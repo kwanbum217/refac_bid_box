@@ -93,5 +93,20 @@
 - **관련 파일**: `frontend/package.json`, `frontend/vite.config.ts`, `frontend/doctor.config.json`, `frontend/src/App.tsx`, `docker-compose.yml`, `Makefile`
 - **검증 결과**: `pytest` 2/2 passed, `validate_agent_rules.py` 6/6 PASS
 
+---
+
+### 2026-07-31 | Phase 2 & 3 세부 이행 | 9개 DB ORM 모델 1:1 이식, Pydantic v2 스키마 및 API 라우터 구축
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `feat: implement 9 ORM models, Pydantic v2 schemas, and API routers for bids, predictions, chatbot`
+- **주요 변경사항**:
+  - `src/app/models/`: 9개 핵심 DB 모델 (`BidAnnouncement`, `BidResult`, `InstitutionStat`, `PredictionResult`, `RetrainLog`, `ChatbotLog`, `KBDocument`, `RAGHistory`, `UserAccount`) 100% 이식
+  - `src/app/schemas/`: Pydantic v2 DTO 스키마 구현 (`bids.py`, `predictions.py`, `chatbot.py`)
+  - `src/app/api/v1/`: 입찰 공고/결과(`bids.py`), AI 낙찰가 예측(`predictions.py`), 하이브리드 RAG 챗봇(`chatbot.py`) API 라우터 구현 및 `main.py` 연결
+  - `tests/test_api_v1.py`: 예측 및 챗봇 API 테스트 작성 및 100% 통과
+- **관련 파일**: `src/app/models/*`, `src/app/schemas/*`, `src/app/api/v1/*`, `tests/test_api_v1.py`, `src/ml/features.py`
+- **검증 결과**: `pytest` 4/4 passed, `validate_agent_rules.py` 6/6 PASS
+
+
 
 

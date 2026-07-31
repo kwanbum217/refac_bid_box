@@ -21,8 +21,10 @@ def _compute_features(raw_data: dict[str, Any]) -> dict[str, Any]:
     presumed_price = float(raw_data.get("presumed_price", 0.0))
     base_price = float(raw_data.get("base_price", presumed_price))
 
-    # 하드코딩 상수 대신 집계값 또는 인자 수용
-    inst_hist_rate = float(raw_data.get("inst_hist_rate", 0.925))
+    # 하드코딩 상수 대신 집계값 또는 인자 수용 (None 처리 안전성 확보)
+    inst_hist_rate_val = raw_data.get("inst_hist_rate")
+    inst_hist_rate = float(inst_hist_rate_val if inst_hist_rate_val is not None else 0.925)
+
 
     # 차원 계산 예시 (52차원 벡터 빌드 로직 기준)
     price_ratio = presumed_price / base_price if base_price > 0 else 1.0

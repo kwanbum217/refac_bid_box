@@ -1,5 +1,8 @@
 from fastapi import FastAPI
+from src.app.api.v1.bids import router as bids_router
+from src.app.api.v1.chatbot import router as chatbot_router
 from src.app.api.v1.health import router as health_router
+from src.app.api.v1.predictions import router as predictions_router
 from src.app.core.config import settings
 
 app = FastAPI(
@@ -11,6 +14,10 @@ app = FastAPI(
 )
 
 app.include_router(health_router, prefix="/api/v1")
+app.include_router(bids_router, prefix="/api/v1")
+app.include_router(predictions_router, prefix="/api/v1")
+app.include_router(chatbot_router, prefix="/api/v1")
+
 
 
 @app.get("/")
