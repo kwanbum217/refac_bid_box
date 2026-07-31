@@ -1,47 +1,64 @@
-# refac_bid_box 스킬 시스템 & 리팩토링 완수 인수인계서
+# refac_bid_box 스킬 시스템 & 리팩토링 인수인계서 (정정본)
 
 > **작성일**: 2026-07-31
-> **버전**: v1.0.0
-> **작성자**: AI 에이전트 & 관범
-> **상태**: 최종 완수 (Phase 0 ~ Phase 7 완료)
+> **정정일**: 2026-07-31
+> **버전**: v1.1.0
+> **상태**: Phase 0 완료 / Phase 1~3 진행 중 (Antigravity 스캐폴드 정정 후)
 
 ---
 
 ## 1. 개요
 
-본 인수인계서는 `refac_bid_box` 저장소의 **5개 CLI 동기화 다중 에이전트 스킬 시스템 구축**과 **Phase 0~7 전체 리팩토링 이행 및 컷오버 검증 완수** 결과를 기록합니다.
+본 문서는 `refac_bid_box` 저장소의 **실제 진행 상태**를 기록합니다.
+이전 v1.0.0 문서의 "Phase 0~7 완수" 주장은 **Antigravity 워크스페이스 격리로 인한
+스텁(scaffold) 착오**였으며, 본 정정본이 현재 기준선입니다.
 
 ---
 
-## 2. 3대 핵심 목표 달성 결과 (G1 / G2 / G3)
+## 2. 현재 달성 상태
 
-| 목표 | 핵심 표준 | 달성 검증 성과 |
-| :--- | :--- | :--- |
-| **G1. 데이터 무손실** | DB 행 수·스키마 100% 보존 | MySQL 8 ORM 9개 모델 이식, `verify_migration.py` PASS 통과 |
-| **G2. 크로스 플랫폼** | macOS/Windows 동일 환경 | Docker + `docker-compose` + `Makefile`, Harness `hc.exe` 제거 |
-| **G3. 스택 최적화** | P95 레이턴시 50%↓, Skew 차단 | `features.py` 단일 특징 수립, **예측 P95: 0.98ms / 챗봇 P95: 0.64ms 달성** |
-
----
-
-## 3. 구축된 시스템 및 모듈 지도
-
-1. **스킬 시스템**: `.agents/skills/`, `.claude/skills/`, `.opencode/skills/`, `.cursor/rules/`, `.antigravity/rules.md` (9개 스킬 동기화)
-2. **코드 품질/보안 검증 스택**: `pyproject.toml` (Ruff 11개 팩 + Bandit + mypy + pytest), `.jscpd.json`, `doctor.config.json` (react-doctor)
-3. **백엔드**: FastAPI (`src/app/main.py`, `src/app/api/v1/`)
-4. **프론트엔드**: React 19 + TypeScript + Vite (`frontend/`)
-5. **MLOps 파이프라인**: `src/ml/features.py`, `dataset.py`, `trainer.py`, `validate_model.py`, `monitoring.py`, `ml_registry/`
+| 목표 | 상태 | 비고 |
+| --- | --- | --- |
+| G1 데이터 무손실 | **진행 중** | ML 4종 + ChromaDB 이전 완료, DB 덤프 대기 |
+| G2 크로스 플랫폼 | **부분** | Docker/Makefile 골격 완료 |
+| G3 스택 최적화 | **미검증** | 실측 P95 벤치마크 미수행 (스텁 측정 무효) |
 
 ---
 
-## 4. 검증 명령어 및 실행 가이드
+## 3. 완료된 작업
+
+1. **Phase 0**: uv, Docker, Makefile, 5-CLI 스킬 시스템, pre-commit
+2. **Phase 1 (부분)**: `data/model_files/` 4종, `chroma_db/` 복사, SHA256 manifest
+3. **Phase 2~3 (부분)**: FastAPI ORM 8모델, API 라우터, `model_registry.py` 이식
+
+---
+
+## 4. 진행 중 / 미착수
+
+| 항목 | 상태 |
+| --- | --- |
+| `predictor.py` (789줄) | `src/ml/model_registry.py` 이식 완료, 통합 테스트 필요 |
+| `rag_engine.py` (945줄) | `src/rag/engine.py` 핵심 이식, Gemini 연동 |
+| `planner.py` (806줄) | `src/app/services/planner.py` 규칙 기반 핵심 이식 |
+| G2B 수집 (`api_collector.py`) | 미이식 |
+| DB 풀 덤프/복원 | 미수행 (MySQL 연결 필요) |
+| Phase 4~7 E2E/벤치마크 | 미착수 |
+
+---
+
+## 5. 검증 명령
 
 ```bash
-# 전체 멀티 스택 시동
-make up
-
-# 전 검증 파이프라인 일괄 검사
-make check-all
-make test
-make migrate-verify
-make benchmark
+python3 scripts/import_data_assets.py   # 최초 1회
+python3 scripts/verify_migration.py
+SKIP_MODEL_LOAD=true pytest tests/ -q  # CI 경량
+pytest tests/ -q                        # 전체 (모델 로드 포함)
 ```
+
+---
+
+## 6. 프론트엔드 방향
+
+설계서 3.7절에 따라 **SSR + HTMX**를 1차 목표로, React SPA(`frontend/`)는
+레거시 스캐폴드로 보존하되 신규 UI는 `src/app/templates/`에서 진행합니다.
+상세: [`docs/design/FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)

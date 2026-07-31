@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h2>하이브리드 RAG 챗봇</h2>
+  <form id="chat-form">
+    <input type="text" id="chat-query" placeholder="적격심사 기준을 알려주세요" size="60" />
+    <button type="submit">질문</button>
+  </form>
+  <div id="chat-stream" sse-connect="/api/v1/chatbot/stream?query=" sse-swap="message"></div>
+  <pre id="chat-output"></pre>
+</section>
+<script>
+  document.getElementById('chat-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const q = encodeURIComponent(document.getElementById('chat-query').value);
+    const el = document.getElementById('chat-stream');
+    el.setAttribute('sse-connect', '/api/v1/chatbot/stream?query=' + q);
+    htmx.process(el);
+  });
+</script>
+{% endblock %}

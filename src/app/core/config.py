@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     # LLM & RAG
     GEMINI_API_KEY: str = ""
+    CHROMA_DB_PATH: str = str(PROJECT_ROOT / "chroma_db")
+    MODEL_FILES_DIR: str = str(PROJECT_ROOT / "data" / "model_files")
 
     # ML MLOps Directory
     MODEL_REGISTRY_DIR: str = "ml_registry"

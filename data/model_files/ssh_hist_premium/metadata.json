@@ -1,0 +1,18 @@
+{
+  "name": "SSH Hist Premium Ensemble",
+  "version": "1.0",
+  "type": "hist_premium_ensemble",
+  "description": "용역(Servc) 공고를 기본 대상으로 하는 SSH 데이터셋 기반 하한율 보정 + HistGradientBoosting 앙상블 예측 모델입니다. 계약 체결 방식, 입찰 방식, 공고기관, 기준 하한율을 함께 반영해 용역 공고의 추천 투찰가를 안정적으로 산정합니다.",
+  "specialized_categories": [
+    "Servc"
+  ],
+  "specialization": "용역 공고 기본 모델",
+  "required_features": [
+    "presmpt_prce",
+    "cntrctCnclsMthdNm",
+    "bidMethdNm",
+    "ntceInsttNm",
+    "lower_rate"
+  ],
+  "training_rows": 22893
+}

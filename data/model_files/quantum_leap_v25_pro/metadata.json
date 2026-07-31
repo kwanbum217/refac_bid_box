@@ -1,0 +1,16 @@
+{
+  "name": "Quantum Leap V25 Pro",
+  "version": "25.1",
+  "type": "quantum_leap_rule",
+  "description": "Quantum Leap V25 Pro는 물품(Thng) 공고를 대상으로 하는 규칙형 보조 예측 모델입니다. 공고명, 공고기관, 기준금액과 시나리오 모드를 조합해 물품 공고의 가격대별 위험 구간을 빠르게 보정합니다.",
+  "specialized_categories": [
+    "Thng"
+  ],
+  "specialization": "물품 공고 보조 모델",
+  "required_features": [
+    "title",
+    "agency_name",
+    "presmpt_prce",
+    "scenario_mode"
+  ]
+}

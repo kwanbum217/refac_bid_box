@@ -1,0 +1,138 @@
+{
+  "timestamp": "2026-04-10T14:13:20.133467",
+  "model_version": "25.0_TemporalHybridStacking",
+  "profile_id": "D1_M1",
+  "seed": 42,
+  "holdout_mode": "single",
+  "holdouts": [
+    {
+      "timestamp": "2026-04-10T14:13:20.131718",
+      "model_version": "25.0_TemporalHybridStacking",
+      "profile_id": "D1_M1",
+      "seed": 42,
+      "holdout_id": "H3",
+      "rows_train": 12000,
+      "rows_test": 3000,
+      "r2": 0.8049587895797325,
+      "mae": 1.3531855836181639,
+      "mlp_weight": 0.45,
+      "rank": 1,
+      "is_champion": true,
+      "baseline_v23_r2": 0.5735102891921997,
+      "baseline_v24_r2": 0.5625453171494268,
+      "diagnostics": {
+        "meta_val_r2": -0.25583342525383546,
+        "meta_val_mae": 1.3679858717473605,
+        "meta_selected": "ridge_mlp_blend",
+        "meta_candidates": [
+          {
+            "name": "ridge",
+            "r2": -0.3009253740310669,
+            "mae": 1.4562453031539917
+          },
+          {
+            "name": "ridge_mlp_blend",
+            "r2": -0.25583342525383546,
+            "mae": 1.3679858717473605
+          }
+        ]
+      },
+      "meta_features": [
+        "p_v17",
+        "p_v18",
+        "p_v19",
+        "p_v20",
+        "p_lgbm_meta",
+        "p_cat_meta",
+        "meta_mean",
+        "meta_std",
+        "meta_range",
+        "meta_delta_lgbm_cat",
+        "rank_spread",
+        "pairwise_abs_diff_mean"
+      ],
+      "config": {
+        "max_rows": 15000,
+        "recent_ratio": 0.7,
+        "test_ratio": 0.2,
+        "decay_lambda": 0.001,
+        "rate_min": 78.0,
+        "rate_max": 105.0,
+        "data_scope": "all",
+        "dedup_mode": "legacy",
+        "history_mode": "legacy",
+        "holdout_mode": "single",
+        "meta_type": "ridge_mlp_blend",
+        "meta_mode": "ridge_mlp",
+        "run_minutes_target": 25,
+        "oof_splits": 4,
+        "row_cap": 260000,
+        "est_scale": 0.9
+      }
+    }
+  ],
+  "aggregate": {
+    "avg_r2": 0.8049587895797325,
+    "avg_mae": 1.3531855836181639,
+    "min_r2": 0.8049587895797325,
+    "max_mae": 1.3531855836181639,
+    "n_holdouts": 1
+  },
+  "acceptance": {
+    "baseline_r2": 0.6334,
+    "baseline_mae": 1.871,
+    "target_r2_gain": 0.01,
+    "target_mae_gain_ratio": 0.05,
+    "pass_r2": true,
+    "pass_mae": true,
+    "pass_stability": true,
+    "pass_any_primary": true,
+    "pass_all": true
+  },
+  "budget": {
+    "target_minutes": 25,
+    "row_cap": 260000,
+    "est_scale": 0.9,
+    "oof_splits": 4
+  },
+  "data_cfg": {
+    "data_scope": "all",
+    "dedup_mode": "legacy",
+    "history_mode": "legacy",
+    "max_rows": 15000,
+    "recent_ratio": 0.7,
+    "profile_data": "D1"
+  },
+  "model_cfg": {
+    "profile_model": "M1",
+    "meta_mode": "ridge_mlp",
+    "oof_lgbm": {
+      "n_estimators": 198,
+      "learning_rate": 0.05,
+      "max_depth": 6,
+      "num_leaves": 31,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9
+    },
+    "oof_cat": {
+      "iterations": 198,
+      "learning_rate": 0.05,
+      "depth": 6,
+      "loss_function": "RMSE"
+    },
+    "final_lgbm": {
+      "n_estimators": 234,
+      "learning_rate": 0.04,
+      "max_depth": 6,
+      "num_leaves": 31,
+      "subsample": 0.9,
+      "colsample_bytree": 0.9
+    },
+    "final_cat": {
+      "iterations": 234,
+      "learning_rate": 0.04,
+      "depth": 6,
+      "loss_function": "RMSE"
+    }
+  }
+}

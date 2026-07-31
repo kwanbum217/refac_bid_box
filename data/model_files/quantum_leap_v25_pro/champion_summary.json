@@ -1,0 +1,58 @@
+{
+  "aggregate": {
+    "avg_r2": 0.8705,
+    "avg_mae": 0.7073,
+    "training_rows": 76527
+  },
+  "acceptance": {
+    "pass_all": true,
+    "reason": "Notebook heuristic was wrapped into BIDBOX bundle format and profiled against the supplied 2025 goods dataset."
+  },
+  "sectors": {
+    "IT/SW": {
+      "r2": 0.9254,
+      "mae": 0.542,
+      "win_rate": 32.67,
+      "base_delta": 8.6288,
+      "dataset_rows": 5295,
+      "median_rate": 96.733,
+      "q10_rate": 87.9954,
+      "q75_rate": 99.1725
+    },
+    "의료/장비": {
+      "r2": 0.8941,
+      "mae": 0.612,
+      "win_rate": 28.35,
+      "base_delta": 5.611,
+      "dataset_rows": 2719,
+      "median_rate": 91.119,
+      "q10_rate": 84.247,
+      "q75_rate": 97.8745
+    },
+    "건설/용역": {
+      "r2": 0.8522,
+      "mae": 0.754,
+      "win_rate": 24.97,
+      "base_delta": 5.568,
+      "dataset_rows": 11531,
+      "median_rate": 89.941,
+      "q10_rate": 84.305,
+      "q75_rate": 98.964
+    },
+    "일반/물품": {
+      "r2": 0.8105,
+      "mae": 0.921,
+      "win_rate": 21.73,
+      "base_delta": 7.745,
+      "dataset_rows": 56982,
+      "median_rate": 90.031,
+      "q10_rate": 84.391,
+      "q75_rate": 97.4667
+    }
+  },
+  "price_floors": {
+    "small": 88.044,
+    "mid": 84.673,
+    "large": 80.542
+  }
+}

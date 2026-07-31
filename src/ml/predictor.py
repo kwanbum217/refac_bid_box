@@ -2,14 +2,14 @@
 src/ml/predictor.py
 
 ML 모델 추론 싱글톤 로더.
-요청 마다 모델 가중치를 동적으로 불러오는 오버헤드를 차단하기 위해
-서버 시동 시 인메모리에 가중치를 프리로딩(Pre-loading)합니다.
+서버 시동 시 ModelRegistry가 4종 Champion 가중치를 프리로딩합니다.
 """
 
-import json
-from pathlib import Path
-from typing import Any
-import joblib
+from __future__ import annotations
+
+import os
+from typing import Any, Optional
+
 from src.ml.features import build_feature_dict
 
 
@@ -25,54 +25,35 @@ class SingletonPredictor:
     def __init__(self):
         if self._initialized:
             return
-
-        self.model_name = "quantum_leap_v25_pro"
-        self.version = "v25_pro_latest"
-        self.model = None
-        self.metadata = {}
         self._initialized = True
-        self._load_model()
+        if os.getenv("SKIP_MODEL_LOAD", "false").lower() != "true":
+            from src.ml.model_registry import ModelRegistry
 
-    def _load_model(self):
-        """가중치 파일 프리로딩"""
-        # 레지스트리 및 모델 가중치 파일 경로
-        registry_path = Path("ml_registry") / self.model_name / self.version / "model.bin"
-        if registry_path.exists():
-            try:
-                self.model = joblib.load(registry_path)
-                meta_path = registry_path.parent / "metadata.json"
-                if meta_path.exists():
-                    with open(meta_path, encoding="utf-8") as f:
-                        self.metadata = json.load(f)
-            except Exception as e:
-                print(f"[Predictor] 가중치 로딩 경고: {e}")
+            ModelRegistry.load_all_models()
 
-    def predict(self, request_data: dict[str, Any]) -> dict[str, Any]:
-        """
-        Single Source of Truth features.py를 이용하여 단일 특징 dict를 추출한 뒤
-        인메모리 상주 모델로 사투가를 예측합니다.
-        """
+    def predict(self, request_data: dict[str, Any], model_id: Optional[str] = None) -> dict[str, Any]:
         features = build_feature_dict(request_data)
-        presumed = features["presumed_price"]
-        inst_rate = features.get("inst_hist_rate", 0.925)
 
-        # 모델 객체가 상주 시 실제 predict, 없을 경우 계산 로직 적용
-        if self.model is not None and hasattr(self.model, "predict"):
-            try:
-                # 1D feature array
-                feature_vals = [list(features.values())[:4]]
-                predicted_rate = float(self.model.predict(feature_vals)[0])
-            except Exception:
-                predicted_rate = inst_rate * 100.0
-        else:
+        if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
+            inst_rate = float(features.get("inst_hist_rate", 0.925))
             predicted_rate = inst_rate * 100.0
+            model_version = "fallback"
+        else:
+            from src.ml.model_registry import ModelRegistry, _preferred_model_for_features, predict_optimal_price
 
+            preferred = _preferred_model_for_features(features)
+            if not ModelRegistry.available_models():
+                ModelRegistry.load_all_models()
+            predicted_rate = float(predict_optimal_price(None, features)) * 100.0
+            model_version = preferred
+
+        presumed = float(features.get("presumed_price") or features.get("presmpt_prce") or 0.0)
         predicted_price = presumed * (predicted_rate / 100.0)
 
         return {
             "predicted_price": predicted_price,
             "predicted_rate": predicted_rate,
-            "model_version": self.version,
+            "model_version": model_version,
             "features_used": features,
         }
 

@@ -1,0 +1,6 @@
+.header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; background: #1e293b; color: #f8fafc; }
+.header nav a { color: #cbd5e1; margin-left: 1rem; text-decoration: none; }
+.header nav a.active { color: #38bdf8; font-weight: bold; }
+.container { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+form label { display: block; margin: 0.5rem 0; }
+pre { background: #f1f5f9; padding: 1rem; border-radius: 6px; overflow-x: auto; }

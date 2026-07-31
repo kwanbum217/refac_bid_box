@@ -1,0 +1,13 @@
+{
+    "name": "V25 Ultimate Ensemble",
+    "version": "25.0",
+    "description": "건설·외자 등 현재 별도 분야 전용 모델이 없는 공고에서 기본으로 사용하는 범용 시계열 앙상블 모델입니다. LGBM, CatBoost, Ridge/MLP 기반 예측을 결합해 공고 시점과 금액 규모의 패턴을 함께 반영합니다.",
+    "specialized_categories": [
+        "Cnstwk",
+        "Frgcpt"
+    ],
+    "specialization": "건설·외자 범용 기본 모델",
+    "required_features": [
+        "log_price", "month", "weekday", "month_sin", "month_cos"
+    ]
+}

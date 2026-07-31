@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>refac_bid_box</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <header class="header">
+    <h1>refac_bid_box</h1>
+    <nav>
+      <a href="/ui/" class="{% if active_tab == 'dashboard' %}active{% endif %}">대시보드</a>
+      <a href="/ui/prediction" class="{% if active_tab == 'prediction' %}active{% endif %}">AI 예측</a>
+      <a href="/ui/chatbot" class="{% if active_tab == 'chatbot' %}active{% endif %}">RAG 챗봇</a>
+      <a href="/docs" target="_blank">API Docs</a>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

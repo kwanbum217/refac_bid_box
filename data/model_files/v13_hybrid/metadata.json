@@ -1,0 +1,15 @@
+{
+    "name": "V13 Pruned Hybrid",
+    "version": "13.2",
+    "description": "가볍고 빠른 멀티 스테이지 하이브리드 fallback 모델입니다. 카테고리 전용 모델이 실패하거나 빠른 비교가 필요할 때 금액 로그값과 공고 시점 패턴을 기반으로 보수적인 기준 예측을 제공합니다.",
+    "specialized_categories": [
+        "Servc",
+        "Cnstwk",
+        "Thng",
+        "Frgcpt"
+    ],
+    "specialization": "범용 fallback 모델",
+    "required_features": [
+        "log_price", "month", "weekday"
+    ]
+}

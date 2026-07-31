@@ -1,7 +1,7 @@
 # ML 가중치 및 ChromaDB 보존 검증
 
 > **작성일**: 2026-07-31
-> **상태**: 설계 (실행 전)
+> **상태**: Phase 1 진행 중 (가중치·Chroma 이전 완료)
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 5.4~5.5장
 
 ---
@@ -10,18 +10,20 @@
 
 ### 1.1 보존 대상 (4개 모델)
 
-| 모델 | 경로 (기존) | 크기 | 분야 |
+| 모델 | 경로 (refac) | 크기 | 분야 |
 | --- | --- | --- | --- |
-| `v25` | `apps/predictions/model_files/v25/` | ~1.1MB | 건설·외자 범용 |
-| `quantum_leap_v25_pro` | `apps/predictions/model_files/quantum_leap_v25_pro/` | ~24KB | 물품(Thng) |
-| `ssh_hist_premium` | `apps/predictions/model_files/ssh_hist_premium/` | ~4.1MB | 용역(Servc) |
-| `v13_hybrid` | `apps/predictions/model_files/v13_hybrid/` | ~36MB | 하이브리드 |
+| `v25` | `data/model_files/v25/` | ~1.1MB | 건설·외자 범용 |
+| `quantum_leap_v25_pro` | `data/model_files/quantum_leap_v25_pro/` | ~24KB | 물품(Thng) |
+| `ssh_hist_premium` | `data/model_files/ssh_hist_premium/` | ~4.1MB | 용역(Servc) |
+| `v13_hybrid` | `data/model_files/v13_hybrid/` | ~36MB | 하이브리드 |
 
-### 1.2 체크섬 기록 (이행 전)
+> 가중치 바이너리(`*.bin`, `*.joblib`)는 `.gitignore` 대상입니다. SHA256 manifest는 `data/backups/data_assets_checksums.json`에 기록합니다.
+
+### 1.2 체크섬 기록
 
 ```bash
-# 각 모델 디렉토리의 모든 파일에 대해 sha256 기록
-find apps/predictions/model_files -type f -exec shasum -a 256 {} \; > ml_weights_checksums_pre.txt
+python3 scripts/import_data_assets.py
+python3 scripts/verify_migration.py
 ```
 
 ### 1.3 검증 절차
@@ -79,8 +81,8 @@ cp -R chroma_db/ chroma_db_backup_YYYYMMDD/
 
 ## 4. 체크리스트
 
-- [ ] ML 가중치 체크섬 기준선 기록
-- [ ] ChromaDB 백업
-- [ ] 4개 모델 로드 + 회귀 테스트 통과
-- [ ] ChromaDB 19개 컬렉션 문서수/쿼리 검증 통과
-- [ ] 레지스트리 초기 champion 등록 완료
+- [x] ML 가중치 체크섬 기준선 기록 (`data/backups/data_assets_checksums.json`)
+- [x] ChromaDB 로컬 복사 (`chroma_db/`, Git 제외)
+- [ ] 4개 모델 로드 + 회귀 테스트 통과 (`RUN_MODEL_TESTS=1`)
+- [x] ChromaDB 컬렉션 디렉토리 검증 (`verify_migration.py`)
+- [ ] DB 풀 덤프/복원 및 행 수 대조

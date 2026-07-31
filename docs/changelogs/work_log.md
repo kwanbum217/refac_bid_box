@@ -6,7 +6,25 @@
 
 ---
 
-### 2026-07-31 | Phase 0 스킬 시스템 | 다중 에이전트 스킬 구축 및 검증 스크립트 완성
+### 2026-07-31 | Antigravity 정정 | 문서·데이터·핵심 로직 이식 및 SSR/HTMX 결정
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - handoff/work_log/README/docs/README: "Phase 0~7 완수" 착오 정정, 실제 진행 상태 반영
+  - `scripts/import_data_assets.py`: bid_box에서 ML 4종 + chroma_db 이전 및 SHA256 manifest
+  - `data/model_files/`, `chroma_db/`, `data/backups/data_assets_checksums.json` 생성
+  - `src/ml/model_registry.py`: 원본 predictor.py 789줄 이식 (Django 의존 제거)
+  - `src/ml/features.py`: 52차원 특징 맵 SSoT로 확장
+  - `src/rag/engine.py`, `vector_store.py`, `structured_data.py`: RAG 엔진 이식, 스텁 제거
+  - `src/app/services/planner.py`: planner 규칙 기반 핵심 이식
+  - `docs/design/FRONTEND_DECISION.md`: SSR+HTMX 확정, React SPA 신규 개발 중단
+  - `src/app/templates/`: Jinja2 SSR UI (/ui/, /ui/prediction, /ui/chatbot)
+  - `scripts/verify_migration.py`: 실제 테이블명·체크섬 검증으로 강화
+- **관련 파일**: 위 전체 + `tests/test_data_preservation.py`
+- **검증 결과**: `verify_migration.py` PASS, `pytest` (SKIP_MODEL_LOAD) 통과
+
+---
+
 
 - **작업자**: 관범 & AI 에이전트
 - **커밋**: `feat: build multi-agent skill system and validation script`
