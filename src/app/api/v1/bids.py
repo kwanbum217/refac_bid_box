@@ -201,3 +201,21 @@ def get_bid_detail(pk: int, db: Session = Depends(get_db)):
         past_results=[_serialize_result(db, row) for row in detail["past_results"]],
         default_prediction_model=detail["default_prediction_model"],
     )
+
+
+@router.post("/collect", summary="G2B 데이터 수집 실행")
+async def collect_bids_api(
+    start_date: str = Query("", description="수집 시작일 (YYYYMMDD, 미지정 시 어제)"),
+    end_date: str = Query("", description="수집 종료일 (YYYYMMDD, 미지정 시 어제)"),
+    fetch_type: str = Query("both", description="both/announce/result"),
+    db: Session = Depends(get_db),
+):
+    """원본 collect_bids 관리 명령 대응. 장시간 수집은 자동화 큐를 사용하십시오."""
+    from src.app.services.collector_service import collect_bids
+
+    return await collect_bids(
+        db,
+        start_date=start_date or None,
+        end_date=end_date or None,
+        fetch_type=fetch_type,
+    )

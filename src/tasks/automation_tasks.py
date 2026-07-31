@@ -8,6 +8,7 @@ apply_callback_payload 계약으로 automation_requests 에 누적합니다.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -48,38 +49,43 @@ def _report(db, automation_request_id: str, step: str, status: str, summary: str
     )
 
 
-def _step_collect(db) -> tuple[str, dict[str, Any]]:
-    """G2B 수집 스텝. 수집기가 아직 이식되지 않아 현재 적재 현황만 보고합니다."""
-    today = datetime.utcnow().date()
-    today_rows = db.scalar(
-        select(func.count(BidAnnouncement.id)).where(
-            BidAnnouncement.collected_at >= datetime.combine(today, datetime.min.time())
+async def _step_collect(db) -> tuple[str, dict[str, Any]]:
+    """G2B 수집 스텝 (원본 collect_bids 명령 대응)."""
+    from src.app.services.collector_service import collect_bids
+
+    metrics = await collect_bids(db)
+    if metrics.get("status") == "error":
+        today_rows = db.scalar(
+            select(func.count(BidAnnouncement.id)).where(
+                BidAnnouncement.collected_at
+                >= datetime.combine(datetime.utcnow().date(), datetime.min.time())
+            )
         )
-    )
+        return (
+            f"{metrics.get('message')} 오늘 적재분 {today_rows or 0}건.",
+            {"today_rows": int(today_rows or 0), "collector_available": False},
+        )
+
     return (
-        f"G2B 수집기 미이식으로 신규 수집은 수행하지 않았습니다. 오늘 적재분 {today_rows or 0}건.",
-        {"today_rows": int(today_rows or 0), "collector_available": False},
+        f"수집 완료 (공고 {metrics['announcement_count']}건, 낙찰 {metrics['result_count']}건, "
+        f"기간 {metrics['start_date']}~{metrics['end_date']}).",
+        {
+            "today_rows": metrics["total_records"],
+            "announcement_count": metrics["announcement_count"],
+            "result_count": metrics["result_count"],
+            "collector_available": True,
+        },
     )
 
 
-def _step_rag(db) -> tuple[str, dict[str, Any]]:
-    """ChromaDB 벡터 수 점검."""
-    from src.app.core.config import settings
+def _step_rag(db, execution_id: str = "") -> tuple[str, dict[str, Any]]:
+    """ChromaDB 지식베이스 재구축 (원본 update_hybrid_kb 명령 대응)."""
+    from src.app.services.kb_builder import rebuild_knowledge_base
 
-    vector_count = 0
-    try:
-        import chromadb
-
-        client = chromadb.PersistentClient(path=str(settings.CHROMA_DB_PATH))
-        vector_count = client.get_collection("bidding_kb").count()
-    except Exception as exc:
-        logger.warning("ChromaDB 점검 실패: %s", exc)
-
-    announcement_count = db.scalar(select(func.count(BidAnnouncement.id))) or 0
-    return (
-        f"KB 벡터 {vector_count}건, 원본 공고 {announcement_count}건 확인.",
-        {"vector_count": int(vector_count), "source_bid_count": int(announcement_count)},
-    )
+    outcome = rebuild_knowledge_base(db, pipeline_run_id=execution_id)
+    metrics = dict(outcome.get("metrics") or {})
+    metrics.setdefault("vector_count", metrics.get("source_bid_count", 0))
+    return outcome["summary"], metrics
 
 
 def _step_predict(db) -> tuple[str, dict[str, Any]]:
@@ -201,7 +207,11 @@ async def run_automation_pipeline(
                 execution.stage_name = step
                 execution.stage_status = STATUS_RUNNING
                 db.commit()
-            summary, metrics = runner(db)
+            kwargs = {}
+            if "execution_id" in inspect.signature(runner).parameters:
+                kwargs["execution_id"] = execution_id
+            outcome = runner(db, **kwargs)
+            summary, metrics = await outcome if inspect.isawaitable(outcome) else outcome
             completed.append(step)
             _report(db, automation_request_id, step, "success", summary, metrics)
 
