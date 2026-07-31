@@ -18,7 +18,10 @@
 
 ## 문서
 
-- [리팩토링 설계서](docs/REFACTORING_DESIGN.md)
+- [문서 인덱스](docs/README.md) — 전체 문서 마스터 인덱스
+- [리팩토링 설계서](docs/design/REFACTORING_DESIGN.md) — 전체 청사진 (데이터 무손실, 크로스플랫폼, 재학습)
+- [SKILLS.md](SKILLS.md) — AI 에이전트 작업 규칙
+- [AGENTS.md](AGENTS.md) — 코딩·스택·커뮤니케이션 규칙 정본
 
 ---
 
