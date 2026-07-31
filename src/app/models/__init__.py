@@ -1,15 +1,24 @@
 from src.app.models.accounts import UserAccount
 from src.app.models.bids import BidAnnouncement, BidDatasetSummary, BidResult
-from src.app.models.chatbot import AutomationRequest, ChatSessionState
+from src.app.models.chatbot import (
+    AutomationRequest,
+    AutomationSubscription,
+    ChatSessionState,
+    KnowledgeBaseStatus,
+    PipelineExecution,
+)
 from src.app.models.predictions import PredictionResult, RetrainLog
 
 __all__ = [
+    "AutomationRequest",
+    "AutomationSubscription",
     "BidAnnouncement",
-    "BidResult",
     "BidDatasetSummary",
+    "BidResult",
+    "ChatSessionState",
+    "KnowledgeBaseStatus",
+    "PipelineExecution",
     "PredictionResult",
     "RetrainLog",
-    "AutomationRequest",
-    "ChatSessionState",
     "UserAccount",
 ]
