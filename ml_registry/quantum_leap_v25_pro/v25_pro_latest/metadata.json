@@ -1,0 +1,9 @@
+{
+  "model_name": "quantum_leap_v25_pro",
+  "version": "v25_pro_latest",
+  "description": "공공조달 최적 사투가 예측 Champion 모델 (v25 pro)",
+  "framework": "LightGBM / CatBoost Hybrid",
+  "feature_dim": 52,
+  "registered_at": "2026-07-31T14:59:00Z",
+  "status": "champion"
+}

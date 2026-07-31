@@ -151,6 +151,19 @@
 - **관련 파일**: `.harness/pipeline.yaml`, `docs/ops/harness_ci_guide.md`, `docs/README.md`
 - **검증 결과**: `validate_agent_rules.py` 6/6 PASS
 
+---
+
+### 2026-07-31 | 실측 마이그레이션 & 레지스트리 | ML Champion 레지스트리 버저닝 수립 및 무손실 실측 검증 통과
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `feat: setup initial ML champion registry and enhanced data preservation verification`
+- **주요 변경사항**:
+  - `ml_registry/quantum_leap_v25_pro/v25_pro_latest/`: 초기 Champion 모델 아티팩트 및 메타데이터(`metadata.json`, `metrics.json`, `status`) 등록
+  - `scripts/verify_migration.py`: ML Champion 레지스트리 및 DB 무손실 검증 실측 로직 고도화 및 PASS 통과
+- **관련 파일**: `ml_registry/quantum_leap_v25_pro/v25_pro_latest/*`, `scripts/verify_migration.py`
+- **검증 결과**: `verify_migration.py` PASS, `pytest` 8/8 passed, `validate_agent_rules.py` 6/6 PASS
+
+
 
 
 
