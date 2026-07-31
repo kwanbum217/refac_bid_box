@@ -50,6 +50,7 @@ docs/
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
 | 인수인계 (정정본) | [`2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md) | 실제 진행 상태 |
+| 원본 재현율 복원 | [`2026-07-31_parity_restoration_handoff.md`](handoff/2026-07-31_parity_restoration_handoff.md) | 데이터 유실 복구, 조작·결함 7건 수정, 스택 변경 |
 
 ## 4. changelogs/
 
@@ -64,8 +65,9 @@ docs/
 1. [`README.md`](../README.md)
 2. [`AGENTS.md`](../AGENTS.md) / [`SKILLS.md`](../SKILLS.md)
 3. [`design/REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md)
-4. [`handoff/2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md)
-5. [`migration/ml_weights_verification.md`](migration/ml_weights_verification.md)
+4. [`handoff/2026-07-31_parity_restoration_handoff.md`](handoff/2026-07-31_parity_restoration_handoff.md)
+5. [`handoff/2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md)
+6. [`migration/ml_weights_verification.md`](migration/ml_weights_verification.md)
 
 ---
 
