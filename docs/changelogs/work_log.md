@@ -62,3 +62,20 @@
 - **관련 파일**: `docs/design/REFACTORING_DESIGN.md`, `AGENTS.md`, `.antigravity/rules.md`
 - **검증 결과**: pre-commit 정합성 검증 6/6 PASS 통과
 
+---
+
+### 2026-07-31 | Phase 0~3 이행 | FastAPI 백엔드, 컨테이너, 데이터 보존 검증 및 단일 특징 함수 수립
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `feat: implement fastapi backend, containerization, data preservation script, and features.py`
+- **주요 변경사항**:
+  - `Dockerfile` & `docker-compose.yml` (MySQL 8 + Redis 7 + FastAPI app 서비스 오케스트레이션)
+  - `.github/workflows/ci.yml` CI 검증 파이프라인 수립
+  - `scripts/verify_migration.py`: G1 무손실 마이그레이션 검증 스크립트 작성 및 통과
+  - `src/app/main.py` & `src/app/api/v1/health.py`: FastAPI 비동기 백엔드 진입점 수립
+  - `src/ml/features.py`: Single Source of Truth 단일 특징 함수 (`build_feature_frame`, `build_feature_dict`) 구현
+  - `tests/test_health.py`: 백엔드 시동 및 헬스체크 단위 테스트 구현 및 통과
+- **관련 파일**: `Dockerfile`, `docker-compose.yml`, `.github/workflows/ci.yml`, `scripts/verify_migration.py`, `src/app/main.py`, `src/ml/features.py`, `tests/test_health.py`
+- **검증 결과**: `pytest` 2/2 passed, `validate_agent_rules.py` 6/6 PASS
+
+
