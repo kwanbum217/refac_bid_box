@@ -1,0 +1,14 @@
+---
+description: Phase 5 재학습 MLOps (단일 특징 features.py, trainer, 레지스트리, PSI)
+globs: src/ml/features.py,src/ml/dataset.py,src/ml/trainer.py,ml_registry/**
+alwaysApply: false
+---
+
+# 06-retraining-pipeline
+
+해당 경로 작업 시 `.agents/skills/retraining-pipeline/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- `src/ml/features.py` 단일 특징 공급원으로 train/serve skew 원천 제거
+- `dataset.py`, `trainer.py`, `validate_model.py` 기반 자동 재학습 파이프라인
+- `ml_registry/` Champion/Challenger 검증 게이트 및 PSI 드리프트 모니터링

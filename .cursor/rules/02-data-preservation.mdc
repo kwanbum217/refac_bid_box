@@ -1,0 +1,14 @@
+---
+description: Phase 1 데이터 보존 선행 (DB 덤프, 가중치 체크섬, ChromaDB 백업)
+globs: docs/migration/**,scripts/verify*
+alwaysApply: false
+---
+
+# 02-data-preservation
+
+해당 경로 작업 시 `.agents/skills/data-preservation/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- DB 행 수 및 스키마 100% 보존 (G1 데이터 무손실)
+- ML 가중치 4종 SHA256 체크섬 기록 및 무결성 검증
+- `scripts/verify_migration.py` 통과 후에만 다음 Phase 진행

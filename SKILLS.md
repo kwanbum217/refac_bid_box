@@ -5,7 +5,7 @@
 이 프로젝트에서 작업을 시작하기 전, 아래 순서를 **반드시** 따르십시오.
 건너뛰거나 생략하는 것은 허용되지 않습니다.
 
-> **진행 중인 작업**: 다중 에이전트 스킬 시스템 구축. [`docs/handoff/2026-07-31_skill_system_handoff.md`](docs/handoff/2026-07-31_skill_system_handoff.md)를 먼저 읽으십시오.
+> **스킬 시스템 상태**: 다중 에이전트 스킬 시스템 8개 구축 완료. 정합성 검증: `python scripts/validate_agent_rules.py`
 
 ---
 

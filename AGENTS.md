@@ -9,15 +9,13 @@
 
 ---
 
-## 0. 진행 중인 작업 (인수인계) ★
+## 0. 스킬 시스템 구축 현황 (완료)
 
-**다중 에이전트 스킬 시스템 구축이 진행 중입니다.** 다음 세션에서 이 작업을 이어받습니다.
+**5개 CLI 동기화 다중 에이전트 스킬 시스템 구축이 완료되었습니다.**
 
 - **인수인계 문서**: [`docs/handoff/2026-07-31_skill_system_handoff.md`](docs/handoff/2026-07-31_skill_system_handoff.md)
-- **참고 모델**: `Minchodan` 프로젝트의 `.agents/skills/`, `.claude/skills/`, `.cursor/rules/`
-- **작업 범위**: Phase 0~7을 스킬로 구축하여 5개 CLI에서 호출 가능하도록 동기화
-
-> 스킬 시스템 작업을 시작하기 전에 반드시 인수인계 문서를 처음부터 끝까지 읽으십시오.
+- **정합성 검증 스크립트**: [`scripts/validate_agent_rules.py`](scripts/validate_agent_rules.py)
+- **작업 완료**: Phase 0~7 대응 8개 스킬 구축 (`.agents/skills/`, `.claude/skills/`, `.opencode/skills/`, `.cursor/rules/`, `.antigravity/rules.md`)
 
 ---
 
@@ -96,3 +94,19 @@ refac_bid_box는 기존 `bid_box`(Django 5.1.6 모놀리식)를 리팩토링하�
 ## 7. 문서화 표준
 
 마크다운 위계(`#`/`##`/`###`), 구분선(`---`), 표 우선, Mermaid 다이어그램, 메타데이터 블록(`>`)을 준수합니다. 상세는 [`SKILLS.md`](SKILLS.md)의 DOCUMENTATION & FORMATTING RULES 섹션을 참조하십시오.
+
+---
+
+## 8. 스킬 인덱스 (Phase 0~7)
+
+| 스킬명 | Phase | globs / 경로 | 핵심 기능 |
+| --- | --- | --- | --- |
+| `foundation-setup` | Phase 0 | `.agents/skills/foundation-setup/` | uv, Makefile, Docker, CI, 린터 설정 |
+| `data-preservation` | Phase 1 | `.agents/skills/data-preservation/` | DB 덤프, 가중치 체크섬, ChromaDB 백업 |
+| `infrastructure-setup` | Phase 2 | `.agents/skills/infrastructure-setup/` | DB ORM 이식, Redis 캐시, 비동기 태스크 큐 |
+| `application-migration` | Phase 3 | `.agents/skills/application-migration/` | 백엔드 API 이식, 거대 모듈 분할, async/await |
+| `inference-rag-opt` | Phase 4 | `.agents/skills/inference-rag-opt/` | 싱글톤 로드, 가중치 외부화, RAG 캐싱 |
+| `retraining-pipeline` | Phase 5 | `.agents/skills/retraining-pipeline/` | 단일 특징 features.py, trainer, ml_registry, PSI 모니터링 |
+| `frontend-streaming` | Phase 6 | `.agents/skills/frontend-streaming/` | SSE/WebSocket 스트리밍, HTMX 동적 UI |
+| `validation-cutover` | Phase 7 | `.agents/skills/validation-cutover/` | E2E, P95 레이턴시 벤치마크, 크로스플랫폼 컷오버 |
+

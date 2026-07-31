@@ -1,0 +1,14 @@
+---
+description: Phase 0 기반 정비 (uv, Makefile, Docker, CI, 린터)
+globs: pyproject.toml,Makefile,Dockerfile,.github/**
+alwaysApply: false
+---
+
+# 01-foundation-setup
+
+해당 경로 작업 시 `.agents/skills/foundation-setup/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- uv 패키지 매니저 기반 의존성 세분화 (main, ml, dev 그룹)
+- macOS 및 Windows 모두 단일 `make` 명령 실행 지원
+- `.env` 실제 시크릿 노출 금지 및 ruff/pre-commit 자동 연동

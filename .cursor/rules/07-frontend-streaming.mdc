@@ -1,0 +1,14 @@
+---
+description: Phase 6 프론트엔드/스트리밍 (SSE/WebSocket 스트리밍, HTMX)
+globs: templates/**,src/app/api/chatbot*
+alwaysApply: false
+---
+
+# 07-frontend-streaming
+
+해당 경로 작업 시 `.agents/skills/frontend-streaming/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- SSE(Server-Sent Events) 기반 Gemini LLM 토큰 실시간 스트리밍
+- HTMX 및 Vanilla JS 활용 반응형 컴포넌트 구성
+- 스트리밍 수신 단절 대비 reconnection 안전 처리

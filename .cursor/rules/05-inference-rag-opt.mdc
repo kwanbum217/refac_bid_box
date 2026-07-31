@@ -1,0 +1,14 @@
+---
+description: Phase 4 ML 추론/RAG 최적화 (싱글톤 로드, RAG 캐싱, hc.exe 제거)
+globs: src/ml/**,src/rag/**
+alwaysApply: false
+---
+
+# 05-inference-rag-opt
+
+해당 경로 작업 시 `.agents/skills/inference-rag-opt/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- 추론 모델 가중치 스타트업 시점 싱글톤 로딩
+- ChromaDB 비동기 검색 및 자주 묻는 Q&A Redis 캐싱
+- Harness `hc.exe` 플랫폼 종속 바이너리 Git 제거 (G2 크로스플랫폼)

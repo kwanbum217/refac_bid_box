@@ -1,0 +1,14 @@
+---
+description: Phase 7 검증 및 컷오버 (E2E, P95 레이턴시 벤치마크, 컷오버)
+globs: tests/**,scripts/benchmark*
+alwaysApply: false
+---
+
+# 08-validation-cutover
+
+해당 경로 작업 시 `.agents/skills/validation-cutover/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- G1(무손실), G2(크로스플랫폼), G3(성능 P95 50%↓) 지표 검증
+- 재학습 파이프라인 전 주기 (데이터-학습-평가-배포) 검증
+- macOS 및 Windows 통합 E2E 검증 통과 후 컷오버

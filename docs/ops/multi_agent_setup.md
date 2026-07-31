@@ -109,7 +109,13 @@
 | `SKILLS.md` | 시작 시퀀스, 문서 규칙, 워크플로우 체크리스트 |
 | `CLAUDE.md` | Claude Code thin pointer (`@AGENTS.md`) |
 | `opencode.json` | opencode instructions 설정 |
-| `.cursor/rules/00-core-guidelines.mdc` | Cursor 핵심 규칙 (AGENTS.md 참조) |
+| `.antigravity/rules.md` | Antigravity 핵심 규칙 요약본 (12,000자 캡 준수) |
+| `.cursor/rules/*.mdc` | Cursor 핵심 규칙 (00-core) 및 Phase 0~7 스킬 규칙 (01~08) |
+| `.agents/skills/{스킬명}/` | 스킬 정본 (Phase 0~7 8개 스킬) |
+| `.claude/skills/{스킬명}/` | Claude Code 전용 스킬 1:1 미러 |
+| `.opencode/skills/{스킬명}/` | opencode 전용 스킬 1:1 미러 |
+| `scripts/validate_agent_rules.py` | 정합성 자동 검증 스크립트 (pre-commit 연동) |
+
 
 ---
 

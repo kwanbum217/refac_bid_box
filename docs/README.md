@@ -58,7 +58,7 @@ docs/
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
-| 스킬 시스템 구축 인계 | [`2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md) | 다중 에이전트 스킬 시스템 구축 작업 인계 (진행 중) |
+| 스킬 시스템 구축 인계 | [`2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md) | 다중 에이전트 스킬 시스템 8개 구축 완료 (Phase 0~7) |
 
 ---
 

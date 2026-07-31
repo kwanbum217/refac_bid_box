@@ -1,0 +1,14 @@
+---
+description: Phase 3 애플리케이션 이식 (거대 모듈 분할, async/await, Pydantic v2)
+globs: src/app/api/**,src/app/services/**
+alwaysApply: false
+---
+
+# 04-application-migration
+
+해당 경로 작업 시 `.agents/skills/application-migration/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- 거대 파일(`chatbot/views.py` 등)을 라우터, 서비스, 스키마 계층으로 분할
+- LLM API 및 외부 수집 요청의 async/await 비동기 처리
+- Pydantic v2 검증 도입 및 DEBUG=False 보안 기본값 강제
