@@ -1,0 +1,14 @@
+---
+description: Git 커밋 메시지 컨벤션, pre-commit 검증, main push 금지 및 PR 워크플로우
+globs: .git/**,docs/ops/git_branching_strategy.md,.github/**
+alwaysApply: false
+---
+
+# 09-git-workflow
+
+해당 경로 작업 시 `.agents/skills/git-workflow/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- 커밋 메시지 `type: subject` 형식 준수 (feat, fix, docs, refactor, chore, test, ci)
+- `main` 브랜치 직접 push 절대 금지 (항상 feature 브랜치 -> PR)
+- 이모지 사용 금지 및 pre-commit 검증 (`scripts/validate_agent_rules.py`) 필수 통과

@@ -56,6 +56,7 @@
 | `retraining-pipeline` | Phase 5 | `.agents/skills/retraining-pipeline/` | 단일 특징 features.py, trainer, ml_registry, PSI 모니터링 |
 | `frontend-streaming` | Phase 6 | `.agents/skills/frontend-streaming/` | SSE/WebSocket 스트리밍, HTMX 동적 UI |
 | `validation-cutover` | Phase 7 | `.agents/skills/validation-cutover/` | E2E, P95 레이턴시 벤치마크, 크로스플랫폼 컷오버 |
+| `git-workflow` | 공통 | `.agents/skills/git-workflow/` | 브랜치 전략, 커밋 컨벤션, PR 템플릿 |
 
 ---
 
