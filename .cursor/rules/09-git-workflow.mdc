@@ -1,5 +1,5 @@
 ---
-description: 커밋전 변경내역 문서 동기화, Git 커밋 컨벤션, main push 금지 및 PR 워크플로우
+description: 커밋전 연관문서 업데이트 및 문서간/코드간 실제 정합성 검토, main push 금지
 globs: .git/**,docs/ops/git_branching_strategy.md,.github/**
 alwaysApply: false
 ---
@@ -9,7 +9,7 @@ alwaysApply: false
 해당 경로 작업 시 `.agents/skills/git-workflow/SKILL.md`를 먼저 읽으십시오.
 
 핵심 계약:
-- **★ [최우선] 커밋/푸시 전 변경 및 수정 내역을 관련 문서(설계서, README, 인덱스 등) 형식에 맞춰 최신화**
+- **★ [최우선] 커밋/푸시 전 관련 문서 업데이트 및 문서 간 & 문서-코드 간 실제 정합성 검토(Consistency Verification)**
 - 커밋 메시지 `type: subject` 형식 준수 (feat, fix, docs, refactor, chore, test, ci)
 - `main` 브랜치 직접 push 절대 금지 (항상 feature 브랜치 -> PR)
 - 이모지 사용 금지 및 pre-commit 검증 (`scripts/validate_agent_rules.py`) 필수 통과
