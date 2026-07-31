@@ -1,27 +1,33 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, JSON, String
+from sqlalchemy import BigInteger, Column, DateTime, JSON, Numeric, String
 from src.app.core.db import Base
 
 
 class PredictionResult(Base):
-    __tablename__ = "prediction_result"
+    """예측 결과 이력 테이블 (원래 db_table: prediction_results)"""
+    __tablename__ = "prediction_results"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    bid_notice_no = Column(String(100), nullable=False, index=True)
-    model_version = Column(String(50), nullable=False, index=True)
-    predicted_price = Column(Float, nullable=False)
-    predicted_rate = Column(Float, nullable=False)
-    features_used = Column(JSON, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    bid_ntce_no = Column(String(50), nullable=False, index=True, comment="입찰공고번호")
+    bid_ntce_ord = Column(String(10), default="000", comment="입찰공고차수")
+    user_input_price = Column(BigInteger, nullable=True, comment="사용자 투찰 금액")
+    model_version = Column(String(100), nullable=False, index=True, comment="사용한 모델 버전")
+    predicted_lower_bound = Column(BigInteger, nullable=True, comment="예측 하한가")
+    predicted_upper_bound = Column(BigInteger, nullable=True, comment="예측 상한가")
+    predicted_optimal_price = Column(BigInteger, nullable=True, comment="최적 투찰 추천가")
+    confidence_score = Column(Numeric(5, 4), nullable=True, comment="신뢰도 점수")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="예측 일시")
+
 
 
 class RetrainLog(Base):
-    __tablename__ = "retrain_log"
+    """재학습 이력 로그 테이블"""
+    __tablename__ = "retrain_logs"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    trigger_source = Column(String(50), nullable=False)  # manual, scheduled, drift_psi
+    trigger_source = Column(String(50), nullable=False)
     champion_version = Column(String(50), nullable=False)
     challenger_version = Column(String(50), nullable=False)
-    status = Column(String(30), nullable=False)  # promoted, archived, failed
+    status = Column(String(30), nullable=False)
     metrics_summary = Column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

@@ -11,13 +11,15 @@ interface HealthStatus {
 
 interface BidNotice {
   id: number;
-  bid_notice_no: str;
-  bid_notice_name: str;
-  order_institution: str;
-  category_code: str;
-  presumed_price: number;
-  base_price: number;
-  notice_date: string;
+  bid_ntce_no: string;
+  bid_ntce_ord: string;
+  bid_ntce_nm: string;
+  dminstt_nm: string;
+  ntce_instt_nm: string;
+  category: string;
+  presmpt_prce: number;
+  base_amount: number;
+  bid_ntce_dt: string;
 }
 
 export default function App() {
@@ -89,7 +91,6 @@ export default function App() {
       });
   };
 
-
   const handleCategoryChange = (cat: string) => {
     setCategoryFilter(cat);
     fetchBids(cat, searchQuery);
@@ -103,9 +104,9 @@ export default function App() {
   // 공고 선택 후 AI 예측 탭으로 이동 및 자동 입력
   const handleSelectBidForPrediction = (bid: BidNotice) => {
     setSelectedBid(bid);
-    setPresumedPrice(bid.presumed_price);
-    setBasePrice(bid.base_price);
-    setCategoryCode(bid.category_code);
+    setPresumedPrice(bid.presmpt_prce || 0);
+    setBasePrice(bid.base_amount || 0);
+    setCategoryCode(bid.category);
     setActiveTab('prediction');
   };
 
@@ -117,7 +118,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          bid_notice_no: selectedBid?.bid_notice_no,
+          bid_notice_no: selectedBid?.bid_ntce_no,
           presumed_price: presumedPrice,
           base_price: basePrice,
           category_code: categoryCode,
@@ -177,6 +178,7 @@ export default function App() {
     Thng: '물품',
     Servc: '용역',
     Cnstwk: '공사',
+    Frgcpt: '외자',
   };
 
   return (
@@ -188,7 +190,7 @@ export default function App() {
             refac_bid_box
           </h1>
           <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: '13px' }}>
-            공공조달 입찰가 예측 &amp; 하이브리드 RAG 챗봇 MLOps 통합 대시보드
+            조달청 입찰가 예측 &amp; 하이브리드 RAG 챗봇 MLOps 플랫폼 (원본 bid_box 1:1 매핑)
           </p>
         </div>
 
@@ -206,7 +208,7 @@ export default function App() {
         <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '16px' }}>
           <div style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>수집된 입찰 공고</div>
           <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#38bdf8', marginTop: '4px' }}>1,420,891 건</div>
-          <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '4px' }}>↑ MySQL 8 무손실 연동 (G1)</div>
+          <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '4px' }}>↑ MySQL 8 bid_announcements 보존 (G1)</div>
         </div>
 
         <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '16px' }}>
@@ -313,7 +315,7 @@ export default function App() {
                   fontSize: '13px',
                 }}
               >
-                물품
+                물품 (Thng)
               </button>
               <button
                 onClick={() => handleCategoryChange('Servc')}
@@ -328,7 +330,7 @@ export default function App() {
                   fontSize: '13px',
                 }}
               >
-                용역
+                용역 (Servc)
               </button>
               <button
                 onClick={() => handleCategoryChange('Cnstwk')}
@@ -343,7 +345,7 @@ export default function App() {
                   fontSize: '13px',
                 }}
               >
-                공사
+                공사 (Cnstwk)
               </button>
             </div>
 
@@ -352,7 +354,7 @@ export default function App() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="공고명 또는 발주기관 검색..."
+                placeholder="공고명 또는 수요기관명 검색..."
                 style={{ padding: '8px 12px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '6px', fontSize: '13px', width: '240px' }}
               />
               <button type="submit" style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
@@ -366,12 +368,12 @@ export default function App() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
               <thead>
                 <tr style={{ backgroundColor: '#0f172a', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                  <th style={{ padding: '12px' }}>공고번호</th>
-                  <th style={{ padding: '12px' }}>구분</th>
-                  <th style={{ padding: '12px' }}>공고명</th>
-                  <th style={{ padding: '12px' }}>발주기관</th>
-                  <th style={{ padding: '12px', textAlign: 'right' }}>추정가격</th>
-                  <th style={{ padding: '12px', textAlign: 'right' }}>기초금액</th>
+                  <th style={{ padding: '12px' }}>입찰공고번호</th>
+                  <th style={{ padding: '12px' }}>업무구분</th>
+                  <th style={{ padding: '12px' }}>입찰공고명</th>
+                  <th style={{ padding: '12px' }}>수요기관명</th>
+                  <th style={{ padding: '12px', textAlign: 'right' }}>추정가격 (presmpt_prce)</th>
+                  <th style={{ padding: '12px', textAlign: 'right' }}>기초금액 (base_amount)</th>
                   <th style={{ padding: '12px', textAlign: 'center' }}>AI 사투가 예측</th>
                 </tr>
               </thead>
@@ -379,7 +381,7 @@ export default function App() {
                 {isLoadingBids ? (
                   <tr>
                     <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
-                      입찰 공고 데이터를 동기화 중입니다...
+                      bid_announcements 데이터를 로딩 중입니다...
                     </td>
                   </tr>
                 ) : bids.length === 0 ? (
@@ -391,7 +393,7 @@ export default function App() {
                 ) : (
                   bids.map((bid) => (
                     <tr key={bid.id} style={{ borderBottom: '1px solid #334155' }}>
-                      <td style={{ padding: '12px', color: '#38bdf8', fontFamily: 'monospace' }}>{bid.bid_notice_no}</td>
+                      <td style={{ padding: '12px', color: '#38bdf8', fontFamily: 'monospace' }}>{bid.bid_ntce_no}</td>
                       <td style={{ padding: '12px' }}>
                         <span
                           style={{
@@ -399,18 +401,18 @@ export default function App() {
                             borderRadius: '4px',
                             fontSize: '11px',
                             fontWeight: 600,
-                            backgroundColor: bid.category_code === 'Thng' ? '#1e1b4b' : bid.category_code === 'Servc' ? '#064e3b' : '#451a03',
-                            color: bid.category_code === 'Thng' ? '#818cf8' : bid.category_code === 'Servc' ? '#34d399' : '#fb923c',
-                            border: `1px solid ${bid.category_code === 'Thng' ? '#4338ca' : bid.category_code === 'Servc' ? '#059669' : '#b45309'}`,
+                            backgroundColor: bid.category === 'Thng' ? '#1e1b4b' : bid.category === 'Servc' ? '#064e3b' : '#451a03',
+                            color: bid.category === 'Thng' ? '#818cf8' : bid.category === 'Servc' ? '#34d399' : '#fb923c',
+                            border: `1px solid ${bid.category === 'Thng' ? '#4338ca' : bid.category === 'Servc' ? '#059669' : '#b45309'}`,
                           }}
                         >
-                          {categoryNameMap[bid.category_code] || bid.category_code}
+                          {categoryNameMap[bid.category] || bid.category}
                         </span>
                       </td>
-                      <td style={{ padding: '12px', color: '#f8fafc', fontWeight: 500 }}>{bid.bid_notice_name}</td>
-                      <td style={{ padding: '12px', color: '#cbd5e1' }}>{bid.order_institution}</td>
-                      <td style={{ padding: '12px', textAlign: 'right', color: '#cbd5e1' }}>{Math.round(bid.presumed_price).toLocaleString()} 원</td>
-                      <td style={{ padding: '12px', textAlign: 'right', color: '#38bdf8', fontWeight: 600 }}>{Math.round(bid.base_price).toLocaleString()} 원</td>
+                      <td style={{ padding: '12px', color: '#f8fafc', fontWeight: 500 }}>{bid.bid_ntce_nm}</td>
+                      <td style={{ padding: '12px', color: '#cbd5e1' }}>{bid.dminstt_nm}</td>
+                      <td style={{ padding: '12px', textAlign: 'right', color: '#cbd5e1' }}>{Math.round(bid.presmpt_prce || 0).toLocaleString()} 원</td>
+                      <td style={{ padding: '12px', textAlign: 'right', color: '#38bdf8', fontWeight: 600 }}>{Math.round(bid.base_amount || 0).toLocaleString()} 원</td>
                       <td style={{ padding: '12px', textAlign: 'center' }}>
                         <button
                           onClick={() => handleSelectBidForPrediction(bid)}
@@ -438,14 +440,14 @@ export default function App() {
 
           {selectedBid && (
             <div style={{ backgroundColor: '#0f172a', padding: '12px 16px', borderRadius: '8px', border: '1px solid #38bdf8', marginBottom: '20px', fontSize: '13px' }}>
-              <span style={{ color: '#38bdf8', fontWeight: 600 }}>선택된 공고:</span> {selectedBid.bid_notice_name} ({selectedBid.bid_notice_no}) — <strong style={{ color: '#4ade80' }}>{selectedBid.order_institution}</strong>
+              <span style={{ color: '#38bdf8', fontWeight: 600 }}>선택된 공고:</span> {selectedBid.bid_ntce_nm} ({selectedBid.bid_ntce_no}) — <strong style={{ color: '#4ade80' }}>{selectedBid.dminstt_nm}</strong>
             </div>
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', color: '#cbd5e1', fontSize: '13px' }}>추정가격 (원)</label>
+                <label style={{ display: 'block', marginBottom: '6px', color: '#cbd5e1', fontSize: '13px' }}>추정가격 presmpt_prce (원)</label>
                 <input
                   type="number"
                   value={presumedPrice}
@@ -455,7 +457,7 @@ export default function App() {
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', color: '#cbd5e1', fontSize: '13px' }}>기초금액 (원)</label>
+                <label style={{ display: 'block', marginBottom: '6px', color: '#cbd5e1', fontSize: '13px' }}>기초금액 base_amount (원)</label>
                 <input
                   type="number"
                   value={basePrice}
@@ -465,7 +467,7 @@ export default function App() {
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', color: '#cbd5e1', fontSize: '13px' }}>카테고리</label>
+                <label style={{ display: 'block', marginBottom: '6px', color: '#cbd5e1', fontSize: '13px' }}>업무구분 category</label>
                 <select
                   value={categoryCode}
                   onChange={(e) => setCategoryCode(e.target.value)}
@@ -474,6 +476,7 @@ export default function App() {
                   <option value="Thng">물품 (Thng)</option>
                   <option value="Servc">용역 (Servc)</option>
                   <option value="Cnstwk">공사 (Cnstwk)</option>
+                  <option value="Frgcpt">외자 (Frgcpt)</option>
                 </select>
               </div>
 

@@ -1,16 +1,15 @@
 from src.app.models.accounts import UserAccount
-from src.app.models.bids import BidAnnouncement, BidResult, InstitutionStat
-from src.app.models.chatbot import ChatbotLog, KBDocument, RAGHistory
+from src.app.models.bids import BidAnnouncement, BidDatasetSummary, BidResult
+from src.app.models.chatbot import AutomationRequest, ChatSessionState
 from src.app.models.predictions import PredictionResult, RetrainLog
 
 __all__ = [
     "BidAnnouncement",
     "BidResult",
-    "InstitutionStat",
+    "BidDatasetSummary",
     "PredictionResult",
     "RetrainLog",
-    "ChatbotLog",
-    "KBDocument",
-    "RAGHistory",
+    "AutomationRequest",
+    "ChatSessionState",
     "UserAccount",
 ]
