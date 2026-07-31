@@ -38,21 +38,21 @@ benchmark:
 
 
 lint:
-	uv run ruff check . --fix
-	uv run ruff format .
+	$(PYTHON) -m ruff check . --fix
+	$(PYTHON) -m ruff format .
 
 security:
-	uv run bandit -c pyproject.toml -r src/ scripts/
+	$(PYTHON) -m bandit -c pyproject.toml -r src/ scripts/
 
 quality:
-	uv run mypy src/
-	npx jscpd
+	$(PYTHON) -m mypy src/
+	npx jscpd src/ frontend/src/ --threshold 5
 
 check-rules:
 	$(PYTHON) scripts/validate_agent_rules.py
 
-check-all: lint security check-rules
+check-all: lint security quality check-rules
 	@echo "전체 코드 품질 및 정합성 검사 통과"
 
 test:
-	uv run pytest tests/
+	$(PYTHON) -m pytest tests/
