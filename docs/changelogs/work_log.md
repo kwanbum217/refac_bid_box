@@ -217,6 +217,18 @@
 - **관련 파일**: `.agents/skills/project-orchestrator/*`, `.claude/skills/project-orchestrator/*`, `.opencode/skills/project-orchestrator/*`, `.cursor/rules/10-project-orchestrator.mdc`, `AGENTS.md`
 - **검증 결과**: `validate_agent_rules.py` 6/6 PASS
 
+---
+
+### 2026-07-31 | 컴퓨터 종료 및 인프라 중지 | 도커 컨테이너 서비스(app, frontend, db, redis) 자원 안전 수거 및 세션 종료
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `chore: gracefully shutdown container stack for environment cleanup`
+- **주요 변경사항**:
+  - `make down`: FastAPI 백엔드, React 19 프론트엔드, MySQL 8 DB, Redis 7 캐시 전체 컨테이너 및 네트워크 자원 안전 중지 및 수거 완료
+- **관련 파일**: `docker-compose.yml`, `docs/changelogs/work_log.md`
+- **검증 결과**: `docker compose ps` (실행 중인 컨테이너 0개 확인), `validate_agent_rules.py` 6/6 PASS
+
+
 
 
 
