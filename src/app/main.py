@@ -54,22 +54,19 @@ def root():
 @app.get("/ui/")
 def ui_dashboard(request: Request):
     return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "active_tab": "dashboard"},
+        request, "dashboard.html", {"active_tab": "dashboard"},
     )
 
 
 @app.get("/ui/prediction")
 def ui_prediction(request: Request):
     return templates.TemplateResponse(
-        "prediction.html",
-        {"request": request, "active_tab": "prediction"},
+        request, "prediction.html", {"active_tab": "prediction"},
     )
 
 
 @app.get("/ui/chatbot")
 def ui_chatbot(request: Request):
     return templates.TemplateResponse(
-        "chatbot.html",
-        {"request": request, "active_tab": "chatbot"},
+        request, "chatbot.html", {"active_tab": "chatbot"},
     )
