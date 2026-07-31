@@ -1,12 +1,12 @@
 from datetime import datetime
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, String
-from src.app.core.db import Base
+from src.app.core.db import Base, PKBigInteger
 
 
 class UserAccount(Base):
     __tablename__ = "user_account"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
     username = Column(String(100), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)

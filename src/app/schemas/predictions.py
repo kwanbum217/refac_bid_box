@@ -19,3 +19,22 @@ class PredictionResponse(BaseModel):
     model_version: str = Field(..., description="사용한 ML Champion 모델 버전")
     features_used: dict[str, Any] = Field(..., description="추론에 사용된 단일 특징 레코드")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PredictPriceRequest(BaseModel):
+    """원본 predict_price_api 폼 파라미터 대응."""
+
+    bid_id: int = Field(..., description="입찰공고 ID")
+    user_price: Optional[str] = Field("0", description="사용자 투찰 금액 (문자열 허용)")
+    selected_model: Optional[str] = Field(None, description="선택 모델 ID (미지정 시 카테고리 기본값)")
+
+
+class PredictPriceResponse(BaseModel):
+    """원본 predict_price_api JsonResponse 계약과 동일."""
+
+    status: str = "success"
+    optimal_price: int = Field(..., description="최적 투찰 추천가")
+    prediction_rate: float = Field(..., description="예상 낙찰률 (%)")
+    confidence: int = Field(..., description="신뢰도 점수 (0~100)")
+    model_name: str = Field(..., description="사용한 모델 표시명")
+    message: str = Field(..., description="사용자 안내 메시지")

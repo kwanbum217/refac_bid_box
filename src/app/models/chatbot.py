@@ -1,14 +1,14 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, JSON, String, Text
-from src.app.core.db import Base
+from src.app.core.db import Base, PKBigInteger
 
 
 class AutomationRequest(Base):
     """자동화 요청 테이블 (원래 db_table: automation_requests)"""
     __tablename__ = "automation_requests"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
     request_id = Column(String(36), default=lambda: str(uuid.uuid4()), unique=True, index=True)
     user_id = Column(BigInteger, nullable=True, index=True)
     intent_type = Column(String(64), default="unknown", index=True)
@@ -35,7 +35,7 @@ class ChatSessionState(Base):
     """채팅 세션 및 내역 테이블 (원래 db_table: chat_session_states)"""
     __tablename__ = "chat_session_states"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
     session_key = Column(String(64), unique=True, index=True)
     user_id = Column(BigInteger, nullable=True, index=True)
     last_query = Column(Text, nullable=True)
