@@ -44,3 +44,21 @@
   - `.pre-commit-config.yaml` & `Makefile` 품질 검증 타깃 연동
 - **관련 파일**: `pyproject.toml`, `.jscpd.json`, `doctor.config.json`, `.pre-commit-config.yaml`, `Makefile`
 - **검증 결과**: 전체 규칙 및 린트 검증 PASS 통과
+
+---
+
+### 2026-07-31 | 아키텍처 결정 | 7가지 기술 트레이드오프 확정 및 설계서/규칙 동기화
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `docs: sign-off 7 architectural decisions in design and agent rules`
+- **주요 변경사항**:
+  - 1. 백엔드: FastAPI (ASGI)
+  - 2. DB: Docker MySQL 8 단일 통일
+  - 3. 태스크 큐: Arq (asyncio + Redis 초경량)
+  - 4. 벡터DB: ChromaDB 기존 19개 컬렉션 유지
+  - 5. 가중치 저장: 외부 스토리지 / 독립 볼륨 (Git 저장소 경량화)
+  - 6. 재학습 주기: PSI 드리프트 감지 동적 주기 (PSI > 0.2)
+  - 7. Champion 전환: 자동 평가 검증 후 1-Click 수동/카나리 승인 게이트
+- **관련 파일**: `docs/design/REFACTORING_DESIGN.md`, `AGENTS.md`, `.antigravity/rules.md`
+- **검증 결과**: pre-commit 정합성 검증 6/6 PASS 통과
+

@@ -7,12 +7,13 @@
 
 ---
 
-## 1. 비협상 원칙
+## 1. 비협상 원칙 및 확정 스택
 
-- **데이터 무손실**: 기존 DB 테이블/컬럼명·타입 변경 금지.
+- **데이터 무손실**: 기존 DB 테이블/컬럼명·타입 변경 금지, ChromaDB 유지.
 - **Train/Serve 특징 단일화**: 특징 생성은 `src/ml/features.py` 단일 함수만 사용.
-- **크로스 플랫폼**: macOS/Windows Docker + Makefile 동일 환경.
+- **크로스 플랫폼**: macOS/Windows Docker + Makefile 동일 환경 (FastAPI + Arq + MySQL 8 + Redis).
 - **시크릿 비기록**: `.env` 실제 값은 문서/코드에 노출 금지.
+
 
 ---
 

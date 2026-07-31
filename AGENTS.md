@@ -33,19 +33,20 @@ refac_bid_box는 기존 `bid_box`(Django 5.1.6 모놀리식)를 리팩토링하�
 
 ---
 
-## 2. 기술 스택
+## 2. 기술 스택 (확정)
 
 | 영역 | 기술 | 비고 |
 | --- | --- | --- |
-| 백엔드 | FastAPI (권장) 또는 Django ASGI | 결정 보류 (설계서 10장) |
-| DB | MySQL 8 (Docker) | 이중화(SQLite fallback) 제거 |
+| 백엔드 | FastAPI (ASGI) | 비동기 I/O, Pydantic v2, Swagger 자동화 |
+| DB | MySQL 8 (Docker) | 이중화(SQLite fallback) 제거, 스키마 100% 보존 |
 | 캐시/브로커 | Redis | 파일/locmem 캐시 대체 |
-| 태스크 큐 | Celery 또는 Arq | 결정 보류 (설계서 10장) |
+| 태스크 큐 | Arq (asyncio + Redis) | 경량 비동기 태스크 큐 |
 | ML | LightGBM, CatBoost, scikit-learn | 기존 스택 유지 |
-| 벡터DB | ChromaDB (유지) 또는 Qdrant | 결정 보류 (설계서 10장) |
-| LLM | Google Gemini | 의도 분류, 요약 |
+| 벡터DB | ChromaDB (유지) | 19개 컬렉션 데이터 보존 최우선 (G1) |
+| LLM | Google Gemini | 의도 분류, 요약, RAG |
 | 패키지 관리 | uv + pyproject.toml | pip 대체 |
-| 컨테이너 | Docker + docker-compose | 전체 스택 |
+| 컨테이너 | Docker + docker-compose | 크로스 플랫폼 표준 (G2) |
+
 
 ---
 
