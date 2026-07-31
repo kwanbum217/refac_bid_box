@@ -152,7 +152,7 @@ def _serialize_state(state: ChatSessionState | None) -> dict[str, Any]:
 
 
 def load_conversation_context(
-    db: Session, session_key: str, *, user_id: int | None = None
+    db: Session, session_key: str, user_id: int | None = None
 ) -> dict[str, Any]:
     payload = _serialize_state(_get_state_by_key(db, session_key, user_id=user_id, create=False))
     return {

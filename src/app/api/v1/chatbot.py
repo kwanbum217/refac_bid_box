@@ -22,7 +22,9 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from src.app.api.v1.accounts import get_current_user
 from src.app.core.db import SessionLocal, get_db
+from src.app.models.accounts import CustomUser
 from src.app.schemas.chat import ChatPlan
 from src.app.schemas.chatbot import (
     ChatbotQueryRequest,
@@ -30,6 +32,8 @@ from src.app.schemas.chatbot import (
     ChatRequest,
     ChatResponse,
 )
+from src.app.services.advisory_engine import AdvisoryEngine
+from src.app.services.automation_orchestrator import build_action_response, create_automation_request
 from src.app.services.conversation_state import (
     ensure_session_key,
     load_conversation_context,
@@ -183,6 +187,29 @@ def _build_direct_tool_answer(tool_context: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _build_advisory_bundle(
+    db: Session,
+    base_suggestions: list[str] | None,
+    *,
+    user_id: int | None = None,
+    request_obj=None,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """원본 _build_advisory_bundle 대응. 제안 텍스트와 신호를 함께 구성합니다."""
+    engine = AdvisoryEngine()
+    advisory_signals = engine.suggest(db, user_id=user_id, request_obj=request_obj)
+    suggestions = list(base_suggestions or [])
+    for signal in advisory_signals:
+        message = str(signal.get("message") or "").strip()
+        if message and message not in suggestions:
+            suggestions.append(message)
+    return suggestions, advisory_signals
+
+
+def _build_automation_status_payload(tool_context: dict | None) -> dict | None:
+    payload = ((tool_context or {}).get("tool_results") or {}).get("automation_status")
+    return payload if isinstance(payload, dict) else None
+
+
 def _plan_steps_payload(plan: ChatPlan) -> list[dict[str, str]]:
     return [
         {"step_id": step.step_id, "kind": step.kind, "tool": step.tool}
@@ -191,13 +218,18 @@ def _plan_steps_payload(plan: ChatPlan) -> list[dict[str, str]]:
 
 
 def _build_answer_tool_context(
-    message: str, history: list[dict], context_state: dict, plan: ChatPlan
+    message: str,
+    history: list[dict],
+    context_state: dict,
+    plan: ChatPlan,
+    user_id: int | None = None,
 ) -> dict[str, Any]:
     tool_context: dict[str, Any] = {
         "user_message": message,
         "history": history,
         "context_state": context_state,
         "original_query": message,
+        "user_id": user_id,
     }
     if "result-object" not in str(plan.reason or ""):
         return tool_context
@@ -212,10 +244,10 @@ def _build_answer_tool_context(
     return tool_context
 
 
-def _run_chat(db: Session, payload: ChatRequest) -> ChatResponse:
+def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> ChatResponse:
     message = (payload.message or "").strip()
     session_key = ensure_session_key(payload.session_key)
-    context_state = load_conversation_context(db, session_key)
+    context_state = load_conversation_context(db, session_key, user_id=user_id)
     history = context_state.get("chat_history", [])
     kb_status = get_latest_kb_status_payload(db)
 
@@ -247,21 +279,80 @@ def _run_chat(db: Session, payload: ChatRequest) -> ChatResponse:
     plan = plan_chat_request(message, context_state=context_state)
 
     if plan.mode == "advisory":
+        suggestions, advisory_signals = _build_advisory_bundle(db, plan.suggestions)
         answer_text = _append_kb_status(
             "자동화 구독 설정으로 전환할 수 있는 요청으로 보입니다.\n"
             "원하는 주기/조건을 알려주시면 등록 가능한 정책으로 정리해드리겠습니다.\n\n"
-            "추천 항목:\n- " + "\n- ".join(plan.suggestions),
+            "추천 항목:\n- " + "\n- ".join(suggestions),
             kb_status,
         )
         remember_chat_interaction(
-            db, session_key, message=message, plan=plan, answer_text=answer_text
+            db, session_key, user_id=user_id, message=message, plan=plan, answer_text=answer_text
         )
         return ChatResponse(
             mode="advisory",
             intent=plan.intent_type,
             message="자동화 정책 제안 요청으로 분류했습니다.",
             answer=answer_text,
-            suggestions=plan.suggestions,
+            suggestions=suggestions,
+            advisory_signals=advisory_signals,
+            kb_status=kb_status,
+            session_key=session_key,
+            plan_steps=_plan_steps_payload(plan),
+        )
+
+    # 자동화 실행 요청은 자동화 요청 레코드를 만들고 실행 카드를 반환합니다 (원본 동일).
+    if plan.mode == "action":
+        if user_id is None:
+            answer_text = _append_kb_status(
+                "자동화 실행은 로그인 후 이용할 수 있습니다. 로그인 뒤 다시 요청해주세요.", kb_status
+            )
+            return ChatResponse(
+                status="error",
+                mode="error",
+                intent=plan.intent_type,
+                message="로그인이 필요합니다.",
+                answer=answer_text,
+                kb_status=kb_status,
+                session_key=session_key,
+                plan_steps=_plan_steps_payload(plan),
+            )
+
+        request_obj = create_automation_request(
+            db,
+            plan=plan,
+            message=message,
+            user_id=user_id,
+            payload={"source": "chat_api"},
+        )
+        action_payload = build_action_response(db, request_obj)
+        suggestions, advisory_signals = _build_advisory_bundle(
+            db, action_payload.get("suggestions"), user_id=user_id, request_obj=request_obj
+        )
+        answer_text = _append_kb_status(action_payload["answer"], kb_status)
+        remember_chat_interaction(
+            db,
+            session_key,
+            user_id=user_id,
+            message=message,
+            plan=plan,
+            answer_text=answer_text,
+            visualizations=action_payload["visualizations"],
+            result_payload=action_payload["result_payload"],
+            job_id=str(request_obj.request_id),
+            action_key=request_obj.action_key,
+        )
+        return ChatResponse(
+            mode=action_payload["mode"],
+            intent=action_payload["intent"],
+            message=action_payload["message"],
+            answer=answer_text,
+            job=action_payload["job"],
+            suggestions=suggestions,
+            advisory_signals=advisory_signals,
+            visualizations=action_payload["visualizations"],
+            result_payload=action_payload["result_payload"],
+            confirmation_token=action_payload["confirmation_token"],
             kb_status=kb_status,
             session_key=session_key,
             plan_steps=_plan_steps_payload(plan),
@@ -271,8 +362,62 @@ def _run_chat(db: Session, payload: ChatRequest) -> ChatResponse:
     if plan.steps:
         tool_context = execute_plan_steps(
             plan,
-            _build_answer_tool_context(message, history, context_state, plan),
+            _build_answer_tool_context(message, history, context_state, plan, user_id=user_id),
             db=db,
+        )
+
+    # 자동화 상태 질의는 도구 결과를 그대로 응답 계약에 실어 보냅니다 (원본 동일).
+    automation_status_payload = _build_automation_status_payload(tool_context)
+    if automation_status_payload:
+        answer_text = _append_kb_status(
+            str(
+                automation_status_payload.get("answer")
+                or automation_status_payload.get("message")
+                or "자동화 상태를 확인했습니다."
+            ),
+            kb_status,
+        )
+        base_suggestions = automation_status_payload.get("suggestions") or []
+        suggestions, advisory_signals = _build_advisory_bundle(
+            db, base_suggestions if isinstance(base_suggestions, list) else [], user_id=user_id
+        )
+        visualizations = list(
+            automation_status_payload.get("visualizations")
+            or (tool_context or {}).get("visualizations")
+            or []
+        )
+        job_payload = automation_status_payload.get("job")
+        job_payload = job_payload if isinstance(job_payload, dict) else None
+        result_payload = automation_status_payload.get("result_payload")
+        result_payload = result_payload if isinstance(result_payload, dict) else {}
+
+        remember_chat_interaction(
+            db,
+            session_key,
+            user_id=user_id,
+            message=message,
+            plan=plan,
+            tool_context=tool_context,
+            answer_text=answer_text,
+            visualizations=visualizations,
+            result_payload=result_payload,
+            job_id=str((job_payload or {}).get("job_id") or ""),
+            action_key=str((job_payload or {}).get("action_key") or ""),
+        )
+        return ChatResponse(
+            mode=str(automation_status_payload.get("mode") or "answer"),
+            intent=str(automation_status_payload.get("intent") or plan.intent_type),
+            message=str(automation_status_payload.get("message") or "자동화 상태를 확인했습니다."),
+            answer=answer_text,
+            job=job_payload,
+            suggestions=suggestions,
+            advisory_signals=advisory_signals,
+            visualizations=visualizations,
+            result_payload=result_payload,
+            confirmation_token=str(automation_status_payload.get("confirmation_token") or ""),
+            kb_status=kb_status,
+            session_key=session_key,
+            plan_steps=_plan_steps_payload(plan),
         )
 
     direct_answer = _build_direct_tool_answer(tool_context)
@@ -294,6 +439,7 @@ def _run_chat(db: Session, payload: ChatRequest) -> ChatResponse:
     remember_chat_interaction(
         db,
         session_key,
+        user_id=user_id,
         message=message,
         plan=plan,
         tool_context=tool_context,
@@ -317,9 +463,13 @@ def _run_chat(db: Session, payload: ChatRequest) -> ChatResponse:
 
 
 @router.post("/chat", response_model=ChatResponse, summary="챗봇 대화")
-async def chat_api(payload: ChatRequest, db: Session = Depends(get_db)):
+async def chat_api(
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
     """계획 수립 -> 도구 실행 -> RAG 답변 생성의 원본 파이프라인을 그대로 수행합니다."""
-    return await asyncio.to_thread(_run_chat, db, payload)
+    return await asyncio.to_thread(_run_chat, db, payload, user.id if user else None)
 
 
 @router.post("/session/new", summary="새 대화 세션 생성")
