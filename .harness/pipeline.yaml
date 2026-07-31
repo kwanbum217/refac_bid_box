@@ -1,0 +1,43 @@
+pipeline:
+  name: refac_bid_box_ci
+  identifier: refac_bid_box_ci
+  projectIdentifier: refac_bid_box
+  orgIdentifier: default
+  tags: {}
+  stages:
+    - stage:
+        name: Build and Validate
+        identifier: build_and_validate
+        type: CI
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Multi-Agent Rules & Code Quality Check
+                  identifier: quality_check
+                  spec:
+                    connectorRef: account.harnessImage
+                    image: python:3.11-slim
+                    command: |-
+                      pip install uv ruff bandit pytest pydantic-settings fastapi sqlalchemy pymysql httpx
+                      python3 scripts/validate_agent_rules.py --quiet
+                      ruff check .
+                      bandit -c pyproject.toml -r src/ scripts/
+                      pytest tests/
+              - step:
+                  type: Run
+                  name: Docker Compose Build Verification
+                  identifier: docker_build
+                  spec:
+                    connectorRef: account.harnessImage
+                    image: docker:dind
+                    command: |-
+                      docker compose build

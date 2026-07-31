@@ -52,8 +52,10 @@ docs/
 | --- | --- | --- |
 | 환경변수 명세 | [`environment_variables.md`](ops/environment_variables.md) | 전체 환경변수 단일 명세 |
 | 크로스플랫폼 가이드 | [`cross_platform_guide.md`](ops/cross_platform_guide.md) | macOS/Windows 호환 (Docker + Makefile) |
+| Harness CI 가이드 | [`harness_ci_guide.md`](ops/harness_ci_guide.md) | Harness Cloud 선언형 CI/CD 연동 및 hc.exe 제거 표준 |
 | Git 브랜치 전략 | [`git_branching_strategy.md`](ops/git_branching_strategy.md) | 브랜치/커밋 규칙 |
 | 다중 에이전트 셋업 | [`multi_agent_setup.md`](ops/multi_agent_setup.md) | 5개 CLI(opencode/cursor/codex/Claude/Antigravity) 규칙 파일 매핑 |
+
 
 ## 4. handoff/ — 세션 인수인계서
 

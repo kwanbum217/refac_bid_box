@@ -139,6 +139,19 @@
 - **관련 파일**: `src/app/api/v1/chatbot.py`, `frontend/src/App.tsx`, `scripts/benchmark_latency.py`, `tests/test_e2e_cutover.py`
 - **검증 결과**: `benchmark_latency.py` PASS (P95 < 1ms), `pytest` 8/8 passed, `validate_agent_rules.py` 6/6 PASS
 
+---
+
+### 2026-07-31 | Harness CI 연동 | Harness Cloud 파이프라인 선언형 설정 수립 및 hc.exe 플랫폼 종속성 교체
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `ci: setup declarative Harness CI pipeline definition and documentation`
+- **주요 변경사항**:
+  - `.harness/pipeline.yaml`: Harness Cloud 선언형 CI/CD 파이프라인 명세 수립 (규칙 검증 + ruff + pytest + docker compose build)
+  - `docs/ops/harness_ci_guide.md`: 레거시 `hc.exe` 플랫폼 종속 바이너리 제거 및 Harness CI/CD 연동 가이드 수립
+- **관련 파일**: `.harness/pipeline.yaml`, `docs/ops/harness_ci_guide.md`, `docs/README.md`
+- **검증 결과**: `validate_agent_rules.py` 6/6 PASS
+
+
 
 
 
