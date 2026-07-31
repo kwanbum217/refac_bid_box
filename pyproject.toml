@@ -7,7 +7,19 @@ name = "refac_bid_box"
 version = "0.1.0"
 description = "Refactored BidBox - Procurement Analytics, Hybrid RAG Chatbot, AI Prediction & MLOps Platform"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.8.0",
+    "sqlalchemy>=2.0.0",
+    "pymysql>=1.1.0",
+    "httpx>=0.28.0",
+    "pandas>=2.2.0",
+    "scikit-learn>=1.6.0",
+    "joblib>=1.4.0",
+]
+
 
 [tool.setuptools]
 packages = ["src"]

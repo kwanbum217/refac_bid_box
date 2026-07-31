@@ -15,9 +15,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # 프로젝트 소스 및 설정 전체 복사
 COPY . /app/
 
-# 의존성 설치
+# 의존성 설치 (system python 패키지로 uvicorn 포함 설치)
 RUN uv pip install --system -e .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python3", "-m", "uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
