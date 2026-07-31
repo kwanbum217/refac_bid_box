@@ -1,4 +1,4 @@
-.PHONY: help dev build lint security quality test clean
+.PHONY: help dev dev-fe build lint security quality test doctor clean
 
 PYTHON ?= python3
 
@@ -10,6 +10,11 @@ help:
 	@echo "  make check-rules - 다중 에이전트 규칙 정합성 검증"
 	@echo "  make check-all   - 전체 린트, 보안, 품질, 규칙 정합성 검사"
 	@echo "  make test        - Pytest 단위/통합 테스트 실행"
+	@echo "  make dev-fe      - 프론트엔드 (Vite + React 19) 개발 서버 구동"
+
+dev-fe:
+	cd frontend && npm run dev
+
 
 lint:
 	uv run ruff check . --fix

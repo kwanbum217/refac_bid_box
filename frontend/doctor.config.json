@@ -1,0 +1,7 @@
+{
+  "rules": {
+    "react-doctor/effect-listener-cleanup-mismatch": "warn",
+    "react-doctor/effect-needs-cleanup": "warn",
+    "react-doctor/no-impure-state-updater": "warn"
+  }
+}

@@ -21,7 +21,17 @@ services:
       - ./ml_registry:/app/ml_registry
       - ./data:/app/data
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    depends_on:
+      - app
+
   db:
+
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password
     restart: always
