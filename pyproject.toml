@@ -1,0 +1,112 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "refac_bid_box"
+version = "0.1.0"
+description = "Refactored BidBox - Procurement Analytics, Hybrid RAG Chatbot, AI Prediction & MLOps Platform"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools]
+packages = ["src"]
+
+# ==========================================
+# Ruff (Linter + Formatter)
+# ==========================================
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    "data",
+    "chroma_db",
+    "migrations",
+]
+
+[tool.ruff.lint]
+select = [
+    "I",     # isort: 임포트 순서
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes: 미사용 import/변수
+    "UP",    # pyupgrade: Modern Python 3.11+ syntax
+    "S",     # bandit 호환 보안 룰
+    "B",     # bugbear: 방어적 코딩 관련
+    "SIM",   # simplify: 간결화
+    "C4",    # comprehensions: 컴프리헨션 권장
+    "RUF",   # Ruff 자체 룰
+    "PT",    # pytest 스타일
+]
+ignore = [
+    "E501",  # line too long (formatter가 처리)
+    "S101",  # assert 사용 (tests/에서 허용)
+    "B008",  # 함수 호출 기본값 (FastAPI Depends() 패턴 허용)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",  # assert 허용 (pytest)
+    "S106",  # 하드코딩 비밀번호 (테스트 fixture)
+    "S108",  # /tmp 경로
+    "E402",  # sys.path 조작 후 로컬 import
+]
+"scripts/**/*.py" = [
+    "S404",  # subprocess import 허용
+    "S603",  # subprocess.run 허용
+    "S607",  # partial path subprocess 허용
+    "S310",  # urllib URL open 허용
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ==========================================
+# mypy (정적 타입 검사)
+# ==========================================
+[tool.mypy]
+python_version = "3.11"
+disallow_untyped_defs = false
+warn_return_any = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
+explicit_package_bases = true
+namespace_packages = true
+disable_error_code = [
+    "union-attr",
+    "assignment",
+    "attr-defined",
+    "return-value",
+    "arg-type",
+]
+exclude = [
+    "data/",
+    "chroma_db/",
+    ".venv/",
+    "migrations/",
+]
+
+# ==========================================
+# bandit (보안 정적 스캔)
+# ==========================================
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "data", "chroma_db"]
+skips = ["B101"]  # assert_used
+recursive = true
+
+# ==========================================
+# pytest
+# ==========================================
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]

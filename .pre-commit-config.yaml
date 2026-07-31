@@ -1,0 +1,64 @@
+# refac_bid_box pre-commit 훅 설정
+# 검증 도구: Ruff + Bandit + 다중 에이전트 정합성 + 기본 포맷 훅
+
+repos:
+  # ==========================================
+  # Ruff (Formatting & Linting)
+  # ==========================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.6
+    hooks:
+      - id: ruff-format
+        name: Ruff Format
+        stages: [pre-commit]
+      - id: ruff
+        name: Ruff Lint
+        args: [--fix, --exit-non-zero-on-fix]
+        stages: [pre-commit]
+
+  # ==========================================
+  # Bandit (보안 정적 검사)
+  # ==========================================
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.2
+    hooks:
+      - id: bandit
+        name: Bandit Security Scan
+        args: ["-c", "pyproject.toml", "-r", "src/", "scripts/"]
+        stages: [pre-commit]
+        pass_filenames: false
+
+  # ==========================================
+  # 다중 에이전트 진입점 및 스킬 정합성 (로컬 훅)
+  # ==========================================
+  - repo: local
+    hooks:
+      - id: validate-agent-rules
+        name: Multi-Agent Entry Points & Skill Consistency
+        entry: python3 scripts/validate_agent_rules.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+        files: '^(AGENTS\.md|CLAUDE\.md|SKILLS\.md|\.antigravity/rules\.md|\.cursor/rules/.*\.mdc|\.agents/skills/.*|\.claude/skills/.*|\.opencode/skills/.*)$'
+
+  # ==========================================
+  # 공통 기본 검사 훅
+  # ==========================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        name: Fix End of Files
+        stages: [pre-commit]
+      - id: check-yaml
+        name: Check YAML
+        stages: [pre-commit]
+      - id: check-toml
+        name: Check TOML
+        stages: [pre-commit]
+      - id: check-merge-conflict
+        name: Check Merge Conflict
+        stages: [pre-commit]

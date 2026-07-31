@@ -1,0 +1,19 @@
+{
+  "threshold": 5,
+  "reporters": ["console", "html"],
+  "format": ["python", "javascript", "typescript"],
+  "min-lines": 5,
+  "min-tokens": 50,
+  "ignore": [
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/data/**",
+    "**/chroma_db/**",
+    "**/node_modules/**",
+    "**/reports/**",
+    "**/migrations/**"
+  ],
+  "output": "./reports/jscpd",
+  "absolute": true
+}
