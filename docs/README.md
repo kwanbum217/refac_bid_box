@@ -23,7 +23,8 @@ docs/
 ├── design/                # 핵심 시스템 설계서 (아키텍처, 리팩토링 설계)
 ├── migration/             # 데이터 무손실 마이그레이션 절차서
 ├── ops/                   # 운영/환경/배포/테스트 + 다중 에이전트 셋업
-└── handoff/               # 세션 인수인계서
+├── handoff/               # 세션 인수인계서
+└── changelogs/            # 통합 작업 일지 (work_log.md)
 ```
 
 > 1인 리팩토링 프로젝트 실제 규모에 맞춰 간결화했습니다. 각 폴더는 실제 문서를 보유한 폴더만 유지합니다.
@@ -59,6 +60,14 @@ docs/
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
 | 스킬 시스템 구축 인계 | [`2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md) | 다중 에이전트 스킬 시스템 8개 구축 완료 (Phase 0~7) |
+
+## 5. changelogs/ — 작업 일지
+
+| 문서 | 파일 | 설명 |
+| --- | --- | --- |
+| 작업 변경 기록 가이드 | [`changelogs/README.md`](changelogs/README.md) | 1인 및 AI 에이전트 협업 단일 로그 작성 지침 |
+| 통합 작업 일지 | [`changelogs/work_log.md`](changelogs/work_log.md) | 관범 님의 리팩토링 날짜 및 Phase별 누적 작업 일지 |
+
 
 ---
 
