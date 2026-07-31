@@ -1,0 +1,11 @@
+{
+  "model_name": "quantum_leap_v25_pro",
+  "version": "v_20260731_060033",
+  "trained_at": "2026-07-31T06:00:33.571827",
+  "samples_count": 2,
+  "hyperparams": {
+    "alpha": 1.0,
+    "random_state": 42
+  },
+  "status": "challenger"
+}
