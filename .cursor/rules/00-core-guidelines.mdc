@@ -1,0 +1,35 @@
+---
+description: refac_bid_box 핵심 코딩/작업 규칙. 항상 로드되는 기본 규칙입니다. 전체 규칙은 AGENTS.md와 SKILLS.md를 참조하세요.
+globs: "**/*"
+alwaysApply: true
+---
+
+# refac_bid_box 핵심 규칙
+
+본 파일은 Cursor 핵심 규칙(alwaysApply)입니다. **전체 규칙의 정본은 [`AGENTS.md`](../../AGENTS.md)와 [`SKILLS.md`](../../SKILLS.md) 입니다.** 규칙 충돌 시 정본이 우선합니다.
+
+## 반드시 읽어야 할 문서
+
+1. [`README.md`](../../README.md) — 프로젝트 기준선
+2. [`AGENTS.md`](../../AGENTS.md) — 코딩·스택·커뮤니케이션 규칙 정본 (SSoT)
+3. [`SKILLS.md`](../../SKILLS.md) — 시작 시퀀스, 문서 규칙, 워크플로우 체크리스트
+4. [`docs/design/REFACTORING_DESIGN.md`](../../docs/design/REFACTORING_DESIGN.md) — 리팩토링 전체 설계
+
+## 코딩 규칙 (요약)
+
+- 대화 응답/아티팩트는 **한국어 존댓말**. 코드·변수명·환경변수명은 영어.
+- **이모지 금지** (코드 주석, 커밋 메시지, 문서).
+- 파일 참조는 **프로젝트 루트 기준** 상대 경로.
+- 새 라이브러리 추가 전 사전 합의 (`pyproject.toml` 기록).
+
+## 비협상 원칙
+
+- **데이터 무손실**: 기존 DB 테이블/컬럼명·타입 변경 금지.
+- **Train/Serve 특징 단일화**: 특징 생성은 `src/ml/features.py` 단일 함수만 사용.
+- **크로스 플랫폼**: macOS/Windows Docker + Makefile 동일 환경.
+- **시크릿 비기록**: `.env` 실제 값은 문서/코드에 노출 금지.
+
+## Git 규칙
+
+- `main` 브랜치 직접 push 금지. 브랜치 → PR.
+- 커밋 메시지: `type: subject` (`feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`).
