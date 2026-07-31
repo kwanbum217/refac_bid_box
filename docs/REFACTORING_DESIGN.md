@@ -378,7 +378,216 @@ services:
 
 ---
 
-## 7. 이행 로드맵 (단계별)
+## 7. 재학습(Training) 파이프라인 신규 설계 ★ 핵심 추가
+
+> 기존 시스템은 수집·RAG·검증(ops) 파이프라인만 갖추고 있으며, **ML 모델 학습/재학습 단계가 전무**하다. 본 장에서는 학습 사이드 전체를 새로 설계한다.
+
+### 7.1 현재 상태 (AS-IS) — 재학습 갭 분석
+
+조사 결과, "재학습"은 요구사항 정의서·발표 자료에는 명시되어 있으나 **실행 가능한 구현체가 없다**. 구체적 증거:
+
+| 항목 | 현황 | 증거 |
+|------|------|------|
+| `retrain_dag.py` | **순수 stub** | 3개 태스크 중 2개는 `echo`만, 1개는 **존재하지 않는 명령** `retrain_model_v13` 호출 |
+| `retrain_model_v13` 명령 | **미구현** | 전체 grep 결과 0건 |
+| `run_mode_matrix.py` 단계 공간 | `retrain` 단계 **정의 없음** | 가능 단계는 collect/rag/predict/inspect 4개뿐 |
+| `local_automation.py` STEP_COMMANDS | 재학습 매핑 **없음** | 4개 명령만 |
+| Harness 5단계 파이프라인 | retrain 단계 **0회** | `ci_pipeline_run.sh`에 `retrain` 키워드 0회 |
+| 4개 모델 빌드 스크립트 | **2개만 존재** | `quantum_leap_v25_pro`는 실제 학습 아님(분위수 통계+하드코딩값 블렌딩); `v25`/`v13_hybrid`는 외부 노트북 산출물(model.bin)만 |
+
+**가장 심각한 문제 — Train/Serve Skew (학습-서빙 특징 불일치):**
+
+`predictor.py`의 추론 특징(52차원)에는 `inst_hist_rate`, `ppi`, `ex_rate`, `sem_0~31` 임베딩 등이 정의되어 있으나, **이들을 raw 데이터에서 계산하는 로직이 레포 전체에 없다.** 그 결과 실서비스 추론 시:
+- `views.py`가 predictor에 넘기는 features_dict에는 원시 필드만 있고,
+- `inst_hist_rate`/`ppi`/`ex_rate`/`sem_*`는 **하드코딩된 상수**(`DEFAULT_INST_RATE=0.925`, `DEFAULT_PPI=100.0`, `DEFAULT_EXCHANGE_RATE=1300.0`)로 들어간다.
+
+즉, **학습 시점(외부 노트북)에 사용한 특징 분포와 서빙 특징 분포가 다르다.** 이는 모델 정확도의 근본 원인이며, 재학습 파이프라인 설계의 출발점이 된다.
+
+**DB → 학습 데이터셋 변환 로직 부재:** `BidAnnouncement` + `BidResult`를 join하여 feature matrix를 만드는 코드가 없다 (수집→DB 적재는 완성되어 있으나, DB→학습 데이터는 비어있음).
+
+**`validate_model.py` 한계:** 학습 후 RMSE/MAPE/R²를 실측하는 것이 아니라, 외부에서 미리 계산해 둔 `champion_summary.json`의 `avg_r2 >= 0.75` 임계값만 체크하는 게이트다.
+
+### 7.2 재학습 설계 목표
+
+| # | 목표 | 지표 |
+|---|------|------|
+| T1 | **재현 가능한 학습 파이프라인** | 동일 입력 → 동일 가중치(시드 고정), 학습 단계 전부 코드화 |
+| T2 | **Train/Serve Skew 제거** | 학습·추론이 **동일 특징 생성 함수** 사용 (단일 진실 공급원) |
+| T3 | **자동화된 재학습 트리거** | 정기(주간) + 데이터 드리프트 감지 + 수동 |
+| T4 | **모델 버저닝·레지스트리** | 가중치·메타데이터·평가지표 추적, 롤백 가능 |
+| T5 | **Champion/Challenger 배포** | 신규 모델이 현역(champion)을 성능으로 압도 시에만 승격 |
+| T6 | **모니터링** | 데이터 드리프트·예측 분포 변화 감지 |
+
+### 7.3 타겟 학습 파이프라인 (전체 흐름)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. DATA INGESTION (기존 수집 파이프라인 재사용)                       │
+│     G2B API ─▶ DB (BidAnnouncement + BidResult)                       │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  2. TRAINING DATASET BUILD  ★ 핵심 신규 (현재 부재)                    │
+│     - DB 쿼리: BidAnnouncement ⟕ BidResult (공고번호 join)            │
+│     - 카테고리 분할: Thng / Servc / Cnstwk                             │
+│     - 레이블 생성: sucsf_bid_rate (낙찰률) 또는 premium                │
+│     - 특징 저장(Feature Store): 재사용 가능 형태로 캐싱                 │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  3. FEATURE ENGINEERING  ★ 핵심 신규 — Train/Serve 공유                │
+│     단일 transform_features(df) 함수 (학습·추론 모두 호출)             │
+│     - 기본: log_price, month/weekday + sin/cos                        │
+│     - 기관 히스토리: inst_hist_rate (과거 낙찰률 집계 — 현재 상수값!)  │
+│     - 시장 지표: PPI, 환율 (외부 데이터 소스 join)                     │
+│     - 텍스트 임베딩: sem_0~31 (공고명 → 임베딩)                        │
+│     - interaction 특징                                                │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  4. TRAIN                                                           │
+│     - 시계열 분할(train:과거 / test:최근, 랜덤분할 지양)               │
+│     - 모델: LightGBM / CatBoost (기존 스택 유지)                       │
+│     - 시드 고정(재현성), 하이퍼파라미터 기록                           │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  5. EVALUATE  ★ validate_model.py 실측화                              │
+│     - RMSE / MAPE / R² 실시간 산출 (summary JSON 의존 탈피)           │
+│     - 카테고리별·기간별 성능 분해                                      │
+│     - 기존 champion 대비 성능 비교 (Challenger 평가)                   │
+└───────────────────────────┬─────────────────────────────────────────┘
+                            ▼
+        ┌─────────────────┴─────────────────┐
+        ▼                                   ▼
+  [성능 임계값                                  [미달]
+   충족]                                    → 아카이브만,
+        ▼                                       미배포
+┌──────────────────────────────────────────┐
+│  6. REGISTER & DEPLOY                    │
+│     - 모델 레지스트리에 버전 등록           │
+│       (가중치 + 메타데이터 + 평가지표)      │
+│     - Champion 교체 (카나리/블루그린)       │
+│     - 추론 서비스 핫스왑 (재시작 없이)      │
+└───────────────────────────┬──────────────┘
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  7. MONITOR (운영 중)                                                │
+│     - 데이터 드리프트: 입력 특징 분포 변화 (PSI/KL)                    │
+│     - 예측 드리프트: 예측값 분포 변화                                  │
+│     - 임계 초과 시 → 재학습 트리거 자동 발화 (3단계로 루프)            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.4 핵심 설계 결정
+
+#### (A) 단일 특징 공급원 (Single Source of Truth for Features) ★ T2 핵심
+
+기존의 **train/serve skew**를 근본적으로 해결하기 위해, 특징 생성을 한 곳에 둔다.
+
+```
+src/ml/features.py
+├── build_feature_frame(raw_df) → DataFrame   # 학습용 (DB 데이터프레임 입력)
+└── build_feature_dict(request) → dict        # 추론용 (API 요청 입력)
+    # 두 함수 모두 동일한 내부 _compute_features() 호출
+    # → 학습·서빙 특징 정의가 영원히 일치
+```
+
+- **기관 히스토리 낙찰률**(`inst_hist_rate`): 더 이상 상수 `0.925`가 아닌, **DB 집계 쿼리**(기관별 과거 낙찰률 평균)로 계산. 집계 결과는 Redis에 캐싱하여 추론 시에도 실시간 계산 가능.
+- **PPI/환율**: 외부 통계 API 또는 사전 적재된 참조 테이블에서 as-of join (시점 기준값).
+- **텍스트 임베딩**(`sem_0~31`): 공고명 → 임베딩 모델. 학습 시 사전 계산하여 Feature Store에 저장, 추론 시 온디맨드 계산(캐싱).
+
+#### (B) 학습 데이터셋 빌더 (현재 부재) ★ 신규
+
+```
+src/ml/dataset.py
+└── build_training_dataset(category, since=None) → DataFrame
+    - DB에서 BidAnnouncement ⟕ BidResult join (공고번호)
+    - 결측치/이상치 처리 (ssh/final_cleaned_filtered.csv 정제 로직 승격)
+    - 카테고리(Thng/Servc/Cnstwk) 분할
+    - Feature Store(materialized parquet)에 캐싱 → 반복 학습 시 DB 부하 회피
+```
+
+기존 `ssh/final_cleaned_filtered.csv`의 정제 로직(결측치 필터링 등)을 일회성 스크립트에서 **재사용 가능한 모듈로 승격**.
+
+#### (C) 재학습 트리거 (3가지)
+
+| 트리거 | 조건 | 스케줄 |
+|--------|------|--------|
+| 정기 | 고정 주기 | 주 1회 (월요일 03:00, 기존 `retrain_dag.py` 의도) |
+| 데이터 드리프트 | 입력 특징 분포 PSI > 임계값 | 비정기 (모니터링이 발화) |
+| 수동 | 운영자 판단 | 온디맨드 (API/CLI) |
+
+모두 **동일한 학습 파이프라인 코드**를 실행하며, 트리거 원인만 `PipelineExecution.source`에 기록.
+
+#### (D) 모델 레지스트리 & 버저닝
+
+기존의 느슨한 폴더 구조(`model_files/[model_id]/`)를 **레지스트리 패턴**으로 발전:
+
+```
+ml_registry/
+└── {model_name}/
+    └── {version}/            # 타임스탬프 + git SHA
+        ├── model.bin         # 가중치 (joblib)
+        ├── metadata.json     # 학습 설정 (하이퍼파라미터, 시드, 데이터 범위)
+        ├── metrics.json      # RMSE/MAPE/R² (실측, champion_summary 대체)
+        ├── feature_schema.json  # 특징 목록 (스키마 검증용)
+        └── status            # challenger | champion | archived
+```
+
+- **Champion**: 현재 서빙 중인 모델
+- **Challenger**: 평가 중인 신규 모델 (성능 압도 시 champion 승격, 기존은 archived)
+- 롤백: 이전 champion 버전으로 즉시 복귀 가능
+
+기존 메타데이터 스펙(`metadata.json` + `champion_summary.json`, `MODEL_INTEGRATION_GUIDE.md`에 문서화됨)을 **흡수·확장**. 기존 4개 모델은 초기 champion으로 레지스트리에 등록(바이너리 복사, 메타데이터 마이그레이션).
+
+#### (E) 평가 실측화 (validate_model.py 개선)
+
+```
+기존: champion_summary.json의 avg_r2 >= 0.75 게이트만
+개선: holdout/test 세트에 대해 RMSE, MAPE, R² 실시간 산출
+      + 카테고리별·기간별 분해
+      + champion vs challenger 비교 리포트 자동 생성
+```
+
+#### (F) 모니터링 (드리프트 감지)
+
+- **데이터 드리프트**: 최근 N일 입력 특징 분포 vs 학습 시 분포를 PSI(Population Stability Index)로 비교. PSI > 0.2 시 경고·재학습 트리거.
+- **예측 드리프트**: 예측값 분포 변화 추적.
+- 결과는 `PipelineExecution`의 후속 모델(예: `ModelMonitoringLog`)에 누적.
+
+### 7.5 학습 오케스트레이션 — 태스크 큐 연동
+
+재학습은 장시간(수십 분~수 시간) 실행되므로 **비동기 태스크**(3.4절 Celery/Arq)로 구현. 기존 `run_mode_matrix`에 `retrain` 단계를 **정식 추가**:
+
+```
+run_mode_matrix (개정):
+  refresh_data : (collect, rag, inspect)
+  retrain_only : (retrain,)                    ★ 신규
+  nightly_full : (collect, rag, retrain, predict, inspect)  ★ retrain 추가
+```
+
+→ 챗봇 자동화 오케스트레이터(`automation_orchestrator.py`)에서도 "재학습 실행"을 트리거 가능.
+
+### 7.6 기존 코드 재사용 매핑
+
+| 기존 자산 | 재사용 방식 |
+|-----------|-------------|
+| `build_ssh_hist_premium_model.py`(유일한 실제 학습 스크립트, KFold) | 학습 로직 **템플릿으로 승격** — 일반화된 `trainer.py`의 기반 |
+| `ssh/final_cleaned_filtered.csv` 정제 로직 | `dataset.py`의 결측치 처리 모듈로 이식 |
+| predictor.py 특징 정의(52차원) | `features.py`의 추출 기준 (학습용으로 보강) |
+| 메타데이터 스펙(`metadata.json`/`champion_summary.json`) | 레지스트리 메타데이터 포맷으로 흡수 |
+| 기존 4개 모델 가중치 | 레지스트리 초기 champion으로 등록 (G1 보존) |
+
+### 7.7 트레이드오프 / 범위 한계
+
+- **딥러닝 도입 여부**: 현재 스택(LightGBM/CatBoost)이 테이블 데이터에 효율적이므로 유지. TF/Keras는 레거시 import만 남기고 기본 비활성.
+- **온라인 학습**: 범위 외. 배치 재학습(주간)으로 충분.
+- **분산 학습**: 단일 워커 머신으로 시작. 데이터 규모(~140만 행)는 단일 머신으로 처리 가능.
+
+---
+
+## 8. 이행 로드맵 (단계별)
 
 > 원칙: 각 단계가 **독립적으로 검증 가능**하고 **롤백 가능**해야 한다.
 
@@ -414,25 +623,36 @@ services:
 - [ ] 비동기화: 챗봇 API, G2B 수집, 모델 추론
 - [ ] 보안 강화: 검증기 활성화, SECRET_KEY/DEBUG 환경 강제, 시크릿 관리
 
-### Phase 4 — ML/RAG 최적화 (3~5일)
+### Phase 4 — ML 추론/RAG 최적화 (3~5일)
 - [ ] 모델 싱글톤 로드 + 통합 전처리 레지스트리
 - [ ] 가중치 Git LFS / 외부 저장소 이동
 - [ ] RAG 검색 비동기화 + 결과 캐싱
 - [ ] Harness 바이너리 Git 제거 + 플랫폼 중립화
 
-### Phase 5 — 프론트엔드/스트리밍 (선택, 3~5일)
+### Phase 5 — 재학습 파이프라인 구축 (5~8일) ★ 신규 — 7장 참조
+- [ ] **단일 특징 공급원** `features.py` 구현 (train/serve skew 제거)
+- [ ] **학습 데이터셋 빌더** `dataset.py` (DB join → feature matrix, 현재 부재)
+- [ ] **일반화 학습기** `trainer.py` (`build_ssh_hist_premium_model.py` 승격)
+- [ ] **평가 실측화**: validate_model 개선 (RMSE/MAPE/R² 실시간 산출)
+- [ ] **모델 레지스트리** + 기존 4개 모델 champion 등록
+- [ ] **재학습 태스크** (Celery/Arq) + `run_mode_matrix`에 `retrain` 단계 추가
+- [ ] **재학습 트리거**: 주간 스케줄 + 수동 API
+- [ ] **모니터링**: 데이터/예측 드리프트 감지 (PSI)
+
+### Phase 6 — 프론트엔드/스트리밍 (선택, 3~5일)
 - [ ] 챗봇 SSE/WebSocket 스트리밍
 - [ ] HTMX 도입(필요 시)
 
-### Phase 6 — 검증 및 컷오버 (2~3일)
+### Phase 7 — 검증 및 컷오버 (2~3일)
 - [ ] E2E 테스트 (`tests/chatbot_e2e/` 이식)
 - [ ] 성능 벤치마크 (Before/After 레이턴시 비교)
+- [ ] 재학습 end-to-end 검증 (데이터→학습→평가→배포 전 주기)
 - [ ] 크로스 플랫폼 실행 검증 (macOS + Windows)
 - [ ] 컷오버 + 사후 모니터링
 
 ---
 
-## 8. 위험 관리
+## 9. 위험 관리
 
 | 위험 | 확률 | 영향 | 완화 |
 |------|------|------|------|
@@ -441,11 +661,14 @@ services:
 | FastAPI 전환 공수 과대 | 중 | 중 | 점진적 이행, 필요 시 Django ASGI 대안 |
 | ML 가중치 비호환 | 낮 | 중 | 체크섬 + 회귀 테스트 |
 | 크로스플랫폼 의존성 누락 | 중 | 중 | Docker 표준화 + CI에서 Windows/macOS 매트릭스 테스트 |
-| 성능 개선 미달 | 낮 | 중 | Phase 6 벤치마크로 조기 검증 |
+| 성능 개선 미달 | 낮 | 중 | Phase 7 벤치마크로 조기 검증 |
+| **재학습 후 성능 저하** | **중** | **높음** | **Champion/Challenger 게이트, 새 모델이 기존 압도 시에만 승격, 즉시 롤백** |
+| **Train/Serve 특징 불일치 잔존** | **중** | **높음** | **단일 특징 함수 + 스키마 검증 + 학습/추론 패리티 테스트** |
+| **재학습 모델 배포로 예측 정합성 붕괴** | 낮 | **높음** | **카나리 배포 + 메타데이터 검증 + E2E 회귀** |
 
 ---
 
-## 9. 결정 보류 사항 (사용자 확인 필요)
+## 10. 결정 보류 사항 (사용자 확인 필요)
 
 아래 사항은 트레이드오프가 명확하여 구현 착수 전 사용자 결정이 필요하다.
 
@@ -454,6 +677,8 @@ services:
 3. **태스크 큐**: Celery(성숙) vs Arq(경량·async)
 4. **벡터DB**: ChromaDB 유지(보존 우선) vs Qdrant 전환(성능)
 5. **ML 가중치 저장**: Git LFS vs 외부 오브젝트 스토리지(S3 등)
+6. **재학습 주기**: 주간 고정 vs 드리프트 감지 기반 동적
+7. **Champion 전환 정책**: 자동 승격(임계값 충족 시) vs 수동 승인 게이트
 
 ---
 
