@@ -22,7 +22,8 @@ docs/
 ├── README.md              # 본 파일 (마스터 인덱스)
 ├── design/                # 핵심 시스템 설계서 (아키텍처, 리팩토링 설계)
 ├── migration/             # 데이터 무손실 마이그레이션 절차서
-└── ops/                   # 운영/환경/배포/테스트 + 다중 에이전트 셋업
+├── ops/                   # 운영/환경/배포/테스트 + 다중 에이전트 셋업
+└── handoff/               # 세션 인수인계서
 ```
 
 > 1인 리팩토링 프로젝트 실제 규모에 맞춰 간결화했습니다. 각 폴더는 실제 문서를 보유한 폴더만 유지합니다.
@@ -52,6 +53,12 @@ docs/
 | 크로스플랫폼 가이드 | [`cross_platform_guide.md`](ops/cross_platform_guide.md) | macOS/Windows 호환 (Docker + Makefile) |
 | Git 브랜치 전략 | [`git_branching_strategy.md`](ops/git_branching_strategy.md) | 브랜치/커밋 규칙 |
 | 다중 에이전트 셋업 | [`multi_agent_setup.md`](ops/multi_agent_setup.md) | 5개 CLI(opencode/cursor/codex/Claude/Antigravity) 규칙 파일 매핑 |
+
+## 4. handoff/ — 세션 인수인계서
+
+| 문서 | 파일 | 설명 |
+| --- | --- | --- |
+| 스킬 시스템 구축 인계 | [`2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md) | 다중 에이전트 스킬 시스템 구축 작업 인계 (진행 중) |
 
 ---
 

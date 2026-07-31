@@ -9,6 +9,18 @@
 
 ---
 
+## 0. 진행 중인 작업 (인수인계) ★
+
+**다중 에이전트 스킬 시스템 구축이 진행 중입니다.** 다음 세션에서 이 작업을 이어받습니다.
+
+- **인수인계 문서**: [`docs/handoff/2026-07-31_skill_system_handoff.md`](docs/handoff/2026-07-31_skill_system_handoff.md)
+- **참고 모델**: `Minchodan` 프로젝트의 `.agents/skills/`, `.claude/skills/`, `.cursor/rules/`
+- **작업 범위**: Phase 0~7을 스킬로 구축하여 5개 CLI에서 호출 가능하도록 동기화
+
+> 스킬 시스템 작업을 시작하기 전에 반드시 인수인계 문서를 처음부터 끝까지 읽으십시오.
+
+---
+
 ## 1. 프로젝트 개요
 
 refac_bid_box는 기존 `bid_box`(Django 5.1.6 모놀리식)를 리팩토링하는 저장소입니다. 공공조달 입찰 데이터 수집·분석, 하이브리드 RAG 챗봇, AI 낙찰가 예측, 재학습 MLOps를 통합합니다.
