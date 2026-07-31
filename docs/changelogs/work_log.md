@@ -107,6 +107,25 @@
 - **관련 파일**: `src/app/models/*`, `src/app/schemas/*`, `src/app/api/v1/*`, `tests/test_api_v1.py`, `src/ml/features.py`
 - **검증 결과**: `pytest` 4/4 passed, `validate_agent_rules.py` 6/6 PASS
 
+---
+
+### 2026-07-31 | Phase 4 & 5 세부 이행 | ML 추론 싱글톤, ChromaDB RAG, 재학습 MLOps 파이프라인 수립
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `feat: implement ML predictor singleton, ChromaDB vector store, retraining pipeline, and PSI monitoring`
+- **주요 변경사항**:
+  - `src/ml/predictor.py`: 인메모리 모델 프리로딩 싱글톤 구현
+  - `src/rag/vector_store.py`: ChromaDB 19개 컬렉션 비동기 질의 래퍼 작성
+  - `src/ml/dataset.py`: DB 조인(BidAnnouncement ⟕ BidResult) 및 정제 기반 Feature Store Parquet 빌더 구현
+  - `src/ml/trainer.py`: K-Fold 및 Ridge/LightGBM 일반화 학습 엔진 구현
+  - `src/ml/validate_model.py`: RMSE, MAPE, R² 실시간 산출 및 Champion vs Challenger 하이브리드 승격 게이트 구현
+  - `src/ml/monitoring.py`: PSI(Population Stability Index) 기반 특징/예측 드리프트 감지 구현
+  - `src/tasks/retrain_task.py`: Arq 비동기 재학습 파이프라인 태스크 정의
+  - `tests/test_mlops_pipeline.py`: 싱글톤, 학습기, 평가, PSI 드리프트 단위 테스트 작성 및 100% 통과
+- **관련 파일**: `src/ml/predictor.py`, `src/rag/vector_store.py`, `src/ml/dataset.py`, `src/ml/trainer.py`, `src/ml/validate_model.py`, `src/ml/monitoring.py`, `src/tasks/retrain_task.py`, `tests/test_mlops_pipeline.py`
+- **검증 결과**: `pytest` 7/7 passed, `validate_agent_rules.py` 6/6 PASS
+
+
 
 
 
