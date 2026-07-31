@@ -129,6 +129,40 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]]:
     week_ago = now - timedelta(days=7)
     today_start = datetime.combine(now.date(), datetime.min.time())
 
+    recent_bid_announcements = int(
+        db.scalar(
+            select(func.count(BidAnnouncement.id)).where(BidAnnouncement.bid_ntce_dt >= week_ago)
+        )
+        or 0
+    )
+    recent_bid_results = int(
+        db.scalar(select(func.count(BidResult.id)).where(BidResult.rl_openg_dt >= week_ago)) or 0
+    )
+    fresh_ingest_announcements = int(
+        db.scalar(
+            select(func.count(BidAnnouncement.id)).where(
+                BidAnnouncement.collected_at >= week_ago
+            )
+        )
+        or 0
+    )
+    fresh_ingest_results = int(
+        db.scalar(select(func.count(BidResult.id)).where(BidResult.collected_at >= week_ago)) or 0
+    )
+
+    latest_notice_at = db.scalar(select(func.max(BidAnnouncement.bid_ntce_dt)))
+    latest_result_open_at = db.scalar(select(func.max(BidResult.rl_openg_dt)))
+    latest_announcement_collected = db.scalar(select(func.max(BidAnnouncement.collected_at)))
+    latest_result_collected = db.scalar(select(func.max(BidResult.collected_at)))
+    collected_candidates = [
+        ts for ts in (latest_announcement_collected, latest_result_collected) if ts is not None
+    ]
+    latest_collected_at = max(collected_candidates) if collected_candidates else None
+
+    stale_hours: float | None = None
+    if latest_collected_at is not None:
+        stale_hours = round((now - latest_collected_at).total_seconds() / 3600, 1)
+
     metrics = {
         "today_rows": int(
             db.scalar(
@@ -138,31 +172,26 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]]:
             )
             or 0
         ),
-        "recent_bid_announcements": int(
-            db.scalar(
-                select(func.count(BidAnnouncement.id)).where(BidAnnouncement.bid_ntce_dt >= week_ago)
-            )
-            or 0
-        ),
-        "recent_bid_results": int(
-            db.scalar(select(func.count(BidResult.id)).where(BidResult.rl_openg_dt >= week_ago)) or 0
-        ),
-        "fresh_ingest_announcements": int(
-            db.scalar(
-                select(func.count(BidAnnouncement.id)).where(
-                    BidAnnouncement.collected_at >= week_ago
-                )
-            )
-            or 0
-        ),
-        "fresh_ingest_results": int(
-            db.scalar(select(func.count(BidResult.id)).where(BidResult.collected_at >= week_ago)) or 0
-        ),
+        "recent_bid_announcements": recent_bid_announcements,
+        "recent_bid_results": recent_bid_results,
+        "fresh_ingest_announcements": fresh_ingest_announcements,
+        "fresh_ingest_results": fresh_ingest_results,
+        "latest_notice_at": latest_notice_at.isoformat() if latest_notice_at else None,
+        "latest_result_open_at": latest_result_open_at.isoformat() if latest_result_open_at else None,
+        "latest_collected_at": latest_collected_at.isoformat() if latest_collected_at else None,
+        "stale_hours": stale_hours,
     }
-    return (
-        f"최근 7일 공고 {metrics['recent_bid_announcements']}건, 낙찰 {metrics['recent_bid_results']}건 점검 완료.",
-        metrics,
-    )
+
+    warnings: list[str] = []
+    if stale_hours is not None and stale_hours > 48:
+        warnings.append(f"최근 수집이 {stale_hours:.0f}시간 경과 (48시간 초과).")
+    if recent_bid_announcements == 0 and recent_bid_results == 0:
+        warnings.append("최근 7일 신규 공고/낙찰 데이터가 없습니다.")
+
+    summary = f"최근 7일 공고 {recent_bid_announcements}건, 낙찰 {recent_bid_results}건 점검 완료."
+    if warnings:
+        summary += " " + " ".join(warnings)
+    return summary, metrics
 
 
 STEP_RUNNERS = {

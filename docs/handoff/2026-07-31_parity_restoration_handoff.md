@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-07-31
 > **브랜치**: `refactor/restore-original-parity` (커밋 7개)
-> **상태**: 기능 계층 이식 완료, 테스트 스위트 및 템플릿 미이식
+> **상태**: 기능 계층 이식 완료, 테스트 스위트 부분 이식 (67 passed, 1 skipped), 회귀 2건 수정
 
 ---
 
@@ -85,6 +85,13 @@ python scripts/backfill_from_g2b.py --dry-run  # 구간만 확인
 전자는 `KB_MAX_DOCUMENTS` 환경변수로 조정 가능하게 하고 기본값은 원본과 동일하게 두었습니다.
 후자는 Ollama 전환 후 KB 갱신이 막히지 않도록 키 요구를 제거했습니다.
 
+### 세션 2에서 발견·수정한 회귀
+
+| 위치 | 문제 | 수정 |
+| --- | --- | --- |
+| `src/app/main.py:56,64,72` | Starlette 1.3.1에서 구식 `TemplateResponse(name, context)` 호출 시 Jinja2 캐시 키 충돌 (`TypeError: unhashable type: 'dict'`) | positional 인자 `TemplateResponse(request, name, context)` 방식으로 변경 |
+| `src/ml/features.py:92` | trainer가 `price_ratio` 특징을 요구하지만 단일 공급원이 생성하지 않아 `KeyError: "['price_ratio'] not in index"` | `build_default_feature_map`에 `price_ratio = base_price / presumed_price` 추가 (train/serve 단일화 원칙 준수) |
+
 ---
 
 ## 4. 스택 변경 사항
@@ -129,10 +136,10 @@ python scripts/verify_migration.py   # 행 수 기준선 대조 포함
 
 | 우선순위 | 항목 | 원본 규모 | 비고 |
 | --- | --- | --- | --- |
-| 1 | 원본 테스트 스위트 이식 | 약 3,000줄 | 회귀 방지에 가장 효과적. `bid_box/apps/*/tests.py` |
-| 2 | `final_inspect` 상세 점검 | 295줄 | 현재 inspect 스텝은 핵심 지표만 산출 |
+| 1 | 원본 테스트 스위트 이식 | 약 3,000줄 | **부분 완료**: 54개 테스트 이식 (run_mode_matrix 11, accounts 13, predictions 10, bids 13, chatbot core 7). chatbot PlannerTests/ChatAutomationApiTests 약 40개 잔존 |
+| 2 | `final_inspect` 상세 점검 | 295줄 | **완료**: 최신 타임스탬프(latest_notice_at, latest_result_open_at, latest_collected_at), stale_hours 경고, 데이터 부족 경고 추가 |
 | 3 | Jinja2 템플릿 12종 | — | 담당자와 후순위 합의됨 |
-| 4 | G2B 백필 완주 확인 | — | 진행 중, 재실행 가능 |
+| 4 | G2B 백필 완주 확인 | — | **완료**: bid_announcements 1,785,456행(105.1%), bid_results 3,002,254행(100.2%), 최신 수집 2026-07-31 |
 
 `load_big_data`, `migrate_legacy_data`, `update_rag_kb` 는 각각 parquet 복원 스크립트와
 `update_hybrid_kb` 이식으로 대체되어 별도 이식이 불필요합니다.
