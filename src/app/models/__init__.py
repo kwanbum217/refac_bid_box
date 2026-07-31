@@ -1,4 +1,4 @@
-from src.app.models.accounts import UserAccount
+from src.app.models.accounts import CustomUser, UserAccount
 from src.app.models.bids import BidAnnouncement, BidDatasetSummary, BidResult
 from src.app.models.chatbot import (
     AutomationRequest,
@@ -20,5 +20,6 @@ __all__ = [
     "PipelineExecution",
     "PredictionResult",
     "RetrainLog",
+    "CustomUser",
     "UserAccount",
 ]

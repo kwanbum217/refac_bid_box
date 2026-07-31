@@ -18,7 +18,8 @@ dependencies = [
     "arq>=0.26.0",
     "httpx>=0.28.0",
     "pandas>=2.2.0",
-    "scikit-learn>=1.6.0",
+    # 원본 pickle 호환을 위해 고정 (1.7+ 에서 ssh_hist_premium 역직렬화 실패)
+    "scikit-learn==1.6.1",
     "joblib>=1.4.0",
     "numpy>=1.26.0",
     "google-genai>=1.0.0",
@@ -26,6 +27,8 @@ dependencies = [
     "jinja2>=3.1.0",
     "lightgbm>=4.0.0",
     "catboost>=1.2.0",
+    "category-encoders>=2.6.4",
+    "pydantic[email]>=2.10.0",
 ]
 
 

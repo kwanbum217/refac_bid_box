@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from src.app.api.v1.accounts import router as accounts_router
+from src.app.api.v1.automation import router as automation_router
 from src.app.api.v1.bids import router as bids_router
 from src.app.api.v1.chatbot import router as chatbot_router
 from src.app.api.v1.health import router as health_router
@@ -35,6 +37,8 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(bids_router, prefix="/api/v1")
 app.include_router(predictions_router, prefix="/api/v1")
 app.include_router(chatbot_router, prefix="/api/v1")
+app.include_router(automation_router, prefix="/api/v1")
+app.include_router(accounts_router, prefix="/api/v1")
 
 
 @app.get("/")
