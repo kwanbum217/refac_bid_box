@@ -1,0 +1,17 @@
+---
+description: refac_bid_box 프로젝트 도커 컨테이너 및 전체 구현 환경 자동 시동, 헬스체크, 레이턴시 벤치마크 및 무손실 검증 오케스트레이션 지침
+globs: Makefile, docker-compose.yml, scripts/*
+---
+
+# 10-project-orchestrator Rule
+
+참조: AGENTS.md (Single Source of Truth)
+
+## 실행 가이드
+
+프로젝트 실행 요청 시 아래 명령을 순차 실행하십시오:
+
+1. `make up`
+2. `make migrate-verify`
+3. `make benchmark`
+4. `make test` && `make check-rules`

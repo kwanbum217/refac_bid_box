@@ -186,6 +186,20 @@
 - **관련 파일**: `docs/handoff/2026-07-31_skill_system_handoff.md`, `docs/README.md`, `docs/changelogs/work_log.md`
 - **검증 결과**: `validate_agent_rules.py` 6/6 PASS, `pytest` 8/8 passed, `benchmark_latency.py` PASS
 
+---
+
+### 2026-07-31 | 운영 스킬 구축 | project-orchestrator 전용 오케스트레이션 스킬 수립
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `feat: add project-orchestrator skill for automated docker stack execution and verification`
+- **주요 변경사항**:
+  - `.agents/skills/project-orchestrator/`: 도커 컨테이너 전체 시동(`make up`), 헬스체크, 무손실 검증(`make migrate-verify`), 레이턴시 벤치마크(`make benchmark`), 전체 테스트(`make test`, `make check-rules`) 자동 오케스트레이션 지침 구축
+  - `.claude/skills/`, `.opencode/skills/`, `.cursor/rules/10-project-orchestrator.mdc` 미러 100% 동기화
+  - `AGENTS.md`: 운영 영역 `project-orchestrator` 스킬 인덱스 수립
+- **관련 파일**: `.agents/skills/project-orchestrator/*`, `.claude/skills/project-orchestrator/*`, `.opencode/skills/project-orchestrator/*`, `.cursor/rules/10-project-orchestrator.mdc`, `AGENTS.md`
+- **검증 결과**: `validate_agent_rules.py` 6/6 PASS
+
+
 
 
 
