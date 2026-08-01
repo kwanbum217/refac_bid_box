@@ -1,0 +1,516 @@
+{% extends 'base.html' %}
+
+{% block title %}공고 상세 - {{ bid.bid_ntce_nm|truncatechars(30) }} | BIDBOX{% endblock %}
+
+{% block extra_head %}
+<style>
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .badge-blue { background-color: var(--h-primary-light); color: var(--h-primary); }
+    .badge-gray { background-color: #F3F4F6; color: #374151; }
+    .badge-red { background-color: #FEE2E2; color: #B91C1C; }
+    .badge-green { background-color: #D1FAE5; color: #065F46; }
+
+    .detail-label {
+        font-size: 0.625rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--h-text-muted);
+        margin-bottom: 0.25rem;
+    }
+    .detail-value {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--h-text-primary);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white min-h-screen">
+    <!-- Breadcrumbs & Header -->
+    <div class="h-page-header">
+        <nav class="flex items-center space-x-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-4">
+            <a href="{{ url('index') }}" class="hover:text-primary transition-colors">Home</a>
+            <i class="fas fa-chevron-right text-[8px] opacity-50"></i>
+            <a href="{{ url('bids:bid_list') }}" class="hover:text-primary transition-colors">Bids</a>
+            <i class="fas fa-chevron-right text-[8px] opacity-50"></i>
+            <span class="text-slate-600">Notice Detail</span>
+        </nav>
+
+        <div class="flex flex-col md:flex-row md:items-start justify-between gap-6">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center space-x-3 mb-2">
+                    <span class="badge badge-blue">
+                        {{ bid.category_label }}
+                    </span>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        REF: {{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}
+                    </span>
+                </div>
+                <h1 class="text-2xl font-bold text-slate-900 leading-tight truncate">
+                    {{ bid.bid_ntce_nm }}
+                </h1>
+                <div class="flex flex-wrap gap-4 mt-3">
+                    <div class="flex items-center text-sm text-slate-600">
+                        <i class="far fa-building mr-2 text-slate-400"></i>
+                        {{ bid.dminstt_nm }}
+                    </div>
+                    <div class="flex items-center text-sm text-slate-600">
+                        <i class="far fa-calendar-alt mr-2 text-slate-400"></i>
+                        게시일: {{ bid.bid_ntce_dt|date("Y.m.d") }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-end shrink-0">
+                <div class="detail-label">기초금액</div>
+                <div class="text-2xl font-bold text-primary">
+                    {% if bid.has_base_amount %}
+                    ₩{{ bid.display_base_amount|intcomma }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="h-content-padding">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <!-- Left Column: Details & AI -->
+            <div class="lg:col-span-8 space-y-6">
+                <!-- Bid Specs Card -->
+                <div class="h-card p-6">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                        <div>
+                            <div class="detail-label">계약 방법</div>
+                            <div class="detail-value">{{ bid.cntrct_mthd_nm|default("-", true) }}</div>
+                        </div>
+                        <div>
+                            <div class="detail-label">입찰 방식</div>
+                            <div class="detail-value">{{ bid.bid_methd_nm|default("-", true) }}</div>
+                        </div>
+                        <div>
+                            <div class="detail-label">마감 일시</div>
+                            <div class="detail-value text-rose-600 font-bold">{{ bid.bid_clse_dt|date("Y.m.d H:i") }}</div>
+                        </div>
+                        <div>
+                            <div class="detail-label">공고 종류</div>
+                            <div class="detail-value">{{ bid.ntce_kind_nm|default("-", true) }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Prediction Section -->
+                <div class="h-card overflow-hidden">
+                    <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                        <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                            <i class="fas fa-brain text-primary mr-2"></i>
+                            AI 투찰 금액 분석기
+                        </h2>
+                        <div class="flex items-center space-x-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span class="text-[10px] font-bold text-slate-500 uppercase">Engine Online</span>
+                        </div>
+                    </div>
+
+                    <div class="p-6 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="detail-label">분석 모델</label>
+                                <div class="relative">
+                                    <select id="selected-model" class="w-full bg-white border border-slate-200 rounded-md px-3 py-2 text-sm font-semibold outline-none focus:border-primary transition-all cursor-pointer appearance-none">
+                                        <option value="v25">V25 Ultimate Ensemble (Loading...)</option>
+                                    </select>
+                                    <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none"></i>
+                                </div>
+                                <div id="model-info-panel" class="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-sm">
+                                    <p id="model-desc" class="text-sm font-semibold leading-6 text-slate-800">Initializing predictive algorithms...</p>
+                                    <div id="model-tags" class="mt-3 flex flex-wrap gap-2"></div>
+                                    <div id="model-metrics" class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"></div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-2">
+                                <label class="detail-label">내 투찰 금액 (원)</label>
+                                <div class="flex gap-2">
+                                    <div class="relative flex-1">
+                                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">₩</span>
+                                        <input type="text" id="user-price" inputmode="numeric" autocomplete="off" placeholder="000,000"
+                                               class="w-full bg-white border border-slate-200 rounded-md pl-7 pr-3 py-2 text-sm font-bold focus:border-primary outline-none transition-all">
+                                    </div>
+                                    <button id="btn-predict" class="h-btn h-btn-primary px-4 shadow-sm">
+                                        분석 실행
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Prediction Result -->
+                        <div id="prediction-result" class="hidden">
+                            <div class="p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-sm relative overflow-hidden">
+                                <div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+
+                                <div class="flex items-center justify-between mb-8 relative z-10">
+                                    <div>
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <i class="fas fa-magic text-primary text-[10px]"></i>
+                                            <div class="detail-label text-primary mb-0">추천 최적 투찰가</div>
+                                        </div>
+                                        <div id="res-optimal-price" class="text-3xl font-black text-slate-900 tracking-tight">₩ 0</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="flex items-center justify-end gap-2 mb-1">
+                                            <div class="detail-label text-primary mb-0">예상 낙찰률</div>
+                                            <i class="fas fa-chart-line text-primary text-[10px]"></i>
+                                        </div>
+                                        <div id="res-prediction-rate" class="text-3xl font-black text-primary tracking-tighter">0%</div>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-4 relative z-10">
+                                    <div class="flex justify-between items-end">
+                                        <div class="space-y-1">
+                                            <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
+                                                <i class="fas fa-shield-alt mr-1.5 text-slate-300"></i>
+                                                분석 신뢰도
+                                            </div>
+                                            <div id="res-status-msg" class="text-[11px] font-bold text-slate-600">CONFIDENCE SCORE</div>
+                                        </div>
+                                        <div class="text-right">
+                                            <span id="res-percentage" class="text-lg font-black text-primary">0%</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="relative pt-1">
+                                        <div class="overflow-hidden h-2 text-xs flex rounded-full bg-slate-200">
+                                            <div id="res-bar" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary transition-all duration-1000 ease-out" style="width: 0%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-6 flex items-start gap-3 p-4 bg-white/60 backdrop-blur-sm border border-slate-100 rounded-lg text-xs text-slate-600 leading-relaxed group hover:border-primary/20 transition-colors">
+                                        <div class="shrink-0 mt-0.5">
+                                            <i class="fas fa-robot text-primary opacity-40 group-hover:opacity-100 transition-opacity"></i>
+                                        </div>
+                                        <span id="res-message" class="font-medium italic">AI engine has completed the analysis based on historical winning patterns and market trends.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Sidebar -->
+            <div class="lg:col-span-4 space-y-6">
+                <!-- Past Results -->
+                <div class="h-card">
+                    <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                        <h3 class="text-[11px] font-bold text-slate-900 uppercase tracking-widest">과거 사례</h3>
+                        <i class="fas fa-history text-slate-300 text-xs"></i>
+                    </div>
+                    <div class="p-2 space-y-1">
+                        {% for result in past_results %}
+                        <a href="{{ url('bids:result_detail', result.id) }}" class="block p-3 rounded hover:bg-slate-50 transition-colors group">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-[9px] text-slate-400 font-bold uppercase">{{ result.rl_openg_dt|date("Y-m-d") }}</span>
+                                <span class="badge badge-green text-[9px] px-1.5 py-0">완료</span>
+                            </div>
+                            <p class="text-xs font-bold text-slate-800 group-hover:text-primary transition-colors truncate">{{ result.bid_ntce_nm }}</p>
+                            <div class="mt-2 flex justify-between items-center text-[10px]">
+                                <span class="text-slate-400">낙찰률</span>
+                                <span class="font-bold text-slate-900">{{ result.sucsf_bid_rate }}%</span>
+                            </div>
+                        </a>
+                        {% else %}
+                        <div class="py-10 text-center">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase">이력 없음</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Recommended -->
+                <div class="h-card">
+                    <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                        <h3 class="text-[11px] font-bold text-slate-900 uppercase tracking-widest">추천 공고</h3>
+                        <i class="fas fa-star text-amber-400 text-xs"></i>
+                    </div>
+                    <div class="p-2 space-y-1">
+                        {% for sim in similar_bids %}
+                        <a href="{{ url('bids:bid_detail', sim.id) }}" class="block p-3 rounded hover:bg-slate-50 transition-colors group">
+                            <span class="text-[9px] font-bold text-primary uppercase mb-1 block">{{ sim.category_label }}</span>
+                            <p class="text-xs font-bold text-slate-800 group-hover:text-primary transition-colors line-clamp-2 leading-snug">{{ sim.bid_ntce_nm }}</p>
+                            <div class="mt-2 flex justify-between items-center">
+                                <span class="text-[9px] text-slate-400">{{ sim.dminstt_nm|truncatechars(12) }}</span>
+                                <span class="text-[11px] font-bold text-slate-900">
+                                    {% if sim.has_base_amount %}
+                                    ₩{{ sim.display_base_amount|intcomma }}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </a>
+                        {% else %}
+                        <div class="py-10 text-center">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase">추천 없음</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    let availableModels = [];
+    const defaultModelId = '{{ default_prediction_model|default("v25", true) }}';
+    const bidCategory = '{{ bid.category|default("", true)|escapejs }}';
+    const categoryLabels = {
+        Thng: '물품',
+        Cnstwk: '건설',
+        Servc: '용역',
+        Frgcpt: '외자',
+    };
+    const currencyFormatter = new Intl.NumberFormat('ko-KR', {
+        style: 'currency',
+        currency: 'KRW',
+        maximumFractionDigits: 0
+    });
+
+    // 1. Load Available Models
+    function loadModels() {
+        $.getJSON('{{ url('predictions:list_models') }}', function(data) {
+            if (data.status === 'success') {
+                availableModels = data.models;
+                const $select = $('#selected-model');
+                $select.empty();
+                const preferredModelId = availableModels.some(model => model.id === defaultModelId)
+                    ? defaultModelId
+                    : (availableModels[0] ? availableModels[0].id : 'v25');
+
+                availableModels.forEach(model => {
+                    const selected = (model.id === preferredModelId) ? 'selected' : '';
+                    $select.append(`<option value="${model.id}" ${selected}>${model.name}</option>`);
+                });
+
+                $select.val(preferredModelId);
+                updateModelInfo(preferredModelId);
+            }
+        });
+    }
+
+    function updateModelInfo(modelId) {
+        const model = availableModels.find(m => m.id === modelId);
+        if (model) {
+            $('#model-desc').html(buildModelDescription(model));
+            renderModelTags(model);
+            renderModelMetrics(model.metrics || {});
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function labelCategory(code) {
+        return categoryLabels[code] || code || '범용';
+    }
+
+    function modelCategoryLabels(model) {
+        const categories = Array.isArray(model.specialized_categories)
+            ? model.specialized_categories
+            : [];
+        return categories.map(labelCategory).filter(Boolean);
+    }
+
+    function formatFeatureList(features) {
+        const labels = {
+            presmpt_prce: '기준금액',
+            log_price: '금액 로그값',
+            month: '공고 월',
+            weekday: '공고 요일',
+            month_sin: '월 주기성',
+            month_cos: '월 주기성',
+            title: '공고명',
+            agency_name: '공고기관',
+            scenario_mode: '시나리오 모드',
+            cntrctCnclsMthdNm: '계약 체결 방식',
+            bidMethdNm: '입찰 방식',
+            ntceInsttNm: '공고기관',
+            lower_rate: '기준 하한율',
+        };
+        return (features || []).map(feature => labels[feature] || feature).slice(0, 6).join(', ');
+    }
+
+    function buildModelDescription(model) {
+        const version = model.version ? `v${escapeHtml(model.version)}` : '버전 정보 없음';
+        const categories = modelCategoryLabels(model);
+        const categoryText = categories.length ? categories.join(', ') : '범용';
+        const featureText = formatFeatureList(model.required_features) || '모델 번들 기본 입력값';
+        const trainingRows = model.training_rows
+            ? `${Number(model.training_rows).toLocaleString('ko-KR')}건 학습 데이터`
+            : '번들 검증 지표 기준';
+        const currentCategoryLabel = labelCategory(bidCategory);
+        const categoriesRaw = Array.isArray(model.specialized_categories) ? model.specialized_categories : [];
+        const categoryFit = categoriesRaw.includes(bidCategory)
+            ? `현재 공고 분야(${currentCategoryLabel})와 맞는 모델입니다.`
+            : `현재 공고 분야는 ${currentCategoryLabel}이며, 필요 시 분야 기본 모델과 비교해 선택하세요.`;
+
+        return `
+            <span class="block text-sm font-black text-slate-900">${escapeHtml(model.name)} <span class="text-primary">${version}</span></span>
+            <span class="mt-1 block text-sm font-semibold leading-6 text-slate-800">${escapeHtml(model.description || '분석 엔진')}</span>
+            <span class="mt-2 block text-xs font-bold leading-5 text-slate-600">
+                특화 분야: ${escapeHtml(categoryText)} · 핵심 입력: ${escapeHtml(featureText)} · 기준: ${escapeHtml(trainingRows)}
+            </span>
+            <span class="mt-1 block text-xs font-semibold leading-5 text-blue-700">${escapeHtml(categoryFit)}</span>
+        `;
+    }
+
+    function renderModelTags(model) {
+        const categories = modelCategoryLabels(model);
+        const tags = [
+            model.specialization || '분야별 예측 모델',
+            ...categories.map(label => `${label} 특화`),
+            model.type ? `type: ${model.type}` : '',
+        ].filter(Boolean);
+
+        $('#model-tags').html(tags.map(tag => `
+            <span class="rounded-full border border-blue-100 bg-white px-3 py-1 text-[11px] font-black tracking-tight text-blue-700">${escapeHtml(tag)}</span>
+        `).join(''));
+    }
+
+    function formatMetricValue(value, digits = 3) {
+        if (value === null || value === undefined || value === '') {
+            return '-';
+        }
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return '-';
+        }
+        return numericValue.toFixed(digits);
+    }
+
+    function renderModelMetrics(metrics) {
+        const hasMetrics = Object.keys(metrics || {}).length > 0;
+        const metricItems = hasMetrics
+            ? [
+                { label: 'R²', value: formatMetricValue(metrics.avg_r2, 3) },
+                { label: 'MAE', value: formatMetricValue(metrics.avg_mae, 3) },
+                { label: '검증', value: metrics.validation_label || '-' },
+                { label: '품질', value: metrics.pass_all === false ? '점검' : (metrics.pass_all === true ? '통과' : '-') },
+            ]
+            : [
+                { label: '성능', value: '대기' },
+            ];
+
+        $('#model-metrics').html(metricItems.map(item => `
+            <div class="rounded-lg border border-white/80 bg-white px-3 py-2 shadow-sm">
+                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">${item.label}</div>
+                <div class="mt-1 text-base font-black tracking-tight text-slate-900">${item.value}</div>
+            </div>
+        `).join(''));
+    }
+
+    function formatNumberInputValue(value) {
+        const digits = String(value || '').replace(/\D/g, '');
+        return digits ? Number(digits).toLocaleString('ko-KR') : '';
+    }
+
+    $('#user-price').on('input', function() {
+        const formattedValue = formatNumberInputValue($(this).val());
+        $(this).val(formattedValue);
+    });
+
+    $('#selected-model').change(function() {
+        updateModelInfo($(this).val());
+    });
+
+    loadModels();
+
+    // 2. Execute Prediction
+    $('#btn-predict').click(function() {
+        const price = $('#user-price').val().replace(/\D/g, '');
+        const modelId = $('#selected-model').val();
+
+        if (!price) {
+            alert('Please enter a bid amount for analysis.');
+            return;
+        }
+
+        // Show loading state
+        const originalBtnContent = $(this).html();
+        $(this).html('<i class="fas fa-circle-notch fa-spin"></i>').prop('disabled', true);
+
+        // Hide previous result
+        $('#prediction-result').addClass('hidden');
+
+        $.ajax({
+            url: '{{ url('predictions:predict_price') }}',
+            method: 'POST',
+            data: {
+                csrfmiddlewaretoken: '{{ csrf_token }}',
+                bid_id: '{{ bid.id }}',
+                user_price: price,
+                selected_model: modelId
+            },
+            success: function(data) {
+                if(data.status === 'success') {
+                    $('#prediction-result').removeClass('hidden').addClass('animate-in fade-in slide-in-from-top-2 duration-300');
+                    $('#res-optimal-price').text(currencyFormatter.format(data.optimal_price));
+                    $('#res-prediction-rate').text(data.prediction_rate + '%');
+                    $('#res-percentage').text(data.confidence + '%');
+                    $('#res-bar').css('width', data.confidence + '%');
+                    $('#res-status-msg').text('낙찰 신뢰도 (CONFIDENCE SCORE)');
+                    $('#res-message').text(data.message);
+
+                    // Color change based on confidence
+                    const $bar = $('#res-bar');
+                    const $percent = $('#res-percentage');
+                    $bar.removeClass('bg-emerald-500 bg-amber-500 bg-rose-500 bg-primary');
+                    $percent.removeClass('text-emerald-500 text-amber-500 text-rose-500 text-primary');
+
+                    if(data.confidence > 70) {
+                        $bar.addClass('bg-emerald-500');
+                        $percent.addClass('text-emerald-500');
+                    } else if(data.confidence > 40) {
+                        $bar.addClass('bg-amber-500');
+                        $percent.addClass('text-amber-500');
+                    } else {
+                        $bar.addClass('bg-rose-500');
+                        $percent.addClass('text-rose-500');
+                    }
+                } else {
+                    alert('Prediction Failed: ' + data.message);
+                }
+            },
+            error: function(xhr) {
+                const err = xhr.responseJSON ? xhr.responseJSON.message : 'Server communication error occurred.';
+                alert('Error: ' + err);
+            },
+            complete: function() {
+                $('#btn-predict').html(originalBtnContent).prop('disabled', false);
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

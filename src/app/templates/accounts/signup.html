@@ -1,0 +1,275 @@
+{% extends 'base.html' %}
+
+{% block title %}회원가입 - BIDBOX Intelligence{% endblock %}
+
+{% block content %}
+<div class="min-h-[calc(100vh-128px)] bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-xl mx-auto">
+        <!-- Signup Card -->
+        <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8 md:p-10">
+            <div class="text-center mb-10">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-primary/5 rounded-2xl mb-6">
+                    <i class="fas fa-user-plus text-primary text-2xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-slate-900 tracking-tight mb-2">새로운 계정 만들기</h1>
+                <p class="text-slate-500 text-sm">BIDBOX의 프리미엄 인텔리전스 서비스를 시작하세요</p>
+            </div>
+
+            <form method="POST" class="space-y-5">
+
+                {% if form.non_field_errors %}
+                <div class="p-4 bg-red-50 border border-red-100 rounded-lg">
+                    {% for error in form.non_field_errors %}
+                    <p class="text-red-500 text-xs font-medium flex items-center">
+                        <i class="fas fa-circle-exclamation mr-2"></i> {{ error }}
+                    </p>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {% for field in form %}
+                    {% if field.name == 'agree_terms' or field.name == 'agree_privacy' or field.name == 'birth_y' or field.name == 'birth_m' or field.name == 'birth_d' %}
+                    <!-- Skip these fields here -->
+                    {% elif field.name == 'birth_date' %}
+                    <div class="space-y-1.5">
+                        <label for="{{ field.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            {{ field.label }}
+                        </label>
+                        <div class="relative group">
+                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none transition-colors group-focus-within:text-primary text-slate-400">
+                                <i class="fas fa-calendar-alt text-sm"></i>
+                            </div>
+                            <input type="date"
+                                   name="{{ field.name }}"
+                                   id="{{ field.id_for_label }}"
+                                   value="{{ field.value|default('', true) }}"
+                                   class="block w-full pl-10 pr-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
+                        </div>
+                        {% if field.errors %}
+                        <p class="text-red-500 text-[10px] font-bold mt-1">{{ field.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    {% elif field.name == 'gender' %}
+                    <div class="space-y-1.5">
+                        <span class="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            {{ field.label }}
+                        </span>
+                        <div class="grid grid-cols-2 gap-3">
+                            {% for choice in field %}
+                            <label for="{{ choice.id_for_label }}" class="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition-all hover:border-primary/40 hover:bg-slate-50 has-[:checked]:border-primary has-[:checked]:bg-primary/5 has-[:checked]:text-primary cursor-pointer">
+                                {{ choice.tag }}
+                                <span>{{ choice.choice_label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        {% if field.errors %}
+                        <p class="text-red-500 text-[10px] font-bold mt-1">{{ field.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <div class="space-y-1.5 {% if field.name == 'username' or field.name == 'email' %}md:col-span-2{% endif %}">
+                        <label for="{{ field.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            {{ field.label }}
+                        </label>
+                        <div class="relative group">
+                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none transition-colors group-focus-within:text-primary text-slate-400">
+                                {% if field.name == 'username' %}<i class="fas fa-user text-sm"></i>
+                                {% elif field.name == 'email' %}<i class="fas fa-envelope text-sm"></i>
+                                {% elif 'password' in field.name %}<i class="fas fa-key text-sm"></i>
+                                {% else %}<i class="fas fa-pen text-sm"></i>{% endif %}
+                            </div>
+                            <input type="{{ field.field.widget.input_type|default('text', true) }}"
+                                   name="{{ field.name }}"
+                                   id="{{ field.id_for_label }}"
+                                   value="{{ field.value|default('', true) }}"
+                                   class="block w-full pl-10 pr-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                   placeholder="{{ field.label }} 입력">
+                        </div>
+                        {% if field.errors %}
+                        <p class="text-red-500 text-[10px] font-bold mt-1">{{ field.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {{ form.birth_y }}
+                {{ form.birth_m }}
+                {{ form.birth_d }}
+
+                <!-- Agreement Section -->
+                <div class="pt-6 mt-6 border-t border-slate-100 space-y-4">
+                    <div class="flex items-center space-x-3 p-3.5 bg-slate-50 rounded-lg border border-slate-200 group cursor-pointer transition-colors hover:bg-slate-100">
+                        <input type="checkbox" id="check-all" class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
+                        <label for="check-all" class="text-sm font-bold text-slate-700 cursor-pointer select-none">모든 약관에 동의합니다</label>
+                    </div>
+
+                    <div class="space-y-3 px-1">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <input type="checkbox" name="agree_terms" id="{{ form.agree_terms.id_for_label }}" required
+                                       class="agreement-checkbox w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
+                                <label for="{{ form.agree_terms.id_for_label }}" class="text-sm text-slate-600 cursor-pointer select-none">
+                                    이용약관 <span class="text-primary font-bold">(필수)</span>
+                                </label>
+                            </div>
+                            <button type="button" onclick="openModal('tos')" class="text-xs font-bold text-slate-400 hover:text-primary transition-colors underline underline-offset-4">전문 보기</button>
+                        </div>
+
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <input type="checkbox" name="agree_privacy" id="{{ form.agree_privacy.id_for_label }}" required
+                                       class="agreement-checkbox w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
+                                <label for="{{ form.agree_privacy.id_for_label }}" class="text-sm text-slate-600 cursor-pointer select-none">
+                                    개인정보처리방침 <span class="text-primary font-bold">(필수)</span>
+                                </label>
+                            </div>
+                            <button type="button" onclick="openModal('privacy')" class="text-xs font-bold text-slate-400 hover:text-primary transition-colors underline underline-offset-4">전문 보기</button>
+                        </div>
+                    </div>
+                    {% if form.agree_terms.errors or form.agree_privacy.errors %}
+                    <p class="text-red-500 text-[10px] font-bold px-1">필수 약관에 동의해주세요.</p>
+                    {% endif %}
+                </div>
+
+                <button type="submit" class="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all transform hover:-translate-y-0.5 active:translate-y-0 mt-4">
+                    계정 생성
+                </button>
+            </form>
+
+            {% if social_login_providers.kakao or social_login_providers.naver or social_login_providers.google %}
+            <div class="mt-10">
+                <div class="relative">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-slate-100"></div>
+                    </div>
+                    <div class="relative flex justify-center text-xs">
+                        <span class="px-3 bg-white text-slate-400 font-medium">또는 소셜 계정으로 가입</span>
+                    </div>
+                </div>
+
+                <div class="mt-6 space-y-3">
+                    {% if social_login_providers.kakao %}
+                    <a href="{{ provider_login_url('kakao') }}"
+                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-[#FEE500] hover:bg-[#FDD835] transition-all shadow-sm text-slate-900 font-bold text-sm">
+                        <i class="fas fa-comment"></i>
+                        <span>카카오로 시작하기</span>
+                    </a>
+                    {% endif %}
+                    {% if social_login_providers.naver %}
+                    <a href="{{ provider_login_url('naver') }}"
+                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-[#03C75A] hover:bg-[#02B350] transition-all shadow-sm text-white font-bold text-sm">
+                        <span class="font-black">N</span>
+                        <span>네이버로 시작하기</span>
+                    </a>
+                    {% endif %}
+                    {% if social_login_providers.google %}
+                    <a href="{{ provider_login_url('google') }}"
+                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm text-slate-700 font-bold text-sm">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" class="h-4 w-4">
+                        <span>Google로 시작하기</span>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="mt-8 text-center pt-6 border-t border-slate-50">
+                <p class="text-sm text-slate-500">
+                    이미 계정이 있으신가요?
+                    <a href="{{ url('accounts:login') }}" class="font-bold text-primary hover:underline ml-1">로그인하기</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agreement Modals -->
+<div id="terms-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm">
+    <div class="bg-white w-full max-w-2xl max-h-[80vh] flex flex-col rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <h3 id="modal-title" class="text-lg font-bold text-slate-900">약관 내용</h3>
+            <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="p-8 overflow-y-auto text-sm text-slate-600 leading-relaxed scroll-smooth">
+            {% include 'accounts/terms_content.html' %}
+            <div id="modal-dynamic-content"></div>
+        </div>
+        <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <button onclick="closeModal()" class="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-bold transition-all">닫기</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const birthDateInput = document.getElementById('{{ form.birth_date.id_for_label }}');
+    const birthYearInput = document.getElementById('{{ form.birth_y.id_for_label }}');
+    const birthMonthInput = document.getElementById('{{ form.birth_m.id_for_label }}');
+    const birthDayInput = document.getElementById('{{ form.birth_d.id_for_label }}');
+
+    function syncBirthDateParts() {
+        if (!birthDateInput || !birthYearInput || !birthMonthInput || !birthDayInput) {
+            return;
+        }
+        if (!birthDateInput.value) {
+            birthYearInput.value = '';
+            birthMonthInput.value = '';
+            birthDayInput.value = '';
+            return;
+        }
+        const [year, month, day] = birthDateInput.value.split('-');
+        birthYearInput.value = year || '';
+        birthMonthInput.value = month ? Number(month) : '';
+        birthDayInput.value = day ? Number(day) : '';
+    }
+
+    if (birthDateInput) {
+        syncBirthDateParts();
+        birthDateInput.addEventListener('change', syncBirthDateParts);
+    }
+
+    function openModal(type) {
+        const modal = document.getElementById('terms-modal');
+        const title = document.getElementById('modal-title');
+        const tos = document.getElementById('terms-of-service-content');
+        const privacy = document.getElementById('privacy-policy-content');
+
+        if (tos) tos.classList.add('hidden');
+        if (privacy) privacy.classList.add('hidden');
+
+        if (type === 'tos') {
+            title.innerText = '이용약관 전문';
+            if (tos) tos.classList.remove('hidden');
+        } else {
+            title.innerText = '개인정보처리방침 전문';
+            if (privacy) privacy.classList.remove('hidden');
+        }
+
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+        document.getElementById('terms-modal').classList.add('hidden');
+        document.body.style.overflow = 'auto';
+    }
+
+    // Select All Logic
+    const checkAll = document.getElementById('check-all');
+    const checkboxes = document.querySelectorAll('.agreement-checkbox');
+
+    if (checkAll) {
+        checkAll.addEventListener('change', (e) => {
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+        });
+
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                checkAll.checked = Array.from(checkboxes).every(c => c.checked);
+            });
+        });
+    }
+</script>
+{% endblock %}

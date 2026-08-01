@@ -35,8 +35,50 @@ GET /api/v1/chatbot/stream  # SSE (HTMX hx-ext="sse" 연동)
 
 ---
 
-## 후속 작업
+## 이행 결과 (2026-08-01)
 
-1. `src/app/templates/base.html` HTMX 레이아웃
-2. 챗봇 탭 SSE 스트리밍 (`hx-ext="sse"`)
-3. Chart.js 대시보드 API 연동 (`/api/v1/bids`)
+원본 템플릿 12종(5,370줄)을 Jinja2 로 이식 완료했습니다. 경로는 원본 Django URL 을 그대로 씁니다.
+
+| 원본 템플릿 | 이식 경로 | SSR 경로 |
+| --- | --- | --- |
+| `base.html` | `src/app/templates/base.html` | (레이아웃) |
+| `index.html` | `src/app/templates/index.html` | `GET /` |
+| `bids/list.html` | `src/app/templates/bids/list.html` | `GET /bids/` |
+| `bids/detail.html` | `src/app/templates/bids/detail.html` | `GET /bids/{pk}/` |
+| `bids/results.html` | `src/app/templates/bids/results.html` | `GET /results/` |
+| `bids/result_detail.html` | `src/app/templates/bids/result_detail.html` | `GET /results/{pk}/` |
+| `bids/dashboard.html` | `src/app/templates/bids/dashboard.html` | `GET /dashboard/` |
+| `bids/compare.html` | `src/app/templates/bids/compare.html` | `GET /compare/` |
+| `chatbot/chat.html` | `src/app/templates/chatbot/chat.html` | `GET /chat/` |
+| `accounts/login.html` | `src/app/templates/accounts/login.html` | `GET /accounts/login/` |
+| `accounts/signup.html` | `src/app/templates/accounts/signup.html` | `GET /accounts/signup/` |
+| `accounts/terms_content.html` | `src/app/templates/accounts/terms_content.html` | (모달 포함) |
+
+### Django 호환 계층
+
+원본 템플릿 본문을 최대한 그대로 두기 위해 두 개의 호환 모듈을 두었습니다.
+
+| 모듈 | 역할 |
+| --- | --- |
+| `src/app/core/templating.py` | `{% url %}` 이름 표, `intcomma`/`date`/`truncatechars`/`add` 등 Django 필터 |
+| `src/app/services/auth_forms.py` | `signup.html` 이 순회하는 Django `BoundField` 호환 객체 |
+
+### 원본과 의도적으로 다른 부분
+
+| 항목 | 원본 | 이식본 | 사유 |
+| --- | --- | --- | --- |
+| 소셜 로그인 | django-allauth (kakao/naver/google) | 버튼 미노출 | 이식본에 소셜 인증 없음. 죽은 링크 노출 방지 |
+| 챗봇 헤더 모델명 | `Gemini 3.1 Flash-Lite preview` 하드코딩 | `settings` 실제 값 | LLM 을 Ollama 로 교체해 하드코딩 값이 거짓이 됨 |
+| 챗봇 색인 건수 | `842K` 하드코딩 | DB 실집계 | 실제 183만행과 불일치 |
+| CSRF 토큰 | `{% csrf_token %}` | 제거 | 세션 쿠키 기반, 토큰 미사용 |
+
+### React SPA
+
+`frontend/` 는 본 ADR 대로 신규 개발을 중단하고 참조용으로 동결합니다.
+
+---
+
+## 남은 작업
+
+1. 챗봇 탭 SSE 스트리밍을 `hx-ext="sse"` 로 전환 (현재는 원본과 동일한 fetch 방식)
+2. 로그인/회원가입 POST 처리를 SSR 폼으로 연결 (현재 화면 렌더링만, 제출은 `/api/v1/accounts/*`)

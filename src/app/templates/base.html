@@ -1,25 +1,447 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-theme="light">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>refac_bid_box</title>
-  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-  <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
-  <link rel="stylesheet" href="/static/css/app.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}BIDBOX - 프리미엄 입찰 분석 플랫폼{% endblock %}</title>
+
+    <link rel="icon" href="{{ url_for('static', path='images/favicon.ico') }}" sizes="any">
+    <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', path='images/favicon-16x16.png') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', path='images/favicon-32x32.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', path='images/apple-touch-icon.png') }}">
+    <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', path='images/android-chrome-192x192.png') }}">
+    <link rel="icon" type="image/png" sizes="512x512" href="{{ url_for('static', path='images/favicon-512x512.png') }}">
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            DEFAULT: '#0073E6',
+                            hover: '#005BB3',
+                            light: '#E6F1FF'
+                        },
+                        harness: {
+                            bg: '#F9FAFB',
+                            sidebar: '#020B1A',
+                            border: '#E6E9EF',
+                            text: '#1F2937',
+                            muted: '#6B7280'
+                        }
+                    },
+                    borderRadius: {
+                        enterprise: '0.75rem',
+                    },
+                    boxShadow: {
+                        'h-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                        'h-md': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/harness.css') }}">
+
+    <style>
+        #sidebar {
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
+        .dark ::-webkit-scrollbar-thumb { background: #334155; }
+    </style>
+    {% block extra_head %}{% endblock %}
 </head>
-<body>
-  <header class="header">
-    <h1>refac_bid_box</h1>
-    <nav>
-      <a href="/ui/" class="{% if active_tab == 'dashboard' %}active{% endif %}">대시보드</a>
-      <a href="/ui/prediction" class="{% if active_tab == 'prediction' %}active{% endif %}">AI 예측</a>
-      <a href="/ui/chatbot" class="{% if active_tab == 'chatbot' %}active{% endif %}">RAG 챗봇</a>
-      <a href="/docs" target="_blank">API Docs</a>
-    </nav>
-  </header>
-  <main class="container">
-    {% block content %}{% endblock %}
-  </main>
+<body class="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex min-h-screen">
+
+    {% if not hide_sidebar %}
+    <aside id="sidebar" class="w-20 lg:w-64 bg-harness-sidebar text-white flex flex-col sticky top-0 h-screen z-50 overflow-hidden shrink-0">
+        <div class="h-16 flex items-center px-6 border-b border-white/5 overflow-hidden">
+            <a href="{{ url('index') }}" class="flex items-center space-x-3 min-w-max">
+                <div class="w-8 h-8 bg-primary rounded flex items-center justify-center shrink-0">
+                    <i class="fas fa-cube text-white text-lg"></i>
+                </div>
+                <span class="text-xl font-bold tracking-tight text-white hidden lg:block">
+                    BID<span class="text-primary">BOX</span>
+                </span>
+            </a>
+        </div>
+
+        <div class="flex-1 py-6 space-y-1 px-3">
+            <p class="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] px-3 mb-4 hidden lg:block">메인 메뉴</p>
+
+            <a href="{{ url('index') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'index' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+                <i class="fas fa-home w-5 text-center text-lg"></i>
+                <span class="text-sm hidden lg:block">홈</span>
+            </a>
+
+            <a href="{{ url('bids:bid_list') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'bids' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+                <i class="fas fa-search w-5 text-center text-lg"></i>
+                <span class="text-sm hidden lg:block">공고 탐색</span>
+            </a>
+
+            <a href="{{ url('bids:result_list') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'results' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+                <i class="fas fa-trophy w-5 text-center text-lg"></i>
+                <span class="text-sm hidden lg:block">낙찰 결과</span>
+            </a>
+
+            <a href="{{ url('bids:dashboard') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'dashboard' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+                <i class="fas fa-chart-line w-5 text-center text-lg"></i>
+                <span class="text-sm hidden lg:block">입찰 인텔리전스</span>
+            </a>
+
+            <a href="{{ url('chatbot:chat_page') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'chatbot' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+                <i class="fas fa-robot w-5 text-center text-lg"></i>
+                <span class="text-sm hidden lg:block">AI 어드바이저</span>
+            </a>
+
+            <div class="pt-6">
+                <p class="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] px-3 mb-4 hidden lg:block">설정</p>
+                <a href="#" data-open-settings class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors text-white/60">
+                    <i class="fas fa-cog w-5 text-center text-lg"></i>
+                    <span class="text-sm hidden lg:block">환경 설정</span>
+                </a>
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-white/5">
+            {% if user %}
+                <div class="flex items-center space-x-3 p-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer">
+                    <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                        {{ user.username[:1]|upper }}
+                    </div>
+                    <div class="flex-1 min-w-0 hidden lg:block">
+                        <p class="text-xs font-bold truncate">{{ user.nickname|default(user.username, true) }}</p>
+                        <p class="text-[10px] text-white/40 truncate">엔터프라이즈 사용자</p>
+                    </div>
+                    <a href="{{ url('accounts:logout') }}" class="text-white/30 hover:text-red-400 transition-colors hidden lg:block">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </a>
+                </div>
+            {% else %}
+                <a href="{{ url('accounts:login') }}" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-white/10 transition-colors text-white/60">
+                    <i class="fas fa-sign-in-alt w-6 text-center text-lg"></i>
+                    <span class="text-sm hidden lg:block">로그인</span>
+                </a>
+            {% endif %}
+        </div>
+    </aside>
+    {% endif %}
+
+    <div class="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-950">
+        <header class="h-16 bg-white border-b border-harness-border dark:bg-slate-900 dark:border-slate-800 flex items-center justify-between px-8 sticky top-0 z-40">
+            <div class="flex min-w-0 items-center gap-4">
+                <div class="flex items-center text-sm font-medium text-slate-400">
+                    {% block breadcrumbs %}
+                    <span class="hover:text-slate-600 cursor-pointer transition-colors">기본 프로젝트</span>
+                    <i class="fas fa-chevron-right mx-3 text-[9px] opacity-30"></i>
+                    <span class="text-slate-900 dark:text-white font-semibold">{% block page_header %}대시보드{% endblock %}</span>
+                    {% endblock %}
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-6">
+                <form action="{{ url('bids:bid_list') }}" method="GET" class="relative hidden md:block">
+                    <button type="submit" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-primary" aria-label="공고 검색">
+                        <i class="fas fa-search text-xs"></i>
+                    </button>
+                    <input
+                        type="text"
+                        name="q"
+                        value="{{ request.query_params.get('q')|default('', true) }}"
+                        placeholder="공고명 또는 번호 검색..."
+                        class="bg-slate-50 border border-slate-200 rounded pl-9 pr-4 py-1.5 text-xs focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all w-64">
+                </form>
+
+                <button onclick="toggleTheme()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
+                    <i id="theme-icon" class="fas fa-moon"></i>
+                </button>
+
+                {% if hide_sidebar %}
+                    {% if user %}
+                        <a href="{{ url('accounts:logout') }}" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                            <i class="fas fa-sign-out-alt text-[11px]"></i>
+                            로그아웃
+                        </a>
+                    {% else %}
+                        <a href="{{ url('accounts:login') }}" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:border-blue-200 hover:text-primary dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                            <i class="fas fa-sign-in-alt text-[11px]"></i>
+                            로그인
+                        </a>
+                        <a href="{{ url('accounts:signup') }}" class="h-btn h-btn-primary text-xs !py-1.5 !px-4">회원가입</a>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-y-auto">
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="bg-white border-t border-harness-border py-4 px-8 flex justify-between items-center text-[10px] text-slate-400 font-medium">
+            <p>&copy; 2026 BIDBOX Intelligence. 고성능 입찰 분석을 위해 설계되었습니다.</p>
+            <div class="flex space-x-6">
+                <a href="#" class="hover:text-primary transition-colors">문서</a>
+                <a href="#" class="hover:text-primary transition-colors">지원 센터</a>
+                <a href="#" class="hover:text-primary transition-colors">API 안내</a>
+            </div>
+        </footer>
+    </div>
+
+    <dialog id="app_settings_modal" class="modal">
+        <div class="modal-box bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 rounded-xl p-8 max-w-lg">
+            <div class="flex items-start justify-between gap-4 mb-6">
+                <div>
+                    <h3 class="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                        <i class="fas fa-sliders-h text-primary"></i>
+                        환경 설정
+                    </h3>
+                    <p class="mt-2 text-xs text-slate-500 leading-5">
+                        현재 브라우저에 저장되는 개인 설정입니다. 챗봇 화면의 응답 표시와 상태 갱신 방식도 함께 제어합니다.
+                    </p>
+                </div>
+                <form method="dialog">
+                    <button type="submit" class="w-8 h-8 inline-flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors" aria-label="환경 설정 닫기">
+                        <i class="fas fa-times text-xs"></i>
+                    </button>
+                </form>
+            </div>
+
+            <div class="space-y-4">
+                <label class="flex items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-harness-border dark:border-slate-700 cursor-pointer">
+                    <div>
+                        <p class="text-sm font-bold text-slate-700 dark:text-slate-200">다크 모드 사용</p>
+                        <p class="text-[11px] text-slate-500">전체 화면 테마를 어두운 배경으로 전환합니다.</p>
+                    </div>
+                    <input id="settings-theme-toggle" type="checkbox" class="toggle toggle-primary toggle-sm" />
+                </label>
+
+                <label class="flex items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-harness-border dark:border-slate-700 cursor-pointer">
+                    <div>
+                        <p class="text-sm font-bold text-slate-700 dark:text-slate-200">챗봇 응답 근거 표시</p>
+                        <p class="text-[11px] text-slate-500">답변 아래 출처 태그와 인용 번호를 표시합니다.</p>
+                    </div>
+                    <input id="settings-show-sources" type="checkbox" class="toggle toggle-primary toggle-sm" />
+                </label>
+
+                <div class="flex items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-harness-border dark:border-slate-700">
+                    <div>
+                        <p class="text-sm font-bold text-slate-700 dark:text-slate-200">자동 상태 갱신 주기</p>
+                        <p class="text-[11px] text-slate-500">챗봇 자동화 작업의 진행 상태를 확인하는 간격입니다.</p>
+                    </div>
+                    <label class="sr-only" for="settings-poll-interval">자동 상태 갱신 주기</label>
+                    <select id="settings-poll-interval" class="select select-bordered select-sm w-36 bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200">
+                        <option value="3000">빠르게 3초</option>
+                        <option value="5000">기본 5초</option>
+                        <option value="10000">절전 10초</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mt-6 flex items-center justify-between gap-4">
+                <p class="text-[11px] text-slate-400">설정 변경은 즉시 적용됩니다.</p>
+                <form method="dialog">
+                    <button type="submit" class="py-2 px-6 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-lg text-xs transition-colors">
+                        닫기
+                    </button>
+                </form>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop bg-slate-900/40 backdrop-blur-sm">
+            <button type="submit" aria-label="환경 설정 닫기">close</button>
+        </form>
+    </dialog>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script>
+        const APP_SETTINGS_KEY = 'bidbox.app.settings';
+        const APP_SETTINGS_DEFAULTS = {
+            theme: 'light',
+            showSources: true,
+            pollIntervalMs: 5000,
+        };
+        const APP_SETTINGS_ALLOWED_INTERVALS = [3000, 5000, 10000];
+        let currentBidboxSettings = null;
+
+        function getPreferredTheme() {
+            if (localStorage.getItem('theme') === 'dark') {
+                return 'dark';
+            }
+            if (localStorage.getItem('theme') === 'light') {
+                return 'light';
+            }
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+
+        function normalizeBidboxSettings(rawSettings = {}) {
+            const nextTheme = rawSettings.theme === 'dark' ? 'dark' : 'light';
+            const nextPollInterval = Number(rawSettings.pollIntervalMs);
+            return {
+                theme: nextTheme,
+                showSources: rawSettings.showSources !== false && rawSettings.showSources !== 'false',
+                pollIntervalMs: APP_SETTINGS_ALLOWED_INTERVALS.includes(nextPollInterval) ? nextPollInterval : APP_SETTINGS_DEFAULTS.pollIntervalMs,
+            };
+        }
+
+        function loadBidboxSettings() {
+            let parsedSettings = {};
+            try {
+                parsedSettings = JSON.parse(localStorage.getItem(APP_SETTINGS_KEY) || '{}') || {};
+            } catch (error) {
+                parsedSettings = {};
+            }
+
+            return normalizeBidboxSettings({
+                ...APP_SETTINGS_DEFAULTS,
+                theme: getPreferredTheme(),
+                ...parsedSettings,
+            });
+        }
+
+        function updateThemeIcon() {
+            const icon = document.getElementById('theme-icon');
+            if (!icon) {
+                return;
+            }
+
+            if (document.documentElement.classList.contains('dark')) {
+                icon.classList.remove('fa-moon');
+                icon.classList.add('fa-sun');
+            } else {
+                icon.classList.remove('fa-sun');
+                icon.classList.add('fa-moon');
+            }
+        }
+
+        function applyBidboxSettings(settings) {
+            const html = document.documentElement;
+            const isDark = settings.theme === 'dark';
+
+            html.classList.toggle('dark', isDark);
+            html.setAttribute('data-theme', isDark ? 'dark' : 'light');
+            html.setAttribute('data-show-sources', settings.showSources ? 'on' : 'off');
+            html.setAttribute('data-poll-interval-ms', String(settings.pollIntervalMs));
+
+            localStorage.setItem('theme', settings.theme);
+            updateThemeIcon();
+        }
+
+        function syncSettingsUi(settings) {
+            const themeToggle = document.getElementById('settings-theme-toggle');
+            const sourcesToggle = document.getElementById('settings-show-sources');
+            const pollSelect = document.getElementById('settings-poll-interval');
+
+            if (themeToggle) {
+                themeToggle.checked = settings.theme === 'dark';
+            }
+            if (sourcesToggle) {
+                sourcesToggle.checked = Boolean(settings.showSources);
+            }
+            if (pollSelect) {
+                pollSelect.value = String(settings.pollIntervalMs);
+            }
+        }
+
+        function persistBidboxSettings(settings) {
+            currentBidboxSettings = normalizeBidboxSettings(settings);
+            localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(currentBidboxSettings));
+            applyBidboxSettings(currentBidboxSettings);
+            syncSettingsUi(currentBidboxSettings);
+            window.dispatchEvent(new CustomEvent('bidbox:settings-changed', {
+                detail: { ...currentBidboxSettings },
+            }));
+            return { ...currentBidboxSettings };
+        }
+
+        function updateBidboxSettings(patch) {
+            return persistBidboxSettings({
+                ...(currentBidboxSettings || loadBidboxSettings()),
+                ...patch,
+            });
+        }
+
+        function openAppSettingsModal() {
+            const modal = document.getElementById('app_settings_modal');
+            if (!modal) {
+                return;
+            }
+            syncSettingsUi(currentBidboxSettings || loadBidboxSettings());
+            modal.showModal();
+        }
+
+        function toggleTheme() {
+            const activeSettings = currentBidboxSettings || loadBidboxSettings();
+            updateBidboxSettings({
+                theme: activeSettings.theme === 'dark' ? 'light' : 'dark',
+            });
+        }
+
+        function initializeBidboxSettings() {
+            currentBidboxSettings = loadBidboxSettings();
+            applyBidboxSettings(currentBidboxSettings);
+            syncSettingsUi(currentBidboxSettings);
+
+            const themeToggle = document.getElementById('settings-theme-toggle');
+            const sourcesToggle = document.getElementById('settings-show-sources');
+            const pollSelect = document.getElementById('settings-poll-interval');
+
+            if (themeToggle) {
+                themeToggle.addEventListener('change', function(event) {
+                    updateBidboxSettings({
+                        theme: event.target.checked ? 'dark' : 'light',
+                    });
+                });
+            }
+
+            if (sourcesToggle) {
+                sourcesToggle.addEventListener('change', function(event) {
+                    updateBidboxSettings({
+                        showSources: event.target.checked,
+                    });
+                });
+            }
+
+            if (pollSelect) {
+                pollSelect.addEventListener('change', function(event) {
+                    updateBidboxSettings({
+                        pollIntervalMs: Number(event.target.value) || APP_SETTINGS_DEFAULTS.pollIntervalMs,
+                    });
+                });
+            }
+
+            document.addEventListener('click', function(event) {
+                const trigger = event.target.closest('[data-open-settings]');
+                if (!trigger) {
+                    return;
+                }
+                event.preventDefault();
+                openAppSettingsModal();
+            });
+        }
+
+        window.BIDBOX_SETTINGS = {
+            get() {
+                return { ...(currentBidboxSettings || loadBidboxSettings()) };
+            },
+            update: updateBidboxSettings,
+            open: openAppSettingsModal,
+        };
+
+        document.addEventListener('DOMContentLoaded', initializeBidboxSettings);
+    </script>
+    {% block extra_js %}{% endblock %}
 </body>
 </html>

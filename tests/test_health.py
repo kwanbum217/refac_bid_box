@@ -5,9 +5,10 @@ client = TestClient(app)
 
 
 def test_root():
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "refac_bid_box" in response.json()["message"]
+    """루트는 원본과 동일하게 로그인이 필요한 홈 화면(SSR)이다."""
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/accounts/login/?next=/"
 
 
 def test_health():

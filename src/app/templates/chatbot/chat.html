@@ -1,0 +1,1828 @@
+{% extends 'base.html' %}
+
+{% block title %}AI Advisor - BIDBOX{% endblock %}
+
+{% block extra_head %}
+<style>
+    :root {
+        --h-bg: #FFFFFF;
+        --h-sidebar-bg: #FFFFFF;
+        --h-sidebar-text: #334155;
+        --h-border: #E6E9EF;
+        --h-primary: #0073E6;
+        --chat-bg: #F9FAFB;
+    }
+
+    body {
+        background-color: var(--chat-bg);
+        overflow: hidden;
+    }
+
+    /* Aura Background Effect - Ultra Subtle for White Theme */
+    .aura-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1;
+        overflow: hidden;
+        pointer-events: none;
+    }
+    .aura-sphere {
+        position: absolute;
+        filter: blur(140px);
+        border-radius: 50%;
+        opacity: 0.08;
+        animation: auraFlow 25s infinite alternate ease-in-out;
+    }
+    .aura-1 { width: 60vw; height: 60vw; background: radial-gradient(circle, #0073E6, transparent 70%); top: -10%; left: -10%; }
+    .aura-2 { width: 50vw; height: 50vw; background: radial-gradient(circle, #5C4AD1, transparent 70%); bottom: -10%; right: -10%; animation-delay: -5s; }
+
+    @keyframes auraFlow {
+        0% { transform: translate(0, 0) scale(1); }
+        100% { transform: translate(4vw, 4vh) scale(1.1); }
+    }
+
+    /* Harness Sidebar (Updated to Light) */
+    .h-sidebar {
+        background-color: var(--h-sidebar-bg);
+        color: var(--h-sidebar-text);
+    }
+
+    .session-item-li .p-3 {
+        border-radius: 0.5rem;
+        border: 1px solid transparent;
+        transition: all 0.2s ease;
+    }
+    .session-item-li:hover .p-3 {
+        background-color: #F1F5F9;
+        border-color: #E2E8F0;
+    }
+    .session-item-li.active .p-3 {
+        background-color: #EFF6FF;
+        border-color: #BFDBFE;
+    }
+    .session-item-li.active .text-slate-200 {
+        color: var(--h-primary) !important;
+    }
+
+    .chat-bubble-custom {
+        border-radius: 12px;
+        font-size: 0.925rem;
+        line-height: 1.6;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    }
+
+    .bot-msg-content {
+        color: #374151;
+        word-break: keep-all;
+        overflow-wrap: break-word;
+    }
+    .bot-msg-content p {
+        margin: 0 0 0.85rem;
+    }
+    .bot-msg-content p:last-child {
+        margin-bottom: 0;
+    }
+    .bot-msg-content h3 {
+        margin: 0 0 0.75rem;
+        color: #0F172A;
+        font-size: 1rem;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+    .bot-msg-content ul,
+    .bot-msg-content ol {
+        margin: 0.75rem 0 0.75rem 1.1rem;
+        padding-left: 0.35rem;
+    }
+    .bot-msg-content li {
+        margin: 0.35rem 0;
+        line-height: 1.7;
+    }
+    .bot-msg-content strong { color: var(--h-primary); font-weight: 700; }
+    .bot-msg-content table {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        margin: 0.9rem 0;
+        overflow-x: auto;
+        border: 1px solid #E2E8F0;
+        border-radius: 0.75rem;
+        border-spacing: 0;
+        border-collapse: separate;
+        background: #FFFFFF;
+        font-size: 0.8125rem;
+        line-height: 1.5;
+    }
+    .bot-msg-content thead {
+        background: #F8FAFC;
+    }
+    .bot-msg-content th,
+    .bot-msg-content td {
+        padding: 0.72rem 0.85rem;
+        border-bottom: 1px solid #E2E8F0;
+        color: #334155;
+        text-align: left;
+        vertical-align: top;
+        white-space: nowrap;
+    }
+    .bot-msg-content th {
+        color: #475569;
+        font-weight: 800;
+    }
+    .bot-msg-content td:nth-child(2) {
+        min-width: 220px;
+        white-space: normal;
+    }
+    .bot-msg-content tr:last-child td {
+        border-bottom: 0;
+    }
+    .bot-msg-content code {
+        padding: 0.1rem 0.32rem;
+        border: 1px solid #E2E8F0;
+        border-radius: 0.35rem;
+        background: #F1F5F9;
+        color: #334155;
+        font-size: 0.78rem;
+    }
+    .bot-msg-content blockquote {
+        margin: 0.85rem 0 0;
+        padding: 0.75rem 0.9rem;
+        border-left: 3px solid var(--h-primary);
+        border-radius: 0.5rem;
+        background: #EFF6FF;
+        color: #1E3A8A;
+    }
+    .user-msg-content {
+        color: #FFFFFF;
+        word-break: keep-all;
+        overflow-wrap: break-word;
+    }
+    .user-msg-content strong,
+    .user-msg-content a {
+        color: #FFFFFF;
+    }
+
+    .chat-chart-card {
+        width: min(780px, calc(100vw - 3rem));
+        height: 360px;
+        min-width: min(340px, calc(100vw - 3rem));
+        max-width: min(1280px, calc(100vw - 3rem));
+        min-height: 340px;
+        max-height: 760px;
+        display: flex;
+        flex-direction: column;
+        overflow: auto;
+        position: relative;
+        resize: both;
+        border: 1px solid #E2E8F0;
+        border-radius: 0.75rem;
+        background:
+            linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.98)),
+            #FFFFFF;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+    }
+    .chat-chart-card.is-expanded {
+        position: fixed;
+        inset: 1.25rem;
+        z-index: 80;
+        width: auto !important;
+        height: auto !important;
+        max-width: none;
+        max-height: none;
+        resize: none;
+        background: #FFFFFF;
+        border-color: #CBD5E1;
+        box-shadow: 0 28px 80px rgba(15, 23, 42, 0.18);
+    }
+    .chat-chart-card.is-expanded::before {
+        display: none;
+    }
+    body.chart-expanded-open {
+        overflow: hidden;
+    }
+    .chat-chart-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.1rem 1.25rem 0;
+    }
+    .chat-chart-header-actions {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.65rem;
+    }
+    .chat-chart-controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        border: 1px solid #DBEAFE;
+        border-radius: 0.65rem;
+        background: #FFFFFF;
+        padding: 0.22rem;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+    }
+    .chat-chart-control-btn {
+        width: 1.8rem;
+        height: 1.8rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.5rem;
+        color: #334155;
+        font-size: 0.9rem;
+        font-weight: 900;
+        line-height: 1;
+        transition: background 0.15s ease, color 0.15s ease;
+    }
+    .chat-chart-control-btn:hover {
+        background: #EFF6FF;
+        color: #1D4ED8;
+    }
+    .chat-chart-control-btn.is-active {
+        background: #DBEAFE;
+        color: #1D4ED8;
+    }
+    .chat-chart-eyebrow {
+        color: #64748B;
+        font-size: 0.66rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        line-height: 1;
+        text-transform: uppercase;
+    }
+    .chat-chart-title {
+        margin-top: 0.32rem;
+        color: #0F172A;
+        font-size: 0.98rem;
+        font-weight: 900;
+        letter-spacing: 0;
+        line-height: 1.25;
+    }
+    .chat-chart-summary {
+        flex: 0 0 auto;
+        min-width: 5.5rem;
+        border-radius: 0.7rem;
+        border: 1px solid #DBEAFE;
+        background: #EFF6FF;
+        padding: 0.55rem 0.75rem;
+        text-align: right;
+    }
+    .chat-chart-summary-label {
+        color: #64748B;
+        font-size: 0.62rem;
+        font-weight: 800;
+        line-height: 1;
+    }
+    .chat-chart-summary-value {
+        margin-top: 0.28rem;
+        color: #1D4ED8;
+        font-size: 1rem;
+        font-weight: 900;
+        line-height: 1;
+    }
+    .chat-chart-body {
+        flex: 1 1 auto;
+        min-height: 230px;
+        padding: 0.9rem 1.1rem 1rem;
+    }
+    .chat-chart {
+        display: block;
+        width: 100% !important;
+        height: 100% !important;
+    }
+    .chart-empty-state {
+        border: 1px dashed #CBD5E1;
+        background: #F8FAFC;
+        color: #64748B;
+    }
+
+    @media (max-width: 640px) {
+        .chat-chart-card {
+            width: calc(100vw - 2rem);
+            resize: vertical;
+        }
+        .chat-chart-header {
+            flex-direction: column;
+        }
+        .chat-chart-header-actions {
+            width: 100%;
+            justify-content: space-between;
+        }
+    }
+
+    /* Premium Advisory Card */
+    .advisory-card-premium {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-left: 4px solid var(--h-primary);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .advisory-card-premium:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+    }
+
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
+
+    /* Typing Animation */
+    .typing-dot {
+        width: 4px;
+        height: 4px;
+        background: var(--h-primary);
+        border-radius: 50%;
+        animation: typing 1.4s infinite ease-in-out;
+        display: inline-block;
+        margin: 0 1px;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typing {
+        0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
+        40% { transform: scale(1); opacity: 1; }
+    }
+
+    .source-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 4px;
+        background: #F1F5F9;
+        color: #64748B;
+        border: 1px solid #E2E8F0;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+    .source-tag-index {
+        color: #0073E6;
+        font-weight: 900;
+        letter-spacing: 0;
+    }
+
+    .citation-badge {
+        background: #EBF5FF;
+        color: #0073E6;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 0 4px;
+        border-radius: 3px;
+        margin: 0 2px;
+        border: 1px solid #CCE3FF;
+        vertical-align: super;
+    }
+
+    html[data-show-sources="off"] .message-source-block,
+    html[data-show-sources="off"] .citation-badge {
+        display: none !important;
+    }
+
+    .chat-send-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        min-height: 3.25rem;
+        padding: 0 1.25rem;
+        border-radius: 0.75rem;
+        font-size: 0.875rem;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+        box-shadow: 0 10px 20px rgba(0, 115, 230, 0.16);
+        transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+    }
+
+    .chat-send-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 24px rgba(0, 91, 179, 0.2);
+    }
+
+    .chat-send-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 8px 16px rgba(0, 91, 179, 0.16);
+    }
+
+    .chat-send-btn:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 4px rgba(0, 115, 230, 0.14), 0 10px 20px rgba(0, 115, 230, 0.16);
+    }
+
+    .chat-send-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .chat-send-btn i {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1rem;
+        height: 1rem;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.18);
+    }
+
+    .chat-stop-btn {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        min-height: 3.25rem;
+        padding: 0 1rem;
+        border-radius: 0.75rem;
+        border: 1px solid #FECACA;
+        background: #FEF2F2;
+        color: #B91C1C;
+        font-size: 0.8125rem;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+        transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+    }
+
+    .chat-stop-btn.is-active {
+        display: inline-flex;
+    }
+
+    .chat-stop-btn:hover {
+        transform: translateY(-1px);
+        border-color: #FCA5A5;
+        background: #FEE2E2;
+    }
+
+    .chat-stop-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+        transform: none;
+    }
+
+    @media (max-width: 640px) {
+        #chat-interface {
+            align-items: stretch;
+        }
+
+        .chat-send-btn,
+        .chat-stop-btn {
+            min-width: 3.25rem;
+            padding: 0 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="aura-container">
+    <div class="aura-sphere aura-1"></div>
+    <div class="aura-sphere aura-2"></div>
+</div>
+
+<div class="flex h-[calc(100vh-64px)] overflow-hidden">
+    <!-- Sidebar: Interaction History (Light Enterprise Style) -->
+    <aside class="w-72 h-full h-sidebar flex flex-col border-r border-harness-border">
+        <div class="p-6 border-b border-harness-border">
+            <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">AI 상호작용 허브</h3>
+            <button id="btn-new-chat" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-bold transition-all shadow-md shadow-primary/20">
+                <i class="fas fa-plus text-xs"></i>
+                새 분석
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1 bg-slate-50/30">
+            {% for session in sessions %}
+            <div class="session-item-li group cursor-pointer {% if session.session_key == current_session_key %}active{% endif %}" data-session-key="{{ session.session_key }}">
+                <div class="p-3">
+                    <p class="text-xs font-semibold text-slate-600 truncate group-hover:text-primary transition-colors">
+                        {{ session.last_query|default("새 분석", true) }}
+                    </p>
+                    <div class="flex items-center gap-2 mt-1.5 opacity-60">
+                        <i class="far fa-clock text-[9px] text-slate-400"></i>
+                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{{ session.updated_at|date("M d, H:i") }}</span>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="py-12 text-center opacity-30">
+                <i class="fas fa-history text-2xl mb-3 block text-slate-300"></i>
+                <p class="text-[10px] font-bold tracking-widest">기록 없음</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="p-5 border-t border-harness-border bg-slate-50/50">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold text-xs border border-primary/20">
+                    {{ user.username[:1]|upper }}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-[11px] font-bold text-slate-700 truncate uppercase tracking-tight">{{ user.nickname|default(user.username, true) }}</p>
+                    <p class="text-[9px] text-slate-400 font-bold">시스템 분석가</p>
+                </div>
+                <button type="button" data-open-settings class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-primary hover:bg-white rounded-md border border-transparent hover:border-slate-200 transition-all">
+                    <i class="fas fa-cog text-xs"></i>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <div class="flex-1 flex flex-col min-w-0 bg-[#F9FAFB] dark:bg-slate-950">
+
+        <!-- Workspace Header -->
+        <header class="h-14 bg-white dark:bg-slate-900 border-b border-harness-border dark:border-slate-800 px-6 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    <i class="fas fa-microchip text-primary"></i>
+                    <span>AI 신경망 코어</span>
+                    <span class="text-slate-300 dark:text-slate-700 mx-1">/</span>
+                    <span class="text-slate-500">예측 어드바이저</span>
+                </div>
+                <div class="flex items-center gap-2 ml-4">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 uppercase">
+                        <span class="w-1 h-1 bg-green-500 rounded-full mr-1.5 animate-pulse"></span>
+                        활성
+                    </span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <div class="text-right hidden sm:block">
+                    <p class="text-[10px] font-bold text-slate-400 tracking-tighter">모델 성능</p>
+                    <p class="text-[10px] font-bold text-slate-700 dark:text-slate-300">{{ llm_model_label }}</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Messages Area -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar">
+            <!-- Welcome View -->
+            <div id="welcome-state" class="max-w-3xl mx-auto py-12 text-center space-y-10">
+                <div class="space-y-4">
+                    <h1 class="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                        데이터 인텔리전스의 <span class="text-primary">새로운 기준</span>
+                    </h1>
+                    <p class="text-slate-500 text-lg font-medium max-w-xl mx-auto">
+                        BIDBOX AI Advisor는 수백만 건의 조달 데이터를 실시간 분석하여 최적의 입찰 전략을 도출합니다.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="h-card p-6 text-left cursor-pointer hover:border-primary group" onclick="setAndSend('최근 3개월 시설공사 낙찰률 트렌드 분석해줘')">
+                        <div class="w-10 h-10 rounded-lg bg-primary/5 flex items-center justify-center mb-4 group-hover:bg-primary/10 transition-colors">
+                            <i class="fas fa-chart-line text-primary"></i>
+                        </div>
+                        <h4 class="font-bold text-sm text-slate-900 dark:text-white mb-2">통계 인사이트</h4>
+                        <p class="text-xs text-slate-500 leading-relaxed">과거 낙찰 패턴을 분석하여 성공 확률이 높은 구간을 제안합니다.</p>
+                    </div>
+                    <div class="h-card p-6 text-left cursor-pointer hover:border-primary group" onclick="setAndSend('정보기술 분야 고득점 입찰 전략 제안해줘')">
+                        <div class="w-10 h-10 rounded-lg bg-indigo-500/5 flex items-center justify-center mb-4 group-hover:bg-indigo-500/10 transition-colors">
+                            <i class="fas fa-bullseye text-indigo-500"></i>
+                        </div>
+                        <h4 class="font-bold text-sm text-slate-900 dark:text-white mb-2">전략 최적화</h4>
+                        <p class="text-xs text-slate-500 leading-relaxed">경쟁사 분석을 기반으로 최적의 투찰 금액 범위를 산출합니다.</p>
+                    </div>
+                    <div class="h-card p-6 text-left cursor-pointer hover:border-primary group" onclick="setAndSend('조달청 지식베이스 최신 업데이트 내용 알려줘')">
+                        <div class="w-10 h-10 rounded-lg bg-teal-500/5 flex items-center justify-center mb-4 group-hover:bg-teal-500/10 transition-colors">
+                            <i class="fas fa-book-open text-teal-500"></i>
+                        </div>
+                        <h4 class="font-bold text-sm text-slate-900 dark:text-white mb-2">규정 어드바이저</h4>
+                        <p class="text-xs text-slate-500 leading-relaxed">복잡한 입찰 지침과 법령 정보를 대화로 즉시 확인하세요.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-6 bg-white dark:bg-slate-900 border-t border-harness-border dark:border-slate-800">
+            <div class="max-w-4xl mx-auto">
+                <div id="suggestions-area" class="flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
+                    <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider mr-2">Suggestions</span>
+                    <button class="quick-btn h-card py-1.5 px-3 text-[10px] font-bold text-slate-600 hover:text-primary">#낙찰률분석</button>
+                    <button class="quick-btn h-card py-1.5 px-3 text-[10px] font-bold text-slate-600 hover:text-primary">#공고추천</button>
+                    <button class="quick-btn h-card py-1.5 px-3 text-[10px] font-bold text-slate-600 hover:text-primary">#규정확인</button>
+                </div>
+
+                <div id="chat-interface"
+                     data-chat-url="{{ url('chatbot:chat_api') }}"
+                     data-new-session-url="{{ url('chatbot:new_chat_session') }}"
+                     data-csrf-token="{{ csrf_token }}"
+                     class="relative flex items-center gap-3">
+                    <div class="relative flex-1">
+                        <input type="text" id="chat-input"
+                               placeholder="분석하려는 내용이나 궁금한 점을 입력하세요..."
+                               class="w-full bg-slate-50 dark:bg-slate-800 border border-harness-border dark:border-slate-700 focus:border-primary dark:focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 text-sm py-4 pl-5 pr-20 rounded-xl transition-all">
+                        <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                            <kbd class="hidden sm:inline-flex px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-400">Enter</kbd>
+                        </div>
+                    </div>
+                    <button id="btn-send" type="button" class="h-btn-primary chat-send-btn" aria-label="분석 실행">
+                        <span class="font-bold">분석 실행</span>
+                        <i class="fas fa-chevron-right text-[10px]"></i>
+                    </button>
+                    <button id="btn-stop" type="button" class="chat-stop-btn" aria-label="요청 중지">
+                        <i class="fas fa-stop text-[10px]"></i>
+                        <span class="font-bold">요청 중지</span>
+                    </button>
+                </div>
+
+                <div class="mt-4 flex items-center justify-between text-[10px] font-bold text-slate-400">
+                    <div class="flex items-center gap-4">
+                        <span class="flex items-center gap-1"><i class="fas fa-shield-alt text-slate-300"></i> Secure Session</span>
+                        <span class="flex items-center gap-1"><i class="fas fa-database text-slate-300"></i> {{ indexed_record_label }} Records Indexed</span>
+                    </div>
+                    <span>System Version 2.4.1</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+$(document).ready(function() {
+    const chatContainer = $('#chat-messages');
+    const input = $('#chat-input');
+    const btnSend = $('#btn-send');
+    const btnStop = $('#btn-stop');
+    const interface = $('#chat-interface');
+    const welcomeState = $('#welcome-state');
+    const jobPollers = new Map();
+    let activeChatRequest = null;
+    let activeLoadingId = '';
+    let requestStoppedByUser = false;
+
+    const CONFIG = {
+        chatUrl: interface.data('chat-url'),
+        newSessionUrl: interface.data('new-session-url'),
+        csrfToken: interface.data('csrf-token'),
+        confirmUrlTemplate: '/chatbot/api/automation/job/__JOB_ID__/confirm/',
+        statusUrlTemplate: '/chatbot/api/automation/job/__JOB_ID__/status/',
+        cancelUrlTemplate: '/chatbot/api/automation/job/__JOB_ID__/cancel/'
+    };
+
+    marked.setOptions({ breaks: true, gfm: true });
+
+    function getAppSettings() {
+        if (window.BIDBOX_SETTINGS && typeof window.BIDBOX_SETTINGS.get === 'function') {
+            return window.BIDBOX_SETTINGS.get();
+        }
+        return {
+            showSources: true,
+            pollIntervalMs: 5000,
+        };
+    }
+
+    function resolvePollDelay(fallbackDelay) {
+        const configuredDelay = Number(getAppSettings().pollIntervalMs);
+        if (Number.isFinite(configuredDelay) && configuredDelay > 0) {
+            return configuredDelay;
+        }
+        return fallbackDelay;
+    }
+
+    function setAndSend(text) {
+        input.val(text);
+        sendMessage();
+    }
+    window.setAndSend = setAndSend;
+
+    function toggleWelcome(show) {
+        if (show) {
+            welcomeState.show();
+        } else {
+            welcomeState.hide();
+        }
+    }
+
+    function clearConversation() {
+        chatContainer.children().not('#welcome-state').remove();
+        if (jobPollers && typeof jobPollers.forEach === 'function') {
+            jobPollers.forEach(entry => {
+                if (entry && entry.timer) {
+                    window.clearTimeout(entry.timer);
+                }
+            });
+            jobPollers.clear();
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function buildEndpointUrl(template, jobId) {
+        return template.replace('__JOB_ID__', encodeURIComponent(jobId));
+    }
+
+    function buildChartCanvas(visualization) {
+        return `
+            <canvas
+                class="chat-chart"
+                data-type="${escapeHtml(visualization.chart_type || 'bar')}"
+                data-labels='${escapeHtml(JSON.stringify(visualization.labels || []))}'
+                data-values='${escapeHtml(JSON.stringify(visualization.values || []))}'
+                data-title="${escapeHtml(visualization.title || 'Analysis')}"
+                data-unit="${escapeHtml(visualization.unit || '')}"
+                data-x-label="${escapeHtml(visualization.x_label || '')}"
+                data-y-label="${escapeHtml(visualization.y_label || '')}">
+            </canvas>
+        `;
+    }
+
+    function containsRenderedHtml(value) {
+        return /<\s*(canvas|div|button|a|table|ul|ol|li|p|span|section)\b/i.test(String(value || ''));
+    }
+
+    function normalizePlainBotMarkdown(value) {
+        const raw = String(value ?? '').trim();
+        if (!raw || containsRenderedHtml(raw)) {
+            return raw;
+        }
+        if (raw.length < 120 || /\n\s*\n|^\s*(#{1,6}\s|[-*]\s|\d+\.\s)/m.test(raw)) {
+            return raw;
+        }
+
+        return raw
+            .replace(/(\[[\d,\s]+\]\.?)\s+(?=[가-힣A-Za-z0-9])/g, '$1\n\n')
+            .replace(/((?:입니다|합니다|됩니다|있습니다|없습니다|했습니다|였습니다|같습니다|권장합니다|필요합니다)(?:\s*\[[\d,\s]+\])?\.?)\s+(?=[가-힣A-Za-z0-9])/g, '$1\n\n')
+            .replace(/\n{3,}/g, '\n\n');
+    }
+
+    function getSourceCitationNumber(item) {
+        const metadata = item && item.metadata ? item.metadata : {};
+        const value = metadata.citation_number ?? metadata.citationNumber ?? item?.citation_number;
+        const numberValue = Number(value);
+        return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null;
+    }
+
+    function formatSourceTag(item) {
+        const sourceId = item && item.id ? item.id : 'source';
+        const citationNumber = getSourceCitationNumber(item);
+        const citationLabel = citationNumber ? `<span class="source-tag-index">[${citationNumber}]</span>` : '';
+        const role = item?.metadata?.citation_role || item?.type || '';
+        return `
+            <span class="source-tag" title="${escapeHtml(role)}">
+                ${citationLabel}
+                <span>${escapeHtml(sourceId)}</span>
+            </span>
+        `;
+    }
+
+    function stopJobPolling(jobId) {
+        const timer = jobPollers.get(jobId);
+        if (timer && timer.timer) {
+            window.clearTimeout(timer.timer);
+            jobPollers.delete(jobId);
+        }
+    }
+
+    function setRequestBusy(isBusy) {
+        btnSend.prop('disabled', isBusy);
+        btnStop.toggleClass('is-active', isBusy).prop('disabled', !isBusy);
+        input.prop('disabled', isBusy);
+    }
+
+    function stopActiveChatRequest() {
+        requestStoppedByUser = true;
+        if (activeChatRequest && typeof activeChatRequest.abort === 'function') {
+            activeChatRequest.abort();
+        }
+        if (activeLoadingId) {
+            $(`#${activeLoadingId}`).remove();
+        }
+        activeChatRequest = null;
+        activeLoadingId = '';
+        setRequestBusy(false);
+        appendMessage(
+            'bot',
+            '요청을 중지했습니다. 이미 자동화 실행이 시작된 경우에는 해당 실행 카드의 `실행 중지` 버튼을 사용하세요.'
+        );
+    }
+
+    function scheduleJobPolling(jobId, pollFn, delayMs) {
+        stopJobPolling(jobId);
+        const timer = window.setTimeout(pollFn, delayMs);
+        jobPollers.set(jobId, { timer, pollFn });
+    }
+
+    function formatStatusBadge(status) {
+        const map = {
+            pending_confirmation: { label: 'Confirmation', classes: 'border-amber-200 bg-amber-50 text-amber-700' },
+            queued: { label: 'Queued', classes: 'border-slate-200 bg-slate-100 text-slate-600' },
+            running: { label: 'Running', classes: 'border-blue-200 bg-blue-50 text-blue-700' },
+            success: { label: 'Completed', classes: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+            failed: { label: 'Failed', classes: 'border-red-200 bg-red-50 text-red-700' },
+            canceled: { label: 'Canceled', classes: 'border-slate-200 bg-slate-100 text-slate-600' }
+        };
+        return map[status] || { label: 'Active', classes: 'border-slate-200 bg-slate-100 text-slate-600' };
+    }
+
+    function buildAutomationCard(job, options = {}) {
+        if (!job || !job.job_id) {
+            return '';
+        }
+
+        const badge = formatStatusBadge(job.status);
+        const callbackMode = job.callback_mode === 'callback' ? 'Callback' : 'Polling';
+        const detailRows = [
+            { label: 'Job ID', value: job.job_id },
+            { label: 'Action', value: job.action_key || '-' },
+            { label: 'Run Mode', value: job.run_mode || '-' },
+            { label: 'Pipeline', value: job.pipeline || job.pipeline_id || '-' },
+            { label: 'Delivery', value: callbackMode },
+        ];
+
+        if (job.plan_execution_id) {
+            detailRows.push({ label: 'Execution', value: job.plan_execution_id });
+        }
+        if (job.stage_name || job.stage_status) {
+            detailRows.push({
+                label: 'Stage',
+                value: `${job.stage_name || '-'} / ${job.stage_status || '-'}`
+            });
+        }
+        if (job.result_summary) {
+            detailRows.push({ label: 'Summary', value: job.result_summary });
+        }
+
+        const detailsHtml = detailRows.map((row) => `
+            <div class="flex items-center justify-between gap-4 text-[11px]">
+                <span class="font-bold uppercase tracking-[0.14em] text-slate-400">${escapeHtml(row.label)}</span>
+                <span class="max-w-[70%] break-words text-right font-semibold text-slate-700">${escapeHtml(row.value)}</span>
+            </div>
+        `).join('');
+
+        const canCancel = ['pending_confirmation', 'queued', 'running'].includes(job.status);
+        const cancelButtonHtml = canCancel ? `
+            <button
+                class="cancel-automation-btn inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700 transition-colors hover:bg-red-100"
+                data-job-id="${escapeHtml(job.job_id)}">
+                실행 중지
+                <i class="fas fa-stop text-[10px]"></i>
+            </button>
+        ` : '';
+        const consoleLinkHtml = job.execution_url ? `
+            <a
+                class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:border-primary hover:text-primary"
+                href="${escapeHtml(job.execution_url)}"
+                target="_blank"
+                rel="noreferrer">
+                실행 콘솔 열기
+                <i class="fas fa-arrow-up-right-from-square text-[10px]"></i>
+            </a>
+        ` : '';
+        const actionHtml = options.confirmationToken ? `
+            <div class="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                    class="confirm-automation-btn inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-amber-600"
+                    data-job-id="${escapeHtml(job.job_id)}"
+                    data-confirmation-token="${escapeHtml(options.confirmationToken)}">
+                    승인 후 실행
+                    <i class="fas fa-shield-halved text-[10px]"></i>
+                </button>
+                ${cancelButtonHtml}
+            </div>
+        ` : (cancelButtonHtml || consoleLinkHtml) ? `
+            <div class="mt-4 flex flex-wrap items-center gap-2">
+                ${cancelButtonHtml}
+                ${consoleLinkHtml}
+            </div>
+        ` : '';
+
+        const helperText = options.confirmationToken
+            ? '고비용 자동화이므로 최종 승인 후 실행됩니다.'
+            : job.status === 'failed'
+                ? '실행 요청 또는 파이프라인 처리 중 오류가 발생했습니다. 오류 메시지와 실행 콘솔을 확인하세요.'
+            : job.status === 'canceled'
+                ? '사용자 요청으로 대화 상태와 자동 상태 확인을 중지했습니다.'
+            : options.live
+                ? '백엔드 상태를 주기적으로 확인해 완료 시 결과를 이어서 보여줍니다.'
+                : '자동화 상태가 업데이트되면 같은 대화 흐름에서 이어서 확인할 수 있습니다.';
+
+        const errorHtml = job.error_message ? `
+            <div class="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold leading-5 text-red-700">
+                ${escapeHtml(job.error_message)}
+            </div>
+        ` : '';
+
+        return `
+            <div class="automation-card mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div class="flex items-center justify-between gap-3">
+                    <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Automation Control</p>
+                    <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${badge.classes}">
+                        ${escapeHtml(badge.label)}
+                    </span>
+                </div>
+                <div class="mt-4 space-y-2">
+                    ${detailsHtml}
+                </div>
+                <p class="mt-4 text-xs leading-5 text-slate-500">${escapeHtml(helperText)}</p>
+                ${errorHtml}
+                ${actionHtml}
+            </div>
+        `;
+    }
+
+    function scrollChatToBottom() {
+        const container = chatContainer[0];
+        if (!container) {
+            return;
+        }
+        container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'smooth',
+        });
+    }
+
+    function scrollChatToMessageStart(messageElement) {
+        const container = chatContainer[0];
+        if (!container || !messageElement) {
+            return;
+        }
+        const containerRect = container.getBoundingClientRect();
+        const messageRect = messageElement.getBoundingClientRect();
+        const top = container.scrollTop + (messageRect.top - containerRect.top) - 24;
+        container.scrollTo({
+            top: Math.max(top, 0),
+            behavior: 'smooth',
+        });
+    }
+
+    function appendMessage(role, text, provenance = null, advisory_signals = null, options = {}) {
+        toggleWelcome(false);
+        const isBot = role === 'bot' || role === 'model';
+        let formattedText = String(text ?? '');
+        const extraHtml = isBot ? String(options.extraHtml || '') : '';
+        const contentClass = isBot ? 'bot-msg-content' : 'user-msg-content';
+        const scrollMode = options.scrollMode || (isBot ? 'start' : 'bottom');
+
+        if (isBot) {
+            formattedText = formattedText.replace(/```html/gi, '').replace(/```/g, '');
+            formattedText = normalizePlainBotMarkdown(formattedText);
+            formattedText = formattedText.replace(/\[(\d+)\]/g, '<span class="citation-badge" title="Source #$1">$1</span>');
+            formattedText = marked.parse(formattedText);
+        } else {
+            formattedText = escapeHtml(formattedText).replace(/\n/g, '<br>');
+        }
+
+        const botIcon = `<div class="w-9 h-9 rounded bg-primary flex items-center justify-center shadow-lg shadow-primary/20 flex-shrink-0"><i class="fas fa-robot text-white text-sm"></i></div>`;
+        const userIcon = `<div class="w-9 h-9 rounded bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 font-bold text-xs flex-shrink-0">{{ user.username[:1]|upper }}</div>`;
+
+        let sourceHtml = '';
+        if (provenance && provenance.items && provenance.items.length > 0) {
+            const tags = provenance.items.map(formatSourceTag).join(' ');
+            sourceHtml = `<div class="message-source-block mt-4 flex flex-wrap gap-2 border-t border-slate-100 dark:border-slate-800 pt-4">${tags}</div>`;
+        }
+
+        let advisoryHtml = '';
+        if (advisory_signals && advisory_signals.length > 0) {
+            advisoryHtml = advisory_signals.map(sig => `
+                <div class="advisory-card-premium p-4 rounded-lg mt-4 flex items-start gap-3">
+                    <i class="fas fa-info-circle text-primary mt-1"></i>
+                    <div>
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Expert Advisor Note</p>
+                        <p class="text-xs text-slate-700 dark:text-slate-300 font-semibold">${escapeHtml(sig.message)}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        const bubbleClass = isBot
+            ? 'bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 text-slate-700 dark:text-slate-300'
+            : 'bg-primary text-white border border-primary-hover';
+
+        const html = `
+            <div class="flex ${isBot ? 'justify-start' : 'justify-end'} animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div class="flex ${isBot ? 'flex-row' : 'flex-row-reverse'} items-start gap-4 max-w-[85%]">
+                    ${isBot ? botIcon : userIcon}
+                    <div class="flex flex-col ${isBot ? 'items-start' : 'items-end'}">
+                        <div class="px-5 py-4 ${bubbleClass} chat-bubble-custom shadow-sm">
+                            <div class="${contentClass}">${formattedText}</div>
+                            ${extraHtml}
+                            ${advisoryHtml}
+                            ${sourceHtml}
+                        </div>
+                        <span class="text-[9px] font-bold text-slate-400 mt-2 px-1">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        chatContainer.append(html);
+        const appendedMessage = chatContainer.children().last()[0];
+        window.requestAnimationFrame(() => {
+            if (scrollMode === 'none') {
+                return;
+            }
+            if (scrollMode === 'start') {
+                scrollChatToMessageStart(appendedMessage);
+                return;
+            }
+            scrollChatToBottom();
+        });
+        renderCharts();
+    }
+
+    function parseChartArray(rawValue) {
+        if (!rawValue) return [];
+        try {
+            const parsed = JSON.parse(rawValue);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            return String(rawValue).split(',');
+        }
+    }
+
+    function normalizeChartSeries(labels, values) {
+        const normalized = [];
+        values.forEach((value, index) => {
+            const numericValue = Number(String(value).replace(/[,%원\s]/g, ''));
+            if (!Number.isFinite(numericValue)) {
+                return;
+            }
+            normalized.push({
+                label: String(labels[index] || `#${index + 1}`),
+                value: numericValue,
+            });
+        });
+        return normalized;
+    }
+
+    function compactChartLabel(value, maxLength = 14) {
+        const text = String(value || '');
+        if (text.length <= maxLength) {
+            return text;
+        }
+        return `${text.slice(0, maxLength - 3)}...`;
+    }
+
+    function formatChartValue(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return '-';
+        }
+        const rounded = Math.abs(numericValue) >= 100 ? Math.round(numericValue) : Math.round(numericValue * 10) / 10;
+        return rounded.toLocaleString('ko-KR');
+    }
+
+    function inferChartUnit(title, explicitUnit = '') {
+        const unit = String(explicitUnit || '').trim();
+        if (unit) {
+            return unit;
+        }
+        const normalizedTitle = String(title || '').toLowerCase();
+        if (/(낙찰률|진행도|비율|rate|percent|r2)/i.test(normalizedTitle)) {
+            return '%';
+        }
+        if (/(시간|소요|duration|분)/i.test(normalizedTitle)) {
+            return '분';
+        }
+        if (/(금액|가격|예산|amount|price|원)/i.test(normalizedTitle)) {
+            return '원';
+        }
+        if (/(건수|현황|공고|문서|결과|count|rows)/i.test(normalizedTitle)) {
+            return '건';
+        }
+        return '';
+    }
+
+    function inferXAxisLabel(labels, chartType, explicitLabel = '') {
+        const label = String(explicitLabel || '').trim();
+        if (label) {
+            return label;
+        }
+        const looksLikePeriod = labels.some((item) => /^\d{4}[-./]\d{1,2}/.test(String(item || '')));
+        if (chartType === 'line' || looksLikePeriod) {
+            return '기간';
+        }
+        return '항목';
+    }
+
+    function inferYAxisLabel(title, unit, explicitLabel = '') {
+        const label = String(explicitLabel || '').trim();
+        if (label) {
+            return label;
+        }
+        const normalizedTitle = String(title || '').trim();
+        let metric = '값';
+        if (/낙찰률|rate/i.test(normalizedTitle)) {
+            metric = '낙찰률';
+        } else if (/진행도/i.test(normalizedTitle)) {
+            metric = '진행도';
+        } else if (/시간|소요|duration/i.test(normalizedTitle)) {
+            metric = '소요 시간';
+        } else if (/금액|가격|예산|amount|price/i.test(normalizedTitle)) {
+            metric = '금액';
+        } else if (/문서/i.test(normalizedTitle)) {
+            metric = '문서 수';
+        } else if (/건수|현황|공고|결과|count|rows/i.test(normalizedTitle)) {
+            metric = '건수';
+        }
+        return unit ? `${metric} (${unit})` : metric;
+    }
+
+    function formatChartValueWithUnit(value, unit) {
+        const formattedValue = formatChartValue(value);
+        return unit ? `${formattedValue}${unit}` : formattedValue;
+    }
+
+    function resizeChartCard($card, scale) {
+        const currentWidth = $card.outerWidth();
+        const currentHeight = $card.outerHeight();
+        const maxWidth = Math.min(1280, Math.max(340, $(window).width() - 48));
+        const nextWidth = Math.max(340, Math.min(Math.round(currentWidth * scale), maxWidth));
+        const nextHeight = Math.max(340, Math.min(Math.round(currentHeight * scale), 760));
+        $card.css({ width: `${nextWidth}px`, height: `${nextHeight}px` });
+        const chart = $card.find('.chat-chart').data('chartInstance');
+        if (chart && typeof chart.resize === 'function') {
+            window.requestAnimationFrame(() => chart.resize());
+        }
+    }
+
+    function resetChartCard($card) {
+        $card.css({
+            width: '',
+            height: '',
+        });
+        const chart = $card.find('.chat-chart').data('chartInstance');
+        if (chart && typeof chart.resize === 'function') {
+            window.requestAnimationFrame(() => chart.resize());
+        }
+    }
+
+    function setChartExpanded($card, expanded) {
+        $('.chat-chart-card.is-expanded').not($card).each(function() {
+            setChartExpanded($(this), false);
+        });
+        $card.toggleClass('is-expanded', expanded);
+        $('body').toggleClass('chart-expanded-open', expanded);
+        const $button = $card.find('.chart-zoom-expand');
+        $button.toggleClass('is-active', expanded);
+        $button.attr('title', expanded ? '확대 닫기' : '화면 확대');
+        $button.text(expanded ? '×' : '⛶');
+        const chart = $card.find('.chat-chart').data('chartInstance');
+        if (chart && typeof chart.resize === 'function') {
+            window.requestAnimationFrame(() => chart.resize());
+        }
+    }
+
+    function observeChartResize($card, chart) {
+        if (!window.ResizeObserver || !chart || $card.data('resizeObserved')) {
+            return;
+        }
+        const observer = new ResizeObserver(() => {
+            window.requestAnimationFrame(() => chart.resize());
+        });
+        observer.observe($card[0]);
+        $card.data('resizeObserved', true);
+        $card.data('resizeObserver', observer);
+    }
+
+    function buildChartShell($canvas, title, values) {
+        const maxValue = values.length ? Math.max(...values) : 0;
+        const unit = inferChartUnit(title, $canvas.attr('data-unit'));
+        const summary = values.length ? formatChartValueWithUnit(maxValue, unit) : '-';
+        $canvas.wrap('<div class="chat-chart-card mt-6 mb-2"></div>');
+        const $card = $canvas.closest('.chat-chart-card');
+        $card.prepend(`
+            <div class="chat-chart-header">
+                <div class="min-w-0">
+                    <p class="chat-chart-eyebrow">BIDBOX ANALYTICS</p>
+                    <p class="chat-chart-title">${escapeHtml(title)}</p>
+                </div>
+                <div class="chat-chart-header-actions">
+                    <div class="chat-chart-controls" aria-label="차트 크기 조절">
+                        <button type="button" class="chat-chart-control-btn chart-zoom-out" title="축소">-</button>
+                        <button type="button" class="chat-chart-control-btn chart-zoom-in" title="확대">+</button>
+                        <button type="button" class="chat-chart-control-btn chart-zoom-reset" title="크기 초기화">↺</button>
+                        <button type="button" class="chat-chart-control-btn chart-zoom-expand" title="화면 확대">⛶</button>
+                    </div>
+                    <div class="chat-chart-summary">
+                        <p class="chat-chart-summary-label">MAX</p>
+                        <p class="chat-chart-summary-value">${escapeHtml(summary)}</p>
+                    </div>
+                </div>
+            </div>
+        `);
+        $card.find('.chart-zoom-out').on('click', () => resizeChartCard($card, 0.86));
+        $card.find('.chart-zoom-in').on('click', () => resizeChartCard($card, 1.16));
+        $card.find('.chart-zoom-reset').on('click', () => resetChartCard($card));
+        $card.find('.chart-zoom-expand').on('click', () => setChartExpanded($card, !$card.hasClass('is-expanded')));
+        $canvas.wrap('<div class="chat-chart-body"></div>');
+    }
+
+    const CHAT_CHART_BAR_PALETTE = [
+        { top: '#2563EB', mid: '#38BDF8', bottom: '#BAE6FD', border: '#1D4ED8' },
+        { top: '#059669', mid: '#34D399', bottom: '#BBF7D0', border: '#047857' },
+        { top: '#D97706', mid: '#FBBF24', bottom: '#FEF3C7', border: '#B45309' },
+        { top: '#7C3AED', mid: '#A78BFA', bottom: '#DDD6FE', border: '#6D28D9' },
+        { top: '#E11D48', mid: '#FB7185', bottom: '#FFE4E6', border: '#BE123C' },
+        { top: '#0F766E', mid: '#2DD4BF', bottom: '#CCFBF1', border: '#0F766E' },
+        { top: '#4F46E5', mid: '#818CF8', bottom: '#E0E7FF', border: '#4338CA' },
+        { top: '#475569', mid: '#94A3B8', bottom: '#E2E8F0', border: '#334155' },
+    ];
+
+    function hexToRgba(hex, alpha = 1) {
+        const normalized = String(hex || '').replace('#', '');
+        if (normalized.length !== 6) {
+            return `rgba(37, 99, 235, ${alpha})`;
+        }
+        const value = parseInt(normalized, 16);
+        const red = (value >> 16) & 255;
+        const green = (value >> 8) & 255;
+        const blue = value & 255;
+        return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+    }
+
+    function getBarPaletteColor(index) {
+        return CHAT_CHART_BAR_PALETTE[index % CHAT_CHART_BAR_PALETTE.length];
+    }
+
+    function createBarGradient(ctx, area, index) {
+        const color = getBarPaletteColor(index);
+        const gradient = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        gradient.addColorStop(0, hexToRgba(color.top, 0.94));
+        gradient.addColorStop(0.58, hexToRgba(color.mid, 0.76));
+        gradient.addColorStop(1, hexToRgba(color.bottom, 0.72));
+        return gradient;
+    }
+
+    function createChartGradient(ctx, area, type) {
+        const gradient = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        if (type === 'line') {
+            gradient.addColorStop(0, 'rgba(0, 115, 230, 0.20)');
+            gradient.addColorStop(1, 'rgba(0, 115, 230, 0.02)');
+            return gradient;
+        }
+        gradient.addColorStop(0, 'rgba(37, 99, 235, 0.92)');
+        gradient.addColorStop(0.55, 'rgba(14, 165, 233, 0.72)');
+        gradient.addColorStop(1, 'rgba(125, 211, 252, 0.62)');
+        return gradient;
+    }
+
+    const chatChartValueLabelPlugin = {
+        id: 'chatChartValueLabel',
+        afterDatasetsDraw(chart) {
+            const dataset = chart.data.datasets[0];
+            if (!dataset || chart.config.type === 'line') {
+                return;
+            }
+            const unit = chart.options.chatChartUnit || '';
+            const meta = chart.getDatasetMeta(0);
+            const { ctx } = chart;
+            ctx.save();
+            ctx.font = '700 11px Inter, system-ui, sans-serif';
+            ctx.fillStyle = '#334155';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            meta.data.forEach((bar, index) => {
+                const y = Math.max(bar.y - 7, chart.chartArea.top + 14);
+                ctx.fillText(formatChartValueWithUnit(dataset.data[index], unit), bar.x, y);
+            });
+            ctx.restore();
+        }
+    };
+
+    function renderCharts() {
+        $('.chat-chart').each(function() {
+            if (!$(this).data('rendered')) {
+                $(this).data('rendered', true);
+                const ctx = this.getContext('2d');
+                const requestedType = $(this).attr('data-type') || 'bar';
+                const rawLabels = parseChartArray($(this).attr('data-labels'));
+                const rawValues = parseChartArray($(this).attr('data-values'));
+                const series = normalizeChartSeries(rawLabels, rawValues);
+                const labels = series.map((item) => item.label);
+                const values = series.map((item) => item.value);
+                const type = requestedType === 'line' && values.length < 2 ? 'bar' : requestedType;
+                const title = $(this).attr('data-title') || 'Data Analysis';
+                const unit = inferChartUnit(title, $(this).attr('data-unit'));
+                const xAxisLabel = inferXAxisLabel(labels, type, $(this).attr('data-x-label'));
+                const yAxisLabel = inferYAxisLabel(title, unit, $(this).attr('data-y-label'));
+
+                buildChartShell($(this), title, values);
+
+                if (!values.length) {
+                    $(this).replaceWith(`
+                        <div class="chart-empty-state rounded-lg px-4 py-5 text-center text-xs font-bold">
+                            차트로 표시할 수 있는 숫자 데이터가 충분하지 않습니다.
+                        </div>
+                    `);
+                    return;
+                }
+
+                const minValue = Math.min(...values);
+                const maxValue = Math.max(...values);
+                const padding = minValue === maxValue ? Math.max(Math.abs(minValue) * 0.05, 1) : 0;
+
+                const chart = new Chart(ctx, {
+                    type: type,
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: title,
+                            data: values,
+                            backgroundColor: (chartContext) => {
+                                const area = chartContext.chart.chartArea;
+                                if (!area) {
+                                    return type === 'line' ? 'rgba(0, 115, 230, 0.12)' : 'rgba(37, 99, 235, 0.78)';
+                                }
+                                if (type === 'bar') {
+                                    return createBarGradient(chartContext.chart.ctx, area, chartContext.dataIndex || 0);
+                                }
+                                return createChartGradient(chartContext.chart.ctx, area, type);
+                            },
+                            borderColor: (chartContext) => {
+                                if (type === 'line') {
+                                    return '#2563EB';
+                                }
+                                return getBarPaletteColor(chartContext.dataIndex || 0).border;
+                            },
+                            hoverBackgroundColor: (chartContext) => {
+                                if (type === 'line') {
+                                    return 'rgba(37, 99, 235, 0.18)';
+                                }
+                                const color = getBarPaletteColor(chartContext.dataIndex || 0);
+                                return hexToRgba(color.top, 0.88);
+                            },
+                            hoverBorderColor: (chartContext) => {
+                                if (type === 'line') {
+                                    return '#1D4ED8';
+                                }
+                                return getBarPaletteColor(chartContext.dataIndex || 0).border;
+                            },
+                            borderWidth: type === 'line' ? 3 : 1,
+                            borderRadius: type === 'bar' ? 8 : 0,
+                            borderSkipped: false,
+                            maxBarThickness: 72,
+                            categoryPercentage: 0.68,
+                            barPercentage: 0.82,
+                            tension: type === 'line' ? 0.35 : 0,
+                            pointRadius: type === 'line' ? 4 : 0,
+                            pointHoverRadius: type === 'line' ? 6 : 0,
+                            pointBackgroundColor: '#FFFFFF',
+                            pointBorderColor: '#2563EB',
+                            pointBorderWidth: type === 'line' ? 2.5 : 0,
+                            fill: type === 'line',
+                            spanGaps: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        chatChartUnit: unit,
+                        layout: {
+                            padding: { top: type === 'bar' ? 18 : 8, right: 6, bottom: 0, left: 0 }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            title: { display: false },
+                            tooltip: {
+                                enabled: true,
+                                backgroundColor: 'rgba(15, 23, 42, 0.94)',
+                                borderColor: 'rgba(148, 163, 184, 0.35)',
+                                borderWidth: 1,
+                                cornerRadius: 10,
+                                displayColors: false,
+                                padding: 12,
+                                titleColor: '#F8FAFC',
+                                bodyColor: '#DBEAFE',
+                                titleFont: { size: 12, weight: '800' },
+                                bodyFont: { size: 12, weight: '700' },
+                                callbacks: {
+                                    title: (items) => items[0]?.label || '',
+                                    label: (item) => `${title}: ${formatChartValueWithUnit(item.parsed.y, unit)}`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: type !== 'line',
+                                suggestedMin: padding ? minValue - padding : undefined,
+                                suggestedMax: padding ? maxValue + padding : undefined,
+                                grace: '12%',
+                                border: { display: false },
+                                grid: {
+                                    color: 'rgba(148, 163, 184, 0.16)',
+                                    drawTicks: false
+                                },
+                                ticks: {
+                                    color: '#64748B',
+                                    font: { size: 10, weight: '700' },
+                                    padding: 8,
+                                    callback: (value) => formatChartValueWithUnit(value, unit)
+                                },
+                                title: {
+                                    display: true,
+                                    text: yAxisLabel,
+                                    color: '#334155',
+                                    font: { size: 11, weight: '800' },
+                                    padding: { top: 0, bottom: 8 }
+                                }
+                            },
+                            x: {
+                                border: { display: false },
+                                grid: { display: false },
+                                ticks: {
+                                    color: '#475569',
+                                    font: { size: 10, weight: '700' },
+                                    maxRotation: 0,
+                                    minRotation: 0,
+                                    padding: 8,
+                                    callback: function(value) {
+                                        return compactChartLabel(this.getLabelForValue(value), labels.length > 4 ? 9 : 14);
+                                    }
+                                },
+                                title: {
+                                    display: true,
+                                    text: xAxisLabel,
+                                    color: '#334155',
+                                    font: { size: 11, weight: '800' },
+                                    padding: { top: 10, bottom: 0 }
+                                }
+                            }
+                        },
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        }
+                    },
+                    plugins: [chatChartValueLabelPlugin]
+                });
+                $(this).data('chartInstance', chart);
+                observeChartResize($(this).closest('.chat-chart-card'), chart);
+            }
+        });
+    }
+
+    $(document).on('keydown', function(event) {
+        if (event.key === 'Escape') {
+            const $expandedChart = $('.chat-chart-card.is-expanded').first();
+            if ($expandedChart.length) {
+                setChartExpanded($expandedChart, false);
+            }
+        }
+    });
+
+    function appendVisualizations(visualizations) {
+        if (!Array.isArray(visualizations)) {
+            return;
+        }
+        visualizations.forEach((visualization) => {
+            if (visualization.type === 'chart') {
+                appendMessage('bot', buildChartCanvas(visualization), null, null, { scrollMode: 'none' });
+            }
+        });
+    }
+
+    function handleBotPayload(data) {
+        const answerText = data.answer || data.message || '응답을 받지 못했습니다.';
+
+        if (data.mode === 'confirmation' && data.job) {
+            appendMessage(
+                'bot',
+                answerText,
+                data.provenance,
+                data.advisory_signals,
+                { extraHtml: buildAutomationCard(data.job, { confirmationToken: data.confirmation_token }) }
+            );
+            return;
+        }
+
+        if ((data.mode === 'action' || data.mode === 'progress') && data.job) {
+            appendMessage(
+                'bot',
+                answerText,
+                data.provenance,
+                data.advisory_signals,
+                { extraHtml: buildAutomationCard(data.job, { live: true }) }
+            );
+            startJobPolling(data.job);
+            return;
+        }
+
+        if ((data.mode === 'result' || data.mode === 'error') && data.job) {
+            stopJobPolling(data.job.job_id);
+            appendMessage(
+                'bot',
+                answerText,
+                data.provenance,
+                data.advisory_signals,
+                { extraHtml: buildAutomationCard(data.job) }
+            );
+            appendVisualizations(data.visualizations);
+            return;
+        }
+
+        appendMessage('bot', answerText, data.provenance, data.advisory_signals);
+        appendVisualizations(data.visualizations);
+    }
+
+    function startJobPolling(job) {
+        if (!job || !job.job_id) {
+            return;
+        }
+        if (job.status === 'success' || job.status === 'failed' || job.status === 'canceled' || job.status === 'pending_confirmation') {
+            return;
+        }
+
+        const pollDelay = resolvePollDelay(Number(job.poll_after_ms) || 5000);
+        const pollUrl = buildEndpointUrl(CONFIG.statusUrlTemplate, job.job_id);
+
+        const poll = function() {
+            $.ajax({
+                url: pollUrl,
+                method: 'GET',
+                success: function(data) {
+                    if (data.status !== 'success') {
+                        scheduleJobPolling(job.job_id, poll, resolvePollDelay(pollDelay));
+                        return;
+                    }
+
+                    if (data.mode === 'result' || data.mode === 'error') {
+                        handleBotPayload(data);
+                        return;
+                    }
+
+                    const nextDelay = resolvePollDelay(Number((data.job || {}).poll_after_ms) || pollDelay);
+                    scheduleJobPolling(job.job_id, poll, nextDelay);
+                },
+                error: function() {
+                    scheduleJobPolling(job.job_id, poll, resolvePollDelay(pollDelay));
+                }
+            });
+        };
+
+        scheduleJobPolling(job.job_id, poll, pollDelay);
+    }
+
+    window.addEventListener('bidbox:settings-changed', function(event) {
+        const nextDelay = Number((event.detail || {}).pollIntervalMs);
+        if (!Number.isFinite(nextDelay) || nextDelay <= 0) {
+            return;
+        }
+
+        jobPollers.forEach(function(entry, jobId) {
+            if (!entry || typeof entry.pollFn !== 'function') {
+                return;
+            }
+            window.clearTimeout(entry.timer);
+            jobPollers.set(jobId, {
+                timer: window.setTimeout(entry.pollFn, nextDelay),
+                pollFn: entry.pollFn,
+            });
+        });
+    });
+
+    function sendMessage() {
+        const message = input.val().trim();
+        if (!message) return;
+        if (activeChatRequest) return;
+
+        appendMessage('user', message);
+        input.val('');
+        requestStoppedByUser = false;
+        setRequestBusy(true);
+
+        const loadingId = 'loading-' + Date.now();
+        activeLoadingId = loadingId;
+        chatContainer.append(`
+            <div id="${loadingId}" class="flex justify-start animate-in fade-in duration-300">
+                <div class="flex items-start gap-4">
+                    <div class="w-9 h-9 rounded bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                        <span class="loading loading-spinner loading-xs"></span>
+                    </div>
+                    <div class="px-5 py-4 bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 rounded-xl shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xs font-bold text-slate-500 tracking-widest">AI가 요청을 분석 중입니다</span>
+                            <div class="flex gap-1">
+                                <div class="typing-dot"></div>
+                                <div class="typing-dot"></div>
+                                <div class="typing-dot"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+        scrollChatToBottom();
+
+        activeChatRequest = $.ajax({
+            url: CONFIG.chatUrl,
+            method: 'POST',
+            data: { csrfmiddlewaretoken: CONFIG.csrfToken, message: message },
+            success: function(data) {
+                $(`#${loadingId}`).remove();
+                activeChatRequest = null;
+                activeLoadingId = '';
+                setRequestBusy(false);
+                if (data.status === 'success') {
+                    handleBotPayload(data);
+                } else {
+                    appendMessage('bot', '분석 처리 중 오류가 발생했습니다: ' + (data.message || '알 수 없는 오류'));
+                }
+            },
+            error: function(_xhr, textStatus) {
+                $(`#${loadingId}`).remove();
+                activeChatRequest = null;
+                activeLoadingId = '';
+                setRequestBusy(false);
+                if (textStatus === 'abort' && requestStoppedByUser) {
+                    requestStoppedByUser = false;
+                    return;
+                }
+                appendMessage('bot', '서버 통신 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+            }
+        });
+    }
+
+    btnSend.click(sendMessage);
+    btnStop.click(stopActiveChatRequest);
+    input.keypress(function(e) { if (e.which === 13) sendMessage(); });
+    $('.quick-btn').click(function() {
+        input.val($(this).text().trim());
+        sendMessage();
+    });
+
+    $('#btn-new-chat').click(function() {
+        const button = $(this);
+        button.prop('disabled', true).addClass('opacity-70');
+
+        $.ajax({
+            url: CONFIG.newSessionUrl,
+            method: 'POST',
+            data: { csrfmiddlewaretoken: CONFIG.csrfToken },
+            success: function(data) {
+                if (data.status === 'success') {
+                    location.href = '{{ url('chatbot:chat_page') }}';
+                    return;
+                }
+                button.prop('disabled', false).removeClass('opacity-70');
+                appendMessage('bot', '새 분석 세션을 시작하지 못했습니다: ' + (data.message || '알 수 없는 오류'));
+            },
+            error: function() {
+                button.prop('disabled', false).removeClass('opacity-70');
+                appendMessage('bot', '새 분석 세션을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            }
+        });
+    });
+
+    $('.session-item-li').click(function() {
+        const item = $(this);
+        const sessionKey = item.data('session-key');
+
+        if (!sessionKey) {
+            return;
+        }
+
+        $('.session-item-li').removeClass('active');
+        item.addClass('active');
+
+        clearConversation();
+        toggleWelcome(false);
+        chatContainer.append(`
+            <div class="flex h-full min-h-[240px] items-center justify-center">
+                <div class="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-center shadow-sm">
+                    <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                        <span class="loading loading-spinner loading-sm"></span>
+                    </div>
+                    <p class="mt-4 text-sm font-bold tracking-tight text-slate-900">세션 기록을 불러오는 중입니다</p>
+                    <p class="mt-2 text-xs text-slate-500">최근 대화와 시각화 결과를 복원합니다.</p>
+                </div>
+            </div>
+        `);
+
+        $.ajax({
+            url: CONFIG.chatUrl,
+            method: 'POST',
+            data: {
+                csrfmiddlewaretoken: CONFIG.csrfToken,
+                session_key: sessionKey
+            },
+            success: function(data) {
+                clearConversation();
+
+                if (data.status !== 'success') {
+                    appendMessage('bot', '세션 전환에 실패했습니다: ' + (data.message || '알 수 없는 오류'));
+                    return;
+                }
+
+                if (Array.isArray(data.history) && data.history.length > 0) {
+                    data.history.forEach((item) => {
+                        appendMessage(item.role === 'user' ? 'user' : 'bot', item.text || '');
+                    });
+                    appendVisualizations(data.visualizations);
+                    return;
+                }
+
+                if (data.last_query || data.answer) {
+                    if (data.last_query) {
+                        appendMessage('user', data.last_query);
+                    }
+                    if (data.answer) {
+                        appendMessage('bot', data.answer);
+                    }
+                    appendVisualizations(data.visualizations);
+                    return;
+                }
+
+                toggleWelcome(true);
+            },
+            error: function() {
+                clearConversation();
+                appendMessage('bot', '세션 기록을 가져오지 못했습니다. 다시 시도해 주세요.');
+            }
+        });
+    });
+
+    $(document).on('click', '.confirm-automation-btn', function() {
+        const button = $(this);
+        const jobId = button.data('job-id');
+        const confirmationToken = button.data('confirmation-token');
+
+        button.prop('disabled', true).addClass('opacity-70').text('승인 처리 중...');
+
+        $.ajax({
+            url: buildEndpointUrl(CONFIG.confirmUrlTemplate, jobId),
+            method: 'POST',
+            data: {
+                csrfmiddlewaretoken: CONFIG.csrfToken,
+                confirmation_token: confirmationToken
+            },
+            success: function(data) {
+                button.closest('.automation-card').fadeOut(150, function() {
+                    $(this).remove();
+                });
+                if (data.status === 'success') {
+                    handleBotPayload(data);
+                } else {
+                    appendMessage('bot', '승인 요청 처리에 실패했습니다: ' + (data.message || '알 수 없는 오류'));
+                }
+            },
+            error: function() {
+                button.prop('disabled', false).removeClass('opacity-70').text('승인 후 실행');
+                appendMessage('bot', '승인 요청 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+            }
+        });
+    });
+
+    $(document).on('click', '.cancel-automation-btn', function() {
+        const button = $(this);
+        const jobId = button.data('job-id');
+        if (!jobId) {
+            return;
+        }
+
+        button.prop('disabled', true).addClass('opacity-70').text('중지 중...');
+        stopJobPolling(jobId);
+
+        $.ajax({
+            url: buildEndpointUrl(CONFIG.cancelUrlTemplate, jobId),
+            method: 'POST',
+            data: { csrfmiddlewaretoken: CONFIG.csrfToken },
+            success: function(data) {
+                button.closest('.automation-card').fadeOut(150, function() {
+                    $(this).remove();
+                });
+                if (data.status === 'success') {
+                    handleBotPayload(data);
+                    return;
+                }
+                appendMessage('bot', '실행 중지 요청에 실패했습니다: ' + (data.message || '알 수 없는 오류'));
+            },
+            error: function() {
+                button.prop('disabled', false).removeClass('opacity-70').text('실행 중지');
+                appendMessage('bot', '실행 중지 요청 중 오류가 발생했습니다. 실행 콘솔에서 상태를 확인해 주세요.');
+            }
+        });
+    });
+
+    // Automatically load the active session history on page load
+    const activeSessionItem = $('.session-item-li.active');
+    if (activeSessionItem.length > 0) {
+        activeSessionItem.click();
+    }
+});
+</script>
+{% endblock %}

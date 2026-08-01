@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+
+{% block title %}공고 탐색 - BIDBOX Intelligence{% endblock %}
+
+{% block extra_head %}
+<style>
+    .bid-row:hover .bid-title { color: var(--h-primary); }
+    .search-input:focus { border-color: var(--h-primary); box-shadow: 0 0 0 1px var(--h-primary); }
+    .pagination-btn { transition: all 0.2s ease; }
+    .pagination-btn:hover:not(.active) { border-color: var(--h-primary); color: var(--h-primary); }
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.125rem 0.5rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .badge-gray { background-color: #F3F4F6; color: #374151; }
+    .badge-red { background-color: #FEE2E2; color: #B91C1C; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white min-h-screen">
+    <div class="h-page-header">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">공고 탐색</h1>
+                <p class="text-sm text-slate-500 mt-1">실시간 G2B 입찰 공고와 상세 분석 데이터를 조회합니다.</p>
+            </div>
+
+            <form method="GET" class="flex flex-wrap items-center gap-2">
+                <div class="relative group">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                    <input
+                        type="text"
+                        name="q"
+                        value="{{ q }}"
+                        placeholder="공고명 또는 번호 검색"
+                        class="search-input w-64 bg-white border border-slate-200 rounded-md pl-9 pr-3 py-2 text-sm outline-none transition-all"
+                    >
+                </div>
+                <select name="cat" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-none cursor-pointer">
+                    <option value="">전체 분야</option>
+                    <option value="Thng" {% if cat == 'Thng' %}selected{% endif %}>물품</option>
+                    <option value="Cnstwk" {% if cat == 'Cnstwk' %}selected{% endif %}>건설</option>
+                    <option value="Servc" {% if cat == 'Servc' %}selected{% endif %}>용역</option>
+                    <option value="Frgcpt" {% if cat == 'Frgcpt' %}selected{% endif %}>외자</option>
+                </select>
+                <select name="sort" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-none cursor-pointer">
+                    <option value="notice" {% if sort == 'notice' %}selected{% endif %}>공고일</option>
+                    <option value="deadline" {% if sort == 'deadline' %}selected{% endif %}>마감일</option>
+                    <option value="amount" {% if sort == 'amount' %}selected{% endif %}>금액별</option>
+                    <option value="region" {% if sort == 'region' %}selected{% endif %}>지역별</option>
+                </select>
+                <select name="region" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-none cursor-pointer">
+                    <option value="">전체 지역</option>
+                    {% for group in region_groups %}
+                    <optgroup label="{{ group.label }}">
+                        {% for item in group['items'] %}
+                        <option value="{{ item.code }}" {% if region == item.code %}selected{% endif %}>{{ item.label }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="h-btn h-btn-primary py-2 px-4">검색</button>
+                <a href="{{ url('bids:result_list') }}" class="h-btn h-btn-secondary py-2 px-4">
+                    <i class="fas fa-trophy mr-2 text-[12px]"></i>
+                    낙찰 결과
+                </a>
+            </form>
+        </div>
+    </div>
+
+    <div class="h-content-padding">
+        <div class="h-card">
+            <div class="overflow-x-auto">
+                <table class="h-table">
+                    <thead>
+                        <tr>
+                            <th class="w-24">분류</th>
+                            <th>공고 정보</th>
+                            <th>수요기관</th>
+                            <th>기초금액</th>
+                            <th>공고일시</th>
+                            <th class="text-right">마감일정</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for bid in bids %}
+                        <tr class="bid-row cursor-pointer" data-url="{{ url('bids:bid_detail', bid.id) }}" onclick="location.href=this.dataset.url;">
+                            <td>
+                                <span class="badge badge-gray">{{ bid.category_label }}</span>
+                            </td>
+                            <td class="max-w-md">
+                                <div class="bid-title font-semibold text-slate-900 truncate">
+                                    {{ bid.bid_ntce_nm }}
+                                </div>
+                                <div class="text-[11px] text-slate-400 mt-0.5">
+                                    {{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="flex items-center text-sm text-slate-600">
+                                    <i class="far fa-building mr-2 text-slate-300"></i>
+                                    {{ bid.dminstt_nm|truncatechars(18) }}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="text-sm font-medium text-slate-900">
+                                    {% if bid.has_base_amount %}
+                                    ₩{{ bid.display_base_amount|intcomma }}
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="flex flex-col text-sm">
+                                    <span class="text-[11px] text-slate-400 mb-1">공고</span>
+                                    <span class="font-semibold text-slate-700">{{ bid.bid_ntce_dt|date("Y.m.d H:i")|default("-", true) }}</span>
+                                </div>
+                            </td>
+                            <td class="text-right">
+                                <div class="flex flex-col items-end">
+                                    <span class="text-[11px] text-slate-400 mb-1">마감</span>
+                                    <span class="badge badge-red text-[10px]">
+                                        {{ bid.bid_clse_dt|date("m.d H:i") }}
+                                    </span>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="py-20 text-center">
+                                <div class="flex flex-col items-center">
+                                    <div class="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mb-4">
+                                        <i class="fas fa-search text-slate-200"></i>
+                                    </div>
+                                    <p class="text-slate-900 font-semibold">검색 결과가 없습니다</p>
+                                    <p class="text-slate-500 text-sm">다른 키워드나 조건으로 다시 검색해 보세요.</p>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if is_paginated %}
+            <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
+                <div class="text-xs text-slate-500">
+                    {% if page_obj.start_index %}
+                    {{ page_obj.start_index }}-{{ page_obj.end_index }}건 표시
+                    {% else %}
+                    표시할 공고가 없습니다
+                    {% endif %}
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                        이전
+                    </a>
+                    {% endif %}
+
+                    <span class="h-8 px-3 flex items-center justify-center rounded bg-primary text-white text-xs font-bold">
+                        {{ page_obj.number }} 페이지
+                    </span>
+
+                    {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                        다음
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

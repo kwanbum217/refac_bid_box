@@ -138,7 +138,7 @@ python scripts/verify_migration.py   # 행 수 기준선 대조 포함
 | --- | --- | --- | --- |
 | 1 | 원본 테스트 스위트 이식 | 약 3,000줄 | **대부분 완료**: 112 passed / 1 skipped. PlannerTests 19, InterpretationLayer 5, AdvisoryEngine 3, StepExecutor 3, ResultPresenter 2, RAG 순수/DB 6, Automation API 7 이식. ChatAutomationApiTests 챗봇 통합(16) 잔존 |
 | 2 | `final_inspect` 상세 점검 | 295줄 | **완료**: 최신 타임스탬프, stale_hours 경고, DB 무결성(db_table_count), ChromaDB 벡터 수(vector_count) 점검 추가 |
-| 3 | Jinja2 템플릿 12종 | — | 담당자와 후순위 합의됨 |
+| 3 | Jinja2 템플릿 12종 | 5,370줄 | **완료**: 원본 12종 전량 이식, SSR 라우트 14개, 회귀 테스트 30개. 상세는 [`design/FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md) |
 | 4 | G2B 백필 완주 확인 | — | **완료**: bid_announcements 1,785,456행(105.1%), bid_results 3,002,254행(100.2%), 최신 수집 2026-07-31 |
 
 `load_big_data`, `migrate_legacy_data`, `update_rag_kb` 는 각각 parquet 복원 스크립트와

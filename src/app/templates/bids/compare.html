@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+
+{% block title %}BIDBOX 비교 분석 - 입찰공고 vs 낙찰{% endblock %}
+
+{% block extra_head %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .stat-card { transition: all 0.2s ease-in-out; }
+    .stat-card:hover { transform: translateY(-2px); border-color: var(--h-primary); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-[#F9FAFB]">
+    <div class="max-w-[1600px] mx-auto px-6 lg:px-10 py-10 space-y-8 animate-in fade-in duration-500">
+
+        <!-- Header Section -->
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+            <div class="flex items-center space-x-6">
+                <div class="w-14 h-14 rounded-xl bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">
+                    <i class="fas fa-exchange-alt text-xl"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2 mb-1">
+                        <span class="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider rounded">Analysis</span>
+                        <span class="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Announcement vs Award</span>
+                    </div>
+                    <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">
+                        입찰공고 vs 낙찰 <span class="text-primary">비교 분석</span>
+                    </h1>
+                    <p class="text-slate-500 mt-1 font-medium">공고된 기초금액과 실제 낙찰가의 정밀 매칭 분석 데이터를 제공합니다.</p>
+                </div>
+            </div>
+            <div class="hidden lg:flex items-center space-x-3 px-4 py-2 bg-white rounded-lg border border-slate-200 shadow-sm">
+                <div class="flex -space-x-2">
+                    <div class="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[8px] font-bold text-slate-400">DB</div>
+                    <div class="w-8 h-8 rounded-full border-2 border-white bg-primary/10 flex items-center justify-center text-[8px] font-bold text-primary">AI</div>
+                </div>
+                <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider ml-1">Hybrid Data Match</span>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            <div class="h-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm group">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100 group-hover:text-primary transition-colors">
+                        <i class="fas fa-bullhorn text-sm"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest">ANNOUNCEMENT</span>
+                </div>
+                <h4 class="text-slate-500 text-xs font-bold mb-1">입찰공고 건수</h4>
+                <p class="text-2xl font-extrabold text-slate-900" id="announceCount">-</p>
+            </div>
+
+            <div class="h-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm group">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100 group-hover:text-primary transition-colors">
+                        <i class="fas fa-calculator text-sm"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest">TOTAL BASE BUDGET</span>
+                </div>
+                <h4 class="text-slate-500 text-xs font-bold mb-1">총 기초금액</h4>
+                <p class="text-2xl font-extrabold text-slate-900" id="announceTotalPrce">-</p>
+            </div>
+
+            <div class="h-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm group">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-500 border border-emerald-100 group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                        <i class="fas fa-trophy text-sm"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">WINNING BIDS</span>
+                </div>
+                <h4 class="text-slate-500 text-xs font-bold mb-1">낙찰 건수</h4>
+                <p class="text-2xl font-extrabold text-slate-900" id="resultCount">-</p>
+            </div>
+
+            <div class="h-card p-6 bg-white border border-slate-200 rounded-xl shadow-sm group">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-500 border border-emerald-100 group-hover:bg-emerald-500 group-hover:text-white transition-all">
+                        <i class="fas fa-won-sign text-sm"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">TOTAL AWARDED</span>
+                </div>
+                <h4 class="text-slate-500 text-xs font-bold mb-1">총 낙찰금액</h4>
+                <p class="text-2xl font-extrabold text-slate-900" id="resultTotalAmt">-</p>
+            </div>
+
+            <div class="h-card p-6 bg-primary border border-primary/20 rounded-xl shadow-lg shadow-primary/20 relative overflow-hidden group">
+                <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
+                <div class="flex items-center justify-between mb-4 relative z-10">
+                    <div class="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center text-white border border-white/30">
+                        <i class="fas fa-link text-sm"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-primary-200 uppercase tracking-widest text-blue-100">MATCH RATE</span>
+                </div>
+                <h4 class="text-blue-100 text-xs font-bold mb-1 relative z-10">데이터 매칭률</h4>
+                <p class="text-2xl font-extrabold text-white relative z-10" id="matchRate">-</p>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div class="h-card p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+                <div class="flex items-center justify-between mb-8">
+                    <h3 class="text-lg font-extrabold text-slate-900 flex items-center tracking-tight">
+                        <span class="w-1 h-5 bg-primary rounded-full mr-3"></span>
+                        월별 공고 vs 낙찰 건수
+                    </h3>
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            <span class="w-2 h-2 bg-slate-300 rounded-full mr-1.5"></span> 공고
+                        </div>
+                        <div class="flex items-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            <span class="w-2 h-2 bg-primary rounded-full mr-1.5"></span> 낙찰
+                        </div>
+                    </div>
+                </div>
+                <div class="h-[350px]">
+                    <canvas id="monthlyCompareChart"></canvas>
+                </div>
+            </div>
+
+            <div class="h-card p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+                <div class="flex items-center justify-between mb-8">
+                    <h3 class="text-lg font-extrabold text-slate-900 flex items-center tracking-tight">
+                        <span class="w-1 h-5 bg-slate-900 rounded-full mr-3"></span>
+                        기관별 기초금액 TOP 10
+                    </h3>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Base Budget (KRW)</span>
+                </div>
+                <div class="h-[350px]">
+                    <canvas id="agencyAnnounceChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Detail Section -->
+        <div class="h-card bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden relative">
+            <div class="absolute top-0 right-0 w-1/3 h-full bg-slate-50/50 -skew-x-12 translate-x-10 pointer-events-none"></div>
+
+            <div class="p-10 flex flex-col lg:flex-row items-center justify-between gap-12 relative z-10">
+                <div class="max-w-2xl space-y-6">
+                    <h3 class="text-2xl font-extrabold text-slate-900 tracking-tight leading-tight">
+                        분석 데이터 <span class="text-primary">신뢰도 가이드</span>
+                    </h3>
+                    <p class="text-slate-600 leading-relaxed font-medium text-sm md:text-base">
+                        본 비교 분석은 공고 번호와 개찰 결과를 고유 식별자로 매칭하여 생성되었습니다.
+                        <span class="text-slate-900 font-bold">기초금액</span>과 <span class="text-slate-900 font-bold">낙찰금액</span>의 격차를 분석함으로써,
+                        투찰 전략 수립 시 객관적인 지표로 활용할 수 있습니다.
+                    </p>
+                    <div class="flex flex-wrap gap-4 pt-2">
+                        <div class="flex items-center space-x-2 text-xs font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                            <i class="fas fa-check-circle text-emerald-500"></i>
+                            <span>최근 1개년도 기준</span>
+                        </div>
+                        <div class="flex items-center space-x-2 text-xs font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                            <i class="fas fa-shield-check text-primary"></i>
+                            <span>정확도 99.8% 매칭</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-xl border border-slate-200 shadow-xl flex flex-col items-center justify-center min-w-[280px] group hover:-translate-y-1 transition-all duration-300">
+                    <div class="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <i class="fas fa-link text-2xl text-primary"></i>
+                    </div>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Matched Samples</p>
+                    <p class="text-4xl font-extrabold text-slate-900 tracking-tighter" id="matchedCount">-</p>
+                    <div class="mt-6 px-4 py-1.5 bg-primary text-white text-[10px] font-extrabold uppercase tracking-widest rounded-lg shadow-lg shadow-primary/20">
+                        Verified Match
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', loadCompareData);
+
+    async function fetchJsonOrThrow(url) {
+        const res = await fetch(url);
+        const rawText = await res.text();
+        let data = null;
+
+        try {
+            data = JSON.parse(rawText);
+        } catch (e) {
+            throw new Error(`HTTP ${res.status}: ${rawText.slice(0, 160)}`);
+        }
+
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${data.message || '요청 처리에 실패했습니다.'}`);
+        }
+
+        return data;
+    }
+
+    async function loadCompareData() {
+        try {
+            const data = await fetchJsonOrThrow('{{ url('bids:api_compare_stats') }}');
+
+            // Stats
+            document.getElementById('announceCount').textContent = (data.announce_count || 0).toLocaleString() + '건';
+            const announceTotalBaseAmount = data.announce_total_base_amount ?? data.announce_total_prce ?? 0;
+            document.getElementById('announceTotalPrce').textContent = formatWon(announceTotalBaseAmount);
+            document.getElementById('resultCount').textContent = (data.result_count || 0).toLocaleString() + '건';
+            document.getElementById('resultTotalAmt').textContent = formatWon(data.result_total_amt);
+            document.getElementById('matchedCount').textContent = (data.matched_count || 0).toLocaleString() + '건';
+
+            const matchRate = data.announce_count > 0 ? ((data.matched_count / data.announce_count) * 100).toFixed(1) : 0;
+            document.getElementById('matchRate').textContent = matchRate + '%';
+
+            // Charts
+            renderCompareCharts(data);
+        } catch (e) {
+            console.error('Compare Data Load Error:', e);
+        }
+    }
+
+    function formatWon(amt) {
+        if (!amt) return '0원';
+        if (amt >= 100000000) return (amt / 100000000).toFixed(1) + '억';
+        if (amt >= 10000) return (amt / 10000).toFixed(0) + '만';
+        return amt.toLocaleString() + '원';
+    }
+
+    function renderCompareCharts(data) {
+        Chart.defaults.font.family = "'Inter', 'Noto Sans KR', sans-serif";
+        Chart.defaults.font.weight = "700";
+        Chart.defaults.color = "#94a3b8";
+
+        const announceByMonth = data.announce_by_month || [];
+        const resultByMonth = data.result_by_month || [];
+        const agencyTop10 = data.agency_announce_top10 || [];
+
+        const allMonths = [...new Set([
+            ...announceByMonth.map(d => d.month),
+            ...resultByMonth.map(d => d.month)
+        ])].sort();
+
+        const announceMap = Object.fromEntries(announceByMonth.map(d => [d.month, d.count]));
+        const resultMap = Object.fromEntries(resultByMonth.map(d => [d.month, d.count]));
+
+        // 1. Monthly Compare Chart
+        const mCtx = document.getElementById('monthlyCompareChart').getContext('2d');
+        new Chart(mCtx, {
+            type: 'bar',
+            data: {
+                labels: allMonths,
+                datasets: [
+                    {
+                        label: '입찰공고',
+                        data: allMonths.map(m => announceMap[m] || 0),
+                        backgroundColor: '#cbd5e1',
+                        borderRadius: 6,
+                        barThickness: 20
+                    },
+                    {
+                        label: '낙찰',
+                        data: allMonths.map(m => resultMap[m] || 0),
+                        backgroundColor: '#0073E6',
+                        borderRadius: 6,
+                        barThickness: 20
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#0f172a',
+                        titleFont: { size: 13 },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    x: { ticks: { font: { size: 10, weight: '600' } }, grid: { display: false } },
+                    y: {
+                        ticks: { font: { size: 10, weight: '600' } },
+                        grid: { color: '#f1f5f9', drawBorder: false },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        // 2. Agency Top 10 Chart
+        const aCtx = document.getElementById('agencyAnnounceChart').getContext('2d');
+        new Chart(aCtx, {
+            type: 'bar',
+            data: {
+                labels: agencyTop10.map(d => d.name.length > 8 ? d.name.slice(0, 8) + '..' : d.name),
+                datasets: [{
+                    label: '기초금액 총액',
+                    data: agencyTop10.map(d => d.total_base_amount ?? d.total_prce ?? 0),
+                    backgroundColor: '#1e293b',
+                    borderRadius: 4,
+                    barThickness: 16
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#0f172a',
+                        callbacks: { label: ctx => ' ' + formatWon(ctx.raw) }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { font: { size: 10, weight: '600' }, callback: v => formatWon(v) },
+                        grid: { color: '#f1f5f9', drawBorder: false }
+                    },
+                    y: {
+                        ticks: { color: '#0f172a', font: { size: 11, weight: '700' } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}
