@@ -17,7 +17,7 @@ import logging
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -48,6 +48,10 @@ STATUS_SUCCESS = "success"
 STATUS_FAILED = "failed"
 STATUS_CANCELED = "canceled"
 TERMINAL_STATUSES = {STATUS_SUCCESS, STATUS_FAILED, STATUS_CANCELED}
+
+# 최근 성공 이력을 재사용할 고비용 작업 (원본 REUSABLE_STAGING_ACTIONS 동일)
+REUSABLE_ACTIONS = {"full_validation"}
+REUSE_MAX_AGE_HOURS = 72
 
 # run_mode -> Arq 태스크 이름
 RUN_MODE_TASKS = {
@@ -527,6 +531,130 @@ def start_automation_request(db: Session, request_obj: AutomationRequest) -> Aut
     return request_obj
 
 
+def _find_reusable_execution(
+    db: Session, *, pipeline_name: str, run_mode: str = ""
+) -> PipelineExecution | None:
+    """원본 _find_local_reusable_pipeline_execution 대응.
+
+    같은 파이프라인의 최근 성공 실행을 찾습니다. run_mode 를 주면 정확히 일치하는
+    건만 봅니다. 신선도 창을 벗어난 이력은 재사용하지 않습니다.
+    """
+    if not pipeline_name or REUSE_MAX_AGE_HOURS <= 0:
+        return None
+
+    stmt = select(PipelineExecution).where(
+        PipelineExecution.pipeline_name == pipeline_name,
+        PipelineExecution.status == STATUS_SUCCESS,
+    )
+    if run_mode:
+        stmt = stmt.where(PipelineExecution.run_mode == run_mode)
+    stmt = stmt.order_by(
+        PipelineExecution.ended_at.desc(),
+        PipelineExecution.started_at.desc(),
+        PipelineExecution.created_at.desc(),
+    ).limit(20)
+
+    cutoff = datetime.utcnow() - timedelta(hours=REUSE_MAX_AGE_HOURS)
+    for execution in db.execute(stmt).scalars().all():
+        reference_time = execution.ended_at or execution.started_at or execution.created_at
+        if reference_time and reference_time >= cutoff:
+            return execution
+    return None
+
+
+def _attach_reused_execution(
+    db: Session,
+    request_obj: AutomationRequest,
+    execution: PipelineExecution,
+    *,
+    requested_run_mode: str,
+    exact_run_mode: bool,
+) -> AutomationRequest:
+    """원본 _attach_reused_pipeline_execution 대응. 새 실행 없이 기존 결과에 연결합니다."""
+    payload = dict(request_obj.payload or {})
+    payload.update(
+        {
+            "reuse_mode": "recent_execution",
+            "reused_execution_id": execution.execution_id,
+            "reused_run_mode": execution.run_mode,
+            "requested_run_mode": requested_run_mode,
+            "reuse_exact_run_mode": exact_run_mode,
+        }
+    )
+    run_mode_label = execution.run_mode or "manual_full"
+    if exact_run_mode:
+        summary = f"최근 성공한 자동화 실행({run_mode_label}) 결과를 재사용했습니다."
+    else:
+        summary = (
+            f"요청한 `{requested_run_mode}` 성공 이력은 최근 범위에 없어 "
+            f"최근 성공한 자동화 실행(`{run_mode_label}`) 결과를 재사용했습니다."
+        )
+
+    request_obj.payload = payload
+    request_obj.plan_execution_id = execution.execution_id
+    request_obj.harness_execution_id = execution.execution_id
+    request_obj.execution_url = execution.external_url or ""
+    request_obj.started_at = execution.started_at or request_obj.started_at or datetime.utcnow()
+    request_obj.completed_at = execution.ended_at or datetime.utcnow()
+    request_obj.status = STATUS_SUCCESS
+    request_obj.result_summary = summary
+    request_obj.result_payload = {
+        "summary": summary,
+        "outline": execution.raw_status_payload or {},
+        "sync_mode": "reused_recent_execution",
+        "reused_execution": {
+            "execution_id": execution.execution_id,
+            "pipeline_name": execution.pipeline_name,
+            "run_mode": execution.run_mode,
+            "requested_run_mode": requested_run_mode,
+            "status": execution.status,
+            "started_at": execution.started_at.isoformat() if execution.started_at else None,
+            "ended_at": execution.ended_at.isoformat() if execution.ended_at else None,
+            "external_url": execution.external_url or "",
+        },
+    }
+    db.commit()
+    db.refresh(request_obj)
+    return request_obj
+
+
+def _try_reuse_recent_execution(
+    db: Session, request_obj: AutomationRequest
+) -> AutomationRequest | None:
+    """고비용 작업은 최근 성공 이력이 있으면 새로 돌리지 않습니다 (원본 동일).
+
+    원본은 Harness 클라우드 이력도 함께 조회했습니다. 이식본은 워커가 로컬이라
+    pipeline_executions 가 유일한 진실 원천이므로 DB 조회만 수행합니다.
+    """
+    if request_obj.action_key not in REUSABLE_ACTIONS or not settings.AUTOMATION_REUSE_RECENT:
+        return None
+
+    action = get_action(request_obj.action_key)
+    requested_run_mode = action.run_mode if action else ""
+    pipeline_name = request_obj.pipeline_name or (action.pipeline_id if action else "")
+    if not pipeline_name:
+        return None
+
+    exact = _find_reusable_execution(
+        db, pipeline_name=pipeline_name, run_mode=requested_run_mode
+    )
+    if exact is not None:
+        return _attach_reused_execution(
+            db, request_obj, exact, requested_run_mode=requested_run_mode, exact_run_mode=True
+        )
+
+    recent = _find_reusable_execution(db, pipeline_name=pipeline_name)
+    if recent is not None:
+        return _attach_reused_execution(
+            db,
+            request_obj,
+            recent,
+            requested_run_mode=requested_run_mode,
+            exact_run_mode=recent.run_mode == requested_run_mode,
+        )
+    return None
+
+
 def confirm_automation_request(db: Session, request_obj: AutomationRequest) -> AutomationRequest:
     if request_obj.confirmed_at:
         return request_obj
@@ -535,6 +663,11 @@ def confirm_automation_request(db: Session, request_obj: AutomationRequest) -> A
     request_obj.result_summary = "실행 확인이 완료되었습니다."
     db.commit()
     db.refresh(request_obj)
+
+    reused = _try_reuse_recent_execution(db, request_obj)
+    if reused is not None:
+        return reused
+
     return start_automation_request(db, request_obj)
 
 
@@ -542,10 +675,20 @@ def cancel_automation_request(db: Session, request_obj: AutomationRequest) -> Au
     if request_obj.status in TERMINAL_STATUSES:
         return request_obj
 
+    execution = _get_pipeline_execution(db, request_obj)
+    running = bool(execution and execution.status in {STATUS_QUEUED, STATUS_RUNNING})
+
+    # 원본은 Harness abort API 를 호출했습니다. 이식본은 같은 자리에서 Arq 작업을
+    # 중단합니다. 확인 대기 등 아직 큐에 들어가지 않은 건은 호출하지 않습니다.
+    arq_job_id = str((execution.raw_status_payload or {}).get("arq_job_id") or "") if execution else ""
+    abort_succeeded = abort_arq_job(arq_job_id) if (running and arq_job_id) else False
+
     payload = dict(request_obj.payload or {})
     payload["canceled_by_user"] = {
         "requested_at": datetime.utcnow().isoformat(),
         "plan_execution_id": request_obj.plan_execution_id,
+        "arq_job_id": arq_job_id,
+        "worker_abort_requested": abort_succeeded,
     }
     request_obj.payload = payload
     request_obj.status = STATUS_CANCELED
@@ -553,12 +696,12 @@ def cancel_automation_request(db: Session, request_obj: AutomationRequest) -> Au
     request_obj.result_summary = "사용자 요청으로 분석 실행을 중지했습니다."
     request_obj.error_message = ""
 
-    execution = _get_pipeline_execution(db, request_obj)
-    if execution and execution.status in {STATUS_QUEUED, STATUS_RUNNING}:
+    if running:
         raw_payload = dict(execution.raw_status_payload or {})
         raw_payload["canceled_by_user"] = payload["canceled_by_user"]
         execution.raw_status_payload = raw_payload
         execution.status = STATUS_FAILED
+        execution.stage_status = STATUS_CANCELED
         execution.ended_at = datetime.utcnow()
         execution.logs_summary = "사용자 요청으로 중지되었습니다."
 
@@ -648,6 +791,8 @@ def enqueue_pipeline_run(
     """Arq 큐에 실행을 등록하고 pipeline_executions 이력을 남깁니다."""
     execution_id = f"{run_mode}-{uuid.uuid4().hex[:12]}"
     task_name = RUN_MODE_TASKS.get(run_mode, "manual_full_task")
+    # 나중에 중지 요청이 오면 이 ID 로 Arq 작업을 붙잡아 abort 합니다.
+    arq_job_id = f"arq-{execution_id}"
 
     execution = None
     if db is not None:
@@ -663,6 +808,7 @@ def enqueue_pipeline_run(
                 "task_name": task_name,
                 "original_query": original_query,
                 "automation_request_id": automation_request_id,
+                "arq_job_id": arq_job_id,
             },
         )
         db.add(execution)
@@ -671,6 +817,7 @@ def enqueue_pipeline_run(
 
     enqueued = _enqueue_arq_job(
         task_name,
+        arq_job_id=arq_job_id,
         execution_id=execution_id,
         action_key=action_key,
         run_mode=run_mode,
@@ -689,6 +836,7 @@ def enqueue_pipeline_run(
 
     return {
         "execution_id": execution_id,
+        "arq_job_id": arq_job_id,
         "pipeline_name": pipeline_name,
         "run_mode": run_mode,
         "task_name": task_name,
@@ -697,30 +845,69 @@ def enqueue_pipeline_run(
     }
 
 
-def _enqueue_arq_job(task_name: str, **kwargs: Any) -> bool:
-    try:
-        import asyncio
-        import concurrent.futures
+def _run_arq_coroutine(factory, timeout: float = 10) -> Any:
+    """이벤트 루프 안팎 어디서 불려도 Arq 코루틴을 안전하게 실행합니다."""
+    import asyncio
+    import concurrent.futures
 
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(factory())
+
+    # 이미 이벤트 루프 안이면 별도 스레드의 루프에서 처리합니다.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, factory()).result(timeout=timeout)
+
+
+def abort_arq_job(arq_job_id: str) -> bool:
+    """실행 중인 Arq 작업에 중단 신호를 보냅니다 (원본 abort_pipeline_execution 대응).
+
+    arq 의 Job.abort() 는 신호를 넣은 뒤 워커의 확인 결과까지 기다립니다. 중지
+    버튼이 워커 응답만큼 멈추게 되므로, 여기서는 대기 없이 신호 전달까지만 합니다.
+    워커는 allow_abort_jobs 설정에 따라 큐에서 집어들 때 이 신호를 확인합니다.
+
+    반환값은 "중단 신호를 전달했는가" 이지 "작업이 실제로 멈췄는가" 가 아닙니다.
+    """
+    if not arq_job_id:
+        return False
+    try:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+        from arq.constants import abort_jobs_ss, default_queue_name
+
+        async def _abort() -> bool:
+            pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+            try:
+                # 예약 실행분은 큐 앞으로 당겨 워커가 곧바로 중단 신호를 보게 합니다.
+                async with pool.pipeline(transaction=True) as tr:
+                    tr.zrem(default_queue_name, arq_job_id)
+                    tr.zadd(default_queue_name, {arq_job_id: 1})
+                    tr.zadd(abort_jobs_ss, {arq_job_id: int(time.time() * 1000)})
+                    await tr.execute()
+                return True
+            finally:
+                await pool.close()
+
+        return bool(_run_arq_coroutine(_abort, timeout=15))
+    except Exception as exc:
+        logger.warning("Arq 작업 중단 신호 전달에 실패했습니다: %s", exc)
+        return False
+
+
+def _enqueue_arq_job(task_name: str, arq_job_id: str = "", **kwargs: Any) -> bool:
+    try:
         from arq import create_pool
         from arq.connections import RedisSettings
 
         async def _push() -> None:
             pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
             try:
-                await pool.enqueue_job(task_name, **kwargs)
+                await pool.enqueue_job(task_name, _job_id=arq_job_id or None, **kwargs)
             finally:
                 await pool.close()
 
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(_push())
-            return True
-
-        # 이미 이벤트 루프 안이면 별도 스레드의 루프에서 처리합니다.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            pool.submit(asyncio.run, _push()).result(timeout=10)
+        _run_arq_coroutine(_push)
         return True
     except Exception as exc:
         logger.warning("Arq 작업 등록 실패 (%s): %s", task_name, exc)

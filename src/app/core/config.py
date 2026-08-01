@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
     SECRET_KEY: str = os.getenv("SECRET_KEY", "default-insecure-secret-key-change-me")
+    # 고비용 자동화는 최근 성공 이력이 있으면 재실행하지 않습니다 (원본 동일 기본값 on).
+    AUTOMATION_REUSE_RECENT: bool = True
 
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"
