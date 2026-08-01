@@ -111,4 +111,32 @@
         </div>
     </div>
 </div>
+
+<script>
+    const loginForm = document.querySelector('form[method="POST"]');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const fd = new FormData(this);
+            try {
+                const resp = await fetch('/api/v1/accounts/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: fd.get('username'),
+                        password: fd.get('password'),
+                    }),
+                });
+                if (resp.ok) {
+                    window.location.href = '/';
+                } else {
+                    const err = await resp.json();
+                    alert(err.detail || '로그인에 실패했습니다.');
+                }
+            } catch (err) {
+                alert('서버 통신 오류가 발생했습니다.');
+            }
+        });
+    }
+</script>
 {% endblock %}
