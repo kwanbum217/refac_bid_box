@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     SECRET_KEY: str = os.getenv("SECRET_KEY", "default-insecure-secret-key-change-me")
     # 고비용 자동화는 최근 성공 이력이 있으면 재실행하지 않습니다 (원본 동일 기본값 on).
     AUTOMATION_REUSE_RECENT: bool = True
+    # 워커가 앱과 같은 DB 를 보는지 여부. 기본 docker-compose 구성은 공유합니다.
+    AUTOMATION_WORKER_SHARES_DB: bool = True
+    # 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소입니다.
+    # 워커가 도달할 수 있는 주소여야 하며, 컨테이너 분리 시 서비스명(http://app:8000)을 씁니다.
+    AUTOMATION_CALLBACK_BASE_URL: str = ""
 
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"

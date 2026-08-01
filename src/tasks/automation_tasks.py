@@ -30,23 +30,58 @@ from src.tasks.run_mode_matrix import get_run_mode_steps
 logger = logging.getLogger(__name__)
 
 
-def _report(db, automation_request_id: str, step: str, status: str, summary: str, metrics: dict, final: bool = False):
+def _post_callback(callback_url: str, callback_token: str, payload: dict) -> bool:
+    """DB 를 공유하지 않는 워커가 API 로 결과를 되돌려 보냅니다."""
+    import httpx
+
+    try:
+        response = httpx.post(
+            callback_url,
+            json=payload,
+            headers={"X-BIDBOX-CALLBACK-TOKEN": callback_token},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return True
+    except Exception as exc:
+        logger.warning("콜백 전송 실패 (%s): %s", callback_url, exc)
+        return False
+
+
+def _report(
+    db,
+    automation_request_id: str,
+    step: str,
+    status: str,
+    summary: str,
+    metrics: dict,
+    final: bool = False,
+    callback_url: str = "",
+    callback_token: str = "",
+):
+    """단계 결과를 요청 레코드로 되돌립니다.
+
+    callback_url 이 있으면 API 로 보냅니다 (워커가 DB 를 공유하지 않는 배포).
+    없거나 전송에 실패하면 같은 페이로드를 DB 에 직접 기록합니다.
+    """
     if not automation_request_id:
         return
+
+    payload = {
+        "step": step,
+        "status": status,
+        "summary": summary,
+        "metrics": metrics,
+        "final": final,
+    }
+
+    if callback_url and _post_callback(callback_url, callback_token, payload):
+        return
+
     request_obj = get_automation_request(db, automation_request_id)
     if request_obj is None:
         return
-    apply_callback_payload(
-        db,
-        request_obj,
-        {
-            "step": step,
-            "status": status,
-            "summary": summary,
-            "metrics": metrics,
-            "final": final,
-        },
-    )
+    apply_callback_payload(db, request_obj, payload)
 
 
 async def _step_collect(db) -> tuple[str, dict[str, Any]]:
@@ -253,8 +288,11 @@ async def run_automation_pipeline(
     run_mode: str = "manual_full",
     original_query: str = "",
     automation_request_id: str = "",
+    callback_url: str = "",
+    callback_token: str = "",
 ) -> dict[str, Any]:
     """run_mode 에 정의된 스텝을 순서대로 실행하고 결과를 누적 보고합니다."""
+    delivery = {"callback_url": callback_url, "callback_token": callback_token}
     db = SessionLocal()
     completed: list[str] = []
     try:
@@ -285,7 +323,7 @@ async def run_automation_pipeline(
             outcome = runner(db, **kwargs)
             summary, metrics = await outcome if inspect.isawaitable(outcome) else outcome
             completed.append(step)
-            _report(db, automation_request_id, step, "success", summary, metrics)
+            _report(db, automation_request_id, step, "success", summary, metrics, **delivery)
 
         final_summary = (
             f"실행 모드 `{run_mode}` 스텝 {len(completed)}개 완료: {', '.join(completed)}"
@@ -300,6 +338,7 @@ async def run_automation_pipeline(
             final_summary,
             {"completed_steps": completed, "run_mode": run_mode},
             final=True,
+            **delivery,
         )
 
         if execution is not None:
@@ -321,6 +360,7 @@ async def run_automation_pipeline(
             f"실행 중 오류가 발생했습니다: {exc}",
             {"completed_steps": completed},
             final=True,
+            **delivery,
         )
         execution = db.execute(
             select(PipelineExecution).where(PipelineExecution.execution_id == execution_id)

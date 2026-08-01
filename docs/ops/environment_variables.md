@@ -68,13 +68,27 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` | 아니오 | Kakao OAuth |
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 아니오 | Naver OAuth |
 
-### 2.8 MLOps / Automation (Harness)
+### 2.8 MLOps / Automation (Arq)
 
-| 변수 | 필수 | 설명 |
-| --- | --- | --- |
-| `HARNESS_ACCOUNT_ID` | 아니오 | Harness 계정 |
-| `HARNESS_API_KEY` | 아니오 | Harness API 키 |
-| `HARNESS_PIPELINE_ID` | 아니오 | Harness 파이프라인 ID |
+원본의 Harness 관련 변수(`HARNESS_ACCOUNT_ID`, `HARNESS_API_KEY`, `HARNESS_PIPELINE_ID`)는 실행 백엔드를 Arq 로 교체하면서 사용하지 않습니다.
+
+| 변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `AUTOMATION_WORKER_SHARES_DB` | 아니오 | `true` | 워커가 앱과 같은 DB 를 보는지 여부. 기본 docker-compose 구성은 공유합니다 |
+| `AUTOMATION_CALLBACK_BASE_URL` | 아니오 | (없음) | 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소 |
+| `AUTOMATION_REUSE_RECENT` | 아니오 | `true` | 고비용 작업(`full_validation`)의 최근 72시간 성공 이력 재사용 |
+
+`AUTOMATION_CALLBACK_BASE_URL` 은 **워커가 도달할 수 있는 주소**여야 합니다. 컨테이너를 분리했다면 `http://app:8000` 처럼 서비스명을 쓰십시오. `http://localhost:8000` 은 워커 컨테이너 자기 자신을 가리키므로 거부됩니다.
+
+결과 수신 경로는 다음과 같이 결정됩니다.
+
+| `AUTOMATION_CALLBACK_BASE_URL` | `AUTOMATION_WORKER_SHARES_DB` | 모드 | 동작 |
+| --- | --- | --- | --- |
+| 없음 | `true` | `direct` | 워커가 DB 에 직접 기록 (기본 구성) |
+| 없음 | `false` | `polling` | 되돌릴 경로 없음, 화면이 상태를 조회 |
+| 정상 주소 | 무관 | `callback` | 워커가 HTTP 로 보고 |
+| 루프백/형식 오류 | `true` | `direct` | 안내 문구와 함께 DB 기록으로 강등 |
+| 루프백/형식 오류 | `false` | `polling` | 안내 문구와 함께 폴링으로 강등 |
 
 ### 2.9 ML / Retraining
 
