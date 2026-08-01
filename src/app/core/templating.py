@@ -34,7 +34,7 @@ URL_MAP = {
     "predictions:predict_price": "/api/v1/predictions/predict-price",
     "chatbot:chat_page": "/chat/",
     "chatbot:chat_api": "/api/v1/chatbot/chat",
-    "chatbot:new_chat_session": "/api/v1/chatbot/sessions/new",
+    "chatbot:new_chat_session": "/api/v1/chatbot/session/new",
     "accounts:login": "/accounts/login/",
     "accounts:logout": "/accounts/logout/",
     "accounts:signup": "/accounts/signup/",
