@@ -128,7 +128,10 @@ def _check_chroma_vectors() -> int | None:
     import sqlite3
     from pathlib import Path
 
-    chroma_path = Path("chroma_db") / "chroma.sqlite3"
+    from src.app.core.config import settings
+
+    # 워커의 작업 디렉토리와 무관하게 동일한 경로를 보도록 설정값을 사용한다.
+    chroma_path = Path(settings.CHROMA_DB_PATH) / "chroma.sqlite3"
     if not chroma_path.exists():
         return None
     try:
