@@ -618,7 +618,7 @@
                 <div id="chat-interface"
                      data-chat-url="{{ url('chatbot:chat_api') }}"
                      data-new-session-url="{{ url('chatbot:new_chat_session') }}"
-                     data-csrf-token="{{ csrf_token }}"
+                     data-csrf-token=""
                      class="relative flex items-center gap-3">
                     <div class="relative flex-1">
                         <input type="text" id="chat-input"
@@ -670,6 +670,7 @@ $(document).ready(function() {
 
     const CONFIG = {
         chatUrl: interface.data('chat-url'),
+        streamUrl: '/api/v1/chatbot/stream',
         newSessionUrl: interface.data('new-session-url'),
         csrfToken: interface.data('csrf-token'),
         confirmUrlTemplate: '/chatbot/api/automation/job/__JOB_ID__/confirm/',
@@ -1631,7 +1632,8 @@ $(document).ready(function() {
         activeChatRequest = $.ajax({
             url: CONFIG.chatUrl,
             method: 'POST',
-            data: { csrfmiddlewaretoken: CONFIG.csrfToken, message: message },
+            contentType: 'application/json',
+            data: JSON.stringify({ message: message }),
             success: function(data) {
                 $(`#${loadingId}`).remove();
                 activeChatRequest = null;
@@ -1672,7 +1674,8 @@ $(document).ready(function() {
         $.ajax({
             url: CONFIG.newSessionUrl,
             method: 'POST',
-            data: { csrfmiddlewaretoken: CONFIG.csrfToken },
+            contentType: 'application/json',
+            data: JSON.stringify({}),
             success: function(data) {
                 if (data.status === 'success') {
                     location.href = '{{ url('chatbot:chat_page') }}';
@@ -1716,10 +1719,10 @@ $(document).ready(function() {
         $.ajax({
             url: CONFIG.chatUrl,
             method: 'POST',
-            data: {
-                csrfmiddlewaretoken: CONFIG.csrfToken,
+            contentType: 'application/json',
+            data: JSON.stringify({
                 session_key: sessionKey
-            },
+            }),
             success: function(data) {
                 clearConversation();
 
@@ -1766,10 +1769,10 @@ $(document).ready(function() {
         $.ajax({
             url: buildEndpointUrl(CONFIG.confirmUrlTemplate, jobId),
             method: 'POST',
-            data: {
-                csrfmiddlewaretoken: CONFIG.csrfToken,
+            contentType: 'application/json',
+            data: JSON.stringify({
                 confirmation_token: confirmationToken
-            },
+            }),
             success: function(data) {
                 button.closest('.automation-card').fadeOut(150, function() {
                     $(this).remove();
@@ -1800,7 +1803,8 @@ $(document).ready(function() {
         $.ajax({
             url: buildEndpointUrl(CONFIG.cancelUrlTemplate, jobId),
             method: 'POST',
-            data: { csrfmiddlewaretoken: CONFIG.csrfToken },
+            contentType: 'application/json',
+            data: JSON.stringify({}),
             success: function(data) {
                 button.closest('.automation-card').fadeOut(150, function() {
                     $(this).remove();

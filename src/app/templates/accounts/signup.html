@@ -271,5 +271,39 @@
             });
         });
     }
+
+    const signupForm = document.querySelector('form[method="POST"]');
+    if (signupForm) {
+        signupForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const fd = new FormData(this);
+            const payload = {
+                username: fd.get('username'),
+                password1: fd.get('password1'),
+                password2: fd.get('password2'),
+                nickname: fd.get('nickname'),
+                email: fd.get('email'),
+                birth_date: fd.get('birth_date'),
+                gender: fd.get('gender'),
+                agree_terms: fd.has('agree_terms'),
+                agree_privacy: fd.has('agree_privacy'),
+            };
+            try {
+                const resp = await fetch('/api/v1/accounts/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (resp.ok) {
+                    window.location.href = '/';
+                } else {
+                    const err = await resp.json();
+                    alert(err.detail || '회원가입에 실패했습니다.');
+                }
+            } catch (err) {
+                alert('서버 통신 오류가 발생했습니다.');
+            }
+        });
+    }
 </script>
 {% endblock %}

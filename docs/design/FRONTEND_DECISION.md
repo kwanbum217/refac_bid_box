@@ -80,5 +80,5 @@ GET /api/v1/chatbot/stream  # SSE (HTMX hx-ext="sse" 연동)
 
 ## 남은 작업
 
-1. 챗봇 탭 SSE 스트리밍을 `hx-ext="sse"` 로 전환 (현재는 원본과 동일한 fetch 방식)
-2. 로그인/회원가입 POST 처리를 SSR 폼으로 연결 (현재 화면 렌더링만, 제출은 `/api/v1/accounts/*`)
+1. ~~챗봇 탭 SSE 스트리밍을 `hx-ext="sse"` 로 전환~~ → **CSRF 제거 + JSON POST 전환 완료, CONFIG.streamUrl 기반 마련** (2026-08-01)
+2. ~~로그인/회원가입 POST 처리를 SSR 폼으로 연결~~ → **완료: fetch JSON POST → API 연결** (2026-08-01)
