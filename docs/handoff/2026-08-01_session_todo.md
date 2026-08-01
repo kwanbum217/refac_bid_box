@@ -33,10 +33,8 @@
 
 | 원본 테스트 | 제외 사유 |
 | --- | --- |
-| `test_chat_api_falls_back_to_polling_for_loopback_callback_base_url` | 전제가 반전됩니다. 원본은 외부 SaaS 인 Harness 가 사설망으로 들어올 수 없어 loopback/private 주소를 거부했습니다. Arq 워커는 같은 Docker 네트워크 안에 있어 사설 주소가 오히려 정상 설정이므로, 규칙을 그대로 옮기면 정상 배포에서 콜백이 영구히 꺼집니다 |
+| `test_chat_api_falls_back_to_polling_for_loopback_callback_base_url` | 전제가 반전됩니다. 원본은 외부 SaaS 인 Harness 가 사설망으로 들어올 수 없어 loopback/private 주소를 거부했습니다. Arq 워커는 같은 Docker 네트워크 안에 있어 사설 주소가 오히려 정상 설정이므로, 규칙을 그대로 옮기면 정상 배포에서 콜백이 영구히 꺼집니다. 판정 자체는 Arq 기준으로 새로 설계해 구현했습니다 (아래 참조) |
 | `test_confirm_reuses_recent_harness_summary_without_new_run` | 원격 Harness API 이력을 끌어와 로컬에 적재하는 흐름입니다. Arq 는 외부 실행 레지스트리가 없고 `pipeline_executions` 가 이미 유일한 진실 원천이라 로컬 재사용 테스트와 같은 것이 됩니다 |
-
-관련해 남은 과제: `_callback_metadata`(`automation_orchestrator.py:197`)가 `callback_mode`/`callback_configured` 를 읽지만 이를 채우는 곳이 없어 모든 작업이 기본값 `polling` 으로 보고됩니다. Arq 기준의 도달성 판정("설정됐고 형식이 올바른가")을 새로 세워야 하며, 원본 재현이 아닌 신규 설계 건입니다.
 
 ### 이식 과정에서 복원한 누락 기능
 
@@ -68,9 +66,47 @@
 
 ---
 
+## 콜백 도달성 판정 (Arq 기준 신규 설계)
+
+`_callback_metadata` 가 읽던 `callback_mode`/`callback_configured` 를 아무도 채우지 않아 모든 작업이 기본값 `polling` 으로 보고되던 문제를 해결했습니다. 검증은 `tests/test_callback_delivery.py` (21건).
+
+### 원본과 무엇이 다른가
+
+원본의 질문은 "외부 SaaS 가 우리 망으로 들어올 수 있는가" 였고, 그래서 사설 대역 전체를 거부했습니다. Arq 의 질문은 "워커의 단계별 보고가 요청 레코드까지 돌아올 수 있는가" 이고, 워커는 이미 같은 네트워크 안에 있습니다. 따라서 판정 축이 바뀝니다.
+
+| 축 | 원본 (Harness) | 이식본 (Arq) |
+| --- | --- | --- |
+| 호출자 위치 | 외부 클라우드 | 같은 네트워크 |
+| 사설 주소 | 거부 | **허용** (`http://app:8000` 이 정상) |
+| 루프백 | 거부 | 거부 (사유가 다름: 워커 자기 자신을 가리킴) |
+| 경로 종류 | callback / polling | **direct** / callback / polling |
+
+`direct` 는 원본에 없던 모드입니다. 번들 워커는 앱과 같은 DB 를 보므로 HTTP 를 거치지 않고 `apply_callback_payload` 로 바로 기록합니다. 이게 기본 구성이자 가장 확실한 경로인데, 기존 코드는 이 경우를 `polling` 이라 잘못 안내하고 있었습니다.
+
+### 판정 규칙
+
+`resolve_callback_delivery(job_id)` (`automation_orchestrator.py`)
+
+| `AUTOMATION_CALLBACK_BASE_URL` | `AUTOMATION_WORKER_SHARES_DB` | 모드 |
+| --- | --- | --- |
+| 없음 | `true` | `direct` |
+| 없음 | `false` | `polling` |
+| 정상 주소 | 무관 | `callback` |
+| 루프백 / 형식 오류 | `true` | `direct` (안내 문구 첨부) |
+| 루프백 / 형식 오류 | `false` | `polling` (안내 문구 첨부) |
+
+판정 결과는 요청 생성 시점에 `AutomationRequest.payload` 에 기록되어 `job` 응답 계약과 답변 문구에 그대로 실립니다.
+
+### 워커 보고 경로
+
+`_report`(`src/tasks/automation_tasks.py`)는 `callback_url` 이 있으면 HTTP 로 보내고, 없거나 전송이 실패하면 같은 페이로드를 DB 에 기록합니다. 전송 실패로 단계 보고가 유실되지 않습니다. 실제 uvicorn 을 띄워 워커 → API → 요청 레코드 왕복까지 확인했습니다.
+
+`callback_url`/`callback_token` 은 `callback` 모드일 때만 워커에 전달합니다. `direct` 모드에서는 빈 값을 넘겨 불필요한 HTTP 왕복과 토큰 노출을 만들지 않습니다.
+---
+
 ## 참조
 
 - 인수인계: `docs/handoff/2026-07-31_parity_restoration_handoff.md`
 - 설계서 체크리스트: `docs/design/REFACTORING_DESIGN.md` Phase 7
 - 프론트엔드 결정: `docs/design/FRONTEND_DECISION.md`
-- 테스트 현황: 175 passed / 1 skipped (20개 파일)
+- 테스트 현황: 196 passed / 1 skipped (21개 파일)
