@@ -44,6 +44,9 @@ class ChatResponse(BaseModel):
     job: Optional[dict[str, Any]] = None
     confirmation_token: str = ""
     session_key: str = ""
+    # 세션 전환 응답 전용. chat.html 의 사이드바가 대화창을 복원할 때 사용합니다.
+    last_query: str = ""
+    history: list[dict[str, Any]] = Field(default_factory=list)
     llm_backend: str = Field("", description="답변을 생성한 LLM 백엔드")
     latency_ms: float = 0.0
 
