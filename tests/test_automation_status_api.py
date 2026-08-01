@@ -8,11 +8,23 @@ tests/test_automation_status_api.py
 이어지는가" 이므로 Harness 고유 필드만 제외하고 그대로 옮겼습니다.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from src.app.models.chatbot import AutomationRequest, KnowledgeBaseStatus, PipelineExecution
+from src.app.services.action_catalog import get_action
 from src.app.services.automation_orchestrator import make_callback_token
+
+
+def _full_validation_pipeline() -> str:
+    """재사용 조회는 pipeline_name 이 일치해야 하므로 카탈로그 값을 그대로 씁니다."""
+    return get_action("full_validation").pipeline_id
+
+
+def _plan_execution_id(db, job_id: str) -> str:
+    request_obj = db.query(AutomationRequest).filter_by(request_id=job_id).one()
+    db.refresh(request_obj)
+    return request_obj.plan_execution_id
 
 VALID_SIGNUP = {
     "username": "auto-status-user",
@@ -303,6 +315,176 @@ def test_sync_status_preserves_step_history(mock_enqueue, client, isolated_db):
     request_obj = isolated_db.query(AutomationRequest).filter_by(request_id="job-sync-001").one()
     isolated_db.refresh(request_obj)
     assert set(request_obj.result_payload["steps"]) == {"preflight", "collect"}
+
+
+# --------------------------------------------------------------------------- #
+# 실행 중지 (원본 Harness abort -> Arq abort)
+# --------------------------------------------------------------------------- #
+
+
+@patch("src.app.services.automation_orchestrator.abort_arq_job", return_value=True)
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_cancel_running_automation_request_aborts_worker_job(
+    mock_enqueue, mock_abort, client, isolated_db
+):
+    """원본 test_cancel_running_automation_request_aborts_harness 대응.
+
+    원본은 Harness abort API 를 호출했습니다. 이식본은 같은 자리에서 Arq 작업을
+    중단해야 하며, DB 만 바꾸고 워커를 방치하면 안 됩니다.
+    """
+    _login(client)
+    _seed_kb_status(isolated_db)
+    job_id = client.post("/api/v1/automation/run/collect-bids", json={"reason": "수집"}).json()[
+        "job"
+    ]["job_id"]
+
+    execution_id = _plan_execution_id(isolated_db, job_id)
+    arq_job_id = (
+        isolated_db.query(PipelineExecution)
+        .filter_by(execution_id=execution_id)
+        .one()
+        .raw_status_payload["arq_job_id"]
+    )
+
+    response = client.post(f"/api/v1/automation/job/{job_id}/cancel")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["job"]["status"] == "canceled"
+    assert "사용자 요청으로 분석 실행을 중지했습니다" in payload["answer"]
+    mock_abort.assert_called_once_with(arq_job_id)
+
+    request_obj = isolated_db.query(AutomationRequest).filter_by(request_id=job_id).one()
+    isolated_db.refresh(request_obj)
+    assert request_obj.status == "canceled"
+    assert request_obj.payload["canceled_by_user"]["worker_abort_requested"] is True
+
+    execution = isolated_db.query(PipelineExecution).filter_by(execution_id=execution_id).one()
+    assert execution.status == "failed"
+    assert execution.stage_status == "canceled"
+
+
+@patch("src.app.services.automation_orchestrator.abort_arq_job", return_value=True)
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_cancel_pending_confirmation_does_not_abort_worker_job(
+    mock_enqueue, mock_abort, client, isolated_db
+):
+    """확인 대기 건은 아직 큐에 없으므로 abort 를 부르면 안 됩니다 (원본 동일)."""
+    _login(client)
+    _seed_kb_status(isolated_db)
+    job_id = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"}).json()[
+        "job"
+    ]["job_id"]
+
+    assert client.post(f"/api/v1/automation/job/{job_id}/cancel").status_code == 200
+    mock_abort.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# 최근 성공 실행 재사용
+# --------------------------------------------------------------------------- #
+
+
+def _seed_successful_execution(db, *, age: timedelta, run_mode: str, execution_id: str):
+    started_at = datetime.utcnow() - age
+    execution = PipelineExecution(
+        execution_id=execution_id,
+        pipeline_name=_full_validation_pipeline(),
+        run_mode=run_mode,
+        status="success",
+        started_at=started_at,
+        ended_at=started_at + timedelta(minutes=5),
+        raw_status_payload={"status": "success"},
+        source="chatbot",
+    )
+    db.add(execution)
+    db.commit()
+    return execution
+
+
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_confirm_reuses_recent_success_without_new_run(mock_enqueue, client, isolated_db):
+    """원본 test_confirm_reuses_recent_staging_success_without_new_run 대응.
+
+    최근 성공 이력이 있으면 고비용 전체 점검을 새로 돌리지 않습니다.
+    """
+    _login(client)
+    _seed_kb_status(isolated_db)
+    _seed_successful_execution(
+        isolated_db,
+        age=timedelta(minutes=40),
+        run_mode="manual_full",
+        execution_id="recent-manual-full-001",
+    )
+
+    create_resp = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
+    job_id = create_resp.json()["job"]["job_id"]
+    token = create_resp.json()["confirmation_token"]
+    mock_enqueue.reset_mock()
+
+    response = client.post(
+        f"/api/v1/automation/job/{job_id}/confirm", json={"confirmation_token": token}
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "result"
+    assert payload["job"]["status"] == "success"
+    assert payload["job"]["plan_execution_id"] == "recent-manual-full-001"
+    assert "최근 성공한 자동화 실행" in payload["answer"]
+    assert "requested_run_mode" in payload["result_payload"]["reused_execution"]
+    mock_enqueue.assert_not_called()
+
+    request_obj = isolated_db.query(AutomationRequest).filter_by(request_id=job_id).one()
+    isolated_db.refresh(request_obj)
+    assert request_obj.status == "success"
+    assert request_obj.payload["reuse_mode"] == "recent_execution"
+
+
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_confirm_ignores_stale_success_and_executes_new_run(mock_enqueue, client, isolated_db):
+    """원본 test_confirm_ignores_stale_staging_success_and_executes_new_run 대응.
+
+    신선도 창(72시간)을 벗어난 이력은 재사용하지 않고 새로 실행합니다.
+    """
+    _login(client)
+    _seed_kb_status(isolated_db)
+    _seed_successful_execution(
+        isolated_db,
+        age=timedelta(days=7),
+        run_mode="manual_full",
+        execution_id="stale-manual-full-001",
+    )
+
+    create_resp = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
+    job_id = create_resp.json()["job"]["job_id"]
+    token = create_resp.json()["confirmation_token"]
+    mock_enqueue.reset_mock()
+
+    response = client.post(
+        f"/api/v1/automation/job/{job_id}/confirm", json={"confirmation_token": token}
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "action"
+    assert payload["job"]["plan_execution_id"] != "stale-manual-full-001"
+    mock_enqueue.assert_called_once()
+
+
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_collect_bids_is_not_reused(mock_enqueue, client, isolated_db):
+    """재사용은 고비용 작업(full_validation)에만 적용됩니다 (원본 동일)."""
+    _login(client)
+    _seed_kb_status(isolated_db)
+    _seed_successful_execution(
+        isolated_db,
+        age=timedelta(minutes=10),
+        run_mode="collect_only",
+        execution_id="recent-collect-001",
+    )
+
+    payload = client.post("/api/v1/automation/run/collect-bids", json={"reason": "수집"}).json()
+    assert payload["job"]["plan_execution_id"] != "recent-collect-001"
+    mock_enqueue.assert_called_once()
 
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)

@@ -37,3 +37,6 @@ class WorkerSettings:
     max_jobs = 4
     job_timeout = 1800
     keep_result = 3600
+    # 원본은 Harness abort API 로 실행 중인 파이프라인을 죽였습니다. 이식본에서
+    # 같은 동작을 하려면 워커가 abort 신호를 받아들여야 합니다.
+    allow_abort_jobs = True
