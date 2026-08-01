@@ -7,7 +7,7 @@
 
 ## 즉시 진행 가능 (서버 없이)
 
-1. **ChatAutomationApiTests 16개 이식** — 3개 완료 (`test_chatbot_integration.py`). 잔존 13개: session 전환(2), 예측 mock(2), 진행상태(2), 완료 그래프(2), 취소(2), 콜백 폴 백(1), 확인 실행(2). 원본 `apps/chatbot/tests.py:834-1798` 참조. `_enqueue_arq_job` mock 패턴 재사용.
+1. **ChatAutomationApiTests 16개 이식** — 3개 완료 (`test_chatbot_integration.py`). 잔존 13개 중 refac 구조상 이식 불가 4개: 세션 전환(2, 원본은 chat_api에 session_key POST이나 refac은 `/session/new`만 존재), 콜백 폴 백(1, Harness 제거), 결과 그래프(1). **이식 가능 9개**: 예측 mock(2), 진행상태(2), 완료(2), 취소(2), 확인 실행(2). 원본 `apps/chatbot/tests.py:909-1798` 참조.
 2. **주간 재학습 스케줄 추가** — `src/tasks/retrain_task.py`에 Arq 크론 설정 또는 `run_mode_matrix`에 `retrain` 모드 추가
 3. **Alembic 마이그레이션 도입** — 원본 19개 히스토리 보존. `alembic init` → `autogenerate` → 기존 스키마와 정합성 검증
 
