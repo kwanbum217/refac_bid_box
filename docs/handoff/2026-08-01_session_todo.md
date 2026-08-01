@@ -1,21 +1,71 @@
 # 세션 TODO (2026-08-01 기준)
 
 > **작성일**: 2026-08-01
-> **상태**: Phase 0~6 완료 (86%), Phase 7 검증 잔존
+> **최종 갱신**: 2026-08-01 (세션 종료 시점)
+> **상태**: Phase 0~6 완료, Phase 7 검증 잔존
+> **기준 커밋**: `9a1a7c0` (main, origin 까지 push 완료)
+> **테스트**: 196 passed / 1 skipped, `python scripts/validate_agent_rules.py` 6/6 PASS
 
 ---
 
-## 즉시 진행 가능 (서버 없이)
+## 재개 방법
+
+작업 트리는 clean 이고 브랜치는 `main` 단독입니다. 미커밋 작업물이나 띄워둔 서버는 없습니다.
+
+```bash
+cd ~/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box
+git pull
+
+# 서버가 필요한 작업일 때만
+redis-server --port 6379 --daemonize yes
+.venv/bin/python -m uvicorn src.app.main:app --host 127.0.0.1 --port 8000
+# 워커까지 필요하면
+.venv/bin/arq src.tasks.worker.WorkerSettings
+```
+
+화면은 `http://127.0.0.1:8000/` 입니다. Ollama 는 담당자 앱(`Ollama.app`)이 상시 구동하므로 별도 기동이 필요 없습니다.
+
+**주의**: `dump.rdb` 가 Git 추적 파일이라 Redis 를 띄우면 변경으로 잡힙니다. 커밋 전에 `git checkout -- dump.rdb` 로 되돌리십시오. (`.gitignore` 처리 필요 — 아래 7번)
+
+---
+
+## 다음에 할 일
+
+### 즉시 진행 가능 (서버 없이)
 
 1. ~~**ChatAutomationApiTests 이식**~~ — **완료**. 상세는 아래 "ChatAutomationApiTests 이식 결과" 참조.
 2. **주간 재학습 스케줄 추가** — `src/tasks/retrain_task.py`에 Arq 크론 설정 또는 `run_mode_matrix`에 `retrain` 모드 추가
 3. **Alembic 마이그레이션 도입** — 원본 19개 히스토리 보존. `alembic init` → `autogenerate` → 기존 스키마와 정합성 검증
+7. **`dump.rdb` Git 추적 해제** — Redis 런타임 스냅샷이라 실행할 때마다 변경됩니다. `git rm --cached dump.rdb` 후 `.gitignore` 등록
 
-## 서버 필요 (Ollama + Redis)
+### 서버 필요 (Ollama + Redis)
 
 4. **성능 벤치마크** — `scripts/benchmark_latency.py` 작성. SSE 첫 토큰 P95 3초, 전체 P95 20초 목표 측정
 5. **재학습 E2E 검증** — 데이터→학습→평가→배포 전 주기 실증
 6. **크로스 플랫폼 검증** — Windows 환경에서 Docker + Makefile 실행 확인
+
+### 실기동 확인이 남은 항목
+
+단위 테스트는 통과했으나 워커를 붙여 눈으로 확인하지 않은 부분입니다.
+
+| 대상 | 확인할 것 |
+| --- | --- |
+| 챗봇 "요청 중지" 버튼 | 화면에서 눌렀을 때 실제 워커 작업이 죽는지 (`allow_abort_jobs` 경로) |
+| 세션 사이드바 | 과거 대화를 눌렀을 때 `history`/`last_query` 로 대화창이 복원되는지 |
+| 실행 재사용 | `full_validation` 을 두 번 승인했을 때 두 번째가 재사용으로 즉시 끝나는지 |
+
+---
+
+## 최근 세션 작업 요약 (2026-08-01)
+
+| 커밋 | 내용 |
+| --- | --- |
+| `b6486ca` | 자동화 통합 테스트를 챗봇 경로 기준으로 재작성, `new_chat_session` URL 오타 수정 |
+| `eabb9c1` | 원본 ChatAutomationApiTests 23개 이식, 누락 기능 5건 복원 |
+| `8012ef1` | Arq 작업 중지(abort) 연결, 최근 실행 재사용 구현, 테스트 3개 추가 이식 |
+| `9a1a7c0` | 콜백 도달성 판정을 Arq 기준으로 설계·구현 |
+
+원본 재현율: ChatAutomationApiTests **26/28 이식** (제외 2건은 Arq 로 바꾼 이상 개념이 성립하지 않음).
 
 ---
 
