@@ -136,7 +136,7 @@ python scripts/verify_migration.py   # 행 수 기준선 대조 포함
 
 | 우선순위 | 항목 | 원본 규모 | 비고 |
 | --- | --- | --- | --- |
-| 1 | 원본 테스트 스위트 이식 | 약 3,000줄 | **부분 완료**: 54개 테스트 이식 (run_mode_matrix 11, accounts 13, predictions 10, bids 13, chatbot core 7). chatbot PlannerTests/ChatAutomationApiTests 약 40개 잔존 |
+| 1 | 원본 테스트 스위트 이식 | 약 3,000줄 | **대부분 완료**: 102 passed / 1 skipped. PlannerTests 19, InterpretationLayer 5, AdvisoryEngine 3, StepExecutor 3, ResultPresenter 2, RAG 3 이식. ChatAutomationApiTests(16, 서버 통합 필요) 잔존 |
 | 2 | `final_inspect` 상세 점검 | 295줄 | **완료**: 최신 타임스탬프(latest_notice_at, latest_result_open_at, latest_collected_at), stale_hours 경고, 데이터 부족 경고 추가 |
 | 3 | Jinja2 템플릿 12종 | — | 담당자와 후순위 합의됨 |
 | 4 | G2B 백필 완주 확인 | — | **완료**: bid_announcements 1,785,456행(105.1%), bid_results 3,002,254행(100.2%), 최신 수집 2026-07-31 |
