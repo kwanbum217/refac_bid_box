@@ -593,58 +593,58 @@ run_mode_matrix (개정):
 
 ### Phase 0 — 기반 정비 (1~2일)
 - [x] 신규 저장소 초기화 (완료)
-- [ ] `pyproject.toml`(uv) + 의존성 그룹 정의
-- [ ] `Makefile` / `Taskfile` 진입점
-- [ ] `.env.example` 보강 (완료 기본)
-- [ ] `Dockerfile` + `docker-compose.yml`(mysql, redis)
-- [ ] 린터/포매터(ruff, black), pre-commit 설정
-- [ ] CI(GitHub Actions): lint + test 파이프라인
+- [x] `pyproject.toml`(uv) + 의존성 그룹 정의
+- [x] `Makefile` / `Taskfile` 진입점
+- [x] `.env.example` 보강 (완료 기본)
+- [x] `Dockerfile` + `docker-compose.yml`(mysql, redis)
+- [x] 린터/포매터(ruff, black), pre-commit 설정
+- [x] CI(GitHub Actions): lint + test 파이프라인
 
 ### Phase 1 — 데이터 보존 선행 (2~3일) ★ G1
-- [ ] 기존 MySQL 풀 덤프 + 행 수 기준선 문서화
-- [ ] ML 가중치 체크섬 기록
-- [ ] ChromaDB 백업
-- [ ] 자동화된 검증 스크립트 작성 (`scripts/verify_migration.py`)
-- [ ] **검증 통과 후에만 다음 단계 진행**
+- [x] 기존 MySQL 풀 덤프 + 행 수 기준선 문서화 (parquet 복원으로 대체)
+- [x] ML 가중치 체크섬 기록 (`data_assets_checksums.json`)
+- [x] ChromaDB 백업
+- [x] 자동화된 검증 스크립트 작성 (`scripts/verify_migration.py`)
+- [x] **검증 통과 후에만 다음 단계 진행** (행 수 100%+ 달성)
 
 ### Phase 2 — DB/캐시/태스크 인프라 (3~5일)
-- [ ] ORM 모델 이식 (기존 9개, 테이블명·컬럼 100% 유지)
-- [ ] 마이그레이션 히스토리 복사 (19개 버전)
-- [ ] Redis 캐시 레이어 적용
-- [ ] Celery/Arq 워커 + 태스크 이식 (G2B 수집, KB 업데이트)
-- [ ] 기존 DB 연결 후 데이터 무결성 재검증
+- [x] ORM 모델 이식 (기존 9개, 테이블명·컬럼 100% 유지)
+- [ ] 마이그레이션 히스토리 복사 (19개 버전) — Alembic 미도입, 스키마 직접 생성
+- [x] Redis 캐시 레이어 적용
+- [x] Celery/Arq 워커 + 태스크 이식 (G2B 수집, KB 업데이트)
+- [x] 기존 DB 연결 후 데이터 무결성 재검증
 
 ### Phase 3 — 애플리케이션 이식 (5~10일)
-- [ ] 백엔드 전환 결정(FastAPI vs Django ASGI)에 따라 라우터/서비스 이식
-- [ ] 거대 파일 분할:
+- [x] 백엔드 전환 결정(FastAPI vs Django ASGI)에 따라 라우터/서비스 이식
+- [x] 거대 파일 분할:
       - `chatbot/views.py`(801줄) → 라우터 + 서비스 + 스키마 분리
       - `automation_orchestrator.py`/`rag_engine.py`/`planner.py` → 도메인별 모듈
       - `predictor.py`(758줄) → ML 도메인 + 싱글톤 로드
-- [ ] 비동기화: 챗봇 API, G2B 수집, 모델 추론
-- [ ] 보안 강화: 검증기 활성화, SECRET_KEY/DEBUG 환경 강제, 시크릿 관리
+- [x] 비동기화: 챗봇 API, G2B 수집, 모델 추론
+- [x] 보안 강화: 검증기 활성화, SECRET_KEY/DEBUG 환경 강제, 시크릿 관리
 
 ### Phase 4 — ML 추론/RAG 최적화 (3~5일)
-- [ ] 모델 싱글톤 로드 + 통합 전처리 레지스트리
-- [ ] 가중치 Git LFS / 외부 저장소 이동
-- [ ] RAG 검색 비동기화 + 결과 캐싱
-- [ ] Harness 바이너리 Git 제거 + 플랫폼 중립화
+- [x] 모델 싱글톤 로드 + 통합 전처리 레지스트리
+- [ ] 가중치 Git LFS / 외부 저장소 이동 — 현재 `data/model_files/` 로컬 보관
+- [x] RAG 검색 비동기화 + 결과 캐싱
+- [x] Harness 바이너리 Git 제거 + 플랫폼 중립화
 
 ### Phase 5 — 재학습 파이프라인 구축 (5~8일) ★ 신규 — 7장 참조
-- [ ] **단일 특징 공급원** `features.py` 구현 (train/serve skew 제거)
-- [ ] **학습 데이터셋 빌더** `dataset.py` (DB join → feature matrix, 현재 부재)
-- [ ] **일반화 학습기** `trainer.py` (`build_ssh_hist_premium_model.py` 승격)
-- [ ] **평가 실측화**: validate_model 개선 (RMSE/MAPE/R² 실시간 산출)
-- [ ] **모델 레지스트리** + 기존 4개 모델 champion 등록
-- [ ] **재학습 태스크** (Celery/Arq) + `run_mode_matrix`에 `retrain` 단계 추가
-- [ ] **재학습 트리거**: 주간 스케줄 + 수동 API
-- [ ] **모니터링**: 데이터/예측 드리프트 감지 (PSI)
+- [x] **단일 특징 공급원** `features.py` 구현 (train/serve skew 제거)
+- [x] **학습 데이터셋 빌더** `dataset.py` (DB join → feature matrix, 현재 부재)
+- [x] **일반화 학습기** `trainer.py` (`build_ssh_hist_premium_model.py` 승격)
+- [x] **평가 실측화**: validate_model 개선 (RMSE/MAPE/R² 실시간 산출)
+- [x] **모델 레지스트리** + 기존 4개 모델 champion 등록
+- [x] **재학습 태스크** (Celery/Arq) + `run_mode_matrix`에 `retrain` 단계 추가
+- [ ] **재학습 트리거**: 주간 스케줄 + 수동 API — 수동 API만 구현됨
+- [x] **모니터링**: 데이터/예측 드리프트 감지 (PSI)
 
 ### Phase 6 — 프론트엔드/스트리밍 (선택, 3~5일)
-- [ ] 챗봇 SSE/WebSocket 스트리밍
-- [ ] HTMX 도입(필요 시)
+- [x] 챗봇 SSE/WebSocket 스트리밍 (stream 엔드포인트 + CONFIG.streamUrl)
+- [ ] HTMX 도입(필요 시) — 현재 jQuery, 필요시 전환
 
 ### Phase 7 — 검증 및 컷오버 (2~3일)
-- [ ] E2E 테스트 (`tests/chatbot_e2e/` 이식)
+- [ ] E2E 테스트 (`tests/chatbot_e2e/` 이식) — 142 passed / 1 skipped, ChatAutomationApiTests 16개 잔존
 - [ ] 성능 벤치마크 (Before/After 레이턴시 비교)
   > **P95 목표 재설정 (2026-08-01)**: LLM 을 Gemini → Ollama `gemma4:e4b` 로 전환하여
   > 절대 응답 시간이 1~3초 → 11~16초로 증가. SSE 토큰 스트리밍으로 체감 레이턴시를 개선.
