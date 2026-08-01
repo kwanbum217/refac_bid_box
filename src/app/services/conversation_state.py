@@ -19,6 +19,7 @@ from src.app.models.chatbot import ChatSessionState
 from src.app.schemas.chat import ChatPlan
 
 MAX_HISTORY_TURNS = 10
+USER_MEMORY_PREFIX = "user:"
 
 
 def ensure_session_key(session_key: str | None = None) -> str:
@@ -132,6 +133,47 @@ def _extract_tool_results(result_payload: dict[str, Any] | None) -> dict[str, An
     return dict(embedded) if isinstance(embedded, dict) else {}
 
 
+def _resolve_user_memory_key(user_id: int | None) -> str:
+    """원본 _resolve_user_memory_key 대응. 로그인 사용자별 고정 메모리 키입니다."""
+    return f"{USER_MEMORY_PREFIX}{user_id}" if user_id is not None else ""
+
+
+def _merge_state_dicts(primary: dict, secondary: dict) -> dict:
+    """원본 _merge_state_dicts 1:1 이식.
+
+    세션 메모리를 우선하되, 필터는 사용자 메모리 위에 덮어써 세션이 바뀌어도
+    직전 필터가 이어지도록 합니다.
+    """
+    merged_filters = dict(secondary.get("last_filters_json") or {})
+    merged_filters.update(dict(primary.get("last_filters_json") or {}))
+    return {
+        "session_key": primary.get("session_key") or secondary.get("session_key") or "",
+        "last_query": primary.get("last_query") or secondary.get("last_query") or "",
+        "last_plan_json": dict(
+            primary.get("last_plan_json") or secondary.get("last_plan_json") or {}
+        ),
+        "last_filters_json": merged_filters,
+        "last_result_summary": primary.get("last_result_summary")
+        or secondary.get("last_result_summary")
+        or "",
+        "last_chart_payload": list(primary.get("last_chart_payload") or []),
+        "last_result_payload": dict(
+            primary.get("last_result_payload") or secondary.get("last_result_payload") or {}
+        ),
+        "last_job_id": primary.get("last_job_id") or secondary.get("last_job_id") or "",
+        "last_action_key": primary.get("last_action_key")
+        or secondary.get("last_action_key")
+        or "",
+        "last_kb_version": primary.get("last_kb_version")
+        or secondary.get("last_kb_version")
+        or "",
+        "last_response_mode": primary.get("last_response_mode")
+        or secondary.get("last_response_mode")
+        or "",
+        "chat_history": list(primary.get("chat_history") or []),
+    }
+
+
 def _serialize_state(state: ChatSessionState | None) -> dict[str, Any]:
     if not state:
         return {}
@@ -154,11 +196,27 @@ def _serialize_state(state: ChatSessionState | None) -> dict[str, Any]:
 def load_conversation_context(
     db: Session, session_key: str, user_id: int | None = None
 ) -> dict[str, Any]:
-    payload = _serialize_state(_get_state_by_key(db, session_key, user_id=user_id, create=False))
+    """원본과 동일하게 세션 메모리와 사용자 메모리를 합쳐 돌려줍니다."""
+    session_payload = _serialize_state(
+        _get_state_by_key(db, session_key, user_id=user_id, create=False)
+    )
+    user_memory_key = _resolve_user_memory_key(user_id)
+    user_payload = (
+        _serialize_state(_get_state_by_key(db, user_memory_key, user_id=user_id, create=False))
+        if user_memory_key
+        else {}
+    )
+    merged = _merge_state_dicts(session_payload, user_payload)
     return {
-        **payload,
-        "session_key": payload.get("session_key") or session_key,
-        "last_tool_results": _extract_tool_results(payload.get("last_result_payload")),
+        **merged,
+        "session_key": session_payload.get("session_key") or session_key,
+        "last_tool_results": _extract_tool_results(merged.get("last_result_payload")),
+        "session_memory": session_payload,
+        "user_memory": user_payload,
+        "memory_policy": {
+            "session_scope": "full conversation result context",
+            "user_scope": "sticky filters and query summary",
+        },
     }
 
 
@@ -220,4 +278,20 @@ def remember_chat_interaction(
 
     db.commit()
     db.refresh(state)
+
+    # 원본과 동일하게 사용자 메모리에는 고정 필터와 질의 요약만 남깁니다.
+    # 대화 내역과 결과 페이로드는 세션 메모리에만 두어 세션 간 오염을 막습니다.
+    user_memory_key = _resolve_user_memory_key(user_id)
+    if user_memory_key:
+        user_state = _get_state_by_key(db, user_memory_key, user_id=user_id)
+        if user_state is not None:
+            user_filters = dict(user_state.last_filters_json or {})
+            user_filters.update(filters)
+            user_state.last_query = message or user_state.last_query
+            if plan is not None:
+                user_state.last_plan_json = plan.model_dump()
+            user_state.last_filters_json = user_filters
+            user_state.updated_at = datetime.utcnow()
+            db.commit()
+
     return state

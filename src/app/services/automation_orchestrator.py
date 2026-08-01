@@ -214,11 +214,18 @@ def _step_status_lines(request_obj: AutomationRequest) -> list[str]:
     steps = (request_obj.result_payload or {}).get("steps") or {}
     if not isinstance(steps, dict) or not steps:
         return []
-    lines = []
-    for step_name, step_payload in steps.items():
+
+    lines = ["", "Step 진행 상황:"]
+    ordered_names = ("preflight", "collect", "rag", "predict", "inspect", "final")
+    ordered_steps = [name for name in ordered_names if name in steps]
+    ordered_steps.extend(name for name in steps if name not in ordered_steps)
+    for step_name in ordered_steps:
+        step_payload = steps.get(step_name) or {}
         if not isinstance(step_payload, dict):
             continue
-        lines.append(f"- {step_name}: `{step_payload.get('status') or '-'}`")
+        summary = step_payload.get("summary") or ""
+        suffix = f" / {summary}" if summary else ""
+        lines.append(f"- {step_name}: `{step_payload.get('status') or '-'}`{suffix}")
     return lines
 
 
