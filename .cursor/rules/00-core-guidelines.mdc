@@ -31,5 +31,6 @@ alwaysApply: true
 
 ## Git 규칙
 
-- `main` 브랜치 직접 push 금지. 브랜치 → PR.
+- `main` 에서 직접 작업·커밋 금지. 작업 브랜치 -> `main` `--no-ff` 병합.
+- Pull Request 생성 금지 (1인 작업이라 리뷰 절차 없음).
 - 커밋 메시지: `type: subject` (`feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`).

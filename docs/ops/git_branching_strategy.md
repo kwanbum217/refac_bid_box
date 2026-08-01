@@ -1,19 +1,25 @@
 # Git 브랜치 전략
 
 > **작성일**: 2026-07-31
-> **상태**: 설계
+> **정정일**: 2026-08-01
+> **버전**: v1.1.0
+> **상태**: 운용 중
+
+본 저장소는 **1인 작업**입니다. 리뷰어가 없어 Pull Request 와 `dev` 통합 브랜치를 두지 않습니다.
+초판에 기술되어 있던 `dev` 기반 PR 모델은 실제로 운용된 적이 없어 정정했습니다.
 
 ---
 
 ## 1. 브랜치 모델
 
-| 브랜치 | 용도 | 보호 |
+| 브랜치 | 용도 | 규칙 |
 | --- | --- | --- |
-| `main` | 운영 반영 가능 안정 버전 | 직접 push 금지, PR만 |
-| `dev` | 통합 개발 브랜치 | PR 기반 병합 |
-| `feature/*` | 개별 기능 개발 | `dev`에서 분기 |
-| `phase/*` | Phase 단위 작업 | `dev`에서 분기 |
-| `fix/*` | 버그 수정 | `dev` 또는 `main`에서 분기 |
+| `main` | 운영 반영 가능 안정 버전 | 직접 작업·커밋 금지, 작업 브랜치 병합으로만 갱신 |
+| `feature/*` | 개별 기능 개발 | `main`에서 분기 |
+| `refactor/*` | 리팩토링 단위 작업 | `main`에서 분기 |
+| `phase/*` | Phase 단위 작업 | `main`에서 분기 |
+| `fix/*` | 버그 수정 | `main`에서 분기 |
+| `docs/*` | 문서 작업 | `main`에서 분기 |
 
 ---
 
@@ -21,6 +27,7 @@
 
 ```
 feature/retraining-trainer
+refactor/restore-original-parity
 phase5/retraining-pipeline
 fix/db-connection-timeout
 docs/migration-runbook
@@ -54,14 +61,28 @@ docs: add phase5 retraining design
 
 ---
 
-## 4. PR 프로세스
+## 4. 병합 프로세스 (PR 없음)
 
-1. `dev`에서 브랜치 분기.
-2. 작업 완료 후 `dev`로 PR.
-3. CI(lint + test) 통과 필수.
-4. 데이터 무손실 영향 시 [`migration/`](../migration/) 검증 결과를 PR에 명시.
-5. 리뷰 후 병합.
-6. `dev` → `main`은 릴리스 시점에 병합.
+1. `main`에서 작업 브랜치 분기.
+2. 작업 브랜치에서 커밋·푸시.
+3. 병합 전 확인:
+   - 테스트 전량 통과 (`pytest`)
+   - `python scripts/validate_agent_rules.py` 통과
+   - 데이터 무손실 영향 시 [`migration/`](../migration/) 검증 결과 확인
+4. 담당자 확인 후 `main`으로 병합. 작업 단위를 이력에 남기기 위해 `--no-ff`를 사용합니다.
+5. 병합 후 `main` 푸시.
+
+```bash
+git checkout -b feature/example
+# 작업, 커밋
+git push origin feature/example
+
+git checkout main
+git merge --no-ff feature/example -m "merge: <요약>"
+git push origin main
+```
+
+> Pull Request 는 생성하지 않습니다. 에이전트도 이 규칙을 따릅니다.
 
 ---
 

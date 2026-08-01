@@ -1,5 +1,5 @@
 ---
-description: 커밋전 연관문서 업데이트 및 문서간/코드간 실제 정합성 검토, main push 금지
+description: 커밋전 연관문서 업데이트 및 문서간/코드간 실제 정합성 검토, main 직접 작업 금지, PR 생성 금지
 globs: .git/**,docs/ops/git_branching_strategy.md,.github/**
 alwaysApply: false
 ---
@@ -11,5 +11,6 @@ alwaysApply: false
 핵심 계약:
 - **★ [최우선] 커밋/푸시 전 관련 문서 업데이트 및 문서 간 & 문서-코드 간 실제 정합성 검토(Consistency Verification)**
 - 커밋 메시지 `type: subject` 형식 준수 (feat, fix, docs, refactor, chore, test, ci)
-- `main` 브랜치 직접 push 절대 금지 (항상 feature 브랜치 -> PR)
+- `main` 에서 직접 작업·커밋 금지 (항상 작업 브랜치에서 분기)
+- **Pull Request 생성 금지** (1인 작업). 푸시 후 담당자 확인을 거쳐 `main` 에 `--no-ff` 병합
 - 이모지 사용 금지 및 pre-commit 검증 (`scripts/validate_agent_rules.py`) 필수 통과
