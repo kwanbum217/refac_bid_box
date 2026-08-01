@@ -90,6 +90,8 @@ def build_default_feature_map(features_dict: dict[str, Any]) -> dict[str, Any]:
     inst_hist_rate = _coerce_float(features_dict.get("inst_hist_rate"), DEFAULT_INST_RATE)
     inst_rate_mean_30d = _coerce_float(features_dict.get("inst_rate_mean_30d"), inst_hist_rate)
     inst_rate_std_90d = _coerce_float(features_dict.get("inst_rate_std_90d"), DEFAULT_INST_RATE_STD)
+    base_price = _coerce_float(features_dict.get("base_price"), price)
+    price_ratio = (base_price / price) if price > 0 else 1.0
 
     feature_map: dict[str, Any] = {
         "log_price": log_price,
@@ -106,7 +108,8 @@ def build_default_feature_map(features_dict: dict[str, Any]) -> dict[str, Any]:
         "real_budget": price,
         "presumed_price": price,
         "presmpt_prce": price,
-        "base_price": _coerce_float(features_dict.get("base_price"), price),
+        "base_price": base_price,
+        "price_ratio": price_ratio,
         "inst_hist_rate": inst_hist_rate,
         "inst_rate_mean_30d": inst_rate_mean_30d,
         "inst_rate_std_90d": inst_rate_std_90d,

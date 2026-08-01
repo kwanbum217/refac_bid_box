@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from src.app.api.v1.accounts import router as accounts_router
+from src.app.api.v1.automation import router as automation_router
 from src.app.api.v1.bids import router as bids_router
 from src.app.api.v1.chatbot import router as chatbot_router
 from src.app.api.v1.health import router as health_router
@@ -35,6 +37,8 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(bids_router, prefix="/api/v1")
 app.include_router(predictions_router, prefix="/api/v1")
 app.include_router(chatbot_router, prefix="/api/v1")
+app.include_router(automation_router, prefix="/api/v1")
+app.include_router(accounts_router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -50,22 +54,19 @@ def root():
 @app.get("/ui/")
 def ui_dashboard(request: Request):
     return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "active_tab": "dashboard"},
+        request, "dashboard.html", {"active_tab": "dashboard"},
     )
 
 
 @app.get("/ui/prediction")
 def ui_prediction(request: Request):
     return templates.TemplateResponse(
-        "prediction.html",
-        {"request": request, "active_tab": "prediction"},
+        request, "prediction.html", {"active_tab": "prediction"},
     )
 
 
 @app.get("/ui/chatbot")
 def ui_chatbot(request: Request):
     return templates.TemplateResponse(
-        "chatbot.html",
-        {"request": request, "active_tab": "chatbot"},
+        request, "chatbot.html", {"active_tab": "chatbot"},
     )

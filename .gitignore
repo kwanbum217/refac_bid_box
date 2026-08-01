@@ -173,6 +173,8 @@ logs/
 # Vector DB runtime data
 chroma_db/
 chroma/
+# ML model registry (runtime artifacts — trainer output)
+ml_registry/
 *.faiss
 # Data exports / snapshots
 data/exports/

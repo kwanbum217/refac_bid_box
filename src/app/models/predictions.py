@@ -1,13 +1,13 @@
 from datetime import datetime
 from sqlalchemy import BigInteger, Column, DateTime, JSON, Numeric, String
-from src.app.core.db import Base
+from src.app.core.db import Base, PKBigInteger
 
 
 class PredictionResult(Base):
     """예측 결과 이력 테이블 (원래 db_table: prediction_results)"""
     __tablename__ = "prediction_results"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
     bid_ntce_no = Column(String(50), nullable=False, index=True, comment="입찰공고번호")
     bid_ntce_ord = Column(String(10), default="000", comment="입찰공고차수")
     user_input_price = Column(BigInteger, nullable=True, comment="사용자 투찰 금액")
@@ -24,7 +24,7 @@ class RetrainLog(Base):
     """재학습 이력 로그 테이블"""
     __tablename__ = "retrain_logs"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
     trigger_source = Column(String(50), nullable=False)
     champion_version = Column(String(50), nullable=False)
     challenger_version = Column(String(50), nullable=False)
