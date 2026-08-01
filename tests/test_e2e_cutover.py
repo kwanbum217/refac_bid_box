@@ -27,5 +27,7 @@ def test_e2e_full_flow():
     assert res_stream.status_code == 200
     assert "text/event-stream" in res_stream.headers["content-type"]
 
-    res_ui = client.get("/ui/chatbot")
-    assert res_ui.status_code == 200
+    # 챗봇 화면은 원본 경로 /chat/ 로 이식되었고 로그인을 요구한다.
+    res_ui = client.get("/chat/", follow_redirects=False)
+    assert res_ui.status_code == 303
+    assert res_ui.headers["location"] == "/accounts/login/?next=/chat/"

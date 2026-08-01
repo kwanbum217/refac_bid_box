@@ -1,0 +1,122 @@
+/* Harness Design System Tokens */
+:root {
+    --h-primary: #0073E6;
+    --h-primary-hover: #005BB3;
+    --h-primary-light: #E6F1FF;
+    
+    --h-bg: #FFFFFF;
+    --h-bg-secondary: #F9FAFB;
+    
+    --h-sidebar-bg: #020B1A;
+    --h-sidebar-hover: rgba(255, 255, 255, 0.1);
+    
+    --h-border: #E6E9EF;
+    --h-border-hover: #D1D5DB;
+    
+    --h-text-primary: #1F2937;
+    --h-text-secondary: #4B5563;
+    --h-text-muted: #9CA3AF;
+    
+    --h-success: #10B981;
+    --h-warning: #F59E0B;
+    --h-error: #EF4444;
+}
+
+/* Base Styles */
+body {
+    background-color: var(--h-bg);
+    color: var(--h-text-primary);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Component: Harness Card */
+.h-card {
+    background-color: #FFFFFF;
+    border: 1px solid var(--h-border);
+    border-radius: 6px;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.h-card:hover {
+    border-color: var(--h-border-hover);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Component: Button */
+.h-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 4px;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.h-btn-primary {
+    background-color: var(--h-primary);
+    color: #FFFFFF;
+    border: 1px solid var(--h-primary);
+}
+
+.h-btn-primary:hover {
+    background-color: var(--h-primary-hover);
+    border-color: var(--h-primary-hover);
+}
+
+.h-btn-secondary {
+    background-color: #FFFFFF;
+    color: var(--h-text-primary);
+    border: 1px solid var(--h-border);
+}
+
+.h-btn-secondary:hover {
+    background-color: var(--h-bg-secondary);
+    border-color: var(--h-border-hover);
+}
+
+/* Component: Table */
+.h-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.h-table th {
+    background-color: var(--h-bg-secondary);
+    color: var(--h-text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--h-border);
+    text-align: left;
+}
+
+.h-table td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--h-border);
+    font-size: 0.875rem;
+    color: var(--h-text-primary);
+    transition: background-color 0.2s;
+}
+
+.h-table tr:hover td {
+    background-color: var(--h-bg-secondary);
+}
+
+/* Layout Utilities */
+.h-page-header {
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--h-border);
+    background-color: #FFFFFF;
+}
+
+.h-content-padding {
+    padding: 2rem;
+}

@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+
+{% block title %}BIDBOX 대시보드 - 입찰 인텔리전스{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .stat-card { transition: all 0.2s ease-in-out; }
+    .stat-card:hover { transform: translateY(-2px); border-color: var(--h-primary); }
+    .chart-container { position: relative; width: 100%; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="py-10 px-6 sm:px-10 max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+            <div class="flex items-center space-x-2 mb-1">
+                <span class="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider rounded">분석 센터</span>
+                <span class="text-slate-400 text-[10px] font-bold uppercase tracking-wider">시장 인텔리전스</span>
+            </div>
+            <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">
+                입찰 인텔리전스 대시보드
+            </h1>
+            <p class="text-slate-500 mt-1 font-medium">실시간 G2B 데이터 시각화와 시장 흐름 분석을 한 화면에서 확인합니다.</p>
+        </div>
+        <div class="flex items-center space-x-3 px-4 py-2 bg-white rounded-lg border border-slate-200 shadow-sm">
+            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span class="text-[11px] font-semibold text-slate-500">마지막 동기화</span>
+            <span id="latestCollected" class="text-[11px] font-bold text-slate-900">-</span>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-primary border border-blue-100">
+                    <i class="fas fa-file-invoice text-lg"></i>
+                </div>
+                <div class="flex items-center text-emerald-500 text-xs font-bold">
+                    <i class="fas fa-arrow-up mr-1"></i> 실시간
+                </div>
+            </div>
+            <div>
+                <h3 class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">전체 낙찰 건수</h3>
+                <p class="mb-2 text-[10px] font-bold text-blue-500">2015년 ~ 현재</p>
+                <p class="text-2xl font-extrabold text-slate-900 tracking-tight" id="totalCount">-</p>
+            </div>
+        </div>
+
+        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
+                    <i class="fas fa-won-sign text-lg"></i>
+                </div>
+            </div>
+            <div>
+                <h3 class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">누적 낙찰금액</h3>
+                <p class="mb-2 text-[10px] font-bold text-indigo-500">2015년 ~ 현재</p>
+                <p class="text-2xl font-extrabold text-slate-900 tracking-tight" id="totalAmount">-</p>
+            </div>
+        </div>
+
+        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center text-orange-600 border border-orange-100">
+                    <i class="fas fa-percentage text-lg"></i>
+                </div>
+            </div>
+            <div>
+                <h3 class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">평균 낙찰률</h3>
+                <p class="mb-2 text-[10px] font-bold text-orange-500">2015년 ~ 현재</p>
+                <p class="text-2xl font-extrabold text-slate-900 tracking-tight" id="avgRate">-</p>
+            </div>
+        </div>
+
+        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+                <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
+                    <i class="fas fa-shield-check text-lg"></i>
+                </div>
+                <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded">정상</span>
+            </div>
+            <div>
+                <h3 class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">시스템 상태</h3>
+                <p class="text-2xl font-extrabold text-slate-900 tracking-tight">안정</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div class="h-card p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div class="flex items-center justify-between mb-8">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900">월별 낙찰 추이</h3>
+                    <p class="text-xs text-slate-500 font-medium mt-0.5">최근 12개월 기준 낙찰 건수 흐름을 확인합니다.</p>
+                </div>
+                <div class="p-2 bg-slate-50 rounded-md">
+                    <i class="fas fa-chart-line text-slate-400"></i>
+                </div>
+            </div>
+            <div class="chart-container h-[300px]">
+                <canvas id="monthlyTrendChart"></canvas>
+            </div>
+        </div>
+
+        <div class="h-card p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+            <div class="flex items-center justify-between mb-8">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900">기관별 계약 규모</h3>
+                    <p class="text-xs text-slate-500 font-medium mt-0.5">계약 금액 기준 상위 10개 기관을 비교합니다.</p>
+                </div>
+                <div class="p-2 bg-slate-50 rounded-md">
+                    <i class="fas fa-building text-slate-400"></i>
+                </div>
+            </div>
+            <div class="chart-container h-[300px]">
+                <canvas id="agencyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
+        <div class="lg:col-span-2 h-card bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div class="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900">총액 계약 상위 10개 업체</h3>
+                    <p class="text-xs text-slate-500 font-medium mt-0.5">최근 1년 단가성 입찰을 제외하고 총액 낙찰금액 기준으로 정리합니다.</p>
+                </div>
+                <button class="text-[11px] font-bold text-primary hover:underline uppercase tracking-wider">보고서 내보내기</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="bg-white text-slate-500 text-[10px] uppercase font-bold tracking-widest border-b border-slate-100">
+                            <th class="px-8 py-4">순위</th>
+                            <th class="px-8 py-4">업체명</th>
+                            <th class="px-8 py-4 text-right">건수</th>
+                            <th class="px-8 py-4 text-right">총액 합계</th>
+                        </tr>
+                    </thead>
+                    <tbody id="companyTableBody" class="divide-y divide-slate-100">
+                        <tr><td colspan="4" class="py-20 text-center text-slate-400 animate-pulse font-bold uppercase tracking-widest text-[10px]">데이터를 불러오는 중입니다...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="flex flex-col space-y-6">
+            <div class="h-card p-8 bg-slate-900 text-white border-none shadow-xl relative overflow-hidden flex-1 rounded-xl">
+                <div class="absolute top-0 right-0 w-48 h-48 bg-primary/20 rounded-full blur-3xl -mr-24 -mt-24"></div>
+
+                <h3 class="text-xl font-bold mb-6 flex items-center relative z-10">
+                    <i class="fas fa-wand-magic-sparkles text-primary mr-3"></i> AI 인사이트
+                </h3>
+
+                <div class="space-y-4 relative z-10">
+                    <div class="p-5 bg-white/5 rounded-xl border border-white/10">
+                        <p class="text-[10px] font-bold text-primary mb-2 uppercase tracking-widest">시장 전략</p>
+                        <p class="text-slate-300 leading-relaxed text-xs">
+                            상반기 입찰 집중도가 높아지는 경향이 있으므로 1분기 안에 제안 전략을 정교화하면 수주 확률을 높일 수 있습니다.
+                        </p>
+                    </div>
+
+                    <div class="p-5 bg-white/5 rounded-xl border border-white/10">
+                        <p class="text-[10px] font-bold text-orange-400 mb-2 uppercase tracking-widest">가격 변동성</p>
+                        <p class="text-slate-300 leading-relaxed text-xs">
+                            업종별 평균 낙찰률 편차가 크기 때문에 IT 서비스 계열은 98.5% 이상 구간의 경쟁 강도를 특히 주의해야 합니다.
+                        </p>
+                    </div>
+
+                    <div class="pt-4">
+                        <a href="{{ url('chatbot:chat_page') }}" class="flex items-center justify-center w-full h-btn-primary !py-4 transition-transform hover:scale-[1.02] shadow-lg shadow-primary/20">
+                            AI 어드바이저에게 묻기
+                            <i class="fas fa-arrow-right ml-2 text-xs"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="h-card p-6 bg-white border border-dashed border-slate-300 rounded-xl">
+                <h4 class="text-sm font-bold text-slate-900 mb-2">더 자세한 분석이 필요하신가요?</h4>
+                <p class="text-xs text-slate-500 mb-4">경쟁사 가격대, 기관별 추세, 최근 낙찰 흐름까지 더 깊게 살펴볼 수 있습니다.</p>
+                <a href="#" class="text-xs font-bold text-primary hover:underline">문서 보기</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        loadStats();
+    });
+
+    async function fetchJsonOrThrow(url) {
+        const res = await fetch(url);
+        if (!res.ok) {
+            const rawText = await res.text();
+            throw new Error(`HTTP ${res.status}: ${rawText.slice(0, 100)}`);
+        }
+        return await res.json();
+    }
+
+    async function loadStats() {
+        try {
+            const data = await fetchJsonOrThrow('{{ url('bids:api_stats') }}');
+
+            document.getElementById('totalCount').textContent = data.total_count.toLocaleString() + '건';
+            document.getElementById('totalAmount').textContent = formatWon(data.total_amount);
+            document.getElementById('avgRate').textContent = data.avg_rate + '%';
+            document.getElementById('latestCollected').textContent = data.latest_collected ? data.latest_collected.replace('T', ' ').slice(0, 16) : '-';
+
+            renderCharts(data);
+            renderCompanyTable(data.by_company);
+        } catch (e) {
+            console.error('Data Load Error:', e);
+            const tbody = document.getElementById('companyTableBody');
+            tbody.innerHTML = '<tr><td colspan="4" class="py-20 text-center text-red-500 font-bold">대시보드 데이터를 불러오지 못했습니다.</td></tr>';
+        }
+    }
+
+    function formatUnitValue(value, largeValueDecimals = 0) {
+        const numericValue = Number(value || 0);
+        const maximumFractionDigits = Math.abs(numericValue) >= 100 ? largeValueDecimals : 1;
+        return numericValue.toLocaleString('ko-KR', {
+            maximumFractionDigits,
+        });
+    }
+
+    function formatCount(value) {
+        return Number(value || 0).toLocaleString('ko-KR') + '건';
+    }
+
+    function formatWon(amt) {
+        const amount = Number(amt || 0);
+        if (!amount) return '-';
+
+        const eokUnit = 100000000;
+        const joUnit = 1000000000000;
+
+        if (amount >= joUnit) {
+            const jo = Math.floor(amount / joUnit);
+            const eok = Math.floor((amount - (jo * joUnit)) / eokUnit);
+            return jo.toLocaleString('ko-KR') + '조' + (eok ? ' ' + eok.toLocaleString('ko-KR') + '억원' : '원');
+        }
+        if (amount >= eokUnit) return formatUnitValue(amount / eokUnit) + '억원';
+        if (amount >= 10000) return Math.round(amount / 10000).toLocaleString('ko-KR') + '만원';
+        return amount.toLocaleString('ko-KR') + '원';
+    }
+
+    function renderCharts(data) {
+        const textColor = '#64748b';
+        const gridColor = '#f1f5f9';
+
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.font.weight = '600';
+        Chart.defaults.color = textColor;
+
+        const primaryColor = '#0073E6';
+        const secondaryColor = '#8b5cf6';
+
+        const trendCtx = document.getElementById('monthlyTrendChart').getContext('2d');
+        const months = (data.by_month || []).map((d) => d.month);
+        const counts = (data.by_month || []).map((d) => d.count);
+
+        const gradient = trendCtx.createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, 'rgba(0, 115, 230, 0.15)');
+        gradient.addColorStop(1, 'rgba(0, 115, 230, 0)');
+
+        new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: months,
+                datasets: [{
+                    label: '낙찰 건수',
+                    data: counts,
+                    borderColor: primaryColor,
+                    backgroundColor: gradient,
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 3,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: primaryColor,
+                    pointBorderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#020B1A',
+                        padding: 12,
+                        titleFont: { size: 11 },
+                        bodyFont: { size: 13, weight: '700' },
+                        cornerRadius: 6,
+                        displayColors: false,
+                        callbacks: {
+                            label: (v) => ' ' + v.dataset.label + ': ' + formatCount(v.raw)
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                    y: {
+                        grid: { color: gridColor },
+                        border: { display: false },
+                        beginAtZero: true,
+                        ticks: { font: { size: 10 }, callback: (v) => formatCount(v) }
+                    }
+                }
+            }
+        });
+
+        const agencyCtx = document.getElementById('agencyChart').getContext('2d');
+        const agencies = (data.by_agency || []).map((d) => d.name.length > 10 ? d.name.slice(0, 10) + '..' : d.name);
+        const amounts = (data.by_agency || []).map((d) => d.total_amt);
+
+        new Chart(agencyCtx, {
+            type: 'bar',
+            data: {
+                labels: agencies,
+                datasets: [{
+                    label: '계약 금액',
+                    data: amounts,
+                    backgroundColor: secondaryColor + 'cc',
+                    hoverBackgroundColor: secondaryColor,
+                    borderRadius: 4,
+                    barThickness: 16
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#020B1A',
+                        callbacks: { label: (v) => ' ' + formatWon(v.raw) }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: gridColor },
+                        border: { display: false },
+                        ticks: { font: { size: 9 }, callback: (v) => formatWon(v) }
+                    },
+                    y: { grid: { display: false }, ticks: { color: '#0f172a', font: { size: 11, weight: '700' } } }
+                }
+            }
+        });
+    }
+
+    function renderCompanyTable(companies) {
+        const tbody = document.getElementById('companyTableBody');
+        if (!companies || companies.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="py-20 text-center text-slate-400 font-bold uppercase tracking-widest text-[10px]">표시할 데이터가 없습니다.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = companies.map((c, i) => `
+            <tr class="hover:bg-slate-50 transition-colors group">
+                <td class="px-8 py-4">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded bg-slate-100 text-slate-500 text-[10px] font-bold group-hover:bg-primary group-hover:text-white transition-colors">
+                        ${i + 1}
+                    </span>
+                </td>
+                <td class="px-8 py-4">
+                    <div class="font-bold text-slate-900">${c.name}</div>
+                    <div class="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-0.5">총액 기준 업체</div>
+                </td>
+                <td class="px-8 py-4 text-right font-semibold text-slate-600">${c.count.toLocaleString()}</td>
+                <td class="px-8 py-4 text-right">
+                    <span class="text-primary font-bold text-sm">${formatWon(c.total_amt)}</span>
+                </td>
+            </tr>
+        `).join('');
+    }
+</script>
+{% endblock %}

@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
+from src.app.api.ui import router as ui_router
 from src.app.api.v1.accounts import router as accounts_router
 from src.app.api.v1.automation import router as automation_router
 from src.app.api.v1.bids import router as bids_router
@@ -13,7 +13,6 @@ from src.app.api.v1.health import router as health_router
 from src.app.api.v1.predictions import router as predictions_router
 
 APP_DIR = Path(__file__).resolve().parent
-templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
 app = FastAPI(
     title="refac_bid_box API",
@@ -40,33 +39,5 @@ app.include_router(chatbot_router, prefix="/api/v1")
 app.include_router(automation_router, prefix="/api/v1")
 app.include_router(accounts_router, prefix="/api/v1")
 
-
-@app.get("/")
-def root():
-    return {
-        "message": "Welcome to refac_bid_box API platform",
-        "ui": "/ui/",
-        "docs": "/docs",
-        "health": "/api/v1/health",
-    }
-
-
-@app.get("/ui/")
-def ui_dashboard(request: Request):
-    return templates.TemplateResponse(
-        request, "dashboard.html", {"active_tab": "dashboard"},
-    )
-
-
-@app.get("/ui/prediction")
-def ui_prediction(request: Request):
-    return templates.TemplateResponse(
-        request, "prediction.html", {"active_tab": "prediction"},
-    )
-
-
-@app.get("/ui/chatbot")
-def ui_chatbot(request: Request):
-    return templates.TemplateResponse(
-        request, "chatbot.html", {"active_tab": "chatbot"},
-    )
+# SSR 화면은 원본 Django 경로를 그대로 사용하므로 prefix 없이 마지막에 포함합니다.
+app.include_router(ui_router)

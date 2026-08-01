@@ -1,0 +1,783 @@
+{% extends "base.html" %}
+
+{% block title %}BIDBOX - 홈 인사이트{% endblock %}
+{% block page_header %}홈 인사이트{% endblock %}
+
+{% block breadcrumbs %}
+<div class="flex min-w-0 items-center gap-4">
+    <a href="{{ url('index') }}" class="inline-flex shrink-0 items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-2.5 text-slate-900 shadow-sm transition-colors hover:border-primary/30 dark:border-slate-200 dark:bg-white dark:text-slate-900">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+            <i class="fas fa-cube text-base text-white"></i>
+        </div>
+        <div class="hidden sm:block">
+            <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">BIDBOX</p>
+            <p class="text-sm font-bold tracking-tight text-slate-900">홈</p>
+        </div>
+    </a>
+    <div class="hidden h-7 w-px bg-slate-200 md:block dark:bg-slate-700"></div>
+    <div class="min-w-0">
+        <p class="hidden text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 lg:block">홈 인사이트</p>
+        <span class="block truncate text-sm font-black tracking-tight text-slate-900 dark:text-white sm:text-base">최근 수집 브리핑</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .home-swipe-slide.home-hero-slide {
+        background:
+            radial-gradient(circle at top left, rgba(59, 130, 246, 0.26), transparent 34%),
+            radial-gradient(circle at bottom right, rgba(56, 189, 248, 0.20), transparent 30%),
+            linear-gradient(135deg, #031225 0%, #081f3d 52%, #0b2f61 100%);
+        border-color: rgba(96, 165, 250, 0.18);
+        color: #FFFFFF;
+    }
+
+    .home-hero-grid {
+        position: relative;
+        z-index: 1;
+    }
+
+    .home-stat-card {
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(14px);
+    }
+
+    .home-pill {
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .home-sync-meta {
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .home-swipe-track {
+        display: flex;
+        align-items: flex-start;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        scroll-behavior: smooth;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        transition: height 0.24s ease;
+        cursor: grab;
+    }
+
+    .home-swipe-track:active {
+        cursor: grabbing;
+    }
+
+    .home-swipe-track.is-dragging {
+        scroll-snap-type: none;
+        scroll-behavior: auto;
+    }
+
+    .home-swipe-track.is-dragging * {
+        pointer-events: none;
+    }
+
+    .home-swipe-track::-webkit-scrollbar {
+        display: none;
+    }
+
+    .home-swipe-slide {
+        box-sizing: border-box;
+        flex: 0 0 100%;
+        min-width: 100%;
+        scroll-snap-align: start;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        background: rgba(255, 255, 255, 0.96);
+        border-radius: 28px;
+        box-shadow: 0 20px 40px -30px rgba(15, 23, 42, 0.42);
+    }
+
+    .home-swipe-shell {
+        position: relative;
+        border: 1px solid rgba(37, 99, 235, 0.14);
+        background:
+            radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 28%),
+            radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.18), transparent 32%),
+            linear-gradient(180deg, rgba(3, 18, 37, 0.98) 0%, rgba(8, 31, 61, 0.97) 46%, rgba(10, 44, 90, 0.96) 74%, rgba(11, 47, 97, 0.96) 100%);
+        box-shadow: 0 26px 72px -42px rgba(2, 18, 39, 0.72);
+    }
+
+    .home-swipe-shell::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(96, 165, 250, 0.08) 0%, rgba(96, 165, 250, 0) 26%);
+        pointer-events: none;
+    }
+
+    .home-swipe-stage {
+        position: relative;
+        padding: 0 14px 16px;
+    }
+
+    .home-nav-chip {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(219, 234, 254, 0.86);
+        backdrop-filter: blur(12px);
+        transition: all 0.2s ease;
+        position: relative;
+        z-index: 10;
+        cursor: pointer;
+        pointer-events: auto;
+    }
+
+    .home-nav-chip:hover {
+        border-color: rgba(147, 197, 253, 0.5);
+        background: rgba(255, 255, 255, 0.12);
+        color: #FFFFFF;
+    }
+
+    .home-nav-chip.is-active {
+        border-color: #2563EB;
+        background: #2563EB;
+        color: #FFFFFF;
+        box-shadow: 0 14px 30px -18px rgba(37, 99, 235, 0.75);
+    }
+
+    .home-nav-arrow {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(219, 234, 254, 0.86);
+        backdrop-filter: blur(12px);
+        transition: all 0.2s ease;
+        position: relative;
+        z-index: 10;
+        cursor: pointer;
+        pointer-events: auto;
+    }
+
+    .home-nav-arrow:hover {
+        border-color: rgba(147, 197, 253, 0.5);
+        background: rgba(255, 255, 255, 0.12);
+        color: #FFFFFF;
+    }
+
+    .home-slide-card {
+        transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+        word-break: keep-all;
+        overflow-wrap: break-word;
+    }
+
+    .home-slide-card:hover {
+        transform: translateY(-4px);
+        border-color: #BFDBFE;
+        box-shadow: 0 18px 34px -24px rgba(15, 23, 42, 0.28);
+    }
+
+    .home-result-metrics > :first-child > span:first-child {
+        padding-top: 0.25rem;
+    }
+
+    .home-result-metrics > :first-child > span:last-child {
+        min-width: 0;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-align: right;
+        line-height: 1.5rem;
+        word-break: keep-all;
+        overflow-wrap: break-word;
+        text-wrap: pretty;
+    }
+
+    .home-metric-stack {
+        display: grid;
+        gap: 0.45rem;
+        min-width: 0;
+    }
+
+    .home-metric-stack > :last-child,
+    .home-metric-value {
+        min-width: 0;
+        justify-self: end;
+        text-align: right;
+        line-height: 1.1;
+    }
+
+    .home-money-stack > :last-child,
+    .home-money-value {
+        white-space: nowrap;
+        word-break: keep-all;
+        overflow-wrap: normal;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .home-line-clamp-2 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        word-break: keep-all;
+        overflow-wrap: break-word;
+        text-wrap: pretty;
+    }
+
+    .home-line-clamp-3 {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        word-break: keep-all;
+        overflow-wrap: break-word;
+        text-wrap: pretty;
+    }
+
+    .home-nav-arrow[disabled] {
+        opacity: 0.35;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    @media (max-width: 1023px) {
+        .home-swipe-shell {
+            background:
+                radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 26%),
+                radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.16), transparent 34%),
+                linear-gradient(180deg, rgba(3, 18, 37, 0.98) 0%, rgba(8, 31, 61, 0.97) 38%, rgba(10, 44, 90, 0.96) 72%, rgba(11, 47, 97, 0.96) 100%);
+        }
+    }
+
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="px-5 py-8 sm:px-8 xl:px-10">
+    <div class="mx-auto max-w-[1600px] space-y-8">
+        <section class="home-swipe-shell overflow-hidden rounded-[30px]">
+            <div class="relative flex flex-col gap-5 px-6 py-6 lg:flex-row lg:items-end lg:justify-between lg:px-8">
+                <div>
+                    <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/70">스와이프 브리핑</p>
+                    <h2 class="mt-2 text-2xl font-black tracking-tight text-white">카테고리별 최근 수집 공고와 최근 낙찰 결과</h2>
+                    <p class="mt-2 text-sm leading-6 text-blue-100/75">
+                        상단 버튼으로 바로 이동하거나, 패널을 좌우로 넘기며 흐름을 이어서 볼 수 있습니다.
+                    </p>
+                </div>
+
+                <div class="flex flex-col gap-3 lg:items-end">
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            class="home-nav-chip is-active rounded-full px-4 py-2 text-xs font-bold tracking-tight"
+                            data-home-swipe-tab
+                            data-slide-index="0">
+                            홈 브리핑
+                        </button>
+                        {% for section in recent_bid_sections %}
+                        <button
+                            type="button"
+                            class="home-nav-chip rounded-full px-4 py-2 text-xs font-bold tracking-tight"
+                            data-home-swipe-tab
+                            data-slide-index="{{ loop.index }}">
+                            {{ section.label }}
+                        </button>
+                        {% endfor %}
+                        <button
+                            type="button"
+                            class="home-nav-chip rounded-full px-4 py-2 text-xs font-bold tracking-tight"
+                            data-home-swipe-tab
+                            data-slide-index="{{ recent_bid_sections|length|add('1') }}">
+                            최근 낙찰 결과
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" class="home-nav-arrow inline-flex h-10 w-10 items-center justify-center rounded-full" data-home-swipe-prev>
+                            <i class="fas fa-chevron-left text-xs"></i>
+                        </button>
+                        <button type="button" class="home-nav-arrow inline-flex h-10 w-10 items-center justify-center rounded-full" data-home-swipe-next>
+                            <i class="fas fa-chevron-right text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="home-swipe-stage">
+            <div class="home-swipe-track" data-home-swipe-track>
+                <article class="home-swipe-slide home-hero-slide text-white" data-home-swipe-slide>
+                    <div class="home-hero-grid px-7 py-8 lg:px-10 lg:py-10">
+                        <div class="space-y-7">
+                            <div class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-blue-100 home-pill">
+                                <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+                                오늘의 공고 브리핑
+                            </div>
+
+                            <div class="space-y-6 lg:space-y-7">
+                                <h1 class="max-w-none text-4xl font-black tracking-tight leading-[1.14] text-white sm:text-[3.1rem] sm:leading-[1.1] xl:text-[4.6rem] xl:leading-[1.08]">
+                                    최근에 수집된 공고와 낙찰 결과를 한 번의 <br class="hidden xl:block"><span class="inline-block whitespace-nowrap">스와이프로</span> 살펴보는 홈 인사이트
+                                </h1>
+                                <p class="max-w-none text-sm leading-7 text-blue-50/80 sm:text-base">
+                                    좌측 메뉴 없이 핵심 브리핑에 바로 집중할 수 있도록 홈을 재구성했습니다.
+                                    건설, 용역, 물품 공고와 최근 낙찰 결과를 같은 흐름 안에서 넘겨보며 바로 탐색할 수 있습니다.
+                                </p>
+                            </div>
+
+                            <div class="flex flex-col gap-5">
+                                <div class="flex flex-col gap-3 sm:flex-row">
+                                    <a href="{{ url('bids:bid_list') }}" class="h-btn h-btn-primary rounded-xl px-5 py-3 text-sm shadow-lg shadow-blue-950/20">
+                                        공고 전체 탐색
+                                        <i class="fas fa-arrow-right ml-2 text-[11px]"></i>
+                                    </a>
+                                    <a href="{{ url('chatbot:chat_page') }}" class="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/10 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-white/15">
+                                        AI 어드바이저로 이어가기
+                                        <i class="fas fa-robot ml-2 text-[11px]"></i>
+                                    </a>
+                                </div>
+
+                                <div class="home-sync-meta flex min-h-[8rem] flex-col justify-center gap-3 py-4 xl:min-h-[12rem] xl:flex-row xl:items-center xl:justify-between">
+                                    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                                        <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/70">최근 동기화</p>
+                                        <p class="text-xl font-black tracking-tight leading-none text-white sm:text-[1.6rem]">
+                                            {% if latest_collected_at %}
+                                                {{ latest_collected_at|date("Y.m.d H:i") }}
+                                            {% else %}
+                                                데이터 대기 중
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    <p class="max-w-[34rem] text-sm leading-6 text-blue-100/72">
+                                        홈 스와이프 패널은 최근 수집 시각을 기준으로 가장 최신 데이터를 우선 노출합니다.
+                                        상단에서 흐름을 확인하고 아래 카드 열에서 핵심 상태를 바로 읽을 수 있습니다.
+                                    </p>
+                                </div>
+
+                                <div class="flex flex-wrap gap-3">
+                                    <div class="inline-flex items-center gap-3 rounded-2xl px-4 py-3 home-pill">
+                                        <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
+                                            <i class="fas fa-layer-group text-sm text-blue-100"></i>
+                                        </span>
+                                        <div>
+                                            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/70">누적 공고</p>
+                                            <p class="mt-1 text-lg font-black tracking-tight text-white">{{ announcement_total|intcomma }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="inline-flex items-center gap-3 rounded-2xl px-4 py-3 home-pill">
+                                        <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
+                                            <i class="fas fa-scale-balanced text-sm text-blue-100"></i>
+                                        </span>
+                                        <div>
+                                            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/70">낙찰 결과</p>
+                                            <p class="mt-1 text-lg font-black tracking-tight text-white">{{ result_total|intcomma }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="inline-flex items-center gap-3 rounded-2xl px-4 py-3 home-pill">
+                                        <span class="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
+                                            <i class="fas fa-wave-square text-sm text-blue-100"></i>
+                                        </span>
+                                        <div>
+                                            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/70">최근 낙찰률</p>
+                                            <p class="mt-1 text-lg font-black tracking-tight text-white">
+                                                {% if latest_result_rate is not none %}
+                                                    {{ latest_result_rate }}%
+                                                {% else %}
+                                                    -
+                                                {% endif %}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 pt-2">
+                            <div class="grid gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)_minmax(0,1.1fr)]">
+                                <article class="flex h-full flex-col rounded-[22px] border border-white/12 bg-white/10 p-4 home-stat-card">
+                                    <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/70">최근 수집 공고</p>
+                                    <p class="mt-2 text-[2rem] font-black tracking-tight leading-none text-white">{{ recent_bids|length }}</p>
+                                    <p class="mt-1.5 text-sm leading-5 text-blue-100/75">홈에서 바로 확인 가능한 최신 공고 묶음</p>
+                                </article>
+
+                                <article class="flex h-full flex-col rounded-[22px] border border-white/12 bg-white/10 p-4 home-stat-card">
+                                    <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/70">최근 낙찰 묶음</p>
+                                    <p class="mt-2 text-[2rem] font-black tracking-tight leading-none text-white">{{ recent_results|length }}</p>
+                                    <p class="mt-1.5 text-sm leading-5 text-blue-100/75">개찰 순으로 정렬한 최신 결과 스냅샷</p>
+                                </article>
+
+                                <article class="flex h-full flex-col rounded-[22px] border border-emerald-400/20 bg-emerald-400/10 p-4">
+                                    <div class="flex h-full items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-100">권장 탐색 흐름</p>
+                                            <p class="mt-2 max-w-[18rem] text-[1.7rem] font-black tracking-tight leading-tight text-white">카테고리별 공고 확인 후 결과 패널로 비교</p>
+                                        </div>
+                                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/10 text-emerald-100">
+                                            <i class="fas fa-route text-base"></i>
+                                        </div>
+                                    </div>
+                                </article>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                {% for section in recent_bid_sections %}
+                <article class="home-swipe-slide" data-home-swipe-slide>
+                    <div class="grid gap-6 px-6 py-6 xl:grid-cols-[300px_1fr] xl:px-8 xl:py-8">
+                        <div class="rounded-[26px] bg-slate-950 p-6 text-white shadow-sm">
+                            {% if section.code == "Cnstwk" %}
+                            <span class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400/15 text-amber-200">
+                                <i class="fas fa-helmet-safety text-lg"></i>
+                            </span>
+                            {% elif section.code == "Servc" %}
+                            <span class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-400/15 text-sky-200">
+                                <i class="fas fa-briefcase text-lg"></i>
+                            </span>
+                            {% else %}
+                            <span class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-200">
+                                <i class="fas fa-boxes-stacked text-lg"></i>
+                            </span>
+                            {% endif %}
+                            <p class="mt-5 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">최근 수집 공고</p>
+                            <h3 class="mt-2 text-3xl font-black tracking-tight">{{ section.label }} 브리핑</h3>
+                            <p class="mt-3 text-sm leading-6 text-slate-300">
+                                최근 수집 시각 기준으로 정렬한 {{ section.label }} 공고입니다.
+                                필요하면 바로 전체 탐색으로 넘어갈 수 있습니다.
+                            </p>
+                            <div class="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
+                                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">노출 건수</p>
+                                <p class="mt-2 text-3xl font-black tracking-tight text-white">{{ section.entries|length }}</p>
+                            </div>
+                            <a href="{{ url('bids:bid_list') }}?cat={{ section.code }}" class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-white/90 transition-colors hover:text-white">
+                                {{ section.label }} 전체 공고 보기
+                                <i class="fas fa-arrow-right text-[11px]"></i>
+                            </a>
+                        </div>
+
+                        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {% for bid in section.entries %}
+                            <a href="{{ url('bids:bid_detail', bid.id) }}" class="home-slide-card flex h-full flex-col rounded-[24px] border border-slate-200 bg-slate-50/70 p-5">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold tracking-tight text-slate-900 shadow-sm">
+                                        {{ bid.category_label }}
+                                    </span>
+                                    <span class="text-[11px] font-semibold text-slate-500">{{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}</span>
+                                </div>
+                                <h4 class="mt-4 home-line-clamp-2 text-lg font-black tracking-tight text-slate-900">
+                                    {{ bid.bid_ntce_nm|default("공고명 정보 없음", true) }}
+                                </h4>
+                                <p class="mt-3 home-line-clamp-2 text-sm leading-6 text-slate-500">
+                                    {{ bid.dminstt_nm|default("수요기관 정보 없음", true) }}
+                                </p>
+                                <div class="mt-5 grid gap-3 text-sm text-slate-600">
+                                    <div class="home-metric-stack home-money-stack rounded-2xl bg-white px-4 py-3">
+                                        <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">기초금액</span>
+                                        <span class="home-metric-value home-money-value text-xl font-black tracking-tight text-slate-900">
+                                            {% if bid.has_base_amount %}
+                                            ₩{{ bid.display_base_amount|intcomma }}
+                                            {% else %}
+                                            -
+                                            {% endif %}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center justify-between gap-4 rounded-2xl bg-white px-4 py-3">
+                                        <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">수집 시각</span>
+                                        <span class="font-semibold text-slate-700">{{ bid.collected_at|date("m.d H:i") }}</span>
+                                    </div>
+                                </div>
+                                <div class="mt-5 inline-flex w-fit max-w-full items-center gap-5 self-center rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-2.5 shadow-sm">
+                                    <span class="grid gap-0.5 text-center text-[11px] font-extrabold uppercase tracking-[0.08em] leading-4 text-slate-700">
+                                        <span>공고</span>
+                                        <span>일시</span>
+                                    </span>
+                                    <span class="grid gap-0.5 text-sm font-black leading-5 tracking-tight text-slate-950">
+                                        {% if bid.bid_ntce_dt %}
+                                            <span>{{ bid.bid_ntce_dt|date("Y.m.d") }}</span>
+                                            <span>{{ bid.bid_ntce_dt|date("H:i") }}</span>
+                                        {% else %}
+                                            <span>-</span>
+                                        {% endif %}
+                                    </span>
+                                </div>
+                            </a>
+                            {% else %}
+                            <div class="md:col-span-2 xl:col-span-3 rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 py-16 text-center">
+                                <p class="text-lg font-black tracking-tight text-slate-900">{{ section.label }} 공고가 아직 없습니다</p>
+                                <p class="mt-2 text-sm text-slate-500">새로 수집되면 이 패널에 바로 노출됩니다.</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </article>
+                {% endfor %}
+
+                <article class="home-swipe-slide" data-home-swipe-slide>
+                    <div class="grid gap-6 px-6 py-6 xl:grid-cols-[320px_1fr] xl:px-8 xl:py-8">
+                        <div class="rounded-[26px] bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white shadow-sm xl:self-start">
+                            <span class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white">
+                                <i class="fas fa-chart-column text-lg"></i>
+                            </span>
+                            <p class="mt-5 text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-50/80">최근 낙찰 결과</p>
+                            <h3 class="mt-2 text-3xl font-black tracking-tight">낙찰 결과 비교</h3>
+                            <p class="mt-3 text-sm leading-6 text-emerald-50/90">
+                                가장 최근 개찰된 결과를 빠르게 비교해 현재 시장 흐름을 읽을 수 있습니다.
+                                낙찰률과 낙찰 금액을 함께 확인해 보세요.
+                            </p>
+                            <div class="mt-6 rounded-2xl border border-white/20 bg-white/10 px-4 py-4">
+                                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-50/80">노출 건수</p>
+                                <p class="mt-2 text-3xl font-black tracking-tight text-white">{{ recent_results|length }}</p>
+                            </div>
+                            <a href="{{ url('bids:result_list') }}" class="mt-6 inline-flex items-center gap-2 text-sm font-bold text-white transition-colors hover:text-emerald-50">
+                                낙찰 결과 더 보기
+                                <i class="fas fa-arrow-right text-[11px]"></i>
+                            </a>
+                        </div>
+
+                        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            {% for result in recent_results %}
+                            <a href="{{ url('bids:result_detail', result.id) }}" class="home-slide-card flex h-full flex-col rounded-[24px] border border-slate-200 bg-white p-5">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold tracking-tight text-emerald-700">
+                                        {{ result.category_label }}
+                                    </span>
+                                    <span class="text-[11px] font-medium text-slate-400">{{ result.rl_openg_dt|date("m.d H:i") }}</span>
+                                </div>
+                                <h4 class="mt-4 home-line-clamp-2 text-lg font-black tracking-tight text-slate-900">
+                                    {{ result.display_bid_ntce_nm }}
+                                </h4>
+                                <p class="mt-3 home-line-clamp-2 text-sm leading-6 text-slate-500">
+                                    {{ result.display_dminstt_nm }}
+                                </p>
+                                <div class="home-result-metrics mt-5 rounded-[22px] bg-slate-50 px-4 py-4">
+                                    <div class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-4">
+                                        <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">낙찰 업체</span>
+                                        <span class="text-sm font-bold tracking-tight text-slate-900">{{ result.display_bidwinnr_nm }}</span>
+                                    </div>
+                                    <div class="mt-3 grid gap-3">
+                                        <div class="home-metric-stack">
+                                            <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">낙찰률</p>
+                                            <p class="mt-1 min-w-0 text-right text-2xl font-black leading-none tracking-tight text-primary">
+                                                {% if result.sucsf_bid_rate is not none %}
+                                                    {{ result.sucsf_bid_rate }}%
+                                                {% else %}
+                                                    -
+                                                {% endif %}
+                                            </p>
+                                        </div>
+                                        <div class="home-metric-stack home-money-stack">
+                                            <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">낙찰 금액</p>
+                                            <p class="home-metric-value home-money-value text-base font-black tracking-tight text-slate-900">₩{{ result.sucsf_bid_amt|default(0, true)|intcomma }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-5 flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                                    <span>공고번호</span>
+                                    <span>{{ result.bid_ntce_no }}-{{ result.bid_ntce_ord }}</span>
+                                </div>
+                            </a>
+                            {% else %}
+                            <div class="md:col-span-2 xl:col-span-3 rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 py-16 text-center">
+                                <p class="text-lg font-black tracking-tight text-slate-900">최근 낙찰 결과가 아직 없습니다</p>
+                                <p class="mt-2 text-sm text-slate-500">데이터가 수집되면 이 패널에서 바로 비교할 수 있습니다.</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </article>
+            </div>
+            </div>
+        </section>
+
+        <section class="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <article class="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">빠른 작업</p>
+                <h2 class="mt-2 text-2xl font-black tracking-tight text-slate-900">다음 액션으로 바로 이어가기</h2>
+                <p class="mt-3 text-sm leading-6 text-slate-500">
+                    홈에서 흐름을 확인한 뒤 공고 탐색, 비교 분석, AI 어드바이저로 자연스럽게 넘어갈 수 있습니다.
+                </p>
+                <div class="mt-5 grid gap-3 md:grid-cols-3">
+                    <a href="{{ url('bids:bid_list') }}" class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-900 transition-colors hover:border-blue-200 hover:bg-blue-50">
+                        공고 탐색 열기
+                    </a>
+                    <a href="{{ url('bids:compare') }}" class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-900 transition-colors hover:border-blue-200 hover:bg-blue-50">
+                        비교 분석 열기
+                    </a>
+                    <a href="{{ url('chatbot:chat_page') }}" class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-900 transition-colors hover:border-blue-200 hover:bg-blue-50">
+                        AI 어드바이저 열기
+                    </a>
+                </div>
+            </article>
+
+            <article class="rounded-[28px] border border-slate-200 bg-slate-950 p-6 text-white shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-200/70">스와이프 팁</p>
+                <h2 class="mt-2 text-2xl font-black tracking-tight">모바일에서는 손가락으로, 데스크톱에서는 버튼으로 이동</h2>
+                <p class="mt-3 text-sm leading-6 text-slate-300">
+                    각 패널은 터치 스와이프와 버튼 이동을 모두 지원합니다.
+                    최신 수집 공고를 카테고리별로 확인하고 마지막 패널에서 최근 낙찰 결과를 비교해 보세요.
+                </p>
+            </article>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const track = document.querySelector('[data-home-swipe-track]');
+    if (!track) {
+        return;
+    }
+
+    const slides = Array.from(track.querySelectorAll('[data-home-swipe-slide]'));
+    const tabs = Array.from(document.querySelectorAll('[data-home-swipe-tab]'));
+    const prevButton = document.querySelector('[data-home-swipe-prev]');
+    const nextButton = document.querySelector('[data-home-swipe-next]');
+    let currentIndex = 0;
+    let scrollTicking = false;
+
+    function clampIndex(index) {
+        return Math.max(0, Math.min(index, slides.length - 1));
+    }
+
+    function syncTrackHeight(index) {
+        const target = slides[clampIndex(index)];
+        if (!target) {
+            return;
+        }
+
+        track.style.height = `${target.offsetHeight}px`;
+    }
+
+    function syncControls(index) {
+        currentIndex = clampIndex(index);
+        syncTrackHeight(currentIndex);
+
+        tabs.forEach(function(tab, tabIndex) {
+            tab.classList.toggle('is-active', tabIndex === currentIndex);
+        });
+
+        if (prevButton) {
+            prevButton.disabled = currentIndex === 0;
+        }
+        if (nextButton) {
+            nextButton.disabled = currentIndex === slides.length - 1;
+        }
+    }
+
+    function scrollToSlide(index) {
+        const nextIndex = clampIndex(index);
+        const target = slides[nextIndex];
+        if (!target) {
+            return;
+        }
+
+        track.scrollTo({
+            left: target.offsetLeft,
+            behavior: 'smooth',
+        });
+        syncControls(nextIndex);
+    }
+
+    function detectCurrentSlide() {
+        const trackCenter = track.scrollLeft + (track.clientWidth / 2);
+        let closestIndex = 0;
+        let closestDistance = Number.POSITIVE_INFINITY;
+
+        slides.forEach(function(slide, index) {
+            const slideCenter = slide.offsetLeft + (slide.clientWidth / 2);
+            const distance = Math.abs(slideCenter - trackCenter);
+
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestIndex = index;
+            }
+        });
+
+        syncControls(closestIndex);
+    }
+
+    tabs.forEach(function(tab) {
+        // 기존 클릭 이벤트 유지
+        tab.addEventListener('click', function() {
+            scrollToSlide(Number(tab.dataset.slideIndex));
+        });
+        
+        // 마우스 호버 시 자동으로 해당 탭으로 스와이프
+        tab.addEventListener('mouseenter', function() {
+            scrollToSlide(Number(tab.dataset.slideIndex));
+        });
+    });
+
+    if (prevButton) {
+        prevButton.addEventListener('click', function() {
+            scrollToSlide(currentIndex - 1);
+        });
+    }
+
+    if (nextButton) {
+        nextButton.addEventListener('click', function() {
+            scrollToSlide(currentIndex + 1);
+        });
+    }
+
+    track.addEventListener('scroll', function() {
+        if (scrollTicking) {
+            return;
+        }
+
+        scrollTicking = true;
+        window.requestAnimationFrame(function() {
+            detectCurrentSlide();
+            scrollTicking = false;
+        });
+    }, { passive: true });
+
+    // 마우스 드래그 스와이프 지원
+    let isDown = false;
+    let startX;
+    let scrollLeft;
+
+    track.addEventListener('mousedown', function(e) {
+        // 버튼 등 컨트롤 요소 클릭 시 드래그 방지
+        if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.home-nav-chip') || e.target.closest('.home-nav-arrow')) return;
+        
+        isDown = true;
+        track.classList.add('is-dragging');
+        startX = e.pageX - track.offsetLeft;
+        scrollLeft = track.scrollLeft;
+    });
+
+    track.addEventListener('mouseleave', function() {
+        if (!isDown) return;
+        isDown = false;
+        track.classList.remove('is-dragging');
+        window.requestAnimationFrame(function() {
+            detectCurrentSlide();
+        });
+    });
+
+    track.addEventListener('mouseup', function() {
+        if (!isDown) return;
+        isDown = false;
+        track.classList.remove('is-dragging');
+        window.requestAnimationFrame(function() {
+            detectCurrentSlide();
+        });
+    });
+
+    track.addEventListener('mousemove', function(e) {
+        if (!isDown) return;
+        e.preventDefault();
+        const x = e.pageX - track.offsetLeft;
+        const walk = (x - startX) * 1.5; // 드래그 속도 조절
+        track.scrollLeft = scrollLeft - walk;
+    });
+
+    window.addEventListener('resize', function() {
+        window.requestAnimationFrame(function() {
+            scrollToSlide(currentIndex);
+            syncTrackHeight(currentIndex);
+        });
+    });
+
+    window.requestAnimationFrame(function() {
+        syncControls(0);
+    });
+});
+</script>
+{% endblock %}
