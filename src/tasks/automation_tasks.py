@@ -123,6 +123,26 @@ def _step_predict(db) -> tuple[str, dict[str, Any]]:
     )
 
 
+def _check_chroma_vectors() -> int | None:
+    """chroma_db/chroma.sqlite3 에서 임베딩 수를 반환한다 (원본 _check_chroma 대응)."""
+    import sqlite3
+    from pathlib import Path
+
+    chroma_path = Path("chroma_db") / "chroma.sqlite3"
+    if not chroma_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{chroma_path}?mode=ro", uri=True)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM embeddings")
+            return cursor.fetchone()[0]
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
 def _step_inspect(db) -> tuple[str, dict[str, Any]]:
     """데이터 최신성 점검 (원본 final_inspect 지표 대응)."""
     now = datetime.utcnow()
@@ -182,11 +202,31 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]]:
         "stale_hours": stale_hours,
     }
 
+    # DB 무결성 점검 (원본 _check_db_integrity 대응)
+    missing_tables: set[str] = set()
+    try:
+        from sqlalchemy import inspect as sa_inspect
+
+        inspector = sa_inspect(db.bind)
+        existing_tables = set(inspector.get_table_names())
+        essential_tables = {"bid_announcements", "bid_results", "accounts_customuser"}
+        missing_tables = essential_tables - existing_tables
+        metrics["db_table_count"] = len(existing_tables)
+    except Exception:
+        metrics["db_table_count"] = None
+
+    # ChromaDB 벡터 수 점검 (원본 _check_chroma 대응)
+    metrics["vector_count"] = _check_chroma_vectors()
+
     warnings: list[str] = []
     if stale_hours is not None and stale_hours > 48:
         warnings.append(f"최근 수집이 {stale_hours:.0f}시간 경과 (48시간 초과).")
     if recent_bid_announcements == 0 and recent_bid_results == 0:
         warnings.append("최근 7일 신규 공고/낙찰 데이터가 없습니다.")
+    if missing_tables:
+        warnings.append(f"DB 필수 테이블 누락: {', '.join(sorted(missing_tables))}")
+    if metrics.get("vector_count") == 0:
+        warnings.append("ChromaDB 임베딩이 비어 있습니다.")
 
     summary = f"최근 7일 공고 {recent_bid_announcements}건, 낙찰 {recent_bid_results}건 점검 완료."
     if warnings:
