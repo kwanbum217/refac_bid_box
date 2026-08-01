@@ -33,14 +33,19 @@
 4. `.env` 파일의 실제 값을 코드나 문서에 노출
 5. 기존 DB 테이블/컬럼명·타입 변경 (데이터 무손실 원칙 위반)
 6. 학습·추론 특징 생성 로직을 분리하여 작성 (train/serve skew 유발)
-7. `main` 브랜치에 직접 push
-8. 마이그레이션 검증 없이 다음 Phase 진행
+7. `main` 브랜치에서 직접 작업·커밋 (병합은 작업 브랜치를 거칠 것)
+8. Pull Request 생성 (1인 작업이므로 불필요)
+9. 마이그레이션 검증 없이 다음 Phase 진행
 
 ---
 
 ## 4. Git 전략 및 브랜치 규칙
 
-- `main` 브랜치에 직접 push 금지. 항상 브랜치 → PR.
+본 저장소는 1인 작업입니다. Pull Request 절차를 두지 않습니다.
+
+- **Pull Request 를 만들지 않습니다.** 작업 브랜치에서 커밋·푸시 후 담당자 확인을 거쳐 `main` 에 직접 병합합니다.
+- `main` 에서 직접 작업하지 않습니다. 변경은 항상 작업 브랜치에서 시작합니다.
+- 병합은 `git merge --no-ff` 로 수행합니다.
 - 커밋 메시지: `type: subject` 형식 (`feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`).
 
 ---
@@ -57,7 +62,7 @@
 | `retraining-pipeline` | Phase 5 | `.agents/skills/retraining-pipeline/` | 단일 특징 features.py, trainer, ml_registry, PSI 모니터링 |
 | `frontend-streaming` | Phase 6 | `.agents/skills/frontend-streaming/` | SSE/WebSocket 스트리밍, HTMX 동적 UI |
 | `validation-cutover` | Phase 7 | `.agents/skills/validation-cutover/` | E2E, P95 레이턴시 벤치마크, 크로스플랫폼 컷오버 |
-| `git-workflow` | 공통 | `.agents/skills/git-workflow/` | 브랜치 전략, 커밋 컨벤션, PR 템플릿 |
+| `git-workflow` | 공통 | `.agents/skills/git-workflow/` | 브랜치 전략, 커밋 컨벤션, 1인 main 병합 (PR 없음) |
 
 ---
 

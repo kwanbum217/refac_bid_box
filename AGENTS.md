@@ -72,7 +72,12 @@ refac_bid_box는 기존 `bid_box`(Django 5.1.6 모놀리식)를 리팩토링하�
 
 ## 5. Git 규칙
 
-- `main` 브랜치에 직접 push 금지. 항상 브랜치 → PR.
+본 저장소는 **1인 작업**입니다. 리뷰어가 없으므로 Pull Request 절차를 두지 않습니다.
+
+- **Pull Request 를 만들지 않습니다.** 작업 브랜치에서 커밋·푸시한 뒤 담당자 확인을 거쳐 `main` 에 직접 병합합니다.
+- `main` 에 곧바로 커밋하지 않습니다. 변경은 항상 작업 브랜치에서 시작합니다.
+- 병합은 `git merge --no-ff` 로 수행해 작업 단위를 이력에 남깁니다.
+- 병합 전 필수 확인: 테스트 전량 통과, `python scripts/validate_agent_rules.py` 통과.
 - 커밋 메시지: `type: subject` 형식 (예: `feat: add retraining trainer`).
   - type: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`
 - 상세는 [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md).
@@ -87,8 +92,9 @@ refac_bid_box는 기존 `bid_box`(Django 5.1.6 모놀리식)를 리팩토링하�
 4. `.env` 파일의 실제 값을 코드나 문서에 노출
 5. 기존 DB 테이블/컬럼명·타입 변경 (데이터 무손실 원칙 위반)
 6. 학습·추론 특징 생성 로직을 분리하여 작성 (train/serve skew 유발)
-7. `main` 브랜치에 직접 push
-8. 마이그레이션 검증 없이 다음 Phase 진행
+7. `main` 브랜치에서 직접 작업·커밋 (병합은 작업 브랜치를 거칠 것)
+8. Pull Request 생성 (1인 작업이므로 불필요)
+9. 마이그레이션 검증 없이 다음 Phase 진행
 
 ---
 
@@ -111,7 +117,7 @@ refac_bid_box는 기존 `bid_box`(Django 5.1.6 모놀리식)를 리팩토링하�
 | `frontend-streaming` | Phase 6 | `.agents/skills/frontend-streaming/` | SSE/WebSocket 스트리밍, HTMX/React 동적 UI |
 | `validation-cutover` | Phase 7 | `.agents/skills/validation-cutover/` | E2E, P95 레이턴시 벤치마크, 크로스플랫폼 컷오버 |
 | `project-orchestrator` | 운영 | `.agents/skills/project-orchestrator/` | 도커 컨테이너 통째 시동, 헬스체크, 무손실 검증, 레이턴시 벤치마크 자동 오케스트레이션 |
-| `git-workflow` | 공통 | `.agents/skills/git-workflow/` | 커밋 메시지 컨벤션, pre-commit 검증, 1인 main push / PR 워크플로우 |
+| `git-workflow` | 공통 | `.agents/skills/git-workflow/` | 커밋 메시지 컨벤션, pre-commit 검증, 1인 작업 브랜치 -> main 병합 워크플로우 (PR 없음) |
 
 
 

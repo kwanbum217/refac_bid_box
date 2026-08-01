@@ -1,13 +1,14 @@
 ---
 name: git-workflow
 description: |
-  커밋/푸시 전 변경 및 수정 내역을 관련 문서에 업데이트하고, 문서 간 및 문서-코드 간 실제 정합성을 검토하여 명확히 맞춘 후 Git 커밋 컨벤션과 pre-commit 검증을 준수하여 푸시/PR을 진행할 때 호출됩니다.
+  커밋/푸시 전 변경 및 수정 내역을 관련 문서에 업데이트하고, 문서 간 및 문서-코드 간 실제 정합성을 검토하여 명확히 맞춘 후 Git 커밋 컨벤션과 pre-commit 검증을 준수하여 푸시/병합을 진행할 때 호출됩니다.
 ---
 
 # git-workflow (문서 정합성 검토 기반 Git 커밋 및 푸시 워크플로우)
 
 > **작성일**: 2026-07-31
-> **버전**: v0.3.0
+> **정정일**: 2026-08-01
+> **버전**: v0.4.0
 > **설계 기준**: `AGENTS.md` 5장 Git 규칙 및 `docs/ops/git_branching_strategy.md`
 > **핵심 수칙**: **커밋/푸시 전 관련 문서 업데이트 및 문서 간·문서-코드 간 실제 정합성 검토(Consistency Verification) 필수 이행**
 
@@ -48,10 +49,14 @@ graph TD
     E -- "PASS" --> F["규격 준수 커밋 생성 (type: subject)"]
     E -- "FAIL" --> G["원인 수정 후 재검증"]
     F --> H{"브랜치 검사 (main 여부)"}
-    H -- "main 직접 push 시도" --> I["차단 (기능 브랜치 push 필요)"]
-    H -- "기능 브랜치" --> J["remote push (git push origin feature/xxx)"]
-    J --> K["PR (Pull Request) 생성"]
+    H -- "main 에서 직접 작업" --> I["차단 (작업 브랜치 분기 필요)"]
+    H -- "작업 브랜치" --> J["remote push (git push origin feature/xxx)"]
+    J --> L["담당자 확인"]
+    L --> M["main 으로 --no-ff 병합 후 push"]
 ```
+
+> **PR 을 생성하지 않습니다.** 본 저장소는 1인 작업이라 리뷰 절차가 없습니다.
+> 상세는 [`docs/ops/git_branching_strategy.md`](../../../docs/ops/git_branching_strategy.md) 4장을 따릅니다.
 
 ## 단계별 실행
 
@@ -83,11 +88,18 @@ python3 scripts/validate_agent_rules.py --quiet
 git commit -m "docs: update retraining design and verify document consistency"
 ```
 
-### 5. 안전한 Push 및 PR 생성
-- `main` 브랜치에 직접 push하지 않고, 작업 브랜치에서 remote push를 진행합니다:
+### 5. 안전한 Push 및 main 병합 (PR 없음)
+- `main` 에서 직접 작업하지 않고, 작업 브랜치에서 remote push를 진행합니다:
 ```bash
 git push origin feature/my-feature
 ```
+- 푸시까지 마친 뒤 **담당자에게 병합 여부만 확인**하고, 승인되면 직접 병합합니다:
+```bash
+git checkout main
+git merge --no-ff feature/my-feature -m "merge: <요약>"
+git push origin main
+```
+- **`gh pr create` 등 PR 생성 명령은 사용하지 않습니다.**
 
 ## 에이전트 권한 및 안전 가드레일
 
@@ -95,7 +107,8 @@ git push origin feature/my-feature
 | :--- | :--- |
 | **코드 변경 시 연관 문서 동시 업데이트 및 정합성 검토** | **문서 간/문서-코드 간 내용이 상충되는 상태로 커밋** |
 | 문서 상호 참조 및 실제 파일 경로/명세 100% 대조 | 단순 문서 수정을 넘어 실제 코드와 불일치하는 명세 방치 |
-| pre-commit 검증을 통과한 규격 커밋 작성 | `main` 브랜치 직접 push (`git push origin main`) |
+| pre-commit 검증을 통과한 규격 커밋 작성 | `main` 브랜치에서 직접 작업·커밋 |
+| 담당자 확인 후 `main` 으로 `--no-ff` 병합 및 push | Pull Request 생성 (`gh pr create` 등) |
 
 ## 세션 종료 시 정리
 `git status`를 수행하여 문서 및 코드 변경사항 및 정합성이 누락 없이 완벽히 맞추어졌는지 확인합니다.
