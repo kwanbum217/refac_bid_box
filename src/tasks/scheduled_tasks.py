@@ -67,13 +67,32 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         db.close()
 
     logger.info("야간 스케줄 실행 시작 (execution_id=%s)", execution_id)
-    return await run_automation_pipeline(
+    outcome = await run_automation_pipeline(
         ctx,
         execution_id=execution_id,
         action_key="nightly_schedule",
         run_mode="nightly_schedule",
         original_query="정기 야간 스케줄",
     )
+
+    # 수집으로 원본 데이터가 바뀌었으니 상위 N 스냅샷을 다시 만듭니다.
+    # 원본 스텝 구성(run_mode_matrix)을 건드리지 않으려고 파이프라인 밖에 둡니다.
+    outcome["ranking_snapshots"] = _rebuild_ranking_snapshots()
+    return outcome
+
+
+def _rebuild_ranking_snapshots() -> dict[str, Any]:
+    """실패해도 야간 스케줄 전체를 실패로 만들지 않습니다."""
+    from src.app.services.ranking_snapshots import rebuild_ranking_snapshots
+
+    db = SessionLocal()
+    try:
+        return rebuild_ranking_snapshots(db)
+    except Exception as exc:
+        logger.exception("상위 N 스냅샷 재집계 실패")
+        return {"status": "failed", "error": str(exc)}
+    finally:
+        db.close()
 
 
 async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:

@@ -42,7 +42,7 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 ### 서버 필요 (Ollama + Redis)
 
 4. ~~**성능 벤치마크**~~ — **측정 완료**. 목표 2건 미달, 원인 규명. [`docs/ops/latency_benchmark.md`](../ops/latency_benchmark.md)
-9. **레이턴시 개선** — 신규. 위 벤치마크가 지목한 두 가지. 아래 참조
+9. **레이턴시 개선** — SQL 사전 집계 **완료** (전체 P95 목표 달성). SSE 진짜 스트리밍은 잔존. 아래 참조
 5. **재학습 E2E 검증** — 데이터→학습→평가→배포 전 주기 실증
 6. **크로스 플랫폼 검증** — Windows 환경에서 Docker + Makefile 실행 확인
 
@@ -332,13 +332,31 @@ P95 를 끌어올린 것은 `2025년 물품 낙찰 평균 낙찰률` 류의 질�
 
 `retrieve_structured_data` 의 6개 쿼리 중 3개(`GROUP BY bidwinnr_nm / dminstt_nm / bid_ntce_nm`)가 31.4초를 씁니다. `category` 단일 인덱스로 범위만 좁힌 뒤 160~190만 행에 `Using temporary; Using filesort` 를 겁니다. `category` 는 값이 3종뿐이라 거의 걸러지지 않습니다.
 
-### 개선 후보
+### 적용: 상위 N 사전 집계 (2026-08-02 완료)
 
-| 대상 | 방법 | 비고 |
-| --- | --- | --- |
-| SQL | `(category, bidwinnr_nm)` 등 복합 인덱스 3개 | 원본에 없는 인덱스이므로 Alembic 리비전 + `PRODUCTION_INDEX_NAMES` 갱신 필요. 300만 행 테이블 DDL |
-| SQL (대안) | 상위 N 스냅샷을 `bid_dataset_summaries` 방식으로 사전 집계 | 스키마 변경 없이 조회를 상수 시간으로 |
-| SSE | Ollama `/api/chat` 을 `stream: True` 로 호출 | 답변 후처리(Answer Guard, 카테고리 표기 정규화)가 완성본 전제라 교정 처리 설계 필요 |
+복합 인덱스 대신 사전 집계를 택했습니다. 원본 테이블의 스키마와 인덱스를 건드리지 않아 재현율이 유지되고, 300만 행 DDL 부담도 없습니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| 신규 테이블 | `bid_ranking_snapshots` (Alembic 리비전 `23cb59f0e3fe`) |
+| 서비스 | `src/app/services/ranking_snapshots.py` |
+| 적용 범위 | 필터가 category 뿐인 질의만. 날짜/기관 필터는 실시간 경로 유지 |
+| 갱신 | 야간 스케줄 자동, `make rebuild-rankings` 수동 (약 77초) |
+| 검증 | `tests/test_ranking_snapshots.py` 19건 |
+
+| 구간 | 개선 전 P95 | 개선 후 P95 | 판정 |
+| --- | ---: | ---: | --- |
+| SSE 첫 토큰 | 42.83s | 16.02s | 목표 3s 미달 |
+| SSE 전체 응답 | 43.03s | **16.56s** | 목표 20s **달성** |
+| 느린 질의 SQL 구간 | 33.00s | 1.95s | - |
+
+스냅샷이 없으면 `get_top_rankings` 가 `None` 을 돌려 실시간 집계로 넘어갑니다. 느려질 뿐 답은 항상 나옵니다.
+
+이번 작업으로 Alembic 도입이 실제로 쓰였습니다. 생성된 리비전이 신규 테이블만 담고 기존 11개 테이블은 전혀 건드리지 않는 것을 확인했습니다.
+
+### 잔존: SSE 진짜 스트리밍
+
+첫 토큰 목표(3s)는 여전히 미달입니다. 원인은 SQL 이 아니라 `stream_tokens` 의 가짜 스트리밍입니다. Ollama `/api/chat` 을 `stream: True` 로 호출해야 하며, 답변 후처리(Answer Guard, 카테고리 표기 정규화)가 완성본을 전제로 하므로 교정 처리 설계가 필요합니다.
 
 ---
 

@@ -22,6 +22,21 @@ BASELINE = "0001_django_baseline"
 
 # 운영 DB 에 남아 있는 원본 Django 테이블. 하나라도 관리 대상에 들어오면
 # autogenerate 가 DROP 을 제안하게 됩니다.
+# 원본 Django 19개 마이그레이션이 만든 테이블. 기준선 리비전의 범위입니다.
+DJANGO_BASELINE_TABLES = (
+    "accounts_customuser",
+    "automation_requests",
+    "automation_subscriptions",
+    "bid_announcements",
+    "bid_dataset_summaries",
+    "bid_results",
+    "chat_session_states",
+    "knowledge_base_status",
+    "pipeline_executions",
+    "prediction_results",
+    "retrain_logs",
+)
+
 DJANGO_LEGACY_TABLES = (
     "django_migrations",
     "django_session",
@@ -63,9 +78,14 @@ def _load_env_filters():
 # --------------------------------------------------------------------------- #
 
 
-def test_baseline_is_the_only_head(script_directory):
-    heads = script_directory.get_heads()
-    assert heads == (BASELINE,) or BASELINE in heads
+def test_baseline_is_the_root_revision(script_directory):
+    """기준선은 항상 이력의 뿌리여야 합니다. head 는 리비전이 쌓이며 앞으로 갑니다."""
+    assert list(script_directory.get_bases()) == [BASELINE]
+
+
+def test_revision_history_is_linear(script_directory):
+    """분기가 생기면 어느 것이 진짜 스키마인지 알 수 없게 됩니다."""
+    assert len(script_directory.get_heads()) == 1
 
 
 def test_baseline_has_no_parent(script_directory):
@@ -73,13 +93,27 @@ def test_baseline_has_no_parent(script_directory):
     assert revision.down_revision is None
 
 
-def test_baseline_creates_every_modeled_table():
-    """모델에 있는 테이블은 전부 기준선에 들어 있어야 신규 환경이 동작합니다."""
+def test_baseline_creates_every_django_table():
+    """원본 Django 19개 마이그레이션이 만든 테이블은 전부 기준선에 있어야 합니다.
+
+    이후 추가된 테이블(`bid_ranking_snapshots` 등)은 후속 리비전 소관이므로
+    기준선에 없는 것이 정상입니다.
+    """
     source = (PROJECT_ROOT / "migrations" / "versions" / f"{BASELINE}.py").read_text(
         encoding="utf-8"
     )
-    for table in sorted(Base.metadata.tables):
+    for table in sorted(DJANGO_BASELINE_TABLES):
         assert f"op.create_table('{table}'" in source, f"{table} 이 기준선에 없습니다."
+
+
+def test_every_modeled_table_is_created_by_some_revision():
+    """모델에 있는데 어느 리비전도 만들지 않으면 신규 환경이 깨집니다."""
+    sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (PROJECT_ROOT / "migrations" / "versions").glob("*.py")
+    )
+    for table in sorted(Base.metadata.tables):
+        assert f"op.create_table('{table}'" in sources, f"{table} 을 만드는 리비전이 없습니다."
 
 
 def test_baseline_does_not_touch_django_legacy_tables():

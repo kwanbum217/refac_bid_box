@@ -1,5 +1,10 @@
 from src.app.models.accounts import CustomUser, UserAccount
-from src.app.models.bids import BidAnnouncement, BidDatasetSummary, BidResult
+from src.app.models.bids import (
+    BidAnnouncement,
+    BidDatasetSummary,
+    BidRankingSnapshot,
+    BidResult,
+)
 from src.app.models.chatbot import (
     AutomationRequest,
     AutomationSubscription,
@@ -14,6 +19,7 @@ __all__ = [
     "AutomationSubscription",
     "BidAnnouncement",
     "BidDatasetSummary",
+    "BidRankingSnapshot",
     "BidResult",
     "ChatSessionState",
     "KnowledgeBaseStatus",

@@ -1,4 +1,4 @@
-.PHONY: help dev dev-fe up down logs build lint security quality check-rules check-all migrate-verify migrate-up migrate-stamp migrate-check benchmark test clean
+.PHONY: help dev dev-fe up down logs build lint security quality check-rules check-all migrate-verify migrate-up migrate-stamp migrate-check rebuild-rankings benchmark test clean
 
 PYTHON ?= python3
 
@@ -16,6 +16,7 @@ help:
 	@echo "  make migrate-up     - Alembic 스키마 적용 (신규 환경 전용)"
 	@echo "  make migrate-stamp  - 기존 Django DB 에 기준선 버전만 기록 (DDL 미실행)"
 	@echo "  make migrate-check  - 모델과 실제 스키마 차이 점검 (읽기 전용)"
+	@echo "  make rebuild-rankings - 상위 N 집계 스냅샷 재생성"
 	@echo "  make benchmark      - P95 레이턴시 벤치마크 (서버 기동 필요)"
 	@echo "  make test           - Pytest 단위/통합/E2E 테스트 실행"
 	@echo "  make dev-fe         - 프론트엔드 (Vite + React 19) 개발 서버 구동"
@@ -44,6 +45,9 @@ migrate-stamp:
 
 migrate-check:
 	$(PYTHON) scripts/check_schema_drift.py
+
+rebuild-rankings:
+	$(PYTHON) scripts/rebuild_ranking_snapshots.py
 
 # 기동 중인 서버에 HTTP 로 붙습니다. 먼저 uvicorn 을 띄우십시오.
 benchmark:
