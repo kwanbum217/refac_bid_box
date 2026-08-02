@@ -34,7 +34,12 @@ from src.app.models.bids import BidAnnouncement, BidResult  # noqa: E402
 from src.app.services.api_collector import BID_CATEGORIES, get_service_key  # noqa: E402
 from src.app.services.collector_service import collect_bids  # noqa: E402
 
-CHUNK_DAYS = 15
+# 한 번의 collect_bids 호출이 담당하는 기간입니다.
+# api_collector 가 이 기간을 15일 구간으로 쪼개 MAX_CONCURRENT(16) 개씩 병렬 요청하므로,
+# 15일로 두면 구간이 1개뿐이라 동시성이 전혀 쓰이지 않습니다. 16배로 잡아
+# 매 호출마다 16개 구간이 동시에 나가게 합니다. 수신 즉시 적재하고 버려
+# 메모리는 구간 수에 비례한 상한 안에서 유지됩니다.
+CHUNK_DAYS = 15 * 16
 
 
 def _latest(session, model, column, category: str) -> date | None:
@@ -50,7 +55,14 @@ def _chunks(start: date, end: date):
         current = chunk_end + timedelta(days=1)
 
 
-async def _backfill(categories: list[str], since: str | None, dry_run: bool) -> int:
+async def _backfill(
+    categories: list[str],
+    since: str | None,
+    dry_run: bool,
+    *,
+    until: str | None = None,
+    fetch_types: tuple[str, ...] = ("announce", "result"),
+) -> int:
     today = datetime.utcnow().date()
     session = SessionLocal()
     total_announcements = 0
@@ -61,22 +73,29 @@ async def _backfill(categories: list[str], since: str | None, dry_run: bool) -> 
                 ("announce", BidAnnouncement, BidAnnouncement.bid_ntce_dt),
                 ("result", BidResult, BidResult.rl_openg_dt),
             ):
+                if fetch_type not in fetch_types:
+                    continue
+
                 if since:
                     start = datetime.strptime(since, "%Y%m%d").date()
                 else:
                     latest = _latest(session, model, column, category)
                     start = (latest + timedelta(days=1)) if latest else today - timedelta(days=30)
 
-                if start > today:
+                # 과거 결손 구간을 메우려면 종료일을 직접 지정합니다.
+                # 지정이 없으면 기존처럼 오늘까지 채웁니다.
+                finish = datetime.strptime(until, "%Y%m%d").date() if until else today
+
+                if start > finish:
                     print(f"[{category}/{fetch_type}] 공백 없음 (최신 {start - timedelta(days=1)})")
                     continue
 
-                span = (today - start).days + 1
-                print(f"[{category}/{fetch_type}] {start} ~ {today} ({span}일) 수집 시작")
+                span = (finish - start).days + 1
+                print(f"[{category}/{fetch_type}] {start} ~ {finish} ({span}일) 수집 시작")
                 if dry_run:
                     continue
 
-                for chunk_start, chunk_end in _chunks(start, today):
+                for chunk_start, chunk_end in _chunks(start, finish):
                     metrics = await collect_bids(
                         session,
                         start_date=chunk_start.strftime("%Y%m%d"),
@@ -107,6 +126,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="G2B API 로 데이터 공백 백필")
     parser.add_argument("--category", action="append", choices=list(BID_CATEGORIES))
     parser.add_argument("--since", help="시작일 강제 지정 (YYYYMMDD)")
+    parser.add_argument("--until", help="종료일 지정 (YYYYMMDD). 과거 결손 구간 복구용")
+    parser.add_argument(
+        "--fetch-type",
+        action="append",
+        choices=["announce", "result"],
+        help="수집 대상. 지정하지 않으면 둘 다",
+    )
     parser.add_argument("--dry-run", action="store_true", help="수집 구간만 출력")
     args = parser.parse_args()
 
@@ -115,7 +141,16 @@ def main() -> int:
         return 1
 
     categories = args.category or list(BID_CATEGORIES)
-    return asyncio.run(_backfill(categories, args.since, args.dry_run))
+    fetch_types = tuple(args.fetch_type or ("announce", "result"))
+    return asyncio.run(
+        _backfill(
+            categories,
+            args.since,
+            args.dry_run,
+            until=args.until,
+            fetch_types=fetch_types,
+        )
+    )
 
 
 if __name__ == "__main__":

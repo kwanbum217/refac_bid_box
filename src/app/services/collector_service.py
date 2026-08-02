@@ -18,9 +18,9 @@ from sqlalchemy.orm import Session
 from src.app.models.bids import DATASET_ANNOUNCEMENT, DATASET_RESULT, BidAnnouncement, BidResult
 from src.app.services.api_collector import (
     BID_CATEGORIES,
-    fetch_bid_announcements,
-    fetch_bid_data,
     get_service_key,
+    stream_bid_announcements,
+    stream_bid_data,
 )
 from src.app.services.dashboard import rebuild_bid_dataset_summaries, warm_dashboard_stats_cache
 from src.app.services.home_context import warm_home_page_cache
@@ -93,8 +93,14 @@ async def collect_bids(
 
         if fetch_type in ("both", "announce"):
             try:
-                items = await fetch_bid_announcements(start_date, end_date, category=cat_code)
-                saved = _bulk_insert(db, BidAnnouncement, items)
+                # 15일 구간이 끝나는 즉시 적재하고 버립니다. 전 구간을 모으면
+                # raw_data JSON 때문에 장기 백필에서 메모리가 터집니다.
+                saved = await stream_bid_announcements(
+                    start_date,
+                    end_date,
+                    lambda rows: _bulk_insert(db, BidAnnouncement, rows),
+                    category=cat_code,
+                )
                 metrics["announcement_count"] += saved
                 metrics["categories"][cat_code]["announcement_count"] += saved
                 logger.info("[%s] 입찰공고 %s건 적재", cat_name, saved)
@@ -104,8 +110,12 @@ async def collect_bids(
 
         if fetch_type in ("both", "result"):
             try:
-                items = await fetch_bid_data(start_date, end_date, category=cat_code)
-                saved = _bulk_insert(db, BidResult, items)
+                saved = await stream_bid_data(
+                    start_date,
+                    end_date,
+                    lambda rows: _bulk_insert(db, BidResult, rows),
+                    category=cat_code,
+                )
                 metrics["result_count"] += saved
                 metrics["categories"][cat_code]["result_count"] += saved
                 logger.info("[%s] 낙찰정보 %s건 적재", cat_name, saved)
