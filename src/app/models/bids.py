@@ -117,6 +117,16 @@ def _is_heavily_corrupted_text(value: Any) -> bool:
     )
 
 
+def is_corrupted_display_text(value: Any) -> bool:
+    """표시하기 어려울 만큼 인코딩이 깨진 값인지 판정합니다.
+
+    parquet 복구분 1,244,778행(`bid_results` 의 41%)이 원본 바이트를 U+FFFD 로
+    잃은 상태이고 `raw_data` 도 비어 있어 복구가 불가능합니다. 집계·순위에서
+    걸러내는 용도로 쓰며, 판정 기준은 화면 표시용 `clean_display_text` 와 같습니다.
+    """
+    return _is_heavily_corrupted_text(value)
+
+
 def clean_display_text(value: Any, fallback: str = "") -> str:
     if value in (None, ""):
         return fallback

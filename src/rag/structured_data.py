@@ -14,10 +14,20 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.app.models.bids import CATEGORY_LABELS, BidAnnouncement, BidResult
+from src.app.models.bids import (
+    CATEGORY_LABELS,
+    CORRUPTED_TEXT_FALLBACKS,
+    BidAnnouncement,
+    BidResult,
+    clean_display_text,
+    is_corrupted_display_text,
+)
 from src.app.services.ranking_snapshots import (
     DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
+    REPLACEMENT_CHAR,
+    exclude_corrupted,
+    get_skipped_count,
     get_top_rankings,
 )
 from src.rag.schemas import RetrievalPlan
@@ -123,6 +133,28 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     return _normalize_text(str(filters.get("category") or ""))
 
 
+# U+FFFD 는 SQL 에서 먼저 쳐내므로 배수는 작아도 됩니다.
+LIVE_OVERFETCH_FACTOR = 3
+
+
+def _drop_corrupted(rows, limit: int) -> tuple[list, int]:
+    """인코딩이 깨진 값을 순위에서 제외합니다.
+
+    복구 불가능한 손상값(bid_results 의 41%)을 그대로 두면 순위 상위가 전부
+    깨진 문자열로 채워집니다. 제외 건수를 함께 돌려 답변에 안내를 답니다.
+    """
+    kept: list = []
+    dropped = 0
+    for row in rows:
+        if is_corrupted_display_text(row[0]):
+            dropped += 1
+            continue
+        kept.append(row)
+        if len(kept) >= limit:
+            break
+    return kept, dropped
+
+
 def _top_rows(
     db: Session,
     *,
@@ -130,14 +162,27 @@ def _top_rows(
     dataset: str,
     dimension: str,
     live_stmt,
+    corrupted_probe,
     limit: int = 5,
-) -> list[tuple]:
-    """스냅샷이 있으면 그것을, 없으면 실시간 집계를 씁니다."""
+) -> tuple[list, int]:
+    """스냅샷이 있으면 그것을, 없으면 실시간 집계를 씁니다.
+
+    스냅샷은 집계 시점에 이미 손상값을 걸러 두었으므로 그대로 씁니다.
+    실시간 경로는 여기서 걸러냅니다.
+    """
     if scope is not None:
         cached = get_top_rankings(db, dataset, dimension, scope, limit)
         if cached is not None:
-            return cached
-    return db.execute(live_stmt).all()
+            # 스냅샷은 집계 시점에 걸러냈으므로 그때 기록해 둔 표시를 씁니다.
+            return cached, get_skipped_count(db, dataset, dimension, scope)
+
+    rows = db.execute(live_stmt.limit(limit * LIVE_OVERFETCH_FACTOR)).all()
+    kept, dropped = _drop_corrupted(rows, limit)
+    if not dropped:
+        # SQL 이 이미 U+FFFD 를 쳐냈으므로, 제외가 있었는지는 따로 확인합니다.
+        # 첫 건에서 멈추므로 전체 스캔이 되지 않습니다.
+        dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
+    return kept, dropped
 
 
 def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
@@ -156,56 +201,66 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         select(func.count(BidAnnouncement.id)).where(*announcement_conditions)
     )
 
+    winner_rows, dropped_winners = _top_rows(
+        db,
+        scope=snapshot_scope,
+        dataset=DATASET_RESULT,
+        dimension="bidwinnr_nm",
+        live_stmt=select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+        .where(exclude_corrupted(BidResult.bidwinnr_nm), *result_conditions)
+        .group_by(BidResult.bidwinnr_nm)
+        .order_by(func.count(BidResult.id).desc()),
+        corrupted_probe=select(BidResult.id).where(
+            BidResult.bidwinnr_nm.contains(REPLACEMENT_CHAR), *result_conditions
+        ),
+    )
     top_winners = [
         {"bidwinnr_nm": _normalize_text(row[0]) if row[0] else row[0], "win_count": row[1]}
-        for row in _top_rows(
-            db,
-            scope=snapshot_scope,
-            dataset=DATASET_RESULT,
-            dimension="bidwinnr_nm",
-            live_stmt=select(BidResult.bidwinnr_nm, func.count(BidResult.id))
-            .where(*result_conditions)
-            .group_by(BidResult.bidwinnr_nm)
-            .order_by(func.count(BidResult.id).desc())
-            .limit(5),
-        )
+        for row in winner_rows
     ]
 
+    institution_rows, dropped_institutions = _top_rows(
+        db,
+        scope=snapshot_scope,
+        dataset=DATASET_ANNOUNCEMENT,
+        dimension="dminstt_nm",
+        live_stmt=select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+        .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *announcement_conditions)
+        .group_by(BidAnnouncement.dminstt_nm)
+        .order_by(func.count(BidAnnouncement.id).desc()),
+        corrupted_probe=select(BidAnnouncement.id).where(
+            BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+        ),
+    )
     top_institutions = [
         {"dminstt_nm": _normalize_text(row[0]) if row[0] else row[0], "ntce_count": row[1]}
-        for row in _top_rows(
-            db,
-            scope=snapshot_scope,
-            dataset=DATASET_ANNOUNCEMENT,
-            dimension="dminstt_nm",
-            live_stmt=select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
-            .where(*announcement_conditions)
-            .group_by(BidAnnouncement.dminstt_nm)
-            .order_by(func.count(BidAnnouncement.id).desc())
-            .limit(5),
-        )
+        for row in institution_rows
     ]
 
+    announcement_rows, dropped_announcements = _top_rows(
+        db,
+        scope=snapshot_scope,
+        dataset=DATASET_ANNOUNCEMENT,
+        dimension="bid_ntce_nm",
+        live_stmt=select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+        .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
+        .group_by(BidAnnouncement.bid_ntce_nm)
+        .order_by(func.count(BidAnnouncement.id).desc()),
+        corrupted_probe=select(BidAnnouncement.id).where(
+            BidAnnouncement.bid_ntce_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+        ),
+    )
     top_announcements = [
         {"bid_ntce_nm": _normalize_text(row[0]) if row[0] else row[0], "ntce_count": row[1]}
-        for row in _top_rows(
-            db,
-            scope=snapshot_scope,
-            dataset=DATASET_ANNOUNCEMENT,
-            dimension="bid_ntce_nm",
-            live_stmt=select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
-            .where(*announcement_conditions)
-            .group_by(BidAnnouncement.bid_ntce_nm)
-            .order_by(func.count(BidAnnouncement.id).desc())
-            .limit(5),
-        )
+        for row in announcement_rows
     ]
 
     sample_announcements = [
         {
             "bid_ntce_no": row[0],
-            "bid_ntce_nm": _normalize_text(row[1]),
-            "dminstt_nm": _normalize_text(row[2]),
+            # 표본은 순위와 달리 건너뛸 수 없으므로 화면과 같은 안내 문구로 대체합니다.
+            "bid_ntce_nm": clean_display_text(row[1], CORRUPTED_TEXT_FALLBACKS["title"]),
+            "dminstt_nm": clean_display_text(row[2], CORRUPTED_TEXT_FALLBACKS["agency"]),
         }
         for row in db.execute(
             select(
@@ -257,6 +312,14 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         insufficiency.append("조건에 맞는 낙찰 결과가 충분하지 않습니다.")
     if not announcement_count:
         insufficiency.append("조건에 맞는 공고 데이터가 없어 추세 해석이 제한될 수 있습니다.")
+
+    # 순위에서 손상값을 빼면 답이 읽히지만 집계 모수가 달라집니다. 숨기지 않고 알립니다.
+    dropped_total = dropped_winners + dropped_institutions + dropped_announcements
+    if dropped_total:
+        insufficiency.append(
+            "일부 항목은 원문 인코딩이 손상되어 순위 집계에서 제외했습니다. "
+            "표시된 순위는 판독 가능한 값 기준입니다."
+        )
 
     response_filters = dict(plan.filters or {})
     if response_filters.get("category"):
