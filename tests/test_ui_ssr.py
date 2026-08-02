@@ -88,7 +88,7 @@ def seeded_bid(isolated_db):
 def test_all_templates_compile():
     """12종 템플릿이 Jinja2 문법 오류 없이 컴파일된다."""
     names = sorted(
-        str(path.relative_to(TEMPLATE_DIR)) for path in TEMPLATE_DIR.rglob("*.html")
+        path.relative_to(TEMPLATE_DIR).as_posix() for path in TEMPLATE_DIR.rglob("*.html")
     )
     assert len(names) == 12, names
     for name in names:
