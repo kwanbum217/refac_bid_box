@@ -51,6 +51,52 @@ def include_object(obj, name, type_, reflected, compare_to) -> bool:
     return True
 
 
+def _strip_comment_only_changes(context_, revision, directives) -> None:
+    """주석만 다른 변경은 마이그레이션에서 제외합니다.
+
+    원본 Django 는 컬럼 주석을 DB 에 기록하지 않지만, 이식본 모델은 한국어 주석을
+    문서로 달고 있습니다. 그대로 두면 autogenerate 가 매번 컬럼 67개의 주석 변경을
+    제안하고, 그 소음에 진짜 스키마 변경이 묻힙니다.
+    """
+    if not directives:
+        return
+
+    upgrade_ops = directives[0].upgrade_ops
+    if upgrade_ops is None:
+        return
+
+    # 미변경 표시는 필드마다 다릅니다 (modify_type/modify_nullable 은 None,
+    # modify_server_default 는 False). 주석 자체는 upgrade 에서 문자열, downgrade 에서
+    # None 이 되므로 modify_comment 값으로는 판별할 수 없습니다. alembic 은 차이가
+    # 있을 때만 op 를 만들므로, 나머지가 모두 미변경이면 주석 변경뿐입니다.
+    UNCHANGED = (None, False)
+
+    def _is_comment_only(op) -> bool:
+        if type(op).__name__ != "AlterColumnOp":
+            return False
+        return not any(
+            getattr(op, key, None) not in UNCHANGED
+            for key in ("modify_type", "modify_nullable", "modify_server_default", "modify_name")
+        )
+
+    for ops_container in (directives[0].upgrade_ops, directives[0].downgrade_ops):
+        if ops_container is None:
+            continue
+        for modify in ops_container.ops:
+            inner = getattr(modify, "ops", None)
+            if inner is not None:
+                modify.ops = [op for op in inner if not _is_comment_only(op)]
+        ops_container.ops = [
+            op
+            for op in ops_container.ops
+            if not _is_comment_only(op) and getattr(op, "ops", None) != []
+        ]
+
+    # 걸러내고 나서 남은 변경이 없으면 빈 리비전 파일을 만들지 않습니다.
+    if directives[0].upgrade_ops.is_empty():
+        directives[:] = []
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
@@ -61,6 +107,7 @@ def run_migrations_offline() -> None:
         compare_server_default=True,
         include_name=include_name,
         include_object=include_object,
+        process_revision_directives=_strip_comment_only_changes,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -80,6 +127,7 @@ def run_migrations_online() -> None:
             compare_server_default=True,
             include_name=include_name,
             include_object=include_object,
+            process_revision_directives=_strip_comment_only_changes,
         )
         with context.begin_transaction():
             context.run_migrations()

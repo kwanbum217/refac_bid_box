@@ -512,9 +512,10 @@ def create_automation_request(
     *,
     plan: ChatPlan,
     message: str,
-    user_id: int | None = None,
+    user_id: int,
     payload: dict[str, Any] | None = None,
 ) -> AutomationRequest:
+    """automation_requests.user_id 는 NOT NULL 입니다. 익명 요청은 만들 수 없습니다."""
     action = get_action(plan.primary_action_key)
     pipeline_step = _get_pipeline_step(plan)
     capability = get_capability(pipeline_step.tool) if pipeline_step else None
@@ -554,7 +555,7 @@ def create_action_request(
     *,
     action_key: str,
     message: str,
-    user_id: int | None = None,
+    user_id: int,
     payload: dict[str, Any] | None = None,
 ) -> AutomationRequest:
     action = get_action(action_key)
