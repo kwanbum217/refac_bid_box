@@ -232,7 +232,8 @@ def _is_worker_unreachable_host(hostname: str) -> bool:
     host = (hostname or "").strip().lower().strip("[]")
     if not host:
         return True
-    if host in {"localhost", "0.0.0.0", "::1"} or host.endswith(".localhost"):
+    # 바인딩이 아니라 로컬 호스트 판별용 비교입니다
+    if host in {"localhost", "0.0.0.0", "::1"} or host.endswith(".localhost"):  # nosec B104
         return True
     try:
         address = ipaddress.ip_address(host)
@@ -452,7 +453,8 @@ def build_action_response(db: Session, request_obj: AutomationRequest) -> dict[s
         answer = _build_canceled_answer(request_obj)
         message = request_obj.result_summary or "요청이 중지되었습니다."
         suggestions = ["다시 시도하기"]
-        confirmation_token = ""
+        # 비밀번호가 아니라 확인 토큰 없음 표시입니다
+        confirmation_token = ""  # nosec B105
         visualizations: list[dict] = []
     elif request_obj.requires_confirmation and not request_obj.confirmed_at:
         mode = "confirmation"
@@ -468,7 +470,8 @@ def build_action_response(db: Session, request_obj: AutomationRequest) -> dict[s
         suggestions = ["자동화 결과 요약 보기", "그래프로 다시 보기"] + presentable_result_payload.get(
             "recommended_actions", []
         )[:2]
-        confirmation_token = ""
+        # 비밀번호가 아니라 확인 토큰 없음 표시입니다
+        confirmation_token = ""  # nosec B105
         visualizations = build_visualizations(request_obj.result_payload)
     elif request_obj.status == STATUS_FAILED:
         mode = "error"
@@ -477,14 +480,16 @@ def build_action_response(db: Session, request_obj: AutomationRequest) -> dict[s
         suggestions = ["실행 상태 보기", "다시 시도하기"] + presentable_result_payload.get(
             "recommended_actions", []
         )[:2]
-        confirmation_token = ""
+        # 비밀번호가 아니라 확인 토큰 없음 표시입니다
+        confirmation_token = ""  # nosec B105
         visualizations = build_visualizations(request_obj.result_payload)
     else:
         mode = "action" if request_obj.status == STATUS_RUNNING else "progress"
         answer = _build_in_progress_answer(request_obj)
         message = request_obj.result_summary or "자동화 작업이 등록되었습니다."
         suggestions = ["실행 상태 보기", "자동화 결과 요약 보기"]
-        confirmation_token = ""
+        # 비밀번호가 아니라 확인 토큰 없음 표시입니다
+        confirmation_token = ""  # nosec B105
         visualizations = []
 
     return asdict(

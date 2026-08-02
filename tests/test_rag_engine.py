@@ -99,6 +99,43 @@ async def test_stream_tokens_uses_backend_stream_generate():
     assert "trace_id" in events[-1]
 
 
+class _DenyingStreamingBackend(_FakeStreamingBackend):
+    """데이터가 있는데도 없다고 답하는 백엔드."""
+
+    def stream_generate(self, system_prompt, messages):
+        yield "관련 "
+        yield "데이터가 없습니다"
+
+
+@pytest.mark.asyncio
+async def test_stream_tokens_reports_answer_guard_correction():
+    """token 이벤트는 원문이므로 교정 결과가 done 에 실려야 합니다.
+
+    이 필드가 사라지면 Answer Guard 가 스트리밍 경로에서 무력해집니다.
+    데이터가 있는데 "데이터가 없습니다" 라고 답한 원문이 화면에 남습니다.
+    """
+    rag_engine._backend = _DenyingStreamingBackend()
+    rag_engine._backend_resolved = True
+
+    tool_context = {
+        "tool_results": {
+            "bid_query": {"result": {"summary": {"total_bids": 12, "announcement_count": 5}}},
+        },
+    }
+
+    events = []
+    async for event in rag_engine.stream_tokens("테스트 질문", tool_context=tool_context):
+        events.append(event)
+
+    streamed = "".join(e["text"] for e in events if e["type"] == "token")
+    assert "데이터가 없습니다" in streamed
+
+    done = events[-1]
+    assert "corrected_answer" in done, "교정 결과가 클라이언트에 전달되지 않습니다"
+    assert "낙찰 12건" in done["corrected_answer"]
+    assert "데이터가 없습니다" not in done["corrected_answer"]
+
+
 # --------------------------------------------------------------------------- #
 # HybridRAGStructuredDataTests (DB 기반)
 # --------------------------------------------------------------------------- #

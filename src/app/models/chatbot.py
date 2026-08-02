@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
 )
 from sqlalchemy.dialects import mysql
+from sqlalchemy.sql.sqltypes import UUID
 
 from src.app.core.db import Base, LongText, PKBigInteger
 
@@ -26,9 +27,11 @@ FK_AUTOMATION_REQUEST_USER = "automation_requests_user_id_09027998_fk_accounts_c
 FK_AUTOMATION_SUBSCRIPTION_USER = "automation_subscript_user_id_65841fc4_fk_accounts_"
 FK_CHAT_SESSION_USER = "chat_session_states_user_id_47adeb98_fk_accounts_customuser_id"
 
-# 원본 Django UUIDField 를 MySQL 8 에서도 사용할 수 있도록 문자열 기반 UUID 로 매핑합니다.
-# as_uuid=False 처럼 애플리케이션은 문자열로 다룹니다.
-RequestUuid = String(36)
+# 운영 DB 는 MariaDB 12.3 이고 request_id 는 네이티브 uuid 컬럼으로 존재합니다.
+# 일반 Uuid 는 MariaDB 에서 CHAR(32) 로, String(36) 은 VARCHAR(36) 으로 컴파일되어
+# 둘 다 원본 컬럼 타입과 어긋납니다. 어긋난 채로 autogenerate 를 돌리면
+# 운영 테이블에 ALTER 가 걸립니다. as_uuid=False 로 두어 애플리케이션은 문자열로 다룹니다.
+RequestUuid = UUID(as_uuid=False).with_variant(String(36), "sqlite")
 
 
 class AutomationRequest(Base):

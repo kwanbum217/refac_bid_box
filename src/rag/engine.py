@@ -831,8 +831,19 @@ class HybridRAGEngine:
     ) -> AsyncIterator[dict[str, Any]]:
         """Ollama/Gemini 스트리밍 API 를 사용해 실제 실시간 토큰을 반환합니다.
 
-        Answer Guard 와 카테고리 정규화는 완성된 답변에 대해 마지막에 적용됩니다.
-        교정이 필요하면 `done` 이벤트에 `corrected_answer` 필드로 내려갑니다.
+        클라이언트 필수 계약:
+
+        `token` 이벤트는 LLM 원문이라 Answer Guard 와 카테고리 정규화를 거치지
+        않은 상태입니다. 두 교정은 답변이 완성돼야 판단할 수 있어 `done` 시점에
+        적용됩니다. 교정이 발생하면 `done` 이벤트에 `corrected_answer` 가 실립니다.
+
+        **`corrected_answer` 가 있으면 클라이언트는 지금까지 그린 본문을 이 값으로
+        교체해야 합니다.** 무시하면 데이터가 있는데도 "데이터가 없습니다" 라고
+        답한 원문이 그대로 남습니다. Answer Guard 가 막으려던 바로 그 상황입니다.
+
+        주의: 이 경로는 RAG 답변만 흘립니다. 플래너, 자동화 확인, 차트 페이로드,
+        세션 저장은 POST /api/v1/chatbot/chat 에만 있습니다. 화면을 스트리밍으로
+        옮기려면 그 기능들을 먼저 이벤트로 옮겨야 합니다.
         """
         (
             plan,

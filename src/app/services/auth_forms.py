@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 
 @dataclass
@@ -33,9 +33,11 @@ class Choice:
     @property
     def tag(self) -> Markup:
         checked = " checked" if self.checked else ""
-        return Markup(
-            f'<input type="radio" name="{self.name}" value="{self.value}" '
-            f'id="{self.id_for_label}" class="peer sr-only"{checked}>'
+        # 보간값을 전부 escape 한 뒤에만 Markup 으로 감쌉니다. Markup 은 Jinja
+        # 자동 이스케이프를 건너뛰므로 원문을 그대로 넣으면 HTML 주입이 됩니다.
+        return Markup(  # nosec B704
+            f'<input type="radio" name="{escape(self.name)}" value="{escape(self.value)}" '
+            f'id="{escape(self.id_for_label)}" class="peer sr-only"{checked}>'
         )
 
 
@@ -79,15 +81,17 @@ class BoundField:
 
     def __str__(self) -> str:
         """{{ form.birth_y }} 처럼 필드를 직접 출력할 때의 위젯 렌더링."""
+        # value 는 제출된 폼 데이터입니다. 오류 재렌더 시 그대로 돌아오므로
+        # escape 없이 Markup 에 넣으면 반사형 XSS 가 됩니다.
         if self.hidden:
             value = "" if self.value is None else self.value
-            return Markup(
-                f'<input type="hidden" name="{self.name}" '
-                f'id="{self.id_for_label}" value="{value}">'
+            return Markup(  # nosec B704
+                f'<input type="hidden" name="{escape(self.name)}" '
+                f'id="{escape(self.id_for_label)}" value="{escape(value)}">'
             )
-        return Markup(
-            f'<input type="{self.input_type}" name="{self.name}" '
-            f'id="{self.id_for_label}" value="{self.value or ""}">'
+        return Markup(  # nosec B704
+            f'<input type="{escape(self.input_type)}" name="{escape(self.name)}" '
+            f'id="{escape(self.id_for_label)}" value="{escape(self.value or "")}">'
         )
 
     __html__ = __str__

@@ -117,6 +117,12 @@ async def run_retrain_pipeline_task(
 
         verdict = compare_champion_vs_challenger(champion_metrics, challenger_metrics)
 
+        # 홀드아웃을 뗄 수 없었던 학습의 지표는 학습 구간을 그대로 잰 값이라
+        # 항상 좋게 나옵니다. 그 값으로 승격시키면 게이트가 무의미해집니다.
+        if metadata.get("holdout_is_overfit"):
+            verdict["recommendation"] = "REJECT_CHALLENGER"
+            verdict["rejected_reason"] = "표본이 적어 홀드아웃 분리 실패. 지표를 신뢰할 수 없습니다."
+
         _record(
             db,
             trigger_source=trigger_source,
