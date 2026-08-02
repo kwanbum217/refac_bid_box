@@ -673,9 +673,9 @@ $(document).ready(function() {
         streamUrl: '/api/v1/chatbot/stream',
         newSessionUrl: interface.data('new-session-url'),
         csrfToken: interface.data('csrf-token'),
-        confirmUrlTemplate: '/chatbot/api/automation/job/__JOB_ID__/confirm/',
-        statusUrlTemplate: '/chatbot/api/automation/job/__JOB_ID__/status/',
-        cancelUrlTemplate: '/chatbot/api/automation/job/__JOB_ID__/cancel/'
+        confirmUrlTemplate: '{{ url("chatbot:automation_job_confirm", job_id="__JOB_ID__") }}',
+        statusUrlTemplate: '{{ url("chatbot:automation_job_status", job_id="__JOB_ID__") }}',
+        cancelUrlTemplate: '{{ url("chatbot:automation_job_cancel", job_id="__JOB_ID__") }}'
     };
 
     marked.setOptions({ breaks: true, gfm: true });
