@@ -35,7 +35,8 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 
 1. ~~**ChatAutomationApiTests 이식**~~ — **완료**. 상세는 아래 "ChatAutomationApiTests 이식 결과" 참조.
 2. ~~**정기 실행 스케줄 추가**~~ — **완료**. 아래 "정기 실행 스케줄 이식" 참조
-3. **Alembic 마이그레이션 도입** — 원본 19개 히스토리 보존. `alembic init` → `autogenerate` → 기존 스키마와 정합성 검증
+3. ~~**Alembic 마이그레이션 도입**~~ — **완료**. 아래 "Alembic 도입 결과" 참조
+8. **모델-스키마 실질 차이 33건 정리** — 신규. `make migrate-check` 로 확인. 아래 참조
 7. ~~**`dump.rdb` Git 추적 해제**~~ — **완료**. `git rm --cached` 후 `.gitignore` 에 `*.rdb`/`appendonly.aof` 등록
 
 ### 서버 필요 (Ollama + Redis)
@@ -178,6 +179,43 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 ### 확인한 것과 남은 것
 
 워커를 실제로 띄워 `cron:nightly_schedule_task`, `cron:weekly_retrain_task` 가 등록되는 것까지 확인했습니다. 스케줄이 실제 시각에 발화해 번들을 끝까지 도는 것은 아직 관측하지 못했습니다.
+
+---
+
+## Alembic 도입 결과 (2026-08-02)
+
+기준선 리비전 `migrations/versions/0001_django_baseline.py` 를 만들고 운영 DB 에 `stamp` 까지 완료했습니다. 검증은 `tests/test_alembic_setup.py` (34건).
+
+핵심 설계 판단은 **기준선을 모델이 아니라 운영 DB 반영(reflect)으로 만들었다**는 점입니다. 모델에서 뽑으면 "19개 마이그레이션을 적용한 상태"와 다른 것을 기준선이라 부르게 되고, `stamp` 가 거짓말이 됩니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| 기준선 리비전 | `0001_django_baseline` (down_revision 없음) |
+| 생성 방식 | 운영 DB 11개 테이블 reflect |
+| 검증 | 빈 스키마에 적용 후 운영 DB 와 비교 → 차이 0건 |
+| 운영 DB 적용 | `stamp` 만 실행 (DDL 미실행), 27→28 테이블, 데이터 변동 없음 |
+| 신규 환경 | `make migrate-up` |
+| 기존 환경 | `make migrate-stamp` |
+| 드리프트 점검 | `make migrate-check` (읽기 전용) |
+
+`migrations/env.py` 의 `include_object`/`include_name` 이 모델에 있는 11개 테이블만 추적합니다. 이 필터가 없으면 `autogenerate` 가 운영 DB 에 남은 Django 인프라 테이블 16개(`django_migrations`, `auth_*`, `socialaccount_*`, `account_*`)를 전부 DROP 대상으로 잡습니다. G1 직결 사안이라 테스트로 고정했습니다.
+
+원본 19개 마이그레이션의 목록과 내용은 `docs/migration/django_migration_history.md` 에 기록했습니다. `bids` 0006~0008 이 기초금액 산출 기준을 세 번 뒤집는 관계라 리비전으로 재현하지 않고 최종 상태만 기준선에 담았습니다.
+
+### 부수적으로 드러난 것: 모델-스키마 실질 차이 33건
+
+`make migrate-check` 결과입니다. 주석 67건과 인덱스 명명 차이 58건은 무해하지만, **33건은 SQLAlchemy 모델이 원본 Django 스키마를 그대로 재현하지 못한 지점**입니다.
+
+| 유형 | 건수 | 내용 |
+| --- | ---: | --- |
+| `nullable` 완화 | 20 | DB 는 `NOT NULL` 인데 모델은 nullable. 모델이 원본보다 느슨합니다 |
+| `LONGTEXT` -> `TEXT` | 10 | 모델이 `Text()` 로 선언. MySQL `TEXT` 는 64KB 라 4GB 인 `LONGTEXT` 보다 좁습니다 |
+| `UUID` -> `VARCHAR(36)` | 1 | `automation_requests.request_id` |
+| unique 제약 추가 | 2 | `uq_bid_ann_no_ord_cat`, `uq_bid_results_no_ord_cat` (원본은 인덱스로 동일 제약) |
+
+현재는 운영에 영향이 없습니다. 모델을 DB 에 맞추는 것이 아니라 **DB 를 모델에 맞추는 순간** 문제가 됩니다. 특히 `LONGTEXT` -> `TEXT` 는 64KB 를 넘는 기존 값을 잘라냅니다. 절대 `autogenerate` 결과를 그대로 적용하지 마십시오.
+
+해야 할 일은 모델 선언을 원본 스키마에 맞추는 것입니다(`Text()` -> `LONGTEXT`, `nullable=False` 복원). 스키마 변경이 아니라 **선언 정정**이므로 DB 는 건드리지 않습니다.
 
 ---
 

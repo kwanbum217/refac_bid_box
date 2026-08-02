@@ -90,6 +90,28 @@ mysql -u root -p new_procurement < snapshot_pre_YYYYMMDD.sql
 
 ---
 
+## 4.4 Alembic 도입 절차 (2026-08-02 적용 완료)
+
+이식본은 Django 마이그레이션 실행 체계 대신 Alembic 을 씁니다. 기준선 리비전은 `migrations/versions/0001_django_baseline.py` 이며, **모델이 아니라 운영 DB 를 반영해서** 생성했습니다. 원본 19개 마이그레이션 목록은 [`django_migration_history.md`](django_migration_history.md) 에 있습니다.
+
+| 환경 | 명령 | 동작 |
+| --- | --- | --- |
+| 이미 Django 로 구축된 DB | `make migrate-stamp` | DDL 을 실행하지 않고 `alembic_version` 에 버전만 기록 |
+| 새로 구축하는 환경 | `make migrate-up` | 기준선 DDL 을 실행해 스키마 생성 |
+| 점검 | `make migrate-check` | 모델과 실제 스키마 차이를 읽기 전용으로 보고 |
+
+**기존 DB 에 `make migrate-up` 을 실행하지 마십시오.** 이미 존재하는 테이블을 다시 만들려 하다 실패합니다.
+
+### 안전장치
+
+운영 DB 에는 원본 Django 가 만든 테이블 16개(`django_migrations`, `auth_*`, `socialaccount_*`, `account_*` 등)가 남아 있습니다. 이식본은 이들을 ORM 모델로 옮기지 않았으므로, 필터가 없으면 `autogenerate` 가 전부 DROP 대상으로 잡습니다. `migrations/env.py` 의 `include_object`/`include_name` 이 모델에 있는 11개 테이블만 추적하도록 막고 있으며, 이 안전장치는 `tests/test_alembic_setup.py` 가 지킵니다.
+
+### 검증 기록
+
+빈 스키마에 기준선을 적용한 뒤 운영 DB 와 비교해 **차이 0건**을 확인했습니다. `stamp` 후 운영 DB 테이블 수는 27개에서 28개(`alembic_version` 추가)가 되었고, `bid_announcements` 1,839,088행 / `bid_results` 3,002,254행이 그대로 유지되었습니다.
+
+---
+
 ## 5. 롤백 계획
 
 이상 발견 시:
@@ -107,7 +129,8 @@ mysql -u root -p new_procurement < snapshot_pre_YYYYMMDD.sql
 - [ ] 기준선 행 수 수집 및 저장
 - [ ] 풀 덤프 완료 (롤백용 보관)
 - [ ] 신규 ORM 모델 스키마 호환성 확인 (테이블/컬럼/타입)
-- [ ] 마이그레이션 히스토리 19개 복사
+- [x] 마이그레이션 히스토리 19개 기록 (`django_migration_history.md`)
+- [x] Alembic 기준선 생성 및 운영 DB stamp
 - [ ] 이행 후 행 수 100% 일치 확인
 - [ ] FK/인덱스 무결성 확인
 - [ ] `django_migrations` 기록 일치 확인
