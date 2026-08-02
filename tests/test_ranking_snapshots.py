@@ -15,12 +15,18 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from src.app.models.bids import BidAnnouncement, BidRankingSnapshot, BidResult
+from src.app.models.bids import (
+    CORRUPTED_TEXT_FALLBACKS,
+    BidAnnouncement,
+    BidRankingSnapshot,
+    BidResult,
+)
 from src.app.services.ranking_snapshots import (
     ALL_CATEGORIES,
     DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
     SNAPSHOT_DEPTH,
+    get_skipped_count,
     get_top_rankings,
     rebuild_ranking_snapshots,
     snapshot_age,
@@ -210,3 +216,94 @@ def test_snapshot_scope_survives_empty_category(seeded_db):
     summary = retrieve_structured_data(seeded_db, plan)["summary"]
     winners = {row["bidwinnr_nm"] for row in summary["top_winners"]}
     assert {"가나기업", "마바건설", "다라상사"} <= winners
+
+
+# --------------------------------------------------------------------------- #
+# 인코딩 손상값 제외
+# --------------------------------------------------------------------------- #
+
+CORRUPTED_WINNER = "���� ����"
+
+
+@pytest.fixture
+def corrupted_db(isolated_db):
+    """손상값이 정상값보다 건수가 많은 상황. 실제 DB(건설 99.2% 손상)와 같습니다."""
+    base = datetime(2026, 5, 1, 9, 0, 0)
+    rows = [(CORRUPTED_WINNER, 5), ("정상건설", 2)]
+    index = 0
+    for winner, count in rows:
+        for _ in range(count):
+            isolated_db.add(
+                BidResult(
+                    bid_ntce_no=f"C{index:04d}",
+                    bid_ntce_ord="00",
+                    category="Cnstwk",
+                    bidwinnr_nm=winner,
+                    dminstt_nm="대전시",
+                    rl_openg_dt=base,
+                    collected_at=base,
+                )
+            )
+            index += 1
+    isolated_db.commit()
+    return isolated_db
+
+
+def test_corrupted_labels_excluded_from_snapshot(corrupted_db):
+    """손상값이 1위여도 순위에서 빠져야 합니다."""
+    rebuild_ranking_snapshots(corrupted_db)
+    rows = get_top_rankings(corrupted_db, DATASET_RESULT, "bidwinnr_nm", "Cnstwk", 5)
+    assert rows == [("정상건설", 2)]
+
+
+def test_exclusion_is_recorded_for_the_answer(corrupted_db):
+    """제외 사실을 숨기면 집계 모수가 달라진 것을 알 수 없습니다."""
+    rebuild_ranking_snapshots(corrupted_db)
+    assert get_skipped_count(corrupted_db, DATASET_RESULT, "bidwinnr_nm", "Cnstwk") == 1
+
+
+def test_answer_carries_exclusion_hint(corrupted_db):
+    rebuild_ranking_snapshots(corrupted_db)
+    plan = RetrievalPlan(use_sql=True, filters={"category": "Cnstwk"})
+    outcome = retrieve_structured_data(corrupted_db, plan)
+
+    assert [row["bidwinnr_nm"] for row in outcome["summary"]["top_winners"]] == ["정상건설"]
+    assert any("인코딩" in hint for hint in outcome["insufficiency_hints"])
+
+
+def test_live_path_also_excludes_corrupted(corrupted_db):
+    """스냅샷 없이 실시간 집계로 가는 질의도 같은 기준이어야 합니다."""
+    plan = RetrievalPlan(use_sql=True, filters={"category": "Cnstwk", "date_from": "2026-04-01"})
+    outcome = retrieve_structured_data(corrupted_db, plan)
+
+    assert [row["bidwinnr_nm"] for row in outcome["summary"]["top_winners"]] == ["정상건설"]
+    assert any("인코딩" in hint for hint in outcome["insufficiency_hints"])
+
+
+def test_no_hint_when_nothing_was_excluded(seeded_db):
+    """멀쩡한 데이터에까지 안내를 붙이면 신뢰를 잃습니다."""
+    rebuild_ranking_snapshots(seeded_db)
+    plan = RetrievalPlan(use_sql=True, filters={"category": "Thng"})
+    outcome = retrieve_structured_data(seeded_db, plan)
+    assert not any("인코딩" in hint for hint in outcome["insufficiency_hints"])
+
+
+def test_sample_announcements_use_display_fallback(isolated_db):
+    """표본 공고는 건너뛸 수 없으므로 화면과 같은 안내 문구로 대체합니다."""
+    isolated_db.add(
+        BidAnnouncement(
+            bid_ntce_no="A9999",
+            bid_ntce_ord="000",
+            category="Cnstwk",
+            bid_ntce_nm=CORRUPTED_WINNER,
+            dminstt_nm=CORRUPTED_WINNER,
+            bid_ntce_dt=datetime(2026, 5, 1),
+            collected_at=datetime(2026, 5, 1),
+        )
+    )
+    isolated_db.commit()
+
+    plan = RetrievalPlan(use_sql=True, filters={"category": "Cnstwk"})
+    samples = retrieve_structured_data(isolated_db, plan)["summary"]["sample_announcements"]
+    assert samples[0]["bid_ntce_nm"] == CORRUPTED_TEXT_FALLBACKS["title"]
+    assert samples[0]["dminstt_nm"] == CORRUPTED_TEXT_FALLBACKS["agency"]

@@ -23,6 +23,7 @@ from src.app.models.bids import (
     BidAnnouncement,
     BidDatasetSummary,
     BidResult,
+    is_corrupted_display_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,15 @@ def _display_agency_name(name: str | None) -> str | None:
     if name in UNCLASSIFIED_AGENCY_LABELS:
         return "미분류 기관"
     return name
+
+
+def _is_readable_agency_name(name: str | None) -> bool:
+    """업체 순위(`_is_readable_company_name`)와 같은 기준을 기관 순위에도 적용합니다.
+
+    parquet 복구분에 인코딩이 깨진 기관명이 남아 있어, 걸러내지 않으면 순위 상단이
+    읽을 수 없는 문자열로 채워집니다.
+    """
+    return bool(name) and not is_corrupted_display_text(name)
 
 
 def _exclude_unit_price_results(stmt):
@@ -301,6 +311,7 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
                 "count": row.cnt,
             }
             for row in by_agency
+            if _is_readable_agency_name(row.dminstt_nm)
         ],
         "by_company": _build_company_rows(
             [

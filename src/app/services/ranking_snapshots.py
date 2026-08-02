@@ -25,6 +25,7 @@ from src.app.models.bids import (
     BidAnnouncement,
     BidRankingSnapshot,
     BidResult,
+    is_corrupted_display_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,19 @@ DATASET_RESULT = "result"
 
 # 호출부는 상위 5개를 쓰지만 여유를 두고 저장합니다.
 SNAPSHOT_DEPTH = 10
+
+# U+FFFD 를 SQL 에서 먼저 쳐내도 파이썬 휴리스틱에 걸리는 값이 남습니다.
+# 그만큼만 여유를 두면 충분합니다.
+OVERFETCH_FACTOR = 3
+
+# 복구 불가능한 손상값은 U+FFFD(치환 문자)를 포함합니다. 상위권 대부분이 손상값이라
+# 파이썬에서만 거르면 오버페치를 아무리 늘려도 순위가 다 차지 않습니다.
+REPLACEMENT_CHAR = "\ufffd"
+
+# 순위는 1위부터입니다. rank 0 은 "손상값을 제외했는가" 표시 자리로 씁니다
+# (metric_count 1 = 제외 있었음). 조회 시점에 다시 판정하면 300만 행 스캔이
+# 필요하므로 집계할 때 함께 남깁니다.
+SKIPPED_MARKER_RANK = 0
 
 # (dataset, dimension) -> (모델, 집계 컬럼)
 DIMENSIONS: dict[tuple[str, str], tuple[Any, Any]] = {
@@ -47,23 +61,64 @@ ALL_CATEGORIES = ""
 SNAPSHOT_CATEGORIES = (ALL_CATEGORIES, *CATEGORY_LABELS)
 
 
-def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> list[tuple]:
+def exclude_corrupted(column):
+    """U+FFFD 를 포함한 값을 SQL 단계에서 제외합니다."""
+    return column.is_not(None) & ~column.contains(REPLACEMENT_CHAR)
+
+
+def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> tuple[list, int]:
+    """상위 N 을 집계하되 인코딩이 깨진 값은 순위에서 제외합니다.
+
+    복구 불가능한 손상값(전체의 41%)을 그대로 두면 순위 상위가 전부 깨진 문자열로
+    채워져 답변이 쓸모없어집니다. 대시보드 업체 순위(`_is_readable_company_name`)도
+    같은 방침입니다. 제외한 그룹 수를 함께 돌려주어 호출부가 안내할 수 있게 합니다.
+    """
     model, column = DIMENSIONS[(dataset, dimension)]
-    stmt = select(column, func.count(model.id)).group_by(column)
-    if category:
-        stmt = stmt.where(model.category == category)
-    stmt = stmt.order_by(func.count(model.id).desc()).limit(SNAPSHOT_DEPTH)
-    return db.execute(stmt).all()
+    scope = [model.category == category] if category else []
+
+    stmt = (
+        select(column, func.count(model.id))
+        .where(exclude_corrupted(column), *scope)
+        .group_by(column)
+        .order_by(func.count(model.id).desc())
+        .limit(SNAPSHOT_DEPTH * OVERFETCH_FACTOR)
+    )
+
+    kept: list = []
+    dropped = False
+    for label, count in db.execute(stmt).all():
+        # SQL 이 U+FFFD 를 쳐냈어도 다른 형태로 깨진 값이 남을 수 있습니다.
+        if is_corrupted_display_text(label):
+            dropped = True
+            continue
+        kept.append((label, count))
+        if len(kept) >= SNAPSHOT_DEPTH:
+            break
+
+    if not dropped:
+        # SQL 단계에서 제외된 것이 있었는지 확인합니다. 첫 건에서 멈추므로 저렴합니다.
+        dropped = (
+            db.execute(
+                select(model.id)
+                .where(column.contains(REPLACEMENT_CHAR), *scope)
+                .limit(1)
+            ).first()
+            is not None
+        )
+
+    return kept, dropped
 
 
 def rebuild_ranking_snapshots(db: Session) -> dict[str, int]:
     """전체 조합을 다시 집계합니다. 무거우므로 정기 실행과 수집 직후에만 호출합니다."""
     started = datetime.utcnow()
     written = 0
+    skipped = 0
 
     for (dataset, dimension) in DIMENSIONS:
         for category in SNAPSHOT_CATEGORIES:
-            rows = _compute_rows(db, dataset, dimension, category)
+            rows, dropped = _compute_rows(db, dataset, dimension, category)
+            skipped += int(dropped)
             db.execute(
                 delete(BidRankingSnapshot).where(
                     BidRankingSnapshot.dataset == dataset,
@@ -71,6 +126,18 @@ def rebuild_ranking_snapshots(db: Session) -> dict[str, int]:
                     BidRankingSnapshot.category == category,
                 )
             )
+            if dropped:
+                db.add(
+                    BidRankingSnapshot(
+                        dataset=dataset,
+                        dimension=dimension,
+                        category=category,
+                        rank=SKIPPED_MARKER_RANK,
+                        label=None,
+                        metric_count=1,
+                        rebuilt_at=started,
+                    )
+                )
             for rank, (label, count) in enumerate(rows, start=1):
                 db.add(
                     BidRankingSnapshot(
@@ -89,8 +156,10 @@ def rebuild_ranking_snapshots(db: Session) -> dict[str, int]:
             db.commit()
 
     elapsed = (datetime.utcnow() - started).total_seconds()
-    logger.info("상위 N 스냅샷 재집계 완료 (%d행, %.1fs)", written, elapsed)
-    return {"rows": written, "elapsed_seconds": elapsed}
+    logger.info(
+        "상위 N 스냅샷 재집계 완료 (%d행, 손상 제외 조합 %d개, %.1fs)", written, skipped, elapsed
+    )
+    return {"rows": written, "scopes_with_corruption": skipped, "elapsed_seconds": elapsed}
 
 
 def get_top_rankings(
@@ -106,6 +175,7 @@ def get_top_rankings(
             BidRankingSnapshot.dataset == dataset,
             BidRankingSnapshot.dimension == dimension,
             BidRankingSnapshot.category == (category or ALL_CATEGORIES),
+            BidRankingSnapshot.rank > SKIPPED_MARKER_RANK,
         )
         .order_by(BidRankingSnapshot.rank)
         .limit(limit)
@@ -114,6 +184,19 @@ def get_top_rankings(
     if not rows:
         return None
     return [(row[0], int(row[1] or 0)) for row in rows]
+
+
+def get_skipped_count(db: Session, dataset: str, dimension: str, category: str) -> int:
+    """집계 시점에 손상값을 제외했는지 여부(1/0). 답변 안내 문구용입니다."""
+    value = db.scalar(
+        select(BidRankingSnapshot.metric_count).where(
+            BidRankingSnapshot.dataset == dataset,
+            BidRankingSnapshot.dimension == dimension,
+            BidRankingSnapshot.category == (category or ALL_CATEGORIES),
+            BidRankingSnapshot.rank == SKIPPED_MARKER_RANK,
+        )
+    )
+    return int(value or 0)
 
 
 def snapshot_age(db: Session) -> datetime | None:
