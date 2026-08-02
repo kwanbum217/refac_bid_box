@@ -42,9 +42,9 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 ### 서버 필요 (Ollama + Redis)
 
 4. ~~**성능 벤치마크**~~ — **측정 완료**. 목표 2건 미달, 원인 규명. [`docs/ops/latency_benchmark.md`](../ops/latency_benchmark.md)
-9. **레이턴시 개선** — SQL 사전 집계 **완료** (전체 P95 목표 달성). SSE 진짜 스트리밍은 잔존. 아래 참조
+9. **레이턴시 개선** — SQL 사전 집계 **완료** (전체 P95 목표 달성). SSE 진짜 스트리밍 **완료** (`src/rag/llm.py`, `src/rag/engine.py`). 아래 참조
 5. ~~**재학습 E2E 검증**~~ — **완료**. 결함 6건 발견·수정. [`docs/ops/retrain_pipeline_e2e.md`](../ops/retrain_pipeline_e2e.md)
-10. **재학습 모델 설계** — `inst_hist_rate` 실제 기관 이력 계산 완료. 잔여: 승격 임계값, 특징 확장, K-Fold/LightGBM/CatBoost, 시계열 분할
+10. **재학습 모델 설계** — 완료. `inst_hist_rate` 실제 기관 이력, 특징 확장 10개, LightGBM/CatBoost+K-Fold, 시계열 분할, 승격 임계값 0.005 margin.
 6. **크로스 플랫폼 검증** — Windows 환경에서 Docker + Makefile 실행 확인
 
 ### 실기동 확인 (2026-08-02 완료)
