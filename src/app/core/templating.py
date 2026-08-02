@@ -35,6 +35,11 @@ URL_MAP = {
     "chatbot:chat_page": "/chat/",
     "chatbot:chat_api": "/api/v1/chatbot/chat",
     "chatbot:new_chat_session": "/api/v1/chatbot/session/new",
+    # 자동화 작업 제어. 원본은 /chatbot/api/automation/job/<id>/... 였습니다.
+    # 화면 스크립트가 job_id 를 런타임에 끼워 넣으므로 자리표시자를 그대로 둡니다.
+    "chatbot:automation_job_confirm": "/api/v1/automation/job/{job_id}/confirm",
+    "chatbot:automation_job_status": "/api/v1/automation/job/{job_id}/status",
+    "chatbot:automation_job_cancel": "/api/v1/automation/job/{job_id}/cancel",
     "accounts:login": "/accounts/login/",
     "accounts:logout": "/accounts/logout/",
     "accounts:signup": "/accounts/signup/",

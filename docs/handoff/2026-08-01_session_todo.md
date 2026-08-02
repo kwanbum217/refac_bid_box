@@ -45,15 +45,9 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 5. **재학습 E2E 검증** — 데이터→학습→평가→배포 전 주기 실증
 6. **크로스 플랫폼 검증** — Windows 환경에서 Docker + Makefile 실행 확인
 
-### 실기동 확인이 남은 항목
+### 실기동 확인 (2026-08-02 완료)
 
-단위 테스트는 통과했으나 워커를 붙여 눈으로 확인하지 않은 부분입니다.
-
-| 대상 | 확인할 것 |
-| --- | --- |
-| 챗봇 "요청 중지" 버튼 | 화면에서 눌렀을 때 실제 워커 작업이 죽는지 (`allow_abort_jobs` 경로) |
-| 세션 사이드바 | 과거 대화를 눌렀을 때 `history`/`last_query` 로 대화창이 복원되는지 |
-| 실행 재사용 | `full_validation` 을 두 번 승인했을 때 두 번째가 재사용으로 즉시 끝나는지 |
+Redis + MySQL + uvicorn + Arq 워커 + Ollama 를 모두 띄우고 실제 HTTP 로 확인했습니다. 상세는 아래 "실기동 확인 결과" 참조.
 
 ---
 
@@ -251,6 +245,67 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 ### 검증 방법
 
 빈 스키마에 `Base.metadata.create_all` 로 스키마를 만든 뒤 운영 DB 와 비교해 주석 외 차이 0건을 확인했습니다. 임시 스키마는 검증 후 삭제했습니다.
+
+---
+
+## 실기동 확인 결과 (2026-08-02)
+
+Redis, MariaDB(운영), uvicorn, Arq 워커, Ollama 를 모두 띄우고 실제 HTTP 요청으로 확인했습니다. 세 항목 모두 통과했으며, 확인 과정에서 화면 버그 하나가 드러났습니다.
+
+### 드러난 버그: 자동화 제어 버튼 3개가 전부 404
+
+`chat.html` 의 URL 템플릿이 원본 Django 경로(`/chatbot/api/automation/job/<id>/...`)로 남아 있었습니다. 이식본 라우트는 `/api/v1/automation/job/{job_id}/...` 이므로 다음이 전부 동작하지 않았습니다.
+
+| 기능 | 증상 |
+| --- | --- |
+| 요청 중지 버튼 | 404 |
+| 확인 실행(고비용 승인) 버튼 | 404 |
+| 진행 상황 폴링 | 404 |
+
+단위 테스트가 API 를 직접 호출하는 방식이라 아무도 잡지 못했습니다. 세 경로를 `URL_MAP` 에 등록해 다른 항목처럼 `url()` 을 거치도록 고쳤고, `tests/test_template_urls.py` (13건)로 고정했습니다. 이 테스트는 수정 전 코드에서 실제로 실패하는 것을 확인했습니다.
+
+### 확인 1: 요청 중지가 실제 워커 작업을 막는가
+
+화면이 렌더링한 URL 을 그대로 읽어 같은 요청을 보냈습니다.
+
+- 짧은 작업(`predict_only`)은 2초 안에 끝나 중지 대상이 없었고, 이미 끝난 작업의 상태를 바꾸지 않는 것까지 확인했습니다(올바른 동작).
+- 워커를 멈춘 상태에서 작업을 넣고 중지한 뒤 워커를 되살렸습니다. 워커 로그에 **`aborted before start`** 가 찍히고 작업을 실행하지 않았습니다. DB 상태는 `canceled` 유지.
+
+중지가 DB 표시만 바꾸는 것이 아니라 Arq abort 신호로 실제 실행을 막는다는 뜻입니다. 실행 중인 작업을 중간에 죽이는 것은 이전 세션에서 10초 태스크로 확인했습니다.
+
+운영 데이터를 건드리지 않으려고 읽기 전용 스텝만 썼습니다. `collect`(G2B 적재)와 `rag`(ChromaDB 재구축)는 돌리지 않았습니다.
+
+### 확인 2: 세션 사이드바 대화 복원
+
+첫 세션에서 2턴 대화 후 새 세션을 만들고, 사이드바 클릭에 해당하는 전환 요청을 보냈습니다.
+
+| 항목 | 결과 |
+| --- | --- |
+| `mode` | `switch` |
+| `history` | 4개 (user/model 2턴) 복원 |
+| `last_query` | `"그중 상위 기관은 어디야"` 복원 |
+| `answer` | 마지막 답변 전문 복원 |
+
+실제 Ollama 가 응답하고 ChromaDB 검색이 동작하는 상태에서 확인했습니다.
+
+### 확인 3: full_validation 재사용
+
+7/31 11:54 의 `manual_full` 성공 이력이 72시간 창 안에 있어 재사용 조건을 실제로 만족했습니다.
+
+| 항목 | 결과 |
+| --- | --- |
+| 승인 후 상태 | 즉시 `success` |
+| 재사용한 실행 | `manual_full-2a5bdfaffa43` |
+| 새 `pipeline_executions` | 0건 |
+| Redis 큐 | 비어 있음 |
+| `payload.reuse_mode` | `recent_execution` |
+| `result_payload.sync_mode` | `reused_recent_execution` |
+
+`reuse_mode` 는 job 응답이 아니라 `AutomationRequest.payload` 에 실립니다. 원본도 같은 위치입니다(`apps/chatbot/tests.py:1418`). 값만 원본의 `recent_staging_execution` / `reused_recent_staging` 에서 `staging` 을 뺀 형태이며, Arq 이식으로 스테이징 환경 구분이 사라졌기 때문입니다. 구조는 원본과 동일합니다.
+
+### 확인에 쓴 계정
+
+`livecheck_*` 형식의 테스트 계정이 운영 DB 에 남아 있습니다. 정리 대상입니다.
 
 ---
 
