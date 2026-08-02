@@ -694,14 +694,14 @@ class HybridRAGEngine:
     def backend_name(self) -> str:
         return getattr(self.backend, "name", "fallback")
 
-    def get_answer_sync(
+    def _prepare_context(
         self,
         user_query: str,
         db: Optional[Session] = None,
         history: list[dict] | None = None,
         tool_context: dict | None = None,
-    ) -> AnswerBundle:
-        started = time.time()
+    ) -> tuple:
+        """검색 계획 수립과 컨텍스트 조회를 수행합니다."""
         plan = build_retrieval_plan(user_query)
         structured_data, vector_docs, kb_status = _normalize_tool_context(tool_context)
 
@@ -730,6 +730,54 @@ class HybridRAGEngine:
             kb_version=str(kb_status.get("updated_at", "")) if kb_status else None,
         )
 
+        context_text = _compose_context_text(plan, structured_data, vector_docs, kb_status)
+
+        messages = [
+            {"role": item["role"], "content": item["text"]} for item in history or []
+        ]
+        messages.append({"role": "user", "content": f"검색 컨텍스트:\n{context_text}"})
+        messages.append({"role": "user", "content": _normalize_text(user_query)})
+
+        return plan, structured_data, vector_docs, kb_status, provenance, context_text, messages
+
+    def _apply_answer_guard(
+        self,
+        answer_text: str,
+        structured_data: dict | None,
+        plan: Any,
+    ) -> str:
+        """Answer Guard: 데이터가 있는데 없다고 답한 경우 강제 교정."""
+        summary_data = (structured_data or {}).get("summary", {})
+        total_bids = summary_data.get("total_bids", 0)
+        total_ntce = summary_data.get("announcement_count", 0)
+        if "데이터가 없습니다" in answer_text and (total_bids > 0 or total_ntce > 0):
+            stats_msg = f"분석 결과 낙찰 {total_bids}건, 공고 {total_ntce}건이 확인되었습니다. "
+            answer_text = (
+                stats_msg
+                + answer_text.replace("데이터가 없습니다", "")
+                .replace("관련 정보를 찾을 수 없습니다", "")
+                .strip()
+            )
+        return _normalize_category_wording(answer_text, plan)
+
+    def get_answer_sync(
+        self,
+        user_query: str,
+        db: Optional[Session] = None,
+        history: list[dict] | None = None,
+        tool_context: dict | None = None,
+    ) -> AnswerBundle:
+        started = time.time()
+        (
+            plan,
+            structured_data,
+            vector_docs,
+            kb_status,
+            provenance,
+            _context_text,
+            messages,
+        ) = self._prepare_context(user_query, db=db, history=history, tool_context=tool_context)
+
         def _bundle(answer: str, citations: list[str] | None = None) -> AnswerBundle:
             return AnswerBundle(
                 answer=answer,
@@ -746,31 +794,9 @@ class HybridRAGEngine:
             )
             return _bundle(_normalize_category_wording(fallback_text, plan))
 
-        context_text = _compose_context_text(plan, structured_data, vector_docs, kb_status)
-
         try:
-            messages = [
-                {"role": item["role"], "content": item["text"]} for item in history or []
-            ]
-            messages.append({"role": "user", "content": f"검색 컨텍스트:\n{context_text}"})
-            messages.append({"role": "user", "content": _normalize_text(user_query)})
-
             answer_text = backend.generate(SYSTEM_PROMPT, messages)
-
-            # Answer Guard: 데이터가 있는데 없다고 답한 경우 강제 교정
-            summary_data = (structured_data or {}).get("summary", {})
-            total_bids = summary_data.get("total_bids", 0)
-            total_ntce = summary_data.get("announcement_count", 0)
-            if "데이터가 없습니다" in answer_text and (total_bids > 0 or total_ntce > 0):
-                stats_msg = f"분석 결과 낙찰 {total_bids}건, 공고 {total_ntce}건이 확인되었습니다. "
-                answer_text = (
-                    stats_msg
-                    + answer_text.replace("데이터가 없습니다", "")
-                    .replace("관련 정보를 찾을 수 없습니다", "")
-                    .strip()
-                )
-
-            answer_text = _normalize_category_wording(answer_text, plan)
+            answer_text = self._apply_answer_guard(answer_text, structured_data, plan)
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
@@ -803,14 +829,76 @@ class HybridRAGEngine:
         history: list[dict] | None = None,
         tool_context: dict | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
-        bundle = await self.get_answer(user_query, db=db, history=history, tool_context=tool_context)
-        yield {"type": "docs", "docs": bundle.retrieved_docs}
-        chunk_size = 40
-        text = bundle.answer
-        for i in range(0, len(text), chunk_size):
-            yield {"type": "token", "text": text[i : i + chunk_size]}
-            await asyncio.sleep(0.05)
-        yield {"type": "done", "citations": bundle.citations, "trace_id": bundle.provenance.trace_id}
+        """Ollama/Gemini 스트리밍 API 를 사용해 실제 실시간 토큰을 반환합니다.
+
+        Answer Guard 와 카테고리 정규화는 완성된 답변에 대해 마지막에 적용됩니다.
+        교정이 필요하면 `done` 이벤트에 `corrected_answer` 필드로 내려갑니다.
+        """
+        (
+            plan,
+            structured_data,
+            vector_docs,
+            kb_status,
+            provenance,
+            _context_text,
+            messages,
+        ) = self._prepare_context(user_query, db=db, history=history, tool_context=tool_context)
+
+        yield {"type": "docs", "docs": vector_docs}
+
+        backend = self.backend
+        if backend is None:
+            fallback_text = _fallback_answer(
+                user_query, plan, structured_data, vector_docs, kb_status
+            )
+            normalized = _normalize_category_wording(fallback_text, plan)
+            yield {"type": "token", "text": normalized}
+            citation_suffix = _build_source_citation_from_context(
+                structured_data, vector_docs, kb_status
+            )
+            yield {
+                "type": "done",
+                "citations": [citation_suffix.strip()] if citation_suffix.strip() else [],
+                "trace_id": provenance.trace_id,
+            }
+            return
+
+        try:
+            raw_answer = ""
+            token_gen = backend.stream_generate(SYSTEM_PROMPT, messages)
+            while True:
+                token = await asyncio.to_thread(next, token_gen, None)
+                if token is None:
+                    break
+                raw_answer += token
+                yield {"type": "token", "text": token}
+
+            corrected_answer = self._apply_answer_guard(raw_answer, structured_data, plan)
+            citation_suffix = _build_source_citation_from_context(
+                structured_data, vector_docs, kb_status
+            )
+            final_answer = f"{corrected_answer}{citation_suffix}"
+            final_citations = [citation_suffix.strip()] if citation_suffix.strip() else []
+
+            done_event: dict[str, Any] = {
+                "type": "done",
+                "citations": final_citations,
+                "trace_id": provenance.trace_id,
+            }
+            if corrected_answer != raw_answer:
+                done_event["corrected_answer"] = final_answer
+            yield done_event
+        except Exception:
+            fallback_text = _fallback_answer(
+                user_query, plan, structured_data, vector_docs, kb_status
+            )
+            normalized = _normalize_category_wording(fallback_text, plan)
+            yield {"type": "token", "text": normalized}
+            yield {
+                "type": "done",
+                "citations": [],
+                "trace_id": provenance.trace_id,
+            }
 
 
 rag_engine = HybridRAGEngine()

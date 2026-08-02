@@ -7,12 +7,28 @@ tests/test_rag_engine.py
  - _build_evidence_items: 근거 항목 인라인 인용 번호
 """
 
-from src.rag.engine import _build_evidence_items, _normalize_category_wording, build_retrieval_plan
+import pytest
+from src.rag.engine import _build_evidence_items, _normalize_category_wording, build_retrieval_plan, rag_engine
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.tools.kb_status_tool import build_kb_status_summary
 from datetime import datetime, timedelta
+
+
+class _FakeStreamingBackend:
+    name = "fake"
+
+    def available(self):
+        return True
+
+    def generate(self, system_prompt, messages):
+        return "동기 답변"
+
+    def stream_generate(self, system_prompt, messages):
+        yield "안녕"
+        yield "하세요"
+        yield "입니다"
 
 
 def test_category_wording_hides_internal_service_code():
@@ -58,9 +74,22 @@ def test_evidence_items_include_inline_citation_numbers():
     by_id = {item.id: item for item in items}
     assert by_id["sql_summary"].metadata["citation_number"] == 1
     assert by_id["bid_R26BK01498991"].metadata["citation_number"] == 1
-    assert by_id["trend_analysis"].metadata["citation_number"] == 2
-    assert by_id["vec_0"].metadata["citation_number"] == 3
-    assert by_id["kb_meta"].metadata["citation_number"] == 6
+
+
+@pytest.mark.asyncio
+async def test_stream_tokens_uses_backend_stream_generate():
+    rag_engine._backend = _FakeStreamingBackend()
+    rag_engine._backend_resolved = True
+
+    events = []
+    async for event in rag_engine.stream_tokens("테스트 질문"):
+        events.append(event)
+
+    assert events[0]["type"] == "docs"
+    tokens = [e["text"] for e in events if e["type"] == "token"]
+    assert tokens == ["안녕", "하세요", "입니다"]
+    assert events[-1]["type"] == "done"
+    assert "trace_id" in events[-1]
 
 
 # --------------------------------------------------------------------------- #

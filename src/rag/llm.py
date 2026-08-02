@@ -13,8 +13,9 @@ RAG 생성 LLM 백엔드 추상화.
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Protocol
+from typing import Any, Iterator, Protocol
 
 import httpx
 
@@ -29,6 +30,10 @@ class LLMBackend(Protocol):
     def available(self) -> bool: ...
 
     def generate(self, system_prompt: str, messages: list[dict[str, str]]) -> str: ...
+
+    def stream_generate(
+        self, system_prompt: str, messages: list[dict[str, str]]
+    ) -> Iterator[str]: ...
 
 
 class OllamaBackend:
@@ -67,6 +72,36 @@ class OllamaBackend:
         body = response.json()
         return str((body.get("message") or {}).get("content") or "")
 
+    def stream_generate(
+        self, system_prompt: str, messages: list[dict[str, str]]
+    ) -> Iterator[str]:
+        """Ollama /api/chat stream=True 를 사용해 실시간 토큰을 반환합니다."""
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system_prompt}, *messages],
+            "stream": True,
+            "options": {"temperature": settings.LLM_TEMPERATURE},
+        }
+        with httpx.stream(
+            "POST",
+            f"{self.base_url}/api/chat",
+            json=payload,
+            timeout=self.timeout,
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if chunk.get("done"):
+                    break
+                content = (chunk.get("message") or {}).get("content")
+                if content:
+                    yield str(content)
+
 
 class GeminiBackend:
     """원본 bid_box 와 동일한 Google Gemini 경로."""
@@ -104,6 +139,28 @@ class GeminiBackend:
             config=types.GenerateContentConfig(system_instruction=system_prompt),
         )
         return response.text or ""
+
+    def stream_generate(
+        self, system_prompt: str, messages: list[dict[str, str]]
+    ) -> Iterator[str]:
+        """Gemini 스트리밍 API 를 사용해 실시간 토큰을 반환합니다."""
+        from google.genai import types
+
+        contents = [
+            types.Content(
+                role="model" if item.get("role") == "assistant" else "user",
+                parts=[types.Part.from_text(text=item.get("content") or "")],
+            )
+            for item in messages
+        ]
+        for chunk in self._client.models.generate_content_stream(
+            model=self.model,
+            contents=contents,
+            config=types.GenerateContentConfig(system_instruction=system_prompt),
+        ):
+            text = chunk.text or ""
+            if text:
+                yield text
 
 
 def build_backend(provider: str | None = None) -> LLMBackend | None:
