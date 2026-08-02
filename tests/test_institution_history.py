@@ -271,3 +271,41 @@ def test_lookup_institution_history_without_institution_returns_default(memory_s
     features = {"category": "Servc", "openg_dt": datetime.utcnow()}
     rate = lookup_institution_history(features, memory_session)
     assert rate == pytest.approx(0.9011)
+
+
+# ---------------------------------------------------------------------------
+# 학습/추론 경로 연결 상태 고정
+#
+# institution_history 는 아직 production 경로에 연결돼 있지 않습니다.
+# 한쪽만 연결하면 AGENTS.md 6항이 금지하는 train/serve skew 가 생기므로,
+# 현재 상태를 테스트로 못박아 문서와 코드가 어긋나지 않게 합니다.
+# ---------------------------------------------------------------------------
+
+
+def test_production_feature_path_still_uses_constant():
+    """trainer/predictor 는 session 을 넘기지 않으므로 상수가 나와야 합니다."""
+    from src.ml.features import build_default_feature_map
+
+    features = {
+        "dminstt_nm": "서울특별시",
+        "category": "Servc",
+        "presumed_price": 1.0e8,
+        "openg_dt": "2025-01-01",
+    }
+    assert build_default_feature_map(features)["inst_hist_rate"] == pytest.approx(0.9011)
+
+
+def test_train_and_serve_use_the_same_session_policy():
+    """학습과 추론이 같은 방식으로 특징을 만들어야 합니다.
+
+    한쪽만 session 을 넘기도록 바뀌면 이 테스트가 실패합니다.
+    양쪽을 함께 바꾸고 이 테스트를 갱신하십시오.
+    """
+    import inspect
+
+    from src.ml import predictor, trainer
+
+    trainer_call = "build_feature_frame(records)"
+    predictor_call = "build_feature_dict(request_data)"
+    assert trainer_call in inspect.getsource(trainer.ModelTrainer.train_and_register)
+    assert predictor_call in inspect.getsource(predictor.SingletonPredictor.predict)

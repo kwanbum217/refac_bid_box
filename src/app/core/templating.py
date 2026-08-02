@@ -168,12 +168,14 @@ def urlencode_filter(value) -> str:
 
 def escapejs(value) -> str:
     """{{ x|escapejs }} 대응. JS 리터럴 안에 안전하게 삽입합니다."""
-    return Markup(json.dumps(str(value or ""))[1:-1])
+    # json.dumps 결과라 따옴표/제어문자가 이미 이스케이프됩니다
+    return Markup(json.dumps(str(value or ""))[1:-1])  # nosec B704
 
 
 def to_json(value) -> Markup:
     """script 태그 안에 파이썬 객체를 그대로 실어 보내기 위한 헬퍼입니다."""
-    return Markup(json.dumps(value, ensure_ascii=False, default=str))
+    # json.dumps 결과라 따옴표/제어문자가 이미 이스케이프됩니다
+    return Markup(json.dumps(value, ensure_ascii=False, default=str))  # nosec B704
 
 
 def _build_templates() -> Jinja2Templates:

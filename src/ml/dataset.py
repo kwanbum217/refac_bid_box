@@ -124,8 +124,15 @@ def build_training_dataset(
     stmt = stmt.where(BidResult.sucsf_bid_rate.is_not(None))
     if category_code:
         stmt = stmt.where(BidResult.category == category_code)
+
+    # 정렬을 걸지 않으면 행 순서가 DB 반환 순서에 좌우되어 홀드아웃 구간이 매번
+    # 달라지고, limit 을 걸었을 때 어떤 표본이 뽑힐지도 알 수 없습니다.
+    # limit 은 최근 구간을 보려는 용도이므로 내림차순으로 잘라냅니다.
+    # trainer 가 개찰일로 다시 정렬하므로 프레임 순서 자체는 학습에 영향이 없습니다.
     if limit:
-        stmt = stmt.limit(limit)
+        stmt = stmt.order_by(BidResult.rl_openg_dt.desc()).limit(limit)
+    else:
+        stmt = stmt.order_by(BidResult.rl_openg_dt.asc())
 
     rows = db_session.execute(stmt).mappings().all()
     df = pd.DataFrame([dict(row) for row in rows], columns=list(TRAINING_COLUMNS))

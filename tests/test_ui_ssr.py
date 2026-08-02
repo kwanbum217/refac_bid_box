@@ -258,3 +258,17 @@ def test_logout_clears_session(auth_client):
     response = auth_client.get("/accounts/logout/", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/accounts/login/"
+
+
+def test_bound_field_escapes_submitted_values():
+    """폼 값은 Markup 안으로 들어가므로 Jinja 자동 이스케이프를 못 받습니다.
+
+    오류 재렌더 시 제출값이 그대로 돌아오는 구조라 escape 를 빼면 반사형 XSS 가 됩니다.
+    """
+    from src.app.services.auth_forms import signup_form
+
+    form = signup_form(data={"birth_y": '"><script>alert(1)</script>'})
+    rendered = str(form.birth_y)
+
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;" in rendered

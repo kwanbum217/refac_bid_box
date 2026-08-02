@@ -187,7 +187,7 @@ def upgrade() -> None:
     )
     op.create_table('automation_requests',
     sa.Column('id', mysql.BIGINT(display_width=20), autoincrement=True, nullable=False),
-    sa.Column('request_id', sa.String(36), nullable=False),
+    sa.Column('request_id', sa.UUID(), nullable=False),
     sa.Column('intent_type', mysql.VARCHAR(length=64), nullable=False),
     sa.Column('requested_text', mysql.LONGTEXT(), nullable=False),
     sa.Column('pipeline_name', mysql.VARCHAR(length=100), nullable=False),

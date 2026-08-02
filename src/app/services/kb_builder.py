@@ -141,7 +141,8 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
 
         try:
             chroma_client.delete_collection(COLLECTION_NAME)
-        except Exception:
+        # 없는 컬렉션 삭제는 정상 흐름이라 무시합니다
+        except Exception:  # nosec B110
             pass
         collection = chroma_client.create_collection(name=COLLECTION_NAME)
 

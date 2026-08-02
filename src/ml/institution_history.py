@@ -3,12 +3,21 @@ src/ml/institution_history.py
 
 기관별 낙찰률 이력을 DB 에서 계산하는 모듈.
 
-features.py 의 단일 특징 공급원 원칙을 유지하면서,
-inst_hist_rate 를 DEFAULT_INST_RATE(0.925) 상수 대신 실제 기관 이력으로
-채울 수 있게 뼈대를 제공합니다.
+주의: 이 모듈은 아직 학습·추론 경로에 연결되어 있지 않습니다.
 
-담당자가 아래 TODO 마커(# TODO) 5곳을 20~40줄 단위로 직접 구현합니다.
-세부 구현 가이드는 docs/handoff/inst_hist_rate_impl_todo.md 를 참조하세요.
+`features.py` 는 `session` 을 받도록 준비돼 있지만 실제 호출부인
+`trainer.py` 와 `predictor.py` 는 session 을 넘기지 않습니다. 따라서
+`inst_hist_rate` 는 여전히 `_default_institution_rate()` 상수로 채워집니다.
+
+연결하지 않은 이유는 두 가지입니다.
+
+1. 행당 2쿼리(COUNT + AVG)라 용역 학습셋 773,045 행 기준 약 32시간이 걸립니다.
+   기관/카테고리/기간을 GROUP BY 로 한 번에 집계해 매핑하는 배치 설계가 필요합니다.
+2. 추론 경로에만 연결하면 학습은 상수, 추론은 DB 값이 되어 AGENTS.md 6항이
+   금지하는 train/serve skew 가 발생합니다. 양쪽을 같은 방식으로 바꿔야 합니다.
+
+배치 집계 방식(윈도우 크기, 누수 방지 기준, 최소 표본)은 특징 엔지니어링
+결정이므로 담당자가 정합니다. 가이드는 docs/handoff/inst_hist_rate_impl_todo.md 참조.
 """
 
 from __future__ import annotations
@@ -85,7 +94,8 @@ def _resolve_reference_date(features_dict: dict[str, Any]) -> datetime:
                 ts = pd.Timestamp(value)
                 if pd.notna(ts):
                     return ts.to_pydatetime()
-            except Exception:
+            # 파싱 실패한 후보 키는 건너뛰고 다음 키를 봅니다
+            except Exception:  # nosec B112
                 continue
     return datetime.utcnow()
 

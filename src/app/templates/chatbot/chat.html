@@ -670,7 +670,9 @@ $(document).ready(function() {
 
     const CONFIG = {
         chatUrl: interface.data('chat-url'),
-        streamUrl: '/api/v1/chatbot/stream',
+        // streamUrl 은 두지 않습니다. /api/v1/chatbot/stream 은 RAG 답변 토큰만 흘리고
+        // 플래너, 자동화 확인, 차트 페이로드, 세션 저장을 거치지 않습니다.
+        // 이 화면을 스트리밍으로 옮기려면 그 기능들을 SSE 이벤트로 먼저 옮겨야 합니다.
         newSessionUrl: interface.data('new-session-url'),
         csrfToken: interface.data('csrf-token'),
         confirmUrlTemplate: '{{ url("chatbot:automation_job_confirm", job_id="__JOB_ID__") }}',

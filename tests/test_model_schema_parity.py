@@ -182,11 +182,22 @@ def test_columns_are_not_nullable(table, column):
     assert _column(table, column).nullable is False
 
 
-def test_request_id_uses_mysql_compatible_string():
-    """MySQL 8 은 네이티브 UUID 타입을 지원하지 않으므로 VARCHAR(36) 을 사용합니다."""
+def test_request_id_uses_native_uuid_on_mariadb():
+    """운영 DB(MariaDB 12.3) 의 request_id 는 네이티브 uuid 컬럼입니다.
+
+    일반 Uuid 는 CHAR(32), String(36) 은 VARCHAR(36) 으로 컴파일되어 둘 다
+    원본과 어긋납니다. 어긋난 채로 autogenerate 를 돌리면 운영 테이블에
+    ALTER COLUMN 이 걸립니다.
+    """
     column = _column("automation_requests", "request_id")
-    assert column.type.compile(MYSQL) == "VARCHAR(36)"
-    assert column.type.compile(SQLITE) == "VARCHAR(36)"
+    mariadb = mysql.dialect()
+    mariadb.supports_native_uuid = True
+    assert column.type.compile(mariadb) == "UUID"
+
+
+def test_request_id_stays_varchar_on_sqlite():
+    """테스트는 SQLite 를 쓰므로 MariaDB 전용 타입이 새어 나오면 안 됩니다."""
+    assert _column("automation_requests", "request_id").type.compile(SQLITE) == "VARCHAR(36)"
 
 
 def test_request_id_stays_string_in_python():

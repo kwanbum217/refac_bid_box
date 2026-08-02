@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import xml.etree.ElementTree as ET
+
+# G2B 공공 API 응답 전용. 외부 사용자 입력이 아닙니다
+import xml.etree.ElementTree as ET  # nosec B405
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
@@ -187,7 +189,8 @@ async def _fetch_paged(
             "type": "xml",
         }
         resp = await _make_request_with_retry(client, api_url, params)
-        root = ET.fromstring(resp.text)
+        # G2B 공공 API 응답 전용. 외부 사용자 입력이 아닙니다
+        root = ET.fromstring(resp.text)  # nosec B314
 
         result_code = root.findtext(".//resultCode", default="")
         if result_code != "00":

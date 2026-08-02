@@ -28,6 +28,9 @@ DEFAULT_VALIDATION_SPLIT = 0.2
 # K-Fold 폴드 수. 시간 순서를 존중하는 블록 K-Fold 를 사용합니다.
 DEFAULT_N_FOLDS = 5
 
+# 폴드 하나가 가져야 하는 최소 행 수. 트리 모델이 1행 입력에서 예외를 던집니다.
+MIN_FOLD_SAMPLES = 2
+
 # 시계열 기준 컬럼. 없으면 프레임 순서를 그대로 사용합니다.
 TIME_SORT_COLUMN = "openg_dt"
 
@@ -46,11 +49,27 @@ TRAINING_FEATURES = [
 ]
 
 
-def _resolve_time_index(df_feat: pd.DataFrame) -> pd.Series:
-    """시계열 분할을 위한 기준 시계열을 반환합니다."""
-    if TIME_SORT_COLUMN in df_feat.columns:
-        return pd.to_datetime(df_feat[TIME_SORT_COLUMN], errors="coerce")
-    return pd.Series(range(len(df_feat)))
+def has_time_column(df: pd.DataFrame) -> bool:
+    """시계열 정렬 기준 컬럼이 실재하는지 확인합니다."""
+    return TIME_SORT_COLUMN in df.columns
+
+
+def _sorted_positions(df: pd.DataFrame) -> np.ndarray:
+    """시계열 오름차순 위치 배열을 반환합니다.
+
+    라벨이 아니라 위치를 돌려줍니다. 호출부가 numpy 배열에 위치 색인을 쓰므로
+    라벨을 섞어 쓰면 인덱스가 기본 RangeIndex 가 아닐 때 조용히 어긋납니다.
+
+    기준 컬럼이 없거나 값이 비면 프레임 순서를 그대로 씁니다. 파싱 실패(NaT)는
+    맨 앞으로 보내 학습 구간에 넣습니다. 검증 구간은 개찰일이 확실한 최신
+    구간이어야 의미가 있습니다.
+    """
+    if not has_time_column(df):
+        return np.arange(len(df))
+    parsed = pd.to_datetime(df[TIME_SORT_COLUMN], errors="coerce")
+    if parsed.isna().all():
+        return np.arange(len(df))
+    return parsed.reset_index(drop=True).sort_values(na_position="first").index.to_numpy()
 
 
 def _time_based_split(
@@ -58,13 +77,17 @@ def _time_based_split(
     y: np.ndarray,
     validation_split: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """개찰일 기준으로 정렬한 뒤 뒤에서 validation_split 만큼을 검증에 사용합니다."""
-    time_index = _resolve_time_index(df)
-    sorted_order = time_index.sort_values().index.to_numpy()
+    """개찰일 기준으로 정렬한 뒤 뒤에서 validation_split 만큼을 검증에 사용합니다.
+
+    표본이 적어 홀드아웃을 뗄 수 없으면 전체를 학습과 검증에 함께 씁니다.
+    빈 검증 구간을 돌려주면 predict 단계에서 0행 입력으로 예외가 납니다.
+    이 경우 지표는 과적합된 값이므로 승격 판단에 쓰면 안 됩니다.
+    """
+    sorted_order = _sorted_positions(df)
 
     split_at = int(len(sorted_order) * (1.0 - validation_split))
     if split_at <= 0 or split_at >= len(sorted_order):
-        return np.arange(len(df)), np.array([], dtype=int), y, np.array([], dtype=float)
+        return sorted_order, sorted_order, y[sorted_order], y[sorted_order]
 
     train_idx = sorted_order[:split_at]
     valid_idx = sorted_order[split_at:]
@@ -79,8 +102,7 @@ def _time_based_kfold_splits(
 
     각 폴드는 이전 폴드들을 훈련, 현재 폴드를 검증으로 사용합니다.
     """
-    time_index = _resolve_time_index(df)
-    sorted_order = time_index.sort_values().index.to_numpy()
+    sorted_order = _sorted_positions(df)
 
     fold_size = max(1, len(sorted_order) // n_folds)
     splits = []
@@ -89,7 +111,9 @@ def _time_based_kfold_splits(
         valid_end = (fold_idx + 1) * fold_size if fold_idx < n_folds - 1 else len(sorted_order)
         train_idx = sorted_order[:valid_start]
         valid_idx = sorted_order[valid_start:valid_end]
-        if len(train_idx) == 0 or len(valid_idx) == 0:
+        # 표본이 적으면 fold_size 가 1 이 되어 1행짜리 폴드가 생깁니다.
+        # LightGBM/CatBoost 는 1행 입력에서 예외를 던지므로 건너뜁니다.
+        if len(train_idx) < MIN_FOLD_SAMPLES or len(valid_idx) < MIN_FOLD_SAMPLES:
             continue
         splits.append((train_idx, valid_idx))
     return splits
@@ -105,6 +129,17 @@ def _train_ridge(
     params = {"alpha": 1.0, "random_state": 42}
     params.update(hyperparams or {})
     return Ridge(**params).fit(X_train, y_train)
+
+
+def _train_ridge_cv(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_valid: np.ndarray,
+    y_valid: np.ndarray,
+    hyperparams: dict[str, Any] | None = None,
+) -> Any:
+    """트리 모델과 시그니처를 맞춘 Ridge 어댑터. Ridge 는 조기 종료가 없어 검증 구간을 쓰지 않습니다."""
+    return _train_ridge(X_train, y_train, hyperparams)
 
 
 def _train_lightgbm(
@@ -229,6 +264,12 @@ class ModelTrainer:
         features_list = build_feature_frame(records)
         df_feat = pd.DataFrame(features_list)
 
+        # build_feature_frame 은 새 dict 를 만들어 반환하므로 개찰일이 사라집니다.
+        # 시계열 분할이 프레임 순서로 조용히 폴백하지 않도록 여기서 다시 싣습니다.
+        # 학습 특징이 아니라 정렬 기준이므로 TRAINING_FEATURES 에는 넣지 않습니다.
+        if TIME_SORT_COLUMN in df_raw.columns:
+            df_feat[TIME_SORT_COLUMN] = df_raw[TIME_SORT_COLUMN].to_numpy()
+
         # Target (winning_rate)
         if "winning_rate" in df_raw.columns:
             y = df_raw["winning_rate"].values
@@ -246,55 +287,39 @@ class ModelTrainer:
         # 정기 실행이 멈추지 않도록 최소 2건 이상 확보 시에만 트리 모델을 시도합니다.
         use_tree_models = len(X_train) >= 2 and len(X_valid) >= 2
 
-        lgbm_cv: dict[str, Any] = {}
-        catboost_cv: dict[str, Any] = {}
-        lgbm_valid_metrics: dict[str, float] = {}
-        catboost_valid_metrics: dict[str, float] = {}
-
-        if use_tree_models:
-            # K-Fold 교차 검증으로 LightGBM/CatBoost 성능을 비교합니다.
-            lgbm_cv = _cross_validate_model(
-                df_feat.iloc[train_idx].reset_index(drop=True),
-                y_train,
-                _train_lightgbm,
-                hyperparams.get("lightgbm") if hyperparams else None,
-                n_folds,
-            )
-            catboost_cv = _cross_validate_model(
-                df_feat.iloc[train_idx].reset_index(drop=True),
-                y_train,
-                _train_catboost,
-                hyperparams.get("catboost") if hyperparams else None,
-                n_folds,
-            )
-
-            lgbm_model = _train_lightgbm(X_train, y_train, X_valid, y_valid, hyperparams.get("lightgbm") if hyperparams else None)
-            catboost_model = _train_catboost(X_train, y_train, X_valid, y_valid, hyperparams.get("catboost") if hyperparams else None)
-
-            lgbm_valid_metrics = evaluate_model_performance(
-                np.asarray(y_valid),
-                np.asarray(lgbm_model.predict(X_valid)),
-            )
-            catboost_valid_metrics = evaluate_model_performance(
-                np.asarray(y_valid),
-                np.asarray(catboost_model.predict(X_valid)),
-            )
-
-        # Ridge 폴백은 항상 가능하며, 트리 모델이 없거나 실패하면 사용합니다.
-        ridge_model = _train_ridge(X_train, y_train, hyperparams.get("ridge") if hyperparams else None)
-        ridge_valid_metrics = evaluate_model_performance(
-            np.asarray(y_valid),
-            np.asarray(ridge_model.predict(X_valid)),
+        # 홀드아웃을 뗄 수 없어 학습 구간을 그대로 검증에 쓴 경우입니다.
+        # 이때 지표는 과적합된 값이라 승격 판단 근거가 될 수 없습니다.
+        holdout_is_overfit = len(train_idx) == len(valid_idx) and np.array_equal(
+            train_idx, valid_idx
         )
 
-        # R² 기준으로 더 나은 모델을 선택합니다.
-        candidates = [(ridge_model, "ridge", ridge_valid_metrics, {})]
+        model_fns: dict[str, Any] = {"ridge": _train_ridge_cv}
         if use_tree_models:
-            candidates.append((lgbm_model, "lightgbm", lgbm_valid_metrics, lgbm_cv))
-            candidates.append((catboost_model, "catboost", catboost_valid_metrics, catboost_cv))
+            model_fns["lightgbm"] = _train_lightgbm
+            model_fns["catboost"] = _train_catboost
 
-        best_model, model_type, valid_metrics, cv_metrics = max(
-            candidates, key=lambda item: item[2]["r2"]
+        df_train = df_feat.iloc[train_idx].reset_index(drop=True)
+
+        candidates = []
+        cv_by_model: dict[str, dict[str, Any]] = {}
+        holdout_by_model: dict[str, dict[str, float]] = {}
+        for name, model_fn in model_fns.items():
+            params = hyperparams.get(name) if hyperparams else None
+            # 모델 선택은 학습 구간 내부의 K-Fold 로만 합니다. 홀드아웃 점수로
+            # 고르면 그 점수가 선택 편향으로 부풀려져 승격 판단이 낙관적이 됩니다.
+            cv = _cross_validate_model(df_train, y_train, model_fn, params, n_folds)
+            model = model_fn(X_train, y_train, X_valid, y_valid, params)
+            holdout = evaluate_model_performance(
+                np.asarray(y_valid), np.asarray(model.predict(X_valid))
+            )
+            cv_by_model[name] = cv
+            holdout_by_model[name] = holdout
+            # K-Fold 를 만들 수 없을 만큼 표본이 적으면 홀드아웃으로 내려갑니다.
+            selection_score = cv.get("avg_r2", holdout["r2"])
+            candidates.append((selection_score, name, model, cv, holdout))
+
+        _, model_type, best_model, cv_metrics, valid_metrics = max(
+            candidates, key=lambda item: item[0]
         )
 
         # 가중치 저장
@@ -313,10 +338,11 @@ class ModelTrainer:
             "model_type": model_type,
             "metrics": valid_metrics,
             "cv_metrics": cv_metrics,
-            "candidate_metrics": {
-                "lightgbm": lgbm_valid_metrics,
-                "catboost": catboost_valid_metrics,
-            },
+            "candidate_cv_metrics": cv_by_model,
+            "candidate_holdout_metrics": holdout_by_model,
+            # 아래 두 값이 참이면 metrics 를 승격 판단에 쓰면 안 됩니다.
+            "holdout_is_overfit": holdout_is_overfit,
+            "time_sorted_split": bool(has_time_column(df_feat)),
             "hyperparams": hyperparams or {},
             "status": "challenger",
         }

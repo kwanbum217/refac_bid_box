@@ -1,6 +1,6 @@
 > **작성일**: 2026-08-02
 > **버전**: v0.1.0
-> **상태**: 구현 완료, 검증 필요
+> **상태**: 단건 계산 함수만 구현. **학습·추론 경로에 미연결**
 
 # 기관별 낙찰률 이력(inst_hist_rate) 구현 TODO
 
@@ -9,6 +9,25 @@
 현재 `src/ml/features.py` 는 `inst_hist_rate` 가 입력되지 않으면 `DEFAULT_INST_RATE(0.925)` 를 상수로 사용합니다. 용역 모델 성능을 올리려면 이 값을 실제 기관별 낙찰률 이력으로 계산해야 합니다.
 
 이 문서는 `src/ml/institution_history.py` 의 TODO-1~TODO-5 를 20~40줄 단위로 나누어 담당자가 직접 구현할 수 있도록 안내합니다.
+
+---
+
+## 현재 상태 (2026-08-02 검토)
+
+단건 계산 함수 `calculate_institution_win_rate()` 는 구현·검증되었습니다. 그러나 **학습·추론 경로 어디에도 연결되어 있지 않습니다.**
+
+`features.py` 는 `session` 인자를 받도록 준비돼 있으나, 실제 호출부인 `trainer.py:229` 와 `predictor.py:35` 는 session 을 넘기지 않습니다. 따라서 `inst_hist_rate` 는 여전히 상수입니다. 기존 `DEFAULT_INST_RATE(0.925)` 가 카테고리별 상수(Thng 0.9132 / Servc 0.9011 / Cnstwk 0.8859)로 바뀌었을 뿐입니다.
+
+남은 작업은 두 가지 제약을 동시에 만족해야 합니다.
+
+| 제약 | 내용 |
+| --- | --- |
+| 성능 | 행당 2쿼리(COUNT + AVG). 실측 150ms/행. 용역 773,045행 기준 **약 32시간**. 기관/카테고리/기간 GROUP BY 배치 집계가 필요합니다 |
+| train/serve 단일화 | 추론에만 연결하면 학습은 상수, 추론은 DB 값이 되어 AGENTS.md 6항이 금지하는 skew 가 발생합니다. **양쪽을 함께** 바꿔야 합니다 |
+
+배치 집계의 윈도우 크기, 미래 정보 누수 방지 기준, 최소 표본 수는 특징 엔지니어링 결정이므로 담당자가 정합니다.
+
+현재 상태는 `tests/test_institution_history.py` 의 `test_production_feature_path_still_uses_constant` 와 `test_train_and_serve_use_the_same_session_policy` 가 고정하고 있습니다. 연결 작업을 하면 이 두 테스트를 함께 갱신하십시오.
 
 ---
 
