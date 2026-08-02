@@ -50,7 +50,7 @@
 ### 3.2 SKILLS.md (import 대상)
 
 - AGENTS.md에 의해 import되는 보조 지침서입니다.
-- MANDATORY STARTUP SEQUENCE, 담당자 학습형 협업 규칙, CORE PROJECT CONTEXT, DOCUMENTATION & FORMATTING RULES, WORKFLOW CHECKLIST를 담습니다.
+- MANDATORY STARTUP SEQUENCE, 서비스 품질 우선 원칙, CORE PROJECT CONTEXT, DOCUMENTATION & FORMATTING RULES, WORKFLOW CHECKLIST를 담습니다.
 - 직접 편집해도 되지만, 코딩 규칙·스택은 AGENTS.md 정본이 우선합니다.
 
 ### 3.3 CLAUDE.md (thin pointer)

@@ -8,7 +8,7 @@
 
 현재 `src/ml/features.py` 는 `inst_hist_rate` 가 입력되지 않으면 `DEFAULT_INST_RATE(0.925)` 를 상수로 사용합니다. 용역 모델 성능을 올리려면 이 값을 실제 기관별 낙찰률 이력으로 계산해야 합니다.
 
-이 문서는 `src/ml/institution_history.py` 의 TODO-1~TODO-5 를 20~40줄 단위로 나누어 담당자가 직접 구현할 수 있도록 안내합니다.
+이 문서는 `src/ml/institution_history.py` 의 설계 배경과 남은 연결 작업을 정리합니다.
 
 ---
 
@@ -25,7 +25,7 @@
 | 성능 | 행당 2쿼리(COUNT + AVG). 실측 150ms/행. 용역 773,045행 기준 **약 32시간**. 기관/카테고리/기간 GROUP BY 배치 집계가 필요합니다 |
 | train/serve 단일화 | 추론에만 연결하면 학습은 상수, 추론은 DB 값이 되어 AGENTS.md 6항이 금지하는 skew 가 발생합니다. **양쪽을 함께** 바꿔야 합니다 |
 
-배치 집계의 윈도우 크기, 미래 정보 누수 방지 기준, 최소 표본 수는 특징 엔지니어링 결정이므로 담당자가 정합니다.
+배치 집계의 윈도우 크기, 미래 정보 누수 방지 기준, 최소 표본 수는 실측으로 정합니다. 후보안을 비교해 근거와 함께 결정하고 이 문서에 기록하십시오.
 
 현재 상태는 `tests/test_institution_history.py` 의 `test_production_feature_path_still_uses_constant` 와 `test_train_and_serve_use_the_same_session_policy` 가 고정하고 있습니다. 연결 작업을 하면 이 두 테스트를 함께 갱신하십시오.
 
