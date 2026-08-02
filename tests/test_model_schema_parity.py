@@ -152,6 +152,8 @@ PRODUCTION_INDEX_NAMES = {
     "retrain_logs": set(),
     # 원본에 없는 신규 테이블. 리비전 23cb59f0e3fe 가 만듭니다.
     "bid_ranking_snapshots": {"uq_bid_ranking_slot", "ix_bid_ranking_lookup"},
+    # 원본에 없는 신규 테이블. 리비전 88dd431cb285 가 만듭니다.
+    "institution_win_rate_stats": {"uq_inst_win_rate_scope"},
 }
 
 

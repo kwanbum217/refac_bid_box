@@ -274,38 +274,91 @@ def test_lookup_institution_history_without_institution_returns_default(memory_s
 
 
 # ---------------------------------------------------------------------------
-# 학습/추론 경로 연결 상태 고정
+# 학습/추론 경로 연결 검증
 #
-# institution_history 는 아직 production 경로에 연결돼 있지 않습니다.
-# 한쪽만 연결하면 AGENTS.md 6항이 금지하는 train/serve skew 가 생기므로,
-# 현재 상태를 테스트로 못박아 문서와 코드가 어긋나지 않게 합니다.
+# inst_hist_rate 는 낙찰률 예측의 유일한 실질 신호입니다. 양쪽 경로가 같은
+# 정의를 써야 하고(AGENTS.md 6항), 한쪽이 상수로 떨어지면 성능이 무너집니다.
 # ---------------------------------------------------------------------------
 
 
-def test_production_feature_path_still_uses_constant():
-    """trainer/predictor 는 session 을 넘기지 않으므로 상수가 나와야 합니다."""
-    from src.ml.features import build_default_feature_map
-
-    features = {
-        "dminstt_nm": "서울특별시",
-        "category": "Servc",
-        "presumed_price": 1.0e8,
-        "openg_dt": "2025-01-01",
-    }
-    assert build_default_feature_map(features)["inst_hist_rate"] == pytest.approx(0.9011)
-
-
-def test_train_and_serve_use_the_same_session_policy():
-    """학습과 추론이 같은 방식으로 특징을 만들어야 합니다.
-
-    한쪽만 session 을 넘기도록 바뀌면 이 테스트가 실패합니다.
-    양쪽을 함께 바꾸고 이 테스트를 갱신하십시오.
-    """
+def test_training_path_injects_real_history():
+    """trainer 는 특징 생성 전에 프레임 단위로 이력을 붙여야 합니다."""
     import inspect
 
-    from src.ml import predictor, trainer
+    from src.ml import trainer
 
-    trainer_call = "build_feature_frame(records)"
-    predictor_call = "build_feature_dict(request_data)"
-    assert trainer_call in inspect.getsource(trainer.ModelTrainer.train_and_register)
-    assert predictor_call in inspect.getsource(predictor.SingletonPredictor.predict)
+    source = inspect.getsource(trainer.ModelTrainer.train_and_register)
+    assert "attach_institution_history(df_raw)" in source
+    assert source.index("attach_institution_history") < source.index("build_feature_frame")
+
+
+def test_serving_path_receives_session():
+    """predictor 가 session 을 넘기지 않으면 추론만 상수가 됩니다."""
+    import inspect
+
+    from src.ml import predictor
+
+    assert "build_feature_dict(request_data, session)" in inspect.getsource(
+        predictor.SingletonPredictor.predict
+    )
+
+
+def test_attach_institution_history_excludes_self_and_future():
+    """각 행은 자기 자신과 미래를 뺀 과거 평균만 받아야 합니다."""
+    import pandas as pd
+
+    from src.ml.institution_history import attach_institution_history
+
+    df = pd.DataFrame({
+        "dminstt_nm": ["A"] * 6,
+        "category": ["Servc"] * 6,
+        "openg_dt": pd.date_range("2024-01-01", periods=6, freq="D"),
+        "winning_rate": [80.0, 82.0, 84.0, 86.0, 88.0, 99.0],
+    })
+    out = attach_institution_history(df, min_samples=5)
+
+    # 6번째 행만 과거 5건을 갖습니다. 평균 (80+82+84+86+88)/5 = 84.0
+    assert out.loc[5, "inst_sample_cnt"] == 5
+    assert out.loc[5, "inst_hist_rate"] == pytest.approx(0.84)
+    # 자기 값 99.0 은 반영되면 안 됩니다.
+    assert out.loc[5, "inst_hist_rate"] != pytest.approx(0.865)
+    # 이력이 모자란 앞 행들은 카테고리 기본값입니다.
+    assert out.loc[0, "inst_hist_rate"] == pytest.approx(0.9011)
+
+
+def test_attach_institution_history_preserves_row_order():
+    """정렬 후 순서를 되돌리지 않으면 목표값과 특징이 어긋납니다."""
+    import pandas as pd
+
+    from src.ml.institution_history import attach_institution_history
+
+    df = pd.DataFrame({
+        "dminstt_nm": ["A", "B", "A"],
+        "openg_dt": ["2024-03-01", "2024-01-01", "2024-02-01"],
+        "winning_rate": [90.0, 85.0, 80.0],
+        "marker": [10, 20, 30],
+    })
+    out = attach_institution_history(df)
+    assert list(out["marker"]) == [10, 20, 30]
+
+
+def test_attach_institution_history_drops_outlier_rates():
+    """0 이나 100 을 넘는 낙찰률은 데이터 오류라 이력에서 빠져야 합니다."""
+    import pandas as pd
+
+    from src.ml.institution_history import attach_institution_history
+
+    df = pd.DataFrame({
+        "dminstt_nm": ["A"] * 7,
+        "category": ["Servc"] * 7,
+        "openg_dt": pd.date_range("2024-01-01", periods=7, freq="D"),
+        "winning_rate": [80.0, 0.0, 82.0, 500.0, 84.0, 86.0, 88.0],
+    })
+    # 6번 행의 과거 6건 중 0.0 과 500.0 이 빠져 유효 이력은 4건입니다.
+    out = attach_institution_history(df, min_samples=4)
+    assert out.loc[6, "inst_sample_cnt"] == 4
+    assert out.loc[6, "inst_hist_rate"] == pytest.approx((80 + 82 + 84 + 86) / 4 / 100)
+
+    # 최소 표본에 못 미치면 기본값으로 떨어집니다.
+    strict = attach_institution_history(df, min_samples=5)
+    assert strict.loc[6, "inst_hist_rate"] == pytest.approx(0.9011)

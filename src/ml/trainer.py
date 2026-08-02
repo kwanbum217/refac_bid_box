@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from src.ml.features import build_feature_frame
+from src.ml.institution_history import attach_institution_history
 from src.ml.validate_model import evaluate_model_performance
 
 # 홀드아웃 비율. 학습에 쓰지 않은 구간에서 지표를 내야 의미가 있습니다.
@@ -34,7 +35,16 @@ MIN_FOLD_SAMPLES = 2
 # 시계열 기준 컬럼. 없으면 프레임 순서를 그대로 사용합니다.
 TIME_SORT_COLUMN = "openg_dt"
 
-# 학습에 쓰는 특징. features.py 가 산출하는 컬럼 중 선정합니다.
+# 학습에 쓰는 특징. features.py 산출물 중 실측으로 선정했습니다 (2026-08-02).
+#
+# inst_hist_rate 가 사실상 유일한 신호입니다. 이 값 하나만으로 R2 0.33 이고,
+# 빼면 전체 R2 가 0.36 에서 0.03 으로 떨어집니다.
+#
+# 제외한 것들과 근거입니다.
+#   inst_rate_mean_30d  inst_hist_rate 를 그대로 복사한 값이라 중복입니다
+#   inst_rate_std_90d   입력이 없어 항상 상수 0.015 입니다
+#   price_ratio         기초금액은 제도상 예정가격의 1.1 배라 표준편차 0.017,
+#                       목표 상관 0.05 로 신호가 없습니다
 TRAINING_FEATURES = [
     "log_price",
     "month_sin",
@@ -43,9 +53,7 @@ TRAINING_FEATURES = [
     "weekday_cos",
     "notice_duration",
     "inst_hist_rate",
-    "inst_rate_mean_30d",
-    "inst_rate_std_90d",
-    "price_ratio",
+    "inst_sample_cnt",
 ]
 
 
@@ -258,6 +266,11 @@ class ModelTrainer:
             target_dir = self.registry_dir / self.model_name / version
             suffix += 1
         target_dir.mkdir(parents=True, exist_ok=True)
+
+        # 기관 이력을 프레임 단위로 먼저 붙입니다. features.py 는 입력에 있는
+        # inst_hist_rate 를 그대로 쓰므로, 여기서 채우면 단일 공급원이 유지됩니다.
+        # 행당 DB 조회로는 32시간이 걸려 배치 계산을 씁니다.
+        df_raw = attach_institution_history(df_raw)
 
         # 단일 특징 공급원 적용
         records = df_raw.to_dict(orient="records")

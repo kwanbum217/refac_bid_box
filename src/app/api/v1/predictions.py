@@ -126,9 +126,13 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
 
 
 @router.post("/predict", response_model=PredictionResponse, summary="특징 직접 입력 예측")
-def predict_winning_price(payload: PredictionRequest):
-    """공고 레코드 없이 특징을 직접 넣어 예측합니다 (리팩토링 신규 계약)."""
-    result = predictor.predict(payload.model_dump())
+def predict_winning_price(payload: PredictionRequest, db: Session = Depends(get_db)):
+    """공고 레코드 없이 특징을 직접 넣어 예측합니다 (리팩토링 신규 계약).
+
+    db 는 inst_hist_rate 를 실제 기관 이력으로 채우기 위해 필요합니다.
+    빼면 상수로 떨어져 학습과 정의가 갈립니다.
+    """
+    result = predictor.predict(payload.model_dump(), session=db)
     return PredictionResponse(
         bid_notice_no=payload.bid_notice_no,
         predicted_price=result["predicted_price"],

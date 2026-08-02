@@ -92,15 +92,23 @@ def build_default_feature_map(
         0.0,
     )
     log_price = np.log1p(price) if price > 0 else 0.0
-    # 입력값이 없으면 실제 기관별 낙찰률 이력을 조회합니다.
-    # session 이 없으면 institution_history 가 기본값을 반환합니다.
-    inst_hist_rate = _coerce_float(
-        features_dict.get("inst_hist_rate") or lookup_institution_history(features_dict, session),
-        DEFAULT_INST_RATE,
-    )
+    # 학습 경로는 trainer 가 attach_institution_history 로 미리 채워 넣습니다.
+    # 추론 경로는 값이 없으므로 여기서 조회합니다. 정의는 양쪽 모두
+    # "기준 시점 이전 같은 기관의 낙찰률 평균" 으로 같습니다.
+    # `or` 를 쓰면 0.0 이 falsy 로 걸려 조회로 새므로 None 검사를 씁니다.
+    provided_rate = features_dict.get("inst_hist_rate")
+    if provided_rate is None:
+        provided_rate = lookup_institution_history(features_dict, session)
+    inst_hist_rate = _coerce_float(provided_rate, DEFAULT_INST_RATE)
+
+    inst_sample_cnt = _coerce_float(features_dict.get("inst_sample_cnt"), 0.0)
     inst_rate_mean_30d = _coerce_float(features_dict.get("inst_rate_mean_30d"), inst_hist_rate)
     inst_rate_std_90d = _coerce_float(features_dict.get("inst_rate_std_90d"), DEFAULT_INST_RATE_STD)
-    base_price = _coerce_float(features_dict.get("base_price"), price)
+    # 데이터셋은 기초금액을 base_amount 로 내보냅니다. 별칭을 받지 않으면
+    # base_price 가 항상 price 로 폴백해 price_ratio 가 상수 1.0 이 됩니다.
+    base_price = _coerce_float(
+        features_dict.get("base_price", features_dict.get("base_amount")), price
+    )
     price_ratio = (base_price / price) if price > 0 else 1.0
 
     feature_map: dict[str, Any] = {
@@ -121,6 +129,8 @@ def build_default_feature_map(
         "base_price": base_price,
         "price_ratio": price_ratio,
         "inst_hist_rate": inst_hist_rate,
+        # 이력 표본 수. 모델이 이력값을 얼마나 신뢰할지 판단하는 근거가 됩니다.
+        "inst_sample_cnt": inst_sample_cnt,
         "inst_rate_mean_30d": inst_rate_mean_30d,
         "inst_rate_std_90d": inst_rate_std_90d,
         "ntceInsttNm": _get_institution_name(features_dict),
