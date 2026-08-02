@@ -18,9 +18,9 @@ from sqlalchemy.orm import Session
 from src.app.models.bids import DATASET_ANNOUNCEMENT, DATASET_RESULT, BidAnnouncement, BidResult
 from src.app.services.api_collector import (
     BID_CATEGORIES,
-    fetch_bid_announcements,
-    fetch_bid_data,
     get_service_key,
+    stream_bid_announcements,
+    stream_bid_data,
 )
 from src.app.services.dashboard import rebuild_bid_dataset_summaries, warm_dashboard_stats_cache
 from src.app.services.home_context import warm_home_page_cache
@@ -59,6 +59,7 @@ async def collect_bids(
     end_date: str | None = None,
     fetch_type: str = "both",
     categories: tuple[str, ...] | None = None,
+    refresh_aggregates: bool = True,
 ) -> dict[str, Any]:
     """조달청 입찰공고/낙찰 데이터를 수집해 적재합니다."""
     if not get_service_key():
@@ -93,8 +94,14 @@ async def collect_bids(
 
         if fetch_type in ("both", "announce"):
             try:
-                items = await fetch_bid_announcements(start_date, end_date, category=cat_code)
-                saved = _bulk_insert(db, BidAnnouncement, items)
+                # 15일 구간이 끝나는 즉시 적재하고 버립니다. 전 구간을 모으면
+                # raw_data JSON 때문에 장기 백필에서 메모리가 터집니다.
+                saved = await stream_bid_announcements(
+                    start_date,
+                    end_date,
+                    lambda rows: _bulk_insert(db, BidAnnouncement, rows),
+                    category=cat_code,
+                )
                 metrics["announcement_count"] += saved
                 metrics["categories"][cat_code]["announcement_count"] += saved
                 logger.info("[%s] 입찰공고 %s건 적재", cat_name, saved)
@@ -104,8 +111,12 @@ async def collect_bids(
 
         if fetch_type in ("both", "result"):
             try:
-                items = await fetch_bid_data(start_date, end_date, category=cat_code)
-                saved = _bulk_insert(db, BidResult, items)
+                saved = await stream_bid_data(
+                    start_date,
+                    end_date,
+                    lambda rows: _bulk_insert(db, BidResult, rows),
+                    category=cat_code,
+                )
                 metrics["result_count"] += saved
                 metrics["categories"][cat_code]["result_count"] += saved
                 logger.info("[%s] 낙찰정보 %s건 적재", cat_name, saved)
@@ -115,7 +126,10 @@ async def collect_bids(
 
     metrics["total_records"] = metrics["announcement_count"] + metrics["result_count"]
 
-    if metrics["total_records"] > 0:
+    # 장기 백필은 이 함수를 수십 번 호출합니다. 매번 300만 행을 훑어
+    # 집계를 다시 만들면 수집보다 집계에 시간을 더 씁니다. 호출부가 끄고
+    # 마지막에 한 번만 수행하도록 합니다.
+    if metrics["total_records"] > 0 and refresh_aggregates:
         datasets = []
         if fetch_type in ("both", "announce"):
             datasets.append(DATASET_ANNOUNCEMENT)

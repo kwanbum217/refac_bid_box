@@ -56,8 +56,17 @@ BID_CATEGORIES: dict[str, dict[str, str]] = {
     },
 }
 
-# 동시 요청 수 제한 (조달청 서버 연결 거부 방지)
-MAX_CONCURRENT = 3
+# 동시 요청 수 제한. 2026-08-02 실측 기준입니다.
+#
+#   동시  3  0.48 req/s
+#   동시 12  1.78 req/s
+#   동시 16  약 1.9 req/s   <- 기본값
+#   동시 20  2.01 req/s     (증가율 13% 로 둔화, 지연 5.4 -> 6.6초)
+#   동시 32  32건 중 2건이 XML 이 아닌 응답으로 실패 (차단 추정)
+#
+# 12 를 넘으면 수확이 급격히 줄고 지연이 늘어납니다. 20 이 무오류 확인 상한이지만
+# 16 대비 1분밖에 못 줄이면서 차단 위험만 커져 16 을 기본으로 둡니다.
+MAX_CONCURRENT = int(os.getenv("G2B_MAX_CONCURRENT", "16"))
 RANGE_DAYS = 15
 
 
@@ -174,21 +183,29 @@ async def _fetch_paged(
     num_of_rows: int,
     mapper: Callable[[ET.Element, dict[str, str]], dict[str, Any]],
     error_label: str,
+    sem: asyncio.Semaphore,
 ) -> list[dict[str, Any]]:
-    """단일 날짜 구간을 페이지 끝까지 순회 수집합니다."""
-    items: list[dict[str, Any]] = []
-    page = 1
-    while True:
-        params = {
+    """단일 날짜 구간을 페이지 끝까지 수집합니다.
+
+    1페이지로 totalCount 를 확인한 뒤 나머지 페이지는 병렬로 받습니다.
+    페이지를 순차로 돌면 구간당 왕복 지연이 그대로 쌓여, 구간을 아무리
+    병렬화해도 이 직렬 구간이 전체 처리량을 결정합니다.
+    """
+
+    async def _page(page_no: int) -> tuple[list[dict[str, Any]], int]:
+        params: dict[str, str] = {
             "serviceKey": get_service_key(),
-            "pageNo": str(page),
+            "pageNo": str(page_no),
             "numOfRows": str(num_of_rows),
             "inqryDiv": "1",
             "inqryBgnDt": f"{step_start}0000",
             "inqryEndDt": f"{step_end}2359",
             "type": "xml",
         }
-        resp = await _make_request_with_retry(client, api_url, params)
+        # 동시 요청 수는 여기 한 곳에서만 통제합니다. 구간과 페이지를 각각
+        # 제한하면 둘이 곱해져 실측 차단 지점(32)을 훌쩍 넘깁니다.
+        async with sem:
+            resp = await _make_request_with_retry(client, api_url, params)
         # G2B 공공 API 응답 전용. 외부 사용자 입력이 아닙니다
         root = ET.fromstring(resp.text)  # nosec B314
 
@@ -197,15 +214,17 @@ async def _fetch_paged(
             result_msg = root.findtext(".//resultMsg", default="알 수 없는 오류")
             raise RuntimeError(f"{error_label} API 오류 [{result_code}]: {result_msg}")
 
-        total_count = int(root.findtext(".//totalCount", default="0"))
-        for item in root.findall(".//item"):
-            items.append(mapper(item, _item_raw_data(item)))
+        rows = [mapper(item, _item_raw_data(item)) for item in root.findall(".//item")]
+        return rows, int(root.findtext(".//totalCount", default="0"))
 
-        if page * num_of_rows >= total_count:
-            break
-        page += 1
-        await asyncio.sleep(0.1)
+    items, total_count = await _page(1)
+    last_page = -(-total_count // num_of_rows)
+    if last_page <= 1:
+        return items
 
+    rest = await asyncio.gather(*[_page(p) for p in range(2, last_page + 1)])
+    for rows, _ in rest:
+        items.extend(rows)
     return items
 
 
@@ -258,28 +277,59 @@ async def _gather_ranges(
     mapper: Callable[[ET.Element, dict[str, str]], dict[str, Any]],
     error_label: str,
 ) -> list[dict[str, Any]]:
+    """날짜 구간을 병렬 수집해 전부 메모리에 모아 반환합니다.
+
+    구간이 길면 `stream_ranges` 를 쓰십시오. 10년치를 여기로 모으면
+    raw_data JSON 때문에 수 GB 가 되어 터집니다.
+    """
+    collected: list[dict[str, Any]] = []
+    await _run_ranges(
+        api_url, start_date, end_date, num_of_rows, mapper, error_label, collected.extend
+    )
+    return collected
+
+
+async def _run_ranges(
+    api_url: str,
+    start_date: str,
+    end_date: str,
+    num_of_rows: int,
+    mapper: Callable[[ET.Element, dict[str, str]], dict[str, Any]],
+    error_label: str,
+    sink: Callable[[list[dict[str, Any]]], Any],
+) -> int:
+    """15일 구간을 병렬로 받아 끝나는 즉시 `sink` 에 넘기고 메모리에서 버립니다.
+
+    sink 는 동기 함수라 이벤트 루프를 막지 않도록 별도 스레드에서 실행하고,
+    Session 동시 사용을 막기 위해 한 번에 하나만 수행합니다.
+    """
     date_ranges = split_date_range(start_date, end_date)
     sem = asyncio.Semaphore(MAX_CONCURRENT)
+    sink_lock = asyncio.Lock()
+    total = 0
 
     async with httpx.AsyncClient() as client:
 
-        async def _limited(step_start: str, step_end: str):
-            async with sem:
-                return await _fetch_paged(
-                    client, api_url, step_start, step_end, num_of_rows, mapper, error_label
-                )
+        async def _limited(step_start: str, step_end: str) -> int:
+            # 구간은 전부 동시에 시작하고, 실제 요청 수는 _fetch_paged 안의
+            # 세마포어가 통제합니다. 구간 단위로 막으면 페이지 병렬화가 무의미해집니다.
+            items = await _fetch_paged(
+                client, api_url, step_start, step_end, num_of_rows, mapper, error_label, sem
+            )
+            async with sink_lock:
+                saved = await asyncio.to_thread(sink, items)
+            return saved if isinstance(saved, int) else len(items)
 
         results = await asyncio.gather(
             *[_limited(s, e) for s, e in date_ranges], return_exceptions=True
         )
 
-    all_items: list[dict[str, Any]] = []
     for result in results:
         if isinstance(result, Exception):
             logger.error("%s 구간 수집 실패: %s", error_label, result)
             continue
-        all_items.extend(result)
-    return all_items
+        total += result
+    return total
 
 
 async def fetch_bid_data(
@@ -307,4 +357,42 @@ async def fetch_bid_announcements(
         num_of_rows,
         _map_announcement_item(category),
         "입찰공고",
+    )
+
+
+async def stream_bid_data(
+    start_date: str,
+    end_date: str,
+    sink: Callable[[list[dict[str, Any]]], Any],
+    num_of_rows: int = 999,
+    category: str = "Thng",
+) -> int:
+    """낙찰정보를 15일 구간 단위로 받아 즉시 `sink` 로 넘깁니다."""
+    return await _run_ranges(
+        _resolve_bid_url(category),
+        start_date,
+        end_date,
+        num_of_rows,
+        _map_result_item(category),
+        "낙찰정보",
+        sink,
+    )
+
+
+async def stream_bid_announcements(
+    start_date: str,
+    end_date: str,
+    sink: Callable[[list[dict[str, Any]]], Any],
+    num_of_rows: int = 999,
+    category: str = "Thng",
+) -> int:
+    """입찰공고를 15일 구간 단위로 받아 즉시 `sink` 로 넘깁니다."""
+    return await _run_ranges(
+        _resolve_announce_url(category),
+        start_date,
+        end_date,
+        num_of_rows,
+        _map_announcement_item(category),
+        "입찰공고",
+        sink,
     )
