@@ -7,13 +7,20 @@ tests/test_rag_engine.py
  - _build_evidence_items: 근거 항목 인라인 인용 번호
 """
 
+from datetime import datetime, timedelta
+
 import pytest
-from src.rag.engine import _build_evidence_items, _normalize_category_wording, build_retrieval_plan, rag_engine
-from src.rag.schemas import RetrievalPlan
-from src.rag.structured_data import retrieve_structured_data
+
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.tools.kb_status_tool import build_kb_status_summary
-from datetime import datetime, timedelta
+from src.rag.engine import (
+    _build_evidence_items,
+    _normalize_category_wording,
+    build_retrieval_plan,
+    rag_engine,
+)
+from src.rag.schemas import RetrievalPlan
+from src.rag.structured_data import retrieve_structured_data
 
 
 class _FakeStreamingBackend:
@@ -98,30 +105,30 @@ async def test_stream_tokens_uses_backend_stream_generate():
 
 
 def _seed_bid_result(db, **overrides):
-    defaults = dict(
-        bid_ntce_no="BID-001",
-        bid_ntce_ord="00",
-        bidwinnr_nm="서울건설",
-        sucsf_bid_amt=1000000,
-        sucsf_bid_rate=98.1234,
-        rl_openg_dt=datetime.utcnow() - timedelta(days=2),
-        dminstt_nm="서울특별시청",
-        category="Cnstwk",
-    )
+    defaults = {
+        "bid_ntce_no": "BID-001",
+        "bid_ntce_ord": "00",
+        "bidwinnr_nm": "서울건설",
+        "sucsf_bid_amt": 1000000,
+        "sucsf_bid_rate": 98.1234,
+        "rl_openg_dt": datetime.utcnow() - timedelta(days=2),
+        "dminstt_nm": "서울특별시청",
+        "category": "Cnstwk",
+    }
     defaults.update(overrides)
     db.add(BidResult(**defaults))
 
 
 def _seed_announcement(db, **overrides):
-    defaults = dict(
-        bid_ntce_no="ANN-001",
-        bid_ntce_ord="000",
-        bid_ntce_nm="서울 도로 정비 공사",
-        dminstt_nm="서울특별시청",
-        bid_ntce_dt=datetime.utcnow() - timedelta(days=2),
-        category="Cnstwk",
-        raw_data=None,
-    )
+    defaults = {
+        "bid_ntce_no": "ANN-001",
+        "bid_ntce_ord": "000",
+        "bid_ntce_nm": "서울 도로 정비 공사",
+        "dminstt_nm": "서울특별시청",
+        "bid_ntce_dt": datetime.utcnow() - timedelta(days=2),
+        "category": "Cnstwk",
+        "raw_data": None,
+    }
     defaults.update(overrides)
     db.add(BidAnnouncement(**defaults))
 

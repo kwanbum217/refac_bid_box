@@ -13,7 +13,6 @@ from sqlalchemy import select
 
 from src.app.models.accounts import CustomUser
 
-
 VALID_SIGNUP = {
     "username": "testuser",
     "password1": "StrongPass123!!",

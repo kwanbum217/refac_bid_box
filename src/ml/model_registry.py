@@ -3,11 +3,11 @@ import json
 import math
 import os
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 MODEL_FILES_ROOT = PROJECT_ROOT / "data" / "model_files"
@@ -90,7 +90,7 @@ def _load_champion_metrics(model_dir):
             "validation_type": "missing_summary",
         }
     try:
-        with open(summary_path, "r", encoding="utf-8") as handle:
+        with open(summary_path, encoding="utf-8") as handle:
             summary = json.load(handle)
     except (OSError, json.JSONDecodeError):
         return {
@@ -688,7 +688,7 @@ class ModelRegistry:
             metadata = {}
             metadata_path = os.path.join(model_dir, "metadata.json")
             if os.path.exists(metadata_path):
-                with open(metadata_path, "r", encoding="utf-8") as handle:
+                with open(metadata_path, encoding="utf-8") as handle:
                     metadata = json.load(handle)
 
             model_id = entry

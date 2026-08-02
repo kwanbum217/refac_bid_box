@@ -8,8 +8,6 @@ src/app/api/ui.py
 
 from __future__ import annotations
 
-from typing import Optional
-
 from datetime import datetime
 from urllib.parse import parse_qs
 
@@ -76,7 +74,7 @@ def _render(request: Request, name: str, context: dict, user, active_nav: str = 
 def index(
     request: Request,
     db: Session = Depends(get_db),
-    user: Optional[CustomUser] = Depends(get_current_user),
+    user: CustomUser | None = Depends(get_current_user),
 ):
     if user is None:
         return _login_redirect(request)
@@ -94,7 +92,7 @@ def bid_list(
     sort: str = Query(""),
     page: int = Query(1),
     db: Session = Depends(get_db),
-    user: Optional[CustomUser] = Depends(get_current_user),
+    user: CustomUser | None = Depends(get_current_user),
 ):
     if user is None:
         return _login_redirect(request)
@@ -119,7 +117,7 @@ def bid_detail(
     request: Request,
     pk: int,
     db: Session = Depends(get_db),
-    user: Optional[CustomUser] = Depends(get_current_user),
+    user: CustomUser | None = Depends(get_current_user),
 ):
     if user is None:
         return _login_redirect(request)
@@ -138,7 +136,7 @@ def result_list(
     sort: str = Query(""),
     page: int = Query(1),
     db: Session = Depends(get_db),
-    user: Optional[CustomUser] = Depends(get_current_user),
+    user: CustomUser | None = Depends(get_current_user),
 ):
     if user is None:
         return _login_redirect(request)
@@ -163,7 +161,7 @@ def result_detail(
     request: Request,
     pk: int,
     db: Session = Depends(get_db),
-    user: Optional[CustomUser] = Depends(get_current_user),
+    user: CustomUser | None = Depends(get_current_user),
 ):
     if user is None:
         return _login_redirect(request)
@@ -175,7 +173,7 @@ def result_detail(
 
 @router.get("/dashboard/")
 def dashboard(
-    request: Request, user: Optional[CustomUser] = Depends(get_current_user)
+    request: Request, user: CustomUser | None = Depends(get_current_user)
 ):
     if user is None:
         return _login_redirect(request)
@@ -183,7 +181,7 @@ def dashboard(
 
 
 @router.get("/compare/")
-def compare(request: Request, user: Optional[CustomUser] = Depends(get_current_user)):
+def compare(request: Request, user: CustomUser | None = Depends(get_current_user)):
     if user is None:
         return _login_redirect(request)
     return _render(request, "bids/compare.html", {}, user, "dashboard")
@@ -193,8 +191,8 @@ def compare(request: Request, user: Optional[CustomUser] = Depends(get_current_u
 def chat_page(
     request: Request,
     db: Session = Depends(get_db),
-    user: Optional[CustomUser] = Depends(get_current_user),
-    bidbox_session: Optional[str] = Cookie(None),
+    user: CustomUser | None = Depends(get_current_user),
+    bidbox_session: str | None = Cookie(None),
 ):
     """원본 chatbot_page 대응. 사이드바에 최근 대화 세션 20건을 싣습니다."""
     if user is None:
@@ -235,7 +233,7 @@ def chat_page(
 
 @router.get("/accounts/login/")
 def login_page(
-    request: Request, user: Optional[CustomUser] = Depends(get_current_user)
+    request: Request, user: CustomUser | None = Depends(get_current_user)
 ):
     if user is not None:
         return RedirectResponse(url="/", status_code=303)
@@ -245,7 +243,7 @@ def login_page(
 
 @router.get("/accounts/signup/")
 def signup_page(
-    request: Request, user: Optional[CustomUser] = Depends(get_current_user)
+    request: Request, user: CustomUser | None = Depends(get_current_user)
 ):
     if user is not None:
         return RedirectResponse(url="/", status_code=303)
@@ -312,7 +310,7 @@ async def login_submit(
 
 @router.get("/accounts/logout/")
 @router.post("/accounts/logout/")
-def logout_submit(bidbox_session: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME)):
+def logout_submit(bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME)):
     """원본은 링크(GET)로 로그아웃하므로 두 메서드를 모두 받습니다."""
     destroy_session(bidbox_session)
     response = RedirectResponse(url="/accounts/login/", status_code=303)

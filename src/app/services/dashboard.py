@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta
-from datetime import timezone as dt_timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import BigInteger, String, case, func, literal, or_, select
@@ -30,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 DASHBOARD_STATS_CACHE_TTL = 60 * 60 * 24
 COMPARE_STATS_CACHE_TTL = 60 * 60 * 24
-DASHBOARD_RESULT_SCOPE_START = datetime(2015, 1, 1, tzinfo=dt_timezone.utc).replace(tzinfo=None)
+DASHBOARD_RESULT_SCOPE_START = datetime(2015, 1, 1, tzinfo=UTC).replace(tzinfo=None)
 DASHBOARD_RESULT_SCOPE_LABEL = "2015년 ~ 현재"
 UNIT_PRICE_RESULT_KEYWORDS = (
     "단가",

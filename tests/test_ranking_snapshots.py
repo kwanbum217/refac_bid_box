@@ -23,7 +23,6 @@ from src.app.models.bids import (
 )
 from src.app.services.ranking_snapshots import (
     ALL_CATEGORIES,
-    DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
     SNAPSHOT_DEPTH,
     get_skipped_count,

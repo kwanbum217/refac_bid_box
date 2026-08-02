@@ -14,8 +14,8 @@ DB 접속 없이 컴파일된 DDL 과 컬럼 속성만 확인합니다. 실제 D
 import pytest
 from sqlalchemy.dialects import mysql, sqlite
 
-from src.app.core.db import Base
 import src.app.models  # noqa: F401
+from src.app.core.db import Base
 
 MYSQL = mysql.dialect()
 SQLITE = sqlite.dialect()

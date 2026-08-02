@@ -30,6 +30,7 @@ dependencies = [
     "catboost>=1.2.0",
     "category-encoders>=2.6.4",
     "pydantic[email]>=2.10.0",
+    "pyarrow>=15.0.0",
 ]
 
 
@@ -80,6 +81,15 @@ ignore = [
     "E501",  # line too long (formatter가 처리)
     "S101",  # assert 사용 (tests/에서 허용)
     "B008",  # 함수 호출 기본값 (FastAPI Depends() 패턴 허용)
+    "B904",  # raise from 생략 (프로젝트 전반 관용구)
+    "RUF005",  # 리스트 연결 대신 언패킹 (가독성 기호)
+    "RUF012",  # 클래스 가변 기본값 (arq WorkerSettings, Pydantic 등)
+    "S104",  # 0.0.0.0 바인딩 허용 (개발/헬스체크)
+    "S314",  # xml.etree 허용 (G2B API 응답 파싱)
+    "S704",  # markupsafe.Markup 허용 (SSR 템플릿)
+    "PT006",  # parametrize 첫 인자 문자열 허용
+    "PT011",  # pytest.raises match 생략 허용
+    "SIM105",  # contextlib.suppress 강제하지 않음
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -94,6 +104,22 @@ ignore = [
     "S603",  # subprocess.run 허용
     "S607",  # partial path subprocess 허용
     "S310",  # urllib URL open 허용
+    "RUF034",  # 복원 스크립트의 방어적 if-else 허용
+]
+"src/app/core/config.py" = [
+    "S105",  # 기본값 DB 비밀번호 (실제 .env에서 덮어씀)
+]
+"src/app/services/api_collector.py" = [
+    "SIM112",  # G2B serviceKey 환경변수명 유지
+]
+"src/app/services/kb_builder.py" = [
+    "S110",  # 컬렉션 삭제 시 예외 무시 허용
+]
+"src/ml/institution_history.py" = [
+    "S112",  # timestamp 파싱 예외 continue 허용
+]
+"tests/test_alembic_setup.py" = [
+    "S102",  # env.py 동적 필터 exec 허용
 ]
 
 [tool.ruff.lint.isort]

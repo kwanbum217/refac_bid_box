@@ -23,9 +23,9 @@ from alembic.autogenerate import compare_metadata  # noqa: E402
 from alembic.migration import MigrationContext  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 
+import src.app.models  # noqa: E402,F401
 from src.app.core.config import settings  # noqa: E402
 from src.app.core.db import Base  # noqa: E402
-import src.app.models  # noqa: E402,F401
 
 # 주석은 Django 가 DB 에 기록하지 않으므로 항상 차이로 잡힙니다. 스키마 의미에
 # 영향이 없어 기본 보고에서 제외합니다.

@@ -7,7 +7,7 @@ src/tasks/run_mode_matrix.py
 from __future__ import annotations
 
 RUN_MODE_STEP_ORDER: dict[str, tuple[str, ...]] = {
-    "preflight_only": tuple(),
+    "preflight_only": (),
     "collect_only": ("collect",),
     "kb_only": ("rag",),
     "predict_only": ("predict",),

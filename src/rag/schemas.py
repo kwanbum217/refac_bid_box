@@ -7,7 +7,7 @@ evidence_schema.py 1:1 이식).
 
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -35,7 +35,7 @@ class EvidenceItem(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Source metadata (URL, date, category, etc.)"
     )
-    relevance_score: Optional[float] = Field(
+    relevance_score: float | None = Field(
         None, description="Similarity or relevance score if applicable"
     )
 
@@ -49,7 +49,7 @@ class Provenance(BaseModel):
     insufficiency_hints: list[str] = Field(
         default_factory=list, description="Limitations of the current evidence"
     )
-    kb_version: Optional[str] = Field(None, description="The version/timestamp of the KB used")
+    kb_version: str | None = Field(None, description="The version/timestamp of the KB used")
 
 
 class AnswerBundle(BaseModel):

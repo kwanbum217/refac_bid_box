@@ -22,10 +22,10 @@ __all__ = [
     "BidRankingSnapshot",
     "BidResult",
     "ChatSessionState",
+    "CustomUser",
     "KnowledgeBaseStatus",
     "PipelineExecution",
     "PredictionResult",
     "RetrainLog",
-    "CustomUser",
     "UserAccount",
 ]

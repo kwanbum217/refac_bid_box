@@ -8,15 +8,14 @@ K-Fold 교차 검증 및 LightGBM/CatBoost 기반 사투가 예측 모델을 재
 
 from __future__ import annotations
 
-from datetime import datetime
 import json
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import KFold
 
 from src.ml.features import build_feature_frame
 from src.ml.validate_model import evaluate_model_performance
@@ -99,7 +98,7 @@ def _time_based_kfold_splits(
 def _train_ridge(
     X_train: np.ndarray,
     y_train: np.ndarray,
-    hyperparams: Optional[dict[str, Any]] = None,
+    hyperparams: dict[str, Any] | None = None,
 ) -> Any:
     from sklearn.linear_model import Ridge
 
@@ -113,7 +112,7 @@ def _train_lightgbm(
     y_train: np.ndarray,
     X_valid: np.ndarray,
     y_valid: np.ndarray,
-    hyperparams: Optional[dict[str, Any]] = None,
+    hyperparams: dict[str, Any] | None = None,
 ) -> Any:
     import lightgbm as lgb
 
@@ -142,7 +141,7 @@ def _train_catboost(
     y_train: np.ndarray,
     X_valid: np.ndarray,
     y_valid: np.ndarray,
-    hyperparams: Optional[dict[str, Any]] = None,
+    hyperparams: dict[str, Any] | None = None,
 ) -> Any:
     from catboost import CatBoostRegressor
 
@@ -164,14 +163,14 @@ def _cross_validate_model(
     df: pd.DataFrame,
     y: np.ndarray,
     model_fn,
-    hyperparams: Optional[dict[str, Any]],
+    hyperparams: dict[str, Any] | None,
     n_folds: int,
 ) -> dict[str, Any]:
     """K-Fold 교차 검증을 수행하고 평균 지표를 반환합니다."""
     X = df[TRAINING_FEATURES].values
     fold_metrics = []
 
-    for fold_idx, (train_idx, valid_idx) in enumerate(_time_based_kfold_splits(df, n_folds)):
+    for _fold_idx, (train_idx, valid_idx) in enumerate(_time_based_kfold_splits(df, n_folds)):
         model = model_fn(
             X[train_idx],
             y[train_idx],
@@ -206,7 +205,7 @@ class ModelTrainer:
     def train_and_register(
         self,
         df_raw: pd.DataFrame,
-        hyperparams: Optional[dict[str, Any]] = None,
+        hyperparams: dict[str, Any] | None = None,
         validation_split: float = DEFAULT_VALIDATION_SPLIT,
         n_folds: int = DEFAULT_N_FOLDS,
     ) -> dict[str, Any]:
@@ -308,8 +307,8 @@ class ModelTrainer:
             "version": version,
             "trained_at": datetime.utcnow().isoformat(),
             "samples_count": len(df_raw),
-            "train_samples": int(len(train_idx)),
-            "validation_samples": int(len(valid_idx)),
+            "train_samples": len(train_idx),
+            "validation_samples": len(valid_idx),
             "features": list(TRAINING_FEATURES),
             "model_type": model_type,
             "metrics": valid_metrics,

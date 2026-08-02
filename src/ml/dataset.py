@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 from sqlalchemy import func, literal, select
@@ -71,11 +70,11 @@ def _normalized_ord():
 
 def build_training_dataset(
     db_session: Session,
-    category_code: Optional[str] = None,
+    category_code: str | None = None,
     output_dir: str = "data/feature_store",
     *,
     require_announcement: bool = True,
-    limit: Optional[int] = None,
+    limit: int | None = None,
 ) -> pd.DataFrame:
     """DB 조인 및 정제를 거친 학습 데이터셋을 만들고 parquet 으로 캐싱합니다.
 

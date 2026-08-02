@@ -7,8 +7,6 @@ tests/test_chatbot_planner.py
 
 from unittest.mock import patch
 
-import pytest
-
 from src.app.services.planner import plan_chat_request
 
 

@@ -49,7 +49,7 @@ def test_ui_dashboard():
 
 
 @pytest.mark.skipif(
-    not (os.getenv("RUN_MODEL_TESTS") == "1"),
+    os.getenv("RUN_MODEL_TESTS") != "1",
     reason="RUN_MODEL_TESTS=1 필요 (무거운 joblib 로드)",
 )
 def test_predict_with_real_models():

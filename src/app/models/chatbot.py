@@ -1,8 +1,20 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String
+
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
 from sqlalchemy.dialects import mysql
 from sqlalchemy.sql.sqltypes import UUID
+
 from src.app.core.db import Base, LongText, PKBigInteger
 
 # 원본 Django PositiveIntegerField 는 MySQL/MariaDB 에서 int unsigned 로 생성됩니다.

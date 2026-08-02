@@ -16,8 +16,9 @@ import asyncio
 import logging
 import os
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 

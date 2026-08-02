@@ -17,7 +17,6 @@ src/app/api/v1/accounts.py
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -92,8 +91,8 @@ def _serialize(user: CustomUser) -> UserResponse:
 
 def get_current_user(
     db: Session = Depends(get_db),
-    bidbox_session: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME),
-) -> Optional[CustomUser]:
+    bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
+) -> CustomUser | None:
     """세션 쿠키로 사용자를 해석합니다. 미인증이면 None."""
     payload = read_session(bidbox_session)
     if not payload:
@@ -101,7 +100,7 @@ def get_current_user(
     return db.get(CustomUser, int(payload.get("user_id") or 0))
 
 
-def require_current_user(user: Optional[CustomUser] = Depends(get_current_user)) -> CustomUser:
+def require_current_user(user: CustomUser | None = Depends(get_current_user)) -> CustomUser:
     """원본 @login_required 대응. 미인증 요청을 401 로 차단합니다."""
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
@@ -171,7 +170,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
 @router.post("/logout", summary="로그아웃")
 def logout(
     response: Response,
-    bidbox_session: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME),
+    bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ):
     destroy_session(bidbox_session)
     response.delete_cookie(SESSION_COOKIE_NAME)

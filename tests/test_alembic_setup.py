@@ -14,8 +14,8 @@ import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-from src.app.core.db import Base
 import src.app.models  # noqa: F401  모든 테이블을 Base.metadata 에 등록
+from src.app.core.db import Base
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BASELINE = "0001_django_baseline"

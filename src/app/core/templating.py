@@ -96,7 +96,7 @@ def floatformat(value, digits: int = -1) -> str:
             return str(int(number))
         return f"{number:.{abs(digits)}f}"
     if digits == 0:
-        return str(int(round(number)))
+        return str(round(number))
     return f"{number:.{digits}f}"
 
 

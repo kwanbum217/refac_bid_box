@@ -53,5 +53,9 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      - name: Install macOS OpenMP runtime
+        if: matrix.os == 'macos-latest'
+        run: brew install libomp
+
       - name: Run pytest (SQLite in-memory)
         run: uv run pytest -q

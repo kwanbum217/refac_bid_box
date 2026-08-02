@@ -1,5 +1,7 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Column, DateTime, JSON, Numeric, String
+
+from sqlalchemy import JSON, BigInteger, Column, DateTime, Numeric, String
+
 from src.app.core.db import Base, PKBigInteger
 
 

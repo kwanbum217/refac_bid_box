@@ -10,8 +10,6 @@ Django 템플릿 렌더링 테스트는 React 프론트엔드로 대체되어 �
 
 from datetime import datetime
 
-import pytest
-
 from src.app.models.bids import BidAnnouncement, extract_business_budget
 
 
@@ -36,17 +34,17 @@ def test_extract_business_budget_returns_fallback_for_non_dict():
 
 
 def _make_announcement(**overrides):
-    defaults = dict(
-        bid_ntce_no="ANN-TEST",
-        bid_ntce_ord="000",
-        bid_ntce_nm="테스트 공고",
-        dminstt_nm="Test agency",
-        base_amount=110000000,
-        presmpt_prce=100000000,
-        bid_ntce_dt=datetime.utcnow(),
-        category="Thng",
-        raw_data=None,
-    )
+    defaults = {
+        "bid_ntce_no": "ANN-TEST",
+        "bid_ntce_ord": "000",
+        "bid_ntce_nm": "테스트 공고",
+        "dminstt_nm": "Test agency",
+        "base_amount": 110000000,
+        "presmpt_prce": 100000000,
+        "bid_ntce_dt": datetime.utcnow(),
+        "category": "Thng",
+        "raw_data": None,
+    }
     defaults.update(overrides)
     return BidAnnouncement(**defaults)
 

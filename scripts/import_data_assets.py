@@ -13,7 +13,7 @@ import hashlib
 import json
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -73,7 +73,7 @@ def main() -> int:
 
     print("[3/3] SHA256 체크섬 manifest 생성...")
     manifest = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "source_repo": str(source_root),
         "models": {},
         "chroma_db": collect_checksums(chroma_dest, "chroma_db"),

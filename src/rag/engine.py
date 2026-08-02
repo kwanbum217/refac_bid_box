@@ -14,12 +14,12 @@ import os
 import re
 import time
 import unicodedata
+from collections.abc import AsyncIterator
 from datetime import date, datetime, timedelta
-from typing import Any, AsyncIterator, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.app.core.config import settings
 from src.app.models.bids import CATEGORY_LABELS
 from src.rag.llm import build_backend
 from src.rag.schemas import AnswerBundle, EvidenceItem, Provenance, RetrievalPlan
@@ -697,7 +697,7 @@ class HybridRAGEngine:
     def _prepare_context(
         self,
         user_query: str,
-        db: Optional[Session] = None,
+        db: Session | None = None,
         history: list[dict] | None = None,
         tool_context: dict | None = None,
     ) -> tuple:
@@ -763,7 +763,7 @@ class HybridRAGEngine:
     def get_answer_sync(
         self,
         user_query: str,
-        db: Optional[Session] = None,
+        db: Session | None = None,
         history: list[dict] | None = None,
         tool_context: dict | None = None,
     ) -> AnswerBundle:
@@ -813,7 +813,7 @@ class HybridRAGEngine:
     async def get_answer(
         self,
         user_query: str,
-        db: Optional[Session] = None,
+        db: Session | None = None,
         history: list[dict] | None = None,
         tool_context: dict | None = None,
     ) -> AnswerBundle:
@@ -825,7 +825,7 @@ class HybridRAGEngine:
     async def stream_tokens(
         self,
         user_query: str,
-        db: Optional[Session] = None,
+        db: Session | None = None,
         history: list[dict] | None = None,
         tool_context: dict | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
@@ -906,7 +906,7 @@ rag_engine = HybridRAGEngine()
 
 def get_chatbot_response(
     user_message: str,
-    db: Optional[Session] = None,
+    db: Session | None = None,
     history: list[dict] | None = None,
     tool_context: dict | None = None,
 ) -> AnswerBundle:
