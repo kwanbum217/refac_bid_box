@@ -41,7 +41,8 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 
 ### 서버 필요 (Ollama + Redis)
 
-4. **성능 벤치마크** — `scripts/benchmark_latency.py` 작성. SSE 첫 토큰 P95 3초, 전체 P95 20초 목표 측정
+4. ~~**성능 벤치마크**~~ — **측정 완료**. 목표 2건 미달, 원인 규명. [`docs/ops/latency_benchmark.md`](../ops/latency_benchmark.md)
+9. **레이턴시 개선** — 신규. 위 벤치마크가 지목한 두 가지. 아래 참조
 5. **재학습 E2E 검증** — 데이터→학습→평가→배포 전 주기 실증
 6. **크로스 플랫폼 검증** — Windows 환경에서 Docker + Makefile 실행 확인
 
@@ -306,6 +307,38 @@ Redis, MariaDB(운영), uvicorn, Arq 워커, Ollama 를 모두 띄우고 실제 
 ### 확인에 쓴 계정
 
 `livecheck_*` 형식의 테스트 계정이 운영 DB 에 남아 있습니다. 정리 대상입니다.
+
+---
+
+## 레이턴시 벤치마크 결과 요약 (2026-08-02)
+
+상세는 [`docs/ops/latency_benchmark.md`](../ops/latency_benchmark.md) 입니다.
+
+| 구간 | P50 | P95 | 목표 | 판정 |
+| --- | ---: | ---: | ---: | --- |
+| SSE 첫 토큰 | 10.35s | 42.83s | 3s | 미달 |
+| SSE 전체 응답 | 10.65s | 43.03s | 20s | 미달 |
+| 낙찰가 예측 API | 0.7ms | 1.0ms | 100ms | 달성 (100배 여유) |
+
+기존 `scripts/benchmark_latency.py` 는 `TestClient` 로 인프로세스 호출을 재고 있었고 목표치(3초/20초)와 무관한 임계값(100ms/300ms)을 쓰고 있었습니다. 실제 서버에 HTTP 로 붙어 첫 토큰과 전체를 나눠 재도록 다시 썼습니다.
+
+### 미달 원인 1: SSE 가 실제 스트리밍이 아님
+
+`stream_tokens`(`src/rag/engine.py:799`)가 `get_answer` 로 답변을 **전부 받은 뒤** 40자씩 잘라 내보냅니다. LLM 백엔드도 `"stream": False` 입니다. 첫 토큰(10.35s)과 전체(10.65s) 차이가 0.3초뿐인 이유입니다.
+
+### 미달 원인 2: 집계 SQL 이 33초
+
+P95 를 끌어올린 것은 `2025년 물품 낙찰 평균 낙찰률` 류의 질의 하나였습니다. 단계별로 나누면 **SQL 33.00s, LLM 9.59s** 로 LLM 이 아니라 SQL 이 병목입니다.
+
+`retrieve_structured_data` 의 6개 쿼리 중 3개(`GROUP BY bidwinnr_nm / dminstt_nm / bid_ntce_nm`)가 31.4초를 씁니다. `category` 단일 인덱스로 범위만 좁힌 뒤 160~190만 행에 `Using temporary; Using filesort` 를 겁니다. `category` 는 값이 3종뿐이라 거의 걸러지지 않습니다.
+
+### 개선 후보
+
+| 대상 | 방법 | 비고 |
+| --- | --- | --- |
+| SQL | `(category, bidwinnr_nm)` 등 복합 인덱스 3개 | 원본에 없는 인덱스이므로 Alembic 리비전 + `PRODUCTION_INDEX_NAMES` 갱신 필요. 300만 행 테이블 DDL |
+| SQL (대안) | 상위 N 스냅샷을 `bid_dataset_summaries` 방식으로 사전 집계 | 스키마 변경 없이 조회를 상수 시간으로 |
+| SSE | Ollama `/api/chat` 을 `stream: True` 로 호출 | 답변 후처리(Answer Guard, 카테고리 표기 정규화)가 완성본 전제라 교정 처리 설계 필요 |
 
 ---
 
