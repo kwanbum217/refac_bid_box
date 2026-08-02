@@ -1,9 +1,10 @@
 import numpy as np
 import pandas as pd
+
+from src.ml.monitoring import check_feature_drift
 from src.ml.predictor import predictor
 from src.ml.trainer import ModelTrainer
-from src.ml.validate_model import evaluate_model_performance, compare_champion_vs_challenger
-from src.ml.monitoring import calculate_psi, check_feature_drift
+from src.ml.validate_model import compare_champion_vs_challenger, evaluate_model_performance
 
 
 def test_predictor_singleton():

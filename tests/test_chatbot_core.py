@@ -10,7 +10,6 @@ Django 템플릿 렌더링, 챗봇 API 통합 테스트는 React 프론트엔드
 from src.app.services.capability_registry import CAPABILITY_REGISTRY
 from src.rag.engine import build_retrieval_plan
 
-
 EXPECTED_CAPABILITIES = {
     "preflight_check",
     "collect_refresh",

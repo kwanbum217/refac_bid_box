@@ -11,7 +11,6 @@ tests/test_automation_api.py
 
 from unittest.mock import patch
 
-
 VALID_SIGNUP = {
     "username": "automation-user",
     "password1": "StrongPass123!!",

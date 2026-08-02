@@ -8,7 +8,7 @@ ML 모델 추론 싱글톤 로더.
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 from src.ml.features import build_feature_dict
 
@@ -31,7 +31,7 @@ class SingletonPredictor:
 
             ModelRegistry.load_all_models()
 
-    def predict(self, request_data: dict[str, Any], model_id: Optional[str] = None) -> dict[str, Any]:
+    def predict(self, request_data: dict[str, Any], model_id: str | None = None) -> dict[str, Any]:
         features = build_feature_dict(request_data)
 
         if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
@@ -39,7 +39,11 @@ class SingletonPredictor:
             predicted_rate = inst_rate * 100.0
             model_version = "fallback"
         else:
-            from src.ml.model_registry import ModelRegistry, _preferred_model_for_features, predict_optimal_price
+            from src.ml.model_registry import (
+                ModelRegistry,
+                _preferred_model_for_features,
+                predict_optimal_price,
+            )
 
             preferred = _preferred_model_for_features(features)
             if not ModelRegistry.available_models():

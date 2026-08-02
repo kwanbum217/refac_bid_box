@@ -12,19 +12,15 @@ AdvisoryEngineTests, StepExecutorTests 이식.
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-import pytest
-
 from src.app.models.chatbot import AutomationRequest, KnowledgeBaseStatus
-from src.app.schemas.chat import PlanStep, ChatPlan
+from src.app.schemas.chat import ChatPlan, PlanStep
 from src.app.services.advisory_engine import AdvisoryEngine
 from src.app.services.plan_executor import execute_internal_tool_step, execute_plan_steps
 from src.app.services.planner import compile_plan, interpret_request
 from src.app.services.result_presenter import (
     build_result_intelligence,
-    build_terminal_answer,
     build_visualizations,
 )
-
 
 # --------------------------------------------------------------------------- #
 # InterpretationLayerTests

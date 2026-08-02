@@ -8,7 +8,7 @@ src/app/schemas/bids.py
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,12 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field
 class BidAnnouncementBase(BaseModel):
     bid_ntce_no: str = Field(..., description="입찰공고번호")
     bid_ntce_ord: str = Field("000", description="입찰공고차수")
-    bid_ntce_nm: Optional[str] = Field(None, description="입찰공고명")
-    dminstt_nm: Optional[str] = Field(None, description="수요기관명")
-    ntce_instt_nm: Optional[str] = Field(None, description="공고기관명")
+    bid_ntce_nm: str | None = Field(None, description="입찰공고명")
+    dminstt_nm: str | None = Field(None, description="수요기관명")
+    ntce_instt_nm: str | None = Field(None, description="공고기관명")
     category: str = Field("Thng", description="업무구분 (Thng/Servc/Cnstwk/Frgcpt)")
-    base_amount: Optional[int] = Field(None, description="기초금액(사업예산)")
-    presmpt_prce: Optional[int] = Field(None, description="원본 참고금액")
+    base_amount: int | None = Field(None, description="기초금액(사업예산)")
+    presmpt_prce: int | None = Field(None, description="원본 참고금액")
 
 
 class BidAnnouncementCreate(BidAnnouncementBase):
@@ -30,17 +30,17 @@ class BidAnnouncementCreate(BidAnnouncementBase):
 
 class BidAnnouncementResponse(BidAnnouncementBase):
     id: int
-    bid_ntce_dt: Optional[datetime] = None
-    bid_clse_dt: Optional[datetime] = None
-    openg_dt: Optional[datetime] = None
-    ntce_kind_nm: Optional[str] = None
-    bid_methd_nm: Optional[str] = None
-    cntrct_mthd_nm: Optional[str] = None
-    collected_at: Optional[datetime] = None
+    bid_ntce_dt: datetime | None = None
+    bid_clse_dt: datetime | None = None
+    openg_dt: datetime | None = None
+    ntce_kind_nm: str | None = None
+    bid_methd_nm: str | None = None
+    cntrct_mthd_nm: str | None = None
+    collected_at: datetime | None = None
     category_label: str = Field("", description="업무구분 한글 라벨")
-    resolved_base_amount: Optional[int] = Field(None, description="raw_data 기준 확정 기초금액")
+    resolved_base_amount: int | None = Field(None, description="raw_data 기준 확정 기초금액")
     has_base_amount: bool = Field(False, description="기초금액 확정 가능 여부")
-    prediction_reference_amount: Optional[int] = Field(None, description="예측 기준 금액")
+    prediction_reference_amount: int | None = Field(None, description="예측 기준 금액")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,20 +49,20 @@ class BidResultResponse(BaseModel):
     id: int
     bid_ntce_no: str
     bid_ntce_ord: str = "00"
-    bid_ntce_nm: Optional[str] = None
-    bidwinnr_nm: Optional[str] = None
-    sucsf_bid_amt: Optional[int] = None
-    sucsf_bid_rate: Optional[float] = None
-    rl_openg_dt: Optional[datetime] = None
-    dminstt_nm: Optional[str] = None
+    bid_ntce_nm: str | None = None
+    bidwinnr_nm: str | None = None
+    sucsf_bid_amt: int | None = None
+    sucsf_bid_rate: float | None = None
+    rl_openg_dt: datetime | None = None
+    dminstt_nm: str | None = None
     category: str = "Thng"
-    collected_at: Optional[datetime] = None
+    collected_at: datetime | None = None
     category_label: str = Field("", description="업무구분 한글 라벨")
     display_bid_ntce_nm: str = Field("", description="정제된 공고명")
     display_dminstt_nm: str = Field("", description="정제된 수요기관명")
     display_bidwinnr_nm: str = Field("", description="정제된 낙찰업체명")
     has_corrupted_display_text: bool = Field(False, description="원문 인코딩 손상 여부")
-    display_winning_rate: Optional[float] = Field(None, description="기초금액 기준 재계산 낙찰률")
+    display_winning_rate: float | None = Field(None, description="기초금액 기준 재계산 낙찰률")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -120,7 +120,7 @@ class BidDetailResponse(BaseModel):
 class BidResultDetailResponse(BaseModel):
     result: BidResultResponse
     related_results: list[BidResultResponse] = Field(default_factory=list)
-    raw_json: Optional[dict[str, Any]] = None
+    raw_json: dict[str, Any] | None = None
 
 
 class HomeCategorySection(BaseModel):
@@ -135,5 +135,5 @@ class HomeContextResponse(BaseModel):
     recent_bid_sections: list[HomeCategorySection] = Field(default_factory=list)
     announcement_total: int = 0
     result_total: int = 0
-    latest_result_rate: Optional[float] = None
-    latest_collected_at: Optional[datetime] = None
+    latest_result_rate: float | None = None
+    latest_collected_at: datetime | None = None

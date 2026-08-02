@@ -7,7 +7,7 @@ src/app/schemas/chatbot.py
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +16,7 @@ class ChatRequest(BaseModel):
     """원본 chat_api POST 파라미터 대응."""
 
     message: str = Field("", description="사용자 메시지")
-    session_key: Optional[str] = Field(None, description="대화 세션 키")
+    session_key: str | None = Field(None, description="대화 세션 키")
     confirmation_token: str = Field("", description="자동화 실행 확인 토큰")
 
 
@@ -34,14 +34,14 @@ class ChatResponse(BaseModel):
     intent: str = ""
     message: str = ""
     answer: str = ""
-    kb_status: Optional[dict[str, Any]] = None
+    kb_status: dict[str, Any] | None = None
     suggestions: list[str] = Field(default_factory=list)
     advisory_signals: list[dict[str, Any]] = Field(default_factory=list)
     visualizations: list[dict[str, Any]] = Field(default_factory=list)
-    provenance: Optional[dict[str, Any]] = None
+    provenance: dict[str, Any] | None = None
     plan_steps: list[PlanStepPayload] = Field(default_factory=list)
     result_payload: dict[str, Any] = Field(default_factory=dict)
-    job: Optional[dict[str, Any]] = None
+    job: dict[str, Any] | None = None
     confirmation_token: str = ""
     session_key: str = ""
     # 세션 전환 응답 전용. chat.html 의 사이드바가 대화창을 복원할 때 사용합니다.
@@ -55,7 +55,7 @@ class ChatbotQueryRequest(BaseModel):
     """리팩토링 신규 간이 계약 (단발 질의)."""
 
     query: str = Field(..., min_length=1, description="질문 내용")
-    session_id: Optional[str] = Field(None, description="세션 ID")
+    session_id: str | None = Field(None, description="세션 ID")
     stream: bool = Field(False, description="실시간 SSE 스트리밍 여부")
 
 

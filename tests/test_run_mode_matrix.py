@@ -23,7 +23,7 @@ def test_refresh_data_keeps_lightweight_followup_path():
 @pytest.mark.parametrize(
     "run_mode, expected_steps",
     [
-        ("preflight_only", tuple()),
+        ("preflight_only", ()),
         ("collect_only", ("collect",)),
         ("kb_only", ("rag",)),
         ("predict_only", ("predict",)),

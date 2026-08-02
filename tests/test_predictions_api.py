@@ -39,20 +39,20 @@ def test_normalize_prediction_rate_clamps_to_min():
 
 
 def _create_bid(db, **overrides):
-    defaults = dict(
-        bid_ntce_nm="테스트 공고",
-        bid_ntce_no="BID-001",
-        bid_ntce_ord="000",
-        ntce_instt_nm="테스트 공고기관",
-        dminstt_nm="테스트 수요기관",
-        base_amount=110000000,
-        presmpt_prce=100000000,
-        bid_ntce_dt=datetime.utcnow(),
-        bid_clse_dt=datetime.utcnow(),
-        openg_dt=datetime.utcnow(),
-        category="Thng",
-        raw_data=None,
-    )
+    defaults = {
+        "bid_ntce_nm": "테스트 공고",
+        "bid_ntce_no": "BID-001",
+        "bid_ntce_ord": "000",
+        "ntce_instt_nm": "테스트 공고기관",
+        "dminstt_nm": "테스트 수요기관",
+        "base_amount": 110000000,
+        "presmpt_prce": 100000000,
+        "bid_ntce_dt": datetime.utcnow(),
+        "bid_clse_dt": datetime.utcnow(),
+        "openg_dt": datetime.utcnow(),
+        "category": "Thng",
+        "raw_data": None,
+    }
     defaults.update(overrides)
     bid = BidAnnouncement(**defaults)
     db.add(bid)

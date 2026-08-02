@@ -6,11 +6,12 @@ scripts/verify_institution_history.py
 
 from __future__ import annotations
 
+import statistics
 from datetime import datetime
 from typing import Any
 
-import statistics
 from sqlalchemy import text
+
 from src.app.core.db import SessionLocal
 from src.ml.institution_history import calculate_institution_win_rate
 
