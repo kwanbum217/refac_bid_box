@@ -55,6 +55,8 @@ jobs:
 
       - name: Install macOS OpenMP runtime
         if: matrix.os == 'macos-latest'
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
         run: brew install libomp
 
       - name: Run pytest (SQLite in-memory)

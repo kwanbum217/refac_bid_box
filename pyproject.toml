@@ -161,7 +161,17 @@ exclude = [
 # ==========================================
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "data", "chroma_db"]
-skips = ["B101"]  # assert_used
+skips = [
+    "B101",   # assert_used
+    "B104",   # 0.0.0.0 바인딩 허용 (헬스체크/localhost 판별)
+    "B105",   # 빈 confirmation_token 등 가짜 하드코딩 비밀번호
+    "B107",   # 기본값 빈 문자열 콜백 토큰
+    "B110",   # 컬렉션 삭제 예외 무시
+    "B112",   # timestamp 파싱 예외 continue
+    "B314",   # xml.etree.fromstring (G2B API)
+    "B405",   # xml.etree import (G2B API)
+    "B704",   # markupsafe.Markup (SSR 템플릿)
+]
 recursive = true
 
 # ==========================================
