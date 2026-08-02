@@ -15,6 +15,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import CATEGORY_LABELS, BidAnnouncement, BidResult
+from src.app.services.ranking_snapshots import (
+    DATASET_ANNOUNCEMENT,
+    DATASET_RESULT,
+    get_top_rankings,
+)
 from src.rag.schemas import RetrievalPlan
 
 
@@ -102,9 +107,43 @@ def _time_series_bucket_key(opened_at: datetime, granularity: str) -> str:
     return opened_at.strftime("%Y-%m")
 
 
+def _snapshot_scope(plan: RetrievalPlan) -> str | None:
+    """사전 집계 스냅샷을 쓸 수 있는 질의인지 판정합니다.
+
+    스냅샷은 category 조합만 미리 계산해 둡니다. 날짜나 기관명이 걸리면 조합이
+    사실상 무한하므로 실시간 집계로 넘깁니다. 반환값은 category 코드이며,
+    필터가 전혀 없으면 빈 문자열(전체)입니다.
+    """
+    filters = plan.filters or {}
+    date_from, date_to = _resolve_window(filters)
+    if date_from or date_to:
+        return None
+    if _normalize_text(str(filters.get("institution_name") or "")):
+        return None
+    return _normalize_text(str(filters.get("category") or ""))
+
+
+def _top_rows(
+    db: Session,
+    *,
+    scope: str | None,
+    dataset: str,
+    dimension: str,
+    live_stmt,
+    limit: int = 5,
+) -> list[tuple]:
+    """스냅샷이 있으면 그것을, 없으면 실시간 집계를 씁니다."""
+    if scope is not None:
+        cached = get_top_rankings(db, dataset, dimension, scope, limit)
+        if cached is not None:
+            return cached
+    return db.execute(live_stmt).all()
+
+
 def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
     result_conditions = _result_conditions(plan)
     announcement_conditions = _announcement_conditions(plan)
+    snapshot_scope = _snapshot_scope(plan)
 
     total_count, avg_rate, total_amt = db.execute(
         select(
@@ -119,35 +158,47 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
 
     top_winners = [
         {"bidwinnr_nm": _normalize_text(row[0]) if row[0] else row[0], "win_count": row[1]}
-        for row in db.execute(
-            select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+        for row in _top_rows(
+            db,
+            scope=snapshot_scope,
+            dataset=DATASET_RESULT,
+            dimension="bidwinnr_nm",
+            live_stmt=select(BidResult.bidwinnr_nm, func.count(BidResult.id))
             .where(*result_conditions)
             .group_by(BidResult.bidwinnr_nm)
             .order_by(func.count(BidResult.id).desc())
-            .limit(5)
-        ).all()
+            .limit(5),
+        )
     ]
 
     top_institutions = [
         {"dminstt_nm": _normalize_text(row[0]) if row[0] else row[0], "ntce_count": row[1]}
-        for row in db.execute(
-            select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+        for row in _top_rows(
+            db,
+            scope=snapshot_scope,
+            dataset=DATASET_ANNOUNCEMENT,
+            dimension="dminstt_nm",
+            live_stmt=select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
             .where(*announcement_conditions)
             .group_by(BidAnnouncement.dminstt_nm)
             .order_by(func.count(BidAnnouncement.id).desc())
-            .limit(5)
-        ).all()
+            .limit(5),
+        )
     ]
 
     top_announcements = [
         {"bid_ntce_nm": _normalize_text(row[0]) if row[0] else row[0], "ntce_count": row[1]}
-        for row in db.execute(
-            select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+        for row in _top_rows(
+            db,
+            scope=snapshot_scope,
+            dataset=DATASET_ANNOUNCEMENT,
+            dimension="bid_ntce_nm",
+            live_stmt=select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
             .where(*announcement_conditions)
             .group_by(BidAnnouncement.bid_ntce_nm)
             .order_by(func.count(BidAnnouncement.id).desc())
-            .limit(5)
-        ).all()
+            .limit(5),
+        )
     ]
 
     sample_announcements = [

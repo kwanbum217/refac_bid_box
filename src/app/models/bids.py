@@ -309,3 +309,44 @@ class BidDatasetSummary(Base):
 
     def __str__(self) -> str:
         return f"{DATASET_LABELS.get(self.dataset, self.dataset)} 요약"
+
+
+class BidRankingSnapshot(Base):
+    """상위 N 집계 스냅샷.
+
+    원본에는 없는 테이블입니다. `retrieve_structured_data` 가 매 질의마다
+    300만 행에 GROUP BY 를 걸어 33초를 쓰던 문제를 해결하기 위해 추가했습니다.
+    (docs/ops/latency_benchmark.md)
+
+    `bid_dataset_summaries` 와 같은 사전 집계 방식이며, 필터가 category 뿐인
+    질의만 대상으로 합니다. 날짜나 기관명이 걸린 질의는 조합이 무한하므로
+    기존 실시간 집계 경로를 그대로 씁니다.
+    """
+
+    __tablename__ = "bid_ranking_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset", "dimension", "category", "rank", name="uq_bid_ranking_slot"
+        ),
+        Index("ix_bid_ranking_lookup", "dataset", "dimension", "category", "rank"),
+    )
+
+    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
+    dataset = Column(String(20), nullable=False, comment="집계 대상 (announcement/result)")
+    dimension = Column(String(30), nullable=False, comment="집계 축 컬럼명")
+    # 전체 집계는 빈 문자열로 둡니다. NULL 은 유니크 제약에서 중복을 허용해 못 씁니다.
+    category = Column(String(10), nullable=False, default="", comment="업무구분 (전체는 빈 문자열)")
+    rank = Column(BigInteger, nullable=False, comment="순위 (1부터)")
+    label = Column(String(500), nullable=True, comment="집계 축 값")
+    metric_count = Column(BigInteger, nullable=False, default=0, comment="건수")
+    rebuilt_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        comment="집계 갱신 시각",
+    )
+
+    def __str__(self) -> str:
+        scope = self.category or "전체"
+        return f"[{self.dataset}/{self.dimension}/{scope}] {self.rank}위 {self.label}"
