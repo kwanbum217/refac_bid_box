@@ -13,6 +13,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.ml.institution_history import lookup_institution_history
+
 DEFAULT_INST_RATE = 0.925
 DEFAULT_INST_RATE_STD = 0.015
 DEFAULT_NOTICE_DURATION_DAYS = 14.0
@@ -77,7 +79,10 @@ def _get_institution_name(features_dict: dict[str, Any]) -> str:
     return DEFAULT_INSTITUTION_NAME
 
 
-def build_default_feature_map(features_dict: dict[str, Any]) -> dict[str, Any]:
+def build_default_feature_map(
+    features_dict: dict[str, Any],
+    session: Any = None,
+) -> dict[str, Any]:
     reference_ts = _get_reference_timestamp(features_dict)
     price = max(
         _coerce_float(
@@ -87,7 +92,12 @@ def build_default_feature_map(features_dict: dict[str, Any]) -> dict[str, Any]:
         0.0,
     )
     log_price = np.log1p(price) if price > 0 else 0.0
-    inst_hist_rate = _coerce_float(features_dict.get("inst_hist_rate"), DEFAULT_INST_RATE)
+    # 입력값이 없으면 실제 기관별 낙찰률 이력을 조회합니다.
+    # session 이 없으면 institution_history 가 기본값을 반환합니다.
+    inst_hist_rate = _coerce_float(
+        features_dict.get("inst_hist_rate") or lookup_institution_history(features_dict, session),
+        DEFAULT_INST_RATE,
+    )
     inst_rate_mean_30d = _coerce_float(features_dict.get("inst_rate_mean_30d"), inst_hist_rate)
     inst_rate_std_90d = _coerce_float(features_dict.get("inst_rate_std_90d"), DEFAULT_INST_RATE_STD)
     base_price = _coerce_float(features_dict.get("base_price"), price)
@@ -152,7 +162,10 @@ def prepare_input_frame(feature_values: dict[str, Any], column_order: list[str])
     return pd.DataFrame([row], columns=column_order)
 
 
-def prepare_features(features_dict: dict[str, Any]) -> pd.DataFrame:
+def prepare_features(
+    features_dict: dict[str, Any],
+    session: Any = None,
+) -> pd.DataFrame:
     feature_names = [
         "log_price",
         "month",
@@ -179,9 +192,15 @@ def prepare_features(features_dict: dict[str, Any]) -> pd.DataFrame:
     return prepare_input_frame(features_dict, feature_names)
 
 
-def build_feature_dict(request_data: dict[str, Any]) -> dict[str, Any]:
-    return build_default_feature_map(request_data)
+def build_feature_dict(
+    request_data: dict[str, Any],
+    session: Any = None,
+) -> dict[str, Any]:
+    return build_default_feature_map(request_data, session)
 
 
-def build_feature_frame(df_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [build_default_feature_map(rec) for rec in df_records]
+def build_feature_frame(
+    df_records: list[dict[str, Any]],
+    session: Any = None,
+) -> list[dict[str, Any]]:
+    return [build_default_feature_map(rec, session) for rec in df_records]
