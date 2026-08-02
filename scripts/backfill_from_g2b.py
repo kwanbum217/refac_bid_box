@@ -102,6 +102,9 @@ async def _backfill(
                         end_date=chunk_end.strftime("%Y%m%d"),
                         fetch_type=fetch_type,
                         categories=(category,),
+                        # 덩어리마다 집계를 다시 만들면 수집보다 집계가 오래 걸립니다.
+                        # 아래에서 전체가 끝난 뒤 한 번만 수행합니다.
+                        refresh_aggregates=False,
                     )
                     if metrics.get("status") == "error":
                         print(f"  중단: {metrics.get('message')}")
@@ -114,12 +117,37 @@ async def _backfill(
                         f"  (누적 공고 {total_announcements:,} / 낙찰 {total_results:,})",
                         flush=True,
                     )
+        if not dry_run and (total_announcements or total_results):
+            print("대시보드 집계 재생성 중...", flush=True)
+            _refresh_aggregates(session, fetch_types)
     finally:
         session.close()
 
     print("-" * 60)
     print(f"백필 완료: 공고 {total_announcements:,}건, 낙찰 {total_results:,}건 신규 적재")
     return 0
+
+
+def _refresh_aggregates(session, fetch_types: tuple[str, ...]) -> None:
+    """수집이 전부 끝난 뒤 한 번만 집계를 다시 만듭니다."""
+    from src.app.models.bids import DATASET_ANNOUNCEMENT, DATASET_RESULT
+    from src.app.services.dashboard import (
+        rebuild_bid_dataset_summaries,
+        warm_dashboard_stats_cache,
+    )
+    from src.app.services.home_context import warm_home_page_cache
+
+    datasets = []
+    if "announce" in fetch_types:
+        datasets.append(DATASET_ANNOUNCEMENT)
+    if "result" in fetch_types:
+        datasets.append(DATASET_RESULT)
+    try:
+        rebuild_bid_dataset_summaries(session, datasets)
+        warm_dashboard_stats_cache(session)
+        warm_home_page_cache(session)
+    except Exception as exc:
+        print(f"  집계 재생성 실패 (적재 자체는 완료됨): {exc}")
 
 
 def main() -> int:

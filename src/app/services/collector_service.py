@@ -59,6 +59,7 @@ async def collect_bids(
     end_date: str | None = None,
     fetch_type: str = "both",
     categories: tuple[str, ...] | None = None,
+    refresh_aggregates: bool = True,
 ) -> dict[str, Any]:
     """조달청 입찰공고/낙찰 데이터를 수집해 적재합니다."""
     if not get_service_key():
@@ -125,7 +126,10 @@ async def collect_bids(
 
     metrics["total_records"] = metrics["announcement_count"] + metrics["result_count"]
 
-    if metrics["total_records"] > 0:
+    # 장기 백필은 이 함수를 수십 번 호출합니다. 매번 300만 행을 훑어
+    # 집계를 다시 만들면 수집보다 집계에 시간을 더 씁니다. 호출부가 끄고
+    # 마지막에 한 번만 수행하도록 합니다.
+    if metrics["total_records"] > 0 and refresh_aggregates:
         datasets = []
         if fetch_type in ("both", "announce"):
             datasets.append(DATASET_ANNOUNCEMENT)

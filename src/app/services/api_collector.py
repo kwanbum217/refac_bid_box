@@ -183,21 +183,29 @@ async def _fetch_paged(
     num_of_rows: int,
     mapper: Callable[[ET.Element, dict[str, str]], dict[str, Any]],
     error_label: str,
+    sem: asyncio.Semaphore,
 ) -> list[dict[str, Any]]:
-    """단일 날짜 구간을 페이지 끝까지 순회 수집합니다."""
-    items: list[dict[str, Any]] = []
-    page = 1
-    while True:
-        params = {
+    """단일 날짜 구간을 페이지 끝까지 수집합니다.
+
+    1페이지로 totalCount 를 확인한 뒤 나머지 페이지는 병렬로 받습니다.
+    페이지를 순차로 돌면 구간당 왕복 지연이 그대로 쌓여, 구간을 아무리
+    병렬화해도 이 직렬 구간이 전체 처리량을 결정합니다.
+    """
+
+    async def _page(page_no: int) -> tuple[list[dict[str, Any]], int]:
+        params: dict[str, str] = {
             "serviceKey": get_service_key(),
-            "pageNo": str(page),
+            "pageNo": str(page_no),
             "numOfRows": str(num_of_rows),
             "inqryDiv": "1",
             "inqryBgnDt": f"{step_start}0000",
             "inqryEndDt": f"{step_end}2359",
             "type": "xml",
         }
-        resp = await _make_request_with_retry(client, api_url, params)
+        # 동시 요청 수는 여기 한 곳에서만 통제합니다. 구간과 페이지를 각각
+        # 제한하면 둘이 곱해져 실측 차단 지점(32)을 훌쩍 넘깁니다.
+        async with sem:
+            resp = await _make_request_with_retry(client, api_url, params)
         # G2B 공공 API 응답 전용. 외부 사용자 입력이 아닙니다
         root = ET.fromstring(resp.text)  # nosec B314
 
@@ -206,15 +214,17 @@ async def _fetch_paged(
             result_msg = root.findtext(".//resultMsg", default="알 수 없는 오류")
             raise RuntimeError(f"{error_label} API 오류 [{result_code}]: {result_msg}")
 
-        total_count = int(root.findtext(".//totalCount", default="0"))
-        for item in root.findall(".//item"):
-            items.append(mapper(item, _item_raw_data(item)))
+        rows = [mapper(item, _item_raw_data(item)) for item in root.findall(".//item")]
+        return rows, int(root.findtext(".//totalCount", default="0"))
 
-        if page * num_of_rows >= total_count:
-            break
-        page += 1
-        await asyncio.sleep(0.1)
+    items, total_count = await _page(1)
+    last_page = -(-total_count // num_of_rows)
+    if last_page <= 1:
+        return items
 
+    rest = await asyncio.gather(*[_page(p) for p in range(2, last_page + 1)])
+    for rows, _ in rest:
+        items.extend(rows)
     return items
 
 
@@ -301,10 +311,11 @@ async def _run_ranges(
     async with httpx.AsyncClient() as client:
 
         async def _limited(step_start: str, step_end: str) -> int:
-            async with sem:
-                items = await _fetch_paged(
-                    client, api_url, step_start, step_end, num_of_rows, mapper, error_label
-                )
+            # 구간은 전부 동시에 시작하고, 실제 요청 수는 _fetch_paged 안의
+            # 세마포어가 통제합니다. 구간 단위로 막으면 페이지 병렬화가 무의미해집니다.
+            items = await _fetch_paged(
+                client, api_url, step_start, step_end, num_of_rows, mapper, error_label, sem
+            )
             async with sink_lock:
                 saved = await asyncio.to_thread(sink, items)
             return saved if isinstance(saved, int) else len(items)
