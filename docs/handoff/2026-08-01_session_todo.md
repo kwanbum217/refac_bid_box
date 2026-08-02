@@ -36,7 +36,7 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 1. ~~**ChatAutomationApiTests 이식**~~ — **완료**. 상세는 아래 "ChatAutomationApiTests 이식 결과" 참조.
 2. ~~**정기 실행 스케줄 추가**~~ — **완료**. 아래 "정기 실행 스케줄 이식" 참조
 3. ~~**Alembic 마이그레이션 도입**~~ — **완료**. 아래 "Alembic 도입 결과" 참조
-8. **모델-스키마 실질 차이 33건 정리** — 신규. `make migrate-check` 로 확인. 아래 참조
+8. ~~**모델-스키마 차이 정리**~~ — **완료**. 아래 "모델 선언 정정 결과" 참조
 7. ~~**`dump.rdb` Git 추적 해제**~~ — **완료**. `git rm --cached` 후 `.gitignore` 에 `*.rdb`/`appendonly.aof` 등록
 
 ### 서버 필요 (Ollama + Redis)
@@ -202,7 +202,7 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 
 원본 19개 마이그레이션의 목록과 내용은 `docs/migration/django_migration_history.md` 에 기록했습니다. `bids` 0006~0008 이 기초금액 산출 기준을 세 번 뒤집는 관계라 리비전으로 재현하지 않고 최종 상태만 기준선에 담았습니다.
 
-### 부수적으로 드러난 것: 모델-스키마 실질 차이 33건
+### 부수적으로 드러난 것: 모델-스키마 차이 (2026-08-02 해소 완료)
 
 `make migrate-check` 결과입니다. 주석 67건과 인덱스 명명 차이 58건은 무해하지만, **33건은 SQLAlchemy 모델이 원본 Django 스키마를 그대로 재현하지 못한 지점**입니다.
 
@@ -215,7 +215,42 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 
 현재는 운영에 영향이 없습니다. 모델을 DB 에 맞추는 것이 아니라 **DB 를 모델에 맞추는 순간** 문제가 됩니다. 특히 `LONGTEXT` -> `TEXT` 는 64KB 를 넘는 기존 값을 잘라냅니다. 절대 `autogenerate` 결과를 그대로 적용하지 마십시오.
 
-해야 할 일은 모델 선언을 원본 스키마에 맞추는 것입니다(`Text()` -> `LONGTEXT`, `nullable=False` 복원). 스키마 변경이 아니라 **선언 정정**이므로 DB 는 건드리지 않습니다.
+해소 결과는 아래 절에 정리했습니다.
+
+---
+
+## 모델 선언 정정 결과 (2026-08-02)
+
+모델 선언만 고쳤습니다. **DB 는 한 번도 건드리지 않았습니다.** 검증은 `tests/test_model_schema_parity.py` (66건).
+
+최종 상태는 `make migrate-check` 기준 **실질 차이 0건, 인덱스 명명 차이 0건**이며, `alembic revision --autogenerate` 는 리비전 파일 자체를 만들지 않습니다.
+
+### 무엇을 고쳤는가
+
+| 대상 | 건수 | 내용 |
+| --- | ---: | --- |
+| `nullable` 복원 | 20 | DB 가 `NOT NULL` 인 컬럼에 `nullable=False` 명시 |
+| `LONGTEXT` | 10 | `LongText = Text().with_variant(mysql.LONGTEXT, ...)` 도입. SQLite 테스트는 그대로 `TEXT` |
+| 네이티브 `uuid` | 1 | 일반 `Uuid` 는 MariaDB 에서 `CHAR(32)` 로 컴파일됩니다. `UUID(as_uuid=False)` 로 교체 |
+| `int unsigned` | 1 | `knowledge_base_status.source_bid_count` (원본 `PositiveIntegerField`) |
+| 누락 FK | 3 | `automation_requests`, `automation_subscriptions`, `chat_session_states` 의 `accounts_customuser` 참조가 통째로 빠져 있었습니다 |
+| 누락 인덱스 | 6 | 원본 `Meta.indexes` 가 이름 붙인 복합 인덱스. `ix_auto_req_user_status` 등 |
+| 임의 추가 인덱스 제거 | 3 | `prediction_results` 는 원본에 인덱스가 없습니다 |
+| 인덱스명 정정 | 15 | `index=True` 가 만든 `ix_<table>_<column>` 을 원본 실제 이름으로 교체 |
+
+인덱스를 "이름만 다름"으로 분류했던 앞선 판단은 틀렸습니다. 실제로는 **원본이 명시 선언한 복합 인덱스 6개가 빠져 있었고**, 그중 `ix_auto_req_user_status` 는 `_find_pending_confirmation_request` 가 매 요청마다 쓰는 `user_id + status` 조회 경로입니다.
+
+### 코드 쪽 영향
+
+`automation_requests.user_id` 가 `NOT NULL` 이므로 `create_automation_request` / `create_action_request` 의 `user_id` 를 필수 인자로 조였습니다. 두 호출부 모두 이미 로그인 사용자 ID 를 넘기고 있어 동작 변화는 없습니다. 익명 요청은 애초에 DB 가 거부합니다.
+
+### 주석 67건을 남긴 이유
+
+원본 Django 는 컬럼 주석을 DB 에 기록하지 않지만, 이식본 모델의 한국어 주석은 문서로서 가치가 있습니다. 주석을 지우는 대신 `migrations/env.py` 의 `process_revision_directives` 훅이 **주석만 다른 변경을 마이그레이션에서 걸러냅니다.** 진짜 스키마 변경(타입 변경, 컬럼 추가/삭제)은 그대로 감지되는 것까지 확인했습니다.
+
+### 검증 방법
+
+빈 스키마에 `Base.metadata.create_all` 로 스키마를 만든 뒤 운영 DB 와 비교해 주석 외 차이 0건을 확인했습니다. 임시 스키마는 검증 후 삭제했습니다.
 
 ---
 

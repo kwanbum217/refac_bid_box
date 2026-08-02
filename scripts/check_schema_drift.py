@@ -44,7 +44,7 @@ def _table_of(item) -> str:
         return item[2]
     if kind in ("add_index", "remove_index"):
         return item[1].table.name
-    if kind in ("add_constraint", "remove_constraint"):
+    if kind in ("add_constraint", "remove_constraint", "add_fk", "remove_fk"):
         return getattr(item[1].table, "name", "?")
     if kind.startswith("modify_"):
         return item[2]
@@ -57,7 +57,14 @@ def _describe(item) -> str:
         return f"{kind}: {item[3].name} ({item[3].type})"
     if kind.startswith("modify_"):
         return f"{kind}: {item[3]}  DB={item[5]!r} -> MODEL={item[6]!r}"
-    if kind in ("add_index", "remove_index", "add_constraint", "remove_constraint"):
+    if kind in (
+        "add_index",
+        "remove_index",
+        "add_constraint",
+        "remove_constraint",
+        "add_fk",
+        "remove_fk",
+    ):
         return f"{kind}: {getattr(item[1], 'name', '?')}"
     if kind in ("add_table", "remove_table"):
         return kind
@@ -88,7 +95,9 @@ def main() -> int:
     naming = [it for it in items if it[0] in NAMING_KINDS]
     cosmetic = [it for it in items if it[0] in COSMETIC_KINDS]
 
-    print(f"대상 DB: {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}")
+    # DB_HOST/DB_PORT 는 DATABASE_URL 과 어긋날 수 있으므로 실제 접속에 쓰인 값을 씁니다.
+    url = engine.url
+    print(f"대상 DB: {url.host}:{url.port}/{url.database} ({engine.dialect.name})")
     print(f"관리 테이블: {len(managed)}개")
     print()
     print(f"실질 차이   : {len(substantive)}건")

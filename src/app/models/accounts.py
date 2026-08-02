@@ -29,7 +29,9 @@ class CustomUser(Base):
     password = Column(String(128), nullable=False)
     last_login = Column(DateTime, nullable=True)
     is_superuser = Column(Boolean, nullable=False, default=False)
-    username = Column(String(150), nullable=False, unique=True, index=True)
+    # unique=True 만으로 DB 의 UNIQUE KEY `username` 과 일치합니다.
+    # index=True 를 더하면 원본에 없는 ix_accounts_customuser_username 이 생깁니다.
+    username = Column(String(150), nullable=False, unique=True)
     first_name = Column(String(150), nullable=False, default="")
     last_name = Column(String(150), nullable=False, default="")
     email = Column(String(254), nullable=False, default="")

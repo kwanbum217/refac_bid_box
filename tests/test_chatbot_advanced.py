@@ -148,6 +148,8 @@ def test_advisory_engine_detects_recent_failures(isolated_db):
         isolated_db.add(
             AutomationRequest(
                 request_id=f"fail-{offset}",
+                # user_id 는 원본 스키마에서 NOT NULL 입니다. 익명 요청은 존재할 수 없습니다.
+                user_id=1,
                 intent_type="data_refresh",
                 action_key="data_refresh",
                 requested_text=f"실패 테스트 {offset}",
