@@ -182,12 +182,11 @@ def test_columns_are_not_nullable(table, column):
     assert _column(table, column).nullable is False
 
 
-def test_request_id_uses_native_uuid_on_mariadb():
-    """일반 Uuid 는 MariaDB 에서 CHAR(32) 로 컴파일되어 원본 uuid 컬럼과 어긋납니다."""
+def test_request_id_uses_mysql_compatible_string():
+    """MySQL 8 은 네이티브 UUID 타입을 지원하지 않으므로 VARCHAR(36) 을 사용합니다."""
     column = _column("automation_requests", "request_id")
-    mariadb = mysql.dialect()
-    mariadb.supports_native_uuid = True
-    assert column.type.compile(mariadb) == "UUID"
+    assert column.type.compile(MYSQL) == "VARCHAR(36)"
+    assert column.type.compile(SQLITE) == "VARCHAR(36)"
 
 
 def test_request_id_stays_string_in_python():
