@@ -4,6 +4,7 @@ from src.app.models.bids import (
     BidDatasetSummary,
     BidRankingSnapshot,
     BidResult,
+    InstitutionWinRateStat,
 )
 from src.app.models.chatbot import (
     AutomationRequest,
@@ -23,6 +24,7 @@ __all__ = [
     "BidResult",
     "ChatSessionState",
     "CustomUser",
+    "InstitutionWinRateStat",
     "KnowledgeBaseStatus",
     "PipelineExecution",
     "PredictionResult",

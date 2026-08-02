@@ -360,3 +360,42 @@ class BidRankingSnapshot(Base):
     def __str__(self) -> str:
         scope = self.category or "전체"
         return f"[{self.dataset}/{self.dimension}/{scope}] {self.rank}위 {self.label}"
+
+
+class InstitutionWinRateStat(Base):
+    """기관별 낙찰률 이력 사전 집계.
+
+    원본에는 없는 테이블입니다. `inst_hist_rate` 는 낙찰률 예측의 유일한 실질
+    신호이지만(단독 R2 0.33), 추론 때마다 bid_results 를 COUNT + AVG 하면
+    건당 150ms 가 걸립니다. 학습은 pandas 배치로 처리하고, 추론은 이 표를
+    PK 조회합니다.
+
+    학습과 같은 정의를 씁니다. "해당 기관의 기준 시점 이전 낙찰률 평균"이며,
+    이 표는 그 정의의 현재 시점 값입니다. 정의가 갈리면 train/serve skew 가
+    생겨 운영 성능이 무너집니다 (AGENTS.md 6항).
+
+    야간 스케줄에서 갱신합니다.
+    """
+
+    __tablename__ = "institution_win_rate_stats"
+    __table_args__ = (
+        UniqueConstraint("institution_name", "category", name="uq_inst_win_rate_scope"),
+    )
+
+    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
+    institution_name = Column(String(200), nullable=False, comment="수요기관명")
+    # 전체 집계는 빈 문자열로 둡니다. NULL 은 유니크 제약에서 중복을 허용해 못 씁니다.
+    category = Column(String(10), nullable=False, default="", comment="업무구분 (전체는 빈 문자열)")
+    sample_count = Column(BigInteger, nullable=False, default=0, comment="집계에 쓴 낙찰 건수")
+    avg_rate = Column(Numeric(10, 4), nullable=False, comment="평균 낙찰률 (퍼센트)")
+    rebuilt_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        comment="집계 갱신 시각",
+    )
+
+    def __str__(self) -> str:
+        scope = self.category or "전체"
+        return f"[{scope}] {self.institution_name} {self.avg_rate}% ({self.sample_count}건)"

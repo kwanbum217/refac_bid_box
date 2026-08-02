@@ -31,8 +31,18 @@ class SingletonPredictor:
 
             ModelRegistry.load_all_models()
 
-    def predict(self, request_data: dict[str, Any], model_id: str | None = None) -> dict[str, Any]:
-        features = build_feature_dict(request_data)
+    def predict(
+        self,
+        request_data: dict[str, Any],
+        model_id: str | None = None,
+        session: Any = None,
+    ) -> dict[str, Any]:
+        """session 을 넘기면 inst_hist_rate 를 실제 기관 이력으로 채웁니다.
+
+        학습은 `attach_institution_history` 로 같은 정의를 씁니다. session 을
+        빼면 상수로 떨어져 train/serve skew 가 생기므로 호출부는 반드시 넘기십시오.
+        """
+        features = build_feature_dict(request_data, session)
 
         if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
             inst_rate = float(features.get("inst_hist_rate", 0.925))
