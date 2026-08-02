@@ -125,9 +125,9 @@ steps:
 
 ## 7. 체크리스트
 
-- [ ] Dockerfile 작성 (파이썬 슬림 이미지)
-- [ ] docker-compose.yml 작성 (mysql, redis, app, worker)
-- [ ] Makefile 작성
-- [ ] macOS에서 `make up` 실행 검증
-- [ ] Windows에서 `make up` 실행 검증 (Git Bash)
-- [ ] CI 매트릭스 테스트 통과
+- [x] Dockerfile 작성 (파이썬 슬림 이미지)
+- [x] docker-compose.yml 작성 (mysql, redis, app, worker)
+- [x] Makefile 작성
+- [x] macOS에서 `make up` 실행 검증
+- [x] Windows에서 `uv run pytest -q` 실행 검증 (GitHub Actions windows-latest)
+- [x] CI 매트릭스 테스트 통과 (macOS/Windows)
