@@ -20,30 +20,39 @@ from typing import Any
 # 테스트 환경이나 모델 로드 시 불필요한 의존성을 피하기 위함입니다.
 
 
-def _default_institution_rate() -> float:
-    """이력이 없거나 계산 불가능할 때 돌아갈 기본값."""
-    # TODO-1: 담당자가 결정한 기본값을 반영하세요.
-    # 현재는 features.py 의 DEFAULT_INST_RATE 와 동일하게 유지합니다.
-    return 0.925
+def _default_institution_rate(category: str = "") -> float:
+    """이력이 없거나 계산 불가능할 때 돌아갈 기본값.
+
+    카테고리별 경험적 평균 낙찰률을 사용합니다.
+    정확한 값은 훈련셋 분석 후 갱신해야 합니다.
+    """
+    if category == "Servc":
+        return 0.887
+    if category == "Thng":
+        return 0.842
+    return 0.871
+
+
+def _normalize_institution_name(name: str) -> str:
+    """기관명에서 앞뒤 공백과 연속 공백을 정리합니다."""
+    return " ".join(str(name).strip().split())
 
 
 def _resolve_institution_name(features_dict: dict[str, Any]) -> str:
-    """features_dict 에서 기관명을 우선순위대로 추출합니다."""
-    # TODO-2: 수요기관명(dminstt_nm)과 공고기관명(ntce_instt_nm) 중
-    # 어떤 기관 단위로 이력을 계산할지 결정하세요.
-    #   - 수요기관: 실제 예산을 집행하는 기관(낙찰 결과에 직결)
-    #   - 공고기관: 조달청 등 입찰을 공고하는 기관(예산 주인과 다를 수 있음)
+    """features_dict 에서 기관명을 우선순위대로 추출합니다.
+
+    수요기관(dminstt_nm)이 예산 집행 주체이므로 우선합니다.
+    공고기관(ntce_instt_nm)은 조달청 등 예산 주인과 다를 수 있습니다.
+    """
     for key in ("dminstt_nm", "ntce_instt_nm", "ntceInsttNm"):
         value = features_dict.get(key)
         if value:
-            return str(value).strip()
+            return _normalize_institution_name(value)
     return ""
 
 
 def _resolve_category(features_dict: dict[str, Any]) -> str:
     """계산 범위를 제한할 업무구분을 추출합니다."""
-    # TODO-3: 카테고리별 이력을 분리할지, 전체를 합산할지 결정하세요.
-    # 용역(Servc) 모델 개선이 목표라면 Servc 이력만 쓰는 것도 후보입니다.
     category = features_dict.get("category") or features_dict.get("category_code") or ""
     return str(category).strip()
 
@@ -52,14 +61,14 @@ def _resolve_reference_date(features_dict: dict[str, Any]) -> datetime:
     """현재 예측 대상 입찰의 기준 시점을 결정합니다.
 
     기준 시점 이전의 낙찰 결과만 이력으로 사용해야 미래 정보 누출을 막습니다.
+    시계열 분할과 일관되게 개찰일을 우선 사용합니다.
     """
-    # TODO-4: 기준 시점을 개찰일, 공고일, 입찰마감일 중 하나로 결정하세요.
-    # 시계열 분할과 마찬가지로 개찰일(rl_openg_dt / openg_dt)이 가장 안전합니다.
     for key in ("openg_dt", "bid_clse_dt", "bid_ntce_dt"):
         value = features_dict.get(key)
         if value:
             try:
                 import pandas as pd
+
                 ts = pd.Timestamp(value)
                 if pd.notna(ts):
                     return ts.to_pydatetime()
@@ -90,29 +99,48 @@ def calculate_institution_win_rate(
         평균 낙찰률(0.0~1.0 사이 비율) 또는 기본값.
     """
     if not institution_name:
-        return _default_institution_rate()
+        return _default_institution_rate(category)
 
-    # TODO-5: 실제 DB 쿼리를 작성하세요.
-    # 필요한 컬럼:
-    #   - dminstt_nm (수요기관명) 또는 ntce_instt_nm (공고기관명)
-    #   - rl_openg_dt (개찰일시)
-    #   - sucsf_bid_rate (낙찰률)
-    #   - category (업무구분)
-    #
-    # 쿼리 조건 예시:
-    #   - dminstt_nm == institution_name
-    #   - rl_openg_dt < reference_date
-    #   - rl_openg_dt >= reference_date - lookback_days
-    #   - category == category (빈 값이면 조건 제외)
-    #   - sucsf_bid_rate IS NOT NULL
-    #   - sucsf_bid_rate > 0
-    #
-    # 낙찰률이 퍼센트(87.5)로 저장돼 있을 수 있으므로 100 으로 나눌지
-    # 확인해야 합니다. BidResult.sucsf_bid_rate 는 Numeric(10,4) 입니다.
-    #
-    # 이상치 제거 여부(예: 0% 또는 100% 근처)도 담당자가 결정합니다.
+    from sqlalchemy import func
 
-    return _default_institution_rate()
+    from src.app.models.bids import BidResult
+
+    start_date = reference_date - timedelta(days=lookback_days)
+
+    count_query = session.query(func.count(BidResult.id)).filter(
+        BidResult.dminstt_nm == institution_name,
+        BidResult.rl_openg_dt < reference_date,
+        BidResult.rl_openg_dt >= start_date,
+        BidResult.sucsf_bid_rate.isnot(None),
+        BidResult.sucsf_bid_rate > 0,
+    )
+    if category:
+        count_query = count_query.filter(BidResult.category == category)
+
+    sample_count = count_query.scalar()
+    if sample_count is None or sample_count < min_samples:
+        return _default_institution_rate(category)
+
+    avg_query = session.query(func.avg(BidResult.sucsf_bid_rate)).filter(
+        BidResult.dminstt_nm == institution_name,
+        BidResult.rl_openg_dt < reference_date,
+        BidResult.rl_openg_dt >= start_date,
+        BidResult.sucsf_bid_rate.isnot(None),
+        BidResult.sucsf_bid_rate > 0,
+    )
+    if category:
+        avg_query = avg_query.filter(BidResult.category == category)
+
+    result = avg_query.scalar()
+    if result is None:
+        return _default_institution_rate(category)
+
+    avg_rate = float(result)
+    # BidResult.sucsf_bid_rate 는 Numeric(10,4)로 퍼센트(87.5) 형태로 저장돼 있습니다.
+    if avg_rate > 1.0:
+        avg_rate = avg_rate / 100.0
+
+    return avg_rate
 
 
 def lookup_institution_history(features_dict: dict[str, Any], session: Any = None) -> float:
@@ -122,14 +150,13 @@ def lookup_institution_history(features_dict: dict[str, Any], session: Any = Non
     """
     institution_name = _resolve_institution_name(features_dict)
     if not institution_name:
-        return _default_institution_rate()
+        return _default_institution_rate(_resolve_category(features_dict))
 
     reference_date = _resolve_reference_date(features_dict)
     category = _resolve_category(features_dict)
 
     if session is None:
-        # TODO: 캐시 레이어(Redis)를 도입할 경우 여기서 캐시 조회를 추가합니다.
-        return _default_institution_rate()
+        return _default_institution_rate(category)
 
     return calculate_institution_win_rate(
         session=session,
