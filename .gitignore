@@ -181,6 +181,8 @@ chroma/
 # ML model registry (runtime artifacts — trainer output)
 ml_registry/
 *.faiss
+# CatBoost training logs
+catboost_info/
 # Data exports / snapshots
 data/exports/
 *.parquet

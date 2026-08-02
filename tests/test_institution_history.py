@@ -59,9 +59,10 @@ def seed_results(session, institution_name, category, rates, reference_date, pre
 
 
 def test_default_rate_by_category():
-    assert _default_institution_rate("Servc") == 0.887
-    assert _default_institution_rate("Thng") == 0.842
-    assert _default_institution_rate("") == 0.871
+    assert _default_institution_rate("Servc") == 0.9011
+    assert _default_institution_rate("Thng") == 0.9132
+    assert _default_institution_rate("Cnstwk") == 0.8859
+    assert _default_institution_rate("") == 0.9001
 
 
 def test_normalize_institution_name():
@@ -71,11 +72,11 @@ def test_normalize_institution_name():
 
 def test_resolve_institution_name_prefers_dminstt_nm():
     features = {
-        "dminstt_nm": "수요기관",
+        "dminstt_nm": "실제수요기관",
         "ntce_instt_nm": "공고기관",
         "ntceInsttNm": "기관별칭",
     }
-    assert _resolve_institution_name(features) == "수요기관"
+    assert _resolve_institution_name(features) == "실제수요기관"
 
 
 def test_resolve_institution_name_falls_back_to_ntce_instt_nm():
@@ -121,7 +122,7 @@ def test_calculate_returns_default_for_missing_institution_name(memory_session):
         reference_date=datetime.utcnow(),
         category="Servc",
     )
-    assert rate == pytest.approx(0.887)
+    assert rate == pytest.approx(0.9011)
 
 
 def test_calculate_returns_default_when_insufficient_samples(memory_session):
@@ -135,7 +136,7 @@ def test_calculate_returns_default_when_insufficient_samples(memory_session):
         category="Servc",
         min_samples=5,
     )
-    assert rate == pytest.approx(0.887)
+    assert rate == pytest.approx(0.9011)
 
 
 def test_calculate_averages_percent_rate_values(memory_session):
@@ -217,7 +218,7 @@ def test_calculate_excludes_zero_rate_records(memory_session):
 def test_lookup_institution_history_without_session_returns_default():
     features = {"category": "Servc"}
     rate = lookup_institution_history(features)
-    assert rate == pytest.approx(0.887)
+    assert rate == pytest.approx(0.9011)
 
 
 def test_lookup_institution_history_with_session(memory_session):
@@ -247,7 +248,26 @@ def test_lookup_institution_history_uses_normalized_name(memory_session):
     assert rate == pytest.approx((87.5 + 88.0 + 88.5 + 89.0 + 89.5) / 5 / 100.0)
 
 
+def test_resolve_institution_name_skips_placeholder_institutions():
+    assert _resolve_institution_name({"dminstt_nm": "각 수요기관", "ntce_instt_nm": "공고기관"}) == "공고기관"
+    assert _resolve_institution_name({"dminstt_nm": "수요기관", "ntce_instt_nm": ""}) == ""
+
+
+def test_calculate_excludes_outlier_rates(memory_session):
+    reference_date = datetime(2024, 6, 15, 10, 0, 0)
+    seed_results(memory_session, "서울시", "Servc", [87.5, 88.0, 99.0, 100.0, 150.0], reference_date)
+
+    rate = calculate_institution_win_rate(
+        memory_session,
+        institution_name="서울시",
+        reference_date=reference_date,
+        category="Servc",
+        min_samples=1,
+    )
+    assert rate == pytest.approx((87.5 + 88.0 + 99.0) / 3 / 100.0)
+
+
 def test_lookup_institution_history_without_institution_returns_default(memory_session):
     features = {"category": "Servc", "openg_dt": datetime.utcnow()}
     rate = lookup_institution_history(features, memory_session)
-    assert rate == pytest.approx(0.887)
+    assert rate == pytest.approx(0.9011)

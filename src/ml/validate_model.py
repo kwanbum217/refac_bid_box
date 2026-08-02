@@ -27,19 +27,22 @@ def evaluate_model_performance(y_true: np.ndarray, y_pred: np.ndarray) -> dict[s
     }
 
 
+MIN_R2_IMPROVEMENT = 0.005
+
+
 def compare_champion_vs_challenger(
     champion_metrics: dict[str, float],
     challenger_metrics: dict[str, float],
 ) -> dict[str, Any]:
     """
     Champion vs Challenger 지표 비교 및 승격 추천 여부 판단.
-    Challenger가 RMSE/MAPE를 낮추고 R²를 향상시켰을 때 승격 권장.
+    Challenger가 RMSE/MAPE를 낮추고 R²를 압도적으로 향상시켰을 때 승격 권장.
     """
     improved_rmse = challenger_metrics["rmse"] < champion_metrics["rmse"]
     improved_mape = challenger_metrics["mape"] < champion_metrics["mape"]
-    improved_r2 = challenger_metrics["r2"] >= champion_metrics["r2"]
+    improved_r2 = challenger_metrics["r2"] >= (champion_metrics["r2"] + MIN_R2_IMPROVEMENT)
 
-    should_promote = improved_rmse or improved_r2
+    should_promote = improved_r2 and (improved_rmse or improved_mape)
 
     return {
         "champion_metrics": champion_metrics,
@@ -47,5 +50,6 @@ def compare_champion_vs_challenger(
         "improved_rmse": improved_rmse,
         "improved_mape": improved_mape,
         "improved_r2": improved_r2,
+        "min_r2_improvement": MIN_R2_IMPROVEMENT,
         "recommendation": "PROMOTE_CHALLENGER" if should_promote else "REJECT_CHALLENGER",
     }

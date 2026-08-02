@@ -23,14 +23,16 @@ from typing import Any
 def _default_institution_rate(category: str = "") -> float:
     """이력이 없거나 계산 불가능할 때 돌아갈 기본값.
 
-    카테고리별 경험적 평균 낙찰률을 사용합니다.
-    정확한 값은 훈련셋 분석 후 갱신해야 합니다.
+    2024-06-01 ~ 2025-06-01 기간의 전체 평균 낙찰률을 사용합니다.
+    Thng: 0.9132, Servc: 0.9011, Cnstwk: 0.8859
     """
     if category == "Servc":
-        return 0.887
+        return 0.9011
     if category == "Thng":
-        return 0.842
-    return 0.871
+        return 0.9132
+    if category == "Cnstwk":
+        return 0.8859
+    return 0.9001
 
 
 def _normalize_institution_name(name: str) -> str:
@@ -38,16 +40,27 @@ def _normalize_institution_name(name: str) -> str:
     return " ".join(str(name).strip().split())
 
 
+_PLACEHOLDER_INSTITUTIONS = {
+    "각 수요기관",
+    "수요기관",
+    "조달청",
+    "",
+}
+
+
 def _resolve_institution_name(features_dict: dict[str, Any]) -> str:
     """features_dict 에서 기관명을 우선순위대로 추출합니다.
 
-    수요기관(dminstt_nm)이 예산 집행 주체이므로 우선합니다.
+    수요기관(dminstt_nm)이 예산 집행 주체이므로 낙찰률 예측에 더 직접적입니다.
     공고기관(ntce_instt_nm)은 조달청 등 예산 주인과 다를 수 있습니다.
     """
     for key in ("dminstt_nm", "ntce_instt_nm", "ntceInsttNm"):
         value = features_dict.get(key)
         if value:
-            return _normalize_institution_name(value)
+            normalized = _normalize_institution_name(value)
+            if normalized in _PLACEHOLDER_INSTITUTIONS:
+                continue
+            return normalized
     return ""
 
 
@@ -107,13 +120,17 @@ def calculate_institution_win_rate(
 
     start_date = reference_date - timedelta(days=lookback_days)
 
-    count_query = session.query(func.count(BidResult.id)).filter(
+    # 이상치 제거: 0% 또는 100% 이상(데이터 오류)인 낙찰률은 제외합니다.
+    base_filters = [
         BidResult.dminstt_nm == institution_name,
         BidResult.rl_openg_dt < reference_date,
         BidResult.rl_openg_dt >= start_date,
         BidResult.sucsf_bid_rate.isnot(None),
         BidResult.sucsf_bid_rate > 0,
-    )
+        BidResult.sucsf_bid_rate < 100,
+    ]
+
+    count_query = session.query(func.count(BidResult.id)).filter(*base_filters)
     if category:
         count_query = count_query.filter(BidResult.category == category)
 
@@ -121,13 +138,7 @@ def calculate_institution_win_rate(
     if sample_count is None or sample_count < min_samples:
         return _default_institution_rate(category)
 
-    avg_query = session.query(func.avg(BidResult.sucsf_bid_rate)).filter(
-        BidResult.dminstt_nm == institution_name,
-        BidResult.rl_openg_dt < reference_date,
-        BidResult.rl_openg_dt >= start_date,
-        BidResult.sucsf_bid_rate.isnot(None),
-        BidResult.sucsf_bid_rate > 0,
-    )
+    avg_query = session.query(func.avg(BidResult.sucsf_bid_rate)).filter(*base_filters)
     if category:
         avg_query = avg_query.filter(BidResult.category == category)
 
