@@ -37,6 +37,17 @@ dependencies = [
 packages = ["src"]
 
 # ==========================================
+# Dev dependencies
+# ==========================================
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.6.0",
+    "bandit>=1.7.0",
+]
+
+# ==========================================
 # Ruff (Linter + Formatter)
 # ==========================================
 [tool.ruff]
