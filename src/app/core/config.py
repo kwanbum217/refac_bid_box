@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소입니다.
     # 워커가 도달할 수 있는 주소여야 하며, 컨테이너 분리 시 서비스명(http://app:8000)을 씁니다.
     AUTOMATION_CALLBACK_BASE_URL: str = ""
+    # 원본 Harness 야간 트리거(매일 02:00) 대체. 개발 장비에서는 꺼둘 수 있습니다.
+    AUTOMATION_NIGHTLY_SCHEDULE_ENABLED: bool = True
+    # 원본 Airflow narabid_weekly_retrain(매주 월요일 03:00) 대체.
+    ML_WEEKLY_RETRAIN_ENABLED: bool = True
 
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"

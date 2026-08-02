@@ -25,7 +25,7 @@ redis-server --port 6379 --daemonize yes
 
 화면은 `http://127.0.0.1:8000/` 입니다. Ollama 는 담당자 앱(`Ollama.app`)이 상시 구동하므로 별도 기동이 필요 없습니다.
 
-**주의**: `dump.rdb` 가 Git 추적 파일이라 Redis 를 띄우면 변경으로 잡힙니다. 커밋 전에 `git checkout -- dump.rdb` 로 되돌리십시오. (`.gitignore` 처리 필요 — 아래 7번)
+Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커밋에 잡히지 않습니다.
 
 ---
 
@@ -34,9 +34,10 @@ redis-server --port 6379 --daemonize yes
 ### 즉시 진행 가능 (서버 없이)
 
 1. ~~**ChatAutomationApiTests 이식**~~ — **완료**. 상세는 아래 "ChatAutomationApiTests 이식 결과" 참조.
-2. **주간 재학습 스케줄 추가** — `src/tasks/retrain_task.py`에 Arq 크론 설정 또는 `run_mode_matrix`에 `retrain` 모드 추가
-3. **Alembic 마이그레이션 도입** — 원본 19개 히스토리 보존. `alembic init` → `autogenerate` → 기존 스키마와 정합성 검증
-7. **`dump.rdb` Git 추적 해제** — Redis 런타임 스냅샷이라 실행할 때마다 변경됩니다. `git rm --cached dump.rdb` 후 `.gitignore` 등록
+2. ~~**정기 실행 스케줄 추가**~~ — **완료**. 아래 "정기 실행 스케줄 이식" 참조
+3. ~~**Alembic 마이그레이션 도입**~~ — **완료**. 아래 "Alembic 도입 결과" 참조
+8. **모델-스키마 실질 차이 33건 정리** — 신규. `make migrate-check` 로 확인. 아래 참조
+7. ~~**`dump.rdb` Git 추적 해제**~~ — **완료**. `git rm --cached` 후 `.gitignore` 에 `*.rdb`/`appendonly.aof` 등록
 
 ### 서버 필요 (Ollama + Redis)
 
@@ -152,6 +153,70 @@ redis-server --port 6379 --daemonize yes
 `_report`(`src/tasks/automation_tasks.py`)는 `callback_url` 이 있으면 HTTP 로 보내고, 없거나 전송이 실패하면 같은 페이로드를 DB 에 기록합니다. 전송 실패로 단계 보고가 유실되지 않습니다. 실제 uvicorn 을 띄워 워커 → API → 요청 레코드 왕복까지 확인했습니다.
 
 `callback_url`/`callback_token` 은 `callback` 모드일 때만 워커에 전달합니다. `direct` 모드에서는 빈 값을 넘겨 불필요한 HTTP 왕복과 토큰 노출을 만들지 않습니다.
+---
+
+## 정기 실행 스케줄 이식 (2026-08-02)
+
+원본은 스케줄이 **두 군데로 나뉘어** 있었습니다. 야간 번들은 Harness 트리거, 주간 재학습은 Airflow DAG 였습니다. 이식본은 둘 다 Arq 크론(`src/tasks/worker.py` `cron_jobs`)으로 모았습니다. 검증은 `tests/test_scheduled_tasks.py` (10건).
+
+| 원본 | 정의 위치 | 주기 | 이식 태스크 |
+| --- | --- | --- | --- |
+| `BIDBOX_Personal_Nightly_Schedule` | `harness/bidbox_personal_triggers.yaml` (`0 2 * * *`) | 매일 02:00 | `nightly_schedule_task` |
+| `narabid_weekly_retrain` | `apps/pipelines/dags/retrain_dag.py` (`0 3 * * 1`) | 매주 월요일 03:00 | `weekly_retrain_task` |
+
+시각은 원본과 동일하게 유지했고, 테스트는 값 비교가 아니라 `next_cron` 으로 다음 실행 시각을 계산해 검증합니다.
+
+### 설계 메모
+
+- 야간 실행은 `run_mode="nightly_schedule"` 로 원본 스텝 구성(`collect, rag, predict, inspect`)을 그대로 씁니다.
+- 실행 이력은 챗봇 실행과 같은 `pipeline_executions` 에 남기되 `source="local_scheduler"` 로 구분합니다. 원본 `run_local_automation_bundle` 의 기본 라벨과 같은 값입니다.
+- 큐를 한 번 더 거치지 않고 크론 작업 안에서 파이프라인을 직접 실행합니다. 워커 안에서 다시 Redis 로 넣을 이유가 없습니다.
+- 두 크론 모두 `timeout=10800` 입니다. 기본 `job_timeout` 30분으로는 전체 번들이 끝나지 않습니다.
+- `run_at_startup=False` 입니다. 워커를 재기동할 때마다 수집이 도는 사고를 막습니다.
+- `weekly_retrain_task` 는 예외를 삼키고 실패 결과를 반환합니다. 크론 안에서 예외가 새면 이후 스케줄까지 함께 멈춥니다.
+- 개발 장비용 차단 스위치: `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED`, `ML_WEEKLY_RETRAIN_ENABLED`.
+
+### 확인한 것과 남은 것
+
+워커를 실제로 띄워 `cron:nightly_schedule_task`, `cron:weekly_retrain_task` 가 등록되는 것까지 확인했습니다. 스케줄이 실제 시각에 발화해 번들을 끝까지 도는 것은 아직 관측하지 못했습니다.
+
+---
+
+## Alembic 도입 결과 (2026-08-02)
+
+기준선 리비전 `migrations/versions/0001_django_baseline.py` 를 만들고 운영 DB 에 `stamp` 까지 완료했습니다. 검증은 `tests/test_alembic_setup.py` (34건).
+
+핵심 설계 판단은 **기준선을 모델이 아니라 운영 DB 반영(reflect)으로 만들었다**는 점입니다. 모델에서 뽑으면 "19개 마이그레이션을 적용한 상태"와 다른 것을 기준선이라 부르게 되고, `stamp` 가 거짓말이 됩니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| 기준선 리비전 | `0001_django_baseline` (down_revision 없음) |
+| 생성 방식 | 운영 DB 11개 테이블 reflect |
+| 검증 | 빈 스키마에 적용 후 운영 DB 와 비교 → 차이 0건 |
+| 운영 DB 적용 | `stamp` 만 실행 (DDL 미실행), 27→28 테이블, 데이터 변동 없음 |
+| 신규 환경 | `make migrate-up` |
+| 기존 환경 | `make migrate-stamp` |
+| 드리프트 점검 | `make migrate-check` (읽기 전용) |
+
+`migrations/env.py` 의 `include_object`/`include_name` 이 모델에 있는 11개 테이블만 추적합니다. 이 필터가 없으면 `autogenerate` 가 운영 DB 에 남은 Django 인프라 테이블 16개(`django_migrations`, `auth_*`, `socialaccount_*`, `account_*`)를 전부 DROP 대상으로 잡습니다. G1 직결 사안이라 테스트로 고정했습니다.
+
+원본 19개 마이그레이션의 목록과 내용은 `docs/migration/django_migration_history.md` 에 기록했습니다. `bids` 0006~0008 이 기초금액 산출 기준을 세 번 뒤집는 관계라 리비전으로 재현하지 않고 최종 상태만 기준선에 담았습니다.
+
+### 부수적으로 드러난 것: 모델-스키마 실질 차이 33건
+
+`make migrate-check` 결과입니다. 주석 67건과 인덱스 명명 차이 58건은 무해하지만, **33건은 SQLAlchemy 모델이 원본 Django 스키마를 그대로 재현하지 못한 지점**입니다.
+
+| 유형 | 건수 | 내용 |
+| --- | ---: | --- |
+| `nullable` 완화 | 20 | DB 는 `NOT NULL` 인데 모델은 nullable. 모델이 원본보다 느슨합니다 |
+| `LONGTEXT` -> `TEXT` | 10 | 모델이 `Text()` 로 선언. MySQL `TEXT` 는 64KB 라 4GB 인 `LONGTEXT` 보다 좁습니다 |
+| `UUID` -> `VARCHAR(36)` | 1 | `automation_requests.request_id` |
+| unique 제약 추가 | 2 | `uq_bid_ann_no_ord_cat`, `uq_bid_results_no_ord_cat` (원본은 인덱스로 동일 제약) |
+
+현재는 운영에 영향이 없습니다. 모델을 DB 에 맞추는 것이 아니라 **DB 를 모델에 맞추는 순간** 문제가 됩니다. 특히 `LONGTEXT` -> `TEXT` 는 64KB 를 넘는 기존 값을 잘라냅니다. 절대 `autogenerate` 결과를 그대로 적용하지 마십시오.
+
+해야 할 일은 모델 선언을 원본 스키마에 맞추는 것입니다(`Text()` -> `LONGTEXT`, `nullable=False` 복원). 스키마 변경이 아니라 **선언 정정**이므로 DB 는 건드리지 않습니다.
+
 ---
 
 ## 참조

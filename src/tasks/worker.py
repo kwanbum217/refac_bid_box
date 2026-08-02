@@ -9,6 +9,7 @@ Arq 워커 진입점. 원본 Harness 파이프라인 실행 백엔드를 대체�
 
 from __future__ import annotations
 
+from arq import cron
 from arq.connections import RedisSettings
 
 from src.app.core.config import settings
@@ -21,6 +22,7 @@ from src.tasks.automation_tasks import (
     validate_model_task,
 )
 from src.tasks.retrain_task import run_retrain_pipeline_task
+from src.tasks.scheduled_tasks import nightly_schedule_task, weekly_retrain_task
 
 
 class WorkerSettings:
@@ -32,6 +34,13 @@ class WorkerSettings:
         refresh_data_task,
         manual_full_task,
         run_retrain_pipeline_task,
+    ]
+    # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
+    # 워커가 여러 대여도 arq 는 크론을 한 번만 실행합니다.
+    # 두 스케줄 모두 전체 번들이라 아래 job_timeout(30분)으로는 부족합니다. 개별 지정합니다.
+    cron_jobs = [
+        cron(nightly_schedule_task, hour=2, minute=0, run_at_startup=False, timeout=10800),
+        cron(weekly_retrain_task, weekday="mon", hour=3, minute=0, run_at_startup=False, timeout=10800),
     ]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     max_jobs = 4

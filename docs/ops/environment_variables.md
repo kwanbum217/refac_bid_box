@@ -77,6 +77,7 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `AUTOMATION_WORKER_SHARES_DB` | 아니오 | `true` | 워커가 앱과 같은 DB 를 보는지 여부. 기본 docker-compose 구성은 공유합니다 |
 | `AUTOMATION_CALLBACK_BASE_URL` | 아니오 | (없음) | 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소 |
 | `AUTOMATION_REUSE_RECENT` | 아니오 | `true` | 고비용 작업(`full_validation`)의 최근 72시간 성공 이력 재사용 |
+| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | 아니오 | `true` | 매일 02:00 야간 번들 크론 사용 여부 |
 
 `AUTOMATION_CALLBACK_BASE_URL` 은 **워커가 도달할 수 있는 주소**여야 합니다. 컨테이너를 분리했다면 `http://app:8000` 처럼 서비스명을 쓰십시오. `http://localhost:8000` 은 워커 컨테이너 자기 자신을 가리키므로 거부됩니다.
 
@@ -95,8 +96,10 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
 | `MODEL_REGISTRY_PATH` | 아니오 | `ml_registry` | 모델 레지스트리 경로 |
-| `RETRAIN_SCHEDULE` | 아니오 | `0 3 * * 1` | 재학습 주간 스케줄 (월요일 03:00) |
+| `ML_WEEKLY_RETRAIN_ENABLED` | 아니오 | `true` | 매주 월요일 03:00 재학습 크론 사용 여부 |
 | `DRIFT_PSI_THRESHOLD` | 아니오 | `0.2` | 데이터 드리프트 PSI 임계값 |
+
+재학습 시각 자체는 환경 변수가 아니라 `src/tasks/worker.py` 의 `cron_jobs` 에 고정되어 있습니다. 원본 Airflow DAG 의 `schedule_interval='0 3 * * 1'` 을 그대로 옮긴 값이므로, 바꿀 때는 원본과의 차이를 인지하고 변경하십시오.
 
 ---
 

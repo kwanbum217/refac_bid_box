@@ -142,6 +142,11 @@ out/
 *.sqlite3-journal
 *.db
 *.db-journal
+# Redis 스냅샷. 워커/캐시를 띄울 때마다 갱신되는 런타임 산출물입니다.
+dump.rdb
+*.rdb
+appendonly.aof
+appendonlydir/
 
 # ============================================================
 # Caches / logs / runtime
