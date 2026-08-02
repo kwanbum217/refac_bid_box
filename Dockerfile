@@ -18,6 +18,9 @@ COPY . /app/
 # 의존성 설치 (system python 패키지로 uvicorn 포함 설치)
 RUN uv pip install --system -e .
 
+# 컨테이너 내에서 make test 가 동작하도록 개발 의존성도 설치
+RUN uv pip install --system pytest pytest-asyncio
+
 EXPOSE 8000
 
 CMD ["python3", "-m", "uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
