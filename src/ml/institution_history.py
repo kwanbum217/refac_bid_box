@@ -16,8 +16,8 @@ src/ml/institution_history.py
 2. 추론 경로에만 연결하면 학습은 상수, 추론은 DB 값이 되어 AGENTS.md 6항이
    금지하는 train/serve skew 가 발생합니다. 양쪽을 같은 방식으로 바꿔야 합니다.
 
-배치 집계 방식(윈도우 크기, 누수 방지 기준, 최소 표본)은 특징 엔지니어링
-결정이므로 담당자가 정합니다. 가이드는 docs/handoff/inst_hist_rate_impl_todo.md 참조.
+배치 집계 방식(윈도우 크기, 누수 방지 기준, 최소 표본)은 실측으로 정합니다.
+설계 배경은 docs/handoff/inst_hist_rate_impl_todo.md 참조.
 """
 
 from __future__ import annotations

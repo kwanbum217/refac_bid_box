@@ -44,7 +44,7 @@ Redis 스냅파일(`dump.rdb`)은 `.gitignore` 처리가 끝나 더 이상 커�
 4. ~~**성능 벤치마크**~~ — **측정 완료**. 목표 2건 미달, 원인 규명. [`docs/ops/latency_benchmark.md`](../ops/latency_benchmark.md)
 9. **레이턴시 개선** — SQL 사전 집계 **완료** (전체 P95 목표 달성). SSE 스트리밍은 **엔진만 구현**(`src/rag/llm.py`, `src/rag/engine.py`). `chat.html` 은 여전히 비스트리밍 POST 를 씁니다. `/api/v1/chatbot/stream` 은 플래너·자동화·차트·세션 저장을 거치지 않아 화면을 그대로 옮길 수 없습니다. 아래 참조
 5. ~~**재학습 E2E 검증**~~ — **완료**. 결함 6건 발견·수정. [`docs/ops/retrain_pipeline_e2e.md`](../ops/retrain_pipeline_e2e.md)
-10. **재학습 모델 설계** — **부분 완료**. 특징 10개, LightGBM/CatBoost+K-Fold, 시계열 분할, 승격 임계값 0.005 margin 적용. **`inst_hist_rate` 는 미완**입니다. `institution_history.py` 가 학습·추론 어느 쪽에도 연결되지 않아 여전히 카테고리별 상수입니다. 행당 2쿼리라 용역 773,045행 기준 32시간이 걸려 배치 집계 설계가 필요하고, 한쪽만 연결하면 train/serve skew 가 발생합니다. 특징 선택·모델·임계값·분할 전략은 AGENTS.md 담당자 학습형 협업 규칙상 담당자 재검토 대상입니다.
+10. **재학습 모델 설계** — **부분 완료**. 특징 10개, LightGBM/CatBoost+K-Fold, 시계열 분할, 승격 임계값 0.005 margin 적용. **`inst_hist_rate` 는 미완**입니다. `institution_history.py` 가 학습·추론 어느 쪽에도 연결되지 않아 여전히 카테고리별 상수입니다. 행당 2쿼리라 용역 773,045행 기준 32시간이 걸려 배치 집계 설계가 필요하고, 한쪽만 연결하면 train/serve skew 가 발생합니다. 특징 선택·모델·임계값·분할 전략은 실측 비교 후 확정할 고도화 대상입니다.
 6. **크로스 플랫폼 검증** — Windows 환경에서 Docker + Makefile 실행 확인
 
 ### 실기동 확인 (2026-08-02 완료)
@@ -429,7 +429,7 @@ metrics = {'rmse': 4.5108, 'mape': 3.5131, 'r2': -0.0012}
 
 전 주기가 약 30초에 완주합니다. **R² -0.0012 는 평균값 예측보다 못하다는 뜻**입니다. 이전에는 rmse 0 / r2 1 로 가려져 있던 사실입니다.
 
-### 담당자 결정 대기 (TODO 10번)
+### 성능 고도화 대상 (TODO 10번)
 
 | 항목 | 현재 상태 |
 | --- | --- |
