@@ -42,6 +42,12 @@ CATEGORICAL_FEATURES = (
     "cntrct_mthd_nm",
     "prearng_mthd",
     "sucsfbid_mthd_nm",
+    "mid_clsfc_nm",
+    "clsfc_nm",
+    "ntce_kind_nm",
+    "bid_methd_nm",
+    "intrbid_yn",
+    "ppsw_gnrl_srvce_yn",
 )
 
 
@@ -206,6 +212,14 @@ def build_default_feature_map(
         "cntrct_mthd_nm": _coerce_category(features_dict.get("cntrct_mthd_nm")),
         "prearng_mthd": _coerce_category(features_dict.get("prearng_mthd")),
         "sucsfbid_mthd_nm": _coerce_category(features_dict.get("sucsfbid_mthd_nm")),
+        # 대분류 11종으로는 용역 종류별 하한율 별표를 담지 못합니다. 중분류 40종,
+        # 소분류 200종이 그 차이를 대리합니다 (제도 분석서 5.4 절).
+        "mid_clsfc_nm": _coerce_category(features_dict.get("mid_clsfc_nm")),
+        "clsfc_nm": _coerce_category(features_dict.get("clsfc_nm")),
+        "ntce_kind_nm": _coerce_category(features_dict.get("ntce_kind_nm")),
+        "bid_methd_nm": _coerce_category(features_dict.get("bid_methd_nm")),
+        "intrbid_yn": _coerce_category(features_dict.get("intrbid_yn")),
+        "ppsw_gnrl_srvce_yn": _coerce_category(features_dict.get("ppsw_gnrl_srvce_yn")),
         "log_price": log_price,
         "month": float(reference_ts.month),
         "weekday": float(reference_ts.weekday()),

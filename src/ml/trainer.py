@@ -58,6 +58,14 @@ TIME_SORT_COLUMN = "openg_dt"
 #   + 제도 범주         R2 0.6683  RMSE 2.7591
 #
 # 근거: docs/design/servc_segment_experiment_20260803.md
+#
+# 같은 날 세부분류(중/소)와 공고속성을 더했습니다. 학습 2024년까지, 검증 2025년
+# 96,141건 실측입니다.
+#
+#   범주 5종            R2 0.6767  RMSE 2.7312
+#   범주 11종           R2 0.6910  RMSE 2.6701
+#
+# 근거: docs/design/servc_restricted_competition_20260803.md
 NUMERIC_FEATURES = [
     "log_price",
     "month_sin",

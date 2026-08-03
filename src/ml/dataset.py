@@ -65,6 +65,13 @@ INSTITUTION_FIELDS = {
     "sucsfbid_mthd_nm": "sucsfbidMthdNm",  # 적격심사 구간이 문자열로 명시됨
     "srvce_div_nm": "srvceDivNm",  # 일반용역 / 기술용역. 산포가 7.92 대 2.97
     "lrg_clsfc_nm": "pubPrcrmntLrgClsfcNm",  # 공공조달 대분류 11종
+    # 일반용역은 추정가격 구간이 아니라 용역 종류별 별표로 낙찰하한율이 갈립니다
+    # (시설분야 89.995 대 보험 47.994). 대분류 11종으로는 그 차이를 못 담습니다.
+    # 근거: docs/design/g2b_procurement_institution_analysis.md 5.4 절
+    "mid_clsfc_nm": "pubPrcrmntMidClsfcNm",  # 중분류 40종
+    "clsfc_nm": "pubPrcrmntClsfcNm",  # 소분류 200종
+    "intrbid_yn": "intrbidYn",  # 국제입찰 여부
+    "ppsw_gnrl_srvce_yn": "ppswGnrlSrvceYn",  # 조달청 일반용역 여부
     "tech_ablt_evl_rt": "techAbltEvlRt",  # 협상 계약 기술능력 평가비율
     "bid_prce_evl_rt": "bidPrceEvlRt",  # 협상 계약 입찰가격 평가비율
     "tot_prdprc_num": "totPrdprcNum",  # 복수예비가격 총수 (통상 15)
@@ -79,6 +86,9 @@ TRAINING_COLUMNS = (
     "dminstt_nm",
     "category",
     "cntrct_mthd_nm",
+    # 재공고는 유찰 뒤 재입찰이라 경쟁이 약합니다 (낙찰률 94.15 대 등록공고 91.16).
+    "ntce_kind_nm",
+    "bid_methd_nm",
     "presmpt_prce",
     "base_amount",
     "bid_ntce_dt",
@@ -146,6 +156,8 @@ def build_training_dataset(
             BidResult.dminstt_nm,
             BidResult.category,
             BidAnnouncement.cntrct_mthd_nm,
+            BidAnnouncement.ntce_kind_nm,
+            BidAnnouncement.bid_methd_nm,
             BidAnnouncement.presmpt_prce,
             BidAnnouncement.base_amount,
             BidAnnouncement.bid_ntce_dt,
