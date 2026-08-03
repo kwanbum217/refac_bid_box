@@ -63,7 +63,15 @@ CAPABILITY_REGISTRY: dict[str, CapabilityDefinition] = {
         type="internal_tool",
         mutating=False,
         requires_confirmation=False,
-        allowed_params=("query", "institution_name", "category", "years", "date_from", "date_to"),
+        allowed_params=(
+            "query",
+            "institution_name",
+            "category",
+            "years",
+            "date_from",
+            "date_to",
+            "limit",
+        ),
         executor="src.app.services.tools.bid_query_tool.execute",
     ),
     "bid_prediction_tool": CapabilityDefinition(

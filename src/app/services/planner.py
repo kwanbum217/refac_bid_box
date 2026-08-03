@@ -15,6 +15,7 @@ from typing import Any, Literal, cast
 from src.app.schemas.chat import ChatExecutionPlan, ChatPlan, PlanStep
 from src.app.services.action_catalog import ACTION_CATALOG, DEFAULT_POLL_AFTER_MS
 from src.app.services.capability_registry import CAPABILITY_REGISTRY, get_capability
+from src.rag.engine import extract_result_limit, is_result_list_query
 
 LLM_PLAN_DRAFT_ENV = "CHATBOT_ENABLE_LLM_PLAN_DRAFT"
 
@@ -675,6 +676,16 @@ def interpret_request(
         return execution_plan
 
     # 7. 결과 상세 분석 및 시각화
+    if is_result_list_query(normalized):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = ["bid_query_tool"]
+        execution_plan.parameters.update(
+            _extract_bid_query_params(execution_plan.effective_query, execution_plan.filters)
+        )
+        execution_plan.parameters["limit"] = extract_result_limit(normalized)
+        execution_plan.reasoning = "recent winning result list request"
+        return execution_plan
+
     wants_detail = any(keyword in normalized for keyword in FOLLOWUP_DETAIL_KEYWORDS)
     wants_chart = any(keyword in normalized for keyword in FOLLOWUP_CHART_KEYWORDS)
     wants_ranking = any(keyword in normalized for keyword in FOLLOWUP_RANKING_KEYWORDS)

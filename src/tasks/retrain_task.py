@@ -27,6 +27,9 @@ from src.ml.validate_model import compare_champion_vs_challenger
 
 logger = logging.getLogger(__name__)
 
+# 데이터셋 parquet 캐시 위치. build_training_dataset 의 기본값과 같습니다.
+DEFAULT_FEATURE_STORE_DIR = "data/feature_store"
+
 # champion 이 없을 때 쓰는 비교 기준. 첫 학습이 무조건 승격되지 않도록
 # 의도적으로 낮은 난이도가 아닌 값을 둡니다. 담당자가 조정합니다.
 COLD_START_CHAMPION_METRICS = {"rmse": float("inf"), "mape": float("inf"), "r2": float("-inf")}
@@ -87,12 +90,20 @@ async def run_retrain_pipeline_task(
     trigger_source: str = "manual",
     category_code: str | None = None,
     require_announcement: bool = True,
+    output_dir: str = DEFAULT_FEATURE_STORE_DIR,
 ) -> dict[str, Any]:
-    """재학습 전 주기: 데이터셋 빌드 -> 학습 -> 홀드아웃 평가 -> 승격 판정 -> 이력 기록."""
+    """재학습 전 주기: 데이터셋 빌드 -> 학습 -> 홀드아웃 평가 -> 승격 판정 -> 이력 기록.
+
+    output_dir 을 노출하는 이유는 테스트 때문입니다. 기본값으로 두면 테스트가
+    소량 픽스처로 만든 프레임이 운영 feature store 의 parquet 을 덮어씁니다.
+    """
     db = SessionLocal()
     try:
         df_train = build_training_dataset(
-            db, category_code=category_code, require_announcement=require_announcement
+            db,
+            category_code=category_code,
+            output_dir=output_dir,
+            require_announcement=require_announcement,
         )
         if df_train.empty:
             _record(

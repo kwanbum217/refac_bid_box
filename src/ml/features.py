@@ -14,6 +14,11 @@ import numpy as np
 import pandas as pd
 
 from src.ml.institution_history import lookup_institution_history
+from src.ml.repeat_history import (
+    DEFAULT_REPEAT_RATE,
+    NO_HISTORY_DAYS,
+    lookup_repeat_history,
+)
 
 DEFAULT_INST_RATE = 0.925
 DEFAULT_INST_RATE_STD = 0.015
@@ -21,6 +26,115 @@ DEFAULT_NOTICE_DURATION_DAYS = 14.0
 DEFAULT_INSTITUTION_NAME = "미상기관"
 DEFAULT_PPI = 100.0
 DEFAULT_EXCHANGE_RATE = 1300.0
+
+# 낙찰하한율 2%p 일괄 인상 시행일. 이 날 이후 최초 공고분부터 신 기준이 적용됩니다.
+# 근거: 조달청공고 제2026-260호
+REGIME_SHIFT_DATE = pd.Timestamp("2026-05-26")
+
+# WTO 정부조달협정 기준 고시금액(중앙행정기관 물품·용역). 적격심사 배점표의
+# 구간을 가르는 임계값이라 연도별 실제 값을 써야 합니다.
+NOTICE_AMOUNT_BY_YEAR = {2025: 230_000_000, 2026: 230_000_000}
+DEFAULT_NOTICE_AMOUNT = 220_000_000
+
+MISSING_CATEGORY = "미상"
+
+# 범주형으로 학습하는 제도 특징입니다. 학습과 추론이 같은 범주 수준을 써야
+# 코드가 어긋나지 않으므로, 수준 목록을 모델 메타데이터에 저장하고
+# apply_categorical_dtypes 로 양쪽에서 동일하게 되살립니다.
+CATEGORICAL_FEATURES = (
+    "srvce_div_nm",
+    "lrg_clsfc_nm",
+    "cntrct_mthd_nm",
+    "prearng_mthd",
+    "sucsfbid_mthd_nm",
+    "mid_clsfc_nm",
+    "clsfc_nm",
+    "ntce_kind_nm",
+    "bid_methd_nm",
+    "intrbid_yn",
+    "ppsw_gnrl_srvce_yn",
+)
+
+
+def collect_category_levels(df: pd.DataFrame) -> dict[str, list[str]]:
+    """학습 프레임에서 범주 수준을 뽑습니다. 결과는 모델과 함께 저장합니다."""
+    levels: dict[str, list[str]] = {}
+    for column in CATEGORICAL_FEATURES:
+        if column not in df.columns:
+            continue
+        values = df[column].astype("string").fillna(MISSING_CATEGORY)
+        unique = sorted(set(values.tolist()) | {MISSING_CATEGORY})
+        levels[column] = unique
+    return levels
+
+
+def apply_categorical_dtypes(
+    df: pd.DataFrame,
+    levels: dict[str, list[str]] | None,
+) -> pd.DataFrame:
+    """저장된 범주 수준으로 dtype 을 복원합니다.
+
+    수준을 고정하지 않으면 추론 시점 프레임의 범주 코드가 학습 때와 달라져
+    모델이 조용히 다른 값을 읽습니다. train/serve skew 의 전형적인 형태입니다.
+    학습에서 못 본 값은 결측이 되므로 MISSING_CATEGORY 로 되돌립니다.
+    """
+    if not levels:
+        return df
+    out = df.copy()
+    for column, categories in levels.items():
+        if column not in out.columns:
+            continue
+        dtype = pd.CategoricalDtype(categories=categories)
+        converted = out[column].astype("string").fillna(MISSING_CATEGORY).astype(dtype)
+        if converted.isna().any() and MISSING_CATEGORY in categories:
+            converted = converted.fillna(MISSING_CATEGORY)
+        out[column] = converted
+    return out
+
+
+def _notice_amount_for(reference_ts) -> float:
+    return float(NOTICE_AMOUNT_BY_YEAR.get(reference_ts.year, DEFAULT_NOTICE_AMOUNT))
+
+
+def _repeat_features(features_dict: dict[str, Any], session: Any) -> dict[str, float]:
+    """재발주 이력 6종을 확정합니다.
+
+    프레임에 값이 있으면 그대로 씁니다(학습 경로). 없으면 조회하고, 조회도
+    실패하면 "이력 없음" 기본값으로 채웁니다.
+    """
+    if features_dict.get("is_repeat") is not None:
+        return {
+            "is_repeat": _coerce_float(features_dict.get("is_repeat"), 0.0),
+            "repeat_cnt": _coerce_float(features_dict.get("repeat_cnt"), 0.0),
+            "repeat_hist_rate": _coerce_float(
+                features_dict.get("repeat_hist_rate"), DEFAULT_REPEAT_RATE
+            ),
+            "repeat_prev_rate": _coerce_float(
+                features_dict.get("repeat_prev_rate"), DEFAULT_REPEAT_RATE
+            ),
+            "repeat_hist_std": _coerce_float(features_dict.get("repeat_hist_std"), 0.0),
+            "repeat_days_since": _coerce_float(
+                features_dict.get("repeat_days_since"), NO_HISTORY_DAYS
+            ),
+        }
+
+    found = lookup_repeat_history(features_dict, session)
+    if found is not None:
+        return found
+    return {
+        "is_repeat": 0.0,
+        "repeat_cnt": 0.0,
+        "repeat_hist_rate": DEFAULT_REPEAT_RATE,
+        "repeat_prev_rate": DEFAULT_REPEAT_RATE,
+        "repeat_hist_std": 0.0,
+        "repeat_days_since": NO_HISTORY_DAYS,
+    }
+
+
+def _coerce_category(value: Any) -> str:
+    if _is_missing(value) or value == "":
+        return MISSING_CATEGORY
+    return str(value)
 
 
 def _coerce_float(value: Any, default: float = 0.0) -> float:
@@ -101,6 +215,11 @@ def build_default_feature_map(
         provided_rate = lookup_institution_history(features_dict, session)
     inst_hist_rate = _coerce_float(provided_rate, DEFAULT_INST_RATE)
 
+    # 재발주 이력도 같은 구조입니다. 학습은 trainer 가 attach_repeat_history 로
+    # 미리 채우고, 추론은 여기서 조회합니다. 정의는 "기준 시점 이전 같은 기관의
+    # 같은 사업(정규화 공고명) 낙찰 결과" 로 양쪽이 같습니다.
+    repeat = _repeat_features(features_dict, session)
+
     inst_sample_cnt = _coerce_float(features_dict.get("inst_sample_cnt"), 0.0)
     inst_rate_mean_30d = _coerce_float(features_dict.get("inst_rate_mean_30d"), inst_hist_rate)
     inst_rate_std_90d = _coerce_float(features_dict.get("inst_rate_std_90d"), DEFAULT_INST_RATE_STD)
@@ -111,7 +230,44 @@ def build_default_feature_map(
     )
     price_ratio = (base_price / price) if price > 0 else 1.0
 
+    # 제도 특징입니다. 낙찰하한율은 낙찰률과 Spearman 0.71 로 가장 강한 신호지만
+    # 학습 표본의 33%, 추론 시점의 63% 가 결측이라 결측 지시자를 반드시 함께 냅니다.
+    # 결측을 0 으로 채우면 "하한율이 0" 과 구분되지 않아 모델이 잘못 학습합니다.
+    raw_lwlt = features_dict.get("lwlt_rate")
+    lwlt_missing = _is_missing(raw_lwlt) or _coerce_float(raw_lwlt, 0.0) <= 0.0
+    lwlt_rate = 0.0 if lwlt_missing else _coerce_float(raw_lwlt, 0.0)
+
+    notice_amount = _notice_amount_for(reference_ts)
+    notice_ts = _coerce_timestamp(features_dict.get("bid_ntce_dt")) or reference_ts
+
     feature_map: dict[str, Any] = {
+        "lwlt_rate": lwlt_rate,
+        "lwlt_rate_missing": 1.0 if lwlt_missing else 0.0,
+        "is_post_regime_shift": 1.0 if notice_ts >= REGIME_SHIFT_DATE else 0.0,
+        "notice_amt_ratio": (price / notice_amount) if notice_amount > 0 else 0.0,
+        "is_over_notice_amt": 1.0 if price >= notice_amount else 0.0,
+        # 협상에 의한 계약의 배점 구성. 기술 비중이 높을수록 낙찰률이 가격에
+        # 고정되지 않아 산포가 커집니다 (90:10 구간 표준편차 11.9).
+        "tech_ablt_evl_rt": _coerce_float(features_dict.get("tech_ablt_evl_rt"), 0.0),
+        "bid_prce_evl_rt": _coerce_float(features_dict.get("bid_prce_evl_rt"), 0.0),
+        "tot_prdprc_num": _coerce_float(features_dict.get("tot_prdprc_num"), 0.0),
+        "drwt_prdprc_num": _coerce_float(features_dict.get("drwt_prdprc_num"), 0.0),
+        "srvce_div_nm": _coerce_category(features_dict.get("srvce_div_nm")),
+        "lrg_clsfc_nm": _coerce_category(features_dict.get("lrg_clsfc_nm")),
+        "cntrct_mthd_nm": _coerce_category(features_dict.get("cntrct_mthd_nm")),
+        "prearng_mthd": _coerce_category(features_dict.get("prearng_mthd")),
+        "sucsfbid_mthd_nm": _coerce_category(features_dict.get("sucsfbid_mthd_nm")),
+        # 대분류 11종으로는 용역 종류별 하한율 별표를 담지 못합니다. 중분류 40종,
+        # 소분류 200종이 그 차이를 대리합니다 (제도 분석서 5.4 절).
+        "mid_clsfc_nm": _coerce_category(features_dict.get("mid_clsfc_nm")),
+        "clsfc_nm": _coerce_category(features_dict.get("clsfc_nm")),
+        "ntce_kind_nm": _coerce_category(features_dict.get("ntce_kind_nm")),
+        "bid_methd_nm": _coerce_category(features_dict.get("bid_methd_nm")),
+        "intrbid_yn": _coerce_category(features_dict.get("intrbid_yn")),
+        "ppsw_gnrl_srvce_yn": _coerce_category(features_dict.get("ppsw_gnrl_srvce_yn")),
+        # 재발주 이력. 용역은 같은 기관이 1~2년 주기로 같은 사업을 다시 냅니다
+        # (재발주 주기 중앙값 358일, 직전 낙찰률과의 절대차 중앙값 0.252%p).
+        **repeat,
         "log_price": log_price,
         "month": float(reference_ts.month),
         "weekday": float(reference_ts.weekday()),

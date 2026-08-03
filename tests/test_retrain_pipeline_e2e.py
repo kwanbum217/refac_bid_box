@@ -22,7 +22,9 @@ import pytest
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.predictions import RetrainLog
 from src.ml.dataset import (
+    MAX_PRESMPT_PRCE,
     MAX_WINNING_RATE,
+    MIN_PRESMPT_PRCE,
     MIN_WINNING_RATE,
     TRAINING_COLUMNS,
     build_training_dataset,
@@ -140,6 +142,113 @@ def test_builder_returns_empty_frame_when_no_data(isolated_db, tmp_path):
     assert df.empty
 
 
+def test_builder_filters_presmpt_prce_outliers(isolated_db, tmp_path):
+    """추정가격 이상값이 비율 특징의 평균을 통째로 망가뜨립니다 (실측 0.99%)."""
+    _seed(isolated_db, count=5)
+    for suffix, price in (("LOW", MIN_PRESMPT_PRCE - 1), ("HIGH", MAX_PRESMPT_PRCE + 1)):
+        isolated_db.add(
+            BidResult(
+                bid_ntce_no=f"OUT{suffix}",
+                bid_ntce_ord="00",
+                category="Servc",
+                sucsf_bid_amt=100,
+                sucsf_bid_rate=90.0,
+                rl_openg_dt=datetime(2024, 6, 1),
+                collected_at=datetime(2024, 6, 1),
+            )
+        )
+        isolated_db.add(
+            BidAnnouncement(
+                bid_ntce_no=f"OUT{suffix}",
+                bid_ntce_ord="000",
+                category="Servc",
+                presmpt_prce=price,
+                bid_ntce_dt=datetime(2024, 5, 1),
+                collected_at=datetime(2024, 6, 1),
+            )
+        )
+    isolated_db.commit()
+
+    df = build_training_dataset(isolated_db, category_code="Servc", output_dir=str(tmp_path))
+    assert len(df) == 5
+    assert df["presmpt_prce"].between(MIN_PRESMPT_PRCE, MAX_PRESMPT_PRCE).all()
+
+
+def test_builder_extracts_institution_fields_from_raw_data(isolated_db, tmp_path):
+    """낙찰하한율 등 제도 필드는 정식 컬럼이 아니라 raw_data JSON 안에만 있습니다."""
+    base = datetime(2024, 1, 1, 9, 0, 0)
+    isolated_db.add(
+        BidResult(
+            bid_ntce_no="INST01",
+            bid_ntce_ord="00",
+            category="Servc",
+            sucsf_bid_amt=100_000_000,
+            sucsf_bid_rate=88.5,
+            rl_openg_dt=base,
+            collected_at=base,
+        )
+    )
+    isolated_db.add(
+        BidAnnouncement(
+            bid_ntce_no="INST01",
+            bid_ntce_ord="000",
+            category="Servc",
+            presmpt_prce=110_000_000,
+            bid_ntce_dt=base - timedelta(days=14),
+            collected_at=base,
+            raw_data={
+                "sucsfbidLwltRate": "87.745",
+                "srvceDivNm": "기술용역",
+                "pubPrcrmntLrgClsfcNm": "기술용역",
+                "prearngPrceDcsnMthdNm": "복수예가",
+                "totPrdprcNum": "15",
+                "drwtPrdprcNum": "4",
+            },
+        )
+    )
+    isolated_db.commit()
+
+    df = build_training_dataset(isolated_db, category_code="Servc", output_dir=str(tmp_path))
+    assert len(df) == 1
+    row = df.iloc[0]
+    assert float(row["lwlt_rate"]) == pytest.approx(87.745)
+    assert row["srvce_div_nm"] == "기술용역"
+    assert row["prearng_mthd"] == "복수예가"
+    assert float(row["tot_prdprc_num"]) == 15
+    assert float(row["drwt_prdprc_num"]) == 4
+
+
+def test_builder_treats_zero_lower_limit_as_missing(isolated_db, tmp_path):
+    """하한율 0 은 값이 아니라 미기재입니다. 0 으로 두면 특징이 잘못 학습됩니다."""
+    base = datetime(2024, 1, 1, 9, 0, 0)
+    isolated_db.add(
+        BidResult(
+            bid_ntce_no="ZERO01",
+            bid_ntce_ord="00",
+            category="Servc",
+            sucsf_bid_amt=100_000_000,
+            sucsf_bid_rate=88.5,
+            rl_openg_dt=base,
+            collected_at=base,
+        )
+    )
+    isolated_db.add(
+        BidAnnouncement(
+            bid_ntce_no="ZERO01",
+            bid_ntce_ord="000",
+            category="Servc",
+            presmpt_prce=110_000_000,
+            bid_ntce_dt=base - timedelta(days=14),
+            collected_at=base,
+            raw_data={"sucsfbidLwltRate": "0"},
+        )
+    )
+    isolated_db.commit()
+
+    df = build_training_dataset(isolated_db, category_code="Servc", output_dir=str(tmp_path))
+    assert df["lwlt_rate"].isna().all()
+
+
 # --------------------------------------------------------------------------- #
 # 학습기 평가
 # --------------------------------------------------------------------------- #
@@ -210,14 +319,16 @@ def test_gate_rejects_worse_challenger():
 
 
 @pytest.mark.asyncio
-async def test_pipeline_skips_and_logs_when_no_data(isolated_db, monkeypatch):
+async def test_pipeline_skips_and_logs_when_no_data(isolated_db, monkeypatch, tmp_path):
     """데이터가 없을 때 학습을 성공으로 보고하면 안 됩니다."""
     from src.tasks import retrain_task
 
     monkeypatch.setattr(retrain_task, "SessionLocal", lambda: isolated_db)
     isolated_db.close = lambda: None
 
-    outcome = await retrain_task.run_retrain_pipeline_task({}, category_code="Servc")
+    outcome = await retrain_task.run_retrain_pipeline_task(
+        {}, category_code="Servc", output_dir=str(tmp_path)
+    )
 
     assert outcome["status"] == "skipped"
     log = isolated_db.query(RetrainLog).one()
@@ -235,7 +346,11 @@ async def test_pipeline_records_history(isolated_db, monkeypatch, tmp_path):
     isolated_db.close = lambda: None
 
     outcome = await retrain_task.run_retrain_pipeline_task(
-        {}, trigger_source="unit", category_code="Servc", require_announcement=False
+        {},
+        trigger_source="unit",
+        category_code="Servc",
+        require_announcement=False,
+        output_dir=str(tmp_path),
     )
 
     assert outcome["status"] == "success"
@@ -245,6 +360,35 @@ async def test_pipeline_records_history(isolated_db, monkeypatch, tmp_path):
     assert log.trigger_source == "unit"
     assert log.challenger_version == outcome["version"]
     assert log.metrics_summary["challenger_metrics"]["rmse"] > 0.0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_does_not_write_default_feature_store(isolated_db, monkeypatch, tmp_path):
+    """테스트가 운영 feature store 의 parquet 을 픽스처로 덮어쓴 적이 있습니다.
+
+    2026-08-03 에 실제로 발생했습니다. 91만행짜리 dataset_Servc.parquet 이
+    테스트 픽스처 80행으로 교체되어 실험이 조용히 잘못된 데이터로 돌았습니다.
+    """
+    from src.ml import dataset as dataset_module
+    from src.tasks import retrain_task
+
+    captured: list[str] = []
+    original = dataset_module.build_training_dataset
+
+    def _spy(db_session, *args, **kwargs):
+        captured.append(kwargs.get("output_dir", dataset_module.DEFAULT_OUTPUT_DIR))
+        return original(db_session, *args, **kwargs)
+
+    monkeypatch.setattr(retrain_task, "build_training_dataset", _spy)
+    monkeypatch.setattr(retrain_task, "SessionLocal", lambda: isolated_db)
+    isolated_db.close = lambda: None
+
+    await retrain_task.run_retrain_pipeline_task(
+        {}, category_code="Servc", output_dir=str(tmp_path)
+    )
+
+    assert captured == [str(tmp_path)]
+    assert dataset_module.DEFAULT_OUTPUT_DIR not in captured
 
 
 @pytest.mark.asyncio
@@ -259,10 +403,10 @@ async def test_champion_is_read_before_training(isolated_db, monkeypatch, tmp_pa
     isolated_db.close = lambda: None
 
     first = await retrain_task.run_retrain_pipeline_task(
-        {}, category_code="Servc", require_announcement=False
+        {}, category_code="Servc", require_announcement=False, output_dir=str(tmp_path)
     )
     second = await retrain_task.run_retrain_pipeline_task(
-        {}, category_code="Servc", require_announcement=False
+        {}, category_code="Servc", require_announcement=False, output_dir=str(tmp_path)
     )
 
     assert first["champion_version"] == ""

@@ -100,6 +100,12 @@ ignore = [
 "src/app/api/v1/bids.py" = [
     "B904",  # HTTPException 재발생 시 raise from 생략
 ]
+"scripts/verify_servc_institution.py" = [
+    "S608",  # 검증 전용 질의. 보간값은 모듈 상수뿐이며 외부 입력이 없습니다
+]
+"scripts/survey_servc_fields.py" = [
+    "S608",  # 조사 전용 질의. 보간값은 ALL_FIELDS 상수뿐이며 외부 입력이 없습니다
+]
 "src/app/core/templating.py" = [
     "S704",  # json.dumps 결과만 Markup 으로 감쌉니다
 ]

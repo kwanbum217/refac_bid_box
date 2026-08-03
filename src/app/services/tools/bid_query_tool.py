@@ -24,6 +24,7 @@ def execute(
     years: int = 5,
     date_from: str = "",
     date_to: str = "",
+    limit: int = 0,
     **_ignored: Any,
 ) -> dict[str, Any]:
     retrieval_plan = build_retrieval_plan(query)
@@ -38,6 +39,8 @@ def execute(
         filters["date_to"] = date_to
     if years and "date_from" not in filters and "date_to" not in filters:
         filters["relative_years"] = years
+    if limit:
+        filters["result_limit"] = min(max(int(limit), 1), 20)
 
     explicit_plan = RetrievalPlan(
         use_sql=True,

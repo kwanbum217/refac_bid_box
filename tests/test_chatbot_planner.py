@@ -116,6 +116,15 @@ def test_plan_statistics_answer_uses_bid_query_tool():
     assert "chart_builder" in [step.tool for step in plan.steps]
 
 
+def test_plan_result_list_request_uses_bid_query_tool():
+    plan = plan_chat_request("최근 낙찰된 용역 사업 5개만 리스트 해봐라")
+    assert plan.mode == "answer"
+    assert plan.intent_type == "statistics_query"
+    assert plan.steps[0].tool == "bid_query_tool"
+    assert plan.steps[0].params["category"] == "Servc"
+    assert plan.steps[0].params["limit"] == 5
+
+
 def test_plan_hybrid_answer_uses_bid_and_semantic_tools():
     plan = plan_chat_request("최근 낙찰률 추세와 사례를 같이 알려줘")
     assert plan.mode == "answer"
