@@ -27,7 +27,11 @@ services:
       - ./ml_registry:/app/ml_registry
       - ./data:/app/data
 
+  # 동결된 React 스캐폴드입니다. docs/design/FRONTEND_DECISION.md 에 따라
+  # 정본 UI 는 SSR(Jinja2) 이며 원본과 디자인이 다른 이 서비스는 기본 기동에서 제외합니다.
+  # 참조가 필요할 때만 다음으로 띄웁니다: docker compose --profile legacy up -d frontend
   frontend:
+    profiles: ["legacy"]
     build:
       context: ./frontend
       dockerfile: Dockerfile
