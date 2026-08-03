@@ -148,6 +148,12 @@ dump.rdb
 appendonly.aof
 appendonlydir/
 
+# DB 덤프와 백업 아카이브. GB 단위 이진 파일이라 저장소에 담지 않습니다.
+# 체크섬(data/backups/data_assets_checksums.json)만 추적해 무결성을 검증합니다.
+data/backups/*.sql
+data/backups/*.sql.gz
+data/backups/*.tar.gz
+
 # ============================================================
 # Caches / logs / runtime
 # ============================================================
