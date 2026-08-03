@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.app.core.timeutil import utcnow
+
 
 class PredictionRequest(BaseModel):
     bid_notice_no: str | None = Field(None, description="공고번호 (선택)")
@@ -19,7 +21,7 @@ class PredictionResponse(BaseModel):
     predicted_rate: float = Field(..., description="예측 투찰률 (%)")
     model_version: str = Field(..., description="사용한 ML Champion 모델 버전")
     features_used: dict[str, Any] = Field(..., description="추론에 사용된 단일 특징 레코드")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class PredictPriceRequest(BaseModel):

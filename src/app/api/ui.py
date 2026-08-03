@@ -8,7 +8,6 @@ src/app/api/ui.py
 
 from __future__ import annotations
 
-from datetime import datetime
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
@@ -26,6 +25,7 @@ from src.app.core.security import (
     destroy_session,
 )
 from src.app.core.templating import templates
+from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement
 from src.app.models.chatbot import ChatSessionState
@@ -295,7 +295,7 @@ async def login_submit(
         response.status_code = 403
         return response
 
-    account.last_login = datetime.utcnow()
+    account.last_login = utcnow()
     db.commit()
 
     redirect = RedirectResponse(url=next or "/", status_code=303)

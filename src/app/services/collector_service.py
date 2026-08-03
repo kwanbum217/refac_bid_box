@@ -9,12 +9,13 @@ src/app/services/collector_service.py
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import DATASET_ANNOUNCEMENT, DATASET_RESULT, BidAnnouncement, BidResult
 from src.app.services.api_collector import (
     BID_CATEGORIES,
@@ -45,7 +46,7 @@ def _bulk_insert(db: Session, model, rows: list[dict[str, Any]]) -> int:
         if not chunk:
             continue
         for row in chunk:
-            row.setdefault("collected_at", datetime.utcnow())
+            row.setdefault("collected_at", utcnow())
         db.execute(stmt, chunk)
         db.commit()
         inserted += len(chunk)
@@ -71,7 +72,7 @@ async def collect_bids(
             "total_records": 0,
         }
 
-    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y%m%d")
+    yesterday = (utcnow() - timedelta(days=1)).strftime("%Y%m%d")
     start_date = start_date or yesterday
     end_date = end_date or yesterday
     target_categories = categories or tuple(BID_CATEGORIES.keys())

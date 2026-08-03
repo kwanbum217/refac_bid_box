@@ -1,8 +1,7 @@
-from datetime import datetime
-
 from sqlalchemy import JSON, BigInteger, Column, DateTime, Numeric, String
 
 from src.app.core.db import Base, PKBigInteger
+from src.app.core.timeutil import utcnow
 
 
 class PredictionResult(Base):
@@ -18,7 +17,7 @@ class PredictionResult(Base):
     predicted_upper_bound = Column(BigInteger, nullable=True, comment="예측 상한가")
     predicted_optimal_price = Column(BigInteger, nullable=True, comment="최적 투찰 추천가")
     confidence_score = Column(Numeric(5, 4), nullable=True, comment="신뢰도 점수")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="예측 일시")
+    created_at = Column(DateTime, nullable=False, default=utcnow, comment="예측 일시")
 
 
 
@@ -32,4 +31,4 @@ class RetrainLog(Base):
     challenger_version = Column(String(50), nullable=False)
     status = Column(String(30), nullable=False)
     metrics_summary = Column(JSON, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow)

@@ -8,8 +8,7 @@ Django 템플릿 렌더링 테스트는 React 프론트엔드로 대체되어 �
  - 대시보드 통계 API / 비교 통계 API 기본 동작
 """
 
-from datetime import datetime
-
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, extract_business_budget
 
 
@@ -41,7 +40,7 @@ def _make_announcement(**overrides):
         "dminstt_nm": "Test agency",
         "base_amount": 110000000,
         "presmpt_prce": 100000000,
-        "bid_ntce_dt": datetime.utcnow(),
+        "bid_ntce_dt": utcnow(),
         "category": "Thng",
         "raw_data": None,
     }
@@ -93,7 +92,7 @@ def test_dashboard_stats_api_returns_basic_structure(client, isolated_db):
         bidwinnr_nm="Test vendor",
         sucsf_bid_amt=950000,
         sucsf_bid_rate=95.0,
-        rl_openg_dt=datetime.utcnow(),
+        rl_openg_dt=utcnow(),
         dminstt_nm="Test agency",
         category="Servc",
     )

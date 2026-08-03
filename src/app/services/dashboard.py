@@ -16,6 +16,7 @@ from sqlalchemy import BigInteger, String, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from src.app.core.cache import cache
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import (
     DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
@@ -219,7 +220,7 @@ def rebuild_bid_dataset_summary(db: Session, dataset: str) -> BidDatasetSummary:
     else:
         for field, value in defaults.items():
             setattr(summary, field, value)
-        summary.rebuilt_at = datetime.utcnow()
+        summary.rebuilt_at = utcnow()
     db.commit()
     db.refresh(summary)
     return summary
@@ -246,7 +247,7 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
     if data:
         return data
 
-    now = datetime.utcnow()
+    now = utcnow()
     one_year_ago = now - timedelta(days=365)
 
     scoped = db.execute(
@@ -334,7 +335,7 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
     if data:
         return data
 
-    now = datetime.utcnow()
+    now = utcnow()
     one_year_ago = now - timedelta(days=365)
 
     # 매칭 데이터 (최근 1년)

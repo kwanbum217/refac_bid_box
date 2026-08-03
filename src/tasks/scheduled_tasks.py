@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
 from typing import Any
 
 from src.app.core.config import settings
 from src.app.core.db import SessionLocal
+from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import PipelineExecution
 from src.app.services.automation_orchestrator import STATUS_RUNNING
 from src.tasks.automation_tasks import run_automation_pipeline
@@ -42,7 +42,7 @@ def _create_scheduled_execution(db, run_mode: str, trigger_name: str) -> str:
             run_mode=run_mode,
             status=STATUS_RUNNING,
             source=SCHEDULER_SOURCE,
-            started_at=datetime.utcnow(),
+            started_at=utcnow(),
             raw_status_payload={
                 "action_key": run_mode,
                 "trigger_name": trigger_name,

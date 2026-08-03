@@ -8,11 +8,10 @@ src/app/models/accounts.py
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import Boolean, Column, DateTime, Integer, String
 
 from src.app.core.db import Base, PKBigInteger
+from src.app.core.timeutil import utcnow
 
 GENDER_CHOICES = {
     "M": "남성",
@@ -37,7 +36,7 @@ class CustomUser(Base):
     email = Column(String(254), nullable=False, default="")
     is_staff = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
-    date_joined = Column(DateTime, nullable=False, default=datetime.utcnow)
+    date_joined = Column(DateTime, nullable=False, default=utcnow)
     nickname = Column(String(50), nullable=False, default="")
     birth_y = Column(Integer, nullable=True)
     birth_m = Column(Integer, nullable=True)

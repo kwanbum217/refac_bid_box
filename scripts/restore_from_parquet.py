@@ -25,6 +25,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.app.core.timeutil import utcnow
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -185,7 +187,7 @@ def _map_announcement(record: dict[str, Any], category: str, extra_keys: tuple[s
         "cntrct_mthd_nm": _to_text(record.get("cntrct_mthd_nm"), 100),
         "category": _to_text(record.get("category"), 10) or category,
         "raw_data": _build_raw_data(record, extra_keys),
-        "collected_at": _to_datetime(record.get("collected_at")) or datetime.utcnow(),
+        "collected_at": _to_datetime(record.get("collected_at")) or utcnow(),
     }
 
 
@@ -202,7 +204,7 @@ def _map_result(record: dict[str, Any], category: str, extra_keys: tuple[str, ..
         "dminstt_nm": _to_text(record.get("dminstt_nm"), 200),
         "category": _to_text(record.get("category"), 10) or category,
         "raw_data": _build_raw_data(record, extra_keys),
-        "collected_at": _to_datetime(record.get("collected_at")) or datetime.utcnow(),
+        "collected_at": _to_datetime(record.get("collected_at")) or utcnow(),
     }
 
 

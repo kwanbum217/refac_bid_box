@@ -8,9 +8,10 @@ tests/test_automation_status_api.py
 이어지는가" 이므로 Harness 고유 필드만 제외하고 그대로 옮겼습니다.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
+from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import AutomationRequest, KnowledgeBaseStatus, PipelineExecution
 from src.app.services.action_catalog import get_action
 from src.app.services.automation_orchestrator import make_callback_token
@@ -54,7 +55,7 @@ def _seed_kb_status(db) -> KnowledgeBaseStatus:
         status="ready",
         source_bid_count=321,
         last_pipeline_run_id="exec_002",
-        updated_at=datetime.utcnow(),
+        updated_at=utcnow(),
     )
     db.add(kb)
     db.commit()
@@ -386,7 +387,7 @@ def test_cancel_pending_confirmation_does_not_abort_worker_job(
 
 
 def _seed_successful_execution(db, *, age: timedelta, run_mode: str, execution_id: str):
-    started_at = datetime.utcnow() - age
+    started_at = utcnow() - age
     execution = PipelineExecution(
         execution_id=execution_id,
         pipeline_name=_full_validation_pipeline(),

@@ -18,7 +18,7 @@ import logging
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
+from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import AutomationRequest, PipelineExecution
 from src.app.schemas.chat import ChatPlan, PlanStep
 from src.app.services.action_catalog import DEFAULT_POLL_AFTER_MS, get_action
@@ -606,7 +607,7 @@ def start_automation_request(db: Session, request_obj: AutomationRequest) -> Aut
     if not action and not pipeline_step:
         request_obj.status = STATUS_SUCCESS
         request_obj.result_summary = "실행 파이프라인이 필요하지 않은 요청입니다."
-        request_obj.completed_at = datetime.utcnow()
+        request_obj.completed_at = utcnow()
         db.commit()
         db.refresh(request_obj)
         return request_obj
@@ -636,13 +637,13 @@ def start_automation_request(db: Session, request_obj: AutomationRequest) -> Aut
 
     request_obj.plan_execution_id = trigger["execution_id"]
     request_obj.harness_execution_id = trigger["execution_id"]
-    request_obj.started_at = datetime.utcnow()
+    request_obj.started_at = utcnow()
     if trigger["enqueued"]:
         request_obj.status = STATUS_RUNNING
         request_obj.result_summary = "자동화 작업이 실행 큐에 등록되었습니다."
     else:
         request_obj.status = STATUS_FAILED
-        request_obj.completed_at = datetime.utcnow()
+        request_obj.completed_at = utcnow()
         request_obj.result_summary = "자동화 작업 등록에 실패했습니다."
         request_obj.error_message = "Arq 브로커(Redis)에 연결하지 못했습니다."
     db.commit()
@@ -673,7 +674,7 @@ def _find_reusable_execution(
         PipelineExecution.created_at.desc(),
     ).limit(20)
 
-    cutoff = datetime.utcnow() - timedelta(hours=REUSE_MAX_AGE_HOURS)
+    cutoff = utcnow() - timedelta(hours=REUSE_MAX_AGE_HOURS)
     for execution in db.execute(stmt).scalars().all():
         reference_time = execution.ended_at or execution.started_at or execution.created_at
         if reference_time and reference_time >= cutoff:
@@ -713,8 +714,8 @@ def _attach_reused_execution(
     request_obj.plan_execution_id = execution.execution_id
     request_obj.harness_execution_id = execution.execution_id
     request_obj.execution_url = execution.external_url or ""
-    request_obj.started_at = execution.started_at or request_obj.started_at or datetime.utcnow()
-    request_obj.completed_at = execution.ended_at or datetime.utcnow()
+    request_obj.started_at = execution.started_at or request_obj.started_at or utcnow()
+    request_obj.completed_at = execution.ended_at or utcnow()
     request_obj.status = STATUS_SUCCESS
     request_obj.result_summary = summary
     request_obj.result_payload = {
@@ -777,7 +778,7 @@ def _try_reuse_recent_execution(
 def confirm_automation_request(db: Session, request_obj: AutomationRequest) -> AutomationRequest:
     if request_obj.confirmed_at:
         return request_obj
-    request_obj.confirmed_at = datetime.utcnow()
+    request_obj.confirmed_at = utcnow()
     request_obj.status = STATUS_QUEUED
     request_obj.result_summary = "실행 확인이 완료되었습니다."
     db.commit()
@@ -804,14 +805,14 @@ def cancel_automation_request(db: Session, request_obj: AutomationRequest) -> Au
 
     payload = dict(request_obj.payload or {})
     payload["canceled_by_user"] = {
-        "requested_at": datetime.utcnow().isoformat(),
+        "requested_at": utcnow().isoformat(),
         "plan_execution_id": request_obj.plan_execution_id,
         "arq_job_id": arq_job_id,
         "worker_abort_requested": abort_succeeded,
     }
     request_obj.payload = payload
     request_obj.status = STATUS_CANCELED
-    request_obj.completed_at = datetime.utcnow()
+    request_obj.completed_at = utcnow()
     request_obj.result_summary = "사용자 요청으로 분석 실행을 중지했습니다."
     request_obj.error_message = ""
 
@@ -821,7 +822,7 @@ def cancel_automation_request(db: Session, request_obj: AutomationRequest) -> Au
         execution.raw_status_payload = raw_payload
         execution.status = STATUS_FAILED
         execution.stage_status = STATUS_CANCELED
-        execution.ended_at = datetime.utcnow()
+        execution.ended_at = utcnow()
         execution.logs_summary = "사용자 요청으로 중지되었습니다."
 
     db.commit()
@@ -840,7 +841,7 @@ def sync_automation_status(db: Session, request_obj: AutomationRequest) -> Autom
     request_obj.status = execution.status
     request_obj.execution_url = execution.external_url or request_obj.execution_url
     if execution.status in TERMINAL_STATUSES and not request_obj.completed_at:
-        request_obj.completed_at = execution.ended_at or datetime.utcnow()
+        request_obj.completed_at = execution.ended_at or utcnow()
     if execution.logs_summary and not request_obj.result_summary:
         request_obj.result_summary = execution.logs_summary
     db.commit()
@@ -867,7 +868,7 @@ def apply_callback_payload(
         "summary": summary,
         "metrics": metrics,
         "artifacts": artifacts,
-        "received_at": datetime.utcnow().isoformat(),
+        "received_at": utcnow().isoformat(),
     }
     result_payload["steps"] = steps
     request_obj.result_payload = result_payload
@@ -877,14 +878,14 @@ def apply_callback_payload(
 
     if is_final and not was_canceled:
         request_obj.status = STATUS_SUCCESS if status in {"success", "succeeded"} else STATUS_FAILED
-        request_obj.completed_at = datetime.utcnow()
+        request_obj.completed_at = utcnow()
         if request_obj.status == STATUS_FAILED and not request_obj.error_message:
             request_obj.error_message = summary or "자동화 실행이 실패했습니다."
 
         execution = _get_pipeline_execution(db, request_obj)
         if execution is not None:
             execution.status = request_obj.status
-            execution.ended_at = datetime.utcnow()
+            execution.ended_at = utcnow()
             execution.metrics_json = metrics or execution.metrics_json
             execution.logs_summary = summary or execution.logs_summary
 
@@ -923,7 +924,7 @@ def enqueue_pipeline_run(
             run_mode=run_mode,
             status=STATUS_QUEUED,
             source="chatbot",
-            started_at=datetime.utcnow(),
+            started_at=utcnow(),
             raw_status_payload={
                 "action_key": action_key,
                 "task_name": task_name,
@@ -954,7 +955,7 @@ def enqueue_pipeline_run(
         else:
             execution.status = STATUS_FAILED
             execution.logs_summary = "Arq 브로커에 연결하지 못해 실행을 등록하지 못했습니다."
-            execution.ended_at = datetime.utcnow()
+            execution.ended_at = utcnow()
         db.commit()
 
     return {

@@ -9,12 +9,12 @@ Django 세션 대신 session_key 를 명시 전달받아 chat_session_states 테
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import ChatSessionState
 from src.app.schemas.chat import ChatPlan
 
@@ -274,7 +274,7 @@ def remember_chat_interaction(
     if kb_version:
         state.last_kb_version = kb_version
     state.chat_history_json = history[-(MAX_HISTORY_TURNS * 2) :]
-    state.updated_at = datetime.utcnow()
+    state.updated_at = utcnow()
 
     db.commit()
     db.refresh(state)
@@ -291,7 +291,7 @@ def remember_chat_interaction(
             if plan is not None:
                 user_state.last_plan_json = plan.model_dump()
             user_state.last_filters_json = user_filters
-            user_state.updated_at = datetime.utcnow()
+            user_state.updated_at = utcnow()
             db.commit()
 
     return state

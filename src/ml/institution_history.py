@@ -27,6 +27,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from src.app.core.timeutil import utcnow
+
 # SQLAlchemy 와 pandas 는 이 모듈이 실제로 DB/프레임을 태울 때만 지연 임포트합니다.
 # 테스트 환경이나 모델 로드 시 불필요한 의존성을 피하기 위함입니다.
 if TYPE_CHECKING:
@@ -104,7 +106,7 @@ def _resolve_reference_date(features_dict: dict[str, Any]) -> datetime:
             # 파싱 실패한 후보 키는 건너뛰고 다음 키를 봅니다
             except Exception:  # nosec B112
                 continue
-    return datetime.utcnow()
+    return utcnow()
 
 
 def calculate_institution_win_rate(
@@ -279,7 +281,7 @@ def rebuild_institution_stats(session: Any, *, min_samples: int = HISTORY_MIN_SA
     )
 
     rows = session.execute(stmt).all()
-    now = datetime.utcnow()
+    now = utcnow()
     payload = [
         {
             "institution_name": name,

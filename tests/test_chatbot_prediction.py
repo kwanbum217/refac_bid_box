@@ -7,9 +7,10 @@ tests/test_chatbot_prediction.py
 마크다운 계약으로 렌더링되는가" 를 봅니다. 모델 추론은 원본과 동일하게 mock 합니다.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
 from src.app.models.chatbot import ChatSessionState, KnowledgeBaseStatus
 from src.rag.schemas import AnswerBundle, Provenance
@@ -54,7 +55,7 @@ def _seed_kb_status(db, **overrides) -> KnowledgeBaseStatus:
         "status": "ready",
         "source_bid_count": 321,
         "last_pipeline_run_id": "exec_002",
-        "updated_at": datetime.utcnow(),
+        "updated_at": utcnow(),
     }
     payload.update(overrides)
     kb = KnowledgeBaseStatus(**payload)
@@ -64,7 +65,7 @@ def _seed_kb_status(db, **overrides) -> KnowledgeBaseStatus:
 
 
 def _seed_bid(db, index: int = 0, **overrides) -> BidAnnouncement:
-    now = datetime.utcnow()
+    now = utcnow()
     payload = {
         "bid_ntce_nm": f"최근 물품 공고 {index + 1}",
         "bid_ntce_no": f"BID-GOODS-{index + 1:03d}",
@@ -142,7 +143,7 @@ def test_chat_predicts_requested_count_of_latest_goods_bids(
     kb_refresh 를 알려야 합니다 (원본과 동일한 분리 규칙).
     """
     _login(client)
-    _seed_kb_status(isolated_db, updated_at=datetime.utcnow() - timedelta(hours=30))
+    _seed_kb_status(isolated_db, updated_at=utcnow() - timedelta(hours=30))
     for index in range(5):
         _seed_bid(isolated_db, index)
 
@@ -300,7 +301,7 @@ def test_chat_answer_mode_includes_proactive_suggestions(
     _seed_kb_status(
         isolated_db,
         source_bid_count=0,
-        updated_at=datetime.utcnow() - timedelta(days=2),
+        updated_at=utcnow() - timedelta(days=2),
     )
 
     payload = _chat(client, "최근 공고 특징 알려줘").json()

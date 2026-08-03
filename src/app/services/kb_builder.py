@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import (
     CATEGORY_LABELS,
     BidAnnouncement,
@@ -62,7 +63,7 @@ def _upsert_kb_status(db: Session, **fields: Any) -> None:
         db.add(status)
     for key, value in fields.items():
         setattr(status, key, value)
-    status.updated_at = datetime.utcnow()
+    status.updated_at = utcnow()
     db.commit()
 
 
@@ -157,7 +158,7 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
             pass
         collection = chroma_client.create_collection(name=COLLECTION_NAME)
 
-        one_year_ago = datetime.utcnow() - timedelta(days=365)
+        one_year_ago = utcnow() - timedelta(days=365)
         announcements, source_mode = _resolve_announcements(db, one_year_ago)
 
         results = (
@@ -212,7 +213,7 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
         if indexed_count == 0:
             raise RuntimeError("최근 1년 기준으로 인덱싱할 공고/낙찰 데이터가 없습니다.")
 
-        embedded_at = datetime.utcnow()
+        embedded_at = utcnow()
         summary = f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"
         _upsert_kb_status(
             db,

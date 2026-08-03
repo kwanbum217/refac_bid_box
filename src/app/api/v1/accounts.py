@@ -16,7 +16,7 @@ src/app/api/v1/accounts.py
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -33,6 +33,7 @@ from src.app.core.security import (
     make_password,
     read_session,
 )
+from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
@@ -138,7 +139,7 @@ def signup(payload: SignUpRequest, response: Response, db: Session = Depends(get
         birth_m=payload.birth_date.month,
         birth_d=payload.birth_date.day,
         gender=payload.gender,
-        date_joined=datetime.utcnow(),
+        date_joined=utcnow(),
     )
     db.add(user)
     db.commit()
@@ -159,7 +160,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     if not user.is_active:
         raise HTTPException(status_code=403, detail="비활성화된 계정입니다.")
 
-    user.last_login = datetime.utcnow()
+    user.last_login = utcnow()
     db.commit()
     db.refresh(user)
 

@@ -19,6 +19,8 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from src.app.core.timeutil import utcnow
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -63,7 +65,7 @@ async def _backfill(
     until: str | None = None,
     fetch_types: tuple[str, ...] = ("announce", "result"),
 ) -> int:
-    today = datetime.utcnow().date()
+    today = utcnow().date()
     session = SessionLocal()
     total_announcements = 0
     total_results = 0

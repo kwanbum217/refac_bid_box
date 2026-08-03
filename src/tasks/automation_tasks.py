@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from src.app.core.db import SessionLocal
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import PipelineExecution
 from src.app.services.automation_orchestrator import (
@@ -94,7 +95,7 @@ async def _step_collect(db) -> tuple[str, dict[str, Any]]:
         today_rows = db.scalar(
             select(func.count(BidAnnouncement.id)).where(
                 BidAnnouncement.collected_at
-                >= datetime.combine(datetime.utcnow().date(), datetime.min.time())
+                >= datetime.combine(utcnow().date(), datetime.min.time())
             )
         )
         return (
@@ -186,7 +187,7 @@ def _check_chroma_vectors() -> int | None:
 
 def _step_inspect(db) -> tuple[str, dict[str, Any]]:
     """데이터 최신성 점검 (원본 final_inspect 지표 대응)."""
-    now = datetime.utcnow()
+    now = utcnow()
     week_ago = now - timedelta(days=7)
     today_start = datetime.combine(now.date(), datetime.min.time())
 
@@ -304,7 +305,7 @@ async def run_automation_pipeline(
         ).scalar_one_or_none()
         if execution is not None:
             execution.status = STATUS_RUNNING
-            execution.started_at = execution.started_at or datetime.utcnow()
+            execution.started_at = execution.started_at or utcnow()
             db.commit()
 
         try:
@@ -347,7 +348,7 @@ async def run_automation_pipeline(
         if execution is not None:
             execution.status = STATUS_SUCCESS
             execution.stage_status = STATUS_SUCCESS
-            execution.ended_at = datetime.utcnow()
+            execution.ended_at = utcnow()
             execution.logs_summary = final_summary
             execution.metrics_json = {"completed_steps": completed}
             db.commit()
@@ -370,7 +371,7 @@ async def run_automation_pipeline(
         ).scalar_one_or_none()
         if execution is not None:
             execution.status = STATUS_FAILED
-            execution.ended_at = datetime.utcnow()
+            execution.ended_at = utcnow()
             execution.logs_summary = str(exc)
             db.commit()
         return {"status": "failed", "run_mode": run_mode, "error": str(exc)}

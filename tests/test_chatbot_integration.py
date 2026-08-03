@@ -12,9 +12,10 @@ tests/test_chatbot_integration.py
 tests/test_automation_status_api.py 에 있습니다.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
+from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import (
     AutomationRequest,
     ChatSessionState,
@@ -51,7 +52,7 @@ def _seed_kb_status(db, **overrides) -> KnowledgeBaseStatus:
         "status": "ready",
         "source_bid_count": 321,
         "last_pipeline_run_id": "exec_002",
-        "updated_at": datetime.utcnow(),
+        "updated_at": utcnow(),
     }
     payload.update(overrides)
     kb = KnowledgeBaseStatus(**payload)
@@ -401,7 +402,7 @@ def test_chat_page_renders_session_sidebar_and_chat_binding(client, isolated_db)
             session_key="session-sidebar-001",
             user_id=user_id,
             last_query="파이프라인 감시",
-            updated_at=datetime.utcnow() - timedelta(minutes=1),
+            updated_at=utcnow() - timedelta(minutes=1),
         )
     )
     isolated_db.commit()
