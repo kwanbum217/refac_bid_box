@@ -261,7 +261,9 @@ def _map_announcement_item(category: str):
             "openg_dt": _parse_datetime(_get_text(item, "opengDt")),
             "ntce_kind_nm": _get_text(item, "ntceKindNm"),
             "bid_methd_nm": _get_text(item, "bidMethdNm"),
-            "cntrct_mthd_nm": _get_text(item, "cntrctMthdNm"),
+            # G2B 응답의 계약체결방법 필드명은 cntrctCnclsMthdNm 입니다.
+            # cntrctMthdNm 은 응답에 존재하지 않아 컬럼이 통째로 비어 있었습니다.
+            "cntrct_mthd_nm": _get_text(item, "cntrctCnclsMthdNm"),
             "category": category,
             "raw_data": raw_data,
         }
