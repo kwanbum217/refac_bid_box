@@ -22,6 +22,27 @@ DEFAULT_INSTITUTION_NAME = "미상기관"
 DEFAULT_PPI = 100.0
 DEFAULT_EXCHANGE_RATE = 1300.0
 
+# 낙찰하한율 2%p 일괄 인상 시행일. 이 날 이후 최초 공고분부터 신 기준이 적용됩니다.
+# 근거: 조달청공고 제2026-260호
+REGIME_SHIFT_DATE = pd.Timestamp("2026-05-26")
+
+# WTO 정부조달협정 기준 고시금액(중앙행정기관 물품·용역). 적격심사 배점표의
+# 구간을 가르는 임계값이라 연도별 실제 값을 써야 합니다.
+NOTICE_AMOUNT_BY_YEAR = {2025: 230_000_000, 2026: 230_000_000}
+DEFAULT_NOTICE_AMOUNT = 220_000_000
+
+MISSING_CATEGORY = "미상"
+
+
+def _notice_amount_for(reference_ts) -> float:
+    return float(NOTICE_AMOUNT_BY_YEAR.get(reference_ts.year, DEFAULT_NOTICE_AMOUNT))
+
+
+def _coerce_category(value: Any) -> str:
+    if _is_missing(value) or value == "":
+        return MISSING_CATEGORY
+    return str(value)
+
 
 def _coerce_float(value: Any, default: float = 0.0) -> float:
     if value is None:
@@ -111,7 +132,33 @@ def build_default_feature_map(
     )
     price_ratio = (base_price / price) if price > 0 else 1.0
 
+    # 제도 특징입니다. 낙찰하한율은 낙찰률과 Spearman 0.71 로 가장 강한 신호지만
+    # 학습 표본의 33%, 추론 시점의 63% 가 결측이라 결측 지시자를 반드시 함께 냅니다.
+    # 결측을 0 으로 채우면 "하한율이 0" 과 구분되지 않아 모델이 잘못 학습합니다.
+    raw_lwlt = features_dict.get("lwlt_rate")
+    lwlt_missing = _is_missing(raw_lwlt) or _coerce_float(raw_lwlt, 0.0) <= 0.0
+    lwlt_rate = 0.0 if lwlt_missing else _coerce_float(raw_lwlt, 0.0)
+
+    notice_amount = _notice_amount_for(reference_ts)
+    notice_ts = _coerce_timestamp(features_dict.get("bid_ntce_dt")) or reference_ts
+
     feature_map: dict[str, Any] = {
+        "lwlt_rate": lwlt_rate,
+        "lwlt_rate_missing": 1.0 if lwlt_missing else 0.0,
+        "is_post_regime_shift": 1.0 if notice_ts >= REGIME_SHIFT_DATE else 0.0,
+        "notice_amt_ratio": (price / notice_amount) if notice_amount > 0 else 0.0,
+        "is_over_notice_amt": 1.0 if price >= notice_amount else 0.0,
+        # 협상에 의한 계약의 배점 구성. 기술 비중이 높을수록 낙찰률이 가격에
+        # 고정되지 않아 산포가 커집니다 (90:10 구간 표준편차 11.9).
+        "tech_ablt_evl_rt": _coerce_float(features_dict.get("tech_ablt_evl_rt"), 0.0),
+        "bid_prce_evl_rt": _coerce_float(features_dict.get("bid_prce_evl_rt"), 0.0),
+        "tot_prdprc_num": _coerce_float(features_dict.get("tot_prdprc_num"), 0.0),
+        "drwt_prdprc_num": _coerce_float(features_dict.get("drwt_prdprc_num"), 0.0),
+        "srvce_div_nm": _coerce_category(features_dict.get("srvce_div_nm")),
+        "lrg_clsfc_nm": _coerce_category(features_dict.get("lrg_clsfc_nm")),
+        "cntrct_mthd_nm": _coerce_category(features_dict.get("cntrct_mthd_nm")),
+        "prearng_mthd": _coerce_category(features_dict.get("prearng_mthd")),
+        "sucsfbid_mthd_nm": _coerce_category(features_dict.get("sucsfbid_mthd_nm")),
         "log_price": log_price,
         "month": float(reference_ts.month),
         "weekday": float(reference_ts.weekday()),

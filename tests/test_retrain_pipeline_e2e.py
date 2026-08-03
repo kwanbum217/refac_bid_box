@@ -22,7 +22,9 @@ import pytest
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.predictions import RetrainLog
 from src.ml.dataset import (
+    MAX_PRESMPT_PRCE,
     MAX_WINNING_RATE,
+    MIN_PRESMPT_PRCE,
     MIN_WINNING_RATE,
     TRAINING_COLUMNS,
     build_training_dataset,
@@ -138,6 +140,113 @@ def test_builder_returns_empty_frame_when_no_data(isolated_db, tmp_path):
     """예전 구현은 데이터가 없으면 더미 1행을 만들어 학습이 성공한 것처럼 보였습니다."""
     df = build_training_dataset(isolated_db, category_code="Servc", output_dir=str(tmp_path))
     assert df.empty
+
+
+def test_builder_filters_presmpt_prce_outliers(isolated_db, tmp_path):
+    """추정가격 이상값이 비율 특징의 평균을 통째로 망가뜨립니다 (실측 0.99%)."""
+    _seed(isolated_db, count=5)
+    for suffix, price in (("LOW", MIN_PRESMPT_PRCE - 1), ("HIGH", MAX_PRESMPT_PRCE + 1)):
+        isolated_db.add(
+            BidResult(
+                bid_ntce_no=f"OUT{suffix}",
+                bid_ntce_ord="00",
+                category="Servc",
+                sucsf_bid_amt=100,
+                sucsf_bid_rate=90.0,
+                rl_openg_dt=datetime(2024, 6, 1),
+                collected_at=datetime(2024, 6, 1),
+            )
+        )
+        isolated_db.add(
+            BidAnnouncement(
+                bid_ntce_no=f"OUT{suffix}",
+                bid_ntce_ord="000",
+                category="Servc",
+                presmpt_prce=price,
+                bid_ntce_dt=datetime(2024, 5, 1),
+                collected_at=datetime(2024, 6, 1),
+            )
+        )
+    isolated_db.commit()
+
+    df = build_training_dataset(isolated_db, category_code="Servc", output_dir=str(tmp_path))
+    assert len(df) == 5
+    assert df["presmpt_prce"].between(MIN_PRESMPT_PRCE, MAX_PRESMPT_PRCE).all()
+
+
+def test_builder_extracts_institution_fields_from_raw_data(isolated_db, tmp_path):
+    """낙찰하한율 등 제도 필드는 정식 컬럼이 아니라 raw_data JSON 안에만 있습니다."""
+    base = datetime(2024, 1, 1, 9, 0, 0)
+    isolated_db.add(
+        BidResult(
+            bid_ntce_no="INST01",
+            bid_ntce_ord="00",
+            category="Servc",
+            sucsf_bid_amt=100_000_000,
+            sucsf_bid_rate=88.5,
+            rl_openg_dt=base,
+            collected_at=base,
+        )
+    )
+    isolated_db.add(
+        BidAnnouncement(
+            bid_ntce_no="INST01",
+            bid_ntce_ord="000",
+            category="Servc",
+            presmpt_prce=110_000_000,
+            bid_ntce_dt=base - timedelta(days=14),
+            collected_at=base,
+            raw_data={
+                "sucsfbidLwltRate": "87.745",
+                "srvceDivNm": "기술용역",
+                "pubPrcrmntLrgClsfcNm": "기술용역",
+                "prearngPrceDcsnMthdNm": "복수예가",
+                "totPrdprcNum": "15",
+                "drwtPrdprcNum": "4",
+            },
+        )
+    )
+    isolated_db.commit()
+
+    df = build_training_dataset(isolated_db, category_code="Servc", output_dir=str(tmp_path))
+    assert len(df) == 1
+    row = df.iloc[0]
+    assert float(row["lwlt_rate"]) == pytest.approx(87.745)
+    assert row["srvce_div_nm"] == "기술용역"
+    assert row["prearng_mthd"] == "복수예가"
+    assert float(row["tot_prdprc_num"]) == 15
+    assert float(row["drwt_prdprc_num"]) == 4
+
+
+def test_builder_treats_zero_lower_limit_as_missing(isolated_db, tmp_path):
+    """하한율 0 은 값이 아니라 미기재입니다. 0 으로 두면 특징이 잘못 학습됩니다."""
+    base = datetime(2024, 1, 1, 9, 0, 0)
+    isolated_db.add(
+        BidResult(
+            bid_ntce_no="ZERO01",
+            bid_ntce_ord="00",
+            category="Servc",
+            sucsf_bid_amt=100_000_000,
+            sucsf_bid_rate=88.5,
+            rl_openg_dt=base,
+            collected_at=base,
+        )
+    )
+    isolated_db.add(
+        BidAnnouncement(
+            bid_ntce_no="ZERO01",
+            bid_ntce_ord="000",
+            category="Servc",
+            presmpt_prce=110_000_000,
+            bid_ntce_dt=base - timedelta(days=14),
+            collected_at=base,
+            raw_data={"sucsfbidLwltRate": "0"},
+        )
+    )
+    isolated_db.commit()
+
+    df = build_training_dataset(isolated_db, category_code="Servc", output_dir=str(tmp_path))
+    assert df["lwlt_rate"].isna().all()
 
 
 # --------------------------------------------------------------------------- #
