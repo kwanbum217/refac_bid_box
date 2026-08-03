@@ -26,7 +26,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
-from src.app.models.bids import CATEGORY_LABELS, BidAnnouncement, BidResult, extract_business_budget
+from src.app.models.bids import (
+    CATEGORY_LABELS,
+    BidAnnouncement,
+    BidResult,
+    extract_business_budget,
+    normalize_bid_ntce_ord,
+)
 from src.app.models.chatbot import KnowledgeBaseStatus
 
 logger = logging.getLogger(__name__)
@@ -93,6 +99,11 @@ def _resolve_announcements(db: Session, one_year_ago: datetime) -> tuple[list[Bi
     return [], "announcements_unavailable"
 
 
+def _join_key(row: BidAnnouncement | BidResult) -> str:
+    """공고와 낙찰을 잇는 키. 차수 자리수를 맞추지 않으면 거의 이어지지 않습니다."""
+    return f"{row.bid_ntce_no}-{normalize_bid_ntce_ord(row.bid_ntce_ord)}-{row.category}"
+
+
 def _build_announcement_document(ann: BidAnnouncement, result: BidResult | None) -> str:
     resolved_base_amount = extract_business_budget(ann.raw_data)
     if resolved_base_amount is None and ann.raw_data is None:
@@ -156,14 +167,14 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
             if announcements
             else []
         )
-        results_map = {f"{row.bid_ntce_no}-{row.bid_ntce_ord}": row for row in results}
+        results_map = {_join_key(row): row for row in results}
 
         documents: list[str] = []
         metadatas: list[dict[str, Any]] = []
         ids: list[str] = []
 
         for ann in announcements:
-            result = results_map.get(f"{ann.bid_ntce_no}-{ann.bid_ntce_ord}")
+            result = results_map.get(_join_key(ann))
             documents.append(_build_announcement_document(ann, result))
             metadatas.append(
                 {
