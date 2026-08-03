@@ -33,6 +33,53 @@ DEFAULT_NOTICE_AMOUNT = 220_000_000
 
 MISSING_CATEGORY = "미상"
 
+# 범주형으로 학습하는 제도 특징입니다. 학습과 추론이 같은 범주 수준을 써야
+# 코드가 어긋나지 않으므로, 수준 목록을 모델 메타데이터에 저장하고
+# apply_categorical_dtypes 로 양쪽에서 동일하게 되살립니다.
+CATEGORICAL_FEATURES = (
+    "srvce_div_nm",
+    "lrg_clsfc_nm",
+    "cntrct_mthd_nm",
+    "prearng_mthd",
+    "sucsfbid_mthd_nm",
+)
+
+
+def collect_category_levels(df: pd.DataFrame) -> dict[str, list[str]]:
+    """학습 프레임에서 범주 수준을 뽑습니다. 결과는 모델과 함께 저장합니다."""
+    levels: dict[str, list[str]] = {}
+    for column in CATEGORICAL_FEATURES:
+        if column not in df.columns:
+            continue
+        values = df[column].astype("string").fillna(MISSING_CATEGORY)
+        unique = sorted(set(values.tolist()) | {MISSING_CATEGORY})
+        levels[column] = unique
+    return levels
+
+
+def apply_categorical_dtypes(
+    df: pd.DataFrame,
+    levels: dict[str, list[str]] | None,
+) -> pd.DataFrame:
+    """저장된 범주 수준으로 dtype 을 복원합니다.
+
+    수준을 고정하지 않으면 추론 시점 프레임의 범주 코드가 학습 때와 달라져
+    모델이 조용히 다른 값을 읽습니다. train/serve skew 의 전형적인 형태입니다.
+    학습에서 못 본 값은 결측이 되므로 MISSING_CATEGORY 로 되돌립니다.
+    """
+    if not levels:
+        return df
+    out = df.copy()
+    for column, categories in levels.items():
+        if column not in out.columns:
+            continue
+        dtype = pd.CategoricalDtype(categories=categories)
+        converted = out[column].astype("string").fillna(MISSING_CATEGORY).astype(dtype)
+        if converted.isna().any() and MISSING_CATEGORY in categories:
+            converted = converted.fillna(MISSING_CATEGORY)
+        out[column] = converted
+    return out
+
 
 def _notice_amount_for(reference_ts) -> float:
     return float(NOTICE_AMOUNT_BY_YEAR.get(reference_ts.year, DEFAULT_NOTICE_AMOUNT))

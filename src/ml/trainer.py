@@ -17,7 +17,12 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from src.ml.features import build_feature_frame
+from src.ml.features import (
+    CATEGORICAL_FEATURES,
+    apply_categorical_dtypes,
+    build_feature_frame,
+    collect_category_levels,
+)
 from src.ml.institution_history import attach_institution_history
 from src.ml.validate_model import evaluate_model_performance
 
@@ -45,7 +50,15 @@ TIME_SORT_COLUMN = "openg_dt"
 #   inst_rate_std_90d   입력이 없어 항상 상수 0.015 입니다
 #   price_ratio         기초금액은 제도상 예정가격의 1.1 배라 표준편차 0.017,
 #                       목표 상관 0.05 로 신호가 없습니다
-TRAINING_FEATURES = [
+#
+# 2026-08-03 에 제도 특징을 추가했습니다. 용역 917,629행 시간순 홀드아웃 실측입니다.
+#
+#   기존 6종            R2 0.5600  RMSE 3.1780
+#   + 제도 수치         R2 0.6433  RMSE 2.8615
+#   + 제도 범주         R2 0.6683  RMSE 2.7591
+#
+# 근거: docs/design/servc_segment_experiment_20260803.md
+NUMERIC_FEATURES = [
     "log_price",
     "month_sin",
     "month_cos",
@@ -54,7 +67,18 @@ TRAINING_FEATURES = [
     "notice_duration",
     "inst_hist_rate",
     "inst_sample_cnt",
+    "lwlt_rate",
+    "lwlt_rate_missing",
+    "is_post_regime_shift",
+    "notice_amt_ratio",
+    "is_over_notice_amt",
+    "tech_ablt_evl_rt",
+    "bid_prce_evl_rt",
+    "tot_prdprc_num",
+    "drwt_prdprc_num",
 ]
+
+TRAINING_FEATURES = [*NUMERIC_FEATURES, *CATEGORICAL_FEATURES]
 
 
 def has_time_column(df: pd.DataFrame) -> bool:
@@ -127,33 +151,57 @@ def _time_based_kfold_splits(
     return splits
 
 
-def _train_ridge(
-    X_train: np.ndarray,
+def _present_categoricals(X: pd.DataFrame) -> list[str]:
+    return [column for column in CATEGORICAL_FEATURES if column in X.columns]
+
+
+def _to_numeric_matrix(X: pd.DataFrame) -> np.ndarray:
+    """범주형을 정수 코드로 바꾼 수치 행렬입니다.
+
+    Ridge 는 범주형을 다루지 못합니다. 코드는 순서에 의미가 없어 선형모형에
+    적합하지 않지만, Ridge 는 트리 모델이 실패할 때의 폴백 기준선이므로
+    비교 가능한 값만 내면 충분합니다.
+    """
+    numeric = X.copy()
+    for column in _present_categoricals(numeric):
+        numeric[column] = numeric[column].cat.codes.astype(float)
+    return numeric.to_numpy(dtype=float)
+
+
+def _train_ridge_cv(
+    X_train: pd.DataFrame,
     y_train: np.ndarray,
+    X_valid: pd.DataFrame,
+    y_valid: np.ndarray,
     hyperparams: dict[str, Any] | None = None,
 ) -> Any:
+    """트리 모델과 시그니처를 맞춘 Ridge 어댑터.
+
+    Ridge 는 조기 종료가 없어 검증 구간을 쓰지 않습니다. predict 도 DataFrame 을
+    받아야 하므로 얇은 래퍼로 감싸 호출부의 인터페이스를 통일합니다.
+    """
     from sklearn.linear_model import Ridge
 
     params = {"alpha": 1.0, "random_state": 42}
     params.update(hyperparams or {})
-    return Ridge(**params).fit(X_train, y_train)
+    model = Ridge(**params).fit(_to_numeric_matrix(X_train), y_train)
+    return _RidgeFrameAdapter(model)
 
 
-def _train_ridge_cv(
-    X_train: np.ndarray,
-    y_train: np.ndarray,
-    X_valid: np.ndarray,
-    y_valid: np.ndarray,
-    hyperparams: dict[str, Any] | None = None,
-) -> Any:
-    """트리 모델과 시그니처를 맞춘 Ridge 어댑터. Ridge 는 조기 종료가 없어 검증 구간을 쓰지 않습니다."""
-    return _train_ridge(X_train, y_train, hyperparams)
+class _RidgeFrameAdapter:
+    """DataFrame 을 받아 정수 코드 행렬로 바꿔 예측합니다."""
+
+    def __init__(self, model: Any):
+        self.model = model
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        return self.model.predict(_to_numeric_matrix(X))
 
 
 def _train_lightgbm(
-    X_train: np.ndarray,
+    X_train: pd.DataFrame,
     y_train: np.ndarray,
-    X_valid: np.ndarray,
+    X_valid: pd.DataFrame,
     y_valid: np.ndarray,
     hyperparams: dict[str, Any] | None = None,
 ) -> Any:
@@ -174,15 +222,16 @@ def _train_lightgbm(
         X_train,
         y_train,
         eval_set=[(X_valid, y_valid)],
+        categorical_feature=_present_categoricals(X_train),
         callbacks=[lgb.early_stopping(10, verbose=False)],
     )
     return model
 
 
 def _train_catboost(
-    X_train: np.ndarray,
+    X_train: pd.DataFrame,
     y_train: np.ndarray,
-    X_valid: np.ndarray,
+    X_valid: pd.DataFrame,
     y_valid: np.ndarray,
     hyperparams: dict[str, Any] | None = None,
 ) -> Any:
@@ -197,9 +246,38 @@ def _train_catboost(
     }
     params.update(hyperparams or {})
 
+    # CatBoost 는 범주형 컬럼에 결측을 허용하지 않습니다. features.py 가
+    # MISSING_CATEGORY 로 채워 주지만 문자열로 넘겨야 코드 해석이 어긋나지 않습니다.
+    cat_features = _present_categoricals(X_train)
+    train_frame = X_train.copy()
+    valid_frame = X_valid.copy()
+    for column in cat_features:
+        train_frame[column] = train_frame[column].astype(str)
+        valid_frame[column] = valid_frame[column].astype(str)
+
     model = CatBoostRegressor(**params)
-    model.fit(X_train, y_train, eval_set=(X_valid, y_valid), verbose=False)
-    return model
+    model.fit(
+        train_frame,
+        y_train,
+        eval_set=(valid_frame, y_valid),
+        cat_features=cat_features,
+        verbose=False,
+    )
+    return _CatBoostFrameAdapter(model, cat_features)
+
+
+class _CatBoostFrameAdapter:
+    """범주형을 문자열로 되돌려 예측합니다. 학습 때와 표현을 맞춰야 합니다."""
+
+    def __init__(self, model: Any, cat_features: list[str]):
+        self.model = model
+        self.cat_features = cat_features
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        frame = X.copy()
+        for column in self.cat_features:
+            frame[column] = frame[column].astype(str)
+        return self.model.predict(frame)
 
 
 def _cross_validate_model(
@@ -210,18 +288,18 @@ def _cross_validate_model(
     n_folds: int,
 ) -> dict[str, Any]:
     """K-Fold 교차 검증을 수행하고 평균 지표를 반환합니다."""
-    X = df[TRAINING_FEATURES].values
+    X = df[TRAINING_FEATURES]
     fold_metrics = []
 
     for _fold_idx, (train_idx, valid_idx) in enumerate(_time_based_kfold_splits(df, n_folds)):
         model = model_fn(
-            X[train_idx],
+            X.iloc[train_idx],
             y[train_idx],
-            X[valid_idx],
+            X.iloc[valid_idx],
             y[valid_idx],
             hyperparams,
         )
-        preds = model.predict(X[valid_idx])
+        preds = model.predict(X.iloc[valid_idx])
         metrics = evaluate_model_performance(np.asarray(y[valid_idx]), np.asarray(preds))
         fold_metrics.append(metrics)
 
@@ -277,6 +355,11 @@ class ModelTrainer:
         features_list = build_feature_frame(records)
         df_feat = pd.DataFrame(features_list)
 
+        # 범주 수준을 여기서 확정해 모델과 함께 저장합니다. 추론 시점에 같은
+        # 수준으로 복원하지 않으면 범주 코드가 어긋나 조용히 다른 값을 읽습니다.
+        category_levels = collect_category_levels(df_feat)
+        df_feat = apply_categorical_dtypes(df_feat, category_levels)
+
         # build_feature_frame 은 새 dict 를 만들어 반환하므로 개찰일이 사라집니다.
         # 시계열 분할이 프레임 순서로 조용히 폴백하지 않도록 여기서 다시 싣습니다.
         # 학습 특징이 아니라 정렬 기준이므로 TRAINING_FEATURES 에는 넣지 않습니다.
@@ -293,8 +376,8 @@ class ModelTrainer:
         train_idx, valid_idx, y_train, y_valid = _time_based_split(
             df_feat, y, validation_split
         )
-        X = df_feat[TRAINING_FEATURES].values
-        X_train, X_valid = X[train_idx], X[valid_idx]
+        X = df_feat[TRAINING_FEATURES]
+        X_train, X_valid = X.iloc[train_idx], X.iloc[valid_idx]
 
         # 데이터가 너무 적으면 트리 모델이 실패하므로 Ridge 로 폴백합니다.
         # 정기 실행이 멈추지 않도록 최소 2건 이상 확보 시에만 트리 모델을 시도합니다.
@@ -348,6 +431,8 @@ class ModelTrainer:
             "train_samples": len(train_idx),
             "validation_samples": len(valid_idx),
             "features": list(TRAINING_FEATURES),
+            "categorical_features": list(CATEGORICAL_FEATURES),
+            "category_levels": category_levels,
             "model_type": model_type,
             "metrics": valid_metrics,
             "cv_metrics": cv_metrics,

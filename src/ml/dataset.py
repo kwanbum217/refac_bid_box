@@ -54,6 +54,9 @@ MAX_WINNING_RATE = 110.0
 MIN_PRESMPT_PRCE = 100_000
 MAX_PRESMPT_PRCE = 1_000_000_000_000
 
+# 데이터셋 parquet 캐시 기본 위치.
+DEFAULT_OUTPUT_DIR = "data/feature_store"
+
 # raw_data JSON 키 -> 학습 프레임 컬럼명.
 # 전부 bid_announcements.raw_data 안에만 있어 정식 컬럼으로 조회할 수 없습니다.
 INSTITUTION_FIELDS = {
@@ -121,7 +124,7 @@ def _normalized_ord():
 def build_training_dataset(
     db_session: Session,
     category_code: str | None = None,
-    output_dir: str = "data/feature_store",
+    output_dir: str = DEFAULT_OUTPUT_DIR,
     *,
     require_announcement: bool = True,
     limit: int | None = None,

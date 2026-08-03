@@ -319,14 +319,16 @@ def test_gate_rejects_worse_challenger():
 
 
 @pytest.mark.asyncio
-async def test_pipeline_skips_and_logs_when_no_data(isolated_db, monkeypatch):
+async def test_pipeline_skips_and_logs_when_no_data(isolated_db, monkeypatch, tmp_path):
     """데이터가 없을 때 학습을 성공으로 보고하면 안 됩니다."""
     from src.tasks import retrain_task
 
     monkeypatch.setattr(retrain_task, "SessionLocal", lambda: isolated_db)
     isolated_db.close = lambda: None
 
-    outcome = await retrain_task.run_retrain_pipeline_task({}, category_code="Servc")
+    outcome = await retrain_task.run_retrain_pipeline_task(
+        {}, category_code="Servc", output_dir=str(tmp_path)
+    )
 
     assert outcome["status"] == "skipped"
     log = isolated_db.query(RetrainLog).one()
@@ -344,7 +346,11 @@ async def test_pipeline_records_history(isolated_db, monkeypatch, tmp_path):
     isolated_db.close = lambda: None
 
     outcome = await retrain_task.run_retrain_pipeline_task(
-        {}, trigger_source="unit", category_code="Servc", require_announcement=False
+        {},
+        trigger_source="unit",
+        category_code="Servc",
+        require_announcement=False,
+        output_dir=str(tmp_path),
     )
 
     assert outcome["status"] == "success"
@@ -354,6 +360,35 @@ async def test_pipeline_records_history(isolated_db, monkeypatch, tmp_path):
     assert log.trigger_source == "unit"
     assert log.challenger_version == outcome["version"]
     assert log.metrics_summary["challenger_metrics"]["rmse"] > 0.0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_does_not_write_default_feature_store(isolated_db, monkeypatch, tmp_path):
+    """테스트가 운영 feature store 의 parquet 을 픽스처로 덮어쓴 적이 있습니다.
+
+    2026-08-03 에 실제로 발생했습니다. 91만행짜리 dataset_Servc.parquet 이
+    테스트 픽스처 80행으로 교체되어 실험이 조용히 잘못된 데이터로 돌았습니다.
+    """
+    from src.ml import dataset as dataset_module
+    from src.tasks import retrain_task
+
+    captured: list[str] = []
+    original = dataset_module.build_training_dataset
+
+    def _spy(db_session, *args, **kwargs):
+        captured.append(kwargs.get("output_dir", dataset_module.DEFAULT_OUTPUT_DIR))
+        return original(db_session, *args, **kwargs)
+
+    monkeypatch.setattr(retrain_task, "build_training_dataset", _spy)
+    monkeypatch.setattr(retrain_task, "SessionLocal", lambda: isolated_db)
+    isolated_db.close = lambda: None
+
+    await retrain_task.run_retrain_pipeline_task(
+        {}, category_code="Servc", output_dir=str(tmp_path)
+    )
+
+    assert captured == [str(tmp_path)]
+    assert dataset_module.DEFAULT_OUTPUT_DIR not in captured
 
 
 @pytest.mark.asyncio
@@ -368,10 +403,10 @@ async def test_champion_is_read_before_training(isolated_db, monkeypatch, tmp_pa
     isolated_db.close = lambda: None
 
     first = await retrain_task.run_retrain_pipeline_task(
-        {}, category_code="Servc", require_announcement=False
+        {}, category_code="Servc", require_announcement=False, output_dir=str(tmp_path)
     )
     second = await retrain_task.run_retrain_pipeline_task(
-        {}, category_code="Servc", require_announcement=False
+        {}, category_code="Servc", require_announcement=False, output_dir=str(tmp_path)
     )
 
     assert first["champion_version"] == ""
