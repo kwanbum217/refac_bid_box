@@ -78,6 +78,31 @@ GET /api/v1/chatbot/stream  # SSE (HTMX hx-ext="sse" 연동)
 
 ---
 
+## 동결 자산 노출 차단 (2026-08-03)
+
+동결 결정 이후에도 `docker-compose.yml` 의 `frontend` 서비스가 기본 기동 대상에 남아 있어, `docker compose up` 시 5173 포트로 **원본과 다른 디자인의 화면이 노출**되는 문제가 있었습니다.
+
+| 항목 | 원본 | 동결된 React |
+| --- | --- | --- |
+| 화면 수 | 12개 페이지 5,370줄 | `App.tsx` 단일 파일 728줄 |
+| 주 색상 | `#0073E6` (기업형 블루) | `#0f172a`, `#38bdf8` (slate/sky) |
+| API 연동 | - | `/api/v1/chatbot/stream` 한 곳뿐 |
+
+조치로 해당 서비스에 `profiles: ["legacy"]` 를 지정해 기본 기동에서 제외했습니다.
+
+| 명령 | 기동 서비스 |
+| --- | --- |
+| `docker compose up -d` | `db`, `redis`, `app` |
+| `docker compose --profile legacy up -d frontend` | 위 + `frontend` (참조용) |
+
+디렉토리 자체는 본 ADR 의 "삭제하지 않고 참조용으로 유지" 방침에 따라 그대로 둡니다.
+
+### 검토 후 기각된 대안
+
+React 를 원본 디자인으로 전면 재구현하는 방안을 설계까지 진행한 뒤 기각했습니다. 근거 자료는 [`frontend_react_reproduction_design.md`](frontend_react_reproduction_design.md) 에 보존하며, 기각 사유는 원본 재현이 SSR 에서 이미 완료되어 재수행의 실익이 없다는 점입니다.
+
+---
+
 ## 남은 작업
 
 1. ~~챗봇 탭 SSE 스트리밍을 `hx-ext="sse"` 로 전환~~ → **CSRF 제거 + JSON POST 전환 완료, CONFIG.streamUrl 기반 마련** (2026-08-01)
