@@ -11,6 +11,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.app.core.timeutil import utcnow
+
 
 class ChatRequest(BaseModel):
     """원본 chat_api POST 파라미터 대응."""
@@ -66,4 +68,4 @@ class ChatbotQueryResponse(BaseModel):
     latency_ms: float = Field(0.0, description="응답 소요 시간 (ms)")
     route_reason: str = ""
     citations: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)

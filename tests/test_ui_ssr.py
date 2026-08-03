@@ -6,7 +6,7 @@ tests/test_ui_ssr.py
 DB 에 넣은 값이 응답 HTML 에 실제로 나타나는지까지 확인합니다.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +14,7 @@ from jinja2 import TemplateSyntaxError
 
 from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_password
 from src.app.core.templating import TEMPLATE_DIR, templates
+from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
@@ -38,7 +39,7 @@ def seeded_user(isolated_db):
         is_active=True,
         is_staff=False,
         is_superuser=False,
-        date_joined=datetime.utcnow(),
+        date_joined=utcnow(),
     )
     isolated_db.add(user)
     isolated_db.commit()
@@ -54,7 +55,7 @@ def auth_client(seeded_user):
 
 @pytest.fixture
 def seeded_bid(isolated_db):
-    now = datetime.utcnow()
+    now = utcnow()
     bid = BidAnnouncement(
         bid_ntce_no="20260801-TEST",
         bid_ntce_ord="00",

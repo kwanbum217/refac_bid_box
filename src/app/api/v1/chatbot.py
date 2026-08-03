@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from html import escape
 from typing import Any
 
@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import get_current_user
 from src.app.core.db import SessionLocal, get_db
+from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
 from src.app.models.chatbot import AutomationRequest
 from src.app.schemas.chat import ChatPlan
@@ -237,7 +238,7 @@ def _find_pending_confirmation_request(db: Session, user_id: int | None) -> Auto
     """원본 _find_pending_confirmation_request 대응. 24시간 내 확인 대기 건을 찾습니다."""
     if user_id is None:
         return None
-    cutoff = datetime.utcnow() - timedelta(hours=24)
+    cutoff = utcnow() - timedelta(hours=24)
     stmt = (
         select(AutomationRequest)
         .where(

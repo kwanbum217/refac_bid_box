@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 
 from sqlalchemy import (
     JSON,
@@ -16,6 +15,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.sql.sqltypes import UUID
 
 from src.app.core.db import Base, LongText, PKBigInteger
+from src.app.core.timeutil import utcnow
 
 # 원본 Django PositiveIntegerField 는 MySQL/MariaDB 에서 int unsigned 로 생성됩니다.
 PositiveInteger = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql", "mariadb")
@@ -73,7 +73,7 @@ class AutomationRequest(Base):
     result_summary = Column(LongText, nullable=False, default="")
     result_payload = Column(JSON, nullable=False, default=dict)
     error_message = Column(LongText, nullable=False, default="")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
     confirmed_at = Column(DateTime, nullable=True)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
@@ -105,8 +105,8 @@ class ChatSessionState(Base):
     last_kb_version = Column(String(100), nullable=False, default="")
     last_response_mode = Column(String(20), nullable=False, default="")
     chat_history_json = Column(JSON, nullable=False, default=list)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
 
 class AutomationSubscription(Base):
@@ -131,8 +131,8 @@ class AutomationSubscription(Base):
     is_active = Column(Boolean, nullable=False, default=True, comment="활성 여부")
     last_run_at = Column(DateTime, nullable=True, comment="마지막 실행 시각")
     next_run_at = Column(DateTime, nullable=True, comment="다음 실행 예정 시각")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
 
 class KnowledgeBaseStatus(Base):
@@ -146,7 +146,7 @@ class KnowledgeBaseStatus(Base):
     last_embedding_at = Column(DateTime, nullable=True, comment="마지막 임베딩 시각")
     last_pipeline_run_id = Column(String(100), nullable=False, default="", comment="마지막 파이프라인 실행 ID")
     notes = Column(LongText, nullable=False, default="", comment="메모")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
 
 class PipelineExecution(Base):
@@ -173,5 +173,5 @@ class PipelineExecution(Base):
     logs_summary = Column(LongText, nullable=False, default="", comment="로그 요약")
     external_url = Column(LongText, nullable=False, default="", comment="외부 실행 URL")
     source = Column(String(50), nullable=False, default="chatbot", comment="요청 소스")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)

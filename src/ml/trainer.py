@@ -9,7 +9,6 @@ K-Fold 교차 검증 및 LightGBM/CatBoost 기반 사투가 예측 모델을 재
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from src.app.core.timeutil import utcnow
 from src.ml.features import (
     CATEGORICAL_FEATURES,
     apply_categorical_dtypes,
@@ -352,11 +352,11 @@ class ModelTrainer:
         """
         # 초 단위 버전명은 같은 초에 두 번 학습하면 충돌해 이전 아티팩트를 덮어씁니다.
         # 밀리초까지 넣고, 그래도 겹치면 접미사를 붙여 회피합니다.
-        version = f"v_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
+        version = f"v_{utcnow().strftime('%Y%m%d_%H%M%S_%f')[:-3]}"
         target_dir = self.registry_dir / self.model_name / version
         suffix = 1
         while target_dir.exists():
-            version = f"v_{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')[:-3]}_{suffix}"
+            version = f"v_{utcnow().strftime('%Y%m%d_%H%M%S_%f')[:-3]}_{suffix}"
             target_dir = self.registry_dir / self.model_name / version
             suffix += 1
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -443,7 +443,7 @@ class ModelTrainer:
         metadata = {
             "model_name": self.model_name,
             "version": version,
-            "trained_at": datetime.utcnow().isoformat(),
+            "trained_at": utcnow().isoformat(),
             "samples_count": len(df_raw),
             "train_samples": len(train_idx),
             "validation_samples": len(valid_idx),

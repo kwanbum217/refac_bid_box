@@ -8,11 +8,11 @@ tests/test_predictions_api.py
  - predict-price API: selected_model 명시 전달
 """
 
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
 from src.ml.model_registry import _normalize_prediction_rate
 
@@ -47,9 +47,9 @@ def _create_bid(db, **overrides):
         "dminstt_nm": "테스트 수요기관",
         "base_amount": 110000000,
         "presmpt_prce": 100000000,
-        "bid_ntce_dt": datetime.utcnow(),
-        "bid_clse_dt": datetime.utcnow(),
-        "openg_dt": datetime.utcnow(),
+        "bid_ntce_dt": utcnow(),
+        "bid_clse_dt": utcnow(),
+        "openg_dt": utcnow(),
         "category": "Thng",
         "raw_data": None,
     }

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.tools.kb_status_tool import build_kb_status_summary
 from src.rag.engine import (
@@ -176,7 +177,7 @@ def _seed_bid_result(db, **overrides):
         "bidwinnr_nm": "서울건설",
         "sucsf_bid_amt": 1000000,
         "sucsf_bid_rate": 98.1234,
-        "rl_openg_dt": datetime.utcnow() - timedelta(days=2),
+        "rl_openg_dt": utcnow() - timedelta(days=2),
         "dminstt_nm": "서울특별시청",
         "category": "Cnstwk",
     }
@@ -190,7 +191,7 @@ def _seed_announcement(db, **overrides):
         "bid_ntce_ord": "000",
         "bid_ntce_nm": "서울 도로 정비 공사",
         "dminstt_nm": "서울특별시청",
-        "bid_ntce_dt": datetime.utcnow() - timedelta(days=2),
+        "bid_ntce_dt": utcnow() - timedelta(days=2),
         "category": "Cnstwk",
         "raw_data": None,
     }
@@ -228,7 +229,7 @@ def test_retrieve_structured_data_returns_recent_result_list(isolated_db):
         bid_ntce_nm="용역 목록 테스트",
         bidwinnr_nm="테스트 업체",
         category="Servc",
-        rl_openg_dt=datetime.utcnow(),
+        rl_openg_dt=utcnow(),
     )
     isolated_db.commit()
 
@@ -270,7 +271,7 @@ def test_retrieve_structured_data_reports_latest_available_date_when_window_is_e
 
 
 def test_retrieve_structured_data_uses_daily_buckets_for_short_trend_range(isolated_db):
-    now = datetime.utcnow()
+    now = utcnow()
     for index, days_ago in enumerate((1, 0), start=2):
         _seed_bid_result(
             isolated_db,

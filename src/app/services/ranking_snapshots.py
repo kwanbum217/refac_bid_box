@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import (
     CATEGORY_LABELS,
     BidAnnouncement,
@@ -111,7 +112,7 @@ def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> t
 
 def rebuild_ranking_snapshots(db: Session) -> dict[str, int]:
     """전체 조합을 다시 집계합니다. 무거우므로 정기 실행과 수집 직후에만 호출합니다."""
-    started = datetime.utcnow()
+    started = utcnow()
     written = 0
     skipped = 0
 
@@ -155,7 +156,7 @@ def rebuild_ranking_snapshots(db: Session) -> dict[str, int]:
                 written += 1
             db.commit()
 
-    elapsed = (datetime.utcnow() - started).total_seconds()
+    elapsed = (utcnow() - started).total_seconds()
     logger.info(
         "상위 N 스냅샷 재집계 완료 (%d행, 손상 제외 조합 %d개, %.1fs)", written, skipped, elapsed
     )

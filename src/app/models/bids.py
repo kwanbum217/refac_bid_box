@@ -8,7 +8,6 @@ src/app/models/bids.py
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
@@ -24,6 +23,7 @@ from sqlalchemy import (
 )
 
 from src.app.core.db import Base, PKBigInteger
+from src.app.core.timeutil import utcnow
 
 CATEGORY_LABELS = {
     "Thng": "물품",
@@ -180,7 +180,7 @@ class BidResult(Base):
     dminstt_nm = Column(String(200), nullable=True, comment="수요기관명")
     category = Column(String(10), nullable=False, default="Thng", comment="업무구분(Thng/Cnstwk/Servc/Frgcpt)")
     raw_data = Column(JSON, nullable=True, comment="전체 원본 데이터")
-    collected_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="수집일시")
+    collected_at = Column(DateTime, nullable=False, default=utcnow, comment="수집일시")
 
     def __str__(self) -> str:
         return f"[{self.category}] {self.bid_ntce_no} - {self.bidwinnr_nm}"
@@ -277,7 +277,7 @@ class BidAnnouncement(Base):
     cntrct_mthd_nm = Column(String(100), nullable=True, comment="계약방법명")
     category = Column(String(10), nullable=False, default="Thng", comment="업무구분(Thng/Cnstwk/Servc/Frgcpt)")
     raw_data = Column(JSON, nullable=True, comment="전체 원본 데이터")
-    collected_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="수집일시")
+    collected_at = Column(DateTime, nullable=False, default=utcnow, comment="수집일시")
 
     def __str__(self) -> str:
         return f"[{self.category}] {self.bid_ntce_no} - {self.bid_ntce_nm}"
@@ -323,8 +323,8 @@ class BidDatasetSummary(Base):
     rebuilt_at = Column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="집계 갱신 시각",
     )
 
@@ -363,8 +363,8 @@ class BidRankingSnapshot(Base):
     rebuilt_at = Column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="집계 갱신 시각",
     )
 
@@ -402,8 +402,8 @@ class InstitutionWinRateStat(Base):
     rebuilt_at = Column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         comment="집계 갱신 시각",
     )
 

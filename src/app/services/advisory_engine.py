@@ -8,12 +8,13 @@ src/app/services/advisory_engine.py
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import AutomationRequest, KnowledgeBaseStatus
 from src.app.schemas.chat import AdvisorySignal
 
@@ -42,7 +43,7 @@ class AdvisoryEngine:
         request_obj: AutomationRequest | None = None,
     ) -> list[dict[str, Any]]:
         signals: list[AdvisorySignal] = []
-        now = datetime.utcnow()
+        now = utcnow()
 
         # 1. 지식베이스 상태 분석
         latest_kb = db.execute(
@@ -182,7 +183,7 @@ class AdvisoryEngine:
         return db.execute(stmt).scalar_one_or_none()
 
     def _recent_failure_count(self, db: Session, *, user_id: int | None = None) -> int:
-        since = datetime.utcnow() - timedelta(days=3)
+        since = utcnow() - timedelta(days=3)
 
         health_stmt = select(AutomationRequest).where(
             AutomationRequest.created_at >= since,

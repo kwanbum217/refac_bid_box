@@ -9,9 +9,10 @@ AdvisoryEngineTests, StepExecutorTests 이식.
  - execute_internal_tool_step / execute_plan_steps: 스텝 실행기
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 
+from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import AutomationRequest, KnowledgeBaseStatus
 from src.app.schemas.chat import ChatPlan, PlanStep
 from src.app.services.advisory_engine import AdvisoryEngine
@@ -132,7 +133,7 @@ def test_advisory_engine_detects_stale_kb(isolated_db):
     )
     isolated_db.add(kb)
     isolated_db.commit()
-    kb.updated_at = datetime.utcnow() - timedelta(days=2)
+    kb.updated_at = utcnow() - timedelta(days=2)
     isolated_db.commit()
 
     suggestions = AdvisoryEngine().suggestion_texts(isolated_db)
@@ -166,7 +167,7 @@ def test_advisory_engine_returns_priority_and_severity_sorted_signals(isolated_d
     )
     isolated_db.add(kb)
     isolated_db.commit()
-    kb.updated_at = datetime.utcnow() - timedelta(days=3)
+    kb.updated_at = utcnow() - timedelta(days=3)
     isolated_db.commit()
 
     signals = AdvisoryEngine().suggest(isolated_db)

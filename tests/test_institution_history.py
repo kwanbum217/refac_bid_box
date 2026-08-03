@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.app.core.db import Base
+from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidResult
 from src.ml.institution_history import (
     _default_institution_rate,
@@ -52,7 +53,7 @@ def seed_results(session, institution_name, category, rates, reference_date, pre
             category=category,
             rl_openg_dt=reference_date - timedelta(days=idx + 1),
             sucsf_bid_rate=rate,
-            collected_at=datetime.utcnow(),
+            collected_at=utcnow(),
         )
         session.add(result)
     session.commit()
@@ -119,7 +120,7 @@ def test_calculate_returns_default_for_missing_institution_name(memory_session):
     rate = calculate_institution_win_rate(
         memory_session,
         institution_name="",
-        reference_date=datetime.utcnow(),
+        reference_date=utcnow(),
         category="Servc",
     )
     assert rate == pytest.approx(0.9011)
@@ -268,7 +269,7 @@ def test_calculate_excludes_outlier_rates(memory_session):
 
 
 def test_lookup_institution_history_without_institution_returns_default(memory_session):
-    features = {"category": "Servc", "openg_dt": datetime.utcnow()}
+    features = {"category": "Servc", "openg_dt": utcnow()}
     rate = lookup_institution_history(features, memory_session)
     assert rate == pytest.approx(0.9011)
 
