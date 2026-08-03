@@ -24,6 +24,7 @@ from src.ml.features import (
     collect_category_levels,
 )
 from src.ml.institution_history import attach_institution_history
+from src.ml.repeat_history import REPEAT_FEATURES, attach_repeat_history
 from src.ml.validate_model import evaluate_model_performance
 
 # 홀드아웃 비율. 학습에 쓰지 않은 구간에서 지표를 내야 의미가 있습니다.
@@ -84,6 +85,7 @@ NUMERIC_FEATURES = [
     "bid_prce_evl_rt",
     "tot_prdprc_num",
     "drwt_prdprc_num",
+    *REPEAT_FEATURES,
 ]
 
 TRAINING_FEATURES = [*NUMERIC_FEATURES, *CATEGORICAL_FEATURES]
@@ -215,8 +217,14 @@ def _train_lightgbm(
 ) -> Any:
     import lightgbm as lgb
 
+    # 낙찰률에서 하한율을 뺀 잔차는 0 에 몰린 비대칭 분포입니다(중앙값 0.159%p,
+    # 72.7% 가 0.5%p 이내). L2 로 학습하면 긴 오른쪽 꼬리를 줄이려고 중심 예측을
+    # 위로 밀어 올려, 대다수 건에서 조금씩 빗나갑니다. Huber 로 바꾸면 0.5%p 이내
+    # 적중이 45.69% 에서 59.91% 로 오릅니다. 대가는 10%p 초과 오차 1.11% -> 1.56%.
+    # 근거: docs/design/servc_repeat_procurement_20260803.md 1장
     params = {
-        "objective": "regression",
+        "objective": "huber",
+        "alpha": 1.0,
         "n_estimators": 200,
         "learning_rate": 0.05,
         "num_leaves": 31,
@@ -357,6 +365,7 @@ class ModelTrainer:
         # inst_hist_rate 를 그대로 쓰므로, 여기서 채우면 단일 공급원이 유지됩니다.
         # 행당 DB 조회로는 32시간이 걸려 배치 계산을 씁니다.
         df_raw = attach_institution_history(df_raw)
+        df_raw = attach_repeat_history(df_raw)
 
         # 단일 특징 공급원 적용
         records = df_raw.to_dict(orient="records")

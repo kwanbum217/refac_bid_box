@@ -14,6 +14,11 @@ import numpy as np
 import pandas as pd
 
 from src.ml.institution_history import lookup_institution_history
+from src.ml.repeat_history import (
+    DEFAULT_REPEAT_RATE,
+    NO_HISTORY_DAYS,
+    lookup_repeat_history,
+)
 
 DEFAULT_INST_RATE = 0.925
 DEFAULT_INST_RATE_STD = 0.015
@@ -89,6 +94,41 @@ def apply_categorical_dtypes(
 
 def _notice_amount_for(reference_ts) -> float:
     return float(NOTICE_AMOUNT_BY_YEAR.get(reference_ts.year, DEFAULT_NOTICE_AMOUNT))
+
+
+def _repeat_features(features_dict: dict[str, Any], session: Any) -> dict[str, float]:
+    """재발주 이력 6종을 확정합니다.
+
+    프레임에 값이 있으면 그대로 씁니다(학습 경로). 없으면 조회하고, 조회도
+    실패하면 "이력 없음" 기본값으로 채웁니다.
+    """
+    if features_dict.get("is_repeat") is not None:
+        return {
+            "is_repeat": _coerce_float(features_dict.get("is_repeat"), 0.0),
+            "repeat_cnt": _coerce_float(features_dict.get("repeat_cnt"), 0.0),
+            "repeat_hist_rate": _coerce_float(
+                features_dict.get("repeat_hist_rate"), DEFAULT_REPEAT_RATE
+            ),
+            "repeat_prev_rate": _coerce_float(
+                features_dict.get("repeat_prev_rate"), DEFAULT_REPEAT_RATE
+            ),
+            "repeat_hist_std": _coerce_float(features_dict.get("repeat_hist_std"), 0.0),
+            "repeat_days_since": _coerce_float(
+                features_dict.get("repeat_days_since"), NO_HISTORY_DAYS
+            ),
+        }
+
+    found = lookup_repeat_history(features_dict, session)
+    if found is not None:
+        return found
+    return {
+        "is_repeat": 0.0,
+        "repeat_cnt": 0.0,
+        "repeat_hist_rate": DEFAULT_REPEAT_RATE,
+        "repeat_prev_rate": DEFAULT_REPEAT_RATE,
+        "repeat_hist_std": 0.0,
+        "repeat_days_since": NO_HISTORY_DAYS,
+    }
 
 
 def _coerce_category(value: Any) -> str:
@@ -175,6 +215,11 @@ def build_default_feature_map(
         provided_rate = lookup_institution_history(features_dict, session)
     inst_hist_rate = _coerce_float(provided_rate, DEFAULT_INST_RATE)
 
+    # 재발주 이력도 같은 구조입니다. 학습은 trainer 가 attach_repeat_history 로
+    # 미리 채우고, 추론은 여기서 조회합니다. 정의는 "기준 시점 이전 같은 기관의
+    # 같은 사업(정규화 공고명) 낙찰 결과" 로 양쪽이 같습니다.
+    repeat = _repeat_features(features_dict, session)
+
     inst_sample_cnt = _coerce_float(features_dict.get("inst_sample_cnt"), 0.0)
     inst_rate_mean_30d = _coerce_float(features_dict.get("inst_rate_mean_30d"), inst_hist_rate)
     inst_rate_std_90d = _coerce_float(features_dict.get("inst_rate_std_90d"), DEFAULT_INST_RATE_STD)
@@ -220,6 +265,9 @@ def build_default_feature_map(
         "bid_methd_nm": _coerce_category(features_dict.get("bid_methd_nm")),
         "intrbid_yn": _coerce_category(features_dict.get("intrbid_yn")),
         "ppsw_gnrl_srvce_yn": _coerce_category(features_dict.get("ppsw_gnrl_srvce_yn")),
+        # 재발주 이력. 용역은 같은 기관이 1~2년 주기로 같은 사업을 다시 냅니다
+        # (재발주 주기 중앙값 358일, 직전 낙찰률과의 절대차 중앙값 0.252%p).
+        **repeat,
         "log_price": log_price,
         "month": float(reference_ts.month),
         "weekday": float(reference_ts.weekday()),

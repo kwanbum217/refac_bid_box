@@ -133,6 +133,29 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     return _normalize_text(str(filters.get("category") or ""))
 
 
+def _result_limit(plan: RetrievalPlan) -> int:
+    raw_limit = (plan.filters or {}).get("result_limit")
+    if raw_limit in (None, ""):
+        return 0
+    try:
+        return min(max(int(raw_limit), 1), 20)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _result_availability_conditions(plan: RetrievalPlan) -> list:
+    """날짜 필터를 제외한 결과 보유 범위 확인 조건을 만듭니다."""
+    filters = plan.filters or {}
+    institution_name = _normalize_text(str(filters.get("institution_name") or ""))
+    category = _normalize_text(str(filters.get("category") or ""))
+    conditions = []
+    if institution_name:
+        conditions.append(BidResult.dminstt_nm.contains(institution_name))
+    if category:
+        conditions.append(BidResult.category == category)
+    return conditions
+
+
 # U+FFFD 는 SQL 에서 먼저 쳐내므로 배수는 작아도 됩니다.
 LIVE_OVERFETCH_FACTOR = 3
 
@@ -189,6 +212,14 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
     result_conditions = _result_conditions(plan)
     announcement_conditions = _announcement_conditions(plan)
     snapshot_scope = _snapshot_scope(plan)
+    result_limit = _result_limit(plan)
+    latest_available_result_at = None
+    if result_limit:
+        latest_available_result_at = db.scalar(
+            select(func.max(BidResult.rl_openg_dt)).where(
+                *_result_availability_conditions(plan)
+            )
+        )
 
     total_count, avg_rate, total_amt = db.execute(
         select(
@@ -200,6 +231,62 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
     announcement_count = db.scalar(
         select(func.count(BidAnnouncement.id)).where(*announcement_conditions)
     )
+
+    recent_results: list[dict[str, Any]] = []
+    if result_limit:
+        result_rows = db.execute(
+            select(BidResult)
+            .where(*result_conditions)
+            .order_by(
+                BidResult.rl_openg_dt.is_(None),
+                BidResult.rl_openg_dt.desc(),
+                BidResult.id.desc(),
+            )
+            .limit(result_limit * LIVE_OVERFETCH_FACTOR)
+        ).scalars().all()
+        for result in result_rows:
+            if any(
+                is_corrupted_display_text(value)
+                for value in (
+                    result.bid_ntce_nm,
+                    result.dminstt_nm,
+                    result.bidwinnr_nm,
+                )
+            ):
+                continue
+            recent_results.append(
+                {
+                    "id": result.id,
+                    "bid_ntce_no": result.bid_ntce_no,
+                    "bid_ntce_ord": result.bid_ntce_ord,
+                    "bid_ntce_nm": clean_display_text(
+                        result.bid_ntce_nm, CORRUPTED_TEXT_FALLBACKS["title"]
+                    ),
+                    "dminstt_nm": clean_display_text(
+                        result.dminstt_nm, CORRUPTED_TEXT_FALLBACKS["agency"]
+                    ),
+                    "bidwinnr_nm": clean_display_text(
+                        result.bidwinnr_nm, CORRUPTED_TEXT_FALLBACKS["winner"]
+                    ),
+                    "sucsf_bid_amt": (
+                        int(result.sucsf_bid_amt) if result.sucsf_bid_amt is not None else None
+                    ),
+                    "sucsf_bid_rate": (
+                        float(result.sucsf_bid_rate)
+                        if result.sucsf_bid_rate is not None
+                        else None
+                    ),
+                    "rl_openg_dt": (
+                        result.rl_openg_dt.isoformat(sep=" ")
+                        if result.rl_openg_dt is not None
+                        else None
+                    ),
+                    "category": result.category,
+                    "category_label": _category_label(result.category),
+                }
+            )
+            if len(recent_results) >= result_limit:
+                break
 
     winner_rows, dropped_winners = _top_rows(
         db,
@@ -310,7 +397,16 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
     insufficiency: list[str] = []
     if not total_count:
         insufficiency.append("조건에 맞는 낙찰 결과가 충분하지 않습니다.")
-    if not announcement_count:
+    if result_limit and not recent_results:
+        if latest_available_result_at:
+            insufficiency.append(
+                "요청 기간에 조건에 맞는 낙찰 결과가 없습니다. "
+                f"DB에서 확인 가능한 해당 조건의 최신 개찰일은 "
+                f"{latest_available_result_at.isoformat(sep=' ')}입니다."
+            )
+        else:
+            insufficiency.append("해당 분야의 낙찰 결과 보유 데이터가 없습니다.")
+    if not announcement_count and not result_limit:
         insufficiency.append("조건에 맞는 공고 데이터가 없어 추세 해석이 제한될 수 있습니다.")
 
     # 순위에서 손상값을 빼면 답이 읽히지만 집계 모수가 달라집니다. 숨기지 않고 알립니다.
@@ -336,6 +432,12 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
             "top_institutions": top_institutions,
             "top_announcements": top_announcements,
             "sample_announcements": sample_announcements,
+            "recent_results": recent_results,
+            "latest_available_result_at": (
+                latest_available_result_at.isoformat(sep=" ")
+                if latest_available_result_at
+                else None
+            ),
             "time_series": time_series,
         },
         "insufficiency_hints": insufficiency,

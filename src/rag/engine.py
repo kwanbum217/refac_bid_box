@@ -100,6 +100,35 @@ def _query_lower(query: str) -> str:
     return _normalize_text(query).lower()
 
 
+RESULT_QUERY_MARKERS = (
+    "낙찰된",
+    "낙찰 결과",
+    "낙찰정보",
+    "낙찰 정보",
+    "낙찰 사업",
+    "낙찰 업체",
+)
+RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
+
+
+def is_result_list_query(query: str) -> bool:
+    """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다."""
+    lowered = _query_lower(query)
+    has_result_marker = any(marker in lowered for marker in RESULT_QUERY_MARKERS)
+    has_list_marker = any(marker in lowered for marker in RESULT_LIST_MARKERS) or bool(
+        re.search(r"\d+\s*(?:개|건)", lowered)
+    )
+    return has_result_marker and has_list_marker
+
+
+def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
+    """목록 질의의 요청 건수를 안전한 범위로 정규화합니다."""
+    match = re.search(r"(\d+)\s*(?:개|건)", _query_lower(query))
+    if not match:
+        return default
+    return min(max(int(match.group(1)), 1), maximum)
+
+
 def _format_filters_for_prompt(filters: dict | None) -> str:
     if not filters:
         return ""
@@ -110,6 +139,7 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "date_to": "종료일",
         "relative_years": "최근 연수",
         "analysis_mode": "분석 모드",
+        "result_limit": "요청 목록 수",
     }
     lines = []
     for key, value in filters.items():
@@ -216,8 +246,9 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     normalized_query = _normalize_text(query)
     lowered = normalized_query.lower()
 
-    use_sql = any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
-    use_vector = any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
+    result_list_query = is_result_list_query(normalized_query)
+    use_sql = result_list_query or any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
+    use_vector = not result_list_query and any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
 
     if not any((use_sql, use_vector, use_kb_status)):
@@ -240,10 +271,15 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
             filters["institution_name"] = region
             break
 
+    if result_list_query:
+        filters["result_limit"] = extract_result_limit(normalized_query)
+
     if any(keyword in lowered for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
 
     route_reason_parts = []
+    if result_list_query:
+        route_reason_parts.append("낙찰 결과 목록 질의")
     if use_sql:
         route_reason_parts.append("정형 통계 질의")
     if use_vector:
@@ -310,6 +346,23 @@ def _extract_statistical_snapshot(structured_data: dict | None) -> str:
         )
         lines.append(f"- 자주 올라오는 공고 명칭: {ntce_snapshot}")
 
+    recent_results = summary.get("recent_results") or []
+    latest_available_result_at = summary.get("latest_available_result_at")
+    if latest_available_result_at:
+        lines.append(f"- 해당 조건의 DB 최신 개찰일: {latest_available_result_at}")
+    if recent_results:
+        lines.append("- 최근 낙찰 결과 목록:")
+        for index, item in enumerate(recent_results, start=1):
+            lines.append(
+                f"  - {index}. 공고명={item.get('bid_ntce_nm') or '-'} / "
+                f"공고번호={item.get('bid_ntce_no') or '-'} / "
+                f"수요기관={item.get('dminstt_nm') or '-'} / "
+                f"낙찰업체={item.get('bidwinnr_nm') or '-'} / "
+                f"낙찰금액={item.get('sucsf_bid_amt') or '-'}원 / "
+                f"낙찰률={item.get('sucsf_bid_rate') or '-'}% / "
+                f"개찰일={item.get('rl_openg_dt') or '-'}"
+            )
+
     time_series = summary.get("time_series") or []
     if time_series:
         period_label = "일별" if (time_series[0].get("period") == "day") else "월별"
@@ -371,6 +424,62 @@ def _extract_trend_snapshot(trend_analysis: dict | None) -> str:
         lines.append(f"- 최고 구간: {peak.get('label') or '-'} / {peak.get('value', 0)}")
     if trough:
         lines.append(f"- 최저 구간: {trough.get('label') or '-'} / {trough.get('value', 0)}")
+    return "\n".join(lines)
+
+
+def _markdown_result_cell(value: Any) -> str:
+    return str(value or "-").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _format_result_amount(value: Any) -> str:
+    try:
+        return f"{int(value):,}원"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _format_result_rate(value: Any) -> str:
+    try:
+        return f"{float(value):.4f}%"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _build_result_list_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """목록 질의는 LLM 추측 없이 DB 결과를 그대로 표시합니다."""
+    result_limit = (plan.filters or {}).get("result_limit")
+    if not result_limit or not structured_data:
+        return ""
+
+    summary = structured_data.get("summary") or {}
+    results = summary.get("recent_results") or []
+    category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
+    if not results:
+        latest = summary.get("latest_available_result_at")
+        answer = f"요청하신 기간에 조건에 맞는 최근 {category_label} 낙찰 결과는 0건입니다."
+        if latest:
+            answer += f"\n현재 DB에서 확인 가능한 해당 분야의 최신 개찰일은 {latest}입니다."
+        return answer
+
+    lines = [
+        f"최근 {category_label} 낙찰 결과 {len(results)}건입니다.",
+        "",
+        "| # | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 | 개찰일 |",
+        "| ---: | --- | --- | --- | ---: | ---: | --- |",
+    ]
+    for index, item in enumerate(results, start=1):
+        lines.append(
+            f"| {index} | {_markdown_result_cell(item.get('bid_ntce_nm'))} "
+            f"({_markdown_result_cell(item.get('bid_ntce_no'))}) | "
+            f"{_markdown_result_cell(item.get('dminstt_nm'))} | "
+            f"{_markdown_result_cell(item.get('bidwinnr_nm'))} | "
+            f"{_format_result_amount(item.get('sucsf_bid_amt'))} | "
+            f"{_format_result_rate(item.get('sucsf_bid_rate'))} | "
+            f"{_markdown_result_cell(item.get('rl_openg_dt'))} |"
+        )
     return "\n".join(lines)
 
 
@@ -550,6 +659,21 @@ def _fallback_answer(
             )
             lines.append(f"- 상위 낙찰 업체: {top_line}")
 
+        recent_results = summary.get("recent_results") or []
+        latest_available_result_at = summary.get("latest_available_result_at")
+        if latest_available_result_at:
+            lines.append(f"- DB 최신 개찰일: {latest_available_result_at}")
+        if recent_results:
+            lines.append("- 최근 낙찰 결과:")
+            for index, item in enumerate(recent_results, start=1):
+                lines.append(
+                    f"  {index}. {item.get('bid_ntce_nm') or '-'} | "
+                    f"{item.get('dminstt_nm') or '-'} | "
+                    f"{item.get('bidwinnr_nm') or '-'} | "
+                    f"{item.get('sucsf_bid_amt') or '-'}원 | "
+                    f"{item.get('sucsf_bid_rate') or '-'}%"
+                )
+
     if vector_docs:
         snippet = _normalize_text(str(vector_docs[0].get("document") or ""))
         if len(snippet) > 200:
@@ -605,6 +729,20 @@ def _build_evidence_items(
                         "citation_number": 1,
                         "citation_label": "Source [1]",
                         "citation_role": "통계/수치 상세 공고",
+                    },
+                )
+            )
+        for i, result in enumerate(summary.get("recent_results") or []):
+            items.append(
+                EvidenceItem(
+                    id=f"result_{result.get('bid_ntce_no') or i}",
+                    type="sql_stats",
+                    content=result,
+                    metadata={
+                        "source": "BidResult",
+                        "citation_number": 1,
+                        "citation_label": "Source [1]",
+                        "citation_role": "최근 낙찰 결과 목록",
                     },
                 )
             )
@@ -668,6 +806,10 @@ SYSTEM_PROMPT = (
     "상세 문맥은 Source [3], [4], [5]를 인용하세요. "
     "특히 '자주 올라오는 공고'나 '빈번한 기관'에 대한 질문에는 Source [1]의 '빈번 공고 기관' 및 "
     "'자주 올라오는 공고 명칭' 데이터를 활용하여 구체적인 수치와 함께 답변하세요. "
+    "'최근 낙찰 결과', '낙찰된 사업 목록'처럼 개별 목록을 요청하면 Source [1]의 '최근 낙찰 결과 목록'을 "
+    "그대로 사용하여 요청한 개수만큼 공고명, 기관, 낙찰업체, 금액, 낙찰률을 나열하세요. "
+    "목록 데이터가 컨텍스트에 있으면 검색 결과가 없다고 말하지 마세요. "
+    "요청 기간에 목록이 없으면 컨텍스트 부족이라고 하지 말고, 요청 기간의 0건과 DB 최신 개찰일을 명확히 설명하세요. "
     "분야 코드는 내부 식별자입니다. 최종 답변에는 Servc, Thng, Cnstwk, Frgcpt 같은 코드를 쓰지 말고 "
     "용역, 물품, 공사, 외자처럼 사용자용 분류명만 쓰세요. "
     "시각화가 유용하면 아래 형식의 canvas 태그를 본문 끝에 포함할 수 있습니다. "
@@ -787,6 +929,16 @@ class HybridRAGEngine:
                 latency_ms=(time.time() - started) * 1000.0,
             )
 
+        direct_result_list_answer = _build_result_list_answer(plan, structured_data)
+        if direct_result_list_answer:
+            citation_suffix = _build_source_citation_from_context(
+                structured_data, vector_docs, kb_status
+            )
+            return _bundle(
+                f"{direct_result_list_answer}{citation_suffix}",
+                [citation_suffix.strip()] if citation_suffix.strip() else [],
+            )
+
         backend = self.backend
         if backend is None:
             fallback_text = _fallback_answer(
@@ -856,6 +1008,20 @@ class HybridRAGEngine:
         ) = self._prepare_context(user_query, db=db, history=history, tool_context=tool_context)
 
         yield {"type": "docs", "docs": vector_docs}
+
+        direct_result_list_answer = _build_result_list_answer(plan, structured_data)
+        if direct_result_list_answer:
+            citation_suffix = _build_source_citation_from_context(
+                structured_data, vector_docs, kb_status
+            )
+            final_answer = f"{direct_result_list_answer}{citation_suffix}"
+            yield {"type": "token", "text": final_answer}
+            yield {
+                "type": "done",
+                "citations": [citation_suffix.strip()] if citation_suffix.strip() else [],
+                "trace_id": provenance.trace_id,
+            }
+            return
 
         backend = self.backend
         if backend is None:

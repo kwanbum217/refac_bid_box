@@ -62,6 +62,15 @@ def test_build_retrieval_plan_routes_statistics_query_to_sql():
     assert plan.filters["date_from"]
 
 
+def test_build_retrieval_plan_routes_result_list_query_to_sql():
+    plan = build_retrieval_plan("최근 낙찰된 용역 사업 5개만 리스트 해봐라")
+    assert plan.use_sql is True
+    assert plan.use_vector is False
+    assert plan.filters["category"] == "Servc"
+    assert plan.filters["result_limit"] == 5
+    assert plan.filters["date_from"]
+
+
 def test_build_retrieval_plan_routes_hybrid_query_to_sql_and_vector():
     plan = build_retrieval_plan("최근 한 달 낙찰률 추세와 위험 사례를 같이 알려줘")
     assert plan.use_sql is True

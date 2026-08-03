@@ -40,11 +40,15 @@ from scripts.segment_servc_models import (  # noqa: E402
     apply_lower_limit,
 )
 from src.ml.features import CATEGORICAL_FEATURES  # noqa: E402
+from src.ml.repeat_history import REPEAT_FEATURES, attach_repeat_history  # noqa: E402
+
+# 학습 경로와 같은 목적함수를 써야 평가가 운영을 대변합니다 (trainer.py 참조).
+EVAL_PARAMS = {**LGB_PARAMS, "objective": "huber", "alpha": 1.0}
 
 # 범주형 목록은 features.py 가 단일 공급원입니다. 여기에 따로 적으면 학습 경로와
 # 어긋나 평가가 운영과 다른 특징을 재게 됩니다 (AGENTS.md 6항).
 CATEGORICAL = list(CATEGORICAL_FEATURES)
-ALL_FEATURES = [*NUMERIC_BASE, *NUMERIC_INSTITUTION, *CATEGORICAL]
+ALL_FEATURES = [*NUMERIC_BASE, *NUMERIC_INSTITUTION, *REPEAT_FEATURES, *CATEGORICAL]
 
 # 오차 구간. 낙찰률 %p 단위이며 발주 담당자가 체감하는 단위와 같습니다.
 ERROR_BANDS = [0.5, 1.0, 2.0, 3.0, 5.0, 10.0]
@@ -101,6 +105,8 @@ def build_frame(parquet_path: Path, train_end_year: int) -> pd.DataFrame:
 
     df = _attach_institution_history(df)
     df["inst_hist_rate"] = df["inst_hist_rate"].fillna(rate_median)
+    # 학습 경로(trainer.train_and_register)와 같은 함수를 씁니다.
+    df = attach_repeat_history(df)
     return df.sort_values("openg_dt").reset_index(drop=True)
 
 
@@ -209,7 +215,7 @@ def main() -> int:
         f"표준편차 {valid['winning_rate'].std():.3f}",
     )
 
-    model = lgb.LGBMRegressor(**LGB_PARAMS)
+    model = lgb.LGBMRegressor(**EVAL_PARAMS)
     model.fit(train[ALL_FEATURES], train["winning_rate"])
     preds = apply_lower_limit(model.predict(valid[ALL_FEATURES]), valid)
 

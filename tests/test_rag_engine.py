@@ -15,6 +15,7 @@ from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.tools.kb_status_tool import build_kb_status_summary
 from src.rag.engine import (
     _build_evidence_items,
+    _build_result_list_answer,
     _normalize_category_wording,
     build_retrieval_plan,
     rag_engine,
@@ -48,6 +49,33 @@ def test_category_wording_hides_internal_service_code():
     assert "용역 공고" in answer
     assert "서비스(Servc)" not in answer
     assert "Servc" not in answer
+
+
+def test_result_list_answer_uses_structured_rows_without_llm():
+    plan = build_retrieval_plan("최근 낙찰된 용역 사업 2개만 리스트")
+    answer = _build_result_list_answer(
+        plan,
+        {
+            "filters": {"category_label": "용역"},
+            "summary": {
+                "recent_results": [
+                    {
+                        "bid_ntce_no": "SERVC-001",
+                        "bid_ntce_nm": "용역 목록 테스트",
+                        "dminstt_nm": "테스트 기관",
+                        "bidwinnr_nm": "테스트 업체",
+                        "sucsf_bid_amt": 1000000,
+                        "sucsf_bid_rate": 98.1234,
+                        "rl_openg_dt": "2026-08-03 11:00:00",
+                    }
+                ]
+            },
+        },
+    )
+
+    assert "용역 낙찰 결과 1건" in answer
+    assert "SERVC-001" in answer
+    assert "98.1234%" in answer
 
 
 def test_kb_status_summary_explains_source_bid_count_meaning():
@@ -191,6 +219,54 @@ def test_retrieve_structured_data_adds_human_category_label(isolated_db):
     data = retrieve_structured_data(isolated_db, plan)
     assert data["filters"]["category"] == "Servc"
     assert data["filters"]["category_label"] == "용역"
+
+
+def test_retrieve_structured_data_returns_recent_result_list(isolated_db):
+    _seed_bid_result(
+        isolated_db,
+        bid_ntce_no="SERVC-001",
+        bid_ntce_nm="용역 목록 테스트",
+        bidwinnr_nm="테스트 업체",
+        category="Servc",
+        rl_openg_dt=datetime.utcnow(),
+    )
+    isolated_db.commit()
+
+    plan = RetrievalPlan(use_sql=True, filters={"category": "Servc", "result_limit": 1})
+    data = retrieve_structured_data(isolated_db, plan)
+
+    recent_results = data["summary"]["recent_results"]
+    assert len(recent_results) == 1
+    assert recent_results[0]["bid_ntce_no"] == "SERVC-001"
+    assert recent_results[0]["category_label"] == "용역"
+
+
+def test_retrieve_structured_data_reports_latest_available_date_when_window_is_empty(
+    isolated_db,
+):
+    _seed_bid_result(
+        isolated_db,
+        bid_ntce_no="SERVC-OLD-001",
+        bid_ntce_nm="이전 용역 결과",
+        category="Servc",
+        rl_openg_dt=datetime(2025, 4, 7, 15, 0),
+    )
+    isolated_db.commit()
+
+    plan = RetrievalPlan(
+        use_sql=True,
+        filters={
+            "category": "Servc",
+            "date_from": "2026-07-28",
+            "date_to": "2026-08-03",
+            "result_limit": 5,
+        },
+    )
+    data = retrieve_structured_data(isolated_db, plan)
+
+    assert data["summary"]["recent_results"] == []
+    assert data["summary"]["latest_available_result_at"] == "2025-04-07 15:00:00"
+    assert any("최신 개찰일" in hint for hint in data["insufficiency_hints"])
 
 
 def test_retrieve_structured_data_uses_daily_buckets_for_short_trend_range(isolated_db):
