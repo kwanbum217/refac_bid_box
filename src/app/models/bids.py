@@ -88,6 +88,17 @@ def _format_rate(value: Any) -> Decimal | None:
     return numeric.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
 
+def normalize_bid_ntce_ord(value: Any) -> str:
+    """차수를 3자리로 맞춥니다.
+
+    공고 API 는 3자리(`000`), 낙찰 API 는 2자리(`00`) 로 같은 차수를 내려줍니다.
+    정규화 없이 두 테이블을 문자열로 이으면 거의 모든 행이 어긋납니다.
+    SQL 조인 쪽 대응은 `src/ml/dataset.py` 의 `_normalized_ord` 입니다.
+    """
+    text = str(value or "").strip()
+    return text.zfill(3)[-3:] if text else "000"
+
+
 def extract_business_budget(raw_data: Any, fallback: Any = None) -> Any:
     """기초금액은 예산금액/배정예산금액만 사용한다."""
     if isinstance(raw_data, dict):
