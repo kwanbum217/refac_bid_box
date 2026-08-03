@@ -1,0 +1,28 @@
+# 대용량 덤프 복원 전용 오버라이드
+#
+# 사용법:
+#   docker compose -f docker-compose.yml -f docker-compose.restore.yml up -d db
+#   (복원 수행)
+#   docker compose up -d db   # 운영 설정으로 원복
+#
+# 기본 innodb_redo_log_capacity(100MB)가 26GB 규모 INSERT에서 체크포인트 병목을
+# 일으켜 복원이 사실상 정지하므로, 복원 동안만 아래 값을 사용합니다.
+# 내구성 관련 설정(flush_log_at_trx_commit, doublewrite)을 낮추므로 복원 전용입니다.
+# 복원 중 크래시가 나면 처음부터 다시 복원합니다.
+
+services:
+  db:
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-redo-log-capacity=8589934592
+      --innodb-buffer-pool-size=6442450944
+      --innodb-flush-log-at-trx-commit=2
+      --innodb-doublewrite=0
+      --innodb-flush-method=O_DIRECT
+      --skip-log-bin
+      --max-allowed-packet=1073741824
+      --net-read-timeout=3600
+      --net-write-timeout=3600
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./data/backups:/backups:ro

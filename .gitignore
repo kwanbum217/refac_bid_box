@@ -192,6 +192,8 @@ catboost_info/
 # Data exports / snapshots
 data/exports/
 *.parquet
+# 데이터셋 캐시 산출물(src/ml/dataset.py). parquet 외 조사 결과 CSV 도 재생성 대상입니다.
+data/feature_store/
 *.arrow
 # Large binaries
 *.exe

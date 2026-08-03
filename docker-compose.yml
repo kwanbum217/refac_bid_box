@@ -42,7 +42,9 @@ services:
   db:
 
     image: mysql:8.0
-    command: --default-authentication-plugin=mysql_native_password
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-redo-log-capacity=2147483648
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
