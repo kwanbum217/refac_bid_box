@@ -74,6 +74,7 @@ GET /api/v1/chatbot/stream  # SSE (HTMX hx-ext="sse" 연동)
 | 로그인 폼 전송 | Django 폼 POST | fetch JSON POST 스크립트 추가 | 인증이 `POST /api/v1/accounts/login` 으로 이동. 폼 본문 그대로는 API 가 받지 못함 |
 | 로그인 `next` | Django 가 자동 처리 | hidden 필드로 명시 전달 | fetch 전송이라 폼 액션의 쿼리스트링이 서버에 닿지 않음 |
 | 낙찰가 예측 호출 | `$.ajax` form-encoded | JSON 본문 | FastAPI Pydantic 스키마가 JSON 을 요구 |
+| 금액 미공개 공고의 예측 폼 | 항상 활성. 누르면 0원 반환 | 잠금 + 사유 표시 | 0원은 오답. [`prediction_without_amount_20260804.md`](prediction_without_amount_20260804.md) |
 
 ### React SPA
 
