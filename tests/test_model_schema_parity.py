@@ -132,6 +132,8 @@ PRODUCTION_INDEX_NAMES = {
         "bid_results_rl_openg_dt_00b70e7a",
         "ix_bid_results_amt_id",
         "ix_bid_results_bidwinnr_nm",
+        # 챗봇 통계 집계 커버링 인덱스. 마이그레이션 a1c4e7b90d21 로 추가했습니다.
+        "ix_bid_results_cat_dt_stats",
         "ix_bid_results_dt_cat",
         "ix_bid_results_rate_id",
     },

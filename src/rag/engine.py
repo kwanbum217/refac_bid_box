@@ -9,6 +9,7 @@ src/rag/engine.py
 from __future__ import annotations
 
 import asyncio
+import calendar
 import json
 import os
 import re
@@ -171,6 +172,61 @@ def _normalize_category_wording(answer_text: str, plan: RetrievalPlan) -> str:
     return normalized
 
 
+def _month_end(year: int, month: int) -> date:
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
+def _parse_year_month_window(lowered: str) -> tuple[date, date] | None:
+    """일자 없이 연도와 월만 지정한 표현을 기간으로 바꿉니다.
+
+    지원하는 형태입니다.
+
+    | 표현 | 해석 |
+    | --- | --- |
+    | `2025년 1월부터 3월까지` | 2025-01-01 ~ 2025-03-31 |
+    | `2024년 11월부터 2025년 2월까지` | 2024-11-01 ~ 2025-02-28 |
+    | `2025년 3월` | 2025-03-01 ~ 2025-03-31 |
+    | `2025년` | 2025-01-01 ~ 2025-12-31 |
+
+    월을 넘길 때 30일을 더하는 방식은 말일이 어긋나므로 달력 말일을 씁니다.
+    """
+    # 연도가 양쪽에 다 붙은 경우를 먼저 봅니다. 뒤 연도를 앞 연도로 덮어쓰면
+    # 해를 넘기는 기간이 뒤집힙니다.
+    cross_year = re.search(
+        r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(?:부터|~|-)\s*(\d{4})\s*년\s*(\d{1,2})\s*월", lowered
+    )
+    if cross_year:
+        y1, m1, y2, m2 = (int(g) for g in cross_year.groups())
+        if 1 <= m1 <= 12 and 1 <= m2 <= 12:
+            start, end = sorted((date(y1, m1, 1), date(y2, m2, 1)))
+            return start, _month_end(end.year, end.month)
+
+    same_year = re.search(
+        r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(?:부터|~|-)\s*(\d{1,2})\s*월", lowered
+    )
+    if same_year:
+        year, m1, m2 = (int(g) for g in same_year.groups())
+        if 1 <= m1 <= 12 and 1 <= m2 <= 12:
+            first, second = sorted((m1, m2))
+            return date(year, first, 1), _month_end(year, second)
+
+    single_month = re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월", lowered)
+    if single_month:
+        year, month = (int(g) for g in single_month.groups())
+        if 1 <= month <= 12:
+            return date(year, month, 1), _month_end(year, month)
+
+    # 연도만 말한 경우입니다. 네 자리 숫자면 무엇이든 연도로 보면 금액이나
+    # 공고번호가 걸리므로 "년" 글자가 붙은 것만 인정합니다.
+    year_only = re.search(r"(\d{4})\s*년", lowered)
+    if year_only:
+        year = int(year_only.group(1))
+        if 1900 <= year <= 2999:
+            return date(year, 1, 1), date(year, 12, 31)
+
+    return None
+
+
 def _parse_time_window(query: str) -> tuple[str, str, str]:
     lowered = _query_lower(query)
     today = date.today()
@@ -196,6 +252,17 @@ def _parse_time_window(query: str) -> tuple[str, str, str]:
     if len(iso_dates) >= 2:
         start_date, end_date = sorted((iso_dates[0], iso_dates[1]))
         start, end = _to_iso(start_date, end_date)
+        return start, end, "recent"
+
+    # 일자 없이 연/월만 말하는 표현입니다. 위의 완전한 날짜 쌍보다 뒤에 두어야
+    # "2026년 4월 19일부터 2026년 4월 25일까지" 가 연월 규칙에 먼저 잡히지 않습니다.
+    #
+    # 이 구간이 비어 있는 동안 "2025년 물품 낙찰률" 같은 질문은 기간 조건 없이
+    # 전 기간을 집계하고도 2025년을 답한 것처럼 응답했습니다. 침묵하는 오답이라
+    # 느린 것보다 나쁩니다.
+    year_month_window = _parse_year_month_window(lowered)
+    if year_month_window is not None:
+        start, end = _to_iso(*year_month_window)
         return start, end, "recent"
 
     if "오늘" in lowered:
