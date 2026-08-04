@@ -19,8 +19,8 @@ dependencies = [
     "arq>=0.26.0",
     "httpx>=0.28.0",
     "pandas>=2.2.0",
-    # 원본 pickle 호환을 위해 고정 (1.7+ 에서 ssh_hist_premium 역직렬화 실패)
-    "scikit-learn==1.6.1",
+    # 원본 가중치가 1.8.0에서 직렬화되어 학습·서빙 런타임을 동일 버전으로 고정합니다.
+    "scikit-learn==1.8.0",
     "joblib>=1.4.0",
     "numpy>=1.26.0",
     "google-genai>=1.0.0",

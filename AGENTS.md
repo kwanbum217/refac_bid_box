@@ -46,7 +46,7 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 | 캐시/브로커 | Redis | 파일/locmem 캐시 대체 |
 | 태스크 큐 | Arq (asyncio + Redis) | 경량 비동기 태스크 큐 |
 | ML | LightGBM, CatBoost, scikit-learn | 기존 스택 유지 |
-| 벡터DB | ChromaDB (유지) | 19개 컬렉션 데이터 보존 최우선 (G1) |
+| 벡터DB | ChromaDB (유지) | 원본 `bidding_kb` 1개 컬렉션 스냅샷 보존 최우선 (G1) |
 | LLM | Google Gemini | 의도 분류, 요약, RAG |
 | 패키지 관리 | uv + pyproject.toml | pip 대체 |
 | 컨테이너 | Docker + docker-compose | 크로스 플랫폼 표준 (G2) |
@@ -122,6 +122,5 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 | `validation-cutover` | Phase 7 | `.agents/skills/validation-cutover/` | E2E, P95 레이턴시 벤치마크, 크로스플랫폼 컷오버 |
 | `project-orchestrator` | 운영 | `.agents/skills/project-orchestrator/` | 도커 컨테이너 통째 시동, 헬스체크, 무손실 검증, 레이턴시 벤치마크 자동 오케스트레이션 |
 | `git-workflow` | 공통 | `.agents/skills/git-workflow/` | 커밋 메시지 컨벤션, pre-commit 검증, 1인 작업 브랜치 -> main 병합 워크플로우 (PR 없음) |
-
 
 

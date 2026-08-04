@@ -73,7 +73,7 @@
   - 1. 백엔드: FastAPI (ASGI)
   - 2. DB: Docker MySQL 8 단일 통일
   - 3. 태스크 큐: Arq (asyncio + Redis 초경량)
-  - 4. 벡터DB: ChromaDB 기존 19개 컬렉션 유지
+  - 4. 벡터DB: ChromaDB `bidding_kb` 활성 컬렉션 유지
   - 5. 가중치 저장: 외부 스토리지 / 독립 볼륨 (Git 저장소 경량화)
   - 6. 재학습 주기: PSI 드리프트 감지 동적 주기 (PSI > 0.2)
   - 7. Champion 전환: 자동 평가 검증 후 1-Click 수동/카나리 승인 게이트
@@ -133,7 +133,7 @@
 - **커밋**: `feat: implement ML predictor singleton, ChromaDB vector store, retraining pipeline, and PSI monitoring`
 - **주요 변경사항**:
   - `src/ml/predictor.py`: 인메모리 모델 프리로딩 싱글톤 구현
-  - `src/rag/vector_store.py`: ChromaDB 19개 컬렉션 비동기 질의 래퍼 작성
+  - `src/rag/vector_store.py`: ChromaDB `bidding_kb` 컬렉션 비동기 질의 래퍼 작성
   - `src/ml/dataset.py`: DB 조인(BidAnnouncement ⟕ BidResult) 및 정제 기반 Feature Store Parquet 빌더 구현
   - `src/ml/trainer.py`: K-Fold 및 Ridge/LightGBM 일반화 학습 엔진 구현
   - `src/ml/validate_model.py`: RMSE, MAPE, R² 실시간 산출 및 Champion vs Challenger 하이브리드 승격 게이트 구현
@@ -306,3 +306,16 @@
   - `scripts/eval_servc_interval_width.py`: 신설. 분위 모델 `num_leaves` 를 15/31/63/127 로 바꿔 가며 등각 보정 후 최종 구간 폭을 측정합니다. 피복률은 등각예측이 보장하므로 폭만 비교하면 우열이 결정됩니다
 - **관련 파일**: `docs/design/servc_hyperparam_search_20260804.md` 7장
 - **검증 결과**: 폭이 U자를 그리며 현행 63 에서 최소(1.7728%p)입니다. 리프 15 는 배율이 1.093 으로 작아지나 원폭이 1.862 로 넓어져 2.0353%p, 리프 127 은 원폭이 1.516 으로 좁아지나 배율이 1.193 으로 커져 1.8075%p 입니다. 구간 폭은 분위 모델 용량으로 더 줄일 수 없으며 특징이나 데이터를 바꿔야 합니다
+
+---
+
+### 2026-08-04 | Phase 7 컷오버 보강 | 무손실 기준선·모델 호환성·크로스 플랫폼 검증 강화
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - 원본 ChromaDB의 실제 기준선을 `bidding_kb` 1개 / 임베딩 10건으로 정정하고 별도 스냅샷의 모든 파일 체크섬을 검증
+  - scikit-learn 런타임을 모델 직렬화 버전 1.8.0으로 고정하고 등록 모델 5종의 버전·서빙 특징 호환성 게이트 추가
+  - Windows 가상환경 경로를 처리하는 Makefile과 격리 Compose 전체 검증 PowerShell 스크립트 추가
+  - 레이턴시 벤치마크에 고유 질의, 예측 동시성, 오류 실패 판정, 원시 표본 JSON 증거 저장 추가
+- **관련 파일**: `scripts/verify_migration.py`, `scripts/verify_model_compatibility.py`, `scripts/benchmark_latency.py`, `scripts/validate_windows.ps1`, `Makefile`, `uv.lock`
+- **검증 결과**: 631 passed 2 skipped, Ruff 통과, 스키마 실질 차이 0건, `validate_agent_rules.py` 6/6

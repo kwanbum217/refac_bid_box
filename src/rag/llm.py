@@ -8,7 +8,7 @@ RAG 생성 LLM 백엔드 추상화.
 `LLM_PROVIDER=gemini` 로 원본 경로를 즉시 복원할 수 있게 유지합니다.
 
 주의: 본 모듈은 생성(generation) LLM 만 교체합니다. ChromaDB 임베딩 모델은
-기존 19개 컬렉션과의 정합성 때문에 절대 교체하지 않습니다 (G1 데이터 무손실).
+보존된 bidding_kb 임베딩과의 정합성 때문에 절대 교체하지 않습니다 (G1 데이터 무손실).
 """
 
 from __future__ import annotations
@@ -73,9 +73,7 @@ class OllamaBackend:
         body = response.json()
         return str((body.get("message") or {}).get("content") or "")
 
-    def stream_generate(
-        self, system_prompt: str, messages: list[dict[str, str]]
-    ) -> Iterator[str]:
+    def stream_generate(self, system_prompt: str, messages: list[dict[str, str]]) -> Iterator[str]:
         """Ollama /api/chat stream=True 를 사용해 실시간 토큰을 반환합니다."""
         payload: dict[str, Any] = {
             "model": self.model,
@@ -141,9 +139,7 @@ class GeminiBackend:
         )
         return response.text or ""
 
-    def stream_generate(
-        self, system_prompt: str, messages: list[dict[str, str]]
-    ) -> Iterator[str]:
+    def stream_generate(self, system_prompt: str, messages: list[dict[str, str]]) -> Iterator[str]:
         """Gemini 스트리밍 API 를 사용해 실시간 토큰을 반환합니다."""
         from google.genai import types
 

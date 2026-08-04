@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,7 +21,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE = PROJECT_ROOT.parent / "bid_box"
 
 MODEL_NAMES = ("v25", "quantum_leap_v25_pro", "ssh_hist_premium", "v13_hybrid")
-WEIGHT_PATTERNS = ("model.bin", "v25_lgbm_final.joblib", "v25_cat_final.bin", "metadata.json", "preprocess.py", "champion_summary.json")
+WEIGHT_PATTERNS = (
+    "model.bin",
+    "v25_lgbm_final.joblib",
+    "v25_cat_final.bin",
+    "metadata.json",
+    "preprocess.py",
+    "champion_summary.json",
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -45,12 +53,30 @@ def collect_checksums(base: Path, relative_prefix: str) -> dict[str, dict]:
     for path in sorted(base.rglob("*")):
         if not path.is_file():
             continue
-        rel = str(path.relative_to(PROJECT_ROOT))
+        rel = str(Path(relative_prefix) / path.relative_to(base))
         records[rel] = {
             "sha256": sha256_file(path),
             "bytes": path.stat().st_size,
         }
     return records
+
+
+def collect_chroma_baseline(chroma_dir: Path) -> dict:
+    sqlite_path = chroma_dir / "chroma.sqlite3"
+    connection = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT name FROM collections ORDER BY name")
+        collections = [row[0] for row in cursor.fetchall()]
+        cursor.execute("SELECT COUNT(*) FROM embeddings")
+        embedding_count = int(cursor.fetchone()[0])
+    finally:
+        connection.close()
+    return {
+        "collections": collections,
+        "embedding_count": embedding_count,
+        "sqlite_sha256": sha256_file(sqlite_path),
+    }
 
 
 def main() -> int:
@@ -64,19 +90,28 @@ def main() -> int:
     model_dest = PROJECT_ROOT / "data" / "model_files"
     chroma_dest = PROJECT_ROOT / "chroma_db"
     backup_dir = PROJECT_ROOT / "data" / "backups"
+    chroma_source_backup = backup_dir / "chroma_source"
 
-    print(f"[1/3] ML model_files 복사: {model_src} -> {model_dest}")
+    print(f"[1/4] ML model_files 복사: {model_src} -> {model_dest}")
     copy_tree(model_src, model_dest)
 
-    print(f"[2/3] chroma_db 복사: {chroma_src} -> {chroma_dest}")
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    if chroma_source_backup.exists():
+        print(f"[2/4] ChromaDB 원본 스냅샷 유지: {chroma_source_backup}")
+    else:
+        print(f"[2/4] ChromaDB 원본 스냅샷 생성: {chroma_src} -> {chroma_source_backup}")
+        copy_tree(chroma_src, chroma_source_backup)
+
+    print(f"[3/4] 운영 chroma_db 복사: {chroma_src} -> {chroma_dest}")
     copy_tree(chroma_src, chroma_dest)
 
-    print("[3/3] SHA256 체크섬 manifest 생성...")
+    print("[4/4] SHA256 체크섬 manifest 생성...")
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(),
         "source_repo": str(source_root),
+        "chroma_baseline": collect_chroma_baseline(chroma_source_backup),
         "models": {},
-        "chroma_db": collect_checksums(chroma_dest, "chroma_db"),
+        "chroma_db": collect_checksums(chroma_source_backup, "chroma_db"),
     }
     for model in MODEL_NAMES:
         model_dir = model_dest / model
@@ -90,7 +125,6 @@ def main() -> int:
                 if (model_dir / name).exists()
             }
 
-    backup_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = backup_dir / "data_assets_checksums.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"      manifest: {manifest_path.relative_to(PROJECT_ROOT)}")

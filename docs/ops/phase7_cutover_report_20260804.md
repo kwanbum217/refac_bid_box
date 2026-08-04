@@ -1,7 +1,7 @@
 # Phase 7 검증 보고서
 
 > **작성일**: 2026-08-04
-> **버전**: v1.0
+> **버전**: v1.2
 > **상태**: G1 통과 / G3 부분 통과 / G2 미검증
 > **판정**: **컷오버 보류**
 
@@ -29,34 +29,39 @@
 | 항목 | 값 |
 | --- | --- |
 | 서버 | uvicorn, 로컬 단일 프로세스, `http://127.0.0.1:8000` |
-| DB | MySQL 8 (Docker), `bid_announcements` 5,461,079행 / `bid_results` 3,390,117행 |
+| DB | MySQL 8 (Docker), `bid_announcements` 5,461,079행 / `bid_results` 3,405,928행 |
 | LLM | Ollama `gemma4:e4b` (로컬 추론) |
 | 표본 | SSE 20회, 단발 질의 10회, 예측 100회 |
 
 벤치마크는 TestClient 가 아니라 기동 중인 서버에 HTTP 로 붙어 측정합니다.
 인프로세스 호출은 네트워크와 이벤트 루프 경합을 건너뛰어 체감치를 재지 못합니다.
+이 장의 수치는 2026-08-04 최초 측정치입니다. 이후 스크립트는 캐시를 피하는
+고유 질의, 예측 10개 동시 요청, 오류 포함 판정, 원시 표본 JSON 저장을 추가해
+강화했습니다. 강화된 방법론의 운영 재측정 전까지 수치를 새 기준선으로 승격하지
+않습니다.
 
 ---
 
 ## 3. G1 데이터 무손실 — 통과
 
 ```
-PASS: ML 가중치 4종 확인 (v25, quantum_leap_v25_pro, ssh_hist_premium, v13_hybrid)
-PASS: ChromaDB 1개 컬렉션 / 임베딩 500건 확인
+PASS: ML 가중치 4종 manifest 체크섬 일치
+PASS: ChromaDB 원본 10건 보존 / 운영 500건 확인
 PASS: DB 테이블 ORM 정합성 확인 (31개 테이블)
 PASS: 공고 5,461,079행 / 낙찰 3,405,928행 확인
+PASS: 등록 모델 5종 scikit-learn 1.8.0 직렬화·서빙 특징 호환성 확인
 ```
 
-### 확인이 필요한 항목
+### ChromaDB 기준선 정정과 보존 방식
 
-`AGENTS.md` 와 `SKILLS.md` 는 ChromaDB 를 **19개 컬렉션**으로 기술하는데
-실측은 **1개 컬렉션 / 임베딩 500건**입니다. 검증 스크립트는 통과로 판정하지만
-문서 기준과 어긋납니다.
+원본 `bid_box/chroma_db`를 직접 조회한 결과 활성 컬렉션은 `bidding_kb`
+1개, 임베딩은 10건입니다. 과거 문서의 19개는 삭제된 컬렉션의 UUID
+디렉토리를 실제 컬렉션으로 잘못 센 값입니다.
 
-원본 DB 유실과 parquet 복구를 거친 이력이 있어 그 과정에서 축소된 것인지,
-문서가 초기 계획값을 그대로 두고 있는 것인지 확인이 필요합니다. **둘 중
-어느 쪽이든 문서나 데이터 한쪽은 정정해야 합니다.** G1 은 협상 대상이
-아니므로 이 항목이 정리되기 전에는 컷오버 근거로 쓸 수 없습니다.
+원본은 `data/backups/chroma_source/`에 별도 보존했습니다. 검증 스크립트는
+manifest에 기록된 모든 원본 파일의 SHA256, `bidding_kb` 1개, 임베딩 10건을
+확인합니다. 운영 `chroma_db/`의 500건은 KB 재구축 결과이며 원본 스냅샷과
+분리해 검증합니다.
 
 ---
 
@@ -177,7 +182,9 @@ macOS 에서 Docker Compose 기동, 마이그레이션, 전량 테스트가 모�
 **Windows 환경이 없어 검증하지 못했습니다.** 실행하지 않은 것을 통과로
 적을 수 없습니다.
 
-Windows 검증 절차는 `docs/ops/cross_platform_guide.md` 를 따릅니다.
+Windows용 `scripts/validate_windows.ps1`과 운영체제별 가상환경 경로를 처리하는
+Makefile을 추가했습니다. 실제 Windows Docker 환경 실행은 남아 있으며 절차는
+`docs/ops/cross_platform_guide.md`를 따릅니다.
 
 ---
 
@@ -187,13 +194,11 @@ Windows 검증 절차는 `docs/ops/cross_platform_guide.md` 를 따릅니다.
 
 | 항목 | 필요한 조치 | 주체 |
 | --- | --- | --- |
-| ChromaDB 컬렉션 수 불일치 | 문서와 데이터 중 어느 쪽이 정본인지 확인 | 담당자 |
 | SSE 첫 토큰 목표 | 목표 재설정 또는 LLM/하드웨어 변경 결정 | 담당자 |
 | Windows 검증 | Windows 환경에서 `make dev` / `make test` 수행 | 담당자 |
-| 재학습 전 주기 검증 | 현재 다른 세션이 모델 학습 진행 중이라 미수행 | - |
 
-앞의 셋은 실행이 아니라 **결정**이 필요한 항목이라 여기서 진행하지
-않았습니다.
+ChromaDB 기준선은 원본 직접 대조와 별도 스냅샷 보존으로 해소했습니다.
+나머지는 실행 환경 또는 비용·품질 결정이 필요합니다.
 
 ---
 
@@ -201,11 +206,18 @@ Windows 검증 절차는 `docs/ops/cross_platform_guide.md` 를 따릅니다.
 
 ```bash
 docker compose up -d db redis
-python scripts/verify_migration.py
-python -m alembic upgrade head
-python -m uvicorn src.app.main:app --port 8000
-python scripts/benchmark_latency.py --base-url http://127.0.0.1:8000
+uv sync --all-groups
+uv run python scripts/verify_migration.py
+uv run python scripts/verify_model_compatibility.py
+uv run alembic current
+uv run python scripts/check_schema_drift.py
+uv run uvicorn src.app.main:app --port 8000
+uv run python scripts/benchmark_latency.py \
+  --base-url http://127.0.0.1:8000 \
+  --output data/benchmarks/phase7_latency.json
 ```
+
+기존 Django 운영 DB에는 `alembic upgrade head`를 실행하지 않습니다.
 
 ---
 
