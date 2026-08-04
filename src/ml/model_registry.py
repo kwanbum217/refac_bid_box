@@ -12,6 +12,7 @@ import pandas as pd
 from src.ml.features import (
     DEFAULT_INSTITUTION_NAME,
     apply_categorical_dtypes,
+    build_default_feature_map,
     prepare_features,
     prepare_input_frame,
     unservable_features,
@@ -36,9 +37,12 @@ MODEL_ALIASES = {
     "v13_pruned_hybrid": "v13_hybrid",
 }
 
+# 카테고리별 기본 서빙 모델. 이 dict 가 정본이며 app 계층은 여기서 가져다 씁니다.
+# 종전 용역 기본값 ssh_hist_premium 은 5폴드 중 3개가 R2 0.9999999999999998 인
+# 타깃 누수 모델이었습니다. 근거: docs/design/servc_prediction_model_design.md 1장
 CATEGORY_DEFAULT_MODELS = {
     "Thng": "quantum_leap_v25_pro",
-    "Servc": "ssh_hist_premium",
+    "Servc": "servc_institution_v1",
 }
 
 DEFAULT_RATIO_MIN = 0.75
@@ -133,6 +137,18 @@ def _normalize_prediction_rate(raw_prediction):
 
 def _prepare_features(features_dict):
     return prepare_features(features_dict)
+
+
+def _prepare_full_frame(features_dict):
+    """모든 특징을 실은 1행 프레임을 만듭니다.
+
+    wrapper 는 받은 프레임을 df.iloc[0].to_dict() 로 되돌린 뒤 자기 컬럼으로
+    다시 구성합니다. 여기서 프레임을 구 52컬럼으로 좁히면 그 사이에 제도 특징과
+    재발주 이력이 사라지고, wrapper 가 전부 기본값으로 채웁니다. 실측에서
+    하한율 87.995% 인 건의 예측이 100.776% 로 나왔습니다.
+    원본 키도 남깁니다. 규칙 기반 구 모델이 title / agency_name 을 씁니다.
+    """
+    return pd.DataFrame([{**features_dict, **build_default_feature_map(features_dict)}])
 
 
 def _resolve_model_id(model_id):
@@ -687,7 +703,7 @@ def predict_optimal_price(model_id, features_dict):
 
         try:
             custom_df = wrapper.run_preprocess(features_dict)
-            df = custom_df if custom_df is not None else _prepare_features(features_dict)
+            df = custom_df if custom_df is not None else _prepare_full_frame(features_dict)
             raw_prediction = wrapper.predict(df)
             return float(_normalize_prediction_rate(raw_prediction))
         except Exception as exc:

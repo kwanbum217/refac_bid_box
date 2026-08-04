@@ -14,11 +14,10 @@ from sqlalchemy import Integer, and_, case, or_, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidAnnouncement, BidResult
+from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 
-DEFAULT_PREDICTION_MODEL_BY_CATEGORY = {
-    "Thng": "quantum_leap_v25_pro",
-    "Servc": "ssh_hist_premium",
-}
+# 매핑을 여기 다시 적으면 모델 교체 때 한쪽만 바뀝니다. 정본은 model_registry 입니다.
+DEFAULT_PREDICTION_MODEL_BY_CATEGORY = CATEGORY_DEFAULT_MODELS
 DEFAULT_PREDICTION_MODEL = "v25"
 DEFAULT_BID_LIST_SORT = "notice"
 DEFAULT_RESULT_LIST_SORT = "opening"

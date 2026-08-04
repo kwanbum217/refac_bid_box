@@ -3,7 +3,7 @@ tests/test_predictions_api.py
 
 원본 apps/predictions/tests.py 중 이식 가능한 검증을 FastAPI 환경으로 변환.
  - _normalize_prediction_rate 단위 테스트
- - predict-price API: 카테고리별 기본 모델 선택 (Thng→quantum_leap, Servc→ssh_hist_premium)
+ - predict-price API: 카테고리별 기본 모델 선택 (CATEGORY_DEFAULT_MODELS 정본 참조)
  - predict-price API: base_amount None 일 때 presmpt_prce fallback
  - predict-price API: selected_model 명시 전달
 """
@@ -14,7 +14,7 @@ import pytest
 
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
-from src.ml.model_registry import _normalize_prediction_rate
+from src.ml.model_registry import CATEGORY_DEFAULT_MODELS, _normalize_prediction_rate
 
 
 def test_normalize_prediction_rate_converts_percent_to_ratio():
@@ -91,12 +91,12 @@ def test_predict_price_defaults_to_quantum_leap_for_goods(
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
 @patch("src.app.api.v1.predictions.predict_optimal_price")
-def test_predict_price_defaults_to_ssh_hist_premium_for_services(
+def test_predict_price_defaults_to_category_model_for_services(
     mock_predict, mock_get_model, client, isolated_db
 ):
     bid = _create_bid(isolated_db, category="Servc")
     mock_predict.return_value = 0.951
-    mock_get_model.return_value = _mock_wrapper("SSH Hist Premium Ensemble")
+    mock_get_model.return_value = _mock_wrapper("용역 전용 모델")
 
     response = client.post(
         "/api/v1/predictions/predict-price",
@@ -105,7 +105,8 @@ def test_predict_price_defaults_to_ssh_hist_premium_for_services(
 
     assert response.status_code == 200
     called_model_id, _ = mock_predict.call_args.args
-    assert called_model_id == "ssh_hist_premium"
+    # 모델명을 다시 적으면 교체 때 한쪽만 바뀝니다. 정본을 그대로 봅니다.
+    assert called_model_id == CATEGORY_DEFAULT_MODELS["Servc"]
 
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")

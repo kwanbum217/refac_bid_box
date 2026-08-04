@@ -29,6 +29,8 @@ from src.app.services.bid_queries import (
     DEFAULT_PREDICTION_MODEL,
     DEFAULT_PREDICTION_MODEL_BY_CATEGORY,
 )
+from src.ml.dataset import announcement_feature_payload
+from src.ml.features import build_feature_dict
 from src.ml.model_registry import ModelRegistry, predict_optimal_price
 from src.ml.predictor import predictor
 
@@ -60,7 +62,10 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
 
     selected_model = payload.selected_model or _default_model_for_bid(bid)
     reference_amount = float(bid.prediction_reference_amount or 0)
+    # 제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 못 채웁니다.
+    # 이 병합을 빼면 학습이 쓰는 34개 중 30개가 기본값으로 떨어집니다.
     features = {
+        **announcement_feature_payload(bid),
         "title": bid.bid_ntce_nm or "",
         "agency_name": bid.dminstt_nm or bid.ntce_instt_nm or "",
         "scenario_mode": "2",
@@ -78,6 +83,12 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
         "bid_clse_dt": bid.bid_clse_dt,
         "openg_dt": bid.openg_dt,
     }
+
+    # 기관 이력과 재발주 이력은 DB 조회가 필요합니다. session 을 넘기지 않으면
+    # 상수로 떨어져 학습과 다른 값을 보게 됩니다.
+    # 원본 키 위에 덮어씁니다. 통째로 갈아끼우면 규칙 기반 구 모델이 쓰는
+    # title / agency_name / scenario_mode 가 사라집니다.
+    features = {**features, **build_feature_dict(features, db)}
 
     try:
         predicted_rate = predict_optimal_price(selected_model, features)

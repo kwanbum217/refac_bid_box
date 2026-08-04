@@ -163,3 +163,38 @@ def test_every_training_feature_is_servable(column):
 
     frame = model_registry._prepare_input_frame(SAMPLE_NOTICE, [column])
     assert frame[column].iloc[0] == defaults[column]
+
+
+def test_full_frame_keeps_institution_features():
+    """예측 진입점이 프레임을 좁히면 wrapper 재구성 때 제도 특징이 사라집니다.
+
+    실측에서 하한율 87.995% 인 건의 예측이 100.776% 로 나왔습니다.
+    """
+    frame = model_registry._prepare_full_frame(SAMPLE_NOTICE)
+    row = frame.iloc[0].to_dict()
+    for column in ("lwlt_rate", "lwlt_rate_missing", "srvce_div_nm", "mid_clsfc_nm", *TRAINING_FEATURES):
+        assert column in row, f"{column} 이 예측 프레임에서 사라졌습니다"
+    assert row["lwlt_rate"] == SAMPLE_NOTICE["lwlt_rate"]
+    assert row["srvce_div_nm"] == SAMPLE_NOTICE["srvce_div_nm"]
+
+
+def test_full_frame_keeps_legacy_rule_model_keys():
+    """규칙 기반 구 모델은 title / agency_name / scenario_mode 를 씁니다."""
+    payload = {**SAMPLE_NOTICE, "title": "도로 유지관리", "agency_name": "서울시", "scenario_mode": "2"}
+    row = model_registry._prepare_full_frame(payload).iloc[0].to_dict()
+    assert row["title"] == "도로 유지관리"
+    assert row["agency_name"] == "서울시"
+    assert row["scenario_mode"] == "2"
+
+
+def test_announcement_payload_extracts_institution_fields():
+    """API 가 raw_data 를 펼치지 않으면 34개 중 30개가 기본값이 됩니다."""
+    from types import SimpleNamespace
+
+    from src.ml.dataset import INSTITUTION_FIELDS, announcement_feature_payload
+
+    raw = {json_key: f"값-{column}" for column, json_key in INSTITUTION_FIELDS.items()}
+    bid = SimpleNamespace(raw_data=raw, bid_ntce_nm="테스트", dminstt_nm="테스트기관")
+    payload = announcement_feature_payload(bid)
+    for column in INSTITUTION_FIELDS:
+        assert payload[column] == f"값-{column}"

@@ -242,3 +242,23 @@ def build_training_dataset(
     parquet_file = out_path / f"dataset_{category_code or 'all'}.parquet"
     df.to_parquet(parquet_file, index=False)
     return df
+
+
+def announcement_feature_payload(bid: BidAnnouncement) -> dict:
+    """공고 한 건을 학습 프레임과 같은 키 규격으로 펼칩니다.
+
+    추론 경로가 이 함수를 거치지 않으면 제도 특징 26종이 전부 기본값으로
+    떨어집니다. 학습은 raw_data JSON 에서 뽑아 쓰는데 API 가 안 뽑아 주면
+    같은 모델이 학습 때와 다른 입력을 보게 됩니다(train/serve skew).
+    키 매핑은 INSTITUTION_FIELDS 단일 정의를 그대로 씁니다.
+    """
+    raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    payload = {
+        column: getattr(bid, column, None)
+        for column in TRAINING_COLUMNS
+        if column not in INSTITUTION_FIELDS
+    }
+    for column, json_key in INSTITUTION_FIELDS.items():
+        value = raw.get(json_key)
+        payload[column] = None if value in ("", None) else value
+    return payload
