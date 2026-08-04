@@ -31,7 +31,7 @@ from src.app.services.bid_queries import (
 )
 from src.ml.dataset import announcement_feature_payload
 from src.ml.features import build_feature_dict
-from src.ml.model_registry import ModelRegistry, predict_optimal_price
+from src.ml.model_registry import ModelRegistry, predict_interval, predict_optimal_price
 from src.ml.predictor import predictor
 
 logger = logging.getLogger(__name__)
@@ -132,12 +132,27 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
     if confidence < 5:
         confidence = (35 + secrets.randbelow(31)) if optimal_price > 1 else 0
 
+    # 예측 구간. 큰 건일수록 산포가 커지므로 단일 숫자만 주면 사용자가 그 값을
+    # 그대로 신뢰합니다. 구 모델은 분위 아티팩트가 없어 None 이 나옵니다.
+    rate_low = rate_high = price_low = price_high = coverage = None
+    bounds = predict_interval(selected_model, features)
+    if bounds is not None:
+        low, high, coverage = bounds
+        rate_low, rate_high = round(low, 4), round(high, 4)
+        price_low = int(estimated_price * low / 100)
+        price_high = int(estimated_price * high / 100)
+
     return PredictPriceResponse(
         status="success",
         optimal_price=optimal_price,
         prediction_rate=prediction_rate_percent,
         confidence=confidence,
         model_name=model_name,
+        rate_low=rate_low,
+        rate_high=rate_high,
+        price_low=price_low,
+        price_high=price_high,
+        interval_coverage=coverage,
         message=(
             f"{model_name} 분석이 완료되었습니다. "
             f"예상 낙찰률은 {prediction_rate_percent}% 입니다."

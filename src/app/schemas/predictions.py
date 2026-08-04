@@ -41,3 +41,10 @@ class PredictPriceResponse(BaseModel):
     confidence: int = Field(..., description="신뢰도 점수 (0~100)")
     model_name: str = Field(..., description="사용한 모델 표시명")
     message: str = Field(..., description="사용자 안내 메시지")
+    # 구간은 분위 모델을 가진 모델에서만 나옵니다. 구 모델은 None 이라
+    # 원본 JsonResponse 계약을 깨지 않습니다.
+    rate_low: float | None = Field(None, description="예상 낙찰률 하단 (%)")
+    rate_high: float | None = Field(None, description="예상 낙찰률 상단 (%)")
+    price_low: int | None = Field(None, description="예상 낙찰가 하단")
+    price_high: int | None = Field(None, description="예상 낙찰가 상단")
+    interval_coverage: float | None = Field(None, description="구간 명목 피복률")

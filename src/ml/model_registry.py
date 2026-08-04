@@ -232,6 +232,12 @@ class BaseModelWrapper(ABC):
 class JoblibModelWrapper(BaseModelWrapper):
     """Joblib 기반 모델 어댑터 (model.bin)"""
 
+    def __init__(self, model_dir, metadata=None):
+        # load() 안에서 쓰지 않으므로 부모 __init__ 전에 둘 필요는 없지만,
+        # 부모가 load() 를 호출하므로 속성 선언은 먼저 해 둡니다.
+        self._quantile_models = None
+        super().__init__(model_dir, metadata)
+
     def load(self):
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(
@@ -241,6 +247,44 @@ class JoblibModelWrapper(BaseModelWrapper):
 
     def get_serving_columns(self):
         return list(getattr(self.model, "feature_name_", []) or self.get_features())
+
+    def _load_quantile_models(self):
+        """분위 모델을 지연 로드합니다. 없으면 빈 dict 라 구간을 내지 않습니다."""
+        if self._quantile_models is None:
+            loaded = {}
+            for path in sorted(Path(self.model_dir).glob("model_q*.bin")):
+                try:
+                    quantile = int(path.stem.split("_q")[1]) / 100.0
+                    loaded[quantile] = joblib.load(path)
+                except (ValueError, IndexError, OSError) as exc:
+                    print(f"[JoblibModelWrapper] 분위 모델 로드 실패 ({path}): {exc}")
+            self._quantile_models = loaded
+        return self._quantile_models
+
+    def predict_interval(self, df):
+        """예측 구간 (하단, 상단) 을 돌려줍니다. 구간이 없으면 None 입니다.
+
+        소박한 분위 회귀 구간은 보정에 실패하므로(명목 80% 대비 실제 75.52%)
+        학습 때 산정한 등각예측 배율로 중앙 기준 확대합니다.
+        """
+        models = self._load_quantile_models()
+        if len(models) < 2:
+            return None
+        columns = self.get_serving_columns()
+        if not columns:
+            return None
+        frame = _prepare_input_frame(
+            df.iloc[0].to_dict(), columns, self.get_category_levels()
+        )
+        bounds = sorted(
+            float(np.asarray(model.predict(frame)).reshape(-1)[0])
+            for model in models.values()
+        )
+        low, high = bounds[0], bounds[-1]
+        interval_meta = self.metadata.get("interval") or {}
+        scale = float(interval_meta.get("conformal_scale") or 1.0)
+        center, half = (low + high) / 2, (high - low) / 2 * scale
+        return center - half, center + half
 
     def predict(self, df):
         features = self.get_serving_columns()
@@ -685,6 +729,32 @@ class ModelRegistry:
             }
             for model_id, wrapper in ordered
         ]
+
+
+def predict_interval(model_id, features_dict):
+    """예측 구간 (하단%, 상단%, 명목 피복률) 을 돌려줍니다. 없으면 None 입니다.
+
+    점 추정과 달리 구간은 선택 기능입니다. 구 모델은 분위 아티팩트가 없어
+    None 이 나오며, 호출부는 그 경우 구간 없이 응답해야 합니다.
+    """
+    wrapper = ModelRegistry.get_model(_resolve_model_id(model_id))
+    if wrapper is None or not hasattr(wrapper, "predict_interval"):
+        return None
+    try:
+        bounds = wrapper.predict_interval(_prepare_full_frame(features_dict))
+    except Exception as exc:
+        print(f"[Predictor] 구간 산출 실패 ({model_id}): {exc}")
+        return None
+    # 구간은 부가 정보입니다. 형태가 어긋나면 점 추정까지 막지 않고 조용히 뺍니다.
+    if not isinstance(bounds, (tuple, list)) or len(bounds) != 2:
+        return None
+    try:
+        low, high = (_normalize_prediction_rate(value) * 100 for value in bounds)
+        coverage = (wrapper.metadata.get("interval") or {}).get("target_coverage")
+    except (TypeError, ValueError) as exc:
+        print(f"[Predictor] 구간 값이 비정상입니다 ({model_id}): {exc}")
+        return None
+    return low, high, float(coverage) if coverage is not None else None
 
 
 def predict_optimal_price(model_id, features_dict):
