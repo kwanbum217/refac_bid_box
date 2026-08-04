@@ -466,12 +466,13 @@ $(document).ready(function() {
         $.ajax({
             url: '{{ url('predictions:predict_price') }}',
             method: 'POST',
-            data: {
-                csrfmiddlewaretoken: '{{ csrf_token }}',
-                bid_id: '{{ bid.id }}',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify({
+                bid_id: Number('{{ bid.id }}'),
                 user_price: price,
                 selected_model: modelId
-            },
+            }),
             success: function(data) {
                 if(data.status === 'success') {
                     $('#prediction-result').removeClass('hidden').addClass('animate-in fade-in slide-in-from-top-2 duration-300');
@@ -503,7 +504,9 @@ $(document).ready(function() {
                 }
             },
             error: function(xhr) {
-                const err = xhr.responseJSON ? xhr.responseJSON.message : 'Server communication error occurred.';
+                const err = xhr.responseJSON
+                    ? (xhr.responseJSON.detail || xhr.responseJSON.message)
+                    : 'Server communication error occurred.';
                 alert('Error: ' + err);
             },
             complete: function() {
