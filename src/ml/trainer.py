@@ -35,6 +35,20 @@ DEFAULT_VALIDATION_SPLIT = 0.2
 # K-Fold 폴드 수. 시간 순서를 존중하는 블록 K-Fold 를 사용합니다.
 DEFAULT_N_FOLDS = 5
 
+# LightGBM 용량 설정. 점 추정과 분위 모델이 같은 복잡도를 써야 구간과 점
+# 추정이 어긋나지 않습니다. 값은 scripts/ablation_servc_features.py 실측 기준입니다.
+LGB_BASE_PARAMS = {
+    "n_estimators": 600,
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "min_child_samples": 40,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "random_state": 42,
+    "verbose": -1,
+    "n_jobs": -1,
+}
+
 # 폴드 하나가 가져야 하는 최소 행 수. 트리 모델이 1행 입력에서 예외를 던집니다.
 MIN_FOLD_SAMPLES = 2
 
@@ -238,19 +252,7 @@ def _train_lightgbm(
     # 검증된 값에 맞춥니다. 종전 200트리/31리프는 실험본(600/63)보다 작아
     # 같은 데이터에서 2025년 홀드아웃 R2 0.6688 대 0.6967,
     # 0.5%p 이내 적중 54.77% 대 60.49% 로 뒤졌습니다.
-    params = {
-        "objective": "huber",
-        "alpha": 1.0,
-        "n_estimators": 600,
-        "learning_rate": 0.05,
-        "num_leaves": 63,
-        "min_child_samples": 40,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "random_state": 42,
-        "verbose": -1,
-        "n_jobs": -1,
-    }
+    params = {**LGB_BASE_PARAMS, "objective": "huber", "alpha": 1.0}
     params.update(hyperparams or {})
 
     model = lgb.LGBMRegressor(**params)
@@ -357,6 +359,80 @@ def _cross_validate_model(
     # 평균만 보면 그 사실이 드러나지 않습니다.
     aggregated["folds"] = fold_metrics
     return aggregated
+
+
+# 예측 구간 설정. 설계서 6.3 은 이분산 대응을 구간 분할이 아니라 예측 구간
+# 제공으로 정했습니다. 소박한 분위 회귀 구간은 보정에 실패하므로(명목 80%
+# 대비 실제 75.52%, 10억 이상 66.85%) 등각예측 배율을 함께 산정합니다.
+# 목표를 90% 로 두는 이유는 80% 가 보정 후에도 76.77% 로 표기와 어긋나기
+# 때문입니다. 근거: docs/design/servc_prediction_interval_20260804.md
+INTERVAL_QUANTILES = (0.1, 0.9)
+INTERVAL_TARGET_COVERAGE = 0.90
+
+# 등각예측 보정에 쓸 학습 구간 뒷부분 비율. 분위 모델 적합에는 쓰지 않습니다.
+# 같은 데이터로 적합과 보정을 하면 배율이 낙관적으로 나옵니다.
+CALIBRATION_SPLIT = 0.15
+
+
+def _conformal_scale(
+    y_cal: np.ndarray,
+    lo_cal: np.ndarray,
+    hi_cal: np.ndarray,
+    target: float,
+) -> float:
+    """구간을 중앙 기준으로 몇 배 넓혀야 목표 피복률에 닿는지 구합니다."""
+    center = (lo_cal + hi_cal) / 2
+    half = np.maximum((hi_cal - lo_cal) / 2, 1e-9)
+    score = np.abs(y_cal - center) / half
+    return float(np.quantile(score, target))
+
+
+def _train_quantile_models(
+    X_train: pd.DataFrame,
+    y_train: np.ndarray,
+) -> tuple[dict[float, Any], float, dict[str, Any]]:
+    """분위 모델 2종과 등각예측 배율을 만듭니다.
+
+    학습 구간 뒷부분을 보정용으로 떼어 배율을 산정한 뒤, 분위 모델 자체는
+    전체 학습 구간으로 다시 적합합니다. 보정 표본까지 써야 분위 추정이
+    가장 좋아지고, 배율은 이미 확보했으므로 누수가 아닙니다.
+    """
+    import lightgbm as lgb
+
+    params = dict(LGB_BASE_PARAMS)
+    categorical = _present_categoricals(X_train)
+
+    split_at = int(len(X_train) * (1.0 - CALIBRATION_SPLIT))
+    scale = 1.0
+    calibration: dict[str, Any] = {"calibrated": False, "calibration_samples": 0}
+    if split_at > 0 and split_at < len(X_train):
+        X_fit, X_cal = X_train.iloc[:split_at], X_train.iloc[split_at:]
+        y_fit, y_cal = y_train[:split_at], y_train[split_at:]
+        bounds = []
+        for q in INTERVAL_QUANTILES:
+            model = lgb.LGBMRegressor(objective="quantile", alpha=q, **params)
+            model.fit(X_fit, y_fit, categorical_feature=categorical)
+            bounds.append(model.predict(X_cal))
+        # 분위별 독립 학습이라 예측이 뒤집힐 수 있습니다(교차 현상).
+        lo_cal = np.minimum(bounds[0], bounds[1])
+        hi_cal = np.maximum(bounds[0], bounds[1])
+        scale = _conformal_scale(y_cal, lo_cal, hi_cal, INTERVAL_TARGET_COVERAGE)
+        calibration = {"calibrated": True, "calibration_samples": len(X_cal)}
+
+    models: dict[float, Any] = {}
+    for q in INTERVAL_QUANTILES:
+        model = lgb.LGBMRegressor(objective="quantile", alpha=q, **params)
+        model.fit(X_train, y_train, categorical_feature=categorical)
+        models[q] = model
+
+    calibration.update(
+        {
+            "quantiles": list(INTERVAL_QUANTILES),
+            "target_coverage": INTERVAL_TARGET_COVERAGE,
+            "conformal_scale": round(scale, 6),
+        }
+    )
+    return models, scale, calibration
 
 
 class ModelTrainer:
@@ -480,6 +556,15 @@ class ModelTrainer:
         model_file = target_dir / "model.bin"
         joblib.dump(best_model, model_file)
 
+        # 예측 구간. 큰 건일수록 산포가 커지는 이분산에 대한 설계서 6.3 의 대응입니다.
+        # 트리 모델을 못 쓸 만큼 표본이 적으면 구간도 만들지 않습니다.
+        interval_meta: dict[str, Any] = {"available": False}
+        if use_tree_models:
+            quantile_models, _, interval_meta = _train_quantile_models(X_train, y_train)
+            for q, model in quantile_models.items():
+                joblib.dump(model, target_dir / f"model_q{int(q * 100):02d}.bin")
+            interval_meta["available"] = True
+
         # 메타데이터 저장
         metadata = {
             "model_name": self.model_name,
@@ -500,6 +585,7 @@ class ModelTrainer:
             "holdout_is_overfit": holdout_is_overfit,
             "time_sorted_split": bool(has_time_column(df_feat)),
             "hyperparams": hyperparams or {},
+            "interval": interval_meta,
             "status": "challenger",
         }
         with open(target_dir / "metadata.json", "w", encoding="utf-8") as f:

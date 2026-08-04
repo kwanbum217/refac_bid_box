@@ -89,6 +89,7 @@ def build_serving_metadata(metadata: dict[str, Any], category_code: str | None) 
         "required_features": list(metadata.get("features") or []),
         "category_levels": metadata.get("category_levels") or {},
         "training_rows": metadata.get("samples_count"),
+        "interval": metadata.get("interval") or {"available": False},
         "promoted_at": utcnow().isoformat(),
         "source_metrics": metadata.get("metrics") or {},
     }
@@ -142,6 +143,9 @@ def promote(
     try:
         target.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source / "model.bin", target / "model.bin")
+        # 분위 아티팩트를 빠뜨리면 서빙에서 구간이 조용히 사라집니다.
+        for artifact in sorted(source.glob("model_q*.bin")):
+            shutil.copy2(artifact, target / artifact.name)
         serving_metadata = build_serving_metadata(metadata, category_code)
         (target / "metadata.json").write_text(
             json.dumps(serving_metadata, indent=2, ensure_ascii=False), encoding="utf-8"
