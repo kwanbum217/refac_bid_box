@@ -318,3 +318,14 @@
   - 하한율 결측을 수집 누락으로 간주하던 인수인계 우선순위 정정
 - **관련 파일**: `scripts/audit_servc_lwlt_coverage.py`, `tests/test_audit_servc_lwlt_coverage.py`, `docs/design/servc_lwlt_availability_20260804.md`, `docs/handoff/2026-08-04_servc_serving_handoff.md`
 - **검증 결과**: 2026년 7월 이후 미개찰 용역 10,434건 중 하한율 명시 방식 3,587건은 100% 보유해 실제 누락 0건. 결측 6,792건은 협상계약·규격가격동시입찰·수의시담 등에 집중. 용역 기초금액 API 첫 100건과 변경이력 API 전체 10건에는 하한율 필드가 없어 보강 원천으로 기각
+
+---
+
+### 2026-08-04 | 용역 샘플링 | `subsample_freq` 실효화 후 기각
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - `scripts/tune_servc_hyperparams.py`: 절대 출력 경로 사용 시 결과 저장 후 표시 단계에서 발생하던 `ValueError` 수정
+  - `subsample_freq` 0/1/5를 동일한 2025년 홀드아웃에서 비교
+- **관련 파일**: `scripts/tune_servc_hyperparams.py`, `tests/test_tune_servc_hyperparams.py`, `docs/design/servc_hyperparam_search_20260804.md`, `docs/handoff/2026-08-04_servc_serving_handoff.md`
+- **검증 결과**: 빈도 5는 MAE 1.2829 -> 1.2828, 0.5%p 적중 60.57% -> 60.53%, 학습 시간 11.4초 -> 13.8초. 정확도 이득이 측정 분해능 수준이고 적중률·시간이 악화되어 현행 `subsample_freq=0` 유지

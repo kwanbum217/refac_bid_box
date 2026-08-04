@@ -63,6 +63,13 @@ SEARCH_SPACE: dict[str, list] = {
 }
 
 
+def display_output_path(path: Path) -> Path:
+    try:
+        return path.relative_to(PROJECT_ROOT)
+    except ValueError:
+        return path
+
+
 def evaluate(train: pd.DataFrame, valid: pd.DataFrame, params: dict) -> dict[str, float]:
     started = time.perf_counter()
     model = lgb.LGBMRegressor(**{**LGB_BASE_PARAMS, **FIXED_PARAMS, **params})
@@ -190,7 +197,7 @@ def main() -> int:
         ),
         encoding="utf-8",
     )
-    print(f"\n전체 시행 기록: {out_path.relative_to(PROJECT_ROOT)}")
+    print(f"\n전체 시행 기록: {display_output_path(out_path)}")
     return 0
 
 

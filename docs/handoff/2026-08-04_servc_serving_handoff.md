@@ -116,13 +116,13 @@ promote("servc_institution_v1", category_code="Servc")
 | 분위 모델 리프 조정 | 같은 문서 7장. 폭이 U자를 그리며 현행 63 이 최소 |
 | 하한율 결측 역산, 공고명 텍스트 | 이전 세션 기각 |
 | 하한율 결측 축소 | [`servc_lwlt_availability_20260804.md`](../design/servc_lwlt_availability_20260804.md). 명시 방식 3,587건의 실제 누락 0건 |
+| `subsample_freq` 1/5 | [`servc_hyperparam_search_20260804.md`](../design/servc_hyperparam_search_20260804.md) 3장. MAE 이득 0.0001%p, 0.5%p 적중 -0.04%p |
 
 ### 6.2 지금 남은 것
 
 | 순서 | 작업 | 근거 |
 | --- | --- | --- |
 | 1 | 물품 모델 하이퍼파라미터 | 용역만 탐색했습니다 |
-| 2 | `subsample_freq` 실효화 | 축이 죽어 있었으므로 이득 자체가 미지 |
 
 하한율 결측 축소는 2026-08-04 재검증에서 기각했습니다. 2026년 7월 이후 미개찰
 공고 10,434건 중 하한율 명시 방식 3,587건은 전부 값을 보유했습니다. 결측은
