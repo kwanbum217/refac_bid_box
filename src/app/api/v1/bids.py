@@ -20,6 +20,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from src.app.core.db import get_db
@@ -139,13 +140,22 @@ def list_bid_results(
     )
 
 
+def _stats_error(message: str) -> JSONResponse:
+    """원본 JsonResponse 오류 계약입니다.
+
+    화면(compare.html)이 `data.message` 를 읽습니다. FastAPI 기본 `detail` 로
+    돌려주면 사유가 표시되지 않고 fallback 문구만 뜹니다.
+    """
+    return JSONResponse(status_code=500, content={"status": "error", "message": message})
+
+
 @router.get("/stats", summary="대시보드 통계")
 def api_stats(db: Session = Depends(get_db)):
     try:
         return get_dashboard_stats(db)
     except Exception:
         logger.exception("대시보드 통계 API 처리 실패")
-        raise HTTPException(status_code=500, detail="대시보드 통계 데이터를 불러오지 못했습니다.")
+        return _stats_error("대시보드 통계 데이터를 불러오지 못했습니다.")
 
 
 @router.get("/compare-stats", summary="공고 대비 낙찰 비교 통계")
@@ -154,7 +164,7 @@ def api_compare_stats(db: Session = Depends(get_db)):
         return get_compare_stats_data(db)
     except Exception:
         logger.exception("비교 분석 통계 API 처리 실패")
-        raise HTTPException(status_code=500, detail="비교 분석 데이터를 불러오지 못했습니다.")
+        return _stats_error("비교 분석 데이터를 불러오지 못했습니다.")
 
 
 @router.get("/home", response_model=HomeContextResponse, summary="홈 화면 컨텍스트")
