@@ -234,14 +234,22 @@ def _train_lightgbm(
     # 위로 밀어 올려, 대다수 건에서 조금씩 빗나갑니다. Huber 로 바꾸면 0.5%p 이내
     # 적중이 45.69% 에서 59.91% 로 오릅니다. 대가는 10%p 초과 오차 1.11% -> 1.56%.
     # 근거: docs/design/servc_repeat_procurement_20260803.md 1장
+    # 용량은 실험 스크립트(scripts/ablation_servc_features.py)에서 실측으로
+    # 검증된 값에 맞춥니다. 종전 200트리/31리프는 실험본(600/63)보다 작아
+    # 같은 데이터에서 2025년 홀드아웃 R2 0.6688 대 0.6967,
+    # 0.5%p 이내 적중 54.77% 대 60.49% 로 뒤졌습니다.
     params = {
         "objective": "huber",
         "alpha": 1.0,
-        "n_estimators": 200,
+        "n_estimators": 600,
         "learning_rate": 0.05,
-        "num_leaves": 31,
+        "num_leaves": 63,
+        "min_child_samples": 40,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
         "random_state": 42,
         "verbose": -1,
+        "n_jobs": -1,
     }
     params.update(hyperparams or {})
 

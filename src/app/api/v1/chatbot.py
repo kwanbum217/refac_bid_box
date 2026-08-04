@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 from html import escape
 from typing import Any
@@ -352,7 +353,31 @@ def _build_answer_tool_context(
     return tool_context
 
 
-def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> ChatResponse:
+@dataclass
+class _PendingRagAnswer:
+    """플래너와 도구 실행까지 끝나고 RAG 본문만 남은 상태입니다.
+
+    이 지점 이전의 분기(세션 전환, 보안 차단, 자동화 확인·실행, 자동화 상태)는
+    생성할 토큰이 없어 스트리밍할 것이 없습니다. 스트리밍은 여기서부터 갈라집니다.
+    """
+
+    message: str
+    session_key: str
+    history: list[dict]
+    kb_status: dict
+    plan: Any
+    tool_context: dict
+    user_id: int | None
+
+
+def _prepare_chat(
+    db: Session, payload: ChatRequest, user_id: int | None = None
+) -> ChatResponse | _PendingRagAnswer:
+    """RAG 답변 직전까지 진행합니다.
+
+    즉답이 가능한 분기는 완성된 ChatResponse 를, RAG 가 필요하면
+    _PendingRagAnswer 를 돌려줍니다.
+    """
     message = (payload.message or "").strip()
     session_key = ensure_session_key(payload.session_key)
     context_state = load_conversation_context(db, session_key, user_id=user_id)
@@ -549,29 +574,46 @@ def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> 
             plan_steps=_plan_steps_payload(plan),
         )
 
-    direct_answer = _build_direct_tool_answer(tool_context)
-    provenance = None
-    latency_ms = 0.0
-    if direct_answer:
-        answer_text = direct_answer
-    else:
-        bundle = rag_engine.get_answer_sync(
-            message, db=db, history=history, tool_context=tool_context or None
-        )
-        answer_text = bundle.answer
-        provenance = bundle.provenance.model_dump()
-        latency_ms = bundle.latency_ms
+    pending = _PendingRagAnswer(
+        message=message,
+        session_key=session_key,
+        history=list(history),
+        kb_status=kb_status,
+        plan=plan,
+        tool_context=tool_context,
+        user_id=user_id,
+    )
 
+    direct_answer = _build_direct_tool_answer(tool_context)
+    if direct_answer:
+        return _finalize_rag_answer(db, pending, direct_answer)
+    return pending
+
+
+def _finalize_rag_answer(
+    db: Session,
+    pending: _PendingRagAnswer,
+    answer_text: str,
+    provenance: dict[str, Any] | None = None,
+    latency_ms: float = 0.0,
+) -> ChatResponse:
+    """RAG 본문이 확정된 뒤의 마무리입니다. 동기 경로와 스트리밍 경로가 공유합니다.
+
+    세션 저장과 선제 제안이 여기 있으므로, 스트리밍이라도 이 함수를 건너뛰면
+    대화가 기록되지 않고 사이드바 세션 목록이 갱신되지 않습니다.
+    """
+    kb_status = pending.kb_status
+    plan = pending.plan
     answer_text = _append_kb_status(answer_text, kb_status)
-    visualizations = list((tool_context or {}).get("visualizations") or [])
+    visualizations = list((pending.tool_context or {}).get("visualizations") or [])
 
     remember_chat_interaction(
         db,
-        session_key,
-        user_id=user_id,
-        message=message,
+        pending.session_key,
+        user_id=pending.user_id,
+        message=pending.message,
         plan=plan,
-        tool_context=tool_context,
+        tool_context=pending.tool_context,
         answer_text=answer_text,
         visualizations=visualizations,
         kb_version=str((kb_status or {}).get("kb_version") or ""),
@@ -580,7 +622,7 @@ def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> 
     # 원본은 답변 모드에서도 선제 운영 제안을 함께 실어 보냅니다. 답변 본문에는
     # 섞지 않고 advisory_signals/suggestions 로만 분리해 전달합니다.
     suggestions, advisory_signals = _build_advisory_bundle(
-        db, plan.suggestions, user_id=user_id
+        db, plan.suggestions, user_id=pending.user_id
     )
 
     return ChatResponse(
@@ -593,9 +635,30 @@ def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> 
         visualizations=visualizations,
         provenance=provenance,
         plan_steps=_plan_steps_payload(plan),
-        session_key=session_key,
+        session_key=pending.session_key,
         llm_backend=rag_engine.backend_name,
         latency_ms=latency_ms,
+    )
+
+
+def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> ChatResponse:
+    """계획 수립 -> 도구 실행 -> RAG 답변 생성을 한 번에 수행합니다 (비스트리밍)."""
+    prepared = _prepare_chat(db, payload, user_id)
+    if isinstance(prepared, ChatResponse):
+        return prepared
+
+    bundle = rag_engine.get_answer_sync(
+        prepared.message,
+        db=db,
+        history=prepared.history,
+        tool_context=prepared.tool_context or None,
+    )
+    return _finalize_rag_answer(
+        db,
+        prepared,
+        bundle.answer,
+        bundle.provenance.model_dump(),
+        bundle.latency_ms,
     )
 
 
@@ -607,6 +670,81 @@ async def chat_api(
 ):
     """계획 수립 -> 도구 실행 -> RAG 답변 생성의 원본 파이프라인을 그대로 수행합니다."""
     return await asyncio.to_thread(_run_chat, db, payload, user.id if user else None)
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+
+@router.post("/chat/stream", summary="챗봇 대화 (SSE 스트리밍)")
+async def chat_stream_api(
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    """POST /chat 와 동일한 파이프라인을 SSE 로 흘립니다.
+
+    이벤트 순서는 stage -> (plan) -> (token...) -> final 입니다. `final` 은
+    비스트리밍 응답과 완전히 같은 ChatResponse 라, 화면은 기존 렌더 로직을
+    그대로 쓰면 됩니다. 토큰은 체감 속도를 위한 것이고 정본은 `final` 입니다.
+
+    세션은 Depends(get_db) 를 씁니다. 직접 SessionLocal() 을 열면 테스트의
+    dependency_overrides 를 우회해 격리 DB 가 아닌 곳에 대화를 기록합니다.
+    yield 의존성은 응답 본문 전송이 끝난 뒤 정리되므로 스트리밍 중에는 유효합니다.
+    """
+    user_id = user.id if user else None
+
+    async def event_generator():
+        try:
+            yield _sse("stage", {"stage": "planning", "message": "요청을 분석하고 있습니다"})
+
+            prepared = await asyncio.to_thread(_prepare_chat, db, payload, user_id)
+            if isinstance(prepared, ChatResponse):
+                yield _sse("final", prepared.model_dump())
+                return
+
+            yield _sse(
+                "plan",
+                {
+                    "plan_steps": _plan_steps_payload(prepared.plan),
+                    "intent": prepared.plan.intent_type,
+                },
+            )
+            yield _sse("stage", {"stage": "answering", "message": "답변을 작성하고 있습니다"})
+
+            answer_text = ""
+            latency_started = utcnow()
+            async for event in rag_engine.stream_tokens(
+                prepared.message,
+                db=db,
+                history=prepared.history,
+                tool_context=prepared.tool_context or None,
+            ):
+                kind = event.get("type")
+                if kind == "token":
+                    text = str(event.get("text") or "")
+                    answer_text += text
+                    yield _sse("token", {"text": text})
+                elif kind == "done":
+                    # 출처 표기와 Answer Guard 교정이 반영된 정본입니다.
+                    answer_text = str(event.get("final_answer") or answer_text)
+                elif kind == "docs":
+                    yield _sse("docs", {"docs": event.get("docs") or []})
+
+            latency_ms = (utcnow() - latency_started).total_seconds() * 1000
+            final = await asyncio.to_thread(
+                _finalize_rag_answer, db, prepared, answer_text, None, round(latency_ms, 2)
+            )
+            yield _sse("final", final.model_dump())
+        except Exception as exc:  # pragma: no cover - 스트리밍 중단 경로
+            logger.exception("SSE 챗봇 스트리밍 실패")
+            yield _sse("error", {"message": f"응답 생성에 실패했습니다: {exc}"})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/session/new", summary="새 대화 세션 생성")

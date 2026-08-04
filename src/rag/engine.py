@@ -993,9 +993,11 @@ class HybridRAGEngine:
         교체해야 합니다.** 무시하면 데이터가 있는데도 "데이터가 없습니다" 라고
         답한 원문이 그대로 남습니다. Answer Guard 가 막으려던 바로 그 상황입니다.
 
+        `done` 은 항상 `final_answer` 를 싣습니다. 교정 여부와 출처 표기까지 반영한
+        정본 본문이므로, 토큰을 이어붙여 직접 조립하지 말고 이 값을 쓰십시오.
+
         주의: 이 경로는 RAG 답변만 흘립니다. 플래너, 자동화 확인, 차트 페이로드,
-        세션 저장은 POST /api/v1/chatbot/chat 에만 있습니다. 화면을 스트리밍으로
-        옮기려면 그 기능들을 먼저 이벤트로 옮겨야 합니다.
+        세션 저장은 POST /api/v1/chatbot/chat/stream 이 담당합니다.
         """
         (
             plan,
@@ -1020,6 +1022,7 @@ class HybridRAGEngine:
                 "type": "done",
                 "citations": [citation_suffix.strip()] if citation_suffix.strip() else [],
                 "trace_id": provenance.trace_id,
+                "final_answer": final_answer,
             }
             return
 
@@ -1037,6 +1040,7 @@ class HybridRAGEngine:
                 "type": "done",
                 "citations": [citation_suffix.strip()] if citation_suffix.strip() else [],
                 "trace_id": provenance.trace_id,
+                "final_answer": f"{normalized}{citation_suffix}",
             }
             return
 
@@ -1061,6 +1065,7 @@ class HybridRAGEngine:
                 "type": "done",
                 "citations": final_citations,
                 "trace_id": provenance.trace_id,
+                "final_answer": final_answer,
             }
             if corrected_answer != raw_answer:
                 done_event["corrected_answer"] = final_answer
@@ -1075,6 +1080,7 @@ class HybridRAGEngine:
                 "type": "done",
                 "citations": [],
                 "trace_id": provenance.trace_id,
+                "final_answer": normalized,
             }
 
 
