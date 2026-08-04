@@ -76,7 +76,8 @@ def apply_categorical_dtypes(
 
     수준을 고정하지 않으면 추론 시점 프레임의 범주 코드가 학습 때와 달라져
     모델이 조용히 다른 값을 읽습니다. train/serve skew 의 전형적인 형태입니다.
-    학습에서 못 본 값은 결측이 되므로 MISSING_CATEGORY 로 되돌립니다.
+    학습에서 못 본 값은 MISSING_CATEGORY 로 되돌립니다. 소분류 200종은 신규
+    코드가 계속 생기므로 미학습 값 유입은 예외가 아니라 상시 상황입니다.
     """
     if not levels:
         return df
@@ -85,10 +86,14 @@ def apply_categorical_dtypes(
         if column not in out.columns:
             continue
         dtype = pd.CategoricalDtype(categories=categories)
-        converted = out[column].astype("string").fillna(MISSING_CATEGORY).astype(dtype)
-        if converted.isna().any() and MISSING_CATEGORY in categories:
-            converted = converted.fillna(MISSING_CATEGORY)
-        out[column] = converted
+        # astype 에 미학습 값을 그대로 넘기면 pandas 4 에서 예외가 됩니다.
+        # 수준 밖 값을 먼저 MISSING_CATEGORY 로 접어 넣고 변환합니다.
+        known = set(categories)
+        fallback = MISSING_CATEGORY if MISSING_CATEGORY in known else None
+        normalized = out[column].astype("string").fillna(MISSING_CATEGORY)
+        if fallback is not None:
+            normalized = normalized.where(normalized.isin(known), fallback)
+        out[column] = normalized.astype(dtype)
     return out
 
 
