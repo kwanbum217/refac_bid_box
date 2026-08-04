@@ -310,3 +310,69 @@ def test_chat_answer_mode_includes_proactive_suggestions(
     assert "운영 제안" not in payload["answer"]
     for signal in payload["advisory_signals"]:
         assert signal["message"] not in payload["answer"]
+
+
+# --------------------------------------------------------------------------- #
+# 금액 없는 공고 회피
+# --------------------------------------------------------------------------- #
+
+
+def test_prediction_tool_skips_bids_without_amount(isolated_db):
+    """가장 최근 공고라도 금액이 없으면 예측 후보에서 제외한다.
+
+    NULL 만 거르면 presmpt_prce = 0 인 공고가 통과해 추천 투찰가가 0 원으로
+    나옵니다. 실제로 외자 공고에서 기초금액 0 원, 추천 투찰가 0 원이 나왔습니다.
+    """
+    from src.app.services.tools.bid_prediction_tool import _latest_predictable_bids
+
+    priced = _seed_bid(isolated_db, index=0)
+    # 더 최근이지만 금액이 없는 공고
+    _seed_bid(
+        isolated_db,
+        index=5,
+        bid_ntce_no="BID-NO-AMOUNT",
+        base_amount=None,
+        presmpt_prce=0,
+    )
+
+    rows = _latest_predictable_bids(isolated_db, category="Thng", limit=1)
+
+    assert [row.bid_ntce_no for row in rows] == [priced.bid_ntce_no]
+
+
+def test_prediction_tool_skips_zero_budget_in_raw_data(isolated_db):
+    """raw_data 예산이 0 이면 SQL 필터를 통과해도 후보에서 제외한다."""
+    from src.app.services.tools.bid_prediction_tool import _latest_predictable_bids
+
+    priced = _seed_bid(isolated_db, index=0)
+    _seed_bid(
+        isolated_db,
+        index=5,
+        bid_ntce_no="BID-ZERO-BUDGET",
+        raw_data={"bdgtAmt": "0"},
+    )
+
+    rows = _latest_predictable_bids(isolated_db, category="Thng", limit=1)
+
+    assert [row.bid_ntce_no for row in rows] == [priced.bid_ntce_no]
+
+
+def test_prediction_tool_still_fills_requested_count(isolated_db):
+    """금액 없는 건이 섞여도 요청한 건수를 채운다."""
+    from src.app.services.tools.bid_prediction_tool import _latest_predictable_bids
+
+    for index in range(3):
+        _seed_bid(isolated_db, index=index)
+    for index in range(3, 6):
+        _seed_bid(
+            isolated_db,
+            index=index,
+            bid_ntce_no=f"BID-EMPTY-{index}",
+            base_amount=None,
+            presmpt_prce=0,
+        )
+
+    rows = _latest_predictable_bids(isolated_db, category="Thng", limit=3)
+
+    assert len(rows) == 3
+    assert all(float(row.prediction_reference_amount or 0) > 0 for row in rows)

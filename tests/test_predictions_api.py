@@ -242,3 +242,50 @@ def test_predict_price_fills_history_features_requiring_db(
     _, features = mock_predict.call_args.args
     for key in ("inst_sample_cnt", "is_repeat", "repeat_cnt"):
         assert key in features, key
+
+
+# --------------------------------------------------------------------------- #
+# 금액을 확정할 수 없는 공고
+# --------------------------------------------------------------------------- #
+
+
+def test_predict_price_rejects_bid_without_any_amount(client, isolated_db):
+    """기초금액과 예정가격이 모두 없으면 예측을 거부해야 한다.
+
+    원본은 그대로 진행해 추천 투찰가 0 원을 돌려줍니다. 0 원은 답이 아니라
+    오답입니다. 해당 공고가 10만 건 이상이고 외자는 절반 가까이가 이 상태입니다.
+    """
+    bid = _create_bid(
+        isolated_db,
+        bid_ntce_no="BID-NO-AMOUNT",
+        category="Frgcpt",
+        base_amount=None,
+        presmpt_prce=0,
+    )
+
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": bid.id, "user_price": "0"},
+    )
+
+    assert response.status_code == 422
+    assert "산출할 수 없습니다" in response.json()["detail"]
+
+
+def test_predict_price_rejects_bid_with_zero_budget_in_raw_data(client, isolated_db):
+    """raw_data 의 예산이 0 이어도 거부한다 (SQL 필터만으로는 못 걸러짐)."""
+    bid = _create_bid(
+        isolated_db,
+        bid_ntce_no="BID-ZERO-BUDGET",
+        category="Thng",
+        base_amount=110000000,
+        presmpt_prce=100000000,
+        raw_data={"bdgtAmt": "0"},
+    )
+
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": bid.id, "user_price": "0"},
+    )
+
+    assert response.status_code == 422

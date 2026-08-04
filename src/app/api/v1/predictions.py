@@ -62,6 +62,15 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
 
     selected_model = payload.selected_model or _default_model_for_bid(bid)
     reference_amount = float(bid.prediction_reference_amount or 0)
+
+    # 원본은 금액이 없어도 예측을 진행해 추천 투찰가 0 원을 돌려줍니다.
+    # 0 원은 답이 아니라 오답이므로 여기서 끊습니다. 기초금액과 예정가격이
+    # 모두 없는 공고가 10만 건 이상이며 외자는 절반 가까이가 이 상태입니다.
+    if reference_amount <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="기초금액과 예정가격이 모두 공개되지 않은 공고라 투찰가를 산출할 수 없습니다.",
+        )
     # 제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 못 채웁니다.
     # 이 병합을 빼면 학습이 쓰는 34개 중 30개가 기본값으로 떨어집니다.
     features = {

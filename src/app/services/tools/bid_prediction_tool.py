@@ -50,6 +50,10 @@ KOREAN_LIMIT_WORDS = {
 }
 MAX_PREDICTION_LIMIT = 10
 
+# raw_data 예산이 "0" 인 건이 섞여 있어 SQL 필터만으로는 요청 건수를 못 채웁니다.
+# 여유분을 더 읽고 파이썬에서 최종 판정한 뒤 자릅니다.
+CANDIDATE_OVERSAMPLE = 3
+
 
 def _default_model_for_bid(bid: BidAnnouncement) -> str:
     return DEFAULT_MODEL_BY_CATEGORY.get(bid.category, "v25")
@@ -106,8 +110,11 @@ def _build_prediction_features(bid: BidAnnouncement) -> dict[str, Any]:
 
 
 def _latest_predictable_bids(db: Session, category: str = "", limit: int = 1):
+    # NULL 만 거르면 presmpt_prce = 0 인 공고가 통과합니다. 금액이 0 이면
+    # 추천 투찰가가 0 원으로 나와 답변 전체가 무의미해집니다. 외자(Frgcpt)는
+    # 절반 가까이가 이 상태라 필터를 0 초과로 둡니다.
     stmt = select(BidAnnouncement).where(
-        or_(BidAnnouncement.base_amount.is_not(None), BidAnnouncement.presmpt_prce.is_not(None))
+        or_(BidAnnouncement.base_amount > 0, BidAnnouncement.presmpt_prce > 0)
     )
     if category:
         stmt = stmt.where(BidAnnouncement.category == category)
@@ -115,8 +122,16 @@ def _latest_predictable_bids(db: Session, category: str = "", limit: int = 1):
         BidAnnouncement.collected_at.desc(),
         BidAnnouncement.bid_ntce_dt.desc(),
         BidAnnouncement.id.desc(),
-    ).limit(limit)
-    return list(db.execute(stmt).scalars().all())
+    ).limit(limit * CANDIDATE_OVERSAMPLE)
+
+    # 최종 판정은 prediction_reference_amount 로 합니다. raw_data 의 예산 필드가
+    # "0" 이면 SQL 필터를 통과하고도 기준 금액이 0 이 됩니다.
+    rows = [
+        row
+        for row in db.execute(stmt).scalars().all()
+        if float(row.prediction_reference_amount or 0) > 0
+    ]
+    return rows[:limit]
 
 
 def _model_display_name(model_id: str) -> str:
