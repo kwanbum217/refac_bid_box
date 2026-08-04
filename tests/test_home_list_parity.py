@@ -14,6 +14,8 @@ tests/test_home_list_parity.py
 - test_bid_list_renders_notice_date_column_and_sort_select
 - test_latest_announcement_queryset_does_not_evaluate_input_queryset
 - test_bid_result_list_renders_award_results_page
+- test_bid_result_detail_uses_announcement_reference_winning_rate
+- test_double_slash_compare_url_redirects_to_canonical_url
 - test_index_page_renders_restored_home_template
 - test_index_page_header_shows_branding_and_logout_without_bell
 - test_index_page_recent_bid_sections_keep_latest_notice_order
@@ -231,6 +233,39 @@ def test_bid_result_list_renders_award_results_page(auth_client, isolated_db):
     assert "data-results-filter-form" in body
     assert 'name="sort"' in body
     assert "개찰일" in body
+
+
+def test_bid_result_detail_uses_announcement_reference_winning_rate(
+    auth_client, isolated_db
+):
+    """상세의 낙찰률은 수집 필드가 아니라 공고 기준금액으로 다시 계산한다.
+
+    조달청이 주는 sucsf_bid_rate 는 예정가격 대비인 경우가 섞여 있어 화면에
+    그대로 쓰면 기준금액 대비 낙찰률과 어긋납니다. 여기서는 낙찰 950,000 /
+    기준금액 1,100,000 = 86.3636% 가 나와야 하고, 수집값 95.0 은 보이면
+    안 됩니다.
+    """
+    _add_announcement(isolated_db, bid_ntce_no="ANN-RATE", base_amount=1100000)
+    result = _add_result(
+        isolated_db, bid_ntce_no="ANN-RATE", sucsf_bid_amt=950000, sucsf_bid_rate=95.0
+    )
+
+    body = auth_client.get(f"/bids/result/{result.id}/").text
+
+    assert "86.3636%" in body
+    assert "95.0%" not in body
+
+
+def test_double_slash_compare_url_redirects_to_canonical_url(auth_client):
+    """슬래시가 겹친 주소를 원본과 같이 302 로 정규 주소에 되돌린다.
+
+    원본 config/urls.py 의 re_path(r'^bids//...') 대응입니다. 화면 링크 조합
+    과정에서 실제로 생기던 주소라 남겨 둡니다.
+    """
+    response = auth_client.get("/bids//compare/", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/bids/compare/"
 
 
 # --------------------------------------------------------------------------- #

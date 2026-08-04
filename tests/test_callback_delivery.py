@@ -184,6 +184,29 @@ def test_callback_credentials_are_passed_to_worker_only_in_callback_mode(
     assert kwargs["callback_token"]
 
 
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_chat_api_falls_back_to_polling_for_loopback_callback_base_url(
+    mock_enqueue, client, isolated_db, automation_settings
+):
+    """챗봇에서 만든 작업도 루프백 콜백 주소면 polling 으로 내려간다.
+
+    자동화 실행 엔드포인트만 판정이 걸려 있고 챗봇 경로가 새면, 워커가
+    도달할 수 없는 127.0.0.1 로 결과를 보내다 통째로 유실됩니다. 자격을
+    비워 보내는 것까지 확인해야 워커가 헛된 HTTP 시도를 하지 않습니다.
+    """
+    automation_settings(base_url="http://127.0.0.1:8800", shares_db=False)
+    _login(client)
+
+    payload = client.post(
+        "/api/v1/chatbot/chat", json={"message": "오늘 데이터 갱신해서 그래프 보여줘"}
+    ).json()
+
+    assert payload["job"]["callback_mode"] == "polling"
+    assert payload["job"]["callback_configured"] is False
+    assert mock_enqueue.call_args.kwargs["callback_url"] == ""
+    assert mock_enqueue.call_args.kwargs["callback_token"] == ""
+
+
 # --------------------------------------------------------------------------- #
 # 워커 보고 경로
 # --------------------------------------------------------------------------- #

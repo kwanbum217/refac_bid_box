@@ -20,6 +20,7 @@ from src.app.services.plan_executor import execute_internal_tool_step, execute_p
 from src.app.services.planner import compile_plan, interpret_request
 from src.app.services.result_presenter import (
     build_result_intelligence,
+    build_terminal_answer,
     build_visualizations,
 )
 
@@ -120,6 +121,44 @@ def test_build_result_intelligence_generates_insights_and_recommendations():
     assert any("prediction_validate" in item for item in intelligence["recommended_actions"])
 
 
+def test_build_terminal_answer_includes_insights_and_recommended_actions():
+    """자동화 종료 답변은 스텝 요약에서 끝나지 않고 해석과 다음 액션까지 담는다.
+
+    사용자는 "predict: success" 만 봐서는 무엇을 해야 할지 모릅니다. avg_r2 가
+    0.58 로 기준 미달인데 status 는 success 라 더 그렇습니다. 해석 문단이
+    빠지면 실패에 가까운 결과를 성공으로 읽게 됩니다.
+    """
+    request_obj = AutomationRequest(
+        request_id="terminal-answer",
+        user_id=1,
+        intent_type="data_refresh",
+        action_key="data_refresh",
+        requested_text="오늘 데이터 갱신해줘",
+        status="success",
+        result_summary="최종 점검 완료",
+        result_payload={
+            "steps": {
+                "inspect": {
+                    "status": "success",
+                    "summary": "inspect done",
+                    "metrics": {"today_rows": 0, "vector_count": 20},
+                },
+                "predict": {
+                    "status": "success",
+                    "summary": "predict done",
+                    "metrics": {"model_name": "v25", "avg_r2": 0.58, "pass_all": False},
+                },
+            }
+        },
+    )
+
+    answer = build_terminal_answer(request_obj)
+
+    assert "운영 해석" in answer
+    assert "권장 액션" in answer
+    assert "prediction_validate" in answer
+
+
 # --------------------------------------------------------------------------- #
 # AdvisoryEngineTests (DB 필요)
 # --------------------------------------------------------------------------- #
@@ -157,6 +196,47 @@ def test_advisory_engine_detects_recent_failures(isolated_db):
 
     suggestions = AdvisoryEngine().suggestion_texts(isolated_db)
     assert any("full_validation" in item for item in suggestions)
+
+
+def test_advisory_engine_ignores_failures_before_latest_successful_health_check(
+    isolated_db,
+):
+    """전체 점검이 성공한 뒤에는 그 이전 실패를 다시 꺼내지 않는다.
+
+    점검으로 이미 해소된 실패까지 계속 세면, 사용자가 아무리 점검해도
+    "최근 자동화 실패" 경고가 사라지지 않아 신호가 무의미해집니다.
+    """
+    now = utcnow()
+    for offset in range(2):
+        isolated_db.add(
+            AutomationRequest(
+                request_id=f"stale-fail-{offset}",
+                user_id=1,
+                intent_type="kb_refresh",
+                action_key="kb_refresh",
+                requested_text=f"과거 실패 {offset}",
+                status="failed",
+                created_at=now,
+            )
+        )
+    isolated_db.add(
+        AutomationRequest(
+            request_id="health-check",
+            user_id=1,
+            intent_type="full_validation",
+            action_key="full_validation",
+            requested_text="전체 점검해줘",
+            status="success",
+            # 실패들보다 나중에 끝나야 체크포인트 역할을 합니다.
+            created_at=now + timedelta(seconds=1),
+            completed_at=now + timedelta(seconds=2),
+        )
+    )
+    isolated_db.commit()
+
+    suggestions = AdvisoryEngine().suggestion_texts(isolated_db, user_id=1)
+
+    assert not any("최근 자동화 실패" in item for item in suggestions), suggestions
 
 
 def test_advisory_engine_returns_priority_and_severity_sorted_signals(isolated_db):
