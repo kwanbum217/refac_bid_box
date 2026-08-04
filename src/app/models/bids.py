@@ -167,6 +167,16 @@ class BidResult(Base):
         Index("bid_results_category_981358ae", "category"),
         Index("bid_results_collected_at_25a564b9", "collected_at"),
         Index("bid_results_rl_openg_dt_00b70e7a", "rl_openg_dt"),
+        # 챗봇 통계 질의(업무구분 + 기간별 건수/평균낙찰률/합계금액) 전용 커버링
+        # 인덱스입니다. 집계 컬럼까지 넣어야 테이블을 읽지 않습니다. 앞의
+        # category 단일 인덱스만으로는 옵티마이저가 340만 행 풀스캔을 택합니다.
+        Index(
+            "ix_bid_results_cat_dt_stats",
+            "category",
+            "rl_openg_dt",
+            "sucsf_bid_rate",
+            "sucsf_bid_amt",
+        ),
     )
 
     id = Column(PKBigInteger, primary_key=True, autoincrement=True)

@@ -7,6 +7,8 @@ Django 템플릿 렌더링, 챗봇 API 통합 테스트는 React 프론트엔드
  - HybridRAGRoutingTests: RAG 검색 라우팅 규칙
 """
 
+import pytest
+
 from src.app.services.capability_registry import CAPABILITY_REGISTRY
 from src.rag.engine import build_retrieval_plan
 
@@ -86,6 +88,51 @@ def test_build_retrieval_plan_parses_explicit_korean_date_range():
     assert plan.filters["institution_name"] == "서울"
     assert plan.filters["category"] == "Servc"
     assert plan.filters["analysis_mode"] == "trend"
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_from", "expected_to"),
+    [
+        ("2025년 물품 낙찰 평균 낙찰률 알려줘", "2025-01-01", "2025-12-31"),
+        ("2025년 3월 낙찰률 알려줘", "2025-03-01", "2025-03-31"),
+        ("2025년 1월부터 3월까지 물품 낙찰률", "2025-01-01", "2025-03-31"),
+        # 해를 넘기는 구간. 뒤 연도를 앞 연도로 덮어쓰면 기간이 뒤집힙니다.
+        ("2024년 11월부터 2025년 2월까지 낙찰률", "2024-11-01", "2025-02-28"),
+        # 윤년 말일. 30일을 더하는 방식으로는 맞출 수 없습니다.
+        ("2024년 2월 낙찰률", "2024-02-01", "2024-02-29"),
+    ],
+)
+def test_build_retrieval_plan_parses_year_and_month_without_day(
+    query, expected_from, expected_to
+):
+    """일자 없이 연/월만 말해도 기간 조건이 걸려야 한다.
+
+    이 표현들이 파싱되지 않던 동안, 질의는 기간 조건 없이 전 기간을 집계하고도
+    해당 연도를 답한 것처럼 응답했습니다. 느린 것보다 나쁜 침묵하는 오답입니다.
+    """
+    filters = build_retrieval_plan(query).filters
+    assert filters["date_from"] == expected_from
+    assert filters["date_to"] == expected_to
+
+
+def test_build_retrieval_plan_keeps_full_date_range_over_year_month_rule():
+    """완전한 날짜 쌍이 연월 규칙보다 우선해야 한다.
+
+    연월 규칙이 먼저 걸리면 "2026년 4월 19일부터 25일까지" 가 4월 한 달로
+    넓어집니다. 규칙 순서가 계약입니다.
+    """
+    filters = build_retrieval_plan("2026년 4월 19일부터 2026년 4월 25일까지 낙찰률").filters
+    assert filters["date_from"] == "2026-04-19"
+    assert filters["date_to"] == "2026-04-25"
+
+
+def test_build_retrieval_plan_ignores_four_digit_numbers_without_year_marker():
+    """네 자리 숫자만으로 연도를 추정하지 않는다.
+
+    공고번호나 금액이 연도로 잡히면 엉뚱한 기간이 걸립니다.
+    """
+    filters = build_retrieval_plan("공고번호 2025 관련 낙찰 알려줘").filters
+    assert "date_from" not in filters
 
 
 def test_build_retrieval_plan_defaults_to_vector_when_no_keyword_matches():
