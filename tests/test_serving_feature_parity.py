@@ -8,6 +8,7 @@ model_registry 가 특징 맵 복제본을 들고 있던 동안, 신규 제도 �
 from __future__ import annotations
 
 import inspect
+from typing import ClassVar
 
 import pandas as pd
 import pytest
@@ -198,3 +199,52 @@ def test_announcement_payload_extracts_institution_fields():
     payload = announcement_feature_payload(bid)
     for column in INSTITUTION_FIELDS:
         assert payload[column] == f"값-{column}"
+
+
+def test_interval_is_optional_for_legacy_models():
+    """분위 아티팩트가 없는 구 모델은 구간 없이 점 추정만 냅니다."""
+
+    class _Legacy:
+        model_dir = "/tmp/does-not-exist"
+        metadata: ClassVar[dict] = {}
+
+        get_serving_columns = model_registry.JoblibModelWrapper.get_serving_columns
+        _load_quantile_models = model_registry.JoblibModelWrapper._load_quantile_models
+        predict_interval = model_registry.JoblibModelWrapper.predict_interval
+
+        def __init__(self):
+            self._quantile_models = None
+            self.model = None
+
+        def get_features(self):
+            return ["log_price"]
+
+        def get_category_levels(self):
+            return None
+
+    assert _Legacy().predict_interval(pd.DataFrame([SAMPLE_NOTICE])) is None
+
+
+def test_malformed_interval_does_not_break_prediction():
+    """구간은 부가 정보입니다. 형태가 어긋나도 점 추정을 막으면 안 됩니다."""
+
+    class _Broken:
+        metadata: ClassVar[dict] = {"interval": {"target_coverage": 0.9}}
+
+        def predict_interval(self, df):
+            return "이상한 값"
+
+    original = model_registry.ModelRegistry.get_model
+    model_registry.ModelRegistry.get_model = classmethod(lambda cls, _id: _Broken())
+    try:
+        assert model_registry.predict_interval("x", SAMPLE_NOTICE) is None
+    finally:
+        model_registry.ModelRegistry.get_model = original
+
+
+def test_trainer_records_interval_metadata():
+    """승격 판정과 서빙이 배율을 읽으므로 메타데이터에 남아야 합니다."""
+    from src.ml.trainer import INTERVAL_QUANTILES, INTERVAL_TARGET_COVERAGE
+
+    assert INTERVAL_TARGET_COVERAGE == 0.90, "80% 는 보정 후에도 76.77% 라 쓰지 않습니다"
+    assert tuple(INTERVAL_QUANTILES) == (0.1, 0.9)
