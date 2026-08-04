@@ -26,6 +26,9 @@ from src.ml.features import unservable_features
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SERVING_ROOT = PROJECT_ROOT / "data" / "model_files"
 REGISTRY_ROOT = PROJECT_ROOT / "ml_registry"
+# 백업은 서빙 루트 밖에 둡니다. 안에 두면 ModelRegistry 가 디렉터리를 모두
+# 모델로 훑으므로 백업본까지 로드해 같은 모델이 두 번 등록됩니다.
+BACKUP_ROOT = PROJECT_ROOT / "data" / "model_backups"
 
 # 승격 필수 조건. 설계서 7장을 코드로 옮긴 것입니다.
 # 필수 4(어느 폴드도 R2 > 0.99 아닐 것)는 ssh_hist_premium 타깃 누수 사고의
@@ -98,6 +101,7 @@ def promote(
     category_code: str | None = None,
     registry_dir: Path | str = REGISTRY_ROOT,
     serving_dir: Path | str = SERVING_ROOT,
+    backup_dir: Path | str | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
     """챌린저를 서빙 경로로 승격합니다.
@@ -128,7 +132,9 @@ def promote(
     target = serving_dir / model_name
     backup = None
     if target.exists():
-        backup = serving_dir / f"{model_name}.bak"
+        backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
+        backup_root.mkdir(parents=True, exist_ok=True)
+        backup = backup_root / model_name
         if backup.exists():
             shutil.rmtree(backup)
         shutil.move(str(target), str(backup))

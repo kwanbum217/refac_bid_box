@@ -13,17 +13,21 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidAnnouncement
-from src.ml.model_registry import ModelRegistry, predict_optimal_price
+from src.ml.model_registry import (
+    CATEGORY_DEFAULT_MODELS,
+    ModelRegistry,
+    predict_optimal_price,
+)
 
-DEFAULT_MODEL_BY_CATEGORY = {
-    "Thng": "quantum_leap_v25_pro",
-    "Servc": "ssh_hist_premium",
-}
+# 정본은 model_registry 입니다.
+DEFAULT_MODEL_BY_CATEGORY = CATEGORY_DEFAULT_MODELS
 
 MODEL_ALIASES = {
     "quantum_leap_v25_pro": "quantum_leap_v25_pro",
     "ssh_hist_premium": "ssh_hist_premium",
     "ssh": "ssh_hist_premium",
+    "servc_institution_v1": "servc_institution_v1",
+    "servc": "servc_institution_v1",
     "v13_hybrid": "v13_hybrid",
     "v13": "v13_hybrid",
     "v25": "v25",
