@@ -6,6 +6,22 @@ tests/test_predictions_api.py
  - predict-price API: 카테고리별 기본 모델 선택 (CATEGORY_DEFAULT_MODELS 정본 참조)
  - predict-price API: base_amount None 일 때 presmpt_prce fallback
  - predict-price API: selected_model 명시 전달
+
+원본 테스트 대응표입니다. 이름이 다른 것은 이식본 라우트명(predict-price)에
+맞췄기 때문이며 검증 내용은 같습니다.
+
+| 원본 | 이식본 |
+| --- | --- |
+| test_predict_api_defaults_to_quantum_leap_for_goods | test_predict_price_defaults_to_quantum_leap_for_goods |
+| test_predict_api_defaults_to_ssh_hist_premium_for_services | test_predict_price_defaults_to_category_model_for_services |
+| test_predict_api_passes_selected_model_to_backend | test_predict_price_passes_selected_model |
+| test_predict_api_falls_back_to_estimated_price_only_for_prediction_input | test_predict_price_falls_back_to_presmpt_prce_when_base_amount_none |
+| test_quantum_leap_bundle_is_discoverable | test_list_models_api_returns_registered_bundles (정본 상수 대조) |
+| test_ssh_hist_bundle_is_discoverable | test_list_models_api_returns_registered_bundles (정본 상수 대조) |
+
+용역 기본 모델은 원본이 ssh_hist_premium 로 고정돼 있었지만, 이식본은
+CATEGORY_DEFAULT_MODELS 를 정본으로 삼아 재학습 승격을 따라갑니다. 그래서
+모델 ID 를 문자열로 박지 않고 정본 상수와 대조합니다.
 """
 
 from unittest.mock import MagicMock, patch
@@ -14,7 +30,11 @@ import pytest
 
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
-from src.ml.model_registry import CATEGORY_DEFAULT_MODELS, _normalize_prediction_rate
+from src.ml.model_registry import (
+    CATEGORY_DEFAULT_MODELS,
+    MODEL_FILES_ROOT,
+    _normalize_prediction_rate,
+)
 
 
 def test_normalize_prediction_rate_converts_percent_to_ratio():
@@ -36,6 +56,56 @@ def test_normalize_prediction_rate_clamps_to_max():
 
 def test_normalize_prediction_rate_clamps_to_min():
     assert _normalize_prediction_rate(70.0) == pytest.approx(0.75)
+
+
+@pytest.mark.skipif(
+    not (MODEL_FILES_ROOT.exists() and any(MODEL_FILES_ROOT.iterdir())),
+    reason="모델 가중치가 없는 환경입니다",
+)
+def test_list_models_api_returns_registered_bundles(client, isolated_db, monkeypatch):
+    """원본 test_list_models_api_returns_registered_bundles 대응.
+
+    화면의 모델 선택 드롭다운과 성능 배지가 이 응답만 보고 그려집니다.
+    키가 하나라도 빠지면 배지가 통째로 비므로 계약을 고정합니다.
+
+    원본은 training_rows=22893 처럼 특정 번들의 값을 그대로 박아 두었습니다.
+    이식본은 재학습 승격으로 그 값이 바뀌는 것이 정상이므로, 값 대신 구조와
+    카테고리 정본 등록 여부를 봅니다. 값까지 박으면 승격할 때마다 테스트가
+    깨지고 결국 실제 계약을 못 지키게 됩니다.
+    """
+    from src.ml.model_registry import ModelRegistry
+
+    # conftest 가 SKIP_MODEL_LOAD 로 로드를 막으므로 이 검사만 풀어 줍니다.
+    # 목록이 비어 있으면 검증할 대상 자체가 없습니다.
+    monkeypatch.setenv("SKIP_MODEL_LOAD", "false")
+    try:
+        response = client.get("/api/v1/predictions/list-models")
+    finally:
+        ModelRegistry._models = {}
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["models"], "등록된 모델이 하나도 없습니다"
+
+    for model in payload["models"]:
+        for key in (
+            "id",
+            "name",
+            "description",
+            "version",
+            "specialization",
+            "specialized_categories",
+            "required_features",
+            "metrics",
+        ):
+            assert key in model, f"{model.get('id')} 에 {key} 누락"
+
+    model_ids = {model["id"] for model in payload["models"]}
+    # 카테고리 기본 모델은 정본 상수에 등록된 것이 실제로 조회 가능해야 합니다.
+    # 여기가 어긋나면 해당 업무구분 예측이 통째로 fallback 으로 떨어집니다.
+    for category, default_model in CATEGORY_DEFAULT_MODELS.items():
+        assert default_model in model_ids, f"{category} 기본 모델 {default_model} 미등록"
 
 
 def _create_bid(db, **overrides):
