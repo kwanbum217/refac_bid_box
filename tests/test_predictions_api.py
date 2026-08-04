@@ -155,3 +155,90 @@ def test_predict_price_returns_404_for_unknown_bid(client, isolated_db):
         json={"bid_id": 99999, "user_price": "97000000"},
     )
     assert response.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# train/serve skew 방어
+# --------------------------------------------------------------------------- #
+
+
+@patch("src.app.api.v1.predictions.ModelRegistry.get_model")
+@patch("src.app.api.v1.predictions.predict_optimal_price")
+def test_predict_price_passes_institution_features_from_raw_data(
+    mock_predict, mock_get_model, client, isolated_db
+):
+    """API 가 raw_data 의 제도 특징을 추론 입력에 실어야 한다.
+
+    이 경로가 빠지면 학습이 쓰는 제도 특징이 전부 기본값으로 떨어져
+    같은 모델이 학습 때와 다른 입력을 보게 됩니다(train/serve skew).
+    실측에서 하한율 87.995% 인 건이 100.776% 로 예측된 원인입니다.
+    """
+    from src.ml.dataset import INSTITUTION_FIELDS
+
+    raw = {
+        "sucsfbidLwltRate": "87.995",
+        "prearngPrceDcsnMthdNm": "복수예가",
+        "sucsfbidMthdNm": "적격심사",
+        "srvceDivNm": "일반용역",
+    }
+    bid = _create_bid(isolated_db, category="Servc", bid_ntce_no="BID-INST", raw_data=raw)
+    mock_predict.return_value = 0.88
+    mock_get_model.return_value = _mock_wrapper("용역 전용 모델")
+
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": bid.id, "user_price": "0"},
+    )
+
+    assert response.status_code == 200
+    _, features = mock_predict.call_args.args
+    assert float(features["lwlt_rate"]) == pytest.approx(87.995)
+    assert features["prearng_mthd"] == "복수예가"
+    assert features["sucsfbid_mthd_nm"] == "적격심사"
+    assert features["srvce_div_nm"] == "일반용역"
+    # 매핑 키 전체가 입력에 존재해야 합니다. 하나라도 빠지면 기본값으로 떨어집니다.
+    for column in INSTITUTION_FIELDS:
+        assert column in features, column
+
+
+@patch("src.app.api.v1.predictions.ModelRegistry.get_model")
+@patch("src.app.api.v1.predictions.predict_optimal_price")
+def test_predict_price_keeps_legacy_rule_model_keys(
+    mock_predict, mock_get_model, client, isolated_db
+):
+    """제도 특징을 병합해도 규칙 기반 구 모델이 쓰는 키가 남아야 한다."""
+    bid = _create_bid(isolated_db, category="Thng", bid_ntce_no="BID-LEGACY")
+    mock_predict.return_value = 0.9
+    mock_get_model.return_value = _mock_wrapper("Quantum Leap V25 Pro")
+
+    client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": bid.id, "user_price": "0"},
+    )
+
+    _, features = mock_predict.call_args.args
+    for key in ("title", "agency_name", "scenario_mode", "presmpt_prce"):
+        assert key in features, key
+
+
+@patch("src.app.api.v1.predictions.ModelRegistry.get_model")
+@patch("src.app.api.v1.predictions.predict_optimal_price")
+def test_predict_price_fills_history_features_requiring_db(
+    mock_predict, mock_get_model, client, isolated_db
+):
+    """기관 이력과 재발주 이력은 DB 조회로 채워야 한다.
+
+    session 을 넘기지 않으면 상수로 떨어져 학습과 다른 값을 보게 됩니다.
+    """
+    bid = _create_bid(isolated_db, category="Servc", bid_ntce_no="BID-HIST")
+    mock_predict.return_value = 0.88
+    mock_get_model.return_value = _mock_wrapper("용역 전용 모델")
+
+    client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": bid.id, "user_price": "0"},
+    )
+
+    _, features = mock_predict.call_args.args
+    for key in ("inst_sample_cnt", "is_repeat", "repeat_cnt"):
+        assert key in features, key
