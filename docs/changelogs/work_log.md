@@ -306,3 +306,15 @@
   - `scripts/eval_servc_interval_width.py`: 신설. 분위 모델 `num_leaves` 를 15/31/63/127 로 바꿔 가며 등각 보정 후 최종 구간 폭을 측정합니다. 피복률은 등각예측이 보장하므로 폭만 비교하면 우열이 결정됩니다
 - **관련 파일**: `docs/design/servc_hyperparam_search_20260804.md` 7장
 - **검증 결과**: 폭이 U자를 그리며 현행 63 에서 최소(1.7728%p)입니다. 리프 15 는 배율이 1.093 으로 작아지나 원폭이 1.862 로 넓어져 2.0353%p, 리프 127 은 원폭이 1.516 으로 좁아지나 배율이 1.193 으로 커져 1.8075%p 입니다. 구간 폭은 분위 모델 용량으로 더 줄일 수 없으며 특징이나 데이터를 바꿔야 합니다
+
+---
+
+### 2026-08-04 | 하한율 가용성 | 결측 축소 가설을 제도별 실측 후 기각
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - `scripts/audit_servc_lwlt_coverage.py`: 미개찰 용역 공고를 낙찰방법별로 집계하고 하한율 적용 방식의 실제 누락을 분리하는 감사 도구 신설
+  - `docs/design/servc_lwlt_availability_20260804.md`: DB와 조달청 대체 API 실측 결과 기록
+  - 하한율 결측을 수집 누락으로 간주하던 인수인계 우선순위 정정
+- **관련 파일**: `scripts/audit_servc_lwlt_coverage.py`, `tests/test_audit_servc_lwlt_coverage.py`, `docs/design/servc_lwlt_availability_20260804.md`, `docs/handoff/2026-08-04_servc_serving_handoff.md`
+- **검증 결과**: 2026년 7월 이후 미개찰 용역 10,434건 중 하한율 명시 방식 3,587건은 100% 보유해 실제 누락 0건. 결측 6,792건은 협상계약·규격가격동시입찰·수의시담 등에 집중. 용역 기초금액 API 첫 100건과 변경이력 API 전체 10건에는 하한율 필드가 없어 보강 원천으로 기각
