@@ -17,7 +17,10 @@ from src.ml.features import (
     CATEGORICAL_FEATURES,
     MISSING_CATEGORY,
     build_default_feature_map,
+    prepare_input_frame,
+    unservable_features,
 )
+from src.ml.model_registry import MODEL_FILES_ROOT
 from src.ml.trainer import TRAINING_FEATURES
 
 SAMPLE_NOTICE = {
@@ -102,6 +105,50 @@ def test_missing_lower_limit_sets_indicator():
     )
     assert frame["lwlt_rate"].iloc[0] == 0.0
     assert frame["lwlt_rate_missing"].iloc[0] == 1.0
+
+
+def test_unknown_feature_is_rejected_instead_of_zero_filled():
+    """모르는 특징을 0.0 으로 채우면 잘못된 예측을 조용히 내놓습니다."""
+    with pytest.raises(ValueError, match=r"features\.py 가 만들지 못합니다"):
+        prepare_input_frame(SAMPLE_NOTICE, ["log_price", "존재하지않는특징"])
+
+
+def test_caller_supplied_value_passes_the_guard():
+    frame = prepare_input_frame({**SAMPLE_NOTICE, "참여업체수": 7}, ["참여업체수"])
+    assert frame["참여업체수"].iloc[0] == 7.0
+
+
+def test_non_strict_mode_keeps_legacy_behaviour():
+    """실험 스크립트가 임의 컬럼을 만들 수 있도록 우회로를 남깁니다."""
+    frame = prepare_input_frame({}, ["존재하지않는특징"], strict=False)
+    assert frame["존재하지않는특징"].iloc[0] == 0.0
+
+
+def test_trained_servc_model_is_deployable():
+    """재학습이 내놓는 특징 전량이 추론에서 재현돼야 배포할 수 있습니다."""
+    assert unservable_features(list(TRAINING_FEATURES)) == []
+
+
+@pytest.mark.skipif(
+    not (MODEL_FILES_ROOT.exists() and any(MODEL_FILES_ROOT.iterdir())),
+    reason="모델 가중치가 없는 환경입니다",
+)
+def test_all_registered_models_are_servable(monkeypatch):
+    """배포 게이트. 하나라도 걸리면 그 모델은 기본값으로 예측하게 됩니다.
+
+    conftest 가 SKIP_MODEL_LOAD 로 가중치 로드를 막으므로 이 검사만 풀어 줍니다.
+    게이트가 실제로 돌지 않으면 존재 의미가 없습니다.
+    """
+    from src.ml.model_registry import ModelRegistry
+
+    monkeypatch.setenv("SKIP_MODEL_LOAD", "false")
+    try:
+        report = ModelRegistry.verify_servable_features()
+    finally:
+        ModelRegistry._models = {}
+    assert report, "등록된 모델이 없습니다"
+    broken = {model_id: missing for model_id, missing in report.items() if missing}
+    assert not broken, f"서빙 불가 특징이 있는 모델: {broken}"
 
 
 @pytest.mark.parametrize("column", TRAINING_FEATURES)

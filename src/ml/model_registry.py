@@ -14,6 +14,7 @@ from src.ml.features import (
     apply_categorical_dtypes,
     prepare_features,
     prepare_input_frame,
+    unservable_features,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -204,6 +205,10 @@ class BaseModelWrapper(ABC):
         """학습 때 저장한 범주 수준. 구 모델은 없으므로 None 입니다."""
         return self.metadata.get("category_levels")
 
+    def get_serving_columns(self):
+        """추론 프레임에 요구하는 컬럼. 자체 전처리를 쓰는 모델은 빈 목록입니다."""
+        return []
+
     def get_display_name(self):
         return self.metadata.get("name", os.path.basename(self.model_dir))
 
@@ -218,8 +223,11 @@ class JoblibModelWrapper(BaseModelWrapper):
             )
         self.model = joblib.load(self.model_path)
 
+    def get_serving_columns(self):
+        return list(getattr(self.model, "feature_name_", []) or self.get_features())
+
     def predict(self, df):
-        features = list(getattr(self.model, "feature_name_", []) or self.get_features())
+        features = self.get_serving_columns()
         input_df = (
             _prepare_input_frame(
                 df.iloc[0].to_dict(),
@@ -267,6 +275,15 @@ class V13HybridWrapper(BaseModelWrapper):
         }
         if not isinstance(self.model, dict) or not required_keys.issubset(self.model):
             raise ValueError("v13_hybrid 번들 구조가 올바르지 않습니다.")
+
+    def get_serving_columns(self):
+        # 2단계 컬럼은 예측 결과로 고른 실로마다 달라, 합집합으로 봅니다.
+        columns = list(self.model["s1_tier_clf"].feature_name_)
+        for bundle in self.model["silo_models"].values():
+            for name in bundle["model"].feature_name_:
+                if name not in columns:
+                    columns.append(name)
+        return columns
 
     def predict(self, df):
         base_values = df.iloc[0].to_dict()
@@ -320,10 +337,13 @@ class EnsembleV25Wrapper(BaseModelWrapper):
             self.cat = CatBoostRegressor()
             self.cat.load_model(cat_bin)
 
+    def get_serving_columns(self):
+        return list(getattr(self.lgbm, "feature_name_", []))
+
     def predict(self, df):
         from .predictor_v25_helper import predict_v25_logic
 
-        feature_order = list(getattr(self.lgbm, "feature_name_", []) or df.columns)
+        feature_order = self.get_serving_columns() or list(df.columns)
         aligned_df = _prepare_input_frame(
             df.iloc[0].to_dict(), feature_order, self.get_category_levels()
         )
@@ -585,7 +605,28 @@ class ModelRegistry:
     @classmethod
     def _register(cls, model_id, wrapper):
         cls._models[model_id] = wrapper
+        unservable = unservable_features(wrapper.get_serving_columns())
+        if unservable:
+            # 등록 자체는 막지 않습니다. 모델 하나 때문에 서버가 못 뜨면 안 됩니다.
+            # 실제 예측은 prepare_input_frame 이 거부하므로 조용히 넘어가지 않습니다.
+            print(
+                f"[ModelRegistry] 배포 불가 경고: {model_id} 가 요구하는 특징을 "
+                f"features.py 가 만들지 못합니다: {unservable}"
+            )
         print(f"[ModelRegistry] 규격화 모델 등록됨: {model_id}")
+
+    @classmethod
+    def verify_servable_features(cls):
+        """등록된 모델별로 서빙 불가 특징을 돌려줍니다. 전부 빈 목록이어야 합니다.
+
+        신규 모델 배포 전 게이트로 씁니다. 값이 있으면 그 모델은 해당 특징을
+        기본값으로 채운 채 예측하게 되므로 배포해서는 안 됩니다.
+        """
+        cls._sync_registry()
+        return {
+            model_id: unservable_features(wrapper.get_serving_columns())
+            for model_id, wrapper in cls._models.items()
+        }
 
     @classmethod
     def load_all_models(cls):
