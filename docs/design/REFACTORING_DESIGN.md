@@ -26,7 +26,7 @@
 | ORM/마이그레이션 | Django ORM + Django migrations (5개 앱, 19개 마이그레이션) |
 | 인증 | django-allauth (Google/Kakao/Naver OAuth) + CustomUser |
 | ML | scikit-learn, LightGBM, CatBoost, category-encoders (joblib 직렬화 가중치) |
-| 벡터DB/RAG | ChromaDB 0.6.3 (`chroma_db/`, 19개 컬렉션) |
+| 벡터DB/RAG | ChromaDB 0.6.3 (`chroma_db/`, 활성 컬렉션 `bidding_kb` 1개) |
 | LLM | Google Gemini (`google-genai`) |
 | MLOps | Harness Cloud (YAML 파이프라인 + `hc.exe` CLI 바이너리) |
 | 캐시 | 파일기반(`.django_cache`) / locmem / dummy — env 스위치 |
@@ -37,7 +37,7 @@
 |------|------|------|------|
 | DB 데이터 | MySQL `procurement` | 다수 테이블 (9개 모델) | **핵심 보존 대상** |
 | ML 가중치 | `apps/predictions/model_files/` (4종) | ~41MB | v25, quantum_leap_v25_pro, ssh_hist_premium, v13_hybrid |
-| 벡터DB | `chroma_db/` | 3.4MB, 19개 컬렉션 | RAG 임베딩 |
+| 벡터DB | `chroma_db/` | 원본 3.4MB, 활성 컬렉션 1개 / 임베딩 10건 | RAG 임베딩 |
 | parquet 스냅샷 | `data/exports/` | 438MB | 입찰 데이터 스냅샷 |
 | 학습 데이터 | `ssh/`, `sde/` | ~36MB CSV | 정제/원천 데이터 |
 | RAG KB | `rag_kb.csv` | 768KB | 지식베이스 원문 |
@@ -141,7 +141,7 @@ docker-compose.yml → MySQL 8 서비스 (macOS/Windows/Linux 동일 버전)
 |------|-------|-------|------|
 | 엔진 | ChromaDB (임베디드) | **ChromaDB 유지(로컬)** 또는 **Qdrant(Docker)** | 데이터 보존 우선 시 ChromaDB 유지(G1). 성능·필터링 강화 시 Qdrant 고려 |
 | 검색 | 동기 | **비동기 검색** | RAG 파이프라인 병렬화 |
-| 임베딩 재계산 | 불명확 | 기존 컬렉션 **그대로 마이그레이션** | 19개 컬렉션 무결성 보존 (G1) |
+| 임베딩 재계산 | 불명확 | 원본 스냅샷 보존 후 운영 컬렉션 재구축 허용 | 원본 1개 컬렉션 무결성 보존 (G1) |
 
 ### 3.7 프론트엔드 (선택적, 우선순위 낮음)
 
@@ -264,7 +264,7 @@ refac_bid_box/
 | MySQL 행 데이터 | **高** | 풀 덤프 + 검증 |
 | DB 스키마/제약조건 | **高** | 기존 마이그레이션 히스토리 100% 보존 |
 | ML 가중치(4종) | **中** | 바이너리 복사 + 로드 검증 |
-| ChromaDB 컬렉션(19개) | **中** | 디렉토리 복사 + 쿼리 검증 |
+| ChromaDB `bidding_kb` 컬렉션(원본 10건) | **中** | 원본 스냅샷 체크섬 + 운영 컬렉션 구조 검증 |
 | parquet/CSV 데이터 | **低** | 외부 저장소 이동 (변경 없음) |
 
 ### 5.2 DB 마이그레이션 절차
@@ -309,9 +309,9 @@ refac_bid_box/
 ### 5.5 ChromaDB 검증
 
 ```
-[1] chroma_db/ 디렉토리 복사 후 19개 컬렉션 존재 확인
-[2] 각 컬렉션 문서 수 비교 (원본 vs 복사본)
-[3] 샘플 쿼리 10건 → 동일 top-k 결과 반환 확인
+[1] 원본 chroma_db/ 를 data/backups/chroma_source/ 에 별도 보존
+[2] 원본 bidding_kb 1개 컬렉션 / 임베딩 10건과 파일 체크섬 확인
+[3] 운영 chroma_db/ 는 bidding_kb 1개 컬렉션이 비어 있지 않은지 별도 확인
 ```
 
 ---
@@ -678,7 +678,7 @@ run_mode_matrix (개정):
 1. **백엔드 프레임워크**: **FastAPI (ASGI)** — I/O 비동기화, Pydantic v2, Swagger 자동화
 2. **로컬/운영 DB**: **Docker MySQL 8** — DB 이중화 제거, 스키마/데이터 100% 통일 (G1, G2)
 3. **태스크 큐**: **Arq (asyncio + Redis)** — 초경량 FastAPI 친화적 비동기 태스크 큐
-4. **벡터 DB**: **ChromaDB 유지** — 기존 19개 컬렉션 무결성 및 데이터 보존 최우선 (G1)
+4. **벡터 DB**: **ChromaDB 유지** — 원본 `bidding_kb` 1개 컬렉션 스냅샷 무결성 및 데이터 보존 최우선 (G1)
 5. **ML 가중치 저장**: **외부 스토리지 / 독립 볼륨** — Git LFS 대신 저장소 경량화 및 핫스왑 지원
 6. **재학습 주기**: **PSI 드리프트 감지 동적 주기** — 입력 분포(PSI > 0.2) 검출 시 자동 발화
 7. **Champion 전환**: **하이브리드 게이트** — 자동 평가지표 검증 후 1-Click 승인/승격
@@ -686,4 +686,3 @@ run_mode_matrix (개정):
 ---
 
 _본 설계서는 확정된 아키텍처 결정을 바탕으로 구현을 진행합니다._
-

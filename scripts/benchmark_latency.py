@@ -21,8 +21,11 @@ Phase 7 레이턴시 벤치마크.
 """
 
 import argparse
+import concurrent.futures
 import json
+import platform
 import statistics
+import subprocess  # nosec B404
 import sys
 import time
 from dataclasses import dataclass, field
@@ -100,9 +103,25 @@ class Samples:
         print(line)
         if target_ms is None:
             return True
-        passed = p95 <= target_ms
+        passed = p95 <= target_ms and self.errors == 0
         print(f"      목표 P95 {_fmt(target_ms)} -> {'달성' if passed else '미달'}")
         return passed
+
+    def as_dict(self) -> dict:
+        return {
+            "label": self.label,
+            "values_ms": self.values,
+            "errors": self.errors,
+            "p50_ms": self.percentile(50),
+            "p95_ms": self.percentile(95),
+            "p99_ms": self.percentile(99),
+            "tagged": self.tagged,
+        }
+
+
+def _query_for_round(index: int) -> str:
+    base = CHAT_QUERIES[index % len(CHAT_QUERIES)]
+    return f"{base} (성능 측정 표본 {index + 1})"
 
 
 def benchmark_sse(base_url: str, rounds: int) -> tuple[Samples, Samples]:
@@ -112,7 +131,7 @@ def benchmark_sse(base_url: str, rounds: int) -> tuple[Samples, Samples]:
 
     with httpx.Client(base_url=base_url, timeout=180.0) as client:
         for i in range(rounds):
-            query = CHAT_QUERIES[i % len(CHAT_QUERIES)]
+            query = _query_for_round(i)
             start = time.perf_counter()
             seen_token = False
             try:
@@ -138,15 +157,32 @@ def benchmark_sse(base_url: str, rounds: int) -> tuple[Samples, Samples]:
     return first_token, total
 
 
-def benchmark_predict(base_url: str, rounds: int) -> Samples:
+def benchmark_predict(base_url: str, rounds: int, concurrency: int) -> Samples:
     samples = Samples("낙찰가 예측 API")
-    payload = {"presumed_price": 500000000, "base_price": 495000000, "category_code": "Thng"}
-    with httpx.Client(base_url=base_url, timeout=60.0) as client:
-        for _ in range(rounds):
-            start = time.perf_counter()
-            r = client.post("/api/v1/predictions/predict", json=payload)
-            elapsed = (time.perf_counter() - start) * 1000.0
-            if r.status_code == 200:
+
+    def request(index: int) -> tuple[bool, float]:
+        payload = {
+            "presumed_price": 500_000_000 + index,
+            "base_price": 495_000_000 + index,
+            "category_code": "Thng",
+        }
+        start = time.perf_counter()
+        response = httpx.post(
+            f"{base_url}/api/v1/predictions/predict",
+            json=payload,
+            timeout=60.0,
+        )
+        return response.status_code == 200, (time.perf_counter() - start) * 1000.0
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = [executor.submit(request, index) for index in range(rounds)]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                succeeded, elapsed = future.result()
+            except httpx.HTTPError:
+                samples.errors += 1
+                continue
+            if succeeded:
                 samples.add(elapsed)
             else:
                 samples.errors += 1
@@ -158,13 +194,14 @@ def benchmark_query(base_url: str, rounds: int) -> Samples:
     with httpx.Client(base_url=base_url, timeout=180.0) as client:
         for i in range(rounds):
             start = time.perf_counter()
+            query = _query_for_round(i)
             r = client.post(
                 "/api/v1/chatbot/query",
-                json={"query": CHAT_QUERIES[i % len(CHAT_QUERIES)], "stream": False},
+                json={"query": query, "stream": False},
             )
             elapsed = (time.perf_counter() - start) * 1000.0
             if r.status_code == 200:
-                samples.add(elapsed, CHAT_QUERIES[i % len(CHAT_QUERIES)])
+                samples.add(elapsed, query)
             else:
                 samples.errors += 1
             print(f"    단발 질의 {i + 1}/{rounds} 완료", end="\r", flush=True)
@@ -178,6 +215,8 @@ def main() -> int:
     parser.add_argument("--sse-rounds", type=int, default=20)
     parser.add_argument("--query-rounds", type=int, default=10)
     parser.add_argument("--predict-rounds", type=int, default=100)
+    parser.add_argument("--predict-concurrency", type=int, default=10)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     print("=" * 62)
@@ -193,7 +232,7 @@ def main() -> int:
         return 2
 
     print(f"\n[1/3] 낙찰가 예측 API ({args.predict_rounds}회)")
-    predict = benchmark_predict(args.base_url, args.predict_rounds)
+    predict = benchmark_predict(args.base_url, args.predict_rounds, args.predict_concurrency)
 
     print(f"\n[2/3] SSE 스트리밍 ({args.sse_rounds}회)")
     first_token, total = benchmark_sse(args.base_url, args.sse_rounds)
@@ -209,6 +248,35 @@ def main() -> int:
         predict.report(PREDICT_TARGET_MS),
     ]
     query.report()
+
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            git_sha = subprocess.check_output(  # nosec B603 B607
+                ["git", "rev-parse", "HEAD"],
+                cwd=PROJECT_ROOT,
+                text=True,
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            git_sha = "unknown"
+        evidence = {
+            "git_sha": git_sha,
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "base_url": args.base_url,
+            "predict_concurrency": args.predict_concurrency,
+            "samples": {
+                "first_token": first_token.as_dict(),
+                "total": total.as_dict(),
+                "predict": predict.as_dict(),
+                "query": query.as_dict(),
+            },
+        }
+        args.output.write_text(
+            json.dumps(evidence, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"  원시 측정치 저장: {args.output}")
 
     if total.tagged:
         print("\n  질의별 최장 소요 (SSE 전체)")

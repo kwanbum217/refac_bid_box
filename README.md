@@ -8,14 +8,15 @@
 
 ## 상태
 
-**Phase 1~2 진행 중** — Antigravity 스캐폴드 정정 후 원본 로직 이식 단계입니다.
+**Phase 7 컷오버 검증 중** — G1 데이터 무손실은 통과했고, G2 Windows 실기
+검증과 G3 SSE 첫 토큰 목표 결정이 남았습니다.
 
 | Phase | 상태 | 비고 |
 | --- | --- | --- |
 | Phase 0 | 완료 | uv, Docker, Makefile, 스킬 시스템 |
-| Phase 1 | 진행 중 | ML 가중치·ChromaDB 이전 완료, DB 덤프 대기 |
-| Phase 2~3 | 진행 중 | ORM/API 골격 + predictor/rag/planner 이식 |
-| Phase 4~7 | 미착수 | 실측 벤치마크·E2E 컷오버 검증 필요 |
+| Phase 1~3 | 완료 | 데이터 자산 보존, ORM/API 이식 |
+| Phase 4~6 | 완료 | 추론·RAG·재학습·스트리밍 경로 구축 |
+| Phase 7 | 부분 완료 | G1 통과, G2 Windows 실기 검증과 SSE 목표 결정 필요 |
 
 자세한 내용은 [`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md)를 참고하세요.
 
@@ -28,14 +29,17 @@
 ## 빠른 시작
 
 ```bash
+# 환경 구성
+make setup
+
 # 데이터 자산 이전 (최초 1회, bid_box 경로 필요)
-python3 scripts/import_data_assets.py
+make import-assets
 
 # 무손실 검증
-python3 scripts/verify_migration.py
+make verify
 
 # 스택 시동
-make up
+make dev
 ```
 
 ## 문서

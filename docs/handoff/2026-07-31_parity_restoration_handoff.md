@@ -114,7 +114,7 @@ macOS 컨테이너가 GPU(Metal)에 접근하지 못하기 때문입니다.
 ## 5. 실행 방법
 
 ```bash
-# 의존성 (scikit-learn 은 1.6.1 고정 필수)
+# 의존성 (현재 모델 직렬화 버전인 scikit-learn 1.8.0 고정)
 uv sync   # 또는 pip install -e .
 
 # 인프라

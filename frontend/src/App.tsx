@@ -659,7 +659,7 @@ export default function App() {
         <section style={{ backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', padding: '24px' }}>
           <h2 style={{ marginTop: 0, fontSize: '20px' }}>하이브리드 RAG 챗봇 (Ollama gemma4:e4b + ChromaDB)</h2>
           <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px' }}>
-            ChromaDB 19개 지식베이스 비동기 검색 및 실시간 SSE 토큰 스트리밍
+            ChromaDB 공공조달 지식베이스 비동기 검색 및 실시간 SSE 토큰 스트리밍
           </p>
 
           {/* 대화 내역 창 */}

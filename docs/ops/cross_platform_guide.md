@@ -1,14 +1,14 @@
 # 크로스 플랫폼 호환 가이드 (macOS / Windows)
 
 > **작성일**: 2026-07-31
-> **상태**: 설계
+> **상태**: macOS 검증 완료 / Windows 호스트 전체 스택 검증 대기
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
 ---
 
 ## 1. 목적
 
-macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위한 가이드입니다. 기존 프로젝트의 플랫폼 종속性问题를 해결합니다.
+macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위한 가이드입니다. 기존 프로젝트의 플랫폼 종속 문제를 해결합니다.
 
 ---
 
@@ -29,26 +29,9 @@ macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위�
 
 ### 3.1 전체 스택 (docker-compose)
 
-```yaml
-# docker-compose.yml
-services:
-  mysql:     # MySQL 8 — macOS/Windows 동일
-    image: mysql:8
-    environment:
-      MYSQL_DATABASE: procurement
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-    ports: ["3306:3306"]
-  redis:     # 캐시 + 브로커
-    image: redis:7
-    ports: ["6379:6379"]
-  app:       # FastAPI / Django
-    build: .
-    depends_on: [mysql, redis]
-  worker:    # Celery / Arq
-    build: .
-    command: celery -A src.tasks worker -l info
-    depends_on: [redis]
-```
+정본은 루트의 `docker-compose.yml`입니다. 기본 서비스는 FastAPI `app`, MySQL
+8 `db`, Redis 7 `redis`입니다. React 스캐폴드는 `legacy` 프로필에서만
+기동합니다.
 
 ### 3.2 실행 명령
 
@@ -57,7 +40,9 @@ services:
 | 전체 스택 기동 | `make up` 또는 `docker compose up -d` |
 | DB + Redis만 | `make db-up` |
 | 개발 서버 | `make dev` |
-| 마이그레이션 | `make migrate` |
+| Alembic 상태 확인 | `make migrate-current` |
+| 기존 DB 스키마 점검 | `make migrate-check` |
+| 신규 빈 DB 스키마 생성 | `make migrate-up` |
 | 테스트 | `make test` |
 | 중지 | `make down` |
 
@@ -67,32 +52,15 @@ services:
 
 macOS와 Windows(Git Bash) 모두에서 동작하는 단일 진입점입니다.
 
-```makefile
-.PHONY: setup dev test migrate db-up up down lint
+실제 타깃은 루트 `Makefile`을 사용합니다. Windows에서는 `.venv/Scripts/python.exe`,
+macOS에서는 `.venv/bin/python`을 자동 선택합니다.
 
-setup:
-	uv sync
+기존 Django 운영 DB에 `make migrate-up`을 실행하지 마십시오. 기존 DB는
+`make migrate-current`와 `make migrate-check`로 읽기 전용 확인하며, 신규 빈
+Docker DB에만 `make migrate-up`을 사용합니다.
 
-db-up:
-	docker compose up -d mysql redis
-
-dev:
-	uvicorn src.app.main:app --reload --port 8000
-
-migrate:
-	alembic upgrade head
-
-test:
-	pytest -q
-
-up:
-	docker compose up -d
-
-down:
-	docker compose down
-```
-
-> Windows 네이티브 `make`가 없는 경우 **Taskfile.yml + go-task** 또는 **just**를 대안으로 사용합니다 (단일 바이너리, 크로스플랫폼).
+Windows에서는 Docker Desktop을 Linux 컨테이너 모드로 실행하고 Git Bash의
+`make` 또는 GNU Make를 설치합니다.
 
 ---
 
@@ -104,9 +72,25 @@ down:
 
 ---
 
-## 6. CI 크로스 플랫폼 검증
+## 6. Windows 전체 스택 검증
 
-GitHub Actions에서 macOS/Windows 매트릭스 테스트를 수행합니다.
+PowerShell에서 다음을 실행합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/validate_windows.ps1
+```
+
+스크립트는 `uv sync`, `make test`, `make dev` 진입점 확인, Docker Compose
+빌드·기동, 신규 격리 DB의 Alembic 적용, 스키마 드리프트 검사, FastAPI
+헬스체크를 수행합니다. 검증용 Compose 프로젝트만 중지하고 볼륨은 삭제하지
+않습니다.
+
+---
+
+## 7. CI 크로스 플랫폼 검증
+
+GitHub Actions에서 macOS/Windows의 Python 테스트를 수행합니다. GitHub 호스팅
+Windows 러너는 Linux 컨테이너 기반 전체 Compose 스택 검증을 대신하지 않습니다.
 
 ```yaml
 # .github/workflows/ci.yml (개념)
@@ -123,11 +107,12 @@ steps:
 
 ---
 
-## 7. 체크리스트
+## 8. 체크리스트
 
 - [x] Dockerfile 작성 (파이썬 슬림 이미지)
-- [x] docker-compose.yml 작성 (mysql, redis, app, worker)
+- [x] docker-compose.yml 작성 (`app`, `db`, `redis`)
 - [x] Makefile 작성
 - [x] macOS에서 `make up` 실행 검증
 - [x] Windows에서 `uv run pytest -q` 실행 검증 (GitHub Actions windows-latest)
-- [x] CI 매트릭스 테스트 통과 (macOS/Windows)
+- [x] CI Python 매트릭스 테스트 통과 (macOS/Windows)
+- [ ] Windows Docker Desktop에서 `scripts/validate_windows.ps1` 전체 통과

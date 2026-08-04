@@ -1,6 +1,13 @@
 {
   "generated_at": "2026-07-31T06:20:49.674634+00:00",
   "source_repo": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/bid_box",
+  "chroma_baseline": {
+    "collections": [
+      "bidding_kb"
+    ],
+    "embedding_count": 10,
+    "sqlite_sha256": "3969beba12201470a6544e03498e7c70a4c108b406cc1178fbc173ab181f35c8"
+  },
   "models": {
     "v25": {
       "model.bin": {

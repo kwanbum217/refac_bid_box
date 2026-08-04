@@ -1,7 +1,7 @@
 # ML 가중치 및 ChromaDB 보존 검증
 
 > **작성일**: 2026-07-31
-> **상태**: Phase 1 진행 중 (가중치·Chroma 이전 완료)
+> **상태**: Phase 1 검증 보강 완료
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 5.4~5.5장
 
 ---
@@ -51,20 +51,21 @@ python3 scripts/verify_migration.py
 
 | 자산 | 경로 | 규모 |
 | --- | --- | --- |
-| ChromaDB | `chroma_db/` | 3.4MB, 19개 컬렉션 |
+| 원본 스냅샷 | `data/backups/chroma_source/` | 3.4MB, `bidding_kb` 1개 / 임베딩 10건 |
+| 운영 ChromaDB | `chroma_db/` | `bidding_kb` 1개 / 현재 임베딩 500건 |
 
 ### 2.2 백업
 
-```bash
-cp -R chroma_db/ chroma_db_backup_YYYYMMDD/
-```
+원본 `bid_box/chroma_db/`를 `data/backups/chroma_source/`에 복사하고
+`data/backups/data_assets_checksums.json`의 SHA256 기준선으로 검증합니다.
+운영 `chroma_db/`는 KB 갱신으로 변경될 수 있으므로 원본 스냅샷과 분리합니다.
 
 ### 2.3 검증 절차
 
 ```
-[1] 컬렉션 수: 신규 위치에서 19개 컬렉션 존재 확인
-[2] 문서 수:   각 컬렉션의 문서 수가 원본과 동일한지 비교
-[3] 쿼리 검증: 샘플 쿼리 10건 → 동일 top-k 결과 반환 확인
+[1] 원본 스냅샷: 모든 파일 SHA256이 manifest와 일치하는지 확인
+[2] 논리 기준선: `bidding_kb` 1개 컬렉션 / 임베딩 10건 확인
+[3] 운영 데이터: `bidding_kb` 1개 컬렉션과 1건 이상 임베딩 확인
 ```
 
 ---
@@ -82,7 +83,7 @@ cp -R chroma_db/ chroma_db_backup_YYYYMMDD/
 ## 4. 체크리스트
 
 - [x] ML 가중치 체크섬 기준선 기록 (`data/backups/data_assets_checksums.json`)
-- [x] ChromaDB 로컬 복사 (`chroma_db/`, Git 제외)
+- [x] ChromaDB 원본 스냅샷 보존 (`data/backups/chroma_source/`, Git 제외)
 - [ ] 4개 모델 로드 + 회귀 테스트 통과 (`RUN_MODEL_TESTS=1`)
-- [x] ChromaDB 컬렉션 디렉토리 검증 (`verify_migration.py`)
+- [x] ChromaDB 원본 체크섬·논리 기준선·운영 구조 검증 (`verify_migration.py`)
 - [ ] DB 풀 덤프/복원 및 행 수 대조

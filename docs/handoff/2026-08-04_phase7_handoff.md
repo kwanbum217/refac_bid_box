@@ -43,7 +43,7 @@ Redis 를 내려야 한다면 `SHUTDOWN NOSAVE` 를 쓰십시오.
 
 | 목표 | 결과 |
 | --- | --- |
-| G1 데이터 무손실 | 통과 (단, 아래 4.1 확인 필요) |
+| G1 데이터 무손실 | 통과 (원본 ChromaDB 스냅샷 분리 보존 후 재검증) |
 | G3 예측 API P95 100ms | 통과 (1.4ms) |
 | G3 SSE 전체 P95 20초 | 통과 (13.19s) |
 | G3 SSE 첫 토큰 P95 3초 | **미달 (11.06s)** |
@@ -63,26 +63,24 @@ Redis 를 내려야 한다면 `SHUTDOWN NOSAVE` 를 쓰십시오.
 
 ## 2. 다음 담당자가 할 일 (우선순위 순)
 
-### 우선순위 1 — 담당자 결정이 필요한 것 (에이전트가 진행 불가)
+### 우선순위 1 — 담당자 결정이 필요한 것
 
-아래 셋은 **실행이 아니라 결정**이 필요해 진행하지 않았습니다. 결정을
-받아오는 것이 먼저입니다.
+SSE 목표와 운영 추론 환경은 비용·품질 결정이 필요합니다. ChromaDB 기준선은
+후속 검토에서 원본을 직접 대조해 해소했습니다.
 
-#### 2.1 ChromaDB 컬렉션 수 불일치
+#### 2.1 ChromaDB 기준선 정정 (해소)
 
-`AGENTS.md` 와 `SKILLS.md` 는 **19개 컬렉션**이라 하는데 실측은
-**1개 컬렉션 / 임베딩 500건**입니다.
+원본 `bid_box/chroma_db`도 활성 컬렉션은 `bidding_kb` **1개**였습니다.
+19개는 삭제된 컬렉션의 UUID 디렉토리를 잘못 센 값입니다. 원본은 임베딩
+10건이고 운영 데이터는 재구축된 500건입니다.
 
 ```bash
-python scripts/verify_migration.py   # 실측 확인
+.venv/bin/python scripts/verify_migration.py
 ```
 
-원본 DB 유실과 parquet 복구 이력이 있어 그때 축소된 것인지, 문서가 초기
-계획값을 그대로 둔 것인지 불명입니다. **G1 은 협상 대상이 아니므로 이것이
-정리되기 전에는 컷오버 근거로 쓸 수 없습니다.**
-
-- 데이터가 정본이면 → `AGENTS.md`, `SKILLS.md` 문구 정정
-- 문서가 정본이면 → 유실 조사 및 복구
+원본 10건은 `data/backups/chroma_source/`에 별도 보존하며 manifest의 모든
+SHA256과 논리 기준선(1개 컬렉션 / 10건)을 검증합니다. 운영 `chroma_db/`는
+KB 갱신으로 확장할 수 있지만 `bidding_kb` 컬렉션이 비어 있으면 실패합니다.
 
 #### 2.2 SSE 첫 토큰 목표
 
@@ -117,44 +115,43 @@ python scripts/verify_migration.py   # 실측 확인
 #### 2.3 Windows 검증 (G2)
 
 macOS 는 전부 통과했습니다. Windows 환경이 없어 미검증입니다.
-절차는 [`docs/ops/cross_platform_guide.md`](cross_platform_guide.md).
+절차는 [`docs/ops/cross_platform_guide.md`](../ops/cross_platform_guide.md).
 
 Windows 머신에서 `make dev` 와 `make test` 가 macOS 와 동일하게
 동작하는지만 확인하면 됩니다.
 
-### 우선순위 2 — 에이전트가 진행 가능한 것
+### 우선순위 2 — 후속 검증에서 완료된 것
 
-#### 2.4 재학습 전 주기 검증
+#### 2.4 재학습·승격·롤백 경로 검증 (완료)
 
-Phase 7 항목 중 유일하게 미수행이고 결정이 필요 없는 것입니다.
-DB 집계 → 데이터셋 구성 → 학습 → 평가 → Champion 승격 → 핫스왑까지
-한 바퀴 돌려 확인합니다.
+용역 모델 917,629행 학습, Champion 승격, 운영 경로 비교, 백업 롤백까지
+실행됐습니다. 이후 하이퍼파라미터 후보 `num_leaves=255`는 운영 구간 폭이
+11.2% 넓어져 기각하고 현행 63으로 되돌렸습니다.
 
-**단, 다른 세션이 모델 학습 중이면 충돌합니다.** 시작 전에
-`git log --oneline -5` 와 `git status` 로 학습 세션 활동을 확인하고,
-활동 중이면 이 항목은 건너뛰십시오.
+일반 전 주기 계약은 `tests/test_retrain_pipeline_e2e.py`,
+`tests/test_mlops_pipeline.py`, `tests/test_serving_feature_parity.py`로 다시
+검증합니다. 상세 근거는 `docs/handoff/2026-08-04_servc_serving_handoff.md`입니다.
 
-관련 테스트: `tests/test_retrain_pipeline_e2e.py`, `tests/test_mlops_pipeline.py`
+#### 2.5 등각예측 구간 서빙 경로 연결 (완료)
 
-#### 2.5 등각예측 구간 서빙 경로 연결
-
-이전 세션에서 등각예측(conformal prediction) 보정 배율을 측정했으나
-**서빙 경로에 연결되지 않았습니다.** 측정만 되고 실제 응답에는 반영되지
-않은 상태입니다.
-
-이것도 `src/ml/` 영역이라 학습 세션과 겹칩니다. 확인 후 진행하십시오.
+API 응답과 상세 화면에 90% 등각예측 구간이 연결됐습니다. API 경로 200건
+실측 피복률은 93.00%이고, 구형 모델은 구간 필드를 `None`으로 반환해 점 추정
+호환성을 유지합니다.
 
 ---
 
 ## 3. 환경 재현 절차
 
-### 3.1 주의: `uv` 가 이 환경에 없습니다
+### 3.1 `uv` 환경 정합성
 
-`AGENTS.md` 는 uv 를 표준이라 하지만 실제로는 설치돼 있지 않습니다.
-**`.venv/bin/python` 을 직접 쓰십시오.**
+기존 `.venv`는 scikit-learn 1.6.1이라 1.8.0에서 직렬화한 모델 3종과
+호환되지 않습니다. `uv.lock`을 기준으로 환경을 동기화해야 합니다. `uv`가
+설치되지 않은 머신에서는 먼저 공식 설치 절차로 설치하십시오.
 
 ```bash
-.venv/bin/python -m pytest tests/ -q
+uv sync --all-groups
+uv run python scripts/verify_model_compatibility.py
+uv run pytest tests/ -q
 ```
 
 macOS 에 GNU `timeout` 도 없습니다.
@@ -165,22 +162,32 @@ macOS 에 GNU `timeout` 도 없습니다.
 open -a Docker                       # 데몬이 내려가 있으면
 docker compose up -d db redis
 docker compose ps                    # db healthy 확인
-python -m alembic upgrade head
+.venv/bin/python -m alembic current  # 적용 상태만 읽기 전용 확인
+.venv/bin/python scripts/check_schema_drift.py
 ```
+
+기존 Django 운영 DB에는 `alembic upgrade head`를 실행하지 마십시오. 신규 빈
+DB만 `make migrate-up`을 사용하며 기존 DB는 이미 stamp된 상태를 확인합니다.
 
 ### 3.3 검증 실행
 
 ```bash
-.venv/bin/python scripts/verify_migration.py          # G1
-.venv/bin/python -m pytest tests/ -q                  # 612 passed / 2 skipped
-.venv/bin/python scripts/validate_agent_rules.py      # 6/6
+uv run python scripts/verify_migration.py
+uv run python scripts/verify_model_compatibility.py
+uv run pytest tests/ -q
+uv run python scripts/validate_agent_rules.py
 ```
+
+2026-08-04 macOS 격리 작업 트리 기준 결과는 `631 passed / 2 skipped`,
+에이전트 규칙 `6/6`입니다.
 
 ### 3.4 벤치마크 (서버 기동 필요)
 
 ```bash
-.venv/bin/python -m uvicorn src.app.main:app --port 8000 &
-.venv/bin/python scripts/benchmark_latency.py --base-url http://127.0.0.1:8000
+uv run uvicorn src.app.main:app --port 8000 &
+uv run python scripts/benchmark_latency.py \
+  --base-url http://127.0.0.1:8000 \
+  --output data/benchmarks/phase7_latency.json
 ```
 
 TestClient 로는 재지 마십시오. 인프로세스 호출이라 네트워크와 이벤트 루프
@@ -224,14 +231,20 @@ list-models 테스트가 구조만 보는 예입니다.
 
 ---
 
-## 6. 현재 Git 상태
+## 6. Git 상태 확인과 병렬 세션 격리
 
-```
-main:   ca577a8 merge: 원본 테스트 재현율 93.1% 달성 및 낙찰률 렌더링 결함 수정 병합
-브랜치: fix/phase7-date-parsing-and-stats-index (6251975, 미병합)
+Phase 7 연월 파싱·통계 인덱스 수정은 `051ab01`에서 `main`에 병합됐습니다.
+고정된 상태를 문서에 복사하지 말고 시작할 때 아래를 실행하십시오.
+
+```bash
+git status --short --branch
+git log --oneline -5
+git worktree list
 ```
 
-작업 브랜치는 전량 테스트 통과 후 `--no-ff` 로 `main` 에 병합하면 됩니다.
+병렬 세션은 같은 디렉토리에서 브랜치를 바꾸지 말고 세션별 `git worktree`를
+사용합니다. 작업 브랜치는 전량 테스트 통과 후 `--no-ff`로 `main`에
+병합합니다.
 
 ---
 

@@ -1,9 +1,9 @@
 # refac_bid_box 문서 인덱스
 
 > **작성일**: 2026-07-31
-> **정정일**: 2026-07-31
-> **버전**: v1.1.0
-> **상태**: Phase 0 완료 / Phase 1~3 진행 중
+> **정정일**: 2026-08-04
+> **버전**: v1.2.0
+> **상태**: Phase 0~6 완료 / Phase 7 컷오버 보류
 > **적용 범위**: `bid_box` (Django) → `refac_bid_box` (FastAPI + SSR/HTMX) 전환
 
 ---
@@ -46,7 +46,7 @@ docs/
 | 용역 2025년 연도 홀드아웃 | [`servc_year_holdout_2025_20260803.md`](design/servc_year_holdout_2025_20260803.md) | 공고 건당 오차 분포, 연초 성능 저하 |
 | 제한경쟁 진단과 난수 구조 | [`servc_restricted_competition_20260803.md`](design/servc_restricted_competition_20260803.md) | 참여업체 수·복수예가 난수 분해, 세부분류 특징 배선 |
 | 손실함수와 반복 발주 이력 | [`servc_repeat_procurement_20260803.md`](design/servc_repeat_procurement_20260803.md) | Huber 채택, 재발주 이력 6종, 공고명 텍스트 기각 |
-| 예측 구간 보정 측정 | [`servc_prediction_interval_20260804.md`](design/servc_prediction_interval_20260804.md) | 분위 회귀 피복률 실패, 등각예측 보정, 서빙 미착수 |
+| 예측 구간 보정 측정 | [`servc_prediction_interval_20260804.md`](design/servc_prediction_interval_20260804.md) | 분위 회귀 피복률 실패, 등각예측 보정과 서빙 완료 |
 | 하이퍼파라미터 탐색 | [`servc_hyperparam_search_20260804.md`](design/servc_hyperparam_search_20260804.md) | 좌표 하강 17회, num_leaves 255 운영 실측 후 기각, subsample 무효 발견 |
 
 ## 2. migration/
@@ -68,8 +68,16 @@ docs/
 | 용역 제도 분석 인수인계 | [`2026-08-03_servc_institution_handoff.md`](handoff/2026-08-03_servc_institution_handoff.md) | 제도 특징 배선, 세부분류 채택 |
 | 용역 모델 튜닝 인수인계 | [`2026-08-03_servc_model_tuning_handoff.md`](handoff/2026-08-03_servc_model_tuning_handoff.md) | Huber, 재발주 이력, 기각 목록 |
 | 서빙 배선 인수인계 | [`2026-08-04_servc_serving_handoff.md`](handoff/2026-08-04_servc_serving_handoff.md) | 특징 단일화, 승격 경로, 예측 구간 |
+| Phase 7 인수인계 | [`2026-08-04_phase7_handoff.md`](handoff/2026-08-04_phase7_handoff.md) | 컷오버 판정, 재현 절차, 잔여 조건 |
 
-## 4. changelogs/
+## 4. ops/
+
+| 문서 | 파일 | 설명 |
+| --- | --- | --- |
+| Phase 7 검증 보고서 | [`phase7_cutover_report_20260804.md`](ops/phase7_cutover_report_20260804.md) | 무손실·레이턴시·크로스 플랫폼 판정 근거 |
+| 크로스 플랫폼 가이드 | [`cross_platform_guide.md`](ops/cross_platform_guide.md) | macOS·Windows 재현 및 검증 절차 |
+
+## 5. changelogs/
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
@@ -84,7 +92,8 @@ docs/
 3. [`design/REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md)
 4. [`handoff/2026-07-31_parity_restoration_handoff.md`](handoff/2026-07-31_parity_restoration_handoff.md)
 5. [`handoff/2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md)
-6. [`migration/ml_weights_verification.md`](migration/ml_weights_verification.md)
+6. [`handoff/2026-08-04_phase7_handoff.md`](handoff/2026-08-04_phase7_handoff.md)
+7. [`ops/phase7_cutover_report_20260804.md`](ops/phase7_cutover_report_20260804.md)
 
 ---
 
