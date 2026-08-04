@@ -194,6 +194,9 @@ data/exports/
 *.parquet
 # 데이터셋 캐시 산출물(src/ml/dataset.py). parquet 외 조사 결과 CSV 도 재생성 대상입니다.
 data/feature_store/
+# 모델 승격 시 직전 서빙본을 옮겨 두는 롤백용 백업입니다(src/ml/promotion.py).
+# 승격마다 덮어써지는 런타임 산출물이며 정본은 data/model_files/ 가 추적합니다.
+data/model_backups/
 *.arrow
 # Large binaries
 *.exe
