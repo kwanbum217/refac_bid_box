@@ -34,6 +34,9 @@ URL_MAP = {
     "predictions:predict_price": "/api/v1/predictions/predict-price",
     "chatbot:chat_page": "/chatbot/",
     "chatbot:chat_api": "/api/v1/chatbot/chat",
+    # 원본에는 없던 경로입니다. 설계서 G3 레이턴시 목표에 따라 추가한 SSE 스트리밍이며
+    # 응답 계약은 chat_api 와 같습니다 (final 이벤트가 동일한 ChatResponse).
+    "chatbot:chat_stream": "/api/v1/chatbot/chat/stream",
     "chatbot:new_chat_session": "/api/v1/chatbot/session/new",
     # 자동화 작업 제어. 원본은 /chatbot/api/automation/job/<id>/... 였습니다.
     # 화면 스크립트가 job_id 를 런타임에 끼워 넣으므로 자리표시자를 그대로 둡니다.

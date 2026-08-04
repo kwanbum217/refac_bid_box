@@ -324,3 +324,24 @@ def test_bound_field_escapes_submitted_values():
 
     assert "<script>" not in rendered
     assert "&lt;script&gt;" in rendered
+
+
+@pytest.mark.parametrize(
+    ("source", "target"),
+    [
+        ("/bids//123/", "/bids/123/"),
+        ("/bids//results/", "/bids/results/"),
+        ("/bids//", "/bids/"),
+    ],
+)
+def test_double_slash_bids_paths_are_corrected(client, source, target):
+    """원본 config/urls.py 의 re_path 교정과 동일하게 동작해야 한다."""
+    response = client.get(source, follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"] == target
+
+
+def test_double_slash_redirect_preserves_query_string(client):
+    response = client.get("/bids//?q=도로", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"].startswith("/bids/?q=")

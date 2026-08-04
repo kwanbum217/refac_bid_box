@@ -456,3 +456,100 @@ def test_chat_page_new_session_url_matches_real_route(client, isolated_db):
     body = client.get("/chatbot/").text
     assert 'data-new-session-url="/api/v1/chatbot/session/new"' in body
     assert client.post("/api/v1/chatbot/session/new").status_code == 200
+
+
+# --------------------------------------------------------------------------- #
+# SSE 스트리밍
+# --------------------------------------------------------------------------- #
+
+
+def _parse_sse(text: str) -> list[tuple[str, dict]]:
+    """event/data 쌍을 순서대로 돌려줍니다."""
+    import json as _json
+
+    events = []
+    for chunk in text.split("\n\n"):
+        if not chunk.strip():
+            continue
+        name = "message"
+        data_lines = []
+        for line in chunk.split("\n"):
+            if line.startswith("event:"):
+                name = line[6:].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line[5:].strip())
+        if data_lines:
+            events.append((name, _json.loads("\n".join(data_lines))))
+    return events
+
+
+def _stream(client, message: str, **extra):
+    return client.post(
+        "/api/v1/chatbot/chat/stream", json={"message": message, **extra}
+    )
+
+
+def test_stream_emits_stage_and_final_events(client, isolated_db):
+    """스트리밍이 단계 알림과 최종 응답을 순서대로 흘려야 한다."""
+    _login(client)
+    _seed_kb_status(isolated_db)
+
+    response = _stream(client, "최근 공고 알려줘")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    events = _parse_sse(response.text)
+    names = [name for name, _ in events]
+    assert names[0] == "stage"
+    assert names[-1] == "final"
+
+
+def test_stream_final_matches_non_streaming_contract(client, isolated_db):
+    """final 이벤트는 POST /chat 응답과 같은 계약이어야 한다.
+
+    화면이 handleBotPayload 하나로 두 경로를 렌더하므로, 키가 어긋나면
+    스트리밍에서만 차트나 자동화 카드가 사라진다.
+    """
+    _login(client)
+    _seed_kb_status(isolated_db)
+
+    plain = _chat(client, "최근 공고 알려줘").json()
+    events = _parse_sse(_stream(client, "최근 공고 알려줘").text)
+    final = next(data for name, data in events if name == "final")
+
+    assert set(final) == set(plain)
+    assert final["status"] == plain["status"]
+    assert final["session_key"]
+
+
+def test_stream_persists_conversation(client, isolated_db):
+    """스트리밍 경로도 대화를 세션에 기록해야 한다 (사이드바 목록 갱신 근거)."""
+    _login(client)
+    _seed_kb_status(isolated_db)
+
+    before = isolated_db.query(ChatSessionState).count()
+    events = _parse_sse(_stream(client, "최근 낙찰 결과 보여줘").text)
+    final = next(data for name, data in events if name == "final")
+
+    isolated_db.expire_all()
+    after = isolated_db.query(ChatSessionState).count()
+    assert after >= before
+    state = (
+        isolated_db.query(ChatSessionState)
+        .filter(ChatSessionState.session_key == final["session_key"])
+        .one_or_none()
+    )
+    assert state is not None
+    assert state.last_query == "최근 낙찰 결과 보여줘"
+
+
+def test_stream_security_block_returns_final_without_tokens(client, isolated_db):
+    """즉답 분기는 토큰 없이 final 만 흘러야 한다."""
+    _login(client)
+    _seed_kb_status(isolated_db)
+
+    events = _parse_sse(_stream(client, "분류코드 알려줘").text)
+    names = [name for name, _ in events]
+    assert "final" in names
+    final = next(data for name, data in events if name == "final")
+    assert final["intent"] == "security_block"

@@ -617,6 +617,7 @@
 
                 <div id="chat-interface"
                      data-chat-url="{{ url('chatbot:chat_api') }}"
+                     data-stream-url="{{ url('chatbot:chat_stream') }}"
                      data-new-session-url="{{ url('chatbot:new_chat_session') }}"
                      data-csrf-token=""
                      class="relative flex items-center gap-3">
@@ -670,9 +671,10 @@ $(document).ready(function() {
 
     const CONFIG = {
         chatUrl: interface.data('chat-url'),
-        // streamUrl 은 두지 않습니다. /api/v1/chatbot/stream 은 RAG 답변 토큰만 흘리고
-        // 플래너, 자동화 확인, 차트 페이로드, 세션 저장을 거치지 않습니다.
-        // 이 화면을 스트리밍으로 옮기려면 그 기능들을 SSE 이벤트로 먼저 옮겨야 합니다.
+        // streamUrl 의 final 이벤트는 chatUrl 응답과 같은 ChatResponse 입니다.
+        // 플래너, 자동화 확인, 차트 페이로드, 세션 저장이 모두 실려 오므로
+        // 렌더링은 handleBotPayload 하나로 통일합니다. 토큰은 체감 속도용입니다.
+        streamUrl: interface.data('stream-url'),
         newSessionUrl: interface.data('new-session-url'),
         csrfToken: interface.data('csrf-token'),
         confirmUrlTemplate: '{{ url("chatbot:automation_job_confirm", job_id="__JOB_ID__") }}',
@@ -1631,33 +1633,122 @@ $(document).ready(function() {
         `);
         scrollChatToBottom();
 
-        activeChatRequest = $.ajax({
-            url: CONFIG.chatUrl,
-            method: 'POST',
-            contentType: 'application/json',
-            data: JSON.stringify({ message: message }),
-            success: function(data) {
-                $(`#${loadingId}`).remove();
-                activeChatRequest = null;
-                activeLoadingId = '';
-                setRequestBusy(false);
+        streamMessage(message, loadingId);
+    }
+
+    // AbortController 는 jQuery jqXHR 처럼 abort() 를 가지고 있어
+    // stopActiveChatRequest 가 그대로 동작합니다.
+    function streamMessage(message, loadingId) {
+        const controller = new AbortController();
+        activeChatRequest = controller;
+
+        const streamId = 'stream-' + Date.now();
+        let streamStarted = false;
+
+        function ensureStreamBubble() {
+            if (streamStarted) return;
+            streamStarted = true;
+            $(`#${loadingId}`).remove();
+            chatContainer.append(`
+                <div id="${streamId}" class="flex justify-start animate-in fade-in duration-300">
+                    <div class="flex items-start gap-4">
+                        <div class="w-9 h-9 rounded bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                            <i data-lucide="bot" class="w-5 h-5"></i>
+                        </div>
+                        <div class="px-5 py-4 bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 rounded-xl shadow-sm max-w-3xl">
+                            <div class="prose prose-sm max-w-none dark:prose-invert" data-stream-body></div>
+                        </div>
+                    </div>
+                </div>
+            `);
+            if (window.lucide) { window.lucide.createIcons(); }
+        }
+
+        function cleanup() {
+            $(`#${loadingId}`).remove();
+            $(`#${streamId}`).remove();
+            activeChatRequest = null;
+            activeLoadingId = '';
+            setRequestBusy(false);
+        }
+
+        function handleEvent(name, data) {
+            if (name === 'stage') {
+                $(`#${loadingId}`).find('span.text-xs').text(data.message || 'AI가 요청을 분석 중입니다');
+                return;
+            }
+            if (name === 'token') {
+                ensureStreamBubble();
+                const body = $(`#${streamId}`).find('[data-stream-body]');
+                body.text(body.text() + (data.text || ''));
+                scrollChatToBottom();
+                return;
+            }
+            if (name === 'final') {
+                cleanup();
                 if (data.status === 'success') {
                     handleBotPayload(data);
                 } else {
                     appendMessage('bot', '분석 처리 중 오류가 발생했습니다: ' + (data.message || '알 수 없는 오류'));
                 }
-            },
-            error: function(_xhr, textStatus) {
-                $(`#${loadingId}`).remove();
-                activeChatRequest = null;
-                activeLoadingId = '';
-                setRequestBusy(false);
-                if (textStatus === 'abort' && requestStoppedByUser) {
-                    requestStoppedByUser = false;
-                    return;
-                }
-                appendMessage('bot', '서버 통신 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+                return;
             }
+            if (name === 'error') {
+                cleanup();
+                appendMessage('bot', data.message || '응답 생성에 실패했습니다.');
+            }
+        }
+
+        fetch(CONFIG.streamUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: message }),
+            signal: controller.signal
+        }).then(async function(response) {
+            if (!response.ok || !response.body) {
+                throw new Error('stream unavailable');
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                // SSE 는 빈 줄로 이벤트를 구분합니다. 마지막 조각은 미완성일 수
+                // 있으므로 버퍼에 남겨 다음 청크와 이어붙입니다.
+                let boundary = buffer.indexOf('\n\n');
+                while (boundary !== -1) {
+                    const chunk = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+                    let name = 'message';
+                    const dataLines = [];
+                    chunk.split('\n').forEach(function(line) {
+                        if (line.startsWith('event:')) {
+                            name = line.slice(6).trim();
+                        } else if (line.startsWith('data:')) {
+                            dataLines.push(line.slice(5).trim());
+                        }
+                    });
+                    if (dataLines.length > 0) {
+                        try {
+                            handleEvent(name, JSON.parse(dataLines.join('\n')));
+                        } catch (err) {
+                            console.error('SSE 파싱 실패', err);
+                        }
+                    }
+                    boundary = buffer.indexOf('\n\n');
+                }
+            }
+        }).catch(function(err) {
+            if (err && err.name === 'AbortError' && requestStoppedByUser) {
+                requestStoppedByUser = false;
+                return;
+            }
+            cleanup();
+            appendMessage('bot', '서버 통신 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
         });
     }
 

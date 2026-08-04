@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.app.api.ui import router as ui_router
@@ -29,6 +30,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+DOUBLE_SLASH_PREFIX = "/bids//"
+
+
+@app.middleware("http")
+async def collapse_bids_double_slash(request: Request, call_next):
+    """원본 config/urls.py 의 re_path(r'^bids//(?P<remaining>.*)$') 대응입니다.
+
+    화면 스크립트가 경로를 문자열로 이어붙이다 슬래시를 겹쳐 넣는 경우가 있어
+    원본은 이를 리다이렉트로 교정했습니다. 없으면 같은 요청이 404 가 됩니다.
+    슬래시가 셋 이상이어도 원본처럼 한 번에 하나씩 줄이며 수렴합니다.
+    """
+    path = request.url.path
+    if path.startswith(DOUBLE_SLASH_PREFIX):
+        target = "/bids/" + path[len(DOUBLE_SLASH_PREFIX) :]
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        return RedirectResponse(target, status_code=302)
+    return await call_next(request)
+
 
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 
