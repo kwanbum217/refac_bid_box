@@ -273,3 +273,25 @@
   - `src/app/schemas/predictions.py`: `rate_low` / `rate_high` / `price_low` / `price_high` / `interval_coverage` 선택 필드 추가. 구 모델은 None 이라 원본 계약을 유지합니다
 - **관련 파일**: `src/ml/trainer.py`, `src/ml/promotion.py`, `src/ml/model_registry.py`, `src/app/api/v1/predictions.py`, `src/app/schemas/predictions.py`, `docs/design/servc_prediction_interval_20260804.md`
 - **검증 결과**: 배율 1.163014 적용 시 학습기 홀드아웃 피복률 76.04% -> 90.22%, API 경로 93.00%. 구간 폭 증가는 0.27%p. 574 passed 2 skipped, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-04 | 구간 UI·참가자 수·하이퍼파라미터 | 두 건 측정 후 기각
+
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `0f7f982`, `f1c99f9` (병합 `f536e52`, `8333fbb`)
+- **주요 변경사항**:
+  - `src/app/templates/bids/detail.html`: 예측 구간(낙찰률 범위·투찰가 범위·피복률) 노출. API 는 구간을 내놓고 있었으나 화면은 점 추정만 표시했습니다. 구 모델은 응답이 null 이라 블록을 감춥니다
+  - `tests/test_prediction_interval_ui.py`: 신설. 응답 스키마 필드명이 바뀌면 템플릿이 undefined 를 읽고도 예외가 나지 않으므로 필드 일치를 고정합니다
+  - `scripts/collect_servc_participant_count.py`: 신설. 설계 문서는 참가자 수가 "API 에 있으나 미수집" 이라 적었으나, 이미 수집 중인 `getScsbidListSttusServc` 가 `prtcptCnum` 을 내려주고 있었습니다. 비어 있던 것은 과거 이관분입니다
+  - `scripts/eval_servc_participant_effect.py`: 신설. 오라클과 이력 특징을 나눠 측정
+  - `scripts/tune_servc_hyperparams.py`: 신설. 좌표 하강 하이퍼파라미터 탐색
+  - `scripts/retrain_servc_from_parquet.py`: 신설. DB 없이 학습 구간만 재실행
+  - `scripts/eval_servc_api_path.py`: 신설. 운영 API 경로 실측
+  - `src/ml/trainer.py`: `num_leaves` 255 를 검토했으나 63 유지. `subsample` 이 무효 설정임을 주석에 명시
+- **관련 파일**: 위 전체 + `docs/design/servc_hyperparam_search_20260804.md`, `docs/design/servc_restricted_competition_20260803.md`
+- **검증 결과**:
+  - 참가자 수 2025년 116,397건 수집(보유율 100%). 단독응찰은 하한율보다 9.938%p 위, 100곳 초과는 0.008%p. 그러나 오라클 상한이 RMSE 4.9% 뿐이고 이력은 0.35% 만 회수해 **기각**
+  - 하이퍼파라미터 좌표 하강 17회. `num_leaves` 63 -> 255 가 홀드아웃 MAE 1.4% 개선. 재학습·승격 후 API 경로 1,000건에서 정확도는 판별 불가(MAE -0.8%, RMSE +1.3%)이고 구간 폭만 1.423 -> 1.583%p 로 11.2% 악화되어 **롤백**
+  - `subsample=0.8` 이 `subsample_freq` 기본값 0 때문에 무효였음을 확인 (0.6/0.8/1.0 의 MAE 가 소수점 넷째 자리까지 동일)
+  - 605 passed 2 skipped, `validate_agent_rules.py` 6/6
