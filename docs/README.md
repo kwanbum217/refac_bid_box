@@ -45,6 +45,7 @@ docs/
 | 용역 2025년 연도 홀드아웃 | [`servc_year_holdout_2025_20260803.md`](design/servc_year_holdout_2025_20260803.md) | 공고 건당 오차 분포, 연초 성능 저하 |
 | 제한경쟁 진단과 난수 구조 | [`servc_restricted_competition_20260803.md`](design/servc_restricted_competition_20260803.md) | 참여업체 수·복수예가 난수 분해, 세부분류 특징 배선 |
 | 손실함수와 반복 발주 이력 | [`servc_repeat_procurement_20260803.md`](design/servc_repeat_procurement_20260803.md) | Huber 채택, 재발주 이력 6종, 공고명 텍스트 기각 |
+| 예측 구간 보정 측정 | [`servc_prediction_interval_20260804.md`](design/servc_prediction_interval_20260804.md) | 분위 회귀 피복률 실패, 등각예측 보정, 서빙 미착수 |
 
 ## 2. migration/
 
@@ -59,6 +60,12 @@ docs/
 | --- | --- | --- |
 | 인수인계 (정정본) | [`2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md) | 실제 진행 상태 |
 | 원본 재현율 복원 | [`2026-07-31_parity_restoration_handoff.md`](handoff/2026-07-31_parity_restoration_handoff.md) | 데이터 유실 복구, 조작·결함 7건 수정, 스택 변경 |
+| 백필 완료 | [`2026-08-03_backfill_complete.md`](handoff/2026-08-03_backfill_complete.md) | 과거 결손 복구 결과 |
+| 용역 제도 특징 1차 | [`2026-08-03_servc_institution_handoff.md`](handoff/2026-08-03_servc_institution_handoff.md) | 제도 특징 배선 |
+| 용역 모델 개선 2차 | [`2026-08-03_servc_model_tuning_handoff.md`](handoff/2026-08-03_servc_model_tuning_handoff.md) | R2 0.6968, MAE -15.6% |
+| 용역 제도 분석 인수인계 | [`2026-08-03_servc_institution_handoff.md`](handoff/2026-08-03_servc_institution_handoff.md) | 제도 특징 배선, 세부분류 채택 |
+| 용역 모델 튜닝 인수인계 | [`2026-08-03_servc_model_tuning_handoff.md`](handoff/2026-08-03_servc_model_tuning_handoff.md) | Huber, 재발주 이력, 기각 목록 |
+| 서빙 배선 인수인계 | [`2026-08-04_servc_serving_handoff.md`](handoff/2026-08-04_servc_serving_handoff.md) | 특징 단일화, 승격 경로, 예측 구간 |
 
 ## 4. changelogs/
 
