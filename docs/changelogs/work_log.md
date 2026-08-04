@@ -228,14 +228,48 @@
 - **관련 파일**: `docker-compose.yml`, `docs/changelogs/work_log.md`
 - **검증 결과**: `docker compose ps` (실행 중인 컨테이너 0개 확인), `validate_agent_rules.py` 6/6 PASS
 
+---
 
+### 2026-08-03 | 용역 모델 재설계 | G2B 제도 특징 배선, 손실함수 교체, 재발주 이력 도입
 
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `36ce33c`, `d760b5e` (병합 `c179bde`)
+- **주요 변경사항**:
+  - `src/ml/dataset.py`: 낙찰하한율·예가결정방법·용역구분 등 제도 필드 13종을 `raw_data` JSON 에서 추출 (`INSTITUTION_FIELDS`). 중분류 40종·소분류 200종 추가
+  - `src/ml/features.py`: 범주형 특징 11종 수립, `collect_category_levels` / `apply_categorical_dtypes` 로 학습·추론 범주 수준 동기화
+  - `src/ml/trainer.py`: 목적함수를 L2 에서 Huber 로 교체. 낙찰률 잔차가 0 에 몰린 비대칭 분포라 L2 는 중심 예측을 위로 밀어 올립니다
+  - `src/ml/repeat_history.py`: 재발주 이력 6종 신설. 용역은 같은 기관이 1~2년 주기로 같은 사업을 재발주합니다 (주기 중앙값 358일)
+  - `scripts/eval_servc_year_holdout.py`: 2024년까지 학습, 2025년 검증하는 연도 홀드아웃 평가
+- **관련 파일**: `src/ml/dataset.py`, `src/ml/features.py`, `src/ml/trainer.py`, `src/ml/repeat_history.py`, `tests/test_repeat_history.py`
+- **검증 결과**: 2025년 홀드아웃 R2 0.6767 -> 0.6968, 0.5%p 이내 적중 44.29% -> 60.52%, 예측 편향 +0.317%p -> -0.002%p. 456 passed
 
+---
 
+### 2026-08-04 | 서빙 경로 복구 | 특징 단일화, 배포 게이트, 승격 경로 신설
 
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `3a0b772`, `3ff3641`, `d964f4a` (병합 `e1f7255`, `cbb9e5b`)
+- **주요 변경사항**:
+  - `src/ml/model_registry.py`: 특징 맵 복제본 167줄 제거, `features.py` 단일 공급원으로 위임 (AGENTS.md 6항 위반 해소). 복제본에 신규 범주 기본값이 없어 문자열 범주가 float 변환 실패로 전부 0.0 이 되고 있었습니다
+  - `src/ml/features.py`: `prepare_input_frame` strict 모드. 모르는 특징을 0.0 으로 채우는 대신 거부합니다
+  - `src/ml/promotion.py`: 신설. `ml_registry/` 아티팩트를 `data/model_files/` 로 승격. 설계서 7장 필수 4(폴드 R2 > 0.99 금지)를 코드로 구현. 종전에는 두 경로를 잇는 코드 자체가 없었습니다
+  - `src/ml/trainer.py`: 모델 선택 기준을 `avg_r2` 에서 `avg_mape` 로 교체. R2 는 조건부 평균을 겨냥해 CatBoost 를 뽑는데 0.5%p 적중은 46.80% 대 60.49% 로 크게 뒤집니다. 카테고리별 모델 네임스페이스 분리, 폴드별 원지표 보존
+  - `src/app/api/v1/predictions.py`: `announcement_feature_payload` 로 제도 필드를 펼치고 DB 세션을 전달. 종전에는 34개 중 30개가 기본값이었습니다
+  - 카테고리 기본 모델 매핑 3중 복제를 `CATEGORY_DEFAULT_MODELS` 정본 참조로 통합
+- **관련 파일**: `src/ml/model_registry.py`, `src/ml/promotion.py`, `src/ml/trainer.py`, `src/ml/dataset.py`, `src/app/api/v1/predictions.py`, `tests/test_serving_feature_parity.py`
+- **검증 결과**: API 경로 2025년 300건 실측 MAE 6.128 -> 0.973, 1%p 이내 적중 0.7% -> 83.0%. 학습기 홀드아웃 R2 0.6881. 526 passed
 
+---
 
+### 2026-08-04 | 예측 구간 | 분위 회귀와 등각예측 보정을 API 응답까지 배선
 
-
-
-
+- **작업자**: 관범 & AI 에이전트
+- **커밋**: `9da7bd6`, `4a4d517` (병합 `3dfe311`)
+- **주요 변경사항**:
+  - `scripts/eval_servc_prediction_interval.py`: 신설. 분위 회귀 구간의 피복률 측정. 소박한 구간은 명목 80% 대비 실제 75.52%, 10억 이상 구간은 66.85% 로 보정에 실패합니다
+  - `src/ml/trainer.py`: `_train_quantile_models`. 학습 구간 뒤 15% 로 등각예측 배율을 산정한 뒤 분위 모델은 전량으로 재적합합니다. `LGB_BASE_PARAMS` 로 점 추정과 분위 모델의 용량 설정을 통일
+  - `src/ml/promotion.py`: `model_q*.bin` 을 함께 승격
+  - `src/ml/model_registry.py`: `JoblibModelWrapper.predict_interval` 지연 로드, `predict_interval` 진입점
+  - `src/app/schemas/predictions.py`: `rate_low` / `rate_high` / `price_low` / `price_high` / `interval_coverage` 선택 필드 추가. 구 모델은 None 이라 원본 계약을 유지합니다
+- **관련 파일**: `src/ml/trainer.py`, `src/ml/promotion.py`, `src/ml/model_registry.py`, `src/app/api/v1/predictions.py`, `src/app/schemas/predictions.py`, `docs/design/servc_prediction_interval_20260804.md`
+- **검증 결과**: 배율 1.163014 적용 시 학습기 홀드아웃 피복률 76.04% -> 90.22%, API 경로 93.00%. 구간 폭 증가는 0.27%p. 574 passed 2 skipped, `validate_agent_rules.py` 6/6
