@@ -699,3 +699,61 @@ V1~V7 검증을 전부 실행했습니다. 결과는
 
 **11장의 성능 목표 R2 0.62 는 이 재편 이후 재측정합니다.** 구간별 난이도가 30배
 차이나는 것이 확인된 이상, 전체 평균 R2 는 의미 있는 지표가 아닙니다.
+
+---
+
+## 14. 서빙 경로 정합 (2026-08-04)
+
+학습이 쓰는 특징을 추론 경로가 만들지 못하면 같은 모델이 학습 때와 다른 입력을
+보게 됩니다(train/serve skew). 실측으로 그 상태였음이 확인되어 바로잡았습니다.
+
+### 14.1 증상
+
+하한율 87.995% 인 용역 건의 예측이 **100.776%** 로 나왔습니다. 제도상 나올 수 없는
+값이며, 원인은 모델이 하한율을 포함한 제도 특징을 전혀 보지 못한 것이었습니다.
+
+### 14.2 원인
+
+| 경로 | 문제 |
+| --- | --- |
+| `predict_price_api` | 공고 컬럼만 넘김. 제도 특징은 `raw_data` JSON 안에 있어 누락 |
+| `predict_optimal_price` | 프레임을 구 52컬럼으로 좁혀, 남은 특징마저 wrapper 가 기본값으로 채움 |
+| 기관·재발주 이력 | DB 조회가 필요한데 session 을 넘기지 않아 상수로 고정 |
+
+### 14.3 조치
+
+| 위치 | 변경 |
+| --- | --- |
+| `src/ml/dataset.py` | `announcement_feature_payload()` 추가. 공고 한 건을 학습 프레임과 같은 키 규격으로 펼침 |
+| `src/app/api/v1/predictions.py` | 위 함수와 `build_feature_dict(features, db)` 를 병합 |
+| `src/ml/model_registry.py` | `_prepare_full_frame()` 추가. 프레임을 구 컬럼으로 좁히지 않음 |
+
+원본 키(`title`, `agency_name`, `scenario_mode`)는 남깁니다. 통째로 갈아끼우면
+규칙 기반 구 모델이 동작하지 않습니다.
+
+### 14.4 실측
+
+`servc_institution_v1` 이 요구하는 특징 34개 기준입니다.
+
+| 상태 | 충족 특징 |
+| --- | ---: |
+| 조치 전 | **0 / 34** |
+| 조치 후 | **34 / 34** |
+
+`weekday_sin`, `is_repeat`, `inst_sample_cnt` 등이 0 인 것은 결측이 아니라 실제
+값입니다(재발주 아님, 신규 기관 등).
+
+### 14.5 재발 방지
+
+`tests/test_predictions_api.py` 가 API 계층에서 이를 고정합니다. 병합을 되돌리면
+`test_predict_price_passes_institution_features_from_raw_data` 와
+`test_predict_price_fills_history_features_requiring_db` 가 실패합니다. 되돌리는
+변경을 실제로 적용해 두 테스트가 깨지는 것을 확인했습니다.
+
+### 14.6 함께 고친 것
+
+| 항목 | 내용 |
+| --- | --- |
+| 용역 기본 모델 | `ssh_hist_premium` → `servc_institution_v1`. 종전 모델은 5폴드 중 3개가 R2 0.9999999999999998 인 타깃 누수 모델 |
+| 매핑 중복 | 카테고리별 기본 모델을 세 곳에 적어 두던 것을 `CATEGORY_DEFAULT_MODELS` 단일 정본으로 통합 |
+| 승격 백업 위치 | `data/model_files/<name>.bak` → `data/model_backups/<name>`. 서빙 루트 안에 두면 `ModelRegistry` 가 백업본까지 모델로 등록 |
