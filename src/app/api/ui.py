@@ -8,14 +8,15 @@ src/app/api/ui.py
 
 from __future__ import annotations
 
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.app.api.v1.accounts import get_current_user
+from src.app.api.v1.accounts import SignUpRequest, get_current_user, register_user
 from src.app.core.config import settings
 from src.app.core.db import get_db
 from src.app.core.security import (
@@ -50,9 +51,29 @@ def _compact_count(value: int) -> str:
 
 def _login_redirect(request: Request) -> RedirectResponse:
     """원본 LoginRequiredMixin 과 동일하게 next 파라미터를 붙여 로그인으로 보냅니다."""
+    next_path = request.url.path
+    if request.url.query:
+        next_path = f"{next_path}?{request.url.query}"
     return RedirectResponse(
-        url=f"/accounts/login/?next={request.url.path}", status_code=303
+        url=f"/accounts/login/?next={quote(next_path, safe='/')}", status_code=303
     )
+
+
+def _compat_redirect(request: Request, target: str) -> RedirectResponse:
+    """이식 과도기에 쓰던 단축 경로를 원본 경로로 되돌립니다.
+
+    정본은 원본 Django URL(apps/bids/urls.py) 입니다. 화면 링크는 전부 원본
+    경로를 직접 가리키므로 이 리다이렉트는 옛 주소를 저장해 둔 요청에만 걸립니다.
+    """
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(url=f"{target}{query}", status_code=307)
+
+
+def _safe_next_path(value: str | None) -> str:
+    candidate = (value or "/").strip()
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return "/"
+    return candidate
 
 
 # 원본은 django-allauth 소셜 로그인을 붙였습니다. 이식본에는 소셜 인증이 없으므로
@@ -112,22 +133,9 @@ def bid_list(
     return _render(request, "bids/list.html", context, user, "bids")
 
 
-@router.get("/bids/{pk}/")
-def bid_detail(
-    request: Request,
-    pk: int,
-    db: Session = Depends(get_db),
-    user: CustomUser | None = Depends(get_current_user),
-):
-    if user is None:
-        return _login_redirect(request)
-    detail = bid_queries.get_announcement_detail(db, pk)
-    if detail is None:
-        raise HTTPException(status_code=404, detail="대상을 찾을 수 없습니다.")
-    return _render(request, "bids/detail.html", detail, user, "bids")
-
-
-@router.get("/results/")
+# 아래 네 경로는 /bids/{pk} 보다 먼저 등록해야 합니다. 뒤에 두면 "results" 같은
+# 문자열이 pk 로 해석되어 422 가 납니다.
+@router.get("/bids/results/")
 def result_list(
     request: Request,
     q: str = Query(""),
@@ -156,7 +164,7 @@ def result_list(
     return _render(request, "bids/results.html", context, user, "results")
 
 
-@router.get("/results/{pk}/")
+@router.get("/bids/result/{pk}/")
 def result_detail(
     request: Request,
     pk: int,
@@ -171,7 +179,7 @@ def result_detail(
     return _render(request, "bids/result_detail.html", detail, user, "results")
 
 
-@router.get("/dashboard/")
+@router.get("/bids/dashboard/")
 def dashboard(
     request: Request, user: CustomUser | None = Depends(get_current_user)
 ):
@@ -180,14 +188,49 @@ def dashboard(
     return _render(request, "bids/dashboard.html", {}, user, "dashboard")
 
 
-@router.get("/compare/")
+@router.get("/bids/compare/")
 def compare(request: Request, user: CustomUser | None = Depends(get_current_user)):
     if user is None:
         return _login_redirect(request)
     return _render(request, "bids/compare.html", {}, user, "dashboard")
 
 
-@router.get("/chat/")
+@router.get("/bids/{pk}/")
+def bid_detail(
+    request: Request,
+    pk: int,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    if user is None:
+        return _login_redirect(request)
+    detail = bid_queries.get_announcement_detail(db, pk)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="대상을 찾을 수 없습니다.")
+    return _render(request, "bids/detail.html", detail, user, "bids")
+
+
+@router.get("/results/", include_in_schema=False)
+def compat_result_list(request: Request):
+    return _compat_redirect(request, "/bids/results/")
+
+
+@router.get("/results/{pk}/", include_in_schema=False)
+def compat_result_detail(request: Request, pk: int):
+    return _compat_redirect(request, f"/bids/result/{pk}/")
+
+
+@router.get("/dashboard/", include_in_schema=False)
+def compat_dashboard(request: Request):
+    return _compat_redirect(request, "/bids/dashboard/")
+
+
+@router.get("/compare/", include_in_schema=False)
+def compat_compare(request: Request):
+    return _compat_redirect(request, "/bids/compare/")
+
+
+@router.get("/chatbot/")
 def chat_page(
     request: Request,
     db: Session = Depends(get_db),
@@ -231,13 +274,20 @@ def chat_page(
     return _render(request, "chatbot/chat.html", context, user, "chatbot")
 
 
+@router.get("/chat/", include_in_schema=False)
+def compat_chat_page(request: Request):
+    return _compat_redirect(request, "/chatbot/")
+
+
 @router.get("/accounts/login/")
 def login_page(
-    request: Request, user: CustomUser | None = Depends(get_current_user)
+    request: Request,
+    next: str = Query("/"),
+    user: CustomUser | None = Depends(get_current_user),
 ):
     if user is not None:
         return RedirectResponse(url="/", status_code=303)
-    context = {"hide_sidebar": True, "form": login_form()}
+    context = {"hide_sidebar": True, "form": login_form(), "next": _safe_next_path(next)}
     return _render(request, "accounts/login.html", context, None)
 
 
@@ -249,6 +299,58 @@ def signup_page(
         return RedirectResponse(url="/", status_code=303)
     context = {"hide_sidebar": True, "form": signup_form()}
     return _render(request, "accounts/signup.html", context, None)
+
+
+@router.post("/accounts/signup/")
+async def signup_submit(request: Request, db: Session = Depends(get_db)):
+    """JavaScript 없이도 원본 SSR 회원가입 폼을 처리합니다."""
+    form_data = parse_qs((await request.body()).decode("utf-8"))
+
+    def value(name: str) -> str:
+        return (form_data.get(name) or [""])[0]
+
+    payload = {
+        "username": value("username"),
+        "password1": value("password1"),
+        "password2": value("password2"),
+        "nickname": value("nickname"),
+        "email": value("email"),
+        "birth_date": value("birth_date"),
+        "gender": value("gender"),
+        "agree_terms": "agree_terms" in form_data,
+        "agree_privacy": "agree_privacy" in form_data,
+    }
+
+    try:
+        signup_payload = SignUpRequest.model_validate(payload)
+        response = RedirectResponse(url="/", status_code=303)
+        register_user(signup_payload, response, db)
+        return response
+    except ValidationError as exc:
+        errors: dict[str, list[str]] = {}
+        for item in exc.errors():
+            field_name = str(item.get("loc", ("__all__",))[0])
+            errors.setdefault(field_name, []).append(str(item.get("msg", "입력값을 확인해주세요.")))
+        status_code = 422
+    except HTTPException as exc:
+        errors = {}
+        if exc.status_code == 409:
+            errors["username"] = [str(exc.detail)]
+        else:
+            errors["__all__"] = [str(exc.detail)]
+        status_code = exc.status_code
+
+    render_response = _render(
+        request,
+        "accounts/signup.html",
+        {
+            "hide_sidebar": True,
+            "form": signup_form(data=payload, errors=errors),
+        },
+        None,
+    )
+    render_response.status_code = status_code
+    return render_response
 
 
 @router.post("/accounts/login/")
@@ -278,6 +380,7 @@ async def login_submit(
                 data={"username": username},
                 non_field_errors=["아이디 또는 비밀번호가 올바르지 않습니다."],
             ),
+            "next": _safe_next_path(next),
         }
         response = _render(request, "accounts/login.html", context, None)
         response.status_code = 401
@@ -290,6 +393,7 @@ async def login_submit(
                 data={"username": username},
                 non_field_errors=["비활성화된 계정입니다."],
             ),
+            "next": _safe_next_path(next),
         }
         response = _render(request, "accounts/login.html", context, None)
         response.status_code = 403
@@ -298,7 +402,7 @@ async def login_submit(
     account.last_login = utcnow()
     db.commit()
 
-    redirect = RedirectResponse(url=next or "/", status_code=303)
+    redirect = RedirectResponse(url=_safe_next_path(next), status_code=303)
     redirect.set_cookie(
         SESSION_COOKIE_NAME,
         create_session(account.id, account.username),

@@ -88,3 +88,17 @@ def test_automation_control_urls_are_registered_in_url_map(name):
     """세 버튼 모두 url() 을 거치도록 URL_MAP 에 등록되어 있어야 합니다."""
     assert name in URL_MAP
     assert "{job_id}" in URL_MAP[name]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("bids:result_list", "/bids/results/"),
+        ("bids:result_detail", "/bids/result/{pk}/"),
+        ("bids:dashboard", "/bids/dashboard/"),
+        ("bids:compare", "/bids/compare/"),
+        ("chatbot:chat_page", "/chatbot/"),
+    ],
+)
+def test_original_page_url_map_is_preserved(name, expected):
+    assert URL_MAP[name] == expected

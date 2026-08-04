@@ -71,6 +71,9 @@ GET /api/v1/chatbot/stream  # SSE (HTMX hx-ext="sse" 연동)
 | 챗봇 헤더 모델명 | `Gemini 3.1 Flash-Lite preview` 하드코딩 | `settings` 실제 값 | LLM 을 Ollama 로 교체해 하드코딩 값이 거짓이 됨 |
 | 챗봇 색인 건수 | `842K` 하드코딩 | DB 실집계 | 실제 183만행과 불일치 |
 | CSRF 토큰 | `{% csrf_token %}` | 제거 | 세션 쿠키 기반, 토큰 미사용 |
+| 로그인 폼 전송 | Django 폼 POST | fetch JSON POST 스크립트 추가 | 인증이 `POST /api/v1/accounts/login` 으로 이동. 폼 본문 그대로는 API 가 받지 못함 |
+| 로그인 `next` | Django 가 자동 처리 | hidden 필드로 명시 전달 | fetch 전송이라 폼 액션의 쿼리스트링이 서버에 닿지 않음 |
+| 낙찰가 예측 호출 | `$.ajax` form-encoded | JSON 본문 | FastAPI Pydantic 스키마가 JSON 을 요구 |
 
 ### React SPA
 
@@ -97,9 +100,35 @@ GET /api/v1/chatbot/stream  # SSE (HTMX hx-ext="sse" 연동)
 
 디렉토리 자체는 본 ADR 의 "삭제하지 않고 참조용으로 유지" 방침에 따라 그대로 둡니다.
 
+### 명시 기동은 프로필로 막을 수 없습니다 (2026-08-04)
+
+`profiles` 는 기본 기동에서 빼줄 뿐, 서비스 이름을 직접 지정한 `docker compose up -d app frontend` 는 그대로 뜹니다. 실제로 다른 세션이 이 형태로 기동해 5173 이 다시 열렸고, 응답 HTML 만 보고 정상으로 판정한 사례가 있었습니다.
+
+**기동 시에는 서비스 이름을 열거하지 말고 `docker compose up -d` 를 씁니다.** 5173 이 열려 있다면 정본이 아닌 화면이므로 내립니다.
+
 ### 검토 후 기각된 대안
 
 React 를 원본 디자인으로 전면 재구현하는 방안을 설계까지 진행한 뒤 기각했습니다. 근거 자료는 [`frontend_react_reproduction_design.md`](frontend_react_reproduction_design.md) 에 보존하며, 기각 사유는 원본 재현이 SSR 에서 이미 완료되어 재수행의 실익이 없다는 점입니다.
+
+---
+
+## URL 경로 정본 복원 (2026-08-04)
+
+이식 초기에 SSR 경로를 `/results/`, `/dashboard/` 처럼 짧게 줄여 두어 원본과 주소가 달랐습니다. 원본(`apps/bids/urls.py`, `config/urls.py`)을 정본으로 되돌렸습니다.
+
+| 원본 = 현재 정본 | 이식 초기 단축 경로 |
+| --- | --- |
+| `/bids/results/` | `/results/` |
+| `/bids/result/{pk}/` | `/results/{pk}/` |
+| `/bids/dashboard/` | `/dashboard/` |
+| `/bids/compare/` | `/compare/` |
+| `/chatbot/` | `/chat/` |
+
+단축 경로는 삭제하지 않고 307 로 정본에 연결합니다. 북마크와 외부 링크를 깨뜨리지 않기 위함입니다.
+
+중간에 **방향이 반대인 구현**이 있었습니다. 링크는 원본 주소를 가리키는데 핸들러는 단축 경로에 남아 있어, 화면 이동마다 리다이렉트가 한 번씩 더 붙고 주소창 최종 값이 원본과 달라졌습니다. 정본 경로에 핸들러를 두는 방향으로 바로잡았습니다.
+
+`/bids/results/` 등 네 경로는 라우터에서 `/bids/{pk}/` 보다 **먼저** 등록해야 합니다. 뒤에 두면 `results` 가 `pk` 로 해석되어 422 가 납니다.
 
 ---
 

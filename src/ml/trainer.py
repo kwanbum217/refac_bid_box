@@ -38,6 +38,18 @@ DEFAULT_N_FOLDS = 5
 # 폴드 하나가 가져야 하는 최소 행 수. 트리 모델이 1행 입력에서 예외를 던집니다.
 MIN_FOLD_SAMPLES = 2
 
+# 카테고리별 모델 네임스페이스. 물품과 용역은 예정가격 산정과 낙찰자 결정이
+# 서로 다른 제도라 한 이름을 공유하면 champion 비교가 뒤섞입니다.
+DEFAULT_MODEL_NAME = "quantum_leap_v25_pro"
+CATEGORY_MODEL_NAMES = {
+    "Thng": "quantum_leap_v25_pro",
+    "Servc": "servc_institution_v1",
+}
+
+
+def model_name_for_category(category_code: str | None) -> str:
+    return CATEGORY_MODEL_NAMES.get((category_code or "").strip(), DEFAULT_MODEL_NAME)
+
 # 시계열 기준 컬럼. 없으면 프레임 순서를 그대로 사용합니다.
 TIME_SORT_COLUMN = "openg_dt"
 
@@ -331,13 +343,27 @@ def _cross_validate_model(
             float(np.std([m[key] for m in fold_metrics])), 4
         )
     aggregated["fold_count"] = len(fold_metrics)
+    # 폴드별 원지표를 남깁니다. 평균만 저장하면 설계서 7장 필수 4
+    # (어느 폴드도 R2 > 0.99 아닐 것)를 판정할 근거가 사라집니다.
+    # ssh_hist_premium 은 5폴드 중 3개가 R2 0.9999999999999998 이었는데
+    # 평균만 보면 그 사실이 드러나지 않습니다.
+    aggregated["folds"] = fold_metrics
     return aggregated
 
 
 class ModelTrainer:
-    def __init__(self, model_name: str = "quantum_leap_v25_pro", registry_dir: str = "ml_registry"):
+    def __init__(self, model_name: str = DEFAULT_MODEL_NAME, registry_dir: str = "ml_registry"):
         self.model_name = model_name
         self.registry_dir = Path(registry_dir)
+
+    @classmethod
+    def for_category(cls, category_code: str | None, registry_dir: str = "ml_registry"):
+        """카테고리 전용 학습기를 만듭니다.
+
+        분기가 없으면 용역 재학습이 물품 디렉터리에 저장되고 물품 champion 과
+        비교됩니다. 서로 다른 제도를 쓰는 두 모델이 한 이름을 공유하게 됩니다.
+        """
+        return cls(model_name_for_category(category_code), registry_dir)
 
     def train_and_register(
         self,
@@ -427,11 +453,18 @@ class ModelTrainer:
             )
             cv_by_model[name] = cv
             holdout_by_model[name] = holdout
+            # 선택은 MAPE(낮을수록 좋음)로 합니다. R2/RMSE 는 조건부 평균을
+            # 겨냥하는데 낙찰률 잔차는 0 에 몰린 비대칭 분포라, 그 기준으로 고르면
+            # 중심을 위로 밀어 올린 모델이 이깁니다. 2025년 홀드아웃 실측에서
+            # CatBoost 가 R2 0.6994 로 LightGBM(Huber) 0.6967 을 이겼지만
+            # 0.5%p 이내 적중은 46.80% 대 60.49% 로 크게 졌습니다.
+            # MAPE 로 고르면 LightGBM 1.431, CatBoost 1.5025 로 순서가 뒤집힙니다.
+            # 근거: docs/design/servc_repeat_procurement_20260803.md 1장
             # K-Fold 를 만들 수 없을 만큼 표본이 적으면 홀드아웃으로 내려갑니다.
-            selection_score = cv.get("avg_r2", holdout["r2"])
+            selection_score = cv.get("avg_mape", holdout["mape"])
             candidates.append((selection_score, name, model, cv, holdout))
 
-        _, model_type, best_model, cv_metrics, valid_metrics = max(
+        _, model_type, best_model, cv_metrics, valid_metrics = min(
             candidates, key=lambda item: item[0]
         )
 

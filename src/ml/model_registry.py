@@ -9,6 +9,14 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from src.ml.features import (
+    DEFAULT_INSTITUTION_NAME,
+    apply_categorical_dtypes,
+    prepare_features,
+    prepare_input_frame,
+    unservable_features,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 MODEL_FILES_ROOT = PROJECT_ROOT / "data" / "model_files"
 
@@ -35,12 +43,6 @@ CATEGORY_DEFAULT_MODELS = {
 
 DEFAULT_RATIO_MIN = 0.75
 DEFAULT_RATIO_MAX = 1.05
-DEFAULT_INSTITUTION_NAME = "미상기관"
-DEFAULT_NOTICE_DURATION_DAYS = 14.0
-DEFAULT_INST_RATE = 0.925
-DEFAULT_INST_RATE_STD = 0.015
-DEFAULT_PPI = 100.0
-DEFAULT_EXCHANGE_RATE = 1300.0
 
 
 def _coerce_float(value, default=0.0):
@@ -53,33 +55,6 @@ def _coerce_float(value, default=0.0):
     if not math.isfinite(numeric):
         return float(default)
     return numeric
-
-
-def _coerce_timestamp(value):
-    if value in (None, ""):
-        return None
-    try:
-        ts = pd.Timestamp(value)
-    except (TypeError, ValueError):
-        return None
-    return None if pd.isna(ts) else ts
-
-
-def _is_missing(value):
-    if value is None:
-        return True
-    try:
-        return bool(pd.isna(value))
-    except TypeError:
-        return False
-
-
-def _get_reference_timestamp(features_dict):
-    for key in ("openg_dt", "bid_clse_dt", "bid_ntce_dt"):
-        ts = _coerce_timestamp(features_dict.get(key))
-        if ts is not None:
-            return ts
-    return pd.Timestamp.now()
 
 
 def _load_champion_metrics(model_dir):
@@ -136,108 +111,15 @@ def _load_champion_metrics(model_dir):
     }
 
 
-def _get_notice_duration_days(features_dict, reference_ts):
-    start = _coerce_timestamp(features_dict.get("bid_ntce_dt"))
-    end = _coerce_timestamp(features_dict.get("bid_clse_dt")) or reference_ts
-    if start is not None and end is not None:
-        delta_days = (end - start).total_seconds() / 86400
-        return max(delta_days, 0.0)
-    return _coerce_float(
-        features_dict.get("notice_duration"),
-        DEFAULT_NOTICE_DURATION_DAYS,
-    )
+def _prepare_input_frame(feature_values, column_order, category_levels=None):
+    """추론 프레임을 만듭니다. 특징 정의는 features.py 단일 공급원을 따릅니다.
 
-
-def _get_institution_name(features_dict):
-    for key in ("ntceInsttNm", "ntce_instt_nm", "dminstt_nm"):
-        value = features_dict.get(key)
-        if value:
-            return str(value)
-    return DEFAULT_INSTITUTION_NAME
-
-
-def _build_default_feature_map(features_dict):
-    reference_ts = _get_reference_timestamp(features_dict)
-    price = max(
-        _coerce_float(
-            features_dict.get("real_budget", features_dict.get("presmpt_prce")),
-            0.0,
-        ),
-        0.0,
-    )
-    log_price = np.log1p(price) if price > 0 else 0.0
-    inst_hist_rate = _coerce_float(
-        features_dict.get("inst_hist_rate"),
-        DEFAULT_INST_RATE,
-    )
-    inst_rate_mean_30d = _coerce_float(
-        features_dict.get("inst_rate_mean_30d"),
-        inst_hist_rate,
-    )
-    inst_rate_std_90d = _coerce_float(
-        features_dict.get("inst_rate_std_90d"),
-        DEFAULT_INST_RATE_STD,
-    )
-    feature_map = {
-        "log_price": log_price,
-        "month": float(reference_ts.month),
-        "weekday": float(reference_ts.weekday()),
-        "month_sin": float(np.sin(2 * np.pi * reference_ts.month / 12)),
-        "month_cos": float(np.cos(2 * np.pi * reference_ts.month / 12)),
-        "weekday_sin": float(np.sin(2 * np.pi * reference_ts.weekday() / 7)),
-        "weekday_cos": float(np.cos(2 * np.pi * reference_ts.weekday() / 7)),
-        "notice_duration": _get_notice_duration_days(features_dict, reference_ts),
-        "inst_part_avg": _coerce_float(
-            features_dict.get("inst_part_avg"),
-            inst_hist_rate,
-        ),
-        "ppi": _coerce_float(features_dict.get("ppi"), DEFAULT_PPI),
-        "ex_rate": _coerce_float(
-            features_dict.get("ex_rate"),
-            DEFAULT_EXCHANGE_RATE,
-        ),
-        "real_budget": price,
-        "inst_hist_rate": inst_hist_rate,
-        "inst_rate_mean_30d": inst_rate_mean_30d,
-        "inst_rate_std_90d": inst_rate_std_90d,
-        "ntceInsttNm": _get_institution_name(features_dict),
-        "silo_id": _coerce_float(features_dict.get("silo_id"), 0.0),
-        "pred_tier": _coerce_float(features_dict.get("pred_tier"), 0.0),
-        "q50": _coerce_float(features_dict.get("q50"), 0.0),
-        "count_spread": _coerce_float(features_dict.get("count_spread"), 0.0),
-        "log_price_density_q50": _coerce_float(
-            features_dict.get("log_price_density_q50"),
-            0.0,
-        ),
-    }
-    for idx in range(32):
-        key = f"sem_{idx}"
-        feature_map[key] = _coerce_float(features_dict.get(key), 0.0)
-    for idx in (10, 12, 13, 17, 30):
-        feature_map[f"inter_sem_{idx}"] = _coerce_float(
-            features_dict.get(f"inter_sem_{idx}"),
-            feature_map["log_price"] * feature_map[f"sem_{idx}"],
-        )
-        feature_map[f"inst_inter_sem_{idx}"] = _coerce_float(
-            features_dict.get(f"inst_inter_sem_{idx}"),
-            feature_map["inst_hist_rate"] * feature_map[f"sem_{idx}"],
-        )
-    return feature_map
-
-
-def _prepare_input_frame(feature_values, column_order):
-    defaults = _build_default_feature_map(feature_values)
-    row = {}
-    for column in column_order:
-        default = defaults.get(column, 0.0)
-        value = feature_values.get(column, default)
-        if _is_missing(value):
-            value = default
-        if isinstance(default, str):
-            row[column] = str(value) if value not in (None, "") else default
-        else:
-            row[column] = _coerce_float(value, default)
-    return pd.DataFrame([row], columns=column_order)
+    범주 수준은 학습 때 저장한 목록으로 되살립니다. 이 복원을 빼면 추론 시점의
+    범주 코드가 학습 때와 달라져 모델이 조용히 다른 값을 읽습니다.
+    구 모델은 메타데이터에 수준이 없으므로 None 이 되어 아무 일도 하지 않습니다.
+    """
+    frame = prepare_input_frame(feature_values, column_order)
+    return apply_categorical_dtypes(frame, category_levels)
 
 
 def _normalize_prediction_rate(raw_prediction):
@@ -250,30 +132,7 @@ def _normalize_prediction_rate(raw_prediction):
 
 
 def _prepare_features(features_dict):
-    feature_names = [
-        "log_price",
-        "month",
-        "weekday",
-        "month_sin",
-        "month_cos",
-        "weekday_sin",
-        "weekday_cos",
-        "inst_hist_rate",
-        "inst_rate_mean_30d",
-        "inst_rate_std_90d",
-    ] + [f"sem_{idx}" for idx in range(32)] + [
-        "inter_sem_10",
-        "inter_sem_12",
-        "inter_sem_13",
-        "inter_sem_17",
-        "inter_sem_30",
-        "inst_inter_sem_10",
-        "inst_inter_sem_12",
-        "inst_inter_sem_13",
-        "inst_inter_sem_17",
-        "inst_inter_sem_30",
-    ]
-    return _prepare_input_frame(features_dict, feature_names)
+    return prepare_features(features_dict)
 
 
 def _resolve_model_id(model_id):
@@ -342,6 +201,14 @@ class BaseModelWrapper(ABC):
     def get_features(self):
         return self.metadata.get("required_features", [])
 
+    def get_category_levels(self):
+        """학습 때 저장한 범주 수준. 구 모델은 없으므로 None 입니다."""
+        return self.metadata.get("category_levels")
+
+    def get_serving_columns(self):
+        """추론 프레임에 요구하는 컬럼. 자체 전처리를 쓰는 모델은 빈 목록입니다."""
+        return []
+
     def get_display_name(self):
         return self.metadata.get("name", os.path.basename(self.model_dir))
 
@@ -356,9 +223,20 @@ class JoblibModelWrapper(BaseModelWrapper):
             )
         self.model = joblib.load(self.model_path)
 
+    def get_serving_columns(self):
+        return list(getattr(self.model, "feature_name_", []) or self.get_features())
+
     def predict(self, df):
-        features = list(getattr(self.model, "feature_name_", []) or self.get_features())
-        input_df = _prepare_input_frame(df.iloc[0].to_dict(), features) if features else df
+        features = self.get_serving_columns()
+        input_df = (
+            _prepare_input_frame(
+                df.iloc[0].to_dict(),
+                features,
+                self.get_category_levels(),
+            )
+            if features
+            else df
+        )
         prediction = self.model.predict(input_df)
         return float(np.asarray(prediction).reshape(-1)[0])
 
@@ -398,10 +276,19 @@ class V13HybridWrapper(BaseModelWrapper):
         if not isinstance(self.model, dict) or not required_keys.issubset(self.model):
             raise ValueError("v13_hybrid 번들 구조가 올바르지 않습니다.")
 
+    def get_serving_columns(self):
+        # 2단계 컬럼은 예측 결과로 고른 실로마다 달라, 합집합으로 봅니다.
+        columns = list(self.model["s1_tier_clf"].feature_name_)
+        for bundle in self.model["silo_models"].values():
+            for name in bundle["model"].feature_name_:
+                if name not in columns:
+                    columns.append(name)
+        return columns
+
     def predict(self, df):
         base_values = df.iloc[0].to_dict()
         stage1_columns = list(self.model["s1_tier_clf"].feature_name_)
-        stage1_df = _prepare_input_frame(base_values, stage1_columns)
+        stage1_df = _prepare_input_frame(base_values, stage1_columns, self.get_category_levels())
         stage1_encoded = self.model["loo_s1"].transform(stage1_df)
 
         pred_tier = int(self.model["s1_tier_clf"].predict(stage1_encoded)[0])
@@ -428,7 +315,7 @@ class V13HybridWrapper(BaseModelWrapper):
             }
         )
         stage2_columns = list(silo_bundle["model"].feature_name_)
-        stage2_df = _prepare_input_frame(stage2_values, stage2_columns)
+        stage2_df = _prepare_input_frame(stage2_values, stage2_columns, self.get_category_levels())
         encoded_stage2 = silo_bundle["loo"].transform(stage2_df)
         prediction = silo_bundle["model"].predict(encoded_stage2)
         return float(np.asarray(prediction).reshape(-1)[0])
@@ -450,11 +337,16 @@ class EnsembleV25Wrapper(BaseModelWrapper):
             self.cat = CatBoostRegressor()
             self.cat.load_model(cat_bin)
 
+    def get_serving_columns(self):
+        return list(getattr(self.lgbm, "feature_name_", []))
+
     def predict(self, df):
         from .predictor_v25_helper import predict_v25_logic
 
-        feature_order = list(getattr(self.lgbm, "feature_name_", []) or df.columns)
-        aligned_df = _prepare_input_frame(df.iloc[0].to_dict(), feature_order)
+        feature_order = self.get_serving_columns() or list(df.columns)
+        aligned_df = _prepare_input_frame(
+            df.iloc[0].to_dict(), feature_order, self.get_category_levels()
+        )
         return predict_v25_logic(self.lgbm, self.cat, self.meta, aligned_df)
 
 
@@ -713,7 +605,28 @@ class ModelRegistry:
     @classmethod
     def _register(cls, model_id, wrapper):
         cls._models[model_id] = wrapper
+        unservable = unservable_features(wrapper.get_serving_columns())
+        if unservable:
+            # 등록 자체는 막지 않습니다. 모델 하나 때문에 서버가 못 뜨면 안 됩니다.
+            # 실제 예측은 prepare_input_frame 이 거부하므로 조용히 넘어가지 않습니다.
+            print(
+                f"[ModelRegistry] 배포 불가 경고: {model_id} 가 요구하는 특징을 "
+                f"features.py 가 만들지 못합니다: {unservable}"
+            )
         print(f"[ModelRegistry] 규격화 모델 등록됨: {model_id}")
+
+    @classmethod
+    def verify_servable_features(cls):
+        """등록된 모델별로 서빙 불가 특징을 돌려줍니다. 전부 빈 목록이어야 합니다.
+
+        신규 모델 배포 전 게이트로 씁니다. 값이 있으면 그 모델은 해당 특징을
+        기본값으로 채운 채 예측하게 되므로 배포해서는 안 됩니다.
+        """
+        cls._sync_registry()
+        return {
+            model_id: unservable_features(wrapper.get_serving_columns())
+            for model_id, wrapper in cls._models.items()
+        }
 
     @classmethod
     def load_all_models(cls):

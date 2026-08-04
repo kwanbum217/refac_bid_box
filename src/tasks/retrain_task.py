@@ -22,7 +22,7 @@ from typing import Any
 from src.app.core.db import SessionLocal
 from src.app.models.predictions import RetrainLog
 from src.ml.dataset import build_training_dataset
-from src.ml.trainer import trainer
+from src.ml.trainer import ModelTrainer, trainer
 from src.ml.validate_model import compare_champion_vs_challenger
 
 logger = logging.getLogger(__name__)
@@ -116,14 +116,20 @@ async def run_retrain_pipeline_task(
             )
             return {"status": "skipped", "reason": "no_training_data", "category": category_code}
 
+        # 카테고리 전용 학습기를 씁니다. 분기가 없으면 용역 재학습이 물품
+        # 디렉터리에 저장되고 물품 champion 과 비교됩니다.
+        category_trainer = ModelTrainer.for_category(
+            category_code, registry_dir=str(trainer.registry_dir)
+        )
+
         # champion 지표는 학습 **전에** 읽습니다. 학습 후에 읽으면 방금 저장한
         # 챌린저가 최신 버전으로 잡혀 자기 자신과 비교하게 됩니다.
         # 레지스트리 경로는 학습기와 반드시 같아야 합니다. 다르면 엉뚱한 모델과 비교합니다.
         champion_version, champion_metrics = _load_champion_metrics(
-            trainer.model_name, registry_dir=str(trainer.registry_dir)
+            category_trainer.model_name, registry_dir=str(category_trainer.registry_dir)
         )
 
-        metadata = trainer.train_and_register(df_train)
+        metadata = category_trainer.train_and_register(df_train)
         challenger_metrics = metadata["metrics"]
 
         verdict = compare_champion_vs_challenger(champion_metrics, challenger_metrics)

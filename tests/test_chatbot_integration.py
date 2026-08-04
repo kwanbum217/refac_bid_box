@@ -407,7 +407,7 @@ def test_chat_page_renders_session_sidebar_and_chat_binding(client, isolated_db)
     )
     isolated_db.commit()
 
-    response = client.get("/chat/")
+    response = client.get("/chatbot/")
     assert response.status_code == 200
     body = response.text
     for marker in (
@@ -453,6 +453,6 @@ def test_chat_page_new_session_url_matches_real_route(client, isolated_db):
     """chat.html 의 새 대화 버튼이 실제 라우트를 가리켜야 합니다."""
     _login(client)
     _seed_kb_status(isolated_db)
-    body = client.get("/chat/").text
+    body = client.get("/chatbot/").text
     assert 'data-new-session-url="/api/v1/chatbot/session/new"' in body
     assert client.post("/api/v1/chatbot/session/new").status_code == 200

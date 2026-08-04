@@ -76,7 +76,8 @@ def apply_categorical_dtypes(
 
     수준을 고정하지 않으면 추론 시점 프레임의 범주 코드가 학습 때와 달라져
     모델이 조용히 다른 값을 읽습니다. train/serve skew 의 전형적인 형태입니다.
-    학습에서 못 본 값은 결측이 되므로 MISSING_CATEGORY 로 되돌립니다.
+    학습에서 못 본 값은 MISSING_CATEGORY 로 되돌립니다. 소분류 200종은 신규
+    코드가 계속 생기므로 미학습 값 유입은 예외가 아니라 상시 상황입니다.
     """
     if not levels:
         return df
@@ -85,10 +86,14 @@ def apply_categorical_dtypes(
         if column not in out.columns:
             continue
         dtype = pd.CategoricalDtype(categories=categories)
-        converted = out[column].astype("string").fillna(MISSING_CATEGORY).astype(dtype)
-        if converted.isna().any() and MISSING_CATEGORY in categories:
-            converted = converted.fillna(MISSING_CATEGORY)
-        out[column] = converted
+        # astype 에 미학습 값을 그대로 넘기면 pandas 4 에서 예외가 됩니다.
+        # 수준 밖 값을 먼저 MISSING_CATEGORY 로 접어 넣고 변환합니다.
+        known = set(categories)
+        fallback = MISSING_CATEGORY if MISSING_CATEGORY in known else None
+        normalized = out[column].astype("string").fillna(MISSING_CATEGORY)
+        if fallback is not None:
+            normalized = normalized.where(normalized.isin(known), fallback)
+        out[column] = normalized.astype(dtype)
     return out
 
 
@@ -313,8 +318,38 @@ def build_default_feature_map(
     return feature_map
 
 
-def prepare_input_frame(feature_values: dict[str, Any], column_order: list[str]) -> pd.DataFrame:
+def unservable_features(column_order: list[str], feature_values: dict[str, Any] | None = None) -> list[str]:
+    """모델이 요구하지만 본 모듈이 만들어 줄 수 없는 특징을 돌려줍니다.
+
+    호출부가 값을 직접 실어 보낸 컬럼은 제외합니다. 빈 목록이면 배포 가능합니다.
+    """
+    defaults = build_default_feature_map(feature_values or {})
+    supplied = feature_values or {}
+    return [c for c in column_order if c not in defaults and c not in supplied]
+
+
+def prepare_input_frame(
+    feature_values: dict[str, Any],
+    column_order: list[str],
+    *,
+    strict: bool = True,
+) -> pd.DataFrame:
+    """추론 프레임을 만듭니다.
+
+    strict 는 모델이 요구하는데 본 모듈이 모르는 특징이 있으면 예외를 냅니다.
+    이전에는 그런 컬럼이 0.0 으로 조용히 채워져, 학습에서 강한 신호였던 특징이
+    추론에서 상수가 되어도 아무 신호가 없었습니다. 잘못된 예측을 내느니
+    거부하는 편이 낫습니다(SKILLS.md 품질 우선순위 1. 정확성).
+    """
     defaults = build_default_feature_map(feature_values)
+    if strict:
+        unknown = [c for c in column_order if c not in defaults and c not in feature_values]
+        if unknown:
+            raise ValueError(
+                "모델이 요구하는 특징을 features.py 가 만들지 못합니다: "
+                f"{unknown}. features.build_default_feature_map 에 추가하거나 "
+                "호출부가 값을 직접 넘겨야 합니다."
+            )
     row: dict[str, Any] = {}
     for column in column_order:
         default = defaults.get(column, 0.0)

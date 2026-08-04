@@ -19,14 +19,24 @@ from src.app.main import app
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
 
+# 원본 Django URL(apps/bids/urls.py, config/urls.py)이 정본입니다.
 PROTECTED_PATHS = [
     "/",
     "/bids/",
-    "/results/",
-    "/dashboard/",
-    "/compare/",
-    "/chat/",
+    "/bids/results/",
+    "/bids/dashboard/",
+    "/bids/compare/",
+    "/chatbot/",
 ]
+
+# 이식 과도기에 쓰던 단축 경로. 정본으로 되돌려 보냅니다.
+COMPAT_PATH_REDIRECTS = {
+    "/results/": "/bids/results/",
+    "/dashboard/": "/bids/dashboard/",
+    "/compare/": "/bids/compare/",
+    "/results/1/": "/bids/result/1/",
+    "/chat/": "/chatbot/",
+}
 
 
 @pytest.fixture
@@ -107,6 +117,13 @@ def test_protected_pages_redirect_when_anonymous(client, path):
     assert response.headers["location"] == f"/accounts/login/?next={path}"
 
 
+@pytest.mark.parametrize(("source", "target"), COMPAT_PATH_REDIRECTS.items())
+def test_legacy_ui_paths_redirect_to_current_ssr_paths(client, source, target):
+    response = client.get(source, follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == target
+
+
 @pytest.mark.parametrize("path", PROTECTED_PATHS)
 def test_protected_pages_render_when_logged_in(auth_client, seeded_bid, path):
     response = auth_client.get(path)
@@ -125,7 +142,7 @@ def test_bid_list_renders_actual_row(auth_client, seeded_bid):
 
 def test_result_list_renders_actual_row(auth_client, seeded_bid):
     _, result = seeded_bid
-    response = auth_client.get("/results/")
+    response = auth_client.get("/bids/results/")
     assert response.status_code == 200
     assert result.bid_ntce_nm in response.text
 
@@ -137,9 +154,17 @@ def test_bid_detail_renders(auth_client, seeded_bid):
     assert bid.bid_ntce_nm in response.text
 
 
+def test_bid_detail_prediction_uses_json_api_contract(auth_client, seeded_bid):
+    bid, _ = seeded_bid
+    body = auth_client.get(f"/bids/{bid.id}/").text
+    assert "contentType: 'application/json'" in body
+    assert "JSON.stringify" in body
+    assert "csrfmiddlewaretoken" not in body
+
+
 def test_result_detail_renders(auth_client, seeded_bid):
     _, result = seeded_bid
-    response = auth_client.get(f"/results/{result.id}/")
+    response = auth_client.get(f"/bids/result/{result.id}/")
     assert response.status_code == 200
     assert result.bid_ntce_nm in response.text
 
@@ -164,6 +189,11 @@ def test_auth_pages_render_for_anonymous(client):
         response = client.get(path)
         assert response.status_code == 200
         assert "BIDBOX" in response.text
+
+
+def test_login_page_preserves_next_value(client):
+    response = client.get("/accounts/login/?next=/bids/results/")
+    assert 'name="next" value="/bids/results/"' in response.text
 
 
 def test_signup_form_fields_render(client):
@@ -194,7 +224,7 @@ def test_authenticated_user_redirected_from_auth_pages(auth_client):
 def test_sidebar_active_nav_differs_per_page(auth_client, seeded_bid):
     """active_nav 치환이 실제로 페이지마다 다른 항목을 강조하는지 확인한다."""
     bids_body = auth_client.get("/bids/").text
-    results_body = auth_client.get("/results/").text
+    results_body = auth_client.get("/bids/results/").text
     marker = "bg-primary text-white font-bold"
     assert bids_body.count(marker) >= 1
     assert results_body.count(marker) >= 1
@@ -204,14 +234,14 @@ def test_sidebar_active_nav_differs_per_page(auth_client, seeded_bid):
 def test_missing_detail_returns_404(auth_client):
     """존재하지 않는 상세 페이지는 500 이 아니라 404 를 반환한다."""
     assert auth_client.get("/bids/99999999/").status_code == 404
-    assert auth_client.get("/results/99999999/").status_code == 404
+    assert auth_client.get("/bids/result/99999999/").status_code == 404
 
 
 def test_chat_header_shows_configured_model(auth_client, seeded_bid):
     """원본에 하드코딩되어 있던 모델명이 실제 설정값으로 표시되는지 확인한다."""
     from src.app.core.config import settings
 
-    body = auth_client.get("/chat/").text
+    body = auth_client.get("/chatbot/").text
     assert "Gemini 3.1 Flash-Lite preview" not in body
     if settings.LLM_PROVIDER == "gemini":
         assert settings.GEMINI_MODEL in body
@@ -252,6 +282,27 @@ def test_login_post_honours_next_param(client, seeded_user):
     )
     assert response.status_code == 303
     assert response.headers["location"] == "/bids/"
+
+
+def test_signup_post_without_javascript_sets_session(client):
+    response = client.post(
+        "/accounts/signup/",
+        data={
+            "username": "ssr_signup",
+            "password1": "pw-test-1234",
+            "password2": "pw-test-1234",
+            "nickname": "SSR 가입",
+            "email": "ssr-signup@example.com",
+            "birth_date": "1990-01-02",
+            "gender": "M",
+            "agree_terms": "on",
+            "agree_privacy": "on",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert SESSION_COOKIE_NAME in response.cookies
 
 
 def test_logout_clears_session(auth_client):

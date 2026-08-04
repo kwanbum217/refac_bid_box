@@ -119,8 +119,7 @@ def _issue_session(response: Response, user: CustomUser) -> None:
     )
 
 
-@router.post("/signup", response_model=UserResponse, summary="회원가입")
-def signup(payload: SignUpRequest, response: Response, db: Session = Depends(get_db)):
+def register_user(payload: SignUpRequest, response: Response, db: Session) -> UserResponse:
     if payload.password1 != payload.password2:
         raise HTTPException(status_code=400, detail="비밀번호가 일치하지 않습니다.")
 
@@ -148,6 +147,11 @@ def signup(payload: SignUpRequest, response: Response, db: Session = Depends(get
     # 원본 SignUpView 는 가입 직후 자동 로그인합니다.
     _issue_session(response, user)
     return _serialize(user)
+
+
+@router.post("/signup", response_model=UserResponse, summary="회원가입")
+def signup(payload: SignUpRequest, response: Response, db: Session = Depends(get_db)):
+    return register_user(payload, response, db)
 
 
 @router.post("/login", response_model=UserResponse, summary="로그인")

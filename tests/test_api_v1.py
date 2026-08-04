@@ -43,9 +43,9 @@ def test_chatbot_stream_endpoint():
 
 def test_ui_dashboard():
     """대시보드는 원본 경로 /dashboard/ 로 이식되었고 로그인을 요구한다."""
-    response = client.get("/dashboard/", follow_redirects=False)
+    response = client.get("/bids/dashboard/", follow_redirects=False)
     assert response.status_code == 303
-    assert response.headers["location"] == "/accounts/login/?next=/dashboard/"
+    assert response.headers["location"] == "/accounts/login/?next=/bids/dashboard/"
 
 
 @pytest.mark.skipif(
