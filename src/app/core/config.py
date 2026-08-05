@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     LLM_TEMPERATURE: float = 0.2
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "gemma4:e4b"
+    # 모델을 메모리에 붙잡아 두는 시간. 내려가면 다음 질의가 로드 비용을 전부
+    # 냅니다(실측 11.78초). "-1" 은 무기한, "30m" 은 30분입니다.
+    OLLAMA_KEEP_ALIVE: str = "-1"
+    # 기동 시 모델을 미리 올려 첫 질의가 로드 비용을 내지 않게 합니다.
+    LLM_WARMUP_ON_STARTUP: bool = True
+    # 사고(thinking) 단계 사용 여부. gemma4 는 사고를 끝낸 뒤에야 답변 본문을
+    # 내보내므로, 켜 두면 첫 토큰이 9.73초, 끄면 0.41초입니다 (2026-08-05 실측).
+    LLM_THINKING: bool = False
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
     GEMINI_API_KEY: str = ""
     CHROMA_DB_PATH: str = str(PROJECT_ROOT / "chroma_db")

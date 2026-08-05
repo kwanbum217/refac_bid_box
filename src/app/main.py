@@ -1,3 +1,6 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -15,12 +18,47 @@ from src.app.api.v1.predictions import router as predictions_router
 
 APP_DIR = Path(__file__).resolve().parent
 
+logger = logging.getLogger(__name__)
+
+
+async def _warm_llm_backend() -> None:
+    """로컬 LLM 을 미리 올려 첫 질의가 모델 로드 비용을 내지 않게 합니다.
+
+    2026-08-05 실측에서 콜드 첫 토큰 11.92초, 웜 0.61초였습니다. Phase 7 의
+    SSE 첫 토큰 미달(P95 11.06초)은 프리필이 아니라 이 로드 시간이었습니다.
+
+    기동을 막지 않도록 배경 태스크로 돌립니다. 예열이 늦어도 서비스는 정상이며,
+    실패해도 첫 질의가 느려질 뿐입니다.
+    """
+    from src.app.core.config import settings
+
+    if not settings.LLM_WARMUP_ON_STARTUP:
+        return
+    from src.rag.llm import build_backend
+
+    backend = await asyncio.to_thread(build_backend)
+    if backend is None:
+        logger.warning("LLM 백엔드가 없어 예열을 건너뜁니다.")
+        return
+    await asyncio.to_thread(backend.warmup)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    task = asyncio.create_task(_warm_llm_backend())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
 app = FastAPI(
     title="refac_bid_box API",
     description="Refactored Procurement Analytics, Hybrid RAG Chatbot, AI Prediction & MLOps Platform",
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

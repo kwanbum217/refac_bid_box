@@ -36,11 +36,26 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 
 > 이중화 제거: 기존 `BIDBOX_DB_BACKEND=sqlite` fallback을 폐지하고 모든 환경에서 MySQL 통일.
 
-### 2.3 LLM (Google Gemini)
+### 2.3 LLM (로컬 Ollama / Google Gemini)
 
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `GEMINI_API_KEY` | **예** | - | Gemini API 키 (의도 분류, 요약) |
+| `LLM_PROVIDER` | 아니오 | `ollama` | 생성 LLM 백엔드. `gemini` 로 원본 경로 복원 |
+| `OLLAMA_MODEL` | 아니오 | `gemma4:e4b` | 로컬 생성 모델 |
+| `OLLAMA_KEEP_ALIVE` | 아니오 | `-1` | 모델을 메모리에 붙잡아 두는 시간. `-1` 무기한, `30m` 30분 |
+| `LLM_WARMUP_ON_STARTUP` | 아니오 | `true` | 기동 시 모델을 미리 올립니다 |
+| `LLM_THINKING` | 아니오 | `false` | 사고(thinking) 단계 사용 여부 |
+| `GEMINI_API_KEY` | 아니오 | - | Gemini API 키. `LLM_PROVIDER=gemini` 일 때만 필요 |
+
+뒤의 세 변수는 **첫 토큰 지연을 직접 좌우합니다.** 2026-08-05 실측입니다.
+
+| 조건 | 첫 토큰 |
+| --- | ---: |
+| 사고 켜짐 (모델 기본값) | 9.73초 |
+| 사고 끔 (`LLM_THINKING=false`) | **0.41초** |
+| 모델이 내려가 있을 때 추가 비용 | +11.78초 |
+
+`gemma4` 는 사고를 끝낸 뒤에야 답변 본문을 내보내므로, 사고를 켜면 그동안 화면에 아무것도 뜨지 않습니다. 품질이 중요한 용도라면 켜되 첫 토큰이 10초 가까이 걸린다는 점을 감수해야 합니다. 상세는 [`docs/design/sse_first_token_20260805.md`](../design/sse_first_token_20260805.md).
 
 ### 2.4 G2B / 공공데이터 API
 
