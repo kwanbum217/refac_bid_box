@@ -1,4 +1,4 @@
-.PHONY: help setup dev dev-fe db-up up down logs build lint security quality check-rules check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings benchmark test
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security quality check-rules check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings benchmark test test-data-assets
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -12,6 +12,7 @@ UV ?= uv
 help:
 	@echo "refac_bid_box 개발 및 품질 검증 타깃:"
 	@echo "  make setup          - uv 의존성 동기화"
+	@echo "  make import-assets  - 원본 bid_box의 모델·ChromaDB 자산 이전 및 체크섬 기록"
 	@echo "  make dev            - FastAPI 개발 서버 실행"
 	@echo "  make db-up          - MySQL+Redis만 배경 실행"
 	@echo "  make up             - 전체 스택 컨테이너 배경 실행 (FastAPI+MySQL+Redis)"
@@ -31,11 +32,15 @@ help:
 	@echo "  make model-verify   - 모델 직렬화 버전과 서빙 특징 호환성 검증"
 	@echo "  make rebuild-rankings - 상위 N 집계 스냅샷 재생성"
 	@echo "  make benchmark      - P95 레이턴시 벤치마크 (서버 기동 필요)"
-	@echo "  make test           - Pytest 단위/통합/E2E 테스트 실행"
+	@echo "  make test           - 외부 데이터 자산 없이 Pytest 단위/통합/E2E 테스트 실행"
+	@echo "  make test-data-assets - 모델·ChromaDB가 있는 환경의 G1 자산 테스트 실행"
 	@echo "  make dev-fe         - 프론트엔드 (Vite + React 19) 개발 서버 구동"
 
 setup:
 	$(UV) sync --all-groups
+
+import-assets:
+	$(PYTHON) scripts/import_data_assets.py
 
 dev:
 	$(PYTHON) -m uvicorn src.app.main:app --reload --port 8000
@@ -104,4 +109,7 @@ check-all: lint security quality check-rules
 	@echo "전체 코드 품질 및 정합성 검사 통과"
 
 test:
-	$(PYTHON) -m pytest tests/
+	$(PYTHON) -m pytest tests/ -m "not data_assets"
+
+test-data-assets:
+	$(PYTHON) -m pytest tests/ -m data_assets

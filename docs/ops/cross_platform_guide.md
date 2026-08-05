@@ -62,6 +62,8 @@ Docker DB에만 `make migrate-up`을 사용합니다.
 Windows에서는 Docker Desktop을 Linux 컨테이너 모드로 실행하고 Git Bash의
 `make` 또는 GNU Make를 설치합니다.
 
+모델 가중치와 ChromaDB는 Git으로 관리하지 않습니다. 따라서 가중치 없는 새 체크아웃의 make test는 외부 자산 의존 G1 테스트를 제외하고 실행합니다. 자산을 복원한 환경에서는 make test-data-assets, make migrate-verify, make model-verify를 추가로 실행해 G1 무결성과 모델 호환성을 확인하십시오.
+
 ---
 
 ## 5. 인코딩 가드

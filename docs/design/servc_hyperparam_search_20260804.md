@@ -65,7 +65,9 @@
 | reg_lambda | 1.0 | 1.2655 | 60.96% | 0.7025 | 39.3초 |
 | reg_lambda | 10.0 | 1.2654 | 60.87% | 0.7024 | 41.1초 |
 
-전체 시행 기록은 `data/servc_hyperparam_search.json` 에 남습니다.
+전체 시행 기록은 `data/servc_hyperparam_search.json` 에 남습니다. 이 파일은
+원시 입찰·모델 가중치를 포함하지 않는 8.5KB 측정 증적이므로, 재현성과 판정
+추적을 위해 Git으로 관리합니다.
 
 ### 2.1 결과
 
