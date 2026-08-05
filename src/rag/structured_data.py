@@ -7,6 +7,7 @@ RAG 정형 검색 (원본 rag_engine.retrieve_structured_data / _apply_*_filters
 
 from __future__ import annotations
 
+import hashlib
 import unicodedata
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -14,6 +15,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.app.core.cache import cache
 from src.app.models.bids import (
     CATEGORY_LABELS,
     CORRUPTED_TEXT_FALLBACKS,
@@ -208,6 +210,47 @@ def _top_rows(
     return kept, dropped
 
 
+# 집계 캐시 유효 시간. 원본 데이터는 야간 수집(02:00)에서만 바뀌므로 한 시간
+# 묵은 값이어도 답변의 사실관계가 흔들리지 않습니다. 대시보드 계열이 24시간을
+# 쓰지만 그쪽은 야간에 명시적으로 예열하는 반면 이 경로는 예열 대상이 아니라
+# 짧게 잡습니다.
+AGGREGATE_CACHE_TTL = 60 * 60
+
+
+def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list[Any]:
+    """집계 결과를 캐시에서 돌려줍니다.
+
+    3,405,928 행 위의 COUNT/AVG/SUM 은 질의당 190ms 가 걸립니다. 챗봇 한 번에
+    이런 집계가 아홉 번 돌아 1.72초를 씁니다. 그동안 첫 토큰은 나오지 않습니다.
+
+    키는 리터럴을 채운 SQL 문자열의 해시입니다. 조건이 하나라도 다르면 다른
+    키가 되므로, 필터가 다른 질의가 서로의 값을 물려받는 사고가 없습니다.
+
+    캐시가 없어도(Redis 미가용) CacheLayer 가 메모리 캐시로 내려가므로 동작은
+    같습니다. 값이 없으면 그냥 DB 를 칩니다.
+    """
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    key = "rag:agg:" + hashlib.sha256(compiled.encode("utf-8")).hexdigest()
+
+    cached = cache.get(key)
+    if cached is not None:
+        return list(cached)
+
+    row = list(db.execute(stmt).one())
+    # Redis 경로는 JSON 직렬화라 Decimal 이 문자열이 됩니다. 메모리 캐시와 값
+    # 종류가 달라지지 않도록 여기서 미리 float 로 맞춥니다. 호출부는 어차피
+    # int()/float() 로 다시 감쌉니다.
+    normalized = [_numeric_or_none(value) for value in row]
+    cache.set(key, normalized, ttl)
+    return normalized
+
+
+def _numeric_or_none(value: Any) -> Any:
+    if value is None or isinstance(value, (int, float)):
+        return value
+    return float(value)
+
+
 def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
     result_conditions = _result_conditions(plan)
     announcement_conditions = _announcement_conditions(plan)
@@ -221,15 +264,17 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
             )
         )
 
-    total_count, avg_rate, total_amt = db.execute(
+    total_count, avg_rate, total_amt = _cached_aggregate(
+        db,
         select(
             func.count(BidResult.id),
             func.avg(BidResult.sucsf_bid_rate),
             func.sum(BidResult.sucsf_bid_amt),
-        ).where(*result_conditions)
-    ).one()
-    announcement_count = db.scalar(
-        select(func.count(BidAnnouncement.id)).where(*announcement_conditions)
+        ).where(*result_conditions),
+    )
+    (announcement_count,) = _cached_aggregate(
+        db,
+        select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
     )
 
     recent_results: list[dict[str, Any]] = []
