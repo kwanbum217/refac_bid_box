@@ -93,7 +93,7 @@ ORIGINAL_FOREIGN_KEYS = {
 # 원본 prediction_results 에는 인덱스가 없습니다. 이식본이 임의로 추가했던 것들입니다.
 TABLES_WITHOUT_EXTRA_INDEXES = ("prediction_results", "retrain_logs")
 
-# 운영 DB 에 실재하는 인덱스명입니다 (PRIMARY 제외). 2026-08-02 실측.
+# 운영 DB 에 실재하는 인덱스명입니다 (PRIMARY 제외). 2026-08-05 실측.
 # 해시가 붙은 이름은 Django 자동 생성, ix_ 로 시작하는 것은 원본 Meta.indexes 가
 # 직접 붙인 이름, 컬럼명 그대로인 것은 UNIQUE KEY 입니다.
 PRODUCTION_INDEX_NAMES = {
@@ -121,6 +121,8 @@ PRODUCTION_INDEX_NAMES = {
         "bid_announcements_category_02e9e006",
         "bid_announcements_dminstt_nm_952da702",
         "ix_bid_ann_collected",
+        "ix_bid_ann_category_collected_dt",
+        "ix_bid_ann_collected_dt",
         "ix_bid_ann_dt_cat",
     },
     "bid_dataset_summaries": {"bid_dataset_summaries_rebuilt_at_8d77f9db"},

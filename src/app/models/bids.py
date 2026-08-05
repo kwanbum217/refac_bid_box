@@ -269,6 +269,18 @@ class BidAnnouncement(Base):
         Index("bid_announcements_bid_ntce_dt_c42f1afb", "bid_ntce_dt"),
         Index("bid_announcements_category_02e9e006", "category"),
         Index("ix_bid_ann_collected", "collected_at"),
+        # 홈 화면의 카테고리별 최신 공고 표본 조회 전용 복합 인덱스입니다.
+        # category 등치 조건과 collected_at 기간 조건을 선두에서 줄여
+        # 대량 행 filesort 및 반복적인 범위 스캔을 방지합니다.
+        Index(
+            "ix_bid_ann_category_collected_dt",
+            "category",
+            "collected_at",
+            "bid_ntce_dt",
+            "id",
+        ),
+        # 카테고리 공통 최근 공고 조회에서 수집일 범위와 정렬을 함께 사용합니다.
+        Index("ix_bid_ann_collected_dt", "collected_at", "bid_ntce_dt", "id"),
     )
 
     id = Column(PKBigInteger, primary_key=True, autoincrement=True)
