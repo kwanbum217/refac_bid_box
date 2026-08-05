@@ -186,9 +186,36 @@ def verify_chroma_db() -> tuple[bool, str]:
         f"      운영 데이터: {len(operational_collections)}개 컬렉션 / "
         f"임베딩 {operational_embeddings}건"
     )
+
+    # sqlite 를 직접 읽는 것만으로는 부족합니다. 2026-08-05 에 컬렉션 설정
+    # JSON 이 비어 chromadb 클라이언트가 컬렉션을 열지 못하는 동안에도 이
+    # 검증은 통과했고, 챗봇은 닷새간 지식베이스 없이 답했습니다.
+    # 행이 있는 것과 읽히는 것은 다릅니다.
+    readable, detail = probe_chroma_query()
+    if not readable:
+        return False, f"운영 ChromaDB 조회 불가: {detail}"
+    print(f"      조회 경로: {detail}")
+
     return True, (
         f"ChromaDB 원본 {source_embeddings}건 보존 / 운영 {operational_embeddings}건 확인"
     )
+
+
+def probe_chroma_query() -> tuple[bool, str]:
+    """운영 컬렉션을 실제 클라이언트로 열고 한 번 질의해 봅니다."""
+    try:
+        import chromadb
+
+        client = chromadb.PersistentClient(path=str(CHROMA_DB_PATH))
+        collection = client.get_collection("bidding_kb")
+        results = collection.query(query_texts=["입찰 공고"], n_results=1)
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+    documents = (results.get("documents") or [[]])[0]
+    if not documents:
+        return False, "질의 결과 0건 (컬렉션이 비었거나 색인이 깨졌습니다)"
+    return True, f"bidding_kb 질의 정상 ({collection.count()}건 색인)"
 
 
 def verify_db_schema() -> tuple[bool, str]:
