@@ -342,3 +342,15 @@
   - 설계 문서에 증적 파일의 추적 범위와 목적을 명시
 - **관련 파일**: `data/servc_hyperparam_search.json`, `docs/design/servc_hyperparam_search_20260804.md`
 - **검증 결과**: JSON 파싱, 17회 시행 수, 기준선 및 최적 후보(`num_leaves=255`)의 측정값을 생성 스크립트·설계 문서와 대조
+
+---
+
+### 2026-08-05 | 깨끗한 체크아웃 테스트 재현성 | 외부 자산 검증을 명시적 경로로 분리
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - 가중치 파일이 없는 체크아웃에서 메타데이터 디렉터리만 보고 모델을 로드하려던 서빙 테스트를 실제 `model.bin` 존재 기준으로 수정
+  - `make test`에서 Git 제외 자산을 요구하는 G1 테스트를 제외하고, `make test-data-assets`와 `make import-assets` 진입점을 추가
+  - README, 크로스 플랫폼 가이드, Phase 7 체크리스트를 실제 검증 경로와 최신 컷오버 상태에 맞춤
+- **관련 파일**: `Makefile`, `tests/test_serving_feature_parity.py`, `tests/test_predictions_api.py`, `README.md`, `docs/ops/cross_platform_guide.md`, `docs/design/REFACTORING_DESIGN.md`
+- **검증 결과**: Python 3.12 / ChromaDB 0.6.3 / scikit-learn 1.8.0에서 `make test` 627 passed, 4 skipped, 3 deselected; Ruff 통과

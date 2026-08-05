@@ -59,7 +59,7 @@ def test_normalize_prediction_rate_clamps_to_min():
 
 
 @pytest.mark.skipif(
-    not (MODEL_FILES_ROOT.exists() and any(MODEL_FILES_ROOT.iterdir())),
+    not any(MODEL_FILES_ROOT.glob("*/model.bin")),
     reason="모델 가중치가 없는 환경입니다",
 )
 def test_list_models_api_returns_registered_bundles(client, isolated_db, monkeypatch):

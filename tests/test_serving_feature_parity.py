@@ -131,7 +131,7 @@ def test_trained_servc_model_is_deployable():
 
 
 @pytest.mark.skipif(
-    not (MODEL_FILES_ROOT.exists() and any(MODEL_FILES_ROOT.iterdir())),
+    not any(MODEL_FILES_ROOT.glob("*/model.bin")),
     reason="모델 가중치가 없는 환경입니다",
 )
 def test_all_registered_models_are_servable(monkeypatch):
