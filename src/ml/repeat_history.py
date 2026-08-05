@@ -185,20 +185,30 @@ def lookup_repeat_history(
     if not key:
         return None
 
+    # 학습은 카테고리별 parquet 을 보므로 같은 업무구분의 이력만 씁니다. 이 조건이
+    # 없던 동안 추론은 같은 기관의 물품·공사 낙찰까지 용역 이력에 섞어 넣었습니다
+    # (2026-08-05 대조에서 일치율 94~96%). 정의가 갈리면 train/serve skew 입니다.
+    category = str(
+        features_dict.get("category") or features_dict.get("category_code") or ""
+    ).strip()
+
     try:
         import pandas as pd
         from sqlalchemy import select
 
         from src.app.models.bids import BidResult
 
+        conditions = [
+            BidResult.dminstt_nm == institution,
+            BidResult.sucsf_bid_rate.is_not(None),
+            BidResult.sucsf_bid_rate > VALID_RATE_MIN,
+            BidResult.sucsf_bid_rate < VALID_RATE_MAX,
+        ]
+        if category:
+            conditions.append(BidResult.category == category)
         stmt = (
             select(BidResult.bid_ntce_nm, BidResult.sucsf_bid_rate, BidResult.rl_openg_dt)
-            .where(
-                BidResult.dminstt_nm == institution,
-                BidResult.sucsf_bid_rate.is_not(None),
-                BidResult.sucsf_bid_rate > VALID_RATE_MIN,
-                BidResult.sucsf_bid_rate < VALID_RATE_MAX,
-            )
+            .where(*conditions)
             .order_by(BidResult.rl_openg_dt.desc())
             .limit(max_rows)
         )
