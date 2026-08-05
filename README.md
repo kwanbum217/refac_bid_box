@@ -35,8 +35,12 @@ make setup
 # 데이터 자산 이전 (최초 1회, bid_box 경로 필요)
 make import-assets
 
-# 무손실 검증
-make verify
+# 코드 테스트 (외부 데이터 자산 불필요)
+make test
+# 무손실·모델 호환성 검증 (데이터 자산 이전 후)
+make migrate-verify
+make model-verify
+make test-data-assets
 
 # 스택 시동
 make dev
