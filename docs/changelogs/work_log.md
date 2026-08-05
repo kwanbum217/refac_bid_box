@@ -329,3 +329,16 @@
   - `subsample_freq` 0/1/5를 동일한 2025년 홀드아웃에서 비교
 - **관련 파일**: `scripts/tune_servc_hyperparams.py`, `tests/test_tune_servc_hyperparams.py`, `docs/design/servc_hyperparam_search_20260804.md`, `docs/handoff/2026-08-04_servc_serving_handoff.md`
 - **검증 결과**: 빈도 5는 MAE 1.2829 -> 1.2828, 0.5%p 적중 60.57% -> 60.53%, 학습 시간 11.4초 -> 13.8초. 정확도 이득이 측정 분해능 수준이고 적중률·시간이 악화되어 현행 `subsample_freq=0` 유지
+
+---
+
+### 2026-08-05 | 하한율 가용성 | 결측 축소 기각을 학습 모집단 실측으로 철회
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - `scripts/audit_servc_lwlt_coverage.py`: `--skip-db --parquet` 로 학습 모집단의 결측을 낙찰방법별로 분해하는 감사 추가. 방법명이 결측을 완전히 결정하는 그룹과 그렇지 않은 그룹을 가름
+  - `docs/design/servc_lwlt_availability_20260804.md`: v2.0.0 으로 정정. 기각 판정 철회
+  - 인수인계 기각 목록과 잔여 과제 우선순위 원복
+- **관련 파일**: `scripts/audit_servc_lwlt_coverage.py`, `tests/test_audit_servc_lwlt_coverage.py`, `docs/design/servc_lwlt_availability_20260804.md`, `docs/handoff/2026-08-04_servc_serving_handoff.md`
+- **검증 결과**: 학습 데이터 917,629행의 결측 205,238건 중 **76.8%(157,647건)가 낙찰방법으로 설명되지 않습니다.** 거의 전부가 `공고서참조` 한 방법이며, 이 방법은 765,620건 중 79.4%가 하한율을 보유합니다. 결측 건의 낙찰률 표준편차는 6.35 로 보유 건 2.77 의 2.3배이고, 연도별 결측률이 14.7%~26.3% 로 움직여 제도 속성으로 볼 수 없습니다
+- **방법론**: 초판 기각은 2026-07 이후 미개찰 공고 10,434건만 보고 내렸습니다. 그 표본에는 `공고서참조` 가 등장하지 않습니다. **표본의 결론을 다른 모집단으로 옮길 때는 두 모집단의 구성이 같은지를 먼저 확인해야 합니다**

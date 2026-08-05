@@ -18,6 +18,9 @@ from src.app.core.db import engine  # noqa: E402
 
 LOWER_LIMIT_METHOD_MARKERS = ("적격심사", "낙찰하한율", "소액수의견적")
 
+# 결측률이 이 값 이내로 0 또는 1 에 붙은 방법은 제도 속성으로 설명된 것으로 봅니다.
+MIXED_TOLERANCE = 0.01
+
 
 def requires_lower_limit(method: object) -> bool:
     value = str(method or "")
@@ -126,12 +129,79 @@ def print_report(frame: pd.DataFrame, top: int) -> None:
         print(actionable.loc[:, columns].head(top).to_string(index=False))
 
 
+def split_by_explainability(stats: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """`missing_rate` 가 0 이나 1 에 붙은 그룹과 그 사이에 걸친 그룹을 가릅니다."""
+    is_mixed = stats["missing_rate"].between(MIXED_TOLERANCE, 1 - MIXED_TOLERANCE)
+    return stats[~is_mixed], stats[is_mixed]
+
+
+def audit_training_frame(parquet: Path, top: int) -> None:
+    """학습 데이터의 결측도 낙찰방법으로 설명되는지 봅니다.
+
+    미개찰 공고만으로는 판정이 끝나지 않습니다. 예측 구간 폭 문제는 결과가 있는
+    학습 모집단에서 관측된 것이고, 두 모집단은 낙찰방법 표기 관행이 다릅니다.
+
+    방법명별 결측률이 0% 나 100% 에 붙어 있으면 그 방법의 제도 속성으로 설명됩니다.
+    그 사이에 있는 그룹은 **같은 방법 안에서 어떤 공고는 값이 있고 어떤 공고는
+    없다**는 뜻이므로 방법명으로 설명되지 않습니다.
+
+    양 끝에 여유(`MIXED_TOLERANCE`)를 둡니다. 2만 8천 건 중 2건처럼 사실상 한쪽에
+    붙은 그룹을 혼재로 세면 설명 불가 물량이 부풀려집니다.
+    """
+    df = pd.read_parquet(parquet, columns=["sucsfbid_mthd_nm", "lwlt_rate", "winning_rate"])
+    df["missing"] = ~(df["lwlt_rate"].fillna(0) > 0)
+    total_missing = int(df["missing"].sum())
+    print(f"\n{'=' * 88}\n학습 데이터 {parquet.name}\n{'=' * 88}")
+    print(f"전체 {len(df):,}행 / 결측 {total_missing:,}건 ({df['missing'].mean():.2%})")
+
+    grouped = df.groupby("sucsfbid_mthd_nm", observed=True, dropna=False)
+    stats = grouped["missing"].agg(["size", "sum", "mean"])
+    stats.columns = ["notices", "missing", "missing_rate"]
+
+    explained, mixed = split_by_explainability(stats)
+    mixed_missing = int(mixed["missing"].sum())
+    print(
+        f"방법명으로 설명되는 결측 {int(explained['missing'].sum()):,}건 / "
+        f"설명되지 않는 결측 {mixed_missing:,}건 "
+        f"({mixed_missing / total_missing:.1%})"
+        if total_missing
+        else "결측이 없습니다."
+    )
+
+    if mixed.empty:
+        return
+    print("\n같은 방법명 안에서 보유와 결측이 섞인 그룹")
+    view = mixed.sort_values("missing", ascending=False).head(top).copy()
+    view["missing_rate"] = view["missing_rate"].map(lambda v: f"{v:.1%}")
+    print(view.to_string())
+
+    largest = mixed["missing"].idxmax()
+    sub = df[df["sucsfbid_mthd_nm"] == largest]
+    spread = sub.groupby("missing")["winning_rate"].agg(["count", "mean", "std"])
+    print(f"\n최대 그룹 '{largest}' 의 낙찰률 분포 (False=하한율 보유)")
+    print(spread.to_string())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--since", default="2025-01-01")
     parser.add_argument("--top", type=int, default=30)
+    parser.add_argument(
+        "--parquet",
+        default="data/feature_store/dataset_Servc.parquet",
+        help="학습 데이터 결측 구조도 함께 감사합니다. 빈 값이면 건너뜁니다",
+    )
+    parser.add_argument("--skip-db", action="store_true", help="미개찰 공고 조회를 건너뜁니다")
     args = parser.parse_args()
-    print_report(load_unopened_coverage(args.since), args.top)
+
+    if not args.skip_db:
+        print_report(load_unopened_coverage(args.since), args.top)
+    if args.parquet:
+        path = PROJECT_ROOT / args.parquet
+        if path.exists():
+            audit_training_frame(path, args.top)
+        else:
+            print(f"\n학습 데이터가 없어 건너뜁니다: {path}")
 
 
 if __name__ == "__main__":
