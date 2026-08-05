@@ -248,3 +248,57 @@ def test_trainer_records_interval_metadata():
 
     assert INTERVAL_TARGET_COVERAGE == 0.90, "80% 는 보정 후에도 76.77% 라 쓰지 않습니다"
     assert tuple(INTERVAL_QUANTILES) == (0.1, 0.9)
+
+
+# 키가 있는 것과 값이 맞는 것은 다릅니다. `inst_sample_cnt` 는 기본 맵에 키가
+# 있어 위 테스트를 통과했지만, 학습이 채우는 파생 컬럼이라 서빙 payload 에는
+# 없고 조회 폴백도 없어 **항상 0** 이 나갔습니다. 2026-08-05 대조 실측에서
+# 학습값과의 평균절대차가 761 이었습니다. 아래는 그 형태의 결함을 잡습니다.
+#
+# 판정 기준: 학습이 attach 로 채우는 이력 특징은 세션이 주어지면 조회로
+# 살아나야 하고, 세션이 없을 때만 기본값으로 떨어져야 합니다.
+HISTORY_LOOKUP_FEATURES = ("inst_hist_rate", "inst_sample_cnt")
+
+
+class _StubResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar(self):
+        return self._value
+
+
+class _StubSession:
+    """집계 표에 값이 있는 상황을 흉내 냅니다."""
+
+    def __init__(self, sample_count: int = 812, avg_rate: float = 88.5):
+        self._values = [avg_rate, sample_count]
+
+    def execute(self, _stmt):
+        return _StubResult(self._values.pop(0) if self._values else None)
+
+
+@pytest.mark.parametrize("column", HISTORY_LOOKUP_FEATURES)
+def test_history_feature_is_not_silently_defaulted(column):
+    """세션이 있으면 이력 특징은 조회값을 받아야 합니다.
+
+    payload 에 값이 없을 때 조회 없이 상수로 떨어지면, 모델은 학습 때와 다른
+    입력을 받고도 예외 없이 예측을 냅니다.
+    """
+    notice = dict(SAMPLE_NOTICE)
+    notice.pop(column, None)
+
+    without_session = build_default_feature_map(notice)
+    with_session = build_default_feature_map(notice, session=_StubSession())
+
+    assert with_session[column] != without_session[column], (
+        f"{column} 이 세션 유무와 무관하게 같은 값입니다. 조회 폴백이 없습니다"
+    )
+
+
+def test_sample_count_reaches_serving_frame():
+    """표본 수가 0 이 아닌 조회값으로 서빙 프레임에 실려야 합니다."""
+    notice = dict(SAMPLE_NOTICE)
+    notice.pop("inst_sample_cnt", None)
+    served = build_default_feature_map(notice, session=_StubSession(sample_count=812))
+    assert float(served["inst_sample_cnt"]) == 812.0

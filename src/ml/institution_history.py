@@ -342,3 +342,31 @@ def lookup_institution_history(features_dict: dict[str, Any], session: Any = Non
         reference_date=_resolve_reference_date(features_dict),
         category=category,
     )
+
+
+def lookup_institution_sample_count(features_dict: dict[str, Any], session: Any = None) -> float:
+    """이력 표본 수를 집계 표에서 조회합니다.
+
+    이 함수가 없던 동안 서빙은 이 특징을 **항상 0 으로** 넘겼습니다.
+    `attach_institution_history` 가 학습 때 만드는 파생 컬럼이라
+    `announcement_feature_payload` 의 원본 컬럼 목록에 없고, `inst_hist_rate`
+    와 달리 조회 폴백도 없었기 때문입니다.
+
+    2026-08-05 대조 실측에서 학습값과 서빙값의 평균절대차가 761 이었습니다.
+    모델은 "표본이 많으면 이력을 믿어라" 를 배웠는데 운영에서는 늘 표본 0 을
+    받고 있었습니다 (`servc_feature_parity_20260805.md`).
+    """
+    institution_name = _resolve_institution_name(features_dict)
+    if not institution_name or session is None:
+        return 0.0
+
+    from sqlalchemy import select
+
+    from src.app.models.bids import InstitutionWinRateStat
+
+    stmt = select(InstitutionWinRateStat.sample_count).where(
+        InstitutionWinRateStat.institution_name == institution_name,
+        InstitutionWinRateStat.category == (_resolve_category(features_dict) or ""),
+    )
+    value = session.execute(stmt).scalar()
+    return float(value) if value is not None else 0.0

@@ -13,7 +13,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.ml.institution_history import lookup_institution_history
+from src.ml.institution_history import (
+    lookup_institution_history,
+    lookup_institution_sample_count,
+)
 from src.ml.repeat_history import (
     DEFAULT_REPEAT_RATE,
     NO_HISTORY_DAYS,
@@ -225,7 +228,14 @@ def build_default_feature_map(
     # 같은 사업(정규화 공고명) 낙찰 결과" 로 양쪽이 같습니다.
     repeat = _repeat_features(features_dict, session)
 
-    inst_sample_cnt = _coerce_float(features_dict.get("inst_sample_cnt"), 0.0)
+    # 학습은 attach_institution_history 가 채우고, 추론은 조회합니다. 조회
+    # 폴백이 없던 동안 서빙은 이 값을 항상 0 으로 넘겨 왔습니다(대조 실측 평균
+    # 절대차 761). 모델이 이력 신뢰도를 판단하는 근거라 0 고정은 이력 자체를
+    # 무시하라는 신호가 됩니다.
+    provided_cnt = features_dict.get("inst_sample_cnt")
+    if provided_cnt is None:
+        provided_cnt = lookup_institution_sample_count(features_dict, session)
+    inst_sample_cnt = _coerce_float(provided_cnt, 0.0)
     inst_rate_mean_30d = _coerce_float(features_dict.get("inst_rate_mean_30d"), inst_hist_rate)
     inst_rate_std_90d = _coerce_float(features_dict.get("inst_rate_std_90d"), DEFAULT_INST_RATE_STD)
     # 데이터셋은 기초금액을 base_amount 로 내보냅니다. 별칭을 받지 않으면
