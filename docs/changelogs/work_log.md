@@ -319,3 +319,15 @@
   - 레이턴시 벤치마크에 고유 질의, 예측 동시성, 오류 실패 판정, 원시 표본 JSON 증거 저장 추가
 - **관련 파일**: `scripts/verify_migration.py`, `scripts/verify_model_compatibility.py`, `scripts/benchmark_latency.py`, `scripts/validate_windows.ps1`, `Makefile`, `uv.lock`
 - **검증 결과**: 631 passed 2 skipped, Ruff 통과, 스키마 실질 차이 0건, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-05 | Phase 7 재현 환경 고정 | ChromaDB·모델 호환성 검증 신뢰성 보강
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - `chromadb>=0.6.3`이 1.5.9를 선택해 원본 ChromaDB 형식과 다른 런타임을 구성하던 문제를 `chromadb==0.6.3`으로 고정
+  - Python 3.14에서의 비검증 런타임 구성을 막기 위해 지원 범위를 Python 3.11~3.13으로 명시하고, pytest 프로젝트 루트를 import 경로에 고정
+  - 모델 호환성 검사가 일부 로드 실패를 통과로 표시하지 않도록 가중치 디렉터리의 기대 모델과 실제 로드 모델을 대조
+- **관련 파일**: `pyproject.toml`, `uv.lock`, `src/ml/model_registry.py`, `scripts/verify_model_compatibility.py`, `tests/test_model_compatibility.py`
+- **검증 결과**: Python 3.12 / ChromaDB 0.6.3 / scikit-learn 1.8.0에서 모델 5/5 호환, G1 검증 통과, `632 passed / 2 skipped`, Ruff 통과, `validate_agent_rules.py` 6/6

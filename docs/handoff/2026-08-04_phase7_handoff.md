@@ -145,7 +145,8 @@ API 응답과 상세 화면에 90% 등각예측 구간이 연결됐습니다. AP
 ### 3.1 `uv` 환경 정합성
 
 기존 `.venv`는 scikit-learn 1.6.1이라 1.8.0에서 직렬화한 모델 3종과
-호환되지 않습니다. `uv.lock`을 기준으로 환경을 동기화해야 합니다. `uv`가
+호환되지 않습니다. `uv.lock`을 기준으로 Python 3.11~3.13,
+scikit-learn 1.8.0, ChromaDB 0.6.3 환경을 동기화해야 합니다. `uv`가
 설치되지 않은 머신에서는 먼저 공식 설치 절차로 설치하십시오.
 
 ```bash
@@ -178,8 +179,8 @@ uv run pytest tests/ -q
 uv run python scripts/validate_agent_rules.py
 ```
 
-2026-08-04 macOS 격리 작업 트리 기준 결과는 `631 passed / 2 skipped`,
-에이전트 규칙 `6/6`입니다.
+2026-08-05 macOS 격리 작업 트리 기준 결과는 `632 passed / 2 skipped`,
+등록 모델 `5/5` 호환, 에이전트 규칙 `6/6`입니다.
 
 ### 3.4 벤치마크 (서버 기동 필요)
 
