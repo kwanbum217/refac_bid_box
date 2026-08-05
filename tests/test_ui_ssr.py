@@ -167,6 +167,16 @@ def test_result_detail_renders(auth_client, seeded_bid):
     response = auth_client.get(f"/bids/result/{result.id}/")
     assert response.status_code == 200
     assert result.bid_ntce_nm in response.text
+    assert f"/chatbot/?result_id={result.id}" in response.text
+
+
+def test_chat_page_transfers_result_context(auth_client, seeded_bid):
+    _, result = seeded_bid
+    response = auth_client.get("/chatbot/", params={"result_id": result.id})
+    assert response.status_code == 200
+    assert result.bid_ntce_no in response.text
+    assert result.bid_ntce_nm in response.text
+    assert "다음 낙찰 결과 상세를 기준으로 AI 인텔리전스 분석을 시작해 주세요." in response.text
 
 
 def test_bid_list_search_filters_rows(auth_client, seeded_bid):

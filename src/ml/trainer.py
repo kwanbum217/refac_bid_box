@@ -233,6 +233,44 @@ def _time_based_kfold_splits(
     return splits
 
 
+def _best_iteration_of(model: Any, model_type: str) -> int | None:
+    """조기 종료가 고른 트리 수를 꺼냅니다. 없으면 None."""
+    if model_type == "lightgbm":
+        value = getattr(model, "best_iteration_", None)
+        return int(value) if value else None
+    if model_type == "catboost":
+        inner = getattr(model, "model", model)
+        getter = getattr(inner, "get_best_iteration", None)
+        value = getter() if callable(getter) else None
+        return int(value) + 1 if value else None
+    return None
+
+
+def _refit_on_full(
+    model_fn: Any,
+    model_type: str,
+    selected: Any,
+    X: pd.DataFrame,
+    y: np.ndarray,
+    hyperparams: dict[str, Any] | None,
+) -> Any:
+    """선택된 모델을 전량 데이터로 다시 적합합니다.
+
+    트리 수는 **선택 단계에서 조기 종료가 고른 값으로 고정**합니다. 그대로
+    재적합하면 검증 구간이 학습에 포함돼 조기 종료가 판단 근거를 잃고, 설정된
+    n_estimators 를 끝까지 써 과적합합니다.
+
+    Ridge 처럼 반복 수 개념이 없는 모델은 그대로 재적합합니다.
+    """
+    fixed = dict(hyperparams or {})
+    best_iteration = _best_iteration_of(selected, model_type)
+    if best_iteration:
+        fixed["n_estimators" if model_type == "lightgbm" else "iterations"] = best_iteration
+    # 검증 인자에 전량을 넘깁니다. 조기 종료 콜백이 살아 있어도 학습 데이터를
+    # 보므로 멈추지 않으며, 트리 수는 위에서 이미 고정했습니다.
+    return model_fn(X, y, X, y, fixed or None)
+
+
 def _present_categoricals(X: pd.DataFrame) -> list[str]:
     return [column for column in CATEGORICAL_FEATURES if column in X.columns]
 
@@ -598,6 +636,30 @@ class ModelTrainer:
             candidates, key=lambda item: item[0]
         )
 
+        # **선택이 끝나면 전량으로 다시 적합합니다.**
+        #
+        # 위 후보들은 앞 80% 로만 학습했습니다. 홀드아웃 지표를 내려면 그래야
+        # 하지만, 그 모델을 그대로 저장하면 **가장 최근 20% 를 영영 못 배운
+        # 모델이 서빙됩니다.** 시계열 분할이라 그 20% 는 최신 구간입니다.
+        #
+        # 2026-08-05 실측이 그 대가를 보여 줍니다. 같은 2025년 하한율 보유
+        # 구간에서 서빙 아티팩트가 MAE 0.9500, 2024년까지 전량으로 학습한
+        # 실험 모델이 0.7616 이었습니다. 25% 차이가 전부 여기서 옵니다.
+        # (측정: scripts/diagnose_serving_vs_holdout_model.py)
+        #
+        # metrics 는 재적합 전 홀드아웃 값을 그대로 둡니다. 저장 모델과 지표의
+        # 학습 범위가 다르다는 뜻이므로 metadata 에 refit_on_full 로 명시합니다.
+        # 승격 판정은 계속 홀드아웃 지표로 합니다. 전량 학습본의 지표를 내려면
+        # 검증 구간이 학습에 포함돼 무의미해집니다.
+        best_model = _refit_on_full(
+            model_fns[model_type],
+            model_type,
+            best_model,
+            X,
+            y,
+            hyperparams.get(model_type) if hyperparams else None,
+        )
+
         # 가중치 저장
         model_file = target_dir / "model.bin"
         joblib.dump(best_model, model_file)
@@ -606,7 +668,9 @@ class ModelTrainer:
         # 트리 모델을 못 쓸 만큼 표본이 적으면 구간도 만들지 않습니다.
         interval_meta: dict[str, Any] = {"available": False}
         if use_tree_models:
-            quantile_models, _, interval_meta = _train_quantile_models(X_train, y_train)
+            # 분위 모델도 같은 이유로 전량을 씁니다. 등각 보정 배율은 이 함수가
+            # 내부에서 뒷부분을 떼어 산정하므로 누수가 아닙니다.
+            quantile_models, _, interval_meta = _train_quantile_models(X, y)
             for q, model in quantile_models.items():
                 joblib.dump(model, target_dir / f"model_q{int(q * 100):02d}.bin")
             interval_meta["available"] = True
@@ -619,6 +683,9 @@ class ModelTrainer:
             "samples_count": len(df_raw),
             "train_samples": len(train_idx),
             "validation_samples": len(valid_idx),
+            # metrics 는 앞 80% 로 학습한 모델의 홀드아웃 값이고, 저장된 가중치는
+            # 전량으로 재적합한 것입니다. 두 학습 범위가 다르다는 표시입니다.
+            "refit_on_full": True,
             "features": list(TRAINING_FEATURES),
             "categorical_features": list(CATEGORICAL_FEATURES),
             "category_levels": category_levels,

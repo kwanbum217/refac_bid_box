@@ -92,6 +92,10 @@ def build_serving_metadata(metadata: dict[str, Any], category_code: str | None) 
         "interval": metadata.get("interval") or {"available": False},
         "promoted_at": utcnow().isoformat(),
         "source_metrics": metadata.get("metrics") or {},
+        # source_metrics 는 앞 80% 로 학습한 모델의 홀드아웃 값이고, 가중치는
+        # 전량으로 재적합한 것입니다. 두 학습 범위가 다르다는 표시를 서빙본에도
+        # 남겨야 나중에 지표와 모델을 짝지어 읽을 때 오해가 없습니다.
+        "refit_on_full": bool(metadata.get("refit_on_full")),
     }
 
 

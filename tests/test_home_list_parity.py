@@ -296,11 +296,14 @@ def test_index_page_renders_restored_home_template(auth_client, isolated_db):
         "홈 노출 공고",
         "최근 낙찰 결과",
         "홈 브리핑",
+        "외자 브리핑",
         "home-hero-slide",
+        "home-category-entries",
+        "grid-template-columns: repeat(3",
         "공고 전체 탐색",
         "최근 동기화",
         'data-slide-index="0"',
-        'data-slide-index="4"',
+        'data-slide-index="5"',
         "data-home-swipe-track",
         "align-items: flex-start",
         "syncTrackHeight",
@@ -364,3 +367,21 @@ def test_index_page_recent_bid_sections_keep_latest_notice_order(isolated_db):
 
     assert len(matching) == 1
     assert matching[0].id == latest.id
+
+
+def test_index_page_default_sections_include_foreign_procurement(isolated_db):
+    """기본 홈 분야 목록에 외자 공고 6건 패널도 포함합니다."""
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="FRGCPT-HOME",
+        bid_ntce_nm="외자 홈 공고",
+        category="Frgcpt",
+    )
+
+    context = get_home_page_context(isolated_db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
+    section = next(
+        item for item in context["recent_bid_sections"] if item["code"] == "Frgcpt"
+    )
+
+    assert section["label"] == "외자"
+    assert [row.bid_ntce_no for row in section["entries"]] == ["FRGCPT-HOME"]

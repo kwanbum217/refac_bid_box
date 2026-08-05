@@ -1915,6 +1915,14 @@ $(document).ready(function() {
         });
     });
 
+    const initialMessage = {{ initial_message|to_json }};
+    if (initialMessage) {
+        toggleWelcome(false);
+        window.setTimeout(function() {
+            setAndSend(initialMessage);
+        }, 0);
+    }
+
     // Automatically load the active session history on page load
     const activeSessionItem = $('.session-item-li.active');
     if (activeSessionItem.length > 0) {
