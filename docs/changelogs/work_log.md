@@ -506,4 +506,4 @@
   - 낙찰 상세의 `AI 분석 시작하기` 링크에 결과 ID를 연결하고 챗봇 초기 문맥을 자동 전달
   - 데스크톱 홈 패널과 모바일 스와이프 동작을 함께 복원
 - **관련 파일**: `src/app/api/ui.py`, `src/app/services/home_context.py`, `src/app/templates/index.html`, `src/app/templates/bids/result_detail.html`, `src/app/templates/chatbot/chat.html`
-- **검증 결과**: 홈·UI SSR 회귀 테스트 56건 통과
+- **검증 결과**: 홈·UI SSR 회귀 테스트 58건 통과
