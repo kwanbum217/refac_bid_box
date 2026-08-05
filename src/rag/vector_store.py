@@ -8,12 +8,15 @@ ChromaDB 검색 래퍼 (원본 rag_engine.retrieve_semantic_context 이식 + 비
 from __future__ import annotations
 
 import asyncio
+import logging
 import unicodedata
 from pathlib import Path
 from typing import Any
 
 from src.app.core.config import PROJECT_ROOT, settings
 from src.rag.schemas import RetrievalPlan
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_COLLECTION = "bidding_kb"
 
@@ -34,8 +37,13 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> list[dict[str, Any]]:
         client = chromadb.PersistentClient(path=str(settings.CHROMA_DB_PATH))
         collection = client.get_collection(DEFAULT_COLLECTION)
         results = collection.query(query_texts=[semantic_query], n_results=plan.top_k)
-    except Exception as exc:
-        return [{"document": f"문맥 검색 오류: {exc}", "metadata": {}, "distance": None}]
+    except Exception:
+        # 오류 문구를 문서로 돌려주면 안 됩니다. 그 문자열이 그대로 LLM 프롬프트에
+        # 실려 검색이 성공한 것처럼 보이고, 화면과 로그 어디에도 실패가 남지
+        # 않습니다. 2026-08-05 에 ChromaDB 컬렉션 설정이 깨져 닷새 동안 챗봇이
+        # 지식베이스 없이 답하고 있었는데 아무도 몰랐던 것이 이 때문입니다.
+        logger.exception("ChromaDB 검색 실패 (collection=%s)", DEFAULT_COLLECTION)
+        return []
 
     documents = (results.get("documents") or [[]])[0] if results else []
     metadatas = (results.get("metadatas") or [[]])[0] if results else []
