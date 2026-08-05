@@ -28,7 +28,7 @@ from src.app.core.security import (
 from src.app.core.templating import templates
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
-from src.app.models.bids import BidAnnouncement
+from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import ChatSessionState
 from src.app.services import bid_queries
 from src.app.services.auth_forms import login_form, signup_form
@@ -89,6 +89,37 @@ def _render(request: Request, name: str, context: dict, user, active_nav: str = 
         **context,
     }
     return templates.TemplateResponse(request, name, payload)
+
+
+def _result_analysis_prompt(db: Session, result_id: int | None) -> str:
+    """낙찰 상세에서 챗봇으로 넘길 분석 문맥을 만듭니다."""
+    if result_id is None:
+        return ""
+
+    result = db.get(BidResult, result_id)
+    if result is None:
+        return ""
+
+    def value(raw) -> str:
+        return str(raw) if raw not in (None, "") else "정보 없음"
+
+    winning_rate = result.display_winning_rate(db)
+    return "\n".join(
+        [
+            "다음 낙찰 결과 상세를 기준으로 AI 인텔리전스 분석을 시작해 주세요.",
+            "낙찰 결과의 가격 적정성, 경쟁 강도, 유사 사례와 향후 투찰 전략을 구체적으로 분석해 주세요.",
+            "",
+            f"- 결과 ID: {result.id}",
+            f"- 공고번호: {value(result.bid_ntce_no)}-{value(result.bid_ntce_ord)}",
+            f"- 공고명: {result.display_bid_ntce_nm}",
+            f"- 업무구분: {result.category_label}",
+            f"- 수요기관: {result.display_dminstt_nm}",
+            f"- 낙찰업체: {result.display_bidwinnr_nm}",
+            f"- 낙찰금액: {value(result.sucsf_bid_amt)}원",
+            f"- 낙찰률: {value(winning_rate)}%",
+            f"- 개찰일시: {value(result.rl_openg_dt)}",
+        ]
+    )
 
 
 @router.get("/")
@@ -233,6 +264,7 @@ def compat_compare(request: Request):
 @router.get("/chatbot/")
 def chat_page(
     request: Request,
+    result_id: int | None = Query(None),
     db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
     bidbox_session: str | None = Cookie(None),
@@ -270,6 +302,7 @@ def chat_page(
         "current_session_key": bidbox_session or f"user:{user.id}",
         "llm_model_label": llm_model_label,
         "indexed_record_label": _compact_count(indexed_records),
+        "initial_message": _result_analysis_prompt(db, result_id),
     }
     return _render(request, "chatbot/chat.html", context, user, "chatbot")
 

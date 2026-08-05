@@ -23,7 +23,7 @@ from src.app.models.bids import (
     BidResult,
 )
 
-DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES = ("Cnstwk", "Servc", "Thng")
+DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES = ("Cnstwk", "Servc", "Thng", "Frgcpt")
 HOME_CONTEXT_CACHE_TTL = 60 * 60 * 24
 HOME_RECENT_SAMPLE_SIZES = (50, 200, 1000)
 HOME_RECENT_DAY_WINDOWS = (1, 3, 7)

@@ -93,6 +93,50 @@
         box-shadow: 0 20px 40px -30px rgba(15, 23, 42, 0.42);
     }
 
+    /* 데스크톱에서는 최근 항목을 한 번에 확인할 수 있도록 패널을 이어서 노출합니다. */
+    @media (min-width: 1024px) {
+        .home-swipe-track {
+            display: block;
+            overflow: visible;
+            height: auto !important;
+        }
+
+        .home-swipe-slide {
+            min-width: 100%;
+            margin-bottom: 1.5rem;
+        }
+
+        .home-swipe-slide:last-child {
+            margin-bottom: 0;
+        }
+
+        .home-category-slide > div {
+            grid-template-columns: 260px minmax(0, 1fr) !important;
+        }
+
+        .home-nav-arrow {
+            display: none;
+        }
+
+        .home-category-entries {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+
+        .home-category-entries > .home-category-empty {
+            grid-column: 1 / -1;
+        }
+    }
+
+    @media (min-width: 1440px) {
+        .home-category-entries {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        }
+
+        .home-category-entries .home-money-value {
+            font-size: 1.15rem !important;
+        }
+    }
+
     .home-swipe-shell {
         position: relative;
         border: 1px solid rgba(37, 99, 235, 0.14);
@@ -210,6 +254,13 @@
         font-variant-numeric: tabular-nums;
     }
 
+    .home-category-entries .home-money-stack > :last-child {
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     .home-line-clamp-2 {
         display: -webkit-box;
         -webkit-line-clamp: 2;
@@ -257,7 +308,7 @@
                     <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100/70">스와이프 브리핑</p>
                     <h2 class="mt-2 text-2xl font-black tracking-tight text-white">카테고리별 최근 수집 공고와 최근 낙찰 결과</h2>
                     <p class="mt-2 text-sm leading-6 text-blue-100/75">
-                        상단 버튼으로 바로 이동하거나, 패널을 좌우로 넘기며 흐름을 이어서 볼 수 있습니다.
+                        모바일에서는 패널을 좌우로 넘기고, 데스크톱에서는 최근 목록을 한 화면에서 확인할 수 있습니다.
                     </p>
                 </div>
 
@@ -416,7 +467,7 @@
                 </article>
 
                 {% for section in recent_bid_sections %}
-                <article class="home-swipe-slide" data-home-swipe-slide>
+                <article class="home-swipe-slide home-category-slide" data-home-swipe-slide>
                     <div class="grid gap-6 px-6 py-6 xl:grid-cols-[300px_1fr] xl:px-8 xl:py-8">
                         <div class="rounded-[26px] bg-slate-950 p-6 text-white shadow-sm">
                             {% if section.code == "Cnstwk" %}
@@ -448,25 +499,25 @@
                             </a>
                         </div>
 
-                        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <div class="home-category-entries grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                             {% for bid in section.entries %}
-                            <a href="{{ url('bids:bid_detail', bid.id) }}" class="home-slide-card flex h-full flex-col rounded-[24px] border border-slate-200 bg-slate-50/70 p-5">
+                            <a href="{{ url('bids:bid_detail', bid.id) }}" class="home-slide-card flex h-full min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50/70 p-5">
                                 <div class="flex items-center justify-between gap-3">
                                     <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold tracking-tight text-slate-900 shadow-sm">
                                         {{ bid.category_label }}
                                     </span>
-                                    <span class="text-[11px] font-semibold text-slate-500">{{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}</span>
+                                    <span class="min-w-0 truncate text-right text-[11px] font-semibold text-slate-500">{{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}</span>
                                 </div>
-                                <h4 class="mt-4 home-line-clamp-2 text-lg font-black tracking-tight text-slate-900">
+                                <h4 title="{{ bid.bid_ntce_nm|default('공고명 정보 없음', true) }}" class="mt-4 home-line-clamp-3 text-lg font-black tracking-tight text-slate-900">
                                     {{ bid.bid_ntce_nm|default("공고명 정보 없음", true) }}
                                 </h4>
-                                <p class="mt-3 home-line-clamp-2 text-sm leading-6 text-slate-500">
+                                <p title="{{ bid.dminstt_nm|default('수요기관 정보 없음', true) }}" class="mt-3 home-line-clamp-2 text-sm leading-6 text-slate-500">
                                     {{ bid.dminstt_nm|default("수요기관 정보 없음", true) }}
                                 </p>
                                 <div class="mt-5 grid gap-3 text-sm text-slate-600">
                                     <div class="home-metric-stack home-money-stack rounded-2xl bg-white px-4 py-3">
                                         <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">기초금액</span>
-                                        <span class="home-metric-value home-money-value text-xl font-black tracking-tight text-slate-900">
+                                        <span class="home-metric-value home-money-value block max-w-full truncate text-xl font-black tracking-tight text-slate-900">
                                             {% if bid.has_base_amount %}
                                             ₩{{ bid.display_base_amount|intcomma }}
                                             {% else %}
@@ -474,17 +525,17 @@
                                             {% endif %}
                                         </span>
                                     </div>
-                                    <div class="flex items-center justify-between gap-4 rounded-2xl bg-white px-4 py-3">
+                                    <div class="flex min-w-0 items-center justify-between gap-2 rounded-2xl bg-white px-4 py-3">
                                         <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">수집 시각</span>
-                                        <span class="font-semibold text-slate-700">{{ bid.collected_at|date("m.d H:i") }}</span>
+                                        <span class="min-w-0 truncate text-right font-semibold text-slate-700">{{ bid.collected_at|date("m.d H:i") }}</span>
                                     </div>
                                 </div>
-                                <div class="mt-5 inline-flex w-fit max-w-full items-center gap-5 self-center rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-2.5 shadow-sm">
-                                    <span class="grid gap-0.5 text-center text-[11px] font-extrabold uppercase tracking-[0.08em] leading-4 text-slate-700">
+                                <div class="mt-5 flex w-full max-w-full items-center justify-between gap-3 self-center rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-2.5 shadow-sm">
+                                    <span class="grid shrink-0 gap-0.5 text-center text-[11px] font-extrabold uppercase tracking-[0.08em] leading-4 text-slate-700">
                                         <span>공고</span>
                                         <span>일시</span>
                                     </span>
-                                    <span class="grid gap-0.5 text-sm font-black leading-5 tracking-tight text-slate-950">
+                                    <span class="grid min-w-0 gap-0.5 text-right text-sm font-black leading-5 tracking-tight text-slate-950">
                                         {% if bid.bid_ntce_dt %}
                                             <span>{{ bid.bid_ntce_dt|date("Y.m.d") }}</span>
                                             <span>{{ bid.bid_ntce_dt|date("H:i") }}</span>
@@ -495,7 +546,7 @@
                                 </div>
                             </a>
                             {% else %}
-                            <div class="md:col-span-2 xl:col-span-3 rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 py-16 text-center">
+                            <div class="home-category-empty md:col-span-2 xl:col-span-3 rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-6 py-16 text-center">
                                 <p class="text-lg font-black tracking-tight text-slate-900">{{ section.label }} 공고가 아직 없습니다</p>
                                 <p class="mt-2 text-sm text-slate-500">새로 수집되면 이 패널에 바로 노출됩니다.</p>
                             </div>
@@ -505,7 +556,7 @@
                 </article>
                 {% endfor %}
 
-                <article class="home-swipe-slide" data-home-swipe-slide>
+                <article class="home-swipe-slide home-result-slide" data-home-swipe-slide>
                     <div class="grid gap-6 px-6 py-6 xl:grid-cols-[320px_1fr] xl:px-8 xl:py-8">
                         <div class="rounded-[26px] bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white shadow-sm xl:self-start">
                             <span class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white">
@@ -635,6 +686,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function syncTrackHeight(index) {
+        if (window.matchMedia('(min-width: 1024px)').matches) {
+            track.style.height = 'auto';
+            return;
+        }
+
         const target = slides[clampIndex(index)];
         if (!target) {
             return;
@@ -663,6 +719,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const nextIndex = clampIndex(index);
         const target = slides[nextIndex];
         if (!target) {
+            return;
+        }
+
+        if (window.matchMedia('(min-width: 1024px)').matches) {
+            target.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start',
+            });
+            syncControls(nextIndex);
             return;
         }
 

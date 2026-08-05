@@ -495,3 +495,15 @@
 - **설계 요지**: 웹훅 방식. `httpx` 가 이미 의존성에 있어 새 라이브러리가 필요 없고, `AUTOMATION_CALLBACK_BASE_URL` 선례를 따릅니다. 알림 실패가 본 작업을 되돌리지 않도록 예외를 삼킵니다. `REJECT_CHALLENGER` 는 보내지 않아 소음을 막습니다
 - **범위 밖**: 자동 승격(의도적 수동 유지), 감사 로그(1인 작업), 관리 UI, 재시도
 - **예상 작업량**: 1시간 이내
+
+---
+
+### 2026-08-05 | UI 변경 복원 | 홈 최근 공고·낙찰 AI 분석 연결
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - 다른 브랜치에서 Docker 이미지를 재빌드해 누락된 홈 최근 공고 패널 및 외자 분야를 현재 작업 브랜치에 복원
+  - 낙찰 상세의 `AI 분석 시작하기` 링크에 결과 ID를 연결하고 챗봇 초기 문맥을 자동 전달
+  - 데스크톱 홈 패널과 모바일 스와이프 동작을 함께 복원
+- **관련 파일**: `src/app/api/ui.py`, `src/app/services/home_context.py`, `src/app/templates/index.html`, `src/app/templates/bids/result_detail.html`, `src/app/templates/chatbot/chat.html`
+- **검증 결과**: 홈·UI SSR 회귀 테스트 56건 통과
