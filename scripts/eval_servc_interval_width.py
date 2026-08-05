@@ -41,8 +41,12 @@ from src.ml.trainer import (  # noqa: E402
     INTERVAL_QUANTILES,
     INTERVAL_TARGET_COVERAGE,
     LGB_BASE_PARAMS,
+    QUANTILE_PARAM_OVERRIDES,
     _conformal_scale,
 )
+
+# 이 스크립트가 흔드는 축은 분위 모델의 리프입니다. 점 추정 설정과는 무관합니다.
+CURRENT_QUANTILE_LEAVES = QUANTILE_PARAM_OVERRIDES["num_leaves"]
 
 
 def evaluate(train: pd.DataFrame, valid: pd.DataFrame, leaves: int) -> dict:
@@ -54,7 +58,7 @@ def evaluate(train: pd.DataFrame, valid: pd.DataFrame, leaves: int) -> dict:
     cut = int(len(train) * (1 - CALIBRATION_SPLIT))
     fit_part, cal_part = train.iloc[:cut], train.iloc[cut:]
 
-    params = {**LGB_BASE_PARAMS, "num_leaves": leaves}
+    params = {**LGB_BASE_PARAMS, **QUANTILE_PARAM_OVERRIDES, "num_leaves": leaves}
     params.pop("objective", None)
     params.pop("alpha", None)
 
@@ -123,12 +127,12 @@ def main() -> int:
     print(table.to_string(index=False))
 
     best = table.loc[table["보정 후 폭"].idxmin()]
-    current = table[table["num_leaves"] == LGB_BASE_PARAMS["num_leaves"]]
+    current = table[table["num_leaves"] == CURRENT_QUANTILE_LEAVES]
     print(f"\n최소 폭: 리프 {int(best['num_leaves'])} / {best['보정 후 폭']}%p")
     if not current.empty:
         base_width = float(current.iloc[0]["보정 후 폭"])
         gain = base_width - float(best["보정 후 폭"])
-        print(f"현행(리프 {LGB_BASE_PARAMS['num_leaves']}) 대비 {gain:+.4f}%p ({gain / base_width:+.2%})")
+        print(f"현행 분위(리프 {CURRENT_QUANTILE_LEAVES}) 대비 {gain:+.4f}%p ({gain / base_width:+.2%})")
     return 0
 
 

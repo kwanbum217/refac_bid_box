@@ -331,3 +331,18 @@
   - 모델 호환성 검사가 일부 로드 실패를 통과로 표시하지 않도록 가중치 디렉터리의 기대 모델과 실제 로드 모델을 대조
 - **관련 파일**: `pyproject.toml`, `uv.lock`, `src/ml/model_registry.py`, `scripts/verify_model_compatibility.py`, `tests/test_model_compatibility.py`
 - **검증 결과**: Python 3.12 / ChromaDB 0.6.3 / scikit-learn 1.8.0에서 모델 5/5 호환, G1 검증 통과, `632 passed / 2 skipped`, Ruff 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-05 | 용역 모델 | 점 추정·분위 파라미터 분리와 리프 127 기각
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - `src/ml/trainer.py`: `QUANTILE_PARAM_OVERRIDES` 신설. 분위 모델이 점 추정과 `LGB_BASE_PARAMS` 를 공유하던 구조를 끊었습니다
+  - `scripts/eval_servc_point_quantile_split.py`: 신설. 점 추정 리프와 분위 리프를 갈라 조합별로 MAE 와 구간 폭을 잽니다
+  - `scripts/tune_servc_hyperparams.py`: 평가에서 `apply_lower_limit` 제거. 학습기와 서빙 어느 쪽도 절단하지 않는데 탐색만 절단 후 순위를 매기고 있었습니다
+  - `scripts/eval_servc_interval_width.py`: 현행 기준을 분위 오버라이드에서 읽도록 정정
+- **관련 파일**: `src/ml/trainer.py`, `scripts/eval_servc_point_quantile_split.py`, `scripts/tune_servc_hyperparams.py`, `scripts/eval_servc_interval_width.py`, `docs/design/servc_hyperparam_search_20260804.md`
+- **검증 결과**: 구간 폭이 점 추정 리프에 대해 소수점 넷째 자리까지 움직이지 않습니다. 두 축은 완전히 독립이며, 2026-08-04 의 "정확도와 폭을 맞바꿔야 한다" 는 판정은 구조가 묶여 있어 생긴 착시였습니다. 운영 실측에서도 점 추정 127 리프의 구간 폭이 1.423%p 로 63 리프와 동일합니다(분리 전이라면 1.583%p)
+- **기각**: 점 추정 리프 127 은 홀드아웃 R2 0.6881 -> 0.6901, MAE -1.0% 로 champion 을 넘고 승격 게이트 4개를 모두 통과했으나, 운영 API 경로 동일 표본 1,000건에서 MAE 0.9848 -> 0.9863, RMSE 3.1195 -> 3.1455, 0.5%p 적중 75.2% -> 74.5% 로 전 지표가 나빠져 롤백했습니다. 255 에 이어 두 번째 같은 방향의 어긋남입니다
+- **방법론**: **점 추정 용량은 홀드아웃 지표로 정하지 않습니다.** 2025년 홀드아웃 96,141건과 운영 표본(하한율 보유 1,000건)의 분포가 다르고 후자가 사용자가 보는 구성에 가깝습니다. 홀드아웃은 후보를 거르는 데까지만 쓰고 채택은 운영 경로 동일 표본 비교로 판정합니다
