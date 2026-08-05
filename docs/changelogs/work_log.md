@@ -331,3 +331,14 @@
   - 모델 호환성 검사가 일부 로드 실패를 통과로 표시하지 않도록 가중치 디렉터리의 기대 모델과 실제 로드 모델을 대조
 - **관련 파일**: `pyproject.toml`, `uv.lock`, `src/ml/model_registry.py`, `scripts/verify_model_compatibility.py`, `tests/test_model_compatibility.py`
 - **검증 결과**: Python 3.12 / ChromaDB 0.6.3 / scikit-learn 1.8.0에서 모델 5/5 호환, G1 검증 통과, `632 passed / 2 skipped`, Ruff 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-05 | 용역 하이퍼파라미터 증적 추적 | 17회 탐색 원시 측정 기록 보존
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - `data/servc_hyperparam_search.json`을 Git으로 추적. 이 파일은 2025년 홀드아웃 기준 좌표 하강 17회의 파라미터·지표만 담은 8.5KB JSON이며, 원시 입찰 데이터와 모델 가중치는 포함하지 않습니다
+  - 설계 문서에 증적 파일의 추적 범위와 목적을 명시
+- **관련 파일**: `data/servc_hyperparam_search.json`, `docs/design/servc_hyperparam_search_20260804.md`
+- **검증 결과**: JSON 파싱, 17회 시행 수, 기준선 및 최적 후보(`num_leaves=255`)의 측정값을 생성 스크립트·설계 문서와 대조
