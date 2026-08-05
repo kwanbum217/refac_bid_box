@@ -615,6 +615,11 @@ class ModelRegistry:
         )
 
     @classmethod
+    def expected_model_ids(cls):
+        """가중치 디렉터리에 등록된 모델 식별자를 반환합니다."""
+        return cls._discover_model_ids_on_disk()
+
+    @classmethod
     def _sync_registry(cls, force=False):
         disk_model_ids = cls._discover_model_ids_on_disk()
         loaded_model_ids = sorted(cls._models.keys())

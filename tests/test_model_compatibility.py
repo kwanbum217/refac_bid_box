@@ -7,8 +7,16 @@ from scripts.verify_model_compatibility import validate_model_compatibility
 
 class CompatibleRegistry:
     @classmethod
+    def expected_model_ids(cls):
+        return ["model"]
+
+    @classmethod
     def load_all_models(cls):
         return 1
+
+    @classmethod
+    def available_models(cls):
+        return ["model"]
 
     @classmethod
     def verify_servable_features(cls):
@@ -51,3 +59,16 @@ def test_model_compatibility_rejects_unservable_features():
 
     assert passed is False
     assert messages == ["서빙 불가 특징: model=unknown_feature"]
+
+
+class PartiallyLoadedRegistry(CompatibleRegistry):
+    @classmethod
+    def expected_model_ids(cls):
+        return ["model", "missing"]
+
+
+def test_model_compatibility_rejects_partially_loaded_registry():
+    passed, messages = validate_model_compatibility(PartiallyLoadedRegistry)
+
+    assert passed is False
+    assert messages == ["모델 로드 실패: missing"]
