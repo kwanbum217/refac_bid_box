@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     AUTOMATION_NIGHTLY_SCHEDULE_ENABLED: bool = True
     # 원본 Airflow narabid_weekly_retrain(매주 월요일 03:00) 대체.
     ML_WEEKLY_RETRAIN_ENABLED: bool = True
+    # MLOps 알림 웹훅(Slack/Discord). 비면 알림을 보내지 않습니다.
+    # 실제 URL 은 .env 에만 둡니다.
+    MLOPS_WEBHOOK_URL: str = ""
 
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"

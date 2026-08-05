@@ -24,6 +24,11 @@ from src.app.models.predictions import RetrainLog
 from src.ml.dataset import build_training_dataset
 from src.ml.trainer import ModelTrainer, trainer
 from src.ml.validate_model import compare_champion_vs_challenger
+from src.tasks.notifier import (
+    notify_empty_training_data,
+    notify_retrain_result,
+    notify_task_failure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +119,7 @@ async def run_retrain_pipeline_task(
                 status="skipped",
                 summary={"reason": "학습 데이터가 비었습니다.", "category": category_code},
             )
+            await notify_empty_training_data(trigger_source, category_code)
             return {"status": "skipped", "reason": "no_training_data", "category": category_code}
 
         # 카테고리 전용 학습기를 씁니다. 분기가 없으면 용역 재학습이 물품
@@ -155,6 +161,18 @@ async def run_retrain_pipeline_task(
             metadata["samples_count"],
             verdict["recommendation"],
         )
+        # 승격이 수동이므로 권고가 사람에게 닿아야 고리가 이어집니다.
+        await notify_retrain_result(
+            trigger_source=trigger_source,
+            recommendation=verdict["recommendation"],
+            champion_version=champion_version,
+            challenger_version=metadata["version"],
+            champion_metrics=champion_metrics,
+            challenger_metrics=challenger_metrics,
+            samples=metadata["samples_count"],
+            category=category_code,
+            holdout_is_overfit=bool(metadata.get("holdout_is_overfit")),
+        )
         return {
             "status": "success",
             "trigger_source": trigger_source,
@@ -165,5 +183,13 @@ async def run_retrain_pipeline_task(
             "metrics": challenger_metrics,
             "recommendation": verdict["recommendation"],
         }
+    except Exception as exc:
+        # 알리기만 하고 그대로 올립니다. 여기서 삼키면 호출부가 성공으로 오인합니다.
+        await notify_task_failure(
+            "재학습 파이프라인",
+            str(exc),
+            detail=f"대상 {category_code or '전체'} / 트리거 {trigger_source}",
+        )
+        raise
     finally:
         db.close()

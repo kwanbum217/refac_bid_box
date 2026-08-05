@@ -24,6 +24,7 @@ from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import PipelineExecution
 from src.app.services.automation_orchestrator import STATUS_RUNNING
 from src.tasks.automation_tasks import run_automation_pipeline
+from src.tasks.notifier import notify_task_failure
 from src.tasks.retrain_task import run_retrain_pipeline_task
 
 logger = logging.getLogger(__name__)
@@ -67,13 +68,24 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         db.close()
 
     logger.info("야간 스케줄 실행 시작 (execution_id=%s)", execution_id)
-    outcome = await run_automation_pipeline(
-        ctx,
-        execution_id=execution_id,
-        action_key="nightly_schedule",
-        run_mode="nightly_schedule",
-        original_query="정기 야간 스케줄",
-    )
+    try:
+        outcome = await run_automation_pipeline(
+            ctx,
+            execution_id=execution_id,
+            action_key="nightly_schedule",
+            run_mode="nightly_schedule",
+            original_query="정기 야간 스케줄",
+        )
+    except Exception as exc:
+        # 02:00 수집이 실패하면 03:00 재학습은 옛 데이터로 돕니다. 조용히
+        # 지나가면 두 실패가 겹쳐도 아무도 모릅니다.
+        logger.exception("야간 스케줄 실패")
+        await notify_task_failure(
+            "야간 수집 스케줄",
+            str(exc),
+            detail=f"execution_id {execution_id}. 다음 재학습이 옛 데이터로 돕니다.",
+        )
+        raise
 
     # 수집으로 원본 데이터가 바뀌었으니 상위 N 스냅샷을 다시 만듭니다.
     # 원본 스텝 구성(run_mode_matrix)을 건드리지 않으려고 파이프라인 밖에 둡니다.
@@ -125,4 +137,5 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         # 스케줄 실패로 워커가 죽으면 이후 크론까지 함께 멈춥니다.
         logger.exception("주간 재학습 실패")
+        await notify_task_failure("주간 재학습 스케줄", str(exc))
         return {"status": "failed", "trigger_source": "weekly_schedule", "error": str(exc)}

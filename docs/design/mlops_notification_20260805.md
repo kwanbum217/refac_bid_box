@@ -1,9 +1,9 @@
 # MLOps 알림 설계
 
 > **작성일**: 2026-08-05
-> **버전**: v1.0.0
-> **상태**: 설계만 완료. 구현 미착수
-> **예상 작업량**: 1시간 이내
+> **갱신일**: 2026-08-05
+> **버전**: v1.1.0
+> **상태**: 구현 완료. 웹훅 미설정 상태라 실환경 발신은 미검증
 
 ---
 
@@ -164,15 +164,27 @@ async def notify(title: str, lines: list[str], *, level: str = "info") -> None:
 
 ## 6. 작업 단위
 
-| 순서 | 내용 | 예상 |
-| --- | --- | ---: |
-| 1 | `config.MLOPS_WEBHOOK_URL` 추가 | 5분 |
-| 2 | `src/tasks/notifier.py` 신설 | 20분 |
-| 3 | 재학습·스케줄 4개 지점 배선 | 15분 |
-| 4 | 테스트 5건 | 20분 |
-| 5 | 문서·인수인계 갱신 | 10분 |
+| 순서 | 내용 | 결과 |
+| --- | --- | --- |
+| 1 | `config.MLOPS_WEBHOOK_URL` 추가 | 완료 (`src/app/core/config.py:24`) |
+| 2 | `src/tasks/notifier.py` 신설 | 완료 |
+| 3 | 재학습·스케줄 4개 지점 배선 | 완료 |
+| 4 | 테스트 | 완료 (`tests/test_mlops_notifier.py` 11건) |
+| 5 | 문서·환경 변수 갱신 | 완료 |
 
-전량 테스트와 커밋을 포함해 **1시간 안쪽**입니다.
+### 6.1 구현 결과
+
+| 지점 | 위치 | 동작 |
+| --- | --- | --- |
+| 재학습 판정 | `src/tasks/retrain_task.py` `_record` 직후 | `PROMOTE_CHALLENGER` 와 홀드아웃 분리 실패만 발신 |
+| 재학습 예외 | `src/tasks/retrain_task.py` `except` | 알린 뒤 그대로 re-raise. 삼키면 호출부가 성공으로 오인합니다 |
+| 학습 데이터 없음 | `run_retrain_pipeline_task` skip 경로 | 수집 파이프라인 이상 신호로 발신 |
+| 주간 재학습 스케줄 | `scheduled_tasks.weekly_retrain_task` `except` | 알린 뒤 실패 dict 반환(크론 연쇄 중단 방지) |
+| 야간 수집 스케줄 | `scheduled_tasks.nightly_schedule_task` `except` | 알린 뒤 re-raise |
+
+설계와 달라진 점이 하나 있습니다. 홀드아웃 분리 실패(`holdout_is_overfit`)는 판정이 `REJECT_CHALLENGER` 로 덮어써지므로, 기각 무발신 규칙만 두면 알림이 나가지 않습니다. 판정이 아니라 `holdout_is_overfit` 플래그를 따로 보고 경고를 냅니다.
+
+**남은 검증**: `MLOPS_WEBHOOK_URL` 이 아직 비어 있어 실제 Slack/Discord 수신은 확인하지 못했습니다. 웹훅 발급 후 재학습을 한 번 수동 실행해 수신을 확인하십시오.
 
 ---
 
