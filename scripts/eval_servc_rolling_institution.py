@@ -72,12 +72,17 @@ def attach_rolling_history(df: pd.DataFrame, windows: list[int], halflife: int) 
         df[std_col] = rolled["std"].to_numpy()
         added.extend([mean_col, cnt_col, std_col])
 
+    # 지수감쇠는 건수 기준이라 `closed="left"` 같은 장치가 없습니다. `shift(1)` 은
+    # 자기 자신만 뺄 뿐이어서, 같은 시각에 열린 다른 공고가 정렬 순서상 앞에 있으면
+    # 그 결과를 봅니다. 운영에서는 알 수 없는 값이므로 누수입니다.
+    #
+    # (기관, 개찰시각) 그룹의 **첫 행 값**을 그룹 전체에 뿌려 시각 경계를 만듭니다.
+    # 첫 행의 shift 값은 그 시각 이전까지만 반영하므로 동시각 공고가 빠집니다.
     ewm_col = f"inst_ewm_{halflife}"
-    df[ewm_col] = (
-        df.groupby(GROUP_KEY, observed=True)["winning_rate"]
-        .transform(lambda s: s.shift(1).ewm(halflife=halflife, ignore_na=True).mean())
-        .to_numpy()
+    shifted = df.groupby(GROUP_KEY, observed=True)["winning_rate"].transform(
+        lambda s: s.shift(1).ewm(halflife=halflife, ignore_na=True).mean()
     )
+    df[ewm_col] = shifted.groupby([df[GROUP_KEY], df["openg_dt"]], observed=True).transform("first")
     added.append(ewm_col)
 
     # 표본이 없는 신규 기관은 현행 특징과 같은 값으로 채워 비교를 공정하게 합니다.
@@ -96,6 +101,10 @@ def evaluate(train: pd.DataFrame, valid: pd.DataFrame, features: list[str], labe
     pred = model.predict(valid[features])
     actual = valid["winning_rate"].to_numpy(dtype=float)
     error = np.abs(pred - actual)
+
+    # 운영 API 측정은 하한율 보유 건만 봅니다. 전체 평균만 보면 운영이 겪지 않는
+    # 결측 구간의 개선까지 섞여 판단이 흐려집니다.
+    has_lwlt = (valid["lwlt_rate_missing"] == 0).to_numpy()
     return {
         "구성": label,
         "특징 수": len(features),
@@ -103,7 +112,8 @@ def evaluate(train: pd.DataFrame, valid: pd.DataFrame, features: list[str], labe
         "RMSE": round(float(np.sqrt(mean_squared_error(actual, pred))), 4),
         "R2": round(float(r2_score(actual, pred)), 4),
         "0.5%p 적중": round(float((error <= 0.5).mean()), 4),
-        "1%p 적중": round(float((error <= 1.0).mean()), 4),
+        "보유구간 MAE": round(float(error[has_lwlt].mean()), 4),
+        "보유구간 적중": round(float((error[has_lwlt] <= 0.5).mean()), 4),
         "학습 초": round(time.perf_counter() - started, 1),
     }
 
@@ -143,9 +153,16 @@ def main() -> int:
         rows.append(row)
         print(f"  {row['구성']}: MAE {row['MAE']:.4f} / 0.5%p {row['0.5%p 적중']:.2%}", flush=True)
 
-    row = evaluate(train, valid, [*ALL_FEATURES, *added], "+ 전체 창 + 지수감쇠")
-    rows.append(row)
-    print(f"  {row['구성']}: MAE {row['MAE']:.4f} / 0.5%p {row['0.5%p 적중']:.2%}", flush=True)
+    # 창 단독은 이득이 없는데 조합만 좋다면 지수감쇠가 주역입니다. 갈라서 봅니다.
+    ewm_cols = [c for c in added if c.startswith("inst_ewm_")]
+    for label, cols in (
+        ("+ 지수감쇠만", ewm_cols),
+        ("+ 전체 창", [c for c in added if c not in ewm_cols]),
+        ("+ 전체 창 + 지수감쇠", added),
+    ):
+        row = evaluate(train, valid, [*ALL_FEATURES, *cols], label)
+        rows.append(row)
+        print(f"  {row['구성']}: MAE {row['MAE']:.4f} / 0.5%p {row['0.5%p 적중']:.2%}", flush=True)
 
     table = pd.DataFrame(rows)
     print(f"\n{'=' * 100}\n결과\n{'=' * 100}")
@@ -157,6 +174,13 @@ def main() -> int:
     print(f"\n최소 MAE: {best['구성']} / {best['MAE']:.4f}")
     print(f"현행 대비 {-gain:+.4f} ({-gain / float(base['MAE']):+.2%})")
     print(f"0.5%p 적중 {float(base['0.5%p 적중']):.2%} -> {float(best['0.5%p 적중']):.2%}")
+
+    seg_gain = float(base["보유구간 MAE"]) - float(best["보유구간 MAE"])
+    print(
+        f"\n운영이 보는 구간(하한율 보유): {float(base['보유구간 MAE']):.4f} -> "
+        f"{float(best['보유구간 MAE']):.4f} ({-seg_gain / float(base['보유구간 MAE']):+.2%})"
+    )
+    print(f"  적중 {float(base['보유구간 적중']):.2%} -> {float(best['보유구간 적중']):.2%}")
     return 0
 
 
