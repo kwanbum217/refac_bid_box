@@ -354,3 +354,15 @@
   - README, 크로스 플랫폼 가이드, Phase 7 체크리스트를 실제 검증 경로와 최신 컷오버 상태에 맞춤
 - **관련 파일**: `Makefile`, `tests/test_serving_feature_parity.py`, `tests/test_predictions_api.py`, `README.md`, `docs/ops/cross_platform_guide.md`, `docs/design/REFACTORING_DESIGN.md`
 - **검증 결과**: Python 3.12 / ChromaDB 0.6.3 / scikit-learn 1.8.0에서 `make test` 627 passed, 4 skipped, 3 deselected; Ruff 통과
+
+---
+
+### 2026-08-05 | Arq 워커 Compose 배선 | 기본 스택에 비동기 실행 경로 복원
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - 기본 Docker Compose에 `arq src.tasks.worker.WorkerSettings` 워커 서비스를 추가해 수동 자동화 작업과 이미 구현된 크론이 실제 소비자를 갖도록 구성
+  - 개발 Compose와 `.env.example`에서는 야간 수집·주간 재학습 스케줄을 기본 비활성화. 운영은 검증 후 환경 변수로 명시 활성화
+  - 재학습 트리거의 실제 상태를 설계서와 환경 변수 문서에 동기화
+- **관련 파일**: `docker-compose.yml`, `.env.example`, `src/tasks/worker.py`, `tests/test_worker_compose.py`, `docs/ops/cross_platform_guide.md`
+- **검증 결과**: Compose 워커 계약 테스트와 기존 스케줄 테스트를 실행

@@ -636,7 +636,7 @@ run_mode_matrix (개정):
 - [x] **평가 실측화**: validate_model 개선 (RMSE/MAPE/R² 실시간 산출)
 - [x] **모델 레지스트리** + 기존 4개 모델 champion 등록
 - [x] **재학습 태스크** (Celery/Arq) + `run_mode_matrix`에 `retrain` 단계 추가
-- [ ] **재학습 트리거**: 주간 스케줄 + 수동 API — 수동 API만 구현됨
+- [ ] **재학습 트리거**: 주간 Arq 크론·Docker 워커 구성 완료, 운영 활성화와 수동 API 노출은 남음
 - [x] **모니터링**: 데이터/예측 드리프트 감지 (PSI)
 
 ### Phase 6 — 프론트엔드/스트리밍 (선택, 3~5일)

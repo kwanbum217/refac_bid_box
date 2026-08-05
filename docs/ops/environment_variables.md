@@ -99,6 +99,8 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `ML_WEEKLY_RETRAIN_ENABLED` | 아니오 | `true` | 매주 월요일 03:00 재학습 크론 사용 여부 |
 | `DRIFT_PSI_THRESHOLD` | 아니오 | `0.2` | 데이터 드리프트 PSI 임계값 |
 
+개발용 `.env.example`과 기본 Docker Compose 워커는 의도하지 않은 수집·학습을 막기 위해 두 정기 스케줄을 `false`로 둡니다. 운영에서만 검증 후 명시적으로 `true`를 설정하십시오.
+
 재학습 시각 자체는 환경 변수가 아니라 `src/tasks/worker.py` 의 `cron_jobs` 에 고정되어 있습니다. 원본 Airflow DAG 의 `schedule_interval='0 3 * * 1'` 을 그대로 옮긴 값이므로, 바꿀 때는 원본과의 차이를 인지하고 변경하십시오.
 
 ---

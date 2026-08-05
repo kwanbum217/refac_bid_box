@@ -29,9 +29,10 @@ macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위�
 
 ### 3.1 전체 스택 (docker-compose)
 
-정본은 루트의 `docker-compose.yml`입니다. 기본 서비스는 FastAPI `app`, MySQL
-8 `db`, Redis 7 `redis`입니다. React 스캐폴드는 `legacy` 프로필에서만
-기동합니다.
+정본은 루트의 `docker-compose.yml`입니다. 기본 서비스는 FastAPI `app`, Arq
+`worker`, MySQL 8 `db`, Redis 7 `redis`입니다. React 스캐폴드는 `legacy`
+프로필에서만 기동합니다. 개발 Compose의 정기 수집·재학습은 비활성화되어 있으며,
+운영 배포에서 환경 변수로 명시적으로 활성화합니다.
 
 ### 3.2 실행 명령
 
