@@ -34,7 +34,9 @@ LEVEL_PREFIX = {
 # 권하는 문구가 되면 안 됩니다.
 PAIRED_CHECK_HINT = (
     "승격 전 운영 경로 쌍대 비교를 거치십시오.\n"
-    "  scripts/compare_servc_models_paired.py"
+    "  uv run python scripts/compare_servc_models_paired.py\n"
+    "  uv run python scripts/promote_model.py status\n"
+    "  uv run python scripts/promote_model.py promote --model <이름> --apply"
 )
 
 
