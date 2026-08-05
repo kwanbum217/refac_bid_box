@@ -167,3 +167,67 @@ def promote(
         "required_features": serving_metadata["required_features"],
         "category_levels": len(serving_metadata["category_levels"]),
     }
+
+
+class RollbackUnavailable(RuntimeError):
+    """되돌릴 백업본이 없습니다."""
+
+
+def rollback(
+    model_name: str,
+    *,
+    serving_dir: Path | str = SERVING_ROOT,
+    backup_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """직전 서빙본으로 되돌립니다. `promote` 의 짝입니다.
+
+    "즉시 롤백 가능" 은 AGENTS.md 의 비협상 원칙인데, 백업 디렉터리를 사람이
+    직접 옮기는 것이 유일한 수단이면 그 원칙이 손 절차에 걸려 있는 셈입니다.
+
+    현재 서빙본은 버리지 않고 백업 자리로 넣습니다. 그래야 잘못 되돌렸을 때
+    한 번 더 되돌릴 수 있습니다.
+    """
+    serving_dir = Path(serving_dir)
+    backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
+    backup = backup_root / model_name
+    if not backup.exists():
+        raise RollbackUnavailable(
+            f"{model_name} 의 백업본이 없습니다: {backup}. 승격 이력이 없거나 이미 되돌렸습니다."
+        )
+
+    target = serving_dir / model_name
+    restored_version = _metadata_version(backup)
+    replaced_version = _metadata_version(target)
+
+    # 교체 순서가 중요합니다. 백업을 먼저 옮기면 현재 서빙본을 둘 자리가 없습니다.
+    holding = backup_root / f"{model_name}.rollback_tmp"
+    if holding.exists():
+        shutil.rmtree(holding)
+    if target.exists():
+        shutil.move(str(target), str(holding))
+    try:
+        shutil.move(str(backup), str(target))
+    except Exception:
+        if holding.exists():
+            shutil.move(str(holding), str(target))
+        raise
+    if holding.exists():
+        shutil.move(str(holding), str(backup))
+
+    return {
+        "model_name": model_name,
+        "restored_version": restored_version,
+        "replaced_version": replaced_version,
+        "serving_path": str(target),
+        "backup": str(backup) if backup.exists() else None,
+    }
+
+
+def _metadata_version(model_dir: Path) -> str:
+    meta_path = model_dir / "metadata.json"
+    if not meta_path.exists():
+        return ""
+    try:
+        return str(json.loads(meta_path.read_text(encoding="utf-8")).get("version") or "")
+    except (json.JSONDecodeError, OSError):
+        return ""
