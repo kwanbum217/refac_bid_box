@@ -134,6 +134,24 @@ def attach_repeat_history(df: pd.DataFrame) -> pd.DataFrame:
     prev_time = grouped["t"].transform(lambda s: s.shift(1))
     days_since = (ordered["t"] - prev_time).dt.total_seconds() / 86400.0
 
+    # 같은 시각에 열린 같은 사업의 다른 공고는 서로를 보면 안 됩니다. `shift(1)` 은
+    # 자기 자신만 뺄 뿐이라 정렬 순서상 앞선 동시각 행이 이력으로 들어갑니다.
+    # 운영에서는 알 수 없는 값이므로 누수이며, 추론 경로(`lookup_repeat_history`)
+    # 는 `t < reference_ts` 로 이미 제외하고 있어 정의가 갈려 있었습니다.
+    #
+    # 규모는 작지 않습니다. 용역 917,060행 중 같은 키·같은 개찰시각이 2건 이상인
+    # 행이 5.6%(51,175행)이고, 그중 실제로 동시각을 이력으로 쓴 행이 3.7%입니다.
+    # 2026-08-05 대조에서 이 특징들의 일치율이 94~96% 로 나온 원인입니다.
+    #
+    # (키, 개찰시각) 그룹의 **첫 행 값**을 그룹 전체에 뿌려 시각 경계를 만듭니다.
+    # 첫 행의 shift 값은 그 시각 이전까지만 반영합니다.
+    scope = [ordered["key"], ordered["t"]]
+    count = count.groupby(scope, observed=True).transform("first")
+    mean = mean.groupby(scope, observed=True).transform("first")
+    std = std.groupby(scope, observed=True).transform("first")
+    prev = prev.groupby(scope, observed=True).transform("first")
+    days_since = days_since.groupby(scope, observed=True).transform("first")
+
     # 정렬 전 순서로 되돌립니다.
     count = count.reindex(out.index).fillna(0.0)
     mean = mean.reindex(out.index)
