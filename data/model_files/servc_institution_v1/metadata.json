@@ -1,6 +1,6 @@
 {
   "name": "servc_institution_v1",
-  "version": "v_20260805_052203_525",
+  "version": "v_20260805_103528_292",
   "type": "joblib",
   "model_file": "model.bin",
   "description": "servc_institution_v1 재학습 승격본",
@@ -492,19 +492,20 @@
   "training_rows": 917629,
   "interval": {
     "calibrated": true,
-    "calibration_samples": 110116,
+    "calibration_samples": 137645,
     "quantiles": [
       0.1,
       0.9
     ],
     "target_coverage": 0.9,
-    "conformal_scale": 1.165132,
+    "conformal_scale": 1.149117,
     "available": true
   },
-  "promoted_at": "2026-08-05T05:31:11.883878",
+  "promoted_at": "2026-08-05T10:45:14.783900",
   "source_metrics": {
     "rmse": 2.6998,
     "mape": 1.4646,
     "r2": 0.6824
-  }
+  },
+  "refit_on_full": true
 }
