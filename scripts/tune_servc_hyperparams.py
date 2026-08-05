@@ -39,7 +39,6 @@ import pandas as pd  # noqa: E402
 from sklearn.metrics import r2_score  # noqa: E402
 
 from scripts.eval_servc_year_holdout import ALL_FEATURES, build_frame  # noqa: E402
-from scripts.segment_servc_models import apply_lower_limit  # noqa: E402
 from src.ml.trainer import LGB_BASE_PARAMS  # noqa: E402
 
 # 운영 학습기와 같은 목적함수입니다. 여기서 갈리면 탐색 결과가 운영에 옮겨지지
@@ -63,11 +62,26 @@ SEARCH_SPACE: dict[str, list] = {
 }
 
 
+def display_output_path(path: Path) -> Path:
+    try:
+        return path.relative_to(PROJECT_ROOT)
+    except ValueError:
+        return path
+
+
 def evaluate(train: pd.DataFrame, valid: pd.DataFrame, params: dict) -> dict[str, float]:
+    """운영과 같은 기준으로 잽니다.
+
+    예전에는 `apply_lower_limit` 로 절단한 뒤 지표를 냈습니다. 그러나 학습기
+    (`trainer.py`)도 서빙 경로도 절단을 걸지 않으므로, 탐색만 다른 기준으로 순위를
+    매기고 있었습니다. 절단 자체는 이미 측정 후 안전장치로 격하됐습니다
+    (`servc_segment_experiment_20260803.md` 2장, 개선 R2 +0.0001). `lwlt_rate` 가
+    특징으로 들어가 모델이 이미 하한율 위로 예측하기 때문입니다.
+    """
     started = time.perf_counter()
     model = lgb.LGBMRegressor(**{**LGB_BASE_PARAMS, **FIXED_PARAMS, **params})
     model.fit(train[ALL_FEATURES], train["winning_rate"])
-    pred = apply_lower_limit(model.predict(valid[ALL_FEATURES]), valid)
+    pred = model.predict(valid[ALL_FEATURES])
 
     actual = valid["winning_rate"].to_numpy(dtype=float)
     abs_err = np.abs(pred - actual)
@@ -190,7 +204,7 @@ def main() -> int:
         ),
         encoding="utf-8",
     )
-    print(f"\n전체 시행 기록: {out_path.relative_to(PROJECT_ROOT)}")
+    print(f"\n전체 시행 기록: {display_output_path(out_path)}")
     return 0
 
 
