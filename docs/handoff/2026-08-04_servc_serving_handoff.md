@@ -1,7 +1,8 @@
 # 용역 모델 서빙 배선 인수인계
 
 > **작성일**: 2026-08-04
-> **상태**: 1~4번 완료 및 main 병합
+> **갱신일**: 2026-08-05
+> **상태**: 1~4번 완료 및 main 병합. 2026-08-05 에 서빙 결함 2건 수정(6.3)
 > **병합 커밋**: `e1f7255`, `cbb9e5b`, `3dfe311`
 > **미병합 브랜치**: `docs/servc-model-handoff-0803`
 
@@ -115,6 +116,9 @@ promote("servc_institution_v1", category_code="Servc")
 | 점 추정 `num_leaves` 상향 (127, 255) | [`servc_hyperparam_search_20260804.md`](../design/servc_hyperparam_search_20260804.md) 9.3. 홀드아웃 이득이 운영에서 두 번 연속 재현되지 않음 |
 | 분위 모델 리프 조정 | 같은 문서 7장. 폭이 U자를 그리며 현행 63 이 최소 |
 | 하한율 결측 역산, 공고명 텍스트 | 이전 세션 기각 |
+| 고정 시간 창 기관 이력(30/90/365일) | [`servc_rolling_institution_20260805.md`](../design/servc_rolling_institution_20260805.md) 2장. 특징 9개를 넣어도 이득 0 |
+| 지수감쇠 기관 이력 | 같은 문서 6장. 홀드아웃 -1.79% 이나 운영 t=5.39 로 열등 |
+| 목록 API 로 하한율 보강 | [`servc_lwlt_availability_20260804.md`](../design/servc_lwlt_availability_20260804.md) 3.1. 현행 결측 227건 중 값 확보 0건 |
 | 결측 전체를 비적용으로 해석 | [`servc_lwlt_availability_20260804.md`](../design/servc_lwlt_availability_20260804.md) 2.3. 결측의 76.8%는 방법명으로 설명 불가 |
 | `subsample_freq` 1/5 | [`servc_hyperparam_search_20260804.md`](../design/servc_hyperparam_search_20260804.md) 3장. MAE 이득 0.0001%p, 0.5%p 적중 -0.04%p |
 
@@ -122,8 +126,10 @@ promote("servc_institution_v1", category_code="Servc")
 
 | 순서 | 작업 | 근거 |
 | --- | --- | --- |
-| 1 | `공고서참조` 결측 하한율을 공고 원문에서 확보 | 결측 157,579건. 구간 폭을 줄일 가장 큰 표적입니다 |
-| 2 | 물품 모델 하이퍼파라미터 | 용역만 탐색했습니다 |
+| 1 | 재발주 이력 5% 불일치의 남은 원인 | 제목 인코딩(41% 깨짐)과 `max_rows=5000` 이 후보 |
+| 2 | 홀드아웃·운영 격차의 잔여분 | 홀드아웃 0.76 대 운영 0.96. 두 측정의 모델 구성 차이가 남은 후보 |
+| 3 | 물품 모델 하이퍼파라미터 | 용역만 탐색했습니다 |
+| 4 | 공고 첨부 문서에서 하한율 확보 | 결측 157,579건. **API 경로는 전부 닫혔습니다.** 파서 구축 비용 판단 필요 |
 
 현재 `scripts/tune_servc_hyperparams.py`는 `--category` 인자를 지원하지 않고
 용역 parquet·특징·연도 홀드아웃 경로에 고정돼 있습니다. 물품 탐색을 시작할 때는
@@ -142,7 +148,50 @@ MAE 선택 기준 및 운영 경로 검증 원칙을 유지해야 합니다.
 공고 원문에서 실제 값을 가져오는 방식이어야 합니다. 상세는
 [`servc_lwlt_availability_20260804.md`](../design/servc_lwlt_availability_20260804.md)입니다.
 
-### 6.3 이번에 얻은 방법론
+### 6.3 2026-08-05 에 찾은 결함
+
+**모델이 아니라 배관이 문제였습니다.** 특징·파라미터 실험을 아무리 해도 운영이
+좋아지지 않던 이유의 상당 부분이 여기 있었습니다.
+
+| 결함 | 성격 | 운영 효과 |
+| --- | --- | --- |
+| `inst_sample_cnt` 가 서빙에서 항상 0 | 값이 아예 전달되지 않음 | **MAE -6.1%, 구간 폭 -8.3%** |
+| 재발주 이력 조회에 카테고리 필터 없음 | 다른 모집단에서 계산 | 중립 (정의 일치 목적) |
+
+앞의 것 하나가 이 세션에서 시도한 모든 특징·파라미터 실험을 합친 것보다 큽니다.
+**재학습 없이** 입력만 학습과 맞춘 결과입니다. 상세는
+[`servc_feature_parity_20260805.md`](../design/servc_feature_parity_20260805.md).
+
+찾은 방법은 단순합니다. 같은 공고에서 학습 프레임 34개 값과 서빙 프레임 34개
+값을 나란히 놓고 특징별 상관을 냈습니다
+([`scripts/audit_feature_parity_values.py`](../../scripts/audit_feature_parity_values.py)).
+
+**기존 `test_serving_feature_parity.py` 는 이 결함을 통과시켰습니다.** 키가
+있는지만 보고 값이 맞는지는 보지 않았기 때문입니다. 회귀 테스트 3건을 더해
+세션이 있을 때 조회값이 실제로 들어오는지 봅니다.
+
+### 6.4 이번에 얻은 방법론
+
+**성능이 안 오르면 모델보다 배관을 먼저 의심하십시오.** 2026-08-05 에 특징 두
+건과 파라미터 두 건을 실험해 전부 기각했는데, 정작 이득은 서빙에서 값이 하나
+빠져 있던 것을 고쳐서 나왔습니다(MAE -6.1%). 실험 전에 대조부터 했다면 하루를
+아꼈을 것입니다.
+
+**요약값 비교로 우열을 말하지 마십시오.** 1,000건 표본의 MAE 표준오차가 0.099
+인데 관측 차이가 0.0015 인 것을 읽고 방향을 단정한 적이 있습니다. 같은 공고에
+두 모델을 돌리는 쌍대 비교
+([`scripts/compare_servc_models_paired.py`](../../scripts/compare_servc_models_paired.py))
+를 쓰면 표준오차가 22배 작아지고, 그 표본이 잡을 수 있는 최소 차이를 함께
+출력하므로 "판별 불가" 를 명시할 수 있습니다.
+
+**평가 표본을 서비스 모집단과 맞추십시오.** `--require-lwlt` 로 하한율 보유
+건만 채점해 왔는데, 결측은 전체의 30% 이고 오차가 3.3배입니다. 사용자가 겪는
+나쁨이 몰린 구간을 측정에서 빼고 있었습니다.
+
+**이력 특징을 검증할 때는 전량에 붙인 뒤 잘라내십시오.** `attach_*` 는
+`shift(1).expanding()` 이라 프레임을 연도로 자르면 각 기관의 연초 건이 최소
+표본에 걸립니다. 이 함정으로 "train/serve skew 실재" 라는 오진단을 낸 적이
+있습니다.
 
 **홀드아웃은 후보를 거르는 데까지만 씁니다.** 점 추정 `num_leaves` 를 올리면
 홀드아웃 MAE 가 1.0~1.4% 좋아지는데, 운영 API 경로에서는 255 도 127 도 이득이
@@ -207,7 +256,14 @@ MAE 를 1.4% 낮췄지만 운영 경로에서는 정확도가 판별되지 않�
 
 ```bash
 git checkout main && git pull
-.venv/bin/python -m pytest tests/ -q                      # 526 passed 기대
-.venv/bin/python scripts/eval_servc_year_holdout.py       # R2 0.6968 기대
+.venv/bin/python -m pytest tests/ -q                      # 642 passed / 2 skipped 기대
 .venv/bin/python scripts/validate_agent_rules.py          # 6/6 기대
+
+# 운영 성능 기준선 (2026-08-05, 서빙 v_20260804_053225_684)
+.venv/bin/python scripts/eval_servc_api_path.py --samples 5000 --seed 42
+#   MAE 1.5807 / 0.5%p 적중 59.28% / 구간 폭 2.011 기대
+
+# 학습·서빙 특징 정합성. 어긋난 특징이 늘면 배관이 깨진 것입니다
+.venv/bin/python scripts/audit_feature_parity_values.py --samples 200
+#   재발주 이력 6종만 0.95 미만 (기지의 미해결 건)
 ```

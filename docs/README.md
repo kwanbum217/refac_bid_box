@@ -47,6 +47,8 @@ docs/
 | 제한경쟁 진단과 난수 구조 | [`servc_restricted_competition_20260803.md`](design/servc_restricted_competition_20260803.md) | 참여업체 수·복수예가 난수 분해, 세부분류 특징 배선 |
 | 손실함수와 반복 발주 이력 | [`servc_repeat_procurement_20260803.md`](design/servc_repeat_procurement_20260803.md) | Huber 채택, 재발주 이력 6종, 공고명 텍스트 기각 |
 | 예측 구간 보정 측정 | [`servc_prediction_interval_20260804.md`](design/servc_prediction_interval_20260804.md) | 분위 회귀 피복률 실패, 등각예측 보정, API·UI 노출 완료 |
+| 학습·서빙 특징 값 대조 | [`servc_feature_parity_20260805.md`](design/servc_feature_parity_20260805.md) | inst_sample_cnt 가 서빙에서 항상 0 이던 결함, 운영 MAE -6.1% |
+| 기관 이력 시간 가중 | [`servc_rolling_institution_20260805.md`](design/servc_rolling_institution_20260805.md) | 고정 창·지수감쇠 전부 기각, 평가 표본 정정 |
 | 하이퍼파라미터 탐색 | [`servc_hyperparam_search_20260804.md`](design/servc_hyperparam_search_20260804.md) | 좌표 하강 17회, 점 추정·분위 파라미터 분리, 리프 상향은 운영 실측 후 기각 |
 | 용역 하한율 가용성 | [`servc_lwlt_availability_20260804.md`](design/servc_lwlt_availability_20260804.md) | 결측의 76.8%가 방법명으로 설명 불가. 결측 축소는 유효한 경로 |
 
