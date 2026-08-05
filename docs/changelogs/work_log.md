@@ -6,6 +6,20 @@
 
 ---
 
+### 2026-08-05 | Phase 5 재학습 수동 실행 | 확인형 API와 Arq 실행 경로 연결
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - `POST /api/v1/automation/run/retrain`를 추가하고 로그인 사용자만 재학습 요청을 만들도록 구성
+  - 재학습 요청은 확인 토큰 승인 전 Arq 큐에 등록하지 않으며, 승인 후 `manual_retrain_task`만 실행
+  - `retrain_only` 실행 모드와 `retrain` 단계를 추가해 수집·지식베이스 갱신 없이 기존 재학습 파이프라인을 호출
+  - 재학습 실행 이력과 완료 결과를 기존 자동화 상태 조회 계약으로 기록
+  - 설계서 Phase 5 트리거 상태를 실제 구현 상태로 갱신
+- **관련 파일**: `src/app/api/v1/automation.py`, `src/app/services/action_catalog.py`, `src/app/services/automation_orchestrator.py`, `src/tasks/automation_tasks.py`, `src/tasks/run_mode_matrix.py`, `src/tasks/worker.py`, `tests/test_automation_api.py`, `tests/test_automation_bundle_parity.py`, `tests/test_chatbot_core.py`, `docs/design/REFACTORING_DESIGN.md`
+- **검증 결과**: `make test` (가중치 없는 체크아웃 기준), `ruff`, `validate_agent_rules.py` 통과
+
+---
+
 ### 2026-07-31 | Antigravity 정정 | 문서·데이터·핵심 로직 이식 및 SSR/HTMX 결정
 
 - **작업자**: 관범 & AI 에이전트

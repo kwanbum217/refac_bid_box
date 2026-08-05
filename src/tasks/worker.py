@@ -16,6 +16,7 @@ from src.app.core.config import settings
 from src.tasks.automation_tasks import (
     collect_bids_task,
     manual_full_task,
+    manual_retrain_task,
     preflight_check_task,
     refresh_data_task,
     update_kb_task,
@@ -33,6 +34,7 @@ class WorkerSettings:
         validate_model_task,
         refresh_data_task,
         manual_full_task,
+        manual_retrain_task,
         run_retrain_pipeline_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.

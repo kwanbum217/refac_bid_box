@@ -162,6 +162,23 @@ def _step_predict(db) -> tuple[str, dict[str, Any]]:
     )
 
 
+async def _step_retrain(db) -> tuple[str, dict[str, Any]]:
+    """기존 재학습 파이프라인을 자동화 실행 이력에 연결합니다."""
+    from src.tasks.retrain_task import run_retrain_pipeline_task
+
+    outcome = await run_retrain_pipeline_task({}, trigger_source="manual_api")
+    status = outcome.get("status", "unknown")
+    if status == "success":
+        return (
+            f"재학습 완료 (버전 {outcome.get('version', '-')}, 표본 {outcome.get('samples', 0)}건, "
+            f"판정 {outcome.get('recommendation', '-')}).",
+            outcome,
+        )
+    if status == "skipped":
+        return "재학습을 건너뛰었습니다. 학습 가능 데이터가 없습니다.", outcome
+    return f"재학습 결과: {status}", outcome
+
+
 def _check_chroma_vectors() -> int | None:
     """chroma_db/chroma.sqlite3 에서 임베딩 수를 반환한다 (원본 _check_chroma 대응)."""
     import sqlite3
@@ -280,6 +297,7 @@ STEP_RUNNERS = {
     "collect": _step_collect,
     "rag": _step_rag,
     "predict": _step_predict,
+    "retrain": _step_retrain,
     "inspect": _step_inspect,
 }
 
@@ -407,3 +425,8 @@ async def refresh_data_task(ctx, **kwargs):
 async def manual_full_task(ctx, **kwargs):
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="manual_full", **kwargs)
+
+
+async def manual_retrain_task(ctx, **kwargs):
+    kwargs.pop("run_mode", None)
+    return await run_automation_pipeline(ctx, run_mode="retrain_only", **kwargs)
