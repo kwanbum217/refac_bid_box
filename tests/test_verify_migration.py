@@ -52,17 +52,38 @@ def _configure_chroma_paths(monkeypatch, tmp_path: Path, operational_count: int 
     return source, operational
 
 
+def _stub_probe(monkeypatch, result):
+    """조회 검증은 실제 ChromaDB 클라이언트를 쓰므로 합성 sqlite 로는 못 돕니다."""
+    monkeypatch.setattr(verify_migration, "probe_chroma_query", lambda: result)
+
+
 def test_chroma_verification_preserves_source_and_allows_operational_growth(
     monkeypatch,
     tmp_path,
 ):
     _configure_chroma_paths(monkeypatch, tmp_path)
+    _stub_probe(monkeypatch, (True, "bidding_kb 질의 정상 (500건 색인)"))
 
     passed, message = verify_migration.verify_chroma_db()
 
     assert passed is True
     assert "원본 10건 보존" in message
     assert "운영 500건" in message
+
+
+def test_chroma_verification_fails_when_collection_cannot_be_queried(monkeypatch, tmp_path):
+    """행이 있는 것과 읽히는 것은 다릅니다.
+
+    2026-08-05 에 컬렉션 설정 JSON 이 비어 클라이언트가 컬렉션을 열지 못하는
+    동안에도 이 검증은 통과했습니다. sqlite 행 수만 봤기 때문입니다.
+    """
+    _configure_chroma_paths(monkeypatch, tmp_path)
+    _stub_probe(monkeypatch, (False, "KeyError: '_type'"))
+
+    passed, message = verify_migration.verify_chroma_db()
+
+    assert passed is False
+    assert "조회 불가" in message
 
 
 def test_chroma_verification_rejects_mutated_source_snapshot(monkeypatch, tmp_path):
