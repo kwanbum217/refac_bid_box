@@ -12,7 +12,8 @@ src/app/services/kb_builder.py
    기본값은 원본과 동일하게 두되 KB_MAX_DOCUMENTS 로 조정할 수 있게 했습니다.
 2. 원본은 GEMINI_API_KEY 를 요구했지만 실제 임베딩에는 사용하지 않았습니다
    (`_ = client`). ChromaDB 기본 임베딩 함수를 그대로 쓰므로 키 요구를 제거했습니다.
-   임베딩 모델은 기존 컬렉션 정합성 때문에 교체하지 않습니다.
+   임베딩은 2026-08-06 에 bge-m3 로 교체했습니다(`src/rag/embeddings.py`).
+   ChromaDB 기본 모델은 영어 전용이라 한국어 top-5 적중률이 4% 였습니다.
 """
 
 from __future__ import annotations
