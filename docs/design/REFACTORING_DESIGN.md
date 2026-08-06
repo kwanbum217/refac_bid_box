@@ -609,7 +609,7 @@ run_mode_matrix (개정):
 
 ### Phase 2 — DB/캐시/태스크 인프라 (3~5일)
 - [x] ORM 모델 이식 (기존 9개, 테이블명·컬럼 100% 유지)
-- [ ] 마이그레이션 히스토리 복사 (19개 버전) — Alembic 미도입, 스키마 직접 생성
+- [x] 마이그레이션 히스토리 — Alembic 도입 완료(리비전 8개). 원본 Django 이력은 `django_migrations` 54행으로 DB 에 그대로 보존. 스키마 일치는 `scripts/check_schema_drift.py` 로 검증(2026-08-06 실질 차이 0건)
 - [x] Redis 캐시 레이어 적용
 - [x] Celery/Arq 워커 + 태스크 이식 (G2B 수집, KB 업데이트)
 - [x] 기존 DB 연결 후 데이터 무결성 재검증
@@ -625,7 +625,7 @@ run_mode_matrix (개정):
 
 ### Phase 4 — ML 추론/RAG 최적화 (3~5일)
 - [x] 모델 싱글톤 로드 + 통합 전처리 레지스트리
-- [ ] 가중치 Git LFS / 외부 저장소 이동 — 현재 `data/model_files/` 로컬 보관
+- [ ] 가중치 Git LFS / 외부 저장소 이동 — 현재 `data/model_files/` 로컬 보관. **담당자 결정 대기.** 이 경로는 체크섬 매니페스트(G1) 대상이므로 옮길 때 매니페스트 갱신 절차를 함께 정해야 합니다
 - [x] RAG 검색 비동기화 + 결과 캐싱
 - [x] Harness 바이너리 Git 제거 + 플랫폼 중립화
 
@@ -634,9 +634,9 @@ run_mode_matrix (개정):
 - [x] **학습 데이터셋 빌더** `dataset.py` (DB join → feature matrix, 현재 부재)
 - [x] **일반화 학습기** `trainer.py` (`build_ssh_hist_premium_model.py` 승격)
 - [x] **평가 실측화**: validate_model 개선 (RMSE/MAPE/R² 실시간 산출)
-- [x] **모델 레지스트리** + 기존 4개 모델 champion 등록
+- [x] **모델 레지스트리** — 다만 champion 등록은 `quantum_leap_v25_pro` 1개뿐입니다. `ssh_hist_premium`, `v13_hybrid`, `v25` 는 서빙 슬롯(`data/model_files/`)에만 있고 레지스트리에 없어 승격·롤백 경로 밖입니다. 서빙 지표는 실측 사이드카로 채웁니다(`scripts/measure_serving_model.py`)
 - [x] **재학습 태스크** (Celery/Arq) + `run_mode_matrix`에 `retrain` 단계 추가
-- [ ] **재학습 트리거**: 주간 스케줄 + 수동 API — 수동 API만 구현됨
+- [x] **재학습 트리거**: 주간 스케줄 + 수동 API — 둘 다 구현됨. 크론은 `src/tasks/worker.py:43` (월요일 03:00), 야간 수집은 매일 02:00
 - [x] **모니터링**: 데이터/예측 드리프트 감지 (PSI)
 
 ### Phase 6 — 프론트엔드/스트리밍 (선택, 3~5일)
@@ -645,13 +645,39 @@ run_mode_matrix (개정):
 
 ### Phase 7 — 검증 및 컷오버 (2~3일)
 - [x] 원본 동작 재현·통합 테스트 — 원본 테스트 이름 기준 122/131(구조적 제외 9건), 2026-08-05 격리 환경 전량 632 passed / 2 skipped
-- [x] 성능 벤치마크 (Before/After 레이턴시 비교) — 예측 API P95 1.4ms, SSE 전체 P95 13.19초
+- [x] 성능 벤치마크 (Before/After 레이턴시 비교) — 2026-08-06 실측: 예측 API P95 19.1ms(기동 직후), SSE 첫 토큰 P95 2.66초, SSE 전체 P95 6.39초. 모두 목표 충족
   > **P95 목표 재설정 (2026-08-01)**: LLM 을 Gemini → Ollama `gemma4:e4b` 로 전환하여
   > 절대 응답 시간이 1~3초 → 11~16초로 증가. SSE 토큰 스트리밍으로 체감 레이턴시를 개선.
-  > **새 목표: 스트리밍 첫 토큰 P95 3초 이내, 전체 응답 P95 20초 이내.** 전체 응답은 통과했으나 첫 토큰 P95 11.06초는 미달이며, 목표 재설정 또는 LLM/하드웨어 결정이 필요합니다.
+  > **새 목표: 스트리밍 첫 토큰 P95 3초 이내, 전체 응답 P95 20초 이내.** 2026-08-06 기준 첫 토큰 P95 2.66초, 전체 P95 6.39초로 **둘 다 충족**했습니다. 목표 재설정도 하드웨어 투자도 필요하지 않았습니다. 원인은 프리필이 아니라 `gemma4` 의 사고 단계였습니다(`docs/design/sse_first_token_20260805.md`).
 - [x] 재학습 end-to-end 검증 (데이터→학습→평가→배포 전 주기) — 용역 917,629행 학습, Champion 승격, API 비교, 백업 롤백까지 검증
-- [ ] 크로스 플랫폼 실행 검증 (macOS 완료 / Windows Docker Desktop 실기 검증 대기)
+- [ ] 크로스 플랫폼 실행 검증 (macOS 완료 / Windows CI 3개 작업 통과 / Windows Docker Desktop 실기 검증 대기)
 - [ ] 컷오버 + 사후 모니터링
+
+### 2026-08-06 로드맵 실사
+
+표시와 실제가 어긋난 항목이 있어 코드·DB 를 직접 확인하고 정정했습니다. 정정 내역은 위 각 항목의 주석에 있습니다.
+
+| 확인 항목 | 방법 | 결과 |
+| --- | --- | --- |
+| Alembic 도입 | `alembic current` | 리비전 8개, head 단일 |
+| 원본 마이그레이션 이력 | `django_migrations` 조회 | 54행 보존 |
+| 스키마 정합성 | `scripts/check_schema_drift.py` | 실질 차이 0건 |
+| 주간 재학습 크론 | `src/tasks/worker.py` | 월 03:00 배선됨 |
+| 레지스트리 champion | `ml_registry` 탐색 | 1개만 등록 (4개 아님) |
+
+**컷오버를 막는 조건은 Windows 호스트 Docker Compose 실기 검증 하나만 남았습니다.** 나머지 성능·무손실·재현 조건은 모두 충족했습니다.
+
+#### 운영 DB 에 남은 분석 잔여물
+
+관리 밖 테이블 18개를 확인했습니다. 16개는 Django 잔존 테이블(`auth_*`, `django_*`, `account_*`, `socialaccount_*`)이고 G1 원칙상 보존 대상입니다. `alembic_version` 은 정상입니다.
+
+나머지 하나가 문제입니다.
+
+| 테이블 | 행 수 | 크기 | 출처 |
+| --- | ---: | ---: | --- |
+| `servc_inst_verify` | 1,033,106 | 553.1 MB | `scripts/verify_servc_institution.py` 의 작업 테이블 |
+
+일회성 분석 스크립트가 만든 중간 산출물이 운영 DB 에 남아 있습니다. 업무 데이터가 아니고 ORM·백업 매니페스트 어디에도 없습니다. **삭제는 담당자 확인이 필요합니다.** 재생성 비용은 스크립트 재실행 한 번입니다.
 
 ---
 
