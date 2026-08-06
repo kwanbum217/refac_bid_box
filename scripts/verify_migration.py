@@ -105,10 +105,15 @@ def verify_checksum_records(
 
 def verify_model_weights() -> tuple[bool, str]:
     print("[1/4] ML 가중치 4종 무결성 검증...")
-    model_root = ASSET_ROOT / "data" / "model_files"
-    backup_root = ASSET_ROOT / "data" / "model_backups"
+    # 가중치 위치는 설정으로 옮길 수 있으므로(MODEL_FILES_DIR) 여기서도 같은
+    # 환경변수를 따릅니다. 경로를 옮긴 뒤 이 스크립트만 옛 자리를 보면
+    # 무결성 검증이 조용히 파일 누락으로 떨어집니다.
+    model_root = Path(os.environ.get("MODEL_FILES_DIR", ASSET_ROOT / "data" / "model_files"))
+    backup_root = Path(
+        os.environ.get("MODEL_BACKUPS_DIR", ASSET_ROOT / "data" / "model_backups")
+    )
     if not model_root.exists():
-        return False, "data/model_files/ 없음 (scripts/import_data_assets.py 실행 필요)"
+        return False, f"{model_root} 없음 (scripts/sync_model_files.py import 실행 필요)"
 
     try:
         manifest = load_manifest()

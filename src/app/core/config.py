@@ -54,7 +54,16 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
     GEMINI_API_KEY: str = ""
     CHROMA_DB_PATH: str = str(PROJECT_ROOT / "chroma_db")
+    # 가중치 저장 위치의 정본입니다. src/ml/model_registry.py 와
+    # src/ml/promotion.py 가 이 값을 읽습니다. 외부 볼륨이나 다른 디스크로
+    # 옮길 때는 이 환경변수만 바꾸면 되며, 코드 수정은 필요하지 않습니다.
     MODEL_FILES_DIR: str = str(PROJECT_ROOT / "data" / "model_files")
+    # 승격 시 직전 서빙본을 옮겨 두는 곳입니다. verify_migration.py 가 원본
+    # 기준선을 여기서 대조하므로(G1) 서빙 경로와 함께 옮겨야 합니다.
+    MODEL_BACKUPS_DIR: str = str(PROJECT_ROOT / "data" / "model_backups")
+    # 서빙 모델 실측 지표 사이드카. 승격 게이트가 champion 지표를 여기서
+    # 읽으므로 가중치와 한 묶음으로 배포해야 합니다.
+    MODEL_METRICS_DIR: str = str(PROJECT_ROOT / "data" / "model_metrics")
 
     # ML MLOps Directory
     MODEL_REGISTRY_DIR: str = "ml_registry"

@@ -130,7 +130,7 @@ Bandit 17건도 함께 해소했고, `.gitattributes` 가 아예 없어 Windows 
 | 항목 | 내용 |
 | --- | --- |
 | ~~`servc_inst_verify` 553MB~~ | **2026-08-06 담당자 승인으로 삭제 완료.** 삭제 후 `verify_migration.py` 4/4 통과, 테이블 30개. 재생성은 `verify_servc_institution.py` 재실행 한 번 |
-| 가중치 외부 저장소 이동 | Phase 4 미완. `data/model_files/` 는 체크섬 매니페스트 대상이라 옮길 때 매니페스트 갱신 절차를 함께 정해야 합니다 |
+| ~~가중치 외부 저장소 이동~~ | **2026-08-06 완료.** 설계서 전제(Git 내 41MB)가 이미 해소된 상태였고, 실제 결함은 배포 경로 부재였습니다. `scripts/sync_model_files.py` 신설, 경로 3종 설정 단일화. Git LFS·MinIO 는 비용 대비 이득으로 기각 |
 | ~~`MLOPS_WEBHOOK_URL`~~ | **2026-08-06 설정 완료.** Slack Incoming Webhook 발급 후 실환경 수신 확인(HTTP 200, 채널 도달). 남은 것은 웹훅 URL 재발급 하나이며 담당자가 나중에 처리하기로 했습니다 |
 
 ### 4.2 장비가 필요한 것

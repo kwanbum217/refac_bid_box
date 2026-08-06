@@ -20,22 +20,24 @@ from typing import Any
 
 import joblib
 
+from src.app.core.config import settings
 from src.app.core.timeutil import utcnow
 from src.ml.features import unservable_features
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-SERVING_ROOT = PROJECT_ROOT / "data" / "model_files"
+# 경로 정본은 settings 입니다 (src/app/core/config.py).
+SERVING_ROOT = Path(settings.MODEL_FILES_DIR)
 REGISTRY_ROOT = PROJECT_ROOT / "ml_registry"
 # 백업은 서빙 루트 밖에 둡니다. 안에 두면 ModelRegistry 가 디렉터리를 모두
 # 모델로 훑으므로 백업본까지 로드해 같은 모델이 두 번 등록됩니다.
-BACKUP_ROOT = PROJECT_ROOT / "data" / "model_backups"
+BACKUP_ROOT = Path(settings.MODEL_BACKUPS_DIR)
 
 # 서빙 모델 실측 지표를 담는 사이드카.
 #
 # 원본에서 이식한 4개 모델(v25, quantum_leap_v25_pro, ssh_hist_premium,
 # v13_hybrid)의 metadata.json 은 **체크섬 매니페스트에 포함돼 있습니다.**
 # 거기에 지표를 써넣으면 G1 무손실 검증이 깨지므로 별도 파일에 둡니다.
-METRICS_ROOT = PROJECT_ROOT / "data" / "model_metrics"
+METRICS_ROOT = Path(settings.MODEL_METRICS_DIR)
 
 # 승격 필수 조건. 설계서 7장을 코드로 옮긴 것입니다.
 # 필수 4(어느 폴드도 R2 > 0.99 아닐 것)는 ssh_hist_premium 타깃 누수 사고의
