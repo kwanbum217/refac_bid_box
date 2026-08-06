@@ -15,7 +15,7 @@
 
 - **인수인계 문서**: [`docs/handoff/2026-07-31_skill_system_handoff.md`](docs/handoff/2026-07-31_skill_system_handoff.md)
 - **정합성 검증 스크립트**: [`scripts/validate_agent_rules.py`](scripts/validate_agent_rules.py)
-- **작업 완료**: Phase 0~7 대응 8개 스킬 구축 (`.agents/skills/`, `.claude/skills/`, `.opencode/skills/`, `.cursor/rules/`, `.antigravity/rules.md`)
+- **작업 완료**: Phase 0~7 대응 스킬과 상시 스킬 합계 **11개** 구축 (`.agents/skills/`, `.claude/skills/`, `.opencode/skills/`, `.cursor/rules/`, `.antigravity/rules.md`)
 
 ---
 
@@ -118,6 +118,7 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 | `application-migration` | Phase 3 | `.agents/skills/application-migration/` | 백엔드 API 이식, 거대 모듈 분할, async/await |
 | `inference-rag-opt` | Phase 4 | `.agents/skills/inference-rag-opt/` | 싱글톤 로드, 가중치 외부화, RAG 캐싱 |
 | `retraining-pipeline` | Phase 5 | `.agents/skills/retraining-pipeline/` | 단일 특징 features.py, trainer, ml_registry, PSI 모니터링 |
+| `servc-model-tuning` | 상시 | `.agents/skills/servc-model-tuning/` | 용역 모델 성능 개선. 기각 목록, 쌍대 검정 기준, 측정 함정 |
 | `frontend-streaming` | Phase 6 | `.agents/skills/frontend-streaming/` | SSE/WebSocket 스트리밍, HTMX/React 동적 UI |
 | `validation-cutover` | Phase 7 | `.agents/skills/validation-cutover/` | E2E, P95 레이턴시 벤치마크, 크로스플랫폼 컷오버 |
 | `project-orchestrator` | 운영 | `.agents/skills/project-orchestrator/` | 도커 컨테이너 통째 시동, 헬스체크, 무손실 검증, 레이턴시 벤치마크 자동 오케스트레이션 |

@@ -1,0 +1,17 @@
+---
+description: 용역 모델 성능 개선 (기각 목록, 쌍대 검정 기준, 측정 함정)
+globs: scripts/*servc*.py,scripts/compare_servc_models_paired.py,scripts/promote_model.py,ml_registry/servc_institution_v1/**
+alwaysApply: false
+---
+
+# 11-servc-model-tuning
+
+해당 경로 작업 시 `.agents/skills/servc-model-tuning/SKILL.md`를 먼저 읽으십시오.
+
+핵심 계약:
+- **착수 전 기각 목록을 먼저 확인합니다.** 분리 모델, 하한율 절단, 공고명 TF-IDF, 참가자 수 이력, `num_leaves` 127, 하한율 결측 복원, 레짐 보정은 실측으로 기각됐습니다
+- 홀드아웃 개선만으로 승격하지 않습니다. `compare_servc_models_paired.py` 로 **운영 경로 쌍대 검정**을 거칩니다. 요약값 비교로 내린 판단이 네 번 뒤집혔습니다
+- champion 비교 대상은 **서빙 슬롯**의 지표입니다. 레지스트리 최신본은 승격된 적 없는 실험물일 수 있습니다
+- 시계열 분할만 씁니다. 무작위 분할은 미래 정보가 샙니다
+- 측정 환경을 의심합니다. 버퍼 풀 오염, in-sample 낙관, 선택 편향, 예열 차이가 실제로 잘못된 결론을 냈습니다
+- 기각도 근거와 함께 문서화합니다
