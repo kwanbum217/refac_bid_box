@@ -47,6 +47,14 @@ REQUEST_FIELDS = {
 }
 
 
+def _request_from_row(row: dict, category: str) -> dict:
+    """parquet 원본을 보존하면서 구 모델 별칭도 함께 채웁니다."""
+    request = dict(row)
+    request.update({key: row.get(column) for key, column in REQUEST_FIELDS.items()})
+    request["category"] = category
+    return request
+
+
 def _load_holdout(category: str, since: str, sample: int, seed: int) -> pd.DataFrame:
     path = FEATURE_STORE / f"dataset_{category}.parquet"
     if not path.exists():
@@ -75,7 +83,13 @@ def _score(predictions: np.ndarray, actual: np.ndarray) -> dict:
     }
 
 
-def measure(category: str, since: str, sample: int, seed: int) -> tuple[dict, int, int]:
+def measure(
+    model_id: str,
+    category: str,
+    since: str,
+    sample: int,
+    seed: int,
+) -> tuple[dict, int, int]:
     """운영 경로로 예측해 지표를 냅니다. 실패한 건수도 함께 돌려줍니다."""
     from src.app.core.db import SessionLocal
     from src.ml.predictor import SingletonPredictor
@@ -88,10 +102,9 @@ def measure(category: str, since: str, sample: int, seed: int) -> tuple[dict, in
     failed = 0
     try:
         for row in frame.to_dict("records"):
-            request = {key: row.get(column) for key, column in REQUEST_FIELDS.items()}
-            request["category"] = category
+            request = _request_from_row(row, category)
             try:
-                result = predictor.predict(request, session=db)
+                result = predictor.predict(request, model_id=model_id, session=db)
             # 한 건이 실패해도 전체 측정을 멈추지 않습니다. 실패 건수를 함께 보고합니다.
             except Exception:
                 failed += 1
@@ -129,7 +142,13 @@ def main() -> int:
     if existing:
         print(f"  기존 지표 {existing}")
 
-    metrics, scored, failed = measure(args.category, args.since, args.sample, args.seed)
+    metrics, scored, failed = measure(
+        args.model,
+        args.category,
+        args.since,
+        args.sample,
+        args.seed,
+    )
     print(f"  표본 {scored:,} (실패 {failed})  기준 {args.since} 이후 {args.category}")
     print(
         "  RMSE {rmse:.4f} / MAE {mae:.4f} / MAPE {mape:.4f}% / R2 {r2:.4f} / 편향 {bias:+.4f}".format(

@@ -56,10 +56,11 @@ class SingletonPredictor:
             )
 
             preferred = _preferred_model_for_features(features)
+            selected = model_id or preferred
             if not ModelRegistry.available_models():
                 ModelRegistry.load_all_models()
-            predicted_rate = float(predict_optimal_price(None, features)) * 100.0
-            model_version = preferred
+            predicted_rate = float(predict_optimal_price(selected, features)) * 100.0
+            model_version = selected
 
         presumed = float(features.get("presumed_price") or features.get("presmpt_prce") or 0.0)
         predicted_price = presumed * (predicted_rate / 100.0)

@@ -52,7 +52,8 @@ docs/
 | 전량 재적합 결함 | [`servc_refit_on_full_20260805.md`](design/servc_refit_on_full_20260805.md) | 서빙 모델이 최신 20% 미학습. 편향 없는 확인에서 MAE -7.12% |
 | 학습·서빙 특징 값 대조 | [`servc_feature_parity_20260805.md`](design/servc_feature_parity_20260805.md) | inst_sample_cnt 가 서빙에서 항상 0 이던 결함, 운영 MAE -6.1% |
 | 기관 이력 시간 가중 | [`servc_rolling_institution_20260805.md`](design/servc_rolling_institution_20260805.md) | 고정 창 기각 유지, 전량 재적합 후 지수감쇠 재판정 |
-| 용역 기각 후보 재검증 | [`servc_unbiased_candidate_recheck_20260805.md`](design/servc_unbiased_candidate_recheck_20260805.md) | 리프 255와 지수감쇠 배선·재학습·운영 쌍대 검증 |
+| 용역 기각 후보 재검증 | [`servc_unbiased_candidate_recheck_20260805.md`](design/servc_unbiased_candidate_recheck_20260805.md) | 리프 255와 지수감쇠 배선·재학습·운영 쌍대 검증·승격 |
+| 물품 모델 재학습 | [`thng_retraining_20260806.md`](design/thng_retraining_20260806.md) | 34특징 LightGBM 재학습·운영 쌍대 검증·승격 |
 | 하이퍼파라미터 탐색 | [`servc_hyperparam_search_20260804.md`](design/servc_hyperparam_search_20260804.md) | 좌표 하강 17회, 점 추정·분위 파라미터 분리, 리프 상향은 운영 실측 후 기각 |
 | 용역 하한율 가용성 | [`servc_lwlt_availability_20260804.md`](design/servc_lwlt_availability_20260804.md) | 결측의 76.8%가 방법명으로 설명 불가. 결측 축소는 유효한 경로 |
 

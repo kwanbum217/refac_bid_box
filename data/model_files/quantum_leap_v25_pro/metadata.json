@@ -1,16 +1,101 @@
 {
-  "name": "Quantum Leap V25 Pro",
-  "version": "25.1",
-  "type": "quantum_leap_rule",
-  "description": "Quantum Leap V25 Pro는 물품(Thng) 공고를 대상으로 하는 규칙형 보조 예측 모델입니다. 공고명, 공고기관, 기준금액과 시나리오 모드를 조합해 물품 공고의 가격대별 위험 구간을 빠르게 보정합니다.",
+  "name": "quantum_leap_v25_pro",
+  "version": "v_20260806_043408_749",
+  "type": "joblib",
+  "model_file": "model.bin",
+  "description": "quantum_leap_v25_pro 재학습 승격본",
+  "specialization": "lightgbm",
   "specialized_categories": [
     "Thng"
   ],
-  "specialization": "물품 공고 보조 모델",
   "required_features": [
-    "title",
-    "agency_name",
-    "presmpt_prce",
-    "scenario_mode"
-  ]
+    "log_price",
+    "month_sin",
+    "month_cos",
+    "weekday_sin",
+    "weekday_cos",
+    "notice_duration",
+    "inst_hist_rate",
+    "inst_sample_cnt",
+    "lwlt_rate",
+    "lwlt_rate_missing",
+    "is_post_regime_shift",
+    "notice_amt_ratio",
+    "is_over_notice_amt",
+    "tech_ablt_evl_rt",
+    "bid_prce_evl_rt",
+    "tot_prdprc_num",
+    "drwt_prdprc_num",
+    "is_repeat",
+    "repeat_cnt",
+    "repeat_hist_rate",
+    "repeat_prev_rate",
+    "repeat_hist_std",
+    "repeat_days_since",
+    "srvce_div_nm",
+    "lrg_clsfc_nm",
+    "cntrct_mthd_nm",
+    "prearng_mthd",
+    "sucsfbid_mthd_nm",
+    "mid_clsfc_nm",
+    "clsfc_nm",
+    "ntce_kind_nm",
+    "bid_methd_nm",
+    "intrbid_yn",
+    "ppsw_gnrl_srvce_yn"
+  ],
+  "category_levels": {
+    "srvce_div_nm": [
+      "미상"
+    ],
+    "lrg_clsfc_nm": [
+      "미상"
+    ],
+    "cntrct_mthd_nm": [
+      "미상"
+    ],
+    "prearng_mthd": [
+      "미상"
+    ],
+    "sucsfbid_mthd_nm": [
+      "미상"
+    ],
+    "mid_clsfc_nm": [
+      "미상"
+    ],
+    "clsfc_nm": [
+      "미상"
+    ],
+    "ntce_kind_nm": [
+      "미상"
+    ],
+    "bid_methd_nm": [
+      "미상"
+    ],
+    "intrbid_yn": [
+      "미상"
+    ],
+    "ppsw_gnrl_srvce_yn": [
+      "미상"
+    ]
+  },
+  "training_rows": 784266,
+  "interval": {
+    "calibrated": true,
+    "calibration_samples": 117640,
+    "quantiles": [
+      0.1,
+      0.9
+    ],
+    "target_coverage": 0.9,
+    "conformal_scale": 1.138442,
+    "available": true
+  },
+  "promoted_at": "2026-08-06T04:46:13.474834",
+  "source_metrics": {
+    "rmse": 4.7659,
+    "mape": 3.4815,
+    "r2": 0.3583
+  },
+  "refit_on_full": true
 }

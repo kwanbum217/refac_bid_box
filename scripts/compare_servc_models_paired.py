@@ -68,7 +68,17 @@ def predict_one(session, bid_id: int, model_id: str) -> dict | None:
 
 def paired_stats(diff: np.ndarray, label: str, lower_is_better: bool = True) -> dict:
     """쌍대 차이의 평균과 표준오차를 냅니다. diff = challenger - base 입니다."""
+    diff = np.asarray(diff, dtype=float)
+    diff = diff[np.isfinite(diff)]
     n = len(diff)
+    if n == 0:
+        return {
+            "지표": label,
+            "평균 차이": np.nan,
+            "표준오차": np.nan,
+            "t": np.nan,
+            "판정": "측정 불가",
+        }
     mean = float(diff.mean())
     se = float(diff.std(ddof=1) / np.sqrt(n)) if n > 1 else float("inf")
     t = mean / se if se > 0 else 0.0
@@ -94,6 +104,7 @@ def main() -> int:
     parser.add_argument("--samples", type=int, default=1000)
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--category", default="Servc", help="업무구분 코드")
     parser.add_argument("--require-lwlt", action="store_true", help="하한율 보유 건만 채점")
     parser.add_argument(
         "--model-root",
@@ -101,6 +112,10 @@ def main() -> int:
         help="비교용 모델 디렉터리 루트. 지정하면 이 프로세스에서만 사용",
     )
     args = parser.parse_args()
+
+    if args.require_lwlt and args.category != "Servc":
+        print("--require-lwlt는 Servc 평가에서만 지원합니다.")
+        return 1
 
     if args.model_root:
         model_root = Path(args.model_root).resolve()
@@ -113,7 +128,7 @@ def main() -> int:
     session = SessionLocal()
     try:
         pool = args.samples * 4 if args.require_lwlt else args.samples
-        frame = collect(session, args.year, pool, args.seed)
+        frame = collect(session, args.year, pool, args.seed, args.category)
         if frame.empty:
             print("표본이 없습니다. DB 연결과 연도를 확인하십시오.")
             return 1
@@ -129,7 +144,10 @@ def main() -> int:
             frame = frame[frame["bid_id"].isin(keep)]
             print(f"하한율 보유 건만 사용합니다 ({len(frame):,}건).")
 
-        print(f"{args.year}년 용역 {len(frame):,}건에 두 모델을 같은 순서로 호출합니다.")
+        print(
+            f"{args.year}년 {args.category} {len(frame):,}건에 "
+            "두 모델을 같은 순서로 호출합니다."
+        )
         print(f"  base       {args.base}")
         print(f"  challenger {args.challenger}\n")
 
