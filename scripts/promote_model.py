@@ -41,6 +41,7 @@ from src.ml.promotion import (  # noqa: E402
     RollbackUnavailable,
     check_promotion_criteria,
     latest_version,
+    load_serving_metrics,
     promote,
     rollback,
 )
@@ -94,10 +95,13 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     for model_name in models:
         serving_meta = _read_metadata(serving_dir / model_name)
+        # 원본 이식 모델은 metadata.json 이 체크섬 대상이라 지표를 못 넣습니다.
+        # 실측 사이드카까지 함께 봐야 재학습 게이트와 같은 값을 보여 줍니다.
+        _, serving_metrics = load_serving_metrics(model_name, serving_dir=serving_dir)
         print(f"\n[{model_name}]")
         print(
             f"  서빙   {serving_meta.get('version') or '없음':<28}"
-            f" {_format_metrics(serving_meta.get('source_metrics'))}"
+            f" {_format_metrics(serving_metrics)}"
         )
 
         try:

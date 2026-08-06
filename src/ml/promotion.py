@@ -30,6 +30,13 @@ REGISTRY_ROOT = PROJECT_ROOT / "ml_registry"
 # 모델로 훑으므로 백업본까지 로드해 같은 모델이 두 번 등록됩니다.
 BACKUP_ROOT = PROJECT_ROOT / "data" / "model_backups"
 
+# 서빙 모델 실측 지표를 담는 사이드카.
+#
+# 원본에서 이식한 4개 모델(v25, quantum_leap_v25_pro, ssh_hist_premium,
+# v13_hybrid)의 metadata.json 은 **체크섬 매니페스트에 포함돼 있습니다.**
+# 거기에 지표를 써넣으면 G1 무손실 검증이 깨지므로 별도 파일에 둡니다.
+METRICS_ROOT = PROJECT_ROOT / "data" / "model_metrics"
+
 # 승격 필수 조건. 설계서 7장을 코드로 옮긴 것입니다.
 # 필수 4(어느 폴드도 R2 > 0.99 아닐 것)는 ssh_hist_premium 타깃 누수 사고의
 # 재발 방지 장치입니다. 그 모델은 5폴드 중 3개가 R2 0.9999999999999998 이었습니다.
@@ -171,6 +178,76 @@ def promote(
         "required_features": serving_metadata["required_features"],
         "category_levels": len(serving_metadata["category_levels"]),
     }
+
+
+def load_serving_metrics(
+    model_name: str,
+    *,
+    serving_dir: Path | str | None = None,
+    metrics_dir: Path | str | None = None,
+) -> tuple[str, dict]:
+    """서빙 중인 모델의 버전과 지표를 돌려줍니다.
+
+    지표는 두 곳에서 찾습니다.
+
+    1. 서빙 metadata.json 의 `source_metrics` — 승격이 기록합니다
+    2. 사이드카 `data/model_metrics/<모델>.json` — 실측이 기록합니다
+
+    사이드카는 **버전이 일치할 때만** 씁니다. 모델이 교체됐는데 옛 측정값을
+    물려주면 없는 근거로 승격을 판단하게 됩니다.
+    """
+    # 기본값을 인자 자리에 두면 정의 시점에 고정되어 테스트가 경로를 갈아끼울
+    # 수 없습니다. 호출 시점에 모듈 전역을 다시 읽습니다.
+    serving_dir = SERVING_ROOT if serving_dir is None else serving_dir
+    metrics_dir = METRICS_ROOT if metrics_dir is None else metrics_dir
+
+    meta_path = Path(serving_dir) / model_name / "metadata.json"
+    if not meta_path.exists():
+        return "", {}
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return "", {}
+
+    version = str(meta.get("version") or "")
+    metrics = meta.get("source_metrics") or meta.get("metrics") or {}
+    if metrics:
+        return version, dict(metrics)
+
+    sidecar = Path(metrics_dir) / f"{model_name}.json"
+    if not sidecar.exists():
+        return version, {}
+    try:
+        measured = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return version, {}
+
+    if str(measured.get("version") or "") != version:
+        return version, {}
+    return version, dict(measured.get("metrics") or {})
+
+
+def save_serving_metrics(
+    model_name: str,
+    version: str,
+    metrics: dict,
+    *,
+    detail: dict | None = None,
+    metrics_dir: Path | str | None = None,
+) -> Path:
+    """실측 지표를 사이드카에 기록합니다."""
+    root = Path(METRICS_ROOT if metrics_dir is None else metrics_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{model_name}.json"
+    payload = {
+        "model_name": model_name,
+        "version": version,
+        "metrics": metrics,
+        "measured_at": utcnow().isoformat(),
+        **(detail or {}),
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 class RollbackUnavailable(RuntimeError):

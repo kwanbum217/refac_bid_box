@@ -1,0 +1,17 @@
+{
+  "model_name": "quantum_leap_v25_pro",
+  "version": "25.1",
+  "metrics": {
+    "rmse": 6.376873656031366,
+    "mae": 5.494171583333332,
+    "mape": 5.964795597444576,
+    "r2": -0.21327942898984853,
+    "bias": -0.07735597708333304
+  },
+  "measured_at": "2026-08-06T03:53:16.197630",
+  "category": "Thng",
+  "holdout_since": "2026-01-01",
+  "samples": 3000,
+  "failed": 0,
+  "measured_via": "SingletonPredictor.predict (운영 경로)"
+}
