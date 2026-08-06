@@ -35,19 +35,55 @@ logger = logging.getLogger(__name__)
 # 데이터셋 parquet 캐시 위치. build_training_dataset 의 기본값과 같습니다.
 DEFAULT_FEATURE_STORE_DIR = "data/feature_store"
 
-# champion 이 없을 때 쓰는 비교 기준. 첫 학습이 무조건 승격되지 않도록
-# 의도적으로 낮은 난이도가 아닌 값을 둡니다. 담당자가 조정합니다.
-COLD_START_CHAMPION_METRICS = {"rmse": float("inf"), "mape": float("inf"), "r2": float("-inf")}
+# 비교 대상을 찾지 못했을 때의 표시입니다. 예전에는 여기에 rmse=inf 를 두어
+# **어떤 챌린저든 자동으로 이기게** 되어 있었습니다. 주석은 "무조건 승격되지
+# 않도록" 이라 적혀 있었으나 동작은 정반대였습니다. 비교할 대상이 없으면
+# 승격을 권할 근거도 없으므로, 자동 승격이 아니라 기각으로 처리합니다.
+NO_CHAMPION = "__no_champion__"
+
+
+def _serving_metrics(model_name: str) -> tuple[str, dict] | None:
+    """실제 서빙 중인 모델의 버전과 지표를 읽습니다.
+
+    **레지스트리가 아니라 서빙 슬롯을 봅니다.** 재학습이 레지스트리의 최신
+    버전을 champion 으로 삼으면, 승격된 적 없는 실험 아티팩트와 비교하게
+    됩니다. 2026-08-06 에 quantum_leap_v25_pro 가 실제로 그 상태였습니다.
+    서빙본은 25.1 인데 비교 대상은 표본 2개짜리 R2 -35999 버전이었고,
+    그 결과 어떤 챌린저든 승격 권고를 받았습니다.
+    """
+    from src.ml.promotion import SERVING_ROOT
+
+    meta_path = SERVING_ROOT / model_name / "metadata.json"
+    if not meta_path.exists():
+        return None
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    # 승격 시 기록되는 키는 source_metrics 입니다 (build_serving_metadata).
+    # metrics 는 원본에서 이식한 가중치가 쓰던 형태라 함께 봅니다.
+    metrics = meta.get("source_metrics") or meta.get("metrics") or {}
+    return str(meta.get("version") or ""), metrics
 
 
 def _load_champion_metrics(model_name: str, registry_dir: str = "ml_registry") -> tuple[str, dict]:
-    """registry 에서 현재 champion 의 지표를 읽습니다.
+    """현재 서빙 중인 모델의 지표를 읽습니다.
 
-    champion 표시가 없으면 가장 최근 버전을 기준으로 삼습니다. 없으면 cold start.
+    서빙본에 지표가 없으면 비교가 불가능하다는 뜻이며, 레지스트리의 다른
+    버전으로 대체하지 않습니다. 대체하면 서빙본과 무관한 근거로 승격을
+    권하게 됩니다.
     """
+    serving = _serving_metrics(model_name)
+    if serving is not None:
+        version, metrics = serving
+        if metrics:
+            return version, metrics
+        # 서빙본은 있는데 지표가 없습니다. 원본에서 이식한 가중치가 이렇습니다.
+        return version or NO_CHAMPION, {}
+
     base = Path(registry_dir) / model_name
     if not base.exists():
-        return "", dict(COLD_START_CHAMPION_METRICS)
+        return NO_CHAMPION, {}
 
     versions = sorted((p for p in base.iterdir() if p.is_dir()), reverse=True)
     for version_dir in versions:
@@ -61,7 +97,8 @@ def _load_champion_metrics(model_name: str, registry_dir: str = "ml_registry") -
         if meta.get("status") == "champion" and meta.get("metrics"):
             return str(meta.get("version") or version_dir.name), meta["metrics"]
 
-    # champion 표시가 없으면 지표를 가진 최신 버전을 비교 대상으로 씁니다.
+    # champion 표시가 명시된 버전만 씁니다. "지표를 가진 최신 버전" 으로
+    # 대체하면 승격된 적 없는 실험 아티팩트가 비교 대상이 됩니다.
     for version_dir in versions:
         meta_path = version_dir / "metadata.json"
         if not meta_path.exists():
@@ -70,10 +107,7 @@ def _load_champion_metrics(model_name: str, registry_dir: str = "ml_registry") -
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
-        if meta.get("metrics"):
-            return str(meta.get("version") or version_dir.name), meta["metrics"]
-
-    return "", dict(COLD_START_CHAMPION_METRICS)
+    return NO_CHAMPION, {}
 
 
 def _record(db, *, trigger_source: str, champion: str, challenger: str, status: str, summary: dict):
@@ -138,7 +172,21 @@ async def run_retrain_pipeline_task(
         metadata = category_trainer.train_and_register(df_train)
         challenger_metrics = metadata["metrics"]
 
-        verdict = compare_champion_vs_challenger(champion_metrics, challenger_metrics)
+        if champion_metrics:
+            verdict = compare_champion_vs_challenger(champion_metrics, challenger_metrics)
+        else:
+            # 비교 대상이 없으면 승격을 권할 근거도 없습니다. 최초 승격은
+            # 담당자가 지표를 확인하고 명시적으로 수행합니다.
+            verdict = {
+                "champion_metrics": {},
+                "challenger_metrics": challenger_metrics,
+                "recommendation": "REJECT_CHALLENGER",
+                "rejected_reason": (
+                    "서빙 중인 모델에 지표가 없어 비교할 수 없습니다. "
+                    "최초 승격은 담당자가 직접 판단하십시오."
+                ),
+                "champion_comparable": False,
+            }
 
         # 홀드아웃을 뗄 수 없었던 학습의 지표는 학습 구간을 그대로 잰 값이라
         # 항상 좋게 나옵니다. 그 값으로 승격시키면 게이트가 무의미해집니다.
@@ -172,6 +220,7 @@ async def run_retrain_pipeline_task(
             samples=metadata["samples_count"],
             category=category_code,
             holdout_is_overfit=bool(metadata.get("holdout_is_overfit")),
+            champion_comparable=verdict.get("champion_comparable", True),
         )
         return {
             "status": "success",

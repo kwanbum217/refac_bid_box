@@ -402,9 +402,24 @@ async def test_pipeline_does_not_write_default_feature_store(isolated_db, monkey
 
 @pytest.mark.asyncio
 async def test_champion_is_read_before_training(isolated_db, monkeypatch, tmp_path):
-    """학습 후에 champion 을 읽으면 방금 만든 챌린저와 자기 자신을 비교합니다."""
+    """챌린저가 자기 자신과 비교되면 안 됩니다.
+
+    2026-08-06 이후 champion 은 서빙 슬롯에서 읽습니다. 학습이 서빙 슬롯을
+    건드리지 않으므로 자기 자신과 비교되는 사고는 구조적으로 막히지만,
+    비교 대상이 서빙본이라는 계약 자체를 여기서 고정합니다.
+    """
+    import json
+
     from src.ml.trainer import ModelTrainer as _Trainer
     from src.tasks import retrain_task
+
+    serving = tmp_path / "serving" / "servc_institution_v1"
+    serving.mkdir(parents=True)
+    (serving / "metadata.json").write_text(
+        json.dumps({"version": "v_serving", "source_metrics": {"rmse": 2.7, "mape": 1.5, "r2": 0.68}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("src.ml.promotion.SERVING_ROOT", tmp_path / "serving")
 
     _seed(isolated_db, count=80, with_announcement=False)
     monkeypatch.setattr(retrain_task, "SessionLocal", lambda: isolated_db)
@@ -418,9 +433,9 @@ async def test_champion_is_read_before_training(isolated_db, monkeypatch, tmp_pa
         {}, category_code="Servc", require_announcement=False, output_dir=str(tmp_path)
     )
 
-    assert first["champion_version"] == ""
-    assert second["champion_version"] == first["version"]
-    assert second["champion_version"] != second["version"]
+    for result in (first, second):
+        assert result["champion_version"] == "v_serving"
+        assert result["champion_version"] != result["version"]
 
 
 def test_versions_do_not_collide_within_a_second(tmp_path):

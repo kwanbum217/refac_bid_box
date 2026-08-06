@@ -90,6 +90,7 @@ async def notify_retrain_result(
     samples: int,
     category: str | None = None,
     holdout_is_overfit: bool = False,
+    champion_comparable: bool = True,
 ) -> None:
     """재학습 판정 결과를 알립니다.
 
@@ -101,6 +102,22 @@ async def notify_retrain_result(
     지표 자체를 믿을 수 없다는 신호이며, 표본 부족은 수집 쪽 문제입니다.
     """
     label = f"{category or '전체'} 모델"
+
+    # 비교 대상이 없어 기각된 것은 정상 기각이 아닙니다. 게이트가 판단을
+    # 못 한 상태이며, 담당자가 직접 봐야 진도가 나갑니다.
+    if not champion_comparable:
+        await notify(
+            f"{label} 재학습 승격 판정 불가",
+            [
+                "서빙 중인 모델에 지표가 없어 챌린저와 비교할 수 없습니다.",
+                f"challenger {challenger_version}  {_format_metrics(challenger_metrics)}",
+                f"표본 {samples:,} / 트리거 {trigger_source}",
+                "",
+                "  uv run python scripts/promote_model.py status",
+            ],
+            level="warning",
+        )
+        return
 
     if holdout_is_overfit:
         await notify(
