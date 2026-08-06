@@ -77,6 +77,57 @@ Windows에서는 Docker Desktop을 Linux 컨테이너 모드로 실행하고 Git
 
 ---
 
+## 5.1 새 장비 셋업: 모델 가중치 배포
+
+**저장소 클론만으로는 예측 API 가 뜨지 않습니다.** 가중치 바이너리는 Git 추적
+대상이 아니어서(`.gitignore` 의 `*.bin`, `*.joblib`) 새 장비에는 `metadata.json`
+만 도착합니다. `metadata.json` 이 있다고 모델이 있는 것으로 판단하지 마십시오.
+
+기존 장비에서 번들을 만듭니다.
+
+```bash
+uv run python scripts/sync_model_files.py export
+# dist/model_files_bundle.tar.gz 와 .sha256 사이드카가 생깁니다
+```
+
+번들과 사이드카를 함께 새 장비로 옮긴 뒤 들여옵니다.
+
+```bash
+uv run python scripts/sync_model_files.py verify   # 배치 없이 무결성만 확인
+uv run python scripts/sync_model_files.py import   # 검증 통과 시에만 배치
+```
+
+`import` 는 배치 전에 검증을 먼저 수행하며, 실패하면 아무것도 쓰지 않습니다.
+기존 가중치가 있는 경로에는 `--force` 없이 덮어쓰지 않습니다.
+
+배치 후 반드시 확인합니다.
+
+```bash
+uv run python scripts/verify_migration.py     # 1/4 항목이 G1 무결성입니다
+uv run python scripts/promote_model.py status
+```
+
+| 항목 | 내용 |
+| --- | --- |
+| 번들 구성 | `model_files/`, `model_backups/`, `model_metrics/` |
+| 크기 | 82MB -> 압축 29.8MB (2026-08-06 실측) |
+| 무결성 | 파일별 SHA256 + 번들 사이드카 |
+| 제외 | `__pycache__` (장비마다 파이썬 버전이 다릅니다) |
+
+`model_backups/` 를 빼면 안 됩니다. 승격된 모델은 서빙본이 원본과 달라지므로
+`verify_migration.py` 가 원본 기준선을 백업 쪽에서 대조합니다. 백업 없이 실측한
+결과 G1 검증이 체크섬 불일치로 실패했습니다.
+
+경로를 외부 볼륨으로 옮기려면 `MODEL_FILES_DIR`, `MODEL_BACKUPS_DIR`,
+`MODEL_METRICS_DIR` 을 함께 바꾸십시오. 셋은 함께 움직여야 합니다.
+
+`scripts/import_data_assets.py` 는 원본 `bid_box` 저장소가 옆에 있을 때 쓰는
+최초 이관용이며 새 장비에서는 동작하지 않습니다. 또한 그 스크립트는 체크섬
+매니페스트를 재생성하므로, 승격이 일어난 뒤 실행하면 G1 기준선이 현재
+서빙본으로 덮여 무손실 검증이 의미를 잃습니다.
+
+---
+
 ## 6. Windows 전체 스택 검증
 
 PowerShell에서 다음을 실행합니다.

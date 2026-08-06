@@ -111,6 +111,9 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
 | `MODEL_REGISTRY_PATH` | 아니오 | `ml_registry` | 모델 레지스트리 경로 |
+| `MODEL_FILES_DIR` | 아니오 | `data/model_files` | 서빙 가중치 위치. 경로 정본이며 `model_registry.py`, `promotion.py`, `verify_migration.py` 가 함께 따릅니다 |
+| `MODEL_BACKUPS_DIR` | 아니오 | `data/model_backups` | 승격 시 직전 서빙본 보관 위치. G1 원본 기준선 대조에 쓰이므로 서빙 경로와 함께 옮겨야 합니다 |
+| `MODEL_METRICS_DIR` | 아니오 | `data/model_metrics` | 서빙 모델 실측 지표 사이드카. 승격 게이트가 champion 지표를 읽습니다 |
 | `ML_WEEKLY_RETRAIN_ENABLED` | 아니오 | `true` | 매주 월요일 03:00 재학습 크론 사용 여부 |
 | `DRIFT_PSI_THRESHOLD` | 아니오 | `0.2` | 데이터 드리프트 PSI 임계값 |
 | `MLOPS_WEBHOOK_URL` | 아니오 | (없음) | 재학습 실패·승격 권고를 보낼 **Slack Incoming Webhook** 주소. 비면 알림을 보내지 않습니다 |
@@ -118,6 +121,8 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 발신 페이로드는 `{"text": ...}` 로 고정돼 있어 **Slack 전용**입니다. Discord 로 바꾸려면 `{"content": ...}` 를 요구하므로 `src/tasks/notifier.py:60` 수정이 함께 필요합니다. 발신 실패는 예외를 삼키고 로그만 남기므로 형식이 틀려도 조용히 실패합니다.
 
 `MLOPS_WEBHOOK_URL` 이 비어 있으면 알림 발신이 통째로 생략됩니다. 개발 장비의 기본 동작이며, `ML_WEEKLY_RETRAIN_ENABLED` 와 같은 규약입니다. 알림 발신 실패는 재학습을 되돌리지 않고 로그만 남깁니다. 무엇을 보내고 무엇을 보내지 않는지는 [`docs/design/mlops_notification_20260805.md`](../design/mlops_notification_20260805.md) 4장을 참조하십시오.
+
+가중치 3종 경로는 **함께 움직여야 합니다.** 서빙 경로만 옮기고 백업을 두고 오면, 승격된 모델의 원본 기준선을 대조할 곳이 없어 `verify_migration.py` 가 체크섬 불일치로 실패합니다(G1). 옮길 때는 `scripts/sync_model_files.py` 로 세 경로를 한 번에 내보내고 들여오십시오.
 
 재학습 시각 자체는 환경 변수가 아니라 `src/tasks/worker.py` 의 `cron_jobs` 에 고정되어 있습니다. 원본 Airflow DAG 의 `schedule_interval='0 3 * * 1'` 을 그대로 옮긴 값이므로, 바꿀 때는 원본과의 차이를 인지하고 변경하십시오.
 

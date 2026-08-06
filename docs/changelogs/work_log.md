@@ -657,3 +657,18 @@
 - **현재 상태 확인**: Servc `v_20260806_025423_494`, Thng `v_20260806_043408_749`가 기본 서빙 중이며 feature store 불변조건 917,629행 × 28컬럼과 784,266행 × 12컬럼을 확인했습니다
 - **주요 변경사항**: 두 모델의 승격·실측·롤백 기준과 다음 Servc 하한율 결측 집단 진단의 평가 설계·중단 기준을 `docs/handoff/2026-08-06_model_improvement_handoff.md`에 정리했습니다
 - **문서 정합성**: 이미 기각된 낙찰방법별 분리 모델을 유망 과제로 적은 문구를 정정하고, 하한율 결측 규칙 복원과 분리 학습을 재시도하지 않도록 문서 우선순위를 명시했습니다
+
+---
+
+### 2026-08-06 | Phase 4 | 가중치 배포 경로 확립과 저장 경로 설정 단일화
+
+- **작업자**: 관범 & Claude
+- **전제 정정**: 설계서 3.5/Phase 4 는 AS-IS 를 "Git 내 model_files 41MB" 로 적고 목표를 저장소 경량화로 두었으나, 실사 결과 바이너리는 이미 `.gitignore` 의 `*.bin`/`*.joblib` 로 제외돼 Git 추적 파일이 10개(metadata.json, preprocess.py, champion_summary.json)뿐이었습니다. 경량화는 이미 달성된 상태였습니다
+- **실제 결함**: 배포 경로 부재. 저장소만 클론한 장비에는 `metadata.json` 만 도착해 예측 API 가 뜨지 않습니다. `import_data_assets.py` 는 원본 `bid_box` 가 옆에 있어야 동작하므로 새 장비에서는 쓸 수 없습니다
+- **기각한 대안**: Git LFS(GitHub 무료 한도 저장 1GB·월 대역폭 1GB, 승격마다 71MB 누적으로 소진이 빠르고 되돌리기 어려움), MinIO(boto3 의존성과 컨테이너 증설이 1인 운영·71MB 규모에 과함)
+- **주요 변경사항**: `scripts/sync_model_files.py` 신설(export/import/verify), 경로 3종 설정 단일화(`MODEL_FILES_DIR`, `MODEL_BACKUPS_DIR`, `MODEL_METRICS_DIR`). `model_registry.py`, `promotion.py`, `verify_migration.py` 가 같은 설정을 따릅니다
+- **번들 구성 근거**: `model_backups/` 를 포함합니다. 승격된 모델은 서빙본이 원본과 달라져 `verify_migration.py` 가 원본 기준선을 백업 쪽에서 대조하기 때문입니다. 백업을 뺀 상태로 실측하니 G1 검증이 체크섬 불일치로 실패했습니다
+- **매니페스트 불변**: `data_assets_checksums.json` 은 갱신하지 않습니다. 원본 4종의 G1 기준선이며 서빙본으로 재생성하면 승격 모델이 기준선을 덮습니다
+- **실측**: 82.0MB -> 압축 29.8MB(파일 30개). 격리 경로에 배치한 뒤 `verify_migration.py` 4/4 통과를 확인했습니다
+- **검증 결과**: 신설 테스트 8건 포함 726 passed / 2 skipped. 잘린 번들 검증이 EOFError 로 죽어 import 방어가 무력화되던 결함을 테스트가 잡아 수정했습니다
+- **남은 것**: 없음. Phase 4 미완 항목이 닫혔습니다

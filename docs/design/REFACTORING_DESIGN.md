@@ -150,12 +150,13 @@ docker-compose.yml → MySQL 8 서비스 (macOS/Windows/Linux 동일 버전)
 | 렌더링 | Django Templates (SSR) | **SSR 유지 + 점진적 하이브리드(HTMX)** | 챗봇 스트리밍 응답 등 인터랙션 필요 시에만 도입. 풀 SPA(React/Vue)는 오버킬 |
 | 채팅 UI | 폴링/동기 | **SSE/WebSocket 스트리밍** | LLM 토큰 스트리밍 → 체감 레이턴시 ↓ (G3) |
 
-### 3.8 MLOps/Harness: 바이너리 종속 → **외부화 + 플랫폼 중립**
+### 3.8 MLOps 실행·CI: 외부 SaaS 종속 → **Arq + GitHub Actions**
 
 | 항목 | AS-IS | TO-BE | 근거 |
 |------|-------|-------|------|
-| CLI | `hc.exe`(Windows)/`hc.tar.gz`(46+15MB) in Git | **Git에서 제거**, CI에서 다운로드 또는 REST API만 사용 | repo 경량화 + 크로스 플랫폼 (G2) |
-| 스케줄러 | `.ps1`(Windows 작업스케줄러) | **Celery Beat / cron(크로스플랫폼)** | OS 종속성 제거 (G2) |
+| 실행 백엔드 | Harness Cloud 파이프라인 | **Arq + Redis 워커** | 로컬·컨테이너 재현성 및 비동기 실행 |
+| CI | Harness YAML 파이프라인 | **GitHub Actions** (`.github/workflows/ci.yml`) | 저장소 표준 CI와 크로스 플랫폼 검증 |
+| 스케줄러 | `.ps1`(Windows 작업스케줄러) | **Arq cron** | OS 종속성 제거 (G2) |
 
 ### 3.9 패키지 관리: pip → **uv + pyproject.toml**
 
@@ -213,7 +214,7 @@ docker-compose.yml → MySQL 8 서비스 (macOS/Windows/Linux 동일 버전)
                        │   External Stores (outside Git)         │
                        │   - Model weights (Git LFS / S3)        │
                        │   - parquet snapshots (S3/NAS)          │
-                       │   - Harness CLI (CI download)           │
+                       │   - CI artifacts (GitHub Actions)        │
                        └─────────────────────────────────────────┘
 ```
 
@@ -625,9 +626,34 @@ run_mode_matrix (개정):
 
 ### Phase 4 — ML 추론/RAG 최적화 (3~5일)
 - [x] 모델 싱글톤 로드 + 통합 전처리 레지스트리
-- [ ] 가중치 Git LFS / 외부 저장소 이동 — 현재 `data/model_files/` 로컬 보관. **담당자 결정 대기.** 이 경로는 체크섬 매니페스트(G1) 대상이므로 옮길 때 매니페스트 갱신 절차를 함께 정해야 합니다
+- [x] 가중치 저장·배포 경로 정비 (2026-08-06) — 아래 전제 정정 참조
 - [x] RAG 검색 비동기화 + 결과 캐싱
 - [x] Harness 바이너리 Git 제거 + 플랫폼 중립화
+
+#### 가중치 외부화 전제 정정 (2026-08-06)
+
+이 절과 3.4 절은 AS-IS 를 "Git 내 `model_files/` (41MB)" 로 적고 목표를 저장소 경량화로 두었습니다. **2026-08-06 실사 결과 그 전제는 이미 해소된 상태였습니다.**
+
+| 항목 | 실측 |
+| --- | --- |
+| `data/model_files/` 전체 | 71MB (모델 5종) |
+| Git 추적 파일 | 10개 — `metadata.json`, `preprocess.py`, `champion_summary.json` |
+| 바이너리 추적 | 없음 (`.gitignore` 의 `*.bin`, `*.joblib` 로 제외) |
+
+경량화 대신 실제로 비어 있던 것은 **배포 경로**였습니다. 저장소만 클론한 장비에는 `metadata.json` 만 오고 `model.bin` 은 오지 않아 예측 API 가 뜨지 않습니다. `import_data_assets.py` 는 원본 `bid_box` 저장소가 옆에 있어야 동작하므로 새 장비에서는 쓸 수 없습니다.
+
+Git LFS 와 오브젝트 스토리지는 검토 후 채택하지 않았습니다. LFS 는 GitHub 무료 한도가 저장 1GB·월 대역폭 1GB 인데 승격마다 71MB 가 누적돼 소진이 빠르고, 되돌리기도 어렵습니다. MinIO 는 `boto3` 의존성과 컨테이너 증설을 요구해 1인 운영·71MB 규모에 비용이 큽니다.
+
+채택한 것은 **로컬 보관 유지 + 번들 배포 경로 확립**입니다.
+
+| 조치 | 내용 |
+| --- | --- |
+| 경로 설정 단일화 | `MODEL_FILES_DIR`, `MODEL_BACKUPS_DIR`, `MODEL_METRICS_DIR`. 외부 볼륨 이전 시 코드 수정 불필요 |
+| 배포 스크립트 | `scripts/sync_model_files.py` 의 `export` / `import` / `verify` |
+| 무결성 | 파일별 SHA256 인벤토리 + 번들 사이드카. 검증 실패 시 배치하지 않음 |
+| 매니페스트 | `data_assets_checksums.json` 은 갱신하지 않습니다. 원본 4종의 G1 기준선이며, 서빙본으로 다시 만들면 승격 모델이 기준선을 덮습니다 |
+
+번들에는 `model_backups/` 를 반드시 포함합니다. 승격된 모델은 서빙본이 원본과 달라지므로 `verify_migration.py` 가 원본 기준선을 백업 쪽에서 대조합니다. 백업을 뺀 상태로 실측한 결과 G1 검증이 체크섬 불일치로 실패했습니다.
 
 ### Phase 5 — 재학습 파이프라인 구축 (5~8일) ★ 신규 — 7장 참조
 - [x] **단일 특징 공급원** `features.py` 구현 (train/serve skew 제거)

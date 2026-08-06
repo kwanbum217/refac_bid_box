@@ -9,6 +9,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from src.app.core.config import settings
 from src.ml.features import (
     DEFAULT_INSTITUTION_NAME,
     apply_categorical_dtypes,
@@ -19,7 +20,9 @@ from src.ml.features import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-MODEL_FILES_ROOT = PROJECT_ROOT / "data" / "model_files"
+# 경로 정본은 settings 입니다. 여기서 다시 조립하면 설정을 바꿔도 로더가
+# 옛 경로를 보게 되므로, 값은 반드시 설정에서 읽습니다.
+MODEL_FILES_ROOT = Path(settings.MODEL_FILES_DIR)
 
 # 방어적 임포트
 try:
