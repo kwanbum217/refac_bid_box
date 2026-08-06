@@ -44,10 +44,22 @@ from src.ml.dataset import announcement_feature_payload  # noqa: E402
 from src.ml.features import CATEGORICAL_FEATURES, build_feature_frame  # noqa: E402
 from src.ml.institution_history import attach_institution_history  # noqa: E402
 from src.ml.repeat_history import attach_repeat_history  # noqa: E402
-from src.ml.trainer import TRAINING_FEATURES  # noqa: E402
+from src.ml.trainer import training_features_for_category  # noqa: E402
 
 # 이 값 미만이면 두 경로가 사실상 다른 특징을 쓰고 있다고 봅니다.
 CORRELATION_FLOOR = 0.95
+AUDITED_FEATURES = tuple(training_features_for_category("Servc"))
+KNOWN_TIMING_LIMITS = {
+    "inst_hist_rate": (0.90, 0.01),
+    "inst_sample_cnt": (0.85, 250.0),
+    "inst_ewm_rate": (0.85, 0.02),
+    "is_repeat": (0.90, 0.04),
+    "repeat_hist_rate": (0.92, 0.003),
+    "repeat_prev_rate": (0.92, 0.003),
+    "repeat_hist_std": (0.85, 0.001),
+    "repeat_days_since": (0.80, 25.0),
+    "ntce_kind_nm": (0.92, None),
+}
 
 
 def build_training_side(parquet: Path, year: int) -> pd.DataFrame:
@@ -81,7 +93,7 @@ def serving_row(session, bid_ntce_no: str) -> dict | None:
 def compare(train_row: pd.Series, serve_row: dict) -> dict[str, tuple]:
     """특징별로 (학습값, 서빙값) 쌍을 돌려줍니다. 없는 키는 건너뜁니다."""
     pairs = {}
-    for name in TRAINING_FEATURES:
+    for name in AUDITED_FEATURES:
         if name not in train_row or name not in serve_row:
             continue
         pairs[name] = (train_row[name], serve_row[name])
@@ -91,7 +103,7 @@ def compare(train_row: pd.Series, serve_row: dict) -> dict[str, tuple]:
 def summarize(records: list[dict]) -> pd.DataFrame:
     frame = pd.DataFrame(records)
     rows = []
-    for name in TRAINING_FEATURES:
+    for name in AUDITED_FEATURES:
         t_col, s_col = f"{name}__t", f"{name}__s"
         if t_col not in frame.columns:
             continue
@@ -100,8 +112,13 @@ def summarize(records: list[dict]) -> pd.DataFrame:
         if name in CATEGORICAL_FEATURES:
             match = (t.astype("string").fillna("") == s.astype("string").fillna("")).mean()
             rows.append(
-                {"특징": name, "종류": "범주", "일치율": round(float(match), 4),
-                 "상관": np.nan, "평균절대차": np.nan}
+                {
+                    "특징": name,
+                    "종류": "범주",
+                    "일치율": round(float(match), 4),
+                    "상관": np.nan,
+                    "평균절대차": np.nan,
+                }
             )
             continue
 
@@ -109,8 +126,15 @@ def summarize(records: list[dict]) -> pd.DataFrame:
         s_num = pd.to_numeric(s, errors="coerce")
         both = t_num.notna() & s_num.notna()
         if both.sum() < 2:
-            rows.append({"특징": name, "종류": "수치", "일치율": np.nan,
-                         "상관": np.nan, "평균절대차": np.nan})
+            rows.append(
+                {
+                    "특징": name,
+                    "종류": "수치",
+                    "일치율": np.nan,
+                    "상관": np.nan,
+                    "평균절대차": np.nan,
+                }
+            )
             continue
         corr = t_num[both].corr(s_num[both])
         rows.append(
@@ -123,6 +147,34 @@ def summarize(records: list[dict]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def split_differences(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """임계값 미달 특징을 기지 시점 차이와 예상 밖 차이로 나눕니다."""
+    numeric_low = (table["종류"] == "수치") & table["상관"].notna() & (
+        table["상관"] < CORRELATION_FLOOR
+    )
+    categorical_low = (table["종류"] == "범주") & (
+        table["일치율"] < CORRELATION_FLOOR
+    )
+    low = table[numeric_low | categorical_low]
+    known_mask = []
+    for row in low.itertuples(index=False):
+        limits = KNOWN_TIMING_LIMITS.get(row.특징)
+        if limits is None:
+            known_mask.append(False)
+            continue
+        min_score, max_difference = limits
+        score = row.상관 if row.종류 == "수치" else row.일치율
+        score_ok = pd.notna(score) and score >= min_score
+        difference_ok = (
+            max_difference is None
+            or (pd.notna(row.평균절대차) and row.평균절대차 <= max_difference)
+        )
+        known_mask.append(bool(score_ok and difference_ok))
+    known = low[known_mask]
+    unexpected = low[[not value for value in known_mask]]
+    return known, unexpected
 
 
 def main() -> int:
@@ -170,23 +222,28 @@ def main() -> int:
     print(f"{'=' * 96}\n특징별 학습·서빙 값 일치\n{'=' * 96}")
     print(table.to_string(index=False))
 
-    numeric = table[table["종류"] == "수치"]
-    broken = numeric[numeric["상관"].notna() & (numeric["상관"] < CORRELATION_FLOOR)]
-    categorical = table[(table["종류"] == "범주") & (table["일치율"] < CORRELATION_FLOOR)]
+    known, unexpected = split_differences(table)
 
     print(f"\n{'=' * 96}\n판정\n{'=' * 96}")
-    if broken.empty and categorical.empty:
-        print(f"모든 특징이 상관/일치율 {CORRELATION_FLOOR} 이상입니다. 값 불일치는 원인이 아닙니다.")
+    if known.empty and unexpected.empty:
+        print(
+            f"모든 특징이 상관/일치율 {CORRELATION_FLOOR} 이상입니다. 값 불일치는 원인이 아닙니다."
+        )
         return 0
 
-    print(f"**어긋난 특징 {len(broken) + len(categorical)}개**")
-    if not broken.empty:
-        print("\n수치형:")
-        print(broken.to_string(index=False))
-    if not categorical.empty:
-        print("\n범주형:")
-        print(categorical.to_string(index=False))
-    print("\n이 특징들이 학습 때와 다른 값으로 서빙되고 있습니다.")
+    if not known.empty:
+        print(f"알려진 시점 차이 {len(known)}개:")
+        print(known.to_string(index=False))
+        print(
+            "\n학습값은 각 과거 공고 직전의 값이고 서빙값은 현재 집계 또는 현재 "
+            "공고 원본입니다. 과거 공고를 현재 경로로 재평가할 때 생기는 기지 차이입니다."
+        )
+    if not unexpected.empty:
+        print(f"\n예상 밖 차이 {len(unexpected)}개:")
+        print(unexpected.to_string(index=False))
+        print("\n새 배관 결함 가능성이 있으므로 원인을 확인해야 합니다.")
+    else:
+        print("\n예상 밖 차이는 없습니다.")
     return 0
 
 
