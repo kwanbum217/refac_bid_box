@@ -43,13 +43,41 @@ async def _warm_llm_backend() -> None:
     await asyncio.to_thread(backend.warmup)
 
 
+async def _warm_predictor() -> None:
+    """예측 모델을 미리 올려 기동 직후 요청이 로드 비용을 내지 않게 합니다.
+
+    2026-08-06 실측입니다. 기동 직후 100회에서 P95 164.1ms 로 목표 100ms 를
+    넘겼으나, 같은 부하를 예열 뒤에 다시 주니 P95 16.4ms 였습니다. 꼬리 전부가
+    첫 요청들이 문 모델 로드 비용이었습니다.
+
+    LLM 예열과 같은 이유로 배경 태스크입니다. 실패해도 첫 요청이 느려질 뿐이라
+    기동을 막지 않습니다.
+    """
+    import os
+
+    if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
+        return
+
+    from src.ml.model_registry import ModelRegistry
+
+    try:
+        await asyncio.to_thread(ModelRegistry.load_all_models)
+    # 예열은 부가 기능입니다. 실패해도 첫 요청이 지연 로드로 처리합니다.
+    except Exception as exc:
+        logger.warning("예측 모델 예열 실패: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    task = asyncio.create_task(_warm_llm_backend())
+    tasks = [
+        asyncio.create_task(_warm_llm_backend()),
+        asyncio.create_task(_warm_predictor()),
+    ]
     try:
         yield
     finally:
-        task.cancel()
+        for task in tasks:
+            task.cancel()
 
 
 app = FastAPI(
