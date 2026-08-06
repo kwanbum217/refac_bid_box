@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import unicodedata
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
@@ -161,6 +162,22 @@ def _result_availability_conditions(plan: RetrievalPlan) -> list:
 # U+FFFD 는 SQL 에서 먼저 쳐내므로 배수는 작아도 됩니다.
 LIVE_OVERFETCH_FACTOR = 3
 
+# 집계 캐시 유효 시간. 원본 데이터는 야간 수집(02:00)에서만 바뀌므로 한 시간
+# 묵은 값이어도 답변의 사실관계가 흔들리지 않습니다. 대시보드 계열이 24시간을
+# 쓰지만 그쪽은 야간에 명시적으로 예열하는 반면 이 경로는 예열 대상이 아니라
+# 짧게 잡습니다.
+AGGREGATE_CACHE_TTL = 60 * 60
+
+
+def _stmt_cache_key(prefix: str, stmt) -> str:
+    """리터럴을 채운 SQL 문자열의 해시를 키로 씁니다.
+
+    조건이 하나라도 다르면 다른 키가 되므로, 필터가 다른 질의가 서로의 값을
+    물려받는 사고가 없습니다.
+    """
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    return prefix + hashlib.sha256(compiled.encode("utf-8")).hexdigest()
+
 
 def _drop_corrupted(rows, limit: int) -> tuple[list, int]:
     """인코딩이 깨진 값을 순위에서 제외합니다.
@@ -189,6 +206,7 @@ def _top_rows(
     live_stmt,
     corrupted_probe,
     limit: int = 5,
+    ttl: int = AGGREGATE_CACHE_TTL,
 ) -> tuple[list, int]:
     """스냅샷이 있으면 그것을, 없으면 실시간 집계를 씁니다.
 
@@ -201,20 +219,26 @@ def _top_rows(
             # 스냅샷은 집계 시점에 걸러냈으므로 그때 기록해 둔 표시를 씁니다.
             return cached, get_skipped_count(db, dataset, dimension, scope)
 
-    rows = db.execute(live_stmt.limit(limit * LIVE_OVERFETCH_FACTOR)).all()
-    kept, dropped = _drop_corrupted(rows, limit)
+    # 스냅샷은 날짜 필터가 붙는 순간 포기합니다(_snapshot_scope). "2026년" 같은
+    # 흔한 표현이 곧 날짜 필터이므로 실시간 경로가 자주 타며, 그 경로가 캐시
+    # 없이는 매번 2초를 씁니다. 같은 창을 다시 묻는 일이 잦으므로 캐시합니다.
+    stmt = live_stmt.limit(limit * LIVE_OVERFETCH_FACTOR)
+    key = _stmt_cache_key("rag:top:", stmt)
+    cached_live = cache.get(key)
+    if cached_live is not None:
+        rows, dropped = cached_live
+        return [tuple(row) for row in rows], int(dropped)
+
+    kept, dropped = _drop_corrupted(db.execute(stmt).all(), limit)
     if not dropped:
         # SQL 이 이미 U+FFFD 를 쳐냈으므로, 제외가 있었는지는 따로 확인합니다.
         # 첫 건에서 멈추므로 전체 스캔이 되지 않습니다.
         dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
+
+    # 손상 탐지 결과까지 함께 담습니다. 순위만 캐시하면 적중할 때마다 탐지
+    # 질의가 다시 돌아 절반만 아끼게 됩니다.
+    cache.set(key, [[[_cacheable(v) for v in row] for row in kept], dropped], ttl)
     return kept, dropped
-
-
-# 집계 캐시 유효 시간. 원본 데이터는 야간 수집(02:00)에서만 바뀌므로 한 시간
-# 묵은 값이어도 답변의 사실관계가 흔들리지 않습니다. 대시보드 계열이 24시간을
-# 쓰지만 그쪽은 야간에 명시적으로 예열하는 반면 이 경로는 예열 대상이 아니라
-# 짧게 잡습니다.
-AGGREGATE_CACHE_TTL = 60 * 60
 
 
 def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list[Any]:
@@ -223,14 +247,10 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
     3,405,928 행 위의 COUNT/AVG/SUM 은 질의당 190ms 가 걸립니다. 챗봇 한 번에
     이런 집계가 아홉 번 돌아 1.72초를 씁니다. 그동안 첫 토큰은 나오지 않습니다.
 
-    키는 리터럴을 채운 SQL 문자열의 해시입니다. 조건이 하나라도 다르면 다른
-    키가 되므로, 필터가 다른 질의가 서로의 값을 물려받는 사고가 없습니다.
-
     캐시가 없어도(Redis 미가용) CacheLayer 가 메모리 캐시로 내려가므로 동작은
     같습니다. 값이 없으면 그냥 DB 를 칩니다.
     """
-    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-    key = "rag:agg:" + hashlib.sha256(compiled.encode("utf-8")).hexdigest()
+    key = _stmt_cache_key("rag:agg:", stmt)
 
     cached = cache.get(key)
     if cached is not None:
@@ -243,6 +263,19 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
     normalized = [_numeric_or_none(value) for value in row]
     cache.set(key, normalized, ttl)
     return normalized
+
+
+def _cacheable(value: Any) -> Any:
+    """순위 행의 값을 Redis JSON 경로에서도 같은 모양이 되도록 맞춥니다.
+
+    순위 행은 (이름, 건수) 형태라 문자열이 섞입니다. 숫자만 다루는
+    `_numeric_or_none` 을 쓰면 이름을 float 로 바꾸려다 실패합니다.
+    """
+    if value is None or isinstance(value, (str, int, float)):
+        return value
+    if isinstance(value, Decimal):
+        return float(value)
+    return str(value)
 
 
 def _numeric_or_none(value: Any) -> Any:

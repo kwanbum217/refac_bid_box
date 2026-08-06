@@ -86,3 +86,96 @@ def test_none_aggregate_is_preserved():
     """표본이 없으면 AVG 는 NULL 입니다. 0 으로 바뀌면 없는 값이 값처럼 보입니다."""
     db = CountingSession([0, None, None])
     assert structured_data._cached_aggregate(db, _stmt("Frgcpt")) == [0, None, None]
+
+
+# --------------------------------------------------------------------------- #
+# 상위 N 실시간 경로
+# --------------------------------------------------------------------------- #
+#
+# 스냅샷은 날짜 필터가 붙는 순간 포기합니다. "2026년" 같은 흔한 표현이 곧 날짜
+# 필터이므로 실시간 경로가 자주 타며, 2026-08-06 측정에서 그 경로가 GROUP BY 로
+# 질의당 1.9초를 썼습니다. 같은 질의를 반복해도 값이 줄지 않았습니다.
+
+
+class RowSession:
+    """상위 N 실시간 경로용 세션 대역. 순위 질의와 손상 탐지를 구분해 셉니다."""
+
+    def __init__(self, rows, corrupted=None):
+        self.rows = rows
+        self.corrupted = corrupted
+        self.executions = 0
+
+    def execute(self, _stmt):
+        self.executions += 1
+        self._last = _stmt
+        return self
+
+    def all(self):
+        return self.rows
+
+    def first(self):
+        return self.corrupted
+
+
+def _live_stmt(category: str):
+    return (
+        select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+        .where(BidResult.category == category)
+        .group_by(BidResult.bidwinnr_nm)
+    )
+
+
+def _top(db, category: str):
+    return structured_data._top_rows(
+        db,
+        scope=None,
+        dataset="bid_results",
+        dimension="bidwinnr_nm",
+        live_stmt=_live_stmt(category),
+        corrupted_probe=select(BidResult.id),
+    )
+
+
+def test_top_rows_second_call_does_not_hit_db():
+    db = RowSession([("번성 주식회사", 812), ("대한건설", 640)])
+
+    first = _top(db, "Cnstwk")
+    executions_after_first = db.executions
+    second = _top(db, "Cnstwk")
+
+    assert db.executions == executions_after_first
+    assert first == second
+
+
+def test_top_rows_preserves_names_and_counts():
+    """이름은 문자열로 남아야 합니다. 숫자 변환을 태우면 여기서 깨집니다."""
+    db = RowSession([("번성 주식회사", 812)])
+
+    rows, _ = _top(db, "Cnstwk")
+    cached_rows, _ = _top(db, "Cnstwk")
+
+    assert rows == [("번성 주식회사", 812)]
+    assert cached_rows == [("번성 주식회사", 812)]
+
+
+def test_top_rows_different_categories_do_not_share_a_key():
+    """공사 순위가 물품 답변에 실리면 조용히 틀린 답이 됩니다."""
+    cnstwk = RowSession([("대한건설", 640)])
+    thng = RowSession([("한국물산", 91)])
+
+    _top(cnstwk, "Cnstwk")
+    rows, _ = _top(thng, "Thng")
+
+    assert rows == [("한국물산", 91)]
+
+
+def test_top_rows_caches_corruption_flag():
+    """탐지 결과까지 담지 않으면 적중할 때마다 탐지 질의가 다시 돕니다."""
+    db = RowSession([("대한건설", 640)], corrupted=(1,))
+
+    _, first_dropped = _top(db, "Cnstwk")
+    executions_after_first = db.executions
+    _, cached_dropped = _top(db, "Cnstwk")
+
+    assert first_dropped == cached_dropped == 1
+    assert db.executions == executions_after_first
