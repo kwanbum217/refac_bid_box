@@ -280,6 +280,15 @@ def test_trainer_records_feature_contract(tmp_path):
     assert metadata["features"] == list(TRAINING_FEATURES)
 
 
+def test_servc_uses_validated_features_and_hyperparams():
+    from src.ml.trainer import hyperparams_for_category, training_features_for_category
+
+    assert training_features_for_category("Thng") == list(TRAINING_FEATURES)
+    assert training_features_for_category("Servc") == [*TRAINING_FEATURES, "inst_ewm_rate"]
+    assert hyperparams_for_category("Thng") == {}
+    assert hyperparams_for_category("Servc")["lightgbm"]["num_leaves"] == 255
+
+
 def test_trainer_writes_versioned_artifacts(tmp_path):
     trainer = ModelTrainer(registry_dir=str(tmp_path))
     metadata = trainer.train_and_register(_frame())

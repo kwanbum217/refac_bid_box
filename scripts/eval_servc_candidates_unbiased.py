@@ -32,7 +32,7 @@ from src.ml.features import (  # noqa: E402
     build_feature_frame,
     collect_category_levels,
 )
-from src.ml.institution_history import attach_institution_history  # noqa: E402
+from src.ml.institution_history import EWM_HALFLIFE, attach_institution_history  # noqa: E402
 from src.ml.repeat_history import attach_repeat_history  # noqa: E402
 from src.ml.trainer import (  # noqa: E402
     CATEGORICAL_FEATURES,
@@ -53,21 +53,23 @@ def attach_ewm_history(raw: pd.DataFrame, halflife: int) -> str:
     shifted = rate.groupby(raw["dminstt_nm"], observed=True).transform(
         lambda values: values.shift(1).ewm(halflife=halflife, ignore_na=True).mean()
     )
-    raw[column] = shifted.groupby(
-        [raw["dminstt_nm"], raw["openg_dt"]], observed=True
-    ).transform(lambda values: values.iloc[0])
+    raw[column] = shifted.groupby([raw["dminstt_nm"], raw["openg_dt"]], observed=True).transform(
+        lambda values: values.iloc[0]
+    )
     raw[column] = raw[column].fillna(raw["inst_hist_rate"])
     return column
 
 
 def build_training_frame(path: Path, halflife: int) -> tuple[pd.DataFrame, str]:
     """운영 trainer와 같은 단일 특징 공급원으로 평가 프레임을 만듭니다."""
+    if halflife != EWM_HALFLIFE:
+        raise ValueError(f"운영 EWM 반감기는 {EWM_HALFLIFE}건입니다: {halflife}")
     raw = pd.read_parquet(path)
     raw = raw[raw["winning_rate"].notna()].copy()
     raw["openg_dt"] = pd.to_datetime(raw["openg_dt"], errors="coerce")
     raw = attach_institution_history(raw)
     raw = attach_repeat_history(raw)
-    ewm_feature = attach_ewm_history(raw, halflife)
+    ewm_feature = "inst_ewm_rate"
 
     feature_frame = pd.DataFrame(build_feature_frame(raw.to_dict(orient="records")))
     levels = collect_category_levels(feature_frame)
@@ -97,9 +99,7 @@ def fit_refit_full(
         categorical_feature=categoricals,
         callbacks=[lgb.early_stopping(10, verbose=False)],
     )
-    best_iteration = int(
-        getattr(selected, "best_iteration_", 0) or LGB_BASE_PARAMS["n_estimators"]
-    )
+    best_iteration = int(getattr(selected, "best_iteration_", 0) or LGB_BASE_PARAMS["n_estimators"])
 
     refit = lgb.LGBMRegressor(**{**params, "n_estimators": best_iteration})
     refit.fit(
@@ -127,9 +127,7 @@ def paired(diff: np.ndarray, metric: str) -> dict[str, object]:
     se = float(diff.std(ddof=1) / np.sqrt(n)) if n > 1 else float("inf")
     t_value = mean / se if se > 0 else 0.0
     verdict = (
-        "판별 불가"
-        if abs(t_value) < T_THRESHOLD
-        else ("후보 우세" if mean < 0 else "기준 우세")
+        "판별 불가" if abs(t_value) < T_THRESHOLD else ("후보 우세" if mean < 0 else "기준 우세")
     )
     return {
         "지표": metric,
@@ -173,8 +171,7 @@ def main() -> int:
         return 1
 
     print(
-        f"학습 {len(train):,}행 (~{args.train_end}년) / "
-        f"검증 {len(valid):,}행 ({args.valid_year}년)"
+        f"학습 {len(train):,}행 (~{args.train_end}년) / 검증 {len(valid):,}행 ({args.valid_year}년)"
     )
     print(f"운영과 같은 기준 특징 {len(base_features)}개를 사용합니다.\n")
 
@@ -183,9 +180,7 @@ def main() -> int:
         (f"리프 {leaves}", leaves, base_features)
         for leaves in (int(value) for value in args.leaves.split(","))
     )
-    candidates.append(
-        (f"지수감쇠 반감기 {args.halflife}건", 63, [*base_features, ewm_feature])
-    )
+    candidates.append((f"지수감쇠 반감기 {args.halflife}건", 63, [*base_features, ewm_feature]))
     largest_leaves = max(int(value) for value in args.leaves.split(","))
     candidates.append(
         (

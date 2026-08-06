@@ -182,6 +182,10 @@ INSTITUTION_COLUMN = "dminstt_nm"
 VALID_RATE_MIN = 50.0
 VALID_RATE_MAX = 120.0
 
+# 발주 건수 기준 지수감쇠 이력의 반감기입니다. 날짜 창은 기관별 발주 빈도 차이로
+# 표본 수가 크게 달라지므로, 최근 20건에 같은 감쇠 강도를 적용합니다.
+EWM_HALFLIFE = 20
+
 
 def attach_institution_history(
     df: pd.DataFrame,
@@ -206,6 +210,7 @@ def attach_institution_history(
     if INSTITUTION_COLUMN not in out.columns or RATE_COLUMN not in out.columns:
         out["inst_hist_rate"] = _default_institution_rate(_frame_category(out))
         out["inst_sample_cnt"] = 0
+        out["inst_ewm_rate"] = out["inst_hist_rate"]
         return out
 
     rate = pd.to_numeric(out[RATE_COLUMN], errors="coerce")
@@ -227,16 +232,25 @@ def attach_institution_history(
     grouped = ordered.groupby("key", sort=False)["rate"]
     hist = grouped.transform(lambda s: s.shift(1).expanding().mean())
     count = grouped.transform(lambda s: s.shift(1).expanding().count())
+    ewm = grouped.transform(lambda s: s.shift(1).ewm(halflife=EWM_HALFLIFE, ignore_na=True).mean())
+    # 같은 개찰 시각의 다른 결과는 예측 시점에 알 수 없습니다. 그룹 첫 행의
+    # 직전 값을 위치 그대로 복제해야 하며, pandas "first" 집계는 NaN 을 건너뛰어
+    # 첫 시각에 자기 결과를 누출하므로 사용하지 않습니다.
+    ewm = ewm.groupby([ordered["key"], ordered["t"]], observed=True).transform(
+        lambda values: values.iloc[0]
+    )
 
     # 정렬 전 순서로 되돌립니다.
     hist = hist.reindex(out.index)
     count = count.reindex(out.index).fillna(0)
+    ewm = ewm.reindex(out.index)
 
     fallback = _default_institution_rate(_frame_category(out))
     usable = hist.notna() & (count >= min_samples)
 
     out["inst_hist_rate"] = (hist / 100.0).where(usable, fallback)
     out["inst_sample_cnt"] = count.astype(int)
+    out["inst_ewm_rate"] = (ewm / 100.0).where(usable & ewm.notna(), fallback)
     return out
 
 
@@ -282,12 +296,14 @@ def rebuild_institution_stats(session: Any, *, min_samples: int = HISTORY_MIN_SA
 
     rows = session.execute(stmt).all()
     now = utcnow()
+    ewm = _rebuild_ewm_rates(session, min_samples=min_samples)
     payload = [
         {
             "institution_name": name,
             "category": category or "",
             "sample_count": int(count),
             "avg_rate": avg,
+            "ewm_rate": ewm.get((name, category or "")),
             "rebuilt_at": now,
         }
         for name, category, count, avg in rows
@@ -301,22 +317,117 @@ def rebuild_institution_stats(session: Any, *, min_samples: int = HISTORY_MIN_SA
     return {"institutions": len(payload), "rebuilt_at": now.isoformat()}
 
 
-def _lookup_from_stats(session: Any, institution_name: str, category: str) -> float | None:
-    """사전 집계 표에서 조회합니다. 표가 비었거나 항목이 없으면 None."""
+def _rebuild_ewm_rates(session: Any, *, min_samples: int) -> dict[tuple[str, str], float]:
+    """현재 시점의 기관별 지수감쇠 낙찰률을 스트리밍 계산합니다."""
+    from sqlalchemy import select
+
+    from src.app.models.bids import BidResult
+
+    rate = BidResult.sucsf_bid_rate
+    stmt = (
+        select(
+            BidResult.dminstt_nm,
+            BidResult.category,
+            rate,
+            BidResult.rl_openg_dt,
+            BidResult.id,
+        )
+        .where(
+            BidResult.dminstt_nm.is_not(None),
+            BidResult.dminstt_nm != "",
+            rate.is_not(None),
+            rate > VALID_RATE_MIN,
+            rate < VALID_RATE_MAX,
+        )
+        .order_by(
+            BidResult.dminstt_nm,
+            BidResult.category,
+            BidResult.rl_openg_dt,
+            BidResult.id,
+        )
+    )
+
+    decay = 0.5 ** (1.0 / EWM_HALFLIFE)
+    current_key: tuple[str, str] | None = None
+    numerator = denominator = 0.0
+    count = 0
+    output: dict[tuple[str, str], float] = {}
+
+    for name, category, value, _opened_at, _row_id in session.execute(stmt).yield_per(10_000):
+        key = (str(name), str(category or ""))
+        if key != current_key:
+            if current_key is not None and count >= min_samples:
+                output[current_key] = numerator / denominator
+            current_key = key
+            numerator = denominator = 0.0
+            count = 0
+        numerator = float(value) + decay * numerator
+        denominator = 1.0 + decay * denominator
+        count += 1
+
+    if current_key is not None and count >= min_samples:
+        output[current_key] = numerator / denominator
+    return output
+
+
+def _as_ratio(value: Any) -> float | None:
+    if value is None:
+        return None
+    rate = float(value)
+    return rate / 100.0 if rate > 1.0 else rate
+
+
+def _lookup_from_stats(
+    session: Any, institution_name: str, category: str
+) -> tuple[Any, Any, Any] | None:
+    """사전 집계 표에서 평균·표본 수·지수감쇠 값을 한 번에 조회합니다."""
     from sqlalchemy import select
 
     from src.app.models.bids import InstitutionWinRateStat
 
-    stmt = select(InstitutionWinRateStat.avg_rate).where(
+    stmt = select(
+        InstitutionWinRateStat.avg_rate,
+        InstitutionWinRateStat.sample_count,
+        InstitutionWinRateStat.ewm_rate,
+    ).where(
         InstitutionWinRateStat.institution_name == institution_name,
         InstitutionWinRateStat.category == (category or ""),
     )
-    value = session.execute(stmt).scalar()
-    if value is None:
-        return None
-    rate = float(value)
-    # 표에는 퍼센트(87.5)로 저장하고 특징은 비율(0.875)로 씁니다.
-    return rate / 100.0 if rate > 1.0 else rate
+    return session.execute(stmt).one_or_none()
+
+
+def lookup_institution_stats(
+    features_dict: dict[str, Any], session: Any = None
+) -> dict[str, float]:
+    """학습과 서빙이 공유하는 기관 이력 특징 세 개를 반환합니다."""
+    institution_name = _resolve_institution_name(features_dict)
+    category = _resolve_category(features_dict)
+    fallback = _default_institution_rate(category)
+    defaults = {
+        "inst_hist_rate": fallback,
+        "inst_sample_cnt": 0.0,
+        "inst_ewm_rate": fallback,
+    }
+    if not institution_name or session is None:
+        return defaults
+
+    cached = _lookup_from_stats(session, institution_name, category)
+    if cached is not None:
+        avg_rate, sample_count, ewm_rate = cached
+        history = _as_ratio(avg_rate) or fallback
+        return {
+            "inst_hist_rate": history,
+            "inst_sample_cnt": float(sample_count or 0),
+            "inst_ewm_rate": _as_ratio(ewm_rate) or history,
+        }
+
+    history = calculate_institution_win_rate(
+        session=session,
+        institution_name=institution_name,
+        reference_date=_resolve_reference_date(features_dict),
+        category=category,
+    )
+    return {**defaults, "inst_hist_rate": history, "inst_ewm_rate": history}
 
 
 def lookup_institution_history(features_dict: dict[str, Any], session: Any = None) -> float:
@@ -327,21 +438,7 @@ def lookup_institution_history(features_dict: dict[str, Any], session: Any = Non
 
     session 이 없으면(예: 모델 로드 시) 기본값을 반환합니다.
     """
-    institution_name = _resolve_institution_name(features_dict)
-    category = _resolve_category(features_dict)
-    if not institution_name or session is None:
-        return _default_institution_rate(category)
-
-    cached = _lookup_from_stats(session, institution_name, category)
-    if cached is not None:
-        return cached
-
-    return calculate_institution_win_rate(
-        session=session,
-        institution_name=institution_name,
-        reference_date=_resolve_reference_date(features_dict),
-        category=category,
-    )
+    return lookup_institution_stats(features_dict, session)["inst_hist_rate"]
 
 
 def lookup_institution_sample_count(features_dict: dict[str, Any], session: Any = None) -> float:
@@ -356,17 +453,4 @@ def lookup_institution_sample_count(features_dict: dict[str, Any], session: Any 
     모델은 "표본이 많으면 이력을 믿어라" 를 배웠는데 운영에서는 늘 표본 0 을
     받고 있었습니다 (`servc_feature_parity_20260805.md`).
     """
-    institution_name = _resolve_institution_name(features_dict)
-    if not institution_name or session is None:
-        return 0.0
-
-    from sqlalchemy import select
-
-    from src.app.models.bids import InstitutionWinRateStat
-
-    stmt = select(InstitutionWinRateStat.sample_count).where(
-        InstitutionWinRateStat.institution_name == institution_name,
-        InstitutionWinRateStat.category == (_resolve_category(features_dict) or ""),
-    )
-    value = session.execute(stmt).scalar()
-    return float(value) if value is not None else 0.0
+    return lookup_institution_stats(features_dict, session)["inst_sample_cnt"]

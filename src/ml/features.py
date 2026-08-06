@@ -13,10 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.ml.institution_history import (
-    lookup_institution_history,
-    lookup_institution_sample_count,
-)
+from src.ml.institution_history import lookup_institution_stats
 from src.ml.repeat_history import (
     DEFAULT_REPEAT_RATE,
     NO_HISTORY_DAYS,
@@ -208,7 +205,10 @@ def build_default_feature_map(
     reference_ts = _get_reference_timestamp(features_dict)
     price = max(
         _coerce_float(
-            features_dict.get("real_budget", features_dict.get("presumed_price", features_dict.get("presmpt_prce"))),
+            features_dict.get(
+                "real_budget",
+                features_dict.get("presumed_price", features_dict.get("presmpt_prce")),
+            ),
             0.0,
         ),
         0.0,
@@ -219,8 +219,13 @@ def build_default_feature_map(
     # "기준 시점 이전 같은 기관의 낙찰률 평균" 으로 같습니다.
     # `or` 를 쓰면 0.0 이 falsy 로 걸려 조회로 새므로 None 검사를 씁니다.
     provided_rate = features_dict.get("inst_hist_rate")
+    provided_cnt = features_dict.get("inst_sample_cnt")
+    provided_ewm = features_dict.get("inst_ewm_rate")
+    stats = None
+    if provided_rate is None or provided_cnt is None or provided_ewm is None:
+        stats = lookup_institution_stats(features_dict, session)
     if provided_rate is None:
-        provided_rate = lookup_institution_history(features_dict, session)
+        provided_rate = stats["inst_hist_rate"]
     inst_hist_rate = _coerce_float(provided_rate, DEFAULT_INST_RATE)
 
     # 재발주 이력도 같은 구조입니다. 학습은 trainer 가 attach_repeat_history 로
@@ -232,10 +237,12 @@ def build_default_feature_map(
     # 폴백이 없던 동안 서빙은 이 값을 항상 0 으로 넘겨 왔습니다(대조 실측 평균
     # 절대차 761). 모델이 이력 신뢰도를 판단하는 근거라 0 고정은 이력 자체를
     # 무시하라는 신호가 됩니다.
-    provided_cnt = features_dict.get("inst_sample_cnt")
     if provided_cnt is None:
-        provided_cnt = lookup_institution_sample_count(features_dict, session)
+        provided_cnt = stats["inst_sample_cnt"]
     inst_sample_cnt = _coerce_float(provided_cnt, 0.0)
+    if provided_ewm is None:
+        provided_ewm = stats["inst_ewm_rate"]
+    inst_ewm_rate = _coerce_float(provided_ewm, inst_hist_rate)
     inst_rate_mean_30d = _coerce_float(features_dict.get("inst_rate_mean_30d"), inst_hist_rate)
     inst_rate_std_90d = _coerce_float(features_dict.get("inst_rate_std_90d"), DEFAULT_INST_RATE_STD)
     # 데이터셋은 기초금액을 base_amount 로 내보냅니다. 별칭을 받지 않으면
@@ -300,13 +307,18 @@ def build_default_feature_map(
         "base_price": base_price,
         "price_ratio": price_ratio,
         "inst_hist_rate": inst_hist_rate,
+        "inst_ewm_rate": inst_ewm_rate,
         # 이력 표본 수. 모델이 이력값을 얼마나 신뢰할지 판단하는 근거가 됩니다.
         "inst_sample_cnt": inst_sample_cnt,
         "inst_rate_mean_30d": inst_rate_mean_30d,
         "inst_rate_std_90d": inst_rate_std_90d,
         "ntceInsttNm": _get_institution_name(features_dict),
-        "category": str(features_dict.get("category_code") or features_dict.get("category") or "Thng"),
-        "category_code": str(features_dict.get("category_code") or features_dict.get("category") or "Thng"),
+        "category": str(
+            features_dict.get("category_code") or features_dict.get("category") or "Thng"
+        ),
+        "category_code": str(
+            features_dict.get("category_code") or features_dict.get("category") or "Thng"
+        ),
         "silo_id": _coerce_float(features_dict.get("silo_id"), 0.0),
         "pred_tier": _coerce_float(features_dict.get("pred_tier"), 0.0),
         "q50": _coerce_float(features_dict.get("q50"), 0.0),
@@ -328,7 +340,9 @@ def build_default_feature_map(
     return feature_map
 
 
-def unservable_features(column_order: list[str], feature_values: dict[str, Any] | None = None) -> list[str]:
+def unservable_features(
+    column_order: list[str], feature_values: dict[str, Any] | None = None
+) -> list[str]:
     """모델이 요구하지만 본 모듈이 만들어 줄 수 없는 특징을 돌려줍니다.
 
     호출부가 값을 직접 실어 보낸 컬럼은 제외합니다. 빈 목록이면 배포 가능합니다.
@@ -377,29 +391,33 @@ def prepare_features(
     features_dict: dict[str, Any],
     session: Any = None,
 ) -> pd.DataFrame:
-    feature_names = [
-        "log_price",
-        "month",
-        "weekday",
-        "month_sin",
-        "month_cos",
-        "weekday_sin",
-        "weekday_cos",
-        "inst_hist_rate",
-        "inst_rate_mean_30d",
-        "inst_rate_std_90d",
-    ] + [f"sem_{idx}" for idx in range(32)] + [
-        "inter_sem_10",
-        "inter_sem_12",
-        "inter_sem_13",
-        "inter_sem_17",
-        "inter_sem_30",
-        "inst_inter_sem_10",
-        "inst_inter_sem_12",
-        "inst_inter_sem_13",
-        "inst_inter_sem_17",
-        "inst_inter_sem_30",
-    ]
+    feature_names = (
+        [
+            "log_price",
+            "month",
+            "weekday",
+            "month_sin",
+            "month_cos",
+            "weekday_sin",
+            "weekday_cos",
+            "inst_hist_rate",
+            "inst_rate_mean_30d",
+            "inst_rate_std_90d",
+        ]
+        + [f"sem_{idx}" for idx in range(32)]
+        + [
+            "inter_sem_10",
+            "inter_sem_12",
+            "inter_sem_13",
+            "inter_sem_17",
+            "inter_sem_30",
+            "inst_inter_sem_10",
+            "inst_inter_sem_12",
+            "inst_inter_sem_13",
+            "inst_inter_sem_17",
+            "inst_inter_sem_30",
+        ]
+    )
     return prepare_input_frame(features_dict, feature_names)
 
 

@@ -1,8 +1,9 @@
 # 기관 이력의 시간 가중과 평가 표본 정정
 
 > **작성일**: 2026-08-05
-> **버전**: v1.0.0
-> **상태**: 전부 기각. 지수감쇠는 홀드아웃 -1.79% 이나 운영에서 t=5.39 로 열등
+> **최종 갱신**: 2026-08-06
+> **버전**: v1.1.0
+> **상태**: 고정 시간 창은 기각 유지, 지수감쇠는 전량 재적합 수정 후 채택 후보
 > **측정 스크립트**: [`scripts/eval_servc_rolling_institution.py`](../../scripts/eval_servc_rolling_institution.py), [`scripts/compare_servc_models_paired.py`](../../scripts/compare_servc_models_paired.py)
 
 ---
@@ -97,7 +98,7 @@
 
 ---
 
-## 5. 배선 (실험 후 원복)
+## 5. 최초 배선 (실험 후 원복)
 
 채택을 전제로 아래처럼 배선했다가 6장 실측 후 되돌렸습니다. 재시도할 때 같은
 설계를 다시 세울 수 있도록 남깁니다.
@@ -110,7 +111,7 @@
 | `attach_institution_history` | 학습 프레임에 `inst_ewm_rate` 부착 |
 | `trainer.NUMERIC_FEATURES` | 학습 특징으로 등록 |
 | `features.build_default_feature_map` | 추론 조회. 없으면 전체 평균 폴백 |
-| `institution_win_rate_stats.ewm_rate` | 집계 컬럼 (마이그레이션 `b7e2f4a19c33`) |
+| `institution_win_rate_stats.ewm_rate` | 집계 컬럼 |
 | `rebuild_institution_stats` | 야간 갱신 때 pandas 로 계산해 저장 |
 
 감쇠는 순서에 의존해 SQL `AVG` 로 낼 수 없습니다. 추론 때마다 최근 이력을
@@ -189,3 +190,16 @@ train/serve skew 를 의심해 `inst_hist_rate` 의 학습값과 서빙 조회�
 .venv/bin/python scripts/compare_servc_models_paired.py \
     --base servc_prev_noewm --challenger servc_institution_v1 --samples 5000
 ```
+
+---
+
+## 8. 2026-08-06 재판정
+
+6장의 기각은 서빙 모델이 최신 20%를 학습하지 않던 결함이 있는 상태에서 내린
+판정입니다. `refit_on_full` 수정 후 동일 학습 상한으로 다시 평가하자 지수감쇠와
+리프 255 결합이 MAE를 3.13% 낮췄고 절대오차 t=-29.62로 우세했습니다.
+
+실제 배선과 전량 재학습 후 운영 3,999건에서도 MAE 1.4984에서 1.4471로 3.42%
+개선됐고 쌍대 절대오차 t=-7.50으로 재현됐습니다. 따라서 고정 시간 창 기각은
+유지하되, 지수감쇠 기각은 철회합니다. 구현과 최신 수치는
+`docs/design/servc_unbiased_candidate_recheck_20260805.md`를 정본으로 봅니다.

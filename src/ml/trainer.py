@@ -48,17 +48,18 @@ DEFAULT_N_FOLDS = 5
 # 그래서 아래 QUANTILE_PARAM_OVERRIDES 로 두 축을 갈랐습니다. 분리 후에는 점
 # 추정 용량을 키워도 구간 폭이 움직이지 않습니다(운영 실측 1.423%p 동일).
 #
-# **그럼에도 값은 63 입니다.** 리프를 올리면 홀드아웃은 좋아지지만 운영
-# 경로에서는 그 이득이 나타나지 않습니다. 같은 표본 1,000건 실측입니다.
+# 전량 재적합 결함 수정 전에는 리프를 올린 이득이 운영에서 나타나지 않았습니다.
+# 같은 표본 1,000건의 당시 실측입니다.
 #
 #              홀드아웃 MAE   운영 MAE   운영 RMSE   운영 0.5%p 적중
 #   리프  63       1.2838     0.9848      3.1195         75.2%
 #   리프 127       1.2710     0.9863      3.1455         74.5%
 #
-# 홀드아웃에서 1.0% 개선인데 운영에서는 전 지표가 나빠집니다. 255 도 앞서 같은
-# 방향으로 어긋났습니다(5장). 2025년 홀드아웃과 운영 표본의 분포가 다르므로
-# **점 추정 용량은 홀드아웃 지표로 정하지 않습니다.**
-# 근거는 docs/design/servc_hyperparam_search_20260804.md 9장.
+# 이후 모델 선택 뒤 최신 20%를 버리던 결함을 고치고 동일 학습 상한으로 다시
+# 평가하자 용역 리프 255 + EWM이 우세했습니다. 운영 3,999건에서도 MAE 3.42%
+# 개선, 쌍대 절대오차 t=-7.50으로 재현됐습니다. 이 기본값 63은 물품과 미지정
+# 카테고리에 유지하고, 용역만 CATEGORY_HYPERPARAMS에서 255로 재정의합니다.
+# 근거는 docs/design/servc_unbiased_candidate_recheck_20260805.md 입니다.
 #
 # subsample 은 LightGBM 이 subsample_freq(기본 0)가 0 이면 통째로 무시합니다.
 # 탐색에서 0.6/0.8/1.0 의 MAE 가 소수점 넷째 자리까지 같게 나온 것이 그
@@ -106,9 +107,14 @@ CATEGORY_MODEL_NAMES = {
     "Servc": "servc_institution_v1",
 }
 
+# 편향 없는 동일 학습 상한 재평가에서 용역은 리프 255와 기관 EWM 조합이
+# 기준 대비 MAE 3.13%를 낮췄습니다. 물품에는 검증되지 않았으므로 적용하지 않습니다.
+CATEGORY_HYPERPARAMS = {"Servc": {"lightgbm": {"num_leaves": 255}}}
+
 
 def model_name_for_category(category_code: str | None) -> str:
     return CATEGORY_MODEL_NAMES.get((category_code or "").strip(), DEFAULT_MODEL_NAME)
+
 
 # 시계열 기준 컬럼. 없으면 프레임 순서를 그대로 사용합니다.
 TIME_SORT_COLUMN = "openg_dt"
@@ -161,6 +167,28 @@ NUMERIC_FEATURES = [
 ]
 
 TRAINING_FEATURES = [*NUMERIC_FEATURES, *CATEGORICAL_FEATURES]
+SERVC_EXTRA_FEATURES = ["inst_ewm_rate"]
+
+
+def training_features_for_category(category_code: str | None) -> list[str]:
+    """검증된 카테고리에만 추가 특징을 적용합니다."""
+    if (category_code or "").strip() == "Servc":
+        return [*TRAINING_FEATURES, *SERVC_EXTRA_FEATURES]
+    return list(TRAINING_FEATURES)
+
+
+def hyperparams_for_category(
+    category_code: str | None,
+    overrides: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """카테고리 기본값에 호출자 재정의를 모델별로 병합합니다."""
+    effective = {
+        name: dict(params)
+        for name, params in CATEGORY_HYPERPARAMS.get((category_code or "").strip(), {}).items()
+    }
+    for name, params in (overrides or {}).items():
+        effective[name] = {**effective.get(name, {}), **params}
+    return effective
 
 
 def has_time_column(df: pd.DataFrame) -> bool:
@@ -408,9 +436,10 @@ def _cross_validate_model(
     model_fn,
     hyperparams: dict[str, Any] | None,
     n_folds: int,
+    feature_columns: list[str] | None = None,
 ) -> dict[str, Any]:
     """K-Fold 교차 검증을 수행하고 평균 지표를 반환합니다."""
-    X = df[TRAINING_FEATURES]
+    X = df[feature_columns or TRAINING_FEATURES]
     fold_metrics = []
 
     for _fold_idx, (train_idx, valid_idx) in enumerate(_time_based_kfold_splits(df, n_folds)):
@@ -430,12 +459,8 @@ def _cross_validate_model(
 
     aggregated = {}
     for key in fold_metrics[0]:
-        aggregated[f"avg_{key}"] = round(
-            float(np.mean([m[key] for m in fold_metrics])), 4
-        )
-        aggregated[f"std_{key}"] = round(
-            float(np.std([m[key] for m in fold_metrics])), 4
-        )
+        aggregated[f"avg_{key}"] = round(float(np.mean([m[key] for m in fold_metrics])), 4)
+        aggregated[f"std_{key}"] = round(float(np.std([m[key] for m in fold_metrics])), 4)
     aggregated["fold_count"] = len(fold_metrics)
     # 폴드별 원지표를 남깁니다. 평균만 저장하면 설계서 7장 필수 4
     # (어느 폴드도 R2 > 0.99 아닐 것)를 판정할 근거가 사라집니다.
@@ -520,9 +545,15 @@ def _train_quantile_models(
 
 
 class ModelTrainer:
-    def __init__(self, model_name: str = DEFAULT_MODEL_NAME, registry_dir: str = "ml_registry"):
+    def __init__(
+        self,
+        model_name: str = DEFAULT_MODEL_NAME,
+        registry_dir: str = "ml_registry",
+        category_code: str | None = None,
+    ):
         self.model_name = model_name
         self.registry_dir = Path(registry_dir)
+        self.category_code = (category_code or "").strip() or None
 
     @classmethod
     def for_category(cls, category_code: str | None, registry_dir: str = "ml_registry"):
@@ -531,7 +562,7 @@ class ModelTrainer:
         분기가 없으면 용역 재학습이 물품 디렉터리에 저장되고 물품 champion 과
         비교됩니다. 서로 다른 제도를 쓰는 두 모델이 한 이름을 공유하게 됩니다.
         """
-        return cls(model_name_for_category(category_code), registry_dir)
+        return cls(model_name_for_category(category_code), registry_dir, category_code)
 
     def train_and_register(
         self,
@@ -560,6 +591,8 @@ class ModelTrainer:
         # 행당 DB 조회로는 32시간이 걸려 배치 계산을 씁니다.
         df_raw = attach_institution_history(df_raw)
         df_raw = attach_repeat_history(df_raw)
+        feature_columns = training_features_for_category(self.category_code)
+        effective_hyperparams = hyperparams_for_category(self.category_code, hyperparams)
 
         # 단일 특징 공급원 적용
         records = df_raw.to_dict(orient="records")
@@ -584,10 +617,8 @@ class ModelTrainer:
             y = np.full(len(df_feat), 88.0)
 
         # 시계열 분할: 과거를 학습, 미래를 검증
-        train_idx, valid_idx, y_train, y_valid = _time_based_split(
-            df_feat, y, validation_split
-        )
-        X = df_feat[TRAINING_FEATURES]
+        train_idx, valid_idx, y_train, y_valid = _time_based_split(df_feat, y, validation_split)
+        X = df_feat[feature_columns]
         X_train, X_valid = X.iloc[train_idx], X.iloc[valid_idx]
 
         # 데이터가 너무 적으면 트리 모델이 실패하므로 Ridge 로 폴백합니다.
@@ -611,10 +642,12 @@ class ModelTrainer:
         cv_by_model: dict[str, dict[str, Any]] = {}
         holdout_by_model: dict[str, dict[str, float]] = {}
         for name, model_fn in model_fns.items():
-            params = hyperparams.get(name) if hyperparams else None
+            params = effective_hyperparams.get(name)
             # 모델 선택은 학습 구간 내부의 K-Fold 로만 합니다. 홀드아웃 점수로
             # 고르면 그 점수가 선택 편향으로 부풀려져 승격 판단이 낙관적이 됩니다.
-            cv = _cross_validate_model(df_train, y_train, model_fn, params, n_folds)
+            cv = _cross_validate_model(
+                df_train, y_train, model_fn, params, n_folds, feature_columns
+            )
             model = model_fn(X_train, y_train, X_valid, y_valid, params)
             holdout = evaluate_model_performance(
                 np.asarray(y_valid), np.asarray(model.predict(X_valid))
@@ -657,7 +690,7 @@ class ModelTrainer:
             best_model,
             X,
             y,
-            hyperparams.get(model_type) if hyperparams else None,
+            effective_hyperparams.get(model_type),
         )
 
         # 가중치 저장
@@ -686,7 +719,7 @@ class ModelTrainer:
             # metrics 는 앞 80% 로 학습한 모델의 홀드아웃 값이고, 저장된 가중치는
             # 전량으로 재적합한 것입니다. 두 학습 범위가 다르다는 표시입니다.
             "refit_on_full": True,
-            "features": list(TRAINING_FEATURES),
+            "features": list(feature_columns),
             "categorical_features": list(CATEGORICAL_FEATURES),
             "category_levels": category_levels,
             "model_type": model_type,
@@ -697,7 +730,7 @@ class ModelTrainer:
             # 아래 두 값이 참이면 metrics 를 승격 판단에 쓰면 안 됩니다.
             "holdout_is_overfit": holdout_is_overfit,
             "time_sorted_split": bool(has_time_column(df_feat)),
-            "hyperparams": hyperparams or {},
+            "hyperparams": effective_hyperparams,
             "interval": interval_meta,
             "status": "challenger",
         }

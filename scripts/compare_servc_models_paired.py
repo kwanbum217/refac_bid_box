@@ -42,6 +42,7 @@ from src.app.core.db import SessionLocal  # noqa: E402
 from src.app.models.bids import BidAnnouncement  # noqa: E402
 from src.app.schemas.predictions import PredictPriceRequest  # noqa: E402
 from src.ml.dataset import announcement_feature_payload  # noqa: E402
+from src.ml.model_registry import ModelRegistry  # noqa: E402
 
 # 유의 판정 기준. 쌍대 t 통계량의 절댓값이 이보다 커야 방향을 말합니다.
 T_THRESHOLD = 2.0
@@ -94,7 +95,20 @@ def main() -> int:
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--require-lwlt", action="store_true", help="하한율 보유 건만 채점")
+    parser.add_argument(
+        "--model-root",
+        default=None,
+        help="비교용 모델 디렉터리 루트. 지정하면 이 프로세스에서만 사용",
+    )
     args = parser.parse_args()
+
+    if args.model_root:
+        model_root = Path(args.model_root).resolve()
+        if not model_root.is_dir():
+            print(f"비교용 모델 루트가 없습니다: {model_root}")
+            return 1
+        ModelRegistry._get_model_root = classmethod(lambda cls: str(model_root))
+        ModelRegistry.load_all_models()
 
     session = SessionLocal()
     try:
@@ -174,12 +188,8 @@ def main() -> int:
     stats = pd.DataFrame(
         [
             paired_stats((df["chal_err"] - df["base_err"]).to_numpy(), "절대오차"),
-            paired_stats(
-                (df["chal_err"] ** 2 - df["base_err"] ** 2).to_numpy(), "제곱오차"
-            ),
-            paired_stats(
-                (df["chal_width"] - df["base_width"]).dropna().to_numpy(), "구간 폭"
-            ),
+            paired_stats((df["chal_err"] ** 2 - df["base_err"] ** 2).to_numpy(), "제곱오차"),
+            paired_stats((df["chal_width"] - df["base_width"]).dropna().to_numpy(), "구간 폭"),
         ]
     )
     print(f"\n{'=' * 92}\n쌍대 비교 (challenger - base)\n{'=' * 92}")
