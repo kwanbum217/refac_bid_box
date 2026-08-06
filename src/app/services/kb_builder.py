@@ -17,6 +17,7 @@ src/app/services/kb_builder.py
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from datetime import datetime, timedelta
@@ -42,6 +43,13 @@ COLLECTION_NAME = "bidding_kb"
 INDEX_BATCH_SIZE = 100
 DEFAULT_MAX_DOCUMENTS = 10
 
+# 문서 본문 포맷 버전.
+#
+# `_build_announcement_document` 나 `_build_result_document` 의 출력 형식을
+# 바꾸면 반드시 이 값을 올리십시오. 증분 색인은 본문 해시로 변경을 판정하므로,
+# 포맷을 바꾸고 버전을 그대로 두면 낡은 형식의 문서가 조용히 남습니다.
+DOC_FORMAT_VERSION = 1
+
 
 def _max_documents() -> int:
     raw = os.getenv("KB_MAX_DOCUMENTS", "").strip()
@@ -52,6 +60,60 @@ def _max_documents() -> int:
     except ValueError:
         return DEFAULT_MAX_DOCUMENTS
     return value if value > 0 else DEFAULT_MAX_DOCUMENTS
+
+
+def _document_hash(content: str) -> str:
+    """문서 본문의 해시. 증분 색인의 변경 판정 기준입니다.
+
+    DB 시각을 쓰지 않는 이유가 있습니다. `collected_at` 은 `default=utcnow` 라
+    INSERT 시각이며, 재수집으로 값이 갱신돼도 시각이 그대로일 수 있습니다.
+    본문 해시는 어떤 경로로 값이 바뀌었든 잡아냅니다.
+    """
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _load_existing_index(collection) -> tuple[dict[str, str], bool]:
+    """컬렉션에 이미 있는 id -> 본문 해시 맵을 읽습니다.
+
+    두 번째 반환값은 증분을 적용할 수 있는지 여부입니다. 해시가 없거나 포맷
+    버전이 다른 문서가 하나라도 있으면 비교 기준이 서지 않으므로 전량
+    재구축으로 떨어집니다.
+    """
+    try:
+        stored = collection.get(include=["metadatas"])
+    # 컬렉션이 비었거나 읽을 수 없으면 증분을 포기하고 전량으로 갑니다.
+    except Exception as exc:  # nosec B110
+        logger.warning("기존 색인 조회 실패, 전량 재구축으로 전환합니다: %s", exc)
+        return {}, False
+
+    ids = stored.get("ids") or []
+    metadatas = stored.get("metadatas") or []
+    if not ids:
+        return {}, False
+
+    hashes: dict[str, str] = {}
+    for doc_id, meta in zip(ids, metadatas, strict=False):
+        meta = meta or {}
+        doc_hash = meta.get("doc_hash")
+        if not doc_hash or int(meta.get("fmt", 0)) != DOC_FORMAT_VERSION:
+            return {}, False
+        hashes[doc_id] = str(doc_hash)
+    return hashes, True
+
+
+def _diff_index(
+    existing: dict[str, str],
+    ids: list[str],
+    metadatas: list[dict[str, Any]],
+) -> tuple[list[int], list[str]]:
+    """재색인할 항목의 위치와 삭제할 id 를 계산합니다."""
+    changed_positions = [
+        position
+        for position, doc_id in enumerate(ids)
+        if existing.get(doc_id) != metadatas[position]["doc_hash"]
+    ]
+    removed_ids = [doc_id for doc_id in existing if doc_id not in set(ids)]
+    return changed_positions, removed_ids
 
 
 def _upsert_kb_status(db: Session, **fields: Any) -> None:
@@ -141,8 +203,18 @@ def _build_result_document(result: BidResult) -> str:
     return content
 
 
-def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, Any]:
-    """최근 1년 데이터로 bidding_kb 컬렉션을 재구축합니다."""
+def rebuild_knowledge_base(
+    db: Session, pipeline_run_id: str = "", *, full: bool = False
+) -> dict[str, Any]:
+    """최근 1년 데이터로 bidding_kb 컬렉션을 갱신합니다.
+
+    기본은 증분입니다. 본문 해시가 그대로인 문서는 다시 임베딩하지 않습니다.
+    `full=True` 면 컬렉션을 비우고 전량 재구축합니다.
+
+    **컬렉션을 먼저 지우지 않습니다.** 예전에는 `delete_collection` 뒤에
+    재색인했는데, 그 사이 챗봇 질의가 빈 KB 를 조회해 근거 없이 답했고 색인이
+    실패하면 KB 가 빈 채로 남았습니다.
+    """
     limit = _max_documents()
     try:
         import chromadb
@@ -151,12 +223,15 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
         os.makedirs(chroma_path, exist_ok=True)
         chroma_client = chromadb.PersistentClient(path=chroma_path)
 
-        try:
-            chroma_client.delete_collection(COLLECTION_NAME)
-        # 없는 컬렉션 삭제는 정상 흐름이라 무시합니다
-        except Exception:  # nosec B110
-            pass
-        collection = chroma_client.create_collection(name=COLLECTION_NAME)
+        if full:
+            try:
+                chroma_client.delete_collection(COLLECTION_NAME)
+            # 없는 컬렉션 삭제는 정상 흐름이라 무시합니다
+            except Exception:  # nosec B110
+                pass
+        collection = chroma_client.get_or_create_collection(name=COLLECTION_NAME)
+
+        existing_hashes, incremental = ({}, False) if full else _load_existing_index(collection)
 
         one_year_ago = utcnow() - timedelta(days=365)
         announcements, source_mode = _resolve_announcements(db, one_year_ago)
@@ -176,18 +251,23 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
 
         for ann in announcements:
             result = results_map.get(_join_key(ann))
-            documents.append(_build_announcement_document(ann, result))
+            content = _build_announcement_document(ann, result)
+            documents.append(content)
             metadatas.append(
                 {
                     "type": "bid_info",
                     "id": ann.id,
                     "category": ann.category,
                     "has_result": bool(result),
+                    "doc_hash": _document_hash(content),
+                    "fmt": DOC_FORMAT_VERSION,
                 }
             )
             ids.append(f"bid_{ann.id}")
 
-        indexed_count = _flush(collection, documents, metadatas, ids)
+        indexed_count, stats = _sync(
+            collection, documents, metadatas, ids, existing_hashes, incremental
+        )
 
         if indexed_count == 0:
             source_mode = "results_only"
@@ -203,18 +283,34 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
             )
             documents, metadatas, ids = [], [], []
             for index, result in enumerate(fallback_results):
-                documents.append(_build_result_document(result))
+                content = _build_result_document(result)
+                documents.append(content)
                 metadatas.append(
-                    {"type": "bid_result", "category": result.category, "has_result": True}
+                    {
+                        "type": "bid_result",
+                        "category": result.category,
+                        "has_result": True,
+                        "doc_hash": _document_hash(content),
+                        "fmt": DOC_FORMAT_VERSION,
+                    }
                 )
                 ids.append(f"result_{result.bid_ntce_no}_{result.bid_ntce_ord}_{index}")
-            indexed_count = _flush(collection, documents, metadatas, ids)
+            indexed_count, stats = _sync(
+                collection, documents, metadatas, ids, existing_hashes, incremental
+            )
 
         if indexed_count == 0:
             raise RuntimeError("최근 1년 기준으로 인덱싱할 공고/낙찰 데이터가 없습니다.")
 
         embedded_at = utcnow()
-        summary = f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"
+        if stats["mode"] == "incremental":
+            summary = (
+                f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"
+                f" (증분: 갱신 {stats['embedded']}건 / 유지 {stats['unchanged']}건"
+                f" / 삭제 {stats['removed']}건)"
+            )
+        else:
+            summary = f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"
         _upsert_kb_status(
             db,
             status="ready",
@@ -233,6 +329,10 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
                 "max_documents": limit,
                 "last_pipeline_run_id": pipeline_run_id,
                 "last_embedding_at": embedded_at.isoformat(),
+                "index_mode": stats["mode"],
+                "embedded_count": stats["embedded"],
+                "unchanged_count": stats["unchanged"],
+                "removed_count": stats["removed"],
             },
         }
     except Exception as exc:
@@ -248,17 +348,67 @@ def rebuild_knowledge_base(db: Session, pipeline_run_id: str = "") -> dict[str, 
 
 
 def _flush(collection, documents: list[str], metadatas: list[dict], ids: list[str]) -> int:
+    """배치로 upsert 합니다. 같은 id 가 오면 제자리에서 갱신됩니다."""
     indexed = 0
     for start in range(0, len(documents), INDEX_BATCH_SIZE):
         end = start + INDEX_BATCH_SIZE
         chunk_ids = ids[start:end]
         if not chunk_ids:
             continue
-        collection.add(
+        collection.upsert(
             documents=documents[start:end], metadatas=metadatas[start:end], ids=chunk_ids
         )
         indexed += len(chunk_ids)
     return indexed
+
+
+def _sync(
+    collection,
+    documents: list[str],
+    metadatas: list[dict[str, Any]],
+    ids: list[str],
+    existing_hashes: dict[str, str],
+    incremental: bool,
+) -> tuple[int, dict[str, int]]:
+    """컬렉션을 목표 상태에 맞춥니다.
+
+    반환하는 건수는 **컬렉션에 있어야 할 전체 문서 수**입니다. 이번에 임베딩한
+    수가 아닙니다. `knowledge_base_status.source_bid_count` 가 KB 규모를 뜻하는
+    값이라, 증분 실행에서 변경분만 기록하면 KB 가 줄어든 것처럼 보입니다.
+    """
+    if not documents:
+        return 0, {"embedded": 0, "unchanged": 0, "removed": 0, "mode": "full"}
+
+    if not incremental:
+        embedded = _flush(collection, documents, metadatas, ids)
+        return embedded, {
+            "embedded": embedded,
+            "unchanged": 0,
+            "removed": 0,
+            "mode": "full",
+        }
+
+    changed_positions, removed_ids = _diff_index(existing_hashes, ids, metadatas)
+
+    embedded = 0
+    if changed_positions:
+        embedded = _flush(
+            collection,
+            [documents[position] for position in changed_positions],
+            [metadatas[position] for position in changed_positions],
+            [ids[position] for position in changed_positions],
+        )
+
+    # 삭제는 재색인 뒤에 합니다. 먼저 지우면 색인이 실패했을 때 문서만 사라집니다.
+    if removed_ids:
+        collection.delete(ids=removed_ids)
+
+    return len(ids), {
+        "embedded": embedded,
+        "unchanged": len(ids) - embedded,
+        "removed": len(removed_ids),
+        "mode": "incremental",
+    }
 
 
 def get_kb_document_count(db: Session) -> int:

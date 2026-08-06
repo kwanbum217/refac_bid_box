@@ -18,7 +18,7 @@ import pytest
 sync_model_files = importlib.import_module("scripts.sync_model_files")
 
 
-@pytest.fixture()
+@pytest.fixture
 def asset_roots(tmp_path, monkeypatch):
     """가중치 3종 경로를 임시 디렉터리로 돌립니다."""
     files = tmp_path / "model_files"
@@ -82,7 +82,6 @@ def test_bundle_keys_use_posix_separator(asset_roots, tmp_path):
 
 
 def test_roundtrip_preserves_content(asset_roots, tmp_path, monkeypatch):
-    files, backups, metrics = asset_roots
     bundle = _export(tmp_path)
 
     dest = tmp_path / "restored"
