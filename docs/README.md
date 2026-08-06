@@ -42,6 +42,7 @@ docs/
 | 금액 미공개 공고 예측 | [`prediction_without_amount_20260804.md`](design/prediction_without_amount_20260804.md) | 0원 추천 차단. 원본과 의도적으로 다른 동작 |
 | G2B 전자입찰 제도 분석 | [`g2b_procurement_institution_analysis.md`](design/g2b_procurement_institution_analysis.md) | 예정가격·낙찰하한율 산식, 2026-05-26 제도 변경 |
 | 용역 제도 가정 검증 보고 | [`servc_institution_verification_20260803.md`](design/servc_institution_verification_20260803.md) | V1~V7 데이터 검증 결과, 설계 정정 사항 |
+| 낙찰하한율 결측 조사 | [`lwlt_missing_investigation_20260806.md`](design/lwlt_missing_investigation_20260806.md) | 복원 기각. 결측은 제도적 부재, 레짐 전환 편향 없음 |
 | 용역 분리 모델 실험 | [`servc_segment_experiment_20260803.md`](design/servc_segment_experiment_20260803.md) | 분리 모델·하한율 절단 기각, 제도 특징 채택 |
 | 용역 2025년 연도 홀드아웃 | [`servc_year_holdout_2025_20260803.md`](design/servc_year_holdout_2025_20260803.md) | 공고 건당 오차 분포, 연초 성능 저하 |
 | 제한경쟁 진단과 난수 구조 | [`servc_restricted_competition_20260803.md`](design/servc_restricted_competition_20260803.md) | 참여업체 수·복수예가 난수 분해, 세부분류 특징 배선 |
