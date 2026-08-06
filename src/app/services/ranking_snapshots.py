@@ -14,7 +14,7 @@ src/app/services/ranking_snapshots.py
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -60,6 +60,22 @@ DIMENSIONS: dict[tuple[str, str], tuple[Any, Any]] = {
 # 빈 문자열은 "전체" 를 뜻합니다. NULL 은 유니크 제약에서 중복을 허용해 쓰지 않습니다.
 ALL_CATEGORIES = ""
 SNAPSHOT_CATEGORIES = (ALL_CATEGORIES, *CATEGORY_LABELS)
+
+# 매일 다시 집계하지 않는 차원입니다.
+#
+# `bid_ntce_nm` 은 varchar(500) 에 인덱스가 없어 6,645,162 행을 전표 스캔한 뒤
+# 임시 테이블과 파일소트를 씁니다. 2026-08-06 실측에서 전체 카테고리 한 조합이
+# 167초로, 야간 재집계 506초의 3분의 1을 혼자 씁니다.
+#
+# 이 순위는 전 기간 누적이라 하루 만에 뒤집히지 않습니다. 주기를 늘려도 답변이
+# 달라지지 않으므로 비용만 회수합니다. 근거는
+# `docs/ops/snapshot_rebuild_cost_20260806.md`.
+WEEKLY_DIMENSIONS = frozenset({(DATASET_ANNOUNCEMENT, "bid_ntce_nm")})
+
+# 주간 차원을 다시 집계하는 간격입니다. 요일로 판정하면 크론이 도는 시각의
+# 시간대에 따라 건너뛰거나 두 번 도는 날이 생깁니다. 스냅샷 자체의 나이를
+# 보면 시간대와 무관하게 자기교정됩니다.
+WEEKLY_REBUILD_INTERVAL_DAYS = 7
 
 
 def exclude_corrupted(column):
@@ -110,13 +126,51 @@ def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> t
     return kept, dropped
 
 
-def rebuild_ranking_snapshots(db: Session) -> dict[str, int]:
-    """전체 조합을 다시 집계합니다. 무거우므로 정기 실행과 수집 직후에만 호출합니다."""
+def _dimension_age_days(db: Session, dataset: str, dimension: str) -> float | None:
+    """해당 차원 스냅샷의 나이(일). 아직 집계된 적이 없으면 None."""
+    rebuilt_at = db.scalar(
+        select(func.max(BidRankingSnapshot.rebuilt_at)).where(
+            BidRankingSnapshot.dataset == dataset,
+            BidRankingSnapshot.dimension == dimension,
+        )
+    )
+    if rebuilt_at is None:
+        return None
+    # 이 저장소는 DateTime 컬럼을 UTC naive 로 통일합니다 (`core/timeutil`).
+    # 어쩌다 aware 값이 들어와도 빼기가 깨지지 않도록 여기서 맞춥니다.
+    if rebuilt_at.tzinfo is not None:
+        rebuilt_at = rebuilt_at.astimezone(UTC).replace(tzinfo=None)
+    return (utcnow() - rebuilt_at).total_seconds() / 86400.0
+
+
+def _should_rebuild(db: Session, dataset: str, dimension: str, force_weekly: bool) -> bool:
+    """주간 차원인지, 주간 차원이라면 다시 집계할 때가 됐는지 판정합니다."""
+    if (dataset, dimension) not in WEEKLY_DIMENSIONS:
+        return True
+    if force_weekly:
+        return True
+    age = _dimension_age_days(db, dataset, dimension)
+    # 한 번도 집계된 적이 없으면 반드시 만듭니다. 없는 채로 두면 조회가
+    # 실시간 경로로 떨어져 오히려 느려집니다.
+    return age is None or age >= WEEKLY_REBUILD_INTERVAL_DAYS
+
+
+def rebuild_ranking_snapshots(db: Session, *, force_weekly: bool = False) -> dict[str, int]:
+    """전체 조합을 다시 집계합니다. 무거우므로 정기 실행과 수집 직후에만 호출합니다.
+
+    `WEEKLY_DIMENSIONS` 는 나이가 `WEEKLY_REBUILD_INTERVAL_DAYS` 를 넘었을 때만
+    다시 집계합니다. 건너뛴 차원의 기존 스냅샷은 그대로 두므로 조회는 계속
+    동작합니다. `force_weekly=True` 면 주기와 무관하게 전부 집계합니다.
+    """
     started = utcnow()
     written = 0
     skipped = 0
+    deferred: list[str] = []
 
     for (dataset, dimension) in DIMENSIONS:
+        if not _should_rebuild(db, dataset, dimension, force_weekly):
+            deferred.append(dimension)
+            continue
         for category in SNAPSHOT_CATEGORIES:
             rows, dropped = _compute_rows(db, dataset, dimension, category)
             skipped += int(dropped)
@@ -158,9 +212,18 @@ def rebuild_ranking_snapshots(db: Session) -> dict[str, int]:
 
     elapsed = (utcnow() - started).total_seconds()
     logger.info(
-        "상위 N 스냅샷 재집계 완료 (%d행, 손상 제외 조합 %d개, %.1fs)", written, skipped, elapsed
+        "상위 N 스냅샷 재집계 완료 (%d행, 손상 제외 조합 %d개, %.1fs, 주간 보류 %s)",
+        written,
+        skipped,
+        elapsed,
+        ",".join(deferred) or "없음",
     )
-    return {"rows": written, "scopes_with_corruption": skipped, "elapsed_seconds": elapsed}
+    return {
+        "rows": written,
+        "scopes_with_corruption": skipped,
+        "elapsed_seconds": elapsed,
+        "deferred_dimensions": deferred,
+    }
 
 
 def get_top_rankings(
