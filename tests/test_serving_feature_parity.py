@@ -22,7 +22,7 @@ from src.ml.features import (
     unservable_features,
 )
 from src.ml.model_registry import MODEL_FILES_ROOT
-from src.ml.trainer import TRAINING_FEATURES
+from src.ml.trainer import TRAINING_FEATURES, training_features_for_category
 
 SAMPLE_NOTICE = {
     "srvce_div_nm": "일반용역",
@@ -101,9 +101,7 @@ def test_legacy_model_without_levels_still_works():
 def test_missing_lower_limit_sets_indicator():
     """하한율 결측을 0 으로 채우면 "하한율 0" 과 구분되지 않습니다."""
     payload = {key: value for key, value in SAMPLE_NOTICE.items() if key != "lwlt_rate"}
-    frame = model_registry._prepare_input_frame(
-        payload, ["lwlt_rate", "lwlt_rate_missing"]
-    )
+    frame = model_registry._prepare_input_frame(payload, ["lwlt_rate", "lwlt_rate_missing"])
     assert frame["lwlt_rate"].iloc[0] == 0.0
     assert frame["lwlt_rate_missing"].iloc[0] == 1.0
 
@@ -127,7 +125,7 @@ def test_non_strict_mode_keeps_legacy_behaviour():
 
 def test_trained_servc_model_is_deployable():
     """재학습이 내놓는 특징 전량이 추론에서 재현돼야 배포할 수 있습니다."""
-    assert unservable_features(list(TRAINING_FEATURES)) == []
+    assert unservable_features(training_features_for_category("Servc")) == []
 
 
 @pytest.mark.skipif(
@@ -173,7 +171,13 @@ def test_full_frame_keeps_institution_features():
     """
     frame = model_registry._prepare_full_frame(SAMPLE_NOTICE)
     row = frame.iloc[0].to_dict()
-    for column in ("lwlt_rate", "lwlt_rate_missing", "srvce_div_nm", "mid_clsfc_nm", *TRAINING_FEATURES):
+    for column in (
+        "lwlt_rate",
+        "lwlt_rate_missing",
+        "srvce_div_nm",
+        "mid_clsfc_nm",
+        *TRAINING_FEATURES,
+    ):
         assert column in row, f"{column} 이 예측 프레임에서 사라졌습니다"
     assert row["lwlt_rate"] == SAMPLE_NOTICE["lwlt_rate"]
     assert row["srvce_div_nm"] == SAMPLE_NOTICE["srvce_div_nm"]
@@ -181,7 +185,12 @@ def test_full_frame_keeps_institution_features():
 
 def test_full_frame_keeps_legacy_rule_model_keys():
     """규칙 기반 구 모델은 title / agency_name / scenario_mode 를 씁니다."""
-    payload = {**SAMPLE_NOTICE, "title": "도로 유지관리", "agency_name": "서울시", "scenario_mode": "2"}
+    payload = {
+        **SAMPLE_NOTICE,
+        "title": "도로 유지관리",
+        "agency_name": "서울시",
+        "scenario_mode": "2",
+    }
     row = model_registry._prepare_full_frame(payload).iloc[0].to_dict()
     assert row["title"] == "도로 유지관리"
     assert row["agency_name"] == "서울시"
@@ -257,25 +266,30 @@ def test_trainer_records_interval_metadata():
 #
 # 판정 기준: 학습이 attach 로 채우는 이력 특징은 세션이 주어지면 조회로
 # 살아나야 하고, 세션이 없을 때만 기본값으로 떨어져야 합니다.
-HISTORY_LOOKUP_FEATURES = ("inst_hist_rate", "inst_sample_cnt")
+HISTORY_LOOKUP_FEATURES = ("inst_hist_rate", "inst_sample_cnt", "inst_ewm_rate")
 
 
 class _StubResult:
-    def __init__(self, value):
-        self._value = value
+    def __init__(self, row):
+        self._row = row
 
-    def scalar(self):
-        return self._value
+    def one_or_none(self):
+        return self._row
 
 
 class _StubSession:
     """집계 표에 값이 있는 상황을 흉내 냅니다."""
 
-    def __init__(self, sample_count: int = 812, avg_rate: float = 88.5):
-        self._values = [avg_rate, sample_count]
+    def __init__(
+        self,
+        sample_count: int = 812,
+        avg_rate: float = 88.5,
+        ewm_rate: float = 89.25,
+    ):
+        self._row = (avg_rate, sample_count, ewm_rate)
 
     def execute(self, _stmt):
-        return _StubResult(self._values.pop(0) if self._values else None)
+        return _StubResult(self._row)
 
 
 @pytest.mark.parametrize("column", HISTORY_LOOKUP_FEATURES)
@@ -302,3 +316,24 @@ def test_sample_count_reaches_serving_frame():
     notice.pop("inst_sample_cnt", None)
     served = build_default_feature_map(notice, session=_StubSession(sample_count=812))
     assert float(served["inst_sample_cnt"]) == 812.0
+
+
+def test_institution_stats_use_one_serving_query():
+    """기관 이력 세 특징을 각각 조회해 서빙 DB 왕복이 늘어나면 안 됩니다."""
+    notice = dict(SAMPLE_NOTICE)
+    session = _StubSession()
+    calls = 0
+    original = session.execute
+
+    def counted(stmt):
+        nonlocal calls
+        calls += 1
+        return original(stmt)
+
+    session.execute = counted
+    served = build_default_feature_map(notice, session=session)
+
+    assert calls == 1
+    assert served["inst_hist_rate"] == pytest.approx(0.885)
+    assert served["inst_sample_cnt"] == 812.0
+    assert served["inst_ewm_rate"] == pytest.approx(0.8925)

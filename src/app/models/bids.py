@@ -188,7 +188,9 @@ class BidResult(Base):
     sucsf_bid_rate = Column(Numeric(10, 4), nullable=True, comment="낙찰률")
     rl_openg_dt = Column(DateTime, nullable=True, comment="개찰일시")
     dminstt_nm = Column(String(200), nullable=True, comment="수요기관명")
-    category = Column(String(10), nullable=False, default="Thng", comment="업무구분(Thng/Cnstwk/Servc/Frgcpt)")
+    category = Column(
+        String(10), nullable=False, default="Thng", comment="업무구분(Thng/Cnstwk/Servc/Frgcpt)"
+    )
     raw_data = Column(JSON, nullable=True, comment="전체 원본 데이터")
     collected_at = Column(DateTime, nullable=False, default=utcnow, comment="수집일시")
 
@@ -297,7 +299,9 @@ class BidAnnouncement(Base):
     ntce_kind_nm = Column(String(100), nullable=True, comment="공고종류명")
     bid_methd_nm = Column(String(100), nullable=True, comment="입찰방식명")
     cntrct_mthd_nm = Column(String(100), nullable=True, comment="계약방법명")
-    category = Column(String(10), nullable=False, default="Thng", comment="업무구분(Thng/Cnstwk/Servc/Frgcpt)")
+    category = Column(
+        String(10), nullable=False, default="Thng", comment="업무구분(Thng/Cnstwk/Servc/Frgcpt)"
+    )
     raw_data = Column(JSON, nullable=True, comment="전체 원본 데이터")
     collected_at = Column(DateTime, nullable=False, default=utcnow, comment="수집일시")
 
@@ -368,9 +372,7 @@ class BidRankingSnapshot(Base):
 
     __tablename__ = "bid_ranking_snapshots"
     __table_args__ = (
-        UniqueConstraint(
-            "dataset", "dimension", "category", "rank", name="uq_bid_ranking_slot"
-        ),
+        UniqueConstraint("dataset", "dimension", "category", "rank", name="uq_bid_ranking_slot"),
         Index("ix_bid_ranking_lookup", "dataset", "dimension", "category", "rank"),
     )
 
@@ -421,6 +423,11 @@ class InstitutionWinRateStat(Base):
     category = Column(String(10), nullable=False, default="", comment="업무구분 (전체는 빈 문자열)")
     sample_count = Column(BigInteger, nullable=False, default=0, comment="집계에 쓴 낙찰 건수")
     avg_rate = Column(Numeric(10, 4), nullable=False, comment="평균 낙찰률 (퍼센트)")
+    ewm_rate = Column(
+        Numeric(10, 4),
+        nullable=True,
+        comment="지수감쇠 낙찰률 (퍼센트, 반감기 20건)",
+    )
     rebuilt_at = Column(
         DateTime,
         nullable=False,

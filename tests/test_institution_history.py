@@ -17,8 +17,10 @@ from src.app.core.db import Base
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidResult
 from src.ml.institution_history import (
+    EWM_HALFLIFE,
     _default_institution_rate,
     _normalize_institution_name,
+    _rebuild_ewm_rates,
     _resolve_category,
     _resolve_institution_name,
     _resolve_reference_date,
@@ -173,8 +175,12 @@ def test_calculate_filters_by_category(memory_session):
 def test_calculate_respects_reference_date_boundaries(memory_session):
     reference_date = datetime(2024, 6, 15, 10, 0, 0)
     # lookback_days=30 범위 안에 1건만 포함
-    seed_results(memory_session, "서울시", "Servc", [87.5], reference_date - timedelta(days=10), prefix="IN")
-    seed_results(memory_session, "서울시", "Servc", [99.0], reference_date - timedelta(days=40), prefix="OUT")
+    seed_results(
+        memory_session, "서울시", "Servc", [87.5], reference_date - timedelta(days=10), prefix="IN"
+    )
+    seed_results(
+        memory_session, "서울시", "Servc", [99.0], reference_date - timedelta(days=40), prefix="OUT"
+    )
 
     rate = calculate_institution_win_rate(
         memory_session,
@@ -189,8 +195,17 @@ def test_calculate_respects_reference_date_boundaries(memory_session):
 
 def test_calculate_excludes_future_results(memory_session):
     reference_date = datetime(2024, 6, 15, 10, 0, 0)
-    seed_results(memory_session, "서울시", "Servc", [87.5], reference_date - timedelta(days=1), prefix="PAST")
-    seed_results(memory_session, "서울시", "Servc", [99.0], reference_date + timedelta(days=1), prefix="FUTURE")
+    seed_results(
+        memory_session, "서울시", "Servc", [87.5], reference_date - timedelta(days=1), prefix="PAST"
+    )
+    seed_results(
+        memory_session,
+        "서울시",
+        "Servc",
+        [99.0],
+        reference_date + timedelta(days=1),
+        prefix="FUTURE",
+    )
 
     rate = calculate_institution_win_rate(
         memory_session,
@@ -250,13 +265,18 @@ def test_lookup_institution_history_uses_normalized_name(memory_session):
 
 
 def test_resolve_institution_name_skips_placeholder_institutions():
-    assert _resolve_institution_name({"dminstt_nm": "각 수요기관", "ntce_instt_nm": "공고기관"}) == "공고기관"
+    assert (
+        _resolve_institution_name({"dminstt_nm": "각 수요기관", "ntce_instt_nm": "공고기관"})
+        == "공고기관"
+    )
     assert _resolve_institution_name({"dminstt_nm": "수요기관", "ntce_instt_nm": ""}) == ""
 
 
 def test_calculate_excludes_outlier_rates(memory_session):
     reference_date = datetime(2024, 6, 15, 10, 0, 0)
-    seed_results(memory_session, "서울시", "Servc", [87.5, 88.0, 99.0, 100.0, 150.0], reference_date)
+    seed_results(
+        memory_session, "서울시", "Servc", [87.5, 88.0, 99.0, 100.0, 150.0], reference_date
+    )
 
     rate = calculate_institution_win_rate(
         memory_session,
@@ -310,12 +330,14 @@ def test_attach_institution_history_excludes_self_and_future():
 
     from src.ml.institution_history import attach_institution_history
 
-    df = pd.DataFrame({
-        "dminstt_nm": ["A"] * 6,
-        "category": ["Servc"] * 6,
-        "openg_dt": pd.date_range("2024-01-01", periods=6, freq="D"),
-        "winning_rate": [80.0, 82.0, 84.0, 86.0, 88.0, 99.0],
-    })
+    df = pd.DataFrame(
+        {
+            "dminstt_nm": ["A"] * 6,
+            "category": ["Servc"] * 6,
+            "openg_dt": pd.date_range("2024-01-01", periods=6, freq="D"),
+            "winning_rate": [80.0, 82.0, 84.0, 86.0, 88.0, 99.0],
+        }
+    )
     out = attach_institution_history(df, min_samples=5)
 
     # 6번째 행만 과거 5건을 갖습니다. 평균 (80+82+84+86+88)/5 = 84.0
@@ -333,12 +355,14 @@ def test_attach_institution_history_preserves_row_order():
 
     from src.ml.institution_history import attach_institution_history
 
-    df = pd.DataFrame({
-        "dminstt_nm": ["A", "B", "A"],
-        "openg_dt": ["2024-03-01", "2024-01-01", "2024-02-01"],
-        "winning_rate": [90.0, 85.0, 80.0],
-        "marker": [10, 20, 30],
-    })
+    df = pd.DataFrame(
+        {
+            "dminstt_nm": ["A", "B", "A"],
+            "openg_dt": ["2024-03-01", "2024-01-01", "2024-02-01"],
+            "winning_rate": [90.0, 85.0, 80.0],
+            "marker": [10, 20, 30],
+        }
+    )
     out = attach_institution_history(df)
     assert list(out["marker"]) == [10, 20, 30]
 
@@ -349,12 +373,14 @@ def test_attach_institution_history_drops_outlier_rates():
 
     from src.ml.institution_history import attach_institution_history
 
-    df = pd.DataFrame({
-        "dminstt_nm": ["A"] * 7,
-        "category": ["Servc"] * 7,
-        "openg_dt": pd.date_range("2024-01-01", periods=7, freq="D"),
-        "winning_rate": [80.0, 0.0, 82.0, 500.0, 84.0, 86.0, 88.0],
-    })
+    df = pd.DataFrame(
+        {
+            "dminstt_nm": ["A"] * 7,
+            "category": ["Servc"] * 7,
+            "openg_dt": pd.date_range("2024-01-01", periods=7, freq="D"),
+            "winning_rate": [80.0, 0.0, 82.0, 500.0, 84.0, 86.0, 88.0],
+        }
+    )
     # 6번 행의 과거 6건 중 0.0 과 500.0 이 빠져 유효 이력은 4건입니다.
     out = attach_institution_history(df, min_samples=4)
     assert out.loc[6, "inst_sample_cnt"] == 4
@@ -363,3 +389,42 @@ def test_attach_institution_history_drops_outlier_rates():
     # 최소 표본에 못 미치면 기본값으로 떨어집니다.
     strict = attach_institution_history(df, min_samples=5)
     assert strict.loc[6, "inst_hist_rate"] == pytest.approx(0.9011)
+
+
+def test_attach_ewm_excludes_self_and_same_timestamp():
+    """동시각 공고끼리는 서로의 결과를 이력으로 보면 안 됩니다."""
+    import pandas as pd
+
+    from src.ml.institution_history import attach_institution_history
+
+    df = pd.DataFrame(
+        {
+            "dminstt_nm": ["A"] * 8,
+            "category": ["Servc"] * 8,
+            "openg_dt": pd.to_datetime(
+                ["2024-01-01"] * 2 + ["2024-02-01"] * 2 + ["2024-03-01"] * 2 + ["2024-04-01"] * 2
+            ),
+            "winning_rate": [80.0, 82.0, 84.0, 86.0, 88.0, 90.0, 99.0, 70.0],
+        }
+    )
+
+    out = attach_institution_history(df, min_samples=5)
+
+    assert out.loc[0, "inst_ewm_rate"] == pytest.approx(0.9011)
+    assert out.loc[1, "inst_ewm_rate"] == pytest.approx(0.9011)
+    assert out.loc[6, "inst_ewm_rate"] == pytest.approx(out.loc[7, "inst_ewm_rate"])
+    assert 0.80 <= out.loc[6, "inst_ewm_rate"] <= 0.90
+
+
+def test_streaming_ewm_matches_pandas(memory_session):
+    """집계 경로의 스트리밍 계산이 학습 경로의 pandas 정의와 같아야 합니다."""
+    import pandas as pd
+
+    reference_date = datetime(2024, 6, 15, 10, 0, 0)
+    rates = [87.5, 88.0, 91.0, 89.0, 90.5]
+    seed_results(memory_session, "서울시", "Servc", rates, reference_date)
+
+    result = _rebuild_ewm_rates(memory_session, min_samples=5)
+    expected = pd.Series(list(reversed(rates))).ewm(halflife=EWM_HALFLIFE).mean().iloc[-1]
+
+    assert result[("서울시", "Servc")] == pytest.approx(expected)

@@ -43,6 +43,21 @@ python3 scripts/verify_migration.py
 - 메타데이터를 레지스트리 포맷으로 변환 (기존 `metadata.json` 흡수).
 - 상태 = `champion`.
 
+### 1.5 2026-08-06 용역 challenger 체크섬
+
+승격 전 challenger `servc_institution_v1/v_20260806_025423_494`를
+`ml_registry/`에 보존했습니다. 원 학습 worktree와 보존본의 SHA256이 모두
+아래 값으로 일치합니다.
+
+| 파일 | SHA256 |
+| --- | --- |
+| `model.bin` | `5e2ec89afaf8e4884343f534406a1ee461e057c56e4eabf9257edfec7c1d6f88` |
+| `model_q10.bin` | `fcd237c42acfc718e4f620d5a372cf72a4393272149bb4a116647634b73b161f` |
+| `model_q90.bin` | `b89e90b5abe6c1beaab077cf5f8ff8e24d4bda51d32e39e90a334c3218088c6e` |
+
+이 기록은 challenger 아티팩트의 복사 무결성 기준입니다. 기존 4개 champion의
+정본 manifest인 `data/backups/data_assets_checksums.json`은 변경하지 않았습니다.
+
 ---
 
 ## 2. ChromaDB 보존 검증
