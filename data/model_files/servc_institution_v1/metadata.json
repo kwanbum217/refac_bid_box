@@ -1,6 +1,6 @@
 {
   "name": "servc_institution_v1",
-  "version": "v_20260805_103528_292",
+  "version": "v_20260806_025423_494",
   "type": "joblib",
   "model_file": "model.bin",
   "description": "servc_institution_v1 재학습 승격본",
@@ -42,7 +42,8 @@
     "ntce_kind_nm",
     "bid_methd_nm",
     "intrbid_yn",
-    "ppsw_gnrl_srvce_yn"
+    "ppsw_gnrl_srvce_yn",
+    "inst_ewm_rate"
   ],
   "category_levels": {
     "srvce_div_nm": [
@@ -498,14 +499,14 @@
       0.9
     ],
     "target_coverage": 0.9,
-    "conformal_scale": 1.149117,
+    "conformal_scale": 1.151263,
     "available": true
   },
-  "promoted_at": "2026-08-05T10:45:14.783900",
+  "promoted_at": "2026-08-06T03:48:34.793594",
   "source_metrics": {
-    "rmse": 2.6998,
-    "mape": 1.4646,
-    "r2": 0.6824
+    "rmse": 2.6571,
+    "mape": 1.4207,
+    "r2": 0.6924
   },
   "refit_on_full": true
 }

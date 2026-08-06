@@ -1,8 +1,8 @@
 # 학습·서빙 특징 값 대조와 `inst_sample_cnt` 결함
 
 > **작성일**: 2026-08-05
-> **버전**: v1.0.0
-> **상태**: 결함 1건 수정(효과 큼), 1건 부분 수정(효과 중립)
+> **버전**: v1.1.0
+> **상태**: 결함 수정 완료, Servc 35개 특징 감사 계약 반영
 > **측정 스크립트**: [`scripts/audit_feature_parity_values.py`](../../scripts/audit_feature_parity_values.py)
 
 ---
@@ -281,9 +281,24 @@ assert with_session[column] != without_session[column]
 ## 7. 재현
 
 ```bash
-.venv/bin/python scripts/audit_feature_parity_values.py --samples 200
+.venv/bin/python scripts/audit_feature_parity_values.py --samples 600
 ```
 
 이력 계열은 **전량에 붙인 뒤 잘라내야** 합니다. 연도로 먼저 자르면 각 기관의
 연초 건이 최소 표본에 걸려 기본값 폴백이 폭증합니다
 (`servc_rolling_institution_20260805.md` 6.2).
+
+### 7.1 2026-08-06 EWM 추가 후 감사
+
+감사 스크립트가 공용 `TRAINING_FEATURES` 34개를 고정해서 보던 경로를
+`training_features_for_category("Servc")` 계약으로 바꿨습니다. 따라서 승격된
+용역 모델의 35번째 특징 `inst_ewm_rate`도 자동으로 검사합니다.
+
+2025년 600건 대조에서 `inst_ewm_rate`의 상관은 0.8899, 평균절대차는
+0.00791이었습니다. 학습값은 각 과거 공고 직전의 EWM이고 서빙값은 현재 집계
+EWM이므로 기존 이력 특징과 같은 시점 차이입니다. 전체 임계값 미달은 기존 8개에
+EWM 1개가 더해진 9개였고, 예상 밖 차이는 0개였습니다.
+
+스크립트는 이제 이 9개를 알려진 시점 차이로 따로 표시합니다. 각 특징에는 이번
+실측을 감싸는 최소 상관·최대 평균절대차 가드가 있어, 같은 특징이라도 범위를
+벗어나면 새 배관 결함 후보로 출력합니다.
