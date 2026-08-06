@@ -106,12 +106,76 @@ def test_all_categories_scope_aggregates_everything(seeded_db):
 
 
 def test_rebuild_is_idempotent(seeded_db):
-    first = rebuild_ranking_snapshots(seeded_db)["rows"]
-    second = rebuild_ranking_snapshots(seeded_db)["rows"]
+    first = rebuild_ranking_snapshots(seeded_db, force_weekly=True)["rows"]
+    second = rebuild_ranking_snapshots(seeded_db, force_weekly=True)["rows"]
     assert first == second
     # 갱신할 때마다 행이 쌓이면 순위가 뒤섞입니다.
     total = seeded_db.query(BidRankingSnapshot).count()
     assert total == second
+
+
+# --------------------------------------------------------------------------- #
+# 주간 차원
+# --------------------------------------------------------------------------- #
+#
+# bid_ntce_nm 은 varchar(500) 에 인덱스가 없어 6,645,162 행을 전표 스캔합니다.
+# 2026-08-06 실측에서 한 조합이 167초로 야간 재집계 506초의 3분의 1을 씁니다.
+# 전 기간 누적 순위라 하루 만에 뒤집히지 않으므로 주기를 늘립니다.
+
+
+def test_weekly_dimension_is_skipped_on_the_next_night(seeded_db):
+    from src.app.services.ranking_snapshots import WEEKLY_DIMENSIONS
+
+    rebuild_ranking_snapshots(seeded_db)
+    result = rebuild_ranking_snapshots(seeded_db)
+
+    deferred = set(result["deferred_dimensions"])
+    assert deferred == {dimension for _, dimension in WEEKLY_DIMENSIONS}
+
+
+def test_deferred_dimension_keeps_its_snapshot(seeded_db):
+    """건너뛴 차원의 기존 순위를 지우면 조회가 실시간 경로로 떨어집니다."""
+    from src.app.services.ranking_snapshots import DATASET_ANNOUNCEMENT, get_top_rankings
+
+    rebuild_ranking_snapshots(seeded_db)
+    before = get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm", "", 5)
+    rebuild_ranking_snapshots(seeded_db)
+    after = get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm", "", 5)
+
+    assert before
+    assert after == before
+
+
+def test_weekly_dimension_rebuilds_once_stale(seeded_db):
+    from datetime import timedelta
+
+    from src.app.core.timeutil import utcnow
+    from src.app.services.ranking_snapshots import (
+        DATASET_ANNOUNCEMENT,
+        WEEKLY_REBUILD_INTERVAL_DAYS,
+    )
+
+    rebuild_ranking_snapshots(seeded_db)
+    stale = utcnow() - timedelta(days=WEEKLY_REBUILD_INTERVAL_DAYS + 1)
+    seeded_db.query(BidRankingSnapshot).filter(
+        BidRankingSnapshot.dataset == DATASET_ANNOUNCEMENT,
+        BidRankingSnapshot.dimension == "bid_ntce_nm",
+    ).update({BidRankingSnapshot.rebuilt_at: stale})
+    seeded_db.commit()
+
+    result = rebuild_ranking_snapshots(seeded_db)
+
+    assert result["deferred_dimensions"] == []
+
+
+def test_weekly_dimension_is_built_when_missing(seeded_db):
+    """한 번도 집계된 적이 없으면 주기와 무관하게 만들어야 합니다."""
+    from src.app.services.ranking_snapshots import DATASET_ANNOUNCEMENT, get_top_rankings
+
+    result = rebuild_ranking_snapshots(seeded_db)
+
+    assert result["deferred_dimensions"] == []
+    assert get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm", "", 5)
 
 
 def test_rebuild_reflects_new_data(seeded_db):
