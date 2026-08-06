@@ -89,7 +89,7 @@ def build_work_table(conn) -> None:
          AND a.bid_ntce_ord = SUBSTR(CONCAT('000', r.bid_ntce_ord), -3, 3)
          AND a.category = r.category
         WHERE r.category = 'Servc'
-        """
+        """  # nosec B608 - 보간값이 모듈 상수입니다
         )
     )
     conn.execute(text(f"CREATE INDEX ix_v_dt ON {WORK_TABLE} (bid_ntce_dt)"))
@@ -121,7 +121,7 @@ def v0_overview(conn) -> None:
                SUM(lwlt_rate IS NOT NULL AND lwlt_rate <> '0') AS has_lwlt,
                MIN(bid_ntce_dt) AS min_dt, MAX(bid_ntce_dt) AS max_dt
         FROM {WORK_TABLE}
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V0. 조인 표본 개요", df)
 
@@ -137,7 +137,7 @@ def v1_regime(conn) -> None:
                ROUND(AVG(sucsf_bid_rate), 4) AS avg_rate
         FROM {WORK_TABLE}
         GROUP BY regime ORDER BY regime DESC
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V1-a. 제도 레짐별 표본", df)
 
@@ -150,7 +150,7 @@ def v1_regime(conn) -> None:
         FROM {WORK_TABLE}
         WHERE bid_ntce_dt >= '2026-01-01'
         GROUP BY ym ORDER BY ym
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V1-b. 2026년 월별 하한율·낙찰률 추이 (계단 이동 확인)", df)
 
@@ -163,7 +163,7 @@ def v1_regime(conn) -> None:
         WHERE bid_ntce_dt >= '2026-01-01' AND lwlt_rate IS NOT NULL AND lwlt_rate <> '0'
         GROUP BY regime, lwlt_rate
         HAVING n >= 50 ORDER BY regime DESC, n DESC
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V1-c. 2026년 레짐 전후 하한율 최빈값", df)
 
@@ -180,7 +180,7 @@ def v2_unknown_rates(conn) -> None:
             WHERE lwlt_rate + 0 = {rate}
             GROUP BY cntrct_mthd_nm, sucsfbid_mthd_nm, srvce_div_nm, lrg_clsfc_nm
             ORDER BY n DESC LIMIT 8
-            """,
+            """,  # nosec B608 - 보간값이 모듈 상수입니다
         )
         show(f"V2. 하한율 {rate} 의 정체", df)
 
@@ -191,7 +191,7 @@ def v2_unknown_rates(conn) -> None:
         FROM {WORK_TABLE}
         WHERE lwlt_rate IS NOT NULL AND lwlt_rate <> '0'
         GROUP BY lwlt_rate ORDER BY n DESC LIMIT 25
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V2-b. 하한율 상위 25개 값", df)
 
@@ -207,7 +207,7 @@ def v3_presmpt_availability(conn) -> None:
                ROUND(AVG(sucsf_bid_amt / NULLIF(presmpt_prce, 0)) * 100, 4) AS avg_amt_over_presmpt
         FROM {WORK_TABLE}
         GROUP BY prearng_mthd ORDER BY n DESC
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show(
         "V3-a. 예가결정방법별 금액 필드 결측·비율",
@@ -218,7 +218,7 @@ def v3_presmpt_availability(conn) -> None:
 
     df = q(
         conn,
-        """
+        """  # nosec B608 - 보간값이 모듈 상수입니다
         SELECT COUNT(*) AS open_announcements,
                SUM(raw_data IS NOT NULL) AS has_raw,
                SUM(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(raw_data,'$.presmptPrce')),'') IS NOT NULL) AS has_presmpt,
@@ -245,7 +245,7 @@ def v4_award_method(conn) -> None:
                SUM(lwlt_rate IS NULL OR lwlt_rate='0') AS lwlt_missing
         FROM {WORK_TABLE}
         GROUP BY sucsfbid_mthd_nm ORDER BY n DESC LIMIT 20
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V4-a. 낙찰방법(sucsfbidMthdNm) 분포와 낙찰률 산포", df)
 
@@ -257,7 +257,7 @@ def v4_award_method(conn) -> None:
                ROUND(STDDEV_SAMP(sucsf_bid_rate), 3) AS sd_rate
         FROM {WORK_TABLE}
         GROUP BY cntrct_mthd_nm ORDER BY n DESC LIMIT 15
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V4-b. 계약방법별 낙찰률 산포", df)
 
@@ -276,7 +276,7 @@ def v5_negotiation(conn) -> None:
         FROM {WORK_TABLE}
         WHERE sucsf_bid_rate IS NOT NULL
         GROUP BY kind
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V5-a. 협상에 의한 계약 vs 그 외 낙찰률 산포", df)
 
@@ -290,7 +290,7 @@ def v5_negotiation(conn) -> None:
         WHERE tech_ablt_evl_rt IS NOT NULL AND tech_ablt_evl_rt <> '0'
         GROUP BY tech_ablt_evl_rt, bid_prce_evl_rt
         ORDER BY n DESC LIMIT 15
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show(
         "V5-b. 기술능력/입찰가격 평가비율별 낙찰률",
@@ -309,7 +309,7 @@ def v6_base_amount(conn) -> None:
                ROUND(AVG(base_amount / NULLIF(presmpt_prce,0)), 5) AS base_over_presmpt,
                ROUND(AVG(asign_bdgt_amt / NULLIF(presmpt_prce,0)), 5) AS bdgt_over_presmpt
         FROM {WORK_TABLE}
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show(
         "V6-a. 기초금액 대체 후보 필드 보유율",
@@ -324,7 +324,7 @@ def v6_base_amount(conn) -> None:
         FROM {WORK_TABLE}
         WHERE tot_prdprc_num IS NOT NULL
         GROUP BY tot_prdprc_num, drwt_prdprc_num ORDER BY n DESC LIMIT 10
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show(
         "V6-b. 복수예비가격 개수 구조 (totPrdprcNum / drwtPrdprcNum)",
@@ -344,7 +344,7 @@ def v7_category(conn) -> None:
                ROUND(STDDEV_SAMP(sucsf_bid_rate),3) AS sd_rate
         FROM {WORK_TABLE}
         GROUP BY srvce_div_nm ORDER BY n DESC LIMIT 15
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show(
         "V7-a. 용역구분명(srvceDivNm)별 하한율·낙찰률",
@@ -361,7 +361,7 @@ def v7_category(conn) -> None:
         FROM {WORK_TABLE}
         WHERE lrg_clsfc_nm IS NOT NULL
         GROUP BY lrg_clsfc_nm ORDER BY n DESC LIMIT 15
-        """,
+        """,  # nosec B608 - 보간값이 모듈 상수입니다
     )
     show("V7-b. 공공조달 대분류(pubPrcrmntLrgClsfcNm)별 지표", df)
 

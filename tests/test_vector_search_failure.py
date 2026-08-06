@@ -33,7 +33,7 @@ def test_search_failure_returns_no_documents(monkeypatch):
 
     class BrokenChroma:
         @staticmethod
-        def PersistentClient(path):  # noqa: N802
+        def PersistentClient(path):
             raise KeyError("_type")
 
     monkeypatch.setitem(__import__("sys").modules, "chromadb", BrokenChroma)
@@ -48,7 +48,7 @@ def test_search_failure_is_logged(monkeypatch, caplog):
 
     class BrokenChroma:
         @staticmethod
-        def PersistentClient(path):  # noqa: N802
+        def PersistentClient(path):
             raise KeyError("_type")
 
     monkeypatch.setitem(__import__("sys").modules, "chromadb", BrokenChroma)

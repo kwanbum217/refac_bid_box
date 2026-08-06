@@ -53,7 +53,10 @@ def collect_checksums(base: Path, relative_prefix: str) -> dict[str, dict]:
     for path in sorted(base.rglob("*")):
         if not path.is_file():
             continue
-        rel = str(Path(relative_prefix) / path.relative_to(base))
+        # 매니페스트 키는 as_posix 로 고정합니다. str() 은 Windows 에서
+        # 역슬래시를 내므로, 한 플랫폼에서 만든 매니페스트를 다른 플랫폼에서
+        # 대조할 수 없게 됩니다 (G1 검증이 플랫폼에 묶입니다).
+        rel = (Path(relative_prefix) / path.relative_to(base)).as_posix()
         records[rel] = {
             "sha256": sha256_file(path),
             "bytes": path.stat().st_size,
