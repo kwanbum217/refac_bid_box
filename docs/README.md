@@ -77,6 +77,7 @@ docs/
 | 용역 모델 튜닝 인수인계 | [`2026-08-03_servc_model_tuning_handoff.md`](handoff/2026-08-03_servc_model_tuning_handoff.md) | Huber, 재발주 이력, 기각 목록 |
 | 서빙 배선 인수인계 | [`2026-08-04_servc_serving_handoff.md`](handoff/2026-08-04_servc_serving_handoff.md) | 특징 단일화, 승격 경로, 예측 구간 |
 | Phase 7 인수인계 | [`2026-08-04_phase7_handoff.md`](handoff/2026-08-04_phase7_handoff.md) | 컷오버 판정, 재현 절차, 잔여 조건 |
+| 리팩토링 세션 인수인계 | [`2026-08-06_refactoring_handoff.md`](handoff/2026-08-06_refactoring_handoff.md) | 첫 토큰·CI·승격 게이트 수정, 기각 목록, 잔여 결정 사항 |
 
 ## 4. ops/
 
