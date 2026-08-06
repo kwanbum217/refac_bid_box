@@ -1,8 +1,8 @@
 # refac_bid_box 문서 인덱스
 
 > **작성일**: 2026-07-31
-> **정정일**: 2026-08-04
-> **버전**: v1.2.0
+> **정정일**: 2026-08-06
+> **버전**: v1.3.0
 > **상태**: Phase 0~6 완료 / Phase 7 컷오버 보류
 > **적용 범위**: `bid_box` (Django) → `refac_bid_box` (FastAPI + SSR/HTMX) 전환
 
@@ -78,6 +78,7 @@ docs/
 | 서빙 배선 인수인계 | [`2026-08-04_servc_serving_handoff.md`](handoff/2026-08-04_servc_serving_handoff.md) | 특징 단일화, 승격 경로, 예측 구간 |
 | Phase 7 인수인계 | [`2026-08-04_phase7_handoff.md`](handoff/2026-08-04_phase7_handoff.md) | 컷오버 판정, 재현 절차, 잔여 조건 |
 | 리팩토링 세션 인수인계 | [`2026-08-06_refactoring_handoff.md`](handoff/2026-08-06_refactoring_handoff.md) | 첫 토큰·CI·승격 게이트 수정, 기각 목록, 잔여 결정 사항 |
+| 모델 성능 개선 재개 인수인계 | [`2026-08-06_model_improvement_handoff.md`](handoff/2026-08-06_model_improvement_handoff.md) | Servc·Thng 승격 상태, 하한율 결측 집단 후속 진단, 기각 경계 |
 
 ## 4. ops/
 
