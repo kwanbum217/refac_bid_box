@@ -129,7 +129,7 @@ Bandit 17건도 함께 해소했고, `.gitattributes` 가 아예 없어 Windows 
 
 | 항목 | 내용 |
 | --- | --- |
-| **`servc_inst_verify` 553MB** | 일회성 분석 스크립트(`verify_servc_institution.py`)가 운영 DB 에 남긴 작업 테이블 1,033,106행. 업무 데이터가 아니고 ORM·매니페스트 어디에도 없습니다. 재생성은 스크립트 재실행 한 번. **삭제 여부 확인 필요** |
+| ~~`servc_inst_verify` 553MB~~ | **2026-08-06 담당자 승인으로 삭제 완료.** 삭제 후 `verify_migration.py` 4/4 통과, 테이블 30개. 재생성은 `verify_servc_institution.py` 재실행 한 번 |
 | 가중치 외부 저장소 이동 | Phase 4 미완. `data/model_files/` 는 체크섬 매니페스트 대상이라 옮길 때 매니페스트 갱신 절차를 함께 정해야 합니다 |
 | `MLOPS_WEBHOOK_URL` | 코드·테스트 완료, URL 만 넣으면 동작. 1인 운영에서는 실익이 작아 보류했습니다 |
 

@@ -671,13 +671,15 @@ run_mode_matrix (개정):
 
 관리 밖 테이블 18개를 확인했습니다. 16개는 Django 잔존 테이블(`auth_*`, `django_*`, `account_*`, `socialaccount_*`)이고 G1 원칙상 보존 대상입니다. `alembic_version` 은 정상입니다.
 
-나머지 하나가 문제입니다.
+나머지 하나였던 `servc_inst_verify` 는 **2026-08-06 담당자 승인으로 삭제했습니다.**
 
-| 테이블 | 행 수 | 크기 | 출처 |
-| --- | ---: | ---: | --- |
-| `servc_inst_verify` | 1,033,106 | 553.1 MB | `scripts/verify_servc_institution.py` 의 작업 테이블 |
+| 테이블 | 행 수 | 크기 | 출처 | 조치 |
+| --- | ---: | ---: | --- | --- |
+| `servc_inst_verify` | 1,033,106 | 553.1 MB (데이터 509.0 + 인덱스 44.1) | `scripts/verify_servc_institution.py` 의 작업 테이블 | 2026-08-06 `DROP TABLE` |
 
-일회성 분석 스크립트가 만든 중간 산출물이 운영 DB 에 남아 있습니다. 업무 데이터가 아니고 ORM·백업 매니페스트 어디에도 없습니다. **삭제는 담당자 확인이 필요합니다.** 재생성 비용은 스크립트 재실행 한 번입니다.
+일회성 분석 스크립트가 만든 중간 산출물이며 업무 데이터가 아닙니다. ORM·백업 매니페스트·`verify_migration.py` 검증 대상 어디에도 없어 G1 영향이 없습니다. 삭제 후 `verify_migration.py` 4/4 통과를 확인했습니다.
+
+재생성이 필요하면 `scripts/verify_servc_institution.py` 를 다시 실행하십시오. 스크립트가 `DROP TABLE IF EXISTS` 후 테이블과 인덱스 2종(`ix_v_dt`, `ix_v_lwlt`)을 스스로 만듭니다.
 
 ---
 
