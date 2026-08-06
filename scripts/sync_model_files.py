@@ -190,7 +190,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
                     failures.append(f"읽을 수 없음: {name}")
                     continue
                 digest = hashlib.sha256()
-                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                while chunk := handle.read(1024 * 1024):
                     digest.update(chunk)
                 if digest.hexdigest() != meta["sha256"]:
                     failures.append(f"체크섬 불일치: {name}")
