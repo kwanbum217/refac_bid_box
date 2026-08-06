@@ -1,0 +1,30 @@
+# 줄바꿈 정규화 (G2 크로스 플랫폼)
+#
+# Git for Windows 는 core.autocrlf=true 가 기본이라 가드가 없으면 Makefile 과
+# Dockerfile 이 CRLF 로 체크아웃됩니다. CRLF Makefile 은 GNU make 에서 레시피가
+# 깨지고, CI 는 pytest 만 돌리므로 이 실패를 잡지 못합니다.
+
+* text=auto eol=lf
+
+# PowerShell 은 CRLF 가 정본입니다.
+*.ps1 text eol=crlf
+
+# 데이터 자산은 절대 변환하지 않습니다.
+#
+# 이 경로들은 체크섬 매니페스트로 무결성을 검증합니다 (G1). 줄바꿈이 한 바이트만
+# 바뀌어도 sha256 이 달라져 무손실 검증이 실패합니다. 실제로
+# data/model_files/v25/champion_summary.json 은 CRLF 로 저장돼 있습니다.
+data/** -text
+ml_registry/** -text
+chroma_db/** -text
+
+# 이진 파일
+*.parquet binary
+*.bin binary
+*.pkl binary
+*.joblib binary
+*.sqlite3 binary
+*.tar.gz binary
+*.png binary
+*.jpg binary
+*.ico binary
