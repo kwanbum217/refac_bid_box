@@ -1,7 +1,8 @@
 # 크로스 플랫폼 호환 가이드 (macOS / Windows)
 
 > **작성일**: 2026-07-31
-> **상태**: macOS 검증 완료 / Windows 호스트 전체 스택 검증 대기
+> **갱신일**: 2026-08-06
+> **상태**: macOS 검증 완료 / Windows CI 통과 / Windows 호스트 전체 스택 검증 대기
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
 ---
@@ -22,6 +23,8 @@ macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위�
 | 환경 차이 | 로컬 직접 설치 | Docker + Makefile 표준화 |
 | 경로 구분자 | `\` vs `/` | `pathlib.Path` 전면 사용 |
 | 인코딩 | 시스템 기본 인코딩 차이 | UTF-8 강제 |
+| 체크섬 매니페스트 키 | `str(Path)` 가 Windows 에서 `\` 를 냄 | `as_posix()` 고정 (2026-08-06) |
+| 줄바꿈 | `core.autocrlf=true` 가 Makefile 을 CRLF 로 체크아웃 | `.gitattributes` 로 `eol=lf` 고정 (2026-08-06) |
 
 ---
 
@@ -116,5 +119,27 @@ steps:
 - [x] Makefile 작성
 - [x] macOS에서 `make up` 실행 검증
 - [x] Windows에서 `uv run pytest -q` 실행 검증 (GitHub Actions windows-latest)
-- [x] CI Python 매트릭스 테스트 통과 (macOS/Windows)
+- [x] CI Python 매트릭스 테스트 통과 (macOS/Windows) — 2026-08-06 실제 통과 확인
+- [x] `.gitattributes` 줄바꿈 가드 (데이터 자산은 변환 제외)
 - [ ] Windows Docker Desktop에서 `scripts/validate_windows.ps1` 전체 통과
+
+### 2026-08-06 정적 감사 결과
+
+Windows 장비가 없어 실행 검증 대신 정적 감사와 CI 로 확인했습니다.
+
+| 점검 항목 | 결과 |
+| --- | --- |
+| `open()` 인코딩 누락 | 없음 (바이너리 모드 2건만) |
+| 하드코딩 `/tmp`, `.exe`, `fcntl`/`pwd`/`os.fork` | 없음 |
+| 문자열 `+ "/"` 경로 조합 | 없음 |
+| `os.symlink`/`chmod`, 로케일 의존 | 없음 |
+| 대소문자만 다른 동일 경로 | 없음 |
+| 빌드 진입점 줄바꿈 | Dockerfile/Makefile/compose 모두 LF |
+| **체크섬 매니페스트 경로** | **결함 발견 후 수정** (`as_posix`) |
+
+CI 의 windows-latest 작업은 이 결함으로 실패하고 있었으며, 수정 후 3개 작업
+(macOS / Windows / lint) 전량 통과를 확인했습니다.
+
+남은 미검증 영역은 **Windows 호스트의 Docker Compose 전체 스택**입니다. GitHub
+호스팅 Windows 러너는 Linux 컨테이너 스택을 대신하지 못하므로 실제 장비가
+필요합니다.
