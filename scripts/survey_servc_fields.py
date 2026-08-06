@@ -134,7 +134,7 @@ def extract(engine) -> pd.DataFrame:
         WHERE r.category = 'Servc' AND r.sucsf_bid_rate IS NOT NULL
           AND r.rl_openg_dt >= :start AND r.rl_openg_dt < :end
         LIMIT {SAMPLE_PER_YEAR}
-    """
+    """  # nosec B608 - 보간값이 모듈 상수입니다
     frames = []
     for year in SURVEY_YEARS:
         part = pd.read_sql(
@@ -165,7 +165,7 @@ def unopened_coverage(engine) -> pd.Series:
         WHERE a.category = 'Servc' AND r.id IS NULL
           AND a.bid_ntce_dt >= :start
         LIMIT 60000
-    """
+    """  # nosec B608 - 보간값이 모듈 상수입니다
     print("[extract] 미개찰 공고 추출 중", flush=True)
     # 최근 구간만 봅니다. 추론 시점의 가용성을 재는 것이므로 과거 미수집 건은
     # 오히려 왜곡입니다.
