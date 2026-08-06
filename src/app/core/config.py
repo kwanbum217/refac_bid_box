@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
     GEMINI_API_KEY: str = ""
     CHROMA_DB_PATH: str = str(PROJECT_ROOT / "chroma_db")
+    # 임베딩 제공자. "ollama" 가 기본이며 "default" 는 ChromaDB 내장
+    # all-MiniLM-L6-v2 로 되돌립니다. 그 모델은 영어 전용이라 한국어 검색
+    # 적중률이 top-5 에서 4% 에 그칩니다 (2026-08-06 실측, bge-m3 는 100%).
+    EMBEDDING_PROVIDER: str = "ollama"
+    EMBEDDING_MODEL: str = "bge-m3"
     # 가중치 저장 위치의 정본입니다. src/ml/model_registry.py 와
     # src/ml/promotion.py 가 이 값을 읽습니다. 외부 볼륨이나 다른 디스크로
     # 옮길 때는 이 환경변수만 바꾸면 되며, 코드 수정은 필요하지 않습니다.

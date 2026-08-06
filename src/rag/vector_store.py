@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src.app.core.config import PROJECT_ROOT, settings
+from src.rag.embeddings import get_collection
 from src.rag.schemas import RetrievalPlan
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,9 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> list[dict[str, Any]]:
         import chromadb
 
         client = chromadb.PersistentClient(path=str(settings.CHROMA_DB_PATH))
-        collection = client.get_collection(DEFAULT_COLLECTION)
+        # 색인과 같은 임베딩 함수로 열어야 합니다. 그냥 get_collection 을 부르면
+        # ChromaDB 가 기본 함수를 끼워 넣어, 실패 없이 결과만 엉뚱해집니다.
+        collection = get_collection(client, DEFAULT_COLLECTION)
         results = collection.query(query_texts=[semantic_query], n_results=plan.top_k)
     except Exception:
         # 오류 문구를 문서로 돌려주면 안 됩니다. 그 문자열이 그대로 LLM 프롬프트에

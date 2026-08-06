@@ -75,7 +75,16 @@ def read_chroma_stats(sqlite_path: Path) -> tuple[list[str], int]:
         cursor = connection.cursor()
         cursor.execute("SELECT name FROM collections ORDER BY name")
         collections = [row[0] for row in cursor.fetchall()]
-        cursor.execute("SELECT COUNT(*) FROM embeddings")
+        # 살아 있는 컬렉션의 세그먼트만 셉니다. embeddings 를 통째로 세면
+        # 삭제된 옛 컬렉션의 고아 레코드까지 잡혀 실제보다 부풀려집니다
+        # (2026-08-06 확인: 컬렉션 500건인데 1,500건으로 보고되고 있었습니다).
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM embeddings e
+            JOIN segments s ON e.segment_id = s.id
+            JOIN collections c ON s.collection = c.id
+            """
+        )
         embedding_count = int(cursor.fetchone()[0])
     finally:
         connection.close()
@@ -224,8 +233,11 @@ def probe_chroma_query() -> tuple[bool, str]:
     try:
         import chromadb
 
+        from src.rag.embeddings import get_collection
+
         client = chromadb.PersistentClient(path=str(CHROMA_DB_PATH))
-        collection = client.get_collection("bidding_kb")
+        # 운영 경로와 같은 임베딩 함수로 열어야 실제 질의를 재현합니다.
+        collection = get_collection(client, "bidding_kb")
         results = collection.query(query_texts=["입찰 공고"], n_results=1)
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
