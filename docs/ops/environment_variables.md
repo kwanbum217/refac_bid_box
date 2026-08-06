@@ -113,7 +113,9 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `MODEL_REGISTRY_PATH` | 아니오 | `ml_registry` | 모델 레지스트리 경로 |
 | `ML_WEEKLY_RETRAIN_ENABLED` | 아니오 | `true` | 매주 월요일 03:00 재학습 크론 사용 여부 |
 | `DRIFT_PSI_THRESHOLD` | 아니오 | `0.2` | 데이터 드리프트 PSI 임계값 |
-| `MLOPS_WEBHOOK_URL` | 아니오 | (없음) | 재학습 실패·승격 권고를 보낼 웹훅(Slack/Discord) 주소. 비면 알림을 보내지 않습니다 |
+| `MLOPS_WEBHOOK_URL` | 아니오 | (없음) | 재학습 실패·승격 권고를 보낼 **Slack Incoming Webhook** 주소. 비면 알림을 보내지 않습니다 |
+
+발신 페이로드는 `{"text": ...}` 로 고정돼 있어 **Slack 전용**입니다. Discord 로 바꾸려면 `{"content": ...}` 를 요구하므로 `src/tasks/notifier.py:60` 수정이 함께 필요합니다. 발신 실패는 예외를 삼키고 로그만 남기므로 형식이 틀려도 조용히 실패합니다.
 
 `MLOPS_WEBHOOK_URL` 이 비어 있으면 알림 발신이 통째로 생략됩니다. 개발 장비의 기본 동작이며, `ML_WEEKLY_RETRAIN_ENABLED` 와 같은 규약입니다. 알림 발신 실패는 재학습을 되돌리지 않고 로그만 남깁니다. 무엇을 보내고 무엇을 보내지 않는지는 [`docs/design/mlops_notification_20260805.md`](../design/mlops_notification_20260805.md) 4장을 참조하십시오.
 

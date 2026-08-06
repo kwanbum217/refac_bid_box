@@ -130,7 +130,7 @@ R2 0.4160이었으며 상세는
 
 `PROMOTE_CHALLENGER` 판정이 나오면 `src/tasks/notifier.py` 가 웹훅으로 두 버전의 지표와 이 런북의 명령을 함께 보냅니다. 정상 기각은 보내지 않습니다. 상세는 [`docs/design/mlops_notification_20260805.md`](../design/mlops_notification_20260805.md).
 
-`MLOPS_WEBHOOK_URL` 이 비어 있으면 알림은 생략되며, 그때는 `promote_model.py status` 로 직접 확인해야 합니다.
+`MLOPS_WEBHOOK_URL` 이 비어 있으면 알림은 생략되며, 그때는 `promote_model.py status` 로 직접 확인해야 합니다. 2026-08-06 기준 Slack 웹훅이 설정돼 실환경 수신까지 확인된 상태입니다.
 
 ---
 
