@@ -106,6 +106,7 @@ def verify_checksum_records(
 def verify_model_weights() -> tuple[bool, str]:
     print("[1/4] ML 가중치 4종 무결성 검증...")
     model_root = ASSET_ROOT / "data" / "model_files"
+    backup_root = ASSET_ROOT / "data" / "model_backups"
     if not model_root.exists():
         return False, "data/model_files/ 없음 (scripts/import_data_assets.py 실행 필요)"
 
@@ -119,13 +120,25 @@ def verify_model_weights() -> tuple[bool, str]:
         records = manifest_models.get(model)
         if not records or "model.bin" not in records:
             return False, f"manifest 모델 기준선 누락: {model}"
-        failures = verify_checksum_records(
+        serving_failures = verify_checksum_records(
             model_root / model,
             {f"{model}/{name}": meta for name, meta in records.items()},
             prefix=f"{model}/",
         )
-        if failures:
-            return False, failures[0]
+        if not serving_failures:
+            continue
+
+        # 재학습 champion을 승격하면 운영 슬롯은 의도적으로 원본과 달라집니다.
+        # promotion은 직전 서빙본을 model_backups에 보존하므로, 원본 기준선은
+        # 그쪽에서 계속 검증해야 합니다. 둘 다 어긋날 때만 G1 실패입니다.
+        backup_failures = verify_checksum_records(
+            backup_root / model,
+            {f"{model}/{name}": meta for name, meta in records.items()},
+            prefix=f"{model}/",
+        )
+        if backup_failures:
+            return False, f"{serving_failures[0]}; 백업도 불일치: {backup_failures[0]}"
+        print(f"      {model}: 운영본 교체, 원본 백업 체크섬 일치")
 
     print(f"      4종 모델 manifest 체크섬 일치: {', '.join(EXPECTED_MODELS)}")
     return True, "ML 가중치 4종 체크섬 일치"

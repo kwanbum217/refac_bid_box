@@ -133,3 +133,50 @@ def test_import_checksum_paths_use_stable_prefix(tmp_path):
     assert records["chroma_db/chroma.sqlite3"]["sha256"] == (
         verify_migration.sha256_file(sqlite_path)
     )
+
+
+def _configure_promoted_model(monkeypatch, tmp_path: Path, backup_bytes: bytes):
+    model = "promoted_model"
+    serving = tmp_path / "data" / "model_files" / model
+    backup = tmp_path / "data" / "model_backups" / model
+    serving.mkdir(parents=True)
+    backup.mkdir(parents=True)
+    (serving / "model.bin").write_bytes(b"new champion")
+    (backup / "model.bin").write_bytes(backup_bytes)
+    original = tmp_path / "original.bin"
+    original.write_bytes(b"original")
+    manifest = tmp_path / "model_manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "models": {
+                    model: {
+                        "model.bin": {
+                            "sha256": verify_migration.sha256_file(original),
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(verify_migration, "ASSET_ROOT", tmp_path)
+    monkeypatch.setattr(verify_migration, "MANIFEST_PATH", manifest)
+    monkeypatch.setattr(verify_migration, "EXPECTED_MODELS", (model,))
+
+
+def test_model_verification_accepts_original_in_promotion_backup(monkeypatch, tmp_path):
+    _configure_promoted_model(monkeypatch, tmp_path, b"original")
+
+    passed, _ = verify_migration.verify_model_weights()
+
+    assert passed is True
+
+
+def test_model_verification_rejects_mutated_serving_and_backup(monkeypatch, tmp_path):
+    _configure_promoted_model(monkeypatch, tmp_path, b"corrupted")
+
+    passed, message = verify_migration.verify_model_weights()
+
+    assert passed is False
+    assert "백업도 불일치" in message

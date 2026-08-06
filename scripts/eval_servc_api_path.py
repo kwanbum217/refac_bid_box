@@ -44,8 +44,14 @@ from src.app.schemas.predictions import PredictPriceRequest  # noqa: E402
 ERROR_BANDS = (0.5, 1.0, 2.0, 3.0, 5.0)
 
 
-def collect(session, year: int, samples: int, seed: int) -> pd.DataFrame:
-    """실제 낙찰률이 있는 용역 공고를 무작위로 뽑습니다."""
+def collect(
+    session,
+    year: int,
+    samples: int,
+    seed: int,
+    category: str = "Servc",
+) -> pd.DataFrame:
+    """실제 낙찰률이 있는 해당 업무구분 공고를 무작위로 뽑습니다."""
     stmt = (
         select(
             BidAnnouncement.id,
@@ -54,7 +60,7 @@ def collect(session, year: int, samples: int, seed: int) -> pd.DataFrame:
         )
         .join(BidResult, BidResult.bid_ntce_no == BidAnnouncement.bid_ntce_no)
         .where(
-            BidAnnouncement.category == "Servc",
+            BidAnnouncement.category == category,
             BidResult.sucsf_bid_rate.isnot(None),
             BidResult.sucsf_bid_rate > 0,
             func.year(BidResult.rl_openg_dt) == year,
@@ -71,6 +77,7 @@ def main() -> int:
     parser.add_argument("--samples", type=int, default=300)
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--seed", type=int, default=42, help="표본 재현용 시드")
+    parser.add_argument("--category", default="Servc", help="업무구분 코드")
     parser.add_argument(
         "--require-lwlt",
         action="store_true",
@@ -83,7 +90,7 @@ def main() -> int:
         # 하한율 필터는 raw_data JSON 안이라 SQL 로 거르기 번거롭습니다. 넉넉히
         # 뽑아 파이썬에서 걸러 냅니다.
         pool = args.samples * 4 if args.require_lwlt else args.samples
-        frame = collect(session, args.year, pool, args.seed)
+        frame = collect(session, args.year, pool, args.seed, args.category)
         if frame.empty:
             print("표본이 없습니다. DB 연결과 연도를 확인하십시오.")
             return 1
@@ -102,7 +109,7 @@ def main() -> int:
             frame = frame[frame["bid_id"].isin(keep)]
             print(f"하한율 보유 건만 사용합니다 ({len(frame):,}건).")
 
-        print(f"{args.year}년 용역 {len(frame):,}건으로 API 경로를 호출합니다.")
+        print(f"{args.year}년 {args.category} {len(frame):,}건으로 API 경로를 호출합니다.")
 
         records = []
         for row in frame.itertuples():

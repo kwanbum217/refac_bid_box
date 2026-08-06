@@ -60,6 +60,21 @@ python3 scripts/verify_migration.py
 기존 4개 이식 모델의 정본 manifest인 `data/backups/data_assets_checksums.json`은
 변경하지 않았습니다.
 
+### 1.6 2026-08-06 물품 champion 체크섬
+
+`quantum_leap_v25_pro/v_20260806_043408_749`를 승격한 뒤 레지스트리와 서빙
+슬롯의 SHA-256 일치를 확인했습니다.
+
+| 파일 | SHA256 |
+| --- | --- |
+| `model.bin` | `3cacfaa0d97e3db0203ff73879364e1b9d332b71c1a10b2770011c3ded240d5e` |
+| `model_q10.bin` | `1182d8b6ef84a65ebfb7106f0d0c4e5d948134416220ab47042ad8e0d1c8887a` |
+| `model_q90.bin` | `44b3dad35b4554d650695eac9ca2bb604a592857071b6e3a90e7de7e69a6add7` |
+
+직전 25.1 규칙 모델은 `data/model_backups/quantum_leap_v25_pro`에 보관했습니다.
+`scripts/verify_migration.py`는 운영 슬롯이 재학습 champion으로 교체된 경우 이
+백업본을 원본 manifest와 대조합니다. 운영본과 백업본이 모두 어긋나면 실패합니다.
+
 ---
 
 ## 2. ChromaDB 보존 검증
