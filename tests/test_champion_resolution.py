@@ -91,6 +91,57 @@ def test_explicit_champion_marking_is_used(serving_root, tmp_path):
     assert metrics == SERVING_METRICS
 
 
+# --------------------------------------------------------------------------- #
+# 실측 지표 사이드카
+# --------------------------------------------------------------------------- #
+#
+# 원본에서 이식한 4개 모델의 metadata.json 은 체크섬 매니페스트에 포함돼
+# 있습니다. 거기에 지표를 써넣으면 G1 무손실 검증이 깨지므로 별도 파일에 둡니다.
+
+
+@pytest.fixture
+def metrics_root(tmp_path, monkeypatch):
+    root = tmp_path / "model_metrics"
+    monkeypatch.setattr("src.ml.promotion.METRICS_ROOT", root)
+    return root
+
+
+def test_sidecar_metrics_are_used_when_serving_has_none(serving_root, metrics_root):
+    from src.ml import promotion
+
+    _write(serving_root / "m", {"version": "25.1"})
+    promotion.save_serving_metrics("m", "25.1", {"r2": -0.2133, "rmse": 6.3769})
+
+    version, metrics = retrain_task._load_champion_metrics("m")
+
+    assert version == "25.1"
+    assert metrics["r2"] == -0.2133
+
+
+def test_sidecar_is_ignored_when_version_differs(serving_root, metrics_root):
+    """모델이 교체됐는데 옛 측정값을 물려주면 없는 근거로 판단하게 됩니다."""
+    from src.ml import promotion
+
+    _write(serving_root / "m", {"version": "25.2"})
+    promotion.save_serving_metrics("m", "25.1", {"r2": -0.2133})
+
+    _, metrics = retrain_task._load_champion_metrics("m")
+
+    assert metrics == {}
+
+
+def test_serving_metadata_wins_over_sidecar(serving_root, metrics_root):
+    """승격이 기록한 값이 정본입니다. 실측은 그것이 없을 때만 씁니다."""
+    from src.ml import promotion
+
+    _write(serving_root / "m", {"version": "v1", "source_metrics": SERVING_METRICS})
+    promotion.save_serving_metrics("m", "v1", {"r2": -99.0})
+
+    _, metrics = retrain_task._load_champion_metrics("m")
+
+    assert metrics == SERVING_METRICS
+
+
 @pytest.mark.asyncio
 async def test_incomparable_champion_is_warned_not_silently_rejected(monkeypatch):
     """비교 불가는 정상 기각이 아닙니다. 조용히 지나가면 아무도 모릅니다."""

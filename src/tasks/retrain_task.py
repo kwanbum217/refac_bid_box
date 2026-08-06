@@ -51,19 +51,12 @@ def _serving_metrics(model_name: str) -> tuple[str, dict] | None:
     서빙본은 25.1 인데 비교 대상은 표본 2개짜리 R2 -35999 버전이었고,
     그 결과 어떤 챌린저든 승격 권고를 받았습니다.
     """
-    from src.ml.promotion import SERVING_ROOT
+    from src.ml.promotion import load_serving_metrics
 
-    meta_path = SERVING_ROOT / model_name / "metadata.json"
-    if not meta_path.exists():
+    version, metrics = load_serving_metrics(model_name)
+    if not version and not metrics:
         return None
-    try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-    # 승격 시 기록되는 키는 source_metrics 입니다 (build_serving_metadata).
-    # metrics 는 원본에서 이식한 가중치가 쓰던 형태라 함께 봅니다.
-    metrics = meta.get("source_metrics") or meta.get("metrics") or {}
-    return str(meta.get("version") or ""), metrics
+    return version, metrics
 
 
 def _load_champion_metrics(model_name: str, registry_dir: str = "ml_registry") -> tuple[str, dict]:
