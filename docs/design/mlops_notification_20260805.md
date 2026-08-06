@@ -184,7 +184,23 @@ async def notify(title: str, lines: list[str], *, level: str = "info") -> None:
 
 설계와 달라진 점이 하나 있습니다. 홀드아웃 분리 실패(`holdout_is_overfit`)는 판정이 `REJECT_CHALLENGER` 로 덮어써지므로, 기각 무발신 규칙만 두면 알림이 나가지 않습니다. 판정이 아니라 `holdout_is_overfit` 플래그를 따로 보고 경고를 냅니다.
 
-**남은 검증**: `MLOPS_WEBHOOK_URL` 이 아직 비어 있어 실제 Slack/Discord 수신은 확인하지 못했습니다. 웹훅 발급 후 재학습을 한 번 수동 실행해 수신을 확인하십시오.
+**실환경 수신 검증 완료 (2026-08-06)**: Slack Incoming Webhook 을 발급해 `MLOPS_WEBHOOK_URL` 에 설정하고 발신을 확인했습니다. HTTP 200 응답과 채널 실제 수신을 모두 확인했으며, `[알림]` 접두사와 들여쓰기가 `_format_message` 설계대로 출력됐습니다.
+
+검증에서 확인된 함정을 남깁니다. `notify()` 는 모든 예외를 삼키므로(`notifier.py:63`) **명령이 조용히 끝나는 것은 성공 신호가 아닙니다.** URL 이 틀려도 동일하게 종료됩니다. 발신 여부를 판별하려면 채널을 눈으로 확인하거나 아래처럼 응답 코드를 직접 받아야 합니다.
+
+```bash
+uv run python -c "
+import asyncio, httpx
+from src.app.core.config import settings
+async def main():
+    async with httpx.AsyncClient(timeout=10) as c:
+        r = await c.post(settings.MLOPS_WEBHOOK_URL, json={'text': '발신 점검'})
+        print('HTTP', r.status_code, r.text)
+asyncio.run(main())
+"
+```
+
+Slack 은 `{"text": ...}` 페이로드를 그대로 받으므로 코드 수정이 필요 없습니다. **Discord 로 바꾸는 경우에는 `{"content": ...}` 를 요구하므로 `notifier.py:60` 수정이 필요합니다.** 예외를 삼키는 구조상 그 상태에서도 조용히 실패하므로 주의하십시오.
 
 ---
 

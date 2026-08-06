@@ -101,7 +101,7 @@ Bandit 17건도 함께 해소했고, `.gitattributes` 가 아예 없어 Windows 
 | --- | --- |
 | 예측 API 기동 예열 | 기동 직후 P95 164.1ms → 19.1ms |
 | alembic head 병합 | 분기 둘 → 단일 head |
-| MLOps 알림 | 웹훅 발신 구현·배선 완료. `MLOPS_WEBHOOK_URL` 미설정이라 **미발신** |
+| MLOps 알림 | 웹훅 발신 구현·배선 완료. 2026-08-06 Slack 웹훅 설정으로 **실환경 수신 확인 완료** |
 | 승격·롤백 CLI | `scripts/promote_model.py` |
 | 서빙 지표 실측 | `scripts/measure_serving_model.py` |
 | `servc-model-tuning` 스킬 | 기각 목록 9건, 판정 기준, 측정 함정 4종 |
@@ -131,7 +131,7 @@ Bandit 17건도 함께 해소했고, `.gitattributes` 가 아예 없어 Windows 
 | --- | --- |
 | ~~`servc_inst_verify` 553MB~~ | **2026-08-06 담당자 승인으로 삭제 완료.** 삭제 후 `verify_migration.py` 4/4 통과, 테이블 30개. 재생성은 `verify_servc_institution.py` 재실행 한 번 |
 | 가중치 외부 저장소 이동 | Phase 4 미완. `data/model_files/` 는 체크섬 매니페스트 대상이라 옮길 때 매니페스트 갱신 절차를 함께 정해야 합니다 |
-| `MLOPS_WEBHOOK_URL` | 코드·테스트 완료, URL 만 넣으면 동작. 1인 운영에서는 실익이 작아 보류했습니다 |
+| ~~`MLOPS_WEBHOOK_URL`~~ | **2026-08-06 설정 완료.** Slack Incoming Webhook 발급 후 실환경 수신 확인(HTTP 200, 채널 도달). 남은 것은 웹훅 URL 재발급 하나이며 담당자가 나중에 처리하기로 했습니다 |
 
 ### 4.2 장비가 필요한 것
 
