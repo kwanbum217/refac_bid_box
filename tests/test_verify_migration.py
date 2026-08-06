@@ -5,22 +5,46 @@ from pathlib import Path
 from scripts import import_data_assets, verify_migration
 
 
-def _create_chroma(path: Path, embedding_count: int) -> Path:
+def _create_chroma(path: Path, embedding_count: int, orphan_count: int = 0) -> Path:
+    """실제 ChromaDB 스키마(collections - segments - embeddings)를 흉내 냅니다.
+
+    `orphan_count` 는 삭제된 옛 컬렉션이 남긴 고아 임베딩입니다. 실물 DB 에서
+    실제로 관찰됐고(2026-08-06: 컬렉션 500건인데 1,500건으로 집계), 검증이
+    이것까지 세면 운영 규모를 부풀려 보고합니다.
+    """
     path.mkdir(parents=True)
     sqlite_path = path / "chroma.sqlite3"
     connection = sqlite3.connect(sqlite_path)
     try:
-        connection.execute("CREATE TABLE collections (name TEXT NOT NULL)")
-        connection.execute("CREATE TABLE embeddings (id INTEGER PRIMARY KEY)")
-        connection.execute("INSERT INTO collections (name) VALUES ('bidding_kb')")
+        connection.execute("CREATE TABLE collections (id TEXT PRIMARY KEY, name TEXT NOT NULL)")
+        connection.execute("CREATE TABLE segments (id TEXT PRIMARY KEY, collection TEXT)")
+        connection.execute("CREATE TABLE embeddings (id INTEGER PRIMARY KEY, segment_id TEXT)")
+        connection.execute("INSERT INTO collections (id, name) VALUES ('col-1', 'bidding_kb')")
+        connection.execute("INSERT INTO segments (id, collection) VALUES ('seg-live', 'col-1')")
         connection.executemany(
-            "INSERT INTO embeddings (id) VALUES (?)",
+            "INSERT INTO embeddings (id, segment_id) VALUES (?, 'seg-live')",
             [(index,) for index in range(embedding_count)],
         )
+        if orphan_count:
+            # 세그먼트만 있고 컬렉션에 매달려 있지 않은 잔재입니다.
+            connection.executemany(
+                "INSERT INTO embeddings (id, segment_id) VALUES (?, 'seg-orphan')",
+                [(embedding_count + index,) for index in range(orphan_count)],
+            )
         connection.commit()
     finally:
         connection.close()
     return sqlite_path
+
+
+def test_read_chroma_stats_ignores_orphan_embeddings(tmp_path):
+    """삭제된 컬렉션 잔재를 세면 운영 규모가 부풀려집니다."""
+    sqlite_path = _create_chroma(tmp_path / "chroma", embedding_count=500, orphan_count=1000)
+
+    collections, count = verify_migration.read_chroma_stats(sqlite_path)
+
+    assert collections == ["bidding_kb"]
+    assert count == 500
 
 
 def _configure_chroma_paths(monkeypatch, tmp_path: Path, operational_count: int = 500):

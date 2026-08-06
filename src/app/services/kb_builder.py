@@ -36,6 +36,7 @@ from src.app.models.bids import (
     normalize_bid_ntce_ord,
 )
 from src.app.models.chatbot import KnowledgeBaseStatus
+from src.rag.embeddings import get_collection
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,8 @@ def rebuild_knowledge_base(
             # 없는 컬렉션 삭제는 정상 흐름이라 무시합니다
             except Exception:  # nosec B110
                 pass
-        collection = chroma_client.get_or_create_collection(name=COLLECTION_NAME)
+        # 질의 경로(vector_store)와 반드시 같은 임베딩 함수여야 합니다.
+        collection = get_collection(chroma_client, COLLECTION_NAME, create=True)
 
         existing_hashes, incremental = ({}, False) if full else _load_existing_index(collection)
 
