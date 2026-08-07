@@ -253,3 +253,14 @@ async def test_nightly_schedule_failure_notifies(isolated_db):
 
     notify_failure.assert_awaited_once()
     assert "수집 API 응답 없음" in notify_failure.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_tests_never_send_to_a_real_webhook():
+    """테스트 실행이 운영 채널로 나가면 안 됩니다.
+
+    2026-08-06 에 .env 에 실제 Slack URL 이 들어오자 재학습 실패/빈 데이터셋
+    테스트가 경고 6건을 실제 발신했습니다. conftest 의 차단이 살아 있는지
+    고정합니다.
+    """
+    assert not settings.MLOPS_WEBHOOK_URL
