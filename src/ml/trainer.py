@@ -123,8 +123,33 @@ CATEGORY_MODEL_NAMES = {
 # 분위 모델(_train_quantile_models)은 hyperparams 를 받지 않으므로 이 재정의의
 # 영향을 받지 않습니다. 점 추정만 바뀝니다.
 # 근거: docs/design/servc_loss_function_20260807.md
+#
+# min_child_samples / learning_rate / n_estimators / subsample_freq 는 quantile
+# 아래에서 좌표 하강을 다시 돌려 얻은 값입니다. 2025년 홀드아웃 96,141건에서
+# MAE 1.2562 -> 1.2525 이고, 시드 3개 전부에서 -0.0035~-0.0038 로 방향과 크기가
+# 일치해 좌표 하강의 선택 편향이 아님을 확인했습니다(시드 표준편차 0.0008).
+#
+# num_leaves 는 huber 아래에서 고른 255 가 quantile 에서도 최적이었습니다.
+# 511 은 MAE 1.2560 으로 나쁘고 0.5%p 적중은 61.49% 로 더 떨어집니다. 용량은
+# 손실함수가 아니라 범주 조합 구조가 정합니다.
+#
+# n_estimators 2000 은 여기서 상한으로만 작동합니다. _train_lightgbm 이
+# early_stopping(10)을 걸기 때문이며, 실제 트리 수는 learning_rate 0.03 아래에서
+# 조기 종료가 정합니다. 탐색 스크립트는 조기 종료 없이 전량을 쓰므로 두 경로의
+# 트리 수가 다릅니다. 탐색 이득이 그대로 옮겨진다고 보면 안 됩니다.
+# 근거: docs/design/servc_hyperparam_quantile_20260807.md
 CATEGORY_HYPERPARAMS = {
-    "Servc": {"lightgbm": {"num_leaves": 255, "objective": "quantile", "alpha": 0.5}}
+    "Servc": {
+        "lightgbm": {
+            "num_leaves": 255,
+            "objective": "quantile",
+            "alpha": 0.5,
+            "min_child_samples": 160,
+            "learning_rate": 0.03,
+            "n_estimators": 2000,
+            "subsample_freq": 5,
+        }
+    }
 }
 
 

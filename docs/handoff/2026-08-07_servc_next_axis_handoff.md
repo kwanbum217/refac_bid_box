@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-08-07
 > **범위**: `quantile(0.5)` 승격 이후 남은 개선 축
-> **상태**: **착수 전.** 세 축 모두 미검증입니다
+> **상태**: 1순위는 홀드아웃까지 완료(**운영 쌍대 검정에서 재개**). 2·3순위 착수 전
 > **선행 인수인계**: [`2026-08-07_servc_loss_function_handoff.md`](2026-08-07_servc_loss_function_handoff.md) (완료)
 
 ---
@@ -47,7 +47,97 @@ git checkout main -- data/model_files/servc_institution_v1/metadata.json
 
 ## 2. 1순위: quantile 아래 하이퍼파라미터 재탐색
 
-### 2.1 왜 이 축인가
+> **2026-08-07 21:00 갱신.** 탐색과 시드 재현성 검정까지 끝났습니다. 재개
+> 지점은 **운영 경로 쌍대 검정**입니다. 상세는
+> [`servc_hyperparam_quantile_20260807.md`](../design/servc_hyperparam_quantile_20260807.md).
+
+### 2.0 어디까지 왔는가
+
+| 단계 | 상태 |
+| --- | --- |
+| 탐색 시작점을 운영값으로 수정 | 완료 |
+| 좌표 하강 21회 | 완료 |
+| 시드 재현성 검정 | 완료. 실체 있음 |
+| `CATEGORY_HYPERPARAMS` 반영 | 완료 |
+| 동일 학습 상한 재학습 | 아래 2.0.2 참조 |
+| **운영 경로 쌍대 검정** | **미실시. 여기서 재개** |
+| 승격 | 하지 않음 |
+
+**후보 설정** (`src/ml/trainer.py` `CATEGORY_HYPERPARAMS["Servc"]["lightgbm"]`)
+
+| 키 | 종전 | 후보 |
+| --- | ---: | ---: |
+| `num_leaves` | 255 | 255 (변화 없음) |
+| `min_child_samples` | 40 | 160 |
+| `learning_rate` | 0.05 | 0.03 |
+| `n_estimators` | 600 | 2000 (조기 종료 상한) |
+| `subsample_freq` | 0 | 5 |
+
+2025년 홀드아웃 96,141건에서 MAE 1.2562 -> 1.2525, 0.5%p 적중 +0.20%p 이며
+시드 3개에서 -0.0035 / -0.0037 / -0.0038 로 일관합니다(시드 표준편차 0.0008).
+
+#### 2.0.1 되돌리는 법
+
+운영 쌍대에서 기각되면 `CATEGORY_HYPERPARAMS` 에서 네 키를 지우면 됩니다.
+`num_leaves` 와 `objective` / `alpha` 는 남겨야 합니다. 그 셋은 이미 승격된
+설정입니다.
+
+#### 2.0.2 재학습 상태
+
+**세션 종료 시각까지 완료 여부는 아래 명령으로 확인하십시오.**
+
+```bash
+.venv/bin/python scripts/promote_model.py status
+ls -t ml_registry/servc_institution_v1/ | head -3
+```
+
+레지스트리 최상단 버전이 `v_20260807_043210_535` 이면 재학습이 완료되지 않은
+것이므로 다시 돌리십시오.
+
+```bash
+.venv/bin/python -u scripts/retrain_servc_from_parquet.py
+```
+
+**승격은 하지 않습니다.** 레지스트리에만 등록됩니다.
+
+#### 2.0.3 재개 명령
+
+```bash
+NEW=$(ls -t ml_registry/servc_institution_v1/ | head -1)
+cp -r "ml_registry/servc_institution_v1/$NEW" data/model_files/servc_hp_challenger
+
+.venv/bin/python scripts/compare_servc_models_paired.py \
+  --base servc_institution_v1 --challenger servc_hp_challenger \
+  --samples 9000 --year 2025 --seed 42
+
+.venv/bin/python scripts/compare_servc_models_by_group.py \
+  --base servc_institution_v1 --challenger servc_hp_challenger \
+  --samples 9000 --year 2025 --seed 42 \
+  --out data/analysis/servc_residuals/paired_hparam_2025.parquet
+
+rm -rf data/model_files/servc_hp_challenger
+```
+
+#### 2.0.4 판정에 미리 붙는 유보
+
+**이번 이득은 지금까지 이 축에서 운영에 옮겨지지 않은 두 사례보다 작습니다.**
+
+| 시도 | 홀드아웃 이득 | 운영 |
+| --- | ---: | --- |
+| `num_leaves` 255 (08-04) | 0.0177 | 판별 불가, 롤백 |
+| `num_leaves` 127 (08-05) | 0.0128 | t=2.13 악화 |
+| 이번 조합 | **0.0037** | 미측정 |
+
+**낙관하지 마십시오.** 통과하지 못하면 그것이 정상 결과입니다.
+
+또 하나. 운영은 `early_stopping(10)` 을 걸고 탐색 스크립트는 걸지 않습니다.
+`n_estimators=2000` 은 운영에서 상한으로만 작동하므로 두 경로의 트리 수가
+다릅니다. 재학습 지표가 탐색값과 어긋나도 결함이 아닙니다.
+
+`subsample_freq=5` 는 기여가 0.0004 로 시드 표준편차의 절반이고 huber 아래에서
+기각된 이력이 있습니다. 조합이 우세하면 이 축만 빼고 재확인하십시오.
+
+### 2.1 왜 이 축이었는가
 
 `num_leaves=255` 는 **huber 기준으로 고른 값입니다.**
 [`servc_hyperparam_search_20260804.md`](../design/servc_hyperparam_search_20260804.md)
@@ -69,15 +159,12 @@ quantile 은 huber 보다 학습이 빠릅니다(홀드아웃 21.3초 대 35.5�
 # {'objective': 'quantile', 'alpha': 0.5}
 ```
 
-### 2.3 남은 손질
+### 2.3 남은 손질 (완료)
 
-**탐색 시작점이 아직 `LGB_BASE_PARAMS` 입니다** (`tune_servc_hyperparams.py:133`).
-용역 운영값은 `num_leaves=255` 인데 기본값은 63 이라 시작점이 어긋납니다.
-좌표 하강은 시작점에 민감하므로 착수 전에 이 줄을 손보십시오.
-
-```python
-best = {key: LGB_BASE_PARAMS[key] for key in SEARCH_SPACE if key in LGB_BASE_PARAMS}
-```
+시작점이 `LGB_BASE_PARAMS`(리프 63)라 용역 운영값 255 와 어긋나 있었습니다.
+`tune_servc_hyperparams.py` 가 시작점과 목적함수를 모두
+`CATEGORY_HYPERPARAMS["Servc"]["lightgbm"]` 에서 읽도록 고쳤습니다. 값을 베끼지
+않으므로 앞으로 운영 설정이 바뀌면 탐색도 따라갑니다.
 
 ### 2.4 이미 닫힌 값
 
