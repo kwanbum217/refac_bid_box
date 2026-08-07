@@ -43,7 +43,16 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "bidding_kb"
 INDEX_BATCH_SIZE = 100
-DEFAULT_MAX_DOCUMENTS = 10
+
+# 원본은 10 이었습니다. 그 값이 야간 재색인에 그대로 적용되면 목표 문서가 10건이
+# 되고, 기존 색인 전부가 삭제 대상으로 계산됩니다. 2026-08-07 에 KB 를 50만 건으로
+# 확대한 뒤로는 운영 규모와 맞는 값이어야 합니다.
+DEFAULT_MAX_DOCUMENTS = 500_000
+
+# 한 번의 증분 색인이 지울 수 있는 비율의 상한입니다. 이를 넘으면 색인을 중단하고
+# 실패로 보고합니다. 상한값 설정 실수나 DB 일시 장애로 KB 가 통째로 사라지는 경로를
+# 막습니다. 데이터 무손실(G1)은 벡터DB 에도 적용됩니다.
+MAX_REMOVAL_RATIO = 0.5
 
 # 문서 본문 포맷 버전.
 #
@@ -395,6 +404,18 @@ def _sync(
         }
 
     changed_positions, removed_ids = _diff_index(existing_hashes, ids, metadatas)
+
+    # 임베딩을 시작하기 전에 막습니다. 이 비율을 넘는 삭제는 데이터가 실제로
+    # 사라진 것이 아니라 상한값이나 DB 조회가 잘못된 경우입니다. 그대로 두면
+    # 야간 재색인 한 번에 KB 가 통째로 비고, 챗봇은 근거 없이 답하게 됩니다.
+    removal_ratio = len(removed_ids) / len(existing_hashes) if existing_hashes else 0.0
+    if removal_ratio > MAX_REMOVAL_RATIO:
+        raise RuntimeError(
+            f"삭제 대상이 기존 색인의 {removal_ratio:.1%} 입니다"
+            f" (기존 {len(existing_hashes)}건, 삭제 {len(removed_ids)}건, 목표 {len(ids)}건)."
+            f" 상한 {MAX_REMOVAL_RATIO:.0%} 를 넘어 중단합니다."
+            " KB_MAX_DOCUMENTS 설정과 DB 조회 결과를 확인하십시오."
+        )
 
     embedded = 0
     if changed_positions:
