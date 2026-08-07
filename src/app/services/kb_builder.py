@@ -114,7 +114,10 @@ def _diff_index(
         for position, doc_id in enumerate(ids)
         if existing.get(doc_id) != metadatas[position]["doc_hash"]
     ]
-    removed_ids = [doc_id for doc_id in existing if doc_id not in set(ids)]
+    # 집합을 반드시 밖에서 한 번만 만듭니다. 컴프리헨션 안에 두면 기존 문서마다
+    # 재구축해 O(기존 x 대상) 이 되고, 10만 x 50만 규모에서는 끝나지 않습니다.
+    target_ids = set(ids)
+    removed_ids = [doc_id for doc_id in existing if doc_id not in target_ids]
     return changed_positions, removed_ids
 
 
