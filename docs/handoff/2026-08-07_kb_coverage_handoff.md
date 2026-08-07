@@ -113,12 +113,29 @@ MRR 을 추가로 냅니다.
 증분 색인이 있어 초기 적재만 한 번 비싸고 이후 야간 재색인은 변경분에
 비례합니다. 확대 후에는 같은 스크립트로 반드시 다시 재십시오.
 
+실행은 [`scripts/scale_kb_coverage.py`](../../scripts/scale_kb_coverage.py) 로
+고정했습니다. 브랜치 `feat/kb-coverage-500k` 에서 진행합니다.
+
+```bash
+KB_MAX_DOCUMENTS=500000 uv run python scripts/scale_kb_coverage.py
+```
+
+**중단해도 진행분은 남습니다.** `_flush` 가 100건 단위로 `upsert` 하고
+`PersistentClient` 라 배치마다 디스크에 씁니다. 재실행하면 `_diff_index` 가
+본문 해시로 이미 넣은 문서를 걸러내므로 남은 분량부터 이어갑니다. 목표 집합이
+기존 색인의 상위 집합이라 `removed_ids` 도 비어 삭제가 일어나지 않습니다.
+최악의 경우 HNSW 가 아직 플러시하지 않은 최근 수천 건만 다시 임베딩됩니다.
+
+컴퓨터를 끄실 때는 `pkill -f scale_kb_coverage` 로 프로세스를 먼저 정리하십시오.
+
 ### 3.2 그 뒤
 
 - 원문(HWP/PDF) 수집·청킹·overlap. 현재 KB 문서는 DB 행에서 조립한 정형
   레코드(평균 183자)라 쪼갤 대상이 없습니다. 이것이 먼저가 아닙니다
 - Windows Docker Compose 실기 검증 — 컷오버를 막는 유일한 조건, 장비 필요
-- Slack 웹훅 재발급 — URL 이 대화에 노출된 상태입니다. 담당자가 시점을 미뤄둠
+- ~~Slack 웹훅 재발급~~ — 2026-08-07 담당자가 재발급 완료. 테스트 발신 차단은
+  `tests/conftest.py` 가 `MLOPS_WEBHOOK_URL` 을 빈 값으로 대입하는 방식이라 새
+  URL 에서도 그대로 유효합니다
 
 ---
 
