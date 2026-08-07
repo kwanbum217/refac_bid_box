@@ -132,6 +132,45 @@ top-1 이 73.0% 에서 68.0% 로 내린 것은 후보 밀도가 높아져 유사
 증분 재개가 실제로 동작했습니다. 재개 시 `unchanged_count: 317,000` 으로 이미
 넣은 분량을 그대로 건너뛰었습니다.
 
+### 2.5 운영 경로(컨테이너) 연결 (2026-08-07 20:50)
+
+호스트 측정만으로는 완료가 아니었습니다. 웹으로 확인하니 컨테이너 챗봇이 확대된
+KB 를 전혀 쓰지 못하고 있었고, 원인이 **세 개** 겹쳐 있었습니다.
+
+| 문제 | 증상 | 조치 |
+| --- | --- | --- |
+| `chroma_db` 미마운트 | 이미지 빌드 시점(8/5)에 구워진 6.7MB 색인을 봄 | compose `app` 에 `./chroma_db:/app/chroma_db` 추가 |
+| `.env` 의 호스트 절대 경로 | `.env:8` 의 `CHROMA_DB_PATH` 가 `/Users/kwanbum/...` 라 이미지에 실려 컨테이너가 없는 경로를 보고 빈 컬렉션 생성 | compose 에 `CHROMA_DB_PATH=/app/chroma_db` 로 덮어씀 |
+| `knowledge_base_status` 불일치 | 챗봇이 "색인 500건" 이라 답함 | 아래 참조 |
+
+두 번째가 특히 고약합니다. 마운트를 고쳐도 앱은 그 경로를 보지도 않았습니다.
+로그에는 `InvalidCollectionException: Collection bidding_kb does not exist` 가
+쌓이는데 응답은 정상 형식이라 화면만 보면 알 수 없습니다.
+
+세 번째는 **호스트와 컨테이너가 서로 다른 DB 를 본다**는 사실에서 옵니다.
+
+| 대상 | DB | `source_bid_count` |
+| --- | --- | ---: |
+| 호스트 `.env` | MariaDB `127.0.0.1:3307` | 499,195 |
+| 컨테이너 `app` | MySQL 8 Docker `:3306` | 500 (7/31 `manual-test`) |
+
+행 수는 두 DB 가 동일하므로(공고 5,461,079 / 결과 3,405,928) 문서 내용 차이는
+없습니다. 컨테이너 DB 를 대상으로 같은 스크립트를 한 번 더 돌려
+(`embedded_count: 0`, `unchanged_count: 498,958`) 상태만 맞췄습니다.
+
+> **`AGENTS.md` 는 MySQL 8 Docker 통일과 이중화 제거를 규정합니다. 호스트 기본
+> DB 가 로컬 MariaDB 인 현 상태는 그 원칙과 어긋납니다.** 이번 범위를 넘어
+> 손대지 않았지만, 호스트에서 잰 값이 운영 경로와 다른 DB 를 본다는 뜻이라 같은
+> 함정이 계속 반복됩니다. 별도 과제로 다루십시오.
+
+검증 결과입니다. 챗봇이 실제 KB 문서를 인용해 답했고 ChromaDB 오류는 0건입니다.
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/chatbot/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"서울특별시 용역 공고 알려줘"}'
+```
+
 ---
 
 ## 3. 다음에 할 일
