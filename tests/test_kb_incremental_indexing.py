@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import timedelta
 
 import pytest
@@ -194,3 +195,23 @@ def test_diff_index_classifies_correctly():
 
     assert changed == [1, 2]
     assert removed == ["gone"]
+
+
+def test_diff_index_scales_to_large_collections():
+    """삭제 대상 계산이 기존 문서 수에 선형인지 고정합니다.
+
+    2026-08-07 에 `set(ids)` 가 컴프리헨션 안에 있어 기존 문서마다 대상 집합을
+    재구축했고, 10만 x 50만 규모에서 색인이 진행되지 않았습니다. 아래 규모는
+    수정 전이면 분 단위로 걸리고 수정 후에는 1초 안에 끝납니다.
+    """
+    ids = [f"bid_{index}" for index in range(100_000)]
+    metadatas = [{"doc_hash": f"h{index}"} for index in range(100_000)]
+    existing = {f"bid_{index}": f"h{index}" for index in range(5_000)}
+
+    started = time.perf_counter()
+    changed, removed = kb_builder._diff_index(existing, ids, metadatas)
+    elapsed = time.perf_counter() - started
+
+    assert changed == list(range(5_000, 100_000))
+    assert removed == []
+    assert elapsed < 5.0

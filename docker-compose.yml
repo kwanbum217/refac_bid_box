@@ -12,6 +12,9 @@ services:
       - DATABASE_URL=mysql+pymysql://root:rootpassword@db:3306/procurement
       - REDIS_URL=redis://redis:6379/0
       # 생성 LLM 은 호스트에서 구동 중인 Ollama 를 재사용합니다 (macOS Metal 가속 유지).
+      # .env 의 CHROMA_DB_PATH 는 호스트 절대 경로입니다. 이미지에 그대로 실려
+      # 컨테이너가 없는 경로를 보고 빈 컬렉션을 만들었습니다. 반드시 덮어씁니다.
+      - CHROMA_DB_PATH=/app/chroma_db
       - LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=gemma4:e4b
@@ -26,6 +29,9 @@ services:
       - ./src:/app/src
       - ./ml_registry:/app/ml_registry
       - ./data:/app/data
+      # 마운트하지 않으면 이미지 빌드 시점에 구워진 낡은 색인을 보게 됩니다.
+      # 호스트에서 KB 를 확대해도 컨테이너 챗봇에는 반영되지 않습니다.
+      - ./chroma_db:/app/chroma_db
 
   # 동결된 React 스캐폴드입니다. docs/design/FRONTEND_DECISION.md 에 따라
   # 정본 UI 는 SSR(Jinja2) 이며 원본과 디자인이 다른 이 서비스는 기본 기동에서 제외합니다.
