@@ -72,8 +72,16 @@ git checkout main -- data/model_files/servc_institution_v1/metadata.json
 보상해야 하는데, 탐색에서는 `n_estimators=2000` 이 보상했고 운영에서는 조기
 종료가 그 전에 잘랐습니다.
 
-**다시 시도하려면 탐색 스크립트에 `early_stopping` 을 먼저 넣으십시오.**
-그러지 않은 탐색 결과는 운영을 예측하지 못합니다.
+**원인은 제거했습니다.** `tune_servc_hyperparams.py` 의 `evaluate` 가 운영
+3단계를 그대로 따릅니다. 학습 구간을 시간순 80/20 으로 가르고, 뒤 20%를
+`eval_set` 으로 조기 종료해 트리 수를 정한 뒤, 그 트리 수로 학습 구간 전량을
+재적합합니다. 검증 연도는 평가에만 씁니다.
+
+**이 수정 이전 탐색 결과의 절대값은 새 경로와 비교할 수 없습니다.** 시행
+시간은 학습이 2회로 늘어도 25% 증가에 그칩니다(실측 39.5초 -> 49.4초).
+
+그래도 **이 축을 다시 여는 것은 권하지 않습니다.** 경로를 맞춘 것이지 여지가
+있다는 증거가 생긴 것은 아닙니다. 앙상블과 교차 이력이 먼저입니다.
 
 ### 2.3 레지스트리 주의
 
@@ -125,7 +133,8 @@ CatBoost 가 R2 0.6994 로 LightGBM 0.6967 을 이겼고 MAPE 로만 순서가 �
 | --- | --- | --- |
 | `scripts/compare_servc_models_paired.py` | 전체 쌍대 검정 | 1,000건은 검정력 부족. **9,000건 이상 쓰십시오** |
 | `scripts/compare_servc_models_by_group.py` | 집단별 회귀 검정 | 2026-08-07 신설. 비중 가중 판정, 본페로니 보정, parquet 저장 |
-| `scripts/tune_servc_hyperparams.py` | 좌표 하강 | 목적함수는 운영 설정을 따라감 |
+| `scripts/tune_servc_hyperparams.py` | 좌표 하강 | 목적함수·시작점·조기 종료를 운영 학습기에 맞춤 |
+| `scripts/measure_servc_tuning_noise.py` | 탐색 결과가 시드 산포보다 큰지 | 2026-08-07 신설. 좌표 하강 뒤 반드시 거칠 것 |
 | `scripts/measure_serving_model.py` | 승격 후 서빙 실측 | — |
 
 **전체 쌍대만으로 판정하지 마십시오.** 2026-08-07 에 전체는 t=-2.89 우세였지만
@@ -152,7 +161,10 @@ CatBoost 가 R2 0.6994 로 LightGBM 0.6967 을 이겼고 MAPE 로만 순서가 �
 ## 8. 주의 사항
 
 **이 저장소는 병렬 세션이 동작합니다.** 2026-08-07 에도 작업 중 HEAD 가
-`feat/kb-coverage-500k` 로 바뀌어 있었습니다.
+`feat/kb-coverage-500k` 로 바뀌어 있었습니다. 같은 날 저녁 그 세션이 별도
+worktree(`/private/tmp/.../wt-kb`)로 옮겨 갔습니다. **다른 worktree 가 쓰는
+브랜치는 이 트리에서 체크아웃할 수 없습니다.** `git worktree list` 로 먼저
+확인하십시오.
 
 - `git add` 직전에 `git status --short --branch` 로 **HEAD 를 반드시 확인**
 - `git add -A` 와 `git stash` 금지
