@@ -39,11 +39,13 @@ import pandas as pd  # noqa: E402
 from sklearn.metrics import r2_score  # noqa: E402
 
 from scripts.eval_servc_year_holdout import ALL_FEATURES, build_frame  # noqa: E402
-from src.ml.trainer import LGB_BASE_PARAMS  # noqa: E402
+from src.ml.trainer import CATEGORY_HYPERPARAMS, LGB_BASE_PARAMS  # noqa: E402
 
 # 운영 학습기와 같은 목적함수입니다. 여기서 갈리면 탐색 결과가 운영에 옮겨지지
-# 않습니다.
-FIXED_PARAMS = {"objective": "huber", "alpha": 1.0}
+# 않습니다. 2026-08-07 에 용역이 quantile(0.5)로 승격되면서 하드코딩된 huber 가
+# 운영과 어긋났습니다. 값을 베끼지 말고 운영 설정에서 읽습니다.
+_SERVC_LGB = CATEGORY_HYPERPARAMS["Servc"]["lightgbm"]
+FIXED_PARAMS = {"objective": _SERVC_LGB["objective"], "alpha": _SERVC_LGB["alpha"]}
 
 # 탐색 축과 후보. 기준값을 반드시 포함시켜 "기준이 이미 최적" 인 경우를 탐색이
 # 스스로 확인하게 합니다.
