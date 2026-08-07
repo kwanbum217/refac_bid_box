@@ -178,6 +178,48 @@ def test_incremental_run_never_empties_collection(isolated_db, chroma_path, monk
     assert _collection(chroma_path).count() == 1
 
 
+def test_low_document_limit_cannot_wipe_the_collection(isolated_db, chroma_path, monkeypatch):
+    """상한이 낮아도 기존 KB 가 지워지면 안 됩니다.
+
+    `_step_rag` 는 `rebuild_knowledge_base(db)` 를 인자 없이 부르므로 기본
+    상한이 그대로 적용됩니다. 2026-08-07 이전 기본값 10 이었다면 50만 건 KB 가
+    야간 재색인 한 번에 10건으로 붕괴합니다.
+    """
+    for index in range(10):
+        _add_announcement(isolated_db, notice_no=f"2026{index:06d}", name=f"공고 {index}")
+    kb_builder.rebuild_knowledge_base(isolated_db)
+    assert _collection(chroma_path).count() == 10
+
+    monkeypatch.setenv("KB_MAX_DOCUMENTS", "2")
+    outcome = kb_builder.rebuild_knowledge_base(isolated_db)
+
+    assert outcome["status"] == "failed"
+    assert _collection(chroma_path).count() == 10
+
+
+def test_default_document_limit_matches_operating_scale():
+    """기본 상한이 운영 KB 규모(약 50만 건)와 어긋나면 안 됩니다."""
+    assert kb_builder.DEFAULT_MAX_DOCUMENTS >= 500_000
+
+
+def test_sync_rejects_mass_removal(monkeypatch):
+    existing = {f"bid_{index}": f"h{index}" for index in range(100)}
+    ids = ["bid_0", "bid_1"]
+    metadatas = [{"doc_hash": "h0"}, {"doc_hash": "h1"}]
+
+    class _Collection:
+        def __init__(self):
+            self.deleted = []
+
+        def delete(self, ids):
+            self.deleted.extend(ids)
+
+    collection = _Collection()
+    with pytest.raises(RuntimeError, match="상한"):
+        kb_builder._sync(collection, ["a", "b"], metadatas, ids, existing, True)
+    assert collection.deleted == []
+
+
 def test_document_hash_detects_content_change():
     """DB 시각이 아니라 본문으로 판정하는지 확인합니다."""
     first = kb_builder._document_hash("[공고명] A\n")
