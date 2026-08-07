@@ -39,7 +39,12 @@ import pandas as pd  # noqa: E402
 from sklearn.metrics import r2_score  # noqa: E402
 
 from scripts.eval_servc_year_holdout import ALL_FEATURES, build_frame  # noqa: E402
-from src.ml.trainer import CATEGORY_HYPERPARAMS, LGB_BASE_PARAMS  # noqa: E402
+from src.ml.trainer import (  # noqa: E402
+    CATEGORY_HYPERPARAMS,
+    DEFAULT_VALIDATION_SPLIT,
+    LGB_BASE_PARAMS,
+    TIME_SORT_COLUMN,
+)
 
 # 운영 학습기와 같은 목적함수입니다. 여기서 갈리면 탐색 결과가 운영에 옮겨지지
 # 않습니다. 2026-08-07 에 용역이 quantile(0.5)로 승격되면서 하드코딩된 huber 가
@@ -79,10 +84,44 @@ def evaluate(train: pd.DataFrame, valid: pd.DataFrame, params: dict) -> dict[str
     매기고 있었습니다. 절단 자체는 이미 측정 후 안전장치로 격하됐습니다
     (`servc_segment_experiment_20260803.md` 2장, 개선 R2 +0.0001). `lwlt_rate` 가
     특징으로 들어가 모델이 이미 하한율 위로 예측하기 때문입니다.
+
+    **조기 종료를 운영과 맞춥니다.** 종전에는 `n_estimators` 를 전량 썼는데
+    `_train_lightgbm` 은 `early_stopping(10)` 을 겁니다. 이 차이 하나로
+    2026-08-07 탐색이 통째로 기각됐습니다. `learning_rate` 를 낮추면 더 많은
+    트리로 보상해야 하는데, 탐색에서는 `n_estimators=2000` 이 보상했고 운영에서는
+    조기 종료가 그 전에 잘라 덜 학습된 모델이 됐습니다. 운영 쌍대 t=5.14 로
+    나빴습니다. 근거: docs/design/servc_hyperparam_quantile_20260807.md 8장.
+
+    운영 `train_and_register` 의 3단계를 그대로 따릅니다.
+
+        1. 학습 구간을 시간순 80/20 으로 가르고 앞 80%로 학습
+        2. 뒤 20%를 eval_set 으로 조기 종료해 트리 수를 정함
+        3. 그 트리 수로 학습 구간 전량 재적합 (_refit_on_full)
+
+    검증 연도를 eval_set 으로 쓰면 트리 수를 검증 연도로 정하고 같은 연도에서
+    점수를 내게 되어 누수입니다. 학습 구간 안에서만 갈라야 합니다.
+
+    학습이 2회로 늘어 시행 시간이 대략 두 배가 됩니다.
     """
     started = time.perf_counter()
-    model = lgb.LGBMRegressor(**{**LGB_BASE_PARAMS, **FIXED_PARAMS, **params})
-    model.fit(train[ALL_FEATURES], train["winning_rate"])
+    base = {**LGB_BASE_PARAMS, **FIXED_PARAMS, **params}
+
+    ordered = train.sort_values(TIME_SORT_COLUMN, kind="stable")
+    split_at = int(len(ordered) * (1 - DEFAULT_VALIDATION_SPLIT))
+    inner_train, inner_valid = ordered.iloc[:split_at], ordered.iloc[split_at:]
+
+    probe = lgb.LGBMRegressor(**base)
+    probe.fit(
+        inner_train[ALL_FEATURES],
+        inner_train["winning_rate"],
+        eval_set=[(inner_valid[ALL_FEATURES], inner_valid["winning_rate"])],
+        callbacks=[lgb.early_stopping(10, verbose=False)],
+    )
+    # best_iteration_ 은 조기 종료가 걸리지 않으면 None 입니다.
+    n_trees = probe.best_iteration_ or base["n_estimators"]
+
+    model = lgb.LGBMRegressor(**{**base, "n_estimators": n_trees})
+    model.fit(ordered[ALL_FEATURES], ordered["winning_rate"])
     pred = model.predict(valid[ALL_FEATURES])
 
     actual = valid["winning_rate"].to_numpy(dtype=float)
