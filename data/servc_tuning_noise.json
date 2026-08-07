@@ -1,0 +1,99 @@
+{
+  "seeds": [
+    42,
+    1,
+    7
+  ],
+  "settings": {
+    "기준선": {
+      "num_leaves": 255,
+      "min_child_samples": 40,
+      "learning_rate": 0.05,
+      "n_estimators": 600,
+      "colsample_bytree": 0.8,
+      "subsample": 0.8,
+      "reg_lambda": 0.0,
+      "subsample_freq": 0
+    },
+    "탐색 결과": {
+      "num_leaves": 255,
+      "min_child_samples": 160,
+      "learning_rate": 0.03,
+      "n_estimators": 2000,
+      "colsample_bytree": 0.8,
+      "subsample": 0.8,
+      "reg_lambda": 0.0,
+      "subsample_freq": 5
+    }
+  },
+  "runs": {
+    "기준선": [
+      {
+        "seed": 42,
+        "mae": 1.2554,
+        "rmse": 2.6736,
+        "r2": 0.6902,
+        "hit_0_5": 0.6181,
+        "hit_1_0": 0.728,
+        "bias": -0.0345,
+        "seconds": 39.6
+      },
+      {
+        "seed": 1,
+        "mae": 1.2562,
+        "rmse": 2.6726,
+        "r2": 0.6904,
+        "hit_0_5": 0.6163,
+        "hit_1_0": 0.7266,
+        "bias": -0.0341,
+        "seconds": 40.3
+      },
+      {
+        "seed": 7,
+        "mae": 1.257,
+        "rmse": 2.6725,
+        "r2": 0.6904,
+        "hit_0_5": 0.6166,
+        "hit_1_0": 0.727,
+        "bias": -0.0252,
+        "seconds": 40.2
+      }
+    ],
+    "탐색 결과": [
+      {
+        "seed": 42,
+        "mae": 1.2519,
+        "rmse": 2.6706,
+        "r2": 0.6909,
+        "hit_0_5": 0.6195,
+        "hit_1_0": 0.7296,
+        "bias": -0.0316,
+        "seconds": 136.0
+      },
+      {
+        "seed": 1,
+        "mae": 1.2525,
+        "rmse": 2.6703,
+        "r2": 0.6909,
+        "hit_0_5": 0.6184,
+        "hit_1_0": 0.7294,
+        "bias": -0.0327,
+        "seconds": 136.4
+      },
+      {
+        "seed": 7,
+        "mae": 1.2532,
+        "rmse": 2.6714,
+        "r2": 0.6907,
+        "hit_0_5": 0.6191,
+        "hit_1_0": 0.7295,
+        "bias": -0.0247,
+        "seconds": 136.2
+      }
+    ]
+  },
+  "mae_gain": 0.003666666666666707,
+  "mae_seed_std": 0.0007999999999999119,
+  "hit_0_5_gain": 0.0020000000000000018,
+  "hit_0_5_seed_std": 0.0009643650760992929
+}

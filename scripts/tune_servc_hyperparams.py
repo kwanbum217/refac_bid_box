@@ -132,7 +132,12 @@ def main() -> int:
 
     print(f"학습 {len(train):,}행 / 검증 {len(valid):,}행 / 특징 {len(ALL_FEATURES)}개")
 
-    best = {key: LGB_BASE_PARAMS[key] for key in SEARCH_SPACE if key in LGB_BASE_PARAMS}
+    # 시작점도 운영 설정에서 읽습니다. 좌표 하강은 시작점에 민감한데 용역은
+    # num_leaves 255 로 서 있고 LGB_BASE_PARAMS 기본값은 63 입니다. 기본값에서
+    # 출발하면 운영이 실제로 선 지점이 기준선이 되지 못해, 탐색이 내놓는
+    # "개선" 이 운영 대비 개선인지 알 수 없게 됩니다.
+    serving_params = {**LGB_BASE_PARAMS, **_SERVC_LGB}
+    best = {key: serving_params[key] for key in SEARCH_SPACE if key in serving_params}
     best.setdefault("reg_lambda", 0.0)
     best.setdefault("subsample_freq", 0)
     if args.base:
