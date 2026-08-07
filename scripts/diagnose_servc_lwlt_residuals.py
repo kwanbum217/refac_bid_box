@@ -352,21 +352,10 @@ def main() -> int:
         if args.dump_dir:
             dump_dir = Path(args.dump_dir)
             dump_dir.mkdir(parents=True, exist_ok=True)
-            keep = [
-                "openg_dt",
-                "year",
-                "lwlt_group",
-                "sucsfbid_mthd_raw",
-                "inst_sample_cnt",
-                "lwlt_rate",
-                "log_price",
-                "tech_ablt_evl_rt",
-                "actual",
-                "pred",
-                "err",
-                "abs_err",
-            ]
-            valid[keep].to_parquet(dump_dir / f"servc_residuals_{year}.parquet", index=False)
+            # 컬럼을 골라 남기지 않습니다. 한 번 돌리는 데 35분이 걸리는데, 나중에
+            # 필요한 축이 빠져 있으면 그 35분을 다시 써야 합니다. 연도당 10만 행에
+            # 40여 컬럼이라 통째로 남겨도 parquet 이 작습니다.
+            valid.to_parquet(dump_dir / f"servc_residuals_{year}.parquet", index=False)
         report(
             f"1-{year}. {year}년 out-of-sample 전체 (학습 ~{year - 1}년, {len(valid):,}건)",
             pd.DataFrame([summarize(valid)]),
