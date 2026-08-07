@@ -95,15 +95,26 @@ flowchart TD
 | 소분류별 잔차 오프셋 보정 | 재현성 0.803 인데도 오라클 오프셋 -0.1525 | `servc_general_service_signal_20260807.md` |
 | 일반용역 얕은이력 셀의 특징 엔지니어링 | 잔차와 수치 특징의 최대 상관 0.105. 남은 신호 없음 | 같은 문서 |
 
-### 채택 대기 후보 (승격 전)
+### 채택된 변경
 
-| 후보 | 홀드아웃 결과 | 남은 절차 | 근거 |
-| --- | --- | --- | --- |
-| 점 추정 objective 를 `quantile(0.5)` 로 | MAE 1.3554 -> 1.3312, 0.5%p 적중 +1.12%p, 7개 모집단 중 악화 0개 | 운영 경로 쌍대 검정 | `servc_loss_function_20260807.md` |
+| 변경 | 결과 | 승격 |
+| --- | --- | --- |
+| 점 추정 objective 를 `quantile(0.5)` 로 | 운영 MAE 1.4159 -> 1.4050 (t=-2.89), 0.5%p 적중 +0.78%p | `v_20260807_043210_535` |
 
-RMSE 는 2.7454 -> 2.7834 로 나빠집니다. L1 최적화의 대가이며 운영 지표가 MAE 와
-0.5%p 적중이라 수용 가능하지만 알고 있어야 합니다. 구현 시 `_train_lightgbm` 은
-물품도 함께 쓰므로 카테고리별로 분기해야 합니다.
+`CATEGORY_HYPERPARAMS["Servc"]["lightgbm"]` 에서 덮어씁니다. `_train_lightgbm` 을
+직접 고치면 물품까지 바뀝니다. 분위 모델은 hyperparams 를 받지 않아 영향이
+없고 구간 폭·피복률도 실측에서 소수점까지 동일했습니다.
+
+**RMSE 악화는 운영에서 나타나지 않았습니다.** 홀드아웃 2.7454 -> 2.7834 를
+보고 "L1 의 대가" 로 적었으나 운영 제곱오차 쌍대 t 는 0.25 였습니다. 홀드아웃의
+맞바꿈이 운영에 그대로 오지 않을 수 있습니다.
+
+**남은 약점은 하한율 결측 집단입니다.** 두 해 모두 MAE 가 악화 방향이고
+(2025 +0.0400 t=4.20, 2026 +0.0244 t=2.57) 이 집단의 낙찰률 IQR 은 9.682 로
+보유 집단 0.705 의 14배입니다. 분포가 넓어 중앙값 겨냥이 불리합니다. 다음
+개선 축으로 남겨 두되, 낙찰방식별 분리 모델은 이미 기각된 접근입니다.
+
+근거는 `servc_loss_function_20260807.md` 8장입니다.
 
 **`alpha` 를 줄여 L1 에 다가가려 하지 마십시오.** `huber alpha=0.2` 는 MAE 1.7971
 로 기준선보다 32% 나쁩니다. gradient 가 `±alpha` 로 고정돼 학습 신호가
@@ -174,6 +185,7 @@ RMSE 는 2.7454 -> 2.7834 로 나빠집니다. L1 최적화의 대가이며 운�
 | 2 | 특징 절제 실험 | `uv run python scripts/ablation_servc_features.py` |
 | 3 | 편향 없는 후보 평가 | `uv run python scripts/eval_servc_candidates_unbiased.py` |
 | 4 | 운영 경로 쌍대 비교 | `uv run python scripts/compare_servc_models_paired.py` |
+| 4b | 집단별 회귀 확인 | `uv run python scripts/compare_servc_models_by_group.py` |
 | 5 | 승격 예행 | `uv run python scripts/promote_model.py promote --model servc_institution_v1` |
 | 6 | 승격 실행 | 위 명령에 `--category Servc --apply` |
 | 7 | 승격 후 서빙 실측 | `uv run python scripts/measure_serving_model.py --model servc_institution_v1 --category Servc --apply` |

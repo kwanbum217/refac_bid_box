@@ -1,0 +1,17 @@
+{
+  "model_name": "servc_institution_v1",
+  "version": "v_20260807_043210_535",
+  "metrics": {
+    "rmse": 2.659565711975938,
+    "mae": 1.200852802831123,
+    "mape": 1.3216452116665824,
+    "r2": 0.7037729012680953,
+    "bias": -0.12319243018345781
+  },
+  "measured_at": "2026-08-07T06:13:29.347291",
+  "category": "Servc",
+  "holdout_since": "2026-01-01",
+  "samples": 3000,
+  "failed": 0,
+  "measured_via": "SingletonPredictor.predict (운영 경로)"
+}

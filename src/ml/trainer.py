@@ -109,7 +109,23 @@ CATEGORY_MODEL_NAMES = {
 
 # 편향 없는 동일 학습 상한 재평가에서 용역은 리프 255와 기관 EWM 조합이
 # 기준 대비 MAE 3.13%를 낮췄습니다. 물품에는 검증되지 않았으므로 적용하지 않습니다.
-CATEGORY_HYPERPARAMS = {"Servc": {"lightgbm": {"num_leaves": 255}}}
+#
+# objective 는 _train_lightgbm 의 기본값 huber(alpha=1.0)를 덮어씁니다. 용역 잔차는
+# 0 에 몰린 비대칭 분포라 조건부 중앙값을 직접 겨냥하는 quantile(0.5)이 낫습니다.
+# 2026년 out-of-sample 56,338건 실측에서 MAE 1.3554 -> 1.3312, 0.5%p 이내 적중
+# 58.53% -> 59.65% 이고 7개 모집단 중 악화가 없었습니다. RMSE 는 2.7454 -> 2.7834
+# 로 나빠지며 이는 L1 최적화의 대가로 수용한 값입니다.
+#
+# huber 의 alpha 를 줄여 L1 에 다가가는 방향은 기각됐습니다. alpha=0.2 는 gradient
+# 가 +-alpha 로 고정돼 학습 신호가 평평해지고 MAE 1.7971 로 32% 나빴습니다. 두
+# 목적함수는 연속적으로 이어지지 않습니다.
+#
+# 분위 모델(_train_quantile_models)은 hyperparams 를 받지 않으므로 이 재정의의
+# 영향을 받지 않습니다. 점 추정만 바뀝니다.
+# 근거: docs/design/servc_loss_function_20260807.md
+CATEGORY_HYPERPARAMS = {
+    "Servc": {"lightgbm": {"num_leaves": 255, "objective": "quantile", "alpha": 0.5}}
+}
 
 
 def model_name_for_category(category_code: str | None) -> str:
@@ -364,6 +380,9 @@ def _train_lightgbm(
     # 검증된 값에 맞춥니다. 종전 200트리/31리프는 실험본(600/63)보다 작아
     # 같은 데이터에서 2025년 홀드아웃 R2 0.6688 대 0.6967,
     # 0.5%p 이내 적중 54.77% 대 60.49% 로 뒤졌습니다.
+    #
+    # 용역은 CATEGORY_HYPERPARAMS 에서 quantile(0.5)로 덮어씁니다. 여기 huber 는
+    # 물품과 미지정 카테고리의 기본값입니다.
     params = {**LGB_BASE_PARAMS, "objective": "huber", "alpha": 1.0}
     params.update(hyperparams or {})
 
