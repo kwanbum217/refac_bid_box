@@ -115,6 +115,19 @@ def build_full_frame(parquet_path: Path, chunk_rows: int) -> tuple[pd.DataFrame,
     df_feat["openg_dt"] = df_raw["openg_dt"].to_numpy()
     df_feat["year"] = df_raw["openg_dt"].dt.year.to_numpy()
     df_feat["sucsfbid_mthd_raw"] = df_raw["sucsfbid_mthd_nm"].fillna("미상").astype(str).to_numpy()
+
+    # 식별자입니다. 잔차를 원본과 다시 잇거나 기관 단위로 묶을 때 필요합니다.
+    #
+    # 2026-08-07 에 기관 x 소분류 교차 이력의 사전 신호를 보려다 막혔습니다.
+    # 저장된 잔차에 기관 식별자가 없었고, 원본과 행 순서로 맞추려 해도 같은
+    # openg_dt 안의 순서가 달라 안전하게 이을 수 없었습니다. 재생성에 35분이
+    # 걸리므로 그 자리에서 되돌릴 수도 없었습니다.
+    #
+    # 특징이 아니므로 학습에는 들어가지 않습니다. fit_until 이 feature_columns
+    # 만 골라 씁니다.
+    df_feat["bid_ntce_no"] = df_raw["bid_ntce_no"].astype(str).to_numpy()
+    df_feat["dminstt_nm"] = df_raw["dminstt_nm"].fillna("미상").astype(str).to_numpy()
+    df_feat["ntce_instt_nm"] = df_raw["ntce_instt_nm"].fillna("미상").astype(str).to_numpy()
     df_feat["lwlt_group"] = np.where(df_feat["lwlt_rate_missing"] == 1, "결측", "보유")
 
     return df_feat, df_raw["winning_rate"].to_numpy(dtype=float)
