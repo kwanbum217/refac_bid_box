@@ -9,6 +9,7 @@ src/app/services/planner.py
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Literal, cast
 
@@ -16,6 +17,8 @@ from src.app.schemas.chat import ChatExecutionPlan, ChatPlan, PlanStep
 from src.app.services.action_catalog import ACTION_CATALOG, DEFAULT_POLL_AFTER_MS
 from src.app.services.capability_registry import CAPABILITY_REGISTRY, get_capability
 from src.rag.engine import extract_result_limit, is_result_list_query
+
+logger = logging.getLogger(__name__)
 
 LLM_PLAN_DRAFT_ENV = "CHATBOT_ENABLE_LLM_PLAN_DRAFT"
 
@@ -444,7 +447,11 @@ def _request_llm_plan_draft(message: str) -> dict[str, Any] | None:
                 response_mime_type="application/json",
             ),
         )
+    # 규칙 기반 계획으로 폴백하지만 흔적은 남겨야 합니다. 키 만료나 할당량 소진이
+    # 조용히 지나가면 계획 품질이 내려간 것을 아무도 모릅니다. 2026-08-05 에
+    # ChromaDB 검색이 같은 방식으로 닷새 동안 실패하고 있었습니다.
     except Exception:
+        logger.exception("LLM 계획 수립 실패, 규칙 기반으로 폴백합니다")
         return None
 
     text = getattr(response, "text", "") or ""
