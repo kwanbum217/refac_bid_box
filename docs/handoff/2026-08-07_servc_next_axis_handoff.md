@@ -2,15 +2,15 @@
 
 > **작성일**: 2026-08-07
 > **범위**: `quantile(0.5)` 승격 이후 남은 개선 축
-> **상태**: 1순위는 홀드아웃까지 완료(**운영 쌍대 검정에서 재개**). 2·3순위 착수 전
+> **상태**: 1순위 **기각 완료**. 남은 것은 **앙상블(1순위)과 교차 이력(2순위)** 입니다
 > **선행 인수인계**: [`2026-08-07_servc_loss_function_handoff.md`](2026-08-07_servc_loss_function_handoff.md) (완료)
 
 ---
 
 ## 0. 한 문장
 
-**손실함수를 `quantile(0.5)` 로 승격했으니, huber 아래에서 고른
-하이퍼파라미터를 새 목적함수 아래에서 다시 재는 것이 다음 순서입니다.**
+**하이퍼파라미터 재탐색은 기각으로 닫혔으니, 다음 순서는 LightGBM + CatBoost
+앙상블입니다.**
 
 ---
 
@@ -45,140 +45,46 @@ git checkout main -- data/model_files/servc_institution_v1/metadata.json
 
 ---
 
-## 2. 1순위: quantile 아래 하이퍼파라미터 재탐색
+## 2. 1순위였던 축: quantile 아래 하이퍼파라미터 재탐색 (기각)
 
-> **2026-08-07 21:00 갱신.** 탐색과 시드 재현성 검정까지 끝났습니다. 재개
-> 지점은 **운영 경로 쌍대 검정**입니다. 상세는
-> [`servc_hyperparam_quantile_20260807.md`](../design/servc_hyperparam_quantile_20260807.md).
+> **2026-08-07 종료.** 운영 쌍대 검정에서 기각했습니다. **재시도하지 마십시오.**
+> 상세는 [`servc_hyperparam_quantile_20260807.md`](../design/servc_hyperparam_quantile_20260807.md).
 
-### 2.0 어디까지 왔는가
-
-| 단계 | 상태 |
+| 단계 | 결과 |
 | --- | --- |
-| 탐색 시작점을 운영값으로 수정 | 완료 |
 | 좌표 하강 21회 | 완료 |
-| 시드 재현성 검정 | 완료. 실체 있음 |
-| `CATEGORY_HYPERPARAMS` 반영 | 완료 |
-| 동일 학습 상한 재학습 | 아래 2.0.2 참조 |
-| **운영 경로 쌍대 검정** | **미실시. 여기서 재개** |
-| 승격 | 하지 않음 |
+| 시드 재현성 검정 | 실체 있음 (시드 3개 -0.0035~-0.0038, 산포의 4.6배) |
+| 재학습 `v_20260807_110637_435` | 완료. 레지스트리에만 등록 |
+| 운영 쌍대 8,995건 | **기각.** MAE 1.4050 -> 1.4188, t=5.14 |
+| 집단별 | 6개 집단 중 challenger 우세 **0개** |
+| 되돌림 | `CATEGORY_HYPERPARAMS` 원복 완료 |
 
-**후보 설정** (`src/ml/trainer.py` `CATEGORY_HYPERPARAMS["Servc"]["lightgbm"]`)
+### 2.1 확정된 사실
 
-| 키 | 종전 | 후보 |
-| --- | ---: | ---: |
-| `num_leaves` | 255 | 255 (변화 없음) |
-| `min_child_samples` | 40 | 160 |
-| `learning_rate` | 0.05 | 0.03 |
-| `n_estimators` | 600 | 2000 (조기 종료 상한) |
-| `subsample_freq` | 0 | 5 |
+**용량 최적점은 목적함수와 무관합니다.** 두 목적함수 모두 31 < 63 < 127 <
+255 > 511 로 순서가 같고 255 에서 최소입니다. 목적함수를 바꿨다는 이유만으로
+용량 축을 다시 훑지 마십시오.
 
-2025년 홀드아웃 96,141건에서 MAE 1.2562 -> 1.2525, 0.5%p 적중 +0.20%p 이며
-시드 3개에서 -0.0035 / -0.0037 / -0.0038 로 일관합니다(시드 표준편차 0.0008).
+### 2.2 왜 뒤집혔는가
 
-#### 2.0.1 되돌리는 법
+`tune_servc_hyperparams.py` 는 조기 종료를 걸지 않고 `_train_lightgbm` 은
+`early_stopping(10)` 을 겁니다. `learning_rate` 를 낮추면 더 많은 트리로
+보상해야 하는데, 탐색에서는 `n_estimators=2000` 이 보상했고 운영에서는 조기
+종료가 그 전에 잘랐습니다.
 
-운영 쌍대에서 기각되면 `CATEGORY_HYPERPARAMS` 에서 네 키를 지우면 됩니다.
-`num_leaves` 와 `objective` / `alpha` 는 남겨야 합니다. 그 셋은 이미 승격된
-설정입니다.
+**다시 시도하려면 탐색 스크립트에 `early_stopping` 을 먼저 넣으십시오.**
+그러지 않은 탐색 결과는 운영을 예측하지 못합니다.
 
-#### 2.0.2 재학습 상태
+### 2.3 레지스트리 주의
 
-**세션 종료 시각까지 완료 여부는 아래 명령으로 확인하십시오.**
-
-```bash
-.venv/bin/python scripts/promote_model.py status
-ls -t ml_registry/servc_institution_v1/ | head -3
-```
-
-레지스트리 최상단 버전이 `v_20260807_043210_535` 이면 재학습이 완료되지 않은
-것이므로 다시 돌리십시오.
-
-```bash
-.venv/bin/python -u scripts/retrain_servc_from_parquet.py
-```
-
-**승격은 하지 않습니다.** 레지스트리에만 등록됩니다.
-
-#### 2.0.3 재개 명령
-
-```bash
-NEW=$(ls -t ml_registry/servc_institution_v1/ | head -1)
-cp -r "ml_registry/servc_institution_v1/$NEW" data/model_files/servc_hp_challenger
-
-.venv/bin/python scripts/compare_servc_models_paired.py \
-  --base servc_institution_v1 --challenger servc_hp_challenger \
-  --samples 9000 --year 2025 --seed 42
-
-.venv/bin/python scripts/compare_servc_models_by_group.py \
-  --base servc_institution_v1 --challenger servc_hp_challenger \
-  --samples 9000 --year 2025 --seed 42 \
-  --out data/analysis/servc_residuals/paired_hparam_2025.parquet
-
-rm -rf data/model_files/servc_hp_challenger
-```
-
-#### 2.0.4 판정에 미리 붙는 유보
-
-**이번 이득은 지금까지 이 축에서 운영에 옮겨지지 않은 두 사례보다 작습니다.**
-
-| 시도 | 홀드아웃 이득 | 운영 |
-| --- | ---: | --- |
-| `num_leaves` 255 (08-04) | 0.0177 | 판별 불가, 롤백 |
-| `num_leaves` 127 (08-05) | 0.0128 | t=2.13 악화 |
-| 이번 조합 | **0.0037** | 미측정 |
-
-**낙관하지 마십시오.** 통과하지 못하면 그것이 정상 결과입니다.
-
-또 하나. 운영은 `early_stopping(10)` 을 걸고 탐색 스크립트는 걸지 않습니다.
-`n_estimators=2000` 은 운영에서 상한으로만 작동하므로 두 경로의 트리 수가
-다릅니다. 재학습 지표가 탐색값과 어긋나도 결함이 아닙니다.
-
-`subsample_freq=5` 는 기여가 0.0004 로 시드 표준편차의 절반이고 huber 아래에서
-기각된 이력이 있습니다. 조합이 우세하면 이 축만 빼고 재확인하십시오.
-
-### 2.1 왜 이 축이었는가
-
-`num_leaves=255` 는 **huber 기준으로 고른 값입니다.**
-[`servc_hyperparam_search_20260804.md`](../design/servc_hyperparam_search_20260804.md)
-의 좌표 하강 17회가 전부 `objective="huber", alpha=1.0` 아래에서 돌았습니다.
-목적함수가 바뀌면 최적 용량도 이동할 수 있습니다.
-
-quantile 은 huber 보다 학습이 빠릅니다(홀드아웃 21.3초 대 35.5초). 같은 시간에
-더 넓은 공간을 볼 수 있다는 뜻입니다.
-
-### 2.2 준비된 것
-
-`scripts/tune_servc_hyperparams.py` 의 `FIXED_PARAMS` 를 **운영 설정에서 읽도록
-고쳐 두었습니다.** 종전에는 huber 가 하드코딩돼 있어 승격 직후 운영과 어긋난
-상태였습니다. 지금은 `CATEGORY_HYPERPARAMS["Servc"]["lightgbm"]` 를 참조하므로
-자동으로 quantile(0.5)로 탐색합니다.
-
-```bash
-.venv/bin/python -c "from scripts.tune_servc_hyperparams import FIXED_PARAMS; print(FIXED_PARAMS)"
-# {'objective': 'quantile', 'alpha': 0.5}
-```
-
-### 2.3 남은 손질 (완료)
-
-시작점이 `LGB_BASE_PARAMS`(리프 63)라 용역 운영값 255 와 어긋나 있었습니다.
-`tune_servc_hyperparams.py` 가 시작점과 목적함수를 모두
-`CATEGORY_HYPERPARAMS["Servc"]["lightgbm"]` 에서 읽도록 고쳤습니다. 값을 베끼지
-않으므로 앞으로 운영 설정이 바뀌면 탐색도 따라갑니다.
-
-### 2.4 이미 닫힌 값
-
-| 값 | 결과 |
-| --- | --- |
-| `num_leaves=127` | 게이트 4개 통과·홀드아웃 우세였으나 운영 쌍대에서 t=2.13 악화 |
-| `subsample_freq` 실효화 | MAE -0.0001, 학습 시간 +21% |
-
-huber 아래 결과이므로 quantile 에서 자동으로 같다고 볼 수는 없습니다. 다만
-재시도한다면 운영 쌍대까지 반드시 가십시오. 홀드아웃에서 뒤집힌 전례입니다.
+`ml_registry/servc_institution_v1/v_20260807_110637_435` 를 재판단용으로
+남겼습니다. **`promote_model.py status` 가 이 버전을 "승격 조건 통과" 로
+표시하지만 학습기 지표만 본 판정입니다. 운영 쌍대에서 기각됐으므로 승격하지
+마십시오.**
 
 ---
 
-## 3. 2순위: LightGBM + CatBoost 앙상블
+## 3. 1순위: LightGBM + CatBoost 앙상블
 
 CatBoost 가 R2 0.6994 로 LightGBM 0.6967 을 이겼고 MAPE 로만 순서가 뒤집혔습니다
 (1.431 대 1.5025). **강점이 다르다는 신호**이므로 앙상블 여지가 있습니다.
@@ -188,7 +94,7 @@ CatBoost 가 R2 0.6994 로 LightGBM 0.6967 을 이겼고 MAPE 로만 순서가 �
 
 ---
 
-## 4. 3순위: 기관 x 소분류 교차 이력
+## 4. 2순위: 기관 x 소분류 교차 이력
 
 현행 기관 이력은 기관 전체 평균이고 재발주 특징은 정규화 공고명 기준입니다.
 **둘의 교차는 없습니다.** 같은 기관이라도 소분류가 다르면 낙찰률 수준이 다를
@@ -209,6 +115,7 @@ CatBoost 가 R2 0.6994 로 LightGBM 0.6967 을 이겼고 MAPE 로만 순서가 �
 | 접근 | 기각 근거 |
 | --- | --- |
 | 하한율 결측 집단을 개선 축으로 | 설명력이 보유 집단과 동등(0.38~0.44 대 0.41~0.45). MAE 3배는 못해서가 아니라 어려워서. 잔차 최대 상관 0.076 |
+| quantile 아래 하이퍼파라미터 재탐색 | 용량 최적점은 목적함수와 무관하게 255. 나머지 조합은 홀드아웃 -0.0037 이 운영 쌍대에서 +0.0139 t=5.14 로 뒤집힘. 탐색과 운영의 조기 종료 차이가 원인 |
 
 ---
 
@@ -256,7 +163,6 @@ CatBoost 가 R2 0.6994 로 LightGBM 0.6967 을 이겼고 MAPE 로만 순서가 �
 
 ## 9. 완료 정의
 
-- 탐색 시작점을 용역 운영값으로 맞춘 뒤 좌표 하강
 - 후보가 나오면 동일 학습 상한 재학습
 - 운영 경로 쌍대 검정 9,000건 이상, t 절댓값 2.0 초과
 - **집단별 회귀 검정 동반**. 비중 가중 합계로 판정
