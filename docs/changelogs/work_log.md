@@ -887,3 +887,18 @@
 - **계열 전체 종결**: 잔차 후처리 계열이 하한율·낙찰방법·소분류·기관·기관 x 소분류 다섯 축에서 전부 닫혔습니다. 스킬 기각 목록에 2행과 계열 종결 섹션을 추가했습니다
 - **문서**: `docs/design/servc_inst_clsfc_cross_20260809.md` 신설, 인수인계 4장을 기각 결과로 교체하고 0장·5장·6장을 갱신했습니다
 - **남은 것**: 사전 순위 축이 모두 닫혔습니다. 미측정은 CatBoost L1 목적함수 하나이며 기대값이 낮습니다. 다음 개선은 새 정보 수집 설계 과업이며 착수 전 범위 합의가 필요합니다
+
+---
+
+### 2026-08-09 | Arq 워커 Compose 배선 | 기본 스택의 태스크 소비자 복원
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - 최신 `main` 기준으로 기본 Docker Compose에 `arq src.tasks.worker.WorkerSettings` worker 서비스를 추가했습니다
+  - worker가 앱과 동일한 MySQL, Redis, 모델 레지스트리, 데이터, ChromaDB를 사용하도록 연결했습니다
+  - 개발 환경에서는 야간 수집과 주간 재학습을 기본 비활성화하고, 수동 작업 소비는 유지했습니다
+  - 오래된 `fix/arq-worker-compose` 브랜치는 병합하지 않고 필요한 변경만 새 브랜치에 재적용했습니다
+- **관련 파일**: `docker-compose.yml`, `.env.example`, `Makefile`, `tests/test_worker_compose.py`, `docs/ops/cross_platform_guide.md`, `docs/ops/environment_variables.md`, `docs/design/REFACTORING_DESIGN.md`
+- **검증 결과**: 전체 비자산 테스트 753건 통과(4건 skip, 3건 deselect), Ruff, Compose 구문, 에이전트 규칙 정합성 검증을 통과했습니다. 격리된 MySQL 8·Redis·worker 스택의 이미지 빌드와 기동 후 `arq --check`도 통과했습니다
+- **범위 외 발견**: 신규 빈 MySQL 8에 Alembic 기준선을 적용하면 `automation_requests.request_id UUID` DDL에서 실패합니다. worker 기동 결함은 아니며 DB 통일 작업에서 별도 해소해야 합니다
+- **검증 인프라 부채**: 저장소의 pre-commit은 Ruff `0.9.6`이 현행 `S704` 설정을 읽지 못하고 Bandit 훅에 TOML 파서가 없어 전체 실행되지 않습니다. 현행 Ruff `0.16.1`과 나머지 변경 파일 훅은 통과했으며, 이 설정 보정은 기반환경 작업으로 분리합니다

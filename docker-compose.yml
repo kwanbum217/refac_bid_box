@@ -33,6 +33,35 @@ services:
       # 호스트에서 KB 를 확대해도 컨테이너 챗봇에는 반영되지 않습니다.
       - ./chroma_db:/app/chroma_db
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["arq", "src.tasks.worker.WorkerSettings"]
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=mysql+pymysql://root:rootpassword@db:3306/procurement
+      - REDIS_URL=redis://redis:6379/0
+      - CHROMA_DB_PATH=/app/chroma_db
+      - LLM_PROVIDER=ollama
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=gemma4:e4b
+      # 개발 스택 기동만으로 수집과 재학습이 실행되지 않도록 막습니다.
+      - AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false
+      - ML_WEEKLY_RETRAIN_ENABLED=false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+      - ./ml_registry:/app/ml_registry
+      - ./data:/app/data
+      - ./chroma_db:/app/chroma_db
+
   # 동결된 React 스캐폴드입니다. docs/design/FRONTEND_DECISION.md 에 따라
   # 정본 UI 는 SSR(Jinja2) 이며 원본과 디자인이 다른 이 서비스는 기본 기동에서 제외합니다.
   # 참조가 필요할 때만 다음으로 띄웁니다: docker compose --profile legacy up -d frontend

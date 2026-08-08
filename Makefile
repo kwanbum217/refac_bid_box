@@ -15,7 +15,7 @@ help:
 	@echo "  make import-assets  - 원본 bid_box의 모델·ChromaDB 자산 이전 및 체크섬 기록"
 	@echo "  make dev            - FastAPI 개발 서버 실행"
 	@echo "  make db-up          - MySQL+Redis만 배경 실행"
-	@echo "  make up             - 전체 스택 컨테이너 배경 실행 (FastAPI+MySQL+Redis)"
+	@echo "  make up             - 전체 스택 컨테이너 배경 실행 (FastAPI+Arq+MySQL+Redis)"
 	@echo "  make build          - 컨테이너 이미지 빌드"
 	@echo "  make down           - 컨테이너 중지 및 네트워크 정리"
 	@echo "  make logs           - 컨테이너 실시간 로그 확인"
