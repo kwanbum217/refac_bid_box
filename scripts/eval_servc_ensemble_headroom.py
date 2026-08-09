@@ -70,6 +70,11 @@ def main() -> int:
     parser.add_argument("--train-end", type=int, default=2024)
     parser.add_argument("--valid-year", type=int, default=2025)
     parser.add_argument("--out", default="data/servc_ensemble_headroom.json")
+    parser.add_argument(
+        "--catboost-loss",
+        default=None,
+        help="CatBoost loss_function 재정의 (예: MAE, Quantile:alpha=0.5). 미지정이면 운영 설정",
+    )
     args = parser.parse_args()
 
     path = PROJECT_ROOT / args.parquet
@@ -98,6 +103,16 @@ def main() -> int:
     # 운영과 같은 카테고리 설정을 씁니다. 여기서 갈리면 비교가 운영을 대변하지
     # 못합니다.
     overrides = hyperparams_for_category(CATEGORY)
+    if args.catboost_loss:
+        # CatBoost 기본 목적함수는 RMSE 라 조건부 평균을 겨냥합니다. LightGBM 은
+        # quantile(0.5) 로 중앙값을 겨냥하므로 평균을 내면 겨냥이 희석됩니다.
+        # 목적함수를 맞추면 그 희석이 사라지는지 재기 위한 갈래입니다.
+        overrides["catboost"] = {
+            **overrides.get("catboost", {}),
+            "loss_function": args.catboost_loss,
+        }
+        print(f"CatBoost 목적함수 재정의: {args.catboost_loss}")
+
     preds: dict[str, np.ndarray] = {}
     for name, trainer_fn in (("lightgbm", _train_lightgbm), ("catboost", _train_catboost)):
         started = time.perf_counter()
@@ -116,6 +131,23 @@ def main() -> int:
 
     best_single = min(rows[0]["mae"], rows[1]["mae"])
     gain = best_single - rows[2]["mae"]
+
+    # 가중치를 검증 연도에서 고르는 것은 오라클입니다. 실제로는 이 가중치를
+    # 미리 알 수 없으므로 이 값은 상한이며, 상한조차 이득이 없으면 가중치
+    # 탐색을 구현할 이유가 없습니다.
+    sweep = []
+    for weight in np.round(np.arange(0.0, 1.01, 0.05), 2):
+        mixed = weight * preds["lightgbm"] + (1 - weight) * preds["catboost"]
+        sweep.append({"lgbm 가중": float(weight), **metrics(mixed, actual)})
+    sweep_frame = pd.DataFrame(sweep)
+    best_row = sweep_frame.loc[sweep_frame["mae"].idxmin()]
+    oracle_gain = best_single - float(best_row["mae"])
+
+    print(f"\n### 가중치 스윕 (검증 연도에서 고른 오라클)\n{sweep_frame.to_string(index=False)}")
+    print(
+        f"\n오라클 최적 가중치 {best_row['lgbm 가중']:.2f} 에서 MAE {best_row['mae']:.4f}, "
+        f"단일 최고 대비 {oracle_gain:+.4f}"
+    )
 
     print(f"\n{'=' * 76}")
     print(f"잔차 상관 {correlation:.4f} (한계 {CORRELATION_CEILING})")
@@ -136,8 +168,12 @@ def main() -> int:
                 "train_end": args.train_end,
                 "valid_year": args.valid_year,
                 "metrics": rows,
+                "catboost_loss": args.catboost_loss,
                 "residual_correlation": correlation,
                 "blend_gain_over_best_single": gain,
+                "weight_sweep": sweep,
+                "oracle_best_weight": float(best_row["lgbm 가중"]),
+                "oracle_gain_over_best_single": oracle_gain,
             },
             ensure_ascii=False,
             indent=2,
