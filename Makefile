@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security quality check-rules check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings benchmark test test-data-assets
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security quality check-rules check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -31,6 +31,7 @@ help:
 	@echo "  make migrate-check  - 모델과 실제 스키마 차이 점검 (읽기 전용)"
 	@echo "  make model-verify   - 모델 직렬화 버전과 서빙 특징 호환성 검증"
 	@echo "  make rebuild-rankings - 상위 N 집계 스냅샷 재생성"
+	@echo "  make rebuild-institution-stats - 기관별 낙찰률 사전 집계 재생성"
 	@echo "  make benchmark      - P95 레이턴시 벤치마크 (서버 기동 필요)"
 	@echo "  make test           - 외부 데이터 자산 없이 Pytest 단위/통합/E2E 테스트 실행"
 	@echo "  make test-data-assets - 모델·ChromaDB가 있는 환경의 G1 자산 테스트 실행"
@@ -84,6 +85,9 @@ model-verify:
 
 rebuild-rankings:
 	$(PYTHON) scripts/rebuild_ranking_snapshots.py
+
+rebuild-institution-stats:
+	$(PYTHON) scripts/rebuild_institution_stats.py
 
 # 기동 중인 서버에 HTTP 로 붙습니다. 먼저 uvicorn 을 띄우십시오.
 benchmark:
