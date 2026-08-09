@@ -170,7 +170,7 @@ docker-compose.yml → MySQL 8 서비스 (macOS/Windows/Linux 동일 버전)
 | 항목 | TO-BE | 근거 |
 |------|-------|------|
 | Dockerfile (앱) | 파이썬 슬림 이미지 | macOS/Windows/Linux 동일 런타임 (G2) |
-| docker-compose | app + MySQL + Redis (+ worker) | `make up` 단일 명령으로 전체 스택 실행 (G2) |
+| docker-compose | app + Arq worker + MySQL + Redis | `make up` 단일 명령으로 전체 스택 실행 (G2) |
 
 ---
 
@@ -339,7 +339,7 @@ setup:        ## 의존성 설치 (uv)
 	uv sync
 
 db-up:        ## MySQL + Redis 컨테이너 기동
-	docker compose up -d mysql redis
+	docker compose up -d db redis
 
 dev:          ## 개발 서버 실행
 	uvicorn src.app.main:app --reload --port 8000
@@ -370,12 +370,12 @@ down:         ## 전체 스택 중지
 ```yaml
 # docker-compose.yml (개념)
 services:
-  mysql:    # MySQL 8 — macOS/Windows 동일
+  db:       # MySQL 8 — macOS/Windows 동일
   redis:    # 캐시 + 브로커
   app:      # FastAPI/Django (uvicorn)
-  worker:   # Celery/Arq 워커
+  worker:   # Arq 워커
 ```
-→ 개발자는 `docker compose up` 한 번으로 운영과 동일한 스택을 로컬에 재현.
+→ 개발자는 `docker compose up` 한 번으로 운영과 동일한 서비스 토폴로지를 로컬에 재현.
 
 ---
 
@@ -597,7 +597,7 @@ run_mode_matrix (개정):
 - [x] `pyproject.toml`(uv) + 의존성 그룹 정의
 - [x] `Makefile` / `Taskfile` 진입점
 - [x] `.env.example` 보강 (완료 기본)
-- [x] `Dockerfile` + `docker-compose.yml`(mysql, redis)
+- [x] `Dockerfile` + `docker-compose.yml`(`app`, `worker`, `db`, `redis`)
 - [x] 린터/포매터(ruff, black), pre-commit 설정
 - [x] CI(GitHub Actions): lint + test 파이프라인
 

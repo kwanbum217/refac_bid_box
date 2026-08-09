@@ -1,7 +1,7 @@
 # 크로스 플랫폼 호환 가이드 (macOS / Windows)
 
 > **작성일**: 2026-07-31
-> **갱신일**: 2026-08-06
+> **갱신일**: 2026-08-09
 > **상태**: macOS 검증 완료 / Windows CI 통과 / Windows 호스트 전체 스택 검증 대기
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
@@ -32,9 +32,10 @@ macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위�
 
 ### 3.1 전체 스택 (docker-compose)
 
-정본은 루트의 `docker-compose.yml`입니다. 기본 서비스는 FastAPI `app`, MySQL
-8 `db`, Redis 7 `redis`입니다. React 스캐폴드는 `legacy` 프로필에서만
-기동합니다.
+정본은 루트의 `docker-compose.yml`입니다. 기본 서비스는 FastAPI `app`, Arq
+`worker`, MySQL 8 `db`, Redis 7 `redis`입니다. React 스캐폴드는 `legacy`
+프로필에서만 기동합니다. 개발용 worker는 수동 요청을 소비하지만, 의도하지 않은
+야간 수집과 주간 재학습을 막기 위해 두 예약 실행을 기본 비활성화합니다.
 
 ### 3.2 실행 명령
 
@@ -166,7 +167,7 @@ steps:
 ## 8. 체크리스트
 
 - [x] Dockerfile 작성 (파이썬 슬림 이미지)
-- [x] docker-compose.yml 작성 (`app`, `db`, `redis`)
+- [x] docker-compose.yml 작성 (`app`, `worker`, `db`, `redis`)
 - [x] Makefile 작성
 - [x] macOS에서 `make up` 실행 검증
 - [x] Windows에서 `uv run pytest -q` 실행 검증 (GitHub Actions windows-latest)
