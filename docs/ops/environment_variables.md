@@ -61,7 +61,7 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `G2B_SERVICE_KEY` | **예** | - | 나라장터 공공데이터 serviceKey |
+| `G2B_SERVICE_KEY` | **예** | - | 나라장터 공공데이터 serviceKey. 기존 `serviceKey`도 하위 호환으로 읽습니다 |
 
 ### 2.5 Vector DB / RAG
 
@@ -92,6 +92,7 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `AUTOMATION_WORKER_SHARES_DB` | 아니오 | `true` | 워커가 앱과 같은 DB 를 보는지 여부. 기본 docker-compose 구성은 공유합니다 |
 | `AUTOMATION_CALLBACK_BASE_URL` | 아니오 | (없음) | 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소 |
 | `AUTOMATION_REUSE_RECENT` | 아니오 | `true` | 고비용 작업(`full_validation`)의 최근 72시간 성공 이력 재사용 |
+| `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | 아니오 | `false` | 매일 02:00 KST 개발 DB 수집·최근 24시간 KB 델타 upsert·집계 최신화. 예측 검증·재학습은 제외 |
 | `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | 아니오 | `true` | 매일 02:00 야간 번들 크론 사용 여부 |
 
 `AUTOMATION_CALLBACK_BASE_URL` 은 **워커가 도달할 수 있는 주소**여야 합니다. 컨테이너를 분리했다면 `http://app:8000` 처럼 서비스명을 쓰십시오. `http://localhost:8000` 은 워커 컨테이너 자기 자신을 가리키므로 거부됩니다.
@@ -118,9 +119,13 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `DRIFT_PSI_THRESHOLD` | 아니오 | `0.2` | 데이터 드리프트 PSI 임계값 |
 | `MLOPS_WEBHOOK_URL` | 아니오 | (없음) | 재학습 실패·승격 권고를 보낼 **Slack Incoming Webhook** 주소. 비면 알림을 보내지 않습니다 |
 
-개발용 `.env.example`과 기본 Docker Compose worker는 의도하지 않은 수집·학습을
-막기 위해 두 예약 실행을 `false`로 둡니다. 운영에서는 데이터와 알림 경로를
-검증한 뒤 명시적으로 활성화하십시오. 수동 Arq 작업은 이 설정과 관계없이 소비합니다.
+기본 Docker Compose worker는 개발 DB 최신화를 위해
+`AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=true`로 둡니다. 이 작업은
+`collect → rag → inspect`와 순위·기관 집계만 수행합니다. `rag`는 최근 24시간 수집분과
+새 낙찰 결과에 연결되는 공고만 upsert하므로 50만 건 KB 전체를 워커 메모리에 올리지
+않습니다. 예측 검증이 포함된 운영
+야간 번들과 주간 재학습은 `false`로 유지합니다. 두 야간 스케줄을 함께 켜면 개발
+최신화 작업이 건너뛰어 중복 수집을 막습니다.
 
 발신 페이로드는 `{"text": ...}` 로 고정돼 있어 **Slack 전용**입니다. Discord 로 바꾸려면 `{"content": ...}` 를 요구하므로 `src/tasks/notifier.py:60` 수정이 함께 필요합니다. 발신 실패는 예외를 삼키고 로그만 남기므로 형식이 틀려도 조용히 실패합니다.
 

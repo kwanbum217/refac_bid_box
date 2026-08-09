@@ -141,6 +141,52 @@ async def test_run_local_automation_bundle_short_circuits_preflight_only(worker_
 
 
 @pytest.mark.asyncio
+async def test_development_refresh_skips_dashboard_full_scan(worker_db):
+    """개발 정기 수집은 신규분만 반영하고 대시보드 전수 집계를 건너뜁니다."""
+    _add_execution(worker_db, "development-refresh-001", "refresh_data")
+    collect_kwargs: dict = {}
+
+    def collect_runner(db, **kwargs):
+        collect_kwargs.update(kwargs)
+        return "collect done", {}
+
+    runners = _recording_runners([])
+    runners["collect"] = collect_runner
+    with patch.object(automation_tasks, "STEP_RUNNERS", runners):
+        result = await automation_tasks.run_automation_pipeline(
+            {},
+            execution_id="development-refresh-001",
+            run_mode="refresh_data",
+        )
+
+    assert result["status"] == "success"
+    assert collect_kwargs["refresh_aggregates"] is False
+
+
+@pytest.mark.asyncio
+async def test_development_refresh_uses_delta_kb_window(worker_db):
+    """개발 정기 수집은 전체 KB 재구축 대신 최근 적재분만 upsert합니다."""
+    _add_execution(worker_db, "development-refresh-002", "refresh_data")
+    rag_kwargs: dict = {}
+
+    def rag_runner(db, **kwargs):
+        rag_kwargs.update(kwargs)
+        return "rag done", {}
+
+    runners = _recording_runners([])
+    runners["rag"] = rag_runner
+    with patch.object(automation_tasks, "STEP_RUNNERS", runners):
+        result = await automation_tasks.run_automation_pipeline(
+            {},
+            execution_id="development-refresh-002",
+            run_mode="refresh_data",
+        )
+
+    assert result["status"] == "success"
+    assert rag_kwargs["collected_since"] is not None
+
+
+@pytest.mark.asyncio
 async def test_run_local_automation_bundle_marks_failure(worker_db):
     """중간 스텝이 실패하면 그 자리에서 멈추고 실행 이력에 실패를 남긴다.
 

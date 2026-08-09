@@ -5,6 +5,7 @@ src/tasks/scheduled_tasks.py
 
 | 원본 | 주기 | 이식본 |
 | --- | --- | --- |
+| 개발 데이터 최신화 | 매일 02:00 | `development_data_refresh_task` |
 | Harness `BIDBOX_Personal_Nightly_Schedule` | 매일 02:00 | `nightly_schedule_task` |
 | Airflow `narabid_weekly_retrain` | 매주 월요일 03:00 | `weekly_retrain_task` |
 
@@ -93,6 +94,45 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # 추론 경로가 쓰는 기관 이력 집계도 함께 갱신합니다. 이 표가 낡으면
     # 학습과 추론의 inst_hist_rate 정의가 갈립니다 (AGENTS.md 6항).
+    outcome["institution_stats"] = _rebuild_institution_stats()
+    return outcome
+
+
+async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """개발 DB를 최신화하는 매일 수집·KB·집계 작업입니다."""
+    if not settings.AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED:
+        logger.info("개발 데이터 최신화 스케줄이 비활성화되어 있어 건너뜁니다.")
+        return {"status": "skipped", "reason": "disabled"}
+    if settings.AUTOMATION_NIGHTLY_SCHEDULE_ENABLED:
+        logger.info("운영 야간 번들이 활성화되어 개발 데이터 최신화를 건너뜁니다.")
+        return {"status": "skipped", "reason": "nightly_schedule_enabled"}
+
+    db = SessionLocal()
+    try:
+        execution_id = _create_scheduled_execution(
+            db, "development_data_refresh", "development_data_refresh"
+        )
+    finally:
+        db.close()
+
+    logger.info("개발 데이터 최신화 시작 (execution_id=%s)", execution_id)
+    try:
+        outcome = await run_automation_pipeline(
+            ctx,
+            execution_id=execution_id,
+            action_key="development_data_refresh",
+            run_mode="refresh_data",
+            original_query="개발 정기 데이터 최신화",
+        )
+    except Exception as exc:
+        logger.exception("개발 데이터 최신화 실패")
+        await notify_task_failure("개발 데이터 최신화", str(exc), detail=f"execution_id {execution_id}")
+        raise
+
+    if outcome.get("status") != "success":
+        return outcome
+
+    outcome["ranking_snapshots"] = _rebuild_ranking_snapshots()
     outcome["institution_stats"] = _rebuild_institution_stats()
     return outcome
 

@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET  # nosec B405
 
 import pytest
 
-from src.app.services.api_collector import _map_announcement_item, _map_result_item
+from src.app.services.api_collector import _map_announcement_item, _map_result_item, get_service_key
 
 ANNOUNCEMENT_XML = """
 <item>
@@ -51,6 +51,15 @@ RESULT_XML = """
 
 def _raw(xml: str) -> dict[str, str]:
     return {child.tag: (child.text or "") for child in ET.fromstring(xml)}  # noqa: S314
+
+
+def test_service_key_accepts_canonical_and_legacy_environment_names(monkeypatch):
+    monkeypatch.setenv("G2B_SERVICE_KEY", "canonical")
+    monkeypatch.setenv("serviceKey", "legacy")
+    assert get_service_key() == "canonical"
+
+    monkeypatch.delenv("G2B_SERVICE_KEY")
+    assert get_service_key() == "legacy"
 
 
 @pytest.fixture

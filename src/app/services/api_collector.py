@@ -72,7 +72,11 @@ RANGE_DAYS = 15
 
 def get_service_key() -> str:
     """G2B 서비스 키. 값은 .env 에서만 읽고 코드/로그에 노출하지 않습니다."""
-    return os.getenv("serviceKey", "") or os.getenv("SERVICE_KEY", "")
+    return (
+        os.getenv("G2B_SERVICE_KEY", "")
+        or os.getenv("serviceKey", "")
+        or os.getenv("SERVICE_KEY", "")
+    )
 
 
 def _get_text(item: ET.Element, tag_name: str, default: str | None = None) -> str | None:

@@ -15,6 +15,7 @@ import pytest
 from arq.cron import next_cron
 from sqlalchemy import select
 
+from src.app.core.config import settings
 from src.app.models.chatbot import PipelineExecution
 from src.tasks import scheduled_tasks
 from src.tasks.run_mode_matrix import get_run_mode_steps
@@ -56,6 +57,14 @@ def test_nightly_cron_runs_daily_at_two():
 
     next_run = _next_run_after(job, datetime(2026, 8, 5, 12, 0, 0))
     assert next_run == datetime(2026, 8, 6, 2, 0, 0, job.microsecond)
+
+
+def test_development_refresh_cron_runs_daily_at_two():
+    job = _cron_by_name("development_data_refresh_task")
+    assert job.hour == 2
+    assert job.minute == 0
+    assert job.weekday is None
+    assert scheduled_tasks.development_data_refresh_task in WorkerSettings.functions
 
 
 def test_weekly_retrain_cron_runs_monday_at_three():
@@ -135,6 +144,69 @@ async def test_nightly_schedule_skipped_when_disabled(monkeypatch, isolated_db):
     run_pipeline.assert_not_awaited()
     # 실행하지 않았으므로 이력도 남지 않아야 합니다.
     assert isolated_db.execute(select(PipelineExecution)).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_development_refresh_records_lightweight_pipeline(isolated_db, monkeypatch):
+    session_factory = lambda: isolated_db  # noqa: E731
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False, raising=False)
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", session_factory),
+        patch.object(
+            scheduled_tasks,
+            "run_automation_pipeline",
+            new=AsyncMock(return_value={"status": "success", "completed_steps": ["collect", "rag", "inspect"]}),
+        ) as run_pipeline,
+        patch.object(scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}),
+        patch.object(scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}),
+    ):
+        isolated_db.close = lambda: None
+        result = await scheduled_tasks.development_data_refresh_task({})
+
+    assert result["status"] == "success"
+    kwargs = run_pipeline.await_args.kwargs
+    assert kwargs["run_mode"] == "refresh_data"
+    execution = isolated_db.execute(
+        select(PipelineExecution).where(PipelineExecution.execution_id == kwargs["execution_id"])
+    ).scalar_one()
+    assert execution.run_mode == "development_data_refresh"
+    assert execution.source == "local_scheduler"
+
+
+@pytest.mark.asyncio
+async def test_development_refresh_skips_when_full_nightly_schedule_is_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True, raising=False)
+
+    result = await scheduled_tasks.development_data_refresh_task({})
+
+    assert result == {"status": "skipped", "reason": "nightly_schedule_enabled"}
+
+
+@pytest.mark.asyncio
+async def test_development_refresh_does_not_rebuild_aggregates_after_pipeline_failure(
+    isolated_db, monkeypatch
+):
+    session_factory = lambda: isolated_db  # noqa: E731
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False, raising=False)
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", session_factory),
+        patch.object(
+            scheduled_tasks,
+            "run_automation_pipeline",
+            new=AsyncMock(return_value={"status": "failed", "error": "KB 오류"}),
+        ),
+        patch.object(scheduled_tasks, "_rebuild_ranking_snapshots") as rebuild_ranking,
+        patch.object(scheduled_tasks, "_rebuild_institution_stats") as rebuild_institution,
+    ):
+        isolated_db.close = lambda: None
+        result = await scheduled_tasks.development_data_refresh_task({})
+
+    assert result["status"] == "failed"
+    rebuild_ranking.assert_not_called()
+    rebuild_institution.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #
