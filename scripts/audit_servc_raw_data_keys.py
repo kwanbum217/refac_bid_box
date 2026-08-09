@@ -41,6 +41,25 @@ from sqlalchemy import create_engine, text  # noqa: E402
 
 from scripts.survey_servc_fields import CANDIDATES, IN_USE  # noqa: E402
 
+# `raw_data` 에서 직접 읽는 키 말고, 수집기가 **정규 컬럼으로 옮겨 담는** 키가
+# 따로 있습니다(`_map_announcement_item`). 그 컬럼 중 일부는 이미 학습 특징이라
+# 여기를 빠뜨리면 쓰고 있는 키를 미사용으로 셉니다. 실제로 `ntceKindNm` 과
+# `bidMethdNm` 을 후보로 잘못 올렸다가 3단계에서 발견했습니다.
+COLUMN_MAPPED = {
+    "bidNtceNm": "bid_ntce_nm",
+    "bidNtceNo": "bid_ntce_no",
+    "bidNtceOrd": "bid_ntce_ord",
+    "ntceInsttNm": "ntce_instt_nm",
+    "dminsttNm": "dminstt_nm",
+    "presmptPrce": "presmpt_prce",
+    "bidNtceDt": "bid_ntce_dt",
+    "bidClseDt": "bid_clse_dt",
+    "opengDt": "openg_dt",
+    "ntceKindNm": "ntce_kind_nm",
+    "bidMethdNm": "bid_methd_nm",
+    "cntrctCnclsMthdNm": "cntrct_mthd_nm",
+}
+
 # 학습 구간입니다. `eval_servc_year_holdout` 이 2024년까지 학습, 2025년 검증을
 # 쓰므로 채움률도 같은 축으로 봐야 판단이 이어집니다.
 SURVEY_YEARS = range(2015, 2027)
@@ -165,7 +184,7 @@ def main() -> int:
         if frame.empty:
             print(f"\n[{label}] raw_data 가 비어 표본이 없습니다")
             continue
-        frame["in_use"] = frame["key"].isin(IN_USE.keys())
+        frame["in_use"] = frame["key"].isin(set(IN_USE) | set(COLUMN_MAPPED))
         # 2026-08-03 조사가 손으로 고른 후보입니다. 이미 연관도를 잰 것이므로
         # 새로 볼 것은 이 둘 어디에도 없는 키입니다.
         frame["surveyed"] = frame["key"].isin(CANDIDATES.keys())
