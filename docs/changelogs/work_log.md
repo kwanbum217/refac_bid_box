@@ -902,4 +902,20 @@
 - **R2 함정 재확인**: 2026-08-07 에 반반 평균이 R2 에서 이겼던 것은 CatBoost 가 RMSE 를 겨냥했기 때문이지 앙상블 덕이 아니었습니다. L1 으로 바꾸자 CatBoost 는 RMSE 3.0137 / R2 0.6063 으로 두 지표에서도 집니다
 - **조치**: `train_and_register` 의 MAPE 단일 선택 구조는 손대지 않습니다. 재학습·승격 없음. 서빙은 `v_20260807_043210_535` 그대로입니다
 - **문서**: `docs/design/servc_ensemble_catboost_l1_20260809.md` 신설, 인수인계 3장을 기각으로 교체하고 0·5장 갱신, 스킬 기각 목록 1행 추가
-- **남은 것**: 2026-08-07 인수인계가 남긴 세 축이 모두 닫혔고 미측정 축이 없습니다. 다음 개선은 새 정보 수집 설계 과업입니다
+- **남은 것**: 2026-08-07 인수인계가 남긴 세 축이 모두 닫혔고 미측정 축이 없습니다
+- **다음 과업 특정**: 인수인계 4.3 을 신설했습니다. 새 정보의 1차 후보는 API 재수집이 아니라 이미 저장된 `raw_data` 입니다. `_item_raw_data` 가 응답 XML 의 모든 태그를 담고(`api_collector.py:174`) `bid_results`·`bid_announcements` 양쪽에 JSON 컬럼으로 들어가므로(`bids.py:194`, `:305`), 학습 특징 32개가 쓰지 않는 키가 이미 DB 에 있습니다. 채움률 -> 미사용 키 목록 -> 결측률·안정성 -> 잔차 대조(기준선 상관 0.105) 순으로 판정합니다. **채움률을 먼저 재야 합니다.** parquet 복구분 1,244,778행(`bid_results` 의 41%)은 `raw_data` 가 비어 있고(`bids.py:135`) 그 구간이 Servc 학습 구간에 얼마나 겹치는지는 아직 재지 않았습니다. 이 세션은 컨테이너 CLI 를 쓸 수 없어 조사를 실행하지 못했습니다
+
+---
+
+### 2026-08-09 | Arq 워커 Compose 배선 | 기본 스택의 태스크 소비자 복원
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - 최신 `main` 기준으로 기본 Docker Compose에 `arq src.tasks.worker.WorkerSettings` worker 서비스를 추가했습니다
+  - worker가 앱과 동일한 MySQL, Redis, 모델 레지스트리, 데이터, ChromaDB를 사용하도록 연결했습니다
+  - 개발 환경에서는 야간 수집과 주간 재학습을 기본 비활성화하고, 수동 작업 소비는 유지했습니다
+  - 오래된 `fix/arq-worker-compose` 브랜치는 병합하지 않고 필요한 변경만 새 브랜치에 재적용했습니다
+- **관련 파일**: `docker-compose.yml`, `.env.example`, `Makefile`, `tests/test_worker_compose.py`, `docs/ops/cross_platform_guide.md`, `docs/ops/environment_variables.md`, `docs/design/REFACTORING_DESIGN.md`
+- **검증 결과**: 전체 비자산 테스트 753건 통과(4건 skip, 3건 deselect), Ruff, Compose 구문, 에이전트 규칙 정합성 검증을 통과했습니다. 격리된 MySQL 8·Redis·worker 스택의 이미지 빌드와 기동 후 `arq --check`도 통과했습니다
+- **범위 외 발견**: 신규 빈 MySQL 8에 Alembic 기준선을 적용하면 `automation_requests.request_id UUID` DDL에서 실패합니다. worker 기동 결함은 아니며 DB 통일 작업에서 별도 해소해야 합니다
+- **검증 인프라 부채**: 저장소의 pre-commit은 Ruff `0.9.6`이 현행 `S704` 설정을 읽지 못하고 Bandit 훅에 TOML 파서가 없어 전체 실행되지 않습니다. 현행 Ruff `0.16.1`과 나머지 변경 파일 훅은 통과했으며, 이 설정 보정은 기반환경 작업으로 분리합니다
