@@ -1,0 +1,41 @@
+# Version control and local configuration
+.git/
+.env
+.env.*
+!.env.example
+
+# Python environments, caches, and build outputs
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+htmlcov/
+.coverage
+.coverage.*
+dist/
+build/
+
+# Runtime data is supplied through Docker Compose bind mounts.
+data/
+chroma_db/
+ml_registry/
+catboost_info/
+logs/
+*.log
+*.pid
+
+# The legacy frontend has its own build context.
+frontend/
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+Thumbs.db

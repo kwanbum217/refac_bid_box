@@ -42,9 +42,16 @@ make migrate-verify
 make model-verify
 make test-data-assets
 
-# 스택 시동
+# 전체 Docker 스택 시동 (앱·Arq·MySQL·Redis)
+make up
+
+# 로컬 코드만 FastAPI로 실행할 때
 make dev
 ```
+
+Docker 앱·워커 이미지는 소스와 의존성만 포함합니다. 데이터셋, 모델 레지스트리,
+ChromaDB 색인은 `docker-compose.yml`의 호스트 볼륨으로 제공하므로 첫 이미지 빌드에
+포함되지 않습니다.
 
 ## 문서
 
