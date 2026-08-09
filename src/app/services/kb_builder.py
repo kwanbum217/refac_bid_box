@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "bidding_kb"
 INDEX_BATCH_SIZE = 100
+# 50만 건 메타데이터를 한 응답으로 읽으면 Chroma 응답 객체가 워커 메모리를
+# 소진할 수 있습니다. 해시 비교용 조회도 페이지 단위로 제한합니다.
+INDEX_LOOKUP_BATCH_SIZE = 10_000
 
 # 원본은 10 이었습니다. 그 값이 야간 재색인에 그대로 적용되면 목표 문서가 10건이
 # 되고, 기존 색인 전부가 삭제 대상으로 계산됩니다. 2026-08-07 에 KB 를 50만 건으로
@@ -91,24 +94,35 @@ def _load_existing_index(collection) -> tuple[dict[str, str], bool]:
     재구축으로 떨어집니다.
     """
     try:
-        stored = collection.get(include=["metadatas"])
+        stored_count = collection.count()
     # 컬렉션이 비었거나 읽을 수 없으면 증분을 포기하고 전량으로 갑니다.
     except Exception as exc:  # nosec B110
         logger.warning("기존 색인 조회 실패, 전량 재구축으로 전환합니다: %s", exc)
         return {}, False
 
-    ids = stored.get("ids") or []
-    metadatas = stored.get("metadatas") or []
-    if not ids:
+    if not stored_count:
         return {}, False
 
     hashes: dict[str, str] = {}
-    for doc_id, meta in zip(ids, metadatas, strict=False):
-        meta = meta or {}
-        doc_hash = meta.get("doc_hash")
-        if not doc_hash or int(meta.get("fmt", 0)) != DOC_FORMAT_VERSION:
-            return {}, False
-        hashes[doc_id] = str(doc_hash)
+    try:
+        for offset in range(0, stored_count, INDEX_LOOKUP_BATCH_SIZE):
+            stored = collection.get(
+                include=["metadatas"], limit=INDEX_LOOKUP_BATCH_SIZE, offset=offset
+            )
+            ids = stored.get("ids") or []
+            metadatas = stored.get("metadatas") or []
+            if not ids:
+                logger.warning("기존 색인 페이지가 비어 있어 전량 재구축으로 전환합니다.")
+                return {}, False
+            for doc_id, meta in zip(ids, metadatas, strict=False):
+                meta = meta or {}
+                doc_hash = meta.get("doc_hash")
+                if not doc_hash or int(meta.get("fmt", 0)) != DOC_FORMAT_VERSION:
+                    return {}, False
+                hashes[doc_id] = str(doc_hash)
+    except Exception as exc:  # nosec B110
+        logger.warning("기존 색인 조회 실패, 전량 재구축으로 전환합니다: %s", exc)
+        return {}, False
     return hashes, True
 
 
@@ -176,6 +190,39 @@ def _resolve_announcements(db: Session, one_year_ago: datetime) -> tuple[list[Bi
     return [], "announcements_unavailable"
 
 
+def _resolve_delta_announcements(
+    db: Session, collected_since: datetime
+) -> tuple[list[BidAnnouncement], str]:
+    """이번 수집분과 새 낙찰 결과가 참조하는 공고만 KB에 반영합니다."""
+    announcements = list(
+        db.execute(
+            select(BidAnnouncement)
+            .where(BidAnnouncement.collected_at >= collected_since)
+            .order_by(BidAnnouncement.collected_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    result_notice_numbers = list(
+        db.scalars(
+            select(BidResult.bid_ntce_no)
+            .where(BidResult.collected_at >= collected_since)
+            .distinct()
+        ).all()
+    )
+    if result_notice_numbers:
+        related_announcements = db.execute(
+            select(BidAnnouncement).where(BidAnnouncement.bid_ntce_no.in_(result_notice_numbers))
+        ).scalars()
+        known_ids = {announcement.id for announcement in announcements}
+        announcements.extend(
+            announcement
+            for announcement in related_announcements
+            if announcement.id not in known_ids
+        )
+    return announcements, "announcements_by_collected_delta"
+
+
 def _join_key(row: BidAnnouncement | BidResult) -> str:
     """공고와 낙찰을 잇는 키. 차수 자리수를 맞추지 않으면 거의 이어지지 않습니다."""
     return f"{row.bid_ntce_no}-{normalize_bid_ntce_ord(row.bid_ntce_ord)}-{row.category}"
@@ -218,7 +265,11 @@ def _build_result_document(result: BidResult) -> str:
 
 
 def rebuild_knowledge_base(
-    db: Session, pipeline_run_id: str = "", *, full: bool = False
+    db: Session,
+    pipeline_run_id: str = "",
+    *,
+    full: bool = False,
+    collected_since: datetime | None = None,
 ) -> dict[str, Any]:
     """최근 1년 데이터로 bidding_kb 컬렉션을 갱신합니다.
 
@@ -246,13 +297,25 @@ def rebuild_knowledge_base(
         # 질의 경로(vector_store)와 반드시 같은 임베딩 함수여야 합니다.
         collection = get_collection(chroma_client, COLLECTION_NAME, create=True)
 
-        existing_hashes, incremental = ({}, False) if full else _load_existing_index(collection)
+        delta_mode = collected_since is not None and not full
+        existing_hashes, incremental = (
+            ({}, False) if full or delta_mode else _load_existing_index(collection)
+        )
 
         one_year_ago = utcnow() - timedelta(days=365)
-        announcements, source_mode = _resolve_announcements(db, one_year_ago)
+        if delta_mode:
+            announcements, source_mode = _resolve_delta_announcements(db, collected_since)
+        else:
+            announcements, source_mode = _resolve_announcements(db, one_year_ago)
 
         results = (
-            db.execute(select(BidResult).where(BidResult.rl_openg_dt >= one_year_ago))
+            db.execute(
+                select(BidResult).where(
+                    BidResult.bid_ntce_no.in_({announcement.bid_ntce_no for announcement in announcements})
+                    if delta_mode
+                    else BidResult.rl_openg_dt >= one_year_ago
+                )
+            )
             .scalars()
             .all()
             if announcements
@@ -280,11 +343,21 @@ def rebuild_knowledge_base(
             )
             ids.append(f"bid_{ann.id}")
 
-        indexed_count, stats = _sync(
-            collection, documents, metadatas, ids, existing_hashes, incremental
-        )
+        if delta_mode:
+            embedded = _flush(collection, documents, metadatas, ids) if documents else 0
+            indexed_count = collection.count()
+            stats = {
+                "mode": "delta",
+                "embedded": embedded,
+                "unchanged": 0,
+                "removed": 0,
+            }
+        else:
+            indexed_count, stats = _sync(
+                collection, documents, metadatas, ids, existing_hashes, incremental
+            )
 
-        if indexed_count == 0:
+        if indexed_count == 0 and not delta_mode:
             source_mode = "results_only"
             fallback_results = (
                 db.execute(
@@ -314,7 +387,7 @@ def rebuild_knowledge_base(
                 collection, documents, metadatas, ids, existing_hashes, incremental
             )
 
-        if indexed_count == 0:
+        if indexed_count == 0 and not delta_mode:
             raise RuntimeError("최근 1년 기준으로 인덱싱할 공고/낙찰 데이터가 없습니다.")
 
         embedded_at = utcnow()
@@ -323,6 +396,11 @@ def rebuild_knowledge_base(
                 f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"
                 f" (증분: 갱신 {stats['embedded']}건 / 유지 {stats['unchanged']}건"
                 f" / 삭제 {stats['removed']}건)"
+            )
+        elif stats["mode"] == "delta":
+            summary = (
+                f"이번 수집분 {embedded}건 반영 완료 "
+                f"(KB 전체 {indexed_count}건, 기준 {collected_since.isoformat()})"
             )
         else:
             summary = f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"

@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     AUTOMATION_CALLBACK_BASE_URL: str = ""
     # 원본 Harness 야간 트리거(매일 02:00) 대체. 개발 장비에서는 꺼둘 수 있습니다.
     AUTOMATION_NIGHTLY_SCHEDULE_ENABLED: bool = True
+    # 개발 DB 최신화 전용 크론. 수집·KB·집계만 수행하며 예측 검증과 재학습은 포함하지 않습니다.
+    AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED: bool = False
     # 원본 Airflow narabid_weekly_retrain(매주 월요일 03:00) 대체.
     ML_WEEKLY_RETRAIN_ENABLED: bool = True
     # MLOps 알림 웹훅(Slack/Discord). 비면 알림을 보내지 않습니다.

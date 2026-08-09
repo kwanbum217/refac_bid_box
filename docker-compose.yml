@@ -15,6 +15,9 @@ services:
       # .env 의 CHROMA_DB_PATH 는 호스트 절대 경로입니다. 이미지에 그대로 실려
       # 컨테이너가 없는 경로를 보고 빈 컬렉션을 만들었습니다. 반드시 덮어씁니다.
       - CHROMA_DB_PATH=/app/chroma_db
+      # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
+      - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
+      - serviceKey=${serviceKey:-}
       - LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=gemma4:e4b
@@ -43,12 +46,18 @@ services:
       - DATABASE_URL=mysql+pymysql://root:rootpassword@db:3306/procurement
       - REDIS_URL=redis://redis:6379/0
       - CHROMA_DB_PATH=/app/chroma_db
+      # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
+      - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
+      - serviceKey=${serviceKey:-}
       - LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=gemma4:e4b
-      # 개발 스택 기동만으로 수집과 재학습이 실행되지 않도록 막습니다.
+      # 개발 DB와 KB는 매일 최신화하되, 예측 검증·재학습은 운영 스케줄에만 둡니다.
+      - AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=true
       - AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false
       - ML_WEEKLY_RETRAIN_ENABLED=false
+      # Arq cron 은 워커의 로컬 시간을 사용하므로 운영 문서의 02:00을 KST로 고정합니다.
+      - TZ=Asia/Seoul
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

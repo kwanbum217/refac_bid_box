@@ -77,6 +77,23 @@ def test_unchanged_documents_are_not_reembedded(isolated_db, chroma_path):
     assert outcome["metrics"]["source_bid_count"] == 3
 
 
+def test_delta_run_indexes_only_recently_collected_announcements(isolated_db, chroma_path):
+    old = _add_announcement(isolated_db, notice_no="20260000", name="기존 공고")
+    old.collected_at = utcnow() - timedelta(days=2)
+    isolated_db.commit()
+    kb_builder.rebuild_knowledge_base(isolated_db)
+
+    _add_announcement(isolated_db, notice_no="20260001", name="새 공고")
+    outcome = kb_builder.rebuild_knowledge_base(
+        isolated_db, collected_since=utcnow() - timedelta(hours=1)
+    )
+
+    assert outcome["status"] == "success"
+    assert outcome["metrics"]["index_mode"] == "delta"
+    assert outcome["metrics"]["embedded_count"] == 1
+    assert outcome["metrics"]["source_bid_count"] == 2
+
+
 def test_only_changed_document_is_reembedded(isolated_db, chroma_path):
     rows = [
         _add_announcement(isolated_db, notice_no=f"2026{index:06d}", name=f"공고 {index}")
@@ -200,6 +217,36 @@ def test_low_document_limit_cannot_wipe_the_collection(isolated_db, chroma_path,
 def test_default_document_limit_matches_operating_scale():
     """기본 상한이 운영 KB 규모(약 50만 건)와 어긋나면 안 됩니다."""
     assert kb_builder.DEFAULT_MAX_DOCUMENTS >= 500_000
+
+
+def test_existing_index_metadata_is_loaded_in_pages(monkeypatch):
+    """대규모 KB 메타데이터를 단일 Chroma 응답으로 읽으면 워커가 OOM 납니다."""
+
+    class _Collection:
+        def __init__(self):
+            self.rows = [
+                (f"bid_{index}", {"doc_hash": f"hash_{index}", "fmt": 1})
+                for index in range(5)
+            ]
+            self.calls: list[tuple[int, int]] = []
+
+        def count(self):
+            return len(self.rows)
+
+        def get(self, *, include, limit, offset):
+            assert include == ["metadatas"]
+            self.calls.append((limit, offset))
+            rows = self.rows[offset : offset + limit]
+            return {"ids": [row[0] for row in rows], "metadatas": [row[1] for row in rows]}
+
+    collection = _Collection()
+    monkeypatch.setattr(kb_builder, "INDEX_LOOKUP_BATCH_SIZE", 2)
+
+    hashes, incremental = kb_builder._load_existing_index(collection)
+
+    assert incremental is True
+    assert hashes == {f"bid_{index}": f"hash_{index}" for index in range(5)}
+    assert collection.calls == [(2, 0), (2, 2), (2, 4)]
 
 
 def test_sync_rejects_mass_removal(monkeypatch):

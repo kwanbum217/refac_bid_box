@@ -86,11 +86,13 @@ def _report(  # nosec B107
     apply_callback_payload(db, request_obj, payload)
 
 
-async def _step_collect(db) -> tuple[str, dict[str, Any]]:
+async def _step_collect(
+    db, *, refresh_aggregates: bool = True
+) -> tuple[str, dict[str, Any]]:
     """G2B 수집 스텝 (원본 collect_bids 명령 대응)."""
     from src.app.services.collector_service import collect_bids
 
-    metrics = await collect_bids(db)
+    metrics = await collect_bids(db, refresh_aggregates=refresh_aggregates)
     if metrics.get("status") == "error":
         today_rows = db.scalar(
             select(func.count(BidAnnouncement.id)).where(
@@ -115,11 +117,15 @@ async def _step_collect(db) -> tuple[str, dict[str, Any]]:
     )
 
 
-def _step_rag(db, execution_id: str = "") -> tuple[str, dict[str, Any]]:
+def _step_rag(
+    db, execution_id: str = "", collected_since: datetime | None = None
+) -> tuple[str, dict[str, Any]]:
     """ChromaDB 지식베이스 재구축 (원본 update_hybrid_kb 명령 대응)."""
     from src.app.services.kb_builder import rebuild_knowledge_base
 
-    outcome = rebuild_knowledge_base(db, pipeline_run_id=execution_id)
+    outcome = rebuild_knowledge_base(
+        db, pipeline_run_id=execution_id, collected_since=collected_since
+    )
     metrics = dict(outcome.get("metrics") or {})
     metrics.setdefault("vector_count", metrics.get("source_bid_count", 0))
     return outcome["summary"], metrics
@@ -324,6 +330,14 @@ async def run_automation_pipeline(
             kwargs = {}
             if "execution_id" in inspect.signature(runner).parameters:
                 kwargs["execution_id"] = execution_id
+            # 개발 최신화는 수집 직후 500만 행 대시보드 전수 집계를 하지 않습니다.
+            # 이후 스냅샷·기관 통계 갱신으로 추론 경로의 최신성은 유지합니다.
+            if step == "collect" and run_mode == "refresh_data":
+                kwargs["refresh_aggregates"] = False
+            if step == "rag" and run_mode == "refresh_data":
+                # 직전 실패·재기동 뒤에도 적재분을 놓치지 않도록 24시간 겹침 구간을
+                # 다시 upsert 합니다. 문서 ID가 안정적이므로 중복 벡터는 생기지 않습니다.
+                kwargs["collected_since"] = utcnow() - timedelta(days=1)
             outcome = runner(db, **kwargs)
             summary, metrics = await outcome if inspect.isawaitable(outcome) else outcome
             completed.append(step)
