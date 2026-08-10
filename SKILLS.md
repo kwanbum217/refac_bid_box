@@ -5,7 +5,7 @@
 이 프로젝트에서 작업을 시작하기 전, 아래 순서를 **반드시** 따르십시오.
 건너뛰거나 생략하는 것은 허용되지 않습니다.
 
-> **스킬 시스템 상태**: 다중 에이전트 스킬 시스템 11개 구축 완료. 정합성 검증: `python scripts/validate_agent_rules.py`
+> **스킬 시스템 상태**: 다중 에이전트 스킬 시스템 12개 구축 완료. 정합성 검증: `python scripts/validate_agent_rules.py`
 
 ---
 
@@ -48,6 +48,8 @@ README를 처음부터 끝까지 읽고 다음을 파악합니다:
 | 브랜치/PR 작업 | [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md) |
 | 다중 에이전트 환경 | [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md) |
 | 문서 전체 인덱스 | [`docs/README.md`](docs/README.md) |
+
+둘 이상의 에이전트 또는 섹션이 관여하거나, 병합·검증·공유 자원 대기가 있으면 작업 전 [`orca-section-coordination`](.agents/skills/orca-section-coordination/SKILL.md)을 읽고 Orca Run·Task로 등록합니다.
 
 ---
 
@@ -119,3 +121,4 @@ refac_bid_box는 **공공조달(G2B/나라장터) 입찰 데이터 수집·분�
 - [ ] 작업 유형에 맞는 추가 문서 참조 완료
 - [ ] 데이터 무손실 영향 여부 확인 (DB/가중치/ChromaDB 접근 시)
 - [ ] macOS/Windows 호환성 영향 여부 확인
+- [ ] 다중 섹션 작업이면 Orca Run·Task·의존성·공유 자원 소유자 등록 완료
