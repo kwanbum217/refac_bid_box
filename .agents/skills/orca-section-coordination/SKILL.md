@@ -71,6 +71,19 @@ Task는 반드시 둘 다 돌립니다.
 단독 재실행해 통과를 확인하고, `worker_done` 에 그 사실을 함께 적습니다. 이
 예외를 모르면 오탐으로 후속 Task 가 차단됩니다.
 
+### 2.4 서빙 모델을 로드하는 작업은 주 저장소에서 돌리십시오
+
+같은 이유로 **`data/model_files/*/model.bin` 을 읽는 스크립트는 격리 트리에서
+동작하지 않습니다.** `ModelRegistry` 가 워크트리 루트 기준으로 경로를 잡아
+"모델 파일을 찾을 수 없습니다" 로 전부 실패합니다.
+
+    격리 트리에서 가능     parquet 만 읽는 측정, 학습, 문서 작업
+    주 저장소에서만 가능   운영 경로 평가, 쌍대 검정, 승격, 서빙 실측
+
+`compare_servc_models_paired.py`, `eval_servc_asof.py`,
+`measure_serving_model.py` 가 후자입니다. 이 작업들은 서빙 루트라는 **공유
+자원을 점유**하므로 Task 로 등록해 소유권을 명시하십시오.
+
 ## 3. 감독 절차
 
 1. 각 Task는 `orca orchestration worker-start` 또는 `dispatch --inject`로 Dispatch합니다. 사용자 요청에 모델·추론 수준이 있으면 해당 값도 Dispatch 시 반영합니다.
