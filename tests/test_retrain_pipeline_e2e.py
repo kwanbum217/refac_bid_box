@@ -289,6 +289,32 @@ def test_servc_uses_validated_features_and_hyperparams():
     assert hyperparams_for_category("Servc")["lightgbm"]["num_leaves"] == 255
 
 
+def test_category_model_namespaces_do_not_collide():
+    """공사 재학습이 물품 네임스페이스로 떨어지면 물품 champion 을 덮어씁니다."""
+    import pytest
+
+    from src.ml.trainer import (
+        DEFAULT_MODEL_NAME,
+        ModelTrainer,
+        model_name_for_category,
+    )
+
+    names = {
+        code: model_name_for_category(code) for code in ("Thng", "Servc", "Cnstwk")
+    }
+    assert len(set(names.values())) == 3, f"네임스페이스가 겹칩니다: {names}"
+    assert names["Cnstwk"] != DEFAULT_MODEL_NAME
+    assert ModelTrainer.for_category("Cnstwk").model_name == names["Cnstwk"]
+
+    # 카테고리를 지정하지 않은 전체 학습만 기본 네임스페이스를 씁니다.
+    assert model_name_for_category(None) == DEFAULT_MODEL_NAME
+    assert model_name_for_category("  ") == DEFAULT_MODEL_NAME
+
+    # 미등록 카테고리는 조용히 물품으로 떨어지지 않고 실패해야 합니다.
+    with pytest.raises(ValueError, match="Frgcpt"):
+        model_name_for_category("Frgcpt")
+
+
 def test_trainer_writes_versioned_artifacts(tmp_path):
     trainer = ModelTrainer(registry_dir=str(tmp_path))
     metadata = trainer.train_and_register(_frame())

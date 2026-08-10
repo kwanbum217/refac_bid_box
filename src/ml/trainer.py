@@ -101,10 +101,20 @@ MIN_FOLD_SAMPLES = 2
 
 # 카테고리별 모델 네임스페이스. 물품과 용역은 예정가격 산정과 낙찰자 결정이
 # 서로 다른 제도라 한 이름을 공유하면 champion 비교가 뒤섞입니다.
+#
+# 공사는 아직 전용 모델을 학습하지 않았지만 이름은 미리 갈라 둡니다. 예전에는
+# 미등록 카테고리가 DEFAULT_MODEL_NAME 으로 떨어져, 공사 재학습이 물품 디렉터리에
+# 저장되고 물품 champion 과 비교됐을 것입니다. 학습을 돌리는 순간 물품 승격본을
+# 덮어쓰는 경로였습니다.
+#
+# 서빙 매핑은 model_registry.CATEGORY_DEFAULT_MODELS 이며 지금은 공사를 v25 로
+# 보냅니다. cnstwk_institution_v1 이 실제로 승격되기 전까지 두 매핑이 다른 것은
+# 의도된 상태입니다. 승격 시점에 서빙 매핑도 함께 옮겨야 합니다.
 DEFAULT_MODEL_NAME = "quantum_leap_v25_pro"
 CATEGORY_MODEL_NAMES = {
     "Thng": "quantum_leap_v25_pro",
     "Servc": "servc_institution_v1",
+    "Cnstwk": "cnstwk_institution_v1",
 }
 
 # 편향 없는 동일 학습 상한 재평가에서 용역은 리프 255와 기관 EWM 조합이
@@ -143,7 +153,21 @@ CATEGORY_HYPERPARAMS = {
 
 
 def model_name_for_category(category_code: str | None) -> str:
-    return CATEGORY_MODEL_NAMES.get((category_code or "").strip(), DEFAULT_MODEL_NAME)
+    """카테고리 코드를 모델 네임스페이스로 옮깁니다.
+
+    모르는 코드를 조용히 DEFAULT_MODEL_NAME 으로 떨어뜨리지 않습니다. 그 동작은
+    다른 제도의 학습 산출물을 물품 이름으로 저장해 물품 champion 을 덮어씁니다.
+    카테고리를 새로 학습하려면 CATEGORY_MODEL_NAMES 에 먼저 등록하십시오.
+    """
+    code = (category_code or "").strip()
+    if not code:
+        return DEFAULT_MODEL_NAME
+    if code not in CATEGORY_MODEL_NAMES:
+        raise ValueError(
+            f"모델 네임스페이스가 없는 카테고리입니다: {code}. "
+            f"CATEGORY_MODEL_NAMES 에 등록하십시오 (등록됨: {sorted(CATEGORY_MODEL_NAMES)})"
+        )
+    return CATEGORY_MODEL_NAMES[code]
 
 
 # 시계열 기준 컬럼. 없으면 프레임 순서를 그대로 사용합니다.

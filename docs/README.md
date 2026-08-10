@@ -44,6 +44,7 @@ docs/
 | G2B 전자입찰 제도 분석 | [`g2b_procurement_institution_analysis.md`](design/g2b_procurement_institution_analysis.md) | 예정가격·낙찰하한율 산식, 2026-05-26 제도 변경 |
 | 용역 제도 가정 검증 보고 | [`servc_institution_verification_20260803.md`](design/servc_institution_verification_20260803.md) | V1~V7 데이터 검증 결과, 설계 정정 사항 |
 | 낙찰하한율 결측 조사 | [`lwlt_missing_investigation_20260806.md`](design/lwlt_missing_investigation_20260806.md) | 복원 기각. 결측은 제도적 부재, 레짐 전환 편향 없음 |
+| 레짐 전환 재점검 (값 수준 축) | [`servc_regime_lwlt_levels_20260810.md`](design/servc_regime_lwlt_levels_20260810.md) | 기각 유지. 인상 희소 수준 3.26%, 오라클 상한 0.0079%p, 재점검 트리거 명시 |
 | 용역 분리 모델 실험 | [`servc_segment_experiment_20260803.md`](design/servc_segment_experiment_20260803.md) | 분리 모델·하한율 절단 기각, 제도 특징 채택 |
 | 용역 2025년 연도 홀드아웃 | [`servc_year_holdout_2025_20260803.md`](design/servc_year_holdout_2025_20260803.md) | 공고 건당 오차 분포, 연초 성능 저하 |
 | 제한경쟁 진단과 난수 구조 | [`servc_restricted_competition_20260803.md`](design/servc_restricted_competition_20260803.md) | 참여업체 수·복수예가 난수 분해, 세부분류 특징 배선 |
@@ -55,8 +56,10 @@ docs/
 | 기관 이력 시간 가중 | [`servc_rolling_institution_20260805.md`](design/servc_rolling_institution_20260805.md) | 고정 창 기각 유지, 전량 재적합 후 지수감쇠 재판정 |
 | 용역 기각 후보 재검증 | [`servc_unbiased_candidate_recheck_20260805.md`](design/servc_unbiased_candidate_recheck_20260805.md) | 리프 255와 지수감쇠 배선·재학습·운영 쌍대 검증·승격 |
 | 물품 모델 재학습 | [`thng_retraining_20260806.md`](design/thng_retraining_20260806.md) | 34특징 LightGBM 재학습·운영 쌍대 검증·승격 |
+| 카테고리 모델 커버리지 | [`category_model_coverage_20260810.md`](design/category_model_coverage_20260810.md) | 공사 전용 모델 부재, 물품 실측 미갱신, 학습 라우팅 결함 수정 |
 | 하이퍼파라미터 탐색 | [`servc_hyperparam_search_20260804.md`](design/servc_hyperparam_search_20260804.md) | 좌표 하강 17회, 점 추정·분위 파라미터 분리, 리프 상향은 운영 실측 후 기각 |
-| 용역 하한율 가용성 | [`servc_lwlt_availability_20260804.md`](design/servc_lwlt_availability_20260804.md) | 결측의 76.8%가 방법명으로 설명 불가. 결측 축소는 유효한 경로 |
+| 용역 하한율 가용성 | [`servc_lwlt_availability_20260804.md`](design/servc_lwlt_availability_20260804.md) | 대체 API 검증만 유효. "76.8% 미표기" 판정은 2026-08-10 폐기 |
+| 하한율 결측 메커니즘 재분해 | [`servc_lwlt_missing_mechanism_20260810.md`](design/servc_lwlt_missing_mechanism_20260810.md) | 예가방식으로 결측의 99.1% 설명. 첨부문서 파싱 불필요, 축 종결 |
 
 ## 2. migration/
 
@@ -89,7 +92,7 @@ docs/
 | Phase 7 검증 보고서 | [`phase7_cutover_report_20260804.md`](ops/phase7_cutover_report_20260804.md) | 무손실·레이턴시·크로스 플랫폼 판정 근거 |
 | 크로스 플랫폼 가이드 | [`cross_platform_guide.md`](ops/cross_platform_guide.md) | macOS·Windows 재현 및 검증 절차 |
 | 모델 승격·롤백 런북 | [`model_promotion_runbook.md`](ops/model_promotion_runbook.md) | 승격 게이트, 쌍대 비교 절차, 롤백 왕복 |
-| 스냅샷 재집계 비용 | [`snapshot_rebuild_cost_20260806.md`](ops/snapshot_rebuild_cost_20260806.md) | 야간 506초 구조, 날짜 축 확장·LIKE 제거 기각 근거 |
+| 스냅샷 재집계 비용 | [`snapshot_rebuild_cost_20260806.md`](ops/snapshot_rebuild_cost_20260806.md) | 주간 재집계로 506초에서 135.8초. 날짜 축 확장·LIKE 제거 기각, 증분 집계 타당성 판정(8절) |
 
 ## 5. changelogs/
 
