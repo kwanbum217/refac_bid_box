@@ -49,7 +49,7 @@ README를 처음부터 끝까지 읽고 다음을 파악합니다:
 | 다중 에이전트 환경 | [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md) |
 | 문서 전체 인덱스 | [`docs/README.md`](docs/README.md) |
 
-둘 이상의 에이전트 또는 섹션이 관여하거나, 병합·검증·공유 자원 대기가 있으면 작업 전 [`orca-section-coordination`](.agents/skills/orca-section-coordination/SKILL.md)을 읽고 Orca Run·Task로 등록합니다.
+다른 섹션과 같은 파일·브랜치·작업 트리를 다루거나, 병합·검증·공유 자원 대기가 있으면 작업 전 [`orca-section-coordination`](.agents/skills/orca-section-coordination/SKILL.md)을 읽고 Orca Run·Task로 등록합니다. 겹치는 것이 없는 독립 작업은 대상이 아닙니다.
 
 ---
 
@@ -121,4 +121,4 @@ refac_bid_box는 **공공조달(G2B/나라장터) 입찰 데이터 수집·분�
 - [ ] 작업 유형에 맞는 추가 문서 참조 완료
 - [ ] 데이터 무손실 영향 여부 확인 (DB/가중치/ChromaDB 접근 시)
 - [ ] macOS/Windows 호환성 영향 여부 확인
-- [ ] 다중 섹션 작업이면 Orca Run·Task·의존성·공유 자원 소유자 등록 완료
+- [ ] 다른 섹션과 겹치는 파일·자원·순서가 있으면 Orca Run·Task·의존성·공유 자원 소유자 등록 완료
