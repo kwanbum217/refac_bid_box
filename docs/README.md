@@ -55,6 +55,7 @@ docs/
 | 기관 이력 시간 가중 | [`servc_rolling_institution_20260805.md`](design/servc_rolling_institution_20260805.md) | 고정 창 기각 유지, 전량 재적합 후 지수감쇠 재판정 |
 | 용역 기각 후보 재검증 | [`servc_unbiased_candidate_recheck_20260805.md`](design/servc_unbiased_candidate_recheck_20260805.md) | 리프 255와 지수감쇠 배선·재학습·운영 쌍대 검증·승격 |
 | 물품 모델 재학습 | [`thng_retraining_20260806.md`](design/thng_retraining_20260806.md) | 34특징 LightGBM 재학습·운영 쌍대 검증·승격 |
+| 카테고리 모델 커버리지 | [`category_model_coverage_20260810.md`](design/category_model_coverage_20260810.md) | 공사 전용 모델 부재, 물품 실측 미갱신, 학습 라우팅 결함 수정 |
 | 하이퍼파라미터 탐색 | [`servc_hyperparam_search_20260804.md`](design/servc_hyperparam_search_20260804.md) | 좌표 하강 17회, 점 추정·분위 파라미터 분리, 리프 상향은 운영 실측 후 기각 |
 | 용역 하한율 가용성 | [`servc_lwlt_availability_20260804.md`](design/servc_lwlt_availability_20260804.md) | 대체 API 검증만 유효. "76.8% 미표기" 판정은 2026-08-10 폐기 |
 | 하한율 결측 메커니즘 재분해 | [`servc_lwlt_missing_mechanism_20260810.md`](design/servc_lwlt_missing_mechanism_20260810.md) | 예가방식으로 결측의 99.1% 설명. 첨부문서 파싱 불필요, 축 종결 |
