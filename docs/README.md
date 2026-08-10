@@ -64,6 +64,7 @@ docs/
 | quantile alpha 스윕 | [`servc_quantile_alpha_20260810.md`](design/servc_quantile_alpha_20260810.md) | 기각. 홀드아웃 0.45 최적이나 운영 쌍대 판별 불가. 학습·서빙 특징 괴리 단서 확보 |
 | 판정 도구 특징 시점 조사 | [`servc_paired_asof_gap_20260810.md`](design/servc_paired_asof_gap_20260810.md) | 정적 특징 완전 일치, 이력만 시점 차이. as-of 가 오히려 나빠 분포 이동 가설 기각 |
 | 홀드아웃 분할 간 산포 | [`servc_split_variance_20260810.md`](design/servc_split_variance_20260810.md) | 분할 산포 0.0074 가 시드 산포의 7.4배. 홀드아웃 최소 감지 차이 기준 변경 |
+| 홀드아웃·운영 MAE 격차 규명 | [`servc_holdout_serving_gap_20260810.md`](design/servc_holdout_serving_gap_20260810.md) | 학습만 적용되는 낙찰률 [70,110] 필터가 격차 0.17 전부를 설명. 판정용·보고용 표본 분리 |
 
 ## 2. migration/
 
