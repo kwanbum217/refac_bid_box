@@ -8,6 +8,7 @@ src/app/api/ui.py
 
 from __future__ import annotations
 
+import logging
 from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
@@ -36,7 +37,9 @@ from src.app.services.home_context import (
     DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES,
     get_home_page_context,
 )
+from src.app.services.search_index import SearchBackendUnavailable
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ui"])
 
 
@@ -148,9 +151,16 @@ def bid_list(
 ):
     if user is None:
         return _login_redirect(request)
-    page_obj = bid_queries.list_announcements(
-        db, q=q, cat=cat, region=region, sort=sort, page=page
-    )
+    try:
+        page_obj = bid_queries.list_announcements(
+            db, q=q, cat=cat, region=region, sort=sort, page=page
+        )
+    except SearchBackendUnavailable as exc:
+        logger.exception("공고 SSR 목록 검색 백엔드 실패")
+        raise HTTPException(
+            status_code=503,
+            detail="공고 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        ) from exc
     context = {
         "bids": page_obj.object_list,
         "page_obj": page_obj,
@@ -179,9 +189,14 @@ def result_list(
 ):
     if user is None:
         return _login_redirect(request)
-    page_obj = bid_queries.list_results(
-        db, q=q, cat=cat, region=region, sort=sort, page=page
-    )
+    try:
+        page_obj = bid_queries.list_results(db, q=q, cat=cat, region=region, sort=sort, page=page)
+    except SearchBackendUnavailable as exc:
+        logger.exception("낙찰 SSR 목록 검색 백엔드 실패")
+        raise HTTPException(
+            status_code=503,
+            detail="낙찰 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        ) from exc
     context = {
         "results": page_obj.object_list,
         "page_obj": page_obj,
@@ -211,9 +226,7 @@ def result_detail(
 
 
 @router.get("/bids/dashboard/")
-def dashboard(
-    request: Request, user: CustomUser | None = Depends(get_current_user)
-):
+def dashboard(request: Request, user: CustomUser | None = Depends(get_current_user)):
     if user is None:
         return _login_redirect(request)
     return _render(request, "bids/dashboard.html", {}, user, "dashboard")
@@ -325,9 +338,7 @@ def login_page(
 
 
 @router.get("/accounts/signup/")
-def signup_page(
-    request: Request, user: CustomUser | None = Depends(get_current_user)
-):
+def signup_page(request: Request, user: CustomUser | None = Depends(get_current_user)):
     if user is not None:
         return RedirectResponse(url="/", status_code=303)
     context = {"hide_sidebar": True, "form": signup_form()}

@@ -94,9 +94,9 @@ flowchart LR
 | Compose | `docker-compose.yml` | 영속 볼륨을 쓰는 `meilisearch` 서비스를 추가했습니다 |
 | 설정 | `src/app/core/config.py` | `MEILI_ENABLED`, URL, 인증키, 타임아웃을 환경 변수로 분리했습니다 |
 | 읽기 모델 | `src/app/services/search_index.py` | 공고 최신 차수와 낙찰 결과를 Meilisearch 문서로 변환·전체/증분 upsert 합니다 |
-| 검색 API | `src/app/services/bid_queries.py` | 키워드 요청만 Meilisearch로 보내고, DB에서는 ID 목록으로 원본 행을 다시 읽어 기존 응답 계약을 보존합니다 |
+| 검색 API | `src/app/services/bid_queries.py` | 빈 검색어를 포함한 목록 요청을 Meilisearch로 보내고, DB에서는 ID 목록으로 원본 행을 다시 읽어 기존 응답 계약을 보존합니다 |
 | 수집 연계 | `src/tasks/run_mode_matrix.py` | `collect → search → rag` 순서로 최근 24시간 적재분을 멱등 upsert 합니다 |
-| 장애 처리 | `src/app/api/v1/bids.py` | 검색 엔진 연결 실패는 빈 결과가 아닌 HTTP 503과 오류 로그로 드러냅니다 |
+| 장애 처리 | `src/app/api/v1/bids.py`, `src/app/api/ui.py` | 검색 엔진 연결 실패는 API와 SSR 모두 빈 결과가 아닌 HTTP 503과 오류 로그로 드러냅니다 |
 
 초기 전체 색인은 다음 명령으로 실행합니다. 실행 전에 `.env`의 `MEILI_MASTER_KEY`를
 충분히 긴 무작위 값으로 설정해야 합니다. 실제 값은 문서나 커밋에 기록하지 않습니다.
@@ -109,6 +109,10 @@ uv run python scripts/sync_search_index.py
 동기화는 원본 테이블을 읽기만 하며, 공고 문서의 ID는 `업무구분 + 공고번호`로 고정해
 차수가 갱신될 때 이전 문서를 교체합니다. 색인 완료 뒤에는 `청소`, `미화`, 공고번호,
 기관명, 지역·카테고리 필터를 실제 API로 대조하고 기존 경로와 P50/P95를 측정합니다.
+인덱스 설정은 최대 조회 범위를 10,000,000건으로 두며, 낙찰률을 필터 가능 속성으로
+등록해 낙찰률 정렬에서 값이 없는 문서를 제외합니다. 기존 운영 인덱스에는 배포 뒤
+`MeiliSearchClient.configure_index()`만 실행하고 설정 갱신 태스크 완료를 확인하면 되며,
+문서 전체 재색인은 필요하지 않습니다.
 
 ### 5.1 초기 전체 색인·실측 결과
 

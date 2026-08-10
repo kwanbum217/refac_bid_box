@@ -111,7 +111,7 @@ def list_bids(
             db, q=q, cat=cat, region=region, sort=sort, page=page
         )
     except SearchBackendUnavailable as exc:
-        logger.exception("Meilisearch 공고 검색 실패")
+        logger.exception("공고 목록 검색 백엔드 실패")
         raise HTTPException(
             status_code=503,
             detail="공고 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
@@ -142,7 +142,7 @@ def list_bid_results(
     try:
         page_obj = bid_queries.list_results(db, q=q, cat=cat, region=region, sort=sort, page=page)
     except SearchBackendUnavailable as exc:
-        logger.exception("Meilisearch 낙찰 검색 실패")
+        logger.exception("낙찰 목록 검색 백엔드 실패")
         raise HTTPException(
             status_code=503,
             detail="낙찰 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
