@@ -1,11 +1,12 @@
 """Meilisearch 검색 읽기 모델.
 
-원본 MySQL의 공고·낙찰 테이블은 변경하지 않습니다. 검색어가 있는 목록 요청만 이
-읽기 모델을 사용하고, 검색 엔진 장애는 빈 목록으로 감추지 않고 호출자에게 알립니다.
+원본 MySQL의 공고·낙찰 테이블은 변경하지 않습니다. 활성화 시 검색어 유무와 관계없이
+목록 요청을 처리하고, 장애는 API의 HTTP 503 계약으로 전파할 수 있게 호출자에게 알립니다.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 INDEX_UID = "bid_records"
 SYNC_BATCH_SIZE = 1_000
+INDEX_MAX_TOTAL_HITS = 10_000_000
 
 
 class SearchBackendUnavailable(RuntimeError):
@@ -122,7 +124,12 @@ class MeiliSearchClient:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise SearchBackendUnavailable("Meilisearch에 연결할 수 없습니다.") from exc
-        return response.json() if response.content else {}
+        if not response.content:
+            return {}
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise SearchBackendUnavailable("Meilisearch 응답을 해석할 수 없습니다.") from exc
 
     def configure_index(self) -> None:
         try:
@@ -142,7 +149,12 @@ class MeiliSearchClient:
                     "ntce_instt_nm",
                     "bidwinnr_nm",
                 ],
-                "filterableAttributes": ["dataset", "category", "region_codes"],
+                "filterableAttributes": [
+                    "dataset",
+                    "category",
+                    "region_codes",
+                    "sucsf_bid_rate",
+                ],
                 "sortableAttributes": [
                     "bid_ntce_dt",
                     "bid_clse_dt",
@@ -153,6 +165,7 @@ class MeiliSearchClient:
                     "region_rank",
                     "source_id",
                 ],
+                "pagination": {"maxTotalHits": INDEX_MAX_TOTAL_HITS},
             },
         )
 
@@ -171,11 +184,15 @@ class MeiliSearchClient:
         offset: int,
         limit: int,
     ) -> SearchPage:
-        filters = [f'dataset = "{dataset}"']
+        filters = [f"dataset = {json.dumps(dataset, ensure_ascii=False)}"]
         if category:
-            filters.append(f'category = "{category}"')
+            filters.append(f"category = {json.dumps(category, ensure_ascii=False)}")
         if region:
-            filters.append(f'region_codes = "{region}"')
+            filters.append(f"region_codes = {json.dumps(region, ensure_ascii=False)}")
+        if dataset == "result" and any(
+            item in {"sucsf_bid_rate:asc", "sucsf_bid_rate:desc"} for item in sort
+        ):
+            filters.append("sucsf_bid_rate IS NOT NULL")
         payload = self._request(
             "POST",
             f"/indexes/{INDEX_UID}/search",
@@ -188,7 +205,10 @@ class MeiliSearchClient:
                 "attributesToRetrieve": ["source_id"],
             },
         )
-        ids = [int(hit["source_id"]) for hit in payload.get("hits", [])]
+        try:
+            ids = [int(hit["source_id"]) for hit in payload.get("hits", [])]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SearchBackendUnavailable("Meilisearch 응답에 원본 PK가 없습니다.") from exc
         estimated_total = payload.get("estimatedTotalHits")
         has_next = (
             estimated_total > offset + len(ids)

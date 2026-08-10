@@ -2,7 +2,7 @@
 src/app/services/bid_queries.py
 
 입찰공고/낙찰결과 목록 조회 (원본 apps/bids/views.py 질의 로직 1:1 이식).
-지역 그룹, 정렬 키, 최신 차수 서브쿼리, count 없는 offset 페이지네이션을 그대로 보존합니다.
+지역 그룹, 정렬 키, 최신 차수, count 없는 offset 페이지네이션을 그대로 보존합니다.
 """
 
 from __future__ import annotations
@@ -10,7 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Integer, and_, case, or_, select
+from sqlalchemy import Integer, and_, case, func, or_, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
@@ -26,6 +27,8 @@ DEFAULT_REGION_SORT_RANK = 999
 BID_LIST_SORT_CHOICES = ("notice", "deadline", "amount", "region")
 RESULT_LIST_SORT_CHOICES = ("opening", "amount", "rate")
 PAGE_SIZE = 20
+MYSQL_FALLBACK_MAX_EXECUTION_TIME_MS = 5_000
+MYSQL_QUERY_TIMEOUT_ERROR_CODE = 3024
 
 
 def _meili_enabled() -> bool:
@@ -165,24 +168,24 @@ def _region_sort_rank():
 
 
 def latest_announcement_filter(stmt):
-    """공고번호+카테고리 기준 최신 차수 1건만 남기는 서브쿼리 필터."""
-    latest_alias = BidAnnouncement.__table__.alias("latest_ann")
-    latest_id_subquery = (
-        select(latest_alias.c.id)
-        .where(
-            latest_alias.c.bid_ntce_no == BidAnnouncement.bid_ntce_no,
-            latest_alias.c.category == BidAnnouncement.category,
+    """공고번호+카테고리별 최신 차수 ID를 한 번만 계산해 결합합니다."""
+    ranked_ids = select(
+        BidAnnouncement.id.label("id"),
+        func.row_number()
+        .over(
+            partition_by=(BidAnnouncement.bid_ntce_no, BidAnnouncement.category),
+            order_by=(
+                BidAnnouncement.bid_ntce_ord.desc(),
+                BidAnnouncement.bid_ntce_dt.desc(),
+                BidAnnouncement.collected_at.desc(),
+                BidAnnouncement.id.desc(),
+            ),
         )
-        .order_by(
-            latest_alias.c.bid_ntce_ord.desc(),
-            latest_alias.c.bid_ntce_dt.desc(),
-            latest_alias.c.collected_at.desc(),
-            latest_alias.c.id.desc(),
-        )
-        .limit(1)
-        .scalar_subquery()
+        .label("latest_rank"),
+    ).subquery("latest_ann")
+    return stmt.join(ranked_ids, ranked_ids.c.id == BidAnnouncement.id).where(
+        ranked_ids.c.latest_rank == 1
     )
-    return stmt.where(BidAnnouncement.id == latest_id_subquery)
 
 
 def latest_announcement_for_instance(db: Session, instance: BidAnnouncement | None):
@@ -205,10 +208,31 @@ def latest_announcement_for_instance(db: Session, instance: BidAnnouncement | No
     return latest or instance
 
 
+def _with_mysql_execution_limit(stmt):
+    """MySQL fallback SELECT가 요청 수명보다 오래 실행되지 않게 제한합니다."""
+    return stmt.prefix_with(
+        f"/*+ MAX_EXECUTION_TIME({MYSQL_FALLBACK_MAX_EXECUTION_TIME_MS}) */",
+        dialect="mysql",
+    )
+
+
+def _is_mysql_query_timeout(exc: DBAPIError) -> bool:
+    args = getattr(exc.orig, "args", ())
+    return bool(args) and args[0] == MYSQL_QUERY_TIMEOUT_ERROR_CODE
+
+
 def _paginate_without_count(db: Session, stmt, page_number: int) -> OffsetPage:
     page_number = max(page_number, 1)
     offset = (page_number - 1) * PAGE_SIZE
-    rows = db.execute(stmt.offset(offset).limit(PAGE_SIZE + 1)).scalars().all()
+    stmt = _with_mysql_execution_limit(stmt.offset(offset).limit(PAGE_SIZE + 1))
+    try:
+        rows = db.execute(stmt).scalars().all()
+    except DBAPIError as exc:
+        if not _is_mysql_query_timeout(exc):
+            raise
+        from src.app.services.search_index import SearchBackendUnavailable
+
+        raise SearchBackendUnavailable("MySQL 검색 fallback 실행시간을 초과했습니다.") from exc
     has_next = len(rows) > PAGE_SIZE
     return OffsetPage(
         object_list=list(rows[:PAGE_SIZE]),
@@ -231,6 +255,31 @@ def _page_from_search_ids(
         per_page=PAGE_SIZE,
         has_next=has_next,
     )
+
+
+def _search_index_page(
+    db: Session,
+    *,
+    model,
+    query: str,
+    dataset: str,
+    category: str | None,
+    region: str | None,
+    sort: list[str],
+    page_number: int,
+) -> OffsetPage:
+    from src.app.services.search_index import MeiliSearchClient
+
+    result = MeiliSearchClient().search(
+        query=query,
+        dataset=dataset,
+        category=category,
+        region=region,
+        sort=sort,
+        offset=(page_number - 1) * PAGE_SIZE,
+        limit=PAGE_SIZE,
+    )
+    return _page_from_search_ids(db, model, result.ids, page_number, result.has_next)
 
 
 def _announcement_search_sort(sort_key: str) -> list[str]:
@@ -262,35 +311,33 @@ def list_announcements(
 ) -> OffsetPage:
     region_code = normalize_region_code(region)
     sort_key = normalize_bid_sort(sort)
+    page_number = max(page, 1)
+    query = (q or "").strip()
 
-    if q and q.strip() and _meili_enabled():
-        from src.app.services.search_index import MeiliSearchClient
-
-        page_number = max(page, 1)
-        result = MeiliSearchClient().search(
-            query=q.strip(),
+    if _meili_enabled():
+        return _search_index_page(
+            db,
+            model=BidAnnouncement,
+            query=query,
             dataset="announcement",
             category=cat or None,
             region=region_code or None,
             sort=_announcement_search_sort(sort_key),
-            offset=(page_number - 1) * PAGE_SIZE,
-            limit=PAGE_SIZE,
+            page_number=page_number,
         )
-        return _page_from_search_ids(db, BidAnnouncement, result.ids, page_number, result.has_next)
 
     stmt = select(BidAnnouncement)
 
-    if q:
-        q_clean = q.strip()
+    if query:
         # 숫자로만 이루어지거나 하이픈 포함 숫자인 경우 공고번호 전용 검색으로 인덱스 타게 함
-        if q_clean.replace("-", "").isdigit():
-            stmt = stmt.where(BidAnnouncement.bid_ntce_no.contains(q_clean))
+        if query.replace("-", "").isdigit():
+            stmt = stmt.where(BidAnnouncement.bid_ntce_no.contains(query))
         else:
             stmt = stmt.where(
                 or_(
-                    BidAnnouncement.bid_ntce_nm.contains(q_clean),
-                    BidAnnouncement.bid_ntce_no.contains(q_clean),
-                    BidAnnouncement.dminstt_nm.contains(q_clean),
+                    BidAnnouncement.bid_ntce_nm.contains(query),
+                    BidAnnouncement.bid_ntce_no.contains(query),
+                    BidAnnouncement.dminstt_nm.contains(query),
                 )
             )
 
@@ -300,7 +347,7 @@ def list_announcements(
     if region_code:
         stmt = stmt.where(_region_match_clause(BID_REGION_BY_CODE[region_code]["aliases"]))
 
-    # 필터링을 거친 후 마지막에 최신 서브쿼리 필터를 적용하여 쿼리 범위를 대폭 축소
+    # 필터와 무관하게 동일 공고번호·업무구분의 최신 차수만 노출합니다.
     stmt = latest_announcement_filter(stmt)
 
     if sort_key == "deadline":
@@ -316,7 +363,7 @@ def list_announcements(
     else:
         stmt = stmt.order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
 
-    return _paginate_without_count(db, stmt, page)
+    return _paginate_without_count(db, stmt, page_number)
 
 
 def list_results(
@@ -330,35 +377,33 @@ def list_results(
 ) -> OffsetPage:
     region_code = normalize_region_code(region)
     sort_key = normalize_result_sort(sort)
+    page_number = max(page, 1)
+    query = (q or "").strip()
 
-    if q and q.strip() and _meili_enabled():
-        from src.app.services.search_index import MeiliSearchClient
-
-        page_number = max(page, 1)
-        result = MeiliSearchClient().search(
-            query=q.strip(),
+    if _meili_enabled():
+        return _search_index_page(
+            db,
+            model=BidResult,
+            query=query,
             dataset="result",
             category=cat or None,
             region=region_code or None,
             sort=_result_search_sort(sort_key),
-            offset=(page_number - 1) * PAGE_SIZE,
-            limit=PAGE_SIZE,
+            page_number=page_number,
         )
-        return _page_from_search_ids(db, BidResult, result.ids, page_number, result.has_next)
 
     stmt = select(BidResult)
 
-    if q:
-        q_clean = q.strip()
-        if q_clean.replace("-", "").isdigit():
-            stmt = stmt.where(BidResult.bid_ntce_no.contains(q_clean))
+    if query:
+        if query.replace("-", "").isdigit():
+            stmt = stmt.where(BidResult.bid_ntce_no.contains(query))
         else:
             stmt = stmt.where(
                 or_(
-                    BidResult.bid_ntce_nm.contains(q_clean),
-                    BidResult.bid_ntce_no.contains(q_clean),
-                    BidResult.dminstt_nm.contains(q_clean),
-                    BidResult.bidwinnr_nm.contains(q_clean),
+                    BidResult.bid_ntce_nm.contains(query),
+                    BidResult.bid_ntce_no.contains(query),
+                    BidResult.dminstt_nm.contains(query),
+                    BidResult.bidwinnr_nm.contains(query),
                 )
             )
 
@@ -377,7 +422,7 @@ def list_results(
     else:
         stmt = stmt.order_by(BidResult.rl_openg_dt.desc(), BidResult.id.desc())
 
-    return _paginate_without_count(db, stmt, page)
+    return _paginate_without_count(db, stmt, page_number)
 
 
 def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:

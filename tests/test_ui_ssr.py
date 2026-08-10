@@ -7,6 +7,7 @@ DB 에 넣은 값이 응답 HTML 에 실제로 나타나는지까지 확인합�
 """
 
 from datetime import timedelta
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,8 @@ from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
+from src.app.services import bid_queries
+from src.app.services.search_index import SearchBackendUnavailable
 
 # 원본 Django URL(apps/bids/urls.py, config/urls.py)이 정본입니다.
 PROTECTED_PATHS = [
@@ -145,6 +148,36 @@ def test_result_list_renders_actual_row(auth_client, seeded_bid):
     response = auth_client.get("/bids/results/")
     assert response.status_code == 200
     assert result.bid_ntce_nm in response.text
+
+
+@pytest.mark.parametrize(
+    ("path", "service_name", "detail"),
+    [
+        (
+            "/bids/",
+            "list_announcements",
+            "공고 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        ),
+        (
+            "/bids/results/",
+            "list_results",
+            "낙찰 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        ),
+    ],
+)
+def test_list_search_backend_failure_returns_503(
+    monkeypatch, auth_client, path, service_name, detail
+):
+    monkeypatch.setattr(
+        bid_queries,
+        service_name,
+        Mock(side_effect=SearchBackendUnavailable("offline")),
+    )
+
+    response = auth_client.get(path)
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": detail}
 
 
 def test_bid_detail_renders(auth_client, seeded_bid):
