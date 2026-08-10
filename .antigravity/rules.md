@@ -52,7 +52,7 @@
 
 ## 5. Orca 다중 섹션 조율
 
-- 둘 이상의 에이전트·섹션, 병합 대기, 검증 의존성, Docker/DB/대량 색인/ML 학습 공유 자원이 있으면 `.agents/skills/orca-section-coordination/SKILL.md`를 먼저 읽습니다.
+- 다른 섹션과 같은 파일·브랜치·작업 트리를 다루거나, 병합 대기, 검증 의존성, Docker/DB/대량 색인/ML 학습 공유 자원이 있으면 `.agents/skills/orca-section-coordination/SKILL.md`를 먼저 읽습니다. 겹치는 것이 없는 독립 작업은 대상이 아닙니다.
 - Orca Run과 Task에 작업·의존성·자원 소유자를 등록하고, `worker_done` 및 검증 결과 전에는 후속 섹션을 시작하지 않습니다.
 - 터미널 출력이나 구두 보고만으로 완료·병합·시작 가능을 선언하지 않습니다. 같은 브랜치·작업 트리·공유 자원에 동시 쓰기를 배정하지 않습니다.
 
