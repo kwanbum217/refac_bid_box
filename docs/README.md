@@ -61,6 +61,7 @@ docs/
 | 용역 하한율 가용성 | [`servc_lwlt_availability_20260804.md`](design/servc_lwlt_availability_20260804.md) | 대체 API 검증만 유효. "76.8% 미표기" 판정은 2026-08-10 폐기 |
 | 하한율 결측 메커니즘 재분해 | [`servc_lwlt_missing_mechanism_20260810.md`](design/servc_lwlt_missing_mechanism_20260810.md) | 예가방식으로 결측의 99.1% 설명. 첨부문서 파싱 불필요, 축 종결 |
 | 초과분 타깃 실험 | [`servc_excess_target_20260810.md`](design/servc_excess_target_20260810.md) | 기각(MAE +0.0364). 적중률만 +0.2687%p 개선되어 목적함수 축 근거 확보 |
+| quantile alpha 스윕 | [`servc_quantile_alpha_20260810.md`](design/servc_quantile_alpha_20260810.md) | 기각. 홀드아웃 0.45 최적이나 운영 쌍대 판별 불가. 학습·서빙 특징 괴리 단서 확보 |
 
 ## 2. migration/
 
