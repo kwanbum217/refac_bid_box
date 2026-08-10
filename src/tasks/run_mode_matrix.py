@@ -11,9 +11,9 @@ RUN_MODE_STEP_ORDER: dict[str, tuple[str, ...]] = {
     "collect_only": ("collect",),
     "kb_only": ("rag",),
     "predict_only": ("predict",),
-    "refresh_data": ("collect", "rag", "inspect"),
-    "manual_full": ("collect", "rag", "predict", "inspect"),
-    "nightly_schedule": ("collect", "rag", "predict", "inspect"),
+    "refresh_data": ("collect", "search", "rag", "inspect"),
+    "manual_full": ("collect", "search", "rag", "predict", "inspect"),
+    "nightly_schedule": ("collect", "search", "rag", "predict", "inspect"),
     "push_deploy": ("inspect",),
 }
 

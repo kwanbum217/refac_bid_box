@@ -11,6 +11,9 @@ services:
       - ENVIRONMENT=development
       - DATABASE_URL=mysql+pymysql://root:rootpassword@db:3306/procurement
       - REDIS_URL=redis://redis:6379/0
+      - MEILI_ENABLED=true
+      - MEILI_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set in .env}
       # 생성 LLM 은 호스트에서 구동 중인 Ollama 를 재사용합니다 (macOS Metal 가속 유지).
       # .env 의 CHROMA_DB_PATH 는 호스트 절대 경로입니다. 이미지에 그대로 실려
       # 컨테이너가 없는 경로를 보고 빈 컬렉션을 만들었습니다. 반드시 덮어씁니다.
@@ -27,6 +30,8 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_started
+      meilisearch:
         condition: service_started
     volumes:
       - ./src:/app/src
@@ -45,6 +50,9 @@ services:
       - ENVIRONMENT=development
       - DATABASE_URL=mysql+pymysql://root:rootpassword@db:3306/procurement
       - REDIS_URL=redis://redis:6379/0
+      - MEILI_ENABLED=true
+      - MEILI_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set in .env}
       - CHROMA_DB_PATH=/app/chroma_db
       # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
@@ -64,6 +72,8 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_started
+      meilisearch:
         condition: service_started
     volumes:
       - ./src:/app/src
@@ -114,6 +124,17 @@ services:
     volumes:
       - redis_data:/data
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.14
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set in .env}
+      - MEILI_NO_ANALYTICS=true
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilisearch_data:/meili_data
+
 volumes:
   mysql_data:
   redis_data:
+  meilisearch_data:

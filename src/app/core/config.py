@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # Redis 설정
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # 검색 전용 Meilisearch 인덱스입니다. 원본 MySQL 테이블에는 검색용 DDL을 추가하지
+    # 않고 별도 읽기 모델로 복제합니다. 기본값은 기존 개발 환경 호환을 위해 비활성입니다.
+    MEILI_ENABLED: bool = False
+    MEILI_URL: str = "http://localhost:7700"
+    MEILI_MASTER_KEY: str = ""
+    MEILI_TIMEOUT_SECONDS: float = 5.0
+
     # LLM & RAG
     # 생성 LLM 백엔드: "ollama"(기본, 로컬 gemma4:e4b) 또는 "gemini"(원본 경로)
     LLM_PROVIDER: str = "ollama"
@@ -76,11 +83,7 @@ class Settings(BaseSettings):
     MODEL_REGISTRY_DIR: str = "ml_registry"
     FEATURE_STORE_DIR: str = "data/feature_store"
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()

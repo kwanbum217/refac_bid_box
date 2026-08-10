@@ -104,7 +104,13 @@ def test_cron_timeout_exceeds_default_job_timeout():
 
 def test_nightly_schedule_uses_original_run_mode():
     """원본 트리거의 RUN_MODE 값과 스텝 구성이 유지되어야 합니다."""
-    assert get_run_mode_steps("nightly_schedule") == ("collect", "rag", "predict", "inspect")
+    assert get_run_mode_steps("nightly_schedule") == (
+        "collect",
+        "search",
+        "rag",
+        "predict",
+        "inspect",
+    )
 
 
 @pytest.mark.asyncio
@@ -112,9 +118,11 @@ async def test_nightly_schedule_records_execution_and_runs_pipeline(isolated_db)
     session_factory = lambda: isolated_db  # noqa: E731
     with (
         patch.object(scheduled_tasks, "SessionLocal", session_factory),
-        patch.object(scheduled_tasks, "run_automation_pipeline", new=AsyncMock(
-            return_value={"status": "success"}
-        )) as run_pipeline,
+        patch.object(
+            scheduled_tasks,
+            "run_automation_pipeline",
+            new=AsyncMock(return_value={"status": "success"}),
+        ) as run_pipeline,
     ):
         isolated_db.close = lambda: None
         result = await scheduled_tasks.nightly_schedule_task({})
@@ -156,10 +164,16 @@ async def test_development_refresh_records_lightweight_pipeline(isolated_db, mon
         patch.object(
             scheduled_tasks,
             "run_automation_pipeline",
-            new=AsyncMock(return_value={"status": "success", "completed_steps": ["collect", "rag", "inspect"]}),
+            new=AsyncMock(
+                return_value={"status": "success", "completed_steps": ["collect", "rag", "inspect"]}
+            ),
         ) as run_pipeline,
-        patch.object(scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}),
-        patch.object(scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}),
+        patch.object(
+            scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}
+        ),
     ):
         isolated_db.close = lambda: None
         result = await scheduled_tasks.development_data_refresh_task({})
@@ -216,9 +230,11 @@ async def test_development_refresh_does_not_rebuild_aggregates_after_pipeline_fa
 
 @pytest.mark.asyncio
 async def test_weekly_retrain_marks_trigger_source():
-    with patch.object(scheduled_tasks, "run_retrain_pipeline_task", new=AsyncMock(
-        return_value={"status": "success", "version": "v1"}
-    )) as retrain:
+    with patch.object(
+        scheduled_tasks,
+        "run_retrain_pipeline_task",
+        new=AsyncMock(return_value={"status": "success", "version": "v1"}),
+    ) as retrain:
         result = await scheduled_tasks.weekly_retrain_task({})
 
     assert result["status"] == "success"
@@ -240,9 +256,11 @@ async def test_weekly_retrain_skipped_when_disabled(monkeypatch):
 @pytest.mark.asyncio
 async def test_weekly_retrain_failure_does_not_propagate():
     """크론 안에서 예외가 새면 이후 스케줄까지 함께 멈춥니다."""
-    with patch.object(scheduled_tasks, "run_retrain_pipeline_task", new=AsyncMock(
-        side_effect=RuntimeError("학습 데이터 부족")
-    )):
+    with patch.object(
+        scheduled_tasks,
+        "run_retrain_pipeline_task",
+        new=AsyncMock(side_effect=RuntimeError("학습 데이터 부족")),
+    ):
         result = await scheduled_tasks.weekly_retrain_task({})
 
     assert result["status"] == "failed"

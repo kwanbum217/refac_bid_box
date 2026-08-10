@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-07-31
 > **버전**: v1.0
-> **목적**: opencode, Cursor, Codex, Claude Code, Antigravity 등 서로 다른 AI 코딩 에이전트를 돌아가며 사용해도, 세션 시작 시 동일한 프로젝트 규칙이 자동으로 로드되도록 통합하는 아키텍처를 설명합니다.
+> **목적**: opencode, Cursor, Codex, Claude Code, Antigravity 등 서로 다른 AI 코딩 에이전트를 돌아가며 사용해도, 세션 시작 시 동일한 프로젝트 규칙이 자동으로 로드되고 Orca로 섹션 협업을 조율하도록 하는 아키텍처를 설명합니다.
 
 ---
 
@@ -88,7 +88,23 @@
 
 ---
 
-## 5. 신규 에이전트 추가 체크리스트
+## 5. Orca 섹션 조율 규약
+
+두 섹션 이상의 작업, 작업 간 병합·검증 의존성, 공유 자원 사용이 있으면 모든 에이전트는 `.agents/skills/orca-section-coordination/SKILL.md`를 먼저 읽습니다. 코디네이터는 Orca Run에 각 섹션을 Task로 등록하고, 의존성·공유 자원 소유자·완료 기준을 명시합니다.
+
+| 단계 | Orca 기록 | 다음 단계 조건 |
+| :--- | :--- | :--- |
+| 계획 | Run + Task | 의존성·소유자·검증 기준 등록 |
+| 실행 | Dispatch | 독립 Task만 병렬 실행 |
+| 완료 | `worker_done` | 검증 결과와 변경 파일 확인 |
+| 후속 작업 | 의존 Task Dispatch | 선행 Task의 검증 완료 |
+| 병합 | 별도 Git Task | 테스트·규칙 검증·사용자 승인 확인 |
+
+터미널 출력, 채팅의 구두 보고, 단순 프로세스 종료는 완료·병합·후속 작업 시작의 근거가 아닙니다. Orca 런타임을 이용할 수 없으면 조율 작업을 시작하지 않고 차단 원인을 보고합니다.
+
+---
+
+## 6. 신규 에이전트 추가 체크리스트
 
 새로운 에이전트를 도입할 때의 진입점 추가 절차입니다.
 
@@ -101,7 +117,7 @@
 
 ---
 
-## 6. 관련 파일 인덱스
+## 7. 관련 파일 인덱스
 
 | 파일 | 역할 |
 | :--- | :--- |
@@ -114,12 +130,13 @@
 | `.agents/skills/{스킬명}/` | 스킬 정본 (Phase 0~7 8개 스킬) |
 | `.claude/skills/{스킬명}/` | Claude Code 전용 스킬 1:1 미러 |
 | `.opencode/skills/{스킬명}/` | opencode 전용 스킬 1:1 미러 |
+| `.agents/skills/orca-section-coordination/` | Orca 기반 다중 섹션 조율 스킬 정본 |
 | `scripts/validate_agent_rules.py` | 정합성 자동 검증 스크립트 (pre-commit 연동) |
 
 
 ---
 
-## 7. 참고 자료
+## 8. 참고 자료
 
 - [AGENTS.md 공식 표준](https://agents.md/)
 - [OpenAI Codex — AGENTS.md 가이드](https://learn.chatgpt.com/docs/agent-configuration/agents-md)

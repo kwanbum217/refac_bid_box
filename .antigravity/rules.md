@@ -50,7 +50,15 @@
 
 ---
 
-## 5. 스킬 인덱스
+## 5. Orca 다중 섹션 조율
+
+- 다른 섹션과 같은 파일·브랜치·작업 트리를 다루거나, 병합 대기, 검증 의존성, Docker/DB/대량 색인/ML 학습 공유 자원이 있으면 `.agents/skills/orca-section-coordination/SKILL.md`를 먼저 읽습니다. 겹치는 것이 없는 독립 작업은 대상이 아닙니다.
+- Orca Run과 Task에 작업·의존성·자원 소유자를 등록하고, `worker_done` 및 검증 결과 전에는 후속 섹션을 시작하지 않습니다.
+- 터미널 출력이나 구두 보고만으로 완료·병합·시작 가능을 선언하지 않습니다. 같은 브랜치·작업 트리·공유 자원에 동시 쓰기를 배정하지 않습니다.
+
+---
+
+## 6. 스킬 인덱스
 
 | 스킬명 | Phase | 경로 | 주요 기능 |
 | --- | --- | --- | --- |
@@ -65,10 +73,11 @@
 | `servc-model-tuning` | 상시 | `.agents/skills/servc-model-tuning/` | 용역 모델 성능 개선. 기각 목록, 쌍대 검정 기준, 측정 함정 |
 | `project-orchestrator` | 운영 | `.agents/skills/project-orchestrator/` | 컨테이너 시동, 헬스체크, 무손실 검증, 레이턴시 벤치마크 자동화 |
 | `git-workflow` | 공통 | `.agents/skills/git-workflow/` | 브랜치 전략, 커밋 컨벤션, 1인 main 병합 (PR 없음) |
+| `orca-section-coordination` | 공통 | `.agents/skills/orca-section-coordination/` | Orca Run·Task·Dispatch 기반 섹션 의존성 및 완료 검증 |
 
 ---
 
-## 6. 재학습 (핵심 MLOps)
+## 7. 재학습 (핵심 MLOps)
 
 - train/serve skew 해소: 단일 `features.py` 사용 (`DEFAULT_INST_RATE` 하드코딩 제거).
 - Champion/Challenger 게이트: 신규 모델이 기존 모델을 성능(RMSE/MAPE/R²)으로 압도할 때만 승격.
@@ -76,6 +85,6 @@
 
 ---
 
-## 7. 문서화 표준
+## 8. 문서화 표준
 
 - 마크다운 위계(`#`/`##`/`###`), 구분선(`---`), 표 우선, Mermaid 다이어그램, 메타데이터 블록(`>`) 준수.
