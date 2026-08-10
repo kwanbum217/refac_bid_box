@@ -11,12 +11,18 @@ from src.tasks.run_mode_matrix import get_run_mode_steps, should_run_step
 
 
 def test_nightly_schedule_includes_prediction_validation():
-    assert get_run_mode_steps("nightly_schedule") == ("collect", "rag", "predict", "inspect")
+    assert get_run_mode_steps("nightly_schedule") == (
+        "collect",
+        "search",
+        "rag",
+        "predict",
+        "inspect",
+    )
     assert should_run_step("nightly_schedule", "predict")
 
 
 def test_refresh_data_keeps_lightweight_followup_path():
-    assert get_run_mode_steps("refresh_data") == ("collect", "rag", "inspect")
+    assert get_run_mode_steps("refresh_data") == ("collect", "search", "rag", "inspect")
     assert not should_run_step("refresh_data", "predict")
 
 
@@ -27,8 +33,8 @@ def test_refresh_data_keeps_lightweight_followup_path():
         ("collect_only", ("collect",)),
         ("kb_only", ("rag",)),
         ("predict_only", ("predict",)),
-        ("manual_full", ("collect", "rag", "predict", "inspect")),
-        ("nightly_schedule", ("collect", "rag", "predict", "inspect")),
+        ("manual_full", ("collect", "search", "rag", "predict", "inspect")),
+        ("nightly_schedule", ("collect", "search", "rag", "predict", "inspect")),
         ("push_deploy", ("inspect",)),
     ],
 )

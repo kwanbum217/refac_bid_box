@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import Integer, and_, case, or_, select
 from sqlalchemy.orm import Session
 
+from src.app.core.config import settings
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 
@@ -25,6 +26,11 @@ DEFAULT_REGION_SORT_RANK = 999
 BID_LIST_SORT_CHOICES = ("notice", "deadline", "amount", "region")
 RESULT_LIST_SORT_CHOICES = ("opening", "amount", "rate")
 PAGE_SIZE = 20
+
+
+def _meili_enabled() -> bool:
+    return settings.MEILI_ENABLED
+
 
 BID_REGION_GROUPS = (
     ("특별시", (("seoul", "서울특별시", ("서울특별시", "서울")),)),
@@ -153,10 +159,7 @@ def _result_region_match_clause(aliases) -> Any:
 
 def _region_sort_rank():
     return case(
-        *[
-            (_region_match_clause(item["aliases"]), item["rank"])
-            for item in BID_REGION_CHOICES
-        ],
+        *[(_region_match_clause(item["aliases"]), item["rank"]) for item in BID_REGION_CHOICES],
         else_=DEFAULT_REGION_SORT_RANK,
     ).cast(Integer)
 
@@ -215,6 +218,39 @@ def _paginate_without_count(db: Session, stmt, page_number: int) -> OffsetPage:
     )
 
 
+def _page_from_search_ids(
+    db: Session, model, ids: list[int], page_number: int, has_next: bool
+) -> OffsetPage:
+    if not ids:
+        return OffsetPage(object_list=[], number=page_number, per_page=PAGE_SIZE, has_next=False)
+    rows = db.execute(select(model).where(model.id.in_(ids))).scalars().all()
+    by_id = {row.id: row for row in rows}
+    return OffsetPage(
+        object_list=[by_id[row_id] for row_id in ids if row_id in by_id],
+        number=page_number,
+        per_page=PAGE_SIZE,
+        has_next=has_next,
+    )
+
+
+def _announcement_search_sort(sort_key: str) -> list[str]:
+    if sort_key == "deadline":
+        return ["bid_clse_dt:asc", "source_id:desc"]
+    if sort_key == "amount":
+        return ["base_amount:desc", "source_id:desc"]
+    if sort_key == "region":
+        return ["region_rank:asc", "bid_ntce_dt:desc", "source_id:desc"]
+    return ["bid_ntce_dt:desc", "source_id:desc"]
+
+
+def _result_search_sort(sort_key: str) -> list[str]:
+    if sort_key == "amount":
+        return ["sucsf_bid_amt:desc", "source_id:desc"]
+    if sort_key == "rate":
+        return ["sucsf_bid_rate:asc", "source_id:asc"]
+    return ["rl_openg_dt:desc", "source_id:desc"]
+
+
 def list_announcements(
     db: Session,
     *,
@@ -224,8 +260,25 @@ def list_announcements(
     sort: str | None = None,
     page: int = 1,
 ) -> OffsetPage:
-    stmt = select(BidAnnouncement)
     region_code = normalize_region_code(region)
+    sort_key = normalize_bid_sort(sort)
+
+    if q and q.strip() and _meili_enabled():
+        from src.app.services.search_index import MeiliSearchClient
+
+        page_number = max(page, 1)
+        result = MeiliSearchClient().search(
+            query=q.strip(),
+            dataset="announcement",
+            category=cat or None,
+            region=region_code or None,
+            sort=_announcement_search_sort(sort_key),
+            offset=(page_number - 1) * PAGE_SIZE,
+            limit=PAGE_SIZE,
+        )
+        return _page_from_search_ids(db, BidAnnouncement, result.ids, page_number, result.has_next)
+
+    stmt = select(BidAnnouncement)
 
     if q:
         q_clean = q.strip()
@@ -250,15 +303,12 @@ def list_announcements(
     # 필터링을 거친 후 마지막에 최신 서브쿼리 필터를 적용하여 쿼리 범위를 대폭 축소
     stmt = latest_announcement_filter(stmt)
 
-    sort_key = normalize_bid_sort(sort)
     if sort_key == "deadline":
         missing = case((BidAnnouncement.bid_clse_dt.is_(None), 1), else_=0)
         stmt = stmt.order_by(missing, BidAnnouncement.bid_clse_dt, BidAnnouncement.id.desc())
     elif sort_key == "amount":
         missing = case((BidAnnouncement.base_amount.is_(None), 1), else_=0)
-        stmt = stmt.order_by(
-            missing, BidAnnouncement.base_amount.desc(), BidAnnouncement.id.desc()
-        )
+        stmt = stmt.order_by(missing, BidAnnouncement.base_amount.desc(), BidAnnouncement.id.desc())
     elif sort_key == "region":
         stmt = stmt.order_by(
             _region_sort_rank(), BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc()
@@ -278,8 +328,25 @@ def list_results(
     sort: str | None = None,
     page: int = 1,
 ) -> OffsetPage:
-    stmt = select(BidResult)
     region_code = normalize_region_code(region)
+    sort_key = normalize_result_sort(sort)
+
+    if q and q.strip() and _meili_enabled():
+        from src.app.services.search_index import MeiliSearchClient
+
+        page_number = max(page, 1)
+        result = MeiliSearchClient().search(
+            query=q.strip(),
+            dataset="result",
+            category=cat or None,
+            region=region_code or None,
+            sort=_result_search_sort(sort_key),
+            offset=(page_number - 1) * PAGE_SIZE,
+            limit=PAGE_SIZE,
+        )
+        return _page_from_search_ids(db, BidResult, result.ids, page_number, result.has_next)
+
+    stmt = select(BidResult)
 
     if q:
         q_clean = q.strip()
@@ -301,7 +368,6 @@ def list_results(
     if region_code:
         stmt = stmt.where(_result_region_match_clause(BID_REGION_BY_CODE[region_code]["aliases"]))
 
-    sort_key = normalize_result_sort(sort)
     if sort_key == "amount":
         stmt = stmt.order_by(BidResult.sucsf_bid_amt.desc(), BidResult.id.desc())
     elif sort_key == "rate":
