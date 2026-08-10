@@ -38,6 +38,7 @@ from src.app.services.home_context import (
     DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES,
     get_home_page_context,
 )
+from src.app.services.search_index import SearchBackendUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,9 @@ def _serialize_result(db: Session, result: BidResult) -> dict[str, Any]:
         "bid_ntce_nm": result.bid_ntce_nm,
         "bidwinnr_nm": result.bidwinnr_nm,
         "sucsf_bid_amt": result.sucsf_bid_amt,
-        "sucsf_bid_rate": float(result.sucsf_bid_rate) if result.sucsf_bid_rate is not None else None,
+        "sucsf_bid_rate": float(result.sucsf_bid_rate)
+        if result.sucsf_bid_rate is not None
+        else None,
         "rl_openg_dt": result.rl_openg_dt,
         "dminstt_nm": result.dminstt_nm,
         "category": result.category,
@@ -103,7 +106,16 @@ def list_bids(
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
-    page_obj = bid_queries.list_announcements(db, q=q, cat=cat, region=region, sort=sort, page=page)
+    try:
+        page_obj = bid_queries.list_announcements(
+            db, q=q, cat=cat, region=region, sort=sort, page=page
+        )
+    except SearchBackendUnavailable as exc:
+        logger.exception("Meilisearch 공고 검색 실패")
+        raise HTTPException(
+            status_code=503,
+            detail="공고 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        ) from exc
     return BidListResponse(
         bids=[_serialize_announcement(bid) for bid in page_obj.object_list],
         page_obj=page_obj.as_dict(),
@@ -127,7 +139,14 @@ def list_bid_results(
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
 ):
-    page_obj = bid_queries.list_results(db, q=q, cat=cat, region=region, sort=sort, page=page)
+    try:
+        page_obj = bid_queries.list_results(db, q=q, cat=cat, region=region, sort=sort, page=page)
+    except SearchBackendUnavailable as exc:
+        logger.exception("Meilisearch 낙찰 검색 실패")
+        raise HTTPException(
+            status_code=503,
+            detail="낙찰 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        ) from exc
     return BidResultListResponse(
         results=[_serialize_result(db, row) for row in page_obj.object_list],
         page_obj=page_obj.as_dict(),

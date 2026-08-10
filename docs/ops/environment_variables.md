@@ -83,7 +83,20 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` | 아니오 | Kakao OAuth |
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 아니오 | Naver OAuth |
 
-### 2.8 MLOps / Automation (Arq)
+### 2.8 Search / Meilisearch
+
+| 변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `MEILI_ENABLED` | 아니오 | `false` | 키워드 목록 검색을 Meilisearch 읽기 모델로 전환합니다 |
+| `MEILI_URL` | 전환 시 예 | `http://localhost:7700` | Meilisearch API 주소. Compose 내부에서는 `http://meilisearch:7700`입니다 |
+| `MEILI_MASTER_KEY` | 전환 시 예 | - | Meilisearch 관리자 키. `.env`와 배포 시크릿에만 저장합니다 |
+
+Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니다. 초기 전체 색인은
+`uv run python scripts/sync_search_index.py`, 일일 증분 반영은 수집 직후 Arq의
+`search` 단계가 수행합니다. 검색 엔진 장애 시 키워드 검색 API는 빈 결과나 느린
+`LIKE` 폴백 대신 HTTP 503을 반환합니다.
+
+### 2.9 MLOps / Automation (Arq)
 
 원본의 Harness 관련 변수(`HARNESS_ACCOUNT_ID`, `HARNESS_API_KEY`, `HARNESS_PIPELINE_ID`)는 실행 백엔드를 Arq 로 교체하면서 사용하지 않습니다.
 
@@ -107,7 +120,7 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | 루프백/형식 오류 | `true` | `direct` | 안내 문구와 함께 DB 기록으로 강등 |
 | 루프백/형식 오류 | `false` | `polling` | 안내 문구와 함께 폴링으로 강등 |
 
-### 2.9 ML / Retraining
+### 2.10 ML / Retraining
 
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |

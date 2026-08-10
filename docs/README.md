@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | **리팩토링 설계서** | [`design/REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md) | 전체 리팩토링 청사진 |
 | **프론트엔드 결정** | [`design/FRONTEND_DECISION.md`](design/FRONTEND_DECISION.md) | SSR+HTMX 확정, React SPA 중단 |
+| **공고 검색 전환** | [`handoff/2026-08-09_bid_search_meilisearch_handoff.md`](handoff/2026-08-09_bid_search_meilisearch_handoff.md) | Meilisearch 읽기 모델 구현 및 초기 색인 검증 절차 |
 
 ---
 
@@ -82,6 +83,7 @@ docs/
 | Phase 7 인수인계 | [`2026-08-04_phase7_handoff.md`](handoff/2026-08-04_phase7_handoff.md) | 컷오버 판정, 재현 절차, 잔여 조건 |
 | 리팩토링 세션 인수인계 | [`2026-08-06_refactoring_handoff.md`](handoff/2026-08-06_refactoring_handoff.md) | 첫 토큰·CI·승격 게이트 수정, 기각 목록, 잔여 결정 사항 |
 | 모델 성능 개선 재개 인수인계 | [`2026-08-06_model_improvement_handoff.md`](handoff/2026-08-06_model_improvement_handoff.md) | Servc·Thng 승격 상태, 하한율 결측 집단 후속 진단, 기각 경계 |
+| 공고 검색 성능 개선 | [`2026-08-09_bid_search_meilisearch_handoff.md`](handoff/2026-08-09_bid_search_meilisearch_handoff.md) | Meilisearch 구현, 초기 색인·P95 검증 절차 |
 
 ## 4. ops/
 

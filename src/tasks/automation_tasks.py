@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
@@ -86,9 +87,7 @@ def _report(  # nosec B107
     apply_callback_payload(db, request_obj, payload)
 
 
-async def _step_collect(
-    db, *, refresh_aggregates: bool = True
-) -> tuple[str, dict[str, Any]]:
+async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, dict[str, Any]]:
     """G2B 수집 스텝 (원본 collect_bids 명령 대응)."""
     from src.app.services.collector_service import collect_bids
 
@@ -129,6 +128,20 @@ def _step_rag(
     metrics = dict(outcome.get("metrics") or {})
     metrics.setdefault("vector_count", metrics.get("source_bid_count", 0))
     return outcome["summary"], metrics
+
+
+def _step_search(db, collected_since: datetime | None = None) -> tuple[str, dict[str, Any]]:
+    """수집 성공 뒤 검색 읽기 모델을 최근 적재분만 멱등 upsert 합니다."""
+    if not settings.MEILI_ENABLED:
+        return "Meilisearch가 비활성화되어 검색 인덱스 동기화를 건너뜁니다.", {"skipped": True}
+
+    from src.app.services.search_index import sync_search_index
+
+    counts = sync_search_index(db, collected_since=collected_since)
+    return (
+        f"검색 인덱스 동기화 완료 (공고 {counts['announcements']}건, 낙찰 {counts['results']}건).",
+        counts,
+    )
 
 
 def _step_predict(db) -> tuple[str, dict[str, Any]]:
@@ -208,9 +221,7 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]]:
     )
     fresh_ingest_announcements = int(
         db.scalar(
-            select(func.count(BidAnnouncement.id)).where(
-                BidAnnouncement.collected_at >= week_ago
-            )
+            select(func.count(BidAnnouncement.id)).where(BidAnnouncement.collected_at >= week_ago)
         )
         or 0
     )
@@ -245,7 +256,9 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]]:
         "fresh_ingest_announcements": fresh_ingest_announcements,
         "fresh_ingest_results": fresh_ingest_results,
         "latest_notice_at": latest_notice_at.isoformat() if latest_notice_at else None,
-        "latest_result_open_at": latest_result_open_at.isoformat() if latest_result_open_at else None,
+        "latest_result_open_at": latest_result_open_at.isoformat()
+        if latest_result_open_at
+        else None,
         "latest_collected_at": latest_collected_at.isoformat() if latest_collected_at else None,
         "stale_hours": stale_hours,
     }
@@ -284,6 +297,7 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]]:
 
 STEP_RUNNERS = {
     "collect": _step_collect,
+    "search": _step_search,
     "rag": _step_rag,
     "predict": _step_predict,
     "inspect": _step_inspect,
@@ -337,6 +351,9 @@ async def run_automation_pipeline(
             if step == "rag" and run_mode == "refresh_data":
                 # 직전 실패·재기동 뒤에도 적재분을 놓치지 않도록 24시간 겹침 구간을
                 # 다시 upsert 합니다. 문서 ID가 안정적이므로 중복 벡터는 생기지 않습니다.
+                kwargs["collected_since"] = utcnow() - timedelta(days=1)
+            if step == "search" and run_mode == "refresh_data":
+                # 수집 API 재시도와 워커 재기동을 고려해 24시간을 겹쳐 upsert 합니다.
                 kwargs["collected_since"] = utcnow() - timedelta(days=1)
             outcome = runner(db, **kwargs)
             summary, metrics = await outcome if inspect.isawaitable(outcome) else outcome

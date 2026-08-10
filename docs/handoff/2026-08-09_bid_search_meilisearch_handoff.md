@@ -1,7 +1,7 @@
 # 공고 검색 성능 개선 인수인계
 
 > **작성일**: 2026-08-09
-> **상태**: 보류. Meilisearch 전환 승인 및 작업 시간 확보 후 재개
+> **상태**: 구현·초기 전체 색인·검색 실측 완료
 > **우선순위**: 웹 공고 검색 응답시간 개선
 
 ---
@@ -87,7 +87,48 @@ flowchart LR
 초기 색인 시간은 호스트 디스크 I/O와 MySQL 읽기 부하에 따라 달라집니다. DB가 바쁜
 시간대에는 초기 색인을 피하고, 수행 전 백업·행 수·스키마 확인을 합니다.
 
-## 5. 재개 순서와 완료 기준
+## 5. 구현 결과 (2026-08-10)
+
+| 항목 | 구현 위치 | 내용 |
+| --- | --- | --- |
+| Compose | `docker-compose.yml` | 영속 볼륨을 쓰는 `meilisearch` 서비스를 추가했습니다 |
+| 설정 | `src/app/core/config.py` | `MEILI_ENABLED`, URL, 인증키, 타임아웃을 환경 변수로 분리했습니다 |
+| 읽기 모델 | `src/app/services/search_index.py` | 공고 최신 차수와 낙찰 결과를 Meilisearch 문서로 변환·전체/증분 upsert 합니다 |
+| 검색 API | `src/app/services/bid_queries.py` | 키워드 요청만 Meilisearch로 보내고, DB에서는 ID 목록으로 원본 행을 다시 읽어 기존 응답 계약을 보존합니다 |
+| 수집 연계 | `src/tasks/run_mode_matrix.py` | `collect → search → rag` 순서로 최근 24시간 적재분을 멱등 upsert 합니다 |
+| 장애 처리 | `src/app/api/v1/bids.py` | 검색 엔진 연결 실패는 빈 결과가 아닌 HTTP 503과 오류 로그로 드러냅니다 |
+
+초기 전체 색인은 다음 명령으로 실행합니다. 실행 전에 `.env`의 `MEILI_MASTER_KEY`를
+충분히 긴 무작위 값으로 설정해야 합니다. 실제 값은 문서나 커밋에 기록하지 않습니다.
+
+```bash
+uv run python scripts/verify_migration.py
+uv run python scripts/sync_search_index.py
+```
+
+동기화는 원본 테이블을 읽기만 하며, 공고 문서의 ID는 `업무구분 + 공고번호`로 고정해
+차수가 갱신될 때 이전 문서를 교체합니다. 색인 완료 뒤에는 `청소`, `미화`, 공고번호,
+기관명, 지역·카테고리 필터를 실제 API로 대조하고 기존 경로와 P50/P95를 측정합니다.
+
+### 5.1 초기 전체 색인·실측 결과
+
+| 항목 | 결과 |
+| --- | ---: |
+| 최신 공고 문서 | 4,829,807건 |
+| 낙찰결과 문서 | 3,405,950건 |
+| 검색 문서 합계 | 8,235,757건 |
+| `q=청소`, `cat=Servc`, `region=seoul` 30회 P50 | 15.9ms |
+| 같은 조건 30회 P95 | 47.5ms |
+| 같은 조건 30회 P99 | 54.7ms |
+| 검색 요청 오류 | 0건 |
+
+원본 공고 전체 행 수와 최신 공고 문서 수가 다른 것은 의도된 동작입니다. 검색 읽기
+모델은 동일 공고번호·업무구분에서 최신 차수만 남기므로, 이전 차수는 색인하지 않습니다.
+`청소`, `미화`, 공고번호 및 기관명 검색과 지역·업무구분 필터를 Compose 앱의 실제 API에서
+확인했습니다. MySQL 원본은 색인 전에 `verify_migration.py`를 통과했으며 검색 인덱스는
+Meilisearch 전용 볼륨에만 기록됩니다.
+
+## 6. 재개 순서와 완료 기준
 
 1. `infrastructure-setup`, `data-preservation`, `validation-cutover`, `git-workflow`
    스킬을 읽고 적용합니다.
