@@ -1,0 +1,15 @@
+---
+description: 다중 에이전트·섹션 작업을 Orca Run·Task·Dispatch·worker_done으로 조율하는 필수 규칙
+globs: "**/*"
+alwaysApply: true
+---
+
+# 10-orca-section-coordination
+
+둘 이상의 에이전트 또는 섹션이 관여하거나, 병합·검증·공유 자원 의존성이 있으면 `.agents/skills/orca-section-coordination/SKILL.md`를 먼저 읽으십시오.
+
+- 작업 전 Orca Run에 바인딩하고, 각 섹션을 Task와 의존성으로 등록합니다.
+- Docker/DB, 대량 색인, ML 학습, Git 병합처럼 충돌 가능한 자원은 하나의 Task만 소유합니다.
+- `worker_done`과 요구 검증이 확인되기 전에는 후속 Task를 시작하거나 완료·병합·시작 가능이라고 표현하지 않습니다.
+- 같은 브랜치 또는 작업 트리에 동시 쓰기 작업을 배정하지 않습니다. 독립 Task만 병렬 Dispatch합니다.
+- Orca 런타임이 준비되지 않으면 조율 작업을 시작하지 말고 차단 원인을 보고합니다.

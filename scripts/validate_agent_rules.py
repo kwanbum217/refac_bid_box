@@ -9,7 +9,7 @@
   1. CLAUDE.md 가 @AGENTS.md thin pointer 인지 (정본 복사 금지)
   2. .antigravity/rules.md 가 존재 + 12,000자 이하 + 핵심 섹션 포함
   3. .cursor/rules/00-core-guidelines.mdc 가 AGENTS.md 참조 여부
-  4. .agents/skills/ 와 .claude/skills/ 내용 동일성 (미러 정합성)
+  4. .agents/skills/ 와 .claude/skills/, .opencode/skills/ 내용 동일성 (미러 정합성)
   5. AGENTS.md 에 @SKILLS.md import 구문 존재 여부
   6. opencode.json instructions 배열 포함 여부
 
@@ -44,6 +44,7 @@ CURSOR_CORE_RULE = PROJECT_ROOT / ".cursor" / "rules" / "00-core-guidelines.mdc"
 OPENCODE_JSON = PROJECT_ROOT / "opencode.json"
 AGENTS_SKILLS_DIR = PROJECT_ROOT / ".agents" / "skills"
 CLAUDE_SKILLS_DIR = PROJECT_ROOT / ".claude" / "skills"
+OPENCODE_SKILLS_DIR = PROJECT_ROOT / ".opencode" / "skills"
 
 # .antigravity/rules.md 요약본이 반드시 포함해야 할 핵심 키워드 (드리프트 탐지용)
 ANTIGRAVITY_REQUIRED_SECTIONS = [
@@ -164,13 +165,21 @@ def _collect_dircmp_diffs(dc: filecmp.dircmp, root_a: Path, root_b: Path, diffs:
 
 
 def check_skills_mirror() -> CheckResult:
-    equal, diffs = _dir_trees_equal(AGENTS_SKILLS_DIR, CLAUDE_SKILLS_DIR)
-    if equal:
-        return CheckResult(".agents/skills 와 .claude/skills 미러", True, "내용 완전 일치")
-    detail = f"{len(diffs)}건 차이: " + " | ".join(diffs[:3])
-    if len(diffs) > 3:
-        detail += f" ... 외 {len(diffs) - 3}건"
-    return CheckResult(".agents/skills 와 .claude/skills 미러", False, detail)
+    mirrors = [
+        (".claude/skills", CLAUDE_SKILLS_DIR),
+        (".opencode/skills", OPENCODE_SKILLS_DIR),
+    ]
+    all_diffs: list[str] = []
+    for label, mirror_dir in mirrors:
+        equal, diffs = _dir_trees_equal(AGENTS_SKILLS_DIR, mirror_dir)
+        if not equal:
+            all_diffs.extend(f"{label}: {diff}" for diff in diffs)
+    if not all_diffs:
+        return CheckResult("스킬 미러 정합성", True, ".claude/skills, .opencode/skills 내용 완전 일치")
+    detail = f"{len(all_diffs)}건 차이: " + " | ".join(all_diffs[:3])
+    if len(all_diffs) > 3:
+        detail += f" ... 외 {len(all_diffs) - 3}건"
+    return CheckResult("스킬 미러 정합성", False, detail)
 
 
 def check_agents_imports_skills() -> CheckResult:
