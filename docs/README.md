@@ -63,6 +63,7 @@ docs/
 | 초과분 타깃 실험 | [`servc_excess_target_20260810.md`](design/servc_excess_target_20260810.md) | 기각(MAE +0.0364). 적중률만 +0.2687%p 개선되어 목적함수 축 근거 확보 |
 | quantile alpha 스윕 | [`servc_quantile_alpha_20260810.md`](design/servc_quantile_alpha_20260810.md) | 기각. 홀드아웃 0.45 최적이나 운영 쌍대 판별 불가. 학습·서빙 특징 괴리 단서 확보 |
 | 판정 도구 특징 시점 조사 | [`servc_paired_asof_gap_20260810.md`](design/servc_paired_asof_gap_20260810.md) | 정적 특징 완전 일치, 이력만 시점 차이. as-of 가 오히려 나빠 분포 이동 가설 기각 |
+| 홀드아웃 분할 간 산포 | [`servc_split_variance_20260810.md`](design/servc_split_variance_20260810.md) | 분할 산포 0.0074 가 시드 산포의 7.4배. 홀드아웃 최소 감지 차이 기준 변경 |
 
 ## 2. migration/
 
