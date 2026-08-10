@@ -90,6 +90,7 @@ docs/
 | 모델 성능 개선 재개 인수인계 | [`2026-08-06_model_improvement_handoff.md`](handoff/2026-08-06_model_improvement_handoff.md) | Servc·Thng 승격 상태, 하한율 결측 집단 후속 진단, 기각 경계 |
 | 공고 검색 성능 개선 | [`2026-08-09_bid_search_meilisearch_handoff.md`](handoff/2026-08-09_bid_search_meilisearch_handoff.md) | Meilisearch 구현, 초기 색인·P95 검증 절차 |
 | 용역 모델 튜닝 인수인계 | [`2026-08-10_servc_tuning_handoff.md`](handoff/2026-08-10_servc_tuning_handoff.md) | 다섯 축 기각 근거, 홀드아웃 판정 기준 0.0074 상향, 남은 사용자 결정 |
+| 쌍대 표본 기준 착수 지시 | [`2026-08-11_paired_sample_filter_todo.md`](handoff/2026-08-11_paired_sample_filter_todo.md) | 판정용·보고용 표본 분리 반영. 코드 변경 지점, 검증 절차, 금지 사항 |
 
 ## 4. ops/
 
