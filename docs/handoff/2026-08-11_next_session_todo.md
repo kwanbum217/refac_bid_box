@@ -63,6 +63,27 @@
 
 **t 가 전부 -1.6 미만이라 유의하지 않습니다.** 다음 재학습 후 같은 스크립트로 재측정해 부호가 유지되는지만 확인하십시오. 지금 손대면 잡음을 좇습니다.
 
+### E. 완료 섹션 자원 정리 — GPT 작업 종료 후
+
+Orca 좌측 목록에 끝난 섹션의 워크트리·브랜치가 남아 활성 섹션과 구분되지 않습니다. **GPT 의 G1·G2·G3 가 전부 끝난 뒤** 한 번에 정리하십시오. 활성 트리가 하나라도 있으면 하지 마십시오.
+
+정리 대상(전부 `origin/main` 에 완전 병합 확인됨)입니다.
+
+| 워크트리 | 병합 커밋 |
+| --- | --- |
+| `claude-thng-feature-audit` | `2054ead` |
+| `claude-quantile-releaf` | `db96317` |
+| `claude-servc-tuning` | 2026-08-10 병합 |
+| `fix-search-api-timeout` | `8f628fc` |
+| `docs-mlops-index-sync` | `1cb7679` |
+| `docs-env-contract` | `23b63f9` |
+
+`claude-deep-page-pagination` 은 트리가 이미 해제됐고 브랜치만 남아 있습니다.
+
+절차는 `orca-section-coordination` 스킬 7장을 따르십시오. `git branch -d` 가 거부하면 병합되지 않았다는 뜻이므로 `-D` 로 강제하지 마십시오.
+
+권장: Opus 5 / effort low. 절차적 작업입니다.
+
 ---
 
 ## 2. 하지 말 것
