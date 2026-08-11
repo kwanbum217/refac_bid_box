@@ -156,6 +156,9 @@
                     {% else %}
                     표시할 공고가 없습니다
                     {% endif %}
+                    {% if max_page and page_obj.number >= max_page %}
+                    <span class="ml-2 text-slate-400">목록은 {{ max_page }} 페이지까지 표시합니다. 더 이전 공고는 검색어나 필터로 좁혀 주세요.</span>
+                    {% endif %}
                 </div>
 
                 <div class="flex items-center space-x-2">
