@@ -26,7 +26,8 @@
 | 축 | 상태 | 다음 행동 | 근거 |
 | --- | --- | --- | --- |
 | **제도 플래그 특징 추가** | 신호 확인, 학습 미수행 | `features.py` 에 추가하고 쌍대 검정. 단 2025-01 전환 필드는 체제 지시자와 함께 | `design/servc_unused_rawdata_field_audit_20260811.md` |
-| 2025-01 체제 지시자 도입 | **범위 축소** | `prdctClsfcLmtYn`, `rbidPermsnYn` 축에만 검토. 하한율 축은 불필요로 판정 | `design/servc_lwlt_missing_remechanism_20260811.md` |
+| 2025-01 체제 지시자 도입 | **범위 확정** | `prdctClsfcLmtYn` 축에만 필요. 하한율·`rbidPermsnYn` 축은 불필요로 판정 | `design/servc_flag_notation_verdict_20260811.md` |
+| `rbidPermsnYn` 결측 수준 정규화 | 미착수 | 표기 이동으로 판정. 키 부재(최근 38%)를 제3수준으로 두면 지금 사용 가능 | 위와 동일 |
 | `prearng_mthd` 와 결측 지시자 공선성 | 미착수 | 경계 이후 단일예가 99.34% 가 결측이라 두 특징 정보가 겹침. 학습 실험 축 | 위와 동일 |
 | 나머지 raw_data 필드 전환 추적 | 부분 확인 | 세 필드에서 나왔으므로 더 있을 수 있음. `scripts/audit_servc_flag_regime.py` | 위와 동일 |
 | 적격심사제 계열 피복률 | **대기** | t 가 -1.6 미만이라 유의하지 않음. 재학습 후 부호 유지만 확인 | `design/servc_interval_coverage_recheck_20260811.md` |
