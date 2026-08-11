@@ -29,7 +29,7 @@
 | 2025-01 체제 지시자 도입 | **범위 확정** | `prdctClsfcLmtYn` 축에만 필요. 하한율·`rbidPermsnYn` 축은 불필요로 판정 | `design/servc_flag_notation_verdict_20260811.md` |
 | `rbidPermsnYn` 결측 수준 정규화 | 미착수 | 표기 이동으로 판정. 키 부재(최근 38%)를 제3수준으로 두면 지금 사용 가능 | 위와 동일 |
 | `prearng_mthd` 와 결측 지시자 공선성 | 미착수 | 경계 이후 단일예가 99.34% 가 결측이라 두 특징 정보가 겹침. 학습 실험 축 | 위와 동일 |
-| 나머지 raw_data 필드 전환 추적 | 부분 확인 | 세 필드에서 나왔으므로 더 있을 수 있음. `scripts/audit_servc_flag_regime.py` | 위와 동일 |
+| 신규 검출 6개 필드의 표기·실질 판정 | 미착수 | 92개 전수 스캔에서 2025-01 전환 6개 추가 검출. 아직 표기 이동인지 실질 변화인지 갈리지 않음. 전부 미사용 필드 | `design/servc_rawdata_regime_scan_20260811.md` |
 | 적격심사제 계열 피복률 | **대기** | t 가 -1.6 미만이라 유의하지 않음. 재학습 후 부호 유지만 확인 | `design/servc_interval_coverage_recheck_20260811.md` |
 
 ### 1.1 제도 플래그 신호 요약
@@ -45,6 +45,12 @@
 | `prdctClsfcLmtYn` | 0.15%p | +7.4 | 3/3 |
 
 비교 13개가 본페로니 임계 2.9 를 모두 넘습니다.
+
+**그러나 이 표를 기여의 예고로 읽지 마십시오.** 위 세 필드(`indstrytyLmtYn`,
+`cmmnSpldmdMethdNm`, `dsgntCmptYn`)를 실제로 넣은 결과는 홀드아웃 평균 -0.0068
+로 분할 산포 안이었습니다. 잔차 편향이 있다는 것과 그 정보가 기존 35종에 없다는
+것은 다른 명제입니다. 상세는 2장과
+`design/servc_flag_features_holdout_20260811.md` 를 보십시오.
 
 ---
 
