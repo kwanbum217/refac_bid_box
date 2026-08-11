@@ -15,7 +15,7 @@ from typing import Any
 
 from src.app.core.config import PROJECT_ROOT, settings
 from src.rag.embeddings import get_collection
-from src.rag.schemas import RetrievalPlan
+from src.rag.schemas import DEFAULT_VECTOR_TOP_K, RetrievalPlan
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +72,14 @@ class AsyncVectorStore:
     def __init__(self, chroma_dir: str | Path | None = None):
         self.chroma_path = Path(chroma_dir or PROJECT_ROOT / "chroma_db")
 
-    async def search_similar_docs(self, query: str, top_k: int = 3) -> list[dict[str, Any]]:
-        plan = RetrievalPlan(use_vector=True, semantic_query=query, top_k=max(int(top_k or 3), 1))
+    async def search_similar_docs(
+        self, query: str, top_k: int = DEFAULT_VECTOR_TOP_K
+    ) -> list[dict[str, Any]]:
+        plan = RetrievalPlan(
+            use_vector=True,
+            semantic_query=query,
+            top_k=max(int(top_k or DEFAULT_VECTOR_TOP_K), 1),
+        )
         return await asyncio.to_thread(retrieve_semantic_context, plan)
 
 

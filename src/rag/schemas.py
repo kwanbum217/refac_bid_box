@@ -11,6 +11,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+DEFAULT_VECTOR_TOP_K = 5
+
 
 class RetrievalPlan(BaseModel):
     use_sql: bool = False
@@ -18,7 +20,7 @@ class RetrievalPlan(BaseModel):
     use_kb_status: bool = False
     filters: dict[str, Any] = Field(default_factory=dict)
     semantic_query: str = ""
-    top_k: int = 3
+    top_k: int = DEFAULT_VECTOR_TOP_K
     time_bias: str = ""
     route_reason: str = ""
     insufficiency_hints: list[str] = Field(default_factory=list)

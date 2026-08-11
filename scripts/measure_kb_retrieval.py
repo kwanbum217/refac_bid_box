@@ -6,7 +6,8 @@
 
 임베딩 교체(2026-08-06, MiniLM -> bge-m3)와 커버리지 확대의 효과를 같은 자로
 재려고 스크립트로 고정했습니다. 후보 수가 늘면 순위가 밀리므로 규모를 바꿀
-때마다 다시 재야 합니다.
+때마다 다시 재야 합니다. 한 실행에서 top-1/3/5/k 적중률과 평균·P50·P95
+지연을 함께 출력합니다.
 
 사용법:
     uv run python scripts/measure_kb_retrieval.py
@@ -16,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import re
 import sys
@@ -48,6 +50,15 @@ def _build_query(document: str) -> str:
     return " ".join(part for part in (title, institution) if part)
 
 
+def _percentile_ms(elapsed_ms: list[float], percentile: float) -> float:
+    """표본의 nearest-rank 백분위 지연을 반환합니다."""
+    if not elapsed_ms:
+        return 0.0
+    ordered = sorted(elapsed_ms)
+    index = max(math.ceil(percentile * len(ordered)) - 1, 0)
+    return ordered[index]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="KB 검색 적중률 측정")
     parser.add_argument("--samples", type=int, default=100, help="질의 개수")
@@ -70,14 +81,14 @@ def main() -> int:
     sampled = collection.get(ids=sample_ids, include=["documents"])
 
     ranks: list[int | None] = []
-    elapsed_total = 0.0
+    elapsed_ms: list[float] = []
     for doc_id, document in zip(sampled["ids"], sampled["documents"], strict=False):
         query = _build_query(document or "")
         if not query:
             continue
         started = time.perf_counter()
         hits = collection.query(query_texts=[query], n_results=args.top_k)
-        elapsed_total += time.perf_counter() - started
+        elapsed_ms.append((time.perf_counter() - started) * 1000)
         returned = hits["ids"][0]
         ranks.append(returned.index(doc_id) + 1 if doc_id in returned else None)
 
@@ -86,18 +97,21 @@ def main() -> int:
         print("질의를 만들 수 있는 문서가 없습니다.")
         return 1
 
-    top1 = sum(1 for rank in ranks if rank == 1)
-    topk = sum(1 for rank in ranks if rank is not None)
     # MRR 은 적중률만으로는 안 보이는 순위 열화를 잡아냅니다. 커버리지를 늘리면
     # 적중률이 유지돼도 순위가 밀릴 수 있습니다.
     mrr = sum(1.0 / rank for rank in ranks if rank is not None) / measured
 
     print(f"컬렉션      : {args.collection} ({total_indexed:,}건 색인)")
     print(f"질의        : {measured}건 (시드 {args.seed})")
-    print(f"top-1 적중률: {top1 / measured * 100:.1f}%")
-    print(f"top-{args.top_k} 적중률: {topk / measured * 100:.1f}%")
+    for cutoff in sorted({1, 3, 5, args.top_k}):
+        if cutoff > args.top_k:
+            continue
+        hits = sum(1 for rank in ranks if rank is not None and rank <= cutoff)
+        print(f"top-{cutoff} 적중률: {hits / measured * 100:.1f}%")
     print(f"MRR         : {mrr:.4f}")
-    print(f"질의 평균   : {elapsed_total / measured * 1000:.1f}ms")
+    print(f"질의 평균   : {sum(elapsed_ms) / measured:.1f}ms")
+    print(f"질의 P50    : {_percentile_ms(elapsed_ms, 0.50):.1f}ms")
+    print(f"질의 P95    : {_percentile_ms(elapsed_ms, 0.95):.1f}ms")
     return 0
 
 

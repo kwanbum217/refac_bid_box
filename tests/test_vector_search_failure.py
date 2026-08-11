@@ -20,8 +20,10 @@ tests/test_vector_search_failure.py
 
 import logging
 
+import pytest
+
 from src.rag import vector_store
-from src.rag.schemas import RetrievalPlan
+from src.rag.schemas import DEFAULT_VECTOR_TOP_K, RetrievalPlan
 
 
 def _plan() -> RetrievalPlan:
@@ -71,3 +73,17 @@ def test_empty_query_returns_empty_without_touching_chroma(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "chromadb", Chroma)
 
     assert vector_store.retrieve_semantic_context(RetrievalPlan(semantic_query="  ")) == []
+
+
+@pytest.mark.asyncio
+async def test_async_vector_store_uses_the_shared_top_k_default(monkeypatch):
+    captured: list[RetrievalPlan] = []
+
+    def retrieve(plan: RetrievalPlan):
+        captured.append(plan)
+        return []
+
+    monkeypatch.setattr(vector_store, "retrieve_semantic_context", retrieve)
+
+    assert await vector_store.AsyncVectorStore().search_similar_docs("적격심사") == []
+    assert captured[0].top_k == DEFAULT_VECTOR_TOP_K
