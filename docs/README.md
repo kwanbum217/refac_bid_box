@@ -39,6 +39,7 @@ docs/
 | 리팩토링 설계서 | [`REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md) | AS-IS/TO-BE, 로드맵 |
 | 프론트엔드 결정 | [`FRONTEND_DECISION.md`](design/FRONTEND_DECISION.md) | SSR+HTMX ADR, React 동결 및 노출 차단 |
 | React 재현 설계 (기각) | [`frontend_react_reproduction_design.md`](design/frontend_react_reproduction_design.md) | 검토 후 기각. SSR 정본 유지 근거 |
+| **용역 모델 개선 현황판** | [`servc_model_status.md`](servc_model_status.md) | **용역 작업 전 먼저 읽으십시오.** 열린 축, 닫힌 축, 대기 결정. 갱신형 |
 | 용역 낙찰률 예측 모델 | [`servc_prediction_model_design.md`](design/servc_prediction_model_design.md) | 특징 설계, 절제 실험, 승격 기준 |
 | 금액 미공개 공고 예측 | [`prediction_without_amount_20260804.md`](design/prediction_without_amount_20260804.md) | 0원 추천 차단. 원본과 의도적으로 다른 동작 |
 | G2B 전자입찰 제도 분석 | [`g2b_procurement_institution_analysis.md`](design/g2b_procurement_institution_analysis.md) | 예정가격·낙찰하한율 산식, 2026-05-26 제도 변경 |

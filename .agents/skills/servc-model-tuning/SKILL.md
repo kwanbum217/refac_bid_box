@@ -44,6 +44,7 @@ description: |
 | :--- | :--- | :--- |
 | 데이터셋 | 용역 feature store parquet | `ls data/feature_store/dataset_Servc.parquet` |
 | 서빙 모델 | 현재 서빙 버전과 지표 | `uv run python scripts/promote_model.py status` |
+| **현재 어디까지 왔는가** | **가장 먼저 읽으십시오** | [`docs/servc_model_status.md`](../../../docs/servc_model_status.md) |
 | 기각 목록 | 아래 4장 숙지 | 이 문서 |
 | 병렬 세션 | 다른 세션이 같은 파일을 만지는지 확인 | `git worktree list` |
 
@@ -521,6 +522,8 @@ DB·서빙 루트 점유)보다 **싼 관문**이므로 먼저 통과시키십�
 - 실험용 임시 테이블·parquet 정리 (운영 DB 에 작업 테이블을 남기지 말 것)
 - 기각한 접근은 근거와 함께 `docs/design/` 에 문서화
 - 이 스킬의 기각 목록에 새 항목 반영
+- **결론은 `docs/servc_model_status.md` 에 옮기십시오.** 날짜 문서는 근거로 남기되,
+  현황판을 갱신하지 않으면 다음 사람이 파일 다섯 개를 읽어야 상태를 압니다
 - 승격했다면 `docs/changelogs/work_log.md` 기록
 
 ---
