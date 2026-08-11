@@ -25,6 +25,7 @@
 
 | 축 | 상태 | 다음 행동 | 근거 |
 | --- | --- | --- | --- |
+| **학습 프레임의 비예가 누락** | **관측 확정. 최우선** | `dataset.py` 조인 조건이 비예가를 배제하는지 확인하고 의도된 것인지 판정 | `design/servc_training_frame_population_gap_20260811.md` |
 | **제도 플래그 특징 추가** | **전환 없는 3종은 닫힘.** 2장 참조 | 남은 것은 `rbidPermsnYn` 과 `prdctClsfcLmtYn` 뿐입니다. 아래 두 행이 그 선행 작업입니다 | `design/servc_flag_features_holdout_20260811.md` |
 | 2025-01 체제 지시자 도입 | **범위 확정** | `prdctClsfcLmtYn` 축에만 필요. 하한율·`rbidPermsnYn` 축은 불필요로 판정 | `design/servc_flag_notation_verdict_20260811.md` |
 | `rbidPermsnYn` 결측 수준 정규화 | 미착수 | 표기 이동으로 판정. 키 부재(최근 38%)를 제3수준으로 두면 지금 사용 가능 | 위와 동일 |
