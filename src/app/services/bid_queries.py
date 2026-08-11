@@ -27,6 +27,12 @@ DEFAULT_REGION_SORT_RANK = 999
 BID_LIST_SORT_CHOICES = ("notice", "deadline", "amount", "region")
 RESULT_LIST_SORT_CHOICES = ("opening", "amount", "rate")
 PAGE_SIZE = 20
+# 정렬된 목록의 깊은 offset 은 Meilisearch 에서 깊이에 비례해 비싸집니다.
+# 같은 색인(공고 483만 건)에서 공고일 정렬 기준 page 1000 은 12ms, page 5000 은
+# 56ms, page 100000 은 1310ms 입니다(2026-08-11 실측). 화면 페이지네이션은
+# 이전/다음만 제공하므로 그 깊이는 주소를 직접 고쳐야 닿습니다. 도달 가능한
+# 마지막 페이지를 여기서 끊어 비용의 꼬리를 잘라냅니다.
+MAX_LIST_PAGE = 1_000
 MYSQL_FALLBACK_MAX_EXECUTION_TIME_MS = 5_000
 MYSQL_QUERY_TIMEOUT_ERROR_CODE = 3024
 
@@ -221,6 +227,18 @@ def _is_mysql_query_timeout(exc: DBAPIError) -> bool:
     return bool(args) and args[0] == MYSQL_QUERY_TIMEOUT_ERROR_CODE
 
 
+def _page_beyond_limit(page_number: int) -> OffsetPage:
+    """상한 밖 페이지는 검색 백엔드를 부르지 않고 빈 페이지로 끊습니다."""
+    return OffsetPage(object_list=[], number=page_number, per_page=PAGE_SIZE, has_next=False)
+
+
+def _apply_page_limit(page: OffsetPage) -> OffsetPage:
+    """마지막 도달 가능 페이지에서 다음 링크를 내려 상한을 화면에 노출합니다."""
+    if page.number >= MAX_LIST_PAGE:
+        page.has_next = False
+    return page
+
+
 def _paginate_without_count(db: Session, stmt, page_number: int) -> OffsetPage:
     page_number = max(page_number, 1)
     offset = (page_number - 1) * PAGE_SIZE
@@ -314,16 +332,21 @@ def list_announcements(
     page_number = max(page, 1)
     query = (q or "").strip()
 
+    if page_number > MAX_LIST_PAGE:
+        return _page_beyond_limit(page_number)
+
     if _meili_enabled():
-        return _search_index_page(
-            db,
-            model=BidAnnouncement,
-            query=query,
-            dataset="announcement",
-            category=cat or None,
-            region=region_code or None,
-            sort=_announcement_search_sort(sort_key),
-            page_number=page_number,
+        return _apply_page_limit(
+            _search_index_page(
+                db,
+                model=BidAnnouncement,
+                query=query,
+                dataset="announcement",
+                category=cat or None,
+                region=region_code or None,
+                sort=_announcement_search_sort(sort_key),
+                page_number=page_number,
+            )
         )
 
     stmt = select(BidAnnouncement)
@@ -363,7 +386,7 @@ def list_announcements(
     else:
         stmt = stmt.order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
 
-    return _paginate_without_count(db, stmt, page_number)
+    return _apply_page_limit(_paginate_without_count(db, stmt, page_number))
 
 
 def list_results(
@@ -380,16 +403,21 @@ def list_results(
     page_number = max(page, 1)
     query = (q or "").strip()
 
+    if page_number > MAX_LIST_PAGE:
+        return _page_beyond_limit(page_number)
+
     if _meili_enabled():
-        return _search_index_page(
-            db,
-            model=BidResult,
-            query=query,
-            dataset="result",
-            category=cat or None,
-            region=region_code or None,
-            sort=_result_search_sort(sort_key),
-            page_number=page_number,
+        return _apply_page_limit(
+            _search_index_page(
+                db,
+                model=BidResult,
+                query=query,
+                dataset="result",
+                category=cat or None,
+                region=region_code or None,
+                sort=_result_search_sort(sort_key),
+                page_number=page_number,
+            )
         )
 
     stmt = select(BidResult)
@@ -422,7 +450,7 @@ def list_results(
     else:
         stmt = stmt.order_by(BidResult.rl_openg_dt.desc(), BidResult.id.desc())
 
-    return _paginate_without_count(db, stmt, page_number)
+    return _apply_page_limit(_paginate_without_count(db, stmt, page_number))
 
 
 def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:

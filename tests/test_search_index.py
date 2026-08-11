@@ -214,6 +214,55 @@ def test_empty_query_announcement_search_continues_after_page_50(monkeypatch, is
     assert search.call_args.kwargs["offset"] == 1_000
 
 
+@pytest.mark.parametrize(
+    "list_rows",
+    [bid_queries.list_announcements, bid_queries.list_results],
+)
+def test_page_beyond_limit_skips_the_search_backend(monkeypatch, isolated_db, list_rows):
+    search = Mock(return_value=SearchPage(ids=[], has_next=True))
+    monkeypatch.setattr(settings, "MEILI_ENABLED", True, raising=False)
+    monkeypatch.setattr("src.app.services.search_index.MeiliSearchClient.search", search)
+
+    page = list_rows(isolated_db, page=bid_queries.MAX_LIST_PAGE + 1)
+
+    assert page.object_list == []
+    assert page.has_next is False
+    assert page.number == bid_queries.MAX_LIST_PAGE + 1
+    search.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "list_rows",
+    [bid_queries.list_announcements, bid_queries.list_results],
+)
+def test_last_reachable_page_hides_the_next_link(monkeypatch, isolated_db, list_rows):
+    search = Mock(return_value=SearchPage(ids=[], has_next=True))
+    monkeypatch.setattr(settings, "MEILI_ENABLED", True, raising=False)
+    monkeypatch.setattr("src.app.services.search_index.MeiliSearchClient.search", search)
+
+    page = list_rows(isolated_db, page=bid_queries.MAX_LIST_PAGE)
+
+    assert page.has_next is False
+    assert page.has_previous is True
+    assert search.call_args.kwargs["offset"] == (bid_queries.MAX_LIST_PAGE - 1) * bid_queries.PAGE_SIZE
+
+
+@pytest.mark.parametrize(
+    "list_rows",
+    [bid_queries.list_announcements, bid_queries.list_results],
+)
+def test_page_beyond_limit_also_applies_to_mysql_fallback(monkeypatch, isolated_db, list_rows):
+    monkeypatch.setattr(settings, "MEILI_ENABLED", False, raising=False)
+    execute = Mock(wraps=isolated_db.execute)
+    monkeypatch.setattr(isolated_db, "execute", execute)
+
+    page = list_rows(isolated_db, page=bid_queries.MAX_LIST_PAGE + 1)
+
+    assert page.object_list == []
+    assert page.has_next is False
+    execute.assert_not_called()
+
+
 def test_empty_query_result_search_preserves_index_order(monkeypatch, isolated_db):
     now = utcnow()
     first = BidResult(
