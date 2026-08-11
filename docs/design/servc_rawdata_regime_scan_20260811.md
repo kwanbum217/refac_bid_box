@@ -2,7 +2,8 @@
 
 > **작성일**: 2026-08-11
 > **상태**: 읽기 전용 감사 완료
-> **결론**: 추가로 16건의 계단식 전환을 찾았습니다. 그중 6건이 2025-01 에 몰려 있어 경계 가설을 보강합니다. **현재 학습에 쓰는 필드에서는 전환이 나오지 않았습니다.**
+> **결론**: 추가로 16건의 계단식 전환 후보를 찾았습니다(값 존재율 정의 기준, 7장 한계 참조). 그중 6건이 2025-01 에 몰려 있습니다. **현재 학습에 쓰는 필드에서는 전환이 나오지 않았습니다.**
+> **정정 (2026-08-11 늦은 시각, main 재병합 후)**: 선행 세 필드 중 `rbidPermsnYn` 은 이후 별도 감사([`servc_flag_notation_verdict_20260811.md`](servc_flag_notation_verdict_20260811.md))에서 표기 이동(경계도 2025-05)으로 정정됐고, `sucsfbidLwltRate` 도 표기 변경으로 정정됐습니다. **2025-01 실질 전환이 확정된 것은 `prdctClsfcLmtYn` 뿐입니다.** 이번 문서가 새로 찾은 6개 필드는 같은 수준의 실질/표기 판정을 아직 받지 못했습니다(6장 유보, 미완 항목).
 > **선행**: [`servc_2025_source_regime_shift_20260811.md`](servc_2025_source_regime_shift_20260811.md), [`servc_unused_rawdata_field_audit_20260811.md`](servc_unused_rawdata_field_audit_20260811.md)
 
 ---
@@ -79,7 +80,9 @@
 
 ### 4.1 2025-01 군집
 
-16건 중 **6개 필드, 7건**이 2025-01 에 몰려 있습니다: `arsltApplDocRcptMthdNm`, `bidPrtcptFee`, `ntceInsttOfclEmailAdrs`, `pqEvalYn`, `tpEvalYn`, `rsrvtnPrceReMkngMthdNm`. 선행 감사에서 확인된 두 필드(`prdctClsfcLmtYn`, `rbidPermsnYn`)와 합치면 **8개 필드가 2025-01 을 경계로 계단식으로 움직입니다.** 세 번째로 확인됐던 `sucsfbidLwltRate` 는 이후 재분해([`servc_lwlt_missing_remechanism_20260811.md`](servc_lwlt_missing_remechanism_20260811.md) 4.4)에서 결측 표기가 `'0'` 에서 빈 문자열로 바뀐 표기 변경으로 정정됐으므로 이 군집에서 뺍니다. 7장에 관련 한계를 적었습니다.
+16건 중 **6개 필드, 7건**이 2025-01 에 몰려 있습니다: `arsltApplDocRcptMthdNm`, `bidPrtcptFee`, `ntceInsttOfclEmailAdrs`, `pqEvalYn`, `tpEvalYn`, `rsrvtnPrceReMkngMthdNm`.
+
+선행 세 필드와의 관계는 **머리말 정정을 따릅니다.** `prdctClsfcLmtYn` 만 실질 전환이 확정됐고, `rbidPermsnYn`(경계 2025-05, 표기 이동)과 `sucsfbidLwltRate`(표기 변경)는 이 군집에서 뺍니다. 이번 6개 필드가 `prdctClsfcLmtYn` 처럼 실질 변화인지, `rbidPermsnYn` 처럼 표기 이동인지는 **이 감사로는 가르지 못합니다.** 7장의 한계가 정확히 이 지점입니다.
 
 `ntceInsttOfclEmailAdrs` 는 존재율이 91.6% 에서 0.0% 로 한 달 만에 사라졌습니다. `bidPrtcptFee` 와 `tpEvalYn` 은 반대로 거의 없던 값이 갑자기 채워집니다(0.1~0.2% -> 84~88%). 방향이 필드마다 다르므로 **단일 필드의 결측 증가가 아니라 원천 응답 스키마 자체가 그 시점에 바뀐 것**으로 보입니다. 원인은 저장소 안에서 특정할 수 없습니다.
 
@@ -104,6 +107,7 @@
 1. **표본 기반입니다.** 월 3,000행(2026-08 은 206행) 표본이며 전수 스캔이 아닙니다. 존재율은 표본 오차가 작지만(3,000 표본에서 20%p 이상 차이는 잡음으로 보기 어려움), 희귀 값 구성은 표본에 따라 흔들릴 수 있습니다.
 2. **원인은 저장소 안에서 특정할 수 없습니다.** 2025-01 군집이든 2023년 초 군집이든 제도 변경으로 단정하지 마십시오. 관측된 경계로만 쓰십시오.
 3. **미사용 필드의 신호 자체는 측정하지 않았습니다.** 이번 감사는 값 구성의 시점 안정성만 봤습니다. 후보로 쓰려면 `survey_servc_fields.py` 식의 연관도 측정이 별도로 필요합니다.
+4. **미완: 6개 필드의 실질/표기 판정.** `prdctClsfcLmtYn`(실질) 과 `rbidPermsnYn`(표기, 경계 2025-05)을 가른 것과 같은 수준의 분해(`servc_flag_notation_verdict_20260811.md` 방법)를 이번 6개 필드(`arsltApplDocRcptMthdNm`, `bidPrtcptFee`, `ntceInsttOfclEmailAdrs`, `pqEvalYn`, `tpEvalYn`, `rsrvtnPrceReMkngMthdNm`)에는 아직 하지 않았습니다. 지금 표의 16건은 값 존재율 정의 아래의 "급변 후보" 목록이지, 실질 전환이라는 확정이 아닙니다.
 
 ---
 
