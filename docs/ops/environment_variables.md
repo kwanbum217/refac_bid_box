@@ -18,10 +18,14 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `APP_ENV` | 아니오 | `development` | 실행 환경 (`development` / `staging` / `production`) |
-| `APP_SECRET_KEY` | **예** | - | 애플리케이션 시크릿 키 (랜덤값) |
-| `APP_DEBUG` | 아니오 | `true` | 디버그 모드 (운영은 `false` 강제) |
-| `APP_ALLOWED_HOSTS` | 아니오 | `localhost,127.0.0.1` | 허용 호스트 |
+| `ENVIRONMENT` | 아니오 | `development` | 실행 환경 (`development` / `staging` / `production`) |
+| `SECRET_KEY` | **예** | - | 애플리케이션 시크릿 키 (랜덤값) |
+| `DEBUG` | 아니오 | `false` | 디버그 모드 (운영은 `false` 권장) |
+
+현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 세 가지입니다. `APP_ENV`,
+`APP_SECRET_KEY`, `APP_DEBUG`, `APP_ALLOWED_HOSTS`는 이전 Django 설계의 명칭이므로
+이 프로젝트의 `.env`에 사용하지 않습니다. 허용 호스트 목록은 현재 설정 모델에
+구현되어 있지 않아 별도 환경변수로 추가하지 않습니다.
 
 ### 2.2 Database
 
