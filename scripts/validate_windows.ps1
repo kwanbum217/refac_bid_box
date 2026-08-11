@@ -16,13 +16,20 @@ Require-Command "uv"
 Require-Command "make"
 Require-Command "docker"
 
+if ([string]::IsNullOrWhiteSpace($env:SECRET_KEY)) {
+    $env:SECRET_KEY = "windows-validation-only-secret-key-20260811"
+}
+if ([string]::IsNullOrWhiteSpace($env:MEILI_MASTER_KEY)) {
+    $env:MEILI_MASTER_KEY = "windows-validation-meili-key-20260811"
+}
+
 uv sync
 make test
 make -n dev
 docker compose config --quiet
 
 try {
-    docker compose -p $ProjectName up --build -d
+    docker compose -p $ProjectName up --build -d --wait --wait-timeout 300
     docker compose -p $ProjectName ps
     docker compose -p $ProjectName exec -T app python -m alembic upgrade head
     docker compose -p $ProjectName exec -T app python scripts/check_schema_drift.py

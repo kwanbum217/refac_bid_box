@@ -97,7 +97,7 @@ def audit(df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
             missing = float(numeric.isna().mean())
             counts = numeric.value_counts(dropna=False)
 
-        unique = int(len(counts))
+        unique = len(counts)
         top_value = counts.index[0] if unique else ""
         top_share = float(counts.iloc[0] / len(frame)) if unique else np.nan
 

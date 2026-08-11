@@ -1,15 +1,16 @@
-import os
 from pathlib import Path
+from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
 class Settings(BaseSettings):
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: Literal["development", "staging", "production"] = "development"
     DEBUG: bool = False
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "default-insecure-secret-key-change-me")
+    SECRET_KEY: str
     # 고비용 자동화는 최근 성공 이력이 있으면 재실행하지 않습니다 (원본 동일 기본값 on).
     AUTOMATION_REUSE_RECENT: bool = True
     # 워커가 앱과 같은 DB 를 보는지 여부. 기본 docker-compose 구성은 공유합니다.
@@ -84,6 +85,30 @@ class Settings(BaseSettings):
     FEATURE_STORE_DIR: str = "data/feature_store"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @model_validator(mode="after")
+    def validate_security_settings(self):
+        secret_key = self.SECRET_KEY.strip()
+        if len(secret_key) < 32:
+            raise ValueError("SECRET_KEY는 32자 이상의 무작위 값이어야 합니다.")
+
+        if self.ENVIRONMENT != "production":
+            return self
+
+        if self.DEBUG:
+            raise ValueError("운영 환경에서는 DEBUG를 활성화할 수 없습니다.")
+
+        insecure_secret_keys = {
+            "change-this-in-production-to-a-secure-random-key",
+            "default-insecure-secret-key-change-me",
+        }
+        if secret_key in insecure_secret_keys:
+            raise ValueError("운영 환경에서는 예제 SECRET_KEY를 사용할 수 없습니다.")
+
+        if self.DB_PASSWORD == "rootpassword" or "rootpassword" in self.DATABASE_URL:
+            raise ValueError("운영 환경에서는 기본 데이터베이스 비밀번호를 사용할 수 없습니다.")
+
+        return self
 
 
 settings = Settings()

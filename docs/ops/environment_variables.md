@@ -1,7 +1,8 @@
 # 환경변수 명세
 
 > **작성일**: 2026-07-31
-> **상태**: 설계
+> **갱신일**: 2026-08-11
+> **상태**: 운영 계약
 > **관련**: [`.env.example`](../../.env.example)
 
 ---
@@ -18,23 +19,41 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `APP_ENV` | 아니오 | `development` | 실행 환경 (`development` / `staging` / `production`) |
-| `APP_SECRET_KEY` | **예** | - | 애플리케이션 시크릿 키 (랜덤값) |
-| `APP_DEBUG` | 아니오 | `true` | 디버그 모드 (운영은 `false` 강제) |
-| `APP_ALLOWED_HOSTS` | 아니오 | `localhost,127.0.0.1` | 허용 호스트 |
+| `ENVIRONMENT` | 아니오 | `development` | 실행 환경 (`development` / `staging` / `production`) |
+| `SECRET_KEY` | **예** | - | 32자 이상의 애플리케이션 시크릿 키 (랜덤값) |
+| `DEBUG` | 아니오 | `false` | 디버그 모드 (운영은 `false` 강제) |
+
+현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 세 가지입니다. `APP_ENV`,
+`APP_SECRET_KEY`, `APP_DEBUG`, `APP_ALLOWED_HOSTS`는 이전 Django 설계의 명칭이므로
+이 프로젝트의 `.env`에 사용하지 않습니다. 허용 호스트 목록은 현재 설정 모델에
+구현되어 있지 않아 별도 환경변수로 추가하지 않습니다.
+
+`ENVIRONMENT`는 표의 세 값만 허용합니다. 오타나 임의 값은 개발 환경으로 강등하지
+않고 시동을 거부합니다. `SECRET_KEY`가 없거나 32자보다 짧아도 애플리케이션은
+시작하지 않습니다. 또한 `ENVIRONMENT=production`에서는 예제 시크릿,
+`DEBUG=true`, 기본 DB 비밀번호를 거부합니다. Docker Compose도 `.env`에
+`SECRET_KEY`가 없으면 구성 단계에서 실패하도록 동일한 계약을 사용합니다.
 
 ### 2.2 Database
 
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `DB_ENGINE` | **예** | `mysql` | DB 엔진 (`mysql`) |
-| `DB_HOST` | **예** | `127.0.0.1` | DB 호스트 |
-| `DB_PORT` | **예** | `3306` | DB 포트 (기존 3307에서 표준 3306으로 표준화) |
-| `DB_NAME` | **예** | `procurement` | DB 이름 (기존 유지) |
-| `DB_USER` | **예** | - | DB 사용자 |
-| `DB_PASSWORD` | **예** | - | DB 비밀번호 |
+| `DATABASE_URL` | 아니오 | `mysql+pymysql://root:rootpassword@localhost:3306/procurement` | 애플리케이션이 실제 연결에 사용하는 SQLAlchemy URL |
+| `DB_HOST` | 아니오 | `localhost` | DB 호스트 보조 설정 |
+| `DB_PORT` | 아니오 | `3306` | DB 포트 (기존 3307에서 표준 3306으로 표준화) |
+| `DB_NAME` | 아니오 | `procurement` | DB 이름 (기존 유지) |
+| `DB_USER` | 아니오 | `root` | DB 사용자 보조 설정 |
+| `DB_PASSWORD` | 아니오 | `rootpassword` | DB 비밀번호 보조 설정과 운영 보안 검증 입력 |
+| `MYSQL_ROOT_PASSWORD` | 아니오 | `rootpassword` | Docker Compose 개발용 MySQL root 비밀번호 (운영에서는 교체 필수) |
 
 > 이중화 제거: 기존 `BIDBOX_DB_BACKEND=sqlite` fallback을 폐지하고 모든 환경에서 MySQL 통일.
+
+현재 애플리케이션 연결의 정본은 `DATABASE_URL`입니다. Docker Compose는
+`MYSQL_ROOT_PASSWORD`로 `DATABASE_URL`을 구성하고 같은 값을 `DB_PASSWORD`에도
+전달하므로 Compose에서는 `MYSQL_ROOT_PASSWORD`만 실제 운영값으로 교체하면 두
+설정이 함께 바뀝니다. Compose 밖에서 직접 배포할 때는 `DATABASE_URL`과
+`DB_PASSWORD`를 일치시켜야 하며, 둘 중 하나라도 기본 비밀번호가 남으면
+애플리케이션이 시동을 거부합니다.
 
 ### 2.3 LLM (로컬 Ollama / Google Gemini)
 
@@ -153,7 +172,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 ## 3. 로드 패턴
 
 - `.env` 파일은 `.gitignore`로 제외됩니다.
-- 개발 환경: `.env` 파일에서 로드 (`python-dotenv` 또는 `django-environ`).
+- 개발 환경: Pydantic Settings가 `.env` 파일을 UTF-8로 로드합니다.
 - 운영 환경: 환경변수 주입 (Docker Compose `environment` 또는 오케스트레이터 시크릿).
 - 누락된 필수 변수는 애플리케이션 시작 시 검증하고 명확한 에러를 발생시킵니다.
 

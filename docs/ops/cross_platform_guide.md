@@ -1,7 +1,7 @@
 # 크로스 플랫폼 호환 가이드 (macOS / Windows)
 
 > **작성일**: 2026-07-31
-> **갱신일**: 2026-08-09
+> **갱신일**: 2026-08-11
 > **상태**: macOS 검증 완료 / Windows CI 통과 / Windows 호스트 전체 스택 검증 대기
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
@@ -33,9 +33,15 @@ macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위�
 ### 3.1 전체 스택 (docker-compose)
 
 정본은 루트의 `docker-compose.yml`입니다. 기본 서비스는 FastAPI `app`, Arq
-`worker`, MySQL 8 `db`, Redis 7 `redis`입니다. React 스캐폴드는 `legacy`
-프로필에서만 기동합니다. 개발용 worker는 수동 요청을 소비하지만, 의도하지 않은
-야간 수집과 주간 재학습을 막기 위해 두 예약 실행을 기본 비활성화합니다.
+`worker`, MySQL 8 `db`, Redis 7 `redis`, Meilisearch `meilisearch`입니다. React
+스캐폴드는 `legacy` 프로필에서만 기동합니다. 개발용 worker는 매일 02:00 KST에
+수집·KB·집계 최신화만 수행하며, 전체 야간 검증과 주간 재학습은 기본
+비활성화합니다.
+
+`app`과 `worker`는 MySQL·Redis·Meilisearch가 모두 `healthy`가 된 뒤 시작합니다.
+`legacy` 프로필의 `frontend`도 `app`의 `/api/v1/health` 응답이
+`{"status":"healthy"}` 계약을 만족한 뒤 시작합니다. 단순 프로세스 시작 상태를
+준비 완료로 간주하지 않습니다.
 
 ### 3.2 실행 명령
 
@@ -49,6 +55,11 @@ macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위�
 | 신규 빈 DB 스키마 생성 | `make migrate-up` |
 | 테스트 | `make test` |
 | 중지 | `make down` |
+
+`make up` 전 `.env.example`을 `.env`로 복사하고 `SECRET_KEY`와
+`MEILI_MASTER_KEY`를 실제 개발용 무작위 값으로 교체하십시오. `SECRET_KEY`는 32자
+미만이거나 누락되면 애플리케이션이 시동하지 않고, 두 값이 비어 있으면 Compose
+구성 단계에서도 실패합니다. 예제 값은 운영 환경에서 사용할 수 없습니다.
 
 ---
 
@@ -138,9 +149,11 @@ powershell -ExecutionPolicy Bypass -File scripts/validate_windows.ps1
 ```
 
 스크립트는 `uv sync`, `make test`, `make dev` 진입점 확인, Docker Compose
-빌드·기동, 신규 격리 DB의 Alembic 적용, 스키마 드리프트 검사, FastAPI
-헬스체크를 수행합니다. 검증용 Compose 프로젝트만 중지하고 볼륨은 삭제하지
-않습니다.
+빌드·기동을 수행하고 서비스가 `healthy`가 될 때까지 최대 300초 기다립니다. 이어서
+신규 격리 DB의 Alembic 적용, 스키마 드리프트 검사, FastAPI 헬스 응답의
+`status=healthy` 계약을 검증합니다. 시크릿이 없는 새 체크아웃에서는 스크립트
+프로세스에만 검증 전용 값을 주입합니다. 검증용 Compose 프로젝트만 중지하고
+볼륨은 삭제하지 않습니다.
 
 ---
 
@@ -167,7 +180,7 @@ steps:
 ## 8. 체크리스트
 
 - [x] Dockerfile 작성 (파이썬 슬림 이미지)
-- [x] docker-compose.yml 작성 (`app`, `worker`, `db`, `redis`)
+- [x] docker-compose.yml 작성 (`app`, `worker`, `db`, `redis`, `meilisearch`)
 - [x] Makefile 작성
 - [x] macOS에서 `make up` 실행 검증
 - [x] Windows에서 `uv run pytest -q` 실행 검증 (GitHub Actions windows-latest)
@@ -195,3 +208,12 @@ CI 의 windows-latest 작업은 이 결함으로 실패하고 있었으며, 수�
 남은 미검증 영역은 **Windows 호스트의 Docker Compose 전체 스택**입니다. GitHub
 호스팅 Windows 러너는 Linux 컨테이너 스택을 대신하지 못하므로 실제 장비가
 필요합니다.
+
+### 2026-08-11 계약 보강 결과
+
+`SECRET_KEY` 필수화와 운영 보안 검증, Redis·Meilisearch·FastAPI 헬스체크,
+`service_healthy` 의존성, Windows 헬스 응답 계약을 코드와 회귀 테스트에
+반영했습니다. macOS에서는 Docker Desktop 번들 CLI로 `docker compose config
+--quiet` 정적 검증을 통과했습니다. PowerShell과 Windows 호스트가 없어 변경된
+`scripts/validate_windows.ps1`과 전체 스택은 실기 실행하지 못했으므로, 위
+체크리스트의 Windows Docker Desktop 항목은 계속 미완료입니다.
