@@ -176,3 +176,75 @@ Orca 좌측 목록에서 활성 섹션과 끝난 섹션이 구분되지 않고, 
 정리한 사실은 `worker_done` 또는 종료 인수인계에 남깁니다. **"정리했다" 와
 "정리하지 않았다" 를 구분해 적으십시오.** 적지 않으면 다음 사람이 남은
 트리를 활성으로 오해합니다.
+
+### 7.4 `worker-release` 로 닫히지 않는 터미널
+
+`worker-release` 는 **재사용된 터미널을 닫지 않습니다.** 워커가
+`reused_agent_terminal` 로 떴으면 호출이 `retained` 로 돌아오고 창은 남습니다.
+`worker-show` 의 `effects` 에서 `action` 을 보면 구분됩니다.
+
+이때는 실물을 직접 확인하고 창 단위로 닫습니다.
+
+```bash
+orca terminal list                      # 실제로 살아 있는 창만 나옵니다
+orca terminal show --terminal <handle>  # preview 로 종결 여부와 tabId 확인
+orca terminal close --terminal <handle> # --tab 없이 창 단위로만
+```
+
+**`--tab` 을 쓰지 마십시오.** 워커 창이 코디네이터와 같은 탭의 분할 창인
+경우가 있고, 그때 `--tab` 은 코디네이터까지 닫아 조율이 끊깁니다. 닫기 전에
+`tabId` 가 자기 것과 같은지 반드시 확인하십시오.
+
+닫기 전에 `preview` 로 그 섹션이 실제로 끝났는지 봅니다. 병합 완료 SHA 나
+`worker_done` 흔적이 없으면 닫지 마십시오. `worker-list` 의 기록은 이미 사라진
+터미널도 `retained` 로 남아 있어 실물 판단 근거가 되지 않습니다.
+
+---
+
+## 8. `worker_done` 이후 워커는 지시를 받지 못합니다
+
+`orca orchestration send` 는 **워커가 `check` 를 실행해야 도착합니다.** 워커가
+`worker_done` 을 보내고 턴을 끝내면 그 뒤에 보낸 메시지는 아무도 읽지 않습니다.
+
+겉으로는 정상입니다. Task 는 `completed` 로 보이고 heartbeat 만 없을 뿐이라,
+코디네이터가 지시를 보내 놓고 반영되기를 기다리는 동안 그 섹션은 유휴로
+남습니다.
+
+**커밋 수로 확인하십시오.** 보고와 실제 상태가 어긋나는 지점입니다.
+
+```bash
+git -C <worktree> log --oneline main..HEAD | wc -l
+git -C <worktree> status --short
+```
+
+`worker_done` 이 왔는데 커밋이 0 이면 병합할 대상이 없다는 뜻입니다. 보고
+내용과 무관하게 완료로 처리하지 마십시오.
+
+유휴 워커에 지시를 전달하려면 터미널에 직접 입력합니다.
+
+```bash
+orca terminal send --terminal <handle> --text "<지시>" --enter
+```
+
+`--enter` 를 빠뜨리면 텍스트가 입력창에 남기만 하고 전달되지 않습니다. 화면에는
+보이므로 보낸 것으로 착각하기 쉽습니다. 사람이 하위 창에 직접 입력한 미전송
+텍스트도 같은 상태로 남아 있을 수 있으니, 유휴로 보이면 `terminal show` 의
+`preview` 를 먼저 확인하십시오.
+
+---
+
+## 9. 격리 트리에는 `.env` 가 없습니다
+
+`.env` 는 Git 미추적이라 새 워크트리에 따라가지 않습니다. 이 저장소는
+`Settings()` 가 `SECRET_KEY` 를 필수로 검증하므로, `.env` 가 없으면 애플리케이션
+설정을 읽는 코드가 전부 실패합니다. DB 접속도 마찬가지입니다.
+
+워커를 띄운 직후 코디네이터가 배치하십시오. 워커가 스스로 진단하기 어려운
+실패입니다.
+
+```bash
+cp <주 저장소>/.env <워크트리>/.env
+```
+
+값을 문서나 커밋에 남기지 마십시오. `.env` 는 `.gitignore` 대상이라 커밋되지
+않지만, 워커에게 커밋 금지를 함께 지시하십시오.
