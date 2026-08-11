@@ -45,8 +45,11 @@ def test_unknown_environment_cannot_bypass_production_guards():
     ],
 )
 def test_production_rejects_insecure_defaults(overrides, message):
+    # 기준값은 전부 명시합니다. DEBUG 를 비워 두면 .env 가 os.environ 에 실린
+    # 실행에서 DEBUG 가드가 먼저 걸려 검증하려던 메시지를 가립니다.
     values = {
         "ENVIRONMENT": "production",
+        "DEBUG": False,
         "SECRET_KEY": "production-test-secret-key-that-is-long-enough",
         "DATABASE_URL": "mysql+pymysql://app:strong-password@db:3306/procurement",
         "DB_PASSWORD": "strong-password",
