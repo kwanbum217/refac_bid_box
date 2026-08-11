@@ -80,7 +80,8 @@
 | 사실 | 값 |
 | --- | --- |
 | 하한율 값 존재율 추이 | 2024-06 100% -> 2025-01 56.8% -> 2026-08 38.3% |
-| 2025-01 전환 필드 | `prdctClsfcLmtYn`, `rbidPermsnYn`, `sucsfbidLwltRate` |
+| 2025-01 전환 필드 | `prdctClsfcLmtYn`, `rbidPermsnYn`, `sucsfbidLwltRate` (미사용 raw_data 6개 추가 확인, [`servc_rawdata_regime_scan_20260811.md`](design/servc_rawdata_regime_scan_20260811.md)) |
+| 학습 사용 필드(`IN_USE` 13개) 중 전환 | `sucsfbidLwltRate` 뿐. 나머지 12개는 92개 확대 조사에서도 전환 없음 |
 | 결측 집단 구간 폭 | 8.1197%p (보유 집단 1.1700%p 의 약 7배) |
 | 결측 집단 피복률 | 90.02% (명목 90% 와 일치) |
 | 홀드아웃 분할 산포 | 0.0074. 시드 산포 0.0010 의 7.4배 |
