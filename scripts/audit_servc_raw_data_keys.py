@@ -162,9 +162,9 @@ def main() -> int:
     print("=" * 76)
     rates = fill_rate(engine)
     print(
-        rates[
-            ["year", "rows_total", "result_rate", "ann_rate", "ann_missing_rate"]
-        ].to_string(index=False)
+        rates[["year", "rows_total", "result_rate", "ann_rate", "ann_missing_rate"]].to_string(
+            index=False
+        )
     )
     total = int(rates["rows_total"].sum())
     print(
