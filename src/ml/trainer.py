@@ -96,6 +96,14 @@ LGB_BASE_PARAMS = {
 # 근거는 docs/design/servc_hyperparam_search_20260804.md 7장과 9장입니다.
 QUANTILE_PARAM_OVERRIDES = {"num_leaves": 63}
 
+# 분위 모델 설정을 카테고리별로 잡을 때 쓰는 하이퍼파라미터 키입니다. 점 추정
+# 키("lightgbm")와 반드시 갈라야 합니다. 용역 점 추정은 objective quantile
+# alpha 0.5 / 리프 255 인데, 그 값이 분위 모델로 흘러들면 10·90분위가 전부
+# 중앙값으로 바뀌어 구간이 붕괴합니다.
+#
+# objective 와 alpha 는 분위별로 정해지므로 이 통로로 받아도 무시합니다.
+QUANTILE_HYPERPARAM_KEY = "lightgbm_quantile"
+
 # 폴드 하나가 가져야 하는 최소 행 수. 트리 모델이 1행 입력에서 예외를 던집니다.
 MIN_FOLD_SAMPLES = 2
 
@@ -130,8 +138,9 @@ CATEGORY_MODEL_NAMES = {
 # 가 +-alpha 로 고정돼 학습 신호가 평평해지고 MAE 1.7971 로 32% 나빴습니다. 두
 # 목적함수는 연속적으로 이어지지 않습니다.
 #
-# 분위 모델(_train_quantile_models)은 hyperparams 를 받지 않으므로 이 재정의의
-# 영향을 받지 않습니다. 점 추정만 바뀝니다.
+# 이 "lightgbm" 키는 점 추정 전용입니다. 분위 모델은 QUANTILE_HYPERPARAM_KEY
+# 로 따로 받으므로 여기 objective quantile alpha 0.5 와 리프 255 는 구간에
+# 닿지 않습니다. 두 키를 합치면 10·90분위가 중앙값으로 무너집니다.
 # 근거: docs/design/servc_loss_function_20260807.md
 #
 # num_leaves 는 huber 아래에서 고른 255 가 quantile 에서도 최적이었습니다.
@@ -570,16 +579,24 @@ def _conformal_scale(
 def _train_quantile_models(
     X_train: pd.DataFrame,
     y_train: np.ndarray,
+    hyperparams: dict[str, Any] | None = None,
 ) -> tuple[dict[float, Any], float, dict[str, Any]]:
     """분위 모델 2종과 등각예측 배율을 만듭니다.
 
     학습 구간 뒷부분을 보정용으로 떼어 배율을 산정한 뒤, 분위 모델 자체는
     전체 학습 구간으로 다시 적합합니다. 보정 표본까지 써야 분위 추정이
     가장 좋아지고, 배율은 이미 확보했으므로 누수가 아닙니다.
+
+    hyperparams 는 QUANTILE_HYPERPARAM_KEY 로 전달된 카테고리별 재정의입니다.
+    이 인자가 없던 동안 분위 모델은 카테고리와 무관하게 리프 63 에 고정돼
+    있었고, 점 추정만 카테고리별 설정을 받았습니다.
     """
     import lightgbm as lgb
 
-    params = {**LGB_BASE_PARAMS, **QUANTILE_PARAM_OVERRIDES}
+    params = {**LGB_BASE_PARAMS, **QUANTILE_PARAM_OVERRIDES, **(hyperparams or {})}
+    # 분위별로 정해지는 축이라 외부 재정의를 받지 않습니다.
+    params.pop("objective", None)
+    params.pop("alpha", None)
     categorical = _present_categoricals(X_train)
 
     split_at = int(len(X_train) * (1.0 - CALIBRATION_SPLIT))
@@ -610,6 +627,11 @@ def _train_quantile_models(
             "quantiles": list(INTERVAL_QUANTILES),
             "target_coverage": INTERVAL_TARGET_COVERAGE,
             "conformal_scale": round(scale, 6),
+            # 어떤 용량으로 적합했는지 아티팩트에 남깁니다. 이 값이 없던 동안
+            # 세 버전의 metadata.json 이 서로 다른 hyperparams 를 기록하면서도
+            # conformal_scale 이 1.151263 으로 같았고, 그 이유가 분위 모델이
+            # 통로 없이 고정돼 있어서였다는 사실이 드러나지 않았습니다.
+            "num_leaves": params.get("num_leaves"),
         }
     )
     return models, scale, calibration
@@ -774,7 +796,9 @@ class ModelTrainer:
         if use_tree_models:
             # 분위 모델도 같은 이유로 전량을 씁니다. 등각 보정 배율은 이 함수가
             # 내부에서 뒷부분을 떼어 산정하므로 누수가 아닙니다.
-            quantile_models, _, interval_meta = _train_quantile_models(X, y)
+            quantile_models, _, interval_meta = _train_quantile_models(
+                X, y, effective_hyperparams.get(QUANTILE_HYPERPARAM_KEY)
+            )
             for q, model in quantile_models.items():
                 joblib.dump(model, target_dir / f"model_q{int(q * 100):02d}.bin")
             interval_meta["available"] = True
