@@ -10,7 +10,10 @@ Django 템플릿 렌더링, 챗봇 API 통합 테스트는 React 프론트엔드
 import pytest
 
 from src.app.services.capability_registry import CAPABILITY_REGISTRY
+from src.app.services.tools import semantic_search_tool
+from src.rag import engine as rag_engine
 from src.rag.engine import build_retrieval_plan
+from src.rag.schemas import DEFAULT_VECTOR_TOP_K, RetrievalPlan
 
 EXPECTED_CAPABILITIES = {
     "preflight_check",
@@ -138,3 +141,29 @@ def test_build_retrieval_plan_ignores_four_digit_numbers_without_year_marker():
 def test_build_retrieval_plan_defaults_to_vector_when_no_keyword_matches():
     plan = build_retrieval_plan("안녕하세요")
     assert plan.use_vector is True
+    assert plan.top_k == DEFAULT_VECTOR_TOP_K
+
+
+def test_retrieval_plan_uses_the_shared_vector_top_k_default():
+    assert RetrievalPlan().top_k == DEFAULT_VECTOR_TOP_K == 5
+
+
+def test_semantic_search_tool_uses_the_shared_vector_top_k_default(monkeypatch):
+    monkeypatch.setattr(semantic_search_tool, "retrieve_semantic_context", lambda plan: [])
+
+    result = semantic_search_tool.execute(query="적격심사 사례")
+
+    assert result["retrieval_plan"]["top_k"] == DEFAULT_VECTOR_TOP_K
+
+
+def test_recent_detail_search_uses_the_shared_vector_top_k_default(monkeypatch):
+    captured: list[RetrievalPlan] = []
+
+    def retrieve(plan: RetrievalPlan):
+        captured.append(plan)
+        return []
+
+    monkeypatch.setattr(rag_engine, "retrieve_semantic_context", retrieve)
+
+    assert "찾지 못했습니다" in rag_engine.search_recent_details("적격심사 사례")
+    assert captured[0].top_k == DEFAULT_VECTOR_TOP_K

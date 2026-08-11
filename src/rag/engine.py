@@ -23,7 +23,13 @@ from sqlalchemy.orm import Session
 
 from src.app.models.bids import CATEGORY_LABELS
 from src.rag.llm import build_backend
-from src.rag.schemas import AnswerBundle, EvidenceItem, Provenance, RetrievalPlan
+from src.rag.schemas import (
+    DEFAULT_VECTOR_TOP_K,
+    AnswerBundle,
+    EvidenceItem,
+    Provenance,
+    RetrievalPlan,
+)
 from src.rag.structured_data import retrieve_structured_data
 from src.rag.vector_store import retrieve_semantic_context
 
@@ -360,7 +366,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_kb_status=use_kb_status,
         filters=filters,
         semantic_query=normalized_query,
-        top_k=5 if use_vector else 3,
+        top_k=DEFAULT_VECTOR_TOP_K,
         time_bias=time_bias,
         route_reason=", ".join(route_reason_parts) or "기본 벡터 질의",
     )
@@ -688,11 +694,11 @@ def get_bidding_statistics(
     return json.dumps(retrieve_structured_data(db, plan), ensure_ascii=False, default=str)
 
 
-def search_recent_details(query: str, top_k: int = 3) -> str:
+def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
     plan = RetrievalPlan(
         use_vector=True,
         semantic_query=_normalize_text(query),
-        top_k=max(int(top_k or 3), 1),
+        top_k=max(int(top_k or DEFAULT_VECTOR_TOP_K), 1),
         route_reason="문맥 검색 함수 호출",
     )
     documents = retrieve_semantic_context(plan)
