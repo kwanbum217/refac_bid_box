@@ -21,6 +21,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -46,6 +48,8 @@ INDEX_BATCH_SIZE = 100
 # 50만 건 메타데이터를 한 응답으로 읽으면 Chroma 응답 객체가 워커 메모리를
 # 소진할 수 있습니다. 해시 비교용 조회도 페이지 단위로 제한합니다.
 INDEX_LOOKUP_BATCH_SIZE = 10_000
+INDEX_LOOKUP_MAX_ATTEMPTS = 2
+INDEX_LOOKUP_RETRY_DELAY_SECONDS = 0.25
 
 # 원본은 10 이었습니다. 그 값이 야간 재색인에 그대로 적용되면 목표 문서가 10건이
 # 되고, 기존 색인 전부가 삭제 대상으로 계산됩니다. 2026-08-07 에 KB 를 50만 건으로
@@ -86,6 +90,30 @@ def _document_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def _read_existing_index_value(operation: Callable[[], Any], operation_name: str) -> Any:
+    """기존 색인 조회를 재시도하고, 계속 실패하면 변경 전에 중단합니다."""
+    last_error: Exception | None = None
+    for attempt in range(1, INDEX_LOOKUP_MAX_ATTEMPTS + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            last_error = exc
+            if attempt < INDEX_LOOKUP_MAX_ATTEMPTS:
+                logger.warning(
+                    "%s 실패 (%d/%d), 재시도합니다: %s",
+                    operation_name,
+                    attempt,
+                    INDEX_LOOKUP_MAX_ATTEMPTS,
+                    exc,
+                )
+                time.sleep(INDEX_LOOKUP_RETRY_DELAY_SECONDS)
+
+    raise RuntimeError(
+        f"{operation_name}에 {INDEX_LOOKUP_MAX_ATTEMPTS}회 실패했습니다. "
+        "기존 색인을 보존한 채 중단합니다. 명시적 full 실행 전에 원인을 확인하십시오."
+    ) from last_error
+
+
 def _load_existing_index(collection) -> tuple[dict[str, str], bool]:
     """컬렉션에 이미 있는 id -> 본문 해시 맵을 읽습니다.
 
@@ -93,36 +121,47 @@ def _load_existing_index(collection) -> tuple[dict[str, str], bool]:
     버전이 다른 문서가 하나라도 있으면 비교 기준이 서지 않으므로 전량
     재구축으로 떨어집니다.
     """
-    try:
-        stored_count = collection.count()
-    # 컬렉션이 비었거나 읽을 수 없으면 증분을 포기하고 전량으로 갑니다.
-    except Exception as exc:  # nosec B110
-        logger.warning("기존 색인 조회 실패, 전량 재구축으로 전환합니다: %s", exc)
-        return {}, False
+    stored_count = _read_existing_index_value(
+        lambda: int(collection.count()), "기존 색인 문서 수 조회"
+    )
 
     if not stored_count:
         return {}, False
 
     hashes: dict[str, str] = {}
-    try:
-        for offset in range(0, stored_count, INDEX_LOOKUP_BATCH_SIZE):
+    for offset in range(0, stored_count, INDEX_LOOKUP_BATCH_SIZE):
+
+        def read_page(page_offset: int = offset) -> tuple[list[str], list[dict[str, Any] | None]]:
             stored = collection.get(
-                include=["metadatas"], limit=INDEX_LOOKUP_BATCH_SIZE, offset=offset
+                include=["metadatas"], limit=INDEX_LOOKUP_BATCH_SIZE, offset=page_offset
             )
             ids = stored.get("ids") or []
             metadatas = stored.get("metadatas") or []
             if not ids:
-                logger.warning("기존 색인 페이지가 비어 있어 전량 재구축으로 전환합니다.")
+                raise RuntimeError(f"offset {page_offset} 페이지가 비어 있습니다.")
+            if len(ids) != len(metadatas):
+                raise RuntimeError(
+                    f"offset {page_offset} 페이지의 ID {len(ids)}건과 "
+                    f"메타데이터 {len(metadatas)}건이 일치하지 않습니다."
+                )
+            return ids, metadatas
+
+        ids, metadatas = _read_existing_index_value(
+            read_page, f"기존 색인 메타데이터 조회(offset={offset})"
+        )
+        for doc_id, meta in zip(ids, metadatas, strict=True):
+            meta = meta or {}
+            doc_hash = meta.get("doc_hash")
+            if not doc_hash or int(meta.get("fmt", 0)) != DOC_FORMAT_VERSION:
                 return {}, False
-            for doc_id, meta in zip(ids, metadatas, strict=False):
-                meta = meta or {}
-                doc_hash = meta.get("doc_hash")
-                if not doc_hash or int(meta.get("fmt", 0)) != DOC_FORMAT_VERSION:
-                    return {}, False
-                hashes[doc_id] = str(doc_hash)
-    except Exception as exc:  # nosec B110
-        logger.warning("기존 색인 조회 실패, 전량 재구축으로 전환합니다: %s", exc)
-        return {}, False
+            hashes[doc_id] = str(doc_hash)
+
+    if len(hashes) != stored_count:
+        raise RuntimeError(
+            "기존 색인 조회 중 문서 수가 달라졌습니다. "
+            f"count={stored_count}, loaded={len(hashes)}. 기존 색인을 보존한 채 중단합니다."
+        )
+
     return hashes, True
 
 

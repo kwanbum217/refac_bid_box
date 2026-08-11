@@ -249,6 +249,106 @@ def test_existing_index_metadata_is_loaded_in_pages(monkeypatch):
     assert collection.calls == [(2, 0), (2, 2), (2, 4)]
 
 
+def test_existing_index_count_failure_retries_without_falling_back(monkeypatch):
+    """일시적 count 실패는 전량 재구축이 아니라 같은 조회를 재시도합니다."""
+
+    class _Collection:
+        def __init__(self):
+            self.count_calls = 0
+
+        def count(self):
+            self.count_calls += 1
+            if self.count_calls == 1:
+                raise RuntimeError("일시적 count 실패")
+            return 1
+
+        def get(self, *, include, limit, offset):
+            return {
+                "ids": ["bid_1"],
+                "metadatas": [{"doc_hash": "hash_1", "fmt": 1}],
+            }
+
+    collection = _Collection()
+    monkeypatch.setattr(kb_builder, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
+
+    hashes, incremental = kb_builder._load_existing_index(collection)
+
+    assert incremental is True
+    assert hashes == {"bid_1": "hash_1"}
+    assert collection.count_calls == 2
+
+
+def test_existing_index_page_failure_retries_without_falling_back(monkeypatch):
+    """일시적 페이지 실패도 비교 기준을 버리지 않고 재시도합니다."""
+
+    class _Collection:
+        def __init__(self):
+            self.get_calls = 0
+
+        def count(self):
+            return 1
+
+        def get(self, *, include, limit, offset):
+            self.get_calls += 1
+            if self.get_calls == 1:
+                raise RuntimeError("일시적 get 실패")
+            return {
+                "ids": ["bid_1"],
+                "metadatas": [{"doc_hash": "hash_1", "fmt": 1}],
+            }
+
+    collection = _Collection()
+    monkeypatch.setattr(kb_builder, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
+
+    hashes, incremental = kb_builder._load_existing_index(collection)
+
+    assert incremental is True
+    assert hashes == {"bid_1": "hash_1"}
+    assert collection.get_calls == 2
+
+
+def test_repeated_existing_index_count_failure_stops_after_retry(monkeypatch):
+    """계속되는 운영 오류는 전량 모드가 아니라 명시적 실패가 됩니다."""
+
+    class _Collection:
+        def __init__(self):
+            self.count_calls = 0
+
+        def count(self):
+            self.count_calls += 1
+            raise RuntimeError("지속적인 count 실패")
+
+    collection = _Collection()
+    monkeypatch.setattr(kb_builder, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
+
+    with pytest.raises(RuntimeError, match="기존 색인을 보존한 채 중단"):
+        kb_builder._load_existing_index(collection)
+
+    assert collection.count_calls == 2
+
+
+def test_repeated_existing_index_failure_preserves_collection(
+    isolated_db, chroma_path, monkeypatch
+):
+    """조회가 계속 실패하면 전량 임베딩하지 않고 기존 KB를 그대로 둡니다."""
+    _add_announcement(isolated_db, notice_no="20260000", name="기존 공고")
+    kb_builder.rebuild_knowledge_base(isolated_db)
+    collection = _collection(chroma_path)
+    original_ids = set(collection.get()["ids"])
+
+    _add_announcement(isolated_db, notice_no="20260001", name="새 공고")
+
+    def fail_existing_index(_collection):
+        raise RuntimeError("기존 색인 문서 수 조회에 2회 실패했습니다.")
+
+    monkeypatch.setattr(kb_builder, "_load_existing_index", fail_existing_index)
+    outcome = kb_builder.rebuild_knowledge_base(isolated_db)
+
+    assert outcome["status"] == "failed"
+    assert "2회 실패" in outcome["summary"]
+    assert set(collection.get()["ids"]) == original_ids
+
+
 def test_sync_rejects_mass_removal(monkeypatch):
     existing = {f"bid_{index}": f"h{index}" for index in range(100)}
     ids = ["bid_0", "bid_1"]
