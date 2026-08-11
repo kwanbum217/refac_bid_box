@@ -101,8 +101,7 @@ def report_prearng(frame: pd.DataFrame) -> pd.DataFrame:
     )
     print(pivot.round(1).to_string())
     print(
-        "\n비예가는 10년 내내 100%, 단일예가는 84~99% 입니다. 제도 구조이지 "
-        "수집 누락이 아닙니다."
+        "\n비예가는 10년 내내 100%, 단일예가는 84~99% 입니다. 제도 구조이지 수집 누락이 아닙니다."
     )
     return grouped
 
@@ -138,9 +137,7 @@ def report_multi_prearng(frame: pd.DataFrame) -> None:
 
     share = len(unexplained) / len(recent) * multi["miss"].sum() / total_missing
     print(f"\n전체 결측 {total_missing:,}건 중 미분류 추정 비중: {share * 100:.2f}%")
-    print(
-        "이 비중이 수집 경로 개선(첨부문서 파싱 포함)으로 얻을 수 있는 상한입니다."
-    )
+    print("이 비중이 수집 경로 개선(첨부문서 파싱 포함)으로 얻을 수 있는 상한입니다.")
 
 
 def main() -> int:
