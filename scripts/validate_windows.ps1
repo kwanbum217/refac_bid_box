@@ -28,7 +28,7 @@ try {
     docker compose -p $ProjectName exec -T app python scripts/check_schema_drift.py
 
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/health" -TimeoutSec 30
-    if ($health.status -ne "ok") {
+    if ($health.status -ne "healthy") {
         throw "FastAPI 헬스체크가 정상 상태를 반환하지 않았습니다."
     }
 }
