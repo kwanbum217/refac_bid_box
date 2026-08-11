@@ -16,6 +16,7 @@ import os
 
 os.environ.setdefault("SKIP_MODEL_LOAD", "true")
 os.environ.setdefault("EMBEDDING_PROVIDER", "default")
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-at-least-32-characters")
 # setdefault 가 아니라 대입입니다. 셸에 export 된 값이 있어도 막아야 합니다.
 os.environ["MLOPS_WEBHOOK_URL"] = ""
 
