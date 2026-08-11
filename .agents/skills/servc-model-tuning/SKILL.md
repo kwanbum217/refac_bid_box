@@ -110,6 +110,8 @@ flowchart TD
 | `quantile` alpha 조정 (0.35~0.58) | 0.45 가 꼭짓점인 U 자형으로 2025년 홀드아웃에서 여섯 지표가 모두 개선(MAE 1.2407 -> 1.2323)됐으나 운영 9,997건 쌍대에서 MAE t=-0.44 판별 불가. **검증 연도를 바꾸면 2024년에서 +0.0036 으로 부호가 뒤집혀 홀드아웃 이득 자체가 분할 변동(산포 0.0074) 안이었음.** alpha 를 올리는 방향(0.52~0.58)은 단조 악화 | `servc_quantile_alpha_20260810.md`, `servc_split_variance_20260810.md` |
 | 분포 예측 계열 도입 (LightGBMLSS, NGBoost) | 도입 논거였던 "하한율 결측 집단 피복률 80.32%" 는 저장소 어디에도 출처가 없고, 운영 경로 재측정은 90.02%(1,202건, 명목 대비 +0.02%p) 로 명목과 일치. 조건부 분산으로 새로 얻으려던 성질도 이미 보유하여 구간 폭이 집단 간 7배(1.1700 대 8.1197), 결측 집단 내부 낙찰방법별 22배(0.7277~16.0208) 로 적응함. 명목에서 벗어난 쪽은 결측이 아니라 보유 집단(89.23%) 이며 그마저 t 가 -1.6 미만으로 유의하지 않음. 신규 의존성이므로 근거 없이 합의를 구하지 않음 | `servc_interval_coverage_recheck_20260811.md` |
 
+| 미사용 raw_data 제도 플래그 | **열린 축.** indstrytyLmtYn, rbidPermsnYn, cmmnSpldmdMethdNm, prdctClsfcLmtYn, dsgntCmptYn 이 현행 잔차에 세 연도 일관된 편향을 남김. 기존 낙찰방법 특징이 흡수하지 못함. 다만 prdctClsfcLmtYn 과 rbidPermsnYn 은 2025-01 체제 전환이 있어 그대로 넣으면 안 됨 | `servc_unused_rawdata_field_audit_20260811.md`, `servc_2025_source_regime_shift_20260811.md` |
+
 ### 잔차 후처리 계열은 전부 닫혔습니다
 
 셀을 갈라 잔차 오프셋을 빼는 계열을 **다섯 축**에서 기각했습니다. 하한율,
