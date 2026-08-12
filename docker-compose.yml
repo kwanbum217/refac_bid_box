@@ -8,6 +8,11 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      # 이미지에 .env 를 넣지 않으므로(.dockerignore) 설정은 전부 여기서 전달합니다.
+      # ENVIRONMENT=production 이면 Settings 가 이 값을 필수로 검증하며, 비어 있거나
+      # 와일드카드면 기동을 거부합니다. 전달하지 않으면 컨테이너가 기동 즉시 죽습니다.
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - CORS_DEV_ALLOW_ALL=${CORS_DEV_ALLOW_ALL:-true}
       - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-rootpassword}@db:3306/procurement
       - DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
       - REDIS_URL=redis://redis:6379/0
@@ -59,6 +64,10 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}
+      # 워커는 HTTP 를 받지 않아 CORS 자체는 쓰지 않지만, Settings 검증은 프로세스
+      # 공통이라 이 값이 없으면 production 에서 워커도 기동하지 못합니다.
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - CORS_DEV_ALLOW_ALL=${CORS_DEV_ALLOW_ALL:-true}
       - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-rootpassword}@db:3306/procurement
       - DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
       - REDIS_URL=redis://redis:6379/0

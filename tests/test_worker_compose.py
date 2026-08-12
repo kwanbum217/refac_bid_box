@@ -42,3 +42,16 @@ def test_default_compose_waits_for_shared_services_to_be_healthy():
     assert "http://localhost:7700/health" in compose
     assert "http://localhost:8000/api/v1/health/ready" in compose
     assert "json.load(response)['status'] in ('ready', 'degraded')" in compose
+
+
+def test_default_compose_forwards_cors_settings_to_every_python_service():
+    """이미지에 .env 가 없으므로 compose 가 전달하지 않으면 값이 사라집니다.
+
+    production 에서 Settings 가 CORS_ALLOWED_ORIGINS 를 필수로 검증하므로,
+    전달을 빠뜨리면 app 과 worker 가 기동 즉시 죽습니다. 두 서비스 모두
+    전달하는지 개수로 고정합니다.
+    """
+    compose = COMPOSE_FILE.read_text(encoding="utf-8")
+
+    assert compose.count("CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}") == 2
+    assert compose.count("CORS_DEV_ALLOW_ALL=${CORS_DEV_ALLOW_ALL:-true}") == 2
