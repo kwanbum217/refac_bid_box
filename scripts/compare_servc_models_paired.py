@@ -52,6 +52,21 @@ from src.ml.model_registry import ModelRegistry  # noqa: E402
 T_THRESHOLD = 2.0
 
 
+def _sanitize_fallback_reason(reason: str | None) -> str:
+    """민감한 스택 트레이스나 내부 경로를 제거하고 1줄 요약으로 정화합니다."""
+    if not reason:
+        return "Unknown error"
+    lines = [line.strip() for line in str(reason).splitlines() if line.strip()]
+    if not lines:
+        return "Unknown error"
+    first = lines[0]
+    if "Traceback" in first or "File " in first:
+        parts = first.split(":")
+        return parts[0].strip() if parts else "Traceback Exception"
+    summary = first.split(":")[0].strip()
+    return summary[:80]
+
+
 def predict_one(session, bid_id: int, model_id: str) -> dict | None:
     try:
         response = predict_price_api(
@@ -67,6 +82,10 @@ def predict_one(session, bid_id: int, model_id: str) -> dict | None:
         "model": response.model_name,
         "low": response.rate_low,
         "high": response.rate_high,
+        "model_id": getattr(response, "model_id", response.model_name),
+        "requested_model": getattr(response, "requested_model", model_id),
+        "fallback_used": bool(getattr(response, "fallback_used", False)),
+        "fallback_reason": getattr(response, "fallback_reason", None),
     }
 
 
@@ -118,15 +137,48 @@ def evaluate_paired_samples(frame: pd.DataFrame) -> dict:
     if frame.empty:
         raise ValueError("쌍대 평가 표본이 없습니다.")
 
-    actual = pd.to_numeric(frame["actual"], errors="coerce")
+    df = frame.copy()
+    if "provenance_valid" not in df.columns:
+        df["provenance_valid"] = True
+    if "base_fallback" not in df.columns:
+        df["base_fallback"] = False
+    if "chal_fallback" not in df.columns:
+        df["chal_fallback"] = False
+    if "same_actual_model" not in df.columns:
+        df["same_actual_model"] = False
+
+    invalid_prov = ~df["provenance_valid"]
+    invalid_provenance_count = int(invalid_prov.sum())
+    total_pairs = len(df)
+    invalid_provenance_ratio = (
+        float(invalid_provenance_count / total_pairs) if total_pairs > 0 else 0.0
+    )
+
+    valid_frame = df.loc[df["provenance_valid"]]
+    if valid_frame.empty:
+        raise ValueError("정상 출처(provenance)를 만족하는 쌍대 평가 표본이 없습니다.")
+
+    actual = pd.to_numeric(valid_frame["actual"], errors="coerce")
     # 학습 데이터셋의 낙찰률 필터를 판정 범위의 단일 출처로 사용합니다.
     inside = actual.between(MIN_WINNING_RATE, MAX_WINNING_RATE)
     outside_count = int((~inside).sum())
-    reporting = _evaluate_scope(frame, "보고용(전량)")
-    decision = _evaluate_scope(frame.loc[inside], "판정용(학습 범위 내)")
+    reporting = _evaluate_scope(valid_frame, "보고용(전량)")
+    decision = _evaluate_scope(valid_frame.loc[inside], "판정용(학습 범위 내)")
+
+    fail_closed = invalid_provenance_count > 0
+    if fail_closed:
+        decision["verdict"] = "판정 불가 (대체 모델 발생)"
+        reporting["verdict"] = "판정 불가 (대체 모델 발생)"
+
     return {
         "outside_count": outside_count,
-        "outside_ratio": outside_count / len(frame),
+        "outside_ratio": outside_count / len(valid_frame) if len(valid_frame) > 0 else 0.0,
+        "invalid_provenance_count": invalid_provenance_count,
+        "invalid_provenance_ratio": invalid_provenance_ratio,
+        "base_fallback_count": int(df["base_fallback"].sum()),
+        "chal_fallback_count": int(df["chal_fallback"].sum()),
+        "same_actual_model_count": int(df["same_actual_model"].sum()),
+        "fail_closed": fail_closed,
         "reporting": reporting,
         "decision": decision,
         "verdict_mismatch": reporting["verdict"] != decision["verdict"],
@@ -191,6 +243,20 @@ def _model_summary(frame: pd.DataFrame, model: str, prefix: str) -> dict:
 
 
 def print_paired_evaluation(evaluation: dict) -> None:
+    invalid_prov_count = evaluation.get("invalid_provenance_count", 0)
+    invalid_prov_ratio = evaluation.get("invalid_provenance_ratio", 0.0)
+    if invalid_prov_count > 0:
+        base_fb = evaluation.get("base_fallback_count", 0)
+        chal_fb = evaluation.get("chal_fallback_count", 0)
+        same_m = evaluation.get("same_actual_model_count", 0)
+        print(
+            f"대체 모델/동일 모델 등 출처 오류 표본 {invalid_prov_count:,}건({invalid_prov_ratio:.3%})을 "
+            "정상 비교에서 제외합니다."
+        )
+        print(f"  - base 모델 fallback: {base_fb:,}건")
+        print(f"  - challenger 모델 fallback: {chal_fb:,}건")
+        print(f"  - 양 팔 동일 actual model: {same_m:,}건")
+
     outside_count = evaluation["outside_count"]
     outside_ratio = evaluation["outside_ratio"]
     print(
@@ -210,6 +276,8 @@ def print_paired_evaluation(evaluation: dict) -> None:
     reporting_verdict = evaluation["reporting"]["verdict"]
     decision_verdict = evaluation["decision"]["verdict"]
     print(f"\n최종 판정(학습 범위 내): {decision_verdict}")
+    if evaluation.get("fail_closed", False):
+        print("주의: 대체 모델(fallback) 발생으로 인해 승격 판정이 차단(fail-closed)되었습니다.")
     if evaluation["verdict_mismatch"]:
         print(
             "주의: 판정이 어긋납니다: "
@@ -274,11 +342,26 @@ def main() -> int:
         print(f"  challenger {args.challenger}\n")
 
         records = []
+        fallback_reasons = []
+        api_error_count = 0
         for row in frame.itertuples():
             a = predict_one(session, row.bid_id, args.base)
             b = predict_one(session, row.bid_id, args.challenger)
             if a is None or b is None:
+                api_error_count += 1
                 continue
+
+            base_fb = a.get("fallback_used", False) or (a.get("model_id") != a.get("requested_model"))
+            chal_fb = b.get("fallback_used", False) or (b.get("model_id") != b.get("requested_model"))
+            same_m = (a.get("model_id") == b.get("model_id"))
+            is_valid = not (base_fb or chal_fb or same_m)
+
+            if not is_valid:
+                if a.get("fallback_reason"):
+                    fallback_reasons.append(_sanitize_fallback_reason(a["fallback_reason"]))
+                if b.get("fallback_reason"):
+                    fallback_reasons.append(_sanitize_fallback_reason(b["fallback_reason"]))
+
             actual = float(row.actual_rate)
             records.append(
                 {
@@ -289,6 +372,12 @@ def main() -> int:
                     "chal_width": (b["high"] - b["low"]) if b["low"] is not None else np.nan,
                     "base_covered": _covered(a, actual),
                     "chal_covered": _covered(b, actual),
+                    "provenance_valid": is_valid,
+                    "base_fallback": base_fb,
+                    "chal_fallback": chal_fb,
+                    "same_actual_model": same_m,
+                    "base_model_id": a.get("model_id", ""),
+                    "chal_model_id": b.get("model_id", ""),
                 }
             )
     finally:
@@ -299,7 +388,13 @@ def main() -> int:
         return 1
 
     df = pd.DataFrame(records)
-    print(f"채점 {len(df):,}건 / 제외 {len(frame) - len(df):,}건\n")
+    print(f"채점 {len(df):,}건 / 제외 {len(frame) - len(df):,}건")
+    if api_error_count > 0:
+        print(f"API 응답 실패/미반환: {api_error_count:,}건")
+    if fallback_reasons:
+        unique_reasons = sorted(set(fallback_reasons))
+        print(f"감지된 예외 요약 유형: {', '.join(unique_reasons)}")
+    print()
     print_paired_evaluation(evaluate_paired_samples(df))
     return 0
 
