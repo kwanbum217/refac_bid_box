@@ -20,9 +20,12 @@ from src.rag import structured_data
 
 @pytest.fixture(autouse=True)
 def isolated_cache(monkeypatch):
-    """프로세스 공용 캐시를 테스트마다 비웁니다."""
-    monkeypatch.setattr(cache, "_client", None)
-    monkeypatch.setattr(cache, "_connected", True)
+    """프로세스 공용 캐시를 테스트마다 비웁니다.
+
+    백오프 시각을 무한대로 밀어 Redis 재연결을 막고 로컬 저장소만 쓰게 합니다.
+    """
+    monkeypatch.setattr(cache._conn, "_client", None)
+    monkeypatch.setattr(cache._conn, "_next_attempt_at", float("inf"))
     monkeypatch.setattr(cache, "_local", {})
     return cache
 

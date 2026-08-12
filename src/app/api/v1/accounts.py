@@ -23,10 +23,12 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.app.core.config import settings
 from src.app.core.db import get_db
 from src.app.core.security import (
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
+    SessionStoreUnavailable,
     check_password,
     create_session,
     destroy_session,
@@ -37,6 +39,17 @@ from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
+
+SESSION_STORE_UNAVAILABLE_DETAIL = "세션 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주십시오."
+
+
+def _session_store_unavailable() -> HTTPException:
+    """저장소 장애를 401 이 아니라 503 으로 알립니다.
+
+    401 로 내리면 클라이언트가 정상적인 비로그인과 구분하지 못해, 세션이 살아
+    있는데도 로그아웃된 것처럼 보입니다.
+    """
+    return HTTPException(status_code=503, detail=SESSION_STORE_UNAVAILABLE_DETAIL)
 
 
 class SignUpRequest(BaseModel):
@@ -95,7 +108,10 @@ def get_current_user(
     bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> CustomUser | None:
     """세션 쿠키로 사용자를 해석합니다. 미인증이면 None."""
-    payload = read_session(bidbox_session)
+    try:
+        payload = read_session(bidbox_session)
+    except SessionStoreUnavailable as exc:
+        raise _session_store_unavailable() from exc
     if not payload:
         return None
     return db.get(CustomUser, int(payload.get("user_id") or 0))
@@ -109,13 +125,23 @@ def require_current_user(user: CustomUser | None = Depends(get_current_user)) ->
 
 
 def _issue_session(response: Response, user: CustomUser) -> None:
-    token = create_session(user.id, user.username)
+    try:
+        token = create_session(user.id, user.username)
+    except SessionStoreUnavailable as exc:
+        raise _session_store_unavailable() from exc
     response.set_cookie(
         SESSION_COOKIE_NAME,
         token,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
+        # samesite 는 lax 를 유지합니다. main.py 의 CORS 가 allow_origins=["*"] 에
+        # allow_credentials=True 라 쿠키가 실린 요청에 요청 Origin 을 그대로
+        # 반사합니다. none 으로 완화하면 임의 사이트가 사용자 세션으로 API 를
+        # 호출할 수 있게 됩니다. CORS 를 먼저 좁히기 전에는 건드리지 마십시오.
         samesite="lax",
+        # http://localhost 개발에서는 secure 쿠키가 저장되지 않아 로그인이
+        # 깨집니다. 기존 ENVIRONMENT 게이트를 그대로 씁니다.
+        secure=settings.ENVIRONMENT != "development",
     )
 
 
@@ -177,7 +203,12 @@ def logout(
     response: Response,
     bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ):
-    destroy_session(bidbox_session)
+    # 저장소가 죽어 있으면 서버측 무효화를 못 합니다. 쿠키만 지우고 성공을
+    # 돌려주면 복구된 Redis 에서 그 토큰이 되살아나므로 503 으로 알립니다.
+    try:
+        destroy_session(bidbox_session)
+    except SessionStoreUnavailable as exc:
+        raise _session_store_unavailable() from exc
     response.delete_cookie(SESSION_COOKIE_NAME)
     return {"status": "success"}
 
