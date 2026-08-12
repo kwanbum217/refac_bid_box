@@ -2,6 +2,11 @@
 src/app/services/tools/bid_prediction_tool.py
 
 공고 투찰가 예측 도구 (원본 apps/chatbot/tools/bid_prediction_tool.py 1:1 이식).
+
+A4 교정:
+- 비예가 판정을 model_registry.classify_price_decision_method 단일 함수로 통합.
+- 도달 불가 재시도 패턴을 제거하고 predict_optimal_price_with_provenance 사용.
+- actual_model, fallback_used, fallback_reason 이 실제 예측 모델을 가리키게 한다.
 """
 
 from __future__ import annotations
@@ -16,7 +21,8 @@ from src.app.models.bids import BidAnnouncement
 from src.ml.model_registry import (
     CATEGORY_DEFAULT_MODELS,
     ModelRegistry,
-    predict_optimal_price,
+    classify_price_decision_method,
+    predict_optimal_price_with_provenance,
 )
 
 # 정본은 model_registry 입니다.
@@ -140,22 +146,95 @@ def _model_display_name(model_id: str) -> str:
 
 
 def _predict_bid(bid: BidAnnouncement, requested_model: str) -> dict[str, Any]:
-    features = _build_prediction_features(bid)
-    fallback_used = False
+    """공고 한 건에 대해 투찰가를 예측한다.
 
+    비예가 공고는 낙찰률 모델로 보내지 않고 사유를 반환한다.
+    모델 출처는 predict_optimal_price_with_provenance 가 추적하므로
+    이 함수에서 별도 재시도를 하지 않는다.
+    """
+    features = _build_prediction_features(bid)
+
+    # 비예가 판정: model_registry.classify_price_decision_method 단일 함수 사용.
+    # API 와 동일한 함수로 판정하므로 세 경로의 판정이 일치한다.
+    raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    method_class = classify_price_decision_method(raw)
+    if method_class == "비예가":
+        reference_amount = float(bid.prediction_reference_amount or 0)
+        return {
+            "bid": {
+                "id": bid.id,
+                "bid_ntce_no": bid.bid_ntce_no,
+                "bid_ntce_ord": bid.bid_ntce_ord,
+                "bid_ntce_nm": bid.bid_ntce_nm or "",
+                "dminstt_nm": bid.dminstt_nm or "",
+                "ntce_instt_nm": bid.ntce_instt_nm or "",
+                "category": bid.category,
+                "category_label": bid.category_label,
+                "bid_ntce_dt": (
+                    bid.bid_ntce_dt.isoformat() if bid.bid_ntce_dt else ""
+                ),
+                "collected_at": (
+                    bid.collected_at.isoformat() if bid.collected_at else ""
+                ),
+            },
+            "model_id": "",
+            "model_name": "",
+            "requested_model": requested_model,
+            "fallback_used": False,
+            "fallback_reason": "",
+            "reference_amount": int(reference_amount),
+            "optimal_price": 0,
+            "prediction_rate": 0,
+            "skipped": True,
+            "skip_reason": (
+                "비예가 공고는 예정가격을 작성하지 않는 제도라 "
+                "낙찰률 기반 투찰가를 산출할 수 없습니다."
+            ),
+        }
+
+    # predict_optimal_price_with_provenance 를 사용하여 actual_model,
+    # fallback_used, fallback_reason 이 실제 예측 모델을 가리키게 한다.
+    # 종전의 도달 불가 재시도 패턴(요청 모델 실패 -> 카테고리 기본 모델 재시도)은
+    # provenance 함수 내부의 후보 순회와 중복이므로 제거한다.
     try:
-        predicted_rate = predict_optimal_price(requested_model, features)
-        resolved_model = requested_model
-        model_name = _model_display_name(resolved_model)
-    except Exception as exc:
-        fallback_model = _default_model_for_bid(bid)
-        predicted_rate = predict_optimal_price(fallback_model, features)
-        resolved_model = fallback_model
-        model_name = f"{_model_display_name(fallback_model)} (Fallback)"
-        fallback_used = True
-        fallback_reason = str(exc)
-    else:
-        fallback_reason = ""
+        outcome = predict_optimal_price_with_provenance(requested_model, features)
+    except Exception:
+        # 후보 전량 실패 시 챗봇은 오류 대신 사유를 반환한다.
+        reference_amount = float(bid.prediction_reference_amount or 0)
+        return {
+            "bid": {
+                "id": bid.id,
+                "bid_ntce_no": bid.bid_ntce_no,
+                "bid_ntce_ord": bid.bid_ntce_ord,
+                "bid_ntce_nm": bid.bid_ntce_nm or "",
+                "dminstt_nm": bid.dminstt_nm or "",
+                "ntce_instt_nm": bid.ntce_instt_nm or "",
+                "category": bid.category,
+                "category_label": bid.category_label,
+                "bid_ntce_dt": (
+                    bid.bid_ntce_dt.isoformat() if bid.bid_ntce_dt else ""
+                ),
+                "collected_at": (
+                    bid.collected_at.isoformat() if bid.collected_at else ""
+                ),
+            },
+            "model_id": "",
+            "model_name": "",
+            "requested_model": requested_model,
+            "fallback_used": True,
+            "fallback_reason": "모델 후보 전량 실패",
+            "reference_amount": int(reference_amount),
+            "optimal_price": 0,
+            "prediction_rate": 0,
+            "skipped": True,
+            "skip_reason": "예측 모델을 사용할 수 없어 투찰가를 산출하지 못했습니다.",
+        }
+
+    predicted_rate = outcome.predicted_rate
+    actual_model = outcome.actual_model
+    model_name = _model_display_name(actual_model)
+    if outcome.fallback_used:
+        model_name = f"{model_name} (Fallback)"
 
     reference_amount = float(bid.prediction_reference_amount or 0)
     if predicted_rate < 2.0:
@@ -178,11 +257,11 @@ def _predict_bid(bid: BidAnnouncement, requested_model: str) -> dict[str, Any]:
             "bid_ntce_dt": bid.bid_ntce_dt.isoformat() if bid.bid_ntce_dt else "",
             "collected_at": bid.collected_at.isoformat() if bid.collected_at else "",
         },
-        "model_id": resolved_model,
+        "model_id": actual_model,
         "model_name": model_name,
-        "requested_model": requested_model,
-        "fallback_used": fallback_used,
-        "fallback_reason": fallback_reason,
+        "requested_model": outcome.requested_model,
+        "fallback_used": outcome.fallback_used,
+        "fallback_reason": outcome.fallback_reason or "",
         "reference_amount": int(reference_amount),
         "optimal_price": optimal_price,
         "prediction_rate": prediction_rate_percent,

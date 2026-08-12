@@ -29,6 +29,22 @@ src/ml/dataset.py
    낙찰하한율·낙찰방법·용역구분 등은 정식 컬럼이 아니라 `bid_announcements.raw_data`
    에만 존재합니다. `INSTITUTION_FIELDS` 가 그 매핑이며, 근거는
    `docs/design/servc_institution_verification_20260803.md` 입니다.
+
+4. 비예가 공고의 학습 프레임 배제 (수정 금지).
+
+   비예가(``prearngPrceDcsnMthdNm`` 이 ``"없음"`` 또는 부재) 공고는 LEFT JOIN 후
+   ``sucsf_bid_rate IS NOT NULL`` 조건과 후속 ``dropna()`` 에서 자연 배제된다.
+
+   이는 의도적 설계이다:
+   - 비예가 공고는 예정가격을 작성하지 않는 제도이므로 낙찰률(= 낙찰금액 /
+     예정가격)의 분모가 존재하지 않는다.
+   - 학습 데이터에 잔존했던 2,405건(0.47%)은 국지적 표기 관행의 예외 데이터로,
+     낙찰률 100% 비율이 17.59% 에 달하는 등 정상 표본이 아니다.
+   - 따라서 이 배제 동작을 오인하여 비예가를 학습에 복구해서는 안 된다.
+   - 서빙 라우팅(API, 챗봇 도구)에서의 비예가 차단은
+     ``model_registry.classify_price_decision_method`` 단일 함수가 담당한다.
+
+   원인 규명: ``docs/design/servc_nonprearng_population_cause_20260812.md``
 """
 
 from __future__ import annotations
