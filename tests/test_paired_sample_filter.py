@@ -17,6 +17,10 @@ def _paired_frame(actual: list[float], chal_err: list[float]) -> pd.DataFrame:
             "chal_width": [1.8] * size,
             "base_covered": [True] * size,
             "chal_covered": [True] * size,
+            "provenance_valid": [True] * size,
+            "base_fallback": [False] * size,
+            "chal_fallback": [False] * size,
+            "same_actual_model": [False] * size,
         }
     )
 

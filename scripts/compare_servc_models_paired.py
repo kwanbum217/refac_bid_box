@@ -61,7 +61,8 @@ def _sanitize_fallback_reason(reason: str | None) -> str:
         return "Unknown error"
     first = lines[0]
     if "Traceback" in first or "File " in first:
-        parts = first.split(":")
+        last = lines[-1]
+        parts = last.split(":")
         return parts[0].strip() if parts else "Traceback Exception"
     summary = first.split(":")[0].strip()
     return summary[:80]
@@ -77,6 +78,7 @@ def predict_one(session, bid_id: int, model_id: str) -> dict | None:
         return None
     if response.prediction_rate is None:
         return None
+    has_fallback = hasattr(response, "fallback_used")
     return {
         "pred": float(response.prediction_rate),
         "model": response.model_name,
@@ -84,8 +86,8 @@ def predict_one(session, bid_id: int, model_id: str) -> dict | None:
         "high": response.rate_high,
         "model_id": getattr(response, "model_id", response.model_name),
         "requested_model": getattr(response, "requested_model", model_id),
-        "fallback_used": bool(getattr(response, "fallback_used", False)),
-        "fallback_reason": getattr(response, "fallback_reason", None),
+        "fallback_used": bool(getattr(response, "fallback_used", True)),
+        "fallback_reason": getattr(response, "fallback_reason", "Missing field fail-closed" if not has_fallback else None),
     }
 
 
@@ -139,13 +141,13 @@ def evaluate_paired_samples(frame: pd.DataFrame) -> dict:
 
     df = frame.copy()
     if "provenance_valid" not in df.columns:
-        df["provenance_valid"] = True
+        df["provenance_valid"] = False
     if "base_fallback" not in df.columns:
-        df["base_fallback"] = False
+        df["base_fallback"] = True
     if "chal_fallback" not in df.columns:
-        df["chal_fallback"] = False
+        df["chal_fallback"] = True
     if "same_actual_model" not in df.columns:
-        df["same_actual_model"] = False
+        df["same_actual_model"] = True
 
     invalid_prov = ~df["provenance_valid"]
     invalid_provenance_count = int(invalid_prov.sum())
@@ -392,10 +394,18 @@ def main() -> int:
     if api_error_count > 0:
         print(f"API 응답 실패/미반환: {api_error_count:,}건")
     if fallback_reasons:
-        unique_reasons = sorted(set(fallback_reasons))
-        print(f"감지된 예외 요약 유형: {', '.join(unique_reasons)}")
+        from collections import Counter
+        counter = Counter(fallback_reasons)
+        formatted = ", ".join(f"{k}({v}건)" for k, v in counter.most_common())
+        print(f"감지된 예외 요약 유형: {formatted}")
     print()
-    print_paired_evaluation(evaluate_paired_samples(df))
+    try:
+        eval_result = evaluate_paired_samples(df)
+    except ValueError as e:
+        print(f"오류: {e}")
+        return 1
+
+    print_paired_evaluation(eval_result)
     return 0
 
 

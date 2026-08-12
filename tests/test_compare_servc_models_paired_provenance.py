@@ -29,12 +29,20 @@ def _sample_frame(
     }
     if provenance_valids is not None:
         data["provenance_valid"] = provenance_valids
+    else:
+        data["provenance_valid"] = [True] * size
     if base_fallbacks is not None:
         data["base_fallback"] = base_fallbacks
+    else:
+        data["base_fallback"] = [False] * size
     if chal_fallbacks is not None:
         data["chal_fallback"] = chal_fallbacks
+    else:
+        data["chal_fallback"] = [False] * size
     if same_actual_models is not None:
         data["same_actual_model"] = same_actual_models
+    else:
+        data["same_actual_model"] = [False] * size
     return pd.DataFrame(data)
 
 
@@ -98,8 +106,8 @@ def test_missing_response_fields_legacy(monkeypatch):
     assert res["model"] == "LegacyModel"
     assert res["model_id"] == "LegacyModel"
     assert res["requested_model"] == "legacy_req"
-    assert res["fallback_used"] is False
-    assert res["fallback_reason"] is None
+    assert res["fallback_used"] is True
+    assert res["fallback_reason"] == "Missing field fail-closed"
 
 
 def test_all_invalid_samples_case():
@@ -122,7 +130,7 @@ def test_sanitize_fallback_reason():
     )
     sanitized = _sanitize_fallback_reason(raw_traceback)
     assert "/secret/path" not in sanitized
-    assert "Traceback Exception" in sanitized or "Traceback" in sanitized
+    assert sanitized == "ValueError"
 
     raw_val_error = "ValueError: Model failed to converge after 100 iterations"
     sanitized_val = _sanitize_fallback_reason(raw_val_error)
