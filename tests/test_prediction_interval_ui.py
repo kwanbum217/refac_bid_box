@@ -54,3 +54,40 @@ def test_interval_targets_exist(markup: str, element_id: str):
 def test_interval_is_guarded_by_null_check(markup: str):
     """null 을 toFixed 하면 예외가 나 점 추정 표시까지 함께 죽습니다."""
     assert "data.rate_low != null" in markup
+
+
+# --------------------------------------------------------------------------- #
+# 근접도 막대와 대체 표기
+# --------------------------------------------------------------------------- #
+
+
+def test_template_no_longer_reads_confidence(markup: str):
+    """confidence 는 계약에서 사라졌습니다. 남아 있으면 undefined 를 그립니다."""
+    assert "data.confidence" not in markup
+
+
+def test_template_reads_similarity_field(markup: str):
+    assert "data.user_bid_similarity" in markup
+
+
+def test_similarity_label_does_not_claim_model_confidence(markup: str):
+    """막대는 입력 투찰가 근접도입니다. 신뢰도로 읽히는 문구를 남기면 안 됩니다."""
+    assert "입력 투찰가 근접도" in markup
+    assert "CONFIDENCE SCORE" not in markup
+    assert "분석 신뢰도" not in markup
+
+
+def test_similarity_block_is_toggled_both_ways(markup: str):
+    """투찰가 미입력 시 근접도는 null 입니다. 감추지 않으면 직전 값이 남습니다."""
+    assert "data.user_bid_similarity != null" in markup
+    assert "$('#res-similarity').removeClass('hidden')" in markup
+    assert "$('#res-similarity').addClass('hidden')" in markup
+
+
+def test_template_surfaces_fallback(markup: str):
+    """대체가 일어난 사실을 화면에서도 감추지 않습니다."""
+    assert "data.fallback_used" in markup
+    assert "data.requested_model" in markup
+    assert 'id="res-fallback"' in markup
+    assert "$('#res-fallback').removeClass('hidden')" in markup
+    assert "$('#res-fallback').addClass('hidden')" in markup

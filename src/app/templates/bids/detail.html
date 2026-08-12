@@ -206,22 +206,32 @@
                                 </div>
 
                                 <div class="space-y-4 relative z-10">
-                                    <div class="flex justify-between items-end">
-                                        <div class="space-y-1">
-                                            <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
-                                                <i class="fas fa-shield-alt mr-1.5 text-slate-300"></i>
-                                                분석 신뢰도
-                                            </div>
-                                            <div id="res-status-msg" class="text-[11px] font-bold text-slate-600">CONFIDENCE SCORE</div>
-                                        </div>
-                                        <div class="text-right">
-                                            <span id="res-percentage" class="text-lg font-black text-primary">0%</span>
-                                        </div>
+                                    <!-- 요청 모델이 아닌 모델이 답한 경우에만 노출합니다. -->
+                                    <div id="res-fallback" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] font-bold text-amber-700 flex items-start gap-2">
+                                        <i class="fas fa-triangle-exclamation mt-0.5"></i>
+                                        <span id="res-fallback-msg"></span>
                                     </div>
 
-                                    <div class="relative pt-1">
-                                        <div class="overflow-hidden h-2 text-xs flex rounded-full bg-slate-200">
-                                            <div id="res-bar" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary transition-all duration-1000 ease-out" style="width: 0%"></div>
+                                    <!-- 막대는 모델 신뢰도가 아니라 입력 투찰가와 추천가의 근접도입니다.
+                                         투찰가를 넣지 않으면 계산할 값이 없어 통째로 감춥니다. -->
+                                    <div id="res-similarity">
+                                        <div class="flex justify-between items-end">
+                                            <div class="space-y-1">
+                                                <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
+                                                    <i class="fas fa-arrows-to-circle mr-1.5 text-slate-300"></i>
+                                                    입력 투찰가 근접도
+                                                </div>
+                                                <div id="res-status-msg" class="text-[11px] font-bold text-slate-600">입력하신 투찰가가 추천가에 얼마나 가까운지입니다 (모델 신뢰도가 아닙니다)</div>
+                                            </div>
+                                            <div class="text-right">
+                                                <span id="res-percentage" class="text-lg font-black text-primary">0%</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="relative pt-1">
+                                            <div class="overflow-hidden h-2 text-xs flex rounded-full bg-slate-200">
+                                                <div id="res-bar" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary transition-all duration-1000 ease-out" style="width: 0%"></div>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -507,10 +517,28 @@ $(document).ready(function() {
                     $('#prediction-result').removeClass('hidden').addClass('animate-in fade-in slide-in-from-top-2 duration-300');
                     $('#res-optimal-price').text(currencyFormatter.format(data.optimal_price));
                     $('#res-prediction-rate').text(data.prediction_rate + '%');
-                    $('#res-percentage').text(data.confidence + '%');
-                    $('#res-bar').css('width', data.confidence + '%');
-                    $('#res-status-msg').text('낙찰 신뢰도 (CONFIDENCE SCORE)');
                     $('#res-message').text(data.message);
+
+                    // 요청 모델이 아닌 모델이 답했으면 그 사실을 감추지 않습니다.
+                    if (data.fallback_used) {
+                        $('#res-fallback-msg').text(
+                            '요청 모델(' + data.requested_model + ')을 쓸 수 없어 '
+                            + data.model_name + ' 으로 예측했습니다.'
+                        );
+                        $('#res-fallback').removeClass('hidden');
+                    } else {
+                        $('#res-fallback').addClass('hidden');
+                    }
+
+                    // 근접도는 모델 신뢰도가 아닙니다. 투찰가를 넣지 않으면 값이 없습니다.
+                    if (data.user_bid_similarity != null) {
+                        $('#res-percentage').text(data.user_bid_similarity + '%');
+                        $('#res-bar').css('width', data.user_bid_similarity + '%');
+                        $('#res-status-msg').text('입력하신 투찰가가 추천가에 얼마나 가까운지입니다 (모델 신뢰도가 아닙니다)');
+                        $('#res-similarity').removeClass('hidden');
+                    } else {
+                        $('#res-similarity').addClass('hidden');
+                    }
 
                     // 구간은 부가 정보입니다. 없으면 감추고 점 추정만 보여 줍니다.
                     if (data.rate_low != null && data.rate_high != null) {
@@ -527,16 +555,16 @@ $(document).ready(function() {
                         $('#res-interval').addClass('hidden');
                     }
 
-                    // Color change based on confidence
+                    // 색은 근접도 자체를 나타냅니다. 추천가에 가까울수록 초록입니다.
                     const $bar = $('#res-bar');
                     const $percent = $('#res-percentage');
                     $bar.removeClass('bg-emerald-500 bg-amber-500 bg-rose-500 bg-primary');
                     $percent.removeClass('text-emerald-500 text-amber-500 text-rose-500 text-primary');
 
-                    if(data.confidence > 70) {
+                    if(data.user_bid_similarity > 70) {
                         $bar.addClass('bg-emerald-500');
                         $percent.addClass('text-emerald-500');
-                    } else if(data.confidence > 40) {
+                    } else if(data.user_bid_similarity > 40) {
                         $bar.addClass('bg-amber-500');
                         $percent.addClass('text-amber-500');
                     } else {

@@ -12,7 +12,6 @@ src/app/api/v1/predictions.py
 from __future__ import annotations
 
 import logging
-import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -31,7 +30,11 @@ from src.app.services.bid_queries import (
 )
 from src.ml.dataset import announcement_feature_payload
 from src.ml.features import build_feature_dict
-from src.ml.model_registry import ModelRegistry, predict_interval, predict_optimal_price
+from src.ml.model_registry import (
+    ModelRegistry,
+    predict_interval,
+    predict_optimal_price_with_provenance,
+)
 from src.ml.predictor import predictor
 
 logger = logging.getLogger(__name__)
@@ -99,17 +102,23 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
     # title / agency_name / scenario_mode 가 사라집니다.
     features = {**features, **build_feature_dict(features, db)}
 
+    # 후보 순회는 함수 안에서 끝납니다. 여기서 다시 fallback 을 시도하면 같은
+    # 후보 목록을 두 번 돌 뿐이라 대체 사실이 그대로 은폐됩니다. 어느 모델이
+    # 답했는지는 outcome.actual_model 하나만 봅니다.
     try:
-        predicted_rate = predict_optimal_price(selected_model, features)
-        wrapper = ModelRegistry.get_model(selected_model)
-        model_name = wrapper.get_display_name() if wrapper else selected_model
+        outcome = predict_optimal_price_with_provenance(selected_model, features)
     except Exception as exc:
-        logger.warning("선택 모델(%s) 추론 실패, fallback 시도: %s", selected_model, exc)
-        fallback_model = _default_model_for_bid(bid)
-        predicted_rate = predict_optimal_price(fallback_model, features)
-        fallback_wrapper = ModelRegistry.get_model(fallback_model)
-        base_name = fallback_wrapper.get_display_name() if fallback_wrapper else fallback_model
-        model_name = f"{base_name} (Fallback)"
+        logger.error("모델 후보 전량 실패 (요청 모델 %s): %s", selected_model, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="예측 모델을 사용할 수 없어 투찰가를 산출하지 못했습니다.",
+        ) from exc
+
+    predicted_rate = outcome.predicted_rate
+    actual_model = outcome.actual_model
+    wrapper = ModelRegistry.get_model(actual_model)
+    base_name = wrapper.get_display_name() if wrapper else actual_model
+    model_name = f"{base_name} (Fallback)" if outcome.fallback_used else base_name
 
     estimated_price = reference_amount
     if predicted_rate < 2.0:
@@ -119,44 +128,57 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
         optimal_price = int(predicted_rate)
         prediction_rate_percent = round(predicted_rate, 4)
 
+    # 입력 투찰가가 추천가에 얼마나 가까운지입니다. 모델 불확실성과는 무관하며
+    # 종전 이름(confidence)은 사용자가 이를 신뢰도로 읽게 만들었습니다. 모델
+    # 불확실성은 아래 예측 구간으로 전달합니다.
+    # 값이 낮을 때 난수로 채우던 종전 동작은 제거했습니다. 같은 입력은 항상
+    # 같은 응답을 내야 합니다.
+    user_bid_similarity = None
     try:
-        user_price_value = float(user_price) if user_price else 0
-        if estimated_price > 0:
-            diff_ratio = abs(user_price_value - optimal_price) / estimated_price
-            confidence = max(0, min(100, int(100 - (diff_ratio * 400))))
-        else:
-            confidence = 50
-    except (ValueError, ZeroDivisionError):
-        confidence = 50
-
-    if confidence < 5:
-        confidence = (35 + secrets.randbelow(31)) if optimal_price > 1 else 0
+        user_price_value = float(user_price) if user_price else 0.0
+    except ValueError:
+        user_price_value = 0.0
+    if user_price_value > 0 and estimated_price > 0:
+        diff_ratio = abs(user_price_value - optimal_price) / estimated_price
+        user_bid_similarity = max(0, min(100, int(100 - (diff_ratio * 400))))
 
     # 예측 구간. 큰 건일수록 산포가 커지므로 단일 숫자만 주면 사용자가 그 값을
     # 그대로 신뢰합니다. 구 모델은 분위 아티팩트가 없어 None 이 나옵니다.
+    # 점 추정을 낸 모델과 같은 모델에서 뽑아야 합니다.
     rate_low = rate_high = price_low = price_high = coverage = None
-    bounds = predict_interval(selected_model, features)
+    bounds = predict_interval(actual_model, features)
     if bounds is not None:
         low, high, coverage = bounds
         rate_low, rate_high = round(low, 4), round(high, 4)
         price_low = int(estimated_price * low / 100)
         price_high = int(estimated_price * high / 100)
 
+    message = (
+        f"{model_name} 분석이 완료되었습니다. 예상 낙찰률은 {prediction_rate_percent}% 입니다."
+    )
+    if outcome.fallback_used:
+        message = (
+            f"요청하신 모델({outcome.requested_model})을 쓸 수 없어 "
+            f"{base_name} 으로 예측했습니다. "
+            f"예상 낙찰률은 {prediction_rate_percent}% 입니다."
+        )
+
     return PredictPriceResponse(
         status="success",
         optimal_price=optimal_price,
         prediction_rate=prediction_rate_percent,
-        confidence=confidence,
+        user_bid_similarity=user_bid_similarity,
         model_name=model_name,
+        model_id=actual_model,
+        requested_model=outcome.requested_model,
+        fallback_used=outcome.fallback_used,
+        fallback_reason=outcome.fallback_reason,
         rate_low=rate_low,
         rate_high=rate_high,
         price_low=price_low,
         price_high=price_high,
         interval_coverage=coverage,
-        message=(
-            f"{model_name} 분석이 완료되었습니다. "
-            f"예상 낙찰률은 {prediction_rate_percent}% 입니다."
-        ),
+        message=message,
     )
 
 

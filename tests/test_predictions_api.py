@@ -33,8 +33,20 @@ from src.app.models.bids import BidAnnouncement
 from src.ml.model_registry import (
     CATEGORY_DEFAULT_MODELS,
     MODEL_FILES_ROOT,
+    PredictionOutcome,
     _normalize_prediction_rate,
 )
+
+
+def _outcome(rate, model_id="quantum_leap_v25_pro"):
+    """대체 없이 요청 모델이 그대로 답한 정상 경로 산출물."""
+    return PredictionOutcome(
+        predicted_rate=rate,
+        requested_model=model_id,
+        actual_model=model_id,
+        fallback_used=False,
+        fallback_reason=None,
+    )
 
 
 def test_normalize_prediction_rate_converts_percent_to_ratio():
@@ -138,12 +150,12 @@ def _mock_wrapper(display_name):
 
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
-@patch("src.app.api.v1.predictions.predict_optimal_price")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
 def test_predict_price_defaults_to_quantum_leap_for_goods(
     mock_predict, mock_get_model, client, isolated_db
 ):
     bid = _create_bid(isolated_db)
-    mock_predict.return_value = 0.951
+    mock_predict.return_value = _outcome(0.951)
     mock_get_model.return_value = _mock_wrapper("Quantum Leap V25 Pro")
 
     response = client.post(
@@ -160,12 +172,12 @@ def test_predict_price_defaults_to_quantum_leap_for_goods(
 
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
-@patch("src.app.api.v1.predictions.predict_optimal_price")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
 def test_predict_price_defaults_to_category_model_for_services(
     mock_predict, mock_get_model, client, isolated_db
 ):
     bid = _create_bid(isolated_db, category="Servc")
-    mock_predict.return_value = 0.951
+    mock_predict.return_value = _outcome(0.951)
     mock_get_model.return_value = _mock_wrapper("용역 전용 모델")
 
     response = client.post(
@@ -180,12 +192,12 @@ def test_predict_price_defaults_to_category_model_for_services(
 
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
-@patch("src.app.api.v1.predictions.predict_optimal_price")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
 def test_predict_price_passes_selected_model(
     mock_predict, mock_get_model, client, isolated_db
 ):
     bid = _create_bid(isolated_db)
-    mock_predict.return_value = 0.97
+    mock_predict.return_value = _outcome(0.97)
     mock_get_model.return_value = _mock_wrapper("Dummy Model")
 
     response = client.post(
@@ -200,12 +212,12 @@ def test_predict_price_passes_selected_model(
 
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
-@patch("src.app.api.v1.predictions.predict_optimal_price")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
 def test_predict_price_falls_back_to_presmpt_prce_when_base_amount_none(
     mock_predict, mock_get_model, client, isolated_db
 ):
     bid = _create_bid(isolated_db, base_amount=None)
-    mock_predict.return_value = 0.951
+    mock_predict.return_value = _outcome(0.951)
     mock_get_model.return_value = _mock_wrapper("Quantum Leap V25 Pro")
 
     response = client.post(
@@ -233,7 +245,7 @@ def test_predict_price_returns_404_for_unknown_bid(client, isolated_db):
 
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
-@patch("src.app.api.v1.predictions.predict_optimal_price")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
 def test_predict_price_passes_institution_features_from_raw_data(
     mock_predict, mock_get_model, client, isolated_db
 ):
@@ -252,7 +264,7 @@ def test_predict_price_passes_institution_features_from_raw_data(
         "srvceDivNm": "일반용역",
     }
     bid = _create_bid(isolated_db, category="Servc", bid_ntce_no="BID-INST", raw_data=raw)
-    mock_predict.return_value = 0.88
+    mock_predict.return_value = _outcome(0.88)
     mock_get_model.return_value = _mock_wrapper("용역 전용 모델")
 
     response = client.post(
@@ -272,13 +284,13 @@ def test_predict_price_passes_institution_features_from_raw_data(
 
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
-@patch("src.app.api.v1.predictions.predict_optimal_price")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
 def test_predict_price_keeps_legacy_rule_model_keys(
     mock_predict, mock_get_model, client, isolated_db
 ):
     """제도 특징을 병합해도 규칙 기반 구 모델이 쓰는 키가 남아야 한다."""
     bid = _create_bid(isolated_db, category="Thng", bid_ntce_no="BID-LEGACY")
-    mock_predict.return_value = 0.9
+    mock_predict.return_value = _outcome(0.9)
     mock_get_model.return_value = _mock_wrapper("Quantum Leap V25 Pro")
 
     client.post(
@@ -292,7 +304,7 @@ def test_predict_price_keeps_legacy_rule_model_keys(
 
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
-@patch("src.app.api.v1.predictions.predict_optimal_price")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
 def test_predict_price_fills_history_features_requiring_db(
     mock_predict, mock_get_model, client, isolated_db
 ):
@@ -301,7 +313,7 @@ def test_predict_price_fills_history_features_requiring_db(
     session 을 넘기지 않으면 상수로 떨어져 학습과 다른 값을 보게 됩니다.
     """
     bid = _create_bid(isolated_db, category="Servc", bid_ntce_no="BID-HIST")
-    mock_predict.return_value = 0.88
+    mock_predict.return_value = _outcome(0.88)
     mock_get_model.return_value = _mock_wrapper("용역 전용 모델")
 
     client.post(
