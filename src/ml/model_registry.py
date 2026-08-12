@@ -769,6 +769,63 @@ def predict_interval(model_id, features_dict):
     return low, high, float(coverage) if coverage is not None else None
 
 
+def classify_price_decision_method(raw_data: dict) -> str:
+    """raw_data.prearngPrceDcsnMthdNm 기반으로 예가 유형을 분류한다.
+
+    세 경로(API, 챗봇 도구, 기본 모델 선택)가 동일한 판정을 사용하도록
+    이 함수 한 곳에서 판정한다.
+
+    Args:
+        raw_data: 공고 raw_data JSON 딕셔너리 또는 특징 딕셔너리.
+            ``prearngPrceDcsnMthdNm`` 또는 ``prearng_mthd`` 키를 읽는다.
+
+    Returns:
+        ``"복수예가"`` | ``"단일예가"`` | ``"비예가"``
+
+    판정 근거:
+        - ``"복수예가"`` 가 포함되면 복수예가
+        - ``"단일예가"`` 가 포함되면 단일예가
+        - 빈 문자열, ``"없음"``, ``None``, 키 부재 -> 비예가
+        - 그 외 인식 불가 값 -> 비예가 (로그에 원값 기록)
+
+    제도적 근거:
+        비예가 공고는 예정가격을 작성하지 않는 제도이므로 낙찰률(= 낙찰금액 /
+        예정가격)의 분모가 존재하지 않는다. 따라서 낙찰률 기반 투찰가 산출이
+        제도적으로 불가하다.
+        원인 규명: docs/design/servc_nonprearng_population_cause_20260812.md
+    """
+    # raw_data JSON 키와 학습 프레임 키를 모두 지원한다.
+    value = raw_data.get("prearngPrceDcsnMthdNm")
+    if value is None:
+        value = raw_data.get("prearng_mthd")
+    if value is None:
+        value = ""
+
+    if not isinstance(value, str):
+        try:
+            value = str(value)
+        except Exception:
+            logger.warning(
+                "prearngPrceDcsnMthdNm 파싱 실패: type=%s", type(value).__name__
+            )
+            return "비예가"
+
+    normalized = value.strip()
+
+    if not normalized or normalized in ("없음",):
+        return "비예가"
+    if "복수예가" in normalized:
+        return "복수예가"
+    if "단일예가" in normalized:
+        return "단일예가"
+
+    # 인식 불가 값: 임의로 차단하지 않되 비예가로 안전하게 분류한다.
+    logger.warning(
+        "prearngPrceDcsnMthdNm 인식 불가 값 '%s' -> 비예가로 분류", normalized
+    )
+    return "비예가"
+
+
 @dataclass(frozen=True)
 class PredictionOutcome:
     """점 추정과 그 값을 실제로 낸 모델을 함께 담습니다.

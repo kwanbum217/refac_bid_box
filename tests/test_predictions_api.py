@@ -121,19 +121,20 @@ def test_list_models_api_returns_registered_bundles(client, isolated_db, monkeyp
 
 
 def _create_bid(db, **overrides):
+    base_amt = overrides.get("base_amount", 110000000)
     defaults = {
         "bid_ntce_nm": "테스트 공고",
         "bid_ntce_no": "BID-001",
         "bid_ntce_ord": "000",
         "ntce_instt_nm": "테스트 공고기관",
         "dminstt_nm": "테스트 수요기관",
-        "base_amount": 110000000,
+        "base_amount": base_amt,
         "presmpt_prce": 100000000,
         "bid_ntce_dt": utcnow(),
         "bid_clse_dt": utcnow(),
         "openg_dt": utcnow(),
         "category": "Thng",
-        "raw_data": None,
+        "raw_data": {"prearngPrceDcsnMthdNm": "복수예가", "bdgtAmt": base_amt},
     }
     defaults.update(overrides)
     bid = BidAnnouncement(**defaults)
