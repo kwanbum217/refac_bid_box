@@ -21,6 +21,7 @@ from src.app.models.bids import BidAnnouncement
 from src.ml.model_registry import (
     CATEGORY_DEFAULT_MODELS,
     ModelRegistry,
+    PriceDecisionMethod,
     classify_price_decision_method,
     predict_optimal_price_with_provenance,
 )
@@ -158,7 +159,7 @@ def _predict_bid(bid: BidAnnouncement, requested_model: str) -> dict[str, Any]:
     # 명시적 Servc 비예가만 차단하고 missing/unknown/non-Servc는 pass-through 한다.
     raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     method_class = classify_price_decision_method(raw)
-    if method_class == "비예가" and bid.category == "Servc":
+    if method_class == PriceDecisionMethod.NON_PREARNG and bid.category == "Servc":
         reference_amount = float(bid.prediction_reference_amount or 0)
         return {
             "bid": {

@@ -5,6 +5,7 @@ import math
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import joblib
@@ -54,6 +55,14 @@ CATEGORY_DEFAULT_MODELS = {
 
 DEFAULT_RATIO_MIN = 0.75
 DEFAULT_RATIO_MAX = 1.05
+
+
+class PriceDecisionMethod(StrEnum):
+    MULTI = "복수예가"
+    SINGLE = "단일예가"
+    NON_PREARNG = "비예가"
+    MISSING = "Missing"
+    UNKNOWN = "Unknown"
 
 
 def _coerce_float(value, default=0.0):
@@ -165,6 +174,12 @@ def _resolve_model_id(model_id):
 
 def _preferred_model_for_features(features_dict):
     category = str(features_dict.get("category") or "").strip()
+    if category == "Servc":
+        method_class = classify_price_decision_method(features_dict)
+        if method_class == PriceDecisionMethod.NON_PREARNG:
+            raise ValueError(
+                "비예가 공고는 예정가격을 작성하지 않는 제도라 낙찰률 기반 투찰가를 산출할 수 없습니다."
+            )
     return CATEGORY_DEFAULT_MODELS.get(category, "v25")
 
 
@@ -769,7 +784,7 @@ def predict_interval(model_id, features_dict):
     return low, high, float(coverage) if coverage is not None else None
 
 
-def classify_price_decision_method(raw_data: dict) -> str:
+def classify_price_decision_method(raw_data: dict) -> PriceDecisionMethod:
     """raw_data.prearngPrceDcsnMthdNm 기반으로 예가 유형을 분류한다.
 
     세 경로(API, 챗봇 도구, 기본 모델 선택)가 동일한 판정을 사용하도록
@@ -780,7 +795,7 @@ def classify_price_decision_method(raw_data: dict) -> str:
             ``prearngPrceDcsnMthdNm`` 또는 ``prearng_mthd`` 키를 읽는다.
 
     Returns:
-        ``"복수예가"`` | ``"단일예가"`` | ``"비예가"`` | ``"Missing"`` | ``"Unknown"``
+        PriceDecisionMethod
 
     판정 근거:
         - ``"복수예가"`` 가 포함되면 복수예가
@@ -801,7 +816,7 @@ def classify_price_decision_method(raw_data: dict) -> str:
         value = raw_data.get("prearng_mthd")
 
     if value is None:
-        return "Missing"
+        return PriceDecisionMethod.MISSING
 
     if not isinstance(value, str):
         try:
@@ -810,24 +825,22 @@ def classify_price_decision_method(raw_data: dict) -> str:
             logger.warning(
                 "prearngPrceDcsnMthdNm 파싱 실패: type=%s", type(value).__name__
             )
-            return "Unknown"
+            return PriceDecisionMethod.UNKNOWN
 
     normalized = value.strip()
 
     if not normalized:
-        return "Missing"
+        return PriceDecisionMethod.MISSING
     if normalized == "없음" or "비예가" in normalized:
-        return "비예가"
+        return PriceDecisionMethod.NON_PREARNG
     if "복수예가" in normalized:
-        return "복수예가"
+        return PriceDecisionMethod.MULTI
     if "단일예가" in normalized:
-        return "단일예가"
+        return PriceDecisionMethod.SINGLE
 
     # 인식 불가 값: 임의로 차단하지 않되 Unknown 으로 안전하게 분류한다.
-    logger.warning(
-        "prearngPrceDcsnMthdNm 인식 불가 값 '%s' -> Unknown 으로 분류", normalized
-    )
-    return "Unknown"
+    logger.warning("prearngPrceDcsnMthdNm 인식 불가 값 -> Unknown 으로 분류")
+    return PriceDecisionMethod.UNKNOWN
 
 
 @dataclass(frozen=True)

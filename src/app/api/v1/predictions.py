@@ -32,6 +32,7 @@ from src.ml.dataset import announcement_feature_payload
 from src.ml.features import build_feature_dict
 from src.ml.model_registry import (
     ModelRegistry,
+    PriceDecisionMethod,
     classify_price_decision_method,
     predict_interval,
     predict_optimal_price_with_provenance,
@@ -81,7 +82,7 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
     # 근거: docs/design/servc_nonprearng_population_cause_20260812.md
     raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     method_class = classify_price_decision_method(raw)
-    if method_class == "비예가" and bid.category == "Servc":
+    if method_class == PriceDecisionMethod.NON_PREARNG and bid.category == "Servc":
         raise HTTPException(
             status_code=422,
             detail="비예가 공고는 예정가격을 작성하지 않는 제도라 "
