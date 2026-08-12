@@ -1,8 +1,6 @@
 import pandas as pd
-import pytest
 
 from scripts.compare_servc_models_paired import (
-    _sanitize_fallback_reason,
     evaluate_paired_samples,
     predict_one,
 )
@@ -51,7 +49,6 @@ def test_normal_distinct_models():
     eval_res = evaluate_paired_samples(frame)
 
     assert eval_res["invalid_provenance_count"] == 0
-    assert eval_res["invalid_provenance_ratio"] == 0.0
     assert eval_res["fail_closed"] is False
     assert eval_res["decision"]["verdict"] == "challenger 우세"
 
@@ -95,6 +92,7 @@ def test_missing_response_fields_legacy(monkeypatch):
         model_name = "LegacyModel"
         rate_low = 85.0
         rate_high = 90.0
+        # missing model_id, requested_model, fallback_used
 
     monkeypatch.setattr(
         "scripts.compare_servc_models_paired.predict_price_api",
@@ -104,10 +102,10 @@ def test_missing_response_fields_legacy(monkeypatch):
     res = predict_one(session=None, bid_id=101, model_id="legacy_req")
     assert res["pred"] == 87.5
     assert res["model"] == "LegacyModel"
-    assert res["model_id"] == "LegacyModel"
-    assert res["requested_model"] == "legacy_req"
-    assert res["fallback_used"] is True
-    assert res["fallback_reason"] == "Missing field fail-closed"
+    assert res["model_id"] == ""
+    assert res["requested_model"] == ""
+    assert res["fallback_used"] is False
+    assert res["missing_provenance"] is True
 
 
 def test_all_invalid_samples_case():
@@ -118,20 +116,66 @@ def test_all_invalid_samples_case():
         chal_fallbacks=[True, True],
         same_actual_models=[True, True],
     )
-    with pytest.raises(ValueError, match="정상 출처"):
-        evaluate_paired_samples(frame)
+
+    # Should not raise ValueError anymore, should return valid_pairs = 0 and fail_closed
+    eval_res = evaluate_paired_samples(frame)
+    assert eval_res["valid_pairs"] == 0
+    assert eval_res["fail_closed"] is True
+    assert eval_res["invalid_provenance_count"] == 2
 
 
-def test_sanitize_fallback_reason():
-    raw_traceback = (
-        "Traceback (most recent call last):\n"
-        '  File "/internal/secret/path/model_loader.py", line 42, in load\n'
-        "ValueError: Model weights file missing at /secret/path/weights.bin"
+def test_no_sensitive_info_exposure_on_api_error(monkeypatch, capsys):
+    def _mock_raise_sensitive(*args, **kwargs):
+        raise RuntimeError(
+            "Secret_URL: http://internal-db:3306, password=secret123, token=JWT12345"
+        )
+
+    monkeypatch.setattr(
+        "scripts.compare_servc_models_paired.predict_price_api",
+        _mock_raise_sensitive,
     )
-    sanitized = _sanitize_fallback_reason(raw_traceback)
-    assert "/secret/path" not in sanitized
-    assert sanitized == "ValueError"
 
-    raw_val_error = "ValueError: Model failed to converge after 100 iterations"
-    sanitized_val = _sanitize_fallback_reason(raw_val_error)
-    assert sanitized_val == "ValueError"
+    res = predict_one(session=None, bid_id=101, model_id="some_model")
+    assert res is None
+
+    captured = capsys.readouterr()
+    assert "Secret_URL" not in captured.out
+    assert "Secret_URL" not in captured.err
+    assert "password" not in captured.out
+    assert "token" not in captured.out
+
+
+def test_main_zero_valid_or_empty_scope_nonzero_exit(monkeypatch):
+    import sys
+
+    from scripts.compare_servc_models_paired import main
+
+    # Mock collect to return dummy data with an out-of-bounds actual rate
+    def _mock_collect(*args, **kwargs):
+        return pd.DataFrame([{"bid_id": 1, "actual_rate": 999.0}])  # Scope will be empty
+
+    monkeypatch.setattr("scripts.compare_servc_models_paired.collect", _mock_collect)
+
+    class DummySession:
+        def close(self):
+            pass
+
+    monkeypatch.setattr("scripts.compare_servc_models_paired.SessionLocal", DummySession)
+
+    def _mock_predict_one(*args, **kwargs):
+        return {
+            "pred": 80.0,
+            "model": "model",
+            "low": 75.0,
+            "high": 85.0,
+            "model_id": "model_id_" + kwargs.get("model_id", args[2]),
+            "requested_model": "model_id_" + kwargs.get("model_id", args[2]),
+            "fallback_used": False,
+            "missing_provenance": False,
+        }
+
+    monkeypatch.setattr("scripts.compare_servc_models_paired.predict_one", _mock_predict_one)
+    monkeypatch.setattr(sys, "argv", ["script", "--base", "a", "--challenger", "b"])
+
+    exit_code = main()
+    assert exit_code == 1

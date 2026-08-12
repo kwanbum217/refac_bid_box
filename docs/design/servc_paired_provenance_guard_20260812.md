@@ -29,7 +29,7 @@ API 응답(`PredictPriceResponse`)에서 제공하는 모델 출처 계약 필�
 - `requested_model`: 호출부가 요청한 모델 ID
 - `model_id`: 실제로 추론을 수행한 실제 모델 ID
 - `fallback_used`: 대체 모델 응답 여부 (`bool`)
-- `fallback_reason`: 대체 발생 사유 (`str | None`)
+- `fallback_reason`: 대체 발생 사유 (`str | None`) - **보안 및 규격화를 위해 전혀 출력하지 않음**
 
 ### 2.2 표본 유효성 검증 규칙 (Provenance Validation)
 각 공고(bid) 표본에 대해 두 팔의 예측 결과를 다음과 같이 검증합니다:
@@ -39,16 +39,17 @@ API 응답(`PredictPriceResponse`)에서 제공하는 모델 출처 계약 필�
 | Base 팔 대체 여부 | `requested_model == model_id` 및 `not fallback_used` | `base_fallback` 감지 |
 | Challenger 팔 대체 여부 | `requested_model == model_id` 및 `not fallback_used` | `chal_fallback` 감지 |
 | 양 팔 실제 모델 동일성 | `base.model_id != chal.model_id` | `same_actual_model` 감지 |
+| 응답 계약 필드 누락 | `model_id`, `requested_model`, `fallback_used` 중 하나라도 부재, None, 공백일 때 | `missing_provenance` 감지 |
 
-위 3가지 조건 중 하나라도 위반하면 해당 표본은 **출처 오류 표본(invalid provenance)**으로 지정되어 정상 쌍대 비교 수치 계산(MAE, RMSE, t-통계량)에서 즉시 제외됩니다.
+위 4가지 조건 중 하나라도 위반하면 해당 표본은 **출처 오류 표본(invalid provenance)**으로 지정되어 정상 쌍대 비교 수치 계산(MAE, RMSE, t-통계량)에서 즉시 제외됩니다.
 
-### 2.3 민감 정보 마스킹 (Reason Sanitization)
+### 2.3 임의 사유 비노출 (Strict No-Exposure)
 `fallback_reason`에는 내부 파일 경로, DB 연결 정보, 스택 트레이스 등 민감 정보가 포함될 수 있습니다.
-- 로그 및 보고서에는 예외 전문을 노출하지 않고, `_sanitize_fallback_reason()` 함수를 통해 예외 유형 및 대표 메세지의 1줄 요약(최대 80자)으로 정화/범주화하여 집계합니다.
+- 로그 및 보고서에는 예외 원문을 정화(sanitize)하여 노출하던 기존 방식을 폐기하고, 아예 **임의 문자열을 전혀 출력하지 않고 고정 구조화 범주(`base_fallback`, `chal_fallback`, `missing_provenance`, `same_actual_model`)만 집계**하도록 설계합니다. (민감 한 줄 stdout 비노출 원칙)
 
 ### 2.4 Fail-Closed 승격 판정 단축 (Short-Circuit)
-출처 오류 표본이 단 1건이라도 발생하거나, 정상 유효 표본 비율이 기준을 충족하지 못하면:
-- 실패 건수와 원인(base fallback, challenger fallback, same actual model)을 명시적으로 집계·출력합니다.
+출처 오류 표본이나 API 오류(요청 실패 등) 표본이 단 1건이라도 발생하면:
+- 실패 건수와 고정 범주별 원인을 명시적으로 집계·출력합니다.
 - 승격 판정(`verdict`)은 **Fail-Closed** 처리되어 `"판정 불가 (대체 모델 발생)"`으로 자동 변환되고 모델 승격을 즉시 차단합니다.
 
 ---
@@ -60,10 +61,11 @@ flowchart TD
     A["API 예측 요청 (Base, Challenger)"] --> B{"두 팔 모두 응답 성공?"}
     B -- 아니오 --> C["API 오류 표본 집계 (제외)"]
     B -- 예 --> D{"Provenance 검증<br/>1. Base fallback 여부<br/>2. Challenger fallback 여부<br/>3. Base model_id != Challenger model_id"}
-    D -- 위반 (Invalid) --> E["출처 오류 표본 Excluded<br/>(원인별 카운트 & 민감정보 정화)"]
+    D -- 위반 (Invalid) --> E["출처 오류 표본 Excluded<br/>(고정 범주 카운트만 집계)"]
     D -- 통과 (Valid) --> F["정상 쌍대 표본 집계"]
     
-    E --> G{"Invalid 표본 > 0?"}
+    C --> G
+    E --> G{"API 오류 > 0 or<br/>Invalid 표본 > 0?"}
     F --> H["MAE / RMSE / t-통계량 계산"]
     
     G -- 예 --> I["최종 판정: Fail-Closed<br/>'판정 불가 (대체 모델 발생)'"]
@@ -77,10 +79,10 @@ flowchart TD
 `tests/test_compare_servc_models_paired_provenance.py` 신규 단위 테스트 작성을 통해 아래 5가지 핵심 시나리오를 monkeypatch로 검증 완료했습니다:
 
 1. **정상 서로 다른 모델**: 100% 정상 쌍대 검정 수행 및 통계 기반 판정.
-2. **한 팔 fallback**: 대체 발생 표본 제외, 감지 건수 및 정화된 사유 집계, Fail-Closed 판정.
+2. **한 팔 fallback**: 대체 발생 표본 제외, 고정 범주 건수 집계, Fail-Closed 판정.
 3. **두 팔 동일 actual_model**: 동일 모델 판정 감지, Excluded 집계 및 Fail-Closed.
-4. **응답 필드 누락 레거시 대응**: `getattr` 기본값 적용으로 안전하게 하위 호환 동작.
-5. **전량 무효 케이스**: 유효 표본 0건 시 `ValueError` 발생으로 왜곡 통계 계산 방지.
+4. **응답 필드 누락 레거시 대응**: `missing_provenance`로 엄격히 탐지하여 제외 및 Fail-Closed.
+5. **전량 무효 케이스 (Zero Valid)**: 유효 표본 0건 시 빈 통계를 반환하며 CLI Non-Zero(1) 종료로 traceback 없이 Fail-Closed 테스트 완료.
 
 ---
 
