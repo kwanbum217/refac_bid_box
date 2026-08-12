@@ -15,6 +15,7 @@ from src.app.api.v1.bids import router as bids_router
 from src.app.api.v1.chatbot import router as chatbot_router
 from src.app.api.v1.health import router as health_router
 from src.app.api.v1.predictions import router as predictions_router
+from src.app.core.config import Settings, settings
 
 APP_DIR = Path(__file__).resolve().parent
 
@@ -30,8 +31,6 @@ async def _warm_llm_backend() -> None:
     기동을 막지 않도록 배경 태스크로 돌립니다. 예열이 늦어도 서비스는 정상이며,
     실패해도 첫 질의가 느려질 뿐입니다.
     """
-    from src.app.core.config import settings
-
     if not settings.LLM_WARMUP_ON_STARTUP:
         return
     from src.rag.llm import build_backend
@@ -80,27 +79,45 @@ async def lifespan(_: FastAPI):
             task.cancel()
 
 
-app = FastAPI(
-    title="refac_bid_box API",
-    description="Refactored Procurement Analytics, Hybrid RAG Chatbot, AI Prediction & MLOps Platform",
-    version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    lifespan=lifespan,
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 DOUBLE_SLASH_PREFIX = "/bids//"
 
 
-@app.middleware("http")
+def _docs_kwargs(app_settings: Settings) -> dict[str, str | None]:
+    """production 에서 API 문서 표면을 닫습니다.
+
+    docs_url 만 None 으로 두면 /openapi.json 이 남아 전체 스키마가 그대로
+    노출됩니다. Swagger UI 는 그 문서를 읽어 화면을 그리는 것이므로 세 경로를
+    함께 닫아야 실제로 가려집니다.
+    """
+    if not app_settings.docs_enabled:
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+
+def _cors_kwargs(app_settings: Settings) -> dict[str, object]:
+    """자격증명 허용 CORS 의 오리진 범위를 환경에 따라 좁힙니다.
+
+    Starlette 은 allow_origins=["*"] 와 allow_credentials=True 가 함께 오면
+    쿠키가 실린 요청에 대해 요청 Origin 을 그대로 반사하고
+    Access-Control-Allow-Credentials: true 를 붙입니다. 사실상 임의 오리진
+    허용이며, 지금 악용되지 않는 것은 세션 쿠키가 samesite=lax 여서 생긴
+    우연한 방어입니다. production 에서는 명시 목록만 허용합니다.
+
+    개발·스테이징은 로컬 화면이 깨지지 않도록 기존 범위를 유지합니다.
+    """
+    origins = app_settings.cors_allowed_origins
+    production = app_settings.ENVIRONMENT == "production"
+    if not origins and not production and app_settings.CORS_DEV_ALLOW_ALL:
+        origins = ["*"]
+
+    return {
+        "allow_origins": origins,
+        "allow_credentials": True,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+    }
+
+
 async def collapse_bids_double_slash(request: Request, call_next):
     """원본 config/urls.py 의 re_path(r'^bids//(?P<remaining>.*)$') 대응입니다.
 
@@ -117,14 +134,40 @@ async def collapse_bids_double_slash(request: Request, call_next):
     return await call_next(request)
 
 
-app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+def create_app(app_settings: Settings | None = None) -> FastAPI:
+    """환경별 노출 정책을 적용한 앱을 만듭니다.
 
-app.include_router(health_router, prefix="/api/v1")
-app.include_router(bids_router, prefix="/api/v1")
-app.include_router(predictions_router, prefix="/api/v1")
-app.include_router(chatbot_router, prefix="/api/v1")
-app.include_router(automation_router, prefix="/api/v1")
-app.include_router(accounts_router, prefix="/api/v1")
+    팩토리로 둔 이유는 문서 노출과 CORS 범위가 ENVIRONMENT 에 좌우되기
+    때문입니다. 모듈 수준 전역 하나만 두면 환경별 동작을 테스트할 때
+    모듈을 다시 임포트해야 하고, 그러면 같은 세션의 다른 테스트가 잡은
+    앱 객체와 어긋납니다.
+    """
+    app_settings = app_settings or settings
 
-# SSR 화면은 원본 Django 경로를 그대로 사용하므로 prefix 없이 마지막에 포함합니다.
-app.include_router(ui_router)
+    app = FastAPI(
+        title="refac_bid_box API",
+        description="Refactored Procurement Analytics, Hybrid RAG Chatbot, AI Prediction & MLOps Platform",
+        version="0.1.0",
+        lifespan=lifespan,
+        **_docs_kwargs(app_settings),
+    )
+
+    app.add_middleware(CORSMiddleware, **_cors_kwargs(app_settings))
+    app.middleware("http")(collapse_bids_double_slash)
+
+    app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+
+    app.include_router(health_router, prefix="/api/v1")
+    app.include_router(bids_router, prefix="/api/v1")
+    app.include_router(predictions_router, prefix="/api/v1")
+    app.include_router(chatbot_router, prefix="/api/v1")
+    app.include_router(automation_router, prefix="/api/v1")
+    app.include_router(accounts_router, prefix="/api/v1")
+
+    # SSR 화면은 원본 Django 경로를 그대로 사용하므로 prefix 없이 마지막에 포함합니다.
+    app.include_router(ui_router)
+
+    return app
+
+
+app = create_app()

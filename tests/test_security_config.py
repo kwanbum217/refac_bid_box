@@ -42,6 +42,10 @@ def test_unknown_environment_cannot_bypass_production_guards():
             {"DATABASE_URL": "mysql+pymysql://root:rootpassword@db:3306/procurement"},
             "데이터베이스 비밀번호",
         ),
+        ({"CORS_ALLOWED_ORIGINS": ""}, "CORS_ALLOWED_ORIGINS"),
+        ({"CORS_ALLOWED_ORIGINS": "   ,  "}, "CORS_ALLOWED_ORIGINS"),
+        ({"CORS_ALLOWED_ORIGINS": "*"}, "와일드카드"),
+        ({"CORS_ALLOWED_ORIGINS": "https://app.example.com,*"}, "와일드카드"),
     ],
 )
 def test_production_rejects_insecure_defaults(overrides, message):
@@ -53,6 +57,7 @@ def test_production_rejects_insecure_defaults(overrides, message):
         "SECRET_KEY": "production-test-secret-key-that-is-long-enough",
         "DATABASE_URL": "mysql+pymysql://app:strong-password@db:3306/procurement",
         "DB_PASSWORD": "strong-password",
+        "CORS_ALLOWED_ORIGINS": "https://app.example.com",
         "_env_file": None,
     }
     values.update(overrides)
@@ -68,7 +73,39 @@ def test_production_accepts_explicit_secure_settings():
         SECRET_KEY="production-test-secret-key-that-is-long-enough",
         DATABASE_URL="mysql+pymysql://app:strong-password@db:3306/procurement",
         DB_PASSWORD="strong-password",
+        CORS_ALLOWED_ORIGINS="https://app.example.com, https://admin.example.com",
         _env_file=None,
     )
 
     assert configured.ENVIRONMENT == "production"
+    assert configured.cors_allowed_origins == [
+        "https://app.example.com",
+        "https://admin.example.com",
+    ]
+
+
+def test_cors_dev_allow_all_does_not_exempt_production():
+    """개발 편의 플래그로 운영 게이트를 우회할 수 없어야 합니다."""
+    with pytest.raises(ValidationError, match="CORS_ALLOWED_ORIGINS"):
+        Settings(
+            ENVIRONMENT="production",
+            DEBUG=False,
+            SECRET_KEY="production-test-secret-key-that-is-long-enough",
+            DATABASE_URL="mysql+pymysql://app:strong-password@db:3306/procurement",
+            DB_PASSWORD="strong-password",
+            CORS_ALLOWED_ORIGINS="",
+            CORS_DEV_ALLOW_ALL=True,
+            _env_file=None,
+        )
+
+
+def test_development_allows_empty_cors_origins():
+    configured = Settings(
+        ENVIRONMENT="development",
+        SECRET_KEY="test-only-secret-key-at-least-32-characters",
+        CORS_ALLOWED_ORIGINS="",
+        _env_file=None,
+    )
+
+    assert configured.cors_allowed_origins == []
+    assert configured.docs_enabled is True
