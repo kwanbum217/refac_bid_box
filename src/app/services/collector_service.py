@@ -70,6 +70,8 @@ async def collect_bids(
             "announcement_count": 0,
             "result_count": 0,
             "total_records": 0,
+            "attempted": 0,
+            "failed_count": 0,
         }
 
     yesterday = (utcnow() - timedelta(days=1)).strftime("%Y%m%d")
@@ -83,6 +85,8 @@ async def collect_bids(
         "fetch_type": fetch_type,
         "announcement_count": 0,
         "result_count": 0,
+        "attempted": 0,
+        "failed_count": 0,
         "categories": {},
     }
 
@@ -94,6 +98,7 @@ async def collect_bids(
         metrics["categories"].setdefault(cat_code, {"announcement_count": 0, "result_count": 0})
 
         if fetch_type in ("both", "announce"):
+            metrics["attempted"] += 1
             try:
                 # 15일 구간이 끝나는 즉시 적재하고 버립니다. 전 구간을 모으면
                 # raw_data JSON 때문에 장기 백필에서 메모리가 터집니다.
@@ -111,6 +116,7 @@ async def collect_bids(
                 metrics["categories"][cat_code]["announcement_error"] = str(exc)
 
         if fetch_type in ("both", "result"):
+            metrics["attempted"] += 1
             try:
                 saved = await stream_bid_data(
                     start_date,
@@ -145,5 +151,15 @@ async def collect_bids(
             logger.warning("대시보드 집계 또는 캐시 예열 실패: %s", exc)
             metrics["cache_warmed"] = False
 
-    metrics["status"] = "success"
+    metrics["failed_count"] = sum(
+        error_key in category_metrics
+        for category_metrics in metrics["categories"].values()
+        for error_key in ("announcement_error", "result_error")
+    )
+    if metrics["failed_count"] == 0:
+        metrics["status"] = "success"
+    elif metrics["failed_count"] == metrics["attempted"]:
+        metrics["status"] = "failed"
+    else:
+        metrics["status"] = "partial_success"
     return metrics

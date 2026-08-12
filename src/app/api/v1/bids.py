@@ -23,7 +23,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from src.app.api.v1.accounts import require_current_user
 from src.app.core.db import get_db
+from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.schemas.bids import (
     BidDetailResponse,
@@ -238,8 +240,12 @@ async def collect_bids_api(
     end_date: str = Query("", description="수집 종료일 (YYYYMMDD, 미지정 시 어제)"),
     fetch_type: str = Query("both", description="both/announce/result"),
     db: Session = Depends(get_db),
+    user: CustomUser = Depends(require_current_user),
 ):
     """원본 collect_bids 관리 명령 대응. 장시간 수집은 자동화 큐를 사용하십시오."""
+    if not (user.is_staff or user.is_superuser):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+
     from src.app.services.collector_service import collect_bids
 
     return await collect_bids(
