@@ -6,6 +6,11 @@ src/app/core/security.py
 비밀번호는 Django 의 `pbkdf2_sha256$<iterations>$<salt>$<hash>` 포맷을 그대로 사용합니다.
 원본 accounts_customuser 에 저장된 기존 계정이 그대로 로그인되어야 하기 때문입니다.
 표준 라이브러리만 사용하므로 신규 의존성이 없습니다.
+
+세션 저장소는 일반 조회 캐시(src/app/core/cache.py 의 cache)와 다른 객체이며
+연결도 따로 씁니다. 조회 캐시의 로컬 degrade 정책이 인증 상태로 전파되면
+프로세스마다 다른 세션 집합을 보게 되어 로그인 사용자가 요청마다 임의로
+로그아웃됩니다.
 """
 
 from __future__ import annotations
@@ -13,10 +18,16 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
+import logging
 import secrets
+import time
 from typing import Any
 
-from src.app.core.cache import cache
+from src.app.core.cache import RedisConnection
+from src.app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 ALGORITHM = "pbkdf2_sha256"
 DEFAULT_ITERATIONS = 600_000
@@ -48,10 +59,118 @@ def check_password(raw_password: str, encoded: str) -> bool:
     return hmac.compare_digest(candidate, encoded)
 
 
+class SessionStoreUnavailable(RuntimeError):
+    """세션 저장소에 접근할 수 없습니다.
+
+    세션 없음(정상적인 비로그인)과 저장소 장애를 구분하기 위한 신호입니다.
+    호출부는 이 예외를 401 이 아니라 503 으로 다뤄야 합니다.
+    """
+
+
+class SessionStore:
+    """인증 세션 전용 저장소. Redis 를 쓸 수 없으면 fail-closed 입니다.
+
+    development 환경에서만 프로세스 로컬 저장소를 허용합니다. 로컬 저장소는
+    다중 프로세스에서 세션이 어긋나므로, 내려갈 때 ERROR 로그로 드러냅니다.
+    """
+
+    def __init__(
+        self,
+        connection: RedisConnection | None = None,
+        allow_local_fallback: bool | None = None,
+    ):
+        self._conn = connection or RedisConnection(label="session")
+        self._allow_local_fallback = allow_local_fallback
+        self._local: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._degraded_logged = False
+
+    @property
+    def local_fallback_allowed(self) -> bool:
+        if self._allow_local_fallback is None:
+            return settings.ENVIRONMENT == "development"
+        return self._allow_local_fallback
+
+    @staticmethod
+    def _key(token: str) -> str:
+        return f"{SESSION_CACHE_PREFIX}{token}"
+
+    def _fallback(self, reason: str) -> dict[str, tuple[float, dict[str, Any]]]:
+        if not self.local_fallback_allowed:
+            logger.error("인증 세션 저장소를 사용할 수 없어 요청을 실패시킵니다: %s", reason)
+            raise SessionStoreUnavailable(reason)
+        if not self._degraded_logged:
+            logger.error(
+                "인증 세션이 프로세스 로컬 저장소로 내려갔습니다. "
+                "다중 프로세스에서는 세션이 어긋납니다: %s",
+                reason,
+            )
+            self._degraded_logged = True
+        return self._local
+
+    def create(self, token: str, payload: dict[str, Any], ttl: int) -> None:
+        client = self._conn.client()
+        if client is None:
+            self._fallback("Redis 연결 없음")[token] = (time.time() + ttl, payload)
+            return
+        self._degraded_logged = False
+        try:
+            client.setex(self._key(token), ttl, json.dumps(payload, ensure_ascii=False))
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            self._fallback(f"세션 저장 실패: {exc}")[token] = (time.time() + ttl, payload)
+
+    def read(self, token: str) -> dict[str, Any] | None:
+        client = self._conn.client()
+        if client is None:
+            return self._read_local(self._fallback("Redis 연결 없음"), token)
+        self._degraded_logged = False
+        try:
+            raw = client.get(self._key(token))
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            return self._read_local(self._fallback(f"세션 조회 실패: {exc}"), token)
+        if not raw:
+            return None
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            logger.warning("세션 값 역직렬화 실패")
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def destroy(self, token: str) -> None:
+        client = self._conn.client()
+        if client is None:
+            self._fallback("Redis 연결 없음").pop(token, None)
+            return
+        self._degraded_logged = False
+        try:
+            client.delete(self._key(token))
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            self._fallback(f"세션 삭제 실패: {exc}").pop(token, None)
+
+    @staticmethod
+    def _read_local(
+        store: dict[str, tuple[float, dict[str, Any]]], token: str
+    ) -> dict[str, Any] | None:
+        entry = store.get(token)
+        if entry is None:
+            return None
+        expires_at, payload = entry
+        if expires_at < time.time():
+            store.pop(token, None)
+            return None
+        return payload
+
+
+session_store = SessionStore()
+
+
 def create_session(user_id: int, username: str) -> str:
     token = secrets.token_urlsafe(32)
-    cache.set(
-        f"{SESSION_CACHE_PREFIX}{token}",
+    session_store.create(
+        token,
         {"user_id": int(user_id), "username": username},
         SESSION_TTL_SECONDS,
     )
@@ -61,10 +180,9 @@ def create_session(user_id: int, username: str) -> str:
 def read_session(token: str | None) -> dict[str, Any] | None:
     if not token:
         return None
-    payload = cache.get(f"{SESSION_CACHE_PREFIX}{token}")
-    return payload if isinstance(payload, dict) else None
+    return session_store.read(token)
 
 
 def destroy_session(token: str | None) -> None:
     if token:
-        cache.delete(f"{SESSION_CACHE_PREFIX}{token}")
+        session_store.destroy(token)
