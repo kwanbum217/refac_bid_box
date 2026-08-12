@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SSEParser } from './sseParser';
+import { processChatStream } from './chatStreamHandler';
 
 interface HealthStatus {
   status: string;
@@ -215,63 +215,62 @@ export default function App() {
       if (!res.body) throw new Error("No response body");
 
       const reader = res.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      const parser = new SSEParser();
 
-      let accumulated = '';
-      let accumulatedDocs: any[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        for (const event of parser.parseChunk(chunk)) {
-          const { event: eventName, data } = event;
-          
-          if (eventName === 'stage') {
-            setCurrentStreamText(`[${data.stage}] ${data.message}...`);
-          } else if (eventName === 'docs') {
-            accumulatedDocs = data.docs ?? [];
-            setCurrentDocs(accumulatedDocs);
-          } else if (eventName === 'token') {
-            accumulated += data.text;
-            setCurrentStreamText(accumulated);
-          } else if (eventName === 'final') {
-            if (data.session_key) {
-              setSessionKey(data.session_key);
-            }
-            setChatMessages((prev) => [
-              ...prev,
-              { role: 'assistant', text: data.answer || accumulated || '분석이 완료되었습니다.', docs: accumulatedDocs, visualizations: data.visualizations }
-            ]);
-            setCurrentStreamText('');
-            setCurrentDocs([]);
-            setIsStreaming(false);
-            setAbortController(null);
-            return;
-          } else if (eventName === 'error') {
-            const errorMsg = `[오류] ${data.message} (Trace ID: ${data.trace_id})`;
-            setChatMessages((prev) => [
-              ...prev,
-              { role: 'assistant', text: errorMsg }
-            ]);
-            setCurrentStreamText('');
-            setCurrentDocs([]);
-            setIsStreaming(false);
-            setAbortController(null);
-            return;
-          }
-        }
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-         setChatMessages((prev) => [
+      await processChatStream(reader, {
+        onStage: (stage, message) => {
+          setCurrentStreamText(`[${stage}] ${message}...`);
+        },
+        onDocs: (docs) => {
+          setCurrentDocs(docs);
+        },
+        onToken: (accumulated) => {
+          setCurrentStreamText(accumulated);
+        },
+        onFinal: (answer, docs, visualizations, key) => {
+          if (key) setSessionKey(key);
+          setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: answer, docs, visualizations }
+          ]);
+        },
+        onError: (message, traceId) => {
+          setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: `[오류] ${message} (Trace ID: ${traceId})` }
+          ]);
+        },
+        onAbort: () => {
+          setChatMessages((prev) => [
             ...prev,
             { role: 'assistant', text: '사용자에 의해 중지되었습니다.' }
+          ]);
+        },
+        onNetworkError: (message) => {
+          setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: `[네트워크 오류] ${message}` }
+          ]);
+        },
+        onUnexpectedEnd: (accumulated) => {
+          setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: accumulated || '응답이 예기치 않게 종료되었습니다.' }
+          ]);
+        },
+        onComplete: () => {
+          setIsStreaming(false);
+          setAbortController(null);
+          setCurrentStreamText('');
+          setCurrentDocs([]);
+        }
+      });
+    } catch (err: any) {
+      console.error('Chat request error:', err);
+      if (err.name !== 'AbortError') {
+         setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: `[요청 오류] ${err.message || '알 수 없는 오류'}` }
          ]);
-      } else {
-         console.error('Chat error:', err);
       }
       setIsStreaming(false);
       setAbortController(null);
@@ -730,6 +729,12 @@ export default function App() {
                   }}
                 >
                   {msg.text}
+                  {msg.visualizations && (
+                    <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#0f172a', borderRadius: '4px', fontSize: '11px', overflowX: 'auto', border: '1px dashed #4ade80' }}>
+                      <div style={{ color: '#4ade80', marginBottom: '4px', fontWeight: 600 }}>차트 데이터</div>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(msg.visualizations, null, 2)}</pre>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

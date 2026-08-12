@@ -9,18 +9,20 @@ export class SSEParser {
   *parseChunk(chunk: string): Generator<SSEEvent, void, unknown> {
     this.buffer += chunk;
     while (true) {
-      const index = this.buffer.indexOf('\n\n');
-      if (index === -1) {
+      const match = this.buffer.match(/(?:\r?\n){2}/);
+      if (!match || match.index === undefined) {
         break; // Wait for more data
       }
-      
+
+      const index = match.index;
+      const frameLength = match[0].length;
       const frame = this.buffer.slice(0, index);
-      this.buffer = this.buffer.slice(index + 2);
-      
-      const lines = frame.split('\n');
+      this.buffer = this.buffer.slice(index + frameLength);
+
+      const lines = frame.split(/\r?\n/);
       let eventType = 'message';
       let dataStr = '';
-      
+
       for (const line of lines) {
         if (line.startsWith('event: ')) {
           eventType = line.slice(7).trim();
@@ -32,7 +34,7 @@ export class SSEParser {
           dataStr += (dataStr ? '\n' : '') + line.slice(5);
         }
       }
-      
+
       if (dataStr) {
         try {
           const parsedData = JSON.parse(dataStr);

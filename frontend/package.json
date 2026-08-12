@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test src/sseParser.test.ts"
+    "test": "node --experimental-strip-types --test src/*.test.ts"
   },
 
   "dependencies": {
