@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-08-10
 > **착수 예정**: 2026-08-11
-> **상태**: 미착수. 설계 결정 완료, 코드 변경 지점 확정
+> **상태**: 완료. 판정용·보고용 이중 집계와 판정 어긋남 경고 반영
 > **선행 근거**: [`servc_holdout_serving_gap_20260810.md`](../design/servc_holdout_serving_gap_20260810.md)
 > **선행 인수인계**: [`2026-08-10_servc_tuning_handoff.md`](2026-08-10_servc_tuning_handoff.md) 2.6
 > **예상 소요**: DB 없이 진행하는 1~4단계 **1시간 20분**, 쿼리 최적화 포함 시 **1시간 50분**
@@ -212,3 +212,34 @@ s.close()"
 
 3번은 이 작업과 짝입니다. 평가를 학습 기준에 맞췄는데 **그 학습 기준 자체가
 임의값이면** 정상 건을 버리고 있을 수 있습니다.
+
+---
+
+## 8. 실행 결과 (2026-08-12)
+
+### 8.1 산출물
+
+| 산출물 | 결과 |
+| --- | --- |
+| [`scripts/compare_servc_models_paired.py`](../../scripts/compare_servc_models_paired.py) | 전량 보고와 학습 범위 내 판정을 순수 함수로 분리하고, 두 조건의 요약·쌍대 지표와 어긋남 경고를 함께 출력합니다. |
+| [`tests/test_paired_sample_filter.py`](../../tests/test_paired_sample_filter.py) | 범위 밖 표본의 판정 제외와 전량·범위 내 판정 어긋남을 인위 최소 표본으로 검증합니다. |
+| [`scripts/audit_paired_sample_filter_gap.py`](../../scripts/audit_paired_sample_filter_gap.py) | 기존 parquet 감사 도구를 재실행해 2025년 8,995건 중 60건(0.667%)이 범위 밖이며 판정이 뒤집히는 것을 재확인했습니다. |
+
+학습 범위는 `src/ml/dataset.py`의 `MIN_WINNING_RATE`와
+`MAX_WINNING_RATE`를 가져와 사용하며, 쌍대 t 판정 기준 `T_THRESHOLD = 2.0`은
+변경하지 않았습니다. 범위 밖 표본 수와 비율은 0건일 때도 항상 출력합니다.
+
+### 8.2 검증과 남은 위험
+
+| 검증 | 결과 |
+| --- | --- |
+| `uv run pytest tests/ -q` | 821건 통과, 4건 건너뜀, 격리 트리의 알려진 데이터 자산 테스트 2건 실패 |
+| `uv run python scripts/validate_agent_rules.py` | 6/6건 통과 |
+| `uv run ruff check .` | 통과 |
+| `uv run python scripts/audit_paired_sample_filter_gap.py` | 2025년 8,995건 중 범위 밖 60건(0.667%), 전량 `challenger 우세`에서 범위 내 `판별 불가`로 뒤집힘 재현 |
+
+격리 작업 트리에 `data/model_files/*/model.bin`이 없어 실제 서빙 모델을 불러오는
+4.2 배선 검증은 수행하지 않았습니다. 또한 기존 쌍대 parquet은 당시
+`predict_optimal_price`의 자동 대체 동작 때문에 base와 challenger가 실제로 같은
+모델이었을 가능성을 배제할 수 없으므로, 모델 출처 결함 수정과 실제 모델 기반
+종단 재검증 전에는 기존 측정치로 승격 판단을 내려서는 안 됩니다.
