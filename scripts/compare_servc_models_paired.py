@@ -41,7 +41,11 @@ from src.app.api.v1.predictions import predict_price_api  # noqa: E402
 from src.app.core.db import SessionLocal  # noqa: E402
 from src.app.models.bids import BidAnnouncement  # noqa: E402
 from src.app.schemas.predictions import PredictPriceRequest  # noqa: E402
-from src.ml.dataset import announcement_feature_payload  # noqa: E402
+from src.ml.dataset import (  # noqa: E402
+    MAX_WINNING_RATE,
+    MIN_WINNING_RATE,
+    announcement_feature_payload,
+)
 from src.ml.model_registry import ModelRegistry  # noqa: E402
 
 # 유의 판정 기준. 쌍대 t 통계량의 절댓값이 이보다 커야 방향을 말합니다.
@@ -95,6 +99,124 @@ def paired_stats(diff: np.ndarray, label: str, lower_is_better: bool = True) -> 
         "t": round(t, 2),
         "판정": verdict,
     }
+
+
+def evaluate_paired_samples(frame: pd.DataFrame) -> dict:
+    """전량 보고와 학습 범위 내 판정을 함께 계산합니다."""
+    required = {
+        "actual",
+        "base_err",
+        "chal_err",
+        "base_width",
+        "chal_width",
+        "base_covered",
+        "chal_covered",
+    }
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ValueError(f"쌍대 평가 컬럼이 없습니다: {missing}")
+    if frame.empty:
+        raise ValueError("쌍대 평가 표본이 없습니다.")
+
+    actual = pd.to_numeric(frame["actual"], errors="coerce")
+    # 학습 데이터셋의 낙찰률 필터를 판정 범위의 단일 출처로 사용합니다.
+    inside = actual.between(MIN_WINNING_RATE, MAX_WINNING_RATE)
+    outside_count = int((~inside).sum())
+    reporting = _evaluate_scope(frame, "보고용(전량)")
+    decision = _evaluate_scope(frame.loc[inside], "판정용(학습 범위 내)")
+    return {
+        "outside_count": outside_count,
+        "outside_ratio": outside_count / len(frame),
+        "reporting": reporting,
+        "decision": decision,
+        "verdict_mismatch": reporting["verdict"] != decision["verdict"],
+    }
+
+
+def _evaluate_scope(frame: pd.DataFrame, label: str) -> dict:
+    summary = pd.DataFrame(
+        [
+            _model_summary(frame, "base", "base"),
+            _model_summary(frame, "challenger", "chal"),
+        ]
+    )
+    stats = pd.DataFrame(
+        [
+            paired_stats((frame["chal_err"] - frame["base_err"]).to_numpy(), "절대오차"),
+            paired_stats(
+                (frame["chal_err"] ** 2 - frame["base_err"] ** 2).to_numpy(),
+                "제곱오차",
+            ),
+            paired_stats(
+                (frame["chal_width"] - frame["base_width"]).dropna().to_numpy(),
+                "구간 폭",
+            ),
+            paired_stats(
+                (
+                    frame["chal_covered"].astype(float)
+                    - frame["base_covered"].astype(float)
+                ).to_numpy(),
+                "피복률",
+                lower_is_better=False,
+            ),
+        ]
+    )
+    mae_diff = frame["chal_err"] - frame["base_err"]
+    n = len(mae_diff)
+    detectable = (
+        T_THRESHOLD * float(mae_diff.std(ddof=1) / np.sqrt(n)) if n > 1 else float("nan")
+    )
+    return {
+        "label": label,
+        "n": n,
+        "summary": summary,
+        "stats": stats,
+        "better_ratio": float((frame["chal_err"] < frame["base_err"]).mean()),
+        "detectable": detectable,
+        "observed": abs(float(mae_diff.mean())),
+        "verdict": stats.iloc[0]["판정"],
+    }
+
+
+def _model_summary(frame: pd.DataFrame, model: str, prefix: str) -> dict:
+    errors = frame[f"{prefix}_err"]
+    return {
+        "모델": model,
+        "MAE": round(float(errors.mean()), 4),
+        "RMSE": round(float(np.sqrt((errors**2).mean())), 4),
+        "0.5%p 적중": round(float((errors <= 0.5).mean()), 4),
+        "구간 폭": round(float(frame[f"{prefix}_width"].median()), 4),
+        "피복률": round(float(frame[f"{prefix}_covered"].mean()), 4),
+    }
+
+
+def print_paired_evaluation(evaluation: dict) -> None:
+    outside_count = evaluation["outside_count"]
+    outside_ratio = evaluation["outside_ratio"]
+    print(
+        f"학습 범위 밖 {outside_count:,}건({outside_ratio:.3%})은 판정에서 제외하고 "
+        "보고에는 유지합니다."
+    )
+    for key in ("reporting", "decision"):
+        scope = evaluation[key]
+        print(f"\n{'=' * 92}\n{scope['label']} {scope['n']:,}건\n{'=' * 92}")
+        print(scope["summary"].to_string(index=False))
+        print("\n쌍대 비교 (challenger - base)")
+        print(scope["stats"].to_string(index=False))
+        print(f"challenger 가 더 정확한 공고 비율: {scope['better_ratio']:.2%}")
+        print(f"이 표본이 잡아낼 수 있는 최소 MAE 차이: {scope['detectable']:.5f}")
+        print(f"관측된 차이: {scope['observed']:.5f}")
+
+    reporting_verdict = evaluation["reporting"]["verdict"]
+    decision_verdict = evaluation["decision"]["verdict"]
+    print(f"\n최종 판정(학습 범위 내): {decision_verdict}")
+    if evaluation["verdict_mismatch"]:
+        print(
+            "주의: 판정이 어긋납니다: "
+            f"전량 '{reporting_verdict}' -> 범위 내 '{decision_verdict}'"
+        )
+    else:
+        print(f"전량과 범위 내 판정이 같습니다: {decision_verdict}")
 
 
 def main() -> int:
@@ -177,48 +299,8 @@ def main() -> int:
         return 1
 
     df = pd.DataFrame(records)
-    n = len(df)
-    print(f"채점 {n:,}건 / 제외 {len(frame) - n:,}건\n")
-
-    summary = pd.DataFrame(
-        [
-            {
-                "모델": "base",
-                "MAE": round(float(df["base_err"].mean()), 4),
-                "RMSE": round(float(np.sqrt((df["base_err"] ** 2).mean())), 4),
-                "0.5%p 적중": round(float((df["base_err"] <= 0.5).mean()), 4),
-                "구간 폭": round(float(df["base_width"].median()), 4),
-                "피복률": round(float(df["base_covered"].mean()), 4),
-            },
-            {
-                "모델": "challenger",
-                "MAE": round(float(df["chal_err"].mean()), 4),
-                "RMSE": round(float(np.sqrt((df["chal_err"] ** 2).mean())), 4),
-                "0.5%p 적중": round(float((df["chal_err"] <= 0.5).mean()), 4),
-                "구간 폭": round(float(df["chal_width"].median()), 4),
-                "피복률": round(float(df["chal_covered"].mean()), 4),
-            },
-        ]
-    )
-    print(f"{'=' * 92}\n요약 (이것만으로는 판정하지 마십시오)\n{'=' * 92}")
-    print(summary.to_string(index=False))
-
-    stats = pd.DataFrame(
-        [
-            paired_stats((df["chal_err"] - df["base_err"]).to_numpy(), "절대오차"),
-            paired_stats((df["chal_err"] ** 2 - df["base_err"] ** 2).to_numpy(), "제곱오차"),
-            paired_stats((df["chal_width"] - df["base_width"]).dropna().to_numpy(), "구간 폭"),
-        ]
-    )
-    print(f"\n{'=' * 92}\n쌍대 비교 (challenger - base)\n{'=' * 92}")
-    print(stats.to_string(index=False))
-
-    better = float((df["chal_err"] < df["base_err"]).mean())
-    print(f"\nchallenger 가 더 정확한 공고 비율: {better:.2%}")
-
-    detectable = 2 * float((df["chal_err"] - df["base_err"]).std(ddof=1) / np.sqrt(n))
-    print(f"이 표본이 잡아낼 수 있는 최소 MAE 차이: {detectable:.5f}")
-    print(f"관측된 차이: {abs(float((df['chal_err'] - df['base_err']).mean())):.5f}")
+    print(f"채점 {len(df):,}건 / 제외 {len(frame) - len(df):,}건\n")
+    print_paired_evaluation(evaluate_paired_samples(df))
     return 0
 
 
