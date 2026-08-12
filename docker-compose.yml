@@ -38,7 +38,7 @@ services:
         - CMD
         - python
         - -c
-        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3); assert json.load(response)['status'] == 'healthy'"
+        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3); assert json.load(response)['status'] in ('ready', 'degraded')"
       interval: 10s
       timeout: 5s
       retries: 12

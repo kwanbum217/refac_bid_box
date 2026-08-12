@@ -1,5 +1,9 @@
+import time
+
 from fastapi.testclient import TestClient
 
+from src.app.api.v1 import health
+from src.app.core.config import settings
 from src.app.main import app
 
 client = TestClient(app)
@@ -15,6 +19,123 @@ def test_root():
 def test_health():
     response = client.get("/api/v1/health")
     assert response.status_code == 200
+    assert response.json() == {
+        "status": "healthy",
+        "service": "refac_bid_box",
+        "environment": settings.ENVIRONMENT,
+        "framework": "FastAPI (ASGI)",
+        "database": "MySQL 8 (Docker)",
+        "task_queue": "Arq (asyncio)",
+    }
+
+
+def _patch_checks_healthy(monkeypatch):
+    for name in (
+        "_check_mysql",
+        "_check_redis",
+        "_check_meilisearch",
+        "_check_model_registry",
+        "_check_chromadb",
+    ):
+        monkeypatch.setattr(health, name, lambda: None)
+
+
+def test_liveness_ignores_dependency_failures(monkeypatch):
+    def unavailable():
+        raise RuntimeError("secret connection detail")
+
+    for name in (
+        "_check_mysql",
+        "_check_redis",
+        "_check_meilisearch",
+        "_check_model_registry",
+        "_check_chromadb",
+    ):
+        monkeypatch.setattr(health, name, unavailable)
+
+    response = client.get("/api/v1/health/live")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "alive"}
+
+
+def test_readiness_is_ready_when_all_checks_pass(monkeypatch):
+    _patch_checks_healthy(monkeypatch)
+
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "healthy"
-    assert data["framework"] == "FastAPI (ASGI)"
+    assert data["status"] == "ready"
+    assert set(data["checks"]) == {
+        "mysql",
+        "redis",
+        "meilisearch",
+        "model_registry",
+        "chromadb",
+    }
+    assert all(check["ok"] is True for check in data["checks"].values())
+    assert all(check["detail"] is None for check in data["checks"].values())
+    assert all(isinstance(check["latency_ms"], float) for check in data["checks"].values())
+
+
+def test_readiness_is_not_ready_when_mysql_fails(monkeypatch):
+    _patch_checks_healthy(monkeypatch)
+
+    def mysql_failure():
+        raise RuntimeError("mysql://user:password@host/database")
+
+    monkeypatch.setattr(health, "_check_mysql", mysql_failure)
+
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "not_ready"
+    assert data["checks"]["mysql"]["ok"] is False
+    assert data["checks"]["mysql"]["detail"] == "RuntimeError: dependency_check_failed"
+    assert "password" not in data["checks"]["mysql"]["detail"]
+
+
+def test_readiness_is_degraded_when_only_meilisearch_fails(monkeypatch):
+    _patch_checks_healthy(monkeypatch)
+
+    def meilisearch_failure():
+        raise ConnectionError("http://master-key@meilisearch:7700")
+
+    monkeypatch.setattr(health, "_check_meilisearch", meilisearch_failure)
+
+    response = client.get("/api/v1/health/ready")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "degraded"
+    assert data["checks"]["meilisearch"]["ok"] is False
+    assert data["checks"]["meilisearch"]["detail"] == "ConnectionError: dependency_check_failed"
+
+
+def test_readiness_times_out_without_hanging(monkeypatch):
+    _patch_checks_healthy(monkeypatch)
+    monkeypatch.setattr(health, "CHECK_TIMEOUT_SECONDS", 0.02)
+
+    def slow_mysql():
+        return None
+
+    async def controlled_to_thread(check):
+        if check is slow_mysql:
+            await health.asyncio.sleep(0.1)
+        else:
+            check()
+
+    monkeypatch.setattr(health, "_check_mysql", slow_mysql)
+    monkeypatch.setattr(health.asyncio, "to_thread", controlled_to_thread)
+    started_at = time.perf_counter()
+
+    response = client.get("/api/v1/health/ready")
+
+    elapsed = time.perf_counter() - started_at
+    assert elapsed < 0.08
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "not_ready"
+    assert data["checks"]["mysql"]["detail"] == "TimeoutError: timeout"
