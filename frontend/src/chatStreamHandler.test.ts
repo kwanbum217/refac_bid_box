@@ -74,6 +74,30 @@ test('buildChatRequestBody - pure function constructs correct JSON body with ses
   });
 });
 
+test('processChatStream & buildChatRequestBody - session_key transition state flow contract', async () => {
+  // 1차 요청 (세션키 없음)
+  const reqBody1 = buildChatRequestBody('첫 번째 질문');
+  assert.equal(reqBody1.session_key, null);
+
+  // 1차 SSE 응답에서 final 이벤트로 session_key 발급
+  const cb = createMockCallbacks();
+  const reader = new MockReader([
+    'event: final\ndata: {"answer":"첫번째 답변","session_key":"sk_session_999"}\n\n'
+  ]);
+  await processChatStream(reader, cb);
+
+  assert.equal(cb.calls.onFinal.length, 1);
+  const receivedSessionKey = cb.calls.onFinal[0].s;
+  assert.equal(receivedSessionKey, 'sk_session_999');
+
+  // 2차 요청 시 onFinal에서 수신한 session_key가 바디에 포함되는 상태 흐름 계약 검증
+  const reqBody2 = buildChatRequestBody('두 번째 질문', receivedSessionKey);
+  assert.deepEqual(reqBody2, {
+    message: '두 번째 질문',
+    session_key: 'sk_session_999',
+  });
+});
+
 test('processChatStream - successful flow with token accumulation and final answer replacement', async () => {
   const cb = createMockCallbacks();
   const reader = new MockReader([
