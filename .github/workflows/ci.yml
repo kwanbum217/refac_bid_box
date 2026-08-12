@@ -34,6 +34,23 @@ jobs:
       - name: Validate Multi-Agent Rules Consistency
         run: python3 scripts/validate_agent_rules.py --quiet
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          
+      - name: Install Frontend Dependencies
+        working-directory: ./frontend
+        run: npm ci
+        
+      - name: Run Frontend Tests
+        working-directory: ./frontend
+        run: npm run test
+        
+      - name: Build Frontend
+        working-directory: ./frontend
+        run: npm run build
+
   cross-platform-test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
