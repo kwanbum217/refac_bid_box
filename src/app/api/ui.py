@@ -22,6 +22,8 @@ from src.app.core.config import settings
 from src.app.core.db import get_db
 from src.app.core.security import (
     SESSION_COOKIE_NAME,
+    SESSION_TTL_SECONDS,
+    SessionStoreUnavailable,
     check_password,
     create_session,
     destroy_session,
@@ -448,12 +450,23 @@ async def login_submit(
     account.last_login = utcnow()
     db.commit()
 
+    try:
+        token = create_session(account.id, account.username)
+    except SessionStoreUnavailable as exc:
+        logger.exception("SSR 로그인 세션 저장 실패")
+        raise HTTPException(
+            status_code=503,
+            detail="세션 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주십시오.",
+        ) from exc
+
     redirect = RedirectResponse(url=_safe_next_path(next), status_code=303)
     redirect.set_cookie(
         SESSION_COOKIE_NAME,
-        create_session(account.id, account.username),
+        token,
+        max_age=SESSION_TTL_SECONDS,
         httponly=True,
         samesite="lax",
+        secure=settings.ENVIRONMENT != "development",
     )
     return redirect
 
@@ -461,8 +474,19 @@ async def login_submit(
 @router.get("/accounts/logout/")
 @router.post("/accounts/logout/")
 def logout_submit(bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME)):
-    """원본은 링크(GET)로 로그아웃하므로 두 메서드를 모두 받습니다."""
-    destroy_session(bidbox_session)
+    """원본은 링크(GET)로 로그아웃하므로 두 메서드를 모두 받습니다.
+
+    저장소 장애 시 서버측 무효화 없이 쿠키만 지우면 복구 후 토큰이 되살아납니다.
+    API 경로와 동일하게 503 으로 차단합니다.
+    """
+    try:
+        destroy_session(bidbox_session)
+    except SessionStoreUnavailable as exc:
+        logger.exception("SSR 로그아웃 세션 삭제 실패")
+        raise HTTPException(
+            status_code=503,
+            detail="세션 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주십시오.",
+        ) from exc
     response = RedirectResponse(url="/accounts/login/", status_code=303)
     response.delete_cookie(SESSION_COOKIE_NAME)
     return response
