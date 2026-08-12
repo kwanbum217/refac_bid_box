@@ -5,6 +5,9 @@ tests/test_chatbot_prediction.py
 
 예측 값 자체가 아니라 "자연어 요청이 예측 도구로 라우팅되고, 결과가 원본과 같은
 마크다운 계약으로 렌더링되는가" 를 봅니다. 모델 추론은 원본과 동일하게 mock 합니다.
+
+A4 교정: bid_prediction_tool 이 predict_optimal_price_with_provenance 를 사용하므로
+mock 대상이 PredictionOutcome 을 돌려주도록 변경합니다.
 """
 
 from datetime import timedelta
@@ -13,6 +16,7 @@ from unittest.mock import patch
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
 from src.app.models.chatbot import ChatSessionState, KnowledgeBaseStatus
+from src.ml.model_registry import PredictionOutcome
 from src.rag.schemas import AnswerBundle, Provenance
 
 VALID_SIGNUP = {
@@ -27,8 +31,9 @@ VALID_SIGNUP = {
     "agree_privacy": True,
 }
 
-PREDICT_TARGET = "src.app.services.tools.bid_prediction_tool.predict_optimal_price"
+PROVENANCE_TARGET = "src.app.services.tools.bid_prediction_tool.predict_optimal_price_with_provenance"
 REGISTRY_TARGET = "src.app.services.tools.bid_prediction_tool.ModelRegistry.get_model"
+CLASSIFY_TARGET = "src.app.services.tools.bid_prediction_tool.classify_price_decision_method"
 PLAN_EXEC_TARGET = "src.app.api.v1.chatbot.execute_plan_steps"
 RAG_TARGET = "src.app.api.v1.chatbot.rag_engine.get_answer_sync"
 
@@ -107,10 +112,14 @@ def _answer_bundle(*_args, **_kwargs) -> AnswerBundle:
 # --------------------------------------------------------------------------- #
 
 
+@patch(CLASSIFY_TARGET, return_value="복수예가")
 @patch(REGISTRY_TARGET, return_value=DummyWrapper())
-@patch(PREDICT_TARGET, return_value=0.973)
+@patch(PROVENANCE_TARGET, return_value=PredictionOutcome(
+    predicted_rate=0.973, requested_model="v25", actual_model="v25",
+    fallback_used=False, fallback_reason=None,
+))
 def test_chat_predicts_latest_goods_bid_price_directly(
-    mocked_predict, mocked_get_model, client, isolated_db
+    mocked_provenance, mocked_get_model, mocked_classify, client, isolated_db
 ):
     """원본 test_chat_api_predicts_latest_goods_bid_price_directly 대응."""
     _login(client)
@@ -126,16 +135,23 @@ def test_chat_predicts_latest_goods_bid_price_directly(
     assert "V25 테스트 모델" in payload["answer"]
     assert payload["plan_steps"][0]["tool"] == "bid_prediction_tool"
 
-    called_model_id, called_features = mocked_predict.call_args.args
+    called_model_id, called_features = mocked_provenance.call_args.args
     assert called_model_id == "v25"
     assert called_features["category"] == "Thng"
     assert called_features["presmpt_prce"] == 100000000.0
 
 
+@patch(CLASSIFY_TARGET, return_value="복수예가")
 @patch(REGISTRY_TARGET, return_value=DummyWrapper())
-@patch(PREDICT_TARGET, side_effect=[0.91, 0.92, 0.93, 0.94, 0.95])
+@patch(PROVENANCE_TARGET, side_effect=[
+    PredictionOutcome(predicted_rate=0.91, requested_model="v25", actual_model="v25", fallback_used=False),
+    PredictionOutcome(predicted_rate=0.92, requested_model="v25", actual_model="v25", fallback_used=False),
+    PredictionOutcome(predicted_rate=0.93, requested_model="v25", actual_model="v25", fallback_used=False),
+    PredictionOutcome(predicted_rate=0.94, requested_model="v25", actual_model="v25", fallback_used=False),
+    PredictionOutcome(predicted_rate=0.95, requested_model="v25", actual_model="v25", fallback_used=False),
+])
 def test_chat_predicts_requested_count_of_latest_goods_bids(
-    mocked_predict, mocked_get_model, client, isolated_db
+    mocked_provenance, mocked_get_model, mocked_classify, client, isolated_db
 ):
     """원본 test_chat_api_predicts_requested_count_of_latest_goods_bids 대응.
 
@@ -159,8 +175,8 @@ def test_chat_predicts_requested_count_of_latest_goods_bids(
     assert "KB 최신화가" not in answer
     assert any(signal["action_key"] == "kb_refresh" for signal in payload["advisory_signals"])
 
-    assert mocked_predict.call_count == 5
-    first_model_id, first_features = mocked_predict.call_args_list[0].args
+    assert mocked_provenance.call_count == 5
+    first_model_id, first_features = mocked_provenance.call_args_list[0].args
     assert first_model_id == "v25"
     assert first_features["category"] == "Thng"
 

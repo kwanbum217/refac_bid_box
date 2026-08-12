@@ -5,6 +5,7 @@ import math
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import joblib
@@ -54,6 +55,14 @@ CATEGORY_DEFAULT_MODELS = {
 
 DEFAULT_RATIO_MIN = 0.75
 DEFAULT_RATIO_MAX = 1.05
+
+
+class PriceDecisionMethod(StrEnum):
+    MULTI = "복수예가"
+    SINGLE = "단일예가"
+    NON_PREARNG = "비예가"
+    MISSING = "Missing"
+    UNKNOWN = "Unknown"
 
 
 def _coerce_float(value, default=0.0):
@@ -165,6 +174,12 @@ def _resolve_model_id(model_id):
 
 def _preferred_model_for_features(features_dict):
     category = str(features_dict.get("category") or "").strip()
+    if category == "Servc":
+        method_class = classify_price_decision_method(features_dict)
+        if method_class == PriceDecisionMethod.NON_PREARNG:
+            raise ValueError(
+                "비예가 공고는 예정가격을 작성하지 않는 제도라 낙찰률 기반 투찰가를 산출할 수 없습니다."
+            )
     return CATEGORY_DEFAULT_MODELS.get(category, "v25")
 
 
@@ -767,6 +782,65 @@ def predict_interval(model_id, features_dict):
         logger.warning("구간 값이 비정상입니다 (%s): %s", model_id, exc)
         return None
     return low, high, float(coverage) if coverage is not None else None
+
+
+def classify_price_decision_method(raw_data: dict) -> PriceDecisionMethod:
+    """raw_data.prearngPrceDcsnMthdNm 기반으로 예가 유형을 분류한다.
+
+    세 경로(API, 챗봇 도구, 기본 모델 선택)가 동일한 판정을 사용하도록
+    이 함수 한 곳에서 판정한다.
+
+    Args:
+        raw_data: 공고 raw_data JSON 딕셔너리 또는 특징 딕셔너리.
+            ``prearngPrceDcsnMthdNm`` 또는 ``prearng_mthd`` 키를 읽는다.
+
+    Returns:
+        PriceDecisionMethod
+
+    판정 근거:
+        - ``"복수예가"`` 가 포함되면 복수예가
+        - ``"단일예가"`` 가 포함되면 단일예가
+        - 명시적 비예가 (``"없음"``, ``"비예가"``) -> 비예가
+        - 키 부재 또는 빈 문자열 -> Missing
+        - 그 외 인식 불가 값 -> Unknown (로그에 원값 기록)
+
+    제도적 근거:
+        비예가 공고는 예정가격을 작성하지 않는 제도이므로 낙찰률(= 낙찰금액 /
+        예정가격)의 분모가 존재하지 않는다. 따라서 낙찰률 기반 투찰가 산출이
+        제도적으로 불가하다.
+        원인 규명: docs/design/servc_nonprearng_population_cause_20260812.md
+    """
+    # raw_data JSON 키와 학습 프레임 키를 모두 지원한다.
+    value = raw_data.get("prearngPrceDcsnMthdNm")
+    if value is None:
+        value = raw_data.get("prearng_mthd")
+
+    if value is None:
+        return PriceDecisionMethod.MISSING
+
+    if not isinstance(value, str):
+        try:
+            value = str(value)
+        except Exception:
+            logger.warning(
+                "prearngPrceDcsnMthdNm 파싱 실패: type=%s", type(value).__name__
+            )
+            return PriceDecisionMethod.UNKNOWN
+
+    normalized = value.strip()
+
+    if not normalized:
+        return PriceDecisionMethod.MISSING
+    if normalized == "없음" or "비예가" in normalized:
+        return PriceDecisionMethod.NON_PREARNG
+    if "복수예가" in normalized:
+        return PriceDecisionMethod.MULTI
+    if "단일예가" in normalized:
+        return PriceDecisionMethod.SINGLE
+
+    # 인식 불가 값: 임의로 차단하지 않되 Unknown 으로 안전하게 분류한다.
+    logger.warning("prearngPrceDcsnMthdNm 인식 불가 값 -> Unknown 으로 분류")
+    return PriceDecisionMethod.UNKNOWN
 
 
 @dataclass(frozen=True)
