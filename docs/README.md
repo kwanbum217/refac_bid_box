@@ -102,6 +102,7 @@ docs/
 | 크로스 플랫폼 가이드 | [`cross_platform_guide.md`](ops/cross_platform_guide.md) | macOS·Windows 재현 및 검증 절차 |
 | 모델 승격·롤백 런북 | [`model_promotion_runbook.md`](ops/model_promotion_runbook.md) | 승격 게이트, 쌍대 비교 절차, 롤백 왕복 |
 | 스냅샷 재집계 비용 | [`snapshot_rebuild_cost_20260806.md`](ops/snapshot_rebuild_cost_20260806.md) | 주간 재집계로 506초에서 135.8초. 날짜 축 확장·LIKE 제거 기각, 증분 집계 타당성 판정(8절) |
+| Orca 오케스트레이션 실행 지침 | [`orca_orchestration_playbook.md`](ops/orca_orchestration_playbook.md) | 다중 섹션 병렬 운영 절차. 작업 분해, 모델·effort 배정, 감독, 접합부 검증, 함정 12건 |
 
 ## 5. changelogs/
 
