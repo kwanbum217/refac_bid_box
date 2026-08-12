@@ -169,6 +169,7 @@ async def test_collect_status_partial_success_propagation(worker_db, monkeypatch
         .one()
     )
     assert execution.status == "failed"
+    assert execution.stage_status == "failed"
 
     req = (
         worker_db.query(AutomationRequest)
@@ -295,3 +296,58 @@ async def test_collect_status_error_servicekey_compatibility(worker_db, monkeypa
     assert steps["collect"]["status"] == "error"
     assert steps["collect"]["metrics"]["collector_available"] is False
     assert "serviceKey" in steps["collect"]["metrics"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_collect_status_unknown_malformed_fail_closed(worker_db, monkeypatch):
+    """알 수 없거나 잘못된 collector status 가 반환되면 silent success 가 아닌 fail-closed 처리된다."""
+    execution_id = "test-exec-unknown-001"
+    request_id = "test-req-unknown-001"
+    _add_execution(worker_db, execution_id, "refresh_data")
+    _add_request(worker_db, request_id, action_key="data_refresh")
+
+    mock_collect_metrics = {
+        "status": "unknown_invalid_status",
+        "total_records": 0,
+    }
+
+    def dummy_search(db, **kwargs):
+        return ("search step ok", {})
+
+    with patch("src.app.services.collector_service.collect_bids", new_callable=AsyncMock) as mock_collect, \
+         patch.dict(
+             automation_tasks.STEP_RUNNERS,
+             {
+                 "collect": automation_tasks._step_collect,
+                 "search": dummy_search,
+             },
+         ):
+        mock_collect.return_value = mock_collect_metrics
+        result = await automation_tasks.run_automation_pipeline(
+            {},
+            execution_id=execution_id,
+            run_mode="refresh_data",
+            automation_request_id=request_id,
+        )
+
+    assert result["status"] == "failed"
+    assert result["completed_steps"] == ["collect"]
+
+    worker_db.expire_all()
+    execution = (
+        worker_db.query(PipelineExecution)
+        .filter(PipelineExecution.execution_id == execution_id)
+        .one()
+    )
+    assert execution.status == "failed"
+    assert execution.stage_status == "failed"
+
+    req = (
+        worker_db.query(AutomationRequest)
+        .filter(AutomationRequest.request_id == request_id)
+        .one()
+    )
+    assert req.status == "failed"
+    steps = req.result_payload.get("steps", {})
+    assert steps["collect"]["status"] == "failed"
+    assert steps["collect"]["metrics"]["collector_available"] is False

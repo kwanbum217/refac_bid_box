@@ -93,6 +93,8 @@ async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, st
 
     metrics = await collect_bids(db, refresh_aggregates=refresh_aggregates)
     status = str(metrics.get("status") or "error")
+    if status not in ("success", "partial_success", "failed", "error"):
+        status = "failed"
 
     if status == "error":
         today_rows = db.scalar(
@@ -418,13 +420,19 @@ async def run_automation_pipeline(
                 execution.stage_status = step_status
                 db.commit()
 
-            if step_status in (STATUS_FAILED, "error"):
-                pipeline_status = STATUS_FAILED
-                pipeline_error = summary
-                break
+            if step_status == STATUS_SUCCESS:
+                pass
             elif step_status == "partial_success":
                 pipeline_status = STATUS_FAILED
                 pipeline_error = summary
+            elif step_status in (STATUS_FAILED, "error"):
+                pipeline_status = STATUS_FAILED
+                pipeline_error = summary
+                break
+            else:
+                pipeline_status = STATUS_FAILED
+                pipeline_error = summary
+                break
 
         if pipeline_status == STATUS_SUCCESS:
             final_summary = (
@@ -471,6 +479,8 @@ async def run_automation_pipeline(
 
             if execution is not None:
                 execution.status = STATUS_FAILED
+                if execution.stage_status != "error":
+                    execution.stage_status = STATUS_FAILED
                 execution.ended_at = utcnow()
                 execution.logs_summary = final_summary
                 execution.metrics_json = {"completed_steps": completed, "step_statuses": step_statuses}
