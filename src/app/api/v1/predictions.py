@@ -77,11 +77,11 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
         )
 
     # 비예가 판정: model_registry.classify_price_decision_method 단일 함수 사용.
-    # 비예가 공고는 예정가격이 없어 낙찰률 산출이 제도적으로 불가하다.
+    # 명시적 Servc 비예가만 차단하고 missing/unknown/non-Servc는 pass-through 한다.
     # 근거: docs/design/servc_nonprearng_population_cause_20260812.md
     raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     method_class = classify_price_decision_method(raw)
-    if method_class == "비예가":
+    if method_class == "비예가" and bid.category == "Servc":
         raise HTTPException(
             status_code=422,
             detail="비예가 공고는 예정가격을 작성하지 않는 제도라 "

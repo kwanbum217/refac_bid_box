@@ -30,9 +30,9 @@ src/ml/dataset.py
    에만 존재합니다. `INSTITUTION_FIELDS` 가 그 매핑이며, 근거는
    `docs/design/servc_institution_verification_20260803.md` 입니다.
 
-4. 비예가 공고의 학습 프레임 배제 (수정 금지).
+4. 명시적 비예가 공고의 학습 프레임 배제 (수정 금지).
 
-   비예가(``prearngPrceDcsnMthdNm`` 이 ``"없음"`` 또는 부재) 공고는 LEFT JOIN 후
+   명시적 비예가(``prearngPrceDcsnMthdNm`` 이 ``"없음"`` 등) 공고는 LEFT JOIN 후
    ``sucsf_bid_rate IS NOT NULL`` 조건과 후속 ``dropna()`` 에서 자연 배제된다.
 
    이는 의도적 설계이다:
@@ -42,7 +42,8 @@ src/ml/dataset.py
      낙찰률 100% 비율이 17.59% 에 달하는 등 정상 표본이 아니다.
    - 따라서 이 배제 동작을 오인하여 비예가를 학습에 복구해서는 안 된다.
    - 서빙 라우팅(API, 챗봇 도구)에서의 비예가 차단은
-     ``model_registry.classify_price_decision_method`` 단일 함수가 담당한다.
+     ``model_registry.classify_price_decision_method`` 단일 함수로 판정하며,
+     명시적 Servc 비예가만 차단하고 missing/unknown/non-Servc는 통과시킨다.
 
    원인 규명: ``docs/design/servc_nonprearng_population_cause_20260812.md``
 """

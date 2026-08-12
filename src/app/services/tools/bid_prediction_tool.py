@@ -155,10 +155,10 @@ def _predict_bid(bid: BidAnnouncement, requested_model: str) -> dict[str, Any]:
     features = _build_prediction_features(bid)
 
     # 비예가 판정: model_registry.classify_price_decision_method 단일 함수 사용.
-    # API 와 동일한 함수로 판정하므로 세 경로의 판정이 일치한다.
+    # 명시적 Servc 비예가만 차단하고 missing/unknown/non-Servc는 pass-through 한다.
     raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     method_class = classify_price_decision_method(raw)
-    if method_class == "비예가":
+    if method_class == "비예가" and bid.category == "Servc":
         reference_amount = float(bid.prediction_reference_amount or 0)
         return {
             "bid": {

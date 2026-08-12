@@ -42,21 +42,21 @@ class TestClassifyPriceDecisionMethod:
         ("복수예가", "복수예가"),
         ("단일예가", "단일예가"),
         ("없음", "비예가"),
-        ("", "비예가"),
-        (None, "비예가"),
+        ("", "Missing"),
+        (None, "Missing"),
     ])
     def test_standard_values(self, value, expected):
         """표준 세 유형이 올바르게 분류된다."""
         raw = {"prearngPrceDcsnMthdNm": value} if value is not None else {}
         assert classify_price_decision_method(raw) == expected
 
-    def test_key_absent_is_nonprearranged(self):
-        """키 자체가 없으면 비예가이다."""
-        assert classify_price_decision_method({}) == "비예가"
+    def test_key_absent_is_missing(self):
+        """키 자체가 없으면 Missing이다."""
+        assert classify_price_decision_method({}) == "Missing"
 
     def test_both_keys_absent(self):
-        """두 키 모두 없으면 비예가이다."""
-        assert classify_price_decision_method({"unrelated": "value"}) == "비예가"
+        """두 키 모두 없으면 Missing이다."""
+        assert classify_price_decision_method({"unrelated": "value"}) == "Missing"
 
     def test_prearng_mthd_fallback_key(self):
         """학습 프레임 키(prearng_mthd)로도 판정할 수 있다."""
@@ -76,17 +76,17 @@ class TestClassifyPriceDecisionMethod:
             {"prearngPrceDcsnMthdNm": "  복수예가  "}
         ) == "복수예가"
 
-    def test_unrecognized_value_is_nonprearranged(self):
-        """인식 불가 값은 비예가로 안전하게 분류한다."""
+    def test_unrecognized_value_is_unknown(self):
+        """인식 불가 값은 Unknown으로 안전하게 분류한다."""
         assert classify_price_decision_method(
             {"prearngPrceDcsnMthdNm": "알수없는값"}
-        ) == "비예가"
+        ) == "Unknown"
 
     def test_numeric_value_coerced(self):
-        """숫자가 들어와도 파싱 실패 없이 비예가로 분류한다."""
+        """숫자가 들어와도 파싱 실패 없이 Unknown으로 분류한다."""
         assert classify_price_decision_method(
             {"prearngPrceDcsnMthdNm": 12345}
-        ) == "비예가"
+        ) == "Unknown"
 
     def test_partial_match_복수(self):
         """'복수예가' 가 포함된 문자열은 복수예가이다."""
@@ -181,8 +181,8 @@ def test_api_rejects_nonprearranged_with_422(mock_interval, client, isolated_db,
 
 
 @patch("src.app.api.v1.predictions.predict_interval", return_value=None)
-def test_api_rejects_empty_prearng_with_422(mock_interval, client, isolated_db, monkeypatch):
-    """prearngPrceDcsnMthdNm 이 빈 문자열이면 API 가 HTTP 422 를 반환한다."""
+def test_api_accepts_empty_prearng(mock_interval, client, isolated_db, monkeypatch):
+    """prearngPrceDcsnMthdNm 이 빈 문자열이면 Missing 이므로 API 가 통과시킨다."""
     bid = _create_bid(
         isolated_db,
         raw_data={"prearngPrceDcsnMthdNm": ""},
@@ -198,12 +198,12 @@ def test_api_rejects_empty_prearng_with_422(mock_interval, client, isolated_db, 
         json={"bid_id": bid.id, "user_price": "97000000", "selected_model": REQUESTED},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
 
 
 @patch("src.app.api.v1.predictions.predict_interval", return_value=None)
-def test_api_rejects_absent_prearng_with_422(mock_interval, client, isolated_db, monkeypatch):
-    """raw_data 에 prearngPrceDcsnMthdNm 키가 없으면 비예가로 판정한다."""
+def test_api_accepts_absent_prearng(mock_interval, client, isolated_db, monkeypatch):
+    """raw_data 에 prearngPrceDcsnMthdNm 키가 없으면 Missing 이므로 API 가 통과시킨다."""
     bid = _create_bid(
         isolated_db,
         raw_data={"otherKey": "value"},
@@ -219,7 +219,7 @@ def test_api_rejects_absent_prearng_with_422(mock_interval, client, isolated_db,
         json={"bid_id": bid.id, "user_price": "97000000", "selected_model": REQUESTED},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
 
 
 @patch("src.app.api.v1.predictions.predict_interval", return_value=None)
@@ -265,8 +265,8 @@ def test_api_accepts_single_prearranged(mock_interval, client, isolated_db, monk
 
 
 @patch("src.app.api.v1.predictions.predict_interval", return_value=None)
-def test_api_nonprearranged_null_raw_data(mock_interval, client, isolated_db, monkeypatch):
-    """raw_data 가 None 이면 비예가로 판정한다."""
+def test_api_null_raw_data_passes_through(mock_interval, client, isolated_db, monkeypatch):
+    """raw_data 가 None 이면 Missing 이므로 API 가 통과시킨다."""
     bid = _create_bid(
         isolated_db,
         raw_data=None,
@@ -282,7 +282,7 @@ def test_api_nonprearranged_null_raw_data(mock_interval, client, isolated_db, mo
         json={"bid_id": bid.id, "user_price": "97000000", "selected_model": REQUESTED},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
 
 
 # --------------------------------------------------------------------------- #
@@ -492,3 +492,25 @@ def test_api_and_tool_agree_on_plural_prearranged(mock_interval, client, isolate
     tool_result = _predict_bid(bid, REQUESTED)
     assert "skipped" not in tool_result
     assert tool_result["optimal_price"] > 0
+
+
+@patch("src.app.api.v1.predictions.predict_interval", return_value=None)
+def test_api_accepts_non_servc_nonprearranged(mock_interval, client, isolated_db, monkeypatch):
+    """Servc 가 아닌 비예가 공고는 API 가 통과시킨다."""
+    bid = _create_bid(
+        isolated_db,
+        category="Thng",
+        raw_data={"prearngPrceDcsnMthdNm": "없음"},
+    )
+    monkeypatch.setattr(
+        ModelRegistry,
+        "get_model",
+        _registry({REQUESTED: _FakeWrapper(REQUESTED, rate=0.90)}),
+    )
+
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": bid.id, "user_price": "97000000", "selected_model": REQUESTED},
+    )
+
+    assert response.status_code == 200

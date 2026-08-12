@@ -780,13 +780,14 @@ def classify_price_decision_method(raw_data: dict) -> str:
             ``prearngPrceDcsnMthdNm`` 또는 ``prearng_mthd`` 키를 읽는다.
 
     Returns:
-        ``"복수예가"`` | ``"단일예가"`` | ``"비예가"``
+        ``"복수예가"`` | ``"단일예가"`` | ``"비예가"`` | ``"Missing"`` | ``"Unknown"``
 
     판정 근거:
         - ``"복수예가"`` 가 포함되면 복수예가
         - ``"단일예가"`` 가 포함되면 단일예가
-        - 빈 문자열, ``"없음"``, ``None``, 키 부재 -> 비예가
-        - 그 외 인식 불가 값 -> 비예가 (로그에 원값 기록)
+        - 명시적 비예가 (``"없음"``, ``"비예가"``) -> 비예가
+        - 키 부재 또는 빈 문자열 -> Missing
+        - 그 외 인식 불가 값 -> Unknown (로그에 원값 기록)
 
     제도적 근거:
         비예가 공고는 예정가격을 작성하지 않는 제도이므로 낙찰률(= 낙찰금액 /
@@ -798,8 +799,9 @@ def classify_price_decision_method(raw_data: dict) -> str:
     value = raw_data.get("prearngPrceDcsnMthdNm")
     if value is None:
         value = raw_data.get("prearng_mthd")
+
     if value is None:
-        value = ""
+        return "Missing"
 
     if not isinstance(value, str):
         try:
@@ -808,22 +810,24 @@ def classify_price_decision_method(raw_data: dict) -> str:
             logger.warning(
                 "prearngPrceDcsnMthdNm 파싱 실패: type=%s", type(value).__name__
             )
-            return "비예가"
+            return "Unknown"
 
     normalized = value.strip()
 
-    if not normalized or normalized in ("없음",):
+    if not normalized:
+        return "Missing"
+    if normalized == "없음" or "비예가" in normalized:
         return "비예가"
     if "복수예가" in normalized:
         return "복수예가"
     if "단일예가" in normalized:
         return "단일예가"
 
-    # 인식 불가 값: 임의로 차단하지 않되 비예가로 안전하게 분류한다.
+    # 인식 불가 값: 임의로 차단하지 않되 Unknown 으로 안전하게 분류한다.
     logger.warning(
-        "prearngPrceDcsnMthdNm 인식 불가 값 '%s' -> 비예가로 분류", normalized
+        "prearngPrceDcsnMthdNm 인식 불가 값 '%s' -> Unknown 으로 분류", normalized
     )
-    return "비예가"
+    return "Unknown"
 
 
 @dataclass(frozen=True)
