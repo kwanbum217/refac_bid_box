@@ -12,6 +12,18 @@ export interface ChatStreamCallbacks {
   onComplete: () => void;
 }
 
+export interface ChatRequestBody {
+  message: string;
+  session_key: string | null;
+}
+
+export function buildChatRequestBody(message: string, sessionKey?: string | null): ChatRequestBody {
+  return {
+    message: message.trim(),
+    session_key: sessionKey && sessionKey.trim() !== '' ? sessionKey.trim() : null,
+  };
+}
+
 export async function processChatStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   callbacks: ChatStreamCallbacks
@@ -64,7 +76,10 @@ export async function processChatStream(
     isFinished = true;
   } finally {
     if (!isFinished) {
-      callbacks.onUnexpectedEnd(accumulated || '응답이 예기치 않게 종료되었습니다.');
+      const unexpectedMessage = accumulated
+        ? `${accumulated} (불완전한 응답)`
+        : '응답이 예기치 않게 종료되었습니다. (불완전한 응답)';
+      callbacks.onUnexpectedEnd(unexpectedMessage);
     }
     callbacks.onComplete();
   }

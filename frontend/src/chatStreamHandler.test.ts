@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { processChatStream } from './chatStreamHandler.ts';
+import { processChatStream, buildChatRequestBody } from './chatStreamHandler.ts';
 
 // Mock stream reader
 class MockReader implements ReadableStreamDefaultReader<Uint8Array> {
@@ -51,6 +51,29 @@ const createMockCallbacks = (): any & { calls: Record<string, any[]> } => {
   };
 };
 
+test('buildChatRequestBody - pure function constructs correct JSON body with session_key', () => {
+  // sessionKey가 없을 때 session_key: null
+  const body1 = buildChatRequestBody(' 입찰가 예측 문의드립니다. ');
+  assert.deepEqual(body1, {
+    message: '입찰가 예측 문의드립니다.',
+    session_key: null,
+  });
+
+  // next session_key가 제공되었을 때 요청 바디에 세션 키 포함
+  const body2 = buildChatRequestBody('다음 질문입니다', 'session_abc123');
+  assert.deepEqual(body2, {
+    message: '다음 질문입니다',
+    session_key: 'session_abc123',
+  });
+
+  // sessionKey가 빈 문자열/공백일 때 session_key: null
+  const body3 = buildChatRequestBody('질문', '   ');
+  assert.deepEqual(body3, {
+    message: '질문',
+    session_key: null,
+  });
+});
+
 test('processChatStream - successful flow with token accumulation and final answer replacement', async () => {
   const cb = createMockCallbacks();
   const reader = new MockReader([
@@ -72,17 +95,29 @@ test('processChatStream - successful flow with token accumulation and final answ
   assert.equal(cb.calls.onComplete.length, 1);
 });
 
-test('processChatStream - handles unexpected EOF without final', async () => {
+test('processChatStream - handles unexpected EOF with incomplete answer indicator', async () => {
   const cb = createMockCallbacks();
   const reader = new MockReader([
-    'event: token\ndata: {"text":"partial"}\n\n'
+    'event: token\ndata: {"text":"partial answer"}\n\n'
   ]);
 
   await processChatStream(reader, cb);
 
   assert.equal(cb.calls.onFinal.length, 0);
   assert.equal(cb.calls.onUnexpectedEnd.length, 1);
-  assert.equal(cb.calls.onUnexpectedEnd[0].a, 'partial');
+  assert.equal(cb.calls.onUnexpectedEnd[0].a, 'partial answer (불완전한 응답)');
+  assert.equal(cb.calls.onComplete.length, 1);
+});
+
+test('processChatStream - handles unexpected EOF when no tokens received', async () => {
+  const cb = createMockCallbacks();
+  const reader = new MockReader([]);
+
+  await processChatStream(reader, cb);
+
+  assert.equal(cb.calls.onFinal.length, 0);
+  assert.equal(cb.calls.onUnexpectedEnd.length, 1);
+  assert.equal(cb.calls.onUnexpectedEnd[0].a, '응답이 예기치 않게 종료되었습니다. (불완전한 응답)');
   assert.equal(cb.calls.onComplete.length, 1);
 });
 

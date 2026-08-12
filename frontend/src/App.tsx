@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { processChatStream } from './chatStreamHandler';
+import { processChatStream, buildChatRequestBody } from './chatStreamHandler';
+
+const hasVisualizations = (vis: any): boolean => {
+  if (!vis) return false;
+  if (Array.isArray(vis)) return vis.length > 0;
+  if (typeof vis === 'object') return Object.keys(vis).length > 0;
+  return false;
+};
+
 
 interface HealthStatus {
   status: string;
@@ -207,7 +215,7 @@ export default function App() {
       const res = await fetch('/api/v1/chatbot/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userQ, session_key: sessionKey }),
+        body: JSON.stringify(buildChatRequestBody(userQ, sessionKey)),
         signal: controller.signal,
       });
 
@@ -234,9 +242,10 @@ export default function App() {
           ]);
         },
         onError: (message, traceId) => {
+          const safeMsg = message || '응답 생성에 실패했습니다. 잠시 후 다시 시도해 주십시오.';
           setChatMessages((prev) => [
             ...prev,
-            { role: 'assistant', text: `[오류] ${message} (Trace ID: ${traceId})` }
+            { role: 'assistant', text: `[오류] ${safeMsg}${traceId ? ` (Trace ID: ${traceId})` : ''}` }
           ]);
         },
         onAbort: () => {
@@ -245,16 +254,16 @@ export default function App() {
             { role: 'assistant', text: '사용자에 의해 중지되었습니다.' }
           ]);
         },
-        onNetworkError: (message) => {
+        onNetworkError: (_message) => {
           setChatMessages((prev) => [
             ...prev,
-            { role: 'assistant', text: `[네트워크 오류] ${message}` }
+            { role: 'assistant', text: '[오류] 네트워크 연결에 실패했습니다. 서버 상태 및 네트워크를 확인해 주십시오.' }
           ]);
         },
         onUnexpectedEnd: (accumulated) => {
           setChatMessages((prev) => [
             ...prev,
-            { role: 'assistant', text: accumulated || '응답이 예기치 않게 종료되었습니다.' }
+            { role: 'assistant', text: accumulated || '응답이 예기치 않게 종료되었습니다. (불완전한 응답)' }
           ]);
         },
         onComplete: () => {
@@ -269,7 +278,7 @@ export default function App() {
       if (err.name !== 'AbortError') {
          setChatMessages((prev) => [
             ...prev,
-            { role: 'assistant', text: `[요청 오류] ${err.message || '알 수 없는 오류'}` }
+            { role: 'assistant', text: '[오류] 요청을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주십시오.' }
          ]);
       }
       setIsStreaming(false);
@@ -729,7 +738,7 @@ export default function App() {
                   }}
                 >
                   {msg.text}
-                  {msg.visualizations && (
+                  {hasVisualizations(msg.visualizations) && (
                     <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#0f172a', borderRadius: '4px', fontSize: '11px', overflowX: 'auto', border: '1px dashed #4ade80' }}>
                       <div style={{ color: '#4ade80', marginBottom: '4px', fontWeight: 600 }}>차트 데이터</div>
                       <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(msg.visualizations, null, 2)}</pre>
