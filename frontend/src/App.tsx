@@ -1,4 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { processChatStream, buildChatRequestBody } from './chatStreamHandler';
+
+const hasVisualizations = (vis: any): boolean => {
+  if (!vis) return false;
+  if (Array.isArray(vis)) return vis.length > 0;
+  if (typeof vis === 'object') return Object.keys(vis).length > 0;
+  return false;
+};
+
 
 interface HealthStatus {
   status: string;
@@ -67,11 +76,13 @@ export default function App() {
   const [isPredicting, setIsPredicting] = useState<boolean>(false);
 
   // 챗봇 스트리밍 상태
-  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; text: string; docs?: any[] }[]>([]);
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; text: string; docs?: any[]; visualizations?: any }[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [currentStreamText, setCurrentStreamText] = useState<string>('');
   const [currentDocs, setCurrentDocs] = useState<any[]>([]);
+  const [sessionKey, setSessionKey] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   // 헬스체크, 대시보드 통계, 공고 목록 데이터 로드
   useEffect(() => {
@@ -188,7 +199,7 @@ export default function App() {
   };
 
   // 챗봇 SSE 스트리밍
-  const handleSendChat = () => {
+  const handleSendChat = async () => {
     if (!chatInput.trim() || isStreaming) return;
     const userQ = chatInput.trim();
     setChatMessages((prev) => [...prev, { role: 'user', text: userQ }]);
@@ -197,41 +208,84 @@ export default function App() {
     setCurrentDocs([]);
     setIsStreaming(true);
 
-    const eventSource = new EventSource(`/api/v1/chatbot/stream?query=${encodeURIComponent(userQ)}`);
+    const controller = new AbortController();
+    setAbortController(controller);
 
-    // 상태 변수는 이 콜백 클로저에 고정되므로 누적은 지역 변수로 처리한다.
-    let accumulated = '';
-    let accumulatedDocs: any[] = [];
+    try {
+      const res = await fetch('/api/v1/chatbot/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildChatRequestBody(userQ, sessionKey)),
+        signal: controller.signal,
+      });
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'docs') {
-          accumulatedDocs = data.docs ?? [];
-          setCurrentDocs(accumulatedDocs);
-        } else if (data.type === 'token') {
-          accumulated += data.text;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
+
+      await processChatStream(reader, {
+        onStage: (stage, message) => {
+          setCurrentStreamText(`[${stage}] ${message}...`);
+        },
+        onDocs: (docs) => {
+          setCurrentDocs(docs);
+        },
+        onToken: (accumulated) => {
           setCurrentStreamText(accumulated);
-        } else if (data.type === 'done') {
-          setIsStreaming(false);
-          eventSource.close();
+        },
+        onFinal: (answer, docs, visualizations, key) => {
+          if (key) setSessionKey(key);
           setChatMessages((prev) => [
             ...prev,
-            { role: 'assistant', text: accumulated || '분석이 완료되었습니다.', docs: accumulatedDocs },
+            { role: 'assistant', text: answer, docs, visualizations }
           ]);
+        },
+        onError: (message, traceId) => {
+          const safeMsg = message || '응답 생성에 실패했습니다. 잠시 후 다시 시도해 주십시오.';
+          setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: `[오류] ${safeMsg}${traceId ? ` (Trace ID: ${traceId})` : ''}` }
+          ]);
+        },
+        onAbort: () => {
+          setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: '사용자에 의해 중지되었습니다.' }
+          ]);
+        },
+        onNetworkError: (_message) => {
+          setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: '[오류] 네트워크 연결에 실패했습니다. 서버 상태 및 네트워크를 확인해 주십시오.' }
+          ]);
+        },
+        onUnexpectedEnd: (accumulated) => {
+          setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: accumulated || '응답이 예기치 않게 종료되었습니다. (불완전한 응답)' }
+          ]);
+        },
+        onComplete: () => {
+          setIsStreaming(false);
+          setAbortController(null);
           setCurrentStreamText('');
           setCurrentDocs([]);
         }
-      } catch (err) {
-        console.error('SSE parse error:', err);
+      });
+    } catch (err: any) {
+      console.error('Chat request error:', err);
+      if (err.name !== 'AbortError') {
+         setChatMessages((prev) => [
+            ...prev,
+            { role: 'assistant', text: '[오류] 요청을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주십시오.' }
+         ]);
       }
-    };
-
-    eventSource.onerror = (err) => {
-      console.error('SSE error:', err);
       setIsStreaming(false);
-      eventSource.close();
-    };
+      setAbortController(null);
+      setCurrentStreamText('');
+      setCurrentDocs([]);
+    }
   };
 
   const formatNumber = (value: number) => new Intl.NumberFormat('ko-KR').format(value ?? 0);
@@ -684,6 +738,12 @@ export default function App() {
                   }}
                 >
                   {msg.text}
+                  {hasVisualizations(msg.visualizations) && (
+                    <div style={{ marginTop: '8px', padding: '8px', backgroundColor: '#0f172a', borderRadius: '4px', fontSize: '11px', overflowX: 'auto', border: '1px dashed #4ade80' }}>
+                      <div style={{ color: '#4ade80', marginBottom: '4px', fontWeight: 600 }}>차트 데이터</div>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{JSON.stringify(msg.visualizations, null, 2)}</pre>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -713,13 +773,21 @@ export default function App() {
               placeholder="예: 물품구매 적격심사 입찰가격 평점산식을 설명해줘"
               style={{ flex: 1, padding: '12px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '6px', fontSize: '13px' }}
             />
-            <button
-              onClick={handleSendChat}
-              disabled={isStreaming}
-              style={{ backgroundColor: isStreaming ? '#475569' : '#6366f1', color: '#fff', border: 'none', padding: '0 24px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
-            >
-              {isStreaming ? '전송 중' : '전송'}
-            </button>
+            {isStreaming ? (
+              <button
+                onClick={() => abortController?.abort()}
+                style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '0 24px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
+              >
+                중지
+              </button>
+            ) : (
+              <button
+                onClick={handleSendChat}
+                style={{ backgroundColor: '#6366f1', color: '#fff', border: 'none', padding: '0 24px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '13px' }}
+              >
+                전송
+              </button>
+            )}
           </div>
         </section>
       )}
