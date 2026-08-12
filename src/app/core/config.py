@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     # 실제 URL 은 .env 에만 둡니다.
     MLOPS_WEBHOOK_URL: str = ""
 
+    # CORS 허용 오리진. 콤마로 구분한 문자열입니다.
+    # list[str] 필드로 두면 pydantic-settings 가 환경변수를 JSON 으로만 해석해
+    # .env 에 ["https://a","https://b"] 를 요구합니다. 운영자가 손으로 쓰는 값이라
+    # 콤마 구분을 받고 cors_allowed_origins 프로퍼티에서 나눕니다.
+    # 개발·스테이징 기본값은 비어 있어도 되며, 그 경우 아래 CORS_DEV_ALLOW_ALL
+    # 정책이 적용됩니다. production 에서 비면 validator 가 기동을 거부합니다.
+    CORS_ALLOWED_ORIGINS: str = ""
+    # 개발·스테이징에서 임의 오리진을 허용할지 여부입니다. 로컬 개발 편의를 위해
+    # 기본 활성이며, production 에서는 이 값과 무관하게 항상 목록만 허용합니다.
+    CORS_DEV_ALLOW_ALL: bool = True
+
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"
     DB_HOST: str = "localhost"
@@ -86,6 +97,19 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        """CORS_ALLOWED_ORIGINS 를 오리진 목록으로 변환합니다."""
+        return [origin.strip() for origin in self.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def docs_enabled(self) -> bool:
+        """OpenAPI 스키마와 문서 UI 노출 여부입니다.
+
+        production 에서는 전체 API 표면이 공개되지 않도록 닫습니다.
+        """
+        return self.ENVIRONMENT != "production"
+
     @model_validator(mode="after")
     def validate_security_settings(self):
         secret_key = self.SECRET_KEY.strip()
@@ -107,6 +131,16 @@ class Settings(BaseSettings):
 
         if self.DB_PASSWORD == "rootpassword" or "rootpassword" in self.DATABASE_URL:
             raise ValueError("운영 환경에서는 기본 데이터베이스 비밀번호를 사용할 수 없습니다.")
+
+        origins = self.cors_allowed_origins
+        if not origins:
+            raise ValueError(
+                "운영 환경에서는 CORS_ALLOWED_ORIGINS 에 허용 오리진을 명시해야 합니다."
+            )
+        if "*" in origins:
+            raise ValueError(
+                "운영 환경에서는 CORS_ALLOWED_ORIGINS 에 와일드카드를 사용할 수 없습니다."
+            )
 
         return self
 

@@ -22,8 +22,10 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `ENVIRONMENT` | 아니오 | `development` | 실행 환경 (`development` / `staging` / `production`) |
 | `SECRET_KEY` | **예** | - | 32자 이상의 애플리케이션 시크릿 키 (랜덤값) |
 | `DEBUG` | 아니오 | `false` | 디버그 모드 (운영은 `false` 강제) |
+| `CORS_ALLOWED_ORIGINS` | 운영은 **예** | - | 자격증명 요청을 허용할 오리진 목록. 콤마 구분, 스킴 포함 |
+| `CORS_DEV_ALLOW_ALL` | 아니오 | `true` | 개발·스테이징에서 임의 오리진 허용 여부. 운영에는 영향이 없습니다 |
 
-현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 세 가지입니다. `APP_ENV`,
+현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 다섯 가지입니다. `APP_ENV`,
 `APP_SECRET_KEY`, `APP_DEBUG`, `APP_ALLOWED_HOSTS`는 이전 Django 설계의 명칭이므로
 이 프로젝트의 `.env`에 사용하지 않습니다. 허용 호스트 목록은 현재 설정 모델에
 구현되어 있지 않아 별도 환경변수로 추가하지 않습니다.
@@ -33,6 +35,21 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 시작하지 않습니다. 또한 `ENVIRONMENT=production`에서는 예제 시크릿,
 `DEBUG=true`, 기본 DB 비밀번호를 거부합니다. Docker Compose도 `.env`에
 `SECRET_KEY`가 없으면 구성 단계에서 실패하도록 동일한 계약을 사용합니다.
+
+`ENVIRONMENT`에 따라 갈리는 노출 정책은 다음과 같습니다.
+
+| 항목 | development / staging | production |
+| --- | --- | --- |
+| `/docs`, `/redoc`, `/openapi.json` | 노출 | 세 경로 모두 404 |
+| CORS 허용 오리진 | `CORS_ALLOWED_ORIGINS`가 비면 `CORS_DEV_ALLOW_ALL`에 따라 임의 오리진 | `CORS_ALLOWED_ORIGINS` 목록만 |
+| `CORS_ALLOWED_ORIGINS` 미설정 | 허용 | **시동 거부** |
+| `CORS_ALLOWED_ORIGINS`에 `*` 포함 | 허용 | **시동 거부** |
+
+CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명이 실린 요청에
+와일드카드를 쓰면 `*` 대신 요청 `Origin`을 그대로 반사하고
+`Access-Control-Allow-Credentials: true`를 붙이므로, 와일드카드는 사실상 임의
+오리진 허용입니다. 운영에서 목록을 강제하는 이유입니다. 문서 경로는 `docs_url`만
+닫으면 `/openapi.json`이 남아 스키마가 그대로 공개되므로 세 경로를 함께 닫습니다.
 
 ### 2.2 Database
 

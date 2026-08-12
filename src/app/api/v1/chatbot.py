@@ -7,7 +7,11 @@ src/app/api/v1/chatbot.py
 | --- | --- |
 | `chatbot:chat_api` | `POST /api/v1/chatbot/chat` |
 | `chatbot:new_chat_session` | `POST /api/v1/chatbot/session/new` |
-| (신규) 스트리밍 | `GET /api/v1/chatbot/stream` |
+| (신규) 스트리밍 정본 | `POST /api/v1/chatbot/chat/stream` |
+| (legacy) 스트리밍 | `GET /api/v1/chatbot/stream` |
+
+`GET /stream` 은 RAG 답변 토큰만 흘리는 legacy 경로입니다. 계약과 제약은
+`stream_chatbot` docstring 을 보십시오.
 """
 
 from __future__ import annotations
@@ -15,8 +19,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from html import escape
 from typing import Any
 
@@ -168,7 +173,9 @@ def _build_direct_tool_answer(tool_context: dict | None) -> str:
         if model_summary:
             lines.extend(["", model_summary])
         if any(item.get("fallback_used") for item in predictions):
-            lines.extend(["", "> 일부 공고는 요청 모델 추론 실패로 기본 모델 fallback을 사용했습니다."])
+            lines.extend(
+                ["", "> 일부 공고는 요청 모델 추론 실패로 기본 모델 fallback을 사용했습니다."]
+            )
         return "\n".join(lines)
 
     bid = prediction.get("bid") or {}
@@ -235,7 +242,9 @@ def _is_text_confirmation_message(message: str) -> bool:
     )
 
 
-def _find_pending_confirmation_request(db: Session, user_id: int | None) -> AutomationRequest | None:
+def _find_pending_confirmation_request(
+    db: Session, user_id: int | None
+) -> AutomationRequest | None:
     """원본 _find_pending_confirmation_request 대응. 24시간 내 확인 대기 건을 찾습니다."""
     if user_id is None:
         return None
@@ -397,7 +406,9 @@ def _prepare_chat(
         )
 
     if not message:
-        return ChatResponse(status="error", message="메시지를 입력해주세요.", session_key=session_key)
+        return ChatResponse(
+            status="error", message="메시지를 입력해주세요.", session_key=session_key
+        )
 
     compact = message.replace(" ", "")
     if any(keyword in compact or keyword in message for keyword in RESTRICTED_KEYWORDS):
@@ -459,7 +470,8 @@ def _prepare_chat(
     if plan.mode == "action":
         if user_id is None:
             answer_text = _append_kb_status(
-                "자동화 실행은 로그인 후 이용할 수 있습니다. 로그인 뒤 다시 요청해주세요.", kb_status
+                "자동화 실행은 로그인 후 이용할 수 있습니다. 로그인 뒤 다시 요청해주세요.",
+                kb_status,
             )
             return ChatResponse(
                 status="error",
@@ -676,6 +688,21 @@ def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
+# 사용자에게 나가는 스트리밍 실패 문구입니다. 예외 문자열에는 DB 접속 정보,
+# 내부 경로, 스택 조각이 섞일 수 있어 원문은 서버 로그로만 보냅니다.
+STREAM_ERROR_MESSAGE = "응답 생성에 실패했습니다. 잠시 후 다시 시도해 주십시오."
+
+
+def _new_trace_id() -> str:
+    """src/rag/engine.py 의 provenance.trace_id 와 같은 형식으로 추적 id 를 만듭니다.
+
+    스트리밍이 `done` 이벤트까지 도달하면 그 이벤트의 trace_id 를 쓰고, 그 전에
+    끊기면 이 값으로 사용자 응답과 서버 로그를 잇습니다. 형식을 맞춰 두면 두
+    경로의 id 를 같은 검색으로 찾을 수 있습니다.
+    """
+    return datetime.now().strftime("%Y%m%d%H%M%S") + os.urandom(4).hex()
+
+
 @router.post("/chat/stream", summary="챗봇 대화 (SSE 스트리밍)")
 async def chat_stream_api(
     payload: ChatRequest,
@@ -695,6 +722,7 @@ async def chat_stream_api(
     user_id = user.id if user else None
 
     async def event_generator():
+        trace_id = _new_trace_id()
         try:
             yield _sse("stage", {"stage": "planning", "message": "요청을 분석하고 있습니다"})
 
@@ -728,6 +756,7 @@ async def chat_stream_api(
                 elif kind == "done":
                     # 출처 표기와 Answer Guard 교정이 반영된 정본입니다.
                     answer_text = str(event.get("final_answer") or answer_text)
+                    trace_id = str(event.get("trace_id") or trace_id)
                 elif kind == "docs":
                     yield _sse("docs", {"docs": event.get("docs") or []})
 
@@ -736,9 +765,9 @@ async def chat_stream_api(
                 _finalize_rag_answer, db, prepared, answer_text, None, round(latency_ms, 2)
             )
             yield _sse("final", final.model_dump())
-        except Exception as exc:  # pragma: no cover - 스트리밍 중단 경로
-            logger.exception("SSE 챗봇 스트리밍 실패")
-            yield _sse("error", {"message": f"응답 생성에 실패했습니다: {exc}"})
+        except Exception:
+            logger.exception("SSE 챗봇 스트리밍 실패 (trace_id=%s)", trace_id)
+            yield _sse("error", {"message": STREAM_ERROR_MESSAGE, "trace_id": trace_id})
 
     return StreamingResponse(
         event_generator(),
@@ -765,9 +794,29 @@ async def query_chatbot(payload: ChatbotQueryRequest, db: Session = Depends(get_
     )
 
 
-@router.get("/stream", summary="SSE 스트리밍 응답")
+@router.get("/stream", summary="SSE 스트리밍 응답 (legacy, 정본은 POST /chat/stream)")
 async def stream_chatbot(query: str, session_key: str = ""):
+    """RAG 답변 토큰만 흘리는 legacy 경로입니다. 신규 화면은 쓰지 마십시오.
+
+    정본은 `POST /api/v1/chatbot/chat/stream` 입니다. 새 화면과 새 클라이언트는
+    그 경로만 씁니다. 이 경로가 남아 있는 이유는 `frontend/src/App.tsx` 와
+    `scripts/benchmark_latency.py` 가 아직 이 계약을 소비하고 있어서입니다.
+
+    정본과 다른 점이 셋입니다.
+
+    1. 플래너, 자동화 확인, 차트 페이로드, 세션 저장을 거치지 않습니다. 즉
+       같은 질문에 정본보다 좁은 답을 냅니다. 대화 이력도 `session_key` 를
+       넘겼을 때만 읽고, 이 경로의 응답은 이력에 다시 기록되지 않습니다.
+    2. 질의가 URL 쿼리 문자열로 들어옵니다. 사용자 질문이 웹서버 access log,
+       중간 프록시 로그, 브라우저 히스토리에 그대로 남습니다. 정본은 요청
+       본문으로 받아 이 흔적을 남기지 않습니다.
+    3. 이벤트 형식이 다릅니다. 이 경로는 이름 없는 `data:` 프레임에
+       `{"type": ...}` 를 실어 보내고, 정본은 named SSE event(`event: token`,
+       `event: final` 등)를 씁니다. 두 계약은 호환되지 않습니다.
+    """
+
     async def event_generator():
+        trace_id = _new_trace_id()
         db = SessionLocal()
         try:
             history = (
@@ -778,6 +827,12 @@ async def stream_chatbot(query: str, session_key: str = ""):
             async for event in rag_engine.stream_tokens(query, db=db, history=history):
                 yield f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
                 await asyncio.sleep(0)
+        except Exception:
+            # 예외 문자열에는 DB 접속 정보와 내부 경로가 섞일 수 있어 원문은
+            # 로그로만 보냅니다. 클라이언트에는 추적 id 만 넘깁니다.
+            logger.exception("legacy SSE 챗봇 스트리밍 실패 (trace_id=%s)", trace_id)
+            payload = {"type": "error", "message": STREAM_ERROR_MESSAGE, "trace_id": trace_id}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         finally:
             db.close()
 
