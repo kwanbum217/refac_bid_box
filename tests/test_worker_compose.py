@@ -40,5 +40,5 @@ def test_default_compose_waits_for_shared_services_to_be_healthy():
     assert '["CMD", "redis-cli", "ping"]' in compose
     assert '["CMD", "curl", "--fail", "--silent", "--show-error", "http://localhost:7700/health"]' in compose
     assert "http://localhost:7700/health" in compose
-    assert "http://localhost:8000/api/v1/health" in compose
-    assert "json.load(response)['status'] == 'healthy'" in compose
+    assert "http://localhost:8000/api/v1/health/ready" in compose
+    assert "json.load(response)['status'] in ('ready', 'degraded')" in compose
