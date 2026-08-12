@@ -1,8 +1,10 @@
 import importlib.util
 import json
+import logging
 import math
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 
 import joblib
@@ -18,6 +20,8 @@ from src.ml.features import (
     prepare_input_frame,
     unservable_features,
 )
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # 경로 정본은 settings 입니다. 여기서 다시 조립하면 설정을 바꿔도 로더가
@@ -751,7 +755,7 @@ def predict_interval(model_id, features_dict):
     try:
         bounds = wrapper.predict_interval(_prepare_full_frame(features_dict))
     except Exception as exc:
-        print(f"[Predictor] 구간 산출 실패 ({model_id}): {exc}")
+        logger.warning("구간 산출 실패 (%s): %s", model_id, exc)
         return None
     # 구간은 부가 정보입니다. 형태가 어긋나면 점 추정까지 막지 않고 조용히 뺍니다.
     if not isinstance(bounds, (tuple, list)) or len(bounds) != 2:
@@ -760,12 +764,33 @@ def predict_interval(model_id, features_dict):
         low, high = (_normalize_prediction_rate(value) * 100 for value in bounds)
         coverage = (wrapper.metadata.get("interval") or {}).get("target_coverage")
     except (TypeError, ValueError) as exc:
-        print(f"[Predictor] 구간 값이 비정상입니다 ({model_id}): {exc}")
+        logger.warning("구간 값이 비정상입니다 (%s): %s", model_id, exc)
         return None
     return low, high, float(coverage) if coverage is not None else None
 
 
-def predict_optimal_price(model_id, features_dict):
+@dataclass(frozen=True)
+class PredictionOutcome:
+    """점 추정과 그 값을 실제로 낸 모델을 함께 담습니다.
+
+    후보 순회는 요청 모델이 실패해도 다른 모델로 답을 냅니다. 값만 돌려주면
+    호출부는 어느 모델이 답했는지 알 수 없어 모델명, 예측 구간, 로그가 전부
+    답하지 않은 모델을 가리키게 됩니다. 그 은폐를 막는 것이 이 타입입니다.
+    """
+
+    predicted_rate: float
+    requested_model: str
+    actual_model: str
+    fallback_used: bool
+    fallback_reason: str | None = None
+
+
+def predict_optimal_price_with_provenance(model_id, features_dict) -> PredictionOutcome:
+    """점 추정과 실제 사용 모델을 함께 돌려줍니다.
+
+    응답의 모델명과 예측 구간은 반드시 `actual_model` 을 기준으로 계산해야
+    합니다. 요청 모델을 그대로 쓰면 점 추정과 구간이 서로 다른 모델에서 나옵니다.
+    """
     requested_id = _resolve_model_id(model_id or _preferred_model_for_features(features_dict))
     preferred_id = _preferred_model_for_features(features_dict)
     candidate_ids = []
@@ -774,20 +799,54 @@ def predict_optimal_price(model_id, features_dict):
             candidate_ids.append(candidate)
 
     last_error = None
+    failures: list[str] = []
     for candidate_id in candidate_ids:
         wrapper = ModelRegistry.get_model(candidate_id)
         if not wrapper:
+            failures.append(f"{candidate_id}: 미등록")
             continue
 
         try:
             custom_df = wrapper.run_preprocess(features_dict)
             df = custom_df if custom_df is not None else _prepare_full_frame(features_dict)
             raw_prediction = wrapper.predict(df)
-            return float(_normalize_prediction_rate(raw_prediction))
+            predicted_rate = float(_normalize_prediction_rate(raw_prediction))
         except Exception as exc:
             last_error = exc
-            print(f"[Predictor] 모델 '{candidate_id}' 추론 실패: {exc}")
+            failures.append(f"{candidate_id}: {type(exc).__name__}: {exc}")
+            logger.warning("모델 '%s' 추론 실패: %s", candidate_id, exc)
+            continue
+
+        fallback_used = candidate_id != requested_id
+        fallback_reason = "; ".join(failures) if fallback_used else None
+        if fallback_used:
+            logger.warning(
+                "요청 모델 '%s' 대신 '%s' 로 예측했습니다. 사유: %s",
+                requested_id,
+                candidate_id,
+                fallback_reason,
+            )
+        return PredictionOutcome(
+            predicted_rate=predicted_rate,
+            requested_model=requested_id,
+            actual_model=candidate_id,
+            fallback_used=fallback_used,
+            fallback_reason=fallback_reason,
+        )
 
     if last_error:
         raise last_error
-    raise ValueError(f"모델 '{requested_id}'을 찾을 수 없습니다.")
+    raise ValueError(
+        f"모델 '{requested_id}'을 찾을 수 없습니다. (후보: {'; '.join(failures)})"
+    )
+
+
+def predict_optimal_price(model_id, features_dict):
+    """점 추정만 돌려주는 기존 계약입니다.
+
+    출처가 필요한 호출부는 `predict_optimal_price_with_provenance` 를 쓰십시오.
+    이 얇은 래퍼를 남기는 이유는 float 를 그대로 pandas 프레임이나 문자열
+    포매팅에 넣는 호출부가 여럿 있어, 반환형을 바꾸면 그쪽 동작이 조용히
+    달라질 수 있기 때문입니다.
+    """
+    return predict_optimal_price_with_provenance(model_id, features_dict).predicted_rate

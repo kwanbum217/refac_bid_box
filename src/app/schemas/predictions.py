@@ -38,8 +38,19 @@ class PredictPriceResponse(BaseModel):
     status: str = "success"
     optimal_price: int = Field(..., description="최적 투찰 추천가")
     prediction_rate: float = Field(..., description="예상 낙찰률 (%)")
-    confidence: int = Field(..., description="신뢰도 점수 (0~100)")
-    model_name: str = Field(..., description="사용한 모델 표시명")
+    # 종전 confidence 를 대체합니다. 입력 투찰가와 추천가의 근접도이며 모델
+    # 신뢰도가 아닙니다. 투찰가를 넣지 않으면 계산할 값이 없어 None 입니다.
+    # 모델 불확실성은 아래 rate_low / rate_high 구간으로 표현합니다.
+    user_bid_similarity: int | None = Field(
+        None, description="입력 투찰가와 추천가의 근접도 (0~100). 모델 신뢰도가 아님"
+    )
+    model_name: str = Field(..., description="실제로 예측한 모델의 표시명")
+    # 출처. 후보 순회로 다른 모델이 답할 수 있어 요청 모델과 실제 모델을
+    # 함께 노출합니다. 이 값이 없으면 조용한 대체를 밖에서 알 수 없습니다.
+    model_id: str = Field(..., description="실제로 예측한 모델 ID")
+    requested_model: str = Field(..., description="호출부가 요청한 모델 ID")
+    fallback_used: bool = Field(False, description="요청 모델이 아닌 대체 모델이 답했는지 여부")
+    fallback_reason: str | None = Field(None, description="대체 사유 (실패한 모델과 예외)")
     message: str = Field(..., description="사용자 안내 메시지")
     # 구간은 분위 모델을 가진 모델에서만 나옵니다. 구 모델은 None 이라
     # 원본 JsonResponse 계약을 깨지 않습니다.
