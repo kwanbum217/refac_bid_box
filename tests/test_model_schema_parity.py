@@ -13,6 +13,7 @@ DB 접속 없이 컴파일된 DDL 과 컬럼 속성만 확인합니다. 실제 D
 
 import pytest
 from sqlalchemy.dialects import mysql, sqlite
+from sqlalchemy.dialects.mysql.mariadb import MariaDBDialect
 
 import src.app.models  # noqa: F401
 from src.app.core.db import Base
@@ -196,9 +197,13 @@ def test_request_id_uses_native_uuid_on_mariadb():
     ALTER COLUMN 이 걸립니다.
     """
     column = _column("automation_requests", "request_id")
-    mariadb = mysql.dialect()
-    mariadb.supports_native_uuid = True
+    mariadb = MariaDBDialect()
     assert column.type.compile(mariadb) == "UUID"
+
+
+def test_request_id_uses_varchar_on_mysql():
+    """MySQL 8 에는 UUID DDL 타입이 없어 빈 검증 DB도 생성 가능해야 합니다."""
+    assert _column("automation_requests", "request_id").type.compile(MYSQL) == "VARCHAR(36)"
 
 
 def test_request_id_stays_varchar_on_sqlite():
