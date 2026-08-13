@@ -24,7 +24,7 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `DEBUG` | 아니오 | `false` | 디버그 모드 (운영은 `false` 강제) |
 | `CORS_ALLOWED_ORIGINS` | 운영은 **예** | - | 자격증명 요청을 허용할 오리진 목록. 콤마 구분, 스킴 포함 |
 | `CORS_DEV_ALLOW_ALL` | 아니오 | `true` | 개발·스테이징에서 임의 오리진 허용 여부. 운영에는 영향이 없습니다 |
-| `WEB_CONCURRENCY` | 아니오 | `3` | Docker Compose app 서비스의 Uvicorn 워커 프로세스 수. FastAPI 설정 모델이 읽는 값이 아니라 `docker-compose.yml`의 `command`가 직접 소비합니다 |
+| `WEB_CONCURRENCY` | 아니오 | `1` | Docker Compose app 서비스의 Uvicorn 워커 프로세스 수. FastAPI 설정 모델이 읽는 값이 아니라 `docker-compose.yml`의 `command`가 직접 소비합니다. 3워커 이상은 100ms 목표에 실패해 기본값에서 철회된 수동 실험 옵션입니다 |
 
 현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 다섯 가지입니다. `APP_ENV`,
 `APP_SECRET_KEY`, `APP_DEBUG`, `APP_ALLOWED_HOSTS`는 이전 Django 설계의 명칭이므로
@@ -34,7 +34,7 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 `WEB_CONCURRENCY`는 위 다섯 가지와 달리 애플리케이션 코드가 아니라
 `docker-compose.yml`의 app 서비스 `command`가 `--workers` 인자로 그대로
 전달하는 Compose 전용 변수입니다. Arq `worker` 서비스에는 적용되지 않습니다.
-근거 실측과 메모리·기동 시간 게이트, 롤백 절차는
+실제 Docker 실측치와 3·4워커 기각 판정, 안전 기본값 1의 근거는
 [`docs/ops/uvicorn_worker_scaling_candidate_20260813.md`](uvicorn_worker_scaling_candidate_20260813.md)를 참조하십시오.
 
 `ENVIRONMENT`는 표의 세 값만 허용합니다. 오타나 임의 값은 개발 환경으로 강등하지

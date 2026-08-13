@@ -3,13 +3,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # Uvicorn 워커 프로세스 수는 WEB_CONCURRENCY 로 조정합니다. 기본값 3은
-    # docs/ops/uvicorn_worker_scaling_candidate_20260813.md 의 c10 P95 실측
-    # (1워커 199.18ms -> 2워커 101.98ms -> 3워커 60.56ms, c1/c2/c4 역행 없음)
-    # 후보입니다. 배열(exec) 형태라 셸을 거치지 않으므로 값에 셸 확장이나
-    # 명령 주입 여지가 없고, 그대로 --workers 인자 하나로만 전달됩니다.
-    # Dockerfile 의 CMD(단일 워커)는 그대로 두어 `docker run` 직접 실행과
-    # 개발/테스트 계약을 건드리지 않습니다. 롤백은 WEB_CONCURRENCY=1.
+    # Uvicorn 워커 프로세스 수는 WEB_CONCURRENCY 로 조정합니다. 기본값은
+    # 안전값 1입니다. 로컬(비 Docker) 실측에서 3워커가 유망해 보였지만,
+    # 실제 Docker 재기동 실측(docs/ops/uvicorn_worker_scaling_candidate_20260813.md
+    # 4장)에서 3워커 c10 P95 127.32ms/반복 151.82ms, 4워커 c10 P95 165.92ms로
+    # 둘 다 100ms 목표에 실패해 기본값 채택을 철회했습니다. 3워커 이상은
+    # WEB_CONCURRENCY 로 수동 실험할 때만 사용하십시오. 배열(exec) 형태라
+    # 셸을 거치지 않으므로 값에 셸 확장이나 명령 주입 여지가 없고, 그대로
+    # --workers 인자 하나로만 전달됩니다. Dockerfile 의 CMD(단일 워커)는
+    # 그대로 두어 `docker run` 직접 실행과 개발/테스트 계약을 건드리지
+    # 않습니다.
     command:
       - python3
       - -m
@@ -20,7 +23,7 @@ services:
       - --port
       - "8000"
       - --workers
-      - "${WEB_CONCURRENCY:-3}"
+      - "${WEB_CONCURRENCY:-1}"
     ports:
       - "8000:8000"
     environment:
