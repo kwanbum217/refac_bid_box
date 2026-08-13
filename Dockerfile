@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     git \
-    && rm -rf /var/lib/apt-lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # uv 패키지 매니저 복사
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
