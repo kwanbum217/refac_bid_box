@@ -46,6 +46,7 @@ docs/
 | 용역 제도 가정 검증 보고 | [`servc_institution_verification_20260803.md`](design/servc_institution_verification_20260803.md) | V1~V7 데이터 검증 결과, 설계 정정 사항 |
 | 낙찰하한율 결측 조사 | [`lwlt_missing_investigation_20260806.md`](design/lwlt_missing_investigation_20260806.md) | 복원 기각. 결측은 제도적 부재, 레짐 전환 편향 없음 |
 | 레짐 전환 재점검 (값 수준 축) | [`servc_regime_lwlt_levels_20260810.md`](design/servc_regime_lwlt_levels_20260810.md) | 기각 유지. 인상 희소 수준 3.26%, 오라클 상한 0.0079%p, 재점검 트리거 명시 |
+| 레짐 재개 조건 재확인 | [`servc_regime_reopen_check_20260813.md`](design/servc_regime_reopen_check_20260813.md) | 역사적 대리 측정상 재개 근거 없음. 현행 champion OOS 는 라벨 부재로 판정 불가. MAE 격차는 결측 비중이 만든 구성 효과 |
 | 용역 분리 모델 실험 | [`servc_segment_experiment_20260803.md`](design/servc_segment_experiment_20260803.md) | 분리 모델·하한율 절단 기각, 제도 특징 채택 |
 | 용역 2025년 연도 홀드아웃 | [`servc_year_holdout_2025_20260803.md`](design/servc_year_holdout_2025_20260803.md) | 공고 건당 오차 분포, 연초 성능 저하 |
 | 제한경쟁 진단과 난수 구조 | [`servc_restricted_competition_20260803.md`](design/servc_restricted_competition_20260803.md) | 참여업체 수·복수예가 난수 분해, 세부분류 특징 배선 |
