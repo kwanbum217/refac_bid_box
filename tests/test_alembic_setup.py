@@ -106,6 +106,14 @@ def test_baseline_creates_every_django_table():
         assert f"op.create_table('{table}'" in source, f"{table} 이 기준선에 없습니다."
 
 
+def test_baseline_uses_mysql_compatible_request_id_type():
+    """MySQL 8 은 UUID DDL 타입을 지원하지 않으므로 빈 DB 생성이 가능해야 합니다."""
+    source = (PROJECT_ROOT / "migrations" / "versions" / f"{BASELINE}.py").read_text(
+        encoding="utf-8"
+    )
+    assert "sa.Column('request_id', sa.String(length=36)" in source
+
+
 def test_every_modeled_table_is_created_by_some_revision():
     """모델에 있는데 어느 리비전도 만들지 않으면 신규 환경이 깨집니다."""
     sources = "\n".join(

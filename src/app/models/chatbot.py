@@ -27,11 +27,11 @@ FK_AUTOMATION_REQUEST_USER = "automation_requests_user_id_09027998_fk_accounts_c
 FK_AUTOMATION_SUBSCRIPTION_USER = "automation_subscript_user_id_65841fc4_fk_accounts_"
 FK_CHAT_SESSION_USER = "chat_session_states_user_id_47adeb98_fk_accounts_customuser_id"
 
-# 운영 DB 는 MariaDB 12.3 이고 request_id 는 네이티브 uuid 컬럼으로 존재합니다.
-# 일반 Uuid 는 MariaDB 에서 CHAR(32) 로, String(36) 은 VARCHAR(36) 으로 컴파일되어
-# 둘 다 원본 컬럼 타입과 어긋납니다. 어긋난 채로 autogenerate 를 돌리면
-# 운영 테이블에 ALTER 가 걸립니다. as_uuid=False 로 두어 애플리케이션은 문자열로 다룹니다.
-RequestUuid = UUID(as_uuid=False).with_variant(String(36), "sqlite")
+# 운영 DB 는 MySQL 8 이고 UUID DDL 타입을 지원하지 않으므로 VARCHAR(36) 으로 컴파일됩니다.
+# MariaDB 방언('mariadb')은 'mysql' 변형 대상이 아니어서 UUID 타입을 그대로 씁니다.
+# 이는 레거시 MariaDB 호환 경로이며 운영 정본이 아닙니다.
+# as_uuid=False 로 두어 애플리케이션은 request_id 를 36자 문자열로 다룹니다.
+RequestUuid = UUID(as_uuid=False).with_variant(String(36), "sqlite", "mysql")
 
 
 class AutomationRequest(Base):
