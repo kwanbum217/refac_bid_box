@@ -87,33 +87,69 @@ def _report(  # nosec B107
     apply_callback_payload(db, request_obj, payload)
 
 
-async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, dict[str, Any]]:
+async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, str, dict[str, Any]]:
     """G2B 수집 스텝 (원본 collect_bids 명령 대응)."""
     from src.app.services.collector_service import collect_bids
 
     metrics = await collect_bids(db, refresh_aggregates=refresh_aggregates)
-    if metrics.get("status") == "error":
+    status = str(metrics.get("status") or "error")
+    if status not in ("success", "partial_success", "failed", "error"):
+        status = "failed"
+
+    if status == "error":
         today_rows = db.scalar(
             select(func.count(BidAnnouncement.id)).where(
                 BidAnnouncement.collected_at
                 >= datetime.combine(utcnow().date(), datetime.min.time())
             )
         )
-        return (
-            f"{metrics.get('message')} 오늘 적재분 {today_rows or 0}건.",
-            {"today_rows": int(today_rows or 0), "collector_available": False},
+        msg = str(metrics.get("message") or "G2B serviceKey 가 설정되지 않아 수집을 수행할 수 없습니다.")
+        summary = f"{msg} 오늘 적재분 {today_rows or 0}건."
+        res_metrics = {
+            "today_rows": int(today_rows or 0),
+            "announcement_count": metrics.get("announcement_count", 0),
+            "result_count": metrics.get("result_count", 0),
+            "collector_available": False,
+            "attempted": metrics.get("attempted", 0),
+            "failed_count": metrics.get("failed_count", 0),
+            "categories": metrics.get("categories", {}),
+            "status": "error",
+            "message": msg,
+        }
+        return "error", summary, res_metrics
+
+    res_metrics = {
+        "today_rows": metrics.get("total_records", 0),
+        "announcement_count": metrics.get("announcement_count", 0),
+        "result_count": metrics.get("result_count", 0),
+        "collector_available": status in ("success", "partial_success"),
+        "attempted": metrics.get("attempted", 0),
+        "failed_count": metrics.get("failed_count", 0),
+        "categories": metrics.get("categories", {}),
+        "start_date": metrics.get("start_date", ""),
+        "end_date": metrics.get("end_date", ""),
+        "status": status,
+    }
+
+    if status == "success":
+        summary = (
+            f"수집 완료 (공고 {metrics['announcement_count']}건, 낙찰 {metrics['result_count']}건, "
+            f"기간 {metrics['start_date']}~{metrics['end_date']})."
+        )
+    elif status == "partial_success":
+        summary = (
+            f"수집 부분 성공 (공고 {metrics['announcement_count']}건, 낙찰 {metrics['result_count']}건, "
+            f"시도 {metrics['attempted']}건 중 실패 {metrics['failed_count']}건, "
+            f"기간 {metrics['start_date']}~{metrics['end_date']})."
+        )
+    else:  # failed
+        summary = (
+            f"수집 실패 (공고 {metrics.get('announcement_count', 0)}건, 낙찰 {metrics.get('result_count', 0)}건, "
+            f"시도 {metrics.get('attempted', 0)}건 중 실패 {metrics.get('failed_count', 0)}건, "
+            f"기간 {metrics.get('start_date', '')}~{metrics.get('end_date', '')})."
         )
 
-    return (
-        f"수집 완료 (공고 {metrics['announcement_count']}건, 낙찰 {metrics['result_count']}건, "
-        f"기간 {metrics['start_date']}~{metrics['end_date']}).",
-        {
-            "today_rows": metrics["total_records"],
-            "announcement_count": metrics["announcement_count"],
-            "result_count": metrics["result_count"],
-            "collector_available": True,
-        },
-    )
+    return status, summary, res_metrics
 
 
 def _step_rag(
@@ -333,6 +369,10 @@ async def run_automation_pipeline(
         except ValueError:
             steps = ()
 
+        pipeline_status = STATUS_SUCCESS
+        pipeline_error = ""
+        step_statuses: dict[str, str] = {}
+
         for step in steps:
             runner = STEP_RUNNERS.get(step)
             if runner is None:
@@ -356,35 +396,102 @@ async def run_automation_pipeline(
                 # 수집 API 재시도와 워커 재기동을 고려해 24시간을 겹쳐 upsert 합니다.
                 kwargs["collected_since"] = utcnow() - timedelta(days=1)
             outcome = runner(db, **kwargs)
-            summary, metrics = await outcome if inspect.isawaitable(outcome) else outcome
+            res = await outcome if inspect.isawaitable(outcome) else outcome
+
+            if isinstance(res, tuple) and len(res) == 3:
+                step_status, summary, metrics = res
+            elif isinstance(res, tuple) and len(res) == 2:
+                summary, metrics = res
+                step_status = (
+                    str(metrics.get("status"))
+                    if isinstance(metrics, dict) and metrics.get("status")
+                    else STATUS_SUCCESS
+                )
+            else:
+                step_status = STATUS_SUCCESS
+                summary = str(res)
+                metrics = {}
+
             completed.append(step)
-            _report(db, automation_request_id, step, "success", summary, metrics, **delivery)
+            step_statuses[step] = step_status
+            _report(db, automation_request_id, step, step_status, summary, metrics, **delivery)
 
-        final_summary = (
-            f"실행 모드 `{run_mode}` 스텝 {len(completed)}개 완료: {', '.join(completed)}"
-            if completed
-            else f"실행 모드 `{run_mode}` 에 수행할 스텝이 없습니다."
-        )
-        _report(
-            db,
-            automation_request_id,
-            "final",
-            "success",
-            final_summary,
-            {"completed_steps": completed, "run_mode": run_mode},
-            final=True,
-            **delivery,
-        )
+            if execution is not None:
+                execution.stage_status = step_status
+                db.commit()
 
-        if execution is not None:
-            execution.status = STATUS_SUCCESS
-            execution.stage_status = STATUS_SUCCESS
-            execution.ended_at = utcnow()
-            execution.logs_summary = final_summary
-            execution.metrics_json = {"completed_steps": completed}
-            db.commit()
+            if step_status == STATUS_SUCCESS:
+                pass
+            elif step_status == "partial_success":
+                pipeline_status = STATUS_FAILED
+                pipeline_error = summary
+            elif step_status in (STATUS_FAILED, "error"):
+                pipeline_status = STATUS_FAILED
+                pipeline_error = summary
+                break
+            else:
+                pipeline_status = STATUS_FAILED
+                pipeline_error = summary
+                break
 
-        return {"status": "success", "run_mode": run_mode, "completed_steps": completed}
+        if pipeline_status == STATUS_SUCCESS:
+            final_summary = (
+                f"실행 모드 `{run_mode}` 스텝 {len(completed)}개 완료: {', '.join(completed)}"
+                if completed
+                else f"실행 모드 `{run_mode}` 에 수행할 스텝이 없습니다."
+            )
+            _report(
+                db,
+                automation_request_id,
+                "final",
+                STATUS_SUCCESS,
+                final_summary,
+                {"completed_steps": completed, "run_mode": run_mode},
+                final=True,
+                **delivery,
+            )
+
+            if execution is not None:
+                execution.status = STATUS_SUCCESS
+                execution.stage_status = STATUS_SUCCESS
+                execution.ended_at = utcnow()
+                execution.logs_summary = final_summary
+                execution.metrics_json = {"completed_steps": completed}
+                db.commit()
+
+            return {"status": STATUS_SUCCESS, "run_mode": run_mode, "completed_steps": completed}
+        else:
+            final_summary = (
+                f"실행 모드 `{run_mode}` 스텝 완료 중 이상 발생: {pipeline_error}"
+                if pipeline_error
+                else f"실행 모드 `{run_mode}` 실패"
+            )
+            _report(
+                db,
+                automation_request_id,
+                "final",
+                STATUS_FAILED,
+                final_summary,
+                {"completed_steps": completed, "run_mode": run_mode, "step_statuses": step_statuses},
+                final=True,
+                **delivery,
+            )
+
+            if execution is not None:
+                execution.status = STATUS_FAILED
+                if execution.stage_status != "error":
+                    execution.stage_status = STATUS_FAILED
+                execution.ended_at = utcnow()
+                execution.logs_summary = final_summary
+                execution.metrics_json = {"completed_steps": completed, "step_statuses": step_statuses}
+                db.commit()
+
+            return {
+                "status": STATUS_FAILED,
+                "run_mode": run_mode,
+                "completed_steps": completed,
+                "error": pipeline_error or final_summary,
+            }
     except Exception as exc:
         logger.exception("자동화 파이프라인 실패 (%s)", run_mode)
         _report(

@@ -32,6 +32,8 @@ from src.ml.dataset import announcement_feature_payload
 from src.ml.features import build_feature_dict
 from src.ml.model_registry import (
     ModelRegistry,
+    PriceDecisionMethod,
+    classify_price_decision_method,
     predict_interval,
     predict_optimal_price_with_provenance,
 )
@@ -74,6 +76,19 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
             status_code=422,
             detail="기초금액과 예정가격이 모두 공개되지 않은 공고라 투찰가를 산출할 수 없습니다.",
         )
+
+    # 비예가 판정: model_registry.classify_price_decision_method 단일 함수 사용.
+    # 명시적 Servc 비예가만 차단하고 missing/unknown/non-Servc는 pass-through 한다.
+    # 근거: docs/design/servc_nonprearng_population_cause_20260812.md
+    raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    method_class = classify_price_decision_method(raw)
+    if method_class == PriceDecisionMethod.NON_PREARNG and bid.category == "Servc":
+        raise HTTPException(
+            status_code=422,
+            detail="비예가 공고는 예정가격을 작성하지 않는 제도라 "
+                   "낙찰률 기반 투찰가를 산출할 수 없습니다.",
+        )
+
     # 제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 못 채웁니다.
     # 이 병합을 빼면 학습이 쓰는 34개 중 30개가 기본값으로 떨어집니다.
     features = {

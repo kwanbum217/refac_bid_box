@@ -157,6 +157,49 @@ def benchmark_sse(base_url: str, rounds: int) -> tuple[Samples, Samples]:
     return first_token, total
 
 
+def benchmark_sse_new(base_url: str, rounds: int) -> tuple[Samples, Samples, Samples]:
+    """정본 SSE 스트림에서 first_stage_ms, first_token_ms, final_ms를 측정합니다."""
+    first_stage = Samples("정본 SSE 첫 stage (first_stage_ms)")
+    first_token = Samples("정본 SSE 첫 token (first_token_ms)")
+    final = Samples("정본 SSE 완료 (final_ms)")
+
+    with httpx.Client(base_url=base_url, timeout=180.0) as client:
+        for i in range(rounds):
+            query = _query_for_round(i)
+            start = time.perf_counter()
+            seen_stage = False
+            seen_token = False
+            try:
+                with client.stream("POST", "/api/v1/chatbot/chat/stream", json={"message": query}) as r:
+                    if r.status_code != 200:
+                        first_stage.errors += 1
+                        first_token.errors += 1
+                        final.errors += 1
+                        continue
+                    current_event = None
+                    for line in r.iter_lines():
+                        if not line:
+                            continue
+                        if line.startswith("event:"):
+                            current_event = line[6:].strip()
+                        elif line.startswith("data:"):
+                            if not seen_stage and current_event == "stage":
+                                first_stage.add((time.perf_counter() - start) * 1000.0, query)
+                                seen_stage = True
+                            if not seen_token and current_event == "token":
+                                first_token.add((time.perf_counter() - start) * 1000.0, query)
+                                seen_token = True
+                            if current_event == "final":
+                                final.add((time.perf_counter() - start) * 1000.0, query)
+            except httpx.HTTPError:
+                first_stage.errors += 1
+                first_token.errors += 1
+                final.errors += 1
+            print(f"    정본 스트리밍 {i + 1}/{rounds} 완료", end="\r", flush=True)
+    print(" " * 40, end="\r")
+    return first_stage, first_token, final
+
+
 def benchmark_predict(base_url: str, rounds: int, concurrency: int) -> Samples:
     samples = Samples("낙찰가 예측 API")
 
@@ -231,13 +274,16 @@ def main() -> int:
         print("먼저 서버를 띄우십시오: uvicorn src.app.main:app --port 8000")
         return 2
 
-    print(f"\n[1/3] 낙찰가 예측 API ({args.predict_rounds}회)")
+    print(f"\n[1/4] 낙찰가 예측 API ({args.predict_rounds}회)")
     predict = benchmark_predict(args.base_url, args.predict_rounds, args.predict_concurrency)
 
-    print(f"\n[2/3] SSE 스트리밍 ({args.sse_rounds}회)")
+    print(f"\n[2/4] legacy SSE 스트리밍 ({args.sse_rounds}회)")
     first_token, total = benchmark_sse(args.base_url, args.sse_rounds)
 
-    print(f"\n[3/3] 단발 질의 API ({args.query_rounds}회)")
+    print(f"\n[3/4] 정본 SSE 스트리밍 ({args.sse_rounds}회)")
+    first_stage, new_first_token, final = benchmark_sse_new(args.base_url, args.sse_rounds)
+
+    print(f"\n[4/4] 단발 질의 API ({args.query_rounds}회)")
     query = benchmark_query(args.base_url, args.query_rounds)
 
     print("\n" + "-" * 62)
@@ -245,6 +291,9 @@ def main() -> int:
     results = [
         first_token.report(FIRST_TOKEN_TARGET_MS),
         total.report(TOTAL_TARGET_MS),
+        first_stage.report(),
+        new_first_token.report(),
+        final.report(),
         predict.report(PREDICT_TARGET_MS),
     ]
     query.report()
@@ -268,6 +317,9 @@ def main() -> int:
             "samples": {
                 "first_token": first_token.as_dict(),
                 "total": total.as_dict(),
+                "first_stage_new": first_stage.as_dict(),
+                "first_token_new": new_first_token.as_dict(),
+                "final_new": final.as_dict(),
                 "predict": predict.as_dict(),
                 "query": query.as_dict(),
             },
