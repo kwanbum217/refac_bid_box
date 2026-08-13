@@ -157,21 +157,25 @@ def test_predict_equivalence_with_previous_chain(monkeypatch, tiny_model_dir, pa
     _freeze_reference_time(monkeypatch)
 
     result = predictor_module.predictor.predict(payload)
+    new_frame = wrapper.last_frame.copy(deep=True)
 
     # 이전 경로: 요청으로 1회 구축한 뒤 _prepare_full_frame 이 재구축합니다.
     feature_map = build_default_feature_map(payload)
+    old_wrapper = _RecordingWrapper(tiny_model_dir)
+    monkeypatch.setattr(ModelRegistry, "get_model", _registry({model_id: old_wrapper}))
     outcome = model_registry.predict_optimal_price_with_provenance(
         model_id, feature_map, full_map=None
     )
+    old_frame = old_wrapper.last_frame.copy(deep=True)
     expected_rate = outcome.predicted_rate * 100.0
     expected_price = payload["presumed_price"] * (expected_rate / 100.0)
 
     assert result["predicted_rate"] == expected_rate
     assert result["predicted_price"] == expected_price
     assert result["model_version"] == model_id
-    # 두 경로가 모델에 실어 보낸 프레임이 같은 값이어야 합니다.
-    new_row = wrapper.last_frame.iloc[0].to_dict()
-    assert new_row == feature_map
+    # 신·구 경로를 별도 래퍼로 기록해 두 프레임을 실제로 비교합니다.
+    assert new_frame.iloc[0].to_dict() == old_frame.iloc[0].to_dict()
+    assert new_frame.iloc[0].to_dict() == feature_map
 
 
 def test_predict_fallback_equivalence_with_previous_chain(monkeypatch, tiny_model_dir):
@@ -192,19 +196,33 @@ def test_predict_fallback_equivalence_with_previous_chain(monkeypatch, tiny_mode
     _freeze_reference_time(monkeypatch)
 
     result = predictor_module.predictor.predict(SERVC_PAYLOAD, model_id=SERVC_MODEL)
+    new_fallback_frame = fallback_wrapper.last_frame.copy(deep=True)
 
     feature_map = build_default_feature_map(SERVC_PAYLOAD)
+    old_fallback_wrapper = _RecordingWrapper(tiny_model_dir)
+    monkeypatch.setattr(
+        ModelRegistry,
+        "get_model",
+        _registry(
+            {
+                SERVC_MODEL: _FailingWrapper(),
+                "v25": old_fallback_wrapper,
+            }
+        ),
+    )
     outcome = model_registry.predict_optimal_price_with_provenance(
         SERVC_MODEL, feature_map, full_map=None
     )
+    old_fallback_frame = old_fallback_wrapper.last_frame.copy(deep=True)
     assert outcome.actual_model == "v25"
     assert outcome.fallback_used is True
 
     # predictor 는 요청 모델을 model_version 으로 보고합니다 (기존 계약).
     assert result["model_version"] == SERVC_MODEL
     assert result["predicted_rate"] == outcome.predicted_rate * 100.0
-    # 대체 모델도 요청 키 병합된 같은 맵을 받아야 합니다.
-    assert fallback_wrapper.last_frame.iloc[0].to_dict() == feature_map
+    # 대체 모델도 신·구 경로에서 요청 키 병합된 같은 맵을 받아야 합니다.
+    assert new_fallback_frame.iloc[0].to_dict() == old_fallback_frame.iloc[0].to_dict()
+    assert new_fallback_frame.iloc[0].to_dict() == feature_map
 
 
 def test_prepare_input_frame_defaults_preserve_values_and_dtypes(monkeypatch):
