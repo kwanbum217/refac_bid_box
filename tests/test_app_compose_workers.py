@@ -27,10 +27,11 @@ def test_app_command_uses_exec_form_array_not_shell_string():
     assert "/bin/sh" not in app
 
 
-def test_app_command_exposes_web_concurrency_with_default_three():
+def test_app_command_exposes_web_concurrency_with_safe_default_one():
+    """3·4워커 모두 실제 Docker c10 P95 100ms 목표에 실패해 안전 기본값 1로 되돌렸습니다."""
     app = _app_service()
 
-    assert '"${WEB_CONCURRENCY:-3}"' in app
+    assert '"${WEB_CONCURRENCY:-1}"' in app
     assert "--workers" in app
     # host/port 는 기존 계약과 동일하게 유지됩니다.
     assert '"0.0.0.0"' in app
@@ -69,4 +70,4 @@ def test_worker_arq_service_is_not_affected_by_web_concurrency():
 def test_web_concurrency_interpolation_only_appears_in_app_service():
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
 
-    assert compose.count("${WEB_CONCURRENCY:-3}") == 1
+    assert compose.count("${WEB_CONCURRENCY:-1}") == 1
