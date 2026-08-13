@@ -1,8 +1,8 @@
 # 용역 쌍대 비교의 실제 모델 출처(Provenance) 가드 설계서
 
 > **작성일**: 2026-08-12
-> **버전**: v1.0.0
-> **상태**: 작성 완료 (A5 Task 구현)
+> **버전**: v1.1.0
+> **상태**: 검수 반영 완료 (A5 Task 구현)
 > **소유 파일**: `scripts/compare_servc_models_paired.py`, `tests/test_compare_servc_models_paired_provenance.py`
 > **참조 파일**: `src/app/api/v1/predictions.py`, `src/app/schemas/predictions.py`
 
@@ -31,26 +31,42 @@ API 응답(`PredictPriceResponse`)에서 제공하는 모델 출처 계약 필�
 - `fallback_used`: 대체 모델 응답 여부 (`bool`)
 - `fallback_reason`: 대체 발생 사유 (`str | None`) - **보안 및 규격화를 위해 전혀 출력하지 않음**
 
-### 2.2 표본 유효성 검증 규칙 (Provenance Validation)
+### 2.2 응답 계약 타입 검증 (Strict Typing)
+출처 필드는 **타입까지** 검증합니다. 값이 존재하기만 하면 통과시키던 방식은 `model_id=123`,
+`model_id="   "`, `fallback_used=1` 같은 계약 위반을 그대로 유효 표본으로 흘려보냈습니다.
+
+| 필드 | 유효 조건 | 위반 시 |
+| --- | --- | --- |
+| `model_id` | `str` 이고 공백 제거 후 비어 있지 않을 것 | `missing_provenance` |
+| `requested_model` | `str` 이고 공백 제거 후 비어 있지 않을 것 | `missing_provenance` |
+| `fallback_used` | `bool` 일 것 (`0`/`1`/문자열은 위반) | `missing_provenance` |
+
+### 2.3 표본 유효성 검증 규칙 (Provenance Validation)
 각 공고(bid) 표본에 대해 두 팔의 예측 결과를 다음과 같이 검증합니다:
 
 | 검증 항목 | 조건 | 위반 시 판정 |
 | --- | --- | --- |
+| 응답 계약 필드 | 2.2 의 타입 조건을 두 팔 모두 만족 | `missing_provenance` 감지 |
 | Base 팔 대체 여부 | `requested_model == model_id` 및 `not fallback_used` | `base_fallback` 감지 |
-| Challenger 팔 대체 여부 | `requested_model == model_id` 및 `not fallback_used` | `chal_fallback` 감지 |
+| Challenger 팔 대체 여부 | `requested_model == model_id` 및 `not fallback_used` | `challenger_fallback` 감지 |
 | 양 팔 실제 모델 동일성 | `base.model_id != chal.model_id` | `same_actual_model` 감지 |
-| 응답 계약 필드 누락 | `model_id`, `requested_model`, `fallback_used` 중 하나라도 부재, None, 공백일 때 | `missing_provenance` 감지 |
 
-위 4가지 조건 중 하나라도 위반하면 해당 표본은 **출처 오류 표본(invalid provenance)**으로 지정되어 정상 쌍대 비교 수치 계산(MAE, RMSE, t-통계량)에서 즉시 제외됩니다.
+위 조건 중 하나라도 위반하면 해당 표본은 **출처 오류 표본(invalid provenance)**으로 지정되어 정상 쌍대 비교 수치 계산(MAE, RMSE, t-통계량)에서 즉시 제외됩니다.
 
-### 2.3 임의 사유 비노출 (Strict No-Exposure)
+출처가 누락된 표본은 `missing_provenance` 하나로만 셉니다. 비교할 출처 자체가 없는 표본을
+`base_fallback` 이나 `same_actual_model` 로 겹쳐 세면 원인 집계가 왜곡되기 때문입니다.
+출처 열이 아예 없는 프레임은 신뢰할 수 없으므로 전 범주를 참으로 두어 fail-closed 처리합니다.
+
+### 2.4 임의 사유 비노출 (Strict No-Exposure)
 `fallback_reason`에는 내부 파일 경로, DB 연결 정보, 스택 트레이스 등 민감 정보가 포함될 수 있습니다.
-- 로그 및 보고서에는 예외 원문을 정화(sanitize)하여 노출하던 기존 방식을 폐기하고, 아예 **임의 문자열을 전혀 출력하지 않고 고정 구조화 범주(`base_fallback`, `chal_fallback`, `missing_provenance`, `same_actual_model`)만 집계**하도록 설계합니다. (민감 한 줄 stdout 비노출 원칙)
+- 로그 및 보고서에는 예외 원문을 정화(sanitize)하여 노출하던 기존 방식을 폐기하고, 아예 **임의 문자열을 전혀 출력하지 않고 아래 고정 범주만 집계**하도록 설계합니다. (민감 한 줄 stdout 비노출 원칙)
+- 고정 범주는 `base_fallback`, `challenger_fallback`, `same_actual_model`, `missing_provenance`, `api_error` 다섯 가지뿐이며, 상수 `EXCLUSION_CATEGORIES` 가 유일한 출력원입니다.
 
-### 2.4 Fail-Closed 승격 판정 단축 (Short-Circuit)
+### 2.5 Fail-Closed 승격 판정 단축 (Short-Circuit)
 출처 오류 표본이나 API 오류(요청 실패 등) 표본이 단 1건이라도 발생하면:
-- 실패 건수와 고정 범주별 원인을 명시적으로 집계·출력합니다.
-- 승격 판정(`verdict`)은 **Fail-Closed** 처리되어 `"판정 불가 (대체 모델 발생)"`으로 자동 변환되고 모델 승격을 즉시 차단합니다.
+- 고정 범주별 **건수와 요청 쌍 대비 비율**을 집계·출력합니다. 유효 표본이 0건이거나 전량이 API 오류여도 0 나눗셈 없이 같은 출력 경로를 탑니다.
+- 승격 판정(`verdict`)은 **Fail-Closed** 처리되어 `"판정 불가 (대체 모델 발생)"`으로 자동 변환됩니다.
+- CLI 종료 코드는 **1(nonzero)** 이 되어 승격 자동화가 진행되지 않습니다. 유효 쌍이 남아 통계가 계산되더라도 fail-closed 이면 0 을 돌려주지 않습니다.
 
 ---
 
