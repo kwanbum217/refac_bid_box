@@ -22,7 +22,7 @@
 src/app/templates/          # Jinja2 SSR (dashboard, prediction, chatbot)
 src/app/static/             # CSS, HTMX, Chart.js
 GET /ui/                    # SSR 진입점
-POST /api/v1/chatbot/chat/stream  # SSE (HTMX hx-ext="sse" 연동)
+POST /api/v1/chatbot/chat/stream  # SSE (React fetch / ReadableStream 연동)
 ```
 
 ---

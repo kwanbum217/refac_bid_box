@@ -162,9 +162,6 @@ def test_canonical_stream_error_hides_exception_text(client, monkeypatch):
     assert errors[-1]["message"] == chatbot_module.STREAM_ERROR_MESSAGE
 
 
-
-
-
 def test_trace_id_matches_provenance_format():
     """추적 id 는 src/rag/engine.py 의 provenance.trace_id 와 같은 형식입니다."""
     trace_id = chatbot_module._new_trace_id()
