@@ -4,7 +4,8 @@
 > **작업**: Orca Task `task_d75dc4c7a5db` (B2 재학습 API 감사) — 읽기 전용 감사, 코드 구현 없음
 > **기준**: `main` `11d302b`, 원격 브랜치 `origin/fix/arq-worker-compose` (`20f5692`, `2d5a0c8`)
 > **후속 문서**: [`2026-08-13_branch_audit_report.md`](2026-08-13_branch_audit_report.md) 의 3.1 판정 후속
-> **범위**: 코드·Docker·DB·브랜치 변경 없음. 본 계획 문서만 작성
+> **감사 커밋 범위**: 코드·Docker·DB·브랜치 변경 없음. 본 계획 문서만 작성
+> **이행 결과**: 후속 Task `task_980457255d6e`에서 `4a03f94`로 9파일 최소 재구현 완료
 
 ---
 
@@ -13,7 +14,7 @@
 | 항목 | 판정 | 근거 |
 | --- | --- | --- |
 | `2d5a0c8` (Compose Arq worker) | **유지 불필요 (흡수 완료)** | main 은 worker 서비스 + `command: ["arq", "src.tasks.worker.WorkerSettings"]` 를 Meilisearch·CORS·healthcheck 등 더 발전된 계약으로 보유. `tests/test_worker_compose.py` 4개 테스트 존재 |
-| `20f5692` (수동 재학습 API) | **재구현 필요 (미흡수)** | main 소스·테스트에 `model_retrain`/`/run/retrain`/`retrain_only`/`manual_retrain_task` 전부 부재. 기반 요소(`retrain_task.py`, 라우터, 액션 카탈로그, 워커)는 모두 존재하므로 **수동 재적용 최소 diff** 가능 |
+| `20f5692` (수동 재학습 API) | **재구현 완료** | 감사 당시에는 네 계약이 모두 없었으나 후속 `4a03f94`에서 최신 main에 수동 재적용 |
 | 브랜치 전체 병합 | **금지** | merge-base `8d13dad` 가 main(`11d302b`)보다 오래됨. `.env.example`/`docker-compose.yml`/`Makefile` 은 main 과 구조가 달라 충돌·퇴행 위험. `20f5692` 만 최신 main 기준으로 재작성 |
 
 ---
@@ -52,7 +53,7 @@
 
 ---
 
-## 4. 최신 main 적용 최소 diff (9파일, 약 +130/-2 행)
+## 4. 최신 main 적용 최소 diff (9파일, +90/-2 행)
 
 | 순서 | 파일 | 변경량 | 비고 |
 | --- | --- | --- | --- |
@@ -63,8 +64,8 @@
 | 5 | `src/tasks/worker.py` | +2 | import·functions 등록 |
 | 6 | `src/app/api/v1/automation.py` | +11 | `/run/retrain` 라우터 |
 | 7 | `tests/test_automation_api.py` | +21 | confirm 흐름 테스트 |
-| 8 | `tests/test_automation_bundle_parity.py` | +19/-1 | parity 테스트 |
-| 9 | `tests/test_chatbot_core.py` | +3/-1 | capability 목록 갱신 |
+| 8 | `tests/test_automation_bundle_parity.py` | +18/-1 | parity 테스트 |
+| 9 | `tests/test_chatbot_core.py` | +2/-1 | capability 목록 갱신 |
 
 > **적용 방식**: cherry-pick `20f5692` 금지 — `run_mode_matrix.py`(search 스텝 컨텍스트)·`automation_tasks.py`(main 에 `_step_search` 존재)·`worker.py`(development 태스크)에서 충돌이 확정적. 위 9파일에 원본 변경을 수동으로 새 컨텍스트에 맞게 재작성.
 
@@ -84,13 +85,24 @@
 
 ---
 
-## 6. 15:40 내 구현 불가 사유
+## 6. 감사 시점 판단과 후속 이행
 
-1. **본 Run(`run_3a5cbed3bf86`)은 감사·인수인계 전용** — 배정 Task 가 B1 OOS 판정·B2 본 감사·B3 인수인계 동기화 3건뿐이며 구현 Task 가 없다. 구현은 담당자 승인 후 별도 Task 로 배정되어야 한다.
-2. **단순 이식 불가**: merge-base 가 `8d13dad` 로 스테일이라 cherry-pick 은 3파일 이상에서 충돌한다. 수동 재작성(4장) 후 전량 회귀 검증이 필요해 오늘 남은 시간(감사 마감 15:15, Run 마감 15:40)에 안전하게 끝낼 수 없다.
-3. **검증 비용**: 전체 스위트 963건 회귀 + 재학습 스텝 E2E(DB·feature store 준비)가 필요하다. 테스트 전량 통과는 병합 전 필수 게이트(AGENTS.md 6장)이며, 준비되지 않은 상태에서 진행하면 컷오버 위험이 크다.
+감사 시점에는 구현 Task가 없고 스테일 브랜치의 단순 병합이 위험해 다음 세션 이행을
+권고했습니다. 코디네이터가 9파일 범위를 직접 검수한 뒤 같은 Run에 후속 Task를
+추가했고, DeepSeek V4 Flash max 워커가 브랜치를 병합하지 않고 최신 코드에
+재작성했습니다.
 
-**권고**: 9파일 최소 diff(4장)를 다음 세션에서 구현 Task 로 배정하고, `tests/test_automation_api.py`·`tests/test_automation_bundle_parity.py`·`tests/test_chatbot_core.py` 전량 통과 후 main 병합. 구현 완료 시 [`2026-08-13_next_session_todo.md`](2026-08-13_next_session_todo.md) 2.2 의 "감사 완료" 상태를 "재구현 완료"로 갱신한다.
+| 항목 | 결과 |
+| --- | --- |
+| 후속 Task | `task_980457255d6e` |
+| 구현 커밋 | `4a03f94` |
+| 표적 테스트 | 38 passed |
+| 격리 트리 전체 검사 | 961 passed, 4 skipped, 자산 부재 2 failed |
+| 자산 실패 대조 | 변경을 stash한 기준 상태에서도 같은 2건 실패 |
+| 주 저장소 전체 회귀 | 965 passed, 2 skipped |
+
+격리 트리의 실패는 `v25/model.bin`과 ChromaDB 컬렉션이 복제되지 않는 알려진
+예외입니다. 자산이 있는 주 저장소에서 전체 회귀 965건을 통과했습니다.
 
 ---
 
@@ -102,3 +114,6 @@
 | `git diff --check` | 오류 없음 |
 | 커밋 | `docs: 수동 재학습 API 재구현 계획을 기록한다` — 본 문서만 add |
 | 푸시 | `kwanbum217/retrain-api-replan` (main `11d302b` 기준) |
+
+후속 구현은 `4a03f94`로 같은 브랜치에 푸시됐고, 코드 9파일 외에는 변경하지
+않았습니다.

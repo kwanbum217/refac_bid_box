@@ -24,7 +24,7 @@
 | --- | --- |
 | A5 출처 가드 최종 검수 | `be14c58`. 타입 검증, 범주 집계, fail-closed 종료 코드 1 |
 | A1~A5 통합 | `4107074` 에 최신 `main` 접합 후 `6285b73` 으로 `main` 병합 |
-| 회귀 | 본 저장소 백엔드 963 passed 2 skipped, 프런트 11 passed, `validate_agent_rules` 6/6 |
+| 회귀 | 본 저장소 백엔드 965 passed 2 skipped, 프런트 11 passed, `validate_agent_rules` 6/6 |
 | 섹션 자원 반납 | 워크트리 6개 해제, 원격 병합 완료 브랜치 26개 삭제 |
 | Orca Antigravity 사용량 | 별도 저장소 `kwanbum217/antigravity-usage-status` 에 `88e37b6` 로컬 커밋 |
 
@@ -54,16 +54,23 @@
 지시자 하나로 절편만 옮기는 것으로 충분한지, 신 제도 표본 가중이나 별도 보정이
 필요한지는 **측정으로 갈립니다.**
 
-**상태 업데이트:** 레짐 대리 측정 완료와 Champion OOS 미판정 상태입니다.
+**상태 업데이트:** 레짐 대리 측정은 완료됐고 Champion OOS 유효 후보는 2건뿐이라
+아직 판정할 수 없습니다. 모델 변경보다 2026-08-04 이후 수집 백필이 먼저이며,
+0.10%p 편향 판정 게이트는 필터 통과 3,098건입니다. 근거는
+[`2026-08-13_servc_oos_readiness_gate.md`](2026-08-13_servc_oos_readiness_gate.md)에
+기록했습니다.
 
 ### 2.2 미병합 브랜치 두 건 처분
 
 | 브랜치 | 내용 | 판단 |
 | --- | --- | --- |
-| `fix/arq-worker-compose` | 17파일, 커밋 2건. `feat: add confirmed manual retraining API` 포함 | `main` 에 재학습 API 가 **없음을 확인**했습니다. 실질 미병합 기능입니다 |
-| `task-976479dbe8cb` | A3 의 초기판 React SSE 이관 | `frontend/src/sseParser.ts` 와 CI 프런트 레인 모두 `main` 에 이미 있습니다. `tasks.json` 만 잔여 |
+| `fix/arq-worker-compose` | 17파일, 커밋 2건. `feat: add confirmed manual retraining API` 포함 | 필요한 API를 최신 main에 `4a03f94`로 재구현 완료. 구 브랜치는 삭제 대상 |
+| `task-976479dbe8cb` | A3 의 초기판 React SSE 이관 | 기능이 main에 이미 흡수돼 삭제 대상 |
 
-**상태 업데이트:** 브랜치 감사 완료 및 원격 두 건의 남은 결정 상태입니다.
+**상태 업데이트:** 브랜치 감사와 수동 재학습 API 재구현까지 완료했습니다. 상세
+이식 범위와 검증은
+[`2026-08-13_retrain_api_reimplementation_plan.md`](2026-08-13_retrain_api_reimplementation_plan.md)에
+기록했습니다. main 병합 뒤 원격 두 브랜치를 정리합니다.
 
 ### 2.3 legacy GET SSE 경로 제거
 
@@ -111,10 +118,10 @@ A1 의 `prdctClsfcLmtYn` 과 `rbidPermsnYn` 은 2025-01 전환이 있어 그대�
 
 ## 3. 권장 착수 순서
 
-2.1 → 2.2 → 2.4 → 2.3 → 2.5
+2.1 수집 백필 → 2.4 운영 CORS·SameSite 결정 → 2.5 ML 후속
 
-2.1 을 앞에 두는 이유는 이것만이 **지금 사용자에게 나가는 예측값의 정확도**에
-직접 걸려 있기 때문입니다. 나머지는 위생과 부채입니다.
+2.2 와 2.3 은 완료됐습니다. 2.1 을 앞에 두는 이유는 이것만이 **지금 사용자에게
+나가는 예측값의 정확도**에 직접 걸려 있기 때문입니다. 나머지는 위생과 부채입니다.
 
 ---
 

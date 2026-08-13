@@ -930,3 +930,15 @@
 - **KB 메모리 보정**: 첫 검증에서 50만 건 KB 메타데이터 및 공고 전량 적재가 worker OOM을 일으켜, 개발 경로는 최근 24시간 수집분과 새 낙찰 결과에 연결된 공고만 멱등 upsert하는 델타 색인으로 전환했습니다. 전체 재색인은 별도 운영 작업으로 유지합니다
 - **실측**: 수동 실행 `development_data_refresh-9081416d3806`이 23초 안에 성공했습니다. 공고 47건·낙찰 22건을 적재했고, KB는 498,958건에서 499,005건으로 증가했습니다
 - **검증**: 관련 회귀 테스트 59건, Ruff, Compose 구문 검사를 통과했습니다. worker는 KST 환경과 개발 수집 활성화 상태로 재기동해 실제 Arq 실행까지 확인했습니다
+
+---
+
+### 2026-08-13 | OOS 준비도·수동 재학습 API | 수집 병목 확정과 누락 기능 복원
+
+- **작업자**: 관범 & GPT-5.6-sol high 코디네이터, Claude Opus high, OpenCode DeepSeek V4 Flash max, Antigravity Gemini 3.1 Pro high
+- **OOS 판정**: 현 Servc parquet 이후 라벨 원시 행은 3건, 학습 조인·필터 통과는 2건뿐이라 Champion OOS 편향을 판정할 수 없습니다
+- **병목**: 2026-08-09 이후 수집 실행이 없어 모델 조정보다 2026-08-04 이후 수집 백필이 먼저입니다. 0.10%p 편향 판정 게이트는 필터 통과 3,098건으로 고정했습니다
+- **재학습 API**: 스테일 `fix/arq-worker-compose`를 병합하지 않고 최신 코드에 `model_retrain`, `POST /run/retrain`, `retrain_only`, `manual_retrain_task`를 9파일 최소 변경으로 재구현했습니다
+- **안전 계약**: 재학습은 `high_cost=True`로 확인 토큰 전에는 큐에 들어가지 않으며, 기존 검색 단계·개발 데이터 수집 태스크·cron 3건을 보존했습니다
+- **검증**: 표적 테스트 38건 통과. 격리 트리의 모델·ChromaDB 자산 부재 2건은 변경 전 상태에서도 동일했고, 자산이 있는 주 저장소에서 백엔드 965건 통과·2건 skip, 프런트 11건 통과를 확인했습니다
+- **관련 문서**: `docs/handoff/2026-08-13_servc_oos_readiness_gate.md`, `docs/handoff/2026-08-13_retrain_api_reimplementation_plan.md`
