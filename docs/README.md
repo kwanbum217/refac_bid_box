@@ -93,6 +93,7 @@ docs/
 | 용역 모델 튜닝 인수인계 | [`2026-08-10_servc_tuning_handoff.md`](handoff/2026-08-10_servc_tuning_handoff.md) | 다섯 축 기각 근거, 홀드아웃 판정 기준 0.0074 상향, 남은 사용자 결정 |
 | 쌍대 표본 기준 착수 지시 | [`2026-08-11_paired_sample_filter_todo.md`](handoff/2026-08-11_paired_sample_filter_todo.md) | 판정용·보고용 표본 분리 반영. 코드 변경 지점, 검증 절차, 금지 사항 |
 | legacy SSE 이관 착수 지시 | [`2026-08-12_legacy_sse_migration_task.md`](handoff/2026-08-12_legacy_sse_migration_task.md) | GET /chatbot/stream 을 정본 POST /chat/stream 으로 옮기는 절차. 이벤트 계약 차이, 벤치마크 기준선 처리 |
+| P0 후속 마감 이후 착수 목록 | [`2026-08-13_next_session_todo.md`](handoff/2026-08-13_next_session_todo.md) | A1~A5 병합 이후 잔여 과제. 신 제도 표본 1.276% 실측, 미병합 브랜치 처분, 컷오버 점검 |
 
 ## 4. ops/
 
