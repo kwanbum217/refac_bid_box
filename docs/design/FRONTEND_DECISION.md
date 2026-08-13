@@ -22,7 +22,7 @@
 src/app/templates/          # Jinja2 SSR (dashboard, prediction, chatbot)
 src/app/static/             # CSS, HTMX, Chart.js
 GET /ui/                    # SSR 진입점
-GET /api/v1/chatbot/stream  # SSE (HTMX hx-ext="sse" 연동)
+POST /api/v1/chatbot/chat/stream  # SSE (React fetch / ReadableStream 연동)
 ```
 
 ---
@@ -90,7 +90,7 @@ GET /api/v1/chatbot/stream  # SSE (HTMX hx-ext="sse" 연동)
 | --- | --- | --- |
 | 화면 수 | 12개 페이지 5,370줄 | `App.tsx` 단일 파일 728줄 |
 | 주 색상 | `#0073E6` (기업형 블루) | `#0f172a`, `#38bdf8` (slate/sky) |
-| API 연동 | - | `/api/v1/chatbot/stream` 한 곳뿐 |
+| API 연동 | - | `/api/v1/chatbot/chat/stream` 한 곳뿐 |
 
 조치로 해당 서비스에 `profiles: ["legacy"]` 를 지정해 기본 기동에서 제외했습니다.
 
@@ -135,7 +135,7 @@ React 를 원본 디자인으로 전면 재구현하는 방안을 설계까지 �
 
 ## 챗봇 SSE 스트리밍 (2026-08-04)
 
-기존 `GET /api/v1/chatbot/stream` 은 RAG 답변 토큰만 흘려 플래너, 자동화 확인, 차트 페이로드, 세션 저장이 빠져 있었습니다. 그래서 화면은 계속 비스트리밍 `POST /chat` 을 썼습니다.
+기존 legacy `GET /api/v1/chatbot/stream` 은 제거되었습니다. 해당 엔드포인트는 RAG 답변 토큰만 흘려 플래너, 자동화 확인, 차트 페이로드, 세션 저장이 빠져 있었고, 현재는 모든 클라이언트가 정본 `POST /api/v1/chatbot/chat/stream`을 씁니다.
 
 `POST /api/v1/chatbot/chat/stream` 을 새로 두어 **같은 파이프라인을 그대로 스트리밍**합니다.
 

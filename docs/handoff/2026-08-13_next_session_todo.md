@@ -80,25 +80,20 @@
 
 ### 2.3 legacy GET SSE 경로 제거
 
-`GET /api/v1/chatbot/stream` 이 `src/app/api/v1/chatbot.py:798` 에 남아 있고,
-`chatbot.py:820` 에서 `SessionLocal()` 을 직접 엽니다. 테스트의
-`dependency_overrides` 를 우회해 격리 DB 가 아닌 곳을 볼 수 있는 경로입니다.
+**완료되었습니다.** legacy `GET /api/v1/chatbot/stream`을 제거하고 모든
+호출부를 정본 `POST /api/v1/chatbot/chat/stream`으로 전환했습니다.
 
-제거 선결 조건은 이미 갖춰졌습니다.
-
-| 조건 | 상태 |
+| 조건 | 최종 상태 |
 | --- | --- |
-| React 챗봇의 정본 POST 이관 | 완료 (`main` 반영) |
-| 벤치마크 병행 측정 | 완료. legacy `benchmark_latency.py:138`, 정본 `:173` |
-| CI 프런트엔드 레인 | 완료 (`.github/workflows/ci.yml`) |
+| 정본 첫 토큰 P95 | 1.721초, 목표 3초 통과 |
+| 정본 전체 응답 P95 | 8.129초, 목표 20초 통과 |
+| legacy GET 라우트 | 제거, 회귀 테스트에서 404 확인 |
+| 정본 POST 라우트 | 유지, SSE 응답 회귀 테스트 통과 |
 
-남은 것은 정본 지표가 목표를 만족하는지 **실측으로 확인한 뒤 제거**하는
-것입니다. 정본은 플래너 단계를 거치므로 첫 토큰이 legacy 보다 구조적으로
-느립니다. 같은 지표명으로 섞어 회귀로 오독하지 마십시오. 상세 계약은
-[`2026-08-12_legacy_sse_migration_task.md`](2026-08-12_legacy_sse_migration_task.md)
-5장에 있습니다.
-
-권장: **Opus 5 / effort medium**.
+이로써 `SessionLocal()` 직접 사용과 테스트 `dependency_overrides` 우회 문제도
+함께 제거되었습니다. 원시 표본과 판정 근거는
+[`docs/ops/phase7_latency_recheck_20260813.md`](../ops/phase7_latency_recheck_20260813.md)에
+기록했습니다.
 
 ### 2.4 운영 컷오버 전 점검
 

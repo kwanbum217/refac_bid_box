@@ -357,6 +357,7 @@ def prepare_input_frame(
     column_order: list[str],
     *,
     strict: bool = True,
+    defaults: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     """추론 프레임을 만듭니다.
 
@@ -364,8 +365,13 @@ def prepare_input_frame(
     이전에는 그런 컬럼이 0.0 으로 조용히 채워져, 학습에서 강한 신호였던 특징이
     추론에서 상수가 되어도 아무 신호가 없었습니다. 잘못된 예측을 내느니
     거부하는 편이 낫습니다(SKILLS.md 품질 우선순위 1. 정확성).
+
+    defaults 는 호출부가 이미 구축한 전체 특징 맵입니다. 서빙 경로는 요청당
+    한 번 구축한 맵을 요청 키 병합 프레임과 함께 내려보내, 여기서 같은 맵을
+    다시 구축하지 않게 합니다. None 이면 이전처럼 여기서 구축합니다.
     """
-    defaults = build_default_feature_map(feature_values)
+    if defaults is None:
+        defaults = build_default_feature_map(feature_values)
     if strict:
         unknown = [c for c in column_order if c not in defaults and c not in feature_values]
         if unknown:
