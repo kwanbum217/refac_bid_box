@@ -63,7 +63,7 @@ harness.text #1F2937      harness.muted #6B7280
 | 화면 수 | 12개 페이지 템플릿 (총 5,370줄) | `App.tsx` 단일 파일 728줄 |
 | 주 색상 | `#0073E6` 기업형 블루 | `#0f172a`, `#38bdf8`, `#334155` (slate/sky) |
 | 레이아웃 | 고정 사이드바 + harness 디자인 | 원본과 무관한 독자 구성 |
-| API 연동 | - | `/api/v1/chatbot/stream` 한 곳뿐 |
+| API 연동 | - | `/api/v1/chatbot/chat/stream` 한 곳뿐 |
 
 `docker-compose.yml:30`에 `frontend` 서비스가 5173 포트로 등록되어 실행 시 화면에 노출되지만, `src/app/main.py`는 이 빌드 산출물을 마운트하지 않습니다. **원본과 다른 디자인의 UI가 배포 구성에는 올라가 있으면서 백엔드와는 연결되지 않은 상태**입니다.
 
@@ -140,7 +140,7 @@ graph LR
     end
     subgraph "FastAPI (8000)"
         A["/api/v1 REST"]
-        S["SSE /chatbot/stream"]
+        S["SSE /chatbot/chat/stream"]
         ST["StaticFiles<br/>/static"]
     end
     subgraph "저장소"
@@ -167,7 +167,7 @@ graph LR
 | 낙찰 결과 상세 | `GET /api/v1/bids/results/{pk}` |
 | 입찰 인텔리전스 | `GET /api/v1/bids/stats` |
 | 공고 대비 비교 | `GET /api/v1/bids/compare-stats` |
-| AI 어드바이저 | `POST /api/v1/chatbot/chat`, `GET /api/v1/chatbot/stream`, `POST /api/v1/chatbot/session/new` |
+| AI 어드바이저 | `POST /api/v1/chatbot/chat`, `POST /api/v1/chatbot/chat/stream`, `POST /api/v1/chatbot/session/new` |
 | 로그인 | `POST /api/v1/accounts/login`, `GET /api/v1/accounts/me` |
 | 회원가입 | `POST /api/v1/accounts/signup` |
 | 로그아웃 | `POST /api/v1/accounts/logout` |
@@ -280,7 +280,7 @@ frontend/src/
 | 입력창 | `chat-input` | `ChatInput` |
 | 전송 / 중지 | `btn-send`, `btn-stop` | `ChatInput` 내부 상태 |
 
-스트리밍은 `GET /api/v1/chatbot/stream` (SSE) 를 `EventSource` 로 구독하며, 중지 버튼은 연결 해제로 처리합니다. 세션 생성은 `POST /api/v1/chatbot/session/new` 를 사용합니다.
+스트리밍은 `POST /api/v1/chatbot/chat/stream` (SSE) 를 `fetch` 와 `ReadableStream` 으로 구독하며, 중지 버튼은 `AbortController` 연결 해제로 처리합니다. 세션 생성은 `POST /api/v1/chatbot/session/new` 를 사용합니다.
 
 ---
 

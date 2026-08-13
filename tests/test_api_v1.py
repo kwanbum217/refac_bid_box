@@ -34,11 +34,17 @@ def test_chatbot_query_endpoint():
     assert "latency_ms" in data
 
 
-def test_chatbot_stream_endpoint():
+def test_chatbot_stream_legacy_removed():
     response = client.get("/api/v1/chatbot/stream?query=적격심사")
+    assert response.status_code == 404
+
+
+def test_chatbot_stream_canonical():
+    payload = {"message": "적격심사"}
+    response = client.post("/api/v1/chatbot/chat/stream", json=payload)
     assert response.status_code == 200
     assert "text/event-stream" in response.headers["content-type"]
-    assert "data:" in response.text
+    assert "event:" in response.text
 
 
 def test_ui_dashboard():
