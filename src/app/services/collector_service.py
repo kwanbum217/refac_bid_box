@@ -48,17 +48,23 @@ def resolve_collection_window(
     start_date: str | None,
     end_date: str | None,
     fetch_type: str,
+    categories: tuple[str, ...] | None = None,
     max_catchup_days: int = MAX_CATCHUP_DAYS,
 ) -> tuple[str, str, bool]:
     """수집 날짜 창을 결정합니다.
 
     start_date 가 명시되면 그대로 사용합니다 (수동 백필 경로).
     명시되지 않으면 DB 최신 날짜를 체크포인트로 삼아 공백을 계산합니다.
-    공백이 max_catchup_days 를 초과하면 최근 max_catchup_days 일만 회수합니다.
+
+    체크포인트 선택 규칙:
+    - 요청 카테고리만 대상으로 MIN(MAX(date) per category) 를 계산합니다.
+    - 공고/결과 두 타입 중 더 오래된 쪽을 전체 체크포인트로 사용합니다.
+    - 요청 카테고리 중 DB 에 행이 없는 카테고리가 하나라도 있으면 영구 누락을
+      막기 위해 max_catchup_days 창으로 처리합니다.
+    - 공백이 max_catchup_days 를 초과하면 최근 max_catchup_days 일만 회수합니다.
 
     Returns:
         (resolved_start, resolved_end, is_catchup)
-        is_catchup 이 True 이면 어제 하루가 아니라 누락 구간을 회수하는 실행입니다.
     """
     yesterday: date = (utcnow() - timedelta(days=1)).date()
     yesterday_str = yesterday.strftime("%Y%m%d")
@@ -66,32 +72,63 @@ def resolve_collection_window(
     if start_date is not None:
         return start_date, end_date or yesterday_str, False
 
-    # 체크포인트는 카테고리별 최신일 중 가장 오래된 것(MIN of MAX per category)을
-    # 사용합니다. 전역 MAX 는 느린 카테고리의 공백을 건너뜁니다.
-    # 예: Frgcpt 개찰 8/7, 나머지 8/13 → 전역 MAX 8/13 → 8/14 시작으로
-    # Frgcpt 8/8~8/13 공백이 영구 누락됩니다.
+    # 요청 카테고리 전부에 데이터가 있는지 먼저 확인합니다.
+    # 한 카테고리라도 없으면 영구 누락이 발생하므로 max_catchup_days 창을 씁니다.
+    if categories:
+        for cat in categories:
+            if fetch_type in ("both", "announce"):
+                has_ann = db.scalar(
+                    select(func.count(BidAnnouncement.id)).where(
+                        BidAnnouncement.category == cat
+                    )
+                )
+                if not has_ann:
+                    gap_start = yesterday - timedelta(days=max_catchup_days - 1)
+                    logger.warning(
+                        "카테고리 '%s' 공고 데이터 없음: max_catchup_days(%d일) 창으로 시작합니다.",
+                        cat,
+                        max_catchup_days,
+                    )
+                    return gap_start.strftime("%Y%m%d"), yesterday_str, True
+            if fetch_type in ("both", "result"):
+                has_res = db.scalar(
+                    select(func.count(BidResult.id)).where(BidResult.category == cat)
+                )
+                if not has_res:
+                    gap_start = yesterday - timedelta(days=max_catchup_days - 1)
+                    logger.warning(
+                        "카테고리 '%s' 결과 데이터 없음: max_catchup_days(%d일) 창으로 시작합니다.",
+                        cat,
+                        max_catchup_days,
+                    )
+                    return gap_start.strftime("%Y%m%d"), yesterday_str, True
+
+    # 요청 카테고리별 최신일 중 가장 오래된 것(MIN of MAX per category) 을 계산합니다.
+    # d < latest 로 비교해 최솟값(가장 오래된 날짜)을 유지합니다.
+    # 전역 MAX 는 느린 카테고리의 공백을 건너뜁니다.
+    # 공고/결과 두 타입 중에서도 더 오래된 쪽이 전체 체크포인트가 됩니다.
     latest: date | None = None
 
     if fetch_type in ("both", "announce"):
-        per_cat = (
-            select(func.max(BidAnnouncement.bid_ntce_dt).label("max_dt"))
-            .group_by(BidAnnouncement.category)
-        ).subquery()
+        ann_q = select(func.max(BidAnnouncement.bid_ntce_dt).label("max_dt"))
+        if categories:
+            ann_q = ann_q.where(BidAnnouncement.category.in_(categories))
+        per_cat = ann_q.group_by(BidAnnouncement.category).subquery()
         row = db.scalar(select(func.min(per_cat.c.max_dt)))
         if row is not None:
             d = row.date() if hasattr(row, "date") else row
-            if latest is None or d > latest:
+            if latest is None or d < latest:
                 latest = d
 
     if fetch_type in ("both", "result"):
-        per_cat = (
-            select(func.max(BidResult.rl_openg_dt).label("max_dt"))
-            .group_by(BidResult.category)
-        ).subquery()
+        res_q = select(func.max(BidResult.rl_openg_dt).label("max_dt"))
+        if categories:
+            res_q = res_q.where(BidResult.category.in_(categories))
+        per_cat = res_q.group_by(BidResult.category).subquery()
         row = db.scalar(select(func.min(per_cat.c.max_dt)))
         if row is not None:
             d = row.date() if hasattr(row, "date") else row
-            if latest is None or d > latest:
+            if latest is None or d < latest:
                 latest = d
 
     if latest is None:
@@ -168,16 +205,17 @@ async def collect_bids(
             "failed_count": 0,
         }
 
+    target_categories = categories or tuple(BID_CATEGORIES.keys())
     start_date, end_date, is_catchup = resolve_collection_window(
         db,
         start_date=start_date,
         end_date=end_date,
         fetch_type=fetch_type,
+        categories=target_categories,
         max_catchup_days=max_catchup_days,
     )
     if is_catchup:
         logger.info("누락일 회수 모드: %s ~ %s", start_date, end_date)
-    target_categories = categories or tuple(BID_CATEGORIES.keys())
 
     metrics: dict[str, Any] = {
         "start_date": start_date,
