@@ -9,6 +9,7 @@ src/app/api/v1/automation.py
 | `chatbot:run_update_kb` | `POST /api/v1/automation/run/update-kb` |
 | `chatbot:run_prediction` | `POST /api/v1/automation/run/predict` |
 | `chatbot:run_manual_full` | `POST /api/v1/automation/run/manual-full` |
+| 신규 재학습 실행 | `POST /api/v1/automation/run/retrain` |
 | `chatbot:automation_job_confirm` | `POST /api/v1/automation/job/{job_id}/confirm` |
 | `chatbot:automation_job_status` | `GET /api/v1/automation/job/{job_id}/status` |
 | `chatbot:automation_job_cancel` | `POST /api/v1/automation/job/{job_id}/cancel` |
@@ -135,6 +136,16 @@ def run_manual_full_api(
     user: CustomUser = Depends(require_current_user),
 ):
     return _run_automation_by_action(db, "full_validation", reason, user)
+
+
+@router.post("/run/retrain", summary="예측 모델 재학습 실행")
+def run_model_retrain_api(
+    reason: str = Body("", embed=True),
+    db: Session = Depends(get_db),
+    user: CustomUser = Depends(require_current_user),
+):
+    """재학습은 고비용 작업이므로 확인 API 호출 전에는 큐에 넣지 않습니다."""
+    return _run_automation_by_action(db, "model_retrain", reason, user)
 
 
 @router.post("/job/{job_id}/confirm", summary="고비용 실행 확인")

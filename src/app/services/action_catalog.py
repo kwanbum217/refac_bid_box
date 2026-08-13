@@ -108,6 +108,17 @@ ACTION_CATALOG = {
         followup_after_completion=True,
         keywords=("전체 실행", "manual_full", "풀 파이프라인", "종합 점검", "전체 점검"),
     ),
+    "model_retrain": AutomationAction(
+        action_key="model_retrain",
+        intent="model_retrain",
+        display_name="예측 모델 재학습",
+        pipeline_id=STAGING_PIPELINE_ID,
+        run_mode="retrain_only",
+        mutating=True,
+        high_cost=True,
+        followup_after_completion=True,
+        keywords=("모델 재학습", "재학습 실행", "재훈련", "모델 다시 학습"),
+    ),
 }
 
 ACTION_KEY_BY_INTENT = {action.intent: action.action_key for action in ACTION_CATALOG.values()}
