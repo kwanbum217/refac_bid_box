@@ -95,6 +95,7 @@ docs/
 | 쌍대 표본 기준 착수 지시 | [`2026-08-11_paired_sample_filter_todo.md`](handoff/2026-08-11_paired_sample_filter_todo.md) | 판정용·보고용 표본 분리 반영. 코드 변경 지점, 검증 절차, 금지 사항 |
 | legacy SSE 이관 착수 지시 | [`2026-08-12_legacy_sse_migration_task.md`](handoff/2026-08-12_legacy_sse_migration_task.md) | GET /chatbot/stream 제거 완료. 정본 POST /chat/stream 전면 이관 및 벤치마크 기준선 갱신 |
 | P0 후속 마감 이후 착수 목록 | [`2026-08-13_next_session_todo.md`](handoff/2026-08-13_next_session_todo.md) | A1~A5 병합 이후 잔여 과제. 신 제도 표본 1.276% 실측, 미병합 브랜치 처분, 컷오버 점검 |
+| 추후 작업 정본 백로그 | [`2026-08-13_future_work_backlog.md`](handoff/2026-08-13_future_work_backlog.md) | **현재 정본.** 수집 복구, Phase 7 차단, OOS 게이트, 조건부 모델 연구와 저장소 잔여물의 의존 순서 |
 | 예측 P95 병목 감사 | [`2026-08-13_prediction_p95_diagnosis.md`](handoff/2026-08-13_prediction_p95_diagnosis.md) | /predict P95 627ms 원인(스레드 미제한·특징 3중 구축·이중 프리로드), 최소 수정 후보 A~E, 재측정 매트릭스 1/2/4/10 |
 | 용역 OOS 준비도 판정 | [`2026-08-13_servc_oos_readiness_gate.md`](handoff/2026-08-13_servc_oos_readiness_gate.md) | 현행 champion OOS 후보 2건으로 판정 불가. 수집 백필과 3,098건 축적을 다음 게이트로 확정 |
 | 수동 재학습 API 재구현 계획 | [`2026-08-13_retrain_api_reimplementation_plan.md`](handoff/2026-08-13_retrain_api_reimplementation_plan.md) | 구 브랜치 전체 병합을 기각하고 최신 main의 9파일 최소 이식 범위와 검증 절차 확정 |
