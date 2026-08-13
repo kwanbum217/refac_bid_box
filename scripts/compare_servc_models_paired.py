@@ -51,6 +51,41 @@ from src.ml.model_registry import ModelRegistry  # noqa: E402
 # 유의 판정 기준. 쌍대 t 통계량의 절댓값이 이보다 커야 방향을 말합니다.
 T_THRESHOLD = 2.0
 
+# 제외 사유로 출력할 수 있는 유일한 범주입니다. 임의 문자열(예외 원문, fallback_reason,
+# 파일 경로)은 어떤 경로로도 stdout 에 싣지 않습니다.
+PROVENANCE_CATEGORIES = (
+    "base_fallback",
+    "challenger_fallback",
+    "same_actual_model",
+    "missing_provenance",
+)
+EXCLUSION_CATEGORIES = (*PROVENANCE_CATEGORIES, "api_error")
+
+PAIRED_COLUMNS = (
+    "actual",
+    "base_err",
+    "chal_err",
+    "base_width",
+    "chal_width",
+    "base_covered",
+    "chal_covered",
+)
+
+FAIL_CLOSED_VERDICT = "판정 불가 (대체 모델 발생)"
+
+
+def _valid_model_id(value: object) -> str | None:
+    """출처 계약상 model_id 는 공백이 아닌 문자열이어야 합니다."""
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _valid_fallback_flag(value: object) -> bool | None:
+    """fallback_used 는 bool 만 유효합니다. 0/1 이나 문자열은 계약 위반입니다."""
+    return value if isinstance(value, bool) else None
+
 
 def predict_one(session, bid_id: int, model_id: str) -> dict | None:
     try:
@@ -62,11 +97,41 @@ def predict_one(session, bid_id: int, model_id: str) -> dict | None:
         return None
     if response.prediction_rate is None:
         return None
+
+    act_model_id = _valid_model_id(getattr(response, "model_id", None))
+    req_model = _valid_model_id(getattr(response, "requested_model", None))
+    fb_used = _valid_fallback_flag(getattr(response, "fallback_used", None))
+
+    missing_prov = act_model_id is None or req_model is None or fb_used is None
+
     return {
         "pred": float(response.prediction_rate),
         "model": response.model_name,
         "low": response.rate_low,
         "high": response.rate_high,
+        "model_id": act_model_id or "",
+        "requested_model": req_model or "",
+        "fallback_used": bool(fb_used),
+        "missing_provenance": missing_prov,
+    }
+
+
+def classify_pair(base: dict, challenger: dict) -> dict:
+    """두 팔의 응답을 고정 범주로 분류합니다. 출처가 없으면 다른 범주로 세지 않습니다."""
+    base_missing = bool(base.get("missing_provenance", True))
+    chal_missing = bool(challenger.get("missing_provenance", True))
+    missing = base_missing or chal_missing
+
+    def _fallback(arm: dict, arm_missing: bool) -> bool:
+        if arm_missing:
+            return False
+        return bool(arm.get("fallback_used")) or arm.get("model_id") != arm.get("requested_model")
+
+    return {
+        "missing_provenance": missing,
+        "base_fallback": _fallback(base, base_missing),
+        "challenger_fallback": _fallback(challenger, chal_missing),
+        "same_actual_model": (not missing) and base.get("model_id") == challenger.get("model_id"),
     }
 
 
@@ -101,36 +166,75 @@ def paired_stats(diff: np.ndarray, label: str, lower_is_better: bool = True) -> 
     }
 
 
-def evaluate_paired_samples(frame: pd.DataFrame) -> dict:
+def evaluate_paired_samples(
+    frame: pd.DataFrame, requested_pairs: int = 0, api_error_count: int = 0
+) -> dict:
     """전량 보고와 학습 범위 내 판정을 함께 계산합니다."""
-    required = {
-        "actual",
-        "base_err",
-        "chal_err",
-        "base_width",
-        "chal_width",
-        "base_covered",
-        "chal_covered",
-    }
-    missing = sorted(required - set(frame.columns))
+    missing = sorted(set(PAIRED_COLUMNS) - set(frame.columns))
     if missing:
         raise ValueError(f"쌍대 평가 컬럼이 없습니다: {missing}")
-    if frame.empty:
-        raise ValueError("쌍대 평가 표본이 없습니다.")
 
-    actual = pd.to_numeric(frame["actual"], errors="coerce")
-    # 학습 데이터셋의 낙찰률 필터를 판정 범위의 단일 출처로 사용합니다.
+    df = frame.copy()
+    # 출처 열이 없는 프레임은 신뢰할 수 없으므로 fail-closed 기본값을 씁니다.
+    for column in PROVENANCE_CATEGORIES:
+        if column not in df.columns:
+            df[column] = True
+
+    invalid_prov = (
+        df["missing_provenance"]
+        | df["base_fallback"]
+        | df["challenger_fallback"]
+        | df["same_actual_model"]
+    ).astype(bool)
+    df["provenance_valid"] = ~invalid_prov
+
+    invalid_provenance_count = int(invalid_prov.sum())
+    total_complete_pairs = len(df)
+
+    if requested_pairs == 0:
+        requested_pairs = total_complete_pairs + api_error_count
+
+    valid_frame = df.loc[df["provenance_valid"]]
+    valid_count = len(valid_frame)
+
+    actual = pd.to_numeric(valid_frame["actual"], errors="coerce")
     inside = actual.between(MIN_WINNING_RATE, MAX_WINNING_RATE)
     outside_count = int((~inside).sum())
-    reporting = _evaluate_scope(frame, "보고용(전량)")
-    decision = _evaluate_scope(frame.loc[inside], "판정용(학습 범위 내)")
+    reporting = _evaluate_scope(valid_frame, "보고용(전량)")
+    decision = _evaluate_scope(valid_frame.loc[inside], "판정용(학습 범위 내)")
+
+    counts = {name: int(df[name].sum()) for name in PROVENANCE_CATEGORIES}
+    counts["api_error"] = int(api_error_count)
+
+    fail_closed = invalid_provenance_count > 0 or api_error_count > 0
+    if fail_closed:
+        decision["verdict"] = FAIL_CLOSED_VERDICT
+        reporting["verdict"] = FAIL_CLOSED_VERDICT
+
     return {
+        "requested_pairs": requested_pairs,
+        "complete_pairs": total_complete_pairs,
+        "valid_pairs": valid_count,
+        "api_error_count": int(api_error_count),
+        "api_error_ratio": _ratio(api_error_count, requested_pairs),
+        "exclusion_counts": counts,
+        "missing_provenance_count": counts["missing_provenance"],
+        "invalid_provenance_count": invalid_provenance_count,
+        "invalid_provenance_ratio": _ratio(invalid_provenance_count, requested_pairs),
+        "base_fallback_count": counts["base_fallback"],
+        "challenger_fallback_count": counts["challenger_fallback"],
+        "same_actual_model_count": counts["same_actual_model"],
+        "fail_closed": fail_closed,
         "outside_count": outside_count,
-        "outside_ratio": outside_count / len(frame),
+        "outside_ratio": _ratio(outside_count, valid_count),
         "reporting": reporting,
         "decision": decision,
         "verdict_mismatch": reporting["verdict"] != decision["verdict"],
     }
+
+
+def _ratio(numerator: float, denominator: float) -> float:
+    return float(numerator) / float(denominator) if denominator else 0.0
 
 
 def _evaluate_scope(frame: pd.DataFrame, label: str) -> dict:
@@ -153,8 +257,7 @@ def _evaluate_scope(frame: pd.DataFrame, label: str) -> dict:
             ),
             paired_stats(
                 (
-                    frame["chal_covered"].astype(float)
-                    - frame["base_covered"].astype(float)
+                    frame["chal_covered"].astype(float) - frame["base_covered"].astype(float)
                 ).to_numpy(),
                 "피복률",
                 lower_is_better=False,
@@ -163,9 +266,7 @@ def _evaluate_scope(frame: pd.DataFrame, label: str) -> dict:
     )
     mae_diff = frame["chal_err"] - frame["base_err"]
     n = len(mae_diff)
-    detectable = (
-        T_THRESHOLD * float(mae_diff.std(ddof=1) / np.sqrt(n)) if n > 1 else float("nan")
-    )
+    detectable = T_THRESHOLD * float(mae_diff.std(ddof=1) / np.sqrt(n)) if n > 1 else float("nan")
     return {
         "label": label,
         "n": n,
@@ -191,6 +292,27 @@ def _model_summary(frame: pd.DataFrame, model: str, prefix: str) -> dict:
 
 
 def print_paired_evaluation(evaluation: dict) -> None:
+    req = evaluation["requested_pairs"]
+    comp = evaluation["complete_pairs"]
+    val = evaluation["valid_pairs"]
+
+    print(f"요청 쌍: {req:,}건")
+    print(f"완전 쌍(Complete): {comp:,}건 ({_ratio(comp, req):.1%})")
+    print(f"유효 쌍(Valid): {val:,}건 ({_ratio(val, req):.1%})")
+    print()
+
+    counts = evaluation.get("exclusion_counts") or {}
+    excluded_total = evaluation.get("invalid_provenance_count", 0) + evaluation.get(
+        "api_error_count", 0
+    )
+    if excluded_total > 0:
+        print("대체 모델/동일 모델/출처 누락/API 오류 표본을 정상 비교에서 제외합니다.")
+        for category in EXCLUSION_CATEGORIES:
+            count = int(counts.get(category, 0))
+            print(f"  - {category}: {count:,}건 ({_ratio(count, req):.1%})")
+
+    if val == 0:
+        print("\n유효 쌍이 없어 쌍대 통계를 계산하지 않습니다.")
     outside_count = evaluation["outside_count"]
     outside_ratio = evaluation["outside_ratio"]
     print(
@@ -210,13 +332,12 @@ def print_paired_evaluation(evaluation: dict) -> None:
     reporting_verdict = evaluation["reporting"]["verdict"]
     decision_verdict = evaluation["decision"]["verdict"]
     print(f"\n최종 판정(학습 범위 내): {decision_verdict}")
+    if evaluation.get("fail_closed", False):
+        print("주의: 출처 오류 또는 API 오류로 승격 판정이 차단(fail-closed)되었습니다.")
     if evaluation["verdict_mismatch"]:
         print(
-            "주의: 판정이 어긋납니다: "
-            f"전량 '{reporting_verdict}' -> 범위 내 '{decision_verdict}'"
+            f"주의: 판정이 어긋납니다: 전량 '{reporting_verdict}' -> 범위 내 '{decision_verdict}'"
         )
-    else:
-        print(f"전량과 범위 내 판정이 같습니다: {decision_verdict}")
 
 
 def main() -> int:
@@ -266,19 +387,20 @@ def main() -> int:
             frame = frame[frame["bid_id"].isin(keep)]
             print(f"하한율 보유 건만 사용합니다 ({len(frame):,}건).")
 
-        print(
-            f"{args.year}년 {args.category} {len(frame):,}건에 "
-            "두 모델을 같은 순서로 호출합니다."
-        )
+        print(f"{args.year}년 {args.category} {len(frame):,}건에 두 모델을 같은 순서로 호출합니다.")
         print(f"  base       {args.base}")
         print(f"  challenger {args.challenger}\n")
 
+        requested_pairs = len(frame)
         records = []
+        api_error_count = 0
         for row in frame.itertuples():
             a = predict_one(session, row.bid_id, args.base)
             b = predict_one(session, row.bid_id, args.challenger)
             if a is None or b is None:
+                api_error_count += 1
                 continue
+
             actual = float(row.actual_rate)
             records.append(
                 {
@@ -289,19 +411,37 @@ def main() -> int:
                     "chal_width": (b["high"] - b["low"]) if b["low"] is not None else np.nan,
                     "base_covered": _covered(a, actual),
                     "chal_covered": _covered(b, actual),
+                    **classify_pair(a, b),
                 }
             )
     finally:
         session.close()
 
-    if not records:
-        print("채점 가능한 표본이 없습니다.")
+    df = pd.DataFrame(records) if records else _empty_paired_frame()
+
+    try:
+        eval_result = evaluate_paired_samples(
+            df, requested_pairs=requested_pairs, api_error_count=api_error_count
+        )
+    except ValueError as e:
+        print(f"오류: {e}")
         return 1
 
-    df = pd.DataFrame(records)
-    print(f"채점 {len(df):,}건 / 제외 {len(frame) - len(df):,}건\n")
-    print_paired_evaluation(evaluate_paired_samples(df))
+    print_paired_evaluation(eval_result)
+    if eval_result["fail_closed"]:
+        return 1
+    if eval_result["valid_pairs"] == 0:
+        return 1
+    if eval_result["decision"]["n"] == 0:
+        return 1
     return 0
+
+
+def _empty_paired_frame() -> pd.DataFrame:
+    """표본이 하나도 남지 않아도 같은 출력 경로를 타도록 빈 프레임을 만듭니다."""
+    columns = {name: pd.Series(dtype="float64") for name in PAIRED_COLUMNS}
+    columns.update({name: pd.Series(dtype="bool") for name in PROVENANCE_CATEGORIES})
+    return pd.DataFrame(columns)
 
 
 def _covered(result: dict, actual: float) -> bool:
