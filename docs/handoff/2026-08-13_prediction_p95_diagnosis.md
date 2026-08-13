@@ -3,8 +3,8 @@
 > **작성일**: 2026-08-13
 > **작성자**: Orca Dispatch ctx_2e4720d83066 / Task task_5c918f4b7f82
 > **범위**: 읽기 전용 성능 감사. 벤치마크·학습·LLM/RAG 호출·코드 변경 없음
-> **상태**: 진단 완료. 후보 A 채택·구현 완료 (2026-08-13, Dispatch ctx_d36c3e6fe8b6 / Task task_5a7091f04f6a). 후보 B~E 미착수
-> **실측 출처**: warm sequential /predict 첫 요청 57ms 이후 11~14ms, concurrency=10 n=100 P50 166.2ms / P95 627.0ms, cold 포함 P95 1.93s
+> **상태**: 진단 완료. 후보 A 채택·구현·재측정 완료 (P95 17.45/21.68/54.75/193.09ms @ 동시성 1/2/4/10, warm). 후보 B 채택·구현 완료 (2026-08-13, Dispatch ctx_a760ba6d6186 / Task task_7090143a0e8c). 후보 C~E 미착수
+> **실측 출처**: warm sequential /predict 첫 요청 57ms 이후 11~14ms, concurrency=10 n=100 P50 166.2ms / P95 627.0ms, cold 포함 P95 1.93s. 후보 A 적용 후 warm concurrency 1/2/4/10 P95 17.45/21.68/54.75/193.09ms (n=100)
 
 ---
 
@@ -36,10 +36,13 @@
 | warm sequential /predict 첫 요청 | 57ms | - |
 | warm sequential /predict 이후 요청 | 11~14ms | - |
 | concurrency=10, n=100 /predict | P50 166.2ms / P95 627.0ms | P95 100ms |
+| 후보 A 적용 후 warm /predict n=100 (동시성 1/2/4/10) | P95 17.45 / 21.68 / 54.75 / 193.09ms | P95 100ms |
 | cold 포함 (재시작 직후 구간 포함) | P95 1.93s | - |
 
 순차 12ms 대비 동시성 10 P50 166.2ms는 **14배 증폭**, P95 627ms는 **52배 증폭**입니다.
-단일 요청 지연보다 동시성 붕괴가 지배적입니다.
+단일 요청 지연보다 동시성 붕괴가 지배적입니다. 후보 A 적용으로 동시성 1~4는 목표
+(P95 100ms)에 도달했지만, 동시성 10 은 193.09ms 로 **목표 미달**이 남아 후보 B 채택의
+근거가 되었습니다.
 
 ### 1.2 벤치마크가 실제로 태운 경로 (src/app/api/v1/predictions.py:200)
 
@@ -145,7 +148,7 @@
 1. 재발주 이력 쿼리: `dminstt_nm` 단일 인덱스 + filesort + 파이썬 5,000행 정규식
    매칭 (1.5절). 대형 기관에서 수십 ms.
 2. 분위 모델 지연 로드 (첫 요청 한정 수백 ms 이상).
-3. 특징 맵 3중 구축은 `/predict-price` 에도 동일하게 발생.
+3. 특징 맵 재구축은 `/predict-price` 에도 발생 (후보 B 적용 후에도 full_map 미전달로 2회 유지).
 
 ---
 
@@ -163,15 +166,18 @@
 | 범위 | 후보 A 만 적용. 후보 B(특징 맵 1회)·후보 C(프리로드 단일화) 미적용. CatBoost(`thread_count`, n_jobs 미지원)와 v25/v13_hybrid/ssh_hist_premium 번들은 범위 밖으로 그대로 둠. 학습 기본값·아티팩트 파일·특징 생성은 변경 없음 |
 | 예측값 동등성 | `tests/test_model_registry.py` 신규 6건 — 지원 추정기(LGBMRegressor) n_jobs=1 적용, 미지원 추정기 무변경, `set_params(n_jobs=1)` 전후 예측값 동등(점 추정 비트 동일, 분위 모델은 OpenMP 합산 순서 차이로 1 ULP 이내 허용), 점·분위 모델 로드 시 적용 확인. 아티팩트 파일의 n_jobs 는 None 그대로임을 확인 |
 | 기대 | 단건 추론 오버헤드 감소, 동시성 10 oversubscription 제거. 효과 실측은 4절 재측정 매트릭스로 후속 수행 |
+| 재측정 결과 | warm concurrency 1/2/4/10 n=100 → P95 17.45 / 21.68 / 54.75 / 193.09ms. 동시성 1~4 는 목표(100ms) 충족, 10 은 미달 → 후보 B 채택 근거 (4절 매트릭스 반영) |
 
-### 후보 B: 요청당 특징 맵 1회 구축 (2.1-2, 2.2-2 겨냥)
+### 후보 B: 요청당 특징 맵 1회 구축 (2.1-2, 2.2-2 겨냥) — 채택·구현 완료 (2026-08-13)
 
 | 항목 | 내용 |
 | --- | --- |
-| 내용 | `build_feature_dict` 결과(전체 맵)를 `predict_optimal_price_with_provenance` → `_prepare_full_frame` → `JoblibModelWrapper.predict` → `prepare_input_frame` 까지 재사용. 현재 3회 호출되는 `build_default_feature_map` 을 1회로 |
-| 방법 | 이미 전체 맵인 dict 를 프레임으로 바로 변환하고, `prepare_input_frame` 의 defaults 재계산을 전달받은 값으로 대체. `announcement_feature_payload` 병합 위치(원본 키)는 유지 |
-| 위험 | 낮음 (같은 함수, 같은 입력). 단 서로 다른 두 dict(요청 키 vs 전체 맵)의 병합 의미가 변하지 않도록 회귀 테스트 |
-| 기대 | 순차 11~14ms 의 Python 부분 1/3 수준으로, GIL 점유 시간 감소 → 동시성 붕괴 완화 |
+| 내용 | `build_feature_dict` 결과(전체 맵)를 `predict_optimal_price_with_provenance` → `_prepare_full_frame` → wrapper.predict → `prepare_input_frame` 까지 재사용. 현재 3회 호출되는 `build_default_feature_map` 을 /predict 요청당 1회로 |
+| 구현 | `predictor.SingletonPredictor.predict` 가 구축한 전체 맵을 `predict_optimal_price(selected, features, full_map=features)` 로 전달. `predict_optimal_price_with_provenance(model_id, features_dict, full_map=None)` 는 full_map 이 있으면 `_prepare_full_frame` 의 재구축을 생략하고 `frame.attrs["feature_defaults"]` 로 스탬프. `_prepare_input_frame(feature_values, column_order, category_levels=None, *, defaults=None)` → `prepare_input_frame(feature_values, columns, levels, defaults)` 로 전달되어 `defaults` 가 있으면 `build_default_feature_map` 재호출 없이 값·category dtype 을 그대로 재사용. JoblibModelWrapper.predict/predict_interval, V13HybridWrapper.predict(단계별), EnsembleV25Wrapper.predict 가 `df.attrs.get("feature_defaults")` 를 내려보냄. 후보 순회 전체(v25/v13_hybrid 폴백 포함)가 같은 단일 맵을 씀 |
+| 근거 | /predict 스키마(PredictionRequest)에 날짜 필드가 없어 전체 맵의 now() 의존 키가 요청 내에서 불변 → 단일 맵 재사용이 이전 3회 재구성 경로와 값이 완전히 같음. 얕은 사본 컬럼 병합(원본 요청 키 우선)과 `apply_categorical_dtypes` 는 defaults 경로에서도 동일하게 수행 |
+| 범위 | `defaults=None`(full_map 미전달) 호출부는 기존 재구축 경로 그대로 → API `/predict-price`, 도구, 자동화 태스크는 3회에서 2회로만 감소. features.py 단일 공급원, 모델 아티팩트, 학습, DB 는 변경 없음 |
+| 예측값 동등성 | `tests/test_feature_map_single_build.py` 신규 7건 — ① /predict 요청당 build 호출 1회(원본 요청 dict 키로 호출), ② Thng/Servc 쌍대 예측 동등(predictor.predict vs 기존 3회 경로, 참조 시각 고정), ③ 요청 모델 실패 시 v25 폴백 동등, ④ defaults 전달 프레임 값·CategoricalDtype 동등, ⑤ strict unservable 검증 유지(호출부 컬럼은 통과), ⑥ full_map 미전달 경로 재구축 유지. 전체 회귀 958건 통과 |
+| 기대 | 요청당 Python/pandas 특징 구축 1/3 수준 → GIL 점유 시간 감소로 동시성 붕괴 추가 완화. 운영 재측정은 후속 Dispatch 에서 4절 매트릭스로 수행 |
 
 ### 후보 C: 모델 프리로드 단일화 (2.3-1 겨냥)
 
@@ -205,14 +211,14 @@
 각 셀은 별도 실행입니다. 벤치마크는 `scripts/benchmark_latency.py` 와 동일한
 payload(`category_code="Thng"`)를 쓰되 `--predict-concurrency` 를 조정합니다.
 
-| concurrency | 경로 | 상태 | n | 목표 P95 | 비고 |
-| ---: | --- | --- | ---: | ---: | --- |
-| 1 | /predict (Thng) | warm | 100 | 100ms | 후보 A·B 적용 후 순차 11~14ms 가 몇 ms 로 내려가는지 |
-| 1 | /predict (Thng) | cold (재시작 직후) | 100 | 기준선 1.93s 대비 감소 | 후보 C 검증. 재시작 직후 즉시 실행 |
-| 2 | /predict (Thng) | warm | 100 | 100ms | 1→2 에서 증폭률 관찰 |
-| 4 | /predict (Thng) | warm | 100 | 100ms | 4 동시성에서 oversubscription 시작 여부 |
-| 10 | /predict (Thng) | warm | 100 | 100ms | 현재 P50 166.2ms / P95 627.0ms 기준선과 직접 비교 |
-| 10 | /predict-price (Servc 실공고, bid_id 순회) | warm | 100 | 100ms | DB 쿼리 3종 + 분위 모델 포함 실사용 궤적. 후보 D·E 검증 |
+| concurrency | 경로 | 상태 | n | 목표 P95 | 후보 A 적용 후 측정 (P95) | 비고 |
+| ---: | --- | --- | ---: | ---: | ---: | --- |
+| 1 | /predict (Thng) | warm | 100 | 100ms | 17.45ms | 목표 충족. 순차 11~14ms → 17.45ms (A 적용 후 기준선) |
+| 1 | /predict (Thng) | cold (재시작 직후) | 100 | 기준선 1.93s 대비 감소 | 미측정 | 후보 C 미적용. 재시작 직후 즉시 실행 예정 |
+| 2 | /predict (Thng) | warm | 100 | 100ms | 21.68ms | 목표 충족. 1→2 증폭률 1.24 |
+| 4 | /predict (Thng) | warm | 100 | 100ms | 54.75ms | 목표 충족. oversubscription 회복 구간 |
+| 10 | /predict (Thng) | warm | 100 | 100ms | 193.09ms | **목표 미달** (기준선 627.0ms 대비 -69%). 후보 B 채택 근거 |
+| 10 | /predict-price (Servc 실공고, bid_id 순회) | warm | 100 | 100ms | 미측정 | DB 쿼리 3종 + 분위 모델 포함 실사용 궤적. 후보 D·E 미적용 |
 
 판정 기준:
 
@@ -229,7 +235,10 @@ cold 측정은 `docker compose restart app` 직후 30초 안에 시작하며, wa
 
 ## 5. 금지 및 유의 (이 감사의 범위)
 
-- 본 감사는 읽기 전용이었습니다. 후보 A 만 2026-08-13 에 채택·구현되었고(3절),
-  후보 B~E 는 적용하지 않았습니다.
-- 후보 A 의 예측값 동등성 회귀는 `tests/test_model_registry.py` 로 수행했습니다.
+- 본 감사는 읽기 전용이었습니다. 후보 A(추론 스레드 제한)와 후보 B(특징 맵 1회 구축)가
+  2026-08-13 에 채택·구현되었고(3절), 후보 C~E 는 적용하지 않았습니다.
+- 후보 A 의 예측값 동등성 회귀는 `tests/test_model_registry.py`, 후보 B 는
+  `tests/test_feature_map_single_build.py` 로 수행했습니다. 전체 회귀 958건 통과.
 - 재발주 이력 인덱스(후보 E)는 담당자 확인 전 실행 금지.
+- 후보 B 의 운영 경로 재측정(4절 concurrency 10 /predict, /predict-price)은 아직
+  수행하지 않았습니다. 벤치마크·Docker 조작은 후속 Dispatch 의 책임입니다.
