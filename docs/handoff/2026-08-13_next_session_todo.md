@@ -80,25 +80,7 @@
 
 ### 2.3 legacy GET SSE 경로 제거
 
-`GET /api/v1/chatbot/stream` 이 `src/app/api/v1/chatbot.py:798` 에 남아 있고,
-`chatbot.py:820` 에서 `SessionLocal()` 을 직접 엽니다. 테스트의
-`dependency_overrides` 를 우회해 격리 DB 가 아닌 곳을 볼 수 있는 경로입니다.
-
-제거 선결 조건은 이미 갖춰졌습니다.
-
-| 조건 | 상태 |
-| --- | --- |
-| React 챗봇의 정본 POST 이관 | 완료 (`main` 반영) |
-| 벤치마크 병행 측정 | 완료. legacy `benchmark_latency.py:138`, 정본 `:173` |
-| CI 프런트엔드 레인 | 완료 (`.github/workflows/ci.yml`) |
-
-남은 것은 정본 지표가 목표를 만족하는지 **실측으로 확인한 뒤 제거**하는
-것입니다. 정본은 플래너 단계를 거치므로 첫 토큰이 legacy 보다 구조적으로
-느립니다. 같은 지표명으로 섞어 회귀로 오독하지 마십시오. 상세 계약은
-[`2026-08-12_legacy_sse_migration_task.md`](2026-08-12_legacy_sse_migration_task.md)
-5장에 있습니다.
-
-권장: **Opus 5 / effort medium**.
+**완료되었습니다.** `GET /api/v1/chatbot/stream` 은 코드에서 완전히 제거되었고, 모든 호출부가 정본 `POST /api/v1/chatbot/chat/stream` 으로 전환되었습니다. 테스트의 `dependency_overrides` 를 우회해 격리 DB 가 아닌 곳을 볼 수 있던 경로 문제도 자연스럽게 해결되었습니다. 정본 지표가 목표를 충족한 것을 실측으로 확인한 뒤 완전히 제거되었습니다.
 
 ### 2.4 운영 컷오버 전 점검
 

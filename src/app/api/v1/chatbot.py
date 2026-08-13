@@ -790,5 +790,3 @@ async def query_chatbot(payload: ChatbotQueryRequest, db: Session = Depends(get_
         route_reason=bundle.route_reason,
         citations=bundle.citations,
     )
-
-
