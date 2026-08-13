@@ -3,7 +3,7 @@
 > **작성일**: 2026-08-13
 > **작성자**: Orca Dispatch ctx_2e4720d83066 / Task task_5c918f4b7f82
 > **범위**: 읽기 전용 성능 감사. 벤치마크·학습·LLM/RAG 호출·코드 변경 없음
-> **상태**: 진단 완료. 수정 미착수 (최소 수정 후보만 확정)
+> **상태**: 진단 완료. 후보 A 채택·구현 완료 (2026-08-13, Dispatch ctx_d36c3e6fe8b6 / Task task_5a7091f04f6a). 후보 B~E 미착수
 > **실측 출처**: warm sequential /predict 첫 요청 57ms 이후 11~14ms, concurrency=10 n=100 P50 166.2ms / P95 627.0ms, cold 포함 P95 1.93s
 
 ---
@@ -153,14 +153,15 @@
 수정 우선순위는 재측정 매트릭스(4절)로 검증하는 순서입니다. 각 후보는 1개의
 측정 사실을 겨냥합니다.
 
-### 후보 A: 추론 스레드 수 제한 (2.1-1, 2.2-1 겨냥)
+### 후보 A: 추론 스레드 수 제한 (2.1-1, 2.2-1 겨냥) — 채택·구현 완료 (2026-08-13)
 
 | 항목 | 내용 |
 | --- | --- |
-| 방법 1 (권장) | 컨테이너 환경 변수 `OMP_NUM_THREADS=2` 추가 (docker-compose app 서비스). 코드 변경 없음. LightGBM/CatBoost 기본값(0)은 이 변수를 존중 |
-| 방법 2 | 모델 로드 직후 `CatBoostRegressor.set_thread_count(2)` 호출. LGBM 은 `model.set_params(num_threads=2)` 후 `_Booster` 재구성 필요(직렬화된 booster 반영 여부 확인 필수) — 방법 1이 안전 |
-| 위험 | 스레드 수 변경이 부동소수 합산 순서를 바꿀 수 있으나, 트리 합산은 순서 독립적이라 예측값 불변 가능성 높음. 승격 전 예측값 동등성 회귀(기존 응답 재현) 검증 필수 |
-| 기대 | 단건 추론 오버헤드 감소(수 ms → sub-ms), 동시성 10에서 oversubscription 제거 |
+| 채택 구현 | `src/ml/model_registry.py` 에 `_apply_inference_thread_budget()` 헬퍼 추가. `JoblibModelWrapper.load()` 의 점 추정 모델과 `_load_quantile_models()` 의 분위 모델(model_q*.bin)을 로드 직후 `set_params(n_jobs=1)` 로 덮어 씀. `get_params()` 에 `n_jobs` 가 없는 추정기는 그대로 둠 |
+| 근거 | LightGBM 4.7.0 sklearn API 는 predict 시점에 `self.n_jobs` 를 `num_threads` 로 읽습니다 (lightgbm/sklearn.py `_process_params(stage="predict")` → `_choose_param_value("num_threads", params, self.n_jobs)` → `_process_n_jobs`). 학습 기본값 `None` 은 물리 코어 전부(14)를 쓰므로, 로드 직후 `n_jobs=1` 로 덮어 쓰면 단건 추론의 스레드 팀 오버헤드와 동시성 oversubscription 이 제거됩니다. 전역 OMP 환경변수와 달리 컨테이너·코드 외부 설정에 의존하지 않는 코드 수준 고정입니다 |
+| 범위 | 후보 A 만 적용. 후보 B(특징 맵 1회)·후보 C(프리로드 단일화) 미적용. CatBoost(`thread_count`, n_jobs 미지원)와 v25/v13_hybrid/ssh_hist_premium 번들은 범위 밖으로 그대로 둠. 학습 기본값·아티팩트 파일·특징 생성은 변경 없음 |
+| 예측값 동등성 | `tests/test_model_registry.py` 신규 6건 — 지원 추정기(LGBMRegressor) n_jobs=1 적용, 미지원 추정기 무변경, `set_params(n_jobs=1)` 전후 예측값 동등(점 추정 비트 동일, 분위 모델은 OpenMP 합산 순서 차이로 1 ULP 이내 허용), 점·분위 모델 로드 시 적용 확인. 아티팩트 파일의 n_jobs 는 None 그대로임을 확인 |
+| 기대 | 단건 추론 오버헤드 감소, 동시성 10 oversubscription 제거. 효과 실측은 4절 재측정 매트릭스로 후속 수행 |
 
 ### 후보 B: 요청당 특징 맵 1회 구축 (2.1-2, 2.2-2 겨냥)
 
@@ -227,6 +228,7 @@ cold 측정은 `docker compose restart app` 직후 30초 안에 시작하며, wa
 
 ## 5. 금지 및 유의 (이 감사의 범위)
 
-- 본 감사는 읽기 전용입니다. 위 후보 중 어느 것도 이 문서와 함께 적용하지 않았습니다.
-- 예측값 동등성 회귀 없이 후보 A 를 승격하면 안 됩니다 (부동소수 합산 순서).
+- 본 감사는 읽기 전용이었습니다. 후보 A 만 2026-08-13 에 채택·구현되었고(3절),
+  후보 B~E 는 적용하지 않았습니다.
+- 후보 A 의 예측값 동등성 회귀는 `tests/test_model_registry.py` 로 수행했습니다.
 - 재발주 이력 인덱스(후보 E)는 담당자 확인 전 실행 금지.
