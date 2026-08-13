@@ -7,7 +7,7 @@ Phase 7 레이턴시 벤치마크.
 
 | 구간 | 목표 | 근거 |
 | --- | --- | --- |
-| SSE 첫 토큰 | P95 3초 이내 | REFACTORING_DESIGN.md:651 |
+| SSE 첫 토큰 | P95 3초 이내 | REFACTORING_DESIGN.md:651 (legacy 경로 전환 완료) |
 | SSE 전체 응답 | P95 20초 이내 | REFACTORING_DESIGN.md:651 |
 | 낙찰가 예측 API | P95 100ms 이내 | 싱글톤 모델 로드 효과 확인 |
 | 단발 질의 API | 참고값 | 스트리밍 대비 비교용 |
@@ -124,41 +124,12 @@ def _query_for_round(index: int) -> str:
     return f"{base} (성능 측정 표본 {index + 1})"
 
 
-def benchmark_sse(base_url: str, rounds: int) -> tuple[Samples, Samples]:
-    """SSE 스트림에서 첫 토큰 도착 시각과 전체 완료 시각을 나눠 측정합니다."""
-    first_token = Samples("SSE 첫 토큰")
-    total = Samples("SSE 전체 응답")
+def benchmark_sse_canonical(base_url: str, rounds: int) -> tuple[Samples, Samples, Samples]:
+    """정본 SSE 스트림에서 first_stage_ms, first_token_ms, final_ms를 측정합니다.
 
-    with httpx.Client(base_url=base_url, timeout=180.0) as client:
-        for i in range(rounds):
-            query = _query_for_round(i)
-            start = time.perf_counter()
-            seen_token = False
-            try:
-                with client.stream("GET", "/api/v1/chatbot/stream", params={"query": query}) as r:
-                    if r.status_code != 200:
-                        first_token.errors += 1
-                        total.errors += 1
-                        continue
-                    for line in r.iter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        event = json.loads(line[6:])
-                        if not seen_token and event.get("type") == "token":
-                            first_token.add((time.perf_counter() - start) * 1000.0, query)
-                            seen_token = True
-                        if event.get("type") == "done":
-                            total.add((time.perf_counter() - start) * 1000.0, query)
-            except httpx.HTTPError:
-                first_token.errors += 1
-                total.errors += 1
-            print(f"    스트리밍 {i + 1}/{rounds} 완료", end="\r", flush=True)
-    print(" " * 40, end="\r")
-    return first_token, total
-
-
-def benchmark_sse_new(base_url: str, rounds: int) -> tuple[Samples, Samples, Samples]:
-    """정본 SSE 스트림에서 first_stage_ms, first_token_ms, final_ms를 측정합니다."""
+    기존 legacy GET /api/v1/chatbot/stream은 제거되었고,
+    canonical POST /api/v1/chatbot/chat/stream으로 전환되었습니다.
+    """
     first_stage = Samples("정본 SSE 첫 stage (first_stage_ms)")
     first_token = Samples("정본 SSE 첫 token (first_token_ms)")
     final = Samples("정본 SSE 완료 (final_ms)")
@@ -274,26 +245,21 @@ def main() -> int:
         print("먼저 서버를 띄우십시오: uvicorn src.app.main:app --port 8000")
         return 2
 
-    print(f"\n[1/4] 낙찰가 예측 API ({args.predict_rounds}회)")
+    print(f"\n[1/3] 낙찰가 예측 API ({args.predict_rounds}회)")
     predict = benchmark_predict(args.base_url, args.predict_rounds, args.predict_concurrency)
 
-    print(f"\n[2/4] legacy SSE 스트리밍 ({args.sse_rounds}회)")
-    first_token, total = benchmark_sse(args.base_url, args.sse_rounds)
+    print(f"\n[2/3] 정본 SSE 스트리밍 ({args.sse_rounds}회)")
+    first_stage, new_first_token, final = benchmark_sse_canonical(args.base_url, args.sse_rounds)
 
-    print(f"\n[3/4] 정본 SSE 스트리밍 ({args.sse_rounds}회)")
-    first_stage, new_first_token, final = benchmark_sse_new(args.base_url, args.sse_rounds)
-
-    print(f"\n[4/4] 단발 질의 API ({args.query_rounds}회)")
+    print(f"\n[3/3] 단발 질의 API ({args.query_rounds}회)")
     query = benchmark_query(args.base_url, args.query_rounds)
 
     print("\n" + "-" * 62)
     print("결과")
     results = [
-        first_token.report(FIRST_TOKEN_TARGET_MS),
-        total.report(TOTAL_TARGET_MS),
+        new_first_token.report(FIRST_TOKEN_TARGET_MS),
+        final.report(TOTAL_TARGET_MS),
         first_stage.report(),
-        new_first_token.report(),
-        final.report(),
         predict.report(PREDICT_TARGET_MS),
     ]
     query.report()
@@ -315,8 +281,6 @@ def main() -> int:
             "base_url": args.base_url,
             "predict_concurrency": args.predict_concurrency,
             "samples": {
-                "first_token": first_token.as_dict(),
-                "total": total.as_dict(),
                 "first_stage_new": first_stage.as_dict(),
                 "first_token_new": new_first_token.as_dict(),
                 "final_new": final.as_dict(),
@@ -330,9 +294,9 @@ def main() -> int:
         )
         print(f"  원시 측정치 저장: {args.output}")
 
-    if total.tagged:
+    if final.tagged:
         print("\n  질의별 최장 소요 (SSE 전체)")
-        for tag, ms in total.slowest(5):
+        for tag, ms in final.slowest(5):
             print(f"      {_fmt(ms):>8s}  {tag}")
 
     print("-" * 62)

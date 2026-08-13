@@ -8,10 +8,9 @@ src/app/api/v1/chatbot.py
 | `chatbot:chat_api` | `POST /api/v1/chatbot/chat` |
 | `chatbot:new_chat_session` | `POST /api/v1/chatbot/session/new` |
 | (신규) 스트리밍 정본 | `POST /api/v1/chatbot/chat/stream` |
-| (legacy) 스트리밍 | `GET /api/v1/chatbot/stream` |
+| (신규) 스트리밍 정본 | `POST /api/v1/chatbot/chat/stream` |
 
-`GET /stream` 은 RAG 답변 토큰만 흘리는 legacy 경로입니다. 계약과 제약은
-`stream_chatbot` docstring 을 보십시오.
+(legacy GET /api/v1/chatbot/stream 경로는 제거되었습니다.)
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import get_current_user
-from src.app.core.db import SessionLocal, get_db
+from src.app.core.db import get_db
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
 from src.app.models.chatbot import AutomationRequest
@@ -794,46 +793,3 @@ async def query_chatbot(payload: ChatbotQueryRequest, db: Session = Depends(get_
     )
 
 
-@router.get("/stream", summary="SSE 스트리밍 응답 (legacy, 정본은 POST /chat/stream)")
-async def stream_chatbot(query: str, session_key: str = ""):
-    """RAG 답변 토큰만 흘리는 legacy 경로입니다. 신규 화면은 쓰지 마십시오.
-
-    정본은 `POST /api/v1/chatbot/chat/stream` 입니다. 새 화면과 새 클라이언트는
-    그 경로만 씁니다. 이 경로가 남아 있는 이유는 `frontend/src/App.tsx` 와
-    `scripts/benchmark_latency.py` 가 아직 이 계약을 소비하고 있어서입니다.
-
-    정본과 다른 점이 셋입니다.
-
-    1. 플래너, 자동화 확인, 차트 페이로드, 세션 저장을 거치지 않습니다. 즉
-       같은 질문에 정본보다 좁은 답을 냅니다. 대화 이력도 `session_key` 를
-       넘겼을 때만 읽고, 이 경로의 응답은 이력에 다시 기록되지 않습니다.
-    2. 질의가 URL 쿼리 문자열로 들어옵니다. 사용자 질문이 웹서버 access log,
-       중간 프록시 로그, 브라우저 히스토리에 그대로 남습니다. 정본은 요청
-       본문으로 받아 이 흔적을 남기지 않습니다.
-    3. 이벤트 형식이 다릅니다. 이 경로는 이름 없는 `data:` 프레임에
-       `{"type": ...}` 를 실어 보내고, 정본은 named SSE event(`event: token`,
-       `event: final` 등)를 씁니다. 두 계약은 호환되지 않습니다.
-    """
-
-    async def event_generator():
-        trace_id = _new_trace_id()
-        db = SessionLocal()
-        try:
-            history = (
-                load_conversation_context(db, session_key).get("chat_history", [])
-                if session_key
-                else []
-            )
-            async for event in rag_engine.stream_tokens(query, db=db, history=history):
-                yield f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
-                await asyncio.sleep(0)
-        except Exception:
-            # 예외 문자열에는 DB 접속 정보와 내부 경로가 섞일 수 있어 원문은
-            # 로그로만 보냅니다. 클라이언트에는 추적 id 만 넘깁니다.
-            logger.exception("legacy SSE 챗봇 스트리밍 실패 (trace_id=%s)", trace_id)
-            payload = {"type": "error", "message": STREAM_ERROR_MESSAGE, "trace_id": trace_id}
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        finally:
-            db.close()
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")

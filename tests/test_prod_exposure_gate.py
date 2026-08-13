@@ -162,24 +162,7 @@ def test_canonical_stream_error_hides_exception_text(client, monkeypatch):
     assert errors[-1]["message"] == chatbot_module.STREAM_ERROR_MESSAGE
 
 
-def test_legacy_stream_error_hides_exception_text(client, monkeypatch):
-    """legacy GET 경로도 같은 계약을 지켜야 합니다."""
 
-    def explode(*_args, **_kwargs):
-        raise RuntimeError(f"connection failed: {SECRET_IN_EXCEPTION}")
-
-    monkeypatch.setattr(chatbot_module.rag_engine, "stream_tokens", explode)
-
-    response = client.get("/api/v1/chatbot/stream?query=적격심사")
-
-    assert response.status_code == 200
-    assert SECRET_IN_EXCEPTION not in response.text
-    assert "super-secret-password" not in response.text
-    assert chatbot_module.STREAM_ERROR_MESSAGE in response.text
-
-    errors = [event for event in _sse_events(response.text) if event.get("type") == "error"]
-    assert errors, "오류 이벤트에 추적 id 가 실려야 합니다"
-    assert errors[-1]["trace_id"]
 
 
 def test_trace_id_matches_provenance_format():

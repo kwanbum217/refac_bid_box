@@ -24,7 +24,7 @@ def test_e2e_full_flow():
     assert res_chat.status_code == 200
     assert res_chat.json()["response"]
 
-    res_stream = client.get("/api/v1/chatbot/stream?query=적격심사")
+    res_stream = client.post("/api/v1/chatbot/chat/stream", json={"message": "적격심사"})
     assert res_stream.status_code == 200
     assert "text/event-stream" in res_stream.headers["content-type"]
 
