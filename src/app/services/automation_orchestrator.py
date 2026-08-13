@@ -67,6 +67,7 @@ RUN_MODE_TASKS = {
     "predict_only": "validate_model_task",
     "refresh_data": "refresh_data_task",
     "manual_full": "manual_full_task",
+    "retrain_only": "manual_retrain_task",
 }
 
 

@@ -68,7 +68,7 @@ def _recording_runners(calls: list[str], failing_step: str = ""):
 
         return runner
 
-    return {step: make(step) for step in ("collect", "rag", "predict", "inspect")}
+    return {step: make(step) for step in ("collect", "rag", "predict", "retrain", "inspect")}
 
 
 @pytest.mark.asyncio
@@ -138,6 +138,23 @@ async def test_run_local_automation_bundle_short_circuits_preflight_only(worker_
     )
     assert execution.status == "success"
     assert execution.stage_status == "success"
+
+
+@pytest.mark.asyncio
+async def test_manual_retrain_runs_only_retrain_step(worker_db):
+    """수동 재학습은 수집·KB 갱신을 섞지 않고 기존 재학습 태스크만 실행한다."""
+    _add_execution(worker_db, "manual-retrain-001", "retrain_only")
+    calls: list[str] = []
+
+    with patch.object(automation_tasks, "STEP_RUNNERS", _recording_runners(calls)):
+        result = await automation_tasks.run_automation_pipeline(
+            {},
+            execution_id="manual-retrain-001",
+            run_mode="retrain_only",
+        )
+
+    assert calls == ["retrain"]
+    assert result == {"status": "success", "run_mode": "retrain_only", "completed_steps": ["retrain"]}
 
 
 @pytest.mark.asyncio

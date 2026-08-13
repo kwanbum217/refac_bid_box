@@ -16,6 +16,7 @@ from src.app.core.config import settings
 from src.tasks.automation_tasks import (
     collect_bids_task,
     manual_full_task,
+    manual_retrain_task,
     preflight_check_task,
     refresh_data_task,
     update_kb_task,
@@ -37,6 +38,7 @@ class WorkerSettings:
         validate_model_task,
         refresh_data_task,
         manual_full_task,
+        manual_retrain_task,
         run_retrain_pipeline_task,
         development_data_refresh_task,
     ]

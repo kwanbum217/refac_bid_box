@@ -22,6 +22,7 @@ EXPECTED_CAPABILITIES = {
     "prediction_validate",
     "data_refresh",
     "full_validation",
+    "model_retrain",
     "kb_status_tool",
     "automation_status_tool",
     "bid_query_tool",
@@ -37,7 +38,7 @@ def test_registry_contains_expected_capabilities():
 
 
 def test_pipeline_capabilities_carry_run_mode():
-    for name in ("data_refresh", "full_validation", "collect_refresh"):
+    for name in ("data_refresh", "full_validation", "model_retrain", "collect_refresh"):
         cap = CAPABILITY_REGISTRY[name]
         assert cap.type == "pipeline"
         assert cap.run_mode, f"{name}에 run_mode가 없습니다"

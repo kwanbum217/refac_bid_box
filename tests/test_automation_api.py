@@ -53,6 +53,27 @@ def test_manual_full_requires_confirmation(mock_enqueue, client, isolated_db):
 
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_manual_retrain_requires_confirmation(mock_enqueue, client, isolated_db):
+    _login(client)
+    response = client.post("/api/v1/automation/run/retrain", json={"reason": "운영자 검토"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "confirmation"
+    assert payload["job"]["action_key"] == "model_retrain"
+    assert payload["job"]["run_mode"] == "retrain_only"
+    assert payload["confirmation_token"]
+    mock_enqueue.assert_not_called()
+
+    confirm_response = client.post(
+        f"/api/v1/automation/job/{payload['job']['job_id']}/confirm",
+        json={"confirmation_token": payload["confirmation_token"]},
+    )
+    assert confirm_response.status_code == 200
+    assert mock_enqueue.call_args.args[0] == "manual_retrain_task"
+
+
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_cancel_pending_confirmation(mock_enqueue, client, isolated_db):
     _login(client)
     create_resp = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
