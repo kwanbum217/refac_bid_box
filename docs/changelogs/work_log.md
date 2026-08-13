@@ -941,4 +941,5 @@
 - **재학습 API**: 스테일 `fix/arq-worker-compose`를 병합하지 않고 최신 코드에 `model_retrain`, `POST /run/retrain`, `retrain_only`, `manual_retrain_task`를 9파일 최소 변경으로 재구현했습니다
 - **안전 계약**: 재학습은 `high_cost=True`로 확인 토큰 전에는 큐에 들어가지 않으며, 기존 검색 단계·개발 데이터 수집 태스크·cron 3건을 보존했습니다
 - **검증**: 표적 테스트 38건 통과. 격리 트리의 모델·ChromaDB 자산 부재 2건은 변경 전 상태에서도 동일했고, 자산이 있는 주 저장소에서 백엔드 965건 통과·2건 skip, 프런트 11건 통과를 확인했습니다
+- **정리**: 기능 통합 뒤 구 원격 2개와 이번 Run의 완료 원격 4개를 삭제해 원격 브랜치를 `main` 하나로 정리했습니다
 - **관련 문서**: `docs/handoff/2026-08-13_servc_oos_readiness_gate.md`, `docs/handoff/2026-08-13_retrain_api_reimplementation_plan.md`

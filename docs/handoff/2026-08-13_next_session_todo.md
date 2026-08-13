@@ -1,7 +1,7 @@
 # 착수 목록 — P0 후속 마감 이후
 
 > **작성일**: 2026-08-13
-> **기준 상태**: `main` `11d302b`, `origin` 동기화 완료, 미커밋 없음
+> **기능 통합 기준**: `main` `7ebc07a`, `origin` 동기화 완료, 미커밋 없음
 > **직전 문서**: [`2026-08-11_next_session_todo.md`](2026-08-11_next_session_todo.md)
 > **방침**: 용역(Servc) 우선
 
@@ -70,7 +70,8 @@
 **상태 업데이트:** 브랜치 감사와 수동 재학습 API 재구현까지 완료했습니다. 상세
 이식 범위와 검증은
 [`2026-08-13_retrain_api_reimplementation_plan.md`](2026-08-13_retrain_api_reimplementation_plan.md)에
-기록했습니다. main 병합 뒤 원격 두 브랜치를 정리합니다.
+기록했습니다. main 병합 후 원격 `fix/arq-worker-compose`와
+`task-976479dbe8cb`를 삭제했습니다.
 
 ### 2.3 legacy GET SSE 경로 제거
 
