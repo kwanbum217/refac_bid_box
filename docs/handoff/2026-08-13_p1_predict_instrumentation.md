@@ -1,21 +1,26 @@
-# P1 예측 계측 준비 완료 보고 (실제 P95 미측정)
+# P1 예측 계측 결과 및 c10 벤치마크 결과 보고
 
 ## 작업 결과 요약
-* `/predict` 및 `/predict-price` 엔드포인트에 예측 의미를 보존하는 wall/thread_cpu/model 구간 최소 계측을 기계 파싱 가능한 형태(`endpoint=..., wall_ms=..., thread_cpu_ms=..., model_wall_ms=..., model_thread_cpu_ms=...`)로 구현 완료했습니다.
-* 출력 동등성(200 성공 및 응답값 검증) 및 계측 형식 검증을 위한 단위 테스트(`tests/test_predict_instrumentation.py`)를 작성했으며 `app.dependency_overrides` 의존성 복구가 테스트 간 고립을 완벽히 보장하도록 강화했습니다.
-* 본 작업은 실제 운영 모델의 P95 벤치마크 및 100ms 병목 개선을 위한 사전 **계측 로직 준비 단계**이며, 아직 **실제 P95 벤치마크는 미측정** 상태입니다. 해당 단계는 코디네이터 지침에 따라 병합 후 주 저장소에서 별도 수행해야 합니다.
+* `/predict` 및 `/predict-price` 엔드포인트에 예측 의미를 보존하는 wall/thread_cpu/model 구간 계측을 기계 파싱 가능한 형태(`endpoint=..., wall_ms=..., thread_cpu_ms=..., model_wall_ms=..., model_thread_cpu_ms=...`)로 통일했습니다.
+* 출력 동등성 검증과 더불어 의존성 원복을 안전하게 보장하도록 단위 테스트를 개선하고 통과시켰습니다.
+* 계측용 모듈 로거(`logger.info`)가 Uvicorn 환경 설정에 의해 가려지는 문제를 확인하고, 계측 로그에 한해 `uvicorn.error` 로거 인스턴스(`latency_logger`)를 사용하도록 보정하여 Docker Uvicorn 표준 출력에서 실측 데이터가 정상 표시되도록 수정했습니다. 본 작업은 실측 데이터 수집을 위한 가시성 확보 조치이며, 어떠한 새로운 애플리케이션 성능 개선도 포함하지 않습니다.
+
+## 벤치마크 (e3d705c 기준)
+코디네이터 주도로 `main` 브랜치 (Git SHA `e3d705c`) 환경의 실제 Docker 모델 환경에서 warm `/predict` 엔드포인트를 각 동시성별 100회씩 측정한 결과입니다.
+
+* **측정 환경**: Git SHA `e3d705c` (Docker 운영 모델 환경)
+* **표본 크기**: 각 동시성(c1, c2, c4, c10) 당 100회
+* **결과 (P95 Latency / 에러율)**:
+  * **c1**: 16.1358ms (오류 0)
+  * **c2**: 31.2996ms (오류 0)
+  * **c4**: 58.4468ms (오류 0)
+  * **c10**: 199.1758ms (오류 0) (100ms 목표 실패)
+* **비고**: c10 동시성 환경에서 목표 레이턴시인 100ms를 초과하여 P95 벤치마크 목표에 실패했습니다. 해당 벤치마크 원시 JSON 파일들은 `data/benchmarks/` 아래에 보존되었습니다.
+* 해당 측정 후, 상기 기재한 '계측 가시성 수정(logger 설정 변경)'이 후속으로 반영되었습니다.
 
 ## 커밋 역할 구분
 본 작업 트리(kwanbum217/p1-predict-p95)에서의 커밋들은 다음의 역할을 갖습니다:
-1. **`26d5c73`**: 예측 동등성을 보존하는 기초 계측 로직 삽입 및 1차 단위 테스트 도입
-2. **`c16cf67`**: `pytest` 구동 시 계측 조건부 거짓 양성 단언문 제거 및 `app.dependency_overrides` 원복 구문(fixture) 적용
-3. **새 SHA (본 변경사항)**: 다중 스레드 환경에서 정확한 CPU 시간 계측을 위해 `process_time`을 `thread_time`으로 교체하고 로그 포맷을 기계가 파싱 가능한 구조(`key=value` 형태의 4개 수치 인자)로 통일
-
-## 벤치마크 및 판정
-* 실제 운영 모델 파일이 필요한 P95 벤치마크 실행과 100ms 목표 달성을 위한 추가 병목 최적화(채택/기각 판정)는 **병합 후 코디네이터가 수행하도록 위임**(deferred_to_coordinator)합니다.
-
-## 세부 정보
-* **변경 파일**: `src/app/api/v1/predictions.py`, `tests/test_predict_instrumentation.py`, `docs/handoff/2026-08-13_p1_predict_instrumentation.md`
-* **테스트 경로**: `tests/test_predict_instrumentation.py`
-* **벤치마크 원시 경로**: `deferred_to_coordinator`
-* **채택/기각 판정**: `deferred_to_coordinator`
+1. **`26d5c73`**: 예측 동등성을 보존하는 기초 계측 로직 삽입 및 단위 테스트 도입
+2. **`c16cf67`**: 거짓 양성 테스트 단언 제거 및 `app.dependency_overrides` 안전 복구 적용
+3. **`d822e88`**: 다중 스레드 CPU 계측 정확도를 위한 `thread_time` 도입, 기계 파싱 포맷 통일 및 Uvicorn 로깅 가시성 누락 픽스 적용
+4. **계측 가시성 수정 반영 커밋 (d822e88 이후 본 문서 및 JSON을 적재하는 새 커밋)**: 벤치마크 원시 데이터 적재, 이모지 제거 및 문서 갱신 확정

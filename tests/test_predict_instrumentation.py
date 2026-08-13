@@ -46,7 +46,7 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
 
     with patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance", return_value=mock_outcome), \
          patch("src.app.api.v1.predictions.predict_interval", return_value=(87.0, 88.0, 95.0)), \
-         patch("src.app.api.v1.predictions.logger") as mock_logger, \
+         patch("src.app.api.v1.predictions.latency_logger") as mock_logger, \
          patch("src.app.api.v1.predictions.time") as mock_time, \
          patch("src.app.api.v1.predictions.build_feature_dict", return_value={}):
 
@@ -73,7 +73,7 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
         assert len(info_calls) == 1, "predict_price_api 계측 로그가 정확히 1회 호출되어야 합니다."
 
         args = info_calls[0].args
-        assert "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f" == args[0]
+        assert args[0] == "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
         assert len(args) == 5
 
 def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, monkeypatch):
@@ -87,7 +87,7 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
             "model_version": "test_model",
             "features_used": {"test": "feature"},
         }
-        with patch("src.app.api.v1.predictions.logger") as mock_logger, \
+        with patch("src.app.api.v1.predictions.latency_logger") as mock_logger, \
              patch("src.app.api.v1.predictions.time") as mock_time:
 
             mock_time.perf_counter.side_effect = [0.0, 1.0, 2.0, 3.0]
@@ -114,5 +114,5 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
             assert len(info_calls) == 1, "predict_winning_price 계측 로그가 정확히 1회 호출되어야 합니다."
 
             args = info_calls[0].args
-            assert "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f" == args[0]
+            assert args[0] == "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
             assert len(args) == 5

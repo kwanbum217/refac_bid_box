@@ -41,6 +41,7 @@ from src.ml.model_registry import (
 from src.ml.predictor import predictor
 
 logger = logging.getLogger(__name__)
+latency_logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
@@ -188,7 +189,7 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
 
     t_total = time.perf_counter() - t_start
     c_total = time.thread_time() - c_start
-    logger.info(
+    latency_logger.info(
         "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f",
         t_total * 1000.0,
         c_total * 1000.0,
@@ -234,7 +235,7 @@ def predict_winning_price(payload: PredictionRequest, db: Session = Depends(get_
 
     t_total = time.perf_counter() - t_start
     c_total = time.thread_time() - c_start
-    logger.info(
+    latency_logger.info(
         "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f",
         t_total * 1000.0,
         c_total * 1000.0,
