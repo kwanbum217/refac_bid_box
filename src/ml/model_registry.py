@@ -77,6 +77,30 @@ def _coerce_float(value, default=0.0):
     return numeric
 
 
+def _apply_inference_thread_budget(estimator):
+    """서빙 예측 스레드 예산을 n_jobs=1 로 고정합니다.
+
+    sklearn LightGBM 추정기는 predict 시점에 self.n_jobs 를 num_threads 로 읽어
+    OpenMP 스레드 팀을 만듭니다. 학습 기본값(None)은 물리 코어 전부를 쓰므로,
+    단건 추론의 스레드 팀 오버헤드와 동시성 oversubscription 이 생깁니다.
+    로드 직후 n_jobs=1 로 덮어 쓰면 이 둘이 사라집니다. 학습 기본값·아티팩트는
+    바꾸지 않습니다. n_jobs 를 지원하지 않는 추정기는 그대로 둡니다.
+    """
+    get_params = getattr(estimator, "get_params", None)
+    if get_params is None:
+        return
+    try:
+        params = get_params()
+    except (TypeError, ValueError):
+        return
+    if not isinstance(params, dict) or "n_jobs" not in params:
+        return
+    set_params = getattr(estimator, "set_params", None)
+    if set_params is None:
+        return
+    set_params(n_jobs=1)
+
+
 def _load_champion_metrics(model_dir):
     summary_path = os.path.join(model_dir, "champion_summary.json")
     if not os.path.exists(summary_path):
@@ -266,6 +290,7 @@ class JoblibModelWrapper(BaseModelWrapper):
                 f"모델 파일을 찾을 수 없습니다: {self.model_path}"
             )
         self.model = joblib.load(self.model_path)
+        _apply_inference_thread_budget(self.model)
 
     def get_serving_columns(self):
         return list(getattr(self.model, "feature_name_", []) or self.get_features())
@@ -277,7 +302,9 @@ class JoblibModelWrapper(BaseModelWrapper):
             for path in sorted(Path(self.model_dir).glob("model_q*.bin")):
                 try:
                     quantile = int(path.stem.split("_q")[1]) / 100.0
-                    loaded[quantile] = joblib.load(path)
+                    quantile_model = joblib.load(path)
+                    _apply_inference_thread_budget(quantile_model)
+                    loaded[quantile] = quantile_model
                 except (ValueError, IndexError, OSError) as exc:
                     print(f"[JoblibModelWrapper] 분위 모델 로드 실패 ({path}): {exc}")
             self._quantile_models = loaded
