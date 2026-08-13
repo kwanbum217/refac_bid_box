@@ -95,6 +95,7 @@ docs/
 | 쌍대 표본 기준 착수 지시 | [`2026-08-11_paired_sample_filter_todo.md`](handoff/2026-08-11_paired_sample_filter_todo.md) | 판정용·보고용 표본 분리 반영. 코드 변경 지점, 검증 절차, 금지 사항 |
 | legacy SSE 이관 착수 지시 | [`2026-08-12_legacy_sse_migration_task.md`](handoff/2026-08-12_legacy_sse_migration_task.md) | GET /chatbot/stream 을 정본 POST /chat/stream 으로 옮기는 절차. 이벤트 계약 차이, 벤치마크 기준선 처리 |
 | P0 후속 마감 이후 착수 목록 | [`2026-08-13_next_session_todo.md`](handoff/2026-08-13_next_session_todo.md) | A1~A5 병합 이후 잔여 과제. 신 제도 표본 1.276% 실측, 미병합 브랜치 처분, 컷오버 점검 |
+| 예측 P95 병목 감사 | [`2026-08-13_prediction_p95_diagnosis.md`](handoff/2026-08-13_prediction_p95_diagnosis.md) | /predict P95 627ms 원인(스레드 미제한·특징 3중 구축·이중 프리로드), 최소 수정 후보 A~E, 재측정 매트릭스 1/2/4/10 |
 
 ## 4. ops/
 
