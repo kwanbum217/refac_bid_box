@@ -59,7 +59,7 @@ def list_models_api():
 def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db)):
     """공고 ID를 받아 Champion 모델로 최적 투찰가를 산출합니다."""
     t_start = time.perf_counter()
-    c_start = time.process_time()
+    c_start = time.thread_time()
 
     user_price = "".join(
         char for char in str(payload.user_price or "0") if char.isdigit() or char == "."
@@ -126,10 +126,10 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
     # 답했는지는 outcome.actual_model 하나만 봅니다.
     try:
         t_model_start = time.perf_counter()
-        c_model_start = time.process_time()
+        c_model_start = time.thread_time()
         outcome = predict_optimal_price_with_provenance(selected_model, features)
         t_model = time.perf_counter() - t_model_start
-        c_model = time.process_time() - c_model_start
+        c_model = time.thread_time() - c_model_start
     except Exception as exc:
         logger.error("모델 후보 전량 실패 (요청 모델 %s): %s", selected_model, exc)
         raise HTTPException(
@@ -187,9 +187,9 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
         )
 
     t_total = time.perf_counter() - t_start
-    c_total = time.process_time() - c_start
+    c_total = time.thread_time() - c_start
     logger.info(
-        "predict_price_api | Wall: %.2fms (CPU: %.2fms) | Model Wall: %.2fms (CPU: %.2fms)",
+        "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f",
         t_total * 1000.0,
         c_total * 1000.0,
         t_model * 1000.0,
@@ -223,19 +223,19 @@ def predict_winning_price(payload: PredictionRequest, db: Session = Depends(get_
     빼면 상수로 떨어져 학습과 정의가 갈립니다.
     """
     t_start = time.perf_counter()
-    c_start = time.process_time()
+    c_start = time.thread_time()
     dumped_payload = payload.model_dump()
 
     t_model_start = time.perf_counter()
-    c_model_start = time.process_time()
+    c_model_start = time.thread_time()
     result = predictor.predict(dumped_payload, session=db)
     t_model = time.perf_counter() - t_model_start
-    c_model = time.process_time() - c_model_start
+    c_model = time.thread_time() - c_model_start
 
     t_total = time.perf_counter() - t_start
-    c_total = time.process_time() - c_start
+    c_total = time.thread_time() - c_start
     logger.info(
-        "predict_winning_price | Wall: %.2fms (CPU: %.2fms) | Model Wall: %.2fms (CPU: %.2fms)",
+        "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f",
         t_total * 1000.0,
         c_total * 1000.0,
         t_model * 1000.0,

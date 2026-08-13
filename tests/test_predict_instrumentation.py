@@ -25,9 +25,12 @@ def mock_db_session():
     def get_db_override():
         yield session
 
-    app.dependency_overrides[get_db] = get_db_override
-    yield session
-    app.dependency_overrides.clear()
+    original_overrides = dict(app.dependency_overrides)
+    try:
+        app.dependency_overrides[get_db] = get_db_override
+        yield session
+    finally:
+        app.dependency_overrides = original_overrides
 
 def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monkeypatch):
     """
@@ -48,7 +51,7 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
          patch("src.app.api.v1.predictions.build_feature_dict", return_value={}):
 
         mock_time.perf_counter.side_effect = [0.0, 1.0, 2.0, 3.0]
-        mock_time.process_time.side_effect = [0.0, 1.0, 2.0, 3.0]
+        mock_time.thread_time.side_effect = [0.0, 1.0, 2.0, 3.0]
 
         response = client.post(
             "/api/v1/predictions/predict-price",
@@ -70,7 +73,7 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
         assert len(info_calls) == 1, "predict_price_api 계측 로그가 정확히 1회 호출되어야 합니다."
 
         args = info_calls[0].args
-        assert "predict_price_api | Wall: %.2fms" in args[0]
+        assert "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f" == args[0]
         assert len(args) == 5
 
 def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, monkeypatch):
@@ -88,7 +91,7 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
              patch("src.app.api.v1.predictions.time") as mock_time:
 
             mock_time.perf_counter.side_effect = [0.0, 1.0, 2.0, 3.0]
-            mock_time.process_time.side_effect = [0.0, 1.0, 2.0, 3.0]
+            mock_time.thread_time.side_effect = [0.0, 1.0, 2.0, 3.0]
 
             payload = {
                 "bid_notice_no": "20261234",
@@ -111,5 +114,5 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
             assert len(info_calls) == 1, "predict_winning_price 계측 로그가 정확히 1회 호출되어야 합니다."
 
             args = info_calls[0].args
-            assert "predict_winning_price | Wall: %.2fms" in args[0]
+            assert "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f" == args[0]
             assert len(args) == 5
