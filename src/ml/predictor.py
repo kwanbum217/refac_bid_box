@@ -59,7 +59,11 @@ class SingletonPredictor:
             selected = model_id or preferred
             if not ModelRegistry.available_models():
                 ModelRegistry.load_all_models()
-            predicted_rate = float(predict_optimal_price(selected, features)) * 100.0
+            # 전체 맵을 이미 구축했으므로 후보 순회에서 다시 구축하지 않게
+            # 내려보냅니다. 요청당 build_default_feature_map 은 1회가 됩니다.
+            predicted_rate = (
+                float(predict_optimal_price(selected, features, full_map=features)) * 100.0
+            )
             model_version = selected
 
         presumed = float(features.get("presumed_price") or features.get("presmpt_prce") or 0.0)

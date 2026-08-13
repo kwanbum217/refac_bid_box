@@ -70,7 +70,7 @@ def test_predictor_honors_explicit_model_id(monkeypatch):
     monkeypatch.setattr(
         model_registry,
         "predict_optimal_price",
-        lambda model_id, features: selected.append(model_id) or 0.9,
+        lambda model_id, features, full_map=None: selected.append(model_id) or 0.9,
     )
 
     instance = object.__new__(predictor_module.SingletonPredictor)

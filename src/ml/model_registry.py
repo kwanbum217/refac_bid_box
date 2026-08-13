@@ -156,14 +156,17 @@ def _load_champion_metrics(model_dir):
     }
 
 
-def _prepare_input_frame(feature_values, column_order, category_levels=None):
+def _prepare_input_frame(feature_values, column_order, category_levels=None, *, defaults=None):
     """추론 프레임을 만듭니다. 특징 정의는 features.py 단일 공급원을 따릅니다.
 
     범주 수준은 학습 때 저장한 목록으로 되살립니다. 이 복원을 빼면 추론 시점의
     범주 코드가 학습 때와 달라져 모델이 조용히 다른 값을 읽습니다.
     구 모델은 메타데이터에 수준이 없으므로 None 이 되어 아무 일도 하지 않습니다.
+
+    defaults 는 서빙 경로가 요청당 한 번 구축한 전체 특징 맵입니다.
+    프레임 행이 이미 전체 맵을 실은 경우 같은 맵을 다시 구축하지 않게 합니다.
     """
-    frame = prepare_input_frame(feature_values, column_order)
+    frame = prepare_input_frame(feature_values, column_order, defaults=defaults)
     return apply_categorical_dtypes(frame, category_levels)
 
 
@@ -180,7 +183,7 @@ def _prepare_features(features_dict):
     return prepare_features(features_dict)
 
 
-def _prepare_full_frame(features_dict):
+def _prepare_full_frame(features_dict, full_map=None):
     """모든 특징을 실은 1행 프레임을 만듭니다.
 
     wrapper 는 받은 프레임을 df.iloc[0].to_dict() 로 되돌린 뒤 자기 컬럼으로
@@ -188,8 +191,16 @@ def _prepare_full_frame(features_dict):
     재발주 이력이 사라지고, wrapper 가 전부 기본값으로 채웁니다. 실측에서
     하한율 87.995% 인 건의 예측이 100.776% 로 나왔습니다.
     원본 키도 남깁니다. 규칙 기반 구 모델이 title / agency_name 을 씁니다.
+
+    full_map 은 호출부가 이미 구축한 전체 특징 맵입니다. 같은 맵을 다시
+    구축하지 않고 그대로 프레임에 실으며, wrapper 가 defaults 로 재사용할 수
+    있도록 프레임 attrs 에도 담아 내려보냅니다.
     """
-    return pd.DataFrame([{**features_dict, **build_default_feature_map(features_dict)}])
+    if full_map is None:
+        full_map = build_default_feature_map(features_dict)
+    frame = pd.DataFrame([{**features_dict, **full_map}])
+    frame.attrs["feature_defaults"] = full_map
+    return frame
 
 
 def _resolve_model_id(model_id):
@@ -324,7 +335,10 @@ class JoblibModelWrapper(BaseModelWrapper):
         if not columns:
             return None
         frame = _prepare_input_frame(
-            df.iloc[0].to_dict(), columns, self.get_category_levels()
+            df.iloc[0].to_dict(),
+            columns,
+            self.get_category_levels(),
+            defaults=df.attrs.get("feature_defaults"),
         )
         bounds = sorted(
             float(np.asarray(model.predict(frame)).reshape(-1)[0])
@@ -343,6 +357,7 @@ class JoblibModelWrapper(BaseModelWrapper):
                 df.iloc[0].to_dict(),
                 features,
                 self.get_category_levels(),
+                defaults=df.attrs.get("feature_defaults"),
             )
             if features
             else df
@@ -397,8 +412,11 @@ class V13HybridWrapper(BaseModelWrapper):
 
     def predict(self, df):
         base_values = df.iloc[0].to_dict()
+        defaults = df.attrs.get("feature_defaults")
         stage1_columns = list(self.model["s1_tier_clf"].feature_name_)
-        stage1_df = _prepare_input_frame(base_values, stage1_columns, self.get_category_levels())
+        stage1_df = _prepare_input_frame(
+            base_values, stage1_columns, self.get_category_levels(), defaults=defaults
+        )
         stage1_encoded = self.model["loo_s1"].transform(stage1_df)
 
         pred_tier = int(self.model["s1_tier_clf"].predict(stage1_encoded)[0])
@@ -425,7 +443,9 @@ class V13HybridWrapper(BaseModelWrapper):
             }
         )
         stage2_columns = list(silo_bundle["model"].feature_name_)
-        stage2_df = _prepare_input_frame(stage2_values, stage2_columns, self.get_category_levels())
+        stage2_df = _prepare_input_frame(
+            stage2_values, stage2_columns, self.get_category_levels(), defaults=defaults
+        )
         encoded_stage2 = silo_bundle["loo"].transform(stage2_df)
         prediction = silo_bundle["model"].predict(encoded_stage2)
         return float(np.asarray(prediction).reshape(-1)[0])
@@ -455,7 +475,10 @@ class EnsembleV25Wrapper(BaseModelWrapper):
 
         feature_order = self.get_serving_columns() or list(df.columns)
         aligned_df = _prepare_input_frame(
-            df.iloc[0].to_dict(), feature_order, self.get_category_levels()
+            df.iloc[0].to_dict(),
+            feature_order,
+            self.get_category_levels(),
+            defaults=df.attrs.get("feature_defaults"),
         )
         return predict_v25_logic(self.lgbm, self.cat, self.meta, aligned_df)
 
@@ -887,11 +910,16 @@ class PredictionOutcome:
     fallback_reason: str | None = None
 
 
-def predict_optimal_price_with_provenance(model_id, features_dict) -> PredictionOutcome:
+def predict_optimal_price_with_provenance(
+    model_id, features_dict, full_map=None
+) -> PredictionOutcome:
     """점 추정과 실제 사용 모델을 함께 돌려줍니다.
 
     응답의 모델명과 예측 구간은 반드시 `actual_model` 을 기준으로 계산해야
     합니다. 요청 모델을 그대로 쓰면 점 추정과 구간이 서로 다른 모델에서 나옵니다.
+
+    full_map 은 호출부가 이미 구축한 전체 특징 맵입니다. 넘기면 후보 순회
+    전체가 같은 맵을 재사용해 요청당 구축 횟수가 1회로 줄어듭니다.
     """
     requested_id = _resolve_model_id(model_id or _preferred_model_for_features(features_dict))
     preferred_id = _preferred_model_for_features(features_dict)
@@ -910,7 +938,11 @@ def predict_optimal_price_with_provenance(model_id, features_dict) -> Prediction
 
         try:
             custom_df = wrapper.run_preprocess(features_dict)
-            df = custom_df if custom_df is not None else _prepare_full_frame(features_dict)
+            df = (
+                custom_df
+                if custom_df is not None
+                else _prepare_full_frame(features_dict, full_map=full_map)
+            )
             raw_prediction = wrapper.predict(df)
             predicted_rate = float(_normalize_prediction_rate(raw_prediction))
         except Exception as exc:
@@ -943,12 +975,14 @@ def predict_optimal_price_with_provenance(model_id, features_dict) -> Prediction
     )
 
 
-def predict_optimal_price(model_id, features_dict):
+def predict_optimal_price(model_id, features_dict, full_map=None):
     """점 추정만 돌려주는 기존 계약입니다.
 
     출처가 필요한 호출부는 `predict_optimal_price_with_provenance` 를 쓰십시오.
     이 얇은 래퍼를 남기는 이유는 float 를 그대로 pandas 프레임이나 문자열
     포매팅에 넣는 호출부가 여럿 있어, 반환형을 바꾸면 그쪽 동작이 조용히
-    달라질 수 있기 때문입니다.
+    달라질 수 있기 때문입니다. full_map 은 provenance 로 그대로 전달됩니다.
     """
-    return predict_optimal_price_with_provenance(model_id, features_dict).predicted_rate
+    return predict_optimal_price_with_provenance(
+        model_id, features_dict, full_map=full_map
+    ).predicted_rate
