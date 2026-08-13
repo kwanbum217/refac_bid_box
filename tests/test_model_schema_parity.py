@@ -189,12 +189,12 @@ def test_columns_are_not_nullable(table, column):
     assert _column(table, column).nullable is False
 
 
-def test_request_id_uses_native_uuid_on_mariadb():
-    """운영 DB(MariaDB 12.3) 의 request_id 는 네이티브 uuid 컬럼입니다.
+def test_request_id_keeps_uuid_on_mariadb_legacy_compat():
+    """레거시 MariaDB 경로에서 request_id 가 UUID 타입을 유지하는지 확인합니다.
 
-    일반 Uuid 는 CHAR(32), String(36) 은 VARCHAR(36) 으로 컴파일되어 둘 다
-    원본과 어긋납니다. 어긋난 채로 autogenerate 를 돌리면 운영 테이블에
-    ALTER COLUMN 이 걸립니다.
+    운영 DB 는 MySQL 8 이며 request_id 는 VARCHAR(36) 으로 저장됩니다.
+    MariaDB 방언('mariadb')은 'mysql' 변형 대상이 아니므로 UUID 타입이 그대로 사용됩니다.
+    이 테스트는 레거시 호환성 보장 목적이며 운영 동작을 기술하지 않습니다.
     """
     column = _column("automation_requests", "request_id")
     mariadb = MariaDBDialect()
@@ -207,7 +207,7 @@ def test_request_id_uses_varchar_on_mysql():
 
 
 def test_request_id_stays_varchar_on_sqlite():
-    """테스트는 SQLite 를 쓰므로 MariaDB 전용 타입이 새어 나오면 안 됩니다."""
+    """테스트는 SQLite 를 쓰므로 MySQL/MariaDB 전용 타입이 새어 나오면 안 됩니다."""
     assert _column("automation_requests", "request_id").type.compile(SQLITE) == "VARCHAR(36)"
 
 
