@@ -1,7 +1,7 @@
 # 착수 목록 — P0 후속 마감 이후
 
 > **작성일**: 2026-08-13
-> **기준 상태**: `main` `6285b73`, `origin` 동기화 완료, 미커밋 없음
+> **기준 상태**: `main` `11d302b`, `origin` 동기화 완료, 미커밋 없음
 > **직전 문서**: [`2026-08-11_next_session_todo.md`](2026-08-11_next_session_todo.md)
 > **방침**: 용역(Servc) 우선
 
@@ -24,7 +24,7 @@
 | --- | --- |
 | A5 출처 가드 최종 검수 | `be14c58`. 타입 검증, 범주 집계, fail-closed 종료 코드 1 |
 | A1~A5 통합 | `4107074` 에 최신 `main` 접합 후 `6285b73` 으로 `main` 병합 |
-| 회귀 | 본 저장소 pytest 950 통과 0 실패, 프런트 11 통과, `validate_agent_rules` 6/6 |
+| 회귀 | 본 저장소 백엔드 963 passed 2 skipped, 프런트 11 passed, `validate_agent_rules` 6/6 |
 | 섹션 자원 반납 | 워크트리 6개 해제, 원격 병합 완료 브랜치 26개 삭제 |
 | Orca Antigravity 사용량 | 별도 저장소 `kwanbum217/antigravity-usage-status` 에 `88e37b6` 로컬 커밋 |
 
@@ -54,16 +54,7 @@
 지시자 하나로 절편만 옮기는 것으로 충분한지, 신 제도 표본 가중이나 별도 보정이
 필요한지는 **측정으로 갈립니다.**
 
-착수 순서입니다.
-
-1. 신 제도 구간만 분리해 현행 서빙 모델의 잔차 부호와 크기를 잽니다.
-2. 편향이 한 방향으로 몰리면 조치 대상입니다. 흩어져 있으면 표본 축적을
-   기다리는 편이 낫습니다.
-3. 조치가 필요하면 운영 경로 쌍대 검정으로 판정합니다. 이 경로는 서빙 루트라는
-   공유 자원을 점유하므로 주 저장소에서만 실행하고 Task 로 소유권을 명시합니다.
-
-권장: **Opus 5 / effort high**. 판정이 갈리는 지점이고, 틀리면 운영 예측이
-통째로 치우칩니다.
+**상태 업데이트:** 레짐 대리 측정 완료와 Champion OOS 미판정 상태입니다.
 
 ### 2.2 미병합 브랜치 두 건 처분
 
@@ -72,11 +63,7 @@
 | `fix/arq-worker-compose` | 17파일, 커밋 2건. `feat: add confirmed manual retraining API` 포함 | `main` 에 재학습 API 가 **없음을 확인**했습니다. 실질 미병합 기능입니다 |
 | `task-976479dbe8cb` | A3 의 초기판 React SSE 이관 | `frontend/src/sseParser.ts` 와 CI 프런트 레인 모두 `main` 에 이미 있습니다. `tasks.json` 만 잔여 |
 
-`fix/arq-worker-compose` 는 `main` 이 크게 전진한 뒤라 재검증이 필요합니다.
-`task-976479dbe8cb` 는 내용이 흡수되었으므로 삭제 후보이나, `git branch -d` 가
-거부하면 병합되지 않은 것이므로 `-D` 로 강제하지 마십시오.
-
-권장: **Opus 5 / effort medium**.
+**상태 업데이트:** 브랜치 감사 완료 및 원격 두 건의 남은 결정 상태입니다.
 
 ### 2.3 legacy GET SSE 경로 제거
 
@@ -99,10 +86,10 @@
 
 | 항목 | 현재 | 조치 |
 | --- | --- | --- |
-| `Dockerfile:10` | `rm -rf /var/lib/apt-lists/*` | 실제 경로는 `/var/lib/apt/lists/` 입니다. 오타라 apt 캐시가 이미지에 그대로 남습니다 |
+| `Dockerfile:10` | Dockerfile 교정 완료 | 오타 수정 및 apt 캐시 제거 정상화 |
 | `CORS_ALLOWED_ORIGINS` | 검증기 완비, `.env` 는 `development` | 운영 전환 시 실제 오리진 지정. 비거나 와일드카드면 기동을 거부합니다(의도된 동작) |
 | 쿠키 `samesite="lax"` | `src/app/api/v1/accounts.py:141` | CORS 를 좁힌 뒤 `strict` 상향 검토. 지금은 lax 가 방어선입니다 |
-| Phase 7 P95 실측 | 미갱신 | A1~A5 반영 후 재측정 |
+| Phase 7 P95 실측 | P95 후보 A와 B 실측 완료 | 두 후보 모두 100ms 미달 확인 |
 
 권장: **Opus 5 / effort low~medium**. 절차적입니다.
 
