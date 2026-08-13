@@ -81,7 +81,8 @@ def _apply_inference_thread_budget(estimator):
     """서빙 예측 스레드 예산을 n_jobs=1 로 고정합니다.
 
     sklearn LightGBM 추정기는 predict 시점에 self.n_jobs 를 num_threads 로 읽어
-    OpenMP 스레드 팀을 만듭니다. 학습 기본값(None)은 물리 코어 전부를 쓰므로,
+    OpenMP 스레드 팀을 만듭니다. 승격 아티팩트의 -1과 기본값 None은 가용 코어를
+    모두 쓰므로,
     단건 추론의 스레드 팀 오버헤드와 동시성 oversubscription 이 생깁니다.
     로드 직후 n_jobs=1 로 덮어 쓰면 이 둘이 사라집니다. 학습 기본값·아티팩트는
     바꾸지 않습니다. n_jobs 를 지원하지 않는 추정기는 그대로 둡니다.

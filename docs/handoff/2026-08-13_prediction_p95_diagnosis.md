@@ -16,7 +16,7 @@
 
 | 순위 | 원인 | 영향 |
 | --- | --- | --- |
-| 1 | LightGBM/CatBoost 추론 스레드 미제한 (num_threads=None → 14코어 전부) | 순차 11~14ms의 상당분 + 동시성 시 스레드 폭주 (10 요청 × 14 스레드 = 140 스레드) |
+| 1 | LightGBM/CatBoost 추론 스레드 미제한 (승격 LightGBM `n_jobs=-1`, CatBoost `thread_count=None`) | 순차 11~14ms의 상당분 + 동시성 시 스레드 폭주 (10 요청 × 14 스레드 = 140 스레드) |
 | 2 | 요청당 특징 맵 3중 재구성 + 범주 dtype 변환 (GIL 바운드 Python/pandas) | 동시성 붕괴의 공동 원인. 순차 기준 3회 중복 계산 |
 | 3 | 부팅 시 모델 이중 프리로드 (import 시 싱글톤 + lifespan 예열 재실행) | cold 포함 P95 1.93s의 직접 원인 후보 |
 
@@ -65,16 +65,17 @@
 
 | 모델 | 파일 (컨테이너) | 크기 | 파라미터 |
 | --- | --- | --- | --- |
-| quantum_leap_v25_pro (Thng 기본, 벤치마크 대상) | model.bin | 3.66MB | LGBMRegressor, objective=huber, 600 trees, 63 leaves, 34 features, **num_threads=None** |
-| quantum_leap_v25_pro 분위 | model_q10.bin / model_q90.bin | 3.57MB + 3.55MB | LGBMRegressor, **num_threads=None**. 지연 로드 |
+| quantum_leap_v25_pro (Thng 기본, 벤치마크 대상) | model.bin | 3.66MB | LGBMRegressor, objective=huber, 600 trees, 63 leaves, 34 features, **n_jobs=-1** |
+| quantum_leap_v25_pro 분위 | model_q10.bin / model_q90.bin | 3.57MB + 3.55MB | LGBMRegressor, **n_jobs=-1**. 지연 로드 |
 | servc_institution_v1 (Servc 기본) | model.bin | 6.59MB | LGBMRegressor, objective=quantile, 261 trees, 255 leaves, **num_threads=None** |
 | v25 | v25_lgbm_final.joblib / v25_cat_final.bin / model.bin | 0.76 + 0.27 + 0.05MB | LGBM 234 trees/31 leaves **num_threads=None**, CatBoost 234 iterations **thread_count=None** |
 | v13_hybrid | model.bin | 37.3MB | joblib dict 번들 (LGBM 다수) |
 | ssh_hist_premium | model.bin | 4.31MB | joblib dict 번들 |
 
 - 컨테이너 CPU: **14코어**. `OMP_NUM_THREADS` / `OPENBLAS_NUM_THREADS` 미설정.
-- LightGBM 4.7.0, CatBoost 1.2.10. `num_threads=None` 은 LightGBM 기본값 0(OpenMP
-  가용 코어 전부), CatBoost `thread_count=None` 도 전체 코어입니다.
+- LightGBM 4.7.0, CatBoost 1.2.10. 승격된 물품 점·분위 모델의 `n_jobs=-1`은
+  scikit-learn 규약에 따라 가용 코어를 쓰고, CatBoost `thread_count=None`도 전체
+  코어를 씁니다.
 - TensorFlow 미설치 (model_registry.py:38 방어 임포트, keras 모델 없음).
 - 모델 로드 합계 약 **52.9MB** (3.66+6.59+4.31+37.3+0.76+0.27+0.05, 분위 모델 제외).
 
@@ -158,7 +159,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 채택 구현 | `src/ml/model_registry.py` 에 `_apply_inference_thread_budget()` 헬퍼 추가. `JoblibModelWrapper.load()` 의 점 추정 모델과 `_load_quantile_models()` 의 분위 모델(model_q*.bin)을 로드 직후 `set_params(n_jobs=1)` 로 덮어 씀. `get_params()` 에 `n_jobs` 가 없는 추정기는 그대로 둠 |
-| 근거 | LightGBM 4.7.0 sklearn API 는 predict 시점에 `self.n_jobs` 를 `num_threads` 로 읽습니다 (lightgbm/sklearn.py `_process_params(stage="predict")` → `_choose_param_value("num_threads", params, self.n_jobs)` → `_process_n_jobs`). 학습 기본값 `None` 은 물리 코어 전부(14)를 쓰므로, 로드 직후 `n_jobs=1` 로 덮어 쓰면 단건 추론의 스레드 팀 오버헤드와 동시성 oversubscription 이 제거됩니다. 전역 OMP 환경변수와 달리 컨테이너·코드 외부 설정에 의존하지 않는 코드 수준 고정입니다 |
+| 근거 | LightGBM 4.7.0 sklearn API 는 predict 시점에 `self.n_jobs` 를 `num_threads` 로 읽습니다 (lightgbm/sklearn.py `_process_params(stage="predict")` → `_choose_param_value("num_threads", params, self.n_jobs)` → `_process_n_jobs`). 승격 아티팩트의 `n_jobs=-1` 은 가용 코어를 쓰므로, 로드 직후 `n_jobs=1` 로 덮어 쓰면 단건 추론의 스레드 팀 오버헤드와 동시성 oversubscription 이 제거됩니다. 전역 OMP 환경변수와 달리 컨테이너·코드 외부 설정에 의존하지 않는 코드 수준 고정입니다 |
 | 범위 | 후보 A 만 적용. 후보 B(특징 맵 1회)·후보 C(프리로드 단일화) 미적용. CatBoost(`thread_count`, n_jobs 미지원)와 v25/v13_hybrid/ssh_hist_premium 번들은 범위 밖으로 그대로 둠. 학습 기본값·아티팩트 파일·특징 생성은 변경 없음 |
 | 예측값 동등성 | `tests/test_model_registry.py` 신규 6건 — 지원 추정기(LGBMRegressor) n_jobs=1 적용, 미지원 추정기 무변경, `set_params(n_jobs=1)` 전후 예측값 동등(점 추정 비트 동일, 분위 모델은 OpenMP 합산 순서 차이로 1 ULP 이내 허용), 점·분위 모델 로드 시 적용 확인. 아티팩트 파일의 n_jobs 는 None 그대로임을 확인 |
 | 기대 | 단건 추론 오버헤드 감소, 동시성 10 oversubscription 제거. 효과 실측은 4절 재측정 매트릭스로 후속 수행 |

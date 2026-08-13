@@ -1,6 +1,6 @@
 """서빙 추정기의 스레드 예산(n_jobs=1) 적용과 예측값 동등성을 검증합니다.
 
-학습 아티팩트의 n_jobs=None 은 predict 시점에 물리 코어 전부를 쓰는 OpenMP
+학습 아티팩트의 n_jobs=-1 또는 None은 predict 시점에 가용 코어를 쓰는 OpenMP
 스레드 팀을 만듭니다. 단건 추론 오버헤드와 동시성 oversubscription 이 P95 를
 붕괴시키므로, 로드 직후 n_jobs=1 로 고정합니다. 학습 기본값·아티팩트·예측값은
 바꾸지 않습니다. 근거: docs/handoff/2026-08-13_prediction_p95_diagnosis.md
