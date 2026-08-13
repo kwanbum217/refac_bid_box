@@ -6,6 +6,11 @@
 > **환경**: macOS 26.6.1 arm64, Docker Compose 전체 스택
 > **판정**: SSE 제거 게이트 통과 / 전체 컷오버 보류
 
+> **후속 실측**: 계측 반영 단일 워커 warm c10 P95 199.18ms, 실제 Docker
+> 3워커 127.32ms·4워커 165.92ms로 모두 목표 실패. 최신 판정은
+> [`uvicorn_worker_scaling_candidate_20260813.md`](uvicorn_worker_scaling_candidate_20260813.md)를
+> 따릅니다.
+
 ---
 
 ## 1. 판정 요약
