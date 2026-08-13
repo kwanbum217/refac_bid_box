@@ -80,7 +80,20 @@
 
 ### 2.3 legacy GET SSE 경로 제거
 
-**완료되었습니다.** `GET /api/v1/chatbot/stream` 은 코드에서 완전히 제거되었고, 모든 호출부가 정본 `POST /api/v1/chatbot/chat/stream` 으로 전환되었습니다. 테스트의 `dependency_overrides` 를 우회해 격리 DB 가 아닌 곳을 볼 수 있던 경로 문제도 자연스럽게 해결되었습니다. 정본 지표가 목표를 충족한 것을 실측으로 확인한 뒤 완전히 제거되었습니다.
+**완료되었습니다.** legacy `GET /api/v1/chatbot/stream`을 제거하고 모든
+호출부를 정본 `POST /api/v1/chatbot/chat/stream`으로 전환했습니다.
+
+| 조건 | 최종 상태 |
+| --- | --- |
+| 정본 첫 토큰 P95 | 1.721초, 목표 3초 통과 |
+| 정본 전체 응답 P95 | 8.129초, 목표 20초 통과 |
+| legacy GET 라우트 | 제거, 회귀 테스트에서 404 확인 |
+| 정본 POST 라우트 | 유지, SSE 응답 회귀 테스트 통과 |
+
+이로써 `SessionLocal()` 직접 사용과 테스트 `dependency_overrides` 우회 문제도
+함께 제거되었습니다. 원시 표본과 판정 근거는
+[`docs/ops/phase7_latency_recheck_20260813.md`](../ops/phase7_latency_recheck_20260813.md)에
+기록했습니다.
 
 ### 2.4 운영 컷오버 전 점검
 

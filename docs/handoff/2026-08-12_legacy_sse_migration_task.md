@@ -207,7 +207,16 @@ legacy 경로가 `Depends(get_db)` 가 아니라 `SessionLocal()` 을 직접 엽
 
 ## 9. 완료 처리 (2026-08-13)
 
-정본 경로 레이턴시 벤치마크 결과, P95 first token 1.721초, final 8.129초로 목표 게이트를 통과했습니다.
-이를 바탕으로 `GET /api/v1/chatbot/stream` 레거시 경로는 완전히 제거되었으며, 다음 커밋 계보를 통해 완료되었습니다:
+정본 경로 레이턴시 벤치마크 결과, 첫 토큰 P95 1.721초와 전체 응답 P95
+8.129초로 목표 게이트를 통과했습니다. 이를 바탕으로 legacy
+`GET /api/v1/chatbot/stream`을 제거하고 정본
+`POST /api/v1/chatbot/chat/stream`으로 단일화했습니다.
+
+완료 커밋 계보는 다음과 같습니다.
+
 - `1cda4e4`: 레거시 엔드포인트 삭제 및 벤치마크 단일화
 - `016d4cf`: 리뷰 코멘트 반영 및 문서 정합성 정리 완료
+
+원시 표본과 전체 판정은
+[`docs/ops/phase7_latency_recheck_20260813.md`](../ops/phase7_latency_recheck_20260813.md)에
+기록했습니다.
