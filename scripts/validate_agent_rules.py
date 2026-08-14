@@ -62,6 +62,9 @@ CURRENT_STATE_PATH = ("docs", "context", "CURRENT_STATE.md")
 # 갱신 커밋과 병합 커밋만으로도 2~3 이 벌어지므로 소폭 지연은 정상으로 봅니다.
 # 이 값을 넘으면 문서가 실제 상태를 놓치기 시작한다는 신호입니다.
 CURRENT_STATE_LAG_TOLERANCE = 5
+
+# git 조회 상한. 검증기는 pre-commit 에서 돌므로 멈추면 커밋이 막힙니다.
+GIT_PROBE_TIMEOUT_SECONDS = 10
 CURRENT_STATE_REQUIRED = [
     "updated_at",
     "source_commit",
@@ -522,7 +525,12 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
     if "docs/" not in content:
         return CheckResult(name, False, "증거 경로(docs/...) 없음. 수치는 evidence path 를 가져야 합니다")
 
-    match = re.search(r"source_commit\D*([0-9a-f]{7,40})", content)
+    # \D 는 줄바꿈도 매칭하므로 값이 비었을 때 아래 줄의 해시 유사 문자열을
+    # source_commit 으로 오인합니다. 같은 줄로 한정하고 경계를 명시합니다.
+    match = re.search(
+        r"source_commit[*_`\t ]*[:=][*_`\t ]*([0-9a-f]{7,40})\b",
+        content,
+    )
     if match is None:
         return CheckResult(name, False, "source_commit 값에서 커밋 해시를 읽을 수 없음")
 
@@ -552,20 +560,30 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
 
 def _commits_behind_head(root: Path, commit: str) -> int | None:
     """기록된 커밋이 HEAD 보다 몇 커밋 뒤처졌는지 셉니다. 확인 불가면 None."""
+    # timeout 을 두지 않으면 git 이 잠기거나 잠금 파일을 기다릴 때 검증기가 함께
+    # 멈춥니다. 이 검증기는 pre-commit 에서 돌기 때문에 커밋 자체가 막힙니다.
     try:
         subprocess.run(
             ["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "HEAD"],
             check=True,
             capture_output=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
         )
         out = subprocess.run(
             ["git", "-C", str(root), "rev-list", "--count", f"{commit}..HEAD"],
             check=True,
             capture_output=True,
             text=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
         )
         return int(out.stdout.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+        ValueError,
+    ):
+        # 확인 불가는 실패가 아닙니다. 호출부가 WARN 으로 처리합니다.
         return None
 
 
@@ -582,13 +600,19 @@ def check_context_budgets(root: Path = PROJECT_ROOT) -> CheckResult:
     ]
     over = []
     sizes = []
+    missing = []
     for path, budget in targets:
         if not path.exists():
+            missing.append(path.name)
             continue
         size = len(read_text(path))
         sizes.append(f"{path.name} {size}자/{budget}")
         if size > budget:
             over.append(f"{path.name} {size}자 (권장 {budget}자)")
+    if missing:
+        # 예산 검사가 대상 부재를 통과로 처리하면 파일이 사라진 상태를 조용히
+        # 넘깁니다. 존재 검사가 따로 있어도 이 검사 자체가 오해를 만듭니다.
+        return CheckResult(name, False, f"측정 대상 없음: {missing}")
     detail = ", ".join(sizes) if sizes else "대상 파일 없음"
     if over:
         return CheckResult(name, True, f"권장 예산 초과: {'; '.join(over)}", warn=True)
