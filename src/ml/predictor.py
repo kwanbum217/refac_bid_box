@@ -7,6 +7,7 @@ ML 모델 추론 싱글톤 로더.
 
 from __future__ import annotations
 
+import logging
 import os
 import queue
 import threading
@@ -14,6 +15,8 @@ import time
 from typing import Any
 
 from src.ml.features import build_feature_dict
+
+logger = logging.getLogger(__name__)
 
 
 class _BatchItem:
@@ -30,6 +33,10 @@ class _PredictionBatcher:
     MAX_BATCH_SIZE = 10
     BATCH_WINDOW_SECONDS = 0.005
     BATCH_WORKERS = 1
+    # 배치 스레드가 죽거나 멈추면 대기 중인 요청은 아무 응답도 받지 못합니다.
+    # 오류가 아니라 무응답이라 상위 계층이 감지할 수 없으므로, 대기에 상한을
+    # 두고 만료 시 호출 스레드가 단건 경로로 직접 처리합니다.
+    SUBMIT_TIMEOUT_SECONDS = 5.0
 
     def __init__(self, predict_one, predict_batch):
         self._predict_one = predict_one
@@ -48,7 +55,12 @@ class _PredictionBatcher:
     def submit(self, features: dict[str, Any]):
         item = _BatchItem(features)
         self._items.put(item)
-        item.event.wait()
+        if not item.event.wait(self.SUBMIT_TIMEOUT_SECONDS):
+            logger.warning(
+                "마이크로배치 응답이 %.1f초 안에 오지 않아 단건 경로로 처리합니다.",
+                self.SUBMIT_TIMEOUT_SECONDS,
+            )
+            return self._predict_one(item.features)
         if item.error is not None:
             raise item.error
         return item.result
@@ -73,18 +85,40 @@ class _PredictionBatcher:
     def _run(self):
         while True:
             batch = self._collect()
+            # 어떤 실패도 스레드를 끝내지 못하게 합니다. 이 스레드가 죽으면
+            # 이후 모든 요청이 응답 없이 대기하다 타임아웃으로 떨어집니다.
             try:
-                results = self._predict_batch(batch)
-            except Exception:
-                results = []
-                for item in batch:
-                    try:
-                        results.append(self._predict_one(item.features))
-                    except BaseException as exc:
-                        item.error = exc
-                        results.append(None)
-            for item, result in zip(batch, results, strict=True):
-                item.result = result
+                self._dispatch(batch)
+            except BaseException as exc:
+                logger.exception("마이크로배치 처리가 실패했습니다.")
+                self._release(batch, exc)
+
+    def _dispatch(self, batch: list[_BatchItem]) -> None:
+        try:
+            results = self._predict_batch(batch)
+        except Exception:
+            results = []
+            for item in batch:
+                try:
+                    results.append(self._predict_one(item.features))
+                except BaseException as exc:
+                    item.error = exc
+                    results.append(None)
+        if len(results) != len(batch):
+            raise ValueError(
+                f"배치 결과 수({len(results)})가 요청 수({len(batch)})와 다릅니다."
+            )
+        for item, result in zip(batch, results, strict=True):
+            item.result = result
+            item.event.set()
+
+    @staticmethod
+    def _release(batch: list[_BatchItem], error: BaseException) -> None:
+        """대기 중인 항목을 남기지 않고 모두 깨웁니다."""
+        for item in batch:
+            if not item.event.is_set():
+                if item.error is None:
+                    item.error = error
                 item.event.set()
 
 
