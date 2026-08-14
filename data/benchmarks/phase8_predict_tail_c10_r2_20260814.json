@@ -1,0 +1,2476 @@
+{
+  "base_url": "http://127.0.0.1:8001",
+  "rounds": 120,
+  "concurrency": 10,
+  "warmup_rounds": 10,
+  "summary": {
+    "n": 120,
+    "successful": 120,
+    "errors": 0,
+    "p50_ms": 31.3540415,
+    "p95_ms": 70.54323095,
+    "p99_ms": 72.41944221,
+    "tail_cutoff_ms": 70.54323095,
+    "tail_n": 6,
+    "tail_request_indices": [
+      23,
+      25,
+      27,
+      29,
+      30,
+      31
+    ],
+    "tail_segment_summary": {
+      "enqueue_to_pick_ms": {
+        "n": 6,
+        "mean_ms": 0.06329166666666666,
+        "median_ms": 0.0108335,
+        "p95_ms": 0.18584325000000002,
+        "max_ms": 0.200541
+      },
+      "batch_window_ms": {
+        "n": 6,
+        "mean_ms": 4.049020333333334,
+        "median_ms": 4.068811999999999,
+        "p95_ms": 4.292979,
+        "max_ms": 4.2935
+      },
+      "lightgbm_call_ms": {
+        "n": 6,
+        "mean_ms": 1.664875,
+        "median_ms": 1.664875,
+        "p95_ms": 1.664875,
+        "max_ms": 1.664875
+      },
+      "residual_after_model_ms": {
+        "n": 6,
+        "mean_ms": 1.0578821666666667,
+        "median_ms": 0.9177295,
+        "p95_ms": 1.91990625,
+        "max_ms": 1.9745
+      }
+    },
+    "batch_size_distribution": {
+      "1": 11,
+      "9": 9,
+      "10": 100
+    },
+    "tail_batch_size_distribution": {
+      "10": 6
+    },
+    "tail_gc_collections_during": {
+      "values": [
+        4,
+        4,
+        4,
+        4,
+        4,
+        4
+      ],
+      "nonzero_count": 6
+    }
+  },
+  "requests": [
+    {
+      "request_index": 0,
+      "latency_ms": 34.097875,
+      "trace_id": 143,
+      "error": null,
+      "trace": {
+        "trace_id": 143,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.422166,
+        "batch_window_ms": 4.22125,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.007208,
+        "response_assembly_ms": 0.426125,
+        "residual_after_model_ms": 0.43333299999999997,
+        "enqueue_to_response_ms": 23.639041,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 1,
+      "latency_ms": 33.124791,
+      "trace_id": 147,
+      "error": null,
+      "trace": {
+        "trace_id": 147,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 7.302625,
+        "batch_window_ms": 4.218625,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.018625,
+        "response_assembly_ms": 0.27625,
+        "residual_after_model_ms": 0.294875,
+        "enqueue_to_response_ms": 22.378417,
+        "gc_collections_during": 6
+      }
+    },
+    {
+      "request_index": 2,
+      "latency_ms": 34.259334,
+      "trace_id": 144,
+      "error": null,
+      "trace": {
+        "trace_id": 144,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.391209,
+        "batch_window_ms": 4.220416,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.009917,
+        "response_assembly_ms": 0.454541,
+        "residual_after_model_ms": 0.464458,
+        "enqueue_to_response_ms": 23.638375,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 3,
+      "latency_ms": 17.342917,
+      "trace_id": 141,
+      "error": null,
+      "trace": {
+        "trace_id": 141,
+        "batch_id": 26,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.016166,
+        "batch_window_ms": 0.001625,
+        "batch_window_total_ms": 0.001625,
+        "lightgbm_call_ms": 1.351375,
+        "result_assembly_ms": 0.00175,
+        "response_assembly_ms": 0.061708,
+        "residual_after_model_ms": 0.063458,
+        "enqueue_to_response_ms": 8.614666,
+        "gc_collections_during": 3
+      }
+    },
+    {
+      "request_index": 4,
+      "latency_ms": 34.643333,
+      "trace_id": 146,
+      "error": null,
+      "trace": {
+        "trace_id": 146,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.185833,
+        "batch_window_ms": 4.219083,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.0155,
+        "response_assembly_ms": 0.499583,
+        "residual_after_model_ms": 0.515083,
+        "enqueue_to_response_ms": 23.482291,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 5,
+      "latency_ms": 33.706709,
+      "trace_id": 145,
+      "error": null,
+      "trace": {
+        "trace_id": 145,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.312833,
+        "batch_window_ms": 4.21975,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.012292,
+        "response_assembly_ms": 0.477875,
+        "residual_after_model_ms": 0.490167,
+        "enqueue_to_response_ms": 23.585042,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 6,
+      "latency_ms": 33.090292,
+      "trace_id": 142,
+      "error": null,
+      "trace": {
+        "trace_id": 142,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.455917,
+        "batch_window_ms": 4.223708,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.001542,
+        "response_assembly_ms": 0.404166,
+        "residual_after_model_ms": 0.405708,
+        "enqueue_to_response_ms": 23.647625,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 7,
+      "latency_ms": 34.630459,
+      "trace_id": 148,
+      "error": null,
+      "trace": {
+        "trace_id": 148,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.810875,
+        "batch_window_ms": 4.218125,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.021,
+        "response_assembly_ms": 1.11775,
+        "residual_after_model_ms": 1.13875,
+        "enqueue_to_response_ms": 19.730042,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 8,
+      "latency_ms": 34.56475,
+      "trace_id": 150,
+      "error": null,
+      "trace": {
+        "trace_id": 150,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 2.938958,
+        "batch_window_ms": 4.217125,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.024875,
+        "response_assembly_ms": 1.321542,
+        "residual_after_model_ms": 1.346417,
+        "enqueue_to_response_ms": 19.064792,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 9,
+      "latency_ms": 32.260458,
+      "trace_id": 149,
+      "error": null,
+      "trace": {
+        "trace_id": 149,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.774208,
+        "batch_window_ms": 4.217583,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.022917,
+        "response_assembly_ms": 0.333583,
+        "residual_after_model_ms": 0.35650000000000004,
+        "enqueue_to_response_ms": 18.910583,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 10,
+      "latency_ms": 17.355875,
+      "trace_id": 151,
+      "error": null,
+      "trace": {
+        "trace_id": 151,
+        "batch_id": 27,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.010083,
+        "batch_window_ms": 0.000458,
+        "batch_window_total_ms": 4.223708,
+        "lightgbm_call_ms": 1.498,
+        "result_assembly_ms": 0.02675,
+        "response_assembly_ms": 0.777167,
+        "residual_after_model_ms": 0.8039170000000001,
+        "enqueue_to_response_ms": 11.37675,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 11,
+      "latency_ms": 14.68775,
+      "trace_id": 152,
+      "error": null,
+      "trace": {
+        "trace_id": 152,
+        "batch_id": 28,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.015958,
+        "batch_window_ms": 0.001667,
+        "batch_window_total_ms": 0.001667,
+        "lightgbm_call_ms": 3.534416,
+        "result_assembly_ms": 0.001709,
+        "response_assembly_ms": 0.174583,
+        "residual_after_model_ms": 0.17629199999999998,
+        "enqueue_to_response_ms": 8.4945,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 12,
+      "latency_ms": 31.352,
+      "trace_id": 153,
+      "error": null,
+      "trace": {
+        "trace_id": 153,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.171917,
+        "batch_window_ms": 4.274667,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.001542,
+        "response_assembly_ms": 0.08575,
+        "residual_after_model_ms": 0.08729200000000001,
+        "enqueue_to_response_ms": 23.073959,
+        "gc_collections_during": 9
+      }
+    },
+    {
+      "request_index": 13,
+      "latency_ms": 30.192042,
+      "trace_id": 160,
+      "error": null,
+      "trace": {
+        "trace_id": 160,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.006208,
+        "batch_window_ms": 3.802709,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.018583,
+        "response_assembly_ms": 0.317584,
+        "residual_after_model_ms": 0.336167,
+        "enqueue_to_response_ms": 14.685167,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 14,
+      "latency_ms": 31.021417,
+      "trace_id": 158,
+      "error": null,
+      "trace": {
+        "trace_id": 158,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.008042,
+        "batch_window_ms": 3.881667,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.014625,
+        "response_assembly_ms": 0.850375,
+        "residual_after_model_ms": 0.865,
+        "enqueue_to_response_ms": 15.294792,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 15,
+      "latency_ms": 30.842083,
+      "trace_id": 157,
+      "error": null,
+      "trace": {
+        "trace_id": 157,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009625,
+        "batch_window_ms": 3.921834,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.012583,
+        "response_assembly_ms": 0.156042,
+        "residual_after_model_ms": 0.168625,
+        "enqueue_to_response_ms": 14.640167,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 16,
+      "latency_ms": 30.473709,
+      "trace_id": 155,
+      "error": null,
+      "trace": {
+        "trace_id": 155,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.01225,
+        "batch_window_ms": 4.2085,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.008208,
+        "response_assembly_ms": 0.443167,
+        "residual_after_model_ms": 0.45137499999999997,
+        "enqueue_to_response_ms": 15.212208,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 17,
+      "latency_ms": 29.303125,
+      "trace_id": 159,
+      "error": null,
+      "trace": {
+        "trace_id": 159,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009042,
+        "batch_window_ms": 3.82925,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.016667,
+        "response_assembly_ms": 0.557875,
+        "residual_after_model_ms": 0.574542,
+        "enqueue_to_response_ms": 14.952917,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 18,
+      "latency_ms": 29.491292,
+      "trace_id": 154,
+      "error": null,
+      "trace": {
+        "trace_id": 154,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.103209,
+        "batch_window_ms": 4.2725,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.006083,
+        "response_assembly_ms": 0.784667,
+        "residual_after_model_ms": 0.79075,
+        "enqueue_to_response_ms": 15.706542,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 19,
+      "latency_ms": 28.902083,
+      "trace_id": 156,
+      "error": null,
+      "trace": {
+        "trace_id": 156,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.008875,
+        "batch_window_ms": 3.97025,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.010375,
+        "response_assembly_ms": 0.274958,
+        "residual_after_model_ms": 0.285333,
+        "enqueue_to_response_ms": 14.804541,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 20,
+      "latency_ms": 28.890875,
+      "trace_id": 161,
+      "error": null,
+      "trace": {
+        "trace_id": 161,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.010458,
+        "batch_window_ms": 3.726709,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.020417,
+        "response_assembly_ms": 0.208416,
+        "residual_after_model_ms": 0.22883299999999998,
+        "enqueue_to_response_ms": 14.506083,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 21,
+      "latency_ms": 16.694333,
+      "trace_id": 162,
+      "error": null,
+      "trace": {
+        "trace_id": 162,
+        "batch_id": 29,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.008291,
+        "batch_window_ms": 0.000459,
+        "batch_window_total_ms": 4.274667,
+        "lightgbm_call_ms": 1.519083,
+        "result_assembly_ms": 0.02275,
+        "response_assembly_ms": 0.492167,
+        "residual_after_model_ms": 0.5149170000000001,
+        "enqueue_to_response_ms": 11.06375,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 22,
+      "latency_ms": 16.31225,
+      "trace_id": 163,
+      "error": null,
+      "trace": {
+        "trace_id": 163,
+        "batch_id": 30,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.013458,
+        "batch_window_ms": 0.001209,
+        "batch_window_total_ms": 0.001209,
+        "lightgbm_call_ms": 3.214666,
+        "result_assembly_ms": 0.002,
+        "response_assembly_ms": 0.226417,
+        "residual_after_model_ms": 0.228417,
+        "enqueue_to_response_ms": 9.257667,
+        "gc_collections_during": 6
+      }
+    },
+    {
+      "request_index": 23,
+      "latency_ms": 71.399917,
+      "trace_id": 164,
+      "error": null,
+      "trace": {
+        "trace_id": 164,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.200541,
+        "batch_window_ms": 4.2935,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.001792,
+        "response_assembly_ms": 0.404833,
+        "residual_after_model_ms": 0.406625,
+        "enqueue_to_response_ms": 54.471541,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 24,
+      "latency_ms": 70.327333,
+      "trace_id": 168,
+      "error": null,
+      "trace": {
+        "trace_id": 168,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009458,
+        "batch_window_ms": 3.93875,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.020375,
+        "response_assembly_ms": 0.266375,
+        "residual_after_model_ms": 0.28674999999999995,
+        "enqueue_to_response_ms": 53.805833,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 25,
+      "latency_ms": 72.520625,
+      "trace_id": 171,
+      "error": null,
+      "trace": {
+        "trace_id": 171,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.008167,
+        "batch_window_ms": 3.809416,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.028667,
+        "response_assembly_ms": 1.945833,
+        "residual_after_model_ms": 1.9745,
+        "enqueue_to_response_ms": 55.362958,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 26,
+      "latency_ms": 70.06225,
+      "trace_id": 167,
+      "error": null,
+      "trace": {
+        "trace_id": 167,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.010708,
+        "batch_window_ms": 4.088083,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.017959,
+        "response_assembly_ms": 0.213166,
+        "residual_after_model_ms": 0.231125,
+        "enqueue_to_response_ms": 53.900791,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 27,
+      "latency_ms": 72.643208,
+      "trace_id": 166,
+      "error": null,
+      "trace": {
+        "trace_id": 166,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.010834,
+        "batch_window_ms": 4.237666,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.015042,
+        "response_assembly_ms": 1.384333,
+        "residual_after_model_ms": 1.399375,
+        "enqueue_to_response_ms": 55.21875,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 28,
+      "latency_ms": 70.539958,
+      "trace_id": 170,
+      "error": null,
+      "trace": {
+        "trace_id": 170,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009125,
+        "batch_window_ms": 3.85075,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.026292,
+        "response_assembly_ms": 0.307625,
+        "residual_after_model_ms": 0.33391699999999996,
+        "enqueue_to_response_ms": 53.764667,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 29,
+      "latency_ms": 70.605417,
+      "trace_id": 172,
+      "error": null,
+      "trace": {
+        "trace_id": 172,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.007625,
+        "batch_window_ms": 3.762166,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.031209,
+        "response_assembly_ms": 0.343375,
+        "residual_after_model_ms": 0.374584,
+        "enqueue_to_response_ms": 53.71525,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 30,
+      "latency_ms": 70.93575,
+      "trace_id": 165,
+      "error": null,
+      "trace": {
+        "trace_id": 165,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.14175,
+        "batch_window_ms": 4.291416,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.012542,
+        "response_assembly_ms": 0.423542,
+        "residual_after_model_ms": 0.43608399999999997,
+        "enqueue_to_response_ms": 54.440125,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 31,
+      "latency_ms": 71.988084,
+      "trace_id": 169,
+      "error": null,
+      "trace": {
+        "trace_id": 169,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.010833,
+        "batch_window_ms": 3.899958,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.02325,
+        "response_assembly_ms": 1.732875,
+        "residual_after_model_ms": 1.756125,
+        "enqueue_to_response_ms": 55.237791,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 32,
+      "latency_ms": 56.599417,
+      "trace_id": 173,
+      "error": null,
+      "trace": {
+        "trace_id": 173,
+        "batch_id": 31,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.00825,
+        "batch_window_ms": 0.000416,
+        "batch_window_total_ms": 4.2935,
+        "lightgbm_call_ms": 1.664875,
+        "result_assembly_ms": 0.033417,
+        "response_assembly_ms": 2.198833,
+        "residual_after_model_ms": 2.23225,
+        "enqueue_to_response_ms": 51.811791,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 33,
+      "latency_ms": 32.561875,
+      "trace_id": 175,
+      "error": null,
+      "trace": {
+        "trace_id": 175,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.877083,
+        "batch_window_ms": 3.926584,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.001542,
+        "response_assembly_ms": 0.995292,
+        "residual_after_model_ms": 0.996834,
+        "enqueue_to_response_ms": 24.333792,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 34,
+      "latency_ms": 15.939583,
+      "trace_id": 174,
+      "error": null,
+      "trace": {
+        "trace_id": 174,
+        "batch_id": 32,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.015917,
+        "batch_window_ms": 0.00175,
+        "batch_window_total_ms": 0.00175,
+        "lightgbm_call_ms": 1.528958,
+        "result_assembly_ms": 0.001667,
+        "response_assembly_ms": 0.064458,
+        "residual_after_model_ms": 0.066125,
+        "enqueue_to_response_ms": 9.029708,
+        "gc_collections_during": 3
+      }
+    },
+    {
+      "request_index": 35,
+      "latency_ms": 32.384667,
+      "trace_id": 176,
+      "error": null,
+      "trace": {
+        "trace_id": 176,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.60275,
+        "batch_window_ms": 3.924625,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.008084,
+        "response_assembly_ms": 1.171208,
+        "residual_after_model_ms": 1.179292,
+        "enqueue_to_response_ms": 24.239958,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 36,
+      "latency_ms": 32.091167,
+      "trace_id": 177,
+      "error": null,
+      "trace": {
+        "trace_id": 177,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.452834,
+        "batch_window_ms": 3.923875,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.0105,
+        "response_assembly_ms": 1.226875,
+        "residual_after_model_ms": 1.237375,
+        "enqueue_to_response_ms": 24.147375,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 37,
+      "latency_ms": 30.039167,
+      "trace_id": 178,
+      "error": null,
+      "trace": {
+        "trace_id": 178,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 6.079125,
+        "batch_window_ms": 3.923292,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.012667,
+        "response_assembly_ms": 0.159542,
+        "residual_after_model_ms": 0.172209,
+        "enqueue_to_response_ms": 20.707917,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 38,
+      "latency_ms": 32.12625,
+      "trace_id": 179,
+      "error": null,
+      "trace": {
+        "trace_id": 179,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.680209,
+        "batch_window_ms": 3.922625,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.014875,
+        "response_assembly_ms": 1.285917,
+        "residual_after_model_ms": 1.300792,
+        "enqueue_to_response_ms": 21.436917,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 39,
+      "latency_ms": 31.299584,
+      "trace_id": 180,
+      "error": null,
+      "trace": {
+        "trace_id": 180,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 2.310916,
+        "batch_window_ms": 3.922084,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.017459,
+        "response_assembly_ms": 1.320291,
+        "residual_after_model_ms": 1.33775,
+        "enqueue_to_response_ms": 18.104041,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 40,
+      "latency_ms": 29.784167,
+      "trace_id": 183,
+      "error": null,
+      "trace": {
+        "trace_id": 183,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.177333,
+        "batch_window_ms": 3.920584,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.024292,
+        "response_assembly_ms": 0.828375,
+        "residual_after_model_ms": 0.852667,
+        "enqueue_to_response_ms": 15.483875,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 41,
+      "latency_ms": 31.150958,
+      "trace_id": 181,
+      "error": null,
+      "trace": {
+        "trace_id": 181,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.99,
+        "batch_window_ms": 3.921542,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.020084,
+        "response_assembly_ms": 1.347791,
+        "residual_after_model_ms": 1.367875,
+        "enqueue_to_response_ms": 16.812708,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 42,
+      "latency_ms": 29.776833,
+      "trace_id": 182,
+      "error": null,
+      "trace": {
+        "trace_id": 182,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.951,
+        "batch_window_ms": 3.921084,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.02225,
+        "response_assembly_ms": 0.912542,
+        "residual_after_model_ms": 0.934792,
+        "enqueue_to_response_ms": 16.340167,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 43,
+      "latency_ms": 14.847916,
+      "trace_id": 184,
+      "error": null,
+      "trace": {
+        "trace_id": 184,
+        "batch_id": 33,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009334,
+        "batch_window_ms": 0.000375,
+        "batch_window_total_ms": 3.926584,
+        "lightgbm_call_ms": 1.523417,
+        "result_assembly_ms": 0.02675,
+        "response_assembly_ms": 0.067709,
+        "residual_after_model_ms": 0.094459,
+        "enqueue_to_response_ms": 10.637459,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 44,
+      "latency_ms": 16.842125,
+      "trace_id": 185,
+      "error": null,
+      "trace": {
+        "trace_id": 185,
+        "batch_id": 34,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.017459,
+        "batch_window_ms": 0.001916,
+        "batch_window_total_ms": 0.001916,
+        "lightgbm_call_ms": 1.551458,
+        "result_assembly_ms": 0.00175,
+        "response_assembly_ms": 0.071666,
+        "residual_after_model_ms": 0.073416,
+        "enqueue_to_response_ms": 10.958875,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 45,
+      "latency_ms": 44.239291,
+      "trace_id": 186,
+      "error": null,
+      "trace": {
+        "trace_id": 186,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 10.785708,
+        "batch_window_ms": 6.276209,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.00175,
+        "response_assembly_ms": 3.339584,
+        "residual_after_model_ms": 3.341334,
+        "enqueue_to_response_ms": 34.207417,
+        "gc_collections_during": 9
+      }
+    },
+    {
+      "request_index": 46,
+      "latency_ms": 44.157542,
+      "trace_id": 191,
+      "error": null,
+      "trace": {
+        "trace_id": 191,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 3.277083,
+        "batch_window_ms": 6.270792,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.018084,
+        "response_assembly_ms": 4.772791,
+        "residual_after_model_ms": 4.790875,
+        "enqueue_to_response_ms": 28.142916,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 47,
+      "latency_ms": 42.733459,
+      "trace_id": 188,
+      "error": null,
+      "trace": {
+        "trace_id": 188,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 3.707125,
+        "batch_window_ms": 6.272625,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.009834,
+        "response_assembly_ms": 3.683708,
+        "residual_after_model_ms": 3.6935420000000003,
+        "enqueue_to_response_ms": 27.477458,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 48,
+      "latency_ms": 42.715875,
+      "trace_id": 189,
+      "error": null,
+      "trace": {
+        "trace_id": 189,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 3.672791,
+        "batch_window_ms": 6.271959,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.012709,
+        "response_assembly_ms": 4.390916,
+        "residual_after_model_ms": 4.403625,
+        "enqueue_to_response_ms": 28.152541,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 49,
+      "latency_ms": 43.045125,
+      "trace_id": 190,
+      "error": null,
+      "trace": {
+        "trace_id": 190,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 3.609709,
+        "batch_window_ms": 6.271375,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.015542,
+        "response_assembly_ms": 4.435542,
+        "residual_after_model_ms": 4.451084,
+        "enqueue_to_response_ms": 28.136334,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 50,
+      "latency_ms": 43.359791,
+      "trace_id": 192,
+      "error": null,
+      "trace": {
+        "trace_id": 192,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 3.034958,
+        "batch_window_ms": 6.270167,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.020542,
+        "response_assembly_ms": 5.15075,
+        "residual_after_model_ms": 5.171292,
+        "enqueue_to_response_ms": 28.280583,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 51,
+      "latency_ms": 41.817708,
+      "trace_id": 187,
+      "error": null,
+      "trace": {
+        "trace_id": 187,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 3.744083,
+        "batch_window_ms": 6.273459,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.006209,
+        "response_assembly_ms": 4.041083,
+        "residual_after_model_ms": 4.0472920000000006,
+        "enqueue_to_response_ms": 27.869,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 52,
+      "latency_ms": 43.32625,
+      "trace_id": 194,
+      "error": null,
+      "trace": {
+        "trace_id": 194,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 1.069583,
+        "batch_window_ms": 6.269042,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.025459,
+        "response_assembly_ms": 6.621208,
+        "residual_after_model_ms": 6.646667,
+        "enqueue_to_response_ms": 27.789458,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 53,
+      "latency_ms": 43.070708,
+      "trace_id": 193,
+      "error": null,
+      "trace": {
+        "trace_id": 193,
+        "batch_id": 35,
+        "batch_size": 9,
+        "enqueue_to_pick_ms": 2.556959,
+        "batch_window_ms": 6.269625,
+        "batch_window_total_ms": 6.276209,
+        "lightgbm_call_ms": 2.026083,
+        "result_assembly_ms": 0.023084,
+        "response_assembly_ms": 5.903375,
+        "residual_after_model_ms": 5.9264589999999995,
+        "enqueue_to_response_ms": 28.557209,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 54,
+      "latency_ms": 29.375958,
+      "trace_id": 195,
+      "error": null,
+      "trace": {
+        "trace_id": 195,
+        "batch_id": 36,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 1.613167,
+        "batch_window_ms": 0.001708,
+        "batch_window_total_ms": 0.001708,
+        "lightgbm_call_ms": 1.386791,
+        "result_assembly_ms": 0.0025,
+        "response_assembly_ms": 0.065291,
+        "residual_after_model_ms": 0.067791,
+        "enqueue_to_response_ms": 9.50775,
+        "gc_collections_during": 2
+      }
+    },
+    {
+      "request_index": 55,
+      "latency_ms": 21.69425,
+      "trace_id": 196,
+      "error": null,
+      "trace": {
+        "trace_id": 196,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.224083,
+        "batch_window_ms": 0.487834,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.00175,
+        "response_assembly_ms": 0.088542,
+        "residual_after_model_ms": 0.090292,
+        "enqueue_to_response_ms": 11.476667,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 56,
+      "latency_ms": 21.243791,
+      "trace_id": 200,
+      "error": null,
+      "trace": {
+        "trace_id": 200,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.126709,
+        "batch_window_ms": 0.15,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.012,
+        "response_assembly_ms": 0.153083,
+        "residual_after_model_ms": 0.165083,
+        "enqueue_to_response_ms": 11.11625,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 57,
+      "latency_ms": 22.692958,
+      "trace_id": 197,
+      "error": null,
+      "trace": {
+        "trace_id": 197,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.188833,
+        "batch_window_ms": 0.485292,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.006167,
+        "response_assembly_ms": 1.6595,
+        "residual_after_model_ms": 1.665667,
+        "enqueue_to_response_ms": 13.01425,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 58,
+      "latency_ms": 22.490667,
+      "trace_id": 198,
+      "error": null,
+      "trace": {
+        "trace_id": 198,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.161875,
+        "batch_window_ms": 0.484459,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.008167,
+        "response_assembly_ms": 1.331416,
+        "residual_after_model_ms": 1.339583,
+        "enqueue_to_response_ms": 12.660375,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 59,
+      "latency_ms": 22.374667,
+      "trace_id": 201,
+      "error": null,
+      "trace": {
+        "trace_id": 201,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.08975,
+        "batch_window_ms": 0.148625,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.015375,
+        "response_assembly_ms": 1.72125,
+        "residual_after_model_ms": 1.7366249999999999,
+        "enqueue_to_response_ms": 12.649458,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 60,
+      "latency_ms": 22.367834,
+      "trace_id": 202,
+      "error": null,
+      "trace": {
+        "trace_id": 202,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009541,
+        "batch_window_ms": 0.147959,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.017875,
+        "response_assembly_ms": 1.975792,
+        "residual_after_model_ms": 1.993667,
+        "enqueue_to_response_ms": 12.825625,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 61,
+      "latency_ms": 20.235709,
+      "trace_id": 199,
+      "error": null,
+      "trace": {
+        "trace_id": 199,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009958,
+        "batch_window_ms": 0.325959,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.01,
+        "response_assembly_ms": 0.262667,
+        "residual_after_model_ms": 0.272667,
+        "enqueue_to_response_ms": 11.283042,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 62,
+      "latency_ms": 20.19775,
+      "trace_id": 203,
+      "error": null,
+      "trace": {
+        "trace_id": 203,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.008125,
+        "batch_window_ms": 0.114334,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.020042,
+        "response_assembly_ms": 0.303666,
+        "residual_after_model_ms": 0.323708,
+        "enqueue_to_response_ms": 11.120625,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 63,
+      "latency_ms": 19.346584,
+      "trace_id": 204,
+      "error": null,
+      "trace": {
+        "trace_id": 204,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.007292,
+        "batch_window_ms": 0.068792,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.022583,
+        "response_assembly_ms": 0.19975,
+        "residual_after_model_ms": 0.222333,
+        "enqueue_to_response_ms": 10.972875,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 64,
+      "latency_ms": 21.613709,
+      "trace_id": 205,
+      "error": null,
+      "trace": {
+        "trace_id": 205,
+        "batch_id": 37,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009917,
+        "batch_window_ms": 0.000375,
+        "batch_window_total_ms": 0.487834,
+        "lightgbm_call_ms": 1.580708,
+        "result_assembly_ms": 0.024667,
+        "response_assembly_ms": 2.078166,
+        "residual_after_model_ms": 2.102833,
+        "enqueue_to_response_ms": 12.787583,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 65,
+      "latency_ms": 14.715083,
+      "trace_id": 206,
+      "error": null,
+      "trace": {
+        "trace_id": 206,
+        "batch_id": 38,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.010208,
+        "batch_window_ms": 0.001209,
+        "batch_window_total_ms": 0.001209,
+        "lightgbm_call_ms": 1.768042,
+        "result_assembly_ms": 0.00175,
+        "response_assembly_ms": 0.464167,
+        "residual_after_model_ms": 0.46591699999999997,
+        "enqueue_to_response_ms": 6.56375,
+        "gc_collections_during": 3
+      }
+    },
+    {
+      "request_index": 66,
+      "latency_ms": 31.91425,
+      "trace_id": 212,
+      "error": null,
+      "trace": {
+        "trace_id": 212,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.033042,
+        "batch_window_ms": 3.900666,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.017208,
+        "response_assembly_ms": 1.021042,
+        "residual_after_model_ms": 1.0382500000000001,
+        "enqueue_to_response_ms": 15.306,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 67,
+      "latency_ms": 30.962917,
+      "trace_id": 207,
+      "error": null,
+      "trace": {
+        "trace_id": 207,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.174625,
+        "batch_window_ms": 3.905875,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.001625,
+        "response_assembly_ms": 0.364417,
+        "residual_after_model_ms": 0.366042,
+        "enqueue_to_response_ms": 14.780584,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 68,
+      "latency_ms": 29.241417,
+      "trace_id": 210,
+      "error": null,
+      "trace": {
+        "trace_id": 210,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.08,
+        "batch_window_ms": 3.901875,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.012625,
+        "response_assembly_ms": 0.24525,
+        "residual_after_model_ms": 0.257875,
+        "enqueue_to_response_ms": 14.573792,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 69,
+      "latency_ms": 30.299042,
+      "trace_id": 208,
+      "error": null,
+      "trace": {
+        "trace_id": 208,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.13875,
+        "batch_window_ms": 3.903541,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.008542,
+        "response_assembly_ms": 0.383166,
+        "residual_after_model_ms": 0.391708,
+        "enqueue_to_response_ms": 14.768041,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 70,
+      "latency_ms": 30.090583,
+      "trace_id": 214,
+      "error": null,
+      "trace": {
+        "trace_id": 214,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.012583,
+        "batch_window_ms": 3.659333,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.021542,
+        "response_assembly_ms": 0.53975,
+        "residual_after_model_ms": 0.5612919999999999,
+        "enqueue_to_response_ms": 14.56725,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 71,
+      "latency_ms": 29.373583,
+      "trace_id": 209,
+      "error": null,
+      "trace": {
+        "trace_id": 209,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.108125,
+        "batch_window_ms": 3.902583,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.010708,
+        "response_assembly_ms": 0.407292,
+        "residual_after_model_ms": 0.418,
+        "enqueue_to_response_ms": 14.76275,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 72,
+      "latency_ms": 28.347375,
+      "trace_id": 215,
+      "error": null,
+      "trace": {
+        "trace_id": 215,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.011209,
+        "batch_window_ms": 3.574416,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.023792,
+        "response_assembly_ms": 0.314583,
+        "residual_after_model_ms": 0.338375,
+        "enqueue_to_response_ms": 14.258042,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 73,
+      "latency_ms": 29.533416,
+      "trace_id": 213,
+      "error": null,
+      "trace": {
+        "trace_id": 213,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.011625,
+        "batch_window_ms": 3.755791,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.019333,
+        "response_assembly_ms": 0.515167,
+        "residual_after_model_ms": 0.5345000000000001,
+        "enqueue_to_response_ms": 14.635958,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 74,
+      "latency_ms": 28.712834,
+      "trace_id": 211,
+      "error": null,
+      "trace": {
+        "trace_id": 211,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.055958,
+        "batch_window_ms": 3.901208,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.014792,
+        "response_assembly_ms": 0.428958,
+        "residual_after_model_ms": 0.44375,
+        "enqueue_to_response_ms": 14.734958,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 75,
+      "latency_ms": 17.33175,
+      "trace_id": 216,
+      "error": null,
+      "trace": {
+        "trace_id": 216,
+        "batch_id": 39,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009417,
+        "batch_window_ms": 0.000416,
+        "batch_window_total_ms": 3.905875,
+        "lightgbm_call_ms": 1.513458,
+        "result_assembly_ms": 0.026125,
+        "response_assembly_ms": 1.29,
+        "residual_after_model_ms": 1.316125,
+        "enqueue_to_response_ms": 11.66,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 76,
+      "latency_ms": 16.208833,
+      "trace_id": 217,
+      "error": null,
+      "trace": {
+        "trace_id": 217,
+        "batch_id": 40,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.012458,
+        "batch_window_ms": 0.001084,
+        "batch_window_total_ms": 0.001084,
+        "lightgbm_call_ms": 1.901625,
+        "result_assembly_ms": 0.001708,
+        "response_assembly_ms": 0.054917,
+        "residual_after_model_ms": 0.056625,
+        "enqueue_to_response_ms": 10.918167,
+        "gc_collections_during": 6
+      }
+    },
+    {
+      "request_index": 77,
+      "latency_ms": 31.929542,
+      "trace_id": 219,
+      "error": null,
+      "trace": {
+        "trace_id": 219,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 1.271958,
+        "batch_window_ms": 4.013917,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.008125,
+        "response_assembly_ms": 0.364833,
+        "residual_after_model_ms": 0.372958,
+        "enqueue_to_response_ms": 16.299083,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 78,
+      "latency_ms": 30.410333,
+      "trace_id": 221,
+      "error": null,
+      "trace": {
+        "trace_id": 221,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 1.111875,
+        "batch_window_ms": 4.012458,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.012042,
+        "response_assembly_ms": 0.203333,
+        "residual_after_model_ms": 0.215375,
+        "enqueue_to_response_ms": 15.979958,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 79,
+      "latency_ms": 32.207958,
+      "trace_id": 218,
+      "error": null,
+      "trace": {
+        "trace_id": 218,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 2.813708,
+        "batch_window_ms": 4.01625,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.001542,
+        "response_assembly_ms": 0.912458,
+        "residual_after_model_ms": 0.914,
+        "enqueue_to_response_ms": 18.384208,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 80,
+      "latency_ms": 32.449792,
+      "trace_id": 224,
+      "error": null,
+      "trace": {
+        "trace_id": 224,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 1.02775,
+        "batch_window_ms": 4.011,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.019292,
+        "response_assembly_ms": 1.443791,
+        "residual_after_model_ms": 1.4630830000000001,
+        "enqueue_to_response_ms": 17.142083,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 81,
+      "latency_ms": 31.479041,
+      "trace_id": 220,
+      "error": null,
+      "trace": {
+        "trace_id": 220,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 1.154125,
+        "batch_window_ms": 4.013125,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.010208,
+        "response_assembly_ms": 0.387959,
+        "residual_after_model_ms": 0.398167,
+        "enqueue_to_response_ms": 16.205667,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 82,
+      "latency_ms": 31.832958,
+      "trace_id": 223,
+      "error": null,
+      "trace": {
+        "trace_id": 223,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 1.054667,
+        "batch_window_ms": 4.011458,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.017042,
+        "response_assembly_ms": 1.156208,
+        "residual_after_model_ms": 1.17325,
+        "enqueue_to_response_ms": 16.879625,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 83,
+      "latency_ms": 31.960333,
+      "trace_id": 226,
+      "error": null,
+      "trace": {
+        "trace_id": 226,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.122458,
+        "batch_window_ms": 4.01,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.02325,
+        "response_assembly_ms": 1.836833,
+        "residual_after_model_ms": 1.860083,
+        "enqueue_to_response_ms": 16.632791,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 84,
+      "latency_ms": 29.578875,
+      "trace_id": 222,
+      "error": null,
+      "trace": {
+        "trace_id": 222,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 1.0825,
+        "batch_window_ms": 4.011958,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.014167,
+        "response_assembly_ms": 0.247791,
+        "residual_after_model_ms": 0.261958,
+        "enqueue_to_response_ms": 15.996666,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 85,
+      "latency_ms": 29.617666,
+      "trace_id": 225,
+      "error": null,
+      "trace": {
+        "trace_id": 225,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.157167,
+        "batch_window_ms": 4.0105,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.021125,
+        "response_assembly_ms": 0.278375,
+        "residual_after_model_ms": 0.2995,
+        "enqueue_to_response_ms": 15.107417,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 86,
+      "latency_ms": 16.264125,
+      "trace_id": 227,
+      "error": null,
+      "trace": {
+        "trace_id": 227,
+        "batch_id": 41,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.011708,
+        "batch_window_ms": 0.000417,
+        "batch_window_total_ms": 4.01625,
+        "lightgbm_call_ms": 1.458584,
+        "result_assembly_ms": 0.025417,
+        "response_assembly_ms": 0.313083,
+        "residual_after_model_ms": 0.3385,
+        "enqueue_to_response_ms": 10.990875,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 87,
+      "latency_ms": 32.960459,
+      "trace_id": 230,
+      "error": null,
+      "trace": {
+        "trace_id": 230,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.352458,
+        "batch_window_ms": 3.8655,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.007875,
+        "response_assembly_ms": 1.299625,
+        "residual_after_model_ms": 1.3075,
+        "enqueue_to_response_ms": 24.126958,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 88,
+      "latency_ms": 31.356083,
+      "trace_id": 229,
+      "error": null,
+      "trace": {
+        "trace_id": 229,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 8.620125,
+        "batch_window_ms": 3.867375,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.001458,
+        "response_assembly_ms": 0.084292,
+        "residual_after_model_ms": 0.08575,
+        "enqueue_to_response_ms": 23.17475,
+        "gc_collections_during": 7
+      }
+    },
+    {
+      "request_index": 89,
+      "latency_ms": 15.537833,
+      "trace_id": 228,
+      "error": null,
+      "trace": {
+        "trace_id": 228,
+        "batch_id": 42,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.0125,
+        "batch_window_ms": 0.001375,
+        "batch_window_total_ms": 0.001375,
+        "lightgbm_call_ms": 1.41275,
+        "result_assembly_ms": 0.0015,
+        "response_assembly_ms": 0.051792,
+        "residual_after_model_ms": 0.053292,
+        "enqueue_to_response_ms": 8.995542,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 90,
+      "latency_ms": 32.332708,
+      "trace_id": 231,
+      "error": null,
+      "trace": {
+        "trace_id": 231,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 7.735833,
+        "batch_window_ms": 3.86475,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.01,
+        "response_assembly_ms": 1.876583,
+        "residual_after_model_ms": 1.886583,
+        "enqueue_to_response_ms": 24.088666,
+        "gc_collections_during": 6
+      }
+    },
+    {
+      "request_index": 91,
+      "latency_ms": 29.914125,
+      "trace_id": 232,
+      "error": null,
+      "trace": {
+        "trace_id": 232,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 7.561291,
+        "batch_window_ms": 3.864167,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.011917,
+        "response_assembly_ms": 0.310333,
+        "residual_after_model_ms": 0.32225000000000004,
+        "enqueue_to_response_ms": 22.349208,
+        "gc_collections_during": 6
+      }
+    },
+    {
+      "request_index": 92,
+      "latency_ms": 30.163334,
+      "trace_id": 233,
+      "error": null,
+      "trace": {
+        "trace_id": 233,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 4.915292,
+        "batch_window_ms": 3.863708,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.014542,
+        "response_assembly_ms": 0.258458,
+        "residual_after_model_ms": 0.273,
+        "enqueue_to_response_ms": 19.6535,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 93,
+      "latency_ms": 29.726542,
+      "trace_id": 234,
+      "error": null,
+      "trace": {
+        "trace_id": 234,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.682375,
+        "batch_window_ms": 3.863125,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.016917,
+        "response_assembly_ms": 0.1465,
+        "residual_after_model_ms": 0.16341699999999998,
+        "enqueue_to_response_ms": 18.310417,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 94,
+      "latency_ms": 30.48,
+      "trace_id": 235,
+      "error": null,
+      "trace": {
+        "trace_id": 235,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 2.774042,
+        "batch_window_ms": 3.862625,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.019042,
+        "response_assembly_ms": 1.5095,
+        "residual_after_model_ms": 1.528542,
+        "enqueue_to_response_ms": 18.766709,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 95,
+      "latency_ms": 30.58625,
+      "trace_id": 236,
+      "error": null,
+      "trace": {
+        "trace_id": 236,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.949875,
+        "batch_window_ms": 3.862167,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.021,
+        "response_assembly_ms": 1.666167,
+        "residual_after_model_ms": 1.6871669999999999,
+        "enqueue_to_response_ms": 17.100709,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 96,
+      "latency_ms": 28.99275,
+      "trace_id": 237,
+      "error": null,
+      "trace": {
+        "trace_id": 237,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.844458,
+        "batch_window_ms": 3.861667,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.023083,
+        "response_assembly_ms": 0.198542,
+        "residual_after_model_ms": 0.221625,
+        "enqueue_to_response_ms": 15.52925,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 97,
+      "latency_ms": 17.239834,
+      "trace_id": 238,
+      "error": null,
+      "trace": {
+        "trace_id": 238,
+        "batch_id": 43,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.014834,
+        "batch_window_ms": 0.000708,
+        "batch_window_total_ms": 3.867375,
+        "lightgbm_call_ms": 1.461708,
+        "result_assembly_ms": 0.025583,
+        "response_assembly_ms": 1.761959,
+        "residual_after_model_ms": 1.787542,
+        "enqueue_to_response_ms": 12.404584,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 98,
+      "latency_ms": 15.3755,
+      "trace_id": 239,
+      "error": null,
+      "trace": {
+        "trace_id": 239,
+        "batch_id": 44,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.021125,
+        "batch_window_ms": 0.001708,
+        "batch_window_total_ms": 0.001708,
+        "lightgbm_call_ms": 1.340292,
+        "result_assembly_ms": 0.001583,
+        "response_assembly_ms": 0.05075,
+        "residual_after_model_ms": 0.052333000000000005,
+        "enqueue_to_response_ms": 9.452708,
+        "gc_collections_during": 6
+      }
+    },
+    {
+      "request_index": 99,
+      "latency_ms": 33.963541,
+      "trace_id": 240,
+      "error": null,
+      "trace": {
+        "trace_id": 240,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.843625,
+        "batch_window_ms": 4.003416,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.001583,
+        "response_assembly_ms": 0.093959,
+        "residual_after_model_ms": 0.095542,
+        "enqueue_to_response_ms": 18.35525,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 100,
+      "latency_ms": 33.379333,
+      "trace_id": 244,
+      "error": null,
+      "trace": {
+        "trace_id": 244,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.726792,
+        "batch_window_ms": 3.999208,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.026792,
+        "response_assembly_ms": 0.2755,
+        "residual_after_model_ms": 0.302292,
+        "enqueue_to_response_ms": 18.440959,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 101,
+      "latency_ms": 33.734958,
+      "trace_id": 242,
+      "error": null,
+      "trace": {
+        "trace_id": 242,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.785917,
+        "batch_window_ms": 4.000333,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.022625,
+        "response_assembly_ms": 1.112958,
+        "residual_after_model_ms": 1.1355829999999998,
+        "enqueue_to_response_ms": 19.3345,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 102,
+      "latency_ms": 33.972,
+      "trace_id": 241,
+      "error": null,
+      "trace": {
+        "trace_id": 241,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.8125,
+        "batch_window_ms": 4.001125,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.020458,
+        "response_assembly_ms": 0.90325,
+        "residual_after_model_ms": 0.923708,
+        "enqueue_to_response_ms": 19.15,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 103,
+      "latency_ms": 33.18525,
+      "trace_id": 243,
+      "error": null,
+      "trace": {
+        "trace_id": 243,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.760958,
+        "batch_window_ms": 3.999708,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.024417,
+        "response_assembly_ms": 0.345416,
+        "residual_after_model_ms": 0.369833,
+        "enqueue_to_response_ms": 18.543166,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 104,
+      "latency_ms": 32.768709,
+      "trace_id": 248,
+      "error": null,
+      "trace": {
+        "trace_id": 248,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 2.782625,
+        "batch_window_ms": 3.99725,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.0365,
+        "response_assembly_ms": 0.187125,
+        "residual_after_model_ms": 0.22362500000000002,
+        "enqueue_to_response_ms": 17.416167,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 105,
+      "latency_ms": 32.110209,
+      "trace_id": 247,
+      "error": null,
+      "trace": {
+        "trace_id": 247,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 2.810792,
+        "batch_window_ms": 3.997791,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.034125,
+        "response_assembly_ms": 1.243875,
+        "residual_after_model_ms": 1.278,
+        "enqueue_to_response_ms": 18.49925,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 106,
+      "latency_ms": 31.876667,
+      "trace_id": 246,
+      "error": null,
+      "trace": {
+        "trace_id": 246,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 2.842083,
+        "batch_window_ms": 3.99825,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.031542,
+        "response_assembly_ms": 1.137291,
+        "residual_after_model_ms": 1.168833,
+        "enqueue_to_response_ms": 18.421833,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 107,
+      "latency_ms": 32.059834,
+      "trace_id": 245,
+      "error": null,
+      "trace": {
+        "trace_id": 245,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 3.244791,
+        "batch_window_ms": 3.99875,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.029,
+        "response_assembly_ms": 0.135875,
+        "residual_after_model_ms": 0.164875,
+        "enqueue_to_response_ms": 17.821083,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 108,
+      "latency_ms": 18.821625,
+      "trace_id": 249,
+      "error": null,
+      "trace": {
+        "trace_id": 249,
+        "batch_id": 45,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.009416,
+        "batch_window_ms": 0.000375,
+        "batch_window_total_ms": 4.003416,
+        "lightgbm_call_ms": 1.470042,
+        "result_assembly_ms": 0.039875,
+        "response_assembly_ms": 1.351333,
+        "residual_after_model_ms": 1.391208,
+        "enqueue_to_response_ms": 11.813666,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 109,
+      "latency_ms": 33.275334,
+      "trace_id": 256,
+      "error": null,
+      "trace": {
+        "trace_id": 256,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.636417,
+        "batch_window_ms": 3.877208,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.015834,
+        "response_assembly_ms": 1.039958,
+        "residual_after_model_ms": 1.0557919999999998,
+        "enqueue_to_response_ms": 20.872625,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 110,
+      "latency_ms": 15.347791,
+      "trace_id": 250,
+      "error": null,
+      "trace": {
+        "trace_id": 250,
+        "batch_id": 46,
+        "batch_size": 1,
+        "enqueue_to_pick_ms": 0.164292,
+        "batch_window_ms": 0.001583,
+        "batch_window_total_ms": 0.001583,
+        "lightgbm_call_ms": 1.236708,
+        "result_assembly_ms": 0.001625,
+        "response_assembly_ms": 0.057792,
+        "residual_after_model_ms": 0.059417000000000005,
+        "enqueue_to_response_ms": 6.244667,
+        "gc_collections_during": 1
+      }
+    },
+    {
+      "request_index": 111,
+      "latency_ms": 33.128375,
+      "trace_id": 253,
+      "error": null,
+      "trace": {
+        "trace_id": 253,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.735042,
+        "batch_window_ms": 3.878875,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.009334,
+        "response_assembly_ms": 0.752208,
+        "residual_after_model_ms": 0.7615419999999999,
+        "enqueue_to_response_ms": 20.678667,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 112,
+      "latency_ms": 32.983542,
+      "trace_id": 252,
+      "error": null,
+      "trace": {
+        "trace_id": 252,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.761667,
+        "batch_window_ms": 3.879708,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.007334,
+        "response_assembly_ms": 0.480666,
+        "residual_after_model_ms": 0.488,
+        "enqueue_to_response_ms": 20.432583,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 113,
+      "latency_ms": 32.9525,
+      "trace_id": 255,
+      "error": null,
+      "trace": {
+        "trace_id": 255,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.682375,
+        "batch_window_ms": 3.87775,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.013417,
+        "response_assembly_ms": 0.145292,
+        "residual_after_model_ms": 0.15870900000000002,
+        "enqueue_to_response_ms": 20.022042,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 114,
+      "latency_ms": 32.935125,
+      "trace_id": 251,
+      "error": null,
+      "trace": {
+        "trace_id": 251,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.793042,
+        "batch_window_ms": 3.881458,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.001417,
+        "response_assembly_ms": 0.5495,
+        "residual_after_model_ms": 0.550917,
+        "enqueue_to_response_ms": 20.528625,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 115,
+      "latency_ms": 32.725791,
+      "trace_id": 254,
+      "error": null,
+      "trace": {
+        "trace_id": 254,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.709375,
+        "batch_window_ms": 3.87825,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.01125,
+        "response_assembly_ms": 0.3055,
+        "residual_after_model_ms": 0.31675,
+        "enqueue_to_response_ms": 20.207583,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 116,
+      "latency_ms": 32.582958,
+      "trace_id": 258,
+      "error": null,
+      "trace": {
+        "trace_id": 258,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.491875,
+        "batch_window_ms": 3.876167,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.020125,
+        "response_assembly_ms": 0.352959,
+        "residual_after_model_ms": 0.373084,
+        "enqueue_to_response_ms": 20.044334,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 117,
+      "latency_ms": 32.450333,
+      "trace_id": 259,
+      "error": null,
+      "trace": {
+        "trace_id": 259,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 4.072542,
+        "batch_window_ms": 3.875708,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.022084,
+        "response_assembly_ms": 0.229625,
+        "residual_after_model_ms": 0.251709,
+        "enqueue_to_response_ms": 18.503167,
+        "gc_collections_during": 4
+      }
+    },
+    {
+      "request_index": 118,
+      "latency_ms": 32.456916,
+      "trace_id": 257,
+      "error": null,
+      "trace": {
+        "trace_id": 257,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 5.563833,
+        "batch_window_ms": 3.876667,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.018084,
+        "response_assembly_ms": 0.588583,
+        "residual_after_model_ms": 0.606667,
+        "enqueue_to_response_ms": 20.350375,
+        "gc_collections_during": 5
+      }
+    },
+    {
+      "request_index": 119,
+      "latency_ms": 17.7615,
+      "trace_id": 260,
+      "error": null,
+      "trace": {
+        "trace_id": 260,
+        "batch_id": 47,
+        "batch_size": 10,
+        "enqueue_to_pick_ms": 0.008917,
+        "batch_window_ms": 0.000375,
+        "batch_window_total_ms": 3.881458,
+        "lightgbm_call_ms": 1.449834,
+        "result_assembly_ms": 0.024292,
+        "response_assembly_ms": 0.060542,
+        "residual_after_model_ms": 0.08483399999999999,
+        "enqueue_to_response_ms": 10.397334,
+        "gc_collections_during": 4
+      }
+    }
+  ],
+  "trace_log": "/tmp/predict-tail-server.log"
+}
