@@ -43,6 +43,7 @@ README를 처음부터 끝까지 읽고 다음을 파악합니다:
 | --- | --- |
 | 데이터 마이그레이션 | [`docs/migration/db_migration_runbook.md`](docs/migration/db_migration_runbook.md) |
 | ML 가중치·ChromaDB 보존 | [`docs/migration/ml_weights_verification.md`](docs/migration/ml_weights_verification.md) |
+| 레이턴시·성능 측정 | [`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md) |
 | 환경 변수 | [`docs/ops/environment_variables.md`](docs/ops/environment_variables.md) |
 | 크로스 플랫폼 대응 | [`docs/ops/cross_platform_guide.md`](docs/ops/cross_platform_guide.md) |
 | 브랜치/PR 작업 | [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md) |
