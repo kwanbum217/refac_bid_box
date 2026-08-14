@@ -21,7 +21,7 @@
 
 ## 2. 최신 성능 지표 정본 (Current Metrics)
 
-모든 성능 지표는 [`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md) 규약(표본 수, warmup 제외, 3회 최악값, 주변 부하 기록)에 따른 실측값만 유효합니다.
+모든 성능 지표는 [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md) 규약(표본 수, warmup 제외, 3회 최악값, 주변 부하 기록)에 따른 실측값만 유효합니다.
 
 ### 2.1 예측 API 레이턴시 지표
 
@@ -59,11 +59,12 @@
    - 100ms 초과 발생 30건으로 기본(21건)보다 오히려 악화되어 기각되었습니다.
 3. **`PREDICTION_GC_MODE=threshold`**:
    - `freeze` 모드가 확정 채택되었으므로 상호 배타적인 threshold 재검토는 불필요합니다.
-4. **`dispatch --inject` 기동 방식**:
-   - Antigravity CLI 환경에서 신뢰 확인 대화창 프롬프트가 유실되어 3/3 실패했습니다.
-   - 워커 기동은 반드시 인자 주입 방식 `agy --model <id> -i "<프롬프트>"`를 사용합니다.
+4. **신뢰 확인 미완료 상태에서의 무검증 `dispatch --inject`**:
+   - Antigravity CLI 환경에서 워크스페이스 신뢰 확인 대화창 미처리 시 주입 키 입력이 유실될 위험이 있습니다.
+   - 사전 신뢰 승인(엔터 전송)을 확인한 뒤 `dispatch --inject`를 수행하거나 인자 주입 방식(`agy --model <id> -i "<프롬프트>"`)을 사용하며, 도달 여부(`terminal read`) 확인 없는 맹목적 대기를 금지합니다.
 5. **무료 LLM 풀의 임계 경로 투입**:
-   - `cerebras/gemma-4-31b`(TPM 초과) 및 `deepseek-v4-flash-free`(무산출)는 불안정하므로 주력/임계 경로 작업에서 배제합니다.
+   - `cerebras/gemma-4-31b`(TPM 초과 위험) 및 OpenCode 무료 모델(`deepseek-v4-flash-free` 등)은 안정성 및 컨텍스트 제약이 있으므로 주력/임계 경로 작업에서 배제합니다.
+   - 무료 모델은 절대 실패/무산출로 단정하지 않고 자동 검증이 가능한 비임계 경로(단독 감사, 분리된 검증 등)로 한정하여 사용합니다.
 6. **미병합 브랜치 재병합 시도**:
    - `feat/codex-task-routing`: 전량 폐기 판정 완료 (중복 라우터 및 불필요 스킬).
    - `integrate/arq-worker-cutover`: 폐기 판정 완료 (`preprocess.py`, `champion_summary.json` 병합 금지).
@@ -90,8 +91,8 @@
 ## 5. 핵심 불변 원칙 (Critical Invariants)
 
 - **데이터 무손실 (G1)**: 기존 DB 테이블명, 컬럼명, 타입 변경 절대 금지.
-- **Train/Serve 단일화**: 학습 및 추론 특징 생성은 [`src/ml/features.py`](src/ml/features.py) 단일 함수만 사용.
-- **게이트 규약 준수**: 성능 판정 시 [`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md)를 엄격히 준수하지 않은 수치는 무효 처리.
+- **Train/Serve 단일화**: 학습 및 추론 특징 생성은 [`src/ml/features.py`](../../src/ml/features.py) 단일 함수만 사용.
+- **게이트 규약 준수**: 성능 판정 시 [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md)를 엄격히 준수하지 않은 수치는 무효 처리.
 - **1인 작업 Git 워크플로우**: Pull Request를 생성하지 않으며, 작업 브랜치에서 검증 통과 후 `main`에 직접 `git merge --no-ff` 수행.
 - **이모지 사용 절대 금지**: 주석, 커밋 메시지, 문서 등 모든 산출물에 이모지 사용 불가.
 
@@ -115,12 +116,12 @@
 
 ## 7. 증거 경로 참조 (Evidence Pointers)
 
-- 코디네이터 토큰 최적화 v2 설계: [`docs/ops/orca_coordinator_token_optimization_v2.md`](docs/ops/orca_coordinator_token_optimization_v2.md)
-- v2 구현 전 기준선 감사: [`docs/ops/orca_token_optimization_v2_baseline_20260815.md`](docs/ops/orca_token_optimization_v2_baseline_20260815.md)
-- 최신 세션 인수인계: [`docs/handoff/2026-08-14_late_session_handoff.md`](docs/handoff/2026-08-14_late_session_handoff.md)
-- 레이턴시 게이트 규약: [`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md)
-- 에이전트 워커 기동 참조: [`docs/ops/agent_worker_launch_reference.md`](docs/ops/agent_worker_launch_reference.md)
-- 용역 모델 현황: [`docs/servc_model_status.md`](docs/servc_model_status.md)
+- 코디네이터 토큰 최적화 v2 설계: [`docs/ops/orca_coordinator_token_optimization_v2.md`](../ops/orca_coordinator_token_optimization_v2.md)
+- v2 구현 전 기준선 감사: [`docs/ops/orca_token_optimization_v2_baseline_20260815.md`](../ops/orca_token_optimization_v2_baseline_20260815.md)
+- 최신 세션 인수인계: [`docs/handoff/2026-08-14_late_session_handoff.md`](../handoff/2026-08-14_late_session_handoff.md)
+- 레이턴시 게이트 규약: [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
+- 에이전트 워커 기동 참조: [`docs/ops/agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
+- 용역 모델 현황: [`docs/servc_model_status.md`](../servc_model_status.md)
 - 미병합 브랜치 판정 기록:
-  - [`docs/ops/phase8_predict_tail_merge_verdict_20260814.md`](docs/ops/phase8_predict_tail_merge_verdict_20260814.md)
-  - [`docs/ops/codex_task_routing_branch_verdict_20260814.md`](docs/ops/codex_task_routing_branch_verdict_20260814.md)
+  - [`docs/ops/phase8_predict_tail_merge_verdict_20260814.md`](../ops/phase8_predict_tail_merge_verdict_20260814.md)
+  - [`docs/ops/codex_task_routing_branch_verdict_20260814.md`](../ops/codex_task_routing_branch_verdict_20260814.md)
