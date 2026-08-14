@@ -1,0 +1,37 @@
+{
+  "schema": "ORCA_WORKER_DONE_V2",
+  "version": "2.0.0",
+  "task_id": "<task_id>",
+  "dispatch_id": "<dispatch_id>",
+  "status": "succeeded",
+  "branch": "kwanbum217/feat-example",
+  "commit": "<commit_sha>",
+  "commit_count": 1,
+  "changed_files": [
+    "src/example.py",
+    "tests/test_example.py"
+  ],
+  "verification": [
+    {
+      "command": "uv run pytest tests/test_example.py -q",
+      "result": "5 passed"
+    },
+    {
+      "command": "python3 scripts/validate_agent_rules.py --quiet",
+      "result": "PASS (6/6)"
+    }
+  ],
+  "metrics": {
+    "before": null,
+    "after": null
+  },
+  "verdict": "candidate",
+  "blocking_issues": [],
+  "remaining_risks": [],
+  "artifacts": [
+    "docs/analysis/example_report.md"
+  ],
+  "reproduce": [
+    "uv run pytest tests/test_example.py -q"
+  ]
+}

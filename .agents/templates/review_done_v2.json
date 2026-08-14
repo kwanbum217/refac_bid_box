@@ -1,0 +1,16 @@
+{
+  "schema": "ORCA_REVIEW_DONE_V2",
+  "version": "2.0.0",
+  "task_id": "<task_id>",
+  "dispatch_id": "<dispatch_id>",
+  "verdict": "pass",
+  "blocking_issues": [],
+  "unverified_claims": [],
+  "missing_tests": [],
+  "requested_context": [],
+  "commands_to_verify": [
+    "git diff --stat main...HEAD",
+    "uv run pytest tests/ -q",
+    "python3 scripts/validate_agent_rules.py --quiet"
+  ]
+}
