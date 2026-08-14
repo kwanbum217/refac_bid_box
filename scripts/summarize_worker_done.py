@@ -87,6 +87,62 @@ def _find_bloated_fields(data: Any, max_len: int, path: str = "") -> list[tuple[
     return bloated
 
 
+def _format_section_with_budget(
+    header: str,
+    items: list[str],
+    available_chars: int,
+) -> tuple[list[str], int]:
+    """주어진 예산(문자 수) 안에서 헤더와 항목 목록을 구성하며, 초과 시 생략 건수를 명시합니다.
+
+    반환값: (생성된 라인 목록, 사용된 문자 수)
+    """
+    if not items:
+        return [], 0
+
+    header_len = char_len(header)
+    if available_chars < header_len:
+        return [header], header_len
+
+    total_count = len(items)
+
+    # 1. 모든 항목이 다 들어갈 수 있는지 확인
+    all_lines = [header, *items]
+    all_text = "\n".join(all_lines)
+    if char_len(all_text) <= available_chars:
+        return all_lines, char_len(all_text)
+
+    # 2. 일부만 들어갈 수 있는 경우: 가능한 만큼 넣고 '... 외 M건 생략' 추가
+    lines = [header]
+    cur_len = header_len
+
+    for i in range(total_count):
+        item = items[i]
+        item_len = 1 + char_len(item)  # 줄바꿈 포함
+        omitted = total_count - (i + 1)
+        omission_line = f"  * ... 외 {omitted}건 생략" if omitted > 0 else ""
+        omission_len = (1 + char_len(omission_line)) if omission_line else 0
+
+        if cur_len + item_len + omission_len <= available_chars:
+            lines.append(item)
+            cur_len += item_len
+        else:
+            actual_omitted = total_count - (len(lines) - 1)
+            if actual_omitted > 0:
+                final_omission = f"  * ... 외 {actual_omitted}건 생략"
+                if cur_len + 1 + char_len(final_omission) <= available_chars:
+                    lines.append(final_omission)
+                    cur_len += 1 + char_len(final_omission)
+                else:
+                    short_omission = f"  * (외 {actual_omitted}건 생략)"
+                    if cur_len + 1 + char_len(short_omission) <= available_chars:
+                        lines.append(short_omission)
+                        cur_len += 1 + char_len(short_omission)
+            break
+
+    result_text = "\n".join(lines)
+    return lines, char_len(result_text)
+
+
 def summarize_worker_report(
     report_path: str | Path,
     capsule_path: str | Path | None = None,
@@ -161,7 +217,7 @@ def summarize_worker_report(
             f"계약 비대 (contract bloat): 필드 '{field_path}' 길이 {length}자가 field_max_chars({field_max_chars}) 초과"
         )
 
-    # 다이제스트 포맷 구성
+    # 다이제스트 포맷 구성 (결정 중요도 우선순위 적용)
     commit_raw = str(report_data.get("commit", ""))
     short_commit = commit_raw[:8] if commit_raw else "(none)"
 
@@ -175,53 +231,98 @@ def summarize_worker_report(
     write_scope_info = f" ({', '.join(write_excess)})" if write_excess else ""
     read_scope_info = f" ({', '.join(read_excess)})" if read_excess else ""
 
-    verifications = report_data.get("verification")
-    verification_lines: list[str] = []
-    if isinstance(verifications, list):
-        for v in verifications:
-            if isinstance(v, dict):
-                cmd = truncate(str(v.get("command", "")), 80)
-                res = truncate(str(v.get("result", "")), 80)
-                verification_lines.append(f"  * [{res}] {cmd}")
-            else:
-                verification_lines.append(f"  * {truncate(str(v), 80)}")
-
-    blocking_lines: list[str] = []
-    if isinstance(blocking_issues, list):
-        for b in blocking_issues:
-            if isinstance(b, dict):
-                title = b.get("title") or b.get("id") or b.get("reason") or str(b)
-            else:
-                title = str(b)
-            blocking_lines.append(f"  * {truncate(title, 80)}")
-
-    violation_lines: list[str] = []
-    for viol in violations:
-        violation_lines.append(f"  * {truncate(viol, 120)}")
-
-    digest_parts = [
+    # 1) 머리글 및 고정 요약 줄
+    digest_parts: list[str] = [
         "[Worker Done Summary]",
         f"- Status: {status}",
         f"- Verdict: {declared_verdict} (실효: {effective_verdict})",
         f"- Branch: {report_data.get('branch')} (commit: {short_commit}, count: {commit_count})",
         f"- Changed files ({len(changed_files)}개): {files_preview}",
         f"- Read files: {len(read_files)}개",
-        f"- Scope excess: write {len(write_excess)}개{write_scope_info}, read {len(read_excess)}개{read_scope_info}",
     ]
 
-    if verification_lines:
-        digest_parts.append(f"- Verification ({len(verification_lines)}건):")
-        digest_parts.extend(verification_lines)
-
-    if blocking_lines:
-        digest_parts.append(f"- Blocking issues ({len(blocking_lines)}건):")
-        digest_parts.extend(blocking_lines)
-
-    if violation_lines:
-        digest_parts.append(f"- Violations ({len(violation_lines)}건):")
-        digest_parts.extend(violation_lines)
+    # 2) Violations (우선순위 1: 결정적 반려 요인)
+    viol_items = [f"  * {v}" for v in violations]
+    if violations:
+        current_len = char_len("\n".join(digest_parts)) + 1
+        rem = max_chars - current_len
+        v_lines, _ = _format_section_with_budget(
+            f"- Violations ({len(violations)}건):",
+            viol_items,
+            rem,
+        )
+        if v_lines:
+            digest_parts.extend(v_lines)
+        else:
+            digest_parts.append(f"- Violations ({len(violations)}건): (생략)")
     else:
         digest_parts.append("- Violations: 0건 (계약 준수)")
+
+    # 3) Blocking issues (우선순위 2: 차단 이슈)
+    blocking_items: list[str] = []
+    if isinstance(blocking_issues, list):
+        for b in blocking_issues:
+            if isinstance(b, dict):
+                title = b.get("title") or b.get("id") or b.get("reason") or str(b)
+            else:
+                title = str(b)
+            blocking_items.append(f"  * {truncate(title, 80)}")
+
+    if blocking_items:
+        current_len = char_len("\n".join(digest_parts)) + 1
+        rem = max_chars - current_len
+        b_lines, _ = _format_section_with_budget(
+            f"- Blocking issues ({len(blocking_items)}건):",
+            blocking_items,
+            rem,
+        )
+        if b_lines:
+            digest_parts.extend(b_lines)
+        else:
+            digest_parts.append(f"- Blocking issues ({len(blocking_items)}건): (생략)")
+
+    # 4) Scope excess (우선순위 3: 스코프 초과 요약)
+    scope_str = (
+        f"- Scope excess: write {len(write_excess)}개{write_scope_info}, "
+        f"read {len(read_excess)}개{read_scope_info}"
+    )
+    current_len = char_len("\n".join(digest_parts)) + 1
+    rem = max_chars - current_len
+    if char_len(scope_str) + 1 <= rem:
+        digest_parts.append(scope_str)
+
+    # 5) Verification (우선순위 4: 최하위 - 상한이 빡빡하면 개수만 요약)
+    verifications = report_data.get("verification")
+    verification_items: list[str] = []
+    if isinstance(verifications, list):
+        for v in verifications:
+            if isinstance(v, dict):
+                cmd = truncate(str(v.get("command", "")), 80)
+                res = truncate(str(v.get("result", "")), 80)
+                verification_items.append(f"  * [{res}] {cmd}")
+            else:
+                verification_items.append(f"  * {truncate(str(v), 80)}")
+
+    if verification_items:
+        current_len = char_len("\n".join(digest_parts)) + 1
+        rem = max_chars - current_len
+        v_header = f"- Verification ({len(verification_items)}건):"
+        if rem >= char_len(v_header) + 1:
+            ver_lines, _ = _format_section_with_budget(
+                v_header,
+                verification_items,
+                rem,
+            )
+            if len(ver_lines) <= 2 and rem < 120:
+                digest_parts.append(
+                    f"- Verification: {len(verification_items)}건 (상한 초과로 개별 항목 생략)"
+                )
+            elif ver_lines:
+                digest_parts.extend(ver_lines)
+            else:
+                digest_parts.append(
+                    f"- Verification: {len(verification_items)}건 (상한 초과로 생략)"
+                )
 
     raw_digest = "\n".join(digest_parts)
     digest = truncate(raw_digest, max_chars)
@@ -242,8 +343,8 @@ def summarize_worker_report(
         "read_files_count": len(read_files),
         "read_scope_excess": read_excess,
         "write_scope_excess": write_excess,
-        "verification_count": len(verification_lines),
-        "blocking_issues_count": len(blocking_lines),
+        "verification_count": len(verification_items),
+        "blocking_issues_count": len(blocking_items),
         "violations": violations,
         "violations_count": len(violations),
         "digest": digest,

@@ -259,3 +259,67 @@ def test_json_output_flag_outputs_valid_json(tmp_path: Path, monkeypatch, capsys
     assert parsed["read_files_count"] == 2
     assert parsed["violations_count"] == 0
     assert "digest" in parsed
+
+
+def test_violations_prioritized_over_verification_under_budget(tmp_path: Path):
+    """(10) 위반이 여러 건이고 verification 이 많은 보고에서 violations 가 전부 남고 verification 이 먼저 줄어듭니다."""
+    # 4개 필수 필드 누락 (4건 위반) + 10개 verification
+    data = dict(
+        SAMPLE_VALID_REPORT,
+        verification=[
+            {"command": f"test_cmd_{i}.py", "result": f"result detail {i}" * 5} for i in range(10)
+        ],
+    )
+    del data["version"]
+    del data["branch"]
+    del data["commit_count"]
+    del data["blocking_issues"]
+
+    report_file = _write_report(tmp_path / "priority_test.json", data)
+    capsule_file = _write_capsule(tmp_path / "capsule.yaml")
+
+    # max_chars 를 700 으로 제한
+    result = summarize_worker_report(report_file, capsule_file, max_chars=700)
+    digest = result["digest"]
+
+    # 4개 위반이 모두 digest 에 온전히 포함되어야 함
+    assert "필수 필드 누락: version" in digest
+    assert "필수 필드 누락: branch" in digest
+    assert "필수 필드 누락: commit_count" in digest
+    assert "필수 필드 누락: blocking_issues" in digest
+
+    # verification 은 예산 부족으로 생략 표기가 발생해야 함
+    assert "생략" in digest
+    assert char_len(digest) <= 700
+
+
+def test_violations_count_preserved_even_under_small_max_chars(tmp_path: Path):
+    """(11) max_chars 를 작게 주었을 때도 위반 총건수 숫자가 출력에 남습니다."""
+    data = dict(SAMPLE_VALID_REPORT)
+    del data["version"]
+    del data["branch"]
+    del data["commit_count"]
+
+    report_file = _write_report(tmp_path / "small_max_chars.json", data)
+    result = summarize_worker_report(report_file, max_chars=250)
+    digest = result["digest"]
+
+    assert "Violations (3건)" in digest
+    assert char_len(digest) <= 250
+
+
+def test_omission_count_explicitly_marked_when_omitted(tmp_path: Path):
+    """(12) 항목 생략이 발생할 때 정확한 생략 건수가 명시됩니다."""
+    # 15개의 bloated 문자열 생성으로 15건의 위반 유발
+    data = dict(SAMPLE_VALID_REPORT)
+    for i in range(15):
+        data[f"extra_bloated_{i}"] = "A" * 700  # field_max_chars(600) 초과
+
+    report_file = _write_report(tmp_path / "omission_test.json", data)
+    result = summarize_worker_report(report_file, max_chars=600, field_max_chars=600)
+    digest = result["digest"]
+
+    assert result["violations_count"] == 15
+    assert "외 " in digest
+    assert "건 생략" in digest
+    assert char_len(digest) <= 600
