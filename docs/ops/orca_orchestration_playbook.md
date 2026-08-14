@@ -108,6 +108,7 @@
 아티팩트로 저장소에 커밋하고, `worker_done` 의 `--body` 에는 **3문장 이내 요약**
 (수행 내역, 발견 사항, 잔여 리스크)만 넣습니다. `--report-path` 나 아티팩트
 목록을 payload 에 남겨 코디네이터가 필요한 경우에만 열어보게 합니다.
+코디네이터는 보고 JSON 전문을 직접 읽지 않고 `python3 scripts/summarize_worker_done.py --report <보고> --capsule <Capsule>` 다이제스트로 수신합니다 (종료 코드: 0 계약 준수, 1 위반 있음, 2 파싱 실패).
 
 | 전달 경로 | 내용 | 금지 |
 | --- | --- | --- |
@@ -463,15 +464,26 @@ orca orchestration check --ack <delivery_id> --json
 
 ## 7. 병합
 
-### 7.1 순서
+### 7.1 수신 및 병합 순서
 
-1. `git fetch origin`
-2. **`git diff` 로 운영 코드를 직접 읽습니다**
-3. `git merge --no-ff origin/<브랜치> -m "merge: <설명>"`
-4. `uv run pytest tests/ -q`
-5. `uv run python scripts/validate_agent_rules.py`
-6. `uv run ruff check .`
-7. `git push origin main`
+1. **`worker_done` 수신 및 다이제스트 검증**: 코디네이터는 보고 JSON 전문을 직접 읽지 않고 다이제스트 도구로 검증 및 요약을 받습니다.
+   ```bash
+   python3 scripts/summarize_worker_done.py --report <보고> --capsule <Capsule>
+   ```
+   (종료 코드: `0` 계약 준수, `1` 위반 있음, `2` 파싱 실패)
+2. **Level 1 (결정론적 기계 검증)**: 5대 게이트(변경 파일, 범위, 테스트, 규칙, 리뷰 보고)를 단일 게이트 도구 호출로 수행합니다.
+   ```bash
+   python3 scripts/orca_level1_gate.py --base main --branch <작업브랜치> --repo <워크트리경로> --tests '<대상 테스트>' --capsule <Capsule 경로>
+   ```
+   (종료 코드: `0` 통과, `1` 게이트 실패, `2` 도구 오류)
+   이 두 도구는 2026-08-15 첫 실사용에서 실제 계약 위반 4건을 검출했습니다. 검출 대상은 필수 필드 누락 version branch commit_count blocking_issues 였습니다.
+3. `git fetch origin`
+4. **`git diff` 로 운영 코드를 직접 읽습니다**
+5. `git merge --no-ff origin/<브랜치> -m "merge: <설명>"`
+6. `uv run pytest tests/ -q`
+7. `uv run python scripts/validate_agent_rules.py`
+8. `uv run ruff check .`
+9. `git push origin main`
 
 병합은 코디네이터만 합니다. **`worker_done` 은 병합 권한이 아닙니다.**
 

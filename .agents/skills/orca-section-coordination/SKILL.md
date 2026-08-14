@@ -132,12 +132,17 @@ Task는 반드시 둘 다 돌립니다.
    - `worker_done` 명령의 `--body`는 반드시 3문장 이내의 요약(수행 내역, 발견 사항, 잔여 리스크)으로 작성합니다.
    - 대량의 로그, diff 전체를 본문에 복사하지 않고 `--report-path` 또는 아티팩트 경로로 전달합니다.
    - 코드 변경이 요구된 작업에서 커밋 수가 0(`commit_count: 0`)이면 `succeeded`를 전송하지 않고 `escalation`을 전송합니다.
+   - 코디네이터는 보고 JSON 전문을 직접 읽지 않고 `python3 scripts/summarize_worker_done.py --report <보고> --capsule <Capsule>` 다이제스트로 수신합니다 (종료 코드: 0 계약 준수, 1 위반 있음, 2 파싱 실패).
 
 ### 4.2 3단계 검증 프로세스 (Builder -> Reviewer -> Coordinator)
 
 코디네이터는 워커 산출물을 무검증 신뢰하지 않고 다음 3단계로 검증합니다.
 
-1. **Level 1 (결정론적 기계 검증)**: 코디네이터가 `git diff --stat`, 단위 테스트, `python3 scripts/validate_agent_rules.py --quiet`를 직접 실행합니다. 실패 시 즉시 반려합니다.
+1. **Level 1 (결정론적 기계 검증)**: 코디네이터가 `python3 scripts/orca_level1_gate.py` 단일 호출로 5대 게이트(변경 파일, 범위, 테스트, 규칙, 리뷰 보고)를 한 번에 검증합니다 (종료 코드: 0 통과, 1 게이트 실패, 2 도구 오류).
+   ```bash
+   python3 scripts/orca_level1_gate.py --base main --branch <작업브랜치> --repo <워크트리경로> --tests '<대상 테스트>' --capsule <Capsule 경로>
+   ```
+   이 두 도구는 2026-08-15 첫 실사용에서 실제 계약 위반 4건(필수 필드 누락: version, branch, commit_count, blocking_issues)을 검출했습니다.
 2. **Level 2 (독립 리뷰어 워커)**: 독립된 리뷰어 모델이 `ORCA_REVIEW_DONE_V2` 계약([`.agents/templates/review_done_v2.json`](../../../.agents/templates/review_done_v2.json))에 따라 acceptance criteria, 회귀 위험, G1(데이터 무손실), Train/Serve 단일화, 동시성 결함, 스코프 초과 수정을 교차 검증합니다.
 3. **Level 3 (코디네이터 핵심 diff 검토)**: 핵심 알고리즘, DB 변경점, 모델 승격 게이트 등 비가역적 위험 지점만 선별하여 최종 병합을 결정합니다.
 
