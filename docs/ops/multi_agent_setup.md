@@ -1,7 +1,8 @@
 # 다중 에이전트 셋업 가이드
 
 > **작성일**: 2026-07-31
-> **버전**: v1.0
+> **수정일**: 2026-08-14
+> **버전**: v1.1
 > **목적**: opencode, Cursor, Codex, Claude Code, Antigravity 등 서로 다른 AI 코딩 에이전트를 돌아가며 사용해도, 세션 시작 시 동일한 프로젝트 규칙이 자동으로 로드되고 Orca로 섹션 협업을 조율하도록 하는 아키텍처를 설명합니다.
 
 ---
@@ -11,16 +12,14 @@
 본 프로젝트는 **규칙을 한 곳(`AGENTS.md`)에서만 편집**하고, 각 에이전트가 요구하는 파일명은 `AGENTS.md`를 가리키는 얇은 진입점(thin pointer / 간접 참조)으로만 둡니다. 진입점 자체에 규칙 내용을 복사하지 않습니다.
 
 ```text
-                 AGENTS.md  (정본, 유일한 편집 대상)
-                     |
-            @SKILLS.md import (시작 시퀀스/금지 행위 자동 주입)
-                     |
-   +--------+--------+--------+--------+
-   |        |        |        |        |
- Codex   opencode Antigravity Claude  Cursor
- (직접)  (직접)    (직접)    Code     .mdc
-                             thin     간접참조
-                             pointer
+                 AGENTS.md  (정본, 유일한 편집 대상, 단일 자동 로드)
+                      |
+    +--------+--------+--------+--------+
+    |        |        |        |        |
+  Codex   opencode Antigravity Claude  Cursor
+  (직접)  (직접)    (직접)    Code     .mdc
+                              thin     간접참조
+                              pointer
 ```
 
 ---
@@ -30,7 +29,7 @@
 | 에이전트 | 자동 로드 파일 | 진입점 방식 | 근거 |
 | :--- | :--- | :--- | :--- |
 | **Codex CLI** | `AGENTS.md` | 정본 직접 | [OpenAI 공식](https://learn.chatgpt.com/docs/agent-configuration/agents-md) — 작업 전 AGENTS.md를 항상 읽음 |
-| **opencode CLI** | `AGENTS.md` + `opencode.json` | 정본 + instructions 배열 | [OpenCode config](https://opencode.ai/docs/config/) — `instructions` 배열로 파일 지정 |
+| **opencode CLI** | `AGENTS.md` | instructions 단일 지정 | [OpenCode config](https://opencode.ai/docs/config/) — `instructions: ["AGENTS.md"]` |
 | **Antigravity CLI** | `AGENTS.md` | 정본 직접 | [Google 공식 best practices](https://antigravity.google/docs/cli/best-practices) — workspace root의 AGENTS.md 권장 |
 | **Claude Code CLI** | `CLAUDE.md` | thin pointer (`@AGENTS.md`) | Claude Code는 CLAUDE.md를 항상 읽음; import로 AGENTS.md 주입 |
 | **Cursor CLI** | `.cursor/rules/*.mdc` | 간접 참조 | [Cursor Rules](https://cursor.com/docs/rules) — `00-core-guidelines.mdc`가 AGENTS.md 참조 |
@@ -43,15 +42,15 @@
 
 ### 3.1 AGENTS.md (정본)
 
-- 프로젝트 규칙의 **유일한 편집 대상**입니다.
-- 최상단 `@SKILLS.md` import 구문으로 시작 시퀀스·문서 규칙·금지 행위를 자동 주입합니다.
-- Codex, opencode, Antigravity는 이 파일을 세션 시작 시 자동 읽습니다.
+- 프로젝트 규칙의 **유일한 편집 대상**이자 모든 에이전트의 **단일 자동 로드 정본**입니다.
+- 비협상 원칙(G1/G2/G3), 코딩 규칙, 절대 금지 행위, Orca 다중 섹션 조율 규칙을 정의합니다.
+- 역할별 부트스트랩 모드(Coordinator, Orca Worker, Reviewer, Standalone)를 정의하여 불필요한 전체 문서 재독을 방지합니다.
 
-### 3.2 SKILLS.md (import 대상)
+### 3.2 SKILLS.md (선택형 컨텍스트 & 스킬 인덱스)
 
-- AGENTS.md에 의해 import되는 보조 지침서입니다.
-- MANDATORY STARTUP SEQUENCE, 서비스 품질 우선 원칙, CORE PROJECT CONTEXT, DOCUMENTATION & FORMATTING RULES, WORKFLOW CHECKLIST를 담습니다.
-- 직접 편집해도 되지만, 코딩 규칙·스택은 AGENTS.md 정본이 우선합니다.
+- Coordinator 및 Standalone 에이전트용 선택형 참조 인덱스입니다.
+- 프로젝트 현재 상태([`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md)) 안내, 작업 유형별 참조 문서 매핑, 서비스 품질 우선 원칙, 문서화 표준을 제공합니다.
+- Orca 워커는 본 문서를 읽지 않으며, 코디네이터가 주입한 `ORCA_TASK_CAPSULE_V2`의 허용 파일 목록만 따릅니다.
 
 ### 3.3 CLAUDE.md (thin pointer)
 
@@ -61,8 +60,8 @@
 
 ### 3.4 opencode.json (opencode 전용)
 
-- opencode CLI는 `AGENTS.md`를 직접 읽을 뿐 아니라, `opencode.json`의 `instructions` 배열에 파일을 명시하여 추가 로드를 제어합니다.
-- 본 프로젝트에서는 `["AGENTS.md", "SKILLS.md"]`를 지정하여 두 파일이 항상 주입되도록 합니다.
+- opencode CLI는 `opencode.json`의 `instructions` 배열을 통해 자동 로드 대상을 지정합니다.
+- 본 프로젝트에서는 `["AGENTS.md"]`로 단일화하여 Cerebras 및 소형 컨텍스트 모델의 토큰 오버헤드를 방지합니다.
 
 ### 3.5 .cursor/rules/00-core-guidelines.mdc (Cursor 전용)
 
@@ -77,8 +76,8 @@
 ### 4.1 규칙 변경 시
 
 1. **`AGENTS.md`만 편집합니다.**
-2. 핵심 규칙(비협상 원칙, 코딩 규칙, 금지 행위) 변경 시 `SKILLS.md`에도 반영 여부를 확인합니다.
-3. Cursor 요약본(`.cursor/rules/00-core-guidelines.mdc`)에도 핵심 사항이 반영되었는지 확인합니다.
+2. 핵심 규칙(비협상 원칙, 코딩 규칙, 금지 행위) 변경 시 `SKILLS.md` 및 요약본(`.antigravity/rules.md`, `.cursor/rules/00-core-guidelines.mdc`)의 정합성을 확인합니다.
+3. `python scripts/validate_agent_rules.py`로 정합성을 검증합니다.
 
 ### 4.2 절대 하면 안 되는 행위
 

@@ -1,19 +1,18 @@
 ---
-description: refac_bid_box 핵심 코딩/작업 규칙. 항상 로드되는 기본 규칙입니다. 전체 규칙은 AGENTS.md와 SKILLS.md를 참조하세요.
+description: refac_bid_box 핵심 코딩/작업 규칙. 항상 로드되는 기본 규칙입니다. 정본은 AGENTS.md를 참조하세요.
 globs: "**/*"
 alwaysApply: true
 ---
 
 # refac_bid_box 핵심 규칙
 
-본 파일은 Cursor 핵심 규칙(alwaysApply)입니다. **전체 규칙의 정본은 [`AGENTS.md`](../../AGENTS.md)와 [`SKILLS.md`](../../SKILLS.md) 입니다.** 규칙 충돌 시 정본이 우선합니다.
+본 파일은 Cursor 핵심 규칙(alwaysApply)입니다. **프로젝트 규칙의 정본(단일 진실 원천)은 [`AGENTS.md`](../../AGENTS.md) 입니다.** 규칙 충돌 시 정본이 우선합니다.
 
-## 반드시 읽어야 할 문서
+## 에이전트 부트스트랩 모드
 
-1. [`README.md`](../../README.md) — 프로젝트 기준선
-2. [`AGENTS.md`](../../AGENTS.md) — 코딩·스택·커뮤니케이션 규칙 정본 (SSoT)
-3. [`SKILLS.md`](../../SKILLS.md) — 시작 시퀀스, 문서 규칙, 워크플로우 체크리스트
-4. [`docs/design/REFACTORING_DESIGN.md`](../../docs/design/REFACTORING_DESIGN.md) — 리팩토링 전체 설계
+- **Coordinator**: [`AGENTS.md`](../../AGENTS.md) -> [`docs/context/CURRENT_STATE.md`](../../docs/context/CURRENT_STATE.md) 확인 후 필요 스킬만 로드.
+- **Orca Worker**: 주입된 `ORCA_TASK_CAPSULE_V2`가 정본. 허용 목록 외 문서 재독 금지.
+- **Standalone**: 선택형 인덱스 [`SKILLS.md`](../../SKILLS.md) 참조.
 
 ## 코딩 규칙 (요약)
 

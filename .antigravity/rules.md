@@ -1,9 +1,19 @@
 # refac_bid_box Antigravity 핵심 규칙 (요약본)
 
 > **작성일**: 2026-07-31
-> **버전**: v0.1.0
+> **수정일**: 2026-08-14
+> **버전**: v0.2.0
 > 본 파일은 AGENTS.md 정본의 핵심 행동 규칙을 압축한 요약본입니다 (12,000자 이내).
 > 충돌 시 AGENTS.md 정본이 우선합니다.
+
+---
+
+## 0. 에이전트 부트스트랩 모드
+
+- **Coordinator 모드**: `AGENTS.md` -> `docs/context/CURRENT_STATE.md` 확인 후 필요 스킬 1개만 선택 로드.
+- **Orca Worker 모드**: 코디네이터가 주입한 `ORCA_TASK_CAPSULE_V2`가 정본. 허용 목록 외 README/SKILLS/설계서 재독 금지. 확정 사실 재조사 금지.
+- **Reviewer 모드**: Task Capsule + diff + 검증 결과 중심 좁은 검토.
+- **Standalone 모드**: 전체 컨텍스트 필요 시 `SKILLS.md` 참조.
 
 ---
 

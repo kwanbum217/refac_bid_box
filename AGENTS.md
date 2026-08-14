@@ -1,21 +1,34 @@
 # refac_bid_box — Agent Guidelines (정본)
 
 > **작성일**: 2026-07-31
-> **버전**: v0.1.0
+> **수정일**: 2026-08-14
+> **버전**: v0.2.0
 > 본 파일은 모든 AI 코딩 에이전트가 공유하는 **단일 진실 원천(Single Source of Truth)** 입니다.
 > 규칙을 편집할 때는 반드시 이 파일만 수정합니다. 상세한 다중 에이전트 매핑은 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md)를 참조하십시오.
 
-@SKILLS.md
-
 ---
 
-## 0. 스킬 시스템 구축 현황 (완료)
+## 0. 에이전트 부트스트랩 모드 (Agent Bootstrap Modes)
 
-**5개 CLI 동기화 다중 에이전트 스킬 시스템과 Orca 섹션 조율 규약이 구축되었습니다.**
+모든 에이전트는 본 `AGENTS.md`를 단일 진실 원천으로 자동 로드한 후, 자신의 역할(Role)에 맞는 최소 문맥만 선택하여 시작합니다.
 
-- **인수인계 문서**: [`docs/handoff/2026-07-31_skill_system_handoff.md`](docs/handoff/2026-07-31_skill_system_handoff.md)
-- **정합성 검증 스크립트**: [`scripts/validate_agent_rules.py`](scripts/validate_agent_rules.py)
-- **작업 완료**: Phase 0~7 대응 스킬·상시 스킬 및 Orca 섹션 조율 스킬 합계 **12개** 구축 (`.agents/skills/`, `.claude/skills/`, `.opencode/skills/`, `.cursor/rules/`, `.antigravity/rules.md`)
+### 0.1 Coordinator 모드
+- 프로젝트 현재 운영 상태 정본: [`docs/context/CURRENT_STATE.md`](docs/context/CURRENT_STATE.md)를 읽습니다.
+- 현재 작업에 필요한 스킬 1개만 선택적으로 로드합니다 (예: `.agents/skills/project-orchestrator/SKILL.md`).
+- Orca 다중 Task/섹션 작업일 때만 [`.agents/skills/orca-section-coordination/SKILL.md`](.agents/skills/orca-section-coordination/SKILL.md)를 읽습니다.
+- 과거 인수인계 문서(handoff)나 전체 설계서([`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md))는 현재 Task의 근거가 부족할 때만 선택 조회합니다.
+
+### 0.2 Orca Worker 모드
+- 코디네이터가 주입한 **`ORCA_TASK_CAPSULE_V2`가 해당 작업 문맥의 정본**입니다.
+- Capsule에 명시되지 않은 `README.md`, `SKILLS.md`, 전체 설계서, 과거 handoff를 재독하지 않습니다.
+- 사양(`ground_truth`)에 명시된 이미 확인된 사실은 재조사하지 않습니다.
+- 허용 범위(`allowed_read_files`, `allowed_write_files`) 밖의 문맥이나 수정이 필요하면 즉시 질문(`ask`) 또는 에스컬레이션(`escalation`)합니다.
+
+### 0.3 Reviewer 모드
+- Task Capsule, 변경 파일 목록, `git diff`, acceptance criteria, 테스트 결과 요약만 좁게 검토합니다. 프로젝트 전체를 탐색하지 않습니다.
+
+### 0.4 Standalone 모드
+- Orca 조율 외 단독 에이전트로 전체 프로젝트 작업을 수행할 때만 선택형 컨텍스트 인덱스인 [`SKILLS.md`](SKILLS.md)를 참조합니다.
 
 ---
 
