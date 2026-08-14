@@ -101,6 +101,8 @@ docs/
 | 용역 OOS 준비도 판정 | [`2026-08-13_servc_oos_readiness_gate.md`](handoff/2026-08-13_servc_oos_readiness_gate.md) | 현행 champion OOS 후보 2건으로 판정 불가. 수집 백필과 3,098건 축적을 다음 게이트로 확정 |
 | 수동 재학습 API 재구현 계획 | [`2026-08-13_retrain_api_reimplementation_plan.md`](handoff/2026-08-13_retrain_api_reimplementation_plan.md) | 구 브랜치 전체 병합을 기각하고 최신 main의 9파일 최소 이식 범위와 검증 절차 확정 |
 | 외부 정적 분석 검증 | [`2026-08-14_gpt_analysis_verification.md`](handoff/2026-08-14_gpt_analysis_verification.md) | GPT 5.6 저장소 감사 대조. 2026-08-04 P95 19.1ms 를 현행 근거로 쓰지 말 것, cron 중복은 해결됨, 교정된 실행 순서 |
+| 수집 관찰 1회차 | [`2026-08-14_collection_observation_round1.md`](handoff/2026-08-14_collection_observation_round1.md) | 정기 수집 실측. 완료 기준을 최신 개찰 시각 전진에서 개찰 건수 증가로 교체한 근거 |
+| Servc OOS 필터 진단 | [`2026-08-14_servc_oos_filter_diagnosis.md`](handoff/2026-08-14_servc_oos_filter_diagnosis.md) | **유효 OOS 2건 서술 폐기.** 실측 1,194건, 전환율 86.02%, 3,098 도달 약 14.0영업일. 08-03 공고 수집 공백이 조인 탈락 원인 |
 
 ## 4. ops/
 
