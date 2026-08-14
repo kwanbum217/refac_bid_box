@@ -1,9 +1,10 @@
 # 에이전트 워커 기동 정본 참조
 
 > **작성일**: 2026-08-14
-> **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과
+> **수정일**: 2026-08-15
+> **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과. Task Capsule v2 워커 실행 계약 반영
 > **적용 대상**: 이 저장소에서 Orca 워커·코디네이터를 배정하는 모든 에이전트
-> **관련 문서**: [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md), [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md)
+> **관련 문서**: [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md), [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md), [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md)
 
 ---
 
@@ -250,6 +251,15 @@ agy --print "reply with OK only" --print-timeout 60s
 워크트리 그룹에 있는지 확인하고 사용자에게 알려 주십시오. 워커를 띄웠는데
 사용자가 볼 수 없는 상태로 두면 감독이 코디네이터 한 사람에게만 남습니다.
 
+### 3.5 워커 완료 보고 계약 (v2)
+
+기동이 성공해도 완료 보고는
+[`orca_task_capsule_v2.md`](orca_task_capsule_v2.md) 3장의 계약을 따릅니다.
+상세 분석은 파일 아티팩트로 커밋하고, `worker_done` `--body`는 3문장 이내
+요약 + `reportPath`만 전달합니다. 원시 로그나 diff 전문을 `--body`에
+붙이지 않습니다. 커밋이 필요한 Task에서 커밋 0이면 `succeeded`를 보내지
+않습니다.
+
 ---
 
 ## 4. 같은 탭 분할 주의
@@ -282,3 +292,4 @@ agy --print "reply with OK only" --print-timeout 60s
 | 공유 자원 소유 | `main` 병합, 서빙 루트, DB 쓰기, 대량 색인은 무료·저가 모델에 주지 않습니다 |
 | 판정 작업 | 유의성, 승격, 회귀 판정은 코디네이터 또는 최상위 모델이 합니다 |
 | 병합 근거 | 워커 보고가 아니라 코디네이터의 `git diff` 직접 확인입니다 |
+| OpenCode 무료 풀 | 결정론적·병렬 조사 전용. 자동 검증이 정오를 판정하는 작업만 넘기고 임계 경로에 두지 않습니다 |
