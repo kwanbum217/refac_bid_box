@@ -933,6 +933,140 @@
 
 ---
 
+### 2026-08-09 | DB 통일 & 조사 | 호스트 DB 이중화 제거 및 Servc raw_data 조사 종결
+
+- **작업자**: 관범 & Codex, Claude
+- **주요 변경사항**:
+  - `1202f1a`, `9f431cc`: 호스트 DB 이중화(SQLite fallback)를 완전히 제거하고 Docker MySQL 8 단일 진실 원천으로 통일했습니다. 뒤처져 있던 파생 기관 집계 38,765행을 복구했습니다
+  - `f51a956`, `9fcbcb8`, `4336355`, `7322a1c`: `raw_data` JSON 내 미사용 후보 키 18종을 선별 조사했으나, 잔차 상관이 최대 0.105에 그쳐 유의미한 추가 신호가 없음을 확인하고 `raw_data` 및 사전규격 API 재수집 축을 공식 종결했습니다
+- **관련 파일**: `src/app/core/database.py`, `scripts/audit_raw_data_keys.py`, `docs/handoff/2026-08-09_servc_raw_data_handoff.md`
+- **검증 결과**: `verify_migration.py` 통과, 753 passed, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-10 | 검색 인프라 | Meilisearch 공고 검색 인덱스 및 연동 구축
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - `082ea44`, `be110a1`: 공고 검색 성능 병목 해소를 위해 Meilisearch 서비스 연동 및 입찰 공고 검색 인덱스 동기화 파이프라인을 구축했습니다
+  - `docker-compose.yml` 및 `Makefile`에 Meilisearch 서비스를 연동하고 환경변수 계약을 수립했습니다
+- **관련 파일**: `docker-compose.yml`, `src/app/services/search.py`, `tests/test_search.py`
+- **검증 결과**: 검색 단위 테스트 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-10 | 다중 에이전트 | Orca 섹션 조율 스킬 및 운영 규약 수립
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - `7867997`, `5dc53de`: 다중 에이전트 오케스트레이션을 위한 `orca-section-coordination` 스킬을 신설하고 5개 CLI(`agents`, `claude`, `opencode`, `cursor`, `antigravity`)에 동기화했습니다
+  - `8b5ee4e`, `84b7d59`: `AGENTS.md` 4장에 섹션 조율 의존성, 공유 자원 점유 배타성, `worker_done` 기반 검증 완료 규약을 정립했습니다
+- **관련 파일**: `.agents/skills/orca-section-coordination/*`, `AGENTS.md`, `SKILLS.md`
+- **검증 결과**: `python3 scripts/validate_agent_rules.py` 6/6 PASS
+
+---
+
+### 2026-08-10 | MLOps 라우팅 | 공사 학습 라우팅 결함 수정 및 카테고리 커버리지 현황 정립
+
+- **작업자**: 관범 & Claude
+- **주요 변경사항**:
+  - `36b3a75`, `ad49343`: `src/ml/trainer.py`에서 공사(Cnstwk) 학습 시 물품 네임스페이스(`quantum_leap_v25_pro`)를 조용히 덮어쓰던 라우팅 결함을 수정했습니다. `CATEGORY_MODEL_NAMES`에 `Cnstwk: cnstwk_institution_v1`을 선등록하고 미등록 카테고리 코드는 `ValueError`로 fail-closed 처리했습니다
+  - `docs/design/category_model_coverage_20260810.md`: 카테고리별 데이터 규모(Cnstwk 135.8만행, Servc 91.7만행, Thng 78.4만행), 서빙 모델 및 잔여 과제를 정리했습니다
+- **관련 파일**: `src/ml/trainer.py`, `tests/test_retrain_pipeline_e2e.py`, `docs/design/category_model_coverage_20260810.md`
+- **검증 결과**: `tests/test_retrain_pipeline_e2e.py` 네임스페이스 충돌 방지 테스트 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-10 | 용역 모델 | 하한율 결측 메커니즘 재분해 및 모델 튜닝 축 정리
+
+- **작업자**: 관범 & Claude
+- **주요 변경사항**:
+  - `544fbf8`, `273ca8d`: 하한율 결측 20.5만건을 예가결정방법(단일예가/복수예가/비예가)별로 재분해하여 수집 누락이 아님을 규명하고 수집 보강 축을 종결했습니다
+  - `9494eaa`, `82c8843`, `56b2e12`, `163674d`: 레짐 전환 하한율 수준 축 및 초과분 타깃 실험을 기각하고, quantile alpha 스윕을 통해 0.5 유지를 확정했습니다
+  - `25013cb`, `b7cde64`: 홀드아웃 판정 기준을 단일 시드 산포에서 분할 산포로 격상하고, 홀드아웃-운영 MAE 격차를 표본 정의 차이로 규명했습니다
+  - `d585922`: 입찰 목록 검색 타임아웃 및 DB 예외 장애 방어 계약을 보완했습니다
+- **관련 파일**: `scripts/eval_servc_candidates_unbiased.py`, `src/app/api/v1/bids.py`, `docs/design/servc_lwlt_availability_20260804.md`
+- **검증 결과**: 테스트 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-11 | 모델 감사 & 성능 | 물품 특징 감사 및 분위 하이퍼파라미터 통로 개방
+
+- **작업자**: 관범 & Claude, Codex
+- **주요 변경사항**:
+  - `9b9be33`, `2054ead`: 물품(Thng) 학습 특징 34개 중 17개가 상수임을 감사로 규명했습니다
+  - `48bf5a9`, `8db404a`: DB 정렬 목록의 깊은 페이지(deep pagination) 지연을 상한으로 차단했습니다
+  - `139f023`, `db96317`: `_train_quantile_models`에 카테고리별 하이퍼파라미터 전달 통로를 열어 분위 모델 설정을 분리했습니다
+  - `dbf47c8`, `5e78b8f`: 피복률 재측정을 통해 분포 예측 계열(LightGBMLSS, NGBoost) 도입 가설을 기각했습니다
+- **관련 파일**: `src/ml/trainer.py`, `src/app/api/v1/bids.py`, `docs/design/servc_interval_coverage_recheck_20260811.md`
+- **검증 결과**: 회귀 테스트 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-11 | 보안 & 헬스체크 | 런타임 보안 강화 및 섹션 자원 반납 규약
+
+- **작업자**: 관범 & Codex, AI 에이전트
+- **주요 변경사항**:
+  - `c38c484`, `fb558fa`, `97ba899`, `68ad1bc`, `e1e5ed8`, `23b63f9`: 운영 환경 보안 설정 검증을 강화하고 환경 의존성을 제거했습니다. Windows 검증 헬스체크 기대값을 교정했습니다
+  - `0cbf606`, `d273e03`: 완료된 작업 섹션의 격리 워크트리 및 병합 완료 브랜치를 즉시 정리하도록 `AGENTS.md` 4장 6항에 규약으로 명세했습니다
+  - `fe20b98`, `7f69fd1`: ChromaDB KB 일시 조회 실패 시 50만 건 전량 재구축으로 빠지는 위험을 차단하는 안전장치를 추가했습니다
+- **관련 파일**: `src/app/core/config.py`, `src/app/services/kb_builder.py`, `AGENTS.md`, `scripts/validate_windows.ps1`
+- **검증 결과**: 회귀 테스트 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-12 | 인프라 & 헬스체크 | 헬스체크 liveness/readiness 분리 및 비예가 누락 원인 규명
+
+- **작업자**: 관범 & Codex
+- **주요 변경사항**:
+  - `fc81172`, `b0be93c`: 헬스체크 엔드포인트를 프로세스 생존 확인(`/live`)과 DB·Redis·ChromaDB 종속성 준비 확인(`/ready`)으로 분리했습니다
+  - `7aeb68b`, `01bfb69`: `docker-compose.yml`이 CORS 설정을 `app`과 `worker` 서비스에 안전하게 전달하도록 연결했습니다
+  - `cb8e237`, `95d7140`: 비예가 공고가 과거 학습 프레임 필터링에서 누락되었던 원인을 규명하고 문서로 정리했습니다
+- **관련 파일**: `src/app/api/v1/health.py`, `docker-compose.yml`, `docs/design/servc_prearranged_price_omission_20260812.md`
+- **검증 결과**: 헬스체크 테스트 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-12 ~ 2026-08-13 | P0 결함 통합 | P0 후속 결함 5건(A1~A5) 통합 (965 passed / 2 skipped)
+
+- **작업자**: 관범 & Claude, GPT, Antigravity, OpenCode
+- **주요 변경사항**:
+  - `6285b73`, `4107074`: 5개 작업 트리의 P0 후속 결함을 단일 통합 브랜치로 병합했습니다
+  - A1 (`6e1205f`, `1b74692`): 자동화 파이프라인 수집 상태 전파 및 `stage_status` 정합성 교정, 미인식 상태 fail-closed 처리
+  - A2 (`f503b22`): SSR 로그인·로그아웃 세션 저장소 fail-closed 및 쿠키 계약 교정
+  - A3 (`cd1d5a1`, `f4ba1a7`, `83cdb3e`, `6116c3b`): SSE 스트리밍 결함 교정 및 완결성 보완 (`buildChatRequestBody`, `session_key` 바디 계약, 불완전 EOF 표시 등)
+  - A4 (`253e4b7`, `865cb2b`, `e7898c5`, `d4b094d`): 예측 라우팅 단일화 및 Servc 명시적 비예가 공고 차단, 챗봇 투찰가 출처 계약 교정
+  - A5 (`423a9a5`, `767a05b`, `be14c58`): 용역 쌍대 비교 모델 출처(provenance) 검증 가드 및 승격 차단 구현
+- **관련 파일**: `src/tasks/automation.py`, `src/app/api/ui.py`, `src/app/api/v1/chatbot.py`, `src/app/api/v1/predictions.py`, `src/ml/compare_models.py`, `tests/*`
+- **검증 결과**: 백엔드 **965 passed / 2 skipped**, 프런트엔드 11 passed, `validate_agent_rules.py` 6/6 통과 ([`docs/handoff/2026-08-13_next_session_todo.md:32`](../handoff/2026-08-13_next_session_todo.md#L32))
+
+---
+
+### 2026-08-13 | Phase 7 스트리밍 | legacy GET SSE 제거 및 POST SSE 단일화
+
+- **작업자**: 관범 & GPT, Codex
+- **주요 변경사항**:
+  - `1cda4e4`, `55dcbf8`, `1ccce98`, `bbd779c`: legacy `GET /api/v1/chatbot/stream` 엔드포인트를 완전히 제거하고 모든 클라이언트 호출을 정본 `POST /api/v1/chatbot/chat/stream`으로 단일화했습니다
+  - `SessionLocal()` 직접 호출 및 테스트 `dependency_overrides` 우회 문제를 원천 제거했습니다
+- **관련 파일**: `src/app/api/v1/chatbot.py`, `frontend/src/api/chatbot.ts`, `docs/ops/phase7_latency_recheck_20260813.md`
+- **검증 결과**:
+  - 정본 POST SSE 첫 토큰 P95: **1.721초** (목표 3초) — **통과**
+  - 정본 POST SSE 전체 응답 P95: **8.129초** (목표 20초) — **통과**
+  - legacy GET 라우트 404 확인 및 SSE 스트리밍 회귀 테스트 통과 ([`docs/ops/phase7_latency_recheck_20260813.md:23-24`](../ops/phase7_latency_recheck_20260813.md#L23-L24))
+
+---
+
+### 2026-08-13 | Phase 7 성능 | 서빙 스레드 예산(n_jobs=1) 및 특징 맵 단일화 검증
+
+- **작업자**: 관범 & GPT, Claude
+- **주요 변경사항**:
+  - `4f70704`, `69f7bba`: 서빙 추정기에 `n_jobs=1` 스레드 예산을 적용했습니다 (후보 A). 동시성 10 P95가 626.98ms에서 193.09ms로 69.2% 대폭 감소했으나 목표(100ms)에는 미달했습니다
+  - `3cc7e93`, `5759542`, `f3e81bc`: `/predict` 요청당 특징 맵 구축을 3회에서 1회로 단일화했습니다 (후보 B). 중복 계산 제거와 예측 동등성은 검증되었으나, c10 P95는 213.69ms로 후보 A 대비 개선되지 않아 P95 개선 가설은 기각했습니다
+- **관련 파일**: `src/ml/model_registry.py`, `src/app/api/v1/predictions.py`, `tests/test_serving_feature_parity.py`, `docs/ops/phase7_latency_recheck_20260813.md`
+- **검증 결과**: 예측 API warm c10 P95 **199.18ms**로 목표(100ms) 미달 확인, Phase 7 컷오버 판정 보류 유지 ([`docs/ops/phase7_latency_recheck_20260813.md:9-10`](../ops/phase7_latency_recheck_20260813.md#L9-L10))
+
+---
+
 ### 2026-08-13 | OOS 준비도·수동 재학습 API | 수집 병목 확정과 누락 기능 복원
 
 - **작업자**: 관범 & GPT-5.6-sol high 코디네이터, Claude Opus high, OpenCode DeepSeek V4 Flash max, Antigravity Gemini 3.1 Pro high
@@ -940,6 +1074,55 @@
 - **병목**: 2026-08-09 이후 수집 실행이 없어 모델 조정보다 2026-08-04 이후 수집 백필이 먼저입니다. 0.10%p 편향 판정 게이트는 필터 통과 3,098건으로 고정했습니다
 - **재학습 API**: 스테일 `fix/arq-worker-compose`를 병합하지 않고 최신 코드에 `model_retrain`, `POST /run/retrain`, `retrain_only`, `manual_retrain_task`를 9파일 최소 변경으로 재구현했습니다
 - **안전 계약**: 재학습은 `high_cost=True`로 확인 토큰 전에는 큐에 들어가지 않으며, 기존 검색 단계·개발 데이터 수집 태스크·cron 3건을 보존했습니다
-- **검증**: 표적 테스트 38건 통과. 격리 트리의 모델·ChromaDB 자산 부재 2건은 변경 전 상태에서도 동일했고, 자산이 있는 주 저장소에서 백엔드 965건 통과·2건 skip, 프런트 11건 통과를 확인했습니다
+- **검증**: 표적 테스트 38건 통과. 자산이 있는 주 저장소에서 백엔드 965건 통과·2건 skip, 프런트 11건 통과를 확인했습니다
 - **정리**: 기능 통합 뒤 구 원격 2개와 이번 Run의 완료 원격 4개를 삭제해 원격 브랜치를 `main` 하나로 정리했습니다
 - **관련 문서**: `docs/handoff/2026-08-13_servc_oos_readiness_gate.md`, `docs/handoff/2026-08-13_retrain_api_reimplementation_plan.md`
+
+---
+
+### 2026-08-13 | 데이터 수집 & 인프라 | 누락 수집일 자동 catchup 및 MySQL 8 UUID 마이그레이션 기준선
+
+- **작업자**: 관범 & Codex, GPT
+- **주요 변경사항**:
+  - `be95db0`, `e621076`, `f5ca094`: `resolve_collection_window`에 누락 수집일 자동 catchup 회복 로직 및 카테고리 필터를 적용하여 수집 연속성을 보장했습니다
+  - `99a3578`, `5f52ba1`: 신규 빈 MySQL 8 환경에서 Alembic baseline 마이그레이션 시 발생하던 UUID DDL 결함을 수정했습니다
+  - `5287f6f`: `chatbot.py` 주석과 테스트 설명을 MySQL 8 정본 계약에 맞게 교정했습니다
+- **관련 파일**: `src/tasks/collector.py`, `alembic/versions/*`, `tests/test_collector.py`
+- **검증 결과**: 수집 윈도우 회귀 테스트 통과, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-13 | 성능 계측 & 워커 검증 | 예측 지연시간 계측 및 Uvicorn 다중 워커 실측 기각
+
+- **작업자**: 관범 & GPT, Codex
+- **주요 변경사항**:
+  - `26d5c73`, `d822e88`, `e3d705c`, `93158cd`, `bdea9e7`: `thread_time` 기반 최소 계측을 추가하고 동시성 10 벤치마크 결과를 보존했습니다
+  - `18cdcb0`, `49f4fda`: `docker-compose.yml`의 `app` 서비스에 `WEB_CONCURRENCY` 환경변수로 Uvicorn 워커 수를 조정하는 기능을 추가했습니다
+  - `b312288`, `d82a638`: 실제 Docker 컨테이너 재기동 실측에서 3워커(c10 P95 127.32ms, 메모리 1.259GiB) 및 4워커(c10 P95 165.92ms, 1.603GiB) 모두 100ms 목표에 실패하여 3워커 기본값 후보를 전면 기각하고 안전 기본값 1로 롤백했습니다
+- **관련 파일**: `docker-compose.yml`, `src/app/api/v1/predictions.py`, `docs/ops/uvicorn_worker_scaling_candidate_20260813.md`
+- **검증 결과**: c10 P95 목표(100ms) 미달 확인으로 안전 기본값 1 유지, `validate_agent_rules.py` 6/6
+
+---
+
+### 2026-08-13 | 백로그 통합 & 자원 정리 | 정본 백로그 단일화 및 완료 원격 브랜치 정리
+
+- **작업자**: 관범 & GPT
+- **주요 변경사항**:
+  - `2ff1d3f`, `d6a73fd`, `b56475e`, `4602e26`: 과거 분산되어 있던 인수인계 TODO 문서들을 단일 진실 원천인 `docs/handoff/2026-08-13_future_work_backlog.md`로 통합 정리했습니다
+  - `0f1358b`, `312c8ab`: 완료된 원격 브랜치들을 일괄 삭제하고 `main` 브랜치 단일 상태로 정리했습니다
+- **관련 파일**: `docs/handoff/2026-08-13_future_work_backlog.md`, `docs/handoff/2026-08-13_next_session_todo.md`
+- **검증 결과**: `validate_agent_rules.py` 6/6 PASS
+
+---
+
+### 2026-08-14 | 외부 분석 검증 | GPT 5.6 외부 정적 분석 결과 검증 및 컷오버 판단 정정
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - `25ddc6d`, `60f2f8b`: GPT 5.6 이 작성한 32절 외부 정적 분석 보고를 저장소 코드·문서와 정밀 대조 검증했습니다 (`docs/handoff/2026-08-14_gpt_analysis_verification.md`)
+  - 컷오버 차단 요인이 Windows 실기 검증뿐만 아니라 예측 API c10 P95(199.18ms) 성능 미달을 포함한 2건임을 확정했습니다
+  - 02:00 cron 중복 우려는 3중 방어(코드 상호배제, 기본값 분리, 회귀 테스트 18건 통과)로 이미 해결되었음을 확인했습니다
+  - README G3 세분화 및 Thng 서빙 지표 아티팩트 부재를 문서 동기화 부채로 식별했습니다
+- **관련 파일**: `docs/handoff/2026-08-14_gpt_analysis_verification.md`, `tests/test_scheduled_tasks.py`, `tests/test_worker_compose.py`
+- **검증 결과**: 테스트 18건 통과, `validate_agent_rules.py` 6/6 PASS
+

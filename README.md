@@ -9,16 +9,28 @@
 ## 상태
 
 **Phase 7 컷오버 검증 중** — G1 데이터 무손실은 통과했고, G2 Windows 실기
-검증과 G3 SSE 첫 토큰 목표 결정이 남았습니다.
+검증과 G3 예측 API 레이턴시 최적화(c10 P95 100ms 달성)가 남았습니다.
 
 | Phase | 상태 | 비고 |
 | --- | --- | --- |
 | Phase 0 | 완료 | uv, Docker, Makefile, 스킬 시스템 |
 | Phase 1~3 | 완료 | 데이터 자산 보존, ORM/API 이식 |
 | Phase 4~6 | 완료 | 추론·RAG·재학습·스트리밍 경로 구축 |
-| Phase 7 | 부분 완료 | G1 통과, G2 Windows 실기 검증과 SSE 목표 결정 필요 |
+| Phase 7 | 부분 완료 | G1 통과, G2 Windows 실기 검증 잔여, G3 세분화(SSE 통과 / 예측 c10 미달) |
 
-자세한 내용은 [`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md)를 참고하세요.
+### Phase 7 검증 세부 현황
+
+| 목표 | 세부 항목 | 현재 실측 | 목표치 | 판정 | 근거 |
+| --- | --- | ---: | ---: | --- | --- |
+| G1 | DB 스키마·행 수·가중치 보존 | 100% 무손실 | 100% | 통과 | `scripts/verify_migration.py` |
+| G2 | 크로스 플랫폼 (macOS / Windows) | macOS 완료 | 양대 OS | 부분 완료 | Windows Docker Desktop 실기 검증 잔여 |
+| G3 | SSE 첫 토큰 P95 | 1.721초 | 3초 | **통과** | [`phase7_latency_recheck_20260813.md:23`](docs/ops/phase7_latency_recheck_20260813.md#L23) |
+| G3 | SSE 전체 응답 P95 | 8.129초 | 20초 | **통과** | [`phase7_latency_recheck_20260813.md:24`](docs/ops/phase7_latency_recheck_20260813.md#L24) |
+| G3 | 예측 API warm c10 P95 | 199.18ms | 100ms | **미달** | [`phase7_latency_recheck_20260813.md:9-10`](docs/ops/phase7_latency_recheck_20260813.md#L9-L10), [`uvicorn_worker_scaling_candidate_20260813.md:138`](docs/ops/uvicorn_worker_scaling_candidate_20260813.md#L138) |
+
+> 2026-08-04 보고서의 예측 API 19.1ms 는 기동 직후 단일 요청 값이며 동시성 10 실측 근거가 아닙니다. G3 는 통과가 아니며 예측 c10 P95 최적화가 진행 중입니다.
+
+자세한 내용은 [`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md)와 [`docs/handoff/2026-08-14_gpt_analysis_verification.md`](docs/handoff/2026-08-14_gpt_analysis_verification.md)를 참고하세요.
 
 ## 주요 목표
 
