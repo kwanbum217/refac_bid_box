@@ -155,3 +155,84 @@ daa1287 merge: Arq 워커와 수동 재학습 실행 경로 통합
 | 기준 main 커밋 | `f5eb107` |
 | 감사 수행자 | Antigravity (Claude Opus 4.6) |
 | 감사 범위 | `docs/` 내 Phase 7 게이트 문서 9개, 로컬 브랜치 2개 |
+
+---
+
+## 코디네이터 검증
+
+> **검증일**: 2026-08-14
+> **검증자**: 코디네이터 (Claude Opus 5)
+> **결론**: A 파트(게이트 규약 4항목 전부 미규정)는 인용된 파일·줄을 대조해 확인했습니다. **B 파트의 "브랜치 고유 신규 파일 0개" 는 틀렸습니다.** 4개 있고, 그중 하나는 병합 시 서빙 동작을 조용히 바꿉니다
+
+### V.1 A 파트 확인
+
+4개 항목 모두 "규정 없음" 이 맞습니다. 이 결론은
+[`phase8_predict_p95_samplesize_effect_20260814.md`](phase8_predict_p95_samplesize_effect_20260814.md)
+7.4~7.5 절과 맞물립니다. 같은 날 같은 코드가 워밍업 유무와 표본 수에 따라
+100ms 초과율 0.00% 와 23.4% 로 갈렸습니다. **규약이 없으면 통과·미달이 측정
+조건 선택으로 결정됩니다.** 지금까지의 Phase 7 판정 전부가 이 영향 아래
+있습니다.
+
+### V.2 B 파트 정정 — 고유 파일은 0 이 아니라 4개입니다
+
+`git ls-tree` 로 브랜치와 `main` 최신 트리를 직접 비교한 결과입니다.
+`git diff main...<branch>` 는 병합 기준점(merge base) 대비이므로 양쪽에서
+독립적으로 추가된 파일을 "브랜치 고유" 로 잘못 보이게 합니다. 감사가 이
+차이에 걸린 것으로 보입니다.
+
+```bash
+comm -23 <(git ls-tree -r <branch> --name-only | sort) \
+         <(git ls-tree -r main --name-only | sort)
+```
+
+`integrate/arq-worker-cutover` 의 고유 파일 4개입니다.
+
+| 파일 | 판단 |
+| --- | --- |
+| `data/model_files/quantum_leap_v25_pro/preprocess.py` | **병합 금지.** V.3 참조 |
+| `data/model_files/quantum_leap_v25_pro/champion_summary.json` | 판단 보류. 현행 `metadata.json` 과 중복 여부 확인 필요 |
+| `.harness/pipeline.yaml` | 판단 보류 |
+| `docs/ops/harness_ci_guide.md` | 판단 보류 |
+
+또한 `tests/test_worker_compose.py` 는 양쪽에 다 있으나 **내용이 다릅니다.**
+감사는 이 파일을 브랜치 고유로 셌습니다.
+
+`feat/codex-task-routing` 의 고유 파일은 13개가 아니라 **17개**입니다. 위 4개를
+공유하기 때문입니다. 두 브랜치가 조상을 공유합니다.
+
+### V.3 `preprocess.py` 는 병합하면 train/serve skew 를 만듭니다
+
+`src/ml/model_registry.py:240` 의 `_load_preprocessor()` 는 모델 디렉터리에
+`preprocess.py` 가 있으면 **동적으로 로드해 커스텀 전처리기로 씁니다.**
+
+```
+src/ml/model_registry.py:242    preprocess_path = os.path.join(self.model_dir, "preprocess.py")
+src/ml/model_registry.py:243    if not os.path.exists(preprocess_path):
+src/ml/model_registry.py:255        self.preprocessor = module.preprocess
+```
+
+브랜치의 그 파일은 35줄이며 `title`, `agency_name`, `scenario_mode` 를 읽어
+DataFrame 을 직접 만듭니다. 즉 **`src/ml/features.py` 를 우회하는 별도 특징
+생성 경로**입니다. `AGENTS.md` 7장 6번과 `SKILLS.md` 의 특징 단일화 원칙에
+정면으로 어긋납니다.
+
+현재 상태는 안전합니다.
+
+| 위치 | `preprocess.py` |
+| --- | --- |
+| 디스크 `data/model_files/quantum_leap_v25_pro/` | **없음.** 운영 서빙은 일반 경로를 씁니다 |
+| `main` Git 트리 | 없음 |
+| `integrate/arq-worker-cutover` | 있음 |
+
+**그 브랜치를 병합하면 파일이 디스크에 생기고 `_load_preprocessor()` 가 집어
+갑니다.** 오류 없이 서빙 특징 생성만 바뀌므로 감지가 어렵습니다.
+
+### V.4 정정된 브랜치 판정
+
+| 브랜치 | 감사 판정 | 코디네이터 판정 |
+| --- | --- | --- |
+| `integrate/arq-worker-cutover` | 폐기 (고유 파일 0) | **폐기 유지, 근거 교체.** 고유 파일은 4개이며 그중 `preprocess.py` 는 병합해서는 안 되는 것입니다. 나머지 3개는 개별 판단 후 필요하면 새 브랜치로 옮기고, 그 뒤에 삭제합니다 |
+| `feat/codex-task-routing` | 추가 조사 필요 | **동의.** 고유 파일 수만 17개로 정정. 현행 스킬 인덱스 12개와의 정합 확인이 선행 조건 |
+
+**두 브랜치 모두 이번 세션에서 삭제하지 않았습니다.** 삭제 전에 위 3개 파일의
+개별 판단이 필요합니다.
