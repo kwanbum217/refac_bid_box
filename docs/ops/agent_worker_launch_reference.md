@@ -76,6 +76,33 @@ Antigravity 쪽 허용량이 적지만, 다음 상황에서 쓸 자리가 분명
 | `opencode/` (무료) | 지금 사용 가능 | `mimo-v2.5-free`, `deepseek-v4-flash-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`, `laguna-s-2.1-free`, `hy3-free`, `big-pickle` |
 | `opencode-go/` (유료) | **세션 쿠키 미설정** | `deepseek-v4-pro`, `kimi-k3`, `kimi-k2.7-code`, `qwen3.8-max`, `qwen3.7-max`, `glm-5.2`, `grok-4.5`, `minimax-m3`, `gpt-5.6-luna`, `mimo-v2.5-pro` 등 |
 
+### 1.4 Cerebras 는 별도 프로바이더입니다
+
+`opencode.json` 에 `cerebras` 프로바이더가 등록되어 있어 OpenCode 무료·유료 풀과
+**무관한 별도 한도**를 씁니다. 자격증명은 `.env` 의 `CEREBRAS_API_KEY` 이며
+설정 파일에는 `{env:CEREBRAS_API_KEY}` 참조만 들어 있습니다.
+
+| 모델 ID | 컨텍스트 / 출력 |
+| --- | --- |
+| `cerebras/gemma-4-31b` | 65,536 / 8,192 |
+| `cerebras/gpt-oss-120b` | 65,536 / 8,192 |
+| `cerebras/zai-glm-4.7` | 65,536 / 8,192 |
+
+```bash
+opencode models | grep cerebras          # 인식 확인
+opencode -m cerebras/gemma-4-31b         # 기동
+```
+
+**컨텍스트가 65K 로 Antigravity 계열보다 작습니다.** 큰 파일을 여러 개 읽어야
+하는 작업은 맞지 않습니다. 지시서가 자족적이고 읽을 범위가 좁은 감사·분석에
+적합합니다.
+
+`payment_required_error` 가 나오면 Cerebras Billing 에서 무료 크레딧 활성화가
+안 된 상태입니다. 모델 목록 조회(`GET /v1/models`)는 그 상태에서도 성공하므로
+**목록에 보이는 것을 사용 가능의 근거로 쓰지 마십시오.**
+
+---
+
 `orca account list` 가 `opencodeGo` 를 `Session cookie not configured` 로
 보고하는 대상이 아래쪽 유료 풀입니다. **무료 풀은 그 설정과 무관하게 지금
 동작합니다.** 쿠키를 붙이면 유료 풀과 Orca 한도 표시가 함께 열립니다.

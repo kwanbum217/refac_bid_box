@@ -3,5 +3,36 @@
   "instructions": [
     "AGENTS.md",
     "SKILLS.md"
-  ]
+  ],
+  "provider": {
+    "cerebras": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Cerebras",
+      "baseURL": "https://api.cerebras.ai/v1",
+      "apiKey": "{env:CEREBRAS_API_KEY}",
+      "models": {
+        "gemma-4-31b": {
+          "name": "Gemma 4 31B",
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          }
+        },
+        "gpt-oss-120b": {
+          "name": "GPT OSS 120B",
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          }
+        },
+        "zai-glm-4.7": {
+          "name": "ZAI GLM 4.7",
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
 }
