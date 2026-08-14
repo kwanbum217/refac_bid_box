@@ -303,6 +303,15 @@ def main() -> None:
     print("-" * 125)
 
     for g in group_records:
+        # 계측 활성 원시 측정치는 진단 브랜치 perf/predict-tail 에만 있습니다.
+        # main 에서는 해당 그룹이 비어 nan 이 되므로 이유를 밝혀 출력합니다.
+        if g["total_n"] == 0:
+            print(
+                f"{g['group_name']:26s} | {g['file_count']:5d} | "
+                f"{'-':>7s} | 원시 측정치가 이 브랜치에 없습니다 "
+                "(perf/predict-tail 참조)"
+            )
+            continue
         ci_str = f"[{g['ci_lower_pct']:5.2f}%, {g['ci_upper_pct']:5.2f}%]"
         print(
             f"{g['group_name']:26s} | {g['file_count']:5d} | {g['total_n']:7d} | "
