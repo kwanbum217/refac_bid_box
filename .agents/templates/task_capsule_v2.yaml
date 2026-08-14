@@ -1,0 +1,65 @@
+schema: ORCA_TASK_CAPSULE_V2
+version: "2.0.0"
+mode: worker # worker | reviewer | investigator | benchmarker
+run_id: "<run_id>"
+task_id: "<task_id>"
+role: "builder" # builder | investigator | reviewer | benchmarker | documenter
+
+objective: >
+  한 문단으로 명확하고 측정 가능한 작업 완료 상태를 정의합니다.
+
+why_now: >
+  현재 이 작업이 필요한 이유와 선행/후속 맥락을 1~3문장으로 기술합니다.
+
+ground_truth:
+  - fact: "확정된 운영 지표 또는 아키텍처 사실"
+    evidence: "docs/context/CURRENT_STATE.md"
+    recheck: false
+
+allowed_read_files:
+  - "src/..."
+  - "tests/..."
+
+allowed_write_files:
+  - "src/..."
+  - "tests/..."
+
+search_scope:
+  mode: deny_by_default # deny_by_default | allowed_globs
+  allowed_globs: []
+
+forbidden:
+  - "README.md 전체 재독 금지"
+  - "SKILLS.md 전체 재독 금지"
+  - "docs/design/REFACTORING_DESIGN.md 전체 재독 금지"
+  - "DB 스키마 및 원본 데이터 변경 금지"
+  - "main 브랜치 직접 수정 및 커밋 금지"
+  - "Pull Request 생성 금지"
+
+shared_resources:
+  - resource: docker # docker | db | serving_model_root | features_py | main_merge
+    ownership: none # exclusive | read_only | none
+
+required_change:
+  - "요구되는 구체적 코드 또는 문서 변경 사항 1"
+  - "요구되는 구체적 코드 또는 문서 변경 사항 2"
+
+acceptance:
+  - "구체적 완료 조건 및 기능/성능 만족 기준"
+
+verification_commands:
+  - "uv run pytest tests/ -q"
+  - "python3 scripts/validate_agent_rules.py --quiet"
+
+artifact_paths:
+  - "docs/analysis/<task_name>.md"
+
+escalate_when:
+  - "allowed_write_files 범위를 벗어난 파일 수정이 필요한 경우"
+  - "ground_truth와 실제 코드/동작이 충돌하는 경우"
+  - "새로운 외부 패키지/의존성 추가가 필요한 경우"
+  - "DB 스키마 변경 또는 데이터 삭제가 필요한 경우"
+  - "공유 자원의 동시 점유 충돌이 발생한 경우"
+  - "테스트 실패 원인이 Task 범위 밖의 레거시 결함인 경우"
+
+return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
