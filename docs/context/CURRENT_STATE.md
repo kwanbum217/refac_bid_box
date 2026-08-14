@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-15
-> **source_commit**: `d8cf2c6`
+> **source_commit**: `f9b9477`
 > **version**: v1.0.0
 > 본 문서는 코디네이터 에이전트가 부트스트랩 시 가장 먼저 참조하는 **단일 진실 현재 운영 상태 정본**입니다. 과거 handoff는 증거와 히스토리이며, 현재 세션의 즉시 판단과 정책 결정은 본 문서를 기준으로 수행합니다.
 
@@ -77,8 +77,8 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **Orca 코디네이터 토큰 최적화 v2 구현 (T0~T7)**:
-   - T0(기준선 감사), T1(부트스트랩 경량화), T2(Task Capsule v2 규약), T3(Validator v2), T5(Playbook/Setup 동기화) 병합 완료 (`main=d8cf2c6`).
-   - T4(CURRENT_STATE 정본화) 문서 검수 후 병합 후보, 후속 작업으로 T6(Cross-CLI 검증) 및 T7(Coordinator Audit) 순차 실행.
+   - T0(기준선 감사), T1(부트스트랩 경량화), T2(Task Capsule v2 규약), T3(Validator v2), T4(CURRENT_STATE 정본화), T5(Playbook/Setup 동기화), T6(Cross-CLI 검증) 병합 완료 (`main=f9b9477`).
+   - T7(Coordinator Audit) 최종 정합성·전체 테스트·작업 트리 정리 점검 진행 중.
 2. **Ollama 병렬도 실험 및 SSE 동시성 기준선 제정**:
    - `OLLAMA_NUM_PARALLEL` 실험을 통해 c4 등 동시성 환경에서의 지연 원인 분석 및 기준 확립.
 3. **Windows Docker Desktop 크로스 플랫폼 실기 검증**:
