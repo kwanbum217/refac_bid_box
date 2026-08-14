@@ -103,12 +103,15 @@ docs/
 | 외부 정적 분석 검증 | [`2026-08-14_gpt_analysis_verification.md`](handoff/2026-08-14_gpt_analysis_verification.md) | GPT 5.6 저장소 감사 대조. 2026-08-04 P95 19.1ms 를 현행 근거로 쓰지 말 것, cron 중복은 해결됨, 교정된 실행 순서 |
 | 수집 관찰 1회차 | [`2026-08-14_collection_observation_round1.md`](handoff/2026-08-14_collection_observation_round1.md) | 정기 수집 실측. 완료 기준을 최신 개찰 시각 전진에서 개찰 건수 증가로 교체한 근거 |
 | Servc OOS 필터 진단 | [`2026-08-14_servc_oos_filter_diagnosis.md`](handoff/2026-08-14_servc_oos_filter_diagnosis.md) | **유효 OOS 2건 서술 폐기.** 실측 1,194건, 전환율 86.02%, 3,098 도달 약 14.0영업일. 08-03 공고 수집 공백이 조인 탈락 원인 |
+| 2026-08-14 후반 세션 인수인계 | [`2026-08-14_late_session_handoff.md`](handoff/2026-08-14_late_session_handoff.md) | 레이턴시 게이트 규약 제정, GC freeze 채택, SSE 기준선, 워커 배정 정책. **성능 작업 착수 전 필독** |
+
+---
 
 ## 4. ops/
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
-| **레이턴시 게이트 측정 규약** | [`latency_gate_protocol.md`](ops/latency_gate_protocol.md) | **정본 규약.** 표본 600, warmup 제외, 3회 최악값, c10 P95 100ms. 규약 제정 이전 측정은 통과·미달 어느 근거도 아님 |
+| **레이턴시 게이트 측정 규약** | [`latency_gate_protocol.md`](ops/latency_gate_protocol.md) | **정본 규약.** 표본 `n >= 오염요청수 x 60`(예측 600, SSE 60), warmup 제외, 3회 최악값, c10 P95 100ms, 주변 부하 기록. 규약 제정 이전 측정은 통과·미달 어느 근거도 아님 |
 | Phase 7 검증 보고서 | [`phase7_cutover_report_20260804.md`](ops/phase7_cutover_report_20260804.md) | 무손실·레이턴시·크로스 플랫폼 판정 근거 |
 | 크로스 플랫폼 가이드 | [`cross_platform_guide.md`](ops/cross_platform_guide.md) | macOS·Windows 재현 및 검증 절차 |
 | 모델 승격·롤백 런북 | [`model_promotion_runbook.md`](ops/model_promotion_runbook.md) | 승격 게이트, 쌍대 비교 절차, 롤백 왕복 |
