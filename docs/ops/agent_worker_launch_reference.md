@@ -210,8 +210,17 @@ agy --print "reply with OK only" --print-timeout 60s
 ## 5. 배정 기준은 별도 문서입니다
 
 어떤 모델에 어떤 작업을 줄지는 이 문서가 아니라
-[`orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 4장과 각
-세션 인수인계의 배분 방침을 따릅니다. 이 문서는 **기동 방법만** 다룹니다.
+[`orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 4장을
+따릅니다. 이 문서는 **기동 방법만** 다룹니다.
+
+그 4장의 요지 셋입니다.
+
+1. **코디네이터 토큰이 가장 희소한 자원입니다.** 배정 기준은 작업 난이도가 아니라
+   위임 시 코디네이터 토큰이 실제로 줄어드는지입니다
+2. **주력 워커는 Antigravity Gemini Flash** 이며 Claude 구독은 코디네이터
+   전용입니다. 한 풀이 마르면 등급을 낮추기 전에 다른 풀의 같은 등급을 봅니다
+3. **검증·병합 판정·게이트 기준 제정은 위임하지 않습니다.** 절감률은 50~60%
+   이며 검증 비용은 남습니다
 
 변하지 않는 원칙만 옮겨 적습니다.
 
