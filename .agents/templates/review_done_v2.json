@@ -9,7 +9,8 @@
       "id": "C1",
       "answer": "yes | no | n/a",
       "evidence": "file:line 또는 명령 출력. 없으면 pass 가 무효입니다",
-      "command": "이 답을 얻은 명령"
+      "command": "이 답을 얻은 명령",
+      "defect_when": "yes | no. Capsule 의 review_checklist 항목과 같은 값"
     }
   ],
   "blocking_issues": [],
