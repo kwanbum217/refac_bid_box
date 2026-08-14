@@ -173,6 +173,24 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
 그 목록을 `allowed_read_files` 와 대조하고, 초과가 있으면 원인이 워커인지 배치인지
 가려 기록합니다.
 
+### 2.9.3 `report_path` 는 Dispatch 마다 다른 경로여야 합니다
+
+같은 Task 에 후속 Dispatch 를 내리면 워커는 같은 `report_path` 에 새 보고를
+**덮어씁니다.** 그러면 이전 Dispatch 의 보고가 사라져 반려·재작업 이력을 사후에
+복원할 수 없습니다.
+
+2026-08-15 에 실제로 발생했습니다. 후속 작업을 받은 워커가 자기 보고를
+덮어써서, 첫 Dispatch 의 `report_chars` 와 `changed_files` 를 지표 원장에
+기록할 수 없었습니다.
+
+| 형태 | 판정 |
+| --- | --- |
+| `<scratch>/<task_id>/worker_done.json` | 단일 Dispatch 만 있을 때 허용 |
+| `<scratch>/<task_id>/worker_done_<dispatch_id>.json` | 권장 |
+| 후속 Dispatch 에 같은 경로 재사용 | 금지 |
+
+반려 후 재작업을 지시할 때는 `report_path` 를 새 경로로 바꿔 함께 전달합니다.
+
 ---
 
 ## 3. Worker Done v2 계약 (`ORCA_WORKER_DONE_V2`)
