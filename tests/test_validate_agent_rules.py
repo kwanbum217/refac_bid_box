@@ -8,6 +8,7 @@ from scripts.validate_agent_rules import (
     ANTIGRAVITY_CHAR_CAP,
     CURRENT_STATE_CHAR_BUDGET,
     CURRENT_STATE_LAG_TOLERANCE,
+    GIT_PROBE_TIMEOUT_SECONDS,
     PROJECT_ROOT,
     check_agents_single_root,
     check_antigravity_rules,
@@ -467,8 +468,12 @@ def test_check_current_state_sections_real_repo_within_tolerance():
 
 
 def test_check_context_budgets_warns_when_over(tmp_path: Path):
-    """예산 초과는 FAIL 이 아니라 WARN 입니다."""
+    """대상이 모두 있고 하나가 예산을 넘으면 FAIL 이 아니라 WARN 입니다.
+
+    대상 부재는 별도로 FAIL 이므로 두 파일을 모두 만들어야 WARN 경로에 닿습니다.
+    """
     (tmp_path / "AGENTS.md").write_text("가" * (AGENTS_CHAR_BUDGET + 1), encoding="utf-8")
+    _write_current_state(tmp_path, "가" * (CURRENT_STATE_CHAR_BUDGET - 1))
     res = check_context_budgets(tmp_path)
     assert res.ok
     assert res.warn
@@ -496,3 +501,57 @@ def test_warn_counts_as_pass_and_shows_warn_tag():
     failed = CheckResult("y", False, "detail", warn=True)
     assert not failed.warn, "실패한 검사는 WARN 으로 격하되지 않아야 합니다"
     assert "[FAIL]" in failed.format()
+
+
+def test_source_commit_regex_does_not_cross_lines(tmp_path: Path):
+    r"""값이 비었을 때 다른 줄의 해시 유사 문자열을 오인하지 않아야 합니다.
+
+    이전 정규식은 `\D*` 를 써서 줄바꿈을 넘어 매칭했고, source_commit 값이
+    비어 있어도 아래 줄의 deadbeef 를 커밋으로 읽었습니다.
+    """
+    body = (
+        "# state\n> updated_at: 2026-08-15\n> **source_commit**: (미기록)\n\n"
+        "어떤 문서 deadbeef 참조\nG1 G2 G3\ndocs/ops/x.md\n"
+    )
+    _write_current_state(tmp_path, body)
+    res = check_current_state_sections(tmp_path)
+    assert not res.ok
+    assert "커밋 해시를 읽을 수 없음" in res.detail
+
+
+def test_source_commit_regex_accepts_markdown_emphasis(tmp_path: Path):
+    """실제 문서 형식인 > **source_commit**: `hash` 를 읽어야 합니다."""
+    body = (
+        "# state\n> updated_at: 2026-08-15\n> **source_commit**: `deadbee`\n"
+        "G1 G2 G3\ndocs/ops/x.md\n"
+    )
+    _write_current_state(tmp_path, body)
+    res = check_current_state_sections(tmp_path)
+    assert res.ok
+    assert "deadbee" in res.detail
+
+
+def test_context_budgets_fails_when_target_missing(tmp_path: Path):
+    """측정 대상이 없으면 통과가 아니라 실패입니다.
+
+    대상 부재를 통과로 처리하면 파일이 사라진 상태를 조용히 넘깁니다.
+    """
+    res = check_context_budgets(tmp_path)
+    assert not res.ok
+    assert "측정 대상 없음" in res.detail
+
+
+def test_git_probe_has_timeout_constant():
+    """git 조회에 상한이 있어야 합니다.
+
+    검증기는 pre-commit 에서 돌기 때문에 git 이 잠기면 커밋 자체가 막힙니다.
+    """
+    assert GIT_PROBE_TIMEOUT_SECONDS > 0
+
+    source = (PROJECT_ROOT / "scripts" / "validate_agent_rules.py").read_text(encoding="utf-8")
+    run_calls = source.count("subprocess.run(")
+    timeout_args = source.count("timeout=GIT_PROBE_TIMEOUT_SECONDS")
+    assert run_calls > 0
+    assert timeout_args == run_calls, (
+        f"subprocess.run {run_calls}회 중 timeout 지정 {timeout_args}회. 전부 지정해야 합니다"
+    )
