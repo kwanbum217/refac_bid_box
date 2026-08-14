@@ -6,6 +6,7 @@ from pathlib import Path
 from scripts.validate_agent_rules import (
     AGENTS_CHAR_BUDGET,
     ANTIGRAVITY_CHAR_CAP,
+    CONTRACT_VERSION,
     CURRENT_STATE_CHAR_BUDGET,
     CURRENT_STATE_LAG_TOLERANCE,
     GIT_PROBE_TIMEOUT_SECONDS,
@@ -281,9 +282,9 @@ def test_check_v2_templates(tmp_path: Path):
     worker_json = tpl_dir / "worker_done_v2.json"
     review_json = tpl_dir / "review_done_v2.json"
 
-    valid_capsule = """
+    valid_capsule = f"""
 schema: ORCA_TASK_CAPSULE_V2
-version: "2.0.0"
+version: "{CONTRACT_VERSION}"
 mode: worker
 run_id: run-123
 task_id: task-456
@@ -306,7 +307,7 @@ return_contract: ORCA_WORKER_DONE_V2
 """
     valid_worker = {
         "schema": "ORCA_WORKER_DONE_V2",
-        "version": "2.0.0",
+        "version": CONTRACT_VERSION,
         "task_id": "task-456",
         "dispatch_id": "ctx-1",
         "status": "succeeded",
@@ -324,7 +325,7 @@ return_contract: ORCA_WORKER_DONE_V2
     }
     valid_review = {
         "schema": "ORCA_REVIEW_DONE_V2",
-        "version": "2.0.0",
+        "version": CONTRACT_VERSION,
         "task_id": "task-456",
         "dispatch_id": "ctx-1",
         "verdict": "pass",
@@ -349,7 +350,9 @@ return_contract: ORCA_WORKER_DONE_V2
     assert not res.ok
 
     # 3. Missing key in capsule
-    capsule_yaml.write_text("schema: ORCA_TASK_CAPSULE_V2\nversion: '2.0.0'\n", encoding="utf-8")
+    capsule_yaml.write_text(
+        f"schema: ORCA_TASK_CAPSULE_V2\nversion: '{CONTRACT_VERSION}'\n", encoding="utf-8"
+    )
     res = check_v2_templates(tmp_path)
     assert not res.ok
     assert "필수 키 누락" in res.detail
