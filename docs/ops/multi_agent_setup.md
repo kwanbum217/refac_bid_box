@@ -1,8 +1,8 @@
 # 다중 에이전트 셋업 가이드
 
 > **작성일**: 2026-07-31
-> **수정일**: 2026-08-14
-> **버전**: v1.1
+> **수정일**: 2026-08-15
+> **버전**: v1.2
 > **목적**: opencode, Cursor, Codex, Claude Code, Antigravity 등 서로 다른 AI 코딩 에이전트를 돌아가며 사용해도, 세션 시작 시 동일한 프로젝트 규칙이 자동으로 로드되고 Orca로 섹션 협업을 조율하도록 하는 아키텍처를 설명합니다.
 
 ---
@@ -95,11 +95,28 @@
 | :--- | :--- | :--- |
 | 계획 | Run + Task | 의존성·소유자·검증 기준 등록 |
 | 실행 | Dispatch | 독립 Task만 병렬 실행 |
-| 완료 | `worker_done` | 검증 결과와 변경 파일 확인 |
+| 완료 | `worker_done` + 파일 아티팩트 | 컴팩트 요약(3문장)과 검증 결과 확인 |
 | 후속 작업 | 의존 Task Dispatch | 선행 Task의 검증 완료 |
 | 병합 | 별도 Git Task | 테스트·규칙 검증·사용자 승인 확인 |
 
 터미널 출력, 채팅의 구두 보고, 단순 프로세스 종료는 완료·병합·후속 작업 시작의 근거가 아닙니다. Orca 런타임을 이용할 수 없으면 조율 작업을 시작하지 않고 차단 원인을 보고합니다.
+
+### 5.1 Task Capsule v2 생명주기
+
+워커 사양과 완료 보고는 [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md)의
+`ORCA_TASK_CAPSULE_V2` 계약을 따릅니다.
+
+| 원칙 | 내용 |
+| :--- | :--- |
+| 워커 부트스트랩 | 자동 로드된 `AGENTS.md` + 주입된 Capsule + `allowed_read_files`만 사용. `README.md`·`SKILLS.md`·전체 설계서·과거 handoff 재독 금지 |
+| 탐색 제한 | `search_scope` 기본 `deny_by_default`. 허용 glob 외 저장소 grep 금지 |
+| 아티팩트 전달 | 상세 분석·벤치마크 표는 파일 아티팩트로 커밋 |
+| 컴팩트 `worker_done` | `--body`는 3문장 이내 요약, `reportPath`/아티팩트 목록으로 상세 분리 |
+| 모델 라우팅 | 빌더 주력 Antigravity Gemini Flash High, OpenCode 무료는 결정론적·병렬 조사 전용, 병합·판정은 코디네이터 |
+
+`opencode.json`은 `instructions: ["AGENTS.md"]` 단일 자동 로드이며 `SKILLS.md`
+중복 주입을 하지 않습니다. `AGENTS.md`에 `@SKILLS.md` 자동 import도 존재하지
+않습니다.
 
 ---
 

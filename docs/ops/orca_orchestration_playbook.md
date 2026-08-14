@@ -1,11 +1,12 @@
 # Orca 다중 섹션 오케스트레이션 실행 지침
 
 > **작성일**: 2026-08-12
-> **버전**: v1.0.0
-> **상태**: 실행 검증 완료. 2026-08-12 세션에서 7개 섹션(S1~S7)을 병렬 운영하고 전량 병합한 결과를 반영했습니다.
+> **수정일**: 2026-08-15
+> **버전**: v2.0.0
+> **상태**: 실행 검증 완료. 2026-08-12 세션에서 7개 섹션(S1~S7)을 병렬 운영하고 전량 병합한 결과를 반영했습니다. Task Capsule v2 계약(자족적 워커 사양, 컴팩트 `worker_done`·아티팩트 분리)을 반영했습니다.
 > **대상**: 이 저장소에서 코디네이터 역할을 맡는 사람 또는 에이전트
 > **규약 정본**: [`AGENTS.md`](../../AGENTS.md) 4장, [`orca-section-coordination`](../../.agents/skills/orca-section-coordination/SKILL.md)
-> **관련 문서**: [`multi_agent_setup.md`](multi_agent_setup.md), [`git_branching_strategy.md`](git_branching_strategy.md)
+> **관련 문서**: [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md), [`multi_agent_setup.md`](multi_agent_setup.md), [`git_branching_strategy.md`](git_branching_strategy.md)
 
 ---
 
@@ -20,6 +21,10 @@
 
 **이 문서에 적힌 함정 대부분은 겉으로 정상으로 보입니다.** 그래서 절차를
 지켰다고 생각하는 동안 시간이 흘러갑니다.
+
+워커 실행 계약의 정본은 [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md)
+입니다. 워커 사양은 `ORCA_TASK_CAPSULE_V2` 형식으로 작성하고, 작업 완료
+통보는 **컴팩트 `worker_done` 요약**과 **파일 아티팩트**로 분리합니다.
 
 ---
 
@@ -76,6 +81,13 @@
 
 ### 3.1 공통 규약 문서를 먼저 만듭니다
 
+섹션별 명세는 `ORCA_TASK_CAPSULE_V2` 스키마([`orca_task_capsule_v2.md`](orca_task_capsule_v2.md))
+로 작성합니다. `objective`(완료 상태)와 `acceptance`(검증 기준)를 분리하고,
+이미 확인된 사실은 `ground_truth`에 `recheck: false`로 넣어 재조사를 막습니다.
+`allowed_read_files`·`allowed_write_files`·`search_scope`(`deny_by_default`)로
+워커가 저장소 전체를 탐색하지 못하게 합니다. 워커는 자동 로드된 `AGENTS.md`와
+주입된 Capsule만 사용하므로 전역 문서 재독 금지가 사양에 들어갑니다.
+
 섹션별 명세 뒤에 붙일 공통 문서 하나를 만들고 다음을 담습니다.
 
 | 항목 | 내용 |
@@ -84,11 +96,26 @@
 | 검증 명령 | 그 환경에서 실제로 되는 형태로. 이 저장소는 `python` 이 없어 `uv run python` 입니다 |
 | 격리 트리 예외 | 아래 3.3 |
 | 커밋 규칙 | `type: subject`, 한국어 제목 |
-| `worker_done` 필수 항목 | 브랜치명, 커밋 수, 변경 파일 전체, 검증별 결과 건수, 설계 판단 근거, 남은 위험 |
+| `worker_done` 필수 항목 | 브랜치명, 커밋 수, 변경 파일 전체, 검증별 결과 건수, 설계 판단 근거, 남은 위험. 본문은 3문장 이내 요약이며 상세는 `reportPath` 아티팩트로 분리 |
 
 마지막 항목에 **"검증을 돌리지 않았거나 커밋이 0 이면 `worker_done` 을 보내지
 말고 `escalation` 을 보내라"** 를 명시합니다. 이 한 줄이 허위 완료 보고를
 막습니다.
+
+### 3.1.1 아티팩트 전달과 컴팩트 `worker_done` 은 분리합니다
+
+상세 분석 문서(수십~수백 줄의 표·로그·설계 근거)는 `docs/analysis/` 등 파일
+아티팩트로 저장소에 커밋하고, `worker_done` 의 `--body` 에는 **3문장 이내 요약**
+(수행 내역, 발견 사항, 잔여 리스크)만 넣습니다. `--report-path` 나 아티팩트
+목록을 payload 에 남겨 코디네이터가 필요한 경우에만 열어보게 합니다.
+
+| 전달 경로 | 내용 | 금지 |
+| --- | --- | --- |
+| 파일 아티팩트 | 상세 분석, 벤치마크 표, diff 분석 | 아티팩트만 두고 `worker_done` 없이 종료 |
+| `worker_done` 본문 | 3문장 요약 + `reportPath` | 원시 로그·diff·긴 보고서 전문 붙여넣기 |
+
+원시 로그나 diff 전문을 `--body` 에 붙이면 위임으로 절약한 코디네이터 토큰을
+되돌립니다.
 
 ### 3.2 섹션별 명세에 넣을 네 가지
 
@@ -235,6 +262,20 @@ import json
 d=json.load(open('/Users/<user>/.codex/models_cache.json'))
 ..."
 ```
+
+### 4.6 v2 모델 라우팅 원칙 (불변)
+
+아래는 위 표들이 사실을 추가해도 바뀌지 않는 배정 원칙입니다.
+
+| 역할 | 기본 배정 | 금지 |
+| --- | --- | --- |
+| **빌더 워커 (주력)** | Antigravity Gemini Flash High (`gemini-3.7-flash-high`) | 임계 경로를 저가·무료 모델에 배정 |
+| **OpenCode 무료** (`opencode/*-free`) | 결정론적·병렬 조사 전용 (자동 검증이 정오를 판정하는 작업) | 공유 자원 소유권, 승격·판정·병합 근거 |
+| **병합·판정·게이트** | 코디네이터 전용 | 워커 위임, `worker_done` 은 병합 권한이 아님 |
+
+상세 역할별 추론 수준 정책은
+[`orca_coordinator_token_optimization_v2.md`](orca_coordinator_token_optimization_v2.md)
+11장을 따릅니다.
 
 ---
 
