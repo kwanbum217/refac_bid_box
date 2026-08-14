@@ -81,6 +81,7 @@
 10. **Reviewer 의 pass 를 코디네이터 검토 축소 근거로 사용**:
    - 2026-08-15 첫 실사용에서 Reviewer 2대가 실재 결함 3건을 놓치고 `pass` 를 냈습니다. 계약 도달과 Capsule 격리는 작동했으나 검출은 미달입니다.
    - 근거: [`../ops/orca_v2_reviewer_plane_20260815.md`](../ops/orca_v2_reviewer_plane_20260815.md). Level 3 코디네이터 검토를 유지합니다.
+   - **2026-08-15 개선 측정**: 계약 v2.1 체크리스트 도입으로 같은 모델이 0/3 에서 4/4 로 개선됐습니다. 다만 체크리스트에 없던 결함은 절반만 찾으므로 Level 3 은 계속 유지합니다. Reviewer 기본 모델은 `gemini-3.7-flash-high` 입니다(Claude 계열과 검출 성적 동일). 근거: [`../ops/orca_v2_reviewer_sensitivity_20260815.md`](../ops/orca_v2_reviewer_sensitivity_20260815.md)
 11. **크기 예산을 바이트로 판정**:
    - 설계 5장의 8,000자는 문자 수이며 바이트가 아닙니다. `wc -c` 로 재면 한글 3바이트 때문에 `AGENTS.md` 가 초과처럼 보이지만 실제는 6,589자로 예산 이내입니다.
    - 검증기 `check_context_budgets` 는 `len()` 으로 문자 수를 셉니다.
