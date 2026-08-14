@@ -43,11 +43,12 @@ return_contract: ORCA_WORKER_DONE_V2
 """
 
 REPORT_CONTENT = {
+    "schema": "ORCA_WORKER_DONE_V2",
+    "version": "2.1.0",
     "status": "succeeded",
-    "outcome": "succeeded",
-    "verdict": "succeeded",
+    "verdict": "candidate",
     "read_files": ["scripts/orca_contract.py", "tests/test_orca_contract.py"],
-    "files_modified": ["scripts/new_tool.py"],
+    "changed_files": ["scripts/new_tool.py"],
     "verification": [
         {"command": "uv run pytest -q", "result": "passed"},
         {"command": "uv run ruff check", "result": "passed"},
@@ -142,18 +143,55 @@ def test_record_auto_derives_values(
     # read_files_count: read_files 리스트 길이
     assert row["read_files_count"] == 2
 
-    # changed_files_count: files_modified 리스트 길이
+    # changed_files_count: ORCA_WORKER_DONE_V2 계약 필드 changed_files 길이
     assert row["changed_files_count"] == 1
 
     # verification_count: verification 리스트 길이
     assert row["verification_count"] == 2
 
-    # verdict / status 자동 도출
-    assert row["verdict"] == "succeeded"
+    # verdict 자동 도출 (계약 필드 verdict 만 읽음)
+    assert row["verdict"] == "candidate"
     assert row["status"] == "succeeded"
 
     # recorded_at 존재
     assert "recorded_at" in row
+
+
+# --------------------------------------------------------------------------
+# (1-b) 결함 1 재현: changed_files 만 있고 files_modified 가 없는 계약 준수 보고
+# --------------------------------------------------------------------------
+
+
+def test_changed_files_count_from_contract_field(
+    capsule_file: Path, ledger_file: Path, tmp_path: Path
+) -> None:
+    """ORCA_WORKER_DONE_V2 계약 준수 보고(changed_files 필드)에서 개수가 정확해야 합니다.
+
+    files_modified 를 읽는 버그가 있으면 changed_files_count=0 이 기록됩니다.
+    """
+    report = tmp_path / "contract_report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "schema": "ORCA_WORKER_DONE_V2",
+                "version": "2.1.0",
+                "status": "succeeded",
+                "verdict": "candidate",
+                "read_files": ["scripts/orca_contract.py"],
+                "changed_files": ["scripts/tool_a.py", "tests/test_tool_a.py"],
+                # files_modified 는 의도적으로 없음 (계약 비표준 필드)
+            }
+        ),
+        encoding="utf-8",
+    )
+    rc = run_record(capsule_file, report, ledger_file)
+    assert rc == 0
+
+    rows, _ = _load_rows(ledger_file)
+    assert rows[0]["changed_files_count"] == 2, (
+        "changed_files 필드 2건이 정확히 계산되어야 합니다. "
+        "files_modified 를 읽는 버그가 있으면 0 이 됩니다."
+    )
 
 
 # --------------------------------------------------------------------------

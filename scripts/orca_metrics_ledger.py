@@ -18,7 +18,7 @@ import contextlib
 import json
 import statistics
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +41,7 @@ DEFAULT_LEDGER = "docs/ops/orca_v2_metrics_ledger.jsonl"
 
 def _now_iso() -> str:
     """로컬 시각을 ISO 8601 문자열로 반환합니다."""
-    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")  # noqa: UP017
 
 
 def _load_rows(ledger_path: Path) -> tuple[list[dict[str, Any]], int]:
@@ -131,13 +131,13 @@ def cmd_record(args: argparse.Namespace) -> int:
     read_files = string_list(report_data.get("read_files"))
     read_files_count = len(read_files)
 
-    changed_files = string_list(report_data.get("files_modified"))
+    changed_files = string_list(report_data.get("changed_files"))
     changed_files_count = len(changed_files)
 
     verification = report_data.get("verification")
     verification_count = len(verification) if isinstance(verification, (list, dict)) else 0
 
-    verdict = report_data.get("verdict") or report_data.get("outcome") or None
+    verdict = report_data.get("verdict") or None
     status = report_data.get("status") or None
 
     # 중복 검사: 같은 (task_id, dispatch_id) 는 재기록하지 않음
