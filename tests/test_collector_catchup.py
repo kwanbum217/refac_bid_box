@@ -19,7 +19,6 @@ from src.app.services.collector_service import (
     resolve_collection_window,
 )
 
-
 # ---------------------------------------------------------------------------
 # 공통 헬퍼
 # ---------------------------------------------------------------------------
@@ -179,7 +178,7 @@ class TestResolveCollectionWindow:
         db = _make_db(two_days_ago, None)
 
         with _utcnow_fixed(fake_today):
-            start, end, is_catchup = resolve_collection_window(
+            start, _end, is_catchup = resolve_collection_window(
                 db, start_date=None, end_date=None, fetch_type="announce"
             )
 
@@ -192,7 +191,7 @@ class TestResolveCollectionWindow:
         db = _make_db(ten_days_ago, ten_days_ago)
 
         with _utcnow_fixed(fake_today):
-            start, end, is_catchup = resolve_collection_window(
+            start, _end, is_catchup = resolve_collection_window(
                 db,
                 start_date=None,
                 end_date=None,
@@ -213,7 +212,7 @@ class TestResolveCollectionWindow:
         db = _make_db(ann_checkpoint, res_checkpoint)
 
         with _utcnow_fixed(fake_today):
-            start, end, is_catchup = resolve_collection_window(
+            start, _end, is_catchup = resolve_collection_window(
                 db, start_date=None, end_date=None, fetch_type="both"
             )
 
@@ -289,7 +288,7 @@ async def test_subset_categories_excludes_others(isolated_db):
     isolated_db.commit()
 
     with _utcnow_fixed(fake_today):
-        start, end, is_catchup = resolve_collection_window(
+        start, _end, is_catchup = resolve_collection_window(
             isolated_db,
             start_date=None,
             end_date=None,
@@ -313,7 +312,7 @@ async def test_missing_category_triggers_max_catchup(isolated_db):
     isolated_db.commit()
 
     with _utcnow_fixed(fake_today):
-        start, end, is_catchup = resolve_collection_window(
+        start, _end, is_catchup = resolve_collection_window(
             isolated_db,
             start_date=None,
             end_date=None,
@@ -402,11 +401,11 @@ async def test_same_range_rerun_is_idempotent(isolated_db, monkeypatch):
     monkeypatch.setattr(svc, "stream_bid_announcements", AsyncMock(return_value=0))
     monkeypatch.setattr(svc, "stream_bid_data", AsyncMock(return_value=0))
 
-    kwargs = dict(
-        start_date="20260810",
-        end_date="20260812",
-        refresh_aggregates=False,
-    )
+    kwargs = {
+        "start_date": "20260810",
+        "end_date": "20260812",
+        "refresh_aggregates": False,
+    }
     r1 = await svc.collect_bids(isolated_db, **kwargs)
     r2 = await svc.collect_bids(isolated_db, **kwargs)
 
