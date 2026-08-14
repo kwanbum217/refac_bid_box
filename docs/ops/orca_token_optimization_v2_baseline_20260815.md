@@ -13,7 +13,7 @@
 
 본 문서는 `Orca Coordinator Token Optimization v2` 구현에 착수하기 전, 현재 저장소(`refac_bid_box`)의 에이전트 부트스트랩 체계, 자동 로드 설정, 정합성 검증기, 최신 성능 운영 사실의 기준선(baseline)을 객관적으로 기록하기 위한 감사 보고서입니다.
 
-외부 설계 원본(`/Users/kwanbum/Downloads/orca_coordinator_token_optimization_v2.md`, 1,033줄)은 [`orca_coordinator_token_optimization_v2.md`](orca_coordinator_token_optimization_v2.md)에 100% 동일하게 등록되었습니다. 본 T0 작업에서는 설계서 등록 및 본 감사 문서 작성 외의 코드, 검증기, 설정 파일 수정을 일체 수행하지 않았습니다.
+외부 설계 원본(`/Users/kwanbum/Downloads/orca_coordinator_token_optimization_v2.md`, 1,033줄)은 [`orca_coordinator_token_optimization_v2.md`](orca_coordinator_token_optimization_v2.md)에 공백 정규화 후 의미 보존 방식으로 등록되었습니다. 원본의 메타데이터 블록 4곳에 있던 줄끝 공백은 한국어 Markdown에서 의미가 없어 제거했으며, 본문 텍스트는 원본과 의미상 동일합니다. 본 T0 작업에서는 설계서 등록 및 본 감사 문서 작성 외의 코드, 검증기, 설정 파일 수정을 일체 수행하지 않았습니다.
 
 ---
 
@@ -98,12 +98,12 @@ v2 설계안에 따라 `opencode.json`의 instructions를 `AGENTS.md` 1개로 �
 ## 5. T0 작업 요약 및 향후 단계 가이드
 
 1. **완료 내역**:
-   - `docs/ops/orca_coordinator_token_optimization_v2.md` 정본 등록 완료 (1,033줄 원본 완전 일치 검증).
+   - `docs/ops/orca_coordinator_token_optimization_v2.md` 정본 등록 완료 (1,033줄 원본을 공백 정규화한 의미 보존 검증).
    - `docs/ops/orca_token_optimization_v2_baseline_20260815.md` 작성 완료 (부트스트랩 현황, 검증기 6개 규칙, Stale vs Current 데이터 기록).
 2. **검증 결과**:
-   - `cmp -s /Users/kwanbum/Downloads/orca_coordinator_token_optimization_v2.md docs/ops/orca_coordinator_token_optimization_v2.md` (일치 확인).
-   - `python3 scripts/validate_agent_rules.py --quiet` (6/6 PASS).
    - `git diff --check` (공백 및 포맷 이상 없음).
+   - 원본 대비 의미 보존: 메타데이터 블록 줄끝 공백 4곳만 제거되고 본문 텍스트는 원본과 동일.
+   - `python3 scripts/validate_agent_rules.py --quiet` (6/6 PASS).
 3. **변경 격리 준수**:
    - 허용 파일 외 수정 없음 (`git status` 상 2개 파일 생성).
    - 저장소 소스 코드, DB, 도커, 의존성 무수정.
