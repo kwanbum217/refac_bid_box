@@ -155,6 +155,26 @@ def test_check_opencode_json_v2_and_legacy_dual_injection(tmp_path: Path):
     assert not res.ok
     assert "SKILLS.md 이중 주입 감지" in res.detail
 
+    # 6. 문자열값은 반드시 실패 (배열이 아니라 문자열이므로 단일 주입 계약 위반)
+    opencode_json.write_text(json.dumps({"instructions": "AGENTS.md"}), encoding="utf-8")
+    res = check_opencode_json(tmp_path)
+    assert not res.ok
+    assert "타입 위반" in res.detail
+
+    # 7. 빈 배열은 반드시 실패 (AGENTS.md 미포함, v2 단일 주입 계약 위반)
+    opencode_json.write_text(json.dumps({"instructions": []}), encoding="utf-8")
+    res = check_opencode_json(tmp_path)
+    assert not res.ok
+    assert "빈 배열" in res.detail
+
+    # 8. 추가 항목 배열은 반드시 실패 (정확히 ["AGENTS.md"]만 허용)
+    opencode_json.write_text(
+        json.dumps({"instructions": ["AGENTS.md", "OTHER.md"]}), encoding="utf-8"
+    )
+    res = check_opencode_json(tmp_path)
+    assert not res.ok
+    assert "추가 항목" in res.detail
+
 
 def test_check_skills_mirror(tmp_path: Path):
     agents_dir = tmp_path / ".agents" / "skills" / "skill-a"

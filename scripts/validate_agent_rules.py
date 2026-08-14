@@ -11,7 +11,7 @@ v2 자동 주입 계약:
   1. CLAUDE.md 가 @AGENTS.md thin pointer 인지 (정본 복사 금지)
   2. .antigravity/rules.md 가 존재 + 12,000자 이하 + 핵심 섹션 포함
   3. .cursor/rules/00-core-guidelines.mdc 가 AGENTS.md 참조 여부
-  4. opencode.json instructions 배열에 AGENTS.md 단일 자동 로드 (SKILLS.md 이중 주입 금지)
+  4. opencode.json instructions 가 정확히 ["AGENTS.md"] 단일 배열인지 (타입/빈 배열/추가 항목/SKILLS.md 이중 주입 금지)
   5. .agents/skills/ 와 .claude/skills/, .opencode/skills/ 내용 동일성 (미러 정합성)
   6. AGENTS.md 가 단일 진실 원천으로서 핵심 비협상 원칙 포함 및 @SKILLS.md 미참조 (단일 부트스트랩)
   7. Task Capsule v2 규약 문서 (docs/ops/orca_task_capsule_v2.md) 정합성
@@ -213,34 +213,58 @@ def check_cursor_references_agents(root: Path = PROJECT_ROOT) -> CheckResult:
 
 
 def check_opencode_json(root: Path = PROJECT_ROOT) -> CheckResult:
+    """opencode.json instructions 가 정확히 [\"AGENTS.md\"] 단일 배열인지 검증합니다.
+
+    v2 계약은 문자열값, 빈 배열, 추가 항목 배열, SKILLS.md 이중 주입을 모두
+    단일 주입 위반으로 간주해 확정적으로 실패시킵니다.
+    """
     target = root / "opencode.json"
     if not target.exists():
         return CheckResult("opencode.json instructions v2 단일 주입", False, "opencode.json 없음")
     try:
         data = json.loads(read_text(target))
-        instructions = data.get("instructions", [])
-        has_agents = "AGENTS.md" in instructions
-        has_skills = "SKILLS.md" in instructions
+    except json.JSONDecodeError as e:
+        return CheckResult("opencode.json instructions v2 단일 주입", False, f"JSON 파싱 실패: {e}")
 
-        if has_skills:
-            return CheckResult(
-                "opencode.json instructions v2 단일 주입",
-                False,
-                "SKILLS.md 이중 주입 감지 (v2 단일 주입 위반: opencode.json instructions에 SKILLS.md를 포함하지 않아야 함)",
-            )
-        if not has_agents:
-            return CheckResult(
-                "opencode.json instructions v2 단일 주입",
-                False,
-                "AGENTS.md 누락 (instructions에 AGENTS.md가 포함되어야 함)",
-            )
+    instructions = data.get("instructions")
+    if not isinstance(instructions, list):
+        return CheckResult(
+            "opencode.json instructions v2 단일 주입",
+            False,
+            f"instructions 타입 위반 (JSON 배열만 허용, 현재: {type(instructions).__name__})",
+        )
+
+    if instructions == ["AGENTS.md"]:
         return CheckResult(
             "opencode.json instructions v2 단일 주입",
             True,
-            "AGENTS.md 단일 자동 로드 확인 (SKILLS.md 이중 주입 없음)",
+            "AGENTS.md 단일 자동 로드 확인 (instructions == [\"AGENTS.md\"])",
         )
-    except json.JSONDecodeError as e:
-        return CheckResult("opencode.json instructions v2 단일 주입", False, f"JSON 파싱 실패: {e}")
+
+    if "SKILLS.md" in instructions:
+        return CheckResult(
+            "opencode.json instructions v2 단일 주입",
+            False,
+            "SKILLS.md 이중 주입 감지 (v2 단일 주입 위반: opencode.json instructions는 정확히 [\"AGENTS.md\"] 배열만 허용)",
+        )
+    if not instructions:
+        return CheckResult(
+            "opencode.json instructions v2 단일 주입",
+            False,
+            "빈 배열 (v2 단일 주입 위반: instructions가 비어 있으며 정확히 [\"AGENTS.md\"] 배열만 허용)",
+        )
+    if "AGENTS.md" not in instructions:
+        return CheckResult(
+            "opencode.json instructions v2 단일 주입",
+            False,
+            "AGENTS.md 누락 (instructions에 AGENTS.md가 포함되어야 함)",
+        )
+    extra = [item for item in instructions if item != "AGENTS.md"]
+    return CheckResult(
+        "opencode.json instructions v2 단일 주입",
+        False,
+        f"추가 항목 포함 (v2 단일 주입 위반: 정확히 [\"AGENTS.md\"] 배열만 허용, 추가 항목: {extra})",
+    )
 
 
 def _dir_trees_equal(dir_a: Path, dir_b: Path) -> tuple[bool, list[str]]:
