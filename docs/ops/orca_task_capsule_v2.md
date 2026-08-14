@@ -195,6 +195,10 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
     "src/example.py",
     "tests/test_example.py"
   ],
+  "read_files": [
+    "scripts/orca_contract.py",
+    "docs/ops/orca_task_capsule_v2.md"
+  ],
   "verification": [
     {
       "command": "uv run pytest tests/test_example.py -q",
@@ -220,6 +224,8 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
   ]
 }
 ```
+
+`read_files`는 작업 중 실제로 읽은 파일 목록을 담는 필수 필드입니다 (규약 2.9.2 참조).
 
 ### 3.2 아티팩트 보고서와 Orca 수명주기 완료 통보의 관계 (중요)
 
