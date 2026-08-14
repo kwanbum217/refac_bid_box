@@ -128,3 +128,78 @@
 1. **회수 자산 없음**: `integrate/arq-worker-cutover` 브랜치에 남아 있는 고유 파일 4건 중 회수할 가치가 있는 유효 자산은 0건입니다.
 2. **브랜치 폐기 안전성 확인**: 본 브랜치를 삭제하더라도 `main`의 데이터 무손실(G1), 크로스 플랫폼(G2), 스택 최적화(G3)에 어떠한 유실도 발생하지 않습니다.
 3. **후속 권고**: 코디네이터는 본 판정 보고서를 바탕으로 `integrate/arq-worker-cutover` 브랜치를 안전하게 삭제할 수 있습니다.
+
+---
+
+## 코디네이터 검증
+
+> **검증일**: 2026-08-14
+> **검증자**: 코디네이터 (Claude Opus 5)
+> **결론**: 4건 전부 폐기 판정에 동의합니다. **다만 `champion_summary.json` 의 근거는 틀렸고, 실제 이유는 훨씬 강합니다**
+
+### V.1 `champion_summary.json` — "미참조" 는 사실이 아닙니다
+
+이 파일은 코드에서 읽힙니다.
+
+```
+src/ml/model_registry.py:109   summary_path = os.path.join(model_dir, "champion_summary.json")
+src/ml/model_registry.py:124   aggregate = summary.get("aggregate") or {}
+scripts/import_data_assets.py:30   "champion_summary.json",
+```
+
+`_load_champion_metrics()` 가 이 파일에서 `validation_label` 과
+`validation_type` 을 만듭니다. 파일이 없으면 `"요약 없음"` /
+`"missing_summary"` 로 떨어지며, **현재 디스크에 없으므로 그 상태입니다.**
+
+### V.2 병합하면 서빙 champion 에 허위 검증 정보가 붙습니다
+
+`quantum_leap_v25_pro` 는 **운영 중인 Thng champion** 입니다
+(`src/ml/model_registry.py:55`). 이 모델에 대해 두 값이 정면으로 충돌합니다.
+
+| 출처 | 주장 |
+| --- | --- |
+| 브랜치 `champion_summary.json` | `avg_r2` **0.8705**, `avg_mae` 0.7073, `training_rows` 76,527, `acceptance.pass_all` **true** |
+| `data/model_metrics/quantum_leap_v25_pro.json` (운영 경로 실측, 2026-08-06, 표본 3,000) | `r2` **-0.2133**, `mae` 5.4942, `mape` 5.9648 |
+| `data/model_files/quantum_leap_v25_pro/metadata.json` | `training_rows` **784,266**, version `v_20260806_043408_749` |
+
+브랜치 파일의 `acceptance.reason` 은 다음과 같습니다.
+
+> Notebook heuristic was wrapped into BIDBOX bundle format and profiled against
+> the supplied 2025 goods dataset.
+
+즉 **레거시 노트북 시절 요약**이며, 학습 행 수가 실제 승격본의 9.8%
+(76,527 / 784,266) 에 불과합니다. 병합하면 `_load_champion_metrics()` 가 이
+값을 집어 올려, **실측 r2 가 -0.2133 인 운영 모델에 대해 r2 0.8705 와
+`pass_all: true` 를 보고하게 됩니다.**
+
+**따라서 이 파일은 "낡아서 쓸모없는 것" 이 아니라 "병합하면 허위 성능 정보를
+운영에 노출시키는 것" 입니다.** 폐기 판정은 유지하되 이유를 이것으로
+바꿉니다. `preprocess.py` 와 같은 성격의 위험이며, 두 파일이 같은 디렉터리에
+있는 것은 우연이 아닙니다.
+
+### V.3 나머지 3건
+
+| 대상 | 감사 판정 | 검증 |
+| --- | --- | --- |
+| `.harness/pipeline.yaml` | 폐기 | 동의 |
+| `docs/ops/harness_ci_guide.md` | 폐기 | 동의 |
+| `tests/test_worker_compose.py` | 폐기 (main 테스트에 포섭) | **확인함.** `tests/test_worker_compose.py:31-32` 가 `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false` 와 `ML_WEEKLY_RETRAIN_ENABLED=false` 를 덮습니다. 브랜치 쪽 4개 단정 전부 커버 |
+
+### V.4 브랜치 처리
+
+`integrate/arq-worker-cutover` 고유 파일 4개 전부 회수 대상이 아니며, 그중
+2개는 **병합 금지** 입니다.
+
+| 파일 | 처분 |
+| --- | --- |
+| `preprocess.py` | **병합 금지.** `features.py` 우회 |
+| `champion_summary.json` | **병합 금지.** 허위 성능 정보 |
+| `.harness/pipeline.yaml` | 폐기 |
+| `docs/ops/harness_ci_guide.md` | 폐기 |
+
+**브랜치를 삭제해도 잃는 것이 없습니다.** 다만 위 두 파일이 왜 병합 금지인지가
+이 문서와 [`phase7_gate_and_stale_branch_audit_20260814.md`](phase7_gate_and_stale_branch_audit_20260814.md)
+에 기록된 뒤에 삭제하십시오. 기록 없이 지우면 다음 사람이 같은 파일을 다시
+만들 수 있습니다.
+
+삭제는 이번 세션에서 수행하지 않았습니다. 사용자 확인 후 진행합니다.
