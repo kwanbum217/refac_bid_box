@@ -235,6 +235,39 @@ agy --print "reply with OK only" --print-timeout 60s
 [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 5.2 절에
 있습니다.
 
+### 3.5 신뢰 확인 대화창은 모든 전달 경로를 막습니다
+
+`orca worktree create` 로 만든 새 경로에서 Antigravity CLI 는 워크스페이스 신뢰
+확인 대화창을 **반드시** 띄웁니다.
+
+```
+Do you trust the contents of this project?
+> Yes, I trust this folder
+  No, exit
+```
+
+**주입 방식과 인자 방식의 결과가 다릅니다.**
+
+| 전달 경로 | 대화창이 열려 있을 때 |
+| --- | --- |
+| `dispatch --inject` | 키 입력이 대화창에 먹혀 **유실**. Orca 는 `ok: true` 로 보고 |
+| `terminal send` | 같음 |
+| `agy -i "<프롬프트>"` | **유실 없음.** 다만 승인까지 실행이 시작되지 않음 |
+
+`agy -i` 를 "유실 지점이 없는 권장 경로" 로만 기억하면 승인 대기를 정체로
+오판합니다. 2026-08-15 T6 실행 검증에서 확인했습니다
+([`orca_v2_runtime_smoke_20260815.md`](orca_v2_runtime_smoke_20260815.md) V.6).
+
+기동 절차는 세 단계입니다.
+
+```bash
+orca terminal create --worktree name:<wt> --command "bash <프롬프트 포함 런처>"
+orca terminal send --terminal <handle> --enter --text ""   # 신뢰 승인
+orca terminal read --terminal <handle> | tail -5           # 진행 확인
+```
+
+---
+
 ### 3.4 이 경로의 워커는 감독 목록에 없습니다
 
 `terminal create` + 주입으로 붙인 워커는 Dispatch 계보는 남지만 **감독 워커로
