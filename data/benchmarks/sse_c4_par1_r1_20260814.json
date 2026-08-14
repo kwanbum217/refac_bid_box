@@ -1,0 +1,603 @@
+{
+  "meta": {
+    "git_sha": "dd08288ff6f9e483829fb4288c13fd3dfe42da0f",
+    "timestamp": "2026-08-14 23:29:27",
+    "python": "3.12.14",
+    "platform": "macOS-26.6.1-arm64-arm-64bit",
+    "base_url": "http://127.0.0.1:8000",
+    "concurrency": 4,
+    "parallel_mode": 1,
+    "rounds": 60,
+    "round_num": 1,
+    "warmup": true
+  },
+  "summary": {
+    "concurrency": 4,
+    "rounds": 60,
+    "round_num": 1,
+    "total_requests": 60,
+    "successful_requests": 60,
+    "error_requests": 0,
+    "first_stage_stats": {
+      "n": 60,
+      "p50_ms": 7.44,
+      "p95_ms": 23.02,
+      "p99_ms": 23.65,
+      "max_ms": 23.83,
+      "min_ms": 5.29,
+      "mean_ms": 8.66,
+      "threshold_ms": null,
+      "exceeded_count": 0,
+      "exceeded_rate_pct": 0.0,
+      "wilson_upper_pct": 0.0
+    },
+    "first_token_stats": {
+      "n": 60,
+      "p50_ms": 11385.22,
+      "p95_ms": 14916.43,
+      "p99_ms": 15964.46,
+      "max_ms": 16683.83,
+      "min_ms": 872.49,
+      "mean_ms": 11136.68,
+      "threshold_ms": 3000.0,
+      "exceeded_count": 59,
+      "exceeded_rate_pct": 98.333,
+      "wilson_upper_pct": 99.705
+    },
+    "final_stats": {
+      "n": 60,
+      "p50_ms": 13936.03,
+      "p95_ms": 17942.32,
+      "p99_ms": 18377.55,
+      "max_ms": 18616.56,
+      "min_ms": 2428.27,
+      "mean_ms": 13963.7,
+      "threshold_ms": 20000.0,
+      "exceeded_count": 0,
+      "exceeded_rate_pct": 0.0,
+      "wilson_upper_pct": 6.017
+    }
+  },
+  "records": [
+    {
+      "request_index": 0,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#1)",
+      "first_stage_ms": 23.53,
+      "first_token_ms": 8746.63,
+      "final_ms": 11229.27,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 1,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#2)",
+      "first_stage_ms": 23.83,
+      "first_token_ms": 872.49,
+      "final_ms": 2428.27,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 2,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#3)",
+      "first_stage_ms": 23.0,
+      "first_token_ms": 11474.99,
+      "final_ms": 14246.36,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 3,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#4)",
+      "first_stage_ms": 23.46,
+      "first_token_ms": 3444.98,
+      "final_ms": 7948.65,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 4,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#5)",
+      "first_stage_ms": 7.49,
+      "first_token_ms": 12668.93,
+      "final_ms": 16138.41,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 5,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#6)",
+      "first_stage_ms": 11.79,
+      "first_token_ms": 11513.71,
+      "final_ms": 12861.95,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 6,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#7)",
+      "first_stage_ms": 6.52,
+      "first_token_ms": 10159.26,
+      "final_ms": 11737.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 7,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#8)",
+      "first_stage_ms": 5.63,
+      "first_token_ms": 9699.88,
+      "final_ms": 16006.81,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 8,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#9)",
+      "first_stage_ms": 6.46,
+      "first_token_ms": 12436.22,
+      "final_ms": 15854.45,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 9,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#10)",
+      "first_stage_ms": 7.38,
+      "first_token_ms": 14531.82,
+      "final_ms": 17933.59,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 10,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#11)",
+      "first_stage_ms": 6.98,
+      "first_token_ms": 16683.83,
+      "final_ms": 18108.26,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 11,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#12)",
+      "first_stage_ms": 7.5,
+      "first_token_ms": 11416.99,
+      "final_ms": 13251.12,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 12,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#13)",
+      "first_stage_ms": 6.56,
+      "first_token_ms": 10072.27,
+      "final_ms": 13540.69,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 13,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#14)",
+      "first_stage_ms": 8.55,
+      "first_token_ms": 9956.23,
+      "final_ms": 11008.25,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 14,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#15)",
+      "first_stage_ms": 5.29,
+      "first_token_ms": 9635.64,
+      "final_ms": 11190.83,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 15,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#16)",
+      "first_stage_ms": 9.24,
+      "first_token_ms": 9565.15,
+      "final_ms": 12452.71,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 16,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#17)",
+      "first_stage_ms": 8.73,
+      "first_token_ms": 8589.91,
+      "final_ms": 10452.63,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 17,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#18)",
+      "first_stage_ms": 6.65,
+      "first_token_ms": 9639.51,
+      "final_ms": 12928.51,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 18,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#19)",
+      "first_stage_ms": 6.9,
+      "first_token_ms": 11353.45,
+      "final_ms": 12607.65,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 19,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#20)",
+      "first_stage_ms": 7.67,
+      "first_token_ms": 9751.27,
+      "final_ms": 13312.01,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 20,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#21)",
+      "first_stage_ms": 7.71,
+      "first_token_ms": 11718.78,
+      "final_ms": 15999.96,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 21,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#22)",
+      "first_stage_ms": 9.12,
+      "first_token_ms": 12307.13,
+      "final_ms": 14189.94,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 22,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#23)",
+      "first_stage_ms": 6.06,
+      "first_token_ms": 12798.54,
+      "final_ms": 16485.65,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 23,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#24)",
+      "first_stage_ms": 5.93,
+      "first_token_ms": 12348.17,
+      "final_ms": 13509.04,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 24,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#25)",
+      "first_stage_ms": 5.58,
+      "first_token_ms": 9259.77,
+      "final_ms": 12552.79,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 25,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#26)",
+      "first_stage_ms": 6.17,
+      "first_token_ms": 10858.46,
+      "final_ms": 13986.56,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 26,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#27)",
+      "first_stage_ms": 5.68,
+      "first_token_ms": 10070.4,
+      "final_ms": 11791.05,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 27,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#28)",
+      "first_stage_ms": 10.08,
+      "first_token_ms": 11320.89,
+      "final_ms": 15161.71,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 28,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#29)",
+      "first_stage_ms": 6.18,
+      "first_token_ms": 11954.42,
+      "final_ms": 15915.41,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 29,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#30)",
+      "first_stage_ms": 7.91,
+      "first_token_ms": 12953.42,
+      "final_ms": 16526.34,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 30,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#31)",
+      "first_stage_ms": 7.34,
+      "first_token_ms": 15145.96,
+      "final_ms": 18616.56,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 31,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#32)",
+      "first_stage_ms": 5.92,
+      "first_token_ms": 14395.98,
+      "final_ms": 16336.53,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 32,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#33)",
+      "first_stage_ms": 6.71,
+      "first_token_ms": 12189.95,
+      "final_ms": 15585.16,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 33,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#34)",
+      "first_stage_ms": 6.67,
+      "first_token_ms": 11970.11,
+      "final_ms": 15536.32,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 34,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#35)",
+      "first_stage_ms": 7.36,
+      "first_token_ms": 11924.2,
+      "final_ms": 15931.39,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 35,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#36)",
+      "first_stage_ms": 6.2,
+      "first_token_ms": 14183.89,
+      "final_ms": 17303.06,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 36,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#37)",
+      "first_stage_ms": 6.74,
+      "first_token_ms": 13686.11,
+      "final_ms": 15875.41,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 37,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#38)",
+      "first_stage_ms": 9.8,
+      "first_token_ms": 11720.62,
+      "final_ms": 13321.51,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 38,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#39)",
+      "first_stage_ms": 7.71,
+      "first_token_ms": 9301.26,
+      "final_ms": 13175.51,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 39,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#40)",
+      "first_stage_ms": 12.69,
+      "first_token_ms": 10114.69,
+      "final_ms": 14559.61,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 40,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#41)",
+      "first_stage_ms": 5.73,
+      "first_token_ms": 12596.56,
+      "final_ms": 16235.32,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 41,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#42)",
+      "first_stage_ms": 5.81,
+      "first_token_ms": 14904.35,
+      "final_ms": 16392.4,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 42,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#43)",
+      "first_stage_ms": 9.86,
+      "first_token_ms": 12454.12,
+      "final_ms": 14493.29,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 43,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#44)",
+      "first_stage_ms": 7.81,
+      "first_token_ms": 9929.82,
+      "final_ms": 13885.51,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 44,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#45)",
+      "first_stage_ms": 8.71,
+      "first_token_ms": 10254.16,
+      "final_ms": 13334.91,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 45,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#46)",
+      "first_stage_ms": 7.98,
+      "first_token_ms": 12081.64,
+      "final_ms": 13444.03,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 46,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#47)",
+      "first_stage_ms": 5.91,
+      "first_token_ms": 11281.15,
+      "final_ms": 12725.38,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 47,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#48)",
+      "first_stage_ms": 7.01,
+      "first_token_ms": 8811.6,
+      "final_ms": 10437.46,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 48,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#49)",
+      "first_stage_ms": 10.24,
+      "first_token_ms": 7438.81,
+      "final_ms": 8645.1,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 49,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#50)",
+      "first_stage_ms": 9.15,
+      "first_token_ms": 7371.75,
+      "final_ms": 12362.26,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 50,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#51)",
+      "first_stage_ms": 7.02,
+      "first_token_ms": 11179.99,
+      "final_ms": 12338.31,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 51,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#52)",
+      "first_stage_ms": 6.73,
+      "first_token_ms": 10529.39,
+      "final_ms": 11937.21,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 52,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#53)",
+      "first_stage_ms": 8.88,
+      "first_token_ms": 10536.26,
+      "final_ms": 13155.01,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 53,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#54)",
+      "first_stage_ms": 8.01,
+      "first_token_ms": 8328.84,
+      "final_ms": 12176.02,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 54,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#55)",
+      "first_stage_ms": 5.83,
+      "first_token_ms": 11019.31,
+      "final_ms": 15427.94,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 55,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#56)",
+      "first_stage_ms": 8.66,
+      "first_token_ms": 14217.21,
+      "final_ms": 18211.46,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 56,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#57)",
+      "first_stage_ms": 5.43,
+      "first_token_ms": 15464.56,
+      "final_ms": 17439.49,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 57,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#58)",
+      "first_stage_ms": 11.21,
+      "first_token_ms": 13335.03,
+      "final_ms": 16926.04,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 58,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#59)",
+      "first_stage_ms": 10.1,
+      "first_token_ms": 12344.3,
+      "final_ms": 15731.28,
+      "success": true,
+      "error": null
+    },
+    {
+      "request_index": 59,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#60)",
+      "first_stage_ms": 8.97,
+      "first_token_ms": 11685.94,
+      "final_ms": 14926.5,
+      "success": true,
+      "error": null
+    }
+  ]
+}
