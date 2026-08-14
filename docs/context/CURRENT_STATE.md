@@ -90,9 +90,13 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **Orca 코디네이터 토큰 최적화 v2 구현 (T0~T7)**:
-   - T0(기준선 감사), T1(부트스트랩 경량화), T2(Task Capsule v2 규약), T3(Validator v2), T4(CURRENT_STATE 정본화), T5(Playbook/Setup 동기화), T6(Cross-CLI 검증) 병합 완료 (`main=f9b9477`).
-   - T7(Coordinator Audit) 최종 정합성·전체 테스트·작업 트리 정리 점검 진행 중.
+1. **Orca 코디네이터 토큰 최적화 v2 — 구현·실증 완료**:
+   - T0~T7 병합 완료. 이후 코디네이터 검수로 빈틈 4건을 보완했습니다(검사 9 -> 12, `CURRENT_STATE` 존재·필수 필드·크기 경고).
+   - T6 은 정적 검증만이었으므로 **실행 검증**을 추가했습니다. 실제 워커에서 Capsule -> `worker_done` 도달과 금지 문서 재독 0건을 확인했습니다([`../ops/orca_v2_runtime_smoke_20260815.md`](../ops/orca_v2_runtime_smoke_20260815.md)).
+   - Capsule 격리 누수를 발견해 배치 규약 2.9 를 만들고 적용 후 `read_files` 초과 0건을 실측했습니다.
+   - Reviewer 계층을 첫 가동했고 결함을 놓쳤습니다. 계약을 v2.1 체크리스트로 고쳐 seeded defect 로 0/3 -> 4/4 개선을 측정했습니다([`../ops/orca_v2_reviewer_sensitivity_20260815.md`](../ops/orca_v2_reviewer_sensitivity_20260815.md)).
+   - 계약 조건은 `scripts/validate_review_report.py` 로 기계 판정합니다.
+   - **미청구 사항**: 절감량 정량값(before 확보 불가, 이후 누적), Level 3 축소 가능성(체크리스트 밖 결함은 절반만 검출), T6 OpenCode 1종(비임계).
 2. **Ollama 병렬도 실험 및 SSE 동시성 기준선 제정**:
    - `OLLAMA_NUM_PARALLEL` 실험을 통해 c4 등 동시성 환경에서의 지연 원인 분석 및 기준 확립.
 3. **Windows Docker Desktop 크로스 플랫폼 실기 검증**:
