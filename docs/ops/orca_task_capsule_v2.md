@@ -336,6 +336,35 @@ review_checklist:
 **이 조항의 목적은 Reviewer 를 신뢰하는 것이 아니라 빈 검토를 드러내는
 것입니다.** 첫 실사용에서 `blocking_issues: []` 만으로는 "결함이 없다" 와
 "찾지 않았다" 가 구분되지 않았습니다.
+### 4.1.3 `report_path` — 상세는 파일로, `--body` 는 최소로
+
+**중첩 JSON 을 `--body` 로 보내면 셸 이스케이프에서 실패합니다.** 2026-08-15 감도
+시험에서 Reviewer 가 `blocking_issues` 의 dict 배열을 `orca orchestration send
+--body` 로 전달하려다 실패해 파일 우회를 택했습니다
+([`orca_v2_reviewer_sensitivity_20260815.md`](orca_v2_reviewer_sensitivity_20260815.md) 5장).
+
+설계 8.1 의 "worker_done 은 인덱스이고 긴 내용은 artifact 로" 원칙을 **리뷰 보고
+자체에도 적용합니다.**
+
+| 위치 | 내용 |
+| --- | --- |
+| `report_path` 가 가리키는 파일 | 전체 `ORCA_REVIEW_DONE_V2` JSON. `checklist_results`, `blocking_issues` 상세 |
+| `--body` | `schema`, `task_id`, `verdict`, `report_path`, 그리고 개수만 |
+
+```bash
+# 1. 상세를 파일로 씁니다 (인용 부호 문제가 없습니다)
+cat > <capsule 디렉터리>/review_report.json <<'JSON'
+{ "schema": "ORCA_REVIEW_DONE_V2", "version": "2.1.0", ... }
+JSON
+
+# 2. 인덱스만 보냅니다
+orca orchestration send --to run:<run_id> --type worker_done \
+  --task-id <task_id> --outcome succeeded \
+  --body '{"schema":"ORCA_REVIEW_DONE_V2","verdict":"fail","report_path":"<경로>","blocking_count":5}'
+```
+
+**Capsule 을 쓰는 코디네이터는 `report_path` 를 `artifact_paths` 에 미리
+지정하십시오.** 지정하지 않으면 워커가 임의 경로를 골라 코디네이터가 찾지 못합니다.
 
 ### 4.2 리뷰어의 7대 핵심 감사 기준
 
