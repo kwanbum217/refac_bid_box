@@ -22,13 +22,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from scripts.orca_contract import (
-    char_len,
-    load_capsule,
-    load_report,
-    parse_capsule_scalar,
-    string_list,
-)
+try:
+    from scripts.orca_contract import (
+        char_len,
+        load_capsule,
+        load_report,
+        parse_capsule_scalar,
+        string_list,
+    )
+except ModuleNotFoundError:
+    # 저장소 루트를 sys.path 에 추가해 python3 scripts/... 직접 실행을 지원합니다.
+    # 형제 도구인 orca_level1_gate.py 와 summarize_worker_done.py 와 실행 방식을
+    # 맞춥니다. 플레이북이 세 도구를 모두 python3 scripts/... 로 안내합니다.
+    _REPO_ROOT = Path(__file__).resolve().parent.parent
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    from scripts.orca_contract import (  # type: ignore[no-redef]
+        char_len,
+        load_capsule,
+        load_report,
+        parse_capsule_scalar,
+        string_list,
+    )
 
 LEDGER_SCHEMA = "ORCA_V2_METRICS_ROW_1"
 DEFAULT_LEDGER = "docs/ops/orca_v2_metrics_ledger.jsonl"
