@@ -1,0 +1,4296 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "rounds": 600,
+  "concurrency": 1,
+  "warmup_rounds": 1,
+  "summary": {
+    "n": 600,
+    "successful": 600,
+    "errors": 0,
+    "p50_ms": 12.3345415,
+    "p95_ms": 15.41530865,
+    "p99_ms": 16.695114249999996,
+    "tail_cutoff_ms": 15.41530865,
+    "tail_n": 30,
+    "tail_request_indices": [
+      0,
+      6,
+      37,
+      51,
+      65,
+      79,
+      93,
+      107,
+      121,
+      135,
+      163,
+      205,
+      222,
+      233,
+      247,
+      261,
+      275,
+      331,
+      345,
+      373,
+      387,
+      401,
+      415,
+      423,
+      425,
+      426,
+      429,
+      499,
+      513,
+      597
+    ],
+    "tail_segment_summary": {
+      "enqueue_to_pick_ms": {
+        "n": 0,
+        "mean_ms": null,
+        "median_ms": null,
+        "p95_ms": null,
+        "max_ms": null
+      },
+      "batch_window_ms": {
+        "n": 0,
+        "mean_ms": null,
+        "median_ms": null,
+        "p95_ms": null,
+        "max_ms": null
+      },
+      "lightgbm_call_ms": {
+        "n": 0,
+        "mean_ms": null,
+        "median_ms": null,
+        "p95_ms": null,
+        "max_ms": null
+      },
+      "residual_after_model_ms": {
+        "n": 0,
+        "mean_ms": null,
+        "median_ms": null,
+        "p95_ms": null,
+        "max_ms": null
+      }
+    },
+    "tail_batch_dispatch_ms": [],
+    "tail_lightgbm_thread_cpu_ms": [],
+    "tail_batch_dispatch_thread_cpu_ms": [],
+    "batch_size_distribution": {},
+    "tail_batch_size_distribution": {},
+    "tail_gc_collections_during": {
+      "values": [],
+      "nonzero_count": 0
+    },
+    "tail_gc_events": {
+      "counts": [],
+      "max_count": 0,
+      "overlap_ms": [],
+      "max_overlap_ms": 0.0
+    }
+  },
+  "requests": [
+    {
+      "request_index": 0,
+      "latency_ms": 15.648292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 1,
+      "latency_ms": 13.26625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 2,
+      "latency_ms": 13.23275,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 3,
+      "latency_ms": 12.71625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 4,
+      "latency_ms": 12.824541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 5,
+      "latency_ms": 13.018042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 6,
+      "latency_ms": 62.846916,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 7,
+      "latency_ms": 13.267958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 8,
+      "latency_ms": 12.633041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 9,
+      "latency_ms": 12.648167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 10,
+      "latency_ms": 12.912916,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 11,
+      "latency_ms": 13.886042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 12,
+      "latency_ms": 11.603917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 13,
+      "latency_ms": 11.93025,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 14,
+      "latency_ms": 11.705209,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 15,
+      "latency_ms": 11.931291,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 16,
+      "latency_ms": 12.208791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 17,
+      "latency_ms": 12.316792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 18,
+      "latency_ms": 12.282542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 19,
+      "latency_ms": 12.204083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 20,
+      "latency_ms": 12.458542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 21,
+      "latency_ms": 12.634458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 22,
+      "latency_ms": 12.401375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 23,
+      "latency_ms": 12.573208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 24,
+      "latency_ms": 15.268125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 25,
+      "latency_ms": 12.214834,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 26,
+      "latency_ms": 12.230208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 27,
+      "latency_ms": 12.022916,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 28,
+      "latency_ms": 11.599084,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 29,
+      "latency_ms": 12.396416,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 30,
+      "latency_ms": 12.517333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 31,
+      "latency_ms": 12.873708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 32,
+      "latency_ms": 12.432917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 33,
+      "latency_ms": 11.749167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 34,
+      "latency_ms": 12.123792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 35,
+      "latency_ms": 12.493291,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 36,
+      "latency_ms": 12.574208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 37,
+      "latency_ms": 15.491458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 38,
+      "latency_ms": 12.779292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 39,
+      "latency_ms": 11.705709,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 40,
+      "latency_ms": 12.342,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 41,
+      "latency_ms": 12.283458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 42,
+      "latency_ms": 12.534042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 43,
+      "latency_ms": 11.426,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 44,
+      "latency_ms": 12.051625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 45,
+      "latency_ms": 11.948791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 46,
+      "latency_ms": 12.35825,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 47,
+      "latency_ms": 12.657792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 48,
+      "latency_ms": 11.990042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 49,
+      "latency_ms": 12.57575,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 50,
+      "latency_ms": 12.298958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 51,
+      "latency_ms": 17.472958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 52,
+      "latency_ms": 11.405875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 53,
+      "latency_ms": 12.436167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 54,
+      "latency_ms": 12.941458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 55,
+      "latency_ms": 12.793375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 56,
+      "latency_ms": 12.664958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 57,
+      "latency_ms": 12.742625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 58,
+      "latency_ms": 12.861166,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 59,
+      "latency_ms": 12.423584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 60,
+      "latency_ms": 12.646333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 61,
+      "latency_ms": 12.082792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 62,
+      "latency_ms": 11.363583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 63,
+      "latency_ms": 12.965875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 64,
+      "latency_ms": 12.350792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 65,
+      "latency_ms": 16.0815,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 66,
+      "latency_ms": 12.933292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 67,
+      "latency_ms": 12.20675,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 68,
+      "latency_ms": 12.060417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 69,
+      "latency_ms": 12.271041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 70,
+      "latency_ms": 11.8555,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 71,
+      "latency_ms": 12.288334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 72,
+      "latency_ms": 12.228083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 73,
+      "latency_ms": 12.588125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 74,
+      "latency_ms": 12.306584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 75,
+      "latency_ms": 13.561583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 76,
+      "latency_ms": 12.88575,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 77,
+      "latency_ms": 13.21825,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 78,
+      "latency_ms": 13.543083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 79,
+      "latency_ms": 16.693208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 80,
+      "latency_ms": 12.87075,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 81,
+      "latency_ms": 12.735375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 82,
+      "latency_ms": 12.341542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 83,
+      "latency_ms": 12.371,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 84,
+      "latency_ms": 12.412292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 85,
+      "latency_ms": 11.334792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 86,
+      "latency_ms": 11.610834,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 87,
+      "latency_ms": 11.348042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 88,
+      "latency_ms": 11.317708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 89,
+      "latency_ms": 11.215208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 90,
+      "latency_ms": 11.573083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 91,
+      "latency_ms": 11.531542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 92,
+      "latency_ms": 11.703792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 93,
+      "latency_ms": 15.935625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 94,
+      "latency_ms": 12.027333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 95,
+      "latency_ms": 11.755666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 96,
+      "latency_ms": 11.841833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 97,
+      "latency_ms": 11.932833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 98,
+      "latency_ms": 11.847458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 99,
+      "latency_ms": 11.556417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 100,
+      "latency_ms": 12.435334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 101,
+      "latency_ms": 11.873,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 102,
+      "latency_ms": 12.539083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 103,
+      "latency_ms": 11.350041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 104,
+      "latency_ms": 11.320333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 105,
+      "latency_ms": 11.373583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 106,
+      "latency_ms": 11.464,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 107,
+      "latency_ms": 15.616834,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 108,
+      "latency_ms": 12.146875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 109,
+      "latency_ms": 12.180041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 110,
+      "latency_ms": 12.101125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 111,
+      "latency_ms": 12.1425,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 112,
+      "latency_ms": 12.206667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 113,
+      "latency_ms": 12.260458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 114,
+      "latency_ms": 12.268917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 115,
+      "latency_ms": 12.28125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 116,
+      "latency_ms": 11.459625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 117,
+      "latency_ms": 12.005167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 118,
+      "latency_ms": 12.226,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 119,
+      "latency_ms": 11.530042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 120,
+      "latency_ms": 12.871334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 121,
+      "latency_ms": 16.183166,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 122,
+      "latency_ms": 12.288166,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 123,
+      "latency_ms": 12.380458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 124,
+      "latency_ms": 12.536459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 125,
+      "latency_ms": 11.199708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 126,
+      "latency_ms": 12.140708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 127,
+      "latency_ms": 12.3785,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 128,
+      "latency_ms": 12.594416,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 129,
+      "latency_ms": 12.625791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 130,
+      "latency_ms": 12.611208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 131,
+      "latency_ms": 12.319375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 132,
+      "latency_ms": 12.12175,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 133,
+      "latency_ms": 12.70225,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 134,
+      "latency_ms": 12.763083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 135,
+      "latency_ms": 15.439,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 136,
+      "latency_ms": 12.347625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 137,
+      "latency_ms": 12.40425,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 138,
+      "latency_ms": 11.905291,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 139,
+      "latency_ms": 12.3515,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 140,
+      "latency_ms": 12.852792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 141,
+      "latency_ms": 12.39025,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 142,
+      "latency_ms": 12.376125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 143,
+      "latency_ms": 12.589083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 144,
+      "latency_ms": 11.859208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 145,
+      "latency_ms": 12.592666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 146,
+      "latency_ms": 11.589042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 147,
+      "latency_ms": 12.435541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 148,
+      "latency_ms": 12.319084,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 149,
+      "latency_ms": 14.917875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 150,
+      "latency_ms": 12.099958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 151,
+      "latency_ms": 11.880417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 152,
+      "latency_ms": 11.843167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 153,
+      "latency_ms": 12.659125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 154,
+      "latency_ms": 12.140666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 155,
+      "latency_ms": 12.016042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 156,
+      "latency_ms": 12.037417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 157,
+      "latency_ms": 12.2195,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 158,
+      "latency_ms": 12.113417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 159,
+      "latency_ms": 12.493,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 160,
+      "latency_ms": 13.028292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 161,
+      "latency_ms": 12.312959,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 162,
+      "latency_ms": 12.42825,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 163,
+      "latency_ms": 15.536875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 164,
+      "latency_ms": 12.058708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 165,
+      "latency_ms": 11.548,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 166,
+      "latency_ms": 13.033791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 167,
+      "latency_ms": 12.326583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 168,
+      "latency_ms": 12.711708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 169,
+      "latency_ms": 12.738583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 170,
+      "latency_ms": 12.222458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 171,
+      "latency_ms": 12.094375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 172,
+      "latency_ms": 12.335208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 173,
+      "latency_ms": 12.655958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 174,
+      "latency_ms": 13.25175,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 175,
+      "latency_ms": 11.798167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 176,
+      "latency_ms": 11.622916,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 177,
+      "latency_ms": 14.168708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 178,
+      "latency_ms": 11.545542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 179,
+      "latency_ms": 11.474208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 180,
+      "latency_ms": 11.385584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 181,
+      "latency_ms": 11.611875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 182,
+      "latency_ms": 11.186083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 183,
+      "latency_ms": 11.381167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 184,
+      "latency_ms": 11.416333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 185,
+      "latency_ms": 11.367041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 186,
+      "latency_ms": 11.634084,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 187,
+      "latency_ms": 11.929125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 188,
+      "latency_ms": 11.611,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 189,
+      "latency_ms": 11.912958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 190,
+      "latency_ms": 11.688958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 191,
+      "latency_ms": 14.919083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 192,
+      "latency_ms": 11.758167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 193,
+      "latency_ms": 11.867541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 194,
+      "latency_ms": 12.725416,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 195,
+      "latency_ms": 12.333875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 196,
+      "latency_ms": 12.172208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 197,
+      "latency_ms": 13.047792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 198,
+      "latency_ms": 13.57275,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 199,
+      "latency_ms": 13.288042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 200,
+      "latency_ms": 14.522875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 201,
+      "latency_ms": 13.633375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 202,
+      "latency_ms": 14.062834,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 203,
+      "latency_ms": 13.057541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 204,
+      "latency_ms": 12.341042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 205,
+      "latency_ms": 16.129458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 206,
+      "latency_ms": 11.896542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 207,
+      "latency_ms": 11.595792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 208,
+      "latency_ms": 11.325125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 209,
+      "latency_ms": 11.707625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 210,
+      "latency_ms": 11.72675,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 211,
+      "latency_ms": 11.5055,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 212,
+      "latency_ms": 11.522167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 213,
+      "latency_ms": 11.466625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 214,
+      "latency_ms": 12.018,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 215,
+      "latency_ms": 11.667334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 216,
+      "latency_ms": 11.825125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 217,
+      "latency_ms": 11.831542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 218,
+      "latency_ms": 11.953625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 219,
+      "latency_ms": 15.185334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 220,
+      "latency_ms": 12.668833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 221,
+      "latency_ms": 12.217583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 222,
+      "latency_ms": 15.499792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 223,
+      "latency_ms": 12.448875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 224,
+      "latency_ms": 14.556792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 225,
+      "latency_ms": 12.521333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 226,
+      "latency_ms": 12.37925,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 227,
+      "latency_ms": 11.553125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 228,
+      "latency_ms": 12.3365,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 229,
+      "latency_ms": 12.316625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 230,
+      "latency_ms": 11.844375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 231,
+      "latency_ms": 11.738375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 232,
+      "latency_ms": 11.315042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 233,
+      "latency_ms": 15.918375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 234,
+      "latency_ms": 13.093542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 235,
+      "latency_ms": 11.743417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 236,
+      "latency_ms": 11.909125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 237,
+      "latency_ms": 12.111333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 238,
+      "latency_ms": 11.951791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 239,
+      "latency_ms": 13.114125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 240,
+      "latency_ms": 12.914083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 241,
+      "latency_ms": 12.902333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 242,
+      "latency_ms": 12.586542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 243,
+      "latency_ms": 11.551958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 244,
+      "latency_ms": 11.4735,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 245,
+      "latency_ms": 12.862459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 246,
+      "latency_ms": 12.705334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 247,
+      "latency_ms": 16.883833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 248,
+      "latency_ms": 12.332958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 249,
+      "latency_ms": 11.607667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 250,
+      "latency_ms": 12.403208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 251,
+      "latency_ms": 12.493584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 252,
+      "latency_ms": 12.434334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 253,
+      "latency_ms": 12.9935,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 254,
+      "latency_ms": 12.116917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 255,
+      "latency_ms": 13.625333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 256,
+      "latency_ms": 13.070625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 257,
+      "latency_ms": 13.644292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 258,
+      "latency_ms": 14.118916,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 259,
+      "latency_ms": 13.508375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 260,
+      "latency_ms": 12.720167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 261,
+      "latency_ms": 15.92625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 262,
+      "latency_ms": 12.338208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 263,
+      "latency_ms": 13.054708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 264,
+      "latency_ms": 11.657792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 265,
+      "latency_ms": 10.863459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 266,
+      "latency_ms": 11.43375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 267,
+      "latency_ms": 11.235292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 268,
+      "latency_ms": 11.158334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 269,
+      "latency_ms": 14.954334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 270,
+      "latency_ms": 12.112667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 271,
+      "latency_ms": 11.377,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 272,
+      "latency_ms": 11.503167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 273,
+      "latency_ms": 11.591417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 274,
+      "latency_ms": 12.060833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 275,
+      "latency_ms": 16.126875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 276,
+      "latency_ms": 11.559959,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 277,
+      "latency_ms": 11.977,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 278,
+      "latency_ms": 12.6205,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 279,
+      "latency_ms": 12.125291,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 280,
+      "latency_ms": 12.165291,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 281,
+      "latency_ms": 12.338292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 282,
+      "latency_ms": 12.112042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 283,
+      "latency_ms": 11.898833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 284,
+      "latency_ms": 12.272875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 285,
+      "latency_ms": 11.668292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 286,
+      "latency_ms": 12.637792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 287,
+      "latency_ms": 12.271083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 288,
+      "latency_ms": 11.684125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 289,
+      "latency_ms": 15.081584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 290,
+      "latency_ms": 12.503333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 291,
+      "latency_ms": 12.23575,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 292,
+      "latency_ms": 12.654,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 293,
+      "latency_ms": 12.581917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 294,
+      "latency_ms": 12.610292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 295,
+      "latency_ms": 12.302041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 296,
+      "latency_ms": 12.76175,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 297,
+      "latency_ms": 12.41575,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 298,
+      "latency_ms": 12.040917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 299,
+      "latency_ms": 12.483709,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 300,
+      "latency_ms": 13.047708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 301,
+      "latency_ms": 12.584666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 302,
+      "latency_ms": 12.300958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 303,
+      "latency_ms": 15.285292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 304,
+      "latency_ms": 12.040333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 305,
+      "latency_ms": 12.429541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 306,
+      "latency_ms": 12.848875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 307,
+      "latency_ms": 12.664875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 308,
+      "latency_ms": 12.391375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 309,
+      "latency_ms": 12.716333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 310,
+      "latency_ms": 12.760417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 311,
+      "latency_ms": 12.49975,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 312,
+      "latency_ms": 12.5895,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 313,
+      "latency_ms": 12.443375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 314,
+      "latency_ms": 12.613083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 315,
+      "latency_ms": 12.036458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 316,
+      "latency_ms": 12.572542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 317,
+      "latency_ms": 15.387458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 318,
+      "latency_ms": 12.224666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 319,
+      "latency_ms": 12.636625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 320,
+      "latency_ms": 12.017292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 321,
+      "latency_ms": 12.713125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 322,
+      "latency_ms": 12.586958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 323,
+      "latency_ms": 12.361167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 324,
+      "latency_ms": 12.438083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 325,
+      "latency_ms": 12.047209,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 326,
+      "latency_ms": 11.956709,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 327,
+      "latency_ms": 12.421,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 328,
+      "latency_ms": 12.779833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 329,
+      "latency_ms": 12.838542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 330,
+      "latency_ms": 12.069292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 331,
+      "latency_ms": 16.030667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 332,
+      "latency_ms": 12.45575,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 333,
+      "latency_ms": 12.578791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 334,
+      "latency_ms": 13.008542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 335,
+      "latency_ms": 12.412417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 336,
+      "latency_ms": 12.034833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 337,
+      "latency_ms": 12.185417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 338,
+      "latency_ms": 12.167125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 339,
+      "latency_ms": 12.355708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 340,
+      "latency_ms": 12.479208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 341,
+      "latency_ms": 12.565083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 342,
+      "latency_ms": 12.609041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 343,
+      "latency_ms": 11.970333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 344,
+      "latency_ms": 13.576458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 345,
+      "latency_ms": 15.967167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 346,
+      "latency_ms": 13.302666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 347,
+      "latency_ms": 13.236083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 348,
+      "latency_ms": 12.393584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 349,
+      "latency_ms": 12.201083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 350,
+      "latency_ms": 12.696083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 351,
+      "latency_ms": 12.761208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 352,
+      "latency_ms": 12.57375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 353,
+      "latency_ms": 11.173542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 354,
+      "latency_ms": 11.618333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 355,
+      "latency_ms": 11.269,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 356,
+      "latency_ms": 11.364542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 357,
+      "latency_ms": 11.452583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 358,
+      "latency_ms": 11.698708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 359,
+      "latency_ms": 14.617625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 360,
+      "latency_ms": 14.142375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 361,
+      "latency_ms": 14.7115,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 362,
+      "latency_ms": 14.371667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 363,
+      "latency_ms": 13.062667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 364,
+      "latency_ms": 14.440625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 365,
+      "latency_ms": 12.954042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 366,
+      "latency_ms": 12.733459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 367,
+      "latency_ms": 12.211459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 368,
+      "latency_ms": 11.787042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 369,
+      "latency_ms": 11.837375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 370,
+      "latency_ms": 11.36375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 371,
+      "latency_ms": 11.545042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 372,
+      "latency_ms": 13.145167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 373,
+      "latency_ms": 17.168542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 374,
+      "latency_ms": 12.5105,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 375,
+      "latency_ms": 11.629875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 376,
+      "latency_ms": 12.478416,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 377,
+      "latency_ms": 12.0845,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 378,
+      "latency_ms": 12.665709,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 379,
+      "latency_ms": 12.461833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 380,
+      "latency_ms": 12.180666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 381,
+      "latency_ms": 12.103625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 382,
+      "latency_ms": 12.06275,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 383,
+      "latency_ms": 12.410958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 384,
+      "latency_ms": 12.657834,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 385,
+      "latency_ms": 12.155583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 386,
+      "latency_ms": 12.106667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 387,
+      "latency_ms": 15.909167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 388,
+      "latency_ms": 11.517041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 389,
+      "latency_ms": 11.755875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 390,
+      "latency_ms": 12.498125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 391,
+      "latency_ms": 12.093584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 392,
+      "latency_ms": 12.392667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 393,
+      "latency_ms": 12.755333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 394,
+      "latency_ms": 12.302333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 395,
+      "latency_ms": 12.401084,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 396,
+      "latency_ms": 12.771292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 397,
+      "latency_ms": 11.758791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 398,
+      "latency_ms": 12.755542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 399,
+      "latency_ms": 12.504125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 400,
+      "latency_ms": 11.50975,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 401,
+      "latency_ms": 16.351083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 402,
+      "latency_ms": 12.57175,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 403,
+      "latency_ms": 12.195667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 404,
+      "latency_ms": 11.860334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 405,
+      "latency_ms": 12.696417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 406,
+      "latency_ms": 12.639,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 407,
+      "latency_ms": 12.348625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 408,
+      "latency_ms": 11.308958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 409,
+      "latency_ms": 12.291542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 410,
+      "latency_ms": 12.670875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 411,
+      "latency_ms": 12.287708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 412,
+      "latency_ms": 12.220833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 413,
+      "latency_ms": 12.187708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 414,
+      "latency_ms": 12.346333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 415,
+      "latency_ms": 15.648917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 416,
+      "latency_ms": 11.863375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 417,
+      "latency_ms": 12.588375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 418,
+      "latency_ms": 13.180959,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 419,
+      "latency_ms": 13.268625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 420,
+      "latency_ms": 11.816666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 421,
+      "latency_ms": 13.795,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 422,
+      "latency_ms": 13.714625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 423,
+      "latency_ms": 16.6515,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 424,
+      "latency_ms": 12.571208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 425,
+      "latency_ms": 16.996542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 426,
+      "latency_ms": 15.418,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 427,
+      "latency_ms": 15.202375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 428,
+      "latency_ms": 12.022084,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 429,
+      "latency_ms": 17.255083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 430,
+      "latency_ms": 13.218291,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 431,
+      "latency_ms": 14.744167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 432,
+      "latency_ms": 12.985084,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 433,
+      "latency_ms": 12.994917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 434,
+      "latency_ms": 12.867292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 435,
+      "latency_ms": 12.891375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 436,
+      "latency_ms": 12.148083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 437,
+      "latency_ms": 13.041292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 438,
+      "latency_ms": 12.628792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 439,
+      "latency_ms": 12.9295,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 440,
+      "latency_ms": 12.113709,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 441,
+      "latency_ms": 11.384334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 442,
+      "latency_ms": 12.058,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 443,
+      "latency_ms": 15.39325,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 444,
+      "latency_ms": 12.419583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 445,
+      "latency_ms": 12.932417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 446,
+      "latency_ms": 12.363584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 447,
+      "latency_ms": 12.122542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 448,
+      "latency_ms": 11.8655,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 449,
+      "latency_ms": 13.046458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 450,
+      "latency_ms": 12.469625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 451,
+      "latency_ms": 12.641083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 452,
+      "latency_ms": 11.162584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 453,
+      "latency_ms": 11.363125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 454,
+      "latency_ms": 11.177,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 455,
+      "latency_ms": 11.465917,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 456,
+      "latency_ms": 11.605208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 457,
+      "latency_ms": 14.741166,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 458,
+      "latency_ms": 11.1465,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 459,
+      "latency_ms": 11.869625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 460,
+      "latency_ms": 11.535791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 461,
+      "latency_ms": 11.834541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 462,
+      "latency_ms": 12.563542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 463,
+      "latency_ms": 12.051167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 464,
+      "latency_ms": 11.1255,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 465,
+      "latency_ms": 11.005416,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 466,
+      "latency_ms": 11.666667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 467,
+      "latency_ms": 11.747083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 468,
+      "latency_ms": 12.007,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 469,
+      "latency_ms": 12.462,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 470,
+      "latency_ms": 12.149417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 471,
+      "latency_ms": 14.884208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 472,
+      "latency_ms": 11.861542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 473,
+      "latency_ms": 12.443708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 474,
+      "latency_ms": 11.7635,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 475,
+      "latency_ms": 11.233542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 476,
+      "latency_ms": 12.132291,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 477,
+      "latency_ms": 11.925375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 478,
+      "latency_ms": 11.536541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 479,
+      "latency_ms": 11.252292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 480,
+      "latency_ms": 11.312,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 481,
+      "latency_ms": 11.338667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 482,
+      "latency_ms": 11.622959,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 483,
+      "latency_ms": 11.66175,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 484,
+      "latency_ms": 11.747209,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 485,
+      "latency_ms": 15.205875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 486,
+      "latency_ms": 12.938541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 487,
+      "latency_ms": 12.188916,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 488,
+      "latency_ms": 12.246042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 489,
+      "latency_ms": 11.68425,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 490,
+      "latency_ms": 11.447125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 491,
+      "latency_ms": 11.932167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 492,
+      "latency_ms": 11.4725,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 493,
+      "latency_ms": 11.698875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 494,
+      "latency_ms": 11.93925,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 495,
+      "latency_ms": 12.026666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 496,
+      "latency_ms": 11.7015,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 497,
+      "latency_ms": 12.265,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 498,
+      "latency_ms": 12.515708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 499,
+      "latency_ms": 16.659292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 500,
+      "latency_ms": 12.29675,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 501,
+      "latency_ms": 12.413,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 502,
+      "latency_ms": 12.008625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 503,
+      "latency_ms": 12.719167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 504,
+      "latency_ms": 12.550291,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 505,
+      "latency_ms": 12.097666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 506,
+      "latency_ms": 12.225667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 507,
+      "latency_ms": 12.2775,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 508,
+      "latency_ms": 11.975292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 509,
+      "latency_ms": 12.518417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 510,
+      "latency_ms": 12.402334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 511,
+      "latency_ms": 13.004459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 512,
+      "latency_ms": 11.345791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 513,
+      "latency_ms": 15.537417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 514,
+      "latency_ms": 11.761791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 515,
+      "latency_ms": 12.149583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 516,
+      "latency_ms": 11.598292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 517,
+      "latency_ms": 12.418791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 518,
+      "latency_ms": 11.684458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 519,
+      "latency_ms": 12.437792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 520,
+      "latency_ms": 11.714667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 521,
+      "latency_ms": 12.735041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 522,
+      "latency_ms": 12.754292,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 523,
+      "latency_ms": 12.544541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 524,
+      "latency_ms": 12.552459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 525,
+      "latency_ms": 13.340167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 526,
+      "latency_ms": 12.542791,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 527,
+      "latency_ms": 15.336584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 528,
+      "latency_ms": 12.800125,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 529,
+      "latency_ms": 12.712084,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 530,
+      "latency_ms": 12.9325,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 531,
+      "latency_ms": 11.938042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 532,
+      "latency_ms": 11.223542,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 533,
+      "latency_ms": 11.639541,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 534,
+      "latency_ms": 11.57425,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 535,
+      "latency_ms": 11.357958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 536,
+      "latency_ms": 11.646375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 537,
+      "latency_ms": 11.649833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 538,
+      "latency_ms": 11.842625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 539,
+      "latency_ms": 11.791458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 540,
+      "latency_ms": 11.5245,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 541,
+      "latency_ms": 15.415167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 542,
+      "latency_ms": 11.5405,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 543,
+      "latency_ms": 12.041667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 544,
+      "latency_ms": 12.484,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 545,
+      "latency_ms": 12.152459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 546,
+      "latency_ms": 12.303042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 547,
+      "latency_ms": 12.369792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 548,
+      "latency_ms": 11.228666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 549,
+      "latency_ms": 11.787875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 550,
+      "latency_ms": 11.578333,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 551,
+      "latency_ms": 11.697375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 552,
+      "latency_ms": 10.871667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 553,
+      "latency_ms": 11.544041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 554,
+      "latency_ms": 11.310833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 555,
+      "latency_ms": 14.622417,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 556,
+      "latency_ms": 12.121834,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 557,
+      "latency_ms": 12.344625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 558,
+      "latency_ms": 12.287375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 559,
+      "latency_ms": 12.332708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 560,
+      "latency_ms": 11.174209,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 561,
+      "latency_ms": 11.462666,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 562,
+      "latency_ms": 11.873708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 563,
+      "latency_ms": 11.254375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 564,
+      "latency_ms": 11.169708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 565,
+      "latency_ms": 12.045583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 566,
+      "latency_ms": 12.127708,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 567,
+      "latency_ms": 11.437375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 568,
+      "latency_ms": 12.367083,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 569,
+      "latency_ms": 15.142667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 570,
+      "latency_ms": 12.682667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 571,
+      "latency_ms": 11.9715,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 572,
+      "latency_ms": 12.855958,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 573,
+      "latency_ms": 12.653375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 574,
+      "latency_ms": 12.221458,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 575,
+      "latency_ms": 12.163875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 576,
+      "latency_ms": 12.648833,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 577,
+      "latency_ms": 12.852459,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 578,
+      "latency_ms": 11.828208,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 579,
+      "latency_ms": 12.874166,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 580,
+      "latency_ms": 12.509041,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 581,
+      "latency_ms": 12.652042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 582,
+      "latency_ms": 12.541167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 583,
+      "latency_ms": 14.660875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 584,
+      "latency_ms": 11.55775,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 585,
+      "latency_ms": 12.748334,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 586,
+      "latency_ms": 12.199583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 587,
+      "latency_ms": 12.898792,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 588,
+      "latency_ms": 12.602875,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 589,
+      "latency_ms": 12.40225,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 590,
+      "latency_ms": 15.164667,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 591,
+      "latency_ms": 12.753583,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 592,
+      "latency_ms": 12.248834,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 593,
+      "latency_ms": 12.163167,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 594,
+      "latency_ms": 11.795166,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 595,
+      "latency_ms": 12.958625,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 596,
+      "latency_ms": 12.600375,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 597,
+      "latency_ms": 16.664584,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 598,
+      "latency_ms": 13.097042,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    },
+    {
+      "request_index": 599,
+      "latency_ms": 12.76275,
+      "trace_id": null,
+      "error": null,
+      "trace": null
+    }
+  ],
+  "trace_log": "/private/tmp/claude-501/-Users-kwanbum-Documents-korea-IT-lanhchain-ai-vision-refac-bid-box/f8c83799-cae2-4a3e-9850-c7e7284edbc5/scratchpad/empty.log"
+}
