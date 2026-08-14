@@ -87,11 +87,12 @@ Task는 반드시 둘 다 돌립니다.
 ## 3. 감독 절차
 
 1. 각 Task는 `orca orchestration worker-start` 또는 `dispatch --inject`로 Dispatch합니다. 사용자 요청에 모델·추론 수준이 있으면 해당 값도 Dispatch 시 반영합니다.
-2. Dispatch 생성 직후 `task-list`와 `dispatch-show`로 Task와 Dispatch가 실제 존재하는지 확인합니다.
-3. 장시간 작업은 터미널 출력만으로 완료라고 판단하지 않습니다. 코디네이터는 `check --wait --types worker_done,escalation,question`으로 상태를 기다립니다.
-4. 워커는 검증이 끝난 뒤 `worker_done`을 정확히 한 번 전송합니다. 보고에는 변경 파일, 실행한 검증, 결과, 남은 위험 또는 차단 사유를 포함합니다.
-5. `worker_done`을 수신한 뒤에만 다음 의존 Task를 시작합니다. 필요하면 코디네이터가 결과를 검토하고, 작업자의 터미널을 다음 Task에 재사용하거나 해제합니다.
-6. 실패·차단은 완료로 바꾸지 않습니다. `escalation` 또는 `question`으로 사용자 결정이 필요한 항목, 재시도 조건, 영향을 받는 후속 Task를 보고합니다.
+2. Dispatch 생성 직후 **워커가 지시를 실제로 받았는지**를 워커 쪽에서 확인합니다. `task-list`와 `dispatch-show`는 Orca 기록만 보여주므로 근거가 되지 않습니다. `dispatch --inject`가 `ok: true`를 반환하고 Task가 `dispatched`로 바뀌어도 전달은 실패할 수 있습니다. `orca terminal read --terminal <handle>`로 프롬프트가 비어 있지 않고 워커가 응답 중인지 확인합니다.
+3. 기동 후 2분 안에 2번 확인을 하고, 이후 커밋 0건과 미커밋 변경 0건이 5분 이상 이어지면 정체로 판정해 터미널 출력을 다시 읽습니다. 진행 중이라고 보고하기 전에 이 확인을 거칩니다.
+4. 장시간 작업은 터미널 출력만으로 완료라고 판단하지 않습니다. 코디네이터는 `check --wait --types worker_done,escalation,question`으로 상태를 기다립니다.
+5. 워커는 검증이 끝난 뒤 `worker_done`을 정확히 한 번 전송합니다. 보고에는 변경 파일, 실행한 검증, 결과, 남은 위험 또는 차단 사유를 포함합니다.
+6. `worker_done`을 수신한 뒤에만 다음 의존 Task를 시작합니다. 필요하면 코디네이터가 결과를 검토하고, 작업자의 터미널을 다음 Task에 재사용하거나 해제합니다.
+7. 실패·차단은 완료로 바꾸지 않습니다. `escalation` 또는 `question`으로 사용자 결정이 필요한 항목, 재시도 조건, 영향을 받는 후속 Task를 보고합니다.
 
 ## 4. 상태 표현과 인수인계
 
