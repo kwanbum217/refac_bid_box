@@ -24,11 +24,13 @@
 | --- | --- | ---: | ---: | --- | --- |
 | G1 | DB 스키마·행 수·가중치 보존 | 100% 무손실 | 100% | 통과 | `scripts/verify_migration.py` |
 | G2 | 크로스 플랫폼 (macOS / Windows) | macOS 완료 | 양대 OS | 부분 완료 | Windows Docker Desktop 실기 검증 잔여 |
-| G3 | SSE 첫 토큰 P95 | 1.721초 | 3초 | **통과** | [`phase7_latency_recheck_20260813.md:23`](docs/ops/phase7_latency_recheck_20260813.md#L23) |
-| G3 | SSE 전체 응답 P95 | 8.129초 | 20초 | **통과** | [`phase7_latency_recheck_20260813.md:24`](docs/ops/phase7_latency_recheck_20260813.md#L24) |
-| G3 | 예측 API warm c10 P95 | 199.18ms | 100ms | **미달** | [`phase7_latency_recheck_20260813.md:9-10`](docs/ops/phase7_latency_recheck_20260813.md#L9-L10), [`uvicorn_worker_scaling_candidate_20260813.md:138`](docs/ops/uvicorn_worker_scaling_candidate_20260813.md#L138) |
+| G3 | 성능 지표 (예측 API, SSE) | 항목별 실측 | 항목별 기준 | **항목별 판정** | [`docs/context/CURRENT_STATE.md`](docs/context/CURRENT_STATE.md) 2장 |
 
-> 2026-08-04 보고서의 예측 API 19.1ms 는 기동 직후 단일 요청 값이며 동시성 10 실측 근거가 아닙니다. G3 는 통과가 아니며 예측 c10 P95 최적화가 진행 중입니다.
+> **G3 실측값은 이 표에 두지 않습니다.** 레이턴시 지표는 측정마다 바뀌므로 정본은
+> [`docs/context/CURRENT_STATE.md`](docs/context/CURRENT_STATE.md) 이며, 측정 조건은
+> [`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md) 규약을 따릅니다.
+> README 에 수치를 복사해 두면 실측이 갱신될 때마다 뒤처져 워커에게 틀린 사실을
+> 주입합니다. **G3 는 일괄 통과로 선언하지 않고 항목별로 판정합니다.**
 
 자세한 내용은 [`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md)와 [`docs/handoff/2026-08-14_gpt_analysis_verification.md`](docs/handoff/2026-08-14_gpt_analysis_verification.md)를 참고하세요.
 

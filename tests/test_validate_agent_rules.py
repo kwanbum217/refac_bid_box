@@ -4,11 +4,17 @@ import json
 from pathlib import Path
 
 from scripts.validate_agent_rules import (
+    AGENTS_CHAR_BUDGET,
     ANTIGRAVITY_CHAR_CAP,
+    CURRENT_STATE_CHAR_BUDGET,
+    CURRENT_STATE_LAG_TOLERANCE,
     PROJECT_ROOT,
     check_agents_single_root,
     check_antigravity_rules,
     check_claude_is_pointer,
+    check_context_budgets,
+    check_current_state_exists,
+    check_current_state_sections,
     check_cursor_references_agents,
     check_opencode_json,
     check_orca_coordination_skill,
@@ -24,7 +30,7 @@ from scripts.validate_agent_rules import (
 def test_real_repo_validation_passes():
     """실제 저장소의 v2 정합성 검증이 100% 통과하는지 확인."""
     checks = get_all_checks(PROJECT_ROOT)
-    assert len(checks) == 9
+    assert len(checks) == 12
     for chk in checks:
         assert chk.ok, f"Check failed: {chk.name} -> {chk.detail}"
     assert run_all_checks(PROJECT_ROOT, quiet=True) == 0
@@ -405,3 +411,88 @@ mode: worker
     assert parsed.get("schema") == "ORCA_TASK_CAPSULE_V2"
     assert parsed.get("version") == "2.0.0"
     assert parsed.get("mode") == "worker"
+
+
+def _write_current_state(root: Path, body: str) -> Path:
+    target = root / "docs" / "context" / "CURRENT_STATE.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(body, encoding="utf-8")
+    return target
+
+
+def test_check_current_state_exists(tmp_path: Path):
+    """정본이 없으면 FAIL, 있으면 PASS 입니다."""
+    res = check_current_state_exists(tmp_path)
+    assert not res.ok
+
+    _write_current_state(tmp_path, "# state\n")
+    res = check_current_state_exists(tmp_path)
+    assert res.ok
+
+
+def test_check_current_state_sections_missing_field(tmp_path: Path):
+    """필수 필드가 빠지면 FAIL 입니다."""
+    _write_current_state(tmp_path, "# state\n> updated_at: 2026-08-15\nG1 G2 G3\ndocs/ops/x.md\n")
+    res = check_current_state_sections(tmp_path)
+    assert not res.ok
+    assert "source_commit" in res.detail
+
+
+def test_check_current_state_sections_missing_evidence(tmp_path: Path):
+    """증거 경로가 없으면 FAIL 입니다. 수치는 evidence path 를 가져야 합니다."""
+    body = "# state\n> updated_at: 2026-08-15\n> source_commit: `abc1234`\nG1 G2 G3\n"
+    _write_current_state(tmp_path, body)
+    res = check_current_state_sections(tmp_path)
+    assert not res.ok
+    assert "증거" in res.detail
+
+
+def test_check_current_state_sections_unverifiable_commit_warns(tmp_path: Path):
+    """git 으로 확인할 수 없는 커밋은 WARN 이며 통과로 셉니다."""
+    body = (
+        "# state\n> updated_at: 2026-08-15\n> source_commit: `deadbee`\n"
+        "G1 G2 G3\ndocs/ops/x.md\n"
+    )
+    _write_current_state(tmp_path, body)
+    res = check_current_state_sections(tmp_path)
+    assert res.ok
+    assert res.warn
+
+
+def test_check_current_state_sections_real_repo_within_tolerance():
+    """실제 저장소의 source_commit 은 허용 지연 안에 있어야 합니다."""
+    res = check_current_state_sections(PROJECT_ROOT)
+    assert res.ok
+    assert str(CURRENT_STATE_LAG_TOLERANCE) in res.detail
+
+
+def test_check_context_budgets_warns_when_over(tmp_path: Path):
+    """예산 초과는 FAIL 이 아니라 WARN 입니다."""
+    (tmp_path / "AGENTS.md").write_text("가" * (AGENTS_CHAR_BUDGET + 1), encoding="utf-8")
+    res = check_context_budgets(tmp_path)
+    assert res.ok
+    assert res.warn
+    assert "AGENTS.md" in res.detail
+
+
+def test_check_context_budgets_passes_within_budget(tmp_path: Path):
+    """예산 이내면 WARN 없이 통과합니다."""
+    (tmp_path / "AGENTS.md").write_text("가" * (AGENTS_CHAR_BUDGET - 1), encoding="utf-8")
+    _write_current_state(tmp_path, "가" * (CURRENT_STATE_CHAR_BUDGET - 1))
+    res = check_context_budgets(tmp_path)
+    assert res.ok
+    assert not res.warn
+
+
+def test_warn_counts_as_pass_and_shows_warn_tag():
+    """WARN 은 실패로 세지 않지만 화면에 드러나야 합니다."""
+    from scripts.validate_agent_rules import CheckResult
+
+    warned = CheckResult("x", True, "detail", warn=True)
+    assert warned.ok
+    assert warned.warn
+    assert "[WARN]" in warned.format()
+
+    failed = CheckResult("y", False, "detail", warn=True)
+    assert not failed.warn, "실패한 검사는 WARN 으로 격하되지 않아야 합니다"
+    assert "[FAIL]" in failed.format()

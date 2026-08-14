@@ -263,6 +263,11 @@ docs/context/CURRENT_STATE.md
 - 충돌 시 우선순위는 `실제 코드/실측 artifact > CURRENT_STATE > README > 과거 handoff`로 둡니다.
 - README는 소개·안정 baseline 중심으로 유지하고 빠르게 변하는 실측값은 `CURRENT_STATE.md`로 이동하는 것을 권장합니다.
 
+**2026-08-15 적용 완료**: `README.md` 의 G3 실측 3행(SSE 첫 토큰·전체 응답, 예측 API
+c10 P95)을 제거하고 `CURRENT_STATE.md` 포인터 한 행으로 대체했습니다. 2.2 절이 지적한
+`199.18ms 미달` 기재가 그 시점에 해소됐습니다. **수치를 갱신하는 것이 아니라 제거한
+이유는 갱신 방식으로는 다음 측정에서 다시 뒤처지기 때문입니다.**
+
 ---
 
 ## 7. Task Capsule v2
@@ -710,6 +715,40 @@ check_opencode_json()의 SKILLS.md 필수 조건
 10. `CURRENT_STATE.md` 권장 크기 상한 경고 추가
 
 크기 상한은 초기에는 FAIL보다 warning으로 시작해 운영 데이터를 보고 강화합니다.
+
+### 16.3 구현 상태 (2026-08-15 갱신)
+
+`scripts/validate_agent_rules.py` 는 검사 12개를 수행하며 16.2 의 10개 항목을 전부
+덮습니다. 초기 구현에서 4개가 빠져 있었고 그 상태를 실측으로 확인한 뒤 보완했습니다.
+
+| 16.2 항목 | 구현 | 검사명 |
+| --- | --- | --- |
+| 1. `AGENTS.md` 존재·비협상 키워드 | 완료 | AGENTS.md 단일 진실 원천 |
+| 2. `@SKILLS.md` 자동 import 없음 | 완료 | 같음 |
+| 3. `opencode.json` 단일 주입 | 완료 | opencode.json instructions v2 단일 주입 |
+| 4. `CURRENT_STATE.md` 존재 | **보완** | CURRENT_STATE 정본 존재 |
+| 5. 필수 필드·증거 경로 | **보완** | CURRENT_STATE 필수 필드 |
+| 6. Task Capsule v2 문서 | 완료 | Task Capsule v2 규약 문서 |
+| 7. skill mirror 정합성 | 완료 | 스킬 미러 정합성 |
+| 8. Antigravity 12,000자 제한 | 완료 | .antigravity/rules.md |
+| 9. `AGENTS.md` 크기 경고 | **보완** | 컨텍스트 예산 |
+| 10. `CURRENT_STATE.md` 크기 경고 | **보완** | 컨텍스트 예산 |
+
+보완 시 함께 도입한 것입니다.
+
+- `CheckResult` 에 **WARN 상태** 추가. 권장 예산 초과처럼 즉시 차단할 근거는 없으나
+  방치하면 되돌리기 어려워지는 항목에 씁니다. WARN 은 통과로 세고 화면에 드러냅니다
+- `source_commit` **신선도 검사**. `git merge-base`/`rev-list` 로 HEAD 대비 지연을
+  세고 `CURRENT_STATE_LAG_TOLERANCE`(5) 를 넘으면 WARN 입니다. 문서는 자기 자신을
+  갱신하는 커밋에서 기록되므로 HEAD 와 정확히 일치할 수 없어 허용치를 둡니다
+- `tests/test_validate_agent_rules.py` 를 11개에서 **19개**로 확장
+
+#### 크기 예산은 문자 수입니다
+
+5장의 8,000자는 **문자 수이며 바이트가 아닙니다.** `wc -c` 로 재면 한글이 3바이트라
+`AGENTS.md` 가 10,872바이트로 초과처럼 보이지만 실제는 6,589자로 예산 이내입니다.
+검사는 `len()` 으로 문자 수를 셉니다. 이 혼동으로 축소가 필요하다고 잘못 판단한
+사례가 있어 기록합니다.
 
 ---
 
