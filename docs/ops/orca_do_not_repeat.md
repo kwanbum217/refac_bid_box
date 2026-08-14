@@ -100,6 +100,21 @@ Antigravity CLI 는 워크스페이스 신뢰 확인 대화창을 먼저 띄웁�
 
 반려나 재작업을 지시할 때는 새 `report_path` 를 함께 전달합니다. 규약: [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md) 2.9.3
 
+### 4.5 반려 후 재작업을 완료된 Task 에 태우기
+
+이미 `completed` 인 Task 의 터미널에 수정 지시만 보내면 워커는 정상적으로
+고치지만, 두 번째 `worker_done` 은 Orca 가 `Rejected worker_done` 으로
+거부합니다. Task 를 두 번 완료할 수 없기 때문입니다.
+
+산출물은 커밋에 남으므로 병합 판단은 가능합니다. 그러나 **반려 사유와 2차 수용
+판정이 수명주기 이력에 남지 않아** 다음 세션이 경위를 복원할 수 없습니다.
+2026-08-15 에 세 워커 모두 이 상태가 되어 `Rejected worker_done` 8건이
+쌓였습니다.
+
+재작업은 Task 를 `ready` 로 되돌려 재 Dispatch 하거나, 원 Task 를 선행
+의존성으로 둔 새 Task 를 만들어 태웁니다. 후자가 이력 보존에 낫고, 전자가
+왕복 지표를 한 Task 에 모으기에 낫습니다. 절차: [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 6.2.1
+
 ---
 
 ## 5. 검증 태도
