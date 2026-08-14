@@ -7,6 +7,7 @@ ML 모델 추론 싱글톤 로더.
 
 from __future__ import annotations
 
+import gc
 import logging
 import os
 import queue
@@ -17,6 +18,29 @@ from typing import Any
 from src.ml.features import build_feature_dict
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# GC 모드 설정 — 모듈 임포트 시 한 번만 실행됩니다.
+# PREDICTION_GC_MODE 가 빈 문자열이거나 설정되지 않으면 아무것도 변경하지
+# 않으므로 기본 경로는 완전히 무비용입니다.
+# ---------------------------------------------------------------------------
+_GC_MODE = os.environ.get("PREDICTION_GC_MODE", "")
+
+# threshold 모드의 임계값:
+# CPython 기본값은 (700, 10, 10) 입니다.
+# gen1 을 20, gen2 를 30 으로 올리면 generation-2 순회 빈도를 약 1/3 로 줄이면서
+# 메모리 누증 위험은 gc.disable() 보다 현저히 낮습니다.
+# gen0 는 그대로 두어 단기 객체 회수를 유지합니다.
+_GC_THRESHOLD_GEN0 = 700
+_GC_THRESHOLD_GEN1 = 20
+_GC_THRESHOLD_GEN2 = 30
+
+if _GC_MODE == "threshold":
+    gc.set_threshold(_GC_THRESHOLD_GEN0, _GC_THRESHOLD_GEN1, _GC_THRESHOLD_GEN2)
+
+# batch-disable 모드: 마이크로배치 스레드 안에서만 GC 를 끕니다.
+# _run() 루프가 이 카운터를 보고 일정 배치마다 수동 collect 를 수행합니다.
+_BATCH_DISABLE_COLLECT_EVERY = 50  # N 배치마다 gc.collect() 호출
 
 
 class _BatchItem:
@@ -83,6 +107,9 @@ class _PredictionBatcher:
         return batch
 
     def _run(self):
+        if _GC_MODE == "batch-disable":
+            gc.disable()
+            batch_count = 0
         while True:
             batch = self._collect()
             # 어떤 실패도 스레드를 끝내지 못하게 합니다. 이 스레드가 죽으면
@@ -92,6 +119,11 @@ class _PredictionBatcher:
             except BaseException as exc:
                 logger.exception("마이크로배치 처리가 실패했습니다.")
                 self._release(batch, exc)
+            if _GC_MODE == "batch-disable":
+                batch_count += 1
+                if batch_count % _BATCH_DISABLE_COLLECT_EVERY == 0:
+                    gc.collect()
+
 
     def _dispatch(self, batch: list[_BatchItem]) -> None:
         try:
@@ -139,10 +171,13 @@ class SingletonPredictor:
             from src.ml.model_registry import ModelRegistry
 
             ModelRegistry.load_all_models()
+            if _GC_MODE == "freeze":
+                gc.freeze()
         self._batcher = _PredictionBatcher(
             self._predict_from_features,
             self._predict_batch,
         )
+
 
     def _predict_from_features(
         self,
