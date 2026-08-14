@@ -128,7 +128,7 @@
 
 - 코디네이터 토큰 최적화 v2 설계: [`docs/ops/orca_coordinator_token_optimization_v2.md`](../ops/orca_coordinator_token_optimization_v2.md)
 - v2 구현 전 기준선 감사: [`docs/ops/orca_token_optimization_v2_baseline_20260815.md`](../ops/orca_token_optimization_v2_baseline_20260815.md)
-- 최신 세션 인수인계: [`docs/handoff/2026-08-14_late_session_handoff.md`](../handoff/2026-08-14_late_session_handoff.md)
+- 최신 세션 인수인계: [`docs/handoff/2026-08-15_coordinator_token_exhaustion_handoff.md`](../handoff/2026-08-15_coordinator_token_exhaustion_handoff.md) (코디네이터 토큰 소진, 대기 중 Task 2건, 리셋 08-16 18:00)
 - 레이턴시 게이트 규약: [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
 - 에이전트 워커 기동 참조: [`docs/ops/agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
 - 용역 모델 현황: [`docs/servc_model_status.md`](../servc_model_status.md)
