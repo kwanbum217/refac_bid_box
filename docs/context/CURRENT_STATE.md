@@ -51,40 +51,24 @@
 
 ## 3. 기각 및 반복 금지 목록 (Do Not Repeat)
 
-과거 검증을 거쳐 기각되었거나 실패가 확정된 항목입니다. 동일한 시도를 반복하지 않습니다.
+과거 검증을 거쳐 기각되었거나 실패가 확정된 항목입니다. 동일한 시도를 반복하지 않습니다. **근거와 실측 세부는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 에 있으며, 그 항목을 다시 검토하려 할 때만 열어봅니다.**
 
-1. **Uvicorn 워커 수 증설 (workers 3/4)**:
-   - 다중 워커 설정 시 지연시간 개선 없이 코어 경합 및 메모리 오버헤드만 증가하여 기각되었습니다.
-2. **`PREDICTION_GC_MODE=batch-disable`**:
-   - 100ms 초과 발생 30건으로 기본(21건)보다 오히려 악화되어 기각되었습니다.
-3. **`PREDICTION_GC_MODE=threshold`**:
-   - `freeze` 모드가 확정 채택되었으므로 상호 배타적인 threshold 재검토는 불필요합니다.
-4. **신뢰 확인 미완료 상태에서의 무검증 `dispatch --inject`**:
-   - Antigravity CLI 환경에서 워크스페이스 신뢰 확인 대화창 미처리 시 주입 키 입력이 유실될 위험이 있습니다.
-   - 사전 신뢰 승인(엔터 전송)을 확인한 뒤 `dispatch --inject`를 수행하거나 인자 주입 방식(`agy --model <id> -i "<프롬프트>"`)을 사용하며, 도달 여부(`terminal read`) 확인 없는 맹목적 대기를 금지합니다.
-   - **2026-08-15 실증 정정**: 인자 주입(`agy -i`)도 신뢰 대화창 승인 전까지 실행이 시작되지 않습니다. 프롬프트는 유실되지 않으나 워커가 유휴로 보입니다. 기동은 **띄운다 -> 신뢰 승인 엔터 -> `terminal read` 로 진행 확인** 세 단계입니다. 근거: [`../ops/orca_v2_runtime_smoke_20260815.md`](../ops/orca_v2_runtime_smoke_20260815.md) V.6
-5. **무료 LLM 풀의 임계 경로 투입**:
-   - `cerebras/gemma-4-31b`(TPM 초과 위험) 및 OpenCode 무료 모델(`deepseek-v4-flash-free` 등)은 안정성 및 컨텍스트 제약이 있으므로 주력/임계 경로 작업에서 배제합니다.
-   - 무료 모델은 절대 실패/무산출로 단정하지 않고 자동 검증이 가능한 비임계 경로(단독 감사, 분리된 검증 등)로 한정하여 사용합니다.
-6. **미병합 브랜치 재병합 시도**:
-   - `feat/codex-task-routing`: 전량 폐기 판정 완료 (중복 라우터 및 불필요 스킬).
-   - `integrate/arq-worker-cutover`: 폐기 판정 완료 (`preprocess.py`, `champion_summary.json` 병합 금지).
-   - `perf/predict-tail` (`0fd489a`): 병합 불가 판정 완료 (진단 전용 보존).
-7. **워커 요약 보고 텍스트만 신뢰하는 행위**:
-   - 워커의 비정형 요약과 실제 산출물 간 불일치가 빈발하므로, 코디네이터는 반드시 생성된 파일 diff 및 deterministic 검증 결과를 직접 대조합니다.
-8. **README 에 성능 실측값 기재**:
-   - 2026-08-15 에 G3 실측 3행을 제거하고 본 문서 포인터로 대체했습니다. 수치를 갱신하는 방식은 다음 측정에서 다시 뒤처지므로 채택하지 않습니다.
-   - 레이턴시 지표의 정본은 본 문서 2장이며 측정 조건은 [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md) 를 따릅니다.
-9. **Capsule 을 공유 디렉터리에 배치**:
-   - 2026-08-15 T6 실행 검증에서 워커가 자기 Capsule 과 함께 다른 Task 의 사양·런처를 읽었습니다. Task 하나당 디렉터리 하나를 쓰고 `allowed_read_files` 에 Capsule 자신의 경로를 넣습니다.
-   - `allowed_read_files` 는 지시이며 강제 장치가 아닙니다. 준수는 `worker_done` 의 `read_files` 로 사후 확인합니다. 규약: [`../ops/orca_task_capsule_v2.md`](../ops/orca_task_capsule_v2.md) 2.9
-10. **Reviewer 의 pass 를 코디네이터 검토 축소 근거로 사용**:
-   - 2026-08-15 첫 실사용에서 Reviewer 2대가 실재 결함 3건을 놓치고 `pass` 를 냈습니다. 계약 도달과 Capsule 격리는 작동했으나 검출은 미달입니다.
-   - 근거: [`../ops/orca_v2_reviewer_plane_20260815.md`](../ops/orca_v2_reviewer_plane_20260815.md). Level 3 코디네이터 검토를 유지합니다.
-   - **2026-08-15 개선 측정**: 계약 v2.1 체크리스트 도입으로 같은 모델이 0/3 에서 4/4 로 개선됐습니다. 다만 체크리스트에 없던 결함은 절반만 찾으므로 Level 3 은 계속 유지합니다. Reviewer 기본 모델은 `gemini-3.7-flash-high` 입니다(Claude 계열과 검출 성적 동일). 근거: [`../ops/orca_v2_reviewer_sensitivity_20260815.md`](../ops/orca_v2_reviewer_sensitivity_20260815.md)
-11. **크기 예산을 바이트로 판정**:
-   - 설계 5장의 8,000자는 문자 수이며 바이트가 아닙니다. `wc -c` 로 재면 한글 3바이트 때문에 `AGENTS.md` 가 초과처럼 보이지만 실제는 6,589자로 예산 이내입니다.
-   - 검증기 `check_context_budgets` 는 `len()` 으로 문자 수를 셉니다.
+| # | 금지 항목 | 결론 |
+| :---: | --- | --- |
+| 1 | Uvicorn 워커 수 증설 (3/4) | 개선 없이 코어 경합만 증가. 기각 |
+| 2 | `PREDICTION_GC_MODE=batch-disable` | 100ms 초과 30건으로 기본(21건)보다 악화. 기각 |
+| 3 | `PREDICTION_GC_MODE=threshold` | `freeze` 확정 채택으로 상호 배타. 재검토 불필요 |
+| 4 | 신뢰 승인 전 `dispatch --inject` | 키 입력 유실. `agy -i` 도 승인 전에는 미실행. 기동은 띄운다 -> 신뢰 승인 -> `terminal read` 도달 확인 3단계 |
+| 5 | 무료 LLM 풀의 임계 경로 투입 | 비임계 경로로만 한정. 단, 실패·무산출로 단정하지 않음 |
+| 6 | 미병합 브랜치 재병합 | `feat/codex-task-routing` 폐기, `integrate/arq-worker-cutover` 폐기, `perf/predict-tail` 진단 전용 |
+| 7 | 워커 요약 텍스트만 신뢰 | diff 와 결정론 검증 결과를 직접 대조 |
+| 8 | README 에 성능 실측값 기재 | 본 문서 2장이 정본. 포인터로 대체 완료 |
+| 9 | Capsule 을 공유 디렉터리에 배치 | Task 하나당 디렉터리 하나. `allowed_read_files` 에 Capsule 자신을 포함 |
+| 10 | Reviewer `pass` 를 검토 축소 근거로 사용 | 체크리스트로 0/3 -> 4/4 개선했으나 밖의 결함은 절반만 검출. **Level 3 유지** |
+| 11 | 크기 예산을 바이트로 판정 | 8,000자는 문자 수. `wc -c` 금지, `len()` 사용 |
+| 12 | 후속 Dispatch 에 같은 `report_path` 재사용 | 덮어써서 이전 보고 소실. 재작업 지시에 새 경로를 함께 준다 |
+| 13 | 파이프라인으로 검증 종료 코드 판정 | `pytest \| tail && <다음>` 은 실패를 통과로 본다. 게이트 도구를 쓴다 |
+| 14 | 워커의 비표준 계약 필드명을 수용 | `files_modified` 를 받아 `changed_files_count: 0` 을 조용히 기록한 사고. 폴백 금지 |
 
 ---
 
@@ -96,7 +80,14 @@
    - Capsule 격리 누수를 발견해 배치 규약 2.9 를 만들고 적용 후 `read_files` 초과 0건을 실측했습니다.
    - Reviewer 계층을 첫 가동했고 결함을 놓쳤습니다. 계약을 v2.1 체크리스트로 고쳐 seeded defect 로 0/3 -> 4/4 개선을 측정했습니다([`../ops/orca_v2_reviewer_sensitivity_20260815.md`](../ops/orca_v2_reviewer_sensitivity_20260815.md)).
    - 계약 조건은 `scripts/validate_review_report.py` 로 기계 판정합니다.
-   - **미청구 사항**: 절감량 정량값(before 확보 불가, 이후 누적), Level 3 축소 가능성(체크리스트 밖 결함은 절반만 검출), T6 OpenCode 1종(비임계).
+   - **2026-08-15 수신면 도구화 완료**: 코디네이터가 원시 출력을 직접 읽던 구간을 세 도구로 대체했습니다.
+     - `scripts/orca_contract.py`: Capsule·보고 공용 파서 (도구 간 판정 분기 방지)
+     - `scripts/orca_level1_gate.py`: 설계 10장 Level 1 을 단일 호출로. 5게이트, 사람 출력 상한 2,000자
+     - `scripts/summarize_worker_done.py`: 보고 계약 기계 판정과 1,200자 다이제스트
+     - `scripts/orca_metrics_ledger.py`: 설계 23장 프록시 지표 append-only 원장
+     - 첫 실사용에서 실제 계약 위반 4건(`version`, `branch`, `commit_count`, `blocking_issues` 누락)을 검출했습니다.
+   - **절감량**: 도입 전 값은 확보 불가 판정을 유지하고, `docs/ops/orca_v2_metrics_ledger.jsonl` 에 v2 이후 기준선부터 누적합니다. 2026-08-15 기준 3행(Capsule 중앙값 7,334자, 보고 중앙값 2,133자, `read_files` 중앙값 8건, 왕복 중앙값 2회).
+   - **미청구 사항**: 절감량 정량값(누적 시작, 아직 추세 판정 불가), Level 3 축소 가능성(체크리스트 밖 결함은 절반만 검출), T6 OpenCode 1종(비임계).
 2. **Ollama 병렬도 실험 및 SSE 동시성 기준선 제정**:
    - `OLLAMA_NUM_PARALLEL` 실험을 통해 c4 등 동시성 환경에서의 지연 원인 분석 및 기준 확립.
 3. **Windows Docker Desktop 크로스 플랫폼 실기 검증**:
