@@ -92,6 +92,7 @@ Task는 반드시 둘 다 돌립니다.
 4. 장시간 작업은 터미널 출력만으로 완료라고 판단하지 않습니다. 코디네이터는 `check --wait --types worker_done,escalation,question`으로 상태를 기다립니다.
 5. 워커는 검증이 끝난 뒤 **`ORCA_WORKER_DONE_V2` 계약**에 따라 `worker_done`을 정확히 한 번 전송합니다. 본문에는 3문장 요약(수행 내역, 발견 사항, 잔여 리스크)과 파일 아티팩트 경로를 명시합니다.
 6. `worker_done`을 수신한 뒤 코디네이터는 결정론적 기계 검증과 독립 리뷰어 워커(`ORCA_REVIEW_DONE_V2`) 감사를 거쳐 핵심 diff를 검토한 후 다음 의존 Task를 시작합니다.
+   - 반려 후 재작업은 완료된 Task 에 태우지 않습니다. 2차 `worker_done` 이 거부되어(`Rejected worker_done`) 반려 사유와 수용 판정이 이력에서 사라집니다. Task 를 `ready` 로 되돌려 재 Dispatch 하거나 재작업용 Task 를 새로 만들고, 새 `report_path` 를 함께 전달합니다.
 7. 실패·차단은 완료로 바꾸지 않습니다. `escalate_when` 조건에 해당하면 워커는 스스로 범위를 넓히지 않고 `escalation` 또는 `question`으로 보고하며, 코디네이터가 추가 범위를 승인하거나 Task Capsule을 갱신합니다.
 
 ### 3.1 배정은 코디네이터 토큰을 기준으로 정합니다

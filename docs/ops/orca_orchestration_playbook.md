@@ -414,6 +414,46 @@ orca terminal list --worktree path:<워크트리> --json   # preview 를 읽습�
 
 읽기 단계와 정체는 **터미널 출력으로만** 구분됩니다.
 
+### 6.2.1 반려 후 재작업은 완료된 Task 에 태우지 마십시오
+
+Level 1 이나 Level 3 에서 결함을 찾아 반려할 때, 이미 `completed` 인 Task 의
+터미널에 지시만 보내면 워커는 정상적으로 고칩니다. 그러나 두 번째
+`worker_done` 은 Orca 가 거부합니다.
+
+```text
+Rejected worker_done: <원래 제목>
+```
+
+Task 를 두 번 완료할 수 없기 때문입니다. 결과로 다음이 남습니다.
+
+| 남는 것 | 사라지는 것 |
+| --- | --- |
+| 워커의 수정 커밋 | 재작업 지시의 근거와 수용 판정 |
+| `Rejected` 메시지 | 2차 검증 결과의 수명주기 기록 |
+
+산출물은 커밋에 남으므로 병합 판단은 가능합니다. 하지만 **왜 반려했고 무엇이
+고쳐졌는지가 이력에 남지 않아** 다음 세션이 경위를 복원할 수 없습니다.
+2026-08-15 에 세 워커 모두 이 상태가 되어 `Rejected worker_done` 8건이
+쌓였습니다.
+
+반려 후 재작업은 다음 둘 중 하나로 합니다.
+
+```bash
+# 방법 A: 같은 Task 를 ready 로 되돌린 뒤 재 Dispatch
+orca orchestration task-update --id <task_id> --status ready --json
+orca orchestration dispatch --task <task_id> --to <handle> --inject --json
+
+# 방법 B: 재작업용 Task 를 새로 만들고 원 Task 를 선행 의존성으로 둔다
+orca orchestration task-create --run <run_id> --task-title "<원제목> 반려 수정" \
+  --deps '["<원 task_id>"]' --spec "<새 Capsule 경로 안내>" --json
+```
+
+어느 쪽이든 **새 `report_path` 를 함께 줍니다.** 같은 경로를 쓰면 1차 보고가
+덮여 사라집니다 (규약 [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md) 2.9.3).
+
+방법 B 가 이력 보존에는 낫습니다. 반려 사유가 별도 Task 사양으로 남기
+때문입니다. 방법 A 는 왕복 지표(`roundtrips`)를 한 Task 에 모아 볼 수 있습니다.
+
 ### 6.3 `ask` 는 `reply` 로만 풀립니다
 
 워커가 `orca orchestration ask` 로 물으면 **블로킹 대기**합니다.
