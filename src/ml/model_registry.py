@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import os
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import StrEnum
@@ -15,6 +16,7 @@ import pandas as pd
 from src.app.core.config import settings
 from src.ml.features import (
     DEFAULT_INSTITUTION_NAME,
+    _is_missing,
     apply_categorical_dtypes,
     build_default_feature_map,
     prepare_features,
@@ -23,6 +25,7 @@ from src.ml.features import (
 )
 
 logger = logging.getLogger(__name__)
+latency_logger = logging.getLogger("uvicorn.error")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # 경로 정본은 settings 입니다. 여기서 다시 조립하면 설정을 바꿔도 로더가
@@ -364,6 +367,41 @@ class JoblibModelWrapper(BaseModelWrapper):
         )
         prediction = self.model.predict(input_df)
         return float(np.asarray(prediction).reshape(-1)[0])
+
+    def predict_batch(self, frames):
+        """여러 요청의 동일 모델 추론을 한 번의 LightGBM 호출로 처리합니다."""
+        if type(self).predict is not JoblibModelWrapper.predict:
+            raise ValueError("사용자 정의 래퍼는 단건 추론 경로를 유지합니다.")
+        columns = self.get_serving_columns()
+        if not columns:
+            raise ValueError("배치 추론에 필요한 모델 컬럼이 없습니다.")
+        levels = self.get_category_levels()
+        prepared_rows = []
+        for frame in frames:
+            values = frame.iloc[0].to_dict()
+            defaults = frame.attrs.get("feature_defaults") or {}
+            row = {}
+            for column in columns:
+                default = defaults.get(column, 0.0)
+                value = values.get(column, default)
+                if _is_missing(value):
+                    value = default
+                if isinstance(default, str):
+                    row[column] = str(value) if value not in (None, "") else default
+                else:
+                    row[column] = _coerce_float(value, default)
+            prepared_rows.append(row)
+        # 단건 프레임을 반복 생성·concat 하지 않고 행을 한 번에 만들어
+        # 동일한 범주 수준을 한 번만 적용해 배치 자체의 GIL 비용을 줄입니다.
+        batch = pd.DataFrame(
+            prepared_rows,
+            columns=columns,
+        )
+        batch = apply_categorical_dtypes(batch, levels)
+        predictions = np.asarray(self.model.predict(batch)).reshape(-1)
+        if len(predictions) != len(frames):
+            raise ValueError("배치 추론 결과 행 수가 요청 수와 다릅니다.")
+        return [float(value) for value in predictions]
 
 
 class KerasModelWrapper(BaseModelWrapper):
@@ -937,6 +975,8 @@ def predict_optimal_price_with_provenance(
             continue
 
         try:
+            call_start = time.perf_counter()
+            call_cpu_start = time.thread_time()
             custom_df = wrapper.run_preprocess(features_dict)
             df = (
                 custom_df
@@ -944,8 +984,25 @@ def predict_optimal_price_with_provenance(
                 else _prepare_full_frame(features_dict, full_map=full_map)
             )
             raw_prediction = wrapper.predict(df)
+            call_wall_ms = (time.perf_counter() - call_start) * 1000.0
+            call_cpu_ms = (time.thread_time() - call_cpu_start) * 1000.0
+            latency_logger.info(
+                "model_call=model_id=%s, status=success, wall_ms=%.2f, thread_cpu_ms=%.2f",
+                candidate_id,
+                call_wall_ms,
+                call_cpu_ms,
+            )
             predicted_rate = float(_normalize_prediction_rate(raw_prediction))
         except Exception as exc:
+            call_wall_ms = (time.perf_counter() - call_start) * 1000.0
+            call_cpu_ms = (time.thread_time() - call_cpu_start) * 1000.0
+            latency_logger.info(
+                "model_call=model_id=%s, status=error, wall_ms=%.2f, thread_cpu_ms=%.2f, error_type=%s",
+                candidate_id,
+                call_wall_ms,
+                call_cpu_ms,
+                type(exc).__name__,
+            )
             last_error = exc
             failures.append(f"{candidate_id}: {type(exc).__name__}: {exc}")
             logger.warning("모델 '%s' 추론 실패: %s", candidate_id, exc)
@@ -986,3 +1043,49 @@ def predict_optimal_price(model_id, features_dict, full_map=None):
     return predict_optimal_price_with_provenance(
         model_id, features_dict, full_map=full_map
     ).predicted_rate
+
+
+def predict_optimal_price_batch(model_id, features_dicts, full_maps=None):
+    """동일한 Joblib 모델에 대한 요청 묶음을 한 번에 추론합니다.
+
+    이 함수는 predictor 의 짧은 마이크로배치 전용입니다. 모델 호출이
+    배치를 지원하지 않거나 요청 모델이 서로 다르면 호출부가 기존 단건
+    provenance 경로로 되돌아가므로 fallback 의미와 응답 계약을 바꾸지 않습니다.
+    """
+    if not features_dicts:
+        return []
+    requested_ids = [_resolve_model_id(model_id or _preferred_model_for_features(item)) for item in features_dicts]
+    if len(set(requested_ids)) != 1:
+        raise ValueError("배치 요청의 모델 식별자가 서로 다릅니다.")
+    requested_id = requested_ids[0]
+    preferred_ids = [_preferred_model_for_features(item) for item in features_dicts]
+    if len(set(preferred_ids)) != 1 or preferred_ids[0] != requested_id:
+        raise ValueError("배치 요청의 기본 모델이 서로 다릅니다.")
+    wrapper = ModelRegistry.get_model(requested_id)
+    if wrapper is None or not hasattr(wrapper, "predict_batch"):
+        raise ValueError(f"모델 '{requested_id}'이 배치 추론을 지원하지 않습니다.")
+    maps = full_maps or [None] * len(features_dicts)
+    frames = [
+        _prepare_full_frame(features, full_map=full_map)
+        for features, full_map in zip(features_dicts, maps, strict=True)
+    ]
+    call_start = time.perf_counter()
+    call_cpu_start = time.thread_time()
+    raw_predictions = wrapper.predict_batch(frames)
+    latency_logger.info(
+        "model_call=model_id=%s, status=success, batch_size=%d, wall_ms=%.2f, thread_cpu_ms=%.2f",
+        requested_id,
+        len(frames),
+        (time.perf_counter() - call_start) * 1000.0,
+        (time.thread_time() - call_cpu_start) * 1000.0,
+    )
+    return [
+        PredictionOutcome(
+            predicted_rate=float(_normalize_prediction_rate(raw_prediction)),
+            requested_model=requested_id,
+            actual_model=requested_id,
+            fallback_used=False,
+            fallback_reason=None,
+        )
+        for raw_prediction in raw_predictions
+    ]

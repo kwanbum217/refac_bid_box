@@ -69,12 +69,22 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
 
         # logger 호출 검증
         assert mock_logger.info.called, "logger.info가 호출되어야 합니다."
-        info_calls = [call for call in mock_logger.info.mock_calls if "predict_price_api" in str(call)]
+        info_calls = [
+            call
+            for call in mock_logger.info.mock_calls
+            if call.args
+            and call.args[0].startswith("endpoint=predict_price_api, wall_ms=")
+        ]
         assert len(info_calls) == 1, "predict_price_api 계측 로그가 정확히 1회 호출되어야 합니다."
 
         args = info_calls[0].args
         assert args[0] == "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
         assert len(args) == 5
+        assert any(
+            call.args
+            and call.args[0] == "endpoint=predict_price_api, executor_queue_wait_ms=%.2f"
+            for call in mock_logger.info.mock_calls
+        )
 
 def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, monkeypatch):
     """
@@ -110,9 +120,19 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
 
             # logger 호출 검증
             assert mock_logger.info.called, "logger.info가 호출되어야 합니다."
-            info_calls = [call for call in mock_logger.info.mock_calls if "predict_winning_price" in str(call)]
+            info_calls = [
+                call
+                for call in mock_logger.info.mock_calls
+                if call.args
+                and call.args[0].startswith("endpoint=predict_winning_price, wall_ms=")
+            ]
             assert len(info_calls) == 1, "predict_winning_price 계측 로그가 정확히 1회 호출되어야 합니다."
 
             args = info_calls[0].args
             assert args[0] == "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
             assert len(args) == 5
+            assert any(
+                call.args
+                and call.args[0] == "endpoint=predict_winning_price, executor_queue_wait_ms=%.2f"
+                for call in mock_logger.info.mock_calls
+            )

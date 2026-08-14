@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -134,6 +135,22 @@ async def collapse_bids_double_slash(request: Request, call_next):
     return await call_next(request)
 
 
+async def mark_prediction_dispatch(request: Request, call_next):
+    """예측 sync 엔드포인트의 실행기 대기 기준 시각을 남깁니다.
+
+    sync 라우트는 Starlette/AnyIO 실행기로 넘겨지므로 라우트 함수 안에서는
+    요청이 실행기 토큰을 기다린 시간을 직접 알 수 없습니다. ASGI 요청 수신
+    직전 시각을 scope 에 남기고 라우트 진입 시 차이를 별도 계측으로 기록해
+    모델 구간과 실행기·요청 준비 구간을 분리합니다.
+    """
+    if request.url.path in {
+        "/api/v1/predictions/predict",
+        "/api/v1/predictions/predict-price",
+    }:
+        request.scope["prediction_dispatch_start_ns"] = time.perf_counter_ns()
+    return await call_next(request)
+
+
 def create_app(app_settings: Settings | None = None) -> FastAPI:
     """환경별 노출 정책을 적용한 앱을 만듭니다.
 
@@ -154,6 +171,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
 
     app.add_middleware(CORSMiddleware, **_cors_kwargs(app_settings))
     app.middleware("http")(collapse_bids_double_slash)
+    app.middleware("http")(mark_prediction_dispatch)
 
     app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 

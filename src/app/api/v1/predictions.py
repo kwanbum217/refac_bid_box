@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from src.app.core.db import get_db
@@ -50,6 +50,16 @@ def _default_model_for_bid(bid: BidAnnouncement) -> str:
     return DEFAULT_PREDICTION_MODEL_BY_CATEGORY.get(bid.category, DEFAULT_PREDICTION_MODEL)
 
 
+def _prediction_dispatch_wait_ms(request: Request) -> float:
+    started_ns = request.scope.get("prediction_dispatch_start_ns")
+    if not isinstance(started_ns, int):
+        return 0.0
+    current_ns = time.perf_counter_ns()
+    if not isinstance(current_ns, int):
+        return 0.0
+    return max(0.0, (current_ns - started_ns) / 1_000_000.0)
+
+
 @router.get("/list-models", summary="사용 가능한 예측 모델 목록")
 def list_models_api():
     """Return the currently available prediction models."""
@@ -57,10 +67,15 @@ def list_models_api():
 
 
 @router.post("/predict-price", response_model=PredictPriceResponse, summary="공고 기반 낙찰가 예측")
-def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db)):
+def predict_price_api(
+    payload: PredictPriceRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """공고 ID를 받아 Champion 모델로 최적 투찰가를 산출합니다."""
     t_start = time.perf_counter()
     c_start = time.thread_time()
+    dispatch_wait_ms = _prediction_dispatch_wait_ms(request)
 
     user_price = "".join(
         char for char in str(payload.user_price or "0") if char.isdigit() or char == "."
@@ -196,6 +211,10 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
         t_model * 1000.0,
         c_model * 1000.0,
     )
+    latency_logger.info(
+        "endpoint=predict_price_api, executor_queue_wait_ms=%.2f",
+        dispatch_wait_ms,
+    )
 
     return PredictPriceResponse(
         status="success",
@@ -217,7 +236,11 @@ def predict_price_api(payload: PredictPriceRequest, db: Session = Depends(get_db
 
 
 @router.post("/predict", response_model=PredictionResponse, summary="특징 직접 입력 예측")
-def predict_winning_price(payload: PredictionRequest, db: Session = Depends(get_db)):
+def predict_winning_price(
+    payload: PredictionRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """공고 레코드 없이 특징을 직접 넣어 예측합니다 (리팩토링 신규 계약).
 
     db 는 inst_hist_rate 를 실제 기관 이력으로 채우기 위해 필요합니다.
@@ -225,6 +248,7 @@ def predict_winning_price(payload: PredictionRequest, db: Session = Depends(get_
     """
     t_start = time.perf_counter()
     c_start = time.thread_time()
+    dispatch_wait_ms = _prediction_dispatch_wait_ms(request)
     dumped_payload = payload.model_dump()
 
     t_model_start = time.perf_counter()
@@ -241,6 +265,10 @@ def predict_winning_price(payload: PredictionRequest, db: Session = Depends(get_
         c_total * 1000.0,
         t_model * 1000.0,
         c_model * 1000.0,
+    )
+    latency_logger.info(
+        "endpoint=predict_winning_price, executor_queue_wait_ms=%.2f",
+        dispatch_wait_ms,
     )
 
     return PredictionResponse(
