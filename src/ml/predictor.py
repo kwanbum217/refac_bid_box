@@ -7,6 +7,7 @@ ML 모델 추론 싱글톤 로더.
 
 from __future__ import annotations
 
+import gc
 import logging
 import os
 import queue
@@ -17,6 +18,33 @@ from typing import Any
 from src.ml.features import build_feature_dict
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# GC 모드 설정 — 모듈 임포트 시 한 번만 실행됩니다.
+# PREDICTION_GC_MODE 가 빈 문자열이거나 설정되지 않으면 아무것도 변경하지
+# 않으므로 기본 경로는 완전히 무비용입니다.
+# ---------------------------------------------------------------------------
+_GC_MODE = os.environ.get("PREDICTION_GC_MODE", "")
+
+# threshold 모드의 임계값:
+# CPython 기본값은 (700, 10, 10) 입니다.
+# gen2 순회는 gen1 순회 threshold2 회마다, gen1 순회는 gen0 순회 threshold1 회마다
+# 일어나므로 gen2 빈도는 threshold1 x threshold2 에 반비례합니다.
+# 기본 10x10=100 에서 20x30=600 으로 올리면 gen2 빈도가 약 1/6 이 됩니다.
+# gc.disable() 과 달리 회수 자체는 유지되므로 메모리 누증 위험이 낮습니다.
+# gen0 는 그대로 두어 단기 객체 회수를 유지합니다.
+_GC_THRESHOLD_GEN0 = 700
+_GC_THRESHOLD_GEN1 = 20
+_GC_THRESHOLD_GEN2 = 30
+
+if _GC_MODE == "threshold":
+    gc.set_threshold(_GC_THRESHOLD_GEN0, _GC_THRESHOLD_GEN1, _GC_THRESHOLD_GEN2)
+
+# batch-disable 모드: 배치 스레드가 GC 를 끄고 일정 배치마다 수동 collect 합니다.
+# 이름과 달리 gc.disable() 은 스레드 한정이 아니라 프로세스 전역입니다. CPython
+# 에는 스레드별 GC 가 없습니다. 즉 이 모드는 자동 회수를 프로세스 전체에서 끄고
+# 회수 시점만 배치 경계로 옮기는 것이며, 채택 전 RSS 추이 확인이 필수입니다.
+_BATCH_DISABLE_COLLECT_EVERY = 50  # N 배치마다 gc.collect() 호출
 
 
 class _BatchItem:
@@ -83,6 +111,9 @@ class _PredictionBatcher:
         return batch
 
     def _run(self):
+        if _GC_MODE == "batch-disable":
+            gc.disable()
+            batch_count = 0
         while True:
             batch = self._collect()
             # 어떤 실패도 스레드를 끝내지 못하게 합니다. 이 스레드가 죽으면
@@ -92,6 +123,11 @@ class _PredictionBatcher:
             except BaseException as exc:
                 logger.exception("마이크로배치 처리가 실패했습니다.")
                 self._release(batch, exc)
+            if _GC_MODE == "batch-disable":
+                batch_count += 1
+                if batch_count % _BATCH_DISABLE_COLLECT_EVERY == 0:
+                    gc.collect()
+
 
     def _dispatch(self, batch: list[_BatchItem]) -> None:
         try:
@@ -139,10 +175,13 @@ class SingletonPredictor:
             from src.ml.model_registry import ModelRegistry
 
             ModelRegistry.load_all_models()
+            if _GC_MODE == "freeze":
+                gc.freeze()
         self._batcher = _PredictionBatcher(
             self._predict_from_features,
             self._predict_batch,
         )
+
 
     def _predict_from_features(
         self,
