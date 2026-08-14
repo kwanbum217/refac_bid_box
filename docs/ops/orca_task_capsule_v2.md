@@ -285,13 +285,20 @@ review_checklist:
   - id: "C1"
     question: "모든 subprocess.run 호출에 timeout 인자가 있는가"
     how: "grep -c 'subprocess.run(' 과 grep -c 'timeout=' 를 비교"
+    defect_when: "no"
   - id: "C2"
     question: "정규식이 여러 줄을 넘어 매칭될 수 있는가"
     how: "\\D, \\s, . 이 줄바꿈을 포함하는지 확인하고 반례 입력으로 재현"
+    defect_when: "yes"
   - id: "C3"
     question: "검사 대상 파일이 없을 때 통과로 처리되는 경로가 있는가"
     how: "빈 임시 디렉터리로 함수를 직접 호출"
+    defect_when: "yes"
 ```
+
+**`defect_when` 은 필수입니다.** 질문의 극성이 항목마다 다르기 때문입니다.
+"timeout 이 있는가" 는 `no` 가 결함이고 "줄을 넘는가" 는 `yes` 가 결함입니다.
+이 필드가 없으면 아래 4.1.2 조건 3 을 기계로 판정할 수 없습니다.
 
 **질문은 서술이 아니라 판정 가능한 형태로 씁니다.** "예외 처리를 확인한다" 가
 아니라 "모든 `subprocess.run` 에 `timeout` 이 있는가" 로 씁니다.
@@ -327,11 +334,32 @@ review_checklist:
 | --- | --- |
 | 1 | `review_checklist` 의 모든 `id` 에 대응하는 `checklist_results` 항목이 있다 |
 | 2 | 각 항목이 `answer` 와 **`evidence`(file:line 또는 명령 출력)** 를 가진다 |
-| 3 | 결함을 시사하는 `answer` 가 있으면 대응하는 `blocking_issues` 항목이 있다 |
+| 3 | 결함을 시사하는 `answer` 가 있으면 대응하는 `blocking_issues` 항목이 있고, **그 항목이 체크리스트 `id` 를 포함한다** |
 | 4 | `verdict` 가 `pass` 인데 `checklist_results` 가 비어 있으면 **`insufficient_context` 로 간주한다** |
 
-코디네이터는 4번을 기계적으로 확인합니다. `checklist_results` 가 비었거나 항목
-수가 `review_checklist` 보다 적으면 **리뷰를 받지 않고 재실행**합니다.
+네 조건은 손으로 대조하지 않고 **기계로 판정합니다.**
+
+```bash
+uv run python scripts/validate_review_report.py \
+  --capsule <capsule.yaml> --report <review_report.json>
+```
+
+조건을 어기면 종료 코드가 0 이 아니며, `verdict: pass` 인데 조건 4 에 걸리면
+**실효 판정을 `insufficient_context` 로 바꿔 출력**합니다. 코디네이터는 그 경우
+리뷰를 받지 않고 재실행합니다.
+
+조건 3 이 **`blocking_issues` 항목에 체크리스트 `id` 를 넣으라고 요구하는 이유**는
+대응 관계를 기계로 확인할 수 있게 하기 위함입니다. `file:line` 만 적으면 어느
+체크리스트 항목에 대한 것인지 자동으로 이을 수 없습니다.
+
+2026-08-15 감도 시험에서 Reviewer 한 대가 조건 3 을 어겼고(체크리스트에서 결함을
+확인했으나 `blocking_issues` 로 옮기지 않음) **코디네이터가 손으로 대조해 겨우
+발견했습니다.** 다른 한 대는 옮겼으나 `id` 를 넣지 않아 기계 확인이 불가능했습니다.
+조항이 있어도 강제 수단이 없으면 놓칩니다.
+
+**보고를 `--body` 에 인라인 JSON 으로 넣지 마십시오.** 같은 시험에서 한 대의 보고가
+정규식 문자열의 `\D` 때문에 **유효한 JSON 이 아니었습니다.** 4.1.3 의 `report_path`
+를 쓰면 이 문제가 생기지 않습니다.
 
 **이 조항의 목적은 Reviewer 를 신뢰하는 것이 아니라 빈 검토를 드러내는
 것입니다.** 첫 실사용에서 `blocking_issues: []` 만으로는 "결함이 없다" 와
