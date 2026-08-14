@@ -221,6 +221,57 @@ Read( ... README.md | SKILLS.md | REFACTORING_DESIGN.md | AGENTS.md | handoff ) 
 근거는 워커의 자기 보고가 아니라 **코디네이터가 터미널 출력에서 직접 센 `Read()`
 호출**입니다. 워커 보고를 판정 근거로 쓰지 않는 원칙을 이 검증에도 적용했습니다.
 
+### V.3.1 정정 — `allowed_read_files` 는 지켜지지 않았습니다
+
+**V.3 의 "정확히 일치" 는 틀렸습니다.** 워커가 `ORCA_WORKER_DONE_V2` 로 보고한
+`read_files` 는 **8개**이며 Capsule 허용 4개를 넘습니다.
+
+| 읽은 파일 | Capsule 허용 여부 |
+| --- | --- |
+| `scripts/validate_agent_rules.py` | 허용 |
+| `tests/test_validate_agent_rules.py` | 허용 |
+| `opencode.json` | 허용 |
+| `CLAUDE.md` | 허용 |
+| `<scratchpad>/capsule_t6.yaml` | **미허용.** 자기 Capsule 인데 목록에 없었음 |
+| `<scratchpad>/t6cmd.sh` | **미허용.** 자기 런처 |
+| `<scratchpad>/p10cmd.sh` | **미허용. 다른 Task 의 런처** |
+| `<scratchpad>/specG.txt` | **미허용. 다른 Task 의 사양** |
+
+V.3 이 "4개 = 4개" 라고 쓴 것은 코디네이터가 터미널 출력을 워크트리 경로로
+필터링해 세었기 때문입니다. 스크래치패드 경로의 읽기가 그 필터에서 빠졌습니다.
+**워커의 자기 보고가 코디네이터의 관찰보다 정확했던 사례입니다.**
+
+터미널을 이미 닫아 재관찰이 불가능하므로 자기 보고를 판정 근거로 채택합니다.
+
+#### 유지되는 결론과 무너진 결론
+
+| 결론 | 상태 |
+| --- | --- |
+| 금지 문서(README/SKILLS/AGENTS/설계서/handoff) 재독 0건 | **유지.** 8개 중 어느 것도 해당 없음 |
+| Capsule -> `worker_done` 흐름 도달 | **유지.** V.2, V.4 |
+| `allowed_read_files` 격리 | **무너짐.** 4개 초과 |
+
+**설계 20장 10번("전체 문서 재독 없이 Capsule -> worker_done 흐름 확인")은
+충족됩니다.** 재독 금지 대상은 지켜졌습니다. 다만 `allowed_read_files` 를
+경계로 신뢰할 수 없다는 것이 함께 확인됐습니다.
+
+#### 근본 원인은 코디네이터의 Capsule 배치입니다
+
+이것은 워커의 일탈이라기보다 **Capsule 을 공유 디렉터리에 둔 설계 오류**입니다.
+
+1. `allowed_read_files` 에 **Capsule 자신의 경로가 없었습니다.** 워커는 자기 계약을
+   읽기 위해 반드시 허용 목록 밖으로 나가야 했습니다
+2. 그 경로가 **다른 Task 의 사양과 런처가 함께 있는 공유 스크래치패드**였습니다.
+   한 번 나간 워커가 이웃 파일을 읽는 것을 막을 장치가 없었습니다
+
+`search_scope: deny_by_default` 는 저장소 검색을 겨냥한 것이고 Capsule 이 놓인
+외부 디렉터리를 덮지 못했습니다.
+
+조치는 [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md) 의 Capsule 배치 규약에
+반영했습니다.
+
+---
+
 ### V.4 acceptance 독립 재검산
 
 Capsule 의 acceptance 6개를 코디네이터가 직접 재실행했습니다.

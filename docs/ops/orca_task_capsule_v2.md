@@ -128,6 +128,53 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
 
 ---
 
+## 2.9 Capsule 배치 규약 (필수)
+
+**Capsule 파일을 여러 Task 가 공유하는 디렉터리에 두지 마십시오.** 2026-08-15 T6
+실행 검증에서 워커가 자기 Capsule 과 함께 **다른 Task 의 사양과 런처를 읽은** 사례가
+확인됐습니다. 근거는
+[`orca_v2_runtime_smoke_20260815.md`](orca_v2_runtime_smoke_20260815.md) V.3.1 입니다.
+
+원인은 워커의 일탈이 아니라 코디네이터의 배치였습니다.
+
+| 원인 | 내용 |
+| --- | --- |
+| Capsule 경로가 허용 목록에 없음 | 워커는 자기 계약을 읽기 위해 반드시 `allowed_read_files` 밖으로 나가야 했습니다 |
+| 그 경로가 공유 디렉터리 | 다른 Task 의 사양·런처가 이웃에 있었고 막을 장치가 없었습니다 |
+| `search_scope: deny_by_default` 의 사각 | 저장소 검색을 겨냥한 설정이며 외부 디렉터리를 덮지 않습니다 |
+
+### 2.9.1 규칙
+
+1. **Task 하나당 디렉터리 하나**를 씁니다. 다른 Task 의 파일이 같은 디렉터리에
+   있으면 안 됩니다.
+
+   ```text
+   <scratch>/<task_id>/capsule.yaml       권장
+   <worktree>/.orca/capsule.yaml          권장
+   <scratch>/capsule_<이름>.yaml           금지 (이웃 노출)
+   ```
+
+2. **`allowed_read_files` 에 Capsule 자신의 경로를 반드시 넣습니다.** 넣지 않으면
+   계약을 읽는 행위 자체가 위반이 되어 경계가 무의미해집니다.
+
+3. 런처 스크립트도 같은 Task 디렉터리에 두고 허용 목록에 넣거나, 프롬프트를
+   인자로 직접 전달해 파일을 만들지 않습니다.
+
+### 2.9.2 `allowed_read_files` 를 보안 경계로 신뢰하지 마십시오
+
+이 필드는 **워커에게 주는 지시이며 강제 장치가 아닙니다.** 파일 시스템 권한으로
+막히지 않습니다. 따라서 다음이 따릅니다.
+
+- 비밀값이 든 파일은 애초에 워커가 접근 가능한 경로에 두지 않습니다
+- 다른 Task 의 산출물·사양은 물리적으로 분리합니다
+- 준수 여부는 `worker_done` 의 `read_files` 로 **사후 확인**합니다
+
+`ORCA_WORKER_DONE_V2` 에 `read_files` 를 요구하는 이유가 이것입니다. 코디네이터는
+그 목록을 `allowed_read_files` 와 대조하고, 초과가 있으면 원인이 워커인지 배치인지
+가려 기록합니다.
+
+---
+
 ## 3. Worker Done v2 계약 (`ORCA_WORKER_DONE_V2`)
 
 빌더/조사 워커가 작업을 마쳤을 때 코디네이터에게 반환하는 구조화 계약입니다. 템플릿 파일은 [`.agents/templates/worker_done_v2.json`](../../.agents/templates/worker_done_v2.json)에 위치합니다.
