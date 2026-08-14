@@ -136,6 +136,12 @@ tests/test_data_preservation.py::test_chroma_db_exists
 
 ### 4.2 모델 ID 는 계정 종류에 따라 다릅니다
 
+제공자별 기동 경로, 확인된 모델 ID, 기동 실패 시 우회는
+[`agent_worker_launch_reference.md`](agent_worker_launch_reference.md) 를
+따릅니다. **"경로를 못 찾아 쓸 수 없다" 고 판정하기 전에 그 문서를 먼저
+확인하십시오.**
+
+
 **틀린 모델 ID 를 주면 워커가 기동 직후 죽는데, Orca 는 Task 를 `dispatched`,
 워커를 `ready` 로 표시합니다.** heartbeat 도 오지 않을 뿐 오류로 보이지
 않습니다.
