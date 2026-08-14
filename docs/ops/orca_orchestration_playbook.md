@@ -205,7 +205,49 @@ gitignore 대상 데이터가 필요한 섹션이면 그것도 복사합니다. 
 `data/analysis/` 의 parquet 을 읽는 섹션은 해당 디렉터리를 복사해 주고
 **읽기 전용임을 명세에 적습니다.**
 
-### 5.2 재기동
+### 5.2 주입이 도달했는지 워커 쪽에서 확인하십시오
+
+**`dispatch --inject` 는 조용히 실패합니다.** 2026-08-14 세션에서 워커 3대가
+6분 동안 아무 일도 하지 않았고, 코디네이터는 그것을 "지시서를 읽는 중" 으로
+보고했습니다.
+
+| 신호 | 그때 값 | 실제 |
+| --- | --- | --- |
+| `dispatch --inject` 반환 | `ok: true`, dispatch id 발급 | 전달 실패 |
+| Task status | `dispatched` | 워커는 아무것도 받지 않음 |
+| `orchestration check --terminal` | `No messages.` | 주입이 유일한 전달 경로였고 사라짐 |
+| 워크트리 | 커밋 0, 미커밋 0 | 정체 |
+
+원인은 **CLI 부팅 중 워크스페이스 신뢰 확인 대화창**입니다. Antigravity CLI 는
+기동 시 `No, exit` 선택지가 있는 대화창을 띄우며, 그 시점에 주입된 키 입력은
+대화창에 먹혀 사라집니다. Orca 쪽 기록은 정상으로 남습니다.
+
+따라서 Dispatch 직후 **워커 터미널을 직접 읽습니다.**
+
+```bash
+orca terminal read --terminal <handle> | tail -8
+```
+
+프롬프트가 비어 있으면 도달하지 않은 것입니다. 배너와 빈 `>` 만 보이는 상태를
+"준비됨" 으로 읽지 마십시오.
+
+도달하지 않았을 때 재주입은 거부됩니다(`only ready tasks can be dispatched`).
+`terminal send` 로 직접 전달합니다. 이때 `worker_done` 명령 전문을 함께 넣어야
+합니다. 주입 preamble 이 사라졌으므로 워커는 보고 방법을 모릅니다.
+
+```bash
+orca terminal send --terminal <handle> --enter --text \
+  "지시서 파일 <경로> 를 읽고 수행하십시오. 완료 후: orca orchestration send \
+   --to run:<run_id> --type worker_done --task-id <task_id> \
+   --dispatch-id <dispatch_id> --outcome succeeded --subject '...' --body '...'"
+```
+
+`worker-start --agent claude|codex|cursor` 경로는 이 문제가 없습니다. 감독
+워커로 등록되어 `worker-read` 로 출력을 읽을 수 있습니다. **`terminal create` +
+주입 경로는 `worker-list` 와 `worker-read` 에 나타나지 않으므로** 관측 수단이
+`terminal read` 하나뿐입니다. 이 차이를 알고 배정하십시오.
+
+### 5.3 재기동
 
 모델 ID 오류처럼 워커가 죽었을 때입니다. 워크트리에 변경이 없으면 그대로
 재사용하므로 잃는 것이 없습니다.
@@ -240,7 +282,25 @@ orca terminal list --worktree path:<워크트리> --json   # preview 를 읽습�
 `worker_done` 이 왔는데 커밋이 0 이면 병합할 대상이 없다는 뜻입니다. 보고
 내용과 무관하게 완료로 처리하지 마십시오.
 
-### 6.2 `ask` 는 `reply` 로만 풀립니다
+### 6.2 정체 판정 기준
+
+"진행 중" 이라고 보고하기 전에 아래를 통과해야 합니다. 근거 없이 진행 중이라고
+쓰면 유휴 워커를 작업 중으로 잘못 보고하게 됩니다.
+
+| 시점 | 확인 | 통과 조건 |
+| --- | --- | --- |
+| Dispatch 직후 2분 내 | `orca terminal read` | 프롬프트가 비어 있지 않고 응답 중 |
+| 이후 5분 주기 | 커밋 수와 미커밋 변경 수 | 둘 중 하나가 증가 |
+| 커밋 0 + 미커밋 0 이 5분 이상 | `orca terminal read` 재확인 | 응답 중이면 계속, 프롬프트가 비어 있으면 정체 |
+
+**프로세스 생존은 진척의 근거가 아닙니다.** `ps` 로 CLI 가 떠 있는 것을 확인해도
+지시를 못 받았으면 아무 일도 하지 않습니다. 2026-08-14 세션에서 코디네이터가
+정확히 이 오류를 냈습니다. `ps` 로 3대 생존을 확인하고 "지시서를 읽는 단계" 로
+보고했으나 실제로는 빈 프롬프트였습니다.
+
+읽기 단계와 정체는 **터미널 출력으로만** 구분됩니다.
+
+### 6.3 `ask` 는 `reply` 로만 풀립니다
 
 워커가 `orca orchestration ask` 로 물으면 **블로킹 대기**합니다.
 
@@ -254,7 +314,7 @@ orca orchestration reply --id <msg_id> --body "<답변>" --json
 
 `msg_id` 는 `orca orchestration inbox --json` 에서 찾습니다.
 
-### 6.3 `worker_done` 이후 워커는 메시지를 받지 못합니다
+### 6.4 `worker_done` 이후 워커는 메시지를 받지 못합니다
 
 `orchestration send` 는 워커가 `check` 를 실행해야 도착합니다. `worker_done` 을
 보내고 턴을 끝낸 워커는 `check` 를 돌리지 않습니다.
@@ -271,7 +331,7 @@ orca terminal send --terminal <handle> --text "<지시>" --enter
 2026-08-12 세션에서 완료된 섹션의 입력창에 사람이 남긴 미전송 지시가 발견됐고,
 코디네이터가 `--enter` 만 보내 제출했습니다.
 
-### 6.4 메일함은 계속 비웁니다
+### 6.5 메일함은 계속 비웁니다
 
 ```bash
 orca orchestration check --json

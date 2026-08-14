@@ -158,6 +158,47 @@ agy --print "reply with OK only" --print-timeout 60s
 
 ---
 
+### 3.3 기동은 절반입니다. 도달을 확인하십시오
+
+**이 문서의 기동 경로를 따랐다고 워커가 일을 시작한 것은 아닙니다.**
+2026-08-14 세션에서 이 문서대로 안티그래비티 워커 3대를 띄웠고 `dispatch
+--inject` 가 세 번 모두 `ok: true` 를 반환했지만, **셋 다 6분간 빈 프롬프트에
+멈춰 있었습니다.**
+
+부팅 중 워크스페이스 신뢰 확인 대화창이 주입된 키 입력을 먹습니다. Orca 쪽
+기록은 정상으로 남아 어디에서도 오류가 보이지 않습니다.
+
+| 확인할 것 | 명령 | 실패 신호 |
+| --- | --- | --- |
+| 주입 도달 | `orca terminal read --terminal <handle>` | 배너와 빈 `>` 만 보임 |
+| 메시지 대기열 | `orca orchestration check --terminal <handle>` | `No messages.` |
+| 실제 진척 | `git -C <워크트리> log --oneline main..HEAD \| wc -l` | 5분 넘게 0 |
+
+`ps` 로 CLI 프로세스가 살아 있는 것을 확인하는 것은 **근거가 아닙니다.** 지시를
+받지 못한 CLI 도 정상적으로 떠 있습니다.
+
+도달하지 않았으면 `terminal send` 로 직접 전달합니다. 절차는
+[`orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 5.2 절에
+있습니다.
+
+### 3.4 이 경로의 워커는 감독 목록에 없습니다
+
+`terminal create` + 주입으로 붙인 워커는 Dispatch 계보는 남지만 **감독 워커로
+등록되지 않습니다.**
+
+| 명령 | `worker-start` 경로 | `terminal create` + 주입 경로 |
+| --- | --- | --- |
+| `orca orchestration worker-list` | 행이 나옵니다 | **나오지 않습니다** |
+| `orca orchestration worker-read` | 출력을 읽습니다 | `has no agent terminal` |
+| `orca terminal read` | 가능 | **유일한 관측 수단** |
+
+또한 워커 터미널 탭은 **자기 워크트리 그룹**에 들어갑니다. Orca 사이드바가 주
+저장소를 보고 있으면 화면에 나타나지 않습니다. `orca terminal list` 로 어느
+워크트리 그룹에 있는지 확인하고 사용자에게 알려 주십시오. 워커를 띄웠는데
+사용자가 볼 수 없는 상태로 두면 감독이 코디네이터 한 사람에게만 남습니다.
+
+---
+
 ## 4. 같은 탭 분할 주의
 
 `terminal show` 의 `tabId` 가 코디네이터의 것과 같으면 그 워커는 코디네이터와
