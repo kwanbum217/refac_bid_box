@@ -44,6 +44,15 @@ services:
       # .env 의 CHROMA_DB_PATH 는 호스트 절대 경로입니다. 이미지에 그대로 실려
       # 컨테이너가 없는 경로를 보고 빈 컬렉션을 만들었습니다. 반드시 덮어씁니다.
       - CHROMA_DB_PATH=/app/chroma_db
+      # 모델 로드 직후 gc.freeze() 로 가중치를 영구 세대로 옮겨 generation-2
+      # 순회에서 제외합니다. c10 최악 P99 108.55 -> 59.32ms, 100ms 초과 21건 ->
+      # 0건(1,800 요청), P50 변화 없음, 10분 지속 부하 RSS 평평.
+      # 근거: docs/ops/phase8_predict_gc_verdict_20260814.md
+      # 되돌리려면 PREDICTION_GC_MODE= 로 빈 값을 명시하십시오. `:-` 가 아니라
+      # `-` 를 쓰는 이유가 이것입니다. `:-` 는 빈 문자열도 미설정으로 보아
+      # freeze 로 되돌려 버리므로 끌 수단이 없어집니다.
+      # batch-disable 은 기각됐으니 운영에 쓰지 마십시오(기본보다 꼬리가 나쁩니다).
+      - PREDICTION_GC_MODE=${PREDICTION_GC_MODE-freeze}
       # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}

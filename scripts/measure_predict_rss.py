@@ -20,6 +20,7 @@ import argparse
 import json
 import logging
 import subprocess
+import sys
 import threading
 import time
 import urllib.request
@@ -70,20 +71,20 @@ def _find_server_pid(base_url: str) -> int | None:
 # 요청 워커
 # ---------------------------------------------------------------------------
 
+# PredictionRequest 계약과 일치해야 합니다. presmpt_prce/category 같은 raw 컬럼명을
+# 보내면 422 로 전부 실패하며, 그래도 이 스크립트는 지연을 기록해 정상으로 보입니다.
 _SAMPLE_PAYLOAD = json.dumps(
     {
-        "presmpt_prce": 1_100_000_000,
-        "real_budget": 1_100_000_000,
-        "base_amount": 1_000_000_000,
-        "scenario_mode": "2",
-        "category": "Thng",
+        "presumed_price": 500_000_000,
+        "base_price": 495_000_000,
+        "category_code": "Thng",
     }
 ).encode()
 
-_PREDICT_PATH = "/api/v1/predictions/"
+_PREDICT_PATH = "/api/v1/predictions/predict"
 
 
-def _send_one(base_url: str, latencies: list[float]) -> None:
+def _send_one(base_url: str, latencies: list[float], errors: list[int]) -> None:
     url = base_url.rstrip("/") + _PREDICT_PATH
     req = urllib.request.Request(
         url,
@@ -95,15 +96,21 @@ def _send_one(base_url: str, latencies: list[float]) -> None:
     try:
         with urllib.request.urlopen(req, timeout=10):
             pass
+        errors.append(0)
     except Exception as exc:
+        # 실패를 빠른 응답으로 착각하지 않도록 건수를 셉니다. 계약이 어긋나면
+        # 422 가 즉시 돌아오므로 지연만 보면 개선된 것처럼 보입니다.
         logger.debug("요청 실패: %s", exc)
+        errors.append(1)
     latencies.append((time.monotonic() - t0) * 1000.0)
 
 
 
-def _worker_loop(base_url: str, latencies: list[float], stop_event: threading.Event) -> None:
+def _worker_loop(
+    base_url: str, latencies: list[float], errors: list[int], stop_event: threading.Event
+) -> None:
     while not stop_event.is_set():
-        _send_one(base_url, latencies)
+        _send_one(base_url, latencies, errors)
 
 
 # ---------------------------------------------------------------------------
@@ -127,11 +134,24 @@ def run(
     out_path: str,
 ) -> None:
     server_pid = _find_server_pid(base_url)
+    if server_pid is None:
+        # /debug/pid 엔드포인트는 이 저장소에 없습니다. 서버가 Docker 안에서
+        # 돌면 호스트 ps 로도 보이지 않으므로 RSS 를 잠자코 비워 두지 않고
+        # 대체 수단을 알려 줍니다. 조용히 None 을 남기면 지연만 있고 메모리는
+        # 없는 결과가 나와 채택 판정에 쓸 수 없습니다.
+        print(
+            "경고: 서버 PID 를 찾을 수 없어 RSS 를 기록하지 않습니다.\n"
+            "  컨테이너 서버는 다음으로 측정하십시오.\n"
+            "    docker stats --no-stream --format '{{.MemUsage}}' refac_bid_box-app-1\n"
+            "  근거: docs/ops/phase8_predict_gc_verdict_20260814.md",
+            file=sys.stderr,
+        )
 
     latencies: list[float] = []
+    errors: list[int] = []
     stop_event = threading.Event()
     threads = [
-        threading.Thread(target=_worker_loop, args=(base_url, latencies, stop_event), daemon=True)
+        threading.Thread(target=_worker_loop, args=(base_url, latencies, errors, stop_event), daemon=True)
         for _ in range(concurrency)
     ]
     for t in threads:
@@ -162,6 +182,7 @@ def run(
         "sample_interval_seconds": sample_interval_seconds,
         "server_pid": server_pid,
         "total_requests": len(lat_copy),
+        "failed_requests": sum(errors),
         "latency_ms": {
             "p50": _percentile(lat_copy, 50),
             "p95": _percentile(lat_copy, 95),
@@ -175,7 +196,7 @@ def run(
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     print(f"보고서 저장: {out_path}")
-    print(f"총 요청 수: {report['total_requests']}")
+    print(f"총 요청 수: {report['total_requests']} (실패 {report['failed_requests']})")
     if lat_copy:
         print(
             f"지연(ms) P50={report['latency_ms']['p50']:.1f}"
