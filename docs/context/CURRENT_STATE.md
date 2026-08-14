@@ -75,7 +75,10 @@
 8. **README 에 성능 실측값 기재**:
    - 2026-08-15 에 G3 실측 3행을 제거하고 본 문서 포인터로 대체했습니다. 수치를 갱신하는 방식은 다음 측정에서 다시 뒤처지므로 채택하지 않습니다.
    - 레이턴시 지표의 정본은 본 문서 2장이며 측정 조건은 [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md) 를 따릅니다.
-9. **크기 예산을 바이트로 판정**:
+9. **Capsule 을 공유 디렉터리에 배치**:
+   - 2026-08-15 T6 실행 검증에서 워커가 자기 Capsule 과 함께 다른 Task 의 사양·런처를 읽었습니다. Task 하나당 디렉터리 하나를 쓰고 `allowed_read_files` 에 Capsule 자신의 경로를 넣습니다.
+   - `allowed_read_files` 는 지시이며 강제 장치가 아닙니다. 준수는 `worker_done` 의 `read_files` 로 사후 확인합니다. 규약: [`../ops/orca_task_capsule_v2.md`](../ops/orca_task_capsule_v2.md) 2.9
+10. **크기 예산을 바이트로 판정**:
    - 설계 5장의 8,000자는 문자 수이며 바이트가 아닙니다. `wc -c` 로 재면 한글 3바이트 때문에 `AGENTS.md` 가 초과처럼 보이지만 실제는 6,589자로 예산 이내입니다.
    - 검증기 `check_context_budgets` 는 `len()` 으로 문자 수를 셉니다.
 

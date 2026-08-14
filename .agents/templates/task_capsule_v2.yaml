@@ -17,6 +17,9 @@ ground_truth:
     recheck: false
 
 allowed_read_files:
+  # 이 Capsule 자신의 경로를 반드시 포함하십시오. 없으면 계약을 읽는 행위가
+  # 위반이 되어 경계가 무의미해집니다. 규약은 orca_task_capsule_v2.md 2.9 절입니다.
+  - "<이 Capsule 파일 경로>"
   - "src/..."
   - "tests/..."
 
