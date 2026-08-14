@@ -32,6 +32,7 @@ import argparse
 import filecmp
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,27 @@ if hasattr(sys.stdout, "reconfigure"):
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 ANTIGRAVITY_CHAR_CAP = 12000
+
+# 설계 5장 컨텍스트 예산. 초과는 FAIL 이 아니라 WARN 으로 시작해 운영 데이터를 보고
+# 강화합니다. 자동 주입 문서가 커지면 모든 워커의 시작 비용이 함께 늘어납니다.
+AGENTS_CHAR_BUDGET = 8000
+CURRENT_STATE_CHAR_BUDGET = 8000
+
+# CURRENT_STATE.md 필수 필드 (설계 6.1). 이 문서가 v2 의 현재 상태 정본이므로
+# 존재와 형식을 기계로 검증합니다.
+CURRENT_STATE_PATH = ("docs", "context", "CURRENT_STATE.md")
+
+# source_commit 은 같은 커밋에서 갱신되므로 HEAD 와 정확히 일치할 수 없습니다.
+# 갱신 커밋과 병합 커밋만으로도 2~3 이 벌어지므로 소폭 지연은 정상으로 봅니다.
+# 이 값을 넘으면 문서가 실제 상태를 놓치기 시작한다는 신호입니다.
+CURRENT_STATE_LAG_TOLERANCE = 5
+CURRENT_STATE_REQUIRED = [
+    "updated_at",
+    "source_commit",
+    "G1",
+    "G2",
+    "G3",
+]
 
 # .antigravity/rules.md 요약본이 반드시 포함해야 할 핵심 키워드 (드리프트 탐지용)
 ANTIGRAVITY_REQUIRED_SECTIONS = [
@@ -127,13 +149,16 @@ REVIEW_DONE_REQUIRED_KEYS = [
 
 
 class CheckResult:
-    def __init__(self, name: str, ok: bool, detail: str = "") -> None:
+    def __init__(self, name: str, ok: bool, detail: str = "", warn: bool = False) -> None:
         self.name = name
         self.ok = ok
         self.detail = detail
+        # WARN 은 통과로 세지만 화면에 드러냅니다. 권장 예산 초과처럼 즉시 차단할
+        # 근거는 없으나 방치하면 되돌리기 어려워지는 항목에 씁니다.
+        self.warn = warn and ok
 
     def format(self, quiet: bool = False) -> str:
-        tag = "PASS" if self.ok else "FAIL"
+        tag = "WARN" if self.warn else ("PASS" if self.ok else "FAIL")
         line = f"[{tag}] {self.name}"
         if not quiet and self.detail:
             line += f"\n       {self.detail}"
@@ -466,6 +491,110 @@ def check_v2_templates(root: Path = PROJECT_ROOT) -> CheckResult:
     )
 
 
+def _current_state_path(root: Path) -> Path:
+    return root.joinpath(*CURRENT_STATE_PATH)
+
+
+def check_current_state_exists(root: Path = PROJECT_ROOT) -> CheckResult:
+    """v2 의 현재 운영 상태 정본이 존재하는지 확인합니다.
+
+    이 파일이 사라지면 코디네이터 부트스트랩이 과거 handoff 나 stale README 로
+    되돌아갑니다. 자동 주입 축소의 전제가 무너지므로 FAIL 로 둡니다.
+    """
+    name = "CURRENT_STATE 정본 존재"
+    target = _current_state_path(root)
+    if not target.exists():
+        return CheckResult(name, False, "docs/context/CURRENT_STATE.md 없음 (v2 부트스트랩 정본 누락)")
+    return CheckResult(name, True, f"{target.relative_to(root)} 확인")
+
+
+def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
+    """필수 필드와 증거 포인터, source_commit 신선도를 확인합니다."""
+    name = "CURRENT_STATE 필수 필드"
+    target = _current_state_path(root)
+    if not target.exists():
+        return CheckResult(name, False, "docs/context/CURRENT_STATE.md 없음")
+    content = read_text(target)
+
+    missing = [k for k in CURRENT_STATE_REQUIRED if k not in content]
+    if missing:
+        return CheckResult(name, False, f"필수 필드 누락: {missing}")
+    if "docs/" not in content:
+        return CheckResult(name, False, "증거 경로(docs/...) 없음. 수치는 evidence path 를 가져야 합니다")
+
+    match = re.search(r"source_commit\D*([0-9a-f]{7,40})", content)
+    if match is None:
+        return CheckResult(name, False, "source_commit 값에서 커밋 해시를 읽을 수 없음")
+
+    recorded = match.group(1)
+    behind = _commits_behind_head(root, recorded)
+    if behind is None:
+        return CheckResult(
+            name,
+            True,
+            f"필수 필드 완비. source_commit {recorded} 은 이 저장소에서 확인할 수 없어 신선도 미검증",
+            warn=True,
+        )
+    if behind > CURRENT_STATE_LAG_TOLERANCE:
+        return CheckResult(
+            name,
+            True,
+            f"필수 필드 완비. source_commit {recorded} 이 HEAD 보다 {behind} 커밋 뒤처짐 "
+            f"(허용 {CURRENT_STATE_LAG_TOLERANCE}). 현재 상태를 놓치고 있는지 확인하십시오",
+            warn=True,
+        )
+    return CheckResult(
+        name,
+        True,
+        f"필수 필드 완비. source_commit {recorded} 은 HEAD 대비 {behind} 커밋 (허용 {CURRENT_STATE_LAG_TOLERANCE})",
+    )
+
+
+def _commits_behind_head(root: Path, commit: str) -> int | None:
+    """기록된 커밋이 HEAD 보다 몇 커밋 뒤처졌는지 셉니다. 확인 불가면 None."""
+    try:
+        subprocess.run(
+            ["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "HEAD"],
+            check=True,
+            capture_output=True,
+        )
+        out = subprocess.run(
+            ["git", "-C", str(root), "rev-list", "--count", f"{commit}..HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return int(out.stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+        return None
+
+
+def check_context_budgets(root: Path = PROJECT_ROOT) -> CheckResult:
+    """자동 주입 문서의 크기 예산을 확인합니다 (설계 5장).
+
+    초과가 곧 오류는 아니지만, 자동 주입 문서는 모든 워커의 시작 비용이므로
+    커지는 것을 조용히 넘기지 않습니다.
+    """
+    name = "컨텍스트 예산"
+    targets = [
+        (root / "AGENTS.md", AGENTS_CHAR_BUDGET),
+        (_current_state_path(root), CURRENT_STATE_CHAR_BUDGET),
+    ]
+    over = []
+    sizes = []
+    for path, budget in targets:
+        if not path.exists():
+            continue
+        size = len(read_text(path))
+        sizes.append(f"{path.name} {size}자/{budget}")
+        if size > budget:
+            over.append(f"{path.name} {size}자 (권장 {budget}자)")
+    detail = ", ".join(sizes) if sizes else "대상 파일 없음"
+    if over:
+        return CheckResult(name, True, f"권장 예산 초과: {'; '.join(over)}", warn=True)
+    return CheckResult(name, True, detail)
+
+
 def check_orca_coordination_skill(root: Path = PROJECT_ROOT) -> CheckResult:
     skill_path = root / ".agents" / "skills" / "orca-section-coordination" / "SKILL.md"
     if not skill_path.exists():
@@ -505,6 +634,9 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_task_capsule_v2_docs(root),
         check_v2_templates(root),
         check_orca_coordination_skill(root),
+        check_current_state_exists(root),
+        check_current_state_sections(root),
+        check_context_budgets(root),
     ]
 
 
