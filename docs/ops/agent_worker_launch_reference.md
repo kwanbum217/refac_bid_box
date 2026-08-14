@@ -88,18 +88,44 @@ Antigravity 쪽 허용량이 적지만, 다음 상황에서 쓸 자리가 분명
 | `cerebras/gpt-oss-120b` | 65,536 / 8,192 |
 | `cerebras/zai-glm-4.7` | 65,536 / 8,192 |
 
-```bash
-opencode models | grep cerebras          # 인식 확인
-opencode -m cerebras/gemma-4-31b         # 기동
+**설정 구조가 중요합니다.** `@ai-sdk/openai-compatible` 는 연결 설정을
+`options` 안에서 찾습니다. `baseURL` 과 `apiKey` 를 프로바이더 최상위에 두면
+프로바이더는 등록되고 모델 목록도 나오지만 **호출 시점에 URL 이 `undefined` 가
+됩니다.**
+
 ```
+Error: "undefined/chat/completions" cannot be parsed as a URL.
+```
+
+**`.env` 는 읽히지 않습니다.** `{env:CEREBRAS_API_KEY}` 는 셸 환경변수를
+참조하며 프로젝트 `.env` 를 자동으로 불러오지 않습니다. 값이 `.env` 에만 있으면
+`Unauthorized: Wrong API Key` 가 납니다.
+
+```bash
+export CEREBRAS_API_KEY=$(awk -F= '/^CEREBRAS_API_KEY=/{print $2}' .env)
+opencode run -m cerebras/gemma-4-31b "reply with OK only"   # OK 가 나와야 합니다
+opencode -m cerebras/gemma-4-31b                            # 그 뒤에 기동
+```
+
+**기동 전에 `opencode run` 으로 1회 호출해 응답을 확인하십시오.**
+`opencode models` 에 보이는 것은 설정 파일을 읽었다는 뜻일 뿐입니다. 2026-08-14
+세션에서 코디네이터가 목록만 확인하고 설정을 병합했고, 워커를 붙인 뒤에야 위 두
+오류를 발견했습니다.
 
 **컨텍스트가 65K 로 Antigravity 계열보다 작습니다.** 큰 파일을 여러 개 읽어야
 하는 작업은 맞지 않습니다. 지시서가 자족적이고 읽을 범위가 좁은 감사·분석에
 적합합니다.
 
-`payment_required_error` 가 나오면 Cerebras Billing 에서 무료 크레딧 활성화가
-안 된 상태입니다. 모델 목록 조회(`GET /v1/models`)는 그 상태에서도 성공하므로
-**목록에 보이는 것을 사용 가능의 근거로 쓰지 마십시오.**
+오류별 원인입니다.
+
+| 오류 | 원인 |
+| --- | --- |
+| `"undefined/chat/completions" cannot be parsed as a URL` | `baseURL` 이 `options` 밖에 있습니다 |
+| `Unauthorized: Wrong API Key` | 셸에 `CEREBRAS_API_KEY` 가 없습니다. `.env` 는 자동으로 읽히지 않습니다 |
+| `payment_required_error` | Cerebras Billing 에서 무료 크레딧이 활성화되지 않았습니다 |
+
+세 오류 모두 `opencode models` 는 정상으로 보입니다. **목록에 보이는 것을 사용
+가능의 근거로 쓰지 마십시오.**
 
 ---
 

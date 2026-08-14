@@ -8,8 +8,6 @@
     "cerebras": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Cerebras",
-      "baseURL": "https://api.cerebras.ai/v1",
-      "apiKey": "{env:CEREBRAS_API_KEY}",
       "models": {
         "gemma-4-31b": {
           "name": "Gemma 4 31B",
@@ -32,6 +30,10 @@
             "output": 8192
           }
         }
+      },
+      "options": {
+        "baseURL": "https://api.cerebras.ai/v1",
+        "apiKey": "{env:CEREBRAS_API_KEY}"
       }
     }
   }
