@@ -270,6 +270,73 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
 }
 ```
 
+### 4.1.1 `review_checklist` 와 `checklist_results` (v2.1 필수)
+
+**2026-08-15 첫 실사용에서 Reviewer 2대가 실재 결함 3건을 놓치고 `pass` 를
+냈습니다.** 원인 분석은
+[`orca_v2_reviewer_plane_20260815.md`](orca_v2_reviewer_plane_20260815.md) 입니다.
+서술형 우선순위(4.2)만 주면 검토가 얕아지므로 **예/아니오로 답할 수 있는
+체크리스트를 Capsule 이 지정**하고 Reviewer 가 항목별로 답하게 합니다.
+
+#### Capsule 측 (코디네이터가 작성)
+
+```yaml
+review_checklist:
+  - id: "C1"
+    question: "모든 subprocess.run 호출에 timeout 인자가 있는가"
+    how: "grep -c 'subprocess.run(' 과 grep -c 'timeout=' 를 비교"
+  - id: "C2"
+    question: "정규식이 여러 줄을 넘어 매칭될 수 있는가"
+    how: "\\D, \\s, . 이 줄바꿈을 포함하는지 확인하고 반례 입력으로 재현"
+  - id: "C3"
+    question: "검사 대상 파일이 없을 때 통과로 처리되는 경로가 있는가"
+    how: "빈 임시 디렉터리로 함수를 직접 호출"
+```
+
+**질문은 서술이 아니라 판정 가능한 형태로 씁니다.** "예외 처리를 확인한다" 가
+아니라 "모든 `subprocess.run` 에 `timeout` 이 있는가" 로 씁니다.
+
+#### 보고 측 (Reviewer 가 채움)
+
+```json
+{
+  "schema": "ORCA_REVIEW_DONE_V2",
+  "version": "2.1.0",
+  "verdict": "pass",
+  "checklist_results": [
+    {
+      "id": "C1",
+      "answer": "no",
+      "evidence": "scripts/x.py:123 subprocess.run 2회 중 timeout 0회",
+      "command": "grep -c 'subprocess.run(' scripts/x.py"
+    }
+  ],
+  "blocking_issues": [],
+  "unverified_claims": [],
+  "missing_tests": [],
+  "requested_context": [],
+  "commands_to_verify": []
+}
+```
+
+### 4.1.2 `verdict: pass` 의 성립 조건
+
+**근거 없는 `pass` 는 판정으로 받지 않습니다.** 다음을 모두 만족해야 유효합니다.
+
+| 조건 | 내용 |
+| --- | --- |
+| 1 | `review_checklist` 의 모든 `id` 에 대응하는 `checklist_results` 항목이 있다 |
+| 2 | 각 항목이 `answer` 와 **`evidence`(file:line 또는 명령 출력)** 를 가진다 |
+| 3 | 결함을 시사하는 `answer` 가 있으면 대응하는 `blocking_issues` 항목이 있다 |
+| 4 | `verdict` 가 `pass` 인데 `checklist_results` 가 비어 있으면 **`insufficient_context` 로 간주한다** |
+
+코디네이터는 4번을 기계적으로 확인합니다. `checklist_results` 가 비었거나 항목
+수가 `review_checklist` 보다 적으면 **리뷰를 받지 않고 재실행**합니다.
+
+**이 조항의 목적은 Reviewer 를 신뢰하는 것이 아니라 빈 검토를 드러내는
+것입니다.** 첫 실사용에서 `blocking_issues: []` 만으로는 "결함이 없다" 와
+"찾지 않았다" 가 구분되지 않았습니다.
+
 ### 4.2 리뷰어의 7대 핵심 감사 기준
 
 리뷰어는 코드 스타일이나 사소한 선호도가 아닌 다음 7대 위험 요소를 우선적으로 검증합니다.

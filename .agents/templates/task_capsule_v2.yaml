@@ -1,5 +1,5 @@
 schema: ORCA_TASK_CAPSULE_V2
-version: "2.0.0"
+version: "2.1.0"
 mode: worker # worker | reviewer | investigator | benchmarker
 run_id: "<run_id>"
 task_id: "<task_id>"

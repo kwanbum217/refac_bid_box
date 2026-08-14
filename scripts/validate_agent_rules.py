@@ -65,6 +65,11 @@ CURRENT_STATE_LAG_TOLERANCE = 5
 
 # git 조회 상한. 검증기는 pre-commit 에서 돌므로 멈추면 커밋이 막힙니다.
 GIT_PROBE_TIMEOUT_SECONDS = 10
+
+# 계약 집합 버전. 세 템플릿이 같은 버전을 공유해야 합니다. 한쪽만 올리면
+# 코디네이터와 워커가 서로 다른 계약을 쓰게 됩니다.
+# 2.1.0: Reviewer 에 review_checklist / checklist_results 를 필수화
+CONTRACT_VERSION = "2.1.0"
 CURRENT_STATE_REQUIRED = [
     "updated_at",
     "source_commit",
@@ -417,7 +422,7 @@ def check_v2_templates(root: Path = PROJECT_ROOT) -> CheckResult:
             False,
             f"task_capsule_v2.yaml schema 불일치: {parsed_capsule.get('schema')}",
         )
-    if str(parsed_capsule.get("version")) != "2.0.0":
+    if str(parsed_capsule.get("version")) != CONTRACT_VERSION:
         return CheckResult(
             "Task Capsule v2 템플릿 정합성",
             False,
@@ -445,7 +450,7 @@ def check_v2_templates(root: Path = PROJECT_ROOT) -> CheckResult:
             False,
             f"worker_done_v2.json schema 불일치: {parsed_worker.get('schema')}",
         )
-    if str(parsed_worker.get("version")) != "2.0.0":
+    if str(parsed_worker.get("version")) != CONTRACT_VERSION:
         return CheckResult(
             "Task Capsule v2 템플릿 정합성",
             False,
@@ -473,7 +478,7 @@ def check_v2_templates(root: Path = PROJECT_ROOT) -> CheckResult:
             False,
             f"review_done_v2.json schema 불일치: {parsed_review.get('schema')}",
         )
-    if str(parsed_review.get("version")) != "2.0.0":
+    if str(parsed_review.get("version")) != CONTRACT_VERSION:
         return CheckResult(
             "Task Capsule v2 템플릿 정합성",
             False,
