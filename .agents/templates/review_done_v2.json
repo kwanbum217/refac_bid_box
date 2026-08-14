@@ -1,9 +1,17 @@
 {
   "schema": "ORCA_REVIEW_DONE_V2",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "task_id": "<task_id>",
   "dispatch_id": "<dispatch_id>",
   "verdict": "pass",
+  "checklist_results": [
+    {
+      "id": "C1",
+      "answer": "yes | no | n/a",
+      "evidence": "file:line 또는 명령 출력. 없으면 pass 가 무효입니다",
+      "command": "이 답을 얻은 명령"
+    }
+  ],
   "blocking_issues": [],
   "unverified_claims": [],
   "missing_tests": [],
