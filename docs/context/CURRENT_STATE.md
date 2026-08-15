@@ -77,21 +77,12 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현·실증 완료**:
-   - T0~T7 병합 완료. 이후 코디네이터 검수로 빈틈 4건을 보완했습니다(검사 9 -> 12, `CURRENT_STATE` 존재·필수 필드·크기 경고).
-   - T6 은 정적 검증만이었으므로 **실행 검증**을 추가했습니다. 실제 워커에서 Capsule -> `worker_done` 도달과 금지 문서 재독 0건을 확인했습니다([`../ops/orca_v2_runtime_smoke_20260815.md`](../ops/orca_v2_runtime_smoke_20260815.md)).
-   - Capsule 격리 누수를 발견해 배치 규약 2.9 를 만들고 적용 후 `read_files` 초과 0건을 실측했습니다.
-   - Reviewer 계층을 첫 가동했고 결함을 놓쳤습니다. 계약을 v2.1 체크리스트로 고쳐 seeded defect 로 0/3 -> 4/4 개선을 측정했습니다([`../ops/orca_v2_reviewer_sensitivity_20260815.md`](../ops/orca_v2_reviewer_sensitivity_20260815.md)).
-   - 계약 조건은 `scripts/validate_review_report.py` 로 기계 판정합니다.
-   - **2026-08-15 수신면 도구화 완료**: 코디네이터가 원시 출력을 직접 읽던 구간을 세 도구로 대체했습니다.
-     - `scripts/orca_contract.py`: Capsule·보고 공용 파서 (도구 간 판정 분기 방지)
-     - `scripts/orca_level1_gate.py`: 설계 10장 Level 1 을 단일 호출로. 5게이트, 사람 출력 상한 2,000자
-     - `scripts/summarize_worker_done.py`: 보고 계약 기계 판정과 1,200자 다이제스트
-     - `scripts/orca_metrics_ledger.py`: 설계 23장 프록시 지표 append-only 원장
-     - 첫 실사용에서 실제 계약 위반 4건(`version`, `branch`, `commit_count`, `blocking_issues` 누락)을 검출했습니다.
-   - **절감량**: 도입 전 값은 확보 불가 판정을 유지하고, `docs/ops/orca_v2_metrics_ledger.jsonl` 에 v2 이후 기준선부터 누적합니다. 2026-08-15 기준 3행(Capsule 중앙값 7,334자, 보고 중앙값 2,133자, `read_files` 중앙값 8건, 왕복 중앙값 2회).
-   - **Level 2 단일화 완료**: `scripts/orca_run_reviewer.py` 로 리뷰어 일회성 실행·계약 판정·상한 출력이 명령 하나가 되었습니다. 체크리스트 0개면 실행하지 않고 종료 코드 2 입니다.
-   - **독립 감사 결과 (2026-08-15)**: 수신면 도구 4개를 리뷰어로 감사해 **실재 결함 7건**을 검출하고 전건 수정했습니다. 경로 탈출(`scripts/../../x`)을 허용으로 오판, 따옴표 안 샵 절단, 0열 주석이 Capsule 블록을 끊어 허용 항목 유실, **`blocking_issues: ['C10']` 이 `C1` 요구를 충족시키는 부분문자열 매칭**, folded scalar 미파싱, 불리언이 지표에 합산. 근거: [`../ops/orca_v2_intake_tools_audit_20260815.md`](../ops/orca_v2_intake_tools_audit_20260815.md)
-   - **미청구 사항**: 절감량 정량값(누적 시작, 아직 추세 판정 불가), Level 3 축소 가능성(체크리스트 밖 결함은 절반만 검출), T6 OpenCode 1종(비임계).
+   - T0~T7 병합 후 코디네이터 검수로 빈틈 4건 보완(검사 9 -> 12). T6 실행 검증 완료, Capsule 배치 규약 2.9 로 `read_files` 초과 0건 실측.
+   - **수신면 도구 5종**으로 코디네이터가 원시 출력을 직접 읽던 구간을 대체했습니다. `orca_contract.py`(공용 파서), `orca_level1_gate.py`(Level 1 단일 호출, 상한 2,000자), `summarize_worker_done.py`(보고 계약 판정, 1,200자 다이제스트), `orca_run_reviewer.py`(**Level 2 단일 호출**), `orca_metrics_ledger.py`(설계 23장 프록시 지표 원장).
+   - **독립 감사에서 실재 결함 7건 검출·전건 수정**: 경로 탈출(`scripts/../../x`) 허용 오판, 따옴표 안 샵 절단, 0열 주석이 Capsule 블록을 끊어 항목 유실, **`blocking_issues: ['C10']` 이 `C1` 요구를 충족시킨 부분문자열 매칭**, folded scalar 미파싱, 불리언이 지표에 합산. 근거: [`../ops/orca_v2_intake_tools_audit_20260815.md`](../ops/orca_v2_intake_tools_audit_20260815.md)
+   - **Level 3 축소 실험**: 현행 계약 0/6 대 개선안 6/6(3회 전부, 오탐 0), 사전 등록 장치 5개 준수. **축소 근거로 채택하지 않았습니다** — 픽스처의 함수당 결함 밀도가 1.0 이라 "전수 열거" 요구가 열거만으로 검출되는 구조였고 실제 코드는 약 0.05 입니다. 개선안 3요구(포괄 항목, 전수 열거, 재현 명령)는 리뷰어 Capsule 기본형으로 채택하고 **Level 3 은 유지**합니다. 근거: [`../ops/orca_v2_level3_reduction_experiment_20260815.md`](../ops/orca_v2_level3_reduction_experiment_20260815.md) 9장
+   - **절감량**: 도입 전 값은 확보 불가 판정 유지. `docs/ops/orca_v2_metrics_ledger.jsonl` 에 v2 이후부터 누적합니다.
+   - **미청구**: 절감량 정량값(누적 시작, 추세 판정 불가), Level 3 축소(외적 타당성 미달. 결함 밀도를 실제 수준으로 낮춘 재실험 필요), T6 OpenCode 1종(비임계).
 2. **Ollama 병렬도 실험 및 SSE 동시성 기준선 제정**:
    - `OLLAMA_NUM_PARALLEL` 실험을 통해 c4 등 동시성 환경에서의 지연 원인 분석 및 기준 확립.
 3. **Windows Docker Desktop 크로스 플랫폼 실기 검증**:
