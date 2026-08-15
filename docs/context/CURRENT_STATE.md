@@ -58,7 +58,7 @@
 | 1 | Uvicorn 워커 수 증설 (3/4) | 개선 없이 코어 경합만 증가. 기각 |
 | 2 | `PREDICTION_GC_MODE=batch-disable` | 100ms 초과 30건으로 기본(21건)보다 악화. 기각 |
 | 3 | `PREDICTION_GC_MODE=threshold` | `freeze` 확정 채택으로 상호 배타. 재검토 불필요 |
-| 4 | 신뢰 승인 전 `dispatch --inject` | 키 입력 유실. `agy -i` 도 승인 전에는 미실행. 기동은 띄운다 -> 신뢰 승인 -> `terminal read` 도달 확인 3단계 |
+| 4 | `dispatch --inject` 도달 미확인 | 승인 전에는 키 유실, `agy -i` 는 미실행. **승인 후에도 유실 사례 있음(2026-08-15)**. 유실 시 `terminal send` 로 직접 투입. 도달은 `terminal read` 로만 확인 |
 | 5 | 무료 LLM 풀의 임계 경로 투입 | 비임계 경로로만 한정. 단, 실패·무산출로 단정하지 않음 |
 | 6 | 미병합 브랜치 재병합 | `feat/codex-task-routing` 폐기, `integrate/arq-worker-cutover` 폐기, `perf/predict-tail` 진단 전용 |
 | 7 | 워커 요약 텍스트만 신뢰 | diff 와 결정론 검증 결과를 직접 대조 |
@@ -70,6 +70,7 @@
 | 13 | 파이프라인으로 검증 종료 코드 판정 | `pytest \| tail && <다음>` 은 실패를 통과로 본다. 게이트 도구를 쓴다 |
 | 14 | 워커의 비표준 계약 필드명을 수용 | `files_modified` 를 받아 `changed_files_count: 0` 을 조용히 기록한 사고. 폴백 금지 |
 | 15 | 반려 후 재작업을 완료된 Task 에 태우기 | 2차 `worker_done` 이 거부되어 반려 사유와 수용 판정이 이력에서 사라진다. `ready` 로 되돌리거나 새 Task 를 만든다 |
+| 16 | 코디네이터 검토를 Level 2 대체로 사용 | 10번의 역방향. 2026-08-15 에 코디네이터 검토만으로 병합한 도구 4개에서 독립 감사가 **실재 결함 7건**을 찾았고 그중 하나는 계약 강제 장치 자체의 허점이었다. 두 층을 모두 통과시킨다 |
 
 ---
 
@@ -88,6 +89,8 @@
      - `scripts/orca_metrics_ledger.py`: 설계 23장 프록시 지표 append-only 원장
      - 첫 실사용에서 실제 계약 위반 4건(`version`, `branch`, `commit_count`, `blocking_issues` 누락)을 검출했습니다.
    - **절감량**: 도입 전 값은 확보 불가 판정을 유지하고, `docs/ops/orca_v2_metrics_ledger.jsonl` 에 v2 이후 기준선부터 누적합니다. 2026-08-15 기준 3행(Capsule 중앙값 7,334자, 보고 중앙값 2,133자, `read_files` 중앙값 8건, 왕복 중앙값 2회).
+   - **Level 2 단일화 완료**: `scripts/orca_run_reviewer.py` 로 리뷰어 일회성 실행·계약 판정·상한 출력이 명령 하나가 되었습니다. 체크리스트 0개면 실행하지 않고 종료 코드 2 입니다.
+   - **독립 감사 결과 (2026-08-15)**: 수신면 도구 4개를 리뷰어로 감사해 **실재 결함 7건**을 검출하고 전건 수정했습니다. 경로 탈출(`scripts/../../x`)을 허용으로 오판, 따옴표 안 샵 절단, 0열 주석이 Capsule 블록을 끊어 허용 항목 유실, **`blocking_issues: ['C10']` 이 `C1` 요구를 충족시키는 부분문자열 매칭**, folded scalar 미파싱, 불리언이 지표에 합산. 근거: [`../ops/orca_v2_intake_tools_audit_20260815.md`](../ops/orca_v2_intake_tools_audit_20260815.md)
    - **미청구 사항**: 절감량 정량값(누적 시작, 아직 추세 판정 불가), Level 3 축소 가능성(체크리스트 밖 결함은 절반만 검출), T6 OpenCode 1종(비임계).
 2. **Ollama 병렬도 실험 및 SSE 동시성 기준선 제정**:
    - `OLLAMA_NUM_PARALLEL` 실험을 통해 c4 등 동시성 환경에서의 지연 원인 분석 및 기준 확립.
