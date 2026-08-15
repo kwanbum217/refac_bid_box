@@ -129,3 +129,28 @@ def test_main_exit_codes(tmp_path: Path):
 
     rep.write_text("{invalid", encoding="utf-8")
     assert main(["--capsule", str(cap), "--report", str(rep)]) == 2
+
+
+def test_evaluate_rejects_prefix_id_matching():
+    """결함 5: C10 이 blocking_issues 에 있어도 C1 요구가 충족되지 않습니다."""
+    checklist = [{"id": "C1", "defect_when": "yes"}]
+    report = {
+        "checklist_results": [{"id": "C1", "answer": "yes", "evidence": "e"}],
+        "blocking_issues": ["C10"],
+        "verdict": "fail",
+    }
+    res = evaluate(checklist, report)
+    assert not res["ok"]
+    assert any("조건3 위반" in v and "C1" in v for v in res["violations"])
+
+
+def test_parse_checklist_folded_scalar():
+    """결함 6: YAML folded scalar (>)로 작성된 question 을 문장으로 파싱합니다."""
+    capsule = (
+        'review_checklist:\n  - id: "C1"\n    question: >\n      abc def\n    defect_when: "yes"\n'
+    )
+    items = parse_checklist(capsule)
+    assert len(items) == 1
+    assert items[0]["id"] == "C1"
+    assert items[0]["question"] == "abc def"
+    assert items[0]["defect_when"] == "yes"

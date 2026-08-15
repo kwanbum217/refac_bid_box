@@ -14,6 +14,7 @@ import pytest
 from scripts.orca_metrics_ledger import (
     DEFAULT_LEDGER,
     LEDGER_SCHEMA,
+    _collect_numeric,
     _load_rows,
     _median_or_null,
     build_parser,
@@ -546,3 +547,9 @@ def test_default_ledger_path() -> None:
     parser = build_parser()
     args = parser.parse_args(["summary"])
     assert args.ledger == DEFAULT_LEDGER
+
+
+def test_collect_numeric_excludes_boolean() -> None:
+    """결함 7: _collect_numeric 은 bool 타입을 수치 값으로 집계하지 않고 제외합니다."""
+    rows = [{"val": True}, {"val": False}]
+    assert _collect_numeric(rows, "val") == []

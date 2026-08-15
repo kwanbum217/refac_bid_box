@@ -44,15 +44,36 @@ def char_len(text: str) -> int:
 
 def parse_capsule_scalar(capsule_text: str, field: str) -> str | None:
     """Capsule 최상위의 단일값 필드를 읽습니다. 없으면 None."""
-    match = re.search(
-        rf'^{re.escape(field)}:[ \t]*["\']?([^"\'\n#]*?)["\']?[ \t]*(?:#.*)?$',
-        capsule_text,
-        re.M,
-    )
-    if match is None:
+    lines = capsule_text.splitlines()
+    field_idx = -1
+    field_val = ""
+    for idx, line in enumerate(lines):
+        match = re.match(rf"^{re.escape(field)}:[ \t]*(.*)$", line)
+        if match:
+            field_idx = idx
+            field_val = match.group(1).strip()
+            break
+    if field_idx == -1:
         return None
-    value = match.group(1).strip()
-    return value or None
+
+    # 주석 제거 후 folded scalar 헤더인지 확인
+    clean_val = re.sub(r"\s+#.*$", "", field_val).strip()
+    if clean_val in (">", "|", ">-", "|-"):
+        collected: list[str] = []
+        for raw in lines[field_idx + 1 :]:
+            if raw and not raw[0].isspace():
+                break
+            line_str = raw.strip()
+            if line_str and not line_str.startswith("#"):
+                collected.append(line_str)
+        if not collected:
+            return None
+        joined = " ".join(collected).strip()
+        return joined or None
+
+    # 일반 단일값
+    val = clean_val.strip("\"'")
+    return val or None
 
 
 def parse_capsule_list(capsule_text: str, field: str) -> list[str]:
@@ -62,26 +83,51 @@ def parse_capsule_list(capsule_text: str, field: str) -> list[str]:
     첫 줄에서 멈춥니다. 항목이 `key: value` 형태인 객체 리스트는 대상이
     아니므로 빈 목록으로 돌려줍니다.
     """
-    block = re.search(
-        rf"^{re.escape(field)}:[ \t]*\n(.*?)(?=^\S|\Z)",
-        capsule_text,
-        re.M | re.S,
-    )
-    if block is None:
+    lines = capsule_text.splitlines()
+    field_idx = -1
+    for idx, line in enumerate(lines):
+        if re.match(rf"^{re.escape(field)}:[ \t]*(?:#.*)?$", line):
+            field_idx = idx
+            break
+    if field_idx == -1:
         return []
 
     items: list[str] = []
-    for raw in block.group(1).splitlines():
+    for raw in lines[field_idx + 1 :]:
+        if raw and not raw[0].isspace():
+            if raw.startswith("#"):
+                continue  # 0열 주석 줄은 건너뜀
+            break  # 다음 최상위 키
+
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         if not line.startswith("- "):
             continue
+
         value = line[2:].strip()
-        value = re.sub(r"\s+#.*$", "", value).strip()
-        if value.endswith(":") or re.match(r"^[a-z_]+:\s", value):
+        # 따옴표가 있는 경우 따옴표 내부의 샵은 보존
+        if value.startswith('"'):
+            m = re.match(r'^"([^"]*)"(?:\s+#.*)?$', value)
+            if m:
+                items.append(m.group(1))
+                continue
+            if re.match(r'^"[^"]*":', value):
+                continue
+        elif value.startswith("'"):
+            m = re.match(r"^'([^']*)'(?:\s+#.*)?$", value)
+            if m:
+                items.append(m.group(1))
+                continue
+            if re.match(r"^'[^']*':", value):
+                continue
+
+        # 따옴표가 없는 경우 공백 뒤 샵부터 주석 제거
+        unquoted = re.sub(r"\s+#.*$", "", value).strip()
+        if unquoted.endswith(":") or re.match(r"^[a-z_]+:\s", unquoted):
             continue
-        items.append(value.strip("\"'"))
+        items.append(unquoted.strip("\"'"))
+
     return items
 
 
@@ -129,10 +175,20 @@ def matches_any(path: str, patterns: list[str]) -> bool:
     판정하며 `*` 는 경로 구분자를 넘지 않습니다. 하위 디렉터리까지 허용하려면
     `tests/*` 가 아니라 `tests/...` 로 적으십시오.
     """
-    normalized = _strip_leading_dot_slash(path)
+    # 감사 도구는 애매하면 허용하지 않고 거부하는 쪽이 안전하므로,
+    # 빈 경로나 상위 디렉터리 참조(..)가 포함된 경로는 판정 이전에 즉시 거부합니다.
+    if not path or not path.strip():
+        return False
+    if ".." in path.replace("\\", "/").split("/"):
+        return False
+
+    normalized = _strip_leading_dot_slash(path.strip())
+    if not normalized:
+        return False
+
     for pattern in patterns:
         candidate = _strip_leading_dot_slash(pattern.strip())
-        if not candidate:
+        if not candidate or ".." in candidate.replace("\\", "/").split("/"):
             continue
         for suffix in _PREFIX_SUFFIXES:
             if candidate.endswith(suffix):
