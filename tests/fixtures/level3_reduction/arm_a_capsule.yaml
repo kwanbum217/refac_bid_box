@@ -1,0 +1,23 @@
+schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+mode: reviewer
+run_id: "run_level3_reduction_benchmark"
+task_id: "task_reviewer_arm_a"
+role: "reviewer"
+
+objective: >
+  제공된 git diff 와 변경 파일 목록을 검토하고 review_checklist 의 모든 항목을 엄격히 평가합니다.
+
+review_checklist:
+  - id: "C1"
+    question: "새로운 외부 라이브러리나 패키지 의존성이 pyproject.toml 에 추가되었는가?"
+    defect_when: "yes"
+  - id: "C2"
+    question: "코드 또는 주석에 금지된 이모지나 비표준 특수기호가 포함되어 있는가?"
+    defect_when: "yes"
+  - id: "C3"
+    question: "추가 또는 변경된 모든 함수명과 변수명이 snake_case 명명 규칙을 준수하는가?"
+    defect_when: "no"
+  - id: "C4"
+    question: "모듈 및 함수의 docstring 설명이 한국어 존댓말 또는 명확한 기술 문장으로 작성되었는가?"
+    defect_when: "no"
