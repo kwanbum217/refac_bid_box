@@ -164,3 +164,31 @@ def test_truncate_marks_loss_and_respects_limit():
     assert out.endswith("...(잘림)")
     assert truncate("abc", 0) == ""
     assert truncate("abcdefgh", 3) == "abc"
+
+
+def test_matches_any_rejects_parent_directory_traversal():
+    """결함 1: 상위 디렉터리 참조가 포함된 경로는 거부됩니다."""
+    assert matches_any("scripts/../../secret.py", ["scripts/..."]) is False
+
+
+def test_matches_any_rejects_empty_path():
+    """결함 2: 빈 경로는 거부됩니다."""
+    assert matches_any("", ["*"]) is False
+
+
+def test_parse_capsule_list_preserves_hash_in_quotes():
+    """결함 3: 따옴표 안의 샵(#) 문자는 주석으로 잘리지 않고 보존됩니다."""
+    capsule = 'allowed_read_files:\n  - "src/file #1.py"\n'
+    assert parse_capsule_list(capsule, "allowed_read_files") == ["src/file #1.py"]
+
+
+def test_parse_capsule_list_continues_past_column_zero_comments():
+    """결함 4: 0열 주석 줄이 블록을 끊지 않고 다음 항목들이 파싱됩니다."""
+    capsule = 'allowed_read_files:\n  - "a.py"\n# comm\n  - "b.py"\n'
+    assert parse_capsule_list(capsule, "allowed_read_files") == ["a.py", "b.py"]
+
+
+def test_parse_capsule_scalar_folded_scalar():
+    """결함 6: YAML folded scalar (>)를 실제 문장으로 파싱합니다."""
+    capsule = "objective: >\n  abc def\n"
+    assert parse_capsule_scalar(capsule, "objective") == "abc def"

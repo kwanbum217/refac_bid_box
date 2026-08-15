@@ -98,11 +98,11 @@ def _mean_or_null(values: list[float]) -> float | None:
 
 
 def _collect_numeric(rows: list[dict[str, Any]], key: str) -> list[float]:
-    """None 이 아닌 수치 값만 모읍니다."""
+    """None 이나 불리언이 아닌 유효한 수치 값만 모읍니다."""
     out: list[float] = []
     for row in rows:
         v = row.get(key)
-        if v is not None:
+        if v is not None and not isinstance(v, bool):
             with contextlib.suppress(TypeError, ValueError):
                 out.append(float(v))
     return out

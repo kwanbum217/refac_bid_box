@@ -47,29 +47,101 @@ def parse_checklist(capsule_text: str) -> list[dict[str, str]]:
     PyYAML 을 새로 추가하지 않기 위해 필요한 필드만 정규식으로 뽑습니다.
     중첩이 얕고 형식이 고정돼 있어 이 범위에서는 충분합니다.
     """
-    block = re.search(
-        r"^review_checklist:\s*\n(.*?)(?=^\S|\Z)",
-        capsule_text,
-        re.M | re.S,
-    )
-    if block is None:
+    lines = capsule_text.splitlines()
+    start_idx = -1
+    for idx, line in enumerate(lines):
+        if re.match(r"^review_checklist:\s*(?:#.*)?$", line):
+            start_idx = idx
+            break
+    if start_idx == -1:
         return []
 
     items: list[dict[str, str]] = []
     current: dict[str, str] = {}
-    for raw in block.group(1).splitlines():
+    current_folded_key: str | None = None
+    current_folded_lines: list[str] = []
+
+    def flush_folded() -> None:
+        nonlocal current_folded_key, current_folded_lines
+        if current_folded_key:
+            joined = " ".join(s.strip() for s in current_folded_lines if s.strip()).strip()
+            current[current_folded_key] = joined
+            current_folded_key = None
+            current_folded_lines = []
+
+    for raw in lines[start_idx + 1 :]:
+        if raw and not raw[0].isspace():
+            if raw.startswith("#"):
+                continue  # 0열 주석
+            break  # 다음 최상위 키
+
         line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+
         if line.startswith("- "):
+            flush_folded()
             if current:
                 items.append(current)
-            current = {}
+                current = {}
             line = line[2:].strip()
-        match = re.match(r'([a-z_]+):\s*"?([^"]*)"?\s*$', line)
-        if match and match.group(1) in CHECKLIST_ITEM_FIELDS:
-            current[match.group(1)] = match.group(2).strip()
+
+        match = re.match(r"^([a-z_]+):\s*(.*)$", line)
+        if match:
+            flush_folded()
+            key = match.group(1)
+            raw_val = match.group(2).strip()
+            clean_val = re.sub(r"\s+#.*$", "", raw_val).strip()
+            if clean_val in (">", "|", ">-", "|-"):
+                current_folded_key = key
+                current_folded_lines = []
+            else:
+                val = clean_val.strip("\"'")
+                current[key] = val
+        elif current_folded_key:
+            current_folded_lines.append(line)
+
+    flush_folded()
     if current:
         items.append(current)
+
     return [item for item in items if item.get("id")]
+
+
+def _matches_id(target_id: str, value: Any) -> bool:
+    """단일 값 또는 컬렉션이 target_id 와 정확히 또는 단어 경계 기준으로 일치하는지 확인합니다."""
+    if not value:
+        return False
+    if isinstance(value, str):
+        if value.strip() == target_id:
+            return True
+        return bool(re.search(rf"\b{re.escape(target_id)}\b", value))
+    if isinstance(value, (list, tuple, set)):
+        return any(_matches_id(target_id, v) for v in value)
+    return False
+
+
+def _issue_matches_id(issue: Any, target_id: str) -> bool:
+    """개별 blocking issue 항목에서 target_id 존재 여부를 판별합니다."""
+    if isinstance(issue, str):
+        return _matches_id(target_id, issue)
+    if isinstance(issue, dict):
+        for key in ("id", "ids", "checklist_id", "checklist_ids", "title", "name", "defect_id"):
+            if key in issue and _matches_id(target_id, issue[key]):
+                return True
+        if "description" in issue:
+            return _matches_id(target_id, issue["description"])
+        return False
+    if isinstance(issue, (list, tuple, set)):
+        return any(_issue_matches_id(sub, target_id) for sub in issue)
+    return False
+
+
+def _blocking_contains_id(blocking: Any, target_id: str) -> bool:
+    """blocking_issues 전체에서 target_id 존재 여부를 대조합니다."""
+    if isinstance(blocking, list):
+        return any(_issue_matches_id(issue, target_id) for issue in blocking)
+    return _issue_matches_id(blocking, target_id)
 
 
 def evaluate(checklist: list[dict[str, str]], report: dict[str, Any]) -> dict[str, Any]:
@@ -77,7 +149,6 @@ def evaluate(checklist: list[dict[str, str]], report: dict[str, Any]) -> dict[st
     results = report.get("checklist_results") or []
     by_id = {str(r.get("id")): r for r in results if isinstance(r, dict)}
     blocking = report.get("blocking_issues") or []
-    blocking_text = json.dumps(blocking, ensure_ascii=False)
 
     violations: list[str] = []
 
@@ -112,10 +183,8 @@ def evaluate(checklist: list[dict[str, str]], report: dict[str, Any]) -> dict[st
             continue
         if _normalize_answer(entry.get("answer")) == polarity:
             defects.append(item["id"])
-            if item["id"] not in blocking_text:
-                violations.append(
-                    f"조건3 위반: {item['id']} 이 결함인데 blocking_issues 에 없음"
-                )
+            if not _blocking_contains_id(blocking, item["id"]):
+                violations.append(f"조건3 위반: {item['id']} 이 결함인데 blocking_issues 에 없음")
 
     # 조건 4: pass 인데 checklist_results 가 비면 insufficient_context
     declared = str(report.get("verdict") or "").strip()
@@ -133,7 +202,7 @@ def evaluate(checklist: list[dict[str, str]], report: dict[str, Any]) -> dict[st
         "checklist_count": len(checklist),
         "results_count": len(results),
         "defect_ids": defects,
-        "blocking_count": len(blocking),
+        "blocking_count": len(blocking) if isinstance(blocking, list) else 1,
         "declared_verdict": declared,
         "effective_verdict": effective,
         "violations": violations,
