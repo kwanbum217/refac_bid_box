@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-15
-> **source_commit**: `210ef4a`
+> **source_commit**: `4212b32`
 > **version**: v1.0.0
 > 본 문서는 코디네이터 에이전트가 부트스트랩 시 가장 먼저 참조하는 **단일 진실 현재 운영 상태 정본**입니다. 과거 handoff는 증거와 히스토리이며, 현재 세션의 즉시 판단과 정책 결정은 본 문서를 기준으로 수행합니다.
 
@@ -80,9 +80,9 @@
    - T0~T7 병합 후 코디네이터 검수로 빈틈 4건 보완(검사 9 -> 12). T6 실행 검증 완료, Capsule 배치 규약 2.9 로 `read_files` 초과 0건 실측.
    - **수신면 도구 5종**으로 코디네이터가 원시 출력을 직접 읽던 구간을 대체했습니다. `orca_contract.py`(공용 파서), `orca_level1_gate.py`(Level 1 단일 호출, 상한 2,000자), `summarize_worker_done.py`(보고 계약 판정, 1,200자 다이제스트), `orca_run_reviewer.py`(**Level 2 단일 호출**), `orca_metrics_ledger.py`(설계 23장 프록시 지표 원장).
    - **독립 감사에서 실재 결함 7건 검출·전건 수정**: 경로 탈출(`scripts/../../x`) 허용 오판, 따옴표 안 샵 절단, 0열 주석이 Capsule 블록을 끊어 항목 유실, **`blocking_issues: ['C10']` 이 `C1` 요구를 충족시킨 부분문자열 매칭**, folded scalar 미파싱, 불리언이 지표에 합산. 근거: [`../ops/orca_v2_intake_tools_audit_20260815.md`](../ops/orca_v2_intake_tools_audit_20260815.md)
-   - **Level 3 축소 실험**: 현행 계약 0/6 대 개선안 6/6(3회 전부, 오탐 0), 사전 등록 장치 5개 준수. **축소 근거로 채택하지 않았습니다** — 픽스처의 함수당 결함 밀도가 1.0 이라 "전수 열거" 요구가 열거만으로 검출되는 구조였고 실제 코드는 약 0.05 입니다. 개선안 3요구(포괄 항목, 전수 열거, 재현 명령)는 리뷰어 Capsule 기본형으로 채택하고 **Level 3 은 유지**합니다. 근거: [`../ops/orca_v2_level3_reduction_experiment_20260815.md`](../ops/orca_v2_level3_reduction_experiment_20260815.md) 9장
+   - **Level 3 축소 재실험 완료**: 함수당 결함 밀도 0.05의 다중 함수 상호작용 결함으로 사전 등록 후 Gemini 3.7 Flash High를 팔별 3회 실행했습니다. 팔 A와 팔 B 모두 결함 검출 0/3, 오탐 0건이므로 사전 기준 `(다)`에 따라 **Level 3 코디네이터 검토를 유지**합니다. 근거: [`../ops/orca_v2_level3_reduction_rerun_results_20260815.md`](../ops/orca_v2_level3_reduction_rerun_results_20260815.md)
    - **절감량**: 도입 전 값은 확보 불가 판정 유지. `docs/ops/orca_v2_metrics_ledger.jsonl` 에 v2 이후부터 누적합니다.
-   - **미청구**: 절감량 정량값(누적 시작, 추세 판정 불가), Level 3 축소(외적 타당성 미달. 결함 밀도를 실제 수준으로 낮춘 재실험 필요), T6 OpenCode 1종(비임계).
+   - **미청구**: 절감량 정량값(누적 시작, 추세 판정 불가), Level 3 축소(저밀도 재실험에서도 검출 개선 없음), T6 OpenCode 1종(비임계).
 2. **Ollama 병렬도 실험 및 SSE 동시성 기준선 제정**:
    - `OLLAMA_NUM_PARALLEL` 실험을 통해 c4 등 동시성 환경에서의 지연 원인 분석 및 기준 확립.
 3. **Windows Docker Desktop 크로스 플랫폼 실기 검증**:
