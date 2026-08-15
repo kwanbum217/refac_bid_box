@@ -147,11 +147,17 @@ def run_experiment(
     timeout: int = 600,
     dry_run: bool = False,
     as_json: bool = False,
-    reviewer_runner: Callable[..., tuple[int, str]] = run_reviewer,
+    reviewer_runner: Callable[..., tuple[int, str]] | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Level 3 축소 실험을 실행하고 결과를 수집하여 보존합니다."""
     results_path = Path(results_dir).resolve()
     results_path.mkdir(parents=True, exist_ok=True)
+
+    effective_reviewer = (
+        reviewer_runner
+        if reviewer_runner is not None
+        else globals().get("run_reviewer", run_reviewer)
+    )
 
     target_fixtures = Path(fixtures_dir).resolve() if fixtures_dir else FIXTURES_DIR.resolve()
     clean_fixture = target_fixtures / "seeded_target_clean.py"
@@ -208,7 +214,7 @@ def run_experiment(
                     model=model,
                     timeout=timeout,
                     dry_run=dry_run,
-                    reviewer_runner=reviewer_runner,
+                    reviewer_runner=effective_reviewer,
                 )
 
                 # 출력 텍스트 보존
@@ -319,8 +325,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    reviewer_runner: Callable[..., tuple[int, str]] | None = None,
+) -> int:
     args = _parse_args(argv)
+    effective_runner = (
+        reviewer_runner
+        if reviewer_runner is not None
+        else globals().get("run_reviewer", run_reviewer)
+    )
     code, summary = run_experiment(
         arm=args.arm,
         runs=args.runs,
@@ -330,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         dry_run=args.dry_run,
         as_json=args.json,
+        reviewer_runner=effective_runner,
     )
 
     if args.json:
