@@ -1,0 +1,30 @@
+schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+mode: reviewer
+run_id: "run_level3_reduction_benchmark"
+task_id: "task_reviewer_arm_b"
+role: "reviewer"
+
+objective: >
+  제공된 git diff 와 변경 파일 목록을 검토하고 review_checklist 의 모든 항목을 엄격히 평가합니다.
+
+review_checklist:
+  - id: "C1"
+    question: "새로운 외부 라이브러리나 패키지 의존성이 pyproject.toml 에 추가되었는가?"
+    defect_when: "yes"
+  - id: "C2"
+    question: "코드 또는 주석에 금지된 이모지나 비표준 특수기호가 포함되어 있는가?"
+    defect_when: "yes"
+  - id: "C3"
+    question: "추가 또는 변경된 모든 함수명과 변수명이 snake_case 명명 규칙을 준수하는가?"
+    defect_when: "no"
+  - id: "C4"
+    question: "모듈 및 함수의 docstring 설명이 한국어 존댓말 또는 명확한 기술 문장으로 작성되었는가?"
+    defect_when: "no"
+  - id: "C5"
+    question: >
+      C1~C4 외의 로직 결함, 경계 조건 오류, 예외 처리 누락, 키/필드명 오류, 타입 혼동, 정규식 오류, 상한 미적용 등의 결함이 존재하는가?
+      (요구사항: (1) 변경된 모든 파일과 함수를 빠짐없이 전수 열거하고 각 함수별로 결함 유무 판정을 evidence 에 기록하십시오. 열거되지 않은 부분이 있어서는 안 됩니다.
+      (2) 위 항목에 속하지 않는 결함을 발견했으면 blocking_issues 에 'C5' ID 와 함께 구체적 결함 기제, 재현 명령, 기대 출력을 명시하십시오. 재현하지 못한 의심은 결함이 아니라 remaining_risks 로 분류하십시오.
+      (3) 결함을 발견하지 못했으면 무엇을 어떻게 찾아봤는지를 evidence 에 상세히 기술하십시오.)
+    defect_when: "yes"
