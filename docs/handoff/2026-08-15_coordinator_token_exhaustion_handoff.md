@@ -1,6 +1,7 @@
 # 코디네이터 토큰 소진 인수인계 (2026-08-15)
 
 > **작성일**: 2026-08-15 09:00 (Asia/Seoul)
+> **갱신**: 2026-08-15 (a1/b1/c1 병합 완료, e1 착수, GPT 전환 절차 확정)
 > **작성자**: Claude Opus 5 코디네이터
 > **사유**: 주간 토큰 한도 97% 소진. 리셋 2026-08-16 18:00 (Asia/Seoul)
 > **인수 대상**: 다음 코디네이터 세션 (Claude 리셋 후 복귀, 또는 GPT 세션으로 즉시 전환)
@@ -42,14 +43,29 @@ Claude 코디네이터의 주간 한도가 97% 소진되어 약 33시간 동안 
 
 | Task | 내용 | 워커 | 브랜치 | Capsule |
 | --- | --- | --- | --- | --- |
-| `task_eec190e02921` (a1) | `scripts/orca_run_reviewer.py` 신설. Level 2 리뷰어 실행을 단일 명령으로 묶는다 | Antigravity `gemini-3.7-flash-high` | `kwanbum217/orca-run-reviewer` | `/Users/kwanbum/orca/capsules/run_659389fed248/a1/capsule.yaml` |
-| `task_3a80e902743a` (b1) | 2026-08-15 병합분(`c381075..de26b3f`) 4개 도구 독립 감사. 코드 수정 없음 | Antigravity `gemini-3.7-flash-high` | `kwanbum217/orca-audit-20260815` | `/Users/kwanbum/orca/capsules/run_659389fed248/b1/capsule.yaml` |
+| `task_4d22d2ba2859` (e1) | **Level 3 축소 가능성 실험.** 체크리스트 밖 결함 6건을 심고 현행 계약(팔 A)과 개선안(팔 B)으로 각 3회 리뷰어를 돌려 검출률과 오탐률을 비교 | Antigravity `gemini-3.7-flash-high` | `kwanbum217/orca-level3-experiment` | `/Users/kwanbum/orca/capsules/run_659389fed248/e1/capsule.yaml` |
 
-두 Task 는 서로 독립이며 파일이 겹치지 않습니다. b1 은 감사 문서 1개만 쓰고 `scripts/`, `tests/` 를 건드리지 않습니다.
+### 3.1 이미 끝난 작업 (참고)
 
-두 Capsule 모두 `coordinator_absent` 절을 담고 있습니다. 막히면 기다리지 말고 그 지점까지 커밋하고 `blocking_issues` 에 사유를 적어 종료하도록 지시했습니다. `verdict` 는 반드시 `candidate`(a1) 또는 검출 결과에 따른 값(b1)이며 `pass` 는 코디네이터 검증 뒤에만 붙습니다.
+| Task | 결과 |
+| --- | --- |
+| a1 | `scripts/orca_run_reviewer.py` 병합. Level 2 가 명령 하나가 됨 |
+| b1 | 수신면 도구 4개 독립 감사. **실재 결함 7건 검출** |
+| c1 | 그 7건 전건 수정. 코디네이터가 재현 7/7 확인 후 병합 |
 
----
+### 3.2 e1 실험의 핵심 제약
+
+이 실험은 **결과를 유리하게 만들 여지를 사전에 막아 둔 설계**입니다. 검증자는 다음을 반드시 확인하십시오.
+
+| 확인 항목 | 방법 |
+| --- | --- |
+| 채점 규칙이 실행보다 먼저 확정됐는가 | `git log --oneline` 에서 `scoring_rule.md` 커밋이 결과 문서 커밋보다 앞에 있어야 한다 |
+| 두 팔의 차이가 명시된 세 가지뿐인가 | `arm_a_capsule.yaml` 과 `arm_b_capsule.yaml` 의 diff |
+| 심은 결함이 정확히 6개인가 | `seeded_target_clean.py` 와 `seeded_target_defective.py` 의 diff |
+| 무효 실행을 검출 0 으로 세지 않았는가 | 결과 문서의 유효 실행 수와 무효 횟수 |
+| 축소 권고 기준을 지켰는가 | 결론 (가)를 쓰려면 6개 중 5개를 3회 모두 검출해야 한다 |
+
+**개선안이 나아지지 않았다는 결론도 유효한 결과입니다.** (다) 결론이 나왔다고 재실행을 지시하지 마십시오. 표본이 팔당 3회라 작다는 한계는 문서에 명시되어 있어야 합니다.
 
 ## 4. 인수자가 할 일
 
@@ -127,16 +143,50 @@ python3 scripts/orca_metrics_ledger.py summary
 
 ## 5. GPT 세션으로 전환할 때 (2단계)
 
-Claude 잔량이 완전히 끊긴 상태에서 즉시 진행이 필요하면 GPT 세션이 인수합니다. 전달할 것은 이 문서 하나와 [`../context/CURRENT_STATE.md`](../context/CURRENT_STATE.md) 입니다. 그 밖의 문서는 요청받았을 때만 엽니다.
+사용자와 합의된 전환 조건입니다. **Claude 코디네이터의 응답이 토큰 한도로 끊기면 같은 세션의 GPT 가 코디네이터를 인수합니다.**
 
-GPT 세션도 주간 잔량이 적다고 확인되었으므로 다음을 지킵니다.
+### 5.1 인수 시 읽을 것
 
-1. `CURRENT_STATE.md` 와 이 문서만 읽고 시작합니다. 설계서 전문과 과거 handoff 를 열지 않습니다.
-2. 검증은 4.2 의 세 명령으로만 합니다. 원시 diff 통독은 4.3 의 지점에 한정합니다.
-3. 새 작업을 띄우지 않습니다. 대기 중인 a1, b1 의 검증과 병합까지만 하고 멈춥니다.
-4. 병합 후 `CURRENT_STATE.md` §4 를 갱신하고 `source_commit` 을 맞춥니다.
+이 문서와 [`../context/CURRENT_STATE.md`](../context/CURRENT_STATE.md) **둘뿐**입니다. 설계서 전문, 과거 handoff, `README.md`, `SKILLS.md` 를 열지 마십시오. GPT 주간 잔량도 적으므로 같은 절약 원칙이 적용됩니다.
 
----
+### 5.2 인수 즉시 할 일
+
+```bash
+orca orchestration run-use --id run_659389fed248 --json
+orca orchestration task-list --run run_659389fed248
+git -C /Users/kwanbum/orca/workspaces/refac_bid_box/orca-level3-experiment log --oneline main..HEAD
+git -C /Users/kwanbum/orca/workspaces/refac_bid_box/orca-level3-experiment status --short
+```
+
+터미널 핸들은 `term_b5e554ec` (e1) 입니다. **Task status 를 진척의 근거로 쓰지 마십시오.** 커밋 수와 미커밋 변경 수, 그리고 `orca terminal read` 만이 근거입니다.
+
+### 5.3 검증 (보고 전문을 읽지 않습니다)
+
+```bash
+python3 scripts/summarize_worker_done.py \
+  --report /Users/kwanbum/orca/capsules/run_659389fed248/e1/worker_done_d1.json \
+  --capsule /Users/kwanbum/orca/capsules/run_659389fed248/e1/capsule.yaml
+
+python3 scripts/orca_level1_gate.py --base main --branch HEAD \
+  --repo /Users/kwanbum/orca/workspaces/refac_bid_box/orca-level3-experiment \
+  --tests 'tests/test_run_level3_reduction_experiment.py' \
+  --capsule /Users/kwanbum/orca/capsules/run_659389fed248/e1/capsule.yaml
+```
+
+그 다음 3.2 표의 다섯 항목을 직접 확인합니다. 이 다섯 개는 도구가 잡지 못합니다.
+
+### 5.4 지키는 범위
+
+1. **새 작업을 띄우지 않습니다.** e1 의 검증과 병합까지만 하고 멈춥니다.
+2. 병합은 `git merge --no-ff` 로 하고, 주 저장소에서 `uv run pytest -q` 전량과 `python3 scripts/validate_agent_rules.py --quiet` 를 통과시킵니다.
+3. **`pytest ... | tail && <다음>` 형태를 쓰지 마십시오.** 파이프라인 종료 코드가 `tail` 것이 되어 실패를 통과로 봅니다.
+4. 병합 후 `CURRENT_STATE.md` §4 의 미청구 사항에서 Level 3 항목을 실험 결론으로 갱신하고 `source_commit` 을 맞춥니다.
+5. 결론이 (가)여도 **Level 3 을 즉시 없애지 마십시오.** 축소를 검토할 근거가 생겼다는 것까지만 기록하고, 실제 정책 변경은 사용자 확인을 받습니다.
+6. 워커·워크트리 정리는 병합 후에 합니다. 활성 Dispatch 가 소유한 트리를 건드리지 않습니다.
+
+### 5.5 GPT 도 끊기면
+
+e1 의 산출물은 브랜치에 격리되어 있고 `main` 은 안전합니다. 아무것도 하지 않고 Claude 주간 리셋(2026-08-16 18:00)을 기다리는 것이 정답입니다. 미검증 상태로 병합하지 마십시오.
 
 ## 6. 코디네이터 복귀 후 다음 순서
 
