@@ -29,11 +29,18 @@ except (ModuleNotFoundError, ImportError):
     from scripts.orca_run_reviewer import DEFAULT_MODEL, run_reviewer
 
 
-FIXTURES_DIR = Path("tests/fixtures/level3_reduction")
+DEFAULT_RERUN_FIXTURES_DIR = Path("tests/fixtures/level3_reduction_rerun")
+LEGACY_FIXTURES_DIR = Path("tests/fixtures/level3_reduction")
+FIXTURES_DIR = (
+    DEFAULT_RERUN_FIXTURES_DIR
+    if DEFAULT_RERUN_FIXTURES_DIR.exists()
+    else LEGACY_FIXTURES_DIR
+)
 CLEAN_FIXTURE = FIXTURES_DIR / "seeded_target_clean.py"
 DEFECTIVE_FIXTURE = FIXTURES_DIR / "seeded_target_defective.py"
 ARM_A_CAPSULE = FIXTURES_DIR / "arm_a_capsule.yaml"
 ARM_B_CAPSULE = FIXTURES_DIR / "arm_b_capsule.yaml"
+
 
 
 def create_seeded_repo(
@@ -135,6 +142,7 @@ def run_experiment(
     arm: str = "both",
     runs: int = 3,
     results_dir: Path | str = "./results",
+    fixtures_dir: Path | str | None = None,
     model: str = DEFAULT_MODEL,
     timeout: int = 600,
     dry_run: bool = False,
@@ -144,6 +152,12 @@ def run_experiment(
     """Level 3 축소 실험을 실행하고 결과를 수집하여 보존합니다."""
     results_path = Path(results_dir).resolve()
     results_path.mkdir(parents=True, exist_ok=True)
+
+    target_fixtures = Path(fixtures_dir).resolve() if fixtures_dir else FIXTURES_DIR.resolve()
+    clean_fixture = target_fixtures / "seeded_target_clean.py"
+    defective_fixture = target_fixtures / "seeded_target_defective.py"
+    arm_a_capsule = target_fixtures / "arm_a_capsule.yaml"
+    arm_b_capsule = target_fixtures / "arm_b_capsule.yaml"
 
     target_arms: list[str]
     if arm.lower() == "a":
@@ -155,8 +169,8 @@ def run_experiment(
 
     # 임시 git 저장소 생성
     tmp_repo_holder, repo_path, base_ref, branch_ref = create_seeded_repo(
-        clean_source=CLEAN_FIXTURE.resolve(),
-        defective_source=DEFECTIVE_FIXTURE.resolve(),
+        clean_source=clean_fixture,
+        defective_source=defective_fixture,
     )
 
     summary_data: dict[str, Any] = {
@@ -164,6 +178,7 @@ def run_experiment(
         "runs_requested_per_arm": runs,
         "dry_run": dry_run,
         "results_dir": str(results_path),
+        "fixtures_dir": str(target_fixtures),
         "arms": {},
     }
 
@@ -172,7 +187,7 @@ def run_experiment(
 
     try:
         for cur_arm in target_arms:
-            capsule_file = ARM_A_CAPSULE.resolve() if cur_arm == "a" else ARM_B_CAPSULE.resolve()
+            capsule_file = arm_a_capsule if cur_arm == "a" else arm_b_capsule
             arm_results: list[dict[str, Any]] = []
             valid_count = 0
             invalid_count = 0
@@ -276,6 +291,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="실행 결과 JSON 및 출력을 보존할 디렉터리 경로 (필수)",
     )
     parser.add_argument(
+        "--fixtures-dir",
+        default=None,
+        help=f"사용할 픽스처 디렉터리 경로 (기본: {FIXTURES_DIR})",
+    )
+    parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
         help=f"사용할 리뷰어 모델 (기본: {DEFAULT_MODEL})",
@@ -305,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         arm=args.arm,
         runs=args.runs,
         results_dir=args.results_dir,
+        fixtures_dir=args.fixtures_dir,
         model=args.model,
         timeout=args.timeout,
         dry_run=args.dry_run,
@@ -319,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         print("=" * 60)
         print(f"사용 모델:          {summary['model']}")
         print(f"결과 보존 경로:     {summary['results_dir']}")
+        print(f"픽스처 디렉터리:    {summary.get('fixtures_dir')}")
         print(f"Dry-run 모드:       {summary['dry_run']}")
         for arm_name, arm_info in summary["arms"].items():
             print(
@@ -328,10 +350,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         print("=" * 60)
         print(
-            "결과 보고서 채점은 tests/fixtures/level3_reduction/scoring_rule.md 에 따라 수행하십시오."
+            "결과 보고서 채점은 tests/fixtures/level3_reduction_rerun/scoring_rule.md 에 따라 수행하십시오."
         )
 
     return code
+
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from pathlib import Path
 from scripts.run_level3_reduction_experiment import (
     CLEAN_FIXTURE,
     DEFECTIVE_FIXTURE,
+    LEGACY_FIXTURES_DIR,
     create_seeded_repo,
     main,
     run_experiment,
@@ -47,8 +48,8 @@ SAMPLE_REVIEW_FAIL = {
 def test_seeded_repo_creates_two_commits_with_exact_6_defects():
     """(1) 임시 git 저장소 구성이 base 와 branch 두 커밋을 만들고 diff 가 6개 결함만 담는지 검증합니다."""
     tmp_holder, repo_path, base_ref, branch_ref = create_seeded_repo(
-        clean_source=CLEAN_FIXTURE.resolve(),
-        defective_source=DEFECTIVE_FIXTURE.resolve(),
+        clean_source=(LEGACY_FIXTURES_DIR / "seeded_target_clean.py").resolve(),
+        defective_source=(LEGACY_FIXTURES_DIR / "seeded_target_defective.py").resolve(),
     )
     try:
         # 커밋 로그 확인
@@ -225,3 +226,94 @@ def test_main_cli_json_output(tmp_path, capsys):
         assert parsed["arms"]["arm_b"]["valid_runs"] == 1
     finally:
         module_under_test.run_reviewer = saved_runner
+
+
+def test_rerun_fixtures_have_20_functions_and_exact_005_density():
+    """(7) rerun 픽스처는 정확히 20개 함수를 포함하고 결함 밀도 0.050(0.04~0.06)과 상호작용 결함을 가집니다."""
+    rerun_dir = Path("tests/fixtures/level3_reduction_rerun")
+    clean_file = rerun_dir / "seeded_target_clean.py"
+    defective_file = rerun_dir / "seeded_target_defective.py"
+
+    assert clean_file.exists()
+    assert defective_file.exists()
+
+    clean_text = clean_file.read_text(encoding="utf-8")
+    defective_text = defective_file.read_text(encoding="utf-8")
+
+    # 함수 정의 개수 추출
+    clean_funcs = [line for line in clean_text.splitlines() if line.startswith("def ")]
+    defective_funcs = [line for line in defective_text.splitlines() if line.startswith("def ")]
+
+    assert len(clean_funcs) == 20
+    assert len(defective_funcs) == 20
+
+    # 결함 diff 검증
+    tmp_holder, repo_path, base_ref, branch_ref = create_seeded_repo(
+        clean_source=clean_file.resolve(),
+        defective_source=defective_file.resolve(),
+    )
+    try:
+        diff_res = subprocess.run(  # noqa: S603
+            ["git", "diff", f"{base_ref}...{branch_ref}"],  # noqa: S607
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        diff_text = diff_res.stdout
+        # build_metric_envelope 에서 envelope_status 로 변경된 상호작용 결함 확인
+        assert "envelope_status" in diff_text
+        assert "build_metric_envelope" in diff_text
+        # 오직 1건의 결함 hunk 만 존재
+        assert diff_text.count("@@ -") == 1
+
+        defect_count = 1
+        function_count = len(clean_funcs)
+        defect_density = defect_count / function_count
+        assert defect_density == 0.050
+        assert 0.04 <= defect_density <= 0.06
+    finally:
+        tmp_holder.cleanup()
+
+
+def test_rerun_capsules_arms_difference():
+    """(8) rerun Arm A 는 로직 항목(C5)을 포함하고, Arm B 는 포괄 항목(C6)과 전수 열거 요구를 포함합니다."""
+    rerun_dir = Path("tests/fixtures/level3_reduction_rerun")
+    arm_a_text = (rerun_dir / "arm_a_capsule.yaml").read_text(encoding="utf-8")
+    arm_b_text = (rerun_dir / "arm_b_capsule.yaml").read_text(encoding="utf-8")
+
+    # Arm A: 로직 항목 C5 포함, C6 없음
+    assert "id: \"C5\"" in arm_a_text
+    assert "로직 결함" in arm_a_text
+    assert "C6" not in arm_a_text
+
+    # Arm B: C1~C5 및 C6 포괄 항목 포함, 전수 열거 및 재현 명령 명시
+    assert "id: \"C5\"" in arm_b_text
+    assert "id: \"C6\"" in arm_b_text
+    assert "전수 열거" in arm_b_text
+    assert "재현 명령" in arm_b_text
+
+
+def test_rerun_dry_run_with_fixtures_dir(tmp_path):
+    """(9) rerun 픽스처 디렉터리를 지정한 dry-run 이 정상 완료됩니다."""
+    results_dir = tmp_path / "results_rerun_dry"
+    rerun_dir = Path("tests/fixtures/level3_reduction_rerun")
+
+    def mock_reviewer(**kwargs):
+        assert kwargs.get("dry_run") is True
+        return 0, "[Rerun Dry-run 완료] 조립된 프롬프트"
+
+    code, summary = run_experiment(
+        arm="both",
+        runs=1,
+        results_dir=results_dir,
+        fixtures_dir=rerun_dir,
+        dry_run=True,
+        reviewer_runner=mock_reviewer,
+    )
+
+    assert code == 0
+    assert summary["dry_run"] is True
+    assert summary["fixtures_dir"] == str(rerun_dir.resolve())
+    assert summary["arms"]["arm_a"]["valid_runs"] == 1
+    assert summary["arms"]["arm_b"]["valid_runs"] == 1
