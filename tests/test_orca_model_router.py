@@ -294,6 +294,39 @@ class TestProbeAndPreflight:
         assert available is False
         assert "할당량 초과" in detail or "quota" in detail
 
+    def test_probe_failure_codex_usage_limit(self, monkeypatch):
+        """codex 의 'You've hit your usage limit. Upgrade to Pro' 에러가 할당량 초과로 정상 분류되는지 검증."""
+        captured_kwargs = {}
+
+        def _mock_run(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="ERROR: You've hit your usage limit. Upgrade to Pro at https://openai.com or try again at Aug 20th, 2026 12:52 PM.",
+            )
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, detail = probe_model("codex")
+        assert available is False
+        assert "할당량 초과" in detail
+        assert captured_kwargs.get("stdin") == subprocess.DEVNULL
+
+    def test_probe_model_passes_stdin_devnull(self, monkeypatch):
+        """probe_model 이 subprocess.run 호출 시 stdin=subprocess.DEVNULL 을 명시적으로 전달하는지 검증."""
+        captured_kwargs = {}
+
+        def _mock_run(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return MagicMock(returncode=0, stdout="ping ok", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, _detail = probe_model("gemini-3.7-flash-high")
+        assert available is True
+        assert captured_kwargs.get("stdin") == subprocess.DEVNULL
+
     def test_probe_failure_unauthorized(self, monkeypatch):
         mock_proc = MagicMock(returncode=1, stdout="", stderr="401 Unauthorized: invalid api_key")
         monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
@@ -651,18 +684,25 @@ class TestFreePoolOptIn:
         assert fake_key not in detail
 
     def test_small_context_limit_warning(self, monkeypatch):
-        """max_tokens 가 200,000 미만인 풀 선택 시 한도 경고 및 Capsule/diff 유지 경고가 발행되는지 검증."""
+        """max_tokens 가 있는 풀(숫자 포함)과 max_tokens 가 None 인 free 풀(한도 미확인) 모두 적절한 한도 경고가 발행되는지 검증."""
         mock_proc = MagicMock(returncode=0, stdout="ping ok", stderr="")
         monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
 
-        # preflight 검증
-        passed, warnings = preflight("cerebras/gpt-oss-120b")
-        assert passed is True
-        assert any("200,000 미만" in w and "Capsule 과 diff" in w for w in warnings)
+        # 1. max_tokens 가 있는 풀 (cerebras: 65536) -> 숫자(65536) 포함
+        passed_c, warnings_c = preflight("cerebras/gpt-oss-120b")
+        assert passed_c is True
+        assert any("200,000 미만" in w and "Capsule 과 diff" in w and "65536" in w for w in warnings_c)
 
-        # route 검증
-        res = route(explicit_model="cerebras/gpt-oss-120b", probe=False)
-        assert any("200,000 미만" in w and "Capsule 과 diff" in w for w in res.warnings)
+        res_c = route(explicit_model="cerebras/gpt-oss-120b", probe=False)
+        assert any("200,000 미만" in w and "Capsule 과 diff" in w and "65536" in w for w in res_c.warnings)
+
+        # 2. max_tokens 가 None 인 free 풀 (opencode-free: None) -> 한도 미확인 경고
+        passed_f, warnings_f = preflight("opencode/nemotron-3.5-lightning-free")
+        assert passed_f is True
+        assert any("컨텍스트 한도가 확인되지 않았습니다" in w and "Capsule 과 diff" in w for w in warnings_f)
+
+        res_f = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False)
+        assert any("컨텍스트 한도가 확인되지 않았습니다" in w and "Capsule 과 diff" in w for w in res_f.warnings)
 
     def test_capsule_has_write_scope_scenarios(self, tmp_path):
         """allowed_write_files 여부에 따른 쓰기 범위 판정 및 fail-closed 검증."""

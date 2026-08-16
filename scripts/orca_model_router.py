@@ -499,6 +499,7 @@ def probe_model(
     try:
         proc = subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=probe_timeout,
@@ -529,7 +530,7 @@ def probe_model(
     stdout_lower = proc.stdout.lower()
     combined = f"{stderr_lower} {stdout_lower}"
 
-    if "quota" in combined or "resource_exhausted" in combined or "429" in combined:
+    if any(k in combined for k in ("quota", "resource_exhausted", "429", "usage limit", "upgrade to pro")):
         detail = f"할당량 초과 (quota exceeded): {proc.stderr.strip()[:200]}"
     elif any(k in combined for k in ("unauthorized", "unauthenticated", "forbidden", "auth", "api_key", "wrong api key", "401", "403")):
         detail = f"인증 실패 (auth failed): {proc.stderr.strip()[:200]}"
@@ -551,7 +552,7 @@ def preflight(
     확인 항목:
       1. 코디네이터 전용 모델 거부
       2. 등록된 풀 여부 확인
-      3. 컨텍스트 한도 경고 (200,000 미만)
+      3. 컨텍스트 한도 경고 (200,000 미만 또는 None)
       4. 모델 probe 호출 검증
 
     반환값: (passed: bool, warnings: list[str])
@@ -575,8 +576,18 @@ def preflight(
     else:
         if found_pool["tier"] == "free":
             warnings.append("주의: 무료 모델 풀입니다. 임계 경로 작업에는 사용하지 마십시오.")
-        if (
-            found_pool.get("tier") in ("free", "secondary")
+            if found_pool.get("max_tokens") is None:
+                warnings.append(
+                    f"주의: 선택된 모델({found_pool['id']})의 컨텍스트 한도가 확인되지 않았습니다. "
+                    "Capsule 과 diff 를 작게 유지해야 합니다."
+                )
+            elif found_pool["max_tokens"] < 200_000:
+                warnings.append(
+                    f"주의: 선택된 모델({found_pool['id']})의 최대 컨텍스트({found_pool['max_tokens']} 토큰)가 200,000 미만입니다. "
+                    "Capsule 과 diff 를 그 한도 안에 유지해야 합니다."
+                )
+        elif (
+            found_pool.get("tier") == "secondary"
             and found_pool.get("max_tokens") is not None
             and found_pool["max_tokens"] < 200_000
         ):
@@ -658,10 +669,19 @@ def route(
 
     if primary_pool_info and primary_pool_info["tier"] == "free":
         warnings.append("주의: 무료 모델 풀이 주 모델로 선택되었습니다. 산출물 재검증 필수이며 임계 경로 금지입니다.")
-
-    if (
+        if primary_pool_info.get("max_tokens") is None:
+            warnings.append(
+                f"주의: 선택된 모델({primary_pool_info['id']})의 컨텍스트 한도가 확인되지 않았습니다. "
+                "Capsule 과 diff 를 작게 유지해야 합니다."
+            )
+        elif primary_pool_info["max_tokens"] < 200_000:
+            warnings.append(
+                f"주의: 선택된 모델({primary_pool_info['id']})의 최대 컨텍스트({primary_pool_info['max_tokens']} 토큰)가 200,000 미만입니다. "
+                "Capsule 과 diff 를 그 한도 안에 유지해야 합니다."
+            )
+    elif (
         primary_pool_info
-        and primary_pool_info.get("tier") in ("free", "secondary")
+        and primary_pool_info.get("tier") == "secondary"
         and primary_pool_info.get("max_tokens") is not None
         and primary_pool_info["max_tokens"] < 200_000
     ):
