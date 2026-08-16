@@ -55,6 +55,8 @@ COMPLEX_CAPSULE_BUDGET = 12000
 DEFAULT_MODEL = "gemini-3.7-flash-high"
 DEFAULT_RUN_ID = "run_auto"
 CAPSULE_VERSION = "2.1.0"
+MAX_CONCURRENT_WRITE_WORKERS = 3
+ACTIVE_TASK_STATUSES = frozenset({"dispatched"})
 
 # 기본 Capsule 템플릿
 CAPSULE_TEMPLATE = """\
@@ -412,6 +414,184 @@ def expand_intent_to_capsule(
 
 
 # ---------------------------------------------------------------------------
+# 동시성 제어 및 쓰기 워커 판별 (Preflight)
+# ---------------------------------------------------------------------------
+
+
+def resolve_run_id(
+    explicit: str | None,
+    timeout: int = 10,
+) -> tuple[str | None, str | None]:
+    """Run ID 를 해석합니다.
+
+    explicit 이 있고 자리표시자 DEFAULT_RUN_ID('run_auto')가 아니면 그것을 씁니다.
+    그렇지 않으면 orca orchestration run-current --json 을 호출해 result.run.id 를 씁니다.
+    어느 쪽도 얻지 못하면 (None, 오류메시지) 를 반환합니다.
+    """
+    if explicit and explicit != DEFAULT_RUN_ID:
+        return explicit, None
+
+    cmd = ["orca", "orchestration", "run-current", "--json"]
+    code, stdout, stderr = _run_command(cmd, timeout=timeout)
+    if code != 0:
+        err_msg = stderr.strip() or stdout.strip() or "명령 실행 실패"
+        return None, f"run-current 조회 실패 (종료 코드 {code}): {err_msg}"
+
+    try:
+        data = json.loads(stdout)
+    except Exception as exc:
+        return None, f"run-current JSON 파싱 실패: {exc}"
+
+    run_id = None
+    if isinstance(data, dict):
+        if "result" in data and isinstance(data["result"], dict):
+            run_obj = data["result"].get("run", {})
+            if isinstance(run_obj, dict):
+                run_id = run_obj.get("id")
+        elif "run" in data and isinstance(data["run"], dict):
+            run_id = data["run"].get("id")
+
+    if not run_id:
+        return None, "run-current 결과에서 run.id 를 찾을 수 없습니다."
+
+    return str(run_id), None
+
+
+def list_dispatched_tasks(
+    run_id: str,
+    timeout: int = 30,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """orca orchestration task-list --run <run_id> --json 을 호출해 dispatched 상태의 태스크 목록과 오류 메시지를 반환합니다."""
+    cmd = ["orca", "orchestration", "task-list", "--run", run_id, "--json"]
+    code, stdout, stderr = _run_command(cmd, timeout=timeout)
+    if code != 0:
+        err_msg = stderr.strip() or stdout.strip() or "명령 실행 실패"
+        return [], f"task-list 조회 실패 (종료 코드 {code}): {err_msg}"
+
+    try:
+        data = json.loads(stdout)
+    except Exception as exc:
+        return [], f"task-list JSON 파싱 실패: {exc}"
+
+    if isinstance(data, dict):
+        if "result" in data and isinstance(data["result"], dict):
+            raw_tasks = data["result"].get("tasks", [])
+        else:
+            raw_tasks = data.get("tasks", [])
+    elif isinstance(data, list):
+        raw_tasks = data
+    else:
+        raw_tasks = []
+
+    dispatched_tasks: list[dict[str, Any]] = []
+    for t in raw_tasks:
+        if not isinstance(t, dict):
+            continue
+        status = str(t.get("status", "")).lower()
+        if status in ACTIVE_TASK_STATUSES:
+            dispatched_tasks.append(t)
+
+    return dispatched_tasks, None
+
+
+def task_has_write_scope(task_id: str, capsule_dir: Path) -> bool:
+    """<capsule_dir>/<task_id>/capsule.yaml 의 allowed_write_files 가 비어 있지 않은지 검사합니다.
+
+    파일이 없거나 읽을 수 없으면 fail-closed 로 True 를 반환합니다.
+    다른 Run 의 Capsule 은 이 저장소의 capsule_dir 밑에 없어서 파일 부재로
+    fail-closed 쓰기로 계상되며, 이는 동시성 상한을 보수적으로 만드는 방향이라 안전합니다.
+    """
+    if not task_id:
+        return True
+
+    capsule_path = capsule_dir / task_id / "capsule.yaml"
+    if not capsule_path.exists():
+        return True
+
+    try:
+        capsule_text = load_capsule(capsule_path)
+        write_files = parse_capsule_list(capsule_text, "allowed_write_files")
+        return len(write_files) > 0
+    except Exception:
+        return True
+
+
+def check_write_concurrency(
+    task_id: str,
+    capsule_dir: Path,
+    run_id: str | None = None,
+    limit: int = MAX_CONCURRENT_WRITE_WORKERS,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    """동시 쓰기 워커 상한(기본 3)을 검사합니다."""
+    # 이번 Task 가 읽기 전용인지 확인
+    is_write = task_has_write_scope(task_id, capsule_dir)
+    if not is_write:
+        return {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": limit,
+            "occupying": [],
+            "probe_error": None,
+            "reason": f"Task {task_id}는 읽기 전용(allowed_write_files 빈 목록)이므로 동시 쓰기 상한 검사를 면제합니다.",
+        }
+
+    # Run ID 해석
+    resolved_run_id, run_err = resolve_run_id(run_id, timeout=timeout)
+    if run_err is not None or not resolved_run_id:
+        err_msg = run_err or "Run ID 해석 실패"
+        return {
+            "allowed": False,
+            "active_write_count": 0,
+            "limit": limit,
+            "occupying": [],
+            "probe_error": err_msg,
+            "reason": f"Run ID 해석 실패로 인한 안전 거부 (fail-closed): {err_msg}",
+        }
+
+    # dispatched 태스크 목록 조회
+    dispatched_tasks, probe_error = list_dispatched_tasks(run_id=resolved_run_id, timeout=timeout)
+    if probe_error is not None:
+        return {
+            "allowed": False,
+            "active_write_count": 0,
+            "limit": limit,
+            "occupying": [],
+            "probe_error": probe_error,
+            "reason": f"dispatched 태스크 목록 조회 실패로 인한 안전 거부 (fail-closed): {probe_error}",
+        }
+
+    occupying_tasks: list[str] = []
+    for t in dispatched_tasks:
+        other_task_id = t.get("id") or ""
+        # 자기 Task 는 점유 집계에서 제외
+        if other_task_id == task_id:
+            continue
+        if task_has_write_scope(other_task_id, capsule_dir):
+            occupying_tasks.append(other_task_id or "unknown")
+
+    active_write_count = len(occupying_tasks)
+    if active_write_count >= limit:
+        return {
+            "allowed": False,
+            "active_write_count": active_write_count,
+            "limit": limit,
+            "occupying": occupying_tasks,
+            "probe_error": None,
+            "reason": f"동시 쓰기 워커 상한({limit}개)에 도달했습니다. 현재 점유: {active_write_count}개 ({', '.join(occupying_tasks)})",
+        }
+
+    return {
+        "allowed": True,
+        "active_write_count": active_write_count,
+        "limit": limit,
+        "occupying": occupying_tasks,
+        "probe_error": None,
+        "reason": f"동시 쓰기 워커 상한 검사 통과 (현재 활성: {active_write_count}/{limit}개)",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Worktree 및 Worker 시작 (결함 6 해결: 실제 CLI 서명만 사용)
 # ---------------------------------------------------------------------------
 
@@ -736,6 +916,50 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             print(f"[Dry-run] 문자 수: {char_len(capsule)}")
         return 0
 
+    # 동시 쓰기 워커 상한 Preflight 검사 (worker-start 호출 직전)
+    if getattr(args, "skip_concurrency_check", False):
+        sys.stderr.write("경고: --skip-concurrency-check 지정으로 동시 쓰기 워커 상한 검사를 건너뜁니다.\n")
+    else:
+        limit = getattr(args, "max_write_workers", MAX_CONCURRENT_WRITE_WORKERS)
+        concurrency = check_write_concurrency(
+            task_id=task_id,
+            capsule_dir=capsule_dir,
+            run_id=args.run_id,
+            limit=limit,
+        )
+        if not concurrency["allowed"]:
+            active_count = concurrency["active_write_count"]
+            occupying = concurrency["occupying"]
+            limit_val = concurrency["limit"]
+            reason = concurrency["reason"]
+            occupying_str = ", ".join(occupying) if occupying else "없음"
+            err_msg = (
+                f"동시 쓰기 워커 상한 초과: {reason} "
+                f"(현재 활성 쓰기 워커: {active_count}개, 상한: {limit_val}개, 점유: {occupying_str})"
+            )
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "concurrency_limit_exceeded"
+                            if not concurrency["probe_error"]
+                            else "concurrency_probe_failed",
+                            "allowed": False,
+                            "task_id": task_id,
+                            "active_write_count": active_count,
+                            "limit": limit_val,
+                            "occupying": occupying,
+                            "probe_error": concurrency["probe_error"],
+                            "reason": reason,
+                            "exit_code": 1,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 1
+
     # worker-start 기동 시도
     sys.stderr.write(f"워커 기동 시작 중... (task={task_id}, model={model})\n")
     code, stdout, stderr = worker_start(
@@ -894,6 +1118,17 @@ def _build_parser() -> argparse.ArgumentParser:
     dsp.add_argument("--terminal", help="워커 터미널 핸들")
     dsp.add_argument("--no-probe", action="store_true", help="모델 probe 생략")
     dsp.add_argument("--dry-run", action="store_true", help="기동 없이 Capsule 생성까지만")
+    dsp.add_argument(
+        "--max-write-workers",
+        type=int,
+        default=MAX_CONCURRENT_WRITE_WORKERS,
+        help=f"동시 쓰기 워커 최대 허용 수 (기본: {MAX_CONCURRENT_WRITE_WORKERS})",
+    )
+    dsp.add_argument(
+        "--skip-concurrency-check",
+        action="store_true",
+        help="동시 쓰기 워커 상한 검사를 건너뜁니다 (경고 출력).",
+    )
     dsp.add_argument("--json", action="store_true", help="JSON 출력")
 
     # finalize

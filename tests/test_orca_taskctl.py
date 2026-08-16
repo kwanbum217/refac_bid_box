@@ -14,16 +14,23 @@ from scripts.orca_contract import (
     parse_capsule_scalar,
 )
 from scripts.orca_taskctl import (
+    ACTIVE_TASK_STATUSES,
+    DEFAULT_RUN_ID,
+    MAX_CONCURRENT_WRITE_WORKERS,
     _format_review_checklist,
     _format_yaml_list,
     _run_command,
     _to_glob,
+    check_write_concurrency,
     create_worktree,
     dispatch_worker,
     expand_intent_to_capsule,
     finalize_task,
+    list_dispatched_tasks,
     main,
     parse_intent,
+    resolve_run_id,
+    task_has_write_scope,
     worker_start,
 )
 
@@ -464,6 +471,7 @@ def test_cmd_dispatch_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, c
         return 0, '{"status": "dispatched"}', ""
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True})
 
     code = main([
         "dispatch",
@@ -490,6 +498,7 @@ def test_cmd_dispatch_failure_prints_command_to_stderr(
         return 1, "", "Connection refused"
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True})
 
     code = main([
         "dispatch",
@@ -517,6 +526,7 @@ def test_cmd_dispatch_failure_json(
         return 1, "", "Connection refused"
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True})
 
     code = main([
         "dispatch",
@@ -823,3 +833,372 @@ def test_run_command_exceptions(monkeypatch: pytest.MonkeyPatch):
     code, _stdout, stderr = _run_command(["test"])
     assert code == -2
     assert "명령 실행 실패" in stderr
+
+
+# ---------------------------------------------------------------------------
+# 동시 쓰기 워커 상한 Preflight 테스트 (새 규약 반영)
+# ---------------------------------------------------------------------------
+
+
+def test_concurrency_constants():
+    """모듈 상수 정의 검증."""
+    assert MAX_CONCURRENT_WRITE_WORKERS == 3
+    assert frozenset({"dispatched"}) == ACTIVE_TASK_STATUSES
+
+
+def test_list_dispatched_tasks_filtering(monkeypatch: pytest.MonkeyPatch):
+    """(1) dispatched 상태의 Task 만 계상되고 pending/ready/completed/failed/blocked 는 제외된다. snake_case 키 검증."""
+    mock_payload = {
+        "ok": True,
+        "result": {
+            "tasks": [
+                {"id": "t1", "run_id": "run_1", "status": "dispatched", "task_title": "W1"},
+                {"id": "t2", "run_id": "run_1", "status": "pending", "task_title": "W2"},
+                {"id": "t3", "run_id": "run_1", "status": "ready", "task_title": "W3"},
+                {"id": "t4", "run_id": "run_1", "status": "completed", "task_title": "W4"},
+                {"id": "t5", "run_id": "run_1", "status": "failed", "task_title": "W5"},
+                {"id": "t6", "run_id": "run_1", "status": "blocked", "task_title": "W6"},
+                {"id": "t7", "run_id": "run_1", "status": "dispatched", "task_title": "W7"},
+            ]
+        },
+    }
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        return 0, json.dumps(mock_payload), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    tasks, err = list_dispatched_tasks(run_id="run_1")
+    assert err is None
+    assert len(tasks) == 2
+    task_ids = [t["id"] for t in tasks]
+    assert task_ids == ["t1", "t7"]
+
+
+def test_resolve_run_id_explicit():
+    """명시적 run_id 가 지정되고 run_auto 가 아니면 그대로 반환한다."""
+    resolved, err = resolve_run_id("run_custom_123")
+    assert err is None
+    assert resolved == "run_custom_123"
+
+
+def test_resolve_run_id_from_run_current(monkeypatch: pytest.MonkeyPatch):
+    """explicit 이 None 또는 DEFAULT_RUN_ID('run_auto')일 때 run-current 로 해석한다."""
+    mock_payload = {
+        "ok": True,
+        "result": {
+            "run": {
+                "id": "run_current_abc",
+                "objective": "테스트",
+            }
+        },
+    }
+
+    def mock_run(cmd, cwd=None, timeout=10):
+        assert cmd == ["orca", "orchestration", "run-current", "--json"]
+        return 0, json.dumps(mock_payload), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    # 1. explicit=None
+    r1, err1 = resolve_run_id(None)
+    assert err1 is None
+    assert r1 == "run_current_abc"
+
+    # 2. explicit=DEFAULT_RUN_ID ('run_auto')
+    r2, err2 = resolve_run_id(DEFAULT_RUN_ID)
+    assert err2 is None
+    assert r2 == "run_current_abc"
+
+
+def test_resolve_run_id_failure(monkeypatch: pytest.MonkeyPatch):
+    """run-current 실행 실패 또는 run.id 부재 시 (None, 에러메시지) 반환."""
+    def mock_run_fail(cmd, cwd=None, timeout=10):
+        return 1, "", "No Run is bound"
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run_fail)
+    resolved, err = resolve_run_id(None)
+    assert resolved is None
+    assert "run-current 조회 실패" in err
+
+
+def test_task_has_write_scope_empty_capsule_is_readonly(tmp_path: Path):
+    """(3) allowed_write_files 가 빈 Capsule 은 읽기 전용으로 판정된다."""
+    task_dir = tmp_path / "task_readonly"
+    task_dir.mkdir(parents=True)
+    capsule_file = task_dir / "capsule.yaml"
+    capsule_file.write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+role: reviewer
+allowed_write_files: []
+""",
+        encoding="utf-8",
+    )
+
+    is_write = task_has_write_scope("task_readonly", tmp_path)
+    assert is_write is False
+
+
+def test_task_has_write_scope_missing_capsule_is_write_fail_closed(tmp_path: Path):
+    """(4) Capsule 파일이 없으면 쓰기로 판정된다 (fail-closed)."""
+    is_write = task_has_write_scope("task_non_existent", tmp_path)
+    assert is_write is True
+
+
+def test_check_write_concurrency_excludes_self_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """자기 Task 는 점유 집계에서 제외된다."""
+    for tid in ("t_self", "t_other"):
+        tdir = tmp_path / tid
+        tdir.mkdir(parents=True, exist_ok=True)
+        (tdir / "capsule.yaml").write_text("allowed_write_files:\n  - src/a.py\n", encoding="utf-8")
+
+    def mock_list_dispatched(run_id, timeout=30):
+        return [
+            {"id": "t_self", "status": "dispatched"},
+            {"id": "t_other", "status": "dispatched"},
+        ], None
+
+    monkeypatch.setattr("scripts.orca_taskctl.list_dispatched_tasks", mock_list_dispatched)
+
+    # t_self 가 재실행되더라도 자기 자신은 점유에서 빠져 활성 카운트는 1개여야 함
+    res = check_write_concurrency("t_self", tmp_path, run_id="run_1", limit=3)
+    assert res["allowed"] is True
+    assert res["active_write_count"] == 1
+    assert res["occupying"] == ["t_other"]
+
+
+def test_check_write_concurrency_at_limit_disallowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """(5) 활성 쓰기 워커가 상한과 같으면 allowed=False 다."""
+    for tid in ("t1", "t2", "t3", "t_new"):
+        tdir = tmp_path / tid
+        tdir.mkdir(parents=True, exist_ok=True)
+        (tdir / "capsule.yaml").write_text("allowed_write_files:\n  - src/a.py\n", encoding="utf-8")
+
+    def mock_list_dispatched(run_id, timeout=30):
+        return [
+            {"id": "t1", "status": "dispatched"},
+            {"id": "t2", "status": "dispatched"},
+            {"id": "t3", "status": "dispatched"},
+        ], None
+
+    monkeypatch.setattr("scripts.orca_taskctl.list_dispatched_tasks", mock_list_dispatched)
+
+    res = check_write_concurrency("t_new", tmp_path, run_id="run_1", limit=3)
+    assert res["allowed"] is False
+    assert res["active_write_count"] == 3
+    assert res["limit"] == 3
+    assert res["occupying"] == ["t1", "t2", "t3"]
+    assert res["probe_error"] is None
+    assert "도달" in res["reason"]
+
+
+def test_check_write_concurrency_below_limit_allowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """(6) 활성 쓰기 워커가 상한보다 적으면 allowed=True 다."""
+    for tid in ("t1", "t2", "t_new"):
+        tdir = tmp_path / tid
+        tdir.mkdir(parents=True, exist_ok=True)
+        (tdir / "capsule.yaml").write_text("allowed_write_files:\n  - src/a.py\n", encoding="utf-8")
+
+    def mock_list_dispatched(run_id, timeout=30):
+        return [
+            {"id": "t1", "status": "dispatched"},
+            {"id": "t2", "status": "dispatched"},
+        ], None
+
+    monkeypatch.setattr("scripts.orca_taskctl.list_dispatched_tasks", mock_list_dispatched)
+
+    res = check_write_concurrency("t_new", tmp_path, run_id="run_1", limit=3)
+    assert res["allowed"] is True
+    assert res["active_write_count"] == 2
+    assert res["limit"] == 3
+    assert res["occupying"] == ["t1", "t2"]
+    assert res["probe_error"] is None
+    assert "통과" in res["reason"]
+
+
+def test_check_write_concurrency_run_id_failure_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Run ID 해석 실패 시 fail-closed 로 allowed=False 및 probe_error 채움."""
+    tdir = tmp_path / "t_write"
+    tdir.mkdir(parents=True, exist_ok=True)
+    (tdir / "capsule.yaml").write_text("allowed_write_files:\n  - src/a.py\n", encoding="utf-8")
+
+    def mock_resolve_run_id(explicit, timeout=10):
+        return None, "Run ID 해석 실패"
+
+    monkeypatch.setattr("scripts.orca_taskctl.resolve_run_id", mock_resolve_run_id)
+
+    res = check_write_concurrency("t_write", tmp_path, limit=3)
+    assert res["allowed"] is False
+    assert res["probe_error"] == "Run ID 해석 실패"
+    assert "Run ID 해석 실패" in res["reason"]
+
+
+def test_check_write_concurrency_task_list_failure_disallowed_with_probe_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """(7) task-list 조회 실패 시 allowed=False 이고 probe_error 가 채워진다."""
+    tdir = tmp_path / "t_write"
+    tdir.mkdir(parents=True, exist_ok=True)
+    (tdir / "capsule.yaml").write_text("allowed_write_files:\n  - src/a.py\n", encoding="utf-8")
+
+    def mock_list_dispatched(run_id, timeout=30):
+        return [], "Orca CLI 통신 오류 (Connection refused)"
+
+    monkeypatch.setattr("scripts.orca_taskctl.list_dispatched_tasks", mock_list_dispatched)
+
+    res = check_write_concurrency("t_write", tmp_path, run_id="run_1", limit=3)
+    assert res["allowed"] is False
+    assert res["probe_error"] == "Orca CLI 통신 오류 (Connection refused)"
+    assert "조회 실패" in res["reason"]
+
+
+def test_check_write_concurrency_readonly_task_allowed_even_over_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """(8) 읽기 전용 Task 는 상한을 초과한 상태에서도 통과한다."""
+    rdir = tmp_path / "t_reviewer"
+    rdir.mkdir(parents=True, exist_ok=True)
+    (rdir / "capsule.yaml").write_text("allowed_write_files: []\n", encoding="utf-8")
+
+    def mock_list_dispatched(run_id, timeout=30):
+        return [{"id": f"t{i}", "status": "dispatched"} for i in range(10)], None
+
+    monkeypatch.setattr("scripts.orca_taskctl.list_dispatched_tasks", mock_list_dispatched)
+
+    res = check_write_concurrency("t_reviewer", tmp_path, run_id="run_1", limit=3)
+    assert res["allowed"] is True
+    assert res["active_write_count"] == 0
+    assert "면제" in res["reason"]
+
+
+def test_cmd_dispatch_blocked_by_concurrency_limit(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+    """CLI: dispatch 실행 시 동시 쓰기 워커 상한 초과로 차단 및 종료 코드 1 반환."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    capsule_dir = tmp_path / "capsules"
+
+    def mock_check(task_id, capsule_dir, run_id=None, limit=3, timeout=30):
+        return {
+            "allowed": False,
+            "active_write_count": 3,
+            "limit": 3,
+            "occupying": ["t1", "t2", "t3"],
+            "probe_error": None,
+            "reason": "동시 쓰기 워커 상한(3개)에 도달했습니다.",
+        }
+
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", mock_check)
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(capsule_dir),
+    ])
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "동시 쓰기 워커 상한 초과" in captured.err
+    assert "t1, t2, t3" in captured.err
+
+
+def test_cmd_dispatch_blocked_json_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+    """CLI: dispatch --json 실행 시 동시 쓰기 상한 초과 JSON 에러 출력 검증."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    capsule_dir = tmp_path / "capsules"
+
+    def mock_check(task_id, capsule_dir, run_id=None, limit=3, timeout=30):
+        return {
+            "allowed": False,
+            "active_write_count": 3,
+            "limit": 3,
+            "occupying": ["t1", "t2", "t3"],
+            "probe_error": None,
+            "reason": "동시 쓰기 워커 상한(3개)에 도달했습니다.",
+        }
+
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", mock_check)
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(capsule_dir),
+        "--json",
+    ])
+    assert code == 1
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["error"] == "concurrency_limit_exceeded"
+    assert data["allowed"] is False
+    assert data["active_write_count"] == 3
+    assert data["limit"] == 3
+    assert data["occupying"] == ["t1", "t2", "t3"]
+    assert data["exit_code"] == 1
+
+
+def test_cmd_dispatch_skip_concurrency_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+    """CLI: --skip-concurrency-check 지정 시 경고를 출력하고 검사를 건너뜀."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    capsule_dir = tmp_path / "capsules"
+
+    def mock_worker_start(**kwargs):
+        return 0, '{"status": "dispatched"}', ""
+
+    monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(capsule_dir),
+        "--skip-concurrency-check",
+    ])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "경고: --skip-concurrency-check" in captured.err
+
+
+def test_cmd_dispatch_dry_run_skips_concurrency_check(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+    """CLI: --dry-run 지정 시 check_write_concurrency 를 실행하지 않고 return 0."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    capsule_dir = tmp_path / "capsules"
+
+    called = []
+
+    def mock_check(*args, **kwargs):
+        called.append(True)
+        return {"allowed": False}
+
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", mock_check)
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(capsule_dir),
+        "--dry-run",
+    ])
+    assert code == 0
+    assert len(called) == 0, "dry-run 에서는 check_write_concurrency 가 호출되지 않아야 합니다."
+
+
+
+
+
