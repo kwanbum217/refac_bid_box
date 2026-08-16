@@ -7,6 +7,11 @@ Claude Code 세션 트랜스크립트(.jsonl)에서 지정한 시간 창의 코�
   Claude Code 는 스트리밍 청크 및 점진적 도구 실행 시 동일한 message.id 를 가진 레코드를
   여러 줄에 걸쳐 출력합니다. 이를 단순 합산할 경우 토큰이 약 1.9배 이상 과대 계상되므로
   message.id(부재 시 최상위 uuid)를 기준으로 중복을 반드시 제거해야 정확한 토큰 측정이 가능합니다.
+
+위임 절감 대표 지표 원칙:
+  위임 절감 비교의 대표 지표는 fresh_input_tokens(uncached_input_tokens + cache_creation_input_tokens)입니다.
+  전체 coordinator_input_tokens 는 cache_read 가 99.5%(실측)로 지배하여 대화 턴 수에 따라 초선형으로
+  증가하므로 세션 간 위임 절감 비교에 사용하면 왜곡이 발생합니다.
 """
 
 from __future__ import annotations
@@ -173,12 +178,14 @@ def collect_usage(
 
     if messages_counted > 0:
         total_in = uncached_in + cache_create_in + cache_read_in
+        fresh_in: int | None = uncached_in + cache_create_in
         coord_in: int | None = total_in
         coord_out: int | None = total_out
         uncached_res: int | None = uncached_in
         cache_create_res: int | None = cache_create_in
         cache_read_res: int | None = cache_read_in
     else:
+        fresh_in = None
         coord_in = None
         coord_out = None
         uncached_res = None
@@ -189,6 +196,7 @@ def collect_usage(
     last_ts = max(collected_timestamps).isoformat() if collected_timestamps else None
 
     return {
+        "fresh_input_tokens": fresh_in,
         "coordinator_input_tokens": coord_in,
         "coordinator_output_tokens": coord_out,
         "uncached_input_tokens": uncached_res,
@@ -336,11 +344,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"사이드체인 제외: {usage['sidechain_skipped']:,}건")
         print("------------------------------------------------------------")
         if usage["coordinator_input_tokens"] is not None:
-            print(f"  Uncached Input Tokens:      {usage['uncached_input_tokens']:>12,}")
-            print(f"  Cache Creation Tokens:      {usage['cache_creation_input_tokens']:>12,}")
-            print(f"  Cache Read Tokens:          {usage['cache_read_input_tokens']:>12,}")
-            print(f"  Total Input Tokens (총입력): {usage['coordinator_input_tokens']:>12,}")
-            print(f"  Output Tokens (출력):        {usage['coordinator_output_tokens']:>12,}")
+            print(
+                f"  Fresh Input Tokens (신선 입력 - 대표 지표): {usage['fresh_input_tokens']:>12,}"
+            )
+            print(f"    - Uncached Input:                    {usage['uncached_input_tokens']:>12,}")
+            print(f"    - Cache Creation:                    {usage['cache_creation_input_tokens']:>12,}")
+            print(f"  Cache Read Tokens (캐시 재조회):       {usage['cache_read_input_tokens']:>12,}")
+            print(f"  Total Input Tokens (총입력):           {usage['coordinator_input_tokens']:>12,}")
+            print(f"  Output Tokens (출력):                  {usage['coordinator_output_tokens']:>12,}")
+            print("------------------------------------------------------------")
+            print("  [안내] 위임 절감 비교의 대표 지표는 fresh_input_tokens 입니다.")
+            print("  coordinator_input_tokens 는 cache_read 가 99.5%(실측)로 지배하여")
+            print("  대화 턴 수에 따라 초선형 증가하므로 세션 간 비교에 사용하지 마십시오.")
         else:
             print("  창 내 메시지가 없어 토큰 값이 null 입니다.")
         print("============================================================")

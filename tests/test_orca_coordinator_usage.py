@@ -207,6 +207,20 @@ def test_input_tokens_is_sum_of_three_components(transcript_file: Path) -> None:
     # 합산 5100
     assert res["coordinator_input_tokens"] == 5100
     assert res["coordinator_output_tokens"] == 150
+    # fresh_input_tokens = uncached (100) + cache_creation (2000) = 2100 (cache_read 제외)
+    assert res["fresh_input_tokens"] == 2100
+
+
+def test_fresh_input_tokens_null_when_zero_messages(transcript_file: Path) -> None:
+    """messages_counted 가 0 일 때 fresh_input_tokens 는 null(None) 입니다."""
+    res = collect_usage(
+        transcript_file,
+        since="2026-08-17T00:00:00Z",
+        until="2026-08-17T01:00:00Z",
+    )
+    assert res["messages_counted"] == 0
+    assert res["fresh_input_tokens"] is None
+    assert res["coordinator_input_tokens"] is None
 
 
 def test_records_outside_window_are_excluded(transcript_file: Path) -> None:
@@ -410,6 +424,24 @@ def test_iter_usage_records_directly(transcript_file: Path) -> None:
     assert len(malformed) == 1
     valid = [r for r, is_m in records if not is_m and r is not None]
     assert len(valid) == 7
+
+
+def test_cli_human_output_contains_fresh_guidance(
+    transcript_file: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """사람용 텍스트 출력에 fresh_input_tokens 대표 지표 안내와 99.5% 실측 문구가 포함됩니다."""
+    argv = [
+        "--transcript-dir",
+        str(transcript_file.parent),
+        "--all-sessions",
+    ]
+    rc = main(argv)
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "Fresh Input Tokens" in captured.out
+    assert "99.5%" in captured.out
+    assert "대표 지표" in captured.out
+
 
 
 

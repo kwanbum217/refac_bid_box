@@ -174,6 +174,9 @@ def cmd_record(args: argparse.Namespace) -> int:
     # 수동 입력값 (미지정 시 null)
     roundtrips: int | None = args.roundtrips
     first_useful_seconds: int | None = args.first_useful_seconds
+    coordinator_fresh_input_tokens: int | None = getattr(
+        args, "coordinator_fresh_input_tokens", None
+    )
     coordinator_input_tokens: int | None = args.coordinator_input_tokens
     coordinator_output_tokens: int | None = args.coordinator_output_tokens
 
@@ -182,7 +185,10 @@ def cmd_record(args: argparse.Namespace) -> int:
     usage_until = getattr(args, "usage_until", None)
     usage_concurrent_arg = getattr(args, "usage_concurrent_dispatches", 1)
     usage_transcript_dir = getattr(args, "usage_transcript_dir", None)
+    usage_session = getattr(args, "usage_session", None)
+    usage_all_sessions = getattr(args, "usage_all_sessions", False)
 
+    usage_lookup_status: str | None = None
     usage_window_start: str | None = None
     usage_window_end: str | None = None
     usage_concurrent_dispatches: int | None = None
@@ -193,16 +199,65 @@ def cmd_record(args: argparse.Namespace) -> int:
             if usage_transcript_dir
             else default_transcript_dir(Path.cwd())
         )
-        session_files = sorted(tdir.glob("*.jsonl")) if tdir.exists() and tdir.is_dir() else []
-        if session_files:
-            usage_res = collect_usage(session_files, since=usage_since, until=usage_until)
-            if coordinator_input_tokens is None:
-                coordinator_input_tokens = usage_res["coordinator_input_tokens"]
-            if coordinator_output_tokens is None:
-                coordinator_output_tokens = usage_res["coordinator_output_tokens"]
         usage_window_start = usage_since
         usage_window_end = usage_until
         usage_concurrent_dispatches = usage_concurrent_arg
+
+        if not tdir.exists() or not tdir.is_dir():
+            print(f"경고: 트랜스크립트 디렉터리를 찾을 수 없습니다: {tdir}", file=sys.stderr)
+            usage_lookup_status = "no_transcript_dir"
+        else:
+            target_files: list[Path] = []
+            if usage_session:
+                for s in usage_session:
+                    fname = s if s.endswith(".jsonl") else f"{s}.jsonl"
+                    p = tdir / fname if not Path(s).is_absolute() else Path(s)
+                    if p.exists():
+                        target_files.append(p)
+                    else:
+                        print(f"경고: 지정된 세션 파일을 찾을 수 없습니다: {p}", file=sys.stderr)
+                if not target_files:
+                    usage_lookup_status = "no_session_file"
+            elif usage_all_sessions:
+                target_files = sorted(tdir.glob("*.jsonl"))
+                if not target_files:
+                    print(
+                        f"경고: 디렉터리에 트랜스크립트 파일이 없습니다: {tdir}",
+                        file=sys.stderr,
+                    )
+                    usage_lookup_status = "no_session_file"
+            else:
+                all_jsonl = list(tdir.glob("*.jsonl"))
+                if not all_jsonl:
+                    print(
+                        f"경고: 디렉터리에 트랜스크립트 파일이 없습니다: {tdir}",
+                        file=sys.stderr,
+                    )
+                    usage_lookup_status = "no_session_file"
+                else:
+                    all_jsonl.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    target_files = [all_jsonl[0]]
+
+            if target_files:
+                print(
+                    f"[트랜스크립트 집계 대상]: {', '.join(p.name for p in target_files)}",
+                    file=sys.stderr,
+                )
+                usage_res = collect_usage(target_files, since=usage_since, until=usage_until)
+                if usage_res["messages_counted"] == 0:
+                    print(
+                        f"경고: 지정한 시간 창({usage_since} ~ {usage_until}) 내에 트랜스크립트 메시지가 없습니다.",
+                        file=sys.stderr,
+                    )
+                    usage_lookup_status = "empty_window"
+                else:
+                    usage_lookup_status = "ok"
+                    if coordinator_fresh_input_tokens is None:
+                        coordinator_fresh_input_tokens = usage_res["fresh_input_tokens"]
+                    if coordinator_input_tokens is None:
+                        coordinator_input_tokens = usage_res["coordinator_input_tokens"]
+                    if coordinator_output_tokens is None:
+                        coordinator_output_tokens = usage_res["coordinator_output_tokens"]
 
     # 자동 도출: Capsule 의 task_id 교차 검증 (불일치 경고)
     capsule_task_id = parse_capsule_scalar(capsule_text, "task_id")
@@ -233,9 +288,11 @@ def cmd_record(args: argparse.Namespace) -> int:
         # 수동 입력 (null 허용)
         "roundtrips": roundtrips,
         "first_useful_seconds": first_useful_seconds,
+        "coordinator_fresh_input_tokens": coordinator_fresh_input_tokens,
         "coordinator_input_tokens": coordinator_input_tokens,
         "coordinator_output_tokens": coordinator_output_tokens,
         # 코디네이터 토큰 사용량 창 및 동시성 메타데이터
+        "usage_lookup_status": usage_lookup_status,
         "usage_window_start": usage_window_start,
         "usage_window_end": usage_window_end,
         "usage_concurrent_dispatches": usage_concurrent_dispatches,
@@ -310,12 +367,17 @@ def cmd_summary(args: argparse.Namespace) -> int:
         "changed_files_count",
         "roundtrips",
         "first_useful_seconds",
+        "coordinator_fresh_input_tokens",
         "coordinator_input_tokens",
         "coordinator_output_tokens",
     ]
     metric_stats: dict[str, dict[str, Any]] = {}
     for key in numeric_metrics:
-        if key in ("coordinator_input_tokens", "coordinator_output_tokens"):
+        if key in (
+            "coordinator_fresh_input_tokens",
+            "coordinator_input_tokens",
+            "coordinator_output_tokens",
+        ):
             metric_stats[key] = _metric_stats(coord_rows, key, total)
         else:
             metric_stats[key] = _metric_stats(rows, key, total)
@@ -375,15 +437,20 @@ def cmd_summary(args: argparse.Namespace) -> int:
 
     print()
     print("지표별 집계:")
+    print(
+        "  [안내] 위임 절감 비교의 대표 지표는 coordinator_fresh_input_tokens 입니다. "
+        "(coordinator_input_tokens 는 cache_read 가 99.5% 지배)"
+    )
     for key in numeric_metrics:
         s = metric_stats[key]
         n = s["valid_count"]
         med = s["median"]
         avg = s["mean"]
         note = " [표본 부족]" if s["insufficient_sample"] else ""
+        rep = " [대표 지표]" if key == "coordinator_fresh_input_tokens" else ""
         med_str = f"{med:.1f}" if med is not None else "null"
         avg_str = f"{avg:.1f}" if avg is not None else "null"
-        print(f"  {key}: 유효 {n}/{total}행, 중앙값={med_str}, 평균={avg_str}{note}")
+        print(f"  {key}: 유효 {n}/{total}행, 중앙값={med_str}, 평균={avg_str}{note}{rep}")
 
     print()
     print("verdict 분포:")
@@ -446,6 +513,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--first-useful-seconds", type=int, default=None, help="첫 유용 산출 소요 초 (생략 가능)"
     )
     rec.add_argument(
+        "--coordinator-fresh-input-tokens",
+        type=int,
+        default=None,
+        help="코디네이터 신선 입력 토큰 (생략 가능)",
+    )
+    rec.add_argument(
         "--coordinator-input-tokens",
         type=int,
         default=None,
@@ -466,6 +539,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--usage-until",
         default=None,
         help="코디네이터 토큰 집계 종료 일시 (ISO 8601)",
+    )
+    rec.add_argument(
+        "--usage-session",
+        action="append",
+        default=None,
+        help="집계할 특정 세션 ID 또는 세션 파일명 (여러 번 지정 가능)",
+    )
+    rec.add_argument(
+        "--usage-all-sessions",
+        action="store_true",
+        help="디렉터리 내 모든 세션 파일을 집계에 포함합니다.",
     )
     rec.add_argument(
         "--usage-concurrent-dispatches",
