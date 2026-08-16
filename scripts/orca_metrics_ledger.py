@@ -30,7 +30,8 @@ try:
         parse_capsule_scalar,
         string_list,
     )
-except ModuleNotFoundError:
+    from scripts.orca_coordinator_usage import collect_usage, default_transcript_dir
+except (ModuleNotFoundError, ImportError):
     # 저장소 루트를 sys.path 에 추가해 python3 scripts/... 직접 실행을 지원합니다.
     # 형제 도구인 orca_level1_gate.py 와 summarize_worker_done.py 와 실행 방식을
     # 맞춥니다. 플레이북이 세 도구를 모두 python3 scripts/... 로 안내합니다.
@@ -43,6 +44,10 @@ except ModuleNotFoundError:
         load_report,
         parse_capsule_scalar,
         string_list,
+    )
+    from scripts.orca_coordinator_usage import (  # type: ignore[no-redef]
+        collect_usage,
+        default_transcript_dir,
     )
 
 LEDGER_SCHEMA = "ORCA_V2_METRICS_ROW_1"
@@ -172,6 +177,33 @@ def cmd_record(args: argparse.Namespace) -> int:
     coordinator_input_tokens: int | None = args.coordinator_input_tokens
     coordinator_output_tokens: int | None = args.coordinator_output_tokens
 
+    # 코디네이터 토큰 사용량 창 및 동시성 메타데이터
+    usage_since = getattr(args, "usage_since", None)
+    usage_until = getattr(args, "usage_until", None)
+    usage_concurrent_arg = getattr(args, "usage_concurrent_dispatches", 1)
+    usage_transcript_dir = getattr(args, "usage_transcript_dir", None)
+
+    usage_window_start: str | None = None
+    usage_window_end: str | None = None
+    usage_concurrent_dispatches: int | None = None
+
+    if usage_since:
+        tdir = (
+            Path(usage_transcript_dir)
+            if usage_transcript_dir
+            else default_transcript_dir(Path.cwd())
+        )
+        session_files = sorted(tdir.glob("*.jsonl")) if tdir.exists() and tdir.is_dir() else []
+        if session_files:
+            usage_res = collect_usage(session_files, since=usage_since, until=usage_until)
+            if coordinator_input_tokens is None:
+                coordinator_input_tokens = usage_res["coordinator_input_tokens"]
+            if coordinator_output_tokens is None:
+                coordinator_output_tokens = usage_res["coordinator_output_tokens"]
+        usage_window_start = usage_since
+        usage_window_end = usage_until
+        usage_concurrent_dispatches = usage_concurrent_arg
+
     # 자동 도출: Capsule 의 task_id 교차 검증 (불일치 경고)
     capsule_task_id = parse_capsule_scalar(capsule_text, "task_id")
     if capsule_task_id and capsule_task_id != args.task:
@@ -203,6 +235,10 @@ def cmd_record(args: argparse.Namespace) -> int:
         "first_useful_seconds": first_useful_seconds,
         "coordinator_input_tokens": coordinator_input_tokens,
         "coordinator_output_tokens": coordinator_output_tokens,
+        # 코디네이터 토큰 사용량 창 및 동시성 메타데이터
+        "usage_window_start": usage_window_start,
+        "usage_window_end": usage_window_end,
+        "usage_concurrent_dispatches": usage_concurrent_dispatches,
     }
 
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
@@ -260,6 +296,12 @@ def cmd_summary(args: argparse.Namespace) -> int:
 
     total = len(rows)
 
+    # 코디네이터 토큰 집계 대상 행 (동시 실행 공유 창 usage_concurrent_dispatches >= 2 제외)
+    concurrent_excluded_count = sum(
+        1 for r in rows if (r.get("usage_concurrent_dispatches") or 1) >= 2
+    )
+    coord_rows = [r for r in rows if (r.get("usage_concurrent_dispatches") or 1) < 2]
+
     # 지표 집계
     numeric_metrics = [
         "capsule_chars",
@@ -273,7 +315,10 @@ def cmd_summary(args: argparse.Namespace) -> int:
     ]
     metric_stats: dict[str, dict[str, Any]] = {}
     for key in numeric_metrics:
-        metric_stats[key] = _metric_stats(rows, key, total)
+        if key in ("coordinator_input_tokens", "coordinator_output_tokens"):
+            metric_stats[key] = _metric_stats(coord_rows, key, total)
+        else:
+            metric_stats[key] = _metric_stats(rows, key, total)
 
     # verdict 분포
     verdict_dist: dict[str, int] = {}
@@ -305,6 +350,7 @@ def cmd_summary(args: argparse.Namespace) -> int:
         "total_rows": total,
         "total_all_rows": total_all,
         "corrupt_rows": corrupt_count,
+        "concurrent_excluded_rows": concurrent_excluded_count,
         "metrics": metric_stats,
         "verdict_distribution": verdict_dist,
         "role_counts": role_counts,
@@ -319,6 +365,11 @@ def cmd_summary(args: argparse.Namespace) -> int:
     print(f"원장 행 수: {total} (전체: {total_all}, 손상: {corrupt_count})")
     if corrupt_count > 0:
         print(f"  [주의] 손상된 행 {corrupt_count}개가 집계에서 제외됩니다.")
+    if concurrent_excluded_count > 0:
+        print(
+            f"  [주의] 동시 실행 공유 창(usage_concurrent_dispatches >= 2) 행 "
+            f"{concurrent_excluded_count}개는 코디네이터 토큰 집계에서 제외됩니다."
+        )
     if total == 0:
         return 0
 
@@ -405,6 +456,28 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="코디네이터 출력 토큰 (생략 가능)",
+    )
+    rec.add_argument(
+        "--usage-since",
+        default=None,
+        help="코디네이터 토큰 집계 시작 일시 (ISO 8601)",
+    )
+    rec.add_argument(
+        "--usage-until",
+        default=None,
+        help="코디네이터 토큰 집계 종료 일시 (ISO 8601)",
+    )
+    rec.add_argument(
+        "--usage-concurrent-dispatches",
+        type=int,
+        default=1,
+        help="해당 시간 창을 공유한 동시 Dispatch 수 (기본: 1)",
+    )
+    rec.add_argument(
+        "--usage-transcript-dir",
+        type=Path,
+        default=None,
+        help="Claude Code 트랜스크립트 디렉터리 경로 (기본: ~/.claude/projects/<slug>)",
     )
     rec.add_argument("--json", action="store_true", help="JSON 형식으로 출력합니다.")
 

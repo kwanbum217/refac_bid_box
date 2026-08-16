@@ -553,3 +553,156 @@ def test_collect_numeric_excludes_boolean() -> None:
     """결함 7: _collect_numeric 은 bool 타입을 수치 값으로 집계하지 않고 제외합니다."""
     rows = [{"val": True}, {"val": False}]
     assert _collect_numeric(rows, "val") == []
+
+
+# --------------------------------------------------------------------------
+# (10) --usage-since 없이 기록 시 토큰 및 사용량 메타데이터 3필드 모두 null
+# --------------------------------------------------------------------------
+
+
+def test_record_without_usage_since_has_null_fields(
+    capsule_file: Path, report_file: Path, ledger_file: Path
+) -> None:
+    rc = run_record(capsule_file, report_file, ledger_file)
+    assert rc == 0
+
+    rows, corrupt = _load_rows(ledger_file)
+    assert corrupt == 0
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["coordinator_input_tokens"] is None
+    assert row["coordinator_output_tokens"] is None
+    assert row["usage_window_start"] is None
+    assert row["usage_window_end"] is None
+    assert row["usage_concurrent_dispatches"] is None
+
+
+# --------------------------------------------------------------------------
+# (11) --usage-since 지정 시 트랜스크립트 자동 계산 및 메타데이터 기록
+# --------------------------------------------------------------------------
+
+
+def test_record_with_usage_since_calculates_and_records(
+    capsule_file: Path, report_file: Path, ledger_file: Path, tmp_path: Path
+) -> None:
+    trans_dir = tmp_path / "trans"
+    trans_dir.mkdir()
+
+    sess_file = trans_dir / "sess.jsonl"
+    sess_file.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-16T10:00:00Z",
+                "message": {
+                    "id": "m1",
+                    "role": "assistant",
+                    "usage": {
+                        "input_tokens": 100,
+                        "cache_creation_input_tokens": 500,
+                        "cache_read_input_tokens": 1000,
+                        "output_tokens": 250,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    argv = [
+        "--ledger",
+        str(ledger_file),
+        "record",
+        "--run",
+        "run_test123",
+        "--task",
+        "task_usage_01",
+        "--dispatch",
+        "ctx_usage_01",
+        "--role",
+        "builder",
+        "--model",
+        "test-model",
+        "--capsule",
+        str(capsule_file),
+        "--report",
+        str(report_file),
+        "--usage-since",
+        "2026-08-16T09:00:00Z",
+        "--usage-until",
+        "2026-08-16T11:00:00Z",
+        "--usage-concurrent-dispatches",
+        "1",
+        "--usage-transcript-dir",
+        str(trans_dir),
+    ]
+
+    rc = main(argv)
+    assert rc == 0
+
+    rows, corrupt = _load_rows(ledger_file)
+    assert corrupt == 0
+    assert len(rows) == 1
+    row = rows[0]
+    # 100 + 500 + 1000 = 1600 input, 250 output
+    assert row["coordinator_input_tokens"] == 1600
+    assert row["coordinator_output_tokens"] == 250
+    assert row["usage_window_start"] == "2026-08-16T09:00:00Z"
+    assert row["usage_window_end"] == "2026-08-16T11:00:00Z"
+    assert row["usage_concurrent_dispatches"] == 1
+
+
+# --------------------------------------------------------------------------
+# (12) usage_concurrent_dispatches >= 2 행은 summary 코디네이터 토큰 집계에서 제외
+# --------------------------------------------------------------------------
+
+
+def test_summary_excludes_concurrent_dispatches_from_coordinator_tokens(
+    ledger_file: Path, capsys: pytest.CaptureFixture
+) -> None:
+    rows = [
+        # 단독 실행 Dispatch (집계 대상)
+        {
+            "ledger_schema": LEDGER_SCHEMA,
+            "recorded_at": "2026-08-16T09:00:00+09:00",
+            "task_id": "t1",
+            "dispatch_id": "d1",
+            "role": "builder",
+            "model": "m1",
+            "capsule_chars": 1000,
+            "report_chars": 500,
+            "coordinator_input_tokens": 1000,
+            "coordinator_output_tokens": 200,
+            "usage_concurrent_dispatches": 1,
+        },
+        # 동시 실행 공유 Dispatch (코디네이터 토큰 집계 제외 대상)
+        {
+            "ledger_schema": LEDGER_SCHEMA,
+            "recorded_at": "2026-08-16T10:00:00+09:00",
+            "task_id": "t2",
+            "dispatch_id": "d2",
+            "role": "builder",
+            "model": "m1",
+            "capsule_chars": 2000,
+            "report_chars": 800,
+            "coordinator_input_tokens": 5000,
+            "coordinator_output_tokens": 1000,
+            "usage_concurrent_dispatches": 2,
+        },
+    ]
+    _write_raw_rows(ledger_file, rows)
+
+    rc = main(["--ledger", str(ledger_file), "summary", "--json"])
+    assert rc == 0
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert data["concurrent_excluded_rows"] == 1
+    # coordinator_input_tokens: t2 가 제외되어 유효 행 수 1건, 값은 t1 의 1000.0
+    assert data["metrics"]["coordinator_input_tokens"]["valid_count"] == 1
+    assert data["metrics"]["coordinator_input_tokens"]["mean"] == 1000.0
+    # 일반 지표(capsule_chars 등)는 2건 모두 포함
+    assert data["metrics"]["capsule_chars"]["valid_count"] == 2
+
+
