@@ -21,10 +21,15 @@ if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
 from scripts.orca_model_router import (
+    FREE_POOL_ELIGIBLE_ROLES,
+    FREE_POOL_MAX_RISK,
+    FREE_POOL_ORDER,
     MODEL_POOL,
     PROBE_CONFIG,
     RISK_KEYWORDS,
     RouteResult,
+    build_probe_env,
+    capsule_has_write_scope,
     classify_from_capsule,
     classify_risk,
     classify_risk_with_reasons,
@@ -32,7 +37,9 @@ from scripts.orca_model_router import (
     cmd_list,
     cmd_probe,
     cmd_route,
+    free_pool_eligibility,
     is_coordinator_model,
+    load_repo_env,
     main,
     preflight,
     probe_model,
@@ -203,7 +210,7 @@ class TestModelPoolAndSelection:
         non_auto_pools = {name for name, info in MODEL_POOL.items() if not info["auto_selectable"]}
 
         assert auto_pools == {"gemini-flash-high", "gemini-flash-medium", "claude-sonnet"}
-        assert non_auto_pools == {"claude-opus", "codex", "opencode-free"}
+        assert non_auto_pools == {"claude-opus", "codex", "opencode-free", "cerebras-oss"}
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +269,16 @@ class TestProbeAndPreflight:
         assert "--prompt" not in opencode_cmd
         assert opencode_cmd[-1] == "ping"
 
+        codex_cmd = PROBE_CONFIG["codex"]["probe_cmd"]
+        assert codex_cmd == ["codex", "exec", "ping"]
+        assert PROBE_CONFIG["codex"]["timeout"] == 30
+
+        cerebras_cmd = PROBE_CONFIG["cerebras"]["probe_cmd"]
+        assert cerebras_cmd[0] == "opencode"
+        assert cerebras_cmd[1] == "run"
+        assert "--model" in cerebras_cmd
+        assert PROBE_CONFIG["cerebras"]["timeout"] == 20
+
         for provider in ("gemini", "claude"):
             agy_cmd = PROBE_CONFIG[provider]["probe_cmd"]
             assert agy_cmd[0] == "agy"
@@ -276,6 +293,39 @@ class TestProbeAndPreflight:
         available, detail = probe_model("gemini-3.7-flash-high")
         assert available is False
         assert "할당량 초과" in detail or "quota" in detail
+
+    def test_probe_failure_codex_usage_limit(self, monkeypatch):
+        """codex 의 'You've hit your usage limit. Upgrade to Pro' 에러가 할당량 초과로 정상 분류되는지 검증."""
+        captured_kwargs = {}
+
+        def _mock_run(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return MagicMock(
+                returncode=1,
+                stdout="",
+                stderr="ERROR: You've hit your usage limit. Upgrade to Pro at https://openai.com or try again at Aug 20th, 2026 12:52 PM.",
+            )
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, detail = probe_model("codex")
+        assert available is False
+        assert "할당량 초과" in detail
+        assert captured_kwargs.get("stdin") == subprocess.DEVNULL
+
+    def test_probe_model_passes_stdin_devnull(self, monkeypatch):
+        """probe_model 이 subprocess.run 호출 시 stdin=subprocess.DEVNULL 을 명시적으로 전달하는지 검증."""
+        captured_kwargs = {}
+
+        def _mock_run(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return MagicMock(returncode=0, stdout="ping ok", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, _detail = probe_model("gemini-3.7-flash-high")
+        assert available is True
+        assert captured_kwargs.get("stdin") == subprocess.DEVNULL
 
     def test_probe_failure_unauthorized(self, monkeypatch):
         mock_proc = MagicMock(returncode=1, stdout="", stderr="401 Unauthorized: invalid api_key")
@@ -337,9 +387,13 @@ class TestProbeAndPreflight:
         mock_proc = MagicMock(returncode=0, stdout="pong", stderr="")
         monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
 
-        passed, warnings = preflight("opencode-free")
+        passed, warnings = preflight("opencode/nemotron-3.5-lightning-free")
         assert passed is True
         assert any("무료 모델" in w for w in warnings)
+
+        passed_pool, warnings_pool = preflight("opencode-free")
+        assert passed_pool is True
+        assert any("무료 모델" in w for w in warnings_pool)
 
     def test_preflight_unregistered_model(self, monkeypatch):
         mock_proc = MagicMock(returncode=0, stdout="pong", stderr="")
@@ -395,7 +449,7 @@ class TestRoute:
         assert len(info["reasons"]) > 0
 
     def test_probe_config_providers(self):
-        for provider in ("gemini", "claude", "opencode"):
+        for provider in ("gemini", "claude", "opencode", "codex", "cerebras"):
             assert provider in PROBE_CONFIG
             assert "probe_cmd" in PROBE_CONFIG[provider]
             assert "timeout" in PROBE_CONFIG[provider]
@@ -559,3 +613,352 @@ class TestCLI:
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
         assert "risk" in data
+
+
+# ---------------------------------------------------------------------------
+# 6. 저가·무료 모델 풀 조건부 개방 (allow_free) 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestFreePoolOptIn:
+    def test_free_pool_constants(self):
+        assert frozenset({"investigator"}) == FREE_POOL_ELIGIBLE_ROLES
+        assert FREE_POOL_MAX_RISK == "low"
+        assert FREE_POOL_ORDER == ["opencode-free", "cerebras-oss"]
+        assert "codex" not in FREE_POOL_ORDER
+
+    def test_free_model_id_and_provider_properties(self):
+        """무료 모델 ID 형식(provider/model) 및 codex 독립 프로바이더 검증."""
+        free_info = MODEL_POOL["opencode-free"]
+        assert "/" in free_info["id"]
+        assert free_info["id"] == "opencode/nemotron-3.5-lightning-free"
+        assert free_info["provider"] == "opencode"
+        assert free_info["tier"] == "free"
+        assert "opencode/deepseek-v4-flash-free" in free_info["notes"]
+
+        codex_info = MODEL_POOL["codex"]
+        assert codex_info["provider"] == "codex"
+        assert codex_info["tier"] == "secondary"
+        assert codex_info["auto_selectable"] is False
+
+    def test_cerebras_pool_properties(self):
+        """cerebras-oss 풀의 속성, ID 형식 및 메타데이터 검증."""
+        c_info = MODEL_POOL["cerebras-oss"]
+        assert "/" in c_info["id"]
+        assert c_info["id"] == "cerebras/gpt-oss-120b"
+        assert c_info["provider"] == "cerebras"
+        assert c_info["tier"] == "free"
+        assert c_info["auto_selectable"] is False
+        assert c_info["max_tokens"] == 65536
+        assert "65536" in c_info["notes"]
+        assert "8192" in c_info["notes"]
+        assert "Capsule" in c_info["notes"]
+
+    def test_env_injection_and_secret_redaction(self, tmp_path, monkeypatch):
+        """환경변수 주입 시 키 값이 로그나 메시지에 노출되지 않고 미설정 사실만 안전하게 전달되는지 검증."""
+        # 1. 가상 키가 설정된 경우 (.env 파싱 및 주입)
+        fake_key = "test_cerebras_secret_key_abcdef123456"
+        env_file = tmp_path / ".env"
+        env_file.write_text(f'CEREBRAS_API_KEY="{fake_key}"\nOTHER_KEY="foo"\n', encoding="utf-8")
+
+        repo_vars = load_repo_env(tmp_path)
+        assert repo_vars["CEREBRAS_API_KEY"] == fake_key
+
+        env, status = build_probe_env(tmp_path)
+        assert env["CEREBRAS_API_KEY"] == fake_key
+        assert fake_key not in str(status)
+
+        # 2. 키가 미설정된 경우
+        empty_dir = tmp_path / "empty_repo"
+        empty_dir.mkdir()
+        monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+
+        _env_empty, status_empty = build_probe_env(empty_dir)
+        assert "CEREBRAS_API_KEY 미설정" in status_empty
+        assert fake_key not in str(status_empty)
+
+        # 3. 키 미설정 상태에서 cerebras probe 호출 시 미설정 에러 메시지 반환 검증
+        ok, detail = probe_model("cerebras/gpt-oss-120b", repo_root=empty_dir)
+        assert ok is False
+        assert "CEREBRAS_API_KEY 미설정" in detail
+        assert fake_key not in detail
+
+    def test_small_context_limit_warning(self, monkeypatch):
+        """max_tokens 가 있는 풀(숫자 포함)과 max_tokens 가 None 인 free 풀(한도 미확인) 모두 적절한 한도 경고가 발행되는지 검증."""
+        mock_proc = MagicMock(returncode=0, stdout="ping ok", stderr="")
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
+
+        # 1. max_tokens 가 있는 풀 (cerebras: 65536) -> 숫자(65536) 포함
+        passed_c, warnings_c = preflight("cerebras/gpt-oss-120b")
+        assert passed_c is True
+        assert any("200,000 미만" in w and "Capsule 과 diff" in w and "65536" in w for w in warnings_c)
+
+        res_c = route(explicit_model="cerebras/gpt-oss-120b", probe=False)
+        assert any("200,000 미만" in w and "Capsule 과 diff" in w and "65536" in w for w in res_c.warnings)
+
+        # 2. max_tokens 가 None 인 free 풀 (opencode-free: None) -> 한도 미확인 경고
+        passed_f, warnings_f = preflight("opencode/nemotron-3.5-lightning-free")
+        assert passed_f is True
+        assert any("컨텍스트 한도가 확인되지 않았습니다" in w and "Capsule 과 diff" in w for w in warnings_f)
+
+        res_f = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False)
+        assert any("컨텍스트 한도가 확인되지 않았습니다" in w and "Capsule 과 diff" in w for w in res_f.warnings)
+
+    def test_capsule_has_write_scope_scenarios(self, tmp_path):
+        """allowed_write_files 여부에 따른 쓰기 범위 판정 및 fail-closed 검증."""
+        # 1. 빈 allowed_write_files -> 쓰기 범위 없음 (False)
+        empty_write_capsule = tmp_path / "capsule_readonly.yaml"
+        empty_write_capsule.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: Readonly cache analysis\n"
+            "allowed_write_files: []\n",
+            encoding="utf-8",
+        )
+        assert capsule_has_write_scope(empty_write_capsule) is False
+
+        # 2. 파일 목록이 있는 allowed_write_files -> 쓰기 범위 있음 (True)
+        write_capsule = tmp_path / "capsule_write.yaml"
+        write_capsule.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: Fix cache analysis\n"
+            "allowed_write_files:\n"
+            '  - "src/ml/..."\n',
+            encoding="utf-8",
+        )
+        assert capsule_has_write_scope(write_capsule) is True
+
+        # 3. 없는 파일 경로 -> fail-closed (True)
+        non_existent = tmp_path / "missing_file.yaml"
+        assert capsule_has_write_scope(non_existent) is True
+
+        # 4. None 경로 -> fail-closed (True)
+        assert capsule_has_write_scope(None) is True
+
+    def test_free_pool_eligibility_unit(self):
+        """free_pool_eligibility 헬퍼의 조건별 통과/거부 및 한국어 사유 검증."""
+        # 통과 조건: investigator, low, has_write_scope=False
+        eligible, reason = free_pool_eligibility("investigator", "low", False)
+        assert eligible is True
+        assert "조건 충족" in reason
+
+        # 거부 1: 역할 불일치 (builder)
+        eligible, reason = free_pool_eligibility("builder", "low", False)
+        assert eligible is False
+        assert "역할(builder)" in reason
+        assert "investigator" in reason
+
+        # 거부 2: 역할 불일치 (reviewer)
+        eligible, reason = free_pool_eligibility("reviewer", "low", False)
+        assert eligible is False
+        assert "역할(reviewer)" in reason
+
+        # 거부 3: 위험도 초과 (high)
+        eligible, reason = free_pool_eligibility("investigator", "high", False)
+        assert eligible is False
+        assert "위험도(high)" in reason
+
+        # 거부 4: 위험도 초과 (medium)
+        eligible, reason = free_pool_eligibility("investigator", "medium", False)
+        assert eligible is False
+        assert "위험도(medium)" in reason
+
+        # 거부 5: 쓰기 범위 존재 (has_write_scope=True)
+        eligible, reason = free_pool_eligibility("investigator", "low", True)
+        assert eligible is False
+        assert "쓰기 권한" in reason
+
+    def test_allow_free_false_never_selects_free_pool(self):
+        """allow_free=False 인 경우 어떤 역할, 위험도, 쓰기 범위에서도 무료 풀이 선택되지 않습니다."""
+        roles = ["investigator", "builder", "reviewer", "benchmarker", "documenter"]
+        risks = ["low", "medium", "high"]
+        scopes = [True, False]
+
+        for r in roles:
+            for k in risks:
+                for s in scopes:
+                    res = select_model(r, k, allow_free=False, has_write_scope=s)
+                    assert res["primary_pool"] != "opencode-free"
+                    assert res["primary_model"] != "opencode/nemotron-3.5-lightning-free"
+                    assert res["fallback_pool"] != "opencode-free"
+                    assert res["fallback_model"] != "opencode/nemotron-3.5-lightning-free"
+
+    def test_allow_free_true_investigator_low_risk_no_write_scope_selects_opencode_free(self):
+        """allow_free=True, investigator, low, 쓰기 없음 조합에서 주 모델로 opencode/nemotron-3.5-lightning-free 가 선택되고 fallback 으로 cerebras/gpt-oss-120b 가 지정됩니다."""
+        res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
+        assert res["primary_pool"] == "opencode-free"
+        assert res["primary_model"] == "opencode/nemotron-3.5-lightning-free"
+        assert res["fallback_pool"] == "cerebras-oss"
+        assert res["fallback_model"] == "cerebras/gpt-oss-120b"
+
+    def test_allow_free_true_builder_rejected_with_warning(self):
+        """allow_free=True 여도 builder 역할은 무료 풀이 거부되고 경고 사유가 기록됩니다."""
+        res = route(role="builder", risk="low", allow_free=True, probe=False)
+        assert res.primary_model == "gemini-3.7-flash-high"
+        assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
+        assert any("역할(builder)" in w and "무료 풀 개방 불가" in w for w in res.warnings)
+
+    def test_allow_free_true_high_risk_rejected(self):
+        """allow_free=True 여도 high/medium 위험도는 무료 풀이 거부됩니다."""
+        res_high = route(role="investigator", risk="high", allow_free=True, has_write_scope=False, probe=False)
+        assert res_high.primary_model != "opencode/nemotron-3.5-lightning-free"
+        assert any("위험도(high)" in w for w in res_high.warnings)
+
+        res_med = route(role="investigator", risk="medium", allow_free=True, has_write_scope=False, probe=False)
+        assert res_med.primary_model != "opencode/nemotron-3.5-lightning-free"
+        assert any("위험도(medium)" in w for w in res_med.warnings)
+
+    def test_allow_free_true_with_write_scope_rejected(self):
+        """allow_free=True 여도 쓰기 범위가 있으면 무료 풀이 거부됩니다."""
+        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=True, probe=False)
+        assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
+        assert any("쓰기 권한" in w for w in res.warnings)
+
+    def test_allow_free_true_reviewer_rejected(self):
+        """reviewer 는 읽기 전용이어도 임계 경로이므로 allow_free=True 여도 무료 풀이 거부됩니다."""
+        res = route(role="reviewer", risk="low", allow_free=True, has_write_scope=False, probe=False)
+        assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
+        assert any("역할(reviewer)" in w for w in res.warnings)
+
+    def test_free_pool_selected_includes_revalidation_mandatory_warning(self):
+        """무료 풀이 주 모델로 선택되면 산출물 재검증 필수 및 임계 경로 금지 경고가 반드시 포함됩니다."""
+        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False)
+        assert res.primary_model == "opencode/nemotron-3.5-lightning-free"
+        assert any(
+            "산출물 재검증 필수" in w and "임계 경로 금지" in w
+            for w in res.warnings
+        )
+
+    def test_allow_free_true_never_selects_coordinator_model(self):
+        """allow_free=True 상태에서도 코디네이터 전용 모델(claude-opus-5)은 절대 선택되지 않습니다."""
+        res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
+        assert res["primary_model"] != "claude-opus-5"
+        assert res["fallback_model"] != "claude-opus-5"
+
+    def test_route_free_pool_primary_fail_fallback(self, monkeypatch):
+        """opencode-free 가 probe 실패하면 cerebras-oss 로 fallback 전환됨을 검증합니다."""
+        def _mock_run(cmd, *args, **kwargs):
+            if "opencode/nemotron-3.5-lightning-free" in cmd:
+                return MagicMock(returncode=1, stdout="", stderr="Error: model unavailable")
+            return MagicMock(returncode=0, stdout="ping ok", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        # tmp_path 에 cerebras 키 설정
+        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=True)
+        assert res.primary_available is False
+        assert res.fallback_available is True
+        assert res.fallback_model == "cerebras/gpt-oss-120b"
+        assert any("대체 모델 cerebras/gpt-oss-120b 로 전환" in w for w in res.warnings)
+
+    def test_route_with_capsule_file_allow_free(self, tmp_path):
+        """Capsule 파일을 통한 route 에서 allow_free 조건부 개방 검증."""
+        # 쓰기 없는 읽기 전용 Capsule (low 위험도)
+        ro_capsule = tmp_path / "investigator_ro.yaml"
+        ro_capsule.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: >\n"
+            "  Investigate doc and typo details without modifications.\n"
+            "why_now: >\n"
+            "  단순 문서 조사.\n"
+            "allowed_write_files: []\n",
+            encoding="utf-8",
+        )
+        res_ro = route(capsule_path=ro_capsule, allow_free=True, probe=False)
+        assert res_ro.risk == "low"
+        assert res_ro.role == "investigator"
+        assert res_ro.primary_model == "opencode/nemotron-3.5-lightning-free"
+
+        # 쓰기 있는 Capsule
+        rw_capsule = tmp_path / "investigator_rw.yaml"
+        rw_capsule.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: >\n"
+            "  Investigate and modify test file.\n"
+            "why_now: >\n"
+            "  수정 포함 조사.\n"
+            "allowed_write_files:\n"
+            '  - "tests/test_foo.py"\n',
+            encoding="utf-8",
+        )
+        res_rw = route(capsule_path=rw_capsule, allow_free=True, probe=False)
+        assert res_rw.primary_model != "opencode/nemotron-3.5-lightning-free"
+        assert any("쓰기 권한" in w for w in res_rw.warnings)
+
+    def test_cli_route_allow_free_json(self, tmp_path, capsys):
+        """CLI route 서브커맨드에서 --allow-free 플래그 전달 시 JSON 출력 검증."""
+        capsule_file = tmp_path / "capsule_cli.yaml"
+        capsule_file.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: >\n"
+            "  Simple doc check.\n"
+            "why_now: >\n"
+            "  문서 조사.\n"
+            "allowed_write_files: []\n",
+            encoding="utf-8",
+        )
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--capsule", default=str(capsule_file))
+        parser.add_argument("--role", default="investigator")
+        parser.add_argument("--risk", default="low")
+        parser.add_argument("--objective", default=None)
+        parser.add_argument("--why-now", default=None)
+        parser.add_argument("--model", default=None)
+        parser.add_argument("--allow-free", action="store_true", default=True)
+        parser.add_argument("--no-probe", action="store_true", default=True)
+        parser.add_argument("--probe-timeout", type=int, default=30)
+        parser.add_argument("--json", action="store_true", default=True)
+        args = parser.parse_args([])
+
+        ret = cmd_route(args)
+        assert ret == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["primary_model"] == "opencode/nemotron-3.5-lightning-free"
+        assert data["recommended"] == "opencode/nemotron-3.5-lightning-free"
+        assert any("산출물 재검증 필수" in w for w in data["warnings"])
+
+    def test_cli_classify_allow_free_json(self, tmp_path, capsys):
+        """CLI classify 서브커맨드에서 --allow-free 플래그 전달 시 JSON 출력 검증."""
+        capsule_file = tmp_path / "capsule_cls.yaml"
+        capsule_file.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: >\n"
+            "  Simple test check.\n"
+            "why_now: >\n"
+            "  테스트 확인.\n"
+            "allowed_write_files: []\n",
+            encoding="utf-8",
+        )
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--capsule", default=str(capsule_file))
+        parser.add_argument("--role", default="investigator")
+        parser.add_argument("--objective", default=None)
+        parser.add_argument("--why-now", default=None)
+        parser.add_argument("--allow-free", action="store_true", default=True)
+        parser.add_argument("--json", action="store_true", default=True)
+        args = parser.parse_args([])
+
+        ret = cmd_classify(args)
+        assert ret == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["primary_model"] == "opencode/nemotron-3.5-lightning-free"
+
+    def test_list_command_includes_free_pool_guide(self, capsys):
+        """CLI list 서브커맨드에서 조건부 개방 안내 문구가 출력되는지 검증."""
+        parser = argparse.ArgumentParser()
+        args = parser.parse_args([])
+
+        ret = cmd_list(args)
+        assert ret == 0
+        captured = capsys.readouterr().out
+        assert "--allow-free" in captured
+        assert "investigator" in captured
+        assert "조건부로 개방" in captured
+
