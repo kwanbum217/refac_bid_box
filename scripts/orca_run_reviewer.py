@@ -79,11 +79,14 @@ def get_git_diff_and_files(
     repo: Path,
     base: str,
     branch: str,
+    paths: list[str] | None = None,
     timeout: int = DEFAULT_GIT_TIMEOUT,
 ) -> tuple[list[str], str]:
     """git diff 로 변경 파일 목록과 diff 본문을 조회합니다."""
+    path_args = ["--", *paths] if paths else []
+
     # 1. changed_files
-    diff_name_cmd = ["git", "diff", "--name-only", f"{base}...{branch}"]
+    diff_name_cmd = ["git", "diff", "--name-only", f"{base}...{branch}", *path_args]
     code, stdout, stderr, timed_out = run_command_safe(diff_name_cmd, repo, timeout)
     if timed_out:
         raise ReviewerToolError(f"git diff 파일 목록 조회 타임아웃 ({timeout}초)")
@@ -95,7 +98,7 @@ def get_git_diff_and_files(
     changed_files = [line.strip() for line in stdout.splitlines() if line.strip()]
 
     # 2. diff 본문
-    diff_cmd = ["git", "diff", f"{base}...{branch}"]
+    diff_cmd = ["git", "diff", f"{base}...{branch}", *path_args]
     code, stdout, stderr, timed_out = run_command_safe(diff_cmd, repo, timeout)
     if timed_out:
         raise ReviewerToolError(f"git diff 본문 조회 타임아웃 ({timeout}초)")
@@ -366,6 +369,7 @@ def run_reviewer(
     diff_base: str = "main",
     diff_branch: str = "HEAD",
     repo: str | Path = ".",
+    paths: list[str] | None = None,
     model: str = DEFAULT_MODEL,
     timeout: int = DEFAULT_MODEL_TIMEOUT,
     max_chars: int = DEFAULT_MAX_CHARS,
@@ -412,10 +416,18 @@ def run_reviewer(
             repo=repo_path,
             base=diff_base,
             branch=diff_branch,
+            paths=paths,
             timeout=DEFAULT_GIT_TIMEOUT,
         )
     except ReviewerToolError as exc:
         err_msg = str(exc)
+        if as_json:
+            return 2, json.dumps({"error": err_msg, "exit_code": 2}, ensure_ascii=False, indent=2)
+        return 2, f"오류: {err_msg}"
+
+    # 경로 필터로 좁힌 결과가 빈 diff 인 경우 종료 코드 2 로 거부 (규약 72)
+    if paths and not diff_raw.strip():
+        err_msg = f"--paths({', '.join(paths)})로 지정된 경로에 변경 사항(diff)이 없습니다."
         if as_json:
             return 2, json.dumps({"error": err_msg, "exit_code": 2}, ensure_ascii=False, indent=2)
         return 2, f"오류: {err_msg}"
@@ -562,6 +574,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--diff-branch", default="HEAD", help="검증 대상 git ref (기본: HEAD)")
     parser.add_argument("--repo", default=".", help="저장소 루트 경로 (기본: 현재 디렉터리)")
     parser.add_argument(
+        "--paths",
+        nargs="*",
+        default=None,
+        help="검토 대상 경로 필터 목록 (공백으로 여러 경로 지정 가능)",
+    )
+    parser.add_argument(
         "--model", default=DEFAULT_MODEL, help=f"사용할 모델 ID (기본: {DEFAULT_MODEL})"
     )
     parser.add_argument(
@@ -576,6 +594,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=DEFAULT_MAX_CHARS,
         help=f"사람 출력 최대 문자 수 상한 (기본: {DEFAULT_MAX_CHARS})",
+    )
+    parser.add_argument(
+        "--max-diff-chars",
+        type=int,
+        default=DEFAULT_MAX_DIFF_CHARS,
+        help=f"diff 본문 최대 허용 문자 수 (기본: {DEFAULT_MAX_DIFF_CHARS})",
     )
     parser.add_argument("--json", action="store_true", help="결과를 JSON 으로 출력")
     parser.add_argument(
@@ -595,9 +619,11 @@ def main(argv: list[str] | None = None) -> int:
         diff_base=args.diff_base,
         diff_branch=args.diff_branch,
         repo=args.repo,
+        paths=args.paths,
         model=args.model,
         timeout=args.timeout,
         max_chars=args.max_chars,
+        max_diff_chars=args.max_diff_chars,
         dry_run=args.dry_run,
         as_json=args.json,
     )

@@ -9,8 +9,10 @@ from scripts.orca_contract import char_len
 from scripts.orca_run_reviewer import (
     DEFAULT_MAX_DIFF_CHARS,
     _extract_capsule_context,
+    _parse_args,
     build_prompt,
     extract_json_from_response,
+    get_git_diff_and_files,
     main,
     run_reviewer,
 )
@@ -64,7 +66,7 @@ def mock_git(monkeypatch):
     """git 호출을 가로채서 더미 변경 파일과 diff 를 돌려줍니다."""
     monkeypatch.setattr(
         "scripts.orca_run_reviewer.get_git_diff_and_files",
-        lambda repo, base, branch, timeout: (
+        lambda repo, base, branch, paths=None, timeout=10: (
             ["scripts/new_file.py", "tests/test_new_file.py"],
             "diff --git a/scripts/new_file.py b/scripts/new_file.py\n+def foo(): pass\n",
         ),
@@ -246,7 +248,7 @@ def test_diff_exceeding_max_diff_chars_is_truncated_and_flagged(tmp_path, monkey
 
     monkeypatch.setattr(
         "scripts.orca_run_reviewer.get_git_diff_and_files",
-        lambda repo, base, branch, timeout: (["huge.py"], huge_diff),
+        lambda repo, base, branch, paths=None, timeout=10: (["huge.py"], huge_diff),
     )
 
     captured_prompt = ""
@@ -413,7 +415,7 @@ def test_main_cli_invocation(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "scripts.orca_run_reviewer.get_git_diff_and_files",
-        lambda repo, base, branch, timeout: (["file.py"], "diff"),
+        lambda repo, base, branch, paths=None, timeout=10: (["file.py"], "diff"),
     )
     monkeypatch.setattr(
         "scripts.orca_run_reviewer.run_model",
@@ -512,3 +514,210 @@ review_checklist:
     assert "allowed_write_files" in ctx
     assert "리뷰어 프롬프트 개선" in ctx["objective"]
     assert "scripts/orca_run_reviewer.py" in ctx["allowed_write_files"]
+
+
+def test_max_diff_chars_large_no_truncation(tmp_path, monkeypatch):
+    """(17) max_diff_chars 를 크게 주면 diff 가 절단되지 않고 정상으로 보고됩니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    diff_content = "+line\n" * 100  # 약 600자
+    monkeypatch.setattr(
+        "scripts.orca_run_reviewer.get_git_diff_and_files",
+        lambda repo, base, branch, paths=None, timeout=10: (
+            ["scripts/new_file.py"],
+            diff_content,
+        ),
+    )
+
+    def dummy_runner(prompt, model, timeout):
+        return 0, json.dumps(SAMPLE_VALID_REPORT), ""
+
+    code, output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        max_diff_chars=5000,
+        model_runner=dummy_runner,
+    )
+    assert code == 0
+    assert "Diff 절단 여부:     정상 (전체 포함)" in output
+
+
+def test_max_diff_chars_small_triggers_truncation(tmp_path, monkeypatch):
+    """(18) max_diff_chars 를 작게 주면 diff 가 절단되고 판정 블록에 절단됨이 기록됩니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    diff_content = "+line\n" * 100  # 약 600자
+    captured_prompt = ""
+
+    monkeypatch.setattr(
+        "scripts.orca_run_reviewer.get_git_diff_and_files",
+        lambda repo, base, branch, paths=None, timeout=10: (
+            ["scripts/new_file.py"],
+            diff_content,
+        ),
+    )
+
+    def dummy_runner(prompt, model, timeout):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return 0, json.dumps(SAMPLE_VALID_REPORT), ""
+
+    code, output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        max_diff_chars=50,
+        model_runner=dummy_runner,
+    )
+    assert code == 0
+    assert "Diff 절단 여부:     절단됨 (상한 초과)" in output
+    assert "[주의: diff 본문이 최대 허용 크기(50자)를 초과하여" in captured_prompt
+
+
+def test_max_diff_chars_default_value_is_20000():
+    """(19) CLI 인자 파서에서 --max-diff-chars 의 기본값은 20000 (DEFAULT_MAX_DIFF_CHARS) 입니다."""
+    args = _parse_args(["--capsule", "cap.yaml", "--out", "out.json"])
+    assert args.max_diff_chars == 20000
+    assert args.max_diff_chars == DEFAULT_MAX_DIFF_CHARS
+
+
+def test_paths_filter_narrows_changed_files_and_diff(tmp_path, monkeypatch):
+    """(20) --paths 로 경로를 좁히면 changed_files 와 diff 가 해당 경로로 제한되어 프롬프트에 전달됩니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    captured_paths = None
+    captured_prompt = ""
+
+    def mock_get_diff(repo, base, branch, paths=None, timeout=10):
+        nonlocal captured_paths
+        captured_paths = paths
+        # paths 에 전달된 파일만 반환
+        return (
+            [p for p in ["scripts/target.py", "tests/other.py"] if paths and p in paths],
+            "diff --git a/scripts/target.py\n+target_content\n",
+        )
+
+    monkeypatch.setattr("scripts.orca_run_reviewer.get_git_diff_and_files", mock_get_diff)
+
+    def dummy_runner(prompt, model, timeout):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return 0, json.dumps(SAMPLE_VALID_REPORT), ""
+
+    code, _output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        paths=["scripts/target.py"],
+        model_runner=dummy_runner,
+    )
+    assert code == 0
+    assert captured_paths == ["scripts/target.py"]
+    assert "- scripts/target.py" in captured_prompt
+    assert "- tests/other.py" not in captured_prompt
+
+
+def test_paths_filter_empty_diff_exits_code_2(tmp_path, monkeypatch):
+    """(21) --paths 로 좁힌 결과가 빈 diff 이면 조용히 pass 하지 않고 종료 코드 2로 거부합니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    # 빈 diff 반환 mock
+    monkeypatch.setattr(
+        "scripts.orca_run_reviewer.get_git_diff_and_files",
+        lambda repo, base, branch, paths=None, timeout=10: ([], ""),
+    )
+
+    model_called = False
+
+    def dummy_runner(prompt, model, timeout):
+        nonlocal model_called
+        model_called = True
+        return 0, json.dumps(SAMPLE_VALID_REPORT), ""
+
+    code, output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        paths=["nonexistent_module.py"],
+        model_runner=dummy_runner,
+    )
+    assert code == 2
+    assert not model_called
+    assert "변경 사항(diff)이 없습니다" in output
+
+    # JSON 모드 확인
+    code_json, output_json = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        paths=["nonexistent_module.py"],
+        as_json=True,
+        model_runner=dummy_runner,
+    )
+    assert code_json == 2
+    data = json.loads(output_json)
+    assert data["exit_code"] == 2
+    assert "nonexistent_module.py" in data["error"]
+
+
+def test_get_git_diff_and_files_command_assembly(monkeypatch):
+    """(22) get_git_diff_and_files 에 paths 가 주어지면 git diff 에 -- <paths> 가 정확히 전달됩니다."""
+    executed_cmds: list[list[str]] = []
+
+    def mock_run_cmd(cmd, cwd, timeout):
+        executed_cmds.append(cmd)
+        if "--name-only" in cmd:
+            return 0, "src/foo.py\nsrc/bar.py\n", "", False
+        return 0, "diff content", "", False
+
+    monkeypatch.setattr("scripts.orca_run_reviewer.run_command_safe", mock_run_cmd)
+
+    files, diff = get_git_diff_and_files(
+        repo=Path("."),
+        base="main",
+        branch="HEAD",
+        paths=["src/foo.py", "src/bar.py"],
+    )
+    assert files == ["src/foo.py", "src/bar.py"]
+    assert diff == "diff content"
+    assert len(executed_cmds) == 2
+    assert executed_cmds[0] == ["git", "diff", "--name-only", "main...HEAD", "--", "src/foo.py", "src/bar.py"]
+    assert executed_cmds[1] == ["git", "diff", "main...HEAD", "--", "src/foo.py", "src/bar.py"]
+
+
+def test_cli_paths_and_max_diff_chars_dry_run(tmp_path, capsys, monkeypatch):
+    """(23) CLI 에서 --paths 와 --max-diff-chars 인자가 전달되고 dry-run 에서 정상 처리되는지 검증."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        "scripts.orca_run_reviewer.get_git_diff_and_files",
+        lambda repo, base, branch, paths=None, timeout=10: (
+            ["src/foo.py"],
+            "+line\n",
+        ),
+    )
+
+    code = main([
+        "--capsule",
+        str(capsule_file),
+        "--out",
+        str(out_file),
+        "--paths",
+        "src/foo.py",
+        "--max-diff-chars",
+        "50000",
+        "--dry-run",
+        "--json",
+    ])
+    assert code == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["dry_run"] is True
+    assert data["char_count"] > 0
+
