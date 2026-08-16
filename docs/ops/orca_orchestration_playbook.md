@@ -6,7 +6,7 @@
 > **상태**: 실행 검증 완료. 2026-08-12 세션에서 7개 섹션(S1~S7)을 병렬 운영하고 전량 병합한 결과를 반영했습니다. Task Capsule v2 계약(자족적 워커 사양, 컴팩트 `worker_done`·아티팩트 분리)을 반영했습니다.
 > **대상**: 이 저장소에서 코디네이터 역할을 맡는 사람 또는 에이전트
 > **규약 정본**: [`AGENTS.md`](../../AGENTS.md) 4장, [`orca-section-coordination`](../../.agents/skills/orca-section-coordination/SKILL.md)
-> **관련 문서**: [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md), [`multi_agent_setup.md`](multi_agent_setup.md), [`git_branching_strategy.md`](git_branching_strategy.md)
+> **관련 문서**: [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md), [`orca_control_plane_tools.md`](orca_control_plane_tools.md), [`multi_agent_setup.md`](multi_agent_setup.md), [`git_branching_strategy.md`](git_branching_strategy.md)
 
 ---
 
