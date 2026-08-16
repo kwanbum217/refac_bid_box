@@ -68,15 +68,20 @@ scope:
 
 
 def test_forbidden_strings():
-    """금지 문자열 검증: git worktree add 가 없고 dispatch 에 허구 플래그가 없어야 함."""
+    """금지 문자열 검증: git worktree add 가 없고 dispatch 에 허구 플래그/잘못된 값이 없어야 함."""
     src_path = Path("scripts/orca_taskctl.py")
     assert src_path.exists(), "scripts/orca_taskctl.py 가 존재해야 합니다."
     source = src_path.read_text(encoding="utf-8")
 
     assert "git worktree add" not in source, "git worktree add 는 사용 금지입니다."
     # dispatch_worker 명령 조립에서 허구 플래그가 없어야 함
-    assert '"--capsule"' not in source or 'cmd.extend(["--capsule"' not in source
-    assert '"--worktree"' not in source or 'dispatch", "--task", task_id' not in source or "--worktree" not in source.split('cmd = ["orca", "orchestration", "dispatch"')[1].split('return _run_command')[0]
+    dispatch_body = source.split("def dispatch_worker")[1].split("def finalize_task")[0]
+    assert '"--capsule"' not in dispatch_body
+    assert '"--worktree"' not in dispatch_body
+    assert '"--model"' not in dispatch_body
+    # --inject 는 값을 받지 않는 불리언 플래그여야 함
+    assert 'cmd.extend(["--inject"' not in dispatch_body
+    assert 'cmd.append("--inject")' in dispatch_body
 
 
 def test_expand_intent_builder_contract_and_paths(tmp_path: Path):
@@ -353,7 +358,7 @@ def test_dispatch_worker_command(monkeypatch: pytest.MonkeyPatch):
         to_handle="term_target",
         from_handle="term_source",
         run_id="run_abc",
-        inject="some_preamble",
+        inject=True,
         dry_run=True,
         return_preamble=True,
         as_json=True,
@@ -373,12 +378,14 @@ def test_dispatch_worker_command(monkeypatch: pytest.MonkeyPatch):
         "--run",
         "run_abc",
         "--inject",
-        "some_preamble",
         "--dry-run",
         "--return-preamble",
         "--json",
     ]
     assert executed_cmds[0] == expected
+    # --inject 뒤에 별도의 인자 값이 붙지 않고 불리언 플래그로만 전달됨을 단정
+    inject_idx = executed_cmds[0].index("--inject")
+    assert executed_cmds[0][inject_idx + 1] in ("--dry-run", "--return-preamble", "--json")
     assert "--capsule" not in executed_cmds[0]
     assert "--worktree" not in executed_cmds[0]
     assert "--model" not in executed_cmds[0]

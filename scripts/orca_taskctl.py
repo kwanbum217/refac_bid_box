@@ -462,7 +462,7 @@ def dispatch_worker(
     to_handle: str | None = None,
     from_handle: str | None = None,
     run_id: str | None = None,
-    inject: str | None = None,
+    inject: bool = False,
     dry_run: bool = False,
     return_preamble: bool = False,
     as_json: bool = False,
@@ -477,7 +477,7 @@ def dispatch_worker(
     if run_id:
         cmd.extend(["--run", run_id])
     if inject:
-        cmd.extend(["--inject", inject])
+        cmd.append("--inject")
     if dry_run:
         cmd.append("--dry-run")
     if return_preamble:
