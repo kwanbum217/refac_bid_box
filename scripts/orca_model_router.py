@@ -55,6 +55,10 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         "probe_cmd": ["opencode", "run", "--model", "{model}", "ping"],
         "timeout": 15,
     },
+    "codex": {
+        "probe_cmd": ["codex", "exec", "ping"],
+        "timeout": 30,
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -112,7 +116,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
     },
     "codex": {
         "id": "codex",
-        "provider": "opencode",
+        "provider": "codex",
         "tier": "secondary",
         "auto_selectable": False,
         "max_tokens": None,
@@ -123,7 +127,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "notes": "주간 잔량이 넉넉할 때만 수동 지정.",
     },
     "opencode-free": {
-        "id": "opencode-free",
+        "id": "opencode/nemotron-3.5-lightning-free",
         "provider": "opencode",
         "tier": "free",
         "auto_selectable": False,
@@ -131,7 +135,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "suitable_for": [
             "investigator",
         ],
-        "notes": "실패해도 손실 없는 병렬 조사. 임계 경로 금지 (수동 지정 전용).",
+        "notes": "실패해도 손실 없는 병렬 조사. 임계 경로 금지 (allow_free 조건부 개방). fallback 후보: opencode/deepseek-v4-flash-free.",
     },
 }
 
@@ -141,7 +145,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 
 FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator"})
 FREE_POOL_MAX_RISK: str = "low"
-FREE_POOL_ORDER: list[str] = ["opencode-free", "codex"]
+FREE_POOL_ORDER: list[str] = ["opencode-free"]
 
 # ---------------------------------------------------------------------------
 # 위험도 분류 기준
@@ -391,8 +395,8 @@ def probe_model(model_id: str, timeout: int = 30) -> tuple[bool, str]:
     비정상 종료 시에만 할당량 초과, 인증 실패 등의 원인을 상세 분류합니다.
     """
     provider = None
-    for pool_info in MODEL_POOL.values():
-        if pool_info["id"] == model_id:
+    for pool_name, pool_info in MODEL_POOL.items():
+        if pool_info["id"] == model_id or pool_name == model_id:
             provider = pool_info["provider"]
             break
 
@@ -401,6 +405,8 @@ def probe_model(model_id: str, timeout: int = 30) -> tuple[bool, str]:
             provider = "gemini"
         elif "claude" in model_id.lower():
             provider = "claude"
+        elif "codex" in model_id.lower():
+            provider = "codex"
         else:
             provider = "opencode"
 
@@ -475,8 +481,8 @@ def preflight(model_id: str, timeout: int = 30) -> tuple[bool, list[str]]:
 
     # 2. 등록 풀 확인
     found_pool: dict[str, Any] | None = None
-    for pool_info in MODEL_POOL.values():
-        if pool_info["id"] == model_id:
+    for pool_name, pool_info in MODEL_POOL.items():
+        if pool_info["id"] == model_id or pool_name == model_id:
             found_pool = pool_info
             break
 

@@ -267,6 +267,10 @@ class TestProbeAndPreflight:
         assert "--prompt" not in opencode_cmd
         assert opencode_cmd[-1] == "ping"
 
+        codex_cmd = PROBE_CONFIG["codex"]["probe_cmd"]
+        assert codex_cmd == ["codex", "exec", "ping"]
+        assert PROBE_CONFIG["codex"]["timeout"] == 30
+
         for provider in ("gemini", "claude"):
             agy_cmd = PROBE_CONFIG[provider]["probe_cmd"]
             assert agy_cmd[0] == "agy"
@@ -342,9 +346,13 @@ class TestProbeAndPreflight:
         mock_proc = MagicMock(returncode=0, stdout="pong", stderr="")
         monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
 
-        passed, warnings = preflight("opencode-free")
+        passed, warnings = preflight("opencode/nemotron-3.5-lightning-free")
         assert passed is True
         assert any("무료 모델" in w for w in warnings)
+
+        passed_pool, warnings_pool = preflight("opencode-free")
+        assert passed_pool is True
+        assert any("무료 모델" in w for w in warnings_pool)
 
     def test_preflight_unregistered_model(self, monkeypatch):
         mock_proc = MagicMock(returncode=0, stdout="pong", stderr="")
@@ -400,7 +408,7 @@ class TestRoute:
         assert len(info["reasons"]) > 0
 
     def test_probe_config_providers(self):
-        for provider in ("gemini", "claude", "opencode"):
+        for provider in ("gemini", "claude", "opencode", "codex"):
             assert provider in PROBE_CONFIG
             assert "probe_cmd" in PROBE_CONFIG[provider]
             assert "timeout" in PROBE_CONFIG[provider]
@@ -575,7 +583,22 @@ class TestFreePoolOptIn:
     def test_free_pool_constants(self):
         assert frozenset({"investigator"}) == FREE_POOL_ELIGIBLE_ROLES
         assert FREE_POOL_MAX_RISK == "low"
-        assert FREE_POOL_ORDER == ["opencode-free", "codex"]
+        assert FREE_POOL_ORDER == ["opencode-free"]
+        assert "codex" not in FREE_POOL_ORDER
+
+    def test_free_model_id_and_provider_properties(self):
+        """무료 모델 ID 형식(provider/model) 및 codex 독립 프로바이더 검증."""
+        free_info = MODEL_POOL["opencode-free"]
+        assert "/" in free_info["id"]
+        assert free_info["id"] == "opencode/nemotron-3.5-lightning-free"
+        assert free_info["provider"] == "opencode"
+        assert free_info["tier"] == "free"
+        assert "opencode/deepseek-v4-flash-free" in free_info["notes"]
+
+        codex_info = MODEL_POOL["codex"]
+        assert codex_info["provider"] == "codex"
+        assert codex_info["tier"] == "secondary"
+        assert codex_info["auto_selectable"] is False
 
     def test_capsule_has_write_scope_scenarios(self, tmp_path):
         """allowed_write_files 여부에 따른 쓰기 범위 판정 및 fail-closed 검증."""
@@ -653,51 +676,51 @@ class TestFreePoolOptIn:
                 for s in scopes:
                     res = select_model(r, k, allow_free=False, has_write_scope=s)
                     assert res["primary_pool"] != "opencode-free"
-                    assert res["primary_model"] != "opencode-free"
+                    assert res["primary_model"] != "opencode/nemotron-3.5-lightning-free"
                     assert res["fallback_pool"] != "opencode-free"
-                    assert res["fallback_model"] != "opencode-free"
+                    assert res["fallback_model"] != "opencode/nemotron-3.5-lightning-free"
 
     def test_allow_free_true_investigator_low_risk_no_write_scope_selects_opencode_free(self):
-        """allow_free=True, investigator, low, 쓰기 없음 조합에서 주 모델로 opencode-free 가 선택됩니다."""
+        """allow_free=True, investigator, low, 쓰기 없음 조합에서 주 모델로 opencode/nemotron-3.5-lightning-free 가 선택됩니다."""
         res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
         assert res["primary_pool"] == "opencode-free"
-        assert res["primary_model"] == "opencode-free"
-        assert res["fallback_pool"] == "codex"
-        assert res["fallback_model"] == "codex"
+        assert res["primary_model"] == "opencode/nemotron-3.5-lightning-free"
+        assert res["fallback_pool"] == "gemini-flash-high"
+        assert res["fallback_model"] == "gemini-3.7-flash-high"
 
     def test_allow_free_true_builder_rejected_with_warning(self):
         """allow_free=True 여도 builder 역할은 무료 풀이 거부되고 경고 사유가 기록됩니다."""
         res = route(role="builder", risk="low", allow_free=True, probe=False)
         assert res.primary_model == "gemini-3.7-flash-high"
-        assert res.primary_model != "opencode-free"
+        assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("역할(builder)" in w and "무료 풀 개방 불가" in w for w in res.warnings)
 
     def test_allow_free_true_high_risk_rejected(self):
         """allow_free=True 여도 high/medium 위험도는 무료 풀이 거부됩니다."""
         res_high = route(role="investigator", risk="high", allow_free=True, has_write_scope=False, probe=False)
-        assert res_high.primary_model != "opencode-free"
+        assert res_high.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("위험도(high)" in w for w in res_high.warnings)
 
         res_med = route(role="investigator", risk="medium", allow_free=True, has_write_scope=False, probe=False)
-        assert res_med.primary_model != "opencode-free"
+        assert res_med.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("위험도(medium)" in w for w in res_med.warnings)
 
     def test_allow_free_true_with_write_scope_rejected(self):
         """allow_free=True 여도 쓰기 범위가 있으면 무료 풀이 거부됩니다."""
         res = route(role="investigator", risk="low", allow_free=True, has_write_scope=True, probe=False)
-        assert res.primary_model != "opencode-free"
+        assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("쓰기 권한" in w for w in res.warnings)
 
     def test_allow_free_true_reviewer_rejected(self):
         """reviewer 는 읽기 전용이어도 임계 경로이므로 allow_free=True 여도 무료 풀이 거부됩니다."""
         res = route(role="reviewer", risk="low", allow_free=True, has_write_scope=False, probe=False)
-        assert res.primary_model != "opencode-free"
+        assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("역할(reviewer)" in w for w in res.warnings)
 
     def test_free_pool_selected_includes_revalidation_mandatory_warning(self):
         """무료 풀이 주 모델로 선택되면 산출물 재검증 필수 및 임계 경로 금지 경고가 반드시 포함됩니다."""
         res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False)
-        assert res.primary_model == "opencode-free"
+        assert res.primary_model == "opencode/nemotron-3.5-lightning-free"
         assert any(
             "산출물 재검증 필수" in w and "임계 경로 금지" in w
             for w in res.warnings
@@ -710,9 +733,9 @@ class TestFreePoolOptIn:
         assert res["fallback_model"] != "claude-opus-5"
 
     def test_route_free_pool_primary_fail_fallback(self, monkeypatch):
-        """opencode-free 가 probe 실패하면 codex 로 fallback 전환됨을 검증합니다."""
+        """opencode-free 가 probe 실패하면 gemini-flash-high 로 fallback 전환됨을 검증합니다."""
         def _mock_run(cmd, *args, **kwargs):
-            if "opencode-free" in cmd:
+            if "opencode/nemotron-3.5-lightning-free" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="Error: model unavailable")
             return MagicMock(returncode=0, stdout="ping ok", stderr="")
 
@@ -721,8 +744,8 @@ class TestFreePoolOptIn:
         res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=True)
         assert res.primary_available is False
         assert res.fallback_available is True
-        assert res.fallback_model == "codex"
-        assert any("대체 모델 codex 로 전환" in w for w in res.warnings)
+        assert res.fallback_model == "gemini-3.7-flash-high"
+        assert any("대체 모델 gemini-3.7-flash-high 로 전환" in w for w in res.warnings)
 
     def test_route_with_capsule_file_allow_free(self, tmp_path):
         """Capsule 파일을 통한 route 에서 allow_free 조건부 개방 검증."""
@@ -741,7 +764,7 @@ class TestFreePoolOptIn:
         res_ro = route(capsule_path=ro_capsule, allow_free=True, probe=False)
         assert res_ro.risk == "low"
         assert res_ro.role == "investigator"
-        assert res_ro.primary_model == "opencode-free"
+        assert res_ro.primary_model == "opencode/nemotron-3.5-lightning-free"
 
         # 쓰기 있는 Capsule
         rw_capsule = tmp_path / "investigator_rw.yaml"
@@ -757,7 +780,7 @@ class TestFreePoolOptIn:
             encoding="utf-8",
         )
         res_rw = route(capsule_path=rw_capsule, allow_free=True, probe=False)
-        assert res_rw.primary_model != "opencode-free"
+        assert res_rw.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("쓰기 권한" in w for w in res_rw.warnings)
 
     def test_cli_route_allow_free_json(self, tmp_path, capsys):
@@ -790,8 +813,8 @@ class TestFreePoolOptIn:
         ret = cmd_route(args)
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
-        assert data["primary_model"] == "opencode-free"
-        assert data["recommended"] == "opencode-free"
+        assert data["primary_model"] == "opencode/nemotron-3.5-lightning-free"
+        assert data["recommended"] == "opencode/nemotron-3.5-lightning-free"
         assert any("산출물 재검증 필수" in w for w in data["warnings"])
 
     def test_cli_classify_allow_free_json(self, tmp_path, capsys):
@@ -820,7 +843,7 @@ class TestFreePoolOptIn:
         ret = cmd_classify(args)
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
-        assert data["primary_model"] == "opencode-free"
+        assert data["primary_model"] == "opencode/nemotron-3.5-lightning-free"
 
     def test_list_command_includes_free_pool_guide(self, capsys):
         """CLI list 서브커맨드에서 조건부 개방 안내 문구가 출력되는지 검증."""
