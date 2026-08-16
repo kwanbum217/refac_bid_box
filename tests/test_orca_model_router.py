@@ -230,6 +230,45 @@ class TestProbeAndPreflight:
         assert "OK (종료 코드 0" in detail
         assert "UserWarning" in detail
 
+    def test_probe_failure_empty_stdout_with_zero_returncode(self, monkeypatch):
+        """종료 코드가 0이어도 stdout 이 비어 있으면 근거 없는 성공이므로 사용 불가로 판정합니다."""
+        mock_proc = MagicMock(returncode=0, stdout="", stderr="")
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
+
+        available, detail = probe_model("gemini-3.7-flash-high")
+        assert available is False
+        assert "응답 본문(stdout)이 비어 있습니다" in detail
+
+    def test_probe_failure_zero_returncode_with_stderr_error(self, monkeypatch):
+        """종료 코드가 0이어도 stderr 에 Error/Failed 가 있으면 거짓 양성을 방지하기 위해 사용 불가로 판정합니다."""
+        mock_proc = MagicMock(
+            returncode=0,
+            stdout="some text",
+            stderr="Error: Failed to change directory to /repo/ask",
+        )
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
+
+        available, detail = probe_model("codex")
+        assert available is False
+        assert "stderr 오류 발생" in detail
+
+    def test_probe_config_valid_signatures(self):
+        """probe_cmd 가 실제 존재하는 서브커맨드와 플래그를 사용하는지 검증합니다."""
+        opencode_cmd = PROBE_CONFIG["opencode"]["probe_cmd"]
+        assert opencode_cmd[0] == "opencode"
+        assert opencode_cmd[1] == "run"
+        assert "--model" in opencode_cmd or "-m" in opencode_cmd
+        assert "ask" not in opencode_cmd
+        assert "--prompt" not in opencode_cmd
+        assert opencode_cmd[-1] == "ping"
+
+        for provider in ("gemini", "claude"):
+            agy_cmd = PROBE_CONFIG[provider]["probe_cmd"]
+            assert agy_cmd[0] == "agy"
+            assert "--model" in agy_cmd
+            assert "--print" in agy_cmd
+            assert "--print-timeout" in agy_cmd
+
     def test_probe_failure_quota_exceeded(self, monkeypatch):
         mock_proc = MagicMock(returncode=1, stdout="", stderr="Error: RESOURCE_EXHAUSTED: quota exceeded 429")
         monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)

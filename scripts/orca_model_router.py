@@ -52,7 +52,7 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         "timeout": 20,
     },
     "opencode": {
-        "probe_cmd": ["opencode", "ask", "--model", "{model}", "--prompt", "ping"],
+        "probe_cmd": ["opencode", "run", "--model", "{model}", "ping"],
         "timeout": 15,
     },
 }
@@ -359,10 +359,18 @@ def probe_model(model_id: str, timeout: int = 30) -> tuple[bool, str]:
         return False, f"실행 파일 없음: {cmd[0]}"
 
     if proc.returncode == 0:
+        stdout_clean = proc.stdout.strip() if proc.stdout else ""
+        if not stdout_clean:
+            stderr_clean = proc.stderr.strip()[:200] if proc.stderr else "없음"
+            return False, f"probe 실패: 응답 본문(stdout)이 비어 있습니다. (stderr: {stderr_clean})"
+
         if proc.stderr and proc.stderr.strip():
+            stderr_lower = proc.stderr.lower()
+            if "error:" in stderr_lower or "failed to" in stderr_lower:
+                return False, f"probe 실패: 종료 코드는 0이나 stderr 오류 발생: {proc.stderr.strip()[:200]}"
             stderr_short = proc.stderr.strip().splitlines()[0][:100]
-            return True, f"OK (종료 코드 0, stderr: {stderr_short})"
-        return True, f"OK (종료 코드 0, {len(proc.stdout)}자)"
+            return True, f"OK (종료 코드 0, {len(stdout_clean)}자, stderr: {stderr_short})"
+        return True, f"OK (종료 코드 0, {len(stdout_clean)}자)"
 
     # 비정상 종료 시 원인 분류
     stderr_lower = proc.stderr.lower()
