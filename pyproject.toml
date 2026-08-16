@@ -101,6 +101,12 @@ ignore = [
 "src/app/api/v1/bids.py" = [
     "B904",  # HTTPException 재발생 시 raise from 생략
 ]
+"tests/fixtures/level3_reduction_rerun/*.py" = [
+    # Level 3 축소 실험의 채점 대상 픽스처입니다. 리뷰어가 찾아야 하는 결함을
+    # 의도적으로 심어 둔 파일이므로 내용을 손대면 사전 채점 규칙이 무효가 됩니다.
+    "S324",  # md5 사용. 픽스처 원문 보존
+    "UP017",  # datetime.timezone.utc 표기. 픽스처 원문 보존
+]
 "scripts/verify_servc_institution.py" = [
     "S608",  # 검증 전용 질의. 보간값은 모듈 상수뿐이며 외부 입력이 없습니다
 ]
