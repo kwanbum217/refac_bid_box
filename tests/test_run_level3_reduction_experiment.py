@@ -5,8 +5,6 @@ import subprocess
 from pathlib import Path
 
 from scripts.run_level3_reduction_experiment import (
-    CLEAN_FIXTURE,
-    DEFECTIVE_FIXTURE,
     LEGACY_FIXTURES_DIR,
     create_seeded_repo,
     main,
