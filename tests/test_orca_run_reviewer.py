@@ -7,6 +7,9 @@ import pytest
 
 from scripts.orca_contract import char_len
 from scripts.orca_run_reviewer import (
+    DEFAULT_MAX_DIFF_CHARS,
+    _extract_capsule_context,
+    build_prompt,
     extract_json_from_response,
     main,
     run_reviewer,
@@ -427,3 +430,85 @@ def test_main_cli_invocation(tmp_path, monkeypatch):
         ]
     )
     assert code == 0
+
+
+def test_default_max_diff_chars_is_20000():
+    """(12) DEFAULT_MAX_DIFF_CHARS 가 설계 권장값인 20000 이어야 합니다."""
+    assert DEFAULT_MAX_DIFF_CHARS == 20000
+
+
+def test_build_prompt_includes_how_field_when_present():
+    """(13) checklist 항목에 how 필드가 있으면 build_prompt 출력에 검증 방법(how) 이 포함됩니다."""
+    checklist = [
+        {
+            "id": "C1",
+            "question": "테스트가 모두 작성되었는가?",
+            "defect_when": "no",
+            "how": "tests/ 디렉터리에서 신규 함수 대응 테스트 파일 존재 확인",
+        }
+    ]
+    prompt = build_prompt(checklist=checklist, changed_files=[], diff_text="diff sample")
+    assert "검증 방법(how): tests/ 디렉터리에서 신규 함수 대응 테스트 파일 존재 확인" in prompt
+    assert "결함 조건(defect_when): no" in prompt
+
+
+def test_build_prompt_excludes_how_section_when_absent():
+    """(14) checklist 항목에 how 필드가 없으면 검증 방법 행 자체가 출력되지 않습니다."""
+    checklist = [
+        {"id": "C1", "question": "규칙을 준수하였는가?", "defect_when": "no"}
+    ]
+    prompt = build_prompt(checklist=checklist, changed_files=[], diff_text="diff sample")
+    assert "검증 방법(how):" not in prompt
+
+
+def test_build_prompt_includes_capsule_context_fields():
+    """(15) capsule_context 에 objective, acceptance, ground_truth, allowed_write_files 가 있으면
+    프롬프트에 Task 컨텍스트 섹션과 해당 값들이 포함됩니다."""
+    checklist = [{"id": "C1", "question": "Q?", "defect_when": "no"}]
+    context = {
+        "objective": "objective: 리뷰어 프롬프트를 개선한다",
+        "acceptance": "acceptance:\n  - build_prompt 출력에 how 포함",
+        "ground_truth": "ground_truth:\n  - fact: DEFAULT_MAX_DIFF_CHARS = 20000",
+        "allowed_write_files": "allowed_write_files:\n  - scripts/orca_run_reviewer.py",
+    }
+    prompt = build_prompt(
+        checklist=checklist,
+        changed_files=[],
+        diff_text="diff sample",
+        capsule_context=context,
+    )
+    assert "=== Task 컨텍스트 ===" in prompt
+    assert "objective: 리뷰어 프롬프트를 개선한다" in prompt
+    assert "acceptance:" in prompt
+    assert "ground_truth:" in prompt
+    assert "allowed_write_files:" in prompt
+
+
+def test_extract_capsule_context_extracts_known_fields():
+    """(16) _extract_capsule_context 가 objective, acceptance, ground_truth, allowed_write_files 를 추출합니다."""
+    capsule_yaml = """schema: ORCA_TASK_CAPSULE_V2
+objective: >
+  리뷰어 프롬프트 개선
+
+acceptance:
+  - build_prompt 출력에 how 포함
+  - DEFAULT_MAX_DIFF_CHARS == 20000
+
+ground_truth:
+  - fact: "DEFAULT_MAX_DIFF_CHARS = 60000"
+
+allowed_write_files:
+  - scripts/orca_run_reviewer.py
+
+review_checklist:
+  - id: "C1"
+    question: "Q?"
+    defect_when: "no"
+"""
+    ctx = _extract_capsule_context(capsule_yaml)
+    assert "objective" in ctx
+    assert "acceptance" in ctx
+    assert "ground_truth" in ctx
+    assert "allowed_write_files" in ctx
+    assert "리뷰어 프롬프트 개선" in ctx["objective"]
+    assert "scripts/orca_run_reviewer.py" in ctx["allowed_write_files"]

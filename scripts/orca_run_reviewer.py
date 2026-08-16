@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Callable
@@ -36,7 +37,7 @@ except (ModuleNotFoundError, ImportError):
 DEFAULT_MODEL = "gemini-3.7-flash-high"
 DEFAULT_MODEL_TIMEOUT = 600
 DEFAULT_GIT_TIMEOUT = 10
-DEFAULT_MAX_DIFF_CHARS = 60000
+DEFAULT_MAX_DIFF_CHARS = 20000
 DEFAULT_MAX_CHARS = 1500
 
 
@@ -104,12 +105,47 @@ def get_git_diff_and_files(
     return changed_files, stdout
 
 
+def _extract_capsule_context(capsule_text: str) -> dict[str, str]:
+    """Capsule 에서 Reviewer 판단에 필요한 핵심 필드를 raw 블록 텍스트로 추출합니다.
+
+    objective, acceptance, ground_truth, allowed_write_files 만 compact 하게 추출합니다.
+    PyYAML 을 사용하지 않고 최상위 키의 들여쓰기 블록을 그대로 반환합니다.
+    """
+    target_keys = ("objective", "acceptance", "ground_truth", "allowed_write_files")
+    context: dict[str, str] = {}
+    lines = capsule_text.splitlines()
+    total = len(lines)
+
+    for key in target_keys:
+        start_idx = -1
+        for i, line in enumerate(lines):
+            if re.match(rf"^{re.escape(key)}:\s*", line):
+                start_idx = i
+                break
+        if start_idx == -1:
+            continue
+
+        end_idx = total
+        for j in range(start_idx + 1, total):
+            raw = lines[j]
+            if raw and not raw[0].isspace() and not raw.startswith("#"):
+                end_idx = j
+                break
+
+        block = "\n".join(lines[start_idx:end_idx]).strip()
+        if block:
+            context[key] = block
+
+    return context
+
+
 def build_prompt(
     checklist: list[dict[str, str]],
     changed_files: list[str],
     diff_text: str,
     diff_truncated: bool = False,
     max_diff_chars: int = DEFAULT_MAX_DIFF_CHARS,
+    capsule_context: dict[str, Any] | None = None,
 ) -> str:
     """리뷰어에게 전달할 프롬프트를 조립합니다."""
     checklist_lines: list[str] = []
@@ -117,7 +153,11 @@ def build_prompt(
         c_id = item.get("id", "")
         q = item.get("question", "")
         d = item.get("defect_when", "")
-        checklist_lines.append(f"- ID: {c_id}\n  질문: {q}\n  결함 조건(defect_when): {d}")
+        h = item.get("how", "")
+        entry = f"- ID: {c_id}\n  질문: {q}\n  결함 조건(defect_when): {d}"
+        if h:
+            entry += f"\n  검증 방법(how): {h}"
+        checklist_lines.append(entry)
 
     checklist_formatted = "\n".join(checklist_lines)
     files_formatted = (
@@ -128,6 +168,16 @@ def build_prompt(
     if diff_truncated:
         diff_header = f"\n[주의: diff 본문이 최대 허용 크기({max_diff_chars}자)를 초과하여 뒷부분이 절단되었습니다.]\n"
 
+    context_section = ""
+    if capsule_context:
+        ctx_parts: list[str] = []
+        for key in ("objective", "acceptance", "ground_truth", "allowed_write_files"):
+            val = capsule_context.get(key, "")
+            if val:
+                ctx_parts.append(val)
+        if ctx_parts:
+            context_section = "\n=== Task 컨텍스트 ===\n" + "\n\n".join(ctx_parts) + "\n"
+
     prompt = f"""당신은 refac_bid_box 프로젝트의 독립 코드 리뷰어(Level 2 Reviewer)입니다.
 제공된 git diff 와 변경 파일 목록을 면밀히 검토하고, 아래 review_checklist 의 모든 항목에 대해 엄격하게 평가하십시오.
 
@@ -136,7 +186,7 @@ def build_prompt(
 
 === 검토 대상 Git Diff ==={diff_header}
 {diff_text}
-
+{context_section}
 === 검토 체크리스트 (review_checklist) ===
 {checklist_formatted}
 
@@ -354,6 +404,8 @@ def run_reviewer(
             return 2, json.dumps({"error": err_msg, "exit_code": 2}, ensure_ascii=False, indent=2)
         return 2, f"오류: {err_msg}"
 
+    capsule_context = _extract_capsule_context(capsule_text)
+
     # 2. git diff 및 변경 파일 조회
     try:
         changed_files, diff_raw = get_git_diff_and_files(
@@ -383,6 +435,7 @@ def run_reviewer(
         diff_text=diff_text,
         diff_truncated=diff_truncated,
         max_diff_chars=max_diff_chars,
+        capsule_context=capsule_context,
     )
 
     # 5. dry-run 처리
