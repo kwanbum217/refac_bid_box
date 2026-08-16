@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -58,6 +59,10 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
     "codex": {
         "probe_cmd": ["codex", "exec", "ping"],
         "timeout": 30,
+    },
+    "cerebras": {
+        "probe_cmd": ["opencode", "run", "--model", "{model}", "ping"],
+        "timeout": 20,
     },
 }
 
@@ -137,6 +142,17 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         ],
         "notes": "실패해도 손실 없는 병렬 조사. 임계 경로 금지 (allow_free 조건부 개방). fallback 후보: opencode/deepseek-v4-flash-free.",
     },
+    "cerebras-oss": {
+        "id": "cerebras/gpt-oss-120b",
+        "provider": "cerebras",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 65536,
+        "suitable_for": [
+            "investigator",
+        ],
+        "notes": "컨텍스트 65536 출력 8192 제한. Capsule 범위 작업 전용.",
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -145,7 +161,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 
 FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator"})
 FREE_POOL_MAX_RISK: str = "low"
-FREE_POOL_ORDER: list[str] = ["opencode-free"]
+FREE_POOL_ORDER: list[str] = ["opencode-free", "cerebras-oss"]
 
 # ---------------------------------------------------------------------------
 # 위험도 분류 기준
@@ -387,7 +403,63 @@ def select_model(
 # ---------------------------------------------------------------------------
 
 
-def probe_model(model_id: str, timeout: int = 30) -> tuple[bool, str]:
+def load_repo_env(repo_root: Path | str | None = None) -> dict[str, str]:
+    """저장소 루트의 .env 파일에서 환경변수를 표준 라이브러리로 파싱합니다.
+
+    보안 규칙: 파싱된 키 값은 로그, 예외 메시지, 주석, 문서에 노출하지 않습니다.
+    """
+    target_dir = Path(__file__).resolve().parent.parent if repo_root is None else Path(repo_root)
+
+    env_path = target_dir / ".env"
+    if not env_path.is_file():
+        return {}
+
+    env_vars: dict[str, str] = {}
+    try:
+        content = env_path.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip()
+                if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                    val = val[1:-1]
+                if key:
+                    env_vars[key] = val
+    except Exception:
+        return {}
+
+    return env_vars
+
+
+def build_probe_env(repo_root: Path | str | None = None) -> tuple[dict[str, str], list[str]]:
+    """probe 실행 시 주입할 환경변수 딕셔너리와 환경변수 상태 메시지를 반환합니다.
+
+    보안 규칙: API 키 값은 로그, 예외 메시지, stdout, 주석, 문서 중 어디에도 출력하지 않습니다.
+    키가 없을 때는 값 대신 'CEREBRAS_API_KEY 미설정'이라는 사실만 알립니다.
+    """
+    env = os.environ.copy()
+    status_messages: list[str] = []
+
+    repo_env = load_repo_env(repo_root)
+    cerebras_key = repo_env.get("CEREBRAS_API_KEY") or env.get("CEREBRAS_API_KEY")
+
+    if cerebras_key:
+        env["CEREBRAS_API_KEY"] = cerebras_key
+    else:
+        status_messages.append("CEREBRAS_API_KEY 미설정")
+
+    return env, status_messages
+
+
+def probe_model(
+    model_id: str,
+    timeout: int = 30,
+    repo_root: Path | str | None = None,
+) -> tuple[bool, str]:
     """모델이 실제로 호출 가능한지 확인합니다.
 
     반환값: (available: bool, detail: str)
@@ -407,12 +479,18 @@ def probe_model(model_id: str, timeout: int = 30) -> tuple[bool, str]:
             provider = "claude"
         elif "codex" in model_id.lower():
             provider = "codex"
+        elif "cerebras" in model_id.lower():
+            provider = "cerebras"
         else:
             provider = "opencode"
 
     probe_info = PROBE_CONFIG.get(provider)
     if probe_info is None:
         return False, f"알 수 없는 provider: {provider}"
+
+    probe_env, env_status = build_probe_env(repo_root)
+    if provider == "cerebras" and "CEREBRAS_API_KEY 미설정" in env_status:
+        return False, "probe 실패: CEREBRAS_API_KEY 미설정"
 
     cmd_template = probe_info["probe_cmd"]
     cmd = [arg.format(model=model_id) for arg in cmd_template]
@@ -425,6 +503,7 @@ def probe_model(model_id: str, timeout: int = 30) -> tuple[bool, str]:
             text=True,
             timeout=probe_timeout,
             check=False,
+            env=probe_env,
         )
     except subprocess.TimeoutExpired:
         return False, f"probe 타임아웃 ({probe_timeout}초)"
@@ -452,7 +531,7 @@ def probe_model(model_id: str, timeout: int = 30) -> tuple[bool, str]:
 
     if "quota" in combined or "resource_exhausted" in combined or "429" in combined:
         detail = f"할당량 초과 (quota exceeded): {proc.stderr.strip()[:200]}"
-    elif any(k in combined for k in ("unauthorized", "unauthenticated", "forbidden", "auth", "api_key", "401", "403")):
+    elif any(k in combined for k in ("unauthorized", "unauthenticated", "forbidden", "auth", "api_key", "wrong api key", "401", "403")):
         detail = f"인증 실패 (auth failed): {proc.stderr.strip()[:200]}"
     elif "not found" in combined or "no such file" in combined:
         detail = f"모델 또는 명령어 없음: {proc.stderr.strip()[:200]}"
@@ -462,13 +541,18 @@ def probe_model(model_id: str, timeout: int = 30) -> tuple[bool, str]:
     return False, detail
 
 
-def preflight(model_id: str, timeout: int = 30) -> tuple[bool, list[str]]:
+def preflight(
+    model_id: str,
+    timeout: int = 30,
+    repo_root: Path | str | None = None,
+) -> tuple[bool, list[str]]:
     """Dispatch 전 모델의 가용성과 정책 적합성을 검사합니다.
 
     확인 항목:
       1. 코디네이터 전용 모델 거부
       2. 등록된 풀 여부 확인
-      3. 모델 probe 호출 검증
+      3. 컨텍스트 한도 경고 (200,000 미만)
+      4. 모델 probe 호출 검증
 
     반환값: (passed: bool, warnings: list[str])
     """
@@ -488,11 +572,21 @@ def preflight(model_id: str, timeout: int = 30) -> tuple[bool, list[str]]:
 
     if found_pool is None:
         warnings.append(f"경고: 등록되지 않은 모델 ID입니다: {model_id}")
-    elif found_pool["tier"] == "free":
-        warnings.append("주의: 무료 모델 풀입니다. 임계 경로 작업에는 사용하지 마십시오.")
+    else:
+        if found_pool["tier"] == "free":
+            warnings.append("주의: 무료 모델 풀입니다. 임계 경로 작업에는 사용하지 마십시오.")
+        if (
+            found_pool.get("tier") in ("free", "secondary")
+            and found_pool.get("max_tokens") is not None
+            and found_pool["max_tokens"] < 200_000
+        ):
+            warnings.append(
+                f"주의: 선택된 모델({found_pool['id']})의 최대 컨텍스트({found_pool['max_tokens']} 토큰)가 200,000 미만입니다. "
+                "Capsule 과 diff 를 그 한도 안에 유지해야 합니다."
+            )
 
     # 3. probe 검증
-    available, detail = probe_model(model_id, timeout)
+    available, detail = probe_model(model_id, timeout, repo_root)
     if not available:
         warnings.append(f"주 모델 {model_id} 사용 불가: {detail}")
         return False, warnings
@@ -564,6 +658,17 @@ def route(
 
     if primary_pool_info and primary_pool_info["tier"] == "free":
         warnings.append("주의: 무료 모델 풀이 주 모델로 선택되었습니다. 산출물 재검증 필수이며 임계 경로 금지입니다.")
+
+    if (
+        primary_pool_info
+        and primary_pool_info.get("tier") in ("free", "secondary")
+        and primary_pool_info.get("max_tokens") is not None
+        and primary_pool_info["max_tokens"] < 200_000
+    ):
+        warnings.append(
+            f"주의: 선택된 모델({primary_pool_info['id']})의 최대 컨텍스트({primary_pool_info['max_tokens']} 토큰)가 200,000 미만입니다. "
+            "Capsule 과 diff 를 그 한도 안에 유지해야 합니다."
+        )
 
     primary_available = True
     fallback_available = None

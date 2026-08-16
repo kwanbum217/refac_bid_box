@@ -28,6 +28,7 @@ from scripts.orca_model_router import (
     PROBE_CONFIG,
     RISK_KEYWORDS,
     RouteResult,
+    build_probe_env,
     capsule_has_write_scope,
     classify_from_capsule,
     classify_risk,
@@ -38,6 +39,7 @@ from scripts.orca_model_router import (
     cmd_route,
     free_pool_eligibility,
     is_coordinator_model,
+    load_repo_env,
     main,
     preflight,
     probe_model,
@@ -208,7 +210,7 @@ class TestModelPoolAndSelection:
         non_auto_pools = {name for name, info in MODEL_POOL.items() if not info["auto_selectable"]}
 
         assert auto_pools == {"gemini-flash-high", "gemini-flash-medium", "claude-sonnet"}
-        assert non_auto_pools == {"claude-opus", "codex", "opencode-free"}
+        assert non_auto_pools == {"claude-opus", "codex", "opencode-free", "cerebras-oss"}
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +272,12 @@ class TestProbeAndPreflight:
         codex_cmd = PROBE_CONFIG["codex"]["probe_cmd"]
         assert codex_cmd == ["codex", "exec", "ping"]
         assert PROBE_CONFIG["codex"]["timeout"] == 30
+
+        cerebras_cmd = PROBE_CONFIG["cerebras"]["probe_cmd"]
+        assert cerebras_cmd[0] == "opencode"
+        assert cerebras_cmd[1] == "run"
+        assert "--model" in cerebras_cmd
+        assert PROBE_CONFIG["cerebras"]["timeout"] == 20
 
         for provider in ("gemini", "claude"):
             agy_cmd = PROBE_CONFIG[provider]["probe_cmd"]
@@ -408,7 +416,7 @@ class TestRoute:
         assert len(info["reasons"]) > 0
 
     def test_probe_config_providers(self):
-        for provider in ("gemini", "claude", "opencode", "codex"):
+        for provider in ("gemini", "claude", "opencode", "codex", "cerebras"):
             assert provider in PROBE_CONFIG
             assert "probe_cmd" in PROBE_CONFIG[provider]
             assert "timeout" in PROBE_CONFIG[provider]
@@ -583,7 +591,7 @@ class TestFreePoolOptIn:
     def test_free_pool_constants(self):
         assert frozenset({"investigator"}) == FREE_POOL_ELIGIBLE_ROLES
         assert FREE_POOL_MAX_RISK == "low"
-        assert FREE_POOL_ORDER == ["opencode-free"]
+        assert FREE_POOL_ORDER == ["opencode-free", "cerebras-oss"]
         assert "codex" not in FREE_POOL_ORDER
 
     def test_free_model_id_and_provider_properties(self):
@@ -599,6 +607,62 @@ class TestFreePoolOptIn:
         assert codex_info["provider"] == "codex"
         assert codex_info["tier"] == "secondary"
         assert codex_info["auto_selectable"] is False
+
+    def test_cerebras_pool_properties(self):
+        """cerebras-oss 풀의 속성, ID 형식 및 메타데이터 검증."""
+        c_info = MODEL_POOL["cerebras-oss"]
+        assert "/" in c_info["id"]
+        assert c_info["id"] == "cerebras/gpt-oss-120b"
+        assert c_info["provider"] == "cerebras"
+        assert c_info["tier"] == "free"
+        assert c_info["auto_selectable"] is False
+        assert c_info["max_tokens"] == 65536
+        assert "65536" in c_info["notes"]
+        assert "8192" in c_info["notes"]
+        assert "Capsule" in c_info["notes"]
+
+    def test_env_injection_and_secret_redaction(self, tmp_path, monkeypatch):
+        """환경변수 주입 시 키 값이 로그나 메시지에 노출되지 않고 미설정 사실만 안전하게 전달되는지 검증."""
+        # 1. 가상 키가 설정된 경우 (.env 파싱 및 주입)
+        fake_key = "test_cerebras_secret_key_abcdef123456"
+        env_file = tmp_path / ".env"
+        env_file.write_text(f'CEREBRAS_API_KEY="{fake_key}"\nOTHER_KEY="foo"\n', encoding="utf-8")
+
+        repo_vars = load_repo_env(tmp_path)
+        assert repo_vars["CEREBRAS_API_KEY"] == fake_key
+
+        env, status = build_probe_env(tmp_path)
+        assert env["CEREBRAS_API_KEY"] == fake_key
+        assert fake_key not in str(status)
+
+        # 2. 키가 미설정된 경우
+        empty_dir = tmp_path / "empty_repo"
+        empty_dir.mkdir()
+        monkeypatch.delenv("CEREBRAS_API_KEY", raising=False)
+
+        _env_empty, status_empty = build_probe_env(empty_dir)
+        assert "CEREBRAS_API_KEY 미설정" in status_empty
+        assert fake_key not in str(status_empty)
+
+        # 3. 키 미설정 상태에서 cerebras probe 호출 시 미설정 에러 메시지 반환 검증
+        ok, detail = probe_model("cerebras/gpt-oss-120b", repo_root=empty_dir)
+        assert ok is False
+        assert "CEREBRAS_API_KEY 미설정" in detail
+        assert fake_key not in detail
+
+    def test_small_context_limit_warning(self, monkeypatch):
+        """max_tokens 가 200,000 미만인 풀 선택 시 한도 경고 및 Capsule/diff 유지 경고가 발행되는지 검증."""
+        mock_proc = MagicMock(returncode=0, stdout="ping ok", stderr="")
+        monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
+
+        # preflight 검증
+        passed, warnings = preflight("cerebras/gpt-oss-120b")
+        assert passed is True
+        assert any("200,000 미만" in w and "Capsule 과 diff" in w for w in warnings)
+
+        # route 검증
+        res = route(explicit_model="cerebras/gpt-oss-120b", probe=False)
+        assert any("200,000 미만" in w and "Capsule 과 diff" in w for w in res.warnings)
 
     def test_capsule_has_write_scope_scenarios(self, tmp_path):
         """allowed_write_files 여부에 따른 쓰기 범위 판정 및 fail-closed 검증."""
@@ -681,12 +745,12 @@ class TestFreePoolOptIn:
                     assert res["fallback_model"] != "opencode/nemotron-3.5-lightning-free"
 
     def test_allow_free_true_investigator_low_risk_no_write_scope_selects_opencode_free(self):
-        """allow_free=True, investigator, low, 쓰기 없음 조합에서 주 모델로 opencode/nemotron-3.5-lightning-free 가 선택됩니다."""
+        """allow_free=True, investigator, low, 쓰기 없음 조합에서 주 모델로 opencode/nemotron-3.5-lightning-free 가 선택되고 fallback 으로 cerebras/gpt-oss-120b 가 지정됩니다."""
         res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
         assert res["primary_pool"] == "opencode-free"
         assert res["primary_model"] == "opencode/nemotron-3.5-lightning-free"
-        assert res["fallback_pool"] == "gemini-flash-high"
-        assert res["fallback_model"] == "gemini-3.7-flash-high"
+        assert res["fallback_pool"] == "cerebras-oss"
+        assert res["fallback_model"] == "cerebras/gpt-oss-120b"
 
     def test_allow_free_true_builder_rejected_with_warning(self):
         """allow_free=True 여도 builder 역할은 무료 풀이 거부되고 경고 사유가 기록됩니다."""
@@ -733,7 +797,7 @@ class TestFreePoolOptIn:
         assert res["fallback_model"] != "claude-opus-5"
 
     def test_route_free_pool_primary_fail_fallback(self, monkeypatch):
-        """opencode-free 가 probe 실패하면 gemini-flash-high 로 fallback 전환됨을 검증합니다."""
+        """opencode-free 가 probe 실패하면 cerebras-oss 로 fallback 전환됨을 검증합니다."""
         def _mock_run(cmd, *args, **kwargs):
             if "opencode/nemotron-3.5-lightning-free" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="Error: model unavailable")
@@ -741,11 +805,12 @@ class TestFreePoolOptIn:
 
         monkeypatch.setattr(subprocess, "run", _mock_run)
 
+        # tmp_path 에 cerebras 키 설정
         res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=True)
         assert res.primary_available is False
         assert res.fallback_available is True
-        assert res.fallback_model == "gemini-3.7-flash-high"
-        assert any("대체 모델 gemini-3.7-flash-high 로 전환" in w for w in res.warnings)
+        assert res.fallback_model == "cerebras/gpt-oss-120b"
+        assert any("대체 모델 cerebras/gpt-oss-120b 로 전환" in w for w in res.warnings)
 
     def test_route_with_capsule_file_allow_free(self, tmp_path):
         """Capsule 파일을 통한 route 에서 allow_free 조건부 개방 검증."""
