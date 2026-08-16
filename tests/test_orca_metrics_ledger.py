@@ -553,3 +553,439 @@ def test_collect_numeric_excludes_boolean() -> None:
     """결함 7: _collect_numeric 은 bool 타입을 수치 값으로 집계하지 않고 제외합니다."""
     rows = [{"val": True}, {"val": False}]
     assert _collect_numeric(rows, "val") == []
+
+
+# --------------------------------------------------------------------------
+# (10) --usage-since 없이 기록 시 토큰 및 사용량 메타데이터 모두 null
+# --------------------------------------------------------------------------
+
+
+def test_record_without_usage_since_has_null_fields(
+    capsule_file: Path, report_file: Path, ledger_file: Path
+) -> None:
+    rc = run_record(capsule_file, report_file, ledger_file)
+    assert rc == 0
+
+    rows, corrupt = _load_rows(ledger_file)
+    assert corrupt == 0
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["coordinator_fresh_input_tokens"] is None
+    assert row["coordinator_input_tokens"] is None
+    assert row["coordinator_output_tokens"] is None
+    assert row["usage_lookup_status"] is None
+    assert row["usage_window_start"] is None
+    assert row["usage_window_end"] is None
+    assert row["usage_concurrent_dispatches"] is None
+
+
+# --------------------------------------------------------------------------
+# (11) --usage-since 지정 시 트랜스크립트 자동 계산 및 메타데이터 기록
+# --------------------------------------------------------------------------
+
+
+def test_record_with_usage_since_calculates_and_records(
+    capsule_file: Path, report_file: Path, ledger_file: Path, tmp_path: Path
+) -> None:
+    trans_dir = tmp_path / "trans"
+    trans_dir.mkdir()
+
+    sess_file = trans_dir / "sess.jsonl"
+    sess_file.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-16T10:00:00Z",
+                "message": {
+                    "id": "m1",
+                    "role": "assistant",
+                    "usage": {
+                        "input_tokens": 100,
+                        "cache_creation_input_tokens": 500,
+                        "cache_read_input_tokens": 1000,
+                        "output_tokens": 250,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    argv = [
+        "--ledger",
+        str(ledger_file),
+        "record",
+        "--run",
+        "run_test123",
+        "--task",
+        "task_usage_01",
+        "--dispatch",
+        "ctx_usage_01",
+        "--role",
+        "builder",
+        "--model",
+        "test-model",
+        "--capsule",
+        str(capsule_file),
+        "--report",
+        str(report_file),
+        "--usage-since",
+        "2026-08-16T09:00:00Z",
+        "--usage-until",
+        "2026-08-16T11:00:00Z",
+        "--usage-concurrent-dispatches",
+        "1",
+        "--usage-transcript-dir",
+        str(trans_dir),
+    ]
+
+    rc = main(argv)
+    assert rc == 0
+
+    rows, corrupt = _load_rows(ledger_file)
+    assert corrupt == 0
+    assert len(rows) == 1
+    row = rows[0]
+    # fresh = 100 + 500 = 600, total = 100 + 500 + 1000 = 1600, output = 250
+    assert row["coordinator_fresh_input_tokens"] == 600
+    assert row["coordinator_input_tokens"] == 1600
+    assert row["coordinator_output_tokens"] == 250
+    assert row["usage_lookup_status"] == "ok"
+    assert row["usage_window_start"] == "2026-08-16T09:00:00Z"
+    assert row["usage_window_end"] == "2026-08-16T11:00:00Z"
+    assert row["usage_concurrent_dispatches"] == 1
+
+
+# --------------------------------------------------------------------------
+# (12) 세션 선택 규칙 검증: 기본 최신 1개 vs --usage-all-sessions vs --usage-session
+# --------------------------------------------------------------------------
+
+
+def test_record_session_selection_rules(
+    capsule_file: Path, report_file: Path, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    trans_dir = tmp_path / "multi_sessions"
+    trans_dir.mkdir()
+
+    old_file = trans_dir / "sess_old.jsonl"
+    old_file.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-16T10:00:00Z",
+                "message": {
+                    "id": "m_old",
+                    "role": "assistant",
+                    "usage": {
+                        "input_tokens": 50,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "output_tokens": 10,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    new_file = trans_dir / "sess_new.jsonl"
+    new_file.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-16T10:00:00Z",
+                "message": {
+                    "id": "m_new",
+                    "role": "assistant",
+                    "usage": {
+                        "input_tokens": 100,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "output_tokens": 20,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # (1) 기본: 최신 1개 세션(sess_new.jsonl)만 집계
+    ledger1 = tmp_path / "ledger1.jsonl"
+    argv1 = [
+        "--ledger",
+        str(ledger1),
+        "record",
+        "--run",
+        "run1",
+        "--task",
+        "task1",
+        "--dispatch",
+        "ctx1",
+        "--role",
+        "builder",
+        "--model",
+        "m1",
+        "--capsule",
+        str(capsule_file),
+        "--report",
+        str(report_file),
+        "--usage-since",
+        "2026-08-16T00:00:00Z",
+        "--usage-transcript-dir",
+        str(trans_dir),
+    ]
+    assert main(argv1) == 0
+    captured = capsys.readouterr()
+    assert "sess_new.jsonl" in captured.err
+
+    rows1, _ = _load_rows(ledger1)
+    assert rows1[0]["coordinator_fresh_input_tokens"] == 100
+
+    # (2) --usage-all-sessions: 2개 모두 합산 (50 + 100 = 150)
+    ledger2 = tmp_path / "ledger2.jsonl"
+    argv2 = [
+        "--ledger",
+        str(ledger2),
+        "record",
+        "--run",
+        "run2",
+        "--task",
+        "task2",
+        "--dispatch",
+        "ctx2",
+        "--role",
+        "builder",
+        "--model",
+        "m1",
+        "--capsule",
+        str(capsule_file),
+        "--report",
+        str(report_file),
+        "--usage-since",
+        "2026-08-16T00:00:00Z",
+        "--usage-all-sessions",
+        "--usage-transcript-dir",
+        str(trans_dir),
+    ]
+    assert main(argv2) == 0
+    rows2, _ = _load_rows(ledger2)
+    assert rows2[0]["coordinator_fresh_input_tokens"] == 150
+
+    # (3) --usage-session sess_old: 지정 세션만 집계 (50)
+    ledger3 = tmp_path / "ledger3.jsonl"
+    argv3 = [
+        "--ledger",
+        str(ledger3),
+        "record",
+        "--run",
+        "run3",
+        "--task",
+        "task3",
+        "--dispatch",
+        "ctx3",
+        "--role",
+        "builder",
+        "--model",
+        "m1",
+        "--capsule",
+        str(capsule_file),
+        "--report",
+        str(report_file),
+        "--usage-since",
+        "2026-08-16T00:00:00Z",
+        "--usage-session",
+        "sess_old",
+        "--usage-transcript-dir",
+        str(trans_dir),
+    ]
+    assert main(argv3) == 0
+    rows3, _ = _load_rows(ledger3)
+    assert rows3[0]["coordinator_fresh_input_tokens"] == 50
+
+
+# --------------------------------------------------------------------------
+# (13) usage_lookup_status 상태값 검증 (no_transcript_dir, no_session_file, empty_window)
+# --------------------------------------------------------------------------
+
+
+def test_record_usage_lookup_status_variations(
+    capsule_file: Path, report_file: Path, tmp_path: Path
+) -> None:
+    # 1. no_transcript_dir
+    non_dir = tmp_path / "does_not_exist_dir"
+    ledger1 = tmp_path / "ledger_no_dir.jsonl"
+    argv1 = [
+        "--ledger",
+        str(ledger1),
+        "record",
+        "--run",
+        "run1",
+        "--task",
+        "t1",
+        "--dispatch",
+        "d1",
+        "--role",
+        "builder",
+        "--model",
+        "m1",
+        "--capsule",
+        str(capsule_file),
+        "--report",
+        str(report_file),
+        "--usage-since",
+        "2026-08-16T00:00:00Z",
+        "--usage-transcript-dir",
+        str(non_dir),
+    ]
+    assert main(argv1) == 0
+    rows1, _ = _load_rows(ledger1)
+    assert rows1[0]["usage_lookup_status"] == "no_transcript_dir"
+    assert rows1[0]["coordinator_fresh_input_tokens"] is None
+
+    # 2. no_session_file
+    empty_dir = tmp_path / "empty_dir"
+    empty_dir.mkdir()
+    ledger2 = tmp_path / "ledger_no_sess.jsonl"
+    argv2 = [
+        "--ledger",
+        str(ledger2),
+        "record",
+        "--run",
+        "run2",
+        "--task",
+        "t2",
+        "--dispatch",
+        "d2",
+        "--role",
+        "builder",
+        "--model",
+        "m1",
+        "--capsule",
+        str(capsule_file),
+        "--report",
+        str(report_file),
+        "--usage-since",
+        "2026-08-16T00:00:00Z",
+        "--usage-transcript-dir",
+        str(empty_dir),
+    ]
+    assert main(argv2) == 0
+    rows2, _ = _load_rows(ledger2)
+    assert rows2[0]["usage_lookup_status"] == "no_session_file"
+    assert rows2[0]["coordinator_fresh_input_tokens"] is None
+
+    # 3. empty_window
+    sess_dir = tmp_path / "has_sess"
+    sess_dir.mkdir()
+    (sess_dir / "sess.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-08-16T10:00:00Z",
+                "message": {
+                    "id": "m1",
+                    "role": "assistant",
+                    "usage": {"input_tokens": 10, "output_tokens": 5},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    ledger3 = tmp_path / "ledger_empty_win.jsonl"
+    argv3 = [
+        "--ledger",
+        str(ledger3),
+        "record",
+        "--run",
+        "run3",
+        "--task",
+        "t3",
+        "--dispatch",
+        "d3",
+        "--role",
+        "builder",
+        "--model",
+        "m1",
+        "--capsule",
+        str(capsule_file),
+        "--report",
+        str(report_file),
+        "--usage-since",
+        "2026-08-17T00:00:00Z",  # 미래 창 지정 -> 0건
+        "--usage-transcript-dir",
+        str(sess_dir),
+    ]
+    assert main(argv3) == 0
+    rows3, _ = _load_rows(ledger3)
+    assert rows3[0]["usage_lookup_status"] == "empty_window"
+    assert rows3[0]["coordinator_fresh_input_tokens"] is None
+
+
+# --------------------------------------------------------------------------
+# (14) usage_concurrent_dispatches >= 2 행은 summary 코디네이터 토큰 집계에서 제외
+# --------------------------------------------------------------------------
+
+
+def test_summary_excludes_concurrent_dispatches_from_coordinator_tokens(
+    ledger_file: Path, capsys: pytest.CaptureFixture
+) -> None:
+    rows = [
+        # 단독 실행 Dispatch (집계 대상)
+        {
+            "ledger_schema": LEDGER_SCHEMA,
+            "recorded_at": "2026-08-16T09:00:00+09:00",
+            "task_id": "t1",
+            "dispatch_id": "d1",
+            "role": "builder",
+            "model": "m1",
+            "capsule_chars": 1000,
+            "report_chars": 500,
+            "coordinator_fresh_input_tokens": 500,
+            "coordinator_input_tokens": 1000,
+            "coordinator_output_tokens": 200,
+            "usage_concurrent_dispatches": 1,
+        },
+        # 동시 실행 공유 Dispatch (코디네이터 토큰 집계 제외 대상)
+        {
+            "ledger_schema": LEDGER_SCHEMA,
+            "recorded_at": "2026-08-16T10:00:00+09:00",
+            "task_id": "t2",
+            "dispatch_id": "d2",
+            "role": "builder",
+            "model": "m1",
+            "capsule_chars": 2000,
+            "report_chars": 800,
+            "coordinator_fresh_input_tokens": 2500,
+            "coordinator_input_tokens": 5000,
+            "coordinator_output_tokens": 1000,
+            "usage_concurrent_dispatches": 2,
+        },
+    ]
+    _write_raw_rows(ledger_file, rows)
+
+    rc = main(["--ledger", str(ledger_file), "summary", "--json"])
+    assert rc == 0
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert data["concurrent_excluded_rows"] == 1
+    # coordinator_fresh_input_tokens: t2 가 제외되어 유효 행 수 1건, 값은 t1 의 500.0
+    assert data["metrics"]["coordinator_fresh_input_tokens"]["valid_count"] == 1
+    assert data["metrics"]["coordinator_fresh_input_tokens"]["mean"] == 500.0
+    # coordinator_input_tokens: t2 가 제외되어 유효 행 수 1건, 값은 t1 의 1000.0
+    assert data["metrics"]["coordinator_input_tokens"]["valid_count"] == 1
+    assert data["metrics"]["coordinator_input_tokens"]["mean"] == 1000.0
+    # 일반 지표(capsule_chars 등)는 2건 모두 포함
+    assert data["metrics"]["capsule_chars"]["valid_count"] == 2
+
+    # 사람용 출력 검증
+    rc_text = main(["--ledger", str(ledger_file), "summary"])
+    assert rc_text == 0
+    cap_text = capsys.readouterr()
+    assert "coordinator_fresh_input_tokens" in cap_text.out
+    assert "대표 지표" in cap_text.out
+    assert "99.5%" in cap_text.out
+
+
+
