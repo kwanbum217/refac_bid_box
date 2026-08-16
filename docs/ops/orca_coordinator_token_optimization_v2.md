@@ -1,8 +1,9 @@
 # Orca Coordinator Token Optimization v2
 
 > **작성일**: 2026-08-14
+> **수정일**: 2026-08-16
 > **대상 저장소**: `refac_bid_box`
-> **상태**: 구현 승인용 설계안
+> **상태**: 구현 완료 (IMPLEMENTED)
 > **목표**: 코디네이터의 컨텍스트·추론 토큰을 계획, 검증, 통합, 최종 판정에 집중시키고 탐색·구현·측정·문서화는 워커에게 위임합니다.
 > **비협상 원칙**: 데이터 무손실(G1), train/serve 특징 단일화, 크로스 플랫폼(G2), 실측 기반 G3, Orca Run/Task/`worker_done` 계보는 유지합니다.
 
@@ -606,9 +607,134 @@ Sol High:
 
 ---
 
-## 12. 수정 대상 파일
+## 12. 실패·에스컬레이션 정책
 
-### 12.1 필수 수정
+워커는 다음 상황에서 스스로 범위를 넓히지 않습니다.
+
+- Task Capsule의 사실과 코드가 충돌
+- 허용하지 않은 파일 수정이 필요
+- 새 dependency 필요
+- DB schema/data mutation 필요
+- 다른 Task가 소유한 shared resource가 필요
+- acceptance criteria가 모순
+- 테스트 실패가 Task 범위 밖 원인으로 보임
+
+이때 `escalation`에 다음만 보냅니다.
+
+```json
+{
+  "task_id": "...",
+  "blocked_by": "...",
+  "evidence": ["file:line", "command/result"],
+  "minimum_extra_scope": ["필요한 파일/자원"],
+  "recommended_action": "..."
+}
+```
+
+코디네이터가 scope expansion을 승인한 뒤 Capsule을 갱신합니다.
+
+---
+
+## 13. 롤백
+
+이 변경은 애플리케이션 런타임보다 에이전트 운영 규칙에 영향을 줍니다.
+
+롤백 조건:
+
+- Codex/Claude/Antigravity/OpenCode 중 주요 CLI가 필수 규칙을 더 이상 자동 인식하지 못함
+- worker가 Task Capsule 없이 실행되는 경로가 발생
+- non-negotiable 누락으로 validator가 잡지 못하는 회귀가 발견됨
+- 오히려 coordinator가 매 Task마다 규칙을 수동 복사해야 해 토큰이 증가함
+
+롤백 시:
+
+1. v2 변경 commit을 revert하는 별도 브랜치를 만듭니다.
+2. 기존 `AGENTS.md`/`SKILLS.md` bootstrap으로 복귀합니다.
+3. 실패 CLI와 원인을 artifact로 남깁니다.
+4. 전체 v2를 포기하기보다 해당 CLI만 compatibility adapter를 추가하는 방향을 우선 검토합니다.
+
+---
+
+## 14. 성공 지표 (구 23장)
+
+v2 도입 전후 최소 5개 대표 Task로 비교합니다.
+
+| 지표 | 기대 방향 |
+| --- | --- |
+| 워커 첫 유효 작업까지 시간 | 감소 |
+| 워커가 읽은 bootstrap 문서 수 | 감소 |
+| Task당 coordinator 왕복 횟수 | 감소 |
+| coordinator가 직접 읽는 raw log/diff 양 | 감소 |
+| worker timeout/idle | 감소 |
+| worker 오류 발견률 | Reviewer 도입으로 coordinator 이전 단계에서 증가 |
+| 최종 회귀 | 증가하면 안 됨 |
+| G1/G2/G3 gate | 기존과 동일 또는 강화 |
+
+토큰 수를 직접 얻을 수 있는 CLI에서는 다음을 추가 기록합니다.
+
+- coordinator input/output/reasoning usage
+- worker별 usage
+- Task Capsule 길이
+- worker_done 길이
+
+직접 토큰 계측이 불가능하면 문자 수, 읽은 파일 수, 왕복 횟수를 proxy로 사용합니다.
+
+### 14.1 측정 도구와 v2 이후 기준선 (2026-08-15)
+
+**현재 절감이 실현된 범위를 먼저 밝힙니다.** v2 의 절감 장치는 둘입니다.
+
+| 장치 | 상태 |
+| --- | --- |
+| 자동 주입 축소 (`AGENTS.md` 단일) | **실현.** 5개 진입점 전부 예산 이내 |
+| 검증 위임 (Reviewer) | **계약만 존재.** 9.2.1 참조 |
+
+둘째가 미달이므로 코디네이터의 검증 부담은 아직 줄지 않았습니다. **절감 효과를
+계산할 때 Reviewer 위임분을 포함하지 마십시오.**
+
+proxy 지표 측정 도구는 `scripts/measure_agent_bootstrap_cost.py` 입니다. 5개 CLI
+진입점별 자동 로드 문자 수를 세고 예산 대비 사용률을 냅니다(`--json` 지원).
+
+| CLI | 자동 로드 문서 | 문자 수 | 예산 | 사용률 |
+| --- | --- | ---: | ---: | ---: |
+| Codex | `AGENTS.md` | 6,589 | 8,000 | 82.4% |
+| opencode | `AGENTS.md` (via `opencode.json`) | 6,589 | 8,000 | 82.4% |
+| Antigravity | `.antigravity/rules.md` | 3,921 | 12,000 | 32.7% |
+| Claude Code | `CLAUDE.md` | 46 | 8,000 | 0.6% |
+| Cursor | `.cursor/rules/` (13개) | 6,740 | 12,000 | 56.2% |
+
+**전후 비교의 한계를 밝힙니다.** v2 이전 상태(README·설계서 전체 읽기 강제)의
+before 데이터는 이제 확보할 수 없습니다. 되돌려 재측정하는 비용이 크므로 이 표를
+**v2 이후 기준선**으로 두고 이후 Task 계측을 누적합니다. 근사 before 로는
+2026-08-14 세션 기록(워커 6대, 지시서 크기, 왕복 횟수)을 쓸 수 있으며 근사임을
+명시해야 합니다.
+
+따라서 **"v2 가 토큰을 N% 절감했다" 는 주장은 현재 근거가 없습니다.** 자동 주입이
+5개 진입점 전부 예산 이내라는 것과 Capsule 격리가 실제로 작동한다는 것까지가
+실측으로 확인된 범위입니다.
+
+---
+
+## 15. 최종 운영 원칙
+
+v2의 핵심은 모델을 더 싼 것으로 바꾸는 것이 아닙니다.
+
+**비싼 모델이 읽어야 하는 정보를 줄이고, 비싼 모델이 내려야 하는 결정만 남기는 것**입니다.
+
+운영 규칙을 한 문장으로 압축하면 다음과 같습니다.
+
+> Coordinator는 목표·경계·게이트를 결정하고, Worker는 좁은 Capsule 안에서 탐색·구현·측정하며, Reviewer는 diff를 공격적으로 검증하고, Coordinator는 기계 검증과 핵심 diff만으로 최종 판정합니다.
+
+이 구조가 안정화되면 GPT 코디네이터는 프로젝트 전체를 반복해서 기억하는 모델이 아니라 **작업 DAG와 품질 게이트를 관리하는 제어면(control plane)**이 됩니다.
+
+---
+
+## Historical Design (2026-08-14)
+
+본 섹션은 2026-08-14 초기 구현 승인 시 작성된 작업 계획, 컴포넌트별 변경 사양, 구현 Task DAG(T0~T7), 모델 배정 및 프롬프트 기록입니다. 2026-08-15 구현 및 실증이 완료되어 이력 참조용으로 보존합니다.
+
+### H.1 수정 대상 파일 (구 12장)
+
+#### H.1.1 필수 수정
 
 | 파일 | 변경 |
 | --- | --- |
@@ -622,14 +748,14 @@ Sol High:
 | `docs/ops/multi_agent_setup.md` | 자동 로드 architecture 갱신 |
 | `scripts/validate_agent_rules.py` | 기존 `@SKILLS.md`/OpenCode 이중 주입을 요구하는 검증을 v2 계약으로 변경 |
 
-### 12.2 필수 신규 파일
+#### H.1.2 필수 신규 파일
 
 | 파일 | 목적 |
 | --- | --- |
 | `docs/context/CURRENT_STATE.md` | 최신 운영 상태 정본 |
 | `docs/ops/orca_task_capsule_v2.md` | Task Capsule / worker_done / review schema 정본 |
 
-### 12.3 선택 신규 파일
+#### H.1.3 선택 신규 파일
 
 ```text
 .agents/templates/task_capsule_v2.yaml
@@ -639,18 +765,16 @@ Sol High:
 
 템플릿은 사람이 복붙할 가능성이 높다면 추가하고, Orca가 동적으로 생성한다면 문서만 유지해도 됩니다.
 
----
+### H.2 `AGENTS.md` 변경 사양 (구 13장)
 
-## 13. `AGENTS.md` 변경 사양
-
-### 13.1 제거/이동
+#### H.2.1 제거/이동
 
 - 최상단 `@SKILLS.md` 자동 import 제거
 - 긴 기술 스택 표는 README/설계 문서로 이동 가능
 - 세션마다 필요 없는 구축 이력 축소
 - 전체 skill 내용이 아니라 위치만 안내
 
-### 13.2 반드시 유지
+#### H.2.2 반드시 유지
 
 - G1/G2/G3 비협상 원칙
 - dependency 사전 합의
@@ -662,7 +786,7 @@ Sol High:
 - Orca coordination 적용 조건
 - 한국어/이모지 금지 등 프로젝트 고유 규칙
 
-### 13.3 새 역할 분기 예시
+#### H.2.3 새 역할 분기 예시
 
 ```markdown
 ## Agent Bootstrap Modes
@@ -679,9 +803,7 @@ Sol High:
 - 허용 범위를 넘어선 문맥 또는 수정이 필요하면 escalation합니다.
 ```
 
----
-
-## 14. `SKILLS.md` 변경 사양
+### H.3 `SKILLS.md` 변경 사양 (구 14장)
 
 파일 목적을 다음과 같이 변경합니다.
 
@@ -711,9 +833,7 @@ Coordinator/standalone agent용 선택형 Project Context & Skill Index
 - standalone agent가 프로젝트 전체 작업을 맡을 때의 full-context 경로
 - Orca worker는 Task Capsule만 따른다는 명시
 
----
-
-## 15. `opencode.json` 변경 사양
+### H.4 `opencode.json` 변경 사양 (구 15장)
 
 목표:
 
@@ -729,9 +849,7 @@ Cerebras provider 설정은 그대로 유지합니다.
 
 이 변경은 **OpenCode/Cerebras의 작은 컨텍스트·TPM 부담을 줄이는 목적**이며 모델 설정 변경과 섞지 않습니다.
 
----
-
-## 16. `validate_agent_rules.py` v2 계약
+### H.5 `validate_agent_rules.py` v2 계약 (구 16장)
 
 현재 validator는 다음을 성공 조건으로 강제합니다.
 
@@ -740,14 +858,14 @@ Cerebras provider 설정은 그대로 유지합니다.
 
 v2에서는 이 두 검증을 반대로 바꿔야 합니다.
 
-### 16.1 제거/변경
+#### H.5.1 제거/변경
 
 ```text
 check_agents_imports_skills()
 check_opencode_json()의 SKILLS.md 필수 조건
 ```
 
-### 16.2 새 검증
+#### H.5.2 새 검증
 
 권장 검증:
 
@@ -764,7 +882,7 @@ check_opencode_json()의 SKILLS.md 필수 조건
 
 크기 상한은 초기에는 FAIL보다 warning으로 시작해 운영 데이터를 보고 강화합니다.
 
-### 16.3 구현 상태 (2026-08-15 갱신)
+#### H.5.3 구현 상태 (2026-08-15 갱신)
 
 `scripts/validate_agent_rules.py` 는 검사 12개를 수행하며 16.2 의 10개 항목을 전부
 덮습니다. 초기 구현에서 4개가 빠져 있었고 그 상태를 실측으로 확인한 뒤 보완했습니다.
@@ -791,16 +909,14 @@ check_opencode_json()의 SKILLS.md 필수 조건
   갱신하는 커밋에서 기록되므로 HEAD 와 정확히 일치할 수 없어 허용치를 둡니다
 - `tests/test_validate_agent_rules.py` 를 11개에서 **19개**로 확장
 
-#### 크기 예산은 문자 수입니다
+##### 크기 예산은 문자 수입니다
 
 5장의 8,000자는 **문자 수이며 바이트가 아닙니다.** `wc -c` 로 재면 한글이 3바이트라
 `AGENTS.md` 가 10,872바이트로 초과처럼 보이지만 실제는 6,589자로 예산 이내입니다.
 검사는 `len()` 으로 문자 수를 셉니다. 이 혼동으로 축소가 필요하다고 잘못 판단한
 사례가 있어 기록합니다.
 
----
-
-## 17. 구현 Task DAG
+### H.6 구현 Task DAG (구 17장)
 
 이 설계 자체의 적용도 한 에이전트가 저장소 전체를 한 번에 수정하지 않습니다.
 
@@ -818,7 +934,7 @@ flowchart LR
     T6 --> T7["T7 Final Audit"]
 ```
 
-### T0 — Baseline Audit
+#### T0 — Baseline Audit
 
 **read-only**
 
@@ -827,7 +943,7 @@ flowchart LR
 - 5개 CLI별 실제 자동 로드 경로 확인
 - 현재 `main` HEAD 기록
 
-### T1 — Bootstrap Refactor
+#### T1 — Bootstrap Refactor
 
 수정:
 
@@ -836,7 +952,7 @@ flowchart LR
 - `opencode.json`
 - 필요 시 `.antigravity/rules.md`, Cursor core rule
 
-### T2 — Capsule Contract
+#### T2 — Capsule Contract
 
 수정/추가:
 
@@ -844,14 +960,14 @@ flowchart LR
 - `.agents/skills/orca-section-coordination/SKILL.md`
 - mirrors
 
-### T3 — Validator v2
+#### T3 — Validator v2
 
 수정:
 
 - `scripts/validate_agent_rules.py`
 - validator 자체 테스트가 존재하면 추가
 
-### T4 — CURRENT_STATE
+#### T4 — CURRENT_STATE
 
 추가:
 
@@ -859,7 +975,7 @@ flowchart LR
 
 최신 실측으로 stale README 값을 그대로 복사하지 않습니다.
 
-### T5 — Playbook Sync
+#### T5 — Playbook Sync
 
 수정:
 
@@ -867,7 +983,7 @@ flowchart LR
 - `docs/ops/multi_agent_setup.md`
 - 필요하면 `docs/ops/agent_worker_launch_reference.md`
 
-### T6 — Cross-CLI Validation
+#### T6 — Cross-CLI Validation
 
 가능한 CLI에서 짧은 worker task를 실제로 1회씩 실행합니다.
 
@@ -879,7 +995,7 @@ flowchart LR
 - OpenCode/Cerebras가 이중 instructions 없이 기동함
 - 기존 G1/G2/G3 규칙이 누락되지 않음
 
-### T6 구현 상태 (2026-08-15 갱신)
+#### T6 구현 상태 (2026-08-15 갱신)
 
 T6 은 두 단계로 나뉘어 완료됐습니다. **초기 구현은 정적 검증만 수행했고 실행
 검증이 빠져 있었습니다.**
@@ -917,7 +1033,7 @@ T6 은 두 단계로 나뉘어 완료됐습니다. **초기 구현은 정적 검
 **남은 것**: CLI 1종(Antigravity)에서만 확인했습니다. OpenCode 계열 1종 추가
 확인이 남으나 무료 풀은 임계 경로가 아니어서 우선순위가 낮습니다.
 
-### T7 — Final Audit
+#### T7 — Final Audit
 
 강한 Reviewer가 read-only로 다음만 검토합니다.
 
@@ -929,13 +1045,11 @@ T6 은 두 단계로 나뉘어 완료됐습니다. **초기 구현은 정적 검
 
 Coordinator가 최종 merge를 판정합니다.
 
----
-
-## 18. 구현 중 모델 배정
+### H.7 구현 중 모델 배정 (구 18장)
 
 GPT 주간 예산을 보호하려면 구현 자체도 이 문서가 제안하는 방식으로 진행합니다.
 
-### Coordinator
+#### Coordinator
 
 ```text
 GPT-5.6 Terra / Medium
@@ -950,7 +1064,7 @@ GPT-5.6 Terra / Medium
 - deterministic verification
 - final merge decision
 
-### 주력 Builder
+#### 주력 Builder
 
 ```text
 Antigravity Gemini 3.7 Flash High
@@ -963,7 +1077,7 @@ Antigravity Gemini 3.7 Flash High
 - T4 CURRENT_STATE
 - T5 Playbook Sync
 
-### Validator Builder
+#### Validator Builder
 
 ```text
 Gemini 3.7 Flash High
@@ -971,7 +1085,7 @@ Gemini 3.7 Flash High
 
 - T3 validator 수정과 테스트
 
-### Reviewer
+#### Reviewer
 
 가능하면 GPT 주간 풀과 다른 제공자를 사용합니다.
 
@@ -979,7 +1093,7 @@ Gemini 3.7 Flash High
 Antigravity Claude 계열 또는 강한 Gemini read-only reviewer
 ```
 
-### GPT를 워커로 추가해야 할 경우
+#### GPT를 워커로 추가해야 할 경우
 
 ```text
 GPT-5.6 Luna / Medium
@@ -994,13 +1108,11 @@ GPT-5.6 Luna / Medium
 
 핵심 설계 재판정에는 Luna를 사용하지 않습니다.
 
----
-
-## 19. 23% 주간 GPT 잔량 기준 운영 규칙
+### H.8 23% 주간 GPT 잔량 기준 운영 규칙 (구 19장)
 
 잔여량이 낮을 때는 모델보다 **GPT가 맡는 작업 수를 줄이는 것**이 먼저입니다.
 
-### 권장 예산 정책
+#### 권장 예산 정책
 
 | 잔량 | GPT 사용 정책 |
 | ---: | --- |
@@ -1018,7 +1130,7 @@ GPT-5.6 Luna / Medium
 - Ultra를 이번 구현의 기본으로 사용
 - 같은 문제를 GPT와 Gemini에게 중복 조사시키기
 
-### 현재 가장 추천하는 조합
+#### 현재 가장 추천하는 조합
 
 ```text
 Coordinator: GPT-5.6 Terra / Medium
@@ -1028,9 +1140,7 @@ GPT fallback worker: GPT-5.6 Luna / Medium
 Final architecture exception: GPT-5.6 Sol / High 1회성
 ```
 
----
-
-## 20. GPT Coordinator용 구현 프롬프트
+### H.9 GPT Coordinator용 구현 프롬프트 (구 20장)
 
 다음 프롬프트를 구현 세션의 첫 요청으로 사용할 수 있습니다.
 
@@ -1068,124 +1178,3 @@ Final architecture exception: GPT-5.6 Sol / High 1회성
 
 각 Task가 끝날 때마다 긴 설명 대신 상태, 커밋, 테스트, 위험만 요약하십시오.
 ```
-
----
-
-## 21. 실패·에스컬레이션 정책
-
-워커는 다음 상황에서 스스로 범위를 넓히지 않습니다.
-
-- Task Capsule의 사실과 코드가 충돌
-- 허용하지 않은 파일 수정이 필요
-- 새 dependency 필요
-- DB schema/data mutation 필요
-- 다른 Task가 소유한 shared resource가 필요
-- acceptance criteria가 모순
-- 테스트 실패가 Task 범위 밖 원인으로 보임
-
-이때 `escalation`에 다음만 보냅니다.
-
-```json
-{
-  "task_id": "...",
-  "blocked_by": "...",
-  "evidence": ["file:line", "command/result"],
-  "minimum_extra_scope": ["필요한 파일/자원"],
-  "recommended_action": "..."
-}
-```
-
-코디네이터가 scope expansion을 승인한 뒤 Capsule을 갱신합니다.
-
----
-
-## 22. 롤백
-
-이 변경은 애플리케이션 런타임보다 에이전트 운영 규칙에 영향을 줍니다.
-
-롤백 조건:
-
-- Codex/Claude/Antigravity/OpenCode 중 주요 CLI가 필수 규칙을 더 이상 자동 인식하지 못함
-- worker가 Task Capsule 없이 실행되는 경로가 발생
-- non-negotiable 누락으로 validator가 잡지 못하는 회귀가 발견됨
-- 오히려 coordinator가 매 Task마다 규칙을 수동 복사해야 해 토큰이 증가함
-
-롤백 시:
-
-1. v2 변경 commit을 revert하는 별도 브랜치를 만듭니다.
-2. 기존 `AGENTS.md`/`SKILLS.md` bootstrap으로 복귀합니다.
-3. 실패 CLI와 원인을 artifact로 남깁니다.
-4. 전체 v2를 포기하기보다 해당 CLI만 compatibility adapter를 추가하는 방향을 우선 검토합니다.
-
----
-
-## 23. 성공 지표
-
-v2 도입 전후 최소 5개 대표 Task로 비교합니다.
-
-| 지표 | 기대 방향 |
-| --- | --- |
-| 워커 첫 유효 작업까지 시간 | 감소 |
-| 워커가 읽은 bootstrap 문서 수 | 감소 |
-| Task당 coordinator 왕복 횟수 | 감소 |
-| coordinator가 직접 읽는 raw log/diff 양 | 감소 |
-| worker timeout/idle | 감소 |
-| worker 오류 발견률 | Reviewer 도입으로 coordinator 이전 단계에서 증가 |
-| 최종 회귀 | 증가하면 안 됨 |
-| G1/G2/G3 gate | 기존과 동일 또는 강화 |
-
-토큰 수를 직접 얻을 수 있는 CLI에서는 다음을 추가 기록합니다.
-
-- coordinator input/output/reasoning usage
-- worker별 usage
-- Task Capsule 길이
-- worker_done 길이
-
-직접 토큰 계측이 불가능하면 문자 수, 읽은 파일 수, 왕복 횟수를 proxy로 사용합니다.
-
-### 23.1 측정 도구와 v2 이후 기준선 (2026-08-15)
-
-**현재 절감이 실현된 범위를 먼저 밝힙니다.** v2 의 절감 장치는 둘입니다.
-
-| 장치 | 상태 |
-| --- | --- |
-| 자동 주입 축소 (`AGENTS.md` 단일) | **실현.** 5개 진입점 전부 예산 이내 |
-| 검증 위임 (Reviewer) | **계약만 존재.** 9.2.1 참조 |
-
-둘째가 미달이므로 코디네이터의 검증 부담은 아직 줄지 않았습니다. **절감 효과를
-계산할 때 Reviewer 위임분을 포함하지 마십시오.**
-
-proxy 지표 측정 도구는 `scripts/measure_agent_bootstrap_cost.py` 입니다. 5개 CLI
-진입점별 자동 로드 문자 수를 세고 예산 대비 사용률을 냅니다(`--json` 지원).
-
-| CLI | 자동 로드 문서 | 문자 수 | 예산 | 사용률 |
-| --- | --- | ---: | ---: | ---: |
-| Codex | `AGENTS.md` | 6,589 | 8,000 | 82.4% |
-| opencode | `AGENTS.md` (via `opencode.json`) | 6,589 | 8,000 | 82.4% |
-| Antigravity | `.antigravity/rules.md` | 3,921 | 12,000 | 32.7% |
-| Claude Code | `CLAUDE.md` | 46 | 8,000 | 0.6% |
-| Cursor | `.cursor/rules/` (13개) | 6,740 | 12,000 | 56.2% |
-
-**전후 비교의 한계를 밝힙니다.** v2 이전 상태(README·설계서 전체 읽기 강제)의
-before 데이터는 이제 확보할 수 없습니다. 되돌려 재측정하는 비용이 크므로 이 표를
-**v2 이후 기준선**으로 두고 이후 Task 계측을 누적합니다. 근사 before 로는
-2026-08-14 세션 기록(워커 6대, 지시서 크기, 왕복 횟수)을 쓸 수 있으며 근사임을
-명시해야 합니다.
-
-따라서 **"v2 가 토큰을 N% 절감했다" 는 주장은 현재 근거가 없습니다.** 자동 주입이
-5개 진입점 전부 예산 이내라는 것과 Capsule 격리가 실제로 작동한다는 것까지가
-실측으로 확인된 범위입니다.
-
----
-
-## 24. 최종 운영 원칙
-
-v2의 핵심은 모델을 더 싼 것으로 바꾸는 것이 아닙니다.
-
-**비싼 모델이 읽어야 하는 정보를 줄이고, 비싼 모델이 내려야 하는 결정만 남기는 것**입니다.
-
-운영 규칙을 한 문장으로 압축하면 다음과 같습니다.
-
-> Coordinator는 목표·경계·게이트를 결정하고, Worker는 좁은 Capsule 안에서 탐색·구현·측정하며, Reviewer는 diff를 공격적으로 검증하고, Coordinator는 기계 검증과 핵심 diff만으로 최종 판정합니다.
-
-이 구조가 안정화되면 GPT 코디네이터는 프로젝트 전체를 반복해서 기억하는 모델이 아니라 **작업 DAG와 품질 게이트를 관리하는 제어면(control plane)**이 됩니다.

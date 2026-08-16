@@ -268,6 +268,8 @@ def cmd_summary(args: argparse.Namespace) -> int:
         "changed_files_count",
         "roundtrips",
         "first_useful_seconds",
+        "coordinator_input_tokens",
+        "coordinator_output_tokens",
     ]
     metric_stats: dict[str, dict[str, Any]] = {}
     for key in numeric_metrics:
