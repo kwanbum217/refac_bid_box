@@ -31,12 +31,12 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from scripts.orca_contract import load_capsule, parse_capsule_scalar
+    from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
-    from scripts.orca_contract import load_capsule, parse_capsule_scalar
+    from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 
 # ---------------------------------------------------------------------------
 # 프로바이더별 probe 설정
@@ -136,6 +136,14 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 }
 
 # ---------------------------------------------------------------------------
+# 무료/저가 풀 개방 정책 상수
+# ---------------------------------------------------------------------------
+
+FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator"})
+FREE_POOL_MAX_RISK: str = "low"
+FREE_POOL_ORDER: list[str] = ["opencode-free", "codex"]
+
+# ---------------------------------------------------------------------------
 # 위험도 분류 기준
 # ---------------------------------------------------------------------------
 
@@ -232,6 +240,51 @@ def classify_risk(text: str) -> str:
     return risk
 
 
+def capsule_has_write_scope(capsule_path: str | Path | None) -> bool:
+    """Capsule 파일에서 allowed_write_files 를 검사하여 쓰기 권한 유무를 반환합니다.
+
+    allowed_write_files 가 비어 있으면 False, 하나 이상이면 True 를 반환합니다.
+    파일 경로가 None 이거나 읽기/파싱에 실패하면 안전(fail-closed)을 위해 True 를 반환합니다.
+    """
+    if capsule_path is None:
+        return True
+    try:
+        text = load_capsule(capsule_path)
+        write_files = parse_capsule_list(text, "allowed_write_files")
+        return len(write_files) > 0
+    except Exception:
+        return True
+
+
+def free_pool_eligibility(
+    role: str,
+    risk: str,
+    has_write_scope: bool,
+) -> tuple[bool, str]:
+    """무료 모델 풀 개방 조건을 검사합니다.
+
+    개방 조건:
+      1. 역할이 FREE_POOL_ELIGIBLE_ROLES 에 속함 (investigator)
+      2. 위험도가 FREE_POOL_MAX_RISK 이하 (low)
+      3. 쓰기 범위가 없음 (not has_write_scope)
+
+    반환값: (eligible: bool, reason: str)
+    모든 조건을 만족하면 (True, "무료 풀 개방 조건 충족") 을 반환하고,
+    그렇지 않으면 (False, 거부 사유) 를 반환합니다.
+    """
+    if role not in FREE_POOL_ELIGIBLE_ROLES:
+        eligible_roles_str = ", ".join(sorted(FREE_POOL_ELIGIBLE_ROLES))
+        return False, f"무료 풀 개방 불가: 역할({role})이 무료 풀 개방 대상({eligible_roles_str})이 아닙니다."
+
+    if risk != FREE_POOL_MAX_RISK:
+        return False, f"무료 풀 개방 불가: 위험도({risk})가 허용 기준({FREE_POOL_MAX_RISK})을 초과합니다."
+
+    if has_write_scope:
+        return False, "무료 풀 개방 불가: 쓰기 권한(allowed_write_files)이 존재합니다."
+
+    return True, "무료 풀 개방 조건 충족"
+
+
 def classify_from_capsule(capsule_path: str | Path) -> dict[str, Any]:
     """Capsule 파일에서 objective, why_now, role 등을 읽어 위험도를 분류합니다."""
     capsule_text = load_capsule(capsule_path)
@@ -264,26 +317,40 @@ def is_coordinator_model(model_or_pool: str) -> bool:
     return False
 
 
-def select_model(role: str, risk: str, exclude: list[str] | None = None) -> dict[str, Any]:
+def select_model(
+    role: str,
+    risk: str,
+    exclude: list[str] | None = None,
+    allow_free: bool = False,
+    has_write_scope: bool = True,
+) -> dict[str, Any]:
     """역할과 위험도에 따라 최적 모델을 선택합니다.
 
     자동 선택 대상 풀(auto_selectable=True) 중에서만 선택하며,
+    allow_free 가 True 이고 무료 풀 개방 조건을 충족하는 경우에만
+    FREE_POOL_ORDER 의 모델이 후보 맨 앞에 추가됩니다.
     코디네이터 전용 모델(claude-opus-5)은 절대 선택되지 않습니다.
     """
     exclude = exclude or []
 
     if risk == "high" and role == "reviewer":
-        candidates = ["claude-sonnet", "gemini-flash-high"]
+        base_candidates = ["claude-sonnet", "gemini-flash-high"]
     elif risk == "high" or role == "reviewer":
-        candidates = ["gemini-flash-high", "claude-sonnet"]
+        base_candidates = ["gemini-flash-high", "claude-sonnet"]
     elif role == "builder":
-        candidates = ["gemini-flash-high"]
+        base_candidates = ["gemini-flash-high"]
     elif role in ("investigator", "benchmarker"):
-        candidates = ["gemini-flash-high", "gemini-flash-medium"]
+        base_candidates = ["gemini-flash-high", "gemini-flash-medium"]
     elif role == "documenter":
-        candidates = ["gemini-flash-medium", "gemini-flash-high"]
+        base_candidates = ["gemini-flash-medium", "gemini-flash-high"]
     else:
-        candidates = ["gemini-flash-high"]
+        base_candidates = ["gemini-flash-high"]
+
+    eligible, _reason = free_pool_eligibility(role, risk, has_write_scope)
+    if allow_free and eligible:
+        candidates = [c for c in FREE_POOL_ORDER if c in MODEL_POOL] + base_candidates
+    else:
+        candidates = base_candidates
 
     primary: str | None = None
     fallback: str | None = None
@@ -441,6 +508,8 @@ def route(
     probe: bool = True,
     probe_timeout: int = 30,
     explicit_model: str | None = None,
+    allow_free: bool = False,
+    has_write_scope: bool | None = None,
 ) -> RouteResult:
     """분류와 probe 를 종합하여 최종 워커 모델을 라우팅합니다."""
     reasons: list[str] = []
@@ -449,11 +518,21 @@ def route(
         risk = risk or info["risk"]
         role = role or info["role"]
         reasons = info.get("reasons", [])
+        if has_write_scope is None:
+            has_write_scope = capsule_has_write_scope(capsule_path)
     else:
         role = role or "builder"
         if risk is None:
             combined = f"{objective or ''}\n{why_now or ''}"
             risk, reasons = classify_risk_with_reasons(combined)
+        if has_write_scope is None:
+            has_write_scope = True
+
+    warnings: list[str] = []
+    if allow_free:
+        eligible, reason = free_pool_eligibility(role, risk, has_write_scope)
+        if not eligible:
+            warnings.append(reason)
 
     if explicit_model:
         if is_coordinator_model(explicit_model):
@@ -461,11 +540,25 @@ def route(
         primary_id = explicit_model
         fallback_id = None
     else:
-        selection = select_model(role, risk)
+        selection = select_model(
+            role=role,
+            risk=risk,
+            allow_free=allow_free,
+            has_write_scope=has_write_scope,
+        )
         primary_id = selection["primary_model"]
         fallback_id = selection.get("fallback_model")
 
-    warnings: list[str] = []
+    # 무료 풀이 실제로 주 모델로 선택된 경우 재검증 의무 경고 추가
+    primary_pool_info = None
+    for pool_info in MODEL_POOL.values():
+        if pool_info["id"] == primary_id:
+            primary_pool_info = pool_info
+            break
+
+    if primary_pool_info and primary_pool_info["tier"] == "free":
+        warnings.append("주의: 무료 모델 풀이 주 모델로 선택되었습니다. 산출물 재검증 필수이며 임계 경로 금지입니다.")
+
     primary_available = True
     fallback_available = None
 
@@ -511,6 +604,11 @@ def _build_parser() -> argparse.ArgumentParser:
     cls.add_argument("--role", choices=["builder", "reviewer", "investigator", "benchmarker", "documenter"])
     cls.add_argument("--objective", help="작업 목표 텍스트")
     cls.add_argument("--why-now", help="작업 배경 텍스트")
+    cls.add_argument(
+        "--allow-free",
+        action="store_true",
+        help="저가·무료 모델 풀 조건부 개방 (쓰기 권한 없는 investigator 및 low 위험도 전용)",
+    )
     cls.add_argument("--json", action="store_true", help="JSON 출력")
 
     # probe
@@ -527,6 +625,11 @@ def _build_parser() -> argparse.ArgumentParser:
     rt.add_argument("--objective", help="작업 목표 텍스트")
     rt.add_argument("--why-now", help="작업 배경 텍스트")
     rt.add_argument("--model", help="명시적 모델 ID 지정")
+    rt.add_argument(
+        "--allow-free",
+        action="store_true",
+        help="저가·무료 모델 풀 조건부 개방 (쓰기 권한 없는 investigator 및 low 위험도 전용)",
+    )
     rt.add_argument("--no-probe", action="store_true", help="probe 생략")
     rt.add_argument("--probe-timeout", type=int, default=30, help="probe 타임아웃 (초)")
     rt.add_argument("--json", action="store_true", help="JSON 출력")
@@ -539,20 +642,28 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def cmd_classify(args: argparse.Namespace) -> int:
     reasons: list[str] = []
+    allow_free = getattr(args, "allow_free", False)
     if args.capsule:
         info = classify_from_capsule(args.capsule)
         risk = info["risk"]
         role = info["role"]
         objective = info["objective"]
         reasons = info.get("reasons", [])
+        has_write_scope = capsule_has_write_scope(args.capsule)
     else:
         objective = args.objective or ""
         why_now = args.why_now or ""
         role = args.role or "builder"
         combined = f"{objective}\n{why_now}"
         risk, reasons = classify_risk_with_reasons(combined)
+        has_write_scope = True
 
-    selection = select_model(role, risk)
+    selection = select_model(
+        role=role,
+        risk=risk,
+        allow_free=allow_free,
+        has_write_scope=has_write_scope,
+    )
 
     if args.json:
         print(json.dumps({
@@ -600,6 +711,7 @@ def cmd_route(args: argparse.Namespace) -> int:
             probe=not args.no_probe,
             probe_timeout=args.probe_timeout,
             explicit_model=args.model,
+            allow_free=getattr(args, "allow_free", False),
         )
     except ValueError as exc:
         if args.json:
@@ -675,6 +787,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"    용도:      {', '.join(info['suitable_for']) or '워커 사용 불가'}")
         print(f"    비고:      {info['notes']}")
         print()
+    print("안내: 무료 풀(opencode-free)은 --allow-free 지정 시 쓰기 권한 없는 low 위험도 조사(investigator) 역할에 한해 조건부로 개방됩니다.")
     return 0
 
 

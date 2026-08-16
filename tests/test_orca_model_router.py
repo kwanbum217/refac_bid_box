@@ -21,10 +21,14 @@ if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
 from scripts.orca_model_router import (
+    FREE_POOL_ELIGIBLE_ROLES,
+    FREE_POOL_MAX_RISK,
+    FREE_POOL_ORDER,
     MODEL_POOL,
     PROBE_CONFIG,
     RISK_KEYWORDS,
     RouteResult,
+    capsule_has_write_scope,
     classify_from_capsule,
     classify_risk,
     classify_risk_with_reasons,
@@ -32,6 +36,7 @@ from scripts.orca_model_router import (
     cmd_list,
     cmd_probe,
     cmd_route,
+    free_pool_eligibility,
     is_coordinator_model,
     main,
     preflight,
@@ -559,3 +564,273 @@ class TestCLI:
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
         assert "risk" in data
+
+
+# ---------------------------------------------------------------------------
+# 6. 저가·무료 모델 풀 조건부 개방 (allow_free) 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestFreePoolOptIn:
+    def test_free_pool_constants(self):
+        assert frozenset({"investigator"}) == FREE_POOL_ELIGIBLE_ROLES
+        assert FREE_POOL_MAX_RISK == "low"
+        assert FREE_POOL_ORDER == ["opencode-free", "codex"]
+
+    def test_capsule_has_write_scope_scenarios(self, tmp_path):
+        """allowed_write_files 여부에 따른 쓰기 범위 판정 및 fail-closed 검증."""
+        # 1. 빈 allowed_write_files -> 쓰기 범위 없음 (False)
+        empty_write_capsule = tmp_path / "capsule_readonly.yaml"
+        empty_write_capsule.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: Readonly cache analysis\n"
+            "allowed_write_files: []\n",
+            encoding="utf-8",
+        )
+        assert capsule_has_write_scope(empty_write_capsule) is False
+
+        # 2. 파일 목록이 있는 allowed_write_files -> 쓰기 범위 있음 (True)
+        write_capsule = tmp_path / "capsule_write.yaml"
+        write_capsule.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: Fix cache analysis\n"
+            "allowed_write_files:\n"
+            '  - "src/ml/..."\n',
+            encoding="utf-8",
+        )
+        assert capsule_has_write_scope(write_capsule) is True
+
+        # 3. 없는 파일 경로 -> fail-closed (True)
+        non_existent = tmp_path / "missing_file.yaml"
+        assert capsule_has_write_scope(non_existent) is True
+
+        # 4. None 경로 -> fail-closed (True)
+        assert capsule_has_write_scope(None) is True
+
+    def test_free_pool_eligibility_unit(self):
+        """free_pool_eligibility 헬퍼의 조건별 통과/거부 및 한국어 사유 검증."""
+        # 통과 조건: investigator, low, has_write_scope=False
+        eligible, reason = free_pool_eligibility("investigator", "low", False)
+        assert eligible is True
+        assert "조건 충족" in reason
+
+        # 거부 1: 역할 불일치 (builder)
+        eligible, reason = free_pool_eligibility("builder", "low", False)
+        assert eligible is False
+        assert "역할(builder)" in reason
+        assert "investigator" in reason
+
+        # 거부 2: 역할 불일치 (reviewer)
+        eligible, reason = free_pool_eligibility("reviewer", "low", False)
+        assert eligible is False
+        assert "역할(reviewer)" in reason
+
+        # 거부 3: 위험도 초과 (high)
+        eligible, reason = free_pool_eligibility("investigator", "high", False)
+        assert eligible is False
+        assert "위험도(high)" in reason
+
+        # 거부 4: 위험도 초과 (medium)
+        eligible, reason = free_pool_eligibility("investigator", "medium", False)
+        assert eligible is False
+        assert "위험도(medium)" in reason
+
+        # 거부 5: 쓰기 범위 존재 (has_write_scope=True)
+        eligible, reason = free_pool_eligibility("investigator", "low", True)
+        assert eligible is False
+        assert "쓰기 권한" in reason
+
+    def test_allow_free_false_never_selects_free_pool(self):
+        """allow_free=False 인 경우 어떤 역할, 위험도, 쓰기 범위에서도 무료 풀이 선택되지 않습니다."""
+        roles = ["investigator", "builder", "reviewer", "benchmarker", "documenter"]
+        risks = ["low", "medium", "high"]
+        scopes = [True, False]
+
+        for r in roles:
+            for k in risks:
+                for s in scopes:
+                    res = select_model(r, k, allow_free=False, has_write_scope=s)
+                    assert res["primary_pool"] != "opencode-free"
+                    assert res["primary_model"] != "opencode-free"
+                    assert res["fallback_pool"] != "opencode-free"
+                    assert res["fallback_model"] != "opencode-free"
+
+    def test_allow_free_true_investigator_low_risk_no_write_scope_selects_opencode_free(self):
+        """allow_free=True, investigator, low, 쓰기 없음 조합에서 주 모델로 opencode-free 가 선택됩니다."""
+        res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
+        assert res["primary_pool"] == "opencode-free"
+        assert res["primary_model"] == "opencode-free"
+        assert res["fallback_pool"] == "codex"
+        assert res["fallback_model"] == "codex"
+
+    def test_allow_free_true_builder_rejected_with_warning(self):
+        """allow_free=True 여도 builder 역할은 무료 풀이 거부되고 경고 사유가 기록됩니다."""
+        res = route(role="builder", risk="low", allow_free=True, probe=False)
+        assert res.primary_model == "gemini-3.7-flash-high"
+        assert res.primary_model != "opencode-free"
+        assert any("역할(builder)" in w and "무료 풀 개방 불가" in w for w in res.warnings)
+
+    def test_allow_free_true_high_risk_rejected(self):
+        """allow_free=True 여도 high/medium 위험도는 무료 풀이 거부됩니다."""
+        res_high = route(role="investigator", risk="high", allow_free=True, has_write_scope=False, probe=False)
+        assert res_high.primary_model != "opencode-free"
+        assert any("위험도(high)" in w for w in res_high.warnings)
+
+        res_med = route(role="investigator", risk="medium", allow_free=True, has_write_scope=False, probe=False)
+        assert res_med.primary_model != "opencode-free"
+        assert any("위험도(medium)" in w for w in res_med.warnings)
+
+    def test_allow_free_true_with_write_scope_rejected(self):
+        """allow_free=True 여도 쓰기 범위가 있으면 무료 풀이 거부됩니다."""
+        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=True, probe=False)
+        assert res.primary_model != "opencode-free"
+        assert any("쓰기 권한" in w for w in res.warnings)
+
+    def test_allow_free_true_reviewer_rejected(self):
+        """reviewer 는 읽기 전용이어도 임계 경로이므로 allow_free=True 여도 무료 풀이 거부됩니다."""
+        res = route(role="reviewer", risk="low", allow_free=True, has_write_scope=False, probe=False)
+        assert res.primary_model != "opencode-free"
+        assert any("역할(reviewer)" in w for w in res.warnings)
+
+    def test_free_pool_selected_includes_revalidation_mandatory_warning(self):
+        """무료 풀이 주 모델로 선택되면 산출물 재검증 필수 및 임계 경로 금지 경고가 반드시 포함됩니다."""
+        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False)
+        assert res.primary_model == "opencode-free"
+        assert any(
+            "산출물 재검증 필수" in w and "임계 경로 금지" in w
+            for w in res.warnings
+        )
+
+    def test_allow_free_true_never_selects_coordinator_model(self):
+        """allow_free=True 상태에서도 코디네이터 전용 모델(claude-opus-5)은 절대 선택되지 않습니다."""
+        res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
+        assert res["primary_model"] != "claude-opus-5"
+        assert res["fallback_model"] != "claude-opus-5"
+
+    def test_route_free_pool_primary_fail_fallback(self, monkeypatch):
+        """opencode-free 가 probe 실패하면 codex 로 fallback 전환됨을 검증합니다."""
+        def _mock_run(cmd, *args, **kwargs):
+            if "opencode-free" in cmd:
+                return MagicMock(returncode=1, stdout="", stderr="Error: model unavailable")
+            return MagicMock(returncode=0, stdout="ping ok", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=True)
+        assert res.primary_available is False
+        assert res.fallback_available is True
+        assert res.fallback_model == "codex"
+        assert any("대체 모델 codex 로 전환" in w for w in res.warnings)
+
+    def test_route_with_capsule_file_allow_free(self, tmp_path):
+        """Capsule 파일을 통한 route 에서 allow_free 조건부 개방 검증."""
+        # 쓰기 없는 읽기 전용 Capsule (low 위험도)
+        ro_capsule = tmp_path / "investigator_ro.yaml"
+        ro_capsule.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: >\n"
+            "  Investigate doc and typo details without modifications.\n"
+            "why_now: >\n"
+            "  단순 문서 조사.\n"
+            "allowed_write_files: []\n",
+            encoding="utf-8",
+        )
+        res_ro = route(capsule_path=ro_capsule, allow_free=True, probe=False)
+        assert res_ro.risk == "low"
+        assert res_ro.role == "investigator"
+        assert res_ro.primary_model == "opencode-free"
+
+        # 쓰기 있는 Capsule
+        rw_capsule = tmp_path / "investigator_rw.yaml"
+        rw_capsule.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: >\n"
+            "  Investigate and modify test file.\n"
+            "why_now: >\n"
+            "  수정 포함 조사.\n"
+            "allowed_write_files:\n"
+            '  - "tests/test_foo.py"\n',
+            encoding="utf-8",
+        )
+        res_rw = route(capsule_path=rw_capsule, allow_free=True, probe=False)
+        assert res_rw.primary_model != "opencode-free"
+        assert any("쓰기 권한" in w for w in res_rw.warnings)
+
+    def test_cli_route_allow_free_json(self, tmp_path, capsys):
+        """CLI route 서브커맨드에서 --allow-free 플래그 전달 시 JSON 출력 검증."""
+        capsule_file = tmp_path / "capsule_cli.yaml"
+        capsule_file.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: >\n"
+            "  Simple doc check.\n"
+            "why_now: >\n"
+            "  문서 조사.\n"
+            "allowed_write_files: []\n",
+            encoding="utf-8",
+        )
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--capsule", default=str(capsule_file))
+        parser.add_argument("--role", default="investigator")
+        parser.add_argument("--risk", default="low")
+        parser.add_argument("--objective", default=None)
+        parser.add_argument("--why-now", default=None)
+        parser.add_argument("--model", default=None)
+        parser.add_argument("--allow-free", action="store_true", default=True)
+        parser.add_argument("--no-probe", action="store_true", default=True)
+        parser.add_argument("--probe-timeout", type=int, default=30)
+        parser.add_argument("--json", action="store_true", default=True)
+        args = parser.parse_args([])
+
+        ret = cmd_route(args)
+        assert ret == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["primary_model"] == "opencode-free"
+        assert data["recommended"] == "opencode-free"
+        assert any("산출물 재검증 필수" in w for w in data["warnings"])
+
+    def test_cli_classify_allow_free_json(self, tmp_path, capsys):
+        """CLI classify 서브커맨드에서 --allow-free 플래그 전달 시 JSON 출력 검증."""
+        capsule_file = tmp_path / "capsule_cls.yaml"
+        capsule_file.write_text(
+            "schema: ORCA_TASK_CAPSULE_V2\n"
+            "role: investigator\n"
+            "objective: >\n"
+            "  Simple test check.\n"
+            "why_now: >\n"
+            "  테스트 확인.\n"
+            "allowed_write_files: []\n",
+            encoding="utf-8",
+        )
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--capsule", default=str(capsule_file))
+        parser.add_argument("--role", default="investigator")
+        parser.add_argument("--objective", default=None)
+        parser.add_argument("--why-now", default=None)
+        parser.add_argument("--allow-free", action="store_true", default=True)
+        parser.add_argument("--json", action="store_true", default=True)
+        args = parser.parse_args([])
+
+        ret = cmd_classify(args)
+        assert ret == 0
+        data = json.loads(capsys.readouterr().out)
+        assert data["primary_model"] == "opencode-free"
+
+    def test_list_command_includes_free_pool_guide(self, capsys):
+        """CLI list 서브커맨드에서 조건부 개방 안내 문구가 출력되는지 검증."""
+        parser = argparse.ArgumentParser()
+        args = parser.parse_args([])
+
+        ret = cmd_list(args)
+        assert ret == 0
+        captured = capsys.readouterr().out
+        assert "--allow-free" in captured
+        assert "investigator" in captured
+        assert "조건부로 개방" in captured
+
