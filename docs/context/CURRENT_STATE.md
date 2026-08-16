@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-08-15
-> **source_commit**: `4212b32`
+> **updated_at**: 2026-08-16
+> **source_commit**: `413a82b`
 > **version**: v1.0.0
 > 본 문서는 코디네이터 에이전트가 부트스트랩 시 가장 먼저 참조하는 **단일 진실 현재 운영 상태 정본**입니다. 과거 handoff는 증거와 히스토리이며, 현재 세션의 즉시 판단과 정책 결정은 본 문서를 기준으로 수행합니다.
 
@@ -71,6 +71,10 @@
 | 14 | 워커의 비표준 계약 필드명을 수용 | `files_modified` 를 받아 `changed_files_count: 0` 을 조용히 기록한 사고. 폴백 금지 |
 | 15 | 반려 후 재작업을 완료된 Task 에 태우기 | 2차 `worker_done` 이 거부되어 반려 사유와 수용 판정이 이력에서 사라진다. `ready` 로 되돌리거나 새 Task 를 만든다 |
 | 16 | 코디네이터 검토를 Level 2 대체로 사용 | 10번의 역방향. 2026-08-15 에 코디네이터 검토만으로 병합한 도구 4개에서 독립 감사가 **실재 결함 7건**을 찾았고 그중 하나는 계약 강제 장치 자체의 허점이었다. 두 층을 모두 통과시킨다 |
+| 17 | 확인하지 않은 외부 CLI 서명으로 코드 작성 | 2026-08-16 에 네 건 발생. 값 유무는 `--help` 의 Usage 줄로 구분한다. `opencode ask` 는 실패하면서 **종료 코드 0** 을 반환해 가용성 거짓 양성을 냈다. 종료 코드만으로 성공을 선언하지 않는다 |
+| 18 | 테스트가 틀린 사실을 정답으로 고정 | `["--inject", "some_preamble"]` 을 기대값으로 단정해 없는 서명을 정답화했다. 통과하는 테스트는 확인의 근거가 아니다. 리뷰어 체크리스트에 이 질문을 넣는다 |
+| 19 | `defect_when` 에 산문 기재 | `yes`/`no` 극성 토큰이다. 한국어 문장을 넣어 리뷰 8항목이 전부 `조건3 판정 불가` 로 무효화됐다. 설명은 `question` 또는 `how` 에 적는다 |
+| 20 | `ready` 복귀만 하고 재 Dispatch 생략 | 권한이 회수된 상태라 재보고가 `capability is revoked` 로 거부된다. 병합한 Task 는 `completed` 로 닫아야 그 터미널을 재사용할 수 있다 |
 
 ---
 
@@ -79,9 +83,10 @@
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현·실증 완료**:
    - T0~T7 병합 후 코디네이터 검수로 빈틈 4건 보완(검사 9 -> 12). T6 실행 검증 완료, Capsule 배치 규약 2.9 로 `read_files` 초과 0건 실측.
    - **수신면 도구 5종**으로 코디네이터가 원시 출력을 직접 읽던 구간을 대체했습니다. `orca_contract.py`(공용 파서), `orca_level1_gate.py`(Level 1 단일 호출, 상한 2,000자), `summarize_worker_done.py`(보고 계약 판정, 1,200자 다이제스트), `orca_run_reviewer.py`(**Level 2 단일 호출**), `orca_metrics_ledger.py`(설계 23장 프록시 지표 원장).
-   - **독립 감사에서 실재 결함 7건 검출·전건 수정**: 경로 탈출(`scripts/../../x`) 허용 오판, 따옴표 안 샵 절단, 0열 주석이 Capsule 블록을 끊어 항목 유실, **`blocking_issues: ['C10']` 이 `C1` 요구를 충족시킨 부분문자열 매칭**, folded scalar 미파싱, 불리언이 지표에 합산. 근거: [`../ops/orca_v2_intake_tools_audit_20260815.md`](../ops/orca_v2_intake_tools_audit_20260815.md)
-   - **Level 3 축소 재실험 완료**: 함수당 결함 밀도 0.05의 다중 함수 상호작용 결함으로 사전 등록 후 Gemini 3.7 Flash High를 팔별 3회 실행했습니다. 팔 A와 팔 B 모두 결함 검출 0/3, 오탐 0건이므로 사전 기준 `(다)`에 따라 **Level 3 코디네이터 검토를 유지**합니다. 근거: [`../ops/orca_v2_level3_reduction_rerun_results_20260815.md`](../ops/orca_v2_level3_reduction_rerun_results_20260815.md)
+   - **독립 감사에서 실재 결함 7건 검출·전건 수정**. 가장 무거운 것은 계약 강제 장치 자체의 허점이었습니다(`blocking_issues: ['C10']` 이 `C1` 요구를 충족시킨 부분문자열 매칭). 근거: [`../ops/orca_v2_intake_tools_audit_20260815.md`](../ops/orca_v2_intake_tools_audit_20260815.md)
+   - **Level 3 축소 재실험 완료**: 결함 밀도 0.05 사전 등록, 팔 A/B 모두 검출 0/3 이라 사전 기준 `(다)` 에 따라 **Level 3 유지**. 근거: [`../ops/orca_v2_level3_reduction_rerun_results_20260815.md`](../ops/orca_v2_level3_reduction_rerun_results_20260815.md)
    - **절감량**: 도입 전 값은 확보 불가 판정 유지. `docs/ops/orca_v2_metrics_ledger.jsonl` 에 v2 이후부터 누적합니다.
+   - **Control Plane 도구 2종 (2026-08-16)**: `orca_taskctl.py`(Intent -> Capsule 확장, finalize 파이프라인), `orca_model_router.py`(위험도 분류, 모델 라우팅, probe). 최초 판 `3453a3f` 는 검증 없이 `main` 직접 커밋되어 되돌린 뒤(`d8c964a`) Gemini Flash 워커 2대로 재작성해 병합했습니다(`bd891aa`, `413a82b`). 되돌린 사유가 곧 본 문서 3장 17~20번입니다.
    - **미청구**: 절감량 정량값(누적 시작, 추세 판정 불가), Level 3 축소(저밀도 재실험에서도 검출 개선 없음), T6 OpenCode 1종(비임계).
 2. **Ollama 병렬도 실험 및 SSE 동시성 기준선 제정**:
    - `OLLAMA_NUM_PARALLEL` 실험을 통해 c4 등 동시성 환경에서의 지연 원인 분석 및 기준 확립.
