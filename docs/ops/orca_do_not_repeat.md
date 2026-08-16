@@ -117,6 +117,23 @@ Antigravity CLI 는 워크스페이스 신뢰 확인 대화창을 먼저 띄웁�
 의존성으로 둔 새 Task 를 만들어 태웁니다. 후자가 이력 보존에 낫고, 전자가
 왕복 지표를 한 Task 에 모으기에 낫습니다. 절차: [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 6.2.1
 
+#### 4.5.1 `ready` 로 되돌린 뒤 재 Dispatch 를 빠뜨리기
+
+`task-update --status ready` 만 하고 터미널에 지시를 보내면 **기존 Dispatch 의
+권한이 회수된 상태**라 재보고가 `Dispatch <id> capability is revoked` 로
+거부됩니다. `ready` 복귀는 재 Dispatch 의 전제이며 그 자체로 권한을 주지
+않습니다. 2026-08-16 에 워커 두 대가 이 상태로 각각 두 번 거부되었습니다.
+
+순서는 `task-update --status ready` 다음 `dispatch --task <id> --to <handle>`
+이고, 그 뒤에 터미널로 수정 지시를 보냅니다.
+
+#### 4.5.2 병합한 Task 를 `completed` 로 닫지 않기
+
+산출물을 병합했는데 Task 상태를 그대로 두면 그 터미널에 활성 Dispatch 가
+남아, 같은 터미널에 다음 Task 를 Dispatch 할 때
+`Terminal <handle> already has an active dispatch` 로 거부됩니다. 워커를
+재사용하려면 병합 직후 `task-update --status completed` 로 닫습니다.
+
 ---
 
 ## 5. 검증 태도
@@ -175,6 +192,43 @@ Reviewer 기본 모델은 `gemini-3.7-flash-high` 입니다. Claude 계열과 �
 
 `ORCA_WORKER_DONE_V2` 의 필드명은 `changed_files` 입니다. 비표준 필드 폴백을 코드에 남기지 않습니다. 남기면 계약 위반이 정상값으로 섞입니다.
 
+### 5.5 확인하지 않은 외부 CLI 서명으로 코드를 작성
+
+이 저장소에서 **가장 많이 반복된 결함 부류**입니다. 세 번 나왔습니다.
+
+| 시점 | 허구 서명 | 실제 |
+| --- | --- | --- |
+| 2026-08-16 `3453a3f` | `orca orchestration dispatch --capsule --model --worktree` | `--task`, `--to` 만 존재 |
+| 2026-08-16 `3453a3f` | `orca worktree create --branch` | `--name` |
+| 2026-08-16 재작성 1차 | `dispatch --inject <값>` | `--inject` 는 값을 받지 않음 |
+| 2026-08-16 재작성 1차 | `opencode ask --model --prompt` | `opencode run [message..] -m <provider/model>` |
+
+**값 유무는 `--help` 의 Usage 줄에서 구분합니다.** `--task <task_id>` 처럼
+자리표시자가 있으면 값을 받고, `[--inject]` 처럼 없으면 불리언입니다. Options
+목록은 둘을 구분해 주지 않으므로 Usage 줄을 보십시오.
+
+이 부류가 특히 위험한 이유는 **틀린 서명이 조용히 실패한다는 점**입니다.
+`opencode ask` 는 `ask` 를 프로젝트 경로로 해석해 실패하면서 **종료 코드 0** 을
+반환했고, probe 는 그것을 가용으로 판정해 거짓 양성을 냈습니다. 실패를 성공으로
+보고하는 쪽이 반대보다 위험합니다.
+
+외부 명령을 조립하는 코드는 **종료 코드만으로 성공을 선언하지 않습니다.**
+응답 본문 같은 추가 근거를 함께 요구하십시오.
+
+### 5.6 테스트가 틀린 사실을 정답으로 고정
+
+`3453a3f` 의 테스트 54건은 전부 통과했지만 결함이 있던 세 함수(워크트리 생성,
+Dispatch, finalize)를 하나도 덮지 않았습니다. 재작성 1차에서는 더 나쁜 형태가
+나왔습니다. 테스트가 `["--inject", "some_preamble"]` 를 **기대값으로 단정**해
+존재하지 않는 서명을 정답으로 고정했습니다.
+
+**통과하는 테스트는 확인의 근거가 아닙니다.** 기대값이 코드가 그렇게 동작한다는
+이유로 정해졌는지, 외부 계약이 그렇다는 근거로 정해졌는지 구분하십시오. 전자는
+동어반복입니다.
+
+리뷰어 체크리스트에 이 항목을 넣으십시오. 2026-08-16 에 Level 2 가 이 결함을
+놓친 것은 체크리스트에 해당 질문이 없었기 때문입니다.
+
 ---
 
 ## 6. 문서와 측정 판정
@@ -184,3 +238,27 @@ Reviewer 기본 모델은 `gemini-3.7-flash-high` 입니다. Claude 계열과 �
 설계 5장의 8,000자는 **문자 수**이며 바이트가 아닙니다. `wc -c` 로 재면 한글이 3바이트라 초과처럼 보입니다.
 
 검증기 `check_context_budgets` 는 `len()` 으로 문자 수를 셉니다. 공용 헬퍼는 `scripts/orca_contract.py` 의 `char_len` 입니다.
+
+### 6.2 `defect_when` 에 산문을 쓰기
+
+`review_checklist` 의 `defect_when` 은 **어느 답이 결함인지를 나타내는 `yes` 또는
+`no` 극성 토큰**입니다. 설명 문장이 아닙니다.
+
+2026-08-16 에 한국어 산문("그런 조합이 남아 있으면 결함이다")을 넣어
+`validate_review_report.py` 가 극성을 읽지 못했고, 리뷰어 판정 8항목이 전부
+`조건3 판정 불가` 로 무효 처리되었습니다. **리뷰 내용은 정상이었는데 형식으로
+무효가 되었습니다.**
+
+질문의 극성을 뒤집어 쓰지 않도록 주의하십시오. "결함이 있는가" 형태면 `yes`,
+"규칙을 지키는가" 형태면 `no` 입니다. 설명은 `question` 이나 `how` 에 적습니다.
+정본 형식: [`.agents/templates/review_done_v2.json`](../../.agents/templates/review_done_v2.json)
+
+### 6.3 예산 상한을 함수에만 두고 CLI 에 노출하지 않기
+
+`orca_run_reviewer.py` 의 `max_diff_chars` 가 함수 인자로만 존재하고 CLI 에
+없어서, 2026-08-16 에 50,261자 diff 를 60% 절단된 상태로만 검토할 수 있었습니다.
+설계서는 초과 시 파일별 분할을 지시하지만 경로 필터도 없어 분할 자체가
+불가능했습니다.
+
+**운영 판정을 좌우하는 상한은 호출자가 조정할 수 있어야 합니다.** 기본값으로
+예산을 지키게 하고, 근거가 있을 때 올릴 수 있는 경로를 함께 두십시오.
