@@ -54,7 +54,8 @@
 | 서브커맨드 | 주요 인자 | 필수 여부 | 설명 |
 | --- | --- | --- | --- |
 | **`expand`** | `--intent <path>`<br>`--out <path>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--json` | `--intent` (필수)<br>`--out` (필수) | Task Intent YAML을 읽어 유효한 `ORCA_TASK_CAPSULE_V2` 파일로 확장합니다. |
-| **`dispatch`** | `--intent <path>`<br>`--repo <path>`<br>`--model <id>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--capsule-dir <dir>`<br>`--agent <id>`<br>`--terminal <handle>`<br>`--no-probe`<br>`--dry-run`<br>`--json` | `--intent` (필수) | Intent를 Capsule로 확장한 후 `orca orchestration worker-start`로 워커를 기동합니다. |
+| **`create`** | `--intent <path>`<br>`--run-id <id>`<br>`--task-id <id>`<br>`--capsule-dir <dir>`<br>`--task-title <text>`<br>`--display-name <text>`<br>`--deps <json>`<br>`--json` | `--intent` (필수) | Intent를 Capsule로 확장하고 **Capsule 절대 경로를 담은 spec** 으로 Orca Task를 만듭니다. Dispatch 전에 이 명령을 씁니다. |
+| **`dispatch`** | `--intent <path>`<br>`--repo <path>`<br>`--model <id>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--capsule-dir <dir>`<br>`--agent <id>`<br>`--terminal <handle>`<br>`--worktree <sel>`<br>`--worktree-name <name>`<br>`--no-probe`<br>`--no-capsule-notice`<br>`--dry-run`<br>`--json` | `--intent` (필수)<br>`--agent` 또는 `--terminal` 중 하나 | Intent를 Capsule로 확장한 뒤 워커를 기동하고 **Capsule 정본 경로 고지문을 자동 투입**합니다. |
 | **`finalize`** | `--report <path>`<br>`--capsule <path>`<br>`--repo <path>`<br>`--worktree <path>`<br>`--base <ref>`<br>`--branch <ref>`<br>`--reviewer`<br>`--reviewer-model <id>`<br>`--json` | `--report` (필수)<br>`--capsule` (필수) | `worker_done` 보고 요약 -> Level 1 게이트 -> Level 2 리뷰어 검증을 일괄 실행하고 최종 판정합니다. |
 | **`status`** | `--run-id <id>`<br>`--task-id <id>`<br>`--json` | 선택 | `orca orchestration task-list`를 호출하여 현재 Run/Task 상태를 조회합니다. |
 
@@ -81,6 +82,34 @@
 - **`0` (통과)**: 모든 도구가 정상 실행되고, 계약 위반이나 게이트 실패가 0건인 경우.
 - **`1` (검증 실패)**: 도구는 정상 실행되었으나 계약 위반, 게이트 반려, 리뷰어 defect가 확인된 경우.
 - **`2` (도구/파싱 오류)**: 대상 파일 누락, JSON 파싱 실패, 하위 검증 도구 자체 비정상 종료 시.
+
+### 3.4 Capsule 경로 전달 (2026-08-17 신설)
+
+**`orca orchestration dispatch --inject` 는 Orca Task 의 `spec` 만 워커에게 전달합니다.** Capsule 경로도 내용도 들어가지 않습니다. 2026-08-17 첫 실사용에서 워커 3대 전부가 Capsule 을 읽지 못한 채 요약만 보고 작업해 파일명과 보고 계약을 위반했습니다. 근거: [`orca_do_not_repeat.md`](orca_do_not_repeat.md) 4.7
+
+경로는 **두 층으로** 전달합니다.
+
+| 층 | 수단 | 시점 |
+| --- | --- | --- |
+| 1차 (구조적) | `create` 가 Capsule 절대 경로를 Task `spec` 에 넣습니다 | Task 생성 시. `--inject` 프리앰블에 함께 실립니다 |
+| 2차 (보강) | `dispatch` 가 기동 직후 `terminal send` 로 고지문을 투입합니다 | 부착 성공 직후 |
+
+권장 순서입니다.
+
+```bash
+python3 scripts/orca_taskctl.py create --intent <intent> --run-id <run> \
+  --capsule-dir /Users/kwanbum/orca/capsules/<run> --task-title "<제목>" --json
+
+python3 scripts/orca_taskctl.py dispatch --intent <intent> --run-id <run> \
+  --capsule-dir /Users/kwanbum/orca/capsules/<run> \
+  --task-id <create 가 돌려준 id> --terminal <handle> --json
+```
+
+고지문에는 Capsule 절대 경로, `allowed_write_files` 준수, 허용 목록 밖 파일명 생성 금지, `commit_count: 0` 이면 `escalation`, 보고 경로, **그리고 `dispatch-show` 로 조회한 유효 `dispatchId`** 가 들어갑니다. 마지막 항목이 재 Dispatch 후 `capability is revoked` 거부를 막습니다.
+
+Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 워크트리에서 돌기 때문에 상대 경로로는 파일을 찾지 못합니다.
+
+전송이 실패하면 `capsule_notice.status` 가 `failed` 가 되고 stderr 에 경고가 나옵니다. **조용히 넘어가지 않습니다.** `--no-capsule-notice` 는 습관적으로 쓰지 않습니다.
 
 ---
 
