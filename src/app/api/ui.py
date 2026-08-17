@@ -8,6 +8,7 @@ src/app/api/ui.py
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from urllib.parse import parse_qs, quote
 
@@ -372,7 +373,8 @@ async def signup_submit(request: Request, db: Session = Depends(get_db)):
     try:
         signup_payload = SignUpRequest.model_validate(payload)
         response = RedirectResponse(url="/", status_code=303)
-        register_user(signup_payload, response, db)
+        # register_user 는 동기 DB 트랜잭션과 PBKDF2 해싱을 함께 수행합니다.
+        await asyncio.to_thread(register_user, signup_payload, response, db)
         return response
     except ValidationError as exc:
         errors: dict[str, list[str]] = {}
@@ -401,6 +403,25 @@ async def signup_submit(request: Request, db: Session = Depends(get_db)):
     return render_response
 
 
+def _load_account_and_verify(db: Session, username: str, password: str) -> tuple:
+    """계정 조회와 비밀번호 검증을 한 스레드에서 수행합니다.
+
+    check_password 는 PBKDF2 600,000 회로 CPU 를 수백 밀리초 점유합니다.
+    조회와 검증을 따로 오프로드하면 왕복이 두 번이라 한 번에 묶습니다.
+    """
+    account = db.execute(
+        select(CustomUser).where(CustomUser.username == username)
+    ).scalar_one_or_none()
+    if account is None:
+        return None, False
+    return account, check_password(password, account.password)
+
+
+def _touch_last_login(db: Session, account: CustomUser) -> None:
+    account.last_login = utcnow()
+    db.commit()
+
+
 @router.post("/accounts/login/")
 async def login_submit(
     request: Request,
@@ -417,11 +438,13 @@ async def login_submit(
     username = (form_data.get("username") or [""])[0]
     password = (form_data.get("password") or [""])[0]
 
-    account = db.execute(
-        select(CustomUser).where(CustomUser.username == username)
-    ).scalar_one_or_none()
+    # 동기 DB 조회와 PBKDF2 검증을 루프 스레드에서 하면 무인증 요청만으로
+    # 이벤트 루프를 점유할 수 있습니다.
+    account, password_ok = await asyncio.to_thread(
+        _load_account_and_verify, db, username, password
+    )
 
-    if account is None or not check_password(password, account.password):
+    if account is None or not password_ok:
         context = {
             "hide_sidebar": True,
             "form": login_form(
@@ -447,11 +470,10 @@ async def login_submit(
         response.status_code = 403
         return response
 
-    account.last_login = utcnow()
-    db.commit()
+    await asyncio.to_thread(_touch_last_login, db, account)
 
     try:
-        token = create_session(account.id, account.username)
+        token = await asyncio.to_thread(create_session, account.id, account.username)
     except SessionStoreUnavailable as exc:
         logger.exception("SSR 로그인 세션 저장 실패")
         raise HTTPException(
