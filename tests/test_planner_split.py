@@ -1,74 +1,93 @@
 """
 tests/test_planner_split.py
 
-planner.py 기계적 분할(planner_intent_signals.py, planner_llm_draft.py) 정합성 검증 테스트.
-- 모듈별 심볼 위치 및 재수출 검증
-- 순환 참조 부재 검증
-- 신규 모듈의 독립 실행 검증
+planner.py 와 planner_interpreter.py 의 모듈 분리 정합성 및 재수출 규약 검증.
+재수출 심볼(_load_last_plan, _load_last_tool_results, interpret_request) 누락 시 실패합니다.
 """
 
-import sys
+import ast
+from pathlib import Path
+
+import src.app.services.planner as planner_mod
+import src.app.services.planner_interpreter as interpreter_mod
+from src.app.schemas.chat import ChatExecutionPlan, ChatPlan
+from src.app.services.planner import (
+    _attempt_llm_plan_draft,
+    _load_last_plan,
+    _load_last_tool_results,
+    _request_llm_plan_draft,
+    compile_plan,
+    interpret_request,
+    plan_chat_request,
+)
 
 
-def test_planner_reexports_all_symbols():
-    import src.app.services.planner as planner
-    import src.app.services.planner_intent_signals as signals
-    import src.app.services.planner_llm_draft as llm_draft
+def test_reexported_symbols_identity():
+    """planner.py 가 planner_interpreter.py 의 핵심 심볼을 동일 객체로 재수출하는지 검증."""
+    assert _load_last_plan is interpreter_mod._load_last_plan
+    assert _load_last_tool_results is interpreter_mod._load_last_tool_results
+    assert interpret_request is interpreter_mod.interpret_request
 
-    moved_signals = [
-        "_extract_bid_query_params",
-        "_extract_followup_region",
-        "_extract_followup_category",
-        "_has_prediction_action_intent",
-        "_has_collection_command",
-        "_has_collection_context_only",
-        "_is_model_validation_request",
-        "_is_bid_price_prediction_request",
-        "_extract_prediction_model_id",
-        "_extract_prediction_limit",
-        "_select_action",
-        "_has_kb_refresh_intent",
-    ]
-    for sym in moved_signals:
-        assert hasattr(signals, sym), f"signals missing {sym}"
-        assert hasattr(planner, sym), f"planner re-export missing {sym}"
-
-    moved_llm = [
-        "LLM_PLAN_DRAFT_ENV",
-        "_attempt_llm_plan_draft",
-        "_llm_plan_draft_enabled",
-        "_should_try_llm_plan_draft",
-        "_llm_system_instruction",
-        "_request_llm_plan_draft",
-        "_validate_llm_plan_draft",
-    ]
-    for sym in moved_llm:
-        assert hasattr(llm_draft, sym), f"llm_draft missing {sym}"
-        assert hasattr(planner, sym), f"planner re-export missing {sym}"
+    assert hasattr(planner_mod, "_load_last_plan")
+    assert hasattr(planner_mod, "_load_last_tool_results")
+    assert hasattr(planner_mod, "interpret_request")
+    assert "_load_last_plan" in planner_mod.__all__
+    assert "_load_last_tool_results" in planner_mod.__all__
+    assert "interpret_request" in planner_mod.__all__
 
 
-def test_no_circular_imports():
-    # 신규 모듈이 planner 를 직접 import 하지 않는지 확인
-    import src.app.services.planner_intent_signals as signals
-    import src.app.services.planner_llm_draft as llm_draft
-
-    assert "src.app.services.planner" not in sys.modules or not hasattr(signals, "plan_chat_request")
-    assert not hasattr(signals, "plan_chat_request")
-    assert not hasattr(signals, "interpret_request")
-    assert not hasattr(llm_draft, "plan_chat_request")
-    assert not hasattr(llm_draft, "interpret_request")
+def test_llm_plan_draft_patch_target_remains_in_planner():
+    """tests/test_chatbot_planner.py 의 patch 타겟이 planner 모듈에 유지되는지 검증."""
+    assert hasattr(planner_mod, "_request_llm_plan_draft")
+    assert hasattr(planner_mod, "_attempt_llm_plan_draft")
+    assert callable(_request_llm_plan_draft)
+    assert callable(_attempt_llm_plan_draft)
 
 
-def test_line_count_limits():
-    from pathlib import Path
+def test_unidirectional_dependency_no_reverse_import():
+    """planner_interpreter.py 가 planner.py 를 역참조(import)하지 않는지 AST 로 검증."""
+    interpreter_path = Path(interpreter_mod.__file__)
+    tree = ast.parse(interpreter_path.read_text(encoding="utf-8"))
 
-    root = Path(__file__).resolve().parent.parent
-    planner_lines = len((root / "src/app/services/planner.py").read_text().splitlines())
-    signals_lines = len(
-        (root / "src/app/services/planner_intent_signals.py").read_text().splitlines()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert alias.name != "src.app.services.planner"
+                assert not alias.name.endswith(".planner")
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            assert mod != "src.app.services.planner"
+            assert not mod.endswith(".planner")
+
+
+def test_file_line_limits():
+    """분리된 두 모듈이 각각 600줄 미만인지 검증."""
+    planner_lines = len(Path(planner_mod.__file__).read_text(encoding="utf-8").splitlines())
+    interpreter_lines = len(
+        Path(interpreter_mod.__file__).read_text(encoding="utf-8").splitlines()
     )
-    llm_lines = len((root / "src/app/services/planner_llm_draft.py").read_text().splitlines())
 
-    assert planner_lines <= 700, f"planner.py line count ({planner_lines}) exceeds 700"
-    assert signals_lines <= 350, f"planner_intent_signals.py line count ({signals_lines}) exceeds 350"
-    assert llm_lines <= 350, f"planner_llm_draft.py line count ({llm_lines}) exceeds 350"
+    assert planner_lines < 600, f"planner.py exceeds 600 lines: {planner_lines}"
+    assert interpreter_lines < 600, f"planner_interpreter.py exceeds 600 lines: {interpreter_lines}"
+
+
+def test_interpret_request_direct_vs_reexported():
+    """interpret_request 가 직접 호출과 planner 재수출 호출 모두에서 동일하게 작동하는지 검증."""
+    raw_query = "최근 서울 용역 통계 알려줘"
+    context = {"last_query": "공고 통계", "last_filters_json": {"category": "Servc"}}
+
+    direct_res = interpreter_mod.interpret_request(raw_query, context)
+    reexported_res = interpret_request(raw_query, context)
+
+    assert isinstance(direct_res, ChatExecutionPlan)
+    assert isinstance(reexported_res, ChatExecutionPlan)
+    assert direct_res.model_dump() == reexported_res.model_dump()
+
+    # compile_plan 및 plan_chat_request 연계 검증
+    plan = compile_plan(reexported_res)
+    assert isinstance(plan, ChatPlan)
+    assert plan.mode == "answer"
+
+    end_to_end_plan = plan_chat_request(raw_query, context)
+    assert end_to_end_plan.mode == plan.mode
+    assert end_to_end_plan.intent_type == plan.intent_type
