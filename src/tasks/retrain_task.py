@@ -14,6 +14,7 @@ AGENTS.md 의 비협상 원칙 "신규 모델은 champion 을 성능으로 압�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -131,14 +132,16 @@ async def run_retrain_pipeline_task(
     """
     db = SessionLocal()
     try:
-        df_train = build_training_dataset(
+        df_train = await asyncio.to_thread(
+            build_training_dataset,
             db,
             category_code=category_code,
             output_dir=output_dir,
             require_announcement=require_announcement,
         )
         if df_train.empty:
-            _record(
+            await asyncio.to_thread(
+                _record,
                 db,
                 trigger_source=trigger_source,
                 champion="",
@@ -158,11 +161,16 @@ async def run_retrain_pipeline_task(
         # champion 지표는 학습 **전에** 읽습니다. 학습 후에 읽으면 방금 저장한
         # 챌린저가 최신 버전으로 잡혀 자기 자신과 비교하게 됩니다.
         # 레지스트리 경로는 학습기와 반드시 같아야 합니다. 다르면 엉뚱한 모델과 비교합니다.
-        champion_version, champion_metrics = _load_champion_metrics(
-            category_trainer.model_name, registry_dir=str(category_trainer.registry_dir)
+        champion_version, champion_metrics = await asyncio.to_thread(
+            _load_champion_metrics,
+            category_trainer.model_name,
+            registry_dir=str(category_trainer.registry_dir),
         )
 
-        metadata = category_trainer.train_and_register(df_train)
+        metadata = await asyncio.to_thread(
+            category_trainer.train_and_register,
+            df_train,
+        )
         challenger_metrics = metadata["metrics"]
 
         if champion_metrics:
@@ -187,7 +195,8 @@ async def run_retrain_pipeline_task(
             verdict["recommendation"] = "REJECT_CHALLENGER"
             verdict["rejected_reason"] = "표본이 적어 홀드아웃 분리 실패. 지표를 신뢰할 수 없습니다."
 
-        _record(
+        await asyncio.to_thread(
+            _record,
             db,
             trigger_source=trigger_source,
             champion=champion_version,
