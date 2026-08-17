@@ -8,7 +8,6 @@ import ast
 import inspect
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 from src.ml import model_registry, model_wrappers, prediction_api
@@ -53,9 +52,8 @@ def test_prediction_api_symbol_identity():
 def test_model_registry_class_defined_in_registry():
     """ModelRegistry 클래스가 model_registry.py 에 직접 정의되어 있는지 검증합니다."""
     source_file = inspect.getsourcefile(model_registry.ModelRegistry)
-    assert source_file is not None and "model_registry.py" in source_file, (
-        f"ModelRegistry 가 model_registry.py 에 정의되어 있지 않음: {source_file}"
-    )
+    assert source_file is not None
+    assert "model_registry.py" in source_file
 
 
 def test_no_circular_imports_in_new_modules():
