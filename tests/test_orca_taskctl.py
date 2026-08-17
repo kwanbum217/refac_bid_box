@@ -1592,3 +1592,48 @@ def test_expand_reviewer_scope_excludes_analysis_artifact():
     capsule = expand_intent_to_capsule(parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev")
     write_block = capsule.split("allowed_write_files:")[1].split("search_scope:")[0]
     assert "docs/analysis" not in write_block
+
+
+READ_SCOPE_INTENT = """schema: ORCA_TASK_INTENT_V1
+role: investigator
+objective: >
+  src/ml/trainer.py 분할 후보를 판정한다.
+scope:
+  - "docs/analysis/audit.md"
+read_scope:
+  - "src/ml/trainer.py"
+  - "src/ml/features.py"
+acceptance:
+  - "판정 근거를 남긴다"
+risk: low
+"""
+
+
+def test_expand_read_scope_reads_without_write_permission():
+    """read_scope 는 읽기 범위에만 들어가고 쓰기 범위에는 들어가지 않습니다.
+
+    감사 대상을 scope 에 넣으면 쓰기까지 열려 범위 게이트가 무단 수정을
+    잡지 못합니다.
+    """
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    intent = parse_intent(READ_SCOPE_INTENT)
+    assert intent["read_scope"] == ["src/ml/trainer.py", "src/ml/features.py"]
+
+    capsule = expand_intent_to_capsule(intent, task_id="task_ro")
+    read_block = capsule.split("allowed_read_files:")[1].split("allowed_write_files:")[0]
+    write_block = capsule.split("allowed_write_files:")[1].split("search_scope:")[0]
+
+    assert "src/ml/trainer.py" in read_block
+    assert "src/ml/features.py" in read_block
+    assert "src/ml/trainer.py" not in write_block
+    assert "src/ml/features.py" not in write_block
+
+
+def test_expand_read_scope_included_in_search_globs():
+    """읽기 전용 경로도 검색 범위에 있어야 워커가 실제로 열어볼 수 있습니다."""
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    capsule = expand_intent_to_capsule(parse_intent(READ_SCOPE_INTENT), task_id="task_ro")
+    glob_block = capsule.split("allowed_globs:")[1].split("forbidden:")[0]
+    assert "src/ml/trainer.py" in glob_block
