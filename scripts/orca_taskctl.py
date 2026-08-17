@@ -637,6 +637,40 @@ def worker_start(
     return _run_command(cmd, timeout=timeout)
 
 
+def _extract_cli_error(stdout: str) -> str | None:
+    """Orca CLI 의 stdout JSON 에서 error.message 를 꺼냅니다.
+
+    실패가 stderr 가 아니라 stdout 의 JSON 본문으로만 오는 경로가 있어
+    stderr 만 읽으면 원인이 사라집니다.
+    """
+    if not stdout or not stdout.strip():
+        return None
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    err = payload.get("error")
+    if isinstance(err, dict):
+        message = err.get("message")
+        return str(message) if message else None
+    if isinstance(err, str) and err:
+        return err
+    return None
+
+
+def _launch_succeeded(stdout: str) -> bool:
+    """종료 코드 0 이어도 ok 가 false 인 응답을 성공으로 보지 않습니다."""
+    if not stdout or not stdout.strip():
+        return True
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return True
+    return not (isinstance(payload, dict) and payload.get("ok") is False)
+
+
 def dispatch_worker(
     task_id: str,
     to_handle: str | None = None,
@@ -960,32 +994,68 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 )
             return 1
 
-    # worker-start 기동 시도
-    sys.stderr.write(f"워커 기동 시작 중... (task={task_id}, model={model})\n")
-    code, stdout, stderr = worker_start(
-        task_id=task_id,
-        agent_id=args.agent,
-        terminal_handle=args.terminal,
-        model=model,
-        worktree="new-child",
-        repo=args.repo,
-        as_json=args.json,
-    )
+    # 기동 경로 선택. --terminal 이 있으면 이미 떠 있는 터미널에 Dispatch 로 부착하고,
+    # 없으면 worker-start 로 새 워커를 감독 기동한다. worker-start --agent 는
+    # claude, codex, cursor 만 받으므로 Antigravity 계열은 터미널 부착 경로만 쓸 수 있다.
+    if args.terminal:
+        sys.stderr.write(f"터미널 부착 Dispatch 중... (task={task_id}, terminal={args.terminal})\n")
+        code, stdout, stderr = dispatch_worker(
+            task_id=task_id,
+            to_handle=args.terminal,
+            run_id=args.run_id if args.run_id != DEFAULT_RUN_ID else None,
+            inject=True,
+            as_json=args.json,
+        )
+        launch_cmd = f"orca orchestration dispatch --task {task_id} --to {args.terminal} --inject"
+    else:
+        if not args.agent:
+            sys.stderr.write(
+                "오류: --agent 또는 --terminal 중 하나가 필요합니다. "
+                "worker-start --agent 는 claude, codex, cursor 만 받으므로 "
+                "Antigravity/OpenCode 워커는 terminal create 로 띄운 뒤 --terminal 로 부착하십시오.\n"
+            )
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "launch_target_missing",
+                            "task_id": task_id,
+                            "capsule": str(capsule_path),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
 
-    if code == 0:
+        worktree_name = args.worktree_name or f"orca-{task_id}"
+        sys.stderr.write(f"워커 기동 시작 중... (task={task_id}, model={model})\n")
+        code, stdout, stderr = worker_start(
+            task_id=task_id,
+            agent_id=args.agent,
+            model=model,
+            worktree=args.worktree,
+            name=worktree_name if args.worktree.startswith("new-") else None,
+            repo=args.repo,
+            as_json=args.json,
+        )
+        launch_cmd = (
+            f"orca orchestration worker-start --task {task_id} --agent {args.agent} "
+            f"--model {model} --worktree {args.worktree} --name {worktree_name}"
+        )
+
+    if code == 0 and _launch_succeeded(stdout):
         if args.json:
             print(stdout)
         else:
             print(f"워커 기동 완료:\n{stdout}")
         return 0
 
-    # 기동 실패 시 실행할 명령 및 오류 출력 후 비정상 종료 (결함 6 해결)
-    err_msg = stderr.strip() or "알 수 없는 오류"
-    sys.stderr.write(f"오류: worker-start 실행 실패 (종료 코드 {code}): {err_msg}\n")
-    sys.stderr.write(
-        f"실행할 명령: orca orchestration worker-start --task {task_id} "
-        f"--model {model} --worktree new-child\n"
-    )
+    # Orca CLI 는 실패를 stdout JSON 의 error.message 로 내보내면서 stderr 를 비워
+    # 두는 경우가 있다. stderr 만 읽으면 원인이 사라지므로 stdout 도 함께 본다.
+    err_msg = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
+    sys.stderr.write(f"오류: 워커 기동 실패 (종료 코드 {code}): {err_msg}\n")
+    sys.stderr.write(f"실행할 명령: {launch_cmd}\n")
     if args.json:
         print(
             json.dumps(
@@ -1114,8 +1184,17 @@ def _build_parser() -> argparse.ArgumentParser:
     dsp.add_argument("--task-id", help="Task ID")
     dsp.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Run ID")
     dsp.add_argument("--capsule-dir", default=".orca/capsules", help="Capsule 저장 디렉터리")
-    dsp.add_argument("--agent", help="워커 agent ID")
-    dsp.add_argument("--terminal", help="워커 터미널 핸들")
+    dsp.add_argument("--agent", help="워커 agent ID (worker-start 경로. claude, codex, cursor 만)")
+    dsp.add_argument("--terminal", help="워커 터미널 핸들 (터미널 부착 Dispatch 경로)")
+    dsp.add_argument(
+        "--worktree",
+        default="new-child",
+        help="worker-start 의 워크트리 선택자 (기본: new-child)",
+    )
+    dsp.add_argument(
+        "--worktree-name",
+        help="새 워크트리 이름. new-child 및 new-top-level 에는 필수이며 미지정 시 orca-<task_id>",
+    )
     dsp.add_argument("--no-probe", action="store_true", help="모델 probe 생략")
     dsp.add_argument("--dry-run", action="store_true", help="기동 없이 Capsule 생성까지만")
     dsp.add_argument(
