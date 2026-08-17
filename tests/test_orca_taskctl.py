@@ -1646,6 +1646,31 @@ def test_expand_reviewer_has_empty_write_scope():
     assert "scripts/orca_taskctl.py" in read_files
 
 
+def test_expand_reviewer_capsule_enumerates_report_fields():
+    """계약 이름만으로는 스키마를 모르는 모델을 구속하지 못합니다.
+
+    2026-08-17 측정에서 워커 2대가 checklist_results 대신 checklist 를 쓰고
+    verdict 를 객체로 내 기계 집계가 깨졌습니다.
+    """
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev")
+    assert "report_schema:" in capsule
+    assert "checklist_results" in capsule
+    assert "checklist 라는 이름을 쓰지 않는다" in capsule
+    assert "pass 또는 fail 문자열 하나" in capsule
+
+
+def test_expand_builder_capsule_enumerates_report_fields():
+    """워커 보고도 같은 이유로 필드명을 열거합니다."""
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_BUILDER_INTENT), task_id="task_b")
+    assert "report_schema:" in capsule
+    assert "commit_count" in capsule
+    assert "checklist_results" not in capsule
+
+
 def test_expand_read_scope_included_in_search_globs():
     """읽기 전용 경로도 검색 범위에 있어야 워커가 실제로 열어볼 수 있습니다."""
     from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent

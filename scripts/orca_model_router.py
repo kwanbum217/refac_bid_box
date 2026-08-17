@@ -110,6 +110,17 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         ],
         "notes": "별도 풀. 판정 품질이 필요한 작업에만 사용.",
     },
+    "claude-opus-thinking": {
+        "id": "claude-opus-4-6-thinking",
+        "provider": "claude",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 200_000,
+        "suitable_for": [
+            "reviewer",
+        ],
+        "notes": "Antigravity 별도 풀. 2026-08-17 감사 1건 실측: 보고 11,773자로 최다, 줄 수 기준을 기계적으로 적용하지 않고 분할 불필요를 논증. 수동 지정 전용.",
+    },
     "claude-opus": {
         "id": "claude-opus-5",
         "provider": "claude",
@@ -152,6 +163,23 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "investigator",
         ],
         "notes": "컨텍스트 65536 출력 8192 제한. Capsule 범위 작업 전용.",
+    },
+    "cerebras-gemma": {
+        "id": "cerebras/gemma-4-31b",
+        "provider": "cerebras",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 65536,
+        "suitable_for": [
+            "investigator",
+        ],
+        "notes": (
+            "실제 제약은 컨텍스트가 아니라 분당 토큰(TPM)이다. 2026-08-17 실측: "
+            "파일 2개(1,081줄) 통독 실패, 파일 1개(522줄) 통독도 실패, 사실 주입 "
+            "원샷(도구 호출 0회)은 성공. 에이전트 루프가 매 턴 컨텍스트를 재전송해 "
+            "분당 유입이 누적되므로 파일 수 축소로는 해소되지 않는다. "
+            "ground_truth 주입형 단발 판정에만 쓴다."
+        ),
     },
 }
 
