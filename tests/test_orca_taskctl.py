@@ -480,6 +480,8 @@ def test_cmd_dispatch_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, c
         "--capsule-dir",
         str(tmp_path / "capsules"),
         "--json",
+        "--agent",
+        "claude",
     ])
     assert code == 0
     captured = capsys.readouterr()
@@ -508,6 +510,8 @@ def test_cmd_dispatch_failure_prints_command_to_stderr(
         str(tmp_path / "capsules"),
         "--model",
         "gemini-3.7-flash-high",
+        "--agent",
+        "claude",
     ])
     assert code == 1
 
@@ -535,6 +539,8 @@ def test_cmd_dispatch_failure_json(
         "--capsule-dir",
         str(tmp_path / "capsules"),
         "--json",
+        "--agent",
+        "claude",
     ])
     assert code == 1
 
@@ -1165,6 +1171,8 @@ def test_cmd_dispatch_skip_concurrency_check(
         "--capsule-dir",
         str(capsule_dir),
         "--skip-concurrency-check",
+        "--agent",
+        "claude",
     ])
     assert code == 0
     captured = capsys.readouterr()
@@ -1202,3 +1210,134 @@ def test_cmd_dispatch_dry_run_skips_concurrency_check(
 
 
 
+# ---------------------------------------------------------------------------
+# 기동 경로 선택 (worker-start vs 터미널 부착 Dispatch)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_cli_error_reads_stdout_error_message():
+    """Orca CLI 는 실패 원인을 stdout JSON 의 error.message 로만 주는 경우가 있다."""
+    from scripts.orca_taskctl import _extract_cli_error
+
+    stdout = json.dumps({"ok": False, "error": {"code": "invalid_argument", "message": "New worktrees require --name."}})
+    assert _extract_cli_error(stdout) == "New worktrees require --name."
+    assert _extract_cli_error("") is None
+    assert _extract_cli_error("not json") is None
+    assert _extract_cli_error(json.dumps({"ok": True})) is None
+
+
+def test_launch_succeeded_rejects_ok_false():
+    """종료 코드 0 이어도 ok 가 false 면 성공으로 보지 않는다."""
+    from scripts.orca_taskctl import _launch_succeeded
+
+    assert _launch_succeeded(json.dumps({"ok": True})) is True
+    assert _launch_succeeded(json.dumps({"ok": False, "error": {"message": "x"}})) is False
+    assert _launch_succeeded("사람이 읽는 출력") is True
+
+
+def test_cmd_dispatch_requires_launch_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """--agent 도 --terminal 도 없으면 기동을 시도하지 않고 종료 코드 2 로 거부한다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    def fail_worker_start(**kwargs):
+        raise AssertionError("기동 대상이 없으면 worker_start 를 호출해서는 안 됩니다.")
+
+    monkeypatch.setattr("scripts.orca_taskctl.worker_start", fail_worker_start)
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+    ])
+    assert code == 2
+
+
+def test_cmd_dispatch_terminal_uses_attach_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """--terminal 이 있으면 worker-start 가 아니라 dispatch --to --inject 로 부착한다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    calls: dict[str, object] = {}
+
+    def mock_dispatch_worker(**kwargs):
+        calls.update(kwargs)
+        return 0, json.dumps({"ok": True}), ""
+
+    def fail_worker_start(**kwargs):
+        raise AssertionError("터미널 부착 경로에서는 worker_start 를 호출해서는 안 됩니다.")
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr("scripts.orca_taskctl.worker_start", fail_worker_start)
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--terminal",
+        "term_abc",
+        "--json",
+    ])
+    assert code == 0
+    assert calls["to_handle"] == "term_abc"
+    assert calls["inject"] is True
+
+
+def test_cmd_dispatch_worker_start_passes_worktree_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """new-child 워크트리는 --name 이 필수이므로 이름을 반드시 넘긴다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    calls: dict[str, object] = {}
+
+    def mock_worker_start(**kwargs):
+        calls.update(kwargs)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--agent",
+        "claude",
+        "--worktree-name",
+        "orca-split-probe",
+        "--json",
+    ])
+    assert code == 0
+    assert calls["worktree"] == "new-child"
+    assert calls["name"] == "orca-split-probe"
+
+
+def test_cmd_dispatch_ok_false_is_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+    """종료 코드 0 + ok:false 응답을 성공으로 보고하지 않고 stdout 의 원인을 노출한다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    payload = json.dumps({"ok": False, "error": {"message": "New worktrees require --name."}})
+
+    monkeypatch.setattr("scripts.orca_taskctl.worker_start", lambda **k: (0, payload, ""))
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--agent",
+        "claude",
+    ])
+    assert code == 1
+    assert "New worktrees require --name." in capsys.readouterr().err
