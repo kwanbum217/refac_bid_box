@@ -486,7 +486,9 @@ def test_cmd_dispatch_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, c
     assert code == 0
     captured = capsys.readouterr()
     data = json.loads(captured.out)
-    assert data["status"] == "dispatched"
+    # 기동 응답은 launch 키 아래에 담기고 Capsule 경로가 함께 보고됩니다.
+    assert data["launch"]["status"] == "dispatched"
+    assert Path(data["capsule"]).is_absolute()
 
 
 def test_cmd_dispatch_failure_prints_command_to_stderr(
@@ -1341,3 +1343,172 @@ def test_cmd_dispatch_ok_false_is_failure(tmp_path: Path, monkeypatch: pytest.Mo
     ])
     assert code == 1
     assert "New worktrees require --name." in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# Capsule 경로 주입
+# ---------------------------------------------------------------------------
+
+
+def test_build_capsule_notice_carries_path_contract_and_dispatch_id():
+    """고지문은 경로, 커밋 계약, 유효 dispatchId 를 함께 담아야 합니다."""
+    from scripts.orca_taskctl import build_capsule_notice
+
+    text = build_capsule_notice(
+        Path("/abs/capsules/task_x/capsule.yaml"),
+        report_path="/abs/capsules/task_x/worker_done.json",
+        dispatch_id="ctx_new",
+    )
+    assert "/abs/capsules/task_x/capsule.yaml" in text
+    assert "allowed_write_files" in text
+    assert "escalation" in text
+    assert "ctx_new" in text
+    assert "/abs/capsules/task_x/worker_done.json" in text
+
+
+def test_build_task_spec_embeds_absolute_capsule_path():
+    """spec 은 --inject 가 전달하는 유일한 본문이므로 Capsule 경로를 담아야 합니다."""
+    from scripts.orca_taskctl import build_task_spec
+
+    spec = build_task_spec("모듈 A 를 기계적 분할한다", Path("/abs/c/capsule.yaml"))
+    assert "/abs/c/capsule.yaml" in spec
+    assert "모듈 A" in spec
+
+
+def test_build_task_spec_truncates_long_objective():
+    """objective 가 길어도 spec 이 무한히 커지지 않아야 합니다."""
+    from scripts.orca_taskctl import build_task_spec
+
+    spec = build_task_spec("가" * 900, Path("/abs/c/capsule.yaml"))
+    assert "/abs/c/capsule.yaml" in spec
+    assert len(spec) < 600
+
+
+def test_cmd_dispatch_sends_capsule_notice_on_attach(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """터미널 부착 성공 후 Capsule 고지문이 자동 전송되어야 합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    sent: dict[str, str] = {}
+
+    def mock_terminal_send(handle, text, timeout=30):
+        sent["handle"] = handle
+        sent["text"] = text
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_send", mock_terminal_send)
+    monkeypatch.setattr("scripts.orca_taskctl.resolve_dispatch_id", lambda *a, **k: "ctx_live")
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--terminal",
+        "term_abc",
+        "--json",
+    ])
+    assert code == 0
+    assert sent["handle"] == "term_abc"
+    assert "capsule.yaml" in sent["text"]
+    assert "ctx_live" in sent["text"]
+    data = json.loads(capsys.readouterr().out)
+    assert data["capsule_notice"]["status"] == "sent"
+    assert Path(data["capsule"]).is_absolute()
+
+
+def test_cmd_dispatch_capsule_notice_failure_is_surfaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """고지문 전송 실패를 조용히 넘기지 않아야 합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.terminal_send",
+        lambda *a, **k: (0, json.dumps({"ok": False, "error": {"message": "tab_not_found"}}), ""),
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.resolve_dispatch_id", lambda *a, **k: None)
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--terminal",
+        "term_abc",
+        "--json",
+    ])
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "tab_not_found" in captured.err
+    assert json.loads(captured.out)["capsule_notice"]["status"] == "failed"
+
+
+def test_cmd_dispatch_no_capsule_notice_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """--no-capsule-notice 를 주면 전송을 시도하지 않아야 합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    def fail_send(*a, **k):
+        raise AssertionError("--no-capsule-notice 에서는 전송하지 않아야 합니다.")
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_send", fail_send)
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--terminal",
+        "term_abc",
+        "--no-capsule-notice",
+    ])
+    assert code == 0
+
+
+def test_cmd_create_puts_capsule_path_in_task_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """create 는 Capsule 절대 경로를 Orca Task spec 에 넣어야 합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        calls.append(cmd)
+        return 0, json.dumps({"ok": True, "result": {"task": {"id": "task_created"}}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    code = main([
+        "create",
+        "--intent",
+        str(intent_file),
+        "--run-id",
+        "run_x",
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--task-title",
+        "제목",
+        "--json",
+    ])
+    assert code == 0
+    cmd = calls[0]
+    assert cmd[:3] == ["orca", "orchestration", "task-create"]
+    spec = cmd[cmd.index("--spec") + 1]
+    assert "capsule.yaml" in spec
+    assert Path(spec.split("정본 사양(Capsule): ")[1]).is_absolute()
+    assert json.loads(capsys.readouterr().out)["task_id"] == "task_created"

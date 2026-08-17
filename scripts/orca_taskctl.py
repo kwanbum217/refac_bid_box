@@ -702,6 +702,85 @@ def dispatch_worker(
     return _run_command(cmd, timeout=timeout)
 
 
+def terminal_send(handle: str, text: str, timeout: int = 30) -> tuple[int, str, str]:
+    """orca terminal send 로 터미널에 지시를 직접 투입합니다.
+
+    `--enter` 를 빠뜨리면 텍스트가 입력창에 남기만 하고 전달되지 않습니다.
+    """
+    cmd = [
+        "orca",
+        "terminal",
+        "send",
+        "--terminal",
+        handle,
+        "--text",
+        text,
+        "--enter",
+        "--json",
+    ]
+    return _run_command(cmd, timeout=timeout)
+
+
+def resolve_dispatch_id(task_id: str, timeout: int = 30) -> str | None:
+    """Task 의 현재 유효한 Dispatch ID 를 조회합니다.
+
+    재 Dispatch 하면 새 권한이 발급되는데 워커는 자기 문맥에 남은 옛 ID 로
+    보고해 `capability is revoked` 로 거부됩니다. 유효 ID 를 워커에게 명시
+    전달하기 위해 씁니다.
+    """
+    cmd = ["orca", "orchestration", "dispatch-show", "--task", task_id, "--json"]
+    code, stdout, _stderr = _run_command(cmd, timeout=timeout)
+    if code != 0 or not stdout.strip():
+        return None
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is False:
+        return None
+    dispatch = (payload.get("result") or {}).get("dispatch") or {}
+    dispatch_id = dispatch.get("id")
+    return str(dispatch_id) if dispatch_id else None
+
+
+def build_capsule_notice(
+    capsule_path: Path,
+    report_path: str | None = None,
+    dispatch_id: str | None = None,
+) -> str:
+    """Capsule 정본 경로 고지문을 만듭니다.
+
+    `dispatch --inject` 는 Orca Task 의 spec 만 주입하며 Capsule 경로도 내용도
+    전달하지 않습니다. 이 고지문 없이는 워커가 한두 문장 요약만 보고 일하며,
+    2026-08-17 에 워커 3대 전부가 파일명과 보고 계약을 위반했습니다.
+    """
+    parts = [
+        f"정본 사양은 {capsule_path} 입니다.",
+        "지금 그 파일을 읽고 이 작업의 유일한 정본으로 삼으십시오.",
+        "objective, acceptance, allowed_write_files, forbidden 을 그대로 지킵니다.",
+        "allowed_write_files 에 없는 파일명을 새로 만들지 마십시오.",
+        "README, AGENTS.md, SKILLS.md, 설계서는 읽지 않습니다.",
+        "코드 변경 작업은 커밋해야 완료입니다. commit_count 가 0 이면 succeeded 대신 escalation 을 보냅니다.",
+    ]
+    if report_path:
+        parts.append(f"보고 JSON 은 {report_path} 에 ORCA_WORKER_DONE_V2 계약으로 씁니다.")
+    if dispatch_id:
+        parts.append(f"worker_done 전송 시 dispatchId 는 {dispatch_id} 입니다.")
+    return " ".join(parts)
+
+
+def build_task_spec(objective: str, capsule_path: Path) -> str:
+    """Orca Task 의 spec 에 Capsule 절대 경로를 함께 넣습니다.
+
+    spec 은 `dispatch --inject` 가 워커에게 실제로 전달하는 유일한 본문입니다.
+    경로를 여기에 넣으면 워커가 첫 턴부터 정본을 찾을 수 있습니다.
+    """
+    summary = objective.strip().replace("\n", " ")
+    if char_len(summary) > 400:
+        summary = truncate(summary, 400)
+    return f"{summary} 정본 사양(Capsule): {capsule_path}"
+
+
 # ---------------------------------------------------------------------------
 # Finalize (결함 4 해결: 정확한 종료 코드 산출)
 # ---------------------------------------------------------------------------
@@ -899,6 +978,125 @@ def cmd_expand(args: argparse.Namespace) -> int:
     return 0
 
 
+def _maybe_json(text: str) -> Any:
+    """JSON 이면 파싱해서, 아니면 원문 문자열로 돌려줍니다."""
+    if not text or not text.strip():
+        return None
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return text.strip()
+
+
+def _deliver_capsule_notice(
+    args: argparse.Namespace,
+    task_id: str,
+    capsule_path: Path,
+    intent: dict[str, Any],
+) -> dict[str, Any]:
+    """기동 직후 Capsule 정본 경로를 워커 터미널에 투입합니다.
+
+    터미널 부착 경로에서만 가능합니다. worker-start 로 기동한 감독 워커는
+    핸들을 즉시 알 수 없으므로 건너뛰고 그 사실을 상태로 남깁니다.
+    """
+    if getattr(args, "no_capsule_notice", False):
+        return {"status": "skipped", "reason": "no_capsule_notice"}
+    if not args.terminal:
+        return {"status": "skipped", "reason": "no_terminal_handle"}
+
+    dispatch_id = resolve_dispatch_id(task_id)
+    report_path = intent.get("report_path") or f"{capsule_path.parent}/worker_done.json"
+    text = build_capsule_notice(capsule_path, report_path=str(report_path), dispatch_id=dispatch_id)
+    code, stdout, stderr = terminal_send(args.terminal, text)
+    if code == 0 and _launch_succeeded(stdout):
+        return {"status": "sent", "dispatch_id": dispatch_id, "chars": char_len(text)}
+
+    reason = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
+    sys.stderr.write(
+        f"경고: Capsule 고지 전송 실패: {reason}\n"
+        f"워커가 Capsule 을 읽지 못한 상태로 작업할 수 있습니다. 수동 전달이 필요합니다.\n"
+    )
+    return {"status": "failed", "reason": reason, "dispatch_id": dispatch_id}
+
+
+def cmd_create(args: argparse.Namespace) -> int:
+    """Intent 를 Capsule 로 확장하고 그 절대 경로를 담은 Orca Task 를 만듭니다.
+
+    Task 의 spec 은 `dispatch --inject` 가 워커에게 전달하는 유일한 본문이라,
+    Capsule 경로를 여기에 넣어야 워커가 첫 턴부터 정본을 찾습니다.
+    """
+    intent_path = Path(args.intent)
+    if not intent_path.exists():
+        sys.stderr.write(f"오류: Intent 파일 없음: {intent_path}\n")
+        return 2
+
+    intent = parse_intent(intent_path.read_text(encoding="utf-8"))
+    task_id = args.task_id or intent.get("task_id") or f"task_{intent_path.stem}"
+
+    task_capsule_dir = Path(args.capsule_dir) / task_id
+    task_capsule_dir.mkdir(parents=True, exist_ok=True)
+    capsule_path = (task_capsule_dir / "capsule.yaml").resolve()
+
+    try:
+        capsule = expand_intent_to_capsule(
+            intent,
+            task_id=task_id,
+            run_id=args.run_id,
+            capsule_path=capsule_path,
+        )
+    except ValueError as err:
+        sys.stderr.write(f"오류: {err}\n")
+        return 2
+    capsule_path.write_text(capsule, encoding="utf-8")
+
+    spec = build_task_spec(intent.get("objective", ""), capsule_path)
+    cmd = [
+        "orca",
+        "orchestration",
+        "task-create",
+        "--run",
+        args.run_id,
+        "--spec",
+        spec,
+        "--json",
+    ]
+    if args.task_title:
+        cmd.extend(["--task-title", args.task_title])
+    if args.display_name:
+        cmd.extend(["--display-name", args.display_name])
+    if args.deps:
+        cmd.extend(["--deps", args.deps])
+
+    code, stdout, stderr = _run_command(cmd)
+    if code != 0 or not _launch_succeeded(stdout):
+        reason = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
+        sys.stderr.write(f"오류: task-create 실패: {reason}\n")
+        return 1
+
+    created_id = None
+    payload = _maybe_json(stdout)
+    if isinstance(payload, dict):
+        created_id = ((payload.get("result") or {}).get("task") or {}).get("id")
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "task_id": created_id,
+                    "capsule": str(capsule_path),
+                    "spec": spec,
+                    "char_count": char_len(capsule),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        print(f"Task 생성 완료: {created_id}")
+        print(f"Capsule: {capsule_path}")
+    return 0
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
     intent_path = Path(args.intent)
     if not intent_path.exists():
@@ -912,7 +1110,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     capsule_dir = Path(args.capsule_dir)
     task_capsule_dir = capsule_dir / task_id
     task_capsule_dir.mkdir(parents=True, exist_ok=True)
-    capsule_path = task_capsule_dir / "capsule.yaml"
+    # 워커는 다른 워크트리에서 돌기 때문에 상대 경로로는 Capsule 을 찾지 못합니다.
+    capsule_path = (task_capsule_dir / "capsule.yaml").resolve()
 
     try:
         capsule = expand_intent_to_capsule(
@@ -1045,10 +1244,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         )
 
     if code == 0 and _launch_succeeded(stdout):
+        notice = _deliver_capsule_notice(args, task_id, capsule_path, intent)
         if args.json:
-            print(stdout)
+            payload: dict[str, Any] = {"launch": _maybe_json(stdout)}
+            payload["capsule"] = str(capsule_path)
+            payload["capsule_notice"] = notice
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             print(f"워커 기동 완료:\n{stdout}")
+            print(f"Capsule 고지: {notice['status']}")
         return 0
 
     # Orca CLI 는 실패를 stdout JSON 의 error.message 로 내보내면서 stderr 를 비워
@@ -1208,7 +1412,23 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="동시 쓰기 워커 상한 검사를 건너뜁니다 (경고 출력).",
     )
+    dsp.add_argument(
+        "--no-capsule-notice",
+        action="store_true",
+        help="기동 직후 Capsule 정본 경로 고지문 전송을 생략합니다 (권장하지 않음).",
+    )
     dsp.add_argument("--json", action="store_true", help="JSON 출력")
+
+    # create
+    crt = sub.add_parser("create", help="Intent -> Capsule -> Orca Task 생성")
+    crt.add_argument("--intent", required=True, help="Task Intent YAML 파일 경로")
+    crt.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Run ID")
+    crt.add_argument("--task-id", help="Task ID")
+    crt.add_argument("--capsule-dir", default=".orca/capsules", help="Capsule 저장 디렉터리")
+    crt.add_argument("--task-title", help="Task 제목")
+    crt.add_argument("--display-name", help="워커 행에 표시할 이름")
+    crt.add_argument("--deps", help="선행 Task ID JSON 배열")
+    crt.add_argument("--json", action="store_true", help="JSON 출력")
 
     # finalize
     fin = sub.add_parser("finalize", help="worker_done -> 검증 파이프라인 실행")
@@ -1237,6 +1457,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "expand":
         return cmd_expand(args)
+    if args.command == "create":
+        return cmd_create(args)
     if args.command == "dispatch":
         return cmd_dispatch(args)
     if args.command == "finalize":

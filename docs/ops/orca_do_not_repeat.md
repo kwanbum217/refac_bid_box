@@ -195,6 +195,8 @@ Antigravity CLI 는 워크스페이스 신뢰 확인 대화창을 먼저 띄웁�
 
 Dispatch 직후 `terminal send` 로 Capsule 절대 경로를 보내되, **이미 작업을 시작한 뒤에 보내면 늦습니다.** Task `spec` 자체에 Capsule 절대 경로를 넣어 `task-create` 하는 것이 순서상 맞습니다.
 
+**2026-08-17 조치**: `scripts/orca_taskctl.py` 에 `create` 서브커맨드를 신설해 Capsule 절대 경로를 Task `spec` 에 넣고, `dispatch` 가 기동 직후 고지문을 자동 투입합니다. 전송 실패는 `capsule_notice.status: failed` 와 stderr 경고로 드러납니다. 상세: [`orca_control_plane_tools.md`](orca_control_plane_tools.md) 3.4
+
 #### 4.7.1 재 Dispatch 후 새 `dispatchId` 를 워커에게 알리지 않기
 
 4.5.1 은 `ready` 복귀만 하고 재 Dispatch 를 빠뜨리는 경우를 다룹니다. **재 Dispatch 를 했어도 같은 거부가 납니다.** 워커가 자기 문맥에 남은 옛 ID 로 보고하기 때문입니다.
