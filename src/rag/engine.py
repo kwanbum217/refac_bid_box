@@ -347,6 +347,8 @@ class HybridRAGEngine:
         주의: 이 경로는 RAG 답변만 흘립니다. 플래너, 자동화 확인, 차트 페이로드,
         세션 저장은 POST /api/v1/chatbot/chat/stream 이 담당합니다.
         """
+        # tool_context 가 비어 있으면 여기서 동기 DB 질의와 ChromaDB 임베딩 검색이
+        # 일어납니다. SSE 제너레이터는 이벤트 루프에서 돌므로 스레드로 넘깁니다.
         (
             plan,
             structured_data,
@@ -355,7 +357,13 @@ class HybridRAGEngine:
             provenance,
             _context_text,
             messages,
-        ) = self._prepare_context(user_query, db=db, history=history, tool_context=tool_context)
+        ) = await asyncio.to_thread(
+            self._prepare_context,
+            user_query,
+            db=db,
+            history=history,
+            tool_context=tool_context,
+        )
 
         yield {"type": "docs", "docs": vector_docs}
 

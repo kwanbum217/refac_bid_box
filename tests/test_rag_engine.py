@@ -289,3 +289,38 @@ def test_retrieve_structured_data_uses_daily_buckets_for_short_trend_range(isola
     assert len(series) >= 2
     assert all(item["period"] == "day" for item in series)
     assert all(len(item["label"]) == 10 for item in series)
+
+
+@pytest.mark.asyncio
+async def test_stream_tokens_prepares_context_off_loop_thread(monkeypatch):
+    """컨텍스트 조회가 이벤트 루프 스레드에서 실행되지 않습니다.
+
+    _prepare_context 는 tool_context 가 비면 동기 DB 질의와 ChromaDB 임베딩
+    검색을 수행합니다. SSE 제너레이터가 루프 스레드에서 이를 수행하면 그 사이
+    다른 모든 요청과 진행 중인 스트림이 함께 멈춥니다.
+
+    판정: 오프로드된 스레드에는 실행 중인 루프가 없어
+    asyncio.get_running_loop() 이 RuntimeError 를 냅니다.
+    """
+    import asyncio
+
+    rag_engine._backend = _FakeStreamingBackend()
+    rag_engine._backend_resolved = True
+
+    observed: list[bool] = []
+    original = rag_engine._prepare_context
+
+    def _spy(*args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            observed.append(True)
+        except RuntimeError:
+            observed.append(False)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(rag_engine, "_prepare_context", _spy)
+
+    async for _event in rag_engine.stream_tokens("테스트 질문"):
+        pass
+
+    assert observed == [False], "_prepare_context 가 이벤트 루프 스레드에서 실행되었습니다"
