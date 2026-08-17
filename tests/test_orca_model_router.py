@@ -190,14 +190,16 @@ class TestModelPoolAndSelection:
         assert res["fallback_pool"] == "claude-sonnet"
 
     def test_select_model_documenter_low_risk(self):
+        """공식 문서가 low 등급 용도로 초안 작성과 빠른 분석을 규정합니다."""
         res = select_model("documenter", "low")
-        assert res["primary_pool"] == "gemini-flash-medium"
-        assert res["fallback_pool"] == "gemini-flash-high"
+        assert res["primary_pool"] == "gemini-flash-low"
+        assert res["fallback_pool"] == "gemini-flash-medium"
 
     def test_select_model_investigator(self):
+        """medium 이 문서상 기본값이므로 medium 위험도의 주 모델입니다."""
         res = select_model("investigator", "medium")
-        assert res["primary_pool"] == "gemini-flash-high"
-        assert res["fallback_pool"] == "gemini-flash-medium"
+        assert res["primary_pool"] == "gemini-flash-medium"
+        assert res["fallback_pool"] == "gemini-flash-high"
 
     def test_select_model_exclude_filtering(self):
         res = select_model("builder", "high", exclude=["gemini-flash-high"])
@@ -209,7 +211,12 @@ class TestModelPoolAndSelection:
         auto_pools = {name for name, info in MODEL_POOL.items() if info["auto_selectable"]}
         non_auto_pools = {name for name, info in MODEL_POOL.items() if not info["auto_selectable"]}
 
-        assert auto_pools == {"gemini-flash-high", "gemini-flash-medium", "claude-sonnet"}
+        assert auto_pools == {
+            "gemini-flash-high",
+            "gemini-flash-medium",
+            "gemini-flash-low",
+            "claude-sonnet",
+        }
         assert non_auto_pools == {
             "claude-opus",
             "claude-opus-thinking",
@@ -217,7 +224,6 @@ class TestModelPoolAndSelection:
             "opencode-free",
             "cerebras-oss",
             "cerebras-gemma",
-            "gemini-flash-low",
         }
 
 
@@ -423,7 +429,7 @@ class TestRoute:
         assert isinstance(res, RouteResult)
         assert res.risk == "medium"
         assert res.role == "builder"
-        assert res.primary_model == "gemini-3.7-flash-high"
+        assert res.primary_model == "gemini-3.7-flash-medium"
         assert res.primary_available is True
         assert res.fallback_available is None
 
@@ -555,7 +561,7 @@ class TestCLI:
         assert ret == 0
         captured = capsys.readouterr().out
         assert "위험도:       low" in captured
-        assert "주 모델:      gemini-3.7-flash-medium" in captured
+        assert "주 모델:      gemini-3.7-flash-low" in captured
 
     def test_probe_cli_success(self, monkeypatch, capsys):
         mock_proc = MagicMock(returncode=0, stdout="ok", stderr="")
@@ -589,7 +595,7 @@ class TestCLI:
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
         assert data["risk"] == "medium"
-        assert data["recommended"] == "gemini-3.7-flash-high"
+        assert data["recommended"] == "gemini-3.7-flash-medium"
 
     def test_route_cli_coordinator_model_rejected(self, capsys):
         parser = argparse.ArgumentParser()
@@ -816,7 +822,7 @@ class TestFreePoolOptIn:
     def test_allow_free_true_builder_rejected_with_warning(self):
         """allow_free=True 여도 builder 역할은 무료 풀이 거부되고 경고 사유가 기록됩니다."""
         res = route(role="builder", risk="low", allow_free=True, probe=False)
-        assert res.primary_model == "gemini-3.7-flash-high"
+        assert res.primary_model == "gemini-3.7-flash-medium"
         assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("역할(builder)" in w and "무료 풀 개방 불가" in w for w in res.warnings)
 
@@ -985,34 +991,41 @@ class TestFreePoolOptIn:
 
 
 class TestRiskAwareTier:
-    """추론 등급이 위험도를 반영하는지 검증합니다.
+    """추론 등급이 공식 문서 기준과 위험도를 반영하는지 검증합니다.
 
-    2026-08-17 까지 리뷰어는 위험도를 무시하고 항상 high 로 갔습니다. 읽기
-    전용 low 위험도 감사 4건이 전부 high 로 배정되어 주간 한도를 불필요하게
-    썼습니다.
+    Gemini 3.7 Flash 문서는 medium 을 기본값으로 두고 "복잡한 코드와 에이전트
+    용도에 권장" 한다고 적습니다. high 는 "가장 어려운" 추론·코딩 전용이고
+    low 는 초안 작성과 빠른 분석용입니다. 2026-08-17 까지 리뷰어와 빌더가
+    위험도와 무관하게 항상 high 로 가서 주간 한도를 불필요하게 썼습니다.
     """
 
-    def test_reviewer_low_risk_uses_medium(self):
-        res = select_model("reviewer", "low")
+    def test_high_tier_is_reserved_for_high_risk(self):
+        """high 는 기본값이 아니라 high 위험도 전용입니다."""
+        for role in ("builder", "reviewer", "investigator", "documenter"):
+            for risk in ("low", "medium"):
+                assert select_model(role, risk)["primary_pool"] != "gemini-flash-high"
+
+    def test_builder_medium_risk_uses_medium(self):
+        """문서가 복잡한 코드에 권장하는 등급이 medium 입니다."""
+        res = select_model("builder", "medium")
         assert res["primary_pool"] == "gemini-flash-medium"
         assert res["fallback_pool"] == "gemini-flash-high"
 
-    def test_reviewer_medium_risk_keeps_high(self):
-        res = select_model("reviewer", "medium")
+    def test_builder_high_risk_uses_high(self):
+        res = select_model("builder", "high")
         assert res["primary_pool"] == "gemini-flash-high"
+        assert res["fallback_pool"] == "claude-sonnet"
+
+    def test_reviewer_never_gets_low_tier_as_primary(self):
+        """판정이 병합 결정에 쓰이므로 리뷰어 주 모델은 low 등급이 아닙니다."""
+        for risk in ("low", "medium", "high"):
+            assert select_model("reviewer", risk)["primary_pool"] != "gemini-flash-low"
 
     def test_reviewer_high_risk_prefers_claude(self):
-        res = select_model("reviewer", "high")
-        assert res["primary_pool"] == "claude-sonnet"
+        assert select_model("reviewer", "high")["primary_pool"] == "claude-sonnet"
 
-    def test_builder_low_risk_stays_high(self):
-        """코드를 쓰는 역할은 측정 없이 등급을 내리지 않습니다."""
-        res = select_model("builder", "low")
-        assert res["primary_pool"] == "gemini-flash-high"
-
-    def test_flash_low_is_manual_only(self):
-        """산출 품질 미측정 등급은 자동 선택되지 않습니다."""
-        assert MODEL_POOL["gemini-flash-low"]["auto_selectable"] is False
-        for role in ("builder", "reviewer", "investigator", "benchmarker", "documenter"):
-            for risk in ("low", "medium", "high"):
-                assert select_model(role, risk)["primary_pool"] != "gemini-flash-low"
+    def test_low_tier_only_for_low_risk_read_or_doc_roles(self):
+        """low 등급은 low 위험도 조사와 문서화에만 주 모델이 됩니다."""
+        assert select_model("investigator", "low")["primary_pool"] == "gemini-flash-low"
+        assert select_model("documenter", "low")["primary_pool"] == "gemini-flash-low"
+        assert select_model("builder", "low")["primary_pool"] == "gemini-flash-medium"
