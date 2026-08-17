@@ -351,7 +351,13 @@ def expand_intent_to_capsule(
     why_now = context if context else f"위험도 {risk} 작업. {role} 역할 수행."
 
     # 쓰기 범위와 읽기 범위 분리 (결함 2 해결: 읽기 범위는 쓰기 범위의 진상위집합)
-    write_files = list(scope) if scope else ["src/...", "tests/..."]
+    # 리뷰어는 판정만 하므로 쓰기 범위가 없습니다. scope 는 검토 대상이라 읽기로만
+    # 갑니다. 예전에는 scope 가 그대로 쓰기 범위가 되어 리뷰어에게 검토 대상을
+    # 고칠 권한이 열렸습니다.
+    if is_reviewer:
+        write_files: list[str] = []
+    else:
+        write_files = list(scope) if scope else ["src/...", "tests/..."]
 
     # 템플릿이 artifact_paths 로 지시하는 분석 문서 경로를 쓰기 범위에 함께 넣습니다.
     # 넣지 않으면 워커가 템플릿을 따라 만든 산출물이 Level 1 범위 게이트에서
@@ -364,6 +370,8 @@ def expand_intent_to_capsule(
     # 안 됩니다. read_scope 가 없으면 대상을 scope 에 넣어야 하고 그러면 쓰기까지
     # 열려 범위 게이트가 무단 수정을 잡지 못합니다.
     extra_read = [str(item) for item in intent.get("read_scope", []) if str(item).strip()]
+    if is_reviewer:
+        extra_read = list(scope) + extra_read
 
     self_capsule_str = str(capsule_path) if capsule_path else f".orca/capsules/{task_id}/capsule.yaml"
     reference_files = [self_capsule_str, "docs/context/CURRENT_STATE.md"]

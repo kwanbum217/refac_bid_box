@@ -1630,6 +1630,22 @@ def test_expand_read_scope_reads_without_write_permission():
     assert "src/ml/features.py" not in write_block
 
 
+def test_expand_reviewer_has_empty_write_scope():
+    """리뷰어는 판정만 하므로 쓰기 범위가 비어 있어야 합니다.
+
+    scope 가 그대로 쓰기 범위가 되면 리뷰어에게 검토 대상을 고칠 권한이
+    열립니다. scope 는 검토 대상이므로 읽기로만 갑니다.
+    """
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev")
+    write_files = parse_capsule_list(capsule, "allowed_write_files")
+    read_files = parse_capsule_list(capsule, "allowed_read_files")
+
+    assert write_files == []
+    assert "scripts/orca_taskctl.py" in read_files
+
+
 def test_expand_read_scope_included_in_search_globs():
     """읽기 전용 경로도 검색 범위에 있어야 워커가 실제로 열어볼 수 있습니다."""
     from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
