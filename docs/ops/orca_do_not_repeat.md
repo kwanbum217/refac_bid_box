@@ -320,6 +320,29 @@ Capsule 에 `return_contract: ORCA_REVIEW_DONE_V2` 라고만 적는 것은 스�
 
 `expand_intent_to_capsule` 이 이제 역할별 `report_schema` 블록을 항상 넣습니다. 손으로 Capsule 을 쓸 때도 필드명을 열거합니다.
 
+#### 5.4.2 Orca 메시지 필드명을 보고 계약 위반으로 오판
+
+두 층이 별개입니다.
+
+| 층 | 스키마 | 필드 표기 |
+| --- | --- | --- |
+| 보고 파일 (`report_path`) | `ORCA_WORKER_DONE_V2` / `ORCA_REVIEW_DONE_V2` | snake_case (`changed_files`, `commit_count`) |
+| Orca 메시지 payload | Orca 런타임 자체 스키마 | camelCase (`taskId`, `dispatchId`, `filesModified`, `reportPath`, `phase`) |
+
+`orca orchestration send` 가 `--files-modified <csv>` 플래그를 제공하고 그 값을 payload 의 `filesModified` 로 넣습니다. 즉 **camelCase 는 CLI 설계이며 워커의 이탈이 아닙니다.**
+
+2026-08-17 에 저는 `check` 로 받은 payload 의 `filesModified` 를 보고 워커가 5.4 절 위반을 했다고 판정했습니다. 틀렸습니다. `send --help` 를 먼저 봤으면 나오지 않을 오판이었고, 이 오판대로 워커를 고치거나 코드에 폴백을 넣으면 5.4 절이 금지한 바로 그 상태를 만들게 됩니다.
+
+판정 순서는 이렇습니다. 보고 파일은 `ORCA_WORKER_DONE_V2` 로 대조하고, 메시지 payload 는 `orca orchestration send --help` 의 서명으로 대조합니다. 하나의 계약으로 둘을 재지 않습니다.
+
+#### 5.4.3 `worker_done` 을 두 번 보내면서 첫 번째에 다른 `report_path` 를 넣기
+
+2026-08-17 S3 워커가 `worker_done` 을 두 번 보냈습니다. 1차 `reportPath` 는 `docs/analysis/s3.md`, 2차는 Capsule 이 선언한 경로였습니다. 스스로 고쳐 다시 보낸 것으로 보입니다.
+
+코디네이터에게는 같은 Task 의 완료 신고가 둘로 보이고, 먼저 읽은 쪽이 Capsule 이 선언하지 않은 경로를 가리킵니다. 그 경로를 그대로 원장의 `report_path` 로 기록하면 `report_chars` 가 분석 문서 길이가 되어 보고량 비교가 오염됩니다.
+
+원장에 넣을 경로는 메시지가 아니라 **Capsule 의 `report_path`** 입니다. 메시지의 `reportPath` 는 참고값으로만 씁니다.
+
 ### 5.5 확인하지 않은 외부 CLI 서명으로 코드를 작성
 
 이 저장소에서 **가장 많이 반복된 결함 부류**입니다. 세 번 나왔습니다.
