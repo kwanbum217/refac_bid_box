@@ -93,14 +93,9 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**:
-   - **수신면 도구 5종**: `orca_contract.py`, `orca_level1_gate.py`(게이트 6대), `summarize_worker_done.py`, `orca_run_reviewer.py`, `orca_metrics_ledger.py`. **Control Plane**: `orca_taskctl.py`, `orca_model_router.py`.
-   - **Level 3 유지 확정**: 결함 밀도 0.05 사전 등록, A/B 검출 0/3.
-   - `3453a3f` 회수 사유는 3장 13·14·16·17번.
-   - **동시 쓰기 워커 상한 3대**를 `dispatch` 가 강제. 병렬 3섹션 실사용 검증 완료(4장 3번).
-   - **실사용 도구 결함 5건 수정**: 기동·Capsule·중복·산출물 경로(`76c3013`,`eb6f429`,`cef6623`,`b86d833`), Intent 의 `ground_truth`·`required_change` 미전달(`08f4fe5`). 전부 문서상 완비였다.
-   - **절감량**: 도입 전 값은 확보 불가 유지. 대표 지표 유효 행 0 -> 7 확보. 순서 효과와 모델 효과가 섞여 추세 판정은 아직 불가(3장 21번).
-   - **등급 실측**: 기계적 분할은 medium 이 high 와 품질 9항목 동일. S1 급 난이도는 미검증.
-   - **모델별 동형 감사 4종**(flash-high, sonnet-4-6, opus-4-6-thinking, gemma-4-31b): 전부 저장소 무수정.
+   - **수신면 5종**: `orca_contract.py`, `orca_level1_gate.py`(게이트 6대), `summarize_worker_done.py`, `orca_run_reviewer.py`, `orca_metrics_ledger.py`. **Control Plane 2종**: `orca_taskctl.py`, `orca_model_router.py`.
+   - **절감량**: 도입 전 값은 확보 불가 유지. 대표 지표 유효 행 0 -> 7. 순서 효과와 모델 효과가 섞여 추세 판정은 아직 불가(3장 21번).
+   - `3453a3f` 회수 사유는 3장 13·14·16·17번. 종결된 운영 판정 5건(Level 3, 등급 실측, 모델 4종, 병렬 3대, 도구 결함)은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 9장.
 2. **대형 모듈 분할 — 종결**: 1,000 -> 600 -> 500줄 순으로 기준을 내려 9개 모듈 분할, 신규 20모듈. AST 동일성 실증(65+85+24+10+15). 500줄 초과 7개 전부 판정 완료(불필요 3, 완료 잔여 2, 비권고 2). 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장. 남은 크기는 함수 길이(`retrieve_structured_data` 236줄)에 몰려 있고 추출은 AST 증명이 불가해, `pytest-cov` 승인 또는 실제 결함 발생을 재개 조건으로 남겼다.
 3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 감사로 찾은 12건(요청 경로 4, Arq 태스크 경로 8)을 `to_thread` 로 오프로드했다. 요청 경로 `5d65b5c`,`bdb69b5`,`45cfd52`. 태스크 경로는 3섹션 병렬 워커 `718de84`,`c89ba04`,`fcdfd58` 로 `src/tasks` `to_thread` 0 -> 16건. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 오프로드 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
 4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
