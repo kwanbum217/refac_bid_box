@@ -352,6 +352,13 @@ def expand_intent_to_capsule(
     # 쓰기 범위와 읽기 범위 분리 (결함 2 해결: 읽기 범위는 쓰기 범위의 진상위집합)
     write_files = list(scope) if scope else ["src/...", "tests/..."]
 
+    # 템플릿이 artifact_paths 로 지시하는 분석 문서 경로를 쓰기 범위에 함께 넣습니다.
+    # 넣지 않으면 워커가 템플릿을 따라 만든 산출물이 Level 1 범위 게이트에서
+    # 초과로 거부됩니다 (반복 금지 4.7.2). 리뷰어는 문서를 쓰지 않으므로 제외합니다.
+    analysis_artifact = f"docs/analysis/{task_id}.md"
+    if not is_reviewer and analysis_artifact not in write_files:
+        write_files.append(analysis_artifact)
+
     self_capsule_str = str(capsule_path) if capsule_path else f".orca/capsules/{task_id}/capsule.yaml"
     reference_files = [self_capsule_str, "docs/context/CURRENT_STATE.md"]
     read_files = list(dict.fromkeys(reference_files + write_files))

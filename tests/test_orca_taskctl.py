@@ -1568,3 +1568,27 @@ def test_cmd_dispatch_missing_reused_capsule_errors(tmp_path: Path, monkeypatch:
         "term_abc",
     ])
     assert code == 2
+
+
+def test_expand_includes_analysis_artifact_in_write_scope():
+    """템플릿이 지시하는 분석 문서 경로가 쓰기 범위에 있어야 합니다.
+
+    없으면 워커가 템플릿을 따라 만든 산출물이 Level 1 범위 게이트에서
+    초과로 거부됩니다 (반복 금지 4.7.2).
+    """
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_BUILDER_INTENT), task_id="task_abc")
+    write_block = capsule.split("allowed_write_files:")[1].split("search_scope:")[0]
+    assert "docs/analysis/task_abc.md" in write_block
+    artifact_block = capsule.split("artifact_paths:")[1].split("escalate_when:")[0]
+    assert "docs/analysis/task_abc.md" in artifact_block
+
+
+def test_expand_reviewer_scope_excludes_analysis_artifact():
+    """리뷰어는 문서를 쓰지 않으므로 분석 문서 경로를 넣지 않습니다."""
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev")
+    write_block = capsule.split("allowed_write_files:")[1].split("search_scope:")[0]
+    assert "docs/analysis" not in write_block
