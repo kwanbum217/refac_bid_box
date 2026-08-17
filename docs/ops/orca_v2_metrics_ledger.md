@@ -31,6 +31,19 @@ v2 도입 이전 데이터는 확보가 불가능하다고 이미 판정했습�
 
 ---
 
+### 2.1 인터프리터
+
+**`uv run python` 으로 실행합니다.** 이 도구는 `scripts/orca_coordinator_usage.py` 를 import 하고 그 모듈은 `datetime.UTC`(Python 3.11+)를 씁니다. `pyproject.toml` 의 `requires-python` 이 `>=3.11,<3.14` 이므로 규격 내이지만, macOS 의 `python3` 는 Xcode 가 제공하는 3.9 로 해석될 수 있어 `ImportError: cannot import name 'UTC'` 가 납니다.
+
+```bash
+python3 --version        # 3.9.6 일 수 있습니다
+uv run python --version  # 프로젝트가 고정한 3.12
+```
+
+코드를 3.9 호환으로 낮추지 마십시오. 선언한 하한과 어긋납니다.
+
+---
+
 ## 3. 행 스키마
 
 원장의 각 행은 JSON 객체 한 줄입니다. 행 하나가 Dispatch 한 건에 대응합니다.
@@ -109,7 +122,7 @@ v2 도입 이전 데이터는 확보가 불가능하다고 이미 판정했습�
 ### 4.1 record: 한 건 기록
 
 ```bash
-python3 scripts/orca_metrics_ledger.py record \
+uv run python scripts/orca_metrics_ledger.py record \
   --run run_659389fed248 \
   --task task_6bd7cee23f01 \
   --dispatch ctx_0d555d0bb609 \
@@ -125,43 +138,43 @@ python3 scripts/orca_metrics_ledger.py record \
 JSON 형식 출력:
 
 ```bash
-python3 scripts/orca_metrics_ledger.py record ... --json
+uv run python scripts/orca_metrics_ledger.py record ... --json
 ```
 
 원장 파일 경로 변경:
 
 ```bash
-python3 scripts/orca_metrics_ledger.py --ledger /tmp/test.jsonl record ...
+uv run python scripts/orca_metrics_ledger.py --ledger /tmp/test.jsonl record ...
 ```
 
 ### 4.2 summary: 집계 출력
 
 ```bash
-python3 scripts/orca_metrics_ledger.py summary
+uv run python scripts/orca_metrics_ledger.py summary
 ```
 
 날짜 필터:
 
 ```bash
-python3 scripts/orca_metrics_ledger.py summary --since 2026-08-01
+uv run python scripts/orca_metrics_ledger.py summary --since 2026-08-01
 ```
 
 역할 필터:
 
 ```bash
-python3 scripts/orca_metrics_ledger.py summary --role builder
+uv run python scripts/orca_metrics_ledger.py summary --role builder
 ```
 
 모델 필터:
 
 ```bash
-python3 scripts/orca_metrics_ledger.py summary --model claude-sonnet-4-6
+uv run python scripts/orca_metrics_ledger.py summary --model claude-sonnet-4-6
 ```
 
 JSON 출력:
 
 ```bash
-python3 scripts/orca_metrics_ledger.py summary --json
+uv run python scripts/orca_metrics_ledger.py summary --json
 ```
 
 ### 4.3 summary 출력 예
