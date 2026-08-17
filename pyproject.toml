@@ -126,6 +126,9 @@ ignore = [
     "RUF005",  # 리스트 연결 대신 언패킹 (가독성 기호)
     "S104",  # 0.0.0.0 은 바인딩이 아니라 로컬 호스트 판별용 비교
 ]
+"src/app/services/automation_callbacks.py" = [
+    "S104",  # 0.0.0.0 은 바인딩이 아니라 로컬 호스트 판별용 비교
+]
 "src/ml/model_registry.py" = [
     "RUF012",  # 클래스 가변 기본값 (모델 레지스트리 테이블)
 ]
