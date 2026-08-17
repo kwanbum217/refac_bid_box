@@ -506,3 +506,41 @@ async def test_catchup_flag_false_when_explicit_dates(isolated_db, monkeypatch):
     assert result["start_date"] == "20260801"
     assert result["end_date"] == "20260810"
     assert result["catchup"] is False
+
+
+@pytest.mark.asyncio
+async def test_sync_db_work_runs_off_event_loop_thread(isolated_db, monkeypatch):
+    """동기 DB 집계와 체크포인트 조회가 이벤트 루프 스레드를 점유하지 않습니다.
+
+    collect_bids 는 ASGI 요청 경로(POST /api/v1/bids/collect)에서 호출됩니다.
+    수백만 행 집계를 루프 스레드에서 돌리면 그 시간 동안 모든 요청이 멈춥니다.
+    """
+    import threading
+
+    import src.app.services.collector_service as svc
+
+    loop_thread = threading.get_ident()
+    observed: dict[str, int] = {}
+
+    def _record(name):
+        def _inner(*args, **kwargs):
+            observed[name] = threading.get_ident()
+            if name == "resolve":
+                return "20260801", "20260801", False
+            return {}
+
+        return _inner
+
+    _patch_svc(monkeypatch, svc, datetime(2026, 8, 13, 10, 0, 0))
+    monkeypatch.setattr(svc, "resolve_collection_window", _record("resolve"))
+    monkeypatch.setattr(svc, "rebuild_bid_dataset_summaries", _record("rebuild"))
+    monkeypatch.setattr(svc, "warm_dashboard_stats_cache", _record("dashboard"))
+    monkeypatch.setattr(svc, "warm_home_page_cache", _record("home"))
+    monkeypatch.setattr(svc, "stream_bid_announcements", AsyncMock(return_value=1))
+    monkeypatch.setattr(svc, "stream_bid_data", AsyncMock(return_value=1))
+
+    await svc.collect_bids(isolated_db, categories=("Thng",), refresh_aggregates=True)
+
+    assert set(observed) == {"resolve", "rebuild", "dashboard", "home"}, observed
+    for name, thread_id in observed.items():
+        assert thread_id != loop_thread, f"{name} 이 이벤트 루프 스레드에서 실행되었습니다"

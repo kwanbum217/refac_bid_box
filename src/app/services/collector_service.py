@@ -14,6 +14,7 @@ src/app/services/collector_service.py
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, timedelta
 from typing import Any
@@ -206,7 +207,10 @@ async def collect_bids(
         }
 
     target_categories = categories or tuple(BID_CATEGORIES.keys())
-    start_date, end_date, is_catchup = resolve_collection_window(
+    # 체크포인트 조회는 동기 DB 질의입니다. 이 함수는 ASGI 요청 경로에서도
+    # 호출되므로 스레드로 넘겨 이벤트 루프를 비웁니다.
+    start_date, end_date, is_catchup = await asyncio.to_thread(
+        resolve_collection_window,
         db,
         start_date=start_date,
         end_date=end_date,
@@ -282,9 +286,11 @@ async def collect_bids(
         if fetch_type in ("both", "result"):
             datasets.append(DATASET_RESULT)
         try:
-            rebuild_bid_dataset_summaries(db, datasets)
-            warm_dashboard_stats_cache(db)
-            warm_home_page_cache(db)
+            # 300만 행 집계와 캐시 예열은 수 초에서 수십 초가 걸립니다.
+            # 같은 Session 을 쓰므로 순차로, 그러나 스레드에서 수행합니다.
+            await asyncio.to_thread(rebuild_bid_dataset_summaries, db, datasets)
+            await asyncio.to_thread(warm_dashboard_stats_cache, db)
+            await asyncio.to_thread(warm_home_page_cache, db)
             metrics["cache_warmed"] = True
         except Exception as exc:
             logger.warning("대시보드 집계 또는 캐시 예열 실패: %s", exc)
