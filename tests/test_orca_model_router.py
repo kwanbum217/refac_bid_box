@@ -690,7 +690,20 @@ class TestFreePoolOptIn:
         assert "CEREBRAS_API_KEY 미설정" in detail
         assert fake_key not in detail
 
-    def test_small_context_limit_warning(self, monkeypatch):
+    @pytest.fixture
+    def cerebras_key_present(self, monkeypatch):
+        """`.env` 유무와 무관하게 Cerebras 키가 있는 상태를 고정합니다.
+
+        저장소 `.env` 를 읽는 경로를 대체하지 않으면 격리 워크트리처럼 `.env`
+        가 없는 환경에서 probe 가 실패해 테스트가 환경에 좌우됩니다.
+        """
+        import scripts.orca_model_router as router
+
+        monkeypatch.setattr(
+            router, "load_repo_env", lambda repo_root=None: {"CEREBRAS_API_KEY": "test-key"}
+        )
+
+    def test_small_context_limit_warning(self, monkeypatch, cerebras_key_present):
         """max_tokens 가 있는 풀(숫자 포함)과 max_tokens 가 None 인 free 풀(한도 미확인) 모두 적절한 한도 경고가 발행되는지 검증."""
         mock_proc = MagicMock(returncode=0, stdout="ping ok", stderr="")
         monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
@@ -843,7 +856,7 @@ class TestFreePoolOptIn:
         assert res["primary_model"] != "claude-opus-5"
         assert res["fallback_model"] != "claude-opus-5"
 
-    def test_route_free_pool_primary_fail_fallback(self, monkeypatch):
+    def test_route_free_pool_primary_fail_fallback(self, monkeypatch, cerebras_key_present):
         """opencode-free 가 probe 실패하면 cerebras-oss 로 fallback 전환됨을 검증합니다."""
         def _mock_run(cmd, *args, **kwargs):
             if "opencode/nemotron-3.5-lightning-free" in cmd:
@@ -852,7 +865,6 @@ class TestFreePoolOptIn:
 
         monkeypatch.setattr(subprocess, "run", _mock_run)
 
-        # tmp_path 에 cerebras 키 설정
         res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=True)
         assert res.primary_available is False
         assert res.fallback_available is True
