@@ -131,6 +131,26 @@ escalate_when:
 
 report_path: "{report_path}"
 return_contract: {return_contract}
+{report_schema}"""
+
+REVIEW_REPORT_SCHEMA = """report_schema:
+  schema: "ORCA_REVIEW_DONE_V2"
+  version: "2.1.0"
+  verdict: "pass 또는 fail 문자열 하나. 객체나 배열로 쓰지 않는다"
+  checklist_results: "배열. 각 항목은 id, answer, evidence 키를 가진다. checklist 라는 이름을 쓰지 않는다"
+  blocking_issues: "배열. 결함 항목마다 id, file, description"
+  unverified_claims: "배열"
+  missing_tests: "배열"
+"""
+
+WORKER_REPORT_SCHEMA = """report_schema:
+  schema: "ORCA_WORKER_DONE_V2"
+  version: "2.1.0"
+  outcome: "succeeded 또는 escalation 문자열 하나"
+  changed_files: "배열. 실제로 커밋한 파일 경로"
+  commit_count: "정수. 0 이면 outcome 을 escalation 으로 쓴다"
+  verification: "배열. 실행한 명령과 결과"
+  blocked_by: "배열. 차단 사유가 없으면 빈 배열"
 """
 
 
@@ -403,6 +423,11 @@ def expand_intent_to_capsule(
         mode = intent.get("mode", "worker")
         artifact_paths_formatted = _format_yaml_list([f"docs/analysis/{task_id}.md"])
 
+    # 계약 이름만 적으면 스키마를 모르는 모델이 필드명을 제 마음대로 바꿉니다.
+    # 2026-08-17 측정에서 Claude 계열 워커 2대가 checklist_results 대신 checklist 를
+    # 쓰고 verdict 를 객체로 냈습니다. 기계 집계가 깨지므로 필드명을 열거합니다.
+    report_schema = REVIEW_REPORT_SCHEMA if is_reviewer else WORKER_REPORT_SCHEMA
+
     capsule = CAPSULE_TEMPLATE.format(
         version=CAPSULE_VERSION,
         mode=mode,
@@ -419,6 +444,7 @@ def expand_intent_to_capsule(
         artifact_paths=artifact_paths_formatted,
         report_path=report_path,
         return_contract=return_contract,
+        report_schema=report_schema,
     )
 
     if is_reviewer:

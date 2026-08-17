@@ -210,7 +210,14 @@ class TestModelPoolAndSelection:
         non_auto_pools = {name for name, info in MODEL_POOL.items() if not info["auto_selectable"]}
 
         assert auto_pools == {"gemini-flash-high", "gemini-flash-medium", "claude-sonnet"}
-        assert non_auto_pools == {"claude-opus", "codex", "opencode-free", "cerebras-oss"}
+        assert non_auto_pools == {
+            "claude-opus",
+            "claude-opus-thinking",
+            "codex",
+            "opencode-free",
+            "cerebras-oss",
+            "cerebras-gemma",
+        }
 
 
 # ---------------------------------------------------------------------------
