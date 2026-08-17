@@ -55,11 +55,52 @@ v2 도입 이전 데이터는 확보가 불가능하다고 이미 판정했습�
 | `status` | str | 예 | 보고의 `status` 값 |
 | `roundtrips` | int or null | 아니오 | 왕복 횟수. 미지정 시 null |
 | `first_useful_seconds` | int or null | 아니오 | 첫 유용 산출 소요 초. 미지정 시 null |
-| `coordinator_input_tokens` | int or null | 아니오 | 코디네이터 입력 토큰. 미지정 시 null |
-| `coordinator_output_tokens` | int or null | 아니오 | 코디네이터 출력 토큰. 미지정 시 null |
+| `coordinator_input_tokens` | int or null | 조건부 | 코디네이터 입력 토큰 총합. **세션 간 비교 금지** (3.1 절) |
+| `coordinator_fresh_input_tokens` | int or null | 조건부 | 캐시 재읽기를 제외한 신선 입력 토큰. **위임 비교 대표 지표** |
+| `coordinator_output_tokens` | int or null | 조건부 | 코디네이터 출력 토큰 |
+| `usage_window_start` | str or null | 아니오 | 토큰 집계 창 시작 (`--usage-since`) |
+| `usage_window_end` | str or null | 아니오 | 토큰 집계 창 종료 (`--usage-until`) |
+| `usage_concurrent_dispatches` | int or null | 아니오 | 그 창을 공유한 동시 Dispatch 수. 2 이상이면 행 간 합산 불가 |
+| `usage_lookup_status` | str or null | 예 | `ok`, `no_transcript_dir`, `no_session_file`, `empty_window` |
 
 > **null 원칙**: 측정하지 않은 값은 절대 0 이나 추정치로 채우지 않습니다.
 > null 인 행은 해당 지표의 집계에서 제외하고, 유효 행 수를 함께 보고합니다.
+
+### 3.1 코디네이터 토큰 대표 지표
+
+`--usage-since` 를 주면 `scripts/orca_coordinator_usage.py` 가 Claude Code 세션
+트랜스크립트에서 세 값을 자동으로 채웁니다. `/usage` 를 수동으로 옮겨 적지 않습니다.
+
+**위임 절감 비교에는 `coordinator_fresh_input_tokens` 만 씁니다.**
+`coordinator_input_tokens` 는 `input_tokens + cache_creation + cache_read` 의 합이고,
+2026-08-16 실측에서 `cache_read` 가 **99.5 퍼센트**(399,563,803 중 397,513,915)를
+차지했습니다. `cache_read` 는 매 assistant 메시지가 캐시된 접두부 전체를 다시 읽어
+누적되므로 대화 턴 수에 비례하고 위임 여부와 무관합니다. 이 값으로 비교하면 위임을
+잘한 세션이 턴이 많다는 이유로 더 나빠 보입니다.
+
+| 지표 | 2026-08-16 세션 전체 | 20분 창 (워커 3대 Dispatch) |
+| --- | ---: | ---: |
+| `coordinator_input_tokens` | 399,563,803 | 6,984,330 |
+| `coordinator_fresh_input_tokens` | 2,049,888 | 150,929 |
+| 배율 | 195배 | 46배 |
+
+### 3.2 계측 이전 행과 조회 실패 행
+
+원장은 append-only 이므로 계측 도입 이전 8 행의 토큰 필드는 null 로 남습니다. 소급
+수정하지 않습니다.
+
+`usage_lookup_status` 는 계측되지 않은 행이 계측된 것처럼 보이는 것을 막습니다.
+`ok` 가 아닌 행은 토큰이 null 이며, `no_transcript_dir` 은 대개 워크트리에서 실행해
+슬러그가 달라진 경우입니다. 이때는 `--usage-transcript-dir` 로 주 저장소의 트랜스크립트
+디렉터리를 명시합니다.
+
+세션 선택 기본값은 수정 시각이 가장 최근인 파일 **하나**입니다. 이 저장소는 같은
+프로젝트에 병렬 Claude 세션이 뜬 이력이 있어 전체 합산이 기본값이면 다른 세션의 토큰이
+섞입니다. 명시 지정은 `--usage-session`, 전체 합산은 `--usage-all-sessions` 입니다.
+집계에 기여한 파일명은 항상 stderr 로 출력됩니다.
+
+`usage_concurrent_dispatches` 가 2 이상인 행은 창을 여러 Dispatch 가 공유했다는 뜻이라
+`summary` 의 코디네이터 토큰 집계에서 제외되고, 제외된 행 수가 함께 출력됩니다.
 
 ---
 
