@@ -13,7 +13,9 @@ Dispatch 전에 모델 가용성을 probe 합니다.
 
 모델 풀 정책 (정본: .agents/skills/orca-section-coordination/SKILL.md 3.1절):
   - Claude 구독     : 코디네이터 전용 (claude-opus-5). 워커 사용 절대 금지.
-  - Gemini Flash    : 주력 워커 (gemini-3.7-flash-high). 분석·감사·측정·절차적 구현.
+  - Gemini Flash    : 주력 워커. 추론 등급은 공식 문서 기준으로 위험도에 따라 배정합니다.
+                      medium 이 기본값이며 복잡한 코드와 에이전트 용도에 권장됩니다.
+                      high 는 가장 어려운 작업 전용, low 는 초안과 빠른 분석용입니다.
   - Claude 계열     : 별도 풀 (claude-sonnet-4-6). 판정 품질이 필요한 작업.
   - Codex           : 주간 잔량이 넉넉할 때만 수동 지정.
   - OpenCode 무료   : 실패해도 손실 없는 병렬 조사. 임계 경로 금지.
@@ -84,7 +86,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "benchmarker",
             "documenter",
         ],
-        "notes": "주력 워커. 분석·감사·측정·절차적 구현.",
+        "notes": "공식 문서 기준 가장 어려운 추론·코딩 전용. high 위험도에만 배정한다. 토큰 소모가 크다.",
     },
     "gemini-flash-medium": {
         "id": "gemini-3.7-flash-medium",
@@ -96,18 +98,18 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "investigator",
             "documenter",
         ],
-        "notes": "읽기 전용 조사 및 문서화.",
+        "notes": "공식 문서 기준 기본값이며 복잡한 코드와 에이전트 용도에 권장되는 등급. medium 위험도 이하의 주력 워커.",
     },
     "gemini-flash-low": {
         "id": "gemini-3.7-flash-low",
         "provider": "gemini",
         "tier": "primary",
-        "auto_selectable": False,
+        "auto_selectable": True,
         "max_tokens": 1_000_000,
         "suitable_for": [
             "documenter",
         ],
-        "notes": "추론 단계가 가장 얕다. 2026-08-17 에 호출 가능만 확인했고 산출 품질은 미측정이라 자동 선택 대상이 아니다. 판단이 없는 기계적 치환에 수동 지정한다.",
+        "notes": "공식 문서 기준 용도는 지연이 중요한 작업, 초안 작성, 빠른 데이터 분석. low 위험도 문서화와 조사에만 자동 선택된다. 리뷰어와 빌더에는 배정하지 않는다.",
     },
     "claude-sonnet": {
         "id": "claude-sonnet-4-6",
@@ -201,6 +203,44 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator"})
 FREE_POOL_MAX_RISK: str = "low"
 FREE_POOL_ORDER: list[str] = ["opencode-free", "cerebras-oss"]
+
+# ---------------------------------------------------------------------------
+# 역할별 추론 등급 정책
+# ---------------------------------------------------------------------------
+#
+# 배정 근거는 Gemini 3.7 Flash 공식 문서입니다.
+#   low    : 지연이 중요한 작업, 초안 작성, 빠른 데이터 분석
+#   medium : 기본값. 대부분의 작업에서 최고 품질이며 "복잡한 코드와 에이전트
+#            용도에 권장" 되고 첫 시도 정확도가 더 높음
+#   high   : 복잡한 추론, 어려운 수학, "가장 어려운" 코딩·에이전트 작업.
+#            토큰 소모가 큼
+#
+# 따라서 high 는 기본값이 아니라 high 위험도 전용입니다. 2026-08-17 까지
+# 리뷰어와 빌더가 위험도와 무관하게 항상 high 로 갔고, 읽기 전용 low 위험도
+# 감사 4건도 전부 high 로 배정되어 주간 한도를 불필요하게 썼습니다.
+#
+# 리뷰어는 판정이 병합 결정에 쓰이므로 주 모델을 low 등급으로 내리지 않습니다.
+
+TIER_POLICY: dict[tuple[str, str], list[str]] = {
+    ("reviewer", "high"): ["claude-sonnet", "gemini-flash-high"],
+    ("reviewer", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
+    ("reviewer", "low"): ["gemini-flash-medium", "gemini-flash-low"],
+    ("builder", "high"): ["gemini-flash-high", "claude-sonnet"],
+    ("builder", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
+    ("builder", "low"): ["gemini-flash-medium", "gemini-flash-low"],
+    ("investigator", "high"): ["gemini-flash-high", "gemini-flash-medium"],
+    ("investigator", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
+    ("investigator", "low"): ["gemini-flash-low", "gemini-flash-medium"],
+    ("benchmarker", "high"): ["gemini-flash-high", "gemini-flash-medium"],
+    ("benchmarker", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
+    ("benchmarker", "low"): ["gemini-flash-low", "gemini-flash-medium"],
+    ("documenter", "high"): ["gemini-flash-high", "gemini-flash-medium"],
+    ("documenter", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
+    ("documenter", "low"): ["gemini-flash-low", "gemini-flash-medium"],
+    ("__default__", "high"): ["gemini-flash-high", "gemini-flash-medium"],
+    ("__default__", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
+    ("__default__", "low"): ["gemini-flash-medium", "gemini-flash-high"],
+}
 
 # ---------------------------------------------------------------------------
 # 위험도 분류 기준
@@ -392,32 +432,7 @@ def select_model(
     """
     exclude = exclude or []
 
-    # 추론 등급은 위험도에 따라 내립니다. 예전에는 리뷰어와 빌더가 위험도를
-    # 무시하고 항상 high 로 갔습니다. 2026-08-17 에 읽기 전용 low 위험도 감사
-    # 4건이 전부 high 로 배정되어 주간 한도를 불필요하게 썼습니다.
-    if role == "reviewer":
-        if risk == "high":
-            base_candidates = ["claude-sonnet", "gemini-flash-high"]
-        elif risk == "medium":
-            base_candidates = ["gemini-flash-high", "claude-sonnet"]
-        else:
-            base_candidates = ["gemini-flash-medium", "gemini-flash-high"]
-    elif risk == "high":
-        base_candidates = ["gemini-flash-high", "claude-sonnet"]
-    elif role == "builder":
-        # 코드를 쓰는 역할은 등급을 내리지 않습니다. 기계적 이동이라도 재수출
-        # 위치와 순환 참조 판단이 들어가고, 틀린 코드를 되돌리는 비용이
-        # 읽기 작업과 비교되지 않습니다. 내리려면 측정이 먼저입니다.
-        base_candidates = ["gemini-flash-high", "claude-sonnet"]
-    elif role in ("investigator", "benchmarker"):
-        if risk == "low":
-            base_candidates = ["gemini-flash-medium", "gemini-flash-high"]
-        else:
-            base_candidates = ["gemini-flash-high", "gemini-flash-medium"]
-    elif role == "documenter":
-        base_candidates = ["gemini-flash-medium", "gemini-flash-high"]
-    else:
-        base_candidates = ["gemini-flash-high", "gemini-flash-medium"]
+    base_candidates = list(TIER_POLICY.get((role, risk), TIER_POLICY[("__default__", risk)]))
 
     eligible, _reason = free_pool_eligibility(role, risk, has_write_scope)
     if allow_free and eligible:
