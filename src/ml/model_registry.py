@@ -1,27 +1,38 @@
-import importlib.util
 import json
 import logging
 import math
 import os
-import time
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 
-import joblib
-import numpy as np
 import pandas as pd
 
+import src.ml.model_wrappers as _wrappers
+import src.ml.prediction_api as _pred_api
 from src.app.core.config import settings
 from src.ml.features import (
-    DEFAULT_INSTITUTION_NAME,
-    _is_missing,
     apply_categorical_dtypes,
     build_default_feature_map,
     prepare_features,
     prepare_input_frame,
     unservable_features,
+)
+from src.ml.model_wrappers import (
+    BaseModelWrapper,
+    EnsembleV25Wrapper,
+    HistPremiumEnsembleWrapper,
+    JoblibModelWrapper,
+    KerasModelWrapper,
+    QuantumLeapRuleWrapper,
+    V13HybridWrapper,
+)
+from src.ml.prediction_api import (
+    PredictionOutcome,
+    PriceDecisionMethod,
+    classify_price_decision_method,
+    predict_interval,
+    predict_optimal_price,
+    predict_optimal_price_batch,
+    predict_optimal_price_with_provenance,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,18 +42,6 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # 경로 정본은 settings 입니다. 여기서 다시 조립하면 설정을 바꿔도 로더가
 # 옛 경로를 보게 되므로, 값은 반드시 설정에서 읽습니다.
 MODEL_FILES_ROOT = Path(settings.MODEL_FILES_DIR)
-
-# 방어적 임포트
-try:
-    from catboost import CatBoostRegressor
-except ImportError:
-    CatBoostRegressor = None
-
-try:
-    import tensorflow as tf
-except ImportError:
-    tf = None
-
 
 MODEL_ALIASES = {
     "v13_pruned_hybrid": "v13_hybrid",
@@ -58,14 +57,6 @@ CATEGORY_DEFAULT_MODELS = {
 
 DEFAULT_RATIO_MIN = 0.75
 DEFAULT_RATIO_MAX = 1.05
-
-
-class PriceDecisionMethod(StrEnum):
-    MULTI = "복수예가"
-    SINGLE = "단일예가"
-    NON_PREARNG = "비예가"
-    MISSING = "Missing"
-    UNKNOWN = "Unknown"
 
 
 def _coerce_float(value, default=0.0):
@@ -222,490 +213,6 @@ def _preferred_model_for_features(features_dict):
     return CATEGORY_DEFAULT_MODELS.get(category, "v25")
 
 
-class BaseModelWrapper(ABC):
-    """모든 분석 모델의 베이스 어댑터 클래스"""
-
-    def __init__(self, model_dir, metadata=None):
-        self.model_dir = model_dir
-        self.metadata = metadata or {}
-        self.model_path = os.path.join(
-            model_dir,
-            self.metadata.get("model_file", "model.bin"),
-        )
-        self.model = None
-        self.preprocessor = None
-        self._load_preprocessor()
-        self.load()
-
-    def _load_preprocessor(self):
-        """커스텀 preprocess.py가 있을 경우 동적 로드"""
-        preprocess_path = os.path.join(self.model_dir, "preprocess.py")
-        if not os.path.exists(preprocess_path):
-            return
-        try:
-            spec = importlib.util.spec_from_file_location(
-                "model_preprocess",
-                preprocess_path,
-            )
-            if spec is None or spec.loader is None:
-                return
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            if hasattr(module, "preprocess"):
-                self.preprocessor = module.preprocess
-                print(
-                    f"[BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: {self.model_dir}"
-                )
-        except Exception as exc:
-            print(
-                f"[BaseModelWrapper] 전처리 스크립트 로드 실패 ({self.model_dir}): {exc}"
-            )
-
-    @abstractmethod
-    def load(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def predict(self, df):
-        raise NotImplementedError
-
-    def run_preprocess(self, features_dict):
-        """본 모델에 정의된 커스텀 전처리 수행"""
-        if self.preprocessor:
-            return self.preprocessor(features_dict)
-        return None
-
-    def get_features(self):
-        return self.metadata.get("required_features", [])
-
-    def get_category_levels(self):
-        """학습 때 저장한 범주 수준. 구 모델은 없으므로 None 입니다."""
-        return self.metadata.get("category_levels")
-
-    def get_serving_columns(self):
-        """추론 프레임에 요구하는 컬럼. 자체 전처리를 쓰는 모델은 빈 목록입니다."""
-        return []
-
-    def get_display_name(self):
-        return self.metadata.get("name", os.path.basename(self.model_dir))
-
-
-class JoblibModelWrapper(BaseModelWrapper):
-    """Joblib 기반 모델 어댑터 (model.bin)"""
-
-    def __init__(self, model_dir, metadata=None):
-        # load() 안에서 쓰지 않으므로 부모 __init__ 전에 둘 필요는 없지만,
-        # 부모가 load() 를 호출하므로 속성 선언은 먼저 해 둡니다.
-        self._quantile_models = None
-        super().__init__(model_dir, metadata)
-
-    def load(self):
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
-        self.model = joblib.load(self.model_path)
-        _apply_inference_thread_budget(self.model)
-
-    def get_serving_columns(self):
-        return list(getattr(self.model, "feature_name_", []) or self.get_features())
-
-    def _load_quantile_models(self):
-        """분위 모델을 지연 로드합니다. 없으면 빈 dict 라 구간을 내지 않습니다."""
-        if self._quantile_models is None:
-            loaded = {}
-            for path in sorted(Path(self.model_dir).glob("model_q*.bin")):
-                try:
-                    quantile = int(path.stem.split("_q")[1]) / 100.0
-                    quantile_model = joblib.load(path)
-                    _apply_inference_thread_budget(quantile_model)
-                    loaded[quantile] = quantile_model
-                except (ValueError, IndexError, OSError) as exc:
-                    print(f"[JoblibModelWrapper] 분위 모델 로드 실패 ({path}): {exc}")
-            self._quantile_models = loaded
-        return self._quantile_models
-
-    def predict_interval(self, df):
-        """예측 구간 (하단, 상단) 을 돌려줍니다. 구간이 없으면 None 입니다.
-
-        소박한 분위 회귀 구간은 보정에 실패하므로(명목 80% 대비 실제 75.52%)
-        학습 때 산정한 등각예측 배율로 중앙 기준 확대합니다.
-        """
-        models = self._load_quantile_models()
-        if len(models) < 2:
-            return None
-        columns = self.get_serving_columns()
-        if not columns:
-            return None
-        frame = _prepare_input_frame(
-            df.iloc[0].to_dict(),
-            columns,
-            self.get_category_levels(),
-            defaults=df.attrs.get("feature_defaults"),
-        )
-        bounds = sorted(
-            float(np.asarray(model.predict(frame)).reshape(-1)[0])
-            for model in models.values()
-        )
-        low, high = bounds[0], bounds[-1]
-        interval_meta = self.metadata.get("interval") or {}
-        scale = float(interval_meta.get("conformal_scale") or 1.0)
-        center, half = (low + high) / 2, (high - low) / 2 * scale
-        return center - half, center + half
-
-    def predict(self, df):
-        features = self.get_serving_columns()
-        input_df = (
-            _prepare_input_frame(
-                df.iloc[0].to_dict(),
-                features,
-                self.get_category_levels(),
-                defaults=df.attrs.get("feature_defaults"),
-            )
-            if features
-            else df
-        )
-        prediction = self.model.predict(input_df)
-        return float(np.asarray(prediction).reshape(-1)[0])
-
-    def predict_batch(self, frames):
-        """여러 요청의 동일 모델 추론을 한 번의 LightGBM 호출로 처리합니다."""
-        if type(self).predict is not JoblibModelWrapper.predict:
-            raise ValueError("사용자 정의 래퍼는 단건 추론 경로를 유지합니다.")
-        columns = self.get_serving_columns()
-        if not columns:
-            raise ValueError("배치 추론에 필요한 모델 컬럼이 없습니다.")
-        levels = self.get_category_levels()
-        prepared_rows = []
-        for frame in frames:
-            values = frame.iloc[0].to_dict()
-            defaults = frame.attrs.get("feature_defaults") or {}
-            row = {}
-            for column in columns:
-                default = defaults.get(column, 0.0)
-                value = values.get(column, default)
-                if _is_missing(value):
-                    value = default
-                if isinstance(default, str):
-                    row[column] = str(value) if value not in (None, "") else default
-                else:
-                    row[column] = _coerce_float(value, default)
-            prepared_rows.append(row)
-        # 단건 프레임을 반복 생성·concat 하지 않고 행을 한 번에 만들어
-        # 동일한 범주 수준을 한 번만 적용해 배치 자체의 GIL 비용을 줄입니다.
-        batch = pd.DataFrame(
-            prepared_rows,
-            columns=columns,
-        )
-        batch = apply_categorical_dtypes(batch, levels)
-        predictions = np.asarray(self.model.predict(batch)).reshape(-1)
-        if len(predictions) != len(frames):
-            raise ValueError("배치 추론 결과 행 수가 요청 수와 다릅니다.")
-        return [float(value) for value in predictions]
-
-
-class KerasModelWrapper(BaseModelWrapper):
-    """Keras 기반 딥러닝 모델 어댑터 (model.bin)"""
-
-    def load(self):
-        if tf is None:
-            raise ImportError("TensorFlow 미설치")
-        self.model = tf.keras.models.load_model(self.model_path)
-
-    def predict(self, df):
-        features = self.get_features()
-        input_data = df[features].values if features else df.values
-        prediction = self.model.predict(input_data, verbose=0)
-        return float(np.asarray(prediction).reshape(-1)[0])
-
-
-class V13HybridWrapper(BaseModelWrapper):
-    """v13 하이브리드 번들 어댑터"""
-
-    def load(self):
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
-        self.model = joblib.load(self.model_path)
-        required_keys = {
-            "s1_tier_clf",
-            "s1_q50",
-            "s1_q10",
-            "s1_q90",
-            "loo_s1",
-            "silo_models",
-        }
-        if not isinstance(self.model, dict) or not required_keys.issubset(self.model):
-            raise ValueError("v13_hybrid 번들 구조가 올바르지 않습니다.")
-
-    def get_serving_columns(self):
-        # 2단계 컬럼은 예측 결과로 고른 실로마다 달라, 합집합으로 봅니다.
-        columns = list(self.model["s1_tier_clf"].feature_name_)
-        for bundle in self.model["silo_models"].values():
-            for name in bundle["model"].feature_name_:
-                if name not in columns:
-                    columns.append(name)
-        return columns
-
-    def predict(self, df):
-        base_values = df.iloc[0].to_dict()
-        defaults = df.attrs.get("feature_defaults")
-        stage1_columns = list(self.model["s1_tier_clf"].feature_name_)
-        stage1_df = _prepare_input_frame(
-            base_values, stage1_columns, self.get_category_levels(), defaults=defaults
-        )
-        stage1_encoded = self.model["loo_s1"].transform(stage1_df)
-
-        pred_tier = int(self.model["s1_tier_clf"].predict(stage1_encoded)[0])
-        q10 = float(self.model["s1_q10"].predict(stage1_encoded)[0])
-        q50 = float(self.model["s1_q50"].predict(stage1_encoded)[0])
-        q90 = float(self.model["s1_q90"].predict(stage1_encoded)[0])
-
-        silo_models = self.model["silo_models"]
-        silo_bundle = silo_models.get(np.int32(pred_tier))
-        if silo_bundle is None:
-            silo_bundle = next(iter(silo_models.values()))
-
-        stage2_values = dict(base_values)
-        stage2_values.update(
-            {
-                "silo_id": float(pred_tier),
-                "pred_tier": float(pred_tier),
-                "q50": q50,
-                "count_spread": max(q90 - q10, 0.0),
-                "log_price_density_q50": q50 / max(
-                    _coerce_float(base_values.get("log_price"), 1.0),
-                    1.0,
-                ),
-            }
-        )
-        stage2_columns = list(silo_bundle["model"].feature_name_)
-        stage2_df = _prepare_input_frame(
-            stage2_values, stage2_columns, self.get_category_levels(), defaults=defaults
-        )
-        encoded_stage2 = silo_bundle["loo"].transform(stage2_df)
-        prediction = silo_bundle["model"].predict(encoded_stage2)
-        return float(np.asarray(prediction).reshape(-1)[0])
-
-
-class EnsembleV25Wrapper(BaseModelWrapper):
-    """v25 특화 앙상블 모델 어댑터"""
-
-    def load(self):
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
-        self.meta = joblib.load(self.model_path)
-        self.lgbm = joblib.load(os.path.join(self.model_dir, "v25_lgbm_final.joblib"))
-        self.cat = None
-        cat_bin = os.path.join(self.model_dir, "v25_cat_final.bin")
-        if CatBoostRegressor and os.path.exists(cat_bin):
-            self.cat = CatBoostRegressor()
-            self.cat.load_model(cat_bin)
-
-    def get_serving_columns(self):
-        return list(getattr(self.lgbm, "feature_name_", []))
-
-    def predict(self, df):
-        from .predictor_v25_helper import predict_v25_logic
-
-        feature_order = self.get_serving_columns() or list(df.columns)
-        aligned_df = _prepare_input_frame(
-            df.iloc[0].to_dict(),
-            feature_order,
-            self.get_category_levels(),
-            defaults=df.attrs.get("feature_defaults"),
-        )
-        return predict_v25_logic(self.lgbm, self.cat, self.meta, aligned_df)
-
-
-class QuantumLeapRuleWrapper(BaseModelWrapper):
-    """Notebook-derived heuristic bundle for goods bidding."""
-
-    def load(self):
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
-        self.model = joblib.load(self.model_path)
-        if not isinstance(self.model, dict):
-            raise ValueError("quantum_leap_v25_pro 번들 형식이 올바르지 않습니다.")
-
-    def _contains_keyword(self, text, keywords):
-        base_text = str(text or "")
-        return any(keyword in base_text for keyword in keywords or [])
-
-    def _detect_sector(self, title):
-        sector_keywords = self.model.get("sector_keywords") or {}
-        for sector_name, keywords in sector_keywords.items():
-            if self._contains_keyword(title, keywords):
-                return sector_name
-        return "일반/물품"
-
-    def _resolve_region_multiplier(self, agency_name):
-        regional_keywords = self.model.get("regional_keywords") or {}
-        regional_multipliers = self.model.get("regional_multipliers") or {}
-        if self._contains_keyword(agency_name, regional_keywords.get("metro")):
-            return _coerce_float(regional_multipliers.get("metro"), 1.0)
-        if self._contains_keyword(agency_name, regional_keywords.get("regional")):
-            return _coerce_float(regional_multipliers.get("regional"), 1.0)
-        return _coerce_float(regional_multipliers.get("default"), 1.0)
-
-    def _resolve_floor(self, price):
-        thresholds = self.model.get("price_thresholds") or {}
-        price_floors = self.model.get("price_floors") or {}
-        small_max = _coerce_float(thresholds.get("small_max"), 20_000_000)
-        large_min = _coerce_float(thresholds.get("large_min"), 210_000_000)
-
-        if price < small_max:
-            return _coerce_float(price_floors.get("small"), 87.995)
-        if price >= large_min:
-            return _coerce_float(price_floors.get("large"), 80.495)
-        return _coerce_float(price_floors.get("mid"), 84.245)
-
-    def predict(self, df):
-        row = df.iloc[0].to_dict()
-        title = row.get("title") or row.get("bid_ntce_nm") or ""
-        agency_name = (
-            row.get("agency_name")
-            or row.get("dminstt_nm")
-            or row.get("ntce_instt_nm")
-            or DEFAULT_INSTITUTION_NAME
-        )
-        scenario_mode = str(
-            row.get("scenario_mode") or self.model.get("default_scenario_mode") or "2"
-        )
-        price = max(_coerce_float(row.get("presmpt_prce"), 0.0), 0.0)
-
-        sector_name = self._detect_sector(title)
-        sector_stats = (self.model.get("stats") or {}).get(sector_name) or {}
-        gravity = 1.2 if price < 50_000_000 else (0.85 if price > 200_000_000 else 1.0)
-        regional_mult = self._resolve_region_multiplier(agency_name)
-        base_delta = _coerce_float(sector_stats.get("base_delta"), 6.0)
-        mode_adjustments = self.model.get("mode_adjustments") or {"1": 0.78, "2": 1.05, "3": 1.45}
-        scenario_multiplier = _coerce_float(
-            mode_adjustments.get(scenario_mode, mode_adjustments.get("2", 1.05)),
-            1.05,
-        )
-        floor = self._resolve_floor(price)
-
-        historical_spread = max(
-            _coerce_float(sector_stats.get("median_rate"), floor)
-            - _coerce_float(sector_stats.get("q10_rate"), floor),
-            0.0,
-        )
-        blended_delta = (base_delta * gravity * regional_mult * scenario_multiplier)
-        if historical_spread > 0:
-            blended_delta = (blended_delta * 0.65) + (historical_spread * 0.35)
-
-        target_rate = floor + blended_delta
-        return float(max(floor, min(104.95, target_rate)))
-
-
-class HistPremiumEnsembleWrapper(BaseModelWrapper):
-    """SSH 실험 코드를 서비스 번들 규격으로 옮긴 프리미엄 앙상블 모델."""
-
-    def load(self):
-        if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
-        self.model = joblib.load(self.model_path)
-        required_keys = {
-            "models",
-            "feature_names",
-            "method_categories",
-            "bid_categories",
-            "lower_rate_by_group",
-            "fallback_lower_rate",
-        }
-        if not isinstance(self.model, dict) or not required_keys.issubset(self.model):
-            raise ValueError("ssh_hist_premium 번들 형식이 올바르지 않습니다.")
-
-    def _normalize_ratio(self, value):
-        numeric = _coerce_float(value, 0.0)
-        if numeric <= 0:
-            return None
-        return numeric / 100.0 if numeric > 1 else numeric
-
-    def _fallback_lower_rate(self, row):
-        contract_method = str(row.get("cntrctCnclsMthdNm") or "")
-        category = str(row.get("category") or "")
-        title = str(row.get("title") or row.get("bid_ntce_nm") or "")
-        combined = " ".join((contract_method, category, title))
-        if "적격심사" in contract_method:
-            return 0.87745
-        if "물품" in combined or category == "Thng":
-            return 0.84
-        if "용역" in combined or category == "Servc":
-            return 0.88
-        return _coerce_float(self.model.get("fallback_lower_rate"), 0.84)
-
-    def _resolve_lower_rate(self, row):
-        direct = self._normalize_ratio(row.get("lower_rate"))
-        if direct is not None:
-            return direct
-
-        institution_name = (
-            row.get("ntceInsttNm")
-            or row.get("ntce_instt_nm")
-            or row.get("agency_name")
-            or row.get("dminstt_nm")
-            or DEFAULT_INSTITUTION_NAME
-        )
-        group_key = "_".join(
-            [
-                str(row.get("cntrctCnclsMthdNm") or ""),
-                str(row.get("bidMethdNm") or ""),
-                str(institution_name),
-            ]
-        )
-        mapped = (self.model.get("lower_rate_by_group") or {}).get(group_key)
-        if mapped is not None:
-            return _coerce_float(mapped, self._fallback_lower_rate(row))
-        return self._fallback_lower_rate(row)
-
-    def _encode_category(self, value, categories):
-        normalized = str(value or "")
-        try:
-            return float(categories.index(normalized))
-        except ValueError:
-            return -1.0
-
-    def predict(self, df):
-        row = df.iloc[0].to_dict()
-        price = max(
-            _coerce_float(
-                row.get("presmpt_prce", row.get("presmptPrce")),
-                0.0,
-            ),
-            0.0,
-        )
-        lower_rate = self._resolve_lower_rate(row)
-        feature_row = {
-            "log_price": np.log1p(price) if price > 0 else 0.0,
-            "lower_rate": lower_rate,
-            "method_enc": self._encode_category(
-                row.get("cntrctCnclsMthdNm"),
-                list(self.model.get("method_categories") or []),
-            ),
-            "bid_enc": self._encode_category(
-                row.get("bidMethdNm"),
-                list(self.model.get("bid_categories") or []),
-            ),
-        }
-        feature_names = list(self.model.get("feature_names") or feature_row.keys())
-        input_df = pd.DataFrame([[feature_row[name] for name in feature_names]], columns=feature_names)
-        models = list(self.model.get("models") or [])
-        if not models:
-            raise ValueError("ssh_hist_premium 모델이 비어 있습니다.")
-        premiums = [float(np.asarray(model.predict(input_df)).reshape(-1)[0]) for model in models]
-        predicted_rate = lower_rate + float(np.mean(premiums))
-        return float(predicted_rate)
-
-
 class ModelRegistry:
     _models = {}
 
@@ -847,245 +354,47 @@ class ModelRegistry:
         ]
 
 
-def predict_interval(model_id, features_dict):
-    """예측 구간 (하단%, 상단%, 명목 피복률) 을 돌려줍니다. 없으면 None 입니다.
+# 런타임 종속성을 model_wrappers 모듈에 연결 (순환 import 방지)
+_wrappers._coerce_float = _coerce_float
+_wrappers._apply_inference_thread_budget = _apply_inference_thread_budget
+_wrappers._prepare_input_frame = _prepare_input_frame
 
-    점 추정과 달리 구간은 선택 기능입니다. 구 모델은 분위 아티팩트가 없어
-    None 이 나오며, 호출부는 그 경우 구간 없이 응답해야 합니다.
-    """
-    wrapper = ModelRegistry.get_model(_resolve_model_id(model_id))
-    if wrapper is None or not hasattr(wrapper, "predict_interval"):
-        return None
-    try:
-        bounds = wrapper.predict_interval(_prepare_full_frame(features_dict))
-    except Exception as exc:
-        logger.warning("구간 산출 실패 (%s): %s", model_id, exc)
-        return None
-    # 구간은 부가 정보입니다. 형태가 어긋나면 점 추정까지 막지 않고 조용히 뺍니다.
-    if not isinstance(bounds, (tuple, list)) or len(bounds) != 2:
-        return None
-    try:
-        low, high = (_normalize_prediction_rate(value) * 100 for value in bounds)
-        coverage = (wrapper.metadata.get("interval") or {}).get("target_coverage")
-    except (TypeError, ValueError) as exc:
-        logger.warning("구간 값이 비정상입니다 (%s): %s", model_id, exc)
-        return None
-    return low, high, float(coverage) if coverage is not None else None
+# 런타임 종속성을 prediction_api 모듈에 연결 (순환 import 방지)
+_pred_api.ModelRegistry = ModelRegistry
+_pred_api._resolve_model_id = _resolve_model_id
+_pred_api._preferred_model_for_features = _preferred_model_for_features
+_pred_api._prepare_full_frame = _prepare_full_frame
+_pred_api._normalize_prediction_rate = _normalize_prediction_rate
 
-
-def classify_price_decision_method(raw_data: dict) -> PriceDecisionMethod:
-    """raw_data.prearngPrceDcsnMthdNm 기반으로 예가 유형을 분류한다.
-
-    세 경로(API, 챗봇 도구, 기본 모델 선택)가 동일한 판정을 사용하도록
-    이 함수 한 곳에서 판정한다.
-
-    Args:
-        raw_data: 공고 raw_data JSON 딕셔너리 또는 특징 딕셔너리.
-            ``prearngPrceDcsnMthdNm`` 또는 ``prearng_mthd`` 키를 읽는다.
-
-    Returns:
-        PriceDecisionMethod
-
-    판정 근거:
-        - ``"복수예가"`` 가 포함되면 복수예가
-        - ``"단일예가"`` 가 포함되면 단일예가
-        - 명시적 비예가 (``"없음"``, ``"비예가"``) -> 비예가
-        - 키 부재 또는 빈 문자열 -> Missing
-        - 그 외 인식 불가 값 -> Unknown (로그에 원값 기록)
-
-    제도적 근거:
-        비예가 공고는 예정가격을 작성하지 않는 제도이므로 낙찰률(= 낙찰금액 /
-        예정가격)의 분모가 존재하지 않는다. 따라서 낙찰률 기반 투찰가 산출이
-        제도적으로 불가하다.
-        원인 규명: docs/design/servc_nonprearng_population_cause_20260812.md
-    """
-    # raw_data JSON 키와 학습 프레임 키를 모두 지원한다.
-    value = raw_data.get("prearngPrceDcsnMthdNm")
-    if value is None:
-        value = raw_data.get("prearng_mthd")
-
-    if value is None:
-        return PriceDecisionMethod.MISSING
-
-    if not isinstance(value, str):
-        try:
-            value = str(value)
-        except Exception:
-            logger.warning(
-                "prearngPrceDcsnMthdNm 파싱 실패: type=%s", type(value).__name__
-            )
-            return PriceDecisionMethod.UNKNOWN
-
-    normalized = value.strip()
-
-    if not normalized:
-        return PriceDecisionMethod.MISSING
-    if normalized == "없음" or "비예가" in normalized:
-        return PriceDecisionMethod.NON_PREARNG
-    if "복수예가" in normalized:
-        return PriceDecisionMethod.MULTI
-    if "단일예가" in normalized:
-        return PriceDecisionMethod.SINGLE
-
-    # 인식 불가 값: 임의로 차단하지 않되 Unknown 으로 안전하게 분류한다.
-    logger.warning("prearngPrceDcsnMthdNm 인식 불가 값 -> Unknown 으로 분류")
-    return PriceDecisionMethod.UNKNOWN
-
-
-@dataclass(frozen=True)
-class PredictionOutcome:
-    """점 추정과 그 값을 실제로 낸 모델을 함께 담습니다.
-
-    후보 순회는 요청 모델이 실패해도 다른 모델로 답을 냅니다. 값만 돌려주면
-    호출부는 어느 모델이 답했는지 알 수 없어 모델명, 예측 구간, 로그가 전부
-    답하지 않은 모델을 가리키게 됩니다. 그 은폐를 막는 것이 이 타입입니다.
-    """
-
-    predicted_rate: float
-    requested_model: str
-    actual_model: str
-    fallback_used: bool
-    fallback_reason: str | None = None
-
-
-def predict_optimal_price_with_provenance(
-    model_id, features_dict, full_map=None
-) -> PredictionOutcome:
-    """점 추정과 실제 사용 모델을 함께 돌려줍니다.
-
-    응답의 모델명과 예측 구간은 반드시 `actual_model` 을 기준으로 계산해야
-    합니다. 요청 모델을 그대로 쓰면 점 추정과 구간이 서로 다른 모델에서 나옵니다.
-
-    full_map 은 호출부가 이미 구축한 전체 특징 맵입니다. 넘기면 후보 순회
-    전체가 같은 맵을 재사용해 요청당 구축 횟수가 1회로 줄어듭니다.
-    """
-    requested_id = _resolve_model_id(model_id or _preferred_model_for_features(features_dict))
-    preferred_id = _preferred_model_for_features(features_dict)
-    candidate_ids = []
-    for candidate in (requested_id, preferred_id, "v25", "v13_hybrid"):
-        if candidate not in candidate_ids:
-            candidate_ids.append(candidate)
-
-    last_error = None
-    failures: list[str] = []
-    for candidate_id in candidate_ids:
-        wrapper = ModelRegistry.get_model(candidate_id)
-        if not wrapper:
-            failures.append(f"{candidate_id}: 미등록")
-            continue
-
-        try:
-            call_start = time.perf_counter()
-            call_cpu_start = time.thread_time()
-            custom_df = wrapper.run_preprocess(features_dict)
-            df = (
-                custom_df
-                if custom_df is not None
-                else _prepare_full_frame(features_dict, full_map=full_map)
-            )
-            raw_prediction = wrapper.predict(df)
-            call_wall_ms = (time.perf_counter() - call_start) * 1000.0
-            call_cpu_ms = (time.thread_time() - call_cpu_start) * 1000.0
-            latency_logger.info(
-                "model_call=model_id=%s, status=success, wall_ms=%.2f, thread_cpu_ms=%.2f",
-                candidate_id,
-                call_wall_ms,
-                call_cpu_ms,
-            )
-            predicted_rate = float(_normalize_prediction_rate(raw_prediction))
-        except Exception as exc:
-            call_wall_ms = (time.perf_counter() - call_start) * 1000.0
-            call_cpu_ms = (time.thread_time() - call_cpu_start) * 1000.0
-            latency_logger.info(
-                "model_call=model_id=%s, status=error, wall_ms=%.2f, thread_cpu_ms=%.2f, error_type=%s",
-                candidate_id,
-                call_wall_ms,
-                call_cpu_ms,
-                type(exc).__name__,
-            )
-            last_error = exc
-            failures.append(f"{candidate_id}: {type(exc).__name__}: {exc}")
-            logger.warning("모델 '%s' 추론 실패: %s", candidate_id, exc)
-            continue
-
-        fallback_used = candidate_id != requested_id
-        fallback_reason = "; ".join(failures) if fallback_used else None
-        if fallback_used:
-            logger.warning(
-                "요청 모델 '%s' 대신 '%s' 로 예측했습니다. 사유: %s",
-                requested_id,
-                candidate_id,
-                fallback_reason,
-            )
-        return PredictionOutcome(
-            predicted_rate=predicted_rate,
-            requested_model=requested_id,
-            actual_model=candidate_id,
-            fallback_used=fallback_used,
-            fallback_reason=fallback_reason,
-        )
-
-    if last_error:
-        raise last_error
-    raise ValueError(
-        f"모델 '{requested_id}'을 찾을 수 없습니다. (후보: {'; '.join(failures)})"
-    )
-
-
-def predict_optimal_price(model_id, features_dict, full_map=None):
-    """점 추정만 돌려주는 기존 계약입니다.
-
-    출처가 필요한 호출부는 `predict_optimal_price_with_provenance` 를 쓰십시오.
-    이 얇은 래퍼를 남기는 이유는 float 를 그대로 pandas 프레임이나 문자열
-    포매팅에 넣는 호출부가 여럿 있어, 반환형을 바꾸면 그쪽 동작이 조용히
-    달라질 수 있기 때문입니다. full_map 은 provenance 로 그대로 전달됩니다.
-    """
-    return predict_optimal_price_with_provenance(
-        model_id, features_dict, full_map=full_map
-    ).predicted_rate
-
-
-def predict_optimal_price_batch(model_id, features_dicts, full_maps=None):
-    """동일한 Joblib 모델에 대한 요청 묶음을 한 번에 추론합니다.
-
-    이 함수는 predictor 의 짧은 마이크로배치 전용입니다. 모델 호출이
-    배치를 지원하지 않거나 요청 모델이 서로 다르면 호출부가 기존 단건
-    provenance 경로로 되돌아가므로 fallback 의미와 응답 계약을 바꾸지 않습니다.
-    """
-    if not features_dicts:
-        return []
-    requested_ids = [_resolve_model_id(model_id or _preferred_model_for_features(item)) for item in features_dicts]
-    if len(set(requested_ids)) != 1:
-        raise ValueError("배치 요청의 모델 식별자가 서로 다릅니다.")
-    requested_id = requested_ids[0]
-    preferred_ids = [_preferred_model_for_features(item) for item in features_dicts]
-    if len(set(preferred_ids)) != 1 or preferred_ids[0] != requested_id:
-        raise ValueError("배치 요청의 기본 모델이 서로 다릅니다.")
-    wrapper = ModelRegistry.get_model(requested_id)
-    if wrapper is None or not hasattr(wrapper, "predict_batch"):
-        raise ValueError(f"모델 '{requested_id}'이 배치 추론을 지원하지 않습니다.")
-    maps = full_maps or [None] * len(features_dicts)
-    frames = [
-        _prepare_full_frame(features, full_map=full_map)
-        for features, full_map in zip(features_dicts, maps, strict=True)
-    ]
-    call_start = time.perf_counter()
-    call_cpu_start = time.thread_time()
-    raw_predictions = wrapper.predict_batch(frames)
-    latency_logger.info(
-        "model_call=model_id=%s, status=success, batch_size=%d, wall_ms=%.2f, thread_cpu_ms=%.2f",
-        requested_id,
-        len(frames),
-        (time.perf_counter() - call_start) * 1000.0,
-        (time.thread_time() - call_cpu_start) * 1000.0,
-    )
-    return [
-        PredictionOutcome(
-            predicted_rate=float(_normalize_prediction_rate(raw_prediction)),
-            requested_model=requested_id,
-            actual_model=requested_id,
-            fallback_used=False,
-            fallback_reason=None,
-        )
-        for raw_prediction in raw_predictions
-    ]
+__all__ = [
+    "CATEGORY_DEFAULT_MODELS",
+    "DEFAULT_RATIO_MAX",
+    "DEFAULT_RATIO_MIN",
+    "MODEL_ALIASES",
+    "MODEL_FILES_ROOT",
+    "PROJECT_ROOT",
+    "BaseModelWrapper",
+    "EnsembleV25Wrapper",
+    "HistPremiumEnsembleWrapper",
+    "JoblibModelWrapper",
+    "KerasModelWrapper",
+    "ModelRegistry",
+    "PredictionOutcome",
+    "PriceDecisionMethod",
+    "QuantumLeapRuleWrapper",
+    "V13HybridWrapper",
+    "_apply_inference_thread_budget",
+    "_coerce_float",
+    "_load_champion_metrics",
+    "_normalize_prediction_rate",
+    "_preferred_model_for_features",
+    "_prepare_features",
+    "_prepare_full_frame",
+    "_prepare_input_frame",
+    "_resolve_model_id",
+    "classify_price_decision_method",
+    "predict_interval",
+    "predict_optimal_price",
+    "predict_optimal_price_batch",
+    "predict_optimal_price_with_provenance",
+]
