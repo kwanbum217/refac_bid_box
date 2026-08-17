@@ -75,15 +75,7 @@ why_now: >
   {why_now}
 
 ground_truth:
-  - fact: "G1 데이터 무손실: DB 스키마 및 행 수 100% 보존"
-    evidence: "docs/context/CURRENT_STATE.md"
-    recheck: false
-  - fact: "Train/Serve 특징 단일화: src/ml/features.py 만 사용"
-    evidence: "src/ml/features.py"
-    recheck: false
-  - fact: "1인 작업: Pull Request 생성 금지, main 직접 커밋 금지"
-    evidence: "AGENTS.md"
-    recheck: false
+{ground_truth}
 
 allowed_read_files:
 {allowed_read_files}
@@ -233,6 +225,35 @@ def _to_glob(path_str: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+BASE_GROUND_TRUTH: tuple[tuple[str, str], ...] = (
+    ("G1 데이터 무손실: DB 스키마 및 행 수 100% 보존", "docs/context/CURRENT_STATE.md"),
+    ("Train/Serve 특징 단일화: src/ml/features.py 만 사용", "src/ml/features.py"),
+    ("1인 작업: Pull Request 생성 금지, main 직접 커밋 금지", "AGENTS.md"),
+)
+
+
+def _format_ground_truth(extra_facts: list[str]) -> str:
+    """기본 사실 3건 뒤에 Intent 가 주입한 사실을 덧붙입니다.
+
+    코디네이터가 이미 확인한 경계 조건을 사실로 못박지 않으면 워커가 같은
+    것을 다시 조사하거나, 조사하지 않고 잘못된 가정으로 고칩니다.
+    """
+    lines = []
+    for fact, evidence in BASE_GROUND_TRUTH:
+        lines.append(f'  - fact: "{_escape(fact)}"')
+        lines.append(f'    evidence: "{_escape(evidence)}"')
+        lines.append("    recheck: false")
+    for fact in extra_facts:
+        lines.append(f'  - fact: "{_escape(fact)}"')
+        lines.append('    evidence: "코디네이터 확인 사실"')
+        lines.append("    recheck: false")
+    return "\n".join(lines)
+
+
+def _escape(text: str) -> str:
+    return str(text).replace("\\", "\\\\").replace('"', '\\"')
+
+
 def parse_intent(text: str) -> dict[str, Any]:
     """Task Intent YAML 을 정규식 기반으로 파싱합니다."""
     result: dict[str, Any] = {
@@ -244,6 +265,8 @@ def parse_intent(text: str) -> dict[str, Any]:
         "acceptance": [],
         "risk": "medium",
         "context": "",
+        "ground_truth": [],
+        "required_change": [],
         "review_checklist": [],
     }
 
@@ -299,7 +322,7 @@ def parse_intent(text: str) -> dict[str, Any]:
             key = match.group(1)
             val = match.group(2).strip()
 
-            if key in ("scope", "read_scope", "acceptance"):
+            if key in ("scope", "read_scope", "acceptance", "ground_truth", "required_change"):
                 items: list[str] = []
                 if val and val != "[]":
                     items.append(val.strip("\"'"))
@@ -405,7 +428,9 @@ def expand_intent_to_capsule(
     allowed_globs_formatted = _format_yaml_list(globs, indent="    - ")
 
     # required_change
-    req_items = [objective[:120]] if objective else ["(작업 목표 참조)"]
+    req_items = [str(item) for item in intent.get("required_change", []) if str(item).strip()]
+    if not req_items:
+        req_items = [objective[:120]] if objective else ["(작업 목표 참조)"]
     required_change_formatted = _format_yaml_list(req_items)
 
     # acceptance
@@ -440,6 +465,9 @@ def expand_intent_to_capsule(
         allowed_read_files=allowed_read_formatted,
         allowed_write_files=allowed_write_formatted,
         allowed_globs=allowed_globs_formatted,
+        ground_truth=_format_ground_truth(
+            [str(item) for item in intent.get("ground_truth", []) if str(item).strip()]
+        ),
         required_change=required_change_formatted,
         acceptance=acceptance_formatted,
         artifact_paths=artifact_paths_formatted,

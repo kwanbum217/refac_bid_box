@@ -1839,3 +1839,60 @@ def test_approve_trust_prompt_not_settled_on_busy_terminal(monkeypatch):
     monkeypatch.setattr(orca_taskctl.time, "sleep", lambda s: None)
 
     assert orca_taskctl.approve_trust_prompt("term_x", wait_seconds=0) == "not_settled"
+
+
+FACTS_INTENT = """schema: ORCA_TASK_INTENT_V1
+task_id: f1
+role: builder
+risk: medium
+objective: 동기 호출을 오프로드한다
+scope:
+  - src/tasks/automation_tasks.py
+ground_truth:
+  - SessionLocal 세션은 코루틴 사이에 공유되지 않는다
+  - src/tasks 에는 to_thread 사용이 0건이다
+required_change:
+  - runner 호출을 await asyncio.to_thread 로 바꾼다
+  - _report 호출을 오프로드한다
+acceptance:
+  - 전량 테스트 통과
+"""
+
+
+def test_parse_intent_reads_ground_truth_and_required_change():
+    intent = parse_intent(FACTS_INTENT)
+    assert intent["ground_truth"] == [
+        "SessionLocal 세션은 코루틴 사이에 공유되지 않는다",
+        "src/tasks 에는 to_thread 사용이 0건이다",
+    ]
+    assert intent["required_change"] == [
+        "runner 호출을 await asyncio.to_thread 로 바꾼다",
+        "_report 호출을 오프로드한다",
+    ]
+
+
+def test_expand_injects_coordinator_facts_after_base_facts():
+    """코디네이터가 확인한 경계 조건이 Capsule 사실로 실려야 워커가 재조사하지 않습니다."""
+    capsule = expand_intent_to_capsule(
+        parse_intent(FACTS_INTENT), run_id="run_x", task_id="f1"
+    )
+    assert "G1 데이터 무손실" in capsule
+    assert "SessionLocal 세션은 코루틴 사이에 공유되지 않는다" in capsule
+    assert "src/tasks 에는 to_thread 사용이 0건이다" in capsule
+    assert capsule.index("G1 데이터 무손실") < capsule.index("SessionLocal 세션은")
+
+
+def test_expand_required_change_lists_each_item():
+    capsule = expand_intent_to_capsule(
+        parse_intent(FACTS_INTENT), run_id="run_x", task_id="f1"
+    )
+    assert "runner 호출을 await asyncio.to_thread 로 바꾼다" in capsule
+    assert "_report 호출을 오프로드한다" in capsule
+
+
+def test_expand_falls_back_to_objective_without_required_change():
+    text = FACTS_INTENT.split("required_change:")[0] + "acceptance:\n  - 통과\n"
+    capsule = expand_intent_to_capsule(
+        parse_intent(text), run_id="run_x", task_id="f1"
+    )
+    assert "동기 호출을 오프로드한다" in capsule
