@@ -9,618 +9,80 @@ src/rag/engine.py
 from __future__ import annotations
 
 import asyncio
-import calendar
 import json
 import os
-import re
 import time
-import unicodedata
 from collections.abc import AsyncIterator
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.app.models.bids import CATEGORY_LABELS
+from src.rag.answer_format import (
+    _build_evidence_items,
+    _build_result_list_answer,
+    _build_source_citation_from_context,
+    _compose_context_text,
+    _fallback_answer,
+    _format_filters_for_prompt,
+    _format_result_amount,
+    _format_result_rate,
+    _markdown_result_cell,
+    _normalize_category_wording,
+)
 from src.rag.llm import build_backend
+from src.rag.query_planning import (
+    CATEGORY_KEYWORDS,
+    KB_KEYWORDS,
+    REGION_KEYWORDS,
+    RESULT_LIST_MARKERS,
+    RESULT_QUERY_MARKERS,
+    SEMANTIC_KEYWORDS,
+    STATISTICS_KEYWORDS,
+    TREND_KEYWORDS,
+    _category_label,
+    _month_end,
+    _normalize_text,
+    _parse_time_window,
+    _parse_year_month_window,
+    _query_lower,
+    build_retrieval_plan,
+    extract_result_limit,
+    is_result_list_query,
+)
 from src.rag.schemas import (
     DEFAULT_VECTOR_TOP_K,
     AnswerBundle,
-    EvidenceItem,
     Provenance,
     RetrievalPlan,
+)
+from src.rag.snapshots import (
+    _extract_kb_snapshot,
+    _extract_semantic_snapshot,
+    _extract_statistical_snapshot,
+    _extract_trend_snapshot,
 )
 from src.rag.structured_data import retrieve_structured_data
 from src.rag.vector_store import retrieve_semantic_context
 
-STATISTICS_KEYWORDS = (
-    "통계",
-    "평균",
-    "추세",
-    "비교",
-    "건수",
-    "낙찰률",
-    "경쟁률",
-    "집계",
-    "흐름",
-    "변화",
-    "자주",
-    "빈도",
-    "많이",
+SYSTEM_PROMPT = (
+    "당신은 BIDBOX의 전문 입찰 분석 어시스턴트입니다. "
+    "반드시 제공된 '검색 컨텍스트'의 Source 정보를 기반으로 답변하세요. "
+    "문장 끝마다 해당 문장의 근거가 되는 소스 번호를 [1], [2]와 같이 인라인 인용으로 표시하세요. "
+    "통계 수치(낙찰 수, 상위 업체, 빈번 공고 기관 등)는 Source [1]을, 추세 분석은 Source [2]를, "
+    "상세 문맥은 Source [3], [4], [5]를 인용하세요. "
+    "특히 '자주 올라오는 공고'나 '빈번한 기관'에 대한 질문에는 Source [1]의 '빈번 공고 기관' 및 "
+    "'자주 올라오는 공고 명칭' 데이터를 활용하여 구체적인 수치와 함께 답변하세요. "
+    "'최근 낙찰 결과', '낙찰된 사업 목록'처럼 개별 목록을 요청하면 Source [1]의 '최근 낙찰 결과 목록'을 "
+    "그대로 사용하여 요청한 개수만큼 공고명, 기관, 낙찰업체, 금액, 낙찰률을 나열하세요. "
+    "목록 데이터가 컨텍스트에 있으면 검색 결과가 없다고 말하지 마세요. "
+    "요청 기간에 목록이 없으면 컨텍스트 부족이라고 하지 말고, 요청 기간의 0건과 DB 최신 개찰일을 명확히 설명하세요. "
+    "분야 코드는 내부 식별자입니다. 최종 답변에는 Servc, Thng, Cnstwk, Frgcpt 같은 코드를 쓰지 말고 "
+    "용역, 물품, 공사, 외자처럼 사용자용 분류명만 쓰세요. "
+    "시각화가 유용하면 아래 형식의 canvas 태그를 본문 끝에 포함할 수 있습니다. "
+    "<canvas class='chat-chart' data-type='bar' data-labels='가,나,다' data-values='10,20,30' "
+    "data-title='차트 제목'></canvas>"
 )
-SEMANTIC_KEYWORDS = (
-    "사례",
-    "상세",
-    "특징",
-    "문맥",
-    "위험",
-    "리스크",
-    "어떤",
-    "왜",
-    "의미",
-)
-KB_KEYWORDS = (
-    "kb",
-    "지식베이스",
-    "벡터",
-    "임베딩",
-    "인덱스",
-)
-CATEGORY_KEYWORDS = {
-    "공사": "Cnstwk",
-    "물품": "Thng",
-    "용역": "Servc",
-    "외자": "Frgcpt",
-}
-REGION_KEYWORDS = (
-    "서울",
-    "부산",
-    "대구",
-    "인천",
-    "광주",
-    "대전",
-    "울산",
-    "세종",
-    "경기",
-    "강원",
-    "충북",
-    "충남",
-    "전북",
-    "전남",
-    "경북",
-    "경남",
-    "제주",
-)
-TREND_KEYWORDS = ("추세", "흐름", "변화")
-
-
-def _normalize_text(value: str | None) -> str:
-    return unicodedata.normalize("NFC", (value or "").strip())
-
-
-def _category_label(category: str | None) -> str:
-    category_code = _normalize_text(str(category or ""))
-    return CATEGORY_LABELS.get(category_code, category_code or "-")
-
-
-def _query_lower(query: str) -> str:
-    return _normalize_text(query).lower()
-
-
-RESULT_QUERY_MARKERS = (
-    "낙찰된",
-    "낙찰 결과",
-    "낙찰정보",
-    "낙찰 정보",
-    "낙찰 사업",
-    "낙찰 업체",
-)
-RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
-
-
-def is_result_list_query(query: str) -> bool:
-    """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다."""
-    lowered = _query_lower(query)
-    has_result_marker = any(marker in lowered for marker in RESULT_QUERY_MARKERS)
-    has_list_marker = any(marker in lowered for marker in RESULT_LIST_MARKERS) or bool(
-        re.search(r"\d+\s*(?:개|건)", lowered)
-    )
-    return has_result_marker and has_list_marker
-
-
-def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
-    """목록 질의의 요청 건수를 안전한 범위로 정규화합니다."""
-    match = re.search(r"(\d+)\s*(?:개|건)", _query_lower(query))
-    if not match:
-        return default
-    return min(max(int(match.group(1)), 1), maximum)
-
-
-def _format_filters_for_prompt(filters: dict | None) -> str:
-    if not filters:
-        return ""
-
-    labels = {
-        "institution_name": "기관/지역",
-        "date_from": "시작일",
-        "date_to": "종료일",
-        "relative_years": "최근 연수",
-        "analysis_mode": "분석 모드",
-        "result_limit": "요청 목록 수",
-    }
-    lines = []
-    for key, value in filters.items():
-        if value in (None, ""):
-            continue
-        if key == "category":
-            lines.append(f"- 분야: {_category_label(str(value))}")
-            continue
-        lines.append(f"- {labels.get(key, key)}: {value}")
-    return "\n".join(lines)
-
-
-def _normalize_category_wording(answer_text: str, plan: RetrievalPlan) -> str:
-    """분야 코드(Servc)가 사용자 답변에 노출되지 않도록 교정합니다."""
-    category = str((plan.filters or {}).get("category") or "")
-    if category != "Servc":
-        return answer_text
-
-    normalized = str(answer_text or "")
-    replacements = (
-        (r"서비스\s*\(\s*Servc\s*\)", "용역"),
-        (r"Service\s*\(\s*Servc\s*\)", "용역"),
-        (r"\bServc\b", "용역"),
-        (r"서비스\s*분야", "용역 분야"),
-        (r"서비스\s*공고", "용역 공고"),
-    )
-    for pattern, replacement in replacements:
-        normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
-    return normalized
-
-
-def _month_end(year: int, month: int) -> date:
-    return date(year, month, calendar.monthrange(year, month)[1])
-
-
-def _parse_year_month_window(lowered: str) -> tuple[date, date] | None:
-    """일자 없이 연도와 월만 지정한 표현을 기간으로 바꿉니다.
-
-    지원하는 형태입니다.
-
-    | 표현 | 해석 |
-    | --- | --- |
-    | `2025년 1월부터 3월까지` | 2025-01-01 ~ 2025-03-31 |
-    | `2024년 11월부터 2025년 2월까지` | 2024-11-01 ~ 2025-02-28 |
-    | `2025년 3월` | 2025-03-01 ~ 2025-03-31 |
-    | `2025년` | 2025-01-01 ~ 2025-12-31 |
-
-    월을 넘길 때 30일을 더하는 방식은 말일이 어긋나므로 달력 말일을 씁니다.
-    """
-    # 연도가 양쪽에 다 붙은 경우를 먼저 봅니다. 뒤 연도를 앞 연도로 덮어쓰면
-    # 해를 넘기는 기간이 뒤집힙니다.
-    cross_year = re.search(
-        r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(?:부터|~|-)\s*(\d{4})\s*년\s*(\d{1,2})\s*월", lowered
-    )
-    if cross_year:
-        y1, m1, y2, m2 = (int(g) for g in cross_year.groups())
-        if 1 <= m1 <= 12 and 1 <= m2 <= 12:
-            start, end = sorted((date(y1, m1, 1), date(y2, m2, 1)))
-            return start, _month_end(end.year, end.month)
-
-    same_year = re.search(
-        r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(?:부터|~|-)\s*(\d{1,2})\s*월", lowered
-    )
-    if same_year:
-        year, m1, m2 = (int(g) for g in same_year.groups())
-        if 1 <= m1 <= 12 and 1 <= m2 <= 12:
-            first, second = sorted((m1, m2))
-            return date(year, first, 1), _month_end(year, second)
-
-    single_month = re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월", lowered)
-    if single_month:
-        year, month = (int(g) for g in single_month.groups())
-        if 1 <= month <= 12:
-            return date(year, month, 1), _month_end(year, month)
-
-    # 연도만 말한 경우입니다. 네 자리 숫자면 무엇이든 연도로 보면 금액이나
-    # 공고번호가 걸리므로 "년" 글자가 붙은 것만 인정합니다.
-    year_only = re.search(r"(\d{4})\s*년", lowered)
-    if year_only:
-        year = int(year_only.group(1))
-        if 1900 <= year <= 2999:
-            return date(year, 1, 1), date(year, 12, 31)
-
-    return None
-
-
-def _parse_time_window(query: str) -> tuple[str, str, str]:
-    lowered = _query_lower(query)
-    today = date.today()
-
-    def _to_iso(start: date, end: date) -> tuple[str, str]:
-        return start.isoformat(), end.isoformat()
-
-    korean_dates = [
-        date(int(year), int(month), int(day))
-        for year, month, day in re.findall(
-            r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일", lowered
-        )
-    ]
-    if len(korean_dates) >= 2:
-        start_date, end_date = sorted((korean_dates[0], korean_dates[1]))
-        start, end = _to_iso(start_date, end_date)
-        return start, end, "recent"
-
-    iso_dates = [
-        date(int(year), int(month), int(day))
-        for year, month, day in re.findall(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b", lowered)
-    ]
-    if len(iso_dates) >= 2:
-        start_date, end_date = sorted((iso_dates[0], iso_dates[1]))
-        start, end = _to_iso(start_date, end_date)
-        return start, end, "recent"
-
-    # 일자 없이 연/월만 말하는 표현입니다. 위의 완전한 날짜 쌍보다 뒤에 두어야
-    # "2026년 4월 19일부터 2026년 4월 25일까지" 가 연월 규칙에 먼저 잡히지 않습니다.
-    #
-    # 이 구간이 비어 있는 동안 "2025년 물품 낙찰률" 같은 질문은 기간 조건 없이
-    # 전 기간을 집계하고도 2025년을 답한 것처럼 응답했습니다. 침묵하는 오답이라
-    # 느린 것보다 나쁩니다.
-    year_month_window = _parse_year_month_window(lowered)
-    if year_month_window is not None:
-        start, end = _to_iso(*year_month_window)
-        return start, end, "recent"
-
-    if "오늘" in lowered:
-        start, end = _to_iso(today, today)
-        return start, end, "today"
-
-    if "어제" in lowered:
-        yesterday = today - timedelta(days=1)
-        start, end = _to_iso(yesterday, yesterday)
-        return start, end, "recent"
-
-    if "이번 주" in lowered:
-        week_start = today - timedelta(days=today.weekday())
-        start, end = _to_iso(week_start, today)
-        return start, end, "recent"
-
-    if "지난달" in lowered:
-        first_this_month = today.replace(day=1)
-        last_prev_month = first_this_month - timedelta(days=1)
-        first_prev_month = last_prev_month.replace(day=1)
-        start, end = _to_iso(first_prev_month, last_prev_month)
-        return start, end, "recent"
-
-    day_match = re.search(r"최근\s*(\d+)\s*일", lowered)
-    if day_match:
-        days = max(int(day_match.group(1)), 1)
-        start, end = _to_iso(today - timedelta(days=days - 1), today)
-        return start, end, "recent"
-
-    month_match = re.search(r"최근\s*(\d+)\s*(?:개월|달)", lowered)
-    if month_match:
-        months = max(int(month_match.group(1)), 1)
-        start, end = _to_iso(today - timedelta(days=(30 * months) - 1), today)
-        return start, end, "recent"
-
-    if "최근 한 달" in lowered or "최근 1달" in lowered or "최근 한달" in lowered:
-        start, end = _to_iso(today - timedelta(days=29), today)
-        return start, end, "recent"
-
-    if "최근" in lowered or "요즘" in lowered:
-        start, end = _to_iso(today - timedelta(days=6), today)
-        return start, end, "recent"
-
-    return "", "", ""
-
-
-def build_retrieval_plan(query: str) -> RetrievalPlan:
-    normalized_query = _normalize_text(query)
-    lowered = normalized_query.lower()
-
-    result_list_query = is_result_list_query(normalized_query)
-    use_sql = result_list_query or any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
-    use_vector = not result_list_query and any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
-    use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
-
-    if not any((use_sql, use_vector, use_kb_status)):
-        use_vector = True
-
-    date_from, date_to, time_bias = _parse_time_window(normalized_query)
-    filters: dict[str, Any] = {}
-    if date_from:
-        filters["date_from"] = date_from
-    if date_to:
-        filters["date_to"] = date_to
-
-    for keyword, category in CATEGORY_KEYWORDS.items():
-        if keyword in lowered:
-            filters["category"] = category
-            break
-
-    for region in REGION_KEYWORDS:
-        if region in lowered:
-            filters["institution_name"] = region
-            break
-
-    if result_list_query:
-        filters["result_limit"] = extract_result_limit(normalized_query)
-
-    if any(keyword in lowered for keyword in TREND_KEYWORDS):
-        filters["analysis_mode"] = "trend"
-
-    route_reason_parts = []
-    if result_list_query:
-        route_reason_parts.append("낙찰 결과 목록 질의")
-    if use_sql:
-        route_reason_parts.append("정형 통계 질의")
-    if use_vector:
-        route_reason_parts.append("문맥/의미 질의")
-    if use_kb_status:
-        route_reason_parts.append("KB 상태 질의")
-
-    plan = RetrievalPlan(
-        use_sql=use_sql,
-        use_vector=use_vector,
-        use_kb_status=use_kb_status,
-        filters=filters,
-        semantic_query=normalized_query,
-        top_k=DEFAULT_VECTOR_TOP_K,
-        time_bias=time_bias,
-        route_reason=", ".join(route_reason_parts) or "기본 벡터 질의",
-    )
-
-    if use_sql and not filters.get("date_from"):
-        plan.insufficiency_hints.append(
-            "기간 조건이 명시되지 않아 전체 기준 통계를 사용할 수 있습니다."
-        )
-    if use_vector and not time_bias:
-        plan.insufficiency_hints.append(
-            "최신성 조건이 명확하지 않아 일반 문맥 검색으로 처리합니다."
-        )
-    return plan
-
-
-def _extract_statistical_snapshot(structured_data: dict | None) -> str:
-    if not structured_data:
-        return ""
-
-    summary = structured_data.get("summary") or {}
-    lines = [
-        "정형 데이터 집계:",
-        f"- 낙찰 결과 수: {summary.get('total_bids', 0)}",
-        f"- 공고 수: {summary.get('announcement_count', 0)}",
-        f"- 평균 낙찰률: {summary.get('average_winning_rate', 0)}",
-        f"- 총 낙찰 금액: {summary.get('total_winning_amount', 0)}",
-    ]
-
-    top_winners = summary.get("top_winners") or []
-    if top_winners:
-        winner_snapshot = ", ".join(
-            f"{item.get('bidwinnr_nm') or '-'}({item.get('win_count', 0)}건)"
-            for item in top_winners[:3]
-        )
-        lines.append(f"- 상위 낙찰 업체: {winner_snapshot}")
-
-    top_institutions = summary.get("top_institutions") or []
-    if top_institutions:
-        inst_snapshot = ", ".join(
-            f"{item.get('dminstt_nm') or '-'}({item.get('ntce_count', 0)}건)"
-            for item in top_institutions[:3]
-        )
-        lines.append(f"- 빈번 공고 기관: {inst_snapshot}")
-
-    top_announcements = summary.get("top_announcements") or []
-    if top_announcements:
-        ntce_snapshot = ", ".join(
-            f"{item.get('bid_ntce_nm') or '-'}({item.get('ntce_count', 0)}건)"
-            for item in top_announcements[:3]
-        )
-        lines.append(f"- 자주 올라오는 공고 명칭: {ntce_snapshot}")
-
-    recent_results = summary.get("recent_results") or []
-    latest_available_result_at = summary.get("latest_available_result_at")
-    if latest_available_result_at:
-        lines.append(f"- 해당 조건의 DB 최신 개찰일: {latest_available_result_at}")
-    if recent_results:
-        lines.append("- 최근 낙찰 결과 목록:")
-        for index, item in enumerate(recent_results, start=1):
-            lines.append(
-                f"  - {index}. 공고명={item.get('bid_ntce_nm') or '-'} / "
-                f"공고번호={item.get('bid_ntce_no') or '-'} / "
-                f"수요기관={item.get('dminstt_nm') or '-'} / "
-                f"낙찰업체={item.get('bidwinnr_nm') or '-'} / "
-                f"낙찰금액={item.get('sucsf_bid_amt') or '-'}원 / "
-                f"낙찰률={item.get('sucsf_bid_rate') or '-'}% / "
-                f"개찰일={item.get('rl_openg_dt') or '-'}"
-            )
-
-    time_series = summary.get("time_series") or []
-    if time_series:
-        period_label = "일별" if (time_series[0].get("period") == "day") else "월별"
-        lines.append(f"- {period_label} 추세:")
-        for row in time_series[-6:]:
-            lines.append(
-                f"  - {row.get('label') or row.get('month')}: "
-                f"avg_rate={row.get('avg_rate', 0)}, bid_count={row.get('bid_count', 0)}"
-            )
-
-    for item in structured_data.get("insufficiency_hints") or []:
-        lines.append(f"- 한계: {item}")
-    return "\n".join(lines)
-
-
-def _extract_semantic_snapshot(vector_docs: list[dict]) -> str:
-    if not vector_docs:
-        return ""
-
-    lines = ["문맥 검색 결과:"]
-    for item in vector_docs[:3]:
-        snippet = _normalize_text(str(item.get("document") or ""))
-        if len(snippet) > 220:
-            snippet = f"{snippet[:220]}..."
-        lines.append(f"- {snippet}")
-    return "\n".join(lines)
-
-
-def _extract_kb_snapshot(kb_status: dict | None) -> str:
-    if not kb_status:
-        return ""
-
-    return "\n".join(
-        [
-            "KB 색인 상태:",
-            f"- 상태: {kb_status.get('status') or 'unknown'}",
-            f"- 색인된 원본 문서 수: {kb_status.get('source_bid_count', 0)}",
-            f"- 마지막 파이프라인: {kb_status.get('last_pipeline_run_id') or '-'}",
-        ]
-    )
-
-
-def _extract_trend_snapshot(trend_analysis: dict | None) -> str:
-    if not trend_analysis:
-        return ""
-
-    lines = ["추세 분석:"]
-    summary_text = str(trend_analysis.get("summary_text") or "").strip()
-    if summary_text:
-        lines.append(f"- {summary_text}")
-
-    direction = str(trend_analysis.get("direction") or "").strip()
-    if direction:
-        lines.append(f"- 방향: {direction}")
-
-    peak = trend_analysis.get("peak") or {}
-    trough = trend_analysis.get("trough") or {}
-    if peak:
-        lines.append(f"- 최고 구간: {peak.get('label') or '-'} / {peak.get('value', 0)}")
-    if trough:
-        lines.append(f"- 최저 구간: {trough.get('label') or '-'} / {trough.get('value', 0)}")
-    return "\n".join(lines)
-
-
-def _markdown_result_cell(value: Any) -> str:
-    return str(value or "-").replace("|", "\\|").replace("\n", " ").strip()
-
-
-def _format_result_amount(value: Any) -> str:
-    try:
-        return f"{int(value):,}원"
-    except (TypeError, ValueError):
-        return "-"
-
-
-def _format_result_rate(value: Any) -> str:
-    try:
-        return f"{float(value):.4f}%"
-    except (TypeError, ValueError):
-        return "-"
-
-
-def _build_result_list_answer(
-    plan: RetrievalPlan,
-    structured_data: dict | None,
-) -> str:
-    """목록 질의는 LLM 추측 없이 DB 결과를 그대로 표시합니다."""
-    result_limit = (plan.filters or {}).get("result_limit")
-    if not result_limit or not structured_data:
-        return ""
-
-    summary = structured_data.get("summary") or {}
-    results = summary.get("recent_results") or []
-    category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
-    if not results:
-        latest = summary.get("latest_available_result_at")
-        answer = f"요청하신 기간에 조건에 맞는 최근 {category_label} 낙찰 결과는 0건입니다."
-        if latest:
-            answer += f"\n현재 DB에서 확인 가능한 해당 분야의 최신 개찰일은 {latest}입니다."
-        return answer
-
-    lines = [
-        f"최근 {category_label} 낙찰 결과 {len(results)}건입니다.",
-        "",
-        "| # | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 | 개찰일 |",
-        "| ---: | --- | --- | --- | ---: | ---: | --- |",
-    ]
-    for index, item in enumerate(results, start=1):
-        lines.append(
-            f"| {index} | {_markdown_result_cell(item.get('bid_ntce_nm'))} "
-            f"({_markdown_result_cell(item.get('bid_ntce_no'))}) | "
-            f"{_markdown_result_cell(item.get('dminstt_nm'))} | "
-            f"{_markdown_result_cell(item.get('bidwinnr_nm'))} | "
-            f"{_format_result_amount(item.get('sucsf_bid_amt'))} | "
-            f"{_format_result_rate(item.get('sucsf_bid_rate'))} | "
-            f"{_markdown_result_cell(item.get('rl_openg_dt'))} |"
-        )
-    return "\n".join(lines)
-
-
-def _compose_context_text(
-    plan: RetrievalPlan,
-    structured_data: dict | None,
-    vector_docs: list[dict],
-    kb_status: dict | None,
-) -> str:
-    sections = [f"검색 라우팅: {plan.route_reason}"]
-    formatted_filters = _format_filters_for_prompt(plan.filters)
-    if formatted_filters:
-        sections.append(f"적용 필터:\n{formatted_filters}")
-
-    # 통계 및 수치 데이터 (Source [1])
-    statistical_snapshot = _extract_statistical_snapshot(structured_data)
-    if statistical_snapshot:
-        sections.append(f"Source [1] (통계/수치):\n{statistical_snapshot}")
-
-    # 추세 분석 (Source [2])
-    trend_snapshot = _extract_trend_snapshot(
-        (structured_data or {}).get("trend_analysis") if structured_data else None
-    )
-    if trend_snapshot:
-        sections.append(f"Source [2] (추세 분석):\n{trend_snapshot}")
-
-    # 문맥/의미 검색 결과 (Source [3], [4], [5])
-    if vector_docs:
-        semantic_lines = ["문맥 검색 결과:"]
-        for i, item in enumerate(vector_docs[:3], start=3):
-            snippet = _normalize_text(str(item.get("document") or ""))
-            if len(snippet) > 250:
-                snippet = f"{snippet[:250]}..."
-            semantic_lines.append(f"Source [{i}]: {snippet}")
-        sections.append("\n".join(semantic_lines))
-
-    # KB 메타데이터 (Source [6])
-    kb_snapshot = _extract_kb_snapshot(kb_status)
-    if kb_snapshot:
-        sections.append(f"Source [6] (지식베이스 상태):\n{kb_snapshot}")
-
-    insufficiency_hints = list(plan.insufficiency_hints)
-    if structured_data:
-        insufficiency_hints.extend(structured_data.get("insufficiency_hints") or [])
-    if not vector_docs and plan.use_vector:
-        insufficiency_hints.append("문맥 검색 결과가 충분하지 않습니다.")
-
-    if insufficiency_hints:
-        sections.append(
-            "한계 및 주의:\n"
-            + "\n".join(f"- {item}" for item in dict.fromkeys(insufficiency_hints))
-        )
-
-    return "\n\n".join(section for section in sections if section)
-
-
-def _build_source_citation_from_context(
-    structured_data: dict | None,
-    vector_docs: list[dict],
-    kb_status: dict | None,
-) -> str:
-    if structured_data and vector_docs:
-        return "\n\n근거: 혼합 근거"
-    if vector_docs:
-        return "\n\n근거: Chroma 문맥 기반"
-    if structured_data or kb_status:
-        return "\n\n근거: DB 집계 기반"
-    return ""
 
 
 def _normalize_tool_context(
@@ -708,189 +170,6 @@ def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
     return json.dumps(_normalize_text(top_document), ensure_ascii=False)
 
 
-def _fallback_answer(
-    query: str,
-    plan: RetrievalPlan,
-    structured_data: dict | None,
-    vector_docs: list[dict],
-    kb_status: dict | None,
-) -> str:
-    lines = [f"질문: {query}"]
-    summary = structured_data.get("summary") if structured_data else {}
-
-    if summary:
-        lines.append(
-            f"- 낙찰 결과 {summary.get('total_bids', 0)}건, "
-            f"공고 {summary.get('announcement_count', 0)}건, "
-            f"평균 낙찰률 {summary.get('average_winning_rate', 0)}"
-        )
-        top_winners = summary.get("top_winners") or []
-        if top_winners:
-            top_line = ", ".join(
-                f"{item.get('bidwinnr_nm') or '-'} {item.get('win_count', 0)}건"
-                for item in top_winners[:3]
-            )
-            lines.append(f"- 상위 낙찰 업체: {top_line}")
-
-        recent_results = summary.get("recent_results") or []
-        latest_available_result_at = summary.get("latest_available_result_at")
-        if latest_available_result_at:
-            lines.append(f"- DB 최신 개찰일: {latest_available_result_at}")
-        if recent_results:
-            lines.append("- 최근 낙찰 결과:")
-            for index, item in enumerate(recent_results, start=1):
-                lines.append(
-                    f"  {index}. {item.get('bid_ntce_nm') or '-'} | "
-                    f"{item.get('dminstt_nm') or '-'} | "
-                    f"{item.get('bidwinnr_nm') or '-'} | "
-                    f"{item.get('sucsf_bid_amt') or '-'}원 | "
-                    f"{item.get('sucsf_bid_rate') or '-'}%"
-                )
-
-    if vector_docs:
-        snippet = _normalize_text(str(vector_docs[0].get("document") or ""))
-        if len(snippet) > 200:
-            snippet = f"{snippet[:200]}..."
-        lines.append(f"- 문맥 참고: {snippet}")
-
-    if kb_status:
-        lines.append(
-            f"- KB 색인 상태: {kb_status.get('status') or 'unknown'} / "
-            f"원본 문서 {kb_status.get('source_bid_count', 0)}건"
-        )
-
-    insufficiency_hints = list(plan.insufficiency_hints)
-    if structured_data:
-        insufficiency_hints.extend(structured_data.get("insufficiency_hints") or [])
-    if insufficiency_hints:
-        lines.append("- 한계: " + " / ".join(dict.fromkeys(insufficiency_hints)))
-
-    return "\n".join(lines) + _build_source_citation_from_context(
-        structured_data, vector_docs, kb_status
-    )
-
-
-def _build_evidence_items(
-    structured_data: dict | None,
-    vector_docs: list[dict],
-    kb_status: dict | None,
-) -> list[EvidenceItem]:
-    items: list[EvidenceItem] = []
-    if structured_data:
-        summary = structured_data.get("summary") or {}
-        items.append(
-            EvidenceItem(
-                id="sql_summary",
-                type="sql_stats",
-                content=summary,
-                metadata={
-                    "filters": structured_data.get("filters", {}),
-                    "citation_number": 1,
-                    "citation_label": "Source [1]",
-                    "citation_role": "통계/수치",
-                },
-            )
-        )
-        for i, sample in enumerate(summary.get("sample_announcements") or []):
-            items.append(
-                EvidenceItem(
-                    id=f"bid_{sample.get('bid_ntce_no', i)}",
-                    type="sql_stats",
-                    content=sample,
-                    metadata={
-                        "source": "BidAnnouncement",
-                        "citation_number": 1,
-                        "citation_label": "Source [1]",
-                        "citation_role": "통계/수치 상세 공고",
-                    },
-                )
-            )
-        for i, result in enumerate(summary.get("recent_results") or []):
-            items.append(
-                EvidenceItem(
-                    id=f"result_{result.get('bid_ntce_no') or i}",
-                    type="sql_stats",
-                    content=result,
-                    metadata={
-                        "source": "BidResult",
-                        "citation_number": 1,
-                        "citation_label": "Source [1]",
-                        "citation_role": "최근 낙찰 결과 목록",
-                    },
-                )
-            )
-        trend_analysis = structured_data.get("trend_analysis") or {}
-        if trend_analysis:
-            items.append(
-                EvidenceItem(
-                    id="trend_analysis",
-                    type="sql_stats",
-                    content=trend_analysis,
-                    metadata={
-                        "source": "TrendAnalysis",
-                        "citation_number": 2,
-                        "citation_label": "Source [2]",
-                        "citation_role": "추세 분석",
-                    },
-                )
-            )
-
-    for i, doc in enumerate(vector_docs):
-        metadata = dict(doc.get("metadata") or {})
-        citation_number = i + 3
-        metadata.update(
-            {
-                "citation_number": citation_number,
-                "citation_label": f"Source [{citation_number}]",
-                "citation_role": "문맥 검색",
-            }
-        )
-        items.append(
-            EvidenceItem(
-                id=f"vec_{i}",
-                type="vector_snippet",
-                content=doc.get("document", ""),
-                metadata=metadata,
-                relevance_score=doc.get("distance"),
-            )
-        )
-
-    if kb_status:
-        items.append(
-            EvidenceItem(
-                id="kb_meta",
-                type="kb_metadata",
-                content=kb_status,
-                metadata={
-                    "citation_number": 6,
-                    "citation_label": "Source [6]",
-                    "citation_role": "지식베이스 상태",
-                },
-            )
-        )
-    return items
-
-
-SYSTEM_PROMPT = (
-    "당신은 BIDBOX의 전문 입찰 분석 어시스턴트입니다. "
-    "반드시 제공된 '검색 컨텍스트'의 Source 정보를 기반으로 답변하세요. "
-    "문장 끝마다 해당 문장의 근거가 되는 소스 번호를 [1], [2]와 같이 인라인 인용으로 표시하세요. "
-    "통계 수치(낙찰 수, 상위 업체, 빈번 공고 기관 등)는 Source [1]을, 추세 분석은 Source [2]를, "
-    "상세 문맥은 Source [3], [4], [5]를 인용하세요. "
-    "특히 '자주 올라오는 공고'나 '빈번한 기관'에 대한 질문에는 Source [1]의 '빈번 공고 기관' 및 "
-    "'자주 올라오는 공고 명칭' 데이터를 활용하여 구체적인 수치와 함께 답변하세요. "
-    "'최근 낙찰 결과', '낙찰된 사업 목록'처럼 개별 목록을 요청하면 Source [1]의 '최근 낙찰 결과 목록'을 "
-    "그대로 사용하여 요청한 개수만큼 공고명, 기관, 낙찰업체, 금액, 낙찰률을 나열하세요. "
-    "목록 데이터가 컨텍스트에 있으면 검색 결과가 없다고 말하지 마세요. "
-    "요청 기간에 목록이 없으면 컨텍스트 부족이라고 하지 말고, 요청 기간의 0건과 DB 최신 개찰일을 명확히 설명하세요. "
-    "분야 코드는 내부 식별자입니다. 최종 답변에는 Servc, Thng, Cnstwk, Frgcpt 같은 코드를 쓰지 말고 "
-    "용역, 물품, 공사, 외자처럼 사용자용 분류명만 쓰세요. "
-    "시각화가 유용하면 아래 형식의 canvas 태그를 본문 끝에 포함할 수 있습니다. "
-    "<canvas class='chat-chart' data-type='bar' data-labels='가,나,다' data-values='10,20,30' "
-    "data-title='차트 제목'></canvas>"
-)
-
-
 class HybridRAGEngine:
     def __init__(self, provider: str | None = None):
         self._provider = provider
@@ -947,9 +226,7 @@ class HybridRAGEngine:
 
         context_text = _compose_context_text(plan, structured_data, vector_docs, kb_status)
 
-        messages = [
-            {"role": item["role"], "content": item["text"]} for item in history or []
-        ]
+        messages = [{"role": item["role"], "content": item["text"]} for item in history or []]
         messages.append({"role": "user", "content": f"검색 컨텍스트:\n{context_text}"})
         messages.append({"role": "user", "content": _normalize_text(user_query)})
 
@@ -1043,9 +320,7 @@ class HybridRAGEngine:
         tool_context: dict | None = None,
     ) -> AnswerBundle:
         """이벤트 루프를 막지 않도록 동기 경로를 스레드로 오프로드합니다."""
-        return await asyncio.to_thread(
-            self.get_answer_sync, user_query, db, history, tool_context
-        )
+        return await asyncio.to_thread(self.get_answer_sync, user_query, db, history, tool_context)
 
     async def stream_tokens(
         self,
@@ -1169,3 +444,47 @@ def get_chatbot_response(
     return rag_engine.get_answer_sync(
         user_message, db=db, history=history, tool_context=tool_context
     )
+
+
+__all__ = [
+    "CATEGORY_KEYWORDS",
+    "KB_KEYWORDS",
+    "REGION_KEYWORDS",
+    "RESULT_LIST_MARKERS",
+    "RESULT_QUERY_MARKERS",
+    "SEMANTIC_KEYWORDS",
+    "STATISTICS_KEYWORDS",
+    "SYSTEM_PROMPT",
+    "TREND_KEYWORDS",
+    "HybridRAGEngine",
+    "_build_evidence_items",
+    "_build_result_list_answer",
+    "_build_source_citation_from_context",
+    "_category_label",
+    "_compose_context_text",
+    "_extract_kb_snapshot",
+    "_extract_semantic_snapshot",
+    "_extract_statistical_snapshot",
+    "_extract_trend_snapshot",
+    "_fallback_answer",
+    "_format_filters_for_prompt",
+    "_format_result_amount",
+    "_format_result_rate",
+    "_markdown_result_cell",
+    "_month_end",
+    "_normalize_category_wording",
+    "_normalize_text",
+    "_normalize_tool_context",
+    "_parse_time_window",
+    "_parse_year_month_window",
+    "_query_lower",
+    "build_retrieval_plan",
+    "extract_result_limit",
+    "get_bidding_statistics",
+    "get_chatbot_response",
+    "is_result_list_query",
+    "rag_engine",
+    "retrieve_semantic_context",
+    "retrieve_structured_data",
+    "search_recent_details",
+]
