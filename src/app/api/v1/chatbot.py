@@ -19,32 +19,44 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from html import escape
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import get_current_user
+from src.app.api.v1.chatbot_confirmation import (
+    _build_automation_status_payload,
+    _build_confirmed_automation_response,
+    _build_missing_confirmation_response,
+    _find_pending_confirmation_request,
+    _is_text_confirmation_message,
+)
+from src.app.api.v1.chatbot_format import (
+    _append_kb_status,
+    _build_advisory_bundle,
+    _build_answer_tool_context,
+    _build_direct_tool_answer,
+    _format_bid_number,
+    _format_model_summary,
+    _format_percent,
+    _format_won,
+    _markdown_cell,
+    _plan_steps_payload,
+)
 from src.app.core.db import get_db
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
-from src.app.models.chatbot import AutomationRequest
-from src.app.schemas.chat import ChatPlan
 from src.app.schemas.chatbot import (
     ChatbotQueryRequest,
     ChatbotQueryResponse,
     ChatRequest,
     ChatResponse,
 )
-from src.app.services.advisory_engine import AdvisoryEngine
 from src.app.services.automation_orchestrator import (
-    STATUS_PENDING_CONFIRMATION,
     build_action_response,
-    confirm_automation_request,
     create_automation_request,
     get_automation_request,
     resolve_confirmation_token,
@@ -56,11 +68,21 @@ from src.app.services.conversation_state import (
 )
 from src.app.services.plan_executor import execute_plan_steps
 from src.app.services.planner import plan_chat_request
-from src.app.services.tools.kb_status_tool import (
-    build_kb_status_summary,
-    get_latest_kb_status_payload,
-)
+from src.app.services.tools.kb_status_tool import get_latest_kb_status_payload
 from src.rag.engine import rag_engine
+
+__all__ = [
+    "RESTRICTED_KEYWORDS", "SECURITY_BLOCK_ANSWER", "STREAM_ERROR_MESSAGE",
+    "_PendingRagAnswer", "_append_kb_status", "_build_advisory_bundle",
+    "_build_answer_tool_context", "_build_automation_status_payload",
+    "_build_confirmed_automation_response", "_build_direct_tool_answer",
+    "_build_missing_confirmation_response", "_finalize_rag_answer",
+    "_find_pending_confirmation_request", "_format_bid_number",
+    "_format_model_summary", "_format_percent", "_format_won",
+    "_is_text_confirmation_message", "_markdown_cell", "_new_trace_id",
+    "_plan_steps_payload", "_prepare_chat", "_run_chat", "_sse",
+    "chat_api", "chat_stream_api", "new_chat_session_api", "query_chatbot", "router",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -78,286 +100,6 @@ SECURITY_BLOCK_ANSWER = (
     "보안상의 이유로 시스템 내부 분류 코드체계 및 코드 베이스 관련 정보는 제공할 수 없습니다. "
     "시스템 관리자에게 문의하시기 바랍니다."
 )
-
-
-def _append_kb_status(answer_text: str, kb_status: dict | None) -> str:
-    summary = build_kb_status_summary(kb_status)
-    if not summary:
-        return answer_text
-    return f"{answer_text}\n\n{summary}"
-
-
-def _format_won(value: Any) -> str:
-    try:
-        return f"{int(value):,}원"
-    except (TypeError, ValueError):
-        return "-"
-
-
-def _format_percent(value: Any) -> str:
-    try:
-        return f"{float(value):.1f}%"
-    except (TypeError, ValueError):
-        return "-"
-
-
-def _markdown_cell(value: Any, *, bold: bool = False, code: bool = False) -> str:
-    text = escape(str(value or "-")).replace("|", "\\|").replace("\n", " ").strip()
-    if not text:
-        text = "-"
-    if code and text != "-":
-        return f"`{text}`"
-    if bold and text != "-":
-        return f"**{text}**"
-    return text
-
-
-def _format_bid_number(bid: dict) -> str:
-    return f"{bid.get('bid_ntce_no') or '-'}-{bid.get('bid_ntce_ord') or '-'}"
-
-
-def _format_model_summary(predictions: list[dict]) -> str:
-    model_names: list[str] = []
-    for item in predictions:
-        model_name = item.get("model_name") or item.get("model_id") or "-"
-        if model_name not in model_names:
-            model_names.append(model_name)
-    if not model_names:
-        return ""
-    return f"사용 모델: **{_markdown_cell(', '.join(model_names))}**"
-
-
-def _build_direct_tool_answer(tool_context: dict | None) -> str:
-    """예측 도구 결과는 LLM 을 거치지 않고 표로 직접 제시합니다 (원본 동일)."""
-    tool_results = (tool_context or {}).get("tool_results") or {}
-    prediction = tool_results.get("bid_prediction")
-    if not isinstance(prediction, dict):
-        return ""
-
-    if prediction.get("status") != "success":
-        return str(prediction.get("message") or "예측 결과를 만들지 못했습니다.")
-
-    predictions = prediction.get("predictions") or []
-    if isinstance(predictions, list) and len(predictions) > 1:
-        result_count = prediction.get("result_count") or len(predictions)
-        requested_count = prediction.get("requested_count") or result_count
-        lines = [
-            "### 투찰가 예측 결과",
-            "",
-            f"최근 수집된 물품 공고 **{result_count}건**을 기준으로 예측했습니다.",
-            "",
-            "| # | 공고 | 수요기관 | 기초금액 | 예상 낙찰률 | 추천 투찰가 |",
-            "| ---: | --- | --- | ---: | ---: | ---: |",
-        ]
-        if requested_count and result_count < requested_count:
-            lines.insert(
-                3,
-                f"요청하신 {requested_count}건 중 예측 가능한 공고 **{result_count}건**만 확인했습니다.",
-            )
-        for index, item in enumerate(predictions, start=1):
-            bid = item.get("bid") or {}
-            title_cell = (
-                f"{_markdown_cell(bid.get('bid_ntce_nm'), bold=True)}<br>"
-                f"{_markdown_cell(_format_bid_number(bid), code=True)}"
-            )
-            lines.append(
-                f"| {index} | {title_cell} "
-                f"| {_markdown_cell(bid.get('dminstt_nm') or bid.get('ntce_instt_nm'))} "
-                f"| {_format_won(item.get('reference_amount'))} "
-                f"| {_format_percent(item.get('prediction_rate'))} "
-                f"| {_markdown_cell(_format_won(item.get('optimal_price')), bold=True)} |"
-            )
-        model_summary = _format_model_summary(predictions)
-        if model_summary:
-            lines.extend(["", model_summary])
-        if any(item.get("fallback_used") for item in predictions):
-            lines.extend(
-                ["", "> 일부 공고는 요청 모델 추론 실패로 기본 모델 fallback을 사용했습니다."]
-            )
-        return "\n".join(lines)
-
-    bid = prediction.get("bid") or {}
-    lines = [
-        "### 투찰가 예측 결과",
-        "",
-        "최근 수집된 물품 공고 기준으로 예측했습니다.",
-        "",
-        "| 항목 | 내용 |",
-        "| --- | --- |",
-        f"| 공고명 | {_markdown_cell(bid.get('bid_ntce_nm'), bold=True)} |",
-        f"| 공고번호 | {_markdown_cell(_format_bid_number(bid), code=True)} |",
-        f"| 분야 | {_markdown_cell(bid.get('category_label') or bid.get('category'))} |",
-        f"| 수요기관 | {_markdown_cell(bid.get('dminstt_nm') or bid.get('ntce_instt_nm'))} |",
-        f"| 기초금액 | {_format_won(prediction.get('reference_amount'))} |",
-        f"| 예상 낙찰률 | {_format_percent(prediction.get('prediction_rate'))} |",
-        f"| 추천 투찰가 | {_markdown_cell(_format_won(prediction.get('optimal_price')), bold=True)} |",
-        f"| 사용 모델 | {_markdown_cell(prediction.get('model_name') or prediction.get('model_id'), bold=True)} |",
-    ]
-    if prediction.get("fallback_used"):
-        lines.extend(
-            [
-                "",
-                f"> 요청 모델 `{_markdown_cell(prediction.get('requested_model'))}` 추론이 실패해 "
-                "기본 모델로 fallback했습니다.",
-            ]
-        )
-    return "\n".join(lines)
-
-
-def _build_advisory_bundle(
-    db: Session,
-    base_suggestions: list[str] | None,
-    *,
-    user_id: int | None = None,
-    request_obj=None,
-) -> tuple[list[str], list[dict[str, Any]]]:
-    """원본 _build_advisory_bundle 대응. 제안 텍스트와 신호를 함께 구성합니다."""
-    engine = AdvisoryEngine()
-    advisory_signals = engine.suggest(db, user_id=user_id, request_obj=request_obj)
-    suggestions = list(base_suggestions or [])
-    for signal in advisory_signals:
-        message = str(signal.get("message") or "").strip()
-        if message and message not in suggestions:
-            suggestions.append(message)
-    return suggestions, advisory_signals
-
-
-def _is_text_confirmation_message(message: str) -> bool:
-    """원본 _is_text_confirmation_message 1:1 이식.
-
-    "승인 후 실행해줘" 처럼 버튼 대신 말로 승인하는 경우를 잡아냅니다.
-    """
-    normalized = "".join(str(message or "").lower().split())
-    if not normalized:
-        return False
-
-    approval_terms = ("승인", "확인", "동의", "허용", "yes", "ok")
-    run_terms = ("실행", "진행", "시작")
-    if normalized in {"승인", "확인", "동의", "허용", "yes", "ok"}:
-        return True
-    return any(term in normalized for term in approval_terms) and any(
-        term in normalized for term in run_terms
-    )
-
-
-def _find_pending_confirmation_request(
-    db: Session, user_id: int | None
-) -> AutomationRequest | None:
-    """원본 _find_pending_confirmation_request 대응. 24시간 내 확인 대기 건을 찾습니다."""
-    if user_id is None:
-        return None
-    cutoff = utcnow() - timedelta(hours=24)
-    stmt = (
-        select(AutomationRequest)
-        .where(
-            AutomationRequest.user_id == user_id,
-            AutomationRequest.status == STATUS_PENDING_CONFIRMATION,
-            AutomationRequest.requires_confirmation.is_(True),
-            AutomationRequest.created_at >= cutoff,
-        )
-        .order_by(AutomationRequest.created_at.desc())
-        .limit(1)
-    )
-    return db.execute(stmt).scalars().first()
-
-
-def _build_confirmed_automation_response(
-    db: Session,
-    request_obj: AutomationRequest,
-    message: str,
-    kb_status: dict | None,
-    session_key: str,
-    user_id: int | None,
-) -> ChatResponse:
-    """원본 _build_confirmed_automation_response 대응. 승인 즉시 실행으로 넘깁니다."""
-    confirm_automation_request(db, request_obj)
-    action_payload = build_action_response(db, request_obj)
-    suggestions, advisory_signals = _build_advisory_bundle(
-        db, action_payload.get("suggestions"), user_id=user_id, request_obj=request_obj
-    )
-    answer_text = _append_kb_status(action_payload["answer"], kb_status)
-    remember_chat_interaction(
-        db,
-        session_key,
-        user_id=user_id,
-        message=message or "실행 확인",
-        answer_text=answer_text,
-        visualizations=action_payload["visualizations"],
-        result_payload=action_payload["result_payload"],
-        job_id=str(request_obj.request_id),
-        action_key=request_obj.action_key,
-    )
-    return ChatResponse(
-        mode=action_payload["mode"],
-        intent=action_payload["intent"],
-        message=action_payload["message"],
-        answer=answer_text,
-        job=action_payload["job"],
-        suggestions=suggestions,
-        advisory_signals=advisory_signals,
-        visualizations=action_payload["visualizations"],
-        result_payload=action_payload["result_payload"],
-        kb_status=kb_status,
-        session_key=session_key,
-    )
-
-
-def _build_missing_confirmation_response(
-    message: str, kb_status: dict | None, session_key: str
-) -> ChatResponse:
-    """원본 _build_missing_confirmation_response 대응."""
-    answer_text = _append_kb_status(
-        "현재 승인 대기 중인 자동화 요청이 없습니다. 먼저 '전체 점검해줘'처럼 실행할 점검을 요청한 뒤 승인해 주세요.",
-        kb_status,
-    )
-    return ChatResponse(
-        mode="answer",
-        intent="automation_confirmation",
-        message="승인 대기 중인 자동화 요청이 없습니다.",
-        answer=answer_text,
-        suggestions=["전체 점검해줘", "사전 점검 실행해줘"],
-        kb_status=kb_status,
-        session_key=session_key,
-    )
-
-
-def _build_automation_status_payload(tool_context: dict | None) -> dict | None:
-    payload = ((tool_context or {}).get("tool_results") or {}).get("automation_status")
-    return payload if isinstance(payload, dict) else None
-
-
-def _plan_steps_payload(plan: ChatPlan) -> list[dict[str, str]]:
-    return [
-        {"step_id": step.step_id, "kind": step.kind, "tool": step.tool}
-        for step in (plan.steps or [])
-    ]
-
-
-def _build_answer_tool_context(
-    message: str,
-    history: list[dict],
-    context_state: dict,
-    plan: ChatPlan,
-    user_id: int | None = None,
-) -> dict[str, Any]:
-    tool_context: dict[str, Any] = {
-        "user_message": message,
-        "history": history,
-        "context_state": context_state,
-        "original_query": message,
-        "user_id": user_id,
-    }
-    if "result-object" not in str(plan.reason or ""):
-        return tool_context
-
-    last_tool_results = context_state.get("last_tool_results") or {}
-    if isinstance(last_tool_results, dict) and last_tool_results:
-        tool_context["tool_results"] = dict(last_tool_results)
-
-    last_chart_payload = context_state.get("last_chart_payload") or []
-    if isinstance(last_chart_payload, list) and last_chart_payload:
-        tool_context["visualizations"] = list(last_chart_payload)
-    return tool_context
 
 
 @dataclass
