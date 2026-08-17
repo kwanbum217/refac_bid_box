@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-17
-> **source_commit**: `45cfd52`
+> **source_commit**: `fcdfd58`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -93,19 +93,19 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**:
-   - **수신면 도구 5종**: `orca_contract.py`, `orca_level1_gate.py`(게이트 6대), `summarize_worker_done.py`, `orca_run_reviewer.py`, `orca_metrics_ledger.py`.
+   - **수신면 도구 5종**: `orca_contract.py`, `orca_level1_gate.py`(게이트 6대), `summarize_worker_done.py`, `orca_run_reviewer.py`, `orca_metrics_ledger.py`. **Control Plane**: `orca_taskctl.py`, `orca_model_router.py`.
    - **Level 3 유지 확정**: 결함 밀도 0.05 사전 등록, A/B 검출 0/3.
-   - **Control Plane 도구**: `orca_taskctl.py`, `orca_model_router.py`. `3453a3f` 회수 사유는 3장 13·14·16·17번.
-   - **동시 쓰기 워커 상한 3대**를 `dispatch` 가 강제(AGENTS.md 4장 5.1).
-   - **실사용 도구 결함 4건 수정**: 기동 경로(`76c3013`), Capsule 경로(`eb6f429`), 중복 생성(`cef6623`), 산출물 경로(`b86d833`). 넷 다 문서상 완비였다.
+   - `3453a3f` 회수 사유는 3장 13·14·16·17번.
+   - **동시 쓰기 워커 상한 3대**를 `dispatch` 가 강제. 병렬 3섹션 실사용 검증 완료(4장 3번).
+   - **실사용 도구 결함 5건 수정**: 기동·Capsule·중복·산출물 경로(`76c3013`,`eb6f429`,`cef6623`,`b86d833`), Intent 의 `ground_truth`·`required_change` 미전달(`08f4fe5`). 전부 문서상 완비였다.
    - **절감량**: 도입 전 값은 확보 불가 유지. 대표 지표 유효 행 0 -> 7 확보. 순서 효과와 모델 효과가 섞여 추세 판정은 아직 불가(3장 21번).
-   - **등급 실측**: 고정 경계 기계적 분할을 medium 으로 돌려 품질 9항목 전부 high 와 동일(AST 15/15, 정정 왕복 0). S1 급 난이도는 미검증.
-   - **2026-08-17 모델별 동형 감사 4종**(gemini-flash-high, sonnet-4-6, opus-4-6-thinking, cerebras/gemma-4-31b): 읽기 전용 4건 전부 저장소 무수정. 도구 결함 3건 수정.
+   - **등급 실측**: 기계적 분할은 medium 이 high 와 품질 9항목 동일. S1 급 난이도는 미검증.
+   - **모델별 동형 감사 4종**(flash-high, sonnet-4-6, opus-4-6-thinking, gemma-4-31b): 전부 저장소 무수정.
 2. **대형 모듈 분할 — 종결**: 1,000 -> 600 -> 500줄 순으로 기준을 내려 9개 모듈 분할, 신규 20모듈. AST 동일성 실증(65+85+24+10+15). 500줄 초과 7개 전부 판정 완료(불필요 3, 완료 잔여 2, 비권고 2). 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장. 남은 크기는 함수 길이(`retrieve_structured_data` 236줄)에 몰려 있고 추출은 AST 증명이 불가해, `pytest-cov` 승인 또는 실제 결함 발생을 재개 조건으로 남겼다.
-3. **요청 경로 동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: G3 감사가 지목한 4건을 오프로드했다. 수집 집계·체크포인트(`5d65b5c`), SSR 회원가입·로그인의 PBKDF2 600k 회와 동기 DB(`bdb69b5`), SSE 컨텍스트 조회(`45cfd52`). 세 커밋 모두 반증 테스트를 동반한다. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 감사가 올린 `stream_generate` 소켓 생성은 제너레이터 지연 평가라 결함이 아니었다.
-4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인을 분석합니다. 호스트 Ollama 재시동과 Docker 단독 점유가 필요합니다.
-5. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 확인 (G2 완결).
-6. **공공조달 입찰 데이터 수집 2·3회차 관찰**: Docker 필요.
+3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 감사로 찾은 12건(요청 경로 4, Arq 태스크 경로 8)을 `to_thread` 로 오프로드했다. 요청 경로 `5d65b5c`,`bdb69b5`,`45cfd52`. 태스크 경로는 3섹션 병렬 워커 `718de84`,`c89ba04`,`fcdfd58` 로 `src/tasks` `to_thread` 0 -> 16건. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 오프로드 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
+4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
+5. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
+6. **수집 2·3회차 관찰**: Docker 필요.
 
 ---
 
@@ -125,7 +125,7 @@
 
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama 다중화 시 자원 점유와 c4 기준선 미확정.
-- 블로킹 I/O 오프로드 4건의 P95 개선치 미측정(4장 3번).
+- 블로킹 I/O 12건의 P95·태스크 처리량 개선치 미측정(4장 3번).
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
