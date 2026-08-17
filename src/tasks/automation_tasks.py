@@ -8,6 +8,7 @@ apply_callback_payload 계약으로 automation_requests 에 누적합니다.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from datetime import datetime, timedelta
@@ -413,8 +414,11 @@ async def run_automation_pipeline(
             if step == "search" and run_mode == "refresh_data":
                 # 수집 API 재시도와 워커 재기동을 고려해 24시간을 겹쳐 upsert 합니다.
                 kwargs["collected_since"] = utcnow() - timedelta(days=1)
-            outcome = runner(db, **kwargs)
-            res = await outcome if inspect.isawaitable(outcome) else outcome
+            if inspect.iscoroutinefunction(runner):
+                res = await runner(db, **kwargs)
+            else:
+                outcome = await asyncio.to_thread(runner, db, **kwargs)
+                res = await outcome if inspect.isawaitable(outcome) else outcome
 
             if isinstance(res, tuple) and len(res) == 3:
                 step_status, summary, metrics = res
@@ -432,7 +436,9 @@ async def run_automation_pipeline(
 
             completed.append(step)
             step_statuses[step] = step_status
-            _report(db, automation_request_id, step, step_status, summary, metrics, **delivery)
+            await asyncio.to_thread(
+                _report, db, automation_request_id, step, step_status, summary, metrics, **delivery
+            )
 
             if execution is not None:
                 execution.stage_status = step_status
@@ -458,7 +464,8 @@ async def run_automation_pipeline(
                 if completed
                 else f"실행 모드 `{run_mode}` 에 수행할 스텝이 없습니다."
             )
-            _report(
+            await asyncio.to_thread(
+                _report,
                 db,
                 automation_request_id,
                 "final",
@@ -484,7 +491,8 @@ async def run_automation_pipeline(
                 if pipeline_error
                 else f"실행 모드 `{run_mode}` 실패"
             )
-            _report(
+            await asyncio.to_thread(
+                _report,
                 db,
                 automation_request_id,
                 "final",
@@ -512,7 +520,8 @@ async def run_automation_pipeline(
             }
     except Exception as exc:
         logger.exception("자동화 파이프라인 실패 (%s)", run_mode)
-        _report(
+        await asyncio.to_thread(
+            _report,
             db,
             automation_request_id,
             "final",
