@@ -66,27 +66,18 @@
 | 9 | 같은 `report_path` 재사용 | 덮어써서 이전 보고 소실. 새 경로를 준다 |
 | 10 | 파이프라인으로 종료 코드 판정 | `pytest \| tail && ...` 은 실패를 통과로 본다. 게이트 도구를 쓴다 |
 | 11 | 비표준 계약 필드명 수용 | `files_modified` 폴백이 `changed_files_count: 0` 을 조용히 기록했다. 폴백 금지 |
-| 12 | 재작업을 완료된 Task 에 태우기 | 2차 `worker_done` 이 거부되어 반려 사유가 사라진다. `ready` 복귀 또는 새 Task |
-| 13 | `ready` 복귀 후 재 Dispatch 생략 | 권한 회수로 재보고가 거부된다. 병합 Task 는 `completed` 로 닫는다 |
-| 14 | 미확인 외부 CLI 서명으로 코드 작성 | 값 유무는 `--help` Usage 줄로 본다. 종료 코드 0 이 성공은 아니다 |
-| 15 | Orca CLI 열거형 미확인 사용 | `check --types ask` 는 `ok: false` + 종료 코드 0 이다. 둘을 따로 본다 |
-| 16 | 테스트가 틀린 사실을 정답으로 고정 | 통과하는 테스트는 확인의 근거가 아니다 |
-| 17 | `defect_when` 에 산문 기재 | `yes`/`no` 극성 토큰이다. 기계 검증이 없어 8항목이 무효화됐다 |
-| 18 | 미실측 모델 ID 등록 | 선택되는 순간에야 `Model not found`. 추가 시 그 자리에서 probe 한다 |
-| 19 | 읽기 범위를 차단 장치로 취급 | 쓰기는 `git diff` 검증, 읽기는 자기 신고만 대조. 유출 금지 대상은 워커 트리에 두지 않는다 |
-| 20 | `coordinator_input_tokens` 로 절감 비교 | `cache_read` 가 99.5%로 턴 수에 비례한다. 대표는 `coordinator_fresh_input_tokens` |
-| 21 | 순차 행을 모델 비교로 읽기 | 뒤 행일수록 캐시가 서 있어 순서 효과와 모델 효과가 섞인다 |
-| 22 | `check` 를 `--ack` 없이 호출 | 미확인 배치가 재전달되어 뒤의 `worker_done` 이 가려진다 |
-| 23 | 동작 보존 분할을 사람 판독으로만 검증 | `ast.dump(node, include_attributes=False)` 로 기계 대조 |
-| 24 | AST 대조 이름을 평평하게 모으기 | `Class.method` / `<module>.func` 로 정규화한다 |
-| 25 | 저장소 도구를 `python3` 로 실행 | macOS `python3` 는 Xcode 3.9 라 `datetime.UTC` 가 깨진다. `uv run python` |
-| 26 | TPM 을 파일 수 축소로 해소 | 원인은 루프의 컨텍스트 재전송. 사실 주입 원샷만 통과 |
-| 27 | 모델 선정 전 반복 금지 미조회 | Cerebras TPM 위험과 리뷰어 개방 금지가 이미 적혀 있었다 |
-| 28 | 메시지 필드명을 계약 위반으로 오판 | payload 는 Orca 자체 camelCase 다(`send --files-modified`). 파일 계약과 따로 대조 |
-| 29 | 메시지 `reportPath` 를 원장에 기록 | 원장은 Capsule 의 `report_path` 를 쓴다 |
-| 30 | 줄 수로 감사 비권고를 뒤집기 | 기준선은 후보를 고르는 장치이고 판정이 아니다. 3개 모듈은 감사 근거로 자르지 않았다 |
-| 31 | 함수 추출을 이동과 같은 방식으로 검증 | 이동은 `ast.dump` 로 증명되지만 추출은 본문을 바꿔 증명이 불가하다. 테스트에만 의존한다 |
-| 32 | 모듈 관점 감사로 함수 내부까지 판정 | A1 이 236줄 함수와 3회 반복 블록을 놓쳤다. 최장 함수 줄 수를 체크리스트에 명시한다 |
+| 12 | 재작업을 완료된 Task 에 태우기 | 2차 `worker_done` 은 권한 회수로 거부된다. `ready` 복귀 시 재 Dispatch 필수, 병합 Task 는 `completed` 로 닫는다 |
+| 13 | 미확인 외부 CLI 서명·열거형 사용 | 값 유무는 `--help` Usage 줄로 본다. `ok: false` + 종료 코드 0 조합이 있어 둘을 따로 본다 |
+| 14 | 테스트가 틀린 사실을 정답으로 고정 | 통과하는 테스트는 확인의 근거가 아니다 |
+| 15 | 미실측 모델 ID 등록 | 선택되는 순간에야 `Model not found`. 추가 시 그 자리에서 probe 한다 |
+| 16 | 읽기 범위를 차단 장치로 취급 | 쓰기는 `git diff` 검증, 읽기는 자기 신고만 대조. 유출 금지 대상은 워커 트리에 두지 않는다 |
+| 17 | 순차 행을 모델 비교로 읽기 | 뒤 행일수록 캐시가 서 있어 순서 효과와 모델 효과가 섞인다 |
+| 18 | `check` 를 `--ack` 없이 호출 | 미확인 배치가 재전달되어 뒤의 `worker_done` 이 가려진다 |
+| 19 | 동작 보존 분할을 사람 판독으로만 검증 | `ast.dump(node, include_attributes=False)`, 이름은 `Class.method`/`<module>.func` 로 정규화 |
+| 20 | 저장소 도구를 `python3` 로 실행 | macOS `python3` 는 Xcode 3.9 라 `datetime.UTC` 가 깨진다. `uv run python` |
+| 21 | 모델 선정 전 반복 금지 미조회 | Cerebras TPM 위험과 리뷰어 개방 금지가 이미 적혀 있었다. TPM 원인은 루프의 컨텍스트 재전송이라 파일 수 축소로는 해소되지 않는다 |
+| 22 | 메시지 payload 를 파일 계약과 섞기 | payload 는 Orca 자체 camelCase 다(`send --files-modified`). 원장에는 Capsule 의 `report_path` 를 쓴다 |
+| 23 | 감사 결론을 검증 없이 채택 | 이동은 `ast.dump` 로 증명되지만 추출은 본문을 바꿔 증명이 불가하다. 모듈 관점 감사는 함수 내부를 놓친다(A1 이 236줄 함수 누락) |
 
 ---
 
@@ -94,8 +85,8 @@
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**:
    - **수신면 5종**: `orca_contract.py`, `orca_level1_gate.py`(게이트 6대), `summarize_worker_done.py`, `orca_run_reviewer.py`, `orca_metrics_ledger.py`. **Control Plane 2종**: `orca_taskctl.py`, `orca_model_router.py`.
-   - **절감량**: 도입 전 값은 확보 불가 유지. 대표 지표 유효 행 0 -> 7. 순서 효과와 모델 효과가 섞여 추세 판정은 아직 불가(3장 21번).
-   - `3453a3f` 회수 사유는 3장 13·14·16·17번. 종결된 운영 판정 5건(Level 3, 등급 실측, 모델 4종, 병렬 3대, 도구 결함)은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 9장.
+   - **절감량**: 도입 전 값은 확보 불가 유지. 대표 지표 유효 행 0 -> 7. 순서 효과와 모델 효과가 섞여 추세 판정은 아직 불가(3장 17번).
+   - `3453a3f` 회수 사유는 3장 12·13·14번. 종결된 운영 판정 5건(Level 3, 등급 실측, 모델 4종, 병렬 3대, 도구 결함)은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 9장.
 2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증, 500줄 초과 7개 전부 판정 완료. 판정표와 남긴 과제(`retrieve_structured_data` 236줄. 재개 조건은 `pytest-cov` 승인 또는 실제 결함)는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장. **줄 수로 자동 분할하지 않는다.**
 3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 감사로 찾은 12건(요청 경로 4, Arq 태스크 경로 8)을 `to_thread` 로 오프로드했다. 요청 경로 `5d65b5c`,`bdb69b5`,`45cfd52`. 태스크 경로는 3섹션 병렬 워커 `718de84`,`c89ba04`,`fcdfd58` 로 `src/tasks` `to_thread` 0 -> 16건. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 오프로드 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
 4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
