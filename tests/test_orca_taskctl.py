@@ -1678,3 +1678,164 @@ def test_expand_read_scope_included_in_search_globs():
     capsule = expand_intent_to_capsule(parse_intent(READ_SCOPE_INTENT), task_id="task_ro")
     glob_block = capsule.split("allowed_globs:")[1].split("forbidden:")[0]
     assert "src/ml/trainer.py" in glob_block
+
+
+# ---------------------------------------------------------------------------
+# 신뢰 확인 대화창 감지
+# ---------------------------------------------------------------------------
+
+TRUST_TAIL = (
+    "Do you trust the contents of this project?\n"
+    "Antigravity CLI requires permission to read, edit, and execute files here.\n"
+    "> Yes, I trust this folder\nNo, exit\n"
+)
+READY_TAIL = "~/orca/workspaces/refac_bid_box/orca-x\n────────\n> "
+
+
+def _show_payload(tail: str) -> str:
+    return json.dumps({"ok": True, "result": {"terminal": {"tail": tail}}})
+
+
+def test_has_trust_prompt_detects_dialog():
+    from scripts.orca_taskctl import has_trust_prompt
+
+    assert has_trust_prompt(TRUST_TAIL) is True
+    assert has_trust_prompt(READY_TAIL) is False
+
+
+def test_approve_trust_prompt_returns_not_present_when_ready(monkeypatch):
+    from scripts import orca_taskctl
+
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda handle, timeout=30: READY_TAIL)
+    sent: list[str] = []
+    monkeypatch.setattr(
+        orca_taskctl, "terminal_send", lambda h, text, timeout=30: sent.append(text) or (0, "", "")
+    )
+
+    assert orca_taskctl.approve_trust_prompt("term_x") == "not_present"
+    assert sent == [], "대화창이 없으면 아무것도 보내지 않아야 합니다."
+
+
+def test_approve_trust_prompt_sends_enter_and_confirms(monkeypatch):
+    """빈 텍스트에 Enter 를 보내 승인하고 사라진 것을 확인해야 합니다."""
+    from scripts import orca_taskctl
+
+    tails = [TRUST_TAIL, READY_TAIL]
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda handle, timeout=30: tails.pop(0))
+    sent: list[str] = []
+    monkeypatch.setattr(
+        orca_taskctl, "terminal_send", lambda h, text, timeout=30: sent.append(text) or (0, "", "")
+    )
+
+    assert orca_taskctl.approve_trust_prompt("term_x") == "approved"
+    assert sent == [""], "기본 선택이 신뢰이므로 빈 텍스트 + Enter 만 보냅니다."
+
+
+def test_approve_trust_prompt_reports_still_present(monkeypatch):
+    """승인이 도달하지 않으면 성공으로 보고하지 않습니다."""
+    from scripts import orca_taskctl
+
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda handle, timeout=30: TRUST_TAIL)
+    monkeypatch.setattr(orca_taskctl, "terminal_send", lambda h, text, timeout=30: (0, "", ""))
+
+    assert orca_taskctl.approve_trust_prompt("term_x", attempts=2) == "still_present"
+
+
+def test_approve_trust_prompt_unreadable(monkeypatch):
+    from scripts import orca_taskctl
+
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda handle, timeout=30: None)
+    assert orca_taskctl.approve_trust_prompt("term_x") == "unreadable"
+
+
+def test_terminal_tail_extracts_text(monkeypatch):
+    from scripts import orca_taskctl
+
+    monkeypatch.setattr(
+        orca_taskctl, "_run_command", lambda cmd, timeout=30: (0, _show_payload("hello"), "")
+    )
+    assert orca_taskctl.terminal_tail("term_x") == "hello"
+
+
+def test_terminal_tail_none_on_not_ok(monkeypatch):
+    from scripts import orca_taskctl
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "_run_command",
+        lambda cmd, timeout=30: (0, json.dumps({"ok": False, "error": {"message": "nope"}}), ""),
+    )
+    assert orca_taskctl.terminal_tail("term_x") is None
+
+
+def test_cmd_dispatch_aborts_when_trust_prompt_persists(tmp_path: Path, monkeypatch, capsys):
+    """대화창이 남아 있으면 Dispatch 를 만들지 않고 종료 코드 2 로 멈춥니다.
+
+    이 상태로 보내면 주입한 지시와 Capsule 고지문이 대화창에 먹혀 사라지고,
+    Dispatch 권한만 소비됩니다.
+    """
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(orca_taskctl, "approve_trust_prompt", lambda h, **kw: "still_present")
+    dispatched: list[str] = []
+    monkeypatch.setattr(
+        orca_taskctl,
+        "dispatch_worker",
+        lambda **kw: dispatched.append("called") or (0, "{}", ""),
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {"allowed": True, "reason": "읽기 전용"},
+    )
+
+    code = orca_taskctl.main([
+        "dispatch",
+        "--intent", str(intent_file),
+        "--terminal", "term_x",
+        "--capsule-dir", str(tmp_path / "caps"),
+        "--task-id", "task_trust",
+        "--no-probe",
+    ])
+    assert code == 2
+    assert dispatched == [], "대화창이 남아 있으면 Dispatch 를 만들지 않아야 합니다."
+    assert "신뢰 확인 대화창이 남아" in capsys.readouterr().err
+
+
+def test_agent_prompt_ready_markers():
+    from scripts.orca_taskctl import agent_prompt_ready
+
+    assert agent_prompt_ready(READY_TAIL) is True
+    assert agent_prompt_ready("refac_bid_box % agy --model x") is False
+    assert agent_prompt_ready("● Bash(uv run pytest)\n⣾  Running...") is False
+
+
+def test_approve_trust_prompt_waits_for_dialog_to_appear(monkeypatch):
+    """기동 직후 한 번만 보고 판정하면 부팅 중 대화창을 놓칩니다."""
+    from scripts import orca_taskctl
+
+    tails = [
+        "refac_bid_box % agy --model gemini-3.7-flash-medium",  # 아직 부팅 중
+        TRUST_TAIL,                                            # 대화창 등장
+        READY_TAIL,                                            # 승인 후
+    ]
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda handle, timeout=30: tails.pop(0))
+    monkeypatch.setattr(orca_taskctl, "terminal_send", lambda h, text, timeout=30: (0, "", ""))
+    monkeypatch.setattr(orca_taskctl.time, "sleep", lambda s: None)
+
+    assert orca_taskctl.approve_trust_prompt("term_x") == "approved"
+
+
+def test_approve_trust_prompt_not_settled_on_busy_terminal(monkeypatch):
+    """이미 작업 중인 터미널은 대화창도 프롬프트도 아니므로 판정을 보류합니다."""
+    from scripts import orca_taskctl
+
+    monkeypatch.setattr(
+        orca_taskctl, "terminal_tail", lambda handle, timeout=30: "⣾  Generating..."
+    )
+    monkeypatch.setattr(orca_taskctl.time, "sleep", lambda s: None)
+
+    assert orca_taskctl.approve_trust_prompt("term_x", wait_seconds=0) == "not_settled"

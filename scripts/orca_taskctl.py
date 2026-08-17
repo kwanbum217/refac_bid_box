@@ -20,6 +20,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -768,6 +769,90 @@ def terminal_send(handle: str, text: str, timeout: int = 30) -> tuple[int, str, 
     return _run_command(cmd, timeout=timeout)
 
 
+TRUST_PROMPT_MARKERS: tuple[str, ...] = (
+    "trust the contents",
+    "i trust this folder",
+    "do you trust",
+)
+
+
+def terminal_tail(handle: str, timeout: int = 30) -> str | None:
+    """터미널의 최근 출력을 읽습니다. 조회에 실패하면 None 을 돌려줍니다."""
+    cmd = ["orca", "terminal", "show", "--terminal", handle, "--json"]
+    code, stdout, _stderr = _run_command(cmd, timeout=timeout)
+    if code != 0 or not stdout.strip():
+        return None
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is False:
+        return None
+    terminal = (payload.get("result") or {}).get("terminal") or {}
+    text = terminal.get("tail") or terminal.get("preview") or ""
+    return str(text)
+
+
+def has_trust_prompt(text: str) -> bool:
+    """워크스페이스 신뢰 확인 대화창이 떠 있는지 판정합니다."""
+    lowered = text.lower()
+    return any(marker in lowered for marker in TRUST_PROMPT_MARKERS)
+
+
+def agent_prompt_ready(text: str) -> bool:
+    """CLI 입력 프롬프트가 준비된 상태인지 판정합니다.
+
+    Antigravity CLI 는 배너를 그린 뒤 마지막 줄에 단독 `>` 를 남깁니다.
+    작업 중이면 진행 표시가 남으므로 준비로 보지 않습니다.
+    """
+    lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+    return bool(lines) and lines[-1] == ">"
+
+
+def approve_trust_prompt(
+    handle: str,
+    attempts: int = 2,
+    timeout: int = 30,
+    wait_seconds: int = 40,
+    poll_seconds: int = 2,
+) -> str:
+    """신뢰 확인 대화창이 뜨면 승인합니다. 뜰 때까지 기다립니다.
+
+    Antigravity CLI 는 새 워크트리마다 신뢰 확인 대화창을 띄웁니다. 그 상태로
+    지시를 보내면 대화창이 입력을 삼켜 워커가 작업을 시작하지 못합니다.
+    2026-08-17 에 Capsule 고지문이 이렇게 소실됐습니다. 기본 선택이 신뢰이므로
+    빈 텍스트에 Enter 만 보내면 승인됩니다.
+
+    **기동 직후에 한 번만 보고 판정하면 안 됩니다.** CLI 가 아직 부팅 중이면
+    대화창이 없어 통과시키고, 그 직후 대화창이 떠서 지시를 먹습니다. 대화창이
+    뜨거나 입력 프롬프트가 준비될 때까지 기다립니다.
+
+    반환값: not_present | approved | still_present | unreadable | not_settled
+    """
+    deadline = time.monotonic() + max(0, wait_seconds)
+    while True:
+        text = terminal_tail(handle, timeout=timeout)
+        if text is None:
+            return "unreadable"
+
+        if has_trust_prompt(text):
+            for _ in range(max(1, attempts)):
+                terminal_send(handle, "", timeout=timeout)
+                after = terminal_tail(handle, timeout=timeout)
+                if after is None:
+                    return "unreadable"
+                if not has_trust_prompt(after):
+                    return "approved"
+            return "still_present"
+
+        if agent_prompt_ready(text):
+            return "not_present"
+
+        if time.monotonic() >= deadline:
+            return "not_settled"
+        time.sleep(max(1, poll_seconds))
+
+
 def resolve_dispatch_id(task_id: str, timeout: int = 30) -> str | None:
     """Task 의 현재 유효한 Dispatch ID 를 조회합니다.
 
@@ -1253,6 +1338,30 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     # 없으면 worker-start 로 새 워커를 감독 기동한다. worker-start --agent 는
     # claude, codex, cursor 만 받으므로 Antigravity 계열은 터미널 부착 경로만 쓸 수 있다.
     if args.terminal:
+        # 신뢰 확인 대화창을 먼저 치운다. 떠 있는 상태로 Dispatch 하면 주입한
+        # 지시와 Capsule 고지문이 대화창에 먹혀 워커가 시작하지 못한다.
+        trust_status = approve_trust_prompt(args.terminal)
+        if trust_status == "approved":
+            sys.stderr.write("신뢰 확인 대화창을 승인했습니다.\n")
+        elif trust_status == "still_present":
+            sys.stderr.write(
+                "오류: 신뢰 확인 대화창이 남아 있어 Dispatch 를 중단했습니다. "
+                f"터미널 {args.terminal} 을 직접 확인하십시오. 이 상태로 보내면 "
+                "지시가 대화창에 먹혀 사라집니다.\n"
+            )
+            return 2
+        elif trust_status == "unreadable":
+            sys.stderr.write(
+                f"경고: 터미널 {args.terminal} 출력을 읽을 수 없어 신뢰 확인 상태를 "
+                "판정하지 못했습니다. Dispatch 후 도달을 직접 확인하십시오.\n"
+            )
+        elif trust_status == "not_settled":
+            sys.stderr.write(
+                f"경고: 터미널 {args.terminal} 이 대기 시간 안에 입력 프롬프트에 이르지 "
+                "못했습니다. 이미 다른 작업을 하고 있을 수 있습니다. Dispatch 후 도달을 "
+                "직접 확인하십시오.\n"
+            )
+
         sys.stderr.write(f"터미널 부착 Dispatch 중... (task={task_id}, terminal={args.terminal})\n")
         code, stdout, stderr = dispatch_worker(
             task_id=task_id,
