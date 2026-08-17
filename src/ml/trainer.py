@@ -17,6 +17,15 @@ import numpy as np
 import pandas as pd
 
 from src.app.core.timeutil import utcnow
+from src.ml.conformal import (
+    CALIBRATION_SPLIT,
+    INTERVAL_QUANTILES,
+    INTERVAL_TARGET_COVERAGE,
+    QUANTILE_HYPERPARAM_KEY,
+    QUANTILE_PARAM_OVERRIDES,
+    _conformal_scale,
+    _train_quantile_models,
+)
 from src.ml.features import (
     CATEGORICAL_FEATURES,
     apply_categorical_dtypes,
@@ -24,318 +33,60 @@ from src.ml.features import (
     collect_category_levels,
 )
 from src.ml.institution_history import attach_institution_history
-from src.ml.repeat_history import REPEAT_FEATURES, attach_repeat_history
+from src.ml.repeat_history import attach_repeat_history
+from src.ml.splitters import (
+    DEFAULT_N_FOLDS,
+    DEFAULT_VALIDATION_SPLIT,
+    MIN_FOLD_SAMPLES,
+    TIME_SORT_COLUMN,
+    _sorted_positions,
+    _time_based_kfold_splits,
+    _time_based_split,
+    has_time_column,
+)
+from src.ml.training_config import (
+    CATEGORY_HYPERPARAMS,
+    CATEGORY_MODEL_NAMES,
+    DEFAULT_MODEL_NAME,
+    LGB_BASE_PARAMS,
+    NUMERIC_FEATURES,
+    SERVC_EXTRA_FEATURES,
+    TRAINING_FEATURES,
+    hyperparams_for_category,
+    model_name_for_category,
+    training_features_for_category,
+)
 from src.ml.validate_model import evaluate_model_performance
 
-# 홀드아웃 비율. 학습에 쓰지 않은 구간에서 지표를 내야 의미가 있습니다.
-# 시계열 데이터이므로 개찰일(rl_openg_dt / openg_dt) 기준으로 정렬한 뒤
-# 뒤에서 20%를 최종 검증에 사용합니다.
-DEFAULT_VALIDATION_SPLIT = 0.2
-
-# K-Fold 폴드 수. 시간 순서를 존중하는 블록 K-Fold 를 사용합니다.
-DEFAULT_N_FOLDS = 5
-
-# 점 추정 모델의 LightGBM 용량 설정입니다. 분위 모델은 아래
-# QUANTILE_PARAM_OVERRIDES 로 따로 잡습니다.
-#
-# scripts/tune_servc_hyperparams.py 좌표 하강 17회 실측(2026-08-04, 학습
-# 765,150행 / 검증 96,141행)에서 값어치가 있어 보인 축은 num_leaves 하나
-# 뿐이었습니다.
-#
-# 그때 255 를 기각한 근거에는 사각지대가 있었습니다. 이 설정을 점 추정과 분위
-# 모델이 함께 쓰고 있었기 때문에 리프를 올리면 **두 모델이 동시에** 바뀌었고,
-# 관측된 "MAE 개선 + 구간 폭 11.2% 악화" 는 분리되지 않은 합계였습니다.
-# 그래서 아래 QUANTILE_PARAM_OVERRIDES 로 두 축을 갈랐습니다. 분리 후에는 점
-# 추정 용량을 키워도 구간 폭이 움직이지 않습니다(운영 실측 1.423%p 동일).
-#
-# 전량 재적합 결함 수정 전에는 리프를 올린 이득이 운영에서 나타나지 않았습니다.
-# 같은 표본 1,000건의 당시 실측입니다.
-#
-#              홀드아웃 MAE   운영 MAE   운영 RMSE   운영 0.5%p 적중
-#   리프  63       1.2838     0.9848      3.1195         75.2%
-#   리프 127       1.2710     0.9863      3.1455         74.5%
-#
-# 이후 모델 선택 뒤 최신 20%를 버리던 결함을 고치고 동일 학습 상한으로 다시
-# 평가하자 용역 리프 255 + EWM이 우세했습니다. 운영 3,999건에서도 MAE 3.42%
-# 개선, 쌍대 절대오차 t=-7.50으로 재현됐습니다. 이 기본값 63은 물품과 미지정
-# 카테고리에 유지하고, 용역만 CATEGORY_HYPERPARAMS에서 255로 재정의합니다.
-# 근거는 docs/design/servc_unbiased_candidate_recheck_20260805.md 입니다.
-#
-# subsample 은 LightGBM 이 subsample_freq(기본 0)가 0 이면 통째로 무시합니다.
-# 탐색에서 0.6/0.8/1.0 의 MAE 가 소수점 넷째 자리까지 같게 나온 것이 그
-# 증거이며, 즉 이 설정은 지금까지 아무 일도 하지 않았습니다. 값을 지우면
-# 과거 아티팩트와 파라미터 비교가 어긋나므로 남기되, 무효임을 여기 적습니다.
-LGB_BASE_PARAMS = {
-    "n_estimators": 600,
-    "learning_rate": 0.05,
-    "num_leaves": 63,
-    "min_child_samples": 40,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "random_state": 42,
-    "verbose": -1,
-    "n_jobs": -1,
-}
-
-# 분위 모델만의 재정의입니다. 지금은 점 추정과 값이 같아 동작이 바뀌지 않지만,
-# 두 모델의 용량을 따로 정할 수 있게 하는 것이 이 상수의 존재 이유입니다. 예전에는
-# 점 추정 리프를 건드리면 구간 폭이 11.2% 딸려 움직여 정확도와 폭을 맞바꾸는 것처럼
-# 보였습니다. 분리 후 실측에서는 점 추정을 127 로 올려도 폭이 1.423%p 로 동일합니다.
-#
-# 점 추정과 목표가 다릅니다.
-#
-#   점 추정: MAE 와 0.5%p 적중을 낮춘다 -> 용량이 클수록 좋다
-#   분위:    등각 보정 후 구간 폭을 줄인다 -> 폭이 리프에 대해 U자를 그린다
-#
-# 분위 모델이 정교해지면 원 구간은 좁아지지만 검증 구간 오차가 상대적으로 커져
-# 등각 배율이 그만큼 오릅니다. 실측에서 두 효과가 63 에서 교차합니다.
-#
-#   분위 63  -> 배율 1.1485 / 폭 1.7728%p / 피복 89.88%
-#   분위 255 -> 배율 1.2595 / 폭 1.8891%p / 피복 89.90%
-#
-# 근거는 docs/design/servc_hyperparam_search_20260804.md 7장과 9장입니다.
-QUANTILE_PARAM_OVERRIDES = {"num_leaves": 63}
-
-# 분위 모델 설정을 카테고리별로 잡을 때 쓰는 하이퍼파라미터 키입니다. 점 추정
-# 키("lightgbm")와 반드시 갈라야 합니다. 용역 점 추정은 objective quantile
-# alpha 0.5 / 리프 255 인데, 그 값이 분위 모델로 흘러들면 10·90분위가 전부
-# 중앙값으로 바뀌어 구간이 붕괴합니다.
-#
-# objective 와 alpha 는 분위별로 정해지므로 이 통로로 받아도 무시합니다.
-QUANTILE_HYPERPARAM_KEY = "lightgbm_quantile"
-
-# 폴드 하나가 가져야 하는 최소 행 수. 트리 모델이 1행 입력에서 예외를 던집니다.
-MIN_FOLD_SAMPLES = 2
-
-# 카테고리별 모델 네임스페이스. 물품과 용역은 예정가격 산정과 낙찰자 결정이
-# 서로 다른 제도라 한 이름을 공유하면 champion 비교가 뒤섞입니다.
-#
-# 공사는 아직 전용 모델을 학습하지 않았지만 이름은 미리 갈라 둡니다. 예전에는
-# 미등록 카테고리가 DEFAULT_MODEL_NAME 으로 떨어져, 공사 재학습이 물품 디렉터리에
-# 저장되고 물품 champion 과 비교됐을 것입니다. 학습을 돌리는 순간 물품 승격본을
-# 덮어쓰는 경로였습니다.
-#
-# 서빙 매핑은 model_registry.CATEGORY_DEFAULT_MODELS 이며 지금은 공사를 v25 로
-# 보냅니다. cnstwk_institution_v1 이 실제로 승격되기 전까지 두 매핑이 다른 것은
-# 의도된 상태입니다. 승격 시점에 서빙 매핑도 함께 옮겨야 합니다.
-DEFAULT_MODEL_NAME = "quantum_leap_v25_pro"
-CATEGORY_MODEL_NAMES = {
-    "Thng": "quantum_leap_v25_pro",
-    "Servc": "servc_institution_v1",
-    "Cnstwk": "cnstwk_institution_v1",
-}
-
-# 편향 없는 동일 학습 상한 재평가에서 용역은 리프 255와 기관 EWM 조합이
-# 기준 대비 MAE 3.13%를 낮췄습니다. 물품에는 검증되지 않았으므로 적용하지 않습니다.
-#
-# objective 는 _train_lightgbm 의 기본값 huber(alpha=1.0)를 덮어씁니다. 용역 잔차는
-# 0 에 몰린 비대칭 분포라 조건부 중앙값을 직접 겨냥하는 quantile(0.5)이 낫습니다.
-# 2026년 out-of-sample 56,338건 실측에서 MAE 1.3554 -> 1.3312, 0.5%p 이내 적중
-# 58.53% -> 59.65% 이고 7개 모집단 중 악화가 없었습니다. RMSE 는 2.7454 -> 2.7834
-# 로 나빠지며 이는 L1 최적화의 대가로 수용한 값입니다.
-#
-# huber 의 alpha 를 줄여 L1 에 다가가는 방향은 기각됐습니다. alpha=0.2 는 gradient
-# 가 +-alpha 로 고정돼 학습 신호가 평평해지고 MAE 1.7971 로 32% 나빴습니다. 두
-# 목적함수는 연속적으로 이어지지 않습니다.
-#
-# 이 "lightgbm" 키는 점 추정 전용입니다. 분위 모델은 QUANTILE_HYPERPARAM_KEY
-# 로 따로 받으므로 여기 objective quantile alpha 0.5 와 리프 255 는 구간에
-# 닿지 않습니다. 두 키를 합치면 10·90분위가 중앙값으로 무너집니다.
-# 근거: docs/design/servc_loss_function_20260807.md
-#
-# num_leaves 는 huber 아래에서 고른 255 가 quantile 에서도 최적이었습니다.
-# 511 은 MAE 1.2560 으로 나쁘고 0.5%p 적중은 61.49% 로 더 떨어집니다. 용량은
-# 손실함수가 아니라 범주 조합 구조가 정합니다. 목적함수를 바꿨다는 이유만으로
-# 용량 축을 다시 훑을 필요가 없습니다.
-#
-# quantile 아래 좌표 하강이 찾은 min_child_samples 160 / learning_rate 0.03 /
-# n_estimators 2000 / subsample_freq 5 조합은 기각했습니다. 홀드아웃에서 MAE
-# 1.2562 -> 1.2525 였고 시드 3개 전부 일관이었는데도, 운영 8,995건 쌍대에서
-# 1.4050 -> 1.4188 로 t=5.14 만큼 나빴습니다. 6개 집단 중 challenger 우세는
-# 0개입니다. 원인은 조기 종료입니다. _train_lightgbm 은 early_stopping(10)을
-# 걸지만 탐색 스크립트는 걸지 않아, 낮춘 학습률이 탐색에서는 2000 그루로
-# 보상되고 운영에서는 조기 종료로 잘립니다.
-# 근거: docs/design/servc_hyperparam_quantile_20260807.md
-#
-# alpha 는 0.5 를 유지합니다. 2026-08-10 에 0.45 를 후보로 올렸다가 운영 쌍대에서
-# 기각했습니다. 홀드아웃(2025년 96,141건)에서는 0.45 가 꼭짓점인 U 자형이고 MAE
-# 1.2407 -> 1.2323, 0.5%p 적중 62.2995% -> 62.4642% 로 여섯 지표가 모두 좋아졌으나,
-# 운영 9,997건 쌍대에서 MAE t=-0.44 로 판별 불가였고 적중률은 63.99% -> 63.92% 로
-# 오히려 뒤집혔습니다. RMSE 만 t=-5.60 으로 유의했는데 이 지표 단독으로는 승격
-# 하지 않습니다.
-#
-# **편향을 근거로 방향을 정하지 마십시오.** 편향 -0.0477 을 과소예측으로 보고
-# alpha 를 올린 것이 처음 오류였습니다. 0.52 부터 전 지표가 단조 악화했고, 편향이
-# 네 배 커지는 0.45 쪽이 홀드아웃에서 최선이었습니다. 낙찰률 분포가 위로 꼬리를
-# 끌어 최적 예측점이 조건부 중앙값보다 아래에 있습니다. 평균 편향은 그 사실의
-# 부산물이지 고칠 결함이 아닙니다.
-# 근거: docs/design/servc_quantile_alpha_20260810.md
-CATEGORY_HYPERPARAMS = {
-    "Servc": {"lightgbm": {"num_leaves": 255, "objective": "quantile", "alpha": 0.5}}
-}
-
-
-def model_name_for_category(category_code: str | None) -> str:
-    """카테고리 코드를 모델 네임스페이스로 옮깁니다.
-
-    모르는 코드를 조용히 DEFAULT_MODEL_NAME 으로 떨어뜨리지 않습니다. 그 동작은
-    다른 제도의 학습 산출물을 물품 이름으로 저장해 물품 champion 을 덮어씁니다.
-    카테고리를 새로 학습하려면 CATEGORY_MODEL_NAMES 에 먼저 등록하십시오.
-    """
-    code = (category_code or "").strip()
-    if not code:
-        return DEFAULT_MODEL_NAME
-    if code not in CATEGORY_MODEL_NAMES:
-        raise ValueError(
-            f"모델 네임스페이스가 없는 카테고리입니다: {code}. "
-            f"CATEGORY_MODEL_NAMES 에 등록하십시오 (등록됨: {sorted(CATEGORY_MODEL_NAMES)})"
-        )
-    return CATEGORY_MODEL_NAMES[code]
-
-
-# 시계열 기준 컬럼. 없으면 프레임 순서를 그대로 사용합니다.
-TIME_SORT_COLUMN = "openg_dt"
-
-# 학습에 쓰는 특징. features.py 산출물 중 실측으로 선정했습니다 (2026-08-02).
-#
-# inst_hist_rate 가 사실상 유일한 신호입니다. 이 값 하나만으로 R2 0.33 이고,
-# 빼면 전체 R2 가 0.36 에서 0.03 으로 떨어집니다.
-#
-# 제외한 것들과 근거입니다.
-#   inst_rate_mean_30d  inst_hist_rate 를 그대로 복사한 값이라 중복입니다
-#   inst_rate_std_90d   입력이 없어 항상 상수 0.015 입니다
-#   price_ratio         기초금액은 제도상 예정가격의 1.1 배라 표준편차 0.017,
-#                       목표 상관 0.05 로 신호가 없습니다
-#
-# 2026-08-03 에 제도 특징을 추가했습니다. 용역 917,629행 시간순 홀드아웃 실측입니다.
-#
-#   기존 6종            R2 0.5600  RMSE 3.1780
-#   + 제도 수치         R2 0.6433  RMSE 2.8615
-#   + 제도 범주         R2 0.6683  RMSE 2.7591
-#
-# 근거: docs/design/servc_segment_experiment_20260803.md
-#
-# 같은 날 세부분류(중/소)와 공고속성을 더했습니다. 학습 2024년까지, 검증 2025년
-# 96,141건 실측입니다.
-#
-#   범주 5종            R2 0.6767  RMSE 2.7312
-#   범주 11종           R2 0.6910  RMSE 2.6701
-#
-# 근거: docs/design/servc_restricted_competition_20260803.md
-NUMERIC_FEATURES = [
-    "log_price",
-    "month_sin",
-    "month_cos",
-    "weekday_sin",
-    "weekday_cos",
-    "notice_duration",
-    "inst_hist_rate",
-    "inst_sample_cnt",
-    "lwlt_rate",
-    "lwlt_rate_missing",
-    "is_post_regime_shift",
-    "notice_amt_ratio",
-    "is_over_notice_amt",
-    "tech_ablt_evl_rt",
-    "bid_prce_evl_rt",
-    "tot_prdprc_num",
-    "drwt_prdprc_num",
-    *REPEAT_FEATURES,
+__all__ = [
+    "CALIBRATION_SPLIT",
+    "CATEGORY_HYPERPARAMS",
+    "CATEGORY_MODEL_NAMES",
+    "DEFAULT_MODEL_NAME",
+    "DEFAULT_N_FOLDS",
+    "DEFAULT_VALIDATION_SPLIT",
+    "INTERVAL_QUANTILES",
+    "INTERVAL_TARGET_COVERAGE",
+    "LGB_BASE_PARAMS",
+    "MIN_FOLD_SAMPLES",
+    "NUMERIC_FEATURES",
+    "QUANTILE_HYPERPARAM_KEY",
+    "QUANTILE_PARAM_OVERRIDES",
+    "SERVC_EXTRA_FEATURES",
+    "TIME_SORT_COLUMN",
+    "TRAINING_FEATURES",
+    "ModelTrainer",
+    "_conformal_scale",
+    "_sorted_positions",
+    "_time_based_kfold_splits",
+    "_time_based_split",
+    "_train_quantile_models",
+    "has_time_column",
+    "hyperparams_for_category",
+    "model_name_for_category",
+    "trainer",
+    "training_features_for_category",
 ]
-
-TRAINING_FEATURES = [*NUMERIC_FEATURES, *CATEGORICAL_FEATURES]
-SERVC_EXTRA_FEATURES = ["inst_ewm_rate"]
-
-
-def training_features_for_category(category_code: str | None) -> list[str]:
-    """검증된 카테고리에만 추가 특징을 적용합니다."""
-    if (category_code or "").strip() == "Servc":
-        return [*TRAINING_FEATURES, *SERVC_EXTRA_FEATURES]
-    return list(TRAINING_FEATURES)
-
-
-def hyperparams_for_category(
-    category_code: str | None,
-    overrides: dict[str, Any] | None = None,
-) -> dict[str, dict[str, Any]]:
-    """카테고리 기본값에 호출자 재정의를 모델별로 병합합니다."""
-    effective = {
-        name: dict(params)
-        for name, params in CATEGORY_HYPERPARAMS.get((category_code or "").strip(), {}).items()
-    }
-    for name, params in (overrides or {}).items():
-        effective[name] = {**effective.get(name, {}), **params}
-    return effective
-
-
-def has_time_column(df: pd.DataFrame) -> bool:
-    """시계열 정렬 기준 컬럼이 실재하는지 확인합니다."""
-    return TIME_SORT_COLUMN in df.columns
-
-
-def _sorted_positions(df: pd.DataFrame) -> np.ndarray:
-    """시계열 오름차순 위치 배열을 반환합니다.
-
-    라벨이 아니라 위치를 돌려줍니다. 호출부가 numpy 배열에 위치 색인을 쓰므로
-    라벨을 섞어 쓰면 인덱스가 기본 RangeIndex 가 아닐 때 조용히 어긋납니다.
-
-    기준 컬럼이 없거나 값이 비면 프레임 순서를 그대로 씁니다. 파싱 실패(NaT)는
-    맨 앞으로 보내 학습 구간에 넣습니다. 검증 구간은 개찰일이 확실한 최신
-    구간이어야 의미가 있습니다.
-    """
-    if not has_time_column(df):
-        return np.arange(len(df))
-    parsed = pd.to_datetime(df[TIME_SORT_COLUMN], errors="coerce")
-    if parsed.isna().all():
-        return np.arange(len(df))
-    return parsed.reset_index(drop=True).sort_values(na_position="first").index.to_numpy()
-
-
-def _time_based_split(
-    df: pd.DataFrame,
-    y: np.ndarray,
-    validation_split: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """개찰일 기준으로 정렬한 뒤 뒤에서 validation_split 만큼을 검증에 사용합니다.
-
-    표본이 적어 홀드아웃을 뗄 수 없으면 전체를 학습과 검증에 함께 씁니다.
-    빈 검증 구간을 돌려주면 predict 단계에서 0행 입력으로 예외가 납니다.
-    이 경우 지표는 과적합된 값이므로 승격 판단에 쓰면 안 됩니다.
-    """
-    sorted_order = _sorted_positions(df)
-
-    split_at = int(len(sorted_order) * (1.0 - validation_split))
-    if split_at <= 0 or split_at >= len(sorted_order):
-        return sorted_order, sorted_order, y[sorted_order], y[sorted_order]
-
-    train_idx = sorted_order[:split_at]
-    valid_idx = sorted_order[split_at:]
-    return train_idx, valid_idx, y[train_idx], y[valid_idx]
-
-
-def _time_based_kfold_splits(
-    df: pd.DataFrame,
-    n_folds: int,
-) -> list[tuple[np.ndarray, np.ndarray]]:
-    """시계열 순서를 존중하는 K-Fold 인덱스 쌍을 반환합니다.
-
-    각 폴드는 이전 폴드들을 훈련, 현재 폴드를 검증으로 사용합니다.
-    """
-    sorted_order = _sorted_positions(df)
-
-    fold_size = max(1, len(sorted_order) // n_folds)
-    splits = []
-    for fold_idx in range(1, n_folds):
-        valid_start = fold_idx * fold_size
-        valid_end = (fold_idx + 1) * fold_size if fold_idx < n_folds - 1 else len(sorted_order)
-        train_idx = sorted_order[:valid_start]
-        valid_idx = sorted_order[valid_start:valid_end]
-        # 표본이 적으면 fold_size 가 1 이 되어 1행짜리 폴드가 생깁니다.
-        # LightGBM/CatBoost 는 1행 입력에서 예외를 던지므로 건너뜁니다.
-        if len(train_idx) < MIN_FOLD_SAMPLES or len(valid_idx) < MIN_FOLD_SAMPLES:
-            continue
-        splits.append((train_idx, valid_idx))
-    return splits
 
 
 def _best_iteration_of(model: Any, model_type: str) -> int | None:
@@ -548,93 +299,6 @@ def _cross_validate_model(
     # 평균만 보면 그 사실이 드러나지 않습니다.
     aggregated["folds"] = fold_metrics
     return aggregated
-
-
-# 예측 구간 설정. 설계서 6.3 은 이분산 대응을 구간 분할이 아니라 예측 구간
-# 제공으로 정했습니다. 소박한 분위 회귀 구간은 보정에 실패하므로(명목 80%
-# 대비 실제 75.52%, 10억 이상 66.85%) 등각예측 배율을 함께 산정합니다.
-# 목표를 90% 로 두는 이유는 80% 가 보정 후에도 76.77% 로 표기와 어긋나기
-# 때문입니다. 근거: docs/design/servc_prediction_interval_20260804.md
-INTERVAL_QUANTILES = (0.1, 0.9)
-INTERVAL_TARGET_COVERAGE = 0.90
-
-# 등각예측 보정에 쓸 학습 구간 뒷부분 비율. 분위 모델 적합에는 쓰지 않습니다.
-# 같은 데이터로 적합과 보정을 하면 배율이 낙관적으로 나옵니다.
-CALIBRATION_SPLIT = 0.15
-
-
-def _conformal_scale(
-    y_cal: np.ndarray,
-    lo_cal: np.ndarray,
-    hi_cal: np.ndarray,
-    target: float,
-) -> float:
-    """구간을 중앙 기준으로 몇 배 넓혀야 목표 피복률에 닿는지 구합니다."""
-    center = (lo_cal + hi_cal) / 2
-    half = np.maximum((hi_cal - lo_cal) / 2, 1e-9)
-    score = np.abs(y_cal - center) / half
-    return float(np.quantile(score, target))
-
-
-def _train_quantile_models(
-    X_train: pd.DataFrame,
-    y_train: np.ndarray,
-    hyperparams: dict[str, Any] | None = None,
-) -> tuple[dict[float, Any], float, dict[str, Any]]:
-    """분위 모델 2종과 등각예측 배율을 만듭니다.
-
-    학습 구간 뒷부분을 보정용으로 떼어 배율을 산정한 뒤, 분위 모델 자체는
-    전체 학습 구간으로 다시 적합합니다. 보정 표본까지 써야 분위 추정이
-    가장 좋아지고, 배율은 이미 확보했으므로 누수가 아닙니다.
-
-    hyperparams 는 QUANTILE_HYPERPARAM_KEY 로 전달된 카테고리별 재정의입니다.
-    이 인자가 없던 동안 분위 모델은 카테고리와 무관하게 리프 63 에 고정돼
-    있었고, 점 추정만 카테고리별 설정을 받았습니다.
-    """
-    import lightgbm as lgb
-
-    params = {**LGB_BASE_PARAMS, **QUANTILE_PARAM_OVERRIDES, **(hyperparams or {})}
-    # 분위별로 정해지는 축이라 외부 재정의를 받지 않습니다.
-    params.pop("objective", None)
-    params.pop("alpha", None)
-    categorical = _present_categoricals(X_train)
-
-    split_at = int(len(X_train) * (1.0 - CALIBRATION_SPLIT))
-    scale = 1.0
-    calibration: dict[str, Any] = {"calibrated": False, "calibration_samples": 0}
-    if split_at > 0 and split_at < len(X_train):
-        X_fit, X_cal = X_train.iloc[:split_at], X_train.iloc[split_at:]
-        y_fit, y_cal = y_train[:split_at], y_train[split_at:]
-        bounds = []
-        for q in INTERVAL_QUANTILES:
-            model = lgb.LGBMRegressor(objective="quantile", alpha=q, **params)
-            model.fit(X_fit, y_fit, categorical_feature=categorical)
-            bounds.append(model.predict(X_cal))
-        # 분위별 독립 학습이라 예측이 뒤집힐 수 있습니다(교차 현상).
-        lo_cal = np.minimum(bounds[0], bounds[1])
-        hi_cal = np.maximum(bounds[0], bounds[1])
-        scale = _conformal_scale(y_cal, lo_cal, hi_cal, INTERVAL_TARGET_COVERAGE)
-        calibration = {"calibrated": True, "calibration_samples": len(X_cal)}
-
-    models: dict[float, Any] = {}
-    for q in INTERVAL_QUANTILES:
-        model = lgb.LGBMRegressor(objective="quantile", alpha=q, **params)
-        model.fit(X_train, y_train, categorical_feature=categorical)
-        models[q] = model
-
-    calibration.update(
-        {
-            "quantiles": list(INTERVAL_QUANTILES),
-            "target_coverage": INTERVAL_TARGET_COVERAGE,
-            "conformal_scale": round(scale, 6),
-            # 어떤 용량으로 적합했는지 아티팩트에 남깁니다. 이 값이 없던 동안
-            # 세 버전의 metadata.json 이 서로 다른 hyperparams 를 기록하면서도
-            # conformal_scale 이 1.151263 으로 같았고, 그 이유가 분위 모델이
-            # 통로 없이 고정돼 있어서였다는 사실이 드러나지 않았습니다.
-            "num_leaves": params.get("num_leaves"),
-        }
-    )
-    return models, scale, calibration
 
 
 class ModelTrainer:
