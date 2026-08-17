@@ -17,6 +17,7 @@ from scripts.orca_level1_gate import (
     run_gate2_scope,
     run_gate3_tests,
     run_gate4_rules,
+    run_gate4b_lint,
     run_gate5_review_report,
     run_level1_gate,
 )
@@ -272,7 +273,7 @@ def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
     assert data["verdict"] == "pass"
     assert data["exit_code"] == 0
     assert "summary" in data
-    assert data["summary"]["total"] == 5
+    assert data["summary"]["total"] == 6
     assert data["summary"]["passed"] >= 1
 
     gates = data["gates"]
@@ -397,3 +398,24 @@ def test_format_human_output_structure():
     assert "[SKIPPED]  게이트 2" in out
     assert "[FAIL]     게이트 3" in out
     assert "최종 판정: FAIL (통과 1 / 건너뜀 1 / 실패 1)" in out
+
+
+def test_gate4b_lint_detects_repo_wide_violation(tmp_path: Path):
+    """게이트 4b 는 워커가 지정하지 않은 경로의 위반도 잡아야 합니다."""
+    repo = tmp_path / "lint_repo"
+    (repo / "tests").mkdir(parents=True)
+    (repo / "pyproject.toml").write_text(
+        '[tool.ruff]\nline-length = 120\n[tool.ruff.lint]\nselect = ["F"]\n',
+        encoding="utf-8",
+    )
+    (repo / "src.py").write_text("x = 1\n", encoding="utf-8")
+    # 워커가 src 만 검사했다면 놓쳤을 위치에 미사용 import 를 둔다
+    (repo / "tests" / "test_x.py").write_text("import json\n", encoding="utf-8")
+
+    g_fail = run_gate4b_lint(repo)
+    assert g_fail.status == "fail"
+    assert any("test_x.py" in line for line in g_fail.details)
+
+    (repo / "tests" / "test_x.py").write_text("x = 2\n", encoding="utf-8")
+    g_pass = run_gate4b_lint(repo)
+    assert g_pass.status == "pass"

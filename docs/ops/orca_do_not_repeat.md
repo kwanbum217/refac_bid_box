@@ -178,6 +178,47 @@ Antigravity CLI 는 워크스페이스 신뢰 확인 대화창을 먼저 띄웁�
 
 `--run` 에 자리표시자(`run_auto` 등)를 기본값으로 두면 조회가 `ok: true`, 결과 0건으로 돌아와 같은 무력화가 발생합니다. Run ID 는 `run-current` 로 해석하고, 해석 실패 시 fail-closed 로 거부합니다. 구현: `scripts/orca_taskctl.py` 의 `check_write_concurrency`, 규칙: [`../../AGENTS.md`](../../AGENTS.md) 4장 5.1
 
+### 4.7 Capsule 을 정본으로 선언하고 경로를 주입하지 않기
+
+**`orca orchestration dispatch --inject` 는 Orca Task 의 `spec` 만 주입합니다.** Capsule 파일 경로도 내용도 들어가지 않습니다. 워커는 한두 문장짜리 요약만 보고 작업을 시작합니다.
+
+2026-08-17 대형 모듈 분할 Run 에서 워커 **3대 전부**가 같은 방식으로 어긋났습니다.
+
+| 위반 | 발생 |
+| --- | --- |
+| `allowed_write_files` 의 파일명을 무시하고 임의 작명 | 3/3 |
+| `commit_count: 0` 인데 `succeeded` 전송 (계약은 `escalation` 요구) | 3/3 |
+| `report_path` 에 보고 JSON 미작성 | 3/3 |
+| `worker_done` 의 `filesModified` 가 실제 파일명과 불일치 | 3/3 |
+
+셋이 독립적으로 같은 실수를 했다는 것이 진단입니다. **워커 품질 문제가 아니라 전달 경로가 끊긴 것입니다.** Capsule 이 정본이라고 문서에 적혀 있어도 워커가 읽지 못하면 계약은 존재하지 않습니다.
+
+Dispatch 직후 `terminal send` 로 Capsule 절대 경로를 보내되, **이미 작업을 시작한 뒤에 보내면 늦습니다.** Task `spec` 자체에 Capsule 절대 경로를 넣어 `task-create` 하는 것이 순서상 맞습니다.
+
+#### 4.7.1 재 Dispatch 후 새 `dispatchId` 를 워커에게 알리지 않기
+
+4.5.1 은 `ready` 복귀만 하고 재 Dispatch 를 빠뜨리는 경우를 다룹니다. **재 Dispatch 를 했어도 같은 거부가 납니다.** 워커가 자기 문맥에 남은 옛 ID 로 보고하기 때문입니다.
+
+```
+Orca rejected this worker_done: Dispatch <old_id> capability is revoked.
+```
+
+2026-08-17 에 이 거부가 3회 났습니다. `--inject` 프리앰블은 새 `dispatchId` 를 실어 주지 않습니다. 재 Dispatch 직후 `dispatch-show --task <id>` 로 유효 ID 를 확인해 워커에게 **명시적으로 전달**하십시오. 전달했더라도 워커가 이미 전송 중이면 한 번 더 거부될 수 있습니다.
+
+#### 4.7.2 Capsule 템플릿의 `artifact_paths` 가 쓰기 범위 밖
+
+`scripts/orca_taskctl.py` 의 `expand` 는 `artifact_paths` 에 `docs/analysis/<task_id>.md` 를 자동으로 넣지만, `allowed_write_files` 는 Intent 의 `scope` 로만 구성됩니다. **템플릿이 지시한 산출물 경로가 쓰기 범위 밖입니다.**
+
+2026-08-17 에 워커 3대가 모두 `docs/analysis/` 를 만들었고, 그대로 커밋하면 Level 1 게이트가 범위 초과로 거부합니다. Intent 의 `scope` 에 산출물 경로를 함께 넣거나, 커밋하지 말고 미추적으로 남기라고 지시하십시오.
+
+### 4.8 `check` 를 `--ack` 없이 호출
+
+`orca orchestration check` 는 **확인 처리되지 않은 가장 오래된 배치를 계속 재전달합니다.** `--ack <delivery_id>` 로 이전 배치를 닫아야 큐가 전진합니다.
+
+2026-08-17 에 heartbeat 2건이 배치에 남아 있어서 같은 두 건이 세 번 연속 나왔고, 그 뒤에 도착한 `worker_done` 3건이 가려져 보이지 않았습니다. **`--wait` 도 무력화됩니다.** 미확인 배치가 이미 있으면 즉시 그것을 반환하므로 15분 대기가 성립하지 않았습니다.
+
+순서는 `check --json` 으로 `deliveryId` 를 받고, 처리 후 다음 호출에 `--ack <그 id>` 를 붙이는 것입니다. 4.6 및 5.5.1 과 같은 부류입니다. **명령이 성공했다는 것이 의도한 일이 일어났다는 뜻은 아닙니다.**
+
 ---
 
 ## 5. 검증 태도
@@ -287,6 +328,40 @@ Dispatch, finalize)를 하나도 덮지 않았습니다. 재작성 1차에서는
 
 리뷰어 체크리스트에 이 항목을 넣으십시오. 2026-08-16 에 Level 2 가 이 결함을
 놓친 것은 체크리스트에 해당 질문이 없었기 때문입니다.
+
+### 5.7 동작 보존 분할을 사람 판독으로만 검증
+
+"로직을 바꾸지 않고 이동만 한다" 는 사양은 **AST 대조로 기계 검증할 수 있습니다.** 리뷰어에게 읽혀서 판정하지 마십시오.
+
+2026-08-17 대형 모듈 분할에서 이동 함수를 원본과 AST 로 대조했습니다.
+
+| 대상 | 이전 함수 | 사라짐 | 본문 변경 |
+| --- | ---: | :---: | ---: |
+| `rag/engine.py` | 37 | 0 | 0 |
+| `planner.py` | 28 | 0 | 0 |
+| `automation_orchestrator.py` | 41 | 0 | **5** |
+
+`automation_orchestrator` 의 5건은 리뷰어가 읽어서는 찾지 못했을 크기입니다(docstring 전각 마침표, 타입 주석, 리스트 연결의 언패킹 전환, 매개변수 신설과 그 전달). 방법은 다음입니다.
+
+```python
+ast.dump(node, include_attributes=False)  # 위치 정보를 제외해 이동만으로는 값이 변하지 않게 한다
+```
+
+`include_attributes=False` 가 핵심입니다. 빼지 않으면 줄 번호가 달라져 전부 변경으로 보입니다.
+
+### 5.8 충족 불가능한 수락 기준을 내려보내기
+
+같은 Task 에 "함수를 다른 모듈로 옮긴다" 와 "기존 테스트 파일을 수정하지 않는다" 를 함께 요구했는데, 테스트 12곳 이상이 `automation_orchestrator._enqueue_arq_job` 을 patch 하고 있었습니다. 함수를 옮기면 patch 대상이 끊기므로 **두 조건을 동시에 만족시킬 방법이 없었습니다.**
+
+워커는 운영 코드에 주입 지점(`enqueue_fn`)을 만들어 우회했습니다. 런타임 동작은 같지만 공개 서명이 늘었습니다. 이것은 5.6 의 이웃 사례입니다. 테스트를 통과시키려고 운영 코드를 바꾸는 압력이 사양에서 나왔습니다.
+
+**수락 기준을 쓸 때 patch 대상, monkeypatch 경로, import 경유 참조를 먼저 조사하십시오.** 조사 결과 충돌이 있으면 이동 대상에서 빼거나 예외를 사양에 명시합니다. 워커가 `escalation` 을 보내는 것이 규약이지만, 모순을 만든 책임은 코디네이터에게 있습니다.
+
+### 5.9 워커의 린터 통과 보고를 전체 통과로 읽기
+
+2026-08-17 에 워커가 `uv run ruff check src/app/services/...` 로 대상 파일만 검사하고 "ruff 린터 통과" 로 보고했습니다. 자기가 새로 만든 **테스트 파일은 검사하지 않았습니다.** 병합 후 `ruff check .` 에서 오류 4건이 나왔습니다.
+
+`scripts/orca_level1_gate.py` 의 게이트 4 는 `validate_agent_rules.py` 이고 **ruff 는 포함되지 않습니다.** 병합 전 확인 목록에 `uv run ruff check .` 를 저장소 전체 범위로 직접 넣으십시오. 워커의 린터 보고는 그 워커가 지정한 경로에 대한 것일 뿐입니다.
 
 ---
 

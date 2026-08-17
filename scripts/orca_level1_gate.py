@@ -363,6 +363,41 @@ def run_gate4_rules(
     )
 
 
+def run_gate4b_lint(
+    repo: Path,
+    timeout: int = DEFAULT_VALIDATE_TIMEOUT,
+) -> GateResult:
+    """게이트 4b: 저장소 전체 ruff 검사.
+
+    워커의 "린터 통과" 보고는 그 워커가 지정한 경로에 대한 것일 뿐입니다.
+    2026-08-17 에 워커가 src 만 검사하고 자기가 만든 테스트 파일을 빼놓아
+    병합 후 main 에서 오류 4건이 나왔습니다. 범위를 저장소 전체로 못박습니다.
+    """
+    cmd = ["uv", "run", "ruff", "check", ".", "--output-format", "concise"]
+    code, stdout, stderr, timed_out = run_command_safe(cmd, repo, timeout)
+    if timed_out:
+        raise GateToolError(f"ruff check 타임아웃 ({timeout}초)")
+
+    combined = f"{stdout}\n{stderr}".strip()
+    if code == 0:
+        return GateResult(
+            name="게이트 4b 린터",
+            status="pass",
+            summary="ruff check . 통과 (저장소 전체)",
+            details=[],
+            raw_data={"exit_code": code},
+        )
+
+    offenders = [ln for ln in combined.splitlines() if ln.strip() and ":" in ln][:10]
+    return GateResult(
+        name="게이트 4b 린터",
+        status="fail",
+        summary=f"ruff check . 실패 (종료 코드 {code})",
+        details=offenders,
+        raw_data={"exit_code": code, "offenders": offenders},
+    )
+
+
 def run_gate5_review_report(
     review_report_path: Path | None,
     capsule_path: Path | None,
@@ -546,6 +581,10 @@ def run_level1_gate(
         # 게이트 4: 규칙
         g4 = run_gate4_rules(repo_path)
         gates.append(g4)
+
+        # 게이트 4b: 린터 (저장소 전체)
+        g4b = run_gate4b_lint(repo_path)
+        gates.append(g4b)
 
         # 게이트 5: 리뷰 보고
         g5 = run_gate5_review_report(review_report_path, capsule_path)

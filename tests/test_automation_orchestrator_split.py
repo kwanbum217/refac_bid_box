@@ -9,13 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from src.app.services import (
-    automation_callbacks,
-    automation_jobs,
-    automation_orchestrator,
-    automation_responses,
-    automation_tokens,
-)
+from src.app.services import automation_orchestrator, automation_tokens
 
 
 def test_token_signing_and_unsigning_compatibility():
@@ -139,11 +133,10 @@ def test_no_circular_imports_in_submodules():
                     assert "automation_orchestrator" not in alias.name, (
                         f"{subpath} 가 automation_orchestrator 를 import 함"
                     )
-            elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    assert "automation_orchestrator" not in node.module, (
-                        f"{subpath} 가 automation_orchestrator 를 importFrom 함"
-                    )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                assert "automation_orchestrator" not in node.module, (
+                    f"{subpath} 가 automation_orchestrator 를 importFrom 함"
+                )
 
 
 def test_module_line_count_limits():
