@@ -552,6 +552,8 @@ f"<module>.{func.name}"       # 모듈 수준 함수
 | 계약 이름만 적고 필드명 미열거 | `expand_intent_to_capsule` 이 역할별 `report_schema` 블록을 항상 삽입 | 5.4.1 |
 | 추론 등급을 항상 high 로 배정 | `TIER_POLICY` 표가 역할·위험도로 배정하고 high 를 high 위험도 전용으로 둠 | 4.2 |
 | 신뢰 대화창이 뜬 채로 Dispatch | `dispatch --terminal` 이 `approve_trust_prompt` 로 승인하고, 승인 실패 시 종료 코드 2 로 중단 | 4.1 |
+| `defect_when` 에 산문 기재 | `validate_review_report.py` 가 극성을 정규화하고 판정 불가 시 "극성을 알 수 없음" 위반으로 보고 | 6.2 |
+| `coordinator_input_tokens` 로 절감 비교 | `orca_metrics_ledger.py` 가 `fresh_input_tokens` 를 스스로 계산해 대표 지표로 기록 | 6.4 |
 
 **강제 장치를 지우면 항목을 다시 표로 올립니다.** 장치가 사라진 채 표에도 없으면 그 교훈은 조용히 소실됩니다. 강제 장치는 각각 테스트로 고정되어 있으므로, 해당 테스트를 삭제하려면 이 표를 함께 고쳐야 합니다.
 
