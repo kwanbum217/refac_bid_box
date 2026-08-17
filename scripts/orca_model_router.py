@@ -98,6 +98,17 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         ],
         "notes": "읽기 전용 조사 및 문서화.",
     },
+    "gemini-flash-low": {
+        "id": "gemini-3.7-flash-low",
+        "provider": "gemini",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "documenter",
+        ],
+        "notes": "추론 단계가 가장 얕다. 2026-08-17 에 호출 가능만 확인했고 산출 품질은 미측정이라 자동 선택 대상이 아니다. 판단이 없는 기계적 치환에 수동 지정한다.",
+    },
     "claude-sonnet": {
         "id": "claude-sonnet-4-6",
         "provider": "claude",
@@ -381,18 +392,32 @@ def select_model(
     """
     exclude = exclude or []
 
-    if risk == "high" and role == "reviewer":
-        base_candidates = ["claude-sonnet", "gemini-flash-high"]
-    elif risk == "high" or role == "reviewer":
+    # 추론 등급은 위험도에 따라 내립니다. 예전에는 리뷰어와 빌더가 위험도를
+    # 무시하고 항상 high 로 갔습니다. 2026-08-17 에 읽기 전용 low 위험도 감사
+    # 4건이 전부 high 로 배정되어 주간 한도를 불필요하게 썼습니다.
+    if role == "reviewer":
+        if risk == "high":
+            base_candidates = ["claude-sonnet", "gemini-flash-high"]
+        elif risk == "medium":
+            base_candidates = ["gemini-flash-high", "claude-sonnet"]
+        else:
+            base_candidates = ["gemini-flash-medium", "gemini-flash-high"]
+    elif risk == "high":
         base_candidates = ["gemini-flash-high", "claude-sonnet"]
     elif role == "builder":
-        base_candidates = ["gemini-flash-high"]
+        # 코드를 쓰는 역할은 등급을 내리지 않습니다. 기계적 이동이라도 재수출
+        # 위치와 순환 참조 판단이 들어가고, 틀린 코드를 되돌리는 비용이
+        # 읽기 작업과 비교되지 않습니다. 내리려면 측정이 먼저입니다.
+        base_candidates = ["gemini-flash-high", "claude-sonnet"]
     elif role in ("investigator", "benchmarker"):
-        base_candidates = ["gemini-flash-high", "gemini-flash-medium"]
+        if risk == "low":
+            base_candidates = ["gemini-flash-medium", "gemini-flash-high"]
+        else:
+            base_candidates = ["gemini-flash-high", "gemini-flash-medium"]
     elif role == "documenter":
         base_candidates = ["gemini-flash-medium", "gemini-flash-high"]
     else:
-        base_candidates = ["gemini-flash-high"]
+        base_candidates = ["gemini-flash-high", "gemini-flash-medium"]
 
     eligible, _reason = free_pool_eligibility(role, risk, has_write_scope)
     if allow_free and eligible:

@@ -217,6 +217,7 @@ class TestModelPoolAndSelection:
             "opencode-free",
             "cerebras-oss",
             "cerebras-gemma",
+            "gemini-flash-low",
         }
 
 
@@ -981,3 +982,37 @@ class TestFreePoolOptIn:
         assert "investigator" in captured
         assert "조건부로 개방" in captured
 
+
+
+class TestRiskAwareTier:
+    """추론 등급이 위험도를 반영하는지 검증합니다.
+
+    2026-08-17 까지 리뷰어는 위험도를 무시하고 항상 high 로 갔습니다. 읽기
+    전용 low 위험도 감사 4건이 전부 high 로 배정되어 주간 한도를 불필요하게
+    썼습니다.
+    """
+
+    def test_reviewer_low_risk_uses_medium(self):
+        res = select_model("reviewer", "low")
+        assert res["primary_pool"] == "gemini-flash-medium"
+        assert res["fallback_pool"] == "gemini-flash-high"
+
+    def test_reviewer_medium_risk_keeps_high(self):
+        res = select_model("reviewer", "medium")
+        assert res["primary_pool"] == "gemini-flash-high"
+
+    def test_reviewer_high_risk_prefers_claude(self):
+        res = select_model("reviewer", "high")
+        assert res["primary_pool"] == "claude-sonnet"
+
+    def test_builder_low_risk_stays_high(self):
+        """코드를 쓰는 역할은 측정 없이 등급을 내리지 않습니다."""
+        res = select_model("builder", "low")
+        assert res["primary_pool"] == "gemini-flash-high"
+
+    def test_flash_low_is_manual_only(self):
+        """산출 품질 미측정 등급은 자동 선택되지 않습니다."""
+        assert MODEL_POOL["gemini-flash-low"]["auto_selectable"] is False
+        for role in ("builder", "reviewer", "investigator", "benchmarker", "documenter"):
+            for risk in ("low", "medium", "high"):
+                assert select_model(role, risk)["primary_pool"] != "gemini-flash-low"
