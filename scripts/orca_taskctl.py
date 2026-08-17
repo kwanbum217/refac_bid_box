@@ -219,6 +219,7 @@ def parse_intent(text: str) -> dict[str, Any]:
         "role": "builder",
         "objective": "",
         "scope": [],
+        "read_scope": [],
         "acceptance": [],
         "risk": "medium",
         "context": "",
@@ -277,7 +278,7 @@ def parse_intent(text: str) -> dict[str, Any]:
             key = match.group(1)
             val = match.group(2).strip()
 
-            if key in ("scope", "acceptance"):
+            if key in ("scope", "read_scope", "acceptance"):
                 items: list[str] = []
                 if val and val != "[]":
                     items.append(val.strip("\"'"))
@@ -359,14 +360,19 @@ def expand_intent_to_capsule(
     if not is_reviewer and analysis_artifact not in write_files:
         write_files.append(analysis_artifact)
 
+    # 읽기만 필요한 경로. 감사나 조사 작업은 대상 파일을 읽어야 하지만 고쳐서는
+    # 안 됩니다. read_scope 가 없으면 대상을 scope 에 넣어야 하고 그러면 쓰기까지
+    # 열려 범위 게이트가 무단 수정을 잡지 못합니다.
+    extra_read = [str(item) for item in intent.get("read_scope", []) if str(item).strip()]
+
     self_capsule_str = str(capsule_path) if capsule_path else f".orca/capsules/{task_id}/capsule.yaml"
     reference_files = [self_capsule_str, "docs/context/CURRENT_STATE.md"]
-    read_files = list(dict.fromkeys(reference_files + write_files))
+    read_files = list(dict.fromkeys(reference_files + write_files + extra_read))
 
     allowed_read_formatted = _format_yaml_list(read_files)
     allowed_write_formatted = _format_yaml_list(write_files)
 
-    globs = [_to_glob(s) for s in write_files]
+    globs = [_to_glob(s) for s in list(dict.fromkeys(write_files + extra_read))]
     allowed_globs_formatted = _format_yaml_list(globs, indent="    - ")
 
     # required_change
