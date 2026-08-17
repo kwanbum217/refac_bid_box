@@ -35,6 +35,7 @@ description: refac_bid_box에서 둘 이상의 에이전트·섹션을 의존성
 3. 모든 섹션을 Task로 등록합니다. 선행 조건은 `--deps`로 명시하고, Task 사양은 **Task Capsule v2 표준 포맷(`ORCA_TASK_CAPSULE_V2`)**을 준수하여 작성합니다. 사양에는 목표(`objective`), 선행 맥락(`why_now`), 기검증 사실(`ground_truth`), 허용 파일(`allowed_read_files`/`allowed_write_files`), 거부 기반 검색 범위(`search_scope`), 절대 금지(`forbidden`), 공유 자원(`shared_resources`), 검증 명령(`verification_commands`), 에스컬레이션 조건(`escalate_when`)을 엄격히 명시합니다. 상세는 [`docs/ops/orca_task_capsule_v2.md`](../../../docs/ops/orca_task_capsule_v2.md) 및 [`.agents/templates/task_capsule_v2.yaml`](../../../.agents/templates/task_capsule_v2.yaml)을 참조하십시오.
 4. 병합, 데이터 변경, Docker Compose 제어, DB, ML 학습 장치, Meilisearch 색인 등 충돌 가능 자원은 한 Task만 소유하도록 합니다. 다른 Task는 의존성으로 대기시킵니다.
 5. 독립 Task만 병렬 Dispatch합니다. 하나의 브랜치나 작업 트리에 동시에 쓰기 작업을 배정하면 안 됩니다. 미커밋 산출물을 이어받아야 하는 의존 작업만 같은 작업 트리에서 순차 실행합니다.
+6. **동시 쓰기 워커는 3대를 넘기지 않습니다.** 작업 트리가 겹치지 않아도 적용됩니다. 코디네이터가 하나이므로 검증이 병목이 되면 미검증 병합 위험이 커집니다. 읽기 전용 워커는 상한에 포함하지 않습니다. `scripts/orca_taskctl.py dispatch` 가 이 상한을 기계로 강제하며, 점유 판정은 `task-list` 의 `dispatched` 상태로 합니다. `worker-list` 는 `worker-start` 워커만 보므로 쓰지 않습니다. 상세는 [`AGENTS.md`](../../../AGENTS.md) 4장 5.1.
 
 ### 2.1 표준 검증
 
@@ -114,7 +115,10 @@ Task는 반드시 둘 다 돌립니다.
 | Antigravity Google (Gemini Flash) | 주력 워커. 분석·감사·측정·절차적 구현 |
 | Antigravity Claude 계열 | 별도 풀이며 허용량이 적습니다. 판정 품질이 필요한 작업 |
 | Codex | 주간 잔량이 넉넉할 때만 |
-| OpenCode 무료 | 실패해도 손실 없는 병렬 조사. 임계 경로 금지 |
+| OpenCode 무료 (`opencode/nemotron-3.5-lightning-free`) | 실패해도 손실 없는 병렬 조사. 임계 경로 금지 |
+| Cerebras (`cerebras/gpt-oss-120b`, 컨텍스트 65K) | 읽기 범위가 Capsule 로 이미 좁혀진 조사. 프로젝트 전체 탐색 불가 |
+
+무료 두 풀은 **자동 선택 대상이 아닙니다.** `scripts/orca_model_router.py` 는 역할이 `investigator` 이고 위험도가 `low` 이고 `allowed_write_files` 가 빈 목록일 때만 `--allow-free` 로 엽니다. `reviewer` 는 판정이 병합 결정에 쓰이므로 임계 경로이며 개방 대상이 아닙니다. 산출물은 반드시 재검증합니다. 상세는 [`docs/ops/orca_control_plane_tools.md`](../../../docs/ops/orca_control_plane_tools.md) 4.3.1 절입니다.
 
 위임하기로 정했으면 **사양이 코디네이터 비용을 결정합니다.** 사양을 Task Capsule v2로 자족적으로 작성하고 `README.md`·`AGENTS.md`·`SKILLS.md` 재독을 금지하며, 확정 사실은 "재조사 불필요" 로 명시하고, 보고 항목(커밋 수·해시, 회차별 값, 대표값, 판정, 차단 사유)을 지정합니다. 수치는 코디네이터가 한 명령으로 재계산할 수 있는 형태로 요구하고, 원시 출력은 워커 문서에 두어 코디네이터 컨텍스트에 넣지 않습니다.
 

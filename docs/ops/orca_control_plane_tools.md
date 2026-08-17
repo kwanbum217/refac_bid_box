@@ -117,14 +117,50 @@
 | `gemini-flash-medium` | `gemini-3.7-flash-medium` | gemini | primary | **대상 (True)** | investigator, documenter | 읽기 전용 조사 및 문서화 |
 | `claude-sonnet` | `claude-sonnet-4-6` | claude | secondary | **대상 (True)** | reviewer, builder | 고품질 판정 필요 작업 |
 | `claude-opus` | `claude-opus-5` | claude | coordinator | **비대상 (False)** | (워커 사용 불가) | **코디네이터 전용. 워커 지정 시 거부(오류)** |
-| `codex` | `codex` | opencode | secondary | **비대상 (False)** | investigator, documenter | 주간 잔량이 넉넉할 때만 수동 지정 |
-| `opencode-free` | `opencode-free` | opencode | free | **비대상 (False)** | investigator | 실패해도 무방한 병렬 조사. 임계 경로 금지 |
+| `codex` | `codex` | codex | secondary | **비대상 (False)** | investigator, documenter | 주간 잔량이 넉넉할 때만 수동 지정. 독립 CLI (`codex exec`) |
+| `opencode-free` | `opencode/nemotron-3.5-lightning-free` | opencode | free | **비대상 (False)** | investigator | 실패해도 무방한 병렬 조사. 임계 경로 금지 |
+| `cerebras-oss` | `cerebras/gpt-oss-120b` | cerebras | free | **비대상 (False)** | investigator | 컨텍스트 65,536 / 출력 8,192. Capsule 범위 작업 전용 |
+
+> **모델 ID 는 반드시 실측으로 확인한 값만 적습니다.** 2026-08-16 까지 `opencode-free` 의 ID 가
+> 자리표시자 `opencode-free` 였고 실제 호출 시 `Model not found` 였습니다. `opencode` 는
+> `provider/model` 형식을 요구하며 실재 모델 목록은 `opencode models` 로 확인합니다.
+> `codex` 의 프로바이더도 `opencode` 로 잘못돼 있었습니다. 자리표시자 ID 는 probe 가
+> 항상 실패하므로 그 풀을 조용히 사용 불가로 만듭니다.
+
+### 4.3.1 저가·무료 풀 조건부 개방 (`--allow-free`)
+
+무료 풀은 기본적으로 자동 선택 대상이 아닙니다(`auto_selectable: False`). 다음 **세 조건을
+모두** 만족할 때만 `--allow-free` 로 주 모델이 될 수 있습니다.
+
+| 조건 | 값 | 근거 |
+| --- | --- | --- |
+| 역할 | `investigator` 만 | `reviewer` 는 읽기 전용이어도 판정이 병합 결정에 쓰이므로 임계 경로 |
+| 위험도 | `low` | `medium` 이상은 재작업 비용이 개방 이득을 넘음 |
+| 쓰기 범위 | `allowed_write_files` 가 빈 목록 | 쓰기 권한이 있으면 실패 손실이 0 이 아님 |
+
+조건 판정은 `free_pool_eligibility()` 가 담당하고, Capsule 을 읽을 수 없으면 fail-closed 로
+쓰기 있음으로 봅니다. 무료 풀이 실제로 선택되면 두 경고가 반드시 발행됩니다.
+
+1. 산출물 재검증 필수 및 임계 경로 금지
+2. 컨텍스트 한도 경고. `max_tokens` 가 200,000 미만이면 그 수치를, 미확인이면 미확인 사실을 알립니다
+
+`codex` 는 무료가 아니라 계량 풀이므로 `FREE_POOL_ORDER` 에 넣지 않습니다. 넣으면
+`--allow-free` 로 자동 선택되면서 `tier != free` 라 재검증 경고도 발행되지 않습니다.
 
 ### 4.4 모델 가용성 Probe 판정 기준
 
 `probe_model`은 프로바이더별 실제 CLI 명령을 실행하여 가용성을 판정합니다:
 - **`gemini` / `claude`**: `agy --model {model} --print ping --print-timeout 15s`
-- **`opencode`**: `opencode run --model {model} ping`
+- **`opencode` / `cerebras`**: `opencode run --model {model} ping`
+- **`codex`**: `codex exec ping`
+
+`stdin` 은 `subprocess.DEVNULL` 로 닫습니다. `codex` 는 stdin 이 열려 있으면 추가 입력을
+기다려 타임아웃을 소진할 수 있습니다.
+
+`cerebras` 프로바이더는 `opencode.json` 이 `{env:CEREBRAS_API_KEY}` 로 **프로세스
+환경변수**를 읽습니다. 저장소 `.env` 는 셸로 export 되지 않으므로 probe 가 `.env` 에서
+키를 읽어 subprocess `env` 로만 전달합니다. **키 값은 로그·예외·경고·문서 어디에도
+출력하지 않으며**, 없을 때는 값 대신 `CEREBRAS_API_KEY 미설정` 사실만 알립니다.
 
 **가용 판정 조건**:
 1. 하위 프로세스 종료 코드가 `0`이어야 합니다.

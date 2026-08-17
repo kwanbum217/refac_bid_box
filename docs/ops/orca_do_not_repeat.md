@@ -94,6 +94,24 @@ Antigravity CLI 는 워크스페이스 신뢰 확인 대화창을 먼저 띄웁�
 
 동시에 **무료 모델을 실패나 무산출로 단정하지 않습니다.** 자동 검증이 가능한 비임계 경로(단독 감사, 분리된 검증)로 한정해 사용합니다.
 
+**2026-08-16 조건부 개방**: 전면 배제는 유지하되, `scripts/orca_model_router.py` 가 세 조건을 모두 만족할 때만 명시적 opt-in(`--allow-free`)으로 무료 풀을 엽니다. 역할이 `investigator` 이고, 위험도가 `low` 이고, `allowed_write_files` 가 빈 목록인 경우입니다. `reviewer` 는 읽기 전용이지만 판정이 병합 결정에 쓰이므로 임계 경로이며 개방 대상이 아닙니다.
+
+기존 세 풀의 `auto_selectable` 값은 바꾸지 않았습니다. **무료 풀은 여전히 자동 선택 대상이 아닙니다.** 조건은 [`orca_control_plane_tools.md`](orca_control_plane_tools.md) 4.3.1 절에 있습니다.
+
+컨텍스트 상한이 좁은 것(Cerebras 65,536)이 개방의 전제입니다. 프로젝트 전체 탐색에는 쓸 수 없고, Task Capsule 로 읽기 범위가 이미 좁혀진 작업에만 맞습니다.
+
+#### 4.2.1 실측하지 않은 모델 ID 를 풀에 등록
+
+`MODEL_POOL` 에 자리표시자 ID 를 넣어두고 probe 로 확인하지 않으면, 그 항목이 선택되는 순간에야 `Model not found` 로 실패합니다. 2026-08-16 에 `opencode-free` 항목의 ID 가 실재하지 않는 값이었고, 실측 ID 는 `opencode/nemotron-3.5-lightning-free` 였습니다. 같은 diff 에서 `codex` 항목의 provider 도 `opencode` 로 잘못 적혀 있었습니다.
+
+풀에 항목을 추가하거나 고칠 때는 그 자리에서 `probe` 를 돌려 응답 본문을 확인합니다. 목록은 `opencode models` 로 얻습니다. 근거 없는 ID 는 5.5 절과 같은 부류입니다.
+
+#### 4.2.2 `{env:...}` 가 저장소 `.env` 를 읽는다고 가정
+
+`opencode.json` 의 `"apiKey": "{env:CEREBRAS_API_KEY}"` 는 **프로세스 환경 변수**를 읽습니다. 이 저장소의 `.env` 는 셸로 export 되지 않으므로 키가 도달하지 않고, 증상은 키 부재가 아니라 `Unauthorized: Wrong API Key` 입니다. 2026-08-16 에 이 메시지 때문에 Cerebras 세 모델을 전부 사용 불가로 오판했습니다.
+
+`scripts/orca_model_router.py` 는 `.env` 를 읽어 subprocess 의 `env` 딕셔너리에만 주입합니다. **키 값은 로그·예외·경고·문서 어디에도 출력하지 않고**, 부재 시 `CEREBRAS_API_KEY 미설정` 이라는 사실만 보고합니다.
+
 ### 4.3 Capsule 을 공유 디렉터리에 배치
 
 2026-08-15 T6 실행 검증에서 워커가 자기 Capsule 과 함께 다른 Task 의 사양·런처를 읽었습니다. 원인은 워커가 아니라 코디네이터의 배치였습니다.
@@ -103,6 +121,14 @@ Antigravity CLI 는 워크스페이스 신뢰 확인 대화창을 먼저 띄웁�
 - `allowed_read_files` 는 지시이며 강제 장치가 아닙니다. 준수는 `worker_done` 의 `read_files` 로 사후 확인합니다
 
 규약: [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md) 2.9
+
+#### 4.3.1 읽기 범위와 쓰기 범위의 강제 수준을 같다고 가정
+
+두 범위의 강제 수준이 **비대칭**입니다. `scripts/orca_level1_gate.py` 는 쓰기 범위를 `git diff` 로 기계 검증하지만, `read_scope_excess` 는 **워커가 스스로 신고한 `read_files` 목록만** `allowed_read_files` 와 대조합니다. `forbidden` 항목도 같습니다.
+
+즉 읽기 범위 위반은 워커가 정직하게 신고했을 때만 검출됩니다. 신고를 누락하면 게이트는 통과합니다. 2026-08-16 확인 사항입니다.
+
+따라서 읽기 범위는 **차단 장치가 아니라 컨텍스트 예산 설계**로 취급합니다. 유출되면 안 되는 것은 `allowed_read_files` 에서 빼는 것으로 막지 말고, 워커 작업 트리 자체에 두지 않습니다.
 
 ### 4.4 후속 Dispatch 에 같은 `report_path` 재사용
 
@@ -141,6 +167,16 @@ Antigravity CLI 는 워크스페이스 신뢰 확인 대화창을 먼저 띄웁�
 남아, 같은 터미널에 다음 Task 를 Dispatch 할 때
 `Terminal <handle> already has an active dispatch` 로 거부됩니다. 워커를
 재사용하려면 병합 직후 `task-update --status completed` 로 닫습니다.
+
+### 4.6 `worker-list` 로 동시 워커 수를 판정
+
+`orca orchestration worker-list` 는 `worker-start` 로 기동한 **감독 대상 워커만** 반환합니다. `terminal create` 로 띄우고 `dispatch --to <handle>` 로 붙인 워커는 여기에 나타나지 않습니다.
+
+2026-08-16 에 워커 3대가 붙어 일하는 중에 `worker-list` 가 활성 0 을 반환했습니다. 이 값으로 동시성 상한을 검사하면 상한이 조용히 무력화됩니다.
+
+동시 점유 판정은 `orca orchestration task-list --run <id> --json` 의 `status` 로 합니다. 유효 상태는 `pending`, `ready`, `dispatched`, `completed`, `failed`, `blocked` 이고, 워커를 점유하는 것은 **`dispatched` 뿐**입니다. 두 명령의 JSON 키 표기도 다릅니다. `worker-list` 는 camelCase, `task-list` 는 snake_case 입니다.
+
+`--run` 에 자리표시자(`run_auto` 등)를 기본값으로 두면 조회가 `ok: true`, 결과 0건으로 돌아와 같은 무력화가 발생합니다. Run ID 는 `run-current` 로 해석하고, 해석 실패 시 fail-closed 로 거부합니다. 구현: `scripts/orca_taskctl.py` 의 `check_write_concurrency`, 규칙: [`../../AGENTS.md`](../../AGENTS.md) 4장 5.1
 
 ---
 
@@ -223,6 +259,21 @@ Reviewer 기본 모델은 `gemini-3.7-flash-high` 입니다. Claude 계열과 �
 외부 명령을 조립하는 코드는 **종료 코드만으로 성공을 선언하지 않습니다.**
 응답 본문 같은 추가 근거를 함께 요구하십시오.
 
+#### 5.5.1 Orca 자체 CLI 의 인자 값을 확인 없이 사용
+
+같은 부류가 **Orca CLI 에서도** 나왔습니다. `orca orchestration check --types ask`
+는 `ask` 가 유효한 종류가 아니어서 아무것도 대기하지 않지만, `ok: false` 를
+출력하면서 **종료 코드 0** 을 반환합니다.
+
+2026-08-16 에 이 명령으로 30분 대기를 걸었고, 실제로는 대기가 성립하지 않았는데
+`완료 (종료 코드 0)` 으로 보고되었습니다. 유효한 종류는 `worker_done`,
+`escalation` 입니다.
+
+**Orca 명령은 종료 코드와 `ok` 필드를 따로 확인합니다.** 5.5 절의 "외부 CLI"
+경계 안쪽이라고 안심하지 마십시오. 인자에 열거형 값을 넣을 때는 `--help` 로
+허용 값을 먼저 확인하고, 없으면 잘못된 값을 한 번 넣어 오류 메시지에서 목록을
+받아냅니다.
+
 ### 5.6 테스트가 틀린 사실을 정답으로 고정
 
 `3453a3f` 의 테스트 54건은 전부 통과했지만 결함이 있던 세 함수(워크트리 생성,
@@ -270,3 +321,25 @@ Dispatch, finalize)를 하나도 덮지 않았습니다. 재작성 1차에서는
 
 **운영 판정을 좌우하는 상한은 호출자가 조정할 수 있어야 합니다.** 기본값으로
 예산을 지키게 하고, 근거가 있을 때 올릴 수 있는 경로를 함께 두십시오.
+
+### 6.4 `coordinator_input_tokens` 로 위임 절감을 비교
+
+이 값은 `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` 의
+합이고, 2026-08-16 실측에서 `cache_read` 가 **99.5 퍼센트**(399,563,803 중
+397,513,915)를 차지했습니다. `cache_read` 는 매 assistant 메시지가 캐시된 접두부
+전체를 다시 읽어 누적되므로 **대화 턴 수에 비례하고 위임 여부와 무관**합니다.
+
+이 값으로 비교하면 위임을 잘한 세션이 턴이 많다는 이유로 더 나빠 보입니다.
+위임 비교 대표 지표는 `coordinator_fresh_input_tokens`(uncached + cache_creation)
+뿐입니다. 근거와 실측표: [`orca_v2_metrics_ledger.md`](orca_v2_metrics_ledger.md) 3.1
+
+같은 트랜스크립트를 집계할 때 두 함정이 더 있습니다.
+
+| 함정 | 결과 |
+| --- | --- |
+| `message.id` 중복 제거 누락 | 같은 id 가 여러 줄에 반복되어 약 1.9배 과대 계상 |
+| 프로젝트 `*.jsonl` 전체 합산 | 병렬 Claude 세션 이력이 있어 다른 세션 토큰이 섞임 |
+
+세션 기본값은 수정 시각이 가장 최근인 파일 하나입니다. 또한 조회 실패를 조용히
+넘기면 창 필드만 채워진 행이 계측된 것처럼 보이므로, `usage_lookup_status` 로
+상태를 함께 기록합니다.
