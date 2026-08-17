@@ -1108,23 +1108,32 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     task_id = args.task_id or intent.get("task_id") or f"task_{intent_path.stem}"
 
     capsule_dir = Path(args.capsule_dir)
-    task_capsule_dir = capsule_dir / task_id
-    task_capsule_dir.mkdir(parents=True, exist_ok=True)
-    # 워커는 다른 워크트리에서 돌기 때문에 상대 경로로는 Capsule 을 찾지 못합니다.
-    capsule_path = (task_capsule_dir / "capsule.yaml").resolve()
+    if args.capsule:
+        # create 가 이미 만든 Capsule 을 그대로 쓴다. 재확장하면 같은 Task 에
+        # Capsule 이 두 벌 생기고 Task spec 이 가리키는 쪽과 어긋난다.
+        capsule_path = Path(args.capsule).resolve()
+        if not capsule_path.exists():
+            sys.stderr.write(f"오류: Capsule 파일 없음: {capsule_path}\n")
+            return 2
+        capsule = capsule_path.read_text(encoding="utf-8")
+    else:
+        task_capsule_dir = capsule_dir / task_id
+        task_capsule_dir.mkdir(parents=True, exist_ok=True)
+        # 워커는 다른 워크트리에서 돌기 때문에 상대 경로로는 Capsule 을 찾지 못합니다.
+        capsule_path = (task_capsule_dir / "capsule.yaml").resolve()
 
-    try:
-        capsule = expand_intent_to_capsule(
-            intent,
-            task_id=task_id,
-            run_id=args.run_id,
-            capsule_path=capsule_path,
-        )
-    except ValueError as err:
-        sys.stderr.write(f"오류: {err}\n")
-        return 2
+        try:
+            capsule = expand_intent_to_capsule(
+                intent,
+                task_id=task_id,
+                run_id=args.run_id,
+                capsule_path=capsule_path,
+            )
+        except ValueError as err:
+            sys.stderr.write(f"오류: {err}\n")
+            return 2
 
-    capsule_path.write_text(capsule, encoding="utf-8")
+        capsule_path.write_text(capsule, encoding="utf-8")
 
     model = args.model or DEFAULT_MODEL
 
@@ -1388,6 +1397,11 @@ def _build_parser() -> argparse.ArgumentParser:
     dsp.add_argument("--task-id", help="Task ID")
     dsp.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Run ID")
     dsp.add_argument("--capsule-dir", default=".orca/capsules", help="Capsule 저장 디렉터리")
+    dsp.add_argument(
+        "--capsule",
+        help="이미 만들어 둔 Capsule 경로. 지정하면 재확장하지 않고 그 파일을 그대로 씁니다 "
+        "(create 로 만든 Capsule 을 재사용할 때).",
+    )
     dsp.add_argument("--agent", help="워커 agent ID (worker-start 경로. claude, codex, cursor 만)")
     dsp.add_argument("--terminal", help="워커 터미널 핸들 (터미널 부착 Dispatch 경로)")
     dsp.add_argument(

@@ -1512,3 +1512,59 @@ def test_cmd_create_puts_capsule_path_in_task_spec(
     assert "capsule.yaml" in spec
     assert Path(spec.split("정본 사양(Capsule): ")[1]).is_absolute()
     assert json.loads(capsys.readouterr().out)["task_id"] == "task_created"
+
+
+def test_cmd_dispatch_reuses_existing_capsule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+    """--capsule 을 주면 재확장하지 않고 그 파일을 그대로 써야 합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    existing = tmp_path / "premade" / "capsule.yaml"
+    existing.parent.mkdir()
+    existing.write_text("schema: ORCA_TASK_CAPSULE_V2\nmarker: premade\n", encoding="utf-8")
+
+    def fail_expand(*a, **k):
+        raise AssertionError("--capsule 지정 시 재확장해서는 안 됩니다.")
+
+    monkeypatch.setattr("scripts.orca_taskctl.expand_intent_to_capsule", fail_expand)
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_send", lambda *a, **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr("scripts.orca_taskctl.resolve_dispatch_id", lambda *a, **k: "ctx_live")
+    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule",
+        str(existing),
+        "--task-id",
+        "task_real_orca_id",
+        "--terminal",
+        "term_abc",
+        "--json",
+    ])
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["capsule"] == str(existing.resolve())
+    assert existing.read_text(encoding="utf-8").endswith("marker: premade\n")
+
+
+def test_cmd_dispatch_missing_reused_capsule_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """--capsule 이 존재하지 않으면 기동하지 않고 종료 코드 2 로 거부해야 합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    def fail_dispatch(**k):
+        raise AssertionError("Capsule 부재 시 기동해서는 안 됩니다.")
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", fail_dispatch)
+
+    code = main([
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule",
+        str(tmp_path / "nope.yaml"),
+        "--terminal",
+        "term_abc",
+    ])
+    assert code == 2

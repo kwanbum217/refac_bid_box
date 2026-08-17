@@ -101,9 +101,11 @@ python3 scripts/orca_taskctl.py create --intent <intent> --run-id <run> \
   --capsule-dir /Users/kwanbum/orca/capsules/<run> --task-title "<제목>" --json
 
 python3 scripts/orca_taskctl.py dispatch --intent <intent> --run-id <run> \
-  --capsule-dir /Users/kwanbum/orca/capsules/<run> \
-  --task-id <create 가 돌려준 id> --terminal <handle> --json
+  --task-id <create 가 돌려준 id> --capsule <create 가 돌려준 capsule 경로> \
+  --terminal <handle> --json
 ```
+
+**`--capsule` 을 반드시 넘기십시오.** Orca 는 Task ID 를 스스로 발급하므로 `create` 가 쓴 Capsule 디렉터리 이름과 실제 Task ID 가 다릅니다. `--capsule` 없이 Dispatch 하면 `dispatch` 가 Task ID 기준으로 Capsule 을 새로 만들어 **같은 Task 에 Capsule 이 두 벌 생기고 Task `spec` 이 가리키는 쪽과 어긋납니다.** `--capsule` 을 주면 재확장하지 않고 그 파일을 그대로 쓰며, 파일이 없으면 기동하지 않고 종료 코드 2 로 거부합니다.
 
 고지문에는 Capsule 절대 경로, `allowed_write_files` 준수, 허용 목록 밖 파일명 생성 금지, `commit_count: 0` 이면 `escalation`, 보고 경로, **그리고 `dispatch-show` 로 조회한 유효 `dispatchId`** 가 들어갑니다. 마지막 항목이 재 Dispatch 후 `capability is revoked` 거부를 막습니다.
 
