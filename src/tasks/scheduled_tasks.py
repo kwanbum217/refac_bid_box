@@ -15,6 +15,7 @@ src/tasks/scheduled_tasks.py
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -64,7 +65,9 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     db = SessionLocal()
     try:
-        execution_id = _create_scheduled_execution(db, "nightly_schedule", "nightly")
+        execution_id = await asyncio.to_thread(
+            _create_scheduled_execution, db, "nightly_schedule", "nightly"
+        )
     finally:
         db.close()
 
@@ -90,11 +93,11 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # 수집으로 원본 데이터가 바뀌었으니 상위 N 스냅샷을 다시 만듭니다.
     # 원본 스텝 구성(run_mode_matrix)을 건드리지 않으려고 파이프라인 밖에 둡니다.
-    outcome["ranking_snapshots"] = _rebuild_ranking_snapshots()
+    outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
 
     # 추론 경로가 쓰는 기관 이력 집계도 함께 갱신합니다. 이 표가 낡으면
     # 학습과 추론의 inst_hist_rate 정의가 갈립니다 (AGENTS.md 6항).
-    outcome["institution_stats"] = _rebuild_institution_stats()
+    outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
     return outcome
 
 
@@ -109,8 +112,11 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     db = SessionLocal()
     try:
-        execution_id = _create_scheduled_execution(
-            db, "development_data_refresh", "development_data_refresh"
+        execution_id = await asyncio.to_thread(
+            _create_scheduled_execution,
+            db,
+            "development_data_refresh",
+            "development_data_refresh",
         )
     finally:
         db.close()
@@ -132,8 +138,8 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     if outcome.get("status") != "success":
         return outcome
 
-    outcome["ranking_snapshots"] = _rebuild_ranking_snapshots()
-    outcome["institution_stats"] = _rebuild_institution_stats()
+    outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
+    outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
     return outcome
 
 
