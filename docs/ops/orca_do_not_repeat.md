@@ -351,6 +351,15 @@ ast.dump(node, include_attributes=False)  # 위치 정보를 제외해 이동만
 
 `include_attributes=False` 가 핵심입니다. 빼지 않으면 줄 번호가 달라져 전부 변경으로 보입니다.
 
+**이름을 평평하게 모으면 거짓 양성이 납니다.** 클래스 메서드와 모듈 수준 함수가 같은 이름을 가질 수 있습니다. 2026-08-17 2차 분할에서 `predict_interval` 이 본문 변경으로 나왔는데, 실제로는 `JoblibModelWrapper.predict_interval` 메서드와 모듈 수준 `predict_interval` 함수가 한 칸을 다퉜을 뿐이고 둘 다 동일했습니다. 소유자를 포함해 정규화하십시오.
+
+```python
+f"{cls.name}.{method.name}"   # 클래스 메서드
+f"<module>.{func.name}"       # 모듈 수준 함수
+```
+
+정규화 후 재대조에서 `model_registry.py` 61개와 `chatbot.py` 24개 전부가 동일로 확정되었습니다. **대조 도구가 낸 결함 신호도 근거를 확인하기 전에는 결함이 아닙니다.**
+
 ### 5.8 충족 불가능한 수락 기준을 내려보내기
 
 같은 Task 에 "함수를 다른 모듈로 옮긴다" 와 "기존 테스트 파일을 수정하지 않는다" 를 함께 요구했는데, 테스트 12곳 이상이 `automation_orchestrator._enqueue_arq_job` 을 patch 하고 있었습니다. 함수를 옮기면 patch 대상이 끊기므로 **두 조건을 동시에 만족시킬 방법이 없었습니다.**

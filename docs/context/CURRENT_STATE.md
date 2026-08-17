@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-17
-> **source_commit**: `735ec20`
+> **source_commit**: `de0f3ed`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -55,22 +55,22 @@
 
 | # | 금지 항목 | 결론 |
 | :---: | --- | --- |
-| 1 | Uvicorn 워커 수 증설 (3/4) | 개선 없이 코어 경합만 증가. 기각 |
+| 1 | Uvicorn 워커 증설 (3/4) | 개선 없이 코어 경합만 증가. 기각 |
 | 2 | `PREDICTION_GC_MODE=batch-disable` | 100ms 초과 30건으로 기본(21)보다 악화. 기각 |
-| 3 | `PREDICTION_GC_MODE=threshold` | `freeze` 확정 채택으로 상호 배타. 재검토 불필요 |
+| 3 | `PREDICTION_GC_MODE=threshold` | `freeze` 확정으로 상호 배타. 재검토 불필요 |
 | 4 | `dispatch --inject` 도달 미확인 | 승인 전 키 유실, 승인 후에도 유실 사례 있음. 도달은 `terminal read` 로만 확인 |
 | 5 | 무료 LLM 풀의 임계 경로 투입 | 자동 선택 대상 아님. `investigator` + `low` + 쓰기 범위 없음 세 조건에서만 `--allow-free` 로 개방. 실패로 단정하지도 않음 |
 | 6 | 미병합 브랜치 재병합 | `feat/codex-task-routing`·`integrate/arq-worker-cutover` 폐기, `perf/predict-tail` 진단 전용 |
-| 7 | 워커 요약 텍스트만 신뢰 | diff 와 결정론 검증 결과를 직접 대조 |
+| 7 | 워커 요약 텍스트만 신뢰 | diff 와 결정론 검증을 직접 대조 |
 | 8 | README 에 성능 실측값·판정 문구 기재 | 본 문서 2장과 1장이 정본. 판정 문구도 수치와 같이 낡는다. 포인터로 대체 완료 |
 | 9 | Capsule 을 공유 디렉터리에 배치 | Task 당 디렉터리 하나. `allowed_read_files` 에 Capsule 자신 포함 |
 | 10 | Reviewer `pass` 를 검토 축소 근거로 사용 | 체크리스트 밖 결함은 절반만 검출. **Level 3 유지** |
-| 11 | 크기 예산을 바이트로 판정 | 8,000자는 문자 수. `wc -c` 금지, `len()` 사용 |
+| 11 | 크기 예산을 바이트로 판정 | 8,000자는 문자 수다. `wc -c` 금지, `len()` 사용 |
 | 12 | 같은 `report_path` 재사용 | 덮어써서 이전 보고 소실. 재작업 지시에 새 경로를 준다 |
 | 13 | 파이프라인으로 종료 코드 판정 | `pytest \| tail && <다음>` 은 실패를 통과로 본다. 게이트 도구를 쓴다 |
 | 14 | 워커의 비표준 계약 필드명을 수용 | `files_modified` 폴백이 `changed_files_count: 0` 을 조용히 기록했다. 폴백 금지 |
 | 15 | 재작업을 완료된 Task 에 태우기 | 2차 `worker_done` 이 거부되어 반려 사유가 이력에서 사라진다. `ready` 로 되돌리거나 새 Task 를 만든다 |
-| 16 | 코디네이터 검토를 Level 2 대체로 사용 | 10번의 역방향. 코디네이터 검토만으로 병합한 도구 4개에서 독립 감사가 결함 7건을 찾았다. 두 층을 모두 통과시킨다 |
+| 16 | 코디네이터 검토를 Level 2 대체로 사용 | 10번의 역방향. 코디네이터 검토만으로 병합한 도구 4개에서 독립 감사가 결함 7건을 찾았다. 두 층을 다 통과시킨다 |
 | 17 | 확인하지 않은 외부 CLI 서명으로 코드 작성 | 값 유무는 `--help` Usage 줄로 본다. `opencode ask` 는 실패하며 **종료 코드 0** 을 냈다. 종료 코드만으로 성공을 선언하지 않는다 |
 | 18 | 테스트가 틀린 사실을 정답으로 고정 | 없는 CLI 서명을 기대값으로 단정했다. 통과하는 테스트는 확인의 근거가 아니다 |
 | 19 | `defect_when` 에 산문 기재 | `yes`/`no` 극성 토큰이다. 문장을 넣어 리뷰 8항목이 무효화됐다 |
@@ -84,19 +84,21 @@
 | 27 | `check` 를 `--ack` 없이 호출 | 미확인 배치가 재전달되어 뒤에 온 `worker_done` 이 가려지고 `--wait` 도 즉시 반환된다. `--ack <deliveryId>` 로 전진시킨다 |
 | 28 | 동작 보존 분할을 사람 판독으로만 검증 | `ast.dump(node, include_attributes=False)` 로 이동 함수를 기계 대조한다. 리뷰어가 놓친 본문 변경 5건을 이 방법으로 찾았다 |
 | 29 | 워커의 린터 보고를 전체 통과로 읽기 | 워커는 지정 경로만 검사한다. Level 1 게이트에 ruff 가 없으므로 병합 전 `uv run ruff check .` 를 직접 돌린다 |
+| 30 | AST 대조 이름을 평평하게 모으기 | 메서드와 모듈 함수가 같은 이름일 수 있어 거짓 양성이 난다. `Class.method` / `<module>.func` 로 정규화한다 |
+| 31 | 저장소 도구를 `python3` 로 실행 | macOS `python3` 가 Xcode 3.9 라 `datetime.UTC` 임포트가 깨진다. `requires-python` 이 `>=3.11` 이므로 코드가 맞다. `uv run python` 을 쓴다 |
 
 ---
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**:
-   - **수신면 도구 5종**: `orca_contract.py`, `orca_level1_gate.py`(Level 1), `summarize_worker_done.py`, `orca_run_reviewer.py`(Level 2), `orca_metrics_ledger.py`. 독립 감사 결함 7건 수정. 근거: [`../ops/orca_v2_intake_tools_audit_20260815.md`](../ops/orca_v2_intake_tools_audit_20260815.md)
-   - **Level 3 유지 확정**: 결함 밀도 0.05 사전 등록, A/B 모두 검출 0/3. 근거: [`../ops/orca_v2_level3_reduction_rerun_results_20260815.md`](../ops/orca_v2_level3_reduction_rerun_results_20260815.md)
-   - **Control Plane 도구**: `orca_taskctl.py`, `orca_model_router.py`. 최초 판 `3453a3f` 를 되돌린(`d8c964a`) 사유가 3장 17~20번입니다.
-   - **동시 쓰기 워커 상한 3대**를 `dispatch` 가 기계 강제(AGENTS.md 4장 5.1). 코디네이터 토큰은 트랜스크립트 자동 계측.
-   - **2026-08-17 첫 실사용에서 전달 경로 결함 4종 확인**(3장 26~29번). Capsule 계약이 워커에 도달하지 않아 3대 전부가 위반했고, `dispatch` 기동 경로는 그때까지 실행된 적이 없었습니다(`76c3013`).
+   - **수신면 도구 5종**: `orca_contract.py`, `orca_level1_gate.py`(Level 1, 게이트 6대), `summarize_worker_done.py`, `orca_run_reviewer.py`(Level 2), `orca_metrics_ledger.py`. 독립 감사 결함 7건 수정.
+   - **Level 3 유지 확정**: 결함 밀도 0.05 사전 등록, A/B 모두 검출 0/3.
+   - **Control Plane 도구**: `orca_taskctl.py`, `orca_model_router.py`. `3453a3f` 를 되돌린 사유가 3장 17~20번입니다.
+   - **동시 쓰기 워커 상한 3대**를 `dispatch` 가 기계 강제(AGENTS.md 4장 5.1).
+   - **2026-08-17 실사용에서 도구 결함 4건 수정**: `dispatch` 기동 경로(`76c3013`), Capsule 경로 미주입(`eb6f429`, `create` 신설), Capsule 중복 생성(`cef6623`), 템플릿 산출물 경로(`b86d833`). 넷 다 문서상으로는 완비돼 있었고 실사용에서만 드러났습니다.
    - **절감량**: 도입 전 값은 확보 불가 유지. 추세는 원장 행이 더 필요합니다.
-2. **대형 모듈 분할 (Phase 3)**: 1차 3건 병합. `rag/engine.py` 1171->490, `automation_orchestrator.py` 1039->550, `planner.py` 968->643. AST 동일성으로 동작 보존 실증. **2차**는 `model_registry.py`(참조 18파일, 서빙 경로)와 `api/v1/chatbot.py` 이며 위험이 커 순차 진행합니다.
+2. **대형 모듈 분할 (Phase 3) — 완료**: 5개 모듈 5,061 -> 2,617줄(-48%). `engine.py` 1171->490, `automation_orchestrator.py` 1039->550, `planner.py` 968->643, `model_registry.py` 1091->400, `chatbot.py` 792->534. 1,000줄 초과 0개, 신규 13모듈 최대 514줄. AST 동일성으로 동작 보존 실증(1차 65개, 2차 85개).
 3. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인을 분석합니다. 호스트 Ollama 재시동과 Docker 단독 점유가 필요합니다.
 4. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 확인 (G2 완결).
 5. **공공조달 입찰 데이터 수집 2·3회차 관찰**: Docker 필요.
@@ -130,8 +132,9 @@
 
 ## 7. 증거 경로 참조 (Evidence Pointers)
 
-- v2 설계: [`docs/ops/orca_coordinator_token_optimization_v2.md`](../ops/orca_coordinator_token_optimization_v2.md)
-- 제어 평면 도구: [`orca_control_plane_tools.md`](../ops/orca_control_plane_tools.md), 지표 원장: [`orca_v2_metrics_ledger.md`](../ops/orca_v2_metrics_ledger.md)
+- v2 설계: [`docs/ops/orca_coordinator_token_optimization_v2.md`](../ops/orca_coordinator_token_optimization_v2.md), 제어 평면: [`orca_control_plane_tools.md`](../ops/orca_control_plane_tools.md)
+- 지표 원장: [`orca_v2_metrics_ledger.md`](../ops/orca_v2_metrics_ledger.md)
 - 레이턴시 게이트 규약: [`latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
-- 워커 기동: [`agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md), 용역 모델: [`servc_model_status.md`](../servc_model_status.md)
+- 워커 기동: [`agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
+- 용역 모델: [`servc_model_status.md`](../servc_model_status.md)
 - 미병합 브랜치 판정: [`phase8_predict_tail_merge_verdict_20260814.md`](../ops/phase8_predict_tail_merge_verdict_20260814.md), [`codex_task_routing_branch_verdict_20260814.md`](../ops/codex_task_routing_branch_verdict_20260814.md)
