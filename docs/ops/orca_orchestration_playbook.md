@@ -511,7 +511,7 @@ orca orchestration check --ack <delivery_id> --json
    python3 scripts/summarize_worker_done.py --report <보고> --capsule <Capsule>
    ```
    (종료 코드: `0` 계약 준수, `1` 위반 있음, `2` 파싱 실패)
-2. **Level 1 (결정론적 기계 검증)**: 5대 게이트(변경 파일, 범위, 테스트, 규칙, 리뷰 보고)를 단일 게이트 도구 호출로 수행합니다.
+2. **Level 1 (결정론적 기계 검증)**: 6대 게이트(변경 파일, 범위, 테스트, 규칙, 린터, 리뷰 보고)를 단일 게이트 도구 호출로 수행합니다.
    ```bash
    python3 scripts/orca_level1_gate.py --base main --branch <작업브랜치> --repo <워크트리경로> --tests '<대상 테스트>' --capsule <Capsule 경로>
    ```

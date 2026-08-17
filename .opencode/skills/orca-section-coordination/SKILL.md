@@ -143,7 +143,7 @@ Task는 반드시 둘 다 돌립니다.
 
 코디네이터는 워커 산출물을 무검증 신뢰하지 않고 다음 3단계로 검증합니다.
 
-1. **Level 1 (결정론적 기계 검증)**: 코디네이터가 `python3 scripts/orca_level1_gate.py` 단일 호출로 5대 게이트(변경 파일, 범위, 테스트, 규칙, 리뷰 보고)를 한 번에 검증합니다 (종료 코드: 0 통과, 1 게이트 실패, 2 도구 오류).
+1. **Level 1 (결정론적 기계 검증)**: 코디네이터가 `python3 scripts/orca_level1_gate.py` 단일 호출로 6대 게이트(변경 파일, 범위, 테스트, 규칙, 린터, 리뷰 보고)를 한 번에 검증합니다 (종료 코드: 0 통과, 1 게이트 실패, 2 도구 오류).
    ```bash
    python3 scripts/orca_level1_gate.py --base main --branch <작업브랜치> --repo <워크트리경로> --tests '<대상 테스트>' --capsule <Capsule 경로>
    ```
