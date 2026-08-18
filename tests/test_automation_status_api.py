@@ -510,3 +510,58 @@ def test_confirm_endpoint_executes_after_confirmation(mock_enqueue, client, isol
     assert request_obj.confirmed_at is not None
     assert request_obj.status in ("queued", "running")
     mock_enqueue.assert_called_once()
+
+
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_confirm_does_not_reuse_other_run_mode(mock_enqueue, client, isolated_db):
+    """run_mode 가 다른 성공 이력은 full_validation 재사용 근거가 되지 않습니다.
+
+    action_catalog 의 7개 액션이 같은 pipeline_id 를 공유하므로, run_mode 를
+    무시하고 대체하면 collect_only 성공 하나로 전체 검증이 수행 없이 성공으로
+    보고됩니다.
+    """
+    _login(client)
+    _seed_kb_status(isolated_db)
+    _seed_successful_execution(
+        isolated_db,
+        age=timedelta(minutes=40),
+        run_mode="collect_only",
+        execution_id="recent-collect-only-001",
+    )
+
+    create_resp = client.post(
+        "/api/v1/automation/run/manual-full", json={"reason": "전체 점검"}
+    ).json()
+    job_id = create_resp["job"]["job_id"]
+    token = create_resp["confirmation_token"]
+    mock_enqueue.reset_mock()
+
+    response = client.post(
+        f"/api/v1/automation/job/{job_id}/confirm", json={"confirmation_token": token}
+    )
+    assert response.status_code == 200
+
+    request_obj = isolated_db.query(AutomationRequest).filter_by(request_id=job_id).one()
+    isolated_db.refresh(request_obj)
+    assert (request_obj.payload or {}).get("reuse_mode") is None
+    assert request_obj.status != "success"
+    mock_enqueue.assert_called_once()
+
+
+def test_find_reusable_execution_requires_run_mode(isolated_db):
+    """run_mode 가 비면 필터가 사라지므로 재사용을 거절합니다 (fail-closed)."""
+    from src.app.services.automation_orchestrator import _find_reusable_execution
+
+    _seed_successful_execution(
+        isolated_db,
+        age=timedelta(minutes=10),
+        run_mode="collect_only",
+        execution_id="run-mode-guard-001",
+    )
+    pipeline = _full_validation_pipeline()
+
+    assert _find_reusable_execution(isolated_db, pipeline_name=pipeline, run_mode="") is None
+    assert (
+        _find_reusable_execution(isolated_db, pipeline_name=pipeline, run_mode="collect_only")
+        is not None
+    )
