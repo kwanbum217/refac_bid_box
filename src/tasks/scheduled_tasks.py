@@ -98,7 +98,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     # 추론 경로가 쓰는 기관 이력 집계도 함께 갱신합니다. 이 표가 낡으면
     # 학습과 추론의 inst_hist_rate 정의가 갈립니다 (AGENTS.md 6항).
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
-    return outcome
+    return _mark_followup_failures(outcome)
 
 
 async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -142,6 +142,30 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
+    return _mark_followup_failures(outcome)
+
+
+FOLLOWUP_KEYS = ("ranking_snapshots", "institution_stats")
+
+
+def _mark_followup_failures(outcome: dict[str, Any]) -> dict[str, Any]:
+    """후속 집계 실패를 스케줄 최종 상태에 드러냅니다.
+
+    파이프라인이 성공해도 기관 이력 집계가 실패하면 추론 경로의
+    inst_hist_rate 가 낡은 채로 남아 학습·추론 정의가 갈립니다. 이를
+    success 로 보고하면 그 어긋남을 아무도 보지 못합니다.
+    """
+    failed = [
+        key
+        for key in FOLLOWUP_KEYS
+        if isinstance(outcome.get(key), dict) and outcome[key].get("status") == "failed"
+    ]
+    if not failed:
+        return outcome
+
+    outcome["failed_followups"] = failed
+    if outcome.get("status") == "success":
+        outcome["status"] = "partial_success"
     return outcome
 
 

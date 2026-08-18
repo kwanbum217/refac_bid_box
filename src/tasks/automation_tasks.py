@@ -183,8 +183,13 @@ def _step_search(db, collected_since: datetime | None = None) -> tuple[str, dict
     )
 
 
-def _step_predict(db) -> tuple[str, dict[str, Any]]:
-    """Champion 모델 로드 및 추론 가능 여부 검증."""
+def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, Any]]:
+    """Champion 모델 로드 및 추론 가능 여부 검증.
+
+    검증할 모델이나 표본이 없으면 성공이 아니라 partial_success 를 돌려줍니다.
+    2요소 튜플은 디스패치 루프에서 성공으로 처리되므로, 아무것도 검증하지
+    못한 실행이 통과로 승격됩니다.
+    """
     from src.ml.model_registry import ModelRegistry, predict_optimal_price
 
     available = ModelRegistry.available_models()
@@ -197,9 +202,15 @@ def _step_predict(db) -> tuple[str, dict[str, Any]]:
 
     if not available or sample is None:
         return (
-            "검증 가능한 모델 또는 공고가 없어 예측 검증을 건너뜁니다.",
+            "partial_success",
+            "검증 가능한 모델 또는 공고가 없어 예측 검증을 수행하지 못했습니다.",
             # 불리언 플래그 키이며 비밀번호가 아닙니다
-            {"pass_all": False, "model_count": len(available)},  # nosec B105
+            {  # nosec B105
+                "pass_all": False,
+                "model_count": len(available),
+                "skipped": True,
+                "skip_reason": ("등록된 모델 없음" if not available else "검증 대상 공고 없음"),
+            },
         )
 
     reference = float(sample.prediction_reference_amount or 0)
@@ -260,8 +271,13 @@ def _check_chroma_vectors() -> int | None:
         return None
 
 
-def _step_inspect(db) -> tuple[str, dict[str, Any]]:
-    """데이터 최신성 점검 (원본 final_inspect 지표 대응)."""
+def _step_inspect(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, Any]]:
+    """데이터 최신성 점검 (원본 final_inspect 지표 대응).
+
+    필수 테이블 누락이나 벡터DB 공백을 감지하면 partial_success 를 돌려줍니다.
+    2요소 튜플은 디스패치 루프에서 성공으로 처리되므로, 치명적 상태가
+    경고 문구만 남긴 채 통과로 승격됩니다.
+    """
     now = utcnow()
     week_ago = now - timedelta(days=7)
     today_start = datetime.combine(now.date(), datetime.min.time())
@@ -345,9 +361,21 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]]:
     if metrics.get("vector_count") == 0:
         warnings.append("ChromaDB 임베딩이 비어 있습니다.")
 
+    # 필수 테이블 누락과 벡터DB 공백은 시스템 불능 상태입니다. 경고 문구만
+    # 남기고 성공으로 보고하면 점검의 목적이 사라집니다.
+    critical = [
+        warning
+        for warning in warnings
+        if warning.startswith("DB 필수 테이블 누락") or warning.startswith("ChromaDB 임베딩")
+    ]
+    metrics["warnings"] = warnings
+    metrics["critical_warnings"] = critical
+
     summary = f"최근 7일 공고 {recent_bid_announcements}건, 낙찰 {recent_bid_results}건 점검 완료."
     if warnings:
         summary += " " + " ".join(warnings)
+    if critical:
+        return "partial_success", summary, metrics
     return summary, metrics
 
 
