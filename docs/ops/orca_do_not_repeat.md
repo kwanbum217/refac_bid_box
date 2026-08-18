@@ -555,6 +555,17 @@ f"<module>.{func.name}"  # 모듈 수준 함수
 | `defect_when` 에 산문 기재 | `validate_review_report.py` 가 극성을 정규화하고 판정 불가 시 "극성을 알 수 없음" 위반으로 보고 | 6.2 |
 | `coordinator_input_tokens` 로 절감 비교 | `orca_metrics_ledger.py` 가 `fresh_input_tokens` 를 스스로 계산해 대표 지표로 기록 | 6.4 |
 
+### 6.6 원장 기록 시 사용량 창을 주지 않기
+
+`orca_metrics_ledger.py record` 는 `--usage-since` 와 `--usage-until` 이 있어야
+코디네이터 토큰을 트랜스크립트에서 계산합니다. 창을 주지 않으면 행은 남지만
+`coordinator_fresh_input_tokens` 가 `None` 이라 대표 지표 집계에서 빠집니다.
+2026-08-18 에 7행을 그렇게 기록해 유효 행이 7행 그대로였습니다.
+
+**Dispatch 직전에 시각을 적어 두고 `worker_done` 직후에 그 창으로 기록합니다.**
+나중에 창을 복원하려 하면 코디네이터가 그 사이 다른 일을 한 구간까지 섞여
+수치가 오염됩니다. 비어 있는 행을 남기는 편이 낫습니다.
+
 **강제 장치를 지우면 항목을 다시 표로 올립니다.** 장치가 사라진 채 표에도 없으면 그 교훈은 조용히 소실됩니다. 강제 장치는 각각 테스트로 고정되어 있으므로, 해당 테스트를 삭제하려면 이 표를 함께 고쳐야 합니다.
 
 ---
