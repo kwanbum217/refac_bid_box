@@ -167,7 +167,8 @@ def main() -> int:
                 "MAE 차이": scores[args.candidate_alpha]["MAE"] - scores[BASELINE_ALPHA]["MAE"],
                 "기준 적중%": scores[BASELINE_ALPHA]["적중%"],
                 "후보 적중%": scores[args.candidate_alpha]["적중%"],
-                "적중 차이": scores[args.candidate_alpha]["적중%"] - scores[BASELINE_ALPHA]["적중%"],
+                "적중 차이": scores[args.candidate_alpha]["적중%"]
+                - scores[BASELINE_ALPHA]["적중%"],
             }
         )
 
@@ -188,7 +189,9 @@ def main() -> int:
     print(f"  후보-기준 MAE 차이의 표준편차    : {diffs.std(ddof=1):.4f}")
     print(f"  후보-기준 MAE 차이의 평균        : {diffs.mean():+.4f}")
     print(f"  적중 차이의 표준편차             : {hit_diffs.std(ddof=1):.4f}")
-    print(f"  부호 일관                        : {'예' if (diffs < 0).all() or (diffs > 0).all() else '아니오'}")
+    print(
+        f"  부호 일관                        : {'예' if (diffs < 0).all() or (diffs > 0).all() else '아니오'}"
+    )
 
     print("\n== 판정 ==")
     seed_std = 0.0010  # eval_servc_quantile_alpha.py 실측
@@ -196,7 +199,9 @@ def main() -> int:
     if diffs.std(ddof=1) > abs(diffs.mean()):
         print("  분할 간 산포가 평균 차이보다 큽니다. 단일 분할의 이득은 읽을 수 없습니다.")
     elif diffs.std(ddof=1) > seed_std * 3:
-        print("  분할 간 산포가 시드 산포를 크게 넘습니다. 단일 분할 결과를 그대로 믿을 수 없습니다.")
+        print(
+            "  분할 간 산포가 시드 산포를 크게 넘습니다. 단일 분할 결과를 그대로 믿을 수 없습니다."
+        )
     else:
         print("  분할 간 산포가 시드 산포와 비슷합니다. 단일 분할 결과가 안정적입니다.")
     return 0

@@ -132,7 +132,9 @@ def main() -> int:
     if not current.empty:
         base_width = float(current.iloc[0]["보정 후 폭"])
         gain = base_width - float(best["보정 후 폭"])
-        print(f"현행 분위(리프 {CURRENT_QUANTILE_LEAVES}) 대비 {gain:+.4f}%p ({gain / base_width:+.2%})")
+        print(
+            f"현행 분위(리프 {CURRENT_QUANTILE_LEAVES}) 대비 {gain:+.4f}%p ({gain / base_width:+.2%})"
+        )
     return 0
 
 

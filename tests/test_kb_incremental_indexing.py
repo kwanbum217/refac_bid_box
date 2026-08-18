@@ -225,8 +225,7 @@ def test_existing_index_metadata_is_loaded_in_pages(monkeypatch):
     class _Collection:
         def __init__(self):
             self.rows = [
-                (f"bid_{index}", {"doc_hash": f"hash_{index}", "fmt": 1})
-                for index in range(5)
+                (f"bid_{index}", {"doc_hash": f"hash_{index}", "fmt": 1}) for index in range(5)
             ]
             self.calls: list[tuple[int, int]] = []
 

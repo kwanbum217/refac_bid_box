@@ -161,12 +161,8 @@ def _merge_state_dicts(primary: dict, secondary: dict) -> dict:
             primary.get("last_result_payload") or secondary.get("last_result_payload") or {}
         ),
         "last_job_id": primary.get("last_job_id") or secondary.get("last_job_id") or "",
-        "last_action_key": primary.get("last_action_key")
-        or secondary.get("last_action_key")
-        or "",
-        "last_kb_version": primary.get("last_kb_version")
-        or secondary.get("last_kb_version")
-        or "",
+        "last_action_key": primary.get("last_action_key") or secondary.get("last_action_key") or "",
+        "last_kb_version": primary.get("last_kb_version") or secondary.get("last_kb_version") or "",
         "last_response_mode": primary.get("last_response_mode")
         or secondary.get("last_response_mode")
         or "",
@@ -239,9 +235,7 @@ def remember_chat_interaction(
     if state is None:
         return None
 
-    chart_payload = (
-        list(visualizations) if visualizations else _derive_chart_payload(tool_context)
-    )
+    chart_payload = list(visualizations) if visualizations else _derive_chart_payload(tool_context)
     filters = _extract_filters(tool_context)
     merged_filters = dict(state.last_filters_json or {})
     merged_filters.update(filters)

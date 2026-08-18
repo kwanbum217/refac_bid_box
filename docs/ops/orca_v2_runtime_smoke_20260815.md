@@ -1,9 +1,9 @@
 # Orca v2 Runtime Smoke & Agent Bootstrap Cost Measurement Report
 
-> **작성일자**: 2026-08-15  
-> **태스크 ID**: `task_e1378cb91479` (T6)  
-> **실행 런**: `run_35e59701b435`  
-> **역할**: Builder  
+> **작성일자**: 2026-08-15
+> **태스크 ID**: `task_e1378cb91479` (T6)
+> **실행 런**: `run_35e59701b435`
+> **역할**: Builder
 > **관련 문서**: 설계 23장 성공 지표, `docs/ops/orca_task_capsule_v2.md`
 
 ---

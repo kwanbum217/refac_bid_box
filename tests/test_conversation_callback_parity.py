@@ -52,9 +52,7 @@ def user(isolated_db):
 # --------------------------------------------------------------------------- #
 
 
-def test_load_conversation_context_merges_user_filters_with_session_priority(
-    isolated_db, user
-):
+def test_load_conversation_context_merges_user_filters_with_session_priority(isolated_db, user):
     """사용자 메모리와 세션 메모리를 합치되 겹치는 값은 세션이 이깁니다.
 
     사용자 메모리는 여러 대화에 걸친 고정 필터고, 세션 메모리는 지금 대화의
@@ -90,9 +88,7 @@ def test_load_conversation_context_merges_user_filters_with_session_priority(
     assert filters["date_from"] == "2026-01-01"
 
 
-def test_remember_chat_interaction_keeps_full_result_only_in_session_memory(
-    isolated_db, user
-):
+def test_remember_chat_interaction_keeps_full_result_only_in_session_memory(isolated_db, user):
     """전체 결과 페이로드는 세션 메모리에만 남기고 사용자 메모리에는 넣지 않는다.
 
     사용자 메모리는 대화를 넘어 계속 따라다니므로, 결과 원본까지 담으면
@@ -121,9 +117,7 @@ def test_remember_chat_interaction_keeps_full_result_only_in_session_memory(
                 "bid_query": {
                     "retrieval_plan": {"filters": {"institution_name": "서울"}},
                     "result": {
-                        "summary": {
-                            "time_series": [{"month": "2026-01", "avg_rate": 98.1}]
-                        }
+                        "summary": {"time_series": [{"month": "2026-01", "avg_rate": 98.1}]}
                     },
                 }
             },

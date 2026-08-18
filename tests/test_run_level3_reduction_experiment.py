@@ -281,13 +281,13 @@ def test_rerun_capsules_arms_difference():
     arm_b_text = (rerun_dir / "arm_b_capsule.yaml").read_text(encoding="utf-8")
 
     # Arm A: 로직 항목 C5 포함, C6 없음
-    assert "id: \"C5\"" in arm_a_text
+    assert 'id: "C5"' in arm_a_text
     assert "로직 결함" in arm_a_text
     assert "C6" not in arm_a_text
 
     # Arm B: C1~C5 및 C6 포괄 항목 포함, 전수 열거 및 재현 명령 명시
-    assert "id: \"C5\"" in arm_b_text
-    assert "id: \"C6\"" in arm_b_text
+    assert 'id: "C5"' in arm_b_text
+    assert 'id: "C6"' in arm_b_text
     assert "전수 열거" in arm_b_text
     assert "재현 명령" in arm_b_text
 

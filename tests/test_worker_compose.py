@@ -14,7 +14,10 @@ def test_default_compose_runs_arq_worker_with_shared_services_and_assets():
     worker = _worker_service()
 
     assert 'command: ["arq", "src.tasks.worker.WorkerSettings"]' in worker
-    assert "DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-rootpassword}@db:3306/procurement" in worker
+    assert (
+        "DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-rootpassword}@db:3306/procurement"
+        in worker
+    )
     assert "DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}" in worker
     assert "SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}" in worker
     assert "REDIS_URL=redis://redis:6379/0" in worker
@@ -38,7 +41,10 @@ def test_default_compose_waits_for_shared_services_to_be_healthy():
     assert compose.count("condition: service_healthy") == 7
     assert compose.count("SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set in .env}") == 2
     assert '["CMD", "redis-cli", "ping"]' in compose
-    assert '["CMD", "curl", "--fail", "--silent", "--show-error", "http://localhost:7700/health"]' in compose
+    assert (
+        '["CMD", "curl", "--fail", "--silent", "--show-error", "http://localhost:7700/health"]'
+        in compose
+    )
     assert "http://localhost:7700/health" in compose
     assert "http://localhost:8000/api/v1/health/ready" in compose
     assert "json.load(response)['status'] in ('ready', 'degraded')" in compose

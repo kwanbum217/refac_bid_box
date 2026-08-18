@@ -46,8 +46,12 @@ class Provenance(BaseModel):
     """정보 출처의 전체 맥락."""
 
     trace_id: str = Field(..., description="Trace ID for this specific retrieval session")
-    retrieval_mode: str = Field(..., description="How the data was routed (e.g., hybrid, vector-only)")
-    items: list[EvidenceItem] = Field(default_factory=list, description="List of evidence items used")
+    retrieval_mode: str = Field(
+        ..., description="How the data was routed (e.g., hybrid, vector-only)"
+    )
+    items: list[EvidenceItem] = Field(
+        default_factory=list, description="List of evidence items used"
+    )
     insufficiency_hints: list[str] = Field(
         default_factory=list, description="Limitations of the current evidence"
     )

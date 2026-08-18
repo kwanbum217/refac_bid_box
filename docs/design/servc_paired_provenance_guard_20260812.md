@@ -79,11 +79,11 @@ flowchart TD
     B -- 예 --> D{"Provenance 검증<br/>1. Base fallback 여부<br/>2. Challenger fallback 여부<br/>3. Base model_id != Challenger model_id"}
     D -- 위반 (Invalid) --> E["출처 오류 표본 Excluded<br/>(고정 범주 카운트만 집계)"]
     D -- 통과 (Valid) --> F["정상 쌍대 표본 집계"]
-    
+
     C --> G
     E --> G{"API 오류 > 0 or<br/>Invalid 표본 > 0?"}
     F --> H["MAE / RMSE / t-통계량 계산"]
-    
+
     G -- 예 --> I["최종 판정: Fail-Closed<br/>'판정 불가 (대체 모델 발생)'"]
     G -- 아니오 --> J["정상 통계 기반 최종 판정<br/>('challenger 우세' / 'base 우세' / '판별 불가')"]
 ```

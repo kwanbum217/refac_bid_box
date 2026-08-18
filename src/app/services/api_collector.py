@@ -168,7 +168,9 @@ async def _make_request_with_retry(
         except httpx.RequestError as exc:
             last_error = exc
             if attempt < max_retries - 1:
-                logger.warning("서버 연결 오류(%s). %s/%s 재시도 대기", exc, attempt + 1, max_retries)
+                logger.warning(
+                    "서버 연결 오류(%s). %s/%s 재시도 대기", exc, attempt + 1, max_retries
+                )
                 await asyncio.sleep(3.0 * (attempt + 1))
                 continue
             raise

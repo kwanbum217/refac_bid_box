@@ -33,7 +33,9 @@ def run_parallel_suite(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
-    print(f"작업 2. SSE c4 측정 시작 (병렬도: par{parallel_mode}, n={rounds_per_cycle}, {num_cycles}회차, warmup=4)")
+    print(
+        f"작업 2. SSE c4 측정 시작 (병렬도: par{parallel_mode}, n={rounds_per_cycle}, {num_cycles}회차, warmup=4)"
+    )
     print("=" * 70)
 
     for r_num in range(1, num_cycles + 1):
@@ -66,9 +68,7 @@ def run_parallel_suite(
             "summary": summary,
             "records": [asdict(r) for r in records],
         }
-        out_json.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"  -> {out_json} 저장 완료")
 
     print("\n" + "=" * 70)
@@ -79,7 +79,9 @@ def run_parallel_suite(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="SSE c4 병렬도 벤치마크 러너")
-    parser.add_argument("--parallel", type=int, required=True, choices=[1, 4], help="OLLAMA 병렬도 (1 또는 4)")
+    parser.add_argument(
+        "--parallel", type=int, required=True, choices=[1, 4], help="OLLAMA 병렬도 (1 또는 4)"
+    )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="대상 서버 URL")
     parser.add_argument("--rounds", type=int, default=60, help="회차당 표본 수")
     parser.add_argument("--cycles", type=int, default=3, help="회차 수")

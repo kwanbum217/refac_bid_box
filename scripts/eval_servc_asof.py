@@ -144,9 +144,7 @@ def paired(diff: np.ndarray, label: str) -> dict:
     mean = float(diff.mean())
     se = float(diff.std(ddof=1) / np.sqrt(n)) if n > 1 else float("inf")
     t = mean / se if se > 0 else 0.0
-    verdict = (
-        "판별 불가" if abs(t) < T_THRESHOLD else ("as-of 우세" if mean < 0 else "현행 우세")
-    )
+    verdict = "판별 불가" if abs(t) < T_THRESHOLD else ("as-of 우세" if mean < 0 else "현행 우세")
     return {
         "지표": label,
         "평균 차이": round(mean, 5),

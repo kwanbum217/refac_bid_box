@@ -50,12 +50,16 @@ from src.ml.trainer import (  # noqa: E402
 )
 
 d = Path("data/model_files/servc_institution_v1")
-meta = json.loads((d/"metadata.json").read_text(encoding="utf-8"))
-q10, q90 = joblib.load(d/"model_q10.bin"), joblib.load(d/"model_q90.bin")
+meta = json.loads((d / "metadata.json").read_text(encoding="utf-8"))
+q10, q90 = joblib.load(d / "model_q10.bin"), joblib.load(d / "model_q90.bin")
 GLOBAL = meta["interval"]["conformal_scale"]
 
-raw = attach_repeat_history(attach_institution_history(pd.read_parquet("data/feature_store/dataset_Servc.parquet")))
-feat = apply_categorical_dtypes(pd.DataFrame(build_feature_frame(raw.to_dict(orient="records"))), meta["category_levels"])
+raw = attach_repeat_history(
+    attach_institution_history(pd.read_parquet("data/feature_store/dataset_Servc.parquet"))
+)
+feat = apply_categorical_dtypes(
+    pd.DataFrame(build_feature_frame(raw.to_dict(orient="records"))), meta["category_levels"]
+)
 feat["openg_dt"] = raw["openg_dt"].to_numpy()
 y = raw["winning_rate"].to_numpy()
 print("특징 생성 완료", flush=True)
@@ -64,31 +68,39 @@ tr, va, _, _ = _time_based_split(feat, y, DEFAULT_VALIDATION_SPLIT)
 cal_start = int(len(tr) * (1 - CALIBRATION_SPLIT))
 cal = tr[cal_start:]
 
+
 def bounds(idx):
     X = feat[TRAINING_FEATURES].iloc[idx]
     a, b = q10.predict(X), q90.predict(X)
     return np.minimum(a, b), np.maximum(a, b)
 
+
 lo_c, hi_c = bounds(cal)
 lo_v, hi_v = bounds(va)
 print("예측 완료", flush=True)
+
 
 def seg_of(idx):
     f = feat.iloc[idx]
     price = f["real_budget"].to_numpy()
     band = np.select(
         [price < 1e7, price < 5e7, price < 1e8, price < 2.3e8, price < 1e9],
-        ["1천만미만","1천만~5천만","5천만~1억","1억~2.3억","2.3억~10억"], "10억이상")
+        ["1천만미만", "1천만~5천만", "5천만~1억", "1억~2.3억", "2.3억~10억"],
+        "10억이상",
+    )
     lw = np.where(f["lwlt_rate_missing"].to_numpy() == 1, "하한율결측", "하한율보유")
     return band, lw
+
 
 bc, lc = seg_of(cal)
 bv, lv = seg_of(va)
 yc, yv = y[cal], y[va]
 
+
 def cover(y_, lo, hi, s):
     c, h = (lo + hi) / 2, (hi - lo) / 2 * s
-    return np.mean((y_ >= c-h) & (y_ <= c+h)), np.median(2*h)
+    return np.mean((y_ >= c - h) & (y_ <= c + h)), np.median(2 * h)
+
 
 rows = []
 for name, keys_c, keys_v in (("금액구간", bc, bv), ("하한율", lc, lv)):
@@ -99,9 +111,19 @@ for name, keys_c, keys_v in (("금액구간", bc, bv), ("하한율", lc, lv)):
         s = _conformal_scale(yc[mc], lo_c[mc], hi_c[mc], INTERVAL_TARGET_COVERAGE)
         g_cov, g_w = cover(yv[mv], lo_v[mv], hi_v[mv], GLOBAL)
         s_cov, s_w = cover(yv[mv], lo_v[mv], hi_v[mv], s)
-        rows.append({"구분": name, "세그먼트": key, "검증건수": int(mv.sum()),
-                     "전역배율": round(GLOBAL,3), "전역피복": round(g_cov,4), "전역폭": round(g_w,3),
-                     "세그배율": round(s,3), "세그피복": round(s_cov,4), "세그폭": round(s_w,3)})
+        rows.append(
+            {
+                "구분": name,
+                "세그먼트": key,
+                "검증건수": int(mv.sum()),
+                "전역배율": round(GLOBAL, 3),
+                "전역피복": round(g_cov, 4),
+                "전역폭": round(g_w, 3),
+                "세그배율": round(s, 3),
+                "세그피복": round(s_cov, 4),
+                "세그폭": round(s_w, 3),
+            }
+        )
 out = pd.DataFrame(rows)
 pd.set_option("display.width", 220)
 print(f"\n보정 {len(cal):,}건 / 검증 {len(va):,}건, 목표 {INTERVAL_TARGET_COVERAGE:.0%}\n")

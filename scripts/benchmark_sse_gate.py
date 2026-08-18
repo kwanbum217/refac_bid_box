@@ -143,11 +143,7 @@ def execute_sse_request(
     except Exception as exc:
         error = f"unexpected_{type(exc).__name__}"
 
-    success = (
-        error is None
-        and first_token_ms is not None
-        and final_ms is not None
-    )
+    success = error is None and first_token_ms is not None and final_ms is not None
 
     return SingleRequestRecord(
         request_index=index,
@@ -217,7 +213,9 @@ def run_benchmark(
     round_num: int,
     warmup: bool = True,
 ) -> tuple[dict[str, Any], list[SingleRequestRecord]]:
-    print(f"\n[시작] SSE 게이트 측정 (동시성: c{concurrency}, 표본: {rounds}건, 회차: r{round_num})")
+    print(
+        f"\n[시작] SSE 게이트 측정 (동시성: c{concurrency}, 표본: {rounds}건, 회차: r{round_num})"
+    )
 
     # 1. Warmup 단계
     if warmup and concurrency > 0:
@@ -264,8 +262,12 @@ def run_benchmark(
     successful_records = [r for r in records if r.success]
     errors_count = len(records) - len(successful_records)
 
-    first_stage_vals = [r.first_stage_ms for r in successful_records if r.first_stage_ms is not None]
-    first_token_vals = [r.first_token_ms for r in successful_records if r.first_token_ms is not None]
+    first_stage_vals = [
+        r.first_stage_ms for r in successful_records if r.first_stage_ms is not None
+    ]
+    first_token_vals = [
+        r.first_token_ms for r in successful_records if r.first_token_ms is not None
+    ]
     final_vals = [r.final_ms for r in successful_records if r.final_ms is not None]
 
     summary = {
@@ -282,7 +284,9 @@ def run_benchmark(
 
     # 결과 출력
     print("-" * 65)
-    print(f"  [결과 요약: c{concurrency} r{round_num}] 총 {len(records)}건 (성공 {len(successful_records)}, 오류 {errors_count})")
+    print(
+        f"  [결과 요약: c{concurrency} r{round_num}] 총 {len(records)}건 (성공 {len(successful_records)}, 오류 {errors_count})"
+    )
     ft_stats = summary["first_token_stats"]
     fn_stats = summary["final_stats"]
     st_stats = summary["first_stage_stats"]
@@ -317,7 +321,9 @@ def get_git_sha() -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="SSE 레이턴시 게이트 벤치마크")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="대상 서버 URL")
-    parser.add_argument("--concurrency", type=int, default=1, choices=[1, 4], help="동시성 수준 (c1 또는 c4)")
+    parser.add_argument(
+        "--concurrency", type=int, default=1, choices=[1, 4], help="동시성 수준 (c1 또는 c4)"
+    )
     parser.add_argument("--rounds", type=int, default=30, help="회차당 표본 수 (기본 30)")
     parser.add_argument("--round-num", type=int, default=1, help="측정 회차 번호 (1, 2, 3...)")
     parser.add_argument("--no-warmup", action="store_true", help="Warmup 건너뛰기")

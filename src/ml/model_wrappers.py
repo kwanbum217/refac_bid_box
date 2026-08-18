@@ -61,13 +61,9 @@ class BaseModelWrapper(ABC):
             spec.loader.exec_module(module)
             if hasattr(module, "preprocess"):
                 self.preprocessor = module.preprocess
-                print(
-                    f"[BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: {self.model_dir}"
-                )
+                print(f"[BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: {self.model_dir}")
         except Exception as exc:
-            print(
-                f"[BaseModelWrapper] 전처리 스크립트 로드 실패 ({self.model_dir}): {exc}"
-            )
+            print(f"[BaseModelWrapper] 전처리 스크립트 로드 실패 ({self.model_dir}): {exc}")
 
     @abstractmethod
     def load(self):
@@ -109,9 +105,7 @@ class JoblibModelWrapper(BaseModelWrapper):
 
     def load(self):
         if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
+            raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
         self.model = joblib.load(self.model_path)
         _apply_inference_thread_budget(self.model)
 
@@ -152,8 +146,7 @@ class JoblibModelWrapper(BaseModelWrapper):
             defaults=df.attrs.get("feature_defaults"),
         )
         bounds = sorted(
-            float(np.asarray(model.predict(frame)).reshape(-1)[0])
-            for model in models.values()
+            float(np.asarray(model.predict(frame)).reshape(-1)[0]) for model in models.values()
         )
         low, high = bounds[0], bounds[-1]
         interval_meta = self.metadata.get("interval") or {}
@@ -232,9 +225,7 @@ class V13HybridWrapper(BaseModelWrapper):
 
     def load(self):
         if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
+            raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
         self.model = joblib.load(self.model_path)
         required_keys = {
             "s1_tier_clf",
@@ -282,7 +273,8 @@ class V13HybridWrapper(BaseModelWrapper):
                 "pred_tier": float(pred_tier),
                 "q50": q50,
                 "count_spread": max(q90 - q10, 0.0),
-                "log_price_density_q50": q50 / max(
+                "log_price_density_q50": q50
+                / max(
                     _coerce_float(base_values.get("log_price"), 1.0),
                     1.0,
                 ),
@@ -302,9 +294,7 @@ class EnsembleV25Wrapper(BaseModelWrapper):
 
     def load(self):
         if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
+            raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
         self.meta = joblib.load(self.model_path)
         self.lgbm = joblib.load(os.path.join(self.model_dir, "v25_lgbm_final.joblib"))
         self.cat = None
@@ -334,9 +324,7 @@ class QuantumLeapRuleWrapper(BaseModelWrapper):
 
     def load(self):
         if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
+            raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
         self.model = joblib.load(self.model_path)
         if not isinstance(self.model, dict):
             raise ValueError("quantum_leap_v25_pro 번들 형식이 올바르지 않습니다.")
@@ -404,7 +392,7 @@ class QuantumLeapRuleWrapper(BaseModelWrapper):
             - _coerce_float(sector_stats.get("q10_rate"), floor),
             0.0,
         )
-        blended_delta = (base_delta * gravity * regional_mult * scenario_multiplier)
+        blended_delta = base_delta * gravity * regional_mult * scenario_multiplier
         if historical_spread > 0:
             blended_delta = (blended_delta * 0.65) + (historical_spread * 0.35)
 
@@ -417,9 +405,7 @@ class HistPremiumEnsembleWrapper(BaseModelWrapper):
 
     def load(self):
         if not os.path.exists(self.model_path):
-            raise FileNotFoundError(
-                f"모델 파일을 찾을 수 없습니다: {self.model_path}"
-            )
+            raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
         self.model = joblib.load(self.model_path)
         required_keys = {
             "models",
@@ -505,7 +491,9 @@ class HistPremiumEnsembleWrapper(BaseModelWrapper):
             ),
         }
         feature_names = list(self.model.get("feature_names") or feature_row.keys())
-        input_df = pd.DataFrame([[feature_row[name] for name in feature_names]], columns=feature_names)
+        input_df = pd.DataFrame(
+            [[feature_row[name] for name in feature_names]], columns=feature_names
+        )
         models = list(self.model.get("models") or [])
         if not models:
             raise ValueError("ssh_hist_premium 모델이 비어 있습니다.")

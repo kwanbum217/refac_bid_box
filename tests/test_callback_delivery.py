@@ -153,9 +153,7 @@ def test_request_records_resolved_delivery(mock_enqueue, client, isolated_db, au
 
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
-def test_direct_mode_is_reported_in_answer(
-    mock_enqueue, client, isolated_db, automation_settings
-):
+def test_direct_mode_is_reported_in_answer(mock_enqueue, client, isolated_db, automation_settings):
     """기본 구성은 polling 이 아니라 direct 로 안내되어야 합니다."""
     automation_settings(base_url="", shares_db=True)
     _login(client)

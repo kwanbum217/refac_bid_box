@@ -36,6 +36,7 @@ def _reload_predictor(gc_mode: str):
         mod_name = "src.ml.predictor"
         sys.modules.pop(mod_name, None)
         import src.ml.predictor as mod
+
         return mod
 
 
@@ -93,7 +94,6 @@ class TestFreezeMode:
                 mod.SingletonPredictor._instance = None
                 mod.SingletonPredictor()
                 mock_freeze.assert_called_once()
-
 
     def test_freeze_not_called_when_skip_model_load(self):
         """SKIP_MODEL_LOAD=true 이면 freeze 모드여도 gc.freeze() 를 호출하지 않습니다."""
@@ -191,7 +191,6 @@ class TestBatchDisableMode:
 
         assert results, "배치 스레드가 예측을 실행하지 않았습니다."
         assert not results[0], "배치 스레드 안에서 gc 가 활성화되어 있었습니다."
-
 
 
 class TestPredictionResultUnchanged:

@@ -82,7 +82,7 @@ envelope = build_metric_envelope("cpu_usage", 85.0)
 success = dispatch_metric_record(envelope, registry)
 
 print(f"디스패치 성공 여부: {success}")  # False (결함: True 여야 함)
-print(f"레지스트리 내용: {registry}")   # {} (결함: {'cpu_usage': 85.0} 여야 함)
+print(f"레지스트리 내용: {registry}")  # {} (결함: {'cpu_usage': 85.0} 여야 함)
 ```
 
 ---

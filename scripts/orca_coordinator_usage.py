@@ -348,10 +348,18 @@ def main(argv: list[str] | None = None) -> int:
                 f"  Fresh Input Tokens (신선 입력 - 대표 지표): {usage['fresh_input_tokens']:>12,}"
             )
             print(f"    - Uncached Input:                    {usage['uncached_input_tokens']:>12,}")
-            print(f"    - Cache Creation:                    {usage['cache_creation_input_tokens']:>12,}")
-            print(f"  Cache Read Tokens (캐시 재조회):       {usage['cache_read_input_tokens']:>12,}")
-            print(f"  Total Input Tokens (총입력):           {usage['coordinator_input_tokens']:>12,}")
-            print(f"  Output Tokens (출력):                  {usage['coordinator_output_tokens']:>12,}")
+            print(
+                f"    - Cache Creation:                    {usage['cache_creation_input_tokens']:>12,}"
+            )
+            print(
+                f"  Cache Read Tokens (캐시 재조회):       {usage['cache_read_input_tokens']:>12,}"
+            )
+            print(
+                f"  Total Input Tokens (총입력):           {usage['coordinator_input_tokens']:>12,}"
+            )
+            print(
+                f"  Output Tokens (출력):                  {usage['coordinator_output_tokens']:>12,}"
+            )
             print("------------------------------------------------------------")
             print("  [안내] 위임 절감 비교의 대표 지표는 fresh_input_tokens 입니다.")
             print("  coordinator_input_tokens 는 cache_read 가 99.5%(실측)로 지배하여")

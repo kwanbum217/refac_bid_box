@@ -106,7 +106,7 @@ def predict_price_api(
         raise HTTPException(
             status_code=422,
             detail="비예가 공고는 예정가격을 작성하지 않는 제도라 "
-                   "낙찰률 기반 투찰가를 산출할 수 없습니다.",
+            "낙찰률 기반 투찰가를 산출할 수 없습니다.",
         )
 
     # 제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 못 채웁니다.

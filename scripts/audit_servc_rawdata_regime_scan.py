@@ -260,8 +260,7 @@ def detect_jumps(per_field: dict[str, list[MonthStat]]) -> list[Jump]:
                     )
                 d_top = cur.top_value_share - prev.top_value_share
                 enough_sample = (
-                    prev.existing >= MIN_EXISTING_FOR_TOP
-                    and cur.existing >= MIN_EXISTING_FOR_TOP
+                    prev.existing >= MIN_EXISTING_FOR_TOP and cur.existing >= MIN_EXISTING_FOR_TOP
                 )
                 if enough_sample and abs(d_top) >= JUMP_THRESHOLD:
                     jumps.append(
@@ -306,8 +305,9 @@ def main() -> int:
         )
 
     used_jumps = [j for j in jumps if j.field in in_use_fields]
-    print(f"\n학습 사용 필드 중 급변: {len(used_jumps)}건 "
-          f"({sorted({j.field for j in used_jumps})})")
+    print(
+        f"\n학습 사용 필드 중 급변: {len(used_jumps)}건 ({sorted({j.field for j in used_jumps})})"
+    )
 
     out_dir = PROJECT_ROOT / "data" / "analysis" / "servc_rawdata_regime_scan"
     out_dir.mkdir(parents=True, exist_ok=True)

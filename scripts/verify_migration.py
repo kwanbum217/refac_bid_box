@@ -118,9 +118,7 @@ def verify_model_weights() -> tuple[bool, str]:
     # 환경변수를 따릅니다. 경로를 옮긴 뒤 이 스크립트만 옛 자리를 보면
     # 무결성 검증이 조용히 파일 누락으로 떨어집니다.
     model_root = Path(os.environ.get("MODEL_FILES_DIR", ASSET_ROOT / "data" / "model_files"))
-    backup_root = Path(
-        os.environ.get("MODEL_BACKUPS_DIR", ASSET_ROOT / "data" / "model_backups")
-    )
+    backup_root = Path(os.environ.get("MODEL_BACKUPS_DIR", ASSET_ROOT / "data" / "model_backups"))
     if not model_root.exists():
         return False, f"{model_root} 없음 (scripts/sync_model_files.py import 실행 필요)"
 

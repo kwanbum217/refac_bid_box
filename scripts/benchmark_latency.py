@@ -141,7 +141,9 @@ def benchmark_sse_canonical(base_url: str, rounds: int) -> tuple[Samples, Sample
             seen_stage = False
             seen_token = False
             try:
-                with client.stream("POST", "/api/v1/chatbot/chat/stream", json={"message": query}) as r:
+                with client.stream(
+                    "POST", "/api/v1/chatbot/chat/stream", json={"message": query}
+                ) as r:
                     if r.status_code != 200:
                         first_stage.errors += 1
                         first_token.errors += 1

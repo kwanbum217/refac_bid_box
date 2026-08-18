@@ -105,7 +105,6 @@ def _send_one(base_url: str, latencies: list[float], errors: list[int]) -> None:
     latencies.append((time.monotonic() - t0) * 1000.0)
 
 
-
 def _worker_loop(
     base_url: str, latencies: list[float], errors: list[int], stop_event: threading.Event
 ) -> None:
@@ -151,7 +150,9 @@ def run(
     errors: list[int] = []
     stop_event = threading.Event()
     threads = [
-        threading.Thread(target=_worker_loop, args=(base_url, latencies, errors, stop_event), daemon=True)
+        threading.Thread(
+            target=_worker_loop, args=(base_url, latencies, errors, stop_event), daemon=True
+        )
         for _ in range(concurrency)
     ]
     for t in threads:

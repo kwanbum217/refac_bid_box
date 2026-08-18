@@ -21,6 +21,7 @@ def calculate_psi(
     0.1 <= PSI < 0.2: 경미한 변화 (주의)
     PSI >= 0.2: 유의미한 분포 변화 (재학습 트리거 필요)
     """
+
     def scale_range(arr, min_val, max_val):
         return (arr - min_val) / (max_val - min_val + 1e-5)
 

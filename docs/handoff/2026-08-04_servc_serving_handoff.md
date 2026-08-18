@@ -74,6 +74,7 @@
 
 ```python
 from src.ml.promotion import promote
+
 promote("servc_institution_v1", category_code="Servc")
 ```
 

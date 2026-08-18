@@ -55,9 +55,7 @@ def _append_kb_status(answer_text: str, kb_status: dict | None) -> str:
     return f"{answer_text}\n\n{summary}" if summary else answer_text
 
 
-def _require_request(
-    db: Session, job_id: str, user: CustomUser | None = None
-) -> AutomationRequest:
+def _require_request(db: Session, job_id: str, user: CustomUser | None = None) -> AutomationRequest:
     request_obj = get_automation_request(db, job_id)
     if request_obj is None:
         raise HTTPException(status_code=404, detail="자동화 요청을 찾을 수 없습니다.")

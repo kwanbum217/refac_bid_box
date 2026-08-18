@@ -215,7 +215,7 @@ def _to_glob(path_str: str) -> str:
     """경로 문자열을 glob 패턴으로 변환합니다 (removesuffix 로 안전하게 접미사 제거)."""
     for suffix in ("/...", "/**", "/"):
         if path_str.endswith(suffix):
-            base = path_str[:-len(suffix)]
+            base = path_str[: -len(suffix)]
             return f"{base}/**"
     return path_str
 
@@ -417,7 +417,9 @@ def expand_intent_to_capsule(
     if is_reviewer:
         extra_read = list(scope) + extra_read
 
-    self_capsule_str = str(capsule_path) if capsule_path else f".orca/capsules/{task_id}/capsule.yaml"
+    self_capsule_str = (
+        str(capsule_path) if capsule_path else f".orca/capsules/{task_id}/capsule.yaml"
+    )
     reference_files = [self_capsule_str, "docs/context/CURRENT_STATE.md"]
     read_files = list(dict.fromkeys(reference_files + write_files + extra_read))
 
@@ -1114,7 +1116,9 @@ def cmd_expand(args: argparse.Namespace) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(capsule, encoding="utf-8")
 
-    parsed_task_id = parse_capsule_scalar(capsule, "task_id") or intent.get("task_id") or "auto-generated"
+    parsed_task_id = (
+        parse_capsule_scalar(capsule, "task_id") or intent.get("task_id") or "auto-generated"
+    )
     parsed_role = parse_capsule_scalar(capsule, "role") or intent.get("role", "builder")
     write_files = parse_capsule_list(capsule, "allowed_write_files")
 
@@ -1320,7 +1324,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
     # 동시 쓰기 워커 상한 Preflight 검사 (worker-start 호출 직전)
     if getattr(args, "skip_concurrency_check", False):
-        sys.stderr.write("경고: --skip-concurrency-check 지정으로 동시 쓰기 워커 상한 검사를 건너뜁니다.\n")
+        sys.stderr.write(
+            "경고: --skip-concurrency-check 지정으로 동시 쓰기 워커 상한 검사를 건너뜁니다.\n"
+        )
     else:
         limit = getattr(args, "max_write_workers", MAX_CONCURRENT_WRITE_WORKERS)
         concurrency = check_write_concurrency(

@@ -264,9 +264,7 @@ def test_filtered_query_still_uses_live_path(seeded_db):
     """날짜 필터가 걸리면 스냅샷을 무시하고 실제 기간으로 집계해야 합니다."""
     rebuild_ranking_snapshots(seeded_db)
 
-    plan = RetrievalPlan(
-        use_sql=True, filters={"category": "Thng", "date_from": "2026-05-03"}
-    )
+    plan = RetrievalPlan(use_sql=True, filters={"category": "Thng", "date_from": "2026-05-03"})
     summary = retrieve_structured_data(seeded_db, plan)["summary"]
 
     # 2026-05-03 이후 물품 낙찰은 다라상사 1건뿐입니다.

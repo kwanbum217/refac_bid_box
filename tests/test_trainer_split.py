@@ -86,10 +86,12 @@ def test_splitters_functionality():
         has_time_column,
     )
 
-    df = pd.DataFrame({
-        TIME_SORT_COLUMN: ["2024-03-01", "2024-01-01", "2024-02-01"],
-        "val": [30, 10, 20],
-    })
+    df = pd.DataFrame(
+        {
+            TIME_SORT_COLUMN: ["2024-03-01", "2024-01-01", "2024-02-01"],
+            "val": [30, 10, 20],
+        }
+    )
     assert has_time_column(df) is True
 
     df_no_time = pd.DataFrame({"val": [1, 2, 3]})
@@ -107,10 +109,12 @@ def test_splitters_functionality():
     assert train_idx[0] == 1
 
     # _time_based_kfold_splits
-    df_large = pd.DataFrame({
-        TIME_SORT_COLUMN: [f"2024-{i:02d}-01" for i in range(1, 11)],
-        "val": list(range(10)),
-    })
+    df_large = pd.DataFrame(
+        {
+            TIME_SORT_COLUMN: [f"2024-{i:02d}-01" for i in range(1, 11)],
+            "val": list(range(10)),
+        }
+    )
     splits = _time_based_kfold_splits(df_large, n_folds=3)
     assert len(splits) > 0
     for train_idx, valid_idx in splits:

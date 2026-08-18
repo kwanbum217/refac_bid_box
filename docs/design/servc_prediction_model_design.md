@@ -215,8 +215,8 @@ v1.0.0 은 DB 통계만 보고 작성했습니다. 원본 `bid_box` 의 낙찰 �
 
 ```python
 # bid_box/ssh/histmodel.py
-lower_map = df.groupby('group')['bid_rate'].quantile(0.05)
-df['lower_rate'] = df['group'].map(lower_map)
+lower_map = df.groupby("group")["bid_rate"].quantile(0.05)
+df["lower_rate"] = df["group"].map(lower_map)
 ```
 
 **하한율을 타깃(`bid_rate`)의 5분위수로 만들었습니다.** 타깃에서 파생한 값을 특징으로

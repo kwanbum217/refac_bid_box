@@ -15,10 +15,12 @@ def test_predictor_singleton():
 
 
 def test_trainer_and_validation(tmp_path):
-    df_raw = pd.DataFrame([
-        {"presumed_price": 1000.0, "base_price": 990.0, "winning_rate": 88.5},
-        {"presumed_price": 2000.0, "base_price": 1980.0, "winning_rate": 87.9},
-    ])
+    df_raw = pd.DataFrame(
+        [
+            {"presumed_price": 1000.0, "base_price": 990.0, "winning_rate": 88.5},
+            {"presumed_price": 2000.0, "base_price": 1980.0, "winning_rate": 87.9},
+        ]
+    )
     # 기본 trainer 를 쓰면 테스트가 돌 때마다 운영 ml_registry 에 버전이 쌓입니다.
     meta = ModelTrainer(registry_dir=str(tmp_path)).train_and_register(df_raw)
     assert meta["status"] == "challenger"
@@ -74,11 +76,17 @@ def test_unparseable_dates_go_to_training():
 def test_openg_dt_survives_feature_building(tmp_path):
     from src.ml.trainer import ModelTrainer
 
-    df_raw = pd.DataFrame([
-        {"presumed_price": 1000.0 + i, "base_price": 990.0 + i,
-         "winning_rate": 88.0 + i * 0.1, "openg_dt": f"2024-{i + 1:02d}-01"}
-        for i in range(10)
-    ])
+    df_raw = pd.DataFrame(
+        [
+            {
+                "presumed_price": 1000.0 + i,
+                "base_price": 990.0 + i,
+                "winning_rate": 88.0 + i * 0.1,
+                "openg_dt": f"2024-{i + 1:02d}-01",
+            }
+            for i in range(10)
+        ]
+    )
     meta = ModelTrainer(registry_dir=str(tmp_path)).train_and_register(df_raw)
     assert meta["time_sorted_split"] is True
 

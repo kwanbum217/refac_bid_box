@@ -131,7 +131,9 @@ def main() -> int:
     train = df[year <= args.train_end]
     valid = df[year == args.valid_year].copy()
     print(f"학습 {len(train):,}행 / 검증 {len(valid):,}행")
-    print(f"현행 공유 리프 {LGB_BASE_PARAMS['num_leaves']} / 명목 피복률 {INTERVAL_TARGET_COVERAGE:.0%}\n")
+    print(
+        f"현행 공유 리프 {LGB_BASE_PARAMS['num_leaves']} / 명목 피복률 {INTERVAL_TARGET_COVERAGE:.0%}\n"
+    )
 
     print("점 추정")
     point_rows = []
@@ -156,9 +158,9 @@ def main() -> int:
         )
 
     print(f"\n{'=' * 92}\n조합\n{'=' * 92}")
-    combos = pd.DataFrame(
-        [{**p, **i} for p in point_rows for i in interval_rows]
-    )[["점추정 리프", "분위 리프", "MAE", "0.5%p 적중", "구간 폭", "피복률"]]
+    combos = pd.DataFrame([{**p, **i} for p in point_rows for i in interval_rows])[
+        ["점추정 리프", "분위 리프", "MAE", "0.5%p 적중", "구간 폭", "피복률"]
+    ]
     print(combos.to_string(index=False))
 
     base = combos[

@@ -66,10 +66,18 @@ async def test_nightly_schedule_task_offloads_sync_functions():
 
     with (
         patch("src.tasks.scheduled_tasks.SessionLocal", return_value=MagicMock()),
-        patch("src.tasks.scheduled_tasks._create_scheduled_execution", side_effect=fake_create_execution),
+        patch(
+            "src.tasks.scheduled_tasks._create_scheduled_execution",
+            side_effect=fake_create_execution,
+        ),
         patch("src.tasks.scheduled_tasks.run_automation_pipeline", side_effect=fake_pipeline),
-        patch("src.tasks.scheduled_tasks._rebuild_ranking_snapshots", side_effect=fake_rebuild_ranking),
-        patch("src.tasks.scheduled_tasks._rebuild_institution_stats", side_effect=fake_rebuild_institution),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_ranking_snapshots", side_effect=fake_rebuild_ranking
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_institution_stats",
+            side_effect=fake_rebuild_institution,
+        ),
         patch.object(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True),
     ):
         result = await nightly_schedule_task({})
@@ -110,10 +118,18 @@ async def test_development_data_refresh_task_offloads_sync_functions():
 
     with (
         patch("src.tasks.scheduled_tasks.SessionLocal", return_value=MagicMock()),
-        patch("src.tasks.scheduled_tasks._create_scheduled_execution", side_effect=fake_create_execution),
+        patch(
+            "src.tasks.scheduled_tasks._create_scheduled_execution",
+            side_effect=fake_create_execution,
+        ),
         patch("src.tasks.scheduled_tasks.run_automation_pipeline", side_effect=fake_pipeline),
-        patch("src.tasks.scheduled_tasks._rebuild_ranking_snapshots", side_effect=fake_rebuild_ranking),
-        patch("src.tasks.scheduled_tasks._rebuild_institution_stats", side_effect=fake_rebuild_institution),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_ranking_snapshots", side_effect=fake_rebuild_ranking
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_institution_stats",
+            side_effect=fake_rebuild_institution,
+        ),
         patch.object(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True),
         patch.object(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False),
     ):

@@ -115,9 +115,15 @@ def test_expand_intent_builder_contract_and_paths(tmp_path: Path):
     read_files = parse_capsule_list(capsule, "allowed_read_files")
     write_files = parse_capsule_list(capsule, "allowed_write_files")
 
-    assert str(capsule_file) in read_files, "Capsule 자기 경로가 allowed_read_files 에 포함되어야 합니다."
-    assert set(write_files).issubset(set(read_files)), "쓰기 범위의 모든 파일이 읽기 범위에 있어야 합니다."
-    assert set(write_files) != set(read_files), "읽기 범위는 쓰기 범위와 동일하지 않고 진상위집합이어야 합니다."
+    assert str(capsule_file) in read_files, (
+        "Capsule 자기 경로가 allowed_read_files 에 포함되어야 합니다."
+    )
+    assert set(write_files).issubset(set(read_files)), (
+        "쓰기 범위의 모든 파일이 읽기 범위에 있어야 합니다."
+    )
+    assert set(write_files) != set(read_files), (
+        "읽기 범위는 쓰기 범위와 동일하지 않고 진상위집합이어야 합니다."
+    )
     assert set(read_files) > set(write_files)
 
 
@@ -179,7 +185,7 @@ def test_yaml_list_formatting_no_empty_bracket_string():
     assert empty_res == ""
     assert "- []" not in empty_res
 
-    items = ['simple.py', 'with "quotes".py', 'back\\slash.py']
+    items = ["simple.py", 'with "quotes".py', "back\\slash.py"]
     formatted = _format_yaml_list(items)
     lines = formatted.splitlines()
     assert lines[0] == '  - "simple.py"'
@@ -197,13 +203,13 @@ def test_format_review_checklist():
         {"id": "C2", "question": "질문 2", "defect_when": "yes"},
     ]
     out = _format_review_checklist(items)
-    assert 'review_checklist:' in out
+    assert "review_checklist:" in out
     assert '- id: "C1"' in out
     assert 'question: "질문 1"' in out
     assert 'defect_when: "no"' in out
     assert 'how: "방법 1"' in out
     assert '- id: "C2"' in out
-    assert 'how:' not in out.split('- id: "C2"')[1]
+    assert "how:" not in out.split('- id: "C2"')[1]
 
 
 def test_to_glob_removes_suffixes_correctly():
@@ -222,14 +228,16 @@ def test_cmd_expand_json_purity(tmp_path: Path, capsys: pytest.CaptureFixture):
     out_file = tmp_path / "capsule.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
-    code = main([
-        "expand",
-        "--intent",
-        str(intent_file),
-        "--out",
-        str(out_file),
-        "--json",
-    ])
+    code = main(
+        [
+            "expand",
+            "--intent",
+            str(intent_file),
+            "--out",
+            str(out_file),
+            "--json",
+        ]
+    )
     assert code == 0
 
     captured = capsys.readouterr()
@@ -247,13 +255,15 @@ def test_cmd_expand_human_output(tmp_path: Path, capsys: pytest.CaptureFixture):
     out_file = tmp_path / "capsule.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
-    code = main([
-        "expand",
-        "--intent",
-        str(intent_file),
-        "--out",
-        str(out_file),
-    ])
+    code = main(
+        [
+            "expand",
+            "--intent",
+            str(intent_file),
+            "--out",
+            str(out_file),
+        ]
+    )
     assert code == 0
 
     captured = capsys.readouterr()
@@ -263,13 +273,15 @@ def test_cmd_expand_human_output(tmp_path: Path, capsys: pytest.CaptureFixture):
 
 def test_cmd_expand_missing_intent_file(tmp_path: Path):
     """존재하지 않는 Intent 파일 전달 시 종료 코드 2 반환."""
-    code = main([
-        "expand",
-        "--intent",
-        str(tmp_path / "nonexistent.yaml"),
-        "--out",
-        str(tmp_path / "capsule.yaml"),
-    ])
+    code = main(
+        [
+            "expand",
+            "--intent",
+            str(tmp_path / "nonexistent.yaml"),
+            "--out",
+            str(tmp_path / "capsule.yaml"),
+        ]
+    )
     assert code == 2
 
 
@@ -347,7 +359,15 @@ def test_worker_start_with_terminal(monkeypatch: pytest.MonkeyPatch):
         terminal_handle="term_123",
     )
     assert code == 0
-    assert executed_cmds[0] == ["orca", "orchestration", "worker-start", "--task", "task_123", "--terminal", "term_123"]
+    assert executed_cmds[0] == [
+        "orca",
+        "orchestration",
+        "worker-start",
+        "--task",
+        "task_123",
+        "--terminal",
+        "term_123",
+    ]
 
 
 def test_dispatch_worker_command(monkeypatch: pytest.MonkeyPatch):
@@ -403,15 +423,17 @@ def test_cmd_dispatch_dry_run_json_purity(tmp_path: Path, capsys: pytest.Capture
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--dry-run",
-        "--json",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--dry-run",
+            "--json",
+        ]
+    )
     assert code == 0
 
     captured = capsys.readouterr()
@@ -425,14 +447,16 @@ def test_cmd_dispatch_dry_run_human(tmp_path: Path, capsys: pytest.CaptureFixtur
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--dry-run",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--dry-run",
+        ]
+    )
     assert code == 0
 
     captured = capsys.readouterr()
@@ -441,11 +465,13 @@ def test_cmd_dispatch_dry_run_human(tmp_path: Path, capsys: pytest.CaptureFixtur
 
 def test_cmd_dispatch_missing_intent(tmp_path: Path):
     """dispatch 시 Intent 파일 없음 처리."""
-    code = main([
-        "dispatch",
-        "--intent",
-        str(tmp_path / "nonexistent.yaml"),
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(tmp_path / "nonexistent.yaml"),
+        ]
+    )
     assert code == 2
 
 
@@ -454,15 +480,19 @@ def test_cmd_dispatch_bad_reviewer_intent(tmp_path: Path):
     intent_file = tmp_path / "bad_rev.yaml"
     intent_file.write_text(SAMPLE_REVIEWER_INTENT_NO_CHECKLIST, encoding="utf-8")
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+        ]
+    )
     assert code == 2
 
 
-def test_cmd_dispatch_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+def test_cmd_dispatch_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
     """dispatch 성공 시 처리 검증."""
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
@@ -471,18 +501,22 @@ def test_cmd_dispatch_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, c
         return 0, '{"status": "dispatched"}', ""
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--json",
-        "--agent",
-        "claude",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--json",
+            "--agent",
+            "claude",
+        ]
+    )
     assert code == 0
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -502,19 +536,23 @@ def test_cmd_dispatch_failure_prints_command_to_stderr(
         return 1, "", "Connection refused"
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--model",
-        "gemini-3.7-flash-high",
-        "--agent",
-        "claude",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--model",
+            "gemini-3.7-flash-high",
+            "--agent",
+            "claude",
+        ]
+    )
     assert code == 1
 
     captured = capsys.readouterr()
@@ -532,18 +570,22 @@ def test_cmd_dispatch_failure_json(
         return 1, "", "Connection refused"
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--json",
-        "--agent",
-        "claude",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--json",
+            "--agent",
+            "claude",
+        ]
+    )
     assert code == 1
 
     captured = capsys.readouterr()
@@ -562,7 +604,13 @@ def test_finalize_task_all_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     def mock_run_command(cmd, cwd=None, timeout=30):
         script = cmd[1]
         if "summarize_worker_done" in script:
-            return 0, json.dumps({"schema": "ORCA_WORKER_DONE_SUMMARY", "violations_count": 0, "digest": "요약"}), ""
+            return (
+                0,
+                json.dumps(
+                    {"schema": "ORCA_WORKER_DONE_SUMMARY", "violations_count": 0, "digest": "요약"}
+                ),
+                "",
+            )
         if "orca_level1_gate" in script:
             return 0, json.dumps({"verdict": "pass"}), ""
         if "orca_run_reviewer" in script:
@@ -592,7 +640,17 @@ def test_finalize_task_violations_returns_exit_1(tmp_path: Path, monkeypatch: py
         script = cmd[1]
         if "summarize_worker_done" in script:
             # summarize 가 위반 발견으로 1 반환
-            return 1, json.dumps({"schema": "ORCA_WORKER_DONE_SUMMARY", "violations_count": 2, "digest": "위반 2건"}), ""
+            return (
+                1,
+                json.dumps(
+                    {
+                        "schema": "ORCA_WORKER_DONE_SUMMARY",
+                        "violations_count": 2,
+                        "digest": "위반 2건",
+                    }
+                ),
+                "",
+            )
         if "orca_level1_gate" in script:
             return 0, json.dumps({"verdict": "pass"}), ""
         return 0, "{}", ""
@@ -607,7 +665,9 @@ def test_finalize_task_violations_returns_exit_1(tmp_path: Path, monkeypatch: py
     assert res["exit_code"] == 1
 
 
-def test_finalize_task_level1_failure_returns_exit_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_finalize_task_level1_failure_returns_exit_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """level1 게이트 실패 시 finalize 종료 코드는 1."""
     report_file = tmp_path / "worker_done.json"
     capsule_file = tmp_path / "capsule.yaml"
@@ -617,7 +677,13 @@ def test_finalize_task_level1_failure_returns_exit_1(tmp_path: Path, monkeypatch
     def mock_run_command(cmd, cwd=None, timeout=30):
         script = cmd[1]
         if "summarize_worker_done" in script:
-            return 0, json.dumps({"schema": "ORCA_WORKER_DONE_SUMMARY", "violations_count": 0, "digest": "요약"}), ""
+            return (
+                0,
+                json.dumps(
+                    {"schema": "ORCA_WORKER_DONE_SUMMARY", "violations_count": 0, "digest": "요약"}
+                ),
+                "",
+            )
         if "orca_level1_gate" in script:
             return 1, json.dumps({"verdict": "fail"}), ""
         return 0, "{}", ""
@@ -632,7 +698,9 @@ def test_finalize_task_level1_failure_returns_exit_1(tmp_path: Path, monkeypatch
     assert res["exit_code"] == 1
 
 
-def test_finalize_task_reviewer_failure_returns_exit_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_finalize_task_reviewer_failure_returns_exit_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """reviewer 검증 실패 시 finalize 종료 코드는 1."""
     report_file = tmp_path / "worker_done.json"
     capsule_file = tmp_path / "capsule.yaml"
@@ -642,7 +710,13 @@ def test_finalize_task_reviewer_failure_returns_exit_1(tmp_path: Path, monkeypat
     def mock_run_command(cmd, cwd=None, timeout=30):
         script = cmd[1]
         if "summarize_worker_done" in script:
-            return 0, json.dumps({"schema": "ORCA_WORKER_DONE_SUMMARY", "violations_count": 0, "digest": "요약"}), ""
+            return (
+                0,
+                json.dumps(
+                    {"schema": "ORCA_WORKER_DONE_SUMMARY", "violations_count": 0, "digest": "요약"}
+                ),
+                "",
+            )
         if "orca_level1_gate" in script:
             return 0, json.dumps({"verdict": "pass"}), ""
         if "orca_run_reviewer" in script:
@@ -683,7 +757,9 @@ def test_finalize_task_tool_error_returns_exit_2(tmp_path: Path, monkeypatch: py
     assert res["exit_code"] == 2
 
 
-def test_finalize_task_json_parse_error_returns_exit_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_finalize_task_json_parse_error_returns_exit_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """도구 출력이 유효한 JSON 이 아니면 finalize 종료 코드는 2."""
     report_file = tmp_path / "worker_done.json"
     capsule_file = tmp_path / "capsule.yaml"
@@ -703,7 +779,9 @@ def test_finalize_task_json_parse_error_returns_exit_2(tmp_path: Path, monkeypat
     assert res["exit_code"] == 2
 
 
-def test_cmd_finalize_json_purity(tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch):
+def test_cmd_finalize_json_purity(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
     """finalize --json 의 출력이 순수 JSON 인지 검증."""
     report_file = tmp_path / "worker_done.json"
     capsule_file = tmp_path / "capsule.yaml"
@@ -720,14 +798,16 @@ def test_cmd_finalize_json_purity(tmp_path: Path, capsys: pytest.CaptureFixture,
 
     monkeypatch.setattr("scripts.orca_taskctl.finalize_task", mock_finalize_task)
 
-    code = main([
-        "finalize",
-        "--report",
-        str(report_file),
-        "--capsule",
-        str(capsule_file),
-        "--json",
-    ])
+    code = main(
+        [
+            "finalize",
+            "--report",
+            str(report_file),
+            "--capsule",
+            str(capsule_file),
+            "--json",
+        ]
+    )
     assert code == 0
 
     captured = capsys.readouterr()
@@ -736,7 +816,9 @@ def test_cmd_finalize_json_purity(tmp_path: Path, capsys: pytest.CaptureFixture,
     assert data["level1"]["verdict"] == "pass"
 
 
-def test_cmd_finalize_human_output(tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch):
+def test_cmd_finalize_human_output(
+    tmp_path: Path, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
     """finalize 사람 모드 출력 검증."""
     report_file = tmp_path / "worker_done.json"
     capsule_file = tmp_path / "capsule.yaml"
@@ -753,13 +835,15 @@ def test_cmd_finalize_human_output(tmp_path: Path, capsys: pytest.CaptureFixture
 
     monkeypatch.setattr("scripts.orca_taskctl.finalize_task", mock_finalize_task)
 
-    code = main([
-        "finalize",
-        "--report",
-        str(report_file),
-        "--capsule",
-        str(capsule_file),
-    ])
+    code = main(
+        [
+            "finalize",
+            "--report",
+            str(report_file),
+            "--capsule",
+            str(capsule_file),
+        ]
+    )
     assert code == 0
 
     captured = capsys.readouterr()
@@ -770,18 +854,21 @@ def test_cmd_finalize_human_output(tmp_path: Path, capsys: pytest.CaptureFixture
 
 def test_cmd_finalize_missing_files(tmp_path: Path):
     """finalize 시 파일 부재 시 종료 코드 2."""
-    code = main([
-        "finalize",
-        "--report",
-        str(tmp_path / "nonexistent.json"),
-        "--capsule",
-        str(tmp_path / "nonexistent.yaml"),
-    ])
+    code = main(
+        [
+            "finalize",
+            "--report",
+            str(tmp_path / "nonexistent.json"),
+            "--capsule",
+            str(tmp_path / "nonexistent.yaml"),
+        ]
+    )
     assert code == 2
 
 
 def test_cmd_status_json_purity(capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch):
     """status --json 의 출력이 순수 JSON 인지 검증."""
+
     def mock_run_command(cmd, cwd=None, timeout=30):
         return 0, json.dumps({"tasks": [{"id": "task_1", "status": "completed"}]}), ""
 
@@ -795,8 +882,11 @@ def test_cmd_status_json_purity(capsys: pytest.CaptureFixture, monkeypatch: pyte
     assert "tasks" in data
 
 
-def test_cmd_status_human_and_failure(capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch):
+def test_cmd_status_human_and_failure(
+    capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
     """status 사람 모드 및 실패 케이스 검증."""
+
     def mock_run_success(cmd, cwd=None, timeout=30):
         return 0, "task_1 completed", ""
 
@@ -819,6 +909,7 @@ def test_cmd_status_human_and_failure(capsys: pytest.CaptureFixture, monkeypatch
 
 def test_run_command_exceptions(monkeypatch: pytest.MonkeyPatch):
     """_run_command 예외 처리(Timeout, FileNotFoundError, 기타 예외) 검증."""
+
     def mock_timeout(*args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=["test"], timeout=10)
 
@@ -921,6 +1012,7 @@ def test_resolve_run_id_from_run_current(monkeypatch: pytest.MonkeyPatch):
 
 def test_resolve_run_id_failure(monkeypatch: pytest.MonkeyPatch):
     """run-current 실행 실패 또는 run.id 부재 시 (None, 에러메시지) 반환."""
+
     def mock_run_fail(cmd, cwd=None, timeout=10):
         return 1, "", "No Run is bound"
 
@@ -953,7 +1045,9 @@ def test_task_has_write_scope_missing_capsule_is_write_fail_closed(tmp_path: Pat
     assert is_write is True
 
 
-def test_check_write_concurrency_excludes_self_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_check_write_concurrency_excludes_self_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """자기 Task 는 점유 집계에서 제외된다."""
     for tid in ("t_self", "t_other"):
         tdir = tmp_path / tid
@@ -975,7 +1069,9 @@ def test_check_write_concurrency_excludes_self_task(tmp_path: Path, monkeypatch:
     assert res["occupying"] == ["t_other"]
 
 
-def test_check_write_concurrency_at_limit_disallowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_check_write_concurrency_at_limit_disallowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """(5) 활성 쓰기 워커가 상한과 같으면 allowed=False 다."""
     for tid in ("t1", "t2", "t3", "t_new"):
         tdir = tmp_path / tid
@@ -1000,7 +1096,9 @@ def test_check_write_concurrency_at_limit_disallowed(tmp_path: Path, monkeypatch
     assert "도달" in res["reason"]
 
 
-def test_check_write_concurrency_below_limit_allowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_check_write_concurrency_below_limit_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """(6) 활성 쓰기 워커가 상한보다 적으면 allowed=True 다."""
     for tid in ("t1", "t2", "t_new"):
         tdir = tmp_path / tid
@@ -1024,7 +1122,9 @@ def test_check_write_concurrency_below_limit_allowed(tmp_path: Path, monkeypatch
     assert "통과" in res["reason"]
 
 
-def test_check_write_concurrency_run_id_failure_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_check_write_concurrency_run_id_failure_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Run ID 해석 실패 시 fail-closed 로 allowed=False 및 probe_error 채움."""
     tdir = tmp_path / "t_write"
     tdir.mkdir(parents=True, exist_ok=True)
@@ -1100,13 +1200,15 @@ def test_cmd_dispatch_blocked_by_concurrency_limit(
 
     monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", mock_check)
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(capsule_dir),
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(capsule_dir),
+        ]
+    )
     assert code == 1
     captured = capsys.readouterr()
     assert "동시 쓰기 워커 상한 초과" in captured.err
@@ -1134,14 +1236,16 @@ def test_cmd_dispatch_blocked_json_output(
 
     monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", mock_check)
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(capsule_dir),
-        "--json",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(capsule_dir),
+            "--json",
+        ]
+    )
     assert code == 1
     captured = capsys.readouterr()
     data = json.loads(captured.out)
@@ -1166,16 +1270,18 @@ def test_cmd_dispatch_skip_concurrency_check(
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(capsule_dir),
-        "--skip-concurrency-check",
-        "--agent",
-        "claude",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(capsule_dir),
+            "--skip-concurrency-check",
+            "--agent",
+            "claude",
+        ]
+    )
     assert code == 0
     captured = capsys.readouterr()
     assert "경고: --skip-concurrency-check" in captured.err
@@ -1197,19 +1303,18 @@ def test_cmd_dispatch_dry_run_skips_concurrency_check(
 
     monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", mock_check)
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(capsule_dir),
-        "--dry-run",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(capsule_dir),
+            "--dry-run",
+        ]
+    )
     assert code == 0
     assert len(called) == 0, "dry-run 에서는 check_write_concurrency 가 호출되지 않아야 합니다."
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -1221,7 +1326,12 @@ def test_extract_cli_error_reads_stdout_error_message():
     """Orca CLI 는 실패 원인을 stdout JSON 의 error.message 로만 주는 경우가 있다."""
     from scripts.orca_taskctl import _extract_cli_error
 
-    stdout = json.dumps({"ok": False, "error": {"code": "invalid_argument", "message": "New worktrees require --name."}})
+    stdout = json.dumps(
+        {
+            "ok": False,
+            "error": {"code": "invalid_argument", "message": "New worktrees require --name."},
+        }
+    )
     assert _extract_cli_error(stdout) == "New worktrees require --name."
     assert _extract_cli_error("") is None
     assert _extract_cli_error("not json") is None
@@ -1246,15 +1356,19 @@ def test_cmd_dispatch_requires_launch_target(tmp_path: Path, monkeypatch: pytest
         raise AssertionError("기동 대상이 없으면 worker_start 를 호출해서는 안 됩니다.")
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", fail_worker_start)
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+        ]
+    )
     assert code == 2
 
 
@@ -1274,24 +1388,30 @@ def test_cmd_dispatch_terminal_uses_attach_path(tmp_path: Path, monkeypatch: pyt
 
     monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", fail_worker_start)
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--terminal",
-        "term_abc",
-        "--json",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_abc",
+            "--json",
+        ]
+    )
     assert code == 0
     assert calls["to_handle"] == "term_abc"
     assert calls["inject"] is True
 
 
-def test_cmd_dispatch_worker_start_passes_worktree_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_cmd_dispatch_worker_start_passes_worktree_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """new-child 워크트리는 --name 이 필수이므로 이름을 반드시 넘긴다."""
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
@@ -1303,26 +1423,32 @@ def test_cmd_dispatch_worker_start_passes_worktree_name(tmp_path: Path, monkeypa
         return 0, json.dumps({"ok": True}), ""
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--agent",
-        "claude",
-        "--worktree-name",
-        "orca-split-probe",
-        "--json",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--agent",
+            "claude",
+            "--worktree-name",
+            "orca-split-probe",
+            "--json",
+        ]
+    )
     assert code == 0
     assert calls["worktree"] == "new-child"
     assert calls["name"] == "orca-split-probe"
 
 
-def test_cmd_dispatch_ok_false_is_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+def test_cmd_dispatch_ok_false_is_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
     """종료 코드 0 + ok:false 응답을 성공으로 보고하지 않고 stdout 의 원인을 노출한다."""
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
@@ -1330,17 +1456,21 @@ def test_cmd_dispatch_ok_false_is_failure(tmp_path: Path, monkeypatch: pytest.Mo
     payload = json.dumps({"ok": False, "error": {"message": "New worktrees require --name."}})
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", lambda **k: (0, payload, ""))
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--agent",
-        "claude",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--agent",
+            "claude",
+        ]
+    )
     assert code == 1
     assert "New worktrees require --name." in capsys.readouterr().err
 
@@ -1398,21 +1528,27 @@ def test_cmd_dispatch_sends_capsule_notice_on_attach(
         sent["text"] = text
         return 0, json.dumps({"ok": True}), ""
 
-    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), "")
+    )
     monkeypatch.setattr("scripts.orca_taskctl.terminal_send", mock_terminal_send)
     monkeypatch.setattr("scripts.orca_taskctl.resolve_dispatch_id", lambda *a, **k: "ctx_live")
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--terminal",
-        "term_abc",
-        "--json",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_abc",
+            "--json",
+        ]
+    )
     assert code == 0
     assert sent["handle"] == "term_abc"
     assert "capsule.yaml" in sent["text"]
@@ -1429,24 +1565,30 @@ def test_cmd_dispatch_capsule_notice_failure_is_surfaced(
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
-    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), "")
+    )
     monkeypatch.setattr(
         "scripts.orca_taskctl.terminal_send",
         lambda *a, **k: (0, json.dumps({"ok": False, "error": {"message": "tab_not_found"}}), ""),
     )
     monkeypatch.setattr("scripts.orca_taskctl.resolve_dispatch_id", lambda *a, **k: None)
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--terminal",
-        "term_abc",
-        "--json",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_abc",
+            "--json",
+        ]
+    )
     assert code == 0
     captured = capsys.readouterr()
     assert "tab_not_found" in captured.err
@@ -1461,20 +1603,26 @@ def test_cmd_dispatch_no_capsule_notice_flag(tmp_path: Path, monkeypatch: pytest
     def fail_send(*a, **k):
         raise AssertionError("--no-capsule-notice 에서는 전송하지 않아야 합니다.")
 
-    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), "")
+    )
     monkeypatch.setattr("scripts.orca_taskctl.terminal_send", fail_send)
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--terminal",
-        "term_abc",
-        "--no-capsule-notice",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_abc",
+            "--no-capsule-notice",
+        ]
+    )
     assert code == 0
 
 
@@ -1493,18 +1641,20 @@ def test_cmd_create_puts_capsule_path_in_task_spec(
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
 
-    code = main([
-        "create",
-        "--intent",
-        str(intent_file),
-        "--run-id",
-        "run_x",
-        "--capsule-dir",
-        str(tmp_path / "capsules"),
-        "--task-title",
-        "제목",
-        "--json",
-    ])
+    code = main(
+        [
+            "create",
+            "--intent",
+            str(intent_file),
+            "--run-id",
+            "run_x",
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--task-title",
+            "제목",
+            "--json",
+        ]
+    )
     assert code == 0
     cmd = calls[0]
     assert cmd[:3] == ["orca", "orchestration", "task-create"]
@@ -1514,7 +1664,9 @@ def test_cmd_create_puts_capsule_path_in_task_spec(
     assert json.loads(capsys.readouterr().out)["task_id"] == "task_created"
 
 
-def test_cmd_dispatch_reuses_existing_capsule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+def test_cmd_dispatch_reuses_existing_capsule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
     """--capsule 을 주면 재확장하지 않고 그 파일을 그대로 써야 합니다."""
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
@@ -1526,29 +1678,39 @@ def test_cmd_dispatch_reuses_existing_capsule(tmp_path: Path, monkeypatch: pytes
         raise AssertionError("--capsule 지정 시 재확장해서는 안 됩니다.")
 
     monkeypatch.setattr("scripts.orca_taskctl.expand_intent_to_capsule", fail_expand)
-    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), ""))
-    monkeypatch.setattr("scripts.orca_taskctl.terminal_send", lambda *a, **k: (0, json.dumps({"ok": True}), ""))
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), "")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.terminal_send", lambda *a, **k: (0, json.dumps({"ok": True}), "")
+    )
     monkeypatch.setattr("scripts.orca_taskctl.resolve_dispatch_id", lambda *a, **k: "ctx_live")
-    monkeypatch.setattr("scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True})
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule",
-        str(existing),
-        "--task-id",
-        "task_real_orca_id",
-        "--terminal",
-        "term_abc",
-        "--json",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule",
+            str(existing),
+            "--task-id",
+            "task_real_orca_id",
+            "--terminal",
+            "term_abc",
+            "--json",
+        ]
+    )
     assert code == 0
     assert json.loads(capsys.readouterr().out)["capsule"] == str(existing.resolve())
     assert existing.read_text(encoding="utf-8").endswith("marker: premade\n")
 
 
-def test_cmd_dispatch_missing_reused_capsule_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_cmd_dispatch_missing_reused_capsule_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """--capsule 이 존재하지 않으면 기동하지 않고 종료 코드 2 로 거부해야 합니다."""
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
@@ -1558,15 +1720,17 @@ def test_cmd_dispatch_missing_reused_capsule_errors(tmp_path: Path, monkeypatch:
 
     monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", fail_dispatch)
 
-    code = main([
-        "dispatch",
-        "--intent",
-        str(intent_file),
-        "--capsule",
-        str(tmp_path / "nope.yaml"),
-        "--terminal",
-        "term_abc",
-    ])
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule",
+            str(tmp_path / "nope.yaml"),
+            "--terminal",
+            "term_abc",
+        ]
+    )
     assert code == 2
 
 
@@ -1589,7 +1753,9 @@ def test_expand_reviewer_scope_excludes_analysis_artifact():
     """리뷰어는 문서를 쓰지 않으므로 분석 문서 경로를 넣지 않습니다."""
     from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
 
-    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev")
+    capsule = expand_intent_to_capsule(
+        parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev"
+    )
     write_block = capsule.split("allowed_write_files:")[1].split("search_scope:")[0]
     assert "docs/analysis" not in write_block
 
@@ -1638,7 +1804,9 @@ def test_expand_reviewer_has_empty_write_scope():
     """
     from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
 
-    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev")
+    capsule = expand_intent_to_capsule(
+        parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev"
+    )
     write_files = parse_capsule_list(capsule, "allowed_write_files")
     read_files = parse_capsule_list(capsule, "allowed_read_files")
 
@@ -1654,7 +1822,9 @@ def test_expand_reviewer_capsule_enumerates_report_fields():
     """
     from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
 
-    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev")
+    capsule = expand_intent_to_capsule(
+        parse_intent(SAMPLE_REVIEWER_INTENT_VALID), task_id="task_rev"
+    )
     assert "report_schema:" in capsule
     assert "checklist_results" in capsule
     assert "checklist 라는 이름을 쓰지 않는다" in capsule
@@ -1792,14 +1962,20 @@ def test_cmd_dispatch_aborts_when_trust_prompt_persists(tmp_path: Path, monkeypa
         lambda *a, **k: {"allowed": True, "reason": "읽기 전용"},
     )
 
-    code = orca_taskctl.main([
-        "dispatch",
-        "--intent", str(intent_file),
-        "--terminal", "term_x",
-        "--capsule-dir", str(tmp_path / "caps"),
-        "--task-id", "task_trust",
-        "--no-probe",
-    ])
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--terminal",
+            "term_x",
+            "--capsule-dir",
+            str(tmp_path / "caps"),
+            "--task-id",
+            "task_trust",
+            "--no-probe",
+        ]
+    )
     assert code == 2
     assert dispatched == [], "대화창이 남아 있으면 Dispatch 를 만들지 않아야 합니다."
     assert "신뢰 확인 대화창이 남아" in capsys.readouterr().err
@@ -1819,8 +1995,8 @@ def test_approve_trust_prompt_waits_for_dialog_to_appear(monkeypatch):
 
     tails = [
         "refac_bid_box % agy --model gemini-3.7-flash-medium",  # 아직 부팅 중
-        TRUST_TAIL,                                            # 대화창 등장
-        READY_TAIL,                                            # 승인 후
+        TRUST_TAIL,  # 대화창 등장
+        READY_TAIL,  # 승인 후
     ]
     monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda handle, timeout=30: tails.pop(0))
     monkeypatch.setattr(orca_taskctl, "terminal_send", lambda h, text, timeout=30: (0, "", ""))
@@ -1873,9 +2049,7 @@ def test_parse_intent_reads_ground_truth_and_required_change():
 
 def test_expand_injects_coordinator_facts_after_base_facts():
     """코디네이터가 확인한 경계 조건이 Capsule 사실로 실려야 워커가 재조사하지 않습니다."""
-    capsule = expand_intent_to_capsule(
-        parse_intent(FACTS_INTENT), run_id="run_x", task_id="f1"
-    )
+    capsule = expand_intent_to_capsule(parse_intent(FACTS_INTENT), run_id="run_x", task_id="f1")
     assert "G1 데이터 무손실" in capsule
     assert "SessionLocal 세션은 코루틴 사이에 공유되지 않는다" in capsule
     assert "src/tasks 에는 to_thread 사용이 0건이다" in capsule
@@ -1883,16 +2057,12 @@ def test_expand_injects_coordinator_facts_after_base_facts():
 
 
 def test_expand_required_change_lists_each_item():
-    capsule = expand_intent_to_capsule(
-        parse_intent(FACTS_INTENT), run_id="run_x", task_id="f1"
-    )
+    capsule = expand_intent_to_capsule(parse_intent(FACTS_INTENT), run_id="run_x", task_id="f1")
     assert "runner 호출을 await asyncio.to_thread 로 바꾼다" in capsule
     assert "_report 호출을 오프로드한다" in capsule
 
 
 def test_expand_falls_back_to_objective_without_required_change():
     text = FACTS_INTENT.split("required_change:")[0] + "acceptance:\n  - 통과\n"
-    capsule = expand_intent_to_capsule(
-        parse_intent(text), run_id="run_x", task_id="f1"
-    )
+    capsule = expand_intent_to_capsule(parse_intent(text), run_id="run_x", task_id="f1")
     assert "동기 호출을 오프로드한다" in capsule

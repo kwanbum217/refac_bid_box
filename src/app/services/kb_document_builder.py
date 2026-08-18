@@ -34,7 +34,9 @@ def _max_documents() -> int:
     return value if value > 0 else DEFAULT_MAX_DOCUMENTS
 
 
-def _resolve_announcements(db: Session, one_year_ago: datetime) -> tuple[list[BidAnnouncement], str]:
+def _resolve_announcements(
+    db: Session, one_year_ago: datetime
+) -> tuple[list[BidAnnouncement], str]:
     """공고일 기준 → 수집일 기준 순으로 폴백합니다 (원본 _resolve_announcement_queryset)."""
     limit = _max_documents()
 

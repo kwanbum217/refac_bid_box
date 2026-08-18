@@ -8,6 +8,7 @@ from src.app.main import app
 
 client = TestClient(app)
 
+
 @pytest.fixture
 def mock_db_session():
     session = MagicMock()
@@ -32,24 +33,33 @@ def mock_db_session():
     finally:
         app.dependency_overrides = original_overrides
 
+
 def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monkeypatch):
     """
     /predict-price 의 출력 동등성과 최소 계측(lazy logger)이 정상 동작하는지 테스트합니다.
     """
-    mock_outcome = type("Outcome", (), {
-        "predicted_rate": 0.87745,
-        "actual_model": "test_model",
-        "requested_model": "test_model",
-        "fallback_used": False,
-        "fallback_reason": None,
-    })
+    mock_outcome = type(
+        "Outcome",
+        (),
+        {
+            "predicted_rate": 0.87745,
+            "actual_model": "test_model",
+            "requested_model": "test_model",
+            "fallback_used": False,
+            "fallback_reason": None,
+        },
+    )
 
-    with patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance", return_value=mock_outcome), \
-         patch("src.app.api.v1.predictions.predict_interval", return_value=(87.0, 88.0, 95.0)), \
-         patch("src.app.api.v1.predictions.latency_logger") as mock_logger, \
-         patch("src.app.api.v1.predictions.time") as mock_time, \
-         patch("src.app.api.v1.predictions.build_feature_dict", return_value={}):
-
+    with (
+        patch(
+            "src.app.api.v1.predictions.predict_optimal_price_with_provenance",
+            return_value=mock_outcome,
+        ),
+        patch("src.app.api.v1.predictions.predict_interval", return_value=(87.0, 88.0, 95.0)),
+        patch("src.app.api.v1.predictions.latency_logger") as mock_logger,
+        patch("src.app.api.v1.predictions.time") as mock_time,
+        patch("src.app.api.v1.predictions.build_feature_dict", return_value={}),
+    ):
         mock_time.perf_counter.side_effect = [0.0, 1.0, 2.0, 3.0]
         mock_time.thread_time.side_effect = [0.0, 1.0, 2.0, 3.0]
 
@@ -72,19 +82,21 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
         info_calls = [
             call
             for call in mock_logger.info.mock_calls
-            if call.args
-            and call.args[0].startswith("endpoint=predict_price_api, wall_ms=")
+            if call.args and call.args[0].startswith("endpoint=predict_price_api, wall_ms=")
         ]
         assert len(info_calls) == 1, "predict_price_api 계측 로그가 정확히 1회 호출되어야 합니다."
 
         args = info_calls[0].args
-        assert args[0] == "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
+        assert (
+            args[0]
+            == "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
+        )
         assert len(args) == 5
         assert any(
-            call.args
-            and call.args[0] == "endpoint=predict_price_api, executor_queue_wait_ms=%.2f"
+            call.args and call.args[0] == "endpoint=predict_price_api, executor_queue_wait_ms=%.2f"
             for call in mock_logger.info.mock_calls
         )
+
 
 def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, monkeypatch):
     """
@@ -97,9 +109,10 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
             "model_version": "test_model",
             "features_used": {"test": "feature"},
         }
-        with patch("src.app.api.v1.predictions.latency_logger") as mock_logger, \
-             patch("src.app.api.v1.predictions.time") as mock_time:
-
+        with (
+            patch("src.app.api.v1.predictions.latency_logger") as mock_logger,
+            patch("src.app.api.v1.predictions.time") as mock_time,
+        ):
             mock_time.perf_counter.side_effect = [0.0, 1.0, 2.0, 3.0]
             mock_time.thread_time.side_effect = [0.0, 1.0, 2.0, 3.0]
 
@@ -123,13 +136,17 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
             info_calls = [
                 call
                 for call in mock_logger.info.mock_calls
-                if call.args
-                and call.args[0].startswith("endpoint=predict_winning_price, wall_ms=")
+                if call.args and call.args[0].startswith("endpoint=predict_winning_price, wall_ms=")
             ]
-            assert len(info_calls) == 1, "predict_winning_price 계측 로그가 정확히 1회 호출되어야 합니다."
+            assert len(info_calls) == 1, (
+                "predict_winning_price 계측 로그가 정확히 1회 호출되어야 합니다."
+            )
 
             args = info_calls[0].args
-            assert args[0] == "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
+            assert (
+                args[0]
+                == "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
+            )
             assert len(args) == 5
             assert any(
                 call.args

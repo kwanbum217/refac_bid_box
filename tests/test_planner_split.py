@@ -63,9 +63,7 @@ def test_unidirectional_dependency_no_reverse_import():
 def test_file_line_limits():
     """분리된 두 모듈이 각각 600줄 미만인지 검증."""
     planner_lines = len(Path(planner_mod.__file__).read_text(encoding="utf-8").splitlines())
-    interpreter_lines = len(
-        Path(interpreter_mod.__file__).read_text(encoding="utf-8").splitlines()
-    )
+    interpreter_lines = len(Path(interpreter_mod.__file__).read_text(encoding="utf-8").splitlines())
 
     assert planner_lines < 600, f"planner.py exceeds 600 lines: {planner_lines}"
     assert interpreter_lines < 600, f"planner_interpreter.py exceeds 600 lines: {interpreter_lines}"

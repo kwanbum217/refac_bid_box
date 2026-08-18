@@ -159,8 +159,11 @@ def main() -> int:
 
     bands = pd.DataFrame(
         [
-            {"오차": f"{band}%p 이내", "건수": int((scored["abs_err"] <= band).sum()),
-             "비율": round(float((scored["abs_err"] <= band).mean()), 4)}
+            {
+                "오차": f"{band}%p 이내",
+                "건수": int((scored["abs_err"] <= band).sum()),
+                "비율": round(float((scored["abs_err"] <= band).mean()), 4),
+            }
             for band in ERROR_BANDS
         ]
     )
@@ -169,11 +172,14 @@ def main() -> int:
     # 구간은 부가 정보라 없을 수 있습니다. 있으면 표기한 피복률이 지켜지는지 봅니다.
     with_interval = scored[scored["low"].notna()]
     if not with_interval.empty:
-        inside = (
-            (with_interval["actual"] >= with_interval["low"])
-            & (with_interval["actual"] <= with_interval["high"])
+        inside = (with_interval["actual"] >= with_interval["low"]) & (
+            with_interval["actual"] <= with_interval["high"]
         )
-        nominal = float(with_interval["coverage"].dropna().iloc[0]) if with_interval["coverage"].notna().any() else None
+        nominal = (
+            float(with_interval["coverage"].dropna().iloc[0])
+            if with_interval["coverage"].notna().any()
+            else None
+        )
         width = (with_interval["high"] - with_interval["low"]).median()
         print(
             f"\n예측 구간 {len(with_interval):,}건 / 실제 피복률 {inside.mean():.2%}"

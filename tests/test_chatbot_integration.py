@@ -375,9 +375,7 @@ def test_chat_completed_result_graph_request_keeps_duration_chart(client, isolat
     )
     isolated_db.commit()
 
-    payload = _chat(
-        client, "방금 결과를 그래프로 보여줘", session_key="session-graph-001"
-    ).json()
+    payload = _chat(client, "방금 결과를 그래프로 보여줘", session_key="session-graph-001").json()
     assert payload["mode"] == "result"
     assert payload["plan_steps"][0]["tool"] == "automation_status_tool"
     assert payload["visualizations"]
@@ -484,9 +482,7 @@ def _parse_sse(text: str) -> list[tuple[str, dict]]:
 
 
 def _stream(client, message: str, **extra):
-    return client.post(
-        "/api/v1/chatbot/chat/stream", json={"message": message, **extra}
-    )
+    return client.post("/api/v1/chatbot/chat/stream", json={"message": message, **extra})
 
 
 def test_stream_emits_stage_and_final_events(client, isolated_db):

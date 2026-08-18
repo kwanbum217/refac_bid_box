@@ -48,9 +48,7 @@ def main() -> int:
     parser.add_argument("--min-rows", type=int, default=100_000, help="이보다 적으면 중단")
     args = parser.parse_args()
 
-    parquet = Path(
-        args.parquet or f"data/feature_store/dataset_{args.category}.parquet"
-    )
+    parquet = Path(args.parquet or f"data/feature_store/dataset_{args.category}.parquet")
     path = PROJECT_ROOT / parquet
     if not path.exists():
         print(f"데이터셋이 없습니다: {path}")
@@ -89,7 +87,7 @@ def main() -> int:
 
     print(
         f"\n승격은 하지 않았습니다. 채택하려면:\n"
-        f'  from src.ml.promotion import promote\n'
+        f"  from src.ml.promotion import promote\n"
         f'  promote("{trainer.model_name}", category_code="{args.category}")'
     )
     return 0

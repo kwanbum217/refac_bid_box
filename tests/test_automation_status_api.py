@@ -27,6 +27,7 @@ def _plan_execution_id(db, job_id: str) -> str:
     db.refresh(request_obj)
     return request_obj.plan_execution_id
 
+
 VALID_SIGNUP = {
     "username": "auto-status-user",
     "password1": "StrongPass123!!",
@@ -213,9 +214,7 @@ def test_status_endpoint_returns_terminal_answer_and_visualizations(client, isol
     assert "recommended_actions" in payload["result_payload"]
 
     # 두 건의 워커 보고가 모두 누적되어야 합니다.
-    request_obj = (
-        isolated_db.query(AutomationRequest).filter_by(request_id="job-status-001").one()
-    )
+    request_obj = isolated_db.query(AutomationRequest).filter_by(request_id="job-status-001").one()
     isolated_db.refresh(request_obj)
     assert set(request_obj.result_payload["steps"]) == {"rag", "final"}
 

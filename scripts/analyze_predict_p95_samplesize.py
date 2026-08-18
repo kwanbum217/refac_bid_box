@@ -165,7 +165,20 @@ def build_group_records(benchmark_data: list[dict[str, Any]]) -> list[dict[str, 
         ],
         "Baseline c10 (r1-r12)": [
             f"phase8_predict_tail_c10_{suffix}20260814.json"
-            for suffix in ["", "r2_", "r3_", "r4_", "r5_", "r6_", "r7_", "r8_", "r9_", "r10_", "r11_", "r12_"]
+            for suffix in [
+                "",
+                "r2_",
+                "r3_",
+                "r4_",
+                "r5_",
+                "r6_",
+                "r7_",
+                "r8_",
+                "r9_",
+                "r10_",
+                "r11_",
+                "r12_",
+            ]
         ],
         "GC Disabled": [
             "phase8_predict_tail_gc_disabled_c10_20260814.json",
@@ -210,9 +223,7 @@ def build_group_records(benchmark_data: list[dict[str, Any]]) -> list[dict[str, 
 
 def main() -> None:
     """Execute analysis and print summary tables."""
-    parser = argparse.ArgumentParser(
-        description="Analyze /predict c10 P95 sample size effect."
-    )
+    parser = argparse.ArgumentParser(description="Analyze /predict c10 P95 sample size effect.")
     parser.add_argument(
         "--data-dir",
         type=Path,
@@ -262,14 +273,10 @@ def main() -> None:
 
     # 3. Largest uninstrumented file bootstrap
     uninst_file = "phase8_predict_tail_uninstrumented_c10_r600_20260814.json"
-    target_item = next(
-        (b for b in benchmark_data if b["_filename"] == uninst_file), None
-    )
+    target_item = next((b for b in benchmark_data if b["_filename"] == uninst_file), None)
 
     if target_item is not None:
-        target_lats = np.array(
-            [r["latency_ms"] for r in target_item["requests"]], dtype=np.float64
-        )
+        target_lats = np.array([r["latency_ms"] for r in target_item["requests"]], dtype=np.float64)
         print(f"\n=== Bootstrap Resampling on {uninst_file} (N={len(target_lats)}) ===")
         print("Percentile Interpolation: Linear (Type 7 / numpy default)")
         print(f"Iterations per sample size: {args.iterations:,} (Seed: {args.seed})")

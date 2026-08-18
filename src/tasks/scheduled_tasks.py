@@ -132,7 +132,9 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
         )
     except Exception as exc:
         logger.exception("개발 데이터 최신화 실패")
-        await notify_task_failure("개발 데이터 최신화", str(exc), detail=f"execution_id {execution_id}")
+        await notify_task_failure(
+            "개발 데이터 최신화", str(exc), detail=f"execution_id {execution_id}"
+        )
         raise
 
     if outcome.get("status") != "success":

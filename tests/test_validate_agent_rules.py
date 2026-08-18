@@ -57,9 +57,7 @@ def test_check_claude_is_pointer(tmp_path: Path):
     assert not res.ok
 
     # 4. Copied canonical markers
-    claude_md.write_text(
-        "# Claude Code\n@AGENTS.md\n## 2. 기술 스택\nFastAPI\n", encoding="utf-8"
-    )
+    claude_md.write_text("# Claude Code\n@AGENTS.md\n## 2. 기술 스택\nFastAPI\n", encoding="utf-8")
     res = check_claude_is_pointer(tmp_path)
     assert not res.ok
     assert "복사됨" in res.detail
@@ -129,9 +127,7 @@ def test_check_opencode_json_v2_and_legacy_dual_injection(tmp_path: Path):
     opencode_json = tmp_path / "opencode.json"
 
     # 1. Valid v2 single injection
-    opencode_json.write_text(
-        json.dumps({"instructions": ["AGENTS.md"]}), encoding="utf-8"
-    )
+    opencode_json.write_text(json.dumps({"instructions": ["AGENTS.md"]}), encoding="utf-8")
     res = check_opencode_json(tmp_path)
     assert res.ok
     assert "단일 자동 로드 확인" in res.detail
@@ -148,9 +144,7 @@ def test_check_opencode_json_v2_and_legacy_dual_injection(tmp_path: Path):
     assert "파싱 실패" in res.detail
 
     # 4. Missing AGENTS.md
-    opencode_json.write_text(
-        json.dumps({"instructions": ["OTHER.md"]}), encoding="utf-8"
-    )
+    opencode_json.write_text(json.dumps({"instructions": ["OTHER.md"]}), encoding="utf-8")
     res = check_opencode_json(tmp_path)
     assert not res.ok
     assert "AGENTS.md 누락" in res.detail
@@ -454,8 +448,7 @@ def test_check_current_state_sections_missing_evidence(tmp_path: Path):
 def test_check_current_state_sections_unverifiable_commit_warns(tmp_path: Path):
     """git 으로 확인할 수 없는 커밋은 WARN 이며 통과로 셉니다."""
     body = (
-        "# state\n> updated_at: 2026-08-15\n> source_commit: `deadbee`\n"
-        "G1 G2 G3\ndocs/ops/x.md\n"
+        "# state\n> updated_at: 2026-08-15\n> source_commit: `deadbee`\nG1 G2 G3\ndocs/ops/x.md\n"
     )
     _write_current_state(tmp_path, body)
     res = check_current_state_sections(tmp_path)

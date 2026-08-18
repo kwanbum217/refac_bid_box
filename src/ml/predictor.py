@@ -128,7 +128,6 @@ class _PredictionBatcher:
                 if batch_count % _BATCH_DISABLE_COLLECT_EVERY == 0:
                     gc.collect()
 
-
     def _dispatch(self, batch: list[_BatchItem]) -> None:
         try:
             results = self._predict_batch(batch)
@@ -141,9 +140,7 @@ class _PredictionBatcher:
                     item.error = exc
                     results.append(None)
         if len(results) != len(batch):
-            raise ValueError(
-                f"배치 결과 수({len(results)})가 요청 수({len(batch)})와 다릅니다."
-            )
+            raise ValueError(f"배치 결과 수({len(results)})가 요청 수({len(batch)})와 다릅니다.")
         for item, result in zip(batch, results, strict=True):
             item.result = result
             item.event.set()
@@ -181,7 +178,6 @@ class SingletonPredictor:
             self._predict_from_features,
             self._predict_batch,
         )
-
 
     def _predict_from_features(
         self,
@@ -233,9 +229,7 @@ class SingletonPredictor:
         for item, outcome in zip(items, outcomes, strict=True):
             predicted_rate = float(outcome.predicted_rate) * 100.0
             presumed = float(
-                item.features.get("presumed_price")
-                or item.features.get("presmpt_prce")
-                or 0.0
+                item.features.get("presumed_price") or item.features.get("presmpt_prce") or 0.0
             )
             results.append(
                 {

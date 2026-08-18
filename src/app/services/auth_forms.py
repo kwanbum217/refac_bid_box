@@ -160,9 +160,7 @@ class RenderForm:
         원본 login.html 이 {% if form.errors %} 로 오류 배너를 띄우므로,
         비필드 오류만 있을 때도 참이 되어야 합니다.
         """
-        collected = {
-            name: bound.errors for name, bound in self._fields.items() if bound.errors
-        }
+        collected = {name: bound.errors for name, bound in self._fields.items() if bound.errors}
         if self._non_field_errors:
             collected["__all__"] = list(self._non_field_errors)
         return collected

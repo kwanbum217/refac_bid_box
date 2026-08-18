@@ -36,6 +36,7 @@ RequestUuid = UUID(as_uuid=False).with_variant(String(36), "sqlite", "mysql")
 
 class AutomationRequest(Base):
     """자동화 요청 테이블 (원래 db_table: automation_requests)"""
+
     __tablename__ = "automation_requests"
     # 인덱스명은 원본 Django 가 만든 실제 이름입니다. 해시가 붙은 것은 Django 자동 생성,
     # ix_ 로 시작하는 셋은 원본 Meta.indexes 가 직접 이름 붙인 복합 인덱스입니다.
@@ -51,9 +52,7 @@ class AutomationRequest(Base):
     )
 
     id = Column(PKBigInteger, primary_key=True, autoincrement=True)
-    request_id = Column(
-        RequestUuid, nullable=False, default=lambda: str(uuid.uuid4()), unique=True
-    )
+    request_id = Column(RequestUuid, nullable=False, default=lambda: str(uuid.uuid4()), unique=True)
     user_id = Column(
         BigInteger,
         ForeignKey("accounts_customuser.id", name=FK_AUTOMATION_REQUEST_USER),
@@ -81,6 +80,7 @@ class AutomationRequest(Base):
 
 class ChatSessionState(Base):
     """채팅 세션 및 내역 테이블 (원래 db_table: chat_session_states)"""
+
     __tablename__ = "chat_session_states"
     __table_args__ = (
         Index("chat_session_states_updated_at_44284963", "updated_at"),
@@ -111,6 +111,7 @@ class ChatSessionState(Base):
 
 class AutomationSubscription(Base):
     """자동화 구독 테이블 (원본 db_table: automation_subscriptions)"""
+
     __tablename__ = "automation_subscriptions"
     __table_args__ = (
         Index("automation_subscriptions_automation_type_64b4d3d1", "automation_type"),
@@ -137,6 +138,7 @@ class AutomationSubscription(Base):
 
 class KnowledgeBaseStatus(Base):
     """지식베이스 색인 상태 테이블 (원본 db_table: knowledge_base_status)"""
+
     __tablename__ = "knowledge_base_status"
 
     id = Column(PKBigInteger, primary_key=True, autoincrement=True)
@@ -144,13 +146,16 @@ class KnowledgeBaseStatus(Base):
     status = Column(String(20), nullable=False, default="unknown", comment="상태")
     source_bid_count = Column(PositiveInteger, nullable=False, default=0, comment="원본 공고 수")
     last_embedding_at = Column(DateTime, nullable=True, comment="마지막 임베딩 시각")
-    last_pipeline_run_id = Column(String(100), nullable=False, default="", comment="마지막 파이프라인 실행 ID")
+    last_pipeline_run_id = Column(
+        String(100), nullable=False, default="", comment="마지막 파이프라인 실행 ID"
+    )
     notes = Column(LongText, nullable=False, default="", comment="메모")
     updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
 
 class PipelineExecution(Base):
     """자동화 파이프라인 실행 이력 (원본 apps/pipelines, db_table: pipeline_executions)"""
+
     __tablename__ = "pipeline_executions"
     __table_args__ = (
         Index("ix_pipe_exec_name_status", "pipeline_name", "status"),

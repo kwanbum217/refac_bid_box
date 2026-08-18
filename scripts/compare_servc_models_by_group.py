@@ -260,10 +260,7 @@ def main() -> int:
     print(weighted_summary(tables).to_string(index=False))
 
     regressed = [
-        row["집단"]
-        for table in tables
-        for _, row in table.iterrows()
-        if row["판정"] == "base 우세"
+        row["집단"] for table in tables for _, row in table.iterrows() if row["판정"] == "base 우세"
     ]
     print()
     if regressed:

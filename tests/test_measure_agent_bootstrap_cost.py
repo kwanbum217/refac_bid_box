@@ -161,7 +161,9 @@ def test_format_table_and_report_generation(tmp_path: Path):
     """build_report 및 format_table 출력 형식 검증."""
     (tmp_path / "AGENTS.md").write_text("Test", encoding="utf-8")
     (tmp_path / "CLAUDE.md").write_text("Test", encoding="utf-8")
-    (tmp_path / "opencode.json").write_text(json.dumps({"instructions": ["AGENTS.md"]}), encoding="utf-8")
+    (tmp_path / "opencode.json").write_text(
+        json.dumps({"instructions": ["AGENTS.md"]}), encoding="utf-8"
+    )
     ag_dir = tmp_path / ".antigravity"
     ag_dir.mkdir(parents=True, exist_ok=True)
     (ag_dir / "rules.md").write_text("Test", encoding="utf-8")

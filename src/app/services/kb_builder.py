@@ -263,7 +263,9 @@ def rebuild_knowledge_base(
         results = (
             db.execute(
                 select(BidResult).where(
-                    BidResult.bid_ntce_no.in_({announcement.bid_ntce_no for announcement in announcements})
+                    BidResult.bid_ntce_no.in_(
+                        {announcement.bid_ntce_no for announcement in announcements}
+                    )
                     if delta_mode
                     else BidResult.rl_openg_dt >= one_year_ago
                 )
@@ -382,9 +384,7 @@ def rebuild_knowledge_base(
         }
     except Exception as exc:
         logger.exception("지식베이스 구축 실패")
-        _upsert_kb_status(
-            db, status="failed", last_pipeline_run_id=pipeline_run_id, notes=str(exc)
-        )
+        _upsert_kb_status(db, status="failed", last_pipeline_run_id=pipeline_run_id, notes=str(exc))
         return {
             "status": "failed",
             "summary": str(exc),

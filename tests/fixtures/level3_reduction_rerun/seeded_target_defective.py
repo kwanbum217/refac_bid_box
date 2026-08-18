@@ -30,7 +30,7 @@ def calculate_exponential_backoff(
     """지수 백오프 대기 시간을 계산하며 최대 지연 상한을 적용합니다."""
     if attempt < 0:
         return base_delay
-    calculated = base_delay * (2 ** attempt)
+    calculated = base_delay * (2**attempt)
     return min(calculated, max_delay)
 
 

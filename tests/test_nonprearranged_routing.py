@@ -38,13 +38,16 @@ from src.ml.model_registry import (
 class TestClassifyPriceDecisionMethod:
     """prearngPrceDcsnMthdNm 판정 로직의 전수 입력 패턴을 검증한다."""
 
-    @pytest.mark.parametrize("value,expected", [
-        ("복수예가", "복수예가"),
-        ("단일예가", "단일예가"),
-        ("없음", "비예가"),
-        ("", "Missing"),
-        (None, "Missing"),
-    ])
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("복수예가", "복수예가"),
+            ("단일예가", "단일예가"),
+            ("없음", "비예가"),
+            ("", "Missing"),
+            (None, "Missing"),
+        ],
+    )
     def test_standard_values(self, value, expected):
         """표준 세 유형이 올바르게 분류된다."""
         raw = {"prearngPrceDcsnMthdNm": value} if value is not None else {}
@@ -72,27 +75,24 @@ class TestClassifyPriceDecisionMethod:
 
     def test_whitespace_stripped(self):
         """앞뒤 공백은 무시한다."""
-        assert classify_price_decision_method(
-            {"prearngPrceDcsnMthdNm": "  복수예가  "}
-        ) == "복수예가"
+        assert (
+            classify_price_decision_method({"prearngPrceDcsnMthdNm": "  복수예가  "}) == "복수예가"
+        )
 
     def test_unrecognized_value_is_unknown(self):
         """인식 불가 값은 Unknown으로 안전하게 분류한다."""
-        assert classify_price_decision_method(
-            {"prearngPrceDcsnMthdNm": "알수없는값"}
-        ) == "Unknown"
+        assert classify_price_decision_method({"prearngPrceDcsnMthdNm": "알수없는값"}) == "Unknown"
 
     def test_numeric_value_coerced(self):
         """숫자가 들어와도 파싱 실패 없이 Unknown으로 분류한다."""
-        assert classify_price_decision_method(
-            {"prearngPrceDcsnMthdNm": 12345}
-        ) == "Unknown"
+        assert classify_price_decision_method({"prearngPrceDcsnMthdNm": 12345}) == "Unknown"
 
     def test_partial_match_복수(self):
         """'복수예가' 가 포함된 문자열은 복수예가이다."""
-        assert classify_price_decision_method(
-            {"prearngPrceDcsnMthdNm": "복수예가(15개중4개)"}
-        ) == "복수예가"
+        assert (
+            classify_price_decision_method({"prearngPrceDcsnMthdNm": "복수예가(15개중4개)"})
+            == "복수예가"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -123,6 +123,7 @@ class _FakeWrapper:
 def _registry(mapping: dict[str, _FakeWrapper | None]):
     def _get_model(model_id):
         return mapping.get(model_id)
+
     return _get_model
 
 
@@ -379,10 +380,12 @@ def test_tool_provenance_actual_model_on_fallback(isolated_db, monkeypatch):
     monkeypatch.setattr(
         ModelRegistry,
         "get_model",
-        _registry({
-            REQUESTED: _FakeWrapper(REQUESTED, error=RuntimeError("가중치 손상")),
-            FALLBACK: _FakeWrapper(FALLBACK, rate=0.91),
-        }),
+        _registry(
+            {
+                REQUESTED: _FakeWrapper(REQUESTED, error=RuntimeError("가중치 손상")),
+                FALLBACK: _FakeWrapper(FALLBACK, rate=0.91),
+            }
+        ),
     )
 
     result = _predict_bid(bid, REQUESTED)
@@ -402,10 +405,12 @@ def test_tool_all_candidates_failing_returns_skip(isolated_db, monkeypatch):
     monkeypatch.setattr(
         ModelRegistry,
         "get_model",
-        _registry({
-            REQUESTED: _FakeWrapper(REQUESTED, error=RuntimeError("가중치 손상")),
-            FALLBACK: _FakeWrapper(FALLBACK, error=RuntimeError("가중치 손상")),
-        }),
+        _registry(
+            {
+                REQUESTED: _FakeWrapper(REQUESTED, error=RuntimeError("가중치 손상")),
+                FALLBACK: _FakeWrapper(FALLBACK, error=RuntimeError("가중치 손상")),
+            }
+        ),
     )
 
     result = _predict_bid(bid, REQUESTED)

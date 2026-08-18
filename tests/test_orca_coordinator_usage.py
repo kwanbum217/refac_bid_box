@@ -369,9 +369,7 @@ def test_cli_json_output_is_pure_json(
     assert data["messages_counted"] >= 3
 
 
-def test_cli_picks_newest_session_by_default(
-    tmp_path: Path, capsys: pytest.CaptureFixture
-) -> None:
+def test_cli_picks_newest_session_by_default(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     """(12) --session 과 --all-sessions 가 없으면 수정 시각이 가장 최근인 세션 파일 하나만 집계합니다."""
     trans_dir = tmp_path / "trans"
     trans_dir.mkdir()
@@ -441,7 +439,3 @@ def test_cli_human_output_contains_fresh_guidance(
     assert "Fresh Input Tokens" in captured.out
     assert "99.5%" in captured.out
     assert "대표 지표" in captured.out
-
-
-
-

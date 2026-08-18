@@ -68,7 +68,9 @@ def _attach_flags(frame: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame:
     """
     for column in FLAG_COLUMNS:
         if column not in raw.columns:
-            raise KeyError(f"parquet 에 {column} 이 없습니다. build_servc_flag_dataset.py 를 먼저 돌리십시오.")
+            raise KeyError(
+                f"parquet 에 {column} 이 없습니다. build_servc_flag_dataset.py 를 먼저 돌리십시오."
+            )
         values = raw[column].astype("string").fillna(MISSING_CATEGORY)
         values = values.where(values != "", MISSING_CATEGORY)
         frame[column] = values.to_numpy()
@@ -231,7 +233,9 @@ def main() -> int:
         print(f"  분할 변동. |평균 차이| {abs(diffs.mean()):.4f} <= 분할 산포 {SPLIT_NOISE}.")
         print("  개선이라 쓰지 않습니다.")
     elif diffs.mean() < 0:
-        print(f"  MAE 개선 {diffs.mean():+.4f} 이 분할 산포 {SPLIT_NOISE} 를 넘고 부호가 일관입니다.")
+        print(
+            f"  MAE 개선 {diffs.mean():+.4f} 이 분할 산포 {SPLIT_NOISE} 를 넘고 부호가 일관입니다."
+        )
         print(
             "  적중률은 "
             f"{'같은 방향' if hit_diffs.mean() > 0 else '반대 방향'}"
@@ -240,7 +244,9 @@ def main() -> int:
     else:
         print(f"  기각. MAE 가 {diffs.mean():+.4f} 로 악화이고 부호가 일관입니다.")
         if hit_diffs.mean() > 0:
-            print(f"  다만 적중률은 {hit_diffs.mean():+.4f}%p 개선입니다. 중앙부와 꼬리의 맞바꿈입니다.")
+            print(
+                f"  다만 적중률은 {hit_diffs.mean():+.4f}%p 개선입니다. 중앙부와 꼬리의 맞바꿈입니다."
+            )
     if not hit_consistent:
         print("  승격 지표(0.5%p 적중률)의 부호가 분할마다 갈립니다. 기준 2 에 걸립니다.")
     print("\n  승격 판단은 이 결과만으로 하지 않습니다. 운영 쌍대 검정이 남아 있습니다.")

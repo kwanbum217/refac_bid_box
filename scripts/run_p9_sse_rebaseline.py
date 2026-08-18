@@ -154,9 +154,7 @@ def run_c1_suite(
                 "summary": summary,
                 "records": [asdict(r) for r in records],
             }
-            out_json.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"  -> {out_json} 저장 완료")
     finally:
         load_logger.stop()
@@ -164,7 +162,9 @@ def run_c1_suite(
     stats = load_logger.get_stats()
     print("\n" + "=" * 70)
     print("작업 1 완료 및 부하 통계:")
-    print(f"  - 주변 부하 (코어당): 최소 {stats['min']}%, 중앙값 {stats['median']}%, 최대 {stats['max']}%")
+    print(
+        f"  - 주변 부하 (코어당): 최소 {stats['min']}%, 중앙값 {stats['median']}%, 최대 {stats['max']}%"
+    )
     print(f"  - 부하 파일: {ambient_csv}")
     print("=" * 70)
 

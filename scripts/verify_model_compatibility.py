@@ -53,10 +53,7 @@ def main() -> int:
     passed, messages = validate_model_compatibility()
     models = ModelRegistry.available_models()
     expected_models = ModelRegistry.expected_model_ids()
-    print(
-        f"등록 모델: {len(models)}/{len(expected_models)}개 "
-        f"({', '.join(models) or '-'})"
-    )
+    print(f"등록 모델: {len(models)}/{len(expected_models)}개 ({', '.join(models) or '-'})")
     if passed:
         print("모델 직렬화 버전과 서빙 특징 호환성 검증 통과")
         return 0

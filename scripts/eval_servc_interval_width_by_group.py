@@ -118,7 +118,9 @@ def main() -> int:
     valid = df[year == args.valid_year].copy()
     print(f"학습 {len(train):,}행 / 검증 {len(valid):,}행 (검증 {args.valid_year}년)")
     print(f"명목 피복률 {INTERVAL_TARGET_COVERAGE:.0%} / 분위 {INTERVAL_QUANTILES}")
-    print(f"검증 집단: 보유 {(valid['하한율'] == '보유').sum():,} / 결측 {(valid['하한율'] == '결측').sum():,}")
+    print(
+        f"검증 집단: 보유 {(valid['하한율'] == '보유').sum():,} / 결측 {(valid['하한율'] == '결측').sum():,}"
+    )
 
     actual = valid["winning_rate"].to_numpy(dtype=float)
     rows = []
@@ -128,7 +130,9 @@ def main() -> int:
         row.update({f"전체 {k}": v for k, v in _summarize(actual, lo, hi).items()})
         for group in ("보유", "결측"):
             mask = (valid["하한율"] == group).to_numpy()
-            row.update({f"{group} {k}": v for k, v in _summarize(actual[mask], lo[mask], hi[mask]).items()})
+            row.update(
+                {f"{group} {k}": v for k, v in _summarize(actual[mask], lo[mask], hi[mask]).items()}
+            )
         rows.append(row)
         print(
             f"  리프 {leaves:>4}: 배율 {scale:.4f} / 전체 폭 {row['전체 폭']:.4f} 피복 {row['전체 피복률']:.2%}"
@@ -142,7 +146,9 @@ def main() -> int:
     print(table.to_string(index=False))
 
     best = table.loc[table["전체 폭"].idxmin()]
-    print(f"\n최소 폭: 리프 {int(best['num_leaves'])} / {best['전체 폭']}%p (현행 {CURRENT_QUANTILE_LEAVES})")
+    print(
+        f"\n최소 폭: 리프 {int(best['num_leaves'])} / {best['전체 폭']}%p (현행 {CURRENT_QUANTILE_LEAVES})"
+    )
     return 0
 
 

@@ -146,7 +146,7 @@ def main() -> int:
     parser.add_argument(
         "--base",
         default=None,
-        help='시작점 JSON. 이전 탐색 결과에서 이어 갈 때 씁니다 (예: \'{"num_leaves": 255}\')',
+        help="시작점 JSON. 이전 탐색 결과에서 이어 갈 때 씁니다 (예: '{\"num_leaves\": 255}')",
     )
     parser.add_argument(
         "--axes",
@@ -187,8 +187,10 @@ def main() -> int:
         axes = {name: SEARCH_SPACE[name] for name in args.axes.split(",")}
 
     baseline = evaluate(train, valid, best)
-    print(f"\n기준선 {best}\n  -> MAE {baseline['mae']} / 0.5%p {baseline['hit_0_5']:.2%} "
-          f"/ R2 {baseline['r2']} ({baseline['seconds']}초)")
+    print(
+        f"\n기준선 {best}\n  -> MAE {baseline['mae']} / 0.5%p {baseline['hit_0_5']:.2%} "
+        f"/ R2 {baseline['r2']} ({baseline['seconds']}초)"
+    )
 
     trials: list[dict] = [{"round": 0, "axis": "baseline", "params": dict(best), **baseline}]
     best_mae = baseline["mae"]
@@ -207,8 +209,10 @@ def main() -> int:
                 if result["mae"] < best_mae:
                     best_mae, best[axis], mark = result["mae"], value, "  <- 채택"
                     improved_in_round = True
-                print(f"  {axis}={value}: MAE {result['mae']} / 0.5%p {result['hit_0_5']:.2%} "
-                      f"/ R2 {result['r2']} ({result['seconds']}초){mark}")
+                print(
+                    f"  {axis}={value}: MAE {result['mae']} / 0.5%p {result['hit_0_5']:.2%} "
+                    f"/ R2 {result['r2']} ({result['seconds']}초){mark}"
+                )
 
         if not improved_in_round:
             print(f"\n{round_no}회차에서 개선이 없어 중단합니다.")
@@ -220,8 +224,14 @@ def main() -> int:
 
     comparison = pd.DataFrame(
         [
-            {"구분": "기준선", **{k: baseline[k] for k in ("mae", "rmse", "r2", "hit_0_5", "hit_1_0", "bias")}},
-            {"구분": "탐색 결과", **{k: final[k] for k in ("mae", "rmse", "r2", "hit_0_5", "hit_1_0", "bias")}},
+            {
+                "구분": "기준선",
+                **{k: baseline[k] for k in ("mae", "rmse", "r2", "hit_0_5", "hit_1_0", "bias")},
+            },
+            {
+                "구분": "탐색 결과",
+                **{k: final[k] for k in ("mae", "rmse", "r2", "hit_0_5", "hit_1_0", "bias")},
+            },
         ]
     )
     print(f"\n{comparison.to_string(index=False)}")

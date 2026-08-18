@@ -91,9 +91,7 @@ def schema_of(engine, database: str) -> pd.DataFrame:
         WHERE TABLE_SCHEMA = :db AND TABLE_NAME IN :tables
         ORDER BY TABLE_NAME, ORDINAL_POSITION
     """
-    return pd.read_sql(
-        text(sql).bindparams(tables=SCHEMA_TABLES), engine, params={"db": database}
-    )
+    return pd.read_sql(text(sql).bindparams(tables=SCHEMA_TABLES), engine, params={"db": database})
 
 
 def main() -> int:
@@ -115,9 +113,11 @@ def main() -> int:
     host, container = make_engine(host_url), make_engine(container_url)
 
     host_rows, container_rows = table_rows(host), table_rows(container)
-    frame = pd.concat(
-        [host_rows.rename("호스트 3307"), container_rows.rename("컨테이너 3306")], axis=1
-    ).fillna(-1).astype(int)
+    frame = (
+        pd.concat([host_rows.rename("호스트 3307"), container_rows.rename("컨테이너 3306")], axis=1)
+        .fillna(-1)
+        .astype(int)
+    )
     frame["차이"] = frame["컨테이너 3306"] - frame["호스트 3307"]
 
     print("=" * 78)

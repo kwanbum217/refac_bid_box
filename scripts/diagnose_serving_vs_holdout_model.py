@@ -113,8 +113,18 @@ def main() -> int:
     has_lwlt = (valid["lwlt_rate_missing"] == 0).to_numpy()
     rows = [
         score(actual, pred, "서빙 모델 + parquet (전체)", len(valid)),
-        score(actual[has_lwlt], pred[has_lwlt], "서빙 모델 + parquet (하한율 보유)", int(has_lwlt.sum())),
-        score(actual[~has_lwlt], pred[~has_lwlt], "서빙 모델 + parquet (하한율 결측)", int((~has_lwlt).sum())),
+        score(
+            actual[has_lwlt],
+            pred[has_lwlt],
+            "서빙 모델 + parquet (하한율 보유)",
+            int(has_lwlt.sum()),
+        ),
+        score(
+            actual[~has_lwlt],
+            pred[~has_lwlt],
+            "서빙 모델 + parquet (하한율 결측)",
+            int((~has_lwlt).sum()),
+        ),
     ]
     print(f"\n{'=' * 88}\n결과\n{'=' * 88}")
     print(pd.DataFrame(rows).to_string(index=False))

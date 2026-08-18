@@ -99,29 +99,19 @@ def summarize(records: list[dict]) -> dict:
             "max_ms": max(values) if values else None,
         }
     batch_sizes = Counter(
-        str(item["trace"].get("batch_size"))
-        for item in successful
-        if item.get("trace")
+        str(item["trace"].get("batch_size")) for item in successful if item.get("trace")
     )
     tail_batch_sizes = Counter(
-        str(item["trace"].get("batch_size"))
-        for item in tail
-        if item.get("trace")
+        str(item["trace"].get("batch_size")) for item in tail if item.get("trace")
     )
     gc_tail = [
-        int(item["trace"].get("gc_collections_during", 0))
-        for item in tail
-        if item.get("trace")
+        int(item["trace"].get("gc_collections_during", 0)) for item in tail if item.get("trace")
     ]
     gc_tail_events = [
-        int(item["trace"].get("gc_event_count", 0))
-        for item in tail
-        if item.get("trace")
+        int(item["trace"].get("gc_event_count", 0)) for item in tail if item.get("trace")
     ]
     gc_tail_overlap = [
-        float(item["trace"].get("gc_overlap_ms", 0.0))
-        for item in tail
-        if item.get("trace")
+        float(item["trace"].get("gc_overlap_ms", 0.0)) for item in tail if item.get("trace")
     ]
     return {
         "n": len(records),
@@ -135,14 +125,10 @@ def summarize(records: list[dict]) -> dict:
         "tail_request_indices": [item["request_index"] for item in tail],
         "tail_segment_summary": segment_summary,
         "tail_batch_dispatch_ms": [
-            float(item["trace"]["batch_dispatch_ms"])
-            for item in tail
-            if item.get("trace")
+            float(item["trace"]["batch_dispatch_ms"]) for item in tail if item.get("trace")
         ],
         "tail_lightgbm_thread_cpu_ms": [
-            float(item["trace"]["lightgbm_thread_cpu_ms"])
-            for item in tail
-            if item.get("trace")
+            float(item["trace"]["lightgbm_thread_cpu_ms"]) for item in tail if item.get("trace")
         ],
         "tail_batch_dispatch_thread_cpu_ms": [
             float(item["trace"]["batch_dispatch_thread_cpu_ms"])
@@ -185,15 +171,14 @@ def main() -> int:
 
     # 모델·모듈을 데운 뒤 c10 표본에 포함하지 않습니다.
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        warmup = list(pool.map(lambda index: request_once(args.base_url, index), range(args.concurrency)))
+        warmup = list(
+            pool.map(lambda index: request_once(args.base_url, index), range(args.concurrency))
+        )
     if any(item["error"] for item in warmup):
         raise RuntimeError(f"warmup 실패: {warmup}")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-        futures = [
-            pool.submit(request_once, args.base_url, index)
-            for index in range(args.rounds)
-        ]
+        futures = [pool.submit(request_once, args.base_url, index) for index in range(args.rounds)]
         records = [future.result() for future in futures]
 
     traces = read_traces(args.trace_log)

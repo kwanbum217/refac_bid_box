@@ -1,9 +1,9 @@
 # task_intent_w4_model_registry 분석 및 완료 보고서
 
-> **작성일**: 2026-08-17  
-> **태스크 ID**: task_31bc1beffc01 / task_intent_w4_model_registry  
-> **런 ID**: run_b9c762c9f2b6  
-> **디스패치 ID**: ctx_22c1429ac62a  
+> **작성일**: 2026-08-17
+> **태스크 ID**: task_31bc1beffc01 / task_intent_w4_model_registry
+> **런 ID**: run_b9c762c9f2b6
+> **디스패치 ID**: ctx_22c1429ac62a
 
 ---
 

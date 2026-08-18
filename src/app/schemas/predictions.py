@@ -12,7 +12,9 @@ class PredictionRequest(BaseModel):
     base_price: float = Field(..., gt=0, description="기초금액")
     category_code: str = Field("Thng", description="카테고리 코드")
     order_institution: str | None = Field(None, description="발주기관")
-    inst_hist_rate: float | None = Field(None, description="기관 과거 평균 낙찰률 (미입력 시 DB/Redis 조회)")
+    inst_hist_rate: float | None = Field(
+        None, description="기관 과거 평균 낙찰률 (미입력 시 DB/Redis 조회)"
+    )
 
 
 class PredictionResponse(BaseModel):

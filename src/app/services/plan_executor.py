@@ -57,9 +57,7 @@ def execute_internal_tool_step(
     capability = resolve_capability(step.tool)
     executor = _import_executor(capability.executor)
     params = {
-        key: value
-        for key, value in (step.params or {}).items()
-        if key in capability.allowed_params
+        key: value for key, value in (step.params or {}).items() if key in capability.allowed_params
     }
     signature = inspect.signature(executor)
     if "context" in signature.parameters:

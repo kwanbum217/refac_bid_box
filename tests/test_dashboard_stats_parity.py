@@ -176,9 +176,7 @@ def test_dashboard_stats_renames_unclassified_agency_label(auth_client, isolated
     assert "기타 기관(분석불가)" not in agency_names
 
 
-def test_dashboard_stats_cache_refreshes_after_new_result_is_collected(
-    auth_client, isolated_db
-):
+def test_dashboard_stats_cache_refreshes_after_new_result_is_collected(auth_client, isolated_db):
     """새 낙찰이 들어오면 캐시가 갱신되어야 한다.
 
     무효화가 안 되면 데이터를 갱신해도 화면에 옛 숫자가 계속 보입니다.
@@ -202,9 +200,7 @@ def test_dashboard_stats_cache_refreshes_after_new_result_is_collected(
     assert auth_client.get(STATS_URL).json()["total_count"] == 2
 
 
-def test_dashboard_company_table_uses_total_amount_contracts_only(
-    auth_client, isolated_db
-):
+def test_dashboard_company_table_uses_total_amount_contracts_only(auth_client, isolated_db):
     """업체 순위는 총액 계약만 집계한다.
 
     학교주관구매 같은 단가성 입찰은 금액이 실제 계약 규모가 아니라, 섞으면
@@ -246,9 +242,7 @@ def test_dashboard_company_table_uses_total_amount_contracts_only(
     assert companies[0]["total_amt"] == 5000000
 
 
-def test_dashboard_company_table_cleans_unreadable_company_names(
-    auth_client, isolated_db
-):
+def test_dashboard_company_table_cleans_unreadable_company_names(auth_client, isolated_db):
     """깨진 업체명은 빼고, 공동수급 문자열에서는 실제 상호를 뽑는다."""
     _add_result(
         isolated_db,
@@ -332,9 +326,7 @@ def test_compare_stats_api_returns_monthly_series(auth_client, isolated_db):
     assert payload["agency_announce_top10"][0]["total_base_amount"] == 1100000
 
 
-def test_compare_stats_base_total_ignores_estimated_price_only_rows(
-    auth_client, isolated_db
-):
+def test_compare_stats_base_total_ignores_estimated_price_only_rows(auth_client, isolated_db):
     """예정가격만 있는 공고는 기초금액 합계에 넣지 않는다.
 
     넣으면 공고 총액이 부풀어 낙찰 총액과의 비교가 무의미해집니다.
@@ -374,9 +366,7 @@ def test_compare_stats_api_returns_json_error_when_backend_fails(auth_client):
 
 def test_dashboard_stats_api_returns_json_error_when_backend_fails(auth_client):
     """대시보드 통계도 같은 오류 계약을 따른다."""
-    with patch(
-        "src.app.api.v1.bids.get_dashboard_stats", side_effect=RuntimeError("boom")
-    ):
+    with patch("src.app.api.v1.bids.get_dashboard_stats", side_effect=RuntimeError("boom")):
         response = auth_client.get(STATS_URL)
 
     assert response.status_code == 500
