@@ -26,6 +26,7 @@ from src.app.core.timeutil import utcnow
 from src.app.models.bids import DATASET_ANNOUNCEMENT, DATASET_RESULT, BidAnnouncement, BidResult
 from src.app.services.api_collector import (
     BID_CATEGORIES,
+    RangeCollectionError,
     get_service_key,
     stream_bid_announcements,
     stream_bid_data,
@@ -178,6 +179,27 @@ def _bulk_insert(db: Session, model, rows: list[dict[str, Any]]) -> int:
     return inserted
 
 
+def _record_partial_failure(
+    metrics: dict[str, Any],
+    cat_code: str,
+    kind: str,
+    exc: RangeCollectionError,
+) -> None:
+    """부분 실패를 적재 건수와 재수집 대상 구간으로 함께 기록합니다.
+
+    체크포인트는 MAX(date) 라 실패 구간을 자동으로 되돌아보지 않습니다.
+    failed_ranges 는 운영자가 그 구간만 수동 백필하기 위한 근거입니다.
+    """
+    count_key = "announcement_count" if kind == "announcement" else "result_count"
+    metrics[count_key] += exc.saved
+    metrics["categories"][cat_code][count_key] += exc.saved
+    metrics["categories"][cat_code][f"{kind}_error"] = str(exc)
+    metrics["failed_ranges"].extend(
+        {"category": cat_code, "kind": kind, "start_date": s, "end_date": e}
+        for s, e in exc.failed_ranges
+    )
+
+
 async def collect_bids(
     db: Session,
     *,
@@ -202,6 +224,7 @@ async def collect_bids(
             "total_records": 0,
             "attempted": 0,
             "failed_count": 0,
+            "failed_ranges": [],
         }
 
     target_categories = categories or tuple(BID_CATEGORIES.keys())
@@ -228,6 +251,7 @@ async def collect_bids(
         "result_count": 0,
         "attempted": 0,
         "failed_count": 0,
+        "failed_ranges": [],
         "categories": {},
     }
 
@@ -252,6 +276,11 @@ async def collect_bids(
                 metrics["announcement_count"] += saved
                 metrics["categories"][cat_code]["announcement_count"] += saved
                 logger.info("[%s] 입찰공고 %s건 적재", cat_name, saved)
+            except RangeCollectionError as exc:
+                # 성공 구간은 이미 적재되었으므로 건수는 반영하되 실패로 표시합니다.
+                # 이것을 성공으로 두면 체크포인트가 실패 구간을 건너뛴 채 전진합니다.
+                logger.error("[%s] 입찰공고 부분 실패: %s", cat_name, exc)
+                _record_partial_failure(metrics, cat_code, "announcement", exc)
             except Exception as exc:
                 logger.exception("[%s] 입찰공고 수집 실패", cat_name)
                 metrics["categories"][cat_code]["announcement_error"] = str(exc)
@@ -268,6 +297,9 @@ async def collect_bids(
                 metrics["result_count"] += saved
                 metrics["categories"][cat_code]["result_count"] += saved
                 logger.info("[%s] 낙찰정보 %s건 적재", cat_name, saved)
+            except RangeCollectionError as exc:
+                logger.error("[%s] 낙찰정보 부분 실패: %s", cat_name, exc)
+                _record_partial_failure(metrics, cat_code, "result", exc)
             except Exception as exc:
                 logger.exception("[%s] 낙찰정보 수집 실패", cat_name)
                 metrics["categories"][cat_code]["result_error"] = str(exc)

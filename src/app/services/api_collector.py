@@ -277,6 +277,23 @@ def _map_announcement_item(category: str):
     return _mapper
 
 
+class RangeCollectionError(Exception):
+    """일부 날짜 구간 수집이 실패했음을 호출부에 알립니다.
+
+    성공한 구간의 적재는 이미 끝났으므로 `saved` 로 함께 전달합니다. 실패
+    구간을 조용히 버리면 체크포인트가 MAX(date) 기준이라 그 구멍을 다시
+    조회하지 않아 영구 누락이 됩니다. 호출부는 반드시 수집 상태에 반영해야
+    합니다.
+    """
+
+    def __init__(self, error_label: str, saved: int, failed_ranges: list[tuple[str, str]]) -> None:
+        self.error_label = error_label
+        self.saved = saved
+        self.failed_ranges = failed_ranges
+        ranges_text = ", ".join(f"{s}~{e}" for s, e in failed_ranges)
+        super().__init__(f"{error_label} {len(failed_ranges)}개 구간 수집 실패: {ranges_text}")
+
+
 async def _gather_ranges(
     api_url: str,
     start_date: str,
@@ -310,6 +327,10 @@ async def _run_ranges(
 
     sink 는 동기 함수라 이벤트 루프를 막지 않도록 별도 스레드에서 실행하고,
     Session 동시 사용을 막기 위해 한 번에 하나만 수행합니다.
+
+    Raises:
+        RangeCollectionError: 하나 이상의 구간이 실패한 경우. 성공 구간은 이미
+            적재되었으며 그 건수는 예외의 saved 에 담깁니다.
     """
     date_ranges = split_date_range(start_date, end_date)
     sem = asyncio.Semaphore(MAX_CONCURRENT)
@@ -332,11 +353,16 @@ async def _run_ranges(
             *[_limited(s, e) for s, e in date_ranges], return_exceptions=True
         )
 
-    for result in results:
-        if isinstance(result, Exception):
-            logger.error("%s 구간 수집 실패: %s", error_label, result)
+    failed_ranges: list[tuple[str, str]] = []
+    for (step_start, step_end), result in zip(date_ranges, results, strict=True):
+        if isinstance(result, BaseException):
+            logger.error("%s %s~%s 구간 수집 실패: %s", error_label, step_start, step_end, result)
+            failed_ranges.append((step_start, step_end))
             continue
         total += result
+
+    if failed_ranges:
+        raise RangeCollectionError(error_label, total, failed_ranges)
     return total
 
 
