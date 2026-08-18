@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 import time
@@ -136,14 +137,22 @@ REVIEW_REPORT_SCHEMA = """report_schema:
   missing_tests: "배열"
 """
 
+# 아래 키 목록은 scripts/summarize_worker_done.py 의 REQUIRED_FIELDS 와 일치해야
+# 합니다. 어긋나면 워커가 지시를 정확히 따를수록 검증기에서 필수 필드 누락으로
+# 거부됩니다. tests/test_orca_taskctl.py 가 이 일치를 강제합니다.
 WORKER_REPORT_SCHEMA = """report_schema:
   schema: "ORCA_WORKER_DONE_V2"
   version: "2.1.0"
-  outcome: "succeeded 또는 escalation 문자열 하나"
+  task_id: "위 task_id 를 그대로 적는다"
+  status: "succeeded 또는 escalation 문자열 하나"
+  branch: "작업한 브랜치 이름"
+  commit: "마지막 커밋 SHA. 커밋이 없으면 빈 문자열"
+  commit_count: "정수. 0 이면 status 를 escalation 으로 쓴다"
   changed_files: "배열. 실제로 커밋한 파일 경로"
-  commit_count: "정수. 0 이면 outcome 을 escalation 으로 쓴다"
-  verification: "배열. 실행한 명령과 결과"
-  blocked_by: "배열. 차단 사유가 없으면 빈 배열"
+  read_files: "배열. 실제로 읽은 파일 경로"
+  verification: "배열. 각 항목은 command 와 result 키를 가진다"
+  verdict: "candidate 또는 blocked 문자열 하나"
+  blocking_issues: "배열. 차단 사유가 없으면 빈 배열"
 """
 
 
@@ -948,6 +957,23 @@ def build_task_spec(objective: str, capsule_path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
+def extract_pytest_specs(capsule_text: str) -> list[str]:
+    """Capsule 의 verification_commands 에서 pytest 실행 사양만 뽑아냅니다.
+
+    Level 1 게이트의 --tests 는 pytest 인자만 받으므로 `uv run pytest` 접두를
+    떼어냅니다. pytest 가 아닌 검증 명령은 게이트 3 의 대상이 아니므로
+    제외하되, 그 결과 사양이 하나도 없으면 게이트 3 은 건너뛴 것으로 남고
+    --strict 가 이를 실패로 만듭니다.
+    """
+    specs: list[str] = []
+    for command in parse_capsule_list(capsule_text, "verification_commands"):
+        tokens = shlex.split(command)
+        if "pytest" not in tokens:
+            continue
+        specs.append(shlex.join(tokens[tokens.index("pytest") + 1 :]))
+    return [spec for spec in specs if spec]
+
+
 def finalize_task(
     report_path: Path,
     capsule_path: Path,
@@ -957,6 +983,7 @@ def finalize_task(
     branch: str = "HEAD",
     run_reviewer: bool = False,
     reviewer_model: str = DEFAULT_MODEL,
+    strict: bool = True,
 ) -> dict[str, Any]:
     """worker_done 보고를 검증하고 Level 1/Reviewer 검증 파이프라인을 실행합니다."""
     scripts_dir = Path(__file__).resolve().parent
@@ -1001,7 +1028,18 @@ def finalize_task(
             }
 
     # 2. orca_level1_gate.py 실행
-    target_repo = worktree_path if (worktree_path and worktree_path.exists()) else repo
+    # 명시된 작업 트리가 없으면 검증 대상이 없는 것입니다. 주 저장소로 대체하면
+    # 워커 변경분 대신 깨끗한 기본 저장소를 검사해 통과가 조작됩니다.
+    if worktree_path is not None and not worktree_path.exists():
+        result["level1"] = {
+            "error": f"지정된 작업 트리가 없습니다: {worktree_path}",
+            "exit_code": 2,
+        }
+        result["exit_code"] = 2
+        return result
+
+    target_repo = worktree_path if worktree_path else repo
+    test_specs = extract_pytest_specs(load_capsule(capsule_path))
     level1_cmd = [
         sys.executable,
         str(scripts_dir / "orca_level1_gate.py"),
@@ -1015,6 +1053,10 @@ def finalize_task(
         str(capsule_path),
         "--json",
     ]
+    for spec in test_specs:
+        level1_cmd += ["--tests", spec]
+    if strict:
+        level1_cmd.append("--strict")
     code_l1, stdout_l1, stderr_l1 = _run_command(level1_cmd, timeout=120)
     if code_l1 == 2:
         tool_error = True
@@ -1045,9 +1087,9 @@ def finalize_task(
             str(capsule_path),
             "--out",
             str(reviewer_out),
-            "--base",
+            "--diff-base",
             base,
-            "--branch",
+            "--diff-branch",
             branch,
             "--repo",
             str(target_repo),
@@ -1526,6 +1568,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         branch=args.branch,
         run_reviewer=args.reviewer,
         reviewer_model=args.reviewer_model,
+        strict=not args.allow_skipped_gates,
     )
 
     if args.json:
@@ -1670,6 +1713,11 @@ def _build_parser() -> argparse.ArgumentParser:
     fin.add_argument("--branch", default="HEAD", help="검증 대상 git ref")
     fin.add_argument("--reviewer", action="store_true", help="Level 2 Reviewer 실행")
     fin.add_argument("--reviewer-model", default=DEFAULT_MODEL, help="Reviewer 모델 ID")
+    fin.add_argument(
+        "--allow-skipped-gates",
+        action="store_true",
+        help="건너뛴 Level 1 게이트를 실패로 보지 않습니다 (기본은 실패 처리)",
+    )
     fin.add_argument("--json", action="store_true", help="JSON 출력")
 
     # status

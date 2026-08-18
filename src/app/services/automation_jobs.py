@@ -118,8 +118,13 @@ def enqueue_pipeline_run(
     enqueue_fn: Any = None,
 ) -> dict[str, Any]:
     """Arq 큐에 실행을 등록하고 pipeline_executions 이력을 남깁니다."""
+    # 알 수 없는 run_mode 를 manual_full_task 로 대체하면 오타 하나가 전체
+    # 파이프라인을 돌립니다. 호출부가 잘못을 알 수 없으므로 여기서 막습니다.
+    if run_mode not in RUN_MODE_TASKS:
+        raise ValueError(f"알 수 없는 run_mode: {run_mode}")
+
     execution_id = f"{run_mode}-{uuid.uuid4().hex[:12]}"
-    task_name = RUN_MODE_TASKS.get(run_mode, "manual_full_task")
+    task_name = RUN_MODE_TASKS[run_mode]
     # 나중에 중지 요청이 오면 이 ID 로 Arq 작업을 붙잡아 abort 합니다.
     arq_job_id = f"arq-{execution_id}"
 
