@@ -179,7 +179,7 @@ def report_raw_encoding(engine) -> None:
     # 필드명은 이 모듈의 LWLT_FIELD 상수로만 정해지고 외부 입력이 닿지 않습니다.
     path = f"'$.{LWLT_FIELD}'"
     sql = (
-        "SELECT LEFT(bid_ntce_dt,7) AS ym, COUNT(*) AS n, "  # noqa: S608
+        "SELECT LEFT(bid_ntce_dt,7) AS ym, COUNT(*) AS n, "  # noqa: S608  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
         f"SUM(JSON_EXTRACT(raw_data,{path}) IS NULL) AS key_absent, "
         f"SUM(JSON_UNQUOTE(JSON_EXTRACT(raw_data,{path}))='') AS empty_str, "
         f"SUM(JSON_UNQUOTE(JSON_EXTRACT(raw_data,{path}))+0=0 "

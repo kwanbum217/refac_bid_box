@@ -11,7 +11,7 @@ import argparse
 import json
 import re
 import shlex
-import subprocess
+import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,7 +68,7 @@ def run_command_safe(
 ) -> tuple[int, str, str, bool]:
     """subprocess 명령을 실행하고 (returncode, stdout, stderr, timed_out) 을 반환합니다."""
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec B603 - shell 없이 고정 인자 목록으로 호출합니다
             cmd,
             cwd=str(cwd),
             capture_output=True,

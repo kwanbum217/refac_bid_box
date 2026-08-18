@@ -29,7 +29,7 @@ def monthly_ratio(engine, field: str) -> list[tuple[str, int, int, int]]:
     # 필드명은 JSON 경로 리터럴이라 바인딩할 수 없습니다. main 에서 영숫자만
     # 허용하도록 검사한 뒤 전달합니다.
     sql = (
-        "SELECT LEFT(bid_ntce_dt,7) AS ym, COUNT(*) AS n, "  # noqa: S608
+        "SELECT LEFT(bid_ntce_dt,7) AS ym, COUNT(*) AS n, "  # noqa: S608  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
         f"SUM(JSON_UNQUOTE(JSON_EXTRACT(raw_data,'$.{field}'))='Y') AS hit, "
         f"SUM(JSON_EXTRACT(raw_data,'$.{field}') IS NULL) AS missing "
         "FROM bid_announcements "

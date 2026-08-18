@@ -76,7 +76,7 @@ def main() -> int:
 
     all_ids = collection.get(include=[])["ids"]
     # 측정 재현용 표본 추출입니다. 암호 용도가 아니므로 시드 고정이 오히려 요건입니다.
-    rng = random.Random(args.seed)  # noqa: S311
+    rng = random.Random(args.seed)  # noqa: S311  # nosec B311 - 암호 용도가 아니라 표본 추출 재현용 시드입니다
     sample_ids = rng.sample(all_ids, min(args.samples, len(all_ids)))
     sampled = collection.get(ids=sample_ids, include=["documents"])
 

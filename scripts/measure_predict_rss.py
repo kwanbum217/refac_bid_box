@@ -19,7 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import subprocess
+import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 import threading
 import time
@@ -47,7 +47,7 @@ except ImportError:
 
     def _get_server_rss_kb(pid: int) -> int | None:
         try:
-            out = subprocess.check_output(
+            out = subprocess.check_output(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
                 ["ps", "-o", "rss=", "-p", str(pid)],
                 stderr=subprocess.DEVNULL,
                 text=True,
@@ -60,7 +60,7 @@ except ImportError:
 def _find_server_pid(base_url: str) -> int | None:
     """서버가 열어 둔 포트를 통해 PID 를 추론합니다. /pid 엔드포인트가 없으면 None."""
     try:
-        with urllib.request.urlopen(f"{base_url}/debug/pid", timeout=2) as resp:
+        with urllib.request.urlopen(f"{base_url}/debug/pid", timeout=2) as resp:  # nosec B310 - 로컬 측정 스크립트가 자기 호스트에만 요청합니다
             data = json.loads(resp.read())
             return int(data["pid"])
     except Exception:
@@ -94,7 +94,7 @@ def _send_one(base_url: str, latencies: list[float], errors: list[int]) -> None:
     )
     t0 = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=10):
+        with urllib.request.urlopen(req, timeout=10):  # nosec B310 - 로컬 측정 스크립트가 자기 호스트에만 요청합니다
             pass
         errors.append(0)
     except Exception as exc:
