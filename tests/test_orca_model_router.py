@@ -1127,3 +1127,34 @@ def test_flash_low_is_never_assigned_to_reviewer_or_builder():
             res = select_model(role, risk)
             assert res["primary_pool"] != "gemini-flash-low", res
             assert res["fallback_pool"] != "gemini-flash-low", res
+
+
+def test_tier_policy_assignments_are_declared_suitable():
+    """TIER_POLICY 가 배정하는 모든 (역할, 모델) 조합이 suitable_for 에 있어야 합니다.
+
+    select_model 은 suitable_for 를 검사하지 않으므로 두 정의는 조용히 어긋납니다.
+    2026-08-18 대조에서 배정 조합 36개 중 9개가 불일치했습니다. TIER_POLICY 를
+    정본으로 삼고 이 테스트로 드리프트를 막습니다.
+    """
+    from scripts.orca_model_router import TIER_POLICY
+
+    mismatched = [
+        (role, effort, model)
+        for (role, effort), models in TIER_POLICY.items()
+        for model in models
+        if role != "__default__" and role not in MODEL_POOL[model]["suitable_for"]
+    ]
+    assert mismatched == []
+
+
+def test_tier_policy_models_exist_in_pool():
+    """TIER_POLICY 가 가리키는 모델은 전부 MODEL_POOL 에 있어야 합니다."""
+    from scripts.orca_model_router import TIER_POLICY
+
+    unknown = [
+        (key, model)
+        for key, models in TIER_POLICY.items()
+        for model in models
+        if model not in MODEL_POOL
+    ]
+    assert unknown == []
