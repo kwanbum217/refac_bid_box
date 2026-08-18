@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-08-17
-> **source_commit**: `bf026a9`
+> **updated_at**: 2026-08-18
+> **source_commit**: `31cb843`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -85,14 +85,15 @@
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**:
    - **수신면 5종**: `orca_contract.py`, `orca_level1_gate.py`(게이트 6대), `summarize_worker_done.py`, `orca_run_reviewer.py`, `orca_metrics_ledger.py`. **Control Plane 2종**: `orca_taskctl.py`, `orca_model_router.py`.
-   - **절감량**: 도입 전 값은 확보 불가 유지. 원장 27행이나 대표 지표 유효 행은 7행 그대로다. 2026-08-18 기록 7건은 사용량 창 미지정으로 토큰 필드가 비었다(상세 문서 6.6). 순서 효과와 모델 효과도 섞여 추세 판정 불가(3장 17번).
-   - `3453a3f` 회수 사유는 3장 12·13·14번. 종결된 운영 판정 5건(Level 3, 등급 실측, 모델 4종, 병렬 3대, 도구 결함)은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 9장.
-2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증, 500줄 초과 7개 전부 판정 완료. 함수 길이 과제도 종결했다. `pytest-cov` 승인 후 `retrieve_structured_data` 를 236 -> 120줄로 줄였고(`9cfe7b5`) 헬퍼 5개를 같은 모듈에 뒀다. 커버리지 91 -> 92%, dict 리터럴 10개 키 집합 전부 동일. 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장. **줄 수로 자동 분할하지 않는다.**
-3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 감사로 찾은 12건(요청 경로 4, Arq 태스크 경로 8)을 `to_thread` 로 오프로드했다. 요청 경로 `5d65b5c`,`bdb69b5`,`45cfd52`. 태스크 경로는 3섹션 병렬 워커 `718de84`,`c89ba04`,`fcdfd58` 로 `src/tasks` `to_thread` 0 -> 16건. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** `src/app/core`·`main.py` 추가 감사(A2)는 결함 0건으로 닫혔다. 오프로드 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
-4. **린터·보안 스캔 정합 완료**: `ruff format` 이 한 번도 실행된 적 없어 py 125개가 미정렬이었다. 일괄 적용하고 `pre-commit install` 로 훅을 연결했다(`c66b55f`). 데이터·모델 레지스트리는 훅 대상 제외(G1). bandit 지적 47건은 전수 분류해 전부 오탐으로 판정하고 `# nosec BXXX - 사유` 를 달아 0건으로 만들었다. 운영 코드(`src/`) 지적은 1건뿐이었고 나머지 46건은 개발 스크립트의 subprocess 및 내부 SQL 조립이다. **CI 는 이 bandit 실패로 최소 9시간(확인된 5회 연속) 막혀 있었고 뒤 단계인 프론트엔드 테스트·빌드와 macOS·Windows 테스트가 실행되지 않았다.** 열어 보니 Windows 잡에서 결함 2건이 나왔다. `project_slug` 가 역슬래시를 처리하지 않아 슬러그가 만들어지지 않았고, Capsule 의 역슬래시 이스케이프를 읽을 때 되돌리지 않아 경로 대조가 항상 실패했다. 수정 후 3개 잡 전부 통과(`bf026a9`).
-5. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
-6. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
-7. **수집 2·3회차 관찰**: Docker 필요.
+   - **절감량**: 도입 전 값 확보 불가. 원장 27행이나 대표 지표 유효 행은 7행뿐이고(2026-08-18 기록 7건은 사용량 창 미지정으로 토큰 필드가 빔, 상세 6.6), 순서·모델 효과가 섞여 추세 판정 불가(3장 17번).
+   - `3453a3f` 회수 사유는 3장 12·13·14번. 종결된 운영 판정 5건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 9장.
+2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증, 500줄 초과 7개 전부 판정 완료. 함수 길이 과제도 종결했다. `retrieve_structured_data` 236 -> 120줄(`9cfe7b5`), 커버리지 91 -> 92%, dict 리터럴 10개 키 집합 전부 동일. 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장. **줄 수로 자동 분할하지 않는다.**
+3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 감사로 찾은 12건(요청 경로 4, Arq 태스크 경로 8)을 `to_thread` 로 오프로드했다(`5d65b5c`,`bdb69b5`,`45cfd52`,`718de84`,`c89ba04`,`fcdfd58`). `src/tasks` 는 0 -> 16건. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 추가 감사(A2)는 결함 0건. 오프로드 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
+4. **린터·보안 스캔 정합 완료**: `ruff format` 일괄 적용과 `pre-commit install` 훅 연결(`c66b55f`), 데이터·모델 레지스트리는 훅 제외(G1). bandit 47건은 전수 분류해 전부 오탐 판정 후 `# nosec` 로 0건화. 이 실패가 CI 를 최소 9시간 막아 macOS·Windows 잡이 실행되지 않았고, 열어 보니 Windows 결함 2건(`project_slug` 역슬래시, Capsule 이스케이프 왕복)이 드러났다. 수정 후 전 잡 통과(`bf026a9`).
+5. **제어 경계 fail-open 제거 — 종결, 9건**: 외부 지적 10건을 코드로 직접 검증해 9건을 확정하고 전부 수정했다. 공통 기전은 `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 것이다. 최악은 수집 구간 부분 실패가 success 로 위장된 건으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않아 재시도로 복구되지 않았다(G1 직결, `e1e50c5`). 나머지는 판정 4건(`dcefb38`,`d449f93`,`4c70a83`,`31cb843`), 실행 3건(`acd15ca`), 런타임 1건(`31cb843`). CI 에 `ubuntu-latest` 백엔드 테스트와 `docker-build` 잡을 넣어 **배포 런타임인 Linux 가 처음으로 검증된다.** **9건 중 5건은 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.** 건별 목록은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 10장.
+6. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
+7. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
+8. **수집 2·3회차 관찰**: Docker 필요.
 
 ---
 
@@ -113,6 +114,7 @@
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama 다중화 시 자원 점유와 c4 기준선 미확정.
 - 블로킹 I/O 12건의 P95·태스크 처리량 개선치 미측정(4장 3번).
+- 모델 메타데이터 `suitable_for` 와 `TIER_POLICY` 가 광범위하게 불일치. `gemini-flash-low` 만 notes 에 금지가 명시돼 수정했고(4장 5번), 나머지는 어느 쪽이 정본인지 미확정.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
