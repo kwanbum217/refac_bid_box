@@ -15,6 +15,7 @@ from scripts.orca_contract import (
     scope_excess,
     string_list,
     truncate,
+    write_scope_excess,
 )
 
 CAPSULE = """schema: ORCA_TASK_CAPSULE_V2
@@ -102,6 +103,21 @@ def test_matches_any(path, pattern, expected):
 def test_scope_excess_without_allowlist_reports_nothing():
     # 허용 목록이 없으면 판정 근거가 없다. 전부 초과로 몰지 않는다.
     assert scope_excess(["a.py", "b.py"], []) == []
+
+
+def test_write_scope_excess_without_allowlist_denies_everything():
+    # 쓰기 범위에서 빈 허용 목록은 전면 금지다. 허용 목록이 비면 전부 초과다.
+    assert write_scope_excess(["a.py"], []) == ["a.py"]
+    assert write_scope_excess(["a.py", "b.py", "c.py"], []) == ["a.py", "b.py", "c.py"]
+    assert write_scope_excess([], []) == []
+
+
+def test_write_scope_excess_reports_only_outsiders():
+    allowed = ["scripts/new_tool.py", "tests/..."]
+    excess = write_scope_excess(
+        ["scripts/new_tool.py", "tests/test_new_tool.py", "src/main.py"], allowed
+    )
+    assert excess == ["src/main.py"]
 
 
 def test_scope_excess_reports_only_outsiders():

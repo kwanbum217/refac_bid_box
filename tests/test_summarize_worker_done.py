@@ -105,7 +105,7 @@ def test_missing_required_fields_detected_individually(tmp_path: Path):
 
 
 def test_succeeded_with_zero_commits_and_changed_files_violates_rule_3_3(tmp_path: Path):
-    """(3) status 가 succeeded 인데 commit_count 0 이고 changed_files 있음이 검출됩니다."""
+    """(3) status 가 succeeded 인데 commit_count 0 이면 changed_files 유무와 무관하게 위반입니다."""
     data = dict(SAMPLE_VALID_REPORT, status="succeeded", commit_count=0)
     report_file = _write_report(tmp_path / "zero_commit.json", data)
 
@@ -113,11 +113,49 @@ def test_succeeded_with_zero_commits_and_changed_files_violates_rule_3_3(tmp_pat
     assert result["exit_code"] == 1
     assert any("규약 3.3 위반" in v for v in result["violations"])
 
-    # changed_files 가 없으면 위반이 아님
+    # changed_files 가 비어 있어도 무작업 succeeded 는 위반 (fail-open 구멍 수정)
     no_change_data = dict(SAMPLE_VALID_REPORT, status="succeeded", commit_count=0, changed_files=[])
     no_change_file = _write_report(tmp_path / "no_change.json", no_change_data)
     res_no_change = summarize_worker_report(no_change_file)
-    assert not any("규약 3.3 위반" in v for v in res_no_change["violations"])
+    assert res_no_change["exit_code"] == 1
+    assert any("규약 3.3 위반" in v for v in res_no_change["violations"])
+
+
+def test_succeeded_zero_commit_readonly_capsule_not_violation(tmp_path: Path):
+    """(3a) allowed_write_files 가 빈 Capsule(읽기 전용)의 commit_count 0 succeeded 보고는 규약 3.3 위반이 아닙니다."""
+    readonly_capsule = tmp_path / "readonly_capsule.yaml"
+    readonly_capsule.write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+mode: worker
+task_id: "task_123"
+
+allowed_read_files:
+  - "scripts/orca_contract.py"
+
+allowed_write_files:
+  # 읽기 전용 Task: 빈 허용 목록
+""",
+        encoding="utf-8",
+    )
+
+    data = dict(SAMPLE_VALID_REPORT, status="succeeded", commit_count=0, changed_files=[])
+    report_file = _write_report(tmp_path / "readonly_zero_commit.json", data)
+
+    result = summarize_worker_report(report_file, readonly_capsule)
+    assert not any("규약 3.3 위반" in v for v in result["violations"])
+    assert result["exit_code"] == 0
+
+
+def test_succeeded_zero_commit_write_capsule_still_violation(tmp_path: Path):
+    """(3b) allowed_write_files 가 있는 Capsule 이면 commit_count 0 succeeded 는 여전히 규약 3.3 위반입니다."""
+    data = dict(SAMPLE_VALID_REPORT, status="succeeded", commit_count=0, changed_files=[])
+    report_file = _write_report(tmp_path / "write_capsule_zero_commit.json", data)
+    capsule_file = _write_capsule(tmp_path / "capsule.yaml")
+
+    result = summarize_worker_report(report_file, capsule_file)
+    assert any("규약 3.3 위반" in v for v in result["violations"])
+    assert result["exit_code"] == 1
 
 
 def test_read_scope_excess_reported_without_failing(tmp_path: Path):
