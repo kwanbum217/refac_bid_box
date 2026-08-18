@@ -230,6 +230,19 @@ def scope_excess(paths: list[str], allowed: list[str]) -> list[str]:
     return [p for p in paths if not matches_any(p, allowed)]
 
 
+def write_scope_excess(paths: list[str], allowed: list[str]) -> list[str]:
+    """쓰기 범위에서 허용 목록을 벗어난 경로만 골라냅니다.
+
+    읽기 범위(`scope_excess`)와 달리 쓰기 범위는 강제 장치입니다. 허용 목록이
+    비어 있으면 어떤 파일도 수정해서는 안 되므로 `paths` 전부를 초과로 반환합니다.
+    읽기 전용 Task 는 `allowed_write_files` 를 빈 목록으로 쓰기 때문에, 비었을 때
+    전면 금지로 보지 않으면 쓰기 범위가 fail-open 됩니다.
+    """
+    if not allowed:
+        return list(paths)
+    return [p for p in paths if not matches_any(p, allowed)]
+
+
 def load_capsule(path: str | Path) -> str:
     """Capsule 원문을 읽습니다."""
     capsule_path = Path(path)

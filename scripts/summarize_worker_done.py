@@ -6,8 +6,8 @@ scripts/summarize_worker_done.py
 
 주요 기능:
   1. 필수 필드 누락 검증 (REQUIRED_FIELDS)
-  2. status == "succeeded" 인데 commit_count == 0 및 changed_files 비어있지 않음 검증 (규약 3.3)
-  3. Task Capsule 의 allowed_read_files 및 allowed_write_files 대조 (scope_excess)
+  2. status == "succeeded" 인데 commit_count == 0 인 무작업 완료 보고 검증 (규약 3.3, 읽기 전용 Capsule 제외)
+  3. Task Capsule 의 allowed_read_files 및 allowed_write_files 대조 (scope_excess / write_scope_excess)
   4. blocking_issues 가 있을 때 verdict(pass/candidate)를 blocked 로 자동 격하
   5. 단일 필드 길이 초과(contract bloat) 검출
   6. 최대 길이(--max-chars)가 보장된 텍스트 다이제스트 또는 JSON 요약 출력
@@ -36,6 +36,7 @@ try:
         scope_excess,
         string_list,
         truncate,
+        write_scope_excess,
     )
 except ImportError:
     # 저장소 루트를 sys.path 에 추가하여 직접 실행(python3 scripts/...) 시 모듈 해석 지원
@@ -51,6 +52,7 @@ except ImportError:
         scope_excess,
         string_list,
         truncate,
+        write_scope_excess,
     )
 
 REQUIRED_FIELDS = (
@@ -171,25 +173,30 @@ def summarize_worker_report(
     changed_files = string_list(report_data.get("changed_files"))
     read_files = string_list(report_data.get("read_files"))
 
-    # 2. 위반 검사 A: status == succeeded 인데 commit_count == 0 이고 changed_files 존재 (규약 3.3)
-    if status == "succeeded" and commit_count == 0 and len(changed_files) > 0:
+    # 2. 위반 검사 A: status == succeeded 인데 commit_count == 0 이면 무작업 완료 보고 (규약 3.3)
+    #    읽기 전용 Task(allowed_write_files 가 빈 목록)는 커밋이 없는 것이 정상이므로 예외로 둔다.
+    allowed_read: list[str] = []
+    allowed_write: list[str] = []
+    if capsule_path is not None:
+        capsule_text = load_capsule(capsule_path)
+        allowed_read = parse_capsule_list(capsule_text, "allowed_read_files")
+        allowed_write = parse_capsule_list(capsule_text, "allowed_write_files")
+
+    read_only_task = capsule_path is not None and not allowed_write
+    if status == "succeeded" and commit_count == 0 and not read_only_task:
         violations.append(
-            "규약 3.3 위반: status 가 succeeded 인데 commit_count 가 0 이고 changed_files 가 비어 있지 않음"
+            "규약 3.3 위반: status 가 succeeded 인데 commit_count 가 0 (무작업 완료 보고)"
         )
 
     # 3. 위반 검사 B & C: Capsule 범위 검사
     read_excess: list[str] = []
     write_excess: list[str] = []
     if capsule_path is not None:
-        capsule_text = load_capsule(capsule_path)
-        allowed_read = parse_capsule_list(capsule_text, "allowed_read_files")
-        allowed_write = parse_capsule_list(capsule_text, "allowed_write_files")
-
         # B: read_files 초과는 지시 불일치 사후 확인용이므로 read_scope_excess 로 기록하되 위반으로 세지 않음 (규약 2.9.2)
         read_excess = scope_excess(read_files, allowed_read)
 
         # C: changed_files 초과는 범위 위반이므로 위반으로 집계
-        write_excess = scope_excess(changed_files, allowed_write)
+        write_excess = write_scope_excess(changed_files, allowed_write)
         if write_excess:
             violations.append(f"allowed_write_files 범위 초과: {', '.join(write_excess)}")
 

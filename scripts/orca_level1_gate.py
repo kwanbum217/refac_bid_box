@@ -22,8 +22,8 @@ try:
         load_capsule,
         load_report,
         parse_capsule_list,
-        scope_excess,
         truncate,
+        write_scope_excess,
     )
     from scripts.validate_review_report import evaluate, parse_checklist
 except ModuleNotFoundError:
@@ -34,8 +34,8 @@ except ModuleNotFoundError:
         load_capsule,
         load_report,
         parse_capsule_list,
-        scope_excess,
         truncate,
+        write_scope_excess,
     )
     from scripts.validate_review_report import evaluate, parse_checklist
 
@@ -181,7 +181,7 @@ def run_gate2_scope(
 
     capsule_text = load_capsule(capsule_path)
     allowed_write = parse_capsule_list(capsule_text, "allowed_write_files")
-    excess = scope_excess(changed_files, allowed_write)
+    excess = write_scope_excess(changed_files, allowed_write)
 
     if excess:
         return GateResult(
