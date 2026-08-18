@@ -457,9 +457,18 @@ def test_check_current_state_sections_unverifiable_commit_warns(tmp_path: Path):
 
 
 def test_check_current_state_sections_real_repo_within_tolerance():
-    """실제 저장소의 source_commit 은 허용 지연 안에 있어야 합니다."""
+    """실제 저장소의 source_commit 은 허용 지연 안에 있어야 합니다.
+
+    CI 는 fetch-depth 1 로 얕게 받으므로 기록된 커밋을 조회하지 못할 수 있고,
+    그때 검사는 실패가 아니라 "신선도 미검증" WARN 으로 내려앉도록 설계돼
+    있습니다. 이 테스트가 조회 성공을 전제하면 검증 대상이 아니라 클론 모양을
+    보게 됩니다. 조회에 성공한 경우에만 허용 지연을 단정합니다.
+    """
     res = check_current_state_sections(PROJECT_ROOT)
     assert res.ok
+    if "신선도 미검증" in res.detail:
+        assert res.warn
+        return
     assert str(CURRENT_STATE_LAG_TOLERANCE) in res.detail
 
 
