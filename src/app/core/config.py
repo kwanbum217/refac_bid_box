@@ -129,7 +129,7 @@ class Settings(BaseSettings):
         if secret_key in insecure_secret_keys:
             raise ValueError("운영 환경에서는 예제 SECRET_KEY를 사용할 수 없습니다.")
 
-        if self.DB_PASSWORD == "rootpassword" or "rootpassword" in self.DATABASE_URL:
+        if self.DB_PASSWORD == "rootpassword" or "rootpassword" in self.DATABASE_URL:  # nosec B105 - 기본 비밀번호 사용을 거부하는 검사 문자열입니다
             raise ValueError("운영 환경에서는 기본 데이터베이스 비밀번호를 사용할 수 없습니다.")
 
         origins = self.cors_allowed_origins

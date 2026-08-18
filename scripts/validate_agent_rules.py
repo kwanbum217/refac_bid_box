@@ -32,7 +32,7 @@ import argparse
 import filecmp
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 from pathlib import Path
 from typing import Any
@@ -592,13 +592,13 @@ def _commits_behind_head(root: Path, commit: str) -> int | None:
     # timeout 을 두지 않으면 git 이 잠기거나 잠금 파일을 기다릴 때 검증기가 함께
     # 멈춥니다. 이 검증기는 pre-commit 에서 돌기 때문에 커밋 자체가 막힙니다.
     try:
-        subprocess.run(
+        subprocess.run(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
             ["git", "-C", str(root), "merge-base", "--is-ancestor", commit, "HEAD"],
             check=True,
             capture_output=True,
             timeout=GIT_PROBE_TIMEOUT_SECONDS,
         )
-        out = subprocess.run(
+        out = subprocess.run(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
             ["git", "-C", str(root), "rev-list", "--count", f"{commit}..HEAD"],
             check=True,
             capture_output=True,

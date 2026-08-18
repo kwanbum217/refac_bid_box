@@ -65,7 +65,7 @@ def table_rows(engine) -> pd.Series:
     for name in names:
         # 테이블명은 SHOW TABLES 결과라 외부 입력이 아닙니다.
         counts[name] = int(
-            pd.read_sql(text(f"SELECT COUNT(*) AS n FROM `{name}`"), engine).iloc[0, 0]  # noqa: S608
+            pd.read_sql(text(f"SELECT COUNT(*) AS n FROM `{name}`"), engine).iloc[0, 0]  # noqa: S608  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
         )
     return pd.Series(counts, name="rows")
 
@@ -75,7 +75,7 @@ def latest_times(engine) -> dict[str, str]:
     for table, column in TIME_COLUMNS.items():
         try:
             value = pd.read_sql(
-                text(f"SELECT MAX(`{column}`) AS m FROM `{table}`"),  # noqa: S608
+                text(f"SELECT MAX(`{column}`) AS m FROM `{table}`"),  # noqa: S608  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
                 engine,
             ).iloc[0, 0]
         except Exception:

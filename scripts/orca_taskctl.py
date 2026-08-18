@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 import time
 import uuid
@@ -159,7 +159,7 @@ def _run_command(
 ) -> tuple[int, str, str]:
     """subprocess.run 래퍼로 (returncode, stdout, stderr) 를 반환합니다."""
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec B603 - shell 없이 고정 인자 목록으로 호출합니다
             cmd,
             cwd=str(cwd) if cwd else None,
             capture_output=True,

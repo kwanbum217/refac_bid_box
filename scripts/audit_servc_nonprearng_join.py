@@ -105,7 +105,7 @@ PREARNG_EXPR = "NULLIF(JSON_UNQUOTE(JSON_EXTRACT(a.raw_data, '$.prearngPrceDcsnM
 
 def _exists(conds: list[str]) -> str:
     where = " AND ".join(conds)
-    return f"EXISTS (SELECT 1 FROM bid_results r WHERE {where})"  # noqa: S608
+    return f"EXISTS (SELECT 1 FROM bid_results r WHERE {where})"  # noqa: S608  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
 
 
 def _stage_expr(stage: str) -> str:
@@ -120,7 +120,7 @@ def build_stage_sql() -> str:
         f"SUM({_stage_expr(stage)}) AS {stage}" for stage, _ in STAGE_LABELS if stage != "s0"
     )
     return (
-        "SELECT\n"
+        "SELECT\n"  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
         f"            {PREARNG_EXPR} AS prearng,\n"
         "            COUNT(*) AS s0,\n"
         f"            {stage_cols}\n"
@@ -142,7 +142,7 @@ def build_rate_null_sql() -> str:
     rate_zero = _exists([*_STAGE_RESULT_CONDS["s3"], "r.sucsf_bid_rate = 0"])
     price_null = "a.presmpt_prce IS NULL"
     return (
-        "SELECT\n"
+        "SELECT\n"  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
         f"            {PREARNG_EXPR} AS prearng,\n"
         f"            SUM({joined}) AS joined_cnt,\n"
         f"            SUM({rate_null}) AS rate_null,\n"

@@ -32,10 +32,7 @@ repos:
         # "toml parser not available" 로 훅이 실패합니다.
         additional_dependencies: ["bandit[toml]"]
         args: ["-c", "pyproject.toml", "-r", "src/", "scripts/"]
-        # 2026-08-18 현재 기존 코드에 미해결 지적 47건(B603 16, B607 11, B608 9 등)이
-        # 있어 pre-commit 단계에 두면 모든 커밋이 막힙니다. 지적을 정리하기 전까지
-        # 수동 단계로 둡니다. CI(.github/workflows/ci.yml)는 계속 같은 명령을 돌립니다.
-        stages: [manual]
+        stages: [pre-commit]
         pass_filenames: false
 
   # ==========================================

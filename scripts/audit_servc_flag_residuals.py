@@ -45,7 +45,7 @@ def load_flags(engine, notices: list[str]) -> pd.DataFrame:
     )
     # 식별자는 FLAGS 상수이고 값은 바인딩 파라미터입니다.
     sql = (
-        f"SELECT bid_ntce_no, {selected} FROM bid_announcements "  # noqa: S608
+        f"SELECT bid_ntce_no, {selected} FROM bid_announcements "  # noqa: S608  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
         "WHERE category='Servc' AND bid_ntce_no IN :notices"
     )
     query = text(sql)

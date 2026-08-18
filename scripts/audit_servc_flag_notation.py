@@ -55,7 +55,7 @@ def fetch(engine, since: str) -> pd.DataFrame:
         for field in FIELDS
     )
     sql = (
-        f"SELECT bid_ntce_no, LEFT(bid_ntce_dt,7) AS ym, {selected} "  # noqa: S608
+        f"SELECT bid_ntce_no, LEFT(bid_ntce_dt,7) AS ym, {selected} "  # noqa: S608  # nosec B608 - 사용자 입력이 아니라 내부 테이블 및 컬럼명으로 조립합니다
         "FROM bid_announcements "
         "WHERE category='Servc' AND raw_data IS NOT NULL AND bid_ntce_dt >= :since"
     )
