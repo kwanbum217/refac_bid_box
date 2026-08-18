@@ -170,20 +170,28 @@ def transcript_file(tmp_path: Path, sample_records: list[str]) -> Path:
 # --------------------------------------------------------------------------
 
 
-def test_project_slug_converts_slash_and_underscore() -> None:
-    """(1) project_slug 가 슬래시와 밑줄을 모두 하이픈으로 바꿉니다."""
+def test_project_slug_converts_separators_and_underscore() -> None:
+    """(1) project_slug 가 경로 구분자와 밑줄을 모두 하이픈으로 바꿉니다.
+
+    Windows 는 구분자가 역슬래시이고 드라이브 문자가 앞에 붙으므로, 기대값을
+    POSIX 경로로 못박지 않고 resolve 결과에서 파생시킵니다.
+    """
     p = Path("/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box")
     slug = project_slug(p)
     assert "/" not in slug
+    assert "\\" not in slug
     assert "_" not in slug
-    assert slug.startswith("-Users-kwanbum-Documents-korea-IT-lanhchain-ai-vision-refac-bid-box")
+    expected = str(p.resolve()).replace("\\", "-").replace("/", "-").replace("_", "-")
+    assert slug == expected
+    assert slug.endswith("-refac-bid-box")
 
 
 def test_default_transcript_dir() -> None:
     """default_transcript_dir 가 올바른 경로를 반환합니다."""
     p = Path("/Users/kwanbum/test_project_dir")
     tdir = default_transcript_dir(p)
-    assert tdir == Path.home() / ".claude" / "projects" / "-Users-kwanbum-test-project-dir"
+    assert tdir == Path.home() / ".claude" / "projects" / project_slug(p)
+    assert tdir.name.endswith("-test-project-dir")
 
 
 def test_duplicates_dropped_when_same_message_id_repeated(transcript_file: Path) -> None:
