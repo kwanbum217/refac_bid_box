@@ -1489,11 +1489,14 @@ def test_build_capsule_notice_carries_path_contract_and_dispatch_id():
         report_path="/abs/capsules/task_x/worker_done.json",
         dispatch_id="ctx_new",
     )
-    assert "/abs/capsules/task_x/capsule.yaml" in text
+    # Windows 에서는 str(Path) 가 역슬래시를 쓰므로 경로 문자열을 못박지 않습니다.
+    assert str(Path("/abs/capsules/task_x/capsule.yaml")) in text
     assert "allowed_write_files" in text
     assert "escalation" in text
     assert "ctx_new" in text
-    assert "/abs/capsules/task_x/worker_done.json" in text
+    assert (
+        "/abs/capsules/task_x/worker_done.json" in text
+    )  # report_path 는 문자열 그대로 전달됩니다
 
 
 def test_build_task_spec_embeds_absolute_capsule_path():
@@ -1501,7 +1504,7 @@ def test_build_task_spec_embeds_absolute_capsule_path():
     from scripts.orca_taskctl import build_task_spec
 
     spec = build_task_spec("모듈 A 를 기계적 분할한다", Path("/abs/c/capsule.yaml"))
-    assert "/abs/c/capsule.yaml" in spec
+    assert str(Path("/abs/c/capsule.yaml")) in spec
     assert "모듈 A" in spec
 
 
@@ -1510,7 +1513,7 @@ def test_build_task_spec_truncates_long_objective():
     from scripts.orca_taskctl import build_task_spec
 
     spec = build_task_spec("가" * 900, Path("/abs/c/capsule.yaml"))
-    assert "/abs/c/capsule.yaml" in spec
+    assert str(Path("/abs/c/capsule.yaml")) in spec
     assert len(spec) < 600
 
 

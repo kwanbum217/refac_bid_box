@@ -26,10 +26,14 @@ from typing import Any
 
 
 def project_slug(project_dir: Path) -> str:
-    """프로젝트 절대 경로의 슬래시(/)와 밑줄(_)을 모두 하이픈(-)으로 변환합니다."""
+    """프로젝트 절대 경로의 구분자와 밑줄(_)을 모두 하이픈(-)으로 변환합니다.
+
+    Windows 경로는 구분자가 역슬래시라 슬래시만 바꾸면 슬러그가 만들어지지
+    않습니다. 두 구분자를 모두 처리해 플랫폼과 무관하게 같은 규칙을 씁니다.
+    """
     resolved = project_dir.resolve()
     path_str = str(resolved)
-    return path_str.replace("/", "-").replace("_", "-")
+    return path_str.replace("\\", "-").replace("/", "-").replace("_", "-")
 
 
 def default_transcript_dir(project_dir: Path) -> Path:

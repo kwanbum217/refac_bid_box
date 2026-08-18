@@ -42,6 +42,22 @@ def char_len(text: str) -> int:
     return len(text)
 
 
+def _unquote(value: str) -> str:
+    """따옴표를 벗기고 이스케이프를 되돌립니다.
+
+    Capsule 을 쓸 때 경로의 역슬래시를 `\\\\` 로 이스케이프하므로, 읽을 때
+    되돌리지 않으면 Windows 경로가 `C:\\\\Users` 형태로 남아 원본과 대조되지
+    않습니다.
+    """
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in "\"'":
+        inner = stripped[1:-1]
+        if stripped[0] == '"':
+            return inner.replace('\\"', '"').replace("\\\\", "\\")
+        return inner
+    return stripped
+
+
 def parse_capsule_scalar(capsule_text: str, field: str) -> str | None:
     """Capsule 최상위의 단일값 필드를 읽습니다. 없으면 None."""
     lines = capsule_text.splitlines()
@@ -72,7 +88,7 @@ def parse_capsule_scalar(capsule_text: str, field: str) -> str | None:
         return joined or None
 
     # 일반 단일값
-    val = clean_val.strip("\"'")
+    val = _unquote(clean_val)
     return val or None
 
 
@@ -108,9 +124,9 @@ def parse_capsule_list(capsule_text: str, field: str) -> list[str]:
         value = line[2:].strip()
         # 따옴표가 있는 경우 따옴표 내부의 샵은 보존
         if value.startswith('"'):
-            m = re.match(r'^"([^"]*)"(?:\s+#.*)?$', value)
+            m = re.match(r'^"((?:[^"\\]|\\.)*)"(?:\s+#.*)?$', value)
             if m:
-                items.append(m.group(1))
+                items.append(m.group(1).replace('\\"', '"').replace("\\\\", "\\"))
                 continue
             if re.match(r'^"[^"]*":', value):
                 continue
