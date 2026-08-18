@@ -182,8 +182,11 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "Cursor CLI 의 Auto 라우터. Hobby(무료) 등급에서 사용량 제한 하에 쓸 수 있다. "
             "요청마다 적합한 모델로 넘기므로 어느 모델이 처리했는지 사후 확정할 수 없어 "
             "reviewer 에는 배정하지 않는다. --mode plan 이 도구 차원에서 읽기 전용을 "
-            "강제하므로 investigator 에 특히 적합하다. 기동은 "
-            "cursor-agent -p --model auto [--mode plan | --force] 형식."
+            "강제하는 것이 유일한 강점이다. 기동은 "
+            "cursor-agent -p --model auto [--mode plan | --force] 형식이며 프롬프트는 "
+            "stdin 으로 넣는다(인자로 주면 무시된다). "
+            "2026-08-18 실측에서 5회 중 3회가 출력 없이 종료 코드 0 으로 끝났다. "
+            "빈 출력을 결과 없음으로 읽지 말고 실패로 취급한다. 주력은 deepseek 이다."
         ),
     },
     "opencode-deepseek": {

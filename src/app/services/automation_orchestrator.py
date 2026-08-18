@@ -260,8 +260,14 @@ def start_automation_request(db: Session, request_obj: AutomationRequest) -> Aut
     action = get_action(action_key)
 
     if not action and not pipeline_step:
-        request_obj.status = STATUS_SUCCESS
-        request_obj.result_summary = "실행 파이프라인이 필요하지 않은 요청입니다."
+        # action_key 가 비어 있는 것과 카탈로그에 없는 것은 다릅니다. 후자는
+        # 잘못된 요청이며, 이를 성공으로 종결하면 오타 하나가 완료로 기록됩니다.
+        if action_key:
+            request_obj.status = STATUS_FAILED
+            request_obj.result_summary = f"등록되지 않은 액션입니다: {action_key}"
+        else:
+            request_obj.status = STATUS_SUCCESS
+            request_obj.result_summary = "실행 파이프라인이 필요하지 않은 요청입니다."
         request_obj.completed_at = utcnow()
         db.commit()
         db.refresh(request_obj)
