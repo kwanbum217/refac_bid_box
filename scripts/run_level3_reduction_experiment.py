@@ -53,14 +53,14 @@ def create_seeded_repo(
     repo_path = Path(tmp_dir.name)
 
     # 1. git init & user config
-    subprocess.run(["git", "init", "-b", "main"], cwd=repo_path, check=True, capture_output=True)  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
-    subprocess.run(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_path, check=True, capture_output=True)  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+    subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
         ["git", "config", "user.name", "Orca Benchmark"],
         cwd=repo_path,
         check=True,
         capture_output=True,
     )
-    subprocess.run(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
+    subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
         ["git", "config", "user.email", "benchmark@orca.local"],
         cwd=repo_path,
         check=True,
@@ -72,8 +72,8 @@ def create_seeded_repo(
 
     # 2. Base commit (clean)
     shutil.copy2(clean_source, target_file)
-    subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
-    subprocess.run(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
+    subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+    subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
         ["git", "commit", "-m", "chore: initial clean code"],
         cwd=repo_path,
         check=True,
@@ -82,15 +82,15 @@ def create_seeded_repo(
     base_ref = "main"
 
     # 3. Branch commit (defective)
-    subprocess.run(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
+    subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
         ["git", "checkout", "-b", "feature/defects"],
         cwd=repo_path,
         check=True,
         capture_output=True,
     )
     shutil.copy2(defective_source, target_file)
-    subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
-    subprocess.run(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
+    subprocess.run(["git", "add", "."], cwd=repo_path, check=True, capture_output=True)  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+    subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
         ["git", "commit", "-m", "fix: seeded defective code"],
         cwd=repo_path,
         check=True,

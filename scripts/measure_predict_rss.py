@@ -47,7 +47,7 @@ except ImportError:
 
     def _get_server_rss_kb(pid: int) -> int | None:
         try:
-            out = subprocess.check_output(  # nosec B603 B607- shell 없이 고정 인자 목록으로 호출합니다
+            out = subprocess.check_output(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
                 ["ps", "-o", "rss=", "-p", str(pid)],
                 stderr=subprocess.DEVNULL,
                 text=True,
