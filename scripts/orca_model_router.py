@@ -55,8 +55,9 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         "timeout": 20,
     },
     "opencode": {
+        # 15초는 콜드스타트에 짧아 살아 있는 모델도 사용 불가로 판정됐습니다.
         "probe_cmd": ["opencode", "run", "--model", "{model}", "ping"],
-        "timeout": 15,
+        "timeout": 60,
     },
     "codex": {
         "probe_cmd": ["codex", "exec", "ping"],
@@ -155,6 +156,26 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         ],
         "notes": "주간 잔량이 넉넉할 때만 수동 지정.",
     },
+    "opencode-deepseek": {
+        "id": "opencode/deepseek-v4-flash-free",
+        "provider": "opencode",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "investigator",
+            "builder",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": (
+            "무료 풀 주력. 공식 발표 기준 컨텍스트 1M, 추론 모드 3단"
+            "(Non-think / Think High / Think Max)이며 Think Max 는 384K 이상 권장. "
+            "에이전트 벤치마크 Terminal Bench 2.1 82.7, DeepSWE 54.4, Toolathlon 70.3 로 "
+            "코딩 에이전트 기본 모델로 제시된다. 벤더 자체 수치이므로 산출물은 "
+            "반드시 재검증한다. reviewer 는 병합 판정에 직결되어 배정하지 않는다."
+        ),
+    },
     "opencode-free": {
         "id": "opencode/nemotron-3.5-lightning-free",
         "provider": "opencode",
@@ -164,7 +185,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "suitable_for": [
             "investigator",
         ],
-        "notes": "실패해도 손실 없는 병렬 조사. 임계 경로 금지 (allow_free 조건부 개방). fallback 후보: opencode/deepseek-v4-flash-free.",
+        "notes": "실패해도 손실 없는 병렬 조사. 임계 경로 금지 (allow_free 조건부 개방).",
     },
     "cerebras-oss": {
         "id": "cerebras/gpt-oss-120b",
@@ -187,11 +208,13 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "investigator",
         ],
         "notes": (
-            "실제 제약은 컨텍스트가 아니라 분당 토큰(TPM)이다. 2026-08-17 실측: "
-            "파일 2개(1,081줄) 통독 실패, 파일 1개(522줄) 통독도 실패, 사실 주입 "
-            "원샷(도구 호출 0회)은 성공. 에이전트 루프가 매 턴 컨텍스트를 재전송해 "
-            "분당 유입이 누적되므로 파일 수 축소로는 해소되지 않는다. "
-            "ground_truth 주입형 단발 판정에만 쓴다."
+            "2026-08-18 공식 문서 확인으로 정정. Cerebras 무료 등급 제약은 "
+            "분당 요청 5회(RPM), 분당 30K 토큰, 시간·일 1M 토큰이다. 종전 기록은 "
+            "이를 컨텍스트나 TPM 단일 원인으로 적어 '파일 수를 줄여도 해소되지 "
+            "않는다' 는 틀린 결론을 남겼다. 실제 병목은 RPM 5 이며 도구 호출 하나에 "
+            "12초가 걸리는 셈이라 에이전트 루프가 사실상 정지한다. "
+            "모델 자체는 컨텍스트 256K, 도구 사용 지원, 코드 생성 중위권이다. "
+            "따라서 도구 호출이 손에 꼽는 작업에만 배정한다."
         ),
     },
 }
@@ -200,9 +223,12 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 # 무료/저가 풀 개방 정책 상수
 # ---------------------------------------------------------------------------
 
-FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator"})
+# reviewer 는 판정이 병합 결정에 직결되므로 개방하지 않습니다. builder 는
+# 산출물이 Level 1 게이트와 테스트를 거쳐 코디네이터가 병합을 결정하므로
+# 개방합니다. 무료 모델이 틀리면 손실은 시간이지 저장소가 아닙니다.
+FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator", "builder"})
 FREE_POOL_MAX_RISK: str = "low"
-FREE_POOL_ORDER: list[str] = ["opencode-free", "cerebras-oss"]
+FREE_POOL_ORDER: list[str] = ["opencode-deepseek", "opencode-free", "cerebras-oss"]
 
 # ---------------------------------------------------------------------------
 # 역할별 추론 등급 정책
@@ -425,8 +451,12 @@ def free_pool_eligibility(
             f"무료 풀 개방 불가: 위험도({risk})가 허용 기준({FREE_POOL_MAX_RISK})을 초과합니다.",
         )
 
+    # 쓰기 범위가 있어도 막지 않습니다. 종전에는 차단했으나, 산출물은 Level 1
+    # 게이트와 테스트를 거쳐 코디네이터가 병합을 결정하므로 무료 모델의 오류가
+    # 저장소에 그대로 들어가지 않습니다. 다만 검증 부담이 커지므로 호출부가
+    # 인지하도록 사유에 남깁니다.
     if has_write_scope:
-        return False, "무료 풀 개방 불가: 쓰기 권한(allowed_write_files)이 존재합니다."
+        return True, "무료 풀 개방 조건 충족 (쓰기 범위 있음: 병합 전 검증 필수)"
 
     return True, "무료 풀 개방 조건 충족"
 
