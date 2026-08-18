@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-18
-> **source_commit**: `db4e95a`
+> **source_commit**: `c9a0160`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -83,16 +83,17 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 수신면 5종과 Control Plane 2종에 적용했다. 절감량은 도입 전 값 확보 불가이며 대표 지표 유효 행이 7행뿐이고 순서·모델 효과가 섞여 추세 판정이 안 된다(3장 17번). `3453a3f` 회수 사유는 3장 12·13·14번. 종결된 운영 판정 5건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 9장.
-2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증, 500줄 초과 7개 전부 판정 완료. 함수 길이 과제도 종결했다. 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장. **줄 수로 자동 분할하지 않는다.**
-3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 감사로 찾은 12건(요청 4, Arq 태스크 8)을 `to_thread` 로 오프로드했다. `src/tasks` 는 0 -> 16건. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
-4. **린터·보안 스캔 정합 완료**: `ruff format` 일괄 적용과 `pre-commit install` 훅 연결(`c66b55f`), 데이터·모델 레지스트리는 훅 제외(G1). bandit 47건은 전수 분류해 전부 오탐 판정 후 `# nosec` 로 0건화했다. 이 실패가 CI 를 최소 9시간 막아 macOS·Windows 잡이 실행되지 않았고, 열어 보니 Windows 결함 2건이 드러났다. 수정 후 전 잡 통과(`bf026a9`).
-5. **제어 경계 fail-open 제거 — 종결, 9건**: 외부 지적 10건을 코드로 검증해 9건을 확정·수정했다. 공통 기전은 `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 것이다. 최악은 수집 구간 부분 실패가 success 로 위장된 건으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결, `e1e50c5`). 나머지는 판정 4건, 실행 3건, 런타임 1건(`dcefb38`,`d449f93`,`4c70a83`,`31cb843`,`acd15ca`). CI 에 `ubuntu-latest` 와 `docker-build` 를 넣어 **배포 런타임 Linux 가 처음으로 검증된다.** **9건 중 5건은 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.** 건별 목록은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 10장.
-6. **fail-open 전수 조사 — 조사 완료, 수정 진행 중**: 워커 3대 병렬로 `src/app`, `src/tasks`·`src/ml`·`src/rag`, `scripts/` 를 훑어 후보 16건을 찾았다. 5건은 코드로 실재를 확정했고 11건은 미검증이다. 확정분 중 G1 검증 스크립트가 차이를 찾고도 종료 코드 0 을 내던 건은 수정했다(`548ac1e`). **`verify_migration.py` 무조건 통과와 같은 결함의 재발이다.** 남은 4건은 챗봇 "추천 투찰가 0원" 표시, PSI 표본 부재의 STABLE 승격, `finalize` 의 테스트 미실행 통과, 읽기 전용 워커 쓰기의 범위 검사 통과. 보고서는 `docs/analysis/task_s1~s3.md`.
-7. **무료 워커 풀 정비 — 종결**: Gemini 주간 한도 1.77% 소진에 대응했다. `opencode/deepseek-v4-flash-free` 를 등록하고 무료 풀 개방을 `builder` 와 쓰기 범위까지 넓혔다(`reviewer` 는 계속 제외). DeepSeek 워커가 테스트 계약 13건을 정확히 갱신해 실사용을 검증했다(`40efc5c`). Cerebras gemma4 는 분당 30K 토큰 상한 때문에 Orca 워커로 불가 판정. 근거와 기동 규약은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 11장.
-8. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
-9. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
-10. **수집 2·3회차 관찰**: Docker 필요.
+1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 수신면 5종과 Control Plane 2종에 적용. **절감량은 도입 전 값 확보 불가이고 유효 행 7행에 순서·모델 효과가 섞여 추세 판정이 안 된다**(3장 17번). `3453a3f` 회수 사유는 3장 12·13·14번. 종결 판정 5건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 9장.
+2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. 함수 길이 과제도 종결. **줄 수로 자동 분할하지 않는다.** 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장.
+3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
+4. **린터·보안 스캔 정합 — 종결**: `ruff format` 과 `pre-commit` 훅 연결(`c66b55f`), 데이터·모델 레지스트리는 훅 제외(G1). bandit 47건은 전부 오탐 판정 후 `# nosec` 로 0건화. **이 실패가 CI 를 9시간 막아 macOS·Windows 잡이 실행되지 않았고, 열어 보니 Windows 결함 2건이 있었다**(`bf026a9`).
+5. **제어 경계 fail-open 제거 — 종결, 9건**: 공통 기전은 `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 것이다. 최악은 수집 구간 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결, `e1e50c5`). 나머지는 판정 4·실행 3·런타임 1건(`dcefb38`,`d449f93`,`4c70a83`,`31cb843`,`acd15ca`). CI 에 `ubuntu-latest` 와 `docker-build` 를 넣어 **배포 런타임 Linux 가 처음으로 검증된다.** **9건 중 5건은 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.** 건별 목록은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 10장.
+6. **fail-open 전수 조사 — 조사 완료, 수정 진행 중**: 워커 3대 병렬 조사로 후보 16건. 5건 실재 확정, 11건 미검증. G1 검증 스크립트가 차이를 찾고도 종료 코드 0 을 내던 건은 수정했다(`548ac1e`). **`verify_migration.py` 무조건 통과와 같은 결함의 재발이다.** 제어 평면 2건은 아래 7번에서 종결했고, 남은 2건은 챗봇 "추천 투찰가 0원" 표시와 PSI 표본 부재의 STABLE 승격이다. 보고서는 `docs/analysis/task_s1~s3.md`.
+7. **무료 워커 풀 정비 — 종결**: Gemini 주간 한도 소진에 대응해 `opencode/deepseek-v4-flash-free` 를 등록하고 무료 풀 개방을 `builder` 와 쓰기 범위까지 넓혔다(`reviewer` 는 제외). **DeepSeek 는 주력 워커로 확정**(`40efc5c`, `a541f64`). Cerebras gemma4 는 분당 30K 토큰 상한 때문에 에이전트 워커로 불가하다. 960바이트 지시로도 재현돼 **지시 압축으로는 해결되지 않음을 확정**했다(병목은 하네스 오버헤드). 근거와 기동 규약은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 11장.
+8. **제어 평면 검증 경계 계약 불일치 — 종결, 7건**: 2차 외부 감사 지적 7건이 전부 실재했다. **Capsule 이 가르치는 보고 스키마가 검증기 요구와 어긋나 필수 필드 7개를 누락**시켜, 워커가 지시를 정확히 따를수록 거부됐다. `finalize` 가 Reviewer 에 잘못된 인자를 넘겨 **Level 2 는 한 번도 실행된 적이 없었고**, 기존 테스트 89건은 `_run_command` mock 때문에 이를 놓쳤다. 그 외 테스트 미실행 통과, 없는 작업 트리의 주 저장소 대체, 빈 `allowed_write_files` 의 전면 허용, 무작업 `succeeded` 통과, `run_mode` fallback(`f4b4db0`,`a541f64`). 상세는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 12장.
+9. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
+10. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
+11. **수집 2·3회차 관찰**: Docker 필요.
 
 ---
 

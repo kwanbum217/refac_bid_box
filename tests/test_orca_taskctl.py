@@ -2128,3 +2128,138 @@ def test_cmd_dispatch_returns_3_when_delivery_unverified(
     ]
     assert main(argv) == 3
     assert main([*argv, "--allow-unverified-delivery"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# 검증 파이프라인 계약 (2026-08-18)
+# ---------------------------------------------------------------------------
+
+FINALIZE_CAPSULE = """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_fin"
+allowed_write_files:
+  - "src/x.py"
+verification_commands:
+  - "uv run pytest tests/test_x.py -q"
+  - "python3 scripts/validate_agent_rules.py --quiet"
+"""
+
+FINALIZE_REPORT = """{
+  "schema": "ORCA_WORKER_DONE_V2",
+  "version": "2.1.0",
+  "task_id": "task_fin",
+  "status": "succeeded",
+  "branch": "b",
+  "commit": "abc",
+  "commit_count": 1,
+  "changed_files": ["src/x.py"],
+  "read_files": [],
+  "verification": [],
+  "verdict": "candidate",
+  "blocking_issues": []
+}"""
+
+
+def _finalize_capturing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwargs):
+    """finalize_task 가 하위 도구에 실제로 넘긴 명령을 모아 돌려줍니다."""
+    capsule = tmp_path / "capsule.yaml"
+    capsule.write_text(FINALIZE_CAPSULE, encoding="utf-8")
+    report = tmp_path / "report.json"
+    report.write_text(FINALIZE_REPORT, encoding="utf-8")
+
+    captured: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        captured.append(cmd)
+        return 0, '{"effective_verdict": "pass", "verdict": "pass"}', ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    result = finalize_task(
+        report_path=report,
+        capsule_path=capsule,
+        repo=tmp_path,
+        **kwargs,
+    )
+    return captured, result
+
+
+def _args_for(script_name: str, captured: list[list[str]]) -> list[str]:
+    for cmd in captured:
+        if any(script_name in str(part) for part in cmd):
+            return [str(part) for part in cmd[2:]]
+    raise AssertionError(f"{script_name} 호출이 없습니다")
+
+
+def test_finalize_reviewer_args_parse_with_real_reviewer_parser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """finalize 가 Reviewer 에 넘기는 인자가 실제 Reviewer 파서로 파싱되어야 합니다.
+
+    종전에는 --base/--branch 를 넘겼는데 Reviewer 는 --diff-base/--diff-branch 만
+    받아 argparse 오류로 Level 2 가 아예 실행되지 못했습니다. mock 만 쓰던
+    기존 테스트는 이 불일치를 잡지 못했습니다.
+    """
+    from scripts.orca_run_reviewer import _parse_args as reviewer_parse_args
+
+    captured, _ = _finalize_capturing(tmp_path, monkeypatch, run_reviewer=True)
+    args = _args_for("orca_run_reviewer.py", captured)
+
+    parsed = reviewer_parse_args(args)
+    assert parsed.diff_base == "main"
+    assert parsed.diff_branch == "HEAD"
+
+
+def test_finalize_level1_args_parse_and_carry_tests_and_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Level 1 호출이 Capsule 의 pytest 사양과 --strict 를 실어 보내야 합니다."""
+    from scripts.orca_level1_gate import parse_arguments as level1_parse_args
+
+    captured, _ = _finalize_capturing(tmp_path, monkeypatch)
+    args = _args_for("orca_level1_gate.py", captured)
+
+    parsed = level1_parse_args(args)
+    assert parsed.strict is True
+    assert parsed.tests == ["tests/test_x.py -q"]
+
+
+def test_finalize_allow_skipped_gates_turns_off_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from scripts.orca_level1_gate import parse_arguments as level1_parse_args
+
+    captured, _ = _finalize_capturing(tmp_path, monkeypatch, strict=False)
+    parsed = level1_parse_args(_args_for("orca_level1_gate.py", captured))
+    assert parsed.strict is False
+
+
+def test_finalize_rejects_missing_worktree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """없는 작업 트리를 주 저장소로 대체하면 변경분 없는 저장소를 검사하게 됩니다."""
+    _captured, result = _finalize_capturing(
+        tmp_path, monkeypatch, worktree_path=tmp_path / "does-not-exist"
+    )
+    assert result["exit_code"] == 2
+    assert "작업 트리가 없습니다" in result["level1"]["error"]
+
+
+def test_worker_report_schema_matches_validator_required_fields():
+    """Capsule 이 가르치는 필드와 검증기가 요구하는 필드가 같아야 합니다.
+
+    어긋나면 워커가 지시를 정확히 따를수록 필수 필드 누락으로 거부됩니다.
+    """
+    from scripts.orca_taskctl import WORKER_REPORT_SCHEMA
+    from scripts.summarize_worker_done import REQUIRED_FIELDS
+
+    taught = {
+        line.split(":", 1)[0].strip()
+        for line in WORKER_REPORT_SCHEMA.splitlines()
+        if line.startswith("  ") and ":" in line
+    }
+    assert set(REQUIRED_FIELDS) <= taught
+
+
+def test_extract_pytest_specs_skips_non_pytest_commands():
+    from scripts.orca_taskctl import extract_pytest_specs
+
+    assert extract_pytest_specs(FINALIZE_CAPSULE) == ["tests/test_x.py -q"]
+    assert extract_pytest_specs('verification_commands:\n  - "python3 a.py"\n') == []

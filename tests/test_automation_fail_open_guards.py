@@ -134,3 +134,30 @@ def test_callback_token_expires(monkeypatch):
         lambda: base_time + automation_tokens.CALLBACK_MAX_AGE + 1,
     )
     assert automation_tokens.verify_callback_token("job-1", token) is False
+
+
+def test_enqueue_pipeline_run_rejects_unknown_run_mode():
+    """알 수 없는 run_mode 가 manual_full_task 로 조용히 대체되면 안 됩니다."""
+    from src.app.services.automation_jobs import enqueue_pipeline_run
+
+    with pytest.raises(ValueError, match="알 수 없는 run_mode"):
+        enqueue_pipeline_run(
+            db=None,
+            action_key="unknown_action",
+            run_mode="typo_only",
+            pipeline_name="refac_bid_box_pipeline",
+        )
+
+
+def test_enqueue_pipeline_run_accepts_known_run_mode():
+    """정상 run_mode 는 그대로 통과해야 합니다."""
+    from src.app.services.automation_jobs import enqueue_pipeline_run
+
+    result = enqueue_pipeline_run(
+        db=None,
+        action_key="collect",
+        run_mode="collect_only",
+        pipeline_name="refac_bid_box_pipeline",
+        enqueue_fn=lambda *a, **k: True,
+    )
+    assert result["execution_id"].startswith("collect_only-")
