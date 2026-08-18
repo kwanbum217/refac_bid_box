@@ -225,6 +225,7 @@ class TestModelPoolAndSelection:
             "claude-opus-thinking",
             "codex",
             "opencode-deepseek",
+            "cursor-auto",
             "opencode-free",
             "cerebras-oss",
             "cerebras-gemma",
@@ -650,7 +651,12 @@ class TestFreePoolOptIn:
     def test_free_pool_constants(self):
         assert frozenset({"investigator", "builder"}) == FREE_POOL_ELIGIBLE_ROLES
         assert FREE_POOL_MAX_RISK == "low"
-        assert FREE_POOL_ORDER == ["opencode-deepseek", "opencode-free", "cerebras-oss"]
+        assert FREE_POOL_ORDER == [
+            "opencode-deepseek",
+            "cursor-auto",
+            "opencode-free",
+            "cerebras-oss",
+        ]
         assert "codex" not in FREE_POOL_ORDER
         assert "reviewer" not in FREE_POOL_ELIGIBLE_ROLES
 
@@ -877,8 +883,8 @@ class TestFreePoolOptIn:
         res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
         assert res["primary_pool"] == "opencode-deepseek"
         assert res["primary_model"] == "opencode/deepseek-v4-flash-free"
-        assert res["fallback_pool"] == "opencode-free"
-        assert res["fallback_model"] == "opencode/nemotron-3.5-lightning-free"
+        assert res["fallback_pool"] == "cursor-auto"
+        assert res["fallback_model"] == "cursor-agent/auto"
 
     def test_allow_free_true_builder_low_risk_allowed(self):
         """allow_free=True, builder, low 는 무료 풀이 허용됩니다. 주 모델로 opencode/deepseek-v4-flash-free 가 선택되고 재검증 경고가 기록됩니다."""
@@ -936,7 +942,7 @@ class TestFreePoolOptIn:
         assert res["fallback_model"] != "claude-opus-5"
 
     def test_route_free_pool_primary_fail_fallback(self, monkeypatch, cerebras_key_present):
-        """opencode-deepseek 가 probe 실패하면 opencode-free 로 fallback 전환됨을 검증합니다."""
+        """opencode-deepseek 가 probe 실패하면 cursor-auto 로 fallback 전환됨을 검증합니다."""
 
         def _mock_run(cmd, *args, **kwargs):
             if "opencode/deepseek-v4-flash-free" in cmd:
@@ -950,10 +956,8 @@ class TestFreePoolOptIn:
         )
         assert res.primary_available is False
         assert res.fallback_available is True
-        assert res.fallback_model == "opencode/nemotron-3.5-lightning-free"
-        assert any(
-            "대체 모델 opencode/nemotron-3.5-lightning-free 로 전환" in w for w in res.warnings
-        )
+        assert res.fallback_model == "cursor-agent/auto"
+        assert any("대체 모델 cursor-agent/auto 로 전환" in w for w in res.warnings)
 
     def test_route_with_capsule_file_allow_free(self, tmp_path):
         """Capsule 파일을 통한 route 에서 allow_free 조건부 개방 검증."""

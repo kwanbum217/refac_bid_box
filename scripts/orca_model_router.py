@@ -67,6 +67,11 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         "probe_cmd": ["opencode", "run", "--model", "{model}", "ping"],
         "timeout": 20,
     },
+    "cursor": {
+        # --mode plan 은 읽기 전용이라 probe 가 저장소를 건드리지 않습니다.
+        "probe_cmd": ["cursor-agent", "-p", "--model", "auto", "--mode", "plan", "ping"],
+        "timeout": 60,
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -161,6 +166,26 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         ],
         "notes": "주간 잔량이 넉넉할 때만 수동 지정.",
     },
+    "cursor-auto": {
+        "id": "cursor-agent/auto",
+        "provider": "cursor",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": None,
+        "suitable_for": [
+            "investigator",
+            "builder",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": (
+            "Cursor CLI 의 Auto 라우터. Hobby(무료) 등급에서 사용량 제한 하에 쓸 수 있다. "
+            "요청마다 적합한 모델로 넘기므로 어느 모델이 처리했는지 사후 확정할 수 없어 "
+            "reviewer 에는 배정하지 않는다. --mode plan 이 도구 차원에서 읽기 전용을 "
+            "강제하므로 investigator 에 특히 적합하다. 기동은 "
+            "cursor-agent -p --model auto [--mode plan | --force] 형식."
+        ),
+    },
     "opencode-deepseek": {
         "id": "opencode/deepseek-v4-flash-free",
         "provider": "opencode",
@@ -233,7 +258,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 # 개방합니다. 무료 모델이 틀리면 손실은 시간이지 저장소가 아닙니다.
 FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator", "builder"})
 FREE_POOL_MAX_RISK: str = "low"
-FREE_POOL_ORDER: list[str] = ["opencode-deepseek", "opencode-free", "cerebras-oss"]
+FREE_POOL_ORDER: list[str] = ["opencode-deepseek", "cursor-auto", "opencode-free", "cerebras-oss"]
 
 # ---------------------------------------------------------------------------
 # 역할별 추론 등급 정책
