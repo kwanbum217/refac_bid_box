@@ -511,7 +511,10 @@ def apply_callback_payload(
     metrics = payload.get("metrics") or {}
     artifacts = payload.get("artifacts") or {}
     is_final = bool(payload.get("final"))
-    was_canceled = request_obj.status == STATUS_CANCELED
+    # 이미 종료된 요청은 늦게 도착한 final 콜백으로 되살아나지 않습니다.
+    # canceled 만 막으면 success 로 끝난 건이 뒤늦은 failed 보고로 뒤집히고,
+    # 그 반대도 성립합니다. 단계 기록은 계속 누적하되 종결 상태만 고정합니다.
+    was_terminal = request_obj.status in TERMINAL_STATUSES
 
     result_payload = dict(request_obj.result_payload or {})
     steps = dict(result_payload.get("steps") or {})
@@ -528,7 +531,7 @@ def apply_callback_payload(
     if summary:
         request_obj.result_summary = summary
 
-    if is_final and not was_canceled:
+    if is_final and not was_terminal:
         request_obj.status = STATUS_SUCCESS if status in {"success", "succeeded"} else STATUS_FAILED
         request_obj.completed_at = utcnow()
         if request_obj.status == STATUS_FAILED and not request_obj.error_message:

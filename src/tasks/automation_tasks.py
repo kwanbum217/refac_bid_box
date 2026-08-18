@@ -385,10 +385,10 @@ async def run_automation_pipeline(
             execution.started_at = execution.started_at or utcnow()
             db.commit()
 
-        try:
-            steps = get_run_mode_steps(run_mode)
-        except ValueError:
-            steps = ()
+        # 알 수 없는 run_mode 를 빈 스텝으로 대체하면 아무 일도 하지 않고
+        # SUCCESS 로 보고됩니다. 큐 인자 오타나 API-워커 버전 불일치가 조용한
+        # 성공으로 바뀌므로 바깥 예외 처리로 넘겨 실패로 보고합니다.
+        steps = get_run_mode_steps(run_mode)
 
         pipeline_status = STATUS_SUCCESS
         pipeline_error = ""
