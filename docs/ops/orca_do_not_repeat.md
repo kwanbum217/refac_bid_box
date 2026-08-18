@@ -555,6 +555,18 @@ f"<module>.{func.name}"  # 모듈 수준 함수
 | `defect_when` 에 산문 기재 | `validate_review_report.py` 가 극성을 정규화하고 판정 불가 시 "극성을 알 수 없음" 위반으로 보고 | 6.2 |
 | `coordinator_input_tokens` 로 절감 비교 | `orca_metrics_ledger.py` 가 `fresh_input_tokens` 를 스스로 계산해 대표 지표로 기록 | 6.4 |
 
+### 6.7 CI 를 초록으로 가정하기
+
+2026-08-18 에 CI 가 최소 9시간, 확인된 5회 연속 실패 상태였는데 아무도
+몰랐습니다. 실패 단계가 `bandit` 이었고 그 뒤의 프론트엔드 테스트·빌드와
+macOS·Windows 테스트가 통째로 실행되지 않았습니다. 로컬 `pytest` 는 계속
+통과했으므로 로컬 통과는 CI 통과의 근거가 아닙니다.
+
+**푸시한 뒤에는 `gh run list` 로 결과를 확인합니다.** 특히 한 단계가 실패해
+뒤 단계가 건너뛰어졌다면, 그 구간은 검증된 적이 없는 코드입니다. 실패를
+고친 직후 실행에서 새 실패가 나오는 것은 회귀가 아니라 가려져 있던 상태가
+드러난 것입니다.
+
 ### 6.6 원장 기록 시 사용량 창을 주지 않기
 
 `orca_metrics_ledger.py record` 는 `--usage-since` 와 `--usage-until` 이 있어야
