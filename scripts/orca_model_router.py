@@ -96,7 +96,10 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "auto_selectable": True,
         "max_tokens": 1_000_000,
         "suitable_for": [
+            "builder",
+            "reviewer",
             "investigator",
+            "benchmarker",
             "documenter",
         ],
         "notes": "공식 문서 기준 기본값이며 복잡한 코드와 에이전트 용도에 권장되는 등급. medium 위험도 이하의 주력 워커.",
@@ -108,9 +111,11 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "auto_selectable": True,
         "max_tokens": 1_000_000,
         "suitable_for": [
+            "investigator",
+            "benchmarker",
             "documenter",
         ],
-        "notes": "공식 문서 기준 용도는 지연이 중요한 작업, 초안 작성, 빠른 데이터 분석. low 위험도 문서화와 조사에만 자동 선택된다. 리뷰어와 빌더에는 배정하지 않는다.",
+        "notes": "공식 문서 기준 용도는 지연이 중요한 작업, 초안 작성, 빠른 데이터 분석. low 위험도 문서화·조사·계측에만 자동 선택된다. 리뷰어와 빌더에는 배정하지 않는다.",
     },
     "claude-sonnet": {
         "id": "claude-sonnet-4-6",
