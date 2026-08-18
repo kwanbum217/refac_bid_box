@@ -94,6 +94,17 @@ def schema_of(engine, database: str) -> pd.DataFrame:
     return pd.read_sql(text(sql).bindparams(tables=SCHEMA_TABLES), engine, params={"db": database})
 
 
+def verdict_exit_code(row_diff: pd.DataFrame, schema_mismatch: pd.DataFrame) -> int:
+    """차이가 하나라도 있으면 1 을 돌려줍니다.
+
+    종전에는 차이를 화면에 출력하면서도 항상 0 을 반환했습니다. 자동화가 이
+    스크립트를 호출하면 DB 불일치가 통과로 승격되어 G1 을 위반합니다.
+    """
+    if row_diff.empty and schema_mismatch.empty:
+        return 0
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -160,7 +171,7 @@ def main() -> int:
         print("두 DB 가 동일합니다. 호스트 DATABASE_URL 을 3306 으로 옮겨도 손실이 없습니다.")
     else:
         print("차이가 있습니다. 전환 전에 위 항목을 해소해야 합니다 (G1).")
-    return 0
+    return verdict_exit_code(diff, mismatch)
 
 
 if __name__ == "__main__":
