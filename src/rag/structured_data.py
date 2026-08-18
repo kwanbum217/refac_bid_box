@@ -284,6 +284,169 @@ def _numeric_or_none(value: Any) -> Any:
     return float(value)
 
 
+def _format_recent_result(result: BidResult) -> dict[str, Any]:
+    """낙찰 결과 단건 모델 인스턴스를 반환용 딕셔너리로 변환합니다."""
+    return {
+        "id": result.id,
+        "bid_ntce_no": result.bid_ntce_no,
+        "bid_ntce_ord": result.bid_ntce_ord,
+        "bid_ntce_nm": clean_display_text(
+            result.bid_ntce_nm, CORRUPTED_TEXT_FALLBACKS["title"]
+        ),
+        "dminstt_nm": clean_display_text(
+            result.dminstt_nm, CORRUPTED_TEXT_FALLBACKS["agency"]
+        ),
+        "bidwinnr_nm": clean_display_text(
+            result.bidwinnr_nm, CORRUPTED_TEXT_FALLBACKS["winner"]
+        ),
+        "sucsf_bid_amt": (
+            int(result.sucsf_bid_amt) if result.sucsf_bid_amt is not None else None
+        ),
+        "sucsf_bid_rate": (
+            float(result.sucsf_bid_rate)
+            if result.sucsf_bid_rate is not None
+            else None
+        ),
+        "rl_openg_dt": (
+            result.rl_openg_dt.isoformat(sep=" ")
+            if result.rl_openg_dt is not None
+            else None
+        ),
+        "category": result.category,
+        "category_label": _category_label(result.category),
+    }
+
+
+def _fetch_recent_results(
+    db: Session, conditions: list, limit: int
+) -> list[dict[str, Any]]:
+    """조건에 맞는 최신 낙찰 결과를 손상값 제외 후 최대 limit 건 조회합니다."""
+    if not limit:
+        return []
+    result_rows = db.execute(
+        select(BidResult)
+        .where(*conditions)
+        .order_by(
+            BidResult.rl_openg_dt.is_(None),
+            BidResult.rl_openg_dt.desc(),
+            BidResult.id.desc(),
+        )
+        .limit(limit * LIVE_OVERFETCH_FACTOR)
+    ).scalars().all()
+    recent: list[dict[str, Any]] = []
+    for result in result_rows:
+        if any(
+            is_corrupted_display_text(value)
+            for value in (
+                result.bid_ntce_nm,
+                result.dminstt_nm,
+                result.bidwinnr_nm,
+            )
+        ):
+            continue
+        recent.append(_format_recent_result(result))
+        if len(recent) >= limit:
+            break
+    return recent
+
+
+def _fetch_sample_announcements(
+    db: Session, conditions: list, limit: int = 3
+) -> list[dict[str, Any]]:
+    """표본 공고 목록을 조회하고 화면 표시용 대체 텍스트를 적용합니다."""
+    rows = db.execute(
+        select(
+            BidAnnouncement.bid_ntce_no,
+            BidAnnouncement.bid_ntce_nm,
+            BidAnnouncement.dminstt_nm,
+        )
+        .where(*conditions)
+        .order_by(BidAnnouncement.bid_ntce_dt.desc())
+        .limit(limit)
+    ).all()
+    return [
+        {
+            "bid_ntce_no": row[0],
+            # 표본은 순위와 달리 건너뛸 수 없으므로 화면과 같은 안내 문구로 대체합니다.
+            "bid_ntce_nm": clean_display_text(row[1], CORRUPTED_TEXT_FALLBACKS["title"]),
+            "dminstt_nm": clean_display_text(row[2], CORRUPTED_TEXT_FALLBACKS["agency"]),
+        }
+        for row in rows
+    ]
+
+
+def _build_time_series(
+    db: Session, plan: RetrievalPlan, conditions: list
+) -> list[dict[str, Any]]:
+    """트렌드 분석 모드일 때 개찰일자별 낙찰률 시계열 버킷을 계산합니다."""
+    if (plan.filters or {}).get("analysis_mode") != "trend":
+        return []
+    granularity = _resolve_time_series_granularity(plan)
+    series_buckets: dict[str, dict[str, float]] = {}
+    rows = db.execute(
+        select(BidResult.rl_openg_dt, BidResult.sucsf_bid_rate)
+        .where(*conditions)
+        .order_by(BidResult.rl_openg_dt)
+    ).all()
+    for opened_at, bid_rate in rows:
+        if not opened_at:
+            continue
+        bucket_key = _time_series_bucket_key(opened_at, granularity)
+        bucket = series_buckets.setdefault(bucket_key, {"sum_rate": 0.0, "bid_count": 0})
+        bucket["sum_rate"] += float(bid_rate or 0)
+        bucket["bid_count"] += 1
+
+    return [
+        {
+            "label": bucket_key,
+            "month": bucket_key,
+            "period": granularity,
+            "avg_rate": float(
+                round(
+                    (bucket["sum_rate"] / bucket["bid_count"]) if bucket["bid_count"] else 0,
+                    4,
+                )
+            ),
+            "bid_count": int(bucket["bid_count"]),
+        }
+        for bucket_key, bucket in sorted(series_buckets.items())
+    ]
+
+
+def _build_insufficiency_hints(
+    *,
+    total_count: float | None,
+    result_limit: int,
+    recent_results: list[dict[str, Any]],
+    latest_available_result_at: datetime | None,
+    announcement_count: float | None,
+    dropped_total: int,
+) -> list[str]:
+    """데이터 부족 및 손상값 제외 안내 힌트 목록을 생성합니다."""
+    hints: list[str] = []
+    if not total_count:
+        hints.append("조건에 맞는 낙찰 결과가 충분하지 않습니다.")
+    if result_limit and not recent_results:
+        if latest_available_result_at:
+            hints.append(
+                "요청 기간에 조건에 맞는 낙찰 결과가 없습니다. "
+                f"DB에서 확인 가능한 해당 조건의 최신 개찰일은 "
+                f"{latest_available_result_at.isoformat(sep=' ')}입니다."
+            )
+        else:
+            hints.append("해당 분야의 낙찰 결과 보유 데이터가 없습니다.")
+    if not announcement_count and not result_limit:
+        hints.append("조건에 맞는 공고 데이터가 없어 추세 해석이 제한될 수 있습니다.")
+
+    # 순위에서 손상값을 빼면 답이 읽히지만 집계 모수가 달라집니다. 숨기지 않고 알립니다.
+    if dropped_total:
+        hints.append(
+            "일부 항목은 원문 인코딩이 손상되어 순위 집계에서 제외했습니다. "
+            "표시된 순위는 판독 가능한 값 기준입니다."
+        )
+    return hints
+
+
 def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
     result_conditions = _result_conditions(plan)
     announcement_conditions = _announcement_conditions(plan)
@@ -310,61 +473,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
     )
 
-    recent_results: list[dict[str, Any]] = []
-    if result_limit:
-        result_rows = db.execute(
-            select(BidResult)
-            .where(*result_conditions)
-            .order_by(
-                BidResult.rl_openg_dt.is_(None),
-                BidResult.rl_openg_dt.desc(),
-                BidResult.id.desc(),
-            )
-            .limit(result_limit * LIVE_OVERFETCH_FACTOR)
-        ).scalars().all()
-        for result in result_rows:
-            if any(
-                is_corrupted_display_text(value)
-                for value in (
-                    result.bid_ntce_nm,
-                    result.dminstt_nm,
-                    result.bidwinnr_nm,
-                )
-            ):
-                continue
-            recent_results.append(
-                {
-                    "id": result.id,
-                    "bid_ntce_no": result.bid_ntce_no,
-                    "bid_ntce_ord": result.bid_ntce_ord,
-                    "bid_ntce_nm": clean_display_text(
-                        result.bid_ntce_nm, CORRUPTED_TEXT_FALLBACKS["title"]
-                    ),
-                    "dminstt_nm": clean_display_text(
-                        result.dminstt_nm, CORRUPTED_TEXT_FALLBACKS["agency"]
-                    ),
-                    "bidwinnr_nm": clean_display_text(
-                        result.bidwinnr_nm, CORRUPTED_TEXT_FALLBACKS["winner"]
-                    ),
-                    "sucsf_bid_amt": (
-                        int(result.sucsf_bid_amt) if result.sucsf_bid_amt is not None else None
-                    ),
-                    "sucsf_bid_rate": (
-                        float(result.sucsf_bid_rate)
-                        if result.sucsf_bid_rate is not None
-                        else None
-                    ),
-                    "rl_openg_dt": (
-                        result.rl_openg_dt.isoformat(sep=" ")
-                        if result.rl_openg_dt is not None
-                        else None
-                    ),
-                    "category": result.category,
-                    "category_label": _category_label(result.category),
-                }
-            )
-            if len(recent_results) >= result_limit:
-                break
+    recent_results = _fetch_recent_results(db, result_conditions, result_limit)
 
     winner_rows, dropped_winners = _top_rows(
         db,
@@ -420,80 +529,18 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         for row in announcement_rows
     ]
 
-    sample_announcements = [
-        {
-            "bid_ntce_no": row[0],
-            # 표본은 순위와 달리 건너뛸 수 없으므로 화면과 같은 안내 문구로 대체합니다.
-            "bid_ntce_nm": clean_display_text(row[1], CORRUPTED_TEXT_FALLBACKS["title"]),
-            "dminstt_nm": clean_display_text(row[2], CORRUPTED_TEXT_FALLBACKS["agency"]),
-        }
-        for row in db.execute(
-            select(
-                BidAnnouncement.bid_ntce_no,
-                BidAnnouncement.bid_ntce_nm,
-                BidAnnouncement.dminstt_nm,
-            )
-            .where(*announcement_conditions)
-            .order_by(BidAnnouncement.bid_ntce_dt.desc())
-            .limit(3)
-        ).all()
-    ]
+    sample_announcements = _fetch_sample_announcements(db, announcement_conditions)
+    time_series = _build_time_series(db, plan, result_conditions)
 
-    time_series: list[dict[str, Any]] = []
-    if (plan.filters or {}).get("analysis_mode") == "trend":
-        granularity = _resolve_time_series_granularity(plan)
-        series_buckets: dict[str, dict[str, float]] = {}
-        rows = db.execute(
-            select(BidResult.rl_openg_dt, BidResult.sucsf_bid_rate)
-            .where(*result_conditions)
-            .order_by(BidResult.rl_openg_dt)
-        ).all()
-        for opened_at, bid_rate in rows:
-            if not opened_at:
-                continue
-            bucket_key = _time_series_bucket_key(opened_at, granularity)
-            bucket = series_buckets.setdefault(bucket_key, {"sum_rate": 0.0, "bid_count": 0})
-            bucket["sum_rate"] += float(bid_rate or 0)
-            bucket["bid_count"] += 1
-
-        time_series = [
-            {
-                "label": bucket_key,
-                "month": bucket_key,
-                "period": granularity,
-                "avg_rate": float(
-                    round(
-                        (bucket["sum_rate"] / bucket["bid_count"]) if bucket["bid_count"] else 0,
-                        4,
-                    )
-                ),
-                "bid_count": int(bucket["bid_count"]),
-            }
-            for bucket_key, bucket in sorted(series_buckets.items())
-        ]
-
-    insufficiency: list[str] = []
-    if not total_count:
-        insufficiency.append("조건에 맞는 낙찰 결과가 충분하지 않습니다.")
-    if result_limit and not recent_results:
-        if latest_available_result_at:
-            insufficiency.append(
-                "요청 기간에 조건에 맞는 낙찰 결과가 없습니다. "
-                f"DB에서 확인 가능한 해당 조건의 최신 개찰일은 "
-                f"{latest_available_result_at.isoformat(sep=' ')}입니다."
-            )
-        else:
-            insufficiency.append("해당 분야의 낙찰 결과 보유 데이터가 없습니다.")
-    if not announcement_count and not result_limit:
-        insufficiency.append("조건에 맞는 공고 데이터가 없어 추세 해석이 제한될 수 있습니다.")
-
-    # 순위에서 손상값을 빼면 답이 읽히지만 집계 모수가 달라집니다. 숨기지 않고 알립니다.
     dropped_total = dropped_winners + dropped_institutions + dropped_announcements
-    if dropped_total:
-        insufficiency.append(
-            "일부 항목은 원문 인코딩이 손상되어 순위 집계에서 제외했습니다. "
-            "표시된 순위는 판독 가능한 값 기준입니다."
-        )
+    insufficiency = _build_insufficiency_hints(
+        total_count=total_count,
+        result_limit=result_limit,
+        recent_results=recent_results,
+        latest_available_result_at=latest_available_result_at,
+        announcement_count=announcement_count,
+        dropped_total=dropped_total,
+    )
 
     response_filters = dict(plan.filters or {})
     if response_filters.get("category"):
