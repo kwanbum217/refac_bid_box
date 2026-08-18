@@ -747,14 +747,21 @@ def _extract_cli_error(stdout: str) -> str | None:
     return None
 
 
-def _launch_succeeded(stdout: str) -> bool:
-    """종료 코드 0 이어도 ok 가 false 인 응답을 성공으로 보지 않습니다."""
+def _launch_succeeded(stdout: str, expect_json: bool = False) -> bool:
+    """종료 코드 0 이어도 ok 가 false 인 응답을 성공으로 보지 않습니다.
+
+    `--json` 을 붙여 호출한 명령은 JSON 을 돌려주기로 되어 있습니다. 그런데도
+    파싱되지 않거나 비어 있으면 응답을 판정할 수 없는 상태이며, 이를 성공으로
+    보면 미확인이 SUCCESS 로 승격됩니다. `expect_json` 은 그 경우를 실패로
+    돌립니다. JSON 을 요구하지 않은 호출은 사람이 읽는 출력이 정상이므로
+    종전대로 관대하게 봅니다.
+    """
     if not stdout or not stdout.strip():
-        return True
+        return not expect_json
     try:
         payload = json.loads(stdout)
     except (json.JSONDecodeError, ValueError):
-        return True
+        return not expect_json
     return not (isinstance(payload, dict) and payload.get("ok") is False)
 
 
@@ -1214,7 +1221,7 @@ def _deliver_capsule_notice(
     report_path = intent.get("report_path") or f"{capsule_path.parent}/worker_done.json"
     text = build_capsule_notice(capsule_path, report_path=str(report_path), dispatch_id=dispatch_id)
     code, stdout, stderr = terminal_send(args.terminal, text)
-    if code == 0 and _launch_succeeded(stdout):
+    if code == 0 and _launch_succeeded(stdout, expect_json=True):
         return {"status": "sent", "dispatch_id": dispatch_id, "chars": char_len(text)}
 
     reason = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
@@ -1274,7 +1281,7 @@ def cmd_create(args: argparse.Namespace) -> int:
         cmd.extend(["--deps", args.deps])
 
     code, stdout, stderr = _run_command(cmd)
-    if code != 0 or not _launch_succeeded(stdout):
+    if code != 0 or not _launch_succeeded(stdout, expect_json=True):
         reason = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
         sys.stderr.write(f"오류: task-create 실패: {reason}\n")
         return 1
@@ -1487,7 +1494,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             f"--model {model} --worktree {args.worktree} --name {worktree_name}"
         )
 
-    if code == 0 and _launch_succeeded(stdout):
+    if code == 0 and _launch_succeeded(stdout, expect_json=args.json):
         notice = _deliver_capsule_notice(args, task_id, capsule_path, intent)
         if notice["status"] == "failed":
             delivery_unverified.append("capsule_notice_failed")

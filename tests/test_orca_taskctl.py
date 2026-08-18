@@ -1347,6 +1347,25 @@ def test_launch_succeeded_rejects_ok_false():
     assert _launch_succeeded("사람이 읽는 출력") is True
 
 
+def test_launch_succeeded_rejects_unparsable_output_when_json_expected():
+    """--json 을 붙여 호출했는데 JSON 이 아니면 판정 불가이므로 실패로 봅니다."""
+    import json as _json
+
+    from scripts.orca_taskctl import _launch_succeeded
+
+    assert _launch_succeeded("사람이 읽는 출력", expect_json=True) is False
+    assert _launch_succeeded("", expect_json=True) is False
+    assert _launch_succeeded("   ", expect_json=True) is False
+    assert _launch_succeeded(_json.dumps({"ok": True}), expect_json=True) is True
+
+
+def test_terminal_send_and_task_create_expect_json():
+    """--json 을 붙이는 호출부는 expect_json 을 켜야 합니다."""
+    source = Path("scripts/orca_taskctl.py").read_text(encoding="utf-8")
+    assert source.count("_launch_succeeded(stdout, expect_json=True)") == 2
+    assert "_launch_succeeded(stdout, expect_json=args.json)" in source
+
+
 def test_cmd_dispatch_requires_launch_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """--agent 도 --terminal 도 없으면 기동을 시도하지 않고 종료 코드 2 로 거부한다."""
     intent_file = tmp_path / "intent.yaml"
