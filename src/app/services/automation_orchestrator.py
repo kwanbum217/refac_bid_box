@@ -308,22 +308,25 @@ def start_automation_request(db: Session, request_obj: AutomationRequest) -> Aut
 
 
 def _find_reusable_execution(
-    db: Session, *, pipeline_name: str, run_mode: str = ""
+    db: Session, *, pipeline_name: str, run_mode: str
 ) -> PipelineExecution | None:
     """원본 _find_local_reusable_pipeline_execution 대응.
 
-    같은 파이프라인의 최근 성공 실행을 찾습니다. run_mode 를 주면 정확히 일치하는
-    건만 봅니다. 신선도 창을 벗어난 이력은 재사용하지 않습니다.
+    같은 파이프라인에서 run_mode 가 정확히 일치하는 최근 성공 실행을 찾습니다.
+    신선도 창을 벗어난 이력은 재사용하지 않습니다.
+
+    run_mode 는 필수입니다. 빈 값을 허용하면 필터가 사라져 아무 실행이나
+    걸리는데, 여러 액션이 같은 pipeline_id 를 공유하므로 그 순간 무엇을
+    실행했는지 구별할 수 없게 됩니다.
     """
-    if not pipeline_name or REUSE_MAX_AGE_HOURS <= 0:
+    if not pipeline_name or not run_mode or REUSE_MAX_AGE_HOURS <= 0:
         return None
 
     stmt = select(PipelineExecution).where(
         PipelineExecution.pipeline_name == pipeline_name,
         PipelineExecution.status == STATUS_SUCCESS,
+        PipelineExecution.run_mode == run_mode,
     )
-    if run_mode:
-        stmt = stmt.where(PipelineExecution.run_mode == run_mode)
     stmt = stmt.order_by(
         PipelineExecution.ended_at.desc(),
         PipelineExecution.started_at.desc(),
@@ -408,25 +411,18 @@ def _try_reuse_recent_execution(
     action = get_action(request_obj.action_key)
     requested_run_mode = action.run_mode if action else ""
     pipeline_name = request_obj.pipeline_name or (action.pipeline_id if action else "")
-    if not pipeline_name:
+    if not pipeline_name or not requested_run_mode:
         return None
 
+    # run_mode 가 다른 이력으로 대체하지 않습니다. action_catalog 의 7개 액션이
+    # 모두 같은 pipeline_id 를 공유하므로, 대체를 허용하면 collect_only 성공
+    # 하나로 full_validation 이 아무것도 검증하지 않고 성공으로 보고됩니다.
     exact = _find_reusable_execution(db, pipeline_name=pipeline_name, run_mode=requested_run_mode)
-    if exact is not None:
-        return _attach_reused_execution(
-            db, request_obj, exact, requested_run_mode=requested_run_mode, exact_run_mode=True
-        )
-
-    recent = _find_reusable_execution(db, pipeline_name=pipeline_name)
-    if recent is not None:
-        return _attach_reused_execution(
-            db,
-            request_obj,
-            recent,
-            requested_run_mode=requested_run_mode,
-            exact_run_mode=recent.run_mode == requested_run_mode,
-        )
-    return None
+    if exact is None:
+        return None
+    return _attach_reused_execution(
+        db, request_obj, exact, requested_run_mode=requested_run_mode, exact_run_mode=True
+    )
 
 
 def confirm_automation_request(db: Session, request_obj: AutomationRequest) -> AutomationRequest:
