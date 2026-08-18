@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-17
-> **source_commit**: `fcdfd58`
+> **source_commit**: `c66b55f`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -85,13 +85,14 @@
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**:
    - **수신면 5종**: `orca_contract.py`, `orca_level1_gate.py`(게이트 6대), `summarize_worker_done.py`, `orca_run_reviewer.py`, `orca_metrics_ledger.py`. **Control Plane 2종**: `orca_taskctl.py`, `orca_model_router.py`.
-   - **절감량**: 도입 전 값은 확보 불가 유지. 대표 지표 유효 행 0 -> 7. 순서 효과와 모델 효과가 섞여 추세 판정은 아직 불가(3장 17번).
+   - **절감량**: 도입 전 값은 확보 불가 유지. 원장 27행이나 대표 지표 유효 행은 7행 그대로다. 2026-08-18 기록 7건은 사용량 창 미지정으로 토큰 필드가 비었다(상세 문서 6.6). 순서 효과와 모델 효과도 섞여 추세 판정 불가(3장 17번).
    - `3453a3f` 회수 사유는 3장 12·13·14번. 종결된 운영 판정 5건(Level 3, 등급 실측, 모델 4종, 병렬 3대, 도구 결함)은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 9장.
-2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증, 500줄 초과 7개 전부 판정 완료. 판정표와 남긴 과제(`retrieve_structured_data` 236줄. 재개 조건은 `pytest-cov` 승인 또는 실제 결함)는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장. **줄 수로 자동 분할하지 않는다.**
-3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 감사로 찾은 12건(요청 경로 4, Arq 태스크 경로 8)을 `to_thread` 로 오프로드했다. 요청 경로 `5d65b5c`,`bdb69b5`,`45cfd52`. 태스크 경로는 3섹션 병렬 워커 `718de84`,`c89ba04`,`fcdfd58` 로 `src/tasks` `to_thread` 0 -> 16건. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 오프로드 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
-4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
-5. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
-6. **수집 2·3회차 관찰**: Docker 필요.
+2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증, 500줄 초과 7개 전부 판정 완료. 함수 길이 과제도 종결했다. `pytest-cov` 승인 후 `retrieve_structured_data` 를 236 -> 120줄로 줄였고(`9cfe7b5`) 헬퍼 5개를 같은 모듈에 뒀다. 커버리지 91 -> 92%, dict 리터럴 10개 키 집합 전부 동일. 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장. **줄 수로 자동 분할하지 않는다.**
+3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 감사로 찾은 12건(요청 경로 4, Arq 태스크 경로 8)을 `to_thread` 로 오프로드했다. 요청 경로 `5d65b5c`,`bdb69b5`,`45cfd52`. 태스크 경로는 3섹션 병렬 워커 `718de84`,`c89ba04`,`fcdfd58` 로 `src/tasks` `to_thread` 0 -> 16건. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** `src/app/core`·`main.py` 추가 감사(A2)는 결함 0건으로 닫혔다. 오프로드 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
+4. **린터 정합 완료, bandit 지적 47건 미해결**: `ruff format` 이 한 번도 실행된 적 없어 py 125개가 미정렬이었다. 일괄 적용하고 `pre-commit install` 로 훅을 연결했다(`c66b55f`). 데이터·모델 레지스트리는 훅 대상에서 제외(G1). **남은 문제: `bandit -c pyproject.toml -r src/ scripts/` 가 47건(B603 16, B607 11, B608 9)으로 종료 코드 1 이다. CI 의 보안 스캔 단계가 현재 실패 상태이며 훅은 manual 로 우회해 두었다.**
+5. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
+6. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
+7. **수집 2·3회차 관찰**: Docker 필요.
 
 ---
 
@@ -111,6 +112,7 @@
 
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama 다중화 시 자원 점유와 c4 기준선 미확정.
+- bandit 지적 47건의 실제 위험도 미분류(4장 4번).
 - 블로킹 I/O 12건의 P95·태스크 처리량 개선치 미측정(4장 3번).
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
