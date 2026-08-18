@@ -224,10 +224,13 @@ FREE_POOL_ORDER: list[str] = ["opencode-free", "cerebras-oss"]
 TIER_POLICY: dict[tuple[str, str], list[str]] = {
     ("reviewer", "high"): ["claude-sonnet", "gemini-flash-high"],
     ("reviewer", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("reviewer", "low"): ["gemini-flash-medium", "gemini-flash-low"],
+    # gemini-flash-low 는 메타데이터 notes 에서 "리뷰어와 빌더에는 배정하지
+    # 않는다" 고 명시한 모델입니다. fallback 으로 넣어 두면 주 모델 장애 시
+    # 금지한 등급이 코드 작성과 병합 판정으로 승격됩니다.
+    ("reviewer", "low"): ["gemini-flash-medium", "gemini-flash-high"],
     ("builder", "high"): ["gemini-flash-high", "claude-sonnet"],
     ("builder", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("builder", "low"): ["gemini-flash-medium", "gemini-flash-low"],
+    ("builder", "low"): ["gemini-flash-medium", "gemini-flash-high"],
     ("investigator", "high"): ["gemini-flash-high", "gemini-flash-medium"],
     ("investigator", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
     ("investigator", "low"): ["gemini-flash-low", "gemini-flash-medium"],

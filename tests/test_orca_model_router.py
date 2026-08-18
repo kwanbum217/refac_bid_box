@@ -1060,3 +1060,25 @@ class TestRiskAwareTier:
         assert select_model("investigator", "low")["primary_pool"] == "gemini-flash-low"
         assert select_model("documenter", "low")["primary_pool"] == "gemini-flash-low"
         assert select_model("builder", "low")["primary_pool"] == "gemini-flash-medium"
+
+
+def test_flash_low_is_never_assigned_to_reviewer_or_builder():
+    """메타데이터가 리뷰어와 빌더에 배정하지 않는다고 명시한 모델은 fallback 에도 없어야 합니다.
+
+    fallback 으로 남겨 두면 주 모델 장애 시 금지한 등급이 코드 작성이나 병합
+    판정으로 승격됩니다.
+    """
+    from scripts.orca_model_router import MODEL_POOL, TIER_POLICY, select_model
+
+    assert "reviewer" not in MODEL_POOL["gemini-flash-low"]["suitable_for"]
+    assert "builder" not in MODEL_POOL["gemini-flash-low"]["suitable_for"]
+
+    for (role, risk), candidates in TIER_POLICY.items():
+        if role in {"reviewer", "builder"}:
+            assert "gemini-flash-low" not in candidates, (role, risk, candidates)
+
+    for role in ("reviewer", "builder"):
+        for risk in ("low", "medium", "high"):
+            res = select_model(role, risk)
+            assert res["primary_pool"] != "gemini-flash-low", res
+            assert res["fallback_pool"] != "gemini-flash-low", res

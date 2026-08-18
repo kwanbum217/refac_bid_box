@@ -58,7 +58,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        # 배포 런타임은 python:3.11-slim(Linux)입니다. ubuntu 를 빼면 실제
+        # 운영 플랫폼에서 backend 테스트가 한 번도 돌지 않습니다.
+        os: [ubuntu-latest, macos-latest, windows-latest]
     env:
       PYTHONUTF8: 1
     steps:
@@ -84,3 +86,21 @@ jobs:
       # 데이터 자산(모델 가중치, chroma_db)은 저장소에 없으므로 G1 검증은 로컬 전용입니다.
       - name: Run pytest (SQLite in-memory)
         run: uv run pytest -q -m "not data_assets"
+
+  docker-build:
+    name: Docker 이미지 빌드 검증
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 운영 이미지가 uv.lock 기준으로 재현 가능하게 빌드되는지 확인합니다.
+      # 이 잡이 없으면 Dockerfile 의 의존성 해석 오류를 배포 시점에야 알게 됩니다.
+      - name: Build image
+        run: docker build -t refac-bid-box:ci .
+
+      # 설정은 SECRET_KEY 를 필수로 요구합니다(운영 fail-closed). 스모크용
+      # 일회성 값을 주입할 뿐 실제 비밀은 CI 에 두지 않습니다.
+      - name: Smoke check (앱 임포트)
+        run: |
+          docker run --rm -e SECRET_KEY=ci-smoke-placeholder-value-not-a-real-secret-0123456789 \
+            refac-bid-box:ci python3 -c "import src.app.main"

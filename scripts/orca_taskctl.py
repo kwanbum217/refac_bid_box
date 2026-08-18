@@ -1371,6 +1371,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     # 기동 경로 선택. --terminal 이 있으면 이미 떠 있는 터미널에 Dispatch 로 부착하고,
     # 없으면 worker-start 로 새 워커를 감독 기동한다. worker-start --agent 는
     # claude, codex, cursor 만 받으므로 Antigravity 계열은 터미널 부착 경로만 쓸 수 있다.
+    delivery_unverified: list[str] = []
     if args.terminal:
         # 신뢰 확인 대화창을 먼저 치운다. 떠 있는 상태로 Dispatch 하면 주입한
         # 지시와 Capsule 고지문이 대화창에 먹혀 워커가 시작하지 못한다.
@@ -1389,12 +1390,14 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 f"경고: 터미널 {args.terminal} 출력을 읽을 수 없어 신뢰 확인 상태를 "
                 "판정하지 못했습니다. Dispatch 후 도달을 직접 확인하십시오.\n"
             )
+            delivery_unverified.append("trust_prompt_unreadable")
         elif trust_status == "not_settled":
             sys.stderr.write(
                 f"경고: 터미널 {args.terminal} 이 대기 시간 안에 입력 프롬프트에 이르지 "
                 "못했습니다. 이미 다른 작업을 하고 있을 수 있습니다. Dispatch 후 도달을 "
                 "직접 확인하십시오.\n"
             )
+            delivery_unverified.append("terminal_not_settled")
 
         sys.stderr.write(f"터미널 부착 Dispatch 중... (task={task_id}, terminal={args.terminal})\n")
         code, stdout, stderr = dispatch_worker(
@@ -1444,15 +1447,33 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
     if code == 0 and _launch_succeeded(stdout):
         notice = _deliver_capsule_notice(args, task_id, capsule_path, intent)
+        if notice["status"] == "failed":
+            delivery_unverified.append("capsule_notice_failed")
+
+        # 워커 기동 성공만으로 0 을 돌려주면 "정본 지시가 워커에게 도달했는가"
+        # 라는 제어 평면의 핵심 불변식이 검증되지 않은 채 성공으로 보고된다.
+        # 2026-08-17 에 신뢰 대화창 때문에 지시가 유실된 사고가 실제로 있었다.
+        unverified = delivery_unverified and not args.allow_unverified_delivery
+        exit_code = 3 if unverified else 0
+
         if args.json:
             payload: dict[str, Any] = {"launch": _maybe_json(stdout)}
             payload["capsule"] = str(capsule_path)
             payload["capsule_notice"] = notice
+            payload["delivery_unverified"] = delivery_unverified
+            payload["exit_code"] = exit_code
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             print(f"워커 기동 완료:\n{stdout}")
             print(f"Capsule 고지: {notice['status']}")
-        return 0
+        if unverified:
+            sys.stderr.write(
+                "오류: 워커는 기동했으나 지시 도달을 확인하지 못했습니다 "
+                f"({', '.join(delivery_unverified)}). 워커가 정본 지시를 받았는지 "
+                "직접 확인한 뒤 진행하십시오. 확인 없이 진행하려면 "
+                "--allow-unverified-delivery 를 쓰십시오.\n"
+            )
+        return exit_code
 
     # Orca CLI 는 실패를 stdout JSON 의 error.message 로 내보내면서 stderr 를 비워
     # 두는 경우가 있다. stderr 만 읽으면 원인이 사라지므로 stdout 도 함께 본다.
@@ -1620,6 +1641,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-capsule-notice",
         action="store_true",
         help="기동 직후 Capsule 정본 경로 고지문 전송을 생략합니다 (권장하지 않음).",
+    )
+    dsp.add_argument(
+        "--allow-unverified-delivery",
+        action="store_true",
+        help="지시 도달을 확인하지 못해도 종료 코드 0 으로 처리합니다 (권장하지 않음).",
     )
     dsp.add_argument("--json", action="store_true", help="JSON 출력")
 

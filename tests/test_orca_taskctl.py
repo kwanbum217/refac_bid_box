@@ -1391,6 +1391,13 @@ def test_cmd_dispatch_terminal_uses_attach_path(tmp_path: Path, monkeypatch: pyt
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
     )
+    # 지시 도달 확인은 별도 테스트에서 다룹니다. 여기서는 도달이 확인된 상태를
+    # 전제해야 부착 경로 자체를 검증할 수 있습니다.
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "approved")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._deliver_capsule_notice",
+        lambda *a, **k: {"status": "sent", "dispatch_id": "d1", "chars": 10},
+    )
 
     code = main(
         [
@@ -1539,6 +1546,9 @@ def test_cmd_dispatch_sends_capsule_notice_on_attach(
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
     )
+    # 지시 도달 확인은 별도 테스트에서 다룹니다. 여기서는 도달이 확인된 상태를
+    # 전제해야 부착 경로 자체를 검증할 수 있습니다.
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "approved")
 
     code = main(
         [
@@ -1579,6 +1589,9 @@ def test_cmd_dispatch_capsule_notice_failure_is_surfaced(
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
     )
+    # 지시 도달 확인은 별도 테스트에서 다룹니다. 여기서는 도달이 확인된 상태를
+    # 전제해야 부착 경로 자체를 검증할 수 있습니다.
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "approved")
 
     code = main(
         [
@@ -1592,7 +1605,8 @@ def test_cmd_dispatch_capsule_notice_failure_is_surfaced(
             "--json",
         ]
     )
-    assert code == 0
+    # 고지 전달이 실패했으면 워커가 정본 지시를 못 받았을 수 있으므로 0 이 아니다.
+    assert code == 3
     captured = capsys.readouterr()
     assert "tab_not_found" in captured.err
     assert json.loads(captured.out)["capsule_notice"]["status"] == "failed"
@@ -1613,6 +1627,9 @@ def test_cmd_dispatch_no_capsule_notice_flag(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
     )
+    # 지시 도달 확인은 별도 테스트에서 다룹니다. 여기서는 도달이 확인된 상태를
+    # 전제해야 부착 경로 자체를 검증할 수 있습니다.
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "approved")
 
     code = main(
         [
@@ -1691,6 +1708,9 @@ def test_cmd_dispatch_reuses_existing_capsule(
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
     )
+    # 지시 도달 확인은 별도 테스트에서 다룹니다. 여기서는 도달이 확인된 상태를
+    # 전제해야 부착 경로 자체를 검증할 수 있습니다.
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "approved")
 
     code = main(
         [
@@ -2069,3 +2089,42 @@ def test_expand_falls_back_to_objective_without_required_change():
     text = FACTS_INTENT.split("required_change:")[0] + "acceptance:\n  - 통과\n"
     capsule = expand_intent_to_capsule(parse_intent(text), run_id="run_x", task_id="f1")
     assert "동기 호출을 오프로드한다" in capsule
+
+
+def test_cmd_dispatch_returns_3_when_delivery_unverified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """워커가 떴어도 지시 도달을 확인하지 못하면 성공(0)으로 보고하지 않습니다.
+
+    2026-08-17 에 신뢰 대화창 때문에 Capsule 지시가 유실된 사고가 있었습니다.
+    "워커가 정본 지시를 받았는가" 는 제어 평면의 핵심 불변식이므로 미확인
+    상태를 성공과 구분합니다.
+    """
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda **kwargs: (0, json.dumps({"ok": True}), ""),
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._deliver_capsule_notice",
+        lambda *a, **k: {"status": "sent", "dispatch_id": "d1", "chars": 10},
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "not_settled")
+
+    argv = [
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--terminal",
+        "term_abc",
+        "--json",
+    ]
+    assert main(argv) == 3
+    assert main([*argv, "--allow-unverified-delivery"]) == 0
