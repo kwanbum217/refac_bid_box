@@ -233,10 +233,7 @@ def test_original_named_indexes_exist(table, index_name, columns):
 @pytest.mark.parametrize(("table", "constraint_name"), sorted(ORIGINAL_FOREIGN_KEYS.items()))
 def test_user_foreign_keys_are_declared(table, constraint_name):
     """원본은 accounts_customuser 를 FK 로 참조합니다. 이식본에는 빠져 있었습니다."""
-    names = {
-        fk.constraint.name
-        for fk in Base.metadata.tables[table].foreign_keys
-    }
+    names = {fk.constraint.name for fk in Base.metadata.tables[table].foreign_keys}
     assert constraint_name in names
 
 

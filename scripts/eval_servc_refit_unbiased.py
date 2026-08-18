@@ -70,9 +70,7 @@ def paired(diff: np.ndarray, label: str) -> dict:
     mean = float(diff.mean())
     se = float(diff.std(ddof=1) / np.sqrt(n)) if n > 1 else float("inf")
     t = mean / se if se > 0 else 0.0
-    verdict = (
-        "판별 불가" if abs(t) < T_THRESHOLD else ("전량 우세" if mean < 0 else "80% 우세")
-    )
+    verdict = "판별 불가" if abs(t) < T_THRESHOLD else ("전량 우세" if mean < 0 else "80% 우세")
     return {
         "지표": label,
         "평균 차이": round(mean, 5),
@@ -88,7 +86,9 @@ def score(actual: np.ndarray, pred: np.ndarray, label: str) -> dict:
         "방식": label,
         "MAE": round(float(error.mean()), 4),
         "RMSE": round(float(np.sqrt(((pred - actual) ** 2).mean())), 4),
-        "R2": round(1 - float(((pred - actual) ** 2).sum() / ((actual - actual.mean()) ** 2).sum()), 4),
+        "R2": round(
+            1 - float(((pred - actual) ** 2).sum() / ((actual - actual.mean()) ** 2).sum()), 4
+        ),
         "0.5%p 적중": round(float((error <= 0.5).mean()), 4),
     }
 
@@ -109,23 +109,32 @@ def main() -> int:
     year = frame["openg_dt"].dt.year
     train = frame[year <= args.train_end]
     valid = frame[year == args.valid_year].copy()
-    print(f"학습 {len(train):,}행 (~{args.train_end}년) / 검증 {len(valid):,}행 ({args.valid_year}년)")
+    print(
+        f"학습 {len(train):,}행 (~{args.train_end}년) / 검증 {len(valid):,}행 ({args.valid_year}년)"
+    )
     print("두 모델 모두 검증 연도를 학습하지 않습니다. 낙관 편향이 없습니다.\n")
 
     started = time.perf_counter()
     old_model, best_iteration = fit_split_only(train)
     cut = int(len(train) * (1 - DEFAULT_VALIDATION_SPLIT))
-    print(f"  구 방식: {cut:,}행 학습 / 조기 종료 트리 {best_iteration} ({time.perf_counter() - started:.0f}초)")
+    print(
+        f"  구 방식: {cut:,}행 학습 / 조기 종료 트리 {best_iteration} ({time.perf_counter() - started:.0f}초)"
+    )
 
     started = time.perf_counter()
     new_model = fit_refit_full(train, best_iteration)
-    print(f"  신 방식: {len(train):,}행 학습 / 트리 {best_iteration} 고정 ({time.perf_counter() - started:.0f}초)\n")
+    print(
+        f"  신 방식: {len(train):,}행 학습 / 트리 {best_iteration} 고정 ({time.perf_counter() - started:.0f}초)\n"
+    )
 
     actual = valid["winning_rate"].to_numpy(dtype=float)
     old_pred = np.asarray(old_model.predict(valid[ALL_FEATURES]), dtype=float)
     new_pred = np.asarray(new_model.predict(valid[ALL_FEATURES]), dtype=float)
 
-    rows = [score(actual, old_pred, "구 방식 (앞 80%)"), score(actual, new_pred, "신 방식 (전량 재적합)")]
+    rows = [
+        score(actual, old_pred, "구 방식 (앞 80%)"),
+        score(actual, new_pred, "신 방식 (전량 재적합)"),
+    ]
     print(f"{'=' * 88}\n결과\n{'=' * 88}")
     print(pd.DataFrame(rows).to_string(index=False))
 

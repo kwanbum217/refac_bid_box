@@ -456,9 +456,7 @@ def test_build_prompt_includes_how_field_when_present():
 
 def test_build_prompt_excludes_how_section_when_absent():
     """(14) checklist 항목에 how 필드가 없으면 검증 방법 행 자체가 출력되지 않습니다."""
-    checklist = [
-        {"id": "C1", "question": "규칙을 준수하였는가?", "defect_when": "no"}
-    ]
+    checklist = [{"id": "C1", "question": "규칙을 준수하였는가?", "defect_when": "no"}]
     prompt = build_prompt(checklist=checklist, changed_files=[], diff_text="diff sample")
     assert "검증 방법(how):" not in prompt
 
@@ -685,7 +683,15 @@ def test_get_git_diff_and_files_command_assembly(monkeypatch):
     assert files == ["src/foo.py", "src/bar.py"]
     assert diff == "diff content"
     assert len(executed_cmds) == 2
-    assert executed_cmds[0] == ["git", "diff", "--name-only", "main...HEAD", "--", "src/foo.py", "src/bar.py"]
+    assert executed_cmds[0] == [
+        "git",
+        "diff",
+        "--name-only",
+        "main...HEAD",
+        "--",
+        "src/foo.py",
+        "src/bar.py",
+    ]
     assert executed_cmds[1] == ["git", "diff", "main...HEAD", "--", "src/foo.py", "src/bar.py"]
 
 
@@ -703,21 +709,22 @@ def test_cli_paths_and_max_diff_chars_dry_run(tmp_path, capsys, monkeypatch):
         ),
     )
 
-    code = main([
-        "--capsule",
-        str(capsule_file),
-        "--out",
-        str(out_file),
-        "--paths",
-        "src/foo.py",
-        "--max-diff-chars",
-        "50000",
-        "--dry-run",
-        "--json",
-    ])
+    code = main(
+        [
+            "--capsule",
+            str(capsule_file),
+            "--out",
+            str(out_file),
+            "--paths",
+            "src/foo.py",
+            "--max-diff-chars",
+            "50000",
+            "--dry-run",
+            "--json",
+        ]
+    )
     assert code == 0
     captured = capsys.readouterr()
     data = json.loads(captured.out)
     assert data["dry_run"] is True
     assert data["char_count"] > 0
-

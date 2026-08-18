@@ -145,7 +145,10 @@ def main() -> int:
     print(f"학습 {len(train):,}행 / 검증 {len(valid):,}행\n")
 
     rows = [evaluate(train, valid, list(ALL_FEATURES), "현행 (expanding 평균)")]
-    print(f"  {rows[0]['구성']}: MAE {rows[0]['MAE']:.4f} / 0.5%p {rows[0]['0.5%p 적중']:.2%}", flush=True)
+    print(
+        f"  {rows[0]['구성']}: MAE {rows[0]['MAE']:.4f} / 0.5%p {rows[0]['0.5%p 적중']:.2%}",
+        flush=True,
+    )
 
     for window in windows:
         cols = [c for c in added if c.startswith(f"inst_roll_{window}d")]

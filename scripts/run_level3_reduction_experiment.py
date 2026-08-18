@@ -32,15 +32,12 @@ except (ModuleNotFoundError, ImportError):
 DEFAULT_RERUN_FIXTURES_DIR = Path("tests/fixtures/level3_reduction_rerun")
 LEGACY_FIXTURES_DIR = Path("tests/fixtures/level3_reduction")
 FIXTURES_DIR = (
-    DEFAULT_RERUN_FIXTURES_DIR
-    if DEFAULT_RERUN_FIXTURES_DIR.exists()
-    else LEGACY_FIXTURES_DIR
+    DEFAULT_RERUN_FIXTURES_DIR if DEFAULT_RERUN_FIXTURES_DIR.exists() else LEGACY_FIXTURES_DIR
 )
 CLEAN_FIXTURE = FIXTURES_DIR / "seeded_target_clean.py"
 DEFECTIVE_FIXTURE = FIXTURES_DIR / "seeded_target_defective.py"
 ARM_A_CAPSULE = FIXTURES_DIR / "arm_a_capsule.yaml"
 ARM_B_CAPSULE = FIXTURES_DIR / "arm_b_capsule.yaml"
-
 
 
 def create_seeded_repo(
@@ -369,7 +366,6 @@ def main(
         )
 
     return code
-
 
 
 if __name__ == "__main__":

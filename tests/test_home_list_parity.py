@@ -235,9 +235,7 @@ def test_bid_result_list_renders_award_results_page(auth_client, isolated_db):
     assert "개찰일" in body
 
 
-def test_bid_result_detail_uses_announcement_reference_winning_rate(
-    auth_client, isolated_db
-):
+def test_bid_result_detail_uses_announcement_reference_winning_rate(auth_client, isolated_db):
     """상세의 낙찰률은 수집 필드가 아니라 공고 기준금액으로 다시 계산한다.
 
     조달청이 주는 sucsf_bid_rate 는 예정가격 대비인 경우가 섞여 있어 화면에
@@ -318,9 +316,7 @@ def test_index_page_renders_restored_home_template(auth_client, isolated_db):
     assert context["result_total"] == 8
 
 
-def test_index_page_header_shows_branding_and_logout_without_bell(
-    auth_client, isolated_db
-):
+def test_index_page_header_shows_branding_and_logout_without_bell(auth_client, isolated_db):
     """헤더는 검색 폼과 로그아웃을 노출하고 알림 아이콘은 두지 않는다."""
     _add_announcement(isolated_db, bid_ntce_no="ANN-HEADER")
 
@@ -360,9 +356,7 @@ def test_index_page_recent_bid_sections_keep_latest_notice_order(isolated_db):
     )
 
     context = get_home_page_context(isolated_db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
-    section = next(
-        item for item in context["recent_bid_sections"] if item["code"] == "Thng"
-    )
+    section = next(item for item in context["recent_bid_sections"] if item["code"] == "Thng")
     matching = [row for row in section["entries"] if row.bid_ntce_no == "ANN-HOME"]
 
     assert len(matching) == 1
@@ -379,9 +373,7 @@ def test_index_page_default_sections_include_foreign_procurement(isolated_db):
     )
 
     context = get_home_page_context(isolated_db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
-    section = next(
-        item for item in context["recent_bid_sections"] if item["code"] == "Frgcpt"
-    )
+    section = next(item for item in context["recent_bid_sections"] if item["code"] == "Frgcpt")
 
     assert section["label"] == "외자"
     assert [row.bid_ntce_no for row in section["entries"]] == ["FRGCPT-HOME"]

@@ -79,9 +79,7 @@ def resolve_collection_window(
         for cat in categories:
             if fetch_type in ("both", "announce"):
                 has_ann = db.scalar(
-                    select(func.count(BidAnnouncement.id)).where(
-                        BidAnnouncement.category == cat
-                    )
+                    select(func.count(BidAnnouncement.id)).where(BidAnnouncement.category == cat)
                 )
                 if not has_ann:
                     gap_start = yesterday - timedelta(days=max_catchup_days - 1)

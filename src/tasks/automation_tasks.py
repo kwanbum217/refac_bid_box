@@ -104,7 +104,9 @@ async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, st
                 >= datetime.combine(utcnow().date(), datetime.min.time())
             )
         )
-        msg = str(metrics.get("message") or "G2B serviceKey 가 설정되지 않아 수집을 수행할 수 없습니다.")
+        msg = str(
+            metrics.get("message") or "G2B serviceKey 가 설정되지 않아 수집을 수행할 수 없습니다."
+        )
         summary = f"{msg} 오늘 적재분 {today_rows or 0}건."
         res_metrics = {
             "today_rows": int(today_rows or 0),
@@ -498,7 +500,11 @@ async def run_automation_pipeline(
                 "final",
                 STATUS_FAILED,
                 final_summary,
-                {"completed_steps": completed, "run_mode": run_mode, "step_statuses": step_statuses},
+                {
+                    "completed_steps": completed,
+                    "run_mode": run_mode,
+                    "step_statuses": step_statuses,
+                },
                 final=True,
                 **delivery,
             )
@@ -509,7 +515,10 @@ async def run_automation_pipeline(
                     execution.stage_status = STATUS_FAILED
                 execution.ended_at = utcnow()
                 execution.logs_summary = final_summary
-                execution.metrics_json = {"completed_steps": completed, "step_statuses": step_statuses}
+                execution.metrics_json = {
+                    "completed_steps": completed,
+                    "step_statuses": step_statuses,
+                }
                 db.commit()
 
             return {

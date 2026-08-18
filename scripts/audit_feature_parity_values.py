@@ -151,12 +151,10 @@ def summarize(records: list[dict]) -> pd.DataFrame:
 
 def split_differences(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """임계값 미달 특징을 기지 시점 차이와 예상 밖 차이로 나눕니다."""
-    numeric_low = (table["종류"] == "수치") & table["상관"].notna() & (
-        table["상관"] < CORRELATION_FLOOR
+    numeric_low = (
+        (table["종류"] == "수치") & table["상관"].notna() & (table["상관"] < CORRELATION_FLOOR)
     )
-    categorical_low = (table["종류"] == "범주") & (
-        table["일치율"] < CORRELATION_FLOOR
-    )
+    categorical_low = (table["종류"] == "범주") & (table["일치율"] < CORRELATION_FLOOR)
     low = table[numeric_low | categorical_low]
     known_mask = []
     for row in low.itertuples(index=False):
@@ -167,9 +165,8 @@ def split_differences(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         min_score, max_difference = limits
         score = row.상관 if row.종류 == "수치" else row.일치율
         score_ok = pd.notna(score) and score >= min_score
-        difference_ok = (
-            max_difference is None
-            or (pd.notna(row.평균절대차) and row.평균절대차 <= max_difference)
+        difference_ok = max_difference is None or (
+            pd.notna(row.평균절대차) and row.평균절대차 <= max_difference
         )
         known_mask.append(bool(score_ok and difference_ok))
     known = low[known_mask]

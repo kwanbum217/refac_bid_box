@@ -31,7 +31,9 @@ VALID_SIGNUP = {
     "agree_privacy": True,
 }
 
-PROVENANCE_TARGET = "src.app.services.tools.bid_prediction_tool.predict_optimal_price_with_provenance"
+PROVENANCE_TARGET = (
+    "src.app.services.tools.bid_prediction_tool.predict_optimal_price_with_provenance"
+)
 REGISTRY_TARGET = "src.app.services.tools.bid_prediction_tool.ModelRegistry.get_model"
 CLASSIFY_TARGET = "src.app.services.tools.bid_prediction_tool.classify_price_decision_method"
 PLAN_EXEC_TARGET = "src.app.api.v1.chatbot.execute_plan_steps"
@@ -114,10 +116,16 @@ def _answer_bundle(*_args, **_kwargs) -> AnswerBundle:
 
 @patch(CLASSIFY_TARGET, return_value="복수예가")
 @patch(REGISTRY_TARGET, return_value=DummyWrapper())
-@patch(PROVENANCE_TARGET, return_value=PredictionOutcome(
-    predicted_rate=0.973, requested_model="v25", actual_model="v25",
-    fallback_used=False, fallback_reason=None,
-))
+@patch(
+    PROVENANCE_TARGET,
+    return_value=PredictionOutcome(
+        predicted_rate=0.973,
+        requested_model="v25",
+        actual_model="v25",
+        fallback_used=False,
+        fallback_reason=None,
+    ),
+)
 def test_chat_predicts_latest_goods_bid_price_directly(
     mocked_provenance, mocked_get_model, mocked_classify, client, isolated_db
 ):
@@ -143,13 +151,26 @@ def test_chat_predicts_latest_goods_bid_price_directly(
 
 @patch(CLASSIFY_TARGET, return_value="복수예가")
 @patch(REGISTRY_TARGET, return_value=DummyWrapper())
-@patch(PROVENANCE_TARGET, side_effect=[
-    PredictionOutcome(predicted_rate=0.91, requested_model="v25", actual_model="v25", fallback_used=False),
-    PredictionOutcome(predicted_rate=0.92, requested_model="v25", actual_model="v25", fallback_used=False),
-    PredictionOutcome(predicted_rate=0.93, requested_model="v25", actual_model="v25", fallback_used=False),
-    PredictionOutcome(predicted_rate=0.94, requested_model="v25", actual_model="v25", fallback_used=False),
-    PredictionOutcome(predicted_rate=0.95, requested_model="v25", actual_model="v25", fallback_used=False),
-])
+@patch(
+    PROVENANCE_TARGET,
+    side_effect=[
+        PredictionOutcome(
+            predicted_rate=0.91, requested_model="v25", actual_model="v25", fallback_used=False
+        ),
+        PredictionOutcome(
+            predicted_rate=0.92, requested_model="v25", actual_model="v25", fallback_used=False
+        ),
+        PredictionOutcome(
+            predicted_rate=0.93, requested_model="v25", actual_model="v25", fallback_used=False
+        ),
+        PredictionOutcome(
+            predicted_rate=0.94, requested_model="v25", actual_model="v25", fallback_used=False
+        ),
+        PredictionOutcome(
+            predicted_rate=0.95, requested_model="v25", actual_model="v25", fallback_used=False
+        ),
+    ],
+)
 def test_chat_predicts_requested_count_of_latest_goods_bids(
     mocked_provenance, mocked_get_model, mocked_classify, client, isolated_db
 ):
@@ -250,9 +271,7 @@ def test_chat_persists_conversation_state_after_answer(
     assert session_state.last_plan_json["mode"] == "answer"
     assert session_state.last_filters_json["institution_name"] == "서울"
 
-    user_state = (
-        isolated_db.query(ChatSessionState).filter_by(session_key=f"user:{user_id}").one()
-    )
+    user_state = isolated_db.query(ChatSessionState).filter_by(session_key=f"user:{user_id}").one()
     assert user_state.last_filters_json["institution_name"] == "서울"
 
 

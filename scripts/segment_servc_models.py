@@ -96,8 +96,10 @@ def build_frame(parquet_path: Path) -> pd.DataFrame:
     df["month_sin"] = np.sin(2 * np.pi * month / 12)
     df["month_cos"] = np.cos(2 * np.pi * month / 12)
     df["notice_duration"] = (
-        (df["bid_clse_dt"] - df["bid_ntce_dt"]).dt.total_seconds() / 86400
-    ).clip(lower=0).fillna(14.0)
+        ((df["bid_clse_dt"] - df["bid_ntce_dt"]).dt.total_seconds() / 86400)
+        .clip(lower=0)
+        .fillna(14.0)
+    )
 
     # 하한율 결측을 0 으로 채우면 "하한율 0" 과 구분되지 않습니다.
     # 지시자를 따로 내고 값은 중앙값으로 채웁니다.

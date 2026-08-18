@@ -440,9 +440,7 @@ async def login_submit(
 
     # 동기 DB 조회와 PBKDF2 검증을 루프 스레드에서 하면 무인증 요청만으로
     # 이벤트 루프를 점유할 수 있습니다.
-    account, password_ok = await asyncio.to_thread(
-        _load_account_and_verify, db, username, password
-    )
+    account, password_ok = await asyncio.to_thread(_load_account_and_verify, db, username, password)
 
     if account is None or not password_ok:
         context = {

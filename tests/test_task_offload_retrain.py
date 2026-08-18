@@ -98,7 +98,9 @@ async def test_retrain_pipeline_task_offloaded_to_thread(monkeypatch: pytest.Mon
 
     idx_load_champ = call_log.index("_load_champion_metrics")
     idx_train = call_log.index("train_and_register")
-    assert idx_load_champ < idx_train, "champion 지표는 학습(train_and_register) 전에 읽어야 합니다."
+    assert idx_load_champ < idx_train, (
+        "champion 지표는 학습(train_and_register) 전에 읽어야 합니다."
+    )
 
 
 @pytest.mark.asyncio

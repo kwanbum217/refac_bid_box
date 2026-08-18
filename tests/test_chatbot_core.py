@@ -106,9 +106,7 @@ def test_build_retrieval_plan_parses_explicit_korean_date_range():
         ("2024년 2월 낙찰률", "2024-02-01", "2024-02-29"),
     ],
 )
-def test_build_retrieval_plan_parses_year_and_month_without_day(
-    query, expected_from, expected_to
-):
+def test_build_retrieval_plan_parses_year_and_month_without_day(query, expected_from, expected_to):
     """일자 없이 연/월만 말해도 기간 조건이 걸려야 한다.
 
     이 표현들이 파싱되지 않던 동안, 질의는 기간 조건 없이 전 기간을 집계하고도

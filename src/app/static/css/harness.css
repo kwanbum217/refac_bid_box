@@ -3,20 +3,20 @@
     --h-primary: #0073E6;
     --h-primary-hover: #005BB3;
     --h-primary-light: #E6F1FF;
-    
+
     --h-bg: #FFFFFF;
     --h-bg-secondary: #F9FAFB;
-    
+
     --h-sidebar-bg: #020B1A;
     --h-sidebar-hover: rgba(255, 255, 255, 0.1);
-    
+
     --h-border: #E6E9EF;
     --h-border-hover: #D1D5DB;
-    
+
     --h-text-primary: #1F2937;
     --h-text-secondary: #4B5563;
     --h-text-muted: #9CA3AF;
-    
+
     --h-success: #10B981;
     --h-warning: #F59E0B;
     --h-error: #EF4444;

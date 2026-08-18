@@ -116,9 +116,7 @@ def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> t
         # SQL 단계에서 제외된 것이 있었는지 확인합니다. 첫 건에서 멈추므로 저렴합니다.
         dropped = (
             db.execute(
-                select(model.id)
-                .where(column.contains(REPLACEMENT_CHAR), *scope)
-                .limit(1)
+                select(model.id).where(column.contains(REPLACEMENT_CHAR), *scope).limit(1)
             ).first()
             is not None
         )
@@ -167,7 +165,7 @@ def rebuild_ranking_snapshots(db: Session, *, force_weekly: bool = False) -> dic
     skipped = 0
     deferred: list[str] = []
 
-    for (dataset, dimension) in DIMENSIONS:
+    for dataset, dimension in DIMENSIONS:
         if not _should_rebuild(db, dataset, dimension, force_weekly):
             deferred.append(dimension)
             continue

@@ -262,7 +262,11 @@ def main() -> int:
     print("\n" + "=" * 100)
     print("사용 중인 필드 (대조군)")
     print("=" * 100)
-    print(result[result["사용중"] == "O"].sort_values("연관도", ascending=False).to_string(index=False))
+    print(
+        result[result["사용중"] == "O"]
+        .sort_values("연관도", ascending=False)
+        .to_string(index=False)
+    )
 
     print("\n" + "=" * 100)
     print(f"미사용 후보 상위 {args.top}")

@@ -248,23 +248,61 @@ TIER_POLICY: dict[tuple[str, str], list[str]] = {
 
 RISK_KEYWORDS: dict[str, list[str]] = {
     "high": [
-        r"\bmerge\b", r"\b병합\b", r"\bdeploy\b", r"\b배포\b",
-        r"\bDB\b", r"\bdatabase\b", r"\bschema\b", r"\b스키마\b",
-        r"\bmigration\b", r"\b마이그레이션\b", r"\bDROP\b", r"\bDELETE\b",
-        r"\bpromotion\b", r"\b승격\b", r"\bcutover\b", r"\b컷오버\b",
-        r"\bproduction\b", r"\b운영\b", r"\bretrain\b", r"\b재학습\b",
-        r"\bsecurity\b", r"\b보안\b", r"\bsecret\b", r"\b시크릿\b",
+        r"\bmerge\b",
+        r"\b병합\b",
+        r"\bdeploy\b",
+        r"\b배포\b",
+        r"\bDB\b",
+        r"\bdatabase\b",
+        r"\bschema\b",
+        r"\b스키마\b",
+        r"\bmigration\b",
+        r"\b마이그레이션\b",
+        r"\bDROP\b",
+        r"\bDELETE\b",
+        r"\bpromotion\b",
+        r"\b승격\b",
+        r"\bcutover\b",
+        r"\b컷오버\b",
+        r"\bproduction\b",
+        r"\b운영\b",
+        r"\bretrain\b",
+        r"\b재학습\b",
+        r"\bsecurity\b",
+        r"\b보안\b",
+        r"\bsecret\b",
+        r"\b시크릿\b",
     ],
     "medium": [
-        r"\brefactor\b", r"\b리팩토링\b", r"\boptimize\b", r"\b최적화\b",
-        r"\bperformance\b", r"\b성능\b", r"\bmodel\b", r"\b모델\b",
-        r"\bAPI\b", r"\bendpoint\b", r"\b엔드포인트\b",
-        r"\bconfig\b", r"\b설정\b", r"\bcache\b", r"\b캐시\b",
+        r"\brefactor\b",
+        r"\b리팩토링\b",
+        r"\boptimize\b",
+        r"\b최적화\b",
+        r"\bperformance\b",
+        r"\b성능\b",
+        r"\bmodel\b",
+        r"\b모델\b",
+        r"\bAPI\b",
+        r"\bendpoint\b",
+        r"\b엔드포인트\b",
+        r"\bconfig\b",
+        r"\b설정\b",
+        r"\bcache\b",
+        r"\b캐시\b",
     ],
     "low": [
-        r"\bdoc\b", r"\b문서\b", r"\btest\b", r"\b테스트\b",
-        r"\blint\b", r"\bformat\b", r"\b포맷\b", r"\btypo\b",
-        r"\bcomment\b", r"\b주석\b", r"\brename\b", r"\bchore\b",
+        r"\bdoc\b",
+        r"\b문서\b",
+        r"\btest\b",
+        r"\b테스트\b",
+        r"\blint\b",
+        r"\bformat\b",
+        r"\b포맷\b",
+        r"\btypo\b",
+        r"\bcomment\b",
+        r"\b주석\b",
+        r"\brename\b",
+        r"\bchore\b",
     ],
 }
 
@@ -373,10 +411,16 @@ def free_pool_eligibility(
     """
     if role not in FREE_POOL_ELIGIBLE_ROLES:
         eligible_roles_str = ", ".join(sorted(FREE_POOL_ELIGIBLE_ROLES))
-        return False, f"무료 풀 개방 불가: 역할({role})이 무료 풀 개방 대상({eligible_roles_str})이 아닙니다."
+        return (
+            False,
+            f"무료 풀 개방 불가: 역할({role})이 무료 풀 개방 대상({eligible_roles_str})이 아닙니다.",
+        )
 
     if risk != FREE_POOL_MAX_RISK:
-        return False, f"무료 풀 개방 불가: 위험도({risk})가 허용 기준({FREE_POOL_MAX_RISK})을 초과합니다."
+        return (
+            False,
+            f"무료 풀 개방 불가: 위험도({risk})가 허용 기준({FREE_POOL_MAX_RISK})을 초과합니다.",
+        )
 
     if has_write_scope:
         return False, "무료 풀 개방 불가: 쓰기 권한(allowed_write_files)이 존재합니다."
@@ -493,7 +537,9 @@ def load_repo_env(repo_root: Path | str | None = None) -> dict[str, str]:
                 key, _, val = line.partition("=")
                 key = key.strip()
                 val = val.strip()
-                if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                if (val.startswith('"') and val.endswith('"')) or (
+                    val.startswith("'") and val.endswith("'")
+                ):
                     val = val[1:-1]
                 if key:
                     env_vars[key] = val
@@ -588,7 +634,10 @@ def probe_model(
         if proc.stderr and proc.stderr.strip():
             stderr_lower = proc.stderr.lower()
             if "error:" in stderr_lower or "failed to" in stderr_lower:
-                return False, f"probe 실패: 종료 코드는 0이나 stderr 오류 발생: {proc.stderr.strip()[:200]}"
+                return (
+                    False,
+                    f"probe 실패: 종료 코드는 0이나 stderr 오류 발생: {proc.stderr.strip()[:200]}",
+                )
             stderr_short = proc.stderr.strip().splitlines()[0][:100]
             return True, f"OK (종료 코드 0, {len(stdout_clean)}자, stderr: {stderr_short})"
         return True, f"OK (종료 코드 0, {len(stdout_clean)}자)"
@@ -598,9 +647,24 @@ def probe_model(
     stdout_lower = proc.stdout.lower()
     combined = f"{stderr_lower} {stdout_lower}"
 
-    if any(k in combined for k in ("quota", "resource_exhausted", "429", "usage limit", "upgrade to pro")):
+    if any(
+        k in combined
+        for k in ("quota", "resource_exhausted", "429", "usage limit", "upgrade to pro")
+    ):
         detail = f"할당량 초과 (quota exceeded): {proc.stderr.strip()[:200]}"
-    elif any(k in combined for k in ("unauthorized", "unauthenticated", "forbidden", "auth", "api_key", "wrong api key", "401", "403")):
+    elif any(
+        k in combined
+        for k in (
+            "unauthorized",
+            "unauthenticated",
+            "forbidden",
+            "auth",
+            "api_key",
+            "wrong api key",
+            "401",
+            "403",
+        )
+    ):
         detail = f"인증 실패 (auth failed): {proc.stderr.strip()[:200]}"
     elif "not found" in combined or "no such file" in combined:
         detail = f"모델 또는 명령어 없음: {proc.stderr.strip()[:200]}"
@@ -736,7 +800,9 @@ def route(
             break
 
     if primary_pool_info and primary_pool_info["tier"] == "free":
-        warnings.append("주의: 무료 모델 풀이 주 모델로 선택되었습니다. 산출물 재검증 필수이며 임계 경로 금지입니다.")
+        warnings.append(
+            "주의: 무료 모델 풀이 주 모델로 선택되었습니다. 산출물 재검증 필수이며 임계 경로 금지입니다."
+        )
         if primary_pool_info.get("max_tokens") is None:
             warnings.append(
                 f"주의: 선택된 모델({primary_pool_info['id']})의 컨텍스트 한도가 확인되지 않았습니다. "
@@ -800,7 +866,9 @@ def _build_parser() -> argparse.ArgumentParser:
     # classify
     cls = sub.add_parser("classify", help="Task 의 위험도와 권장 모델을 분류합니다.")
     cls.add_argument("--capsule", help="Task Capsule YAML 경로")
-    cls.add_argument("--role", choices=["builder", "reviewer", "investigator", "benchmarker", "documenter"])
+    cls.add_argument(
+        "--role", choices=["builder", "reviewer", "investigator", "benchmarker", "documenter"]
+    )
     cls.add_argument("--objective", help="작업 목표 텍스트")
     cls.add_argument("--why-now", help="작업 배경 텍스트")
     cls.add_argument(
@@ -819,7 +887,9 @@ def _build_parser() -> argparse.ArgumentParser:
     # route
     rt = sub.add_parser("route", help="분류 + probe 통합 라우팅.")
     rt.add_argument("--capsule", help="Task Capsule YAML 경로")
-    rt.add_argument("--role", choices=["builder", "reviewer", "investigator", "benchmarker", "documenter"])
+    rt.add_argument(
+        "--role", choices=["builder", "reviewer", "investigator", "benchmarker", "documenter"]
+    )
     rt.add_argument("--risk", choices=["low", "medium", "high"])
     rt.add_argument("--objective", help="작업 목표 텍스트")
     rt.add_argument("--why-now", help="작업 배경 텍스트")
@@ -865,15 +935,21 @@ def cmd_classify(args: argparse.Namespace) -> int:
     )
 
     if args.json:
-        print(json.dumps({
-            "risk": risk,
-            "role": role,
-            "primary_model": selection["primary_model"],
-            "primary_pool": selection["primary_pool"],
-            "fallback_model": selection.get("fallback_model"),
-            "fallback_pool": selection.get("fallback_pool"),
-            "reasons": reasons,
-        }, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "risk": risk,
+                    "role": role,
+                    "primary_model": selection["primary_model"],
+                    "primary_pool": selection["primary_pool"],
+                    "fallback_model": selection.get("fallback_model"),
+                    "fallback_pool": selection.get("fallback_pool"),
+                    "reasons": reasons,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
         print(f"위험도:       {risk}")
         print(f"역할:         {role}")
@@ -890,7 +966,13 @@ def cmd_classify(args: argparse.Namespace) -> int:
 def cmd_probe(args: argparse.Namespace) -> int:
     available, detail = probe_model(args.model, args.timeout)
     if args.json:
-        print(json.dumps({"model": args.model, "available": available, "detail": detail}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {"model": args.model, "available": available, "detail": detail},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
         status = "사용 가능" if available else "사용 불가"
         print(f"모델:    {args.model}")
@@ -926,23 +1008,37 @@ def cmd_route(args: argparse.Namespace) -> int:
     )
 
     if args.json:
-        print(json.dumps({
-            "risk": result.risk,
-            "role": result.role,
-            "primary_model": result.primary_model,
-            "primary_available": result.primary_available,
-            "fallback_model": result.fallback_model,
-            "fallback_available": result.fallback_available,
-            "reasons": result.reasons,
-            "warnings": result.warnings,
-            "recommended": recommended,
-        }, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "risk": result.risk,
+                    "role": result.role,
+                    "primary_model": result.primary_model,
+                    "primary_available": result.primary_available,
+                    "fallback_model": result.fallback_model,
+                    "fallback_available": result.fallback_available,
+                    "reasons": result.reasons,
+                    "warnings": result.warnings,
+                    "recommended": recommended,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
         print(f"위험도:        {result.risk}")
         print(f"역할:          {result.role}")
-        print(f"주 모델:       {result.primary_model} {'(사용 가능)' if result.primary_available else '(사용 불가)'}")
+        print(
+            f"주 모델:       {result.primary_model} {'(사용 가능)' if result.primary_available else '(사용 불가)'}"
+        )
         if result.fallback_model:
-            fb_status = "(사용 가능)" if result.fallback_available else "(사용 불가)" if result.fallback_available is not None else "(미확인)"
+            fb_status = (
+                "(사용 가능)"
+                if result.fallback_available
+                else "(사용 불가)"
+                if result.fallback_available is not None
+                else "(미확인)"
+            )
             print(f"대체 모델:     {result.fallback_model} {fb_status}")
         if result.reasons:
             print(f"판정 근거:     {', '.join(result.reasons)}")
@@ -986,7 +1082,9 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"    용도:      {', '.join(info['suitable_for']) or '워커 사용 불가'}")
         print(f"    비고:      {info['notes']}")
         print()
-    print("안내: 무료 풀(opencode-free)은 --allow-free 지정 시 쓰기 권한 없는 low 위험도 조사(investigator) 역할에 한해 조건부로 개방됩니다.")
+    print(
+        "안내: 무료 풀(opencode-free)은 --allow-free 지정 시 쓰기 권한 없는 low 위험도 조사(investigator) 역할에 한해 조건부로 개방됩니다."
+    )
     return 0
 
 

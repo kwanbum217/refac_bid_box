@@ -154,7 +154,11 @@ async def test_manual_retrain_runs_only_retrain_step(worker_db):
         )
 
     assert calls == ["retrain"]
-    assert result == {"status": "success", "run_mode": "retrain_only", "completed_steps": ["retrain"]}
+    assert result == {
+        "status": "success",
+        "run_mode": "retrain_only",
+        "completed_steps": ["retrain"],
+    }
 
 
 @pytest.mark.asyncio

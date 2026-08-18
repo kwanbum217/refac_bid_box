@@ -74,7 +74,9 @@ async def test_collect_status_success_propagation(worker_db, monkeypatch):
         },
     }
 
-    with patch("src.app.services.collector_service.collect_bids", new_callable=AsyncMock) as mock_collect:
+    with patch(
+        "src.app.services.collector_service.collect_bids", new_callable=AsyncMock
+    ) as mock_collect:
         mock_collect.return_value = mock_collect_metrics
         result = await automation_tasks.run_automation_pipeline(
             {},
@@ -96,9 +98,7 @@ async def test_collect_status_success_propagation(worker_db, monkeypatch):
     assert execution.stage_status == "success"
 
     req = (
-        worker_db.query(AutomationRequest)
-        .filter(AutomationRequest.request_id == request_id)
-        .one()
+        worker_db.query(AutomationRequest).filter(AutomationRequest.request_id == request_id).one()
     )
     assert req.status == "success"
     steps = req.result_payload.get("steps", {})
@@ -141,16 +141,20 @@ async def test_collect_status_partial_success_propagation(worker_db, monkeypatch
     def dummy_inspect(db, **kwargs):
         return ("inspect step ok", {})
 
-    with patch("src.app.services.collector_service.collect_bids", new_callable=AsyncMock) as mock_collect, \
-         patch.dict(
-             automation_tasks.STEP_RUNNERS,
-             {
-                 "collect": automation_tasks._step_collect,
-                 "search": dummy_search,
-                 "rag": dummy_rag,
-                 "inspect": dummy_inspect,
-             },
-         ):
+    with (
+        patch(
+            "src.app.services.collector_service.collect_bids", new_callable=AsyncMock
+        ) as mock_collect,
+        patch.dict(
+            automation_tasks.STEP_RUNNERS,
+            {
+                "collect": automation_tasks._step_collect,
+                "search": dummy_search,
+                "rag": dummy_rag,
+                "inspect": dummy_inspect,
+            },
+        ),
+    ):
         mock_collect.return_value = mock_collect_metrics
         result = await automation_tasks.run_automation_pipeline(
             {},
@@ -172,9 +176,7 @@ async def test_collect_status_partial_success_propagation(worker_db, monkeypatch
     assert execution.stage_status == "failed"
 
     req = (
-        worker_db.query(AutomationRequest)
-        .filter(AutomationRequest.request_id == request_id)
-        .one()
+        worker_db.query(AutomationRequest).filter(AutomationRequest.request_id == request_id).one()
     )
     assert req.status == "failed"
     steps = req.result_payload.get("steps", {})
@@ -212,8 +214,15 @@ async def test_collect_status_failed_propagation(worker_db, monkeypatch):
     def dummy_rag(db, **kwargs):
         return ("rag step ok", {})
 
-    with patch("src.app.services.collector_service.collect_bids", new_callable=AsyncMock) as mock_collect, \
-         patch.dict(automation_tasks.STEP_RUNNERS, {"collect": automation_tasks._step_collect, "rag": dummy_rag}):
+    with (
+        patch(
+            "src.app.services.collector_service.collect_bids", new_callable=AsyncMock
+        ) as mock_collect,
+        patch.dict(
+            automation_tasks.STEP_RUNNERS,
+            {"collect": automation_tasks._step_collect, "rag": dummy_rag},
+        ),
+    ):
         mock_collect.return_value = mock_collect_metrics
         result = await automation_tasks.run_automation_pipeline(
             {},
@@ -235,9 +244,7 @@ async def test_collect_status_failed_propagation(worker_db, monkeypatch):
     assert execution.stage_status == "failed"
 
     req = (
-        worker_db.query(AutomationRequest)
-        .filter(AutomationRequest.request_id == request_id)
-        .one()
+        worker_db.query(AutomationRequest).filter(AutomationRequest.request_id == request_id).one()
     )
     assert req.status == "failed"
     steps = req.result_payload.get("steps", {})
@@ -265,7 +272,9 @@ async def test_collect_status_error_servicekey_compatibility(worker_db, monkeypa
         "failed_count": 0,
     }
 
-    with patch("src.app.services.collector_service.collect_bids", new_callable=AsyncMock) as mock_collect:
+    with patch(
+        "src.app.services.collector_service.collect_bids", new_callable=AsyncMock
+    ) as mock_collect:
         mock_collect.return_value = mock_collect_metrics
         result = await automation_tasks.run_automation_pipeline(
             {},
@@ -287,9 +296,7 @@ async def test_collect_status_error_servicekey_compatibility(worker_db, monkeypa
     assert execution.stage_status == "error"
 
     req = (
-        worker_db.query(AutomationRequest)
-        .filter(AutomationRequest.request_id == request_id)
-        .one()
+        worker_db.query(AutomationRequest).filter(AutomationRequest.request_id == request_id).one()
     )
     assert req.status == "failed"
     steps = req.result_payload.get("steps", {})
@@ -314,14 +321,18 @@ async def test_collect_status_unknown_malformed_fail_closed(worker_db, monkeypat
     def dummy_search(db, **kwargs):
         return ("search step ok", {})
 
-    with patch("src.app.services.collector_service.collect_bids", new_callable=AsyncMock) as mock_collect, \
-         patch.dict(
-             automation_tasks.STEP_RUNNERS,
-             {
-                 "collect": automation_tasks._step_collect,
-                 "search": dummy_search,
-             },
-         ):
+    with (
+        patch(
+            "src.app.services.collector_service.collect_bids", new_callable=AsyncMock
+        ) as mock_collect,
+        patch.dict(
+            automation_tasks.STEP_RUNNERS,
+            {
+                "collect": automation_tasks._step_collect,
+                "search": dummy_search,
+            },
+        ),
+    ):
         mock_collect.return_value = mock_collect_metrics
         result = await automation_tasks.run_automation_pipeline(
             {},
@@ -343,9 +354,7 @@ async def test_collect_status_unknown_malformed_fail_closed(worker_db, monkeypat
     assert execution.stage_status == "failed"
 
     req = (
-        worker_db.query(AutomationRequest)
-        .filter(AutomationRequest.request_id == request_id)
-        .one()
+        worker_db.query(AutomationRequest).filter(AutomationRequest.request_id == request_id).one()
     )
     assert req.status == "failed"
     steps = req.result_payload.get("steps", {})

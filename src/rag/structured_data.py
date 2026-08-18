@@ -290,49 +290,39 @@ def _format_recent_result(result: BidResult) -> dict[str, Any]:
         "id": result.id,
         "bid_ntce_no": result.bid_ntce_no,
         "bid_ntce_ord": result.bid_ntce_ord,
-        "bid_ntce_nm": clean_display_text(
-            result.bid_ntce_nm, CORRUPTED_TEXT_FALLBACKS["title"]
-        ),
-        "dminstt_nm": clean_display_text(
-            result.dminstt_nm, CORRUPTED_TEXT_FALLBACKS["agency"]
-        ),
-        "bidwinnr_nm": clean_display_text(
-            result.bidwinnr_nm, CORRUPTED_TEXT_FALLBACKS["winner"]
-        ),
-        "sucsf_bid_amt": (
-            int(result.sucsf_bid_amt) if result.sucsf_bid_amt is not None else None
-        ),
+        "bid_ntce_nm": clean_display_text(result.bid_ntce_nm, CORRUPTED_TEXT_FALLBACKS["title"]),
+        "dminstt_nm": clean_display_text(result.dminstt_nm, CORRUPTED_TEXT_FALLBACKS["agency"]),
+        "bidwinnr_nm": clean_display_text(result.bidwinnr_nm, CORRUPTED_TEXT_FALLBACKS["winner"]),
+        "sucsf_bid_amt": (int(result.sucsf_bid_amt) if result.sucsf_bid_amt is not None else None),
         "sucsf_bid_rate": (
-            float(result.sucsf_bid_rate)
-            if result.sucsf_bid_rate is not None
-            else None
+            float(result.sucsf_bid_rate) if result.sucsf_bid_rate is not None else None
         ),
         "rl_openg_dt": (
-            result.rl_openg_dt.isoformat(sep=" ")
-            if result.rl_openg_dt is not None
-            else None
+            result.rl_openg_dt.isoformat(sep=" ") if result.rl_openg_dt is not None else None
         ),
         "category": result.category,
         "category_label": _category_label(result.category),
     }
 
 
-def _fetch_recent_results(
-    db: Session, conditions: list, limit: int
-) -> list[dict[str, Any]]:
+def _fetch_recent_results(db: Session, conditions: list, limit: int) -> list[dict[str, Any]]:
     """조건에 맞는 최신 낙찰 결과를 손상값 제외 후 최대 limit 건 조회합니다."""
     if not limit:
         return []
-    result_rows = db.execute(
-        select(BidResult)
-        .where(*conditions)
-        .order_by(
-            BidResult.rl_openg_dt.is_(None),
-            BidResult.rl_openg_dt.desc(),
-            BidResult.id.desc(),
+    result_rows = (
+        db.execute(
+            select(BidResult)
+            .where(*conditions)
+            .order_by(
+                BidResult.rl_openg_dt.is_(None),
+                BidResult.rl_openg_dt.desc(),
+                BidResult.id.desc(),
+            )
+            .limit(limit * LIVE_OVERFETCH_FACTOR)
         )
-        .limit(limit * LIVE_OVERFETCH_FACTOR)
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     recent: list[dict[str, Any]] = []
     for result in result_rows:
         if any(
@@ -375,9 +365,7 @@ def _fetch_sample_announcements(
     ]
 
 
-def _build_time_series(
-    db: Session, plan: RetrievalPlan, conditions: list
-) -> list[dict[str, Any]]:
+def _build_time_series(db: Session, plan: RetrievalPlan, conditions: list) -> list[dict[str, Any]]:
     """트렌드 분석 모드일 때 개찰일자별 낙찰률 시계열 버킷을 계산합니다."""
     if (plan.filters or {}).get("analysis_mode") != "trend":
         return []
@@ -455,9 +443,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
     latest_available_result_at = None
     if result_limit:
         latest_available_result_at = db.scalar(
-            select(func.max(BidResult.rl_openg_dt)).where(
-                *_result_availability_conditions(plan)
-            )
+            select(func.max(BidResult.rl_openg_dt)).where(*_result_availability_conditions(plan))
         )
 
     total_count, avg_rate, total_amt = _cached_aggregate(

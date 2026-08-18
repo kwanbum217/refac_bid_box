@@ -452,8 +452,8 @@ ast.dump(node, include_attributes=False)  # 위치 정보를 제외해 이동만
 **이름을 평평하게 모으면 거짓 양성이 납니다.** 클래스 메서드와 모듈 수준 함수가 같은 이름을 가질 수 있습니다. 2026-08-17 2차 분할에서 `predict_interval` 이 본문 변경으로 나왔는데, 실제로는 `JoblibModelWrapper.predict_interval` 메서드와 모듈 수준 `predict_interval` 함수가 한 칸을 다퉜을 뿐이고 둘 다 동일했습니다. 소유자를 포함해 정규화하십시오.
 
 ```python
-f"{cls.name}.{method.name}"   # 클래스 메서드
-f"<module>.{func.name}"       # 모듈 수준 함수
+f"{cls.name}.{method.name}"  # 클래스 메서드
+f"<module>.{func.name}"  # 모듈 수준 함수
 ```
 
 정규화 후 재대조에서 `model_registry.py` 61개와 `chatbot.py` 24개 전부가 동일로 확정되었습니다. **대조 도구가 낸 결함 신호도 근거를 확인하기 전에는 결함이 아닙니다.**

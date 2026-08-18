@@ -16,7 +16,9 @@ from src.app.core.db import SessionLocal
 from src.ml.institution_history import calculate_institution_win_rate
 
 
-def sample_institutions(session: Any, category: str, reference_date: datetime, lookback_days: int = 365, limit: int = 10):
+def sample_institutions(
+    session: Any, category: str, reference_date: datetime, lookback_days: int = 365, limit: int = 10
+):
     start_date = reference_date - __import__("datetime").timedelta(days=lookback_days)
     query = text("""
         SELECT dminstt_nm, COUNT(*) AS cnt
@@ -32,15 +34,28 @@ def sample_institutions(session: Any, category: str, reference_date: datetime, l
         ORDER BY cnt DESC
         LIMIT :limit
     """)
-    return session.execute(query, {
-        "category": category,
-        "ref_date": reference_date,
-        "start_date": start_date,
-        "limit": limit,
-    }).mappings().all()
+    return (
+        session.execute(
+            query,
+            {
+                "category": category,
+                "ref_date": reference_date,
+                "start_date": start_date,
+                "limit": limit,
+            },
+        )
+        .mappings()
+        .all()
+    )
 
 
-def category_distribution(session: Any, category: str, reference_date: datetime, lookback_days: int = 365, sample_size: int = 100):
+def category_distribution(
+    session: Any,
+    category: str,
+    reference_date: datetime,
+    lookback_days: int = 365,
+    sample_size: int = 100,
+):
     start_date = reference_date - __import__("datetime").timedelta(days=lookback_days)
     query = text("""
         SELECT dminstt_nm
@@ -57,12 +72,19 @@ def category_distribution(session: Any, category: str, reference_date: datetime,
         ORDER BY RAND()
         LIMIT :limit
     """)
-    rows = session.execute(query, {
-        "category": category,
-        "ref_date": reference_date,
-        "start_date": start_date,
-        "limit": sample_size,
-    }).mappings().all()
+    rows = (
+        session.execute(
+            query,
+            {
+                "category": category,
+                "ref_date": reference_date,
+                "start_date": start_date,
+                "limit": sample_size,
+            },
+        )
+        .mappings()
+        .all()
+    )
 
     rates = []
     for row in rows:

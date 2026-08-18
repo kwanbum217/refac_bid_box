@@ -208,7 +208,7 @@ class TestResolveCollectionWindow:
         """announce 체크포인트보다 result 체크포인트가 오래됐을 때 result 쪽이 채택됩니다."""
         fake_today = datetime(2026, 8, 13, 10, 0, 0)
         ann_checkpoint = datetime(2026, 8, 12, 12, 0, 0)  # 어제
-        res_checkpoint = datetime(2026, 8, 7, 12, 0, 0)   # 5일 전
+        res_checkpoint = datetime(2026, 8, 7, 12, 0, 0)  # 5일 전
         db = _make_db(ann_checkpoint, res_checkpoint)
 
         with _utcnow_fixed(fake_today):
@@ -270,7 +270,9 @@ async def test_cross_type_min_chooses_older(isolated_db):
             categories=("Thng",),
         )
 
-    assert start == "20260808", f"결과 체크포인트(8/7)를 무시하고 공고(8/12)를 택했습니다: start={start}"
+    assert start == "20260808", (
+        f"결과 체크포인트(8/7)를 무시하고 공고(8/12)를 택했습니다: start={start}"
+    )
     assert end == "20260812"
     assert is_catchup is True
 

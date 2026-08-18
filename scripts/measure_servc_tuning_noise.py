@@ -124,7 +124,9 @@ def main() -> int:
     if gain <= noise:
         print("차이가 시드 산포 이내입니다. 탐색 결과를 채택할 근거가 없습니다.")
     else:
-        print(f"차이가 시드 산포의 {gain / noise:.1f}배입니다. 운영 경로 쌍대 검정으로 진행하십시오.")
+        print(
+            f"차이가 시드 산포의 {gain / noise:.1f}배입니다. 운영 경로 쌍대 검정으로 진행하십시오."
+        )
 
     base_hit = summarize(records["기준선"], "hit_0_5")
     best_hit = summarize(records["탐색 결과"], "hit_0_5")

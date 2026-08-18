@@ -236,9 +236,7 @@ def lookup_repeat_history(
         return None
 
     matched = [
-        (float(rate), opened)
-        for name, rate, opened in rows
-        if repeat_key(institution, name) == key
+        (float(rate), opened) for name, rate, opened in rows if repeat_key(institution, name) == key
     ]
     if not matched:
         return None

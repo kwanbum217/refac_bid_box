@@ -46,7 +46,9 @@ def test_champion_comes_from_serving_slot(serving_root, tmp_path):
     """레지스트리에 더 최근 버전이 있어도 서빙본이 기준입니다."""
     _write(serving_root / "m", {"version": "v_serving", "source_metrics": SERVING_METRICS})
     registry = tmp_path / "registry"
-    _write(registry / "m" / "v_experiment", {"version": "v_experiment", "metrics": {"r2": -35999.0}})
+    _write(
+        registry / "m" / "v_experiment", {"version": "v_experiment", "metrics": {"r2": -35999.0}}
+    )
 
     version, metrics = retrain_task._load_champion_metrics("m", registry_dir=str(registry))
 

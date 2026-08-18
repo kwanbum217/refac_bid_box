@@ -194,9 +194,7 @@ def test_predict_price_defaults_to_category_model_for_services(
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
 @patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
-def test_predict_price_passes_selected_model(
-    mock_predict, mock_get_model, client, isolated_db
-):
+def test_predict_price_passes_selected_model(mock_predict, mock_get_model, client, isolated_db):
     bid = _create_bid(isolated_db)
     mock_predict.return_value = _outcome(0.97)
     mock_get_model.return_value = _mock_wrapper("Dummy Model")

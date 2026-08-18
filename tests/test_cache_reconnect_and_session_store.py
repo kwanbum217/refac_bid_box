@@ -240,7 +240,9 @@ def test_session_cookie_secure_flag_follows_environment(client, monkeypatch):
     assert "secure" not in response.headers["set-cookie"].lower()
 
     monkeypatch.setattr(accounts_module.settings, "ENVIRONMENT", "production")
-    response = client.post("/api/v1/accounts/login", json={"username": "cookieuser", "password": "StrongPass123!!"})
+    response = client.post(
+        "/api/v1/accounts/login", json={"username": "cookieuser", "password": "StrongPass123!!"}
+    )
     assert response.status_code == 200, response.text
     set_cookie = response.headers["set-cookie"].lower()
     assert "secure" in set_cookie

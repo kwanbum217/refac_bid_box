@@ -171,12 +171,8 @@ def _predict_bid(bid: BidAnnouncement, requested_model: str) -> dict[str, Any]:
                 "ntce_instt_nm": bid.ntce_instt_nm or "",
                 "category": bid.category,
                 "category_label": bid.category_label,
-                "bid_ntce_dt": (
-                    bid.bid_ntce_dt.isoformat() if bid.bid_ntce_dt else ""
-                ),
-                "collected_at": (
-                    bid.collected_at.isoformat() if bid.collected_at else ""
-                ),
+                "bid_ntce_dt": (bid.bid_ntce_dt.isoformat() if bid.bid_ntce_dt else ""),
+                "collected_at": (bid.collected_at.isoformat() if bid.collected_at else ""),
             },
             "model_id": "",
             "model_name": "",
@@ -212,12 +208,8 @@ def _predict_bid(bid: BidAnnouncement, requested_model: str) -> dict[str, Any]:
                 "ntce_instt_nm": bid.ntce_instt_nm or "",
                 "category": bid.category,
                 "category_label": bid.category_label,
-                "bid_ntce_dt": (
-                    bid.bid_ntce_dt.isoformat() if bid.bid_ntce_dt else ""
-                ),
-                "collected_at": (
-                    bid.collected_at.isoformat() if bid.collected_at else ""
-                ),
+                "bid_ntce_dt": (bid.bid_ntce_dt.isoformat() if bid.bid_ntce_dt else ""),
+                "collected_at": (bid.collected_at.isoformat() if bid.collected_at else ""),
             },
             "model_id": "",
             "model_name": "",

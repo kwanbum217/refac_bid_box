@@ -80,19 +80,11 @@ def test_no_circular_imports_in_new_modules():
 def test_module_line_count_limits():
     """분할 후 원본 모듈 600줄 이하 및 신규 2개 모듈 각각 550줄 이하 제약 검증."""
     ml_dir = Path("src/ml")
-    registry_lines = len(
-        (ml_dir / "model_registry.py").read_text(encoding="utf-8").splitlines()
-    )
-    assert registry_lines <= 600, (
-        f"model_registry.py 줄 수 초과: {registry_lines} > 600"
-    )
+    registry_lines = len((ml_dir / "model_registry.py").read_text(encoding="utf-8").splitlines())
+    assert registry_lines <= 600, f"model_registry.py 줄 수 초과: {registry_lines} > 600"
 
-    wrappers_lines = len(
-        (ml_dir / "model_wrappers.py").read_text(encoding="utf-8").splitlines()
-    )
-    assert wrappers_lines <= 550, (
-        f"model_wrappers.py 줄 수 초과: {wrappers_lines} > 550"
-    )
+    wrappers_lines = len((ml_dir / "model_wrappers.py").read_text(encoding="utf-8").splitlines())
+    assert wrappers_lines <= 550, f"model_wrappers.py 줄 수 초과: {wrappers_lines} > 550"
 
     prediction_api_lines = len(
         (ml_dir / "prediction_api.py").read_text(encoding="utf-8").splitlines()
@@ -128,6 +120,7 @@ def test_classify_price_decision_method_behavior():
 
 def test_predict_optimal_price_with_mock(monkeypatch):
     """predict_optimal_price_with_provenance 동작 보존 검증."""
+
     class _MockWrapper:
         def run_preprocess(self, features_dict):
             return None
@@ -161,6 +154,7 @@ def test_predict_optimal_price_with_mock(monkeypatch):
 
 def test_predict_optimal_price_batch_with_mock(monkeypatch):
     """predict_optimal_price_batch 동작 보존 검증."""
+
     class _MockBatchWrapper:
         def predict_batch(self, frames):
             return [88.5, 89.0]

@@ -70,7 +70,9 @@ def audit(path: Path) -> pd.DataFrame | None:
     outside = ~inside
 
     count_out = int(outside.sum())
-    print(f"  표본 {len(frame):,}건 / 학습 범위 밖 {count_out:,}건 ({count_out / len(frame) * 100:.3f}%)")
+    print(
+        f"  표본 {len(frame):,}건 / 학습 범위 밖 {count_out:,}건 ({count_out / len(frame) * 100:.3f}%)"
+    )
     if count_out:
         print(f"    범위 밖 MAE       : {base[outside].mean():.4f}")
         print(f"    전체 MAE 기여     : {base[outside].sum() / len(base):.4f}")
@@ -81,7 +83,11 @@ def audit(path: Path) -> pd.DataFrame | None:
         paired_row("범위 내", base[inside], chal[inside]),
     ]
     table = pd.DataFrame(rows)
-    print(table.round({"base MAE": 4, "chal MAE": 4, "평균차": 5, "t": 2, "최소감지차": 5}).to_string(index=False))
+    print(
+        table.round({"base MAE": 4, "chal MAE": 4, "평균차": 5, "t": 2, "최소감지차": 5}).to_string(
+            index=False
+        )
+    )
 
     verdicts = []
     for row in rows:

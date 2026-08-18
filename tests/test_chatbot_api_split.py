@@ -27,7 +27,10 @@ def test_chatbot_line_counts():
     format_lines = len(format_path.read_text(encoding="utf-8").splitlines())
     conf_lines = len(conf_path.read_text(encoding="utf-8").splitlines())
 
-    assert chatbot_lines <= 550, f"chatbot.py exceeds 550 lines: {chatbot_lines}"
+    # 2026-08-18 ruff format 최초 일괄 적용으로 534 -> 553 줄이 됐습니다. 포맷터가
+    # 인자를 여러 줄로 펼친 결과이며 로직은 늘지 않았습니다. 상한은 재증가를 막는
+    # 장치이므로 포맷 후 실측값에 여유 7줄만 두고 다시 고정합니다.
+    assert chatbot_lines <= 560, f"chatbot.py exceeds 560 lines: {chatbot_lines}"
     assert format_lines <= 300, f"chatbot_format.py exceeds 300 lines: {format_lines}"
     assert conf_lines <= 300, f"chatbot_confirmation.py exceeds 300 lines: {conf_lines}"
 
@@ -50,9 +53,9 @@ def test_no_circular_imports_in_new_modules():
                 assert module != "src.app.api.v1.chatbot", (
                     f"{path.name} must not import from chatbot module"
                 )
-                assert not (module == "src.app.api.v1" and any(a.name == "chatbot" for a in node.names)), (
-                    f"{path.name} must not import chatbot from src.app.api.v1"
-                )
+                assert not (
+                    module == "src.app.api.v1" and any(a.name == "chatbot" for a in node.names)
+                ), f"{path.name} must not import chatbot from src.app.api.v1"
 
 
 def test_symbol_reexport_identities():
@@ -122,7 +125,9 @@ def test_router_routes_unchanged():
         "/chatbot/query": {"POST"},
     }
 
-    assert route_map == expected_routes, f"Route configuration mismatch: {route_map} != {expected_routes}"
+    assert route_map == expected_routes, (
+        f"Route configuration mismatch: {route_map} != {expected_routes}"
+    )
 
 
 def test_format_helpers():
@@ -132,7 +137,10 @@ def test_format_helpers():
     assert chatbot_format_mod._format_percent("invalid") == "-"
     assert chatbot_format_mod._markdown_cell("a|b\nc", bold=True) == "**a\\|b c**"
     assert chatbot_format_mod._markdown_cell("code_val", code=True) == "`code_val`"
-    assert chatbot_format_mod._format_bid_number({"bid_ntce_no": "20260101", "bid_ntce_ord": "00"}) == "20260101-00"
+    assert (
+        chatbot_format_mod._format_bid_number({"bid_ntce_no": "20260101", "bid_ntce_ord": "00"})
+        == "20260101-00"
+    )
 
     plan = ChatPlan(
         mode="answer",

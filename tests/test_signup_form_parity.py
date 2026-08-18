@@ -53,11 +53,7 @@ def test_signup_form_saves_birth_date_parts_and_gender(isolated_db):
 
     assert response.status_code == 303, response.text
 
-    user = (
-        isolated_db.query(CustomUser)
-        .filter(CustomUser.username == "signup-user")
-        .one()
-    )
+    user = isolated_db.query(CustomUser).filter(CustomUser.username == "signup-user").one()
     assert user.birth_y == 1999
     assert user.birth_m == 5
     assert user.birth_d == 17
@@ -90,15 +86,8 @@ def test_signup_rejects_mismatched_password_without_creating_user(isolated_db):
     """
     client = TestClient(app, follow_redirects=False)
 
-    response = client.post(
-        SIGNUP_URL, data=_signup_payload(password2="DifferentPass123!!")
-    )
+    response = client.post(SIGNUP_URL, data=_signup_payload(password2="DifferentPass123!!"))
 
     assert response.status_code == 400
     assert "회원가입" in response.text
-    assert (
-        isolated_db.query(CustomUser)
-        .filter(CustomUser.username == "signup-user")
-        .count()
-        == 0
-    )
+    assert isolated_db.query(CustomUser).filter(CustomUser.username == "signup-user").count() == 0

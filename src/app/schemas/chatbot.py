@@ -64,7 +64,9 @@ class ChatbotQueryRequest(BaseModel):
 class ChatbotQueryResponse(BaseModel):
     query: str
     response: str
-    retrieved_docs: list[dict[str, Any]] = Field(default_factory=list, description="RAG 참조 문서 정보")
+    retrieved_docs: list[dict[str, Any]] = Field(
+        default_factory=list, description="RAG 참조 문서 정보"
+    )
     latency_ms: float = Field(0.0, description="응답 소요 시간 (ms)")
     route_reason: str = ""
     citations: list[str] = Field(default_factory=list)

@@ -34,10 +34,7 @@ def _announcement(**overrides) -> BidAnnouncement:
 
 def test_extract_business_budget_prefers_budget_fields():
     """기초금액은 예산금액/배정예산금액에서만 가져온다."""
-    assert (
-        extract_business_budget({"bdgtAmt": "55330000", "presmptPrce": "50300000"})
-        == 55330000
-    )
+    assert extract_business_budget({"bdgtAmt": "55330000", "presmptPrce": "50300000"}) == 55330000
     assert (
         extract_business_budget({"asignBdgtAmt": "142817400", "presmptPrce": "129834000"})
         == 142817400

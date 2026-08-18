@@ -201,7 +201,13 @@ def test_followup_chart_reuses_previous_result_object():
     context_state = _context_state(
         "최근 1년 낙찰률 추세를 보여줘",
         last_chart_payload=[
-            {"type": "chart", "chart_type": "line", "title": "최근 낙찰률 추세", "labels": ["2026-01"], "values": [98.1]}
+            {
+                "type": "chart",
+                "chart_type": "line",
+                "title": "최근 낙찰률 추세",
+                "labels": ["2026-01"],
+                "values": [98.1],
+            }
         ],
         last_tool_results={
             "trend_analysis": {

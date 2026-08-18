@@ -6,6 +6,7 @@ from src.app.core.timeutil import utcnow
 
 class PredictionResult(Base):
     """예측 결과 이력 테이블 (원래 db_table: prediction_results)"""
+
     __tablename__ = "prediction_results"
 
     id = Column(PKBigInteger, primary_key=True, autoincrement=True)
@@ -20,9 +21,9 @@ class PredictionResult(Base):
     created_at = Column(DateTime, nullable=False, default=utcnow, comment="예측 일시")
 
 
-
 class RetrainLog(Base):
     """재학습 이력 로그 테이블"""
+
     __tablename__ = "retrain_logs"
 
     id = Column(PKBigInteger, primary_key=True, autoincrement=True)

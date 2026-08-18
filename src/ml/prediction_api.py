@@ -60,9 +60,7 @@ def classify_price_decision_method(raw_data: dict) -> PriceDecisionMethod:
         try:
             value = str(value)
         except Exception:
-            logger.warning(
-                "prearngPrceDcsnMthdNm 파싱 실패: type=%s", type(value).__name__
-            )
+            logger.warning("prearngPrceDcsnMthdNm 파싱 실패: type=%s", type(value).__name__)
             return PriceDecisionMethod.UNKNOWN
 
     normalized = value.strip()
@@ -202,9 +200,7 @@ def predict_optimal_price_with_provenance(
 
     if last_error:
         raise last_error
-    raise ValueError(
-        f"모델 '{requested_id}'을 찾을 수 없습니다. (후보: {'; '.join(failures)})"
-    )
+    raise ValueError(f"모델 '{requested_id}'을 찾을 수 없습니다. (후보: {'; '.join(failures)})")
 
 
 def predict_optimal_price(model_id, features_dict, full_map=None):
@@ -229,7 +225,10 @@ def predict_optimal_price_batch(model_id, features_dicts, full_maps=None):
     """
     if not features_dicts:
         return []
-    requested_ids = [_resolve_model_id(model_id or _preferred_model_for_features(item)) for item in features_dicts]
+    requested_ids = [
+        _resolve_model_id(model_id or _preferred_model_for_features(item))
+        for item in features_dicts
+    ]
     if len(set(requested_ids)) != 1:
         raise ValueError("배치 요청의 모델 식별자가 서로 다릅니다.")
     requested_id = requested_ids[0]

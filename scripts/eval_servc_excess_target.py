@@ -224,7 +224,8 @@ def main() -> int:
 
     base_std = float(table[table["타깃"] == "현행"]["MAE"].std())
     gap = float(
-        table[table["타깃"] == "초과분"]["MAE"].mean() - table[table["타깃"] == "현행"]["MAE"].mean()
+        table[table["타깃"] == "초과분"]["MAE"].mean()
+        - table[table["타깃"] == "현행"]["MAE"].mean()
     )
     hit_gap = float(
         table[table["타깃"] == "초과분"]["0.5%p 적중%"].mean()

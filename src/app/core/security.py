@@ -36,7 +36,9 @@ SESSION_COOKIE_NAME = "bidbox_session"
 SESSION_CACHE_PREFIX = "auth:session:"
 
 
-def make_password(raw_password: str, salt: str | None = None, iterations: int = DEFAULT_ITERATIONS) -> str:
+def make_password(
+    raw_password: str, salt: str | None = None, iterations: int = DEFAULT_ITERATIONS
+) -> str:
     salt = salt or secrets.token_hex(6)
     digest = hashlib.pbkdf2_hmac("sha256", raw_password.encode(), salt.encode(), iterations)
     encoded = base64.b64encode(digest).decode().strip()

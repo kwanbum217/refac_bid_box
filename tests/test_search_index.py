@@ -244,7 +244,9 @@ def test_last_reachable_page_hides_the_next_link(monkeypatch, isolated_db, list_
 
     assert page.has_next is False
     assert page.has_previous is True
-    assert search.call_args.kwargs["offset"] == (bid_queries.MAX_LIST_PAGE - 1) * bid_queries.PAGE_SIZE
+    assert (
+        search.call_args.kwargs["offset"] == (bid_queries.MAX_LIST_PAGE - 1) * bid_queries.PAGE_SIZE
+    )
 
 
 @pytest.mark.parametrize(

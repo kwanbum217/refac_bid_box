@@ -193,7 +193,9 @@ async def run_retrain_pipeline_task(
         # 항상 좋게 나옵니다. 그 값으로 승격시키면 게이트가 무의미해집니다.
         if metadata.get("holdout_is_overfit"):
             verdict["recommendation"] = "REJECT_CHALLENGER"
-            verdict["rejected_reason"] = "표본이 적어 홀드아웃 분리 실패. 지표를 신뢰할 수 없습니다."
+            verdict["rejected_reason"] = (
+                "표본이 적어 홀드아웃 분리 실패. 지표를 신뢰할 수 없습니다."
+            )
 
         await asyncio.to_thread(
             _record,

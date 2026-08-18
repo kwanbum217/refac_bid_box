@@ -55,8 +55,11 @@ from scripts.orca_model_router import (
 @pytest.fixture(autouse=True)
 def guard_no_real_subprocess(monkeypatch):
     """모든 테스트에서 실제 외부 프로세스 실행이 일어나지 않도록 기본 차단합니다."""
+
     def _fail_on_unmocked_run(*args, **kwargs):
-        raise RuntimeError("테스트에서 실제 subprocess.run 이 호출되었습니다. monkeypatch 가 필요합니다.")
+        raise RuntimeError(
+            "테스트에서 실제 subprocess.run 이 호출되었습니다. monkeypatch 가 필요합니다."
+        )
 
     monkeypatch.setattr(subprocess, "run", _fail_on_unmocked_run)
 
@@ -243,7 +246,11 @@ class TestProbeAndPreflight:
 
     def test_probe_success_with_warning_in_stderr(self, monkeypatch):
         """종료 코드 0이면서 stderr 에 warning 문구가 있는 경우 사용 가능으로 판정함을 단정합니다."""
-        mock_proc = MagicMock(returncode=0, stdout="pong", stderr="UserWarning: deprecation notice\ninfo: update available")
+        mock_proc = MagicMock(
+            returncode=0,
+            stdout="pong",
+            stderr="UserWarning: deprecation notice\ninfo: update available",
+        )
         monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
 
         available, detail = probe_model("gemini-3.7-flash-high")
@@ -301,7 +308,9 @@ class TestProbeAndPreflight:
             assert "--print-timeout" in agy_cmd
 
     def test_probe_failure_quota_exceeded(self, monkeypatch):
-        mock_proc = MagicMock(returncode=1, stdout="", stderr="Error: RESOURCE_EXHAUSTED: quota exceeded 429")
+        mock_proc = MagicMock(
+            returncode=1, stdout="", stderr="Error: RESOURCE_EXHAUSTED: quota exceeded 429"
+        )
         monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: mock_proc)
 
         available, detail = probe_model("gemini-3.7-flash-high")
@@ -487,6 +496,7 @@ class TestRoute:
 
     def test_route_primary_fail_fallback_success(self, monkeypatch):
         """주 모델이 실패하고 대체 모델이 성공할 때 대체 모델로 전환됨을 확인합니다."""
+
         def _mock_run(cmd, *args, **kwargs):
             if "gemini-3.7-flash-high" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="quota exhausted 429")
@@ -718,18 +728,30 @@ class TestFreePoolOptIn:
         # 1. max_tokens 가 있는 풀 (cerebras: 65536) -> 숫자(65536) 포함
         passed_c, warnings_c = preflight("cerebras/gpt-oss-120b")
         assert passed_c is True
-        assert any("200,000 미만" in w and "Capsule 과 diff" in w and "65536" in w for w in warnings_c)
+        assert any(
+            "200,000 미만" in w and "Capsule 과 diff" in w and "65536" in w for w in warnings_c
+        )
 
         res_c = route(explicit_model="cerebras/gpt-oss-120b", probe=False)
-        assert any("200,000 미만" in w and "Capsule 과 diff" in w and "65536" in w for w in res_c.warnings)
+        assert any(
+            "200,000 미만" in w and "Capsule 과 diff" in w and "65536" in w for w in res_c.warnings
+        )
 
         # 2. max_tokens 가 None 인 free 풀 (opencode-free: None) -> 한도 미확인 경고
         passed_f, warnings_f = preflight("opencode/nemotron-3.5-lightning-free")
         assert passed_f is True
-        assert any("컨텍스트 한도가 확인되지 않았습니다" in w and "Capsule 과 diff" in w for w in warnings_f)
+        assert any(
+            "컨텍스트 한도가 확인되지 않았습니다" in w and "Capsule 과 diff" in w
+            for w in warnings_f
+        )
 
-        res_f = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False)
-        assert any("컨텍스트 한도가 확인되지 않았습니다" in w and "Capsule 과 diff" in w for w in res_f.warnings)
+        res_f = route(
+            role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False
+        )
+        assert any(
+            "컨텍스트 한도가 확인되지 않았습니다" in w and "Capsule 과 diff" in w
+            for w in res_f.warnings
+        )
 
     def test_capsule_has_write_scope_scenarios(self, tmp_path):
         """allowed_write_files 여부에 따른 쓰기 범위 판정 및 fail-closed 검증."""
@@ -828,34 +850,41 @@ class TestFreePoolOptIn:
 
     def test_allow_free_true_high_risk_rejected(self):
         """allow_free=True 여도 high/medium 위험도는 무료 풀이 거부됩니다."""
-        res_high = route(role="investigator", risk="high", allow_free=True, has_write_scope=False, probe=False)
+        res_high = route(
+            role="investigator", risk="high", allow_free=True, has_write_scope=False, probe=False
+        )
         assert res_high.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("위험도(high)" in w for w in res_high.warnings)
 
-        res_med = route(role="investigator", risk="medium", allow_free=True, has_write_scope=False, probe=False)
+        res_med = route(
+            role="investigator", risk="medium", allow_free=True, has_write_scope=False, probe=False
+        )
         assert res_med.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("위험도(medium)" in w for w in res_med.warnings)
 
     def test_allow_free_true_with_write_scope_rejected(self):
         """allow_free=True 여도 쓰기 범위가 있으면 무료 풀이 거부됩니다."""
-        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=True, probe=False)
+        res = route(
+            role="investigator", risk="low", allow_free=True, has_write_scope=True, probe=False
+        )
         assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("쓰기 권한" in w for w in res.warnings)
 
     def test_allow_free_true_reviewer_rejected(self):
         """reviewer 는 읽기 전용이어도 임계 경로이므로 allow_free=True 여도 무료 풀이 거부됩니다."""
-        res = route(role="reviewer", risk="low", allow_free=True, has_write_scope=False, probe=False)
+        res = route(
+            role="reviewer", risk="low", allow_free=True, has_write_scope=False, probe=False
+        )
         assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("역할(reviewer)" in w for w in res.warnings)
 
     def test_free_pool_selected_includes_revalidation_mandatory_warning(self):
         """무료 풀이 주 모델로 선택되면 산출물 재검증 필수 및 임계 경로 금지 경고가 반드시 포함됩니다."""
-        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False)
-        assert res.primary_model == "opencode/nemotron-3.5-lightning-free"
-        assert any(
-            "산출물 재검증 필수" in w and "임계 경로 금지" in w
-            for w in res.warnings
+        res = route(
+            role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False
         )
+        assert res.primary_model == "opencode/nemotron-3.5-lightning-free"
+        assert any("산출물 재검증 필수" in w and "임계 경로 금지" in w for w in res.warnings)
 
     def test_allow_free_true_never_selects_coordinator_model(self):
         """allow_free=True 상태에서도 코디네이터 전용 모델(claude-opus-5)은 절대 선택되지 않습니다."""
@@ -865,6 +894,7 @@ class TestFreePoolOptIn:
 
     def test_route_free_pool_primary_fail_fallback(self, monkeypatch, cerebras_key_present):
         """opencode-free 가 probe 실패하면 cerebras-oss 로 fallback 전환됨을 검증합니다."""
+
         def _mock_run(cmd, *args, **kwargs):
             if "opencode/nemotron-3.5-lightning-free" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="Error: model unavailable")
@@ -872,7 +902,9 @@ class TestFreePoolOptIn:
 
         monkeypatch.setattr(subprocess, "run", _mock_run)
 
-        res = route(role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=True)
+        res = route(
+            role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=True
+        )
         assert res.primary_available is False
         assert res.fallback_available is True
         assert res.fallback_model == "cerebras/gpt-oss-120b"
@@ -987,7 +1019,6 @@ class TestFreePoolOptIn:
         assert "--allow-free" in captured
         assert "investigator" in captured
         assert "조건부로 개방" in captured
-
 
 
 class TestRiskAwareTier:

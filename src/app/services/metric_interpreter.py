@@ -56,11 +56,17 @@ class MetricInterpreter:
 
         if today_rows is not None:
             if int(today_rows) <= 0:
-                insights.append("오늘 신규 수집 데이터가 없어 수집 파이프라인 점검이 필요할 수 있습니다.")
-                recommendations.extend(["collect_refresh 실행 검토", "preflight_check로 기본 상태 확인"])
+                insights.append(
+                    "오늘 신규 수집 데이터가 없어 수집 파이프라인 점검이 필요할 수 있습니다."
+                )
+                recommendations.extend(
+                    ["collect_refresh 실행 검토", "preflight_check로 기본 상태 확인"]
+                )
                 severities.append("warning")
             else:
-                insights.append(f"오늘 신규 수집 데이터가 {int(today_rows)}건 반영되어 최신성은 유지되고 있습니다.")
+                insights.append(
+                    f"오늘 신규 수집 데이터가 {int(today_rows)}건 반영되어 최신성은 유지되고 있습니다."
+                )
 
         recent_values = [v for v in (recent_bid_results, recent_bid_announcements) if v is not None]
         if recent_values and max(int(v) for v in recent_values) <= 0:
@@ -68,10 +74,14 @@ class MetricInterpreter:
             recommendations.append("data_refresh 실행 검토")
             severities.append("warning")
 
-        fresh_values = [v for v in (fresh_ingest_results, fresh_ingest_announcements) if v is not None]
+        fresh_values = [
+            v for v in (fresh_ingest_results, fresh_ingest_announcements) if v is not None
+        ]
         if fresh_values and max(int(v) for v in fresh_values) <= 0:
             insights.append("최근 수집 이력이 없어 배치 실행 누락 가능성을 확인해야 합니다.")
-            recommendations.extend(["collect_refresh 실행 검토", "preflight_check로 기본 상태 확인"])
+            recommendations.extend(
+                ["collect_refresh 실행 검토", "preflight_check로 기본 상태 확인"]
+            )
             severities.append("warning")
 
         if vector_count is not None:
@@ -80,7 +90,9 @@ class MetricInterpreter:
                 recommendations.append("kb_refresh 실행 검토")
                 severities.append("critical")
             elif int(vector_count) < 100:
-                insights.append(f"KB 벡터 수가 {int(vector_count)}건으로 낮아 문맥 근거가 제한적일 수 있습니다.")
+                insights.append(
+                    f"KB 벡터 수가 {int(vector_count)}건으로 낮아 문맥 근거가 제한적일 수 있습니다."
+                )
                 recommendations.append("kb_refresh 실행 검토")
                 severities.append("warning")
             else:
@@ -92,7 +104,9 @@ class MetricInterpreter:
             severities.append("warning")
 
         if model_check is False:
-            insights.append("모델 검증 단계가 생략되었거나 실패해 예측 결과 해석에 주의가 필요합니다.")
+            insights.append(
+                "모델 검증 단계가 생략되었거나 실패해 예측 결과 해석에 주의가 필요합니다."
+            )
             recommendations.append("prediction_validate 실행 검토")
             severities.append("warning")
 
@@ -123,12 +137,16 @@ class MetricInterpreter:
                 recommendations.append("prediction_validate 재실행 검토")
                 severities.append("warning")
             else:
-                insights.append(f"예측 모델 성능이 avg_r2={avg_r2_value:.3f}로 낮아 품질 점검이 필요합니다.")
+                insights.append(
+                    f"예측 모델 성능이 avg_r2={avg_r2_value:.3f}로 낮아 품질 점검이 필요합니다."
+                )
                 recommendations.append("prediction_validate 실행 검토")
                 severities.append("critical")
 
         if pass_all is False:
-            insights.append("모델 acceptance 기준이 통과되지 않아 예측 결과 활용에 주의가 필요합니다.")
+            insights.append(
+                "모델 acceptance 기준이 통과되지 않아 예측 결과 활용에 주의가 필요합니다."
+            )
             recommendations.append("prediction_validate 실행 검토")
             severities.append("critical")
 
@@ -148,7 +166,9 @@ class MetricInterpreter:
 
         count = int(source_bid_count)
         if count <= 0:
-            insights.append("KB 반영 공고 수가 0건이라 RAG 근거가 최신 상태를 반영하지 못할 수 있습니다.")
+            insights.append(
+                "KB 반영 공고 수가 0건이라 RAG 근거가 최신 상태를 반영하지 못할 수 있습니다."
+            )
             recommendations.append("kb_refresh 실행 검토")
             severities.append("critical")
         else:
@@ -171,7 +191,8 @@ class MetricInterpreter:
         missing_steps = sorted(expected_steps - present_steps)
         if missing_steps and present_steps.intersection(expected_steps):
             insights.append(
-                "일부 단계 결과가 누락되어 전체 실행 맥락 해석이 제한됩니다: " + ", ".join(missing_steps)
+                "일부 단계 결과가 누락되어 전체 실행 맥락 해석이 제한됩니다: "
+                + ", ".join(missing_steps)
             )
             recommendations.append("full_validation 실행 검토")
             severities.append("warning")

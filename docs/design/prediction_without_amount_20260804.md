@@ -44,8 +44,8 @@ presmpt_prce: 0
 로 넘어가는데, 그마저 0이라 기준 금액이 0이 됩니다.
 
 ```python
-reference_amount = float(bid.prediction_reference_amount or 0)   # 0.0
-optimal_price = int(reference_amount * predicted_rate)           # 0
+reference_amount = float(bid.prediction_reference_amount or 0)  # 0.0
+optimal_price = int(reference_amount * predicted_rate)  # 0
 ```
 
 챗봇 도구의 후보 필터는 `is_not(None)` 이라 **NULL 만 거르고 0은 통과**시켰습니다.
@@ -81,7 +81,7 @@ FROM bid_announcements GROUP BY category;
 reference_amount = float(bid.prediction_reference_amount or 0)
 estimated_price = reference_amount
 if predicted_rate < 2.0:
-    optimal_price = int(estimated_price * predicted_rate)   # 0
+    optimal_price = int(estimated_price * predicted_rate)  # 0
 ```
 
 `confidence` 계산에서만 `estimated_price > 0` 을 확인해 50을 넣고, 결과 금액은

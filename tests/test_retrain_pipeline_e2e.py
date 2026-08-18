@@ -299,9 +299,7 @@ def test_category_model_namespaces_do_not_collide():
         model_name_for_category,
     )
 
-    names = {
-        code: model_name_for_category(code) for code in ("Thng", "Servc", "Cnstwk")
-    }
+    names = {code: model_name_for_category(code) for code in ("Thng", "Servc", "Cnstwk")}
     assert len(set(names.values())) == 3, f"네임스페이스가 겹칩니다: {names}"
     assert names["Cnstwk"] != DEFAULT_MODEL_NAME
     assert ModelTrainer.for_category("Cnstwk").model_name == names["Cnstwk"]
@@ -442,7 +440,9 @@ async def test_champion_is_read_before_training(isolated_db, monkeypatch, tmp_pa
     serving = tmp_path / "serving" / "servc_institution_v1"
     serving.mkdir(parents=True)
     (serving / "metadata.json").write_text(
-        json.dumps({"version": "v_serving", "source_metrics": {"rmse": 2.7, "mape": 1.5, "r2": 0.68}}),
+        json.dumps(
+            {"version": "v_serving", "source_metrics": {"rmse": 2.7, "mape": 1.5, "r2": 0.68}}
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr("src.ml.promotion.SERVING_ROOT", tmp_path / "serving")

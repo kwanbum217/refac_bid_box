@@ -82,7 +82,7 @@ recommendation      = PROMOTE_CHALLENGER
 `compare_champion_vs_challenger` 는 다음과 같습니다.
 
 ```python
-improved_r2 = challenger_metrics["r2"] >= champion_metrics["r2"]   # 같아도 True
+improved_r2 = challenger_metrics["r2"] >= champion_metrics["r2"]  # 같아도 True
 should_promote = improved_rmse or improved_r2
 ```
 

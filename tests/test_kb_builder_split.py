@@ -70,9 +70,13 @@ def test_no_circular_dependency():
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                assert "kb_builder" not in alias.name, "kb_document_builder 가 kb_builder 를 import 하면 안 됩니다"
+                assert "kb_builder" not in alias.name, (
+                    "kb_document_builder 가 kb_builder 를 import 하면 안 됩니다"
+                )
         elif isinstance(node, ast.ImportFrom) and node.module:
-            assert "kb_builder" not in node.module, "kb_document_builder 가 kb_builder 를 import 하면 안 됩니다"
+            assert "kb_builder" not in node.module, (
+                "kb_document_builder 가 kb_builder 를 import 하면 안 됩니다"
+            )
 
 
 def test_line_counts():

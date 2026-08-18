@@ -53,7 +53,7 @@
 ```python
 model = model_fn(X_train, y_train, X_valid, y_valid, params)
 ...
-joblib.dump(best_model, model_file)   # 앞 80% 로만 배운 모델이 서빙됨
+joblib.dump(best_model, model_file)  # 앞 80% 로만 배운 모델이 서빙됨
 ```
 
 시계열 분할이라 버려지는 20% 는 **가장 최신 구간**입니다. 917,629행 기준으로

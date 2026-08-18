@@ -211,7 +211,9 @@ def check_claude_is_pointer(root: Path = PROJECT_ROOT) -> CheckResult:
     is_pointer = has_import and copied_count == 0
     if is_pointer:
         return CheckResult("CLAUDE.md thin pointer", True, "@AGENTS.md import 포함, 정본 미복사")
-    detail = f"@AGENTS.md import={'있음' if has_import else '없음'}, 정본 섹션 {copied_count}개 복사됨"
+    detail = (
+        f"@AGENTS.md import={'있음' if has_import else '없음'}, 정본 섹션 {copied_count}개 복사됨"
+    )
     return CheckResult("CLAUDE.md thin pointer", False, detail)
 
 
@@ -271,20 +273,20 @@ def check_opencode_json(root: Path = PROJECT_ROOT) -> CheckResult:
         return CheckResult(
             "opencode.json instructions v2 단일 주입",
             True,
-            "AGENTS.md 단일 자동 로드 확인 (instructions == [\"AGENTS.md\"])",
+            'AGENTS.md 단일 자동 로드 확인 (instructions == ["AGENTS.md"])',
         )
 
     if "SKILLS.md" in instructions:
         return CheckResult(
             "opencode.json instructions v2 단일 주입",
             False,
-            "SKILLS.md 이중 주입 감지 (v2 단일 주입 위반: opencode.json instructions는 정확히 [\"AGENTS.md\"] 배열만 허용)",
+            'SKILLS.md 이중 주입 감지 (v2 단일 주입 위반: opencode.json instructions는 정확히 ["AGENTS.md"] 배열만 허용)',
         )
     if not instructions:
         return CheckResult(
             "opencode.json instructions v2 단일 주입",
             False,
-            "빈 배열 (v2 단일 주입 위반: instructions가 비어 있으며 정확히 [\"AGENTS.md\"] 배열만 허용)",
+            '빈 배열 (v2 단일 주입 위반: instructions가 비어 있으며 정확히 ["AGENTS.md"] 배열만 허용)',
         )
     if "AGENTS.md" not in instructions:
         return CheckResult(
@@ -296,7 +298,7 @@ def check_opencode_json(root: Path = PROJECT_ROOT) -> CheckResult:
     return CheckResult(
         "opencode.json instructions v2 단일 주입",
         False,
-        f"추가 항목 포함 (v2 단일 주입 위반: 정확히 [\"AGENTS.md\"] 배열만 허용, 추가 항목: {extra})",
+        f'추가 항목 포함 (v2 단일 주입 위반: 정확히 ["AGENTS.md"] 배열만 허용, 추가 항목: {extra})',
     )
 
 
@@ -336,7 +338,9 @@ def check_skills_mirror(root: Path = PROJECT_ROOT) -> CheckResult:
         if not equal:
             all_diffs.extend(f"{label}: {diff}" for diff in diffs)
     if not all_diffs:
-        return CheckResult("스킬 미러 정합성", True, ".claude/skills, .opencode/skills 내용 완전 일치")
+        return CheckResult(
+            "스킬 미러 정합성", True, ".claude/skills, .opencode/skills 내용 완전 일치"
+        )
     detail = f"{len(all_diffs)}건 차이: " + " | ".join(all_diffs[:3])
     if len(all_diffs) > 3:
         detail += f" ... 외 {len(all_diffs) - 3}건"
@@ -346,7 +350,9 @@ def check_skills_mirror(root: Path = PROJECT_ROOT) -> CheckResult:
 def check_agents_single_root(root: Path = PROJECT_ROOT) -> CheckResult:
     target = root / "AGENTS.md"
     if not target.exists():
-        return CheckResult("AGENTS.md 단일 진실 원천 (@SKILLS.md 미참조)", False, "AGENTS.md 파일 없음")
+        return CheckResult(
+            "AGENTS.md 단일 진실 원천 (@SKILLS.md 미참조)", False, "AGENTS.md 파일 없음"
+        )
     content = read_text(target)
 
     # v2 원칙: AGENTS.md는 단일 진실 원천이며 SKILLS.md를 import하지 않아야 함
@@ -375,7 +381,9 @@ def check_agents_single_root(root: Path = PROJECT_ROOT) -> CheckResult:
 def check_task_capsule_v2_docs(root: Path = PROJECT_ROOT) -> CheckResult:
     doc_path = root / "docs" / "ops" / "orca_task_capsule_v2.md"
     if not doc_path.exists():
-        return CheckResult("Task Capsule v2 규약 문서", False, "docs/ops/orca_task_capsule_v2.md 없음")
+        return CheckResult(
+            "Task Capsule v2 규약 문서", False, "docs/ops/orca_task_capsule_v2.md 없음"
+        )
     content = read_text(doc_path)
     required_keywords = [
         "ORCA_TASK_CAPSULE_V2",
@@ -406,13 +414,17 @@ def check_v2_templates(root: Path = PROJECT_ROOT) -> CheckResult:
 
     # 1. task_capsule_v2.yaml 검증
     if not capsule_yaml.exists():
-        return CheckResult("Task Capsule v2 템플릿 정합성", False, f"템플릿 파일 없음: {capsule_yaml}")
+        return CheckResult(
+            "Task Capsule v2 템플릿 정합성", False, f"템플릿 파일 없음: {capsule_yaml}"
+        )
     capsule_content = read_text(capsule_yaml)
     if yaml is not None:
         try:
             parsed_capsule = yaml.safe_load(capsule_content) or {}
         except Exception as e:
-            return CheckResult("Task Capsule v2 템플릿 정합성", False, f"task_capsule_v2.yaml 파싱 실패: {e}")
+            return CheckResult(
+                "Task Capsule v2 템플릿 정합성", False, f"task_capsule_v2.yaml 파싱 실패: {e}"
+            )
     else:
         parsed_capsule = parse_yaml_keys_fallback(capsule_content)
 
@@ -438,11 +450,15 @@ def check_v2_templates(root: Path = PROJECT_ROOT) -> CheckResult:
 
     # 2. worker_done_v2.json 검증
     if not worker_done_json.exists():
-        return CheckResult("Task Capsule v2 템플릿 정합성", False, f"템플릿 파일 없음: {worker_done_json}")
+        return CheckResult(
+            "Task Capsule v2 템플릿 정합성", False, f"템플릿 파일 없음: {worker_done_json}"
+        )
     try:
         parsed_worker = json.loads(read_text(worker_done_json))
     except json.JSONDecodeError as e:
-        return CheckResult("Task Capsule v2 템플릿 정합성", False, f"worker_done_v2.json 파싱 실패: {e}")
+        return CheckResult(
+            "Task Capsule v2 템플릿 정합성", False, f"worker_done_v2.json 파싱 실패: {e}"
+        )
 
     if parsed_worker.get("schema") != "ORCA_WORKER_DONE_V2":
         return CheckResult(
@@ -466,11 +482,15 @@ def check_v2_templates(root: Path = PROJECT_ROOT) -> CheckResult:
 
     # 3. review_done_v2.json 검증
     if not review_done_json.exists():
-        return CheckResult("Task Capsule v2 템플릿 정합성", False, f"템플릿 파일 없음: {review_done_json}")
+        return CheckResult(
+            "Task Capsule v2 템플릿 정합성", False, f"템플릿 파일 없음: {review_done_json}"
+        )
     try:
         parsed_review = json.loads(read_text(review_done_json))
     except json.JSONDecodeError as e:
-        return CheckResult("Task Capsule v2 템플릿 정합성", False, f"review_done_v2.json 파싱 실패: {e}")
+        return CheckResult(
+            "Task Capsule v2 템플릿 정합성", False, f"review_done_v2.json 파싱 실패: {e}"
+        )
 
     if parsed_review.get("schema") != "ORCA_REVIEW_DONE_V2":
         return CheckResult(
@@ -512,7 +532,9 @@ def check_current_state_exists(root: Path = PROJECT_ROOT) -> CheckResult:
     name = "CURRENT_STATE 정본 존재"
     target = _current_state_path(root)
     if not target.exists():
-        return CheckResult(name, False, "docs/context/CURRENT_STATE.md 없음 (v2 부트스트랩 정본 누락)")
+        return CheckResult(
+            name, False, "docs/context/CURRENT_STATE.md 없음 (v2 부트스트랩 정본 누락)"
+        )
     return CheckResult(name, True, f"{target.relative_to(root)} 확인")
 
 
@@ -528,7 +550,9 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
     if missing:
         return CheckResult(name, False, f"필수 필드 누락: {missing}")
     if "docs/" not in content:
-        return CheckResult(name, False, "증거 경로(docs/...) 없음. 수치는 evidence path 를 가져야 합니다")
+        return CheckResult(
+            name, False, "증거 경로(docs/...) 없음. 수치는 evidence path 를 가져야 합니다"
+        )
 
     # \D 는 줄바꿈도 매칭하므로 값이 비었을 때 아래 줄의 해시 유사 문자열을
     # source_commit 으로 오인합니다. 같은 줄로 한정하고 경계를 명시합니다.

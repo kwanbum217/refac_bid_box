@@ -132,9 +132,7 @@ def _json_text(db_session: Session, column, key: str):
 
 def _institution_columns(db_session: Session) -> list:
     return [
-        func.nullif(_json_text(db_session, BidAnnouncement.raw_data, key), literal("")).label(
-            alias
-        )
+        func.nullif(_json_text(db_session, BidAnnouncement.raw_data, key), literal("")).label(alias)
         for alias, key in INSTITUTION_FIELDS.items()
     ]
 

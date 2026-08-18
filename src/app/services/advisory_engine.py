@@ -134,7 +134,9 @@ class AdvisoryEngine:
         user_id: int | None = None,
         request_obj: AutomationRequest | None = None,
     ) -> list[str]:
-        return [item["message"] for item in self.suggest(db, user_id=user_id, request_obj=request_obj)]
+        return [
+            item["message"] for item in self.suggest(db, user_id=user_id, request_obj=request_obj)
+        ]
 
     def merge_with_base(
         self,
@@ -168,7 +170,9 @@ class AdvisoryEngine:
         )
         return [signal.model_dump() for signal in ordered]
 
-    def _latest_request(self, db: Session, *, user_id: int | None = None) -> AutomationRequest | None:
+    def _latest_request(
+        self, db: Session, *, user_id: int | None = None
+    ) -> AutomationRequest | None:
         stmt = select(AutomationRequest).where(
             or_(
                 AutomationRequest.result_payload.is_(None),

@@ -986,6 +986,3 @@ def test_summary_excludes_concurrent_dispatches_from_coordinator_tokens(
     assert "coordinator_fresh_input_tokens" in cap_text.out
     assert "대표 지표" in cap_text.out
     assert "99.5%" in cap_text.out
-
-
-

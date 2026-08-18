@@ -124,7 +124,9 @@ def measure_opencode_cost(root: Path = PROJECT_ROOT, budget: int | None = None) 
     }
 
 
-def measure_antigravity_cost(root: Path = PROJECT_ROOT, budget: int | None = None) -> dict[str, Any]:
+def measure_antigravity_cost(
+    root: Path = PROJECT_ROOT, budget: int | None = None
+) -> dict[str, Any]:
     """Antigravity 진입점 측정: .antigravity/rules.md."""
     allocated_budget = budget if budget is not None else DEFAULT_BUDGETS["Antigravity"]
     rel_path = ".antigravity/rules.md"
@@ -188,7 +190,11 @@ def measure_cursor_cost(root: Path = PROJECT_ROOT, budget: int | None = None) ->
 
     if exists and rules_dir.is_dir():
         matched_files = sorted(
-            [p for p in rules_dir.iterdir() if p.is_file() and (p.suffix == ".mdc" or p.suffix == ".md")]
+            [
+                p
+                for p in rules_dir.iterdir()
+                if p.is_file() and (p.suffix == ".mdc" or p.suffix == ".md")
+            ]
         )
         for f in matched_files:
             rel = f".cursor/rules/{f.name}"
@@ -203,7 +209,11 @@ def measure_cursor_cost(root: Path = PROJECT_ROOT, budget: int | None = None) ->
     ratio_pct = round(ratio * 100, 2)
     within_budget = char_count <= allocated_budget
 
-    display_path = f".cursor/rules/ ({len(paths)}개 파일)" if len(paths) > 1 else (paths[0] if paths else ".cursor/rules/")
+    display_path = (
+        f".cursor/rules/ ({len(paths)}개 파일)"
+        if len(paths) > 1
+        else (paths[0] if paths else ".cursor/rules/")
+    )
 
     return {
         "cli": "Cursor",

@@ -79,9 +79,7 @@ def attach_participant_history(df: pd.DataFrame, split_dt: pd.Timestamp) -> pd.D
         # 표본이 적은 키는 전체 평균 쪽으로 당깁니다. 1건짜리 키를 그대로 믿으면
         # 이력이 잡음을 특징으로 승격시킵니다.
         shrunk = (stats["mean"] * stats["count"] + global_mean * 10) / (stats["count"] + 10)
-        merged = out[keys].merge(
-            shrunk.rename(name), how="left", left_on=keys, right_index=True
-        )
+        merged = out[keys].merge(shrunk.rename(name), how="left", left_on=keys, right_index=True)
         out[name] = merged[name].fillna(global_mean).to_numpy()
     return out
 
@@ -146,12 +144,16 @@ def main() -> int:
     # 참가자 수와 하한율 대비 초과폭의 관계. 경쟁이 셀수록 하한에 붙습니다.
     df["gap"] = df["winning_rate"] - df["lwlt_rate"]
     bands = pd.cut(df["prtcpt_cnum"], [0, 1, 2, 5, 10, 30, 100, np.inf])
-    table = df.groupby(bands, observed=True).agg(
-        건수=("gap", "size"),
-        gap_중앙값=("gap", "median"),
-        gap_표준편차=("gap", "std"),
-        낙찰률_표준편차=("winning_rate", "std"),
-    ).round(3)
+    table = (
+        df.groupby(bands, observed=True)
+        .agg(
+            건수=("gap", "size"),
+            gap_중앙값=("gap", "median"),
+            gap_표준편차=("gap", "std"),
+            낙찰률_표준편차=("winning_rate", "std"),
+        )
+        .round(3)
+    )
     print(f"\n참가자 수 구간별 하한율 초과폭\n{table.to_string()}")
 
     history_features = [name for name, _ in HISTORY_KEYS]

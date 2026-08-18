@@ -89,10 +89,7 @@ def report_prearng(frame: pd.DataFrame, boundary: str) -> None:
     for seg, label in (("pre", "경계 이전"), ("post", "경계 이후")):
         part = frame[frame["seg"] == seg]
         missing = int(part["miss"].sum())
-        print(
-            f"\n-- {label}  n={len(part):,}  결측={missing:,} "
-            f"({part['miss'].mean() * 100:.2f}%)"
-        )
+        print(f"\n-- {label}  n={len(part):,}  결측={missing:,} ({part['miss'].mean() * 100:.2f}%)")
         print(prearng_table(part).to_string())
 
     print("\n-- 경계 이전을 2024년으로 좁힌 것 (구간 길이 차이를 없앤 비교)")
@@ -114,10 +111,13 @@ def report_method(frame: pd.DataFrame) -> None:
         )
         rest = part[~non_lwlt]
         if not rest.empty and unknown < 50:
-            print("           미분류 방법명: " + ", ".join(
-                f"{name} {count}" for name, count in
-                rest["sucsfbid_mthd_nm"].value_counts().head(3).items()
-            ))
+            print(
+                "           미분류 방법명: "
+                + ", ".join(
+                    f"{name} {count}"
+                    for name, count in rest["sucsfbid_mthd_nm"].value_counts().head(3).items()
+                )
+            )
     print(
         f"\n{METHOD_VALID_YEAR}년 이전은 낙찰방법이 전량 `공고서참조` 이므로 "
         "이 축으로 판정할 수 없습니다. 아래 분포 축으로 대신합니다."
@@ -166,9 +166,7 @@ def report_monthly(frame: pd.DataFrame, since: str) -> None:
             {
                 "단일예가n": (block["prearng_mthd"] == "단일예가").sum(),
                 "단일예가비중%": (block["prearng_mthd"] == "단일예가").mean() * 100,
-                "단일예가결측률%": block.loc[
-                    block["prearng_mthd"] == "단일예가", "miss"
-                ].mean()
+                "단일예가결측률%": block.loc[block["prearng_mthd"] == "단일예가", "miss"].mean()
                 * 100,
             }
         ),

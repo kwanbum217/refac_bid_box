@@ -72,7 +72,9 @@ def check_promotion_criteria(metadata: dict[str, Any]) -> list[str]:
     ]
     leaking = [r2 for r2 in fold_r2 if r2 > LEAK_R2_THRESHOLD]
     if leaking:
-        reasons.append(f"타깃 누수 의심. R2 가 {LEAK_R2_THRESHOLD} 를 넘는 폴드 {len(leaking)}개: {leaking}")
+        reasons.append(
+            f"타깃 누수 의심. R2 가 {LEAK_R2_THRESHOLD} 를 넘는 폴드 {len(leaking)}개: {leaking}"
+        )
 
     features = list(metadata.get("features") or [])
     if not features:
@@ -131,9 +133,7 @@ def promote(
 
     reasons = check_promotion_criteria(metadata)
     if reasons and not force:
-        raise PromotionRejected(
-            f"{model_name}/{version} 승격 거부:\n- " + "\n- ".join(reasons)
-        )
+        raise PromotionRejected(f"{model_name}/{version} 승격 거부:\n- " + "\n- ".join(reasons))
 
     # 모델이 실제로 로드되고 특징 이름이 맞는지 확인합니다. 메타데이터만 믿으면
     # 가중치가 깨져 있어도 승격이 성공한 것처럼 보입니다.

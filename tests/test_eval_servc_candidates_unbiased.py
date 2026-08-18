@@ -8,9 +8,7 @@ def test_attach_ewm_history_uses_ratio_and_excludes_same_timestamp():
     frame = pd.DataFrame(
         {
             "dminstt_nm": ["기관A", "기관A", "기관A", "기관A"],
-            "openg_dt": pd.to_datetime(
-                ["2024-01-01", "2024-01-01", "2024-02-01", "2024-02-01"]
-            ),
+            "openg_dt": pd.to_datetime(["2024-01-01", "2024-01-01", "2024-02-01", "2024-02-01"]),
             "winning_rate": [80.0, 82.0, 90.0, 95.0],
             "inst_hist_rate": [0.925, 0.925, 0.810, 0.810],
         }

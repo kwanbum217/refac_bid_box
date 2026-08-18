@@ -761,7 +761,7 @@ document.addEventListener('DOMContentLoaded', function() {
         tab.addEventListener('click', function() {
             scrollToSlide(Number(tab.dataset.slideIndex));
         });
-        
+
         // 마우스 호버 시 자동으로 해당 탭으로 스와이프
         tab.addEventListener('mouseenter', function() {
             scrollToSlide(Number(tab.dataset.slideIndex));
@@ -800,7 +800,7 @@ document.addEventListener('DOMContentLoaded', function() {
     track.addEventListener('mousedown', function(e) {
         // 버튼 등 컨트롤 요소 클릭 시 드래그 방지
         if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.home-nav-chip') || e.target.closest('.home-nav-arrow')) return;
-        
+
         isDown = true;
         track.classList.add('is-dragging');
         startX = e.pageX - track.offsetLeft;

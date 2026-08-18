@@ -165,7 +165,9 @@ async def run(rows: int, start: str, end: str) -> int:
             continue
         line = cross_check(current, items, name)
         print(f"  {line}")
-        recovered_total += int(line.split("값 확보 ")[-1].split("건")[0]) if "값 확보" in line else 0
+        recovered_total += (
+            int(line.split("값 확보 ")[-1].split("건")[0]) if "값 확보" in line else 0
+        )
 
     print()
     if recovered_total:

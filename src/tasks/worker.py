@@ -48,7 +48,14 @@ class WorkerSettings:
     cron_jobs = [
         cron(development_data_refresh_task, hour=2, minute=0, run_at_startup=False, timeout=10800),
         cron(nightly_schedule_task, hour=2, minute=0, run_at_startup=False, timeout=10800),
-        cron(weekly_retrain_task, weekday="mon", hour=3, minute=0, run_at_startup=False, timeout=10800),
+        cron(
+            weekly_retrain_task,
+            weekday="mon",
+            hour=3,
+            minute=0,
+            run_at_startup=False,
+            timeout=10800,
+        ),
     ]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     max_jobs = 4
