@@ -10,6 +10,15 @@ from typing import Any
 import numpy as np
 
 
+class InsufficientSampleError(ValueError):
+    """PSI 를 계산할 표본이 없음을 알립니다."""
+
+    def __init__(self, expected_size: int, actual_size: int) -> None:
+        self.expected_size = expected_size
+        self.actual_size = actual_size
+        super().__init__(f"PSI 계산 표본 부족: baseline {expected_size}건, recent {actual_size}건")
+
+
 def calculate_psi(
     expected: np.ndarray,
     actual: np.ndarray,
@@ -26,7 +35,9 @@ def calculate_psi(
         return (arr - min_val) / (max_val - min_val + 1e-5)
 
     if len(expected) == 0 or len(actual) == 0:
-        return 0.0
+        # 표본이 없으면 "변화 없음" 이 아니라 판정 불가입니다. 0.0 을 돌려주면
+        # 호출부가 STABLE 로 읽어 드리프트 감시가 조용히 꺼집니다.
+        raise InsufficientSampleError(len(expected), len(actual))
 
     min_v = min(np.min(expected), np.min(actual))
     max_v = max(np.max(expected), np.max(actual))
@@ -54,8 +65,22 @@ def check_feature_drift(
     recent_features: np.ndarray,
     threshold: float = 0.2,
 ) -> dict[str, Any]:
-    """특징 드리프트 검사 및 재학습 트리거 판단"""
-    psi = calculate_psi(baseline_features, recent_features)
+    """특징 드리프트 검사 및 재학습 트리거 판단.
+
+    표본이 없으면 STABLE 로 승격하지 않고 INSUFFICIENT_DATA 를 돌려줍니다.
+    감시할 근거가 없는 상태와 안정된 상태는 다릅니다.
+    """
+    try:
+        psi = calculate_psi(baseline_features, recent_features)
+    except InsufficientSampleError as exc:
+        return {
+            "psi_value": None,
+            "threshold": threshold,
+            "drift_detected": None,
+            "action": "INSUFFICIENT_DATA",
+            "reason": str(exc),
+        }
+
     is_drift_detected = psi >= threshold
 
     return {

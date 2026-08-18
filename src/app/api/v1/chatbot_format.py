@@ -55,12 +55,27 @@ def _format_bid_number(bid: dict) -> str:
 def _format_model_summary(predictions: list[dict]) -> str:
     model_names: list[str] = []
     for item in predictions:
+        # 산출하지 못한 공고는 사용한 모델이 없으므로 요약에서 뺍니다.
+        if item.get("skipped"):
+            continue
         model_name = item.get("model_name") or item.get("model_id") or "-"
         if model_name not in model_names:
             model_names.append(model_name)
     if not model_names:
         return ""
     return f"사용 모델: **{_markdown_cell(', '.join(model_names))}**"
+
+
+def _single_rate_cell(prediction: dict) -> str:
+    if prediction.get("skipped"):
+        return "-"
+    return _format_percent(prediction.get("prediction_rate"))
+
+
+def _single_price_cell(prediction: dict) -> str:
+    if prediction.get("skipped"):
+        return "산출 불가"
+    return _markdown_cell(_format_won(prediction.get("optimal_price")), bold=True)
 
 
 def _build_direct_tool_answer(tool_context: dict | None) -> str:
@@ -96,13 +111,30 @@ def _build_direct_tool_answer(tool_context: dict | None) -> str:
                 f"{_markdown_cell(bid.get('bid_ntce_nm'), bold=True)}<br>"
                 f"{_markdown_cell(_format_bid_number(bid), code=True)}"
             )
+            # 산출하지 못한 공고를 0원·0.0% 로 적으면 실패가 정상 예측으로 보입니다.
+            skipped = bool(item.get("skipped"))
+            rate_cell = "-" if skipped else _format_percent(item.get("prediction_rate"))
+            price_cell = (
+                "산출 불가"
+                if skipped
+                else _markdown_cell(_format_won(item.get("optimal_price")), bold=True)
+            )
             lines.append(
                 f"| {index} | {title_cell} "
                 f"| {_markdown_cell(bid.get('dminstt_nm') or bid.get('ntce_instt_nm'))} "
                 f"| {_format_won(item.get('reference_amount'))} "
-                f"| {_format_percent(item.get('prediction_rate'))} "
-                f"| {_markdown_cell(_format_won(item.get('optimal_price')), bold=True)} |"
+                f"| {rate_cell} "
+                f"| {price_cell} |"
             )
+        skipped_items = [item for item in predictions if item.get("skipped")]
+        if skipped_items:
+            lines.extend(["", f"> {len(skipped_items)}건은 투찰가를 산출하지 못했습니다."])
+            for reason in dict.fromkeys(
+                str(item.get("skip_reason") or "").strip()
+                for item in skipped_items
+                if str(item.get("skip_reason") or "").strip()
+            ):
+                lines.append(f"> - {_markdown_cell(reason)}")
         model_summary = _format_model_summary(predictions)
         if model_summary:
             lines.extend(["", model_summary])
@@ -125,11 +157,16 @@ def _build_direct_tool_answer(tool_context: dict | None) -> str:
         f"| 분야 | {_markdown_cell(bid.get('category_label') or bid.get('category'))} |",
         f"| 수요기관 | {_markdown_cell(bid.get('dminstt_nm') or bid.get('ntce_instt_nm'))} |",
         f"| 기초금액 | {_format_won(prediction.get('reference_amount'))} |",
-        f"| 예상 낙찰률 | {_format_percent(prediction.get('prediction_rate'))} |",
-        f"| 추천 투찰가 | {_markdown_cell(_format_won(prediction.get('optimal_price')), bold=True)} |",
+        f"| 예상 낙찰률 | {_single_rate_cell(prediction)} |",
+        f"| 추천 투찰가 | {_single_price_cell(prediction)} |",
         f"| 사용 모델 | {_markdown_cell(prediction.get('model_name') or prediction.get('model_id'), bold=True)} |",
     ]
-    if prediction.get("fallback_used"):
+    if prediction.get("skipped"):
+        reason = str(prediction.get("skip_reason") or "").strip()
+        lines.extend(
+            ["", f"> {_markdown_cell(reason) if reason else '투찰가를 산출하지 못했습니다.'}"]
+        )
+    elif prediction.get("fallback_used"):
         lines.extend(
             [
                 "",
