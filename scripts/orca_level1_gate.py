@@ -2,7 +2,7 @@
 scripts/orca_level1_gate.py
 
 코디네이터가 워커 산출물을 검증할 때 수행하는 Level 1 기계 검증 단일 게이트 스크립트입니다.
-5개 게이트(변경 파일, 범위, 테스트, 규칙, 리뷰 보고)를 실행하고 고정된 상한 안으로 요약합니다.
+6개 게이트(변경 파일, 범위, 테스트, 규칙, 린터, 리뷰 보고)를 실행하고 고정된 상한 안으로 요약합니다.
 """
 
 from __future__ import annotations
@@ -480,11 +480,15 @@ def build_json_output(
     error_message: str = "",
 ) -> dict[str, Any]:
     """기계용 JSON 구조를 생성합니다."""
+    # run_all 이 append 하는 순서와 1:1 로 맞춥니다. 4b 린터가 빠져 있어
+    # 린터 결과가 gate5_review_report 로, 실제 리뷰 결과가 gate_6 으로
+    # 밀려 나가 있었습니다.
     gate_keys = [
         "gate1_changed_files",
         "gate2_scope",
         "gate3_tests",
         "gate4_rules",
+        "gate4b_lint",
         "gate5_review_report",
     ]
     gates_dict: dict[str, Any] = {}
@@ -535,6 +539,11 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         help="사람 출력 최대 문자 수 상한 (기본: 2000)",
     )
     parser.add_argument("--json", action="store_true", help="결과를 JSON 으로 출력")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="건너뛴 게이트를 실패로 간주 (병합 판정용)",
+    )
     return parser.parse_args(argv)
 
 
@@ -547,8 +556,12 @@ def run_level1_gate(
     review_report: str | Path | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
     as_json: bool = False,
+    strict: bool = False,
 ) -> tuple[int, str]:
-    """Level 1 게이트 전체를 실행하고 (exit_code, output_text) 를 반환합니다."""
+    """Level 1 게이트 전체를 실행하고 (exit_code, output_text) 를 반환합니다.
+
+    strict 를 켜면 건너뛴 게이트가 하나라도 있을 때 fail 로 판정합니다.
+    """
     if tests is None:
         tests = []
     repo_path = Path(repo).resolve()
@@ -615,7 +628,9 @@ def run_level1_gate(
     failed_count = sum(1 for g in gates if g.status == "fail")
     skipped_count = sum(1 for g in gates if g.status == "skipped")
 
-    verdict = "pass" if failed_count == 0 else "fail"
+    # 건너뛴 게이트는 검증하지 않았다는 뜻이지 통과했다는 뜻이 아닙니다.
+    # 병합 판정처럼 전부 검증되어야 하는 호출은 --strict 로 이를 강제합니다.
+    verdict = "pass" if failed_count == 0 and not (strict and skipped_count) else "fail"
     exit_code = 0 if verdict == "pass" else 1
 
     if as_json:
@@ -640,6 +655,7 @@ def main(argv: list[str] | None = None) -> int:
         review_report=args.review_report,
         max_chars=args.max_chars,
         as_json=args.json,
+        strict=args.strict,
     )
     print(output)
     return code

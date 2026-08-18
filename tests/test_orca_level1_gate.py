@@ -259,7 +259,7 @@ def test_timeout_reported_as_tool_error(tmp_path: Path):
 
 
 def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
-    """(7) --json 출력이 유효한 JSON 이고 5개 게이트 상태를 모두 담고 있음을 검증합니다."""
+    """(7) --json 출력이 유효한 JSON 이고 6개 게이트 상태를 모두 담고 있음을 검증합니다."""
     repo, base, branch = _init_git_repo(tmp_path)
 
     code, output = run_level1_gate(
@@ -281,9 +281,18 @@ def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
     assert "gate2_scope" in gates
     assert "gate3_tests" in gates
     assert "gate4_rules" in gates
+    assert "gate4b_lint" in gates
     assert "gate5_review_report" in gates
     assert gates["gate1_changed_files"]["status"] == "pass"
     assert gates["gate2_scope"]["status"] == "skipped"
+
+    # 키가 실제 게이트를 가리키는지 확인합니다. 키 목록이 append 순서보다
+    # 짧으면 뒤 게이트가 한 칸씩 밀려 gate_6 으로 흘러나갑니다.
+    assert data["summary"]["total"] == len(gates)
+    assert not [k for k in gates if k.startswith("gate_")], sorted(gates)
+    assert gates["gate4_rules"]["name"] == "게이트 4 규칙 검증"
+    assert gates["gate4b_lint"]["name"] == "게이트 4b 린터"
+    assert gates["gate5_review_report"]["name"] == "게이트 5 리뷰 보고"
 
 
 def test_validate_agent_rules_output_parser():
@@ -419,3 +428,27 @@ def test_gate4b_lint_detects_repo_wide_violation(tmp_path: Path):
     (repo / "tests" / "test_x.py").write_text("x = 2\n", encoding="utf-8")
     g_pass = run_gate4b_lint(repo)
     assert g_pass.status == "pass"
+
+
+def test_strict_mode_treats_skipped_gates_as_failure(tmp_path: Path):
+    """건너뛴 게이트는 검증하지 않았다는 뜻이므로 --strict 에서 통과가 아닙니다.
+
+    Capsule, 테스트, 리뷰 보고를 전부 생략하면 3개 게이트가 skipped 인데
+    기본 모드는 이를 통과로 계산합니다. 병합 판정에는 --strict 를 씁니다.
+    """
+    repo, base, branch = _init_git_repo(tmp_path)
+
+    code, output = run_level1_gate(base=base, branch=branch, repo=repo, as_json=True)
+    data = json.loads(output)
+    assert code == 0
+    assert data["verdict"] == "pass"
+    assert data["summary"]["skipped"] >= 1
+
+    strict_code, strict_output = run_level1_gate(
+        base=base, branch=branch, repo=repo, as_json=True, strict=True
+    )
+    strict_data = json.loads(strict_output)
+    assert strict_code == 1
+    assert strict_data["verdict"] == "fail"
+    assert strict_data["summary"]["failed"] == 0
+    assert strict_data["summary"]["skipped"] == data["summary"]["skipped"]
