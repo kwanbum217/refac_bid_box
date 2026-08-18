@@ -186,10 +186,14 @@ def execute(
             "found": False,
         }
 
+    sync_failed = False
     if request_obj.status in ACTIVE_STATUSES and request_obj.plan_execution_id:
         try:
             request_obj = sync_automation_status(db, request_obj)
         except Exception as exc:
+            # 대화를 끊지 않되, 여기 담긴 상태가 최신이 아님을 호출자가 기계로
+            # 알 수 있어야 합니다. 문구만 남기면 구분할 방법이 없습니다.
+            sync_failed = True
             request_obj.result_summary = request_obj.result_summary or f"상태 동기화 보류: {exc}"
 
     payload = build_action_response(db, request_obj)
@@ -197,4 +201,6 @@ def execute(
         payload, request_obj, prefer_visualization=bool(prefer_visualization)
     )
     payload["found"] = True
+    payload["sync_failed"] = sync_failed
+    payload["status_is_stale"] = sync_failed
     return payload

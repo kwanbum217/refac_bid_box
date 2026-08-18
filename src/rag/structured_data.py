@@ -45,7 +45,21 @@ def _category_label(category: str | None) -> str:
     return CATEGORY_LABELS.get(category_code, category_code or "-")
 
 
-def _parse_date(value: str | date | datetime | None) -> datetime | None:
+class InvalidDateFilterError(ValueError):
+    """날짜 필터를 해석하지 못했음을 알립니다.
+
+    종전에는 None 을 돌려줘 필터가 통째로 빠졌고, 사용자는 전체 기간 통계를
+    자기가 지정한 기간의 답으로 읽었습니다. 값이 없는 것과 해석하지 못한
+    것은 다릅니다.
+    """
+
+    def __init__(self, field: str, value: object) -> None:
+        self.field = field
+        self.value = value
+        super().__init__(f"{field} 날짜 형식을 해석하지 못했습니다: {value}")
+
+
+def _parse_date(value: str | date | datetime | None, field: str = "date") -> datetime | None:
     if not value:
         return None
     if isinstance(value, datetime):
@@ -54,14 +68,14 @@ def _parse_date(value: str | date | datetime | None) -> datetime | None:
         return datetime.combine(value, datetime.min.time())
     try:
         parsed = datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
+    except ValueError as exc:
+        raise InvalidDateFilterError(field, value) from exc
     return parsed.replace(tzinfo=None)
 
 
 def _resolve_window(filters: dict[str, Any]) -> tuple[datetime | None, datetime | None]:
-    date_from = _parse_date(filters.get("date_from"))
-    date_to = _parse_date(filters.get("date_to"))
+    date_from = _parse_date(filters.get("date_from"), "date_from")
+    date_to = _parse_date(filters.get("date_to"), "date_to")
     relative_years = int(filters.get("relative_years") or 0)
 
     if relative_years and not date_from:
@@ -435,8 +449,38 @@ def _build_insufficiency_hints(
     return hints
 
 
+def _empty_result(plan: RetrievalPlan, hint: str) -> dict[str, Any]:
+    """조회를 수행하지 않았음을 드러내는 빈 결과를 만듭니다."""
+    return {
+        "filters": dict(plan.filters or {}),
+        "summary": {
+            "total_bids": 0,
+            "announcement_count": 0,
+            "average_winning_rate": 0.0,
+            "total_winning_amount": 0.0,
+            "top_winners": [],
+            "top_institutions": [],
+            "top_announcements": [],
+            "sample_announcements": [],
+            "recent_results": [],
+            "latest_available_result_at": None,
+            "time_series": [],
+        },
+        "insufficiency_hints": [hint],
+        "query_skipped": True,
+    }
+
+
 def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
-    result_conditions = _result_conditions(plan)
+    try:
+        result_conditions = _result_conditions(plan)
+    except InvalidDateFilterError as exc:
+        # 해석하지 못한 날짜 필터를 빼고 조회하면 전체 기간 통계가 사용자가
+        # 지정한 기간의 답으로 돌아갑니다. 조회 자체를 하지 않고 알립니다.
+        return _empty_result(
+            plan,
+            f"{exc} 날짜를 YYYY-MM-DD 형식으로 다시 알려주시면 해당 기간으로 조회하겠습니다.",
+        )
     announcement_conditions = _announcement_conditions(plan)
     snapshot_scope = _snapshot_scope(plan)
     result_limit = _result_limit(plan)
