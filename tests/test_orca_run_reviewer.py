@@ -239,7 +239,11 @@ def test_broken_json_saves_raw_file_and_exits_2(tmp_path, mock_git):
 
 
 def test_diff_exceeding_max_diff_chars_is_truncated_and_flagged(tmp_path, monkeypatch):
-    """(7) diff 가 상한을 넘으면 프롬프트에 절단 표시가 들어가고 판정 블록에도 표시됩니다."""
+    """(7) diff 가 상한을 넘으면 절단이 표시되고, 기본적으로 통과 판정을 막습니다.
+
+    절단된 diff 로 내린 pass 는 리뷰어가 보지 못한 부분에 대한 판정이 아니므로
+    병합 근거가 될 수 없습니다. 그대로 받아들이려면 명시적으로 허용해야 합니다.
+    """
     capsule_file = tmp_path / "capsule.yaml"
     capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
     out_file = tmp_path / "out.json"
@@ -265,9 +269,20 @@ def test_diff_exceeding_max_diff_chars_is_truncated_and_flagged(tmp_path, monkey
         model_runner=dummy_runner,
     )
 
-    assert code == 0
+    assert code == 1
     assert "절단되었습니다" in captured_prompt
     assert "Diff 절단 여부:     절단됨 (상한 초과)" in output
+    assert "리뷰 범위가 불완전" in output
+
+    allowed_code, allowed_output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        max_diff_chars=500,
+        allow_truncated_diff=True,
+        model_runner=dummy_runner,
+    )
+    assert allowed_code == 0
+    assert "Diff 절단 여부:     절단됨 (상한 초과)" in allowed_output
 
 
 def test_massive_violations_respects_max_chars_and_keeps_total_count(
@@ -543,7 +558,10 @@ def test_max_diff_chars_large_no_truncation(tmp_path, monkeypatch):
 
 
 def test_max_diff_chars_small_triggers_truncation(tmp_path, monkeypatch):
-    """(18) max_diff_chars 를 작게 주면 diff 가 절단되고 판정 블록에 절단됨이 기록됩니다."""
+    """(18) max_diff_chars 를 작게 주면 diff 가 절단되고 판정 블록에 절단됨이 기록됩니다.
+
+    절단 자체가 통과를 막으므로 종료 코드는 1 입니다.
+    """
     capsule_file = tmp_path / "capsule.yaml"
     capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
     out_file = tmp_path / "out.json"
@@ -570,7 +588,7 @@ def test_max_diff_chars_small_triggers_truncation(tmp_path, monkeypatch):
         max_diff_chars=50,
         model_runner=dummy_runner,
     )
-    assert code == 0
+    assert code == 1
     assert "Diff 절단 여부:     절단됨 (상한 초과)" in output
     assert "[주의: diff 본문이 최대 허용 크기(50자)를 초과하여" in captured_prompt
 

@@ -376,9 +376,15 @@ def run_reviewer(
     max_diff_chars: int = DEFAULT_MAX_DIFF_CHARS,
     dry_run: bool = False,
     as_json: bool = False,
+    allow_truncated_diff: bool = False,
     model_runner: Callable[[str, str, int], tuple[int, str, str]] = run_model,
 ) -> tuple[int, str]:
-    """리뷰어 전체 파이프라인을 실행하고 (exit_code, output_text) 를 반환합니다."""
+    """리뷰어 전체 파이프라인을 실행하고 (exit_code, output_text) 를 반환합니다.
+
+    diff 가 상한을 넘어 절단되면 리뷰어가 변경의 일부를 보지 못한 것이므로
+    기본적으로 통과시키지 않습니다. 절단된 채로 판정을 받아들이려면
+    allow_truncated_diff 를 켜야 합니다.
+    """
     repo_path = Path(repo).resolve()
     capsule_path = Path(capsule).resolve()
     out_path = Path(out).resolve()
@@ -525,8 +531,17 @@ def run_reviewer(
     results_count = eval_res.get("results_count", 0)
     ok = eval_res.get("ok", False)
 
-    # 9. 종료 코드 결정: 계약 만족(ok)이고 실효 verdict 가 "pass" 면 0, 아니면 1
-    exit_code = 0 if (ok and effective_verdict == "pass") else 1
+    # 9. 종료 코드 결정: 계약 만족(ok)이고 실효 verdict 가 "pass" 면 0, 아니면 1.
+    # 절단된 diff 로 내린 pass 는 못 본 부분에 대한 판정이 아니므로 통과로
+    # 취급하지 않습니다. 큰 변경을 그대로 판정하려면 --allow-truncated-diff
+    # 로 명시해야 합니다.
+    truncation_blocks = diff_truncated and not allow_truncated_diff
+    exit_code = 0 if (ok and effective_verdict == "pass" and not truncation_blocks) else 1
+    if truncation_blocks:
+        violations = [
+            *violations,
+            f"diff 가 상한({max_diff_chars}자)을 넘어 절단되어 리뷰 범위가 불완전합니다.",
+        ]
 
     # 10. 결과 출력 포맷팅
     if as_json:
@@ -603,6 +618,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--json", action="store_true", help="결과를 JSON 으로 출력")
     parser.add_argument(
+        "--allow-truncated-diff",
+        action="store_true",
+        help="diff 가 절단되어도 리뷰어 판정을 그대로 받아들임",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="모델을 호출하지 않고 조립된 프롬프트와 문자 수만 출력",
@@ -624,6 +644,7 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         max_chars=args.max_chars,
         max_diff_chars=args.max_diff_chars,
+        allow_truncated_diff=args.allow_truncated_diff,
         dry_run=args.dry_run,
         as_json=args.json,
     )
