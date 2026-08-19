@@ -566,11 +566,11 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
     recorded = match.group(1)
     behind = _commits_behind_head(root, recorded)
     if behind is None:
-        # git 이력이 있는데도 커밋을 찾지 못하면 오타, 잘못된 해시, 이력 재작성
-        # 중 하나입니다. CI 는 fetch-depth 0 으로 전체 이력을 받으므로 이제
-        # "확인 불가" 가 곧 "값이 틀렸다" 는 신호입니다. .git 이 아예 없는
-        # 환경(압축본 검토 등)에서만 미검증으로 넘깁니다.
-        if _has_git_history(root):
+        # 전체 이력을 가진 저장소에서 커밋을 찾지 못하면 오타, 잘못된 해시,
+        # 이력 재작성 중 하나이므로 실패입니다. 다만 얕은 클론은 커밋이 없는
+        # 것과 못 받은 것을 구분할 수 없습니다. 증명할 수 없는 상태를 확정된
+        # 실패로 단정하면 fail-open 을 뒤집은 같은 크기의 오류가 됩니다.
+        if _can_verify_commit_history(root):
             return CheckResult(
                 name,
                 False,
@@ -580,7 +580,7 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
         return CheckResult(
             name,
             True,
-            f"필수 필드 완비. source_commit {recorded} 은 git 이력이 없어 신선도 미검증",
+            f"필수 필드 완비. source_commit {recorded} 은 전체 이력이 없어 신선도 미검증",
             warn=True,
         )
     if behind > CURRENT_STATE_LAG_TOLERANCE:
@@ -600,8 +600,13 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
     )
 
 
-def _has_git_history(root: Path) -> bool:
-    """해당 경로가 커밋 이력을 가진 git 저장소인지 확인합니다."""
+def _can_verify_commit_history(root: Path) -> bool:
+    """커밋의 부재를 증명할 수 있는 저장소인지 확인합니다.
+
+    이력이 있어야 하고, 얕은 클론이 아니어야 합니다. 얕은 클론은 커밋이
+    존재하지 않는 것과 아직 받지 않은 것을 구분하지 못합니다. 이력 유무만
+    보면 `fetch-depth: 1` 로 받은 CI 잡이 정상 값을 오타로 판정합니다.
+    """
     try:
         subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
             ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
@@ -609,7 +614,14 @@ def _has_git_history(root: Path) -> bool:
             capture_output=True,
             timeout=GIT_PROBE_TIMEOUT_SECONDS,
         )
-        return True
+        shallow = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+            ["git", "-C", str(root), "rev-parse", "--is-shallow-repository"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
+        )
+        return shallow.stdout.strip() != "true"
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
         return False
 
