@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-19
-> **source_commit**: `edfd4e4`
+> **source_commit**: `c04338b`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -84,17 +84,22 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 수신면 5종과 Control Plane 2종에 적용. **절감량은 도입 전 값 확보 불가이고 유효 행이 적어 추세 판정이 안 된다**(3장 17번). 왕복 횟수가 비용을 지배한다는 실측과 규율은 조율 스킬 3.2 절.
-2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수로 자동 분할하지 않는다.** [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장.
-3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.**
-4. **린터·보안 스캔 정합 — 종결**: bandit 47건 오탐 판정 후 0건화. **이 실패가 CI 를 9시간 막았다.** [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md).
-5. **fail-open 제거 — 종결, 3라운드 누적 34건**: 공통 기전은 `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 것이다. 최악은 수집 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결). 전수 조사 16건은 **전량 검증을 마쳤고 미검증 잔여는 없다.** **다수는 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.** [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 10·12장.
-6. **상태 전파 경계 — 종결, 3·4차 감사 17건**: 이번 계열은 **하위가 실패·불능을 아는데 상위 경계에서 상태를 잃어버리는** 것이다. `finalize --strict` 가 어떤 입력에도 실패하던 회귀, KB 실패 status 유실, 검사 불능 `None` 의 성공 취급, 벡터 검색 실패와 0건 미구분, 조회 미수행의 0 통계·인용 유입, 보고 타입 우회, stale 미전파를 닫았다. **병합 게이트 자체의 구멍 3건도 함께 닫았다**(비-Python 변경 무검증 통과, 낡은 화면의 도달 오인, 리뷰 계약 누락). 5·6차에서 게이트 3 의 나머지 절반을 닫았다. 검증을 영역이 아니라 **능력 단위**로 세어 `npm run lint` 하나가 test·build 를 대신하거나 Dockerfile 변경이 backend pytest 로 덮이는 것을 막고, rename 원본까지 판정하며, `source_commit` 지연 초과를 FAIL 로 올렸다. [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 13~16장.
-7. **워커 풀 정비 — 종결**: `opencode/deepseek-v4-flash-free` 를 주력으로 등록하고 무료 풀 개방을 `builder` 와 쓰기 범위까지 넓혔다(`reviewer` 는 제외). 무료 후보도 `suitable_for` 불변식을 통과해야 한다. 모델별 실측 판정은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 11장.
-8. **mypy 타입 게이트 도입 — 종결**: 의존성에 없어 그동안 한 번도 돌지 않았다. 추가하니 58건. 플러그인·검사 문법 조정으로 27건까지 줄이고 나머지는 타입 주석으로 해소했다. **`call-overload` 9건은 ORM 이 `Mapped[]` 가 아닌 구식 `Column` 선언이라는 단일 원인**이라 모듈 한정 override 로 처리했다. `Mapped[]` 전환은 G1 에 닿는 별도 과업. `typecheck` 를 `check-all` 과 CI 에 배선했다.
-9. **프론트엔드 의존성 고정 — 종결**: 백엔드는 `uv.lock` 으로 고정돼 있는데 프론트엔드만 범위 지정이라 **CI 가 테스트한 것과 Docker 가 설치하는 것이 달라질 수 있었다.** `package-lock.json` 을 추적하고 CI·Dockerfile 을 `npm ci` 로 통일했다.
-10. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
-11. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
-12. **수집 2·3회차 관찰**: Docker 필요.
+2. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.**
+3. **ORM `Mapped[]` 전환 — 미착수**: mypy `call-overload` 9건이 구식 `Column` 선언이라는 단일 원인이라 모듈 한정 override 로 덮어 두었다. G1 에 닿으므로 별도 과업.
+4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
+5. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
+6. **수집 2·3회차 관찰**: Docker 필요.
+
+### 4.1 종결 계열 요약
+
+기전과 반복 금지 상세는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 해당 장에 있습니다.
+
+- **fail-open 제거 (누적 34건, 10·12장)**: `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 계열. 최악은 수집 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결). **다수는 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.**
+- **상태 전파 경계 (3~6차 감사, 13~16장)**: 하위가 실패·불능을 아는데 상위 경계에서 상태를 잃는 계열. 병합 게이트 자체의 구멍도 닫았다. 게이트 3 은 검증을 영역이 아니라 **능력 단위**로 세고, `source_commit` 지연 초과는 FAIL 이다.
+- **대형 모듈 분할 (8장)**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수로 자동 분할하지 않는다.**
+- **워커 풀 정비 (11장)**: `opencode/deepseek-v4-flash-free` 주력. 무료 후보도 `suitable_for` 불변식을 통과해야 한다.
+- **린터·보안·타입 게이트**: bandit 47건 오탐 판정 후 0건화(**이 실패가 CI 를 9시간 막았다**). mypy 58건 해소 후 `typecheck` 를 `check-all` 과 CI 에 배선.
+- **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile 을 `npm ci` 로 통일.
 
 ---
 
