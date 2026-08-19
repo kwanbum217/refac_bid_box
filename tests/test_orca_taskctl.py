@@ -2687,3 +2687,10 @@ def test_delivery_probe_polling_is_frequent_enough():
 
     default = _inspect.signature(verify_instruction_delivered).parameters["poll_seconds"].default
     assert default <= 1.0
+
+
+def test_workflow_scope_gets_actionlint():
+    """워크플로우를 고치는 Task 는 actionlint 없이 Capsule 이 만들어지면 안 됩니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    assert "uv run actionlint" in resolve_verification_commands({}, [".github/workflows/ci.yml"])

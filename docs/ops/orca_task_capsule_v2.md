@@ -121,7 +121,7 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
 | `shared_resources` | list[object] | 예 | Docker, DB, 서빙 모델 루트 등 공유 자원의 소유권 수준 |
 | `required_change` | list[string] | 예 | 구체적으로 수행해야 하는 변경 항목 목록 |
 | `acceptance` | list[string] | 예 | 객관적으로 검증 가능한 완료 판정 기준 |
-| `verification_commands` | list[string] | 예 | 워커가 로컬에서 실행하고 통과해야 하는 검증 명령어. Level 1 게이트 3 이 그대로 실행하므로 허용 목록(`uv run pytest ...`, `npm ci`, `npm run <script>`, `docker build`, `docker compose config`)만 쓸 수 있고, 변경이 요구하는 검증 능력을 전부 덮어야 합니다 |
+| `verification_commands` | list[string] | 예 | 워커가 로컬에서 실행하고 통과해야 하는 검증 명령어. Level 1 게이트 3 이 그대로 실행하므로 허용 목록(`uv run pytest ...`, `npm ci`, `npm run <script>`, `docker build`, `docker compose config`, `uv run actionlint`)만 쓸 수 있고, 변경이 요구하는 검증 능력을 전부 덮어야 합니다 |
 | `artifact_paths` | list[string] | 선택 | 생성될 상세 보고서/벤치마크 데이터 파일 경로 |
 | `escalate_when` | list[string] | 예 | 자의적 판단 대신 코디네이터에게 에스컬레이션해야 하는 조건 |
 | `return_contract` | enum | 예 | 반환 보고 형식 (`ORCA_WORKER_DONE_V2` 또는 `ORCA_REVIEW_DONE_V2`) |

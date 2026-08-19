@@ -64,6 +64,7 @@ Level 1 게이트 3 은 변경 파일이 요구하는 **검증 능력(capability
 | `frontend/**` | `frontend_test`, `frontend_build` | `npm --prefix frontend run test` / `... run build` |
 | `Dockerfile*` | `docker_build` | `docker build ...` |
 | `docker-compose*.yml` | `compose_config` | `docker compose config -q` |
+| `.github/workflows/*.yml` | `workflow_lint` | `uv run actionlint` |
 | 그 밖의 코드 | `backend_pytest` | `uv run pytest ...` |
 | 문서(`.md`/`.rst`/`.adoc`) | 없음 | - |
 
@@ -74,14 +75,13 @@ Level 1 게이트 3 은 변경 파일이 요구하는 **검증 능력(capability
 **Docker 는 AGENTS.md 4장의 공유 자원입니다.** `docker build` 를 검증에 넣는
 Task 는 `shared_resources` 에 docker 를 선언해 다른 섹션과 겹치지 않게 합니다.
 
-`.github/workflows/**` 는 로컬 검증 수단이 없어 `backend_pytest` 로 둡니다.
-러너 없는 능력을 필수로 걸면 워크플로우 변경이 게이트에서 교착합니다. 실제
-검증은 해당 브랜치 푸시에서 도는 CI 가 담당하므로, 워크플로우를 고친 Task 는
-병합 전에 브랜치 CI 결과를 확인합니다.
+셸 스크립트(`.sh`)는 저장소에 파일이 없어 별도 능력을 두지 않습니다. 러너
+없는 능력을 미리 만들면 첫 파일이 생기는 순간 게이트가 교착합니다. 셸 스크립트를
+도입할 때 shellcheck 와 함께 능력을 추가합니다.
 
 실행되는 명령은 허용 목록(`uv run pytest ...`, `npm ci`, `npm run <script>`,
-`docker build`, `docker compose config`)으로 제한되며, 그 밖의 문자열은 게이트
-3 실패로 거부됩니다.
+`docker build`, `docker compose config`, `uv run actionlint`)으로 제한되며,
+그 밖의 문자열은 게이트 3 실패로 거부됩니다.
 
 ### 2.2 작업 트리는 Orca 를 정본으로 씁니다
 

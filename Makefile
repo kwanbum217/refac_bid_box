@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security typecheck quality check-rules check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -24,6 +24,7 @@ help:
 	@echo "  make typecheck      - mypy 타입 검사 (릴리스 게이트 포함)"
 	@echo "  make quality        - typecheck & jscpd 중복 코드 검사"
 	@echo "  make check-rules    - 다중 에이전트 규칙 정합성 검증"
+	@echo "  make lint-workflows - GitHub Actions 워크플로우 검사 (actionlint)"
 	@echo "  make check-all      - 전체 린트, 보안, 품질, 규칙 정합성 검사"
 	@echo "  make migrate-verify - 데이터 보존 무손실 실측 검증"
 	@echo "  make migrate-current - Alembic 적용 상태 읽기 전용 확인"
@@ -112,7 +113,10 @@ quality: typecheck
 check-rules:
 	$(PYTHON) scripts/validate_agent_rules.py
 
-check-all: lint security typecheck check-rules
+lint-workflows:
+	$(UV) run actionlint
+
+check-all: lint security typecheck check-rules lint-workflows
 	@echo "전체 코드 품질 및 정합성 검사 통과"
 
 test:
