@@ -6,14 +6,16 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from scripts.orca_level1_gate import (
-    capsule_touches_code,
     format_failed_nodes,
     format_human_output,
     get_git_changed_files,
     parse_arguments,
     parse_pytest_output,
     parse_validate_agent_rules_output,
+    requires_test_verification,
     run_gate1_changed_files,
     run_gate2_scope,
     run_gate3_tests,
@@ -455,6 +457,13 @@ def test_strict_mode_treats_skipped_gates_as_failure(tmp_path: Path):
     assert strict_data["summary"]["skipped"] == data["summary"]["skipped"]
 
 
+def _write_passing_test(repo: Path) -> None:
+    """임시 저장소에 항상 통과하는 pytest 파일을 만듭니다."""
+    tests_dir = repo / "tests"
+    tests_dir.mkdir(exist_ok=True)
+    (tests_dir / "test_ok.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+
+
 def _write_capsule(tmp_path: Path, write_files: list[str]) -> Path:
     """allowed_write_files 만 지정한 최소 Capsule 을 만듭니다."""
     lines = ["schema: ORCA_TASK_CAPSULE_V2", "allowed_write_files:"]
@@ -487,16 +496,19 @@ def test_strict_passes_when_only_non_required_gate_is_skipped(tmp_path: Path):
     """
     repo, base, branch = _init_git_repo(tmp_path)
     capsule = _write_capsule(tmp_path, ["docs/note.md", "common.txt", "unique_new.txt"])
+    _write_passing_test(repo)
 
     code, output = run_level1_gate(
         base=base,
         branch=branch,
         repo=repo,
         capsule=capsule,
+        tests=["tests/test_ok.py -q"],
         as_json=True,
         strict=True,
     )
     data = json.loads(output)
+    assert data["gates"]["gate3_tests"]["status"] == "pass"
     assert data["gates"]["gate5_review_report"]["status"] == "skipped"
     assert data["gates"]["gate5_review_report"]["required"] is False
     assert data["summary"]["blocking_skipped"] == []
@@ -525,11 +537,56 @@ def test_strict_still_fails_when_code_capsule_runs_no_tests(tmp_path: Path):
     assert code == 1
 
 
-def test_capsule_touches_code_decides_test_gate_requirement(tmp_path: Path):
-    """쓰기 범위에 코드가 있는지로 테스트 게이트 필수 여부를 정합니다."""
-    assert capsule_touches_code(_write_capsule(tmp_path / "a", ["src/a.py"])) is True
-    assert capsule_touches_code(_write_capsule(tmp_path / "b", ["docs/a.md"])) is False
-    # 판단 근거가 없으면 안전한 쪽인 필수로 둡니다.
-    assert capsule_touches_code(None) is True
-    assert capsule_touches_code(tmp_path / "missing.yaml") is True
-    assert capsule_touches_code(_write_capsule(tmp_path / "c", [])) is True
+def test_requires_test_verification_exempts_only_documents():
+    """코드 확장자를 나열하면 목록에 없는 형식이 조용히 면제됩니다.
+
+    2026-08-19 까지 `.py` 만 코드로 보아 `.ts`, `.tsx`, Dockerfile 변경이
+    테스트 없이 strict 를 통과했습니다. 기본은 검증 필요이고 문서만 바뀐 것이
+    증명될 때만 면제합니다.
+    """
+    assert requires_test_verification(["src/a.py"]) is True
+    assert requires_test_verification(["frontend/src/page.tsx"]) is True
+    assert requires_test_verification(["frontend/src/api.ts"]) is True
+    assert requires_test_verification(["frontend/Dockerfile"]) is True
+    assert requires_test_verification(["config/settings.json"]) is True
+
+    assert requires_test_verification(["docs/a.md"]) is False
+    assert requires_test_verification(["README.rst", "docs/b.adoc"]) is False
+
+    # 하나라도 문서가 아니면 필수입니다.
+    assert requires_test_verification(["docs/a.md", "src/a.py"]) is True
+
+    # 변경이 없으면 검증할 대상도 없습니다. 무작업 완료는 commit_count 검사가 막습니다.
+    assert requires_test_verification([]) is False
+
+
+def test_frontend_change_without_tests_fails_strict(tmp_path: Path):
+    """프론트엔드 코드를 고치고 테스트를 하나도 돌리지 않으면 strict 는 통과가 아닙니다."""
+    repo, base, branch = _init_git_repo(tmp_path)
+    # 이 임시 저장소의 실제 변경 파일은 .txt 이므로 문서 면제 대상이 아닙니다.
+    capsule = _write_capsule(tmp_path, ["common.txt", "unique_new.txt"])
+
+    code, output = run_level1_gate(
+        base=base, branch=branch, repo=repo, capsule=capsule, as_json=True, strict=True
+    )
+    data = json.loads(output)
+    assert data["gates"]["gate3_tests"]["required"] is True
+    assert "게이트 3 테스트" in data["summary"]["blocking_skipped"]
+    assert code == 1
+
+
+def test_gate5_requires_capsule_when_review_report_given(tmp_path: Path):
+    """보고서를 명시했는데 Capsule 이 없으면 N/A 가 아니라 호출 오류입니다.
+
+    N/A 로 처리하면 리뷰를 요구한 호출이 조용히 검증 없이 통과합니다.
+    """
+    from scripts.orca_level1_gate import GateToolError
+
+    report = tmp_path / "review.json"
+    report.write_text(json.dumps({"verdict": "pass"}), encoding="utf-8")
+
+    with pytest.raises(GateToolError, match="capsule"):
+        run_gate5_review_report(report, None)
+
+    # 보고서를 아예 안 준 호출은 종전대로 적용 대상이 아닙니다.
+    assert run_gate5_review_report(None, None).required is False

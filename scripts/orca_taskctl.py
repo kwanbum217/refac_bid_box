@@ -972,10 +972,25 @@ def resolve_dispatch_id(task_id: str, timeout: int = 30) -> str | None:
     return str(dispatch_id) if dispatch_id else None
 
 
+DELIVERY_PROBE_PREFIX = "ORCA_DELIVERY_PROBE_"
+
+
+def new_delivery_probe() -> str:
+    """이번 Dispatch 만 식별하는 도달 증명 표지를 만듭니다.
+
+    task_id 나 Capsule 경로로 도달을 판정하면, 같은 Task 를 재 Dispatch 할 때
+    화면에 남아 있는 이전 시도의 잔상이 그대로 통과합니다. 실제로는 지시가
+    도달하지 않았는데 성공으로 보고되므로 fail-open 입니다. 매 시도마다 새
+    표지를 만들어 그것만 찾습니다.
+    """
+    return f"{DELIVERY_PROBE_PREFIX}{uuid.uuid4().hex[:12]}"
+
+
 def build_capsule_notice(
     capsule_path: Path,
     report_path: str | None = None,
     dispatch_id: str | None = None,
+    delivery_probe: str | None = None,
 ) -> str:
     """Capsule 정본 경로 고지문을 만듭니다.
 
@@ -995,6 +1010,10 @@ def build_capsule_notice(
         parts.append(f"보고 JSON 은 {report_path} 에 ORCA_WORKER_DONE_V2 계약으로 씁니다.")
     if dispatch_id:
         parts.append(f"worker_done 전송 시 dispatchId 는 {dispatch_id} 입니다.")
+    if delivery_probe:
+        # 코디네이터가 이번 시도의 도달을 확인하는 표지입니다. 워커는 아무
+        # 조치도 하지 않아도 되며, 화면에 남는 것만으로 목적을 다합니다.
+        parts.append(f"(전달 확인 표지: {delivery_probe} - 별도 조치 불필요)")
     return " ".join(parts)
 
 
@@ -1286,10 +1305,21 @@ def _deliver_capsule_notice(
 
     dispatch_id = resolve_dispatch_id(task_id)
     report_path = intent.get("report_path") or f"{capsule_path.parent}/worker_done.json"
-    text = build_capsule_notice(capsule_path, report_path=str(report_path), dispatch_id=dispatch_id)
+    delivery_probe = new_delivery_probe()
+    text = build_capsule_notice(
+        capsule_path,
+        report_path=str(report_path),
+        dispatch_id=dispatch_id,
+        delivery_probe=delivery_probe,
+    )
     code, stdout, stderr = terminal_send(args.terminal, text)
     if code == 0 and _launch_succeeded(stdout, expect_json=True):
-        return {"status": "sent", "dispatch_id": dispatch_id, "chars": char_len(text)}
+        return {
+            "status": "sent",
+            "dispatch_id": dispatch_id,
+            "chars": char_len(text),
+            "delivery_probe": delivery_probe,
+        }
 
     reason = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
     sys.stderr.write(
@@ -1573,14 +1603,21 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         # 전의 준비 상태 판정만으로 실패를 단정하면 오탐이 난다. 도달을
         # 확인하면 사전 경고는 해소된 것으로 본다.
         delivery_check = "skipped"
-        if args.terminal:
-            delivery_check = verify_instruction_delivered(
-                args.terminal, [str(capsule_path), task_id]
-            )
+        probe = notice.get("delivery_probe")
+        if args.terminal and probe:
+            # 이번 시도의 표지만 찾습니다. task_id 나 Capsule 경로로 찾으면
+            # 재 Dispatch 시 화면에 남은 이전 시도의 잔상이 그대로 통과합니다.
+            delivery_check = verify_instruction_delivered(args.terminal, [probe])
             if delivery_check == "not_observed":
                 delivery_unverified.append("instruction_not_observed")
             elif delivery_check == "unreadable":
                 delivery_unverified.append("terminal_unreadable_after_dispatch")
+        elif args.terminal:
+            # 표지가 없으면 이번 시도의 도달을 증명할 수단이 없습니다. 고지문
+            # 전송 실패나 --no-capsule-notice 가 여기 해당합니다. 증명 없음을
+            # 성공으로 돌리면 검증 자체가 성립하지 않습니다.
+            delivery_check = "no_probe"
+            delivery_unverified.append("delivery_probe_missing")
         elif pre_dispatch_warnings:
             # worker-start 경로는 핸들을 즉시 알 수 없어 사후 확인을 못 한다.
             # 이때만 사전 경고를 그대로 미확인으로 승계한다.
