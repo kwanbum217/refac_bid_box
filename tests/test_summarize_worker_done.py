@@ -361,3 +361,59 @@ def test_omission_count_explicitly_marked_when_omitted(tmp_path: Path):
     assert "외 " in digest
     assert "건 생략" in digest
     assert char_len(digest) <= 600
+
+
+def test_commit_count_string_zero_does_not_bypass_zero_work_check(tmp_path: Path):
+    """문자열 "0" 은 정수 0 검사를 그대로 지나갑니다.
+
+    필드 존재 여부만 보고 타입을 보지 않으면 무작업 완료 보고가 통과합니다.
+    외부 워커가 항상 올바른 타입을 만든다는 보장이 없습니다.
+    """
+    data = dict(SAMPLE_VALID_REPORT, status="succeeded", commit_count="0", changed_files=[])
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    result = summarize_worker_report(report)
+    assert result["exit_code"] == 1
+    assert any("commit_count 는 정수여야" in v for v in result["violations"])
+
+
+def test_boolean_commit_count_is_rejected(tmp_path: Path):
+    """bool 은 int 의 하위형이라 True 가 1 로 통과합니다."""
+    data = dict(SAMPLE_VALID_REPORT, commit_count=True)
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    result = summarize_worker_report(report)
+    assert any("commit_count 는 정수여야" in v for v in result["violations"])
+
+
+def test_unknown_status_and_verdict_are_rejected(tmp_path: Path):
+    """계약 밖의 status 나 verdict 를 조용히 받아들이면 판정 어휘가 무너집니다."""
+    data = dict(SAMPLE_VALID_REPORT, status="done", verdict="ok")
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    result = summarize_worker_report(report)
+    assert any("status 는" in v for v in result["violations"])
+    assert any("verdict 는" in v for v in result["violations"])
+
+
+def test_non_list_collection_fields_are_rejected(tmp_path: Path):
+    """배열이어야 하는 필드에 문자열이 오면 원소 단위 검사가 무의미해집니다."""
+    data = dict(SAMPLE_VALID_REPORT, changed_files="src/a.py", verification="통과")
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    result = summarize_worker_report(report)
+    assert any("changed_files 는 배열" in v for v in result["violations"])
+    assert any("verification 는 배열" in v for v in result["violations"])
+
+
+def test_valid_report_passes_type_checks(tmp_path: Path):
+    """정상 보고는 새 타입 검사에 걸리지 않아야 합니다."""
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps(SAMPLE_VALID_REPORT, ensure_ascii=False), encoding="utf-8")
+
+    result = summarize_worker_report(report)
+    assert not [v for v in result["violations"] if "타입 위반" in v or "값 위반" in v]
