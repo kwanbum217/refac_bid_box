@@ -2,16 +2,19 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 logger = logging.getLogger(__name__)
 latency_logger = logging.getLogger("uvicorn.error")
 
-# model_registry.py 에서 로드 시점에 주입받는 런타임 종속성 (순환 import 방지)
-ModelRegistry = None
-_resolve_model_id = None
-_preferred_model_for_features = None
-_prepare_full_frame = None
-_normalize_prediction_rate = None
+# model_registry.py 에서 로드 시점에 주입받는 런타임 종속성 (순환 import 방지).
+# Any 로 선언해야 주입 후 호출이 타입 검사에서 "None not callable" 로 잡히지
+# 않습니다. None 은 미주입 상태를 뜻하는 초기값일 뿐입니다.
+ModelRegistry: Any = None
+_resolve_model_id: Any = None
+_preferred_model_for_features: Any = None
+_prepare_full_frame: Any = None
+_normalize_prediction_rate: Any = None
 
 
 class PriceDecisionMethod(StrEnum):

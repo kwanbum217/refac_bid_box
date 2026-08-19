@@ -221,9 +221,13 @@ def build_default_feature_map(
     provided_rate = features_dict.get("inst_hist_rate")
     provided_cnt = features_dict.get("inst_sample_cnt")
     provided_ewm = features_dict.get("inst_ewm_rate")
-    stats = None
+    # 셋 중 하나라도 없으면 조회합니다. 아래 세 분기는 각자 자기 값이 없을
+    # 때만 stats 를 읽으므로 조회가 실행된 경우에만 도달합니다. 다만 그
+    # 상관관계는 코드에 드러나지 않아 사람도 검사기도 놓치기 쉽습니다.
+    # 빈 dict 를 기본값으로 두어 불변식을 값으로 고정합니다.
+    stats: dict[str, float] = {}
     if provided_rate is None or provided_cnt is None or provided_ewm is None:
-        stats = lookup_institution_stats(features_dict, session)
+        stats = lookup_institution_stats(features_dict, session) or {}
     if provided_rate is None:
         provided_rate = stats["inst_hist_rate"]
     inst_hist_rate = _coerce_float(provided_rate, DEFAULT_INST_RATE)
