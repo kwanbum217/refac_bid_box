@@ -148,7 +148,11 @@ def test_retrieval_plan_uses_the_shared_vector_top_k_default():
 
 
 def test_semantic_search_tool_uses_the_shared_vector_top_k_default(monkeypatch):
-    monkeypatch.setattr(semantic_search_tool, "retrieve_semantic_context", lambda plan: [])
+    monkeypatch.setattr(
+        semantic_search_tool,
+        "retrieve_semantic_context",
+        lambda plan: rag_engine.SemanticSearchResult(ok=True, documents=[]),
+    )
 
     result = semantic_search_tool.execute(query="적격심사 사례")
 
@@ -160,7 +164,7 @@ def test_recent_detail_search_uses_the_shared_vector_top_k_default(monkeypatch):
 
     def retrieve(plan: RetrievalPlan):
         captured.append(plan)
-        return []
+        return rag_engine.SemanticSearchResult(ok=True, documents=[])
 
     monkeypatch.setattr(rag_engine, "retrieve_semantic_context", retrieve)
 

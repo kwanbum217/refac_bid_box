@@ -63,7 +63,10 @@ from src.rag.snapshots import (
     _extract_trend_snapshot,
 )
 from src.rag.structured_data import retrieve_structured_data
-from src.rag.vector_store import retrieve_semantic_context
+from src.rag.vector_store import (
+    SemanticSearchResult,
+    retrieve_semantic_context,
+)
 
 SYSTEM_PROMPT = (
     "당신은 BIDBOX의 전문 입찰 분석 어시스턴트입니다. "
@@ -163,10 +166,12 @@ def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
         top_k=max(int(top_k or DEFAULT_VECTOR_TOP_K), 1),
         route_reason="문맥 검색 함수 호출",
     )
-    documents = retrieve_semantic_context(plan)
-    if not documents:
+    result = retrieve_semantic_context(plan)
+    if not result.ok:
+        return "지식베이스 검색에 실패해 상세 문서를 확인하지 못했습니다."
+    if not result.documents:
         return "최근 문맥에서 관련된 상세 문서를 찾지 못했습니다."
-    top_document = documents[0].get("document") or ""
+    top_document = result.documents[0].get("document") or ""
     return json.dumps(_normalize_text(top_document), ensure_ascii=False)
 
 
@@ -198,11 +203,15 @@ class HybridRAGEngine:
         """검색 계획 수립과 컨텍스트 조회를 수행합니다."""
         plan = build_retrieval_plan(user_query)
         structured_data, vector_docs, kb_status = _normalize_tool_context(tool_context)
+        vector_failed = False
 
         if plan.use_sql and structured_data is None and db is not None:
             structured_data = retrieve_structured_data(db, plan)
         if plan.use_vector and not vector_docs:
-            vector_docs = retrieve_semantic_context(plan)
+            result = retrieve_semantic_context(plan)
+            vector_docs = result.documents
+            if not result.ok:
+                vector_failed = True
         if plan.use_kb_status and kb_status is None and db is not None:
             from src.app.services.tools.kb_status_tool import get_latest_kb_status_payload
 
@@ -211,16 +220,22 @@ class HybridRAGEngine:
         trace_id = datetime.now().strftime("%Y%m%d%H%M%S") + os.urandom(4).hex()
         evidence_items = _build_evidence_items(structured_data, vector_docs, kb_status)
 
+        hints = list(
+            dict.fromkeys(
+                plan.insufficiency_hints
+                + (structured_data.get("insufficiency_hints", []) if structured_data else [])
+            )
+        )
+        if vector_failed:
+            failure_hint = "지식베이스 문맥 검색에 실패해 문맥 없이 답변합니다."
+            if failure_hint not in hints:
+                hints.append(failure_hint)
+
         provenance = Provenance(
             trace_id=trace_id,
             retrieval_mode=plan.route_reason,
             items=evidence_items,
-            insufficiency_hints=list(
-                dict.fromkeys(
-                    plan.insufficiency_hints
-                    + (structured_data.get("insufficiency_hints", []) if structured_data else [])
-                )
-            ),
+            insufficiency_hints=hints,
             kb_version=str(kb_status.get("updated_at", "")) if kb_status else None,
         )
 
@@ -465,6 +480,7 @@ __all__ = [
     "SYSTEM_PROMPT",
     "TREND_KEYWORDS",
     "HybridRAGEngine",
+    "SemanticSearchResult",
     "_build_evidence_items",
     "_build_result_list_answer",
     "_build_source_citation_from_context",
