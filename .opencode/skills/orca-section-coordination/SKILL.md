@@ -50,20 +50,38 @@ python3 scripts/validate_agent_rules.py --quiet
 문서만 바꾼 Task는 두 번째만으로 충분합니다. 운영 코드나 `src/ml/` 을 건드린
 Task는 반드시 둘 다 돌립니다.
 
-`frontend/` 를 고치는 Task는 여기에 더해 frontend 검증을 함께 적습니다.
-`scripts/orca_taskctl.py expand` 가 쓰기 범위에 `frontend/` 가 있으면 자동으로
-붙이지만, Capsule 을 손으로 쓸 때는 직접 적어야 합니다.
+`scripts/orca_taskctl.py expand` 는 쓰기 범위가 요구하는 능력에 맞는 명령만
+붙입니다. 문서 전용 범위에는 pytest 를 붙이지 않고, `frontend/` 가 있으면
+frontend 검증을, Dockerfile 이나 compose 가 있으면 각 검증을 붙입니다. Capsule
+을 손으로 쓸 때는 아래 표를 보고 직접 적어야 합니다.
 
-```bash
-npm --prefix frontend run test
-npm --prefix frontend run build
-```
+Level 1 게이트 3 은 변경 파일이 요구하는 **검증 능력(capability)** 을 계산하고,
+그 능력을 덮는 명령이 없으면 `--strict` 에서 실패합니다. 영역 하나로 묶으면 그
+영역의 아무 명령이나 하나만 통과해도 덮인 것이 되므로 능력 단위로 봅니다.
 
-Level 1 게이트 3 은 변경 파일을 `backend` 와 `frontend` 영역으로 나누고, 각
-영역을 덮는 검증 명령이 없으면 `--strict` 에서 실패합니다. `.tsx` 만 고친
-Task가 무관한 backend pytest 통과로 병합되던 경로를 막습니다. 실행되는 명령은
-허용 목록(`uv run pytest ...`, `npm ci`, `npm run <script>`)으로 제한되며, 그
-밖의 문자열은 게이트 3 실패로 거부됩니다.
+| 변경 대상 | 요구 능력 | 덮는 명령 |
+| --- | --- | --- |
+| `frontend/**` | `frontend_test`, `frontend_build` | `npm --prefix frontend run test` / `... run build` |
+| `Dockerfile*` | `docker_build` | `docker build ...` |
+| `docker-compose*.yml` | `compose_config` | `docker compose config -q` |
+| 그 밖의 코드 | `backend_pytest` | `uv run pytest ...` |
+| 문서(`.md`/`.rst`/`.adoc`) | 없음 | - |
+
+`npm run lint` 처럼 능력 대응이 없는 스크립트는 실행은 되지만 아무 능력도 덮지
+않습니다. test 와 build 를 함께 수행하는 통합 스크립트를 쓰려면 게이트의
+`NPM_SCRIPT_CAPABILITIES` 에 이름을 등록합니다.
+
+**Docker 는 AGENTS.md 4장의 공유 자원입니다.** `docker build` 를 검증에 넣는
+Task 는 `shared_resources` 에 docker 를 선언해 다른 섹션과 겹치지 않게 합니다.
+
+`.github/workflows/**` 는 로컬 검증 수단이 없어 `backend_pytest` 로 둡니다.
+러너 없는 능력을 필수로 걸면 워크플로우 변경이 게이트에서 교착합니다. 실제
+검증은 해당 브랜치 푸시에서 도는 CI 가 담당하므로, 워크플로우를 고친 Task 는
+병합 전에 브랜치 CI 결과를 확인합니다.
+
+실행되는 명령은 허용 목록(`uv run pytest ...`, `npm ci`, `npm run <script>`,
+`docker build`, `docker compose config`)으로 제한되며, 그 밖의 문자열은 게이트
+3 실패로 거부됩니다.
 
 ### 2.2 작업 트리는 Orca 를 정본으로 씁니다
 

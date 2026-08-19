@@ -182,23 +182,48 @@ def get_git_changed_files(
 DOC_ONLY_SUFFIXES = frozenset({".md", ".rst", ".adoc"})
 
 
-# 검증 영역 구분. backend 는 pytest 가, frontend 는 frontend/ 의 npm 스크립트가
-# 덮습니다. 영역을 나누지 않으면 .tsx 만 고친 Task 가 무관한 backend pytest 통과로
-# 게이트 3 을 넘습니다. 판정 필요 여부만 보던 2026-08-19 이전 구현의 남은 구멍입니다.
+# 변경 성격별로 무엇을 확인해야 하는지 나눈 검증 능력(capability) 입니다.
+# "영역" 하나로 묶으면 그 영역의 아무 명령이나 하나만 통과해도 덮인 것으로 봅니다.
+# 2026-08-19 측정에서 frontend 를 영역으로만 두니 `npm run lint` 하나가 test 와
+# build 를 대신했고, Dockerfile 변경이 backend pytest 통과로 덮였습니다.
+CAP_BACKEND_PYTEST = "backend_pytest"
+CAP_FRONTEND_TEST = "frontend_test"
+CAP_FRONTEND_BUILD = "frontend_build"
+CAP_DOCKER_BUILD = "docker_build"
+CAP_COMPOSE_CONFIG = "compose_config"
+
 FRONTEND_PATH_PREFIXES = ("frontend/",)
+COMPOSE_NAME_RE = re.compile(r"^(?:docker-)?compose[.\w-]*\.ya?ml$", re.IGNORECASE)
 
 
-def verification_domains(paths: list[str]) -> set[str]:
-    """변경 경로들이 어느 검증 영역의 확인을 요구하는지 판정합니다."""
-    domains: set[str] = set()
+def _path_capabilities(path: str) -> set[str]:
+    """경로 하나가 요구하는 검증 능력을 판정합니다."""
+    name = Path(path).name
+    if name == "Dockerfile" or name.startswith("Dockerfile."):
+        return {CAP_DOCKER_BUILD}
+    if COMPOSE_NAME_RE.match(name):
+        return {CAP_COMPOSE_CONFIG}
+    if path.startswith(FRONTEND_PATH_PREFIXES):
+        return {CAP_FRONTEND_TEST, CAP_FRONTEND_BUILD}
+    return {CAP_BACKEND_PYTEST}
+
+
+def required_capabilities(paths: list[str]) -> set[str]:
+    """변경 경로들이 요구하는 검증 능력 집합을 구합니다.
+
+    `.github/workflows/` 는 이 저장소에 로컬 검증 수단이 없어 backend 로 둡니다.
+    러너 없는 능력을 필수로 걸면 워크플로우 변경이 게이트에서 교착합니다.
+    실제 검증은 해당 브랜치 푸시에서 도는 CI 가 담당합니다.
+    """
+    capabilities: set[str] = set()
     for raw in paths:
         path = raw.strip()
         if not path:
             continue
         if Path(path).suffix.lower() in DOC_ONLY_SUFFIXES:
             continue
-        domains.add("frontend" if path.startswith(FRONTEND_PATH_PREFIXES) else "backend")
-    return domains
+        capabilities |= _path_capabilities(path)
+    return capabilities
 
 
 def requires_test_verification(changed_files: list[str]) -> bool:
@@ -212,7 +237,7 @@ def requires_test_verification(changed_files: list[str]) -> bool:
     변경이 없으면 검증할 대상도 없으므로 필수가 아니다. 무작업 완료 보고는
     summarize_worker_done 의 commit_count 검사가 따로 막는다.
     """
-    return bool(verification_domains(changed_files))
+    return bool(required_capabilities(changed_files))
 
 
 def run_gate1_changed_files(
@@ -349,6 +374,15 @@ def format_failed_nodes(nodes: list[str], max_show: int = 5) -> str:
 
 NPM_SCRIPT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_-]*$")
 
+# npm 스크립트 이름과 그것이 실제로 덮는 검증 능력의 대응입니다. 여기 없는
+# 스크립트는 실행은 되지만 아무 능력도 덮지 않습니다. `npm run lint` 하나로
+# test 와 build 를 대신할 수 없어야 합니다. test 와 build 를 모두 수행하는
+# 통합 스크립트를 쓰려면 그 이름을 여기 명시적으로 등록합니다.
+NPM_SCRIPT_CAPABILITIES = {
+    "test": frozenset({CAP_FRONTEND_TEST}),
+    "build": frozenset({CAP_FRONTEND_BUILD}),
+}
+
 
 @dataclass
 class VerificationCommand:
@@ -357,7 +391,7 @@ class VerificationCommand:
     source: str
     argv: list[str]
     cwd: str | None = None
-    domain: str | None = None
+    provides: frozenset[str] = frozenset()
     kind: str = "pytest"
 
 
@@ -388,12 +422,28 @@ def _parse_npm_command(source: str, tokens: list[str]) -> VerificationCommand:
         prefix = prefix_path.as_posix()
 
     if rest == ["ci"]:
-        # 설치는 검증이 아니므로 어느 영역도 덮지 않습니다.
-        return VerificationCommand(source, ["npm", "ci"], prefix, None, "npm")
+        # 설치는 검증이 아니므로 어느 능력도 덮지 않습니다.
+        return VerificationCommand(source, ["npm", "ci"], prefix, frozenset(), "npm")
     if len(rest) == 2 and rest[0] == "run" and NPM_SCRIPT_RE.match(rest[1]):
-        covered = "frontend" if prefix and prefix.startswith("frontend") else None
-        return VerificationCommand(source, ["npm", "run", rest[1]], prefix, covered, "npm")
+        in_frontend = bool(prefix) and prefix.startswith("frontend")
+        provides = NPM_SCRIPT_CAPABILITIES.get(rest[1], frozenset()) if in_frontend else frozenset()
+        return VerificationCommand(source, ["npm", "run", rest[1]], prefix, provides, "npm")
     raise ValueError("허용되는 npm 명령은 'npm ci' 와 'npm run <script>' 뿐입니다")
+
+
+def _parse_docker_command(source: str, tokens: list[str]) -> VerificationCommand:
+    """docker 검증 명령을 해석합니다. `docker build` 와 `docker compose config` 만 허용합니다.
+
+    docker 는 AGENTS.md 4장의 공유 자원입니다. 이 명령을 검증에 넣는 Task 는
+    shared_resources 에 docker 를 선언해야 다른 섹션과 겹치지 않습니다.
+    """
+    if tokens[1:2] == ["build"]:
+        return VerificationCommand(source, list(tokens), None, frozenset({CAP_DOCKER_BUILD}), "raw")
+    if tokens[1:3] == ["compose", "config"]:
+        return VerificationCommand(
+            source, list(tokens), None, frozenset({CAP_COMPOSE_CONFIG}), "raw"
+        )
+    raise ValueError("허용되는 docker 명령은 'docker build' 와 'docker compose config' 뿐입니다")
 
 
 def parse_verification_command(command: str) -> VerificationCommand:
@@ -417,16 +467,23 @@ def parse_verification_command(command: str) -> VerificationCommand:
 
     head = tokens[0]
     if head == "pytest":
-        return VerificationCommand(command, ["uv", "run", "pytest", *tokens[1:]], None, "backend")
+        return VerificationCommand(
+            command,
+            ["uv", "run", "pytest", *tokens[1:]],
+            None,
+            frozenset({CAP_BACKEND_PYTEST}),
+        )
     if head == "npm":
         return _parse_npm_command(command, tokens)
+    if head == "docker":
+        return _parse_docker_command(command, tokens)
     if (
         head in {"python", "python3", sys.executable}
         and len(tokens) > 1
         and Path(tokens[1]).name == "validate_agent_rules.py"
     ):
         # 게이트 4 가 이미 같은 검사를 수행하므로 중복 실행하지 않습니다.
-        return VerificationCommand(command, [], None, None, "noop")
+        return VerificationCommand(command, [], None, frozenset(), "noop")
     raise ValueError(f"허용 목록에 없는 검증 명령: {head}")
 
 
@@ -443,17 +500,17 @@ def run_gate3_tests(
     timeout: int = DEFAULT_PYTEST_TIMEOUT,
     required: bool = True,
     commands: list[str] | None = None,
-    required_domains: set[str] | None = None,
+    capabilities: set[str] | None = None,
 ) -> GateResult:
     """게이트 3: Capsule 이 지정한 검증 명령을 허용 목록 안에서 실행합니다.
 
     tests 는 pytest 인자만 받던 종전 경로이고, commands 는 Capsule 의
-    verification_commands 원문입니다. 실행 대상이 하나도 없거나 변경 영역을
-    덮는 명령이 없으면 --strict 에서 실패합니다. pytest 만 실행하던 시절에는
-    frontend 변경이 무관한 backend pytest 통과로 이 게이트를 넘었습니다.
+    verification_commands 원문입니다. 실행 대상이 하나도 없거나 변경이 요구하는
+    검증 능력을 덮는 명령이 없으면 --strict 에서 실패합니다. pytest 만 실행하던
+    시절에는 frontend 변경이 무관한 backend pytest 통과로 이 게이트를 넘었습니다.
     """
-    if required_domains is None:
-        required_domains = {"backend"} if required else set()
+    if capabilities is None:
+        capabilities = {CAP_BACKEND_PYTEST} if required else set()
 
     specs: list[VerificationCommand] = []
     invalid: list[str] = []
@@ -462,7 +519,7 @@ def run_gate3_tests(
         argv = ["uv", "run", "pytest", *args]
         if "-q" not in args and "--quiet" not in args:
             argv.append("-q")
-        specs.append(VerificationCommand(test_spec, argv, None, "backend"))
+        specs.append(VerificationCommand(test_spec, argv, None, frozenset({CAP_BACKEND_PYTEST})))
     for command in commands or []:
         try:
             specs.append(parse_verification_command(command))
@@ -470,8 +527,10 @@ def run_gate3_tests(
             invalid.append(f"{command}: {exc}")
 
     executable = [spec for spec in specs if spec.argv]
-    covered = {spec.domain for spec in specs if spec.domain}
-    uncovered = sorted(required_domains - covered)
+    covered: set[str] = set()
+    for spec in specs:
+        covered |= spec.provides
+    uncovered = sorted(capabilities - covered)
 
     results: list[dict[str, Any]] = []
     details: list[str] = []
@@ -511,9 +570,9 @@ def run_gate3_tests(
 
     raw_data = {
         "results": results,
-        "required_domains": sorted(required_domains),
-        "covered_domains": sorted(covered),
-        "uncovered_domains": uncovered,
+        "required_capabilities": sorted(capabilities),
+        "covered_capabilities": sorted(covered),
+        "uncovered_capabilities": uncovered,
         "invalid_commands": invalid,
     }
 
@@ -524,7 +583,7 @@ def run_gate3_tests(
             summary=f"허용되지 않은 검증 명령 {len(invalid)}건",
             details=details + [f"거부: {item}" for item in invalid],
             raw_data=raw_data,
-            required=bool(required_domains),
+            required=bool(capabilities),
         )
 
     if not all_passed:
@@ -534,14 +593,14 @@ def run_gate3_tests(
             summary=f"검증 명령 {len(executable)}건 실행: 실패 발생",
             details=details,
             raw_data=raw_data,
-            required=bool(required_domains),
+            required=bool(capabilities),
         )
 
     if uncovered:
         return GateResult(
             name="게이트 3 테스트",
             status="skipped",
-            summary=f"미검증 영역: {', '.join(uncovered)}",
+            summary=f"미검증 능력: {', '.join(uncovered)}",
             details=details,
             raw_data=raw_data,
             required=True,
@@ -554,7 +613,7 @@ def run_gate3_tests(
             summary="실행할 검증 명령 없음",
             details=details,
             raw_data=raw_data,
-            required=bool(required_domains),
+            required=bool(capabilities),
         )
 
     return GateResult(
@@ -563,7 +622,7 @@ def run_gate3_tests(
         summary=f"검증 명령 {len(executable)}건 실행: 전체 통과",
         details=details,
         raw_data=raw_data,
-        required=bool(required_domains),
+        required=bool(capabilities),
     )
 
 
@@ -872,7 +931,7 @@ def run_level1_gate(
             tests,
             repo_path,
             commands=commands,
-            required_domains=verification_domains(list(changed_files) + list(rename_sources)),
+            capabilities=required_capabilities(list(changed_files) + list(rename_sources)),
         )
         gates.append(g3)
 

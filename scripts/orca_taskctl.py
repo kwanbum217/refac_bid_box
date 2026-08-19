@@ -26,6 +26,28 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scripts.orca_level1_gate import (
+        CAP_BACKEND_PYTEST,
+        CAP_COMPOSE_CONFIG,
+        CAP_DOCKER_BUILD,
+        CAP_FRONTEND_BUILD,
+        CAP_FRONTEND_TEST,
+        required_capabilities,
+    )
+except (ModuleNotFoundError, ImportError):
+    _repo_root = Path(__file__).resolve().parent.parent
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
+    from scripts.orca_level1_gate import (
+        CAP_BACKEND_PYTEST,
+        CAP_COMPOSE_CONFIG,
+        CAP_DOCKER_BUILD,
+        CAP_FRONTEND_BUILD,
+        CAP_FRONTEND_TEST,
+        required_capabilities,
+    )
+
+try:
     from scripts.orca_contract import (
         char_len,
         load_capsule,
@@ -59,18 +81,21 @@ CAPSULE_VERSION = "2.1.0"
 MAX_CONCURRENT_WRITE_WORKERS = 3
 
 # 검증 명령 기본값. Capsule 이 선언한 명령을 Level 1 게이트 3 이 그대로 실행하므로
-# 여기 적히지 않은 검증은 아무도 실행하지 않습니다. frontend 를 고치는 Task 에는
-# frontend 검증이 자동으로 붙습니다. 코디네이터 기억에 의존하면 .tsx 변경이
-# backend pytest 통과만으로 병합됩니다.
-DEFAULT_VERIFICATION_COMMANDS = [
-    "uv run pytest tests/ -q -m 'not data_assets'",
-    "python3 scripts/validate_agent_rules.py --quiet",
+# 여기 적히지 않은 검증은 아무도 실행하지 않습니다. 반대로 변경과 무관한 검증을
+# 넣으면 문서만 고친 Task 도 전량 pytest 를 돌립니다. 쓰기 범위 성격에 맞춰 붙입니다.
+RULES_VERIFICATION_COMMAND = "python3 scripts/validate_agent_rules.py --quiet"
+BACKEND_VERIFICATION_COMMAND = "uv run pytest tests/ -q -m 'not data_assets'"
+DEFAULT_VERIFICATION_COMMANDS = [BACKEND_VERIFICATION_COMMAND, RULES_VERIFICATION_COMMAND]
+
+# 검증 능력과 그것을 덮는 명령의 대응. 순서가 Capsule 에 적히는 순서입니다.
+CAPABILITY_COMMANDS = [
+    (CAP_BACKEND_PYTEST, BACKEND_VERIFICATION_COMMAND),
+    (CAP_FRONTEND_TEST, "npm --prefix frontend run test"),
+    (CAP_FRONTEND_BUILD, "npm --prefix frontend run build"),
+    (CAP_DOCKER_BUILD, "docker build -t refac-bid-box:orca-gate ."),
+    (CAP_COMPOSE_CONFIG, "docker compose config -q"),
 ]
-FRONTEND_VERIFICATION_COMMANDS = [
-    "npm --prefix frontend run test",
-    "npm --prefix frontend run build",
-]
-FRONTEND_PATH_PREFIX = "frontend/"
+
 ACTIVE_TASK_STATUSES = frozenset({"dispatched"})
 
 # 기본 Capsule 템플릿
@@ -221,17 +246,20 @@ def resolve_verification_commands(
     """Task Intent 와 쓰기 범위로부터 Capsule 의 verification_commands 를 정합니다.
 
     Intent 가 명시하면 그것을 씁니다. 종전에는 템플릿에 backend pytest 두 줄이
-    박혀 있어 Intent 가 무엇을 적든 무시됐습니다.
+    박혀 있어 Intent 가 무엇을 적든 무시됐습니다. 명시가 없으면 쓰기 범위가
+    요구하는 검증 능력을 게이트와 같은 함수로 구해 그 능력을 덮는 명령만
+    붙입니다. 판정 기준을 따로 구현하면 Capsule 이 붙이지 않은 검증을 게이트가
+    요구하는, 통과 불가능한 Task 가 생깁니다. 문서만 고치는 Task 에 전량
+    pytest 가 붙던 것도 이 기준을 쓰지 않았기 때문입니다.
     """
     declared = [str(item).strip() for item in intent.get("verification_commands", [])]
-    commands = [item for item in declared if item] or list(DEFAULT_VERIFICATION_COMMANDS)
+    if declared:
+        return list(dict.fromkeys(item for item in declared if item))
 
-    touches_frontend = any(
-        str(path).strip().startswith(FRONTEND_PATH_PREFIX) for path in write_files
-    )
-    has_npm = any(command.split()[:1] == ["npm"] for command in commands)
-    if touches_frontend and not has_npm:
-        commands += FRONTEND_VERIFICATION_COMMANDS
+    paths = [str(path).strip() for path in write_files if str(path).strip()]
+    needed = required_capabilities(paths)
+    commands = [command for capability, command in CAPABILITY_COMMANDS if capability in needed]
+    commands.append(RULES_VERIFICATION_COMMAND)
     return list(dict.fromkeys(commands))
 
 

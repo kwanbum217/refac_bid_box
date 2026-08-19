@@ -1149,3 +1149,58 @@ N/A 처리했다. **리뷰 보고서를 명시했는데 Capsule 만 빠진 호�
 4. Capsule 문자열을 셸에 넘기지 않는다. 허용된 실행기만 고정 인자 목록으로 만든다.
 5. 변경 파일 목록은 rename 원본까지 본다. 새 경로만으로 성격을 단정하지 않는다.
 6. 수정 보고에서 "전부 완료" 는 미룬 부분이 하나도 없을 때만 쓴다.
+
+---
+
+## 16. 영역 하나로 묶으면 아무 명령이나 하나로 덮인다 (2026-08-19 6차)
+
+5차에서 검증 명령을 일반화하면서 변경을 `backend` / `frontend` 두 **영역**으로
+나눴다. 6차 감사(GPT)가 영역 단위 판정의 구멍 둘을 지적했고 재현해 확인했다.
+
+### 16.1 `npm run lint` 하나가 test 와 build 를 대신했다
+
+`npm run <script>` 는 스크립트 이름과 무관하게 frontend 영역을 덮은 것으로
+쳤다. Intent 가 `npm --prefix frontend run lint` 하나만 적으면 test 도 build 도
+돌지 않은 채 게이트가 통과했다.
+
+해결: 영역 대신 **검증 능력(capability)** 으로 본다. `test` 는 `frontend_test`
+를, `build` 는 `frontend_build` 를 덮고, 대응이 없는 스크립트는 실행은 되지만
+아무 능력도 덮지 않는다. 통합 스크립트는 이름을 명시적으로 등록해야 한다.
+
+### 16.2 Dockerfile 변경을 backend pytest 가 덮었다
+
+`Dockerfile`, `docker-compose.yml`, `pyproject.toml` 이 모두 backend 로 분류돼
+pytest 통과만으로 병합 가능했다. **5차에서 닫았다고 한 "무관한 검증으로 통과"
+가 infra 에 그대로 남아 있었다.** 한 계열을 닫을 때는 같은 기전이 다른 입력에도
+있는지 전수로 본다.
+
+해결: `Dockerfile*` 은 `docker_build`, `docker-compose*.yml` 은
+`compose_config` 를 요구한다. docker 는 공유 자원이므로 이 검증을 넣는 Task 는
+`shared_resources` 에 선언한다.
+
+`.github/workflows/**` 는 로컬 검증 수단이 없어 `backend_pytest` 로 남겼다.
+**러너 없는 능력을 필수로 걸면 fail-open 이 fail-deadlock 이 될 뿐이다.**
+워크플로우 변경은 브랜치 CI 가 검증한다.
+
+### 16.3 요구와 부착의 기준이 갈라지면 통과 불가능한 Task 가 생긴다
+
+Capsule 에 붙일 검증을 정하는 쪽(`orca_taskctl`)과 요구를 판정하는 쪽
+(`orca_level1_gate`)이 각자 경로 규칙을 구현하면 어긋난 순간 아무도 통과할 수
+없는 Task 가 만들어진다. 부착도 `required_capabilities()` 를 그대로 불러 쓴다.
+문서 전용 Task 에 전량 pytest 가 붙던 것도 이 기준을 안 쓴 탓이었다.
+
+### 16.4 경고는 아무도 고치지 않는다
+
+`CURRENT_STATE.source_commit` 신선도는 허용 지연을 넘겨도 WARN 이라 exit 0 이었고,
+실제로 6 커밋 뒤처진 채 통과하고 있었다. CI 는 `fetch-depth: 1` 이라 커밋 조회
+자체가 실패해 항상 "미검증" 으로 내려앉았다. 지연 초과를 FAIL 로 올리고 CI
+체크아웃에 `fetch-depth: 0` 을 줬다.
+
+### 16.5 반복 금지
+
+1. 검증 대상을 영역으로 묶지 않는다. 무엇을 확인했는지 능력 단위로 센다.
+2. 한 계열을 닫을 때 같은 기전이 다른 입력에도 있는지 전수로 본다.
+3. 러너 없는 능력을 필수로 걸지 않는다. 교착은 개선이 아니다.
+4. 요구 판정과 검증 부착은 같은 함수를 쓴다. 두 번 구현하면 어긋난다.
+5. 강제할 생각이 없는 검사는 WARN 으로 두지 않는다. 지키게 할 것이면 FAIL 로 만든다.
+6. CI 에서 도는 검사가 CI 환경(얕은 클론 등)에서 무력화되지 않는지 확인한다.

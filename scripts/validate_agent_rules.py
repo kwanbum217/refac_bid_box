@@ -573,12 +573,14 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
             warn=True,
         )
     if behind > CURRENT_STATE_LAG_TOLERANCE:
+        # 경고로 두면 아무도 고치지 않습니다. 2026-08-19 측정에서 6 커밋 뒤처진
+        # 상태로 WARN 만 내고 exit 0 이었습니다. 정본이 실제 상태를 놓치기
+        # 시작하는 지점이므로 실패로 막습니다.
         return CheckResult(
             name,
-            True,
-            f"필수 필드 완비. source_commit {recorded} 이 HEAD 보다 {behind} 커밋 뒤처짐 "
-            f"(허용 {CURRENT_STATE_LAG_TOLERANCE}). 현재 상태를 놓치고 있는지 확인하십시오",
-            warn=True,
+            False,
+            f"source_commit {recorded} 이 HEAD 보다 {behind} 커밋 뒤처짐 "
+            f"(허용 {CURRENT_STATE_LAG_TOLERANCE}). CURRENT_STATE.md 를 갱신하십시오",
         )
     return CheckResult(
         name,
