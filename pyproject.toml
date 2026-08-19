@@ -199,6 +199,13 @@ disable_error_code = [
     "arg-type",
 ]
 
+
+exclude = [
+    "data/",
+    "chroma_db/",
+    ".venv/",
+    "migrations/",
+]
 # ----------------------------------------------------------------------
 # 모듈 한정 mypy override
 # ----------------------------------------------------------------------
@@ -231,13 +238,6 @@ disable_error_code = ["call-overload"]
 module = "src.app.api.v1.predictions"
 disable_error_code = ["call-overload"]
 
-
-exclude = [
-    "data/",
-    "chroma_db/",
-    ".venv/",
-    "migrations/",
-]
 
 # ==========================================
 # bandit (보안 정적 스캔)
