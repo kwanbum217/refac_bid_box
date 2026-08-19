@@ -50,6 +50,21 @@ python3 scripts/validate_agent_rules.py --quiet
 문서만 바꾼 Task는 두 번째만으로 충분합니다. 운영 코드나 `src/ml/` 을 건드린
 Task는 반드시 둘 다 돌립니다.
 
+`frontend/` 를 고치는 Task는 여기에 더해 frontend 검증을 함께 적습니다.
+`scripts/orca_taskctl.py expand` 가 쓰기 범위에 `frontend/` 가 있으면 자동으로
+붙이지만, Capsule 을 손으로 쓸 때는 직접 적어야 합니다.
+
+```bash
+npm --prefix frontend run test
+npm --prefix frontend run build
+```
+
+Level 1 게이트 3 은 변경 파일을 `backend` 와 `frontend` 영역으로 나누고, 각
+영역을 덮는 검증 명령이 없으면 `--strict` 에서 실패합니다. `.tsx` 만 고친
+Task가 무관한 backend pytest 통과로 병합되던 경로를 막습니다. 실행되는 명령은
+허용 목록(`uv run pytest ...`, `npm ci`, `npm run <script>`)으로 제한되며, 그
+밖의 문자열은 게이트 3 실패로 거부됩니다.
+
 ### 2.2 작업 트리는 Orca 를 정본으로 씁니다
 
 섹션 작업용 격리 트리는 `orca worktree create` 로 만듭니다. `git worktree add`

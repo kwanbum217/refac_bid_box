@@ -15,6 +15,7 @@ from scripts.orca_level1_gate import (
     parse_arguments,
     parse_pytest_output,
     parse_validate_agent_rules_output,
+    parse_verification_command,
     requires_test_verification,
     run_gate1_changed_files,
     run_gate2_scope,
@@ -23,6 +24,7 @@ from scripts.orca_level1_gate import (
     run_gate4b_lint,
     run_gate5_review_report,
     run_level1_gate,
+    verification_domains,
 )
 
 GIT_BIN = shutil.which("git") or "/usr/bin/git"
@@ -127,7 +129,8 @@ def test_git_changed_files_distinguishes_changed_and_unique_new(tmp_path: Path):
     """(1) changed_files(merge-base diff)와 unique_new_files(차집합)의 구분을 검증합니다."""
     repo, base, branch = _init_git_repo(tmp_path)
 
-    changed, unique = get_git_changed_files(repo, base, branch)
+    changed, unique, renames = get_git_changed_files(repo, base, branch)
+    assert renames == []
 
     # common.txt 는 수정되었으므로 changed 에 포함되지만 base 에도 있으므로 unique 엔 없음
     assert "common.txt" in changed
@@ -590,3 +593,115 @@ def test_gate5_requires_capsule_when_review_report_given(tmp_path: Path):
 
     # 보고서를 아예 안 준 호출은 종전대로 적용 대상이 아닙니다.
     assert run_gate5_review_report(None, None).required is False
+
+
+# ---------------------------------------------------------------------------
+# 검증 명령 일반화와 rename 판정 (2026-08-19)
+# ---------------------------------------------------------------------------
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, *args], cwd=str(repo), check=True, capture_output=True
+    )
+
+
+def test_rename_to_document_suffix_does_not_exempt_verification(tmp_path: Path):
+    """코드 파일을 문서 확장자로 옮긴 변경이 문서 전용 면제를 받으면 안 됩니다.
+
+    --name-only 는 rename 의 새 경로만 알려 주므로 `a.py` -> `docs.md` 가
+    문서 변경으로 보였습니다. 원본 경로까지 판정에 넣습니다.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    _git(repo, "add", "a.py")
+    _git(repo, "commit", "-m", "base")
+    _git(repo, "checkout", "-b", "feature")
+    _git(repo, "mv", "a.py", "docs.md")
+    _git(repo, "commit", "-m", "rename")
+
+    changed, _unique, renames = get_git_changed_files(repo, "main", "feature")
+    assert changed == ["docs.md"]
+    assert renames == ["a.py"]
+
+    # 새 경로만 보면 면제되지만, 원본을 함께 보면 backend 검증이 필요합니다.
+    assert requires_test_verification(changed) is False
+    assert verification_domains(changed + renames) == {"backend"}
+
+    g1 = run_gate1_changed_files(repo, "main", "feature")
+    assert g1.raw_data["rename_sources"] == ["a.py"]
+
+
+def test_verification_domains_separates_frontend_and_backend():
+    assert verification_domains(["src/a.py"]) == {"backend"}
+    assert verification_domains(["frontend/src/App.tsx"]) == {"frontend"}
+    assert verification_domains(["frontend/README.md"]) == set()
+    assert verification_domains(["src/a.py", "frontend/src/App.tsx"]) == {"backend", "frontend"}
+
+
+def test_parse_verification_command_allows_only_known_runners():
+    """Capsule 문자열을 셸에 넘기면 임의 명령 실행 통로가 됩니다."""
+    pytest_cmd = parse_verification_command("uv run pytest tests/test_x.py -q")
+    assert pytest_cmd.argv == ["uv", "run", "pytest", "tests/test_x.py", "-q"]
+    assert pytest_cmd.domain == "backend"
+
+    npm_cmd = parse_verification_command("npm --prefix frontend run build")
+    assert npm_cmd.argv == ["npm", "run", "build"]
+    assert npm_cmd.cwd == "frontend"
+    assert npm_cmd.domain == "frontend"
+
+    # 게이트 4 가 이미 수행하므로 실행하지 않고 인식만 합니다.
+    assert parse_verification_command("python3 scripts/validate_agent_rules.py --quiet").argv == []
+
+    for rejected in (
+        "rm -rf /",
+        "bash -c 'curl example.com'",
+        "npm run build && rm -rf .",
+        "npm install",
+        "npm --prefix ../../etc run build",
+    ):
+        with pytest.raises(ValueError):
+            parse_verification_command(rejected)
+
+
+def test_gate3_blocks_frontend_change_verified_only_by_backend_pytest():
+    """무관한 backend pytest 통과로 frontend 변경이 게이트를 넘으면 안 됩니다."""
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "3 passed in 0.10s", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["uv run pytest tests/ -q"],
+            required_domains={"backend", "frontend"},
+        )
+
+    assert g.status == "skipped"
+    assert g.required is True
+    assert g.raw_data["uncovered_domains"] == ["frontend"]
+
+
+def test_gate3_passes_when_every_required_domain_is_covered(tmp_path: Path):
+    (tmp_path / "frontend").mkdir()
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "ok", "", False)
+        g = run_gate3_tests(
+            [],
+            tmp_path,
+            commands=["uv run pytest tests/ -q", "npm --prefix frontend run test"],
+            required_domains={"backend", "frontend"},
+        )
+
+    assert g.status == "pass"
+    assert g.raw_data["uncovered_domains"] == []
+    assert len(g.raw_data["results"]) == 2
+
+
+def test_gate3_rejects_unknown_verification_command():
+    """인식하지 못한 명령을 조용히 버리면 검증한 적 없는 Task 가 통과합니다."""
+    g = run_gate3_tests([], Path("."), commands=["make lint"], required_domains={"backend"})
+    assert g.status == "fail"
+    assert g.raw_data["invalid_commands"]

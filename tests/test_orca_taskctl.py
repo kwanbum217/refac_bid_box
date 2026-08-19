@@ -16,6 +16,7 @@ from scripts.orca_contract import (
 from scripts.orca_taskctl import (
     ACTIVE_TASK_STATUSES,
     DEFAULT_RUN_ID,
+    DEFAULT_VERIFICATION_COMMANDS,
     MAX_CONCURRENT_WRITE_WORKERS,
     _format_review_checklist,
     _format_yaml_list,
@@ -2325,10 +2326,14 @@ def test_finalize_reviewer_args_parse_with_real_reviewer_parser(
     assert parsed.diff_branch == "HEAD"
 
 
-def test_finalize_level1_args_parse_and_carry_tests_and_strict(
+def test_finalize_level1_args_carry_capsule_and_strict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Level 1 호출이 Capsule 의 pytest 사양과 --strict 를 실어 보내야 합니다."""
+    """Level 1 호출은 Capsule 경로와 --strict 를 실어 보내야 합니다.
+
+    검증 명령은 게이트가 Capsule 에서 직접 읽습니다. 중간에서 pytest 만 뽑아
+    --tests 로 넘기면 npm 등 나머지 검증 명령이 조용히 버려집니다.
+    """
     from scripts.orca_level1_gate import parse_arguments as level1_parse_args
 
     captured, _ = _finalize_capturing(tmp_path, monkeypatch)
@@ -2336,7 +2341,8 @@ def test_finalize_level1_args_parse_and_carry_tests_and_strict(
 
     parsed = level1_parse_args(args)
     assert parsed.strict is True
-    assert parsed.tests == ["tests/test_x.py -q"]
+    assert parsed.tests == []
+    assert parsed.capsule == str(tmp_path / "capsule.yaml")
 
 
 def test_finalize_allow_skipped_gates_turns_off_strict(
@@ -2374,11 +2380,43 @@ def test_worker_report_schema_matches_validator_required_fields():
     assert set(REQUIRED_FIELDS) <= taught
 
 
-def test_extract_pytest_specs_skips_non_pytest_commands():
-    from scripts.orca_taskctl import extract_pytest_specs
+def test_intent_verification_commands_are_honored():
+    """Intent 가 지정한 검증 명령이 템플릿 기본값에 덮이면 안 됩니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
 
-    assert extract_pytest_specs(FINALIZE_CAPSULE) == ["tests/test_x.py -q"]
-    assert extract_pytest_specs('verification_commands:\n  - "python3 a.py"\n') == []
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/test_x.py -q"]}, ["src/x.py"]
+    ) == ["uv run pytest tests/test_x.py -q"]
+
+    # 미지정이면 backend 기본값입니다.
+    assert resolve_verification_commands({}, ["src/x.py"]) == DEFAULT_VERIFICATION_COMMANDS
+
+
+def test_frontend_scope_gets_frontend_verification_commands():
+    """frontend 를 고치는 Task 는 frontend 검증 없이 Capsule 이 만들어지면 안 됩니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    commands = resolve_verification_commands({}, ["frontend/src/App.tsx"])
+    assert "npm --prefix frontend run test" in commands
+    assert "npm --prefix frontend run build" in commands
+
+    # 이미 npm 검증을 직접 지정했으면 덧붙이지 않습니다.
+    explicit = resolve_verification_commands(
+        {"verification_commands": ["npm --prefix frontend run ci-check"]},
+        ["frontend/src/App.tsx"],
+    )
+    assert explicit == ["npm --prefix frontend run ci-check"]
+
+
+def test_expand_intent_writes_frontend_verification_into_capsule():
+    """Capsule 본문에 frontend 검증 명령이 실제로 실려야 합니다."""
+    capsule = expand_intent_to_capsule(
+        {"objective": "프론트 수정", "scope": ["frontend/src/App.tsx"]},
+        task_id="task_fe",
+    )
+    commands = parse_capsule_list(capsule, "verification_commands")
+    assert "npm --prefix frontend run test" in commands
+    assert "npm --prefix frontend run build" in commands
 
 
 def test_finalize_strict_without_reviewer_is_refused(

@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shlex
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 import time
@@ -58,6 +57,20 @@ DEFAULT_MODEL = "gemini-3.7-flash-high"
 DEFAULT_RUN_ID = "run_auto"
 CAPSULE_VERSION = "2.1.0"
 MAX_CONCURRENT_WRITE_WORKERS = 3
+
+# 검증 명령 기본값. Capsule 이 선언한 명령을 Level 1 게이트 3 이 그대로 실행하므로
+# 여기 적히지 않은 검증은 아무도 실행하지 않습니다. frontend 를 고치는 Task 에는
+# frontend 검증이 자동으로 붙습니다. 코디네이터 기억에 의존하면 .tsx 변경이
+# backend pytest 통과만으로 병합됩니다.
+DEFAULT_VERIFICATION_COMMANDS = [
+    "uv run pytest tests/ -q -m 'not data_assets'",
+    "python3 scripts/validate_agent_rules.py --quiet",
+]
+FRONTEND_VERIFICATION_COMMANDS = [
+    "npm --prefix frontend run test",
+    "npm --prefix frontend run build",
+]
+FRONTEND_PATH_PREFIX = "frontend/"
 ACTIVE_TASK_STATUSES = frozenset({"dispatched"})
 
 # 기본 Capsule 템플릿
@@ -110,8 +123,7 @@ acceptance:
 {acceptance}
 
 verification_commands:
-  - "uv run pytest tests/ -q -m 'not data_assets'"
-  - "python3 scripts/validate_agent_rules.py --quiet"
+{verification_commands}
 
 artifact_paths:
 {artifact_paths}
@@ -200,6 +212,27 @@ def _format_yaml_list(items: list[str], indent: str = "  - ") -> str:
         escaped = item.replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'{indent}"{escaped}"')
     return "\n".join(lines)
+
+
+def resolve_verification_commands(
+    intent: dict[str, Any],
+    write_files: list[str],
+) -> list[str]:
+    """Task Intent 와 쓰기 범위로부터 Capsule 의 verification_commands 를 정합니다.
+
+    Intent 가 명시하면 그것을 씁니다. 종전에는 템플릿에 backend pytest 두 줄이
+    박혀 있어 Intent 가 무엇을 적든 무시됐습니다.
+    """
+    declared = [str(item).strip() for item in intent.get("verification_commands", [])]
+    commands = [item for item in declared if item] or list(DEFAULT_VERIFICATION_COMMANDS)
+
+    touches_frontend = any(
+        str(path).strip().startswith(FRONTEND_PATH_PREFIX) for path in write_files
+    )
+    has_npm = any(command.split()[:1] == ["npm"] for command in commands)
+    if touches_frontend and not has_npm:
+        commands += FRONTEND_VERIFICATION_COMMANDS
+    return list(dict.fromkeys(commands))
 
 
 def _format_review_checklist(items: list[dict[str, str]]) -> str:
@@ -481,6 +514,7 @@ def expand_intent_to_capsule(
         ),
         required_change=required_change_formatted,
         acceptance=acceptance_formatted,
+        verification_commands=_format_yaml_list(resolve_verification_commands(intent, write_files)),
         artifact_paths=artifact_paths_formatted,
         report_path=report_path,
         return_contract=return_contract,
@@ -1061,23 +1095,6 @@ def build_task_spec(objective: str, capsule_path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def extract_pytest_specs(capsule_text: str) -> list[str]:
-    """Capsule 의 verification_commands 에서 pytest 실행 사양만 뽑아냅니다.
-
-    Level 1 게이트의 --tests 는 pytest 인자만 받으므로 `uv run pytest` 접두를
-    떼어냅니다. pytest 가 아닌 검증 명령은 게이트 3 의 대상이 아니므로
-    제외하되, 그 결과 사양이 하나도 없으면 게이트 3 은 건너뛴 것으로 남고
-    --strict 가 이를 실패로 만듭니다.
-    """
-    specs: list[str] = []
-    for command in parse_capsule_list(capsule_text, "verification_commands"):
-        tokens = shlex.split(command)
-        if "pytest" not in tokens:
-            continue
-        specs.append(shlex.join(tokens[tokens.index("pytest") + 1 :]))
-    return [spec for spec in specs if spec]
-
-
 def finalize_task(
     report_path: Path,
     capsule_path: Path,
@@ -1158,8 +1175,9 @@ def finalize_task(
         result["exit_code"] = 2
         return result
 
+    # 검증 명령은 게이트가 Capsule 에서 직접 읽습니다. 여기서 pytest 만 뽑아
+    # 넘기던 종전 방식은 npm 등 나머지 검증을 조용히 버렸습니다.
     target_repo = worktree_path if worktree_path else repo
-    test_specs = extract_pytest_specs(load_capsule(capsule_path))
     level1_cmd = [
         sys.executable,
         str(scripts_dir / "orca_level1_gate.py"),
@@ -1173,8 +1191,6 @@ def finalize_task(
         str(capsule_path),
         "--json",
     ]
-    for spec in test_specs:
-        level1_cmd += ["--tests", spec]
     if strict:
         level1_cmd.append("--strict")
     code_l1, stdout_l1, stderr_l1 = _run_command(level1_cmd, timeout=120)
