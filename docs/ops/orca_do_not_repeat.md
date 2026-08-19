@@ -1000,3 +1000,28 @@ SUCCESS 로 승격한다. `_step_rag` 가 `rebuild_knowledge_base` 의 `status` 
 재발 방지는 [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md)
 3.2·3.3 절에 반영했다. **위임은 여전히 가장 큰 지렛대이지만 검증 비용은 남으므로
 절감률은 50~60% 다**(3.1 절).
+
+### 13.11 `check --ack` 는 배치 ID 를 받는다
+
+`orca orchestration check` 는 배치(delivery) 단위로 응답하며, 최상위 `deliveryId` 가
+배치 식별자이고 `messages[].id`(`msg_...`)는 그 안의 개별 메시지다. **`--ack` 는
+`deliveryId` 를 받는다.** `msg_...` 를 넘기면 다음 오류가 난다.
+
+```
+stale_delivery: Delivery msg_88456b5c227b does not belong to this Run.
+```
+
+**이 문구가 오해를 부른다.** Run 바인딩 문제처럼 읽히지만 실제 원인은 식별자 종류다.
+2026-08-19 에 이 문구를 보고 등록된 Run 을 전부 순회하며 재시도했고, 원인을 찾지
+못한 채 "런타임 부기 문제이며 영향 없음" 으로 넘겼다. **판정이 틀렸다.**
+
+영향은 실재했다. 배치는 FIFO 로 하나씩 나오므로 첫 배치를 ack 하지 않으면 그 뒤
+배치가 보이지 않는다. 그날 워커의 `question` 이 두 번째 배치에 있었는데 정규 경로로는
+드러나지 않았다. 터미널 출력에서 우연히 발견해 답했으나, 그러지 않았다면 워커가
+응답 대기로 멈춰 있었을 것이다.
+
+**배달 소진은 감독 절차의 일부다.** 비어질 때까지 ack 를 반복한다. 절차는
+[`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md) 3.4 절.
+
+**원인을 찾지 못한 것을 "영향 없음" 으로 결론짓지 않는다.** 이 세션이 내내 제거해 온
+fail-open 과 같은 형태다. 미확인은 정상이 아니다.

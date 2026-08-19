@@ -184,6 +184,45 @@ print(d['exit_code'], d.get('effective_verdict'), d.get('violations'))"
 Dispatch 전에 이루어지고 이후 재확인이 없습니다. `orca terminal read` 로 도달을 한 번
 확인하고 진행하십시오.
 
+### 3.4 `check --ack` 는 메시지 ID 가 아니라 배치 ID 를 받습니다
+
+`orca orchestration check` 는 **배치(delivery) 단위**로 메시지를 돌려줍니다. 응답 최상위의
+`deliveryId` 가 그 배치의 식별자이고, `messages[].id`(`msg_...`)는 배치 안의 개별
+메시지입니다. **`--ack` 에 넘겨야 하는 것은 `deliveryId` 입니다.**
+
+```bash
+# 나쁨: 개별 메시지 ID 를 넘긴다
+orca orchestration check --ack msg_88456b5c227b
+#   -> stale_delivery: Delivery msg_... does not belong to this Run.
+
+# 좋음: 배치 ID 를 넘긴다
+orca orchestration check --ack delivery_869ead08c441
+```
+
+**오류 문구가 오해를 부릅니다.** "does not belong to this Run" 은 Run 바인딩 문제처럼
+읽히지만 실제 원인은 식별자 종류가 틀린 것입니다. 2026-08-19 세션에서 이 문구를 보고
+Run 을 전부 순회하며 재시도했고, 그동안 배달이 쌓여 같은 알림이 반복해서 떴습니다.
+
+배치는 FIFO 로 하나씩 나옵니다. **한 번 ack 하면 다음 배치가 나오므로, 비어질 때까지
+돌려야 합니다.**
+
+```bash
+while :; do
+  out=$(orca orchestration check --json)
+  did=$(echo "$out" | python3 -c "import json,sys; print(json.load(sys.stdin).get('result',{}).get('deliveryId') or '')")
+  [ -z "$did" ] && break
+  echo "$out" | python3 -c "
+import json,sys
+for m in json.load(sys.stdin)['result']['messages']: print(m['type'], m['subject'])"
+  orca orchestration check --ack "$did" >/dev/null
+done
+```
+
+**소진하지 않으면 `question` 을 놓칩니다.** 2026-08-19 에 워커의 `question` 이 두 번째
+배치에 들어 있었는데, 첫 배치를 ack 하지 않아 정규 경로로는 보이지 않았습니다. 마침
+터미널 출력에서 발견해 답했으나, 그러지 않았다면 워커가 응답 대기로 멈춰 있었을
+것입니다. **배달 소진은 선택이 아니라 감독 절차의 일부입니다.**
+
 ## 4. 보고 및 완료 계약 (Worker Done v2 & Review Done v2)
 
 ### 4.1 아티팩트 보고서와 Orca 수명주기 통보의 분리 (필수 규칙)
