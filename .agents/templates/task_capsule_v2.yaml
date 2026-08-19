@@ -52,9 +52,9 @@ acceptance:
 
 # 게이트 3 이 이 목록을 그대로 실행하고, 변경이 요구하는 검증 능력을 전부
 # 덮는지 확인합니다. frontend 는 npm test 와 build, Dockerfile 은 docker build,
-# compose 는 docker compose config 가 필요합니다.
+# compose 는 docker compose config, .github/workflows 는 actionlint 가 필요합니다.
 # 허용 목록: uv run pytest ..., npm ci, npm run <script>, docker build,
-#            docker compose config
+#            docker compose config, uv run actionlint
 verification_commands:
   - "uv run pytest tests/ -q"
   - "python3 scripts/validate_agent_rules.py --quiet"

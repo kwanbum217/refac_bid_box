@@ -191,14 +191,18 @@ CAP_FRONTEND_TEST = "frontend_test"
 CAP_FRONTEND_BUILD = "frontend_build"
 CAP_DOCKER_BUILD = "docker_build"
 CAP_COMPOSE_CONFIG = "compose_config"
+CAP_WORKFLOW_LINT = "workflow_lint"
 
 FRONTEND_PATH_PREFIXES = ("frontend/",)
+WORKFLOW_PATH_PREFIX = ".github/workflows/"
 COMPOSE_NAME_RE = re.compile(r"^(?:docker-)?compose[.\w-]*\.ya?ml$", re.IGNORECASE)
 
 
 def _path_capabilities(path: str) -> set[str]:
     """경로 하나가 요구하는 검증 능력을 판정합니다."""
     name = Path(path).name
+    if path.startswith(WORKFLOW_PATH_PREFIX) and Path(path).suffix.lower() in {".yml", ".yaml"}:
+        return {CAP_WORKFLOW_LINT}
     if name == "Dockerfile" or name.startswith("Dockerfile."):
         return {CAP_DOCKER_BUILD}
     if COMPOSE_NAME_RE.match(name):
@@ -211,9 +215,8 @@ def _path_capabilities(path: str) -> set[str]:
 def required_capabilities(paths: list[str]) -> set[str]:
     """변경 경로들이 요구하는 검증 능력 집합을 구합니다.
 
-    `.github/workflows/` 는 이 저장소에 로컬 검증 수단이 없어 backend 로 둡니다.
-    러너 없는 능력을 필수로 걸면 워크플로우 변경이 게이트에서 교착합니다.
-    실제 검증은 해당 브랜치 푸시에서 도는 CI 가 담당합니다.
+    셸 스크립트(`.sh`)는 이 저장소에 파일이 없어 별도 능력을 두지 않습니다.
+    러너 없는 능력을 먼저 만들면 첫 파일이 생기는 순간 게이트가 교착합니다.
     """
     capabilities: set[str] = set()
     for raw in paths:
@@ -477,6 +480,10 @@ def parse_verification_command(command: str) -> VerificationCommand:
         return _parse_npm_command(command, tokens)
     if head == "docker":
         return _parse_docker_command(command, tokens)
+    if head == "actionlint":
+        return VerificationCommand(
+            command, ["uv", "run", "actionlint", *tokens[1:]], None, frozenset({CAP_WORKFLOW_LINT})
+        )
     if (
         head in {"python", "python3", sys.executable}
         and len(tokens) > 1

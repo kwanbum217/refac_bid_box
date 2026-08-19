@@ -32,6 +32,7 @@ try:
         CAP_DOCKER_BUILD,
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
+        CAP_WORKFLOW_LINT,
         required_capabilities,
     )
 except (ModuleNotFoundError, ImportError):
@@ -44,6 +45,7 @@ except (ModuleNotFoundError, ImportError):
         CAP_DOCKER_BUILD,
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
+        CAP_WORKFLOW_LINT,
         required_capabilities,
     )
 
@@ -94,6 +96,7 @@ CAPABILITY_COMMANDS = [
     (CAP_FRONTEND_BUILD, "npm --prefix frontend run build"),
     (CAP_DOCKER_BUILD, "docker build -t refac-bid-box:orca-gate ."),
     (CAP_COMPOSE_CONFIG, "docker compose config -q"),
+    (CAP_WORKFLOW_LINT, "uv run actionlint"),
 ]
 
 ACTIVE_TASK_STATUSES = frozenset({"dispatched"})

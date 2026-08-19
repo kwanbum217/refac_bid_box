@@ -648,9 +648,11 @@ def test_required_capabilities_separates_change_kinds():
     assert required_capabilities(["docker-compose.yml"]) == {"compose_config"}
     assert required_capabilities(["docker-compose.restore.yml"]) == {"compose_config"}
 
-    # 로컬 검증 수단이 없는 워크플로우는 backend 로 둡니다. 러너 없는 능력을
-    # 필수로 걸면 워크플로우 변경이 게이트에서 교착합니다.
-    assert required_capabilities([".github/workflows/ci.yml"]) == {"backend_pytest"}
+    # 워크플로우는 pytest 가 검증하지 않습니다. actionlint 가 덮습니다.
+    assert required_capabilities([".github/workflows/ci.yml"]) == {"workflow_lint"}
+    assert required_capabilities([".github/workflows/x.yaml"]) == {"workflow_lint"}
+    # .github 아래라도 워크플로우가 아니면 해당 없음입니다.
+    assert required_capabilities([".github/dependabot.yml"]) == {"backend_pytest"}
 
     assert required_capabilities(["src/a.py", "frontend/src/App.tsx"]) == {
         "backend_pytest",
@@ -669,6 +671,8 @@ def test_parse_verification_command_allows_only_known_runners():
     assert npm_cmd.argv == ["npm", "run", "build"]
     assert npm_cmd.cwd == "frontend"
     assert npm_cmd.provides == frozenset({"frontend_build"})
+
+    assert parse_verification_command("uv run actionlint").provides == frozenset({"workflow_lint"})
 
     docker_cmd = parse_verification_command("docker build -t x .")
     assert docker_cmd.provides == frozenset({"docker_build"})
@@ -762,3 +766,18 @@ def test_dockerfile_change_is_not_covered_by_backend_pytest():
 
     assert g.status == "skipped"
     assert g.raw_data["uncovered_capabilities"] == ["docker_build"]
+
+
+def test_workflow_change_is_not_covered_by_backend_pytest():
+    """워크플로우 변경을 pytest 통과로 넘기면 안 됩니다."""
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "5 passed in 1s", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["uv run pytest tests/ -q"],
+            capabilities=required_capabilities([".github/workflows/ci.yml"]),
+        )
+
+    assert g.status == "skipped"
+    assert g.raw_data["uncovered_capabilities"] == ["workflow_lint"]

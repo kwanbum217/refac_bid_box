@@ -45,6 +45,11 @@ jobs:
       - name: Validate Multi-Agent Rules Consistency
         run: python3 scripts/validate_agent_rules.py --quiet
 
+      # 워크플로우 파일은 pytest 가 검증하지 않습니다. Orca 게이트 3 의
+      # workflow_lint 능력도 이 명령으로 덮습니다.
+      - name: Lint GitHub Actions Workflows
+        run: uv run actionlint
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
