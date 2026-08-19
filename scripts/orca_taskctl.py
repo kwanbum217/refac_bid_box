@@ -1004,6 +1004,22 @@ def finalize_task(
     tool_error = False
     gate_fail = False
 
+    # Level 1 은 리뷰어보다 먼저 돌므로 그 시점에는 리뷰 보고서가 존재할 수
+    # 없습니다. 그래서 게이트 5 는 이 호출의 적용 대상이 아니며, 리뷰 계약은
+    # 뒤이어 도는 orca_run_reviewer 가 같은 evaluate() 로 판정합니다.
+    # 따라서 strict 인데 리뷰어를 돌리지 않으면 리뷰가 통째로 빠집니다.
+    # 병합 판정에 쓰는 호출이므로 조용히 통과시키지 않고 거부합니다.
+    if strict and not run_reviewer:
+        result["level1"] = {
+            "error": (
+                "strict 모드는 리뷰 검증을 포함해야 합니다. --reviewer 를 함께 지정하거나 "
+                "--allow-skipped-gates 로 strict 를 끄십시오."
+            ),
+            "exit_code": 2,
+        }
+        result["exit_code"] = 2
+        return result
+
     # 1. summarize_worker_done.py 실행
     summarize_cmd = [
         sys.executable,

@@ -1162,3 +1162,34 @@ def test_tier_policy_models_exist_in_pool():
         if model not in MODEL_POOL
     ]
     assert unknown == []
+
+
+def test_probe_resolves_pool_key_to_actual_model_id(monkeypatch):
+    """풀 키로 probe 하면 실제 모델 ID 로 CLI 를 불러야 합니다.
+
+    풀 키를 그대로 넘기면 CLI 가 알 수 없는 모델로 거부해, 살아 있는 모델이
+    사용 불가로 판정됩니다. list 출력과 문서가 안내하는 이름이 풀 키이므로
+    이 경로가 기본 사용법입니다.
+    """
+    import subprocess
+
+    from scripts.orca_model_router import MODEL_POOL, probe_model
+
+    seen: list[list[str]] = []
+
+    class _Proc:
+        returncode = 0
+        stdout = "pong"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        seen.append(cmd)
+        return _Proc()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    available, _detail = probe_model("gemini-flash-medium")
+    assert available is True
+    assert seen, "probe 명령이 실행되지 않았습니다"
+    assert MODEL_POOL["gemini-flash-medium"]["id"] in seen[0]
+    assert "gemini-flash-medium" not in seen[0]

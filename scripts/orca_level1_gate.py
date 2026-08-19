@@ -59,6 +59,11 @@ class GateResult:
     summary: str
     details: list[str] = field(default_factory=list)
     raw_data: dict[str, Any] = field(default_factory=dict)
+    # 건너뜀이 곧 fail-open 인 게이트와, 이 호출에서 애초에 적용 대상이 아닌
+    # 게이트를 구분합니다. --strict 는 전자만 실패로 봅니다. 둘을 묶으면
+    # 리뷰를 요청하지 않은 호출까지 무조건 fail 이 되고, 그것을 뚫으려고
+    # 건너뜀 허용 옵션을 상시로 켜면 테스트 게이트까지 함께 열립니다.
+    required: bool = True
 
 
 def run_command_safe(
@@ -134,6 +139,27 @@ def get_git_changed_files(
 
     unique_new_files = sorted(branch_files - base_files)
     return changed_files, unique_new_files
+
+
+# 코드를 고치는 Task 인지 판정할 때 보는 확장자입니다. 여기에 걸리면 테스트
+# 게이트가 필수가 되고, 문서만 바꾸는 Task 는 필수에서 빠집니다.
+CODE_SUFFIXES = (".py",)
+
+
+def capsule_touches_code(capsule_path: Path | None) -> bool:
+    """Capsule 의 allowed_write_files 에 코드 파일이 하나라도 있는지 봅니다.
+
+    코드를 바꾸는 Task 가 테스트 없이 통과하는 것이 원래의 fail-open 입니다.
+    반대로 문서만 바꾸는 Task 까지 테스트를 강제하면 --strict 가 상시 실패해
+    운영자가 건너뜀 허용 옵션을 습관적으로 켜게 됩니다. 둘을 구분합니다.
+    """
+    if capsule_path is None or not capsule_path.exists():
+        # 판단 근거가 없으면 안전한 쪽인 필수로 둡니다.
+        return True
+    allowed_write = parse_capsule_list(load_capsule(capsule_path), "allowed_write_files")
+    if not allowed_write:
+        return True
+    return any(entry.endswith(CODE_SUFFIXES) for entry in allowed_write)
 
 
 def run_gate1_changed_files(
@@ -267,8 +293,14 @@ def run_gate3_tests(
     tests: list[str],
     repo: Path,
     timeout: int = DEFAULT_PYTEST_TIMEOUT,
+    required: bool = True,
 ) -> GateResult:
-    """게이트 3: 지정된 pytest 테스트 실행."""
+    """게이트 3: 지정된 pytest 테스트 실행.
+
+    required 가 참인데 tests 가 비면 --strict 에서 실패합니다. 코드를 고치는
+    Task 가 테스트 없이 통과하는 것이 종전의 fail-open 이었습니다. 문서만
+    바꾸는 Task 는 호출부가 required 를 거짓으로 내려 구분합니다.
+    """
     if not tests:
         return GateResult(
             name="게이트 3 테스트",
@@ -276,6 +308,7 @@ def run_gate3_tests(
             summary="--tests 미지정으로 건너뜀",
             details=[],
             raw_data={"results": []},
+            required=required,
         )
 
     results: list[dict[str, Any]] = []
@@ -404,12 +437,18 @@ def run_gate5_review_report(
 ) -> GateResult:
     """게이트 5: 리뷰 보고서 계약 판정 (validate_review_report)."""
     if review_report_path is None or capsule_path is None:
+        # 리뷰 보고를 넘기지 않은 호출은 이 단계에서 리뷰를 검증하지 않겠다는
+        # 뜻입니다. finalize 는 Level 1 을 먼저 돌리고 리뷰어를 그 뒤에 돌리므로
+        # 이 시점에는 보고서가 존재할 수 없습니다. 이를 필수 건너뜀으로 세면
+        # --strict 가 어떤 입력에도 fail 을 냅니다. 리뷰 결과 자체는 리뷰어
+        # 종료 코드로 finalize 가 따로 판정합니다.
         return GateResult(
             name="게이트 5 리뷰 보고",
             status="skipped",
-            summary="--review-report 또는 --capsule 미지정으로 건너뜀",
+            summary="--review-report 미지정으로 이 호출의 적용 대상이 아님",
             details=[],
             raw_data={},
+            required=False,
         )
 
     if not review_report_path.exists():
@@ -455,6 +494,8 @@ def format_human_output(
     ]
     for g in gates:
         tag = f"[{g.status.upper()}]"
+        if g.status == "skipped" and not g.required:
+            tag = "[N/A]"
         lines.append(f"{tag:<10} {g.name}")
         if g.summary:
             lines.append(f"           {g.summary}")
@@ -467,6 +508,9 @@ def format_human_output(
     lines.append(
         f"최종 판정: {verdict.upper()} (통과 {passed_count} / 건너뜀 {skipped_count} / 실패 {failed_count})"
     )
+    blocking = [g.name for g in gates if g.status == "skipped" and g.required]
+    if blocking:
+        lines.append(f"필수인데 건너뛴 게이트: {', '.join(blocking)}")
     return "\n".join(lines)
 
 
@@ -497,6 +541,7 @@ def build_json_output(
         gates_dict[key] = {
             "name": g.name,
             "status": g.status,
+            "required": g.required,
             "summary": g.summary,
             "details": g.details,
             **g.raw_data,
@@ -510,6 +555,7 @@ def build_json_output(
             "passed": passed_count,
             "skipped": skipped_count,
             "failed": failed_count,
+            "blocking_skipped": [g.name for g in gates if g.status == "skipped" and g.required],
         },
         "gates": gates_dict,
         "error": error_message or None,
@@ -588,7 +634,7 @@ def run_level1_gate(
         gates.append(g2)
 
         # 게이트 3: 테스트
-        g3 = run_gate3_tests(tests, repo_path)
+        g3 = run_gate3_tests(tests, repo_path, required=capsule_touches_code(capsule_path))
         gates.append(g3)
 
         # 게이트 4: 규칙
@@ -630,7 +676,10 @@ def run_level1_gate(
 
     # 건너뛴 게이트는 검증하지 않았다는 뜻이지 통과했다는 뜻이 아닙니다.
     # 병합 판정처럼 전부 검증되어야 하는 호출은 --strict 로 이를 강제합니다.
-    verdict = "pass" if failed_count == 0 and not (strict and skipped_count) else "fail"
+    # 다만 이 호출의 적용 대상이 아닌 게이트(required=False)까지 실패로 세면
+    # --strict 가 어떤 입력에도 fail 을 냅니다. 필수 건너뜀만 셉니다.
+    blocking_skips = [g.name for g in gates if g.status == "skipped" and g.required]
+    verdict = "pass" if failed_count == 0 and not (strict and blocking_skips) else "fail"
     exit_code = 0 if verdict == "pass" else 1
 
     if as_json:

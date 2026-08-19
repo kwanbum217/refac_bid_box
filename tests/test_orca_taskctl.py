@@ -661,6 +661,7 @@ def test_finalize_task_violations_returns_exit_1(tmp_path: Path, monkeypatch: py
         report_path=report_file,
         capsule_path=capsule_file,
         repo=tmp_path,
+        run_reviewer=True,
     )
     assert res["exit_code"] == 1
 
@@ -694,6 +695,7 @@ def test_finalize_task_level1_failure_returns_exit_1(
         report_path=report_file,
         capsule_path=capsule_file,
         repo=tmp_path,
+        run_reviewer=True,
     )
     assert res["exit_code"] == 1
 
@@ -2193,6 +2195,9 @@ def _finalize_capturing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwarg
         return 0, '{"effective_verdict": "pass", "verdict": "pass"}', ""
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    # strict 는 리뷰 검증을 포함해야 하므로 리뷰어를 함께 켭니다. 개별
+    # 테스트가 kwargs 로 덮어쓸 수 있습니다.
+    kwargs.setdefault("run_reviewer", True)
     result = finalize_task(
         report_path=report,
         capsule_path=capsule,
@@ -2282,3 +2287,104 @@ def test_extract_pytest_specs_skips_non_pytest_commands():
 
     assert extract_pytest_specs(FINALIZE_CAPSULE) == ["tests/test_x.py -q"]
     assert extract_pytest_specs('verification_commands:\n  - "python3 a.py"\n') == []
+
+
+def test_finalize_strict_without_reviewer_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """strict 인데 리뷰어를 돌리지 않으면 리뷰 검증이 통째로 빠집니다.
+
+    Level 1 은 리뷰어보다 먼저 돌아 게이트 5 가 적용 대상이 아니므로, 리뷰
+    계약은 리뷰어 실행만이 판정합니다. 그래서 조합을 거부합니다.
+    """
+    report_file = tmp_path / "worker_done.json"
+    capsule_file = tmp_path / "capsule.yaml"
+    report_file.write_text(json.dumps({"status": "succeeded"}), encoding="utf-8")
+    capsule_file.write_text("schema: ORCA_TASK_CAPSULE_V2\n", encoding="utf-8")
+
+    called: list[str] = []
+
+    def mock_run_command(cmd, cwd=None, timeout=30):
+        called.append(cmd[1])
+        return 0, "{}", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run_command)
+
+    res = finalize_task(
+        report_path=report_file,
+        capsule_path=capsule_file,
+        repo=tmp_path,
+        run_reviewer=False,
+        strict=True,
+    )
+    assert res["exit_code"] == 2
+    assert "--reviewer" in res["level1"]["error"]
+    # 거부는 도구를 하나도 돌리기 전에 이루어져야 합니다.
+    assert called == []
+
+
+def test_finalize_non_strict_without_reviewer_still_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """strict 를 끈 호출은 리뷰어 없이도 기존대로 동작합니다."""
+    report_file = tmp_path / "worker_done.json"
+    capsule_file = tmp_path / "capsule.yaml"
+    report_file.write_text(json.dumps({"status": "succeeded"}), encoding="utf-8")
+    capsule_file.write_text("schema: ORCA_TASK_CAPSULE_V2\n", encoding="utf-8")
+
+    seen: list[list[str]] = []
+
+    def mock_run_command(cmd, cwd=None, timeout=30):
+        seen.append(cmd)
+        if "summarize_worker_done" in cmd[1]:
+            return 0, json.dumps({"violations_count": 0, "digest": "요약"}), ""
+        return 0, json.dumps({"verdict": "pass"}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run_command)
+
+    res = finalize_task(
+        report_path=report_file,
+        capsule_path=capsule_file,
+        repo=tmp_path,
+        run_reviewer=False,
+        strict=False,
+    )
+    assert res["exit_code"] == 0
+    level1_cmd = next(c for c in seen if "orca_level1_gate" in c[1])
+    assert "--strict" not in level1_cmd
+
+
+def test_finalize_never_passes_review_report_to_level1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Level 1 은 리뷰어보다 먼저 돌므로 리뷰 보고 경로를 넘길 수 없습니다.
+
+    넘기도록 되돌리면 아직 만들어지지 않은 파일을 가리켜 도구 오류가 됩니다.
+    """
+    report_file = tmp_path / "worker_done.json"
+    capsule_file = tmp_path / "capsule.yaml"
+    report_file.write_text(json.dumps({"status": "succeeded"}), encoding="utf-8")
+    capsule_file.write_text("schema: ORCA_TASK_CAPSULE_V2\n", encoding="utf-8")
+
+    order: list[str] = []
+
+    def mock_run_command(cmd, cwd=None, timeout=30):
+        order.append(Path(cmd[1]).stem)
+        if "summarize_worker_done" in cmd[1]:
+            return 0, json.dumps({"violations_count": 0, "digest": "요약"}), ""
+        if "orca_level1_gate" in cmd[1]:
+            assert "--review-report" not in cmd
+            return 0, json.dumps({"verdict": "pass"}), ""
+        return 0, json.dumps({"effective_verdict": "pass"}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run_command)
+
+    res = finalize_task(
+        report_path=report_file,
+        capsule_path=capsule_file,
+        repo=tmp_path,
+        run_reviewer=True,
+        strict=True,
+    )
+    assert res["exit_code"] == 0
+    assert order.index("orca_level1_gate") < order.index("orca_run_reviewer")

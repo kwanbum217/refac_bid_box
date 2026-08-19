@@ -647,9 +647,16 @@ def probe_model(
     비정상 종료 시에만 할당량 초과, 인증 실패 등의 원인을 상세 분류합니다.
     """
     provider = None
+    # 풀 키(gemini-flash-medium)와 실제 모델 ID(gemini-3.7-flash-medium)는
+    # 다릅니다. 풀 키로 provider 만 찾고 명령에는 풀 키를 그대로 넘기면
+    # CLI 가 "알 수 없는 모델" 로 거부해, 살아 있는 모델이 사용 불가로
+    # 판정됩니다. 문서와 list 출력이 안내하는 이름이 풀 키이므로 이 경로가
+    # 기본 사용법이었고, 2026-08-19 워커 배정에서 실제로 오판했습니다.
+    resolved_id = model_id
     for pool_name, pool_info in MODEL_POOL.items():
         if pool_info["id"] == model_id or pool_name == model_id:
             provider = pool_info["provider"]
+            resolved_id = pool_info["id"]
             break
 
     if provider is None:
@@ -673,7 +680,7 @@ def probe_model(
         return False, "probe 실패: CEREBRAS_API_KEY 미설정"
 
     cmd_template = probe_info["probe_cmd"]
-    cmd = [arg.format(model=model_id) for arg in cmd_template]
+    cmd = [arg.format(model=resolved_id) for arg in cmd_template]
     probe_timeout = probe_info.get("timeout", timeout)
 
     try:
