@@ -28,11 +28,13 @@ def execute(
         route_reason=retrieval_plan.route_reason or "semantic_search_tool execution",
         insufficiency_hints=list(retrieval_plan.insufficiency_hints),
     )
-    documents = retrieve_semantic_context(explicit_plan)
+    result = retrieve_semantic_context(explicit_plan)
+    documents = result.documents
 
     return {
         "query": query,
         "retrieval_plan": explicit_plan.model_dump(),
+        "search_failed": not result.ok,
         "documents": documents,
         "document": documents[0]["document"] if documents else "",
     }

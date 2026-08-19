@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import unicodedata
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -22,15 +23,22 @@ logger = logging.getLogger(__name__)
 DEFAULT_COLLECTION = "bidding_kb"
 
 
+@dataclass
+class SemanticSearchResult:
+    ok: bool
+    documents: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+
+
 def _normalize_text(value: str | None) -> str:
     return unicodedata.normalize("NFC", (value or "").strip())
 
 
-def retrieve_semantic_context(plan: RetrievalPlan) -> list[dict[str, Any]]:
+def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
     """원본 rag_engine.retrieve_semantic_context 와 동일한 동기 검색 경로."""
     semantic_query = _normalize_text(plan.semantic_query)
     if not semantic_query:
-        return []
+        return SemanticSearchResult(ok=True, documents=[], error=None)
 
     try:
         import chromadb
@@ -40,13 +48,15 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> list[dict[str, Any]]:
         # ChromaDB 가 기본 함수를 끼워 넣어, 실패 없이 결과만 엉뚱해집니다.
         collection = get_collection(client, DEFAULT_COLLECTION)
         results = collection.query(query_texts=[semantic_query], n_results=plan.top_k)
-    except Exception:
+    except Exception as exc:
         # 오류 문구를 문서로 돌려주면 안 됩니다. 그 문자열이 그대로 LLM 프롬프트에
         # 실려 검색이 성공한 것처럼 보이고, 화면과 로그 어디에도 실패가 남지
         # 않습니다. 2026-08-05 에 ChromaDB 컬렉션 설정이 깨져 닷새 동안 챗봇이
         # 지식베이스 없이 답하고 있었는데 아무도 몰랐던 것이 이 때문입니다.
         logger.exception("ChromaDB 검색 실패 (collection=%s)", DEFAULT_COLLECTION)
-        return []
+        return SemanticSearchResult(
+            ok=False, documents=[], error=str(exc) or exc.__class__.__name__
+        )
 
     documents = (results.get("documents") or [[]])[0] if results else []
     metadatas = (results.get("metadatas") or [[]])[0] if results else []
@@ -63,7 +73,7 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> list[dict[str, Any]]:
                 "distance": distances[index] if index < len(distances) else None,
             }
         )
-    return structured_documents
+    return SemanticSearchResult(ok=True, documents=structured_documents, error=None)
 
 
 class AsyncVectorStore:
@@ -74,7 +84,7 @@ class AsyncVectorStore:
 
     async def search_similar_docs(
         self, query: str, top_k: int = DEFAULT_VECTOR_TOP_K
-    ) -> list[dict[str, Any]]:
+    ) -> SemanticSearchResult:
         plan = RetrievalPlan(
             use_vector=True,
             semantic_query=query,
