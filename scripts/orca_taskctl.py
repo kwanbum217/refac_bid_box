@@ -856,6 +856,13 @@ AGENT_READY_MARKERS = (
 )
 
 
+# 상태줄 표지는 TUI 가 그려지자마자 나타나므로, 백엔드가 아직 연결 중이어도
+# 준비로 보입니다. 그 상태로 주입하면 지시가 삼켜집니다. 2026-08-19 에 opencode
+# 워커가 실제로 이렇게 지시를 잃었습니다. 표지가 이 시간만큼 계속 보여야
+# 준비로 인정합니다. 단독 `>` 프롬프트는 입력 대기가 확실하므로 즉시 인정합니다.
+AGENT_READY_SETTLE_SECONDS = 6
+
+
 def agent_prompt_ready(text: str) -> bool:
     """CLI 입력 프롬프트가 준비된 상태인지 판정합니다.
 
@@ -868,6 +875,12 @@ def agent_prompt_ready(text: str) -> bool:
         return True
     lowered = text.lower()
     return any(marker in lowered for marker in AGENT_READY_MARKERS)
+
+
+def agent_prompt_is_input_caret(text: str) -> bool:
+    """단독 `>` 입력 프롬프트인지 판정합니다. 이 형태는 즉시 준비로 봅니다."""
+    lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+    return bool(lines) and lines[-1] == ">"
 
 
 def instruction_observed(text: str, markers: list[str]) -> bool:
@@ -883,13 +896,17 @@ def verify_instruction_delivered(
     markers: list[str],
     timeout: int = 30,
     wait_seconds: int = 30,
-    poll_seconds: int = 3,
+    poll_seconds: float = 1.0,
 ) -> str:
     """Dispatch 이후 지시가 워커 터미널에 도달했는지 확인합니다.
 
     Dispatch 전의 준비 상태 판정만으로 전달 실패를 단정하면 오탐이 납니다.
     CLI 가 아직 뜨는 중이어도 주입은 큐에 남아 정상 도달하기 때문입니다.
     실제 도달 여부는 주입한 문자열이 화면에 나타나는지로만 알 수 있습니다.
+
+    **폴링은 촘촘해야 합니다.** 표지는 터미널 뷰포트에 잠깐 머물다 워커가
+    출력을 쏟아내면 밀려납니다. 2026-08-19 실측에서 3초 간격으로는 Gemini 워커의
+    표지를 놓쳐 도달했는데도 not_observed 로 판정했습니다.
 
     반환값: delivered | not_observed | unreadable
     """
@@ -903,7 +920,7 @@ def verify_instruction_delivered(
                 return "delivered"
         if time.monotonic() >= deadline:
             return "unreadable" if unreadable_only else "not_observed"
-        time.sleep(max(1, poll_seconds))
+        time.sleep(max(0.2, poll_seconds))
 
 
 def approve_trust_prompt(
@@ -927,6 +944,7 @@ def approve_trust_prompt(
     반환값: not_present | approved | still_present | unreadable | not_settled
     """
     deadline = time.monotonic() + max(0, wait_seconds)
+    ready_since: float | None = None
     while True:
         text = terminal_tail(handle, timeout=timeout)
         if text is None:
@@ -943,7 +961,16 @@ def approve_trust_prompt(
             return "still_present"
 
         if agent_prompt_ready(text):
-            return "not_present"
+            if agent_prompt_is_input_caret(text):
+                return "not_present"
+            # 상태줄 표지만 본 경우입니다. 백엔드가 아직 연결 중일 수 있으므로
+            # 표지가 계속 보이는지 확인한 뒤에 준비로 인정합니다.
+            if ready_since is None:
+                ready_since = time.monotonic()
+            elif time.monotonic() - ready_since >= AGENT_READY_SETTLE_SECONDS:
+                return "not_present"
+        else:
+            ready_since = None
 
         if time.monotonic() >= deadline:
             return "not_settled"

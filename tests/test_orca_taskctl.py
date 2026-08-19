@@ -2592,3 +2592,60 @@ def test_verify_instruction_delivered_distinguishes_unreadable_from_not_observed
         orca_taskctl.verify_instruction_delivered("term_x", ["task_abc"], wait_seconds=0)
         == "not_observed"
     )
+
+
+def test_status_bar_readiness_requires_settle_time(monkeypatch: pytest.MonkeyPatch):
+    """상태줄 표지는 TUI 가 그려지자마자 나타나므로 즉시 준비로 보면 안 됩니다.
+
+    백엔드가 아직 연결 중인 상태에 주입하면 지시가 삼켜집니다. 2026-08-19 에
+    opencode 워커가 실제로 이렇게 지시를 잃었습니다.
+    """
+    from scripts import orca_taskctl
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(orca_taskctl.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(
+        orca_taskctl.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s)
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "terminal_tail",
+        lambda h, timeout=30: "본문\n  esc interrupt  ctrl+p commands",
+    )
+
+    status = orca_taskctl.approve_trust_prompt("term_x", wait_seconds=60, poll_seconds=1)
+    assert status == "not_present"
+    # 표지를 처음 본 순간이 아니라 안정화 시간이 지난 뒤에 인정해야 합니다.
+    assert clock["t"] >= orca_taskctl.AGENT_READY_SETTLE_SECONDS
+
+
+def test_input_caret_readiness_is_immediate(monkeypatch: pytest.MonkeyPatch):
+    """단독 `>` 프롬프트는 입력 대기가 확실하므로 기다리지 않습니다."""
+    from scripts import orca_taskctl
+
+    clock = {"t": 0.0}
+    monkeypatch.setattr(orca_taskctl.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(
+        orca_taskctl.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s)
+    )
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: "배너\n>")
+
+    assert (
+        orca_taskctl.approve_trust_prompt("term_x", wait_seconds=60, poll_seconds=1)
+        == "not_present"
+    )
+    assert clock["t"] == 0.0
+
+
+def test_delivery_probe_polling_is_frequent_enough():
+    """표지는 워커 출력에 금방 밀려나므로 폴링이 촘촘해야 합니다.
+
+    2026-08-19 실측에서 3초 간격으로는 Gemini 워커의 표지를 놓쳐 도달했는데도
+    not_observed 로 판정했습니다.
+    """
+    import inspect as _inspect
+
+    from scripts.orca_taskctl import verify_instruction_delivered
+
+    default = _inspect.signature(verify_instruction_delivered).parameters["poll_seconds"].default
+    assert default <= 1.0

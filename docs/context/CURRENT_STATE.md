@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-18
-> **source_commit**: `344ea49`
+> **source_commit**: `14cc133`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -66,31 +66,31 @@
 | 9 | 같은 `report_path` 재사용 | 덮어써서 이전 보고 소실. 새 경로를 준다 |
 | 10 | 파이프라인으로 종료 코드 판정 | `pytest \| tail && ...` 은 실패를 통과로 본다. 게이트 도구를 쓴다 |
 | 11 | 비표준 계약 필드명 수용 | `files_modified` 폴백이 `changed_files_count: 0` 을 조용히 기록했다. 폴백 금지 |
-| 12 | 재작업을 완료된 Task 에 태우기 | 2차 `worker_done` 은 권한 회수로 거부된다. `ready` 복귀 시 재 Dispatch 필수, 병합 Task 는 `completed` 로 닫는다 |
-| 13 | 미확인 외부 CLI 서명·열거형 사용 | 값 유무는 `--help` Usage 줄로 본다. `ok: false` + 종료 코드 0 조합이 있어 둘을 따로 본다 |
+| 12 | 재작업을 완료된 Task 에 태우기 | 2차 `worker_done` 은 권한 회수로 거부된다. `ready` 복귀 후 재 Dispatch |
+| 13 | 미확인 외부 CLI 서명·열거형 사용 | 값 유무는 `--help` Usage 로 본다. `ok: false` + 종료 코드 0 조합이 있다 |
 | 14 | 테스트가 틀린 사실을 정답으로 고정 | 통과하는 테스트는 확인의 근거가 아니다 |
 | 15 | 미실측 모델 ID 등록 | 선택되는 순간에야 `Model not found`. 추가 시 그 자리에서 probe 한다 |
 | 16 | 읽기 범위를 차단 장치로 취급 | 쓰기는 `git diff` 검증, 읽기는 자기 신고만 대조. 유출 금지 대상은 워커 트리에 두지 않는다 |
 | 17 | 순차 행을 모델 비교로 읽기 | 뒤 행일수록 캐시가 서 있어 순서 효과와 모델 효과가 섞인다 |
 | 18 | `check` 를 `--ack` 없이 호출 | 미확인 배치가 재전달되어 뒤의 `worker_done` 이 가려진다 |
-| 19 | 동작 보존 분할을 사람 판독으로만 검증 | `ast.dump(node, include_attributes=False)`, 이름은 `Class.method`/`<module>.func` 로 정규화 |
+| 19 | 동작 보존 분할을 사람 판독으로만 검증 | `ast.dump(node, include_attributes=False)` 로 증명한다 |
 | 20 | 저장소 도구를 `python3` 로 실행 | macOS `python3` 는 Xcode 3.9 라 `datetime.UTC` 가 깨진다. `uv run python` |
-| 21 | 모델 선정 전 반복 금지 미조회 | Cerebras TPM 위험과 리뷰어 개방 금지가 이미 적혀 있었다. TPM 원인은 루프의 컨텍스트 재전송이라 파일 수 축소로는 해소되지 않는다 |
-| 22 | 메시지 payload 를 파일 계약과 섞기 | payload 는 Orca 자체 camelCase 다(`send --files-modified`). 원장에는 Capsule 의 `report_path` 를 쓴다 |
-| 23 | 감사 결론을 검증 없이 채택 | 이동은 `ast.dump` 로 증명되지만 추출은 본문을 바꿔 증명이 불가하다. 모듈 관점 감사는 함수 내부를 놓친다(A1 이 236줄 함수 누락) |
+| 21 | 모델 선정 전 반복 금지 미조회 | Cerebras TPM 위험과 리뷰어 개방 금지가 이미 적혀 있었다. TPM 원인은 루프의 컨텍스트 재전송이다 |
+| 22 | 메시지 payload 를 파일 계약과 섞기 | payload 는 Orca 자체 camelCase 다. 원장에는 Capsule 의 `report_path` 를 쓴다 |
+| 23 | 감사 결론을 검증 없이 채택 | 이동은 `ast.dump` 로 증명되나 추출은 불가하다. 모듈 관점 감사는 함수 내부를 놓친다 |
 
 ---
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 수신면 5종과 Control Plane 2종에 적용. **절감량은 도입 전 값 확보 불가이고 유효 행이 적어 추세 판정이 안 된다**(3장 17번). 왕복 횟수가 비용을 지배한다는 실측과 규율은 조율 스킬 3.2 절.
-2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수로 자동 분할하지 않는다.** 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장.
+2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수로 자동 분할하지 않는다.** [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장.
 3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.**
-4. **린터·보안 스캔 정합 — 종결**: `ruff format` 과 `pre-commit` 훅 연결, bandit 47건 오탐 판정 후 0건화. **이 실패가 CI 를 9시간 막았다.** 경위는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md).
-5. **fail-open 제거 — 종결, 3라운드 누적 34건**: 공통 기전은 `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 것이다. 최악은 수집 구간 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결). 전수 조사 후보 16건은 **전량 검증을 마쳤고 미검증 잔여는 없다**. **다수는 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.** 건별 목록과 재발 금지 사항은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 10장과 12장.
-6. **상태 전파 경계 — 종결, 3차 감사 10건**: 이전 라운드가 "검증하지 않고 성공" 이었다면 이번은 **하위가 실패·불능을 아는데 상위 orchestration·API 경계에서 그 상태를 잃어버리는** 계열이다. `finalize --strict` 는 게이트 5 건너뜀 때문에 **어떤 입력에도 실패했고**, 게이트에 적용 대상(`required`) 개념을 넣어 닫았다. KB 재구축 실패 status 유실, 검사 불능 `None` 의 성공 취급, 벡터 검색 실패와 0건의 미구분, 조회 미수행의 0 통계 유입, 보고 `commit_count` 타입 우회, stale 플래그 미전파를 함께 고쳤다. **`probe_model` 이 풀 키를 그대로 CLI 에 넘겨 살아 있는 모델을 사용 불가로 오판하던 신규 결함도 잡았다.**
-7. **무료 워커 풀 정비 — 종결**: Gemini 주간 한도 소진에 대응해 `opencode/deepseek-v4-flash-free` 를 등록하고 무료 풀 개방을 `builder` 와 쓰기 범위까지 넓혔다(`reviewer` 는 제외). **DeepSeek 는 주력 워커로 확정**(`40efc5c`, `a541f64`). Cerebras gemma4 는 분당 30K 토큰 상한 때문에 에이전트 워커로 불가하다. 960바이트 지시로도 재현돼 **지시 압축으로는 해결되지 않음을 확정**했다(병목은 하네스 오버헤드). 근거와 기동 규약은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 11장.
-8. **mypy 타입 게이트 도입 — 종결**: `Makefile` 의 `quality` 가 mypy 를 부르는데 의존성에 없어 그동안 한 번도 돌지 않았다. 추가하니 58건이 나왔다. `pydantic.mypy` 플러그인(새 패키지 불필요)과 검사 문법 3.12 상향으로 27건까지 줄이고, 나머지는 타입 주석으로 해소했다. **`call-overload` 9건은 ORM 이 `Mapped[]` 가 아닌 구식 `Column` 선언이라는 단일 원인**이라 모듈 한정 override 로 처리했고 전역에 넣지 않았다. `Mapped[]` 전환은 G1 에 닿는 별도 과업이다. `typecheck` 를 `check-all` 과 CI `lint-and-validate` 에 배선했다.
+4. **린터·보안 스캔 정합 — 종결**: bandit 47건 오탐 판정 후 0건화. **이 실패가 CI 를 9시간 막았다.** [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md).
+5. **fail-open 제거 — 종결, 3라운드 누적 34건**: 공통 기전은 `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 것이다. 최악은 수집 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결). 전수 조사 16건은 **전량 검증을 마쳤고 미검증 잔여는 없다.** **다수는 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.** [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 10·12장.
+6. **상태 전파 경계 — 종결, 3·4차 감사 17건**: 이번 계열은 **하위가 실패·불능을 아는데 상위 경계에서 상태를 잃어버리는** 것이다. `finalize --strict` 가 어떤 입력에도 실패하던 회귀, KB 실패 status 유실, 검사 불능 `None` 의 성공 취급, 벡터 검색 실패와 0건 미구분, 조회 미수행의 0 통계·인용 유입, 보고 타입 우회, stale 미전파를 닫았다. **병합 게이트 자체의 구멍 3건도 함께 닫았다**(비-Python 변경 무검증 통과, 낡은 화면의 도달 오인, 리뷰 계약 누락). [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 13장.
+7. **워커 풀 정비 — 종결**: `opencode/deepseek-v4-flash-free` 를 주력으로 등록하고 무료 풀 개방을 `builder` 와 쓰기 범위까지 넓혔다(`reviewer` 는 제외). 무료 후보도 `suitable_for` 불변식을 통과해야 한다. 모델별 실측 판정은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 11장.
+8. **mypy 타입 게이트 도입 — 종결**: 의존성에 없어 그동안 한 번도 돌지 않았다. 추가하니 58건. 플러그인·검사 문법 조정으로 27건까지 줄이고 나머지는 타입 주석으로 해소했다. **`call-overload` 9건은 ORM 이 `Mapped[]` 가 아닌 구식 `Column` 선언이라는 단일 원인**이라 모듈 한정 override 로 처리했다. `Mapped[]` 전환은 G1 에 닿는 별도 과업. `typecheck` 를 `check-all` 과 CI 에 배선했다.
 9. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
 10. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
 11. **수집 2·3회차 관찰**: Docker 필요.
