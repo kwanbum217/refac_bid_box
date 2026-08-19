@@ -141,25 +141,29 @@ def get_git_changed_files(
     return changed_files, unique_new_files
 
 
-# 코드를 고치는 Task 인지 판정할 때 보는 확장자입니다. 여기에 걸리면 테스트
-# 게이트가 필수가 되고, 문서만 바꾸는 Task 는 필수에서 빠집니다.
-CODE_SUFFIXES = (".py",)
+# 검증을 면제해도 되는 문서 전용 확장자입니다. 코드 확장자를 나열하는 방식은
+# 목록에 없는 형식이 조용히 면제되므로 쓰지 않습니다. 2026-08-19 까지 `.py` 만
+# 코드로 보아 `.ts`, `.tsx`, Dockerfile 변경이 테스트 없이 strict 를 통과했습니다.
+# 기본은 "검증 필요" 이고 문서만 바뀐 것이 증명될 때만 면제합니다.
+DOC_ONLY_SUFFIXES = frozenset({".md", ".rst", ".adoc"})
 
 
-def capsule_touches_code(capsule_path: Path | None) -> bool:
-    """Capsule 의 allowed_write_files 에 코드 파일이 하나라도 있는지 봅니다.
+def requires_test_verification(changed_files: list[str]) -> bool:
+    """실제 변경 파일을 근거로 테스트 게이트 필수 여부를 정합니다.
 
-    코드를 바꾸는 Task 가 테스트 없이 통과하는 것이 원래의 fail-open 입니다.
-    반대로 문서만 바꾸는 Task 까지 테스트를 강제하면 --strict 가 상시 실패해
-    운영자가 건너뜀 허용 옵션을 습관적으로 켜게 됩니다. 둘을 구분합니다.
+    Capsule 의 allowed_write_files 는 "고쳐도 되는 범위" 선언이고, 실제로 무엇을
+    고쳤는지는 Gate 1 이 구한 변경 목록만이 안다. 선언을 근거로 판정하면 범위를
+    넓게 잡아 둔 Task 가 실제로는 문서만 고쳐도 테스트를 요구받고, 반대로 좁게
+    적어 둔 Task 는 코드를 고쳐도 면제된다.
+
+    변경이 없으면 검증할 대상도 없으므로 필수가 아니다. 무작업 완료 보고는
+    summarize_worker_done 의 commit_count 검사가 따로 막는다.
     """
-    if capsule_path is None or not capsule_path.exists():
-        # 판단 근거가 없으면 안전한 쪽인 필수로 둡니다.
-        return True
-    allowed_write = parse_capsule_list(load_capsule(capsule_path), "allowed_write_files")
-    if not allowed_write:
-        return True
-    return any(entry.endswith(CODE_SUFFIXES) for entry in allowed_write)
+    if not changed_files:
+        return False
+    return not all(
+        Path(path).suffix.lower() in DOC_ONLY_SUFFIXES for path in changed_files if path.strip()
+    )
 
 
 def run_gate1_changed_files(
@@ -436,7 +440,7 @@ def run_gate5_review_report(
     capsule_path: Path | None,
 ) -> GateResult:
     """게이트 5: 리뷰 보고서 계약 판정 (validate_review_report)."""
-    if review_report_path is None or capsule_path is None:
+    if review_report_path is None:
         # 리뷰 보고를 넘기지 않은 호출은 이 단계에서 리뷰를 검증하지 않겠다는
         # 뜻입니다. finalize 는 Level 1 을 먼저 돌리고 리뷰어를 그 뒤에 돌리므로
         # 이 시점에는 보고서가 존재할 수 없습니다. 이를 필수 건너뜀으로 세면
@@ -450,6 +454,12 @@ def run_gate5_review_report(
             raw_data={},
             required=False,
         )
+
+    if capsule_path is None:
+        # 보고서를 명시했는데 Capsule 이 없으면 체크리스트를 대조할 정본이
+        # 없습니다. 이를 "리뷰를 요청하지 않은 호출" 과 같은 N/A 로 처리하면
+        # 리뷰를 요구한 호출이 조용히 검증 없이 통과합니다. 호출 오류입니다.
+        raise GateToolError("--review-report 검증에는 --capsule 이 필요합니다")
 
     if not review_report_path.exists():
         raise GateToolError(f"리뷰 보고 파일 없음: {review_report_path}")
@@ -634,7 +644,7 @@ def run_level1_gate(
         gates.append(g2)
 
         # 게이트 3: 테스트
-        g3 = run_gate3_tests(tests, repo_path, required=capsule_touches_code(capsule_path))
+        g3 = run_gate3_tests(tests, repo_path, required=requires_test_verification(changed_files))
         gates.append(g3)
 
         # 게이트 4: 규칙

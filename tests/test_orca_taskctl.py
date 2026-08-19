@@ -1420,7 +1420,12 @@ def test_cmd_dispatch_terminal_uses_attach_path(tmp_path: Path, monkeypatch: pyt
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl._deliver_capsule_notice",
-        lambda *a, **k: {"status": "sent", "dispatch_id": "d1", "chars": 10},
+        lambda *a, **k: {
+            "status": "sent",
+            "dispatch_id": "d1",
+            "chars": 10,
+            "delivery_probe": "ORCA_DELIVERY_PROBE_test",
+        },
     )
 
     code = main(
@@ -1676,7 +1681,24 @@ def test_cmd_dispatch_no_capsule_notice_flag(tmp_path: Path, monkeypatch: pytest
             "--no-capsule-notice",
         ]
     )
-    assert code == 0
+    # 고지문을 보내지 않으면 이번 시도의 도달 표지도 없습니다. 증명 수단이
+    # 없으므로 성공으로 돌리지 않습니다.
+    assert code == 3
+
+    code_allowed = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_abc",
+            "--no-capsule-notice",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code_allowed == 0
 
 
 def test_cmd_create_puts_capsule_path_in_task_spec(
@@ -2148,7 +2170,12 @@ def test_cmd_dispatch_returns_3_when_delivery_unverified(
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl._deliver_capsule_notice",
-        lambda *a, **k: {"status": "sent", "dispatch_id": "d1", "chars": 10},
+        lambda *a, **k: {
+            "status": "sent",
+            "dispatch_id": "d1",
+            "chars": 10,
+            "delivery_probe": "ORCA_DELIVERY_PROBE_test",
+        },
     )
     monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "not_settled")
     # Dispatch 이후에도 주입한 지시가 화면에 나타나지 않은 경우입니다.
@@ -2191,7 +2218,12 @@ def test_cmd_dispatch_not_settled_alone_is_not_a_delivery_failure(
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl._deliver_capsule_notice",
-        lambda *a, **k: {"status": "sent", "dispatch_id": "d1", "chars": 10},
+        lambda *a, **k: {
+            "status": "sent",
+            "dispatch_id": "d1",
+            "chars": 10,
+            "delivery_probe": "ORCA_DELIVERY_PROBE_test",
+        },
     )
     monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "not_settled")
     monkeypatch.setattr(
@@ -2475,6 +2507,62 @@ def test_instruction_observed_matches_any_marker():
     assert instruction_observed(text, ["task_abc"]) is True
     assert instruction_observed(text, ["task_zzz"]) is False
     assert instruction_observed(text, []) is False
+
+
+def test_delivery_probe_is_unique_per_dispatch():
+    """같은 Task 를 재 Dispatch 해도 표지는 매번 달라야 합니다."""
+    from scripts.orca_taskctl import DELIVERY_PROBE_PREFIX, new_delivery_probe
+
+    probes = {new_delivery_probe() for _ in range(50)}
+    assert len(probes) == 50
+    assert all(p.startswith(DELIVERY_PROBE_PREFIX) for p in probes)
+
+
+def test_capsule_notice_carries_delivery_probe(tmp_path: Path):
+    """표지가 고지문에 실려야 사후 화면에서 찾을 수 있습니다."""
+    from scripts.orca_taskctl import build_capsule_notice
+
+    text = build_capsule_notice(tmp_path / "capsule.yaml", delivery_probe="ORCA_DELIVERY_PROBE_abc")
+    assert "ORCA_DELIVERY_PROBE_abc" in text
+
+    plain = build_capsule_notice(tmp_path / "capsule.yaml")
+    assert "ORCA_DELIVERY_PROBE" not in plain
+
+
+def test_stale_screen_with_old_task_id_is_not_accepted_as_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """이전 시도의 잔상을 새 전달로 인정하면 fail-open 입니다.
+
+    task_id 나 Capsule 경로로 판정하면 재 Dispatch 시 화면에 남아 있는 옛
+    흔적이 그대로 통과합니다. 실제로는 지시가 도달하지 않았는데 성공으로
+    보고됩니다.
+    """
+    from scripts import orca_taskctl
+
+    stale = "OLD SCREEN: task_abc /tmp/capsule.yaml (이전 시도 잔상)"
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: stale)
+
+    # 이번 시도의 표지는 화면에 없습니다.
+    assert (
+        orca_taskctl.verify_instruction_delivered(
+            "term_x", ["ORCA_DELIVERY_PROBE_new123"], wait_seconds=0
+        )
+        == "not_observed"
+    )
+
+    # 표지가 실제로 도착하면 통과합니다.
+    monkeypatch.setattr(
+        orca_taskctl,
+        "terminal_tail",
+        lambda h, timeout=30: stale + " ORCA_DELIVERY_PROBE_new123",
+    )
+    assert (
+        orca_taskctl.verify_instruction_delivered(
+            "term_x", ["ORCA_DELIVERY_PROBE_new123"], wait_seconds=0
+        )
+        == "delivered"
+    )
 
 
 def test_verify_instruction_delivered_returns_delivered(monkeypatch: pytest.MonkeyPatch):
