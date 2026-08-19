@@ -157,7 +157,7 @@ def _predict_bid(bid: BidAnnouncement, requested_model: str) -> dict[str, Any]:
 
     # 비예가 판정: model_registry.classify_price_decision_method 단일 함수 사용.
     # 명시적 Servc 비예가만 차단하고 missing/unknown/non-Servc는 pass-through 한다.
-    raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    raw: dict[str, Any] = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     method_class = classify_price_decision_method(raw)
     if method_class == PriceDecisionMethod.NON_PREARNG and bid.category == "Servc":
         reference_amount = float(bid.prediction_reference_amount or 0)

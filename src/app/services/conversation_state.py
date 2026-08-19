@@ -61,7 +61,7 @@ def _history_from_state(state: ChatSessionState | None) -> list[dict]:
     if _last_user_message_from_history(history) == last_query:
         return history
 
-    rebuilt = [{"role": "user", "text": last_query}]
+    rebuilt: list[dict[str, Any]] = [{"role": "user", "text": last_query}]
     if state.last_result_summary:
         rebuilt.append({"role": "model", "text": state.last_result_summary})
     return rebuilt

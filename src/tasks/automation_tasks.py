@@ -471,7 +471,7 @@ async def run_automation_pipeline(
             if inspect.iscoroutinefunction(runner):
                 res = await runner(db, **kwargs)
             else:
-                outcome = await asyncio.to_thread(runner, db, **kwargs)
+                outcome: Any = await asyncio.to_thread(runner, db, **kwargs)
                 res = await outcome if inspect.isawaitable(outcome) else outcome
 
             if isinstance(res, tuple) and len(res) == 3:

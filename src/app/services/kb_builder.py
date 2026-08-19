@@ -422,16 +422,18 @@ def _sync(
     값이라, 증분 실행에서 변경분만 기록하면 KB 가 줄어든 것처럼 보입니다.
     """
     if not documents:
-        return 0, {"embedded": 0, "unchanged": 0, "removed": 0, "mode": "full"}
+        full_stats: dict[str, Any] = {"embedded": 0, "unchanged": 0, "removed": 0, "mode": "full"}
+        return 0, full_stats
 
     if not incremental:
         embedded = _flush(collection, documents, metadatas, ids)
-        return embedded, {
+        non_incremental_stats: dict[str, Any] = {
             "embedded": embedded,
             "unchanged": 0,
             "removed": 0,
             "mode": "full",
         }
+        return embedded, non_incremental_stats
 
     changed_positions, removed_ids = _diff_index(existing_hashes, ids, metadatas)
 
@@ -460,12 +462,13 @@ def _sync(
     if removed_ids:
         collection.delete(ids=removed_ids)
 
-    return len(ids), {
+    incremental_stats: dict[str, Any] = {
         "embedded": embedded,
         "unchanged": len(ids) - embedded,
         "removed": len(removed_ids),
         "mode": "incremental",
     }
+    return len(ids), incremental_stats
 
 
 def get_kb_document_count(db: Session) -> int:

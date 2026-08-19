@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import func, literal, select
@@ -267,7 +268,7 @@ def announcement_feature_payload(bid: BidAnnouncement) -> dict:
     같은 모델이 학습 때와 다른 입력을 보게 됩니다(train/serve skew).
     키 매핑은 INSTITUTION_FIELDS 단일 정의를 그대로 씁니다.
     """
-    raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    raw: dict[str, Any] = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     payload = {
         column: getattr(bid, column, None)
         for column in TRAINING_COLUMNS

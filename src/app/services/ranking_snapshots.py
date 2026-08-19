@@ -216,12 +216,13 @@ def rebuild_ranking_snapshots(db: Session, *, force_weekly: bool = False) -> dic
         elapsed,
         ",".join(deferred) or "없음",
     )
-    return {
+    summary: dict[str, Any] = {
         "rows": written,
         "scopes_with_corruption": skipped,
         "elapsed_seconds": elapsed,
         "deferred_dimensions": deferred,
     }
+    return summary
 
 
 def get_top_rankings(

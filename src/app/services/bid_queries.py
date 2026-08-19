@@ -78,7 +78,7 @@ BID_REGION_GROUPS = (
 _BID_REGION_FLAT_CHOICES = [
     item for _group_label, group_items in BID_REGION_GROUPS for item in group_items
 ]
-BID_REGION_CHOICES = [
+BID_REGION_CHOICES: list[dict[str, Any]] = [
     {"code": code, "label": label, "aliases": aliases, "rank": rank}
     for rank, (code, label, aliases) in enumerate(_BID_REGION_FLAT_CHOICES, start=1)
 ]
@@ -223,7 +223,9 @@ def _with_mysql_execution_limit(stmt):
 
 
 def _is_mysql_query_timeout(exc: DBAPIError) -> bool:
-    args = getattr(exc.orig, "args", ())
+    # DBAPI 오류 사유코드는 args[0] 에 담깁니다. 빈 튜플(마이그레이션 실패 등)은
+    # args[0] 을 읽지 않도록 bool(args) 로 먼저 걸러내므로 타입은 넓게 둡니다.
+    args: tuple[Any, ...] = getattr(exc.orig, "args", ())
     return bool(args) and args[0] == MYSQL_QUERY_TIMEOUT_ERROR_CODE
 
 
