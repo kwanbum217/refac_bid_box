@@ -845,14 +845,65 @@ def has_trust_prompt(text: str) -> bool:
     return any(marker in lowered for marker in TRUST_PROMPT_MARKERS)
 
 
+# opencode TUI 는 입력 프롬프트를 단독 `>` 로 그리지 않고 하단 상태줄에 조작
+# 안내를 남깁니다. 이 표지를 모르면 opencode 워커가 항상 대기 시간을 다
+# 소진한 뒤 not_settled 로 판정됩니다. 2026-08-19 Dispatch 3회가 전부
+# 그렇게 오탐이었습니다.
+AGENT_READY_MARKERS = (
+    "esc interrupt",
+    "ctrl+p commands",
+    "shift+tab",
+)
+
+
 def agent_prompt_ready(text: str) -> bool:
     """CLI 입력 프롬프트가 준비된 상태인지 판정합니다.
 
     Antigravity CLI 는 배너를 그린 뒤 마지막 줄에 단독 `>` 를 남깁니다.
-    작업 중이면 진행 표시가 남으므로 준비로 보지 않습니다.
+    작업 중이면 진행 표시가 남으므로 준비로 보지 않습니다. opencode 는
+    `>` 대신 하단 상태줄 표지로 판정합니다.
     """
     lines = [line.rstrip() for line in text.splitlines() if line.strip()]
-    return bool(lines) and lines[-1] == ">"
+    if lines and lines[-1] == ">":
+        return True
+    lowered = text.lower()
+    return any(marker in lowered for marker in AGENT_READY_MARKERS)
+
+
+def instruction_observed(text: str, markers: list[str]) -> bool:
+    """주입한 지시가 터미널에 실제로 도달했는지 판정합니다."""
+    if not markers:
+        return False
+    lowered = text.lower()
+    return any(marker.lower() in lowered for marker in markers if marker)
+
+
+def verify_instruction_delivered(
+    handle: str,
+    markers: list[str],
+    timeout: int = 30,
+    wait_seconds: int = 30,
+    poll_seconds: int = 3,
+) -> str:
+    """Dispatch 이후 지시가 워커 터미널에 도달했는지 확인합니다.
+
+    Dispatch 전의 준비 상태 판정만으로 전달 실패를 단정하면 오탐이 납니다.
+    CLI 가 아직 뜨는 중이어도 주입은 큐에 남아 정상 도달하기 때문입니다.
+    실제 도달 여부는 주입한 문자열이 화면에 나타나는지로만 알 수 있습니다.
+
+    반환값: delivered | not_observed | unreadable
+    """
+    deadline = time.monotonic() + max(0, wait_seconds)
+    unreadable_only = True
+    while True:
+        text = terminal_tail(handle, timeout=timeout)
+        if text is not None:
+            unreadable_only = False
+            if instruction_observed(text, markers):
+                return "delivered"
+        if time.monotonic() >= deadline:
+            return "unreadable" if unreadable_only else "not_observed"
+        time.sleep(max(1, poll_seconds))
 
 
 def approve_trust_prompt(
@@ -1437,6 +1488,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     # 없으면 worker-start 로 새 워커를 감독 기동한다. worker-start --agent 는
     # claude, codex, cursor 만 받으므로 Antigravity 계열은 터미널 부착 경로만 쓸 수 있다.
     delivery_unverified: list[str] = []
+    # Dispatch 전 관찰은 최종 실패 후보가 아닙니다. 사후 확인 결과와 함께
+    # 판정하기 위해 따로 모읍니다.
+    pre_dispatch_warnings: list[str] = []
     if args.terminal:
         # 신뢰 확인 대화창을 먼저 치운다. 떠 있는 상태로 Dispatch 하면 주입한
         # 지시와 Capsule 고지문이 대화창에 먹혀 워커가 시작하지 못한다.
@@ -1450,19 +1504,19 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 "지시가 대화창에 먹혀 사라집니다.\n"
             )
             return 2
-        elif trust_status == "unreadable":
-            sys.stderr.write(
-                f"경고: 터미널 {args.terminal} 출력을 읽을 수 없어 신뢰 확인 상태를 "
-                "판정하지 못했습니다. Dispatch 후 도달을 직접 확인하십시오.\n"
+        elif trust_status in ("unreadable", "not_settled"):
+            # Dispatch 전의 준비 상태만으로 전달 실패를 단정하면 오탐입니다.
+            # CLI 가 아직 뜨는 중이어도 주입은 큐에 남아 정상 도달합니다.
+            # 실제 도달 여부는 Dispatch 이후에 화면으로 확인합니다.
+            pre_dispatch_warnings.append(
+                "trust_prompt_unreadable"
+                if trust_status == "unreadable"
+                else "terminal_not_settled"
             )
-            delivery_unverified.append("trust_prompt_unreadable")
-        elif trust_status == "not_settled":
             sys.stderr.write(
-                f"경고: 터미널 {args.terminal} 이 대기 시간 안에 입력 프롬프트에 이르지 "
-                "못했습니다. 이미 다른 작업을 하고 있을 수 있습니다. Dispatch 후 도달을 "
-                "직접 확인하십시오.\n"
+                f"경고: 터미널 {args.terminal} 의 Dispatch 전 상태가 {trust_status} 입니다. "
+                "Dispatch 이후 도달을 확인합니다.\n"
             )
-            delivery_unverified.append("terminal_not_settled")
 
         sys.stderr.write(f"터미널 부착 Dispatch 중... (task={task_id}, terminal={args.terminal})\n")
         code, stdout, stderr = dispatch_worker(
@@ -1515,6 +1569,23 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         if notice["status"] == "failed":
             delivery_unverified.append("capsule_notice_failed")
 
+        # 사후 확인: 주입한 문자열이 실제로 화면에 나타났는지 본다. Dispatch
+        # 전의 준비 상태 판정만으로 실패를 단정하면 오탐이 난다. 도달을
+        # 확인하면 사전 경고는 해소된 것으로 본다.
+        delivery_check = "skipped"
+        if args.terminal:
+            delivery_check = verify_instruction_delivered(
+                args.terminal, [str(capsule_path), task_id]
+            )
+            if delivery_check == "not_observed":
+                delivery_unverified.append("instruction_not_observed")
+            elif delivery_check == "unreadable":
+                delivery_unverified.append("terminal_unreadable_after_dispatch")
+        elif pre_dispatch_warnings:
+            # worker-start 경로는 핸들을 즉시 알 수 없어 사후 확인을 못 한다.
+            # 이때만 사전 경고를 그대로 미확인으로 승계한다.
+            delivery_unverified.extend(pre_dispatch_warnings)
+
         # 워커 기동 성공만으로 0 을 돌려주면 "정본 지시가 워커에게 도달했는가"
         # 라는 제어 평면의 핵심 불변식이 검증되지 않은 채 성공으로 보고된다.
         # 2026-08-17 에 신뢰 대화창 때문에 지시가 유실된 사고가 실제로 있었다.
@@ -1525,6 +1596,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             payload: dict[str, Any] = {"launch": _maybe_json(stdout)}
             payload["capsule"] = str(capsule_path)
             payload["capsule_notice"] = notice
+            payload["pre_dispatch_warnings"] = pre_dispatch_warnings
+            payload["delivery_check"] = delivery_check
             payload["delivery_unverified"] = delivery_unverified
             payload["exit_code"] = exit_code
             print(json.dumps(payload, ensure_ascii=False, indent=2))
