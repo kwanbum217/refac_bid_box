@@ -446,7 +446,7 @@ def test_check_current_state_sections_missing_evidence(tmp_path: Path):
 
 
 def test_check_current_state_sections_unverifiable_commit_warns(tmp_path: Path):
-    """git 으로 확인할 수 없는 커밋은 WARN 이며 통과로 셉니다."""
+    """git 이력이 없는 곳에서는 WARN 이며 통과로 셉니다. 압축본 검토 등이 여기 해당합니다."""
     body = (
         "# state\n> updated_at: 2026-08-15\n> source_commit: `deadbee`\nG1 G2 G3\ndocs/ops/x.md\n"
     )
@@ -454,6 +454,22 @@ def test_check_current_state_sections_unverifiable_commit_warns(tmp_path: Path):
     res = check_current_state_sections(tmp_path)
     assert res.ok
     assert res.warn
+
+
+def test_check_current_state_sections_unknown_commit_in_git_repo_fails(tmp_path: Path, monkeypatch):
+    """이력이 있는데 커밋을 찾지 못하면 값이 틀린 것이므로 FAIL 입니다.
+
+    CI 가 fetch-depth 0 으로 전체 이력을 받게 된 뒤로는 "확인 불가" 가 곧
+    "값이 잘못됐다" 는 신호입니다. WARN 으로 두면 오타가 통과합니다.
+    """
+    body = (
+        "# state\n> updated_at: 2026-08-15\n> source_commit: `deadbee`\nG1 G2 G3\ndocs/ops/x.md\n"
+    )
+    _write_current_state(tmp_path, body)
+    monkeypatch.setattr("scripts.validate_agent_rules._has_git_history", lambda root: True)
+    res = check_current_state_sections(tmp_path)
+    assert not res.ok
+    assert "찾을 수 없습니다" in res.detail
 
 
 def test_check_current_state_sections_stale_commit_fails(tmp_path: Path, monkeypatch):
@@ -478,10 +494,9 @@ def test_check_current_state_sections_stale_commit_fails(tmp_path: Path, monkeyp
 def test_check_current_state_sections_real_repo_within_tolerance():
     """실제 저장소의 source_commit 은 허용 지연 안에 있어야 합니다.
 
-    CI 는 fetch-depth 1 로 얕게 받으므로 기록된 커밋을 조회하지 못할 수 있고,
-    그때 검사는 실패가 아니라 "신선도 미검증" WARN 으로 내려앉도록 설계돼
-    있습니다. 이 테스트가 조회 성공을 전제하면 검증 대상이 아니라 클론 모양을
-    보게 됩니다. 조회에 성공한 경우에만 허용 지연을 단정합니다.
+    CI 는 fetch-depth 0 으로 전체 이력을 받으므로 조회에 성공해야 정상입니다.
+    다만 이 테스트가 실행되는 환경이 항상 git 저장소라는 보장은 없으므로,
+    이력이 없어 미검증으로 내려앉은 경우만 예외로 둡니다.
     """
     res = check_current_state_sections(PROJECT_ROOT)
     assert res.ok

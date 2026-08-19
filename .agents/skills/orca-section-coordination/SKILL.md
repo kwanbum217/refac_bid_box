@@ -62,7 +62,7 @@ Level 1 게이트 3 은 변경 파일이 요구하는 **검증 능력(capability
 | 변경 대상 | 요구 능력 | 덮는 명령 |
 | --- | --- | --- |
 | `frontend/**` | `frontend_test`, `frontend_build` | `npm --prefix frontend run test` / `... run build` |
-| `Dockerfile*` | `docker_build` | `docker build ...` |
+| `Dockerfile*`, `.dockerignore` | `docker_build` | `docker build ...` |
 | `docker-compose*.yml` | `compose_config` | `docker compose config -q` |
 | `.github/workflows/*.yml` | `workflow_lint` | `uv run actionlint` |
 | 그 밖의 코드 | `backend_pytest` | `uv run pytest ...` |
@@ -72,8 +72,10 @@ Level 1 게이트 3 은 변경 파일이 요구하는 **검증 능력(capability
 않습니다. test 와 build 를 함께 수행하는 통합 스크립트를 쓰려면 게이트의
 `NPM_SCRIPT_CAPABILITIES` 에 이름을 등록합니다.
 
-**Docker 는 AGENTS.md 4장의 공유 자원입니다.** `docker build` 를 검증에 넣는
-Task 는 `shared_resources` 에 docker 를 선언해 다른 섹션과 겹치지 않게 합니다.
+**Docker 는 AGENTS.md 4장의 공유 자원입니다.** docker 검증이 붙는 Task 는
+`shared_resources` 에 `docker` 를 `exclusive` 로 선언해야 합니다.
+`orca_taskctl.py expand` 가 능력 판정에서 이를 자동으로 붙이지만, Capsule 을
+손으로 쓸 때는 직접 적어야 합니다.
 
 셸 스크립트(`.sh`)는 저장소에 파일이 없어 별도 능력을 두지 않습니다. 러너
 없는 능력을 미리 만들면 첫 파일이 생기는 순간 게이트가 교착합니다. 셸 스크립트를

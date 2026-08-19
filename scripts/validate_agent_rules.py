@@ -566,10 +566,21 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
     recorded = match.group(1)
     behind = _commits_behind_head(root, recorded)
     if behind is None:
+        # git 이력이 있는데도 커밋을 찾지 못하면 오타, 잘못된 해시, 이력 재작성
+        # 중 하나입니다. CI 는 fetch-depth 0 으로 전체 이력을 받으므로 이제
+        # "확인 불가" 가 곧 "값이 틀렸다" 는 신호입니다. .git 이 아예 없는
+        # 환경(압축본 검토 등)에서만 미검증으로 넘깁니다.
+        if _has_git_history(root):
+            return CheckResult(
+                name,
+                False,
+                f"source_commit {recorded} 을 이 저장소 이력에서 찾을 수 없습니다. "
+                "값이 잘못됐거나 이력이 재작성됐는지 확인하십시오",
+            )
         return CheckResult(
             name,
             True,
-            f"필수 필드 완비. source_commit {recorded} 은 이 저장소에서 확인할 수 없어 신선도 미검증",
+            f"필수 필드 완비. source_commit {recorded} 은 git 이력이 없어 신선도 미검증",
             warn=True,
         )
     if behind > CURRENT_STATE_LAG_TOLERANCE:
@@ -587,6 +598,20 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
         True,
         f"필수 필드 완비. source_commit {recorded} 은 HEAD 대비 {behind} 커밋 (허용 {CURRENT_STATE_LAG_TOLERANCE})",
     )
+
+
+def _has_git_history(root: Path) -> bool:
+    """해당 경로가 커밋 이력을 가진 git 저장소인지 확인합니다."""
+    try:
+        subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+            ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+            check=True,
+            capture_output=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
+        )
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return False
 
 
 def _commits_behind_head(root: Path, commit: str) -> int | None:

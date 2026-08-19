@@ -203,7 +203,9 @@ def _path_capabilities(path: str) -> set[str]:
     name = Path(path).name
     if path.startswith(WORKFLOW_PATH_PREFIX) and Path(path).suffix.lower() in {".yml", ".yaml"}:
         return {CAP_WORKFLOW_LINT}
-    if name == "Dockerfile" or name.startswith("Dockerfile."):
+    # .dockerignore 는 빌드 컨텍스트를 정합니다. 여기서 src/ 를 제외해 버리면
+    # pytest 는 그대로 통과하면서 이미지 빌드만 깨집니다.
+    if name == ".dockerignore" or name == "Dockerfile" or name.startswith("Dockerfile."):
         return {CAP_DOCKER_BUILD}
     if COMPOSE_NAME_RE.match(name):
         return {CAP_COMPOSE_CONFIG}

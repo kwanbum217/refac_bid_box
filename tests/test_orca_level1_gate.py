@@ -644,6 +644,9 @@ def test_required_capabilities_separates_change_kinds():
 
     # infra 변경을 backend pytest 가 덮으면 안 됩니다.
     assert required_capabilities(["Dockerfile"]) == {"docker_build"}
+    # 빌드 컨텍스트를 정하는 파일이라 잘못 고치면 pytest 는 통과하고 빌드만 깨집니다.
+    assert required_capabilities([".dockerignore"]) == {"docker_build"}
+    assert required_capabilities(["frontend/.dockerignore"]) == {"docker_build"}
     assert required_capabilities(["frontend/Dockerfile"]) == {"docker_build"}
     assert required_capabilities(["docker-compose.yml"]) == {"compose_config"}
     assert required_capabilities(["docker-compose.restore.yml"]) == {"compose_config"}
