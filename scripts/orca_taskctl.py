@@ -33,6 +33,7 @@ try:
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
         CAP_WORKFLOW_LINT,
+        parse_verification_command,
         required_capabilities,
     )
 except (ModuleNotFoundError, ImportError):
@@ -46,6 +47,7 @@ except (ModuleNotFoundError, ImportError):
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
         CAP_WORKFLOW_LINT,
+        parse_verification_command,
         required_capabilities,
     )
 
@@ -90,19 +92,30 @@ BACKEND_VERIFICATION_COMMAND = "uv run pytest tests/ -q -m 'not data_assets'"
 DEFAULT_VERIFICATION_COMMANDS = [BACKEND_VERIFICATION_COMMAND, RULES_VERIFICATION_COMMAND]
 
 # 검증 능력과 그것을 덮는 명령의 대응. 순서가 Capsule 에 적히는 순서입니다.
+# docker_build 는 빌드 컨텍스트별로 갈리므로 여기 두지 않고 따로 만듭니다.
 CAPABILITY_COMMANDS = [
     (CAP_BACKEND_PYTEST, BACKEND_VERIFICATION_COMMAND),
     (CAP_FRONTEND_TEST, "npm --prefix frontend run test"),
     (CAP_FRONTEND_BUILD, "npm --prefix frontend run build"),
-    (CAP_DOCKER_BUILD, "docker build -t refac-bid-box:orca-gate ."),
     (CAP_COMPOSE_CONFIG, "docker compose config -q"),
     (CAP_WORKFLOW_LINT, "uv run actionlint"),
 ]
 
+
+def _docker_build_command(capability: str) -> str:
+    """`docker_build:<context>` 능력을 덮는 빌드 명령을 만듭니다.
+
+    컨텍스트마다 이미지가 다르므로 태그도 나눕니다. 루트 빌드 하나로 모든
+    Dockerfile 을 덮으면 루트 `.dockerignore` 가 제외한 경로는 검증되지 않습니다.
+    """
+    context = capability.split(":", 1)[1]
+    slug = "root" if context == "." else context.replace("/", "-")
+    return f"docker build -t refac-bid-box-{slug}:orca-gate {context}"
+
+
 # docker 를 점유하는 검증을 붙이면서 공유 자원 선언을 빼면, 세 워커가 동시에
 # 같은 daemon 과 빌드 캐시를 쓰게 됩니다. 검증 부착과 자원 선언은 같은 판정에서
 # 함께 나와야 합니다. resource 와 ownership 값은 Capsule v2 규약의 열거형입니다.
-DOCKER_CAPABILITIES = frozenset({CAP_DOCKER_BUILD, CAP_COMPOSE_CONFIG})
 BASE_SHARED_RESOURCES = [("features_py", "read_only")]
 
 ACTIVE_TASK_STATUSES = frozenset({"dispatched"})
@@ -247,15 +260,38 @@ def _format_yaml_list(items: list[str], indent: str = "  - ") -> str:
     return "\n".join(lines)
 
 
-def resolve_shared_resources(write_files: list[str]) -> list[tuple[str, str]]:
-    """쓰기 범위가 점유하는 공유 자원과 소유권 수준을 정합니다.
+def _uses_docker(capabilities: set[str]) -> bool:
+    """docker daemon 을 점유하는 능력이 있는지 봅니다."""
+    return any(
+        capability == CAP_COMPOSE_CONFIG or capability.startswith(f"{CAP_DOCKER_BUILD}:")
+        for capability in capabilities
+    )
+
+
+def resolve_shared_resources(
+    write_files: list[str],
+    verification_commands: list[str] | None = None,
+) -> list[tuple[str, str]]:
+    """점유하는 공유 자원과 소유권 수준을 정합니다.
 
     docker 검증이 붙는 Task 는 docker 를 배타 점유합니다. 스킬 문서는 이를
     요구하는데 템플릿은 features_py 만 고정으로 적고 있었습니다.
+
+    쓰기 범위뿐 아니라 실제로 실행할 검증 명령도 봅니다. Intent 가 docker 명령을
+    직접 적고 쓰기 범위에는 파이썬 파일만 두면, 범위만 보는 판정은 점유를
+    놓칩니다.
     """
     paths = [str(path).strip() for path in write_files if str(path).strip()]
+    capabilities = set(required_capabilities(paths))
+    for command in verification_commands or []:
+        try:
+            capabilities |= set(parse_verification_command(command).provides)
+        except ValueError:
+            # 허용 목록 밖 명령은 게이트 3 이 거부합니다. 여기서는 무시합니다.
+            continue
+
     resources = list(BASE_SHARED_RESOURCES)
-    if required_capabilities(paths) & DOCKER_CAPABILITIES:
+    if _uses_docker(capabilities):
         resources.append(("docker", "exclusive"))
     return resources
 
@@ -289,6 +325,11 @@ def resolve_verification_commands(
     paths = [str(path).strip() for path in write_files if str(path).strip()]
     needed = required_capabilities(paths)
     commands = [command for capability, command in CAPABILITY_COMMANDS if capability in needed]
+    commands += [
+        _docker_build_command(capability)
+        for capability in sorted(needed)
+        if capability.startswith(f"{CAP_DOCKER_BUILD}:")
+    ]
     commands.append(RULES_VERIFICATION_COMMAND)
     return list(dict.fromkeys(commands))
 
@@ -556,6 +597,8 @@ def expand_intent_to_capsule(
     # 쓰고 verdict 를 객체로 냈습니다. 기계 집계가 깨지므로 필드명을 열거합니다.
     report_schema = REVIEW_REPORT_SCHEMA if is_reviewer else WORKER_REPORT_SCHEMA
 
+    verification_commands = resolve_verification_commands(intent, write_files)
+
     capsule = CAPSULE_TEMPLATE.format(
         version=CAPSULE_VERSION,
         mode=mode,
@@ -572,8 +615,10 @@ def expand_intent_to_capsule(
         ),
         required_change=required_change_formatted,
         acceptance=acceptance_formatted,
-        shared_resources=_format_shared_resources(resolve_shared_resources(write_files)),
-        verification_commands=_format_yaml_list(resolve_verification_commands(intent, write_files)),
+        shared_resources=_format_shared_resources(
+            resolve_shared_resources(write_files, verification_commands)
+        ),
+        verification_commands=_format_yaml_list(verification_commands),
         artifact_paths=artifact_paths_formatted,
         report_path=report_path,
         return_contract=return_contract,

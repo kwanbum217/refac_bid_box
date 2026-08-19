@@ -2711,4 +2711,31 @@ def test_docker_verification_declares_docker_as_shared_resource():
     block = capsule[capsule.index("shared_resources:") : capsule.index("required_change:")]
     assert "resource: docker" in block
     assert "ownership: exclusive" in block
-    assert "docker build -t refac-bid-box:orca-gate ." in capsule
+    assert "docker build -t refac-bid-box-root:orca-gate ." in capsule
+
+
+def test_frontend_dockerfile_gets_its_own_build_context():
+    """루트 빌드는 frontend/ 를 제외하므로 컨텍스트별 빌드 명령이 나와야 합니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    assert resolve_verification_commands({}, ["frontend/Dockerfile"])[0] == (
+        "docker build -t refac-bid-box-frontend:orca-gate frontend"
+    )
+    commands = resolve_verification_commands({}, ["Dockerfile", "frontend/Dockerfile"])
+    assert "docker build -t refac-bid-box-root:orca-gate ." in commands
+    assert "docker build -t refac-bid-box-frontend:orca-gate frontend" in commands
+
+
+def test_manual_docker_command_also_claims_the_shared_resource():
+    """쓰기 범위만 보면 Intent 가 직접 적은 docker 명령의 점유를 놓칩니다."""
+    from scripts.orca_taskctl import resolve_shared_resources
+
+    assert ("docker", "exclusive") in resolve_shared_resources(
+        ["src/a.py"], ["docker build -t x ."]
+    )
+    assert ("docker", "exclusive") in resolve_shared_resources(
+        ["src/a.py"], ["docker compose config -q"]
+    )
+    assert resolve_shared_resources(["src/a.py"], ["uv run pytest tests/ -q"]) == [
+        ("features_py", "read_only")
+    ]
