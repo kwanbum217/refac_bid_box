@@ -10,7 +10,7 @@ jobs:
   lint-and-validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -69,7 +69,7 @@ jobs:
     env:
       PYTHONUTF8: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -96,7 +96,7 @@ jobs:
     name: Docker 이미지 빌드 검증
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 운영 이미지가 uv.lock 기준으로 재현 가능하게 빌드되는지 확인합니다.
       # 이 잡이 없으면 Dockerfile 의 의존성 해석 오류를 배포 시점에야 알게 됩니다.
