@@ -446,7 +446,10 @@ def test_check_current_state_sections_missing_evidence(tmp_path: Path):
 
 
 def test_check_current_state_sections_unverifiable_commit_warns(tmp_path: Path):
-    """git 이력이 없는 곳에서는 WARN 이며 통과로 셉니다. 압축본 검토 등이 여기 해당합니다."""
+    """부재를 증명할 수 없는 곳에서는 WARN 이며 통과로 셉니다.
+
+    git 이력이 없는 압축본 검토와 얕은 클론이 여기 해당합니다.
+    """
     body = (
         "# state\n> updated_at: 2026-08-15\n> source_commit: `deadbee`\nG1 G2 G3\ndocs/ops/x.md\n"
     )
@@ -457,16 +460,19 @@ def test_check_current_state_sections_unverifiable_commit_warns(tmp_path: Path):
 
 
 def test_check_current_state_sections_unknown_commit_in_git_repo_fails(tmp_path: Path, monkeypatch):
-    """이력이 있는데 커밋을 찾지 못하면 값이 틀린 것이므로 FAIL 입니다.
+    """전체 이력이 있는데 커밋을 찾지 못하면 값이 틀린 것이므로 FAIL 입니다.
 
-    CI 가 fetch-depth 0 으로 전체 이력을 받게 된 뒤로는 "확인 불가" 가 곧
-    "값이 잘못됐다" 는 신호입니다. WARN 으로 두면 오타가 통과합니다.
+    반대로 얕은 클론에서는 커밋이 없는 것과 못 받은 것을 구분할 수 없어
+    WARN 이어야 합니다. 이력 유무만 보고 FAIL 로 단정했더니 fetch-depth 1 인
+    CI 테스트 잡 셋이 정상 값을 오타로 판정해 main 이 빨개졌습니다.
     """
     body = (
         "# state\n> updated_at: 2026-08-15\n> source_commit: `deadbee`\nG1 G2 G3\ndocs/ops/x.md\n"
     )
     _write_current_state(tmp_path, body)
-    monkeypatch.setattr("scripts.validate_agent_rules._has_git_history", lambda root: True)
+    monkeypatch.setattr(
+        "scripts.validate_agent_rules._can_verify_commit_history", lambda root: True
+    )
     res = check_current_state_sections(tmp_path)
     assert not res.ok
     assert "찾을 수 없습니다" in res.detail
