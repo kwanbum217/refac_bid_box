@@ -145,3 +145,75 @@ def test_empty_action_key_stays_success():
 
     assert request_obj.status == orch.STATUS_SUCCESS
     assert "필요하지 않은 요청" in request_obj.result_summary
+
+
+def test_stale_flags_survive_into_result_payload_and_answer():
+    """플래그를 payload 최상위에만 두면 API 응답 경계에서 사라집니다.
+
+    chatbot.py 는 result_payload 만 ChatResponse 로 옮기므로, 내부적으로는
+    stale 을 아는데 사용자에게는 현재 상태처럼 보였습니다.
+    """
+    from src.app.services.tools import automation_status_tool as tool
+
+    request_obj = MagicMock()
+    request_obj.status = tool.ACTIVE_STATUSES[0]
+    request_obj.plan_execution_id = "exec-1"
+    request_obj.result_summary = ""
+
+    base = {"answer": "현재 점검 상태: 진행 중입니다.", "result_payload": {"steps": []}}
+    with (
+        patch.object(tool, "_find_request", return_value=request_obj),
+        patch.object(tool, "sync_automation_status", side_effect=RuntimeError("boom")),
+        patch.object(tool, "build_action_response", return_value=base),
+        patch.object(tool, "_adapt_status_payload", side_effect=lambda p, *a, **k: p),
+    ):
+        payload = tool.execute(db=MagicMock(), job_id="job-1")
+
+    assert payload["result_payload"]["sync_failed"] is True
+    assert payload["result_payload"]["status_is_stale"] is True
+    # 기존 내용을 덮어쓰지 않아야 합니다.
+    assert payload["result_payload"]["steps"] == []
+    assert "최신이 아닐 수 있습니다" in payload["answer"]
+    assert "현재 점검 상태" in payload["answer"]
+
+
+def test_stale_notice_is_not_duplicated():
+    """같은 안내가 두 번 붙으면 사용자가 오류로 읽습니다."""
+    from src.app.services.tools import automation_status_tool as tool
+
+    request_obj = MagicMock()
+    request_obj.status = tool.ACTIVE_STATUSES[0]
+    request_obj.plan_execution_id = "exec-1"
+    request_obj.result_summary = ""
+
+    base = {"answer": "상태 동기화에 실패해 아래 정보는 최신이 아닐 수 있습니다.\n\n본문"}
+    with (
+        patch.object(tool, "_find_request", return_value=request_obj),
+        patch.object(tool, "sync_automation_status", side_effect=RuntimeError("boom")),
+        patch.object(tool, "build_action_response", return_value=base),
+        patch.object(tool, "_adapt_status_payload", side_effect=lambda p, *a, **k: p),
+    ):
+        payload = tool.execute(db=MagicMock(), job_id="job-1")
+
+    assert payload["answer"].count("최신이 아닐 수 있습니다") == 1
+
+
+def test_successful_sync_does_not_add_stale_notice():
+    """동기화가 성공하면 안내도 플래그도 붙지 않아야 합니다."""
+    from src.app.services.tools import automation_status_tool as tool
+
+    request_obj = MagicMock()
+    request_obj.status = tool.ACTIVE_STATUSES[0]
+    request_obj.plan_execution_id = "exec-1"
+
+    base = {"answer": "현재 점검 상태: 진행 중입니다.", "result_payload": {}}
+    with (
+        patch.object(tool, "_find_request", return_value=request_obj),
+        patch.object(tool, "sync_automation_status", return_value=request_obj),
+        patch.object(tool, "build_action_response", return_value=base),
+        patch.object(tool, "_adapt_status_payload", side_effect=lambda p, *a, **k: p),
+    ):
+        payload = tool.execute(db=MagicMock(), job_id="job-1")
+
+    assert "최신이 아닐 수 있습니다" not in payload["answer"]
+    assert "sync_failed" not in payload["result_payload"]

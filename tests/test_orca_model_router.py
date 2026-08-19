@@ -1193,3 +1193,46 @@ def test_probe_resolves_pool_key_to_actual_model_id(monkeypatch):
     assert seen, "probe 명령이 실행되지 않았습니다"
     assert MODEL_POOL["gemini-flash-medium"]["id"] in seen[0]
     assert "gemini-flash-medium" not in seen[0]
+
+
+def test_free_pool_candidates_must_match_role_suitable_for():
+    """무료 후보도 역할 적합성을 통과해야 합니다.
+
+    걸러 내지 않으면 investigator 전용 모델이 builder 로 배정됩니다.
+    TIER_POLICY 경로는 이미 불변식으로 묶여 있는데 무료 경로만 밖에 있었습니다.
+    """
+    from scripts.orca_model_router import MODEL_POOL, select_model
+
+    # deepseek 과 cursor 를 빼면 남는 무료 모델은 investigator 전용입니다.
+    result = select_model(
+        "builder",
+        "low",
+        exclude=["opencode-deepseek", "cursor-auto"],
+        allow_free=True,
+        has_write_scope=True,
+    )
+    assert "builder" in MODEL_POOL[result["primary_pool"]]["suitable_for"]
+
+    # 적합한 무료 모델이 있으면 여전히 우선합니다.
+    investigator = select_model("investigator", "low", allow_free=True, has_write_scope=False)
+    assert investigator["primary_pool"] == "opencode-deepseek"
+
+
+def test_every_free_pool_selection_is_role_suitable():
+    """무료 풀 개방 대상 역할 전부에서 불변식이 유지되어야 합니다."""
+    from scripts.orca_model_router import (
+        FREE_POOL_ELIGIBLE_ROLES,
+        MODEL_POOL,
+        select_model,
+    )
+
+    for role in sorted(FREE_POOL_ELIGIBLE_ROLES):
+        result = select_model(role, "low", allow_free=True, has_write_scope=False)
+        assert role in MODEL_POOL[result["primary_pool"]]["suitable_for"], (
+            f"{role} 에 부적합한 모델 {result['primary_pool']} 이 선택됐습니다"
+        )
+        fallback = result["fallback_pool"]
+        if fallback:
+            assert role in MODEL_POOL[fallback]["suitable_for"], (
+                f"{role} 에 부적합한 fallback {fallback} 이 선택됐습니다"
+            )

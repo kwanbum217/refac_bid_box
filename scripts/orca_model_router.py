@@ -546,7 +546,17 @@ def select_model(
 
     eligible, _reason = free_pool_eligibility(role, risk, has_write_scope)
     if allow_free and eligible:
-        candidates = [c for c in FREE_POOL_ORDER if c in MODEL_POOL] + base_candidates
+        # 무료 후보도 역할 적합성을 통과해야 합니다. 걸러 내지 않으면
+        # investigator 전용 모델이 builder 로 배정됩니다. TIER_POLICY 경로는
+        # 이미 불변식으로 묶여 있는데 무료 경로만 그 밖에 있었습니다.
+        # 테스트로만 맞추면 후보를 추가할 때마다 다시 어긋나므로 실행 코드가
+        # 계약을 지키게 합니다.
+        free_candidates = [
+            c
+            for c in FREE_POOL_ORDER
+            if c in MODEL_POOL and role in MODEL_POOL[c].get("suitable_for", [])
+        ]
+        candidates = free_candidates + base_candidates
     else:
         candidates = base_candidates
 

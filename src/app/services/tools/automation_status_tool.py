@@ -203,4 +203,20 @@ def execute(
     payload["found"] = True
     payload["sync_failed"] = sync_failed
     payload["status_is_stale"] = sync_failed
+    if sync_failed:
+        # 플래그만 payload 최상위에 두면 API 응답 경계에서 사라집니다.
+        # 사용자는 낡은 상태를 현재 상태로 읽고, result_payload 를 보는
+        # 호출자도 최신 여부를 알 수 없습니다. 둘 다 실어 보냅니다.
+        result_payload = payload.get("result_payload")
+        if not isinstance(result_payload, dict):
+            result_payload = {}
+        result_payload = dict(result_payload)
+        result_payload["sync_failed"] = True
+        result_payload["status_is_stale"] = True
+        payload["result_payload"] = result_payload
+
+        notice = "상태 동기화에 실패해 아래 정보는 최신이 아닐 수 있습니다."
+        answer = str(payload.get("answer") or "").strip()
+        if notice not in answer:
+            payload["answer"] = f"{notice}\n\n{answer}".strip()
     return payload

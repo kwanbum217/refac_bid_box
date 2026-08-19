@@ -71,6 +71,65 @@ REQUIRED_FIELDS = (
 )
 
 
+# 계약이 허용하는 값 집합입니다. 필드 존재 여부만 보고 타입을 보지 않으면
+# 문자열 "0" 이 정수 0 검사를 그대로 지나갑니다. 외부 워커가 항상 올바른
+# 타입을 만든다는 보장이 없으므로 여기서 형과 범위를 함께 강제합니다.
+ALLOWED_STATUS = ("succeeded", "escalation")
+# verdict 는 pass 와 candidate 가 blocking_issues 존재 시 blocked 로 격하되는
+# 계약이므로 세 값을 모두 받습니다.
+ALLOWED_VERDICT = ("pass", "candidate", "blocked")
+
+
+def check_field_types(report_data: dict[str, Any]) -> list[str]:
+    """보고 필드의 형과 값 범위를 검사해 위반 목록을 돌려줍니다."""
+    violations: list[str] = []
+
+    commit_count = report_data.get("commit_count")
+    if "commit_count" in report_data:
+        # bool 은 int 의 하위형이라 True 가 1 로 통과합니다. 따로 막습니다.
+        if isinstance(commit_count, bool) or not isinstance(commit_count, int):
+            violations.append(
+                f"타입 위반: commit_count 는 정수여야 하는데 "
+                f"{type(commit_count).__name__} ({commit_count!r})"
+            )
+        elif commit_count < 0:
+            violations.append(f"값 위반: commit_count 가 음수 ({commit_count})")
+
+    status = report_data.get("status")
+    if "status" in report_data and status not in ALLOWED_STATUS:
+        violations.append(
+            f"값 위반: status 는 {' 또는 '.join(ALLOWED_STATUS)} 여야 하는데 {status!r}"
+        )
+
+    verdict = report_data.get("verdict")
+    if "verdict" in report_data and verdict not in ALLOWED_VERDICT:
+        violations.append(
+            f"값 위반: verdict 는 {' 또는 '.join(ALLOWED_VERDICT)} 여야 하는데 {verdict!r}"
+        )
+
+    for field_name in ("changed_files", "read_files", "blocking_issues"):
+        if field_name not in report_data:
+            continue
+        value = report_data[field_name]
+        if not isinstance(value, list):
+            violations.append(
+                f"타입 위반: {field_name} 는 배열이어야 하는데 {type(value).__name__}"
+            )
+        elif not all(isinstance(item, str) for item in value):
+            violations.append(f"타입 위반: {field_name} 의 원소는 전부 문자열이어야 함")
+
+    verification = report_data.get("verification")
+    if "verification" in report_data:
+        if not isinstance(verification, list):
+            violations.append(
+                f"타입 위반: verification 는 배열이어야 하는데 {type(verification).__name__}"
+            )
+        elif not all(isinstance(item, dict) for item in verification):
+            violations.append("타입 위반: verification 의 원소는 전부 객체여야 함")
+
+    return violations
+
+
 def _find_bloated_fields(data: Any, max_len: int, path: str = "") -> list[tuple[str, int]]:
     """문자열 필드 중 max_len 을 초과하는 필드와 길이를 재귀적으로 탐색합니다."""
     bloated: list[tuple[str, int]] = []
@@ -181,6 +240,8 @@ def summarize_worker_report(
         capsule_text = load_capsule(capsule_path)
         allowed_read = parse_capsule_list(capsule_text, "allowed_read_files")
         allowed_write = parse_capsule_list(capsule_text, "allowed_write_files")
+
+    violations.extend(check_field_types(report_data))
 
     read_only_task = capsule_path is not None and not allowed_write
     if status == "succeeded" and commit_count == 0 and not read_only_task:
