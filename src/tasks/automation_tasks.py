@@ -157,8 +157,12 @@ async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, st
 
 def _step_rag(
     db, execution_id: str = "", collected_since: datetime | None = None
-) -> tuple[str, dict[str, Any]]:
-    """ChromaDB 지식베이스 재구축 (원본 update_hybrid_kb 명령 대응)."""
+) -> tuple[str, str, dict[str, Any]]:
+    """ChromaDB 지식베이스 재구축 (원본 update_hybrid_kb 명령 대응).
+
+    3요소 튜플로 status 를 그대로 전파합니다. rebuild_knowledge_base 의 status 를
+    버리고 2요소 튜플을 돌려주면 디스패치 루프가 성공으로 승격합니다.
+    """
     from src.app.services.kb_builder import rebuild_knowledge_base
 
     outcome = rebuild_knowledge_base(
@@ -166,7 +170,17 @@ def _step_rag(
     )
     metrics = dict(outcome.get("metrics") or {})
     metrics.setdefault("vector_count", metrics.get("source_bid_count", 0))
-    return outcome["summary"], metrics
+    status = str(outcome.get("status") or "")
+    allowed_statuses = {STATUS_SUCCESS, "partial_success", STATUS_FAILED, "error"}
+    if status not in allowed_statuses:
+        status = STATUS_FAILED
+        summary = (
+            f"KB 재구축 상태를 알 수 없어 실패 처리했습니다"
+            f" (status={outcome.get('status')!r}). {outcome.get('summary', '')}".strip()
+        )
+        return status, summary, metrics
+    summary = str(outcome.get("summary") or "")
+    return status, summary, metrics
 
 
 def _step_search(db, collected_since: datetime | None = None) -> tuple[str, dict[str, Any]]:
@@ -352,22 +366,32 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
     metrics["vector_count"] = _check_chroma_vectors()
 
     warnings: list[str] = []
+    critical: list[str] = []
     if stale_hours is not None and stale_hours > 48:
         warnings.append(f"최근 수집이 {stale_hours:.0f}시간 경과 (48시간 초과).")
     if recent_bid_announcements == 0 and recent_bid_results == 0:
         warnings.append("최근 7일 신규 공고/낙찰 데이터가 없습니다.")
     if missing_tables:
-        warnings.append(f"DB 필수 테이블 누락: {', '.join(sorted(missing_tables))}")
+        message = f"DB 필수 테이블 누락: {', '.join(sorted(missing_tables))}"
+        warnings.append(message)
+        critical.append(message)
+    if metrics.get("db_table_count") is None:
+        message = "DB 테이블 목록을 확인하지 못했습니다."
+        warnings.append(message)
+        critical.append(message)
     if metrics.get("vector_count") == 0:
-        warnings.append("ChromaDB 임베딩이 비어 있습니다.")
+        message = "ChromaDB 임베딩이 비어 있습니다."
+        warnings.append(message)
+        critical.append(message)
+    elif metrics.get("vector_count") is None:
+        # None 은 "검사했더니 0건" 이 아니라 "검사하지 못함" 입니다. 0건과
+        # 구분되는 치명 경고로 남겨야 점검 목적이 살아납니다.
+        message = "ChromaDB 임베딩 수를 확인하지 못했습니다."
+        warnings.append(message)
+        critical.append(message)
 
-    # 필수 테이블 누락과 벡터DB 공백은 시스템 불능 상태입니다. 경고 문구만
-    # 남기고 성공으로 보고하면 점검의 목적이 사라집니다.
-    critical = [
-        warning
-        for warning in warnings
-        if warning.startswith("DB 필수 테이블 누락") or warning.startswith("ChromaDB 임베딩")
-    ]
+    # 치명 경고를 별도 리스트로 모아 warnings 와 critical 에 함께 넣습니다.
+    # 문구 startswith 로 판정하면 문구를 바꿀 때 판정이 조용히 깨집니다.
     metrics["warnings"] = warnings
     metrics["critical_warnings"] = critical
 

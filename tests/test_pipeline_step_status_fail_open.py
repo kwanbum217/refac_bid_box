@@ -10,7 +10,10 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from src.tasks.automation_tasks import _step_inspect, _step_predict
+import pytest
+
+from src.tasks import automation_tasks
+from src.tasks.automation_tasks import _step_inspect, _step_predict, _step_rag
 from src.tasks.scheduled_tasks import _mark_followup_failures
 
 
@@ -110,6 +113,161 @@ def test_step_inspect_healthy_state_stays_success():
 
     assert len(result) == 2
     assert result[1]["critical_warnings"] == []
+
+
+def test_step_rag_failure_returns_three_tuple_status():
+    """KB 재구축 실패 상태가 3요소 튜플로 그대로 전파됩니다."""
+    db = MagicMock()
+
+    with patch(
+        "src.app.services.kb_builder.rebuild_knowledge_base",
+        return_value={"status": "failed", "summary": "인덱싱 실패", "metrics": {}},
+    ):
+        result = _step_rag(db)
+
+    assert len(result) == 3
+    assert result[0] == "failed"
+    assert "인덱싱 실패" in result[1]
+
+
+def test_step_rag_success_stays_three_tuple():
+    """KB 재구축 성공도 3요소 튜플로 status 를 그대로 돌려줍니다."""
+    db = MagicMock()
+
+    with patch(
+        "src.app.services.kb_builder.rebuild_knowledge_base",
+        return_value={"status": "success", "summary": "인덱싱 완료", "metrics": {}},
+    ):
+        result = _step_rag(db)
+
+    assert len(result) == 3
+    assert result[0] == "success"
+    assert "인덱싱 완료" in result[1]
+
+
+def test_step_rag_unknown_status_is_demoted_to_failed():
+    """알 수 없는 status 는 성공이 아니라 실패로 강등됩니다."""
+    db = MagicMock()
+
+    with patch(
+        "src.app.services.kb_builder.rebuild_knowledge_base",
+        return_value={"status": "mystery", "summary": "모호한 결과", "metrics": {}},
+    ):
+        status, summary, _metrics = _step_rag(db)
+
+    assert status == "failed"
+    assert "알 수 없어 실패 처리" in summary
+
+
+@pytest.mark.asyncio
+async def test_rag_failure_marks_pipeline_failed():
+    """KB 재구축 실패가 파이프라인 최종 상태를 실패로 만듭니다."""
+    with (
+        patch(
+            "src.app.services.kb_builder.rebuild_knowledge_base",
+            return_value={"status": "failed", "summary": "인덱싱 실패", "metrics": {}},
+        ),
+        patch.object(automation_tasks, "get_run_mode_steps", return_value=["rag"]),
+        patch.object(automation_tasks, "_report") as mock_report,
+        patch.object(automation_tasks, "SessionLocal", return_value=MagicMock()),
+    ):
+        res = await automation_tasks.run_automation_pipeline(
+            {}, run_mode="kb_only", automation_request_id="req_rag_failed"
+        )
+
+    assert res["status"] == automation_tasks.STATUS_FAILED
+    rag_reports = [c for c in mock_report.call_args_list if c.args[2] == "rag"]
+    assert rag_reports
+    assert rag_reports[0].args[3] == "failed"
+    final_reports = [c for c in mock_report.call_args_list if c.kwargs.get("final")]
+    assert final_reports
+    assert final_reports[-1].args[5]["step_statuses"]["rag"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_rag_success_keeps_pipeline_success():
+    """KB 재구축 성공은 기존과 동일하게 파이프라인 성공으로 이어집니다."""
+    with (
+        patch(
+            "src.app.services.kb_builder.rebuild_knowledge_base",
+            return_value={
+                "status": "success",
+                "summary": "인덱싱 완료",
+                "metrics": {"source_bid_count": 10},
+            },
+        ),
+        patch.object(automation_tasks, "get_run_mode_steps", return_value=["rag"]),
+        patch.object(automation_tasks, "_report"),
+        patch.object(automation_tasks, "SessionLocal", return_value=MagicMock()),
+    ):
+        res = await automation_tasks.run_automation_pipeline(
+            {}, run_mode="kb_only", automation_request_id="req_rag_ok"
+        )
+
+    assert res["status"] == automation_tasks.STATUS_SUCCESS
+
+
+def test_step_inspect_unavailable_vector_count_is_not_success():
+    """벡터DB를 확인하지 못한 경우(None)는 치명 처리합니다."""
+    inspector = MagicMock()
+    inspector.get_table_names.return_value = [
+        "bid_announcements",
+        "bid_results",
+        "accounts_customuser",
+    ]
+
+    with (
+        patch("sqlalchemy.inspect", return_value=inspector),
+        patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=None),
+    ):
+        status, _summary, metrics = _unpack(_step_inspect(_inspect_db()))
+
+    assert status == "partial_success"
+    assert any(
+        w == "ChromaDB 임베딩 수를 확인하지 못했습니다." for w in metrics["critical_warnings"]
+    )
+
+
+def test_step_inspect_unavailable_table_count_is_not_success():
+    """DB 테이블 목록 확인 실패(None)는 치명 처리합니다."""
+    with (
+        patch("sqlalchemy.inspect", side_effect=RuntimeError("검사 불능")),
+        patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=100),
+    ):
+        status, _summary, metrics = _unpack(_step_inspect(_inspect_db()))
+
+    assert status == "partial_success"
+    assert any(w == "DB 테이블 목록을 확인하지 못했습니다." for w in metrics["critical_warnings"])
+
+
+def test_vector_count_zero_and_none_warnings_differ():
+    """0건(검사 완료)과 None(검사 불가)은 다른 경고 문구로 구분됩니다."""
+    inspector = MagicMock()
+    inspector.get_table_names.return_value = [
+        "bid_announcements",
+        "bid_results",
+        "accounts_customuser",
+    ]
+
+    def metrics_with_vector_count(value: int | None) -> dict[str, Any]:
+        with (
+            patch("sqlalchemy.inspect", return_value=inspector),
+            patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=value),
+        ):
+            _status, _summary, metrics = _unpack(_step_inspect(_inspect_db()))
+        return metrics
+
+    zero_messages = [
+        w for w in metrics_with_vector_count(0)["critical_warnings"] if "ChromaDB" in w
+    ]
+    none_messages = [
+        w for w in metrics_with_vector_count(None)["critical_warnings"] if "ChromaDB" in w
+    ]
+    assert zero_messages
+    assert none_messages
+    assert zero_messages != none_messages
+    assert any("비어 있습니다" in w for w in zero_messages)
+    assert any("확인하지 못했습니다" in w for w in none_messages)
 
 
 def test_followup_failure_degrades_schedule_status():
