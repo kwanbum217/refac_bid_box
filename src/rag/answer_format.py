@@ -197,13 +197,16 @@ def _fallback_answer(
     kb_status: dict | None,
 ) -> str:
     lines = [f"질문: {query}"]
+    query_skipped = bool(structured_data and structured_data.get("query_skipped"))
     summary = structured_data.get("summary") if structured_data else {}
 
-    if summary:
+    if query_skipped:
+        lines.append("- 조회를 수행하지 않아 통계가 없습니다.")
+    elif summary:
         lines.append(
-            f"- 낙찰 결과 {summary.get('total_bids', 0)}건, "
-            f"공고 {summary.get('announcement_count', 0)}건, "
-            f"평균 낙찰률 {summary.get('average_winning_rate', 0)}"
+            f"- 낙찰 결과 {_stat_text(summary.get('total_bids'))}건, "
+            f"공고 {_stat_text(summary.get('announcement_count'))}건, "
+            f"평균 낙찰률 {_stat_text(summary.get('average_winning_rate'))}"
         )
         top_winners = summary.get("top_winners") or []
         if top_winners:
@@ -251,13 +254,21 @@ def _fallback_answer(
     )
 
 
+def _stat_text(value) -> str:
+    """0 은 측정값, None 은 값 없음. 값 없음을 0 으로 표기하지 않습니다."""
+    return "확인되지 않음" if value is None else str(value)
+
+
 def _build_evidence_items(
     structured_data: dict | None,
     vector_docs: list[dict],
     kb_status: dict | None,
 ) -> list[EvidenceItem]:
     items: list[EvidenceItem] = []
-    if structured_data:
+    # 조회를 수행하지 않았는데 통계 Source 를 만들면, 모델과 사용자 모두
+    # "조회했더니 이런 값이 나왔다" 로 읽습니다. 근거가 없으므로 만들지 않습니다.
+    # 건너뛴 사유는 Provenance 의 insufficiency_hints 로 이미 전달됩니다.
+    if structured_data and not structured_data.get("query_skipped"):
         summary = structured_data.get("summary") or {}
         items.append(
             EvidenceItem(

@@ -127,3 +127,69 @@ def test_bad_date_query_skipped_snapshot_has_no_zero_stat():
     assert "총 낙찰 금액" not in snapshot
     assert "정형 데이터 집계: 조회를 수행하지 않아 통계가 없습니다." in snapshot
     assert "- 한계:" in snapshot
+
+
+def test_answer_guard_does_not_crash_on_none_summary():
+    """summary 값이 None 이면 get 의 기본값이 쓰이지 않아 비교에서 TypeError 가 납니다.
+
+    _empty_result 가 수치를 None 으로 채우도록 바뀌면서 생긴 크래시 경로입니다.
+    """
+    from src.rag.engine import HybridRAGEngine
+
+    engine = HybridRAGEngine()
+    plan = MagicMock()
+    plan.filters = {}
+
+    guarded = engine._apply_answer_guard("데이터가 없습니다", _skipped_structured_data(), plan)
+    assert "데이터가 없습니다" in guarded
+
+    # query_skipped 가 아니어도 값이 None 이면 크래시하지 않아야 합니다.
+    no_flag = _skipped_structured_data()
+    del no_flag["query_skipped"]
+    assert engine._apply_answer_guard("데이터가 없습니다", no_flag, plan)
+
+
+def test_skipped_query_produces_no_statistics_evidence():
+    """조회하지 않았는데 통계 Source 를 만들면 근거 없는 인용이 생깁니다."""
+    from src.rag.answer_format import _build_evidence_items
+
+    items = _build_evidence_items(_skipped_structured_data(), [], None)
+    assert not [i for i in items if i.type == "sql_stats"]
+
+    normal = {
+        "summary": {"total_bids": 0, "announcement_count": 0, "sample_announcements": []},
+        "filters": {},
+    }
+    normal_items = _build_evidence_items(normal, [], None)
+    assert [i for i in normal_items if i.id == "sql_summary"]
+
+
+def test_fallback_answer_marks_skipped_query():
+    """LLM 실패 시 보이는 대체 답변에도 0 통계가 들어가면 안 됩니다."""
+    from src.rag.answer_format import _fallback_answer
+
+    plan = MagicMock()
+    plan.filters = {}
+    plan.route_reason = "테스트"
+
+    text = _fallback_answer("질문", plan, _skipped_structured_data(), [], None)
+    assert "조회를 수행하지 않아 통계가 없습니다" in text
+    assert "낙찰 결과 0건" not in text
+    assert "낙찰 결과 None" not in text
+
+
+def test_fallback_answer_keeps_zero_for_real_zero_result():
+    """정상 조회 0건은 종전대로 0 으로 표기합니다."""
+    from src.rag.answer_format import _fallback_answer
+
+    plan = MagicMock()
+    plan.filters = {}
+    plan.route_reason = "테스트"
+    normal = {
+        "summary": {"total_bids": 0, "announcement_count": 0, "average_winning_rate": 0.0},
+        "filters": {},
+    }
+
+    text = _fallback_answer("질문", plan, normal, [], None)
+    assert "낙찰 결과 0건" in text
+    assert "조회를 수행하지 않아" not in text
