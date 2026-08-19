@@ -254,9 +254,15 @@ class HybridRAGEngine:
         plan: Any,
     ) -> str:
         """Answer Guard: 데이터가 있는데 없다고 답한 경우 강제 교정."""
-        summary_data = (structured_data or {}).get("summary", {})
-        total_bids = summary_data.get("total_bids", 0)
-        total_ntce = summary_data.get("announcement_count", 0)
+        if (structured_data or {}).get("query_skipped"):
+            # 조회를 하지 않았으면 교정할 근거가 없습니다. 없다고 답한 것이 맞습니다.
+            return _normalize_category_wording(answer_text, plan)
+
+        summary_data = (structured_data or {}).get("summary") or {}
+        # 키는 있는데 값이 None 인 경우가 있습니다. get 의 기본값은 그때 쓰이지
+        # 않으므로 None 이 그대로 비교로 들어가 TypeError 가 납니다.
+        total_bids = summary_data.get("total_bids") or 0
+        total_ntce = summary_data.get("announcement_count") or 0
         if "데이터가 없습니다" in answer_text and (total_bids > 0 or total_ntce > 0):
             stats_msg = f"분석 결과 낙찰 {total_bids}건, 공고 {total_ntce}건이 확인되었습니다. "
             answer_text = (
