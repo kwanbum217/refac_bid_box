@@ -41,7 +41,7 @@ def test_retrieve_structured_data_skips_query_on_bad_date():
     result = retrieve_structured_data(db, plan)
 
     assert result["query_skipped"] is True
-    assert result["summary"]["total_bids"] == 0
+    assert result["summary"]["total_bids"] is None
     assert any("YYYY-MM-DD" in hint for hint in result["insufficiency_hints"])
     # 조회 자체를 하지 않았어야 한다
     db.scalar.assert_not_called()
