@@ -180,11 +180,12 @@ def _build_source_citation_from_context(
     vector_docs: list[dict],
     kb_status: dict | None,
 ) -> str:
-    if structured_data and vector_docs:
+    has_sql_evidence = bool(structured_data and not structured_data.get("query_skipped"))
+    if has_sql_evidence and vector_docs:
         return "\n\n근거: 혼합 근거"
     if vector_docs:
         return "\n\n근거: Chroma 문맥 기반"
-    if structured_data or kb_status:
+    if has_sql_evidence or kb_status:
         return "\n\n근거: DB 집계 기반"
     return ""
 
