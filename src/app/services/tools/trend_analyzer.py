@@ -65,7 +65,7 @@ def execute(
     trough: dict[str, Any] = {}
 
     if series:
-        values = [item["value"] for item in series]
+        values: list[float] = [float(item["value"]) for item in series]
         volatility = round(max(values) - min(values), 4)
         peak = max(series, key=lambda item: item["value"])
         trough = min(series, key=lambda item: item["value"])

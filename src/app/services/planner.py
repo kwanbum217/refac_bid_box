@@ -219,7 +219,9 @@ def compile_plan(execution_plan: ChatExecutionPlan) -> ChatPlan:
         if llm_plan:
             return llm_plan
 
-        steps: list[PlanStep] = []
+        # 185행 steps 와는 상호 배타 분기입니다(위쪽은 return). 이름을 바꾸면
+        # 두 분기의 참조가 갈라져 런타임 오류 위험이 크므로 재정의 검사만 끕니다.
+        steps: list[PlanStep] = []  # type: ignore[no-redef]
         for cap in execution_plan.requested_capabilities:
             step_id = f"s{len(steps) + 1}"
             if cap == "automation_status_tool":

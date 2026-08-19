@@ -3,6 +3,7 @@ import logging
 import math
 import os
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -214,7 +215,7 @@ def _preferred_model_for_features(features_dict):
 
 
 class ModelRegistry:
-    _models = {}
+    _models: dict[str, Any] = {}
 
     @classmethod
     def _get_model_root(cls):

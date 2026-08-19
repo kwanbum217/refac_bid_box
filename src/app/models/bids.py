@@ -223,7 +223,9 @@ class BidResult(Base):
     def matching_announcement(self, db) -> BidAnnouncement | None:
         """동일 공고번호/카테고리 공고를 차수 정규화까지 고려해 탐색합니다."""
         if hasattr(self, "_matching_announcement_cache"):
-            return self._matching_announcement_cache
+            # 첫 호출 뒤 인스턴스에 채워지는 동적 캐시입니다. 클래스 주석을
+            # 달면 ORM 매퍼가 오류를 내므로 여기서만 추론 한계를 무시합니다.
+            return self._matching_announcement_cache  # type: ignore[has-type]
 
         query = db.query(BidAnnouncement).filter(
             BidAnnouncement.bid_ntce_no == self.bid_ntce_no,
