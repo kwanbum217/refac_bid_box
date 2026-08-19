@@ -211,6 +211,7 @@ data/model_backups/
 # ============================================================
 *.manifest
 package-lock.json
+!frontend/package-lock.json
 node_modules/
 
 # Orca Capsule 기본 출력 디렉터리 (orca_taskctl.py --capsule-dir 기본값)

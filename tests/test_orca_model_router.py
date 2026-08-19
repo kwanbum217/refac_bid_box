@@ -27,6 +27,7 @@ from scripts.orca_model_router import (
     MODEL_POOL,
     PROBE_CONFIG,
     RISK_KEYWORDS,
+    ModelRoutingError,
     RouteResult,
     build_probe_env,
     capsule_has_write_scope,
@@ -208,6 +209,44 @@ class TestModelPoolAndSelection:
         res = select_model("builder", "high", exclude=["gemini-flash-high"])
         assert res["primary_pool"] == "claude-sonnet"
         assert res["fallback_pool"] is None
+
+    def test_select_model_all_candidates_excluded_raises_model_routing_error(self):
+        """후보가 전부 제외되면 기본 모델로 부활하지 않고 ModelRoutingError 가 발생합니다."""
+        with pytest.raises(ModelRoutingError) as exc_info:
+            select_model(
+                "builder",
+                "high",
+                exclude=["gemini-flash-high", "claude-sonnet"],
+            )
+
+        err = exc_info.value
+        assert err.role == "builder"
+        assert err.risk == "high"
+        assert "gemini-flash-high" in err.exclude
+        assert "claude-sonnet" in err.exclude
+        assert "builder" in str(err)
+        assert "high" in str(err)
+        assert "gemini-flash-high" in str(err)
+
+    def test_select_model_normal_path_regression_preserved(self):
+        """제외하지 않은 정상 경로가 종전과 동일한 모델을 반환합니다."""
+        res_builder_high = select_model("builder", "high")
+        assert res_builder_high["primary_pool"] == "gemini-flash-high"
+        assert res_builder_high["primary_model"] == "gemini-3.7-flash-high"
+        assert res_builder_high["fallback_pool"] == "claude-sonnet"
+        assert res_builder_high["fallback_model"] == "claude-sonnet-4-6"
+
+        res_reviewer_high = select_model("reviewer", "high")
+        assert res_reviewer_high["primary_pool"] == "claude-sonnet"
+        assert res_reviewer_high["primary_model"] == "claude-sonnet-4-6"
+        assert res_reviewer_high["fallback_pool"] == "gemini-flash-high"
+        assert res_reviewer_high["fallback_model"] == "gemini-3.7-flash-high"
+
+        res_investigator_low = select_model("investigator", "low")
+        assert res_investigator_low["primary_pool"] == "gemini-flash-low"
+        assert res_investigator_low["primary_model"] == "gemini-3.7-flash-low"
+        assert res_investigator_low["fallback_pool"] == "gemini-flash-medium"
+        assert res_investigator_low["fallback_model"] == "gemini-3.7-flash-medium"
 
     def test_auto_selectable_pools_distinction(self):
         """자동 선택 대상 풀과 비대상 풀이 명확히 구분됨을 검증합니다."""
@@ -628,6 +667,50 @@ class TestCLI:
         data = json.loads(capsys.readouterr().out)
         assert "error" in data
         assert "코디네이터 전용 모델" in data["error"]
+
+    def test_route_cli_model_routing_error_json(self, monkeypatch, capsys):
+        def _raise_error(*args, **kwargs):
+            raise ModelRoutingError("후보 없음", role="builder", risk="high", exclude=["a"])
+
+        monkeypatch.setattr("scripts.orca_model_router.select_model", _raise_error)
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--capsule", default=None)
+        parser.add_argument("--role", default="builder")
+        parser.add_argument("--risk", default="high")
+        parser.add_argument("--objective", default=None)
+        parser.add_argument("--why-now", default=None)
+        parser.add_argument("--model", default=None)
+        parser.add_argument("--no-probe", action="store_true", default=True)
+        parser.add_argument("--probe-timeout", type=int, default=30)
+        parser.add_argument("--json", action="store_true", default=True)
+        args = parser.parse_args([])
+
+        ret = cmd_route(args)
+        assert ret == 1
+        data = json.loads(capsys.readouterr().out)
+        assert "error" in data
+        assert "후보 없음" in data["error"]
+
+    def test_classify_cli_model_routing_error_json(self, monkeypatch, capsys):
+        def _raise_error(*args, **kwargs):
+            raise ModelRoutingError("후보 없음", role="builder", risk="high", exclude=["a"])
+
+        monkeypatch.setattr("scripts.orca_model_router.select_model", _raise_error)
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--capsule", default=None)
+        parser.add_argument("--role", default="builder")
+        parser.add_argument("--objective", default="test")
+        parser.add_argument("--why-now", default="test")
+        parser.add_argument("--json", action="store_true", default=True)
+        args = parser.parse_args([])
+
+        ret = cmd_classify(args)
+        assert ret == 1
+        data = json.loads(capsys.readouterr().out)
+        assert "error" in data
+        assert "후보 없음" in data["error"]
 
     def test_main_cli_list_dispatch(self, capsys):
         ret = main(["list"])
