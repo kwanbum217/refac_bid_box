@@ -31,6 +31,12 @@ jobs:
       - name: Run Bandit Security Scan
         run: uv run bandit -c pyproject.toml -r src/ scripts/
 
+      # 이 러너는 3.11 이지만 mypy 는 pyproject 의 python_version 3.12 로
+      # 해석합니다. 설치된 numpy 스텁이 3.12 전용 구문을 써서, 3.11 로
+      # 해석하면 스텁 파싱에서 멈춰 우리 코드를 한 줄도 검사하지 못합니다.
+      - name: Run mypy Type Check
+        run: uv run mypy src/
+
       - name: Validate Multi-Agent Rules Consistency
         run: python3 scripts/validate_agent_rules.py --quiet
 
