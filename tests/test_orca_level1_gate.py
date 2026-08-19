@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.orca_level1_gate import (
+    capsule_touches_code,
     format_failed_nodes,
     format_human_output,
     get_git_changed_files,
@@ -452,3 +453,83 @@ def test_strict_mode_treats_skipped_gates_as_failure(tmp_path: Path):
     assert strict_data["verdict"] == "fail"
     assert strict_data["summary"]["failed"] == 0
     assert strict_data["summary"]["skipped"] == data["summary"]["skipped"]
+
+
+def _write_capsule(tmp_path: Path, write_files: list[str]) -> Path:
+    """allowed_write_files 만 지정한 최소 Capsule 을 만듭니다."""
+    lines = ["schema: ORCA_TASK_CAPSULE_V2", "allowed_write_files:"]
+    lines += [f'  - "{entry}"' for entry in write_files]
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    path = tmp_path / "capsule.yaml"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_gate5_is_not_required_when_review_report_absent(tmp_path: Path):
+    """리뷰 보고를 넘기지 않은 호출에서 게이트 5 는 적용 대상이 아닙니다.
+
+    finalize 는 Level 1 을 먼저 돌리고 리뷰어를 그 뒤에 돌리므로, 이 시점에
+    보고서는 존재할 수 없습니다. 이를 필수 건너뜀으로 세면 --strict 가 어떤
+    입력에도 fail 을 냅니다.
+    """
+    capsule = _write_capsule(tmp_path, ["src/a.py"])
+
+    result = run_gate5_review_report(None, capsule)
+    assert result.status == "skipped"
+    assert result.required is False
+
+
+def test_strict_passes_when_only_non_required_gate_is_skipped(tmp_path: Path):
+    """필수 게이트가 전부 검증되면 게이트 5 건너뜀만으로 strict 가 실패하지 않습니다.
+
+    이것이 finalize --strict 가 어떤 입력에도 exit 1 을 내던 조합 회귀의
+    재발 방지 테스트입니다.
+    """
+    repo, base, branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["docs/note.md", "common.txt", "unique_new.txt"])
+
+    code, output = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        capsule=capsule,
+        as_json=True,
+        strict=True,
+    )
+    data = json.loads(output)
+    assert data["gates"]["gate5_review_report"]["status"] == "skipped"
+    assert data["gates"]["gate5_review_report"]["required"] is False
+    assert data["summary"]["blocking_skipped"] == []
+    assert data["verdict"] == "pass"
+    assert code == 0
+
+
+def test_strict_still_fails_when_code_capsule_runs_no_tests(tmp_path: Path):
+    """코드를 고치는 Task 가 테스트 없이 strict 를 통과하면 원래의 fail-open 입니다."""
+    repo, base, branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["src/a.py", "common.txt", "unique_new.txt"])
+
+    code, output = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        capsule=capsule,
+        as_json=True,
+        strict=True,
+    )
+    data = json.loads(output)
+    assert data["gates"]["gate3_tests"]["status"] == "skipped"
+    assert data["gates"]["gate3_tests"]["required"] is True
+    assert "게이트 3 테스트" in data["summary"]["blocking_skipped"]
+    assert data["verdict"] == "fail"
+    assert code == 1
+
+
+def test_capsule_touches_code_decides_test_gate_requirement(tmp_path: Path):
+    """쓰기 범위에 코드가 있는지로 테스트 게이트 필수 여부를 정합니다."""
+    assert capsule_touches_code(_write_capsule(tmp_path / "a", ["src/a.py"])) is True
+    assert capsule_touches_code(_write_capsule(tmp_path / "b", ["docs/a.md"])) is False
+    # 판단 근거가 없으면 안전한 쪽인 필수로 둡니다.
+    assert capsule_touches_code(None) is True
+    assert capsule_touches_code(tmp_path / "missing.yaml") is True
+    assert capsule_touches_code(_write_capsule(tmp_path / "c", [])) is True
