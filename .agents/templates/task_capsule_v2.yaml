@@ -50,8 +50,11 @@ required_change:
 acceptance:
   - "구체적 완료 조건 및 기능/성능 만족 기준"
 
-# 게이트 3 이 이 목록을 그대로 실행합니다. frontend 를 고치면 frontend 검증을
-# 함께 적습니다. 허용 목록: uv run pytest ..., npm ci, npm run <script>
+# 게이트 3 이 이 목록을 그대로 실행하고, 변경이 요구하는 검증 능력을 전부
+# 덮는지 확인합니다. frontend 는 npm test 와 build, Dockerfile 은 docker build,
+# compose 는 docker compose config 가 필요합니다.
+# 허용 목록: uv run pytest ..., npm ci, npm run <script>, docker build,
+#            docker compose config
 verification_commands:
   - "uv run pytest tests/ -q"
   - "python3 scripts/validate_agent_rules.py --quiet"

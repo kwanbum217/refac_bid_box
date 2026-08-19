@@ -456,6 +456,25 @@ def test_check_current_state_sections_unverifiable_commit_warns(tmp_path: Path):
     assert res.warn
 
 
+def test_check_current_state_sections_stale_commit_fails(tmp_path: Path, monkeypatch):
+    """허용 지연을 넘긴 source_commit 은 WARN 이 아니라 FAIL 입니다.
+
+    경고로 두면 아무도 고치지 않습니다. 2026-08-19 측정에서 6 커밋 뒤처진 채
+    WARN 만 내고 exit 0 이었습니다.
+    """
+    body = (
+        "# state\n> updated_at: 2026-08-15\n> source_commit: `abc1234`\nG1 G2 G3\ndocs/ops/x.md\n"
+    )
+    _write_current_state(tmp_path, body)
+    monkeypatch.setattr(
+        "scripts.validate_agent_rules._commits_behind_head",
+        lambda root, commit: CURRENT_STATE_LAG_TOLERANCE + 1,
+    )
+    res = check_current_state_sections(tmp_path)
+    assert not res.ok
+    assert "뒤처짐" in res.detail
+
+
 def test_check_current_state_sections_real_repo_within_tolerance():
     """실제 저장소의 source_commit 은 허용 지연 안에 있어야 합니다.
 

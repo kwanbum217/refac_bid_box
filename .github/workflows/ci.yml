@@ -11,6 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # 얕은 클론에서는 CURRENT_STATE 의 source_commit 을 조회하지 못해
+          # 신선도 검사가 항상 "미검증" 으로 내려앉습니다. 전체 이력을 받아야
+          # CI 가 실제로 검사합니다.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5

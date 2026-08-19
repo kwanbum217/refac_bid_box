@@ -16,6 +16,7 @@ from scripts.orca_level1_gate import (
     parse_pytest_output,
     parse_validate_agent_rules_output,
     parse_verification_command,
+    required_capabilities,
     requires_test_verification,
     run_gate1_changed_files,
     run_gate2_scope,
@@ -24,7 +25,6 @@ from scripts.orca_level1_gate import (
     run_gate4b_lint,
     run_gate5_review_report,
     run_level1_gate,
-    verification_domains,
 )
 
 GIT_BIN = shutil.which("git") or "/usr/bin/git"
@@ -630,29 +630,51 @@ def test_rename_to_document_suffix_does_not_exempt_verification(tmp_path: Path):
 
     # 새 경로만 보면 면제되지만, 원본을 함께 보면 backend 검증이 필요합니다.
     assert requires_test_verification(changed) is False
-    assert verification_domains(changed + renames) == {"backend"}
+    assert required_capabilities(changed + renames) == {"backend_pytest"}
 
     g1 = run_gate1_changed_files(repo, "main", "feature")
     assert g1.raw_data["rename_sources"] == ["a.py"]
 
 
-def test_verification_domains_separates_frontend_and_backend():
-    assert verification_domains(["src/a.py"]) == {"backend"}
-    assert verification_domains(["frontend/src/App.tsx"]) == {"frontend"}
-    assert verification_domains(["frontend/README.md"]) == set()
-    assert verification_domains(["src/a.py", "frontend/src/App.tsx"]) == {"backend", "frontend"}
+def test_required_capabilities_separates_change_kinds():
+    """영역 하나로 묶으면 그 영역의 아무 명령이나 하나로 덮인 것이 됩니다."""
+    assert required_capabilities(["src/a.py"]) == {"backend_pytest"}
+    assert required_capabilities(["frontend/src/App.tsx"]) == {"frontend_test", "frontend_build"}
+    assert required_capabilities(["frontend/README.md"]) == set()
+
+    # infra 변경을 backend pytest 가 덮으면 안 됩니다.
+    assert required_capabilities(["Dockerfile"]) == {"docker_build"}
+    assert required_capabilities(["frontend/Dockerfile"]) == {"docker_build"}
+    assert required_capabilities(["docker-compose.yml"]) == {"compose_config"}
+    assert required_capabilities(["docker-compose.restore.yml"]) == {"compose_config"}
+
+    # 로컬 검증 수단이 없는 워크플로우는 backend 로 둡니다. 러너 없는 능력을
+    # 필수로 걸면 워크플로우 변경이 게이트에서 교착합니다.
+    assert required_capabilities([".github/workflows/ci.yml"]) == {"backend_pytest"}
+
+    assert required_capabilities(["src/a.py", "frontend/src/App.tsx"]) == {
+        "backend_pytest",
+        "frontend_test",
+        "frontend_build",
+    }
 
 
 def test_parse_verification_command_allows_only_known_runners():
     """Capsule 문자열을 셸에 넘기면 임의 명령 실행 통로가 됩니다."""
     pytest_cmd = parse_verification_command("uv run pytest tests/test_x.py -q")
     assert pytest_cmd.argv == ["uv", "run", "pytest", "tests/test_x.py", "-q"]
-    assert pytest_cmd.domain == "backend"
+    assert pytest_cmd.provides == frozenset({"backend_pytest"})
 
     npm_cmd = parse_verification_command("npm --prefix frontend run build")
     assert npm_cmd.argv == ["npm", "run", "build"]
     assert npm_cmd.cwd == "frontend"
-    assert npm_cmd.domain == "frontend"
+    assert npm_cmd.provides == frozenset({"frontend_build"})
+
+    docker_cmd = parse_verification_command("docker build -t x .")
+    assert docker_cmd.provides == frozenset({"docker_build"})
+    assert parse_verification_command("docker compose config -q").provides == frozenset(
+        {"compose_config"}
+    )
 
     # 게이트 4 가 이미 수행하므로 실행하지 않고 인식만 합니다.
     assert parse_verification_command("python3 scripts/validate_agent_rules.py --quiet").argv == []
@@ -663,6 +685,8 @@ def test_parse_verification_command_allows_only_known_runners():
         "npm run build && rm -rf .",
         "npm install",
         "npm --prefix ../../etc run build",
+        "docker run --rm alpine sh",
+        "docker compose up -d",
     ):
         with pytest.raises(ValueError):
             parse_verification_command(rejected)
@@ -676,12 +700,12 @@ def test_gate3_blocks_frontend_change_verified_only_by_backend_pytest():
             [],
             Path("."),
             commands=["uv run pytest tests/ -q"],
-            required_domains={"backend", "frontend"},
+            capabilities={"backend_pytest", "frontend_test"},
         )
 
     assert g.status == "skipped"
     assert g.required is True
-    assert g.raw_data["uncovered_domains"] == ["frontend"]
+    assert g.raw_data["uncovered_capabilities"] == ["frontend_test"]
 
 
 def test_gate3_passes_when_every_required_domain_is_covered(tmp_path: Path):
@@ -692,16 +716,49 @@ def test_gate3_passes_when_every_required_domain_is_covered(tmp_path: Path):
             [],
             tmp_path,
             commands=["uv run pytest tests/ -q", "npm --prefix frontend run test"],
-            required_domains={"backend", "frontend"},
+            capabilities={"backend_pytest", "frontend_test"},
         )
 
     assert g.status == "pass"
-    assert g.raw_data["uncovered_domains"] == []
+    assert g.raw_data["uncovered_capabilities"] == []
     assert len(g.raw_data["results"]) == 2
 
 
 def test_gate3_rejects_unknown_verification_command():
     """인식하지 못한 명령을 조용히 버리면 검증한 적 없는 Task 가 통과합니다."""
-    g = run_gate3_tests([], Path("."), commands=["make lint"], required_domains={"backend"})
+    g = run_gate3_tests([], Path("."), commands=["make lint"], capabilities={"backend_pytest"})
     assert g.status == "fail"
     assert g.raw_data["invalid_commands"]
+
+
+def test_frontend_lint_alone_does_not_cover_test_and_build():
+    """영역이 아니라 능력으로 봐야 lint 하나가 test 와 build 를 대신하지 못합니다."""
+    assert parse_verification_command("npm --prefix frontend run lint").provides == frozenset()
+
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "lint ok", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["npm --prefix frontend run lint"],
+            capabilities={"frontend_test", "frontend_build"},
+        )
+
+    assert g.status == "skipped"
+    assert g.required is True
+    assert g.raw_data["uncovered_capabilities"] == ["frontend_build", "frontend_test"]
+
+
+def test_dockerfile_change_is_not_covered_by_backend_pytest():
+    """infra 변경을 무관한 backend pytest 통과로 넘기면 안 됩니다."""
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "5 passed in 1s", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["uv run pytest tests/ -q"],
+            capabilities=required_capabilities(["Dockerfile"]),
+        )
+
+    assert g.status == "skipped"
+    assert g.raw_data["uncovered_capabilities"] == ["docker_build"]
