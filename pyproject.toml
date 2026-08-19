@@ -51,6 +51,7 @@ dev = [
     "ruff>=0.6.0",
     "bandit>=1.7.0",
     "pre-commit>=3.7.0",
+    "mypy>=1.11.0",
 ]
 
 # ==========================================
@@ -174,7 +175,15 @@ line-ending = "lf"
 # mypy (정적 타입 검사)
 # ==========================================
 [tool.mypy]
-python_version = "3.11"
+# 런타임 하한은 3.11 이지만 타입 검사는 3.12 문법으로 해석합니다. 설치된
+# numpy 스텁이 3.12 전용 `type` 문을 써서, 3.11 로 해석하면 스텁 파싱에서
+# 멈춰 우리 코드를 한 줄도 검사하지 못합니다. 3.11 호환은 ruff 의
+# target-version py311 과 CI 의 3.11 테스트가 담당합니다.
+python_version = "3.12"
+# Pydantic 모델의 기본값과 별칭을 mypy 가 알지 못하면 정상 호출이 전부
+# "Missing named argument" 로 잡힙니다. 플러그인은 이미 의존성인 pydantic 에
+# 포함돼 있어 새 패키지가 필요하지 않습니다.
+plugins = ["pydantic.mypy"]
 disallow_untyped_defs = false
 warn_return_any = false
 warn_unused_ignores = true
@@ -189,6 +198,8 @@ disable_error_code = [
     "return-value",
     "arg-type",
 ]
+
+
 exclude = [
     "data/",
     "chroma_db/",
