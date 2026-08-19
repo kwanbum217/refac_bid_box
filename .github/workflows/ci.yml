@@ -45,10 +45,9 @@ jobs:
         with:
           node-version: '22'
 
-      # package-lock.json 을 저장소에서 추적하지 않으므로 npm ci 는 항상 실패합니다.
       - name: Install Frontend Dependencies
         working-directory: ./frontend
-        run: npm install
+        run: npm ci
 
       - name: Run Frontend Tests
         working-directory: ./frontend

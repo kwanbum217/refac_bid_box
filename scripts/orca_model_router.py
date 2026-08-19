@@ -41,6 +41,35 @@ except (ModuleNotFoundError, ImportError):
         sys.path.insert(0, str(_repo_root))
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 
+__all__ = [
+    "FREE_POOL_ELIGIBLE_ROLES",
+    "FREE_POOL_MAX_RISK",
+    "FREE_POOL_ORDER",
+    "MODEL_POOL",
+    "PROBE_CONFIG",
+    "RISK_KEYWORDS",
+    "TIER_POLICY",
+    "ModelRoutingError",
+    "RouteResult",
+    "build_probe_env",
+    "capsule_has_write_scope",
+    "classify_from_capsule",
+    "classify_risk",
+    "classify_risk_with_reasons",
+    "cmd_classify",
+    "cmd_list",
+    "cmd_probe",
+    "cmd_route",
+    "free_pool_eligibility",
+    "is_coordinator_model",
+    "load_repo_env",
+    "main",
+    "preflight",
+    "probe_model",
+    "route",
+    "select_model",
+]
+
 # ---------------------------------------------------------------------------
 # 프로바이더별 probe 설정
 # ---------------------------------------------------------------------------
@@ -369,6 +398,27 @@ RISK_KEYWORDS: dict[str, list[str]] = {
 }
 
 # ---------------------------------------------------------------------------
+# 예외 클래스
+# ---------------------------------------------------------------------------
+
+
+class ModelRoutingError(RuntimeError):
+    """후보 모델이 모두 제외되었거나 선택 가능한 모델이 없을 때 발생하는 예외."""
+
+    def __init__(
+        self,
+        message: str,
+        role: str | None = None,
+        risk: str | None = None,
+        exclude: list[str] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.role = role
+        self.risk = risk
+        self.exclude = list(exclude) if exclude is not None else []
+
+
+# ---------------------------------------------------------------------------
 # 데이터 클래스
 # ---------------------------------------------------------------------------
 
@@ -571,7 +621,13 @@ def select_model(
                 break
 
     if primary is None:
-        primary = "gemini-flash-high"
+        exclude_str = ", ".join(exclude) if exclude else "(없음)"
+        raise ModelRoutingError(
+            f"선택 가능한 모델 후보가 없습니다. (role={role}, risk={risk}, exclude=[{exclude_str}])",
+            role=role,
+            risk=risk,
+            exclude=exclude,
+        )
 
     primary_model = MODEL_POOL[primary]["id"]
     fallback_model = MODEL_POOL[fallback]["id"] if fallback and fallback in MODEL_POOL else None
@@ -1010,12 +1066,19 @@ def cmd_classify(args: argparse.Namespace) -> int:
         risk, reasons = classify_risk_with_reasons(combined)
         has_write_scope = True
 
-    selection = select_model(
-        role=role,
-        risk=risk,
-        allow_free=allow_free,
-        has_write_scope=has_write_scope,
-    )
+    try:
+        selection = select_model(
+            role=role,
+            risk=risk,
+            allow_free=allow_free,
+            has_write_scope=has_write_scope,
+        )
+    except ModelRoutingError as exc:
+        if args.json:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2))
+        else:
+            print(f"오류: {exc}", file=sys.stderr)
+        return 1
 
     if args.json:
         print(
@@ -1077,7 +1140,7 @@ def cmd_route(args: argparse.Namespace) -> int:
             explicit_model=args.model,
             allow_free=getattr(args, "allow_free", False),
         )
-    except ValueError as exc:
+    except (ValueError, ModelRoutingError) as exc:
         if args.json:
             print(json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2))
         else:
