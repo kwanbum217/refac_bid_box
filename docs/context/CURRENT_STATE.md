@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-18
-> **source_commit**: `c9a0160`
+> **source_commit**: `96b94f7`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -87,13 +87,12 @@
 2. **대형 모듈 분할 — 종결**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. 함수 길이 과제도 종결. **줄 수로 자동 분할하지 않는다.** 판정표는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 8장.
 3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.** 경계와 감사 오판 1건은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 2.9·2.10.
 4. **린터·보안 스캔 정합 — 종결**: `ruff format` 과 `pre-commit` 훅 연결(`c66b55f`), 데이터·모델 레지스트리는 훅 제외(G1). bandit 47건은 전부 오탐 판정 후 `# nosec` 로 0건화. **이 실패가 CI 를 9시간 막아 macOS·Windows 잡이 실행되지 않았고, 열어 보니 Windows 결함 2건이 있었다**(`bf026a9`).
-5. **제어 경계 fail-open 제거 — 종결, 9건**: 공통 기전은 `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 것이다. 최악은 수집 구간 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결, `e1e50c5`). 나머지는 판정 4·실행 3·런타임 1건(`dcefb38`,`d449f93`,`4c70a83`,`31cb843`,`acd15ca`). CI 에 `ubuntu-latest` 와 `docker-build` 를 넣어 **배포 런타임 Linux 가 처음으로 검증된다.** **9건 중 5건은 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.** 건별 목록은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 10장.
-6. **fail-open 전수 조사 — 확정분 종결**: 워커 3대 병렬 조사로 후보 16건. 5건 실재 확정, 11건 미검증. G1 검증 스크립트가 차이를 찾고도 종료 코드 0 을 내던 건은 수정했다(`548ac1e`). **`verify_migration.py` 무조건 통과와 같은 결함의 재발이다.** **확정 5건은 전부 수정 완료**(제어 평면 2건은 8번, 챗봇 "추천 투찰가 0원" 표시와 PSI 표본 부재의 STABLE 승격은 `8481522`). 미검증 11건 중 3건(예측 스텝 미검증 통과, 점검 치명 경고 통과, 스케줄 후속 집계 실패 은폐)을 Cursor Auto 워커로 검증해 실재 확정 후 수정했다(`e094887`). **나머지 5건도 DeepSeek·Cursor 워커로 전수 검증해 전부 실재 확정**했고, 4건을 수정했다(`90ae36c`). 집계·캐시 예열 실패 1건은 `cache_warmed` 로 이미 구분 가능해 수정 없이 종결한다. ChromaDB 검색 실패와 0건을 구분하는 건은 호출부가 얽혀 별도 과업으로 남긴다. 보고서는 `docs/analysis/task_s1~s3.md`.
+5. **fail-open 제거 — 종결, 3라운드 누적 34건**: 공통 기전은 `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 것이다. 최악은 수집 구간 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결). 전수 조사 후보 16건은 **전량 검증을 마쳤고 미검증 잔여는 없다**. **다수는 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.** 건별 목록과 재발 금지 사항은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 10장과 12장.
+6. **상태 전파 경계 — 종결, 3차 감사 10건**: 이전 라운드가 "검증하지 않고 성공" 이었다면 이번은 **하위가 실패·불능을 아는데 상위 orchestration·API 경계에서 그 상태를 잃어버리는** 계열이다. `finalize --strict` 는 게이트 5 건너뜀 때문에 **어떤 입력에도 실패했고**, 게이트에 적용 대상(`required`) 개념을 넣어 닫았다. KB 재구축 실패 status 유실, 검사 불능 `None` 의 성공 취급, 벡터 검색 실패와 0건의 미구분, 조회 미수행의 0 통계 유입, 보고 `commit_count` 타입 우회, stale 플래그 미전파를 함께 고쳤다. **`probe_model` 이 풀 키를 그대로 CLI 에 넘겨 살아 있는 모델을 사용 불가로 오판하던 신규 결함도 잡았다.**
 7. **무료 워커 풀 정비 — 종결**: Gemini 주간 한도 소진에 대응해 `opencode/deepseek-v4-flash-free` 를 등록하고 무료 풀 개방을 `builder` 와 쓰기 범위까지 넓혔다(`reviewer` 는 제외). **DeepSeek 는 주력 워커로 확정**(`40efc5c`, `a541f64`). Cerebras gemma4 는 분당 30K 토큰 상한 때문에 에이전트 워커로 불가하다. 960바이트 지시로도 재현돼 **지시 압축으로는 해결되지 않음을 확정**했다(병목은 하네스 오버헤드). 근거와 기동 규약은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 11장.
-8. **제어 평면 검증 경계 계약 불일치 — 종결, 11건**: 2차 외부 감사 지적 9건이 전부 실재했고, 전수 조사 확정분 2건(챗봇 0원 표시, PSI STABLE 승격)도 함께 닫았다. **Capsule 이 가르치는 보고 스키마가 검증기 요구와 어긋나 필수 필드 7개를 누락**시켜, 워커가 지시를 정확히 따를수록 거부됐다. `finalize` 가 Reviewer 에 잘못된 인자를 넘겨 **Level 2 는 한 번도 실행된 적이 없었고**, 기존 테스트 89건은 `_run_command` mock 때문에 이를 놓쳤다. 그 외 테스트 미실행 통과, 없는 작업 트리의 주 저장소 대체, 빈 `allowed_write_files` 의 전면 허용, 무작업 `succeeded` 통과, `run_mode` fallback, `--json` 호출의 비JSON 응답 통과(`f4b4db0`,`a541f64`,`ac56ceb`). **모델 라우터는 `TIER_POLICY` 를 정본으로 확정**하고 `suitable_for` 불일치 9건을 정렬해 불변식으로 묶었다. 상세는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 12장.
-9. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
-10. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
-11. **수집 2·3회차 관찰**: Docker 필요.
+8. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
+9. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
+10. **수집 2·3회차 관찰**: Docker 필요.
 
 ---
 
@@ -114,8 +113,6 @@
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama 다중화 시 자원 점유와 c4 기준선 미확정.
 - 블로킹 I/O 12건의 P95·태스크 처리량 개선치 미측정(4장 3번).
-- fail-open 후보 11건 미검증(4장 6번).
-- 모델 메타데이터 `suitable_for` 와 `TIER_POLICY` 가 광범위하게 불일치. `gemini-flash-low` 만 notes 에 금지가 명시돼 수정했고(4장 5번), 나머지는 어느 쪽이 정본인지 미확정.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
