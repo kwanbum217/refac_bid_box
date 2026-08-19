@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security quality check-rules check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security typecheck quality check-rules check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -21,7 +21,8 @@ help:
 	@echo "  make logs           - 컨테이너 실시간 로그 확인"
 	@echo "  make lint           - Ruff 포맷팅 및 린트 검사"
 	@echo "  make security       - Bandit 보안 스캔"
-	@echo "  make quality        - mypy 타입 검사 & jscpd 중복 코드 검사"
+	@echo "  make typecheck      - mypy 타입 검사 (릴리스 게이트 포함)"
+	@echo "  make quality        - typecheck & jscpd 중복 코드 검사"
 	@echo "  make check-rules    - 다중 에이전트 규칙 정합성 검증"
 	@echo "  make check-all      - 전체 린트, 보안, 품질, 규칙 정합성 검사"
 	@echo "  make migrate-verify - 데이터 보존 무손실 실측 검증"
@@ -102,14 +103,16 @@ lint:
 security:
 	$(PYTHON) -m bandit -c pyproject.toml -r src/ scripts/
 
-quality:
+typecheck:
 	$(PYTHON) -m mypy src/
+
+quality: typecheck
 	npx jscpd src/ frontend/src/ --threshold 5
 
 check-rules:
 	$(PYTHON) scripts/validate_agent_rules.py
 
-check-all: lint security quality check-rules
+check-all: lint security typecheck check-rules
 	@echo "전체 코드 품질 및 정합성 검사 통과"
 
 test:
