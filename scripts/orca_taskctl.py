@@ -99,6 +99,12 @@ CAPABILITY_COMMANDS = [
     (CAP_WORKFLOW_LINT, "uv run actionlint"),
 ]
 
+# docker 를 점유하는 검증을 붙이면서 공유 자원 선언을 빼면, 세 워커가 동시에
+# 같은 daemon 과 빌드 캐시를 쓰게 됩니다. 검증 부착과 자원 선언은 같은 판정에서
+# 함께 나와야 합니다. resource 와 ownership 값은 Capsule v2 규약의 열거형입니다.
+DOCKER_CAPABILITIES = frozenset({CAP_DOCKER_BUILD, CAP_COMPOSE_CONFIG})
+BASE_SHARED_RESOURCES = [("features_py", "read_only")]
+
 ACTIVE_TASK_STATUSES = frozenset({"dispatched"})
 
 # 기본 Capsule 템플릿
@@ -141,8 +147,7 @@ forbidden:
   - "이모지 사용 금지 (주석, 커밋 메시지, 문서)"
 
 shared_resources:
-  - resource: features_py
-    ownership: read_only
+{shared_resources}
 
 required_change:
 {required_change}
@@ -239,6 +244,28 @@ def _format_yaml_list(items: list[str], indent: str = "  - ") -> str:
     for item in items:
         escaped = item.replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'{indent}"{escaped}"')
+    return "\n".join(lines)
+
+
+def resolve_shared_resources(write_files: list[str]) -> list[tuple[str, str]]:
+    """쓰기 범위가 점유하는 공유 자원과 소유권 수준을 정합니다.
+
+    docker 검증이 붙는 Task 는 docker 를 배타 점유합니다. 스킬 문서는 이를
+    요구하는데 템플릿은 features_py 만 고정으로 적고 있었습니다.
+    """
+    paths = [str(path).strip() for path in write_files if str(path).strip()]
+    resources = list(BASE_SHARED_RESOURCES)
+    if required_capabilities(paths) & DOCKER_CAPABILITIES:
+        resources.append(("docker", "exclusive"))
+    return resources
+
+
+def _format_shared_resources(resources: list[tuple[str, str]]) -> str:
+    """shared_resources 를 Capsule YAML 블록으로 포맷합니다."""
+    lines = []
+    for resource, ownership in resources:
+        lines.append(f"  - resource: {resource}")
+        lines.append(f"    ownership: {ownership}")
     return "\n".join(lines)
 
 
@@ -545,6 +572,7 @@ def expand_intent_to_capsule(
         ),
         required_change=required_change_formatted,
         acceptance=acceptance_formatted,
+        shared_resources=_format_shared_resources(resolve_shared_resources(write_files)),
         verification_commands=_format_yaml_list(resolve_verification_commands(intent, write_files)),
         artifact_paths=artifact_paths_formatted,
         report_path=report_path,

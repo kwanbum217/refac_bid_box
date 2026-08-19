@@ -2694,3 +2694,21 @@ def test_workflow_scope_gets_actionlint():
     from scripts.orca_taskctl import resolve_verification_commands
 
     assert "uv run actionlint" in resolve_verification_commands({}, [".github/workflows/ci.yml"])
+
+
+def test_docker_verification_declares_docker_as_shared_resource():
+    """docker 검증을 붙이면서 공유 자원 선언을 빼면 워커들이 같은 daemon 을 동시에 씁니다."""
+    from scripts.orca_taskctl import resolve_shared_resources
+
+    assert resolve_shared_resources(["src/a.py"]) == [("features_py", "read_only")]
+    assert ("docker", "exclusive") in resolve_shared_resources(["Dockerfile"])
+    assert ("docker", "exclusive") in resolve_shared_resources([".dockerignore"])
+    assert ("docker", "exclusive") in resolve_shared_resources(["docker-compose.yml"])
+
+    capsule = expand_intent_to_capsule(
+        {"objective": "이미지 수정", "scope": ["Dockerfile"]}, task_id="task_img"
+    )
+    block = capsule[capsule.index("shared_resources:") : capsule.index("required_change:")]
+    assert "resource: docker" in block
+    assert "ownership: exclusive" in block
+    assert "docker build -t refac-bid-box:orca-gate ." in capsule
