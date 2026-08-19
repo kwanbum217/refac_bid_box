@@ -454,10 +454,10 @@ def _empty_result(plan: RetrievalPlan, hint: str) -> dict[str, Any]:
     return {
         "filters": dict(plan.filters or {}),
         "summary": {
-            "total_bids": 0,
-            "announcement_count": 0,
-            "average_winning_rate": 0.0,
-            "total_winning_amount": 0.0,
+            "total_bids": None,
+            "announcement_count": None,
+            "average_winning_rate": None,
+            "total_winning_amount": None,
             "top_winners": [],
             "top_institutions": [],
             "top_announcements": [],

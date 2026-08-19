@@ -9,17 +9,30 @@ from __future__ import annotations
 from src.rag.query_planning import _normalize_text
 
 
+def _stat_value_text(value) -> str:
+    """0 은 측정값, None 은 값 없음. 값 없음은 0 으로 표기하지 않는다."""
+    if value is None:
+        return "확인되지 않음"
+    return str(value)
+
+
 def _extract_statistical_snapshot(structured_data: dict | None) -> str:
     if not structured_data:
         return ""
 
+    if structured_data.get("query_skipped"):
+        lines = ["정형 데이터 집계: 조회를 수행하지 않아 통계가 없습니다."]
+        for item in structured_data.get("insufficiency_hints") or []:
+            lines.append(f"- 한계: {item}")
+        return "\n".join(lines)
+
     summary = structured_data.get("summary") or {}
     lines = [
         "정형 데이터 집계:",
-        f"- 낙찰 결과 수: {summary.get('total_bids', 0)}",
-        f"- 공고 수: {summary.get('announcement_count', 0)}",
-        f"- 평균 낙찰률: {summary.get('average_winning_rate', 0)}",
-        f"- 총 낙찰 금액: {summary.get('total_winning_amount', 0)}",
+        f"- 낙찰 결과 수: {_stat_value_text(summary.get('total_bids'))}",
+        f"- 공고 수: {_stat_value_text(summary.get('announcement_count'))}",
+        f"- 평균 낙찰률: {_stat_value_text(summary.get('average_winning_rate'))}",
+        f"- 총 낙찰 금액: {_stat_value_text(summary.get('total_winning_amount'))}",
     ]
 
     top_winners = summary.get("top_winners") or []
