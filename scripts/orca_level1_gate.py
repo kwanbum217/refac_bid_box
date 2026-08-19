@@ -96,26 +96,60 @@ def run_command_safe(
         raise GateToolError(f"명령 실행 실패 ({' '.join(cmd)}): {exc}") from exc
 
 
+def parse_name_status_z(raw: str) -> tuple[list[str], list[str]]:
+    """git diff --name-status -z 출력에서 (변경 경로, rename/copy 원본 경로) 를 나눕니다.
+
+    -z 는 필드를 NUL 로 구분하므로 공백이나 비ASCII 경로가 따옴표로 감싸지지
+    않습니다. rename(R)/copy(C) 항목만 경로 필드를 둘 소비합니다.
+    """
+    fields = raw.split("\0")
+    changed: list[str] = []
+    sources: list[str] = []
+    idx = 0
+    while idx < len(fields):
+        status = fields[idx].strip()
+        idx += 1
+        if not status:
+            continue
+        if status[0] in {"R", "C"}:
+            if idx + 1 >= len(fields):
+                break
+            sources.append(fields[idx])
+            changed.append(fields[idx + 1])
+            idx += 2
+            continue
+        if idx >= len(fields):
+            break
+        changed.append(fields[idx])
+        idx += 1
+    return [p for p in changed if p], [p for p in sources if p]
+
+
 def get_git_changed_files(
     repo: Path,
     base: str,
     branch: str,
     timeout: int = DEFAULT_GIT_TIMEOUT,
-) -> tuple[list[str], list[str]]:
-    """git diff 와 git ls-tree 로 changed_files 와 unique_new_files 를 구합니다.
+) -> tuple[list[str], list[str], list[str]]:
+    """git diff 와 git ls-tree 로 변경 파일, 고유 신규 파일, rename 원본을 구합니다.
 
-    - changed_files: git diff --name-only <base>...<branch> (merge-base 기준 변경 파일)
+    - changed_files: merge-base 기준 변경 파일 (rename 은 새 경로)
     - unique_new_files: <branch> 에만 있고 <base> 에는 없는 고유 신규 파일
+    - rename_sources: rename/copy 로 사라지거나 복사된 원본 경로
+
+    --name-only 는 rename 의 새 경로만 알려 주므로 `a.py` 를 `docs.md` 로 옮긴
+    변경이 문서 전용 변경으로 보였습니다. --name-status 로 원본 경로까지 받아
+    확장자 판정에 함께 넣습니다.
     """
-    # 1. changed_files (3-dot diff)
-    diff_cmd = ["git", "diff", "--name-only", f"{base}...{branch}"]
+    # 1. changed_files, rename_sources (3-dot diff)
+    diff_cmd = ["git", "diff", "--name-status", "-z", "-M", f"{base}...{branch}"]
     code, stdout, stderr, timed_out = run_command_safe(diff_cmd, repo, timeout)
     if timed_out:
         raise GateToolError(f"git diff 타임아웃 ({timeout}초)")
     if code != 0:
         raise GateToolError(f"git diff 실패 (종료 코드 {code}): {stderr.strip()}")
 
-    changed_files = [line.strip() for line in stdout.splitlines() if line.strip()]
+    changed_files, rename_sources = parse_name_status_z(stdout)
 
     # 2. branch 파일 목록
     ls_branch_cmd = ["git", "ls-tree", "-r", "--name-only", branch]
@@ -138,7 +172,7 @@ def get_git_changed_files(
     base_files = {line.strip() for line in stdout.splitlines() if line.strip()}
 
     unique_new_files = sorted(branch_files - base_files)
-    return changed_files, unique_new_files
+    return changed_files, unique_new_files, rename_sources
 
 
 # 검증을 면제해도 되는 문서 전용 확장자입니다. 코드 확장자를 나열하는 방식은
@@ -146,6 +180,25 @@ def get_git_changed_files(
 # 코드로 보아 `.ts`, `.tsx`, Dockerfile 변경이 테스트 없이 strict 를 통과했습니다.
 # 기본은 "검증 필요" 이고 문서만 바뀐 것이 증명될 때만 면제합니다.
 DOC_ONLY_SUFFIXES = frozenset({".md", ".rst", ".adoc"})
+
+
+# 검증 영역 구분. backend 는 pytest 가, frontend 는 frontend/ 의 npm 스크립트가
+# 덮습니다. 영역을 나누지 않으면 .tsx 만 고친 Task 가 무관한 backend pytest 통과로
+# 게이트 3 을 넘습니다. 판정 필요 여부만 보던 2026-08-19 이전 구현의 남은 구멍입니다.
+FRONTEND_PATH_PREFIXES = ("frontend/",)
+
+
+def verification_domains(paths: list[str]) -> set[str]:
+    """변경 경로들이 어느 검증 영역의 확인을 요구하는지 판정합니다."""
+    domains: set[str] = set()
+    for raw in paths:
+        path = raw.strip()
+        if not path:
+            continue
+        if Path(path).suffix.lower() in DOC_ONLY_SUFFIXES:
+            continue
+        domains.add("frontend" if path.startswith(FRONTEND_PATH_PREFIXES) else "backend")
+    return domains
 
 
 def requires_test_verification(changed_files: list[str]) -> bool:
@@ -159,11 +212,7 @@ def requires_test_verification(changed_files: list[str]) -> bool:
     변경이 없으면 검증할 대상도 없으므로 필수가 아니다. 무작업 완료 보고는
     summarize_worker_done 의 commit_count 검사가 따로 막는다.
     """
-    if not changed_files:
-        return False
-    return not all(
-        Path(path).suffix.lower() in DOC_ONLY_SUFFIXES for path in changed_files if path.strip()
-    )
+    return bool(verification_domains(changed_files))
 
 
 def run_gate1_changed_files(
@@ -173,13 +222,17 @@ def run_gate1_changed_files(
     timeout: int = DEFAULT_GIT_TIMEOUT,
 ) -> GateResult:
     """게이트 1: 변경 파일 및 고유 신규 파일 확인."""
-    changed_files, unique_new_files = get_git_changed_files(repo, base, branch, timeout)
+    changed_files, unique_new_files, rename_sources = get_git_changed_files(
+        repo, base, branch, timeout
+    )
 
     summary = f"changed_files {len(changed_files)}건, unique_new_files {len(unique_new_files)}건"
     details: list[str] = [
         f"changed_files: {', '.join(changed_files) if changed_files else '(없음)'}",
         f"unique_new_files: {', '.join(unique_new_files) if unique_new_files else '(없음)'}",
     ]
+    if rename_sources:
+        details.append(f"rename_sources: {', '.join(rename_sources)}")
     return GateResult(
         name="게이트 1 변경 파일",
         status="pass",
@@ -188,6 +241,7 @@ def run_gate1_changed_files(
         raw_data={
             "changed_files": changed_files,
             "unique_new_files": unique_new_files,
+            "rename_sources": rename_sources,
         },
     )
 
@@ -293,70 +347,223 @@ def format_failed_nodes(nodes: list[str], max_show: int = 5) -> str:
     return out
 
 
+NPM_SCRIPT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:_-]*$")
+
+
+@dataclass
+class VerificationCommand:
+    """게이트 3 이 실행할 수 있는 형태로 해석된 검증 명령."""
+
+    source: str
+    argv: list[str]
+    cwd: str | None = None
+    domain: str | None = None
+    kind: str = "pytest"
+
+
+def _parse_npm_command(source: str, tokens: list[str]) -> VerificationCommand:
+    """npm 검증 명령을 해석합니다. `npm ci` 와 `npm run <script>` 만 허용합니다."""
+    prefix: str | None = None
+    rest: list[str] = []
+    idx = 1
+    while idx < len(tokens):
+        arg = tokens[idx]
+        if arg == "--prefix":
+            if idx + 1 >= len(tokens):
+                raise ValueError("--prefix 뒤에 경로가 없습니다")
+            prefix = tokens[idx + 1]
+            idx += 2
+            continue
+        if arg.startswith("--prefix="):
+            prefix = arg.split("=", 1)[1]
+            idx += 1
+            continue
+        rest.append(arg)
+        idx += 1
+
+    if prefix is not None:
+        prefix_path = Path(prefix)
+        if prefix_path.is_absolute() or ".." in prefix_path.parts:
+            raise ValueError("--prefix 는 저장소 안의 상대 경로여야 합니다")
+        prefix = prefix_path.as_posix()
+
+    if rest == ["ci"]:
+        # 설치는 검증이 아니므로 어느 영역도 덮지 않습니다.
+        return VerificationCommand(source, ["npm", "ci"], prefix, None, "npm")
+    if len(rest) == 2 and rest[0] == "run" and NPM_SCRIPT_RE.match(rest[1]):
+        covered = "frontend" if prefix and prefix.startswith("frontend") else None
+        return VerificationCommand(source, ["npm", "run", rest[1]], prefix, covered, "npm")
+    raise ValueError("허용되는 npm 명령은 'npm ci' 와 'npm run <script>' 뿐입니다")
+
+
+def parse_verification_command(command: str) -> VerificationCommand:
+    """Capsule 의 검증 명령 문자열을 허용 목록에 대조해 실행 사양으로 바꿉니다.
+
+    임의 문자열을 셸에 넘기면 Capsule 을 쓰는 쪽이 코디네이터 권한으로 아무
+    명령이나 실행시킬 수 있습니다. 허용된 실행기만 고정 인자 목록으로 만들고
+    나머지는 거부합니다. 인식하지 못한 명령을 조용히 버리면 검증한 적 없는
+    Task 가 통과하므로, 거부는 게이트 3 실패로 드러냅니다.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError(f"명령 파싱 실패: {exc}") from exc
+    if not tokens:
+        raise ValueError("빈 명령")
+    if tokens[:2] == ["uv", "run"]:
+        tokens = tokens[2:]
+    if not tokens:
+        raise ValueError("실행 대상이 없는 명령")
+
+    head = tokens[0]
+    if head == "pytest":
+        return VerificationCommand(command, ["uv", "run", "pytest", *tokens[1:]], None, "backend")
+    if head == "npm":
+        return _parse_npm_command(command, tokens)
+    if (
+        head in {"python", "python3", sys.executable}
+        and len(tokens) > 1
+        and Path(tokens[1]).name == "validate_agent_rules.py"
+    ):
+        # 게이트 4 가 이미 같은 검사를 수행하므로 중복 실행하지 않습니다.
+        return VerificationCommand(command, [], None, None, "noop")
+    raise ValueError(f"허용 목록에 없는 검증 명령: {head}")
+
+
+def summarize_command_output(stdout: str, stderr: str) -> str:
+    """pytest 가 아닌 검증 명령의 출력에서 마지막 의미 있는 줄을 뽑습니다."""
+    text = strip_ansi((stdout + "\n" + stderr).strip())
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return truncate(lines[-1], 200) if lines else "출력 없음"
+
+
 def run_gate3_tests(
     tests: list[str],
     repo: Path,
     timeout: int = DEFAULT_PYTEST_TIMEOUT,
     required: bool = True,
+    commands: list[str] | None = None,
+    required_domains: set[str] | None = None,
 ) -> GateResult:
-    """게이트 3: 지정된 pytest 테스트 실행.
+    """게이트 3: Capsule 이 지정한 검증 명령을 허용 목록 안에서 실행합니다.
 
-    required 가 참인데 tests 가 비면 --strict 에서 실패합니다. 코드를 고치는
-    Task 가 테스트 없이 통과하는 것이 종전의 fail-open 이었습니다. 문서만
-    바꾸는 Task 는 호출부가 required 를 거짓으로 내려 구분합니다.
+    tests 는 pytest 인자만 받던 종전 경로이고, commands 는 Capsule 의
+    verification_commands 원문입니다. 실행 대상이 하나도 없거나 변경 영역을
+    덮는 명령이 없으면 --strict 에서 실패합니다. pytest 만 실행하던 시절에는
+    frontend 변경이 무관한 backend pytest 통과로 이 게이트를 넘었습니다.
     """
-    if not tests:
-        return GateResult(
-            name="게이트 3 테스트",
-            status="skipped",
-            summary="--tests 미지정으로 건너뜀",
-            details=[],
-            raw_data={"results": []},
-            required=required,
-        )
+    if required_domains is None:
+        required_domains = {"backend"} if required else set()
 
-    results: list[dict[str, Any]] = []
-    all_passed = True
-    details: list[str] = []
-
+    specs: list[VerificationCommand] = []
+    invalid: list[str] = []
     for test_spec in tests:
         args = shlex.split(test_spec)
-        cmd = ["uv", "run", "pytest", *args]
+        argv = ["uv", "run", "pytest", *args]
         if "-q" not in args and "--quiet" not in args:
-            cmd.append("-q")
+            argv.append("-q")
+        specs.append(VerificationCommand(test_spec, argv, None, "backend"))
+    for command in commands or []:
+        try:
+            specs.append(parse_verification_command(command))
+        except ValueError as exc:
+            invalid.append(f"{command}: {exc}")
 
-        code, stdout, stderr, timed_out = run_command_safe(cmd, repo, timeout)
+    executable = [spec for spec in specs if spec.argv]
+    covered = {spec.domain for spec in specs if spec.domain}
+    uncovered = sorted(required_domains - covered)
+
+    results: list[dict[str, Any]] = []
+    details: list[str] = []
+    all_passed = True
+
+    for spec in executable:
+        cwd = repo / spec.cwd if spec.cwd else repo
+        if not cwd.is_dir():
+            all_passed = False
+            details.append(f"{spec.source}: 실행 디렉터리 없음 ({cwd})")
+            results.append({"target": spec.source, "exit_code": 2, "summary": "실행 디렉터리 없음"})
+            continue
+
+        code, stdout, stderr, timed_out = run_command_safe(spec.argv, cwd, timeout)
         if timed_out:
-            raise GateToolError(f"pytest 타임아웃 ({timeout}초): {test_spec}")
+            raise GateToolError(f"검증 명령 타임아웃 ({timeout}초): {spec.source}")
 
-        summary_line, failed_nodes = parse_pytest_output(stdout, stderr)
-        passed = code == 0
-        if not passed:
+        if spec.kind == "pytest":
+            summary_line, failed_nodes = parse_pytest_output(stdout, stderr)
+        else:
+            summary_line, failed_nodes = summarize_command_output(stdout, stderr), []
+        if code != 0:
             all_passed = False
 
         results.append(
             {
-                "target": test_spec,
+                "target": spec.source,
                 "exit_code": code,
                 "summary": summary_line,
                 "failed_nodes": failed_nodes,
             }
         )
-
-        detail_line = f"{test_spec}: {summary_line}"
+        detail_line = f"{spec.source}: {summary_line}"
         if failed_nodes:
             detail_line += f" | 실패: {format_failed_nodes(failed_nodes, max_show=5)}"
         details.append(detail_line)
 
-    overall_status = "pass" if all_passed else "fail"
-    summary = f"테스트 {len(tests)}건 실행: {'전체 통과' if all_passed else '실패 발생'}"
+    raw_data = {
+        "results": results,
+        "required_domains": sorted(required_domains),
+        "covered_domains": sorted(covered),
+        "uncovered_domains": uncovered,
+        "invalid_commands": invalid,
+    }
+
+    if invalid:
+        return GateResult(
+            name="게이트 3 테스트",
+            status="fail",
+            summary=f"허용되지 않은 검증 명령 {len(invalid)}건",
+            details=details + [f"거부: {item}" for item in invalid],
+            raw_data=raw_data,
+            required=bool(required_domains),
+        )
+
+    if not all_passed:
+        return GateResult(
+            name="게이트 3 테스트",
+            status="fail",
+            summary=f"검증 명령 {len(executable)}건 실행: 실패 발생",
+            details=details,
+            raw_data=raw_data,
+            required=bool(required_domains),
+        )
+
+    if uncovered:
+        return GateResult(
+            name="게이트 3 테스트",
+            status="skipped",
+            summary=f"미검증 영역: {', '.join(uncovered)}",
+            details=details,
+            raw_data=raw_data,
+            required=True,
+        )
+
+    if not executable:
+        return GateResult(
+            name="게이트 3 테스트",
+            status="skipped",
+            summary="실행할 검증 명령 없음",
+            details=details,
+            raw_data=raw_data,
+            required=bool(required_domains),
+        )
 
     return GateResult(
         name="게이트 3 테스트",
-        status=overall_status,
-        summary=summary,
+        status="pass",
+        summary=f"검증 명령 {len(executable)}건 실행: 전체 통과",
         details=details,
-        raw_data={"results": results},
+        raw_data=raw_data,
+        required=bool(required_domains),
     )
 
 
@@ -586,6 +793,12 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         default=[],
         help="실행할 pytest 인자 문자열 (반복 지정 가능)",
     )
+    parser.add_argument(
+        "--verify",
+        action="append",
+        default=[],
+        help="실행할 검증 명령 문자열 (허용 목록: pytest, npm. 반복 지정 가능)",
+    )
     parser.add_argument("--capsule", default=None, help="Task Capsule 파일 경로")
     parser.add_argument("--review-report", default=None, help="리뷰 보고서 JSON 파일 경로")
     parser.add_argument(
@@ -608,6 +821,7 @@ def run_level1_gate(
     branch: str = "HEAD",
     repo: str | Path = ".",
     tests: list[str] | None = None,
+    verify: list[str] | None = None,
     capsule: str | Path | None = None,
     review_report: str | Path | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
@@ -620,6 +834,8 @@ def run_level1_gate(
     """
     if tests is None:
         tests = []
+    if verify is None:
+        verify = []
     repo_path = Path(repo).resolve()
     capsule_path = Path(capsule).resolve() if capsule else None
     review_report_path = Path(review_report).resolve() if review_report else None
@@ -643,8 +859,21 @@ def run_level1_gate(
         g2 = run_gate2_scope(changed_files, capsule_path)
         gates.append(g2)
 
-        # 게이트 3: 테스트
-        g3 = run_gate3_tests(tests, repo_path, required=requires_test_verification(changed_files))
+        # 게이트 3: 검증 명령
+        # 호출자가 명시한 것이 없으면 Capsule 의 verification_commands 를 정본으로
+        # 씁니다. 코디네이터가 지정한 검증을 실제로 실행하는 경로가 여기 하나뿐이라
+        # 중간에서 pytest 만 뽑아내면 나머지는 선언만 남고 실행되지 않습니다.
+        commands = list(verify)
+        if not commands and not tests and capsule_path is not None and capsule_path.exists():
+            commands = parse_capsule_list(load_capsule(capsule_path), "verification_commands")
+        # rename 원본까지 넣어야 코드 파일을 문서 확장자로 옮긴 변경이 면제되지 않습니다.
+        rename_sources = g1.raw_data.get("rename_sources", [])
+        g3 = run_gate3_tests(
+            tests,
+            repo_path,
+            commands=commands,
+            required_domains=verification_domains(list(changed_files) + list(rename_sources)),
+        )
         gates.append(g3)
 
         # 게이트 4: 규칙
@@ -710,6 +939,7 @@ def main(argv: list[str] | None = None) -> int:
         branch=args.branch,
         repo=args.repo,
         tests=args.tests,
+        verify=args.verify,
         capsule=args.capsule,
         review_report=args.review_report,
         max_chars=args.max_chars,

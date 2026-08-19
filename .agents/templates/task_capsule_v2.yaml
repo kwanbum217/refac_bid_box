@@ -50,6 +50,8 @@ required_change:
 acceptance:
   - "구체적 완료 조건 및 기능/성능 만족 기준"
 
+# 게이트 3 이 이 목록을 그대로 실행합니다. frontend 를 고치면 frontend 검증을
+# 함께 적습니다. 허용 목록: uv run pytest ..., npm ci, npm run <script>
 verification_commands:
   - "uv run pytest tests/ -q"
   - "python3 scripts/validate_agent_rules.py --quiet"
