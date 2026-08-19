@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-18
-> **source_commit**: `14cc133`
+> **source_commit**: `99b2a8d`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -91,9 +91,10 @@
 6. **상태 전파 경계 — 종결, 3·4차 감사 17건**: 이번 계열은 **하위가 실패·불능을 아는데 상위 경계에서 상태를 잃어버리는** 것이다. `finalize --strict` 가 어떤 입력에도 실패하던 회귀, KB 실패 status 유실, 검사 불능 `None` 의 성공 취급, 벡터 검색 실패와 0건 미구분, 조회 미수행의 0 통계·인용 유입, 보고 타입 우회, stale 미전파를 닫았다. **병합 게이트 자체의 구멍 3건도 함께 닫았다**(비-Python 변경 무검증 통과, 낡은 화면의 도달 오인, 리뷰 계약 누락). [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 13장.
 7. **워커 풀 정비 — 종결**: `opencode/deepseek-v4-flash-free` 를 주력으로 등록하고 무료 풀 개방을 `builder` 와 쓰기 범위까지 넓혔다(`reviewer` 는 제외). 무료 후보도 `suitable_for` 불변식을 통과해야 한다. 모델별 실측 판정은 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 11장.
 8. **mypy 타입 게이트 도입 — 종결**: 의존성에 없어 그동안 한 번도 돌지 않았다. 추가하니 58건. 플러그인·검사 문법 조정으로 27건까지 줄이고 나머지는 타입 주석으로 해소했다. **`call-overload` 9건은 ORM 이 `Mapped[]` 가 아닌 구식 `Column` 선언이라는 단일 원인**이라 모듈 한정 override 로 처리했다. `Mapped[]` 전환은 G1 에 닿는 별도 과업. `typecheck` 를 `check-all` 과 CI 에 배선했다.
-9. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
-10. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
-11. **수집 2·3회차 관찰**: Docker 필요.
+9. **프론트엔드 의존성 고정 — 종결**: 백엔드는 `uv.lock` 으로 고정돼 있는데 프론트엔드만 범위 지정이라 **CI 가 테스트한 것과 Docker 가 설치하는 것이 달라질 수 있었다.** `package-lock.json` 을 추적하고 CI·Dockerfile 을 `npm ci` 로 통일했다.
+10. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
+11. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
+12. **수집 2·3회차 관찰**: Docker 필요.
 
 ---
 
