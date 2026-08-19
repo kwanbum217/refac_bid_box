@@ -643,11 +643,15 @@ def test_required_capabilities_separates_change_kinds():
     assert required_capabilities(["frontend/README.md"]) == set()
 
     # infra 변경을 backend pytest 가 덮으면 안 됩니다.
-    assert required_capabilities(["Dockerfile"]) == {"docker_build"}
+    assert required_capabilities(["Dockerfile"]) == {"docker_build:."}
     # 빌드 컨텍스트를 정하는 파일이라 잘못 고치면 pytest 는 통과하고 빌드만 깨집니다.
-    assert required_capabilities([".dockerignore"]) == {"docker_build"}
-    assert required_capabilities(["frontend/.dockerignore"]) == {"docker_build"}
-    assert required_capabilities(["frontend/Dockerfile"]) == {"docker_build"}
+    assert required_capabilities([".dockerignore"]) == {"docker_build:."}
+
+    # 컨텍스트가 다르면 다른 능력입니다. 루트 .dockerignore 가 frontend/ 를
+    # 제외하므로 `docker build .` 은 frontend/Dockerfile 을 읽지도 않습니다.
+    assert required_capabilities(["frontend/Dockerfile"]) == {"docker_build:frontend"}
+    assert required_capabilities(["frontend/.dockerignore"]) == {"docker_build:frontend"}
+    assert required_capabilities(["frontend/Dockerfile"]) == {"docker_build:frontend"}
     assert required_capabilities(["docker-compose.yml"]) == {"compose_config"}
     assert required_capabilities(["docker-compose.restore.yml"]) == {"compose_config"}
 
@@ -678,7 +682,14 @@ def test_parse_verification_command_allows_only_known_runners():
     assert parse_verification_command("uv run actionlint").provides == frozenset({"workflow_lint"})
 
     docker_cmd = parse_verification_command("docker build -t x .")
-    assert docker_cmd.provides == frozenset({"docker_build"})
+    assert docker_cmd.provides == frozenset({"docker_build:."})
+    assert parse_verification_command("docker build -t y ./frontend").provides == frozenset(
+        {"docker_build:frontend"}
+    )
+    # 마지막 토큰을 그냥 쓰면 태그를 컨텍스트로 읽습니다.
+    assert parse_verification_command(
+        "docker build --build-arg A=1 -t y ./frontend"
+    ).provides == frozenset({"docker_build:frontend"})
     assert parse_verification_command("docker compose config -q").provides == frozenset(
         {"compose_config"}
     )
@@ -694,6 +705,9 @@ def test_parse_verification_command_allows_only_known_runners():
         "npm --prefix ../../etc run build",
         "docker run --rm alpine sh",
         "docker compose up -d",
+        "docker build -t x",
+        "docker build -t x . extra",
+        "docker build -t x ../outside",
     ):
         with pytest.raises(ValueError):
             parse_verification_command(rejected)
@@ -768,7 +782,7 @@ def test_dockerfile_change_is_not_covered_by_backend_pytest():
         )
 
     assert g.status == "skipped"
-    assert g.raw_data["uncovered_capabilities"] == ["docker_build"]
+    assert g.raw_data["uncovered_capabilities"] == ["docker_build:."]
 
 
 def test_workflow_change_is_not_covered_by_backend_pytest():
@@ -784,3 +798,29 @@ def test_workflow_change_is_not_covered_by_backend_pytest():
 
     assert g.status == "skipped"
     assert g.raw_data["uncovered_capabilities"] == ["workflow_lint"]
+
+
+def test_root_docker_build_does_not_cover_frontend_dockerfile():
+    """루트 .dockerignore 가 frontend/ 를 제외하므로 루트 빌드는 그 파일을 읽지 않습니다."""
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "Successfully built", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["docker build -t refac-bid-box-root:orca-gate ."],
+            capabilities=required_capabilities(["frontend/Dockerfile"]),
+        )
+
+    assert g.status == "skipped"
+    assert g.raw_data["uncovered_capabilities"] == ["docker_build:frontend"]
+
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "Successfully built", "", False)
+        g_ok = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["docker build -t refac-bid-box-frontend:orca-gate frontend"],
+            capabilities=required_capabilities(["frontend/Dockerfile"]),
+        )
+
+    assert g_ok.status == "pass"

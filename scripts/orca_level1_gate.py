@@ -14,7 +14,7 @@ import shlex
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 try:
@@ -198,6 +198,24 @@ WORKFLOW_PATH_PREFIX = ".github/workflows/"
 COMPOSE_NAME_RE = re.compile(r"^(?:docker-)?compose[.\w-]*\.ya?ml$", re.IGNORECASE)
 
 
+def normalize_build_context(context: str) -> str:
+    """docker build 컨텍스트 경로를 저장소 기준 상대 경로로 정규화합니다."""
+    cleaned = PurePosixPath(context.strip() or ".").as_posix()
+    if cleaned.startswith("./"):
+        cleaned = cleaned[2:]
+    return cleaned.rstrip("/") or "."
+
+
+def docker_build_capability(context: str) -> str:
+    """빌드 컨텍스트별 docker_build 능력 이름을 만듭니다.
+
+    컨텍스트를 구분하지 않으면 루트 빌드 하나가 모든 Dockerfile 을 검증한 것이
+    됩니다. 루트 `.dockerignore` 는 `frontend/` 를 제외하므로, `docker build .`
+    은 `frontend/Dockerfile` 을 아예 읽지 않습니다.
+    """
+    return f"{CAP_DOCKER_BUILD}:{normalize_build_context(context)}"
+
+
 def _path_capabilities(path: str) -> set[str]:
     """경로 하나가 요구하는 검증 능력을 판정합니다."""
     name = Path(path).name
@@ -206,7 +224,8 @@ def _path_capabilities(path: str) -> set[str]:
     # .dockerignore 는 빌드 컨텍스트를 정합니다. 여기서 src/ 를 제외해 버리면
     # pytest 는 그대로 통과하면서 이미지 빌드만 깨집니다.
     if name == ".dockerignore" or name == "Dockerfile" or name.startswith("Dockerfile."):
-        return {CAP_DOCKER_BUILD}
+        parent = PurePosixPath(path).parent.as_posix()
+        return {docker_build_capability(parent)}
     if COMPOSE_NAME_RE.match(name):
         return {CAP_COMPOSE_CONFIG}
     if path.startswith(FRONTEND_PATH_PREFIXES):
@@ -436,6 +455,73 @@ def _parse_npm_command(source: str, tokens: list[str]) -> VerificationCommand:
     raise ValueError("허용되는 npm 명령은 'npm ci' 와 'npm run <script>' 뿐입니다")
 
 
+# 값을 하나 더 먹는 docker build 옵션들입니다. 목록에 없는 `--flag` 는 불리언으로
+# 봅니다. 값을 먹는 옵션을 빠뜨리면 그 값이 위치 인자로 세어져 위치 인자가 둘이
+# 되고, 아래 판정이 거부합니다. 조용히 잘못된 컨텍스트를 고르지는 않습니다.
+DOCKER_BUILD_VALUE_FLAGS = frozenset(
+    {
+        "-t",
+        "--tag",
+        "-f",
+        "--file",
+        "--build-arg",
+        "--target",
+        "--platform",
+        "--label",
+        "--network",
+        "--cache-from",
+        "--cache-to",
+        "--output",
+        "-o",
+        "--progress",
+        "--secret",
+        "--ssh",
+        "--add-host",
+        "--iidfile",
+        "--shm-size",
+        "--memory",
+        "-m",
+        "--memory-swap",
+        "--cpu-shares",
+        "--ulimit",
+        "--allow",
+        "--attest",
+        "--provenance",
+        "--sbom",
+        "--metadata-file",
+        "--builder",
+    }
+)
+
+
+def _docker_build_context(tokens: list[str]) -> str:
+    """`docker build` 인자에서 빌드 컨텍스트(유일한 위치 인자)를 뽑습니다.
+
+    마지막 토큰을 그냥 쓰면 `docker build -t x` 의 태그를 컨텍스트로 읽습니다.
+    옵션이 먹는 값을 건너뛰고 남은 위치 인자가 정확히 하나여야 합니다.
+    """
+    positionals: list[str] = []
+    idx = 2  # docker build 다음부터
+    while idx < len(tokens):
+        arg = tokens[idx]
+        if arg.startswith("-"):
+            if arg in DOCKER_BUILD_VALUE_FLAGS:
+                idx += 2
+                continue
+            idx += 1
+            continue
+        positionals.append(arg)
+        idx += 1
+
+    if len(positionals) != 1:
+        raise ValueError("docker build 는 빌드 컨텍스트 경로를 정확히 하나 받아야 합니다")
+    context = positionals[0]
+    context_path = PurePosixPath(context)
+    if context_path.is_absolute() or ".." in context_path.parts:
+        raise ValueError("빌드 컨텍스트는 저장소 안의 상대 경로여야 합니다")
+    return context
+
+
 def _parse_docker_command(source: str, tokens: list[str]) -> VerificationCommand:
     """docker 검증 명령을 해석합니다. `docker build` 와 `docker compose config` 만 허용합니다.
 
@@ -443,7 +529,10 @@ def _parse_docker_command(source: str, tokens: list[str]) -> VerificationCommand
     shared_resources 에 docker 를 선언해야 다른 섹션과 겹치지 않습니다.
     """
     if tokens[1:2] == ["build"]:
-        return VerificationCommand(source, list(tokens), None, frozenset({CAP_DOCKER_BUILD}), "raw")
+        context = _docker_build_context(tokens)
+        return VerificationCommand(
+            source, list(tokens), None, frozenset({docker_build_capability(context)}), "raw"
+        )
     if tokens[1:3] == ["compose", "config"]:
         return VerificationCommand(
             source, list(tokens), None, frozenset({CAP_COMPOSE_CONFIG}), "raw"
