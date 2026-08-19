@@ -193,3 +193,64 @@ def test_fallback_answer_keeps_zero_for_real_zero_result():
     text = _fallback_answer("질문", plan, normal, [], None)
     assert "낙찰 결과 0건" in text
     assert "조회를 수행하지 않아" not in text
+
+
+def test_citation_query_skipped_without_vector_is_empty():
+    """조회를 건너뛰었고 문맥도 없으면 근거 문구가 붙지 않아야 합니다."""
+    from src.rag.answer_format import _build_source_citation_from_context
+
+    citation = _build_source_citation_from_context(_skipped_structured_data(), [], None)
+    assert citation == ""
+
+
+def test_citation_query_skipped_with_vector_is_chroma_only():
+    """조회를 건너뛰었으면 벡터가 있어도 혼합 근거가 아니라 Chroma 문맥만 인용합니다."""
+    from src.rag.answer_format import _build_source_citation_from_context
+
+    vector_docs = [{"document": "용역 분야 문맥"}]
+    citation = _build_source_citation_from_context(_skipped_structured_data(), vector_docs, None)
+    assert "Chroma 문맥 기반" in citation
+    assert "혼합" not in citation
+
+
+def test_citation_normal_zero_result_keeps_db_basis():
+    """정상 조회가 0건이면 종전대로 DB 집계 기반 인용이 붙습니다."""
+    from src.rag.answer_format import _build_source_citation_from_context
+
+    normal = {
+        "summary": {"total_bids": 0, "announcement_count": 0},
+        "filters": {},
+    }
+    citation = _build_source_citation_from_context(normal, [], None)
+    assert "DB 집계 기반" in citation
+
+
+def test_citation_normal_query_with_vector_keeps_mixed():
+    """정상 조회에 벡터 문맥이 있으면 종전대로 혼합 근거가 붙습니다."""
+    from src.rag.answer_format import _build_source_citation_from_context
+
+    normal = {
+        "summary": {"total_bids": 5, "announcement_count": 5},
+        "filters": {},
+    }
+    vector_docs = [{"document": "용역 분야 문맥"}]
+    citation = _build_source_citation_from_context(normal, vector_docs, None)
+    assert "혼합 근거" in citation
+
+
+def test_citation_kb_status_only_keeps_db_basis():
+    """KB 상태만 있으면 종전대로 DB 집계 기반 인용이 붙습니다."""
+    from src.rag.answer_format import _build_source_citation_from_context
+
+    kb_status = {"status": "ready", "source_bid_count": 10}
+    citation = _build_source_citation_from_context(None, [], kb_status)
+    assert "DB 집계 기반" in citation
+
+
+def test_citation_query_skipped_with_kb_status_keeps_db_basis():
+    """조회를 건너뛰었어도 KB 상태가 있으면 종전대로 DB 집계 기반 인용이 붙습니다."""
+    from src.rag.answer_format import _build_source_citation_from_context
+
+    kb_status = {"status": "ready", "source_bid_count": 10}
+    citation = _build_source_citation_from_context(_skipped_structured_data(), [], kb_status)
+    assert "DB 집계 기반" in citation
