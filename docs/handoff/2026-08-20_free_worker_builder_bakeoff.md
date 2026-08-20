@@ -93,4 +93,33 @@
 
 ## 5. 자원 정리
 
-(세션 종료 시 기록)
+**정리했다.** 경합 워크트리 10개를 전부 제거했고 터미널도 전부 닫았다.
+
+| 대상 | 처리 |
+| --- | --- |
+| 워크트리 10개 | 제거. 주 저장소만 남음 |
+| 터미널 10개 | 닫음. 남은 5개는 이 경합과 무관 |
+| `bakeoff-laguna_xs` 등 6개 브랜치 | 삭제. 승자는 `main` 에 병합됐고 나머지는 커밋 0건 |
+| `feat/free-pool-builder-qualification` | 삭제 (병합 완료) |
+
+**보존한 브랜치 4개**다. 경합에서 통과했으나 채택되지 않은 대안 구현이며,
+`main` 에 병합되지 않았으므로 이 브랜치가 유일본이다.
+
+    kwanbum217/bakeoff-deepseek
+    kwanbum217/bakeoff-mimo
+    kwanbum217/bakeoff-nemotron_ultra
+    kwanbum217/bakeoff-oc_nemotron_ultra
+
+구현을 비교할 일이 없어지면 지워도 된다. `git branch -D` 가 필요하다.
+
+---
+
+## 6. 검증
+
+    uv run pytest tests/ -q              1,564 passed, 2 skipped
+    uv run python scripts/validate_agent_rules.py --quiet   12/12
+    uv run ruff check scripts/ tests/    All checks passed
+    origin/main                          4702c02
+
+`scripts/audit_model_inventory.py` 실동작에서 배정 대상 6종 전부 확인,
+배정 제외 3종은 건너뜀으로 나오고 종료 코드 0 이다.
