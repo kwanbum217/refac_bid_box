@@ -1,8 +1,8 @@
 # 에이전트 워커 기동 정본 참조
 
 > **작성일**: 2026-08-14
-> **수정일**: 2026-08-15
-> **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과. Task Capsule v2 워커 실행 계약 반영
+> **수정일**: 2026-08-20
+> **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과. Task Capsule v2 워커 실행 계약 반영. 1.5 절은 2026-08-20 Run `run_a32b6b614996` 의 모델별 실측 검증 결과
 > **적용 대상**: 이 저장소에서 Orca 워커·코디네이터를 배정하는 모든 에이전트
 > **관련 문서**: [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md), [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md), [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md)
 
@@ -33,10 +33,15 @@
 | Codex | `worker-start --agent codex --model <id> --effort <level>` | 예 |
 | Antigravity (Gemini) | `terminal create --command "agy ..."` 뒤 `dispatch --inject` | 예 |
 | OpenCode Zen (MiMo, DeepSeek) | `terminal create --command "opencode"` 뒤 `dispatch --inject` | 예 |
+| Kimi Code (OpenRouter 무료) | `dispatch --return-preamble` 뒤 `kimi -m <alias> -p "<preamble>"` | 예 (Dispatch 계보만) |
 
 `worker-start --agent` 는 **claude·codex·cursor 만** 받습니다. 그 밖의 CLI 는
 2절의 터미널 부착 경로를 씁니다. 두 경로 모두 Task·Dispatch 계보가 남으므로
 `worker_done` 권한도 정상입니다.
+
+**Kimi Code 는 세 번째 경로입니다.** TUI 가 주입된 Enter 로 종료하므로
+`dispatch --inject` 를 쓸 수 없고, preamble 을 런치 인자로 넘깁니다. 1.5 절을
+보십시오.
 
 ### 1.1 모델 ID
 
@@ -144,6 +149,67 @@ opencode -m opencode/deepseek-v4-flash-free
 무료 모델에 넘길 작업 범위는 5장 표를 지키십시오. **자동 검증이 정오를
 판정해 주는 작업만** 넘기고, 공유 자원 소유권은 주지 않습니다.
 
+### 1.5 Kimi Code 는 OpenRouter 무료 모델을 단발 워커로 씁니다
+
+`kimi` 는 별도 프로필로 OpenRouter `:free` 모델을 고정해 씁니다. 프로필은
+`KIMI_CODE_HOME` 으로 가르며, 기본 설정과 분리되어 있습니다.
+
+```bash
+KIMI_CODE_HOME=/Users/kwanbum/.kimi-openrouter-free kimi --version   # 0.37.2
+```
+
+**`openrouter/free` 라우터를 쓰지 마십시오.** 모델을 무작위로 고르므로 어느
+모델이 응답했는지 증적이 남지 않습니다. 아래 별칭은 각각 slug 하나를 고정합니다.
+
+| 별칭 | slug | 컨텍스트 / 최대 출력 | 판정 | 비고 |
+| --- | --- | ---: | :---: | --- |
+| `or-free/nemotron-ultra` | `nvidia/nemotron-3-ultra-550b-a55b:free` | 1,000,000 / 65,536 | pass | **장문 감사 1순위.** `reasoning_effort` 지원 |
+| `or-free/laguna-s` | `poolside/laguna-s-2.1:free` | 262,144 / 32,768 | pass | tool loop 무결점 |
+| `or-free/north-mini` | `cohere/north-mini-code:free` | 256,000 / 64,000 | pass | 샘플링 파라미터 최다. probe 43s 로 가장 느림 |
+| `or-free/laguna-xs` | `poolside/laguna-xs-2.1:free` | 262,144 / 32,768 | **conditional_pass** | `worker_done` 핸들을 1회 틀렸다가 자가 복구. 감독 필요 |
+
+네 slug 모두 2026-08-20 `GET /api/v1/models` 에서 `pricing.prompt`,
+`pricing.completion` 이 `"0"` 이고 `supported_parameters` 에 `tools` 와
+`tool_choice` 를 포함합니다. 전부 읽기 전용 probe 로 `pwd` 와 `head -1 AGENTS.md`
+tool loop 를 완주하고 `worker_done` 까지 보냈습니다 (Run `run_a32b6b614996`).
+
+**기동은 preamble 을 런치 인자로 넘기는 경로만 씁니다.**
+
+```bash
+orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json  # preamble 추출
+KIMI_CODE_HOME=/Users/kwanbum/.kimi-openrouter-free kimi -m <alias> -p "<preamble>"
+```
+
+| 하지 말 것 | 이유 |
+| --- | --- |
+| `dispatch --inject` | Kimi TUI 는 주입된 Enter 로 **종료**합니다 |
+| `-p` 와 `-y`/`--auto` 병용 | 병용 불가입니다 |
+| 대화형·다단계 감독 Task 배정 | `-p` 는 one-shot 입니다. 자족적 지시서 1개로 끝나는 Task 만 줍니다 |
+| 쓰기 Task 배정 | 검증이 읽기 전용 범위에서만 이루어졌습니다 |
+| 공유 자원 소유·마감 있는 Task 배정 | `:free` 는 provider capacity 에 따라 429 가 납니다 |
+
+**요청 한도는 근거 종류를 구분해 적습니다.**
+
+| 항목 | 값 | 근거 |
+| --- | --- | --- |
+| `:free` 계정 일일 한도 | 1,000 requests/day (누적 $10 이상 구매 계정) | OpenRouter 공식 FAQ |
+| `:free` 분당 한도 | 20 RPM | OpenRouter 공식 FAQ |
+| 계정 상태 | `is_free_tier: false`, 누적 usage 10.23 | 2026-08-20 `GET /api/v1/key` 실측 |
+| 명시적 상한 설정 | `limit`, `limit_remaining` 모두 null | 2026-08-20 `GET /api/v1/key` 실측 |
+
+**실패와 재시도도 요청 한도를 씁니다.** 이번 검증은 모델당 direct 1회 + probe
+1회로 총 8회를 썼고 429 를 만나지 않았습니다. `/api/v1/key` 에서 일일 잔여
+횟수는 확인되지 않으므로, 한도 근접 여부는 **호출 횟수를 직접 세어** 판단합니다.
+
+**한 터미널은 활성 Dispatch 를 하나만 가집니다.** 재 Dispatch 할 때는 새
+터미널을 만드십시오 (`already has an active dispatch`). 또한 `task-create` 와
+`dispatch` 는 Run 코디네이터로 바인딩된 터미널만 수행할 수 있습니다
+(`consumer_fenced`).
+
+**stderr 에 사고 과정이 길게 흐릅니다.** nemotron-ultra 와 north-mini 가
+그렇습니다. `-p` 단발 모드의 stdout 은 최종 답만 담으므로 수집은
+`2> /dev/null` 없이도 파이프로 분리됩니다.
+
 ---
 
 ## 2. 비 Claude·Codex CLI 를 워커로 붙이는 절차
@@ -235,7 +301,7 @@ agy --print "reply with OK only" --print-timeout 60s
 [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 5.2 절에
 있습니다.
 
-### 3.5 신뢰 확인 대화창은 모든 전달 경로를 막습니다
+### 3.4 신뢰 확인 대화창은 모든 전달 경로를 막습니다
 
 `orca worktree create` 로 만든 새 경로에서 Antigravity CLI 는 워크스페이스 신뢰
 확인 대화창을 **반드시** 띄웁니다.
@@ -268,7 +334,7 @@ orca terminal read --terminal <handle> | tail -5           # 진행 확인
 
 ---
 
-### 3.4 이 경로의 워커는 감독 목록에 없습니다
+### 3.5 이 경로의 워커는 감독 목록에 없습니다
 
 `terminal create` + 주입으로 붙인 워커는 Dispatch 계보는 남지만 **감독 워커로
 등록되지 않습니다.**
@@ -284,7 +350,7 @@ orca terminal read --terminal <handle> | tail -5           # 진행 확인
 워크트리 그룹에 있는지 확인하고 사용자에게 알려 주십시오. 워커를 띄웠는데
 사용자가 볼 수 없는 상태로 두면 감독이 코디네이터 한 사람에게만 남습니다.
 
-### 3.5 워커 완료 보고 계약 (v2)
+### 3.6 워커 완료 보고 계약 (v2)
 
 기동이 성공해도 완료 보고는
 [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md) 3장의 계약을 따릅니다.
@@ -299,7 +365,7 @@ orca terminal read --terminal <handle> | tail -5           # 진행 확인
 
 `terminal show` 의 `tabId` 가 코디네이터의 것과 같으면 그 워커는 코디네이터와
 같은 탭의 분할 창입니다. 이때 `terminal close --tab` 은 **코디네이터까지
-닫습니다.** 닫을 때는 `--tab` 없이 창 단위로만 닫으십시오 (스킬 7.4).
+닫습니다.** 닫을 때는 `--tab` 없이 창 단위로만 닫으십시오 (스킬 8.4).
 
 ---
 
