@@ -97,7 +97,7 @@
 - **fail-open 제거 (누적 34건, 10·12장)**: `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 계열. 최악은 수집 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결). **다수는 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.**
 - **상태 전파 경계 (3~6차 감사, 13~16장)**: 하위가 실패·불능을 아는데 상위 경계에서 상태를 잃는 계열. 병합 게이트 자체의 구멍도 닫았다. 게이트 3 은 검증을 영역이 아니라 **능력 단위**로 세고(frontend test·build, docker build, compose config, actionlint), `source_commit` 지연 초과는 FAIL 이다.
 - **대형 모듈 분할 (8장)**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수로 자동 분할하지 않는다.**
-- **워커 풀 정비 (11장)**: `opencode/deepseek-v4-flash-free` 주력. 무료 후보도 `suitable_for` 불변식을 통과해야 한다. 2026-08-20 에 OpenRouter `:free` 4종을 Kimi Code 단발 워커로 검증했다(3종 pass, `or-free/laguna-xs` conditional_pass). 읽기 전용 전용이며 `dispatch --inject` 는 Kimi TUI 를 종료시키므로 preamble 런치 인자 경로만 쓴다.
+- **워커 풀 정비 (11장)**: 무료 후보도 `suitable_for` 불변식을 통과해야 한다. 2026-08-20 에 종전 주력 `opencode/deepseek-v4-flash-free` 가 **provider 목록에서 사라진 것을 실측**해 배정 대상에서 뺐다(무료 풀에서만 소멸, `opencode-go/` 유료에는 있다). 같은 날 OpenRouter `:free` 4종을 Kimi Code 단발 워커로 등록했다. 1,111줄 도구 감사 6문항을 4종 동시 실행해 전부 6/6 이라 **정확도로는 변별되지 않았고**, 순서는 문맥 크기와 속도에 따른다. 읽기 전용(`investigator`)에만 배정하며 `dispatch --inject` 는 Kimi TUI 를 종료시키므로 preamble 런치 인자 경로만 쓴다.
 - **린터·보안·타입 게이트**: bandit 47건 오탐 판정 후 0건화(**이 실패가 CI 를 9시간 막았다**). mypy 58건 해소 후 `typecheck` 를 `check-all` 과 CI 에 배선.
 - **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile 을 `npm ci` 로 통일.
 
