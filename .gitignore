@@ -216,3 +216,6 @@ node_modules/
 
 # Orca Capsule 기본 출력 디렉터리 (orca_taskctl.py --capsule-dir 기본값)
 .orca/
+
+# Model inventory history state file
+data/model_inventory_history.json
