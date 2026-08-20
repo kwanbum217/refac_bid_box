@@ -238,10 +238,13 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "max_tokens": 1_000_000,
         "suitable_for": [],
         "notes": (
-            "**2026-08-20 실측에서 사라졌습니다.** `opencode run` 이 "
-            "`Model not found` 를 반환하고 `opencode models` 목록에도 없습니다. "
-            "배정 대상에서 제외하며, 다시 나타나면 그 자리에서 probe 한 뒤 "
-            "suitable_for 를 복구합니다. 아래는 제외 전 기록입니다. "
+            "**2026-08-20 현재 opt-in 미승인으로 호출 불가입니다. 삭제된 것이 "
+            "아닙니다.** 최신판이 중국 호스팅이라 OpenCode 워크스페이스의 Go "
+            "설정에서 명시적 opt in 을 해야 합니다. 미승인 상태에서는 무료 "
+            "variant 가 계정 모델 목록에서 빠지고 `Model not found` 가 나며, "
+            "유료 variant 는 opt-in 요구 오류를 냅니다. 카탈로그에는 그대로 "
+            "있습니다. opt in 후 probe 로 확인하고 suitable_for 를 복구하십시오. "
+            "아래는 제외 전 기록입니다. "
             "공식 발표 기준 컨텍스트 1M, 추론 모드 3단"
             "(Non-think / Think High / Think Max)이며 Think Max 는 384K 이상 권장. "
             "에이전트 벤치마크 Terminal Bench 2.1 82.7, DeepSWE 54.4, Toolathlon 70.3 로 "
@@ -376,8 +379,8 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 
 FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator", "builder"})
 FREE_POOL_MAX_RISK: str = "low"
-# 2026-08-20 재정렬. 종전 1순위 opencode-deepseek 은 provider 에서 사라져
-# 목록에서 뺐습니다. 앞의 세 자리는 같은 날 감사 6문항을 6/6 으로 통과한
+# 2026-08-20 재정렬. 종전 1순위 opencode-deepseek 은 opt-in 미승인으로 호출이
+# 거부되어 목록에서 뺐습니다. opt in 하면 되돌릴 수 있습니다. 앞의 세 자리는 같은 날 감사 6문항을 6/6 으로 통과한
 # 모델이고, 그 뒤는 이 과제로 측정하지 않은 항목입니다.
 #
 # **정확도로 순위를 매긴 것이 아닙니다.** 측정된 네 모델이 전부 만점이라

@@ -47,11 +47,16 @@ Laguna XS 는 첫 `worker_done` 의 `--from` 에 코디네이터 핸들을 넣�
 
 ## 3. 이 세션에서 드러난 결함
 
-### 3.1 등록된 무료 풀 1순위가 존재하지 않았습니다
+### 3.1 등록된 무료 풀 1순위를 호출할 수 없었습니다
 
-`opencode/deepseek-v4-flash-free` 가 제공자 무료 풀에서 사라졌는데 라우터는
-그대로 1순위로 들고 있었습니다. `opencode-go/` 유료 풀에만 남아 있습니다.
-소멸은 오류를 내지 않으며, 다른 목적으로 호출해 보기 전까지 드러나지 않았습니다.
+`opencode/deepseek-v4-flash-free` 가 계정 모델 목록에서 빠지고 호출이
+`Model not found` 로 거부되는데 라우터는 그대로 1순위로 들고 있었습니다.
+
+**원인은 삭제가 아니라 opt-in 미승인입니다.** 최신판이 중국 호스팅이라
+워크스페이스 Go 설정에서 명시적 opt in 이 필요하고, 미승인 계정에서는 무료
+variant 가 목록에서 사라집니다. 유료 variant 를 호출하면
+`requires explicit opt in` 으로 원인을 명시합니다. **처음에 이 구분을 놓쳐
+삭제로 잘못 판정했고, 사용자 지적으로 바로잡았습니다.**
 
 재발을 막기 위해 [`../../scripts/audit_model_inventory.py`](../../scripts/audit_model_inventory.py)
 를 추가했습니다. 배정 대상만 검사하고, **조회 실패를 소멸로 승격하지 않습니다.**
@@ -60,7 +65,7 @@ Laguna XS 는 첫 `worker_done` 의 `--from` 에 코디네이터 핸들을 넣�
 
 | 대상 | 상태 |
 | --- | --- |
-| OpenCode 무료 풀 목록 | `laguna-s-2.1-free` 도 소멸, `muse-spark-1.2-contributor-free` 신규 |
+| OpenCode 무료 풀 목록 | `laguna-s-2.1-free` 도 목록에서 빠짐(원인 미확인), `muse-spark-1.2-contributor-free` 신규 |
 | Codex 모델 ID | `gpt-5.6-sol-wm` 이 `models_cache.json` 에서 사라짐 |
 | 예시 명령 | `opencode -m opencode/deepseek-v4-flash-free` 는 실행하면 실패 |
 | 반복 금지 11장 | deepseek 을 "주력 사용 가능" 으로 판정 중이었음 |
@@ -101,7 +106,12 @@ ruff check·format 통과입니다.
    과제가 필요하며, 그전까지 `FREE_POOL_ORDER` 순서는 능력 근거가 아닙니다.
 3. **쓰기 적합성 미검증**: 4종 모두 읽기 전용 범위에서만 검증했습니다.
    `builder` 를 부여하려면 별도 실측이 필요합니다.
-4. **`cursor-auto` 가 유일한 무료 builder 후보**: deepseek 소멸로 그렇게
-   됐는데, 이 경로는 5회 중 3회가 빈 출력이었습니다. 대체 후보가 필요합니다.
+4. **deepseek opt in 이 가장 싼 복구입니다**: 워크스페이스 Go 설정에서 opt in
+   한 뒤 `uv run python scripts/audit_model_inventory.py` 와 probe 로 확인하고
+   `suitable_for` 와 `FREE_POOL_ORDER` 를 되돌리면 됩니다. 그전까지는
+   `cursor-auto` 가 유일한 무료 builder 후보입니다.
+5. **`cursor-auto` 재현 시험**: 2026-08-20 3회 시행에서 3회 모두 `OK` 를
+   8~9초에 반환했습니다. 08-18 의 5회 중 3회 빈 출력은 재현되지 않았으나
+   3회는 판정에 부족하므로 기존 주의는 유지합니다.
 5. **터미널 정리**: GPT 의 Codex 창(`term_29ed7781`)이 코디네이터 탭과 같은
    `tabId` 라 닫지 않았습니다. 사용자가 직접 닫아야 합니다.
