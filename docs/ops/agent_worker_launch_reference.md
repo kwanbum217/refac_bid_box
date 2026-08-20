@@ -192,9 +192,26 @@ opencode -m cerebras/gemma-4-31b                            # 그 뒤에 기동
 모델을 지정해 띄우는 형식입니다.
 
 ```bash
-opencode -m opencode/mimo-v2.5-free
-opencode -m opencode/nemotron-3.5-lightning-free
+opencode -m opencode/nemotron-3-ultra-free
+opencode run --dir <워크트리> -m opencode/mimo-v2.5-free "<preamble>"
 ```
+
+**같은 무료 풀 안에서도 편차가 큽니다.** 2026-08-20 쓰기 과제 경합
+(`run_d2fd971f7daa`)에서 여섯 중 셋만 완주했습니다.
+
+| 모델 | 판정 | 근거 |
+| --- | --- | --- |
+| `opencode/nemotron-3-ultra-free` | **쓰기 통과** | 9분01초. 전체 1위이자 무료 풀 1순위 |
+| `opencode/deepseek-v4-flash-free` | **쓰기 통과** | 11분31초. 사양 결함을 유일하게 `ask` 로 제기 |
+| `opencode/mimo-v2.5-free` | **쓰기 통과** | 13분58초 |
+| `opencode/nemotron-3.5-lightning-free` | **배정 금지** | 4.8KB 지시문에 다국어 토큰이 섞인 무의미 출력. 아래 경고 |
+| `opencode/hy3-free` | **배정 금지** | 파일 3개를 읽고 아무것도 쓰지 않은 채 종료 코드 0 |
+| `opencode/muse-spark-1.2-contributor-free` | **사용 불가** | `This model is not available in your country` (지역 차단) |
+
+**`nemotron-3.5-lightning` 은 probe 로 걸러지지 않습니다.** 짧은 지시
+("OK 만 답하라", "2+2")에는 정상 응답하고, 긴 지시문에서만 무너집니다.
+`probe_model()` 은 `ping` 한 마디에 종료 코드 0 이면 통과시키므로 이 유형을
+잡을 수 없습니다. **가용성 확인과 적합성 확인은 다른 문제입니다.**
 
 무료 모델에 넘길 작업 범위는 5장 표를 지키십시오. **자동 검증이 정오를
 판정해 주는 작업만** 넘기고, 공유 자원 소유권은 주지 않습니다.
@@ -213,10 +230,15 @@ KIMI_CODE_HOME=/Users/kwanbum/.kimi-openrouter-free kimi --version   # 0.37.2
 
 | 별칭 | slug | 컨텍스트 / 최대 출력 | 판정 | 비고 |
 | --- | --- | ---: | :---: | --- |
-| `or-free/nemotron-ultra` | `nvidia/nemotron-3-ultra-550b-a55b:free` | 1,000,000 / 65,536 | pass | **장문 감사 1순위.** `reasoning_effort` 지원 |
-| `or-free/laguna-s` | `poolside/laguna-s-2.1:free` | 262,144 / 32,768 | pass | tool loop 무결점 |
-| `or-free/north-mini` | `cohere/north-mini-code:free` | 256,000 / 64,000 | pass | 샘플링 파라미터 최다. probe 43s 로 가장 느림 |
-| `or-free/laguna-xs` | `poolside/laguna-xs-2.1:free` | 262,144 / 32,768 | **conditional_pass** | `worker_done` 핸들을 1회 틀렸다가 자가 복구. 감독 필요 |
+| `or-free/laguna-xs` | `poolside/laguna-xs-2.1:free` | 262,144 / 32,768 | **쓰기 통과** | 11분03초. 무료 풀 2순위. 핵심 불변식을 두 테스트로 쪼개 커버한 유일한 구현 |
+| `or-free/nemotron-ultra` | `nvidia/nemotron-3-ultra-550b-a55b:free` | 1,000,000 / 65,536 | **쓰기 통과** | 12분32초. 무료 풀 4순위. `reasoning_effort` 지원 |
+| `or-free/laguna-s` | `poolside/laguna-s-2.1:free` | 262,144 / 32,768 | **실격** | 32분간 379KB 출력에 도구 호출 0건. 아래 1.6 절 |
+| `or-free/north-mini` | `cohere/north-mini-code:free` | 256,000 / 64,000 | **실격** | 31분50초에 테스트 미착수. 실격선 28분 초과 |
+
+판정 근거는 2026-08-20 쓰기 과제 경합(`run_d2fd971f7daa`)입니다. 그 전의
+`pass`/`conditional_pass` 는 **읽기 전용 probe 결과였고 쓰기 적합성을 예측하지
+못했습니다.** 당시 네 모델은 감사 6문항을 전부 맞혀 변별되지 않았는데, 같은
+네 모델에 쓰기 과제를 주자 둘이 실격했습니다.
 
 네 slug 모두 2026-08-20 `GET /api/v1/models` 에서 `pricing.prompt`,
 `pricing.completion` 이 `"0"` 이고 `supported_parameters` 에 `tools` 와
@@ -235,8 +257,25 @@ KIMI_CODE_HOME=/Users/kwanbum/.kimi-openrouter-free kimi -m <alias> -p "<preambl
 | `dispatch --inject` | Kimi TUI 는 주입된 Enter 로 **종료**합니다 |
 | `-p` 와 `-y`/`--auto` 병용 | 2026-08-20 실측에서 `error: Cannot combine --prompt with --yolo.` 와 `... with --auto.` 로 종료 코드 1 입니다. `--help` 에는 이 제약이 적혀 있지 않습니다 |
 | 대화형·다단계 감독 Task 배정 | `-p` 는 one-shot 입니다. 자족적 지시서 1개로 끝나는 Task 만 줍니다 |
-| 쓰기 Task 배정 | 검증이 읽기 전용 범위에서만 이루어졌습니다 |
+| 실격 모델(`laguna-s`, `north-mini`) 배정 | 위 표를 보십시오. 쓰기 과제에서 완주하지 못합니다 |
 | 공유 자원 소유·마감 있는 Task 배정 | `:free` 는 provider capacity 에 따라 429 가 납니다 |
+
+**쓰기 Task 를 주려면 프로필의 권한 모드를 바꿔야 합니다.**
+
+`-p` 는 `-y`/`--auto` 와 병용할 수 없지만, 그것이 쓰기 불가를 뜻하지는
+않습니다. 승인 정책은 `config.toml` 의 `default_permission_mode` 가 정하고
+`-p` 도 그 값을 따릅니다. 기본 프로필은 `manual` 이라 파일 쓰기가 막힙니다.
+
+```bash
+cp -R ~/.kimi-openrouter-free ~/.kimi-openrouter-bakeoff
+# 사본에서만 default_permission_mode 를 "auto" 로 바꿉니다
+KIMI_CODE_HOME=~/.kimi-openrouter-bakeoff kimi -m <alias> -p "<preamble>"
+```
+
+**기본 프로필을 고치지 마십시오.** 무료 모델이 승인 없이 파일을 쓰게 되는
+설정이므로, 격리 워크트리에서 도는 쓰기 워커 전용 사본으로만 씁니다.
+2026-08-20 에 이 경로로 `laguna-xs` 와 `nemotron-ultra` 가 쓰기 과제를
+완주했습니다.
 
 **요청 한도는 근거 종류를 구분해 적습니다.**
 

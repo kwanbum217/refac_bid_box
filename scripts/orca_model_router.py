@@ -258,10 +258,16 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": None,
-        "suitable_for": [
-            "investigator",
-        ],
-        "notes": "실패해도 손실 없는 병렬 조사. 임계 경로 금지 (allow_free 조건부 개방).",
+        # 2026-08-20 builder 경합에서 4.8KB Capsule 을 주자 다국어 토큰이
+        # 무작위로 섞인 무의미 출력을 냈습니다. 도구 호출 0건, 파일 변경 0건.
+        # 짧은 지시("OK 만 답하라", "2+2")에는 정상 응답하므로 probe 로는
+        # 걸러지지 않습니다. 재시행도 2분 무응답이었습니다.
+        # 배정 대상에서 뺍니다. 이력을 남기려고 항목 자체는 지우지 않습니다.
+        "suitable_for": [],
+        "notes": (
+            "배정 금지. 2026-08-20 실측에서 4.8KB 지시문에 무의미 출력. "
+            "짧은 입력에는 정상 응답하므로 probe 통과. 장문 붕괴형."
+        ),
     },
     "cerebras-oss": {
         "id": "cerebras/gpt-oss-120b",
@@ -299,8 +305,12 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": 1_000_000,
+        # 2026-08-20 builder 경합 통과. 12분32초, 중립 시나리오 8/8, 테스트 10건.
         "suitable_for": [
             "investigator",
+            "builder",
+            "benchmarker",
+            "documenter",
         ],
         "notes": (
             "OpenRouter nvidia/nemotron-3-ultra-550b-a55b:free. 무료 풀에서 문맥이 "
@@ -314,9 +324,11 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": 262_144,
-        "suitable_for": [
-            "investigator",
-        ],
+        # 2026-08-20 builder 경합 실격. 32분간 379KB 를 출력하는 동안 도구 호출
+        # 0건, 파일 변경 0건. 사양 모순을 정확히 인지하고 escalation 을 결정한
+        # 뒤 매번 재검토로 되돌아갔습니다. 같은 모순을 deepseek 은 3분 만에
+        # ask 로 올려 해결했습니다. 읽기 전용 probe 에서는 드러나지 않습니다.
+        "suitable_for": [],
         "notes": (
             "OpenRouter poolside/laguna-s-2.1:free. 2026-08-20 감사 6/6, 26초. "
             "읽기 전용 probe 에서 지시 형식을 정확히 지켰다."
@@ -328,8 +340,13 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": 262_144,
+        # 2026-08-20 builder 경합 통과. 11분03초, 중립 시나리오 8/8, 테스트 11건.
+        # 핵심 불변식을 두 테스트로 쪼개 커버한 유일한 구현이라 산출물이 채택됐습니다.
         "suitable_for": [
             "investigator",
+            "builder",
+            "benchmarker",
+            "documenter",
         ],
         "notes": (
             "OpenRouter poolside/laguna-xs-2.1:free. 2026-08-20 감사 6/6, 15초로 "
@@ -338,15 +355,54 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "작업에만 붙인다."
         ),
     },
+    "opencode-nemotron3-ultra": {
+        "id": "opencode/nemotron-3-ultra-free",
+        "provider": "opencode",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": None,
+        # 2026-08-20 builder 경합 1위. 9분01초로 전체 최속, 중립 시나리오 8/8,
+        # 테스트 9건. 그전까지 MODEL_POOL 에 등록조차 되어 있지 않았습니다.
+        "suitable_for": [
+            "investigator",
+            "builder",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": (
+            "무료 풀 1순위. 2026-08-20 쓰기 과제 실측 9분01초. "
+            "컨텍스트 한도 미확인이므로 Capsule 과 diff 를 작게 유지하십시오."
+        ),
+    },
+    "opencode-mimo": {
+        "id": "opencode/mimo-v2.5-free",
+        "provider": "opencode",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": None,
+        # 2026-08-20 builder 경합 통과. 13분58초, 중립 시나리오 8/8, 테스트 9건.
+        # 역시 미등록 상태였습니다.
+        "suitable_for": [
+            "investigator",
+            "builder",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": (
+            "2026-08-20 쓰기 과제 실측 13분58초 통과. "
+            "컨텍스트 한도 미확인이므로 Capsule 과 diff 를 작게 유지하십시오."
+        ),
+    },
     "or-free-north-mini": {
         "id": "or-free/north-mini",
         "provider": "kimi-openrouter",
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": 256_000,
-        "suitable_for": [
-            "investigator",
-        ],
+        # 2026-08-20 builder 경합 실격. 31분50초 시점에 스크립트 70줄만 쓰고
+        # 테스트 미착수, 커밋 0건. 방향은 맞았으나 통과 5종 최장(13분58초)의
+        # 2.3배로 실격선 28분을 넘겼습니다.
+        "suitable_for": [],
         "notes": (
             "OpenRouter cohere/north-mini-code:free. 2026-08-20 감사 6/6 이나 "
             "86초로 가장 느리고, 출력 형식의 자리표시자를 그대로 남겼다. "
@@ -386,15 +442,29 @@ FREE_POOL_MAX_RISK: str = "low"
 #
 # **정확도로 순위를 매긴 것이 아닙니다.** 측정된 네 모델이 전부 만점이라
 # 변별되지 않았고, 순서는 문맥 크기와 응답 시간, 형식 준수에 따릅니다.
+# 2026-08-20 builder 경합(run_d2fd971f7daa) 실측 순서입니다. 그 전까지는
+# 문맥 크기와 probe 응답 시간으로 매긴 잠정 순서였고 능력 근거가 없었습니다.
+#
+# 무료 10종에 동일 Capsule 로 같은 쓰기 과제를 주고 격리 워크트리에서
+# 수행시킨 뒤, 구현 내부에 의존하지 않는 행동 시나리오 8문항으로 채점했습니다.
+# 통과 5종은 전부 8/8 이라 정확도로는 갈리지 않았고, 순서는 소요 시간입니다.
+#
+#   opencode-nemotron3-ultra  9분01초  8/8  테스트 9건
+#   or-free-laguna-xs        11분03초  8/8  테스트 11건
+#   opencode-deepseek        11분31초  8/8  테스트 8건
+#   or-free-nemotron-ultra   12분32초  8/8  테스트 10건
+#   opencode-mimo            13분58초  8/8  테스트 9건
+#
+# 실격 4종은 suitable_for 를 비워 후보에서 빠집니다. 실격 사유는 각 항목의
+# 주석에 있습니다. 능력 미달, 결정 불능, 속도 초과, 지역 차단으로 서로 다릅니다.
 FREE_POOL_ORDER: list[str] = [
+    "opencode-nemotron3-ultra",
+    "or-free-laguna-xs",
     "opencode-deepseek",
     "or-free-nemotron-ultra",
-    "or-free-laguna-s",
-    "or-free-laguna-xs",
-    "opencode-free",
+    "opencode-mimo",
+    # 읽기 범위가 Capsule 로 좁혀진 조사 전용. 컨텍스트 65K.
     "cerebras-oss",
-    # 출력 형식의 자리표시자를 그대로 남깁니다. 파싱이 필요한 자리에는 뒤로.
-    "or-free-north-mini",
     # 2026-08-18 실측 5회 중 3회가 빈 출력에 종료 코드 0 이었습니다.
     "cursor-auto",
 ]
