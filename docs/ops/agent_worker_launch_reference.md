@@ -43,6 +43,26 @@
 `dispatch --inject` 를 쓸 수 없고, preamble 을 런치 인자로 넘깁니다. 1.5 절을
 보십시오.
 
+### 1.0 같은 모델이 여러 CLI 에 있고 가용성은 CLI 마다 다릅니다
+
+**이 문서에서 가장 혼동하기 쉬운 지점입니다.** 모델 이름이 같아도 어느 CLI 로
+부르느냐에 따라 쓸 수 있는지가 갈립니다. 한쪽에서 사라져도 다른 쪽은 멀쩡합니다.
+
+| 실제 모델 | OpenCode Zen 무료 풀 | Kimi Code + OpenRouter |
+| --- | --- | --- |
+| poolside laguna S 2.1 | `laguna-s-2.1-free` — **2026-08-20 소멸** | `or-free/laguna-s` — **정상** |
+| nvidia nemotron 3 ultra | `nemotron-3-ultra-free` | `or-free/nemotron-ultra` |
+| deepseek v4 flash | `deepseek-v4-flash-free` | OpenRouter 유료 경로만 |
+| poolside laguna XS 2.1 | 없음 | `or-free/laguna-xs` |
+| cohere north mini | 없음 | `or-free/north-mini` |
+
+**한 CLI 의 가용성을 다른 CLI 의 근거로 쓰지 마십시오.** 2026-08-20 에 이
+세션이 Kimi 로 laguna 가 돌아가는 것을 보고 OpenCode 목록이 틀렸다고
+판단했습니다. 둘은 서로 다른 제공자를 거치므로 아무 관계가 없습니다.
+
+판정할 때는 **어느 CLI 로 부를 것인지 먼저 정하고, 그 CLI 로 호출해
+확인하십시오.** 모델 이름만으로는 판정할 수 없습니다.
+
 ### 1.1 모델 ID
 
 Codex 는 `~/.codex/models_cache.json`, Antigravity 는 `agy models` 로 확인합니다.
