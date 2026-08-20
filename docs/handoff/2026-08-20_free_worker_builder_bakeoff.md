@@ -189,3 +189,39 @@
 과제 다양성이 아직 없다. `builder_02` 와 같은 방식으로 investigator 감사 과제와
 중간 규모 리팩터 과제를 추가해 역할별 leaderboard 를 만들어야 한다. 절차는
 `benchmarks/free_workers/README.md` 5 장, 도구는 `aggregate.py` 를 그대로 쓴다.
+
+---
+
+## 9. 다음 세션이 먼저 할 일 (GPT 3차 감사, P0)
+
+**3차 경합을 시작하기 전에 아래 둘을 고쳐야 한다.**
+
+### P0-1. 러너 시한 처리에 프로세스 종료를 넣는다
+
+`benchmarks/free_workers/builder_02/run.sh` 는 시한 초과를 기록만 하고 워커를
+죽이지 않는다. 2차에서 실제로 오염이 발생했다(반복 금지 17.17).
+
+    launch 에서 orca terminal create 의 핸들을 보관
+    시한 초과 -> 그 핸들만 close -> 프로세스 종료 확인
+    -> 산출물 수집 -> 슬롯 반납 -> 다음 회차 허용
+
+`pkill -f` 는 쓰지 않는다. 다른 스택까지 죽는다.
+
+**2차 결과 중 `oc_nemo3ultra` 3회는 폐기하고 재측정한다.** 나머지 4스택
+12회는 시한 초과가 없어 영향받지 않는다.
+
+### P0-2. investigator 순서를 builder 와 실제로 분리한다
+
+`FREE_ORDER_BY_ROLE` 의 두 키가 같은 객체를 가리킨다. 별도 목록으로 나누고,
+두 순서를 다르게 둔 상태에서 역할별로 다른 모델이 선택되는지 검증하는 테스트를
+추가한다(반복 금지 17.18).
+
+### 그다음 (P1)
+
+| 항목 | 내용 |
+| --- | --- |
+| 러너 preflight | base ref·워크트리·출력 디렉터리 생성, CLI 존재 확인, 채점기 self-test |
+| 값 이중화 제거 | `TIMEOUT` 을 상수로 두지 말고 `capsule.yaml` 의 `benchmark.timeout_sec` 에서 읽기 |
+| 집계 단위 테스트 | rc 124/1 분류, `p95_all_sec`, 분모 혼재 거부, `no_commit` |
+| 분모 일관성 검사 | 한 벤치마크 안에서 채점 분모가 다르면 종료 코드 2 |
+| README 재현 절차 | 환경변수와 실행 순서 |
