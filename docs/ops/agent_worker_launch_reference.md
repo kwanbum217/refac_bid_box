@@ -49,9 +49,9 @@ Codex 는 `~/.codex/models_cache.json`, Antigravity 는 `agy models` 로 확인�
 **잘못된 ID 를 주면 워커가 기동 직후 죽는데 Orca 는 `dispatched`/`ready` 로
 표시합니다** (플레이북 4.2).
 
-| 제공자 | 2026-08-14 확인된 ID |
+| 제공자 | 확인된 ID |
 | --- | --- |
-| Codex | `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-sol-wm`, `gpt-5.6-terra`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini` |
+| Codex | **2026-08-20 재확인**: `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`. 08-14 에 있던 `gpt-5.6-sol-wm` 은 캐시에서 사라졌다 |
 | Antigravity | `gemini-3.7-flash-high`, `-medium`, `-low` (3.6·3.5 도 동일 3단), `gemini-3.1-pro-high`, `gemini-3.1-pro-low`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium` |
 | OpenCode Zen | `opencode models` 로 조회합니다. 1.3 절 참조 |
 
@@ -75,12 +75,22 @@ Antigravity 쪽 허용량이 적지만, 다음 상황에서 쓸 자리가 분명
 
 ### 1.3 OpenCode Zen 은 무료 풀과 유료 풀이 나뉩니다
 
-`opencode models` 로 조회합니다. 2026-08-14 확인 결과입니다.
+`opencode models` 로 조회합니다. **무료 풀은 예고 없이 바뀝니다.** 아래는
+2026-08-20 재확인 결과이며, 붙이기 전에 목록을 다시 조회하십시오.
 
 | 풀 | 상태 | 모델 |
 | --- | --- | --- |
-| `opencode/` (무료) | 지금 사용 가능 | `mimo-v2.5-free`, `deepseek-v4-flash-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`, `laguna-s-2.1-free`, `hy3-free`, `big-pickle` |
+| `opencode/` (무료) | 2026-08-20 조회 | `big-pickle`, `hy3-free`, `mimo-v2.5-free`, `muse-spark-1.2-contributor-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free` |
 | `opencode-go/` (유료) | **세션 쿠키 미설정** | `deepseek-v4-pro`, `kimi-k3`, `kimi-k2.7-code`, `qwen3.8-max`, `qwen3.7-max`, `glm-5.2`, `grok-4.5`, `minimax-m3`, `gpt-5.6-luna`, `mimo-v2.5-pro` 등 |
+
+**등록된 모델이 사라질 수 있습니다.** 2026-08-14 목록에 있던
+`deepseek-v4-flash-free` 와 `laguna-s-2.1-free` 는 2026-08-20 무료 풀에서
+사라졌습니다. deepseek 은 `opencode-go/` 유료 풀에만 남아 있습니다.
+
+이 소멸은 **라우터가 존재하지 않는 모델을 무료 풀 1순위로 들고 있는 상태**로
+이어졌고, 다른 목적으로 호출해 보기 전까지 드러나지 않았습니다. `opencode models`
+목록에 있다는 것과 호출이 성공한다는 것은 다르며, **목록에서 사라지는 것 역시
+아무 오류 없이 조용히 일어납니다.**
 
 ### 1.4 Cerebras 는 별도 프로바이더입니다
 
@@ -143,7 +153,7 @@ opencode -m cerebras/gemma-4-31b                            # 그 뒤에 기동
 
 ```bash
 opencode -m opencode/mimo-v2.5-free
-opencode -m opencode/deepseek-v4-flash-free
+opencode -m opencode/nemotron-3.5-lightning-free
 ```
 
 무료 모델에 넘길 작업 범위는 5장 표를 지키십시오. **자동 검증이 정오를
