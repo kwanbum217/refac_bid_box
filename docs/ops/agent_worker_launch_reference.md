@@ -83,14 +83,25 @@ Antigravity 쪽 허용량이 적지만, 다음 상황에서 쓸 자리가 분명
 | `opencode/` (무료) | 2026-08-20 조회 | `big-pickle`, `hy3-free`, `mimo-v2.5-free`, `muse-spark-1.2-contributor-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free` |
 | `opencode-go/` (유료) | **세션 쿠키 미설정** | `deepseek-v4-pro`, `kimi-k3`, `kimi-k2.7-code`, `qwen3.8-max`, `qwen3.7-max`, `glm-5.2`, `grok-4.5`, `minimax-m3`, `gpt-5.6-luna`, `mimo-v2.5-pro` 등 |
 
-**등록된 모델이 사라질 수 있습니다.** 2026-08-14 목록에 있던
-`deepseek-v4-flash-free` 와 `laguna-s-2.1-free` 는 2026-08-20 무료 풀에서
-사라졌습니다. deepseek 은 `opencode-go/` 유료 풀에만 남아 있습니다.
+**목록에서 빠졌다고 삭제된 것이 아닙니다.** 2026-08-20 에
+`deepseek-v4-flash-free` 가 `opencode models` 에서 빠지고 호출이
+`Model not found` 로 거부됐습니다. 그러나 **원인은 삭제가 아니라 opt-in
+미승인**이었습니다. 최신판이 중국 호스팅이라 OpenCode 워크스페이스의 Go
+설정에서 명시적으로 opt in 해야 하고, 미승인 계정에서는 무료 variant 가 목록에서
+빠집니다. 로컬 카탈로그(`~/.cache/opencode/models.json`)에는 그대로 있습니다.
 
-이 소멸은 **라우터가 존재하지 않는 모델을 무료 풀 1순위로 들고 있는 상태**로
-이어졌고, 다른 목적으로 호출해 보기 전까지 드러나지 않았습니다. `opencode models`
-목록에 있다는 것과 호출이 성공한다는 것은 다르며, **목록에서 사라지는 것 역시
-아무 오류 없이 조용히 일어납니다.**
+| 신호 | 실제 |
+| --- | --- |
+| `opencode models` 에 없음 | 계정에 노출되지 않을 뿐 카탈로그에는 있을 수 있습니다 |
+| `Model not found` + `Unexpected server error` | opt-in 요구가 이 형태로 나타납니다 |
+| 유료 variant 호출 | `requires explicit opt in` 으로 **원인을 명시**합니다 |
+
+**원인을 확정하려면 유료 variant 를 호출해 보십시오.** 무료 쪽 오류 문구만으로는
+삭제와 opt-in 미승인이 구분되지 않습니다. 2026-08-20 에 이 구분을 놓쳐 삭제로
+잘못 판정했습니다.
+
+`laguna-s-2.1-free` 도 같은 날 무료 풀 목록에서 빠졌으나 원인은 확인하지
+않았습니다.
 
 ### 1.4 Cerebras 는 별도 프로바이더입니다
 
