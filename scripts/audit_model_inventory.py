@@ -5,10 +5,9 @@
 사라졌는데 라우터는 그대로 들고 있었습니다. 소멸은 오류를 내지 않고 조용히
 일어나며, 그 모델이 선택되는 순간에야 `Model not found` 로 드러납니다.
 
-배정 대상(`suitable_for` 가 비어 있지 않은 항목)만 검사합니다. 코디네이터
-전용이나 이력 보존 항목은 애초에 배정되지 않으므로 소멸해도 해가 없습니다.
-
-종료 코드: 0 전부 확인, 1 소멸 발견, 2 도구 오류
+관측 이력 기반 반복 확인: 조회 실패(unavailable)가 아닌 'absent'가
+연속 3회 확인될 때만 소멸로 판정합니다. 종료 코드: 0 전부 확인/의심, 1 소멸
+발견, 2 도구 오류(손상된 상태 파일 등).
 """
 
 from __future__ import annotations
@@ -25,6 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.orca_model_router import MODEL_POOL
 
 LISTING_TIMEOUT = 120
+
+# 상태 파일 경로
+STATUS_PATH = Path(__file__).resolve().parent.parent / "data" / "model_inventory_history.json"
 
 CODEX_CACHE = Path.home() / ".codex" / "models_cache.json"
 KIMI_CONFIG = Path.home() / ".kimi-openrouter-free" / "config.toml"
@@ -87,7 +89,67 @@ def _kimi_aliases() -> set[str]:
     return set(re.findall(r'^\[models\."([^"]+)"\]', text, flags=re.MULTILINE))
 
 
-def audit(with_agy: bool = False) -> tuple[int, list[str]]:
+def _load_history(state_path: Path | None = None) -> dict[str, dict[str, int | str]]:
+    """상태 파일을 로드합니다. 손상되지 않았으면 기존 이력을 반환합니다."""
+    path = state_path if state_path is not None else STATUS_PATH
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+        return {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_history(
+    history: dict[str, dict[str, int | str]],
+    state_path: Path | None = None,
+) -> None:
+    """상태 파일에 이력을 저장합니다."""
+    path = state_path if state_path is not None else STATUS_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _update_history(
+    pool_name: str,
+    status: str,  # "present" | "absent" | "unknown"
+    counter: int,
+    state_path: Path | None = None,
+) -> int:
+    """조회 결과를 기록하고 반환된 카운터를 업데이트합니다."""
+    history = _load_history(state_path)
+    current = history.get(pool_name, {"status": "present", "counter": 0})
+    prev_counter = current.get("counter", 0)
+
+    if status == "present":
+        # present 관측: 카운터 초기화
+        history[pool_name] = {"status": "present", "counter": 0}
+        _save_history(history, state_path)
+        return 0
+    elif status == "absent":
+        # absent 관측: 카운터 증가
+        new_counter = prev_counter + 1
+        history[pool_name] = {"status": "absent", "counter": new_counter}
+        _save_history(history, state_path)
+        return new_counter
+    else:  # unknown
+        # unknown 관측: 카운터 보존, 기록만 남김
+        history[pool_name] = {"status": "unknown", "counter": prev_counter}
+        _save_history(history, state_path)
+        return prev_counter
+
+
+def audit(with_agy: bool = False, state_path: Path | None = None) -> tuple[int, list[str]]:
+    """모델 존재 여부를 확인하고 관측 이력을 누적합니다.
+
+    종료 코드:
+        0: 모든 배정 대상 모델 확인됨 또는 의심(1~2회 absent)
+        1: 소멸 발견(3회 연속 absent)
+        2: 도구 오류(손상된 상태 파일 등)
+    """
     lines: list[str] = []
     listings: dict[str, set[str]] = {}
     missing = 0
@@ -110,6 +172,7 @@ def audit(with_agy: bool = False) -> tuple[int, list[str]]:
             elif provider in AGY_PROVIDERS:
                 if not with_agy:
                     lines.append(f"  확인불가 {pool_name:26} agy 조회 생략 (--with-agy 로 활성화)")
+                    _update_history(pool_name, "unknown", 0, state_path)
                     continue
                 known = listings.setdefault("agy", _run_listing(AGY_LISTING))
                 present = model_id in known
@@ -117,18 +180,25 @@ def audit(with_agy: bool = False) -> tuple[int, list[str]]:
                 cmd = LISTING_COMMANDS.get(provider)
                 if cmd is None:
                     lines.append(f"  확인불가 {pool_name:26} {provider} 목록 조회 경로 없음")
+                    _update_history(pool_name, "unknown", 0, state_path)
                     continue
                 known = listings.setdefault(provider, _run_listing(cmd))
                 present = model_id in known
         except Exception as exc:
             lines.append(f"  확인불가 {pool_name:26} {exc}")
+            _update_history(pool_name, "unknown", 0, state_path)
             continue
 
         if present:
             lines.append(f"  존재     {pool_name:26} {model_id}")
+            _update_history(pool_name, "present", 0, state_path)
         else:
-            missing += 1
-            lines.append(f"  소멸     {pool_name:26} {model_id}  <- 제공자 목록에 없음")
+            counter = _update_history(pool_name, "absent", 0, state_path)
+            if counter >= 3:
+                missing += 1
+                lines.append(f"  소멸     {pool_name:26} {model_id}  <- 제공자 목록에 없음")
+            else:
+                lines.append(f"  의심     {pool_name:26} {model_id}  <- 의심 {counter}/3")
 
     return missing, lines
 
@@ -141,10 +211,32 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Antigravity 목록도 조회합니다 (느립니다)",
     )
+    parser.add_argument(
+        "--state",
+        type=str,
+        default=None,
+        help="상태 파일 경로를 지정합니다 (기본: data/model_inventory_history.json)",
+    )
+    parser.add_argument(
+        "--reset-state",
+        action="store_true",
+        help="상태 파일을 비웁니다",
+    )
     args = parser.parse_args(argv)
 
+    state_path = Path(args.state) if args.state else None
+
+    # 상태 파일 리셋
+    if args.reset_state:
+        if state_path and state_path.exists():
+            state_path.unlink()
+        elif not state_path and STATUS_PATH.exists():
+            STATUS_PATH.unlink()
+        print("상태 파일을 비활화했습니다.")
+        return 0
+
     try:
-        missing, lines = audit(with_agy=args.with_agy)
+        missing, lines = audit(with_agy=args.with_agy, state_path=state_path)
     except Exception as exc:
         print(f"도구 오류: {exc}")
         return 2
