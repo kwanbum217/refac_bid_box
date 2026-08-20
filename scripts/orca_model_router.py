@@ -101,6 +101,18 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         "probe_cmd": ["cursor-agent", "-p", "--model", "auto", "--mode", "plan", "ping"],
         "timeout": 60,
     },
+    "kimi-openrouter": {
+        # kimi 는 PATH 에 없어 전체 경로로 부릅니다. -p 는 단발 실행이라
+        # probe 가 대화형으로 남지 않습니다. 무료 풀이라 콜드스타트가 깁니다.
+        "probe_cmd": [
+            "/Users/kwanbum/.kimi-code/bin/kimi",
+            "-m",
+            "{model}",
+            "-p",
+            "ping",
+        ],
+        "timeout": 120,
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -224,14 +236,13 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": 1_000_000,
-        "suitable_for": [
-            "investigator",
-            "builder",
-            "benchmarker",
-            "documenter",
-        ],
+        "suitable_for": [],
         "notes": (
-            "무료 풀 주력. 공식 발표 기준 컨텍스트 1M, 추론 모드 3단"
+            "**2026-08-20 실측에서 사라졌습니다.** `opencode run` 이 "
+            "`Model not found` 를 반환하고 `opencode models` 목록에도 없습니다. "
+            "배정 대상에서 제외하며, 다시 나타나면 그 자리에서 probe 한 뒤 "
+            "suitable_for 를 복구합니다. 아래는 제외 전 기록입니다. "
+            "공식 발표 기준 컨텍스트 1M, 추론 모드 3단"
             "(Non-think / Think High / Think Max)이며 Think Max 는 384K 이상 권장. "
             "에이전트 벤치마크 Terminal Bench 2.1 82.7, DeepSWE 54.4, Toolathlon 70.3 로 "
             "코딩 에이전트 기본 모델로 제시된다. 벤더 자체 수치이므로 산출물은 "
@@ -279,6 +290,66 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "따라서 도구 호출이 손에 꼽는 작업에만 배정한다."
         ),
     },
+    "or-free-nemotron-ultra": {
+        "id": "or-free/nemotron-ultra",
+        "provider": "kimi-openrouter",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "investigator",
+        ],
+        "notes": (
+            "OpenRouter nvidia/nemotron-3-ultra-550b-a55b:free. 무료 풀에서 문맥이 "
+            "가장 크므로 장문 감사에 먼저 붙인다. 2026-08-20 게이트 도구 감사 "
+            "6문항 6/6, 57초. reasoning_effort 를 받는 유일한 무료 항목이다."
+        ),
+    },
+    "or-free-laguna-s": {
+        "id": "or-free/laguna-s",
+        "provider": "kimi-openrouter",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 262_144,
+        "suitable_for": [
+            "investigator",
+        ],
+        "notes": (
+            "OpenRouter poolside/laguna-s-2.1:free. 2026-08-20 감사 6/6, 26초. "
+            "읽기 전용 probe 에서 지시 형식을 정확히 지켰다."
+        ),
+    },
+    "or-free-laguna-xs": {
+        "id": "or-free/laguna-xs",
+        "provider": "kimi-openrouter",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 262_144,
+        "suitable_for": [
+            "investigator",
+        ],
+        "notes": (
+            "OpenRouter poolside/laguna-xs-2.1:free. 2026-08-20 감사 6/6, 15초로 "
+            "가장 빠르다. 다만 worker_done 의 --from 핸들을 한 번 틀렸다가 오류 "
+            "메시지를 보고 자가 복구했다. 절차 실수를 감독으로 잡을 수 있는 "
+            "작업에만 붙인다."
+        ),
+    },
+    "or-free-north-mini": {
+        "id": "or-free/north-mini",
+        "provider": "kimi-openrouter",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 256_000,
+        "suitable_for": [
+            "investigator",
+        ],
+        "notes": (
+            "OpenRouter cohere/north-mini-code:free. 2026-08-20 감사 6/6 이나 "
+            "86초로 가장 느리고, 출력 형식의 자리표시자를 그대로 남겼다. "
+            "형식을 기계로 파싱하는 작업에는 붙이지 않는다."
+        ),
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -288,9 +359,40 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 # reviewer 는 판정이 병합 결정에 직결되므로 개방하지 않습니다. builder 는
 # 산출물이 Level 1 게이트와 테스트를 거쳐 코디네이터가 병합을 결정하므로
 # 개방합니다. 무료 모델이 틀리면 손실은 시간이지 저장소가 아닙니다.
+# ---------------------------------------------------------------------------
+# OpenRouter 무료 풀 (Kimi Code 경유)
+# ---------------------------------------------------------------------------
+#
+# 2026-08-20 Run run_a32b6b614996 에서 네 모델 모두 Orca 읽기 전용 worker 경로
+# (dispatch --return-preamble -> kimi -p)를 완주했고, 이어서 1,111줄 게이트 도구
+# 감사 6문항을 4종 동시 실행으로 물려 전부 6/6 정답이었습니다.
+#
+# **정확도로는 네 모델이 변별되지 않았습니다.** 갈린 축은 응답 시간과 지시 형식
+# 준수뿐입니다. 따라서 아래 배정 차이는 능력 등급이 아니라 문맥 크기와 속도에
+# 근거합니다. 더 어려운 과제로 재측정하기 전에는 등급 차이를 주장하지 않습니다.
+#
+# 네 모델 모두 kimi -p 단발 실행이라 대화형 재개와 다단계 감독이 불가능하고,
+# 검증이 읽기 전용 범위에서만 이루어져 builder 는 부여하지 않습니다.
+
 FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator", "builder"})
 FREE_POOL_MAX_RISK: str = "low"
-FREE_POOL_ORDER: list[str] = ["opencode-deepseek", "cursor-auto", "opencode-free", "cerebras-oss"]
+# 2026-08-20 재정렬. 종전 1순위 opencode-deepseek 은 provider 에서 사라져
+# 목록에서 뺐습니다. 앞의 세 자리는 같은 날 감사 6문항을 6/6 으로 통과한
+# 모델이고, 그 뒤는 이 과제로 측정하지 않은 항목입니다.
+#
+# **정확도로 순위를 매긴 것이 아닙니다.** 측정된 네 모델이 전부 만점이라
+# 변별되지 않았고, 순서는 문맥 크기와 응답 시간, 형식 준수에 따릅니다.
+FREE_POOL_ORDER: list[str] = [
+    "or-free-nemotron-ultra",
+    "or-free-laguna-s",
+    "or-free-laguna-xs",
+    "opencode-free",
+    "cerebras-oss",
+    # 출력 형식의 자리표시자를 그대로 남깁니다. 파싱이 필요한 자리에는 뒤로.
+    "or-free-north-mini",
+    # 2026-08-18 실측 5회 중 3회가 빈 출력에 종료 코드 0 이었습니다.
+    "cursor-auto",
+]
 
 # ---------------------------------------------------------------------------
 # 역할별 추론 등급 정책
