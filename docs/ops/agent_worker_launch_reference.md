@@ -85,23 +85,20 @@ Antigravity 쪽 허용량이 적지만, 다음 상황에서 쓸 자리가 분명
 
 **목록에서 빠졌다고 삭제된 것이 아닙니다.** 2026-08-20 에
 `deepseek-v4-flash-free` 가 `opencode models` 에서 빠지고 호출이
-`Model not found` 로 거부됐습니다. 그러나 **원인은 삭제가 아니라 opt-in
-미승인**이었습니다. 최신판이 중국 호스팅이라 OpenCode 워크스페이스의 Go
-설정에서 명시적으로 opt in 해야 하고, 미승인 계정에서는 무료 variant 가 목록에서
-빠집니다. 로컬 카탈로그(`~/.cache/opencode/models.json`)에는 그대로 있습니다.
+`Model not found` 로 거부됐습니다. **같은 날 아무 조치 없이 복구됐습니다.**
+그 사이 로컬 카탈로그(`~/.cache/opencode/models.json`)에는 계속 있었습니다.
 
 | 신호 | 실제 |
 | --- | --- |
-| `opencode models` 에 없음 | 계정에 노출되지 않을 뿐 카탈로그에는 있을 수 있습니다 |
-| `Model not found` + `Unexpected server error` | opt-in 요구가 이 형태로 나타납니다 |
-| 유료 variant 호출 | `requires explicit opt in` 으로 **원인을 명시**합니다 |
+| `opencode models` 에 없음 | 일시적일 수 있습니다. 카탈로그를 함께 보십시오 |
+| `Model not found` + `Unexpected server error` | 서버측 일시 장애에서도 이 형태가 납니다 |
+| 유료 variant 의 `requires explicit opt in` | 중국 호스팅 opt-in 은 **별개 사유**입니다 |
 
-**원인을 확정하려면 유료 variant 를 호출해 보십시오.** 무료 쪽 오류 문구만으로는
-삭제와 opt-in 미승인이 구분되지 않습니다. 2026-08-20 에 이 구분을 놓쳐 삭제로
-잘못 판정했습니다.
+**한 번의 실패로 제외 판정을 내리지 마십시오.** 2026-08-20 에 이 세션이 목록
+이탈과 1회 실패만 보고 삭제로 판정해 라우터에서 뺐다가, 재호출이 성공해
+되돌렸습니다. 제외는 시간을 두고 반복 확인한 뒤에 합니다.
 
-`laguna-s-2.1-free` 도 같은 날 무료 풀 목록에서 빠졌으나 원인은 확인하지
-않았습니다.
+`laguna-s-2.1-free` 는 같은 날 목록에서 빠진 뒤 복구가 확인되지 않았습니다.
 
 ### 1.4 Cerebras 는 별도 프로바이더입니다
 

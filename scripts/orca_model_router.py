@@ -236,20 +236,20 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": 1_000_000,
-        "suitable_for": [],
+        "suitable_for": [
+            "investigator",
+            "builder",
+            "benchmarker",
+            "documenter",
+        ],
         "notes": (
-            "**2026-08-20 현재 opt-in 미승인으로 호출 불가입니다. 삭제된 것이 "
-            "아닙니다.** 최신판이 중국 호스팅이라 OpenCode 워크스페이스의 Go "
-            "설정에서 명시적 opt in 을 해야 합니다. 미승인 상태에서는 무료 "
-            "variant 가 계정 모델 목록에서 빠지고 `Model not found` 가 나며, "
-            "유료 variant 는 opt-in 요구 오류를 냅니다. 카탈로그에는 그대로 "
-            "있습니다. opt in 후 probe 로 확인하고 suitable_for 를 복구하십시오. "
-            "아래는 제외 전 기록입니다. "
-            "공식 발표 기준 컨텍스트 1M, 추론 모드 3단"
-            "(Non-think / Think High / Think Max)이며 Think Max 는 384K 이상 권장. "
-            "에이전트 벤치마크 Terminal Bench 2.1 82.7, DeepSWE 54.4, Toolathlon 70.3 로 "
-            "코딩 에이전트 기본 모델로 제시된다. 벤더 자체 수치이므로 산출물은 "
-            "반드시 재검증한다. reviewer 는 병합 판정에 직결되어 배정하지 않는다."
+            "무료 풀에서 builder 를 받는 유일한 항목이다. 공식 발표 기준 "
+            "컨텍스트 1M, 추론 모드 3단(Non-think / Think High / Think Max)이며 "
+            "Think Max 는 384K 이상 권장. 벤더 자체 수치이므로 산출물은 반드시 "
+            "재검증한다. reviewer 는 병합 판정에 직결되어 배정하지 않는다. "
+            "2026-08-20 에 일시적으로 `Model not found` 가 나고 `opencode models` "
+            "목록에서도 빠졌다가 같은 날 복구됐다. **목록 이탈과 삭제는 다르며, "
+            "재시도 없이 제외 판정을 내리지 않는다.**"
         ),
     },
     "opencode-free": {
@@ -379,13 +379,15 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
 
 FREE_POOL_ELIGIBLE_ROLES: frozenset[str] = frozenset({"investigator", "builder"})
 FREE_POOL_MAX_RISK: str = "low"
-# 2026-08-20 재정렬. 종전 1순위 opencode-deepseek 은 opt-in 미승인으로 호출이
-# 거부되어 목록에서 뺐습니다. opt in 하면 되돌릴 수 있습니다. 앞의 세 자리는 같은 날 감사 6문항을 6/6 으로 통과한
+# 2026-08-20 재정렬. opencode-deepseek 은 같은 날 일시적으로 호출이 거부돼
+# 뺐다가, 복구를 확인하고 원래 자리로 되돌렸습니다. 무료 풀에서 builder 를
+# 받는 유일한 항목이라 1순위를 유지합니다. 앞의 세 자리는 같은 날 감사 6문항을 6/6 으로 통과한
 # 모델이고, 그 뒤는 이 과제로 측정하지 않은 항목입니다.
 #
 # **정확도로 순위를 매긴 것이 아닙니다.** 측정된 네 모델이 전부 만점이라
 # 변별되지 않았고, 순서는 문맥 크기와 응답 시간, 형식 준수에 따릅니다.
 FREE_POOL_ORDER: list[str] = [
+    "opencode-deepseek",
     "or-free-nemotron-ultra",
     "or-free-laguna-s",
     "or-free-laguna-xs",

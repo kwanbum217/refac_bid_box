@@ -47,19 +47,20 @@ Laguna XS 는 첫 `worker_done` 의 `--from` 에 코디네이터 핸들을 넣�
 
 ## 3. 이 세션에서 드러난 결함
 
-### 3.1 등록된 무료 풀 1순위를 호출할 수 없었습니다
+### 3.1 무료 풀 1순위를 일시적으로 호출할 수 없었습니다
 
-`opencode/deepseek-v4-flash-free` 가 계정 모델 목록에서 빠지고 호출이
-`Model not found` 로 거부되는데 라우터는 그대로 1순위로 들고 있었습니다.
+`opencode/deepseek-v4-flash-free` 가 `opencode models` 목록에서 빠지고 호출이
+`Model not found` 로 거부됐습니다. 이 세션은 이를 **삭제로 판정해 라우터에서
+제외했으나 틀렸습니다.** 같은 날 아무 조치 없이 복구됐고, 사용자 지적을 받아
+재호출해 확인한 뒤 1순위로 되돌렸습니다.
 
-**원인은 삭제가 아니라 opt-in 미승인입니다.** 최신판이 중국 호스팅이라
-워크스페이스 Go 설정에서 명시적 opt in 이 필요하고, 미승인 계정에서는 무료
-variant 가 목록에서 사라집니다. 유료 variant 를 호출하면
-`requires explicit opt in` 으로 원인을 명시합니다. **처음에 이 구분을 놓쳐
-삭제로 잘못 판정했고, 사용자 지적으로 바로잡았습니다.**
+판정을 그르친 경로는 두 단계였습니다. 먼저 목록 이탈과 1회 실패만으로 삭제라고
+단정했고, 다음에는 유료 variant 의 `requires explicit opt in` 오류를 보고
+원인을 opt-in 미승인으로 다시 단정했습니다. **두 번 다 한 번의 관측으로
+원인을 확정한 것이 잘못이었습니다.** 실제 원인은 확인되지 않았으며, 관측된
+사실은 "일시적으로 실패했고 같은 날 복구됐다" 뿐입니다.
 
-재발을 막기 위해 [`../../scripts/audit_model_inventory.py`](../../scripts/audit_model_inventory.py)
-를 추가했습니다. 배정 대상만 검사하고, **조회 실패를 소멸로 승격하지 않습니다.**
+제외 판정은 시간을 두고 반복 확인한 뒤에 내려야 합니다.
 
 ### 3.2 문서 정본의 낡은 기록
 
@@ -106,10 +107,9 @@ ruff check·format 통과입니다.
    과제가 필요하며, 그전까지 `FREE_POOL_ORDER` 순서는 능력 근거가 아닙니다.
 3. **쓰기 적합성 미검증**: 4종 모두 읽기 전용 범위에서만 검증했습니다.
    `builder` 를 부여하려면 별도 실측이 필요합니다.
-4. **deepseek opt in 이 가장 싼 복구입니다**: 워크스페이스 Go 설정에서 opt in
-   한 뒤 `uv run python scripts/audit_model_inventory.py` 와 probe 로 확인하고
-   `suitable_for` 와 `FREE_POOL_ORDER` 를 되돌리면 됩니다. 그전까지는
-   `cursor-auto` 가 유일한 무료 builder 후보입니다.
+4. **deepseek 은 복구되어 1순위로 되돌렸습니다**: 무료 풀에서 `builder` 를 받는
+   유일한 항목입니다. 같은 감사 과제를 물려 or-free 4종과 비교하려 했으나
+   `opencode-ai` postinstall 오류로 실행하지 못했습니다. 비교는 미완입니다.
 5. **`cursor-auto` 재현 시험**: 2026-08-20 3회 시행에서 3회 모두 `OK` 를
    8~9초에 반환했습니다. 08-18 의 5회 중 3회 빈 출력은 재현되지 않았으나
    3회는 판정에 부족하므로 기존 주의는 유지합니다.
