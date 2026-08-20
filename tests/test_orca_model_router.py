@@ -272,6 +272,8 @@ class TestModelPoolAndSelection:
             "or-free-laguna-s",
             "or-free-laguna-xs",
             "or-free-north-mini",
+            "opencode-nemotron3-ultra",
+            "opencode-mimo",
         }
 
 
@@ -738,16 +740,24 @@ class TestFreePoolOptIn:
     def test_free_pool_constants(self):
         assert frozenset({"investigator", "builder"}) == FREE_POOL_ELIGIBLE_ROLES
         assert FREE_POOL_MAX_RISK == "low"
+        # 2026-08-20 builder 경합(run_d2fd971f7daa) 실측 순서입니다.
+        # 통과 5종은 중립 시나리오 8문항을 전부 맞혔으므로 순서는 소요 시간입니다.
         assert FREE_POOL_ORDER == [
+            "opencode-nemotron3-ultra",
+            "or-free-laguna-xs",
             "opencode-deepseek",
             "or-free-nemotron-ultra",
-            "or-free-laguna-s",
-            "or-free-laguna-xs",
-            "opencode-free",
+            "opencode-mimo",
             "cerebras-oss",
-            "or-free-north-mini",
             "cursor-auto",
         ]
+        # 실격 4종은 후보에서 빠져 있어야 합니다.
+        for disqualified in (
+            "or-free-laguna-s",
+            "or-free-north-mini",
+            "opencode-free",
+        ):
+            assert disqualified not in FREE_POOL_ORDER
         assert "codex" not in FREE_POOL_ORDER
         assert "reviewer" not in FREE_POOL_ELIGIBLE_ROLES
 
@@ -768,7 +778,8 @@ class TestFreePoolOptIn:
         }
         assert "reviewer" not in deepseek_info["suitable_for"]
 
-        # OpenRouter 무료 4종은 읽기 전용으로만 검증되어 investigator 만 받습니다.
+        # 2026-08-20 builder 경합 결과입니다. 통과한 둘만 쓰기 역할을 받고,
+        # 실격한 둘은 suitable_for 가 비어 배정되지 않습니다.
         for pool_name in (
             "or-free-nemotron-ultra",
             "or-free-laguna-s",
@@ -779,9 +790,21 @@ class TestFreePoolOptIn:
             assert info["provider"] == "kimi-openrouter"
             assert info["tier"] == "free"
             assert info["auto_selectable"] is False
-            assert info["suitable_for"] == ["investigator"]
-            assert "builder" not in info["suitable_for"]
+            # reviewer 는 병합 판정에 쓰이는 임계 경로라 무료 풀에 열지 않습니다.
             assert "reviewer" not in info["suitable_for"]
+
+        for passed in ("or-free-nemotron-ultra", "or-free-laguna-xs"):
+            assert set(MODEL_POOL[passed]["suitable_for"]) == {
+                "investigator",
+                "builder",
+                "benchmarker",
+                "documenter",
+            }
+
+        # laguna-s 는 결정 불능(32분 도구 호출 0건), north-mini 는 속도 초과
+        # (31분50초, 실격선 28분)로 배정 대상에서 빠졌습니다.
+        for failed in ("or-free-laguna-s", "or-free-north-mini"):
+            assert MODEL_POOL[failed]["suitable_for"] == []
 
         free_info = MODEL_POOL["opencode-free"]
         assert "/" in free_info["id"]
@@ -789,6 +812,24 @@ class TestFreePoolOptIn:
         assert free_info["provider"] == "opencode"
         assert free_info["tier"] == "free"
         assert free_info["auto_selectable"] is False
+        # 2026-08-20 실측에서 4.8KB 지시문에 무의미 출력을 냈습니다. 짧은
+        # 입력에는 정상 응답하므로 probe 로는 걸러지지 않아, 배정 대상에서
+        # 명시적으로 빼야 합니다.
+        assert free_info["suitable_for"] == []
+
+        # 2026-08-20 경합을 통과해 새로 등록된 OpenCode 무료 2종입니다.
+        for pool_name in ("opencode-nemotron3-ultra", "opencode-mimo"):
+            info = MODEL_POOL[pool_name]
+            assert info["provider"] == "opencode"
+            assert info["tier"] == "free"
+            assert info["auto_selectable"] is False
+            assert set(info["suitable_for"]) == {
+                "investigator",
+                "builder",
+                "benchmarker",
+                "documenter",
+            }
+            assert "reviewer" not in info["suitable_for"]
 
         codex_info = MODEL_POOL["codex"]
         assert codex_info["provider"] == "codex"
@@ -883,12 +924,12 @@ class TestFreePoolOptIn:
             for w in warnings_f
         )
 
-        # 기본 무료 주 모델 opencode-deepseek 는 max_tokens 1,000,000 이므로
+        # 기본 무료 주 모델 opencode-nemotron3-ultra 는 max_tokens 가 None 이므로
         # 한도 경고 없이 재검증 필수 경고만 발행합니다.
         res_f = route(
             role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False
         )
-        assert res_f.primary_model == "opencode/deepseek-v4-flash-free"
+        assert res_f.primary_model == "opencode/nemotron-3-ultra-free"
         assert any("산출물 재검증 필수" in w for w in res_f.warnings)
 
         res_none = route(explicit_model="opencode/nemotron-3.5-lightning-free", probe=False)
@@ -984,18 +1025,18 @@ class TestFreePoolOptIn:
                     assert res["primary_pool"] != "cerebras-oss"
                     assert res["fallback_pool"] != "cerebras-oss"
 
-    def test_allow_free_true_investigator_low_risk_no_write_scope_selects_deepseek(self):
-        """allow_free=True, investigator, low, 쓰기 없음 조합에서 주 모델로 opencode/deepseek-v4-flash-free 가 선택되고 fallback 으로 opencode/nemotron-3.5-lightning-free 가 지정됩니다."""
+    def test_allow_free_true_investigator_low_risk_no_write_scope_selects_free_primary(self):
+        """allow_free=True, investigator, low, 쓰기 없음 조합에서 FREE_POOL_ORDER 1순위와 2순위가 주/대체 모델로 지정됩니다."""
         res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
-        assert res["primary_pool"] == "opencode-deepseek"
-        assert res["primary_model"] == "opencode/deepseek-v4-flash-free"
-        assert res["fallback_pool"] == "or-free-nemotron-ultra"
-        assert res["fallback_model"] == "or-free/nemotron-ultra"
+        assert res["primary_pool"] == "opencode-nemotron3-ultra"
+        assert res["primary_model"] == "opencode/nemotron-3-ultra-free"
+        assert res["fallback_pool"] == "or-free-laguna-xs"
+        assert res["fallback_model"] == "or-free/laguna-xs"
 
     def test_allow_free_true_builder_low_risk_allowed(self):
         """allow_free=True, builder, low 는 무료 풀이 허용됩니다. 주 모델로 opencode/deepseek-v4-flash-free 가 선택되고 재검증 경고가 기록됩니다."""
         res = route(role="builder", risk="low", allow_free=True, probe=False)
-        assert res.primary_model == "opencode/deepseek-v4-flash-free"
+        assert res.primary_model == "opencode/nemotron-3-ultra-free"
         assert res.primary_model != "opencode/nemotron-3.5-lightning-free"
         assert any("산출물 재검증 필수" in w for w in res.warnings)
 
@@ -1022,7 +1063,7 @@ class TestFreePoolOptIn:
         res = route(
             role="investigator", risk="low", allow_free=True, has_write_scope=True, probe=False
         )
-        assert res.primary_model == "opencode/deepseek-v4-flash-free"
+        assert res.primary_model == "opencode/nemotron-3-ultra-free"
         assert any("산출물 재검증 필수" in w for w in res.warnings)
 
     def test_allow_free_true_reviewer_rejected(self):
@@ -1038,7 +1079,7 @@ class TestFreePoolOptIn:
         res = route(
             role="investigator", risk="low", allow_free=True, has_write_scope=False, probe=False
         )
-        assert res.primary_model == "opencode/deepseek-v4-flash-free"
+        assert res.primary_model == "opencode/nemotron-3-ultra-free"
         assert any("산출물 재검증 필수" in w and "임계 경로 금지" in w for w in res.warnings)
 
     def test_allow_free_true_never_selects_coordinator_model(self):
@@ -1048,10 +1089,10 @@ class TestFreePoolOptIn:
         assert res["fallback_model"] != "claude-opus-5"
 
     def test_route_free_pool_primary_fail_fallback(self, monkeypatch, cerebras_key_present):
-        """opencode-deepseek 가 probe 실패하면 cursor-auto 로 fallback 전환됨을 검증합니다."""
+        """무료 1순위가 probe 실패하면 2순위로 fallback 전환됨을 검증합니다."""
 
         def _mock_run(cmd, *args, **kwargs):
-            if "opencode/deepseek-v4-flash-free" in cmd:
+            if "opencode/nemotron-3-ultra-free" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="Error: model unavailable")
             return MagicMock(returncode=0, stdout="ping ok", stderr="")
 
@@ -1062,8 +1103,8 @@ class TestFreePoolOptIn:
         )
         assert res.primary_available is False
         assert res.fallback_available is True
-        assert res.fallback_model == "or-free/nemotron-ultra"
-        assert any("대체 모델 or-free/nemotron-ultra 로 전환" in w for w in res.warnings)
+        assert res.fallback_model == "or-free/laguna-xs"
+        assert any("대체 모델 or-free/laguna-xs 로 전환" in w for w in res.warnings)
 
     def test_route_with_capsule_file_allow_free(self, tmp_path):
         """Capsule 파일을 통한 route 에서 allow_free 조건부 개방 검증."""
@@ -1082,7 +1123,7 @@ class TestFreePoolOptIn:
         res_ro = route(capsule_path=ro_capsule, allow_free=True, probe=False)
         assert res_ro.risk == "low"
         assert res_ro.role == "investigator"
-        assert res_ro.primary_model == "opencode/deepseek-v4-flash-free"
+        assert res_ro.primary_model == "opencode/nemotron-3-ultra-free"
 
         # 쓰기 있는 Capsule: 쓰기 범위가 있어도 무료 풀이 허용되며 재검증 경고가 기록됩니다.
         rw_capsule = tmp_path / "investigator_rw.yaml"
@@ -1098,7 +1139,7 @@ class TestFreePoolOptIn:
             encoding="utf-8",
         )
         res_rw = route(capsule_path=rw_capsule, allow_free=True, probe=False)
-        assert res_rw.primary_model == "opencode/deepseek-v4-flash-free"
+        assert res_rw.primary_model == "opencode/nemotron-3-ultra-free"
         assert any("산출물 재검증 필수" in w for w in res_rw.warnings)
 
     def test_cli_route_allow_free_json(self, tmp_path, capsys):
@@ -1131,8 +1172,8 @@ class TestFreePoolOptIn:
         ret = cmd_route(args)
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
-        assert data["primary_model"] == "opencode/deepseek-v4-flash-free"
-        assert data["recommended"] == "opencode/deepseek-v4-flash-free"
+        assert data["primary_model"] == "opencode/nemotron-3-ultra-free"
+        assert data["recommended"] == "opencode/nemotron-3-ultra-free"
         assert any("산출물 재검증 필수" in w for w in data["warnings"])
 
     def test_cli_classify_allow_free_json(self, tmp_path, capsys):
@@ -1161,7 +1202,7 @@ class TestFreePoolOptIn:
         ret = cmd_classify(args)
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
-        assert data["primary_model"] == "opencode/deepseek-v4-flash-free"
+        assert data["primary_model"] == "opencode/nemotron-3-ultra-free"
 
     def test_list_command_includes_free_pool_guide(self, capsys):
         """CLI list 서브커맨드에서 조건부 개방 안내 문구가 출력되는지 검증."""
@@ -1307,21 +1348,34 @@ def test_free_pool_candidates_must_match_role_suitable_for():
     걸러 내지 않으면 investigator 전용 모델이 builder 로 배정됩니다.
     TIER_POLICY 경로는 이미 불변식으로 묶여 있는데 무료 경로만 밖에 있었습니다.
     """
-    from scripts.orca_model_router import MODEL_POOL, select_model
+    # builder 를 가진 무료 풀을 전부 빼면 남는 무료 후보는 investigator 전용
+    # 뿐입니다. 그때 그 모델이 builder 로 선택되면 안 됩니다. 목록을 손으로
+    # 적으면 풀이 바뀔 때마다 어긋나므로 MODEL_POOL 에서 유도합니다.
+    from scripts.orca_model_router import FREE_POOL_ORDER, MODEL_POOL, select_model
 
-    # deepseek 과 cursor 를 빼면 남는 무료 모델은 investigator 전용입니다.
+    builder_capable = [
+        name for name in FREE_POOL_ORDER if "builder" in MODEL_POOL[name]["suitable_for"]
+    ]
+    investigator_only = [
+        name for name in FREE_POOL_ORDER if "builder" not in MODEL_POOL[name]["suitable_for"]
+    ]
+    assert investigator_only, "investigator 전용 무료 풀이 없으면 이 불변식을 검사할 수 없습니다"
+
     result = select_model(
         "builder",
         "low",
-        exclude=["opencode-deepseek", "cursor-auto"],
+        exclude=builder_capable,
         allow_free=True,
         has_write_scope=True,
     )
     assert "builder" in MODEL_POOL[result["primary_pool"]]["suitable_for"]
+    assert result["primary_pool"] not in investigator_only
 
-    # 적합한 무료 모델이 있으면 여전히 우선합니다.
+    # 적합한 무료 모델이 있으면 여전히 우선합니다. 제외 없이 부르면
+    # FREE_POOL_ORDER 1순위가 그대로 나와야 합니다.
     investigator = select_model("investigator", "low", allow_free=True, has_write_scope=False)
-    assert investigator["primary_pool"] == "opencode-deepseek"
+    assert investigator["primary_pool"] == FREE_POOL_ORDER[0]
+    assert "investigator" in MODEL_POOL[investigator["primary_pool"]]["suitable_for"]
 
 
 def test_every_free_pool_selection_is_role_suitable():
