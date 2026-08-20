@@ -770,12 +770,10 @@ class TestFreePoolOptIn:
         assert deepseek_info["tier"] == "free"
         assert deepseek_info["auto_selectable"] is False
         assert deepseek_info["max_tokens"] == 1_000_000
-        assert set(deepseek_info["suitable_for"]) == {
-            "investigator",
-            "builder",
-            "benchmarker",
-            "documenter",
-        }
+        # 잰 역할만 부여합니다. 2026-08-20 경합이 측정한 것은 builder 이고,
+        # investigator 는 코드를 정확히 읽어야 완주하므로 포섭됩니다.
+        # benchmarker 와 documenter 는 무료 풀 전체에서 회수했습니다.
+        assert set(deepseek_info["suitable_for"]) == {"investigator", "builder"}
         assert "reviewer" not in deepseek_info["suitable_for"]
 
         # 2026-08-20 builder 경합 결과입니다. 통과한 둘만 쓰기 역할을 받고,
@@ -794,12 +792,7 @@ class TestFreePoolOptIn:
             assert "reviewer" not in info["suitable_for"]
 
         for passed in ("or-free-nemotron-ultra", "or-free-laguna-xs"):
-            assert set(MODEL_POOL[passed]["suitable_for"]) == {
-                "investigator",
-                "builder",
-                "benchmarker",
-                "documenter",
-            }
+            assert set(MODEL_POOL[passed]["suitable_for"]) == {"investigator", "builder"}
 
         # laguna-s 는 결정 불능(32분 도구 호출 0건), north-mini 는 속도 초과
         # (31분50초, 실격선 28분)로 배정 대상에서 빠졌습니다.
@@ -823,13 +816,15 @@ class TestFreePoolOptIn:
             assert info["provider"] == "opencode"
             assert info["tier"] == "free"
             assert info["auto_selectable"] is False
-            assert set(info["suitable_for"]) == {
-                "investigator",
-                "builder",
-                "benchmarker",
-                "documenter",
-            }
+            assert set(info["suitable_for"]) == {"investigator", "builder"}
             assert "reviewer" not in info["suitable_for"]
+
+        # 무료 풀 어느 항목도 측정하지 않은 역할을 가져서는 안 됩니다.
+        for pool_name in FREE_POOL_ORDER:
+            roles = set(MODEL_POOL[pool_name]["suitable_for"])
+            assert roles <= {"investigator", "builder"}, (
+                f"{pool_name} 이 측정되지 않은 역할 {roles - {'investigator', 'builder'}} 을 갖고 있습니다"
+            )
 
         codex_info = MODEL_POOL["codex"]
         assert codex_info["provider"] == "codex"

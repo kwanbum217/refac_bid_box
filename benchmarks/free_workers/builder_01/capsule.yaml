@@ -1,0 +1,126 @@
+schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+mode: worker
+run_id: "run_d2fd971f7daa"
+task_id: "__TASK_ID__"
+role: "builder"
+
+objective: >
+  scripts/audit_model_inventory.py 에 관측 이력 기반 반복 확인 로직을 추가하여,
+  단발 목록 이탈을 소멸로 단정하지 않고 서로 다른 관측 회차에서 3회 연속
+  이탈이 확인될 때만 소멸로 판정하도록 만듭니다. 조회 실패(확인불가)는 연속
+  카운터를 올리지도 내리지도 않아야 합니다. 기존 4개 테스트를 유지한 채
+  신규 테스트를 tests/test_audit_model_inventory.py 에 추가하고, 전체 테스트와
+  규칙 검증을 통과시킨 뒤 자기 작업 브랜치에 커밋합니다.
+
+why_now: >
+  2026-08-20 에 opencode/deepseek-v4-flash-free 가 목록에서 사라졌다가 같은 날
+  아무 조치 없이 복구됐습니다. 당시 코디네이터는 1회 관측만으로 소멸로 단정해
+  라우터에서 잘못 제외했습니다. 현재 도구는 매 실행을 독립 판정하므로 같은
+  오판을 그대로 반복합니다.
+
+ground_truth:
+  - fact: "scripts/audit_model_inventory.py 는 164줄이며 audit() 이 (missing, lines) 튜플을 반환하고 main() 이 종료 코드 0/1/2 를 낸다."
+    evidence: "scripts/audit_model_inventory.py"
+    recheck: false
+  - fact: "조회 실패는 이미 '확인불가' 로 출력되며 결코 '소멸' 로 승격되지 않는다. 이 불변식은 반드시 보존해야 한다."
+    evidence: "scripts/audit_model_inventory.py audit() 의 except 절"
+    recheck: false
+  - fact: "tests/test_audit_model_inventory.py 에 기존 테스트 4건이 있으며 전부 통과 상태다."
+    evidence: "tests/test_audit_model_inventory.py"
+    recheck: false
+  - fact: "data/analysis/ 는 .gitignore 대상이지만 data/ 최상위는 아니다."
+    evidence: ".gitignore"
+    recheck: false
+  - fact: "이 저장소는 uv 를 씁니다. macOS 의 python3 는 Xcode 3.9 이므로 파이썬 실행은 반드시 'uv run python' 으로 합니다."
+    evidence: "docs/ops/orca_do_not_repeat.md"
+    recheck: false
+
+allowed_read_files:
+  - ".orca/capsules/free_builder_bakeoff/__CAPSULE_NAME__.yaml"
+  - "scripts/audit_model_inventory.py"
+  - "tests/test_audit_model_inventory.py"
+  - "scripts/orca_model_router.py"
+  - ".gitignore"
+
+allowed_write_files:
+  - "scripts/audit_model_inventory.py"
+  - "tests/test_audit_model_inventory.py"
+  - ".gitignore"
+
+search_scope:
+  mode: deny_by_default
+  allowed_globs: []
+
+forbidden:
+  - "README.md, AGENTS.md, SKILLS.md, docs/design/REFACTORING_DESIGN.md 재독 금지"
+  - "scripts/orca_model_router.py 수정 금지 (읽기만 허용)"
+  - "MODEL_POOL 또는 FREE_POOL_ORDER 변경 금지"
+  - "실제 CLI(opencode, kimi, agy)를 호출하는 테스트 작성 금지. 조회 계층은 반드시 monkeypatch 로 대체할 것"
+  - "main 브랜치 직접 수정 및 커밋 금지"
+  - "Pull Request 생성 금지"
+  - "이모지 사용 금지 (코드 주석, 커밋 메시지, 문서 전부)"
+  - "새 외부 패키지 추가 금지. 표준 라이브러리만 사용"
+
+shared_resources:
+  - resource: docker
+    ownership: none
+
+required_change:
+  - "관측 이력을 JSON 상태 파일에 누적합니다. 기본 경로는 data/model_inventory_history.json 이고 --state <경로> 로 바꿀 수 있습니다."
+  - "상태 파일은 pool_name 별로 최근 관측 결과를 present / absent / unknown 세 값 중 하나로 기록합니다."
+  - "absent 가 서로 다른 관측 회차에서 3회 연속이면 그 항목을 '소멸' 로 판정하고 종료 코드 1 을 냅니다."
+  - "absent 가 1회 또는 2회 연속이면 '의심 N/3' 으로 출력하되 종료 코드는 0 으로 유지합니다."
+  - "present 관측이 들어오면 그 항목의 연속 absent 카운터를 0 으로 초기화합니다."
+  - "unknown 관측은 연속 absent 카운터를 증가시키지도 초기화하지도 않습니다. 직전 카운터를 그대로 보존하고 기록만 남깁니다."
+  - "--reset-state 옵션으로 상태 파일을 비울 수 있게 합니다."
+  - "상태 파일이 없거나 손상된 JSON 이면 도구 오류로 죽지 말고 빈 이력으로 시작합니다."
+  - "data/model_inventory_history.json 을 .gitignore 에 추가합니다."
+  - "모듈 docstring 의 종료 코드 설명을 새 판정 기준에 맞게 갱신합니다."
+
+acceptance:
+  - "unknown 관측이 연속 absent 카운터를 보존한다는 사실을 검증하는 테스트가 존재하고 통과합니다."
+  - "absent 2회에서는 종료 코드 0, 3회째에서 종료 코드 1 이 되는 경계를 검증하는 테스트가 존재하고 통과합니다."
+  - "absent 이후 present 가 오면 카운터가 초기화되어 그 뒤 absent 2회로는 소멸 판정이 나지 않음을 검증하는 테스트가 존재하고 통과합니다."
+  - "손상된 상태 파일에서 종료 코드 2 로 죽지 않음을 검증하는 테스트가 존재하고 통과합니다."
+  - "기존 테스트 4건이 그대로 통과합니다."
+  - "uv run pytest tests/ -q 전량 통과"
+  - "uv run ruff check scripts/audit_model_inventory.py tests/test_audit_model_inventory.py 통과"
+  - "작업 브랜치에 커밋이 1건 이상 있습니다."
+
+verification_commands:
+  - "uv run pytest tests/test_audit_model_inventory.py -q"
+  - "uv run pytest tests/ -q"
+
+review_checklist:
+  - id: "unknown_not_counted"
+    question: "조회 실패(unknown) 관측이 연속 absent 카운터를 증가시키는가?"
+    defect_when: "yes"
+  - id: "unknown_not_reset"
+    question: "조회 실패(unknown) 관측이 연속 absent 카운터를 0 으로 초기화하는가?"
+    defect_when: "yes"
+  - id: "threshold_boundary"
+    question: "absent 2회 연속에서 종료 코드 1(소멸)이 나는가?"
+    defect_when: "yes"
+  - id: "present_resets"
+    question: "present 관측 후에도 이전 absent 카운터가 남아 있는가?"
+    defect_when: "yes"
+  - id: "corrupt_state_fatal"
+    question: "손상된 상태 파일에서 도구가 종료 코드 2 로 죽는가?"
+    defect_when: "yes"
+  - id: "real_cli_in_tests"
+    question: "테스트가 실제 opencode/kimi/agy CLI 를 호출하는가?"
+    defect_when: "yes"
+  - id: "scope_violation"
+    question: "allowed_write_files 밖의 파일이 수정되었는가?"
+    defect_when: "yes"
+
+artifact_paths: []
+
+escalate_when:
+  - "allowed_write_files 범위를 벗어난 파일 수정이 필요한 경우"
+  - "ground_truth 와 실제 코드가 충돌하는 경우"
+  - "새로운 외부 패키지 추가가 필요한 경우"
+  - "기존 테스트 4건 중 하나가 이 변경과 근본적으로 양립할 수 없는 경우"
+
+return_contract: ORCA_WORKER_DONE_V2

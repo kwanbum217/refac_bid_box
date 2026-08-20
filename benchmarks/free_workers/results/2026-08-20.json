@@ -1,0 +1,136 @@
+{
+  "benchmark": "free_workers/builder_01",
+  "date": "2026-08-20",
+  "orca_run": "run_d2fd971f7daa",
+  "repetitions_per_stack": 1,
+  "scoring": "benchmarks/free_workers/scoring.py (8 behavioral scenarios, implementation-agnostic)",
+  "limitations": [
+    "n=1. 무료 엔드포인트의 큐/콜드스타트/429 편차를 분리하지 못한다. 시간 순서는 잠정이다.",
+    "과제 1종(저위험 Python builder)만 쟀다. benchmarker/documenter 는 측정하지 않았다.",
+    "하네스가 다르다. kimi -p 는 one-shot 이고 opencode run 은 대화 경로가 있어, 코디네이터 회신을 받은 스택과 못 받은 스택이 섞여 있다.",
+    "실격선 28분은 결과를 본 뒤 정했다. 사전 등록이 아니다.",
+    "채점기를 결과 확인 후 1회 수정했다(판정 줄 대신 출력 전체에서 문자열을 찾던 버그). 수정 후 통과 5종이 전부 8/8 이 됐다."
+  ],
+  "stacks": [
+    {
+      "pool": "opencode-nemotron3-ultra",
+      "model": "opencode/nemotron-3-ultra-free",
+      "provider": "opencode",
+      "harness": "opencode run",
+      "verdict": "pass",
+      "elapsed_sec": 541,
+      "behavioral_score": "8/8",
+      "tests_written": 9,
+      "reason": null,
+      "log": "builder_01/logs/oc_nemotron_ultra.tail.log"
+    },
+    {
+      "pool": "or-free-laguna-xs",
+      "model": "or-free/laguna-xs",
+      "provider": "kimi-openrouter",
+      "harness": "kimi -p",
+      "verdict": "pass",
+      "elapsed_sec": 663,
+      "behavioral_score": "8/8",
+      "tests_written": 11,
+      "reason": null,
+      "log": "builder_01/logs/laguna_xs.tail.log"
+    },
+    {
+      "pool": "opencode-deepseek",
+      "model": "opencode/deepseek-v4-flash-free",
+      "provider": "opencode",
+      "harness": "opencode run",
+      "verdict": "pass",
+      "elapsed_sec": 691,
+      "behavioral_score": "8/8",
+      "tests_written": 8,
+      "reason": null,
+      "log": "builder_01/logs/deepseek.tail.log"
+    },
+    {
+      "pool": "or-free-nemotron-ultra",
+      "model": "or-free/nemotron-ultra",
+      "provider": "kimi-openrouter",
+      "harness": "kimi -p",
+      "verdict": "pass",
+      "elapsed_sec": 752,
+      "behavioral_score": "8/8",
+      "tests_written": 10,
+      "reason": null,
+      "log": "builder_01/logs/nemotron_ultra.tail.log"
+    },
+    {
+      "pool": "opencode-mimo",
+      "model": "opencode/mimo-v2.5-free",
+      "provider": "opencode",
+      "harness": "opencode run",
+      "verdict": "pass",
+      "elapsed_sec": 838,
+      "behavioral_score": "8/8",
+      "tests_written": 9,
+      "reason": null,
+      "log": "builder_01/logs/mimo.tail.log"
+    },
+    {
+      "pool": "or-free-laguna-s",
+      "model": "or-free/laguna-s",
+      "provider": "kimi-openrouter",
+      "harness": "kimi -p",
+      "verdict": "quarantine",
+      "elapsed_sec": 3780,
+      "behavioral_score": null,
+      "tests_written": null,
+      "reason": "32분 강제 종료. 379KB 출력에 도구 호출 0건, 파일 변경 0건",
+      "log": "builder_01/logs/laguna_s.tail.log"
+    },
+    {
+      "pool": "or-free-north-mini",
+      "model": "or-free/north-mini",
+      "provider": "kimi-openrouter",
+      "harness": "kimi -p",
+      "verdict": "quarantine",
+      "elapsed_sec": 1910,
+      "behavioral_score": null,
+      "tests_written": null,
+      "reason": "31분50초 시점 테스트 미착수. 사후 설정된 실격선 28분 초과",
+      "log": "builder_01/logs/north_mini.tail.log"
+    },
+    {
+      "pool": "opencode-free",
+      "model": "opencode/nemotron-3.5-lightning-free",
+      "provider": "opencode",
+      "harness": "opencode run",
+      "verdict": "quarantine",
+      "elapsed_sec": 126,
+      "behavioral_score": null,
+      "tests_written": null,
+      "reason": "4.8KB 지시문에 다국어 토큰이 섞인 무의미 출력. 짧은 지시에는 정상 응답",
+      "log": "builder_01/logs/lightning.tail.log"
+    },
+    {
+      "pool": "opencode-hy3",
+      "model": "opencode/hy3-free",
+      "provider": "opencode",
+      "harness": "opencode run",
+      "verdict": "quarantine",
+      "elapsed_sec": 233,
+      "behavioral_score": null,
+      "tests_written": null,
+      "reason": "파일 3개를 읽고 아무것도 쓰지 않은 채 종료 코드 0",
+      "log": "builder_01/logs/hy3.tail.log"
+    },
+    {
+      "pool": "opencode-muse-spark",
+      "model": "opencode/muse-spark-1.2-contributor-free",
+      "provider": "opencode",
+      "harness": "opencode run",
+      "verdict": "unavailable",
+      "elapsed_sec": 7,
+      "behavioral_score": null,
+      "tests_written": null,
+      "reason": "This model is not available in your country (지역 차단)",
+      "log": "builder_01/logs/muse_spark.tail.log"
+    }
+  ]
+}

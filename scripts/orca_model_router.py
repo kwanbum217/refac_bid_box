@@ -216,8 +216,6 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "suitable_for": [
             "investigator",
             "builder",
-            "benchmarker",
-            "documenter",
         ],
         "notes": (
             "Cursor CLI 의 Auto 라우터. Hobby(무료) 등급에서 사용량 제한 하에 쓸 수 있다. "
@@ -239,8 +237,6 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "suitable_for": [
             "investigator",
             "builder",
-            "benchmarker",
-            "documenter",
         ],
         "notes": (
             "무료 풀에서 builder 를 받는 유일한 항목이다. 공식 발표 기준 "
@@ -262,7 +258,10 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         # 무작위로 섞인 무의미 출력을 냈습니다. 도구 호출 0건, 파일 변경 0건.
         # 짧은 지시("OK 만 답하라", "2+2")에는 정상 응답하므로 probe 로는
         # 걸러지지 않습니다. 재시행도 2분 무응답이었습니다.
-        # 배정 대상에서 뺍니다. 이력을 남기려고 항목 자체는 지우지 않습니다.
+        #
+        # 격리(quarantine)입니다. 영구 판정이 아니라 2회 관측에 근거한 배정
+        # 중단이며, 재시험하려면 benchmarks/free_workers 를 다시 돌리십시오.
+        # 이력을 남기려고 항목 자체는 지우지 않습니다.
         "suitable_for": [],
         "notes": (
             "배정 금지. 2026-08-20 실측에서 4.8KB 지시문에 무의미 출력. "
@@ -309,8 +308,6 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "suitable_for": [
             "investigator",
             "builder",
-            "benchmarker",
-            "documenter",
         ],
         "notes": (
             "OpenRouter nvidia/nemotron-3-ultra-550b-a55b:free. 무료 풀에서 문맥이 "
@@ -324,10 +321,14 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": 262_144,
-        # 2026-08-20 builder 경합 실격. 32분간 379KB 를 출력하는 동안 도구 호출
-        # 0건, 파일 변경 0건. 사양 모순을 정확히 인지하고 escalation 을 결정한
-        # 뒤 매번 재검토로 되돌아갔습니다. 같은 모순을 deepseek 은 3분 만에
-        # ask 로 올려 해결했습니다. 읽기 전용 probe 에서는 드러나지 않습니다.
+        # 2026-08-20 builder 경합 격리(quarantine). 32분간 379KB 를 출력하는
+        # 동안 도구 호출 0건, 파일 변경 0건. 사양 모순을 정확히 인지하고
+        # escalation 을 결정한 뒤 매번 재검토로 되돌아갔습니다.
+        #
+        # 1회 관측이고, 그 회차의 Capsule 에는 만족 불가능한 acceptance 가
+        # 하나 섞여 있었습니다(코디네이터 작성 오류). kimi -p 는 one-shot 이라
+        # 코디네이터 회신을 받기도 어려웠습니다. 영구 판정으로 읽지 마십시오.
+        # 재시험 전까지 배정만 중단합니다.
         "suitable_for": [],
         "notes": (
             "OpenRouter poolside/laguna-s-2.1:free. 2026-08-20 감사 6/6, 26초. "
@@ -345,8 +346,6 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "suitable_for": [
             "investigator",
             "builder",
-            "benchmarker",
-            "documenter",
         ],
         "notes": (
             "OpenRouter poolside/laguna-xs-2.1:free. 2026-08-20 감사 6/6, 15초로 "
@@ -366,8 +365,6 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "suitable_for": [
             "investigator",
             "builder",
-            "benchmarker",
-            "documenter",
         ],
         "notes": (
             "무료 풀 1순위. 2026-08-20 쓰기 과제 실측 9분01초. "
@@ -385,8 +382,6 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "suitable_for": [
             "investigator",
             "builder",
-            "benchmarker",
-            "documenter",
         ],
         "notes": (
             "2026-08-20 쓰기 과제 실측 13분58초 통과. "
@@ -399,9 +394,12 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": 256_000,
-        # 2026-08-20 builder 경합 실격. 31분50초 시점에 스크립트 70줄만 쓰고
-        # 테스트 미착수, 커밋 0건. 방향은 맞았으나 통과 5종 최장(13분58초)의
-        # 2.3배로 실격선 28분을 넘겼습니다.
+        # 2026-08-20 builder 경합 격리(quarantine). 31분50초 시점에 스크립트
+        # 70줄만 쓰고 테스트 미착수, 커밋 0건. 산출물 방향은 맞았습니다.
+        #
+        # 실격선 28분은 결과를 본 뒤 정한 사후 기준이라 능력 미달 근거로는
+        # 약합니다. "이 벤치마크의 throughput 기준 부적합" 으로 읽으십시오.
+        # 재시험 시에는 실격선을 시작 전에 정해 Capsule 에 적어야 합니다.
         "suitable_for": [],
         "notes": (
             "OpenRouter cohere/north-mini-code:free. 2026-08-20 감사 6/6 이나 "
@@ -442,18 +440,33 @@ FREE_POOL_MAX_RISK: str = "low"
 #
 # **정확도로 순위를 매긴 것이 아닙니다.** 측정된 네 모델이 전부 만점이라
 # 변별되지 않았고, 순서는 문맥 크기와 응답 시간, 형식 준수에 따릅니다.
-# 2026-08-20 builder 경합(run_d2fd971f7daa) 실측 순서입니다. 그 전까지는
-# 문맥 크기와 probe 응답 시간으로 매긴 잠정 순서였고 능력 근거가 없었습니다.
-#
+# 2026-08-20 builder 경합(run_d2fd971f7daa)으로 선별한 1차 합격군입니다.
 # 무료 10종에 동일 Capsule 로 같은 쓰기 과제를 주고 격리 워크트리에서
 # 수행시킨 뒤, 구현 내부에 의존하지 않는 행동 시나리오 8문항으로 채점했습니다.
-# 통과 5종은 전부 8/8 이라 정확도로는 갈리지 않았고, 순서는 소요 시간입니다.
 #
-#   opencode-nemotron3-ultra  9분01초  8/8  테스트 9건
-#   or-free-laguna-xs        11분03초  8/8  테스트 11건
-#   opencode-deepseek        11분31초  8/8  테스트 8건
-#   or-free-nemotron-ultra   12분32초  8/8  테스트 10건
-#   opencode-mimo            13분58초  8/8  테스트 9건
+#   opencode-nemotron3-ultra  8/8   9분01초  테스트 9건
+#   or-free-laguna-xs         8/8  11분03초  테스트 11건
+#   opencode-deepseek         8/8  11분31초  테스트 8건
+#   or-free-nemotron-ultra    8/8  12분32초  테스트 10건
+#   opencode-mimo             8/8  13분58초  테스트 9건
+#
+# 다섯은 **동등한 합격군이며 아래 순서는 능력 순위가 아닙니다.** 정확도가
+# 전부 8/8 로 갈리지 않아 소요 시간으로 나열했을 뿐인데, 스택당 1회 실행이라
+# 무료 엔드포인트의 큐·콜드스타트·429 편차를 분리하지 못했습니다. 9분과 11분의
+# 차이를 능력 차이로 읽지 마십시오.
+#
+# 순위를 확정하려면 서로 다른 과제 여러 종을 스택당 최소 3회 반복해
+# median 과 p95 로 재야 합니다. 절차는 benchmarks/free_workers/README.md 5 장.
+#
+# 또한 이것은 모델이 아니라 **모델 + 제공자 + CLI 하네스** 조합의 성능입니다.
+# kimi -p 는 one-shot 이고 opencode run 은 대화 경로가 있어, 코디네이터 회신을
+# 받을 수 있었던 스택과 아닌 스택이 섞여 있습니다.
+#
+# 역할은 잰 것만 부여합니다. 이번 경합이 측정한 것은 builder 하나이고,
+# investigator 는 코드를 정확히 읽어야 완주할 수 있으므로 포섭됩니다.
+# benchmarker(측정 설계)와 documenter(문서 작성)는 측정한 적이 없어
+# 무료 풀 전체에서 회수했습니다. opencode-deepseek 과 cursor-auto 는
+# 이번 경합 이전부터 근거 없이 넷을 갖고 있던 항목이라 같이 정리했습니다.
 #
 # 실격 4종은 suitable_for 를 비워 후보에서 빠집니다. 실격 사유는 각 항목의
 # 주석에 있습니다. 능력 미달, 결정 불능, 속도 초과, 지역 차단으로 서로 다릅니다.
