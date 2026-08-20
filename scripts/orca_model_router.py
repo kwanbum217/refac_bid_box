@@ -42,6 +42,8 @@ except (ModuleNotFoundError, ImportError):
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 
 __all__ = [
+    "FREE_BUILDER_ORDER",
+    "FREE_ORDER_BY_ROLE",
     "FREE_POOL_ELIGIBLE_ROLES",
     "FREE_POOL_MAX_RISK",
     "FREE_POOL_ORDER",
@@ -60,6 +62,7 @@ __all__ = [
     "cmd_list",
     "cmd_probe",
     "cmd_route",
+    "free_order_for_role",
     "free_pool_eligibility",
     "is_coordinator_model",
     "load_repo_env",
@@ -484,7 +487,7 @@ FREE_POOL_MAX_RISK: str = "low"
 # audit() 시그니처를 바꿔 기존 테스트를 깨뜨리고 복구하느라 3회 중 2회가 시한을
 # 넘겼습니다. 1차 3위였던 opencode-deepseek 이 3/3 에 median 이 다른 스택의
 # 절반입니다. **n=1 로 매긴 순서는 재현되지 않습니다.**
-FREE_POOL_ORDER: list[str] = [
+FREE_BUILDER_ORDER: list[str] = [
     "opencode-deepseek",
     "or-free-laguna-xs",
     "opencode-mimo",
@@ -495,6 +498,32 @@ FREE_POOL_ORDER: list[str] = [
     # 2026-08-18 실측 5회 중 3회가 빈 출력에 종료 코드 0 이었습니다.
     "cursor-auto",
 ]
+
+# 역할별 무료 후보 순서입니다. 하나의 목록을 모든 역할에 쓰면 builder 실측이
+# investigator 배정까지 바꿉니다. 2026-08-20 2차 경합은 builder 만 쟀습니다.
+#
+# investigator 순서는 **아직 측정하지 않았습니다.** 벤치마크가 나올 때까지
+# builder 순서를 물려 쓰되, 그것이 근거 있는 순서가 아니라는 사실을 여기 남깁니다.
+# 조사 능력은 큰 코드베이스 탐색, 원인 후보 생성과 반증, 근거 수집, 허위 지적
+# 억제를 요구하며 쓰기 능력에 포섭되지 않습니다.
+# 측정 절차는 benchmarks/free_workers/README.md 입니다.
+FREE_ORDER_BY_ROLE: dict[str, list[str]] = {
+    "builder": FREE_BUILDER_ORDER,
+    "investigator": FREE_BUILDER_ORDER,
+}
+
+# 하위 호환 별칭입니다. 역할을 아는 자리에서는 free_order_for_role 을 쓰십시오.
+FREE_POOL_ORDER: list[str] = FREE_BUILDER_ORDER
+
+
+def free_order_for_role(role: str) -> list[str]:
+    """역할에 맞는 무료 후보 순서를 돌려줍니다.
+
+    등록되지 않은 역할은 builder 순서를 씁니다. 무료 풀이 열리는 역할은
+    FREE_POOL_ELIGIBLE_ROLES 로 이미 제한되어 있습니다.
+    """
+    return FREE_ORDER_BY_ROLE.get(role, FREE_BUILDER_ORDER)
+
 
 # ---------------------------------------------------------------------------
 # 역할별 추론 등급 정책
@@ -807,7 +836,7 @@ def select_model(
         # 계약을 지키게 합니다.
         free_candidates = [
             c
-            for c in FREE_POOL_ORDER
+            for c in free_order_for_role(role)
             if c in MODEL_POOL and role in MODEL_POOL[c].get("suitable_for", [])
         ]
         candidates = free_candidates + base_candidates
