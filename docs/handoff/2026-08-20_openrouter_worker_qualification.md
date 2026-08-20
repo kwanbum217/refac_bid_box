@@ -66,7 +66,7 @@ Laguna XS 는 첫 `worker_done` 의 `--from` 에 코디네이터 핸들을 넣�
 
 | 대상 | 상태 |
 | --- | --- |
-| OpenCode 무료 풀 목록 | `laguna-s-2.1-free` 도 목록에서 빠짐(원인 미확인), `muse-spark-1.2-contributor-free` 신규 |
+| OpenCode 무료 풀 목록 | `laguna-s-2.1-free` 도 목록에서 빠져 보였으나 사용자 세션에서는 정상 동작 중이었음. `muse-spark-1.2-contributor-free` 신규 |
 | Codex 모델 ID | `gpt-5.6-sol-wm` 이 `models_cache.json` 에서 사라짐 |
 | 예시 명령 | `opencode -m opencode/deepseek-v4-flash-free` 는 실행하면 실패 |
 | 반복 금지 11장 | deepseek 을 "주력 사용 가능" 으로 판정 중이었음 |
@@ -110,7 +110,11 @@ ruff check·format 통과입니다.
 4. **deepseek 은 복구되어 1순위로 되돌렸습니다**: 무료 풀에서 `builder` 를 받는
    유일한 항목입니다. 같은 감사 과제를 물려 or-free 4종과 비교하려 했으나
    `opencode-ai` postinstall 오류로 실행하지 못했습니다. 비교는 미완입니다.
-5. **`cursor-auto` 재현 시험**: 2026-08-20 3회 시행에서 3회 모두 `OK` 를
+5. **이 세션의 `opencode` CLI 가 고장 난 상태로 끝났습니다**: 세션 후반에
+   `opencode-ai postinstall` 오류로 모든 호출이 막혔습니다. 조치는
+   `cd node_modules/opencode-ai && node postinstall.mjs` 입니다. 목록 조회
+   결과를 근거로 쓰기 전에 CLI 자체가 정상인지 먼저 확인하십시오.
+6. **`cursor-auto` 재현 시험**: 2026-08-20 3회 시행에서 3회 모두 `OK` 를
    8~9초에 반환했습니다. 08-18 의 5회 중 3회 빈 출력은 재현되지 않았으나
    3회는 판정에 부족하므로 기존 주의는 유지합니다.
 5. **터미널 정리**: GPT 의 Codex 창(`term_29ed7781`)이 코디네이터 탭과 같은

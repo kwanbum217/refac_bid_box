@@ -80,7 +80,7 @@ Antigravity 쪽 허용량이 적지만, 다음 상황에서 쓸 자리가 분명
 
 | 풀 | 상태 | 모델 |
 | --- | --- | --- |
-| `opencode/` (무료) | 2026-08-20 조회 | `big-pickle`, `hy3-free`, `mimo-v2.5-free`, `muse-spark-1.2-contributor-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free` |
+| `opencode/` (무료) | 2026-08-20 조회 | `big-pickle`, `deepseek-v4-flash-free`, `hy3-free`, `laguna-s-2.1-free`, `mimo-v2.5-free`, `muse-spark-1.2-contributor-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`. **조회 시점에 따라 일부가 빠져 보입니다** |
 | `opencode-go/` (유료) | **세션 쿠키 미설정** | `deepseek-v4-pro`, `kimi-k3`, `kimi-k2.7-code`, `qwen3.8-max`, `qwen3.7-max`, `glm-5.2`, `grok-4.5`, `minimax-m3`, `gpt-5.6-luna`, `mimo-v2.5-pro` 등 |
 
 **목록에서 빠졌다고 삭제된 것이 아닙니다.** 2026-08-20 에
@@ -98,7 +98,9 @@ Antigravity 쪽 허용량이 적지만, 다음 상황에서 쓸 자리가 분명
 이탈과 1회 실패만 보고 삭제로 판정해 라우터에서 뺐다가, 재호출이 성공해
 되돌렸습니다. 제외는 시간을 두고 반복 확인한 뒤에 합니다.
 
-`laguna-s-2.1-free` 는 같은 날 목록에서 빠진 뒤 복구가 확인되지 않았습니다.
+`laguna-s-2.1-free` 도 같은 날 목록에서 빠졌으나, **사용자 세션에서는 같은 시각에 정상 동작하고 있었습니다.** 이 세션의 CLI 는 이후 `opencode-ai postinstall` 오류로 호출 자체가 막혀 재확인하지 못했습니다.
+
+**관측 수단이 고장 났을 가능성을 먼저 의심하십시오.** 같은 시각에 다른 세션에서 멀쩡히 쓰이는 모델을 이 세션의 CLI 만 못 본 사례입니다. 목록 조회 실패를 모델의 문제로 읽지 마십시오.
 
 ### 1.4 Cerebras 는 별도 프로바이더입니다
 
