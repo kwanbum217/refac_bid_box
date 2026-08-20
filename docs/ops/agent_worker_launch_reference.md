@@ -193,7 +193,7 @@ KIMI_CODE_HOME=/Users/kwanbum/.kimi-openrouter-free kimi -m <alias> -p "<preambl
 | 하지 말 것 | 이유 |
 | --- | --- |
 | `dispatch --inject` | Kimi TUI 는 주입된 Enter 로 **종료**합니다 |
-| `-p` 와 `-y`/`--auto` 병용 | 병용 불가입니다 |
+| `-p` 와 `-y`/`--auto` 병용 | 2026-08-20 실측에서 `error: Cannot combine --prompt with --yolo.` 와 `... with --auto.` 로 종료 코드 1 입니다. `--help` 에는 이 제약이 적혀 있지 않습니다 |
 | 대화형·다단계 감독 Task 배정 | `-p` 는 one-shot 입니다. 자족적 지시서 1개로 끝나는 Task 만 줍니다 |
 | 쓰기 Task 배정 | 검증이 읽기 전용 범위에서만 이루어졌습니다 |
 | 공유 자원 소유·마감 있는 Task 배정 | `:free` 는 provider capacity 에 따라 429 가 납니다 |
