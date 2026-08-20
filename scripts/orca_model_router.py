@@ -470,12 +470,26 @@ FREE_POOL_MAX_RISK: str = "low"
 #
 # 실격 4종은 suitable_for 를 비워 후보에서 빠집니다. 실격 사유는 각 항목의
 # 주석에 있습니다. 능력 미달, 결정 불능, 속도 초과, 지역 차단으로 서로 다릅니다.
+# 2026-08-20 2차 경합(builder_02)에서 스택당 3회 반복해 재정렬했습니다.
+# 실격선과 채점기를 실행 전에 동결했고, 라운드로빈으로 순서 효과를 없앴습니다.
+# 성공은 시한 내 종료 AND 커밋 1건 이상 AND 채점 만점 셋을 모두 만족한 회차입니다.
+#
+#   opencode-deepseek         3/3  median 253s  p95 279s
+#   or-free-laguna-xs         3/3  median 458s  p95 507s
+#   opencode-mimo             2/3  median 456s  p95 506s  (1회 승인 대기로 커밋 0)
+#   or-free-nemotron-ultra    2/3  median 586s  p95 610s  (1회 채점 2/6)
+#   opencode-nemotron3-ultra  1/3  median 594s  p95 594s  (2회 시한 초과)
+#
+# 1차의 순서가 뒤집혔습니다. 1차 1위였던 opencode-nemotron3-ultra 는 매 회차
+# audit() 시그니처를 바꿔 기존 테스트를 깨뜨리고 복구하느라 3회 중 2회가 시한을
+# 넘겼습니다. 1차 3위였던 opencode-deepseek 이 3/3 에 median 이 다른 스택의
+# 절반입니다. **n=1 로 매긴 순서는 재현되지 않습니다.**
 FREE_POOL_ORDER: list[str] = [
-    "opencode-nemotron3-ultra",
-    "or-free-laguna-xs",
     "opencode-deepseek",
-    "or-free-nemotron-ultra",
+    "or-free-laguna-xs",
     "opencode-mimo",
+    "or-free-nemotron-ultra",
+    "opencode-nemotron3-ultra",
     # 읽기 범위가 Capsule 로 좁혀진 조사 전용. 컨텍스트 65K.
     "cerebras-oss",
     # 2026-08-18 실측 5회 중 3회가 빈 출력에 종료 코드 0 이었습니다.

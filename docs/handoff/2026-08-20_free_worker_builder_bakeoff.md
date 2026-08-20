@@ -154,3 +154,38 @@
 **2차 경합이 필요하다.** 합격군 5종을 서로 다른 과제 3종 이상으로 스택당
 최소 3회 반복해 median, p95, 성공률, 무응답률로 재야 `FREE_POOL_ORDER` 순서를
 능력 근거로 확정할 수 있다. 절차는 `benchmarks/free_workers/README.md` 5 장.
+
+---
+
+## 8. 2차 경합 결과 (builder_02, 같은 날)
+
+소형 과제 1종을 스택당 3회 반복했다. 실격선(720초)과 채점기를 **실행 전에
+동결**했고 라운드로빈으로 돌렸다. 성공은 시한 내 종료 AND 커밋 1건 이상 AND
+채점 만점이다.
+
+| 스택 | 성공 | median | p95 | 실패 유형 |
+| --- | :---: | ---: | ---: | --- |
+| `opencode/deepseek-v4-flash-free` | 3/3 | 253s | 279s | - |
+| `or-free/laguna-xs` | 3/3 | 458s | 507s | - |
+| `opencode/mimo-v2.5-free` | 2/3 | 456s | 506s | 승인 대기로 커밋 0 |
+| `or-free/nemotron-ultra` | 2/3 | 586s | 610s | 채점 2/6 |
+| `opencode/nemotron-3-ultra-free` | 1/3 | 594s | 594s | 시한 초과 2회 |
+
+**1차 순위가 뒤집혔다.** 1차 1위(`nemotron-3-ultra`, 9분01초)가 최하위가 됐고
+1차 3위(`deepseek`)가 1위다. `FREE_POOL_ORDER` 를 이 결과로 재정렬했다.
+
+원인은 설계 판단이다. `nemotron-3-ultra` 는 매 회차 `audit()` 반환값을
+3-튜플로 바꿔 기존 테스트 10건을 깨뜨리고 복구하느라 시한을 넘겼다.
+`deepseek` 은 기존 시그니처를 건드리지 않았다.
+
+### 8.1 이 값의 한계
+
+- 반복 3회는 median 에는 충분하나 **p95 를 신뢰하기에는 부족하다.**
+- 동시 3대 조건에서 측정했다. 같은 백엔드를 쓰는 스택끼리 경합이 있다.
+- 과제 1종(소형 builder)만 쟀다. 역할별 적합성은 이 값으로 말할 수 없다.
+
+### 8.2 다음 세션이 이어받을 것
+
+과제 다양성이 아직 없다. `builder_02` 와 같은 방식으로 investigator 감사 과제와
+중간 규모 리팩터 과제를 추가해 역할별 leaderboard 를 만들어야 한다. 절차는
+`benchmarks/free_workers/README.md` 5 장, 도구는 `aggregate.py` 를 그대로 쓴다.
