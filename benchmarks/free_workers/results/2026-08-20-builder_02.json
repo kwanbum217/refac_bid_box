@@ -1,0 +1,219 @@
+{
+  "benchmark": "free_workers/builder_02",
+  "date": "2026-08-20",
+  "scorer_frozen_before_run": true,
+  "timeout_sec": 720,
+  "concurrency": 3,
+  "order": "round-robin (rep 바깥, stack 안쪽)",
+  "success_definition": "종료 코드 0 AND 커밋 1건 이상 AND 채점 만점",
+  "limitations": [
+    "반복 3회는 median 을 잡기에는 충분하나 p95 를 신뢰하기에는 부족하다.",
+    "동시 3대 조건에서 측정했다. 같은 백엔드를 쓰는 스택끼리 경합이 있다.",
+    "과제 1종(소형 builder)만 쟀다. 역할별 적합성은 이 값으로 말할 수 없다."
+  ],
+  "stacks": [
+    {
+      "stack": "deepseek",
+      "runs": 3,
+      "success": 3,
+      "success_rate": 1.0,
+      "median_sec": 253,
+      "p95_sec": 279,
+      "failures": []
+    },
+    {
+      "stack": "laguna_xs",
+      "runs": 3,
+      "success": 3,
+      "success_rate": 1.0,
+      "median_sec": 458,
+      "p95_sec": 507,
+      "failures": []
+    },
+    {
+      "stack": "mimo",
+      "runs": 3,
+      "success": 2,
+      "success_rate": 0.667,
+      "median_sec": 456,
+      "p95_sec": 506,
+      "failures": [
+        "no_commit"
+      ]
+    },
+    {
+      "stack": "or_nemoultra",
+      "runs": 3,
+      "success": 2,
+      "success_rate": 0.667,
+      "median_sec": 586,
+      "p95_sec": 610,
+      "failures": [
+        "score"
+      ]
+    },
+    {
+      "stack": "oc_nemo3ultra",
+      "runs": 3,
+      "success": 1,
+      "success_rate": 0.333,
+      "median_sec": 594,
+      "p95_sec": 594,
+      "failures": [
+        "timeout"
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "stack": "deepseek",
+      "rep": 1,
+      "exit_code": 0,
+      "elapsed_sec": 282,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "laguna_xs",
+      "rep": 1,
+      "exit_code": 0,
+      "elapsed_sec": 429,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "mimo",
+      "rep": 1,
+      "exit_code": 0,
+      "elapsed_sec": 67,
+      "commits": 0,
+      "score": "0/6",
+      "success": false,
+      "failure": "no_commit"
+    },
+    {
+      "stack": "oc_nemo3ultra",
+      "rep": 1,
+      "exit_code": 124,
+      "elapsed_sec": 720,
+      "commits": 0,
+      "score": "6/6",
+      "success": false,
+      "failure": "timeout"
+    },
+    {
+      "stack": "or_nemoultra",
+      "rep": 1,
+      "exit_code": 0,
+      "elapsed_sec": 613,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "laguna_xs",
+      "rep": 2,
+      "exit_code": 0,
+      "elapsed_sec": 512,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "deepseek",
+      "rep": 2,
+      "exit_code": 0,
+      "elapsed_sec": 233,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "oc_nemo3ultra",
+      "rep": 2,
+      "exit_code": 124,
+      "elapsed_sec": 720,
+      "commits": 2,
+      "score": "6/6",
+      "success": false,
+      "failure": "timeout"
+    },
+    {
+      "stack": "or_nemoultra",
+      "rep": 2,
+      "exit_code": 0,
+      "elapsed_sec": 560,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "mimo",
+      "rep": 2,
+      "exit_code": 0,
+      "elapsed_sec": 512,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "deepseek",
+      "rep": 3,
+      "exit_code": 0,
+      "elapsed_sec": 253,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "oc_nemo3ultra",
+      "rep": 3,
+      "exit_code": 0,
+      "elapsed_sec": 594,
+      "commits": 2,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "laguna_xs",
+      "rep": 3,
+      "exit_code": 0,
+      "elapsed_sec": 458,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "mimo",
+      "rep": 3,
+      "exit_code": 0,
+      "elapsed_sec": 399,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null
+    },
+    {
+      "stack": "or_nemoultra",
+      "rep": 3,
+      "exit_code": 0,
+      "elapsed_sec": 632,
+      "commits": 1,
+      "score": "2/6",
+      "success": false,
+      "failure": "score"
+    }
+  ]
+}
