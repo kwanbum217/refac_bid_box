@@ -121,6 +121,10 @@ def main(argv: list[str] | None = None) -> int:
                 else (
                     "timeout"
                     if rc == 124
+                    # 125 는 러너가 워커를 띄우지 못한 회차입니다. 모델이 실패한
+                    # 것이 아니므로 워커 실패와 뭉뚱그리면 원인을 잘못 읽습니다.
+                    else "launch_error"
+                    if rc == 125
                     else f"process_error(rc={rc})"
                     if rc != 0
                     else "no_commit"
