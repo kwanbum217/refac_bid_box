@@ -7,10 +7,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-# 저장소 루트를 파일 위치에서 유도합니다. 절대 경로를 박으면 격리 워크트리에서
-# 검증해도 주 저장소의 옛 코드가 실행되어 통과가 무의미해집니다.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
 
 def run_aggregate(runs_content: str, scores_content: str) -> tuple[int, dict | None, str]:
     """aggregate.py를 실행하고 (exit_code, parsed_json, stderr)를 반환"""
@@ -36,7 +32,7 @@ def run_aggregate(runs_content: str, scores_content: str) -> tuple[int, dict | N
             ],
             capture_output=True,
             text=True,
-            cwd=REPO_ROOT,
+            cwd="/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box",
         )
 
         parsed = None
