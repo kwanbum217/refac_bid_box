@@ -48,12 +48,14 @@ __all__ = [
     "FREE_POOL_ELIGIBLE_ROLES",
     "FREE_POOL_MAX_RISK",
     "FREE_POOL_ORDER",
+    "INVENTORY_MISSING_THRESHOLD",
     "MODEL_POOL",
     "PROBE_CONFIG",
     "RISK_KEYWORDS",
     "TIER_POLICY",
     "ModelRoutingError",
     "RouteResult",
+    "apply_inventory_history",
     "build_probe_env",
     "capsule_has_write_scope",
     "classify_from_capsule",
@@ -66,6 +68,7 @@ __all__ = [
     "free_order_for_role",
     "free_pool_eligibility",
     "is_coordinator_model",
+    "load_inventory_history",
     "load_repo_env",
     "main",
     "preflight",
@@ -542,6 +545,79 @@ def free_order_for_role(role: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# 실재 관측 이력 연동
+# ---------------------------------------------------------------------------
+#
+# 무료 풀은 예고 없이 바뀝니다. 2026-08-20 에 opencode/deepseek-v4-flash-free 가
+# 목록에서 빠졌다가 같은 날 복구됐고, 2026-08-21 에 다시 빠졌습니다. 한 번의
+# 실패로 라우터에서 빼면 복구된 모델을 잃고, 그대로 두면 1순위가 호출 불가인
+# 채로 배정됩니다. OpenCode TUI 는 -m 이 실패해도 조용히 다른 모델로 뜨므로
+# 배정 실패가 드러나지도 않습니다.
+#
+# 그래서 제거가 아니라 강등으로 다룹니다. 소멸 판정(연속 3회)은
+# scripts/audit_model_inventory.py 가 내리고, 라우터는 그 이력을 읽기만 합니다.
+# 이력 파일은 Git 미추적이라 환경에 따라 없습니다. 없으면 강등도 없고 기존
+# 동작 그대로입니다.
+MODEL_INVENTORY_HISTORY_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "model_inventory_history.json"
+)
+INVENTORY_MISSING_THRESHOLD = 3
+
+
+def load_inventory_history(path: Path | str | None = None) -> dict[str, dict[str, Any]]:
+    """모델 실재 관측 이력을 읽습니다.
+
+    파일이 없거나 손상됐으면 빈 이력을 돌려줍니다. 이력을 읽지 못한 것을
+    소멸로 해석하면 안 됩니다. 관측이 없는 것과 없는 것으로 관측된 것은
+    다릅니다.
+    """
+    target = Path(path) if path is not None else MODEL_INVENTORY_HISTORY_PATH
+    if not target.is_file():
+        return {}
+    try:
+        loaded = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {k: v for k, v in loaded.items() if isinstance(v, dict)}
+
+
+def apply_inventory_history(
+    candidates: list[str],
+    history: dict[str, dict[str, Any]] | None = None,
+) -> tuple[list[str], list[str]]:
+    """관측 이력으로 후보 순서를 조정합니다.
+
+    소멸로 판정된 후보는 빼고, 의심 상태 후보는 뒤로 미룹니다. 상대 순서는
+    각 묶음 안에서 보존합니다. (조정된 후보, 사람이 읽을 사유) 를 돌려줍니다.
+    """
+    if history is None:
+        history = load_inventory_history()
+    if not history:
+        return list(candidates), []
+
+    keep: list[str] = []
+    demoted: list[str] = []
+    notes: list[str] = []
+    for name in candidates:
+        record = history.get(name)
+        if not record or record.get("status") != "absent":
+            keep.append(name)
+            continue
+        counter = record.get("counter", 0)
+        if not isinstance(counter, int):
+            keep.append(name)
+            continue
+        if counter >= INVENTORY_MISSING_THRESHOLD:
+            notes.append(f"{name}: 소멸 판정({counter}회 연속 미관측)으로 후보에서 제외")
+            continue
+        demoted.append(name)
+        notes.append(f"{name}: 미관측 {counter}/{INVENTORY_MISSING_THRESHOLD} 회로 후보 순위 강등")
+    return keep + demoted, notes
+
+
+# ---------------------------------------------------------------------------
 # 역할별 추론 등급 정책
 # ---------------------------------------------------------------------------
 #
@@ -840,6 +916,7 @@ def select_model(
     코디네이터 전용 모델(claude-opus-5)은 절대 선택되지 않습니다.
     """
     exclude = exclude or []
+    inventory_notes: list[str] = []
 
     base_candidates = list(TIER_POLICY.get((role, risk), TIER_POLICY[("__default__", risk)]))
 
@@ -855,6 +932,9 @@ def select_model(
             for c in free_order_for_role(role)
             if c in MODEL_POOL and role in MODEL_POOL[c].get("suitable_for", [])
         ]
+        # 무료 풀만 이력을 반영합니다. 예고 없이 바뀌는 것이 관측된 쪽이
+        # 무료 풀이고, 범위를 넓히면 조회 불가가 많은 유료 풀까지 흔듭니다.
+        free_candidates, inventory_notes = apply_inventory_history(free_candidates)
         candidates = free_candidates + base_candidates
     else:
         candidates = base_candidates
@@ -888,6 +968,7 @@ def select_model(
         "fallback_model": fallback_model,
         "risk": risk,
         "role": role,
+        "inventory_notes": inventory_notes,
     }
 
 

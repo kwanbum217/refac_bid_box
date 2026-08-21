@@ -25,6 +25,7 @@ from scripts.orca_model_router import (
     FREE_POOL_ELIGIBLE_ROLES,
     FREE_POOL_MAX_RISK,
     FREE_POOL_ORDER,
+    INVENTORY_MISSING_THRESHOLD,
     MODEL_POOL,
     PROBE_CONFIG,
     RISK_KEYWORDS,
@@ -69,6 +70,20 @@ def guard_no_real_subprocess(monkeypatch):
 # ---------------------------------------------------------------------------
 # 1. 위험도 분류 테스트 (대소문자 무관, 결함 회귀, 근거 기록)
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_inventory_history(monkeypatch):
+    """배정 테스트를 로컬 관측 이력에서 격리합니다.
+
+    data/model_inventory_history.json 은 Git 미추적이라 환경마다 있고 없고가
+    다릅니다. 격리하지 않으면 같은 테스트가 로컬에서는 실패하고 CI 에서는
+    통과합니다. 이력 연동 자체는 이력을 명시로 주입해 검증합니다.
+    """
+    monkeypatch.setattr(
+        "scripts.orca_model_router.load_inventory_history",
+        lambda path=None: {},
+    )
 
 
 class TestClassifyRisk:
@@ -1426,3 +1441,80 @@ def test_select_model_responds_independently_to_role_order_changes(monkeypatch):
         "서로 다른 순서를 monkeypatch 했는데도 builder 와 investigator 가 "
         f"같은 모델({b['primary_pool']})을 골랐습니다"
     )
+
+
+def test_load_inventory_history_missing_file_is_empty(tmp_path):
+    """이력 파일이 없으면 빈 이력입니다. 관측이 없는 것을 소멸로 보면 안 됩니다."""
+    from scripts.orca_model_router import load_inventory_history
+
+    assert load_inventory_history(tmp_path / "none.json") == {}
+
+
+def test_load_inventory_history_corrupt_file_is_empty(tmp_path):
+    """손상된 이력도 빈 이력입니다. 읽기 실패로 후보를 지우면 안 됩니다."""
+    from scripts.orca_model_router import load_inventory_history
+
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    assert load_inventory_history(broken) == {}
+
+
+def test_apply_inventory_history_demotes_suspected_but_keeps_it():
+    """의심 상태는 제외가 아니라 강등입니다. 복구되는 사례가 실제로 있었습니다."""
+    from scripts.orca_model_router import apply_inventory_history
+
+    candidates = ["a", "b", "c"]
+    history = {"a": {"status": "absent", "counter": 1}}
+    ranked, notes = apply_inventory_history(candidates, history)
+
+    assert ranked == ["b", "c", "a"], "의심 후보는 뒤로 미루되 남아 있어야 합니다"
+    assert any("강등" in n for n in notes)
+
+
+def test_apply_inventory_history_drops_confirmed_missing():
+    """연속 임계값을 넘긴 소멸은 후보에서 뺍니다."""
+    from scripts.orca_model_router import apply_inventory_history
+
+    history = {"a": {"status": "absent", "counter": INVENTORY_MISSING_THRESHOLD}}
+    ranked, notes = apply_inventory_history(["a", "b"], history)
+
+    assert ranked == ["b"]
+    assert any("소멸 판정" in n for n in notes)
+
+
+def test_apply_inventory_history_present_and_unknown_untouched():
+    """present 와 unknown 은 순서를 바꾸지 않습니다."""
+    from scripts.orca_model_router import apply_inventory_history
+
+    history = {
+        "a": {"status": "present", "counter": 0},
+        "b": {"status": "unknown", "counter": 2},
+    }
+    ranked, notes = apply_inventory_history(["a", "b"], history)
+
+    assert ranked == ["a", "b"]
+    assert notes == []
+
+
+def test_apply_inventory_history_empty_history_is_identity():
+    """이력이 없으면 기존 동작 그대로여야 합니다."""
+    from scripts.orca_model_router import apply_inventory_history
+
+    ranked, notes = apply_inventory_history(["a", "b"], {})
+    assert ranked == ["a", "b"]
+    assert notes == []
+
+
+def test_select_model_demotes_missing_free_candidate(monkeypatch):
+    """미관측 무료 후보는 1순위에서 밀려나고 사유가 남습니다."""
+    from scripts.orca_model_router import FREE_BUILDER_ORDER, select_model
+
+    first = FREE_BUILDER_ORDER[0]
+    monkeypatch.setattr(
+        "scripts.orca_model_router.load_inventory_history",
+        lambda path=None: {first: {"status": "absent", "counter": 1}},
+    )
+    res = select_model("builder", "low", allow_free=True, has_write_scope=True)
+
+    assert res["primary_pool"] != first
+    assert any(first in note for note in res["inventory_notes"])
