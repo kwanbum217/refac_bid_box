@@ -99,9 +99,10 @@ uv run python benchmarks/free_workers/scoring.py <임시디렉터리>
 돌리면 또 다른 순서가 나오고 그 순서도 다음날 무효가 됩니다. 비용만 늘고
 결정 품질은 나아지지 않습니다.
 
-**대신 상시 관측으로 갈음합니다.** `scripts/orca_model_router.py` 의
-`apply_inventory_history()` 가 실재 관측 이력을 누적해 소멸·의심 후보를
-자동으로 강등·제외합니다. 정기 경합보다 이 경로를 넓히는 편이 낫습니다.
+**대신 상시 관측으로 갈음합니다.** `apply_inventory_history()` 는 실재 여부를,
+`apply_reliability_history()` 는 역할별 최근 10회 실행 성공률과 연속 실패를 봅니다.
+`orca_taskctl dispatch`·`finalize` 경로와 이 벤치마크 러너가 결과를 자동 기록하며,
+관측 3회 미만은 배정에 반영하지 않습니다.
 
 **재실행 트리거는 셋뿐입니다.** 이 밖의 이유로는 돌리지 않습니다.
 

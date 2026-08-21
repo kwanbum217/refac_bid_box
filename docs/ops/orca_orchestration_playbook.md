@@ -181,10 +181,10 @@ tests/test_data_preservation.py::test_chroma_db_exists
 
 | 풀 | 성격 | 배정할 작업 |
 | --- | --- | --- |
-| Claude 구독 | **코디네이터 전용.** 워커로 쓰지 않습니다 | 4.4 의 코디네이터 몫 |
+| Codex (`gpt-5.6-sol`, effort `high`) | **기본 코디네이터.** 워커로 쓰지 않습니다 | 4.4 의 코디네이터 몫 |
+| Claude 구독 | 예비 코디네이터. 한도 여유가 있을 때만 수동 전환합니다 | 코디네이터 예비 |
 | Antigravity Google (`gemini-3.7-flash-high`) | 허용량이 가장 큼. **주력 워커** | 분석, 감사, 측정, 통계, 절차적 구현 |
 | Antigravity Claude (`claude-opus-4-6-thinking`, `claude-sonnet-4-6`) | 별도 풀. **허용량 적음** | 판정 품질이 필요한 감사, 신중한 리팩터 |
-| Codex (`gpt-5.6-luna` 등) | 주간 창. 소진되기 쉬움 | 주간 잔량이 넉넉할 때만. 측정·구현에 신뢰할 만함 |
 | OpenCode 무료 (`opencode/*-free`) | 비용 0. **신뢰성 낮음** | 실패해도 손실이 없는 병렬 조사. 임계 경로에 두지 마십시오 |
 
 기동 경로와 모델 ID 는

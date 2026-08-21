@@ -157,14 +157,14 @@ docker build -t refac-bid-box-frontend:orca-gate frontend # docker_build:fronten
 
 | 풀 | 배정 |
 | --- | --- |
-| Claude 구독 | 코디네이터 전용. 워커로 쓰지 않습니다 |
+| Codex (`gpt-5.6-sol`, effort `high`) | 기본 코디네이터. 워커로 쓰지 않습니다 |
+| Claude 구독 | 예비 코디네이터. 한도 여유가 있을 때만 수동 전환하며 워커로 쓰지 않습니다 |
 | Antigravity Google (Gemini Flash) | 주력 워커. 분석·감사·측정·절차적 구현 |
 | Antigravity Claude 계열 | 별도 풀이며 허용량이 적습니다. 판정 품질이 필요한 작업 |
-| Codex | 주간 잔량이 넉넉할 때만 |
 | OpenCode 무료 (`opencode/nemotron-3.5-lightning-free`) | 실패해도 손실 없는 병렬 조사. 임계 경로 금지 |
 | Cerebras (`cerebras/gpt-oss-120b`, 컨텍스트 65K) | 읽기 범위가 Capsule 로 이미 좁혀진 조사. 프로젝트 전체 탐색 불가 |
 
-무료 두 풀은 **자동 선택 대상이 아닙니다.** `scripts/orca_model_router.py` 는 역할이 `investigator` 이고 위험도가 `low` 이고 `allowed_write_files` 가 빈 목록일 때만 `--allow-free` 로 엽니다. `reviewer` 는 판정이 병합 결정에 쓰이므로 임계 경로이며 개방 대상이 아닙니다. 산출물은 반드시 재검증합니다. 상세는 [`docs/ops/orca_control_plane_tools.md`](../../../docs/ops/orca_control_plane_tools.md) 4.3.1 절입니다.
+무료 풀은 **자동 선택 대상이 아닙니다.** `scripts/orca_model_router.py` 는 역할이 `builder` 또는 `investigator` 이고 위험도가 `low` 일 때만 `--allow-free` 로 엽니다. 쓰기 범위가 있으면 병합 전 검증 경고를 남기며, `reviewer` 는 임계 경로라 개방하지 않습니다. 산출물은 반드시 재검증합니다. 상세는 [`docs/ops/orca_control_plane_tools.md`](../../../docs/ops/orca_control_plane_tools.md) 4.3.1 절입니다.
 
 위임하기로 정했으면 **사양이 코디네이터 비용을 결정합니다.** 사양을 Task Capsule v2로 자족적으로 작성하고 `README.md`·`AGENTS.md`·`SKILLS.md` 재독을 금지하며, 확정 사실은 "재조사 불필요" 로 명시하고, 보고 항목(커밋 수·해시, 회차별 값, 대표값, 판정, 차단 사유)을 지정합니다. 수치는 코디네이터가 한 명령으로 재계산할 수 있는 형태로 요구하고, 원시 출력은 워커 문서에 두어 코디네이터 컨텍스트에 넣지 않습니다.
 

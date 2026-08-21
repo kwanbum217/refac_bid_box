@@ -12,18 +12,19 @@ Dispatch 전에 모델 가용성을 probe 합니다.
   4. list      -- 등록된 모델 풀과 자동 선택 여부 정책을 출력합니다.
 
 모델 풀 정책 (정본: .agents/skills/orca-section-coordination/SKILL.md 3.1절):
-  - Claude 구독     : 코디네이터 전용 (claude-opus-5). 워커 사용 절대 금지.
+  - Codex           : 코디네이터 전용 (gpt-5.6-sol, effort high). 워커 사용 금지.
+  - Claude 구독     : 예비 코디네이터. 워커 사용 금지.
   - Gemini Flash    : 주력 워커. 추론 등급은 공식 문서 기준으로 위험도에 따라 배정합니다.
                       medium 이 기본값이며 복잡한 코드와 에이전트 용도에 권장됩니다.
                       high 는 가장 어려운 작업 전용, low 는 초안과 빠른 분석용입니다.
   - Claude 계열     : 별도 풀 (claude-sonnet-4-6). 판정 품질이 필요한 작업.
-  - Codex           : 주간 잔량이 넉넉할 때만 수동 지정.
   - OpenCode 무료   : 실패해도 손실 없는 병렬 조사. 임계 경로 금지.
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import os
 import re
@@ -51,11 +52,16 @@ __all__ = [
     "INVENTORY_MISSING_THRESHOLD",
     "MODEL_POOL",
     "PROBE_CONFIG",
+    "RELIABILITY_DEMOTE_RATE",
+    "RELIABILITY_MIN_OBSERVATIONS",
+    "RELIABILITY_SUSPEND_CONSECUTIVE",
+    "RELIABILITY_WINDOW",
     "RISK_KEYWORDS",
     "TIER_POLICY",
     "ModelRoutingError",
     "RouteResult",
     "apply_inventory_history",
+    "apply_reliability_history",
     "build_probe_env",
     "capsule_has_write_scope",
     "classify_from_capsule",
@@ -69,10 +75,13 @@ __all__ = [
     "free_pool_eligibility",
     "is_coordinator_model",
     "load_inventory_history",
+    "load_reliability_history",
     "load_repo_env",
     "main",
+    "pool_for_model",
     "preflight",
     "probe_model",
+    "record_reliability_outcome",
     "route",
     "select_model",
 ]
@@ -196,23 +205,26 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
     "claude-opus": {
         "id": "claude-opus-5",
         "provider": "claude",
-        "tier": "coordinator",
+        # 주 코디네이터의 예비 모델입니다. 구독 한도 여유가 있을 때만 수동으로
+        # 전환하며 워커로는 사용하지 않습니다.
+        "tier": "coordinator_reserve",
         "auto_selectable": False,
         "max_tokens": 200_000,
         "suitable_for": [],
-        "notes": "코디네이터 전용. 워커로 사용하지 않습니다.",
+        "notes": "예비 코디네이터. 한도 여유가 있을 때만 수동 지정. 워커로 사용하지 않습니다.",
     },
     "codex": {
-        "id": "codex",
+        "id": "gpt-5.6-sol",
         "provider": "codex",
-        "tier": "secondary",
+        # 2026-08-21 코디네이터로 올렸습니다. 설정은 gpt-5.6-sol + effort high 이며
+        # 근거는 docs/ops/agent_worker_launch_reference.md 5 절입니다.
+        "tier": "coordinator",
         "auto_selectable": False,
         "max_tokens": None,
-        "suitable_for": [
-            "investigator",
-            "documenter",
-        ],
-        "notes": "주간 잔량이 넉넉할 때만 수동 지정.",
+        # 코디네이터는 워커 역할을 겸하지 않습니다. 자기 자신에게 배정하면
+        # 위임으로 토큰이 줄지 않습니다.
+        "suitable_for": [],
+        "notes": "코디네이터 전용 (gpt-5.6-sol, effort high). 워커로 사용하지 않습니다.",
     },
     "cursor-auto": {
         "id": "cursor-agent/auto",
@@ -560,6 +572,170 @@ FREE_ORDER_BY_ROLE: dict[str, list[str]] = {
 FREE_POOL_ORDER: list[str] = FREE_BUILDER_ORDER
 
 
+# ---------------------------------------------------------------------------
+# 실행 신뢰도 이력 (rolling reliability)
+# ---------------------------------------------------------------------------
+#
+# 실재 이력(apply_inventory_history)이 보는 것은 "모델이 존재하는가" 뿐입니다.
+# 2026-08-21 3차 재측정의 or-free/laguna-xs 는 존재했고 코드도 채점 6/6 만점을
+# 받았는데 720초 시한 안에 커밋에 도달하지 못해 3회 전부 실패했습니다.
+# 존재 여부로는 이런 열화를 잡을 수 없습니다.
+#
+# 그래서 최근 실행 결과를 창(window) 단위로 누적해 배정에 반영합니다. 정기
+# 경합을 대신하는 상시 관측 경로이며, 관측이 모자라면 아무것도 하지 않습니다.
+# 표본이 적을 때 순위를 흔드는 것이 이번에 그만두기로 한 바로 그 실수입니다.
+MODEL_RELIABILITY_HISTORY_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "model_reliability_history.json"
+)
+# 최근 몇 회까지 보는지. 오래된 실패가 영원히 따라다니지 않게 합니다.
+RELIABILITY_WINDOW = 10
+# 이 미만이면 판단하지 않습니다. n=1~2 로 순위를 바꾸지 않습니다.
+RELIABILITY_MIN_OBSERVATIONS = 3
+# 창 안 성공률이 이 값 미만이면 강등합니다.
+RELIABILITY_DEMOTE_RATE = 0.5
+# 연속 실패가 이만큼이면 후보에서 뺍니다. 강등으로는 부족한 상태입니다.
+RELIABILITY_SUSPEND_CONSECUTIVE = 3
+
+
+def load_reliability_history(path: Path | str | None = None) -> dict[str, dict[str, Any]]:
+    """실행 신뢰도 이력을 읽습니다.
+
+    파일이 없거나 손상됐으면 빈 이력을 돌려줍니다. 이력을 읽지 못한 것을
+    열화로 해석하면 안 됩니다. 관측이 없는 것과 나쁘게 관측된 것은 다릅니다.
+    """
+    target = Path(path) if path is not None else MODEL_RELIABILITY_HISTORY_PATH
+    if not target.is_file():
+        return {}
+    try:
+        loaded = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {k: v for k, v in loaded.items() if isinstance(v, dict)}
+
+
+def _reliability_stats(record: dict[str, Any], role: str) -> tuple[int, float, int] | None:
+    """(관측 수, 성공률, 연속 실패 수) 를 돌려줍니다. 판단 불가면 None 입니다."""
+    role_record = record.get(role)
+    if not isinstance(role_record, dict):
+        return None
+    recent = role_record.get("recent")
+    if not isinstance(recent, list):
+        return None
+    outcomes = [bool(r.get("ok")) for r in recent if isinstance(r, dict) and "ok" in r]
+    if not outcomes:
+        return None
+    outcomes = outcomes[-RELIABILITY_WINDOW:]
+    consecutive = 0
+    for ok in reversed(outcomes):
+        if ok:
+            break
+        consecutive += 1
+    return len(outcomes), sum(outcomes) / len(outcomes), consecutive
+
+
+def apply_reliability_history(
+    candidates: list[str],
+    role: str,
+    history: dict[str, dict[str, Any]] | None = None,
+) -> tuple[list[str], list[str]]:
+    """최근 실행 신뢰도로 후보 순서를 조정합니다.
+
+    연속 실패가 임계에 닿은 후보는 빼고, 최근 성공률이 낮은 후보는 뒤로
+    미룹니다. 상대 순서는 각 묶음 안에서 보존합니다. 관측이
+    RELIABILITY_MIN_OBSERVATIONS 미만이면 손대지 않습니다.
+    """
+    if history is None:
+        history = load_reliability_history()
+    if not history:
+        return list(candidates), []
+
+    keep: list[str] = []
+    demoted: list[str] = []
+    notes: list[str] = []
+    for name in candidates:
+        record = history.get(name)
+        stats = _reliability_stats(record, role) if isinstance(record, dict) else None
+        if stats is None:
+            keep.append(name)
+            continue
+        seen, rate, consecutive = stats
+        if seen < RELIABILITY_MIN_OBSERVATIONS:
+            keep.append(name)
+            continue
+        if consecutive >= RELIABILITY_SUSPEND_CONSECUTIVE:
+            notes.append(
+                f"{name}: 최근 {consecutive}회 연속 실패로 후보에서 제외 "
+                f"(창 {seen}회 성공률 {rate:.0%})"
+            )
+            continue
+        if rate < RELIABILITY_DEMOTE_RATE:
+            demoted.append(name)
+            notes.append(f"{name}: 최근 {seen}회 성공률 {rate:.0%} 로 후보 순위 강등")
+            continue
+        keep.append(name)
+    return keep + demoted, notes
+
+
+def record_reliability_outcome(
+    pool_name: str,
+    role: str,
+    ok: bool,
+    failure: str | None = None,
+    elapsed_sec: int | None = None,
+    observation_id: str | None = None,
+    path: Path | str | None = None,
+) -> dict[str, Any]:
+    """실행 결과 한 건을 이력에 누적하고 갱신된 기록을 돌려줍니다.
+
+    창 길이를 넘는 오래된 관측은 버립니다. 파일이 없으면 만듭니다.
+    """
+    target = Path(path) if path is not None else MODEL_RELIABILITY_HISTORY_PATH
+    history = load_reliability_history(target)
+    record = history.get(pool_name)
+    role_record = record.get(role) if isinstance(record, dict) else None
+    recent = role_record.get("recent") if isinstance(role_record, dict) else None
+    if not isinstance(recent, list):
+        recent = []
+    if observation_id and any(
+        isinstance(item, dict) and item.get("observation_id") == observation_id for item in recent
+    ):
+        return role_record
+    recent.append(
+        {
+            "ok": bool(ok),
+            "failure": None if ok else failure,
+            "elapsed_sec": elapsed_sec,
+            "observation_id": observation_id,
+            "at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
+        }
+    )
+    if not isinstance(record, dict):
+        record = {}
+    record[role] = {"recent": recent[-RELIABILITY_WINDOW:]}
+    history[pool_name] = record
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(history, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return record[role]
+
+
+def pool_for_model(model_or_pool: str) -> str | None:
+    """풀 이름 또는 실제 모델 ID를 등록된 풀 이름으로 정규화합니다."""
+    for pool_name, pool_info in MODEL_POOL.items():
+        if model_or_pool in (pool_name, pool_info["id"]):
+            return pool_name
+    return None
+
+
 def free_order_for_role(role: str) -> list[str]:
     """역할에 맞는 무료 후보 순서를 돌려줍니다.
 
@@ -863,12 +1039,12 @@ def free_pool_eligibility(
     """무료 모델 풀 개방 조건을 검사합니다.
 
     개방 조건:
-      1. 역할이 FREE_POOL_ELIGIBLE_ROLES 에 속함 (investigator)
-      2. 위험도가 FREE_POOL_MAX_RISK 이하 (low)
-      3. 쓰기 범위가 없음 (not has_write_scope)
+      1. 역할이 FREE_POOL_ELIGIBLE_ROLES 에 속함 (builder, investigator)
+      2. 위험도가 FREE_POOL_MAX_RISK 와 같음 (low)
 
     반환값: (eligible: bool, reason: str)
-    모든 조건을 만족하면 (True, "무료 풀 개방 조건 충족") 을 반환하고,
+    쓰기 범위가 있으면 병합 전 검증 의무를 사유에 포함하며,
+    조건을 만족하면 (True, "무료 풀 개방 조건 충족") 을 반환하고,
     그렇지 않으면 (False, 거부 사유) 를 반환합니다.
     """
     if role not in FREE_POOL_ELIGIBLE_ROLES:
@@ -918,10 +1094,14 @@ def classify_from_capsule(capsule_path: str | Path) -> dict[str, Any]:
 
 def is_coordinator_model(model_or_pool: str) -> bool:
     """주어진 모델 ID 또는 풀 이름이 코디네이터 전용인지 확인합니다."""
-    if model_or_pool in ("claude-opus-5", "claude-opus"):
-        return True
-    for pool_info in MODEL_POOL.values():
-        if pool_info["id"] == model_or_pool and pool_info["tier"] == "coordinator":
+    # 하드코딩된 예외를 두지 않습니다. 코디네이터가 바뀌면 여기도 같이
+    # 고쳐야 하는데 잊기 쉽고, 잊으면 내려간 모델이 계속 코디네이터로 읽힙니다.
+    for pool_name, pool_info in MODEL_POOL.items():
+        if pool_info["tier"] not in {"coordinator", "coordinator_reserve"}:
+            continue
+        # 풀 이름과 모델 ID 둘 다 받습니다. 둘이 같은 풀도 있어 한쪽만 보면
+        # 호출부에 따라 판정이 갈립니다.
+        if model_or_pool in (pool_name, pool_info["id"]):
             return True
     return False
 
@@ -938,7 +1118,7 @@ def select_model(
     자동 선택 대상 풀(auto_selectable=True) 중에서만 선택하며,
     allow_free 가 True 이고 무료 풀 개방 조건을 충족하는 경우에만
     FREE_POOL_ORDER 의 모델이 후보 맨 앞에 추가됩니다.
-    코디네이터 전용 모델(claude-opus-5)은 절대 선택되지 않습니다.
+    코디네이터 전용 모델은 절대 선택되지 않습니다.
     """
     exclude = exclude or []
     inventory_notes: list[str] = []
@@ -960,6 +1140,10 @@ def select_model(
         # 무료 풀만 이력을 반영합니다. 예고 없이 바뀌는 것이 관측된 쪽이
         # 무료 풀이고, 범위를 넓히면 조회 불가가 많은 유료 풀까지 흔듭니다.
         free_candidates, inventory_notes = apply_inventory_history(free_candidates)
+        # 실재 이력 다음에 신뢰도 이력을 적용합니다. 순서가 중요합니다.
+        # 사라진 모델을 신뢰도로 강등해 봐야 의미가 없습니다.
+        free_candidates, reliability_notes = apply_reliability_history(free_candidates, role)
+        inventory_notes = inventory_notes + reliability_notes
         candidates = free_candidates + base_candidates
     else:
         candidates = base_candidates
@@ -1400,6 +1584,25 @@ def _build_parser() -> argparse.ArgumentParser:
     # list
     sub.add_parser("list", help="등록된 모델 풀을 출력합니다.")
 
+    reliability = sub.add_parser(
+        "reliability-record",
+        help="워커 실행 결과를 역할별 rolling reliability 이력에 기록합니다.",
+    )
+    reliability.add_argument("--pool", required=True, help="모델 풀 이름 또는 실제 모델 ID")
+    reliability.add_argument(
+        "--role",
+        required=True,
+        choices=["builder", "reviewer", "investigator", "benchmarker", "documenter"],
+    )
+    reliability.add_argument(
+        "--status", required=True, choices=["succeeded", "failed"], help="실행 결과"
+    )
+    reliability.add_argument("--failure", help="실패 분류")
+    reliability.add_argument("--elapsed-sec", type=int, help="실행 시간(초)")
+    reliability.add_argument("--observation-id", help="중복 기록 방지용 실행 식별자")
+    reliability.add_argument("--state", help="상태 파일 경로")
+    reliability.add_argument("--json", action="store_true", help="JSON 출력")
+
     return parser
 
 
@@ -1568,10 +1771,11 @@ def cmd_list(args: argparse.Namespace) -> int:
             "primary": "주력",
             "secondary": "보조",
             "coordinator": "코디네이터",
+            "coordinator_reserve": "예비 코디네이터",
             "free": "무료",
         }.get(info["tier"], info["tier"])
         auto_status = "대상" if info.get("auto_selectable", False) else "비대상"
-        if info["tier"] == "coordinator":
+        if info["tier"] in {"coordinator", "coordinator_reserve"}:
             auto_status += " (코디네이터 전용 - 워커 사용 불가)"
         elif not info.get("auto_selectable", False):
             auto_status += " (수동 지정 전용)"
@@ -1589,6 +1793,39 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reliability_record(args: argparse.Namespace) -> int:
+    pool_name = pool_for_model(args.pool)
+    if pool_name is None:
+        print(f"오류: 등록되지 않은 모델 풀 또는 ID입니다: {args.pool}", file=sys.stderr)
+        return 2
+    if MODEL_POOL[pool_name]["tier"] != "free":
+        print(
+            f"오류: rolling reliability 기록 대상은 무료 풀뿐입니다: {pool_name}", file=sys.stderr
+        )
+        return 2
+
+    record = record_reliability_outcome(
+        pool_name,
+        args.role,
+        ok=args.status == "succeeded",
+        failure=args.failure,
+        elapsed_sec=args.elapsed_sec,
+        observation_id=args.observation_id,
+        path=args.state,
+    )
+    if args.json:
+        print(
+            json.dumps(
+                {"pool": pool_name, "role": args.role, "record": record},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        print(f"신뢰도 기록 완료: {pool_name}/{args.role} ({args.status})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -1601,6 +1838,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_route(args)
     if args.command == "list":
         return cmd_list(args)
+    if args.command == "reliability-record":
+        return cmd_reliability_record(args)
     return 1
 
 

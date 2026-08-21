@@ -223,3 +223,4 @@ node_modules/
 
 # Model inventory history state file
 data/model_inventory_history.json
+data/model_reliability_history.json

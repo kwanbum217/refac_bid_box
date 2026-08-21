@@ -21,11 +21,17 @@ KILL_CONFIRM_SEC=${BENCH_KILL_CONFIRM_SEC:-60}
 # 경합 조건을 바꾸지 않도록 원래와 같은 수의 스택을 동시에 돌려야 합니다.
 STACKS=(${=BENCH_STACKS:-oc_nemo3ultra laguna_xs deepseek or_nemoultra mimo})
 typeset -A MODEL
+typeset -A POOL
 MODEL[oc_nemo3ultra]="opencode/nemotron-3-ultra-free"
 MODEL[laguna_xs]="or-free/laguna-xs"
 MODEL[deepseek]="opencode/deepseek-v4-flash-free"
 MODEL[or_nemoultra]="or-free/nemotron-ultra"
 MODEL[mimo]="opencode/mimo-v2.5-free"
+POOL[oc_nemo3ultra]="opencode-nemotron3-ultra"
+POOL[laguna_xs]="or-free-laguna-xs"
+POOL[deepseek]="opencode-deepseek"
+POOL[or_nemoultra]="or-free-nemotron-ultra"
+POOL[mimo]="opencode-mimo"
 
 PROMPT='TASK: scripts/audit_model_inventory.py 에 --json 출력 옵션을 추가한다. 계약 정본은 이 워크트리의 benchmarks/free_workers/builder_02/capsule.yaml 이다. 그 파일을 먼저 읽고 required_change 와 acceptance 를 그대로 따르라. 다른 문서를 읽지 마라. 작업이 끝나면 uv run pytest tests/test_audit_model_inventory.py -q 로 검증하고 이 브랜치에 커밋하라. 커밋까지 마치면 종료하라.'
 
@@ -193,8 +199,26 @@ collect() {
   local s=$1 rep=$2 tag="${s}_r${rep}" wt="$W/b2-$s"
   cp "$wt/scripts/audit_model_inventory.py" "$SP/artifacts/$tag.py" 2>/dev/null
   local commits=$(git -C "$wt" log --oneline "$BASE"..HEAD 2>/dev/null | wc -l | tr -d ' ')
-  echo "$tag\t$(cat "$SP/$tag.exit" 2>/dev/null || echo "124 $TIMEOUT")\t$commits" >> "$SP/results.tsv"
-  echo "[수집] $tag  커밋=$commits  $(cat "$SP/$tag.exit" 2>/dev/null)"
+  local exit_line=$(cat "$SP/$tag.exit" 2>/dev/null || echo "124 $TIMEOUT")
+  local code=${exit_line%% *} elapsed=${exit_line##* }
+  local status="failed" failure="exit_$code"
+  if [[ "$code" == "0" && "$commits" -gt 0 ]]; then
+    status="succeeded"
+    failure=""
+  elif [[ "$code" == "124" ]]; then
+    failure="timeout"
+  elif [[ "$code" == "125" ]]; then
+    failure="launch_failed"
+  elif [[ "$code" == "0" ]]; then
+    failure="no_commit"
+  fi
+
+  echo "$tag\t$exit_line\t$commits" >> "$SP/results.tsv"
+  local observation_id="$(basename "$SP"):$tag"
+  local record_args=(--pool "${POOL[$s]}" --role builder --status "$status" --elapsed-sec "$elapsed" --observation-id "$observation_id")
+  [[ -n "$failure" ]] && record_args+=(--failure "$failure")
+  uv run python "$REPO/scripts/orca_model_router.py" reliability-record $record_args >/dev/null
+  echo "[수집] $tag  커밋=$commits  $exit_line"
 }
 
 # ---------------------------------------------------------------------------

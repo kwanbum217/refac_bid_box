@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
@@ -73,6 +74,14 @@ except (ModuleNotFoundError, ImportError):
         truncate,
     )
 
+try:
+    from scripts.orca_model_router import MODEL_POOL, pool_for_model, record_reliability_outcome
+except (ModuleNotFoundError, ImportError):
+    _repo_root = Path(__file__).resolve().parent.parent
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
+    from scripts.orca_model_router import MODEL_POOL, pool_for_model, record_reliability_outcome
+
 # ---------------------------------------------------------------------------
 # 상수
 # ---------------------------------------------------------------------------
@@ -83,6 +92,7 @@ DEFAULT_MODEL = "gemini-3.7-flash-high"
 DEFAULT_RUN_ID = "run_auto"
 CAPSULE_VERSION = "2.1.0"
 MAX_CONCURRENT_WRITE_WORKERS = 3
+ROUTING_STATE_FILENAME = "routing.json"
 
 # 검증 명령 기본값. Capsule 이 선언한 명령을 Level 1 게이트 3 이 그대로 실행하므로
 # 여기 적히지 않은 검증은 아무도 실행하지 않습니다. 반대로 변경과 무관한 검증을
@@ -258,6 +268,93 @@ def _format_yaml_list(items: list[str], indent: str = "  - ") -> str:
         escaped = item.replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'{indent}"{escaped}"')
     return "\n".join(lines)
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _start_reliability_tracking(
+    capsule_path: Path,
+    task_id: str,
+    model: str,
+    started_at: float,
+) -> dict[str, Any]:
+    """무료 풀 Dispatch의 모델·역할·시작 시각을 Finalize용으로 보존합니다."""
+    pool_name = pool_for_model(model)
+    if pool_name is None or MODEL_POOL[pool_name]["tier"] != "free":
+        return {"status": "skipped", "reason": "not_free_pool"}
+
+    role = parse_capsule_scalar(capsule_path.read_text(encoding="utf-8"), "role") or "builder"
+    state = {
+        "schema": "ORCA_RELIABILITY_DISPATCH_V1",
+        "task_id": task_id,
+        "pool": pool_name,
+        "role": role,
+        "started_at": started_at,
+        "observation_id": f"{task_id}:{started_at}",
+    }
+    state_path = capsule_path.parent / ROUTING_STATE_FILENAME
+    _write_json_atomic(state_path, state)
+    return {"status": "tracking", "pool": pool_name, "role": role, "path": str(state_path)}
+
+
+def _record_finalize_reliability(
+    capsule_path: Path,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    """검증 성공·실패를 한 번만 rolling reliability 이력에 반영합니다."""
+    state_path = capsule_path.parent / ROUTING_STATE_FILENAME
+    if not state_path.exists():
+        return {"status": "skipped", "reason": "tracking_state_missing"}
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"status": "error", "reason": f"tracking_state_invalid: {exc}"}
+    if not isinstance(state, dict):
+        return {"status": "error", "reason": "tracking_state_not_object"}
+    if state.get("recorded_at"):
+        return {
+            "status": "already_recorded",
+            "pool": state.get("pool"),
+            "role": state.get("role"),
+        }
+
+    exit_code = int(result.get("exit_code", 2))
+    if exit_code not in (0, 1):
+        return {"status": "skipped", "reason": "verification_inconclusive"}
+
+    pool_name = str(state.get("pool") or "")
+    role = str(state.get("role") or "")
+    if pool_name not in MODEL_POOL or MODEL_POOL[pool_name]["tier"] != "free" or not role:
+        return {"status": "error", "reason": "tracking_identity_invalid"}
+
+    started_at = state.get("started_at")
+    elapsed_sec = None
+    if isinstance(started_at, (int, float)):
+        elapsed_sec = max(0, int(time.time() - started_at))
+    ok = exit_code == 0
+    record_reliability_outcome(
+        pool_name,
+        role,
+        ok=ok,
+        failure=None if ok else "verification_failed",
+        elapsed_sec=elapsed_sec,
+        observation_id=str(state.get("observation_id") or "") or None,
+    )
+    state["recorded_at"] = time.time()
+    state["outcome"] = "succeeded" if ok else "failed"
+    _write_json_atomic(state_path, state)
+    return {"status": "recorded", "pool": pool_name, "role": role, "ok": ok}
 
 
 def _uses_docker(capabilities: set[str]) -> bool:
@@ -1668,6 +1765,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     # Dispatch 전 관찰은 최종 실패 후보가 아닙니다. 사후 확인 결과와 함께
     # 판정하기 위해 따로 모읍니다.
     pre_dispatch_warnings: list[str] = []
+    dispatch_started_at = time.time()
     if args.terminal:
         # 신뢰 확인 대화창을 먼저 치운다. 떠 있는 상태로 Dispatch 하면 주입한
         # 지시와 Capsule 고지문이 대화창에 먹혀 워커가 시작하지 못한다.
@@ -1742,6 +1840,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         )
 
     if code == 0 and _launch_succeeded(stdout, expect_json=args.json):
+        try:
+            reliability_tracking = _start_reliability_tracking(
+                capsule_path,
+                task_id,
+                model,
+                dispatch_started_at,
+            )
+        except Exception as exc:
+            reliability_tracking = {"status": "error", "reason": str(exc)}
         notice = _deliver_capsule_notice(args, task_id, capsule_path, intent)
         if notice["status"] == "failed":
             delivery_unverified.append("capsule_notice_failed")
@@ -1783,11 +1890,14 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             payload["pre_dispatch_warnings"] = pre_dispatch_warnings
             payload["delivery_check"] = delivery_check
             payload["delivery_unverified"] = delivery_unverified
+            payload["reliability_tracking"] = reliability_tracking
             payload["exit_code"] = exit_code
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             print(f"워커 기동 완료:\n{stdout}")
             print(f"Capsule 고지: {notice['status']}")
+            if reliability_tracking["status"] == "tracking":
+                print(f"신뢰도 추적: {reliability_tracking['pool']}/{reliability_tracking['role']}")
         if unverified:
             sys.stderr.write(
                 "오류: 워커는 기동했으나 지시 도달을 확인하지 못했습니다 "
@@ -1850,6 +1960,10 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         reviewer_model=args.reviewer_model,
         strict=not args.allow_skipped_gates,
     )
+    try:
+        result["reliability"] = _record_finalize_reliability(capsule_path, result)
+    except Exception as exc:
+        result["reliability"] = {"status": "error", "reason": str(exc)}
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

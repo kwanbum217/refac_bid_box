@@ -20,7 +20,9 @@ from scripts.orca_taskctl import (
     MAX_CONCURRENT_WRITE_WORKERS,
     _format_review_checklist,
     _format_yaml_list,
+    _record_finalize_reliability,
     _run_command,
+    _start_reliability_tracking,
     _to_glob,
     check_write_concurrency,
     create_worktree,
@@ -73,6 +75,61 @@ objective: >
 scope:
   - "scripts/orca_taskctl.py"
 """
+
+
+def test_reliability_tracking_records_finalize_once(tmp_path, monkeypatch):
+    capsule = tmp_path / "capsule.yaml"
+    capsule.write_text("role: builder\n", encoding="utf-8")
+    tracking = _start_reliability_tracking(
+        capsule,
+        "task_reliability",
+        "or-free/laguna-xs",
+        started_at=1.0,
+    )
+    captured: list[tuple[tuple, dict]] = []
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.record_reliability_outcome",
+        lambda *args, **kwargs: captured.append((args, kwargs)),
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.time.time", lambda: 721.0)
+
+    first = _record_finalize_reliability(capsule, {"exit_code": 1})
+    second = _record_finalize_reliability(capsule, {"exit_code": 1})
+
+    assert tracking["status"] == "tracking"
+    assert first == {
+        "status": "recorded",
+        "pool": "or-free-laguna-xs",
+        "role": "builder",
+        "ok": False,
+    }
+    assert second["status"] == "already_recorded"
+    assert captured == [
+        (
+            ("or-free-laguna-xs", "builder"),
+            {
+                "ok": False,
+                "failure": "verification_failed",
+                "elapsed_sec": 720,
+                "observation_id": "task_reliability:1.0",
+            },
+        )
+    ]
+
+
+def test_reliability_tracking_skips_non_free_pool(tmp_path):
+    capsule = tmp_path / "capsule.yaml"
+    capsule.write_text("role: builder\n", encoding="utf-8")
+
+    result = _start_reliability_tracking(
+        capsule,
+        "task_primary",
+        "gemini-3.7-flash-medium",
+        started_at=1.0,
+    )
+
+    assert result == {"status": "skipped", "reason": "not_free_pool"}
+    assert not (tmp_path / "routing.json").exists()
 
 
 def test_forbidden_strings():

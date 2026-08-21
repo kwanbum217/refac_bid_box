@@ -29,9 +29,11 @@ from scripts.orca_model_router import (
     INVENTORY_MISSING_THRESHOLD,
     MODEL_POOL,
     PROBE_CONFIG,
+    RELIABILITY_WINDOW,
     RISK_KEYWORDS,
     ModelRoutingError,
     RouteResult,
+    apply_reliability_history,
     build_probe_env,
     capsule_has_write_scope,
     classify_from_capsule,
@@ -43,10 +45,12 @@ from scripts.orca_model_router import (
     cmd_route,
     free_pool_eligibility,
     is_coordinator_model,
+    load_reliability_history,
     load_repo_env,
     main,
     preflight,
     probe_model,
+    record_reliability_outcome,
     route,
     select_model,
 )
@@ -74,7 +78,7 @@ def guard_no_real_subprocess(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_inventory_history(monkeypatch):
+def _isolate_local_history(monkeypatch):
     """배정 테스트를 로컬 관측 이력에서 격리합니다.
 
     data/model_inventory_history.json 은 Git 미추적이라 환경마다 있고 없고가
@@ -85,6 +89,26 @@ def _isolate_inventory_history(monkeypatch):
         "scripts.orca_model_router.load_inventory_history",
         lambda path=None: {},
     )
+    original_reliability_loader = load_reliability_history
+    monkeypatch.setattr(
+        "scripts.orca_model_router.load_reliability_history",
+        lambda path=None: {} if path is None else original_reliability_loader(path),
+    )
+
+
+def _coordinator_pool_and_id() -> tuple[str, str]:
+    """코디네이터를 MODEL_POOL 에서 파생시킵니다.
+
+    테스트에 모델 이름을 박으면 코디네이터를 교체할 때 계약이 아니라 이름
+    때문에 깨집니다. 검증해야 하는 것은 "코디네이터로 등록된 것이 워커로
+    선택되지 않는다" 이지 그것이 어느 모델인지가 아닙니다.
+    """
+    pools = [n for n, i in MODEL_POOL.items() if i["tier"] == "coordinator"]
+    assert len(pools) == 1, f"코디네이터는 정확히 하나여야 합니다: {pools}"
+    return pools[0], MODEL_POOL[pools[0]]["id"]
+
+
+COORDINATOR_POOL, COORDINATOR_ID = _coordinator_pool_and_id()
 
 
 class TestClassifyRisk:
@@ -179,12 +203,14 @@ class TestModelPoolAndSelection:
             assert "notes" in info, f"{pool_name}: notes 누락"
 
     def test_coordinator_model_rejection_properties(self):
-        """코디네이터 전용 모델(claude-opus-5)은 어떤 경우에도 워커로 선택되어서는 안 됩니다."""
-        assert is_coordinator_model("claude-opus-5") is True
+        """코디네이터로 등록된 것은 어떤 경우에도 워커로 선택되어서는 안 됩니다."""
+        assert is_coordinator_model(COORDINATOR_ID) is True
+        assert is_coordinator_model(COORDINATOR_POOL) is True
+        assert MODEL_POOL[COORDINATOR_POOL]["auto_selectable"] is False
+        assert MODEL_POOL[COORDINATOR_POOL]["suitable_for"] == []
+        assert MODEL_POOL["claude-opus"]["tier"] == "coordinator_reserve"
         assert is_coordinator_model("claude-opus") is True
-        assert MODEL_POOL["claude-opus"]["tier"] == "coordinator"
-        assert MODEL_POOL["claude-opus"]["auto_selectable"] is False
-        assert MODEL_POOL["claude-opus"]["suitable_for"] == []
+        assert is_coordinator_model("claude-opus-5") is True
 
     def test_select_model_never_returns_coordinator(self):
         """모든 역할과 위험도 조합에서 select_model 은 코디네이터 모델을 반환하지 않습니다."""
@@ -193,10 +219,10 @@ class TestModelPoolAndSelection:
         for r in roles:
             for k in risks:
                 res = select_model(r, k)
-                assert res["primary_model"] != "claude-opus-5"
-                assert res["primary_pool"] != "claude-opus"
-                assert res["fallback_model"] != "claude-opus-5"
-                assert res["fallback_pool"] != "claude-opus"
+                assert res["primary_model"] != COORDINATOR_ID
+                assert res["primary_pool"] != COORDINATOR_POOL
+                assert res["fallback_model"] != COORDINATOR_ID
+                assert res["fallback_pool"] != COORDINATOR_POOL
 
     def test_select_model_high_risk_reviewer(self):
         res = select_model("reviewer", "high")
@@ -459,7 +485,7 @@ class TestProbeAndPreflight:
 
     def test_preflight_coordinator_rejection(self):
         """preflight 에서 코디네이터 전용 모델은 즉시 거부되어야 합니다."""
-        passed, warnings = preflight("claude-opus-5")
+        passed, warnings = preflight(COORDINATOR_ID)
         assert passed is False
         assert any("코디네이터 전용 모델" in w for w in warnings)
 
@@ -575,7 +601,9 @@ class TestRoute:
         assert any("대체 모델" in w and "전환" in w for w in res.warnings)
 
     def test_route_explicit_coordinator_model_rejected(self):
-        """explicit_model 로 claude-opus-5 가 주어지면 ValueError 로 거부합니다."""
+        """explicit_model 로 코디네이터가 주어지면 ValueError 로 거부합니다."""
+        with pytest.raises(ValueError, match="코디네이터 전용 모델은 워커로 지정할 수 없습니다"):
+            route(explicit_model=COORDINATOR_ID, probe=False)
         with pytest.raises(ValueError, match="코디네이터 전용 모델은 워커로 지정할 수 없습니다"):
             route(explicit_model="claude-opus-5", probe=False)
 
@@ -679,7 +707,7 @@ class TestCLI:
         parser.add_argument("--risk", default="medium")
         parser.add_argument("--objective", default=None)
         parser.add_argument("--why-now", default=None)
-        parser.add_argument("--model", default="claude-opus-5")
+        parser.add_argument("--model", default=COORDINATOR_ID)
         parser.add_argument("--no-probe", action="store_true", default=True)
         parser.add_argument("--probe-timeout", type=int, default=30)
         parser.add_argument("--json", action="store_true", default=True)
@@ -851,7 +879,12 @@ class TestFreePoolOptIn:
 
         codex_info = MODEL_POOL["codex"]
         assert codex_info["provider"] == "codex"
-        assert codex_info["tier"] == "secondary"
+        # 2026-08-21 부터 codex 가 코디네이터입니다. 코디네이터는 워커 역할을
+        # 겸하지 않으므로 suitable_for 가 비어 있어야 합니다. 자기 자신에게
+        # 배정하면 위임이 아니라서 코디네이터 토큰이 줄지 않습니다.
+        assert codex_info["tier"] == "coordinator"
+        assert codex_info["id"] == "gpt-5.6-sol"
+        assert codex_info["suitable_for"] == []
         assert codex_info["auto_selectable"] is False
 
     def test_cerebras_pool_properties(self):
@@ -1101,10 +1134,10 @@ class TestFreePoolOptIn:
         assert any("산출물 재검증 필수" in w and "임계 경로 금지" in w for w in res.warnings)
 
     def test_allow_free_true_never_selects_coordinator_model(self):
-        """allow_free=True 상태에서도 코디네이터 전용 모델(claude-opus-5)은 절대 선택되지 않습니다."""
+        """allow_free=True 상태에서도 코디네이터는 절대 선택되지 않습니다."""
         res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
-        assert res["primary_model"] != "claude-opus-5"
-        assert res["fallback_model"] != "claude-opus-5"
+        assert res["primary_model"] != COORDINATOR_ID
+        assert res["fallback_model"] != COORDINATOR_ID
 
     def test_route_free_pool_primary_fail_fallback(self, monkeypatch, cerebras_key_present):
         """무료 1순위가 probe 실패하면 2순위로 fallback 전환됨을 검증합니다."""
@@ -1524,3 +1557,161 @@ def test_select_model_demotes_missing_free_candidate(monkeypatch):
 
     assert res["primary_pool"] != first
     assert any(first in note for note in res["inventory_notes"])
+
+
+def test_select_model_applies_reliability_only_to_matching_role(monkeypatch):
+    first = FREE_BUILDER_ORDER[0]
+    monkeypatch.setattr(
+        "scripts.orca_model_router.load_reliability_history",
+        lambda path=None: {first: {"builder": {"recent": [{"ok": False}] * 3}}},
+    )
+
+    builder = select_model("builder", "low", allow_free=True, has_write_scope=True)
+    investigator = select_model("investigator", "low", allow_free=True, has_write_scope=False)
+
+    assert builder["primary_pool"] != first
+    assert investigator["primary_pool"] == first
+
+
+# ---------------------------------------------------------------------------
+# 실행 신뢰도 이력 (rolling reliability)
+# ---------------------------------------------------------------------------
+
+
+class TestReliabilityHistory:
+    """실재 이력이 잡지 못하는 "존재하지만 실패한다" 유형을 다룹니다."""
+
+    def _hist(self, tmp_path, payload):
+        p = tmp_path / "reliability.json"
+        p.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return p
+
+    def test_missing_file_changes_nothing(self, tmp_path):
+        """이력이 없는 것을 열화로 해석하면 안 됩니다."""
+        got, notes = apply_reliability_history(
+            ["a", "b"], "builder", load_reliability_history(tmp_path / "x")
+        )
+        assert got == ["a", "b"]
+        assert notes == []
+
+    def test_broken_json_changes_nothing(self, tmp_path):
+        p = tmp_path / "reliability.json"
+        p.write_text("{ not json", encoding="utf-8")
+        assert load_reliability_history(p) == {}
+
+    def test_too_few_observations_are_ignored(self, tmp_path):
+        """n=1~2 로 순위를 흔들지 않습니다. 표본이 적을 때의 재정렬이 이번에 그만둔 실수입니다."""
+        hist = {"a": {"builder": {"recent": [{"ok": False}, {"ok": False}]}}}
+        got, notes = apply_reliability_history(["a", "b"], "builder", hist)
+        assert got == ["a", "b"]
+        assert notes == []
+
+    def test_low_success_rate_demotes_but_keeps(self, tmp_path):
+        hist = {
+            "a": {
+                "builder": {"recent": [{"ok": False}, {"ok": True}, {"ok": False}, {"ok": False}]}
+            }
+        }
+        got, notes = apply_reliability_history(["a", "b"], "builder", hist)
+        assert got == ["b", "a"], "성공률이 낮은 후보가 뒤로 가지 않았습니다"
+        assert any("강등" in n for n in notes)
+
+    def test_consecutive_failures_suspend(self, tmp_path):
+        """laguna_xs 가 3회 연속 시한 초과한 형태입니다."""
+        hist = {
+            "a": {
+                "builder": {
+                    "recent": [
+                        {"ok": True},
+                        {"ok": False, "failure": "timeout"},
+                        {"ok": False, "failure": "timeout"},
+                        {"ok": False, "failure": "timeout"},
+                    ]
+                }
+            }
+        }
+        got, notes = apply_reliability_history(["a", "b"], "builder", hist)
+        assert got == ["b"], "연속 실패 후보가 제외되지 않았습니다"
+        assert any("연속 실패" in n for n in notes)
+
+    def test_healthy_stack_untouched(self):
+        hist = {"a": {"builder": {"recent": [{"ok": True}] * 5}}}
+        got, notes = apply_reliability_history(["a", "b"], "builder", hist)
+        assert got == ["a", "b"]
+        assert notes == []
+
+    def test_window_drops_old_observations(self):
+        """오래된 실패가 영원히 따라다니지 않습니다."""
+        recent = [{"ok": False}] * 8 + [{"ok": True}] * RELIABILITY_WINDOW
+        hist = {"a": {"builder": {"recent": recent}}}
+        got, _notes = apply_reliability_history(["a", "b"], "builder", hist)
+        assert got == ["a", "b"], "창 밖의 옛 실패가 아직 반영되고 있습니다"
+
+    def test_record_outcome_accumulates_and_trims(self, tmp_path):
+        p = tmp_path / "reliability.json"
+        for _ in range(RELIABILITY_WINDOW + 5):
+            record_reliability_outcome("a", "builder", ok=True, path=p)
+        rec = record_reliability_outcome(
+            "a", "builder", ok=False, failure="timeout", elapsed_sec=720, path=p
+        )
+        assert len(rec["recent"]) == RELIABILITY_WINDOW
+        assert rec["recent"][-1]["failure"] == "timeout"
+        assert rec["recent"][-1]["elapsed_sec"] == 720
+
+    def test_record_outcome_deduplicates_observation_id(self, tmp_path):
+        p = tmp_path / "reliability.json"
+        first = record_reliability_outcome(
+            "a", "builder", ok=False, observation_id="task:attempt", path=p
+        )
+        second = record_reliability_outcome(
+            "a", "builder", ok=False, observation_id="task:attempt", path=p
+        )
+
+        assert first == second
+        assert len(second["recent"]) == 1
+
+    def test_relative_order_is_preserved_within_groups(self):
+        degraded = [{"ok": False}, {"ok": True}, {"ok": False}, {"ok": False}]
+        hist = {
+            "b": {"builder": {"recent": degraded}},
+            "d": {"builder": {"recent": degraded}},
+        }
+        got, _ = apply_reliability_history(["a", "b", "c", "d"], "builder", hist)
+        assert got == ["a", "c", "b", "d"]
+
+    def test_builder_failures_do_not_change_investigator_order(self):
+        hist = {"a": {"builder": {"recent": [{"ok": False}] * 3}}}
+
+        builder, _ = apply_reliability_history(["a", "b"], "builder", hist)
+        investigator, notes = apply_reliability_history(["a", "b"], "investigator", hist)
+
+        assert builder == ["b"]
+        assert investigator == ["a", "b"]
+        assert notes == []
+
+    def test_cli_records_free_pool_outcome(self, tmp_path, capsys):
+        state = tmp_path / "reliability.json"
+
+        code = main(
+            [
+                "reliability-record",
+                "--pool",
+                "or-free-laguna-xs",
+                "--role",
+                "builder",
+                "--status",
+                "failed",
+                "--failure",
+                "timeout",
+                "--elapsed-sec",
+                "720",
+                "--observation-id",
+                "laguna_xs_r1",
+                "--state",
+                str(state),
+                "--json",
+            ]
+        )
+
+        assert code == 0
+        assert json.loads(capsys.readouterr().out)["record"]["recent"][0]["failure"] == "timeout"

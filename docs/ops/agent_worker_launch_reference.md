@@ -1,7 +1,7 @@
 # 에이전트 워커 기동 정본 참조
 
 > **작성일**: 2026-08-14
-> **수정일**: 2026-08-20
+> **수정일**: 2026-08-21
 > **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과. Task Capsule v2 워커 실행 계약 반영. 1.5 절은 2026-08-20 Run `run_a32b6b614996` 의 모델별 실측 검증 결과
 > **적용 대상**: 이 저장소에서 Orca 워커·코디네이터를 배정하는 모든 에이전트
 > **관련 문서**: [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md), [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md), [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md)
@@ -504,8 +504,9 @@ orca terminal read --terminal <handle> | tail -5           # 진행 확인
 
 1. **코디네이터 토큰이 가장 희소한 자원입니다.** 배정 기준은 작업 난이도가 아니라
    위임 시 코디네이터 토큰이 실제로 줄어드는지입니다
-2. **주력 워커는 Antigravity Gemini Flash** 이며 Claude 구독은 코디네이터
-   전용입니다. 한 풀이 마르면 등급을 낮추기 전에 다른 풀의 같은 등급을 봅니다
+2. **기본 코디네이터는 Codex `gpt-5.6-sol` + effort `high`** 이며 Claude 구독은
+   예비 코디네이터입니다. 둘 다 워커로 쓰지 않습니다. 주력 워커는 Antigravity
+   Gemini Flash입니다
 3. **검증·병합 판정·게이트 기준 제정은 위임하지 않습니다.** 절감률은 50~60%
    이며 검증 비용은 남습니다
 
