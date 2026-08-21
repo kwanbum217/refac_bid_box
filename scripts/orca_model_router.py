@@ -28,11 +28,13 @@ import datetime as _dt
 import json
 import os
 import re
+import shutil
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 try:
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
@@ -82,9 +84,30 @@ __all__ = [
     "preflight",
     "probe_model",
     "record_reliability_outcome",
+    "resolve_kimi_bin",
     "route",
     "select_model",
 ]
+
+# ---------------------------------------------------------------------------
+# kimi 실행 파일 경로 해석
+# ---------------------------------------------------------------------------
+
+
+def resolve_kimi_bin() -> str:
+    """kimi 실행 파일 경로를 해석합니다.
+
+    우선순위: KIMI_BIN 환경변수 -> PATH 탐색(shutil.which) -> 홈 기준 기본 경로.
+    어느 후보도 파일로 존재하지 않으면 마지막 후보 경로 문자열을 그대로 돌려줍니다.
+    """
+    env_bin = os.environ.get("KIMI_BIN", "").strip()
+    if env_bin:
+        return env_bin
+    which_bin = shutil.which("kimi")
+    if which_bin:
+        return which_bin
+    return str(Path.home() / ".kimi-code" / "bin" / "kimi")
+
 
 # ---------------------------------------------------------------------------
 # 프로바이더별 probe 설정
@@ -118,10 +141,10 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         "timeout": 60,
     },
     "kimi-openrouter": {
-        # kimi 는 PATH 에 없어 전체 경로로 부릅니다. -p 는 단발 실행이라
+        # resolve_kimi_bin() 으로 경로를 해석합니다. -p 는 단발 실행이라
         # probe 가 대화형으로 남지 않습니다. 무료 풀이라 콜드스타트가 깁니다.
         "probe_cmd": [
-            "/Users/kwanbum/.kimi-code/bin/kimi",
+            resolve_kimi_bin(),
             "-m",
             "{model}",
             "-p",
@@ -597,6 +620,67 @@ RELIABILITY_DEMOTE_RATE = 0.5
 RELIABILITY_SUSPEND_CONSECUTIVE = 3
 
 
+try:
+    import fcntl as _fcntl
+
+    def _platform_lock(fobj: IO[str]) -> None:
+        _fcntl.flock(fobj.fileno(), _fcntl.LOCK_EX)
+
+    def _platform_unlock(fobj: IO[str]) -> None:
+        _fcntl.flock(fobj.fileno(), _fcntl.LOCK_UN)
+
+    _LOCK_AVAILABLE = True
+except ImportError:
+    try:
+        import msvcrt as _msvcrt
+
+        _LOCK_CHUNK = 1
+
+        # msvcrt 는 현재 파일 위치 기준으로 바이트 구간을 잠급니다. seek(0) 없이
+        # 잠그면 프로세스마다 다른 구간을 잡아 상호 배제가 성립하지 않습니다.
+        # LK_LOCK 은 차단 잠금입니다. LK_NBLCK 은 경쟁 시 대기하지 않고 즉시
+        # OSError 를 내므로 직렬화가 아니라 실패가 됩니다.
+        def _platform_lock(fobj: IO[str]) -> None:
+            fobj.seek(0)
+            _msvcrt.locking(fobj.fileno(), _msvcrt.LK_LOCK, _LOCK_CHUNK)
+
+        def _platform_unlock(fobj: IO[str]) -> None:
+            fobj.seek(0)
+            _msvcrt.locking(fobj.fileno(), _msvcrt.LK_UNLCK, _LOCK_CHUNK)
+
+        _LOCK_AVAILABLE = True
+    except ImportError:
+        _LOCK_AVAILABLE = False
+
+
+@contextmanager
+def _lock_file(lock_path: Path):
+    """lock_path 에 대한 프로세스 간 배타 잠금을 획득합니다.
+
+    잠금 파일은 이력 파일과 별도로 둡니다. replace() 로 이력 파일이 교체돼도
+    잠금이 유효한 inode 를 가리키도록 하기 위해서입니다.
+    잠금 모듈을 사용할 수 없는 플랫폼에서는 잠금 없이 진행하되 표준 오류에 경고를 냅니다.
+    """
+    if not _LOCK_AVAILABLE:
+        sys.stderr.write(
+            f"[reliability] 파일 잠금을 지원하는 모듈이 없습니다 (fcntl/msvcrt). "
+            f"동시 쓰기 안전성이 보장되지 않습니다: {lock_path}\n"
+        )
+        yield
+        return
+
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fobj = lock_path.open("a", encoding="utf-8")
+    try:
+        _platform_lock(fobj)
+        try:
+            yield
+        finally:
+            _platform_unlock(fobj)
+    finally:
+        fobj.close()
+
+
 def load_reliability_history(path: Path | str | None = None) -> dict[str, dict[str, Any]]:
     """실행 신뢰도 이력을 읽습니다.
 
@@ -692,39 +776,42 @@ def record_reliability_outcome(
     창 길이를 넘는 오래된 관측은 버립니다. 파일이 없으면 만듭니다.
     """
     target = Path(path) if path is not None else MODEL_RELIABILITY_HISTORY_PATH
-    history = load_reliability_history(target)
-    record = history.get(pool_name)
-    role_record = record.get(role) if isinstance(record, dict) else None
-    recent = role_record.get("recent") if isinstance(role_record, dict) else None
-    if not isinstance(recent, list):
-        recent = []
-    if observation_id and any(
-        isinstance(item, dict) and item.get("observation_id") == observation_id for item in recent
-    ):
-        return role_record
-    recent.append(
-        {
-            "ok": bool(ok),
-            "failure": None if ok else failure,
-            "elapsed_sec": elapsed_sec,
-            "observation_id": observation_id,
-            "at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
-        }
-    )
-    if not isinstance(record, dict):
-        record = {}
-    record[role] = {"recent": recent[-RELIABILITY_WINDOW:]}
-    history[pool_name] = record
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    try:
-        temporary.write_text(
-            json.dumps(history, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+    lock_path = target.with_name(target.name + ".lock")
+    with _lock_file(lock_path):
+        history = load_reliability_history(target)
+        record = history.get(pool_name)
+        role_record = record.get(role) if isinstance(record, dict) else None
+        recent = role_record.get("recent") if isinstance(role_record, dict) else None
+        if not isinstance(recent, list):
+            recent = []
+        if observation_id and any(
+            isinstance(item, dict) and item.get("observation_id") == observation_id
+            for item in recent
+        ):
+            return role_record
+        recent.append(
+            {
+                "ok": bool(ok),
+                "failure": None if ok else failure,
+                "elapsed_sec": elapsed_sec,
+                "observation_id": observation_id,
+                "at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
+            }
         )
-        temporary.replace(target)
-    finally:
-        temporary.unlink(missing_ok=True)
+        if not isinstance(record, dict):
+            record = {}
+        record[role] = {"recent": recent[-RELIABILITY_WINDOW:]}
+        history[pool_name] = record
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+        try:
+            temporary.write_text(
+                json.dumps(history, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
     return record[role]
 
 
@@ -1286,6 +1373,8 @@ def probe_model(
 
     cmd_template = probe_info["probe_cmd"]
     cmd = [arg.format(model=resolved_id) for arg in cmd_template]
+    if provider == "kimi-openrouter":
+        cmd[0] = resolve_kimi_bin()
     probe_timeout = probe_info.get("timeout", timeout)
 
     try:
