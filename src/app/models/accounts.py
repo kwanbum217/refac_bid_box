@@ -8,7 +8,10 @@ src/app/models/accounts.py
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
 
 from src.app.core.db import Base, PKBigInteger
 from src.app.core.timeutil import utcnow
@@ -24,24 +27,24 @@ class CustomUser(Base):
 
     __tablename__ = "accounts_customuser"
 
-    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
-    password = Column(String(128), nullable=False)
-    last_login = Column(DateTime, nullable=True)
-    is_superuser = Column(Boolean, nullable=False, default=False)
+    id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
+    password: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # unique=True 만으로 DB 의 UNIQUE KEY `username` 과 일치합니다.
     # index=True 를 더하면 원본에 없는 ix_accounts_customuser_username 이 생깁니다.
-    username = Column(String(150), nullable=False, unique=True)
-    first_name = Column(String(150), nullable=False, default="")
-    last_name = Column(String(150), nullable=False, default="")
-    email = Column(String(254), nullable=False, default="")
-    is_staff = Column(Boolean, nullable=False, default=False)
-    is_active = Column(Boolean, nullable=False, default=True)
-    date_joined = Column(DateTime, nullable=False, default=utcnow)
-    nickname = Column(String(50), nullable=False, default="")
-    birth_y = Column(Integer, nullable=True)
-    birth_m = Column(Integer, nullable=True)
-    birth_d = Column(Integer, nullable=True)
-    gender = Column(String(1), nullable=False, default="M")
+    username: Mapped[str] = mapped_column(String(150), nullable=False, unique=True)
+    first_name: Mapped[str] = mapped_column(String(150), nullable=False, default="")
+    last_name: Mapped[str] = mapped_column(String(150), nullable=False, default="")
+    email: Mapped[str] = mapped_column(String(254), nullable=False, default="")
+    is_staff: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    date_joined: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    nickname: Mapped[str] = mapped_column(String(50), nullable=False, default="")
+    birth_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    birth_m: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    birth_d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gender: Mapped[str] = mapped_column(String(1), nullable=False, default="M")
 
     def __str__(self) -> str:
         return f"{self.username} ({self.nickname})"
