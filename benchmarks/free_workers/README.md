@@ -74,3 +74,69 @@ uv run python benchmarks/free_workers/scoring.py <임시디렉터리>
 
 **전원 만점이 나오면 순위를 매기지 말고 과제를 바꾸십시오.** 천장에 붙은
 측정은 변별이 아니라 측정 실패입니다.
+
+---
+
+## 6. 언제 이 벤치마크를 멈추는가
+
+**2026-08-21 3차를 끝으로 정기 경합은 하지 않습니다.**
+
+이 벤치마크의 존재 이유는 `FREE_BUILDER_ORDER` 배정 순서 하나를 정하는
+것입니다. 따라서 **측정이 그 결정을 더 이상 바꾸지 못하면 그 시점이 종료
+시점**입니다.
+
+3차가 그 근거를 스스로 만들었습니다. `or-free/laguna-xs` 는 2차에서
+429~512초에 3/3 으로 완주했는데, 같은 base ref 와 같은 동시 3대 조건으로
+하루 뒤 다시 재자 3회 전부 720초 시한을 넘겨 0/3 이 됐습니다. 그중 2회는
+채점 6/6 만점 코드를 만들어 놓고 커밋에 도달하지 못한 것이므로 **능력
+저하가 아니라 무료 엔드포인트의 응답 지연**입니다.
+
+표본을 늘려도 이 변동은 수렴하지 않고 측정한 날짜만 반영합니다. 4차를
+돌리면 또 다른 순서가 나오고 그 순서도 다음날 무효가 됩니다. 비용만 늘고
+결정 품질은 나아지지 않습니다.
+
+**대신 상시 관측으로 갈음합니다.** `scripts/orca_model_router.py` 의
+`apply_inventory_history()` 가 실재 관측 이력을 누적해 소멸·의심 후보를
+자동으로 강등·제외합니다. 정기 경합보다 이 경로를 넓히는 편이 낫습니다.
+
+**재실행 트리거는 셋뿐입니다.** 이 밖의 이유로는 돌리지 않습니다.
+
+1. 무료 풀에 새 스택을 편입할 때 (해당 스택만. 전체 재측정 아님)
+2. 관측 이력이 어떤 스택을 소멸 확정해 빈자리를 대체 후보로 채울 때
+3. 과제 종류를 새로 열 때. 현재는 저위험 Python builder 1종만 측정됐고
+   `reviewer`, `benchmarker`, `documenter` 적합성은 잰 적이 없습니다
+
+---
+
+## 7. 채점 실행 함정
+
+`scoring_02.py` 는 후보 모듈을 경로로 로드하는데, 후보가
+`from scripts.orca_model_router import MODEL_POOL` 를 하므로 **저장소 루트가
+`sys.path` 에 있어야** 합니다.
+
+`uv run python benchmarks/free_workers/builder_02/scoring_02.py` 로 실행하면
+`sys.path[0]` 이 스크립트 디렉터리라서 후보 전원이
+`ModuleNotFoundError: No module named 'scripts'` 로 **채점 불가**가 됩니다.
+점수 0 이 아니라 오류이므로 조용히 틀리지는 않지만, 원인을 모르면 산출물
+결함으로 오해합니다.
+
+```bash
+PYTHONPATH=$(git rev-parse --show-toplevel) \
+  uv run python benchmarks/free_workers/builder_02/scoring_02.py \
+    --candidate <태그>=<산출물 경로>
+```
+
+집계는 실행 조건을 인자로 받습니다. 기본값을 두지 않는 이유는, 조건을 바꿔
+돌렸을 때 결과 JSON 이 조용히 이전 조건을 기록하기 때문입니다.
+
+```bash
+uv run python benchmarks/free_workers/aggregate.py \
+  --runs <results.tsv> --scores <scores.txt> \
+  --timeout-sec 720 --concurrency 3 --date <YYYY-MM-DD> \
+  --note "<이 실행에만 해당하는 한계>" \
+  --out benchmarks/free_workers/results/<날짜>-<이름>.json
+```
+
+일부 스택만 다시 잴 때는 `BENCH_STACKS` 로 좁히되, **원래와 같은 수의
+스택을 동시에 투입해 경합 조건을 유지해야 합니다.** 혼자 돌리면 백엔드
+경합이 사라져 성공 쪽으로 편향되고, 나머지 회차와 비교할 수 없게 됩니다.

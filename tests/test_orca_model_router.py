@@ -21,6 +21,7 @@ if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
 from scripts.orca_model_router import (
+    FREE_BUILDER_ORDER,
     FREE_INVESTIGATOR_ORDER,
     FREE_POOL_ELIGIBLE_ROLES,
     FREE_POOL_MAX_RISK,
@@ -756,18 +757,23 @@ class TestFreePoolOptIn:
     def test_free_pool_constants(self):
         assert frozenset({"investigator", "builder"}) == FREE_POOL_ELIGIBLE_ROLES
         assert FREE_POOL_MAX_RISK == "low"
-        # 2026-08-20 builder 경합(run_d2fd971f7daa) 실측 순서입니다.
-        # 통과 5종은 중립 시나리오 8문항을 전부 맞혔으므로 순서는 소요 시간입니다.
-        # 2026-08-20 2차 경합(builder_02, 스택당 3회) 성공률과 median 순입니다.
-        assert FREE_POOL_ORDER == [
+        # 2026-08-21 재측정(3차) 이후의 builder 순서입니다. 속도 순위가 아니라
+        # 가장 최근에 관측된 실패율 순입니다. 근거는 orca_model_router.py 의
+        # FREE_BUILDER_ORDER 주석과 benchmarks/free_workers/results/ 입니다.
+        assert FREE_BUILDER_ORDER == [
             "opencode-deepseek",
-            "or-free-laguna-xs",
             "opencode-mimo",
-            "or-free-nemotron-ultra",
             "opencode-nemotron3-ultra",
+            "or-free-nemotron-ultra",
+            "or-free-laguna-xs",
             "cerebras-oss",
             "cursor-auto",
         ]
+        # FREE_POOL_ORDER 는 builder 순서의 하위 호환 별칭입니다.
+        assert FREE_POOL_ORDER == FREE_BUILDER_ORDER
+        # investigator 순서는 builder 실측으로 바꾸지 않습니다. 2026-08-21
+        # 재측정에서 builder 만 재정렬했으므로 두 순서는 값이 달라야 합니다.
+        assert FREE_INVESTIGATOR_ORDER != FREE_BUILDER_ORDER
         # 실격 4종은 후보에서 빠져 있어야 합니다.
         for disqualified in (
             "or-free-laguna-s",

@@ -17,7 +17,9 @@ CONC=${BENCH_CONCURRENCY:-3}
 # 종료 확인에 허용하는 최대 대기 시간입니다. 넘기면 그 스택을 봉인합니다.
 KILL_CONFIRM_SEC=${BENCH_KILL_CONFIRM_SEC:-60}
 
-STACKS=(oc_nemo3ultra laguna_xs deepseek or_nemoultra mimo)
+# 측정 대상 스택입니다. 일부만 다시 재려면 BENCH_STACKS 로 좁힙니다. 이때도
+# 경합 조건을 바꾸지 않도록 원래와 같은 수의 스택을 동시에 돌려야 합니다.
+STACKS=(${=BENCH_STACKS:-oc_nemo3ultra laguna_xs deepseek or_nemoultra mimo})
 typeset -A MODEL
 MODEL[oc_nemo3ultra]="opencode/nemotron-3-ultra-free"
 MODEL[laguna_xs]="or-free/laguna-xs"

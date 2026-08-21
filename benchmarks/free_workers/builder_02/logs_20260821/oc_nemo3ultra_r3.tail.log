@@ -1,0 +1,75 @@
+# oc_nemo3ultra_r3  exit/소요초: 0 612
+# 원본 크기:    89175 bytes (아래는 마지막 4KB)
+---
+                _update_history(pool_name, "unknown", 0, state_path)
+                     continue
+                 known = listings.setdefault("agy", _run_listing(AGY_LISTING))
+@@ -273,10 +275,13 @@ def main(argv: list[str] | None = None) -> int:
+         return 0
+ 
+     try:
+-        missing, result = audit(with_agy=args.with_agy, state_path=state_path, json_output=args.json)
++        missing, result = audit(
++            with_agy=args.with_agy, state_path=state_path, json_output=args.json
++        )
+     except Exception as exc:
+         if args.json:
+             import json
++
+             print(json.dumps({"extinct": 0, "pools": {}}, ensure_ascii=False))
+         else:
+             print(f"도구 오류: {exc}")
+@@ -284,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
+ 
+     if args.json:
+         import json
++
+         print(json.dumps(result, ensure_ascii=False))
+         return 1 if missing else 0
+[0m
+[0m$ [0mgit add scripts/audit_model_inventory.py && git commit -m "feat: add --json output option to audit_model_inventory.py
+
+- Add --json flag to output machine-readable JSON instead of human-readable lines
+- JSON structure: {'extinct': int, 'pools': {pool_name: {'status': str, 'streak': int}}}
+- Status values: present, absent, unknown, skipped
+- Streak: consecutive absent count (0 for present/skipped)
+- --json overrides --quiet (JSON only output)
+- Exit codes unchanged (0=all ok/suspect, 1=extinct found, 2=tool error)
+- Add 5 new tests for JSON output behavior"
+Ruff Format..............................................................Passed
+Ruff Lint................................................................Passed
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[b2-oc_nemo3ultra 68865e6] feat: add --json output option to audit_model_inventory.py
+ 2 files changed, 223 insertions(+), 12 deletions(-)
+[0m
+Commit successful. Let me run the tests one final time to verify everything works:
+[0m$ [0muv run pytest tests/test_audit_model_inventory.py -q
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[33m                                                         [100%][0m
+[33m=============================== warnings summary ===============================[0m
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-oc_nemo3ultra/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+[33m[32m16 passed[0m, [33m[1m1 warning[0m[33m in 0.04s[0m[0m
+[0m
+[0m$ [0mgit log --oneline -1
+68865e6 feat: add --json output option to audit_model_inventory.py
+[0m
+All tests pass. The implementation is complete.
+Done. The `--json` option has been added to `scripts/audit_model_inventory.py` and committed.
+
+**Summary of changes:**
+- Added `--json` flag to output a single JSON object to stdout (machine-readable)
+- JSON structure: `{"extinct": int, "pools": {pool_name: {"status": "present|absent|unknown|skipped", "streak": int}}}`
+- `--json` overrides `--quiet` (JSON only, no Korean text mixed in)
+- Exit codes unchanged: 0=all ok/suspect, 1=extinct found, 2=tool error
+- Added 5 new tests for JSON output behavior
+- All 16 existing + new tests pass
+- Committed to working branch

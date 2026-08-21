@@ -207,7 +207,38 @@ opencode run --dir <워크트리> -m opencode/mimo-v2.5-free "<preamble>"
 | `opencode/mimo-v2.5-free` | **쓰기 통과** | 13분58초 |
 | `opencode/nemotron-3.5-lightning-free` | **격리** | 4.8KB 지시문에 다국어 토큰이 섞인 무의미 출력. 아래 경고 |
 | `opencode/hy3-free` | **격리** | 파일 3개를 읽고 아무것도 쓰지 않은 채 종료 코드 0 |
-| `opencode/muse-spark-1.2-contributor-free` | **사용 불가** | `This model is not available in your country` (지역 차단) |
+| `opencode/muse-spark-1.2-contributor-free` | **자격 미달** | 지역 차단. `This model is not available in your country`. 아래 1.4.1 절 |
+
+#### 1.4.1 muse spark 계열은 능력 미달이 아니라 자격 미달입니다
+
+`muse-spark-1.2` 는 컨텍스트 1,048,576 토큰으로 무료 풀 최상위와 동급이라
+강해 보입니다. 그래서 "왜 뺐는가" 를 반복해 묻게 됩니다. **능력을 재 본 적이
+없습니다.** 1차 경합에서 7초 만에 기동 실패했으므로 `behavioral_score` 는
+`null` 이고, 성능을 근거로 뺀 것이 아닙니다.
+
+측정 단위가 `모델 + 제공자 + CLI 하네스` 조합이므로 두 경로를 갈라 적습니다.
+모델 이름만 보고 하나로 묶으면 판단을 그르칩니다.
+
+| 스택 | 상태 | 근거 (2026-08-21 확인) |
+| --- | --- | --- |
+| `opencode/muse-spark-1.2-contributor-free` | 지역 차단 | `This model is not available in your country` |
+| `openrouter/meta/muse-spark-1.2` | **무료 아님** | `pricing.prompt` $1.25/M, `completion` $4.25/M |
+| `openrouter/meta/muse-spark-1.1` | **무료 아님** | 위와 동일 |
+
+무료 풀 편입 요건은 `pricing.prompt` 와 `pricing.completion` 이 모두 `"0"` 인
+것입니다. 현재 편입된 네 slug 는 전부 이 요건을 만족합니다. muse spark 는 두
+경로 모두 만족할 방법이 없으므로 **측정 대기 목록이 아니라 자격 미달로
+닫았습니다.** 재측정해도 이 사실은 바뀌지 않습니다.
+
+**재검토 트리거는 둘뿐입니다.**
+
+1. OpenRouter 에 `meta/muse-spark-1.2:free` 변종이 등장
+2. opencode contributor-free 의 지역 차단 해제
+
+유료 풀 편입은 권하지 않습니다. 유료 자리에는 `gemini-3.7-flash` 와
+`claude-sonnet-4-6` 이 실측 기반으로 있고, muse spark 는 능력 데이터가 0 인
+상태로 비용을 씁니다. 1M 컨텍스트 축은 `or-free/nemotron-ultra` 가 무료로
+이미 커버합니다.
 
 **`nemotron-3.5-lightning` 은 probe 로 걸러지지 않습니다.** 짧은 지시
 ("OK 만 답하라", "2+2")에는 정상 응답하고, 긴 지시문에서만 무너집니다.

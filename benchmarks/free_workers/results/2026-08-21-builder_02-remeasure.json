@@ -1,0 +1,170 @@
+{
+  "benchmark": "free_workers/builder_02",
+  "date": "2026-08-21",
+  "scorer_frozen_before_run": true,
+  "timeout_sec": 720,
+  "concurrency": 3,
+  "order": "round-robin (rep 바깥, stack 안쪽)",
+  "success_definition": "종료 코드 0 AND 커밋 1건 이상 AND 채점 만점",
+  "limitations": [
+    "반복 3회는 median 을 잡기에는 충분하나 p95 를 신뢰하기에는 부족하다.",
+    "동시 3대 조건에서 측정했다. 같은 백엔드를 쓰는 스택끼리 경합이 있다.",
+    "과제 1종(소형 builder)만 쟀다. 역할별 적합성은 이 값으로 말할 수 없다.",
+    "2차의 oc_nemo3ultra 오염분을 다시 재려고 돌렸다. 동시 3대 경합 조건을 2차와 맞추려고 mimo 와 laguna_xs 를 함께 투입했다. base ref 는 2차와 같은 8b0b400 이다.",
+    "deepseek 는 opencode 목록에서 부재라 이번 측정에서 제외했다. 2026-08-21 기준 부재 2회 관측으로 소멸 확정(3회) 전이다.",
+    "laguna_xs 0/3 은 능력 미달이 아니라 지연이다. r1 과 r3 은 채점 6/6 만점 코드를 만들고도 720초 안에 커밋에 도달하지 못했다. 2차에서는 같은 과제를 429~512초에 3/3 으로 완주했다.",
+    "같은 스택이 하루 만에 3/3 에서 0/3 으로 뒤집혔다. n=3 으로 매긴 스택 간 순위는 재현되지 않는다. 이 값으로 순위를 고정하지 말 것."
+  ],
+  "stacks": [
+    {
+      "stack": "mimo",
+      "runs": 3,
+      "success": 3,
+      "success_rate": 1.0,
+      "median_success_sec": 512,
+      "p95_success_sec": 620,
+      "p95_all_sec": 620,
+      "failures": [],
+      "contaminated": false,
+      "trustworthy": true
+    },
+    {
+      "stack": "oc_nemo3ultra",
+      "runs": 3,
+      "success": 2,
+      "success_rate": 0.667,
+      "median_success_sec": 658,
+      "p95_success_sec": 698,
+      "p95_all_sec": 698,
+      "failures": [
+        "no_commit"
+      ],
+      "contaminated": false,
+      "trustworthy": true
+    },
+    {
+      "stack": "laguna_xs",
+      "runs": 3,
+      "success": 0,
+      "success_rate": 0.0,
+      "median_success_sec": null,
+      "p95_success_sec": null,
+      "p95_all_sec": 720,
+      "failures": [
+        "timeout"
+      ],
+      "contaminated": false,
+      "trustworthy": true
+    }
+  ],
+  "runs": [
+    {
+      "stack": "oc_nemo3ultra",
+      "rep": 1,
+      "exit_code": 0,
+      "elapsed_sec": 183,
+      "commits": 0,
+      "score": "0/6",
+      "success": false,
+      "failure": "no_commit",
+      "contaminated": false,
+      "contamination_reason": null
+    },
+    {
+      "stack": "mimo",
+      "rep": 1,
+      "exit_code": 0,
+      "elapsed_sec": 632,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
+    },
+    {
+      "stack": "laguna_xs",
+      "rep": 1,
+      "exit_code": 124,
+      "elapsed_sec": 720,
+      "commits": 0,
+      "score": "6/6",
+      "success": false,
+      "failure": "timeout",
+      "contaminated": false,
+      "contamination_reason": null
+    },
+    {
+      "stack": "oc_nemo3ultra",
+      "rep": 2,
+      "exit_code": 0,
+      "elapsed_sec": 703,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
+    },
+    {
+      "stack": "mimo",
+      "rep": 2,
+      "exit_code": 0,
+      "elapsed_sec": 512,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
+    },
+    {
+      "stack": "laguna_xs",
+      "rep": 2,
+      "exit_code": 124,
+      "elapsed_sec": 720,
+      "commits": 0,
+      "score": "5/6",
+      "success": false,
+      "failure": "timeout",
+      "contaminated": false,
+      "contamination_reason": null
+    },
+    {
+      "stack": "mimo",
+      "rep": 3,
+      "exit_code": 0,
+      "elapsed_sec": 338,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
+    },
+    {
+      "stack": "oc_nemo3ultra",
+      "rep": 3,
+      "exit_code": 0,
+      "elapsed_sec": 612,
+      "commits": 1,
+      "score": "6/6",
+      "success": true,
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
+    },
+    {
+      "stack": "laguna_xs",
+      "rep": 3,
+      "exit_code": 124,
+      "elapsed_sec": 720,
+      "commits": 0,
+      "score": "6/6",
+      "success": false,
+      "failure": "timeout",
+      "contaminated": false,
+      "contamination_reason": null
+    }
+  ]
+}

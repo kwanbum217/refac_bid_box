@@ -1,0 +1,67 @@
+# laguna_s  exit/소요초: 124 3780
+# 원본 크기:   381903 bytes (아래는 마지막 4KB)
+---
+n (unknown)
+     5. Call `audit(state=state)` → unknown, count preserved at 2
+     6. Monkeypatch `_run_listing` to return empty set (absent) again
+     7. Call `audit(state=state)` → 3rd absent, count=3, "소멸", exit code 1
+
+     Wait, but in step 4, the `_run_listing` is monkeypatched to raise. The `audit()` function would catch the exception and set `present=None`, `unknown_reason=str(exc)`. Then in the else block, the state preserves the count. ✓
+
+     But wait, there's a subtlety. When `_run_listing` raises for provider "opencode", the `listings` cache might have been set in a previous call. Actually no, each `audit()` call creates a new `listings` dict. So the cache doesn't persist across calls. But the state dict does.
+
+     Hmm, actually, in step 3, the 2nd `audit()` call creates a new `listings` dict, calls `_run_listing` again (which returns empty set), and gets absent. The count goes from 1 to 2. ✓
+
+     In step 4, the 3rd `audit()` call creates a new `listings` dict, calls `_run_listing` (which raises), gets unknown, count preserved at 2. ✓
+
+     In step 5, the 4th `audit()` call creates a new `listings` dict, calls `_run_listing` (which returns empty set), gets absent, count goes from 2 to 3. ✓
+
+     This should work.
+
+     But wait, in step 4, the `listings` dict is fresh (empty). When `_run_listing` raises, the `listings.setdefault(provider, ...)` is never called (the exception is raised before setdefault returns). So `listings` stays empty. That's fine.
+
+     Actually, looking at the code:
+     ```python
+     known = listings.setdefault(provider, _run_listing(cmd))
+     ```
+     If `_run_listing(cmd)` raises, the exception is caught, and `listings.setdefault` isLet me understand the current state and what I need to implement.
+
+  The current `audit_model_inventory.py`:
+  - `audit()` returns `(missing, lines)` tuple
+  - `main()` returns exit codes 0/1/2
+  - Currently checks if models exist in provider listings
+  - "소멸" is printed when a model is absent from the listing
+  - Exit code 1 when missing > 0
+
+  The task is to add observation history-based confirmation logic:
+  1. State file accumulates observations. Default path: `data/model_inventory_history.json`, `--state <path>` to override.
+  2. State file records per pool_name the most recent observation as present/absent/unknown.
+  3. `absent` in 3 consecutive different observation rounds → "extinct", exit code 1.
+  4. `absent` 1 or 2 consecutive → "suspected N/3", exit code 0.
+  5. `present` observation resets the consecutive absence counter to 0.
+  6. `unknown` observation neither increments nor resets the counter — preserves previous.
+  7. `--reset-state` option to clear the state file.
+  8. State file missing or corrupt JSON → start with empty history, don't crash.
+  9. Add `data/model_inventory_history.json` to `.gitignore`.
+  10. Update module docstring's exit code description.
+
+  Now let me think about the current code structure. The `audit()` function currently:
+  - Iterates over MODEL_POOL entries
+  - For each, checks if model_id is present in the listing
+  - If present → "존재"
+  - If absent → "소멸" and `missing += 1`
+
+  I need to add the observation history tracking. The key insight is:
+  - Each item's status (present/absent/unknown) is recorded in the state file.
+  - The state tracks consecutive absent counts per pool_name.
+  - When absent count reaches 3 (in different observation rounds), it's "extinct".
+
+  Wait, let me re-read the requirements more carefully.
+
+  "absent 가 서로 다른 관측 회차에서 3회 연속이면 그 항목을 '소멸'로 판정" — absent 3 times in a row across different observation rounds = extinct.
+
+  "absent 가 1회 또는 2회 연속이면 '의심 N/3'으로 출력하되 종료 코드는 0" — absent 1 or 2 consecutive = "suspected N/3", exit code 0.
+
+  "present 관츬이 들어오면 그 항목의 연속 absent 카운터를 0으로 초기화" — present resets counter to 0.
+
+  "unknown 관측은 연속 absent 카운터를 증가시키지도 초기화하지도 않는다.

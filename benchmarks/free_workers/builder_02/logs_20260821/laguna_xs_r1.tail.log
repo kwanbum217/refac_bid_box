@@ -1,0 +1,54 @@
+# laguna_xs_r1  exit/소요초: 124 720
+# 원본 크기:     5308 bytes (아래는 마지막 4KB)
+---
+l에 명시된 requirements를 따르겠습니다:
+
+  **required_change:**
+  1. `--json` 플래그를 추가합니다.
+  2. `--json` 지정 시 stdout 에 JSON 객체 정확히 하나만 출력합니다. 사람이 읽는 줄이나 안내문을 함께 찍지 않습니다.
+  3. JSON 최상위에 정수 필드 `extinct` 를 넣습니다. 3회 연속 이탈로 소멸 판정된 항목 수입니다.
+  4. JSON 최상위에 객체 필드 `pools` 를 넣습니다. 키는 pool_name 이고 값은 객체입니다.
+  5. `pools` 의 각 값에 문자열 필드 `status` 를 넣습니다. 값은 `present`, `absent`, `unknown`, `skipped` 중 하나입니다. 배정 대상이 아닌 항목(`suitable_for` 가 빈 목록)은 `skipped` 입니다.
+  6. `pools` 의 각 값에 정수 필드 `streak` 를 넣습니다. 그 시점의 연속 absent 횟수입니다. `present` 나 `skipped` 이면 0 입니다.
+  7. `--json` 이 없을 때의 출력과 종료 코드는 지금과 동일하게 유지합니다.
+  8. `--json` 指定 시에도 종료 코드는 동일한 규칙을 따릅니다.
+  9. `--json` 과 `--quiet` 을 함께 주면 `--json` 이 이깁니다. JSON 만 출력합니다.
+
+  **acceptance:**
+  1. `--json` 출력이 `json.loads` 로 파싱되고 `extinct` 와 `pools` 키를 갖습니다.
+  2. `absent` 3회 연속에서 `--json` 출력의 `extinct` 가 1 이상이고 종료 코드가 1 입니다.
+  3. `absent` 2회 연속에서 `extinct` 가 0 이고 종료 코드가 0 이며 해당 pool 의 `streak` 가 2 입니다.
+  4. `unknown` 관측이 `streak` 를 보존합니다.
+  5. 기존 테스트가 전부 통과합니다.
+  6. `uv run pytest tests/ -q` 전량 통과
+  7. 작업 브랜치에 커밋이 1건 이상 있습니다.
+
+  핵심은:
+  - `audit()` 함수는 현재 `(missing, lines)` 튜플을 반환합니다
+  - `main()` 함수에서 출력 처리
+
+  `--json` 옵션을 추가하면:
+  - `pools` 딕셔너리를 구성해야 함 (pool_name → {status, streak})
+  - `extinct` 필드는 3회 연속 absent로 판정된 개수
+  - stdout에 JSON 객체 하나만 출력
+
+  `audit()` 함수를 수정해서 pools 정보도 반환하도록 해야 합니다.
+
+  로직을 분석해보면:
+  1. `audit()` 함수가 `lines`를 반환하는데, 이걸 `pools` 구조로도 반환해야 함
+  2. `--json`이 있으면 `pools` dict와 `extinct` count를 JSON 형태로 출력
+  3. 기존 `--json` 없을 때는 기존 동작 유지
+
+  코드 수정이 필요합니다.
+
+• 이제 작업을 수행하겠습니다. 먼저 현재 `audit()` 함수의 반환값과 `MODEL_POOL` 구조를 파악했으므로, `--json` 옵션을 추가하고 JSON 출력 로직을 구현하겠습니다.
+
+• 이제 main 함수를 수정해야 합니다. --json 옵션을 추가하고 JSON 출력 로직을 구현해야 합니다.이제 기존 테스트들이 여전히 통과하는지 확인해야 합니다. 테스트 코드를 살펴보면 `audit()` 함수가 `(missing, lines)` 튜플을 반환하도록 작성되어 있습니다. 새로 반환하는 것은 `(missing, lines, pools)`이므로 테스트들이 깨질 것입니다.
+
+  테스트 코드를 수정해야 합니다. 또한 새로운 `--json` 옵션에 대한 테스트를 추가해야 합니다.
+
+  테스트 코드를 수정하겠습니다.
+
+• 이제 테스트 파일을 수정해야 합니다. `audit()` 함수가 세 번째 값을 추가로 반환하므로 테스트 코드를 업데이트하고, 새 `--json` 옵션에 대한 테스트를 추가하겠습니다.
+
+• 이제 나머지 테스트들도 수정해야 합니다. 모든 `audit_tool.audit()` 호출에 대한 반환값 처리를 업데이트해야 합니다.이제 나머지 테스트들도 수정해야 합니다.이제 test_unknown_preserves_counter 테스트를 수정해야 합니다.이제 나머지 테스트들도 수정해야 합니다. test_unknown_not_reset_counter, test_absent_thresholds_boundary, test_present_resets_counter, test_present_after_absent_resets_counter, test_corrupt_state_file_not_fatal, test_reset_state_option 테스트를 모두 수정해야 합니다.

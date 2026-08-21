@@ -1,0 +1,75 @@
+# mimo_r3  exit/소요초: 0 338
+# 원본 크기:    76996 bytes (아래는 마지막 4KB)
+---
+.....................Failed
+- hook id: ruff
+- exit code: 1
+
+[1m[91m]8;;https://docs.astral.sh/ruff/rules/unused-variable\F841]8;;\[0m[1m Local variable `parsed` is assigned to but never used[0m
+   [1m[94m--> [0mtests/test_audit_model_inventory.py:523:5
+    [1m[94m|[0m
+[1m[94m521[0m [1m[94m|[0m     captured = capsys.readouterr()
+[1m[94m522[0m [1m[94m|[0m     # JSON 파싱이 되어야 하고, 사람이 읽는 한국어 줄이 없어야 함
+[1m[94m523[0m [1m[94m|[0m     parsed = json.loads(captured.out)
+    [1m[94m|[0m     [1m[91m^^^^^^[0m
+[1m[94m524[0m [1m[94m|[0m     assert "존재" not in captured.out
+[1m[94m525[0m [1m[94m|[0m     assert "의심" not in captured.out
+    [1m[94m|[0m
+[1m[96mhelp[0m[1m: Remove assignment to unused variable `parsed`[0m
+
+Found 1 error.
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[0m
+[0m← [0mEdit tests/test_audit_model_inventory.py
+Index: /Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
+===================================================================
+--- /Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
++++ /Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
+@@ -519,9 +519,9 @@
+ audit_tool.main(["--state", str(temp_state_path), "--json"])
+ 
+ captured = capsys.readouterr()
+ # JSON 파싱이 되어야 하고, 사람이 읽는 한국어 줄이 없어야 함
+-parsed = json.loads(captured.out)
++json.loads(captured.out)
+ assert "존재" not in captured.out
+ assert "의심" not in captured.out
+ assert "건너뜀" not in captured.out
+ 
+
+[0m
+Fix the unused variable in the test:
+[0m$ [0mgit add scripts/audit_model_inventory.py tests/test_audit_model_inventory.py && git commit -m "feat: add --json output option to audit_model_inventory"
+Ruff Format..............................................................Passed
+Ruff Lint................................................................Passed
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[b2-mimo b8af9cc] feat: add --json output option to audit_model_inventory
+ 2 files changed, 288 insertions(+), 36 deletions(-)
+[0m
+모든 pre-commit 검증을 통과하고 커밋이 완료되었습니다.
+
+**작업 요약:**
+
+- `scripts/audit_model_inventory.py`에 `--json` 플래그 추가
+  - `--json` 지정 시 `{"extinct": <정수>, "pools": {<pool_name>: {"status": <str>, "streak": <정수>}}}` 형태의 JSON만 출력
+  - `--json`과 `--quiet` 동시 사용 시 `--json` 우선
+  - 종료 코드 규칙은 기존과 동일 유지 (0/1/2)
+
+- `tests/test_audit_model_inventory.py`에 8개 테스트 추가
+  - JSON 파싱 가능 여부, extinct/streak 검증, unknown streak 보존, skipped 처리, --quiet 무시, 한국어 줄 없음, 종료 코드 일관성
+
+- 커밋: `b8af9cc feat: add --json output option to audit_model_inventory`

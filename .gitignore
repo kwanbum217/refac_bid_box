@@ -159,6 +159,10 @@ data/backups/*.tar.gz
 # ============================================================
 logs/
 *.log
+# 벤치마크 로그 꼬리는 결과 JSON 이 근거로 참조하므로 추적합니다. 회차당 4KB
+# 이며, 이것이 없으면 "파일 3개만 읽고 종료" 같은 판정을 확인할 수 없습니다.
+!benchmarks/free_workers/**/logs*/
+!benchmarks/free_workers/**/logs*/*.tail.log
 *.pid
 *.seed
 *.pid.lock

@@ -29,6 +29,14 @@ def run_aggregate(runs_content: str, scores_content: str) -> tuple[int, dict | N
                 str(scores_file),
                 "--out",
                 str(out_file),
+                # 실행 조건은 기본값이 없는 필수 인자입니다. 기본값을 두면
+                # 조건을 바꿔 돌렸을 때 결과 JSON 이 조용히 이전 조건을 적습니다.
+                "--timeout-sec",
+                "720",
+                "--concurrency",
+                "3",
+                "--date",
+                "2026-08-20",
             ],
             capture_output=True,
             text=True,
@@ -271,3 +279,79 @@ if __name__ == "__main__":
     print("✓ test_multiple_stacks_only_contaminated_gets_warning passed")
 
     print("\n모든 테스트 통과!")
+
+
+def test_run_conditions_are_required():
+    """실행 조건은 기본값 없이 필수여야 한다.
+
+    기본값을 두면 조건을 바꿔 돌렸을 때 결과 JSON 이 오류 없이 이전 조건을
+    기록한다. 읽는 사람이 알아챌 방법이 없으므로 인자로 강제한다.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        runs_file = tmpdir / "results.tsv"
+        scores_file = tmpdir / "scores.txt"
+        runs_file.write_text("a_r1\t0 100\t1", encoding="utf-8")
+        scores_file.write_text("a_r1 6/6", encoding="utf-8")
+
+        for omitted in (["--timeout-sec", "720"], ["--concurrency", "3"]):
+            argv = [
+                sys.executable,
+                "benchmarks/free_workers/aggregate.py",
+                "--runs",
+                str(runs_file),
+                "--scores",
+                str(scores_file),
+                "--out",
+                str(tmpdir / "out.json"),
+                *omitted,
+            ]
+            result = subprocess.run(  # noqa: S603
+                argv,
+                capture_output=True,
+                text=True,
+                cwd="/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box",
+            )
+            assert result.returncode == 2, f"{omitted} 만 준 호출이 통과했습니다"
+            assert "required" in result.stderr
+
+
+def test_notes_are_appended_to_limitations():
+    """--note 는 실행별 한계를 limitations 에 덧붙인다."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+        runs_file = tmpdir / "results.tsv"
+        scores_file = tmpdir / "scores.txt"
+        out_file = tmpdir / "out.json"
+        runs_file.write_text("a_r1\t0 100\t1", encoding="utf-8")
+        scores_file.write_text("a_r1 6/6", encoding="utf-8")
+
+        result = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "benchmarks/free_workers/aggregate.py",
+                "--runs",
+                str(runs_file),
+                "--scores",
+                str(scores_file),
+                "--out",
+                str(out_file),
+                "--timeout-sec",
+                "600",
+                "--concurrency",
+                "1",
+                "--date",
+                "2026-08-21",
+                "--note",
+                "단독 실행이라 경합 조건이 다르다",
+            ],
+            capture_output=True,
+            text=True,
+            cwd="/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box",
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(out_file.read_text(encoding="utf-8"))
+        assert data["timeout_sec"] == 600
+        assert data["concurrency"] == 1
+        assert data["date"] == "2026-08-21"
+        assert "단독 실행이라 경합 조건이 다르다" in data["limitations"]
