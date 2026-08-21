@@ -11,12 +11,15 @@ DB 접속 없이 컴파일된 DDL 과 컬럼 속성만 확인합니다. 실제 D
 특히 LONGTEXT -> TEXT 는 64KB 를 넘는 기존 값을 잘라냅니다.
 """
 
+from typing import Any
+
 import pytest
 from sqlalchemy.dialects import mysql, sqlite
 from sqlalchemy.dialects.mysql.mariadb import MariaDBDialect
 
 import src.app.models  # noqa: F401
 from src.app.core.db import Base
+from src.app.core.timeutil import utcnow
 
 MYSQL = mysql.dialect()
 SQLITE = sqlite.dialect()
@@ -254,3 +257,601 @@ def test_declared_index_names_exist_in_production(table):
     declared = set(_index_map(table))
     unknown = sorted(declared - PRODUCTION_INDEX_NAMES[table])
     assert unknown == [], f"운영 DB 에 없는 인덱스명: {unknown}"
+
+
+# ==============================================================================
+# Bids 도메인 모델 메타데이터 불변성 회귀 테스트
+# (BidResult, BidAnnouncement, BidDatasetSummary, BidRankingSnapshot, InstitutionWinRateStat)
+# Mapped[] 타입 어노테이션 전환 시 테이블명, 컬럼명, 타입, nullable, PK,
+# default, onupdate, unique constraint, index, FK 가 100% 보존됨을 보장합니다.
+# ==============================================================================
+
+BIDS_TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
+    "bid_results": {
+        "primary_key": ("id",),
+        "foreign_keys": set(),
+        "unique_constraints": {
+            "bid_results_bid_ntce_no_bid_ntce_ord_category_94d04c58_uniq": (
+                "bid_ntce_no",
+                "bid_ntce_ord",
+                "category",
+            ),
+        },
+        "indexes": {
+            "ix_bid_results_bidwinnr_nm": ("bidwinnr_nm",),
+            "ix_bid_results_dt_cat": ("rl_openg_dt", "category"),
+            "ix_bid_results_amt_id": ("sucsf_bid_amt", "id"),
+            "ix_bid_results_rate_id": ("sucsf_bid_rate", "id"),
+            "bid_results_dminstt_nm_1b809760": ("dminstt_nm",),
+            "bid_results_category_981358ae": ("category",),
+            "bid_results_collected_at_25a564b9": ("collected_at",),
+            "bid_results_rl_openg_dt_00b70e7a": ("rl_openg_dt",),
+            "ix_bid_results_cat_dt_stats": (
+                "category",
+                "rl_openg_dt",
+                "sucsf_bid_rate",
+                "sucsf_bid_amt",
+            ),
+        },
+        "columns": {
+            "id": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "INTEGER",
+                "nullable": False,
+                "primary_key": True,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_ntce_nm": {
+                "mysql_type": "VARCHAR(500)",
+                "sqlite_type": "VARCHAR(500)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_ntce_no": {
+                "mysql_type": "VARCHAR(50)",
+                "sqlite_type": "VARCHAR(50)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_ntce_ord": {
+                "mysql_type": "VARCHAR(10)",
+                "sqlite_type": "VARCHAR(10)",
+                "nullable": False,
+                "primary_key": False,
+                "default": "00",
+                "onupdate": None,
+            },
+            "bidwinnr_nm": {
+                "mysql_type": "VARCHAR(200)",
+                "sqlite_type": "VARCHAR(200)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "sucsf_bid_amt": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "BIGINT",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "sucsf_bid_rate": {
+                "mysql_type": "NUMERIC(10, 4)",
+                "sqlite_type": "NUMERIC(10, 4)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "rl_openg_dt": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "dminstt_nm": {
+                "mysql_type": "VARCHAR(200)",
+                "sqlite_type": "VARCHAR(200)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "category": {
+                "mysql_type": "VARCHAR(10)",
+                "sqlite_type": "VARCHAR(10)",
+                "nullable": False,
+                "primary_key": False,
+                "default": "Thng",
+                "onupdate": None,
+            },
+            "raw_data": {
+                "mysql_type": "JSON",
+                "sqlite_type": "JSON",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "collected_at": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": False,
+                "primary_key": False,
+                "default": utcnow,
+                "onupdate": None,
+            },
+        },
+    },
+    "bid_announcements": {
+        "primary_key": ("id",),
+        "foreign_keys": set(),
+        "unique_constraints": {
+            "bid_announcements_bid_ntce_no_bid_ntce_ord_5d538568_uniq": (
+                "bid_ntce_no",
+                "bid_ntce_ord",
+                "category",
+            ),
+        },
+        "indexes": {
+            "ix_bid_ann_dt_cat": ("bid_ntce_dt", "category"),
+            "bid_announcements_dminstt_nm_952da702": ("dminstt_nm",),
+            "bid_announcements_bid_ntce_dt_c42f1afb": ("bid_ntce_dt",),
+            "bid_announcements_category_02e9e006": ("category",),
+            "ix_bid_ann_collected": ("collected_at",),
+            "ix_bid_ann_category_collected_dt": ("category", "collected_at", "bid_ntce_dt", "id"),
+            "ix_bid_ann_collected_dt": ("collected_at", "bid_ntce_dt", "id"),
+        },
+        "columns": {
+            "id": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "INTEGER",
+                "nullable": False,
+                "primary_key": True,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_ntce_nm": {
+                "mysql_type": "VARCHAR(500)",
+                "sqlite_type": "VARCHAR(500)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_ntce_no": {
+                "mysql_type": "VARCHAR(50)",
+                "sqlite_type": "VARCHAR(50)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_ntce_ord": {
+                "mysql_type": "VARCHAR(10)",
+                "sqlite_type": "VARCHAR(10)",
+                "nullable": False,
+                "primary_key": False,
+                "default": "000",
+                "onupdate": None,
+            },
+            "ntce_instt_nm": {
+                "mysql_type": "VARCHAR(200)",
+                "sqlite_type": "VARCHAR(200)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "dminstt_nm": {
+                "mysql_type": "VARCHAR(200)",
+                "sqlite_type": "VARCHAR(200)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "base_amount": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "BIGINT",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "presmpt_prce": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "BIGINT",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_ntce_dt": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_clse_dt": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "openg_dt": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "ntce_kind_nm": {
+                "mysql_type": "VARCHAR(100)",
+                "sqlite_type": "VARCHAR(100)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "bid_methd_nm": {
+                "mysql_type": "VARCHAR(100)",
+                "sqlite_type": "VARCHAR(100)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "cntrct_mthd_nm": {
+                "mysql_type": "VARCHAR(100)",
+                "sqlite_type": "VARCHAR(100)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "category": {
+                "mysql_type": "VARCHAR(10)",
+                "sqlite_type": "VARCHAR(10)",
+                "nullable": False,
+                "primary_key": False,
+                "default": "Thng",
+                "onupdate": None,
+            },
+            "raw_data": {
+                "mysql_type": "JSON",
+                "sqlite_type": "JSON",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "collected_at": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": False,
+                "primary_key": False,
+                "default": utcnow,
+                "onupdate": None,
+            },
+        },
+    },
+    "bid_dataset_summaries": {
+        "primary_key": ("dataset",),
+        "foreign_keys": set(),
+        "unique_constraints": {},
+        "indexes": {
+            "bid_dataset_summaries_rebuilt_at_8d77f9db": ("rebuilt_at",),
+        },
+        "columns": {
+            "dataset": {
+                "mysql_type": "VARCHAR(20)",
+                "sqlite_type": "VARCHAR(20)",
+                "nullable": False,
+                "primary_key": True,
+                "default": None,
+                "onupdate": None,
+            },
+            "total_count": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "BIGINT",
+                "nullable": False,
+                "primary_key": False,
+                "default": 0,
+                "onupdate": None,
+            },
+            "total_amount": {
+                "mysql_type": "NUMERIC(30, 0)",
+                "sqlite_type": "NUMERIC(30, 0)",
+                "nullable": False,
+                "primary_key": False,
+                "default": 0,
+                "onupdate": None,
+            },
+            "avg_rate": {
+                "mysql_type": "NUMERIC(10, 4)",
+                "sqlite_type": "NUMERIC(10, 4)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "source_latest_collected_at": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "rebuilt_at": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": False,
+                "primary_key": False,
+                "default": utcnow,
+                "onupdate": utcnow,
+            },
+        },
+    },
+    "bid_ranking_snapshots": {
+        "primary_key": ("id",),
+        "foreign_keys": set(),
+        "unique_constraints": {
+            "uq_bid_ranking_slot": ("dataset", "dimension", "category", "rank"),
+        },
+        "indexes": {
+            "ix_bid_ranking_lookup": ("dataset", "dimension", "category", "rank"),
+        },
+        "columns": {
+            "id": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "INTEGER",
+                "nullable": False,
+                "primary_key": True,
+                "default": None,
+                "onupdate": None,
+            },
+            "dataset": {
+                "mysql_type": "VARCHAR(20)",
+                "sqlite_type": "VARCHAR(20)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "dimension": {
+                "mysql_type": "VARCHAR(30)",
+                "sqlite_type": "VARCHAR(30)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "category": {
+                "mysql_type": "VARCHAR(10)",
+                "sqlite_type": "VARCHAR(10)",
+                "nullable": False,
+                "primary_key": False,
+                "default": "",
+                "onupdate": None,
+            },
+            "rank": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "BIGINT",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "label": {
+                "mysql_type": "VARCHAR(500)",
+                "sqlite_type": "VARCHAR(500)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "metric_count": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "BIGINT",
+                "nullable": False,
+                "primary_key": False,
+                "default": 0,
+                "onupdate": None,
+            },
+            "rebuilt_at": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": False,
+                "primary_key": False,
+                "default": utcnow,
+                "onupdate": utcnow,
+            },
+        },
+    },
+    "institution_win_rate_stats": {
+        "primary_key": ("id",),
+        "foreign_keys": set(),
+        "unique_constraints": {
+            "uq_inst_win_rate_scope": ("institution_name", "category"),
+        },
+        "indexes": {},
+        "columns": {
+            "id": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "INTEGER",
+                "nullable": False,
+                "primary_key": True,
+                "default": None,
+                "onupdate": None,
+            },
+            "institution_name": {
+                "mysql_type": "VARCHAR(200)",
+                "sqlite_type": "VARCHAR(200)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "category": {
+                "mysql_type": "VARCHAR(10)",
+                "sqlite_type": "VARCHAR(10)",
+                "nullable": False,
+                "primary_key": False,
+                "default": "",
+                "onupdate": None,
+            },
+            "sample_count": {
+                "mysql_type": "BIGINT",
+                "sqlite_type": "BIGINT",
+                "nullable": False,
+                "primary_key": False,
+                "default": 0,
+                "onupdate": None,
+            },
+            "avg_rate": {
+                "mysql_type": "NUMERIC(10, 4)",
+                "sqlite_type": "NUMERIC(10, 4)",
+                "nullable": False,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "ewm_rate": {
+                "mysql_type": "NUMERIC(10, 4)",
+                "sqlite_type": "NUMERIC(10, 4)",
+                "nullable": True,
+                "primary_key": False,
+                "default": None,
+                "onupdate": None,
+            },
+            "rebuilt_at": {
+                "mysql_type": "DATETIME",
+                "sqlite_type": "DATETIME",
+                "nullable": False,
+                "primary_key": False,
+                "default": utcnow,
+                "onupdate": utcnow,
+            },
+        },
+    },
+}
+
+BIDS_COLUMN_PARAMS = [
+    (table, col_name, spec)
+    for table, schema in BIDS_TABLE_SCHEMAS.items()
+    for col_name, spec in schema["columns"].items()
+]
+
+
+def _check_default(col_default, expected_default):
+    if expected_default is None:
+        assert col_default is None
+    elif callable(expected_default):
+        assert col_default is not None
+        assert (
+            col_default.arg == expected_default
+            or col_default.arg is expected_default
+            or (
+                callable(col_default.arg)
+                and getattr(col_default.arg, "__name__", None) == expected_default.__name__
+                and getattr(col_default.arg, "__module__", None) == expected_default.__module__
+            )
+        )
+    else:
+        assert col_default is not None
+        assert col_default.arg == expected_default
+
+
+def _check_onupdate(col_onupdate, expected_onupdate):
+    if expected_onupdate is None:
+        assert col_onupdate is None
+    elif callable(expected_onupdate):
+        assert col_onupdate is not None
+        assert (
+            col_onupdate.arg == expected_onupdate
+            or col_onupdate.arg is expected_onupdate
+            or (
+                callable(col_onupdate.arg)
+                and getattr(col_onupdate.arg, "__name__", None) == expected_onupdate.__name__
+                and getattr(col_onupdate.arg, "__module__", None) == expected_onupdate.__module__
+            )
+        )
+    else:
+        assert col_onupdate is not None
+        assert col_onupdate.arg == expected_onupdate
+
+
+def _unique_constraint_map(table: str) -> dict[str, tuple[str, ...]]:
+    return {
+        c.name: tuple(col.name for col in c.columns)
+        for c in Base.metadata.tables[table].constraints
+        if type(c).__name__ == "UniqueConstraint" and c.name is not None
+    }
+
+
+def _foreign_key_targets(table: str) -> set[str]:
+    return {fk.target_fullname for fk in Base.metadata.tables[table].foreign_keys}
+
+
+def _pk_columns(table: str) -> tuple[str, ...]:
+    return tuple(c.name for c in Base.metadata.tables[table].primary_key.columns)
+
+
+@pytest.mark.parametrize("table", sorted(BIDS_TABLE_SCHEMAS.keys()))
+def test_bids_table_column_names_exact(table):
+    """bids 도메인 테이블의 모든 컬럼 이름과 순서가 정본과 일치해야 합니다."""
+    declared_cols = tuple(Base.metadata.tables[table].columns.keys())
+    expected_cols = tuple(BIDS_TABLE_SCHEMAS[table]["columns"].keys())
+    assert declared_cols == expected_cols
+
+
+@pytest.mark.parametrize(("table", "col_name", "spec"), BIDS_COLUMN_PARAMS)
+def test_bids_column_metadata_invariance(table, col_name, spec):
+    """bids 도메인 컬럼의 MySQL/SQLite 방언 타입, nullable, PK, 기본값, 갱신 기본값을 검증합니다."""
+    col = _column(table, col_name)
+    assert col.type.compile(MYSQL) == spec["mysql_type"], f"{table}.{col_name} MySQL 타입 불일치"
+    assert col.type.compile(SQLITE) == spec["sqlite_type"], f"{table}.{col_name} SQLite 타입 불일치"
+    assert col.nullable is spec["nullable"], f"{table}.{col_name} nullable 불일치"
+    assert col.primary_key is spec["primary_key"], f"{table}.{col_name} primary_key 불일치"
+    _check_default(col.default, spec["default"])
+    _check_onupdate(col.onupdate, spec["onupdate"])
+
+
+@pytest.mark.parametrize("table", sorted(BIDS_TABLE_SCHEMAS.keys()))
+def test_bids_table_primary_key(table):
+    """bids 도메인 테이블의 기본키(PK) 구성이 불변이어야 합니다."""
+    assert _pk_columns(table) == BIDS_TABLE_SCHEMAS[table]["primary_key"]
+
+
+@pytest.mark.parametrize("table", sorted(BIDS_TABLE_SCHEMAS.keys()))
+def test_bids_table_foreign_keys(table):
+    """bids 도메인 테이블의 외래키(FK) 구성이 정본과 일치해야 합니다."""
+    assert _foreign_key_targets(table) == BIDS_TABLE_SCHEMAS[table]["foreign_keys"]
+
+
+@pytest.mark.parametrize("table", sorted(BIDS_TABLE_SCHEMAS.keys()))
+def test_bids_table_unique_constraints(table):
+    """bids 도메인 테이블의 UniqueConstraint 명칭 및 대상 컬럼이 불변이어야 합니다."""
+    assert _unique_constraint_map(table) == BIDS_TABLE_SCHEMAS[table]["unique_constraints"]
+
+
+@pytest.mark.parametrize("table", sorted(BIDS_TABLE_SCHEMAS.keys()))
+def test_bids_table_named_indexes(table):
+    """bids 도메인 테이블의 Named Index 명칭 및 대상 컬럼이 불변이어야 합니다."""
+    assert _index_map(table) == BIDS_TABLE_SCHEMAS[table]["indexes"]

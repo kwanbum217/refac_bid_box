@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-21
-> **source_commit**: `cc93b2f`
+> **source_commit**: `3f43ab6`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -87,7 +87,7 @@
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 기본 코디네이터는 Codex `gpt-5.6-sol` + effort `high`, Claude 구독은 예비다. 절감 추세는 유효 행 부족으로 미판정이며 왕복 횟수 규율은 조율 스킬 3.2 절을 따른다.
 2. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.**
-3. **ORM `Mapped[]` 전환 — 미착수**: mypy `call-overload` 9건이 구식 `Column` 선언이라는 단일 원인이라 모듈 한정 override 로 덮어 두었다. G1 에 닿으므로 별도 과업.
+3. **ORM `Mapped[]` 전환 — bids 1차 완료**: `src/app/models/bids.py`의 5개 모델·50개 컬럼을 전환했다. 정규화 메타데이터 지문(`1946466a…f149e`)과 160개 대상 테스트로 전후 스키마 동일성을 확인했고, mypy `call-overload` 모듈 예외를 6개에서 2개로 줄였다. 남은 2개는 automation ORM JSON 컬럼 전환 때 제거한다.
 4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
 5. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
 6. **수집 2·3회차 관찰**: Docker 필요.
@@ -101,7 +101,7 @@
 - **대형 모듈 분할 (8장)**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수로 자동 분할하지 않는다.**
 - **워커 풀 정비 (11장)**: 2026-08-20 동일 쓰기 과제 경합에서 무료 10종 중 5종이 저위험 Python builder를 완주했다. `suitable_for`는 실측 역할만 허용하며 reviewer는 계속 닫는다. 격리 대상은 `opencode/nemotron-3.5-lightning-free`, `or-free/laguna-s`, `or-free/north-mini`, `opencode/hy3-free`다. 읽기 probe는 쓰기 적합성을 예측하지 못한다. Kimi는 `dispatch --inject` 대신 preamble 런치 인자와 쓰기 전용 프로필을 쓴다.
 - **모델 실재 대조 (2026-08-20)**: 등록 모델이 제공자에서 조용히 사라지는 것을 `scripts/audit_model_inventory.py` 로 검사한다. 조회 실패와 소멸을 구분해 보고한다. `suitable_for` 가 빈 항목은 배정되지 않으므로 검사 대상이 아니다.
-- **린터·보안·타입 게이트**: bandit 47건 오탐 판정 후 0건화(**이 실패가 CI 를 9시간 막았다**). mypy 58건 해소 후 `typecheck` 를 `check-all` 과 CI 에 배선.
+- **린터·보안·타입 게이트**: bandit 47건 오탐 판정 후 0건화(**이 실패가 CI 를 9시간 막았다**). mypy 58건 해소 후 `typecheck` 를 `check-all` 과 CI 에 배선. bids ORM 전환으로 모듈 한정 `call-overload` 예외 4개를 제거했다.
 - **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile 을 `npm ci` 로 통일.
 
 ---
