@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import statistics
 import sys
@@ -39,6 +40,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--runs", required=True)
     ap.add_argument("--scores", required=True)
     ap.add_argument("--out", required=True)
+    # 실행 조건은 기본값을 두지 않습니다. 기본값을 두면 조건을 바꿔 돌렸을 때
+    # 결과 JSON 이 조용히 이전 조건을 기록합니다.
+    ap.add_argument("--timeout-sec", type=int, required=True)
+    ap.add_argument("--concurrency", type=int, required=True)
+    ap.add_argument("--date", default=None, help="측정일 (기본: 오늘)")
+    ap.add_argument(
+        "--note",
+        action="append",
+        default=[],
+        help="이 실행에만 해당하는 한계를 limitations 에 덧붙입니다 (반복 지정 가능)",
+    )
     a = ap.parse_args(argv)
 
     # 채점 분모 검증: 같은 벤치마크 안에서 full score 가 서로 다르면 거부
@@ -189,13 +201,13 @@ def main(argv: list[str] | None = None) -> int:
 
     out = {
         "benchmark": "free_workers/builder_02",
-        "date": "2026-08-20",
+        "date": a.date or _dt.date.today().isoformat(),
         "scorer_frozen_before_run": True,
-        "timeout_sec": 720,
-        "concurrency": 3,
+        "timeout_sec": a.timeout_sec,
+        "concurrency": a.concurrency,
         "order": "round-robin (rep 바깥, stack 안쪽)",
         "success_definition": "종료 코드 0 AND 커밋 1건 이상 AND 채점 만점",
-        "limitations": limitations,
+        "limitations": limitations + list(a.note),
         "stacks": summary,
         "runs": runs,
     }

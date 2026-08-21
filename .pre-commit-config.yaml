@@ -57,9 +57,13 @@ repos:
       - id: trailing-whitespace
         name: Trim Trailing Whitespace
         stages: [pre-commit]
+        # 벤치마크 로그 꼬리는 워커 출력 원본이 근거다. 공백을 다듬으면
+        # 저장소 사본이 실행 결과와 더 이상 같지 않다.
+        exclude: '^benchmarks/free_workers/.*\.tail\.log$'
       - id: end-of-file-fixer
         name: Fix End of Files
         stages: [pre-commit]
+        exclude: '^benchmarks/free_workers/.*\.tail\.log$'
       - id: check-yaml
         name: Check YAML
         stages: [pre-commit]

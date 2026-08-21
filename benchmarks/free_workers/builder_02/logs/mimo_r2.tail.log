@@ -1,0 +1,58 @@
+# mimo_r2  exit/소요초: 0 512
+# 원본    61793 bytes (마지막 3KB)
+---
+m$ [0mgit add scripts/audit_model_inventory.py tests/test_audit_model_inventory.py && git commit -m "feat: add --json output option to audit_model_inventory"
+Ruff Format..............................................................Failed
+- hook id: ruff-format
+- files were modified by this hook
+
+2 files reformatted
+
+Ruff Lint................................................................Failed
+- hook id: ruff
+- exit code: 1
+- files were modified by this hook
+
+Found 7 errors (7 fixed, 0 remaining).
+
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[0m
+[0m$ [0mgit add scripts/audit_model_inventory.py tests/test_audit_model_inventory.py && git commit -m "feat: add --json output option to audit_model_inventory"
+Ruff Format..............................................................Passed
+Ruff Lint................................................................Passed
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[kwanbum217/b2-mimo f6801b5] feat: add --json output option to audit_model_inventory
+ 2 files changed, 302 insertions(+), 36 deletions(-)
+[0m
+[0m# [0mTodos
+[✓] audit() 함수에 json_output 파라미터 추가, 구조화된 데이터 반환
+[✓] main() 함수에 --json CLI 옵션 추가 및 JSON 출력 처리
+[✓] tests/test_audit_model_inventory.py 에 --json 관련 테스트 추가
+[✓] uv run pytest tests/test_audit_model_inventory.py -q 로 검증
+[✓] 작업 브랜치에 커밋
+[0m
+완료. 요약:
+
+**변경 파일:**
+- `scripts/audit_model_inventory.py` - `--json` CLI 옵션 추가, `audit()` 에 `json_output` 파라미터 추가하여 `{extinct, pools}` 구조화된 dict 반환
+- `tests/test_audit_model_inventory.py` - 기존 테스트 반환값 3-tuple 언패킹 수정, `--json` 관련 테스트 8건 추가
+
+**JSON 출력 형식:**
+```json
+{"extinct": 0, "pools": {"pool_name": {"status": "present|absent|unknown|skipped", "streak": 0}}}
+```
+
+**검증:** `uv run pytest tests/test_audit_model_inventory.py -q` 19건 전부 통과
+**커밋:** `kwanbum217/b2-mimo` 브랜치에 커밋 완료

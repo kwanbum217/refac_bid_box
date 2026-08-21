@@ -1,0 +1,76 @@
+# mimo_r2  exit/소요초: 0 512
+# 원본 크기:    67954 bytes (아래는 마지막 4KB)
+---
+ uv run pytest tests/test_audit_model_inventory.py -q 로 검증
+[•] 작업 브랜치에 커밋
+[0m
+전체 테스트에서 2건 실패는 기존 `test_data_preservation.py` 의 모델 가중치/chroma_db 디렉터리 부재 문제로 제 변경과 무관합니다. `test_audit_model_inventory.py` 19건 전부 통과 확인 완료.
+
+커밋하겠습니다.
+[0m$ [0mgit status && git branch --show-current
+On branch b2-mimo
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   scripts/audit_model_inventory.py
+	modified:   tests/test_audit_model_inventory.py
+
+no changes added to commit (use "git add" and/or "git commit -a")
+b2-mimo
+[0m
+[0m$ [0mgit add scripts/audit_model_inventory.py tests/test_audit_model_inventory.py && git commit -m "feat: add --json output option to audit_model_inventory.py"
+Ruff Format..............................................................Failed
+- hook id: ruff-format
+- files were modified by this hook
+
+2 files reformatted
+
+Ruff Lint................................................................Passed
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[0m
+ruff format에 의해 파일이 다시 포맷되었습니다. 재커밋합니다.
+[0m$ [0mgit add scripts/audit_model_inventory.py tests/test_audit_model_inventory.py && git commit -m "feat: add --json output option to audit_model_inventory.py"
+Ruff Format..............................................................Passed
+Ruff Lint................................................................Passed
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[b2-mimo 2249ea9] feat: add --json output option to audit_model_inventory.py
+ 2 files changed, 297 insertions(+), 36 deletions(-)
+[0m
+[0m$ [0mgit log --oneline -3
+2249ea9 feat: add --json output option to audit_model_inventory.py
+8b0b400 bench: builder_02 사양과 채점기를 모델 실행 전에 동결
+606fc76 merge: CURRENT_STATE 신선도 갱신
+[0m
+[0m# [0mTodos
+[✓] capsule.yaml 요구사항 분석 완료
+[✓] audit_model_inventory.py 에 --json 옵션 추가
+[✓] test_audit_model_inventory.py 에 --json 관련 테스트 추가
+[✓] uv run pytest tests/test_audit_model_inventory.py -q 로 검증
+[✓] 작업 브랜치에 커밋
+[0m
+완료. 커밋 `2249ea9` on `b2-mimo`.
+
+**변경 요약:**
+
+- `scripts/audit_model_inventory.py`:
+  - `--json` 플래그 추가 (`dest="json_output"`)
+  - `audit()` 반환값에 per-pool 데이터 `(status, streak)` 추가 (3-tuple)
+  - `--json` 지정 시 `{"extinct": int, "pools": {name: {"status": str, "streak": int}}}` JSON 출력
+  - `--json` + `--quiet` 동시 사용 시 `--json` 우선
+  - 종료 코드 규칙 동일 유지 (0/1/2)
+
+- `tests/test_audit_model_inventory.py`:
+  - 기존 12건 테스트 `audit()` 3-tuple 언팩에 맞게 수정 (assert 약화 없음)
+  - `--json` 관련 신규 테스트 7건 추가 (JSON 파싱, extinct/streak 검증, skipped, --quiet 우선, 텍스트 혼재 없음, 종료 코드 일치)

@@ -1,0 +1,50 @@
+# oc_nemo3ultra_r3  exit/소요초: 0 594
+# 원본    63836 bytes (마지막 3KB)
+---
+[0m
+[0m$ [0mgit add scripts/audit_model_inventory.py
+(no output)
+[0m
+[0m$ [0mgit commit -m "feat: add --json output option to audit_model_inventory.py"
+Ruff Format..............................................................Passed
+Ruff Lint................................................................Passed
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[kwanbum217/b2-oc_nemo3ultra bc971ea] feat: add --json output option to audit_model_inventory.py
+ 1 file changed, 16 insertions(+), 24 deletions(-)
+[0m
+[0m$ [0mgit log --oneline -2
+bc971ea feat: add --json output option to audit_model_inventory.py
+8aa674f feat: add --json output option to audit_model_inventory.py
+[0m
+[0m$ [0muv run pytest tests/test_audit_model_inventory.py -q
+[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[33m                                                        [100%][0m
+[33m=============================== warnings summary ===============================[0m
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/kwanbum/orca/workspaces/refac_bid_box/b2-oc_nemo3ultra/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+[33m[32m17 passed[0m, [33m[1m1 warning[0m[33m in 0.03s[0m[0m
+[0m
+All tests pass. The task is complete. Let me provide a summary:
+
+**Changes made:**
+1. Added `--json` flag to `scripts/audit_model_inventory.py`
+2. When `--json` is specified, outputs a single JSON object with:
+   - `extinct`: integer count of models with 3+ consecutive absents
+   - `pools`: object with pool_name keys, each having `status` (present/absent/unknown/skipped) and `streak` (consecutive absent count)
+3. `--json` overrides `--quiet` (only JSON output to stdout)
+4. Exit codes remain unchanged (0=all ok/suspect, 1=extinct found, 2=tool error)
+5. Added comprehensive tests for the new `--json` functionality in `tests/test_audit_model_inventory.py`
+
+**Verification:**
+- All 17 tests in `test_audit_model_inventory.py` pass
+- Full test suite: 1564 tests pass (2 pre-existing failures unrelated to changes)
+- Manual verification of `--json`, `--json --quiet`, `--json --reset-state` all work correctly
+- Committed to branch `kwanbum217/b2-oc_nemo3ultra`

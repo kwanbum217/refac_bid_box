@@ -1,0 +1,46 @@
+# deepseek_r3  exit/소요초: 0 253
+# 원본    34167 bytes (마지막 3KB)
+---
+: chroma_db 디렉터리 없음
+[31m[31m[1m2 failed[0m, [33m1 warning[0m[31m in 0.07s[0m[0m
+On branch kwanbum217/b2-deepseek
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   scripts/audit_model_inventory.py
+	modified:   tests/test_audit_model_inventory.py
+
+no changes added to commit (use "git add" and/or "git commit -a")
+Dropped refs/stash@{0} (0b6ff2bdfeadc8646f0107509ce5c554f0c809b8)
+[0m
+기존 실패(가중치/ChromaDB 부재)는 제 변경과 무관한 사전 존재 문제임을 확인했습니다. 이제 커
+[0m$ [0mgit add scripts/audit_model_inventory.py tests/test_audit_model_inventory.py && git commit -m "feat: audit_model_inventory 에 --json 출력 옵션 추가"
+Ruff Format..............................................................Passed
+Ruff Lint................................................................Passed
+Bandit Security Scan.....................................................Passed
+Multi-Agent Entry Points & Skill Consistency.........(no files to check)Skipped
+Trim Trailing Whitespace.................................................Passed
+Fix End of Files.........................................................Passed
+Check YAML...........................................(no files to check)Skipped
+Check TOML...........................................(no files to check)Skipped
+Check Merge Conflict.....................................................Passed
+[kwanbum217/b2-deepseek d672f7c] feat: audit_model_inventory 에 --json 출력 옵션 추가
+ 2 files changed, 199 insertions(+), 3 deletions(-)
+[0m
+[0m$ [0mgit log --oneline -2 && git status
+d672f7c feat: audit_model_inventory 에 --json 출력 옵션 추가
+8b0b400 bench: builder_02 사양과 채점기를 모델 실행 전에 동결
+On branch kwanbum217/b2-deepseek
+nothing to commit, working tree clean
+[0m
+작업 완료했습니다.
+
+**변경 내용**
+- `scripts/audit_model_inventory.py:280` — `--json` 플래그 추가. 지정 시 stdout에 JSON 객체 하나만 출력(`extinct`, `pools`)하고 종료 코드 규칙은 유지. `--quiet`와 함께 주면 `--json`이 우선. `--reset-state`/도구 오류 경로도 `--json`이면 JSON만 출력.
+- `scripts/audit_model_inventory.py:146` — `_pools_report()` 헬퍼 추가: 풀별 `status`(present/absent/unknown/skipped)와 `streak` 계산. `suitable_for`가 빈 항목은 `skipped`, streak 0.
+- `tests/test_audit_model_inventory.py` — `--json` 신규 테스트 6건 추가 (기존 테스트는 미수정).
+
+**검증**
+- `uv run pytest tests/test_audit_model_inventory.py -q` → 17 passed
+- `uv run pytest tests/ -q` → 1564 passed / 2 failed. 실패 2건은 `tests/test_data_preservation.py`의 가중치/ChromaDB 파일 부재로, 스태시 후 기준 커밋에서도 동일하게 실패하는 사전 존재 문제임을 확인했습니다.
+- 커밋: `d672f7c feat: audit_model_inventory 에 --json 출력 옵션 추가` (브랜치 `kwanbum217/b2-deepseek`)

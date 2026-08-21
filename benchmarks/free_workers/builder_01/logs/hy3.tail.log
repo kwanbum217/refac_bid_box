@@ -1,0 +1,9 @@
+# hy3  exit/소요초: 0 233
+# 원본 크기:      195 bytes (아래는 마지막 4KB)
+---
+[0m
+> build · hy3-free
+[0m
+[0m→ [0mRead .orca/capsules/free_builder_bakeoff/hy3.yaml
+[0m→ [0mRead scripts/audit_model_inventory.py
+[0m→ [0mRead tests/test_audit_model_inventory.py

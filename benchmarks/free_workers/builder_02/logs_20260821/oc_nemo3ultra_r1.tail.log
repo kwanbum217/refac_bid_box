@@ -1,0 +1,9 @@
+# oc_nemo3ultra_r1  exit/소요초: 0 183
+# 원본 크기:      211 bytes (아래는 마지막 4KB)
+---
+[0m
+> build · nemotron-3-ultra-free
+[0m
+[0m→ [0mRead benchmarks/free_workers/builder_02/capsule.yaml
+[0m→ [0mRead scripts/audit_model_inventory.py
+[0m→ [0mRead tests/test_audit_model_inventory.py

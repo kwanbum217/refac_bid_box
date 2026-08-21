@@ -485,29 +485,54 @@ FREE_POOL_MAX_RISK: str = "low"
 #   or-free-laguna-xs         3/3  median 458s  p95 507s
 #   opencode-mimo             2/3  median 456s  p95 506s  (1회 승인 대기로 커밋 0)
 #   or-free-nemotron-ultra    2/3  median 586s  p95 610s  (1회 채점 2/6)
-#   opencode-nemotron3-ultra  1/3  median 594s  p95 594s  (2회 시한 초과)
+#   opencode-nemotron3-ultra  1/3  median 594s  p95 594s  (오염. 아래 재측정 참조)
 #
 # 1차의 순서가 뒤집혔습니다. 1차 1위였던 opencode-nemotron3-ultra 는 매 회차
 # audit() 시그니처를 바꿔 기존 테스트를 깨뜨리고 복구하느라 3회 중 2회가 시한을
 # 넘겼습니다. 1차 3위였던 opencode-deepseek 이 3/3 에 median 이 다른 스택의
 # 절반입니다. **n=1 로 매긴 순서는 재현되지 않습니다.**
+#
+# 2026-08-21 재측정(3차). 2차의 oc_nemo3ultra 오염분을 같은 base ref(8b0b400)
+# 와 같은 동시 3대 조건으로 다시 쟀습니다. deepseek 은 opencode 목록에서
+# 부재라 빠졌습니다.
+#
+#   opencode-mimo             3/3  median 512s  p95 620s
+#   opencode-nemotron3-ultra  2/3  median 658s  p95 698s  (1회 미착수 조기 종료)
+#   or-free-laguna-xs         0/3               p95 720s  (3회 전부 시한 초과)
+#
+# **n=3 으로 매긴 순서도 재현되지 않습니다.** or-free-laguna-xs 는 2차에서
+# 3/3 에 median 458s 였는데 하루 뒤 0/3 이 됐습니다. 능력이 떨어진 것이
+# 아닙니다. 3회 중 2회는 채점 6/6 만점 코드를 만들어 놓고 720초 안에 커밋에
+# 도달하지 못했습니다. 무료 엔드포인트의 응답 지연입니다.
+#
+# 그래서 아래 순서는 속도 순위가 아니라 **가장 최근에 관측된 실패율** 순입니다.
+# 지연으로 실패하는 스택을 앞에 두면 회차마다 시한을 통째로 버립니다.
+# 속도로 줄을 세우려는 시도는 하지 마십시오. 다음 측정에서 또 뒤집힙니다.
+#
+# opencode-deepseek 은 순서를 유지합니다. 실재 관측 이력이 부재를 누적하고
+# apply_inventory_history() 가 자동으로 강등·제외하므로 여기서 손대면 이중
+# 처리가 됩니다.
 FREE_BUILDER_ORDER: list[str] = [
     "opencode-deepseek",
-    "or-free-laguna-xs",
     "opencode-mimo",
-    "or-free-nemotron-ultra",
     "opencode-nemotron3-ultra",
+    "or-free-nemotron-ultra",
+    "or-free-laguna-xs",
     # 읽기 범위가 Capsule 로 좁혀진 조사 전용. 컨텍스트 65K.
     "cerebras-oss",
     # 2026-08-18 실측 5회 중 3회가 빈 출력에 종료 코드 0 이었습니다.
     "cursor-auto",
 ]
 
-# investigator 전용 무료 후보 순서입니다. 현재 값은 FREE_BUILDER_ORDER 와 동일하지만
-# 별도 리스트 객체로 분리합니다. builder 실측 갱신이 investigator 배정까지
-# 전파되지 않게 하려는 목적입니다. investigator 순서는 아직 벤치마크로
-# 측정된 적이 없으므로 값은 builder 와 같으나, 측정 결과가 나오면 여기를
-# 독립적으로 재배열합니다.
+# investigator 전용 무료 후보 순서입니다. investigator 순서는 아직 벤치마크로
+# 측정된 적이 없습니다. 아래 값은 2026-08-20 2차 경합 시점의 builder 순서를
+# 물려받은 것이며, investigator 근거로 측정된 값이 아닙니다.
+#
+# 2026-08-21 재측정에서 builder 순서를 실패율 기준으로 바꿨지만 여기는 그대로
+# 둡니다. 조사 능력은 큰 코드베이스 탐색, 원인 후보 생성과 반증, 근거 수집,
+# 허위 지적 억제를 요구하며 쓰기 능력에 포섭되지 않으므로, builder 실측을
+# investigator 재배열의 근거로 쓸 수 없습니다. 이 분리가 두 순서를 서로 다른
+# 리스트 객체로 둔 이유이며, 2026-08-21 부터 값도 실제로 갈라졌습니다.
 FREE_INVESTIGATOR_ORDER: list[str] = [
     "opencode-deepseek",
     "or-free-laguna-xs",
