@@ -16,7 +16,7 @@
 | 도구 | 스크립트 경로 | 핵심 역할 |
 | --- | --- | --- |
 | **`orca_taskctl`** | `scripts/orca_taskctl.py` | Task Intent 파싱, Capsule 자동 확장, 워커 기동(Dispatch), 완료 검증(Finalize) 파이프라인 |
-| **`orca_model_router`** | `scripts/orca_model_router.py` | 작업 위험도 분류(Risk Classification), 최적 모델 풀 선택, 모델 가용성 Probe |
+| **`orca_model_router`** | `scripts/orca_model_router.py` | 작업 위험도 분류, 모델 풀 선택·Probe, 역할별 rolling reliability 기록 |
 
 ---
 
@@ -128,7 +128,7 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 
 ## 4. `orca_model_router` 도구 규약
 
-`scripts/orca_model_router.py`는 위험도 판정, 모델 풀 매핑, 가용성 검증을 수행합니다.
+`scripts/orca_model_router.py`는 위험도 판정, 모델 풀 매핑, 가용성 검증과 실행 신뢰도 기록을 수행합니다.
 
 ### 4.1 서브커맨드 목록
 
@@ -138,6 +138,7 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 | **`probe`** | `--model <id>` (필수)<br>`--timeout <sec>`<br>`--json` | 대상 모델의 실제 호출 가용성을 테스트합니다. |
 | **`route`** | `--capsule <path>` 또는 `--objective <txt>`<br>`--risk <level>`<br>`--role <role>`<br>`--model <id>`<br>`--no-probe`<br>`--json` | 위험도 분류와 probe 검증을 통합 수행하여 최종 모델 및 fallback 모델을 결정합니다. |
 | **`list`** | 없음 | 등록된 모델 풀, 티어, 자동 선택 대상 여부를 출력합니다. |
+| **`reliability-record`** | `--pool <name>`<br>`--role <role>`<br>`--status <succeeded\|failed>`<br>`--failure <kind>`<br>`--elapsed-sec <sec>`<br>`--observation-id <id>`<br>`--state <path>`<br>`--json` | 무료 풀 실행 결과를 역할별 최근 이력에 기록합니다. |
 
 ### 4.2 위험도 분류 (`classify_risk`) 규칙
 
@@ -156,11 +157,12 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 | 풀 이름 | 모델 ID | 프로바이더 | 티어 | 자동 선택 (`auto_selectable`) | 적합 역할 | 비고 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `gemini-flash-high` | `gemini-3.7-flash-high` | gemini | primary | **대상 (True)** | builder, reviewer, investigator, benchmarker, documenter | 주력 워커. 분석·감사·구현 |
-| `gemini-flash-medium` | `gemini-3.7-flash-medium` | gemini | primary | **대상 (True)** | investigator, documenter | 읽기 전용 조사 및 문서화 |
+| `gemini-flash-medium` | `gemini-3.7-flash-medium` | gemini | primary | **대상 (True)** | builder, reviewer, investigator, benchmarker, documenter | medium 이하 주력 워커 |
+| `gemini-flash-low` | `gemini-3.7-flash-low` | gemini | primary | **대상 (True)** | investigator, benchmarker, documenter | 지연 우선 조사·계측·문서화 |
 | `claude-sonnet` | `claude-sonnet-4-6` | claude | secondary | **대상 (True)** | reviewer, builder | 고품질 판정 필요 작업 |
-| `claude-opus` | `claude-opus-5` | claude | coordinator | **비대상 (False)** | (워커 사용 불가) | **코디네이터 전용. 워커 지정 시 거부(오류)** |
-| `codex` | `codex` | codex | secondary | **비대상 (False)** | investigator, documenter | 주간 잔량이 넉넉할 때만 수동 지정. 독립 CLI (`codex exec`) |
-| `opencode-free` | `opencode/nemotron-3.5-lightning-free` | opencode | free | **비대상 (False)** | investigator | 실패해도 무방한 병렬 조사. 임계 경로 금지 |
+| `claude-opus` | `claude-opus-5` | claude | coordinator_reserve | **비대상 (False)** | (워커 사용 불가) | 예비 코디네이터. 워커 지정 시 거부 |
+| `codex` | `gpt-5.6-sol` | codex | coordinator | **비대상 (False)** | (워커 사용 불가) | **기본 코디네이터. 워커 지정 시 거부(오류)** |
+| `opencode-free` | `opencode/nemotron-3.5-lightning-free` | opencode | free | **비대상 (False)** | (격리) | 장문 지시 붕괴 실측으로 재시험 전 배정 중단 |
 | `cerebras-oss` | `cerebras/gpt-oss-120b` | cerebras | free | **비대상 (False)** | investigator | 컨텍스트 65,536 / 출력 8,192. Capsule 범위 작업 전용 |
 
 > **모델 ID 는 반드시 실측으로 확인한 값만 적습니다.** 2026-08-16 까지 `opencode-free` 의 ID 가
@@ -176,9 +178,9 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 
 | 조건 | 값 | 근거 |
 | --- | --- | --- |
-| 역할 | `investigator` 만 | `reviewer` 는 읽기 전용이어도 판정이 병합 결정에 쓰이므로 임계 경로 |
+| 역할 | `builder`, `investigator` | 실측한 두 역할만 개방. `reviewer` 는 임계 경로 |
 | 위험도 | `low` | `medium` 이상은 재작업 비용이 개방 이득을 넘음 |
-| 쓰기 범위 | `allowed_write_files` 가 빈 목록 | 쓰기 권한이 있으면 실패 손실이 0 이 아님 |
+| 쓰기 범위 | 허용하되 병합 전 검증 경고 | Level 1·테스트·코디네이터 검토를 생략할 수 없음 |
 
 조건 판정은 `free_pool_eligibility()` 가 담당하고, Capsule 을 읽을 수 없으면 fail-closed 로
 쓰기 있음으로 봅니다. 무료 풀이 실제로 선택되면 두 경고가 반드시 발행됩니다.
@@ -186,8 +188,20 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 1. 산출물 재검증 필수 및 임계 경로 금지
 2. 컨텍스트 한도 경고. `max_tokens` 가 200,000 미만이면 그 수치를, 미확인이면 미확인 사실을 알립니다
 
-`codex` 는 무료가 아니라 계량 풀이므로 `FREE_POOL_ORDER` 에 넣지 않습니다. 넣으면
-`--allow-free` 로 자동 선택되면서 `tier != free` 라 재검증 경고도 발행되지 않습니다.
+`codex` 는 코디네이터 풀이므로 `FREE_POOL_ORDER` 에 넣지 않습니다.
+
+### 4.3.2 역할별 rolling reliability
+
+`data/model_reliability_history.json`은 Git 미추적 운영 상태입니다. 풀·역할별 최근
+10회 결과를 보며, 3회 미만은 순위를 바꾸지 않습니다. 최근 성공률이 50% 미만이면
+강등하고 3회 연속 실패하면 해당 역할 후보에서 제외합니다. builder 결과는
+investigator 순서에 영향을 주지 않습니다.
+
+`orca_taskctl dispatch`가 무료 풀의 모델·역할·시작 시각을 Capsule 옆
+`routing.json`에 기록하고, `finalize`가 검증 종료 코드 0·1을 성공·실패로 한 번만
+반영합니다. 도구 오류인 종료 코드 2는 모델 결과로 단정하지 않습니다. 벤치마크
+러너는 종료 코드·커밋 유무·시한 초과를 직접 기록합니다. 실행 식별자로 중복
+Finalize나 재수집도 한 번만 반영합니다.
 
 ### 4.4 모델 가용성 Probe 판정 기준
 
