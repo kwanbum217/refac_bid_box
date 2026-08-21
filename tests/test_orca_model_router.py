@@ -1026,7 +1026,9 @@ class TestFreePoolOptIn:
         """allow_free=True, investigator, low, 쓰기 없음 조합에서 FREE_INVESTIGATOR_ORDER 1순위와 2순위가 주/대체 모델로 지정됩니다."""
         res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
         assert res["primary_pool"] == FREE_INVESTIGATOR_ORDER[0]
+        assert res["primary_model"] == MODEL_POOL[FREE_INVESTIGATOR_ORDER[0]]["id"]
         assert res["fallback_pool"] == FREE_INVESTIGATOR_ORDER[1]
+        assert res["fallback_model"] == MODEL_POOL[FREE_INVESTIGATOR_ORDER[1]]["id"]
 
     def test_allow_free_true_builder_low_risk_allowed(self):
         """allow_free=True, builder, low 는 무료 풀이 허용됩니다. 주 모델로 opencode/deepseek-v4-flash-free 가 선택되고 재검증 경고가 기록됩니다."""

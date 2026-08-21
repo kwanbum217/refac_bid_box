@@ -518,6 +518,11 @@ FREE_INVESTIGATOR_ORDER: list[str] = [
 # 역할별 무료 후보 순서입니다. 하나의 목록을 모든 역할에 쓰면 builder 실측이
 # investigator 배정까지 바꿉니다. 두 순서는 같은 값을 가질 수 있으나
 # 반드시 서로 다른 리스트 객체여야 합니다.
+#
+# 조사 능력은 큰 코드베이스 탐색, 원인 후보 생성과 반증, 근거 수집, 허위 지적
+# 억제를 요구하며 쓰기 능력에 포섭되지 않습니다. 그래서 builder 실측을
+# investigator 근거로 쓸 수 없습니다.
+# 측정 절차는 benchmarks/free_workers/README.md 입니다.
 FREE_ORDER_BY_ROLE: dict[str, list[str]] = {
     "builder": FREE_BUILDER_ORDER,
     "investigator": FREE_INVESTIGATOR_ORDER,
