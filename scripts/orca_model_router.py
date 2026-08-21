@@ -43,6 +43,7 @@ except (ModuleNotFoundError, ImportError):
 
 __all__ = [
     "FREE_BUILDER_ORDER",
+    "FREE_INVESTIGATOR_ORDER",
     "FREE_ORDER_BY_ROLE",
     "FREE_POOL_ELIGIBLE_ROLES",
     "FREE_POOL_MAX_RISK",
@@ -499,17 +500,32 @@ FREE_BUILDER_ORDER: list[str] = [
     "cursor-auto",
 ]
 
+# investigator 전용 무료 후보 순서입니다. 현재 값은 FREE_BUILDER_ORDER 와 동일하지만
+# 별도 리스트 객체로 분리합니다. builder 실측 갱신이 investigator 배정까지
+# 전파되지 않게 하려는 목적입니다. investigator 순서는 아직 벤치마크로
+# 측정된 적이 없으므로 값은 builder 와 같으나, 측정 결과가 나오면 여기를
+# 독립적으로 재배열합니다.
+FREE_INVESTIGATOR_ORDER: list[str] = [
+    "opencode-deepseek",
+    "or-free-laguna-xs",
+    "opencode-mimo",
+    "or-free-nemotron-ultra",
+    "opencode-nemotron3-ultra",
+    "cerebras-oss",
+    "cursor-auto",
+]
+
 # 역할별 무료 후보 순서입니다. 하나의 목록을 모든 역할에 쓰면 builder 실측이
-# investigator 배정까지 바꿉니다. 2026-08-20 2차 경합은 builder 만 쟀습니다.
+# investigator 배정까지 바꿉니다. 두 순서는 같은 값을 가질 수 있으나
+# 반드시 서로 다른 리스트 객체여야 합니다.
 #
-# investigator 순서는 **아직 측정하지 않았습니다.** 벤치마크가 나올 때까지
-# builder 순서를 물려 쓰되, 그것이 근거 있는 순서가 아니라는 사실을 여기 남깁니다.
 # 조사 능력은 큰 코드베이스 탐색, 원인 후보 생성과 반증, 근거 수집, 허위 지적
-# 억제를 요구하며 쓰기 능력에 포섭되지 않습니다.
+# 억제를 요구하며 쓰기 능력에 포섭되지 않습니다. 그래서 builder 실측을
+# investigator 근거로 쓸 수 없습니다.
 # 측정 절차는 benchmarks/free_workers/README.md 입니다.
 FREE_ORDER_BY_ROLE: dict[str, list[str]] = {
     "builder": FREE_BUILDER_ORDER,
-    "investigator": FREE_BUILDER_ORDER,
+    "investigator": FREE_INVESTIGATOR_ORDER,
 }
 
 # 하위 호환 별칭입니다. 역할을 아는 자리에서는 free_order_for_role 을 쓰십시오.

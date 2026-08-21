@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-08-20
-> **source_commit**: `f39b177`
+> **updated_at**: 2026-08-21
+> **source_commit**: `dcd6989`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -83,6 +83,8 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
+0. **3차 경합 선행 P0 2건 해소 (2026-08-21 완료)**: 2차 경합 러너가 시한 초과 워커를 죽이지 않아 잔류 프로세스가 다음 회차 워크트리에 커밋했다(`oc_nemo3ultra` 오염). 러너가 터미널 핸들을 보관해 그 워커만 종료하고 `connected` 가 거짓이 될 때까지 확인한 뒤에 슬롯을 반납하도록 고쳤고, 종료 미확인 시 그 스택을 봉인한다. `TIMEOUT`·반복 수를 Capsule 에서 읽고 preflight 를 넣었다. `FREE_ORDER_BY_ROLE` 의 두 키가 같은 리스트 객체라 builder 실측이 investigator 배정까지 바꾸던 결합도 끊었다. 집계기는 오염을 스스로 판정하며, `p95_all_sec` 은 시한 초과만 절단 관측으로 포함한다(조기 실패가 섞여 지표가 좋아지던 문제). **3차 경합을 시작할 수 있는 상태다.**
+
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 수신면 5종과 Control Plane 2종에 적용. **절감량은 도입 전 값 확보 불가이고 유효 행이 적어 추세 판정이 안 된다**(3장 17번). 왕복 횟수가 비용을 지배한다는 실측과 규율은 조율 스킬 3.2 절.
 2. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.**
 3. **ORM `Mapped[]` 전환 — 미착수**: mypy `call-overload` 9건이 구식 `Column` 선언이라는 단일 원인이라 모듈 한정 override 로 덮어 두었다. G1 에 닿으므로 별도 과업.
@@ -97,7 +99,7 @@
 - **fail-open 제거 (누적 34건, 10·12장)**: `실패`·`미검증`·`절단`·`미도달` 이 SUCCESS 로 승격되는 계열. 최악은 수집 부분 실패의 success 위장으로, 체크포인트가 `MAX(date)` 라 그 구멍을 다시 조회하지 않았다(G1 직결). **다수는 기존 테스트가 잘못된 동작을 정상으로 고정하고 있었다.**
 - **상태 전파 경계 (3~6차 감사, 13~16장)**: 하위가 실패·불능을 아는데 상위 경계에서 상태를 잃는 계열. 병합 게이트 자체의 구멍도 닫았다. 게이트 3 은 검증을 영역이 아니라 **능력 단위**로 세고(frontend test·build, docker build, compose config, actionlint), `source_commit` 지연 초과는 FAIL 이다.
 - **대형 모듈 분할 (8장)**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수로 자동 분할하지 않는다.**
-- **워커 풀 정비 (11장)**: 무료 후보도 `suitable_for` 불변식을 통과해야 한다. 2026-08-20 쓰기 과제 경합(`run_d2fd971f7daa`)에서 무료 10종에 동일 Capsule 로 같은 쓰기 과제를 주고 격리 워크트리에서 수행시켜 5종이 통과했다. **저위험 Python builder 과제를 완주하는 무료 워커 스택을 처음으로 실측 선별했다** (순서는 동등 합격군이며 능력 순위가 아니다. 스택당 1회 실행) (이전은 문맥 크기와 probe 응답 시간 기준의 잠정 순서). 신규 등록 `opencode/nemotron-3-ultra-free`(9분01초, 1순위), `opencode/mimo-v2.5-free`(13분58초) 는 그전까지 미등록이었다. `or-free/laguna-xs` 와 `or-free/nemotron-ultra` 에 `builder` 를 부여했다. 격리 3종(영구 판정이 아니라 재시험 전까지 배정 중단)은 `opencode/nemotron-3.5-lightning-free`(4.8KB 지시문에 무의미 출력. 짧은 입력에는 정상 응답해 probe 를 통과한다), `or-free/laguna-s`(32분간 도구 호출 0건), `or-free/north-mini`(실격선 28분 초과)다. **읽기 전용 probe 는 쓰기 적합성을 예측하지 못한다** — 같은 4종이 오전 감사에서는 전부 6/6 이었다. 역할은 잰 것만 준다. 이번에 측정한 것은 `builder` 이므로 무료 풀 전체에서 `benchmarker` 와 `documenter` 를 회수했고, `reviewer` 는 임계 경로라 여전히 닫혀 있다. 측정 장치는 `benchmarks/free_workers/` 에 버전 관리한다. `dispatch --inject` 는 Kimi TUI 를 종료시키므로 preamble 런치 인자 경로만 쓰고, 쓰기 Task 는 `default_permission_mode = "auto"` 인 별도 프로필로 띄운다.
+- **워커 풀 정비 (11장)**: 무료 후보도 `suitable_for` 불변식을 통과해야 한다. 2026-08-20 쓰기 과제 경합(`run_d2fd971f7daa`)에서 무료 10종에 동일 Capsule 로 같은 쓰기 과제를 주고 격리 워크트리에서 수행시켜 5종이 통과했다. **저위험 Python builder 과제를 완주하는 무료 워커 스택을 처음으로 실측 선별했다** (순서는 동등 합격군이며 능력 순위가 아니다. 스택당 1회 실행) (이전은 문맥 크기와 probe 응답 시간 기준의 잠정 순서). 신규 등록 `opencode/nemotron-3-ultra-free`(9분01초, 1순위), `opencode/mimo-v2.5-free`(13분58초) 는 그전까지 미등록이었다. `or-free/laguna-xs` 와 `or-free/nemotron-ultra` 에 `builder` 를 부여했다. 격리 4종(영구 판정이 아니라 재시험 전까지 배정 중단)은 `opencode/nemotron-3.5-lightning-free`(4.8KB 지시문에 무의미 출력. 짧은 입력에는 정상 응답해 probe 를 통과한다), `or-free/laguna-s`(32분간 도구 호출 0건), `or-free/north-mini`(실격선 28분 초과), `opencode/hy3-free`(파일 3개를 읽고 아무것도 쓰지 않은 채 종료 코드 0)다. **읽기 전용 probe 는 쓰기 적합성을 예측하지 못한다** — 같은 4종이 오전 감사에서는 전부 6/6 이었다. 역할은 잰 것만 준다. 이번에 측정한 것은 `builder` 이므로 무료 풀 전체에서 `benchmarker` 와 `documenter` 를 회수했고, `reviewer` 는 임계 경로라 여전히 닫혀 있다. 측정 장치는 `benchmarks/free_workers/` 에 버전 관리한다. `dispatch --inject` 는 Kimi TUI 를 종료시키므로 preamble 런치 인자 경로만 쓰고, 쓰기 Task 는 `default_permission_mode = "auto"` 인 별도 프로필로 띄운다.
 - **모델 실재 대조 (2026-08-20)**: 등록 모델이 제공자에서 조용히 사라지는 것을 `scripts/audit_model_inventory.py` 로 검사한다. 조회 실패와 소멸을 구분해 보고한다. `suitable_for` 가 빈 항목은 배정되지 않으므로 검사 대상이 아니다.
 - **린터·보안·타입 게이트**: bandit 47건 오탐 판정 후 0건화(**이 실패가 CI 를 9시간 막았다**). mypy 58건 해소 후 `typecheck` 를 `check-all` 과 CI 에 배선.
 - **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile 을 `npm ci` 로 통일.

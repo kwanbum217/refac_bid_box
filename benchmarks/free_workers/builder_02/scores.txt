@@ -1,0 +1,15 @@
+deepseek_r1 6/6
+laguna_xs_r1 6/6
+mimo_r1 0/6
+oc_nemo3ultra_r1 6/6
+or_nemoultra_r1 6/6
+laguna_xs_r2 6/6
+deepseek_r2 6/6
+oc_nemo3ultra_r2 6/6
+or_nemoultra_r2 6/6
+mimo_r2 6/6
+deepseek_r3 6/6
+oc_nemo3ultra_r3 6/6
+laguna_xs_r3 6/6
+mimo_r3 6/6
+or_nemoultra_r3 2/6

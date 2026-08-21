@@ -7,7 +7,7 @@
   "order": "round-robin (rep 바깥, stack 안쪽)",
   "success_definition": "종료 코드 0 AND 커밋 1건 이상 AND 채점 만점",
   "limitations": [
-    "오염 확인: 러너가 시한 초과를 기록만 하고 워커 프로세스를 종료하지 않았다. oc_nemo3ultra 는 r1/r2 가 720초 시한을 넘겼는데 잔류 프로세스가 다음 회차의 워크트리에 계속 커밋했다. 성공 회차 커밋 수가 다른 스택은 전부 1인데 이 스택만 r2/r3 가 2다. **이 스택의 3회 결과와 최하위 판정은 신뢰할 수 없다.** 러너를 고친 뒤 재측정해야 한다.",
+    "오염 확인: oc_nemo3ultra 는 시한 초과로 기록된 회차가 커밋을 남겼다(r2(커밋 2건)). 러너가 워커 프로세스를 종료하지 않아 잔류 프로세스가 다음 회차의 워크트리에 커밋한 것이다. **이 스택의 결과는 신뢰할 수 없다.** 러너를 고친 뒤 재측정해야 한다.",
     "반복 3회는 median 을 잡기에는 충분하나 p95 를 신뢰하기에는 부족하다.",
     "동시 3대 조건에서 측정했다. 같은 백엔드를 쓰는 스택끼리 경합이 있다.",
     "과제 1종(소형 builder)만 쟀다. 역할별 적합성은 이 값으로 말할 수 없다."
@@ -21,7 +21,9 @@
       "median_success_sec": 253,
       "p95_success_sec": 279,
       "p95_all_sec": 279,
-      "failures": []
+      "failures": [],
+      "contaminated": false,
+      "trustworthy": true
     },
     {
       "stack": "laguna_xs",
@@ -31,7 +33,9 @@
       "median_success_sec": 458,
       "p95_success_sec": 507,
       "p95_all_sec": 507,
-      "failures": []
+      "failures": [],
+      "contaminated": false,
+      "trustworthy": true
     },
     {
       "stack": "mimo",
@@ -40,10 +44,12 @@
       "success_rate": 0.667,
       "median_success_sec": 456,
       "p95_success_sec": 506,
-      "p95_all_sec": 501,
+      "p95_all_sec": 506,
       "failures": [
         "no_commit"
-      ]
+      ],
+      "contaminated": false,
+      "trustworthy": true
     },
     {
       "stack": "or_nemoultra",
@@ -52,10 +58,12 @@
       "success_rate": 0.667,
       "median_success_sec": 586,
       "p95_success_sec": 610,
-      "p95_all_sec": 630,
+      "p95_all_sec": 610,
       "failures": [
         "score"
-      ]
+      ],
+      "contaminated": false,
+      "trustworthy": true
     },
     {
       "stack": "oc_nemo3ultra",
@@ -68,6 +76,7 @@
       "failures": [
         "timeout"
       ],
+      "contaminated": true,
       "trustworthy": false
     }
   ],
@@ -80,7 +89,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "laguna_xs",
@@ -90,7 +101,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "mimo",
@@ -100,7 +113,9 @@
       "commits": 0,
       "score": "0/6",
       "success": false,
-      "failure": "no_commit"
+      "failure": "no_commit",
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "oc_nemo3ultra",
@@ -111,8 +126,8 @@
       "score": "6/6",
       "success": false,
       "failure": "timeout",
-      "contaminated": true,
-      "contamination_reason": "시한 초과 회차의 프로세스가 종료되지 않아 다음 회차 워크트리에 잔류 커밋"
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "or_nemoultra",
@@ -122,7 +137,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "laguna_xs",
@@ -132,7 +149,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "deepseek",
@@ -142,7 +161,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "oc_nemo3ultra",
@@ -164,7 +185,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "mimo",
@@ -174,7 +197,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "deepseek",
@@ -184,7 +209,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "oc_nemo3ultra",
@@ -195,8 +222,8 @@
       "score": "6/6",
       "success": true,
       "failure": null,
-      "contaminated": true,
-      "contamination_reason": "시한 초과 회차의 프로세스가 종료되지 않아 다음 회차 워크트리에 잔류 커밋"
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "laguna_xs",
@@ -206,7 +233,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "mimo",
@@ -216,7 +245,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "or_nemoultra",
@@ -226,7 +257,9 @@
       "commits": 1,
       "score": "2/6",
       "success": false,
-      "failure": "score"
+      "failure": "score",
+      "contaminated": false,
+      "contamination_reason": null
     }
   ]
 }
