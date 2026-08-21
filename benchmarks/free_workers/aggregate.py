@@ -169,12 +169,18 @@ def main(argv: list[str] | None = None) -> int:
     ]
     for stack in sorted(by_stack.keys()):
         if stack_contaminated[stack]:
+            # 문구를 고정하지 않고 실제 회차에서 유도합니다. 사례별 세부를
+            # 박아 두면 다른 스택이 오염됐을 때 사실과 다른 경고가 나옵니다.
+            bad = sorted(
+                (r for r in by_stack[stack] if r.get("contaminated")),
+                key=lambda r: r["rep"] if r["rep"] is not None else 0,
+            )
+            detail = ", ".join(f"r{r['rep']}(커밋 {r['commits']}건)" for r in bad)
             limitations.insert(
                 0,
-                f"오염 확인: 러너가 시한 초과를 기록만 하고 워커 프로세스를 종료하지 않았다. {stack} 는 "
-                f"r1/r2 가 720초 시한을 넘겼는데 잔류 프로세스가 다음 회차의 워크트리에 계속 커밋했다. "
-                f"성공 회차 커밋 수가 다른 스택은 전부 1인데 이 스택만 r2/r3 가 2다. "
-                f"**이 스택의 3회 결과와 최하위 판정은 신뢰할 수 없다.** 러너를 고친 뒤 재측정해야 한다.",
+                f"오염 확인: {stack} 는 시한 초과로 기록된 회차가 커밋을 남겼다({detail}). "
+                f"러너가 워커 프로세스를 종료하지 않아 잔류 프로세스가 다음 회차의 워크트리에 "
+                f"커밋한 것이다. **이 스택의 결과는 신뢰할 수 없다.** 러너를 고친 뒤 재측정해야 한다.",
             )
             break  # 한 번만 추가 (현재 데이터엔 oc_nemo3ultra 만 해당)
 
