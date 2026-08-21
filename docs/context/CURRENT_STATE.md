@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-21
-> **source_commit**: `82b1f20`
+> **source_commit**: `b89ca57`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -83,14 +83,15 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-0. **무료 워커 경합 종료·상시 관측 전환 (2026-08-21 완료)**: 시한 초과 워커 종료·확인, 미확인 스택 봉인, 사전등록값 preflight를 구현해 2차 오염을 해소했다. 3차에서 `oc_nemo3ultra`는 2/3, `laguna_xs`는 2차 3/3에서 0/3으로 뒤집혀 n=3 순위가 재현되지 않았다. 정기 경합은 종료하고 역할별 최근 10회 성공률·연속 실패를 기록해 강등·제외한다. 관측 3회 미만은 반영하지 않으며 builder 이력이 investigator 순서를 바꾸지 않는다. 재실행 트리거는 `benchmarks/free_workers/README.md` 6장에 있다. 이력 기록은 프로세스 간 파일 잠금으로 보호하며, 잠금을 빼면 동시 8건 중 7건이 유실된다.
+0. **무료 워커 경합 종료·상시 관측 전환 (2026-08-21 완료)**: n=3 순위가 재현되지 않아 정기 경합을 종료했다. 역할별 최근 10회 성공률·연속 실패로 강등·제외하고 관측 3회 미만은 반영하지 않으며, builder 이력이 investigator 순서를 바꾸지 않는다. 재실행 트리거는 `benchmarks/free_workers/README.md` 6장. 이력 기록은 프로세스 간 잠금으로 보호하며 잠금을 빼면 동시 8건 중 7건이 유실된다.
 
-1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 기본 코디네이터는 Codex `gpt-5.6-sol` + effort `high`, Claude 구독은 예비다. 절감 추세는 유효 행 부족으로 미판정이며 왕복 횟수 규율은 조율 스킬 3.2 절을 따른다.
-2. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.**
-3. **ORM `Mapped[]` 전환 완료**: `bids.py`(5모델·50컬럼), `chatbot.py`(5모델·54컬럼), `accounts.py`(16컬럼), `predictions.py`(2모델·17컬럼)를 전부 전환했다. 전 테이블 정규화 메타데이터 지문 `60a9cf49…c51c8` 이 전후 일치해 컴파일 DDL 이 바뀌지 않았음을 확인했고, mypy `call-overload` 모듈 예외 6개를 전부 제거했다.
-4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
-5. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
-6. **수집 2·3회차 관찰**: Docker 필요.
+1. **워커 기동 준비 자동화 (2026-08-22)**: `scripts/orca_prepare_worktree.py` 가 `.env`·신뢰 등록·pre-commit 을 한 명령으로 처리한다(`--check` 는 미준비 시 종료 1). 편집 승인은 별개라 Dispatch 직후 `shift+tab` 이 필요하다. **pre-commit 은 pytest 를 돌리지 않아 테스트 실패 커밋은 게이트에서만 걸린다.**
+2. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 기본 코디네이터는 Codex `gpt-5.6-sol` + effort `high`. 절감 추세는 유효 행 부족으로 미판정이며 왕복 규율은 조율 스킬 3.2 절을 따른다.
+3. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 진행 중**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드했고 6커밋 전부 반증 테스트를 동반한다. **P95 실측이 끝나기 전에는 성능 개선을 주장하지 않는다.**
+4. **ORM `Mapped[]` 전환 완료**: `bids.py`, `chatbot.py`, `accounts.py`, `predictions.py` 의 13개 모델·137개 컬럼을 전부 전환했다. 전 테이블 메타데이터 지문 `60a9cf49…c51c8` 이 전후 일치해 컴파일 DDL 불변을 확인했고, mypy `call-overload` 예외 6개를 전부 제거했다.
+5. **Ollama 병렬도·SSE 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 분석. Ollama 재시동과 Docker 단독 점유 필요.
+6. **Windows Docker Desktop 실기 검증**: 스택 구동과 E2E 통과 (G2 완결).
+7. **수집 2·3회차 관찰**: Docker 필요.
 
 ### 4.1 종결 계열 요약
 

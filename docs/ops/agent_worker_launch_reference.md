@@ -345,18 +345,20 @@ orca worktree create --name <이름> \
   --repo path:/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box \
   --base-branch main --setup skip --json
 
-# 2. .env 배치 (Git 미추적이라 워크트리에 따라가지 않습니다)
-cp <주 저장소>/.env <워크트리>/.env
+# 2. 워크트리 일괄 준비 (.env 복사, Antigravity 신뢰 등록, pre-commit 훅 확인/설치)
+uv run python scripts/orca_prepare_worktree.py <워크트리>
+# 준비 여부만 판정할 때:
+# uv run python scripts/orca_prepare_worktree.py <워크트리> --check
 
-# 3. 폴더 신뢰 사전 등록 (터미널을 띄우기 전에 합니다. 2.1 절 참조)
-uv run python scripts/orca_trust_worktree.py <워크트리>
-
-# 4. 그 워크트리에 CLI 를 띄운 터미널 생성
+# 3. 그 워크트리에 CLI 를 띄운 터미널 생성
 orca terminal create --worktree path:<워크트리> \
   --title "<섹션명>" --command "agy --model gemini-3.7-flash-high" --json
 
-# 5. Task 투입
+# 4. Task 투입
 orca orchestration dispatch --task <task_id> --to <handle> --inject --json
+
+# 5. 파일 편집 자동 승인 (shift+tab. 빠뜨리면 첫 편집에서 멈춥니다. 2.2 절 참조)
+orca terminal send --terminal <handle> --text $'\x1b[Z'
 
 # 6. 실존 확인
 orca orchestration dispatch-show --task <task_id> --json
@@ -364,7 +366,17 @@ orca orchestration dispatch-show --task <task_id> --json
 
 `terminal create` 에는 `--repo` 플래그가 없습니다. `--worktree` 만 받습니다.
 
-### 2.1 폴더 신뢰는 절대경로 단위라 워크트리마다 다시 묻습니다
+> **미해결 항목**: `source_commit` 자동 갱신은 코디네이터 소유 파일 충돌 방지를 위해 이번 워커 준비 범위에서 제외되었습니다.
+
+### 2.1 워크트리 준비 도구 (`scripts/orca_prepare_worktree.py`)
+
+기존에 수동으로 수행하던 `.env` 복사와 `scripts/orca_trust_worktree.py` 호출, 그리고 누락되기 쉬운 `pre-commit` 훅 점검을 단일 명령으로 묶어 자동화합니다.
+
+1. **`.env` 배치**: 주 저장소의 `.env`를 워크트리로 복사하며, 이미 존재하면 건너뜁니다 (환경변수 값은 출력하지 않음).
+2. **폴더 신뢰 사전 등록**: Antigravity CLI의 `trustedWorkspaces` 및 `trustedFolders.json`에 워크트리 절대경로를 사전 등록하여 기동 직후의 다이얼로그 차단을 방지합니다.
+3. **pre-commit 훅 확인 및 설치**: 워크트리 환경에서 Git `pre-commit` 훅의 실존 및 실행 권한을 확인하고, 미설치 시 자동으로 `pre-commit install`을 수행하여 검증 생략 커밋을 방지합니다.
+
+`--check` 옵션을 주면 파일이나 설정을 변경하지 않고 세 항목의 준비 상태만 검사하며, 미준비 항목이 하나라도 있을 경우 종료 코드 1을 반환합니다.
 
 Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 `trustedWorkspaces` 배열에 **경로 문자열 그대로** 넣습니다. 사용자가 언젠가
@@ -375,12 +387,7 @@ Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 다이얼로그가 떠 있는 동안 주입한 Task 는 대화창에 먹혀 사라집니다. 사람이
 직접 승인해야 워커가 시작하므로 병렬 기동이 그 자리에서 멈춥니다.
 
-**터미널을 띄우기 전에 등록하십시오.** 그러면 다이얼로그가 뜨지 않습니다.
-
-```bash
-uv run python scripts/orca_trust_worktree.py <워크트리> [<워크트리> ...]
-uv run python scripts/orca_trust_worktree.py --dry-run <워크트리>   # 판정만
-```
+**터미널을 띄우기 전에 `scripts/orca_prepare_worktree.py` 로 등록하십시오.** 그러면 다이얼로그가 뜨지 않습니다.
 
 `trustedWorkspaces` 와 `~/.gemini/trustedFolders.json` 두 곳을 함께 채우고,
 쓰기 전에 `.orca-bak` 백업을 남기며, 이미 등록된 경로는 건너뜁니다.
@@ -389,6 +396,30 @@ uv run python scripts/orca_trust_worktree.py --dry-run <워크트리>   # 판정
 그리기 전에 입력이 도착하면 그대로 소비되고 다이얼로그는 화면에 남습니다.
 2026-08-22 에 터미널 3대를 연속 생성하면서 이 순서로 실패했고, 결국 사용자가
 세 번 직접 승인했습니다.
+
+### 2.2 파일 편집 승인은 Dispatch 직후 자동 승인으로 바꿉니다
+
+폴더 신뢰를 미리 등록해도 **파일 편집·생성 승인은 따로 뜹니다.** 전역
+`permissions.allow` 와도 무관합니다. 워커는 첫 편집에서 멈추고, 코디네이터가
+알아채지 못하면 사람이 발견할 때까지 유휴로 남습니다. 준비 스크립트로도
+막을 수 없습니다. 워크트리가 아니라 터미널 세션마다 걸리는 상태이기 때문입니다.
+
+다이얼로그 하단의 `shift+tab to auto-approve file edits` 가 해제 수단입니다.
+Dispatch 직후 각 터미널에 한 번 보내면 그 세션 내내 다시 묻지 않습니다.
+
+```bash
+orca terminal send --terminal <handle> --text $'\x1b[Z'
+orca terminal read --terminal <handle> | tail -3   # Accept-edits mode 확인
+```
+
+`\x1b[Z` 가 shift+tab 입니다. 성공하면 하단에
+`Accept-edits mode: file edits auto-approved` 가 뜹니다. 2026-08-22 에 이
+단계를 빠뜨려 워커 5대가 각각 편집 승인에서 멈췄고 전부 사용자가 직접
+눌러야 했습니다.
+
+자동 승인은 쓰기 범위를 넓히지 않습니다. Capsule 의 `allowed_write_files` 는
+Level 1 게이트 2 가 병합 전에 따로 검사하므로, 범위 밖 파일을 만들면 승인
+여부와 무관하게 게이트에서 걸립니다.
 
 명령 단위 권한(`permissions.allow`)은 이와 별개이며 전역입니다. `uv *`,
 `git *`, `python3 *`, `pytest *` 같은 와일드카드가 이미 등록되어 있어 대개
