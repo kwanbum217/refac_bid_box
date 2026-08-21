@@ -21,7 +21,9 @@
       "median_success_sec": 253,
       "p95_success_sec": 279,
       "p95_all_sec": 279,
-      "failures": []
+      "failures": [],
+      "contaminated": false,
+      "trustworthy": true
     },
     {
       "stack": "laguna_xs",
@@ -31,7 +33,9 @@
       "median_success_sec": 458,
       "p95_success_sec": 507,
       "p95_all_sec": 507,
-      "failures": []
+      "failures": [],
+      "contaminated": false,
+      "trustworthy": true
     },
     {
       "stack": "mimo",
@@ -40,10 +44,12 @@
       "success_rate": 0.667,
       "median_success_sec": 456,
       "p95_success_sec": 506,
-      "p95_all_sec": 501,
+      "p95_all_sec": 506,
       "failures": [
         "no_commit"
-      ]
+      ],
+      "contaminated": false,
+      "trustworthy": true
     },
     {
       "stack": "or_nemoultra",
@@ -52,10 +58,12 @@
       "success_rate": 0.667,
       "median_success_sec": 586,
       "p95_success_sec": 610,
-      "p95_all_sec": 630,
+      "p95_all_sec": 610,
       "failures": [
         "score"
-      ]
+      ],
+      "contaminated": false,
+      "trustworthy": true
     },
     {
       "stack": "oc_nemo3ultra",
@@ -68,6 +76,7 @@
       "failures": [
         "timeout"
       ],
+      "contaminated": true,
       "trustworthy": false
     }
   ],
@@ -80,7 +89,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "laguna_xs",
@@ -90,7 +101,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "mimo",
@@ -100,7 +113,9 @@
       "commits": 0,
       "score": "0/6",
       "success": false,
-      "failure": "no_commit"
+      "failure": "no_commit",
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "oc_nemo3ultra",
@@ -111,8 +126,8 @@
       "score": "6/6",
       "success": false,
       "failure": "timeout",
-      "contaminated": true,
-      "contamination_reason": "시한 초과 회차의 프로세스가 종료되지 않아 다음 회차 워크트리에 잔류 커밋"
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "or_nemoultra",
@@ -122,7 +137,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "laguna_xs",
@@ -132,7 +149,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "deepseek",
@@ -142,7 +161,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "oc_nemo3ultra",
@@ -164,7 +185,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "mimo",
@@ -174,7 +197,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "deepseek",
@@ -184,7 +209,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "oc_nemo3ultra",
@@ -195,8 +222,8 @@
       "score": "6/6",
       "success": true,
       "failure": null,
-      "contaminated": true,
-      "contamination_reason": "시한 초과 회차의 프로세스가 종료되지 않아 다음 회차 워크트리에 잔류 커밋"
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "laguna_xs",
@@ -206,7 +233,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "mimo",
@@ -216,7 +245,9 @@
       "commits": 1,
       "score": "6/6",
       "success": true,
-      "failure": null
+      "failure": null,
+      "contaminated": false,
+      "contamination_reason": null
     },
     {
       "stack": "or_nemoultra",
@@ -226,7 +257,9 @@
       "commits": 1,
       "score": "2/6",
       "success": false,
-      "failure": "score"
+      "failure": "score",
+      "contaminated": false,
+      "contamination_reason": null
     }
   ]
 }
