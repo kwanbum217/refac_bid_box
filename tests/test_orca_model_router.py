@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -1722,17 +1724,16 @@ class TestReliabilityHistory:
 # 다중 프로세스 동시 기록 회귀 테스트 및 kimi resolver 테스트
 # ---------------------------------------------------------------------------
 
-import multiprocessing
-import os
 
+def _worker_record(barrier, path_str, pool_name, role, obs_id):
+    """모든 프로세스가 동시에 read-modify-write 에 진입하도록 맞춘 뒤 기록합니다.
 
-def _worker_record(args):
-    """subprocess 격리 없이 multiprocessing 으로 호출되는 기록 함수."""
-    path_str, pool_name, role, obs_id = args
-    from pathlib import Path
-
+    Barrier 없이 그냥 띄우면 프로세스가 순차로 소화되어 경쟁이 재현되지 않고,
+    잠금을 빼도 테스트가 통과해 회귀를 잡지 못합니다.
+    """
     from scripts.orca_model_router import record_reliability_outcome
 
+    barrier.wait()
     record_reliability_outcome(
         pool_name,
         role,
@@ -1749,25 +1750,36 @@ class TestConcurrentReliabilityRecord:
         """N 개 관측이 동시에 기록될 때 모두 최종 이력에 남아야 합니다.
 
         RELIABILITY_WINDOW(10) 보다 작은 N=8 을 사용해 창 자르기와 섞이지 않습니다.
+        _lock_file 의 잠금을 제거하면 이 테스트는 관측 유실로 실패해야 합니다.
         """
         from scripts.orca_model_router import RELIABILITY_WINDOW, load_reliability_history
 
-        N = 8
-        assert N < RELIABILITY_WINDOW, "N 이 창 크기 이상이면 창 자르기와 간섭합니다"
+        n_writers = 8
+        assert n_writers < RELIABILITY_WINDOW, "N 이 창 크기 이상이면 창 자르기와 간섭합니다"
 
         p = tmp_path / "reliability.json"
         pool_name = "test-pool"
         role = "builder"
-        args_list = [(str(p), pool_name, role, f"obs:{i}") for i in range(N)]
 
         ctx = multiprocessing.get_context("fork" if os.name != "nt" else "spawn")
-        with ctx.Pool(processes=N) as pool:
-            pool.map(_worker_record, args_list)
+        barrier = ctx.Barrier(n_writers)
+        procs = [
+            ctx.Process(
+                target=_worker_record,
+                args=(barrier, str(p), pool_name, role, f"obs:{i}"),
+            )
+            for i in range(n_writers)
+        ]
+        for proc in procs:
+            proc.start()
+        for proc in procs:
+            proc.join(timeout=60)
+            assert proc.exitcode == 0, f"기록 프로세스가 비정상 종료했습니다: {proc.exitcode}"
 
         history = load_reliability_history(p)
         recent = history[pool_name][role]["recent"]
         recorded_ids = {item["observation_id"] for item in recent}
-        expected_ids = {f"obs:{i}" for i in range(N)}
+        expected_ids = {f"obs:{i}" for i in range(n_writers)}
         assert recorded_ids == expected_ids, f"유실된 관측: {expected_ids - recorded_ids}"
 
 
