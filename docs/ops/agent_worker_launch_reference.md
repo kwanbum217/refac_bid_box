@@ -348,12 +348,12 @@ orca worktree create --name <이름> \
 # 2. .env 배치 (Git 미추적이라 워크트리에 따라가지 않습니다)
 cp <주 저장소>/.env <워크트리>/.env
 
-# 3. 그 워크트리에 CLI 를 띄운 터미널 생성
+# 3. 폴더 신뢰 사전 등록 (터미널을 띄우기 전에 합니다. 2.1 절 참조)
+uv run python scripts/orca_trust_worktree.py <워크트리>
+
+# 4. 그 워크트리에 CLI 를 띄운 터미널 생성
 orca terminal create --worktree path:<워크트리> \
   --title "<섹션명>" --command "agy --model gemini-3.7-flash-high" --json
-
-# 4. 첫 기동이면 폴더 신뢰 프롬프트가 뜹니다. 기본 선택이 신뢰이므로 엔터만 보냅니다
-orca terminal send --terminal <handle> --text "" --enter
 
 # 5. Task 투입
 orca orchestration dispatch --task <task_id> --to <handle> --inject --json
@@ -363,6 +363,37 @@ orca orchestration dispatch-show --task <task_id> --json
 ```
 
 `terminal create` 에는 `--repo` 플래그가 없습니다. `--worktree` 만 받습니다.
+
+### 2.1 폴더 신뢰는 절대경로 단위라 워크트리마다 다시 묻습니다
+
+Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
+`trustedWorkspaces` 배열에 **경로 문자열 그대로** 넣습니다. 사용자가 언젠가
+"다음부터 묻지 않기" 를 눌렀더라도 그것은 그때 그 폴더를 등록한 것이고,
+`orca worktree create` 로 새로 생긴 경로에는 적용되지 않습니다. 설정이 듣지
+않는 것이 아니라 키가 경로입니다.
+
+다이얼로그가 떠 있는 동안 주입한 Task 는 대화창에 먹혀 사라집니다. 사람이
+직접 승인해야 워커가 시작하므로 병렬 기동이 그 자리에서 멈춥니다.
+
+**터미널을 띄우기 전에 등록하십시오.** 그러면 다이얼로그가 뜨지 않습니다.
+
+```bash
+uv run python scripts/orca_trust_worktree.py <워크트리> [<워크트리> ...]
+uv run python scripts/orca_trust_worktree.py --dry-run <워크트리>   # 판정만
+```
+
+`trustedWorkspaces` 와 `~/.gemini/trustedFolders.json` 두 곳을 함께 채우고,
+쓰기 전에 `.orca-bak` 백업을 남기며, 이미 등록된 경로는 건너뜁니다.
+
+**생성 직후 빈 엔터를 보내는 방식에 의존하지 마십시오.** CLI 가 다이얼로그를
+그리기 전에 입력이 도착하면 그대로 소비되고 다이얼로그는 화면에 남습니다.
+2026-08-22 에 터미널 3대를 연속 생성하면서 이 순서로 실패했고, 결국 사용자가
+세 번 직접 승인했습니다.
+
+명령 단위 권한(`permissions.allow`)은 이와 별개이며 전역입니다. `uv *`,
+`git *`, `python3 *`, `pytest *` 같은 와일드카드가 이미 등록되어 있어 대개
+다시 묻지 않습니다. 워커 기동에서 걸리는 것은 대부분 명령 승인이 아니라 폴더
+신뢰입니다.
 
 ---
 
