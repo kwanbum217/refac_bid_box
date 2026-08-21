@@ -208,17 +208,6 @@ exclude = [
     "migrations/",
 ]
 
-# AutomationRequest.result_payload와 PipelineExecution.raw_status_payload는 아직
-# 구식 Column(JSON) 선언이어서 mypy가 빈 dict의 키 타입을 Never로 추론합니다.
-# 해당 모델의 Mapped[] 전환 전까지 두 소비 모듈에만 예외를 제한합니다.
-[[tool.mypy.overrides]]
-module = "src.app.services.automation_responses"
-disable_error_code = ["call-overload"]
-
-[[tool.mypy.overrides]]
-module = "src.app.services.automation_orchestrator"
-disable_error_code = ["call-overload"]
-
 # ==========================================
 # bandit (보안 정적 스캔)
 # ==========================================
