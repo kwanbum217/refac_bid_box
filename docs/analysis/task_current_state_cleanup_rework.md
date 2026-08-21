@@ -21,7 +21,7 @@
 
 ### 2.1 1~3장 및 5~7장 복구 (최소 diff 원칙)
 - `main` 정본의 CommonMark 표 공백, 정렬, 굵은 글씨, 문장 구조를 100% 동일하게 유지했습니다.
-- 헤더의 `updated_at` 은 2026-08-22 로 갱신했습니다. 워커는 `source_commit` 을 보존했고, 코디네이터 통합 검증에서 기준 `main`인 `1308223`으로 갱신했습니다.
+- 헤더의 `updated_at` 은 2026-08-22 로 갱신했습니다. 워커는 `source_commit` 을 보존했고, 코디네이터는 전체 산출물 통합 후 기준 `main`인 `bd5d481`로 최종 갱신했습니다.
 
 ### 2.2 4장 및 4.1절 종결 항목 이관
 - **항목 0 (무료 워커 경합 종료)**: 4.1절 `워커 풀 정비·상시 관측 전환 (11장)` 항목으로 통합 이관.
@@ -43,7 +43,7 @@
    - `python3 scripts/validate_agent_rules.py`:
      - `[PASS] 컨텍스트 예산` (CURRENT_STATE.md 7387자/8000)
      - `[PASS]` 1~3장, 5~7장 무손실 및 무서식화
-     - `source_commit` 은 코디네이터가 기준 `main` `1308223`으로 갱신
+     - `source_commit` 은 코디네이터가 전체 산출물 통합 기준 `main` `bd5d481`로 최종 갱신
 2. **변경 파일 최소화**:
    - `docs/context/CURRENT_STATE.md`
    - `docs/analysis/task_current_state_cleanup_rework.md`
