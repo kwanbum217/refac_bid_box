@@ -164,3 +164,55 @@ orca terminal send --terminal <handle> --text $'\x1b[Z'
 
 `docker compose down -v` 또는 볼륨 삭제 명령은 실행하지 마십시오. 데이터
 볼륨과 이미지는 그대로 보존되어 있습니다.
+
+---
+
+## 8. Codex 코디네이터 인계 (2026-08-22 추가)
+
+Claude 주간 한도가 97% 에 도달해 **다음 세션은 Codex `gpt-5.6-sol` + effort
+`high` 를 코디네이터로 씁니다.** 이는 임시 조치가 아니라 `CURRENT_STATE` 2번
+항목이 정한 원래 구성으로 돌아가는 것입니다. Claude 구독은 예비입니다.
+
+오케스트레이션에서 토큰을 태우는 쪽은 워커가 아니라 코디네이터입니다. 워커는
+각자 자기 풀을 쓰지만 검증은 전부 코디네이터 몫이며, 조율 스킬이 못 박은
+위임 절감률은 50~60% 입니다. **워커 산출물을 무검증으로 받으면 안 된다는 것이
+이 저장소에서 확인된 사실이므로**(3장 참조) 검증 비용을 빼고 계산하지
+마십시오.
+
+### 8.1 미리 써 둔 Task Intent
+
+다음 작업의 Intent 를 Capsule 확장 직전 상태로 준비해 두었습니다. Codex 는
+읽고 `create` 후 `dispatch` 만 하면 됩니다.
+
+| Intent | 역할 | 위험 | 비고 |
+| --- | --- | :---: | --- |
+| `.orca/capsules/intents/current_state_cleanup.yaml` | documenter | low | 문서 전용. 예산 포화 해소 |
+| `.orca/capsules/intents/query_latency_investigation.yaml` | investigator | low | 읽기 전용. 결정하지 않고 근거만 |
+| `.orca/capsules/intents/coldstart_warmup_investigation.yaml` | investigator | low | 읽기 전용. 재측정 금지 |
+
+**세 Intent 는 Git 미추적입니다.** `.orca/` 가 `.gitignore` 대상이라 이
+저장소 사본에만 존재합니다. 다른 장비에서 재개하면 없으므로 이 문서의 5장을
+보고 다시 작성해야 합니다.
+
+세 건 모두 서로 파일이 겹치지 않아 병렬 Dispatch 가 가능합니다. 두 조사
+Task 는 쓰기 범위가 문서 한 개씩이라 검증 비용이 낮습니다.
+
+```bash
+python3 scripts/orca_taskctl.py create --intent <intent> --run-id <run> \
+  --task-id <id> --capsule-dir <워크트리>/.orca/capsules --json
+python3 scripts/orca_taskctl.py dispatch --intent <intent> --run-id <run> \
+  --task-id <생성된 id> --model gemini-3.7-flash-high --terminal <handle> \
+  --worktree path:<워크트리> --capsule <capsule 경로> --no-probe --json
+```
+
+기동 절차는 6장을 그대로 따르십시오. **`orca_prepare_worktree.py` 와
+Dispatch 직후 `shift+tab` 을 빠뜨리면 워커가 멈춥니다.**
+
+### 8.2 Intent 를 쓰지 않은 작업
+
+| 작업 | 이유 |
+| --- | --- |
+| 수집 2·3회차 관찰 | Docker 점유가 필요하고 실행이 길다. 위임해도 코디네이터 토큰이 줄지 않으므로 배경 실행이 낫다 |
+| 콜드스타트 워밍업 구현 | 조사 결과를 보고 코디네이터가 판단할 사항이다. 판단 전에 구현 Task 를 만들지 마라 |
+| 단발 질의 목표 수립 | 위와 같다. 조사 Task 의 산출물이 선행 조건이다 |
+| pytest 커밋 게이트 도입 | 개발 흐름 전체에 영향을 준다. 위임 금지 대상인 게이트 기준 제정이다 |
