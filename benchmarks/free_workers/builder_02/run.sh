@@ -75,8 +75,12 @@ preflight() {
   if [[ ! -f "$SCORER" ]]; then
     echo "[preflight 실패] 채점기가 없습니다: $SCORER"
     failed=1
-  elif ! uv run python -c "import ast,sys; ast.parse(open(sys.argv[1],encoding='utf-8').read())" "$SCORER" >/dev/null 2>&1; then
-    echo "[preflight 실패] 채점기 self-test 실패 (구문 오류): $SCORER"
+  # 구문 검사만 하면 "채점기가 fail 과 pass 를 구별하는가" 를 확인하지 못합니다.
+  # 채점기가 전원 만점을 주도록 망가져도 통과하므로 실제 self-test 를 돌립니다.
+  # PYTHONPATH 가 없으면 후보 모듈의 `from scripts...` 가 깨져 채점 불가가 됩니다.
+  elif ! PYTHONPATH="$REPO" uv run python "$SCORER" --self-test >/dev/null 2>&1; then
+    echo "[preflight 실패] 채점기 self-test 실패: $SCORER"
+    echo "           재현: PYTHONPATH=$REPO uv run python $SCORER --self-test"
     failed=1
   fi
 
@@ -136,8 +140,10 @@ t=(d.get('result') or {}).get('terminal') or {}
 print(t.get('handle') or '')")
 
   if [[ -z "$handle" ]]; then
-    echo "[기동 실패] $tag  터미널 핸들을 받지 못했습니다. 이 회차를 건너뜁니다"
-    echo "1 0" > "$SP/$tag.exit"
+    # 기동 실패도 하나의 회차입니다. 결과에 남기지 않으면 분모가 줄어 성공률이
+    # 실제보다 좋아집니다. 3회 중 1회가 여기서 사라지면 2/2 로 읽힙니다.
+    echo "[기동 실패] $tag  터미널 핸들을 받지 못했습니다. 실패 회차로 기록합니다"
+    echo "125 0" > "$SP/$tag.exit"
     return 1
   fi
   HANDLE[$tag]=$handle
@@ -250,6 +256,9 @@ while (( ${#QUEUE} > 0 || ${#RUNNING} > 0 )); do
     if launch "$ps" "$pr"; then
       START[${ps}_r${pr}]=$(date +%s)
       RUNNING+=("$picked")
+    else
+      # QUEUE 에서 이미 뺐으므로 여기서 수집하지 않으면 회차가 조용히 사라집니다.
+      collect "$ps" "$pr"
     fi
   done
   sleep 20

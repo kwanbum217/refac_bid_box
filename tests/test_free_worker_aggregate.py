@@ -7,6 +7,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+# 저장소 루트는 이 파일 위치에서 파생시킵니다. 절대 경로를 박으면 작성자
+# 기계에서만 통과하고 CI 와 다른 사람 기계에서는 FileNotFoundError 가 납니다.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 def run_aggregate(runs_content: str, scores_content: str) -> tuple[int, dict | None, str]:
     """aggregate.py를 실행하고 (exit_code, parsed_json, stderr)를 반환"""
@@ -22,7 +26,7 @@ def run_aggregate(runs_content: str, scores_content: str) -> tuple[int, dict | N
         result = subprocess.run(  # noqa: S603
             [
                 sys.executable,
-                "benchmarks/free_workers/aggregate.py",
+                str(REPO_ROOT / "benchmarks" / "free_workers" / "aggregate.py"),
                 "--runs",
                 str(runs_file),
                 "--scores",
@@ -40,7 +44,7 @@ def run_aggregate(runs_content: str, scores_content: str) -> tuple[int, dict | N
             ],
             capture_output=True,
             text=True,
-            cwd="/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box",
+            cwd=REPO_ROOT,
         )
 
         parsed = None
@@ -161,10 +165,7 @@ stackY_r2 4/6"""
 def test_reconstruct_tsv_scores_from_json():
     """결과 JSON의 runs 배열에서 tsv와 scores를 역산 복원할 수 있다"""
     # 원본 JSON 읽기
-    json_path = Path(
-        "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/"
-        "benchmarks/free_workers/results/2026-08-20-builder_02.json"
-    )
+    json_path = REPO_ROOT / "benchmarks" / "free_workers" / "results" / "2026-08-20-builder_02.json"
     original = json.loads(json_path.read_text(encoding="utf-8"))
 
     # runs -> tsv 복원
@@ -297,7 +298,7 @@ def test_run_conditions_are_required():
         for omitted in (["--timeout-sec", "720"], ["--concurrency", "3"]):
             argv = [
                 sys.executable,
-                "benchmarks/free_workers/aggregate.py",
+                str(REPO_ROOT / "benchmarks" / "free_workers" / "aggregate.py"),
                 "--runs",
                 str(runs_file),
                 "--scores",
@@ -310,7 +311,7 @@ def test_run_conditions_are_required():
                 argv,
                 capture_output=True,
                 text=True,
-                cwd="/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box",
+                cwd=REPO_ROOT,
             )
             assert result.returncode == 2, f"{omitted} 만 준 호출이 통과했습니다"
             assert "required" in result.stderr
@@ -329,7 +330,7 @@ def test_notes_are_appended_to_limitations():
         result = subprocess.run(  # noqa: S603
             [
                 sys.executable,
-                "benchmarks/free_workers/aggregate.py",
+                str(REPO_ROOT / "benchmarks" / "free_workers" / "aggregate.py"),
                 "--runs",
                 str(runs_file),
                 "--scores",
@@ -347,7 +348,7 @@ def test_notes_are_appended_to_limitations():
             ],
             capture_output=True,
             text=True,
-            cwd="/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box",
+            cwd=REPO_ROOT,
         )
         assert result.returncode == 0, result.stderr
         data = json.loads(out_file.read_text(encoding="utf-8"))
@@ -355,3 +356,61 @@ def test_notes_are_appended_to_limitations():
         assert data["concurrency"] == 1
         assert data["date"] == "2026-08-21"
         assert "단독 실행이라 경합 조건이 다르다" in data["limitations"]
+
+
+def test_no_machine_specific_cwd_in_tests():
+    """테스트가 작성자 기계의 절대 경로를 subprocess cwd 로 넘기지 않는다.
+
+    이 결함은 한 번 고쳤다가 되돌아온 적이 있다. 로컬에서는 통과하고 CI 와
+    격리 워크트리에서만 깨지므로 사람 눈으로는 잘 잡히지 않는다. 더 나쁜
+    경우는 워크트리에서 돌린 테스트가 조용히 main 저장소의 파일을 실행해
+    **틀린 코드를 통과시키는** 것이다.
+    """
+    # 검사기 자신의 소스와 겹치지 않도록 패턴을 실행 시점에 조립합니다.
+    needles = ("cwd=" + q + "/" for q in ('"', "'"))
+    needles = tuple(needles)
+
+    offenders = []
+    for path in sorted((REPO_ROOT / "tests").rglob("test_*.py")):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if any(n in stripped for n in needles):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}:{lineno}")
+    assert not offenders, "절대 경로를 cwd 로 넘기는 곳: " + ", ".join(offenders)
+
+
+def test_launch_error_counts_as_a_run():
+    """기동 실패 회차(125)는 분모에 포함되고 launch_error 로 분류된다.
+
+    러너가 워커를 띄우지 못한 회차를 결과에서 빼면 분모가 줄어 성공률이
+    실제보다 좋아진다. 3회 중 1회가 사라지면 2/2 = 100% 로 읽힌다.
+    """
+    runs = "a_r1\t0 100\t1\na_r2\t125 0\t0\na_r3\t0 120\t1"
+    scores = "a_r1 6/6\na_r3 6/6"
+    code, out, _ = run_aggregate(runs, scores)
+
+    assert code == 0
+    stack = next(s for s in out["stacks"] if s["stack"] == "a")
+    assert stack["runs"] == 3, "기동 실패 회차가 분모에서 빠졌습니다"
+    assert stack["success"] == 2
+    assert stack["success_rate"] == 0.667
+
+    failed = next(r for r in out["runs"] if r["rep"] == 2)
+    assert failed["success"] is False
+    assert failed["failure"] == "launch_error"
+    # 모델이 실패한 것이 아니므로 오염이나 시한 초과로 읽히면 안 됩니다.
+    assert failed["contaminated"] is False
+
+
+def test_launch_error_does_not_pollute_latency():
+    """0초로 끝난 기동 실패가 p95 를 끌어내리지 않는다."""
+    runs = "a_r1\t0 600\t1\na_r2\t125 0\t0\na_r3\t0 620\t1"
+    scores = "a_r1 6/6\na_r3 6/6"
+    code, out, _ = run_aggregate(runs, scores)
+
+    assert code == 0
+    stack = next(s for s in out["stacks"] if s["stack"] == "a")
+    assert stack["p95_all_sec"] is not None
+    assert stack["p95_all_sec"] >= 600, "기동 실패 0초가 지연 지표에 섞였습니다"
