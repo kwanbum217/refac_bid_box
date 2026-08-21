@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-22
-> **source_commit**: `1cfea2e`
+> **source_commit**: `1308223`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -83,9 +83,9 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **워커 기동 후속**: `scripts/orca_prepare_worktree.py` 완료. pytest 미실행 대응 커밋 게이트 판단.
-2. **코디네이터 토큰 v2**: Codex `gpt-5.6-sol` + effort `high`. 절감 미판정, 조율 3.2절 준수.
-3. **블로킹 I/O 후속**: 예측 콜드(383·122ms) 워밍업 여부, 단발(6.3~10.3s) 목표/SSE, Arq 설계.
+1. **워커 기동 후속**: 준비 자동화 완료. pytest 미실행 대응 커밋 게이트 판단.
+2. **코디네이터 토큰 v2**: Codex `gpt-5.6-sol` + effort `high`. 절감 미판정(조율 3.2절).
+3. **블로킹 I/O 후속**: 예측 콜드 383·122ms 워밍업, 단발 6.3~10.3s 목표/SSE, Arq 설계.
 4. **Ollama 병렬도·SSE 기준선**: `OLLAMA_NUM_PARALLEL` c4 지연 분석(Docker·재시동).
 5. **Windows Docker Desktop 실기 검증**: 스택 구동·E2E 통과(G2).
 6. **수집 2·3회차 관찰**: Docker.
@@ -97,13 +97,13 @@
 - **fail-open 제거 (누적 34건, 10·12장)**: `실패`·`미검증`·`절단`·`미도달` SUCCESS 승격 차단. 수집 위장(`MAX(date)` 누락, G1) 해소, 오동작 고정 테스트 정정.
 - **상태 전파 경계 (3~6차 감사, 13~16장)**: 하위 상태 소실 방지, 게이트 3(frontend test/build, docker build, compose config, actionlint) 보강, `source_commit` FAIL.
 - **대형 모듈 분할 (8장)**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수 기준 자동 분할 금지.**
-- **워커 풀 정비·상시 관측 전환 (11장)**: 2026-08-20 경합 5종 완주, n=3 미재현으로 2026-08-21 경합 종료. 10회 성공률·연속 실패 강등·제외(3회 미만 미반영, 파일 잠금, `benchmarks/free_workers/README.md` 6장), `suitable_for` 실측 한정(reviewer 닫힘), 격리 4종(`nemotron-3.5-lightning-free`, `laguna-s`, `north-mini`, `hy3-free`), probe 쓰기 미예측, Kimi 쓰기 프로필.
+- **워커 풀 정비·상시 관측 전환 (11장)**: 2026-08-20 무료 10종 중 5종 완주, n=3 미재현으로 08-21 종료. 10회 성공률·연속 실패로 강등·제외(3회 미만 미반영, 이력 잠금, `benchmarks/free_workers/README.md` 6장). `suitable_for`: 실측 역할만(reviewer 닫힘). 격리 4종(`opencode/nemotron-3.5-lightning-free`, `or-free/laguna-s`, `or-free/north-mini`, `opencode/hy3-free`), 읽기 probe는 쓰기 미예측, Kimi는 preamble·쓰기 프로필.
 - **모델 실재 대조 (2026-08-20)**: `scripts/audit_model_inventory.py` 로 소멸 검사(조회 실패·소멸 구분). `suitable_for` 빈 항목 배정 제외로 미검사.
 - **ORM `Mapped[]` 전환 완료 (2026-08-22)**: `bids.py`·`chatbot.py`·`accounts.py`·`predictions.py` 13모델·137컬럼 전환. 지문 `60a9cf49…c51c8` 일치(DDL 불변), mypy `call-overload` 6개 제거.
 - **동기 블로킹 I/O 요청 P95 실측 완료 (2026-08-22)**: 예측 웜 P95 61.9~83.6ms(100ms 4회 충족, 콜드 383·122ms 미달), SSE 첫 토큰 1.26~2.29s·완료 6.37~7.65s 충족. 기준선 부재로 개선폭 미주장, 단발 6.3~10.3s 목표 미정의.
 - **워커 기동 준비 자동화 (2026-08-22)**: `scripts/orca_prepare_worktree.py` 로 `.env`·신뢰·pre-commit 자동화(`--check` 미준비 종료 1), `shift+tab` 필요.
-- **린터·보안·타입 게이트**: bandit 47건 오탐 0건화(CI 9시간 차단 해소), mypy 58건 해소 후 `typecheck` `check-all`·CI 배선.
-- **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile `npm ci` 통일.
+- **린터·보안·타입 게이트**: bandit 47건 오탐 0건화(CI 9시간 차단 해소), mypy 58건 해소·`typecheck` `check-all`·CI 배선.
+- **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile `npm ci`.
 
 ---
 
