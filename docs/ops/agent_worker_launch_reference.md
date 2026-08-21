@@ -357,7 +357,10 @@ orca terminal create --worktree path:<워크트리> \
 # 4. Task 투입
 orca orchestration dispatch --task <task_id> --to <handle> --inject --json
 
-# 5. 실존 확인
+# 5. 파일 편집 자동 승인 (shift+tab. 빠뜨리면 첫 편집에서 멈춥니다. 2.2 절 참조)
+orca terminal send --terminal <handle> --text $'\x1b[Z'
+
+# 6. 실존 확인
 orca orchestration dispatch-show --task <task_id> --json
 ```
 
@@ -393,6 +396,30 @@ Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 그리기 전에 입력이 도착하면 그대로 소비되고 다이얼로그는 화면에 남습니다.
 2026-08-22 에 터미널 3대를 연속 생성하면서 이 순서로 실패했고, 결국 사용자가
 세 번 직접 승인했습니다.
+
+### 2.2 파일 편집 승인은 Dispatch 직후 자동 승인으로 바꿉니다
+
+폴더 신뢰를 미리 등록해도 **파일 편집·생성 승인은 따로 뜹니다.** 전역
+`permissions.allow` 와도 무관합니다. 워커는 첫 편집에서 멈추고, 코디네이터가
+알아채지 못하면 사람이 발견할 때까지 유휴로 남습니다. 준비 스크립트로도
+막을 수 없습니다. 워크트리가 아니라 터미널 세션마다 걸리는 상태이기 때문입니다.
+
+다이얼로그 하단의 `shift+tab to auto-approve file edits` 가 해제 수단입니다.
+Dispatch 직후 각 터미널에 한 번 보내면 그 세션 내내 다시 묻지 않습니다.
+
+```bash
+orca terminal send --terminal <handle> --text $'\x1b[Z'
+orca terminal read --terminal <handle> | tail -3   # Accept-edits mode 확인
+```
+
+`\x1b[Z` 가 shift+tab 입니다. 성공하면 하단에
+`Accept-edits mode: file edits auto-approved` 가 뜹니다. 2026-08-22 에 이
+단계를 빠뜨려 워커 5대가 각각 편집 승인에서 멈췄고 전부 사용자가 직접
+눌러야 했습니다.
+
+자동 승인은 쓰기 범위를 넓히지 않습니다. Capsule 의 `allowed_write_files` 는
+Level 1 게이트 2 가 병합 전에 따로 검사하므로, 범위 밖 파일을 만들면 승인
+여부와 무관하게 게이트에서 걸립니다.
 
 명령 단위 권한(`permissions.allow`)은 이와 별개이며 전역입니다. `uv *`,
 `git *`, `python3 *`, `pytest *` 같은 와일드카드가 이미 등록되어 있어 대개
