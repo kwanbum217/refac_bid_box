@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import uuid
+from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
-    Column,
     DateTime,
     ForeignKey,
     Index,
@@ -12,6 +15,7 @@ from sqlalchemy import (
     String,
 )
 from sqlalchemy.dialects import mysql
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql.sqltypes import UUID
 
 from src.app.core.db import Base, LongText, PKBigInteger
@@ -51,31 +55,33 @@ class AutomationRequest(Base):
         Index("ix_auto_req_action_created", "action_key", "created_at"),
     )
 
-    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
-    request_id = Column(RequestUuid, nullable=False, default=lambda: str(uuid.uuid4()), unique=True)
-    user_id = Column(
+    id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(
+        RequestUuid, nullable=False, default=lambda: str(uuid.uuid4()), unique=True
+    )
+    user_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("accounts_customuser.id", name=FK_AUTOMATION_REQUEST_USER),
         nullable=False,
     )
-    intent_type = Column(String(64), nullable=False, default="unknown")
-    requested_text = Column(LongText, nullable=False, default="")
-    action_key = Column(String(64), nullable=False, default="")
-    pipeline_name = Column(String(100), nullable=False, default="")
-    status = Column(String(20), nullable=False, default="queued")
-    payload = Column(JSON, nullable=False, default=dict)
-    requires_confirmation = Column(Boolean, nullable=False, default=False)
-    followup_query = Column(LongText, nullable=False, default="")
-    harness_execution_id = Column(String(100), nullable=False, default="")
-    plan_execution_id = Column(String(100), nullable=False, default="")
-    execution_url = Column(LongText, nullable=False, default="")
-    result_summary = Column(LongText, nullable=False, default="")
-    result_payload = Column(JSON, nullable=False, default=dict)
-    error_message = Column(LongText, nullable=False, default="")
-    created_at = Column(DateTime, nullable=False, default=utcnow)
-    confirmed_at = Column(DateTime, nullable=True)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    intent_type: Mapped[str] = mapped_column(String(64), nullable=False, default="unknown")
+    requested_text: Mapped[str] = mapped_column(LongText, nullable=False, default="")
+    action_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    pipeline_name: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    requires_confirmation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    followup_query: Mapped[str] = mapped_column(LongText, nullable=False, default="")
+    harness_execution_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    plan_execution_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    execution_url: Mapped[str] = mapped_column(LongText, nullable=False, default="")
+    result_summary: Mapped[str] = mapped_column(LongText, nullable=False, default="")
+    result_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    error_message: Mapped[str] = mapped_column(LongText, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ChatSessionState(Base):
@@ -87,26 +93,28 @@ class ChatSessionState(Base):
         Index("ix_chat_state_user_updated", "user_id", "updated_at"),
     )
 
-    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
-    session_key = Column(String(64), nullable=False, unique=True)
-    user_id = Column(
+    id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
+    session_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    user_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("accounts_customuser.id", name=FK_CHAT_SESSION_USER),
         nullable=True,
     )
-    last_query = Column(LongText, nullable=False, default="")
-    last_plan_json = Column(JSON, nullable=False, default=dict)
-    last_filters_json = Column(JSON, nullable=False, default=dict)
-    last_result_summary = Column(LongText, nullable=False, default="")
-    last_chart_payload = Column(JSON, nullable=False, default=dict)
-    last_result_payload = Column(JSON, nullable=False, default=dict)
-    last_job_id = Column(String(100), nullable=False, default="")
-    last_action_key = Column(String(64), nullable=False, default="")
-    last_kb_version = Column(String(100), nullable=False, default="")
-    last_response_mode = Column(String(20), nullable=False, default="")
-    chat_history_json = Column(JSON, nullable=False, default=list)
-    created_at = Column(DateTime, nullable=False, default=utcnow)
-    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    last_query: Mapped[str] = mapped_column(LongText, nullable=False, default="")
+    last_plan_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_filters_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_result_summary: Mapped[str] = mapped_column(LongText, nullable=False, default="")
+    last_chart_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_result_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    last_job_id: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    last_action_key: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    last_kb_version: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    last_response_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    chat_history_json: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
 
 
 class AutomationSubscription(Base):
@@ -120,20 +128,32 @@ class AutomationSubscription(Base):
         Index("ix_auto_sub_user_active", "user_id", "is_active"),
     )
 
-    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(
+    id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("accounts_customuser.id", name=FK_AUTOMATION_SUBSCRIPTION_USER),
         nullable=False,
     )
-    automation_type = Column(String(64), nullable=False, comment="자동화 종류")
-    filter_json = Column(JSON, nullable=False, default=dict, comment="필터 조건")
-    schedule_cron = Column(String(100), nullable=False, default="", comment="스케줄 Cron")
-    is_active = Column(Boolean, nullable=False, default=True, comment="활성 여부")
-    last_run_at = Column(DateTime, nullable=True, comment="마지막 실행 시각")
-    next_run_at = Column(DateTime, nullable=True, comment="다음 실행 예정 시각")
-    created_at = Column(DateTime, nullable=False, default=utcnow)
-    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    automation_type: Mapped[str] = mapped_column(String(64), nullable=False, comment="자동화 종류")
+    filter_json: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, comment="필터 조건"
+    )
+    schedule_cron: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", comment="스케줄 Cron"
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, comment="활성 여부"
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="마지막 실행 시각"
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="다음 실행 예정 시각"
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
 
 
 class KnowledgeBaseStatus(Base):
@@ -141,16 +161,26 @@ class KnowledgeBaseStatus(Base):
 
     __tablename__ = "knowledge_base_status"
 
-    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
-    kb_version = Column(String(100), unique=True, nullable=False, comment="KB 버전/이름")
-    status = Column(String(20), nullable=False, default="unknown", comment="상태")
-    source_bid_count = Column(PositiveInteger, nullable=False, default=0, comment="원본 공고 수")
-    last_embedding_at = Column(DateTime, nullable=True, comment="마지막 임베딩 시각")
-    last_pipeline_run_id = Column(
+    id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
+    kb_version: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, comment="KB 버전/이름"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="unknown", comment="상태"
+    )
+    source_bid_count: Mapped[int] = mapped_column(
+        PositiveInteger, nullable=False, default=0, comment="원본 공고 수"
+    )
+    last_embedding_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="마지막 임베딩 시각"
+    )
+    last_pipeline_run_id: Mapped[str] = mapped_column(
         String(100), nullable=False, default="", comment="마지막 파이프라인 실행 ID"
     )
-    notes = Column(LongText, nullable=False, default="", comment="메모")
-    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    notes: Mapped[str] = mapped_column(LongText, nullable=False, default="", comment="메모")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
 
 
 class PipelineExecution(Base):
@@ -164,19 +194,43 @@ class PipelineExecution(Base):
         Index("pipeline_executions_status_e7ec4919", "status"),
     )
 
-    id = Column(PKBigInteger, primary_key=True, autoincrement=True)
-    execution_id = Column(String(100), unique=True, nullable=False, comment="실행 ID")
-    pipeline_name = Column(String(100), nullable=False, comment="파이프라인명")
-    run_mode = Column(String(50), nullable=False, default="manual_full", comment="실행 모드")
-    stage_name = Column(String(100), nullable=False, default="", comment="현재 스테이지명")
-    stage_status = Column(String(50), nullable=False, default="", comment="현재 스테이지 상태")
-    status = Column(String(20), nullable=False, default="queued", comment="상태")
-    started_at = Column(DateTime, nullable=True, comment="시작 시각")
-    ended_at = Column(DateTime, nullable=True, comment="종료 시각")
-    metrics_json = Column(JSON, nullable=False, default=dict, comment="실행 지표")
-    raw_status_payload = Column(JSON, nullable=False, default=dict, comment="원본 상태 페이로드")
-    logs_summary = Column(LongText, nullable=False, default="", comment="로그 요약")
-    external_url = Column(LongText, nullable=False, default="", comment="외부 실행 URL")
-    source = Column(String(50), nullable=False, default="chatbot", comment="요청 소스")
-    created_at = Column(DateTime, nullable=False, default=utcnow)
-    updated_at = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
+    execution_id: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, comment="실행 ID"
+    )
+    pipeline_name: Mapped[str] = mapped_column(String(100), nullable=False, comment="파이프라인명")
+    run_mode: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="manual_full", comment="실행 모드"
+    )
+    stage_name: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", comment="현재 스테이지명"
+    )
+    stage_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="", comment="현재 스테이지 상태"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="queued", comment="상태"
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="시작 시각"
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="종료 시각")
+    metrics_json: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, comment="실행 지표"
+    )
+    raw_status_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, comment="원본 상태 페이로드"
+    )
+    logs_summary: Mapped[str] = mapped_column(
+        LongText, nullable=False, default="", comment="로그 요약"
+    )
+    external_url: Mapped[str] = mapped_column(
+        LongText, nullable=False, default="", comment="외부 실행 URL"
+    )
+    source: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="chatbot", comment="요청 소스"
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
