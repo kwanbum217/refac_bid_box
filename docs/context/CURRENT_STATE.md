@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-21
-> **source_commit**: `e5bcb8b`
+> **source_commit**: `5bdc7cc`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -87,7 +87,7 @@
 
 1. **Orca 코디네이터 토큰 최적화 v2 — 구현 완료, 실사용 교정 중**: 기본 코디네이터는 Codex `gpt-5.6-sol` + effort `high`, Claude 구독은 예비다. 절감 추세는 유효 행 부족으로 미판정이며 왕복 횟수 규율은 조율 스킬 3.2 절을 따른다.
 2. **동기 블로킹 I/O 제거 — 구조 수정 완료, 실측 미검증**: 12건(요청 4, Arq 8)을 `to_thread` 로 오프로드. 6커밋 전부 반증 테스트 동반. **P95 실측 미수행이라 성능 개선은 주장하지 않는다.**
-3. **ORM `Mapped[]` 전환 — bids·chatbot 2차 완료**: `bids.py` 5모델·50컬럼, `chatbot.py` 5모델·54컬럼을 전환했다. 정규화 메타데이터 지문(chatbot 전후 `60a9cf49…c51c8` 일치)과 대상 테스트로 스키마 동일성을 확인했고, mypy `call-overload` 모듈 예외 6개를 전부 제거했다. 남은 대상은 `accounts.py`, `predictions.py` 다.
+3. **ORM `Mapped[]` 전환 완료**: `bids.py`(5모델·50컬럼), `chatbot.py`(5모델·54컬럼), `accounts.py`(16컬럼), `predictions.py`(2모델·17컬럼)를 전부 전환했다. 전 테이블 정규화 메타데이터 지문 `60a9cf49…c51c8` 이 전후 일치해 컴파일 DDL 이 바뀌지 않았음을 확인했고, mypy `call-overload` 모듈 예외 6개를 전부 제거했다.
 4. **Ollama 병렬도 실험 및 SSE 동시성 기준선**: `OLLAMA_NUM_PARALLEL` 로 c4 지연 원인 분석. 호스트 Ollama 재시동과 Docker 단독 점유 필요.
 5. **Windows Docker Desktop 실기 검증**: 전체 스택 구동과 E2E 통과 (G2 완결).
 6. **수집 2·3회차 관찰**: Docker 필요.
