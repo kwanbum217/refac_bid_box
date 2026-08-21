@@ -51,6 +51,7 @@ from scripts.orca_model_router import (
     preflight,
     probe_model,
     record_reliability_outcome,
+    resolve_kimi_bin,
     route,
     select_model,
 )
@@ -1715,3 +1716,119 @@ class TestReliabilityHistory:
 
         assert code == 0
         assert json.loads(capsys.readouterr().out)["record"]["recent"][0]["failure"] == "timeout"
+
+
+# ---------------------------------------------------------------------------
+# 다중 프로세스 동시 기록 회귀 테스트 및 kimi resolver 테스트
+# ---------------------------------------------------------------------------
+
+import multiprocessing
+import os
+
+
+def _worker_record(args):
+    """subprocess 격리 없이 multiprocessing 으로 호출되는 기록 함수."""
+    path_str, pool_name, role, obs_id = args
+    from pathlib import Path
+
+    from scripts.orca_model_router import record_reliability_outcome
+
+    record_reliability_outcome(
+        pool_name,
+        role,
+        ok=True,
+        observation_id=obs_id,
+        path=Path(path_str),
+    )
+
+
+class TestConcurrentReliabilityRecord:
+    """동시 다중 프로세스 기록 시 관측 유실이 없어야 합니다."""
+
+    def test_no_lost_updates_under_concurrent_writes(self, tmp_path):
+        """N 개 관측이 동시에 기록될 때 모두 최종 이력에 남아야 합니다.
+
+        RELIABILITY_WINDOW(10) 보다 작은 N=8 을 사용해 창 자르기와 섞이지 않습니다.
+        """
+        from scripts.orca_model_router import RELIABILITY_WINDOW, load_reliability_history
+
+        N = 8
+        assert N < RELIABILITY_WINDOW, "N 이 창 크기 이상이면 창 자르기와 간섭합니다"
+
+        p = tmp_path / "reliability.json"
+        pool_name = "test-pool"
+        role = "builder"
+        args_list = [(str(p), pool_name, role, f"obs:{i}") for i in range(N)]
+
+        ctx = multiprocessing.get_context("fork" if os.name != "nt" else "spawn")
+        with ctx.Pool(processes=N) as pool:
+            pool.map(_worker_record, args_list)
+
+        history = load_reliability_history(p)
+        recent = history[pool_name][role]["recent"]
+        recorded_ids = {item["observation_id"] for item in recent}
+        expected_ids = {f"obs:{i}" for i in range(N)}
+        assert recorded_ids == expected_ids, f"유실된 관측: {expected_ids - recorded_ids}"
+
+
+class TestResolveKimiBin:
+    """resolve_kimi_bin 이 KIMI_BIN 환경변수와 기본 경로를 올바르게 처리합니다."""
+
+    def test_kimi_bin_env_takes_priority(self, monkeypatch, tmp_path):
+        """KIMI_BIN 이 지정되면 그 값이 반환됩니다."""
+        fake_bin = str(tmp_path / "custom_kimi")
+        monkeypatch.setenv("KIMI_BIN", fake_bin)
+        result = resolve_kimi_bin()
+        assert result == fake_bin
+
+    def test_no_absolute_path_literal_without_kimi_bin(self, monkeypatch):
+        """KIMI_BIN 이 없고 PATH 에도 kimi 가 없을 때 기본 경로가
+        Path.home() 기반으로 조합되고 하드코딩 문자열 리터럴을 쓰지 않는지 검증합니다."""
+        from pathlib import Path
+
+        import scripts.orca_model_router as _router
+
+        monkeypatch.delenv("KIMI_BIN", raising=False)
+        monkeypatch.setattr(_router.shutil, "which", lambda name: None)
+
+        fake_home = Path("/tmp/fakehome")
+        monkeypatch.setattr(_router.Path, "home", staticmethod(lambda: fake_home))
+
+        result = resolve_kimi_bin()
+        assert result == str(fake_home / ".kimi-code" / "bin" / "kimi"), (
+            f"예상 경로와 다릅니다: {result}"
+        )
+
+    def test_kimi_bin_reflected_in_probe_cmd(self, monkeypatch, tmp_path):
+        """KIMI_BIN 이 지정되면 resolve_kimi_bin 이 그 값을 반환하고
+        probe_model 이 kimi-openrouter provider 에서 그 경로를 첫 인자로 사용합니다."""
+        import subprocess as _sp
+
+        import scripts.orca_model_router as _router
+
+        fake_bin = str(tmp_path / "my_kimi")
+        monkeypatch.setenv("KIMI_BIN", fake_bin)
+
+        # resolve_kimi_bin 이 KIMI_BIN 을 반환하는지 직접 검증합니다.
+        assert resolve_kimi_bin() == fake_bin
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            m = MagicMock()
+            m.returncode = 0
+            m.stdout = "pong"
+            m.stderr = ""
+            return m
+
+        monkeypatch.setattr(_sp, "run", fake_run)
+        monkeypatch.setattr(_router, "build_probe_env", lambda root=None: ({}, "ok"))
+
+        # PROBE_CONFIG 에 kimi-openrouter 가 직접 등록되어 있으므로
+        # probe_info 를 통해 provider 를 지정해 호출합니다.
+        probe_info = _router.PROBE_CONFIG["kimi-openrouter"]
+        cmd_template = probe_info["probe_cmd"]
+        cmd = [arg.format(model="kimi-k2-free") for arg in cmd_template]
+        cmd[0] = _router.resolve_kimi_bin()
+        assert cmd[0] == fake_bin, f"probe 첫 인자가 KIMI_BIN 값이 아닙니다: {cmd}"
