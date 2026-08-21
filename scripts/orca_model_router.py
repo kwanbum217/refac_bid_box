@@ -34,7 +34,7 @@ import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 try:
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
@@ -623,10 +623,10 @@ RELIABILITY_SUSPEND_CONSECUTIVE = 3
 try:
     import fcntl as _fcntl
 
-    def _platform_lock(fobj) -> None:  # type: ignore[misc]
+    def _platform_lock(fobj: IO[str]) -> None:
         _fcntl.flock(fobj.fileno(), _fcntl.LOCK_EX)
 
-    def _platform_unlock(fobj) -> None:  # type: ignore[misc]
+    def _platform_unlock(fobj: IO[str]) -> None:
         _fcntl.flock(fobj.fileno(), _fcntl.LOCK_UN)
 
     _LOCK_AVAILABLE = True
@@ -640,11 +640,11 @@ except ImportError:
         # 잠그면 프로세스마다 다른 구간을 잡아 상호 배제가 성립하지 않습니다.
         # LK_LOCK 은 차단 잠금입니다. LK_NBLCK 은 경쟁 시 대기하지 않고 즉시
         # OSError 를 내므로 직렬화가 아니라 실패가 됩니다.
-        def _platform_lock(fobj) -> None:  # type: ignore[misc]
+        def _platform_lock(fobj: IO[str]) -> None:
             fobj.seek(0)
             _msvcrt.locking(fobj.fileno(), _msvcrt.LK_LOCK, _LOCK_CHUNK)
 
-        def _platform_unlock(fobj) -> None:  # type: ignore[misc]
+        def _platform_unlock(fobj: IO[str]) -> None:
             fobj.seek(0)
             _msvcrt.locking(fobj.fileno(), _msvcrt.LK_UNLCK, _LOCK_CHUNK)
 
