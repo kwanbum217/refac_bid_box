@@ -21,6 +21,7 @@ if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
 from scripts.orca_model_router import (
+    FREE_INVESTIGATOR_ORDER,
     FREE_POOL_ELIGIBLE_ROLES,
     FREE_POOL_MAX_RISK,
     FREE_POOL_ORDER,
@@ -1022,12 +1023,12 @@ class TestFreePoolOptIn:
                     assert res["fallback_pool"] != "cerebras-oss"
 
     def test_allow_free_true_investigator_low_risk_no_write_scope_selects_free_primary(self):
-        """allow_free=True, investigator, low, 쓰기 없음 조합에서 FREE_POOL_ORDER 1순위와 2순위가 주/대체 모델로 지정됩니다."""
+        """allow_free=True, investigator, low, 쓰기 없음 조합에서 FREE_INVESTIGATOR_ORDER 1순위와 2순위가 주/대체 모델로 지정됩니다."""
         res = select_model("investigator", "low", allow_free=True, has_write_scope=False)
-        assert res["primary_pool"] == "opencode-deepseek"
-        assert res["primary_model"] == "opencode/deepseek-v4-flash-free"
-        assert res["fallback_pool"] == "or-free-laguna-xs"
-        assert res["fallback_model"] == "or-free/laguna-xs"
+        assert res["primary_pool"] == FREE_INVESTIGATOR_ORDER[0]
+        assert res["primary_model"] == MODEL_POOL[FREE_INVESTIGATOR_ORDER[0]]["id"]
+        assert res["fallback_pool"] == FREE_INVESTIGATOR_ORDER[1]
+        assert res["fallback_model"] == MODEL_POOL[FREE_INVESTIGATOR_ORDER[1]]["id"]
 
     def test_allow_free_true_builder_low_risk_allowed(self):
         """allow_free=True, builder, low 는 무료 풀이 허용됩니다. 주 모델로 opencode/deepseek-v4-flash-free 가 선택되고 재검증 경고가 기록됩니다."""
@@ -1368,9 +1369,9 @@ def test_free_pool_candidates_must_match_role_suitable_for():
     assert result["primary_pool"] not in investigator_only
 
     # 적합한 무료 모델이 있으면 여전히 우선합니다. 제외 없이 부르면
-    # FREE_POOL_ORDER 1순위가 그대로 나와야 합니다.
+    # FREE_INVESTIGATOR_ORDER 1순위가 그대로 나와야 합니다.
     investigator = select_model("investigator", "low", allow_free=True, has_write_scope=False)
-    assert investigator["primary_pool"] == FREE_POOL_ORDER[0]
+    assert investigator["primary_pool"] == FREE_INVESTIGATOR_ORDER[0]
     assert "investigator" in MODEL_POOL[investigator["primary_pool"]]["suitable_for"]
 
 
@@ -1392,3 +1393,36 @@ def test_every_free_pool_selection_is_role_suitable():
             assert role in MODEL_POOL[fallback]["suitable_for"], (
                 f"{role} 에 부적합한 fallback {fallback} 이 선택됐습니다"
             )
+
+
+def test_free_order_by_role_objects_are_distinct():
+    """FREE_ORDER_BY_ROLE 의 builder 와 investigator 키는 서로 다른 리스트 객체여야 합니다."""
+    from scripts.orca_model_router import FREE_ORDER_BY_ROLE
+
+    assert FREE_ORDER_BY_ROLE["builder"] is not FREE_ORDER_BY_ROLE["investigator"], (
+        "builder 와 investigator 순서가 같은 리스트 객체를 가리킵니다"
+    )
+
+
+def test_select_model_responds_independently_to_role_order_changes(monkeypatch):
+    """FREE_ORDER_BY_ROLE 의 두 순서를 서로 다르게 바꾸면 select_model 이
+    역할별로 다른 주 모델을 골라야 합니다. builder 실측 갱신이 investigator 배정까지
+    전파되지 않는다는 것을 증명하는 회귀 테스트입니다."""
+    from scripts.orca_model_router import FREE_ORDER_BY_ROLE, select_model
+
+    # builder 는 무료 풀 첫 번째, investigator 는 무료 풀 마지막으로 설정
+    builder_order = list(FREE_ORDER_BY_ROLE["builder"])
+    investigator_order = list(reversed(FREE_ORDER_BY_ROLE["investigator"]))
+
+    monkeypatch.setattr(
+        "scripts.orca_model_router.FREE_ORDER_BY_ROLE",
+        {"builder": builder_order, "investigator": investigator_order},
+    )
+
+    b = select_model("builder", "low", allow_free=True, has_write_scope=False)
+    i = select_model("investigator", "low", allow_free=True, has_write_scope=False)
+
+    assert b["primary_pool"] != i["primary_pool"], (
+        "서로 다른 순서를 monkeypatch 했는데도 builder 와 investigator 가 "
+        f"같은 모델({b['primary_pool']})을 골랐습니다"
+    )
