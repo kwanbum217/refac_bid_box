@@ -42,7 +42,10 @@ def git_common_dir(path: Path) -> Path | None:
             text=True,
             check=True,
         )
-        common_dir = Path(res.stdout.strip())
+        raw_dir = res.stdout.strip()
+        if not raw_dir:
+            return None
+        common_dir = Path(raw_dir)
         if not common_dir.is_absolute():
             common_dir = (resolved / common_dir).resolve()
         return common_dir
