@@ -1314,6 +1314,7 @@ def finalize_task(
         "source_branch": branch,
         "target_branch": base,
         "commit": None,
+        "target_commit": None,
         "summarize": None,
         "level1": None,
         "reviewer": None,
@@ -1394,6 +1395,18 @@ def finalize_task(
         result["exit_code"] = 2
         return result
     result["commit"] = stdout_commit.strip()
+
+    target_commit_cmd = ["git", "rev-parse", "--verify", f"{base}^{{commit}}"]
+    code_target_commit, stdout_target_commit, stderr_target_commit = _run_command(
+        target_commit_cmd, cwd=target_repo, timeout=30
+    )
+    if code_target_commit != 0 or not stdout_target_commit.strip():
+        result["target_commit_error"] = truncate(
+            stderr_target_commit.strip() or "검증 대상 target commit을 확인할 수 없습니다.", 200
+        )
+        result["exit_code"] = 2
+        return result
+    result["target_commit"] = stdout_target_commit.strip()
 
     level1_cmd = [
         sys.executable,
