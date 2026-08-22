@@ -181,7 +181,7 @@ tests/test_data_preservation.py::test_chroma_db_exists
 
 | 풀 | 성격 | 배정할 작업 |
 | --- | --- | --- |
-| Codex (`gpt-5.6-sol`, effort `high`) | **기본 코디네이터.** 워커로 쓰지 않습니다 | 4.4 의 코디네이터 몫 |
+| Codex (`gpt-5.6-terra`, effort `medium`) | **기본 코디네이터.** 워커로 쓰지 않습니다. Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 수동 승격합니다 | 4.4 의 코디네이터 몫 |
 | Claude 구독 | 예비 코디네이터. 한도 여유가 있을 때만 수동 전환합니다 | 코디네이터 예비 |
 | Antigravity Google (`gemini-3.7-flash-high`) | 허용량이 가장 큼. **주력 워커** | 분석, 감사, 측정, 통계, 절차적 구현 |
 | Antigravity Claude (`claude-opus-4-6-thinking`, `claude-sonnet-4-6`) | 별도 풀. **허용량 적음** | 판정 품질이 필요한 감사, 신중한 리팩터 |

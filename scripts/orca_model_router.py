@@ -12,7 +12,7 @@ Dispatch 전에 모델 가용성을 probe 합니다.
   4. list      -- 등록된 모델 풀과 자동 선택 여부 정책을 출력합니다.
 
 모델 풀 정책 (정본: .agents/skills/orca-section-coordination/SKILL.md 3.1절):
-  - Codex           : 코디네이터 전용 (gpt-5.6-sol, effort high). 워커 사용 금지.
+  - Codex           : 코디네이터 전용 (gpt-5.6-terra, effort medium). 워커 사용 금지.
   - Claude 구독     : 예비 코디네이터. 워커 사용 금지.
   - Gemini Flash    : 주력 워커. 추론 등급은 공식 문서 기준으로 위험도에 따라 배정합니다.
                       medium 이 기본값이며 복잡한 코드와 에이전트 용도에 권장됩니다.
@@ -237,17 +237,17 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "notes": "예비 코디네이터. 한도 여유가 있을 때만 수동 지정. 워커로 사용하지 않습니다.",
     },
     "codex": {
-        "id": "gpt-5.6-sol",
+        "id": "gpt-5.6-terra",
         "provider": "codex",
-        # 2026-08-21 코디네이터로 올렸습니다. 설정은 gpt-5.6-sol + effort high 이며
-        # 근거는 docs/ops/agent_worker_launch_reference.md 5 절입니다.
+        # 기본 코디네이터는 Terra Medium입니다. Sol High는 데이터 무손실,
+        # 컷오버 및 복잡한 병합 판정에 한해 수동으로 일시 승격합니다.
         "tier": "coordinator",
         "auto_selectable": False,
         "max_tokens": None,
         # 코디네이터는 워커 역할을 겸하지 않습니다. 자기 자신에게 배정하면
         # 위임으로 토큰이 줄지 않습니다.
         "suitable_for": [],
-        "notes": "코디네이터 전용 (gpt-5.6-sol, effort high). 워커로 사용하지 않습니다.",
+        "notes": "코디네이터 전용 (gpt-5.6-terra, effort medium). Sol High는 고위험 최종 판정에만 수동 사용합니다. 워커로 사용하지 않습니다.",
     },
     "cursor-auto": {
         "id": "cursor-agent/auto",

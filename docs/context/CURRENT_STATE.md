@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-22
-> **source_commit**: `17c5115`
+> **source_commit**: `1f544b3`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -84,7 +84,7 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **워커 기동 후속**: 준비 자동화 완료. pytest 미실행 대응 커밋 게이트 판단.
-2. **코디네이터 토큰 v2**: Codex `gpt-5.6-sol` + effort `high`. 절감 미판정(조율 3.2절).
+2. **코디네이터 토큰 v2**: Codex `gpt-5.6-terra` + effort `medium`이 기본값입니다. `gpt-5.6` 별칭은 Sol이므로 사용하지 않으며, Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 수동 승격합니다.
 3. **블로킹 I/O 후속 실측**: 예측 콜드·예열, 단발 RAG/LLM 구간, Arq 처리량 계측 배선 완료. 프로토콜 기반 반복 측정과 판정 대기.
 4. **Ollama 병렬도·SSE 기준선**: `OLLAMA_NUM_PARALLEL` c4 지연 분석(Docker·재시동).
 5. **Windows Docker Desktop 실기 검증**: 스택 구동·E2E 통과(G2).
