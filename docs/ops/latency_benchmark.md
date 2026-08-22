@@ -1,7 +1,7 @@
 # 레이턴시 벤치마크 결과
 
 > **작성일**: 2026-08-02
-> **버전**: v1.1.0
+> **버전**: v1.2.0
 > **상태**: 사전 집계 적용 완료. 전체 응답 목표 달성, 첫 토큰 목표 잔존
 > **측정 도구**: [`scripts/benchmark_latency.py`](../../scripts/benchmark_latency.py) (`make benchmark`)
 
@@ -162,3 +162,9 @@ make benchmark
 ```bash
 python scripts/benchmark_latency.py --sse-rounds 15 --predict-rounds 200 --query-rounds 8
 ```
+
+`--output`을 지정하면 원시 표본과 함께 실행 조건을 JSON으로 보존합니다. 예측 API는
+측정 동시성과 같은 수의 warmup 요청을 먼저 보내며, 그 요청은 표본과 오류 집계에서
+제외합니다. 출력에는 `predict_rounds`, `predict_concurrency`,
+`predict_warmup_requests` 및 측정 시점의 1분 호스트 부하(`meta.host_load`)가 포함됩니다.
+호스트 부하를 읽을 수 없는 플랫폼에서는 부하 관련 값이 `null`로 기록됩니다.

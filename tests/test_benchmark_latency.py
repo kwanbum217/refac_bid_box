@@ -1,5 +1,5 @@
 from scripts import benchmark_latency
-from scripts.benchmark_latency import Samples, _query_for_round
+from scripts.benchmark_latency import Samples, _query_for_round, benchmark_predict, build_evidence
 
 
 def test_latency_target_fails_when_any_request_errors():
@@ -42,6 +42,54 @@ def test_reproducibility_metadata_marks_failed_docker_lookup_unknown(monkeypatch
         "gc",
         "instrumentation",
     }
+
+
+def test_host_load_metadata_marks_unavailable_load(monkeypatch):
+    monkeypatch.setattr(benchmark_latency.os, "cpu_count", lambda: 8)
+    monkeypatch.setattr(benchmark_latency.os, "getloadavg", lambda: (_ for _ in ()).throw(OSError))
+
+    metadata = benchmark_latency.host_load_metadata()
+
+    assert metadata["cpu_count"] == 8
+    assert metadata["load_1m"] is None
+    assert metadata["per_core_percent"] is None
+
+
+def test_predict_warmup_matches_concurrency_and_is_excluded(monkeypatch):
+    calls: list[int] = []
+
+    class Response:
+        status_code = 200
+
+    def post(_url: str, *, json: dict[str, int | str], timeout: float) -> Response:
+        calls.append(json["presumed_price"])
+        return Response()
+
+    monkeypatch.setattr(benchmark_latency.httpx, "post", post)
+
+    samples = benchmark_predict("http://test", rounds=3, concurrency=2)
+
+    assert len(calls) == 5
+    assert len(samples.values) == 3
+    assert sorted(calls[:2]) == [499_999_998, 499_999_999]
+
+
+def test_evidence_records_predict_execution_and_host_load(monkeypatch):
+    monkeypatch.setattr(benchmark_latency, "reproducibility_metadata", lambda: {"git_sha": "abc"})
+    monkeypatch.setattr(
+        benchmark_latency,
+        "host_load_metadata",
+        lambda: {"load_1m": 1.0, "cpu_count": 8, "per_core_percent": 12.5},
+    )
+    sample = Samples("test", values=[1.0])
+
+    evidence = build_evidence("http://test", 600, 10, sample, sample, sample, sample, sample)
+
+    assert evidence["predict_rounds"] == 600
+    assert evidence["predict_concurrency"] == 10
+    assert evidence["predict_warmup_requests"] == 10
+    assert evidence["meta"]["git_sha"] == "abc"
+    assert evidence["meta"]["host_load"]["per_core_percent"] == 12.5
 
 
 def test_reproducibility_metadata_marks_empty_docker_lookup_unknown(monkeypatch):

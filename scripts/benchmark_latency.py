@@ -24,11 +24,13 @@ import argparse
 import concurrent.futures
 import gc
 import json
+import os
 import platform
 import statistics
 import subprocess  # nosec B404
 import sys
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -82,6 +84,25 @@ def reproducibility_metadata() -> dict[str, object]:
             "timer_resolution_seconds": timer_info.resolution,
             "timer_monotonic": timer_info.monotonic,
         },
+    }
+
+
+def host_load_metadata() -> dict[str, object]:
+    """측정 시점의 관찰 가능한 호스트 부하를 보존합니다."""
+    cpu_count = os.cpu_count()
+    try:
+        load_1m, _, _ = os.getloadavg()
+    except OSError:
+        load_1m = None
+
+    per_core_percent = None
+    if load_1m is not None and cpu_count:
+        per_core_percent = (load_1m / cpu_count) * 100.0
+    return {
+        "observed_at_utc": datetime.now(UTC).isoformat(),
+        "load_1m": load_1m,
+        "cpu_count": cpu_count,
+        "per_core_percent": per_core_percent,
     }
 
 
@@ -225,6 +246,11 @@ def benchmark_predict(base_url: str, rounds: int, concurrency: int) -> Samples:
         return response.status_code == 200, (time.perf_counter() - start) * 1000.0
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        # 모델 로드와 첫 배치를 데우되, 이 요청은 측정 표본에 넣지 않습니다.
+        warmup_futures = [executor.submit(request, -1 - index) for index in range(concurrency)]
+        for future in concurrent.futures.as_completed(warmup_futures):
+            with suppress(httpx.HTTPError):
+                future.result()
         futures = [executor.submit(request, index) for index in range(rounds)]
         for future in concurrent.futures.as_completed(futures):
             try:
@@ -237,6 +263,35 @@ def benchmark_predict(base_url: str, rounds: int, concurrency: int) -> Samples:
             else:
                 samples.errors += 1
     return samples
+
+
+def build_evidence(
+    base_url: str,
+    predict_rounds: int,
+    predict_concurrency: int,
+    first_stage: Samples,
+    first_token: Samples,
+    final: Samples,
+    predict: Samples,
+    query: Samples,
+) -> dict[str, object]:
+    return {
+        "meta": {
+            **reproducibility_metadata(),
+            "host_load": host_load_metadata(),
+        },
+        "base_url": base_url,
+        "predict_rounds": predict_rounds,
+        "predict_concurrency": predict_concurrency,
+        "predict_warmup_requests": predict_concurrency,
+        "samples": {
+            "first_stage_new": first_stage.as_dict(),
+            "first_token_new": first_token.as_dict(),
+            "final_new": final.as_dict(),
+            "predict": predict.as_dict(),
+            "query": query.as_dict(),
+        },
+    }
 
 
 def benchmark_query(base_url: str, rounds: int) -> Samples:
@@ -302,18 +357,16 @@ def main() -> int:
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        evidence = {
-            "meta": reproducibility_metadata(),
-            "base_url": args.base_url,
-            "predict_concurrency": args.predict_concurrency,
-            "samples": {
-                "first_stage_new": first_stage.as_dict(),
-                "first_token_new": new_first_token.as_dict(),
-                "final_new": final.as_dict(),
-                "predict": predict.as_dict(),
-                "query": query.as_dict(),
-            },
-        }
+        evidence = build_evidence(
+            args.base_url,
+            args.predict_rounds,
+            args.predict_concurrency,
+            first_stage,
+            new_first_token,
+            final,
+            predict,
+            query,
+        )
         args.output.write_text(
             json.dumps(evidence, ensure_ascii=False, indent=2),
             encoding="utf-8",
