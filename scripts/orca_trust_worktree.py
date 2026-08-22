@@ -63,11 +63,10 @@ def _settings_lock():
                 lock_handle.write(token)
             acquired = True
         except FileExistsError:
-            try:
+            owner_token: str | None = None
+            with suppress(OSError, UnicodeDecodeError):
                 owner_token = LOCK_FILE.read_text(encoding="utf-8").strip()
-            except (OSError, UnicodeDecodeError):
-                owner_token = ""
-            owner_dead = _is_owner_process_dead(owner_token)
+            owner_dead = _is_owner_process_dead(owner_token) if owner_token is not None else False
             if (
                 owner_token != token
                 and time.time() - LOCK_FILE.stat().st_mtime > STALE_LOCK_SECONDS
@@ -82,11 +81,10 @@ def _settings_lock():
         yield
     finally:
         with suppress(FileNotFoundError):
-            try:
+            current_token: str | None = None
+            with suppress(OSError, UnicodeDecodeError):
                 current_token = LOCK_FILE.read_text(encoding="utf-8").strip()
-            except (OSError, UnicodeDecodeError):
-                current_token = ""
-            if current_token == token:
+            if current_token is not None and current_token == token:
                 LOCK_FILE.unlink()
 
 
