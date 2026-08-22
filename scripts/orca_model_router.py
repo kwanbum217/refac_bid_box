@@ -38,11 +38,13 @@ from pathlib import Path
 from typing import IO, Any
 
 try:
+    from scripts._strict_json import dump_strict_json, load_strict_json
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
+    from scripts._strict_json import dump_strict_json, load_strict_json  # type: ignore[no-redef]
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 
 __all__ = [
@@ -813,7 +815,7 @@ def record_reliability_outcome(
         temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
         try:
             temporary.write_text(
-                json.dumps(history, ensure_ascii=False, indent=2) + "\n",
+                dump_strict_json(history, indent=2) + "\n",
                 encoding="utf-8",
             )
             temporary.replace(target)
@@ -1729,14 +1731,14 @@ def cmd_classify(args: argparse.Namespace) -> int:
         )
     except ModelRoutingError as exc:
         if args.json:
-            print(json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2))
+            print(dump_strict_json({"error": str(exc)}, indent=2))
         else:
             print(f"오류: {exc}", file=sys.stderr)
         return 1
 
     if args.json:
         print(
-            json.dumps(
+            dump_strict_json(
                 {
                     "risk": risk,
                     "role": role,
@@ -1746,7 +1748,6 @@ def cmd_classify(args: argparse.Namespace) -> int:
                     "fallback_pool": selection.get("fallback_pool"),
                     "reasons": reasons,
                 },
-                ensure_ascii=False,
                 indent=2,
             )
         )
@@ -1767,9 +1768,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
     available, detail = probe_model(args.model, args.timeout)
     if args.json:
         print(
-            json.dumps(
+            dump_strict_json(
                 {"model": args.model, "available": available, "detail": detail},
-                ensure_ascii=False,
                 indent=2,
             )
         )
@@ -1796,7 +1796,7 @@ def cmd_route(args: argparse.Namespace) -> int:
         )
     except (ValueError, ModelRoutingError) as exc:
         if args.json:
-            print(json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2))
+            print(dump_strict_json({"error": str(exc)}, indent=2))
         else:
             print(f"오류: {exc}", file=sys.stderr)
         return 1
@@ -1809,7 +1809,7 @@ def cmd_route(args: argparse.Namespace) -> int:
 
     if args.json:
         print(
-            json.dumps(
+            dump_strict_json(
                 {
                     "risk": result.risk,
                     "role": result.role,
@@ -1821,7 +1821,6 @@ def cmd_route(args: argparse.Namespace) -> int:
                     "warnings": result.warnings,
                     "recommended": recommended,
                 },
-                ensure_ascii=False,
                 indent=2,
             )
         )
@@ -1914,9 +1913,8 @@ def cmd_reliability_record(args: argparse.Namespace) -> int:
     )
     if args.json:
         print(
-            json.dumps(
+            dump_strict_json(
                 {"pool": pool_name, "role": args.role, "record": record},
-                ensure_ascii=False,
                 indent=2,
             )
         )

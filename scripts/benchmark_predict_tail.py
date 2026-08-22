@@ -17,11 +17,21 @@ import concurrent.futures
 import json
 import math
 import statistics
+import sys
 import time
 from collections import Counter
 from pathlib import Path
 
 import httpx
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from scripts._strict_json import dump_strict_json
+except (ModuleNotFoundError, ImportError):
+    from _strict_json import dump_strict_json  # type: ignore[no-redef]
 
 
 def percentile(values: list[float], q: float) -> float:
@@ -198,8 +208,8 @@ def main() -> int:
         "trace_log": str(args.trace_log),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(evidence["summary"], ensure_ascii=False, indent=2))
+    args.output.write_text(dump_strict_json(evidence), encoding="utf-8")
+    print(dump_strict_json(evidence["summary"]))
     return 0
 
 

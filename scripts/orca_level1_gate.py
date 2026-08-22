@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 try:
+    from scripts._strict_json import dump_strict_json
     from scripts.orca_contract import (
         load_capsule,
         load_report,
@@ -30,6 +31,7 @@ except ModuleNotFoundError:
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
+    from scripts._strict_json import dump_strict_json  # type: ignore[no-redef]
     from scripts.orca_contract import (
         load_capsule,
         load_report,
@@ -1001,7 +1003,7 @@ def run_level1_gate(
         error_msg = f"저장소 경로가 존재하지 않거나 디렉터리가 아님: {repo_path}"
         if as_json:
             data = build_json_output([], "error", 2, 0, 0, 0, error_message=error_msg)
-            return 2, json.dumps(data, ensure_ascii=False, indent=2)
+            return 2, dump_strict_json(data, indent=2)
         out = format_human_output([], "error", 0, 0, 0, error_message=error_msg)
         return 2, truncate(out, max_chars)
 
@@ -1060,7 +1062,7 @@ def run_level1_gate(
                 failed_count,
                 error_message=error_msg,
             )
-            return 2, json.dumps(data, ensure_ascii=False, indent=2)
+            return 2, dump_strict_json(data, indent=2)
         out = format_human_output(
             gates, "error", passed_count, skipped_count, failed_count, error_message=error_msg
         )
@@ -1082,7 +1084,7 @@ def run_level1_gate(
         data = build_json_output(
             gates, verdict, exit_code, passed_count, skipped_count, failed_count
         )
-        return exit_code, json.dumps(data, ensure_ascii=False, indent=2)
+        return exit_code, dump_strict_json(data, indent=2)
 
     human_text = format_human_output(gates, verdict, passed_count, skipped_count, failed_count)
     return exit_code, truncate(human_text, max_chars)

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from scripts._strict_json import dump_strict_json, load_strict_json
     from scripts.orca_contract import (
         char_len,
         load_capsule,
@@ -38,6 +39,7 @@ except (ModuleNotFoundError, ImportError):
     _REPO_ROOT = Path(__file__).resolve().parent.parent
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
+    from scripts._strict_json import dump_strict_json, load_strict_json  # type: ignore[no-redef]
     from scripts.orca_contract import (  # type: ignore[no-redef]
         char_len,
         load_capsule,
@@ -78,12 +80,12 @@ def _load_rows(ledger_path: Path) -> tuple[list[dict[str, Any]], int]:
         if not line:
             continue
         try:
-            obj = json.loads(line)
+            obj = load_strict_json(line)
             if isinstance(obj, dict):
                 rows.append(obj)
             else:
                 corrupt += 1
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError):
             corrupt += 1
     return rows, corrupt
 
@@ -300,10 +302,10 @@ def cmd_record(args: argparse.Namespace) -> int:
 
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     with ledger_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        f.write(dump_strict_json(row, indent=None) + "\n")
 
     if args.json:
-        print(json.dumps(row, ensure_ascii=False, indent=2))
+        print(dump_strict_json(row, indent=2))
     else:
         print(f"기록 완료: task_id={args.task}, dispatch_id={args.dispatch}")
         print(f"  capsule_chars={capsule_chars}, report_chars={report_chars}")
@@ -420,7 +422,7 @@ def cmd_summary(args: argparse.Namespace) -> int:
     }
 
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(dump_strict_json(result, indent=2))
         return 0
 
     # 사람이 읽는 출력
