@@ -92,7 +92,8 @@ def test_settings_lock_timeout(trust_files, tmp_path: Path, monkeypatch: pytest.
     monkeypatch.setattr(orca_trust_worktree, "LOCK_TIMEOUT_SECONDS", 0.1)
     lock_file = orca_trust_worktree.LOCK_FILE
     lock_file.parent.mkdir(parents=True, exist_ok=True)
-    lock_file.write_text("999999", encoding="utf-8")
+    # token 형식으로 작성하되 살아있는 다른 PID라고 가정하면 stale 회수 대상이 아님
+    lock_file.write_text("a1b2c3d4e5f60718:999999", encoding="utf-8")
 
     with (
         pytest.raises(RuntimeError, match="신뢰 설정 잠금을 획득하지 못했습니다"),
@@ -102,10 +103,20 @@ def test_settings_lock_timeout(trust_files, tmp_path: Path, monkeypatch: pytest.
 
 
 def test_settings_lock_stale_recovery(trust_files, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """오래된(stale) 락 파일이 존재할 경우 이를 회수하고 정상적으로 락을 획득해야 합니다."""
+    """오래된 락 + 보유 PID 사망 조건이 모두 만족될 때만 회수하고 정상적으로 락을 획득해야 합니다."""
     lock_file = orca_trust_worktree.LOCK_FILE
     lock_file.parent.mkdir(parents=True, exist_ok=True)
-    lock_file.write_text("999999", encoding="utf-8")
+
+    # 살아있지 않을 PID: 포크 후 즉시 종료해 그 PID를 회수한다.
+    import os as _os
+
+    pid = _os.fork()
+    if pid == 0:
+        _os._exit(0)
+    _, status = _os.waitpid(pid, 0)
+    assert status is not None
+
+    lock_file.write_text(f"a1b2c3d4e5f60718:{pid}", encoding="utf-8")
 
     import os
     import time
@@ -113,13 +124,63 @@ def test_settings_lock_stale_recovery(trust_files, tmp_path: Path, monkeypatch: 
     stale_time = time.time() - (orca_trust_worktree.STALE_LOCK_SECONDS + 10.0)
     os.utime(lock_file, (stale_time, stale_time))
 
-    # stale lock이 정상적으로 회수되어 lock 진입 성공
     with orca_trust_worktree._settings_lock():
         assert lock_file.exists()
-        assert lock_file.read_text(encoding="utf-8") == str(os.getpid())
+        # lock 파일 내용은 "uuid:pid" 형태의 자기 token
+        token = lock_file.read_text(encoding="utf-8").strip()
+        assert ":" in token and str(os.getpid()) in token
 
-    # contextmanager 종료 후 락 파일 정리 확인
     assert not lock_file.exists()
+
+
+def test_settings_lock_other_token_is_not_recovered(trust_files, tmp_path, monkeypatch):
+    """다른 process의 token이 살아있고 mtime이 신선하면 회수되지 않아야 합니다."""
+    lock_file = orca_trust_worktree.LOCK_FILE
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    # 살아있는 self PID를 적어 stale 회수가 진행되면 안 됨
+    import os as _os
+
+    lock_file.write_text(f"a1b2c3d4e5f60718:{_os.getpid()}", encoding="utf-8")
+    monkeypatch.setattr(orca_trust_worktree, "LOCK_TIMEOUT_SECONDS", 0.1)
+
+    with pytest.raises(RuntimeError, match="신뢰 설정 잠금을 획득하지 못했습니다"):
+        with orca_trust_worktree._settings_lock():
+            pass
+
+    # 다른 토큰은 그대로 보존
+    assert lock_file.read_text(encoding="utf-8") == f"a1b2c3d4e5f60718:{_os.getpid()}"
+
+
+def test_settings_lock_release_only_owns_token(trust_files, tmp_path, monkeypatch):
+    """finally 블록에서 lock 파일 토큰이 자기 token과 일치할 때만 unlink 합니다."""
+    lock_file = orca_trust_worktree.LOCK_FILE
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    lock_file.write_text("foreign:999999", encoding="utf-8")
+    monkeypatch.setattr(orca_trust_worktree, "LOCK_TIMEOUT_SECONDS", 0.1)
+
+    # 타인이 점유 중이라 진입 실패. try/finally는 정상 path에서만 release 동작.
+    with pytest.raises(RuntimeError), orca_trust_worktree._settings_lock():
+        pass
+
+    # 우리는 unlink하지 않았으므로 보존
+    assert lock_file.exists()
+    assert lock_file.read_text(encoding="utf-8") == "foreign:999999"
+
+
+def test_settings_lock_concurrent_acquire_serializes(trust_files, tmp_path, monkeypatch):
+    """동시에 두 컨텍스트 매니저가 acquire를 시도해도 한쪽만 먼저 들어가고 타임아웃 후 예외가 납니다."""
+    lock_file = orca_trust_worktree.LOCK_FILE
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # 첫 진입 후, 외부에서 lock 파일을 잠시 유지해 두 번째 시도는 락 획득 못 함
+    holder_path = tmp_path / "holder.lock"
+    holder_path.write_text("holder:999999", encoding="utf-8")
+
+    monkeypatch.setattr(orca_trust_worktree, "LOCK_FILE", holder_path)
+    monkeypatch.setattr(orca_trust_worktree, "LOCK_TIMEOUT_SECONDS", 0.2)
+
+    with pytest.raises(RuntimeError), orca_trust_worktree._settings_lock():
+        pass
 
 
 def test_register_rolls_back_initially_absent_files(

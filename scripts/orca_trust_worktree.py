@@ -45,22 +45,35 @@ def _load(path: Path) -> Any:
 
 @contextmanager
 def _settings_lock():
-    """두 신뢰 설정 파일의 RMW 구간을 프로세스 간에 직렬화합니다."""
+    """두 신뢰 설정 파일의 RMW 구간을 프로세스 간에 직렬화합니다.
+
+    락 파일은 ``<uuid>:<pid>`` 토큰을 보관한다. 같은 락을 가진 프로세스가 PID
+    생존 여부를 함께 검증해 비정상 종료된 자기 락만 stale 회수하며, 다른 락은
+    PID 가 살아 있는 한 회수하지 않는다. finally 블록은 lock 파일의 토큰을 다시
+    읽어 자기 토큰이 맞을 때만 unlink 한다.
+    """
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
     acquired = False
+    token = f"{uuid.uuid4().hex}:{os.getpid()}"
     while not acquired:
         try:
             fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as lock_handle:
-                lock_handle.write(str(os.getpid()))
+                lock_handle.write(token)
             acquired = True
         except FileExistsError:
             try:
-                if time.time() - LOCK_FILE.stat().st_mtime > STALE_LOCK_SECONDS:
-                    LOCK_FILE.unlink()
-                    continue
-            except FileNotFoundError:
+                owner_token = LOCK_FILE.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                owner_token = ""
+            owner_dead = _is_owner_process_dead(owner_token)
+            if (
+                owner_token != token
+                and time.time() - LOCK_FILE.stat().st_mtime > STALE_LOCK_SECONDS
+                and owner_dead
+            ):
+                LOCK_FILE.unlink()
                 continue
             if time.monotonic() >= deadline:
                 raise RuntimeError(f"신뢰 설정 잠금을 획득하지 못했습니다: {LOCK_FILE}") from None
@@ -69,7 +82,40 @@ def _settings_lock():
         yield
     finally:
         with suppress(FileNotFoundError):
-            LOCK_FILE.unlink()
+            try:
+                current_token = LOCK_FILE.read_text(encoding="utf-8").strip()
+            except (OSError, UnicodeDecodeError):
+                current_token = ""
+            if current_token == token:
+                LOCK_FILE.unlink()
+
+
+def _is_owner_process_dead(owner_token: str) -> bool:
+    """lock 파일의 owner 토큰에서 PID를 추출해 그 프로세스가 살아 있는지 확인합니다.
+
+    토큰 형식이 올바르지 않거나 PID 조회에 실패하면 안전상 살아있다고 보수적으로
+    판단해 stale 회수를 허용하지 않습니다.
+    """
+    if not owner_token or ":" not in owner_token:
+        return False
+    pid_text = owner_token.rsplit(":", 1)[-1]
+    try:
+        pid = int(pid_text)
+    except ValueError:
+        return False
+    if pid <= 0 or pid > 2**22:
+        # 시스템에서 정의 가능한 PID 범위(대부분 환경에서 2^22 미만) 밖은
+        # 검사 자체가 안전하지 않다고 보고 살아있다고 보수적으로 본다.
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    except OSError:
+        return False
+    return False
 
 
 def _serialize(payload: Any) -> str:
