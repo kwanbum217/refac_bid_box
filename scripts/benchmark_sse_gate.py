@@ -31,6 +31,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+try:
+    from scripts._strict_json import dump_strict_json
+except (ModuleNotFoundError, ImportError):
+    from _strict_json import dump_strict_json  # type: ignore[no-redef]
+
 import httpx  # noqa: E402
 
 CHAT_QUERIES = [
@@ -385,7 +390,7 @@ def main() -> int:
             "records": [asdict(r) for r in records],
         }
         args.output.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
+            dump_strict_json(payload),
             encoding="utf-8",
         )
         print(f"원시 측정치 저장 완료: {args.output}")

@@ -40,6 +40,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
+    from scripts._strict_json import dump_strict_json
+except (ModuleNotFoundError, ImportError):
+    from _strict_json import dump_strict_json  # type: ignore[no-redef]
+
+try:
     from src.app.core.config import settings
 
     DEFAULT_REDIS_URL = settings.REDIS_URL
@@ -545,7 +550,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
-            json.dumps(result.as_dict(), ensure_ascii=False, indent=2),
+            dump_strict_json(result.as_dict()),
             encoding="utf-8",
         )
         print(f"측정 결과 저장 완료: {args.output}")
