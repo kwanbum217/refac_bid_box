@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-22
-> **source_commit**: `b3ed8ca`
+> **source_commit**: `0860af0`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -13,7 +13,7 @@
 | --- | --- | :---: | --- |
 | **G1** | 데이터 무손실 | **통과 (불변)** | MySQL 8 스키마·행 수 보존, ML 가중치 체크섬 일치, ChromaDB `bidding_kb` 무결성 |
 | **G2** | 크로스 플랫폼 | **부분 통과** | macOS 완전 검증 완료 (Docker + uv + Makefile). Windows Docker Desktop 실기 검증 대기 |
-| **G3** | 스택 최적화 | **부분 통과·승격 보류** | 예측 c10 **통과**(`freeze` P95 54.93ms, >100ms 0/1,800), SSE c1 **통과**(첫 토큰 1297.73ms, 전체 6716.22ms). 예측 c1·c2·c4는 기존 +10% 회귀 한도 초과로 원인 분리 대기 |
+| **G3** | 스택 최적화 | **부분 통과·승격 보류** | 예측 c1 **통과**(P95 15.39ms), c10 **통과**(`freeze` P95 47.77ms, >100ms 0/1,800), SSE c1 **통과**(첫 토큰 1297.73ms, 전체 6716.22ms). 예측 c2·c4는 기존 +10% 회귀 한도 초과(c2 22.68ms > 21.77ms, c4 48.59ms > 36.81ms)로 원인 분리 대기 |
 
 > **주의**: G3 는 일괄 통과로 선언하지 않고 항목별 실측 상태로 기록합니다.
 
@@ -26,16 +26,16 @@
 ### 2.1 예측 API 레이턴시 지표
 
 - **운영 설정**: `PREDICTION_GC_MODE=freeze` (`gc.freeze()` 로 gen2 GC 순회 배제)
-- **부하 조건**: warmup 10 제외, 회차당 600표본, 3회 반복 중 최악 대표값
+- **부하 조건**: warmup(동시성 수) 제외, 회차당 600표본, 3회 반복 중 최악 대표값
 
 | 동시성 | P50 (ms) | P95 (ms) | P99 (ms) | Max (ms) | 100ms 초과 | 회귀 판정선 (P95 +10%) |
-| ---: | ---: | ---: | ---: | ---: | :---: | ---: |
-| c1 | 17.93 | 29.98 | 40.67 | 47.75 | 0건 (1,800회) | **미달**: 17.02ms |
-| c2 | 17.83 | 25.01 | 30.84 | 40.71 | 0건 (1,800회) | **미달**: 21.77ms |
-| c4 | 30.98 | 41.61 | 45.32 | 58.03 | 0건 (1,800회) | **미달**: 36.81ms |
-| **c10** | **40.82** | **54.93** | **62.76** | **69.56** | **0건 (1,800회)** | **통과**: 100ms 이하 |
+| ---: | ---: | ---: | ---: | ---: | ---: | :---: | ---: |
+| **c1** | 12.18 | **15.39** | 18.01 | 27.96 | 0건 (1,800회) | **통과**: 17.02ms |
+| c2 | 17.62 | **22.68** | 26.67 | 28.81 | 0건 (1,800회) | **미달**: 21.77ms |
+| c4 | 30.22 | **48.59** | 59.86 | 68.43 | 0건 (1,800회) | **미달**: 36.81ms |
+| **c10** | **38.63** | **47.77** | **68.30** | **74.42** | **0건 (1,800회)** | **통과**: 100ms 이하 |
 
-> **구형 기록 주의**: `README.md` 등에 남은 199.18ms 는 구형이며 정본 기준선은 **56.45ms** 입니다.
+> **구형 기록 주의**: `README.md` 등에 남은 199.18ms 는 구형이며 c10 정본 기준선은 **56.45ms** (이번 재측정 최악 47.77ms) 입니다.
 
 ### 2.2 하이브리드 RAG SSE 스트리밍 지표
 
@@ -68,7 +68,7 @@
 1. **워커 준비 안전성**: Git common directory 검증, 신뢰 설정 잠금·최초 파일·복구를 먼저 닫습니다. 완료 전 병렬 쓰기 워커를 기동하지 않습니다.
 2. **ModelRegistry single-flight**: startup warmup·readiness 동시 시작에서 실제 로드 1회와 부분 레지스트리 비노출을 증명합니다.
 3. **병합·성능 재현성**: finalize/Level 1 PASS 없는 병합 차단과 prediction 원시 메타데이터를 보완합니다.
-4. **예측 회귀 진단**: 1~3 뒤에 실행 이미지·호스트 부하·요청 경로를 대조합니다.
+4. **예측 회귀 진단**: c1 통과(15.39ms) 및 c10 통과(47.77ms) 외 c2(22.68ms > 21.77ms), c4(48.59ms > 36.81ms) 회귀 원인에 대해 실행 이미지·호스트 부하·배치 윈도우 대기를 대조·분리합니다.
 5. **운영 검증**: 수집 2·3회차, Ollama c4(재기동 승인 필요), Windows Docker Desktop, Arq 처리량을 순차 처리합니다.
 
 ### 4.1 종결 계열 요약
@@ -113,6 +113,7 @@
 - v2 설계: [`docs/ops/orca_coordinator_token_optimization_v2.md`](../ops/orca_coordinator_token_optimization_v2.md), 제어 평면: [`orca_control_plane_tools.md`](../ops/orca_control_plane_tools.md)
 - 지표 원장: [`orca_v2_metrics_ledger.md`](../ops/orca_v2_metrics_ledger.md)
 - 레이턴시 게이트 규약: [`latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
+- 예측 재측정(2026-08-22): [`predict_remeasurement_20260822.md`](../ops/predict_remeasurement_20260822.md)
 - 블로킹 I/O 계측: [`predict_coldstart_instrumentation.md`](../analysis/predict_coldstart_instrumentation.md), [`query_rag_latency_instrumentation.md`](../analysis/query_rag_latency_instrumentation.md), [`arq_throughput_harness.md`](../analysis/arq_throughput_harness.md)
 - 워커 기동: [`agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
 - 용역 모델: [`servc_model_status.md`](../servc_model_status.md)
