@@ -53,6 +53,7 @@ services:
       # freeze 로 되돌려 버리므로 끌 수단이 없어집니다.
       # batch-disable 은 기각됐으니 운영에 쓰지 마십시오(기본보다 꼬리가 나쁩니다).
       - PREDICTION_GC_MODE=${PREDICTION_GC_MODE-freeze}
+      - LATENCY_SEGMENT_LOGGING=${LATENCY_SEGMENT_LOGGING:-false}
       # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}

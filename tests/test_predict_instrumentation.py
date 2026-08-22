@@ -38,6 +38,7 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
     """
     /predict-price 의 출력 동등성과 세부 구간 계측이 정상 동작하는지 테스트합니다.
     """
+    monkeypatch.setattr("src.app.api.v1.predictions.settings.LATENCY_SEGMENT_LOGGING", True)
     mock_outcome = type(
         "Outcome",
         (),
@@ -124,6 +125,7 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
     """
     /predict 의 출력 동등성과 세부 구간 계측이 정상 동작하는지 테스트합니다.
     """
+    monkeypatch.setattr("src.app.api.v1.predictions.settings.LATENCY_SEGMENT_LOGGING", True)
     with patch("src.app.api.v1.predictions.predictor") as mock_predictor:
         mock_predictor.predict.return_value = {
             "predicted_price": 12345,
@@ -178,10 +180,11 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
             )
 
 
-def test_predict_price_api_fallback_and_interval(mock_db_session):
+def test_predict_price_api_fallback_and_interval(mock_db_session, monkeypatch):
     """
     /predict-price 에서 fallback 이 발생했을 때도 계측 및 응답이 정상인지 검증합니다.
     """
+    monkeypatch.setattr("src.app.api.v1.predictions.settings.LATENCY_SEGMENT_LOGGING", True)
     mock_outcome = type(
         "Outcome",
         (),

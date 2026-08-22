@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from src.app.core.config import settings
 from src.rag.answer_format import (
     _build_evidence_items,
     _build_result_list_answer,
@@ -385,6 +386,8 @@ class HybridRAGEngine:
             total_ms: float,
             backend_name: str,
         ) -> None:
+            if not settings.LATENCY_SEGMENT_LOGGING:
+                return
             logger.info(
                 "rag_engine_latency: trace_id=%s status=%s route=%s use_sql=%s use_vector=%s use_kb=%s "
                 "plan_ms=%.2f sql_ms=%.2f vector_ms=%.2f kb_ms=%.2f assembly_ms=%.2f prepare_ms=%.2f "
