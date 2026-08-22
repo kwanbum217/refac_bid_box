@@ -12,6 +12,9 @@
 
 본 작업에서는 외부 API 계약(`AnswerBundle`, `ChatbotQueryResponse`) 및 기존 비동기/스트리밍 동작을 100% 보존하면서, 각 처리 단계의 소요 시간을 밀리초(`ms`) 단위로 정밀 계측하여 구조화 로그(`rag_engine_latency`)를 남기도록 개선하였습니다.
 
+구조화 로그는 `LATENCY_SEGMENT_LOGGING=true`일 때만 발행합니다. 기본값은 `false`이며,
+정식 레이턴시 게이트에서는 계측 오버헤드를 배제하기 위해 비활성으로 측정합니다.
+
 ---
 
 ## 2. 세부 구현 내용

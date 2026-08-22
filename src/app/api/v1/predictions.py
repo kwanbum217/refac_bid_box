@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from src.app.core.config import settings
 from src.app.core.db import get_db
 from src.app.models.bids import BidAnnouncement
 from src.app.schemas.predictions import (
@@ -215,21 +216,22 @@ def predict_price_api(
     c_model = c_point_infer + c_interval_infer
     t_total = max(0.0, time.perf_counter() - t_start)
     c_total = max(0.0, time.thread_time() - c_start)
-    latency_logger.info(
-        "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f, db_lookup_ms=%.2f, feature_build_ms=%.2f, point_infer_ms=%.2f, interval_infer_ms=%.2f",
-        t_total * 1000.0,
-        c_total * 1000.0,
-        t_model * 1000.0,
-        c_model * 1000.0,
-        t_db_lookup * 1000.0,
-        t_feature_build * 1000.0,
-        t_point_infer * 1000.0,
-        t_interval_infer * 1000.0,
-    )
-    latency_logger.info(
-        "endpoint=predict_price_api, executor_queue_wait_ms=%.2f",
-        dispatch_wait_ms,
-    )
+    if settings.LATENCY_SEGMENT_LOGGING:
+        latency_logger.info(
+            "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f, db_lookup_ms=%.2f, feature_build_ms=%.2f, point_infer_ms=%.2f, interval_infer_ms=%.2f",
+            t_total * 1000.0,
+            c_total * 1000.0,
+            t_model * 1000.0,
+            c_model * 1000.0,
+            t_db_lookup * 1000.0,
+            t_feature_build * 1000.0,
+            t_point_infer * 1000.0,
+            t_interval_infer * 1000.0,
+        )
+        latency_logger.info(
+            "endpoint=predict_price_api, executor_queue_wait_ms=%.2f",
+            dispatch_wait_ms,
+        )
 
     return PredictPriceResponse(
         status="success",
@@ -277,18 +279,19 @@ def predict_winning_price(
 
     t_total = max(0.0, time.perf_counter() - t_start)
     c_total = max(0.0, time.thread_time() - c_start)
-    latency_logger.info(
-        "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f, payload_dump_ms=%.2f",
-        t_total * 1000.0,
-        c_total * 1000.0,
-        t_model * 1000.0,
-        c_model * 1000.0,
-        t_payload_dump * 1000.0,
-    )
-    latency_logger.info(
-        "endpoint=predict_winning_price, executor_queue_wait_ms=%.2f",
-        dispatch_wait_ms,
-    )
+    if settings.LATENCY_SEGMENT_LOGGING:
+        latency_logger.info(
+            "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f, payload_dump_ms=%.2f",
+            t_total * 1000.0,
+            c_total * 1000.0,
+            t_model * 1000.0,
+            c_model * 1000.0,
+            t_payload_dump * 1000.0,
+        )
+        latency_logger.info(
+            "endpoint=predict_winning_price, executor_queue_wait_ms=%.2f",
+            dispatch_wait_ms,
+        )
 
     return PredictionResponse(
         bid_notice_no=payload.bid_notice_no,

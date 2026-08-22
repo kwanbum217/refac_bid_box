@@ -388,7 +388,8 @@ def test_prepare_context_timings_respects_skipped_stages():
     assert timings["prepare_total_ms"] >= 0.0
 
 
-def test_get_answer_sync_logs_latency_success_path(caplog):
+def test_get_answer_sync_logs_latency_success_path(caplog, monkeypatch):
+    monkeypatch.setattr("src.rag.engine.settings.LATENCY_SEGMENT_LOGGING", True)
     rag_engine._backend = _FakeStreamingBackend()
     rag_engine._backend_resolved = True
 
@@ -415,7 +416,8 @@ def test_get_answer_sync_logs_latency_success_path(caplog):
     assert "total_ms=" in msg
 
 
-def test_get_answer_sync_logs_latency_direct_result_list(caplog):
+def test_get_answer_sync_logs_latency_direct_result_list(caplog, monkeypatch):
+    monkeypatch.setattr("src.rag.engine.settings.LATENCY_SEGMENT_LOGGING", True)
     rag_engine._backend = _FakeStreamingBackend()
     rag_engine._backend_resolved = True
 
@@ -458,7 +460,8 @@ def test_get_answer_sync_logs_latency_direct_result_list(caplog):
     assert "backend=none" in msg
 
 
-def test_get_answer_sync_logs_latency_fallback_no_backend(caplog):
+def test_get_answer_sync_logs_latency_fallback_no_backend(caplog, monkeypatch):
+    monkeypatch.setattr("src.rag.engine.settings.LATENCY_SEGMENT_LOGGING", True)
     rag_engine._backend = None
     rag_engine._backend_resolved = True
 
@@ -476,7 +479,8 @@ def test_get_answer_sync_logs_latency_fallback_no_backend(caplog):
     assert "backend=fallback" in msg
 
 
-def test_get_answer_sync_logs_latency_fallback_on_exception(caplog):
+def test_get_answer_sync_logs_latency_fallback_on_exception(caplog, monkeypatch):
+    monkeypatch.setattr("src.rag.engine.settings.LATENCY_SEGMENT_LOGGING", True)
     rag_engine._backend = _ErrorBackend()
     rag_engine._backend_resolved = True
 
@@ -493,7 +497,8 @@ def test_get_answer_sync_logs_latency_fallback_on_exception(caplog):
     assert "backend=fake" in msg
 
 
-def test_latency_logs_do_not_leak_user_query_or_documents(caplog):
+def test_latency_logs_do_not_leak_user_query_or_documents(caplog, monkeypatch):
+    monkeypatch.setattr("src.rag.engine.settings.LATENCY_SEGMENT_LOGGING", True)
     rag_engine._backend = _FakeStreamingBackend()
     rag_engine._backend_resolved = True
 
