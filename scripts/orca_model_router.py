@@ -12,7 +12,8 @@ Dispatch 전에 모델 가용성을 probe 합니다.
   4. list      -- 등록된 모델 풀과 자동 선택 여부 정책을 출력합니다.
 
 모델 풀 정책 (정본: .agents/skills/orca-section-coordination/SKILL.md 3.1절):
-  - Codex           : 코디네이터 전용 (gpt-5.6-terra, effort medium). 워커 사용 금지.
+  - Codex           : 코디네이터 전용 (gpt-5.6-terra, effort medium). 기본값 변경 시
+                      사용자에게 MODEL_CHANGE_NOTICE 를 먼저 보냅니다. 워커 사용 금지.
   - Claude 구독     : 예비 코디네이터. 워커 사용 금지.
   - Gemini Flash    : 주력 워커. 추론 등급은 공식 문서 기준으로 위험도에 따라 배정합니다.
                       medium 이 기본값이며 복잡한 코드와 에이전트 용도에 권장됩니다.
@@ -244,10 +245,16 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "coordinator",
         "auto_selectable": False,
         "max_tokens": None,
+        "default_effort": "medium",
+        "notify_user_on_override": True,
         # 코디네이터는 워커 역할을 겸하지 않습니다. 자기 자신에게 배정하면
         # 위임으로 토큰이 줄지 않습니다.
         "suitable_for": [],
-        "notes": "코디네이터 전용 (gpt-5.6-terra, effort medium). Sol High는 고위험 최종 판정에만 수동 사용합니다. 워커로 사용하지 않습니다.",
+        "notes": (
+            "코디네이터 전용 (gpt-5.6-terra, effort medium). 기본값 변경 전 "
+            "MODEL_CHANGE_NOTICE가 필요합니다. Sol High는 사용자 승인 후 고위험 "
+            "최종 판정에만 수동 사용합니다. 워커로 사용하지 않습니다."
+        ),
     },
     "cursor-auto": {
         "id": "cursor-agent/auto",
@@ -1873,6 +1880,9 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"    ID:        {info['id']}")
         print(f"    Provider:  {info['provider']}")
         print(f"    자동 선택: {auto_status}")
+        if info["tier"] == "coordinator":
+            print(f"    기본 추론: {info['default_effort']}")
+            print("    변경 알림: MODEL_CHANGE_NOTICE 사전 고지")
         print(f"    용도:      {', '.join(info['suitable_for']) or '워커 사용 불가'}")
         print(f"    비고:      {info['notes']}")
         print()

@@ -635,6 +635,8 @@ class TestCLI:
         assert "자동 선택: 비대상 (코디네이터 전용 - 워커 사용 불가)" in captured
         assert "codex" in captured
         assert "자동 선택: 비대상 (수동 지정 전용)" in captured
+        assert "기본 추론: medium" in captured
+        assert "MODEL_CHANGE_NOTICE 사전 고지" in captured
         assert "opencode-free" in captured
 
     def test_classify_json(self, capsys):
@@ -887,6 +889,9 @@ class TestFreePoolOptIn:
         # 배정하면 위임이 아니라서 코디네이터 토큰이 줄지 않습니다.
         assert codex_info["tier"] == "coordinator"
         assert codex_info["id"] == "gpt-5.6-terra"
+        assert codex_info["default_effort"] == "medium"
+        assert codex_info["notify_user_on_override"] is True
+        assert "MODEL_CHANGE_NOTICE" in codex_info["notes"]
         assert codex_info["suitable_for"] == []
         assert codex_info["auto_selectable"] is False
 

@@ -84,7 +84,7 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **워커 기동 후속**: 준비 자동화 완료. pytest 미실행 대응 커밋 게이트 판단.
-2. **코디네이터 토큰 v2**: Codex `gpt-5.6-terra` + effort `medium`이 기본값입니다. `gpt-5.6` 별칭은 Sol이므로 사용하지 않으며, Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 수동 승격합니다.
+2. **코디네이터 토큰 v2**: Codex `gpt-5.6-terra` + effort `medium`이 기본값입니다. 기본값 변경 전에는 사용자에게 `MODEL_CHANGE_NOTICE`를 보냅니다. `gpt-5.6` 별칭은 Sol이므로 사용하지 않으며, Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 사용자 승인 후 수동 승격합니다.
 3. **블로킹 I/O 후속 실측**: 예측 콜드·예열, 단발 RAG/LLM 구간, Arq 처리량 계측 배선 완료. 프로토콜 기반 반복 측정과 판정 대기.
 4. **Ollama 병렬도·SSE 기준선**: `OLLAMA_NUM_PARALLEL` c4 지연 분석(Docker·재시동).
 5. **Windows Docker Desktop 실기 검증**: 스택 구동·E2E 통과(G2).
