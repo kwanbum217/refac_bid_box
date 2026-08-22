@@ -13,7 +13,7 @@
 | --- | --- | :---: | --- |
 | **G1** | 데이터 무손실 | **통과 (불변)** | MySQL 8 스키마·행 수 보존, ML 가중치 체크섬 일치, ChromaDB `bidding_kb` 무결성 |
 | **G2** | 크로스 플랫폼 | **부분 통과** | macOS 완전 검증 완료 (Docker + uv + Makefile). Windows Docker Desktop 실기 검증 대기 |
-| **G3** | 스택 최적화 | **부분 통과·승격 보류** | 예측 c1 **통과**(P95 15.39ms), c10 **통과**(`freeze` P95 47.77ms, >100ms 0/1,800), SSE c1 **통과**(첫 토큰 1297.73ms, 전체 6716.22ms). 예측 c2·c4는 기존 +10% 회귀 한도 초과(c2 22.68ms > 21.77ms, c4 48.59ms > 36.81ms)로 원인 분리 대기 |
+| **G3** | 스택 최적화 | **부분 통과·승격 보류** | 예측 c1 **통과**(P95 15.39ms), c10 **통과**(`freeze` P95 47.77ms, >100ms 0/1,800), SSE c1 **통과**(첫 토큰 1297.73ms, 전체 6716.22ms). 통제 A/B 5회 교차 검증 결과 이전 c2·c4 임계치 미달 미재현(>50ms 0건, c2 델타 중앙 -0.97ms, c4 델타 중앙 +1.31ms). c4 1.31ms 중앙 델타는 합의된 회귀 예산 초과 시에만 진단 |
 
 > **주의**: G3 는 일괄 통과로 선언하지 않고 항목별 실측 상태로 기록합니다.
 
@@ -68,7 +68,7 @@
 1. **워커 준비 안전성**: Git common directory 검증, 신뢰 설정 잠금·최초 파일·복구를 먼저 닫습니다. 완료 전 병렬 쓰기 워커를 기동하지 않습니다.
 2. **ModelRegistry single-flight**: startup warmup·readiness 동시 시작에서 실제 로드 1회와 부분 레지스트리 비노출을 증명합니다.
 3. **병합·성능 재현성**: finalize/Level 1 PASS 없는 병합 차단과 prediction 원시 메타데이터를 보완합니다.
-4. **예측 회귀 진단**: c1 통과(15.39ms) 및 c10 통과(47.77ms) 외 c2(22.68ms > 21.77ms), c4(48.59ms > 36.81ms) 회귀 원인에 대해 실행 이미지·호스트 부하·배치 윈도우 대기를 대조·분리합니다.
+4. **예측 A/B 결과 및 후속**: 통제 교차 A/B 5회 검증 결과 이전 c2/c4 임계치 미달은 미재현(전 회차 >50ms/>100ms 0건, c2 델타 중앙 -0.97ms, c4 델타 중앙 +1.31ms). c4의 안정적인 1.31ms 중앙 델타는 사전 합의된 회귀 예산 초과 시에만 진단하며, 임계치 실패로 분류하지 않습니다.
 5. **운영 검증**: 수집 2·3회차, Ollama c4(재기동 승인 필요), Windows Docker Desktop, Arq 처리량을 순차 처리합니다.
 
 ### 4.1 종결 계열 요약
@@ -114,6 +114,7 @@
 - 지표 원장: [`orca_v2_metrics_ledger.md`](../ops/orca_v2_metrics_ledger.md)
 - 레이턴시 게이트 규약: [`latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
 - 예측 재측정(2026-08-22): [`predict_remeasurement_20260822.md`](../ops/predict_remeasurement_20260822.md)
+- 예측 통제 A/B(2026-08-22): [`predict_ab_20260822.md`](../ops/predict_ab_20260822.md)
 - 블로킹 I/O 계측: [`predict_coldstart_instrumentation.md`](../analysis/predict_coldstart_instrumentation.md), [`query_rag_latency_instrumentation.md`](../analysis/query_rag_latency_instrumentation.md), [`arq_throughput_harness.md`](../analysis/arq_throughput_harness.md)
 - 워커 기동: [`agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
 - 용역 모델: [`servc_model_status.md`](../servc_model_status.md)
