@@ -24,6 +24,7 @@ import argparse
 import concurrent.futures
 import gc
 import json
+import math
 import os
 import platform
 import statistics
@@ -35,12 +36,40 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import httpx  # noqa: E402
+
+
+class BuildProvenanceError(RuntimeError):
+    """벤치마크 대상 도커 이미지/컨테이너 provenance 조회가 실패하거나 불완전할 때 발생합니다."""
+
+
+def sanitize_nan_to_none(obj: Any) -> Any:
+    """JSON 직렬화 전 NaN/Inf 부동소수점 값을 None(null)으로 정규화합니다."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: sanitize_nan_to_none(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize_nan_to_none(v) for v in obj]
+    return obj
+
+
+def dump_strict_json(data: Any, **kwargs: Any) -> str:
+    """NaN을 None으로 정규화한 뒤 allow_nan=False로 엄격한 JSON 문자열을 직렬화합니다."""
+    sanitized = sanitize_nan_to_none(data)
+    kwargs.setdefault("ensure_ascii", False)
+    kwargs.setdefault("indent", 2)
+    kwargs["allow_nan"] = False
+    return json.dumps(sanitized, **kwargs)
+
 
 # 캐시 적중으로 측정치가 왜곡되지 않도록 질의를 매번 바꿉니다.
 CHAT_QUERIES = [
@@ -70,15 +99,45 @@ def _command_output(command: list[str]) -> str:
         return "unknown"
 
 
-def reproducibility_metadata() -> dict[str, object]:
+def reproducibility_metadata(
+    service_name: str = "app",
+    strict: bool = True,
+) -> dict[str, object]:
     """원시 측정치를 다른 실행 환경과 대조하기 위한 공통 메타데이터입니다."""
     timer_info = time.get_clock_info("perf_counter")
+    git_sha = _command_output(["git", "rev-parse", "HEAD"])
+    docker_image_id = _command_output(["docker", "compose", "images", "-q", service_name])
+    container_id = _command_output(["docker", "compose", "ps", "-q", service_name])
+    if container_id != "unknown":
+        target_container_image_id = _command_output(
+            ["docker", "inspect", "-f", "{{.Image}}", container_id]
+        )
+    else:
+        target_container_image_id = "unknown"
+
+    if strict:
+        failures = []
+        if git_sha == "unknown":
+            failures.append("git_sha(harness)")
+        if docker_image_id == "unknown":
+            failures.append(f"docker_image_id(compose service '{service_name}')")
+        if container_id == "unknown":
+            failures.append(f"container_id(compose service '{service_name}')")
+        if target_container_image_id == "unknown":
+            failures.append(f"target_container_image_id(container '{container_id}')")
+        if failures:
+            raise BuildProvenanceError(
+                f"Docker/Git provenance lookup failed or returned unknown for: {', '.join(failures)}"
+            )
+
     return {
-        "git_sha": _command_output(["git", "rev-parse", "HEAD"]),
+        "git_sha": git_sha,
         "measured_at_utc": datetime.now(UTC).isoformat(),
         "python_version": platform.python_version(),
         "platform": platform.platform(),
-        "docker_image_id": _command_output(["docker", "compose", "images", "-q", "backend"]),
+        "docker_image_id": docker_image_id,
+        "container_id": container_id,
+        "target_container_image_id": target_container_image_id,
         "gc": {"enabled": gc.isenabled(), "threshold": list(gc.get_threshold())},
         "instrumentation": {
             "timer": "time.perf_counter",
@@ -263,13 +322,16 @@ class Samples:
         return passed
 
     def as_dict(self) -> dict:
+        p50 = self.percentile(50)
+        p95 = self.percentile(95)
+        p99 = self.percentile(99)
         return {
             "label": self.label,
             "values_ms": self.values,
             "errors": self.errors,
-            "p50_ms": self.percentile(50),
-            "p95_ms": self.percentile(95),
-            "p99_ms": self.percentile(99),
+            "p50_ms": None if math.isnan(p50) else p50,
+            "p95_ms": None if math.isnan(p95) else p95,
+            "p99_ms": None if math.isnan(p99) else p99,
             "tagged": self.tagged,
         }
 
@@ -375,10 +437,11 @@ def build_evidence(
     predict: Samples,
     query: Samples,
     host_load: dict[str, object] | None = None,
+    strict_provenance: bool = True,
 ) -> dict[str, object]:
-    return {
+    evidence = {
         "meta": {
-            **reproducibility_metadata(),
+            **reproducibility_metadata(strict=strict_provenance),
             "host_load": host_load if host_load is not None else host_load_metadata(),
         },
         "base_url": base_url,
@@ -393,6 +456,7 @@ def build_evidence(
             "query": query.as_dict(),
         },
     }
+    return sanitize_nan_to_none(evidence)
 
 
 def benchmark_query(base_url: str, rounds: int) -> Samples:
@@ -423,6 +487,12 @@ def main() -> int:
     parser.add_argument("--predict-rounds", type=int, default=100)
     parser.add_argument("--predict-concurrency", type=int, default=10)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--allow-unknown-provenance",
+        action="store_true",
+        default=False,
+        help="Docker provenance 조회 실패 시에도 측정을 강제 진행합니다 (기본: 거부)",
+    )
     args = parser.parse_args()
 
     print("=" * 62)
@@ -435,6 +505,16 @@ def main() -> int:
     except httpx.HTTPError as exc:
         print(f"서버에 접속하지 못했습니다: {exc}")
         print("먼저 서버를 띄우십시오: uvicorn src.app.main:app --port 8000")
+        return 2
+
+    strict_provenance = not args.allow_unknown_provenance
+    try:
+        reproducibility_metadata(strict=strict_provenance)
+    except BuildProvenanceError as exc:
+        print(f"빌드 provenance 검증 실패: {exc}")
+        print(
+            "--allow-unknown-provenance 옵션으로 강제할 수 있으나 정본 evidence로 인정되지 않습니다."
+        )
         return 2
 
     load_monitor = HostLoadMonitor(interval_seconds=5.0, min_samples=3).start()
@@ -472,9 +552,10 @@ def main() -> int:
             predict,
             query,
             host_load=host_load,
+            strict_provenance=strict_provenance,
         )
         args.output.write_text(
-            json.dumps(evidence, ensure_ascii=False, indent=2),
+            dump_strict_json(evidence),
             encoding="utf-8",
         )
         print(f"  원시 측정치 저장: {args.output}")
