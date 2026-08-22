@@ -22,6 +22,7 @@ Phase 7 레이턴시 벤치마크.
 
 import argparse
 import concurrent.futures
+import gc
 import json
 import platform
 import statistics
@@ -29,6 +30,7 @@ import subprocess  # nosec B404
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -49,6 +51,38 @@ CHAT_QUERIES = [
 FIRST_TOKEN_TARGET_MS = 3_000.0
 TOTAL_TARGET_MS = 20_000.0
 PREDICT_TARGET_MS = 100.0
+
+
+def _command_output(command: list[str]) -> str:
+    try:
+        return (
+            subprocess.check_output(  # nosec B603
+                command,
+                cwd=PROJECT_ROOT,
+                text=True,
+            ).strip()
+            or "unknown"
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def reproducibility_metadata() -> dict[str, object]:
+    """원시 측정치를 다른 실행 환경과 대조하기 위한 공통 메타데이터입니다."""
+    timer_info = time.get_clock_info("perf_counter")
+    return {
+        "git_sha": _command_output(["git", "rev-parse", "HEAD"]),
+        "measured_at_utc": datetime.now(UTC).isoformat(),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "docker_image_id": _command_output(["docker", "compose", "images", "-q", "backend"]),
+        "gc": {"enabled": gc.isenabled(), "threshold": list(gc.get_threshold())},
+        "instrumentation": {
+            "timer": "time.perf_counter",
+            "timer_resolution_seconds": timer_info.resolution,
+            "timer_monotonic": timer_info.monotonic,
+        },
+    }
 
 
 def _fmt(milliseconds: float) -> str:
@@ -268,18 +302,8 @@ def main() -> int:
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            git_sha = subprocess.check_output(  # nosec B603 B607
-                ["git", "rev-parse", "HEAD"],
-                cwd=PROJECT_ROOT,
-                text=True,
-            ).strip()
-        except (OSError, subprocess.CalledProcessError):
-            git_sha = "unknown"
         evidence = {
-            "git_sha": git_sha,
-            "python": platform.python_version(),
-            "platform": platform.platform(),
+            "meta": reproducibility_metadata(),
             "base_url": args.base_url,
             "predict_concurrency": args.predict_concurrency,
             "samples": {

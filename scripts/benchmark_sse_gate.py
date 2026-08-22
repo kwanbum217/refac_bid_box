@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import gc
 import json
 import math
 import platform
@@ -22,6 +23,7 @@ import subprocess  # nosec B404
 import sys
 import time
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -307,15 +309,36 @@ def run_benchmark(
     return summary, records
 
 
-def get_git_sha() -> str:
+def _command_output(command: list[str]) -> str:
     try:
-        return subprocess.check_output(  # nosec B603 B607
-            ["git", "rev-parse", "HEAD"],
-            cwd=PROJECT_ROOT,
-            text=True,
-        ).strip()
-    except Exception:
+        return (
+            subprocess.check_output(  # nosec B603 B607
+                command,
+                cwd=PROJECT_ROOT,
+                text=True,
+            ).strip()
+            or "unknown"
+        )
+    except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def reproducibility_metadata() -> dict[str, object]:
+    """원시 측정치를 다른 실행 환경과 대조하기 위한 공통 메타데이터입니다."""
+    timer_info = time.get_clock_info("perf_counter")
+    return {
+        "git_sha": _command_output(["git", "rev-parse", "HEAD"]),
+        "measured_at_utc": datetime.now(UTC).isoformat(),
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "docker_image_id": _command_output(["docker", "compose", "images", "-q", "backend"]),
+        "gc": {"enabled": gc.isenabled(), "threshold": list(gc.get_threshold())},
+        "instrumentation": {
+            "timer": "time.perf_counter",
+            "timer_resolution_seconds": timer_info.resolution,
+            "timer_monotonic": timer_info.monotonic,
+        },
+    }
 
 
 def main() -> int:
@@ -351,10 +374,7 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "meta": {
-                "git_sha": get_git_sha(),
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "python": platform.python_version(),
-                "platform": platform.platform(),
+                **reproducibility_metadata(),
                 "base_url": args.base_url,
                 "concurrency": args.concurrency,
                 "rounds": args.rounds,
