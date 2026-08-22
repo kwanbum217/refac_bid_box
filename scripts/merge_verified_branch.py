@@ -20,6 +20,7 @@ def evidence_errors(
     source_branch: str,
     target_branch: str,
     source_commit: str,
+    target_commit: str,
 ) -> list[str]:
     """병합에 필요한 strict finalize 및 Level 1 PASS 증거를 검사합니다."""
     if not isinstance(evidence, Mapping):
@@ -36,6 +37,12 @@ def evidence_errors(
         errors.append("증거의 target branch가 병합 입력과 일치하지 않습니다.")
     if evidence.get("commit") != source_commit:
         errors.append("증거의 검증 commit이 현재 source ref와 일치하지 않습니다.")
+
+    ev_target_commit = evidence.get("target_commit")
+    if not ev_target_commit or not str(ev_target_commit).strip():
+        errors.append("증거의 target_commit이 누락되었거나 비어 있습니다.")
+    elif ev_target_commit != target_commit:
+        errors.append("증거의 검증 target_commit이 현재 target ref와 일치하지 않습니다.")
 
     level1 = evidence.get("level1")
     if not isinstance(level1, Mapping) or level1.get("verdict") != "pass":
@@ -88,11 +95,17 @@ def merge_verified_branch(
     source_ref = runner(["git", "rev-parse", "--verify", f"{source_branch}^{{commit}}"])
     if source_ref.returncode != 0 or not source_ref.stdout.strip():
         return 2, f"source branch의 commit을 확인할 수 없습니다: {source_ref.stderr.strip()}"
+
+    target_ref = runner(["git", "rev-parse", "--verify", f"{target_branch}^{{commit}}"])
+    if target_ref.returncode != 0 or not target_ref.stdout.strip():
+        return 2, f"target branch의 commit을 확인할 수 없습니다: {target_ref.stderr.strip()}"
+
     errors = evidence_errors(
         evidence,
         source_branch=source_branch,
         target_branch=target_branch,
         source_commit=source_ref.stdout.strip(),
+        target_commit=target_ref.stdout.strip(),
     )
     if errors:
         return 1, "병합 거부: " + " ".join(errors)
