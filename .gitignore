@@ -224,3 +224,7 @@ node_modules/
 # Model inventory history state file
 data/model_inventory_history.json
 data/model_reliability_history.json
+
+# Orca 워크플로우 중간 사본(Intent·Capsule). 일회성 인풋이며 워크플로우
+# 도구(orca_taskctl)로 재생성됩니다. 운영 정합성을 위해 추적 대상에서 제외합니다.
+docs/orca/
