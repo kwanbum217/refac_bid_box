@@ -103,7 +103,8 @@ def merge_verified_branch(
     if current.stdout.strip() != target_branch:
         return 1, f"병합 거부: 현재 브랜치가 대상({target_branch})이 아닙니다."
 
-    command = ["git", "merge", "--no-ff", source_branch]
+    verified_commit = source_ref.stdout.strip()
+    command = ["git", "merge", "--no-ff", verified_commit]
     if message:
         command.extend(["-m", message])
     merged = runner(command)

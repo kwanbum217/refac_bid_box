@@ -142,5 +142,33 @@ def test_merge_runs_only_after_complete_evidence_and_on_target_branch(tmp_path: 
     assert calls == [
         ["git", "rev-parse", "--verify", "feature/example^{commit}"],
         ["git", "branch", "--show-current"],
-        ["git", "merge", "--no-ff", "feature/example", "-m", "merge: verified example"],
+        ["git", "merge", "--no-ff", "a" * 40, "-m", "merge: verified example"],
     ]
+
+
+def test_merge_uses_verified_commit_when_source_ref_advances_before_merge(tmp_path: Path):
+    verified_commit = "a" * 40
+    advanced_commit = "b" * 40
+    evidence = _write_evidence(tmp_path / "finalize.json", commit=verified_commit)
+    calls: list[list[str]] = []
+
+    def runner(command):
+        calls.append(list(command))
+        if command == ["git", "rev-parse", "--verify", "feature/example^{commit}"]:
+            return subprocess.CompletedProcess(command, 0, verified_commit + "\n", "")
+        if command == ["git", "branch", "--show-current"]:
+            return subprocess.CompletedProcess(command, 0, "main\n", "")
+        if command[:3] == ["git", "merge", "--no-ff"]:
+            assert command[3] == verified_commit
+            assert command[3] != advanced_commit
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    code, _ = merge_verified_branch(
+        source_branch="feature/example",
+        target_branch="main",
+        evidence_path=evidence,
+        runner=runner,
+    )
+
+    assert code == 0
+    assert calls[-1] == ["git", "merge", "--no-ff", verified_commit]
