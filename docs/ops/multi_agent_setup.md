@@ -112,7 +112,7 @@
 | 탐색 제한 | `search_scope` 기본 `deny_by_default`. 허용 glob 외 저장소 grep 금지 |
 | 아티팩트 전달 | 상세 분석·벤치마크 표는 파일 아티팩트로 커밋 |
 | 컴팩트 `worker_done` | `--body`는 3문장 이내 요약, `reportPath`/아티팩트 목록으로 상세 분리 |
-| 모델 라우팅 | 빌더 주력 Antigravity Gemini Flash High, OpenCode 무료는 결정론적·병렬 조사 전용, 병합·판정은 코디네이터 |
+| 모델 라우팅 | Antigravity Gemini Flash Medium이 기본 워커입니다. Flash High는 high 위험도 Task에만 `WORKER_MODEL_NOTICE`와 함께 승격하며, OpenCode 무료는 결정론적·병렬 조사 전용이고 병합·판정은 코디네이터가 맡습니다 |
 
 `opencode.json`은 `instructions: ["AGENTS.md"]` 단일 자동 로드이며 `SKILLS.md`
 중복 주입을 하지 않습니다. `AGENTS.md`에 `@SKILLS.md` 자동 import도 존재하지

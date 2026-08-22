@@ -483,8 +483,10 @@ Reviewer는 스타일 선호가 아니라 다음을 우선합니다.
 **계약 변경만으로 0/3 에서 4/4 가 됐습니다.** 모델은 바꾸지 않았습니다.
 
 모델 비교(Gemini 3.7 Flash High 대 Claude Opus 4.6 Thinking)에서는 **검출 성적이
-동일**했습니다. 보고 형식만 후자가 나았습니다. 따라서 **Reviewer 기본은 Gemini
-3.7 Flash High** 로 두고 허용량이 적은 Claude 계열을 쓰지 않습니다.
+동일**했습니다. 보고 형식만 후자가 나았습니다. 이 결과는 High를 사용하던 당시의
+관찰이며, 현재 기본 Reviewer는 Gemini 3.7 Flash Medium입니다. High는 high 위험도
+교차검토에만 `WORKER_MODEL_NOTICE`와 함께 승격하고 허용량이 적은 Claude 계열은
+별도 풀 보완이 필요한 경우에만 사용합니다.
 
 조건 1~4 는 `scripts/validate_review_report.py` 로 기계 판정합니다. 조항만 두고
 손으로 대조하면 놓칩니다. 이 검증기를 붙이자 손으로는 발견하지 못한 것 둘이 더
@@ -1134,7 +1136,7 @@ GPT-5.6 Luna / Medium
 
 ```text
 Coordinator: GPT-5.6 Terra / Medium
-Builder 1~3: Gemini 3.7 Flash High
+Builder 1~3: Gemini 3.7 Flash Medium
 Reviewer: Antigravity Claude 또는 Gemini의 별도 read-only 세션
 GPT fallback worker: GPT-5.6 Luna / Medium
 Final architecture exception: GPT-5.6 Sol / High 1회성
@@ -1155,7 +1157,7 @@ Final architecture exception: GPT-5.6 Sol / High 1회성
 - 직접 대량 구현하지 말고 독립 Task를 Orca worker에게 위임하십시오.
 - 각 worker에게 ORCA_TASK_CAPSULE_V2 형식의 자족적 사양을 주십시오.
 - worker 사양에는 README.md, SKILLS.md, REFACTORING_DESIGN.md, 과거 handoff 전체 재독 금지를 명시하십시오.
-- Builder는 가능한 한 Gemini 3.7 Flash High를 사용하십시오.
+- Builder는 기본적으로 Gemini 3.7 Flash Medium을 사용하십시오. High 위험도 Task만 `WORKER_MODEL_NOTICE`와 함께 Flash High로 승격합니다.
 - GPT worker는 필수인 경우에만 사용하십시오.
 - worker_done은 ORCA_WORKER_DONE_V2로 짧게 받고 원시 출력은 artifact path로 남기십시오.
 - Builder 결과는 read-only Reviewer를 거친 뒤 deterministic verification을 직접 재실행하십시오.
