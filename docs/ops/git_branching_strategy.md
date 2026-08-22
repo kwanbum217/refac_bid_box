@@ -65,11 +65,11 @@ docs: add phase5 retraining design
 
 1. `main`에서 작업 브랜치 분기.
 2. 작업 브랜치에서 커밋·푸시.
-3. 병합 전 확인:
+3. strict `finalize`와 Level 1 PASS가 기록된 JSON 증거를 생성합니다. 병합은 아래 helper로만 실행하며, 증거 누락·실패 시 helper는 `git merge`를 호출하지 않습니다.
    - 테스트 전량 통과 (`pytest`)
    - `python scripts/validate_agent_rules.py` 통과
    - 데이터 무손실 영향 시 [`migration/`](../migration/) 검증 결과 확인
-4. 담당자 확인 후 `main`으로 병합. 작업 단위를 이력에 남기기 위해 `--no-ff`를 사용합니다.
+4. 담당자 확인 후 `main`으로 병합. 작업 단위를 이력에 남기기 위해 helper가 `--no-ff`를 사용합니다.
 5. 병합 후 `main` 푸시.
 
 ```bash
@@ -78,7 +78,11 @@ git checkout -b feature/example
 git push origin feature/example
 
 git checkout main
-git merge --no-ff feature/example -m "merge: <요약>"
+python3 scripts/merge_verified_branch.py \
+  --source-branch feature/example \
+  --target-branch main \
+  --finalize-evidence <strict-finalize-evidence.json> \
+  --message "merge: <요약>"
 git push origin main
 ```
 
