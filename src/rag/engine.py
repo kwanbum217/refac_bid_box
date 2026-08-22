@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from collections.abc import AsyncIterator
@@ -175,6 +176,41 @@ def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
     return json.dumps(_normalize_text(top_document), ensure_ascii=False)
 
 
+logger = logging.getLogger(__name__)
+
+
+class PreparedContext(tuple):
+    """_prepare_context 반환 튜플 (기존 7개 요소와 세부 구간 계측 정보 보존)."""
+
+    timings: dict[str, float]
+
+    def __new__(
+        cls,
+        plan: Any,
+        structured_data: Any,
+        vector_docs: Any,
+        kb_status: Any,
+        provenance: Any,
+        context_text: Any,
+        messages: Any,
+        timings: dict[str, float] | None = None,
+    ) -> PreparedContext:
+        instance = super().__new__(
+            cls,
+            (
+                plan,
+                structured_data,
+                vector_docs,
+                kb_status,
+                provenance,
+                context_text,
+                messages,
+            ),
+        )
+        instance.timings = timings or {}
+        return instance
+
+
 class HybridRAGEngine:
     def __init__(self, provider: str | None = None):
         self._provider = provider
@@ -199,24 +235,41 @@ class HybridRAGEngine:
         db: Session | None = None,
         history: list[dict] | None = None,
         tool_context: dict | None = None,
-    ) -> tuple:
-        """검색 계획 수립과 컨텍스트 조회를 수행합니다."""
+    ) -> PreparedContext:
+        """검색 계획 수립과 컨텍스트 조회를 수행하고 세부 구간을 계측합니다."""
+        t_prep_start = time.perf_counter()
+
+        t_plan_start = time.perf_counter()
         plan = build_retrieval_plan(user_query)
+        plan_elapsed_ms = (time.perf_counter() - t_plan_start) * 1000.0
+
         structured_data, vector_docs, kb_status = _normalize_tool_context(tool_context)
         vector_failed = False
 
+        sql_elapsed_ms = 0.0
         if plan.use_sql and structured_data is None and db is not None:
+            t_sql_start = time.perf_counter()
             structured_data = retrieve_structured_data(db, plan)
+            sql_elapsed_ms = (time.perf_counter() - t_sql_start) * 1000.0
+
+        vector_elapsed_ms = 0.0
         if plan.use_vector and not vector_docs:
+            t_vector_start = time.perf_counter()
             result = retrieve_semantic_context(plan)
+            vector_elapsed_ms = (time.perf_counter() - t_vector_start) * 1000.0
             vector_docs = result.documents
             if not result.ok:
                 vector_failed = True
+
+        kb_status_elapsed_ms = 0.0
         if plan.use_kb_status and kb_status is None and db is not None:
+            t_kb_start = time.perf_counter()
             from src.app.services.tools.kb_status_tool import get_latest_kb_status_payload
 
             kb_status = get_latest_kb_status_payload(db)
+            kb_status_elapsed_ms = (time.perf_counter() - t_kb_start) * 1000.0
 
+        t_assembly_start = time.perf_counter()
         trace_id = datetime.now().strftime("%Y%m%d%H%M%S") + os.urandom(4).hex()
         evidence_items = _build_evidence_items(structured_data, vector_docs, kb_status)
 
@@ -244,8 +297,29 @@ class HybridRAGEngine:
         messages = [{"role": item["role"], "content": item["text"]} for item in history or []]
         messages.append({"role": "user", "content": f"검색 컨텍스트:\n{context_text}"})
         messages.append({"role": "user", "content": _normalize_text(user_query)})
+        assembly_elapsed_ms = (time.perf_counter() - t_assembly_start) * 1000.0
 
-        return plan, structured_data, vector_docs, kb_status, provenance, context_text, messages
+        prepare_total_ms = (time.perf_counter() - t_prep_start) * 1000.0
+
+        timings = {
+            "plan_ms": round(plan_elapsed_ms, 2),
+            "sql_ms": round(sql_elapsed_ms, 2),
+            "vector_ms": round(vector_elapsed_ms, 2),
+            "kb_status_ms": round(kb_status_elapsed_ms, 2),
+            "assembly_ms": round(assembly_elapsed_ms, 2),
+            "prepare_total_ms": round(prepare_total_ms, 2),
+        }
+
+        return PreparedContext(
+            plan,
+            structured_data,
+            vector_docs,
+            kb_status,
+            provenance,
+            context_text,
+            messages,
+            timings=timings,
+        )
 
     def _apply_answer_guard(
         self,
@@ -280,7 +354,10 @@ class HybridRAGEngine:
         history: list[dict] | None = None,
         tool_context: dict | None = None,
     ) -> AnswerBundle:
-        started = time.time()
+        t_start = time.perf_counter()
+        prepared = self._prepare_context(
+            user_query, db=db, history=history, tool_context=tool_context
+        )
         (
             plan,
             structured_data,
@@ -289,49 +366,171 @@ class HybridRAGEngine:
             provenance,
             _context_text,
             messages,
-        ) = self._prepare_context(user_query, db=db, history=history, tool_context=tool_context)
+        ) = prepared
 
-        def _bundle(answer: str, citations: list[str] | None = None) -> AnswerBundle:
+        timings = getattr(prepared, "timings", {})
+        plan_ms = float(timings.get("plan_ms", 0.0))
+        sql_ms = float(timings.get("sql_ms", 0.0))
+        vector_ms = float(timings.get("vector_ms", 0.0))
+        kb_status_ms = float(timings.get("kb_status_ms", 0.0))
+        assembly_ms = float(timings.get("assembly_ms", 0.0))
+        prepare_total_ms = float(
+            timings.get("prepare_total_ms", (time.perf_counter() - t_start) * 1000.0)
+        )
+
+        def _log_latency(
+            status: str,
+            llm_ms: float,
+            guard_ms: float,
+            total_ms: float,
+            backend_name: str,
+        ) -> None:
+            logger.info(
+                "rag_engine_latency: trace_id=%s status=%s route=%s use_sql=%s use_vector=%s use_kb=%s "
+                "plan_ms=%.2f sql_ms=%.2f vector_ms=%.2f kb_ms=%.2f assembly_ms=%.2f prepare_ms=%.2f "
+                "llm_ms=%.2f guard_ms=%.2f total_ms=%.2f backend=%s",
+                provenance.trace_id,
+                status,
+                plan.route_reason or "unknown",
+                plan.use_sql,
+                plan.use_vector,
+                plan.use_kb_status,
+                plan_ms,
+                sql_ms,
+                vector_ms,
+                kb_status_ms,
+                assembly_ms,
+                prepare_total_ms,
+                llm_ms,
+                guard_ms,
+                total_ms,
+                backend_name,
+                extra={
+                    "trace_id": provenance.trace_id,
+                    "status": status,
+                    "route": plan.route_reason,
+                    "use_sql": plan.use_sql,
+                    "use_vector": plan.use_vector,
+                    "use_kb_status": plan.use_kb_status,
+                    "plan_ms": plan_ms,
+                    "sql_ms": sql_ms,
+                    "vector_ms": vector_ms,
+                    "kb_status_ms": kb_status_ms,
+                    "assembly_ms": assembly_ms,
+                    "prepare_ms": prepare_total_ms,
+                    "llm_ms": llm_ms,
+                    "guard_ms": guard_ms,
+                    "total_ms": total_ms,
+                    "backend": backend_name,
+                },
+            )
+
+        def _bundle(
+            answer: str,
+            citations: list[str] | None = None,
+            total_elapsed_ms: float | None = None,
+        ) -> AnswerBundle:
+            elapsed = (
+                total_elapsed_ms
+                if total_elapsed_ms is not None
+                else (time.perf_counter() - t_start) * 1000.0
+            )
             return AnswerBundle(
                 answer=answer,
                 provenance=provenance,
                 citations=citations or [],
                 retrieved_docs=vector_docs,
-                latency_ms=(time.time() - started) * 1000.0,
+                latency_ms=elapsed,
             )
 
+        t_direct_start = time.perf_counter()
         direct_result_list_answer = _build_result_list_answer(plan, structured_data)
         if direct_result_list_answer:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
+            guard_elapsed_ms = (time.perf_counter() - t_direct_start) * 1000.0
+            total_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            _log_latency(
+                status="direct_result_list",
+                llm_ms=0.0,
+                guard_ms=guard_elapsed_ms,
+                total_ms=total_elapsed_ms,
+                backend_name="none",
+            )
             return _bundle(
                 f"{direct_result_list_answer}{citation_suffix}",
                 [citation_suffix.strip()] if citation_suffix.strip() else [],
+                total_elapsed_ms=total_elapsed_ms,
             )
 
         backend = self.backend
         if backend is None:
+            t_fallback_start = time.perf_counter()
             fallback_text = _fallback_answer(
                 user_query, plan, structured_data, vector_docs, kb_status
             )
-            return _bundle(_normalize_category_wording(fallback_text, plan))
+            normalized = _normalize_category_wording(fallback_text, plan)
+            guard_elapsed_ms = (time.perf_counter() - t_fallback_start) * 1000.0
+            total_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            _log_latency(
+                status="fallback_no_backend",
+                llm_ms=0.0,
+                guard_ms=guard_elapsed_ms,
+                total_ms=total_elapsed_ms,
+                backend_name="fallback",
+            )
+            return _bundle(normalized, total_elapsed_ms=total_elapsed_ms)
 
+        backend_name = getattr(backend, "name", "unknown")
+        t_llm_start = time.perf_counter()
         try:
             answer_text = backend.generate(SYSTEM_PROMPT, messages)
+            llm_elapsed_ms = (time.perf_counter() - t_llm_start) * 1000.0
+
+            t_guard_start = time.perf_counter()
             answer_text = self._apply_answer_guard(answer_text, structured_data, plan)
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
+            guard_elapsed_ms = (time.perf_counter() - t_guard_start) * 1000.0
+
+            total_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            _log_latency(
+                status="success",
+                llm_ms=llm_elapsed_ms,
+                guard_ms=guard_elapsed_ms,
+                total_ms=total_elapsed_ms,
+                backend_name=backend_name,
+            )
             return _bundle(
                 f"{answer_text}{citation_suffix}",
                 [citation_suffix.strip()] if citation_suffix.strip() else [],
+                total_elapsed_ms=total_elapsed_ms,
             )
-        except Exception:
+        except Exception as exc:
+            llm_elapsed_ms = (time.perf_counter() - t_llm_start) * 1000.0
+            t_fallback_start = time.perf_counter()
             fallback_text = _fallback_answer(
                 user_query, plan, structured_data, vector_docs, kb_status
             )
-            return _bundle(_normalize_category_wording(fallback_text, plan))
+            normalized = _normalize_category_wording(fallback_text, plan)
+            guard_elapsed_ms = (time.perf_counter() - t_fallback_start) * 1000.0
+            total_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            logger.warning(
+                "LLM 생성 실패로 fallback 전환 (trace_id=%s, backend=%s, error=%s)",
+                provenance.trace_id,
+                backend_name,
+                exc,
+            )
+            _log_latency(
+                status="fallback_error",
+                llm_ms=llm_elapsed_ms,
+                guard_ms=guard_elapsed_ms,
+                total_ms=total_elapsed_ms,
+                backend_name=backend_name,
+            )
+            return _bundle(normalized, total_elapsed_ms=total_elapsed_ms)
 
     async def get_answer(
         self,
@@ -486,6 +685,7 @@ __all__ = [
     "SYSTEM_PROMPT",
     "TREND_KEYWORDS",
     "HybridRAGEngine",
+    "PreparedContext",
     "SemanticSearchResult",
     "_build_evidence_items",
     "_build_result_list_answer",
