@@ -3,7 +3,8 @@
 > **작성일**: 2026-08-22 (Asia/Seoul)
 > **작성자**: Claude 코디네이터
 > **인수 대상**: 다음 코디네이터 세션
-> **병합 기준 main**: `cd2433e`
+> **최종 갱신**: 2026-08-22 (Asia/Seoul)
+> **병합 기준 main**: `1a45ad5`
 > **Orca Run**: `run_72c57a5f44b3`
 > **종료 상태**: 작업 완료, 원격 반영 완료, Docker 스택 종료
 
@@ -167,52 +168,60 @@ orca terminal send --terminal <handle> --text $'\x1b[Z'
 
 ---
 
-## 8. Codex 코디네이터 인계 (2026-08-22 추가)
+## 8. Codex 코디네이터 인계 및 다음 작업 (2026-08-22 갱신)
 
-Claude 주간 한도가 97% 에 도달해 **다음 세션은 Codex `gpt-5.6-sol` + effort
-`high` 를 코디네이터로 씁니다.** 이는 임시 조치가 아니라 `CURRENT_STATE` 2번
-항목이 정한 원래 구성으로 돌아가는 것입니다. Claude 구독은 예비입니다.
+코디네이터 기본값은 Codex `gpt-5.6-terra` + effort `medium`입니다. 변경 전에는
+`MODEL_CHANGE_NOTICE`를 남깁니다. Gemini 워커 기본값은
+`gemini-3.7-flash-medium`이며, 데이터 무손실 영향·복잡한 구현/회귀 분석·독립
+교차 검토일 때만 `WORKER_MODEL_NOTICE`를 남기고 Flash High로 올립니다.
+`gpt-5.6` 별칭과 Sol High는 기본값으로 쓰지 않습니다.
 
-오케스트레이션에서 토큰을 태우는 쪽은 워커가 아니라 코디네이터입니다. 워커는
-각자 자기 풀을 쓰지만 검증은 전부 코디네이터 몫이며, 조율 스킬이 못 박은
-위임 절감률은 50~60% 입니다. **워커 산출물을 무검증으로 받으면 안 된다는 것이
-이 저장소에서 확인된 사실이므로**(3장 참조) 검증 비용을 빼고 계산하지
-마십시오.
+최신 운영 사실은 [`../context/CURRENT_STATE.md`](../context/CURRENT_STATE.md)가
+정본이며, 이 문서는 그 상태로 재개하기 위한 실행 인수인계입니다. 2026-08-22
+정식 게이트에서 예측 c10(P95 54.93ms, 100ms 초과 0/1,800)과 SSE c1(첫 토큰
+P95 1297.73ms, 완료 P95 6716.22ms)은 통과했습니다. 반면 예측 c1·c2·c4는 기존
++10% 회귀 한도를 초과해 G3 전체 승격이 보류됐습니다. 상세 근거는
+[`../analysis/blocking_io_gate_20260822.md`](../analysis/blocking_io_gate_20260822.md)와
+원시 아티팩트 `data/benchmarks/latency_gate_20260822/`입니다.
 
-### 8.1 미리 써 둔 Task Intent
+### 8.1 착수 순서와 완료 기준
 
-다음 작업의 Intent 를 Capsule 확장 직전 상태로 준비해 두었습니다. Codex 는
-읽고 `create` 후 `dispatch` 만 하면 됩니다.
+| 순서 | 작업 | 선행 조건 | 완료 기준 |
+| :---: | --- | --- | --- |
+| 1 | 이전 기준선과 현재 측정의 환경·이미지·요청 경로 대조 | 없음 | 차이 또는 동등성을 증거 경로·수치와 함께 기록 |
+| 2 | `predict-price` 모델 호출·특징 생성 구간의 재현 원인 분석 | 1의 환경 동등성 확인 | 코드 변경 없이 원인 가설과 재현 조건을 좁힘 |
+| 3 | 최적화 후보를 사용자에게 제안 | 1·2 완료 | 기대 효과·위험·G1 불변 조건을 포함한 승인안 |
+| 4 | 승인된 최소 변경 구현과 c1/c2/c4/c10 재측정 | 사용자 승인 | 규약 표본·warmup·3회 최악값·주변 부하를 모두 충족 |
+| 5 | `OLLAMA_NUM_PARALLEL` SSE c4 분석 | 4와 독립 | 호스트 재기동 승인 후 기준선 또는 기각 근거 확정 |
+| 6 | Windows Docker Desktop 실기 검증 | Windows 장비 | G2 검증 결과 기록 |
+| 7 | Arq 처리량·단발 RAG 반복 게이트 | 독립 | 경로별 측정 설계와 규약 충족 원시값 보존 |
 
-| Intent | 역할 | 위험 | 비고 |
-| --- | --- | :---: | --- |
-| `.orca/capsules/intents/current_state_cleanup.yaml` | documenter | low | 문서 전용. 예산 포화 해소 |
-| `.orca/capsules/intents/query_latency_investigation.yaml` | investigator | low | 읽기 전용. 결정하지 않고 근거만 |
-| `.orca/capsules/intents/coldstart_warmup_investigation.yaml` | investigator | low | 읽기 전용. 재측정 금지 |
+1·2는 코드·공유 자원을 변경하지 않는 읽기 전용 조사이므로 병렬 Dispatch가
+가능합니다. 3 이후는 조사 결론과 사용자 승인을 기다리므로 순차로 진행합니다.
 
-**세 Intent 는 Git 미추적입니다.** `.orca/` 가 `.gitignore` 대상이라 이
-저장소 사본에만 존재합니다. 다른 장비에서 재개하면 없으므로 이 문서의 5장을
-보고 다시 작성해야 합니다.
+### 8.2 워커 Dispatch 계약
 
-세 건 모두 서로 파일이 겹치지 않아 병렬 Dispatch 가 가능합니다. 두 조사
-Task 는 쓰기 범위가 문서 한 개씩이라 검증 비용이 낮습니다.
+| Task | 역할·모델 | 읽기 범위 | 쓰기 범위 | 금지 사항 |
+| --- | --- | --- | --- | --- |
+| 기준선 동등성 대조 | Gemini Flash Medium investigator | 2026-08-14·2026-08-22 원시 측정, 규약, 벤치마크 스크립트 | 없음 | 재측정·설정 변경·기준선 갱신 |
+| `predict-price` 경로 분석 | Gemini Flash Medium investigator | 예측 라우터·특징·예측기·진단 로그·관련 테스트 | 없음 | 코드 수정·모델/DB 변경·성능 통과 선언 |
+
+각 워커는 `worker_done`에 확인한 파일, 비교표 또는 근거, 미확인 사항을 남겨야
+합니다. 코디네이터는 `worker_done`과 실제 파일을 대조한 뒤에만 다음 Task를
+시작합니다. 이전 Run `run_76b6d2cc4abb`의 두 메시지는
+`Rejected worker_done`이므로 공식 완료 기록이 아니며, 새 Run·새 Task로 다시
+등록해야 합니다.
+
+### 8.3 재개 전 점검과 종료 규칙
 
 ```bash
-python3 scripts/orca_taskctl.py create --intent <intent> --run-id <run> \
-  --task-id <id> --capsule-dir <워크트리>/.orca/capsules --json
-python3 scripts/orca_taskctl.py dispatch --intent <intent> --run-id <run> \
-  --task-id <생성된 id> --model gemini-3.7-flash-high --terminal <handle> \
-  --worktree path:<워크트리> --capsule <capsule 경로> --no-probe --json
+git status --short
+git branch --show-current
+git rev-parse HEAD origin/main
+docker compose ps
 ```
 
-기동 절차는 6장을 그대로 따르십시오. **`orca_prepare_worktree.py` 와
-Dispatch 직후 `shift+tab` 을 빠뜨리면 워커가 멈춥니다.**
-
-### 8.2 Intent 를 쓰지 않은 작업
-
-| 작업 | 이유 |
-| --- | --- |
-| 수집 2·3회차 관찰 | Docker 점유가 필요하고 실행이 길다. 위임해도 코디네이터 토큰이 줄지 않으므로 배경 실행이 낫다 |
-| 콜드스타트 워밍업 구현 | 조사 결과를 보고 코디네이터가 판단할 사항이다. 판단 전에 구현 Task 를 만들지 마라 |
-| 단발 질의 목표 수립 | 위와 같다. 조사 Task 의 산출물이 선행 조건이다 |
-| pytest 커밋 게이트 도입 | 개발 흐름 전체에 영향을 준다. 위임 금지 대상인 게이트 기준 제정이다 |
+Docker가 필요한 측정은 `make up` 후 `make migrate-verify`를 먼저 수행하고,
+정식 게이트 직전 `LATENCY_SEGMENT_LOGGING=false`와 `PREDICTION_GC_MODE=freeze`가
+컨테이너에 실제 적용됐는지 확인합니다. 작업 종료 시 `make down`으로 컨테이너와
+네트워크만 정리하며 Docker 볼륨·이미지는 삭제하지 않습니다.
