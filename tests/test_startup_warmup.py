@@ -27,21 +27,37 @@ async def test_predictor_warmup_skipped_when_model_load_disabled(monkeypatch):
     monkeypatch.setenv("SKIP_MODEL_LOAD", "true")
     loader = Mock()
     monkeypatch.setattr("src.ml.model_registry.ModelRegistry.load_all_models", loader)
+    mock_logger = Mock()
+    monkeypatch.setattr(main, "logger", mock_logger)
 
     await main._warm_predictor()
 
     loader.assert_not_called()
+    assert mock_logger.info.called
+    info_args = mock_logger.info.call_args[0]
+    assert info_args[0] == "event=predictor_warmup, status=skipped, elapsed_ms=0.00"
 
 
 @pytest.mark.asyncio
 async def test_predictor_warmup_loads_models(monkeypatch):
     monkeypatch.setenv("SKIP_MODEL_LOAD", "false")
-    loader = Mock()
+    loader = Mock(return_value=4)
     monkeypatch.setattr("src.ml.model_registry.ModelRegistry.load_all_models", loader)
+    mock_logger = Mock()
+    monkeypatch.setattr(main, "logger", mock_logger)
 
     await main._warm_predictor()
 
     loader.assert_called_once()
+    assert mock_logger.info.called
+    info_args = mock_logger.info.call_args[0]
+    assert (
+        info_args[0] == "event=predictor_warmup, status=success, elapsed_ms=%.2f, models_loaded=%d"
+    )
+    elapsed_ms = info_args[1]
+    loaded_count = info_args[2]
+    assert elapsed_ms >= 0.0
+    assert loaded_count == 4
 
 
 @pytest.mark.asyncio
@@ -52,8 +68,17 @@ async def test_predictor_warmup_swallows_failure(monkeypatch):
         "src.ml.model_registry.ModelRegistry.load_all_models",
         Mock(side_effect=RuntimeError("model.bin 손상")),
     )
+    mock_logger = Mock()
+    monkeypatch.setattr(main, "logger", mock_logger)
 
     await main._warm_predictor()
+
+    assert mock_logger.warning.called
+    warn_args = mock_logger.warning.call_args[0]
+    assert warn_args[0] == "event=predictor_warmup, status=failed, elapsed_ms=%.2f, error=%s"
+    elapsed_ms = warn_args[1]
+    assert elapsed_ms >= 0.0
+    assert "model.bin 손상" in str(warn_args[2])
 
 
 @pytest.mark.asyncio

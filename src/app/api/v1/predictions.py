@@ -82,7 +82,9 @@ def predict_price_api(
         char for char in str(payload.user_price or "0") if char.isdigit() or char == "."
     )
 
+    t_db_start = time.perf_counter()
     bid = db.get(BidAnnouncement, payload.bid_id)
+    t_db_lookup = max(0.0, time.perf_counter() - t_db_start)
     if bid is None:
         raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
 
@@ -112,6 +114,7 @@ def predict_price_api(
 
     # 제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 못 채웁니다.
     # 이 병합을 빼면 학습이 쓰는 34개 중 30개가 기본값으로 떨어집니다.
+    t_feature_start = time.perf_counter()
     features = {
         **announcement_feature_payload(bid),
         "title": bid.bid_ntce_nm or "",
@@ -137,16 +140,17 @@ def predict_price_api(
     # 원본 키 위에 덮어씁니다. 통째로 갈아끼우면 규칙 기반 구 모델이 쓰는
     # title / agency_name / scenario_mode 가 사라집니다.
     features = {**features, **build_feature_dict(features, db)}
+    t_feature_build = max(0.0, time.perf_counter() - t_feature_start)
 
     # 후보 순회는 함수 안에서 끝납니다. 여기서 다시 fallback 을 시도하면 같은
     # 후보 목록을 두 번 돌 뿐이라 대체 사실이 그대로 은폐됩니다. 어느 모델이
     # 답했는지는 outcome.actual_model 하나만 봅니다.
     try:
-        t_model_start = time.perf_counter()
-        c_model_start = time.thread_time()
+        t_point_start = time.perf_counter()
+        c_point_start = time.thread_time()
         outcome = predict_optimal_price_with_provenance(selected_model, features)
-        t_model = time.perf_counter() - t_model_start
-        c_model = time.thread_time() - c_model_start
+        t_point_infer = max(0.0, time.perf_counter() - t_point_start)
+        c_point_infer = max(0.0, time.thread_time() - c_point_start)
     except Exception as exc:
         logger.error("모델 후보 전량 실패 (요청 모델 %s): %s", selected_model, exc)
         raise HTTPException(
@@ -186,7 +190,11 @@ def predict_price_api(
     # 그대로 신뢰합니다. 구 모델은 분위 아티팩트가 없어 None 이 나옵니다.
     # 점 추정을 낸 모델과 같은 모델에서 뽑아야 합니다.
     rate_low = rate_high = price_low = price_high = coverage = None
+    t_interval_start = time.perf_counter()
+    c_interval_start = time.thread_time()
     bounds = predict_interval(actual_model, features)
+    t_interval_infer = max(0.0, time.perf_counter() - t_interval_start)
+    c_interval_infer = max(0.0, time.thread_time() - c_interval_start)
     if bounds is not None:
         low, high, coverage = bounds
         rate_low, rate_high = round(low, 4), round(high, 4)
@@ -203,14 +211,20 @@ def predict_price_api(
             f"예상 낙찰률은 {prediction_rate_percent}% 입니다."
         )
 
-    t_total = time.perf_counter() - t_start
-    c_total = time.thread_time() - c_start
+    t_model = t_point_infer + t_interval_infer
+    c_model = c_point_infer + c_interval_infer
+    t_total = max(0.0, time.perf_counter() - t_start)
+    c_total = max(0.0, time.thread_time() - c_start)
     latency_logger.info(
-        "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f",
+        "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f, db_lookup_ms=%.2f, feature_build_ms=%.2f, point_infer_ms=%.2f, interval_infer_ms=%.2f",
         t_total * 1000.0,
         c_total * 1000.0,
         t_model * 1000.0,
         c_model * 1000.0,
+        t_db_lookup * 1000.0,
+        t_feature_build * 1000.0,
+        t_point_infer * 1000.0,
+        t_interval_infer * 1000.0,
     )
     latency_logger.info(
         "endpoint=predict_price_api, executor_queue_wait_ms=%.2f",
@@ -250,22 +264,26 @@ def predict_winning_price(
     t_start = time.perf_counter()
     c_start = time.thread_time()
     dispatch_wait_ms = _prediction_dispatch_wait_ms(request)
+
+    t_payload_start = time.perf_counter()
     dumped_payload = payload.model_dump()
+    t_payload_dump = max(0.0, time.perf_counter() - t_payload_start)
 
     t_model_start = time.perf_counter()
     c_model_start = time.thread_time()
     result = predictor.predict(dumped_payload, session=db)
-    t_model = time.perf_counter() - t_model_start
-    c_model = time.thread_time() - c_model_start
+    t_model = max(0.0, time.perf_counter() - t_model_start)
+    c_model = max(0.0, time.thread_time() - c_model_start)
 
-    t_total = time.perf_counter() - t_start
-    c_total = time.thread_time() - c_start
+    t_total = max(0.0, time.perf_counter() - t_start)
+    c_total = max(0.0, time.thread_time() - c_start)
     latency_logger.info(
-        "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f",
+        "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f, payload_dump_ms=%.2f",
         t_total * 1000.0,
         c_total * 1000.0,
         t_model * 1000.0,
         c_model * 1000.0,
+        t_payload_dump * 1000.0,
     )
     latency_logger.info(
         "endpoint=predict_winning_price, executor_queue_wait_ms=%.2f",
