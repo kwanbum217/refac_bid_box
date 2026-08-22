@@ -17,14 +17,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
+import time
+import uuid
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
 CLI_SETTINGS = Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
 TRUSTED_FOLDERS = Path.home() / ".gemini" / "trustedFolders.json"
 TRUST_VALUE = "TRUST_FOLDER"
+LOCK_FILE = TRUSTED_FOLDERS.parent / ".orca-trust-worktree.lock"
+LOCK_TIMEOUT_SECONDS = 10.0
+STALE_LOCK_SECONDS = 60.0
 
 
 def _load(path: Path) -> Any:
@@ -36,11 +43,66 @@ def _load(path: Path) -> Any:
         raise SystemExit(f"오류: 설정을 읽을 수 없습니다: {path} ({exc})") from exc
 
 
-def _write(path: Path, payload: Any) -> None:
-    shutil.copy2(path, path.with_suffix(path.suffix + ".orca-bak"))
-    temporary = path.with_name(f".{path.name}.orca.tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+@contextmanager
+def _settings_lock():
+    """두 신뢰 설정 파일의 RMW 구간을 프로세스 간에 직렬화합니다."""
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
+    acquired = False
+    while not acquired:
+        try:
+            fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as lock_handle:
+                lock_handle.write(str(os.getpid()))
+            acquired = True
+        except FileExistsError:
+            try:
+                if time.time() - LOCK_FILE.stat().st_mtime > STALE_LOCK_SECONDS:
+                    LOCK_FILE.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"신뢰 설정 잠금을 획득하지 못했습니다: {LOCK_FILE}") from None
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        with suppress(FileNotFoundError):
+            LOCK_FILE.unlink()
+
+
+def _serialize(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.orca.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        with suppress(FileNotFoundError):
+            temporary.unlink()
+
+
+def _atomic_write(path: Path, payload: Any) -> None:
+    _atomic_write_text(path, _serialize(payload))
+
+
+def _backup(path: Path) -> None:
+    if path.is_file():
+        shutil.copy2(path, path.with_suffix(path.suffix + ".orca-bak"))
+
+
+def _restore(path: Path, original: str | None, existed: bool) -> None:
+    if existed:
+        assert original is not None
+        _atomic_write_text(path, original)
+    else:
+        with suppress(FileNotFoundError):
+            path.unlink()
 
 
 def register(paths: list[Path], dry_run: bool) -> int:
@@ -51,37 +113,58 @@ def register(paths: list[Path], dry_run: bool) -> int:
             print(f"오류: 디렉터리가 없습니다: {p}", file=sys.stderr)
         return 2
 
-    settings = _load(CLI_SETTINGS)
-    if not isinstance(settings, dict):
-        print(f"오류: CLI 설정을 찾을 수 없습니다: {CLI_SETTINGS}", file=sys.stderr)
-        return 2
+    try:
+        with _settings_lock():
+            settings_existed = CLI_SETTINGS.is_file()
+            folders_existed = TRUSTED_FOLDERS.is_file()
+            settings_original = (
+                CLI_SETTINGS.read_text(encoding="utf-8") if settings_existed else None
+            )
+            folders_original = (
+                TRUSTED_FOLDERS.read_text(encoding="utf-8") if folders_existed else None
+            )
+            settings = _load(CLI_SETTINGS)
+            if not isinstance(settings, dict):
+                print(f"오류: CLI 설정을 찾을 수 없습니다: {CLI_SETTINGS}", file=sys.stderr)
+                return 2
+            folders = _load(TRUSTED_FOLDERS)
+            if folders is None:
+                folders = {}
+            if not isinstance(folders, dict):
+                print(
+                    f"오류: 신뢰 폴더 설정이 올바른 JSON 객체가 아닙니다: {TRUSTED_FOLDERS}",
+                    file=sys.stderr,
+                )
+                return 2
 
-    workspaces = settings.get("trustedWorkspaces")
-    if not isinstance(workspaces, list):
-        workspaces = []
-    known = {str(item) for item in workspaces}
-    added = [str(p) for p in resolved if str(p) not in known]
+            workspaces = settings.get("trustedWorkspaces")
+            if not isinstance(workspaces, list):
+                workspaces = []
+            known = {str(item) for item in workspaces}
+            added = [str(p) for p in resolved if str(p) not in known]
+            folder_added = [str(p).lower() for p in resolved if str(p).lower() not in folders]
 
-    folders = _load(TRUSTED_FOLDERS)
-    if not isinstance(folders, dict):
-        folders = {}
-    # 이 파일은 소문자 경로를 키로 씁니다. 대소문자를 섞으면 조회가 빗나갑니다.
-    folder_added = [str(p).lower() for p in resolved if str(p).lower() not in folders]
+            for p in resolved:
+                state = "등록" if str(p) in {*added} else "이미 신뢰됨"
+                print(f"{state}: {p}")
 
-    for p in resolved:
-        state = "등록" if str(p) in {*added} else "이미 신뢰됨"
-        print(f"{state}: {p}")
+            if dry_run or (not added and not folder_added):
+                return 0
 
-    if dry_run or (not added and not folder_added):
-        return 0
-
-    if added:
-        settings["trustedWorkspaces"] = [*workspaces, *added]
-        _write(CLI_SETTINGS, settings)
-    if folder_added:
-        for key in folder_added:
-            folders[key] = TRUST_VALUE
-        _write(TRUSTED_FOLDERS, folders)
+            updated_settings = {**settings, "trustedWorkspaces": [*workspaces, *added]}
+            updated_folders = {**folders, **dict.fromkeys(folder_added, TRUST_VALUE)}
+            _backup(CLI_SETTINGS)
+            _backup(TRUSTED_FOLDERS)
+            try:
+                _atomic_write(CLI_SETTINGS, updated_settings)
+                _atomic_write(TRUSTED_FOLDERS, updated_folders)
+            except OSError:
+                _restore(CLI_SETTINGS, settings_original, settings_existed)
+                _restore(TRUSTED_FOLDERS, folders_original, folders_existed)
+                raise
+    except (OSError, RuntimeError) as exc:
+        print(f"오류: 신뢰 설정을 원자적으로 저장하지 못했습니다: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 

@@ -376,7 +376,7 @@ orca orchestration dispatch-show --task <task_id> --json
 2. **폴더 신뢰 사전 등록**: Antigravity CLI의 `trustedWorkspaces` 및 `trustedFolders.json`에 워크트리 절대경로를 사전 등록하여 기동 직후의 다이얼로그 차단을 방지합니다.
 3. **pre-commit 훅 확인 및 설치**: 워크트리 환경에서 Git `pre-commit` 훅의 실존 및 실행 권한을 확인하고, 미설치 시 자동으로 `pre-commit install`을 수행하여 검증 생략 커밋을 방지합니다.
 
-`--check` 옵션을 주면 파일이나 설정을 변경하지 않고 세 항목의 준비 상태만 검사하며, 미준비 항목이 하나라도 있을 경우 종료 코드 1을 반환합니다.
+`--check` 옵션을 주면 파일이나 설정을 변경하지 않고 세 항목의 준비 상태만 검사하며, 미준비 항목이 하나라도 있을 경우 종료 코드 1을 반환합니다. 준비 실행도 먼저 대상과 주 저장소가 같은 Git common directory를 공유하는지 검증하므로, 비Git 디렉터리나 다른 저장소에는 `.env`·신뢰 설정·훅을 변경하지 않습니다.
 
 Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 `trustedWorkspaces` 배열에 **경로 문자열 그대로** 넣습니다. 사용자가 언젠가
@@ -390,7 +390,10 @@ Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 **터미널을 띄우기 전에 `scripts/orca_prepare_worktree.py` 로 등록하십시오.** 그러면 다이얼로그가 뜨지 않습니다.
 
 `trustedWorkspaces` 와 `~/.gemini/trustedFolders.json` 두 곳을 함께 채우고,
-쓰기 전에 `.orca-bak` 백업을 남기며, 이미 등록된 경로는 건너뜁니다.
+쓰기 전에 `.orca-bak` 백업을 남기며, 이미 등록된 경로는 건너뜁니다. 두 파일의
+읽기·수정·쓰기는 프로세스 간 잠금으로 직렬화하고 고유 임시 파일로 원자 교체합니다.
+`trustedFolders.json`이 처음부터 없어도 생성하며, 두 번째 파일 쓰기가 실패하면
+첫 번째 파일까지 원문으로 복구합니다.
 
 **생성 직후 빈 엔터를 보내는 방식에 의존하지 마십시오.** CLI 가 다이얼로그를
 그리기 전에 입력이 도착하면 그대로 소비되고 다이얼로그는 화면에 남습니다.
