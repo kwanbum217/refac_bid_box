@@ -36,7 +36,7 @@ def mock_db_session():
 
 def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monkeypatch):
     """
-    /predict-price 의 출력 동등성과 최소 계측(lazy logger)이 정상 동작하는지 테스트합니다.
+    /predict-price 의 출력 동등성과 세부 구간 계측이 정상 동작하는지 테스트합니다.
     """
     mock_outcome = type(
         "Outcome",
@@ -57,12 +57,8 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
         ),
         patch("src.app.api.v1.predictions.predict_interval", return_value=(87.0, 88.0, 95.0)),
         patch("src.app.api.v1.predictions.latency_logger") as mock_logger,
-        patch("src.app.api.v1.predictions.time") as mock_time,
         patch("src.app.api.v1.predictions.build_feature_dict", return_value={}),
     ):
-        mock_time.perf_counter.side_effect = [0.0, 1.0, 2.0, 3.0]
-        mock_time.thread_time.side_effect = [0.0, 1.0, 2.0, 3.0]
-
         response = client.post(
             "/api/v1/predictions/predict-price",
             json={
@@ -76,6 +72,8 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
 
         # 출력 동등성 보존 확인
         assert data["optimal_price"] == 877450
+        assert data["prediction_rate"] == 87.745
+        assert data["model_id"] == "test_model"
 
         # logger 호출 검증
         assert mock_logger.info.called, "logger.info가 호출되어야 합니다."
@@ -89,9 +87,33 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
         args = info_calls[0].args
         assert (
             args[0]
-            == "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
+            == "endpoint=predict_price_api, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f, db_lookup_ms=%.2f, feature_build_ms=%.2f, point_infer_ms=%.2f, interval_infer_ms=%.2f"
         )
-        assert len(args) == 5
+        assert len(args) == 9
+        (
+            wall_ms,
+            thread_cpu_ms,
+            model_wall_ms,
+            model_thread_cpu_ms,
+            db_lookup_ms,
+            feature_build_ms,
+            point_infer_ms,
+            interval_infer_ms,
+        ) = args[1:]
+        # 모든 구간 시간은 0 이상이어야 함
+        assert wall_ms >= 0.0
+        assert thread_cpu_ms >= 0.0
+        assert model_wall_ms >= 0.0
+        assert model_thread_cpu_ms >= 0.0
+        assert db_lookup_ms >= 0.0
+        assert feature_build_ms >= 0.0
+        assert point_infer_ms >= 0.0
+        assert interval_infer_ms >= 0.0
+        # 모델 시간 = 점추론 + 구간추론
+        assert pytest.approx(model_wall_ms, rel=1e-3, abs=1e-3) == (
+            point_infer_ms + interval_infer_ms
+        )
+
         assert any(
             call.args and call.args[0] == "endpoint=predict_price_api, executor_queue_wait_ms=%.2f"
             for call in mock_logger.info.mock_calls
@@ -100,7 +122,7 @@ def test_predict_price_api_instrumentation_and_equivalence(mock_db_session, monk
 
 def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, monkeypatch):
     """
-    /predict 의 출력 동등성과 최소 계측(lazy logger)이 정상 동작하는지 테스트합니다.
+    /predict 의 출력 동등성과 세부 구간 계측이 정상 동작하는지 테스트합니다.
     """
     with patch("src.app.api.v1.predictions.predictor") as mock_predictor:
         mock_predictor.predict.return_value = {
@@ -109,13 +131,7 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
             "model_version": "test_model",
             "features_used": {"test": "feature"},
         }
-        with (
-            patch("src.app.api.v1.predictions.latency_logger") as mock_logger,
-            patch("src.app.api.v1.predictions.time") as mock_time,
-        ):
-            mock_time.perf_counter.side_effect = [0.0, 1.0, 2.0, 3.0]
-            mock_time.thread_time.side_effect = [0.0, 1.0, 2.0, 3.0]
-
+        with patch("src.app.api.v1.predictions.latency_logger") as mock_logger:
             payload = {
                 "bid_notice_no": "20261234",
                 "presumed_price": 1000000,
@@ -145,11 +161,118 @@ def test_predict_winning_price_instrumentation_and_equivalence(mock_db_session, 
             args = info_calls[0].args
             assert (
                 args[0]
-                == "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f"
+                == "endpoint=predict_winning_price, wall_ms=%.2f, thread_cpu_ms=%.2f, model_wall_ms=%.2f, model_thread_cpu_ms=%.2f, payload_dump_ms=%.2f"
             )
-            assert len(args) == 5
+            assert len(args) == 6
+            wall_ms, thread_cpu_ms, model_wall_ms, model_thread_cpu_ms, payload_dump_ms = args[1:]
+            assert wall_ms >= 0.0
+            assert thread_cpu_ms >= 0.0
+            assert model_wall_ms >= 0.0
+            assert model_thread_cpu_ms >= 0.0
+            assert payload_dump_ms >= 0.0
+
             assert any(
                 call.args
                 and call.args[0] == "endpoint=predict_winning_price, executor_queue_wait_ms=%.2f"
                 for call in mock_logger.info.mock_calls
             )
+
+
+def test_predict_price_api_fallback_and_interval(mock_db_session):
+    """
+    /predict-price 에서 fallback 이 발생했을 때도 계측 및 응답이 정상인지 검증합니다.
+    """
+    mock_outcome = type(
+        "Outcome",
+        (),
+        {
+            "predicted_rate": 0.88,
+            "actual_model": "fallback_model",
+            "requested_model": "requested_model",
+            "fallback_used": True,
+            "fallback_reason": "Requested model missing",
+        },
+    )
+
+    with (
+        patch(
+            "src.app.api.v1.predictions.predict_optimal_price_with_provenance",
+            return_value=mock_outcome,
+        ),
+        patch("src.app.api.v1.predictions.predict_interval", return_value=None),
+        patch("src.app.api.v1.predictions.latency_logger") as mock_logger,
+        patch("src.app.api.v1.predictions.build_feature_dict", return_value={}),
+    ):
+        response = client.post(
+            "/api/v1/predictions/predict-price",
+            json={
+                "bid_id": 12345,
+                "user_price": "880000",
+                "selected_model": "requested_model",
+            },
+        )
+
+        assert response.status_code == 200, response.json()
+        data = response.json()
+        assert data["fallback_used"] is True
+        assert data["requested_model"] == "requested_model"
+        assert data["model_id"] == "fallback_model"
+        assert data["rate_low"] is None
+        assert data["price_low"] is None
+
+        info_calls = [
+            call
+            for call in mock_logger.info.mock_calls
+            if call.args and call.args[0].startswith("endpoint=predict_price_api, wall_ms=")
+        ]
+        assert len(info_calls) == 1
+        args = info_calls[0].args
+        assert len(args) == 9
+        (
+            wall_ms,
+            thread_cpu_ms,
+            model_wall_ms,
+            model_thread_cpu_ms,
+            db_lookup_ms,
+            feature_build_ms,
+            point_infer_ms,
+            interval_infer_ms,
+        ) = args[1:]
+        assert wall_ms >= 0.0
+        assert thread_cpu_ms >= 0.0
+        assert model_wall_ms >= 0.0
+        assert model_thread_cpu_ms >= 0.0
+        assert db_lookup_ms >= 0.0
+        assert feature_build_ms >= 0.0
+        assert point_infer_ms >= 0.0
+        assert interval_infer_ms >= 0.0
+
+
+def test_predict_price_api_missing_reference_amount_422(mock_db_session):
+    """
+    기초금액/예정가격이 없는 공고는 422를 반환해야 합니다.
+    """
+    mock_db_session.get.return_value.prediction_reference_amount = 0
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": 12345},
+    )
+    assert response.status_code == 422
+
+
+def test_predict_price_api_model_failure_503(mock_db_session):
+    """
+    모든 모델 후보 실패 시 503을 반환해야 합니다.
+    """
+    with (
+        patch(
+            "src.app.api.v1.predictions.predict_optimal_price_with_provenance",
+            side_effect=RuntimeError("Model inference failed"),
+        ),
+        patch("src.app.api.v1.predictions.build_feature_dict", return_value={}),
+    ):
+        response = client.post(
+            "/api/v1/predictions/predict-price",
+            json={"bid_id": 12345},
+        )
+        assert response.status_code == 503

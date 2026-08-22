@@ -50,21 +50,33 @@ async def _warm_predictor() -> None:
     넘겼으나, 같은 부하를 예열 뒤에 다시 주니 P95 16.4ms 였습니다. 꼬리 전부가
     첫 요청들이 문 모델 로드 비용이었습니다.
 
-    LLM 예열과 같은 이유로 배경 태스크입니다. 실패해도 첫 요청이 느려질 뿐이라
-    기동을 막지 않습니다.
+    LLM 예열과 같은 이유로 배경 태스크입니다. 실패해도 첫 요청이 지연 로드로 처리합니다.
     """
     import os
 
     if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
+        logger.info("event=predictor_warmup, status=skipped, elapsed_ms=0.00")
         return
 
     from src.ml.model_registry import ModelRegistry
 
+    t_start = time.perf_counter()
     try:
-        await asyncio.to_thread(ModelRegistry.load_all_models)
+        count = await asyncio.to_thread(ModelRegistry.load_all_models)
+        elapsed_ms = max(0.0, (time.perf_counter() - t_start) * 1000.0)
+        logger.info(
+            "event=predictor_warmup, status=success, elapsed_ms=%.2f, models_loaded=%d",
+            elapsed_ms,
+            count if isinstance(count, int) else 0,
+        )
     # 예열은 부가 기능입니다. 실패해도 첫 요청이 지연 로드로 처리합니다.
     except Exception as exc:
-        logger.warning("예측 모델 예열 실패: %s", exc)
+        elapsed_ms = max(0.0, (time.perf_counter() - t_start) * 1000.0)
+        logger.warning(
+            "event=predictor_warmup, status=failed, elapsed_ms=%.2f, error=%s",
+            elapsed_ms,
+            exc,
+        )
 
 
 @asynccontextmanager
