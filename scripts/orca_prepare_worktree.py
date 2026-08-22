@@ -32,37 +32,47 @@ except (ModuleNotFoundError, ImportError):
     from scripts import orca_trust_worktree
 
 
-def resolve_main_repo(worktree: Path, explicit_repo: Path | None = None) -> Path:
-    """주 저장소 경로를 확정합니다."""
-    if explicit_repo is not None and explicit_repo.exists():
-        return explicit_repo.resolve()
-
-    resolved_wt = worktree.resolve()
-    # 1. git rev-parse --git-common-dir 로 주 저장소 탐색
+def git_common_dir(path: Path) -> Path | None:
+    """Git common directory를 반환하고, Git 저장소가 아니면 None을 반환합니다."""
+    resolved = path.resolve()
     try:
         res = subprocess.run(  # nosec B603 B607 - 고정 인자로 git common dir 확인
-            ["git", "-C", str(resolved_wt), "rev-parse", "--git-common-dir"],
+            ["git", "-C", str(resolved), "rev-parse", "--git-common-dir"],
             capture_output=True,
             text=True,
             check=True,
         )
         common_dir = Path(res.stdout.strip())
         if not common_dir.is_absolute():
-            common_dir = (resolved_wt / common_dir).resolve()
-        if common_dir.name == ".git":
-            return common_dir.parent.resolve()
-        if (common_dir / ".git").exists():
-            return common_dir.resolve()
+            common_dir = (resolved / common_dir).resolve()
+        return common_dir
     except (subprocess.SubprocessError, OSError):
-        common_dir = None
+        return None
 
-    # 2. 스크립트 상위 저장소 루트 fallback
-    script_repo = Path(__file__).resolve().parent.parent
-    if (script_repo / ".git").exists() or (script_repo / "pyproject.toml").exists():
-        return script_repo.resolve()
 
-    # 3. worktree 자체
-    return resolved_wt
+def resolve_main_repo(worktree: Path, explicit_repo: Path | None = None) -> Path | None:
+    """워크트리의 Git common directory에서 주 저장소 경로를 확정합니다."""
+    if explicit_repo is not None:
+        return explicit_repo.resolve() if explicit_repo.is_dir() else None
+
+    common_dir = git_common_dir(worktree)
+    if common_dir is None:
+        return None
+    return common_dir.parent if common_dir.name == ".git" else None
+
+
+def validate_worktree_ownership(worktree: Path, repo: Path | None) -> tuple[bool, str]:
+    """대상과 주 저장소가 같은 Git common directory를 공유하는지 검증합니다."""
+    if repo is None:
+        return False, "오류: 주 저장소를 Git common directory에서 확인할 수 없습니다"
+
+    worktree_common = git_common_dir(worktree)
+    repo_common = git_common_dir(repo)
+    if worktree_common is None or repo_common is None:
+        return False, "오류: 대상과 주 저장소는 모두 유효한 Git worktree여야 합니다"
+    if worktree_common != repo_common:
+        return False, "오류: 대상 워크트리와 주 저장소의 Git common directory가 일치하지 않습니다"
+    return True, ""
 
 
 def check_or_prepare_env(worktree: Path, repo: Path, check: bool) -> tuple[bool, str]:
@@ -245,6 +255,11 @@ def prepare_worktree(
         return 1
 
     repo = resolve_main_repo(wt, main_repo_path)
+    valid, message = validate_worktree_ownership(wt, repo)
+    if not valid:
+        print(message, file=sys.stderr)
+        return 1
+    assert repo is not None
 
     steps = [
         check_or_prepare_env(wt, repo, check),

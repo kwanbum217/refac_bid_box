@@ -214,12 +214,11 @@ def test_env_content_is_never_printed(mock_gemini_env, fake_git_worktree, monkey
     assert "MY_SUPER_CLASSIFIED_API_TOKEN_XYZ999" not in captured.out
 
 
-def test_missing_repo_env_fails(mock_gemini_env, tmp_path: Path, capsys):
+def test_missing_repo_env_fails(mock_gemini_env, fake_git_worktree, capsys):
     """주 저장소에 .env 가 없는 경우 명확한 에러를 반환해야 합니다."""
-    repo = tmp_path / "empty_repo"
-    repo.mkdir(parents=True, exist_ok=True)
-    wt = tmp_path / "empty_wt"
-    wt.mkdir(parents=True, exist_ok=True)
+    repo = fake_git_worktree["repo"]
+    wt = fake_git_worktree["worktree"]
+    (repo / ".env").unlink()
 
     exit_code = orca_prepare_worktree.prepare_worktree(wt, repo, check=False)
     captured = capsys.readouterr()
@@ -236,6 +235,42 @@ def test_invalid_worktree_path(capsys, tmp_path: Path):
 
     assert exit_code == 1
     assert "유효한 워크트리 디렉터리가 아닙니다" in captured.err
+
+
+def test_non_git_target_is_rejected_before_any_preparation(
+    mock_gemini_env, fake_git_worktree, tmp_path: Path, capsys
+):
+    """비Git 디렉터리에는 .env·신뢰 설정·훅을 절대 변경하지 않습니다."""
+    target = tmp_path / "not_a_worktree"
+    target.mkdir()
+    settings_before = mock_gemini_env["settings_path"].read_text(encoding="utf-8")
+    folders_before = mock_gemini_env["trusted_folders_path"].read_text(encoding="utf-8")
+
+    exit_code = orca_prepare_worktree.prepare_worktree(target, fake_git_worktree["repo"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "유효한 Git worktree" in captured.err
+    assert not (target / ".env").exists()
+    assert mock_gemini_env["settings_path"].read_text(encoding="utf-8") == settings_before
+    assert mock_gemini_env["trusted_folders_path"].read_text(encoding="utf-8") == folders_before
+
+
+def test_foreign_git_worktree_is_rejected_before_any_preparation(
+    mock_gemini_env, fake_git_worktree, tmp_path: Path, capsys
+):
+    """다른 저장소의 워크트리는 명시 저장소가 있어도 준비할 수 없습니다."""
+    foreign_repo = tmp_path / "foreign_repo"
+    subprocess.run(["git", "init", str(foreign_repo)], check=True, capture_output=True)  # noqa: S603, S607
+    settings_before = mock_gemini_env["settings_path"].read_text(encoding="utf-8")
+
+    exit_code = orca_prepare_worktree.prepare_worktree(foreign_repo, fake_git_worktree["repo"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "common directory가 일치하지 않습니다" in captured.err
+    assert not (foreign_repo / ".env").exists()
+    assert mock_gemini_env["settings_path"].read_text(encoding="utf-8") == settings_before
 
 
 def test_cli_main_entrypoint(mock_gemini_env, fake_git_worktree, monkeypatch):

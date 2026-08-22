@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-22
-> **source_commit**: `4460269`
+> **source_commit**: `ae6e1fa`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -51,62 +51,34 @@
 
 ## 3. 기각 및 반복 금지 목록 (Do Not Repeat)
 
-**본 표는 판단으로만 지킬 수 있는 항목입니다.** 기계로 막는 항목과 실측 근거는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 7장에 있습니다.
+상세 근거는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 7장입니다.
 
-| # | 금지 항목 | 결론 |
-| :---: | --- | --- |
-| 1 | 기각된 성능 실험 재시도 | Uvicorn 워커 증설, `GC_MODE=batch-disable`, `GC_MODE=threshold` 세 건 모두 측정으로 기각 |
-| 2 | 미병합 브랜치 재병합 | `codex-task-routing`·`arq-worker-cutover` 폐기, `perf/predict-tail` 진단 전용 |
-| 3 | README 에 성능 실측값·판정 문구 기재 | 본 문서 2장·1장이 정본. 판정 문구도 수치처럼 낡는다 |
-| 4 | `--inject` 도달 미확인 | 승인 전후 모두 유실 사례. 도달은 `terminal read` 로만 확인 |
-| 5 | 워커 요약 텍스트만 신뢰 | diff 와 검증 결과를 직접 대조 |
-| 6 | Capsule 공유 디렉터리 배치 | Task 당 디렉터리 하나. `allowed_read_files` 에 Capsule 자신 포함 |
-| 7 | Reviewer `pass` 로 검토 축소 | 체크리스트 밖 결함은 절반만 검출. Level 3 유지 |
-| 8 | 코디네이터 검토를 Level 2 대체 | 코디네이터 검토만으로 병합한 도구 4개에서 독립 감사가 결함 7건을 찾았다 |
-| 9 | 같은 `report_path` 재사용 | 덮어써서 이전 보고 소실. 새 경로를 준다 |
-| 10 | 파이프라인으로 종료 코드 판정 | `pytest \| tail && ...` 은 실패를 통과로 본다. 게이트 도구를 쓴다 |
-| 11 | 비표준 계약 필드명 수용 | `files_modified` 폴백이 `changed_files_count: 0` 을 조용히 기록했다. 폴백 금지 |
-| 12 | 재작업을 완료된 Task 에 태우기 | 2차 `worker_done` 은 권한 회수로 거부된다. `ready` 복귀 후 재 Dispatch |
-| 13 | 미확인 외부 CLI 서명·열거형 사용 | 값 유무는 `--help` Usage 로 본다. `ok: false` + 종료 코드 0 조합이 있다 |
-| 14 | 테스트가 틀린 사실을 정답으로 고정 | 통과하는 테스트는 확인의 근거가 아니다 |
-| 15 | 미실측 모델 ID 등록 | 선택되는 순간에야 `Model not found`. 추가 시 그 자리에서 probe 한다 |
-| 16 | 읽기 범위를 차단 장치로 취급 | 쓰기는 `git diff` 검증, 읽기는 자기 신고만 대조. 유출 금지 대상은 워커 트리에 두지 않는다 |
-| 17 | 순차 행을 모델 비교로 읽기 | 뒤 행일수록 캐시가 서 있어 순서 효과와 모델 효과가 섞인다 |
-| 18 | `check` 를 `--ack` 없이 호출 | 미확인 배치가 재전달되어 뒤의 `worker_done` 이 가려진다 |
-| 19 | 동작 보존 분할을 사람 판독으로만 검증 | `ast.dump(node, include_attributes=False)` 로 증명한다 |
-| 20 | 저장소 도구를 `python3` 로 실행 | macOS `python3` 는 Xcode 3.9 라 `datetime.UTC` 가 깨진다. `uv run python` |
-| 21 | 모델 선정 전 반복 금지 미조회 | Cerebras TPM 위험과 리뷰어 개방 금지가 이미 적혀 있었다. TPM 원인은 루프의 컨텍스트 재전송이다 |
-| 22 | 메시지 payload 를 파일 계약과 섞기 | payload 는 Orca 자체 camelCase 다. 원장에는 Capsule 의 `report_path` 를 쓴다 |
-| 23 | 감사 결론을 검증 없이 채택 | 이동은 `ast.dump` 로 증명되나 추출은 불가하다. 모듈 관점 감사는 함수 내부를 놓친다 |
+| 금지 항목 | 결론 |
+| --- | --- |
+| 기각된 성능 실험 재시도 | Uvicorn 증설, `GC_MODE=batch-disable`, `GC_MODE=threshold`는 기각 |
+| README 성능 수치 기록 | 1·2장이 정본이며 README에는 기록하지 않음 |
+| `--inject`·요약만으로 완료 판단 | `terminal read`, diff, 검증 결과를 직접 대조 |
+| Capsule·보고 경로 공유 또는 완료 Task 재사용 | Task·Dispatch마다 독립 경로와 새 Task/ready 복귀 사용 |
+| 파이프라인 종료 코드·비표준 계약 필드 신뢰 | 게이트 도구와 계약 필드만 사용 |
 
 ---
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **Orca 워커 준비 안전성 보완**: Git worktree 소속 사전 검증 후에만 `.env` 복사, trust 설정의 프로세스 간 잠금·최초 파일 처리를 먼저 구현. 완료 전 병렬 쓰기 워커 기동 금지.
-2. **코디네이터·워커 토큰 v3**: 코디네이터 기본값은 Codex `gpt-5.6-terra` + effort `medium`이며 변경 전 `MODEL_CHANGE_NOTICE`를 보냅니다. Gemini 워커 기본값은 `gemini-3.7-flash-medium`이며 Flash High는 데이터 무손실 영향·복잡한 구현/회귀 분석·독립 교차검토에만 `WORKER_MODEL_NOTICE`와 함께 승격합니다. `gpt-5.6` 별칭은 Sol이므로 사용하지 않으며, Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 사용자 승인 후 수동 승격합니다.
-3. **ModelRegistry 중복 로드 방지**: startup warmup·readiness의 single-flight 로드와 동시성 반증 테스트를 구현.
-4. **병합·성능 재현성 게이트 보완**: Orca finalize/Level 1 PASS 없는 병합 차단, prediction 원시값에 Git·이미지·런타임 설정 메타데이터 추가.
-5. **예측 c1·c2·c4 회귀 원인 분리**: 위 1~4 완료 후 실행 이미지·호스트 부하·요청 경로를 먼저 대조.
-6. **Ollama 병렬도·SSE 기준선**: `OLLAMA_NUM_PARALLEL` c4 지연 분석(Docker·재시동).
-7. **Windows Docker Desktop 실기 검증**: 스택 구동·E2E 통과(G2).
-8. **수집 2·3회차 관찰**: Docker.
+1. **워커 준비 안전성**: Git common directory 검증, 신뢰 설정 잠금·최초 파일·복구를 먼저 닫습니다. 완료 전 병렬 쓰기 워커를 기동하지 않습니다.
+2. **ModelRegistry single-flight**: startup warmup·readiness 동시 시작에서 실제 로드 1회와 부분 레지스트리 비노출을 증명합니다.
+3. **병합·성능 재현성**: finalize/Level 1 PASS 없는 병합 차단과 prediction 원시 메타데이터를 보완합니다.
+4. **예측 회귀 진단**: 1~3 뒤에 실행 이미지·호스트 부하·요청 경로를 대조합니다.
+5. **운영 검증**: 수집 2·3회차, Ollama c4(재기동 승인 필요), Windows Docker Desktop, Arq 처리량을 순차 처리합니다.
 
 ### 4.1 종결 계열 요약
 
 상세 기전·반복 금지는 [`../ops/orca_do_not_repeat.md`](../ops/orca_do_not_repeat.md) 참조.
 
-- **fail-open 제거 (누적 34건, 10·12장)**: `실패`·`미검증`·`절단`·`미도달` SUCCESS 승격 차단. 수집 위장(`MAX(date)` 누락, G1) 해소, 오동작 고정 테스트 정정.
-- **상태 전파 경계 (3~6차 감사, 13~16장)**: 하위 상태 소실 방지, 게이트 3(frontend test/build, docker build, compose config, actionlint) 보강, `source_commit` FAIL.
-- **대형 모듈 분할 (8장)**: 9개 모듈 분할(신규 20모듈), AST 동일성 실증. **줄 수 기준 자동 분할 금지.**
-- **워커 풀 정비·상시 관측 전환 (11장)**: 2026-08-20 무료 10종 중 5종 완주, n=3 미재현으로 08-21 종료. 10회 성공률·연속 실패로 강등·제외(3회 미만 미반영, 이력 잠금, `benchmarks/free_workers/README.md` 6장). `suitable_for`: 실측 역할만(reviewer 닫힘). 격리 4종(`opencode/nemotron-3.5-lightning-free`, `or-free/laguna-s`, `or-free/north-mini`, `opencode/hy3-free`), 읽기 probe는 쓰기 미예측, Kimi는 preamble·쓰기 프로필.
-- **모델 실재 대조 (2026-08-20)**: `scripts/audit_model_inventory.py` 로 소멸 검사(조회 실패·소멸 구분). `suitable_for` 빈 항목 배정 제외로 미검사.
-- **ORM `Mapped[]` 전환 완료 (2026-08-22)**: `bids.py`·`chatbot.py`·`accounts.py`·`predictions.py` 13모델·137컬럼 전환. 지문 `60a9cf49…c51c8` 일치(DDL 불변), mypy `call-overload` 6개 제거.
-- **동기 블로킹 I/O 요청 P95 실측 완료 (2026-08-22)**: 예측 웜 P95 61.9~83.6ms(100ms 4회 충족, 콜드 383·122ms 미달), SSE 첫 토큰 1.26~2.29s·완료 6.37~7.65s 충족. 기준선 부재로 개선폭 미주장, 단발 6.3~10.3s 목표 미정의.
-- **블로킹 I/O 세부 계측 배선 완료 (2026-08-22)**: 예측 DB·특징·점/구간 추론과 예열, 단발 RAG 계획·SQL·벡터·KB·LLM·후처리 구조화 로그 추가. 운영 큐와 분리된 Arq 처리량 하네스 추가. 실측값과 최적화 판정은 미확정.
-- **워커 기동 준비 자동화 (2026-08-22)**: `scripts/orca_prepare_worktree.py` 로 `.env`·신뢰·pre-commit 자동화(`--check` 미준비 종료 1), `shift+tab` 필요. Git 소속 검증 전 `.env` 복사와 trust 설정 RMW 경쟁은 보완 대기(P1).
-- **린터·보안·타입 게이트**: bandit 47건 오탐 0건화(CI 9시간 차단 해소), mypy 58건 해소·`typecheck` `check-all`·CI 배선.
-- **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile `npm ci`.
+- **안전·품질 게이트**: fail-open 제거, 상태 전파 경계, frontend·Docker·CI 검증 능력과 `source_commit` 신선도 게이트를 갖췄습니다.
+- **구조·데이터**: 9개 모듈을 AST 동일성으로 분할했고 ORM 13모델·137컬럼을 `Mapped[]`로 전환했습니다. DDL 지문은 불변입니다.
+- **실측·계측**: 예측 웜 P95 61.9~83.6ms, SSE 첫 토큰 1.26~2.29s·완료 6.37~7.65s입니다. 블로킹 I/O와 Arq 계측 배선은 완료했고 최적화 판정은 미확정입니다.
+- **운영 준비**: 워커 기동 자동화, mypy·bandit·CI 게이트, 프론트엔드 lockfile·`npm ci`를 반영했습니다.
 
 ---
 
