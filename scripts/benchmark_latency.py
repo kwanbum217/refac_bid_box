@@ -29,6 +29,7 @@ import platform
 import statistics
 import subprocess  # nosec B404
 import sys
+import threading
 import time
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -87,13 +88,15 @@ def reproducibility_metadata() -> dict[str, object]:
     }
 
 
-def host_load_metadata() -> dict[str, object]:
-    """측정 시점의 관찰 가능한 호스트 부하를 보존합니다."""
+def single_host_load_sample() -> dict[str, object]:
+    """단일 호스트 부하 스냅샷을 측정합니다."""
     cpu_count = os.cpu_count()
-    try:
-        load_1m, _, _ = os.getloadavg()
-    except OSError:
-        load_1m = None
+    load_1m = None
+    if hasattr(os, "getloadavg"):
+        try:
+            load_1m, _, _ = os.getloadavg()
+        except OSError:
+            load_1m = None
 
     per_core_percent = None
     if load_1m is not None and cpu_count:
@@ -104,6 +107,103 @@ def host_load_metadata() -> dict[str, object]:
         "cpu_count": cpu_count,
         "per_core_percent": per_core_percent,
     }
+
+
+def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, object]:
+    """호스트 부하 표본 리스트로부터 min/median/max 통계를 계산합니다."""
+    load_values = [float(s["load_1m"]) for s in samples if s.get("load_1m") is not None]
+    pct_values = [
+        float(s["per_core_percent"]) for s in samples if s.get("per_core_percent") is not None
+    ]
+
+    if load_values:
+        load_stats = {
+            "min": min(load_values),
+            "median": statistics.median(load_values),
+            "max": max(load_values),
+        }
+    else:
+        load_stats = {"min": None, "median": None, "max": None}
+
+    if pct_values:
+        pct_stats = {
+            "min": min(pct_values),
+            "median": statistics.median(pct_values),
+            "max": max(pct_values),
+        }
+    else:
+        pct_stats = {"min": None, "median": None, "max": None}
+
+    cpu_count = samples[0].get("cpu_count") if samples else os.cpu_count()
+
+    return {
+        "cpu_count": cpu_count,
+        "samples": samples,
+        "load_1m": load_stats,
+        "per_core_percent": pct_stats,
+    }
+
+
+def collect_host_load_samples(
+    count: int = 3,
+    interval_seconds: float = 5.0,
+) -> list[dict[str, object]]:
+    """지정된 간격으로 호스트 부하 표본을 수집합니다."""
+    samples: list[dict[str, object]] = []
+    for i in range(count):
+        samples.append(single_host_load_sample())
+        if i < count - 1 and interval_seconds > 0:
+            time.sleep(interval_seconds)
+    return samples
+
+
+def host_load_metadata(
+    samples: list[dict[str, object]] | None = None,
+    min_samples: int = 3,
+    interval_seconds: float = 5.0,
+) -> dict[str, object]:
+    """호스트 부하 표본과 통계(min, median, max)를 보존합니다."""
+    if samples is None:
+        samples = collect_host_load_samples(count=min_samples, interval_seconds=interval_seconds)
+    return compute_host_load_stats(samples)
+
+
+class HostLoadMonitor:
+    """벤치마크 실행 동안 5초 간격으로 호스트 부하를 수집하는 백그라운드 모니터입니다."""
+
+    def __init__(self, interval_seconds: float = 5.0, min_samples: int = 3) -> None:
+        self.interval_seconds = interval_seconds
+        self.min_samples = min_samples
+        self.samples: list[dict[str, object]] = []
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def _sample(self) -> None:
+        self.samples.append(single_host_load_sample())
+
+    def _run(self) -> None:
+        self._sample()
+        while not self._stop_event.wait(self.interval_seconds):
+            self._sample()
+
+    def start(self) -> "HostLoadMonitor":
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self) -> dict[str, object]:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        while len(self.samples) < self.min_samples:
+            if self.interval_seconds > 0:
+                time.sleep(self.interval_seconds)
+            self._sample()
+        return self.summary()
+
+    def summary(self) -> dict[str, object]:
+        return compute_host_load_stats(self.samples)
 
 
 def _fmt(milliseconds: float) -> str:
@@ -274,11 +374,12 @@ def build_evidence(
     final: Samples,
     predict: Samples,
     query: Samples,
+    host_load: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "meta": {
             **reproducibility_metadata(),
-            "host_load": host_load_metadata(),
+            "host_load": host_load if host_load is not None else host_load_metadata(),
         },
         "base_url": base_url,
         "predict_rounds": predict_rounds,
@@ -336,6 +437,8 @@ def main() -> int:
         print("먼저 서버를 띄우십시오: uvicorn src.app.main:app --port 8000")
         return 2
 
+    load_monitor = HostLoadMonitor(interval_seconds=5.0, min_samples=3).start()
+
     print(f"\n[1/3] 낙찰가 예측 API ({args.predict_rounds}회)")
     predict = benchmark_predict(args.base_url, args.predict_rounds, args.predict_concurrency)
 
@@ -344,6 +447,8 @@ def main() -> int:
 
     print(f"\n[3/3] 단발 질의 API ({args.query_rounds}회)")
     query = benchmark_query(args.base_url, args.query_rounds)
+
+    host_load = load_monitor.stop()
 
     print("\n" + "-" * 62)
     print("결과")
@@ -366,6 +471,7 @@ def main() -> int:
             final,
             predict,
             query,
+            host_load=host_load,
         )
         args.output.write_text(
             json.dumps(evidence, ensure_ascii=False, indent=2),

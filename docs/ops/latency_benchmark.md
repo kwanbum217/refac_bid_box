@@ -166,5 +166,5 @@ python scripts/benchmark_latency.py --sse-rounds 15 --predict-rounds 200 --query
 `--output`을 지정하면 원시 표본과 함께 실행 조건을 JSON으로 보존합니다. 예측 API는
 측정 동시성과 같은 수의 warmup 요청을 먼저 보내며, 그 요청은 표본과 오류 집계에서
 제외합니다. 출력에는 `predict_rounds`, `predict_concurrency`,
-`predict_warmup_requests` 및 측정 시점의 1분 호스트 부하(`meta.host_load`)가 포함됩니다.
-호스트 부하를 읽을 수 없는 플랫폼에서는 부하 관련 값이 `null`로 기록됩니다.
+`predict_warmup_requests` 및 5초 간격 호스트 부하 표본의 최소·중앙·최대와 원시 표본(`meta.host_load`)이
+포함됩니다. 호스트 부하를 읽을 수 없는 플랫폼에서는 동일 구조에 `null` 값이 기록됩니다.
