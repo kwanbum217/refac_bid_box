@@ -38,16 +38,20 @@ def test_reproducibility_metadata_marks_failed_docker_lookup_unknown(monkeypatch
 
     monkeypatch.setattr(benchmark_latency, "_command_output", fail_docker)
 
-    metadata = benchmark_latency.reproducibility_metadata()
+    metadata = benchmark_latency.reproducibility_metadata(strict=False)
 
     assert metadata["git_sha"] == "abc123"
     assert metadata["docker_image_id"] == "unknown"
+    assert metadata["container_id"] == "unknown"
+    assert metadata["target_container_image_id"] == "unknown"
     assert set(metadata) == {
         "git_sha",
         "measured_at_utc",
         "python_version",
         "platform",
         "docker_image_id",
+        "container_id",
+        "target_container_image_id",
         "gc",
         "instrumentation",
     }
@@ -164,7 +168,9 @@ def test_predict_warmup_matches_concurrency_and_is_excluded(monkeypatch):
 
 
 def test_evidence_records_predict_execution_and_host_load(monkeypatch):
-    monkeypatch.setattr(benchmark_latency, "reproducibility_metadata", lambda: {"git_sha": "abc"})
+    monkeypatch.setattr(
+        benchmark_latency, "reproducibility_metadata", lambda **kwargs: {"git_sha": "abc"}
+    )
     mock_host_load = {
         "cpu_count": 8,
         "samples": [
@@ -202,6 +208,179 @@ def test_reproducibility_metadata_marks_empty_docker_lookup_unknown(monkeypatch)
     )
 
     assert (
-        benchmark_latency._command_output(["docker", "compose", "images", "-q", "backend"])
-        == "unknown"
+        benchmark_latency._command_output(["docker", "compose", "images", "-q", "app"]) == "unknown"
     )
+
+
+def test_reproducibility_metadata_queries_app_service_and_inspect(monkeypatch):
+    commands_executed: list[list[str]] = []
+
+    def mock_command_output(command: list[str]) -> str:
+        commands_executed.append(command)
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "harness_git_sha_123"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:app_image_aaa"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "container_id_bbb"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "container_id_bbb"]:
+            return "sha256:target_container_image_ccc"
+        return "unexpected"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command_output)
+
+    metadata = benchmark_latency.reproducibility_metadata(service_name="app", strict=True)
+
+    assert metadata["git_sha"] == "harness_git_sha_123"
+    assert metadata["docker_image_id"] == "sha256:app_image_aaa"
+    assert metadata["container_id"] == "container_id_bbb"
+    assert metadata["target_container_image_id"] == "sha256:target_container_image_ccc"
+
+    # compose service 이름 'app' 조회와 inspect 호출을 검증합니다.
+    assert ["docker", "compose", "images", "-q", "app"] in commands_executed
+    assert ["docker", "compose", "ps", "-q", "app"] in commands_executed
+    assert [
+        "docker",
+        "inspect",
+        "-f",
+        "{{.Image}}",
+        "container_id_bbb",
+    ] in commands_executed
+
+
+def test_reproducibility_metadata_raises_build_provenance_error_on_unknown(monkeypatch):
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    # 1. docker_image_id 가 unknown 인 경우
+    def mock_fail_image(command: list[str]) -> str:
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "unknown"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt_123"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt_123"]:
+            return "sha256:img_123"
+        return "git_sha_123"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_fail_image)
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.reproducibility_metadata(strict=True)
+    assert "docker_image_id" in str(excinfo.value)
+
+    # 2. container_id 가 unknown 인 경우
+    def mock_fail_container(command: list[str]) -> str:
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "unknown"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:img_123"
+        return "git_sha_123"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_fail_container)
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.reproducibility_metadata(strict=True)
+    assert "container_id" in str(excinfo.value)
+
+    # 3. target_container_image_id 가 unknown 인 경우
+    def mock_fail_inspect(command: list[str]) -> str:
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt_123"]:
+            return "unknown"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt_123"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:img_123"
+        return "git_sha_123"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_fail_inspect)
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.reproducibility_metadata(strict=True)
+    assert "target_container_image_id" in str(excinfo.value)
+
+    # 4. strict=False 일 때는 예외 없이 unknown 을 반환함을 확인
+    non_strict_meta = benchmark_latency.reproducibility_metadata(strict=False)
+    assert non_strict_meta["target_container_image_id"] == "unknown"
+
+
+def test_strict_json_serialization_sanitizes_nan_to_null():
+    import json
+
+    import pytest
+
+    from scripts.benchmark_latency import dump_strict_json, sanitize_nan_to_none
+
+    # 1. Samples 가 비어 있을 때 percentiles 가 None 으로 정규화되는지 확인
+    empty_samples = Samples("empty")
+    sample_dict = empty_samples.as_dict()
+    assert sample_dict["p50_ms"] is None
+    assert sample_dict["p95_ms"] is None
+    assert sample_dict["p99_ms"] is None
+
+    # 2. sanitize_nan_to_none 이 중첩 구조에서 NaN/Inf 를 None 으로 변환하는지 확인
+    raw_data = {
+        "nan_val": float("nan"),
+        "inf_val": float("inf"),
+        "nested_list": [1.0, float("nan"), {"inner": float("nan")}],
+        "valid_val": 42.5,
+    }
+    sanitized = sanitize_nan_to_none(raw_data)
+    assert sanitized["nan_val"] is None
+    assert sanitized["inf_val"] is None
+    assert sanitized["nested_list"] == [1.0, None, {"inner": None}]
+    assert sanitized["valid_val"] == 42.5
+
+    # 3. raw_data 에 대해 기본 json.dumps(allow_nan=False) 는 ValueError 를 발생시킴
+    with pytest.raises(ValueError):
+        json.dumps(raw_data, allow_nan=False)
+
+    # 4. dump_strict_json 은 예외 없이 RFC-8259 준수 strict JSON 문자열을 생성함
+    json_str = dump_strict_json(raw_data)
+    assert "NaN" not in json_str
+    assert "null" in json_str
+
+    # 5. 파싱 결과가 None(null)으로 복원되는지 확인
+    parsed = json.loads(json_str)
+    assert parsed["nan_val"] is None
+    assert parsed["inf_val"] is None
+    assert parsed["nested_list"] == [1.0, None, {"inner": None}]
+
+
+def test_build_evidence_strict_provenance_and_nan_normalization(monkeypatch):
+    import json
+
+    from scripts.benchmark_latency import dump_strict_json
+
+    monkeypatch.setattr(
+        benchmark_latency,
+        "reproducibility_metadata",
+        lambda **kwargs: {
+            "git_sha": "git123",
+            "docker_image_id": "img123",
+            "container_id": "cnt123",
+            "target_container_image_id": "timg123",
+        },
+    )
+
+    empty_stage = Samples("empty_stage")
+    empty_token = Samples("empty_token")
+    empty_final = Samples("empty_final")
+    empty_predict = Samples("empty_predict")
+    empty_query = Samples("empty_query")
+
+    evidence = build_evidence(
+        "http://test",
+        100,
+        10,
+        empty_stage,
+        empty_token,
+        empty_final,
+        empty_predict,
+        empty_query,
+        host_load={"cpu_count": 4, "load_1m": {"min": None, "median": None, "max": None}},
+        strict_provenance=True,
+    )
+
+    # NaN 이 없어야 하고 strict dump 가 성공해야 함
+    serialized = dump_strict_json(evidence)
+    assert "NaN" not in serialized
+    parsed = json.loads(serialized)
+    assert parsed["samples"]["predict"]["p95_ms"] is None
