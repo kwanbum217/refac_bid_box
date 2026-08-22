@@ -65,7 +65,7 @@ docs: add phase5 retraining design
 
 1. `main`에서 작업 브랜치 분기.
 2. 작업 브랜치에서 커밋·푸시.
-3. strict `finalize`와 Level 1 PASS가 기록된 JSON 증거를 생성합니다. 병합은 아래 helper로만 실행하며, 증거 누락·실패 시 helper는 `git merge`를 호출하지 않습니다.
+3. strict `finalize`와 Level 1 PASS가 기록된 JSON 증거를 생성합니다. 증거에는 `execution_mode: strict`, source/target branch, 그리고 검증한 source commit이 포함되어야 하며 helper는 현재 source ref와 모두 대조합니다. 병합은 아래 helper로만 실행하며, 증거 누락·실패·재사용 시 helper는 `git merge`를 호출하지 않습니다.
    - 테스트 전량 통과 (`pytest`)
    - `python scripts/validate_agent_rules.py` 통과
    - 데이터 무손실 영향 시 [`migration/`](../migration/) 검증 결과 확인

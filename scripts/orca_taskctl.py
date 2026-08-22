@@ -1310,6 +1310,10 @@ def finalize_task(
     """worker_done 보고를 검증하고 Level 1/Reviewer 검증 파이프라인을 실행합니다."""
     scripts_dir = Path(__file__).resolve().parent
     result: dict[str, Any] = {
+        "execution_mode": "strict" if strict else "allow_skipped_gates",
+        "source_branch": branch,
+        "target_branch": base,
+        "commit": None,
         "summarize": None,
         "level1": None,
         "reviewer": None,
@@ -1379,6 +1383,18 @@ def finalize_task(
     # 검증 명령은 게이트가 Capsule 에서 직접 읽습니다. 여기서 pytest 만 뽑아
     # 넘기던 종전 방식은 npm 등 나머지 검증을 조용히 버렸습니다.
     target_repo = worktree_path if worktree_path else repo
+    commit_cmd = ["git", "rev-parse", "--verify", f"{branch}^{{commit}}"]
+    code_commit, stdout_commit, stderr_commit = _run_command(
+        commit_cmd, cwd=target_repo, timeout=30
+    )
+    if code_commit != 0 or not stdout_commit.strip():
+        result["commit_error"] = truncate(
+            stderr_commit.strip() or "검증 대상 commit을 확인할 수 없습니다.", 200
+        )
+        result["exit_code"] = 2
+        return result
+    result["commit"] = stdout_commit.strip()
+
     level1_cmd = [
         sys.executable,
         str(scripts_dir / "orca_level1_gate.py"),

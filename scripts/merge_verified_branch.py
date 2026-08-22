@@ -14,16 +14,28 @@ from typing import Any
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
-def evidence_errors(evidence: object) -> list[str]:
+def evidence_errors(
+    evidence: object,
+    *,
+    source_branch: str,
+    target_branch: str,
+    source_commit: str,
+) -> list[str]:
     """병합에 필요한 strict finalize 및 Level 1 PASS 증거를 검사합니다."""
     if not isinstance(evidence, Mapping):
         return ["검증 증거가 JSON 객체가 아닙니다."]
 
     errors: list[str] = []
-    if evidence.get("strict") is not True:
-        errors.append("strict finalize 실행 증거가 없습니다.")
+    if evidence.get("execution_mode") != "strict":
+        errors.append("strict finalize 실행 모드 증거가 없습니다.")
     if evidence.get("exit_code") != 0:
         errors.append("finalize 종료 코드 0 증거가 없습니다.")
+    if evidence.get("source_branch") != source_branch:
+        errors.append("증거의 source branch가 병합 입력과 일치하지 않습니다.")
+    if evidence.get("target_branch") != target_branch:
+        errors.append("증거의 target branch가 병합 입력과 일치하지 않습니다.")
+    if evidence.get("commit") != source_commit:
+        errors.append("증거의 검증 commit이 현재 source ref와 일치하지 않습니다.")
 
     level1 = evidence.get("level1")
     if not isinstance(level1, Mapping) or level1.get("verdict") != "pass":
@@ -33,7 +45,8 @@ def evidence_errors(evidence: object) -> list[str]:
 
     reviewer = evidence.get("reviewer")
     if not isinstance(reviewer, Mapping) or (
-        reviewer.get("effective_verdict", reviewer.get("verdict")) != "pass"
+        reviewer.get("effective_verdict", reviewer.get("declared_verdict", reviewer.get("verdict")))
+        != "pass"
     ):
         errors.append("strict finalize의 리뷰 PASS 증거가 없습니다.")
     return errors
@@ -47,7 +60,9 @@ def load_evidence(path: Path) -> tuple[dict[str, Any] | None, list[str]]:
         return None, [f"검증 증거를 읽을 수 없습니다: {exc}"]
     except json.JSONDecodeError as exc:
         return None, [f"검증 증거 JSON이 올바르지 않습니다: {exc.msg}"]
-    return data if isinstance(data, dict) else None, evidence_errors(data)
+    if not isinstance(data, dict):
+        return None, ["검증 증거가 JSON 객체가 아닙니다."]
+    return data, []
 
 
 def run_git(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -66,7 +81,19 @@ def merge_verified_branch(
     runner: Runner = run_git,
 ) -> tuple[int, str]:
     """증거와 현재 대상 브랜치를 확인한 경우에만 ``git merge``를 실행합니다."""
-    _evidence, errors = load_evidence(evidence_path)
+    evidence, errors = load_evidence(evidence_path)
+    if errors:
+        return 1, "병합 거부: " + " ".join(errors)
+
+    source_ref = runner(["git", "rev-parse", "--verify", f"{source_branch}^{{commit}}"])
+    if source_ref.returncode != 0 or not source_ref.stdout.strip():
+        return 2, f"source branch의 commit을 확인할 수 없습니다: {source_ref.stderr.strip()}"
+    errors = evidence_errors(
+        evidence,
+        source_branch=source_branch,
+        target_branch=target_branch,
+        source_commit=source_ref.stdout.strip(),
+    )
     if errors:
         return 1, "병합 거부: " + " ".join(errors)
 

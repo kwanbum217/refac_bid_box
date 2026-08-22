@@ -684,6 +684,10 @@ def test_finalize_task_all_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         run_reviewer=True,
     )
     assert res["exit_code"] == 0
+    assert res["execution_mode"] == "strict"
+    assert res["source_branch"] == "HEAD"
+    assert res["target_branch"] == "main"
+    assert res["commit"]
     assert load_report(report_file)["status"] == "succeeded"
 
 
