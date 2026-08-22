@@ -1,0 +1,107 @@
+app-1  | 2026-08-22T05:18:34.481918338Z INFO:     Started server process [1]
+app-1  | 2026-08-22T05:18:34.481934672Z INFO:     Waiting for application startup.
+app-1  | 2026-08-22T05:18:34.482647047Z INFO:     Application startup complete.
+app-1  | 2026-08-22T05:18:34.488465380Z INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+app-1  | 2026-08-22T05:18:35.619338797Z onnxruntime cpuid_info warning: Unknown CPU vendor. cpuinfo_vendor value: 0
+app-1  | 2026-08-22T05:18:36.016012798Z Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+app-1  | 2026-08-22T05:18:36.299062298Z [ModelRegistry] 규격화 모델 등록됨: quantum_leap_v25_pro
+app-1  | 2026-08-22T05:18:36.299080256Z [ModelRegistry] 규격화 모델 등록됨: servc_institution_v1
+app-1  | 2026-08-22T05:18:36.299081714Z [BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: /app/data/model_files/ssh_hist_premium
+app-1  | 2026-08-22T05:18:36.299082839Z [ModelRegistry] 규격화 모델 등록됨: ssh_hist_premium
+app-1  | 2026-08-22T05:18:36.299083714Z [BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: /app/data/model_files/v13_hybrid
+app-1  | 2026-08-22T05:18:36.299084631Z [ModelRegistry] 규격화 모델 등록됨: v13_hybrid
+app-1  | 2026-08-22T05:18:36.299085464Z [BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: /app/data/model_files/v25
+app-1  | 2026-08-22T05:18:36.299086464Z [ModelRegistry] 규격화 모델 등록됨: v25
+app-1  | 2026-08-22T05:18:36.299087298Z [ModelRegistry] 규격화 모델 등록됨: quantum_leap_v25_pro
+app-1  | 2026-08-22T05:18:36.299088173Z [ModelRegistry] 규격화 모델 등록됨: servc_institution_v1
+app-1  | 2026-08-22T05:18:36.299089006Z [BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: /app/data/model_files/ssh_hist_premium
+app-1  | 2026-08-22T05:18:36.299089881Z [ModelRegistry] 규격화 모델 등록됨: ssh_hist_premium
+app-1  | 2026-08-22T05:18:36.299090714Z [BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: /app/data/model_files/v13_hybrid
+app-1  | 2026-08-22T05:18:36.299091548Z [ModelRegistry] 규격화 모델 등록됨: v13_hybrid
+app-1  | 2026-08-22T05:18:36.299092381Z [BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: /app/data/model_files/v25
+app-1  | 2026-08-22T05:18:36.299093214Z [ModelRegistry] 규격화 모델 등록됨: v25
+app-1  | 2026-08-22T05:18:36.299094048Z INFO:     192.168.65.1:32802 - "GET /api/v1/health/ready HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.434407923Z Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+app-1  | 2026-08-22T05:18:36.473353631Z INFO:     127.0.0.1:51572 - "GET /api/v1/health/ready HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.671360548Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=105.67, thread_cpu_ms=18.25
+app-1  | 2026-08-22T05:18:36.673925048Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=118.45, thread_cpu_ms=19.80
+app-1  | 2026-08-22T05:18:36.679978965Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=121.00, thread_cpu_ms=17.75
+app-1  | 2026-08-22T05:18:36.683078631Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=127.49, thread_cpu_ms=17.58
+app-1  | 2026-08-22T05:18:36.683770673Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=126.85, thread_cpu_ms=18.27
+app-1  | 2026-08-22T05:18:36.689505506Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=130.28, thread_cpu_ms=18.41
+app-1  | 2026-08-22T05:18:36.691099131Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=132.73, thread_cpu_ms=17.80
+app-1  | 2026-08-22T05:18:36.694282923Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=139.66, thread_cpu_ms=18.82
+app-1  | 2026-08-22T05:18:36.695389048Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=135.98, thread_cpu_ms=17.75
+app-1  | 2026-08-22T05:18:36.695545923Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=149.30, thread_cpu_ms=24.98
+app-1  | 2026-08-22T05:18:36.858507215Z INFO:     endpoint=predict_price_api, wall_ms=412.43, thread_cpu_ms=86.14, model_wall_ms=307.77, model_thread_cpu_ms=70.70, db_lookup_ms=20.01, feature_build_ms=79.07, point_infer_ms=146.05, interval_infer_ms=161.72
+app-1  | 2026-08-22T05:18:36.862996756Z INFO:     endpoint=predict_price_api, wall_ms=403.92, thread_cpu_ms=92.06, model_wall_ms=303.26, model_thread_cpu_ms=76.93, db_lookup_ms=21.70, feature_build_ms=69.59, point_infer_ms=128.06, interval_infer_ms=175.19
+app-1  | 2026-08-22T05:18:36.863282340Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=18.53
+app-1  | 2026-08-22T05:18:36.864154756Z INFO:     192.168.65.1:33002 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.867751465Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=11.76
+app-1  | 2026-08-22T05:18:36.868172423Z INFO:     192.168.65.1:34949 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.868783923Z INFO:     endpoint=predict_price_api, wall_ms=416.55, thread_cpu_ms=87.69, model_wall_ms=295.60, model_thread_cpu_ms=72.28, db_lookup_ms=19.07, feature_build_ms=89.19, point_infer_ms=110.90, interval_infer_ms=184.69
+app-1  | 2026-08-22T05:18:36.868788715Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=14.81
+app-1  | 2026-08-22T05:18:36.872474423Z INFO:     endpoint=predict_price_api, wall_ms=417.98, thread_cpu_ms=87.20, model_wall_ms=307.43, model_thread_cpu_ms=72.90, db_lookup_ms=21.56, feature_build_ms=78.30, point_infer_ms=125.71, interval_infer_ms=181.72
+app-1  | 2026-08-22T05:18:36.872485381Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=12.22
+app-1  | 2026-08-22T05:18:36.874522506Z INFO:     192.168.65.1:28573 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.874649756Z INFO:     192.168.65.1:46635 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.876705631Z INFO:     endpoint=predict_price_api, wall_ms=431.84, thread_cpu_ms=86.68, model_wall_ms=330.17, model_thread_cpu_ms=72.16, db_lookup_ms=7.77, feature_build_ms=90.26, point_infer_ms=151.44, interval_infer_ms=178.73
+app-1  | 2026-08-22T05:18:36.876711673Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=17.80
+app-1  | 2026-08-22T05:18:36.883688465Z INFO:     192.168.65.1:56916 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.886830215Z INFO:     endpoint=predict_price_api, wall_ms=431.24, thread_cpu_ms=87.74, model_wall_ms=323.98, model_thread_cpu_ms=73.02, db_lookup_ms=16.73, feature_build_ms=83.10, point_infer_ms=134.18, interval_infer_ms=189.81
+app-1  | 2026-08-22T05:18:36.886849173Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=17.13
+app-1  | 2026-08-22T05:18:36.890264840Z INFO:     endpoint=predict_price_api, wall_ms=436.43, thread_cpu_ms=85.21, model_wall_ms=336.07, model_thread_cpu_ms=70.42, db_lookup_ms=16.65, feature_build_ms=77.03, point_infer_ms=135.63, interval_infer_ms=200.44
+app-1  | 2026-08-22T05:18:36.890277131Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=16.72
+app-1  | 2026-08-22T05:18:36.890426756Z INFO:     endpoint=predict_price_api, wall_ms=436.46, thread_cpu_ms=85.32, model_wall_ms=331.94, model_thread_cpu_ms=70.96, db_lookup_ms=19.73, feature_build_ms=75.22, point_infer_ms=134.90, interval_infer_ms=197.04
+app-1  | 2026-08-22T05:18:36.890429340Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=16.34
+app-1  | 2026-08-22T05:18:36.890559381Z INFO:     192.168.65.1:53712 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.892324840Z INFO:     192.168.65.1:24682 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.894984673Z INFO:     192.168.65.1:57495 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.897671298Z INFO:     endpoint=predict_price_api, wall_ms=445.58, thread_cpu_ms=85.30, model_wall_ms=332.78, model_thread_cpu_ms=69.84, db_lookup_ms=21.97, feature_build_ms=82.34, point_infer_ms=139.13, interval_infer_ms=193.65
+app-1  | 2026-08-22T05:18:36.897685006Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=15.04
+app-1  | 2026-08-22T05:18:36.902839465Z INFO:     192.168.65.1:34314 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:36.910424256Z INFO:     endpoint=predict_price_api, wall_ms=464.23, thread_cpu_ms=94.87, model_wall_ms=362.51, model_thread_cpu_ms=80.33, db_lookup_ms=20.80, feature_build_ms=77.05, point_infer_ms=151.61, interval_infer_ms=210.90
+app-1  | 2026-08-22T05:18:36.910439340Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=9.98
+app-1  | 2026-08-22T05:18:36.911511423Z INFO:     192.168.65.1:34077 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.037518673Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=82.77, thread_cpu_ms=16.69
+app-1  | 2026-08-22T05:18:37.056936506Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=94.59, thread_cpu_ms=16.03
+app-1  | 2026-08-22T05:18:37.060336840Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=102.37, thread_cpu_ms=16.65
+app-1  | 2026-08-22T05:18:37.063125090Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=96.90, thread_cpu_ms=15.50
+app-1  | 2026-08-22T05:18:37.064782090Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=101.47, thread_cpu_ms=16.94
+app-1  | 2026-08-22T05:18:37.081978381Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=101.95, thread_cpu_ms=16.21
+app-1  | 2026-08-22T05:18:37.090551506Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=93.51, thread_cpu_ms=15.80
+app-1  | 2026-08-22T05:18:37.097863673Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=110.38, thread_cpu_ms=16.73
+app-1  | 2026-08-22T05:18:37.120369465Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=137.03, thread_cpu_ms=16.53
+app-1  | 2026-08-22T05:18:37.153645673Z INFO:     endpoint=predict_price_api, wall_ms=245.56, thread_cpu_ms=44.90, model_wall_ms=195.44, model_thread_cpu_ms=35.96, db_lookup_ms=9.65, feature_build_ms=33.58, point_infer_ms=86.28, interval_infer_ms=109.17
+app-1  | 2026-08-22T05:18:37.153655256Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=1.16
+app-1  | 2026-08-22T05:18:37.155458256Z INFO:     192.168.65.1:30626 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.170417340Z INFO:     model_call=model_id=quantum_leap_v25_pro, status=success, wall_ms=162.05, thread_cpu_ms=17.97
+app-1  | 2026-08-22T05:18:37.184277798Z INFO:     endpoint=predict_price_api, wall_ms=287.61, thread_cpu_ms=45.19, model_wall_ms=216.23, model_thread_cpu_ms=35.11, db_lookup_ms=17.48, feature_build_ms=42.66, point_infer_ms=100.20, interval_infer_ms=116.04
+app-1  | 2026-08-22T05:18:37.184289590Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=2.02
+app-1  | 2026-08-22T05:18:37.184664756Z INFO:     192.168.65.1:37642 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.188302840Z INFO:     endpoint=predict_price_api, wall_ms=278.92, thread_cpu_ms=43.59, model_wall_ms=216.93, model_thread_cpu_ms=34.30, db_lookup_ms=9.03, feature_build_ms=39.25, point_infer_ms=105.54, interval_infer_ms=111.38
+app-1  | 2026-08-22T05:18:37.188308423Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=7.04
+app-1  | 2026-08-22T05:18:37.189332756Z INFO:     192.168.65.1:18677 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.198217131Z INFO:     endpoint=predict_price_api, wall_ms=301.23, thread_cpu_ms=46.21, model_wall_ms=232.73, model_thread_cpu_ms=36.10, db_lookup_ms=15.14, feature_build_ms=42.53, point_infer_ms=105.75, interval_infer_ms=126.98
+app-1  | 2026-08-22T05:18:37.198224840Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=1.49
+app-1  | 2026-08-22T05:18:37.203220590Z INFO:     192.168.65.1:46408 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.205944590Z INFO:     endpoint=predict_price_api, wall_ms=295.95, thread_cpu_ms=46.62, model_wall_ms=236.51, model_thread_cpu_ms=37.14, db_lookup_ms=6.84, feature_build_ms=43.93, point_infer_ms=104.09, interval_infer_ms=132.42
+app-1  | 2026-08-22T05:18:37.205949673Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=3.55
+app-1  | 2026-08-22T05:18:37.212241173Z INFO:     192.168.65.1:57138 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.215934548Z INFO:     endpoint=predict_price_api, wall_ms=307.10, thread_cpu_ms=44.97, model_wall_ms=226.48, model_thread_cpu_ms=34.68, db_lookup_ms=9.25, feature_build_ms=50.45, point_infer_ms=113.54, interval_infer_ms=112.95
+app-1  | 2026-08-22T05:18:37.215946048Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=7.44
+app-1  | 2026-08-22T05:18:37.216890340Z INFO:     192.168.65.1:44332 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.218934340Z INFO:     endpoint=predict_price_api, wall_ms=302.63, thread_cpu_ms=45.07, model_wall_ms=233.86, model_thread_cpu_ms=35.44, db_lookup_ms=8.95, feature_build_ms=51.32, point_infer_ms=121.38, interval_infer_ms=112.48
+app-1  | 2026-08-22T05:18:37.218954006Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=1.47
+app-1  | 2026-08-22T05:18:37.220810923Z INFO:     endpoint=predict_price_api, wall_ms=294.86, thread_cpu_ms=44.32, model_wall_ms=222.53, model_thread_cpu_ms=35.02, db_lookup_ms=4.53, feature_build_ms=56.02, point_infer_ms=104.31, interval_infer_ms=118.22
+app-1  | 2026-08-22T05:18:37.220822173Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=2.21
+app-1  | 2026-08-22T05:18:37.221080381Z INFO:     192.168.65.1:30693 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.222572673Z INFO:     192.168.65.1:19180 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.232759590Z INFO:     endpoint=predict_price_api, wall_ms=323.06, thread_cpu_ms=40.87, model_wall_ms=256.65, model_thread_cpu_ms=32.56, db_lookup_ms=11.60, feature_build_ms=51.58, point_infer_ms=147.58, interval_infer_ms=109.07
+app-1  | 2026-08-22T05:18:37.232772006Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=3.02
+app-1  | 2026-08-22T05:18:37.233302965Z INFO:     192.168.65.1:63418 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:37.236512548Z INFO:     endpoint=predict_price_api, wall_ms=325.64, thread_cpu_ms=40.56, model_wall_ms=229.63, model_thread_cpu_ms=31.03, db_lookup_ms=10.72, feature_build_ms=72.23, point_infer_ms=176.68, interval_infer_ms=52.95
+app-1  | 2026-08-22T05:18:37.236517340Z INFO:     endpoint=predict_price_api, executor_queue_wait_ms=3.66
+app-1  | 2026-08-22T05:18:37.236861798Z INFO:     192.168.65.1:26380 - "POST /api/v1/predictions/predict-price HTTP/1.1" 200 OK
+app-1  | 2026-08-22T05:18:46.545432469Z Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+app-1  | 2026-08-22T05:18:46.573287136Z INFO:     127.0.0.1:53292 - "GET /api/v1/health/ready HTTP/1.1" 200 OK
