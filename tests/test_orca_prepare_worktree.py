@@ -314,3 +314,46 @@ def test_real_gemini_files_untouched(mock_gemini_env, fake_git_worktree, monkeyp
 
     real_mtime_after = real_settings.stat().st_mtime if real_settings.exists() else None
     assert real_mtime_before == real_mtime_after
+
+
+def test_git_common_dir_failure(monkeypatch, tmp_path: Path):
+    """git rev-parse 실행 실패 또는 빈 출력 반환 시 None을 반환해야 합니다."""
+    target = tmp_path / "some_dir"
+    target.mkdir()
+
+    # 1. subprocess.CalledProcessError 발생 시
+    def mock_run_error(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, ["git", "rev-parse"])
+
+    monkeypatch.setattr(subprocess, "run", mock_run_error)
+    assert orca_prepare_worktree.git_common_dir(target) is None
+
+    # 2. 빈 stdout 반환 시
+    class MockResult:
+        stdout = "   \n"
+
+    def mock_run_empty(*args, **kwargs):
+        return MockResult()
+
+    monkeypatch.setattr(subprocess, "run", mock_run_empty)
+    assert orca_prepare_worktree.git_common_dir(target) is None
+
+
+def test_get_git_hooks_path_fallback_and_failure(monkeypatch, tmp_path: Path):
+    """git rev-parse 실패 시 .git/hooks fallback 또는 None 반환을 검증합니다."""
+    target = tmp_path / "test_repo"
+    target.mkdir()
+    git_dir = target / ".git"
+    git_dir.mkdir()
+
+    def mock_run_error(*args, **kwargs):
+        raise subprocess.SubprocessError("git error")
+
+    monkeypatch.setattr(subprocess, "run", mock_run_error)
+    # .git 디렉터리가 있으면 .git/hooks 반환
+    assert orca_prepare_worktree.get_git_hooks_path(target) == (git_dir / "hooks").resolve()
+
+    # .git 디렉터리가 없으면 None 반환
+    non_git = tmp_path / "not_git"
+    non_git.mkdir()
+    assert orca_prepare_worktree.get_git_hooks_path(non_git) is None
