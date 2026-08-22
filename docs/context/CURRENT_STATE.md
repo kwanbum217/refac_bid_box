@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-22
-> **source_commit**: `bd5d481`
+> **source_commit**: `17c5115`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -85,7 +85,7 @@
 
 1. **워커 기동 후속**: 준비 자동화 완료. pytest 미실행 대응 커밋 게이트 판단.
 2. **코디네이터 토큰 v2**: Codex `gpt-5.6-sol` + effort `high`. 절감 미판정(조율 3.2절).
-3. **블로킹 I/O 후속**: 예측 콜드 383·122ms 워밍업, 단발 6.3~10.3s 목표/SSE, Arq 설계.
+3. **블로킹 I/O 후속 실측**: 예측 콜드·예열, 단발 RAG/LLM 구간, Arq 처리량 계측 배선 완료. 프로토콜 기반 반복 측정과 판정 대기.
 4. **Ollama 병렬도·SSE 기준선**: `OLLAMA_NUM_PARALLEL` c4 지연 분석(Docker·재시동).
 5. **Windows Docker Desktop 실기 검증**: 스택 구동·E2E 통과(G2).
 6. **수집 2·3회차 관찰**: Docker.
@@ -101,6 +101,7 @@
 - **모델 실재 대조 (2026-08-20)**: `scripts/audit_model_inventory.py` 로 소멸 검사(조회 실패·소멸 구분). `suitable_for` 빈 항목 배정 제외로 미검사.
 - **ORM `Mapped[]` 전환 완료 (2026-08-22)**: `bids.py`·`chatbot.py`·`accounts.py`·`predictions.py` 13모델·137컬럼 전환. 지문 `60a9cf49…c51c8` 일치(DDL 불변), mypy `call-overload` 6개 제거.
 - **동기 블로킹 I/O 요청 P95 실측 완료 (2026-08-22)**: 예측 웜 P95 61.9~83.6ms(100ms 4회 충족, 콜드 383·122ms 미달), SSE 첫 토큰 1.26~2.29s·완료 6.37~7.65s 충족. 기준선 부재로 개선폭 미주장, 단발 6.3~10.3s 목표 미정의.
+- **블로킹 I/O 세부 계측 배선 완료 (2026-08-22)**: 예측 DB·특징·점/구간 추론과 예열, 단발 RAG 계획·SQL·벡터·KB·LLM·후처리 구조화 로그 추가. 운영 큐와 분리된 Arq 처리량 하네스 추가. 실측값과 최적화 판정은 미확정.
 - **워커 기동 준비 자동화 (2026-08-22)**: `scripts/orca_prepare_worktree.py` 로 `.env`·신뢰·pre-commit 자동화(`--check` 미준비 종료 1), `shift+tab` 필요.
 - **린터·보안·타입 게이트**: bandit 47건 오탐 0건화(CI 9시간 차단 해소), mypy 58건 해소·`typecheck` `check-all`·CI 배선.
 - **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile `npm ci`.
@@ -123,7 +124,7 @@
 
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama 다중화 시 자원 점유와 c4 기준선 미확정.
-- 블로킹 I/O 12건의 P95·태스크 처리량 개선치 미측정(4장 3번).
+- 블로킹 I/O 세부 구간 P95와 Arq 태스크 처리량은 계측 배선만 완료되었고 반복 실측·개선 판정은 미수행.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
@@ -138,6 +139,7 @@
 - v2 설계: [`docs/ops/orca_coordinator_token_optimization_v2.md`](../ops/orca_coordinator_token_optimization_v2.md), 제어 평면: [`orca_control_plane_tools.md`](../ops/orca_control_plane_tools.md)
 - 지표 원장: [`orca_v2_metrics_ledger.md`](../ops/orca_v2_metrics_ledger.md)
 - 레이턴시 게이트 규약: [`latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
+- 블로킹 I/O 계측: [`predict_coldstart_instrumentation.md`](../analysis/predict_coldstart_instrumentation.md), [`query_rag_latency_instrumentation.md`](../analysis/query_rag_latency_instrumentation.md), [`arq_throughput_harness.md`](../analysis/arq_throughput_harness.md)
 - 워커 기동: [`agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
 - 용역 모델: [`servc_model_status.md`](../servc_model_status.md)
 - 미병합 브랜치 판정: [`phase8_predict_tail_merge_verdict_20260814.md`](../ops/phase8_predict_tail_merge_verdict_20260814.md), [`codex_task_routing_branch_verdict_20260814.md`](../ops/codex_task_routing_branch_verdict_20260814.md)
