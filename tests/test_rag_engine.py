@@ -7,6 +7,7 @@ tests/test_rag_engine.py
  - _build_evidence_items: 근거 항목 인라인 인용 번호
 """
 
+import logging
 from datetime import datetime, timedelta
 
 import pytest
@@ -15,6 +16,7 @@ from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.tools.kb_status_tool import build_kb_status_summary
 from src.rag.engine import (
+    PreparedContext,
     _build_evidence_items,
     _build_result_list_answer,
     _normalize_category_wording,
@@ -324,3 +326,184 @@ async def test_stream_tokens_prepares_context_off_loop_thread(monkeypatch):
         pass
 
     assert observed == [False], "_prepare_context 가 이벤트 루프 스레드에서 실행되었습니다"
+
+
+# --------------------------------------------------------------------------- #
+# RAG 레이턴시 계측 및 구조화 로그 검증 테스트
+# --------------------------------------------------------------------------- #
+
+
+class _ErrorBackend(_FakeStreamingBackend):
+    """생성 시 예외를 발생시키는 백엔드."""
+
+    def generate(self, system_prompt, messages):
+        raise RuntimeError("LLM 백엔드 연결 오류 (테스트)")
+
+
+def test_prepare_context_returns_prepared_context_with_timings():
+    prepared = rag_engine._prepare_context("테스트 질문")
+    assert isinstance(prepared, PreparedContext)
+    assert isinstance(prepared, tuple)
+    assert len(prepared) == 7
+
+    # 7개 요소 언패킹 보존 검증
+    plan, _structured_data, _vector_docs, _kb_status, provenance, _context_text, messages = prepared
+    assert plan is not None
+    assert provenance is not None
+    assert isinstance(messages, list)
+
+    timings = prepared.timings
+    assert isinstance(timings, dict)
+    for key in (
+        "plan_ms",
+        "sql_ms",
+        "vector_ms",
+        "kb_status_ms",
+        "assembly_ms",
+        "prepare_total_ms",
+    ):
+        assert key in timings
+        assert isinstance(timings[key], float)
+        assert timings[key] >= 0.0
+
+
+def test_prepare_context_timings_respects_skipped_stages():
+    # tool_context 에 결과가 모두 있으면 SQL, 벡터, KB_status 조회가 실행되지 않고 0.0 으로 남아야 합니다.
+    tool_context = {
+        "tool_results": {
+            "bid_query": {"result": {"summary": {"total_bids": 1}}},
+            "semantic_search": {
+                "documents": [{"document": "문맥", "metadata": {}, "distance": 0.1}]
+            },
+            "kb_status": {"kb_status": {"status": "ready"}},
+        }
+    }
+    prepared = rag_engine._prepare_context("테스트 질문", tool_context=tool_context)
+    timings = prepared.timings
+    assert timings["sql_ms"] == 0.0
+    assert timings["vector_ms"] == 0.0
+    assert timings["kb_status_ms"] == 0.0
+    assert timings["plan_ms"] >= 0.0
+    assert timings["assembly_ms"] >= 0.0
+    assert timings["prepare_total_ms"] >= 0.0
+
+
+def test_get_answer_sync_logs_latency_success_path(caplog):
+    rag_engine._backend = _FakeStreamingBackend()
+    rag_engine._backend_resolved = True
+
+    with caplog.at_level(logging.INFO, logger="src.rag.engine"):
+        bundle = rag_engine.get_answer_sync("적격심사 기준 안내")
+
+    assert bundle.answer is not None
+    assert bundle.latency_ms >= 0.0
+
+    latency_logs = [r for r in caplog.records if "rag_engine_latency:" in r.message]
+    assert len(latency_logs) == 1
+    log_record = latency_logs[0]
+    msg = log_record.message
+    assert "status=success" in msg
+    assert "backend=fake" in msg
+    assert "plan_ms=" in msg
+    assert "sql_ms=" in msg
+    assert "vector_ms=" in msg
+    assert "kb_ms=" in msg
+    assert "assembly_ms=" in msg
+    assert "prepare_ms=" in msg
+    assert "llm_ms=" in msg
+    assert "guard_ms=" in msg
+    assert "total_ms=" in msg
+
+
+def test_get_answer_sync_logs_latency_direct_result_list(caplog):
+    rag_engine._backend = _FakeStreamingBackend()
+    rag_engine._backend_resolved = True
+
+    tool_context = {
+        "tool_results": {
+            "bid_query": {
+                "result": {
+                    "filters": {"category_label": "용역"},
+                    "summary": {
+                        "recent_results": [
+                            {
+                                "bid_ntce_no": "SERVC-001",
+                                "bid_ntce_nm": "용역 공고",
+                                "dminstt_nm": "테스트 기관",
+                                "bidwinnr_nm": "테스트 업체",
+                                "sucsf_bid_amt": 1000000,
+                                "sucsf_bid_rate": 98.12,
+                                "rl_openg_dt": "2026-08-01 10:00:00",
+                            }
+                        ]
+                    },
+                }
+            }
+        }
+    }
+
+    with caplog.at_level(logging.INFO, logger="src.rag.engine"):
+        bundle = rag_engine.get_answer_sync(
+            "최근 낙찰된 용역 사업 1개만 리스트", tool_context=tool_context
+        )
+
+    assert "SERVC-001" in bundle.answer
+    assert bundle.latency_ms >= 0.0
+
+    latency_logs = [r for r in caplog.records if "rag_engine_latency:" in r.message]
+    assert len(latency_logs) == 1
+    msg = latency_logs[0].message
+    assert "status=direct_result_list" in msg
+    assert "llm_ms=0.00" in msg
+    assert "backend=none" in msg
+
+
+def test_get_answer_sync_logs_latency_fallback_no_backend(caplog):
+    rag_engine._backend = None
+    rag_engine._backend_resolved = True
+
+    with caplog.at_level(logging.INFO, logger="src.rag.engine"):
+        bundle = rag_engine.get_answer_sync("일반 질문입니다")
+
+    assert bundle.answer is not None
+    assert bundle.latency_ms >= 0.0
+
+    latency_logs = [r for r in caplog.records if "rag_engine_latency:" in r.message]
+    assert len(latency_logs) == 1
+    msg = latency_logs[0].message
+    assert "status=fallback_no_backend" in msg
+    assert "llm_ms=0.00" in msg
+    assert "backend=fallback" in msg
+
+
+def test_get_answer_sync_logs_latency_fallback_on_exception(caplog):
+    rag_engine._backend = _ErrorBackend()
+    rag_engine._backend_resolved = True
+
+    with caplog.at_level(logging.INFO, logger="src.rag.engine"):
+        bundle = rag_engine.get_answer_sync("일반 질문입니다")
+
+    assert bundle.answer is not None
+    assert bundle.latency_ms >= 0.0
+
+    latency_logs = [r for r in caplog.records if "rag_engine_latency:" in r.message]
+    assert len(latency_logs) == 1
+    msg = latency_logs[0].message
+    assert "status=fallback_error" in msg
+    assert "backend=fake" in msg
+
+
+def test_latency_logs_do_not_leak_user_query_or_documents(caplog):
+    rag_engine._backend = _FakeStreamingBackend()
+    rag_engine._backend_resolved = True
+
+    private_query = "CONFIDENTIAL_USER_QUERY_DATA_XYZ_999"
+    with caplog.at_level(logging.INFO, logger="src.rag.engine"):
+        rag_engine.get_answer_sync(private_query)
+
+    latency_logs = [r for r in caplog.records if "rag_engine_latency:" in r.message]
+    assert len(latency_logs) == 1
+    record = latency_logs[0]
+    assert private_query not in record.message
+    for _key, value in getattr(record, "extra", {}).items():
+        assert private_query not in str(value)
