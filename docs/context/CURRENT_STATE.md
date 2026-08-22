@@ -83,12 +83,14 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **워커 기동 후속**: 준비 자동화 완료. pytest 미실행 대응 커밋 게이트 판단.
+1. **Orca 워커 준비 안전성 보완**: Git worktree 소속 사전 검증 후에만 `.env` 복사, trust 설정의 프로세스 간 잠금·최초 파일 처리를 먼저 구현. 완료 전 병렬 쓰기 워커 기동 금지.
 2. **코디네이터·워커 토큰 v3**: 코디네이터 기본값은 Codex `gpt-5.6-terra` + effort `medium`이며 변경 전 `MODEL_CHANGE_NOTICE`를 보냅니다. Gemini 워커 기본값은 `gemini-3.7-flash-medium`이며 Flash High는 데이터 무손실 영향·복잡한 구현/회귀 분석·독립 교차검토에만 `WORKER_MODEL_NOTICE`와 함께 승격합니다. `gpt-5.6` 별칭은 Sol이므로 사용하지 않으며, Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 사용자 승인 후 수동 승격합니다.
-3. **예측 c1·c2·c4 회귀 원인 분리**: 2026-08-22 정식 반복 측정에서 c10·SSE c1은 통과했으나 세 감시 지점은 기존 +10% 한도를 초과. 실행 이미지·호스트 부하·요청 경로를 먼저 대조.
-4. **Ollama 병렬도·SSE 기준선**: `OLLAMA_NUM_PARALLEL` c4 지연 분석(Docker·재시동).
-5. **Windows Docker Desktop 실기 검증**: 스택 구동·E2E 통과(G2).
-6. **수집 2·3회차 관찰**: Docker.
+3. **ModelRegistry 중복 로드 방지**: startup warmup·readiness의 single-flight 로드와 동시성 반증 테스트를 구현.
+4. **병합·성능 재현성 게이트 보완**: Orca finalize/Level 1 PASS 없는 병합 차단, prediction 원시값에 Git·이미지·런타임 설정 메타데이터 추가.
+5. **예측 c1·c2·c4 회귀 원인 분리**: 위 1~4 완료 후 실행 이미지·호스트 부하·요청 경로를 먼저 대조.
+6. **Ollama 병렬도·SSE 기준선**: `OLLAMA_NUM_PARALLEL` c4 지연 분석(Docker·재시동).
+7. **Windows Docker Desktop 실기 검증**: 스택 구동·E2E 통과(G2).
+8. **수집 2·3회차 관찰**: Docker.
 
 ### 4.1 종결 계열 요약
 
@@ -102,7 +104,7 @@
 - **ORM `Mapped[]` 전환 완료 (2026-08-22)**: `bids.py`·`chatbot.py`·`accounts.py`·`predictions.py` 13모델·137컬럼 전환. 지문 `60a9cf49…c51c8` 일치(DDL 불변), mypy `call-overload` 6개 제거.
 - **동기 블로킹 I/O 요청 P95 실측 완료 (2026-08-22)**: 예측 웜 P95 61.9~83.6ms(100ms 4회 충족, 콜드 383·122ms 미달), SSE 첫 토큰 1.26~2.29s·완료 6.37~7.65s 충족. 기준선 부재로 개선폭 미주장, 단발 6.3~10.3s 목표 미정의.
 - **블로킹 I/O 세부 계측 배선 완료 (2026-08-22)**: 예측 DB·특징·점/구간 추론과 예열, 단발 RAG 계획·SQL·벡터·KB·LLM·후처리 구조화 로그 추가. 운영 큐와 분리된 Arq 처리량 하네스 추가. 실측값과 최적화 판정은 미확정.
-- **워커 기동 준비 자동화 (2026-08-22)**: `scripts/orca_prepare_worktree.py` 로 `.env`·신뢰·pre-commit 자동화(`--check` 미준비 종료 1), `shift+tab` 필요.
+- **워커 기동 준비 자동화 (2026-08-22)**: `scripts/orca_prepare_worktree.py` 로 `.env`·신뢰·pre-commit 자동화(`--check` 미준비 종료 1), `shift+tab` 필요. Git 소속 검증 전 `.env` 복사와 trust 설정 RMW 경쟁은 보완 대기(P1).
 - **린터·보안·타입 게이트**: bandit 47건 오탐 0건화(CI 9시간 차단 해소), mypy 58건 해소·`typecheck` `check-all`·CI 배선.
 - **프론트엔드 의존성 고정**: `package-lock.json` 추적, CI·Dockerfile `npm ci`.
 
