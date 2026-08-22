@@ -161,7 +161,7 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 | `gemini-flash-low` | `gemini-3.7-flash-low` | gemini | primary | **대상 (True)** | investigator, benchmarker, documenter | 지연 우선 조사·계측·문서화 |
 | `claude-sonnet` | `claude-sonnet-4-6` | claude | secondary | **대상 (True)** | reviewer, builder | 고품질 판정 필요 작업 |
 | `claude-opus` | `claude-opus-5` | claude | coordinator_reserve | **비대상 (False)** | (워커 사용 불가) | 예비 코디네이터. 워커 지정 시 거부 |
-| `codex` | `gpt-5.6-sol` | codex | coordinator | **비대상 (False)** | (워커 사용 불가) | **기본 코디네이터. 워커 지정 시 거부(오류)** |
+| `codex` | `gpt-5.6-terra` | codex | coordinator | **비대상 (False)** | (워커 사용 불가) | **기본 코디네이터 (medium). 기본값 변경 전 `MODEL_CHANGE_NOTICE`, Sol High는 사용자 승인 후 고위험 최종 판정에만 수동 사용하며 워커 지정 시 거부(오류)** |
 | `opencode-free` | `opencode/nemotron-3.5-lightning-free` | opencode | free | **비대상 (False)** | (격리) | 장문 지시 붕괴 실측으로 재시험 전 배정 중단 |
 | `cerebras-oss` | `cerebras/gpt-oss-120b` | cerebras | free | **비대상 (False)** | investigator | 컨텍스트 65,536 / 출력 8,192. Capsule 범위 작업 전용 |
 

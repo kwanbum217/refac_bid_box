@@ -181,7 +181,7 @@ tests/test_data_preservation.py::test_chroma_db_exists
 
 | 풀 | 성격 | 배정할 작업 |
 | --- | --- | --- |
-| Codex (`gpt-5.6-sol`, effort `high`) | **기본 코디네이터.** 워커로 쓰지 않습니다 | 4.4 의 코디네이터 몫 |
+| Codex (`gpt-5.6-terra`, effort `medium`) | **기본 코디네이터.** 워커로 쓰지 않습니다. Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 수동 승격합니다 | 4.4 의 코디네이터 몫 |
 | Claude 구독 | 예비 코디네이터. 한도 여유가 있을 때만 수동 전환합니다 | 코디네이터 예비 |
 | Antigravity Google (`gemini-3.7-flash-high`) | 허용량이 가장 큼. **주력 워커** | 분석, 감사, 측정, 통계, 절차적 구현 |
 | Antigravity Claude (`claude-opus-4-6-thinking`, `claude-sonnet-4-6`) | 별도 풀. **허용량 적음** | 판정 품질이 필요한 감사, 신중한 리팩터 |
@@ -189,6 +189,33 @@ tests/test_data_preservation.py::test_chroma_db_exists
 
 기동 경로와 모델 ID 는
 [`agent_worker_launch_reference.md`](agent_worker_launch_reference.md) 를 따릅니다.
+
+### 4.2.1 코디네이터 모델 변경 및 사용자 알림
+
+기본 설정은 Codex `gpt-5.6-terra` / `medium`입니다. `gpt-5.6` 별칭은 Sol을
+가리키므로 기본 설정에 쓰지 않습니다. 작업을 시작하기 전 기본값과 다른 설정이
+필요하면 코디네이터는 아래 매트릭스를 적용하고 사용자에게 먼저 알립니다.
+
+| 작업 조건 | 설정 | 사용자 처리 | 기본값 복귀 |
+| --- | --- | --- | --- |
+| 상태 확인, Task 등록, 짧은 결과 요약, 범위가 좁은 읽기 전용 조사 | Terra / low | `MODEL_CHANGE_NOTICE` 사전 고지 후 진행 | 해당 작업 종료 즉시 |
+| 다단계 조율, Capsule 작성·검증, 워커 결과 대조, 일반 병합 준비 | Terra / medium | 기본값이므로 별도 고지 불필요 | 해당 없음 |
+| 여러 공유 자원 의존성, 복잡한 회귀 원인 분석, 다수 브랜치 충돌 조정 | Terra / high | `MODEL_CHANGE_NOTICE` 사전 고지 후 진행 | 해당 판정 종료 즉시 |
+| 데이터 무손실, DB 스키마, 보안, 컷오버, `main` 최종 병합의 난해한 판단 | Sol / high | `MODEL_CHANGE_NOTICE`를 보내고 **사용자 승인 후** 진행 | 해당 판정 종료 즉시 |
+| 결정론적 문서 동기화·형식 변환 등 비판정성 GPT 보조 작업 | Luna / medium | `MODEL_CHANGE_NOTICE` 사전 고지 후 워커에만 사용 | 작업 종료 즉시 |
+
+알림은 다음 필드를 빠짐없이 포함합니다. 단, 기본 Terra / medium을 그대로 쓰는
+일반 조율은 반복 고지하지 않습니다.
+
+```text
+[MODEL_CHANGE_NOTICE]
+- 대상 작업: <Task 또는 판정 범위>
+- 변경: Terra / medium -> <모델 / effort>
+- 사유: <매트릭스의 작업 조건>
+- 영향: <기본값 대비 사용량·품질·지연의 방향>
+- 복귀: <기본 Terra / medium으로 돌아가는 시점>
+- 승인: <필요 없음 | Sol High 적용 승인 요청>
+```
 
 #### 2026-08-14 관찰된 워커 특성
 

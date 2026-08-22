@@ -99,6 +99,7 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 - 응답은 한국어 존댓말로 작성.
 - 복잡한 변경이나 설계 결정은 사전에 제안하고 합의 후 진행.
 - 파일 경로는 `file_path:line_number` 형식으로 참조 (클릭 가능).
+- 코디네이터의 기본값은 Codex `gpt-5.6-terra` + effort `medium`입니다. 기본값을 벗어나 모델 또는 effort를 변경하기 전에는 사용자에게 `MODEL_CHANGE_NOTICE`로 대상 작업, 변경 전·후 설정, 사유, 사용량 영향, 기본값 복귀 시점을 알립니다. `gpt-5.6-sol` + `high`는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 쓰며 사용자 승인 후에만 적용합니다. 상세 매트릭스는 [`docs/ops/orca_orchestration_playbook.md`](docs/ops/orca_orchestration_playbook.md) 4.2.1절을 따릅니다.
 
 ---
 

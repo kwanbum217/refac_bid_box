@@ -566,9 +566,13 @@ orca terminal read --terminal <handle> | tail -5           # 진행 확인
 
 1. **코디네이터 토큰이 가장 희소한 자원입니다.** 배정 기준은 작업 난이도가 아니라
    위임 시 코디네이터 토큰이 실제로 줄어드는지입니다
-2. **기본 코디네이터는 Codex `gpt-5.6-sol` + effort `high`** 이며 Claude 구독은
-   예비 코디네이터입니다. 둘 다 워커로 쓰지 않습니다. 주력 워커는 Antigravity
-   Gemini Flash입니다
+2. **기본 코디네이터는 Codex `gpt-5.6-terra` + effort `medium`** 이며 Claude 구독은
+   예비 코디네이터입니다. `gpt-5.6` 별칭은 Sol을 가리키므로 기본값으로 쓰지 않습니다.
+   Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 수동 사용합니다. 둘 다
+   워커로 쓰지 않습니다. 기본값 변경 전에는 사용자에게 `MODEL_CHANGE_NOTICE`를 보내며,
+   Sol High는 사용자 승인 후에만 적용합니다. 상세 매트릭스는
+   [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 4.2.1절입니다. 주력
+   워커는 Antigravity Gemini Flash입니다
 3. **검증·병합 판정·게이트 기준 제정은 위임하지 않습니다.** 절감률은 50~60%
    이며 검증 비용은 남습니다
 
