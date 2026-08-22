@@ -104,6 +104,7 @@ docs/
 | 수집 관찰 1회차 | [`2026-08-14_collection_observation_round1.md`](handoff/2026-08-14_collection_observation_round1.md) | 정기 수집 실측. 완료 기준을 최신 개찰 시각 전진에서 개찰 건수 증가로 교체한 근거 |
 | Servc OOS 필터 진단 | [`2026-08-14_servc_oos_filter_diagnosis.md`](handoff/2026-08-14_servc_oos_filter_diagnosis.md) | **유효 OOS 2건 서술 폐기.** 실측 1,194건, 전환율 86.02%, 3,098 도달 약 14.0영업일. 08-03 공고 수집 공백이 조인 탈락 원인 |
 | 2026-08-14 후반 세션 인수인계 | [`2026-08-14_late_session_handoff.md`](handoff/2026-08-14_late_session_handoff.md) | 레이턴시 게이트 규약 제정, GC freeze 채택, SSE 기준선, 워커 배정 정책. **성능 작업 착수 전 필독** |
+| 2026-08-22 P95·워커 감시 인수인계 | [`2026-08-22_p95_and_worker_supervision_handoff.md`](handoff/2026-08-22_p95_and_worker_supervision_handoff.md) | 최신 G3 게이트 결과, Terra Medium·Gemini Medium 운영 정책, c1·c2·c4 회귀 원인 분리 순서 |
 
 ---
 
