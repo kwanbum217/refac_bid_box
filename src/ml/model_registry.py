@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -216,6 +217,7 @@ def _preferred_model_for_features(features_dict):
 
 class ModelRegistry:
     _models: dict[str, Any] = {}
+    _load_lock = threading.RLock()
 
     @classmethod
     def _get_model_root(cls):
@@ -243,10 +245,11 @@ class ModelRegistry:
         disk_model_ids = cls._discover_model_ids_on_disk()
         loaded_model_ids = sorted(cls._models.keys())
         if force or disk_model_ids != loaded_model_ids:
-            cls.load_all_models()
+            cls.load_all_models(force=force)
 
     @classmethod
-    def discover_models(cls):
+    def discover_models(cls, registry: dict[str, Any] | None = None):
+        registry = cls._models if registry is None else registry
         if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
             print("[ModelRegistry] SKIP_MODEL_LOAD=true: skipping heavy model loading.")
             return
@@ -282,13 +285,14 @@ class ModelRegistry:
                     wrapper = KerasModelWrapper(model_dir, metadata)
                 else:
                     wrapper = JoblibModelWrapper(model_dir, metadata)
-                cls._register(model_id, wrapper)
+                cls._register(model_id, wrapper, registry=registry)
             except Exception as exc:
                 print(f"[ModelRegistry] 모델 로드 오류 ({model_id}): {exc}")
 
     @classmethod
-    def _register(cls, model_id, wrapper):
-        cls._models[model_id] = wrapper
+    def _register(cls, model_id, wrapper, registry: dict[str, Any] | None = None):
+        registry = cls._models if registry is None else registry
+        registry[model_id] = wrapper
         unservable = unservable_features(wrapper.get_serving_columns())
         if unservable:
             # 등록 자체는 막지 않습니다. 모델 하나 때문에 서버가 못 뜨면 안 됩니다.
@@ -313,10 +317,17 @@ class ModelRegistry:
         }
 
     @classmethod
-    def load_all_models(cls):
-        cls._models = {}
-        cls.discover_models()
-        return len(cls._models)
+    def load_all_models(cls, force=False):
+        """모델을 한 번만 적재하고, 완성된 레지스트리만 공개합니다."""
+        with cls._load_lock:
+            disk_model_ids = cls._discover_model_ids_on_disk()
+            if not force and disk_model_ids == sorted(cls._models.keys()):
+                return len(cls._models)
+
+            candidate: dict[str, Any] = {}
+            cls.discover_models(registry=candidate)
+            cls._models = candidate
+            return len(candidate)
 
     @classmethod
     def available_models(cls):
