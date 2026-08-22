@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-22
-> **source_commit**: `aeb1db4`
+> **source_commit**: `ef1fedb`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -69,7 +69,7 @@
 2. **ModelRegistry single-flight**: startup warmup·readiness 동시 시작에서 실제 로드 1회와 부분 레지스트리 비노출을 증명합니다.
 3. **병합·성능 재현성**: finalize/Level 1 PASS 없는 병합 차단과 prediction 원시 메타데이터를 보완합니다.
 4. **예측 A/B 결과 및 c4 판정 기록**: 통제 교차 A/B 5회 검증 결과 c4는 worst P95 34.32ms(기준 36.81ms 이내), 쌍대 델타 중앙 +1.31ms(`+2.0ms`는 향후 실험용 보조 지표이며 PASS 판정선 아님), >50ms 0건으로 게이트 통과 기록 완료. G3 전체 컷오버와 구분하여 관리.
-5. **운영 검증**: 수집 2·3회차, Ollama c4(재기동 승인 필요), Windows Docker Desktop, Arq 처리량을 순차 처리합니다.
+5. **운영 검증**: 수집 2·3회차, Ollama c4(재기동 승인 필요), Windows Docker Desktop, 실제 worker 컨테이너 업무 큐, 단발 RAG를 순차 처리합니다. Redis 연계 in-process Arq 합성 하네스의 600건 3회 반복 게이트는 PASS이나 G3 전체 판정과 분리합니다.
 
 ### 4.1 종결 계열 요약
 
@@ -98,7 +98,7 @@
 
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama 다중화 시 자원 점유와 c4 기준선 미확정.
-- Arq 태스크 처리량과 단발 RAG/LLM 내부 구간은 계측 배선만 완료되었고, 반복 게이트 판정은 미수행.
+- Arq 처리량은 Redis 연계 in-process 합성 하네스로 600건 3회 반복을 측정해 최악 1,138.77 jobs/sec, P95 504.941ms, 실패율 0%로 반복 게이트 PASS했습니다. 실제 Docker `worker` 컨테이너의 업무 큐 처리량과 단발 RAG/LLM 내부 구간은 별도 검증 대기입니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
@@ -115,7 +115,7 @@
 - 레이턴시 게이트 규약: [`latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
 - 예측 재측정(2026-08-22): [`predict_remeasurement_20260822.md`](../ops/predict_remeasurement_20260822.md)
 - 예측 통제 A/B(2026-08-22): [`predict_ab_20260822.md`](../ops/predict_ab_20260822.md)
-- 블로킹 I/O 계측: [`predict_coldstart_instrumentation.md`](../analysis/predict_coldstart_instrumentation.md), [`query_rag_latency_instrumentation.md`](../analysis/query_rag_latency_instrumentation.md), [`arq_throughput_harness.md`](../analysis/arq_throughput_harness.md)
+- 블로킹 I/O 계측: [`predict_coldstart_instrumentation.md`](../analysis/predict_coldstart_instrumentation.md), [`query_rag_latency_instrumentation.md`](../analysis/query_rag_latency_instrumentation.md), [`arq_throughput_harness.md`](../analysis/arq_throughput_harness.md), [`arq_throughput_20260823.md`](../analysis/arq_throughput_20260823.md), [`arq_throughput_gate_20260823.md`](../analysis/arq_throughput_gate_20260823.md)
 - 워커 기동: [`agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
 - 용역 모델: [`servc_model_status.md`](../servc_model_status.md)
 - 미병합 브랜치 판정: [`phase8_predict_tail_merge_verdict_20260814.md`](../ops/phase8_predict_tail_merge_verdict_20260814.md), [`codex_task_routing_branch_verdict_20260814.md`](../ops/codex_task_routing_branch_verdict_20260814.md)
