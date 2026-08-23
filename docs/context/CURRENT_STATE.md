@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-23
-> **source_commit**: `84fe85e`
+> **source_commit**: `8bb5213`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -66,7 +66,7 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **운영 검증**: Ollama c4(재기동 승인 필요), Windows CI 복구, Windows Docker Desktop 실기, 단발 RAG를 순차 처리합니다. 수집 2·3회차 관찰과 컨테이너 워커 큐 실측은 종결했습니다.
-1-1. **Arq 증거 규약 이행**: [`arq_threshold_provenance_20260823.md`](../ops/arq_threshold_provenance_20260823.md)가 요구하는 host/Redis/Arq/Docker 4계층 provenance를 컨테이너 하네스는 기록하나 in-process 하네스([`benchmark_arq_throughput.py`](../../scripts/benchmark_arq_throughput.py))는 `python`·`platform`·`redis_url` 3개뿐입니다. 절대 기준선 900 jps / 600ms의 도출 근거도 미명시입니다.
+1-1. **Arq 정식 기준선 캘리브레이션**: 잠정 일관성 봉투(구 절대 기준선 900 jps / 600ms)는 사후 보정임이 확인됐습니다([`arq_threshold_derivation_20260823.md`](../analysis/arq_threshold_derivation_20260823.md)). 정식 기준선을 세우려면 고정 조건 캘리브레이션 런이 필요합니다.
 2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
 3. **G3 전체 컷오버 판정**: 위 항목이 닫힌 뒤 별도로 판정합니다. 개별 게이트 PASS를 컷오버 PASS로 승격하지 않습니다.
 
@@ -99,7 +99,7 @@
 
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama 다중화 시 자원 점유와 c4 기준선 미확정.
-- Arq 처리량은 Docker Redis(`redis:7-alpine`) 연계 in-process 합성 하네스로 600건 3회 반복을 측정해 최악 1,107.79 jobs/sec, P95 519.198ms, 실패율 0%로 반복 게이트 PASS했습니다([`arq_docker_worker_measure_20260823.md`](../analysis/arq_docker_worker_measure_20260823.md)). 실제 Docker `worker` 컨테이너의 업무 큐 처리량과 단발 RAG/LLM 내부 구간은 별도 검증 대기입니다.
+- Arq 처리량은 실제 컨테이너 워커 경로(최악 1,636 jobs/sec, P95 352.6ms)와 Docker Redis 연계 in-process 경로(최악 966.17 jobs/sec, P95 594.86ms) 양쪽을 3회씩 실측했고 실패율은 모두 0%입니다. 두 경로의 원시 JSON 이 회차별로 보존되며 host/Redis/Arq/Docker 4계층 provenance 를 담습니다([`arq_docker_worker_measure_20260823.md`](../analysis/arq_docker_worker_measure_20260823.md)). 실제 Docker `worker` 컨테이너의 업무 큐 처리량과 단발 RAG/LLM 내부 구간은 별도 검증 대기입니다.
 - 벤치마크 provenance 는 측정 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 로 무효화합니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 로 strict 를 끈 측정은 `provenance_consistent: false` 로 기록되며 정본 evidence 가 아닙니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
