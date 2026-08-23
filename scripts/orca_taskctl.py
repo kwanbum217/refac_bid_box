@@ -1472,8 +1472,16 @@ def finalize_task(
         code_rev, stdout_rev, stderr_rev = _run_command(reviewer_cmd, timeout=600)
         if code_rev == 2:
             tool_error = True
+            # 리뷰어는 진단 메시지를 stdout JSON 의 error 필드로 내보낸다.
+            # stderr 만 읽으면 원인을 알 수 없는 "리뷰어 도구 오류" 만 남는다.
+            detail = stderr_rev.strip()
+            if not detail:
+                try:
+                    detail = str(json.loads(stdout_rev).get("error") or "").strip()
+                except json.JSONDecodeError:
+                    detail = stdout_rev.strip()
             result["reviewer"] = {
-                "error": truncate(stderr_rev.strip() or "리뷰어 도구 오류", 200),
+                "error": truncate(detail or "리뷰어 도구 오류", 400),
                 "exit_code": 2,
             }
         else:

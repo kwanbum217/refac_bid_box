@@ -33,6 +33,6 @@
 
 ## 3. 검증 결과
 
-- `scripts/validate_agent_rules.py --quiet`: **12/12 건 전량 PASS**
+- `scripts/validate_agent_rules.py --quiet`: 작업 커밋 직전 기준 **12/12 건 전량 PASS**. 작업 커밋 이후에는 `CURRENT_STATE 필수 필드` 1건이 FAIL 로 바뀌었습니다. `source_commit` 이 HEAD 보다 6 커밋 뒤처져 허용치 5 를 넘었기 때문이며, 본 Task 는 `CURRENT_STATE.md` 수정이 금지되어 있어 코디네이터가 병합 후 갱신했습니다. L2 리뷰가 이 불일치를 차단 사유로 제기했습니다.
 - `CURRENT_STATE.md` 및 코드 파일 수정 없음 (무손실 및 계약 엄수)
 - 과거 증거 수치는 보존하고 배너/주석으로만 표시 완료
