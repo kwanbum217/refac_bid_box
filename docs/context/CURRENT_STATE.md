@@ -65,11 +65,9 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **워커 준비 안전성**: Git common directory 검증, 신뢰 설정 잠금·최초 파일·복구를 먼저 닫습니다. 완료 전 병렬 쓰기 워커를 기동하지 않습니다.
-2. **ModelRegistry single-flight**: startup warmup·readiness 동시 시작에서 실제 로드 1회와 부분 레지스트리 비노출을 증명합니다.
-3. **병합·성능 재현성**: finalize/Level 1 PASS 없는 병합 차단과 prediction 원시 메타데이터를 보완합니다.
-4. **예측 A/B 결과 및 c4 판정 기록**: 통제 교차 A/B 5회 검증 결과 c4는 worst P95 34.32ms(기준 36.81ms 이내), 쌍대 델타 중앙 +1.31ms(`+2.0ms`는 향후 실험용 보조 지표이며 PASS 판정선 아님), >50ms 0건으로 게이트 통과 기록 완료. G3 전체 컷오버와 구분하여 관리.
-5. **운영 검증**: 수집 2·3회차, Ollama c4(재기동 승인 필요), Windows Docker Desktop, 실제 worker 컨테이너 업무 큐, 단발 RAG를 순차 처리합니다. Redis 연계 in-process Arq 합성 하네스의 600건 3회 반복 게이트는 PASS이나 G3 전체 판정과 분리합니다.
+1. **운영 검증**: 수집 2·3회차, Ollama c4(재기동 승인 필요), Windows Docker Desktop 실기, 실제 `worker` 컨테이너 업무 큐, 단발 RAG를 순차 처리합니다. Redis 연계 in-process Arq 합성 하네스의 600건 3회 반복 게이트는 PASS이나 G3 전체 판정과 분리합니다.
+2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
+3. **G3 전체 컷오버 판정**: 위 항목이 닫힌 뒤 별도로 판정합니다. 개별 게이트 PASS를 컷오버 PASS로 승격하지 않습니다.
 
 ### 4.1 종결 계열 요약
 
@@ -77,7 +75,8 @@
 
 - **안전·품질 게이트**: fail-open 제거, 상태 전파 경계, frontend·Docker·CI 검증 능력과 `source_commit` 신선도 게이트를 갖췄습니다.
 - **구조·데이터**: 9개 모듈을 AST 동일성으로 분할했고 ORM 13모델·137컬럼을 `Mapped[]`로 전환했습니다. DDL 지문은 불변입니다.
-- **실측·계측**: 예측 웜 P95 61.9~83.6ms, SSE 첫 토큰 1.26~2.29s·완료 6.37~7.65s입니다. 블로킹 I/O와 Arq 계측 배선은 완료했고 최적화 판정은 미확정입니다.
+- **실측·계측**: 예측 웜 P95 정본은 위 2·3장의 재측정값(c1 15.39ms, c4 34.32ms, c10 47.77ms)이며 SSE c1 첫 토큰 1297.73ms·전체 6716.22ms입니다. 블로킹 I/O와 Arq 계측 배선은 완료했고 최적화 판정은 미확정입니다.
+- **조율 인프라**: 워커 준비 안전성(Git common directory 검증, 신뢰 설정 잠금·복구), ModelRegistry single-flight(로드 1회·부분 레지스트리 비노출), finalize/Level 1 PASS 없는 병합 차단, 벤치마크 provenance 결박을 모두 닫았습니다.
 - **운영 준비**: 워커 기동 자동화, mypy·bandit·CI 게이트, 프론트엔드 lockfile·`npm ci`를 반영했습니다.
 
 ---
