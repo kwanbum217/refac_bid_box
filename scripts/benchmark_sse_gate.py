@@ -15,17 +15,22 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import gc
-import json
 import math
-import platform
-import subprocess  # nosec B404
 import sys
 import time
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from scripts.benchmark_latency import (
+    BuildProvenanceError,
+)
+from scripts.benchmark_latency import (
+    _command_output as _latency_command_output,
+)
+from scripts.benchmark_latency import (
+    reproducibility_metadata as latency_reproducibility_metadata,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -315,40 +320,42 @@ def run_benchmark(
 
 
 def _command_output(command: list[str]) -> str:
-    try:
-        return (
-            subprocess.check_output(  # nosec B603 B607
-                command,
-                cwd=PROJECT_ROOT,
-                text=True,
-            ).strip()
-            or "unknown"
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
+    return _latency_command_output(command)
 
 
-def reproducibility_metadata() -> dict[str, object]:
+def reproducibility_metadata(
+    service_name: str = "app",
+    strict: bool = True,
+    base_url: str | None = None,
+    target_container: str | None = None,
+) -> dict[str, object]:
     """원시 측정치를 다른 실행 환경과 대조하기 위한 공통 메타데이터입니다."""
-    timer_info = time.get_clock_info("perf_counter")
-    return {
-        "git_sha": _command_output(["git", "rev-parse", "HEAD"]),
-        "measured_at_utc": datetime.now(UTC).isoformat(),
-        "python_version": platform.python_version(),
-        "platform": platform.platform(),
-        "docker_image_id": _command_output(["docker", "compose", "images", "-q", "backend"]),
-        "gc": {"enabled": gc.isenabled(), "threshold": list(gc.get_threshold())},
-        "instrumentation": {
-            "timer": "time.perf_counter",
-            "timer_resolution_seconds": timer_info.resolution,
-            "timer_monotonic": timer_info.monotonic,
-        },
-    }
+    return latency_reproducibility_metadata(
+        service_name=service_name,
+        strict=strict,
+        base_url=base_url,
+        target_container=target_container,
+        command_runner=_command_output,
+    )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="SSE 레이턴시 게이트 벤치마크")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="대상 서버 URL")
+    parser.add_argument(
+        "--target-service", default="app", help="대상 도커 컴포즈 서비스명 (기본: app)"
+    )
+    parser.add_argument(
+        "--target-container",
+        default=None,
+        help="명시적 대상 도커 컨테이너 이름 또는 ID (기본: None)",
+    )
+    parser.add_argument(
+        "--allow-unknown-provenance",
+        action="store_true",
+        default=False,
+        help="Docker provenance 조회 실패 시에도 측정을 강제 진행합니다 (기본: 거부)",
+    )
     parser.add_argument(
         "--concurrency", type=int, default=1, choices=[1, 4], help="동시성 수준 (c1 또는 c4)"
     )
@@ -367,6 +374,21 @@ def main() -> int:
         print(f"서버 헬스체크 실패 (/api/v1/health/ready): {exc}")
         return 2
 
+    strict_provenance = not args.allow_unknown_provenance
+    try:
+        meta = reproducibility_metadata(
+            service_name=args.target_service,
+            strict=strict_provenance,
+            base_url=args.base_url,
+            target_container=args.target_container,
+        )
+    except BuildProvenanceError as exc:
+        print(f"빌드 provenance 검증 실패: {exc}")
+        print(
+            "--allow-unknown-provenance 옵션으로 강제할 수 있으나 정본 evidence로 인정되지 않습니다."
+        )
+        return 2
+
     summary, records = run_benchmark(
         base_url=args.base_url,
         concurrency=args.concurrency,
@@ -379,7 +401,7 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "meta": {
-                **reproducibility_metadata(),
+                **meta,
                 "base_url": args.base_url,
                 "concurrency": args.concurrency,
                 "rounds": args.rounds,
