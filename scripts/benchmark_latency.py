@@ -57,6 +57,9 @@ PROVENANCE_IDENTITY_KEYS: tuple[str, ...] = (
     "git_sha",
     "container_name",
     "service_name",
+    "target_source_mount",
+    "target_source_git_sha",
+    "target_source_git_dirty",
 )
 
 
@@ -67,7 +70,7 @@ def verify_provenance_consistency(
 ) -> bool:
     """측정 시작과 종료 시점의 provenance identity 일치 여부를 검증합니다.
 
-    측정 도중 대상 컨테이너나 이미지가 교체되었거나 git_sha가 변경된 경우
+    측정 도중 대상 컨테이너나 이미지가 교체되었거나 git_sha/소스 dirty 상태가 변경된 경우
     strict 모드에서 BuildProvenanceError를 발생시키고 fail-closed로 거부합니다.
     """
     mismatches: list[str] = []
@@ -107,18 +110,40 @@ TOTAL_TARGET_MS = 20_000.0
 PREDICT_TARGET_MS = 100.0
 
 
-def _command_output(command: list[str]) -> str:
+def _command_output(command: list[str], allow_empty: bool = False) -> str:
     try:
-        return (
-            subprocess.check_output(  # nosec B603
-                command,
-                cwd=PROJECT_ROOT,
-                text=True,
-            ).strip()
-            or "unknown"
-        )
+        out = subprocess.check_output(  # nosec B603
+            command,
+            cwd=PROJECT_ROOT,
+            text=True,
+        ).strip()
+        if not out:
+            if allow_empty or (len(command) >= 2 and command[-2:] == ["status", "--porcelain"]):
+                return ""
+            return "unknown"
+        return out
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def _parse_source_mount(raw_mounts: str, target_destination: str = "/app/src") -> str | None:
+    """docker inspect의 .Mounts JSON 문자열에서 target_destination에 해당하는 host Source 경로를 찾습니다."""
+    if not raw_mounts or raw_mounts == "unknown":
+        return None
+    try:
+        mounts_json = json.loads(raw_mounts)
+        if isinstance(mounts_json, list):
+            target_norm = target_destination.rstrip("/")
+            for mount in mounts_json:
+                if isinstance(mount, dict):
+                    dest = mount.get("Destination")
+                    if isinstance(dest, str) and dest.rstrip("/") == target_norm:
+                        source = mount.get("Source")
+                        if source:
+                            return str(source)
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def _parse_port_bindings(raw_ports: str) -> tuple[list[dict[str, object]], set[int], set[int]]:
@@ -199,12 +224,14 @@ def reproducibility_metadata(
             ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", container_id]
         )
         raw_ip = cmd_fn(["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", container_id])
+        raw_mounts = cmd_fn(["docker", "inspect", "-f", "{{json .Mounts}}", container_id])
     else:
         target_container_image_id = "unknown"
         container_name = "unknown"
         is_running_raw = "unknown"
         raw_ports = "unknown"
         raw_ip = "unknown"
+        raw_mounts = "unknown"
 
     # 3. 이미지 repo digest 조회 (image ID와 구분)
     image_digest = "unknown"
@@ -227,7 +254,22 @@ def reproducibility_metadata(
             except (ValueError, TypeError):
                 image_digest = "unknown"
 
-    # 4. 포트 바인딩 및 base_url 결박 검증
+    # 4. 소스 bind mount 및 runtime git 상태 조회
+    target_source_mount = _parse_source_mount(raw_mounts, "/app/src")
+    target_source_git_sha: str | None = None
+    target_source_git_dirty: bool | None = None
+
+    if target_source_mount is not None:
+        target_source_git_sha = cmd_fn(["git", "-C", target_source_mount, "rev-parse", "HEAD"])
+        status_raw = cmd_fn(["git", "-C", target_source_mount, "status", "--porcelain"])
+        if status_raw == "unknown":
+            target_source_git_dirty = None
+        elif status_raw == "":
+            target_source_git_dirty = False
+        else:
+            target_source_git_dirty = True
+
+    # 5. 포트 바인딩 및 base_url 결박 검증
     port_bindings, published_host_ports, container_internal_ports = _parse_port_bindings(raw_ports)
     is_running = is_running_raw.strip().lower() == "true"
 
@@ -253,7 +295,7 @@ def reproducibility_metadata(
             else:
                 port_matched = False
 
-    # 5. Strict 모드 검증 및 fail-closed 거부
+    # 6. Strict 모드 검증 및 fail-closed 거부
     if strict:
         failures = []
         if git_sha == "unknown":
@@ -279,6 +321,13 @@ def reproducibility_metadata(
                     f"base_url port {req_port} not bound to target container '{container_id}' "
                     f"(published host ports: {sorted(published_host_ports) if published_host_ports else 'none'})"
                 )
+            if target_source_mount is not None:
+                if target_source_git_sha == "unknown":
+                    failures.append(f"target_source_git_sha({target_source_mount})")
+                if target_source_git_dirty is None:
+                    failures.append(f"target_source_git_dirty_unknown({target_source_mount})")
+                elif target_source_git_dirty is True:
+                    failures.append(f"target_source_git_dirty({target_source_mount})")
         if failures:
             raise BuildProvenanceError(
                 f"Docker/Git provenance lookup failed or returned unknown for: {', '.join(failures)}"
@@ -298,6 +347,9 @@ def reproducibility_metadata(
         "base_url": base_url,
         "bound_port": req_port,
         "port_bindings": port_bindings,
+        "target_source_mount": target_source_mount,
+        "target_source_git_sha": target_source_git_sha,
+        "target_source_git_dirty": target_source_git_dirty,
         "gc": {"enabled": gc.isenabled(), "threshold": list(gc.get_threshold())},
         "instrumentation": {
             "timer": "time.perf_counter",

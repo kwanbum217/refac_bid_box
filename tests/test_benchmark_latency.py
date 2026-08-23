@@ -60,6 +60,9 @@ def test_reproducibility_metadata_marks_failed_docker_lookup_unknown(monkeypatch
         "base_url",
         "bound_port",
         "port_bindings",
+        "target_source_mount",
+        "target_source_git_sha",
+        "target_source_git_dirty",
         "gc",
         "instrumentation",
     }
@@ -948,3 +951,242 @@ def test_benchmark_latency_main_fails_when_container_swapped_during_measurement(
     assert exit_code == 2
     # 측정 실패 시 결과 파일이 생성되지 않아야 함 (fail-closed)
     assert not out_file.exists()
+
+
+def test_reproducibility_metadata_bind_mount_clean_success(monkeypatch):
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "harness_git_sha"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:compose_img"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt_123"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt_123"]:
+            return "sha256:running_img"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "cnt_123"]:
+            return "/app_cnt"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt_123"]:
+            return "true"
+        if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt_123"]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt_123"]:
+            return "172.18.0.2"
+        if command == ["docker", "inspect", "-f", "{{json .RepoDigests}}", "sha256:running_img"]:
+            return '["app:latest"]'
+        if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "cnt_123"]:
+            return '[{"Type":"bind","Source":"/Users/test/workspace/src","Destination":"/app/src"}]'
+        if command == ["git", "-C", "/Users/test/workspace/src", "rev-parse", "HEAD"]:
+            return "source_git_sha_789"
+        if command == ["git", "-C", "/Users/test/workspace/src", "status", "--porcelain"]:
+            return ""
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    meta = benchmark_latency.reproducibility_metadata(
+        service_name="app",
+        strict=True,
+        base_url="http://127.0.0.1:8000",
+    )
+
+    assert meta["target_source_mount"] == "/Users/test/workspace/src"
+    assert meta["target_source_git_sha"] == "source_git_sha_789"
+    assert meta["target_source_git_dirty"] is False
+
+
+def test_reproducibility_metadata_bind_mount_dirty_rejected_in_strict_mode(monkeypatch):
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "harness_git_sha"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:compose_img"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt_123"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt_123"]:
+            return "sha256:running_img"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "cnt_123"]:
+            return "/app_cnt"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt_123"]:
+            return "true"
+        if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt_123"]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt_123"]:
+            return "172.18.0.2"
+        if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "cnt_123"]:
+            return '[{"Type":"bind","Source":"/Users/test/workspace/src","Destination":"/app/src"}]'
+        if command == ["git", "-C", "/Users/test/workspace/src", "rev-parse", "HEAD"]:
+            return "source_git_sha_789"
+        if command == ["git", "-C", "/Users/test/workspace/src", "status", "--porcelain"]:
+            return " M src/app/main.py\n?? src/new_file.py"
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    # strict=True: BuildProvenanceError 발생
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.reproducibility_metadata(
+            service_name="app",
+            strict=True,
+            base_url="http://127.0.0.1:8000",
+        )
+    assert "target_source_git_dirty(/Users/test/workspace/src)" in str(excinfo.value)
+
+    # strict=False: 에러 없이 정상 반환하되 dirty=True 기록
+    non_strict_meta = benchmark_latency.reproducibility_metadata(
+        service_name="app",
+        strict=False,
+        base_url="http://127.0.0.1:8000",
+    )
+    assert non_strict_meta["target_source_mount"] == "/Users/test/workspace/src"
+    assert non_strict_meta["target_source_git_sha"] == "source_git_sha_789"
+    assert non_strict_meta["target_source_git_dirty"] is True
+
+
+def test_reproducibility_metadata_image_only_container_has_null_source_mount(monkeypatch):
+    import json
+
+    from scripts.benchmark_latency import dump_strict_json
+
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "harness_git_sha"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:compose_img"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt_123"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt_123"]:
+            return "sha256:running_img"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "cnt_123"]:
+            return "/app_cnt"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt_123"]:
+            return "true"
+        if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt_123"]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt_123"]:
+            return "172.18.0.2"
+        if command == ["docker", "inspect", "-f", "{{json .RepoDigests}}", "sha256:running_img"]:
+            return '["app:latest"]'
+        if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "cnt_123"]:
+            # /app/src 마운트가 없는 이미지 전용 컨테이너
+            return '[{"Type":"bind","Source":"/data/chroma","Destination":"/app/chroma_db"}]'
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    meta = benchmark_latency.reproducibility_metadata(
+        service_name="app",
+        strict=True,
+        base_url="http://127.0.0.1:8000",
+    )
+
+    assert meta["target_source_mount"] is None
+    assert meta["target_source_git_sha"] is None
+    assert meta["target_source_git_dirty"] is None
+
+    # strict JSON 직렬화 시 null 로 기록되는지 확인
+    json_str = dump_strict_json(meta)
+    parsed = json.loads(json_str)
+    assert parsed["target_source_mount"] is None
+    assert parsed["target_source_git_sha"] is None
+    assert parsed["target_source_git_dirty"] is None
+
+
+def test_benchmark_latency_main_fails_on_dirty_runtime_source(monkeypatch, tmp_path):
+    class MockHealthResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(benchmark_latency.httpx, "get", lambda *a, **kw: MockHealthResponse())
+
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "git_sha_abc"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "compose_img_id_111"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt_app_111"
+        if command[0] == "docker" and command[1] == "inspect":
+            if command[3] == "{{.Image}}":
+                return "running_img_id_333"
+            if command[3] == "{{.Name}}":
+                return "/refac_app_1"
+            if command[3] == "{{.State.Running}}":
+                return "true"
+            if command[3] == "{{json .NetworkSettings.Ports}}":
+                return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+            if command[3] == "{{.NetworkSettings.IPAddress}}":
+                return "172.18.0.5"
+            if command[3] == "{{json .RepoDigests}}":
+                return '["registry.example.com/app@sha256:repodigest444"]'
+            if command[3] == "{{json .Mounts}}":
+                return '[{"Type":"bind","Source":"/my/dirty/src","Destination":"/app/src"}]'
+        if command == ["git", "-C", "/my/dirty/src", "rev-parse", "HEAD"]:
+            return "dirty_sha_123"
+        if command == ["git", "-C", "/my/dirty/src", "status", "--porcelain"]:
+            return " M dirty_code.py"
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    out_file = tmp_path / "test_dirty_out.json"
+    monkeypatch.setattr(
+        benchmark_latency.sys,
+        "argv",
+        [
+            "benchmark_latency.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--output",
+            str(out_file),
+        ],
+    )
+
+    exit_code = benchmark_latency.main()
+    assert exit_code == 2
+    assert not out_file.exists()
+
+
+def test_verify_provenance_consistency_detects_source_mount_and_git_changes():
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    start_meta = {
+        "container_id": "cnt_123",
+        "target_container_image_id": "img_123",
+        "docker_image_id": "img_123",
+        "image_digest": "none (local build)",
+        "git_sha": "git_123",
+        "container_name": "app-1",
+        "service_name": "app",
+        "target_source_mount": "/path/to/src",
+        "target_source_git_sha": "src_sha_111",
+        "target_source_git_dirty": False,
+    }
+
+    # 1. target_source_mount 변경
+    end_mount = dict(start_meta)
+    end_mount["target_source_mount"] = "/other/path/src"
+    with pytest.raises(BuildProvenanceError) as exc:
+        benchmark_latency.verify_provenance_consistency(start_meta, end_mount, strict=True)
+    assert "target_source_mount changed" in str(exc.value)
+
+    # 2. target_source_git_sha 변경
+    end_sha = dict(start_meta)
+    end_sha["target_source_git_sha"] = "src_sha_222"
+    with pytest.raises(BuildProvenanceError) as exc:
+        benchmark_latency.verify_provenance_consistency(start_meta, end_sha, strict=True)
+    assert "target_source_git_sha changed" in str(exc.value)
+
+    # 3. target_source_git_dirty 변경 (측정 중 소스 수정)
+    end_dirty = dict(start_meta)
+    end_dirty["target_source_git_dirty"] = True
+    with pytest.raises(BuildProvenanceError) as exc:
+        benchmark_latency.verify_provenance_consistency(start_meta, end_dirty, strict=True)
+    assert "target_source_git_dirty changed" in str(exc.value)

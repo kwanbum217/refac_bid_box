@@ -259,3 +259,118 @@ def test_benchmark_sse_gate_output_records_start_and_end_provenance(monkeypatch,
     assert data["meta"]["container_id"] == "cnt_sse_stable_111"
     assert data["meta"]["start_provenance"]["container_id"] == "cnt_sse_stable_111"
     assert data["meta"]["end_provenance"]["container_id"] == "cnt_sse_stable_111"
+
+
+def test_benchmark_sse_gate_main_fails_on_dirty_runtime_source(monkeypatch, tmp_path):
+    class MockHealthResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(benchmark_sse_gate.httpx, "get", lambda *a, **kw: MockHealthResponse())
+
+    def mock_command_output(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "git_sha_abc"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "compose_img_id_111"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt_sse_dirty_111"
+        if command[0] == "docker" and command[1] == "inspect":
+            if command[3] == "{{.Image}}":
+                return "running_img_id_333"
+            if command[3] == "{{.Name}}":
+                return "/refac_app_1"
+            if command[3] == "{{.State.Running}}":
+                return "true"
+            if command[3] == "{{json .NetworkSettings.Ports}}":
+                return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+            if command[3] == "{{.NetworkSettings.IPAddress}}":
+                return "172.18.0.5"
+            if command[3] == "{{json .RepoDigests}}":
+                return '["registry.example.com/app@sha256:repodigest444"]'
+            if command[3] == "{{json .Mounts}}":
+                return '[{"Type":"bind","Source":"/my/dirty/src","Destination":"/app/src"}]'
+        if command == ["git", "-C", "/my/dirty/src", "rev-parse", "HEAD"]:
+            return "dirty_sha_123"
+        if command == ["git", "-C", "/my/dirty/src", "status", "--porcelain"]:
+            return " M dirty_code.py"
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_sse_gate, "_command_output", mock_command_output)
+
+    out_file = tmp_path / "sse_dirty_out.json"
+    monkeypatch.setattr(
+        benchmark_sse_gate.sys,
+        "argv",
+        [
+            "benchmark_sse_gate.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--output",
+            str(out_file),
+        ],
+    )
+
+    exit_code = benchmark_sse_gate.main()
+    assert exit_code == 2
+    assert not out_file.exists()
+
+
+def test_sse_reproducibility_metadata_bind_mount_clean_and_image_only(monkeypatch):
+    # 1. Clean bind mount 케이스
+    def mock_clean_mount(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "sha1"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:img"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt_1"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt_1"]:
+            return "sha256:img_c"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "cnt_1"]:
+            return "/app_c"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt_1"]:
+            return "true"
+        if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt_1"]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt_1"]:
+            return "172.18.0.2"
+        if command == ["docker", "inspect", "-f", "{{json .RepoDigests}}", "sha256:img_c"]:
+            return '["app:latest"]'
+        if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "cnt_1"]:
+            return '[{"Type":"bind","Source":"/workspace/src","Destination":"/app/src"}]'
+        if command == ["git", "-C", "/workspace/src", "rev-parse", "HEAD"]:
+            return "src_sha_abc"
+        if command == ["git", "-C", "/workspace/src", "status", "--porcelain"]:
+            return ""
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_sse_gate, "_command_output", mock_clean_mount)
+
+    meta_clean = benchmark_sse_gate.reproducibility_metadata(
+        service_name="app",
+        strict=True,
+        base_url="http://127.0.0.1:8000",
+    )
+    assert meta_clean["target_source_mount"] == "/workspace/src"
+    assert meta_clean["target_source_git_sha"] == "src_sha_abc"
+    assert meta_clean["target_source_git_dirty"] is False
+
+    # 2. 이미지 전용 (no /app/src mount) 케이스
+    def mock_image_only(command: list[str]) -> str:
+        if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "cnt_1"]:
+            return "[]"
+        return mock_clean_mount(command)
+
+    monkeypatch.setattr(benchmark_sse_gate, "_command_output", mock_image_only)
+
+    meta_img = benchmark_sse_gate.reproducibility_metadata(
+        service_name="app",
+        strict=True,
+        base_url="http://127.0.0.1:8000",
+    )
+    assert meta_img["target_source_mount"] is None
+    assert meta_img["target_source_git_sha"] is None
+    assert meta_img["target_source_git_dirty"] is None
