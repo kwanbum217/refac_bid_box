@@ -2800,3 +2800,55 @@ def test_manual_docker_command_also_claims_the_shared_resource():
     assert resolve_shared_resources(["src/a.py"], ["uv run pytest tests/ -q"]) == [
         ("features_py", "read_only")
     ]
+
+
+def test_finalize_passes_diff_cap_flags_to_reviewer(tmp_path, monkeypatch):
+    """finalize 의 diff 상한 옵션이 리뷰어 명령에 그대로 전달되어야 합니다."""
+    reviewer_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        joined = " ".join(cmd)
+        if "summarize_worker_done.py" in joined:
+            return 0, json.dumps({"exit_code": 0}), ""
+        if "rev-parse" in joined:
+            if "HEAD^{commit}" in joined:
+                return 0, "abc123", ""
+            return 0, "def456", ""
+        if "orca_level1_gate.py" in joined:
+            return 0, json.dumps({"verdict": "pass", "exit_code": 0}), ""
+        if "orca_run_reviewer.py" in joined:
+            reviewer_cmds.append(list(cmd))
+            return 0, json.dumps({"effective_verdict": "pass"}), ""
+        return 0, "", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    result = finalize_task(
+        report_path=tmp_path / "report.json",
+        capsule_path=tmp_path / "capsule.yaml",
+        repo=tmp_path,
+        base="main",
+        branch="HEAD",
+        run_reviewer=True,
+        max_diff_chars=60000,
+        allow_truncated_diff=True,
+    )
+    assert result["exit_code"] == 0
+    assert reviewer_cmds
+    cmd = reviewer_cmds[0]
+    assert cmd[cmd.index("--max-diff-chars") + 1] == "60000"
+    assert "--allow-truncated-diff" in cmd
+
+    reviewer_cmds.clear()
+    result = finalize_task(
+        report_path=tmp_path / "report.json",
+        capsule_path=tmp_path / "capsule.yaml",
+        repo=tmp_path,
+        base="main",
+        branch="HEAD",
+        run_reviewer=True,
+    )
+    assert result["exit_code"] == 0
+    cmd = reviewer_cmds[0]
+    assert "--max-diff-chars" not in cmd
+    assert "--allow-truncated-diff" not in cmd

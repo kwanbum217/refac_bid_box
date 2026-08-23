@@ -1306,6 +1306,8 @@ def finalize_task(
     run_reviewer: bool = False,
     reviewer_model: str = DEFAULT_MODEL,
     strict: bool = True,
+    max_diff_chars: int | None = None,
+    allow_truncated_diff: bool = False,
 ) -> dict[str, Any]:
     """worker_done 보고를 검증하고 Level 1/Reviewer 검증 파이프라인을 실행합니다."""
     scripts_dir = Path(__file__).resolve().parent
@@ -1463,6 +1465,10 @@ def finalize_task(
             reviewer_model,
             "--json",
         ]
+        if max_diff_chars is not None:
+            reviewer_cmd += ["--max-diff-chars", str(max_diff_chars)]
+        if allow_truncated_diff:
+            reviewer_cmd.append("--allow-truncated-diff")
         code_rev, stdout_rev, stderr_rev = _run_command(reviewer_cmd, timeout=600)
         if code_rev == 2:
             tool_error = True
@@ -1988,6 +1994,8 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         run_reviewer=args.reviewer,
         reviewer_model=args.reviewer_model,
         strict=not args.allow_skipped_gates,
+        max_diff_chars=args.max_diff_chars,
+        allow_truncated_diff=args.allow_truncated_diff,
     )
     try:
         result["reliability"] = _record_finalize_reliability(capsule_path, result)
@@ -2136,6 +2144,17 @@ def _build_parser() -> argparse.ArgumentParser:
     fin.add_argument("--branch", default="HEAD", help="검증 대상 git ref")
     fin.add_argument("--reviewer", action="store_true", help="Level 2 Reviewer 실행")
     fin.add_argument("--reviewer-model", default=DEFAULT_MODEL, help="Reviewer 모델 ID")
+    fin.add_argument(
+        "--max-diff-chars",
+        type=int,
+        default=None,
+        help="리뷰어 diff 본문 상한 (기본: 리뷰어 도구 기본값 20000)",
+    )
+    fin.add_argument(
+        "--allow-truncated-diff",
+        action="store_true",
+        help="diff 가 절단되어도 리뷰어 판정을 받아들임",
+    )
     fin.add_argument(
         "--allow-skipped-gates",
         action="store_true",
