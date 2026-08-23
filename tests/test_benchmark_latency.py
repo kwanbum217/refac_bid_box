@@ -676,3 +676,241 @@ def test_benchmark_latency_main_provenance_failure_returns_code_2(monkeypatch):
 
     exit_code = benchmark_latency.main()
     assert exit_code == 2
+
+
+def test_verify_provenance_consistency_success():
+    start_meta = {
+        "container_id": "cnt_123",
+        "target_container_image_id": "img_123",
+        "docker_image_id": "img_123",
+        "image_digest": "none (local build)",
+        "git_sha": "git_123",
+        "container_name": "app-1",
+        "service_name": "app",
+    }
+    end_meta = dict(start_meta)
+
+    assert (
+        benchmark_latency.verify_provenance_consistency(start_meta, end_meta, strict=True) is True
+    )
+    assert (
+        benchmark_latency.verify_provenance_consistency(start_meta, end_meta, strict=False) is True
+    )
+
+
+def test_verify_provenance_consistency_detects_container_id_swap():
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    start_meta = {
+        "container_id": "cnt_123",
+        "target_container_image_id": "img_123",
+        "docker_image_id": "img_123",
+        "image_digest": "none (local build)",
+        "git_sha": "git_123",
+        "container_name": "app-1",
+        "service_name": "app",
+    }
+    end_meta = dict(start_meta)
+    end_meta["container_id"] = "cnt_swapped_456"
+
+    # strict=True: BuildProvenanceError 발생
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.verify_provenance_consistency(start_meta, end_meta, strict=True)
+    assert "container_id changed from 'cnt_123' to 'cnt_swapped_456'" in str(excinfo.value)
+
+    # strict=False: False 반환
+    assert (
+        benchmark_latency.verify_provenance_consistency(start_meta, end_meta, strict=False) is False
+    )
+
+
+def test_verify_provenance_consistency_detects_image_swap():
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    start_meta = {
+        "container_id": "cnt_123",
+        "target_container_image_id": "img_123",
+        "docker_image_id": "img_123",
+        "image_digest": "sha256:digest_aaa",
+        "git_sha": "git_123",
+        "container_name": "app-1",
+        "service_name": "app",
+    }
+
+    # 1. target_container_image_id 변경
+    end_meta_target_img = dict(start_meta)
+    end_meta_target_img["target_container_image_id"] = "img_new_456"
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.verify_provenance_consistency(
+            start_meta, end_meta_target_img, strict=True
+        )
+    assert "target_container_image_id changed" in str(excinfo.value)
+
+    # 2. docker_image_id 변경
+    end_meta_docker_img = dict(start_meta)
+    end_meta_docker_img["docker_image_id"] = "img_docker_789"
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.verify_provenance_consistency(
+            start_meta, end_meta_docker_img, strict=True
+        )
+    assert "docker_image_id changed" in str(excinfo.value)
+
+    # 3. image_digest 변경
+    end_meta_digest = dict(start_meta)
+    end_meta_digest["image_digest"] = "sha256:digest_bbb"
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.verify_provenance_consistency(start_meta, end_meta_digest, strict=True)
+    assert "image_digest changed" in str(excinfo.value)
+
+
+def test_verify_provenance_consistency_detects_git_sha_change():
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    start_meta = {
+        "container_id": "cnt_123",
+        "target_container_image_id": "img_123",
+        "docker_image_id": "img_123",
+        "image_digest": "none (local build)",
+        "git_sha": "git_123",
+        "container_name": "app-1",
+        "service_name": "app",
+    }
+    end_meta = dict(start_meta)
+    end_meta["git_sha"] = "git_swapped_999"
+
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.verify_provenance_consistency(start_meta, end_meta, strict=True)
+    assert "git_sha changed from 'git_123' to 'git_swapped_999'" in str(excinfo.value)
+
+
+def test_build_evidence_stores_start_and_end_provenance(monkeypatch):
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    start_meta = {
+        "git_sha": "git123",
+        "docker_image_id": "img123",
+        "container_id": "cnt123",
+        "target_container_image_id": "timg123",
+        "image_digest": "digest123",
+        "container_name": "app-1",
+        "service_name": "app",
+        "bound_port": 8000,
+    }
+    end_meta = dict(start_meta)
+
+    sample = Samples("test", values=[1.0])
+
+    evidence = build_evidence(
+        "http://test",
+        100,
+        10,
+        sample,
+        sample,
+        sample,
+        sample,
+        sample,
+        host_load={"cpu_count": 4, "load_1m": {"min": None, "median": None, "max": None}},
+        strict_provenance=True,
+        start_meta=start_meta,
+        end_meta=end_meta,
+    )
+
+    assert evidence["meta"]["start_provenance"] == start_meta
+    assert evidence["meta"]["end_provenance"] == end_meta
+    assert evidence["meta"]["provenance_consistent"] is True
+    assert evidence["meta"]["container_id"] == "cnt123"
+
+    # start와 end가 불일치할 때 build_evidence에서 BuildProvenanceError 발생 검증
+    mismatched_end = dict(start_meta)
+    mismatched_end["container_id"] = "cnt_changed"
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        build_evidence(
+            "http://test",
+            100,
+            10,
+            sample,
+            sample,
+            sample,
+            sample,
+            sample,
+            strict_provenance=True,
+            start_meta=start_meta,
+            end_meta=mismatched_end,
+        )
+    assert "container_id changed" in str(excinfo.value)
+
+
+def test_benchmark_latency_main_fails_when_container_swapped_during_measurement(
+    monkeypatch, tmp_path
+):
+    class MockHealthResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(benchmark_latency.httpx, "get", lambda *a, **kw: MockHealthResponse())
+
+    call_count = 0
+
+    def mock_command_output(command: list[str]) -> str:
+        nonlocal call_count
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "git_sha_abc"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "compose_img_id_111"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            call_count += 1
+            # 시작 시점과 종료 시점에 다른 container ID를 반환하여 교체 시뮬레이션
+            return "cnt_start_111" if call_count == 1 else "cnt_end_222"
+        if command[0] == "docker" and command[1] == "inspect":
+            if command[3] == "{{.Image}}":
+                return "running_img_id_333"
+            if command[3] == "{{.Name}}":
+                return "/refac_app_1"
+            if command[3] == "{{.State.Running}}":
+                return "true"
+            if command[3] == "{{json .NetworkSettings.Ports}}":
+                return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+            if command[3] == "{{.NetworkSettings.IPAddress}}":
+                return "172.18.0.5"
+            if command[3] == "{{json .RepoDigests}}":
+                return '["registry.example.com/app@sha256:repodigest444"]'
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command_output)
+
+    # 벤치마크 루틴 mock
+    sample = Samples("dummy", values=[10.0])
+    monkeypatch.setattr(benchmark_latency, "benchmark_predict", lambda *a, **kw: sample)
+    monkeypatch.setattr(
+        benchmark_latency, "benchmark_sse_canonical", lambda *a, **kw: (sample, sample, sample)
+    )
+    monkeypatch.setattr(benchmark_latency, "benchmark_query", lambda *a, **kw: sample)
+
+    out_file = tmp_path / "test_out.json"
+    monkeypatch.setattr(
+        benchmark_latency.sys,
+        "argv",
+        [
+            "benchmark_latency.py",
+            "--base-url",
+            "http://127.0.0.1:8000",
+            "--output",
+            str(out_file),
+        ],
+    )
+
+    exit_code = benchmark_latency.main()
+    # 측정 종료 시점 검증에서 container 교체로 인해 종료 코드 2 반환
+    assert exit_code == 2
+    # 측정 실패 시 결과 파일이 생성되지 않아야 함 (fail-closed)
+    assert not out_file.exists()
