@@ -36,3 +36,15 @@
 - `scripts/validate_agent_rules.py --quiet`: 작업 커밋 직전 기준 **12/12 건 전량 PASS**. 작업 커밋 이후에는 `CURRENT_STATE 필수 필드` 1건이 FAIL 로 바뀌었습니다. `source_commit` 이 HEAD 보다 6 커밋 뒤처져 허용치 5 를 넘었기 때문이며, 본 Task 는 `CURRENT_STATE.md` 수정이 금지되어 있어 코디네이터가 병합 후 갱신했습니다. L2 리뷰가 이 불일치를 차단 사유로 제기했습니다.
 - `CURRENT_STATE.md` 및 코드 파일 수정 없음 (무손실 및 계약 엄수)
 - 과거 증거 수치는 보존하고 배너/주석으로만 표시 완료
+
+---
+
+## 4. 본 Task 범위 밖이라 코디네이터가 이어서 닫은 항목 (2026-08-23)
+
+감사 지적 10건 중 아래 3건은 `CURRENT_STATE.md` 수정 금지 제약과 실측 확인 필요로 본 Task 에서 처리하지 못했고, 병합 후 코디네이터가 닫았습니다.
+
+| 항목 | 조치 |
+| --- | --- |
+| CURRENT_STATE split-brain | `source_commit` 을 `e87c60f` 로 갱신하고, 이미 종결된 워커 준비 안전성·ModelRegistry single-flight·병합 재현성·c4 판정을 Active Priorities 에서 4.1 종결 요약으로 옮겼습니다. 잔여 진행 과업은 운영 검증, 프론트엔드 ADR 이행, G3 컷오버 판정 3건입니다 |
+| CURRENT_STATE 내부 모순 | 4.1 절의 구 blocking-I/O 수치 `예측 웜 P95 61.9~83.6ms` 를 제거하고 2·3 장 재측정 정본(c1 15.39ms, c4 34.32ms, c10 47.77ms)을 가리키도록 고쳤습니다 |
+| 프론트엔드 ADR 대 구현 | 실측 결과 `src/app/templates/` 전체에서 HTMX 로드와 `hx-*` 속성이 0건이고 `base.html:268` 이 jQuery 3.7.1 을 로드합니다. `src/app/static/` 하위는 `css/`, `images/` 뿐입니다. ADR 상태를 `목표 아키텍처 확정 / 구현 미완` 으로 바꾸고, 정적 자산이 CSS·HTMX·Chart.js 를 담고 있다는 기술을 사실로 정정했습니다 (Chart.js 는 CDN 로드) |

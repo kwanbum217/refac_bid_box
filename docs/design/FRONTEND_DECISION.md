@@ -1,7 +1,8 @@
 # 프론트엔드 아키텍처 결정 (ADR)
 
 > **작성일**: 2026-07-31
-> **상태**: 확정
+> **상태**: 목표 아키텍처 확정 / 구현 미완 (HTMX 미도입)
+> **수정일**: 2026-08-23
 > **근거**: [`REFACTORING_DESIGN.md`](REFACTORING_DESIGN.md) 3.7절
 
 ---
@@ -19,7 +20,9 @@
 ## 현재 구현 상태 (실측 및 코드베이스 확인)
 
 - **실제 템플릿 위치**: `src/app/templates/` (총 12종 Jinja2 템플릿 이식 완료)
-- **정적 자산 위치**: `src/app/static/` (CSS, HTMX, Chart.js)
+- **정적 자산 위치**: `src/app/static/` (하위는 `css/`, `images/` 뿐이며 JS 번들 없음)
+- **HTMX 미도입**: `src/app/templates/` 전체에서 HTMX 로드와 `hx-*` 속성이 **0건**입니다. `base.html:268`은 jQuery 3.7.1을 CDN에서 로드합니다. 목표 아키텍처의 1차 UI 선택(SSR + HTMX)은 **아직 이행되지 않았습니다**
+- **Chart.js**: 파일이 아니라 CDN 로드입니다 (`bids/dashboard.html:6` 등 3개 템플릿)
 - **SSR 라우팅 진입점**: `src/app/api/ui.py` (`/`, `/bids/`, `/bids/results/`, `/bids/dashboard/`, `/chatbot/` 등)
 - **챗봇 SSE 스트리밍**: `POST /api/v1/chatbot/chat/stream` (단일 파이프라인 스트리밍 완료)
 - **React SPA 격리**: `docker-compose.yml`에서 `profiles: ["legacy"]`로 격리, 기본 기동 제외
