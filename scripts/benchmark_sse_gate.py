@@ -405,7 +405,9 @@ def main() -> int:
             base_url=args.base_url,
             target_container=args.target_container,
         )
-        verify_provenance_consistency(start_meta, end_meta, strict=strict_provenance)
+        provenance_consistent = verify_provenance_consistency(
+            start_meta, end_meta, strict=strict_provenance
+        )
     except BuildProvenanceError as exc:
         print(f"빌드 provenance 검증 실패 (종료 시점 / 교체 감지): {exc}")
         return 2
@@ -417,7 +419,7 @@ def main() -> int:
                 **start_meta,
                 "start_provenance": start_meta,
                 "end_provenance": end_meta,
-                "provenance_consistent": True,
+                "provenance_consistent": provenance_consistent,
                 "base_url": args.base_url,
                 "concurrency": args.concurrency,
                 "rounds": args.rounds,

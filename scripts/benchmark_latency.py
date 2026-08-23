@@ -619,7 +619,9 @@ def build_evidence(
     elif start_meta is None and end_meta is not None:
         start_meta = end_meta
 
-    verify_provenance_consistency(start_meta, end_meta, strict=strict_provenance)
+    provenance_consistent = verify_provenance_consistency(
+        start_meta, end_meta, strict=strict_provenance
+    )
 
     base_meta = dict(start_meta)
     if meta is not None:
@@ -629,7 +631,7 @@ def build_evidence(
         **base_meta,
         "start_provenance": start_meta,
         "end_provenance": end_meta,
-        "provenance_consistent": True,
+        "provenance_consistent": provenance_consistent,
         "host_load": host_load if host_load is not None else host_load_metadata(),
     }
 

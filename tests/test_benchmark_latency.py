@@ -848,6 +848,40 @@ def test_build_evidence_stores_start_and_end_provenance(monkeypatch):
     assert "container_id changed" in str(excinfo.value)
 
 
+def test_build_evidence_records_false_consistency_in_non_strict_mode():
+    start_meta = {
+        "git_sha": "git123",
+        "docker_image_id": "img123",
+        "container_id": "cnt123",
+        "target_container_image_id": "timg123",
+        "image_digest": "digest123",
+        "container_name": "app-1",
+        "service_name": "app",
+        "bound_port": 8000,
+    }
+    swapped_end = dict(start_meta)
+    swapped_end["container_id"] = "cnt_changed"
+
+    sample = Samples("test", values=[1.0])
+
+    evidence = build_evidence(
+        "http://test",
+        100,
+        10,
+        sample,
+        sample,
+        sample,
+        sample,
+        sample,
+        host_load={"cpu_count": 4, "load_1m": {"min": None, "median": None, "max": None}},
+        strict_provenance=False,
+        start_meta=start_meta,
+        end_meta=swapped_end,
+    )
+
+    assert evidence["meta"]["provenance_consistent"] is False
+
+
 def test_benchmark_latency_main_fails_when_container_swapped_during_measurement(
     monkeypatch, tmp_path
 ):
