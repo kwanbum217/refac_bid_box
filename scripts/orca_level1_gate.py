@@ -8,7 +8,6 @@ scripts/orca_level1_gate.py
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import shlex
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다

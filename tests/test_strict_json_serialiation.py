@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import io
 import json
-import math
 from pathlib import Path
 
 import pytest
@@ -116,13 +115,13 @@ def test_load_strict_json_rejects_non_standard_constants():
         load_strict_json('{"p95": -Infinity}')
 
     with pytest.raises(ValueError):
-        load_strict_json('[1.0, 2.0, NaN]')
+        load_strict_json("[1.0, 2.0, NaN]")
 
     with pytest.raises(ValueError):
-        load_strict_json('[1.0, 2.0, Infinity]')
+        load_strict_json("[1.0, 2.0, Infinity]")
 
     with pytest.raises(ValueError):
-        load_strict_json('[1.0, 2.0, -Infinity]')
+        load_strict_json("[1.0, 2.0, -Infinity]")
 
 
 def test_load_strict_json_rejects_syntax_errors():

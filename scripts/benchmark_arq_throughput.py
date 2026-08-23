@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import json
 import logging
 import platform
 import statistics

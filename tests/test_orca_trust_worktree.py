@@ -128,7 +128,8 @@ def test_settings_lock_stale_recovery(trust_files, tmp_path: Path, monkeypatch: 
         assert lock_file.exists()
         # lock 파일 내용은 "uuid:pid" 형태의 자기 token
         token = lock_file.read_text(encoding="utf-8").strip()
-        assert ":" in token and str(os.getpid()) in token
+        assert ":" in token
+        assert str(os.getpid()) in token
 
     assert not lock_file.exists()
 
@@ -143,9 +144,11 @@ def test_settings_lock_other_token_is_not_recovered(trust_files, tmp_path, monke
     lock_file.write_text(f"a1b2c3d4e5f60718:{_os.getpid()}", encoding="utf-8")
     monkeypatch.setattr(orca_trust_worktree, "LOCK_TIMEOUT_SECONDS", 0.1)
 
-    with pytest.raises(RuntimeError, match="신뢰 설정 잠금을 획득하지 못했습니다"):
-        with orca_trust_worktree._settings_lock():
-            pass
+    with (
+        pytest.raises(RuntimeError, match="신뢰 설정 잠금을 획득하지 못했습니다"),
+        orca_trust_worktree._settings_lock(),
+    ):
+        pass
 
     # 다른 토큰은 그대로 보존
     assert lock_file.read_text(encoding="utf-8") == f"a1b2c3d4e5f60718:{_os.getpid()}"
