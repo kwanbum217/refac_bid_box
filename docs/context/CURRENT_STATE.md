@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-08-22
-> **source_commit**: `28a06b2`
+> **updated_at**: 2026-08-23
+> **source_commit**: `e87c60f`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -98,7 +98,8 @@
 
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama 다중화 시 자원 점유와 c4 기준선 미확정.
-- Arq 처리량은 Redis 연계 in-process 합성 하네스로 600건 3회 반복을 측정해 최악 1,138.77 jobs/sec, P95 504.941ms, 실패율 0%로 반복 게이트 PASS했습니다. 실제 Docker `worker` 컨테이너의 업무 큐 처리량과 단발 RAG/LLM 내부 구간은 별도 검증 대기입니다.
+- Arq 처리량은 Docker Redis(`redis:7-alpine`) 연계 in-process 합성 하네스로 600건 3회 반복을 측정해 최악 1,107.79 jobs/sec, P95 519.198ms, 실패율 0%로 반복 게이트 PASS했습니다([`arq_docker_worker_measure_20260823.md`](../analysis/arq_docker_worker_measure_20260823.md)). 실제 Docker `worker` 컨테이너의 업무 큐 처리량과 단발 RAG/LLM 내부 구간은 별도 검증 대기입니다.
+- 벤치마크 provenance 는 측정 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 로 무효화합니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 로 strict 를 끈 측정은 `provenance_consistent: false` 로 기록되며 정본 evidence 가 아닙니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
