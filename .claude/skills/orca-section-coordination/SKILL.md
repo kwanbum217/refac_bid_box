@@ -219,7 +219,9 @@ print(d['exit_code'], d.get('effective_verdict'), d.get('violations'))"
 
 | 점검 | 이유 |
 | --- | --- |
-| Capsule 을 워크트리 안에 복사했는가 | `.orca/` 는 gitignore 대상이라 워크트리에 없습니다. 주 저장소 절대 경로로 지시하면 워커가 디렉터리마다 외부 접근 승인을 요구합니다 |
+| Capsule 을 워크트리 안에 복사했는가 | `.orca/` 는 gitignore 대상이라 워크트리에 없습니다 |
+| **워커에게 주는 경로가 전부 워크트리 상대 경로인가** | **절대 경로는 워커를 그 저장소로 데려갑니다.** 2026-08-23 에 서로 다른 CLI 의 워커 4대가 전부 주 저장소로 이동했고, 하나는 거기서 브랜치를 만들어 코디네이터의 병합 2건이 엉뚱한 브랜치에 쌓였습니다. `orca_taskctl.py` 가 기계로 강제하지만 Intent 의 `allowed_read_files` 와 `report_path` 는 작성자 책임입니다. `docs/ops/orca_do_not_repeat.md` 20장 |
+| 지시문이 작업 트리 경계를 명시하는가 | "현재 작업 디렉터리를 벗어나면 계약 위반" 을 고지문에 넣습니다 |
 | `task-create --spec` 의 Capsule 경로가 실제 경로인가 | 워커는 Capsule 고지문보다 TASK 블록을 먼저 읽습니다. 자리표시자를 남기면 없는 파일을 엽니다 |
 | `review_checklist` 가 있는가 | 없으면 Level 2 를 실행할 수 없습니다. 항목 키는 `id`·`question`·`defect_when` 이고 `defect_when` 은 산문이 아니라 `yes`/`no` 극성입니다 |
 | `.env` 를 워크트리에 배치했는가 | 10장 |
@@ -312,6 +314,8 @@ done
 
 ## 6. Git 및 안전 규칙
 
+- **`git merge` 직전마다 `git branch --show-current` 로 주 저장소가 `main` 인지 확인합니다.** 워커를 격리 트리에 붙였다는 사실은 주 저장소가 안전하다는 보장이 아닙니다. 2026-08-23 에 워커가 주 저장소에서 브랜치를 만들어 병합 2건이 그 위에 쌓였습니다.
+- **브랜치를 삭제하기 전에 `git log --oneline main..<branch>` 결과를 읽습니다.** 출력만 하고 넘어가면 지우는 순간 알 수 없습니다. `-D` 는 병합 확인 후에만 씁니다.
 - Git 병합 Task는 작업 브랜치의 테스트와 `python3 scripts/validate_agent_rules.py --quiet` 통과를 확인한 뒤에만 수행합니다.
 - 워커의 완료 보고는 병합 권한이 아닙니다. 병합 Task를 별도로 등록했거나 사용자가 명시적으로 승인한 경우에만 병합합니다.
 - 다른 섹션의 미커밋 변경을 덮어쓰거나, 활성 Dispatch가 소유한 파일을 수정하지 않습니다.

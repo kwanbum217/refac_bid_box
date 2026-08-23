@@ -1583,12 +1583,14 @@ def test_build_capsule_notice_carries_path_contract_and_dispatch_id():
     from scripts.orca_taskctl import build_capsule_notice
 
     text = build_capsule_notice(
-        Path("/abs/capsules/task_x/capsule.yaml"),
+        Path("/abs/.orca/capsules/task_x/capsule.yaml"),
         report_path="/abs/capsules/task_x/worker_done.json",
         dispatch_id="ctx_new",
     )
-    # Windows 에서는 str(Path) 가 역슬래시를 쓰므로 경로 문자열을 못박지 않습니다.
-    assert str(Path("/abs/capsules/task_x/capsule.yaml")) in text
+    # 절대 경로를 주면 워커가 그 저장소로 이동합니다. 상대 경로만 담습니다.
+    assert str(Path("/abs/.orca/capsules/task_x/capsule.yaml")) not in text
+    assert str(Path(".orca/capsules/task_x/capsule.yaml")) in text
+    assert "벗어나지" in text
     assert "allowed_write_files" in text
     assert "escalation" in text
     assert "ctx_new" in text
@@ -1597,21 +1599,57 @@ def test_build_capsule_notice_carries_path_contract_and_dispatch_id():
     )  # report_path 는 문자열 그대로 전달됩니다
 
 
-def test_build_task_spec_embeds_absolute_capsule_path():
-    """spec 은 --inject 가 전달하는 유일한 본문이므로 Capsule 경로를 담아야 합니다."""
+def test_build_task_spec_embeds_worktree_relative_capsule_path():
+    """spec 은 --inject 가 전달하는 유일한 본문이므로 Capsule 경로를 담아야 합니다.
+
+    단 절대 경로는 금지입니다. 워커가 spec 을 먼저 읽고 그 저장소로 이동합니다.
+    """
     from scripts.orca_taskctl import build_task_spec
 
-    spec = build_task_spec("모듈 A 를 기계적 분할한다", Path("/abs/c/capsule.yaml"))
-    assert str(Path("/abs/c/capsule.yaml")) in spec
+    spec = build_task_spec(
+        "모듈 A 를 기계적 분할한다",
+        Path("/repo/.orca/capsules/task_x/capsule.yaml"),
+    )
+    assert str(Path("/repo/.orca/capsules/task_x/capsule.yaml")) not in spec
+    assert str(Path(".orca/capsules/task_x/capsule.yaml")) in spec
+    assert "벗어나지" in spec
     assert "모듈 A" in spec
+
+
+def test_capsule_paths_never_leak_main_repo_absolute_path():
+    """2026-08-23 사고 회귀 방지.
+
+    워커 4대가 spec 과 고지문의 주 저장소 절대 경로를 보고 그리로 이동했고,
+    하나는 거기서 브랜치를 만들어 코디네이터의 병합 2건이 엉뚱한 브랜치에
+    쌓였습니다. 두 진입점 모두 절대 경로를 흘리면 안 됩니다.
+    """
+    from scripts.orca_taskctl import build_capsule_notice, build_task_spec
+
+    main_repo = "/Users/someone/Documents/project"
+    capsule = Path(main_repo) / ".orca/capsules/task_y/capsule.yaml"
+
+    spec = build_task_spec("무언가 한다", capsule)
+    notice = build_capsule_notice(capsule, worktree_path="/wt/task_y")
+
+    for text in (spec, notice):
+        assert main_repo not in text
+        assert str(Path(".orca/capsules/task_y/capsule.yaml")) in text
+    assert "/wt/task_y" in notice
+
+
+def test_worktree_relative_capsule_path_falls_back_to_name():
+    """.orca 가 경로에 없으면 파일명만 남겨 절대 경로 유출을 막습니다."""
+    from scripts.orca_taskctl import worktree_relative_capsule_path
+
+    assert worktree_relative_capsule_path(Path("/x/y/capsule.yaml")) == "capsule.yaml"
 
 
 def test_build_task_spec_truncates_long_objective():
     """objective 가 길어도 spec 이 무한히 커지지 않아야 합니다."""
     from scripts.orca_taskctl import build_task_spec
 
-    spec = build_task_spec("가" * 900, Path("/abs/c/capsule.yaml"))
-    assert str(Path("/abs/c/capsule.yaml")) in spec
+    spec = build_task_spec("가" * 900, Path("/abs/.orca/capsules/c/capsule.yaml"))
+    assert str(Path(".orca/capsules/c/capsule.yaml")) in spec
     assert len(spec) < 600
 
 
@@ -1766,7 +1804,7 @@ def test_cmd_dispatch_no_capsule_notice_flag(tmp_path: Path, monkeypatch: pytest
 def test_cmd_create_puts_capsule_path_in_task_spec(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ):
-    """create 는 Capsule 절대 경로를 Orca Task spec 에 넣어야 합니다."""
+    """create 는 Capsule 의 워크트리 상대 경로를 Orca Task spec 에 넣어야 합니다."""
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
@@ -1797,7 +1835,9 @@ def test_cmd_create_puts_capsule_path_in_task_spec(
     assert cmd[:3] == ["orca", "orchestration", "task-create"]
     spec = cmd[cmd.index("--spec") + 1]
     assert "capsule.yaml" in spec
-    assert Path(spec.split("정본 사양(Capsule): ")[1]).is_absolute()
+    # 절대 경로를 주면 워커가 그 저장소로 이동합니다 (2026-08-23 사고).
+    assert str(tmp_path) not in spec
+    assert "현재 작업 디렉터리" in spec
     assert json.loads(capsys.readouterr().out)["task_id"] == "task_created"
 
 
