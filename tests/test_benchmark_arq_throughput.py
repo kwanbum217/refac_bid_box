@@ -26,6 +26,10 @@ from scripts.benchmark_arq_throughput import (
     calculate_percentiles,
     cleanup_benchmark_resources,
     generate_benchmark_queue_name,
+    get_arq_version,
+    get_docker_version,
+    get_redis_py_version,
+    inspect_redis_container,
     main,
     parse_args,
 )
@@ -381,3 +385,205 @@ def test_main_success_and_json_output(tmp_path, capsys):
         assert saved_data["status"] == "success"
         assert saved_data["summary"]["jobs_per_second"] == 50.0
         assert saved_data["latency_ms"]["p95_ms"] == 2.0
+
+
+def test_get_arq_version_returns_string():
+    version = get_arq_version()
+    assert isinstance(version, str)
+    assert version != ""
+
+
+def test_get_redis_py_version_returns_string():
+    version = get_redis_py_version()
+    assert isinstance(version, str)
+    assert version != ""
+
+
+def test_get_docker_version_returns_string():
+    version = get_docker_version()
+    assert isinstance(version, str)
+    assert "Docker version" in version
+
+
+@patch("scripts.benchmark_arq_throughput.subprocess.check_output")
+def test_inspect_redis_container_parses_output(mock_check_output):
+    mock_check_output.side_effect = [
+        '{"ID": "abc123", "Names": "redis-test", "Image": "redis:7-alpine"}',
+        '[{"Image": "sha256:abcdef123456", "NetworkSettings": {"Networks": {"test_net": {}}}}]',
+    ]
+
+    info = inspect_redis_container()
+
+    assert info["container_id"] == "abc123"
+    assert info["container_name"] == "redis-test"
+    assert info["image"] == "redis:7-alpine"
+    assert info["image_id"] == "sha256:abcdef123456"
+    # Verify the calls were made correctly
+    assert mock_check_output.call_count == 2
+    # First call: docker ps
+    args_1 = mock_check_output.call_args_list[0][0][0]
+    assert "docker" in args_1[0]
+    assert "ps" in args_1
+    # Second call: docker inspect
+    args_2 = mock_check_output.call_args_list[1][0][0]
+    assert "docker" in args_2[0]
+    assert "inspect" in args_2
+    assert "abc123" in args_2
+
+
+@patch(
+    "scripts.benchmark_arq_throughput.subprocess.check_output",
+    side_effect=OSError("docker not found"),
+)
+def test_inspect_redis_container_handles_error(mock_check_output):
+    info = inspect_redis_container()
+
+    assert info["container_id"] == "unknown"
+    assert info["container_name"] == "unknown"
+    assert info["image"] == "unknown"
+    assert info["image_id"] == "unknown"
+
+
+def test_aggregate_benchmark_metrics_includes_provenance():
+    """aggregate_benchmark_metrics 가 4계층 provenance 환경 필드를 포함하는지 검증."""
+    config = BenchmarkConfig(
+        queue_name="arq:benchmark:test1234",
+        total_jobs=10,
+        concurrency=2,
+        job_delay_ms=0.0,
+        poll_delay_sec=0.01,
+        timeout_sec=10.0,
+        simulate_error_rate=0.0,
+        redis_url="redis://localhost:6379/0",
+    )
+    collected = [
+        {"job_id": f"job-{i}", "latency_ms": 10.0 + i, "success": True, "error": None}
+        for i in range(10)
+    ]
+
+    with (
+        patch("scripts.benchmark_arq_throughput.inspect_redis_container") as mock_inspect,
+        patch("scripts.benchmark_arq_throughput.get_arq_version", return_value="0.28.0"),
+        patch("scripts.benchmark_arq_throughput.get_redis_py_version", return_value="5.3.1"),
+        patch(
+            "scripts.benchmark_arq_throughput.get_docker_version",
+            return_value="Docker version 29.7.2",
+        ),
+        patch("os.getloadavg", return_value=[1.5, 1.2, 1.0]),
+        patch("os.cpu_count", return_value=8),
+    ):
+        mock_inspect.return_value = {
+            "container_id": "redis-container-123",
+            "container_name": "redis-test",
+            "image": "redis:7-alpine",
+            "image_id": "sha256:abc123",
+        }
+
+        result = aggregate_benchmark_metrics(
+            config=config,
+            collected_results=collected,
+            total_duration_sec=0.5,
+            git_sha="testhash123",
+        )
+
+    env = result.environment
+
+    # 1. Host 계층
+    assert "host_cpu_count" in env
+    assert env["host_cpu_count"] == 8
+    assert "host_load_avg_1m" in env
+    assert env["host_load_avg_1m"] == 1.5
+    assert "python" in env
+    assert "platform" in env
+
+    # 2. Redis 계층
+    assert "redis_container_id" in env
+    assert env["redis_container_id"] == "redis-container-123"
+    assert "redis_image" in env
+    assert env["redis_image"] == "redis:7-alpine"
+    assert "redis_url" in env
+
+    # 3. Arq 계층
+    assert "arq_version" in env
+    assert env["arq_version"] == "0.28.0"
+    assert "redis_py_version" in env
+    assert env["redis_py_version"] == "5.3.1"
+    assert "worker_max_jobs" in env
+    assert env["worker_max_jobs"] == 2
+    assert "worker_poll_delay" in env
+    assert env["worker_poll_delay"] == 0.01
+
+    # 4. Docker 계층
+    assert "docker_version" in env
+    assert env["docker_version"] == "Docker version 29.7.2"
+
+    # benchmark_worker_mode 필드 확인
+    assert result.benchmark_worker_mode == "in_process"
+    as_dict = result.as_dict()
+    assert as_dict["benchmark_worker_mode"] == "in_process"
+
+
+def test_aggregate_benchmark_metrics_provenance_keys_match_container_harness():
+    """in-process 하네스의 environment 키가 container 하네스와 일치하는지 검증 (benchmark_worker_mode 제외)."""
+    config = BenchmarkConfig(
+        queue_name="arq:benchmark:test1234",
+        total_jobs=10,
+        concurrency=2,
+        job_delay_ms=0.0,
+        poll_delay_sec=0.01,
+        timeout_sec=10.0,
+        simulate_error_rate=0.0,
+        redis_url="redis://localhost:6379/0",
+    )
+    collected = [
+        {"job_id": f"job-{i}", "latency_ms": 10.0 + i, "success": True, "error": None}
+        for i in range(10)
+    ]
+
+    with (
+        patch("scripts.benchmark_arq_throughput.inspect_redis_container") as mock_inspect,
+        patch("scripts.benchmark_arq_throughput.get_arq_version", return_value="0.28.0"),
+        patch("scripts.benchmark_arq_throughput.get_redis_py_version", return_value="5.3.1"),
+        patch(
+            "scripts.benchmark_arq_throughput.get_docker_version",
+            return_value="Docker version 29.7.2",
+        ),
+        patch("os.getloadavg", return_value=[1.5, 1.2, 1.0]),
+        patch("os.cpu_count", return_value=8),
+    ):
+        mock_inspect.return_value = {
+            "container_id": "redis-container-123",
+            "container_name": "redis-test",
+            "image": "redis:7-alpine",
+            "image_id": "sha256:abc123",
+        }
+
+        result = aggregate_benchmark_metrics(
+            config=config,
+            collected_results=collected,
+            total_duration_sec=0.5,
+            git_sha="testhash123",
+        )
+
+    env_keys = set(result.environment.keys())
+
+    # container benchmark_arq_container.py 에서 사용하는 키들 (워커 컨테이너 관련 제외)
+    expected_host_redis_arq_docker_keys = {
+        "python",
+        "platform",
+        "host_cpu_count",
+        "host_load_avg_1m",
+        "redis_url",
+        "redis_container_id",
+        "redis_image",
+        "arq_version",
+        "redis_py_version",
+        "worker_max_jobs",
+        "worker_poll_delay",
+        "docker_version",
+    }
+
+    # in_process 하네스는 worker_container_id, worker_image, worker_image_id 가 없음
+    # 대신 benchmark_worker_mode 로 구분
+    assert expected_host_redis_arq_docker_keys.issubset(env_keys)
+    assert "benchmark_worker_mode" in result.as_dict()

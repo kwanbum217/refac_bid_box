@@ -11,6 +11,7 @@ scripts/benchmark_arq_throughput.py
 실행:
     uv run python scripts/benchmark_arq_throughput.py --jobs 100 --concurrency 10
     uv run python scripts/benchmark_arq_throughput.py --jobs 500 --concurrency 20 --output data/benchmarks/arq_throughput.json
+    uv run python scripts/benchmark_arq_throughput.py --jobs 600 --concurrency 10 --repetitions 3 --output data/benchmarks/arq_inprocess_measure_20260823.json
 """
 
 from __future__ import annotations
@@ -18,7 +19,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import importlib.metadata
+import json
 import logging
+import os
 import platform
 import statistics
 import subprocess  # nosec B404
@@ -51,6 +55,65 @@ except Exception:
     DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 logger = logging.getLogger("benchmark_arq_throughput")
+
+
+def get_arq_version() -> str:
+    """arq 라이브러리 버전을 반환합니다."""
+    try:
+        return importlib.metadata.version("arq")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def get_redis_py_version() -> str:
+    """redis-py 라이브러리 버전을 반환합니다."""
+    try:
+        return importlib.metadata.version("redis")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def get_docker_version() -> str:
+    """Docker 엔진 버전을 반환합니다."""
+    try:
+        return subprocess.check_output(  # nosec B603 B607
+            ["docker", "--version"],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def inspect_redis_container() -> dict[str, Any]:
+    """현재 기동 중인 Redis 컨테이너 정보를 조회합니다."""
+    info: dict[str, Any] = {
+        "container_id": "unknown",
+        "container_name": "unknown",
+        "image": "unknown",
+        "image_id": "unknown",
+    }
+    try:
+        ps_out = subprocess.check_output(  # nosec B603 B607
+            ["docker", "ps", "--filter", "name=redis", "--format", "{{json .}}"],
+            text=True,
+        ).strip()
+        lines = [line for line in ps_out.splitlines() if line]
+        if lines:
+            c = json.loads(lines[0])
+            cid = c.get("ID", "")
+            info["container_id"] = cid
+            info["container_name"] = c.get("Names", "")
+            info["image"] = c.get("Image", "")
+
+            inspect_out = subprocess.check_output(  # nosec B603 B607
+                ["docker", "inspect", cid],
+                text=True,
+            )
+            data = json.loads(inspect_out)[0]
+            info["image_id"] = data.get("Image", "")
+    except Exception as exc:
+        logger.warning("Redis 컨테이너 정보 조회 중 예외: %s", exc)
+    return info
 
 
 class RedisConnectionError(Exception):
@@ -220,6 +283,7 @@ class BenchmarkResult:
     summary: dict[str, Any]
     latency_ms: dict[str, Any]
     errors: list[str] = field(default_factory=list)
+    benchmark_worker_mode: str = "in_process"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -231,6 +295,7 @@ class BenchmarkResult:
             "summary": self.summary,
             "latency_ms": self.latency_ms,
             "errors": self.errors,
+            "benchmark_worker_mode": self.benchmark_worker_mode,
         }
 
     def report(self) -> bool:
@@ -327,10 +392,27 @@ def aggregate_benchmark_metrics(
         "error_count": error_count,
     }
 
+    # 4계층 Provenance 수집 (host, Redis, Arq, Docker)
+    redis_info = inspect_redis_container()
+    load_avg = list(os.getloadavg()) if hasattr(os, "getloadavg") else [0.0, 0.0, 0.0]
+
     env_data = {
+        # 1. Host
         "python": platform.python_version(),
         "platform": platform.platform(),
+        "host_cpu_count": os.cpu_count() or 1,
+        "host_load_avg_1m": round(load_avg[0], 2),
+        # 2. Redis
         "redis_url": config.redis_url,
+        "redis_container_id": redis_info.get("container_id", "unknown"),
+        "redis_image": redis_info.get("image", "unknown"),
+        # 3. Arq
+        "arq_version": get_arq_version(),
+        "redis_py_version": get_redis_py_version(),
+        "worker_max_jobs": config.concurrency,
+        "worker_poll_delay": config.poll_delay_sec,
+        # 4. Docker
+        "docker_version": get_docker_version(),
     }
 
     return BenchmarkResult(
@@ -342,6 +424,7 @@ def aggregate_benchmark_metrics(
         summary=summary,
         latency_ms=latency_data,
         errors=errors,
+        benchmark_worker_mode="in_process",
     )
 
 
@@ -438,7 +521,7 @@ async def run_arq_throughput_benchmark(
             await worker_task
 
         await cleanup_benchmark_resources(redis_pool, queue_name, all_job_ids)
-        await redis_pool.close()
+        await redis_pool.aclose()
 
     return aggregate_benchmark_metrics(
         config=config,
@@ -502,6 +585,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="결과 JSON 저장 경로",
     )
     parser.add_argument(
+        "--repetitions",
+        "-r",
+        type=int,
+        default=1,
+        help="반복 측정 횟수 (기본값: 1)",
+    )
+    parser.add_argument(
+        "--run-interval-sec",
+        type=float,
+        default=30.0,
+        help="반복 측정 간 대기 시간(초) (기본값: 30.0)",
+    )
+    parser.add_argument(
         "--quiet",
         "-q",
         action="store_true",
@@ -519,42 +615,71 @@ def main(argv: list[str] | None = None) -> int:
     if args.concurrency <= 0:
         print("오류: --concurrency 는 1 이상이어야 합니다.", file=sys.stderr)
         return 2
-
-    try:
-        result = asyncio.run(
-            run_arq_throughput_benchmark(
-                redis_url=args.redis_url,
-                total_jobs=args.jobs,
-                concurrency=args.concurrency,
-                job_delay_ms=args.job_delay_ms,
-                poll_delay_sec=args.poll_delay,
-                timeout_sec=args.timeout,
-                simulate_error_rate=args.simulate_error_rate,
-            )
-        )
-    except RedisConnectionError as r_err:
-        print(f"Redis 연결 오류: {r_err}", file=sys.stderr)
-        print(
-            "Redis 서버가 기동되어 있는지 확인하십시오 (예: docker compose up -d redis).",
-            file=sys.stderr,
-        )
+    if args.repetitions < 1:
+        print("오류: --repetitions 는 1 이상이어야 합니다.", file=sys.stderr)
         return 2
-    except Exception as exc:
-        print(f"벤치마크 실행 실패: {exc}", file=sys.stderr)
-        return 1
 
-    if not args.quiet:
-        result.report()
+    results: list[BenchmarkResult] = []
+
+    for run_idx in range(1, args.repetitions + 1):
+        if args.repetitions > 1 and not args.quiet:
+            print(f"\n>>> [회차 {run_idx}/{args.repetitions}] 실측 시작...")
+
+        try:
+            result = asyncio.run(
+                run_arq_throughput_benchmark(
+                    redis_url=args.redis_url,
+                    total_jobs=args.jobs,
+                    concurrency=args.concurrency,
+                    job_delay_ms=args.job_delay_ms,
+                    poll_delay_sec=args.poll_delay,
+                    timeout_sec=args.timeout,
+                    simulate_error_rate=args.simulate_error_rate,
+                )
+            )
+            results.append(result)
+        except RedisConnectionError as r_err:
+            print(f"Redis 연결 오류: {r_err}", file=sys.stderr)
+            return 2
+        except Exception as exc:
+            print(f"벤치마크 실행 실패: {exc}", file=sys.stderr)
+            return 1
+
+        if not args.quiet:
+            result.report()
+
+        # 개별 회차 파일 저장 (output 지정 시 _r1, _r2 등 접미사)
+        if args.output and args.repetitions > 1:
+            stem = args.output.stem
+            suffix = args.output.suffix
+            r_path = args.output.parent / f"{stem}_r{run_idx}{suffix}"
+            r_path.parent.mkdir(parents=True, exist_ok=True)
+            r_path.write_text(dump_strict_json(result.as_dict()), encoding="utf-8")
+            if not args.quiet:
+                print(f"회차 {run_idx} 결과 저장: {r_path}")
+
+        # 다음 회차 전 대기
+        if run_idx < args.repetitions and args.run_interval_sec > 0:
+            if not args.quiet:
+                print(f"다음 회차 전 {args.run_interval_sec}초 대기 중...")
+            time.sleep(args.run_interval_sec)
+
+    # 대표 결과 선정: P95 기준 최악 대표값
+    worst_result = max(results, key=lambda r: float(r.latency_ms.get("p95_ms", 0.0)))
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
-            dump_strict_json(result.as_dict()),
+            dump_strict_json(worst_result.as_dict()),
             encoding="utf-8",
         )
-        print(f"측정 결과 저장 완료: {args.output}")
+        if not args.quiet:
+            print(f"\n최종 대표 결과 저장 완료: {args.output}")
 
-    return 0 if (result.status == "success" and result.summary.get("error_count", 0) == 0) else 1
+    all_success = all(
+        r.status == "success" and r.summary.get("error_count", 0) == 0 for r in results
+    )
+    return 0 if all_success else 1
 
 
 if __name__ == "__main__":
