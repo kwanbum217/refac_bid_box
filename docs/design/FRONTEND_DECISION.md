@@ -6,32 +6,23 @@
 
 ---
 
-## 결정
+## 목표 아키텍처 (확정)
 
 | 항목 | 선택 | 근거 |
 | --- | --- | --- |
 | 1차 UI | **SSR + HTMX + Jinja2** | 원본 Django Templates UX 유지, 점진적 이행 |
-| 챗봇 스트리밍 | **SSE (FastAPI StreamingResponse)** | 설계서 G3 레이턴시 목표 |
-| React SPA (`frontend/`) | **레거시 스캐폴드 보존, 신규 개발 중단** | Antigravity가 설계와 무관하게 생성 |
+| 챗봇 스트리밍 | **SSE (FastAPI StreamingResponse)** | 설계서 G3 레이턴시 목표 달성 |
+| React SPA (`frontend/`) | **레거시 스캐폴드 보존, 신규 개발 중단** | Antigravity가 설계와 무관하게 생성한 스캐폴드 동결 |
 
 ---
 
-## 구현 경로
+## 현재 구현 상태 (실측 및 코드베이스 확인)
 
-```
-src/app/templates/          # Jinja2 SSR (dashboard, prediction, chatbot)
-src/app/static/             # CSS, HTMX, Chart.js
-GET /ui/                    # SSR 진입점
-POST /api/v1/chatbot/chat/stream  # SSE (React fetch / ReadableStream 연동)
-```
-
----
-
-## React SPA 처리
-
-- `frontend/` 디렉토리는 삭제하지 않고 참조용으로 유지
-- docker-compose의 `frontend` 서비스는 개발 편의용 optional
-- 프로덕션 UI는 FastAPI SSR을 기본으로 한다
+- **실제 템플릿 위치**: `src/app/templates/` (총 12종 Jinja2 템플릿 이식 완료)
+- **정적 자산 위치**: `src/app/static/` (CSS, HTMX, Chart.js)
+- **SSR 라우팅 진입점**: `src/app/api/ui.py` (`/`, `/bids/`, `/bids/results/`, `/bids/dashboard/`, `/chatbot/` 등)
+- **챗봇 SSE 스트리밍**: `POST /api/v1/chatbot/chat/stream` (단일 파이프라인 스트리밍 완료)
+- **React SPA 격리**: `docker-compose.yml`에서 `profiles: ["legacy"]`로 격리, 기본 기동 제외
 
 ---
 

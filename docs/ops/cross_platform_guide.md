@@ -1,8 +1,8 @@
 # 크로스 플랫폼 호환 가이드 (macOS / Windows)
 
 > **작성일**: 2026-07-31
-> **갱신일**: 2026-08-11
-> **상태**: macOS 검증 완료 / Windows CI 통과 / Windows 호스트 전체 스택 검증 대기
+> **갱신일**: 2026-08-23
+> **상태**: macOS 실기 PASS / Ubuntu CI PASS / macOS CI PASS / 최신 Windows CI FAIL / Windows Docker Desktop 실기 미수행
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
 ---
@@ -19,7 +19,7 @@ macOS와 Windows에서 **동일한 환경**으로 개발하고 실행하기 위�
 | --- | --- | --- |
 | `mysqlclient` 빌드 실패 | macOS에서 C 확장 빌드 의존성 | Docker MySQL + PyMySQL(순수 파이썬) |
 | `hc.exe` Windows 바이너리 | Harness CLI Windows 전용 | Git 제거, CI 다운로드 또는 REST API |
-| `.ps1` 스케줄러 | Windows 작업 스케줄러 | Celery Beat (크로스플랫폼) |
+| `.ps1` 스케줄러 | Windows 작업 스케줄러 | Arq 크론 (크로스플랫폼) |
 | 환경 차이 | 로컬 직접 설치 | Docker + Makefile 표준화 |
 | 경로 구분자 | `\` vs `/` | `pathlib.Path` 전면 사용 |
 | 인코딩 | 시스템 기본 인코딩 차이 | UTF-8 강제 |
@@ -182,11 +182,11 @@ steps:
 - [x] Dockerfile 작성 (파이썬 슬림 이미지)
 - [x] docker-compose.yml 작성 (`app`, `worker`, `db`, `redis`, `meilisearch`)
 - [x] Makefile 작성
-- [x] macOS에서 `make up` 실행 검증
-- [x] Windows에서 `uv run pytest -q` 실행 검증 (GitHub Actions windows-latest)
-- [x] CI Python 매트릭스 테스트 통과 (macOS/Windows) — 2026-08-06 실제 통과 확인
+- [x] macOS에서 `make up` 실행 검증 (macOS 실기 PASS)
+- [x] Ubuntu CI / macOS CI 통과
+- [ ] Windows CI 통과 (최신 CI Run 32599491149 / SHA d95efd5 기준 failure 상태)
 - [x] `.gitattributes` 줄바꿈 가드 (데이터 자산은 변환 제외)
-- [ ] Windows Docker Desktop에서 `scripts/validate_windows.ps1` 전체 통과
+- [ ] Windows Docker Desktop에서 `scripts/validate_windows.ps1` 전체 통과 (실기 미수행)
 
 ### 2026-08-06 정적 감사 결과
 
@@ -202,7 +202,7 @@ Windows 장비가 없어 실행 검증 대신 정적 감사와 CI 로 확인했�
 | 빌드 진입점 줄바꿈 | Dockerfile/Makefile/compose 모두 LF |
 | **체크섬 매니페스트 경로** | **결함 발견 후 수정** (`as_posix`) |
 
-CI 의 windows-latest 작업은 이 결함으로 실패하고 있었으며, 수정 후 3개 작업
+CI 의 windows-latest 작업은 이 결함으로 실패하고 있었으며, 수정 후 당시 3개 작업
 (macOS / Windows / lint) 전량 통과를 확인했습니다.
 
 남은 미검증 영역은 **Windows 호스트의 Docker Compose 전체 스택**입니다. GitHub
@@ -217,3 +217,10 @@ CI 의 windows-latest 작업은 이 결함으로 실패하고 있었으며, 수�
 --quiet` 정적 검증을 통과했습니다. PowerShell과 Windows 호스트가 없어 변경된
 `scripts/validate_windows.ps1`과 전체 스택은 실기 실행하지 못했으므로, 위
 체크리스트의 Windows Docker Desktop 항목은 계속 미완료입니다.
+
+### 2026-08-23 현행 CI 및 검증 상태
+
+- **main SHA**: `d95efd5`
+- **최신 CI Run**: Run `32599491149` (failure: `lint-and-validate` failure, `windows-latest` failure, `macos-latest` success, `ubuntu-latest` success, Docker 이미지 빌드 success)
+- **직전 CI Run**: Run `32583897498` (SHA `9a46efe`, failure)
+- **현행 상태 요약**: macOS 실기 PASS, Ubuntu CI PASS, macOS CI PASS, 최신 Windows CI FAIL, Windows Docker Desktop 실기 미수행.

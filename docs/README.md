@@ -12,7 +12,8 @@
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
-| **리팩토링 설계서** | [`design/REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md) | 전체 리팩토링 청사진 |
+| **운영 상태 정본** | [`context/CURRENT_STATE.md`](context/CURRENT_STATE.md) | **단일 진실 원천(SSOT).** 현재 구현 상태, 테스트/CI, 런타임 지표 |
+| **리팩토링 설계서** | [`design/REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md) | 전체 리팩토링 청사진 (설계 기준선) |
 | **프론트엔드 결정** | [`design/FRONTEND_DECISION.md`](design/FRONTEND_DECISION.md) | SSR+HTMX 확정, React SPA 중단 |
 | **공고 검색 전환** | [`handoff/2026-08-09_bid_search_meilisearch_handoff.md`](handoff/2026-08-09_bid_search_meilisearch_handoff.md) | Meilisearch 읽기 모델 구현 및 초기 색인 검증 절차 |
 
@@ -23,9 +24,11 @@
 ```
 docs/
 ├── README.md
+├── context/
 ├── design/
 ├── migration/
 ├── ops/
+├── analysis/
 ├── handoff/
 └── changelogs/
 ```
@@ -95,7 +98,7 @@ docs/
 | 쌍대 표본 기준 착수 지시 | [`2026-08-11_paired_sample_filter_todo.md`](handoff/2026-08-11_paired_sample_filter_todo.md) | 판정용·보고용 표본 분리 반영. 코드 변경 지점, 검증 절차, 금지 사항 |
 | legacy SSE 이관 착수 지시 | [`2026-08-12_legacy_sse_migration_task.md`](handoff/2026-08-12_legacy_sse_migration_task.md) | GET /chatbot/stream 제거 완료. 정본 POST /chat/stream 전면 이관 및 벤치마크 기준선 갱신 |
 | P0 후속 마감 이후 착수 목록 | [`2026-08-13_next_session_todo.md`](handoff/2026-08-13_next_session_todo.md) | A1~A5 병합 이후 잔여 과제. 신 제도 표본 1.276% 실측, 미병합 브랜치 처분, 컷오버 점검 |
-| 추후 작업 정본 백로그 | [`2026-08-13_future_work_backlog.md`](handoff/2026-08-13_future_work_backlog.md) | **현재 정본.** 수집 안정화 관찰, P1 다중 워커 기각 이후 코드 경로 프로파일링, OOS 게이트와 저장소 잔여물의 의존 순서 |
+| 추후 작업 백로그 (구 정본) | [`2026-08-13_future_work_backlog.md`](handoff/2026-08-13_future_work_backlog.md) | 과거 백로그 (현재 정본은 `docs/context/CURRENT_STATE.md` 참조). 수집 안정화 관찰, P1 다중 워커 기각 이후 코드 경로 프로파일링 |
 | GPT 코디네이션 세션 인수인계 | [`2026-08-13_gpt_coordination_handoff.md`](handoff/2026-08-13_gpt_coordination_handoff.md) | 기능 기준 `d82a638`. 완료·기각 결과, Git·Docker·Orca 종료 상태, 다음 Task 사양과 재개 명령 |
 | 예측 P95 병목 감사 | [`2026-08-13_prediction_p95_diagnosis.md`](handoff/2026-08-13_prediction_p95_diagnosis.md) | /predict P95 627ms 원인(스레드 미제한·특징 3중 구축·이중 프리로드), 최소 수정 후보 A~E, 재측정 매트릭스 1/2/4/10 |
 | 용역 OOS 준비도 판정 | [`2026-08-13_servc_oos_readiness_gate.md`](handoff/2026-08-13_servc_oos_readiness_gate.md) | 현행 champion OOS 후보 2건으로 판정 불가. 수집 백필과 3,098건 축적을 다음 게이트로 확정 |
@@ -113,14 +116,23 @@ docs/
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
 | **레이턴시 게이트 측정 규약** | [`latency_gate_protocol.md`](ops/latency_gate_protocol.md) | **정본 규약.** 표본 `n >= 오염요청수 x 60`(예측 600, SSE 60), warmup 제외, 3회 최악값, c10 P95 100ms, 주변 부하 기록. 규약 제정 이전 측정은 통과·미달 어느 근거도 아님 |
-| Phase 7 검증 보고서 | [`phase7_cutover_report_20260804.md`](ops/phase7_cutover_report_20260804.md) | 무손실·레이턴시·크로스 플랫폼 판정 근거 |
+| Phase 7 검증 보고서 | [`phase7_cutover_report_20260804.md`](ops/phase7_cutover_report_20260804.md) | 과거 Phase 7 이행 보고서 (HISTORICAL, 현재 판정 근거 사용 금지) |
 | 크로스 플랫폼 가이드 | [`cross_platform_guide.md`](ops/cross_platform_guide.md) | macOS·Windows 재현 및 검증 절차 |
 | 모델 승격·롤백 런북 | [`model_promotion_runbook.md`](ops/model_promotion_runbook.md) | 승격 게이트, 쌍대 비교 절차, 롤백 왕복 |
 | 스냅샷 재집계 비용 | [`snapshot_rebuild_cost_20260806.md`](ops/snapshot_rebuild_cost_20260806.md) | 주간 재집계로 506초에서 135.8초. 날짜 축 확장·LIKE 제거 기각, 증분 집계 타당성 판정(8절) |
 | Orca 오케스트레이션 실행 지침 | [`orca_orchestration_playbook.md`](ops/orca_orchestration_playbook.md) | 다중 섹션 병렬 운영 절차. 작업 분해, 모델·effort 배정, 감독, 접합부 검증, 함정 12건 |
 | 에이전트 워커 기동 참조 | [`agent_worker_launch_reference.md`](ops/agent_worker_launch_reference.md) | 제공자별 기동 경로와 모델 ID, 오해하기 쉬운 신호, `worker-start` 차단 시 inject 우회. **기동 불가 판정 전에 필독** |
+| Arq 임계값 도출 및 Provenance | [`arq_threshold_provenance_20260823.md`](ops/arq_threshold_provenance_20260823.md) | Arq 처리량/P95/실패율 게이트 임계값 도출 근거 및 provenance 규약 |
 
-## 5. changelogs/
+## 5. context/ 및 analysis/
+
+| 문서 | 파일 | 설명 |
+| --- | --- | --- |
+| **프로젝트 현재 운영 상태** | [`context/CURRENT_STATE.md`](context/CURRENT_STATE.md) | **단일 진실 원천(SSOT).** 현재 구현 상태, 테스트/CI 현황, 런타임 지표 |
+| 과거 인수인계 (2026-08-18) | [`context/handoff_20260818.md`](context/handoff_20260818.md) | 이전 세션 컨텍스트 인수인계 기록 |
+| 분석 보고서 디렉토리 | [`analysis/`](analysis/) | Arq 처리량, I/O 차단, c2/c4 배치 등 심층 성능 및 분석 보고서 모음 |
+
+## 6. changelogs/
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
@@ -130,13 +142,11 @@ docs/
 
 ## 권장 독해 순서
 
-1. [`README.md`](../README.md)
-2. [`AGENTS.md`](../AGENTS.md) / [`SKILLS.md`](../SKILLS.md)
-3. [`design/REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md)
-4. [`handoff/2026-07-31_parity_restoration_handoff.md`](handoff/2026-07-31_parity_restoration_handoff.md)
-5. [`handoff/2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md)
-6. [`handoff/2026-08-04_phase7_handoff.md`](handoff/2026-08-04_phase7_handoff.md)
-7. [`ops/phase7_cutover_report_20260804.md`](ops/phase7_cutover_report_20260804.md)
+1. [`AGENTS.md`](../AGENTS.md)
+2. [`context/CURRENT_STATE.md`](context/CURRENT_STATE.md) (현재 프로젝트 운영 상태 단일 진실 원천)
+3. 관련 프로토콜 및 ADR ([`ops/latency_gate_protocol.md`](ops/latency_gate_protocol.md), [`design/FRONTEND_DECISION.md`](design/FRONTEND_DECISION.md), [`design/REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md))
+4. 최신 실측 증거 ([`analysis/`](analysis/), [`ops/`](ops/) 최신 보고서)
+5. 과거 인수인계 및 작업 이력 ([`handoff/`](handoff/))
 
 ---
 

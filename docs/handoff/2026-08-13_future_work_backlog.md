@@ -2,10 +2,15 @@
 
 > **작성일**: 2026-08-13
 > **기능 기준 커밋**: `main` `d82a638`
-> **상태**: 현재 정본. 다음 세션은 이 문서부터 읽습니다
+> **상태**: SUPERSEDED (과거 기록. 현재 프로젝트 정본은 [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md) 참조)
 > **범위**: 아직 끝나지 않은 실행 과제, 선행 조건, 완료 기준, 사용자 결정
 > **대체 문서**: [`2026-08-13_next_session_todo.md`](2026-08-13_next_session_todo.md)
 > **세션 인수인계**: [`2026-08-13_gpt_coordination_handoff.md`](2026-08-13_gpt_coordination_handoff.md)
+
+> [!WARNING]
+> **SUPERSEDED / 과거 백로그 안내**
+> 본 문서는 2026-08-13 시점의 과거 작업 백로그 기록입니다. 현재 프로젝트의 단일 진실 원천(SSOT) 및 운영 상태 정본은 [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md) 입니다.
+> 본 문서의 수치와 진행 내역은 작성 시점의 증거로 보존됩니다.
 
 ---
 
