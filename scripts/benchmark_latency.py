@@ -49,6 +49,45 @@ class BuildProvenanceError(RuntimeError):
     """벤치마크 대상 도커 이미지/컨테이너 provenance 조회가 실패하거나 불완전할 때 발생합니다."""
 
 
+PROVENANCE_IDENTITY_KEYS: tuple[str, ...] = (
+    "container_id",
+    "target_container_image_id",
+    "docker_image_id",
+    "image_digest",
+    "git_sha",
+    "container_name",
+    "service_name",
+)
+
+
+def verify_provenance_consistency(
+    start_meta: dict[str, object],
+    end_meta: dict[str, object],
+    strict: bool = True,
+) -> bool:
+    """측정 시작과 종료 시점의 provenance identity 일치 여부를 검증합니다.
+
+    측정 도중 대상 컨테이너나 이미지가 교체되었거나 git_sha가 변경된 경우
+    strict 모드에서 BuildProvenanceError를 발생시키고 fail-closed로 거부합니다.
+    """
+    mismatches: list[str] = []
+    for key in PROVENANCE_IDENTITY_KEYS:
+        start_val = start_meta.get(key)
+        end_val = end_meta.get(key)
+        if start_val != end_val:
+            mismatches.append(f"{key} changed from '{start_val}' to '{end_val}'")
+
+    if mismatches:
+        err_msg = (
+            "Target container/image provenance changed during benchmark measurement: "
+            + ", ".join(mismatches)
+        )
+        if strict:
+            raise BuildProvenanceError(err_msg)
+        return False
+    return True
+
+
 from scripts._strict_json import (  # noqa: E402
     dump_strict_json,
     sanitize_nan_to_none,
@@ -562,19 +601,42 @@ def build_evidence(
     service_name: str = "app",
     target_container: str | None = None,
     meta: dict[str, object] | None = None,
+    start_meta: dict[str, object] | None = None,
+    end_meta: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    if meta is None:
-        meta = reproducibility_metadata(
-            service_name=service_name,
-            strict=strict_provenance,
-            base_url=base_url,
-            target_container=target_container,
-        )
+    if start_meta is None and end_meta is None:
+        if meta is None:
+            meta = reproducibility_metadata(
+                service_name=service_name,
+                strict=strict_provenance,
+                base_url=base_url,
+                target_container=target_container,
+            )
+        start_meta = meta
+        end_meta = meta
+    elif start_meta is not None and end_meta is None:
+        end_meta = start_meta
+    elif start_meta is None and end_meta is not None:
+        start_meta = end_meta
+
+    provenance_consistent = verify_provenance_consistency(
+        start_meta, end_meta, strict=strict_provenance
+    )
+
+    base_meta = dict(start_meta)
+    if meta is not None:
+        base_meta.update(meta)
+
+    evidence_meta = {
+        **base_meta,
+        "start_provenance": start_meta,
+        "end_provenance": end_meta,
+        "provenance_consistent": provenance_consistent,
+        "host_load": host_load if host_load is not None else host_load_metadata(),
+    }
+
     evidence = {
-        "meta": {
-            **meta,
-            "host_load": host_load if host_load is not None else host_load_metadata(),
-        },
+        "meta": evidence_meta,
         "base_url": base_url,
         "predict_rounds": predict_rounds,
         "predict_concurrency": predict_concurrency,
@@ -648,14 +710,14 @@ def main() -> int:
 
     strict_provenance = not args.allow_unknown_provenance
     try:
-        meta = reproducibility_metadata(
+        start_meta = reproducibility_metadata(
             service_name=args.target_service,
             strict=strict_provenance,
             base_url=args.base_url,
             target_container=args.target_container,
         )
     except BuildProvenanceError as exc:
-        print(f"빌드 provenance 검증 실패: {exc}")
+        print(f"빌드 provenance 검증 실패 (시작 시점): {exc}")
         print(
             "--allow-unknown-provenance 옵션으로 강제할 수 있으나 정본 evidence로 인정되지 않습니다."
         )
@@ -673,6 +735,18 @@ def main() -> int:
     query = benchmark_query(args.base_url, args.query_rounds)
 
     host_load = load_monitor.stop()
+
+    try:
+        end_meta = reproducibility_metadata(
+            service_name=args.target_service,
+            strict=strict_provenance,
+            base_url=args.base_url,
+            target_container=args.target_container,
+        )
+        verify_provenance_consistency(start_meta, end_meta, strict=strict_provenance)
+    except BuildProvenanceError as exc:
+        print(f"빌드 provenance 검증 실패 (종료 시점 / 교체 감지): {exc}")
+        return 2
 
     print("\n" + "-" * 62)
     print("결과")
@@ -699,7 +773,8 @@ def main() -> int:
             strict_provenance=strict_provenance,
             service_name=args.target_service,
             target_container=args.target_container,
-            meta=meta,
+            start_meta=start_meta,
+            end_meta=end_meta,
         )
         args.output.write_text(
             dump_strict_json(evidence),

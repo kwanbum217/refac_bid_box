@@ -24,6 +24,7 @@ from typing import Any
 
 from scripts.benchmark_latency import (
     BuildProvenanceError,
+    verify_provenance_consistency,
 )
 from scripts.benchmark_latency import (
     _command_output as _latency_command_output,
@@ -376,14 +377,14 @@ def main() -> int:
 
     strict_provenance = not args.allow_unknown_provenance
     try:
-        meta = reproducibility_metadata(
+        start_meta = reproducibility_metadata(
             service_name=args.target_service,
             strict=strict_provenance,
             base_url=args.base_url,
             target_container=args.target_container,
         )
     except BuildProvenanceError as exc:
-        print(f"빌드 provenance 검증 실패: {exc}")
+        print(f"빌드 provenance 검증 실패 (시작 시점): {exc}")
         print(
             "--allow-unknown-provenance 옵션으로 강제할 수 있으나 정본 evidence로 인정되지 않습니다."
         )
@@ -397,11 +398,28 @@ def main() -> int:
         warmup=not args.no_warmup,
     )
 
+    try:
+        end_meta = reproducibility_metadata(
+            service_name=args.target_service,
+            strict=strict_provenance,
+            base_url=args.base_url,
+            target_container=args.target_container,
+        )
+        provenance_consistent = verify_provenance_consistency(
+            start_meta, end_meta, strict=strict_provenance
+        )
+    except BuildProvenanceError as exc:
+        print(f"빌드 provenance 검증 실패 (종료 시점 / 교체 감지): {exc}")
+        return 2
+
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "meta": {
-                **meta,
+                **start_meta,
+                "start_provenance": start_meta,
+                "end_provenance": end_meta,
+                "provenance_consistent": provenance_consistent,
                 "base_url": args.base_url,
                 "concurrency": args.concurrency,
                 "rounds": args.rounds,
