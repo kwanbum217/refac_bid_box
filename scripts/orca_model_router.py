@@ -38,13 +38,13 @@ from pathlib import Path
 from typing import IO, Any
 
 try:
-    from scripts._strict_json import dump_strict_json, load_strict_json
+    from scripts._strict_json import dump_strict_json
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
-    from scripts._strict_json import dump_strict_json, load_strict_json  # type: ignore[no-redef]
+    from scripts._strict_json import dump_strict_json  # type: ignore[no-redef]
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 
 __all__ = [

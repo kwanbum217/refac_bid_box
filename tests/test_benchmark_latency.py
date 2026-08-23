@@ -44,6 +44,8 @@ def test_reproducibility_metadata_marks_failed_docker_lookup_unknown(monkeypatch
     assert metadata["docker_image_id"] == "unknown"
     assert metadata["container_id"] == "unknown"
     assert metadata["target_container_image_id"] == "unknown"
+    assert metadata["image_digest"] == "unknown"
+    assert metadata["container_name"] == "unknown"
     assert set(metadata) == {
         "git_sha",
         "measured_at_utc",
@@ -52,6 +54,12 @@ def test_reproducibility_metadata_marks_failed_docker_lookup_unknown(monkeypatch
         "docker_image_id",
         "container_id",
         "target_container_image_id",
+        "image_digest",
+        "container_name",
+        "service_name",
+        "base_url",
+        "bound_port",
+        "port_bindings",
         "gc",
         "instrumentation",
     }
@@ -225,16 +233,51 @@ def test_reproducibility_metadata_queries_app_service_and_inspect(monkeypatch):
             return "container_id_bbb"
         if command == ["docker", "inspect", "-f", "{{.Image}}", "container_id_bbb"]:
             return "sha256:target_container_image_ccc"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "container_id_bbb"]:
+            return "/refac_bid_box-app-1"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "container_id_bbb"]:
+            return "true"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{json .NetworkSettings.Ports}}",
+            "container_id_bbb",
+        ]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{.NetworkSettings.IPAddress}}",
+            "container_id_bbb",
+        ]:
+            return "172.18.0.4"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{json .RepoDigests}}",
+            "sha256:target_container_image_ccc",
+        ]:
+            return '["refac_bid_box-app@sha256:digest123"]'
         return "unexpected"
 
     monkeypatch.setattr(benchmark_latency, "_command_output", mock_command_output)
 
-    metadata = benchmark_latency.reproducibility_metadata(service_name="app", strict=True)
+    metadata = benchmark_latency.reproducibility_metadata(
+        service_name="app",
+        strict=True,
+        base_url="http://127.0.0.1:8000",
+    )
 
     assert metadata["git_sha"] == "harness_git_sha_123"
     assert metadata["docker_image_id"] == "sha256:app_image_aaa"
     assert metadata["container_id"] == "container_id_bbb"
     assert metadata["target_container_image_id"] == "sha256:target_container_image_ccc"
+    assert metadata["image_digest"] == "refac_bid_box-app@sha256:digest123"
+    assert metadata["container_name"] == "refac_bid_box-app-1"
+    assert metadata["bound_port"] == 8000
 
     # compose service 이름 'app' 조회와 inspect 호출을 검증합니다.
     assert ["docker", "compose", "images", "-q", "app"] in commands_executed
@@ -261,6 +304,8 @@ def test_reproducibility_metadata_raises_build_provenance_error_on_unknown(monke
             return "cnt_123"
         if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt_123"]:
             return "sha256:img_123"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt_123"]:
+            return "true"
         return "git_sha_123"
 
     monkeypatch.setattr(benchmark_latency, "_command_output", mock_fail_image)
@@ -289,6 +334,8 @@ def test_reproducibility_metadata_raises_build_provenance_error_on_unknown(monke
             return "cnt_123"
         if command == ["docker", "compose", "images", "-q", "app"]:
             return "sha256:img_123"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt_123"]:
+            return "true"
         return "git_sha_123"
 
     monkeypatch.setattr(benchmark_latency, "_command_output", mock_fail_inspect)
@@ -299,6 +346,149 @@ def test_reproducibility_metadata_raises_build_provenance_error_on_unknown(monke
     # 4. strict=False 일 때는 예외 없이 unknown 을 반환함을 확인
     non_strict_meta = benchmark_latency.reproducibility_metadata(strict=False)
     assert non_strict_meta["target_container_image_id"] == "unknown"
+
+
+def test_reproducibility_metadata_detects_port_mismatch(monkeypatch):
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "sha123"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:img123"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt123"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt123"]:
+            return "sha256:img123"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "cnt123"]:
+            return "/app-cnt"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt123"]:
+            return "true"
+        if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt123"]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt123"]:
+            return "172.18.0.2"
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    # base_url이 9000 포트인데 컨테이너는 8000 포트만 발행한 경우 -> strict 모드에서 실패
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.reproducibility_metadata(
+            service_name="app",
+            strict=True,
+            base_url="http://127.0.0.1:9000",
+        )
+    assert "port 9000 not bound" in str(excinfo.value)
+
+    # non-strict 모드에서는 예외 없이 반환
+    meta = benchmark_latency.reproducibility_metadata(
+        service_name="app",
+        strict=False,
+        base_url="http://127.0.0.1:9000",
+    )
+    assert meta["bound_port"] == 9000
+
+    # 로컬 Docker provenance만으로 원격 HTTP 대상의 동일성을 증명할 수 없습니다.
+    with pytest.raises(BuildProvenanceError, match="port 8000 not bound"):
+        benchmark_latency.reproducibility_metadata(
+            service_name="app",
+            strict=True,
+            base_url="http://remote-host:8000",
+        )
+
+
+def test_reproducibility_metadata_detects_stopped_container(monkeypatch):
+    import pytest
+
+    from scripts.benchmark_latency import BuildProvenanceError
+
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "sha123"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:img123"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt123"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt123"]:
+            return "sha256:img123"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "cnt123"]:
+            return "/app-cnt"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt123"]:
+            return "false"
+        if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt123"]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    with pytest.raises(BuildProvenanceError) as excinfo:
+        benchmark_latency.reproducibility_metadata(
+            service_name="app",
+            strict=True,
+            base_url="http://127.0.0.1:8000",
+        )
+    assert "is not running" in str(excinfo.value)
+
+
+def test_reproducibility_metadata_supports_explicit_target_container(monkeypatch):
+    commands_executed: list[list[str]] = []
+
+    def mock_command(command: list[str]) -> str:
+        commands_executed.append(command)
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "sha123"
+        if command == ["docker", "inspect", "-f", "{{.Id}}", "my_custom_container"]:
+            return "custom_cnt_id_999"
+        if command == ["docker", "inspect", "-f", "{{.Config.Image}}", "custom_cnt_id_999"]:
+            return "custom_image:latest"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "custom_cnt_id_999"]:
+            return "sha256:custom_image_hash"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "custom_cnt_id_999"]:
+            return "/my_custom_container"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "custom_cnt_id_999"]:
+            return "true"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{json .NetworkSettings.Ports}}",
+            "custom_cnt_id_999",
+        ]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{.NetworkSettings.IPAddress}}",
+            "custom_cnt_id_999",
+        ]:
+            return "172.18.0.9"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{json .RepoDigests}}",
+            "sha256:custom_image_hash",
+        ]:
+            return "[]"
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    meta = benchmark_latency.reproducibility_metadata(
+        target_container="my_custom_container",
+        strict=True,
+        base_url="http://localhost:8000",
+    )
+
+    assert meta["container_id"] == "custom_cnt_id_999"
+    assert meta["docker_image_id"] == "custom_image:latest"
+    assert meta["target_container_image_id"] == "sha256:custom_image_hash"
+    assert meta["image_digest"] == "none (local build)"
+    assert meta["container_name"] == "my_custom_container"
 
 
 def test_strict_json_serialization_sanitizes_nan_to_null():
@@ -384,3 +574,105 @@ def test_build_evidence_strict_provenance_and_nan_normalization(monkeypatch):
     assert "NaN" not in serialized
     parsed = json.loads(serialized)
     assert parsed["samples"]["predict"]["p95_ms"] is None
+
+
+def test_reproducibility_metadata_direct_container_ip_binding(monkeypatch):
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "sha123"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:img123"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "cnt123"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "cnt123"]:
+            return "sha256:img123"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "cnt123"]:
+            return "/app-cnt"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "cnt123"]:
+            return "true"
+        if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt123"]:
+            return '{"8000/tcp":null}'
+        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt123"]:
+            return "172.18.0.2"
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    # 직접 컨테이너 IP로 연결할 때 IP와 내부 포트 일치 검증
+    meta = benchmark_latency.reproducibility_metadata(
+        service_name="app",
+        strict=True,
+        base_url="http://172.18.0.2:8000",
+    )
+    assert meta["bound_port"] == 8000
+    assert meta["container_id"] == "cnt123"
+
+
+def test_reproducibility_metadata_key_separation(monkeypatch):
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "git_sha_abc"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "compose_img_id_111"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "compose_cnt_id_222"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "compose_cnt_id_222"]:
+            return "running_img_id_333"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "compose_cnt_id_222"]:
+            return "/refac_app_1"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "compose_cnt_id_222"]:
+            return "true"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{json .NetworkSettings.Ports}}",
+            "compose_cnt_id_222",
+        ]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{.NetworkSettings.IPAddress}}",
+            "compose_cnt_id_222",
+        ]:
+            return "172.18.0.5"
+        if command == ["docker", "inspect", "-f", "{{json .RepoDigests}}", "running_img_id_333"]:
+            return '["registry.example.com/app@sha256:repodigest444"]'
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    meta = benchmark_latency.reproducibility_metadata(
+        service_name="app",
+        strict=True,
+        base_url="http://127.0.0.1:8000",
+    )
+
+    # 4가지 식별자 키가 혼동되지 않고 명확히 분리되었는지 검증
+    assert meta["git_sha"] == "git_sha_abc"
+    assert meta["docker_image_id"] == "compose_img_id_111"
+    assert meta["container_id"] == "compose_cnt_id_222"
+    assert meta["target_container_image_id"] == "running_img_id_333"
+    assert meta["image_digest"] == "registry.example.com/app@sha256:repodigest444"
+    assert meta["container_name"] == "refac_app_1"
+
+
+def test_benchmark_latency_main_provenance_failure_returns_code_2(monkeypatch):
+    class MockHealthResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(benchmark_latency.httpx, "get", lambda *a, **kw: MockHealthResponse())
+    monkeypatch.setattr(benchmark_latency, "_command_output", lambda _cmd: "unknown")
+    monkeypatch.setattr(
+        benchmark_latency.sys,
+        "argv",
+        ["benchmark_latency.py", "--base-url", "http://127.0.0.1:8000"],
+    )
+
+    exit_code = benchmark_latency.main()
+    assert exit_code == 2

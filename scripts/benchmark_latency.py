@@ -49,27 +49,10 @@ class BuildProvenanceError(RuntimeError):
     """벤치마크 대상 도커 이미지/컨테이너 provenance 조회가 실패하거나 불완전할 때 발생합니다."""
 
 
-def sanitize_nan_to_none(obj: Any) -> Any:
-    """JSON 직렬화 전 NaN/Inf 부동소수점 값을 None(null)으로 정규화합니다."""
-    if isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
-            return None
-        return obj
-    if isinstance(obj, dict):
-        return {k: sanitize_nan_to_none(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [sanitize_nan_to_none(v) for v in obj]
-    return obj
-
-
-def dump_strict_json(data: Any, **kwargs: Any) -> str:
-    """NaN을 None으로 정규화한 뒤 allow_nan=False로 엄격한 JSON 문자열을 직렬화합니다."""
-    sanitized = sanitize_nan_to_none(data)
-    kwargs.setdefault("ensure_ascii", False)
-    kwargs.setdefault("indent", 2)
-    kwargs["allow_nan"] = False
-    return json.dumps(sanitized, **kwargs)
-
+from scripts._strict_json import (  # noqa: E402
+    dump_strict_json,
+    sanitize_nan_to_none,
+)
 
 # 캐시 적중으로 측정치가 왜곡되지 않도록 질의를 매번 바꿉니다.
 CHAT_QUERIES = [
@@ -99,32 +82,164 @@ def _command_output(command: list[str]) -> str:
         return "unknown"
 
 
+def _parse_port_bindings(raw_ports: str) -> tuple[list[dict[str, object]], set[int], set[int]]:
+    """NetworkSettings.Ports JSON 문자열에서 매핑 정보를 파싱합니다."""
+    port_bindings: list[dict[str, object]] = []
+    published_host_ports: set[int] = set()
+    container_internal_ports: set[int] = set()
+    if raw_ports and raw_ports != "unknown":
+        try:
+            ports_json = json.loads(raw_ports)
+            if isinstance(ports_json, dict):
+                for k, v in ports_json.items():
+                    c_port = (
+                        int(k.split("/")[0]) if "/" in k and k.split("/")[0].isdigit() else None
+                    )
+                    if c_port is not None:
+                        container_internal_ports.add(c_port)
+                    if isinstance(v, list):
+                        for binding in v:
+                            if isinstance(binding, dict):
+                                h_ip = binding.get("HostIp", "")
+                                h_port_str = binding.get("HostPort", "")
+                                if h_port_str and str(h_port_str).isdigit():
+                                    h_port = int(h_port_str)
+                                    published_host_ports.add(h_port)
+                                    port_bindings.append(
+                                        {
+                                            "container_port": c_port,
+                                            "host_ip": h_ip,
+                                            "host_port": h_port,
+                                        }
+                                    )
+        except (ValueError, TypeError):
+            pass
+    return port_bindings, published_host_ports, container_internal_ports
+
+
 def reproducibility_metadata(
     service_name: str = "app",
     strict: bool = True,
+    base_url: str | None = None,
+    target_container: str | None = None,
+    command_runner: Any = None,
 ) -> dict[str, object]:
-    """원시 측정치를 다른 실행 환경과 대조하기 위한 공통 메타데이터입니다."""
+    """원시 측정치를 다른 실행 환경과 대조하기 위한 공통 메타데이터입니다.
+
+    HTTP base_url과 실제 측정 대상 Docker 컨테이너의 identity/포트 매핑을 fail-closed로 검증합니다.
+    """
+    import urllib.parse
+
+    cmd_fn = command_runner if command_runner is not None else _command_output
     timer_info = time.get_clock_info("perf_counter")
-    git_sha = _command_output(["git", "rev-parse", "HEAD"])
-    docker_image_id = _command_output(["docker", "compose", "images", "-q", service_name])
-    container_id = _command_output(["docker", "compose", "ps", "-q", service_name])
+    git_sha = cmd_fn(["git", "rev-parse", "HEAD"])
+
+    # 1. 컨테이너 ID 및 이미지 식별자 조회
+    if target_container:
+        container_id = cmd_fn(["docker", "inspect", "-f", "{{.Id}}", target_container])
+        if container_id == "unknown":
+            container_id = cmd_fn(["docker", "ps", "-q", "-f", f"name={target_container}"])
+    else:
+        container_id = cmd_fn(["docker", "compose", "ps", "-q", service_name])
+
+    if service_name and not target_container:
+        docker_image_id = cmd_fn(["docker", "compose", "images", "-q", service_name])
+    elif container_id != "unknown":
+        docker_image_id = cmd_fn(["docker", "inspect", "-f", "{{.Config.Image}}", container_id])
+    else:
+        docker_image_id = "unknown"
+
+    # 2. 실행 중 컨테이너 상세 정보 조회
     if container_id != "unknown":
-        target_container_image_id = _command_output(
-            ["docker", "inspect", "-f", "{{.Image}}", container_id]
+        target_container_image_id = cmd_fn(["docker", "inspect", "-f", "{{.Image}}", container_id])
+        container_name = cmd_fn(["docker", "inspect", "-f", "{{.Name}}", container_id])
+        if container_name.startswith("/"):
+            container_name = container_name[1:]
+        is_running_raw = cmd_fn(["docker", "inspect", "-f", "{{.State.Running}}", container_id])
+        raw_ports = cmd_fn(
+            ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", container_id]
         )
+        raw_ip = cmd_fn(["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", container_id])
     else:
         target_container_image_id = "unknown"
+        container_name = "unknown"
+        is_running_raw = "unknown"
+        raw_ports = "unknown"
+        raw_ip = "unknown"
 
+    # 3. 이미지 repo digest 조회 (image ID와 구분)
+    image_digest = "unknown"
+    digest_source_id = (
+        target_container_image_id if target_container_image_id != "unknown" else docker_image_id
+    )
+    if digest_source_id != "unknown":
+        raw_digests = cmd_fn(["docker", "inspect", "-f", "{{json .RepoDigests}}", digest_source_id])
+        if raw_digests != "unknown":
+            try:
+                parsed_digests = json.loads(raw_digests)
+                if (
+                    isinstance(parsed_digests, list)
+                    and len(parsed_digests) > 0
+                    and parsed_digests[0]
+                ):
+                    image_digest = str(parsed_digests[0])
+                else:
+                    image_digest = "none (local build)"
+            except (ValueError, TypeError):
+                image_digest = "unknown"
+
+    # 4. 포트 바인딩 및 base_url 결박 검증
+    port_bindings, published_host_ports, container_internal_ports = _parse_port_bindings(raw_ports)
+    is_running = is_running_raw.strip().lower() == "true"
+
+    req_port = None
+    port_matched = True
+    if base_url:
+        parsed_url = urllib.parse.urlparse(base_url)
+        req_host = parsed_url.hostname or "127.0.0.1"
+        req_port = parsed_url.port or (443 if parsed_url.scheme == "https" else 80)
+        is_loopback = req_host in (
+            "127.0.0.1",
+            "localhost",
+            "0.0.0.0",  # noqa: S104  # nosec B104 - 허용된 loopback 대체 표기 비교
+            "::1",
+            "localhost.localdomain",
+        )
+
+        if is_loopback:
+            port_matched = req_port in published_host_ports
+        else:
+            if raw_ip and req_host == raw_ip and req_port in container_internal_ports:
+                port_matched = True
+            else:
+                port_matched = False
+
+    # 5. Strict 모드 검증 및 fail-closed 거부
     if strict:
         failures = []
         if git_sha == "unknown":
             failures.append("git_sha(harness)")
+        target_label = (
+            f"target container '{target_container}'"
+            if target_container
+            else f"compose service '{service_name}'"
+        )
         if docker_image_id == "unknown":
-            failures.append(f"docker_image_id(compose service '{service_name}')")
+            failures.append(f"docker_image_id({target_label})")
         if container_id == "unknown":
-            failures.append(f"container_id(compose service '{service_name}')")
+            failures.append(f"container_id({target_label})")
         if target_container_image_id == "unknown":
             failures.append(f"target_container_image_id(container '{container_id}')")
+        if container_id != "unknown":
+            if not is_running:
+                failures.append(
+                    f"container '{container_id}' is not running (state: {is_running_raw})"
+                )
+            if base_url and not port_matched:
+                failures.append(
+                    f"base_url port {req_port} not bound to target container '{container_id}' "
+                    f"(published host ports: {sorted(published_host_ports) if published_host_ports else 'none'})"
+                )
         if failures:
             raise BuildProvenanceError(
                 f"Docker/Git provenance lookup failed or returned unknown for: {', '.join(failures)}"
@@ -138,6 +253,12 @@ def reproducibility_metadata(
         "docker_image_id": docker_image_id,
         "container_id": container_id,
         "target_container_image_id": target_container_image_id,
+        "image_digest": image_digest,
+        "container_name": container_name,
+        "service_name": service_name,
+        "base_url": base_url,
+        "bound_port": req_port,
+        "port_bindings": port_bindings,
         "gc": {"enabled": gc.isenabled(), "threshold": list(gc.get_threshold())},
         "instrumentation": {
             "timer": "time.perf_counter",
@@ -438,10 +559,20 @@ def build_evidence(
     query: Samples,
     host_load: dict[str, object] | None = None,
     strict_provenance: bool = True,
+    service_name: str = "app",
+    target_container: str | None = None,
+    meta: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    if meta is None:
+        meta = reproducibility_metadata(
+            service_name=service_name,
+            strict=strict_provenance,
+            base_url=base_url,
+            target_container=target_container,
+        )
     evidence = {
         "meta": {
-            **reproducibility_metadata(strict=strict_provenance),
+            **meta,
             "host_load": host_load if host_load is not None else host_load_metadata(),
         },
         "base_url": base_url,
@@ -482,6 +613,14 @@ def benchmark_query(base_url: str, rounds: int) -> Samples:
 def main() -> int:
     parser = argparse.ArgumentParser(description="레이턴시 벤치마크")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
+    parser.add_argument(
+        "--target-service", default="app", help="대상 도커 컴포즈 서비스명 (기본: app)"
+    )
+    parser.add_argument(
+        "--target-container",
+        default=None,
+        help="명시적 대상 도커 컨테이너 이름 또는 ID (기본: None)",
+    )
     parser.add_argument("--sse-rounds", type=int, default=20)
     parser.add_argument("--query-rounds", type=int, default=10)
     parser.add_argument("--predict-rounds", type=int, default=100)
@@ -509,7 +648,12 @@ def main() -> int:
 
     strict_provenance = not args.allow_unknown_provenance
     try:
-        reproducibility_metadata(strict=strict_provenance)
+        meta = reproducibility_metadata(
+            service_name=args.target_service,
+            strict=strict_provenance,
+            base_url=args.base_url,
+            target_container=args.target_container,
+        )
     except BuildProvenanceError as exc:
         print(f"빌드 provenance 검증 실패: {exc}")
         print(
@@ -553,6 +697,9 @@ def main() -> int:
             query,
             host_load=host_load,
             strict_provenance=strict_provenance,
+            service_name=args.target_service,
+            target_container=args.target_container,
+            meta=meta,
         )
         args.output.write_text(
             dump_strict_json(evidence),

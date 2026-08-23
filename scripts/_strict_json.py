@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any
 
 __all__ = [
     "dump_strict_json",
@@ -50,7 +50,9 @@ dumps_strict_json = dump_strict_json
 
 
 def _reject_non_standard_constant(constant: str) -> None:
-    raise ValueError(f"비표준 JSON 상수({constant})는 허용되지 않습니다. RFC-8259 준수 JSON이어야 합니다.")
+    raise ValueError(
+        f"비표준 JSON 상수({constant})는 허용되지 않습니다. RFC-8259 준수 JSON이어야 합니다."
+    )
 
 
 def load_strict_json(source: Any, **kwargs: Any) -> Any:
