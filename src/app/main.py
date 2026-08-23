@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -79,8 +80,28 @@ async def _warm_predictor() -> None:
         )
 
 
+def _enable_latency_segment_logging() -> None:
+    """구간 계측 로그가 실제로 나가도록 로거를 준비합니다.
+
+    계측은 `logger.info` 로 나가는데 컨테이너 런타임의 루트 로거는 WARNING 이고
+    핸들러가 없습니다. 그래서 `LATENCY_SEGMENT_LOGGING` 을 켜도 로그가 한 줄도
+    나오지 않아, 2026-08-22 에 넣은 계측이 실측에 쓰이지 못했습니다. 플래그가
+    켜진 경우에만 해당 로거의 레벨과 핸들러를 보강합니다.
+    """
+    if not settings.LATENCY_SEGMENT_LOGGING:
+        return
+    segment_logger = logging.getLogger("src.rag.engine")
+    segment_logger.setLevel(logging.INFO)
+    if not segment_logger.handlers and not logging.getLogger().handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        segment_logger.addHandler(handler)
+    segment_logger.propagate = False
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    _enable_latency_segment_logging()
     tasks = [
         asyncio.create_task(_warm_llm_backend()),
         asyncio.create_task(_warm_predictor()),

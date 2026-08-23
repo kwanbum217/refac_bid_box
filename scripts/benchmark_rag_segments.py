@@ -64,6 +64,17 @@ class SegmentLoggingDisabledError(RuntimeError):
     """LATENCY_SEGMENT_LOGGING 이 꺼져 있어 구간을 수집할 수 없습니다."""
 
 
+def docker_since_timestamp(now: datetime | None = None) -> str:
+    """`docker logs --since` 에 줄 RFC3339 시각을 만듭니다.
+
+    타임존 표기를 빠뜨리면 docker 가 로컬 시각으로 해석합니다. UTC 값을
+    표기 없이 주면 KST 기준으로 9시간 과거가 되어 측정과 무관한 로그가
+    집계에 섞입니다. 반드시 Z 를 붙입니다.
+    """
+    moment = now or datetime.now(UTC)
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _command_output(command: list[str]) -> str:
     try:
         return subprocess.check_output(  # nosec B603
@@ -210,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"구간 계측 사전 조건 실패: {exc}")
         return 2
 
-    since = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+    since = docker_since_timestamp()
     roundtrip = Samples(label="roundtrip_ms")
     failures = 0
 
@@ -222,11 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             failures += 1
 
-    raw_log = _command_output(
-        ["docker", "logs", "--since", since, args.target_container]
-    ) + _command_output(
-        ["docker", "logs", "--since", since, "--tail", "5000", args.target_container]
-    )
+    raw_log = _command_output(["docker", "logs", "--since", since, args.target_container])
     records = parse_segment_lines(raw_log)
 
     if not records:
