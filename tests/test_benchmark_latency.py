@@ -1,5 +1,6 @@
 from scripts import benchmark_latency
 from scripts.benchmark_latency import (
+    PERF_CONFIG_ALLOWLIST,
     HostLoadMonitor,
     Samples,
     _query_for_round,
@@ -63,6 +64,7 @@ def test_reproducibility_metadata_marks_failed_docker_lookup_unknown(monkeypatch
         "target_source_mount",
         "target_source_git_sha",
         "target_source_git_dirty",
+        "perf_config",
         "gc",
         "instrumentation",
     }
@@ -1190,3 +1192,161 @@ def test_verify_provenance_consistency_detects_source_mount_and_git_changes():
     with pytest.raises(BuildProvenanceError) as exc:
         benchmark_latency.verify_provenance_consistency(start_meta, end_dirty, strict=True)
     assert "target_source_git_dirty changed" in str(exc.value)
+
+
+def test_runtime_config_snapshot_returns_allowlisted_keys_only(monkeypatch):
+    """허용 목록에 없는 환경변수는 값도 이름도 기록되지 않는다."""
+    import json
+
+    def mock_command(command: list[str]) -> str:
+        if command[0] == "docker" and "inspect" in command and command[3] == "{{json .Config.Env}}":
+            env_list = [
+                "WEB_CONCURRENCY=4",
+                "PREDICTION_GC_MODE=freeze",
+                "LATENCY_SEGMENT_LOGGING=true",
+                "LLM_PROVIDER=ollama",
+                "OLLAMA_MODEL=gemma4:e4b",
+                "SECRET_KEY=super_secret_value_12345",
+                "DB_PASSWORD=my_database_password",
+                "MYSQL_ROOT_PASSWORD=root_secret",
+                "MEILI_MASTER_KEY=meili_secret_key",
+                "DATABASE_URL=mysql+pymysql://root:secret@db:3306/procurement",
+                "GEMINI_API_KEY=gemini_secret_api_key",
+                "CUSTOM_UNRELATED_VAR=some_value",
+            ]
+            return json.dumps(env_list)
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    snapshot = benchmark_latency.runtime_config_snapshot("cnt_123")
+
+    # 허용 목록에 있는 키만 기록된다
+    assert snapshot["WEB_CONCURRENCY"] == "4"
+    assert snapshot["PREDICTION_GC_MODE"] == "freeze"
+    assert snapshot["LATENCY_SEGMENT_LOGGING"] == "true"
+    assert snapshot["LLM_PROVIDER"] == "ollama"
+    assert snapshot["OLLAMA_MODEL"] == "gemma4:e4b"
+
+    # 비밀값은 절대 포함되지 않는다
+    assert "SECRET_KEY" not in snapshot
+    assert "DB_PASSWORD" not in snapshot
+    assert "MYSQL_ROOT_PASSWORD" not in snapshot
+    assert "MEILI_MASTER_KEY" not in snapshot
+    assert "DATABASE_URL" not in snapshot
+    assert "GEMINI_API_KEY" not in snapshot
+
+    # 허용 목록에 없는 키는 반환되지 않는다
+    assert "CUSTOM_UNRELATED_VAR" not in snapshot
+    assert len(snapshot) == len(PERF_CONFIG_ALLOWLIST)
+
+
+def test_runtime_config_snapshot_handles_unknown_container():
+    """컨테이너가 없거나 환경변수를 못 읽는 경우에도 모든 값이 None으로 기록된다."""
+    snapshot = benchmark_latency.runtime_config_snapshot("unknown")
+
+    assert len(snapshot) == len(PERF_CONFIG_ALLOWLIST)
+    assert all(v is None for v in snapshot.values())
+    for key in PERF_CONFIG_ALLOWLIST:
+        assert key in snapshot
+
+
+def test_runtime_config_snapshot_in_reproducibility_metadata(monkeypatch):
+    """reproducibility_metadata에 perf_config 키로 설정 스냅샷이 포함된다."""
+    import json
+
+    def mock_command(command: list[str]) -> str:
+        if command == ["git", "rev-parse", "HEAD"]:
+            return "git_sha_abc"
+        if command == ["docker", "compose", "images", "-q", "app"]:
+            return "sha256:app_image"
+        if command == ["docker", "compose", "ps", "-q", "app"]:
+            return "container_id_123"
+        if command == ["docker", "inspect", "-f", "{{.Image}}", "container_id_123"]:
+            return "sha256:target_image"
+        if command == ["docker", "inspect", "-f", "{{.Name}}", "container_id_123"]:
+            return "/app-container"
+        if command == ["docker", "inspect", "-f", "{{.State.Running}}", "container_id_123"]:
+            return "true"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{json .NetworkSettings.Ports}}",
+            "container_id_123",
+        ]:
+            return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{.NetworkSettings.IPAddress}}",
+            "container_id_123",
+        ]:
+            return "172.18.0.2"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{json .RepoDigests}}",
+            "sha256:target_image",
+        ]:
+            return '["app:latest"]'
+        if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "container_id_123"]:
+            return "[]"
+        if command[0] == "docker" and "inspect" in command and command[3] == "{{json .Config.Env}}":
+            env_list = [
+                "WEB_CONCURRENCY=2",
+                "PREDICTION_GC_MODE=freeze",
+                "SECRET_KEY=secret_value",
+            ]
+            return json.dumps(env_list)
+        return "unknown"
+
+    monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
+
+    metadata = benchmark_latency.reproducibility_metadata(
+        service_name="app",
+        strict=True,
+        base_url="http://127.0.0.1:8000",
+    )
+
+    # perf_config 키가 존재하고 올바르게 기록된다
+    assert "perf_config" in metadata
+    assert metadata["perf_config"]["WEB_CONCURRENCY"] == "2"
+    assert metadata["perf_config"]["PREDICTION_GC_MODE"] == "freeze"
+    # 비밀값은 포함되지 않는다
+    assert "SECRET_KEY" not in metadata["perf_config"]
+
+
+def test_perf_config_allowlist_contains_expected_keys():
+    """성능 관련 설정 허용 목록에 예상되는 키가 모두 포함되어 있다."""
+    expected_keys = {
+        "WEB_CONCURRENCY",
+        "PREDICTION_GC_MODE",
+        "LATENCY_SEGMENT_LOGGING",
+        "LLM_PROVIDER",
+        "OLLAMA_BASE_URL",
+        "OLLAMA_MODEL",
+        "LLM_TIMEOUT_SECONDS",
+        "LLM_TEMPERATURE",
+        "GEMINI_MODEL",
+    }
+    assert expected_keys == PERF_CONFIG_ALLOWLIST
+
+
+def test_perf_config_allowlist_excludes_secrets():
+    """비밀값 관련 키가 허용 목록에 절대 포함되지 않는다."""
+    secret_patterns = [
+        "SECRET",
+        "PASSWORD",
+        "KEY",
+        "TOKEN",
+        "DSN",
+        "CREDENTIAL",
+    ]
+    for key in PERF_CONFIG_ALLOWLIST:
+        for pattern in secret_patterns:
+            assert pattern not in key.upper(), (
+                f"Secret pattern '{pattern}' found in allowlist key '{key}'"
+            )
