@@ -91,3 +91,25 @@ def test_assert_segment_logging_enabled_fails_when_inspect_unavailable():
 
     with pytest.raises(SegmentLoggingDisabledError):
         assert_segment_logging_enabled("app", run)
+
+
+def test_docker_since_timestamp_carries_utc_marker():
+    """타임존 표기가 없으면 docker 가 로컬 시각으로 해석해 과거 로그를 긁습니다."""
+    from datetime import UTC, datetime
+
+    from scripts.benchmark_rag_segments import docker_since_timestamp
+
+    stamp = docker_since_timestamp(datetime(2026, 8, 23, 11, 30, 0, tzinfo=UTC))
+    assert stamp == "2026-08-23T11:30:00Z"
+    assert stamp.endswith("Z")
+
+
+def test_docker_since_timestamp_normalizes_local_time_to_utc():
+    """로컬 시각을 받아도 UTC 로 변환해 넘겨야 합니다."""
+    from datetime import datetime, timedelta, timezone
+
+    from scripts.benchmark_rag_segments import docker_since_timestamp
+
+    kst = timezone(timedelta(hours=9))
+    stamp = docker_since_timestamp(datetime(2026, 8, 23, 20, 30, 0, tzinfo=kst))
+    assert stamp == "2026-08-23T11:30:00Z"
