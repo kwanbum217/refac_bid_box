@@ -3,7 +3,7 @@
 > **성격**: 날짜를 붙이지 않는 **규약 문서**입니다. 이 문서가 정본이며, 개별 측정 문서는 여기에 따릅니다
 > **제정일**: 2026-08-14
 > **제정 근거**: [`phase7_gate_and_stale_branch_audit_20260814.md`](phase7_gate_and_stale_branch_audit_20260814.md) 감사에서 표본 수·반복·warmup·동시성 기준 4항목 전부 미규정 확인
-> **판정 주체**: 코디네이터 (Claude Opus 5)
+> **판정 주체**: Orca Coordinator (모델 정책은 [`AGENTS.md`](../../AGENTS.md) 5장 참조)
 > **적용 범위**: G3 성능 목표와 Phase 7 컷오버 판정에 쓰이는 모든 레이턴시 측정
 
 ---

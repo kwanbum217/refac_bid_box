@@ -3,8 +3,14 @@
 > **작성일**: 2026-08-04
 > **갱신일**: 2026-08-11
 > **버전**: v1.4
-> **상태**: G1·G3 통과 / G2 부분 검증
+> **상태**: HISTORICAL (과거 측정 기록. 2026-08-14 latency_gate_protocol 제정 이전 결과로 현행 G3 판정 근거 사용 금지. 현재 정본은 [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md) 참조)
 > **판정**: **컷오버 보류**
+
+> [!WARNING]
+> **HISTORICAL / 과거 측정 보고서 안내**
+> 본 문서는 **2026-08-14 `docs/ops/latency_gate_protocol.md` 제정 이전**에 측정된 과거 Phase 7 검증 결과입니다.
+> 규약 제정 이전의 표본 수(예측 100회 등)와 측정 방식은 현행 G3 판정 근거로 사용할 수 없으며, 당시의 이력 증거로만 보존됩니다.
+> 현재 유효한 레이턴시 판정 규약 및 프로젝트 운영 상태는 [`docs/ops/latency_gate_protocol.md`](latency_gate_protocol.md) 및 [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md)를 참조하십시오.
 
 ---
 

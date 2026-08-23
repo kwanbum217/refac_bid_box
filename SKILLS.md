@@ -74,7 +74,7 @@ refac_bid_box는 **공공조달(G2B/나라장터) 입찰 데이터 수집·분�
 | `src/app/` | 백엔드 애플리케이션 (FastAPI/Django ASGI) — bids/chatbot/predictions/accounts API |
 | `src/ml/` | ML 도메인 — 싱글톤 모델 로드, 통합 특징 함수, 학습기, 레지스트리 |
 | `src/tasks/` | 비동기 태스크 (Arq) — G2B 수집, 재학습, KB 업데이트 |
-| `src/rag/` | RAG 엔진 — ChromaDB 검색 + Gemini |
+| `src/rag/` | RAG 엔진 — ChromaDB 검색 + Ollama gemma4:e4b (기본) / Gemini (대체) |
 | `migrations/` | DB 마이그레이션 (기존 19개 히스토리 보존) |
 | `docker/` | Docker 구성 — MySQL + Redis + app + worker |
 

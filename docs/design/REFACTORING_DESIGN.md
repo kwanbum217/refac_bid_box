@@ -3,12 +3,19 @@
 > 원본: `bid_box` (Django 5.1.6 모놀리식)
 > 대상: `refac_bid_box` (https://github.com/kwanbum217/refac_bid_box)
 > 작성일: 2026-07-31
+> 상태: Baseline Design (설계 기준선)
+> 운영 상태 정본: [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md)
+
+> [!NOTE]
+> **설계 기준선(Baseline Design) 안내**
+> 본 문서는 프로젝트 초기(2026-07-31)에 작성된 리팩토링 청사진 및 설계 기준선입니다.
+> 본 문서의 초기 목표치 및 계획 수치는 설계 당시의 기준선이며, 현재 시스템의 구현 상태, 실측 레이턴시 및 운영 판정의 단일 진실 원천(SSOT)은 [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md) 및 최신 프로토콜 문서([`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md))입니다.
 
 ---
 
 ## 0. 문서 개요
 
-본 설계서는 기존 `bid_box` 프로젝트를 **데이터 무손실**, **크로스 플랫폼 호환(macOS/Windows)**, **기술 스택 최적화(레이턴시·정합성)** 세 가지 목표로 리팩토링하기 위한 청사진이다. 각 장은 현재 상태 분석 → 문제점 → 목표 → 설계 → 이행 절차 순으로 구성된다.
+본 설계서는 기존 `bid_box` 프로젝트를 **데이터 무손실**, **크로스 플랫폼 호환(macOS/Windows)**, **기술 스택 최적화(레이턴시·정합성)** 세 가지 목표로 리팩토링하기 위한 설계 기준선(청사진)이다. 각 장은 현재 상태 분석 → 문제점 → 목표 → 설계 → 이행 절차 순으로 구성된다.
 
 ---
 
