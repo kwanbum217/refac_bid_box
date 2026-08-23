@@ -24,14 +24,51 @@ import time
 import uuid
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
+
+try:
+    import fcntl as _fcntl
+
+    def _acquire_platform_lock(fobj: IO[Any]) -> bool:
+        try:
+            _fcntl.flock(fobj.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            return True
+        except (BlockingIOError, OSError):
+            return False
+
+    def _release_platform_lock(fobj: IO[Any]) -> None:
+        with suppress(OSError):
+            _fcntl.flock(fobj.fileno(), _fcntl.LOCK_UN)
+
+    _LOCK_AVAILABLE = True
+except ImportError:
+    try:
+        import msvcrt as _msvcrt
+
+        _LOCK_CHUNK = 1
+
+        def _acquire_platform_lock(fobj: IO[Any]) -> bool:
+            try:
+                fobj.seek(0)
+                _msvcrt.locking(fobj.fileno(), _msvcrt.LK_NBLCK, _LOCK_CHUNK)
+                return True
+            except (BlockingIOError, OSError):
+                return False
+
+        def _release_platform_lock(fobj: IO[Any]) -> None:
+            with suppress(OSError):
+                fobj.seek(0)
+                _msvcrt.locking(fobj.fileno(), _msvcrt.LK_UNLCK, _LOCK_CHUNK)
+
+        _LOCK_AVAILABLE = True
+    except ImportError:
+        _LOCK_AVAILABLE = False
 
 CLI_SETTINGS = Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
 TRUSTED_FOLDERS = Path.home() / ".gemini" / "trustedFolders.json"
 TRUST_VALUE = "TRUST_FOLDER"
 LOCK_FILE = TRUSTED_FOLDERS.parent / ".orca-trust-worktree.lock"
 LOCK_TIMEOUT_SECONDS = 10.0
-STALE_LOCK_SECONDS = 60.0
 
 
 def _load(path: Path) -> Any:
@@ -47,73 +84,54 @@ def _load(path: Path) -> Any:
 def _settings_lock():
     """두 신뢰 설정 파일의 RMW 구간을 프로세스 간에 직렬화합니다.
 
-    락 파일은 ``<uuid>:<pid>`` 토큰을 보관한다. 같은 락을 가진 프로세스가 PID
-    생존 여부를 함께 검증해 비정상 종료된 자기 락만 stale 회수하며, 다른 락은
-    PID 가 살아 있는 한 회수하지 않는다. finally 블록은 lock 파일의 토큰을 다시
-    읽어 자기 토큰이 맞을 때만 unlink 한다.
+    OS advisory lock(POSIX fcntl.flock, Windows msvcrt.locking)을 사용하여
+    프로세스 비정상 종료 시 커널에 의해 락이 즉시 자동 해제되도록 합니다.
+    기존 ad-hoc 락 파일의 TOCTOU 경쟁 조건(stat/unlink 사이의 타 프로세스 락 삭제 및
+    미포착 FileNotFoundError)을 근본적으로 제거합니다.
     """
+    if not _LOCK_AVAILABLE:
+        sys.stderr.write(
+            f"[trust] 파일 잠금을 지원하는 모듈이 없습니다 (fcntl/msvcrt). "
+            f"동시 쓰기 안전성이 보장되지 않습니다: {LOCK_FILE}\n"
+        )
+        yield
+        return
+
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
-    acquired = False
     token = f"{uuid.uuid4().hex}:{os.getpid()}"
-    while not acquired:
+    fobj: IO[str] | None = None
+    while True:
         try:
-            fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as lock_handle:
-                lock_handle.write(token)
-            acquired = True
-        except FileExistsError:
-            owner_token: str | None = None
-            with suppress(OSError, UnicodeDecodeError):
-                owner_token = LOCK_FILE.read_text(encoding="utf-8").strip()
-            owner_dead = _is_owner_process_dead(owner_token) if owner_token is not None else False
-            if (
-                owner_token != token
-                and time.time() - LOCK_FILE.stat().st_mtime > STALE_LOCK_SECONDS
-                and owner_dead
-            ):
-                LOCK_FILE.unlink()
-                continue
-            if time.monotonic() >= deadline:
-                raise RuntimeError(f"신뢰 설정 잠금을 획득하지 못했습니다: {LOCK_FILE}") from None
-            time.sleep(0.05)
+            fobj = LOCK_FILE.open("a+", encoding="utf-8")
+            if _acquire_platform_lock(fobj):
+                with suppress(OSError):
+                    fobj.seek(0)
+                    fobj.truncate(0)
+                    fobj.write(f"{token}\n")
+                    fobj.flush()
+                break
+            fobj.close()
+            fobj = None
+        except OSError:
+            if fobj is not None:
+                with suppress(OSError):
+                    fobj.close()
+                fobj = None
+
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"신뢰 설정 잠금을 획득하지 못했습니다: {LOCK_FILE}") from None
+        time.sleep(0.05)
+
     try:
         yield
     finally:
-        with suppress(FileNotFoundError):
-            current_token: str | None = None
-            with suppress(OSError, UnicodeDecodeError):
-                current_token = LOCK_FILE.read_text(encoding="utf-8").strip()
-            if current_token is not None and current_token == token:
-                LOCK_FILE.unlink()
-
-
-def _is_owner_process_dead(owner_token: str) -> bool:
-    """lock 파일의 owner 토큰에서 PID를 추출해 그 프로세스가 살아 있는지 확인합니다.
-
-    토큰 형식이 올바르지 않거나 PID 조회에 실패하면 안전상 살아있다고 보수적으로
-    판단해 stale 회수를 허용하지 않습니다.
-    """
-    if not owner_token or ":" not in owner_token:
-        return False
-    pid_text = owner_token.rsplit(":", 1)[-1]
-    try:
-        pid = int(pid_text)
-    except ValueError:
-        return False
-    if pid <= 0 or pid > 2**22:
-        # 시스템에서 정의 가능한 PID 범위(대부분 환경에서 2^22 미만) 밖은
-        # 검사 자체가 안전하지 않다고 보고 살아있다고 보수적으로 본다.
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
-    except PermissionError:
-        return False
-    except OSError:
-        return False
-    return False
+        if fobj is not None:
+            try:
+                _release_platform_lock(fobj)
+            finally:
+                with suppress(OSError):
+                    fobj.close()
 
 
 def _serialize(payload: Any) -> str:
