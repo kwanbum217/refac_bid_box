@@ -96,6 +96,25 @@ from scripts._strict_json import (  # noqa: E402
     sanitize_nan_to_none,
 )
 
+# 성능에 영향을 주는 런타임 설정 허용 목록.
+# 허용 목록 방식으로만 키를 선별하며, 목록에 없는 환경변수는 값도 이름도 기록하지 않는다.
+# 비밀값(SECRET_KEY, DB_PASSWORD, MYSQL_ROOT_PASSWORD, MEILI_MASTER_KEY,
+# G2B_SERVICE_KEY, serviceKey, GEMINI_API_KEY)은 어떤 경우에도 포함하지 않는다.
+# DATABASE_URL, DB_HOST 등 DSN/접속 정보도 성능 설정이 아니므로 제외한다.
+PERF_CONFIG_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "WEB_CONCURRENCY",
+        "PREDICTION_GC_MODE",
+        "LATENCY_SEGMENT_LOGGING",
+        "LLM_PROVIDER",
+        "OLLAMA_BASE_URL",
+        "OLLAMA_MODEL",
+        "LLM_TIMEOUT_SECONDS",
+        "LLM_TEMPERATURE",
+        "GEMINI_MODEL",
+    }
+)
+
 # 캐시 적중으로 측정치가 왜곡되지 않도록 질의를 매번 바꿉니다.
 CHAT_QUERIES = [
     "적격심사 기준이 어떻게 되나요",
@@ -108,6 +127,57 @@ CHAT_QUERIES = [
 FIRST_TOKEN_TARGET_MS = 3_000.0
 TOTAL_TARGET_MS = 20_000.0
 PREDICT_TARGET_MS = 100.0
+
+
+def _parse_env_vars(raw_env: str) -> dict[str, str]:
+    """docker inspect의 .Config.Env 문자열을 딕셔너리로 파싱합니다.
+
+    Env 리스트 형식: ["KEY1=VALUE1", "KEY2=VALUE2", ...]
+    """
+    env_dict: dict[str, str] = {}
+    if not raw_env or raw_env == "unknown":
+        return env_dict
+    try:
+        env_list = json.loads(raw_env)
+        if isinstance(env_list, list):
+            for item in env_list:
+                if isinstance(item, str) and "=" in item:
+                    key, _, value = item.partition("=")
+                    if key:
+                        env_dict[key] = value
+    except (ValueError, TypeError):
+        pass
+    return env_dict
+
+
+def runtime_config_snapshot(
+    container_id: str,
+    command_runner: Any = None,
+) -> dict[str, str | None]:
+    """대상 컨테이너의 성능 관련 런타임 설정만 허용 목록 방식으로 수집합니다.
+
+    같은 이미지와 소스라도 설정이 다르면 다른 벤치마크임을 증거로 드러내기 위해
+    기록합니다. 비밀값은 어떤 경우에도 포함하지 않습니다.
+
+    Returns:
+        허용 목록에 있는 키와 해당 값의 딕셔너리. 컨테이너를 조회할 수 없으면
+        모든 값이 None인 딕셔너리를 반환합니다.
+    """
+    cmd_fn = command_runner if command_runner is not None else _command_output
+
+    snapshot: dict[str, str | None] = dict.fromkeys(sorted(PERF_CONFIG_ALLOWLIST))
+
+    if container_id == "unknown":
+        return snapshot
+
+    raw_env = cmd_fn(["docker", "inspect", "-f", "{{json .Config.Env}}", container_id])
+    env_dict = _parse_env_vars(raw_env)
+
+    for key in PERF_CONFIG_ALLOWLIST:
+        if key in env_dict:
+            snapshot[key] = env_dict[key]
+
+    return snapshot
 
 
 def _command_output(command: list[str], allow_empty: bool = False) -> str:
@@ -333,6 +403,9 @@ def reproducibility_metadata(
                 f"Docker/Git provenance lookup failed or returned unknown for: {', '.join(failures)}"
             )
 
+    # 7. 성능 관련 런타임 설정 스냅샷 (허용 목록 방식)
+    perf_config = runtime_config_snapshot(container_id, command_runner=cmd_fn)
+
     return {
         "git_sha": git_sha,
         "measured_at_utc": datetime.now(UTC).isoformat(),
@@ -350,6 +423,7 @@ def reproducibility_metadata(
         "target_source_mount": target_source_mount,
         "target_source_git_sha": target_source_git_sha,
         "target_source_git_dirty": target_source_git_dirty,
+        "perf_config": perf_config,
         "gc": {"enabled": gc.isenabled(), "threshold": list(gc.get_threshold())},
         "instrumentation": {
             "timer": "time.perf_counter",
