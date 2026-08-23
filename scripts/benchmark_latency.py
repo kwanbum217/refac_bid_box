@@ -209,9 +209,7 @@ def reproducibility_metadata(
         if is_loopback:
             port_matched = req_port in published_host_ports
         else:
-            if (
-                raw_ip and req_host == raw_ip and req_port in container_internal_ports
-            ) or req_port in published_host_ports:
+            if raw_ip and req_host == raw_ip and req_port in container_internal_ports:
                 port_matched = True
             else:
                 port_matched = False

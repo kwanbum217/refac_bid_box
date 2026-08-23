@@ -391,6 +391,14 @@ def test_reproducibility_metadata_detects_port_mismatch(monkeypatch):
     )
     assert meta["bound_port"] == 9000
 
+    # 로컬 Docker provenance만으로 원격 HTTP 대상의 동일성을 증명할 수 없습니다.
+    with pytest.raises(BuildProvenanceError, match="port 8000 not bound"):
+        benchmark_latency.reproducibility_metadata(
+            service_name="app",
+            strict=True,
+            base_url="http://remote-host:8000",
+        )
+
 
 def test_reproducibility_metadata_detects_stopped_container(monkeypatch):
     import pytest
