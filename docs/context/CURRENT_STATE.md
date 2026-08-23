@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-23
-> **source_commit**: `cd3b0b4`
+> **source_commit**: `4161269`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -65,7 +65,8 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **운영 검증**: 단발 RAG 구간 실측(하네스 준비 완료), Windows CI 실제 green 확인, Windows Docker Desktop 실기가 남았습니다. 수집 2·3회차 관찰, 컨테이너 워커 큐 실측, Ollama c4 기준선은 종결했습니다.
+1. **운영 검증**: Windows CI 실제 green 확인과 Windows Docker Desktop 실기가 남았습니다. 수집 2·3회차 관찰, 컨테이너 워커 큐 실측, Ollama c4 기준선, 단발 RAG 구간 실측은 종결했습니다.
+1-2. **LLM 경로 최적화**: 단발 질의 지연의 97.6%가 `llm_ms`이며 RAG 준비는 2.1% 미만입니다([`rag_segments_measure_20260823.md`](../analysis/rag_segments_measure_20260823.md)). RAG 코드 개선은 효과가 없고 모델 크기·양자화·출력 토큰만 유효합니다.
 1-1. **Arq 정식 기준선 캘리브레이션**: 잠정 일관성 봉투(구 절대 기준선 900 jps / 600ms)는 사후 보정임이 확인됐습니다([`arq_threshold_derivation_20260823.md`](../analysis/arq_threshold_derivation_20260823.md)). 정식 기준선을 세우려면 고정 조건 캘리브레이션 런이 필요합니다.
 2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
 3. **G3 전체 컷오버 판정**: 위 항목이 닫힌 뒤 별도로 판정합니다. 개별 게이트 PASS를 컷오버 PASS로 승격하지 않습니다.
@@ -98,7 +99,7 @@
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - Windows Docker Desktop 실기 검증 미수행.
-- Ollama `gemma4:e4b` c4 기준선은 3회 반복 실측으로 확정했습니다. 최악 대표값은 단발 질의 P95 8668.2ms, SSE 첫 토큰 P95 1876.0ms, SSE 완료 P95 8579.6ms, 예측 P95 38.2ms 이며 오류 0건입니다([`ollama_c4_measure_20260823.md`](../analysis/ollama_c4_measure_20260823.md)). 워밍 상태 단발 질의가 2.1~9.0초로 4배 흔들리는데 구간별 원인은 미규명입니다.
+- Ollama `gemma4:e4b` c4 기준선은 3회 반복 실측으로 확정했습니다. 최악 대표값은 단발 질의 P95 8668.2ms, SSE 첫 토큰 P95 1876.0ms, SSE 완료 P95 8579.6ms, 예측 P95 38.2ms 이며 오류 0건입니다([`ollama_c4_measure_20260823.md`](../analysis/ollama_c4_measure_20260823.md)). 워밍 상태 단발 질의 편차는 구간 실측으로 `llm_ms`가 원인임이 확정됐습니다.
 - Arq 처리량은 실제 컨테이너 워커 경로(최악 1,636 jobs/sec, P95 352.6ms)와 Docker Redis 연계 in-process 경로(최악 966.17 jobs/sec, P95 594.86ms) 양쪽을 3회씩 실측했고 실패율은 모두 0%입니다. 두 경로의 원시 JSON 이 회차별로 보존되며 host/Redis/Arq/Docker 4계층 provenance 를 담습니다([`arq_docker_worker_measure_20260823.md`](../analysis/arq_docker_worker_measure_20260823.md)). 실제 Docker `worker` 컨테이너의 업무 큐 처리량과 단발 RAG/LLM 내부 구간은 별도 검증 대기입니다.
 - 벤치마크 provenance 는 측정 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 로 무효화합니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 로 strict 를 끈 측정은 `provenance_consistent: false` 로 기록되며 정본 evidence 가 아닙니다.
 
