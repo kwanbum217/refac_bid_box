@@ -1248,26 +1248,52 @@ def new_delivery_probe() -> str:
     return f"{DELIVERY_PROBE_PREFIX}{uuid.uuid4().hex[:12]}"
 
 
+def worktree_relative_capsule_path(capsule_path: Path) -> str:
+    """워커에게 줄 Capsule 경로를 워크트리 상대 경로로 바꿉니다.
+
+    절대 경로를 주면 워커가 그 경로의 저장소로 `cd` 해서 일합니다. 2026-08-23 에
+    워커 4대가 이 경로를 보고 주 저장소로 이동했고, 그중 하나는 거기서 브랜치까지
+    만들어 코디네이터의 병합 2건이 엉뚱한 브랜치에 쌓였습니다. Capsule 은 각
+    워크트리에 같은 상대 경로로 복사되므로 상대 경로가 어느 트리에서나 맞습니다.
+    """
+    parts = capsule_path.parts
+    if ".orca" in parts:
+        return str(Path(*parts[parts.index(".orca") :]))
+    return capsule_path.name
+
+
 def build_capsule_notice(
     capsule_path: Path,
     report_path: str | None = None,
     dispatch_id: str | None = None,
     delivery_probe: str | None = None,
+    worktree_path: str | None = None,
 ) -> str:
     """Capsule 정본 경로 고지문을 만듭니다.
 
     `dispatch --inject` 는 Orca Task 의 spec 만 주입하며 Capsule 경로도 내용도
     전달하지 않습니다. 이 고지문 없이는 워커가 한두 문장 요약만 보고 일하며,
     2026-08-17 에 워커 3대 전부가 파일명과 보고 계약을 위반했습니다.
+
+    경로는 반드시 워크트리 상대 경로로 줍니다. 절대 경로를 주면 워커가 그
+    저장소로 이동합니다 (2026-08-23, `worktree_relative_capsule_path` 참조).
     """
+    relative_capsule = worktree_relative_capsule_path(capsule_path)
     parts = [
-        f"정본 사양은 {capsule_path} 입니다.",
+        f"정본 사양은 현재 작업 디렉터리 기준 {relative_capsule} 입니다.",
         "지금 그 파일을 읽고 이 작업의 유일한 정본으로 삼으십시오.",
+        "현재 작업 디렉터리가 당신의 격리 작업 트리입니다. 절대 벗어나지 마십시오.",
+        "cd 로 다른 저장소로 이동하지 말고 모든 경로를 상대 경로로 다루십시오.",
         "objective, acceptance, allowed_write_files, forbidden 을 그대로 지킵니다.",
         "allowed_write_files 에 없는 파일명을 새로 만들지 마십시오.",
         "README, AGENTS.md, SKILLS.md, 설계서는 읽지 않습니다.",
         "코드 변경 작업은 커밋해야 완료입니다. commit_count 가 0 이면 succeeded 대신 escalation 을 보냅니다.",
     ]
+    if worktree_path:
+        parts.insert(
+            2,
+            f"당신의 작업 트리는 {worktree_path} 이며 그 밖의 파일을 읽거나 쓰면 계약 위반입니다.",
+        )
     if report_path:
         parts.append(f"보고 JSON 은 {report_path} 에 ORCA_WORKER_DONE_V2 계약으로 씁니다.")
     if dispatch_id:
@@ -1280,15 +1306,22 @@ def build_capsule_notice(
 
 
 def build_task_spec(objective: str, capsule_path: Path) -> str:
-    """Orca Task 의 spec 에 Capsule 절대 경로를 함께 넣습니다.
+    """Orca Task 의 spec 에 Capsule 의 워크트리 상대 경로를 함께 넣습니다.
 
     spec 은 `dispatch --inject` 가 워커에게 실제로 전달하는 유일한 본문입니다.
     경로를 여기에 넣으면 워커가 첫 턴부터 정본을 찾을 수 있습니다.
+
+    절대 경로를 넣으면 안 됩니다. 워커는 spec 을 가장 먼저 읽고 그 경로가 가리키는
+    저장소로 이동합니다 (2026-08-23 사고, `worktree_relative_capsule_path` 참조).
     """
     summary = objective.strip().replace("\n", " ")
     if char_len(summary) > 400:
         summary = truncate(summary, 400)
-    return f"{summary} 정본 사양(Capsule): {capsule_path}"
+    relative_capsule = worktree_relative_capsule_path(capsule_path)
+    return (
+        f"{summary} 정본 사양(Capsule): 현재 작업 디렉터리의 {relative_capsule}. "
+        "현재 작업 디렉터리를 벗어나지 마십시오."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1598,6 +1631,7 @@ def _deliver_capsule_notice(
         report_path=str(report_path),
         dispatch_id=dispatch_id,
         delivery_probe=delivery_probe,
+        worktree_path=getattr(args, "worktree", None),
     )
     code, stdout, stderr = terminal_send(args.terminal, text)
     if code == 0 and _launch_succeeded(stdout, expect_json=True):
