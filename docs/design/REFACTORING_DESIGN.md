@@ -677,6 +677,12 @@ Git LFS 와 오브젝트 스토리지는 검토 후 채택하지 않았습니다
 - [ ] HTMX 도입(필요 시) — 현재 jQuery, 필요시 전환
 
 ### Phase 7 — 검증 및 컷오버 (2~3일)
+
+> [!WARNING]
+> **HISTORICAL SNAPSHOT — 현재 상태 판정에 사용 금지.** 아래 Phase 7 서술은 설계
+> 기준선 작성 시점의 계획과 당시 관측입니다. 현재 게이트 판정은
+> [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md)와
+> [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md)만 근거로 삼습니다.
 - [x] 원본 동작 재현·통합 테스트 — 원본 테스트 이름 기준 122/131(구조적 제외 9건), 2026-08-05 격리 환경 전량 632 passed / 2 skipped
 - [x] 성능 벤치마크 (Before/After 레이턴시 비교) — 2026-08-06 실측: 예측 API P95 19.1ms(기동 직후), SSE 첫 토큰 P95 2.66초, SSE 전체 P95 6.39초. 모두 목표 충족
   > **P95 목표 재설정 (2026-08-01)**: LLM 을 Gemini → Ollama `gemma4:e4b` 로 전환하여

@@ -1,5 +1,9 @@
 # Orca 코디네이터 토큰 소진 및 작업 중단 인수인계 (v2)
 
+> [!NOTE]
+> **SNAPSHOT / HISTORICAL** — 작성 시점의 상태 기록입니다. 현재 정본은 [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md)입니다.
+
+
 > **작성일**: 2026-08-23 (Asia/Seoul)
 > **사유**: 현재 코디네이터(qwen3.8) 5시간 토큰 사용량 92% 도달로 작업 중단
 > **현재 main**: `53396ff` (`origin/main` 은 `d95efd5` 로 7 커밋 미푸시 상태였습니다. 최초 작성본의 origin 일치 기술은 오기이며 2026-08-23 차기 코디네이터가 정정했습니다)

@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-23
-> **source_commit**: `e87c60f`
+> **source_commit**: `d3e781a`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -12,7 +12,7 @@
 | 게이트 | 목표 정의 | 현재 판정 | 상세 상태 및 조건 |
 | --- | --- | :---: | --- |
 | **G1** | 데이터 무손실 | **통과 (불변)** | MySQL 8 스키마·행 수 보존, ML 가중치 체크섬 일치, ChromaDB `bidding_kb` 무결성 |
-| **G2** | 크로스 플랫폼 | **부분 통과** | macOS 완전 검증 완료 (Docker + uv + Makefile). Windows Docker Desktop 실기 검증 대기 |
+| **G2** | 크로스 플랫폼 | **부분 통과** | macOS 실기·CI PASS, Ubuntu CI PASS (Docker + uv + Makefile). **최신 Windows CI FAIL** (`tests/test_orca_trust_worktree.py`가 Windows에 없는 `os.fork()` 호출). Windows Docker Desktop 실기 미수행 |
 | **G3** | 스택 최적화 | **부분 통과·승격 보류** | 예측 c1 **통과**(P95 15.39ms), c4 **통과**(통제 A/B worst P95 34.32ms <= 36.81ms, 기존 +10% 기준 적용, >50ms 0건), c10 **통과**(`freeze` P95 47.77ms, >100ms 0/1,800), SSE c1 **통과**(첫 토큰 1297.73ms, 전체 6716.22ms). 통제 A/B 5회 교차 검증 결과 이전 c2·c4 임계치 미달 미재현(전 회차 >50ms/>100ms 0건, c2 델타 중앙 -0.97ms). `+2.0ms` 쌍대 회귀 예산은 향후 실험용 prospective 지표로 별도 관리. G3 전체 컷오버는 잔여 항목 검증 후 별도 판정 |
 
 > **주의**: G3 는 일괄 통과로 선언하지 않고 항목별 실측 상태로 기록합니다.
@@ -65,7 +65,8 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **운영 검증**: 수집 2·3회차, Ollama c4(재기동 승인 필요), Windows Docker Desktop 실기, 실제 `worker` 컨테이너 업무 큐, 단발 RAG를 순차 처리합니다. Redis 연계 in-process Arq 합성 하네스의 600건 3회 반복 게이트는 PASS이나 G3 전체 판정과 분리합니다.
+1. **운영 검증**: Ollama c4(재기동 승인 필요), Windows CI 복구, Windows Docker Desktop 실기, 단발 RAG를 순차 처리합니다. 수집 2·3회차 관찰과 컨테이너 워커 큐 실측은 종결했습니다.
+1-1. **Arq 증거 규약 이행**: [`arq_threshold_provenance_20260823.md`](../ops/arq_threshold_provenance_20260823.md)가 요구하는 host/Redis/Arq/Docker 4계층 provenance를 컨테이너 하네스는 기록하나 in-process 하네스([`benchmark_arq_throughput.py`](../../scripts/benchmark_arq_throughput.py))는 `python`·`platform`·`redis_url` 3개뿐입니다. 절대 기준선 900 jps / 600ms의 도출 근거도 미명시입니다.
 2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
 3. **G3 전체 컷오버 판정**: 위 항목이 닫힌 뒤 별도로 판정합니다. 개별 게이트 PASS를 컷오버 PASS로 승격하지 않습니다.
 
@@ -76,7 +77,8 @@
 - **안전·품질 게이트**: fail-open 제거, 상태 전파 경계, frontend·Docker·CI 검증 능력과 `source_commit` 신선도 게이트를 갖췄습니다.
 - **구조·데이터**: 9개 모듈을 AST 동일성으로 분할했고 ORM 13모델·137컬럼을 `Mapped[]`로 전환했습니다. DDL 지문은 불변입니다.
 - **실측·계측**: 예측 웜 P95 정본은 위 2·3장의 재측정값(c1 15.39ms, c4 34.32ms, c10 47.77ms)이며 SSE c1 첫 토큰 1297.73ms·전체 6716.22ms입니다. 블로킹 I/O와 Arq 계측 배선은 완료했고 최적화 판정은 미확정입니다.
-- **조율 인프라**: 워커 준비 안전성(Git common directory 검증, 신뢰 설정 잠금·복구), ModelRegistry single-flight(로드 1회·부분 레지스트리 비노출), finalize/Level 1 PASS 없는 병합 차단, 벤치마크 provenance 결박을 모두 닫았습니다.
+- **조율 인프라**: 워커 준비 안전성(Git common directory 검증), ModelRegistry single-flight(로드 1회·부분 레지스트리 비노출), finalize/Level 1 PASS 없는 병합 차단을 닫았습니다. 벤치마크 provenance 는 `base_url`↔컨테이너 결박, 시작·종료 교체 무효화, bind mount 런타임 소스 revision·dirty 거부까지 결박했습니다.
+- **미종결 정정**: 신뢰 설정 잠금의 stale 회수는 2026-08-23 에 종결로 잘못 분류했습니다. `scripts/orca_trust_worktree.py`의 `stat`·`unlink` 사이 경쟁과 미포착 `FileNotFoundError` 가 남아 있어 진행 과업으로 되돌립니다.
 - **운영 준비**: 워커 기동 자동화, mypy·bandit·CI 게이트, 프론트엔드 lockfile·`npm ci`를 반영했습니다.
 
 ---
