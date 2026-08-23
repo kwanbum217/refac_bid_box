@@ -1,7 +1,7 @@
 # refac_bid_box — Agent Guidelines (정본)
 
 > **작성일**: 2026-07-31
-> **수정일**: 2026-08-14
+> **수정일**: 2026-08-23
 > **버전**: v0.2.0
 > 본 파일은 모든 AI 코딩 에이전트가 공유하는 **단일 진실 원천(Single Source of Truth)** 입니다.
 > 규칙을 편집할 때는 반드시 이 파일만 수정합니다. 상세한 다중 에이전트 매핑은 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md)를 참조하십시오.

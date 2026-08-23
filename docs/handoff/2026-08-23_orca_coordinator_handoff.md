@@ -1,5 +1,9 @@
 # Orca 후속 작업 인수인계 (2026-08-23)
 
+> [!NOTE]
+> **SNAPSHOT / HISTORICAL** — 작성 시점의 상태 기록입니다. 현재 정본은 [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md)입니다.
+
+
 > **작성일**: 2026-08-23 (Asia/Seoul)
 > **사유**: 현재 코디네이터 5시간 토큰 사용량 92%
 > **현재 main**: `d95efd5` (`origin/main`과 일치)
