@@ -62,12 +62,11 @@ def find_chroma_sqlite_path() -> Path | None:
             return cand
 
     # 3. 로컬 및 알려진 상대 경로 탐색
+    repo_root = Path(__file__).resolve().parent.parent
     for rel_cand in [
         Path("chroma_db/chroma.sqlite3"),
         Path("../chroma_db/chroma.sqlite3"),
-        Path(
-            "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/chroma_db/chroma.sqlite3"
-        ),
+        repo_root / "chroma_db" / "chroma.sqlite3",
     ]:
         if rel_cand.exists() and rel_cand.stat().st_size > 1000000:
             return rel_cand
