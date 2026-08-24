@@ -14,17 +14,23 @@ import pytest
 from scripts import benchmark_provenance
 from scripts.benchmark_provenance import (
     PERF_CONFIG_ALLOWLIST,
+    PROVENANCE_REQUIRED_FIELDS,
     BuildProvenanceError,
     HostLoadMonitor,
     _command_output,
     _parse_container_command,
     _parse_effective_workers,
+    build_load_protocol_record,
     build_provenance_dict,
+    check_ambient_load_protocol,
+    compute_baseline_summary,
     compute_host_load_stats,
+    enforce_provenance_required_fields,
     get_git_status,
     get_host_memory,
     host_load_metadata,
     is_source_dirty,
+    provenance_unknown_required_fields,
     reproducibility_metadata,
     resolve_redis_container,
     runtime_config_snapshot,
@@ -654,3 +660,298 @@ class TestRedisResolutionFailClosed:
         monkeypatch.setattr(benchmark_provenance, "_command_output", fake_cmd)
         with pytest.raises(BuildProvenanceError, match="image_id"):
             resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
+
+
+class TestAmbientLoadProtocol:
+    """주변 부하 규약(중앙값 30%, 최대 50%) 강제 검증."""
+
+    def test_compliant_load_passes(self):
+        stats = {
+            "per_core_percent": {"min": 5.0, "median": 15.0, "max": 40.0},
+        }
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is True
+        assert detail["median_limit_percent"] == 30.0
+        assert detail["max_limit_percent"] == 50.0
+
+    def test_median_over_30_fails(self):
+        stats = {"per_core_percent": {"min": 5.0, "median": 31.0, "max": 45.0}}
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is False
+        assert detail["median_percent"] == 31.0
+
+    def test_max_over_50_fails(self):
+        stats = {"per_core_percent": {"min": 5.0, "median": 25.0, "max": 51.0}}
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is False
+        assert detail["max_percent"] == 51.0
+
+    def test_unavailable_load_stats_fails(self):
+        compliant, detail = check_ambient_load_protocol({})
+        assert compliant is False
+        assert detail["reason"] == "load_stats_unavailable"
+
+    def test_build_load_protocol_record_bypass_not_canonical(self):
+        record = build_load_protocol_record(
+            start_compliant=False,
+            start_detail={"median_percent": 50.0, "max_percent": 75.0},
+            end_compliant=False,
+            end_detail={"median_percent": 50.0, "max_percent": 75.0},
+            strict=True,
+            allow_violation=True,
+        )
+        assert record["enforced"] is False
+        assert record["bypassed"] is True
+        assert record["compliant"] is False
+        assert record["canonical_evidence"] is False
+
+    def test_build_load_protocol_record_strict_compliant_is_canonical(self):
+        record = build_load_protocol_record(
+            start_compliant=True,
+            start_detail={"median_percent": 10.0, "max_percent": 20.0},
+            end_compliant=True,
+            end_detail={"median_percent": 10.0, "max_percent": 20.0},
+            strict=True,
+            allow_violation=False,
+        )
+        assert record["enforced"] is True
+        assert record["bypassed"] is False
+        assert record["canonical_evidence"] is True
+
+
+class TestBaselineSummaryFormula:
+    """설계서 6장 중앙값 기준선 산식 및 반복 안정성 판정 검증."""
+
+    def test_median_and_cv_and_mad_deterministic(self):
+        results = []
+        # T = [100, 110, 120, 130, 140], P = [50, 55, 60, 65, 70]
+        for t, p in zip(
+            [100.0, 110.0, 120.0, 130.0, 140.0],
+            [50.0, 55.0, 60.0, 65.0, 70.0],
+            strict=True,
+        ):
+            results.append(
+                {
+                    "summary": {
+                        "jobs_per_second": t,
+                        "total_enqueued": 10,
+                        "failed_jobs": 0,
+                        "error_count": 0,
+                    },
+                    "latency_ms": {"p95_ms": p},
+                }
+            )
+
+        summary = compute_baseline_summary(results)
+        assert summary["n_runs"] == 5
+        assert summary["throughput"]["median"] == 120.0
+        assert summary["p95_ms"]["median"] == 60.0
+
+        import statistics
+
+        t_values = [100.0, 110.0, 120.0, 130.0, 140.0]
+        p_values = [50.0, 55.0, 60.0, 65.0, 70.0]
+        t_cv = statistics.stdev(t_values) / statistics.fmean(t_values)
+        p_cv = statistics.stdev(p_values) / statistics.fmean(p_values)
+        assert summary["throughput"]["cv"] == pytest.approx(t_cv)
+        assert summary["p95_ms"]["cv"] == pytest.approx(p_cv)
+        assert summary["regression_gate"]["rt"] == pytest.approx(max(3 * t_cv, 0.06))
+        assert summary["regression_gate"]["rp"] == pytest.approx(max(3 * p_cv, 0.06))
+
+        # MAD/median 검증
+        t_med = statistics.median(t_values)
+        t_mad = statistics.median([abs(v - t_med) for v in t_values])
+        assert summary["throughput"]["mad_median_ratio"] == pytest.approx(t_mad / t_med)
+
+    def test_stability_verdict_records_violation(self):
+        # P95 가 크게 흔들려 CV > 0.05 → 기준선 신뢰 불가 판정 기록
+        results = [
+            {
+                "summary": {
+                    "jobs_per_second": 100.0,
+                    "total_enqueued": 10,
+                    "failed_jobs": 0,
+                    "error_count": 0,
+                },
+                "latency_ms": {"p95_ms": 50.0},
+            },
+            {
+                "summary": {
+                    "jobs_per_second": 101.0,
+                    "total_enqueued": 10,
+                    "failed_jobs": 0,
+                    "error_count": 0,
+                },
+                "latency_ms": {"p95_ms": 200.0},
+            },
+            {
+                "summary": {
+                    "jobs_per_second": 100.0,
+                    "total_enqueued": 10,
+                    "failed_jobs": 0,
+                    "error_count": 0,
+                },
+                "latency_ms": {"p95_ms": 51.0},
+            },
+        ]
+        summary = compute_baseline_summary(results)
+        assert summary["stability"]["passed"] is False
+        assert summary["stability"]["baseline_trustworthy"] is False
+        assert summary["stability"]["verdict"] == "unstable_baseline_not_trustworthy"
+
+    def test_stability_verdict_passes_for_low_variation(self):
+        results = []
+        for i in range(10):
+            results.append(
+                {
+                    "summary": {
+                        "jobs_per_second": 100.0 + i * 0.2,
+                        "total_enqueued": 10,
+                        "failed_jobs": 0,
+                        "error_count": 0,
+                    },
+                    "latency_ms": {"p95_ms": 50.0 + i * 0.1},
+                }
+            )
+        summary = compute_baseline_summary(results)
+        assert summary["stability"]["passed"] is True
+        assert summary["stability"]["baseline_trustworthy"] is True
+        assert summary["stability"]["verdict"] == "stable"
+
+    def test_failure_baseline_records_max_failure(self):
+        results = [
+            {
+                "summary": {
+                    "jobs_per_second": 100.0,
+                    "total_enqueued": 10,
+                    "failed_jobs": 1,
+                    "error_count": 1,
+                },
+                "latency_ms": {"p95_ms": 50.0},
+            },
+        ]
+        summary = compute_baseline_summary(results)
+        assert summary["failure"]["max"] == 0.2
+
+    def _run(
+        self,
+        index: int,
+        jobs_per_second: float,
+        p95_ms: float,
+        canonical: bool = True,
+    ) -> dict:
+        return {
+            "git_sha": f"sha{index}",
+            "timestamp": f"2026-08-24T00:0{index}:00Z",
+            "summary": {
+                "jobs_per_second": jobs_per_second,
+                "total_enqueued": 10,
+                "failed_jobs": 0,
+                "error_count": 0,
+            },
+            "latency_ms": {"p95_ms": p95_ms},
+            "load_protocol": {"canonical_evidence": canonical},
+        }
+
+    def test_all_canonical_runs_are_trustworthy(self):
+        results = [self._run(i, 100.0 + i * 0.2, 50.0 + i * 0.1) for i in range(1, 11)]
+        summary = compute_baseline_summary(results)
+        assert summary["non_canonical_runs"] == []
+        assert summary["stability"]["passed"] is True
+        assert summary["stability"]["baseline_trustworthy"] is True
+        assert summary["stability"]["verdict"] == "stable"
+
+    def test_some_non_canonical_runs_degrade_trustworthiness(self):
+        results = [self._run(i, 100.0 + i * 0.2, 50.0 + i * 0.1) for i in range(1, 11)]
+        # 3회차를 non-canonical(규약 위반 측정)로 표시
+        results[2]["load_protocol"]["canonical_evidence"] = False
+        summary = compute_baseline_summary(results)
+        assert summary["stability"]["passed"] is True  # CV/MAD 는 정상
+        assert len(summary["non_canonical_runs"]) == 1
+        assert summary["non_canonical_runs"][0]["run_index"] == 3
+        assert summary["non_canonical_runs"][0]["git_sha"] == "sha3"
+        # 규약 위반 회차가 섞였으므로 기준선을 신뢰할 수 없다
+        assert summary["stability"]["baseline_trustworthy"] is False
+        assert summary["stability"]["verdict"] == "unstable_non_canonical_runs_present"
+
+
+class TestProvenanceRequiredFields:
+    """provenance 필수 필드 unknown 자동 기각 검증."""
+
+    def _full_provenance(self) -> dict:
+        return {
+            "host": {
+                "python_version": "3.12.14",
+                "platform": "Darwin",
+                "cpu_count": 8,
+                "load_avg_1m": 1.0,
+                "memory_total_bytes": 1000,
+                "memory_available_bytes": 500,
+            },
+            "redis": {
+                "redis_url": "redis://localhost:6379/0",
+                "container_id": "r1",
+                "container_name": "redis-test",
+                "image": "redis:7-alpine",
+                "image_id": "sha256:rimg",
+                "server_version": "7.4.9",
+                "server_mode": "standalone",
+            },
+            "arq": {
+                "arq_version": "0.28.0",
+                "redis_py_version": "5.3.1",
+                "benchmark_worker_mode": "in_process",
+                "worker_settings_module": "in_process:Worker",
+                "worker_functions": ["benchmark_noop_task"],
+                "is_synthetic": True,
+                "worker_max_jobs": 2,
+                "worker_poll_delay": 0.01,
+                "worker_job_timeout": 10,
+            },
+            "docker": {
+                "docker_version": "Docker version 29.7.2",
+                "worker_container_id": None,
+                "worker_container_name": None,
+                "worker_image": None,
+                "worker_image_id": None,
+                "source_mount": "/app",
+                "source_git_sha": "sha_test",
+                "source_git_dirty": False,
+            },
+        }
+
+    def test_required_fields_defined(self):
+        assert "host.python_version" in PROVENANCE_REQUIRED_FIELDS
+        assert "redis.container_id" in PROVENANCE_REQUIRED_FIELDS
+        assert "docker.docker_version" in PROVENANCE_REQUIRED_FIELDS
+        # 선택 필드(worker_container_*)는 필수 목록에 없어야 한다 (in-process 에서 None 허용)
+        assert "docker.worker_container_id" not in PROVENANCE_REQUIRED_FIELDS
+        assert "docker.worker_image" not in PROVENANCE_REQUIRED_FIELDS
+
+    def test_unknown_in_required_field_rejected_in_strict(self):
+        prov = self._full_provenance()
+        prov["redis"]["server_version"] = "unknown"
+        bad = provenance_unknown_required_fields(prov)
+        assert bad == ["redis.server_version"]
+        with pytest.raises(BuildProvenanceError, match=r"redis\.server_version"):
+            enforce_provenance_required_fields(prov, strict=True)
+
+    def test_optional_unknown_allowed(self):
+        prov = self._full_provenance()
+        # 선택 필드는 unknown 허용
+        prov["docker"]["worker_image"] = "unknown"
+        assert provenance_unknown_required_fields(prov) == []
+        enforce_provenance_required_fields(prov, strict=True)
+
+    def test_missing_required_field_rejected(self):
+        prov = self._full_provenance()
+        prov["arq"].pop("arq_version")
+        bad = provenance_unknown_required_fields(prov)
+        assert "arq.arq_version" in bad
+        with pytest.raises(BuildProvenanceError, match=r"arq\.arq_version"):
+            enforce_provenance_required_fields(prov, strict=True)
+
+    def test_non_strict_does_not_raise(self):
+        prov = self._full_provenance()
+        prov["redis"]["server_version"] = "unknown"
+        enforce_provenance_required_fields(prov, strict=False)

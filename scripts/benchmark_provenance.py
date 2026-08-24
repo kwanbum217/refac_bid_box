@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import gc
 import json
+import math
 import os
 import platform
 import shlex
@@ -26,6 +27,7 @@ import sys
 import threading
 import time
 import urllib.parse
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -76,6 +78,41 @@ PERF_CONFIG_ALLOWLIST: frozenset[str] = frozenset(
 # 제외하지 않으면 회차별 raw 를 저장하는 반복 측정이 자기 산출물 때문에
 # 다음 회차에서 fail-closed 로 거부되어 --repetitions 가 완주할 수 없습니다.
 MEASUREMENT_ARTIFACT_PREFIXES: tuple[str, ...] = ("data/benchmarks/",)
+
+# 주변 부하 규약 (docs/ops/latency_gate_protocol.md 5.3): 코어당 사용률 중앙값 30% 이하, 최대 50% 이하
+LOAD_PROTOCOL_MEDIAN_LIMIT_PERCENT = 30.0
+LOAD_PROTOCOL_MAX_LIMIT_PERCENT = 50.0
+
+# 설계서 6장 반복 안정성 임계값 (docs/analysis/arq_calibration_design_20260824.md 6.3/6.4)
+CALIBRATION_CV_MAX = 0.05
+CALIBRATION_MAD_MEDIAN_MAX = 0.03
+CALIBRATION_REGRESSION_FLOOR = 0.06
+
+# provenance 4계층 중 strict 모드에서 "unknown" 을 허용하지 않는 필수 필드 목록.
+# 목록 밖의 선택 필드(예: docker.worker_container_id, docker.worker_image 등)는
+# 하네스가 해당 항목을 쓰지 않는 경우 None 을 기록하므로 unknown 을 허용합니다.
+PROVENANCE_REQUIRED_FIELDS: tuple[str, ...] = (
+    "host.python_version",
+    "host.platform",
+    "host.cpu_count",
+    "redis.redis_url",
+    "redis.container_id",
+    "redis.container_name",
+    "redis.image",
+    "redis.image_id",
+    "redis.server_version",
+    "redis.server_mode",
+    "arq.arq_version",
+    "arq.redis_py_version",
+    "arq.benchmark_worker_mode",
+    "arq.worker_settings_module",
+    "arq.worker_functions",
+    "arq.is_synthetic",
+    "arq.worker_max_jobs",
+    "arq.worker_poll_delay",
+    "arq.worker_job_timeout",
+    "docker.docker_version",
+)
 
 
 def is_source_dirty(status_porcelain: str) -> bool:
@@ -836,6 +873,36 @@ def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, objec
     }
 
 
+def check_ambient_load_protocol(load_stats: Mapping[str, Any]) -> tuple[bool, dict[str, Any]]:
+    """주변 부하 규약 준수 여부를 판정합니다.
+
+    load_stats 는 compute_host_load_stats() 산출물로, per_core_percent 의
+    median/max 가 코어당 사용률(%)입니다. 규약 임계(중앙값 30%, 최대 50%)를
+    초과하면 (False, detail) 를 반환합니다. 부하 표본이 없으면 False 를 반환합니다.
+
+    Returns:
+        tuple[compliant, detail] - detail 에는 median_percent, max_percent,
+        median_limit_percent, max_limit_percent 가 포함됩니다.
+    """
+    pct = load_stats.get("per_core_percent") or {}
+    median_pct = pct.get("median")
+    max_pct = pct.get("max")
+    detail: dict[str, Any] = {
+        "median_percent": median_pct,
+        "max_percent": max_pct,
+        "median_limit_percent": LOAD_PROTOCOL_MEDIAN_LIMIT_PERCENT,
+        "max_limit_percent": LOAD_PROTOCOL_MAX_LIMIT_PERCENT,
+    }
+    if median_pct is None or max_pct is None:
+        detail["reason"] = "load_stats_unavailable"
+        return False, detail
+    compliant = (
+        float(median_pct) <= LOAD_PROTOCOL_MEDIAN_LIMIT_PERCENT
+        and float(max_pct) <= LOAD_PROTOCOL_MAX_LIMIT_PERCENT
+    )
+    return compliant, detail
+
+
 def collect_host_load_samples(
     count: int = 3,
     interval_seconds: float = 5.0,
@@ -909,3 +976,183 @@ class HostLoadMonitor:
 
     def summary(self) -> dict[str, object]:
         return compute_host_load_stats(self.samples)
+
+
+def compute_baseline_summary(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """반복 측정 결과에 설계서 6장 중앙값 기준선 산식을 자동 적용합니다.
+
+    median(T), median(P), CV(T), CV(P), MAD/median, rt, rp 를 계산하고 반복
+    안정성 판정(CV <= 0.05, MAD/median <= 0.03)을 함께 기록합니다. 위반 시
+    기준선을 신뢰할 수 없다는 판정을 명시합니다.
+
+    입력 회차의 load_protocol.canonical_evidence 가 False 인 회차는 규약 위반
+    측정이므로 raw 는 보존하되 기준선 도출에서 제외되어야 합니다. non-canonical
+    회차가 하나라도 있으면 baseline_trustworthy 를 False 로 내리고 verdict 에
+    CV/MAD 판정과 구분되는 사유를 기록합니다.
+    """
+    t_values: list[float] = []
+    p_values: list[float] = []
+    failure_max = 0.0
+    non_canonical_runs: list[dict[str, Any]] = []
+    for idx, r in enumerate(results, start=1):
+        summary = r.get("summary") or {}
+        latency = r.get("latency_ms") or {}
+        t = summary.get("jobs_per_second")
+        p = latency.get("p95_ms")
+        if isinstance(t, (int, float)) and math.isfinite(float(t)):
+            t_values.append(float(t))
+        if isinstance(p, (int, float)) and math.isfinite(float(p)):
+            p_values.append(float(p))
+        total = summary.get("total_enqueued")
+        failed = summary.get("failed_jobs") or 0
+        errors = summary.get("error_count") or 0
+        if isinstance(total, (int, float)) and float(total) > 0:
+            failure_max = max(failure_max, (failed + errors) / float(total))
+        else:
+            failure_max = 1.0
+
+        load_protocol = r.get("load_protocol")
+        if isinstance(load_protocol, Mapping) and load_protocol.get("canonical_evidence") is False:
+            ident: dict[str, Any] = {"run_index": idx}
+            if "git_sha" in r:
+                ident["git_sha"] = r["git_sha"]
+            if "timestamp" in r:
+                ident["timestamp"] = r["timestamp"]
+            non_canonical_runs.append(ident)
+
+    def _median(values: list[float]) -> float | None:
+        return statistics.median(values) if values else None
+
+    def _cv(values: list[float]) -> float | None:
+        if len(values) < 2:
+            return None
+        mean = statistics.fmean(values)
+        if mean == 0:
+            return None
+        return statistics.stdev(values) / mean
+
+    def _mad_median_ratio(values: list[float]) -> float | None:
+        med = _median(values)
+        if med is None or med == 0:
+            return None
+        deviations = [abs(v - med) for v in values]
+        return _median(deviations) / med
+
+    t_median = _median(t_values)
+    p_median = _median(p_values)
+    t_cv = _cv(t_values)
+    p_cv = _cv(p_values)
+    t_mad_ratio = _mad_median_ratio(t_values)
+    p_mad_ratio = _mad_median_ratio(p_values)
+
+    rt = max(3.0 * t_cv, CALIBRATION_REGRESSION_FLOOR) if t_cv is not None else None
+    rp = max(3.0 * p_cv, CALIBRATION_REGRESSION_FLOOR) if p_cv is not None else None
+
+    cv_ok = (
+        t_cv is not None
+        and p_cv is not None
+        and t_cv <= CALIBRATION_CV_MAX
+        and p_cv <= CALIBRATION_CV_MAX
+    )
+    mad_ok = (
+        t_mad_ratio is not None
+        and p_mad_ratio is not None
+        and t_mad_ratio <= CALIBRATION_MAD_MEDIAN_MAX
+        and p_mad_ratio <= CALIBRATION_MAD_MEDIAN_MAX
+    )
+    stable = cv_ok and mad_ok
+    has_non_canonical = bool(non_canonical_runs)
+    trustworthy = stable and not has_non_canonical
+
+    if has_non_canonical:
+        verdict = "unstable_non_canonical_runs_present"
+    elif stable:
+        verdict = "stable"
+    else:
+        verdict = "unstable_baseline_not_trustworthy"
+
+    return {
+        "n_runs": len(results),
+        "throughput_baseline": t_median,
+        "p95_baseline": p_median,
+        "throughput": {
+            "median": t_median,
+            "cv": t_cv,
+            "mad_median_ratio": t_mad_ratio,
+        },
+        "p95_ms": {
+            "median": p_median,
+            "cv": p_cv,
+            "mad_median_ratio": p_mad_ratio,
+        },
+        "failure": {"max": failure_max},
+        "non_canonical_runs": non_canonical_runs,
+        "regression_gate": {
+            "rt": rt,
+            "rp": rp,
+            "floor": CALIBRATION_REGRESSION_FLOOR,
+        },
+        "stability": {
+            "cv_ok": cv_ok,
+            "mad_ratio_ok": mad_ok,
+            "passed": stable,
+            "baseline_trustworthy": trustworthy,
+            "verdict": verdict,
+            "thresholds": {
+                "cv_max": CALIBRATION_CV_MAX,
+                "mad_median_max": CALIBRATION_MAD_MEDIAN_MAX,
+            },
+        },
+    }
+
+
+def provenance_unknown_required_fields(provenance: Mapping[str, Any]) -> list[str]:
+    """필수 provenance 필드 중 unknown 이거나 누락된 dot-path 목록을 반환합니다."""
+    bad: list[str] = []
+    for path in PROVENANCE_REQUIRED_FIELDS:
+        node: Any = provenance
+        resolved = True
+        for key in path.split("."):
+            if not isinstance(node, Mapping) or key not in node:
+                resolved = False
+                break
+            node = node[key]
+        if not resolved or node == "unknown":
+            bad.append(path)
+    return bad
+
+
+def enforce_provenance_required_fields(provenance: Mapping[str, Any], strict: bool = True) -> None:
+    """strict 모드에서 필수 provenance 필드의 unknown 을 BuildProvenanceError 로 기각합니다."""
+    if not strict:
+        return
+    bad = provenance_unknown_required_fields(provenance)
+    if bad:
+        raise BuildProvenanceError(
+            "Required provenance field(s) are unknown or missing: " + ", ".join(bad)
+        )
+
+
+def build_load_protocol_record(
+    start_compliant: bool,
+    start_detail: Mapping[str, Any],
+    end_compliant: bool,
+    end_detail: Mapping[str, Any],
+    strict: bool,
+    allow_violation: bool,
+) -> dict[str, Any]:
+    """주변 부하 규약 적용 상태와 판정을 결과 JSON 에 기록할 구조체를 만듭니다.
+
+    우회(allow_violation) 또는 strict 미적용 시 canonical_evidence 는 False 로
+    기록되어 정본 evidence 가 아님을 명시합니다.
+    """
+    enforced = strict and not allow_violation
+    compliant = start_compliant and end_compliant
+    return {
+        "enforced": enforced,
+        "bypassed": bool(allow_violation),
+        "compliant": compliant,
+        "canonical_evidence": enforced and compliant,
+        "start": dict(start_detail),
+        "end": dict(end_detail),
+    }
