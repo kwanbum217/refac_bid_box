@@ -1322,7 +1322,10 @@ def worktree_relative_capsule_path(capsule_path: Path) -> str:
     """
     parts = capsule_path.parts
     if ".orca" in parts:
-        return str(Path(*parts[parts.index(".orca") :]))
+        # Capsule 경로는 YAML 에 적혀 어느 플랫폼에서든 같은 문자열로 대조되므로
+        # 구분자를 POSIX 로 고정합니다. Windows 에서 str(Path(...)) 는 역슬래시를
+        # 내어 워커와 게이트가 같은 경로를 다른 문자열로 읽습니다.
+        return Path(*parts[parts.index(".orca") :]).as_posix()
     return capsule_path.name
 
 

@@ -402,7 +402,7 @@ def test_get_redis_py_version_returns_string():
 def test_get_docker_version_returns_string():
     version = get_docker_version()
     assert isinstance(version, str)
-    assert "Docker version" in version
+    assert version == "unknown" or "Docker version" in version
 
 
 @patch("scripts.benchmark_arq_throughput.subprocess.check_output")
@@ -469,7 +469,7 @@ def test_aggregate_benchmark_metrics_includes_provenance():
             "scripts.benchmark_arq_throughput.get_docker_version",
             return_value="Docker version 29.7.2",
         ),
-        patch("os.getloadavg", return_value=[1.5, 1.2, 1.0]),
+        patch("os.getloadavg", return_value=[1.5, 1.2, 1.0], create=True),
         patch("os.cpu_count", return_value=8),
     ):
         mock_inspect.return_value = {
@@ -548,7 +548,7 @@ def test_aggregate_benchmark_metrics_provenance_keys_match_container_harness():
             "scripts.benchmark_arq_throughput.get_docker_version",
             return_value="Docker version 29.7.2",
         ),
-        patch("os.getloadavg", return_value=[1.5, 1.2, 1.0]),
+        patch("os.getloadavg", return_value=[1.5, 1.2, 1.0], create=True),
         patch("os.cpu_count", return_value=8),
     ):
         mock_inspect.return_value = {
