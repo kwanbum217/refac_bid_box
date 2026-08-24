@@ -1647,7 +1647,7 @@ def test_build_capsule_notice_carries_path_contract_and_dispatch_id():
     )
     # 절대 경로를 주면 워커가 그 저장소로 이동합니다. 상대 경로만 담습니다.
     assert str(Path("/abs/.orca/capsules/task_x/capsule.yaml")) not in text
-    assert str(Path(".orca/capsules/task_x/capsule.yaml")) in text
+    assert ".orca/capsules/task_x/capsule.yaml" in text
     assert "벗어나지" in text
     assert "allowed_write_files" in text
     assert "escalation" in text
@@ -1826,7 +1826,7 @@ def test_build_task_spec_embeds_worktree_relative_capsule_path():
         Path("/repo/.orca/capsules/task_x/capsule.yaml"),
     )
     assert str(Path("/repo/.orca/capsules/task_x/capsule.yaml")) not in spec
-    assert str(Path(".orca/capsules/task_x/capsule.yaml")) in spec
+    assert ".orca/capsules/task_x/capsule.yaml" in spec
     assert "벗어나지" in spec
     assert "모듈 A" in spec
 
@@ -1848,7 +1848,7 @@ def test_capsule_paths_never_leak_main_repo_absolute_path():
 
     for text in (spec, notice):
         assert main_repo not in text
-        assert str(Path(".orca/capsules/task_y/capsule.yaml")) in text
+        assert ".orca/capsules/task_y/capsule.yaml" in text
     assert "/wt/task_y" in notice
 
 
@@ -1864,7 +1864,7 @@ def test_build_task_spec_truncates_long_objective():
     from scripts.orca_taskctl import build_task_spec
 
     spec = build_task_spec("가" * 900, Path("/abs/.orca/capsules/c/capsule.yaml"))
-    assert str(Path(".orca/capsules/c/capsule.yaml")) in spec
+    assert ".orca/capsules/c/capsule.yaml" in spec
     assert len(spec) < 600
 
 
