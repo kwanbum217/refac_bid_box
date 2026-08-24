@@ -209,6 +209,9 @@ class BidResult(Base):
         DateTime, nullable=False, default=utcnow, comment="수집일시"
     )
 
+    # 템플릿(result_detail.html) 렌더링 시점에 동적으로 채워지는 비영속 속성입니다.
+    resolved_winning_rate: Decimal | None = None
+
     def __str__(self) -> str:
         return f"[{self.category}] {self.bid_ntce_no} - {self.bidwinnr_nm}"
 

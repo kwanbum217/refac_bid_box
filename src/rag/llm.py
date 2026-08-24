@@ -177,6 +177,8 @@ class GeminiBackend:
         return True
 
     def generate(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
+        if self._client is None:
+            raise RuntimeError("Gemini 클라이언트가 초기화되지 않았습니다. API 키를 확인하세요.")
         from google.genai import types
 
         contents = [
@@ -195,6 +197,8 @@ class GeminiBackend:
 
     def stream_generate(self, system_prompt: str, messages: list[dict[str, str]]) -> Iterator[str]:
         """Gemini 스트리밍 API 를 사용해 실시간 토큰을 반환합니다."""
+        if self._client is None:
+            raise RuntimeError("Gemini 클라이언트가 초기화되지 않았습니다. API 키를 확인하세요.")
         from google.genai import types
 
         contents = [
