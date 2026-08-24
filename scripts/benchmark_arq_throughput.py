@@ -48,6 +48,17 @@ except (ModuleNotFoundError, ImportError):
     from _strict_json import dump_strict_json  # type: ignore[no-redef]
 
 try:
+    from scripts.benchmark_provenance import (
+        BuildProvenanceError,
+        single_host_load_sample,
+    )
+except (ModuleNotFoundError, ImportError):
+    from benchmark_provenance import (  # type: ignore[no-redef]
+        BuildProvenanceError,
+        single_host_load_sample,
+    )
+
+try:
     from src.app.core.config import settings
 
     DEFAULT_REDIS_URL = settings.REDIS_URL
@@ -55,6 +66,198 @@ except Exception:
     DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 logger = logging.getLogger("benchmark_arq_throughput")
+
+
+def get_host_memory() -> dict[str, int | None]:
+    """호스트 물리 메모리 크기(total, available)를 바이트 단위로 안전하게 수집합니다."""
+    total_bytes: int | None = None
+    available_bytes: int | None = None
+
+    if hasattr(os, "sysconf"):
+        try:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            if (
+                isinstance(pages, int)
+                and isinstance(page_size, int)
+                and pages > 0
+                and page_size > 0
+            ):
+                total_bytes = pages * page_size
+        except (ValueError, OSError):
+            pass
+        try:
+            avail_pages = os.sysconf("SC_AVPHYS_PAGES")
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            if (
+                isinstance(avail_pages, int)
+                and isinstance(page_size, int)
+                and avail_pages > 0
+                and page_size > 0
+            ):
+                available_bytes = avail_pages * page_size
+        except (ValueError, OSError):
+            pass
+
+    if total_bytes is None and Path("/proc/meminfo").exists():
+        with contextlib.suppress(Exception):
+            meminfo = Path("/proc/meminfo").read_text(encoding="utf-8")
+            for line in meminfo.splitlines():
+                if line.startswith("MemTotal:"):
+                    total_bytes = int(line.split()[1]) * 1024
+                elif line.startswith("MemAvailable:"):
+                    available_bytes = int(line.split()[1]) * 1024
+
+    if total_bytes is None and platform.system() == "Darwin":
+        with contextlib.suppress(Exception):
+            out = subprocess.check_output(  # nosec B603 B607
+                ["sysctl", "-n", "hw.memsize"],
+                text=True,
+            ).strip()
+            total_bytes = int(out)
+
+    return {
+        "total_bytes": total_bytes,
+        "available_bytes": available_bytes,
+    }
+
+
+def get_git_status(path: Path | str | None = None) -> tuple[str, bool | None]:
+    """지정된 디렉터리의 Git SHA 및 dirty 상태를 반환합니다.
+
+    Returns:
+        tuple[git_sha, is_dirty]
+        - git_sha: 커밋 SHA 또는 "unknown"
+        - is_dirty: True (dirty), False (clean), None (unknown/Git 오류)
+    """
+    target_path = Path(path).resolve() if path is not None else PROJECT_ROOT
+    try:
+        sha = subprocess.check_output(  # nosec B603 B607
+            ["git", "-C", str(target_path), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        sha = "unknown"
+
+    try:
+        status = subprocess.check_output(  # nosec B603 B607
+            ["git", "-C", str(target_path), "status", "--porcelain"],
+            text=True,
+        ).strip()
+        is_dirty = len(status) > 0
+    except (OSError, subprocess.CalledProcessError):
+        is_dirty = None
+
+    return sha, is_dirty
+
+
+async def fetch_redis_server_info(redis: ArqRedis) -> dict[str, str]:
+    """Redis 서버 INFO server 섹션에서 버전 및 실행 모드를 조회합니다."""
+    server_info = {"server_version": "unknown", "server_mode": "unknown"}
+    try:
+        raw_info = await redis.info("server")
+        if isinstance(raw_info, dict):
+            server_info["server_version"] = str(raw_info.get("redis_version", "unknown"))
+            server_info["server_mode"] = str(raw_info.get("redis_mode", "standalone"))
+    except Exception as exc:
+        logger.warning("Redis INFO server 조회 중 예외: %s", exc)
+    return server_info
+
+
+def verify_identity_consistency(
+    start_ident: dict[str, Any],
+    end_ident: dict[str, Any],
+    strict: bool = True,
+) -> bool:
+    """측정 시작과 종료 시점의 identity 일치 여부를 검증합니다."""
+    mismatches: list[str] = []
+    for key, start_val in start_ident.items():
+        end_val = end_ident.get(key)
+        if start_val != end_val:
+            mismatches.append(f"{key} changed from '{start_val}' to '{end_val}'")
+
+    if mismatches:
+        err_msg = (
+            "Target/container/source provenance changed during benchmark measurement: "
+            + ", ".join(mismatches)
+        )
+        if strict:
+            raise BuildProvenanceError(err_msg)
+        return False
+    return True
+
+
+def build_provenance_dict(
+    *,
+    host_cpu_count: int,
+    host_load_avg_1m: float | None,
+    host_memory: dict[str, int | None],
+    redis_url: str,
+    redis_container_id: str,
+    redis_container_name: str,
+    redis_image: str,
+    redis_image_id: str,
+    redis_server_version: str,
+    redis_server_mode: str,
+    arq_version: str,
+    redis_py_version: str,
+    benchmark_worker_mode: str,
+    worker_settings_module: str,
+    worker_functions: list[str],
+    is_synthetic: bool,
+    worker_max_jobs: int,
+    worker_poll_delay: float,
+    worker_job_timeout: int,
+    docker_version: str,
+    worker_container_id: str | None,
+    worker_container_name: str | None,
+    worker_image: str | None,
+    worker_image_id: str | None,
+    source_mount: str | None,
+    source_git_sha: str | None,
+    source_git_dirty: bool | None,
+) -> dict[str, Any]:
+    """공통 4계층 Provenance 딕셔너리 구조를 생성합니다."""
+    return {
+        "host": {
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+            "cpu_count": host_cpu_count,
+            "load_avg_1m": host_load_avg_1m,
+            "memory_total_bytes": host_memory.get("total_bytes"),
+            "memory_available_bytes": host_memory.get("available_bytes"),
+        },
+        "redis": {
+            "redis_url": redis_url,
+            "container_id": redis_container_id,
+            "container_name": redis_container_name,
+            "image": redis_image,
+            "image_id": redis_image_id,
+            "server_version": redis_server_version,
+            "server_mode": redis_server_mode,
+        },
+        "arq": {
+            "arq_version": arq_version,
+            "redis_py_version": redis_py_version,
+            "benchmark_worker_mode": benchmark_worker_mode,
+            "worker_settings_module": worker_settings_module,
+            "worker_functions": list(worker_functions),
+            "is_synthetic": is_synthetic,
+            "worker_max_jobs": worker_max_jobs,
+            "worker_poll_delay": worker_poll_delay,
+            "worker_job_timeout": worker_job_timeout,
+        },
+        "docker": {
+            "docker_version": docker_version,
+            "worker_container_id": worker_container_id,
+            "worker_container_name": worker_container_name,
+            "worker_image": worker_image,
+            "worker_image_id": worker_image_id,
+            "source_mount": source_mount,
+            "source_git_sha": source_git_sha,
+            "source_git_dirty": source_git_dirty,
+        },
+    }
 
 
 def get_arq_version() -> str:
@@ -284,18 +487,20 @@ class BenchmarkResult:
     latency_ms: dict[str, Any]
     errors: list[str] = field(default_factory=list)
     benchmark_worker_mode: str = "in_process"
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "git_sha": self.git_sha,
             "timestamp": self.timestamp,
+            "benchmark_worker_mode": self.benchmark_worker_mode,
+            "provenance": self.provenance,
             "environment": self.environment,
             "config": asdict(self.config),
             "summary": self.summary,
             "latency_ms": self.latency_ms,
             "errors": self.errors,
-            "benchmark_worker_mode": self.benchmark_worker_mode,
         }
 
     def report(self) -> bool:
@@ -347,6 +552,12 @@ def aggregate_benchmark_metrics(
     total_duration_sec: float,
     git_sha: str | None = None,
     extra_errors: list[str] | None = None,
+    redis_container: dict[str, Any] | None = None,
+    redis_server_version: str = "unknown",
+    redis_server_mode: str = "unknown",
+    source_mount: Path | str | None = None,
+    source_git_sha: str | None = None,
+    source_git_dirty: bool | None = None,
 ) -> BenchmarkResult:
     """수집된 작업 실행 결과 목록을 기반으로 지표를 결정론적으로 집계합니다."""
     errors = list(extra_errors or [])
@@ -392,32 +603,87 @@ def aggregate_benchmark_metrics(
         "error_count": error_count,
     }
 
-    # 4계층 Provenance 수집 (host, Redis, Arq, Docker)
-    redis_info = inspect_redis_container()
-    load_avg = list(os.getloadavg()) if hasattr(os, "getloadavg") else [0.0, 0.0, 0.0]
+    # 4계층 Provenance 수집
+    r_info = redis_container or inspect_redis_container()
+    load_sample = single_host_load_sample()
+    host_mem = get_host_memory()
+    target_mount = str(
+        Path(source_mount).resolve() if source_mount is not None else PROJECT_ROOT.resolve()
+    )
+    effective_git_sha = git_sha or source_git_sha or get_git_sha()
+    effective_dirty = (
+        source_git_dirty if source_git_dirty is not None else get_git_status(target_mount)[1]
+    )
+    arq_ver = get_arq_version()
+    redis_py_ver = get_redis_py_version()
+    dock_ver = get_docker_version()
+
+    provenance = build_provenance_dict(
+        host_cpu_count=int(load_sample.get("cpu_count") or os.cpu_count() or 1),
+        host_load_avg_1m=load_sample.get("load_1m"),  # type: ignore[arg-type]
+        host_memory=host_mem,
+        redis_url=config.redis_url,
+        redis_container_id=r_info.get("container_id", "unknown"),
+        redis_container_name=r_info.get("container_name", "unknown"),
+        redis_image=r_info.get("image", "unknown"),
+        redis_image_id=r_info.get("image_id", "unknown"),
+        redis_server_version=redis_server_version,
+        redis_server_mode=redis_server_mode,
+        arq_version=arq_ver,
+        redis_py_version=redis_py_ver,
+        benchmark_worker_mode="in_process",
+        worker_settings_module="in_process:Worker",
+        worker_functions=["benchmark_noop_task"],
+        is_synthetic=True,
+        worker_max_jobs=config.concurrency,
+        worker_poll_delay=config.poll_delay_sec,
+        worker_job_timeout=int(config.timeout_sec),
+        docker_version=dock_ver,
+        worker_container_id=None,
+        worker_container_name=None,
+        worker_image=None,
+        worker_image_id=None,
+        source_mount=target_mount,
+        source_git_sha=effective_git_sha,
+        source_git_dirty=effective_dirty,
+    )
 
     env_data = {
         # 1. Host
         "python": platform.python_version(),
         "platform": platform.platform(),
-        "host_cpu_count": os.cpu_count() or 1,
-        "host_load_avg_1m": round(load_avg[0], 2),
+        "host_cpu_count": provenance["host"]["cpu_count"],
+        "host_load_avg_1m": provenance["host"]["load_avg_1m"],
+        "host_memory_total_bytes": provenance["host"]["memory_total_bytes"],
+        "host_memory_available_bytes": provenance["host"]["memory_available_bytes"],
         # 2. Redis
         "redis_url": config.redis_url,
-        "redis_container_id": redis_info.get("container_id", "unknown"),
-        "redis_image": redis_info.get("image", "unknown"),
+        "redis_container_id": provenance["redis"]["container_id"],
+        "redis_container_name": provenance["redis"]["container_name"],
+        "redis_image": provenance["redis"]["image"],
+        "redis_image_id": provenance["redis"]["image_id"],
+        "redis_server_version": provenance["redis"]["server_version"],
+        "redis_server_mode": provenance["redis"]["server_mode"],
         # 3. Arq
-        "arq_version": get_arq_version(),
-        "redis_py_version": get_redis_py_version(),
+        "arq_version": arq_ver,
+        "redis_py_version": redis_py_ver,
+        "benchmark_worker_mode": "in_process",
+        "worker_settings_module": "in_process:Worker",
+        "worker_functions": ["benchmark_noop_task"],
+        "is_synthetic": True,
         "worker_max_jobs": config.concurrency,
         "worker_poll_delay": config.poll_delay_sec,
-        # 4. Docker
-        "docker_version": get_docker_version(),
+        "worker_job_timeout": int(config.timeout_sec),
+        # 4. Docker / Source
+        "docker_version": dock_ver,
+        "source_mount": target_mount,
+        "source_git_sha": effective_git_sha,
+        "source_git_dirty": effective_dirty,
     }
 
     return BenchmarkResult(
         status=status,
-        git_sha=git_sha or get_git_sha(),
+        git_sha=effective_git_sha,
         timestamp=datetime.now(UTC).isoformat(),
         environment=env_data,
         config=config,
@@ -425,6 +691,7 @@ def aggregate_benchmark_metrics(
         latency_ms=latency_data,
         errors=errors,
         benchmark_worker_mode="in_process",
+        provenance=provenance,
     )
 
 
@@ -436,8 +703,28 @@ async def run_arq_throughput_benchmark(
     poll_delay_sec: float = 0.01,
     timeout_sec: float = 60.0,
     simulate_error_rate: float = 0.0,
+    strict: bool = True,
+    source_mount: Path | str | None = None,
 ) -> BenchmarkResult:
     """독립형 벤치마크를 비동기 실행하고 결과를 반환합니다."""
+    target_source = (
+        Path(source_mount).resolve() if source_mount is not None else PROJECT_ROOT.resolve()
+    )
+    git_sha, git_dirty = get_git_status(target_source)
+
+    if strict:
+        failures = []
+        if git_sha == "unknown":
+            failures.append(f"git_sha(source: {target_source})")
+        if git_dirty is None:
+            failures.append(f"git_dirty_unknown(source: {target_source})")
+        elif git_dirty is True:
+            failures.append(f"git_dirty(source: {target_source})")
+        if failures:
+            raise BuildProvenanceError(
+                f"Host/Git provenance check failed (fail-closed): {', '.join(failures)}"
+            )
+
     queue_name = generate_benchmark_queue_name()
     config = BenchmarkConfig(
         queue_name=queue_name,
@@ -456,6 +743,23 @@ async def run_arq_throughput_benchmark(
         await redis_pool.ping()
     except Exception as exc:
         raise RedisConnectionError(f"Redis 연결 실패 ({redis_url}): {exc}") from exc
+
+    start_redis_info = inspect_redis_container()
+    start_server_info = await fetch_redis_server_info(redis_pool)
+
+    if strict and start_redis_info.get("container_id") == "unknown":
+        await redis_pool.aclose()
+        raise BuildProvenanceError("Redis container inspection failed (container_id unknown)")
+
+    start_identity = {
+        "redis_container_id": start_redis_info.get("container_id", "unknown"),
+        "redis_image_id": start_redis_info.get("image_id", "unknown"),
+        "redis_server_version": start_server_info.get("server_version", "unknown"),
+        "redis_server_mode": start_server_info.get("server_mode", "unknown"),
+        "source_mount": str(target_source),
+        "source_git_sha": git_sha,
+        "source_git_dirty": git_dirty,
+    }
 
     results_collector: list[dict[str, Any]] = []
     completion_event = asyncio.Event()
@@ -520,6 +824,26 @@ async def run_arq_throughput_benchmark(
         with contextlib.suppress(asyncio.CancelledError):
             await worker_task
 
+        # End identity check
+        end_redis_info = inspect_redis_container()
+        end_server_info = await fetch_redis_server_info(redis_pool)
+        end_git_sha, end_git_dirty = get_git_status(target_source)
+
+        end_identity = {
+            "redis_container_id": end_redis_info.get("container_id", "unknown"),
+            "redis_image_id": end_redis_info.get("image_id", "unknown"),
+            "redis_server_version": end_server_info.get("server_version", "unknown"),
+            "redis_server_mode": end_server_info.get("server_mode", "unknown"),
+            "source_mount": str(target_source),
+            "source_git_sha": end_git_sha,
+            "source_git_dirty": end_git_dirty,
+        }
+
+        try:
+            verify_identity_consistency(start_identity, end_identity, strict=strict)
+        except BuildProvenanceError as b_err:
+            extra_errors.append(str(b_err))
+
         await cleanup_benchmark_resources(redis_pool, queue_name, all_job_ids)
         await redis_pool.aclose()
 
@@ -527,7 +851,14 @@ async def run_arq_throughput_benchmark(
         config=config,
         collected_results=results_collector,
         total_duration_sec=total_duration,
+        git_sha=git_sha,
         extra_errors=extra_errors,
+        redis_container=end_redis_info,
+        redis_server_version=end_server_info.get("server_version", "unknown"),
+        redis_server_mode=end_server_info.get("server_mode", "unknown"),
+        source_mount=target_source,
+        source_git_sha=end_git_sha,
+        source_git_dirty=end_git_dirty,
     )
 
 
@@ -578,6 +909,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"Redis 접속 URL (기본값: {DEFAULT_REDIS_URL})",
     )
     parser.add_argument(
+        "--source-mount",
+        default=None,
+        help=f"호스트 소스 마운트 경로 (기본값: {PROJECT_ROOT})",
+    )
+    parser.add_argument(
+        "--allow-unknown-provenance",
+        action="store_true",
+        default=False,
+        help="Docker/Git provenance 조회 실패 또는 dirty 상태 시에도 측정을 강제 진행합니다 (기본: 거부)",
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=Path,
@@ -619,7 +961,9 @@ def main(argv: list[str] | None = None) -> int:
         print("오류: --repetitions 는 1 이상이어야 합니다.", file=sys.stderr)
         return 2
 
+    strict = not args.allow_unknown_provenance
     results: list[BenchmarkResult] = []
+    saved_paths: list[Path] = []
 
     for run_idx in range(1, args.repetitions + 1):
         if args.repetitions > 1 and not args.quiet:
@@ -635,11 +979,16 @@ def main(argv: list[str] | None = None) -> int:
                     poll_delay_sec=args.poll_delay,
                     timeout_sec=args.timeout,
                     simulate_error_rate=args.simulate_error_rate,
+                    strict=strict,
+                    source_mount=args.source_mount,
                 )
             )
             results.append(result)
         except RedisConnectionError as r_err:
             print(f"Redis 연결 오류: {r_err}", file=sys.stderr)
+            return 2
+        except BuildProvenanceError as b_err:
+            print(f"Provenance 검증 실패: {b_err}", file=sys.stderr)
             return 2
         except Exception as exc:
             print(f"벤치마크 실행 실패: {exc}", file=sys.stderr)
@@ -653,10 +1002,15 @@ def main(argv: list[str] | None = None) -> int:
             stem = args.output.stem
             suffix = args.output.suffix
             r_path = args.output.parent / f"{stem}_r{run_idx}{suffix}"
-            r_path.parent.mkdir(parents=True, exist_ok=True)
-            r_path.write_text(dump_strict_json(result.as_dict()), encoding="utf-8")
-            if not args.quiet:
-                print(f"회차 {run_idx} 결과 저장: {r_path}")
+            try:
+                r_path.parent.mkdir(parents=True, exist_ok=True)
+                r_path.write_text(dump_strict_json(result.as_dict()), encoding="utf-8")
+                saved_paths.append(r_path)
+                if not args.quiet:
+                    print(f"회차 {run_idx} 결과 저장: {r_path}")
+            except Exception as w_err:
+                print(f"회차 {run_idx} 파일 저장 실패: {w_err}", file=sys.stderr)
+                return 1
 
         # 다음 회차 전 대기
         if run_idx < args.repetitions and args.run_interval_sec > 0:
@@ -664,17 +1018,35 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"다음 회차 전 {args.run_interval_sec}초 대기 중...")
             time.sleep(args.run_interval_sec)
 
+    # 반복 회차 검증 계약: repetitions 수만큼 정상 결과 및 파일 수집 확인
+    if len(results) != args.repetitions:
+        print(
+            f"오류: 요청된 {args.repetitions}회 중 {len(results)}회만 완료되었습니다.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.output and args.repetitions > 1:
+        for r_idx, r_path in enumerate(saved_paths, start=1):
+            if not r_path.exists() or r_path.stat().st_size == 0:
+                print(f"오류: 회차 {r_idx} 결과 파일 누락 또는 0바이트: {r_path}", file=sys.stderr)
+                return 1
+
     # 대표 결과 선정: P95 기준 최악 대표값
     worst_result = max(results, key=lambda r: float(r.latency_ms.get("p95_ms", 0.0)))
 
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(
-            dump_strict_json(worst_result.as_dict()),
-            encoding="utf-8",
-        )
-        if not args.quiet:
-            print(f"\n최종 대표 결과 저장 완료: {args.output}")
+        try:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(
+                dump_strict_json(worst_result.as_dict()),
+                encoding="utf-8",
+            )
+            if not args.quiet:
+                print(f"\n최종 대표 결과 저장 완료: {args.output}")
+        except Exception as out_err:
+            print(f"대표 결과 저장 실패: {out_err}", file=sys.stderr)
+            return 1
 
     all_success = all(
         r.status == "success" and r.summary.get("error_count", 0) == 0 for r in results

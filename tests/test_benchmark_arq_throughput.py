@@ -567,23 +567,298 @@ def test_aggregate_benchmark_metrics_provenance_keys_match_container_harness():
 
     env_keys = set(result.environment.keys())
 
-    # container benchmark_arq_container.py 에서 사용하는 키들 (워커 컨테이너 관련 제외)
+    # container benchmark_arq_container.py 에서 사용하는 키들
     expected_host_redis_arq_docker_keys = {
         "python",
         "platform",
         "host_cpu_count",
         "host_load_avg_1m",
+        "host_memory_total_bytes",
+        "host_memory_available_bytes",
         "redis_url",
         "redis_container_id",
+        "redis_container_name",
         "redis_image",
+        "redis_image_id",
+        "redis_server_version",
+        "redis_server_mode",
         "arq_version",
         "redis_py_version",
+        "benchmark_worker_mode",
+        "worker_settings_module",
+        "worker_functions",
+        "is_synthetic",
         "worker_max_jobs",
         "worker_poll_delay",
+        "worker_job_timeout",
         "docker_version",
+        "source_mount",
+        "source_git_sha",
+        "source_git_dirty",
     }
 
-    # in_process 하네스는 worker_container_id, worker_image, worker_image_id 가 없음
-    # 대신 benchmark_worker_mode 로 구분
     assert expected_host_redis_arq_docker_keys.issubset(env_keys)
     assert "benchmark_worker_mode" in result.as_dict()
+    assert "provenance" in result.as_dict()
+
+    # 4계층 provenance 구조 검증
+    prov = result.provenance
+    assert set(prov.keys()) == {"host", "redis", "arq", "docker"}
+    assert set(prov["host"].keys()) == {
+        "python_version",
+        "platform",
+        "cpu_count",
+        "load_avg_1m",
+        "memory_total_bytes",
+        "memory_available_bytes",
+    }
+    assert set(prov["redis"].keys()) == {
+        "redis_url",
+        "container_id",
+        "container_name",
+        "image",
+        "image_id",
+        "server_version",
+        "server_mode",
+    }
+    assert set(prov["arq"].keys()) == {
+        "arq_version",
+        "redis_py_version",
+        "benchmark_worker_mode",
+        "worker_settings_module",
+        "worker_functions",
+        "is_synthetic",
+        "worker_max_jobs",
+        "worker_poll_delay",
+        "worker_job_timeout",
+    }
+    assert set(prov["docker"].keys()) == {
+        "docker_version",
+        "worker_container_id",
+        "worker_container_name",
+        "worker_image",
+        "worker_image_id",
+        "source_mount",
+        "source_git_sha",
+        "source_git_dirty",
+    }
+
+
+def test_get_host_memory_returns_structure():
+    """get_host_memory 가 total_bytes, available_bytes 키를 갖는 dict를 반환하는지 검증."""
+    from scripts.benchmark_arq_throughput import get_host_memory
+
+    mem = get_host_memory()
+    assert isinstance(mem, dict)
+    assert "total_bytes" in mem
+    assert "available_bytes" in mem
+
+
+def test_get_git_status_clean_and_dirty(tmp_path):
+    """get_git_status 가 clean 및 dirty 상태를 정확히 판별하는지 검증."""
+    from scripts.benchmark_arq_throughput import get_git_status
+
+    with patch("scripts.benchmark_arq_throughput.subprocess.check_output") as mock_out:
+        # 1. Clean git repo
+        mock_out.side_effect = ["sha123456", ""]
+        sha, dirty = get_git_status(tmp_path)
+        assert sha == "sha123456"
+        assert dirty is False
+
+        # 2. Dirty git repo
+        mock_out.side_effect = ["sha123456", " M some_file.py\n?? new_file.py"]
+        sha, dirty = get_git_status(tmp_path)
+        assert sha == "sha123456"
+        assert dirty is True
+
+        # 3. Git error
+        mock_out.side_effect = [OSError("git not found"), OSError("git not found")]
+        sha, dirty = get_git_status(tmp_path)
+        assert sha == "unknown"
+        assert dirty is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_redis_server_info_parsing():
+    """fetch_redis_server_info 가 INFO server 결과를 올바르게 파싱하는지 검증."""
+    from scripts.benchmark_arq_throughput import fetch_redis_server_info
+
+    mock_redis = MagicMock()
+    mock_redis.info = AsyncMock(return_value={"redis_version": "7.4.9", "redis_mode": "standalone"})
+
+    info = await fetch_redis_server_info(mock_redis)
+    assert info["server_version"] == "7.4.9"
+    assert info["server_mode"] == "standalone"
+
+
+def test_verify_identity_consistency():
+    """verify_identity_consistency 가 일치 및 불일치(교체/재시작)를 정확히 판정하는지 검증."""
+    from scripts.benchmark_arq_throughput import BuildProvenanceError, verify_identity_consistency
+
+    start_ident = {
+        "redis_container_id": "c123",
+        "redis_image_id": "img123",
+        "redis_server_version": "7.4.9",
+        "redis_server_mode": "standalone",
+        "source_mount": "/app",
+        "source_git_sha": "sha123",
+        "source_git_dirty": False,
+    }
+
+    # 1. 완벽 일치
+    assert verify_identity_consistency(start_ident, dict(start_ident), strict=True) is True
+
+    # 2. Redis 컨테이너 교체
+    end_ident = dict(start_ident)
+    end_ident["redis_container_id"] = "c999"
+    with pytest.raises(BuildProvenanceError, match="redis_container_id changed"):
+        verify_identity_consistency(start_ident, end_ident, strict=True)
+
+    assert verify_identity_consistency(start_ident, end_ident, strict=False) is False
+
+    # 3. Git dirty 변경
+    end_ident2 = dict(start_ident)
+    end_ident2["source_git_dirty"] = True
+    with pytest.raises(BuildProvenanceError, match="source_git_dirty changed"):
+        verify_identity_consistency(start_ident, end_ident2, strict=True)
+
+
+def test_main_repetitions_preserves_all_raw_files(tmp_path):
+    """repetitions=3 실행 시 _r1, _r2, _r3 파일과 대표 결과가 모두 생성되고 성공하는지 검증."""
+    out_file = tmp_path / "measure.json"
+
+    def make_dummy_result(run_idx: int, p95: float) -> BenchmarkResult:
+        config = BenchmarkConfig(
+            queue_name=f"arq:benchmark:r{run_idx}",
+            total_jobs=5,
+            concurrency=2,
+            job_delay_ms=0.0,
+            poll_delay_sec=0.01,
+            timeout_sec=10.0,
+            simulate_error_rate=0.0,
+            redis_url="redis://localhost:6379/0",
+        )
+        return BenchmarkResult(
+            status="success",
+            git_sha="sha123",
+            timestamp="2026-08-24T00:00:00Z",
+            environment={"python": "3.12.14"},
+            config=config,
+            summary={
+                "total_duration_sec": 0.1,
+                "jobs_per_second": 50.0,
+                "total_enqueued": 5,
+                "successful_jobs": 5,
+                "failed_jobs": 0,
+                "error_count": 0,
+            },
+            latency_ms={
+                "p50_ms": 1.0,
+                "p95_ms": p95,
+                "p99_ms": 2.0,
+                "min_ms": 0.5,
+                "max_ms": 2.0,
+                "mean_ms": 1.0,
+                "values_ms": [1.0, 1.0, 1.0, 1.0, 1.0],
+            },
+            errors=[],
+            provenance={"host": {}, "redis": {}, "arq": {}, "docker": {}},
+        )
+
+    results_seq = [
+        make_dummy_result(1, 10.0),
+        make_dummy_result(2, 25.0),  # 최악 P95 대표
+        make_dummy_result(3, 15.0),
+    ]
+
+    with patch(
+        "scripts.benchmark_arq_throughput.run_arq_throughput_benchmark",
+        side_effect=results_seq,
+    ):
+        code = main(
+            [
+                "--jobs",
+                "5",
+                "--repetitions",
+                "3",
+                "--run-interval-sec",
+                "0",
+                "--output",
+                str(out_file),
+                "--allow-unknown-provenance",
+            ]
+        )
+        assert code == 0
+
+        # _r1, _r2, _r3 파일이 모두 생성되었는지 확인
+        r1_path = tmp_path / "measure_r1.json"
+        r2_path = tmp_path / "measure_r2.json"
+        r3_path = tmp_path / "measure_r3.json"
+        assert r1_path.exists()
+        assert r2_path.exists()
+        assert r3_path.exists()
+        assert out_file.exists()
+
+        # 대표 결과가 worst P95 (25.0ms)인지 확인
+        saved_worst = json.loads(out_file.read_text(encoding="utf-8"))
+        assert saved_worst["latency_ms"]["p95_ms"] == 25.0
+
+
+def test_main_repetitions_fails_closed_if_single_run_fails(tmp_path):
+    """repetitions=3 중 1회차라도 실패하면 최종 결과가 실패(exit code 1)하고 fail-closed인지 검증."""
+    out_file = tmp_path / "measure_fail.json"
+
+    def make_dummy_result(status: str, error_count: int) -> BenchmarkResult:
+        config = BenchmarkConfig(
+            queue_name="arq:benchmark:mock",
+            total_jobs=5,
+            concurrency=2,
+            job_delay_ms=0.0,
+            poll_delay_sec=0.01,
+            timeout_sec=10.0,
+            simulate_error_rate=0.0,
+            redis_url="redis://localhost:6379/0",
+        )
+        return BenchmarkResult(
+            status=status,
+            git_sha="sha123",
+            timestamp="2026-08-24T00:00:00Z",
+            environment={"python": "3.12.14"},
+            config=config,
+            summary={
+                "total_duration_sec": 0.1,
+                "jobs_per_second": 50.0,
+                "total_enqueued": 5,
+                "successful_jobs": 5 - error_count,
+                "failed_jobs": error_count,
+                "error_count": error_count,
+            },
+            latency_ms={"p50_ms": 1.0, "p95_ms": 1.0, "p99_ms": 1.0, "values_ms": [1.0]},
+            errors=["Simulated error"] if error_count > 0 else [],
+            provenance={"host": {}, "redis": {}, "arq": {}, "docker": {}},
+        )
+
+    results_seq = [
+        make_dummy_result("success", 0),
+        make_dummy_result("failed", 1),  # 2회차 실패
+        make_dummy_result("success", 0),
+    ]
+
+    with patch(
+        "scripts.benchmark_arq_throughput.run_arq_throughput_benchmark",
+        side_effect=results_seq,
+    ):
+        code = main(
+            [
+                "--jobs",
+                "5",
+                "--repetitions",
+                "3",
+                "--run-interval-sec",
+                "0",
+                "--output",
+                str(out_file),
+                "--allow-unknown-provenance",
+            ]
+        )
+        assert code == 1
