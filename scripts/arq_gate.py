@@ -79,7 +79,11 @@ class GateThresholds:
 
 @dataclass
 class RepetitionThresholds:
-    """반복 측정의 절대 기준선."""
+    """반복 측정의 절대 기준선.
+
+    기본값은 두는 즉시 어느 경로에도 맞지 않으므로, 실제 판정에는
+    WORKER_MODE_THRESHOLDS 의 경로별 프리셋을 쓴다.
+    """
 
     min_runs: int = 3
     min_throughput_tasks_per_sec: float = 900.0
@@ -98,6 +102,53 @@ class RepetitionThresholds:
                 raise ValueError(f"{name}은 유한한 음이 아닌 값이어야 합니다.")
         if self.max_failure_rate > 1:
             raise ValueError("max_failure_rate는 1 이하이어야 합니다.")
+
+
+# 2026-08-24 정식 캘리브레이션(경로별 10회, git sha 0ab8c3e)에서 도출한 기준선이다.
+# 도출식은 arq_calibration_design_20260824.md 6장을 그대로 따른다.
+#
+#   min_throughput = median(T) * (1 - rt),  rt = max(3 * CV(T), 0.06)
+#   max_p95        = median(P) * (1 + rp),  rp = max(3 * CV(P), 0.06)
+#
+# 두 경로 모두 3 * CV 가 하한 0.06 보다 작아 rt = rp = 0.06 이 적용됐다.
+# 회차별 raw 와 기준선 요약은 data/benchmarks/frozen/arq/<mode>/0ab8c3e/ 에 있다.
+#
+#   in_process      median 1195.59 jps / 480.42ms  (CV 0.0172 / 0.0162)
+#   docker_container median 1756.94 jps / 327.06ms (CV 0.0145 / 0.0154)
+#
+# 두 경로는 처리량이 1.47배 차이나므로 단일 임계값으로는 어느 쪽도 판정할 수 없다.
+IN_PROCESS_THRESHOLDS = RepetitionThresholds(
+    min_runs=3,
+    min_throughput_tasks_per_sec=1123.85,
+    max_p95_latency_ms=509.25,
+    max_failure_rate=0.0,
+)
+
+DOCKER_CONTAINER_THRESHOLDS = RepetitionThresholds(
+    min_runs=3,
+    min_throughput_tasks_per_sec=1651.52,
+    max_p95_latency_ms=346.68,
+    max_failure_rate=0.0,
+)
+
+WORKER_MODE_THRESHOLDS: dict[str, RepetitionThresholds] = {
+    "in_process": IN_PROCESS_THRESHOLDS,
+    "docker_container": DOCKER_CONTAINER_THRESHOLDS,
+}
+
+
+def thresholds_for_worker_mode(worker_mode: str) -> RepetitionThresholds:
+    """워커 경로에 해당하는 실측 기준선을 반환한다.
+
+    알 수 없는 경로는 임의 기본값으로 조용히 넘어가지 않고 거부한다.
+    """
+    try:
+        return WORKER_MODE_THRESHOLDS[worker_mode]
+    except KeyError:
+        known = ", ".join(sorted(WORKER_MODE_THRESHOLDS))
+        raise ValueError(
+            f"기준선이 없는 워커 경로입니다: {worker_mode!r} (알려진 경로: {known})"
+        ) from None
 
 
 @dataclass
@@ -355,6 +406,28 @@ def load_benchmark_samples(paths: Iterable[str | Path]) -> list[ThroughputSample
     return [load_benchmark_sample(path) for path in paths]
 
 
+def load_worker_mode(path: str | Path) -> str:
+    """evidence JSON 의 benchmark_worker_mode 를 읽습니다."""
+    payload = load_strict_json(Path(path))
+    if not isinstance(payload, Mapping):
+        raise ValueError("benchmark evidence는 JSON 객체여야 합니다.")
+    mode = payload.get("benchmark_worker_mode")
+    if not isinstance(mode, str) or not mode:
+        raise ValueError(f"benchmark_worker_mode 가 없습니다: {path}")
+    return mode
+
+
+def resolve_repetition_thresholds(paths: Sequence[str | Path]) -> RepetitionThresholds:
+    """반복 evidence 들이 같은 경로인지 확인하고 그 경로의 실측 기준선을 고릅니다.
+
+    경로가 섞이면 어느 기준선도 맞지 않으므로 판정하지 않고 거부합니다.
+    """
+    modes = {load_worker_mode(path) for path in paths}
+    if len(modes) != 1:
+        raise ValueError(f"반복 evidence 의 워커 경로가 섞여 있습니다: {sorted(modes)}")
+    return thresholds_for_worker_mode(modes.pop())
+
+
 def evaluate_benchmark_files(
     baseline_path: str | Path,
     current_path: str | Path,
@@ -384,11 +457,23 @@ def main(argv: list[str] | None = None) -> int:
         help="반복 측정 evidence JSON (최소 3회, 여러 번 지정)",
     )
     parser.add_argument("--current", type=Path, help="current evidence JSON")
+    parser.add_argument(
+        "--mode",
+        choices=sorted(WORKER_MODE_THRESHOLDS),
+        help="반복 판정에 쓸 워커 경로 기준선. 생략하면 evidence 의 benchmark_worker_mode 로 판별합니다",
+    )
     args = parser.parse_args(argv)
 
     try:
         if args.repetitions:
-            result = evaluate_repetition_gate(load_benchmark_samples(args.repetitions))
+            thresholds = (
+                thresholds_for_worker_mode(args.mode)
+                if args.mode
+                else resolve_repetition_thresholds(args.repetitions)
+            )
+            result = evaluate_repetition_gate(
+                load_benchmark_samples(args.repetitions), thresholds=thresholds
+            )
         else:
             if args.current is None:
                 parser.error("--baseline 사용 시 --current가 필요합니다.")

@@ -273,3 +273,63 @@ def test_benchmark_payload_rejects_failed_run():
 
     with pytest.raises(ValueError, match="success"):
         sample_from_benchmark_payload(payload)
+
+
+def test_worker_mode_thresholds_match_calibrated_derivation():
+    """경로별 기준선이 2026-08-24 캘리브레이션 도출식과 일치하는지 고정합니다.
+
+    median(T) * (1 - 0.06) 과 median(P) * (1 + 0.06) 으로 도출된 값이며,
+    이 상수가 근거 없이 바뀌면 이후 모든 회귀 판정이 조용히 틀립니다.
+    """
+    from scripts.arq_gate import (
+        DOCKER_CONTAINER_THRESHOLDS,
+        IN_PROCESS_THRESHOLDS,
+    )
+
+    assert IN_PROCESS_THRESHOLDS.min_throughput_tasks_per_sec == pytest.approx(
+        1195.585 * (1 - 0.06), abs=0.01
+    )
+    assert IN_PROCESS_THRESHOLDS.max_p95_latency_ms == pytest.approx(480.424 * (1 + 0.06), abs=0.01)
+    assert DOCKER_CONTAINER_THRESHOLDS.min_throughput_tasks_per_sec == pytest.approx(
+        1756.94 * (1 - 0.06), abs=0.01
+    )
+    assert DOCKER_CONTAINER_THRESHOLDS.max_p95_latency_ms == pytest.approx(
+        327.056 * (1 + 0.06), abs=0.01
+    )
+
+
+def test_thresholds_for_worker_mode_rejects_unknown_mode():
+    """기준선이 없는 경로는 기본값으로 넘어가지 않고 거부합니다."""
+    from scripts.arq_gate import thresholds_for_worker_mode
+
+    with pytest.raises(ValueError, match="기준선이 없는 워커 경로"):
+        thresholds_for_worker_mode("kubernetes_pod")
+
+
+def test_resolve_repetition_thresholds_rejects_mixed_modes(tmp_path):
+    """경로가 섞인 반복 evidence 는 판정하지 않고 거부합니다."""
+    import json
+
+    from scripts.arq_gate import resolve_repetition_thresholds
+
+    paths = []
+    for idx, mode in enumerate(("in_process", "docker_container")):
+        path = tmp_path / f"evidence_{idx}.json"
+        path.write_text(json.dumps({"benchmark_worker_mode": mode}), encoding="utf-8")
+        paths.append(path)
+
+    with pytest.raises(ValueError, match="워커 경로가 섞여"):
+        resolve_repetition_thresholds(paths)
+
+
+def test_load_worker_mode_rejects_missing_field(tmp_path):
+    """benchmark_worker_mode 가 없는 evidence 는 조용히 통과시키지 않습니다."""
+    import json
+
+    from scripts.arq_gate import load_worker_mode
+
+    path = tmp_path / "no_mode.json"
+    path.write_text(json.dumps({"summary": {}}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="benchmark_worker_mode"):
+        load_worker_mode(path)
