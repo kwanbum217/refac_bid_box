@@ -1,10 +1,13 @@
 # Arq 캘리브레이션 설계서 실행 가능성 대조 보고서
 
 > **작성일**: 2026-08-24
+> **수정일**: 2026-08-24
 > **Task ID**: task_4e39c6f2075c
+> **상태**: 코드 수정 없음, 측정 미실행
+> **observed_commit**: `b1c6af3` (7개 항목 상태 등급 재분류 및 6.2/6.3 산식 변경 반영 시점 HEAD)
+> **superseded_by**: 기준선 도출식이 [`arq_calibration_formula_fix_20260824.md`](arq_calibration_formula_fix_20260824.md)에 의해 개정되어 6.2/6.3 행을 갱신함. 정식 기준선 측정이 실시되면 별도 문서로 대체된다.
 > **대상 설계서**: `docs/analysis/arq_calibration_design_20260824.md`
 > **대상 코드**: `scripts/benchmark_arq_throughput.py`, `scripts/benchmark_arq_container.py`, `scripts/arq_gate.py`, `scripts/_bench_worker_settings.py`, `src/tasks/worker.py`
-> **상태**: 코드 수정 없음, 측정 미실행
 
 ---
 
@@ -62,9 +65,30 @@
 | 2 | Frozen baseline 디렉터리 구조 | `data/benchmarks/frozen/arq/<mode>/<git_sha_short>/...` 경로로 저장 | `--output`이 지정한 경로 그대로 저장, 중간 디렉터리는 자동 생성하지만 `<mode>/<git_sha_short>`는 사용자가 미리 생성해야 함 | 부분 불가 | 실행 전 `mkdir -p data/benchmarks/frozen/arq/<mode>/$(git rev-parse --short HEAD)` 수동 실행 |
 | 3 | Container 네트워크 기본값 | `arq-docker-measure_default`로 고정 가정 | Redis 컨테이너 네트워크 자동 감지, `--network`로 재정의 가능 | 가능 (주의) | docker-compose 네트워크 이름이 `arq-docker-measure_default`가 아니면 `--network` 명시 |
 | 4 | Redis 컨테이너 식별 | `docker-compose.yml`의 `redis` 서비스 | 이름에 `redis`가 포함된 컨테이너 중 첫 번째 자동 선택 | 가능 (주의) | 여러 redis 컨테이너가 있을 경우 의도하지 않은 컨테이너가 선택될 수 있음 |
-| 5 | Frozen baseline 대표값 선정 | 6장 도출식(`Q_p(T, 0.05)`, `Q_p(P, 0.95)` 등)으로 계산 | 하네스는 P95 기준 최악값(`max(results, key=p95_ms)`)을 `--output`에 자동 저장 | 불가능 (자동) | `--output` 대표 파일을 무시하고 `_r1.json`~`_r10.json`을 별도로 읽어 6장 식을 직접 계산해야 함 |
+| 5 | Frozen baseline 대표값 선정 | 6장 도출식(`median(T)`, `median(P)`)으로 계산 | 하네스는 P95 기준 최악값(`max(results, key=p95_ms)`)을 `--output`에 자동 저장 | 불가능 (자동) | `--output` 대표 파일을 무시하고 `_r1.json`~`_r10.json`을 별도로 읽어 6장 중앙값 식을 직접 계산해야 함 |
 | 6 | Git dirty 전체 런 중단 | dirty 상태에서 전체 런 중단 | strict 모드에서 개별 회차마다 `BuildProvenanceError`로 즉시 종료 | 가능 (동작 다름) | 실제로는 첫 회차부터 종료되므로 "전체 런 중단"과 결과적으로 동일 |
 | 7 | Provenance 4계층 필수 필드 누락 시 기각 | 누락 시 런 무효 | 하네스가 `unknown`으로 채워 출력함 | 부분 불가 | `unknown` 값이 있으면 수동으로 기각 판정해야 함 |
+
+### 3.1 항목 상태 등급 재분류
+
+3장의 7개 항목은 모두 같은 수준의 차단 요인이 아닙니다. 자동화 결손(하네스가 자동으로 강제·적용·기각하지 못하는 것), 수동 절차(운영자가 실행 전에 해야 하는 것), 주의사항(동작은 하지만 잠재 오판 위험이 있는 것), 동작상 차이 없음(요구사항과 실제 동작이 결과적으로 같음)으로 갈립니다. 아래 표는 7개 항목을 네 상태로 재분류합니다.
+
+| 번호 | 지점 | 상태 등급 | 근거 (왜 이 등급인가) |
+| ---: | --- | :---: | --- |
+| 1 | Host 부하 규약 enforcing | **BLOCKER** | 부하 규약을 자동 강제하는 하네스 기능이 없어 측정 유효성을 하네스가 보장하지 못함 |
+| 2 | Frozen baseline 디렉터리 구조 | **MANUAL** | `<mode>/<git_sha_short>` 디렉터리를 실행 전 운영자가 `mkdir -p`로 수동 생성해야 함 |
+| 3 | Container 네트워크 기본값 | **WARNING** | 자동 감지되지만 docker-compose 네트워크명이 다르면 `--network` 재정의가 필요하다는 주의사항 |
+| 4 | Redis 컨테이너 식별 | **WARNING** | 이름 일치 자동 선택이라 여러 redis 컨테이너 시 의도와 다른 대상이 선택될 수 있는 주의사항 |
+| 5 | Frozen baseline 대표값 선정 | **BLOCKER** | 대표값 산식을 하네스가 자동 적용하지 않아 별도 계산이 필수임 (자동화 결손) |
+| 6 | Git dirty 전체 런 중단 | **RESOLVED** | 첫 회차에서 즉시 종료되어 "전체 런 중단"과 동작상 차이 없음 |
+| 7 | Provenance 4계층 필수 필드 누락 시 기각 | **BLOCKER** | `unknown` 값을 하네스가 자동 기각하지 않아 수동 기각 판정이 필수임 (자동화 결손) |
+
+- **BLOCKER** (3건): 하네스가 자동으로 강제·적용·기각하지 못해 측정 유효성 또는 대표값 정확성이 보장되지 않는 항목.
+- **MANUAL** (1건): 하네스 기능이 아닌 운영자의 사전 수동 절차가 필요한 항목.
+- **WARNING** (2건): 동작은 하지만 특정 조건에서 오판 위험이 있어 운영자가 확인해야 하는 항목.
+- **RESOLVED** (1건): 설계서 요구사항과 실제 동작이 결과적으로 동일한 항목.
+
+> **4번 항목 단서**: Redis 컨테이너 식별(WARNING)은 같은 Run의 다른 Task에서 명시 대상 지정과 fail-closed로 수정 중이며, 해당 수정이 병합되면 RESOLVED로 재분류된다. 현재 등급은 지금 시점 기준이다.
 
 ---
 
@@ -84,13 +108,13 @@
 
 ## 5. 설계서 6장 계수 확정 여부 확인
 
-설계서 6장은 "구체 계수를 지어내지 않는다"고 선언했으며 실제로도 `<throughput_baseline>`, `<p95_baseline>`과 같은 자리 표시자만 사용합니다.
+설계서 6장은 "구체 계수를 지어내지 않는다"고 선언했으며 실제로도 `<throughput_baseline>`, `<p95_baseline>`과 같은 자리 표시자만 사용합니다. 다만 2026-08-24 개정으로 6.2/6.3 산식이 중앙값 기반으로 바뀌었습니다([`arq_calibration_formula_fix_20260824.md`](arq_calibration_formula_fix_20260824.md) 2장).
 
 | 위치 | 내용 | 확정값 여부 |
 | --- | --- | :---: |
-| 6.2 | `throughput_baseline = max(Q_p(T, 0.05), min(T) * 0.95)` | 미확정 (도출 방법) |
-| 6.3 | `p95_baseline = max(Q_p(P, 0.95), max(P) * 1.05)` | 미확정 (도출 방법) |
-| 6.4 | `failure_baseline = max(F)` | 미확정 (정상 경로 시 0.0) |
+| 6.2 | `throughput_baseline = median(T)`, `p95_baseline = median(P)`, `failure_baseline = 0` | 미확정 (도출 방법) |
+| 6.3 | 회귀 게이트 `rt = max(3 * CV(T), 0.06)`, `rp = max(3 * CV(P), 0.06)`, `t < baseline * (1 - rt)`, `p > baseline * (1 + rp)` | 도출식 확정 (관측 CV에 따라 값 산출) |
+| 6.4 | 반복 안정성 `CV <= 0.05`, `MAD/median <= 0.03` | 임계값 확정 |
 | 6.5 | `min_throughput_tasks_per_sec: float = <throughput_baseline>` | 미확정 |
 | 6.5 | `max_p95_latency_ms: float = <p95_baseline>` | 미확정 |
 
@@ -132,7 +156,7 @@
 
 ## 7. 결론
 
-설계서의 개별 측정 CLI 인자는 `scripts/benchmark_arq_throughput.py`와 `scripts/benchmark_arq_container.py`에서 모두 지정 가능하나, frozen baseline 대표값 선정과 Host 부하 규약 enforcing은 하네스 외부의 수동 절차가 필요하므로 설계서를 그대로 완전 자동 실행할 수는 없습니다.
+설계서의 개별 측정 CLI 인자는 `scripts/benchmark_arq_throughput.py`와 `scripts/benchmark_arq_container.py`에서 모두 지정 가능하나, 3.1절 재분류 결과 **BLOCKER 3건**(Host 부하 규약 자동 강제 부재, 대표값 산식 자동 적용 부재, provenance unknown 자동 기각 부족)과 **MANUAL 1건**(frozen 디렉터리 명명)은 하네스 외부의 수동 절차가 필요하므로 설계서를 그대로 완전 자동 실행할 수는 없습니다. WARNING 2건과 RESOLVED 1건은 자동 실행을 막지 않습니다.
 
 ---
 

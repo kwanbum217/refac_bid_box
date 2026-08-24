@@ -1,8 +1,11 @@
 # Arq 정식 기준선 캘리브레이션 절차 설계서
 
 > **작성일**: 2026-08-24
+> **수정일**: 2026-08-24
 > **Task ID**: task_5e354d395d04
 > **상태**: 설계 (측정 미실시)
+> **observed_commit**: `b1c6af3` (문서 메타데이터 추가 및 6장 산식 재설계 적용 시점 HEAD)
+> **superseded_by**: 문서 6장 기준선 도출식은 [`arq_calibration_formula_fix_20260824.md`](arq_calibration_formula_fix_20260824.md)에 의해 퇴화 문제를 바로잡음. 본 문서는 6장 산식을 개정한 최신본이며, 정식 기준선 측정이 실시되면 별도 문서로 대체된다.
 > **목적**: `scripts/arq_gate.py`의 잠정 일관성 봉투(`RepetitionThresholds`)를 대체할 정식 기준선(Formal Baseline)을 도출하기 위한 실행 가능한 캘리브레이션 절차를 명시한다.
 > **코드 변경 없음**: 본 문서는 설계서만 작성하며, 측정을 실행하거나 기존 코드를 수정하지 않는다.
 
@@ -10,7 +13,7 @@
 
 ## 1. 개요 및 목적
 
-현재 `scripts/arq_gate.py:80-100`에 정의된 `RepetitionThresholds`(900 jobs/sec, 600ms P95)는 실측 근거 없이 사후 보정된 잠정 일관성 봉투이다([`docs/analysis/arq_threshold_derivation_20260823.md`](docs/analysis/arq_threshold_derivation_20260823.md) 6장 참조). 본 설계서는 이 봉투를 대체할 정식 기준선을 데이터로부터 도출하는 절차, 고정 조건, 회차 수, frozen baseline 파일 규약, 기준선 도출식, 기각 조건을 실행 가능한 사양으로 정의한다.
+현재 `scripts/arq_gate.py:80-100`에 정의된 `RepetitionThresholds`(900 jobs/sec, 600ms P95)는 실측 근거 없이 사후 보정된 잠정 일관성 봉투이다([`arq_threshold_derivation_20260823.md`](arq_threshold_derivation_20260823.md) 6장 참조). 본 설계서는 이 봉투를 대체할 정식 기준선을 데이터로부터 도출하는 절차, 고정 조건, 회차 수, frozen baseline 파일 규약, 기준선 도출식, 기각 조건을 실행 가능한 사양으로 정의한다.
 
 정식 기준선은 두 가지 워커 경로에 대해 각각 도출한다.
 
@@ -41,7 +44,7 @@
 
 | 항목 | In-Process 경로 | Container 경로 | 근거 |
 | --- | --- | --- | --- |
-| 총 작업 수 (`total_jobs`) | 600 | 600 | 기존 측정과 동일한 큐 깊이 ([`docs/analysis/arq_threshold_derivation_20260823.md`](docs/analysis/arq_threshold_derivation_20260823.md) 2장) |
+| 총 작업 수 (`total_jobs`) | 600 | 600 | 기존 측정과 동일한 큐 깊이 ([`arq_threshold_derivation_20260823.md`](arq_threshold_derivation_20260823.md) 2장) |
 | 동시성 (`max_jobs`) | 10 | 4 | In-Process는 기존 10, Container는 운영 워커(`src/tasks/worker.py:61`)와 동일 |
 | 작업 지연 (`job_delay_ms`) | 0.0 | 0.0 | 합성 noop 작업 기준 |
 | 폴링 주기 (`poll_delay_sec`) | 0.01 | 0.01 | 기존 측정과 동일 |
@@ -76,7 +79,7 @@
 
 ### 4.2 산술 근거
 
-기존 In-Process 3회 검증 데이터([`docs/analysis/arq_threshold_derivation_20260823.md`](docs/analysis/arq_threshold_derivation_20260823.md) 2장)를 바탕으로 표준오차를 추정하면 다음과 같다.
+기존 In-Process 3회 검증 데이터([`arq_threshold_derivation_20260823.md`](arq_threshold_derivation_20260823.md) 2장)를 바탕으로 표준오차를 추정하면 다음과 같다.
 
 | 지표 | 평균 | 표준편차 | CV | n=3 SEM | n=10 SEM | n=30 SEM |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -150,6 +153,16 @@ Frozen baseline JSON은 하네스 출력 전체를 그대로 보존하되, 다�
 
 본 설계서는 구체 계수를 지어내지 않는다. 아래 식은 캘리브레이션 런 완료 후 채워질 **도출 방법 사양**이다.
 
+기준선 추정, 회귀 게이트, 반복 안정성 판정은 **서로 다른 기준으로 분리**한다. 각 판정의 목적이 다르므로 한 식으로 합치지 않는다.
+
+| 판정 | 목적 | 사용 기준 |
+| --- | --- | --- |
+| **기준선 추정** | 관측 분포의 대표 위치로 정식 기준선을 고정 | 중앙값(`median`) |
+| **회귀 게이트** | 기준선 대비 허용되는 열화 폭을 벗어나면 회귀로 판정 | 상대 허용 비율(`rt`, `rp`) |
+| **반복 안정성 판정** | 회차 간 변동성이 과하면 기준선 자체를 신뢰하지 못하므로 런 기각 | CV·MAD 기반 별도 임계값 |
+
+> **산식 변경 근거**: 구버전 6.2/6.3은 분위수와 최악값 마진을 `max`로 결합했다. 그러나 표본의 5% 분위수는 항상 최소값 이상이고 최소값은 최소값의 0.95배보다 크므로 처리량식은 항상 `Q_p(T, 0.05)`로 축약되고, P95식은 최대값의 1.05배가 항상 최대값보다 크고 최대값이 95% 분위수 이상이므로 항상 `max(P) * 1.05`로 축약된다. 즉 두 항 중 한 항이 완전히 지배하는 수학적 퇴화였다. 또한 n=10에서 5%/95% 꼬리 분위수는 사실상 최소값·최대값에 붙어 outlier에 취약하다. 따라서 분위수·최악값 마진을 `max`로 섞는 형태를 폐기하고 중앙값 기반 접근으로 대체한다. 상세 근거는 [`arq_calibration_formula_fix_20260824.md`](arq_calibration_formula_fix_20260824.md) 2장 참조.
+
 ### 6.1 표본 집계
 
 캘리브레이션 런에서 수집된 n개 회차의 핵심 지표를 다음과 같이 정의한다.
@@ -158,47 +171,55 @@ Frozen baseline JSON은 하네스 출력 전체를 그대로 보존하되, 다�
 - `P = [p_1, p_2, ..., p_n]`: P95 지연(samples) 목록
 - `F = [f_1, f_2, ..., f_n]`: 실패율(samples) 목록
 
-### 6.2 처리량 기준선
+### 6.2 기준선 추정 (중앙값)
 
-처리량은 높을수록 양호하므로, 하위 측정값 중 보수적 분위수를 사용한다.
-
-```
-throughput_baseline = max(
-    Q_p(T, 0.05),
-    min(T) * 0.95
-)
-```
-
-- `Q_p(T, q)`: 선형 보간 백분위수 함수(`benchmark_arq_throughput.py:337-346`의 `calculate_percentile`과 동일 알고리즘)
-- `Q_p(T, 0.05)`: 처리량 분포의 5% 분위수
-- `min(T) * 0.95`: 최악 회차 대비 5% 여유
-
-### 6.3 P95 지연 기준선
-
-P95 지연은 낮을수록 양호하므로, 상위 측정값 중 보수적 분위수를 사용한다.
+기준선은 분포의 대표 위치인 **중앙값**으로 추정한다. 중앙값은 outlier에 강건하며, n=10에서 꼬리 분위수(5%/95%)가 최소·최대에 붙는 문제를 피한다.
 
 ```
-p95_baseline = max(
-    Q_p(P, 0.95),
-    max(P) * 1.05
-)
+throughput_baseline = median(T)
+p95_baseline        = median(P)
+failure_baseline    = 0
 ```
 
-- `Q_p(P, 0.95)`: P95 지연 분포의 95% 분위수
-- `max(P) * 1.05`: 최악 회차 대비 5% 여유
+- `median(X) = Q_p(X, 0.50)`: 선형 보간 백분위수 함수(`benchmark_arq_throughput.py:337-346`의 `calculate_percentile`과 동일 알고리즘)로 계산한 50% 분위수
+- `failure_baseline = 0`은 **전제 조건(precondition)**이다. 정상 경로 캘리브레이션이므로 실패율 기준선을 0으로 고정하며, 만약 `max(F) > 0`이면 기준선 도출 자체가 무효이므로 캘리브레이션 런 전체를 기각한다.
 
-### 6.4 실패율 기준선
+### 6.3 회귀 게이트 (상대 허용 비율)
+
+기준선 대비 회귀 여부는 **별도 상대 비율**로 판정한다. 개별 측정 표본이 아래 허용 범위를 벗어나면 회귀로 판정한다. 허용 폭은 6.4의 반복 안정성 판정을 통과한 기준선을 전제로 정한다.
 
 ```
-failure_baseline = max(F)
+rt = max(3 * CV(T), 0.06)
+rp = max(3 * CV(P), 0.06)
+
+throughput_regression_fail : t_measured < throughput_baseline * (1 - rt)
+p95_regression_fail        : p_measured > p95_baseline * (1 + rp)
 ```
 
-- 정상 경로 캘리브레이션이므로 `failure_baseline = 0.0`이어야 한다.
-- 만약 `max(F) > 0`이면 캘리브레이션 런 전체를 기각한다.
+- `CV(T)`, `CV(P)`: 6.4절의 처리량·P95 변동계수. 회귀 허용 비율은 각 지표의 관측 변동성에서 유도한다.
+- `rt = max(3 * CV(T), 0.06)`, `rp = max(3 * CV(P), 0.06)`: 관측 변동성의 3배와 6% 중 큰 값을 취한다. 하한 0.06은 반복 안정성 임계값 `cv_max = 0.05`보다 **엄격히 큰** 값으로 두어, CV가 아주 작아 `3 * CV < 0.06`인 경우에도 회귀 허용 폭이 변동성 임계값과 등호가 되지 않도록 보장한다.
+- **원칙**: 회귀 허용 폭은 반드시 반복 안정성 임계값(6.4절 `cv_max = 0.05`)보다 커야 한다(`rt > cv_max`, `rp > cv_max`). CV 상한 0.05를 정상 변동으로 허용하면서 기준선 대비 5% 열화를 회귀로 판정하면, 정상 변동 범위 안의 측정이 회귀로 잡혀 오탐이 잦아진다. `3 * CV` 항과 하한 0.06은 이 엄격 부등식을 항상 성립시킨다.
+- 회귀 게이트는 절대 상수가 아니라 "기준선 대비 얼마나 열화했는가"를 판정한다. 기준선 추정과 독립된 별도 임계값이다.
+
+### 6.4 반복 안정성 판정 (변동성)
+
+회차 간 변동성이 과하면 기준선을 신뢰할 수 없으므로 별도 기준으로 판정하고, 기준선 추정·회귀 게이트와 분리한다.
+
+| 지표 | 판정식 | 임계값 |
+| --- | --- | :---: |
+| 처리량 변동계수 | `CV(T) <= cv_max` | `cv_max = 0.05` (7.2절과 일치) |
+| P95 변동계수 | `CV(P) <= cv_max` | `cv_max = 0.05` |
+| 처리량 절대 변동 | `MAD(T) / median(T) <= m_ratio` | `m_ratio = 0.03` |
+| P95 절대 변동 | `MAD(P) / median(P) <= m_ratio` | `m_ratio = 0.03` |
+
+- `CV(X) = stdev(X) / mean(X)` (표본 표준편차, 7.3절 참조)
+- `MAD(X) = median(|x_i - median(X)|)`: 중앙값 절대편차.
+- **`m_ratio = 0.03` 근거**: 정규분포에서 MAD는 표준편차의 약 0.67배이므로 `MAD/median ≈ 0.67 * CV`이다. `cv_max = 0.05`일 때 `MAD/median`은 약 `0.67 * 0.05 = 0.034`가 되어, `m_ratio = 0.05`는 CV 판정보다 느슨해 보조 지표 역할을 못 한다. 따라서 `m_ratio`를 `0.03`으로 조여 CV 판정보다 엄격하게 만들어, 드물게 큰 편차(outlier)를 잡는 보조 지표 역할을 유지한다.
+- 임계값을 초과하면 외생 변수로 의심해 환경 정리 후 재측정한다. 이 판정은 7.2절 런 전체 기각 조건과 같은 근거로 동작한다.
 
 ### 6.5 최종 정식 기준선
 
-위 도출식 결과를 `scripts/arq_gate.py`의 `RepetitionThresholds` 대신 사용한다.
+위 기준선 추정 결과를 `scripts/arq_gate.py`의 `RepetitionThresholds` 대신 사용한다.
 
 ```python
 class FormalRepetitionThresholds:
@@ -208,7 +229,7 @@ class FormalRepetitionThresholds:
     max_failure_rate: float = 0.0
 ```
 
-> **주의**: `<throughput_baseline>`과 `<p95_baseline>`은 본 설계서가 아닌 실제 캘리브레이션 런 결과로 채워진다.
+> **주의**: `<throughput_baseline>`과 `<p95_baseline>`은 6.2절 중앙값 추정 결과이며, 회귀 게이트 허용 폭(`rt`, `rp`)은 6.3절에서 별도로 관리한다. 이 값들은 본 설계서가 아닌 실제 캘리브레이션 런 결과로 채워진다.
 
 ---
 
@@ -256,7 +277,7 @@ CV(X) = stdev(X) / mean(X)
 - In-Process 측정: 966 ~ 1,165 jobs/sec, P95 492 ~ 519 ms
 - Container 측정: 1,636 jobs/sec, P95 352 ms
 
-두 경로의 처리량 차이는 **약 1.7배**에 달하며, P95 지연도 30% 이상 차이난다([`docs/analysis/arq_threshold_derivation_20260823.md`](docs/analysis/arq_threshold_derivation_20260823.md) 2장, capsule ground_truth).
+두 경로의 처리량 차이는 **약 1.7배**에 달하며, P95 지연도 30% 이상 차이난다([`arq_threshold_derivation_20260823.md`](arq_threshold_derivation_20260823.md) 2장, capsule ground_truth).
 
 ### 8.2 권고
 
@@ -323,7 +344,7 @@ uv run python scripts/benchmark_arq_container.py \
 
 | 항목 | 경로 |
 | --- | --- |
-| 잠정 일관성 봉투 개명 근거 | [`docs/analysis/arq_threshold_derivation_20260823.md`](docs/analysis/arq_threshold_derivation_20260823.md) |
+| 잠정 일관성 봉투 개명 근거 | [`arq_threshold_derivation_20260823.md`](arq_threshold_derivation_20260823.md) |
 | Provenance 규약 | [`docs/ops/arq_threshold_provenance_20260823.md`](docs/ops/arq_threshold_provenance_20260823.md) |
 | 게이트 판정 모듈 | [`scripts/arq_gate.py`](scripts/arq_gate.py) |
 | In-Process 벤치마크 하네스 | [`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py) |
