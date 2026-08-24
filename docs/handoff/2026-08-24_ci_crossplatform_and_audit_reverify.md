@@ -52,8 +52,22 @@
     tests/test_orca_taskctl.py::test_capsule_paths_never_leak_main_repo_absolute_path
     tests/test_orca_taskctl.py::test_build_task_spec_truncates_long_objective
 
-기대 문자열을 리터럴 POSIX 경로로 바꿨습니다(`4d7be51`). **3차 CI 결과는 이번
-세션에서 확인하지 못했습니다.** 다음 세션의 첫 확인 대상입니다.
+기대 문자열을 리터럴 POSIX 경로로 바꿨습니다(`4d7be51`).
+
+### 1.1.2 Windows CI green 확인 (종결)
+
+run `32703096829` (`bd6212c`) 에서 **ubuntu·macOS·windows-latest 전부 green**
+입니다. 잔여 과업 "수정 후 원격 Windows CI green 확인" 은 실측으로 종결했습니다.
+
+    success | Test (windows-latest)
+    success | Test (macos-latest)
+    success | Test (ubuntu-latest)
+    success | lint-and-validate
+    success | Docker 이미지 빌드 검증
+
+**세 라운드가 필요했습니다.** 한 라운드의 수정이 다음 라운드의 실패를 만들었으므로
+(운영 코드를 POSIX 로 고정하자 테스트 기대값이 어긋남), 크로스 플랫폼 수정은
+한 번의 CI 통과를 볼 때까지 완료로 선언하지 마십시오.
 
 ### 1.2 남은 크로스 플랫폼 위험 (미수정)
 
@@ -89,6 +103,7 @@ Orca Task `task_8915e5d1e53f` (워커: OpenCode Zen `mimo-v2.5-free`) 가
 
 | 항목 | 상태 | 이유 |
 | --- | --- | --- |
+| Windows CI green 확인 | **완료** | run `32703096829` 에서 windows-latest success |
 | Arq Docker synthetic 3회 raw 재측정 | **미수행** | 워커 2대와 CI 폴링이 동시에 도는 오염된 부하에서 측정하면 GPT 가 지적한 규약 위반을 그대로 반복합니다 |
 | Ollama 부하 규약 준수 재측정 | **미수행** | 같은 이유. median 30% / max 50% 게이트를 만족하는 조용한 호스트가 필요합니다 |
 | 강화된 RAG 하네스 재측정 | **미수행** | 같은 이유. `--expected-llm-model` 지정이 필수입니다 |
@@ -103,7 +118,7 @@ Orca Task `task_8915e5d1e53f` (워커: OpenCode Zen `mimo-v2.5-free`) 가
 
 ## 4. 다음 세션 순서
 
-1. `feature/audit-remediation-896e1d5` 의 최신 CI 에서 `Test (windows-latest)` 결과를 확인합니다. green 이면 `docs/ops/cross_platform_guide.md` 5행·187행·224~226행과 `docs/context/CURRENT_STATE.md` 15행·68행·82행의 Windows 문구를 실제 run ID 를 근거로 갱신합니다.
+1. Windows CI 는 이미 green 이고 SSOT 도 run `32703096829` 근거로 갱신했습니다. 다시 확인할 필요가 없습니다.
 2. **워커와 다른 부하를 모두 내린 조용한 호스트**에서 측정 3종을 순차 수행합니다. 동시에 돌리지 마십시오. Ollama 는 생성을 직렬화하므로 동시 요청이 상대 P95 에 섞입니다.
 3. Arq 캘리브레이션 설계는 Task 를 새로 만들어 재배정하거나 코디네이터가 직접 씁니다. 정체한 Task 에 2차 `worker_done` 을 태우지 마십시오.
 4. GPT 감사 8·9·12번을 코디네이터가 직접 대조합니다.
