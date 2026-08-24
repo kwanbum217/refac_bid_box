@@ -246,6 +246,7 @@ def build_provenance_dict(
     source_mount: str | None,
     source_git_sha: str | None,
     source_git_dirty: bool | None,
+    network: str | None = None,
 ) -> dict[str, Any]:
     """공통 4계층 Provenance 딕셔너리 구조를 생성합니다."""
     return {
@@ -279,6 +280,7 @@ def build_provenance_dict(
         },
         "docker": {
             "docker_version": docker_version,
+            "network": network,
             "worker_container_id": worker_container_id,
             "worker_container_name": worker_container_name,
             "worker_image": worker_image,
@@ -288,6 +290,44 @@ def build_provenance_dict(
             "source_git_dirty": source_git_dirty,
         },
     }
+
+
+def _detect_container_network(
+    nets_raw: str,
+    network_default: str,
+    strict: bool,
+    container: str,
+) -> str:
+    """NetworkSettings.Networks JSON 문자열에서 컨테이너 네트워크를 감지합니다.
+
+    strict 모드에서 감지 실패(출력 부재/파싱 불가/빈 네트워크)는 하드코딩
+    기본값으로 조용히 넘어가지 않고 BuildProvenanceError 로 중단합니다.
+    비-strict 모드(우회)에서만 network_default 로 폴백합니다.
+    """
+    if nets_raw in ("", "unknown"):
+        if strict:
+            raise BuildProvenanceError(
+                f"Redis container '{container}' network detection failed "
+                "(NetworkSettings.Networks unavailable). Specify --network explicitly."
+            )
+        return network_default
+    try:
+        nets = json.loads(nets_raw)
+    except (ValueError, TypeError):
+        if strict:
+            raise BuildProvenanceError(
+                f"Redis container '{container}' network detection failed to parse "
+                "NetworkSettings.Networks. Specify --network explicitly."
+            ) from None
+        return network_default
+    if not isinstance(nets, dict) or not nets:
+        if strict:
+            raise BuildProvenanceError(
+                f"Redis container '{container}' network detection returned no networks. "
+                "Specify --network explicitly."
+            )
+        return network_default
+    return str(next(iter(nets.keys())))
 
 
 def resolve_redis_container(
@@ -322,15 +362,12 @@ def resolve_redis_container(
         name = raw_name[1:] if raw_name.startswith("/") else raw_name
         raw_ports = cmd_fn(["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", cid])
         nets_raw = cmd_fn(["docker", "inspect", "-f", "{{json .NetworkSettings.Networks}}", cid])
-        network = network_default
-        if nets_raw not in ("", "unknown"):
-            try:
-                nets = json.loads(nets_raw)
-                keys = list(nets.keys())
-                if keys:
-                    network = keys[0]
-            except (ValueError, TypeError):
-                pass
+        network = _detect_container_network(
+            nets_raw,
+            network_default=network_default,
+            strict=strict,
+            container=cid,
+        )
         return {
             "container_id": cid,
             "container_name": name,
@@ -1156,3 +1193,46 @@ def build_load_protocol_record(
         "start": dict(start_detail),
         "end": dict(end_detail),
     }
+
+
+def frozen_baseline_path(
+    mode: str,
+    git_sha: str,
+    root: Path | str | None = None,
+    timestamp: datetime | None = None,
+) -> Path:
+    """frozen baseline 저장 경로 규약(설계서 5.1)을 구성합니다.
+
+    경로 형태: <root>/arq/<mode>/<git_sha_short>/<YYYYMMDD_HHMMSS>_arq_<mode>_baseline.json
+    - root 기본값: PROJECT_ROOT/data/benchmarks/frozen
+    - mode: 'inprocess' 또는 'container'
+    - git_sha_short: git_sha 의 앞 7자
+    중간 디렉터리는 이 함수가 만들지 않지만, 하네스는 저장 시
+    mkdir(parents=True) 로 자동 생성하므로 운영자가 사전 mkdir 할 필요가 없습니다.
+    """
+    root_path = Path(root) if root is not None else PROJECT_ROOT / "data" / "benchmarks" / "frozen"
+    sha_short = (git_sha or "unknown")[:7]
+    ts = timestamp if timestamp is not None else datetime.now(UTC)
+    ts_str = ts.strftime("%Y%m%d_%H%M%S")
+    filename = f"{ts_str}_arq_{mode}_baseline.json"
+    return root_path / "arq" / mode / sha_short / filename
+
+
+def verify_network_record(
+    used_network: str | None,
+    provenance_network: str | None,
+    strict: bool = True,
+) -> bool:
+    """측정에 실제로 쓰인 네트워크와 provenance 기록의 일치를 검증합니다.
+
+    worker 컨테이너를 띄운 네트워크(used_network)와 provenance 의
+    docker.network 가 다르면 strict 모드에서 BuildProvenanceError 로 중단합니다.
+    """
+    if used_network != provenance_network:
+        if strict:
+            raise BuildProvenanceError(
+                f"Network provenance mismatch: used '{used_network}' but "
+                f"provenance records '{provenance_network}'"
+            )
+        return False
+    return True

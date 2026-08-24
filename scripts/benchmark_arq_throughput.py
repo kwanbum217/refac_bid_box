@@ -54,6 +54,7 @@ try:
         check_ambient_load_protocol,
         compute_baseline_summary,
         enforce_provenance_required_fields,
+        frozen_baseline_path,
         get_git_status,
         get_host_memory,
         host_load_metadata,
@@ -68,6 +69,7 @@ except (ModuleNotFoundError, ImportError):
         check_ambient_load_protocol,
         compute_baseline_summary,
         enforce_provenance_required_fields,
+        frozen_baseline_path,
         get_git_status,
         get_host_memory,
         host_load_metadata,
@@ -765,7 +767,7 @@ async def run_arq_throughput_benchmark(
     return result
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="운영 격리형 Arq 처리량 및 지연 벤치마크 하네스")
     parser.add_argument(
         "--jobs",
@@ -836,7 +838,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         default=False,
         help=(
-            "주변 부하 규약(중앙값 30%, 최대 50%) 위반에도 측정을 진행합니다. "
+            "주변 부하 규약(중앙값 30%%, 최대 50%%) 위반에도 측정을 진행합니다. "
             "우회 측정은 결과에 미준수 표시를 남기며 정본 evidence 가 아닙니다 (기본: 거부)"
         ),
     )
@@ -846,6 +848,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=None,
         help="결과 JSON 저장 경로",
+    )
+    parser.add_argument(
+        "--frozen-baseline",
+        action="store_true",
+        default=False,
+        help=(
+            "frozen baseline 경로 규약으로 결과를 저장합니다. "
+            "data/benchmarks/frozen/arq/<mode>/<git_sha_short>/ 경로를 자동 구성하고 "
+            "중간 디렉터리를 자동 생성하므로 사전 mkdir 이 필요 없습니다. "
+            "--output 보다 우선합니다"
+        ),
     )
     parser.add_argument(
         "--repetitions",
@@ -866,7 +879,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="요약 리포트 출력을 생략합니다",
     )
-    return parser.parse_args(argv)
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_arg_parser().parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -881,6 +898,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.repetitions < 1:
         print("오류: --repetitions 는 1 이상이어야 합니다.", file=sys.stderr)
         return 2
+
+    # frozen baseline 경로 규약 우선, 미지정 시 기존 --output 동작 유지 (하위 호환)
+    if args.frozen_baseline:
+        output_path = frozen_baseline_path(mode="inprocess", git_sha=get_git_sha())
+    else:
+        output_path = args.output
 
     strict = not args.allow_unknown_provenance
     results: list[BenchmarkResult] = []
@@ -921,10 +944,10 @@ def main(argv: list[str] | None = None) -> int:
             result.report()
 
         # 개별 회차 파일 저장 (output 지정 시 _r1, _r2 등 접미사)
-        if args.output and args.repetitions > 1:
-            stem = args.output.stem
-            suffix = args.output.suffix
-            r_path = args.output.parent / f"{stem}_r{run_idx}{suffix}"
+        if output_path and args.repetitions > 1:
+            stem = output_path.stem
+            suffix = output_path.suffix
+            r_path = output_path.parent / f"{stem}_r{run_idx}{suffix}"
             try:
                 r_path.parent.mkdir(parents=True, exist_ok=True)
                 r_path.write_text(dump_strict_json(result.as_dict()), encoding="utf-8")
@@ -949,7 +972,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    if args.output and args.repetitions > 1:
+    if output_path and args.repetitions > 1:
         for r_idx, r_path in enumerate(saved_paths, start=1):
             if not r_path.exists() or r_path.stat().st_size == 0:
                 print(f"오류: 회차 {r_idx} 결과 파일 누락 또는 0바이트: {r_path}", file=sys.stderr)
@@ -958,24 +981,24 @@ def main(argv: list[str] | None = None) -> int:
     # 대표 결과 선정: P95 기준 최악 대표값
     worst_result = max(results, key=lambda r: float(r.latency_ms.get("p95_ms", 0.0)))
 
-    if args.output:
+    if output_path:
         try:
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(
                 dump_strict_json(worst_result.as_dict()),
                 encoding="utf-8",
             )
             if not args.quiet:
-                print(f"\n최종 대표 결과 저장 완료: {args.output}")
+                print(f"\n최종 대표 결과 저장 완료: {output_path}")
         except Exception as out_err:
             print(f"대표 결과 저장 실패: {out_err}", file=sys.stderr)
             return 1
 
     # 설계서 6장 중앙값 기준선 요약 자동 산출 (별도 파일로 저장, 기존 대표 파일은 유지)
-    if args.output and len(results) > 1:
+    if output_path and len(results) > 1:
         baseline_summary = compute_baseline_summary([r.as_dict() for r in results])
-        summary_path = args.output.with_name(
-            f"{args.output.stem}_baseline_summary{args.output.suffix}"
+        summary_path = output_path.with_name(
+            f"{output_path.stem}_baseline_summary{output_path.suffix}"
         )
         try:
             summary_path.write_text(

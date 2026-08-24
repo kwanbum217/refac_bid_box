@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC, datetime
 
 import pytest
 
@@ -26,6 +27,7 @@ from scripts.benchmark_provenance import (
     compute_baseline_summary,
     compute_host_load_stats,
     enforce_provenance_required_fields,
+    frozen_baseline_path,
     get_git_status,
     get_host_memory,
     host_load_metadata,
@@ -35,6 +37,7 @@ from scripts.benchmark_provenance import (
     resolve_redis_container,
     runtime_config_snapshot,
     single_host_load_sample,
+    verify_network_record,
     verify_provenance_consistency,
 )
 
@@ -955,3 +958,168 @@ class TestProvenanceRequiredFields:
         prov = self._full_provenance()
         prov["redis"]["server_version"] = "unknown"
         enforce_provenance_required_fields(prov, strict=False)
+
+
+class TestFrozenBaselinePath:
+    """frozen baseline 저장 경로 규약 자동 구성 검증."""
+
+    def test_path_composition(self, tmp_path):
+        ts = datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)
+        path = frozen_baseline_path(
+            mode="inprocess",
+            git_sha="0123456789abcdef",
+            root=tmp_path,
+            timestamp=ts,
+        )
+        assert path == (
+            tmp_path
+            / "arq"
+            / "inprocess"
+            / "0123456"
+            / "20260824_120000_arq_inprocess_baseline.json"
+        )
+
+    def test_container_mode_and_default_root(self):
+        path = frozen_baseline_path(
+            mode="container",
+            git_sha="abcdef1234567890",
+            timestamp=datetime(2026, 8, 24, 1, 2, 3, tzinfo=UTC),
+        )
+        assert path.name.endswith("_arq_container_baseline.json")
+        assert path.parent.name == "abcdef1"
+        assert path.parent.parent.name == "container"
+        assert path.parent.parent.parent.name == "arq"
+
+    def test_unknown_git_sha_short(self):
+        path = frozen_baseline_path(
+            mode="inprocess",
+            git_sha="unknown",
+            timestamp=datetime(2026, 8, 24, 1, 2, 3, tzinfo=UTC),
+        )
+        assert path.parent.name == "unknown"
+
+    def test_parent_dirs_are_created_by_mkdir_parents(self, tmp_path):
+        path = frozen_baseline_path(
+            mode="container",
+            git_sha="0123456789",
+            root=tmp_path,
+            timestamp=datetime(2026, 8, 24, 1, 2, 3, tzinfo=UTC),
+        )
+        assert not path.parent.exists()  # 사전 mkdir 없이 시작
+        path.parent.mkdir(parents=True, exist_ok=True)  # 하네스가 저장 시 수행하는 동작
+        assert path.parent.exists()
+
+
+class TestNetworkDetermination:
+    """컨테이너 네트워크 감지 fail-closed 및 provenance 일치 검증."""
+
+    def _fake_cmd_for_redis(self, networks_raw: str):
+        def fake_cmd(command: list[str]) -> str:
+            if command[0] == "docker" and command[1] == "inspect":
+                if command[3] == "{{.Image}}":
+                    return "sha256:imgid"
+                if command[3] == "{{.Name}}":
+                    return "/redis-test"
+                if command[3] == "{{.Config.Image}}":
+                    return "redis:7-alpine"
+                if command[3] == "{{json .NetworkSettings.Ports}}":
+                    return '{"6379/tcp":[{"HostIp":"0.0.0.0","HostPort":"6379"}]}'
+                if command[3] == "{{json .NetworkSettings.Networks}}":
+                    return networks_raw
+            if command[0] == "docker" and command[1] == "compose":
+                return ""
+            return "unknown"
+
+        return fake_cmd
+
+    def test_network_detection_failure_fail_closed_in_strict(self, monkeypatch):
+        # NetworkSettings.Networks 조회가 unknown(감지 실패)이면 strict 에서 중단
+        monkeypatch.setattr(
+            benchmark_provenance,
+            "_command_output",
+            self._fake_cmd_for_redis("unknown"),
+        )
+        with pytest.raises(BuildProvenanceError, match="network"):
+            resolve_redis_container(
+                redis_url="redis://localhost:6379/0",
+                target="redis-test",
+                strict=True,
+            )
+
+    def test_empty_networks_fail_closed_in_strict(self, monkeypatch):
+        monkeypatch.setattr(
+            benchmark_provenance,
+            "_command_output",
+            self._fake_cmd_for_redis("{}"),
+        )
+        with pytest.raises(BuildProvenanceError, match="network"):
+            resolve_redis_container(
+                redis_url="redis://localhost:6379/0",
+                target="redis-test",
+                strict=True,
+            )
+
+    def test_network_detection_failure_non_strict_falls_back(self, monkeypatch):
+        monkeypatch.setattr(
+            benchmark_provenance,
+            "_command_output",
+            self._fake_cmd_for_redis("unknown"),
+        )
+        info = resolve_redis_container(
+            redis_url="redis://localhost:6379/0",
+            target="redis-test",
+            strict=False,
+        )
+        assert info["network"] == "arq-docker-measure_default"
+
+    def test_network_detected_used_in_strict(self, monkeypatch):
+        monkeypatch.setattr(
+            benchmark_provenance,
+            "_command_output",
+            self._fake_cmd_for_redis('{"my_net": {}}'),
+        )
+        info = resolve_redis_container(
+            redis_url="redis://localhost:6379/0",
+            target="redis-test",
+            strict=True,
+        )
+        assert info["network"] == "my_net"
+
+    def test_verify_network_record_mismatch(self):
+        with pytest.raises(BuildProvenanceError, match="Network provenance mismatch"):
+            verify_network_record("net-a", "net-b", strict=True)
+        assert verify_network_record("net-a", "net-b", strict=False) is False
+        assert verify_network_record("net-a", "net-a", strict=True) is True
+
+    def test_build_provenance_dict_includes_network(self):
+        prov = build_provenance_dict(
+            host_cpu_count=8,
+            host_load_avg_1m=1.0,
+            host_memory={"total_bytes": 1000, "available_bytes": 500},
+            redis_url="redis://localhost:6379/0",
+            redis_container_id="rcid",
+            redis_container_name="rname",
+            redis_image="redis:7-alpine",
+            redis_image_id="sha256:rimg",
+            redis_server_version="7.4.9",
+            redis_server_mode="standalone",
+            arq_version="0.28.0",
+            redis_py_version="5.3.1",
+            benchmark_worker_mode="docker_container",
+            worker_settings_module="scripts._bench_worker_settings.WorkerSettings",
+            worker_functions=["benchmark_noop_task"],
+            is_synthetic=True,
+            worker_max_jobs=4,
+            worker_poll_delay=0.01,
+            worker_job_timeout=60,
+            docker_version="Docker version 29.7.2",
+            worker_container_id="wcid",
+            worker_container_name="wname",
+            worker_image="refac_bid_box-worker:latest",
+            worker_image_id="sha256:wimg",
+            source_mount="/app",
+            source_git_sha="sha_test",
+            source_git_dirty=False,
+            network="arq-docker-measure_default",
+        )
+        assert prov["docker"]["network"] == "arq-docker-measure_default"

@@ -20,6 +20,7 @@ from scripts.benchmark_arq_container import (
     ContainerBenchmarkConfig,
     ContainerLifecycleError,
     DockerWorkerContainerManager,
+    build_arg_parser,
     generate_benchmark_queue_name,
     inspect_image_id,
     main,
@@ -503,3 +504,96 @@ async def test_run_container_worker_benchmark_bypass_marks_load_violation(tmp_pa
     assert result.load_protocol["bypassed"] is True
     assert result.load_protocol["compliant"] is False
     assert result.load_protocol["canonical_evidence"] is False
+
+
+def test_container_main_frozen_baseline_auto_creates_dirs(tmp_path):
+    """--frozen-baseline 이 경로 규약을 자동 구성하고 사전 mkdir 없이 저장에 성공하는지 검증합니다."""
+    out_file = (
+        tmp_path
+        / "frozen"
+        / "arq"
+        / "container"
+        / "abc1234"
+        / "20260824_000000_arq_container_baseline.json"
+    )
+
+    def make_dummy_result(run_idx: int) -> BenchmarkResult:
+        config = ContainerBenchmarkConfig(
+            queue_name=f"arq:container-bench:f{run_idx}",
+            total_jobs=5,
+            concurrency=4,
+            job_delay_ms=0.0,
+            poll_delay_sec=0.01,
+            timeout_sec=10.0,
+            simulate_error_rate=0.0,
+            redis_url="redis://localhost:6379/0",
+            container_image="refac_bid_box-worker:latest",
+            container_network="default",
+            source_mount=str(tmp_path),
+        )
+        return BenchmarkResult(
+            status="success",
+            git_sha="abc1234",
+            timestamp="2026-08-24T00:00:00Z",
+            environment={"python": "3.12.14"},
+            config=config,
+            summary={
+                "total_duration_sec": 0.1,
+                "jobs_per_second": 50.0,
+                "total_enqueued": 5,
+                "successful_jobs": 5,
+                "failed_jobs": 0,
+                "error_count": 0,
+            },
+            latency_ms={"p50_ms": 1.0, "p95_ms": 10.0 + run_idx, "p99_ms": 2.0, "values_ms": [1.0]},
+            errors=[],
+            benchmark_worker_mode="docker_container",
+            provenance={"host": {}, "redis": {}, "arq": {}, "docker": {}},
+        )
+
+    results_seq = [make_dummy_result(i) for i in range(1, 4)]
+
+    with (
+        patch(
+            "scripts.benchmark_arq_container.frozen_baseline_path",
+            return_value=out_file,
+        ),
+        patch(
+            "scripts.benchmark_arq_container.run_container_worker_benchmark",
+            side_effect=results_seq,
+        ),
+    ):
+        code = main(
+            [
+                "--jobs",
+                "5",
+                "--repetitions",
+                "3",
+                "--run-interval-sec",
+                "0",
+                "--frozen-baseline",
+            ]
+        )
+        assert code == 0
+
+    # 사전 mkdir 없이 자동 생성된 경로에 저장 성공
+    assert out_file.exists()
+    assert (tmp_path / "frozen" / "arq" / "container" / "abc1234").is_dir()
+    assert (out_file.parent / "20260824_000000_arq_container_baseline_r1.json").exists()
+    assert (out_file.parent / "20260824_000000_arq_container_baseline_r2.json").exists()
+    assert (out_file.parent / "20260824_000000_arq_container_baseline_r3.json").exists()
+    assert (
+        out_file.parent / "20260824_000000_arq_container_baseline_baseline_summary.json"
+    ).exists()
+
+
+def test_build_arg_parser_format_help_does_not_raise():
+    """실제 argparse 파서가 format_help() 를 예외 없이 생성하는지 검증합니다.
+
+    argparse 는 help 문자열을 % 포맷으로 해석하므로 help 에 이스케이프되지 않은
+    % 가 있으면 ValueError(unsupported format character) 가 발생합니다. 단순
+    문자열 존재 확인이 아니라 format_help() 호출로 회귀를 잡습니다.
+    """
+    help_text = build_arg_parser().format_help()
+    assert "allow-load-protocol-violation" in help_text
+    assert "%" in help_text

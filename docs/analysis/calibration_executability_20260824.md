@@ -37,7 +37,7 @@
 | Redis URL | `redis://localhost:6379/0` | `--redis-url`로 지정, 기본값은 `settings.REDIS_URL` 또는 `redis://localhost:6379/0` | 가능 | |
 | Redis 컨테이너 | `docker-compose.yml`의 `redis` 서비스 | 이름에 `redis`가 포함된 실행 중인 컨테이너 중 첫 번째를 자동 감지 | 가능 (자동) | 정확히 docker-compose.yml의 `redis` 서비스가 아니어도 이름 일치 시 인식 |
 | Container 워커 이미지 | `refac_bid_box-worker:latest` | `--image`로 지정, 기본값 동일 | 가능 | |
-| Container 네트워크 | `arq-docker-measure_default` | `--network`로 지정, 미지정 시 Redis 컨테이너 네트워크 자동 감지 | 가능 | docker-compose 네트워크 이름이 다를 경우 `--network`로 재정의 필요 |
+| Container 네트워크 | `arq-docker-measure_default` | `--network`로 지정, 미지정 시 Redis 컨테이너 네트워크 자동 감지. strict 에서 감지 실패 시 `BuildProvenanceError` 로 중단 | 가능 | docker-compose 네트워크 이름이 달라도 `--network` 명시 또는 감지 성공 시 자동 사용 |
 | 소스 마운트 | 프로젝트 루트를 `/app`에 bind mount | `--source-mount`로 지정, 기본값 `PROJECT_ROOT` | 가능 | |
 
 ### 2.3 회차 수 및 회차 간 간격
@@ -75,20 +75,17 @@
 
 | 번호 | 지점 | 상태 등급 | 근거 (왜 이 등급인가) |
 | ---: | --- | :---: | --- |
-| 1 | Host 부하 규약 enforcing | **BLOCKER** | 부하 규약을 자동 강제하는 하네스 기능이 없어 측정 유효성을 하네스가 보장하지 못함 |
-| 2 | Frozen baseline 디렉터리 구조 | **MANUAL** | `<mode>/<git_sha_short>` 디렉터리를 실행 전 운영자가 `mkdir -p`로 수동 생성해야 함 |
-| 3 | Container 네트워크 기본값 | **WARNING** | 자동 감지되지만 docker-compose 네트워크명이 다르면 `--network` 재정의가 필요하다는 주의사항 |
+| 1 | Host 부하 규약 enforcing | **RESOLVED** | 부하 규약 자동 강제가 구현됨 ([`arq_harness_blocker_remediation_20260824.md`](arq_harness_blocker_remediation_20260824.md)). 측정 시작·종료에서 중앙값 30%/최대 50% 초과 시 strict fail-closed, `--allow-load-protocol-violation` 우회 시 결과에 미준수 표시 |
+| 2 | Frozen baseline 디렉터리 구조 | **RESOLVED** | `--frozen-baseline` 이 `data/benchmarks/frozen/arq/<mode>/<git_sha_short>/` 경로를 자동 구성하고 중간 디렉터리를 자동 생성. 사전 `mkdir -p` 불필요 |
+| 3 | Container 네트워크 기본값 | **RESOLVED** | Redis 컨테이너 네트워크를 우선 감지하고, strict 에서 감지 실패 시 하드코딩 기본값으로 조용히 넘어가지 않고 `BuildProvenanceError` 로 중단. `--network` 명시 지정 지원, 사용 네트워크와 provenance 기록 일치 검증 |
 | 4 | Redis 컨테이너 식별 | **RESOLVED** | `--redis-container` 명시 지정과 후보 0개·다중 시 `BuildProvenanceError` fail-closed 로 해소 (`bc1a721`) |
-| 5 | Frozen baseline 대표값 선정 | **BLOCKER** | 대표값 산식을 하네스가 자동 적용하지 않아 별도 계산이 필수임 (자동화 결손) |
+| 5 | Frozen baseline 대표값 선정 | **RESOLVED** | 설계서 6장 중앙값 기준선 산식(median/CV/MAD/rt/rp)을 `compute_baseline_summary` 가 자동 적용해 별도 요약 파일로 저장 ([`arq_harness_blocker_remediation_20260824.md`](arq_harness_blocker_remediation_20260824.md)) |
 | 6 | Git dirty 전체 런 중단 | **RESOLVED** | 첫 회차에서 즉시 종료되어 "전체 런 중단"과 동작상 차이 없음 |
-| 7 | Provenance 4계층 필수 필드 누락 시 기각 | **BLOCKER** | `unknown` 값을 하네스가 자동 기각하지 않아 수동 기각 판정이 필수임 (자동화 결손) |
+| 7 | Provenance 4계층 필수 필드 누락 시 기각 | **RESOLVED** | 필수 필드 목록(`PROVENANCE_REQUIRED_FIELDS`) 기반 strict unknown 기각 구현 ([`arq_harness_blocker_remediation_20260824.md`](arq_harness_blocker_remediation_20260824.md)) |
 
-- **BLOCKER** (3건): 하네스가 자동으로 강제·적용·기각하지 못해 측정 유효성 또는 대표값 정확성이 보장되지 않는 항목.
-- **MANUAL** (1건): 하네스 기능이 아닌 운영자의 사전 수동 절차가 필요한 항목.
-- **WARNING** (1건): 동작은 하지만 특정 조건에서 오판 위험이 있어 운영자가 확인해야 하는 항목.
-- **RESOLVED** (2건): 설계서 요구사항과 실제 동작이 결과적으로 동일하거나, 후속 수정으로 해소된 항목.
+- **RESOLVED** (7건): 설계서 요구사항과 실제 하네스 동작이 일치하거나, 후속 수정(`bc1a721`, `0f573fa`, `arq-exec-closure`)으로 자동화가 완성된 항목. BLOCKER/MANUAL/WARNING 잔여 없음.
 
-> **4번 항목 갱신**: Redis 컨테이너 식별은 `bc1a721` 병합으로 명시 대상 지정(`--redis-container`)과 후보 모호·조회 실패 fail-closed 가 반영되어 **RESOLVED** 로 재분류했다. `resolve_redis_container` 는 후보가 정확히 1개일 때만 채택하고, `redis_url` 대응 검증에 실패하면 중단한다.
+> **등급 갱신**: 1·5·7(BLOCKER)은 [`arq_harness_blocker_remediation_20260824.md`](arq_harness_blocker_remediation_20260824.md) 병합으로 해소되어 RESOLVED 로 재분류했다. 2(MANUAL)·3(WARNING)은 `--frozen-baseline` 경로 자동 구성과 네트워크 감지 fail-closed 로 이번에 RESOLVED 로 재분류했다. 상세는 [`arq_executability_closure_20260824.md`](arq_executability_closure_20260824.md) 참조.
 
 ---
 
@@ -156,13 +153,13 @@
 
 ## 7. 결론
 
-설계서의 개별 측정 CLI 인자는 `scripts/benchmark_arq_throughput.py`와 `scripts/benchmark_arq_container.py`에서 모두 지정 가능하나, 3.1절 재분류 결과 **BLOCKER 3건**(Host 부하 규약 자동 강제 부재, 대표값 산식 자동 적용 부재, provenance unknown 자동 기각 부족)과 **MANUAL 1건**(frozen 디렉터리 명명)은 하네스 외부의 수동 절차가 필요하므로 설계서를 그대로 완전 자동 실행할 수는 없습니다. WARNING 1건과 RESOLVED 2건은 자동 실행을 막지 않습니다.
+3.1절 재분류 결과 **모든 항목(7건)이 RESOLVED** 입니다. BLOCKER 3건(Host 부하 규약 자동 강제, 대표값 산식 자동 적용, provenance unknown 자동 기각)은 [`arq_harness_blocker_remediation_20260824.md`](arq_harness_blocker_remediation_20260824.md) 병합으로, MANUAL 1건(frozen 디렉터리 명명)과 WARNING 1건(컨테이너 네트워크 기본값)은 `--frozen-baseline` 경로 자동 구성과 네트워크 감지 fail-closed 로 해소되었습니다. 따라서 설계서의 10회 캘리브레이션을 운영자 수동 절차 없이 하네스 명령만으로 실행할 수 있습니다.
 
 ---
 
-## 8. 후속 권고
+## 8. 후속 권고 (이행 상태 포함)
 
-1. Host 부하 규약을 하네스 낮은 수준에서 검증하는 CLI 인자(예: `--max-load-ratio`, `--min-memory-ratio`)를 추가하거나, 실행 전 별도 셸 스크립트로 사전 검증합니다.
-2. Frozen baseline 파일 경로의 `<mode>/<git_sha_short>` 디렉터리를 자동 생성하도록 하거나, 실행 전 `mkdir -p`를 문서화합니다.
-3. 대표값 선정 로직을 하네스에 추가하거나, `_r1.json`~`_r10.json`을 읽어 6장 도출식을 적용하는 별도 스크립트를 작성합니다.
-4. `benchmark_arq_throughput.py:335-306` 인용을 `335-344`로 정정합니다.
+1. ~~Host 부하 규약을 하네스 수준에서 자동 검증~~ → **이행 완료**: `check_ambient_load_protocol` + strict fail-closed.
+2. ~~Frozen baseline 파일 경로의 `<mode>/<git_sha_short>` 디렉터리 자동 생성~~ → **이행 완료**: `--frozen-baseline` 옵션으로 자동 구성.
+3. ~~대표값 선정 로직을 하네스에 추가~~ → **이행 완료**: `compute_baseline_summary` 가 6장 중앙값 산식 자동 적용.
+4. `benchmark_arq_throughput.py:335-306` 인용을 `335-344`로 정정 → 설계서 참고 항목이며 본 보고서의 기록이므로 변경 없음.

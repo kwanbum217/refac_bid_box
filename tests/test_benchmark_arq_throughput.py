@@ -22,6 +22,7 @@ from scripts.benchmark_arq_throughput import (
     RedisConnectionError,
     aggregate_benchmark_metrics,
     benchmark_noop_task,
+    build_arg_parser,
     calculate_percentile,
     calculate_percentiles,
     cleanup_benchmark_resources,
@@ -677,6 +678,7 @@ def test_aggregate_benchmark_metrics_provenance_keys_match_container_harness():
     }
     assert set(prov["docker"].keys()) == {
         "docker_version",
+        "network",
         "worker_container_id",
         "worker_container_name",
         "worker_image",
@@ -905,3 +907,91 @@ def test_main_repetitions_fails_closed_if_single_run_fails(tmp_path):
             ]
         )
         assert code == 1
+
+
+def test_main_frozen_baseline_auto_creates_dirs(tmp_path):
+    """--frozen-baseline 이 inprocess 경로 규약을 자동 구성하고 사전 mkdir 없이 저장에 성공하는지 검증합니다."""
+    out_file = (
+        tmp_path
+        / "frozen"
+        / "arq"
+        / "inprocess"
+        / "abc1234"
+        / "20260824_000000_arq_inprocess_baseline.json"
+    )
+
+    def make_dummy_result(run_idx: int) -> BenchmarkResult:
+        config = BenchmarkConfig(
+            queue_name=f"arq:benchmark:f{run_idx}",
+            total_jobs=5,
+            concurrency=2,
+            job_delay_ms=0.0,
+            poll_delay_sec=0.01,
+            timeout_sec=10.0,
+            simulate_error_rate=0.0,
+            redis_url="redis://localhost:6379/0",
+        )
+        return BenchmarkResult(
+            status="success",
+            git_sha="abc1234",
+            timestamp="2026-08-24T00:00:00Z",
+            environment={"python": "3.12.14"},
+            config=config,
+            summary={
+                "total_duration_sec": 0.1,
+                "jobs_per_second": 50.0,
+                "total_enqueued": 5,
+                "successful_jobs": 5,
+                "failed_jobs": 0,
+                "error_count": 0,
+            },
+            latency_ms={"p50_ms": 1.0, "p95_ms": 10.0 + run_idx, "p99_ms": 2.0, "values_ms": [1.0]},
+            errors=[],
+            provenance={"host": {}, "redis": {}, "arq": {}, "docker": {}},
+        )
+
+    results_seq = [make_dummy_result(i) for i in range(1, 4)]
+
+    with (
+        patch(
+            "scripts.benchmark_arq_throughput.frozen_baseline_path",
+            return_value=out_file,
+        ),
+        patch(
+            "scripts.benchmark_arq_throughput.run_arq_throughput_benchmark",
+            side_effect=results_seq,
+        ),
+    ):
+        code = main(
+            [
+                "--jobs",
+                "5",
+                "--repetitions",
+                "3",
+                "--run-interval-sec",
+                "0",
+                "--frozen-baseline",
+            ]
+        )
+        assert code == 0
+
+    assert out_file.exists()
+    assert (tmp_path / "frozen" / "arq" / "inprocess" / "abc1234").is_dir()
+    assert (out_file.parent / "20260824_000000_arq_inprocess_baseline_r1.json").exists()
+    assert (out_file.parent / "20260824_000000_arq_inprocess_baseline_r2.json").exists()
+    assert (out_file.parent / "20260824_000000_arq_inprocess_baseline_r3.json").exists()
+    assert (
+        out_file.parent / "20260824_000000_arq_inprocess_baseline_baseline_summary.json"
+    ).exists()
+
+
+def test_parse_args_format_help_does_not_raise():
+    """실제 argparse 파서가 format_help() 를 예외 없이 생성하는지 검증합니다.
+
+    argparse 는 help 문자열을 % 포맷으로 해석하므로 help 에 이스케이프되지 않은
+    % 가 있으면 ValueError(unsupported format character) 가 발생합니다. 단순
+    문자열 존재 확인이 아니라 format_help() 호출로 회귀를 잡습니다.
+    """
+    help_text = build_arg_parser().format_help()
+    assert "allow-load-protocol-violation" in help_text
+    assert "%" in help_text
