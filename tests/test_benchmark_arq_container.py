@@ -264,6 +264,12 @@ def test_provenance_schema_equality_between_inprocess_and_container():
         git_sha="sha_test",
         redis_server_version="7.4.9",
         redis_server_mode="standalone",
+        redis_container={
+            "container_id": "rcid",
+            "container_name": "rname",
+            "image": "redis:7-alpine",
+            "image_id": "sha256:rimg",
+        },
     )
 
     # 2. Container provenance 생성 (더미 객체)

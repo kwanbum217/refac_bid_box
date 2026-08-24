@@ -20,7 +20,6 @@ import argparse
 import asyncio
 import contextlib
 import importlib.metadata
-import json
 import logging
 import os
 import platform
@@ -50,13 +49,19 @@ except (ModuleNotFoundError, ImportError):
 try:
     from scripts.benchmark_provenance import (
         BuildProvenanceError,
-        is_source_dirty,
+        build_provenance_dict,
+        get_git_status,
+        get_host_memory,
+        resolve_redis_container,
         single_host_load_sample,
     )
 except (ModuleNotFoundError, ImportError):
     from benchmark_provenance import (  # type: ignore[no-redef]
         BuildProvenanceError,
-        is_source_dirty,
+        build_provenance_dict,
+        get_git_status,
+        get_host_memory,
+        resolve_redis_container,
         single_host_load_sample,
     )
 
@@ -68,89 +73,6 @@ except Exception:
     DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 logger = logging.getLogger("benchmark_arq_throughput")
-
-
-def get_host_memory() -> dict[str, int | None]:
-    """호스트 물리 메모리 크기(total, available)를 바이트 단위로 안전하게 수집합니다."""
-    total_bytes: int | None = None
-    available_bytes: int | None = None
-
-    if hasattr(os, "sysconf"):
-        try:
-            pages = os.sysconf("SC_PHYS_PAGES")
-            page_size = os.sysconf("SC_PAGE_SIZE")
-            if (
-                isinstance(pages, int)
-                and isinstance(page_size, int)
-                and pages > 0
-                and page_size > 0
-            ):
-                total_bytes = pages * page_size
-        except (ValueError, OSError):
-            pass
-        try:
-            avail_pages = os.sysconf("SC_AVPHYS_PAGES")
-            page_size = os.sysconf("SC_PAGE_SIZE")
-            if (
-                isinstance(avail_pages, int)
-                and isinstance(page_size, int)
-                and avail_pages > 0
-                and page_size > 0
-            ):
-                available_bytes = avail_pages * page_size
-        except (ValueError, OSError):
-            pass
-
-    if total_bytes is None and Path("/proc/meminfo").exists():
-        with contextlib.suppress(Exception):
-            meminfo = Path("/proc/meminfo").read_text(encoding="utf-8")
-            for line in meminfo.splitlines():
-                if line.startswith("MemTotal:"):
-                    total_bytes = int(line.split()[1]) * 1024
-                elif line.startswith("MemAvailable:"):
-                    available_bytes = int(line.split()[1]) * 1024
-
-    if total_bytes is None and platform.system() == "Darwin":
-        with contextlib.suppress(Exception):
-            out = subprocess.check_output(  # nosec B603 B607
-                ["sysctl", "-n", "hw.memsize"],
-                text=True,
-            ).strip()
-            total_bytes = int(out)
-
-    return {
-        "total_bytes": total_bytes,
-        "available_bytes": available_bytes,
-    }
-
-
-def get_git_status(path: Path | str | None = None) -> tuple[str, bool | None]:
-    """지정된 디렉터리의 Git SHA 및 dirty 상태를 반환합니다.
-
-    Returns:
-        tuple[git_sha, is_dirty]
-        - git_sha: 커밋 SHA 또는 "unknown"
-        - is_dirty: True (dirty), False (clean), None (unknown/Git 오류)
-    """
-    target_path = Path(path).resolve() if path is not None else PROJECT_ROOT
-    try:
-        sha = subprocess.check_output(  # nosec B603 B607
-            ["git", "-C", str(target_path), "rev-parse", "HEAD"],
-            text=True,
-        ).strip()
-    except (OSError, subprocess.CalledProcessError):
-        sha = "unknown"
-
-    try:
-        status = subprocess.check_output(  # nosec B603 B607
-            ["git", "-C", str(target_path), "status", "--porcelain"],
-            text=True,
-        ).strip()
-        is_dirty = is_source_dirty(status)
-    except (OSError, subprocess.CalledProcessError):
-        is_dirty = None
-
-    return sha, is_dirty
 
 
 async def fetch_redis_server_info(redis: ArqRedis) -> dict[str, str]:
@@ -189,79 +111,6 @@ def verify_identity_consistency(
     return True
 
 
-def build_provenance_dict(
-    *,
-    host_cpu_count: int,
-    host_load_avg_1m: float | None,
-    host_memory: dict[str, int | None],
-    redis_url: str,
-    redis_container_id: str,
-    redis_container_name: str,
-    redis_image: str,
-    redis_image_id: str,
-    redis_server_version: str,
-    redis_server_mode: str,
-    arq_version: str,
-    redis_py_version: str,
-    benchmark_worker_mode: str,
-    worker_settings_module: str,
-    worker_functions: list[str],
-    is_synthetic: bool,
-    worker_max_jobs: int,
-    worker_poll_delay: float,
-    worker_job_timeout: int,
-    docker_version: str,
-    worker_container_id: str | None,
-    worker_container_name: str | None,
-    worker_image: str | None,
-    worker_image_id: str | None,
-    source_mount: str | None,
-    source_git_sha: str | None,
-    source_git_dirty: bool | None,
-) -> dict[str, Any]:
-    """공통 4계층 Provenance 딕셔너리 구조를 생성합니다."""
-    return {
-        "host": {
-            "python_version": platform.python_version(),
-            "platform": platform.platform(),
-            "cpu_count": host_cpu_count,
-            "load_avg_1m": host_load_avg_1m,
-            "memory_total_bytes": host_memory.get("total_bytes"),
-            "memory_available_bytes": host_memory.get("available_bytes"),
-        },
-        "redis": {
-            "redis_url": redis_url,
-            "container_id": redis_container_id,
-            "container_name": redis_container_name,
-            "image": redis_image,
-            "image_id": redis_image_id,
-            "server_version": redis_server_version,
-            "server_mode": redis_server_mode,
-        },
-        "arq": {
-            "arq_version": arq_version,
-            "redis_py_version": redis_py_version,
-            "benchmark_worker_mode": benchmark_worker_mode,
-            "worker_settings_module": worker_settings_module,
-            "worker_functions": list(worker_functions),
-            "is_synthetic": is_synthetic,
-            "worker_max_jobs": worker_max_jobs,
-            "worker_poll_delay": worker_poll_delay,
-            "worker_job_timeout": worker_job_timeout,
-        },
-        "docker": {
-            "docker_version": docker_version,
-            "worker_container_id": worker_container_id,
-            "worker_container_name": worker_container_name,
-            "worker_image": worker_image,
-            "worker_image_id": worker_image_id,
-            "source_mount": source_mount,
-            "source_git_sha": source_git_sha,
-            "source_git_dirty": source_git_dirty,
-        },
-    }
-
-
 def get_arq_version() -> str:
     """arq 라이브러리 버전을 반환합니다."""
     try:
@@ -289,36 +138,18 @@ def get_docker_version() -> str:
         return "unknown"
 
 
-def inspect_redis_container() -> dict[str, Any]:
-    """현재 기동 중인 Redis 컨테이너 정보를 조회합니다."""
-    info: dict[str, Any] = {
-        "container_id": "unknown",
-        "container_name": "unknown",
-        "image": "unknown",
-        "image_id": "unknown",
-    }
-    try:
-        ps_out = subprocess.check_output(  # nosec B603 B607
-            ["docker", "ps", "--filter", "name=redis", "--format", "{{json .}}"],
-            text=True,
-        ).strip()
-        lines = [line for line in ps_out.splitlines() if line]
-        if lines:
-            c = json.loads(lines[0])
-            cid = c.get("ID", "")
-            info["container_id"] = cid
-            info["container_name"] = c.get("Names", "")
-            info["image"] = c.get("Image", "")
+def inspect_redis_container(
+    redis_url: str = "",
+    target: str | None = None,
+    strict: bool = True,
+) -> dict[str, Any]:
+    """현재 기동 중인 Redis 컨테이너 정보를 명시 지정 또는 fail-closed 로 조회합니다.
 
-            inspect_out = subprocess.check_output(  # nosec B603 B607
-                ["docker", "inspect", cid],
-                text=True,
-            )
-            data = json.loads(inspect_out)[0]
-            info["image_id"] = data.get("Image", "")
-    except Exception as exc:
-        logger.warning("Redis 컨테이너 정보 조회 중 예외: %s", exc)
-    return info
+    공통 모듈의 resolve_redis_container 에 위임합니다. 후보가 0개 또는 2개 이상이면
+    자동 선택하지 않고 BuildProvenanceError 로 중단하며, 조회 예외를 unknown 성공으로
+    흡수하지 않습니다.
+    """
+    return resolve_redis_container(redis_url=redis_url, target=target, strict=strict)
 
 
 class RedisConnectionError(Exception):
@@ -606,7 +437,10 @@ def aggregate_benchmark_metrics(
     }
 
     # 4계층 Provenance 수집
-    r_info = redis_container or inspect_redis_container()
+    if redis_container is not None:
+        r_info = redis_container
+    else:
+        r_info = inspect_redis_container(redis_url=config.redis_url)
     load_sample = single_host_load_sample()
     host_mem = get_host_memory()
     target_mount = str(
@@ -707,6 +541,7 @@ async def run_arq_throughput_benchmark(
     simulate_error_rate: float = 0.0,
     strict: bool = True,
     source_mount: Path | str | None = None,
+    redis_container: str | None = None,
 ) -> BenchmarkResult:
     """독립형 벤치마크를 비동기 실행하고 결과를 반환합니다."""
     target_source = (
@@ -746,7 +581,11 @@ async def run_arq_throughput_benchmark(
     except Exception as exc:
         raise RedisConnectionError(f"Redis 연결 실패 ({redis_url}): {exc}") from exc
 
-    start_redis_info = inspect_redis_container()
+    start_redis_info = inspect_redis_container(
+        redis_url=redis_url,
+        target=redis_container,
+        strict=strict,
+    )
     start_server_info = await fetch_redis_server_info(redis_pool)
 
     if strict and start_redis_info.get("container_id") == "unknown":
@@ -827,7 +666,11 @@ async def run_arq_throughput_benchmark(
             await worker_task
 
         # End identity check
-        end_redis_info = inspect_redis_container()
+        end_redis_info = inspect_redis_container(
+            redis_url=redis_url,
+            target=redis_container,
+            strict=strict,
+        )
         end_server_info = await fetch_redis_server_info(redis_pool)
         end_git_sha, end_git_dirty = get_git_status(target_source)
 
@@ -916,6 +759,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"호스트 소스 마운트 경로 (기본값: {PROJECT_ROOT})",
     )
     parser.add_argument(
+        "--redis-container",
+        default=None,
+        help=(
+            "측정 대상 Redis 컨테이너 이름/ID 또는 docker compose 서비스명. "
+            "미지정 시 name=redis 후보가 정확히 1개일 때만 자동 채택하고, "
+            "0개 또는 2개 이상이면 오류로 중단합니다 (fail-closed)"
+        ),
+    )
+    parser.add_argument(
         "--allow-unknown-provenance",
         action="store_true",
         default=False,
@@ -983,6 +835,7 @@ def main(argv: list[str] | None = None) -> int:
                     simulate_error_rate=args.simulate_error_rate,
                     strict=strict,
                     source_mount=args.source_mount,
+                    redis_container=args.redis_container,
                 )
             )
             results.append(result)
