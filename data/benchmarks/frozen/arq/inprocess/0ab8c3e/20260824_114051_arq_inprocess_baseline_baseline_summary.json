@@ -1,0 +1,35 @@
+{
+  "n_runs": 10,
+  "throughput_baseline": 1195.585,
+  "p95_baseline": 480.424,
+  "throughput": {
+    "median": 1195.585,
+    "cv": 0.01717638611669174,
+    "mad_median_ratio": 0.00915869637039612
+  },
+  "p95_ms": {
+    "median": 480.424,
+    "cv": 0.01622232295338345,
+    "mad_median_ratio": 0.007034411270044868
+  },
+  "failure": {
+    "max": 0.0
+  },
+  "non_canonical_runs": [],
+  "regression_gate": {
+    "rt": 0.06,
+    "rp": 0.06,
+    "floor": 0.06
+  },
+  "stability": {
+    "cv_ok": true,
+    "mad_ratio_ok": true,
+    "passed": true,
+    "baseline_trustworthy": true,
+    "verdict": "stable",
+    "thresholds": {
+      "cv_max": 0.05,
+      "mad_median_max": 0.03
+    }
+  }
+}
