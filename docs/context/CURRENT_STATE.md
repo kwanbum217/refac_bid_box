@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-24
-> **source_commit**: `cb99d91`
+> **source_commit**: `dbde63a`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -65,8 +65,8 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **운영 검증**: Windows CI는 run `32703096829`에서 green을 실측 확인했습니다. Windows Docker Desktop 실기가 남았습니다. 수집 2·3회차 관찰은 종결했지만 Arq Docker synthetic 3회 raw와 Ollama 규약 준수 기준선은 재측정해야 합니다.
-1-2. **LLM 경로 최적화**: 기존 clean 20표본에서는 단발 질의 지연의 97.6%가 `llm_ms`로 관측됐습니다([`rag_segments_measure_20260823.md`](../analysis/rag_segments_measure_20260823.md)). 이 결과는 진단용이며, 강화된 HTTP 대상·trace·모델 결박 하네스로 재측정하기 전에는 유일한 최적화 축이나 정본 기준선으로 확정하지 않습니다.
+1. **운영 검증**: Windows CI는 run `32703096829`에서 green을 실측 확인했습니다. Arq Docker synthetic 3회 raw와 Ollama 규약 준수 측정은 2026-08-24에 완료했습니다([`measurement_triple_20260824.md`](../analysis/measurement_triple_20260824.md)). Windows Docker Desktop 실기가 남았습니다.
+1-2. **LLM 경로 최적화**: 강화된 하네스(기대 모델 대조·trace 1:1·strict provenance)로 2026-08-24 재측정한 20표본에서 단발 질의 지연의 **97.9%가 `llm_ms`** 입니다. `residual_ms` P50 0.03ms로 계측 사각지대도 없습니다. LLM 경로가 유일한 유효 최적화 축입니다([`measurement_triple_20260824.md`](../analysis/measurement_triple_20260824.md)).
 1-1. **Arq 정식 기준선 캘리브레이션**: 잠정 일관성 봉투(구 절대 기준선 900 jps / 600ms)는 사후 보정임이 확인됐습니다([`arq_threshold_derivation_20260823.md`](../analysis/arq_threshold_derivation_20260823.md)). 정식 기준선을 세우려면 고정 조건 캘리브레이션 런이 필요합니다.
 2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
 3. **G3 전체 컷오버 판정**: 위 항목이 닫힌 뒤 별도로 판정합니다. 개별 게이트 PASS를 컷오버 PASS로 승격하지 않습니다.
@@ -99,8 +99,8 @@
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - Windows Docker Desktop 실기 검증 미수행.
-- Ollama `gemma4:e4b` 측정은 Predict c4 + SSE c1 + Query c1의 탐색·진단 결과입니다. 세 회차 모두 주변 부하 규약을 초과했으므로 canonical baseline은 미확정이며, 통제된 부하에서 3회 재측정해야 합니다([`ollama_c4_measure_20260823.md`](../analysis/ollama_c4_measure_20260823.md)).
-- Arq 기존 수치는 in-process synthetic과 Docker-container synthetic 경로의 진단 결과입니다. 강화된 하네스는 `/app` source SHA·dirty·start/end, 공통 4계층 runtime schema와 회차별 raw 저장을 fail-closed로 강제하지만, 이 변경 뒤 Docker container 3회 raw를 아직 재측정하지 않았습니다. production business-task E2E도 별도 검증 대상입니다.
+- Ollama `gemma4:e4b` Predict c4 + SSE c1 + Query c1을 2026-08-24에 부하 규약(median 30%/max 50%) 준수 상태로 3회 측정했습니다. 1차 r2는 median 34.26%로 기각하고 재측정했으며 기각본을 보존했습니다. 게이트는 전 항목 통과입니다.
+- Arq Docker-container **synthetic** 3회를 2026-08-24에 재측정해 회차별 raw를 보존했습니다(1,681~1,764 jobs/sec, P95 325~342ms). 측정 중 회차별 raw가 자기 dirty 검사를 유발해 `--repetitions`가 완주 불가였던 결함을 고쳤습니다. 잠정 봉투는 캘리브레이션 미실행으로 유지하며 production business-task E2E도 별도 검증 대상입니다.
 - 벤치마크 provenance 는 측정 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 로 무효화합니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 로 strict 를 끈 측정은 `provenance_consistent: false` 로 기록되며 정본 evidence 가 아닙니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
