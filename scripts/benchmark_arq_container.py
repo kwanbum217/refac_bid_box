@@ -50,12 +50,14 @@ try:
     from scripts.benchmark_provenance import (
         BuildProvenanceError,
         _parse_source_mount,
+        is_source_dirty,
         single_host_load_sample,
     )
 except (ModuleNotFoundError, ImportError):
     from benchmark_provenance import (  # type: ignore[no-redef]
         BuildProvenanceError,
         _parse_source_mount,
+        is_source_dirty,
         single_host_load_sample,
     )
 
@@ -161,7 +163,7 @@ def get_git_status(path: Path | str | None = None) -> tuple[str, bool | None]:
             ["git", "-C", str(target_path), "status", "--porcelain"],
             text=True,
         ).strip()
-        is_dirty = len(status) > 0
+        is_dirty = is_source_dirty(status)
     except (OSError, subprocess.CalledProcessError):
         is_dirty = None
 

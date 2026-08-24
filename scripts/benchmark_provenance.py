@@ -71,6 +71,31 @@ PERF_CONFIG_ALLOWLIST: frozenset[str] = frozenset(
 )
 
 
+# 측정 산출물은 실행되는 코드가 아니므로 dirty 판정에서 제외합니다.
+# 제외하지 않으면 회차별 raw 를 저장하는 반복 측정이 자기 산출물 때문에
+# 다음 회차에서 fail-closed 로 거부되어 --repetitions 가 완주할 수 없습니다.
+MEASUREMENT_ARTIFACT_PREFIXES: tuple[str, ...] = ("data/benchmarks/",)
+
+
+def is_source_dirty(status_porcelain: str) -> bool:
+    """`git status --porcelain` 출력에서 실행 코드 기준 dirty 여부를 판정합니다.
+
+    추적되지 않는 측정 산출물만 제외합니다. 추적 파일의 변경과 측정 산출물 밖의
+    미추적 파일은 그대로 dirty 로 봅니다. 미추적 `.py` 가 import 될 수 있으므로
+    미추적 전체를 무시해서는 안 됩니다.
+    """
+    for line in status_porcelain.splitlines():
+        entry = line.strip()
+        if not entry:
+            continue
+        code, _, path = entry.partition(" ")
+        path = path.strip().strip('"')
+        if code == "??" and path.startswith(MEASUREMENT_ARTIFACT_PREFIXES):
+            continue
+        return True
+    return False
+
+
 def _command_output(
     command: list[str],
     allow_empty: bool = False,
@@ -350,12 +375,7 @@ def reproducibility_metadata(
     if target_source_mount is not None:
         target_source_git_sha = cmd_fn(["git", "-C", target_source_mount, "rev-parse", "HEAD"])
         status_raw = cmd_fn(["git", "-C", target_source_mount, "status", "--porcelain"])
-        if status_raw == "unknown":
-            target_source_git_dirty = None
-        elif status_raw == "":
-            target_source_git_dirty = False
-        else:
-            target_source_git_dirty = True
+        target_source_git_dirty = None if status_raw == "unknown" else is_source_dirty(status_raw)
 
     # 5. 포트 바인딩 및 base_url 결박 검증
     port_bindings, published_host_ports, container_internal_ports = _parse_port_bindings(raw_ports)
