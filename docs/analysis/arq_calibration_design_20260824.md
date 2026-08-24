@@ -169,7 +169,7 @@ throughput_baseline = max(
 )
 ```
 
-- `Q_p(T, q)`: 선형 보간 백분위수 함수(`benchmark_arq_throughput.py:335-306`의 `calculate_percentile`과 동일 알고리즘)
+- `Q_p(T, q)`: 선형 보간 백분위수 함수(`benchmark_arq_throughput.py:337-346`의 `calculate_percentile`과 동일 알고리즘)
 - `Q_p(T, 0.05)`: 처리량 분포의 5% 분위수
 - `min(T) * 0.95`: 최악 회차 대비 5% 여유
 
