@@ -4,7 +4,7 @@
 > **기준 브랜치**: `kwanbum217/audit-remediation-integration-896e1d5`
 > **기준 커밋**: `1a673d6`
 > **Orca Run**: `run_66ae36c8196e`
-> **상태**: 구현 통합 완료, SSOT 동기화 및 종료 검증 진행, 재측정·원격 CI·main 병합 미수행
+> **상태**: 구현 통합·SSOT 동기화·로컬 종료 검증 완료, 재측정·원격 CI·main 병합 미수행
 
 ---
 
@@ -30,6 +30,7 @@
 - Arq: 대상 테스트 37건 통과, 전체 테스트 중 1,873건 통과, 독립 리뷰 5/5 통과.
 - 분기별 전체 테스트의 실패 2건은 모두 기존 `docs/context/CURRENT_STATE.md`의 오래된 `source_commit` 신선도 검사였습니다. 이번 통합 SSOT 갱신 뒤 전체 테스트와 규칙 검증을 다시 실행해야 합니다.
 - Arq 완료 보고 JSON 누락을 감시 단계에서 발견했습니다. 재배정한 Gemini Flash Medium 워커는 `AI: Out of credits`로 실행되지 않아 Task `task_1f628411493d`를 실패 처리했고, 코디네이터가 보고 계약과 문서의 잘못된 검증 문구만 직접 보완했습니다.
+- 최종 통합 검증은 비데이터 테스트 1,915건 통과, 6건 skip, 실패 0건이며 `ruff`, 규칙 12/12, `docker compose config --quiet`도 통과했습니다.
 
 ---
 
@@ -51,4 +52,5 @@
 - 재개 브랜치: `kwanbum217/audit-remediation-integration-896e1d5`
 - `docker compose restart app`은 변경된 Compose 환경을 다시 주입하지 않습니다. 모델 변경 후에는 `docker compose up -d --force-recreate app`을 사용하고 런타임 모델 일치를 하네스가 확인하게 합니다.
 - 데이터 볼륨은 종료 준비 과정에서 삭제하지 않습니다. `docker compose down`만 사용하고 `--volumes`를 붙이지 않습니다.
-- 완료 워커 터미널과 병합된 작업 트리는 Run 종료 시 회수하되 통합 작업 트리는 다음 세션 재개를 위해 보존합니다.
+- 완료 워커 터미널 4개와 병합된 하위 작업 트리 4개는 회수했습니다. 통합 작업 트리는 다음 세션 재개를 위해 보존했습니다.
+- 종료 준비 시 Docker daemon은 이미 중지 상태였습니다. Ollama launch agent 2개와 잔류 `ollama serve` 프로세스는 종료했으며 모델 데이터와 Docker volume은 삭제하지 않았습니다.
