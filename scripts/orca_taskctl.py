@@ -23,7 +23,8 @@ import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으
 import sys
 import time
 import uuid
-from pathlib import Path
+from contextlib import suppress
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 try:
@@ -458,6 +459,52 @@ def _to_glob(path_str: str) -> str:
     return path_str
 
 
+def _strip_leading_dot_slash(value: str) -> str:
+    """선행 `./` 만 제거합니다. `.env` 같은 dotfile 은 그대로 둡니다."""
+    while value.startswith("./"):
+        value = value[2:]
+    return value.lstrip("/") if value.startswith("/") else value
+
+
+def validate_contained_path(path_str: str | Path, field_name: str = "경로") -> str:
+    """경로가 워크트리 내부 상대 경로인지 검증합니다.
+
+    절대경로(POSIX /, Windows C:, UNC //), 상위 디렉터리 탈출(..),
+    홈 디렉터리(~) 참조를 fail-closed 로 거부합니다.
+    """
+    raw = str(path_str).strip()
+    if not raw:
+        raise ValueError(f"{field_name} 에 빈 경로는 허용되지 않습니다.")
+
+    normalized = raw.replace("\\", "/")
+
+    # 1. 절대경로, UNC, 드라이브 레터, 홈 디렉터리 접두사 거부
+    if (
+        normalized.startswith("/")
+        or normalized.startswith("//")
+        or raw.startswith("\\")
+        or raw.startswith("\\\\")
+        or bool(re.match(r"^[a-zA-Z]:", raw))
+        or raw.startswith("~")
+        or PurePosixPath(normalized).is_absolute()
+        or PureWindowsPath(raw).is_absolute()
+        or PureWindowsPath(raw).drive != ""
+    ):
+        raise ValueError(f"{field_name} 에 절대경로는 허용되지 않습니다: {raw}")
+
+    # 2. 상위 디렉터리 탐색(..) 거부
+    parts = normalized.split("/")
+    if ".." in parts:
+        raise ValueError(f"{field_name} 에 상위 디렉터리 탐색(..)은 허용되지 않습니다: {raw}")
+
+    # 3. 선행 ./ 제거 후 빈 문자열 거부
+    cleaned = _strip_leading_dot_slash(normalized)
+    if not cleaned:
+        raise ValueError(f"{field_name} 에 빈 경로는 허용되지 않습니다: {raw}")
+
+    return raw
+
+
 # ---------------------------------------------------------------------------
 # Task Intent 파싱
 # ---------------------------------------------------------------------------
@@ -598,6 +645,13 @@ def parse_intent(text: str) -> dict[str, Any]:
 
         i += 1
 
+    for item in result.get("scope", []):
+        validate_contained_path(item, field_name="scope")
+    for item in result.get("read_scope", []):
+        validate_contained_path(item, field_name="read_scope")
+    if result.get("report_path"):
+        validate_contained_path(result["report_path"], field_name="report_path")
+
     return result
 
 
@@ -641,6 +695,9 @@ def expand_intent_to_capsule(
     else:
         write_files = list(scope) if scope else ["src/...", "tests/..."]
 
+    for path_item in write_files:
+        validate_contained_path(path_item, field_name="scope")
+
     # 템플릿이 artifact_paths 로 지시하는 분석 문서 경로를 쓰기 범위에 함께 넣습니다.
     # 넣지 않으면 워커가 템플릿을 따라 만든 산출물이 Level 1 범위 게이트에서
     # 초과로 거부됩니다 (반복 금지 4.7.2). 리뷰어는 문서를 쓰지 않으므로 제외합니다.
@@ -652,12 +709,17 @@ def expand_intent_to_capsule(
     # 안 됩니다. read_scope 가 없으면 대상을 scope 에 넣어야 하고 그러면 쓰기까지
     # 열려 범위 게이트가 무단 수정을 잡지 못합니다.
     extra_read = [str(item) for item in intent.get("read_scope", []) if str(item).strip()]
+    for path_item in extra_read:
+        validate_contained_path(path_item, field_name="read_scope")
     if is_reviewer:
         extra_read = list(scope) + extra_read
 
     self_capsule_str = (
-        str(capsule_path) if capsule_path else f".orca/capsules/{task_id}/capsule.yaml"
+        worktree_relative_capsule_path(Path(capsule_path))
+        if capsule_path
+        else f".orca/capsules/{task_id}/capsule.yaml"
     )
+    validate_contained_path(self_capsule_str, field_name="capsule_path")
     reference_files = [self_capsule_str, "docs/context/CURRENT_STATE.md"]
     read_files = list(dict.fromkeys(reference_files + write_files + extra_read))
 
@@ -680,11 +742,13 @@ def expand_intent_to_capsule(
     # artifact_paths & report_path
     if is_reviewer:
         report_path = str(intent.get("report_path") or f".orca/capsules/{task_id}/review_done.json")
+        validate_contained_path(report_path, field_name="report_path")
         return_contract = "ORCA_REVIEW_DONE_V2"
         mode = "reviewer"
         artifact_paths_formatted = _format_yaml_list([report_path])
     else:
         report_path = str(intent.get("report_path") or f".orca/capsules/{task_id}/worker_done.json")
+        validate_contained_path(report_path, field_name="report_path")
         return_contract = "ORCA_WORKER_DONE_V2"
         mode = intent.get("mode", "worker")
         artifact_paths_formatted = _format_yaml_list([f"docs/analysis/{task_id}.md"])
@@ -722,7 +786,7 @@ def expand_intent_to_capsule(
         report_schema=report_schema,
     )
 
-    if is_reviewer:
+    if review_checklist:
         checklist_block = _format_review_checklist(review_checklist)
         capsule += "\n" + checklist_block + "\n"
 
@@ -1279,6 +1343,7 @@ def build_capsule_notice(
     저장소로 이동합니다 (2026-08-23, `worktree_relative_capsule_path` 참조).
     """
     relative_capsule = worktree_relative_capsule_path(capsule_path)
+    validate_contained_path(relative_capsule, field_name="capsule_path")
     parts = [
         f"정본 사양은 현재 작업 디렉터리 기준 {relative_capsule} 입니다.",
         "지금 그 파일을 읽고 이 작업의 유일한 정본으로 삼으십시오.",
@@ -1295,6 +1360,7 @@ def build_capsule_notice(
             f"당신의 작업 트리는 {worktree_path} 이며 그 밖의 파일을 읽거나 쓰면 계약 위반입니다.",
         )
     if report_path:
+        validate_contained_path(report_path, field_name="report_path")
         parts.append(f"보고 JSON 은 {report_path} 에 ORCA_WORKER_DONE_V2 계약으로 씁니다.")
     if dispatch_id:
         parts.append(f"worker_done 전송 시 dispatchId 는 {dispatch_id} 입니다.")
@@ -1318,6 +1384,7 @@ def build_task_spec(objective: str, capsule_path: Path) -> str:
     if char_len(summary) > 400:
         summary = truncate(summary, 400)
     relative_capsule = worktree_relative_capsule_path(capsule_path)
+    validate_contained_path(relative_capsule, field_name="capsule_path")
     return (
         f"{summary} 정본 사양(Capsule): 현재 작업 디렉터리의 {relative_capsule}. "
         "현재 작업 디렉터리를 벗어나지 마십시오."
@@ -1554,7 +1621,11 @@ def cmd_expand(args: argparse.Namespace) -> int:
         return 2
 
     intent_text = intent_path.read_text(encoding="utf-8")
-    intent = parse_intent(intent_text)
+    try:
+        intent = parse_intent(intent_text)
+    except ValueError as err:
+        sys.stderr.write(f"오류: {err}\n")
+        return 2
 
     out_path = Path(args.out)
     try:
@@ -1624,15 +1695,24 @@ def _deliver_capsule_notice(
         return {"status": "skipped", "reason": "no_terminal_handle"}
 
     dispatch_id = resolve_dispatch_id(task_id)
-    report_path = intent.get("report_path") or f"{capsule_path.parent}/worker_done.json"
+    report_path = intent.get("report_path")
+    if not report_path:
+        rel_capsule = worktree_relative_capsule_path(capsule_path)
+        rel_parent = str(Path(rel_capsule).parent)
+        report_path = f"{rel_parent}/worker_done.json" if rel_parent != "." else "worker_done.json"
     delivery_probe = new_delivery_probe()
-    text = build_capsule_notice(
-        capsule_path,
-        report_path=str(report_path),
-        dispatch_id=dispatch_id,
-        delivery_probe=delivery_probe,
-        worktree_path=getattr(args, "worktree", None),
-    )
+    try:
+        text = build_capsule_notice(
+            capsule_path,
+            report_path=str(report_path),
+            dispatch_id=dispatch_id,
+            delivery_probe=delivery_probe,
+            worktree_path=getattr(args, "worktree", None),
+        )
+    except ValueError as err:
+        sys.stderr.write(f"경고: Capsule 고지문 작성 실패: {err}\n")
+        return {"status": "failed", "reason": str(err), "dispatch_id": dispatch_id}
+
     code, stdout, stderr = terminal_send(args.terminal, text)
     if code == 0 and _launch_succeeded(stdout, expect_json=True):
         return {
@@ -1651,20 +1731,26 @@ def _deliver_capsule_notice(
 
 
 def cmd_create(args: argparse.Namespace) -> int:
-    """Intent 를 Capsule 로 확장하고 그 절대 경로를 담은 Orca Task 를 만듭니다.
+    """Intent 를 Capsule 로 확장하고 그 경로를 담은 Orca Task 를 만듭니다.
 
     Task 의 spec 은 `dispatch --inject` 가 워커에게 전달하는 유일한 본문이라,
     Capsule 경로를 여기에 넣어야 워커가 첫 턴부터 정본을 찾습니다.
+    Orca 가 반환한 실제 Task ID 로 Capsule 내부 task_id 및 디렉터리를 확정합니다.
     """
     intent_path = Path(args.intent)
     if not intent_path.exists():
         sys.stderr.write(f"오류: Intent 파일 없음: {intent_path}\n")
         return 2
 
-    intent = parse_intent(intent_path.read_text(encoding="utf-8"))
+    try:
+        intent = parse_intent(intent_path.read_text(encoding="utf-8"))
+    except ValueError as err:
+        sys.stderr.write(f"오류: {err}\n")
+        return 2
     task_id = args.task_id or intent.get("task_id") or f"task_{intent_path.stem}"
 
-    task_capsule_dir = Path(args.capsule_dir) / task_id
+    capsule_dir = Path(args.capsule_dir)
+    task_capsule_dir = capsule_dir / task_id
     task_capsule_dir.mkdir(parents=True, exist_ok=True)
     capsule_path = (task_capsule_dir / "capsule.yaml").resolve()
 
@@ -1700,6 +1786,9 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     code, stdout, stderr = _run_command(cmd)
     if code != 0 or not _launch_succeeded(stdout, expect_json=True):
+        capsule_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            task_capsule_dir.rmdir()
         reason = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
         sys.stderr.write(f"오류: task-create 실패: {reason}\n")
         return 1
@@ -1709,22 +1798,61 @@ def cmd_create(args: argparse.Namespace) -> int:
     if isinstance(payload, dict):
         created_id = ((payload.get("result") or {}).get("task") or {}).get("id")
 
+    if not created_id:
+        capsule_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            task_capsule_dir.rmdir()
+        sys.stderr.write("오류: task-create 결과에서 Task ID 를 얻지 못했습니다.\n")
+        return 1
+
+    actual_task_id = str(created_id)
+    actual_capsule_dir = capsule_dir / actual_task_id
+    actual_capsule_dir.mkdir(parents=True, exist_ok=True)
+    actual_capsule_path = (actual_capsule_dir / "capsule.yaml").resolve()
+
+    try:
+        final_capsule = expand_intent_to_capsule(
+            intent,
+            task_id=actual_task_id,
+            run_id=args.run_id,
+            capsule_path=actual_capsule_path,
+        )
+    except ValueError as err:
+        if capsule_path != actual_capsule_path:
+            actual_capsule_path.unlink(missing_ok=True)
+            with suppress(OSError):
+                actual_capsule_dir.rmdir()
+        capsule_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            task_capsule_dir.rmdir()
+        sys.stderr.write(f"오류: {err}\n")
+        return 2
+
+    actual_capsule_path.write_text(final_capsule, encoding="utf-8")
+
+    if capsule_path != actual_capsule_path:
+        capsule_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            task_capsule_dir.rmdir()
+
+    final_spec = build_task_spec(intent.get("objective", ""), actual_capsule_path)
+
     if args.json:
         print(
             json.dumps(
                 {
-                    "task_id": created_id,
-                    "capsule": str(capsule_path),
-                    "spec": spec,
-                    "char_count": char_len(capsule),
+                    "task_id": actual_task_id,
+                    "capsule": str(actual_capsule_path),
+                    "spec": final_spec,
+                    "char_count": char_len(final_capsule),
                 },
                 ensure_ascii=False,
                 indent=2,
             )
         )
     else:
-        print(f"Task 생성 완료: {created_id}")
-        print(f"Capsule: {capsule_path}")
+        print(f"Task 생성 완료: {actual_task_id}")
+        print(f"Capsule: {actual_capsule_path}")
     return 0
 
 
@@ -1735,7 +1863,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         return 2
 
     intent_text = intent_path.read_text(encoding="utf-8")
-    intent = parse_intent(intent_text)
+    try:
+        intent = parse_intent(intent_text)
+    except ValueError as err:
+        sys.stderr.write(f"오류: {err}\n")
+        return 2
     task_id = args.task_id or intent.get("task_id") or f"task_{intent_path.stem}"
 
     capsule_dir = Path(args.capsule_dir)
@@ -1747,6 +1879,21 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             sys.stderr.write(f"오류: Capsule 파일 없음: {capsule_path}\n")
             return 2
         capsule = capsule_path.read_text(encoding="utf-8")
+        capsule_task_id = parse_capsule_scalar(capsule, "task_id")
+        if capsule_task_id:
+            task_id = capsule_task_id
+        try:
+            for p in parse_capsule_list(capsule, "allowed_read_files"):
+                validate_contained_path(p, field_name="allowed_read_files")
+            for p in parse_capsule_list(capsule, "allowed_write_files"):
+                validate_contained_path(p, field_name="allowed_write_files")
+            rep_p = parse_capsule_scalar(capsule, "report_path")
+            if rep_p:
+                validate_contained_path(rep_p, field_name="report_path")
+        except ValueError as err:
+            sys.stderr.write(f"오류: {err}\n")
+            return 2
+
     else:
         task_capsule_dir = capsule_dir / task_id
         task_capsule_dir.mkdir(parents=True, exist_ok=True)

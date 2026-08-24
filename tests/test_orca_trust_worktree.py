@@ -147,12 +147,28 @@ def test_settings_lock_abnormal_termination_recovery(
         monkeypatch.setattr(orca_trust_worktree, "LOCK_TIMEOUT_SECONDS", 1.0)
         with orca_trust_worktree._settings_lock():
             assert lock_file.exists()
-            token = lock_file.read_text(encoding="utf-8").strip()
-            assert ":" in token
+        token = lock_file.read_text(encoding="utf-8").strip()
+        assert ":" in token
     finally:
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+def test_settings_lock_fails_closed_when_no_lock_available(
+    trust_files, monkeypatch: pytest.MonkeyPatch
+):
+    """fcntl과 msvcrt가 모두 없으면 임계구역에 진입하지 않고 RuntimeError로 fail-closed 합니다."""
+    monkeypatch.setattr(orca_trust_worktree, "_LOCK_AVAILABLE", False)
+
+    entered = False
+    with (
+        pytest.raises(RuntimeError, match="파일 잠금을 지원하는 모듈이 없습니다"),
+        orca_trust_worktree._settings_lock(),
+    ):
+        entered = True
+
+    assert not entered
 
 
 def test_settings_lock_active_holder_blocks(trust_files, tmp_path, monkeypatch):
