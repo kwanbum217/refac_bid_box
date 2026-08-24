@@ -50,6 +50,7 @@ Arq 정식 캘리브레이션 설계서([`arq_calibration_design_20260824.md`](a
 | 반복 안정성 | `CV <= 0.05` **그리고** `MAD/median <= 0.03` |
 
 - 안정성 위반 시 `stability.verdict = "unstable_baseline_not_trustworthy"` 와 `baseline_trustworthy=false` 를 기록해 기준선을 신뢰할 수 없다고 명시합니다.
+- **non-canonical 회차 배제(추가 결함 수정)**: `compute_baseline_summary` 는 입력 회차의 `load_protocol.canonical_evidence` 를 검사합니다. 종료 시점 부하 위반 등으로 `canonical_evidence=false` 가 기록된 회차는 raw(`_rN.json`)는 보존하되, 요약에 `non_canonical_runs`(회차 식별 정보: `run_index`, `git_sha`, `timestamp`)를 기록하고 하나라도 존재하면 `baseline_trustworthy=false` 로 내립니다. 이때 `verdict` 는 `"unstable_non_canonical_runs_present"` 로 기록되어 CV/MAD 변동성 판정(`"unstable_baseline_not_trustworthy"`)과 구분됩니다. 규약 위반 측정이 조용히 기준선이 되는 것을 차단합니다.
 - **기존 동작 미변경**: `--output` 의 P95 최악 회차 대표 파일 선정(`max(results, key=p95_ms)`)과 `scripts/arq_gate.py` 의 `RepetitionThresholds` 는 그대로 유지됩니다.
 
 ### 2.3 Provenance 필수 필드 unknown 자동 기각 (`PROVENANCE_REQUIRED_FIELDS`)

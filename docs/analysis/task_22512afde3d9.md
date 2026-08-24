@@ -19,7 +19,7 @@ Arq 정식 캘리브레이션 실행을 막던 하네스 자동화 결손 3건(B
 
 ### 2.1 공통 모듈 (`scripts/benchmark_provenance.py`)
 - `check_ambient_load_protocol()` — 부하 규약 준수 판정
-- `compute_baseline_summary()` — 설계서 6장 중앙값 기준선 요약
+- `compute_baseline_summary()` — 설계서 6장 중앙값 기준선 요약. 입력 회차의 `load_protocol.canonical_evidence` 를 검사해 non-canonical 회차를 `non_canonical_runs` 로 기록하고, 존재 시 `baseline_trustworthy=false` + `verdict="unstable_non_canonical_runs_present"` (CV/MAD 판정과 구분). raw 는 보존.
 - `PROVENANCE_REQUIRED_FIELDS` + `provenance_unknown_required_fields()` + `enforce_provenance_required_fields()`
 - `build_load_protocol_record()` — 결과 JSON 의 `load_protocol` 구조체
 - 상수: `LOAD_PROTOCOL_*`, `CALIBRATION_CV_MAX`(0.05), `CALIBRATION_MAD_MEDIAN_MAX`(0.03), `CALIBRATION_REGRESSION_FLOOR`(0.06)

@@ -833,6 +833,47 @@ class TestBaselineSummaryFormula:
         summary = compute_baseline_summary(results)
         assert summary["failure"]["max"] == 0.2
 
+    def _run(
+        self,
+        index: int,
+        jobs_per_second: float,
+        p95_ms: float,
+        canonical: bool = True,
+    ) -> dict:
+        return {
+            "git_sha": f"sha{index}",
+            "timestamp": f"2026-08-24T00:0{index}:00Z",
+            "summary": {
+                "jobs_per_second": jobs_per_second,
+                "total_enqueued": 10,
+                "failed_jobs": 0,
+                "error_count": 0,
+            },
+            "latency_ms": {"p95_ms": p95_ms},
+            "load_protocol": {"canonical_evidence": canonical},
+        }
+
+    def test_all_canonical_runs_are_trustworthy(self):
+        results = [self._run(i, 100.0 + i * 0.2, 50.0 + i * 0.1) for i in range(1, 11)]
+        summary = compute_baseline_summary(results)
+        assert summary["non_canonical_runs"] == []
+        assert summary["stability"]["passed"] is True
+        assert summary["stability"]["baseline_trustworthy"] is True
+        assert summary["stability"]["verdict"] == "stable"
+
+    def test_some_non_canonical_runs_degrade_trustworthiness(self):
+        results = [self._run(i, 100.0 + i * 0.2, 50.0 + i * 0.1) for i in range(1, 11)]
+        # 3회차를 non-canonical(규약 위반 측정)로 표시
+        results[2]["load_protocol"]["canonical_evidence"] = False
+        summary = compute_baseline_summary(results)
+        assert summary["stability"]["passed"] is True  # CV/MAD 는 정상
+        assert len(summary["non_canonical_runs"]) == 1
+        assert summary["non_canonical_runs"][0]["run_index"] == 3
+        assert summary["non_canonical_runs"][0]["git_sha"] == "sha3"
+        # 규약 위반 회차가 섞였으므로 기준선을 신뢰할 수 없다
+        assert summary["stability"]["baseline_trustworthy"] is False
+        assert summary["stability"]["verdict"] == "unstable_non_canonical_runs_present"
+
 
 class TestProvenanceRequiredFields:
     """provenance 필수 필드 unknown 자동 기각 검증."""

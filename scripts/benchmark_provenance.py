@@ -984,11 +984,17 @@ def compute_baseline_summary(results: Sequence[Mapping[str, Any]]) -> dict[str, 
     median(T), median(P), CV(T), CV(P), MAD/median, rt, rp 를 계산하고 반복
     안정성 판정(CV <= 0.05, MAD/median <= 0.03)을 함께 기록합니다. 위반 시
     기준선을 신뢰할 수 없다는 판정을 명시합니다.
+
+    입력 회차의 load_protocol.canonical_evidence 가 False 인 회차는 규약 위반
+    측정이므로 raw 는 보존하되 기준선 도출에서 제외되어야 합니다. non-canonical
+    회차가 하나라도 있으면 baseline_trustworthy 를 False 로 내리고 verdict 에
+    CV/MAD 판정과 구분되는 사유를 기록합니다.
     """
     t_values: list[float] = []
     p_values: list[float] = []
     failure_max = 0.0
-    for r in results:
+    non_canonical_runs: list[dict[str, Any]] = []
+    for idx, r in enumerate(results, start=1):
         summary = r.get("summary") or {}
         latency = r.get("latency_ms") or {}
         t = summary.get("jobs_per_second")
@@ -1004,6 +1010,15 @@ def compute_baseline_summary(results: Sequence[Mapping[str, Any]]) -> dict[str, 
             failure_max = max(failure_max, (failed + errors) / float(total))
         else:
             failure_max = 1.0
+
+        load_protocol = r.get("load_protocol")
+        if isinstance(load_protocol, Mapping) and load_protocol.get("canonical_evidence") is False:
+            ident: dict[str, Any] = {"run_index": idx}
+            if "git_sha" in r:
+                ident["git_sha"] = r["git_sha"]
+            if "timestamp" in r:
+                ident["timestamp"] = r["timestamp"]
+            non_canonical_runs.append(ident)
 
     def _median(values: list[float]) -> float | None:
         return statistics.median(values) if values else None
@@ -1046,6 +1061,15 @@ def compute_baseline_summary(results: Sequence[Mapping[str, Any]]) -> dict[str, 
         and p_mad_ratio <= CALIBRATION_MAD_MEDIAN_MAX
     )
     stable = cv_ok and mad_ok
+    has_non_canonical = bool(non_canonical_runs)
+    trustworthy = stable and not has_non_canonical
+
+    if has_non_canonical:
+        verdict = "unstable_non_canonical_runs_present"
+    elif stable:
+        verdict = "stable"
+    else:
+        verdict = "unstable_baseline_not_trustworthy"
 
     return {
         "n_runs": len(results),
@@ -1062,6 +1086,7 @@ def compute_baseline_summary(results: Sequence[Mapping[str, Any]]) -> dict[str, 
             "mad_median_ratio": p_mad_ratio,
         },
         "failure": {"max": failure_max},
+        "non_canonical_runs": non_canonical_runs,
         "regression_gate": {
             "rt": rt,
             "rp": rp,
@@ -1071,8 +1096,8 @@ def compute_baseline_summary(results: Sequence[Mapping[str, Any]]) -> dict[str, 
             "cv_ok": cv_ok,
             "mad_ratio_ok": mad_ok,
             "passed": stable,
-            "baseline_trustworthy": stable,
-            "verdict": "stable" if stable else "unstable_baseline_not_trustworthy",
+            "baseline_trustworthy": trustworthy,
+            "verdict": verdict,
             "thresholds": {
                 "cv_max": CALIBRATION_CV_MAX,
                 "mad_median_max": CALIBRATION_MAD_MEDIAN_MAX,
