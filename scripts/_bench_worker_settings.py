@@ -65,6 +65,10 @@ async def startup(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """벤치마크 전용 WorkerSettings."""
 
+    is_synthetic: ClassVar[bool] = True
+    benchmark_worker_mode: ClassVar[str] = "docker_container"
+    worker_settings_module: ClassVar[str] = "scripts._bench_worker_settings.WorkerSettings"
+
     functions: ClassVar[list[Any]] = [benchmark_noop_task]
     on_startup = startup
     redis_settings = RedisSettings.from_dsn(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))

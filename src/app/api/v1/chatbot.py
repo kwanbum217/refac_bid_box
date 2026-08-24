@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -541,8 +541,14 @@ def new_chat_session_api():
 
 
 @router.post("/query", response_model=ChatbotQueryResponse, summary="단발 질의 (간이 계약)")
-async def query_chatbot(payload: ChatbotQueryRequest, db: Session = Depends(get_db)):
+async def query_chatbot(
+    payload: ChatbotQueryRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     bundle = await rag_engine.get_answer(payload.query, db=db)
+    if bundle.provenance and bundle.provenance.trace_id:
+        response.headers["X-RAG-Trace-Id"] = bundle.provenance.trace_id
     return ChatbotQueryResponse(
         query=payload.query,
         response=bundle.answer,

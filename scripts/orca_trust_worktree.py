@@ -90,12 +90,10 @@ def _settings_lock():
     미포착 FileNotFoundError)을 근본적으로 제거합니다.
     """
     if not _LOCK_AVAILABLE:
-        sys.stderr.write(
-            f"[trust] 파일 잠금을 지원하는 모듈이 없습니다 (fcntl/msvcrt). "
-            f"동시 쓰기 안전성이 보장되지 않습니다: {LOCK_FILE}\n"
+        raise RuntimeError(
+            f"파일 잠금을 지원하는 모듈이 없습니다 (fcntl/msvcrt). "
+            f"동시 쓰기 안전성을 보장할 수 없어 작업을 중단합니다: {LOCK_FILE}"
         )
-        yield
-        return
 
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS

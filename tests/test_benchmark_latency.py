@@ -72,7 +72,12 @@ def test_reproducibility_metadata_marks_failed_docker_lookup_unknown(monkeypatch
 
 def test_single_host_load_sample_marks_unavailable_load(monkeypatch):
     monkeypatch.setattr(benchmark_latency.os, "cpu_count", lambda: 8)
-    monkeypatch.setattr(benchmark_latency.os, "getloadavg", lambda: (_ for _ in ()).throw(OSError))
+    monkeypatch.setattr(
+        benchmark_latency.os,
+        "getloadavg",
+        lambda: (_ for _ in ()).throw(OSError),
+        raising=False,
+    )
 
     sample = single_host_load_sample()
 
@@ -85,7 +90,7 @@ def test_single_host_load_sample_marks_unavailable_load(monkeypatch):
 def test_single_host_load_sample_handles_missing_getloadavg(monkeypatch):
     monkeypatch.setattr(benchmark_latency.os, "cpu_count", lambda: 4)
     if hasattr(benchmark_latency.os, "getloadavg"):
-        monkeypatch.delattr(benchmark_latency.os, "getloadavg")
+        monkeypatch.delattr(benchmark_latency.os, "getloadavg", raising=False)
 
     sample = single_host_load_sample()
 
@@ -1238,17 +1243,22 @@ def test_runtime_config_snapshot_returns_allowlisted_keys_only(monkeypatch):
 
     # 허용 목록에 없는 키는 반환되지 않는다
     assert "CUSTOM_UNRELATED_VAR" not in snapshot
-    assert len(snapshot) == len(PERF_CONFIG_ALLOWLIST)
+    assert set(snapshot.keys()) == PERF_CONFIG_ALLOWLIST | {
+        "container_command",
+        "effective_web_workers",
+        "effective_web_workers_reason",
+    }
 
 
 def test_runtime_config_snapshot_handles_unknown_container():
-    """컨테이너가 없거나 환경변수를 못 읽는 경우에도 모든 값이 None으로 기록된다."""
+    """컨테이너가 없거나 환경변수를 못 읽는 경우에도 모든 값이 None(사유 포함)으로 기록된다."""
     snapshot = benchmark_latency.runtime_config_snapshot("unknown")
 
-    assert len(snapshot) == len(PERF_CONFIG_ALLOWLIST)
-    assert all(v is None for v in snapshot.values())
     for key in PERF_CONFIG_ALLOWLIST:
-        assert key in snapshot
+        assert snapshot[key] is None
+    assert snapshot["container_command"] is None
+    assert snapshot["effective_web_workers"] is None
+    assert snapshot["effective_web_workers_reason"] == "container_unknown"
 
 
 def test_runtime_config_snapshot_in_reproducibility_metadata(monkeypatch):

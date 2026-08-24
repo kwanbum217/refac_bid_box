@@ -44,19 +44,20 @@ RAG 준비 전체가 P50 70ms 미만이라 그쪽은 손댈 이유가 없습니�
 docker compose up -d app redis
 curl -s http://localhost:8000/api/v1/health/ready    # ready 확인
 
-# 기준선 (현행 gemma4:e4b) 은 이미 있습니다
-#   data/benchmarks/rag_segments_20260823.json
+# 기존 gemma4:e4b 결과는 진단용이며 강화된 하네스로 다시 측정합니다
 
 # 후보 모델로 교체 측정
 # .env 의 OLLAMA_MODEL 을 바꾸고 LATENCY_SEGMENT_LOGGING=true 를 임시 추가
-docker compose restart app
+# restart는 Compose 환경을 다시 적용하지 않으므로 컨테이너를 재생성합니다
+docker compose up -d --force-recreate app
 uv run python scripts/benchmark_rag_segments.py \
   --base-url http://127.0.0.1:8000 \
   --target-container refac_bid_box-app-1 \
+  --expected-llm-model <모델> \
   --rounds 20 \
   --output data/benchmarks/rag_segments_<모델>_<날짜>.json
 
-# .env 를 원복하고 app 재기동
+# .env 를 원복하고 app 컨테이너 재생성
 ```
 
 ### 1.4 완료 기준

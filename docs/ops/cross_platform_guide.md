@@ -1,8 +1,8 @@
 # 크로스 플랫폼 호환 가이드 (macOS / Windows)
 
 > **작성일**: 2026-07-31
-> **갱신일**: 2026-08-23
-> **상태**: macOS 실기 PASS / Ubuntu CI PASS / macOS CI PASS / 최신 Windows CI FAIL / Windows Docker Desktop 실기 미수행
+> **갱신일**: 2026-08-24
+> **상태**: 2026-08-24 원격 CI run `32703096829` (`bd6212c`) 에서 ubuntu·macOS·windows 전부 green / Windows Docker Desktop 실기 미수행
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
 ---
@@ -184,7 +184,7 @@ steps:
 - [x] Makefile 작성
 - [x] macOS에서 `make up` 실행 검증 (macOS 실기 PASS)
 - [x] Ubuntu CI / macOS CI 통과
-- [ ] Windows CI 통과 (최신 CI Run 32599491149 / SHA d95efd5 기준 failure 상태)
+- [x] Windows CI 통과 (2026-08-24 run `32703096829`, `bd6212c`. `os.getloadavg` 부재·Capsule 경로 역슬래시·테스트 기대값 역슬래시를 수정한 뒤 green)
 - [x] `.gitattributes` 줄바꿈 가드 (데이터 자산은 변환 제외)
 - [ ] Windows Docker Desktop에서 `scripts/validate_windows.ps1` 전체 통과 (실기 미수행)
 
@@ -218,9 +218,9 @@ CI 의 windows-latest 작업은 이 결함으로 실패하고 있었으며, 수�
 `scripts/validate_windows.ps1`과 전체 스택은 실기 실행하지 못했으므로, 위
 체크리스트의 Windows Docker Desktop 항목은 계속 미완료입니다.
 
-### 2026-08-23 현행 CI 및 검증 상태
+### 2026-08-24 현행 CI 및 검증 상태
 
-- **main SHA**: `d95efd5`
-- **최신 CI Run**: Run `32599491149` (failure: `lint-and-validate` failure, `windows-latest` failure, `macos-latest` success, `ubuntu-latest` success, Docker 이미지 빌드 success)
-- **직전 CI Run**: Run `32583897498` (SHA `9a46efe`, failure)
-- **현행 상태 요약**: macOS 실기 PASS, Ubuntu CI PASS, macOS CI PASS, 최신 Windows CI FAIL, Windows Docker Desktop 실기 미수행.
+- **직전 감사 기준 main SHA**: `896e1d5`
+- **코드 상태**: Windows에 없는 `os.fork()` 사용을 제거하고 subprocess 기반 테스트로 교체했습니다.
+- **원격 상태**: 위 수정이 포함된 브랜치의 Windows CI green은 아직 확인하지 않았습니다. 코드 수정만으로 PASS를 추론하지 않습니다.
+- **현행 상태 요약**: 2026-08-24 run `32703096829` 에서 windows-latest green 을 실측 확인했습니다. Windows Docker Desktop 실기는 장비 부재로 미수행입니다.
