@@ -206,4 +206,4 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 
 - 어떤 환경변수의 **실제 값도 문서에 기록하지 않습니다.**
 - 시크릿 순환 정책을 운영 환경에 적용합니다.
-- 상세는 [`security/README.md`](../security/README.md) 참조.
+- 상세는 [`src/app/core/security.py`](../../src/app/core/security.py) 참조.

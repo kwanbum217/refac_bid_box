@@ -94,4 +94,4 @@ $ uv run pytest tests/test_benchmark_latency.py -q
 ### 5.2 불변식 및 데이터 무손실 검증
 
 - 기존 원시 벤치마크 JSON 파일(`data/benchmarks/*.json`)에 대한 임의 수정이 없음을 확인했습니다 (`git diff` 변경 0건).
-- 변경된 파일은 허용 목록([`scripts/benchmark_latency.py`](../../scripts/benchmark_latency.py), [`tests/test_benchmark_latency.py`](../../tests/test_benchmark_latency.py), [`docs/analysis/p1_2_benchmark_provenance.md`](docs/analysis/p1_2_benchmark_provenance.md)) 3개로 한정됩니다.
+- 변경된 파일은 허용 목록([`scripts/benchmark_latency.py`](../../scripts/benchmark_latency.py), [`tests/test_benchmark_latency.py`](../../tests/test_benchmark_latency.py), [`docs/analysis/p1_2_benchmark_provenance.md`](p1_2_benchmark_provenance.md)) 3개로 한정됩니다.
