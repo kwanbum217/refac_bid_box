@@ -11,7 +11,7 @@
 
 `pyproject.toml`의 `[tool.mypy]` 설정에 전역 비활성화(`disable_error_code`)되어 있던 5종 오류 코드 중 실제 위반이 없거나 적은 3종(`return-value`, `attr-defined`, `union-attr`)을 복구하여 타입 검사 게이트의 실효성을 강화했습니다.
 
-`# type: ignore` 주석을 추가하여 억제하는 방식을 배제하고, 코드 수준의 타입 정정 및 방어적 None 검사를 적용하여 위반을 전량 해소했습니다.
+G1 원칙(데이터 무손실 및 DB 스키마 100% 보존)과 SQLAlchemy 2.0 매핑 규칙을 철저히 준수하여 모델 DDL 변경 없이 타입 위반을 해소했습니다.
 
 ---
 
@@ -21,32 +21,35 @@
 | --- | --- | --- | --- |
 | `disable_error_code` 목록 | 5종 (`union-attr`, `assignment`, `attr-defined`, `return-value`, `arg-type`) | 2종 (`assignment`, `arg-type`) | 3종 복구 완료 |
 | `return-value` 위반 건수 | 0건 | 0건 | 즉시 복구 |
-| `attr-defined` 위반 건수 | 2건 | 0건 | `BidResult` 비영속 속성 정의로 해소 |
+| `attr-defined` 위반 건수 | 2건 | 0건 | 명시적 주석 기반 타입 무시로 안전 해소 |
 | `union-attr` 위반 건수 | 9건 | 0건 | 방어적 None 가드 적용으로 해소 |
-| 신규 추가된 `# type: ignore` | - | 0건 | 억제 주석 없음 |
+| 추가된 `# type: ignore` | - | 2건 | `bid_queries.py` 템플릿 동적 바인딩 지점 한정 |
 | mypy 전체 검사 결과 (`src/`) | 통과 (5종 비활성화) | **통과** (3종 활성화, 0 오류) | 89개 소스 파일 검사 통과 |
 | 단위/통합 테스트 | 1932 passed | **1932 passed** (100% 통과) | 런타임 회귀 없음 |
 
 ---
 
-## 3. 세부 수정 내역
+## 3. 세부 수정 내역 및 설계 결정
 
 ### 3.1 `pyproject.toml`
 - `[tool.mypy]`의 `disable_error_code`에서 `union-attr`, `attr-defined`, `return-value`를 제거했습니다.
 - `assignment`와 `arg-type` 2종만 잔여 부채로 유지했습니다.
 
-### 3.2 `src/app/models/bids.py` (`attr-defined` 2건 해소)
-- `BidResult` 모델에 `resolved_winning_rate: Decimal | None = None` 비영속 속성을 명시적으로 선언했습니다.
-- `src/app/services/bid_queries.py:515, 517`에서 낙찰 상세 템플릿(`result_detail.html`) 렌더링을 위해 동적으로 할당하던 속성에 대해 발생하던 `attr-defined` 오류 2건을 안전하게 해소했습니다.
+### 3.2 `src/app/services/bid_queries.py` (`attr-defined` 2건 해소)
+- **초기 시도 및 반려 사유**: `BidResult` 모델 클래스에 `resolved_winning_rate: Decimal | None = None`을 선언하는 방식을 시도했으나, SQLAlchemy 2.0 DeclarativeBase에서 `Mapped[]` 없는 타입 주석은 `MappedAnnotationError`를 발생시키며 G1 스키마 불변 원칙을 훼손할 위험이 있어 기각되었습니다.
+- **최종 채택 방식**: `BidResult` 모델을 전혀 수정하지 않고 원형을 보존하며, `src/app/services/bid_queries.py:515, 517`에서 Jinja2 템플릿(`result_detail.html`) 렌더링에 필요한 동적 속성 할당 지점에 `# type: ignore[attr-defined]`와 이유를 명시한 주석을 달아 안전하게 처리했습니다.
 
 ### 3.3 `src/app/services/kb_builder.py` (`union-attr` 1건 해소)
 - `rebuild_knowledge_base` 함수의 증분 delta 모드 분기에서 `collected_since`의 `datetime | None` 유니온을 검증하는 방어적 None 가드(`since_repr = collected_since.isoformat() if collected_since is not None else ""`)를 적용하여 `union-attr` 오류 1건을 해소했습니다.
+- **런타임 영향**: 기존에는 `delta_mode`가 참일 때 `collected_since`가 항상 None이 아니었으나, 타입 가드를 통해 `None`일 경우 빈 문자열로 처리하도록 방어 코드를 추가했습니다 (기존 동작과 실질적으로 동일).
 
 ### 3.4 `src/app/services/automation_orchestrator.py` (`union-attr` 6건 해소)
 - `cancel_automation_request` 함수에서 실행 상태 취소 처리 시 `if running:` 조건문을 `if running and execution is not None:`로 변경하여 `execution` 인스턴스에 대한 `union-attr` 오류 6건(`raw_status_payload`, `status`, `stage_status`, `ended_at`, `logs_summary`)을 해소했습니다.
+- **런타임 영향**: `running` 플래그 계산 시 `execution`의 존재 여부가 이미 확인되므로 런타임 동작 변경 없이 정적 타입 가드만 보강되었습니다.
 
 ### 3.5 `src/rag/llm.py` (`union-attr` 2건 해소)
 - `GeminiBackend`의 `generate` 및 `stream_generate` 메서드 시작 지점에 `if self._client is None:` 예외 검사를 추가하여 `_client`의 None 가능성을 방어하고 `self._client.models` 접근 시 발생하던 `union-attr` 오류 2건을 해소했습니다.
+- **런타임 영향**: API 키 누락 등으로 `_client`가 초기화되지 않은 상태에서 호출 시 `AttributeError` 대신 명확한 `RuntimeError`를 발생시키도록 방어 처리를 개선했습니다.
 
 ---
 
