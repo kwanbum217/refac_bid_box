@@ -16,7 +16,7 @@
 | 측정 | 회차 | 부하 규약 | 결과 |
 | --- | :---: | :---: | --- |
 | Arq Docker synthetic | 3 | 통과 | 1,681~1,764 jobs/sec, P95 325~342ms |
-| RAG 구간 분리 | 1 (20질의) | 해당 없음 | `llm_ms` 가 총합 P50 의 **97.9%** |
+| RAG 구간 분리 | 1 (20질의) | **위반, 기각** | 부하 median 36.15%. 재측정본은 [`llm_model_comparison_e4b_e2b_20260824.md`](llm_model_comparison_e4b_e2b_20260824.md) |
 | Ollama Predict c4 / SSE c1 / Query c1 | 3 (+기각 1) | 통과 | 게이트 전 항목 달성 |
 
 ---
@@ -102,8 +102,9 @@ trace 와 로그 1:1 대조가 모두 적용된 상태의 측정입니다.
 | total | 3,762.48 | 7,284.70 | 9,160.40 |
 | residual | 0.03 | 1.57 | 30.04 |
 
-- **`llm_ms` 가 총합 P50 의 97.9%** 입니다. 2026-08-23 의 97.6% 가 강화된
-  하네스에서 재현됐습니다
+- **`llm_ms` 가 총합 P50 의 97.9%** 입니다. 다만 **이 회차는 주변 부하 median
+  36.15% 로 규약을 넘겨 뒤에 기각했습니다.** 부하 규약을 지킨 정본은 97.5%,
+  `llm_ms` P50 2,839.93ms 이며 [`llm_model_comparison_e4b_e2b_20260824.md`](llm_model_comparison_e4b_e2b_20260824.md) 에 있습니다
 - `residual_ms` P50 0.03ms 로 계측 사각지대가 없습니다
 - 원시: `data/benchmarks/rag_segments_e4b_20260824.json`
 

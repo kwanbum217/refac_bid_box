@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-24
-> **source_commit**: `dbde63a`
+> **source_commit**: `ede56dd`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -66,7 +66,7 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **운영 검증**: Windows CI는 run `32703096829`에서 green을 실측 확인했습니다. Arq Docker synthetic 3회 raw와 Ollama 규약 준수 측정은 2026-08-24에 완료했습니다([`measurement_triple_20260824.md`](../analysis/measurement_triple_20260824.md)). Windows Docker Desktop 실기가 남았습니다.
-1-2. **LLM 경로 최적화**: 강화된 하네스(기대 모델 대조·trace 1:1·strict provenance)로 2026-08-24 재측정한 20표본에서 단발 질의 지연의 **97.9%가 `llm_ms`** 입니다. `residual_ms` P50 0.03ms로 계측 사각지대도 없습니다. LLM 경로가 유일한 유효 최적화 축입니다([`measurement_triple_20260824.md`](../analysis/measurement_triple_20260824.md)).
+1-2. **LLM 경로 최적화**: 부하 규약을 지킨 조건의 e4b 정본은 `llm_ms` P50 2,839.93ms이며 총합의 97.5%입니다. `gemma4:e2b` 비교에서 `llm_ms` P50 -54.1%, P95 -26.2%로 속도 우세가 확정됐으나 **품질 표본이 5문항뿐이라 승격하지 않았습니다**([`llm_model_comparison_e4b_e2b_20260824.md`](../analysis/llm_model_comparison_e4b_e2b_20260824.md)).
 1-1. **Arq 정식 기준선 캘리브레이션**: 잠정 일관성 봉투(구 절대 기준선 900 jps / 600ms)는 사후 보정임이 확인됐습니다([`arq_threshold_derivation_20260823.md`](../analysis/arq_threshold_derivation_20260823.md)). 정식 기준선을 세우려면 고정 조건 캘리브레이션 런이 필요합니다.
 2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
 3. **G3 전체 컷오버 판정**: 위 항목이 닫힌 뒤 별도로 판정합니다. 개별 게이트 PASS를 컷오버 PASS로 승격하지 않습니다.
