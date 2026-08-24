@@ -29,7 +29,6 @@ from scripts.benchmark_arq_throughput import (
     get_arq_version,
     get_docker_version,
     get_redis_py_version,
-    inspect_redis_container,
     main,
     parse_args,
 )
@@ -96,6 +95,12 @@ def test_aggregate_benchmark_metrics_success():
         collected_results=collected,
         total_duration_sec=0.5,
         git_sha="testhash123",
+        redis_container={
+            "container_id": "r1",
+            "container_name": "redis-test",
+            "image": "redis:7-alpine",
+            "image_id": "sha256:abc",
+        },
     )
 
     assert result.status == "success"
@@ -141,6 +146,12 @@ def test_aggregate_benchmark_metrics_partial_failure():
         collected_results=collected,
         total_duration_sec=1.0,
         git_sha="testhash123",
+        redis_container={
+            "container_id": "r1",
+            "container_name": "redis-test",
+            "image": "redis:7-alpine",
+            "image_id": "sha256:abc",
+        },
     )
 
     assert result.status == "failed"
@@ -173,6 +184,12 @@ def test_aggregate_benchmark_metrics_missing_jobs():
         collected_results=collected,
         total_duration_sec=2.0,
         extra_errors=extra_errors,
+        redis_container={
+            "container_id": "r1",
+            "container_name": "redis-test",
+            "image": "redis:7-alpine",
+            "image_id": "sha256:abc",
+        },
     )
 
     assert result.status == "failed"
@@ -405,43 +422,69 @@ def test_get_docker_version_returns_string():
     assert version == "unknown" or "Docker version" in version
 
 
-@patch("scripts.benchmark_arq_throughput.subprocess.check_output")
-def test_inspect_redis_container_parses_output(mock_check_output):
-    mock_check_output.side_effect = [
-        '{"ID": "abc123", "Names": "redis-test", "Image": "redis:7-alpine"}',
-        '[{"Image": "sha256:abcdef123456", "NetworkSettings": {"Networks": {"test_net": {}}}}]',
-    ]
+@patch("scripts.benchmark_provenance._command_output")
+def test_inspect_redis_container_parses_output(mock_cmd):
+    """resolve_redis_container 가 단일 후보 Redis 컨테이너를 정상 파싱하는지 검증합니다."""
+    from scripts.benchmark_provenance import resolve_redis_container
 
-    info = inspect_redis_container()
+    def fake_cmd(command: list[str]) -> str:
+        if command[0] == "docker" and command[1] == "ps":
+            return "abc123\tredis-test\n"
+        if command[0] == "docker" and command[1] == "inspect":
+            if command[3] == "{{.Image}}":
+                return "sha256:imgid"
+            if command[3] == "{{.Name}}":
+                return "/redis-test"
+            if command[3] == "{{.Config.Image}}":
+                return "redis:7-alpine"
+            if command[3] == "{{json .NetworkSettings.Ports}}":
+                return '{"6379/tcp":[{"HostIp":"0.0.0.0","HostPort":"6379"}]}'
+            if command[3] == "{{json .NetworkSettings.Networks}}":
+                return '{"test_net": {}}'
+        return "unknown"
+
+    mock_cmd.side_effect = fake_cmd
+
+    info = resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
 
     assert info["container_id"] == "abc123"
     assert info["container_name"] == "redis-test"
     assert info["image"] == "redis:7-alpine"
-    assert info["image_id"] == "sha256:abcdef123456"
-    # Verify the calls were made correctly
-    assert mock_check_output.call_count == 2
-    # First call: docker ps
-    args_1 = mock_check_output.call_args_list[0][0][0]
-    assert "docker" in args_1[0]
-    assert "ps" in args_1
-    # Second call: docker inspect
-    args_2 = mock_check_output.call_args_list[1][0][0]
-    assert "docker" in args_2[0]
-    assert "inspect" in args_2
-    assert "abc123" in args_2
+    assert info["image_id"] == "sha256:imgid"
+    assert info["network"] == "test_net"
 
 
-@patch(
-    "scripts.benchmark_arq_throughput.subprocess.check_output",
-    side_effect=OSError("docker not found"),
-)
-def test_inspect_redis_container_handles_error(mock_check_output):
-    info = inspect_redis_container()
+@patch("scripts.benchmark_provenance._command_output")
+def test_inspect_redis_container_handles_error(mock_cmd):
+    """조회 예외가 unknown 성공으로 흡수되지 않고 fail-closed 로 중단되는지 검증합니다."""
+    from scripts.benchmark_provenance import BuildProvenanceError, resolve_redis_container
 
-    assert info["container_id"] == "unknown"
-    assert info["container_name"] == "unknown"
-    assert info["image"] == "unknown"
-    assert info["image_id"] == "unknown"
+    mock_cmd.return_value = "unknown"
+
+    with pytest.raises(BuildProvenanceError, match="image_id"):
+        resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
+
+
+@patch("scripts.benchmark_provenance._command_output")
+def test_inspect_redis_container_fail_closed_on_ambiguous_candidates(mock_cmd):
+    """후보가 2개 이상이면 자동 선택하지 않고 중단하는지 검증합니다."""
+    from scripts.benchmark_provenance import BuildProvenanceError, resolve_redis_container
+
+    mock_cmd.return_value = "abc123\tredis-a\nxyz789\tredis-b\n"
+
+    with pytest.raises(BuildProvenanceError, match="exactly 1 candidate"):
+        resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
+
+
+@patch("scripts.benchmark_provenance._command_output")
+def test_inspect_redis_container_fail_closed_on_zero_candidates(mock_cmd):
+    """후보가 0개이면 자동 선택하지 않고 중단하는지 검증합니다."""
+    from scripts.benchmark_provenance import BuildProvenanceError, resolve_redis_container
+
+    mock_cmd.return_value = ""
+
+    with pytest.raises(BuildProvenanceError, match="exactly 1 candidate"):
+        resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
 
 
 def test_aggregate_benchmark_metrics_includes_provenance():

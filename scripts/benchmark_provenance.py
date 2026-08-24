@@ -14,6 +14,7 @@ scripts/benchmark_provenance.py
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import json
 import os
@@ -94,6 +95,281 @@ def is_source_dirty(status_porcelain: str) -> bool:
             continue
         return True
     return False
+
+
+def get_git_status(path: Path | str | None = None) -> tuple[str, bool | None]:
+    """지정된 디렉터리의 Git SHA 및 dirty 상태를 반환합니다.
+
+    Returns:
+        tuple[git_sha, is_dirty]
+        - git_sha: 커밋 SHA 또는 "unknown"
+        - is_dirty: True (dirty), False (clean), None (unknown/Git 오류)
+    """
+    target_path = Path(path).resolve() if path is not None else PROJECT_ROOT
+    try:
+        sha = subprocess.check_output(  # nosec B603 B607
+            ["git", "-C", str(target_path), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        sha = "unknown"
+
+    try:
+        status = subprocess.check_output(  # nosec B603 B607
+            ["git", "-C", str(target_path), "status", "--porcelain"],
+            text=True,
+        ).strip()
+        is_dirty = is_source_dirty(status)
+    except (OSError, subprocess.CalledProcessError):
+        is_dirty = None
+
+    return sha, is_dirty
+
+
+def get_host_memory() -> dict[str, int | None]:
+    """호스트 물리 메모리 크기(total, available)를 바이트 단위로 안전하게 수집합니다."""
+    total_bytes: int | None = None
+    available_bytes: int | None = None
+
+    if hasattr(os, "sysconf"):
+        try:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            if (
+                isinstance(pages, int)
+                and isinstance(page_size, int)
+                and pages > 0
+                and page_size > 0
+            ):
+                total_bytes = pages * page_size
+        except (ValueError, OSError):
+            pass
+        try:
+            avail_pages = os.sysconf("SC_AVPHYS_PAGES")
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            if (
+                isinstance(avail_pages, int)
+                and isinstance(page_size, int)
+                and avail_pages > 0
+                and page_size > 0
+            ):
+                available_bytes = avail_pages * page_size
+        except (ValueError, OSError):
+            pass
+
+    if total_bytes is None and Path("/proc/meminfo").exists():
+        with contextlib.suppress(Exception):
+            meminfo = Path("/proc/meminfo").read_text(encoding="utf-8")
+            for line in meminfo.splitlines():
+                if line.startswith("MemTotal:"):
+                    total_bytes = int(line.split()[1]) * 1024
+                elif line.startswith("MemAvailable:"):
+                    available_bytes = int(line.split()[1]) * 1024
+
+    if total_bytes is None and platform.system() == "Darwin":
+        with contextlib.suppress(Exception):
+            out = subprocess.check_output(  # nosec B603 B607
+                ["sysctl", "-n", "hw.memsize"],
+                text=True,
+            ).strip()
+            total_bytes = int(out)
+
+    return {
+        "total_bytes": total_bytes,
+        "available_bytes": available_bytes,
+    }
+
+
+def build_provenance_dict(
+    *,
+    host_cpu_count: int,
+    host_load_avg_1m: float | None,
+    host_memory: dict[str, int | None],
+    redis_url: str,
+    redis_container_id: str,
+    redis_container_name: str,
+    redis_image: str,
+    redis_image_id: str,
+    redis_server_version: str,
+    redis_server_mode: str,
+    arq_version: str,
+    redis_py_version: str,
+    benchmark_worker_mode: str,
+    worker_settings_module: str,
+    worker_functions: list[str],
+    is_synthetic: bool,
+    worker_max_jobs: int,
+    worker_poll_delay: float,
+    worker_job_timeout: int,
+    docker_version: str,
+    worker_container_id: str | None,
+    worker_container_name: str | None,
+    worker_image: str | None,
+    worker_image_id: str | None,
+    source_mount: str | None,
+    source_git_sha: str | None,
+    source_git_dirty: bool | None,
+) -> dict[str, Any]:
+    """공통 4계층 Provenance 딕셔너리 구조를 생성합니다."""
+    return {
+        "host": {
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+            "cpu_count": host_cpu_count,
+            "load_avg_1m": host_load_avg_1m,
+            "memory_total_bytes": host_memory.get("total_bytes"),
+            "memory_available_bytes": host_memory.get("available_bytes"),
+        },
+        "redis": {
+            "redis_url": redis_url,
+            "container_id": redis_container_id,
+            "container_name": redis_container_name,
+            "image": redis_image,
+            "image_id": redis_image_id,
+            "server_version": redis_server_version,
+            "server_mode": redis_server_mode,
+        },
+        "arq": {
+            "arq_version": arq_version,
+            "redis_py_version": redis_py_version,
+            "benchmark_worker_mode": benchmark_worker_mode,
+            "worker_settings_module": worker_settings_module,
+            "worker_functions": list(worker_functions),
+            "is_synthetic": is_synthetic,
+            "worker_max_jobs": worker_max_jobs,
+            "worker_poll_delay": worker_poll_delay,
+            "worker_job_timeout": worker_job_timeout,
+        },
+        "docker": {
+            "docker_version": docker_version,
+            "worker_container_id": worker_container_id,
+            "worker_container_name": worker_container_name,
+            "worker_image": worker_image,
+            "worker_image_id": worker_image_id,
+            "source_mount": source_mount,
+            "source_git_sha": source_git_sha,
+            "source_git_dirty": source_git_dirty,
+        },
+    }
+
+
+def resolve_redis_container(
+    redis_url: str,
+    target: str | None = None,
+    strict: bool = True,
+    command_runner: Any = None,
+    network_default: str = "arq-docker-measure_default",
+) -> dict[str, Any]:
+    """대상 Redis 컨테이너 identity 를 명시 지정 또는 fail-closed 자동 결박으로 식별합니다.
+
+    - target(컨테이너 이름/ID 또는 docker compose 서비스명)이 주어지면 그대로 사용합니다.
+    - target 이 없으면 `docker ps --filter name=redis` 로 후보를 수집합니다.
+      후보가 정확히 1개일 때만 채택하며, 0개 또는 2개 이상이면 자동 선택하지 않고
+      BuildProvenanceError 로 중단합니다 (fail-closed).
+    - strict 모드에서는 redis_url 의 호스트/포트가 선택된 컨테이너의 발행 포트와
+      대응하는지 검증하고, 대응을 확인할 수 없으면 BuildProvenanceError 로 중단합니다.
+    - 조회 예외는 unknown 으로 흡수하지 않고 BuildProvenanceError 로 중단합니다.
+    """
+    cmd_fn = command_runner if command_runner is not None else _command_output
+
+    def require(raw: str, what: str) -> str:
+        if raw in ("", "unknown"):
+            raise BuildProvenanceError(
+                f"Redis container '{what}' lookup failed (command returned unknown/empty)"
+            )
+        return raw
+
+    def inspect_container(cid: str) -> dict[str, Any]:
+        raw_image_id = require(cmd_fn(["docker", "inspect", "-f", "{{.Image}}", cid]), "image_id")
+        raw_name = require(cmd_fn(["docker", "inspect", "-f", "{{.Name}}", cid]), "name")
+        name = raw_name[1:] if raw_name.startswith("/") else raw_name
+        raw_ports = cmd_fn(["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", cid])
+        nets_raw = cmd_fn(["docker", "inspect", "-f", "{{json .NetworkSettings.Networks}}", cid])
+        network = network_default
+        if nets_raw not in ("", "unknown"):
+            try:
+                nets = json.loads(nets_raw)
+                keys = list(nets.keys())
+                if keys:
+                    network = keys[0]
+            except (ValueError, TypeError):
+                pass
+        return {
+            "container_id": cid,
+            "container_name": name,
+            "image": require(
+                cmd_fn(["docker", "inspect", "-f", "{{.Config.Image}}", cid]), "image"
+            ),
+            "image_id": raw_image_id,
+            "network": network,
+            "published_host_ports": _parse_published_host_ports(raw_ports),
+        }
+
+    resolved_target: str | None = None
+    if target:
+        compose_id = cmd_fn(["docker", "compose", "ps", "-q", target])
+        resolved_target = compose_id if compose_id not in ("", "unknown") else target
+    else:
+        ps_raw = cmd_fn(
+            [
+                "docker",
+                "ps",
+                "--filter",
+                "name=redis",
+                "--format",
+                "{{.ID}}\t{{.Names}}",
+            ]
+        )
+        lines = [ln for ln in ps_raw.splitlines() if ln.strip()]
+        if len(lines) != 1:
+            raise BuildProvenanceError(
+                f"Redis container auto-selection requires exactly 1 candidate "
+                f"(name=redis), found {len(lines)}. Specify --redis-container explicitly."
+            )
+        resolved_target = lines[0].split("\t")[0].strip()
+
+    info = inspect_container(resolved_target)
+
+    if strict and redis_url:
+        parsed = urllib.parse.urlparse(redis_url)
+        req_host = parsed.hostname or "127.0.0.1"
+        req_port = parsed.port or (6379)
+        is_loopback = req_host in (
+            "127.0.0.1",
+            "localhost",
+            "0.0.0.0",  # noqa: S104  # nosec B104 - 허용된 loopback 대체 표기 비교
+            "::1",
+            "localhost.localdomain",
+        )
+        matched = req_port in info["published_host_ports"] if is_loopback else False
+        if not matched:
+            raise BuildProvenanceError(
+                f"Redis container '{info['container_name']}' does not correspond to "
+                f"redis_url host {req_host}:{req_port} (published host ports: "
+                f"{sorted(info['published_host_ports'])})."
+            )
+
+    info.pop("published_host_ports", None)
+    return info
+
+
+def _parse_published_host_ports(raw_ports: str) -> set[int]:
+    """NetworkSettings.Ports JSON 문자열에서 발행된 호스트 포트 집합을 파싱합니다."""
+    host_ports: set[int] = set()
+    if raw_ports and raw_ports != "unknown":
+        try:
+            ports_json = json.loads(raw_ports)
+            if isinstance(ports_json, dict):
+                for _k, v in ports_json.items():
+                    if isinstance(v, list):
+                        for binding in v:
+                            if isinstance(binding, dict):
+                                h_port_str = binding.get("HostPort", "")
+                                if h_port_str and str(h_port_str).isdigit():
+                                    host_ports.add(int(h_port_str))
+        except (ValueError, TypeError):
+            pass
+    return host_ports
 
 
 def _command_output(

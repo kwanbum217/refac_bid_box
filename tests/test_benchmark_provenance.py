@@ -19,10 +19,14 @@ from scripts.benchmark_provenance import (
     _command_output,
     _parse_container_command,
     _parse_effective_workers,
+    build_provenance_dict,
     compute_host_load_stats,
+    get_git_status,
+    get_host_memory,
     host_load_metadata,
     is_source_dirty,
     reproducibility_metadata,
+    resolve_redis_container,
     runtime_config_snapshot,
     single_host_load_sample,
     verify_provenance_consistency,
@@ -497,3 +501,156 @@ class TestIsSourceDirty:
     def test_benchmark_artifact_mixed_with_source_change_is_dirty(self):
         status = "?? data/benchmarks/run_r1.json\n M src/app/main.py"
         assert is_source_dirty(status) is True
+
+
+class TestCommonHarnessHelpers:
+    """두 하네스가 공유하는 build_provenance_dict / get_git_status / get_host_memory."""
+
+    def test_build_provenance_dict_four_layer_schema(self):
+        prov = build_provenance_dict(
+            host_cpu_count=8,
+            host_load_avg_1m=1.0,
+            host_memory={"total_bytes": 1000, "available_bytes": 500},
+            redis_url="redis://localhost:6379/0",
+            redis_container_id="rcid",
+            redis_container_name="rname",
+            redis_image="redis:7-alpine",
+            redis_image_id="sha256:rimg",
+            redis_server_version="7.4.9",
+            redis_server_mode="standalone",
+            arq_version="0.28.0",
+            redis_py_version="5.3.1",
+            benchmark_worker_mode="in_process",
+            worker_settings_module="in_process:Worker",
+            worker_functions=["benchmark_noop_task"],
+            is_synthetic=True,
+            worker_max_jobs=2,
+            worker_poll_delay=0.01,
+            worker_job_timeout=10,
+            docker_version="Docker version 29.7.2",
+            worker_container_id=None,
+            worker_container_name=None,
+            worker_image=None,
+            worker_image_id=None,
+            source_mount="/app",
+            source_git_sha="sha_test",
+            source_git_dirty=False,
+        )
+        assert set(prov.keys()) == {"host", "redis", "arq", "docker"}
+        assert set(prov["redis"].keys()) == {
+            "redis_url",
+            "container_id",
+            "container_name",
+            "image",
+            "image_id",
+            "server_version",
+            "server_mode",
+        }
+
+    def test_get_git_status_clean_and_dirty(self, tmp_path, monkeypatch):
+        import subprocess
+
+        calls = []
+
+        def fake_check_output(cmd, **kwargs):
+            calls.append(cmd)
+            if "rev-parse" in cmd:
+                return "sha123456"
+            return " M some_file.py"
+
+        monkeypatch.setattr(subprocess, "check_output", fake_check_output)
+        sha, dirty = get_git_status(tmp_path)
+        assert sha == "sha123456"
+        assert dirty is True
+
+    def test_get_host_memory_structure(self):
+        mem = get_host_memory()
+        assert isinstance(mem, dict)
+        assert "total_bytes" in mem
+        assert "available_bytes" in mem
+
+
+class TestRedisResolutionFailClosed:
+    """Redis 컨테이너 명시 지정 및 fail-closed 결박 검증."""
+
+    def test_resolve_with_explicit_target(self, monkeypatch):
+        def fake_cmd(command: list[str]) -> str:
+            if command[0] == "docker" and command[1] == "inspect":
+                if command[3] == "{{.Image}}":
+                    return "sha256:imgid"
+                if command[3] == "{{.Name}}":
+                    return "/redis-test"
+                if command[3] == "{{.Config.Image}}":
+                    return "redis:7-alpine"
+                if command[3] == "{{json .NetworkSettings.Ports}}":
+                    return '{"6379/tcp":[{"HostIp":"0.0.0.0","HostPort":"6379"}]}'
+                if command[3] == "{{json .NetworkSettings.Networks}}":
+                    return '{"test_net": {}}'
+            if command[0] == "docker" and command[1] == "compose":
+                return ""
+            return "unknown"
+
+        monkeypatch.setattr(benchmark_provenance, "_command_output", fake_cmd)
+        info = resolve_redis_container(
+            redis_url="redis://localhost:6379/0",
+            target="redis-test",
+            strict=True,
+        )
+        assert info["container_id"] == "redis-test"
+        assert info["container_name"] == "redis-test"
+        assert info["image"] == "redis:7-alpine"
+        assert info["image_id"] == "sha256:imgid"
+
+    def test_redis_url_mismatch_fail_closed(self, monkeypatch):
+        def fake_cmd(command: list[str]) -> str:
+            if command[0] == "docker" and command[1] == "inspect":
+                if command[3] == "{{.Image}}":
+                    return "sha256:imgid"
+                if command[3] == "{{.Name}}":
+                    return "/redis-test"
+                if command[3] == "{{.Config.Image}}":
+                    return "redis:7-alpine"
+                if command[3] == "{{json .NetworkSettings.Ports}}":
+                    return '{"6380/tcp":[{"HostIp":"0.0.0.0","HostPort":"6380"}]}'
+                if command[3] == "{{json .NetworkSettings.Networks}}":
+                    return '{"test_net": {}}'
+            if command[0] == "docker" and command[1] == "compose":
+                return ""
+            return "unknown"
+
+        monkeypatch.setattr(benchmark_provenance, "_command_output", fake_cmd)
+        with pytest.raises(BuildProvenanceError, match="does not correspond to redis_url"):
+            resolve_redis_container(
+                redis_url="redis://localhost:6379/0",
+                target="redis-test",
+                strict=True,
+            )
+
+    def test_ambiguous_candidates_fail_closed(self, monkeypatch):
+        def fake_cmd(command: list[str]) -> str:
+            if command[0] == "docker" and command[1] == "ps":
+                return "abc123\tredis-a\nxyz789\tredis-b\n"
+            return "unknown"
+
+        monkeypatch.setattr(benchmark_provenance, "_command_output", fake_cmd)
+        with pytest.raises(BuildProvenanceError, match="exactly 1 candidate"):
+            resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
+
+    def test_zero_candidates_fail_closed(self, monkeypatch):
+        monkeypatch.setattr(benchmark_provenance, "_command_output", lambda cmd: "")
+        with pytest.raises(BuildProvenanceError, match="exactly 1 candidate"):
+            resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
+
+    def test_lookup_exception_not_swallowed(self, monkeypatch):
+        def fake_cmd(command: list[str]) -> str:
+            if command[0] == "docker" and command[1] == "inspect":
+                return "unknown"
+            if command[0] == "docker" and command[1] == "compose":
+                return ""
+            if command[0] == "docker" and command[1] == "ps":
+                return "abc123\tredis-test\n"
+            return "unknown"
+
+        monkeypatch.setattr(benchmark_provenance, "_command_output", fake_cmd)
+        with pytest.raises(BuildProvenanceError, match="image_id"):
+            resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
