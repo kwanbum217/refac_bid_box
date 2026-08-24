@@ -40,6 +40,21 @@
 플랫폼을 넘나들며 문자열로 대조되므로 구분자가 갈리면 워커와 게이트가 같은
 경로를 다른 값으로 읽습니다.
 
+### 1.1.1 2차 Windows 실패와 추가 수정 (`4d7be51`)
+
+수정 후 재실행(run `32702409191`)에서 macOS 는 green 이 됐으나 **Windows 는 다시
+실패**했습니다. 이번에는 원인이 반대쪽이었습니다. 운영 코드를 POSIX 로 고정하자
+`str(Path(".orca/..."))` 로 기대값을 만들던 테스트 4건이 Windows 에서 역슬래시
+문자열을 기대해 어긋났습니다.
+
+    tests/test_orca_taskctl.py::test_build_capsule_notice_carries_path_contract_and_dispatch_id
+    tests/test_orca_taskctl.py::test_build_task_spec_embeds_worktree_relative_capsule_path
+    tests/test_orca_taskctl.py::test_capsule_paths_never_leak_main_repo_absolute_path
+    tests/test_orca_taskctl.py::test_build_task_spec_truncates_long_objective
+
+기대 문자열을 리터럴 POSIX 경로로 바꿨습니다(`4d7be51`). **3차 CI 결과는 이번
+세션에서 확인하지 못했습니다.** 다음 세션의 첫 확인 대상입니다.
+
 ### 1.2 남은 크로스 플랫폼 위험 (미수정)
 
 `scripts/run_p9_sse_rebaseline.py:55` 는 `sysctl` 실패 시 `os.getloadavg()` 로
