@@ -177,6 +177,15 @@ async def test_run_container_worker_benchmark_mocked_success(tmp_path):
         patch("scripts.benchmark_arq_container.create_pool", return_value=mock_redis),
         patch("scripts.benchmark_arq_container.get_git_status", return_value=("sha123456", False)),
         patch(
+            "scripts.benchmark_arq_container.host_load_metadata",
+            return_value={
+                "cpu_count": 8,
+                "samples": [],
+                "load_1m": {"min": 0.5, "median": 1.0, "max": 1.5},
+                "per_core_percent": {"min": 6.25, "median": 12.5, "max": 18.75},
+            },
+        ),
+        patch(
             "scripts.benchmark_arq_container.inspect_redis_container",
             return_value={
                 "container_id": "redis_cid",
@@ -216,6 +225,10 @@ async def test_run_container_worker_benchmark_mocked_success(tmp_path):
         assert prov["arq"]["is_synthetic"] is True
         assert prov["docker"]["worker_container_id"] == "worker_cid_123"
         assert prov["redis"]["server_version"] == "7.4.9"
+
+        # 주변 부하 규약: strict=False 이므로 canonical evidence 가 아님
+        assert result.load_protocol["canonical_evidence"] is False
+        assert result.load_protocol["compliant"] is True
 
 
 def test_synthetic_vs_production_worker_settings_labeling():
@@ -388,3 +401,105 @@ def test_container_main_repetitions_preserves_raw_files(tmp_path):
 
         saved = json.loads(out_file.read_text(encoding="utf-8"))
         assert saved["latency_ms"]["p95_ms"] == 30.0
+
+
+def _compliant_load_stats() -> dict:
+    return {
+        "cpu_count": 8,
+        "samples": [],
+        "load_1m": {"min": 0.5, "median": 1.0, "max": 1.5},
+        "per_core_percent": {"min": 6.25, "median": 12.5, "max": 18.75},
+    }
+
+
+def _violating_load_stats() -> dict:
+    # 중앙값 50% (>30%), 최대 75% (>50%) 로 규약 위반
+    return {
+        "cpu_count": 4,
+        "samples": [],
+        "load_1m": {"min": 1.0, "median": 2.0, "max": 3.0},
+        "per_core_percent": {"min": 25.0, "median": 50.0, "max": 75.0},
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_container_worker_benchmark_strict_aborts_on_high_load(tmp_path):
+    """strict 모드에서 시작 부하 중앙값 30% 초과 시 측정이 중단되는지 검증합니다."""
+    with (
+        patch("scripts.benchmark_arq_container.get_git_status", return_value=("sha123", False)),
+        patch(
+            "scripts.benchmark_arq_container.host_load_metadata",
+            return_value=_violating_load_stats(),
+        ),
+        pytest.raises(BuildProvenanceError, match="Ambient load protocol violated at start"),
+    ):
+        await run_container_worker_benchmark(
+            total_jobs=5,
+            concurrency=1,
+            strict=True,
+            source_mount=tmp_path,
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_container_worker_benchmark_bypass_marks_load_violation(tmp_path):
+    """부하 규약을 우회하면 결과에 미준수 표시(canonical_evidence False)가 남는지 검증합니다."""
+    mock_redis = MagicMock()
+    mock_redis.ping = AsyncMock(return_value=True)
+    mock_redis.info = AsyncMock(return_value={"redis_version": "7.4.9", "redis_mode": "standalone"})
+    mock_redis.enqueue_job = AsyncMock(return_value=None)
+    mock_redis.scan = AsyncMock(return_value=(0, []))
+    mock_redis.delete = AsyncMock(return_value=0)
+    mock_redis.aclose = AsyncMock(return_value=None)
+
+    done_payload = json.dumps({"job_id": "cntr-bypass-0", "success": True, "error": None}).encode(
+        "utf-8"
+    )
+    mock_redis.blpop = AsyncMock(side_effect=[("done_key", done_payload), None])
+    mock_redis.lpop = AsyncMock(return_value=[])
+
+    with (
+        patch("scripts.benchmark_arq_container.create_pool", return_value=mock_redis),
+        patch("scripts.benchmark_arq_container.get_git_status", return_value=("sha123456", False)),
+        patch(
+            "scripts.benchmark_arq_container.host_load_metadata",
+            return_value=_violating_load_stats(),
+        ),
+        patch(
+            "scripts.benchmark_arq_container.inspect_redis_container",
+            return_value={
+                "container_id": "redis_cid",
+                "container_name": "redis_test",
+                "image": "redis:7-alpine",
+                "image_id": "sha256:redisimg",
+                "network": "test_net",
+            },
+        ),
+        patch(
+            "scripts.benchmark_arq_container.inspect_image_id",
+            return_value="sha256:workerimg",
+        ),
+    ):
+
+        def fake_start(self, *args, **kwargs):
+            self.mounted_source = str(tmp_path)
+            return "worker_cid_123"
+
+        with (
+            patch.object(DockerWorkerContainerManager, "start", fake_start),
+            patch.object(DockerWorkerContainerManager, "wait_ready", return_value=True),
+            patch.object(DockerWorkerContainerManager, "stop_and_remove", return_value=None),
+        ):
+            result = await run_container_worker_benchmark(
+                total_jobs=1,
+                concurrency=1,
+                strict=True,
+                source_mount=tmp_path,
+                allow_load_violation=True,
+            )
+
+    assert result.status == "success"
+    assert result.load_protocol["enforced"] is False
+    assert result.load_protocol["bypassed"] is True
+    assert result.load_protocol["compliant"] is False
+    assert result.load_protocol["canonical_evidence"] is False

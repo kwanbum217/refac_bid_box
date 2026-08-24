@@ -50,9 +50,14 @@ try:
     from scripts.benchmark_provenance import (
         BuildProvenanceError,
         _parse_source_mount,
+        build_load_protocol_record,
         build_provenance_dict,
+        check_ambient_load_protocol,
+        compute_baseline_summary,
+        enforce_provenance_required_fields,
         get_git_status,
         get_host_memory,
+        host_load_metadata,
         resolve_redis_container,
         single_host_load_sample,
     )
@@ -60,9 +65,14 @@ except (ModuleNotFoundError, ImportError):
     from benchmark_provenance import (  # type: ignore[no-redef]
         BuildProvenanceError,
         _parse_source_mount,
+        build_load_protocol_record,
         build_provenance_dict,
+        check_ambient_load_protocol,
+        compute_baseline_summary,
+        enforce_provenance_required_fields,
         get_git_status,
         get_host_memory,
+        host_load_metadata,
         resolve_redis_container,
         single_host_load_sample,
     )
@@ -301,6 +311,7 @@ class BenchmarkResult:
     errors: list[str] = field(default_factory=list)
     benchmark_worker_mode: str = "docker_container"
     provenance: dict[str, Any] = field(default_factory=dict)
+    load_protocol: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -309,6 +320,7 @@ class BenchmarkResult:
             "timestamp": self.timestamp,
             "benchmark_worker_mode": self.benchmark_worker_mode,
             "provenance": self.provenance,
+            "load_protocol": self.load_protocol,
             "environment": self.environment,
             "config": asdict(self.config),
             "summary": self.summary,
@@ -468,6 +480,10 @@ async def run_container_worker_benchmark(
     strict: bool = True,
     source_mount: Path | str | None = None,
     redis_container: str | None = None,
+    allow_load_violation: bool = False,
+    load_sampler: Any = None,
+    load_min_samples: int = 3,
+    load_interval_seconds: float = 5.0,
 ) -> BenchmarkResult:
     """실제 Docker 컨테이너 워커를 대상으로 벤치마크를 수행합니다."""
     target_source = (
@@ -487,6 +503,22 @@ async def run_container_worker_benchmark(
             raise BuildProvenanceError(
                 f"Host/Git provenance check failed (fail-closed): {', '.join(failures)}"
             )
+
+    # 주변 부하 규약: 시작 시점 부하 통계 평가 (strict + 미우회 시 fail-closed)
+    start_load_stats = host_load_metadata(
+        min_samples=load_min_samples,
+        interval_seconds=load_interval_seconds,
+        sampler=load_sampler,
+    )
+    start_load_compliant, start_load_detail = check_ambient_load_protocol(start_load_stats)
+    if not start_load_compliant and strict and not allow_load_violation:
+        raise BuildProvenanceError(
+            "Ambient load protocol violated at start "
+            f"(median {start_load_detail.get('median_percent')}% > "
+            f"{start_load_detail.get('median_limit_percent')}% or max "
+            f"{start_load_detail.get('max_percent')}% > "
+            f"{start_load_detail.get('max_limit_percent')}%)"
+        )
 
     redis_info = inspect_redis_container(
         redis_url=redis_url,
@@ -688,6 +720,22 @@ async def run_container_worker_benchmark(
         except BuildProvenanceError as b_err:
             extra_errors.append(str(b_err))
 
+        # 주변 부하 규약: 종료 시점 부하 통계 평가
+        end_load_stats = host_load_metadata(
+            min_samples=load_min_samples,
+            interval_seconds=load_interval_seconds,
+            sampler=load_sampler,
+        )
+        end_load_compliant, end_load_detail = check_ambient_load_protocol(end_load_stats)
+        if not end_load_compliant and strict and not allow_load_violation:
+            extra_errors.append(
+                "Ambient load protocol violated at end "
+                f"(median {end_load_detail.get('median_percent')}% > "
+                f"{end_load_detail.get('median_limit_percent')}% or max "
+                f"{end_load_detail.get('max_percent')}% > "
+                f"{end_load_detail.get('max_limit_percent')}%)"
+            )
+
     finally:
         worker_mgr.stop_and_remove()
         await cleanup_benchmark_resources(redis_pool, queue_name, all_job_ids)
@@ -772,6 +820,17 @@ async def run_container_worker_benchmark(
         source_git_dirty=effective_dirty,
     )
 
+    enforce_provenance_required_fields(provenance, strict=strict)
+
+    load_protocol = build_load_protocol_record(
+        start_compliant=start_load_compliant,
+        start_detail=start_load_detail,
+        end_compliant=end_load_compliant,
+        end_detail=end_load_detail,
+        strict=strict,
+        allow_violation=allow_load_violation,
+    )
+
     env_data = {
         # 1. Host
         "python": platform.python_version(),
@@ -821,6 +880,7 @@ async def run_container_worker_benchmark(
         errors=errors,
         benchmark_worker_mode="docker_container",
         provenance=provenance,
+        load_protocol=load_protocol,
     )
 
 
@@ -908,6 +968,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Docker/Git provenance 조회 실패 또는 dirty 상태 시에도 측정을 강제 진행합니다 (기본: 거부)",
     )
     parser.add_argument(
+        "--allow-load-protocol-violation",
+        action="store_true",
+        default=False,
+        help=(
+            "주변 부하 규약(중앙값 30%, 최대 50%) 위반에도 측정을 진행합니다. "
+            "우회 측정은 결과에 미준수 표시를 남기며 정본 evidence 가 아닙니다 (기본: 거부)"
+        ),
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=Path,
@@ -973,6 +1042,7 @@ def main(argv: list[str] | None = None) -> int:
                     strict=strict,
                     source_mount=args.source_mount,
                     redis_container=args.redis_container,
+                    allow_load_violation=args.allow_load_protocol_violation,
                 )
             )
             results.append(result)
@@ -1041,6 +1111,23 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n최종 대표 결과 저장 완료: {args.output}")
         except Exception as out_err:
             print(f"대표 결과 저장 실패: {out_err}", file=sys.stderr)
+            return 1
+
+    # 설계서 6장 중앙값 기준선 요약 자동 산출 (별도 파일로 저장, 기존 대표 파일은 유지)
+    if args.output and len(results) > 1:
+        baseline_summary = compute_baseline_summary([r.as_dict() for r in results])
+        summary_path = args.output.with_name(
+            f"{args.output.stem}_baseline_summary{args.output.suffix}"
+        )
+        try:
+            summary_path.write_text(
+                dump_strict_json(baseline_summary),
+                encoding="utf-8",
+            )
+            if not args.quiet:
+                print(f"\n기준선 요약 저장 완료: {summary_path}")
+        except Exception as sum_err:
+            print(f"기준선 요약 저장 실패: {sum_err}", file=sys.stderr)
             return 1
 
     all_success = all(
