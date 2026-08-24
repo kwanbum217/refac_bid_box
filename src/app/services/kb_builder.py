@@ -352,9 +352,9 @@ def rebuild_knowledge_base(
                 f" / 삭제 {stats['removed']}건)"
             )
         elif stats["mode"] == "delta":
+            since_repr = collected_since.isoformat() if collected_since is not None else ""
             summary = (
-                f"이번 수집분 {embedded}건 반영 완료 "
-                f"(KB 전체 {indexed_count}건, 기준 {collected_since.isoformat()})"
+                f"이번 수집분 {embedded}건 반영 완료 (KB 전체 {indexed_count}건, 기준 {since_repr})"
             )
         else:
             summary = f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"

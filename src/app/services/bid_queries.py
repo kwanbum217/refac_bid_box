@@ -512,9 +512,10 @@ def get_result_detail(db: Session, pk: int) -> dict[str, Any] | None:
     # 낙찰률은 공고 기준금액을 다시 조회해야 나오므로 원본과 달리 property 가
     # 아니라 db 를 받는 메서드입니다. Jinja2 는 속성 접근으로 메서드를 호출하지
     # 않으므로, 템플릿이 쓸 값을 여기서 미리 확정해 붙입니다.
-    result.resolved_winning_rate = result.display_winning_rate(db)
+    # DDL 보존을 위해 모델에 비영속 필드를 추가하지 않고 동적 할당합니다.
+    result.resolved_winning_rate = result.display_winning_rate(db)  # type: ignore[attr-defined]
     for row in related_results:
-        row.resolved_winning_rate = row.display_winning_rate(db)
+        row.resolved_winning_rate = row.display_winning_rate(db)  # type: ignore[attr-defined]
 
     return {
         "result": result,

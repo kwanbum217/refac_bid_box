@@ -474,7 +474,7 @@ def cancel_automation_request(db: Session, request_obj: AutomationRequest) -> Au
     request_obj.result_summary = "사용자 요청으로 분석 실행을 중지했습니다."
     request_obj.error_message = ""
 
-    if running:
+    if running and execution is not None:
         raw_payload = dict(execution.raw_status_payload or {})
         raw_payload["canceled_by_user"] = payload["canceled_by_user"]
         execution.raw_status_payload = raw_payload
