@@ -32,6 +32,8 @@ def test_chatbot_query_endpoint():
     assert data["query"] == payload["query"]
     assert data["response"]
     assert "latency_ms" in data
+    assert "x-rag-trace-id" in response.headers
+    assert len(response.headers["x-rag-trace-id"]) > 0
 
 
 def test_chatbot_stream_legacy_removed():
