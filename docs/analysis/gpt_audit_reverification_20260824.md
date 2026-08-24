@@ -4,6 +4,12 @@
 > **작성자**: task_8915e5d1e53f (investigator)
 > **대상 브랜치**: HEAD (기준 main diff: 30개 파일, 4616 삽입)
 > **기준 커밋**: main `1a673d6` 이후 통합 브랜치
+>
+> **문서 현재성 (Currency)**
+> - **observed_commit**: 미정 (작성 시점 HEAD 커밋 미기록)
+> - **status**: `historical`
+> - **resolved_at_commit**: 미정 (본 문서 작성일 이후 정정 커밋 미기록)
+> - **superseded_by**: 미정 (정정 결과는 별도 Task 기록)
 
 ---
 
@@ -107,11 +113,17 @@
 
 | 판정 | **해소** |
 | --- | --- |
-| 근거 | `scripts/benchmark_arq_throughput.py:190-260` + `scripts/benchmark_arq_container.py:207-277` (`build_provenance_dict`) |
+| 근거 | `scripts/benchmark_arq_throughput.py:192-262` + `scripts/benchmark_arq_container.py:209-279` (`build_provenance_dict`) |
 
-- 두 하네스 모두 동일한 `build_provenance_dict` 함수를 import하여 사용
+- 두 하네스는 **각자** `build_provenance_dict` 함수를 정의해 사용하며, 공통 모듈에서 import 하지 않습니다
+  - `scripts/benchmark_arq_throughput.py:192` 에 별도 정의
+  - `scripts/benchmark_arq_container.py:209` 에 별도 정의
+  - `scripts/benchmark_provenance.py` 에서 import 하는 것은 `BuildProvenanceError`, `_parse_source_mount`, `is_source_dirty`, `single_host_load_sample` 등 일부이며 `build_provenance_dict` 는 포함되지 않습니다
+  - `get_host_memory`(container:90, throughput:73)와 `get_git_status`(container:144, throughput:127)도 마찬가지로 양쪽에 각각 중복 정의되어 있습니다
+- 두 함수의 스키마 동등성은 **공통 구현이 아니라 테스트의 키 집합 비교로 결박**되어 있습니다 (`tests/test_benchmark_arq_container.py`)
 - 4계층 키: `host`(python, platform, cpu, load, memory), `redis`(url, container_id, version, mode), `arq`(version, redis_py_version, worker_mode, settings_module, functions, max_jobs), `docker`(version, container_id, image, source_mount, git_sha, dirty)
 - `benchmark_provenance.py`의 공통 계층(`PROVENANCE_IDENTITY_KEYS`)과 통합
+- **정정 사유**: 본 문서 110행(근거)은 두 함수가 각각 다른 파일에 있다고 정확히 기술했으나, 112행은 "동일한 함수를 import 하여 사용"이라 적어 문서 내부가 모순되었습니다. 실제 구현과 일치하도록 112행을 위와 같이 정정했습니다
 
 ### 10. 반복 raw 누락이 fail-closed
 
@@ -174,7 +186,7 @@
 | 6 | partial 실패 non-zero exit | **해소** | `scripts/benchmark_rag_segments.py:468-487` |
 | 7 | RAG 하네스 runtime provenance | **해소** | `scripts/benchmark_provenance.py:274-451` |
 | 8 | Arq /app bind mount provenance | **해소** | `scripts/benchmark_arq_container.py:569-589` |
-| 9 | 4계층 provenance 동일 schema | **해소** | `scripts/benchmark_arq_throughput.py:190-260` |
+| 9 | 4계층 provenance 동일 schema | **해소** | `scripts/benchmark_arq_throughput.py:192-262` |
 | 10 | 반복 raw 누락 fail-closed | **해소** | `scripts/benchmark_rag_segments.py:278-283` |
 | 11 | trust lock 미지원 fail-closed | **해소** | `scripts/orca_trust_worktree.py:84-96` |
 | 12 | taskctl 경로 containment | **해소** | `scripts/orca_taskctl.py:469-505` |

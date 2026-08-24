@@ -12,7 +12,7 @@
 | 게이트 | 목표 정의 | 현재 판정 | 상세 상태 및 조건 |
 | --- | --- | :---: | --- |
 | **G1** | 데이터 무손실 | **통과 (불변)** | MySQL 8 스키마·행 수 보존, ML 가중치 체크섬 일치, ChromaDB `bidding_kb` 무결성 |
-| **G2** | 크로스 플랫폼 | **부분 통과** | 2026-08-24 원격 CI run `32703096829`(`bd6212c`)에서 ubuntu·macOS·**windows-latest 전부 green**입니다. 앞선 실패 원인 4종(`os.getloadavg` 부재, Capsule 경로 역슬래시 생성, 테스트 기대값 역슬래시, macOS 러너 Docker 부재)을 수정한 결과입니다. Windows Docker Desktop 실기는 장비 부재로 미수행입니다 |
+| **G2** | 크로스 플랫폼 | **부분 통과** | 2026-08-24 **main 병합 검증 run** `32703990405`(`a203286`)에서 ubuntu·macOS·**windows-latest 전부 green**입니다. 앞선 feature 브랜치 사전 검증 run `32703096829`(`bd6212c`)도 동일 green 이며, 실패 원인 4종(`os.getloadavg` 부재, Capsule 경로 역슬래시 생성, 테스트 기대값 역슬래시, macOS 러너 Docker 부재)을 수정한 결과입니다. Windows Docker Desktop 실기는 장비 부재로 미수행입니다 |
 | **G3** | 스택 최적화 | **부분 통과·승격 보류** | 예측 c1 **통과**(P95 15.39ms), c4 **통과**(통제 A/B worst P95 34.32ms <= 36.81ms, 기존 +10% 기준 적용, >50ms 0건), c10 **통과**(`freeze` P95 47.77ms, >100ms 0/1,800), SSE c1 **통과**(첫 토큰 1297.73ms, 전체 6716.22ms). 통제 A/B 5회 교차 검증 결과 이전 c2·c4 임계치 미달 미재현(전 회차 >50ms/>100ms 0건, c2 델타 중앙 -0.97ms). `+2.0ms` 쌍대 회귀 예산은 향후 실험용 prospective 지표로 별도 관리. G3 전체 컷오버는 잔여 항목 검증 후 별도 판정 |
 
 > **주의**: G3 는 일괄 통과로 선언하지 않고 항목별 실측 상태로 기록합니다.
@@ -65,7 +65,7 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **운영 검증**: Windows CI는 run `32703096829`에서 green을 실측 확인했습니다. Arq Docker synthetic 3회 raw와 Ollama 규약 준수 측정은 2026-08-24에 완료했습니다([`measurement_triple_20260824.md`](../analysis/measurement_triple_20260824.md)). Windows Docker Desktop 실기가 남았습니다.
+1. **운영 검증**: Windows CI는 **main 병합 검증 run** `32703990405`(`a203286`)에서 green을 실측 확인했습니다(사전 feature run `32703096829`도 green). Arq Docker synthetic 3회 raw와 Ollama 규약 준수 측정은 2026-08-24에 완료했습니다([`measurement_triple_20260824.md`](../analysis/measurement_triple_20260824.md)). Windows Docker Desktop 실기가 남았습니다.
 1-2. **LLM 경로 최적화**: 부하 규약을 지킨 조건의 e4b 정본은 `llm_ms` P50 2,839.93ms이며 총합의 97.5%입니다. `gemma4:e2b` 비교에서 `llm_ms` P50 -54.1%, P95 -26.2%로 속도 우세가 확정됐으나 **품질 표본이 5문항뿐이라 승격하지 않았습니다**([`llm_model_comparison_e4b_e2b_20260824.md`](../analysis/llm_model_comparison_e4b_e2b_20260824.md)).
 1-1. **Arq 정식 기준선 캘리브레이션**: 잠정 일관성 봉투(구 절대 기준선 900 jps / 600ms)는 사후 보정임이 확인됐습니다([`arq_threshold_derivation_20260823.md`](../analysis/arq_threshold_derivation_20260823.md)). 정식 기준선을 세우려면 고정 조건 캘리브레이션 런이 필요합니다.
 2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
