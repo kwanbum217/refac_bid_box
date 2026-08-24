@@ -21,6 +21,7 @@ from scripts.benchmark_provenance import (
     _parse_effective_workers,
     compute_host_load_stats,
     host_load_metadata,
+    is_source_dirty,
     reproducibility_metadata,
     runtime_config_snapshot,
     single_host_load_sample,
@@ -464,3 +465,35 @@ class TestSubprocessSafety:
 
         monkeypatch.setattr(subprocess, "check_output", mock_check_output)
         assert _command_output(["docker", "ps"]) == "unknown"
+
+
+class TestIsSourceDirty:
+    """측정 산출물이 자기 다음 회차를 fail-closed 로 막던 회귀를 방지합니다."""
+
+    def test_clean_status_is_not_dirty(self):
+        assert is_source_dirty("") is False
+
+    def test_untracked_benchmark_artifact_is_not_dirty(self):
+        status = "?? data/benchmarks/arq_container_measure_20260824_r1.json"
+        assert is_source_dirty(status) is False
+
+    def test_multiple_untracked_benchmark_artifacts_are_not_dirty(self):
+        status = (
+            "?? data/benchmarks/run_r1.json\n"
+            "?? data/benchmarks/run_r2.json\n"
+            "?? data/benchmarks/run_r3.json"
+        )
+        assert is_source_dirty(status) is False
+
+    def test_modified_tracked_source_is_dirty(self):
+        assert is_source_dirty(" M scripts/benchmark_arq_container.py") is True
+
+    def test_untracked_source_outside_benchmarks_is_dirty(self):
+        assert is_source_dirty("?? scripts/rogue_patch.py") is True
+
+    def test_modified_tracked_benchmark_file_is_dirty(self):
+        assert is_source_dirty(" M data/benchmarks/committed_baseline.json") is True
+
+    def test_benchmark_artifact_mixed_with_source_change_is_dirty(self):
+        status = "?? data/benchmarks/run_r1.json\n M src/app/main.py"
+        assert is_source_dirty(status) is True
