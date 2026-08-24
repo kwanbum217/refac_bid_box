@@ -34,7 +34,9 @@ from scripts.orca_taskctl import (
     parse_intent,
     resolve_run_id,
     task_has_write_scope,
+    validate_contained_path,
     worker_start,
+    worktree_relative_capsule_path,
 )
 
 SAMPLE_BUILDER_INTENT = """schema: ORCA_TASK_INTENT_V1
@@ -173,8 +175,15 @@ def test_expand_intent_builder_contract_and_paths(tmp_path: Path):
     read_files = parse_capsule_list(capsule, "allowed_read_files")
     write_files = parse_capsule_list(capsule, "allowed_write_files")
 
-    assert str(capsule_file) in read_files, (
-        "Capsule 자기 경로가 allowed_read_files 에 포함되어야 합니다."
+    relative_capsule = worktree_relative_capsule_path(capsule_file)
+    assert relative_capsule in read_files, (
+        "Capsule 자기 경로(worktree-relative)가 allowed_read_files 에 포함되어야 합니다."
+    )
+    assert str(capsule_file) not in read_files, (
+        "allowed_read_files 에는 절대경로가 포함되지 않아야 합니다."
+    )
+    assert not any(Path(p).is_absolute() for p in read_files), (
+        "allowed_read_files 에는 절대경로가 포함되지 않아야 합니다."
     )
     assert set(write_files).issubset(set(read_files)), (
         "쓰기 범위의 모든 파일이 읽기 범위에 있어야 합니다."
@@ -1584,7 +1593,7 @@ def test_build_capsule_notice_carries_path_contract_and_dispatch_id():
 
     text = build_capsule_notice(
         Path("/abs/.orca/capsules/task_x/capsule.yaml"),
-        report_path="/abs/capsules/task_x/worker_done.json",
+        report_path=".orca/capsules/task_x/worker_done.json",
         dispatch_id="ctx_new",
     )
     # 절대 경로를 주면 워커가 그 저장소로 이동합니다. 상대 경로만 담습니다.
@@ -1594,9 +1603,166 @@ def test_build_capsule_notice_carries_path_contract_and_dispatch_id():
     assert "allowed_write_files" in text
     assert "escalation" in text
     assert "ctx_new" in text
-    assert (
-        "/abs/capsules/task_x/worker_done.json" in text
-    )  # report_path 는 문자열 그대로 전달됩니다
+    assert ".orca/capsules/task_x/worker_done.json" in text
+
+
+def test_build_capsule_notice_rejects_absolute_and_escaping_report_path():
+    """고지문 생성 시 report_path 가 절대경로 또는 상위 탐색이면 거부합니다."""
+    from scripts.orca_taskctl import build_capsule_notice
+
+    capsule = Path(".orca/capsules/task_x/capsule.yaml")
+    # 1. POSIX 절대경로
+    with pytest.raises(ValueError, match="절대경로는 허용되지 않습니다"):
+        build_capsule_notice(capsule, report_path="/abs/capsules/task_x/worker_done.json")
+
+    # 2. Windows 드라이브 절대경로
+    with pytest.raises(ValueError, match="절대경로는 허용되지 않습니다"):
+        build_capsule_notice(capsule, report_path="C:\\capsules\\task_x\\worker_done.json")
+
+    # 3. UNC 경로
+    with pytest.raises(ValueError, match="절대경로는 허용되지 않습니다"):
+        build_capsule_notice(capsule, report_path="\\\\server\\share\\worker_done.json")
+
+    # 4. 상위 디렉터리 탈출 (..)
+    with pytest.raises(ValueError, match="상위 디렉터리 탐색"):
+        build_capsule_notice(capsule, report_path="../outside/worker_done.json")
+
+
+def test_validate_contained_path_counterexamples():
+    """validate_contained_path 가 allow/write/read/report 각 경로의 반례를 모두 거부하는지 검증합니다."""
+    invalid_cases = [
+        "/etc/passwd",
+        "/Users/kwanbum/project/file.py",
+        "C:\\Windows\\System32",
+        "C:/Users/project/file.py",
+        "c:relative.py",
+        "D:\\data\\features.py",
+        "\\\\server\\share\\file.py",
+        "//server/share/file.py",
+        "\\backslash\\root\\file.py",
+        "../escape.py",
+        "src/../../escape.py",
+        "a/b/../../../c.py",
+        "~/secret.txt",
+        "..",
+        "",
+        "   ",
+    ]
+    for path in invalid_cases:
+        with pytest.raises(ValueError):
+            validate_contained_path(path)
+
+
+def test_containment_rejects_invalid_scope_in_intent():
+    """scope 에 절대경로나 .. 탈출이 포함된 Intent 는 파싱/확장 단계에서 거부됩니다."""
+    bad_scopes = [
+        ["/etc/passwd"],
+        ["C:\\repo\\file.py"],
+        ["../outside.py"],
+        ["src/../../outside.py"],
+        ["\\\\share\\file.py"],
+        ["~/file.py"],
+    ]
+    for scope_item in bad_scopes:
+        intent_text = f'schema: ORCA_TASK_INTENT_V1\nrole: builder\nscope:\n  - "{scope_item[0]}"\n'
+        with pytest.raises(ValueError):
+            parse_intent(intent_text)
+
+        intent_dict = {"schema": "ORCA_TASK_INTENT_V1", "role": "builder", "scope": scope_item}
+        with pytest.raises(ValueError):
+            expand_intent_to_capsule(intent_dict, task_id="task_bad_scope")
+
+
+def test_containment_rejects_invalid_read_scope_in_intent():
+    """read_scope 에 절대경로나 .. 탈출이 포함된 Intent 는 파싱/확장 단계에서 거부됩니다."""
+    bad_reads = [
+        ["/var/log/app.log"],
+        ["C:/docs/CURRENT_STATE.md"],
+        ["../../docs/context/CURRENT_STATE.md"],
+        ["docs/../../secret.env"],
+        ["~/.bashrc"],
+    ]
+    for read_item in bad_reads:
+        intent_text = (
+            f'schema: ORCA_TASK_INTENT_V1\nrole: builder\nread_scope:\n  - "{read_item[0]}"\n'
+        )
+        with pytest.raises(ValueError):
+            parse_intent(intent_text)
+
+        intent_dict = {"schema": "ORCA_TASK_INTENT_V1", "role": "builder", "read_scope": read_item}
+        with pytest.raises(ValueError):
+            expand_intent_to_capsule(intent_dict, task_id="task_bad_read")
+
+
+def test_containment_rejects_invalid_report_path_in_intent():
+    """report_path 에 절대경로나 .. 탈출이 포함된 Intent 는 파싱/확장 단계에서 거부됩니다."""
+    bad_reports = [
+        "/tmp/worker_done.json",
+        "C:\\capsules\\worker_done.json",
+        "../worker_done.json",
+        "task/../../worker_done.json",
+        "~/worker_done.json",
+    ]
+    for rep in bad_reports:
+        intent_text = f'schema: ORCA_TASK_INTENT_V1\nrole: builder\nreport_path: "{rep}"\n'
+        with pytest.raises(ValueError):
+            parse_intent(intent_text)
+
+        intent_dict = {"schema": "ORCA_TASK_INTENT_V1", "role": "builder", "report_path": rep}
+        with pytest.raises(ValueError):
+            expand_intent_to_capsule(intent_dict, task_id="task_bad_rep")
+
+
+def test_containment_accepts_valid_relative_paths_and_globs():
+    """정상 상대경로와 glob 패턴은 모두 허용되고 Capsule 로 올바르게 확장되어야 합니다."""
+    intent_dict = {
+        "schema": "ORCA_TASK_INTENT_V1",
+        "role": "builder",
+        "scope": ["src/...", "tests/**", "scripts/*.py", "./docs/analysis/task_x.md"],
+        "read_scope": ["src/ml/features.py", "docs/context/CURRENT_STATE.md"],
+        "report_path": ".orca/capsules/task_x/worker_done.json",
+        "acceptance": ["테스트 통과"],
+    }
+    capsule = expand_intent_to_capsule(intent_dict, task_id="task_x")
+    assert "src/..." in capsule
+    assert "tests/**" in capsule
+    assert "scripts/*.py" in capsule
+    assert ".orca/capsules/task_x/worker_done.json" in capsule
+
+
+def test_cmd_expand_rejects_escaping_intent_with_exit_code_2(tmp_path: Path):
+    """절대경로나 상위 디렉터리 탈출이 포함된 Intent 는 expand 실행 시 종료 코드 2를 반환합니다."""
+    bad_intent = tmp_path / "bad_intent.yaml"
+    out_capsule = tmp_path / "capsule.yaml"
+    bad_intent.write_text(
+        "schema: ORCA_TASK_INTENT_V1\nrole: builder\nscope:\n  - /etc/shadow\n",
+        encoding="utf-8",
+    )
+    code = main(["expand", "--intent", str(bad_intent), "--out", str(out_capsule)])
+    assert code == 2
+    assert not out_capsule.exists()
+
+
+def test_cmd_dispatch_rejects_escaping_capsule_with_exit_code_2(tmp_path: Path):
+    """절대경로가 포함된 Capsule 을 --capsule 로 주입하면 dispatch 실행 시 종료 코드 2를 반환합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    bad_capsule = tmp_path / "bad_capsule.yaml"
+    bad_capsule.write_text(
+        'schema: ORCA_TASK_CAPSULE_V2\nallowed_read_files:\n  - "/abs/path.py"\nallowed_write_files:\n  - "src/..."\n',
+        encoding="utf-8",
+    )
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule",
+            str(bad_capsule),
+            "--dry-run",
+        ]
+    )
+    assert code == 2
 
 
 def test_build_task_spec_embeds_worktree_relative_capsule_path():
