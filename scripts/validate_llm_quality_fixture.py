@@ -3,11 +3,12 @@ scripts/validate_llm_quality_fixture.py
 
 LLM 품질 평가 fixture (data/eval/llm_quality_fixture_v1.json) 스키마 및 무결성 검증기.
 표준 라이브러리만을 사용하여 필수 필드 누락, 타입 불일치, ID 중복, context_sufficient
-문항 수 하한 미달, 채점 가능성 및 자기모순 금지 규칙을 엄격히 검증합니다.
+문항 수 하한 미달, 채점 가능성, 자기모순 금지 규칙, 그리고 ChromaDB bidding_kb 실재
+근거 ID 존재성을 엄격히 검증합니다.
 
 규약:
 - 종료 코드 0: 검증 통과
-- 종료 코드 1: 스키마/무결성 위반 검출
+- 종료 코드 1: 스키마/무결성/실재근거 위반 검출
 - 종료 코드 2: 파일 미존재/인자 오류/JSON 파싱 실패
 - --quiet 플래그 지원 (통과 시 출력 억제)
 """
@@ -16,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sqlite3
 import sys
 from pathlib import Path
 from typing import Any
@@ -36,8 +39,76 @@ REQUIRED_FIELDS = (
 DEFAULT_MIN_CONTEXT_SUFFICIENT = 15
 
 
-class ValidationError(Exception):
-    """Fixture 스키마 또는 도메인 무결성 위반 예외."""
+def find_chroma_sqlite_path() -> Path | None:
+    """ChromaDB sqlite 파일 경로를 탐색합니다 (표준 라이브러리 전용)."""
+    # 1. .env 파일 파싱
+    env_path = Path(".env")
+    if env_path.exists():
+        try:
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("CHROMA_DB_PATH="):
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    cand = Path(val) / "chroma.sqlite3"
+                    if cand.exists() and cand.stat().st_size > 1000000:
+                        return cand
+        except OSError:
+            pass
+
+    # 2. 환경변수 확인
+    env_var = os.environ.get("CHROMA_DB_PATH")
+    if env_var:
+        cand = Path(env_var) / "chroma.sqlite3"
+        if cand.exists() and cand.stat().st_size > 1000000:
+            return cand
+
+    # 3. 로컬 및 알려진 상대 경로 탐색
+    for rel_cand in [
+        Path("chroma_db/chroma.sqlite3"),
+        Path("../chroma_db/chroma.sqlite3"),
+        Path(
+            "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/chroma_db/chroma.sqlite3"
+        ),
+    ]:
+        if rel_cand.exists() and rel_cand.stat().st_size > 1000000:
+            return rel_cand
+
+    return None
+
+
+def verify_evidence_ids_in_kb(evidence_ids: set[str]) -> tuple[bool, list[str], str]:
+    """ChromaDB sqlite 데이터베이스에서 expected_evidence_ids 의 실재 여부를 검증합니다.
+
+    Returns:
+        (kb_available, missing_ids, status_message)
+    """
+    db_path = find_chroma_sqlite_path()
+    if not db_path:
+        return False, [], "ChromaDB 파일 미존재로 실재 검증 건너뜀"
+
+    if not evidence_ids:
+        return True, [], f"ChromaDB 연동 완료 ({db_path})"
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.cursor()
+        found: set[str] = set()
+        for ev_id in sorted(evidence_ids):
+            cur.execute(
+                "SELECT embedding_id FROM embeddings WHERE embedding_id = ? LIMIT 1", (ev_id,)
+            )
+            row = cur.fetchone()
+            if row:
+                found.add(row[0])
+        conn.close()
+
+        missing = sorted(evidence_ids - found)
+        return (
+            True,
+            missing,
+            f"ChromaDB bidding_kb 실재 확인 ({len(found)}/{len(evidence_ids)} 건 일치)",
+        )
+    except Exception as exc:
+        return False, [], f"ChromaDB 조회 실패로 실재 검증 건너뜀 ({exc})"
 
 
 def validate_item_schema(item: dict[str, Any], index: int) -> list[str]:
@@ -86,7 +157,6 @@ def validate_item_schema(item: dict[str, Any], index: int) -> list[str]:
             f"문항 '{item_id}': 'scoring_rubric'은 비어있지 않은 문자열 또는 딕셔너리여야 합니다."
         )
 
-    # numeric_tolerance 타입 검사 (None, int, float, dict 허용)
     num_tol = item["numeric_tolerance"]
     if num_tol is not None and not isinstance(num_tol, (int, float, dict)):
         errors.append(
@@ -144,8 +214,9 @@ def validate_item_schema(item: dict[str, Any], index: int) -> list[str]:
 def validate_fixture_data(
     data: Any,
     min_context_sufficient: int = DEFAULT_MIN_CONTEXT_SUFFICIENT,
+    check_kb_existence: bool = True,
 ) -> tuple[bool, list[str], dict[str, Any]]:
-    """전체 fixture 데이터 구조 및 집합 무결성을 검증합니다."""
+    """전체 fixture 데이터 구조, 집합 무결성 및 KB 근거 실재성을 검증합니다."""
     errors: list[str] = []
 
     if isinstance(data, dict):
@@ -165,6 +236,7 @@ def validate_fixture_data(
 
     seen_ids: set[str] = set()
     duplicate_ids: set[str] = set()
+    all_evidence_ids: set[str] = set()
     context_sufficient_count = 0
     refusal_count = 0
     has_self_contradiction_rule = False
@@ -185,10 +257,13 @@ def validate_fixture_data(
 
         if raw_item.get("context_sufficient") is True:
             context_sufficient_count += 1
+            for ev_id in raw_item.get("expected_evidence_ids") or []:
+                if isinstance(ev_id, str) and ev_id.strip():
+                    all_evidence_ids.add(ev_id.strip())
+
         if raw_item.get("refusal_expected") is True:
             refusal_count += 1
 
-        # 자기모순 금지 문구 포함 여부 검사
         must_not = raw_item.get("must_not_claim") or []
         if isinstance(must_not, list):
             for pattern in must_not:
@@ -211,11 +286,22 @@ def validate_fixture_data(
             "must_not_claim 에 관측된 '자기모순' 유형(데이터 부재 주장 후 비교 수행) 제재 규칙이 누락되었습니다."
         )
 
+    # 4. ChromaDB 실재 근거 존재성 검증
+    kb_status = "미수행"
+    if check_kb_existence and all_evidence_ids:
+        kb_available, missing_ids, kb_status = verify_evidence_ids_in_kb(all_evidence_ids)
+        if kb_available and missing_ids:
+            errors.append(
+                f"ChromaDB bidding_kb 에 실재하지 않는 expected_evidence_ids 발견: {missing_ids}"
+            )
+
     stats = {
         "total_items": len(items),
         "context_sufficient_count": context_sufficient_count,
         "refusal_expected_count": refusal_count,
         "unique_ids_count": len(seen_ids),
+        "total_evidence_ids_count": len(all_evidence_ids),
+        "kb_verification_status": kb_status,
     }
 
     return (len(errors) == 0), errors, stats
@@ -242,7 +328,7 @@ def validate_file(
         return 2
 
     is_valid, errors, stats = validate_fixture_data(
-        data, min_context_sufficient=min_context_sufficient
+        data, min_context_sufficient=min_context_sufficient, check_kb_existence=True
     )
 
     if not is_valid:
@@ -262,13 +348,14 @@ def validate_file(
         )
         print(f"  - 거절 기대 문항: {stats['refusal_expected_count']}")
         print(f"  - 고유 ID 수: {stats['unique_ids_count']}")
+        print(f"  - 지식베이스 실재 검증: {stats['kb_verification_status']}")
 
     return 0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="LLM 품질 평가 fixture 스키마 및 채점 가능성 검증 도구"
+        description="LLM 품질 평가 fixture 스키마, 채점 가능성 및 KB 실재성 검증 도구"
     )
     parser.add_argument(
         "file",

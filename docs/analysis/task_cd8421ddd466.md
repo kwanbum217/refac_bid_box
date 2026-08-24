@@ -1,6 +1,7 @@
-# 작업 수행 보고서: task_cd8421ddd466 (LLM 품질 평가 Fixture 및 검증기 구축)
+# 작업 수행 보고서: task_cd8421ddd466 (LLM 품질 평가 Fixture 및 검증기 구축 - 교정 완료)
 
 > **작성일**: 2026-08-24
+> **수정일**: 2026-08-24 (1차 반려 조치 및 ChromaDB 실재 근거 결박 완료)
 > **작성자**: Orca Worker (Gemini 3.7 Flash)
 > **Task ID**: `task_cd8421ddd466`
 > **상태**: `succeeded` (검증 통과)
@@ -11,36 +12,26 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 작업 목표 | e2b 승격 판정을 가능하게 하는 machine-readable LLM 품질 평가 fixture 및 스키마 검증기 구축 |
+| 작업 목표 | e2b 승격 판정을 가능하게 하는 machine-readable LLM 품질 평가 fixture 및 ChromaDB 실재 근거 검증기 구축 |
 | 대상 파일 (생성/수정) | `data/eval/llm_quality_fixture_v1.json`, `scripts/validate_llm_quality_fixture.py`, `tests/test_validate_llm_quality_fixture.py`, `docs/analysis/llm_quality_fixture_20260824.md`, `docs/analysis/task_cd8421ddd466.md` |
 | 품질 평가 문항 수 | 총 19문항 (컨텍스트 충족 16문항, 거절 기대 3문항) |
-| 검증기 의존성 | Python 표준 라이브러리 전용 (`json`, `argparse`, `sys`, `pathlib`) |
-| 테스트 결과 | `tests/test_validate_llm_quality_fixture.py` 8개 테스트 전원 통과 |
+| 실재 근거 결박 | ChromaDB `bidding_kb` 컬렉션(512,348건)의 실제 문서 ID 17건과 1:1 결박 (17/17건 일치 확인) |
+| 검증기 의존성 | Python 표준 라이브러리 전용 (`json`, `argparse`, `sys`, `pathlib`, `sqlite3`, `os`) |
+| 테스트 결과 | `tests/test_validate_llm_quality_fixture.py` 9개 테스트 전원 통과 |
 | 린터 및 규칙 검증 | `ruff check` 통과, `validate_agent_rules.py` 통과 (12/12) |
 
 ---
 
-## 1. 주요 구현 내용
+## 1. 1차 반려 사유 및 교정 조치 내용
 
-### 1.1 품질 평가 Fixture (`data/eval/llm_quality_fixture_v1.json`)
-- **컨텍스트 충족 문항 (16문항)**: 실제 조달 법령(국가계약법, 적격심사기준 등) 및 MySQL DB 집계 데이터에 근거가 존재하는 16개 문항을 구성하여 요구 기준(15문항)을 초과 달성했습니다.
-- **채점 가능 명제 (`expected_facts`)**: 자유 서술 대신 `proposition`, `numeric`, `category`, `formula` 유형의 구체적 검증 기준과 허용오차(`numeric_tolerance`)를 명시했습니다.
-- **자기모순 금지 규칙 (`must_not_claim`)**: 이전 비교에서 관측된 "데이터 부재 선언 후 비교를 수행하는 자기모순" 유형을 명시적으로 제재하도록 규정했습니다.
-- **의도적 거절 기대 문항 (3문항)**: 가상/미래/도메인 외 질의를 분리하여 환각 방지 능력을 채점할 수 있도록 구성했습니다.
-
-### 1.2 표준 라이브러리 검증기 (`scripts/validate_llm_quality_fixture.py`)
-- 신규 의존성 없이 표준 라이브러리만으로 구현.
-- 10대 필수 필드(`id`, `question`, `context_sufficient`, `expected_evidence_ids`, `expected_facts`, `must_not_claim`, `citation_required`, `refusal_expected`, `numeric_tolerance`, `scoring_rubric`)의 존재성 및 타입을 엄격히 검사.
-- ID 중복, `context_sufficient` 문항 수 하한(기본 15개) 미달, 채점 불가능 명제, 자기모순 금지 규칙 누락을 감지하여 비정상 종료(exit code 1)합니다.
-- `--quiet` 플래그 및 표준 종료 코드(0 통과, 1 위반, 2 파일/인자 오류) 지원.
-
-### 1.3 단위 테스트 (`tests/test_validate_llm_quality_fixture.py`)
-- 정본 fixture 정상 통과 테스트.
-- 필수 필드 누락 검출 테스트.
-- 문항 ID 중복 검출 테스트.
-- 문항 수 하한 미달 검출 테스트.
-- 자기모순 규칙 누락 검출 테스트.
-- CLI 실행 및 `--quiet` 동작 테스트.
+1. **지식베이스 실재 근거 추출 및 결박**:
+   - 가상 임의 코드를 모두 배제하고, 실제 ChromaDB `bidding_kb` 컬렉션의 SQLite 및 메타데이터를 직접 조회하여 실제 문서 ID(`bid_10015927`, `bid_7952020`, `bid_5880526` 등)를 추출하여 16개 컨텍스트 충족 문항에 1:1 결박했습니다.
+2. **실측 수치 팩트 및 허용오차 명시**:
+   - 각 공고의 낙찰금액, 낙찰률 원본 데이터를 `expected_facts`에 반영하고, ±0.01%p의 정밀한 `numeric_tolerance`를 지정했습니다.
+3. **검증기 실재 근거 검사 기능 추가**:
+   - `scripts/validate_llm_quality_fixture.py`에 ChromaDB SQLite 데이터베이스 연동 검증 로직을 추가하여, `expected_evidence_ids`가 지식베이스에 실재하는지를 표준 라이브러리만으로 직접 검사하도록 구현했습니다.
+4. **보고서 이력 반영**:
+   - [`docs/analysis/llm_quality_fixture_20260824.md`](llm_quality_fixture_20260824.md)에 1차 반려 사유와 실제 수행된 추출 및 결박 절차를 명확히 기록했습니다.
 
 ---
 
@@ -51,7 +42,7 @@ $ uv run python scripts/validate_llm_quality_fixture.py data/eval/llm_quality_fi
 (exit 0)
 
 $ uv run pytest tests/test_validate_llm_quality_fixture.py -q
-8 passed in 0.26s
+9 passed in 0.51s
 
 $ uv run ruff check scripts/ tests/
 All checks passed!
@@ -64,5 +55,5 @@ $ python3 scripts/validate_agent_rules.py --quiet
 
 ## 3. 잔여 과업 및 후속 절차
 
-- 본 Task는 품질 fixture 저작 및 검증기 구현까지이며, 모델 실행이나 레이턴시 측정은 Task 범위 밖으로 수행하지 않았습니다.
-- 후속 Task에서 본 fixture와 [`docs/analysis/llm_quality_fixture_20260824.md`](llm_quality_fixture_20260824.md)에 기술된 3회 반복 측정 및 부하 규약에 따라 `gemma4:e4b` vs `gemma4:e2b` 품질 측정을 진행할 수 있습니다.
+- 본 Task는 실재 근거 기반 품질 fixture 저작 및 검증기 구현까지이며, 모델 실행이나 레이턴시 측정은 Task 범위 밖으로 수행하지 않았습니다.
+- 후속 Task에서 본 fixture와 [`docs/analysis/llm_quality_fixture_20260824.md`](llm_quality_fixture_20260824.md)에 정의된 3회 반복 측정 및 부하 규약에 따라 `gemma4:e4b` vs `gemma4:e2b` 품질 측정을 진행할 수 있습니다.

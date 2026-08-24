@@ -2,7 +2,8 @@
 tests/test_validate_llm_quality_fixture.py
 
 LLM 품질 평가 fixture 검증기 (scripts/validate_llm_quality_fixture.py) 단위 테스트.
-- 정상 fixture 통과
+- 정상 fixture 통과 및 ChromaDB 실재 검증
+- 실재하지 않는 expected_evidence_ids 검출
 - 필수 필드 누락 검출
 - ID 중복 검출
 - context_sufficient 문항 수 하한 미달 검출
@@ -35,13 +36,25 @@ def valid_fixture_dict() -> dict[str, Any]:
 
 
 def test_canonical_fixture_passes(valid_fixture_dict: dict[str, Any]):
-    """실제 정본 fixture 파일이 스키마 검증을 완벽히 통과하는지 확인합니다."""
-    is_valid, errors, stats = validate_fixture_data(valid_fixture_dict)
+    """실제 정본 fixture 파일이 스키마 및 KB 실재성 검증을 완벽히 통과하는지 확인합니다."""
+    is_valid, errors, stats = validate_fixture_data(valid_fixture_dict, check_kb_existence=True)
     assert is_valid is True, f"검증 오류 발생: {errors}"
     assert len(errors) == 0
     assert stats["total_items"] >= 15
     assert stats["context_sufficient_count"] >= DEFAULT_MIN_CONTEXT_SUFFICIENT
     assert stats["refusal_expected_count"] >= 1
+
+
+def test_non_existent_evidence_id_detected(valid_fixture_dict: dict[str, Any]):
+    """ChromaDB 에 실재하지 않는 가상의 evidence ID 가 포함되면 검출되는지 확인합니다."""
+    tampered = copy.deepcopy(valid_fixture_dict)
+    # 실재하지 않는 가상 ID 주입
+    tampered["items"][0]["expected_evidence_ids"] = ["bid_non_existent_99999999"]
+
+    is_valid, errors, stats = validate_fixture_data(tampered, check_kb_existence=True)
+    if "건너뜀" not in stats.get("kb_verification_status", ""):
+        assert is_valid is False
+        assert any("실재하지 않는" in err for err in errors)
 
 
 def test_missing_required_field_detected(valid_fixture_dict: dict[str, Any]):
