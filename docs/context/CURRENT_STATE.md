@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-24
-> **source_commit**: `4006a7c`
+> **source_commit**: `1b8a77a`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -66,7 +66,7 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **운영 검증**: Windows CI는 **main 병합 검증 run** `32703990405`(`a203286`)에서 green을 실측 확인했습니다(사전 feature run `32703096829`도 green). Windows Docker Desktop 실기가 남았습니다.
-1-2. **LLM 경로 최적화**: 부하 규약을 지킨 조건의 e4b 정본은 `llm_ms` P50 2,839.93ms이며 총합의 97.5%입니다. `gemma4:e2b` 비교에서 `llm_ms` P50 -54.1%, P95 -26.2%로 속도 우세가 확정됐으나 **품질 표본이 5문항뿐이라 승격하지 않았습니다**. KB 근거로 결박한 19문항(충족 16) 평가 fixture 를 확보했고 측정은 미실행입니다([`llm_model_comparison_e4b_e2b_20260824.md`](../analysis/llm_model_comparison_e4b_e2b_20260824.md)).
+1-2. **LLM 경로 최적화**: 부하 규약을 지킨 조건의 e4b 정본은 `llm_ms` P50 2,839.93ms이며 총합의 97.5%입니다. `gemma4:e2b` 비교에서 `llm_ms` P50 -54.1%, P95 -26.2%로 속도 우세가 확정됐으나 **품질 표본이 5문항뿐이라 승격하지 않았습니다**. 19문항 fixture 로 실측한 결과 지연은 P50 -43.9%/P95 -57.7% 로 개선되나 품질 지표가 검색에 지배되어 생성 품질을 변별하지 못했습니다. 의도 라우팅 오분류로 16문항 중 8문항이 KB 검색을 건너뜁니다([`llm_model_comparison_e4b_e2b_20260824.md`](../analysis/llm_model_comparison_e4b_e2b_20260824.md)).
 1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션으로 정식 기준선을 확정했습니다. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하, 규약 위반 0건). `arq_gate.py` 의 잠정값 900/600 은 경로별 판정선(1,123.85·509.25 / 1,651.52·346.68)으로 교체했습니다([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
 2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
 3. **G3 전체 컷오버 판정**: 위 항목이 닫힌 뒤 별도로 판정합니다. 개별 게이트 PASS를 컷오버 PASS로 승격하지 않습니다.
