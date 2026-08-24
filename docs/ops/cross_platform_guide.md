@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-07-31
 > **갱신일**: 2026-08-24
-> **상태**: 직전 Windows CI FAIL 원인 코드 수정 완료 / 수정 후 원격 CI 미확인 / Windows Docker Desktop 실기 미수행
+> **상태**: 2026-08-24 원격 CI run `32701590510` 에서 Windows·macOS FAIL. 원인 3건 수정 후 재실행에서 macOS green, Windows 미확인 / Windows Docker Desktop 실기 미수행
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
 ---
@@ -184,7 +184,7 @@ steps:
 - [x] Makefile 작성
 - [x] macOS에서 `make up` 실행 검증 (macOS 실기 PASS)
 - [x] Ubuntu CI / macOS CI 통과
-- [ ] Windows CI 통과 (직전 관측 실패 원인 `os.fork()` 제거 완료, 수정 후 원격 green 미확인)
+- [ ] Windows CI 통과 (2026-08-24 run `32701590510` FAIL. `os.getloadavg` 부재와 Capsule 경로 역슬래시를 수정했으나 재실행 결과 미확인)
 - [x] `.gitattributes` 줄바꿈 가드 (데이터 자산은 변환 제외)
 - [ ] Windows Docker Desktop에서 `scripts/validate_windows.ps1` 전체 통과 (실기 미수행)
 
@@ -223,4 +223,4 @@ CI 의 windows-latest 작업은 이 결함으로 실패하고 있었으며, 수�
 - **직전 감사 기준 main SHA**: `896e1d5`
 - **코드 상태**: Windows에 없는 `os.fork()` 사용을 제거하고 subprocess 기반 테스트로 교체했습니다.
 - **원격 상태**: 위 수정이 포함된 브랜치의 Windows CI green은 아직 확인하지 않았습니다. 코드 수정만으로 PASS를 추론하지 않습니다.
-- **현행 상태 요약**: 직전 관측 Windows CI FAIL 원인 수정 완료, 수정 후 원격 CI 미확인, Windows Docker Desktop 실기 미수행.
+- **현행 상태 요약**: 2026-08-24 run `32701590510` 에서 Windows FAIL 3건(`os.getloadavg` 부재 2건, Capsule 경로 역슬래시 1건)을 수정했고 재실행 결과는 미확인입니다. Windows Docker Desktop 실기 미수행.
