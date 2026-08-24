@@ -23,6 +23,7 @@ import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으
 import sys
 import time
 import uuid
+from contextlib import suppress
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
@@ -785,7 +786,7 @@ def expand_intent_to_capsule(
         report_schema=report_schema,
     )
 
-    if is_reviewer:
+    if review_checklist:
         checklist_block = _format_review_checklist(review_checklist)
         capsule += "\n" + checklist_block + "\n"
 
@@ -1730,10 +1731,11 @@ def _deliver_capsule_notice(
 
 
 def cmd_create(args: argparse.Namespace) -> int:
-    """Intent 를 Capsule 로 확장하고 그 절대 경로를 담은 Orca Task 를 만듭니다.
+    """Intent 를 Capsule 로 확장하고 그 경로를 담은 Orca Task 를 만듭니다.
 
     Task 의 spec 은 `dispatch --inject` 가 워커에게 전달하는 유일한 본문이라,
     Capsule 경로를 여기에 넣어야 워커가 첫 턴부터 정본을 찾습니다.
+    Orca 가 반환한 실제 Task ID 로 Capsule 내부 task_id 및 디렉터리를 확정합니다.
     """
     intent_path = Path(args.intent)
     if not intent_path.exists():
@@ -1747,7 +1749,8 @@ def cmd_create(args: argparse.Namespace) -> int:
         return 2
     task_id = args.task_id or intent.get("task_id") or f"task_{intent_path.stem}"
 
-    task_capsule_dir = Path(args.capsule_dir) / task_id
+    capsule_dir = Path(args.capsule_dir)
+    task_capsule_dir = capsule_dir / task_id
     task_capsule_dir.mkdir(parents=True, exist_ok=True)
     capsule_path = (task_capsule_dir / "capsule.yaml").resolve()
 
@@ -1783,6 +1786,9 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     code, stdout, stderr = _run_command(cmd)
     if code != 0 or not _launch_succeeded(stdout, expect_json=True):
+        capsule_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            task_capsule_dir.rmdir()
         reason = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
         sys.stderr.write(f"오류: task-create 실패: {reason}\n")
         return 1
@@ -1792,22 +1798,61 @@ def cmd_create(args: argparse.Namespace) -> int:
     if isinstance(payload, dict):
         created_id = ((payload.get("result") or {}).get("task") or {}).get("id")
 
+    if not created_id:
+        capsule_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            task_capsule_dir.rmdir()
+        sys.stderr.write("오류: task-create 결과에서 Task ID 를 얻지 못했습니다.\n")
+        return 1
+
+    actual_task_id = str(created_id)
+    actual_capsule_dir = capsule_dir / actual_task_id
+    actual_capsule_dir.mkdir(parents=True, exist_ok=True)
+    actual_capsule_path = (actual_capsule_dir / "capsule.yaml").resolve()
+
+    try:
+        final_capsule = expand_intent_to_capsule(
+            intent,
+            task_id=actual_task_id,
+            run_id=args.run_id,
+            capsule_path=actual_capsule_path,
+        )
+    except ValueError as err:
+        if capsule_path != actual_capsule_path:
+            actual_capsule_path.unlink(missing_ok=True)
+            with suppress(OSError):
+                actual_capsule_dir.rmdir()
+        capsule_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            task_capsule_dir.rmdir()
+        sys.stderr.write(f"오류: {err}\n")
+        return 2
+
+    actual_capsule_path.write_text(final_capsule, encoding="utf-8")
+
+    if capsule_path != actual_capsule_path:
+        capsule_path.unlink(missing_ok=True)
+        with suppress(OSError):
+            task_capsule_dir.rmdir()
+
+    final_spec = build_task_spec(intent.get("objective", ""), actual_capsule_path)
+
     if args.json:
         print(
             json.dumps(
                 {
-                    "task_id": created_id,
-                    "capsule": str(capsule_path),
-                    "spec": spec,
-                    "char_count": char_len(capsule),
+                    "task_id": actual_task_id,
+                    "capsule": str(actual_capsule_path),
+                    "spec": final_spec,
+                    "char_count": char_len(final_capsule),
                 },
                 ensure_ascii=False,
                 indent=2,
             )
         )
     else:
-        print(f"Task 생성 완료: {created_id}")
-        print(f"Capsule: {capsule_path}")
+        print(f"Task 생성 완료: {actual_task_id}")
+        print(f"Capsule: {actual_capsule_path}")
     return 0
 
 
@@ -1834,6 +1879,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             sys.stderr.write(f"오류: Capsule 파일 없음: {capsule_path}\n")
             return 2
         capsule = capsule_path.read_text(encoding="utf-8")
+        capsule_task_id = parse_capsule_scalar(capsule, "task_id")
+        if capsule_task_id:
+            task_id = capsule_task_id
         try:
             for p in parse_capsule_list(capsule, "allowed_read_files"):
                 validate_contained_path(p, field_name="allowed_read_files")

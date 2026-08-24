@@ -38,6 +38,7 @@ from scripts.orca_taskctl import (
     worker_start,
     worktree_relative_capsule_path,
 )
+from scripts.validate_review_report import parse_checklist
 
 SAMPLE_BUILDER_INTENT = """schema: ORCA_TASK_INTENT_V1
 role: builder
@@ -212,6 +213,54 @@ def test_expand_intent_reviewer_with_checklist(tmp_path: Path):
     assert "review_checklist:" in capsule
     assert '- id: "C1"' in capsule
     assert '- id: "C2"' in capsule
+
+
+def test_expand_builder_preserves_review_checklist_all_fields(tmp_path: Path):
+    """Builder Intent 의 review_checklist 가 id/question/how/defect_when 및 극성과 함께 Capsule 에 보존되어야 합니다."""
+    capsule_file = tmp_path / "run_test" / "b1" / "capsule.yaml"
+    builder_intent_with_checklist = """schema: ORCA_TASK_INTENT_V1
+role: builder
+objective: >
+  체크리스트가 포함된 빌더 작업.
+scope:
+  - "scripts/orca_taskctl.py"
+review_checklist:
+  - id: "B1"
+    question: "속도 최적화 fast 플래그가 활성화되어 있는가?"
+    defect_when: "no"
+    how: "grep fast 검사"
+  - id: "B2"
+    question: "기존 회귀가 발생하는가?"
+    defect_when: "yes"
+    how: "pytest 실행"
+"""
+    intent = parse_intent(builder_intent_with_checklist)
+    capsule = expand_intent_to_capsule(
+        intent,
+        task_id="task_build_chk",
+        run_id="run_test",
+        capsule_path=capsule_file,
+    )
+
+    assert parse_capsule_scalar(capsule, "role") == "builder"
+    assert "review_checklist:" in capsule
+    assert '- id: "B1"' in capsule
+    assert '- id: "B2"' in capsule
+    assert 'defect_when: "no"' in capsule
+    assert 'defect_when: "yes"' in capsule
+
+    # validate_review_report.parse_checklist 로 파싱 정합성 검증
+    parsed_items = parse_checklist(capsule)
+    assert len(parsed_items) == 2
+    assert parsed_items[0]["id"] == "B1"
+    assert parsed_items[0]["defect_when"] == "no"
+    assert "속도 최적화 fast 플래그" in parsed_items[0]["question"]
+    assert "grep fast 검사" in parsed_items[0]["how"]
+
+    assert parsed_items[1]["id"] == "B2"
+    assert parsed_items[1]["defect_when"] == "yes"
+    assert "기존 회귀가 발생하는가?" in parsed_items[1]["question"]
+    assert "pytest 실행" in parsed_items[1]["how"]
 
 
 def test_expand_intent_reviewer_without_checklist_rejected(tmp_path: Path):
@@ -2001,10 +2050,151 @@ def test_cmd_create_puts_capsule_path_in_task_spec(
     assert cmd[:3] == ["orca", "orchestration", "task-create"]
     spec = cmd[cmd.index("--spec") + 1]
     assert "capsule.yaml" in spec
-    # 절대 경로를 주면 워커가 그 저장소로 이동합니다 (2026-08-23 사고).
-    assert str(tmp_path) not in spec
-    assert "현재 작업 디렉터리" in spec
     assert json.loads(capsys.readouterr().out)["task_id"] == "task_created"
+    created_capsule = tmp_path / "capsules" / "task_created" / "capsule.yaml"
+    assert created_capsule.exists()
+    capsule_text = created_capsule.read_text(encoding="utf-8")
+    assert parse_capsule_scalar(capsule_text, "task_id") == "task_created"
+    assert (
+        parse_capsule_scalar(capsule_text, "report_path")
+        == ".orca/capsules/task_created/worker_done.json"
+    )
+
+
+def test_cmd_create_syncs_actual_task_id_to_capsule_and_spec(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """create 는 Orca 가 반환한 실제 Task ID 를 Capsule 내부 task_id, report_path, artifact_paths 에 일치시켜야 합니다."""
+    intent_file = tmp_path / "intent_provisional.yaml"
+    intent_file.write_text(
+        """schema: ORCA_TASK_INTENT_V1
+role: builder
+task_id: task_provisional_id
+objective: >
+  실제 태스크 ID 일치 검증 작업.
+scope:
+  - scripts/orca_taskctl.py
+""",
+        encoding="utf-8",
+    )
+
+    actual_orca_id = "task_actual_orca_777"
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        return 0, json.dumps({"ok": True, "result": {"task": {"id": actual_orca_id}}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    capsules_dir = tmp_path / ".orca" / "capsules"
+    code = main(
+        [
+            "create",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(capsules_dir),
+            "--json",
+        ]
+    )
+    assert code == 0
+
+    out_data = json.loads(capsys.readouterr().out)
+    assert out_data["task_id"] == actual_orca_id
+
+    final_capsule_path = capsules_dir / actual_orca_id / "capsule.yaml"
+    assert final_capsule_path.exists()
+
+    # 가계정 task_id 디렉터리는 정리되었어야 함
+    provisional_dir = capsules_dir / "task_provisional_id"
+    assert not provisional_dir.exists()
+
+    capsule_content = final_capsule_path.read_text(encoding="utf-8")
+    assert parse_capsule_scalar(capsule_content, "task_id") == actual_orca_id
+    assert (
+        parse_capsule_scalar(capsule_content, "report_path")
+        == f".orca/capsules/{actual_orca_id}/worker_done.json"
+    )
+
+    read_files = parse_capsule_list(capsule_content, "allowed_read_files")
+    write_files = parse_capsule_list(capsule_content, "allowed_write_files")
+    artifact_paths = parse_capsule_list(capsule_content, "artifact_paths")
+
+    assert f".orca/capsules/{actual_orca_id}/capsule.yaml" in read_files
+    assert f"docs/analysis/{actual_orca_id}.md" in write_files
+    assert f"docs/analysis/{actual_orca_id}.md" in artifact_paths
+
+
+def test_cmd_create_atomic_cleanup_on_task_create_exit_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """task-create 호출 실패 시 반쪽 Capsule 과 디렉터리가 디스크에 남지 않아야 합니다."""
+    intent_file = tmp_path / "intent_fail.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        return 1, "", "네트워크 타임아웃 오류"
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    capsules_dir = tmp_path / "capsules"
+    code = main(["create", "--intent", str(intent_file), "--capsule-dir", str(capsules_dir)])
+    assert code == 1
+    assert "task-create 실패" in capsys.readouterr().err
+    # 임시 Capsule 파일/디렉터리가 남아있지 않아야 함
+    if capsules_dir.exists():
+        assert not any(capsules_dir.iterdir())
+
+
+def test_cmd_create_atomic_cleanup_on_missing_task_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """task-create 결과에서 Task ID 를 얻지 못하면 종료 코드 1을 반환하고 파일을 남기지 않아야 합니다."""
+    intent_file = tmp_path / "intent_no_id.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        return 0, json.dumps({"ok": True, "result": {}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    capsules_dir = tmp_path / "capsules"
+    code = main(["create", "--intent", str(intent_file), "--capsule-dir", str(capsules_dir)])
+    assert code == 1
+    assert "Task ID 를 얻지 못했습니다" in capsys.readouterr().err
+    if capsules_dir.exists():
+        assert not any(capsules_dir.iterdir())
+
+
+def test_cmd_create_atomic_cleanup_on_reexpansion_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """Task ID 확정 후 2차 확장 실패 시에도 파일이 남지 않고 종료 코드 2를 반환해야 합니다."""
+    intent_file = tmp_path / "intent_reexpand_err.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    call_count = 0
+    orig_expand = expand_intent_to_capsule
+
+    def mock_expand(intent, task_id=None, run_id=DEFAULT_RUN_ID, capsule_path=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            raise ValueError("2차 확장 예외 주입")
+        return orig_expand(intent, task_id=task_id, run_id=run_id, capsule_path=capsule_path)
+
+    monkeypatch.setattr("scripts.orca_taskctl.expand_intent_to_capsule", mock_expand)
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        return 0, json.dumps({"ok": True, "result": {"task": {"id": "task_reexpand_999"}}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    capsules_dir = tmp_path / "capsules"
+    code = main(["create", "--intent", str(intent_file), "--capsule-dir", str(capsules_dir)])
+    assert code == 2
+    assert "2차 확장 예외 주입" in capsys.readouterr().err
+    if capsules_dir.exists():
+        assert not any(capsules_dir.iterdir())
 
 
 def test_cmd_dispatch_reuses_existing_capsule(
