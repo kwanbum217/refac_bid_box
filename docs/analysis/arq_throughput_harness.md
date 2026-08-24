@@ -1,8 +1,8 @@
 # Arq 백그라운드 태스크 처리량 벤치마크 하네스 설계 및 사용 문서
 
 > **작성일**: 2026-08-22
-> **도구 위치**: [`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py)
-> **단위 테스트**: [`tests/test_benchmark_arq_throughput.py`](tests/test_benchmark_arq_throughput.py)
+> **도구 위치**: [`scripts/benchmark_arq_throughput.py`](../../scripts/benchmark_arq_throughput.py)
+> **단위 테스트**: [`tests/test_benchmark_arq_throughput.py`](../../tests/test_benchmark_arq_throughput.py)
 > **대상**: Arq 비동기 워커 처리량(jobs/sec) 및 Enqueue-to-Complete 지연 측정 도구
 
 ---
@@ -11,7 +11,7 @@
 
 `src/tasks/` 디렉터리의 8개 Arq 백그라운드 태스크(`scheduled_tasks.py`, `automation_tasks.py`, `retrain_task.py`)에 동기 I/O 오프로드(`asyncio.to_thread`)가 적용되었습니다.
 
-HTTP API 요청-응답 경로는 [`docs/analysis/blocking_io_p95_20260822.md`](docs/analysis/blocking_io_p95_20260822.md)를 통해 P95 레이턴시 실측이 완료되었으나, Redis 큐를 매개로 비동기 실행되는 Arq 워커의 처리량(Throughput, jobs/sec)과 작업 적재부터 완료까지의 종단 지연(Enqueue-to-Complete latency)은 전용 하네스의 부재로 미측정 상태였습니다.
+HTTP API 요청-응답 경로는 [`docs/analysis/blocking_io_p95_20260822.md`](blocking_io_p95_20260822.md)를 통해 P95 레이턴시 실측이 완료되었으나, Redis 큐를 매개로 비동기 실행되는 Arq 워커의 처리량(Throughput, jobs/sec)과 작업 적재부터 완료까지의 종단 지연(Enqueue-to-Complete latency)은 전용 하네스의 부재로 미측정 상태였습니다.
 
 실제 Redis 환경에서 운영 워커를 벤치마크할 때 운영 데이터(DB, ChromaDB, ML 가중치)를 오염시키지 않고, 재현 가능한 수치와 계약을 확보하기 위해 본 격리형 벤치마크 하네스를 구현하였습니다.
 
@@ -128,7 +128,7 @@ uv run python scripts/benchmark_arq_throughput.py --help
 
 ## 6. 테스트 및 검증 결과
 
-[`tests/test_benchmark_arq_throughput.py`](tests/test_benchmark_arq_throughput.py)를 통해 Redis 의존성 없이 아래 항목이 완전하게 검증되었습니다.
+[`tests/test_benchmark_arq_throughput.py`](../../tests/test_benchmark_arq_throughput.py)를 통해 Redis 의존성 없이 아래 항목이 완전하게 검증되었습니다.
 
 - **고유 큐 생성 검증**: 100회 연속 생성 시 중복 0건 및 접두사(`arq:benchmark:`) 준수 확인.
 - **결정론적 집계 및 백분위수**: 단일값, 홀수/짝수 표본, 성공/실패 혼합 시 정확한 P50/P95/P99 산출 확인.

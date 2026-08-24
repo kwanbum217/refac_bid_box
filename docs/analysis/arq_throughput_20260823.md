@@ -1,19 +1,19 @@
 # Arq 백그라운드 태스크 처리량 및 지연 실측 보고서
 
 > **작성일**: 2026-08-23
-> **측정 도구**: [`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py)
-> **대표 원시 데이터**: [`data/benchmarks/arq_throughput_20260823.json`](data/benchmarks/arq_throughput_20260823.json) (초기 Run 2)
+> **측정 도구**: [`scripts/benchmark_arq_throughput.py`](../../scripts/benchmark_arq_throughput.py)
+> **대표 원시 데이터**: [`data/benchmarks/arq_throughput_20260823.json`](../../data/benchmarks/arq_throughput_20260823.json) (초기 Run 2)
 > **검증 원시 데이터**: [`verification_r1`](../../data/benchmarks/arq_throughput_20260823_verification_r1.json), [`verification_r2`](../../data/benchmarks/arq_throughput_20260823_verification_r2.json), [`verification_r3`](../../data/benchmarks/arq_throughput_20260823_verification_r3.json)
 > **측정 커밋**: `ca3995dd6587a5b9ee946526f7adda1e8960f5e7`
-> **규약 문서**: [`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md)
+> **규약 문서**: [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
 
 ---
 
 ## 1. 측정 개요 및 목적
 
-본 문서는 운영 Docker Compose의 Redis를 대상으로 격리형 Arq 처리량 벤치마크 하네스([`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py:1))를 실행하여 Arq 큐의 처리량(jobs/sec), 종단 지연(Enqueue-to-Complete latency), 그리고 실패율을 실측한 결과를 기록합니다. 하네스는 전용 큐에 in-process Arq Worker를 띄우므로, 별도 `worker` 컨테이너의 실제 업무 큐 처리량과 동일하다고 해석하지 않습니다.
+본 문서는 운영 Docker Compose의 Redis를 대상으로 격리형 Arq 처리량 벤치마크 하네스([`scripts/benchmark_arq_throughput.py`](../../scripts/benchmark_arq_throughput.py#L1))를 실행하여 Arq 큐의 처리량(jobs/sec), 종단 지연(Enqueue-to-Complete latency), 그리고 실패율을 실측한 결과를 기록합니다. 하네스는 전용 큐에 in-process Arq Worker를 띄우므로, 별도 `worker` 컨테이너의 실제 업무 큐 처리량과 동일하다고 해석하지 않습니다.
 
-[`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md:92) 규약에 따라 최소 3회 반복 측정(회차당 표본 600건, 회차 간 간격 30초 이상)을 수행하였으며, 3회차 중 최악 대표값(worst-case representative)을 기준으로 성능 baseline 및 회귀 기준선 후보를 도출합니다.
+[`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md#L92) 규약에 따라 최소 3회 반복 측정(회차당 표본 600건, 회차 간 간격 30초 이상)을 수행하였으며, 3회차 중 최악 대표값(worst-case representative)을 기준으로 성능 baseline 및 회귀 기준선 후보를 도출합니다.
 
 ```mermaid
 flowchart LR
@@ -27,7 +27,7 @@ flowchart LR
 
 ## 2. 측정 환경 및 주변 부하 (Ambient Load)
 
-[`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md:255) 5.3절 규정에 따라 측정 직전 호스트 주변 부하를 측정하였으며, 코어당 부하율 임계값(중앙값 30% 이하, 최대 50% 이하)을 엄격히 충족함을 확인하였습니다.
+[`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md#L255) 5.3절 규정에 따라 측정 직전 호스트 주변 부하를 측정하였으며, 코어당 부하율 임계값(중앙값 30% 이하, 최대 50% 이하)을 엄격히 충족함을 확인하였습니다.
 
 | 항목 | 상세 규격 및 설정 |
 | --- | --- |

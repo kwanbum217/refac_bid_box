@@ -92,5 +92,5 @@ git push origin main
 
 ## 5. 작업 완료 시
 
-- [`changelogs/[이니셜].md`](../changelogs/TEMPLATE.md)에 엔트리 추가.
+- [`changelogs/work_log.md`](../changelogs/work_log.md)에 엔트리 추가.
 - 관련 문서 갱신 여부 확인.

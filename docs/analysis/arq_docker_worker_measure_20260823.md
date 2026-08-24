@@ -2,19 +2,19 @@
 
 > **작성일**: 2026-08-23
 > **작성 목적**: 실제 Docker 환경의 Redis 컨테이너 연계 Arq 워커 큐 처리량, P95 지연, 실패율 실측 및 게이트 기준선 대조 판정
-> **측정 도구**: [`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py)
-> **게이트 판정 모듈**: [`scripts/arq_gate.py`](scripts/arq_gate.py)
-> **대표 원시 데이터**: [`data/benchmarks/arq_worker_measure_20260823.json`](data/benchmarks/arq_worker_measure_20260823.json) (Run 3, 최악 P95 대표)
+> **측정 도구**: [`scripts/benchmark_arq_throughput.py`](../../scripts/benchmark_arq_throughput.py)
+> **게이트 판정 모듈**: [`scripts/arq_gate.py`](../../scripts/arq_gate.py)
+> **대표 원시 데이터**: [`data/benchmarks/arq_worker_measure_20260823.json`](../../data/benchmarks/arq_worker_measure_20260823.json) (Run 3, 최악 P95 대표)
 > **측정 커밋 SHA**: `d95efd5995a117a7e5113e92434e9105de8c3a31`
-> **규약 문서**: [`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md)
+> **규약 문서**: [`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
 
 ---
 
 ## 1. 측정 개요 및 목적
 
-본 문서는 실제 Docker Compose 스택의 Redis 컨테이너(`redis:7-alpine`)를 대상으로 운영 격리형 Arq 처리량 벤치마크 하네스([`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py:1))를 실행하여 Arq 큐의 처리량(jobs/sec), 종단 지연(Enqueue-to-Complete latency), 그리고 실패율을 실측한 결과를 기록합니다.
+본 문서는 실제 Docker Compose 스택의 Redis 컨테이너(`redis:7-alpine`)를 대상으로 운영 격리형 Arq 처리량 벤치마크 하네스([`scripts/benchmark_arq_throughput.py`](../../scripts/benchmark_arq_throughput.py#L1))를 실행하여 Arq 큐의 처리량(jobs/sec), 종단 지연(Enqueue-to-Complete latency), 그리고 실패율을 실측한 결과를 기록합니다.
 
-[`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md:92) 규약에 따라 최소 3회 반복 측정(회차당 표본 600건, 회차 간 간격 30초 이상)을 수행하였으며, 3회차 중 최악 대표값(worst-case representative)을 기준으로 성능 baseline 및 회귀 기준선 적합성을 검증합니다.
+[`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md#L92) 규약에 따라 최소 3회 반복 측정(회차당 표본 600건, 회차 간 간격 30초 이상)을 수행하였으며, 3회차 중 최악 대표값(worst-case representative)을 기준으로 성능 baseline 및 회귀 기준선 적합성을 검증합니다.
 
 ```mermaid
 flowchart LR
@@ -46,7 +46,7 @@ flowchart LR
 
 ### 2.1 주변 부하 (Ambient Load)
 
-[`docs/ops/latency_gate_protocol.md`](docs/ops/latency_gate_protocol.md:255) 5.3절에 따라 각 회차 시작 직전 코어당 부하율을 측정하였으며, 임계값(중앙값 30% 이하, 최대 50% 이하)을 충족하였습니다.
+[`docs/ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md#L255) 5.3절에 따라 각 회차 시작 직전 코어당 부하율을 측정하였으며, 임계값(중앙값 30% 이하, 최대 50% 이하)을 충족하였습니다.
 
 | 측정 시점 | 1분 Load Average | 코어 수 (`hw.ncpu`) | 코어당 부하율 | 적합 여부 판정 |
 | --- | :---: | :---: | :---: | :---: |

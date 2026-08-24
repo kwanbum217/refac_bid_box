@@ -30,7 +30,7 @@
 
 ### 1.2 백분위수(Percentile) 선형 보간 방식 정의
 
-본 분석 및 저장소의 벤치마크 스크립트([`scripts/benchmark_predict_tail.py`](scripts/benchmark_predict_tail.py), [`scripts/analyze_predict_p95_samplesize.py`](scripts/analyze_predict_p95_samplesize.py))에서 사용하는 백분위수 산출 공식은 **Type 7 선형 보간 방식(Linear Interpolation, R/NumPy 기본 방식)**입니다.
+본 분석 및 저장소의 벤치마크 스크립트([`scripts/benchmark_predict_tail.py`](../../scripts/benchmark_predict_tail.py), [`scripts/analyze_predict_p95_samplesize.py`](../../scripts/analyze_predict_p95_samplesize.py))에서 사용하는 백분위수 산출 공식은 **Type 7 선형 보간 방식(Linear Interpolation, R/NumPy 기본 방식)**입니다.
 
 - 정렬된 지연 배열 $X = [x_0, x_1, \dots, x_{N-1}]$에 대해 목표 백분위 $q \in [0, 100]$의 가상 인덱스 위치는 다음과 같이 정의됩니다.
   $$\text{position} = (N - 1) \times \frac{q}{100}$$
@@ -165,7 +165,7 @@
 
 본 분석의 모든 수치와 부트스트랩 시뮬레이션은 다음 스크립트를 통해 완전히 재현 가능합니다.
 
-- **스크립트 경로**: [`scripts/analyze_predict_p95_samplesize.py`](scripts/analyze_predict_p95_samplesize.py)
+- **스크립트 경로**: [`scripts/analyze_predict_p95_samplesize.py`](../../scripts/analyze_predict_p95_samplesize.py)
 - **실행 방법**:
   ```bash
   uv run python scripts/analyze_predict_p95_samplesize.py --seed 42 --iterations 1000

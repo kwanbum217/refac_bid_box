@@ -45,6 +45,10 @@ jobs:
       - name: Validate Multi-Agent Rules Consistency
         run: python3 scripts/validate_agent_rules.py --quiet
 
+      # 감사 증거 및 문서 링크의 정합성을 검증합니다 (외부 URL 은 네트워크 불안정 방지를 위해 제외).
+      - name: Validate Markdown Doc Links
+        run: python3 scripts/validate_doc_links.py --quiet
+
       # 워크플로우 파일은 pytest 가 검증하지 않습니다. Orca 게이트 3 의
       # workflow_lint 능력도 이 명령으로 덮습니다.
       - name: Lint GitHub Actions Workflows

@@ -16,10 +16,10 @@
 
 | 단계 | 실행 함수 및 위치 | 주요 작업 내용 | I/O 및 연산 유형 |
 | :---: | :--- | :--- | :--- |
-| **1단계** | `query_chatbot`<br>([`src/app/api/v1/chatbot.py:544-553`](src/app/api/v1/chatbot.py#L544-L553)) | 요청 수신, `rag_engine.get_answer` 비동기 호출, Pydantic 응답 직렬화 | FastAPI ASGI 라우팅, CPU 직렬화 |
-| **2단계** | `HybridRAGEngine._prepare_context`<br>([`src/rag/engine.py:196-248`](src/rag/engine.py#L196-L248)) | 1) 질의 계획 수립 (`build_retrieval_plan`)<br>2) 정형 DB 통계/공고 조회 (`retrieve_structured_data`)<br>3) ChromaDB 지식베이스 벡터 검색 (`retrieve_semantic_context`)<br>4) 검색 컨텍스트 텍스트 및 프롬프트 메시지 조립 | CPU 키워드 파싱,<br>MySQL 동기 SQL I/O,<br>ChromaDB 임베딩 연산 및 디스크 I/O |
-| **3단계** | `HybridRAGEngine.get_answer_sync`<br>([`src/rag/engine.py:276-334`](src/rag/engine.py#L276-L334)) | 1) 직답 목록 생성 여부 판정 (`_build_result_list_answer`)<br>2) LLM 백엔드 전체 생성 블로킹 호출 (`backend.generate`)<br>3) Answer Guard 교정 (`_apply_answer_guard`)<br>4) 출처 인용 문구 조립 (`_build_source_citation_from_context`) | 외부 LLM API/Ollama 네트워크 I/O 및 토큰 생성 대기 (블로킹),<br>CPU 문자열 정규화 |
-| **4단계** | `HybridRAGEngine.get_answer`<br>([`src/rag/engine.py:336-344`](src/rag/engine.py#L336-L344)) | 2~3단계 전체 동기 실행을 `asyncio.to_thread`로 워커 스레드 풀에 위임 | 스레드 풀 스케줄링 오버헤드 |
+| **1단계** | `query_chatbot`<br>([`src/app/api/v1/chatbot.py:544-553`](../../src/app/api/v1/chatbot.py#L544-L553)) | 요청 수신, `rag_engine.get_answer` 비동기 호출, Pydantic 응답 직렬화 | FastAPI ASGI 라우팅, CPU 직렬화 |
+| **2단계** | `HybridRAGEngine._prepare_context`<br>([`src/rag/engine.py:196-248`](../../src/rag/engine.py#L196-L248)) | 1) 질의 계획 수립 (`build_retrieval_plan`)<br>2) 정형 DB 통계/공고 조회 (`retrieve_structured_data`)<br>3) ChromaDB 지식베이스 벡터 검색 (`retrieve_semantic_context`)<br>4) 검색 컨텍스트 텍스트 및 프롬프트 메시지 조립 | CPU 키워드 파싱,<br>MySQL 동기 SQL I/O,<br>ChromaDB 임베딩 연산 및 디스크 I/O |
+| **3단계** | `HybridRAGEngine.get_answer_sync`<br>([`src/rag/engine.py:276-334`](../../src/rag/engine.py#L276-L334)) | 1) 직답 목록 생성 여부 판정 (`_build_result_list_answer`)<br>2) LLM 백엔드 전체 생성 블로킹 호출 (`backend.generate`)<br>3) Answer Guard 교정 (`_apply_answer_guard`)<br>4) 출처 인용 문구 조립 (`_build_source_citation_from_context`) | 외부 LLM API/Ollama 네트워크 I/O 및 토큰 생성 대기 (블로킹),<br>CPU 문자열 정규화 |
+| **4단계** | `HybridRAGEngine.get_answer`<br>([`src/rag/engine.py:336-344`](../../src/rag/engine.py#L336-L344)) | 2~3단계 전체 동기 실행을 `asyncio.to_thread`로 워커 스레드 풀에 위임 | 스레드 풀 스케줄링 오버헤드 |
 
 ---
 

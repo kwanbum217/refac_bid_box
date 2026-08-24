@@ -345,11 +345,11 @@ uv run python scripts/benchmark_arq_container.py \
 | 항목 | 경로 |
 | --- | --- |
 | 잠정 일관성 봉투 개명 근거 | [`arq_threshold_derivation_20260823.md`](arq_threshold_derivation_20260823.md) |
-| Provenance 규약 | [`docs/ops/arq_threshold_provenance_20260823.md`](docs/ops/arq_threshold_provenance_20260823.md) |
-| 게이트 판정 모듈 | [`scripts/arq_gate.py`](scripts/arq_gate.py) |
-| In-Process 벤치마크 하네스 | [`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py) |
-| Container 벤치마크 하네스 | [`scripts/benchmark_arq_container.py`](scripts/benchmark_arq_container.py) |
-| 벤치마크 워커 설정 | [`scripts/_bench_worker_settings.py`](scripts/_bench_worker_settings.py) |
-| 운영 워커 설정 | [`src/tasks/worker.py`](src/tasks/worker.py) |
+| Provenance 규약 | [`docs/ops/arq_threshold_provenance_20260823.md`](../ops/arq_threshold_provenance_20260823.md) |
+| 게이트 판정 모듈 | [`scripts/arq_gate.py`](../../scripts/arq_gate.py) |
+| In-Process 벤치마크 하네스 | [`scripts/benchmark_arq_throughput.py`](../../scripts/benchmark_arq_throughput.py) |
+| Container 벤치마크 하네스 | [`scripts/benchmark_arq_container.py`](../../scripts/benchmark_arq_container.py) |
+| 벤치마크 워커 설정 | [`scripts/_bench_worker_settings.py`](../../scripts/_bench_worker_settings.py) |
+| 운영 워커 설정 | [`src/tasks/worker.py`](../../src/tasks/worker.py) |
 
 ---
