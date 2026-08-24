@@ -64,7 +64,7 @@
 | 1 | Host 부하 규약 enforcing | 측정 전/후 `host_load_avg_1m / cpu_count <= 0.30` 등 검증 | 기록만 하고 자동 거부하지 않음 | 부분 불가 | 하네스 외부에서 `scripts/benchmark_provenance.single_host_load_sample()` 또는 시스템 명령으로 사전 검증 후 실행 |
 | 2 | Frozen baseline 디렉터리 구조 | `data/benchmarks/frozen/arq/<mode>/<git_sha_short>/...` 경로로 저장 | `--output`이 지정한 경로 그대로 저장, 중간 디렉터리는 자동 생성하지만 `<mode>/<git_sha_short>`는 사용자가 미리 생성해야 함 | 부분 불가 | 실행 전 `mkdir -p data/benchmarks/frozen/arq/<mode>/$(git rev-parse --short HEAD)` 수동 실행 |
 | 3 | Container 네트워크 기본값 | `arq-docker-measure_default`로 고정 가정 | Redis 컨테이너 네트워크 자동 감지, `--network`로 재정의 가능 | 가능 (주의) | docker-compose 네트워크 이름이 `arq-docker-measure_default`가 아니면 `--network` 명시 |
-| 4 | Redis 컨테이너 식별 | `docker-compose.yml`의 `redis` 서비스 | 이름에 `redis`가 포함된 컨테이너 중 첫 번째 자동 선택 | 가능 (주의) | 여러 redis 컨테이너가 있을 경우 의도하지 않은 컨테이너가 선택될 수 있음 |
+| 4 | Redis 컨테이너 식별 | `docker-compose.yml`의 `redis` 서비스 | `--redis-container` 명시 지정, 미지정 시 후보가 정확히 1개일 때만 자동 채택 | 가능 | `bc1a721` 이후. 후보 0개·다중 또는 `redis_url` 대응 실패는 `BuildProvenanceError` 로 중단 |
 | 5 | Frozen baseline 대표값 선정 | 6장 도출식(`median(T)`, `median(P)`)으로 계산 | 하네스는 P95 기준 최악값(`max(results, key=p95_ms)`)을 `--output`에 자동 저장 | 불가능 (자동) | `--output` 대표 파일을 무시하고 `_r1.json`~`_r10.json`을 별도로 읽어 6장 중앙값 식을 직접 계산해야 함 |
 | 6 | Git dirty 전체 런 중단 | dirty 상태에서 전체 런 중단 | strict 모드에서 개별 회차마다 `BuildProvenanceError`로 즉시 종료 | 가능 (동작 다름) | 실제로는 첫 회차부터 종료되므로 "전체 런 중단"과 결과적으로 동일 |
 | 7 | Provenance 4계층 필수 필드 누락 시 기각 | 누락 시 런 무효 | 하네스가 `unknown`으로 채워 출력함 | 부분 불가 | `unknown` 값이 있으면 수동으로 기각 판정해야 함 |
@@ -78,17 +78,17 @@
 | 1 | Host 부하 규약 enforcing | **BLOCKER** | 부하 규약을 자동 강제하는 하네스 기능이 없어 측정 유효성을 하네스가 보장하지 못함 |
 | 2 | Frozen baseline 디렉터리 구조 | **MANUAL** | `<mode>/<git_sha_short>` 디렉터리를 실행 전 운영자가 `mkdir -p`로 수동 생성해야 함 |
 | 3 | Container 네트워크 기본값 | **WARNING** | 자동 감지되지만 docker-compose 네트워크명이 다르면 `--network` 재정의가 필요하다는 주의사항 |
-| 4 | Redis 컨테이너 식별 | **WARNING** | 이름 일치 자동 선택이라 여러 redis 컨테이너 시 의도와 다른 대상이 선택될 수 있는 주의사항 |
+| 4 | Redis 컨테이너 식별 | **RESOLVED** | `--redis-container` 명시 지정과 후보 0개·다중 시 `BuildProvenanceError` fail-closed 로 해소 (`bc1a721`) |
 | 5 | Frozen baseline 대표값 선정 | **BLOCKER** | 대표값 산식을 하네스가 자동 적용하지 않아 별도 계산이 필수임 (자동화 결손) |
 | 6 | Git dirty 전체 런 중단 | **RESOLVED** | 첫 회차에서 즉시 종료되어 "전체 런 중단"과 동작상 차이 없음 |
 | 7 | Provenance 4계층 필수 필드 누락 시 기각 | **BLOCKER** | `unknown` 값을 하네스가 자동 기각하지 않아 수동 기각 판정이 필수임 (자동화 결손) |
 
 - **BLOCKER** (3건): 하네스가 자동으로 강제·적용·기각하지 못해 측정 유효성 또는 대표값 정확성이 보장되지 않는 항목.
 - **MANUAL** (1건): 하네스 기능이 아닌 운영자의 사전 수동 절차가 필요한 항목.
-- **WARNING** (2건): 동작은 하지만 특정 조건에서 오판 위험이 있어 운영자가 확인해야 하는 항목.
-- **RESOLVED** (1건): 설계서 요구사항과 실제 동작이 결과적으로 동일한 항목.
+- **WARNING** (1건): 동작은 하지만 특정 조건에서 오판 위험이 있어 운영자가 확인해야 하는 항목.
+- **RESOLVED** (2건): 설계서 요구사항과 실제 동작이 결과적으로 동일하거나, 후속 수정으로 해소된 항목.
 
-> **4번 항목 단서**: Redis 컨테이너 식별(WARNING)은 같은 Run의 다른 Task에서 명시 대상 지정과 fail-closed로 수정 중이며, 해당 수정이 병합되면 RESOLVED로 재분류된다. 현재 등급은 지금 시점 기준이다.
+> **4번 항목 갱신**: Redis 컨테이너 식별은 `bc1a721` 병합으로 명시 대상 지정(`--redis-container`)과 후보 모호·조회 실패 fail-closed 가 반영되어 **RESOLVED** 로 재분류했다. `resolve_redis_container` 는 후보가 정확히 1개일 때만 채택하고, `redis_url` 대응 검증에 실패하면 중단한다.
 
 ---
 
@@ -156,7 +156,7 @@
 
 ## 7. 결론
 
-설계서의 개별 측정 CLI 인자는 `scripts/benchmark_arq_throughput.py`와 `scripts/benchmark_arq_container.py`에서 모두 지정 가능하나, 3.1절 재분류 결과 **BLOCKER 3건**(Host 부하 규약 자동 강제 부재, 대표값 산식 자동 적용 부재, provenance unknown 자동 기각 부족)과 **MANUAL 1건**(frozen 디렉터리 명명)은 하네스 외부의 수동 절차가 필요하므로 설계서를 그대로 완전 자동 실행할 수는 없습니다. WARNING 2건과 RESOLVED 1건은 자동 실행을 막지 않습니다.
+설계서의 개별 측정 CLI 인자는 `scripts/benchmark_arq_throughput.py`와 `scripts/benchmark_arq_container.py`에서 모두 지정 가능하나, 3.1절 재분류 결과 **BLOCKER 3건**(Host 부하 규약 자동 강제 부재, 대표값 산식 자동 적용 부재, provenance unknown 자동 기각 부족)과 **MANUAL 1건**(frozen 디렉터리 명명)은 하네스 외부의 수동 절차가 필요하므로 설계서를 그대로 완전 자동 실행할 수는 없습니다. WARNING 1건과 RESOLVED 2건은 자동 실행을 막지 않습니다.
 
 ---
 
