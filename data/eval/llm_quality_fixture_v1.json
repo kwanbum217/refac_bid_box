@@ -1,0 +1,616 @@
+{
+  "version": "1.0.0",
+  "name": "llm_quality_fixture_v1",
+  "description": "gemma4:e4b 대 gemma4:e2b LLM 품질 변별 및 승격 판정을 위한 정본 평가 fixture",
+  "created_at": "2026-08-24",
+  "total_items": 19,
+  "min_context_sufficient_required": 15,
+  "context_sufficient_count": 16,
+  "refusal_expected_count": 3,
+  "items": [
+    {
+      "id": "q01",
+      "question": "공공입찰 적격심사의 기본 심사 항목과 낙찰자 결정 구조는 어떻게 되나요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-LAW-KNTCE-001",
+        "KB-EVAL-QUAL-001",
+        "KB-CRITERIA-DAPS-01"
+      ],
+      "expected_facts": [
+        {
+          "statement": "적격심사는 입찰가격과 계약이행능력(수행능력, 결격사유, 신인도 등)을 종합 심사하여 일정 종합평점 이상을 얻은 자를 낙찰자로 결정함",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "입찰가격 점수와 수행능력/이행능력 점수의 종합 합산 및 종합평점 기준 언급"
+        },
+        {
+          "statement": "예정가격 이하 최저가격 입찰자부터 순서대로 심사하여 적격점수 충족 시 낙찰자로 최종 결정함",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "최저가 입찰자부터 순차적으로 심사하는 방식 명시"
+        }
+      ],
+      "must_not_claim": [
+        "적격심사가 단순 최저가만으로 즉시 자동 낙찰된다는 주장",
+        "Servc, Thng 등 내부 영문 코드를 사용자 답변에 노출"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": null,
+      "scoring_rubric": "심사항목(가격+수행능력), 최저가순 순차심사, 종합평점 통과 기준이 포함되면 10점 만점"
+    },
+    {
+      "id": "q02",
+      "question": "2025년 물품 부문 낙찰 건의 평균 낙찰률은 얼마인가요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "DB-SQL-RESULT-STAT-2025-THNG",
+        "DB-AGG-BIDRESULT-RATE-001"
+      ],
+      "expected_facts": [
+        {
+          "statement": "2025년 물품 낙찰 평균 낙찰률은 91.1075% 임",
+          "fact_type": "numeric",
+          "expected_value": "91.1075",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "수치가 91.1075% (오차 0.01%p 이내, 91.0975%~91.1175%)로 정확히 표기"
+        }
+      ],
+      "must_not_claim": [
+        "91.1075%와 오차 범위를 벗어난 임의의 수치 제시",
+        "통계 데이터가 전혀 없다고 사실과 다르게 거절하는 서술"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "평균 낙찰률 91.1075%를 정확히 제시(오차 0.01%p)하고 Source[1] DB 집계 인용 시 만점(10점)"
+    },
+    {
+      "id": "q03",
+      "question": "국가계약법상 입찰보증금의 법정 원칙 비율과 재난·경기침체 시 완화 비율은 어떻게 되나요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-LAW-KNTCE-ENFORCE-37",
+        "KB-RULE-BID-DEPOSIT-01"
+      ],
+      "expected_facts": [
+        {
+          "statement": "입찰보증금의 기본 법정 원칙 비율은 입찰금액의 100분의 5(5%) 이상임",
+          "fact_type": "numeric",
+          "expected_value": "5.0",
+          "unit": "%",
+          "tolerance": 0.0,
+          "verification_criterion": "원칙 비율 5%(100분의 5) 명시"
+        },
+        {
+          "statement": "재난 및 경기침체 등 특례 적용 시 완화 비율은 100분의 2.5(2.5%) 이상임",
+          "fact_type": "numeric",
+          "expected_value": "2.5",
+          "unit": "%",
+          "tolerance": 0.0,
+          "verification_criterion": "특례/완화 비율 2.5%(100분의 2.5) 명시"
+        }
+      ],
+      "must_not_claim": [
+        "입찰보증금 기본 법정 비율을 10%나 20% 등으로 잘못 서술",
+        "보증금 납부 면제나 지급각서 대체 제도가 전혀 없다는 허위 진술"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.0,
+      "scoring_rubric": "원칙 비율 5%와 완화 비율 2.5%가 모두 정확하면 10점, 1개만 맞으면 5점"
+    },
+    {
+      "id": "q04",
+      "question": "수요기관별 낙찰 금액 상위 기관과 실적을 비교 분석해줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "DB-SQL-RESULT-TOP-INST-001",
+        "DB-AGG-DMINSTT-AMT-RANK"
+      ],
+      "expected_facts": [
+        {
+          "statement": "집계된 상위 수요기관 목록과 낙찰 금액/건수를 순위화하여 일관된 통계로 제시",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "검색된 상위 기관별 실적을 일관된 통계로 순위 비교"
+        }
+      ],
+      "must_not_claim": [
+        "데이터나 통계가 없어 비교 분석이 불가능하다고 명시한 뒤 곧바로 기관별 비교나 순위 집계를 수행하는 자기모순",
+        "통계가 없다고 거절하면서 임의의 기관을 지어내는 환각",
+        "내부 코드 Servc/Thng 노출"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": null,
+      "scoring_rubric": "통계 근거를 바탕으로 자기모순 없이 기관 비교를 일관되게 서술하면 10점. 데이터 부재 주장 후 비교를 전개하는 자기모순 발생 시 0점 감점"
+    },
+    {
+      "id": "q05",
+      "question": "국가를 당사자로 하는 계약에서 계약보증금의 기본 법정 비율은 계약금액의 몇 %인가요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-LAW-KNTCE-ACT-12",
+        "KB-RULE-CONTRACT-DEPOSIT-01"
+      ],
+      "expected_facts": [
+        {
+          "statement": "계약보증금의 기본 원칙 비율은 계약금액의 100분의 10(10%) 이상임",
+          "fact_type": "numeric",
+          "expected_value": "10.0",
+          "unit": "%",
+          "tolerance": 0.0,
+          "verification_criterion": "기본 법정 계약보증금율 10% 명시"
+        },
+        {
+          "statement": "재난 대응 및 한시적 특례 적용 시 100분의 5(5%) 이상으로 감경 가능",
+          "fact_type": "numeric",
+          "expected_value": "5.0",
+          "unit": "%",
+          "tolerance": 0.0,
+          "verification_criterion": "한시적 감경 기준 5% 언급"
+        }
+      ],
+      "must_not_claim": [
+        "기본 계약보증금율을 1% 또는 50% 등 법정 기준 외의 수치로 명시"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.0,
+      "scoring_rubric": "기본 10% 정확도 8점, 특례 감경 5% 설명 2점"
+    },
+    {
+      "id": "q06",
+      "question": "조달청 입찰에서 복수예비가격을 활용한 예정가격 결정 방식과 추첨 규칙은 어떻게 되나요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-PROC-PRED-PRICE-001",
+        "KB-RULE-MULTI-PREPRICE-15-4"
+      ],
+      "expected_facts": [
+        {
+          "statement": "기초금액 기준 총 15개의 복수예비가격이 작성됨",
+          "fact_type": "numeric",
+          "expected_value": "15",
+          "unit": "개",
+          "tolerance": 0.0,
+          "verification_criterion": "복수예비가격 총 개수 15개 명시"
+        },
+        {
+          "statement": "입찰 참여업체들이 추첨하여 가장 많이 선택된 4개의 예비가격을 산술평균하여 예정가격을 확정함",
+          "fact_type": "proposition",
+          "expected_value": "4",
+          "unit": "개",
+          "tolerance": 0.0,
+          "verification_criterion": "다빈도 추첨 4개 예비가격 산술평균 원칙 명시"
+        }
+      ],
+      "must_not_claim": [
+        "예비가격 15개 중 1개만 임의 추첨한다는 주장",
+        "발주처가 개찰 후 임의로 4개를 고른다는 서술"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.0,
+      "scoring_rubric": "15개 작성, 4개 최다추첨 산술평균이 정확히 서술되면 10점 만점"
+    },
+    {
+      "id": "q07",
+      "question": "BIDBOX 시스템에서 분류하는 4대 공공입찰 분야와 사용자 표기 명칭은 무엇인가요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-DOMAIN-CAT-001",
+        "SRC-MODELS-BIDS-CATEGORY-LABELS"
+      ],
+      "expected_facts": [
+        {
+          "statement": "4대 분야는 물품(Thng), 공사/건설(Cnstwk), 용역(Servc), 외자(Frgcpt)로 구성됨",
+          "fact_type": "category",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "물품, 공사(또는 건설), 용역, 외자 4개 표준 명칭 제시"
+        },
+        {
+          "statement": "사용자 응답 시 Servc나 서비스 대신 용역 표준 명칭을 사용해야 함",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "용역 분류 명칭 및 사용자 표준 용어 준수"
+        }
+      ],
+      "must_not_claim": [
+        "Servc, Thng 등 내부 영문 코드를 단독 노출하거나 용역을 단순 서비스로 오기"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": null,
+      "scoring_rubric": "4대 분야(물품, 공사, 용역, 외자)를 사용자 표준 한국어 명칭으로 정확히 열거하면 10점"
+    },
+    {
+      "id": "q08",
+      "question": "국가계약법 시행령에 따른 공사, 물품 제조·구매, 용역의 1일당 지체상금율은 각각 얼마인가요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-LAW-KNTCE-ENFORCE-74",
+        "KB-RULE-DELAY-PENALTY-01"
+      ],
+      "expected_facts": [
+        {
+          "statement": "물품 제조·구매의 1일당 지체상금율은 1,000분의 0.75 (0.075%)임",
+          "fact_type": "numeric",
+          "expected_value": "0.075",
+          "unit": "%",
+          "tolerance": 0.001,
+          "verification_criterion": "물품 1000분의 0.75(0.075%) 명시"
+        },
+        {
+          "statement": "공사의 1일당 지체상금율은 1,000분의 0.5 (0.05%)임",
+          "fact_type": "numeric",
+          "expected_value": "0.05",
+          "unit": "%",
+          "tolerance": 0.001,
+          "verification_criterion": "공사 1000분의 0.5(0.05%) 명시"
+        },
+        {
+          "statement": "용역(일반용역/학술연구 등)의 1일당 지체상금율은 1,000분의 1.25 (0.125%)임",
+          "fact_type": "numeric",
+          "expected_value": "0.125",
+          "unit": "%",
+          "tolerance": 0.001,
+          "verification_criterion": "용역 1000분의 1.25(0.125%) 명시"
+        }
+      ],
+      "must_not_claim": [
+        "지체상금율이 모든 계약 종류에서 10%로 일괄 적용된다는 서술"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.001,
+      "scoring_rubric": "물품(0.075%), 공사(0.05%), 용역(0.125%) 3개 비율이 모두 맞으면 10점, 2개 7점, 1개 4점"
+    },
+    {
+      "id": "q09",
+      "question": "입찰 분석에서 투찰률(낙찰률)과 사정율의 정의 및 계산 공식은 어떻게 되나요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-FORMULA-BID-RATE-001",
+        "KB-FORMULA-ASSESS-RATE-001"
+      ],
+      "expected_facts": [
+        {
+          "statement": "투찰률(낙찰률) = (투찰금액 또는 낙찰금액 / 예정가격) × 100(%)",
+          "fact_type": "formula",
+          "expected_value": "(투찰금액 / 예정가격) * 100",
+          "unit": "%",
+          "tolerance": null,
+          "verification_criterion": "예정가격 대비 투찰금액 백분율 산식 명시"
+        },
+        {
+          "statement": "사정율 = (예정가격 / 기초금액) × 100(%)",
+          "fact_type": "formula",
+          "expected_value": "(예정가격 / 기초금액) * 100",
+          "unit": "%",
+          "tolerance": null,
+          "verification_criterion": "기초금액 대비 예정가격 백분율 산식 명시"
+        }
+      ],
+      "must_not_claim": [
+        "투찰률을 기초금액 대비 입찰금액으로 혼동하거나 분모/분자를 반대로 기재"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": null,
+      "scoring_rubric": "투찰률 공식과 사정율 공식의 분모/분자가 정확하면 10점"
+    },
+    {
+      "id": "q10",
+      "question": "조달청 물품구매 적격심사 세부기준에서 고시금액 이상 10억원 미만 및 10억원 이상 구간의 통상적인 낙찰하한율은 얼마인가요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-DAPS-THNG-QUAL-RATE-001",
+        "KB-QUAL-LOWER-LIMIT-TABLE"
+      ],
+      "expected_facts": [
+        {
+          "statement": "추정가격 10억원 이상 대형 물품구매의 낙찰하한율은 80.495%임",
+          "fact_type": "numeric",
+          "expected_value": "80.495",
+          "unit": "%",
+          "tolerance": 0.005,
+          "verification_criterion": "10억원 이상 구간 80.495% 명시"
+        },
+        {
+          "statement": "고시금액 이상 10억원 미만 물품구매의 낙찰하한율은 84.245%임",
+          "fact_type": "numeric",
+          "expected_value": "84.245",
+          "unit": "%",
+          "tolerance": 0.005,
+          "verification_criterion": "고시금액 이상 10억 미만 구간 84.245% 명시"
+        }
+      ],
+      "must_not_claim": [
+        "물품 낙찰하한율이 60% 미만이라거나 100%라는 허위 진술"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.005,
+      "scoring_rubric": "구간별 낙찰하한율(80.495%, 84.245%) 수치가 일치하면 10점"
+    },
+    {
+      "id": "q11",
+      "question": "공공입찰 공동도급(공동수급체)에서 공동이행방식과 분담이행방식의 차이점과 책임 분담 구조는 어떻게 되나요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-LAW-JOINT-CONTRACT-001",
+        "KB-RULE-JOINT-OPERATION-TYPE"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공동이행방식은 구성원 전원이 출자비율에 따라 연대책임을 지며 공동으로 계약을 이행함",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "출자비율 및 연대책임 구조 명시"
+        },
+        {
+          "statement": "분담이행방식은 구성원 각자가 분담한 공사/역무 부분에 대해서만 개별적으로 책임을 짐",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "분담 부분에 한정한 개별 책임 구조 명시"
+        }
+      ],
+      "must_not_claim": [
+        "분담이행방식에서도 모든 구성원이 전 구간 연대 책임을 진다는 잘못된 진술"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": null,
+      "scoring_rubric": "공동이행(연대책임/출자비율)과 분담이행(분담구간 개별책임) 핵심 비교 시 10점"
+    },
+    {
+      "id": "q12",
+      "question": "국가계약법 시행령상 시설공사의 하자보수보증금율과 보증금 예치 기간 기준은 어떻게 규정되어 있나요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-LAW-KNTCE-ENFORCE-62",
+        "KB-RULE-DEFECT-WARRANTY-01"
+      ],
+      "expected_facts": [
+        {
+          "statement": "하자보수보증금율은 공사종류별로 계약금액의 100분의 2(2%) 이상 100분의 5(5%) 이하 범위에서 결정됨",
+          "fact_type": "numeric",
+          "expected_value": "2~5",
+          "unit": "%",
+          "tolerance": null,
+          "verification_criterion": "2%~5% 법정 범위 명시"
+        },
+        {
+          "statement": "하자담보책임기간은 공종별로 1년 이상 10년 이하의 범위에서 정함",
+          "fact_type": "proposition",
+          "expected_value": "1~10",
+          "unit": "년",
+          "tolerance": null,
+          "verification_criterion": "1년~10년 범위 명시"
+        }
+      ],
+      "must_not_claim": [
+        "하자보수보증금율이 계약금액의 50%를 초과한다는 비현실적 수치"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": null,
+      "scoring_rubric": "보증금율 2%~5% 및 보증기간 1년~10년 기준이 정확히 포함되면 10점"
+    },
+    {
+      "id": "q13",
+      "question": "국가계약법 및 지방계약법에서 규정하는 주요 계약 방법(경쟁 형태) 5가지는 무엇인가요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-LAW-KNTCE-ACT-07",
+        "KB-RULE-BID-METHODS-5"
+      ],
+      "expected_facts": [
+        {
+          "statement": "일반경쟁계약, 제한경쟁계약, 지명경쟁계약, 수의계약, 협상에 의한 계약(또는 경쟁적 대화 등) 5종 명시",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "일반경쟁, 제한경쟁, 지명경쟁, 수의계약, 협상에 의한 계약 5가지 명시"
+        }
+      ],
+      "must_not_claim": [
+        "수의계약이 불법적인 방식이라 법령상 존재하지 않는다는 오답"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": null,
+      "scoring_rubric": "5대 계약 방식을 정확히 제시하면 10점"
+    },
+    {
+      "id": "q14",
+      "question": "조달청 일반용역 적격심사 세부기준에서 추정가격 5억원 이상 및 2억원 이상 5억원 미만 일반용역의 낙찰하한율은 얼마인가요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-DAPS-SERVC-QUAL-RATE-001",
+        "KB-QUAL-SERVC-LOWER-LIMIT"
+      ],
+      "expected_facts": [
+        {
+          "statement": "추정가격 5억원 이상 일반용역의 낙찰하한율은 85.495%임",
+          "fact_type": "numeric",
+          "expected_value": "85.495",
+          "unit": "%",
+          "tolerance": 0.005,
+          "verification_criterion": "5억원 이상 85.495% 명시"
+        },
+        {
+          "statement": "추정가격 2억원 이상 5억원 미만 일반용역의 낙찰하한율은 87.995%임",
+          "fact_type": "numeric",
+          "expected_value": "87.995",
+          "unit": "%",
+          "tolerance": 0.005,
+          "verification_criterion": "2억~5억 미만 87.995% 명시"
+        }
+      ],
+      "must_not_claim": [
+        "용역을 Servc나 서비스로 오기하거나 하한율을 70% 미만으로 표기"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.005,
+      "scoring_rubric": "5억 이상(85.495%)과 2억~5억(87.995%) 수치가 모두 정확하면 10점"
+    },
+    {
+      "id": "q15",
+      "question": "시설공사 입찰에서 A값(국민건강보험료 등 정산 대상 항목)의 개념과 투찰금액 하한선 산정 시 A값 반영 공식은 어떻게 되나요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-RULE-A-VALUE-FORMULA-001",
+        "KB-PROC-CONST-AVALUE-01"
+      ],
+      "expected_facts": [
+        {
+          "statement": "A값은 국민건강보험료, 국민연금보험료, 노인장기요양보험료, 퇴직공제부금, 산업안전보건관리비 등 사후정산 대상 비용의 합계액임",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "A값 사후정산 항목 구성요소 명시"
+        },
+        {
+          "statement": "A값 적용 시 입찰가격 하한 산식: [(예정가격 - A) × 낙찰하한율] + A",
+          "fact_type": "formula",
+          "expected_value": "[(예정가격 - A) * 낙찰하한율] + A",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "A값을 뺀 순공사비에 낙찰하한율을 곱한 뒤 A값을 가산하는 산식 명시"
+        }
+      ],
+      "must_not_claim": [
+        "A값 전체에 낙찰하한율을 바로 곱해 감액한다는 오답"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": null,
+      "scoring_rubric": "A값 정의와 산식 [(예정가격-A)*하한율]+A 가 정확하면 10점"
+    },
+    {
+      "id": "q16",
+      "question": "국가계약법 제27조에 따른 부정당업자의 입찰참가자격 제한의 법정 최대 기간과 주요 제재 사유는 무엇인가요?",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "KB-LAW-KNTCE-ACT-27",
+        "KB-RULE-SANCTION-PERIOD-01"
+      ],
+      "expected_facts": [
+        {
+          "statement": "부정당업자 입찰참가자격 제한 기간은 법정 최대 2년 이하의 범위에서 정함",
+          "fact_type": "numeric",
+          "expected_value": "2",
+          "unit": "년",
+          "tolerance": 0.0,
+          "verification_criterion": "최대 2년 제한 기간 명시"
+        },
+        {
+          "statement": "담합, 계약 미이행, 사기·위조 서류 제출, 뇌물 제공 등이 주요 제재 사유임",
+          "fact_type": "proposition",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "담합, 서류 위조, 정당한 이유 없는 계약 미체결 등 핵심 사유 포함"
+        }
+      ],
+      "must_not_claim": [
+        "부정당업자 제한이 평생 영구 박탈만 가능하다는 잘못된 법률 해석"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.0,
+      "scoring_rubric": "최대 2년 제한 기간과 핵심 제재 사유가 언급되면 10점"
+    },
+    {
+      "id": "q17",
+      "question": "2029년 화성 우주기지 3단계 건설공사의 최종 낙찰자와 낙찰금액을 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "DB 및 지식베이스에 해당 공고 및 낙찰 정보가 없음을 명시하고 답변을 정중히 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "근거 부재 명시 및 환각 없이 거절"
+        }
+      ],
+      "must_not_claim": [
+        "임의의 낙찰자나 가상의 금액을 생성하는 환각(hallucination)"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "데이터 부재를 명시하고 거절하면 10점. 가상 낙찰자를 지어내면 0점"
+    },
+    {
+      "id": "q18",
+      "question": "내일 오후 2시에 개찰 예정인 기상청 차세대 슈퍼컴퓨터 사업의 사전 확정 예정가격과 1순위 낙찰업체를 미리 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "개찰 전 미확정 정보 또는 비공개 내부 정보는 확인/제공할 수 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "미개찰/비공개 정보 제공 불가 및 거절"
+        }
+      ],
+      "must_not_claim": [
+        "사전 유출된 예정가격이나 특정 업체를 낙찰자로 허위 확정 서술"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "사전 정보 제공 불가 및 거절 명시 시 10점"
+    },
+    {
+      "id": "q19",
+      "question": "2030년 유럽연합(EU) 회원국 간 고속철도 통합 신호체계 구축 사업의 입찰 참가 조건과 낙찰 통계를 분석해줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "국내 공공조달 DB 및 지식베이스 범위를 벗어난 해외 미래 입찰로 데이터가 없어 제공 불가함을 명시",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수집 범위 외 데이터 부재 명시 및 거절"
+        }
+      ],
+      "must_not_claim": [
+        "해외 철도 입찰 통계 데이터를 허위로 창작하여 제시"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "수집 범위 외 거절 시 10점"
+    }
+  ]
+}
