@@ -2,15 +2,15 @@
 
 > **작성일**: 2026-08-24
 > **작성 목적**: Arq in-process 및 Docker 컨테이너 벤치마크 하네스의 provenance 공통 스키마 적용, 바인드 마운트/Git 상태 검증, 시작-종료 identity 일치성 결박 및 반복 측정 원시 데이터 보존 계약 구현 검증
-> **대상 모듈**: [`scripts/benchmark_arq_container.py`](scripts/benchmark_arq_container.py), [`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py), [`scripts/_bench_worker_settings.py`](scripts/_bench_worker_settings.py)
-> **테스트 모듈**: [`tests/test_benchmark_arq_container.py`](tests/test_benchmark_arq_container.py), [`tests/test_benchmark_arq_throughput.py`](tests/test_benchmark_arq_throughput.py)
-> **설계 정본**: [`.orca/capsules/task_arq_harness_integrity/capsule.yaml`](.orca/capsules/task_arq_harness_integrity/capsule.yaml)
+> **대상 모듈**: `scripts/benchmark_arq_container.py`, `scripts/benchmark_arq_throughput.py`, `scripts/_bench_worker_settings.py`
+> **테스트 모듈**: `tests/test_benchmark_arq_container.py`, `tests/test_benchmark_arq_throughput.py`
+> **설계 정본**: `.orca/capsules/task_arq_harness_integrity/capsule.yaml`
 
 ---
 
 ## 1. 개요 및 배경
 
-기존 Arq 처리량 및 지연 계측 하네스는 in-process 방식([`scripts/benchmark_arq_throughput.py`](scripts/benchmark_arq_throughput.py:1))과 Docker 컨테이너 방식([`scripts/benchmark_arq_container.py`](scripts/benchmark_arq_container.py:1))으로 분리 운영되었으나, 다음과 같은 무결성 및 정합성 결함이 존재했습니다:
+기존 Arq 처리량 및 지연 계측 하네스는 in-process 방식(`scripts/benchmark_arq_throughput.py`)과 Docker 컨테이너 방식(`scripts/benchmark_arq_container.py`)으로 분리 운영되었으나, 다음과 같은 무결성 및 정합성 결함이 존재했습니다:
 
 1. **런타임 소스 결박 부재**: Docker 워커 컨테이너 기동 시 호스트 소스 디렉터리를 `/app`에 바인드 마운트하지만, 실제 마운트된 소스의 Git SHA, dirty 상태, 마운트 경로를 시작 전에 검증하지 않았습니다.
 2. **시작-종료 Identity 검증 부재**: 벤치마크 실행 도중 Redis 컨테이너나 워커 컨테이너가 재시작되거나 이미지가 교체되어도 이를 감지하지 못했습니다.
@@ -140,7 +140,8 @@ classDiagram
    - 워커 컨테이너/Redis/Git identity 교체 시 시작-종료 검증 거부 확인.
    - repetitions 중 단일 회차 실패 또는 파일 누락 시 실패 코드 반환 확인.
 3. **규칙 및 린트 검증**:
-   - `python3 scripts/validate_agent_rules.py` 검증 통과.
+   - 변경 파일 대상 `ruff` 검증 통과.
+   - `python3 scripts/validate_agent_rules.py`는 `docs/context/CURRENT_STATE.md`의 기존 `source_commit` 신선도 문제로 11/12 통과했습니다. 이 문서 갱신은 전체 구현 병합 후 최종 SSOT Task에서 수행합니다.
 
 ---
 
