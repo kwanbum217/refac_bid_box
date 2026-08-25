@@ -2061,6 +2061,31 @@ def test_cmd_create_puts_capsule_path_in_task_spec(
     )
 
 
+def test_bare_directory_write_scope_is_flagged(tmp_path: Path):
+    """디렉터리 이름만 적은 쓰기 범위는 하위 파일을 허용하지 못합니다.
+
+    matches_any 는 'src/app/static' 을 그 경로 하나로만 봅니다. 선언은 통과하고
+    게이트 2 에서만 터지므로, Capsule 생성 시점에 잡아야 왕복이 줄어듭니다.
+    """
+    from scripts.orca_taskctl import bare_directory_write_scopes
+
+    (tmp_path / "src" / "app" / "static").mkdir(parents=True)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "note.md").write_text("x", encoding="utf-8")
+
+    flagged = bare_directory_write_scopes(
+        [
+            "src/app/static",
+            "src/app/static/...",
+            "docs/note.md",
+            "docs/**",
+            "tests/absent.py",
+        ],
+        tmp_path,
+    )
+    assert flagged == ["src/app/static"]
+
+
 def test_cmd_create_syncs_actual_task_id_to_capsule_and_spec(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ):

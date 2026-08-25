@@ -1374,6 +1374,25 @@ def build_capsule_notice(
     return " ".join(parts)
 
 
+def bare_directory_write_scopes(allowed_write: list[str], repo_root: Path) -> list[str]:
+    """하위를 포함하지 못하는 디렉터리 항목을 찾아냅니다.
+
+    `matches_any` 는 `src/app/static` 을 그 경로 하나로만 봅니다. 하위까지
+    허용하려면 `src/app/static/...` 으로 적어야 하는데, 디렉터리 이름만 쓰면
+    선언은 통과하고 게이트 2 에서만 터집니다. 2026-08-25 에 CDN 자산 로컬화
+    Task 가 이 형태로 26건을 범위 초과로 맞았습니다. 워커 산출물은 의도 안에
+    있었고 Capsule 표기만 틀린 경우였습니다.
+    """
+    suspicious: list[str] = []
+    for entry in allowed_write:
+        cleaned = entry.strip().rstrip("/")
+        if not cleaned or cleaned.endswith(("...", "**", "*")):
+            continue
+        if (repo_root / cleaned).is_dir():
+            suspicious.append(cleaned)
+    return suspicious
+
+
 def build_task_spec(objective: str, capsule_path: Path) -> str:
     """Orca Task 의 spec 에 Capsule 의 워크트리 상대 경로를 함께 넣습니다.
 
@@ -1768,6 +1787,16 @@ def cmd_create(args: argparse.Namespace) -> int:
         sys.stderr.write(f"오류: {err}\n")
         return 2
     capsule_path.write_text(capsule, encoding="utf-8")
+
+    bare_dirs = bare_directory_write_scopes(
+        parse_capsule_list(capsule, "allowed_write_files"), Path.cwd()
+    )
+    if bare_dirs:
+        sys.stderr.write(
+            "경고: allowed_write_files 에 디렉터리 이름만 적힌 항목이 있습니다. "
+            "하위 파일은 허용되지 않아 게이트 2 에서 범위 초과로 잡힙니다. "
+            f"'<경로>/...' 형태로 고치십시오: {', '.join(bare_dirs)}\n"
+        )
 
     spec = build_task_spec(intent.get("objective", ""), capsule_path)
     cmd = [

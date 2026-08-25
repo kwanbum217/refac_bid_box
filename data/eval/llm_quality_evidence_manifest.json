@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-08-25T04:41:46.452823+00:00",
+  "collection_name": "bidding_kb",
+  "total_collection_documents": 512348,
+  "item_count": 17,
+  "entries": [
+    {
+      "evidence_id": "bid_10015856",
+      "content_hash": "sha256:20b31dd810f3058d3a954b6be18b6a717104f2034b0e239b5a581794c8bcb630",
+      "doc_length": 223
+    },
+    {
+      "evidence_id": "bid_10015863",
+      "content_hash": "sha256:c6dce4134aa0efd3a136ae05f4ab189cd6a8242d58509bef17e47aa2f28a88f1",
+      "doc_length": 228
+    },
+    {
+      "evidence_id": "bid_10015865",
+      "content_hash": "sha256:4a66e1d2cd50a46f050f5874a63d94d297360de886027faee4008f306dc3d4f9",
+      "doc_length": 222
+    },
+    {
+      "evidence_id": "bid_10015878",
+      "content_hash": "sha256:34d5bbdb65df047ae64c380271fd92b66673adadfe4f8880ffa918cc79a2b513",
+      "doc_length": 247
+    },
+    {
+      "evidence_id": "bid_10015920",
+      "content_hash": "sha256:739260979710a56256c012e254231f0a4d6cc5e5364e9ebee46a6d2624dedef4",
+      "doc_length": 242
+    },
+    {
+      "evidence_id": "bid_10015923",
+      "content_hash": "sha256:60f670cbee2e0480966d654630fd8395cf950f05299c6098a850d965cf0fe2de",
+      "doc_length": 235
+    },
+    {
+      "evidence_id": "bid_10015925",
+      "content_hash": "sha256:370bb4345e8ccb8b20245fb96b446a3db5f7f000c3adf44e706359d6d8881d41",
+      "doc_length": 241
+    },
+    {
+      "evidence_id": "bid_10015927",
+      "content_hash": "sha256:a0d3bee5adaa51f85b40e20be529e68ed89546e0434d9cb8134ab838a59fc2b3",
+      "doc_length": 228
+    },
+    {
+      "evidence_id": "bid_5880499",
+      "content_hash": "sha256:e3b0ebe26006874f5575a4cb9621f7c69fb545aec93ea4e1ab7533e3b246d580",
+      "doc_length": 224
+    },
+    {
+      "evidence_id": "bid_5880502",
+      "content_hash": "sha256:8c1afaa6381cca3cdf153fdf24492dcf926db55871e51c2383fc430434875cb8",
+      "doc_length": 219
+    },
+    {
+      "evidence_id": "bid_5880526",
+      "content_hash": "sha256:66b4f36b2da70dd9d709dab437a033ef63a00a860857471aff75d0df195f6a3b",
+      "doc_length": 211
+    },
+    {
+      "evidence_id": "bid_7952012",
+      "content_hash": "sha256:cdfc092c5a5e1b05f69474fe5cbd6751bf426ecee797c9a15b2d8c3e430a18b9",
+      "doc_length": 212
+    },
+    {
+      "evidence_id": "bid_7952013",
+      "content_hash": "sha256:0511992b01ecfab7f3544e8bc0361418a497ee2dd1e6c60f2da915abad6b8b5b",
+      "doc_length": 227
+    },
+    {
+      "evidence_id": "bid_7952015",
+      "content_hash": "sha256:082640f8738c936398cb10e166da0d364233edc23970321247fe058f313952ed",
+      "doc_length": 210
+    },
+    {
+      "evidence_id": "bid_7952016",
+      "content_hash": "sha256:cf3df9e983f7f5fc9c0b4d8c3a8f5ef0a8e7609b31115a5f6b1c4f127d1656ea",
+      "doc_length": 217
+    },
+    {
+      "evidence_id": "bid_7952018",
+      "content_hash": "sha256:b51bc69a9174c9573c8b4dfd3aeda66f01d981545600aeff7094685ce48a5bb5",
+      "doc_length": 227
+    },
+    {
+      "evidence_id": "bid_7952020",
+      "content_hash": "sha256:52fdab1776e127306ed76534ffbe2e7b39499b77eaaab2fd5ecad65f2a0c6299",
+      "doc_length": 221
+    }
+  ]
+}
