@@ -33,10 +33,22 @@ class SemanticSearchResult:
     documents: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
     relaxed: bool = False
+    original_filters: dict[str, Any] = field(default_factory=dict)
+    effective_filters: dict[str, Any] = field(default_factory=dict)
+    unsupported_filters: dict[str, Any] = field(default_factory=dict)
 
     @property
     def filter_relaxed(self) -> bool:
         return self.relaxed
+
+    def as_filter_provenance(self) -> dict[str, Any]:
+        """필터 원본·유효·지원 불가·완화 상태를 복원 가능한 딕셔너리로 노출합니다."""
+        return {
+            "original_filters": dict(self.original_filters),
+            "effective_filters": dict(self.effective_filters),
+            "unsupported_filters": dict(self.unsupported_filters),
+            "filter_relaxed": self.filter_relaxed,
+        }
 
 
 def _normalize_text(value: str | None) -> str:
@@ -109,15 +121,21 @@ def build_vector_where(
 def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
     """원본 rag_engine.retrieve_semantic_context 와 동일한 동기 검색 경로.
 
-    where 절 필터링을 적용하며, 필터 검색 결과가 0건일 경우 필터 없이 완화(fallback)
-    재검색을 수행하여 결과를 반환하고 완화 여부(relaxed=True)를 결과에 기록합니다.
+    where 절 필터링을 적용하며, 필터 검색 결과가 0건이면 필터를 해제한 재검색으로
+    다른 문서를 반환하지 않고 빈 결과(empty success)로 처리합니다(fail-closed).
+    반환 오류와 빈 결과를 구분하도록 ok/error 필드로 상태를 남기고, 원본·유효·지원
+    불가 필터와 완화 여부를 SemanticSearchResult 에 기록해 상위 계층이 provenance 로
+    전달할 수 있게 합니다.
     """
     semantic_query = _normalize_text(plan.semantic_query)
     if not semantic_query:
         return SemanticSearchResult(ok=True, documents=[], error=None, relaxed=False)
 
+    original_filters = dict(plan.filters or {})
     where = build_vector_where(plan)
-    relaxed = False
+    unsupported_filters = {
+        key: value for key, value in original_filters.items() if key not in SUPPORTED_METADATA_KEYS
+    }
 
     try:
         import chromadb
@@ -134,19 +152,12 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
                 where=where,
             )
             raw_docs = (results.get("documents") or [[]])[0] if results else []
-            # 필터 적용 검색 결과가 0건이면 필터 없이 완화 재검색 수행
             if not raw_docs:
                 logger.info(
-                    "ChromaDB 필터 적용 결과 0건으로 필터 해제 완화 재검색 수행 (where=%s, query=%s)",
+                    "ChromaDB 필터 적용 결과 0건 (where=%s, query=%s) — 필터 해제 재검색 없이 빈 결과로 처리",
                     where,
                     semantic_query,
                 )
-                fallback_results = collection.query(
-                    query_texts=[semantic_query],
-                    n_results=plan.top_k,
-                )
-                results = fallback_results
-                relaxed = True
         else:
             results = collection.query(query_texts=[semantic_query], n_results=plan.top_k)
 
@@ -157,7 +168,13 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
         # 지식베이스 없이 답하고 있었는데 아무도 몰랐던 것이 이 때문입니다.
         logger.exception("ChromaDB 검색 실패 (collection=%s)", DEFAULT_COLLECTION)
         return SemanticSearchResult(
-            ok=False, documents=[], error=str(exc) or exc.__class__.__name__, relaxed=False
+            ok=False,
+            documents=[],
+            error=str(exc) or exc.__class__.__name__,
+            relaxed=False,
+            original_filters=original_filters,
+            effective_filters=where or {},
+            unsupported_filters=unsupported_filters,
         )
 
     documents = (results.get("documents") or [[]])[0] if results else []
@@ -176,7 +193,13 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
             }
         )
     return SemanticSearchResult(
-        ok=True, documents=structured_documents, error=None, relaxed=relaxed
+        ok=True,
+        documents=structured_documents,
+        error=None,
+        relaxed=False,
+        original_filters=original_filters,
+        effective_filters=where or {},
+        unsupported_filters=unsupported_filters,
     )
 
 
