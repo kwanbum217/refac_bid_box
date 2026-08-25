@@ -251,11 +251,36 @@ def serving_model(container: str) -> str:
         return ""
 
 
-def validate_base_url_port(base_url: str, app_container: str) -> tuple[bool, str]:
-    """base_url 의 포트가 app container 의 실제 발행 포트와 일치하는지 검증한다.
+ALLOWED_LOOPBACK_HOSTNAMES: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 
-    benchmark_provenance.py 의 _parse_published_host_ports 를 재사용한다.
+
+def validate_base_url_port(base_url: str, app_container: str) -> tuple[bool, str]:
+    """base_url 의 hostname 및 포트가 app container 의 실제 발행 포트와 일치하는지 검증한다.
+
+    - http / https scheme 만 허용하며, 사용자 정보(userinfo)가 포함된 경우 거부한다.
+    - hostname 은 localhost, 127.0.0.1, ::1(IPv6 loopback) 중 하나여야만 한다.
+    - benchmark_provenance.py 의 _parse_published_host_ports 를 재사용한다.
     """
+    try:
+        parsed = urlparse.urlparse(base_url)
+    except Exception as exc:
+        return False, f"base_url 파싱 실패: {exc}"
+
+    if parsed.scheme.lower() not in ("http", "https"):
+        return False, f"허용되지 않는 URL scheme '{parsed.scheme}': http 또는 https만 허용됩니다."
+
+    if parsed.username is not None or parsed.password is not None or "@" in (parsed.netloc or ""):
+        return False, "base_url에 사용자 정보(userinfo)를 포함할 수 없습니다."
+
+    hostname = (parsed.hostname or "").lower()
+    if hostname not in ALLOWED_LOOPBACK_HOSTNAMES:
+        return False, (
+            f"base_url 호스트명 '{hostname or parsed.netloc}'은 허용되지 않습니다 "
+            f"(허용 목록: {sorted(ALLOWED_LOOPBACK_HOSTNAMES)})."
+        )
+
+    req_port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+
     try:
         # docker inspect 로 컨테이너 포트 매핑 조회
         raw_ports = subprocess.check_output(  # nosec B603 B607
@@ -264,10 +289,6 @@ def validate_base_url_port(base_url: str, app_container: str) -> tuple[bool, str
             timeout=30,
         ).strip()
         published_host_ports = _parse_published_host_ports(raw_ports)
-
-        # base_url 에서 포트 추출
-        parsed = urlparse.urlparse(base_url)
-        req_port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
         if req_port in published_host_ports:
             return True, f"base_url port {req_port} matches container published port"
@@ -282,36 +303,45 @@ def validate_base_url_port(base_url: str, app_container: str) -> tuple[bool, str
 
 def build_provenance(
     *,
-    git_sha: str,
-    git_dirty: bool | None,
     started_model: str,
     ended_model: str,
     base_url: str,
     app_container: str,
+    start_sha: str | None = None,
+    start_dirty: bool | None = None,
+    end_sha: str | None = None,
+    end_dirty: bool | None = None,
+    git_sha: str | None = None,
+    git_dirty: bool | None = None,
+    timestamp_start_utc: str | None = None,
+    timestamp_end_utc: str | None = None,
+    canonical: bool = True,
 ) -> dict[str, Any]:
     """provenance 메타데이터를 구성한다."""
-    # 시작/종료 시점의 source identity 수집
-    _, start_dirty = get_git_status()
-    end_sha, end_dirty = get_git_status()
+    effective_start_sha = start_sha if start_sha is not None else (git_sha or "unknown")
+    effective_start_dirty = start_dirty if start_dirty is not None else git_dirty
+    effective_end_sha = end_sha if end_sha is not None else effective_start_sha
+    effective_end_dirty = end_dirty if end_dirty is not None else effective_start_dirty
 
     return {
-        "git_sha": git_sha,
-        "git_dirty": git_dirty,
+        "git_sha": effective_start_sha,
+        "git_dirty": effective_start_dirty,
+        "canonical": canonical,
         "source_identity_start": {
-            "git_sha": git_sha,
-            "git_dirty": start_dirty,
+            "git_sha": effective_start_sha,
+            "git_dirty": effective_start_dirty,
         },
         "source_identity_end": {
-            "git_sha": end_sha,
-            "git_dirty": end_dirty,
+            "git_sha": effective_end_sha,
+            "git_dirty": effective_end_dirty,
         },
         "serving_model_start": started_model,
         "serving_model_end": ended_model,
         "serving_model_consistent": bool(started_model) and started_model == ended_model,
         "base_url": base_url,
         "app_container": app_container,
-        "timestamp_start_utc": datetime.now(UTC).isoformat(),
-        "timestamp_end_utc": None,  # 나중에 채움
+        "timestamp_start_utc": timestamp_start_utc or datetime.now(UTC).isoformat(),
+        "timestamp_end_utc": timestamp_end_utc,
     }
 
 
@@ -332,28 +362,58 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app-container", default="refac_bid_box-app-1")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=0, help="문항 수 제한 (0=전체, 시험용)")
+    parser.add_argument(
+        "--allow-unknown-provenance",
+        action="store_true",
+        default=False,
+        help="Git SHA/dirty 확인 불가(unknown/None)를 허용하되 canonical=false로 표시 (dirty True는 여전히 거부)",
+    )
     args = parser.parse_args(argv)
 
-    # 시작 시점 provenance 수집
-    git_sha, git_dirty = get_git_status()
-    if git_sha == "unknown":
-        print("경고: Git SHA 를 가져올 수 없습니다.", file=sys.stderr)
-    if git_dirty is None:
-        print("경고: Git dirty 상태를 확인할 수 없습니다.", file=sys.stderr)
+    # 시작 시점 provenance 수집 (정확히 1회)
+    start_sha, start_dirty = get_git_status()
+    timestamp_start_utc = datetime.now(UTC).isoformat()
 
-    # base_url 포트 결박 검증
-    port_ok, port_msg = validate_base_url_port(args.base_url, args.app_container)
-    if not port_ok:
-        print(f"오류: base_url 포트 검증 실패 - {port_msg}", file=sys.stderr)
-        return 2
-
-    # dirty 면 정식 근거 저장 거부 (fail-closed)
-    if git_dirty is True:
+    # dirty 면 무조건 거부 (fail-closed, --allow-unknown-provenance 로도 우회 불가)
+    if start_dirty is True:
         print(
             "오류: 소스 트리가 dirty 상태입니다. 정식 근거로 저장할 수 없습니다. 커밋 또는 스태시 후 재시도하세요.",
             file=sys.stderr,
         )
         return 3
+
+    if not args.allow_unknown_provenance:
+        if start_sha == "unknown":
+            print(
+                "오류: Git SHA 를 가져올 수 없습니다 (fail-closed). "
+                "필요 시 --allow-unknown-provenance 를 지정하세요 (canonical=false 로 저장됨).",
+                file=sys.stderr,
+            )
+            return 3
+        if start_dirty is None:
+            print(
+                "오류: Git dirty 상태를 확인할 수 없습니다 (fail-closed). "
+                "필요 시 --allow-unknown-provenance 를 지정하세요 (canonical=false 로 저장됨).",
+                file=sys.stderr,
+            )
+            return 3
+    else:
+        if start_sha == "unknown":
+            print(
+                "경고: Git SHA 를 가져올 수 없습니다 (--allow-unknown-provenance 적용됨, canonical=false).",
+                file=sys.stderr,
+            )
+        if start_dirty is None:
+            print(
+                "경고: Git dirty 상태를 확인할 수 없습니다 (--allow-unknown-provenance 적용됨, canonical=false).",
+                file=sys.stderr,
+            )
+
+    # base_url 포트 및 호스트 결박 검증
+    port_ok, port_msg = validate_base_url_port(args.base_url, args.app_container)
+    if not port_ok:
+        print(f"오류: base_url 포트 검증 실패 - {port_msg}", file=sys.stderr)
+        return 2
 
     fixture = json.loads(args.fixture.read_text(encoding="utf-8"))
     items = fixture["items"] if isinstance(fixture, dict) and "items" in fixture else fixture
@@ -386,6 +446,46 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     ended_model = serving_model(args.app_container)
+    # 종료 시점 provenance 수집 (정확히 1회)
+    end_sha, end_dirty = get_git_status()
+    timestamp_end_utc = datetime.now(UTC).isoformat()
+
+    # 종료 시점 dirty 검증 (mid-run mutation 감지)
+    if end_dirty is True:
+        print(
+            "오류: 측정 도중 소스 트리가 dirty 상태로 변경되었습니다 (mid-run mutation / fail-closed).",
+            file=sys.stderr,
+        )
+        return 3
+
+    if not args.allow_unknown_provenance:
+        if end_sha == "unknown":
+            print(
+                "오류: 종료 시점 Git SHA 를 가져올 수 없습니다 (fail-closed).",
+                file=sys.stderr,
+            )
+            return 3
+        if end_dirty is None:
+            print(
+                "오류: 종료 시점 Git dirty 상태를 확인할 수 없습니다 (fail-closed).",
+                file=sys.stderr,
+            )
+            return 3
+
+    # mid-run source mutation 검증 (시작/종료 SHA 및 dirty 상태 변경 여부)
+    if start_sha != end_sha:
+        print(
+            f"오류: 측정 도중 Git SHA 가 변경되었습니다 (start: '{start_sha}' -> end: '{end_sha}').",
+            file=sys.stderr,
+        )
+        return 4
+
+    if start_dirty != end_dirty:
+        print(
+            f"오류: 측정 도중 Git dirty 상태가 변경되었습니다 (start: '{start_dirty}' -> end: '{end_dirty}').",
+            file=sys.stderr,
+        )
+        return 4
 
     # expected-model 검증: 시작/종료 모두 expected-model 과 정확히 일치해야 통과
     model_mismatch = False
@@ -402,15 +502,29 @@ def main(argv: list[str] | None = None) -> int:
         )
         model_mismatch = True
 
+    is_canonical = (
+        (not args.allow_unknown_provenance)
+        and (start_sha != "unknown")
+        and (start_dirty is False)
+        and (end_sha != "unknown")
+        and (end_dirty is False)
+        and (not model_mismatch)
+        and port_ok
+    )
+
     provenance = build_provenance(
-        git_sha=git_sha,
-        git_dirty=git_dirty,
+        start_sha=start_sha,
+        start_dirty=start_dirty,
+        end_sha=end_sha,
+        end_dirty=end_dirty,
         started_model=started_model,
         ended_model=ended_model,
         base_url=args.base_url,
         app_container=args.app_container,
+        timestamp_start_utc=timestamp_start_utc,
+        timestamp_end_utc=timestamp_end_utc,
+        canonical=is_canonical,
     )
-    provenance["timestamp_end_utc"] = datetime.now(UTC).isoformat()
 
     # provenance 일관성 검증 (시작/종료 source identity 비교)
     try:
@@ -423,6 +537,7 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = {
         "schema": "LLM_QUALITY_MEASURE_V2",
+        "canonical": is_canonical,
         "timestamp": provenance["timestamp_end_utc"],
         "model_label": args.model_label,
         "expected_model": args.expected_model,
