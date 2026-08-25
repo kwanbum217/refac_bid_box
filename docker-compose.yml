@@ -1,5 +1,10 @@
 services:
   app:
+    # 재시작 정책은 기동 대상 서비스 전체에 같은 값을 둡니다. db 만 always 이고
+    # 나머지가 비어 있으면 앱이나 워커가 죽었을 때 DB 만 살아남아 부분 가동
+    # 상태가 조용히 이어집니다. unless-stopped 는 사람이 명시로 멈춘 것은
+    # 존중하므로 측정 중 수동 정지를 되살리지 않습니다.
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile
@@ -88,6 +93,7 @@ services:
       - ./chroma_db:/app/chroma_db
 
   worker:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile
@@ -156,7 +162,7 @@ services:
     command: >
       --default-authentication-plugin=mysql_native_password
       --innodb-redo-log-capacity=2147483648
-    restart: always
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
       MYSQL_DATABASE: procurement
@@ -171,6 +177,7 @@ services:
       retries: 10
 
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     ports:
       - "6379:6379"
@@ -183,6 +190,7 @@ services:
       retries: 10
 
   meilisearch:
+    restart: unless-stopped
     image: getmeili/meilisearch:v1.14
     environment:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set in .env}

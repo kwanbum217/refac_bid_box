@@ -60,11 +60,33 @@ make migrate-verify
 make model-verify
 make test-data-assets
 
-# 전체 Docker 스택 시동 (앱·Arq·MySQL·Redis)
+# 전체 Docker 스택 시동 (앱·Arq·MySQL·Redis·Meilisearch)
 make up
 
 # 로컬 코드만 FastAPI로 실행할 때
 make dev
+
+# 코드 품질·정합성 일괄 검사 (lint, security, typecheck, 규칙, 워크플로)
+make check-all
+
+# 레이턴시 벤치마크
+make benchmark
+```
+
+### 스키마 마이그레이션
+
+`make migrate-current` 로 현재 리비전을 확인하고, `make migrate-check` 로 모델과
+스키마가 어긋나지 않았는지 봅니다.
+
+> **`make migrate-up` 은 스키마를 실제로 변경합니다.** 이 저장소의 최우선 목표는
+> 데이터 무손실(G1)이며 기존 테이블·컬럼·타입은 변경 금지입니다. 실행 전
+> `make migrate-verify` 로 행 수와 스키마 보존을 확인하고, 되돌릴 수 있는
+> 백업이 있는지 먼저 점검하십시오. 확인 없이 운영 DB에 적용하지 마십시오.
+
+```bash
+make migrate-current   # 현재 리비전
+make migrate-check     # 모델 대 스키마 정합성
+make migrate-up        # 스키마 변경 (위 경고 확인 후)
 ```
 
 Docker 앱·워커 이미지는 소스와 의존성만 포함합니다. 데이터셋, 모델 레지스트리,

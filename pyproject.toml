@@ -10,7 +10,8 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
-    "pydantic>=2.10.0",
+    # EmailStr(src/app/api/v1/accounts.py)이 email-validator 를 요구하므로 extra 를 함께 고정합니다.
+    "pydantic[email]>=2.10.0",
     "pydantic-settings>=2.8.0",
     "sqlalchemy>=2.0.0",
     "alembic>=1.14.0",
@@ -30,7 +31,6 @@ dependencies = [
     "lightgbm>=4.0.0",
     "catboost>=1.2.0",
     "category-encoders>=2.6.4",
-    "pydantic[email]>=2.10.0",
     # feature_store parquet 캐싱(src/ml/dataset.py)과 원본 복구 스크립트에 필요합니다.
     # pandas.to_parquet 이 엔진으로 요구합니다. 사후 등재이므로 담당자 확인 필요.
     "pyarrow>=15.0.0",
