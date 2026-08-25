@@ -283,10 +283,28 @@ tool loop 를 완주하고 `worker_done` 까지 보냈습니다 (Run `run_a32b6b
 
 **기동은 preamble 을 런치 인자로 넘기는 경로만 씁니다.**
 
+**런처를 터미널 명령으로 지정하십시오.** 명령 없는 셸 터미널을 만들고 나중에
+`terminal send` 로 kimi 를 띄우면, Orca 는 그 터미널을 에이전트 터미널로
+등록하지 않아 **좌측 목록에 워커 행이 생기지 않습니다.** 다른 CLI 워커는 보이는데
+Kimi 만 보이지 않아 진행 상태를 눈으로 확인할 수 없게 됩니다. 소급 등록도 되지
+않습니다 (2026-08-25 실측).
+
+`scripts/orca_kimi_launch.py` 가 preamble 이 나타날 때까지 기다렸다가 kimi 를
+exec 하므로, 터미널을 **먼저** 런처 명령으로 만들 수 있습니다.
+
 ```bash
-orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json  # preamble 추출
-KIMI_CODE_HOME=/Users/kwanbum/.kimi-openrouter-free kimi -m <alias> -p "<preamble>"
+# 1. 런처를 명령으로 지정해 터미널 생성 (여기서 워커 행이 생깁니다)
+orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
+  --command "uv run python scripts/orca_kimi_launch.py --model or-free/nemotron-ultra"
+
+# 2. Dispatch 해서 preamble 을 받고 워크트리에 씁니다
+orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json
+#    결과의 preamble 을 <워크트리>/.orca/preamble.txt 로 저장하면 런처가 이어받습니다
 ```
+
+런처는 커밋 고지문을 자동으로 덧붙입니다. one-shot 워커가 커밋 없이 완료를
+선언하는 사고(21.7 절)를 막기 위한 기본값이며 `--no-commit-notice` 로 끕니다.
+빈 파일은 지시문으로 받아들이지 않고 계속 기다립니다.
 
 | 하지 말 것 | 이유 |
 | --- | --- |
