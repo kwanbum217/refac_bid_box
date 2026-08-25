@@ -7,7 +7,10 @@ LLM 품질 평가 fixture 검증기 (scripts/validate_llm_quality_fixture.py) �
 - 필수 필드 누락 검출
 - ID 중복 검출
 - context_sufficient 문항 수 하한 미달 검출
-- 자기모순 금지 규칙 누락 검출
+- 자기모순 금지 규칙 누락 검출 (semantic_forbidden_claims)
+- 복합 numeric 팩트 검출 (한 expected_facts 에 낙찰금액과 낙찰률 동시 언급)
+- forbidden_literals 검증 (알려진 내부 코드 누락 검출)
+- semantic_forbidden_claims 검증
 - CLI 종료 코드 및 --quiet 동작 검증
 """
 
@@ -93,14 +96,85 @@ def test_min_context_sufficient_threshold_detected(valid_fixture_dict: dict[str,
 
 
 def test_missing_self_contradiction_rule_detected(valid_fixture_dict: dict[str, Any]):
-    """must_not_claim 에 '자기모순' 유형이 전혀 없는 경우 검증이 실패하는지 확인합니다."""
+    """semantic_forbidden_claims 에 '자기모순' 유형이 전혀 없는 경우 검증이 실패하는지 확인합니다."""
     tampered = copy.deepcopy(valid_fixture_dict)
     for item in tampered["items"]:
-        item["must_not_claim"] = ["단순 일반 규칙"]
+        item["semantic_forbidden_claims"] = ["단순 일반 규칙"]
 
     is_valid, errors, _ = validate_fixture_data(tampered)
     assert is_valid is False
     assert any("자기모순" in err for err in errors)
+
+
+def test_compound_numeric_fact_detected(valid_fixture_dict: dict[str, Any]):
+    """복합 numeric 팩트(한 expected_facts 에 낙찰금액과 낙찰률 동시 언급) 가 검출되는지 확인합니다."""
+    tampered = copy.deepcopy(valid_fixture_dict)
+    # q01 의 첫 번째 numeric 팩트를 복합 팩트로 변경
+    tampered["items"][0]["expected_facts"][3] = {
+        "statement": "낙찰금액은 46,602,100원이며 낙찰률은 88.5100% 임",
+        "fact_type": "numeric",
+        "expected_value": "46602100",
+        "unit": "원",
+        "tolerance": 0.01,
+        "verification_criterion": "낙찰금액 46,602,100원 및 낙찰률 88.5100% 명시",
+    }
+
+    is_valid, errors, _ = validate_fixture_data(tampered)
+    assert is_valid is False
+    assert any("복합 numeric 팩트" in err for err in errors)
+    assert any("원자 단위로 분해" in err for err in errors)
+
+
+def test_forbidden_literals_missing_known_codes_detected(valid_fixture_dict: dict[str, Any]):
+    """forbidden_literals 에 알려진 내부 코드(Servc, Thng, Cnstwk, Frgcpt) 가 누락되면 검출되는지 확인합니다."""
+    tampered = copy.deepcopy(valid_fixture_dict)
+    # q01 의 forbidden_literals 에서 Servc 제거
+    tampered["items"][0]["forbidden_literals"] = ["Thng", "Cnstwk", "Frgcpt"]
+
+    is_valid, errors, _ = validate_fixture_data(tampered)
+    assert is_valid is False
+    assert any("누락되었습니다" in err for err in errors)
+    assert any("Servc" in err for err in errors)
+
+
+def test_forbidden_literals_unknown_code_detected(valid_fixture_dict: dict[str, Any]):
+    """forbidden_literals 에 알려지지 않은 코드가 있으면 검출되는지 확인합니다."""
+    tampered = copy.deepcopy(valid_fixture_dict)
+    # q01 의 forbidden_literals 에 알 수 없는 코드 추가
+    tampered["items"][0]["forbidden_literals"] = [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt",
+        "UnknownCode",
+    ]
+
+    is_valid, errors, _ = validate_fixture_data(tampered)
+    assert is_valid is False
+    assert any("알려진 내부 코드" in err for err in errors)
+    assert any("UnknownCode" in err for err in errors)
+
+
+def test_semantic_forbidden_claims_empty_detected(valid_fixture_dict: dict[str, Any]):
+    """semantic_forbidden_claims 가 비어있으면 검출되는지 확인합니다."""
+    tampered = copy.deepcopy(valid_fixture_dict)
+    tampered["items"][0]["semantic_forbidden_claims"] = []
+
+    is_valid, errors, _ = validate_fixture_data(tampered)
+    assert is_valid is False
+    assert any("비어있습니다" in err for err in errors)
+
+
+def test_numeric_fact_missing_required_fields_detected(valid_fixture_dict: dict[str, Any]):
+    """numeric 타입 expected_facts 에 expected_value, unit, tolerance 중 하나라도 없으면 검출되는지 확인합니다."""
+    tampered = copy.deepcopy(valid_fixture_dict)
+    # q01 의 numeric 팩트에서 unit 제거
+    del tampered["items"][0]["expected_facts"][3]["unit"]
+
+    is_valid, errors, _ = validate_fixture_data(tampered)
+    assert is_valid is False
+    assert any("numeric 타입" in err for err in errors)
+    assert any("unit" in err for err in errors)
 
 
 def test_cli_execution_success(tmp_path: Path):
