@@ -7,6 +7,9 @@ import json
 import pytest
 
 from scripts.arq_gate import (
+    ALLOW_CALIBRATION_HOST_MISMATCH,
+    CALIBRATION_HOST_CPU_COUNT,
+    IN_PROCESS_THRESHOLDS,
     GateThresholds,
     RepetitionThresholds,
     ThroughputGateResult,
@@ -16,6 +19,7 @@ from scripts.arq_gate import (
     evaluate_throughput_gate,
     load_benchmark_samples,
     sample_from_benchmark_payload,
+    verify_calibration_host,
 )
 
 
@@ -191,7 +195,7 @@ def test_repetition_gate_requires_three_runs_and_checks_all_metrics():
         _make_sample(600, 0, 495.0, tasks_per_second=1158.0),
     ]
 
-    result = evaluate_repetition_gate(samples)
+    result = evaluate_repetition_gate(samples, IN_PROCESS_THRESHOLDS)
 
     assert result.passed is True
     assert len(result.verdicts) == 3
@@ -199,7 +203,9 @@ def test_repetition_gate_requires_three_runs_and_checks_all_metrics():
 
 
 def test_repetition_gate_fails_closed_when_runs_are_missing():
-    result = evaluate_repetition_gate([_make_sample(600, 0, 499.0, tasks_per_second=1150.0)])
+    result = evaluate_repetition_gate(
+        [_make_sample(600, 0, 499.0, tasks_per_second=1150.0)], IN_PROCESS_THRESHOLDS
+    )
 
     assert result.passed is False
     assert "반복 회차가 부족합니다" in result.errors[0]
@@ -212,7 +218,7 @@ def test_repetition_gate_fails_when_any_run_exceeds_absolute_threshold():
         _make_sample(600, 0, 495.0, tasks_per_second=1150.0),
     ]
 
-    result = evaluate_repetition_gate(samples)
+    result = evaluate_repetition_gate(samples, IN_PROCESS_THRESHOLDS)
 
     assert result.passed is False
     assert result.verdicts[1].passed is False
@@ -225,7 +231,7 @@ def test_repetition_gate_supports_custom_thresholds():
         _make_sample(600, 0, 499.0, tasks_per_second=950.0),
         _make_sample(600, 0, 499.0, tasks_per_second=950.0),
     ]
-    thresholds = RepetitionThresholds(min_throughput_tasks_per_sec=1000.0)
+    thresholds = RepetitionThresholds(min_throughput_tasks_per_sec=1000.0, max_p95_latency_ms=550.0)
 
     result = evaluate_repetition_gate(samples, thresholds)
 
@@ -333,3 +339,83 @@ def test_load_worker_mode_rejects_missing_field(tmp_path):
 
     with pytest.raises(ValueError, match="benchmark_worker_mode"):
         load_worker_mode(path)
+
+
+def test_repetition_thresholds_require_throughput_and_p95():
+    """폐기된 900/600 잠정값을 기본값으로 되살리는 경로가 없어야 합니다."""
+    with pytest.raises(TypeError):
+        RepetitionThresholds()
+
+
+def test_repetition_thresholds_defaults_do_not_contain_discarded_values():
+    """min_throughput 와 max_p95 는 기본값이 없어 900.0/600.0 이 남을 수 없습니다."""
+    thresholds = RepetitionThresholds(
+        min_throughput_tasks_per_sec=1123.85, max_p95_latency_ms=509.25
+    )
+    assert thresholds.min_runs == 3
+    assert thresholds.max_failure_rate == 0.0
+    assert thresholds.min_throughput_tasks_per_sec == 1123.85
+    assert thresholds.max_p95_latency_ms == 509.25
+
+
+def test_repetition_gate_requires_thresholds():
+    """evaluate_repetition_gate 는 thresholds 없이 호출할 수 없습니다."""
+    from scripts.arq_gate import evaluate_repetition_gate
+
+    with pytest.raises(TypeError):
+        evaluate_repetition_gate([_make_sample(600, 0, 499.0, tasks_per_second=1150.0)])
+
+
+def _calibration_environment() -> dict:
+    return {
+        "platform": "macOS-26.6.2-arm64-arm-64bit",
+        "host_cpu_count": 14,
+        "python": "3.12.14",
+    }
+
+
+def test_host_binding_passes_for_calibration_fingerprint():
+    """캘리브레이션 호스트와 같은 지문은 결박을 통과합니다."""
+    verify_calibration_host(_calibration_environment())
+
+
+def test_host_binding_fails_for_different_platform():
+    """다른 platform 의 증거는 기본 설정에서 통과하지 않습니다."""
+    environment = _calibration_environment()
+    environment["platform"] = "Linux-6.8.0-x86_64-with-glibc2.39"
+    with pytest.raises(ValueError, match="재캘리브레이션"):
+        verify_calibration_host(environment)
+
+
+def test_host_binding_fails_for_different_cpu_count():
+    """다른 host_cpu_count 의 증거는 기본 설정에서 통과하지 않습니다."""
+    environment = _calibration_environment()
+    environment["host_cpu_count"] = 8
+    with pytest.raises(ValueError, match="재캘리브레이션"):
+        verify_calibration_host(environment)
+
+
+def test_host_binding_fails_when_environment_missing():
+    """environment 블록이 없으면 fail-closed 로 중단합니다."""
+    with pytest.raises(ValueError, match="환경 지문"):
+        verify_calibration_host(None)
+
+
+def test_host_binding_allow_mismatch_opt_in_passes():
+    """옵트인 플래그를 주면 다른 호스트 지문도 통과합니다."""
+    environment = _calibration_environment()
+    environment["platform"] = "Linux-6.8.0-x86_64-with-glibc2.39"
+    verify_calibration_host(environment, allow_mismatch=True)
+
+
+def test_host_binding_platform_ignores_minor_version_difference():
+    """같은 Mac OS 계열/arm64 의 마이너 버전 차이는 오탐으로 보지 않습니다."""
+    environment = _calibration_environment()
+    environment["platform"] = "macOS-26.7.1-arm64-arm-64bit"
+    verify_calibration_host(environment)
+
+
+def test_host_binding_default_is_fail_closed():
+    """옵트인 플래그의 기본값은 결박이 켜진 상태여야 합니다."""
+    assert ALLOW_CALIBRATION_HOST_MISMATCH is False
+    assert CALIBRATION_HOST_CPU_COUNT == 14

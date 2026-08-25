@@ -100,7 +100,7 @@
 
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama `gemma4:e4b` Predict c4 + SSE c1 + Query c1을 2026-08-24에 부하 규약(median 30%/max 50%) 준수 상태로 3회 측정했습니다. 1차 r2는 median 34.26%로 기각하고 재측정했습니다. 게이트는 전 항목 통과입니다.
-- Arq Docker-container **synthetic** 3회를 2026-08-24에 재측정해 회차별 raw를 보존했습니다(1,681~1,764 jobs/sec, P95 325~342ms). 측정 중 회차별 raw가 자기 dirty 검사를 유발해 `--repetitions`가 완주 불가였던 결함을 고쳤습니다. 잠정 봉투는 캘리브레이션 미실행으로 유지하며 production business-task E2E도 별도 검증 대상입니다.
+- Arq Docker-container **synthetic** 3회를 2026-08-24에 재측정해 회차별 raw를 보존했습니다(1,681~1,764 jobs/sec, P95 325~342ms). 측정 중 회차별 raw가 자기 dirty 검사를 유발해 `--repetitions`가 완주 불가였던 결함을 고쳤습니다. 잠정 봉투는 2026-08-24 정식 캘리브레이션 폐기, 경로별 임계값 사용, production business-task E2E 미측정.
 - 벤치마크 provenance 는 측정 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 로 무효화합니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 로 strict 를 끈 측정은 `provenance_consistent: false` 로 기록되며 정본 evidence 가 아닙니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)

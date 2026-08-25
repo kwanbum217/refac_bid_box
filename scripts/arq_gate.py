@@ -81,13 +81,15 @@ class GateThresholds:
 class RepetitionThresholds:
     """반복 측정의 절대 기준선.
 
-    기본값은 두는 즉시 어느 경로에도 맞지 않으므로, 실제 판정에는
+    min_throughput_tasks_per_sec 와 max_p95_latency_ms 는 반드시 명시해야 한다.
+    이 두 값은 2026-08-24 캘리브레이션으로 폐기된 잠정 900.0/600.0 을
+    기본값으로 되살리는 경로를 막기 위해 기본값을 두지 않는다. 실제 판정에는
     WORKER_MODE_THRESHOLDS 의 경로별 프리셋을 쓴다.
     """
 
+    min_throughput_tasks_per_sec: float
+    max_p95_latency_ms: float
     min_runs: int = 3
-    min_throughput_tasks_per_sec: float = 900.0
-    max_p95_latency_ms: float = 600.0
     max_failure_rate: float = 0.0
 
     def __post_init__(self) -> None:
@@ -135,6 +137,85 @@ WORKER_MODE_THRESHOLDS: dict[str, RepetitionThresholds] = {
     "in_process": IN_PROCESS_THRESHOLDS,
     "docker_container": DOCKER_CONTAINER_THRESHOLDS,
 }
+
+# 2026-08-24 정식 캘리브레이션을 수행한 호스트 지문이다.
+# 출처: data/benchmarks/frozen/arq/<mode>/0ab8c3e/ 의 각 JSON environment 블록
+#   (environment.platform, environment.host_cpu_count, environment.python).
+# 기준선은 이 특정 Mac 호스트의 실측이므로, 다른 호스트의 측정에 그대로
+# 적용되어서는 안 된다. 게이트 평가는 이 지문과 대조해 일치할 때만 통과로
+# 인정한다 (fail-closed).
+CALIBRATION_HOST_PLATFORM_OS = "macos"
+CALIBRATION_HOST_PLATFORM_ARCH = "arm64"
+CALIBRATION_HOST_CPU_COUNT = 14
+CALIBRATION_HOST_PYTHON = "3.12.14"
+
+# 호스트 결박을 의도적으로 끄는 옵트인 플래그. 기본값은 결박이 켜진 상태
+# (fail-closed)다. 재캘리브레이션 검증이나 다른 호스트에서 기준선을 새로
+# 만들 때만 명시적으로 True 를 넘긴다.
+ALLOW_CALIBRATION_HOST_MISMATCH = False
+
+
+def _platform_os(platform: str) -> str:
+    """platform 문자열에서 OS 계열 소문자를 추출한다.
+
+    예: 'macOS-26.6.2-arm64-arm-64bit' -> 'macos'
+    """
+    return platform.split("-", 1)[0].lower()
+
+
+def _platform_arch(platform: str) -> str:
+    """platform 문자열에서 아키텍처 소문자를 추출한다.
+
+    예: 'macOS-26.6.2-arm64-arm-64bit' -> 'arm64'
+    """
+    parts = platform.split("-")
+    for part in parts:
+        low = part.lower()
+        if low in ("arm64", "x86_64", "amd64", "aarch64"):
+            return low
+    return ""
+
+
+def verify_calibration_host(
+    environment: Mapping[str, Any] | None,
+    *,
+    allow_mismatch: bool = ALLOW_CALIBRATION_HOST_MISMATCH,
+) -> None:
+    """evidence 의 environment 지문이 캘리브레이션 호스트와 일치하는지 확인한다.
+
+    불일치하면 재캘리브레이션이 필요하다는 사유와 함께 ValueError 를 일으켜
+    통과로 판정하지 못하게 막는다. platform 은 OS 계열과 아키텍처 수준에서만
+    비교해 마이너 버전 차이로 오탐이 나지 않게 한다. host_cpu_count 는 완전
+    일치를 요구한다. allow_mismatch=True 면 결박을 해제한다(명시적 옵트인).
+    """
+    if allow_mismatch:
+        return
+    if environment is None or not isinstance(environment, Mapping):
+        raise ValueError(
+            "환경 지문(environment)이 없어 캘리브레이션 호스트 결박을 확인할 수 없습니다."
+        )
+    platform = environment.get("platform")
+    host_cpu_count = environment.get("host_cpu_count")
+    if not isinstance(platform, str) or not platform:
+        raise ValueError(
+            "환경 지문에 platform 이 없어 캘리브레이션 호스트 결박을 확인할 수 없습니다."
+        )
+    if not isinstance(host_cpu_count, int):
+        raise ValueError(
+            "환경 지문에 host_cpu_count 가 없어 캘리브레이션 호스트 결박을 확인할 수 없습니다."
+        )
+    os_ok = _platform_os(platform) == CALIBRATION_HOST_PLATFORM_OS
+    arch_ok = _platform_arch(platform) == CALIBRATION_HOST_PLATFORM_ARCH
+    cpu_ok = host_cpu_count == CALIBRATION_HOST_CPU_COUNT
+    if not (os_ok and arch_ok and cpu_ok):
+        raise ValueError(
+            "측정 호스트가 캘리브레이션 기준선 호스트와 다릅니다. "
+            "이 기준선은 특정 호스트의 실측이므로 다른 호스트에 적용할 수 없습니다. "
+            "재캘리브레이션이 필요합니다. "
+            f"(evidence platform={platform!r}, host_cpu_count={host_cpu_count}; "
+            f"기준 platform=macOS/{CALIBRATION_HOST_PLATFORM_ARCH}, "
+            f"host_cpu_count={CALIBRATION_HOST_CPU_COUNT})"
+        )
 
 
 def thresholds_for_worker_mode(worker_mode: str) -> RepetitionThresholds:
@@ -321,10 +402,13 @@ def evaluate_throughput_gate(
 
 def evaluate_repetition_gate(
     samples: Sequence[ThroughputSample],
-    thresholds: RepetitionThresholds | None = None,
+    thresholds: RepetitionThresholds,
 ) -> RepetitionGateResult:
-    """반복 표본을 최악 회차 기준의 절대 기준선으로 판정합니다."""
-    thresholds = thresholds or RepetitionThresholds()
+    """반복 표본을 최악 회차 기준의 절대 기준선으로 판정합니다.
+
+    thresholds 는 필수다. 기본 임계값이 없으므로 폐기된 잠정 900/600 이
+    조용히 재적용되는 경로가 존재하지 않는다.
+    """
     errors: list[str] = []
     if len(samples) < thresholds.min_runs:
         errors.append(f"반복 회차가 부족합니다: {len(samples)}회/{thresholds.min_runs}회")
@@ -417,14 +501,29 @@ def load_worker_mode(path: str | Path) -> str:
     return mode
 
 
+def load_environment(path: str | Path) -> Mapping[str, Any]:
+    """evidence JSON 의 environment 블록을 읽습니다."""
+    payload = load_strict_json(Path(path))
+    if not isinstance(payload, Mapping):
+        raise ValueError("benchmark evidence는 JSON 객체여야 합니다.")
+    environment = payload.get("environment")
+    if not isinstance(environment, Mapping):
+        raise ValueError(f"environment 블록이 없습니다: {path}")
+    return environment
+
+
 def resolve_repetition_thresholds(paths: Sequence[str | Path]) -> RepetitionThresholds:
     """반복 evidence 들이 같은 경로인지 확인하고 그 경로의 실측 기준선을 고릅니다.
 
     경로가 섞이면 어느 기준선도 맞지 않으므로 판정하지 않고 거부합니다.
+    또한 기준선을 도출한 호스트가 아닌 다른 호스트의 측정이면 재캘리브레이션이
+    필요하다고 판단해 거부합니다 (호스트 결박, fail-closed).
     """
     modes = {load_worker_mode(path) for path in paths}
     if len(modes) != 1:
         raise ValueError(f"반복 evidence 의 워커 경로가 섞여 있습니다: {sorted(modes)}")
+    for path in paths:
+        verify_calibration_host(load_environment(path))
     return thresholds_for_worker_mode(modes.pop())
 
 
@@ -466,11 +565,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.repetitions:
-            thresholds = (
-                thresholds_for_worker_mode(args.mode)
-                if args.mode
-                else resolve_repetition_thresholds(args.repetitions)
-            )
+            if args.mode:
+                thresholds = thresholds_for_worker_mode(args.mode)
+                for path in args.repetitions:
+                    verify_calibration_host(load_environment(path))
+            else:
+                thresholds = resolve_repetition_thresholds(args.repetitions)
             result = evaluate_repetition_gate(
                 load_benchmark_samples(args.repetitions), thresholds=thresholds
             )
