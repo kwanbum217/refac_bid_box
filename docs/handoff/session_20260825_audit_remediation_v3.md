@@ -2,7 +2,8 @@
 
 > **작성일**: 2026-08-25 (Asia/Seoul)
 > **세션 시작 기준**: `9516808`
-> **세션 종료 시 HEAD**: `4164291` (LLM v3 evidence 반영 커밋)
+> **측정 소스 HEAD**: `9516808`
+> **evidence 본문 커밋**: `4164291` (후속 정합성 수정과 최종 병합 SHA는 `git log`로 확인)
 > **status**: current
 > **Orca Dispatch**: `ctx_9db06edf8f93`
 > **Orca Task**: `task_389e15173471`
@@ -29,7 +30,8 @@
 | --- | ---: | ---: |
 | numeric 팩트 | 63/102 (61.8%) | **69/102 (67.6%)** |
 | 문항 단위 numeric 전체 통과 | 12/48 | **18/48** |
-| 근거 검색(context_sufficient) | 51/51 | 51/51 |
+| 근거 검색 성공 질의(context_sufficient) | 48/48 | 48/48 |
+| 기대 evidence ID hit 합계 | 51/51 | 51/51 |
 | 인용 표기 | 47/48 | **48/48** |
 | 지연 P50 | 3,593.7ms | **3,005.4ms** |
 | 과잉응답(q18) | **1건 (r1)** | **2건 (r1, r2)** |
@@ -66,6 +68,9 @@
 | Chart.js CDN 로컬화 | `bids/dashboard.html` 등 3개 템플릿 |
 | Tailwind 운영 빌드 | 현재는 `cdn.tailwindcss.com` 스크립트 로컬 배치만 함 |
 | Windows Docker Desktop 실기 검증 | 장비 부재로 보류. G2 컷오버의 마지막 항목 |
+| module별 mypy 부채 | 전역 disable은 제거했지만 module override에 남은 오류를 단계적으로 해소 |
+| production Arq business-task E2E | synthetic 2경로만 완료. 실제 업무 task 부하·실패 복구는 미측정 |
+| Vector 기간·기관 scope | 미지원 metadata 필터는 provenance에 드러나지만 post-filter 또는 metadata 확장은 미구현 |
 
 ## 5. 재현 명령
 
