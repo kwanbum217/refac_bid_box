@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-24
-> **source_commit**: `1b8a77a`
+> **source_commit**: `ed2419c`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -65,11 +65,12 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **운영 검증**: Windows CI는 **main 병합 검증 run** `32703990405`(`a203286`)에서 green을 실측 확인했습니다(사전 feature run `32703096829`도 green). Windows Docker Desktop 실기가 남았습니다.
-1-2. **LLM 경로 최적화**: 부하 규약을 지킨 조건의 e4b 정본은 `llm_ms` P50 2,839.93ms이며 총합의 97.5%입니다. `gemma4:e2b` 비교에서 `llm_ms` P50 -54.1%, P95 -26.2%로 속도 우세가 확정됐으나 **품질 표본이 5문항뿐이라 승격하지 않았습니다**. 19문항 fixture 로 실측한 결과 지연은 P50 -43.9%/P95 -57.7% 로 개선되나 품질 지표가 검색에 지배되어 생성 품질을 변별하지 못했습니다. 의도 라우팅 오분류로 16문항 중 8문항이 KB 검색을 건너뜁니다([`llm_model_comparison_e4b_e2b_20260824.md`](../analysis/llm_model_comparison_e4b_e2b_20260824.md)).
-1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션으로 정식 기준선을 확정했습니다. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하, 규약 위반 0건). `arq_gate.py` 의 잠정값 900/600 은 경로별 판정선(1,123.85·509.25 / 1,651.52·346.68)으로 교체했습니다([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
-2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md)의 목표는 SSR + HTMX이나 실제 템플릿은 jQuery 3.7.1만 로드하고 HTMX 사용이 0건입니다. 도입 또는 ADR 개정 중 하나를 택해야 합니다.
-3. **G3 전체 컷오버 판정**: 위 항목이 닫힌 뒤 별도로 판정합니다. 개별 게이트 PASS를 컷오버 PASS로 승격하지 않습니다.
+1. **운영 검증**: Windows CI는 main 병합 run `32703990405`(`a203286`)에서 green 실측. 이후 커밋이 쌓였으므로 현재 HEAD 의 3플랫폼 green 근거는 아직 없습니다. Windows Docker Desktop 실기도 남았습니다.
+1-2. **LLM 경로 최적화**: 부하 규약을 지킨 조건의 e4b 정본은 `llm_ms` P50 2,839.93ms이며 총합의 97.5%입니다. `gemma4:e2b` 비교에서 `llm_ms` P50 -54.1%, P95 -26.2%로 속도 우세가 확정됐으나 **품질 표본이 5문항뿐이라 승격하지 않았습니다**. 19문항 fixture 실측에서 지연은 P50 -43.9%/P95 -57.7% 로 개선되나 품질이 검색에 지배됐습니다. 원인인 의도 라우팅 오분류와 채점기 결함을 2026-08-25 에 고쳤으므로 **동일 19문항 재측정 전에는 승격 판정을 하지 않습니다**([`llm_model_comparison_e4b_e2b_20260824.md`](../analysis/llm_model_comparison_e4b_e2b_20260824.md)).
+1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션으로 확정했습니다. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하). 잠정값 900/600 은 제거했고 기준선은 캘리브레이션 호스트에 결박됩니다([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
+1-3. **감사 후속 P1 4건**: 2026-08-25 에 RAG 의도 라우팅 오분류, LLM 품질 하네스의 복합 numeric·refusal 미채점, 모델 라벨 미결박, Arq 기준선 호스트 미결박을 닫았습니다. 기존 `llm_quality_*_20260824.json` 은 v1 기준이라 무효입니다.
+2. **프론트엔드 ADR 이행**: [`FRONTEND_DECISION.md`](../design/FRONTEND_DECISION.md) 목표는 SSR + HTMX 이나 템플릿은 jQuery 3.7.1 만 로드하고 HTMX 사용 0건입니다. 도입 또는 ADR 개정을 택해야 합니다.
+3. **G3 컷오버 판정**: 위 항목이 닫힌 뒤 판정합니다. 개별 게이트 PASS 를 컷오버 PASS 로 승격하지 않습니다.
 
 ### 4.1 종결 계열 요약
 
@@ -100,8 +101,8 @@
 
 - Windows Docker Desktop 실기 검증 미수행.
 - Ollama `gemma4:e4b` Predict c4 + SSE c1 + Query c1을 2026-08-24에 부하 규약(median 30%/max 50%) 준수 상태로 3회 측정했습니다. 1차 r2는 median 34.26%로 기각하고 재측정했습니다. 게이트는 전 항목 통과입니다.
-- Arq Docker-container **synthetic** 3회를 2026-08-24에 재측정해 회차별 raw를 보존했습니다(1,681~1,764 jobs/sec, P95 325~342ms). 측정 중 회차별 raw가 자기 dirty 검사를 유발해 `--repetitions`가 완주 불가였던 결함을 고쳤습니다. 잠정 봉투는 2026-08-24 정식 10회 캘리브레이션으로 폐기했고 경로별 정식 임계값을 사용합니다. production business-task E2E 는 여전히 미측정입니다.
-- 벤치마크 provenance 는 측정 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 로 무효화합니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 로 strict 를 끈 측정은 `provenance_consistent: false` 로 기록되며 정본 evidence 가 아닙니다.
+- Arq Docker-container synthetic 3회 재측정 raw 보존(1,681~1,764 jobs/sec, P95 325~342ms). 회차별 raw 가 자기 dirty 검사를 유발하던 결함은 해소했습니다. production business-task E2E 는 미측정입니다.
+- 벤치마크 provenance 는 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 됩니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 로 strict 를 끈 측정은 정본 evidence 가 아닙니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
