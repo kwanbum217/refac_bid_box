@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-25
-> **source_commit**: `0b6d82f`
+> **source_commit**: `9516808`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -67,7 +67,7 @@
 
 1. **운영 검증**: 2026-08-25 최신 CI run `32815469127`(`c6ef35c`)에서 **3플랫폼 green**(Docker/lint/Ubuntu/macOS/Windows 5잡). Windows Docker Desktop 실기만 남음.
 1-4. **Vector fail-closed 수정**: 2026-08-25 검색 필터 누락(`where` 절 부재)과 category 첫 일치 오분류를 수정해 근거 적중 15/16 → **16/16**, fail-closed 정합(`284e49d`) 반영 완료.
-1-2. **LLM 경로 최적화**: 2026-08-25 v2 재측정(소스 `1d51d38`, retrieval fix 전)에서 e2b 는 지연 P50 -50.8%, numeric 62.7% 대 58.8% 로 앞서고 근거 검색은 동일(45/48)했으나, 미개찰 공고 q18 에서 3회 중 2회 과잉응답이 나와 **승격하지 않았습니다**. e4b 는 과잉응답 0([`llm_quality_v2_e4b_e2b_20260825.md`](../analysis/llm_quality_v2_e4b_e2b_20260825.md)).
+1-2. **LLM 경로 최적화**: v3 재측정(소스 `9516808`, 검색 개선 반영)에서 e2b 는 numeric 67.6% 대 61.8%, 지연 P50 3,005.4ms 대 3,593.7ms 로 앞서고 evidence ID hit 동일(51/51)했으나, 미개찰 공고 q18 에서 3회 중 2회 과잉응답(e4b 1회)이 나와 **승격하지 않았습니다**([`llm_quality_v3_e4b_e2b_20260825.md`](../analysis/llm_quality_v3_e4b_e2b_20260825.md)).
 1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션으로 확정했습니다. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하). 잠정값 900/600 은 제거했고 기준선은 캘리브레이션 호스트에 결박됩니다([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
 1-3. **감사 후속 P1 4건**: 2026-08-25 에 RAG 의도 라우팅 오분류, LLM 품질 하네스의 복합 numeric·refusal 미채점, 모델 라벨 미결박, Arq 기준선 호스트 미결박을 닫았습니다. 기존 `llm_quality_*_20260824.json` 은 v1 기준이라 무효입니다.
 2. **프론트엔드**: HTMX 는 2026-08-25 기각하고 ADR 을 SSR + Jinja2 + jQuery 로 개정했습니다. `base.html` 의 외부 CDN 7곳은 같은 날 로컬 벤더 자산으로 대체해 https 참조 0건입니다. Chart.js 3개 템플릿과 Tailwind 운영 빌드는 후속 과제입니다.
@@ -79,9 +79,9 @@
 
 - **안전·품질 게이트**: fail-open 제거, 상태 전파 경계, frontend·Docker·CI 검증 능력과 `source_commit` 신선도 게이트를 갖췄습니다.
 - **구조·데이터**: 9개 모듈을 AST 동일성으로 분할했고 ORM 13모델·137컬럼을 `Mapped[]`로 전환했습니다. DDL 지문은 불변입니다.
-- **실측·계측**: 예측 웜 P95 정본은 위 2·3장의 재측정값(c1 15.39ms, c4 34.32ms, c10 47.77ms)이며 SSE c1 첫 토큰 1297.73ms·전체 6716.22ms입니다. 블로킹 I/O와 Arq 계측 배선은 완료했고 최적화 판정은 미확정입니다.
-- **조율 인프라**: 워커 준비 안전성(Git common directory 검증), ModelRegistry single-flight(로드 1회·부분 레지스트리 비노출), finalize/Level 1 PASS 없는 병합 차단을 닫았습니다. 벤치마크 provenance 는 `base_url`↔컨테이너 결박, 시작·종료 교체 무효화, bind mount 런타임 소스 revision·dirty 거부까지 결박했습니다. Arq 하네스 2종의 provenance 헬퍼는 공통 모듈로 단일화했고 Redis 대상은 fail-closed 결박입니다.
-- **신뢰 설정 잠금**: PID 파일의 `stat`·`unlink` stale 회수는 제거했고 POSIX `fcntl.flock`, Windows `msvcrt.locking` advisory lock으로 교체했습니다. 지원 구현이 없는 플랫폼도 fail-closed로 중단합니다. 코드와 회귀 테스트는 완료했으며 수정 후 원격 Windows CI 확인은 별도입니다.
+- **실측·계측**: 예측 웜 P95 c1 15.39ms·c4 34.32ms·c10 47.77ms, SSE c1 첫 토큰 1297.73ms·전체 6716.22ms. 블로킹 I/O·Arq 계측 배선 완료, 최적화 판정 미확정.
+- **조율 인프라**: 워커 준비 안전성(Git common directory 검증), ModelRegistry single-flight(로드 1회), finalize/Level 1 PASS 없는 병합 차단을 닫았습니다. 벤치마크 provenance 는 `base_url`↔컨테이너 결박·시작/종료 교체 무효화·런타임 revision·dirty 거부로 결박했습니다. Arq 하네스 2종 헬퍼는 단일화하고 Redis 는 fail-closed 결박입니다.
+- **신뢰 설정 잠금**: PID stale 회수 제거, POSIX `fcntl.flock`·Windows `msvcrt.locking` advisory lock으로 교체. 미지원 플랫폼은 fail-closed 중단. 회귀 테스트 완료, 원격 Windows CI 확인은 별도입니다.
 - **운영 준비**: 워커 기동 자동화, mypy·bandit·CI 게이트, 프론트엔드 lockfile·`npm ci`를 반영했습니다.
 
 ---
@@ -101,9 +101,9 @@
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - Windows Docker Desktop 실기 검증 미수행.
-- **LLM v3 재측정 대기**: v2 는 retrieval fix 전(`1d51d38`)이며, 검색 개선(근거 적중 16/16) 후 numeric 재측정 미실행입니다.
-- Ollama `gemma4:e4b` Predict c4 + SSE c1 + Query c1을 2026-08-24에 부하 규약(median 30%/max 50%) 준수 상태로 3회 측정했습니다. 1차 r2는 median 34.26%로 기각하고 재측정했습니다. 게이트는 전 항목 통과입니다.
-- Arq Docker-container synthetic 3회 재측정 raw 보존(1,681~1,764 jobs/sec, P95 325~342ms). 자기 dirty 검사 결함은 해소. production business-task E2E 는 미측정입니다.
+- **LLM v3 재측정 완료**: 소스 `9516808`(canonical=true)에서 e4b/e2b 각 57회차 측정. numeric e4b 63/102, e2b 69/102, 기대 evidence ID hit 양쪽 51/51, latency P50 e4b 3,593.7ms / e2b 3,005.4ms. q18 과잉응답은 e4b 1건, e2b 2건으로 e2b 승격 보류([`llm_quality_v3_e4b_e2b_20260825.md`](../analysis/llm_quality_v3_e4b_e2b_20260825.md)).
+- Ollama `gemma4:e4b` Predict c4·SSE c1·Query c1 2026-08-24 부하 규약 준수 3회 측정, 1차 r2 기각 후 재측정, 게이트 전 항목 통과.
+- Arq Docker-container synthetic 3회 재측정 raw 보존(1,681~1,764 jobs/sec, P95 325~342ms). production business-task E2E 는 미측정입니다.
 - 벤치마크 provenance 는 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 됩니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 는 정본 evidence 가 아닙니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
