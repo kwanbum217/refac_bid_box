@@ -193,14 +193,69 @@
 
 ---
 
-## 7. 산출물 및 파일 변경 내역
+---
+
+## 8. 경량 Evidence Manifest 체계 및 Fail-Closed 검증 (2026-08-25)
+
+### 8.1 도입 배경 (Fail-Open 제거)
+기존 `scripts/validate_llm_quality_fixture.py`는 ChromaDB SQLite 파일(`chroma_db/chroma.sqlite3`)을 찾을 수 없는 환경에서 "실재 검증 건너뜀"으로 처리하고 종료 코드 0으로 통과하는 **Fail-Open 결함**이 있었습니다.
+ChromaDB 데이터베이스 자산은 대용량 바이너리이므로 Git에 추적되지 않으며, 격리 워크트리 및 GitHub CI 환경에 존재하지 않습니다. 이로 인해 과거처럼 임의의 가상 근거 ID를 지어 넣어도 CI가 이를 검출하지 못하는 위험이 존재했습니다.
+
+### 8.2 해결 방안: 경량 Evidence Manifest (`data/eval/llm_quality_evidence_manifest.json`)
+ChromaDB 전체를 복사하거나 CI에 올리는 대신, fixture가 참조하는 `expected_evidence_ids`에 해당하는 문서의 SHA-256 해시와 메타데이터만 담은 경량 JSON manifest를 Git에 추적합니다.
+
+1. **Fail-Closed 원칙**:
+   - `scripts/validate_llm_quality_fixture.py`는 기본적으로 manifest 파일(`data/eval/llm_quality_evidence_manifest.json`)을 필수로 요구합니다.
+   - manifest 파일이 없거나, 필수 필드가 누락되었거나, fixture의 `expected_evidence_ids` 중 단 하나라도 manifest에 없으면 즉시 검증 실패(`exit code 1`)로 종료합니다.
+   - 과도기 또는 디버깅을 위해 명시적 옵트아웃 플래그(`--skip-manifest-check`)를 지원하되, 기본값은 엄격 검증(Fail-Closed)입니다.
+2. **ChromaDB 실재 환경 연동**:
+   - ChromaDB가 존재하는 환경에서는 로컬 SQLite 직접 조회 검증도 병행 수행됩니다.
+
+### 8.3 Manifest 스키마 사양
+```json
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-08-25T13:00:00Z",
+  "collection_name": "bidding_kb",
+  "total_collection_documents": 512348,
+  "item_count": 17,
+  "entries": [
+    {
+      "evidence_id": "bid_10015927",
+      "content_hash": "sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
+      "doc_length": 450
+    }
+  ]
+}
+```
+
+### 8.4 Manifest 생성 및 갱신 절차
+fixture 문항을 추가/수정하거나 `expected_evidence_ids`를 변경한 경우, **ChromaDB 자산이 존재하는 환경에서 반드시 manifest를 다시 생성하여 Git에 함께 커밋**해야 합니다.
+
+```bash
+# 1. ChromaDB 자산이 존재하는 주 저장소/호스트에서 manifest 생성
+uv run python scripts/build_llm_fixture_manifest.py \
+  --fixture data/eval/llm_quality_fixture_v1.json \
+  --output data/eval/llm_quality_evidence_manifest.json
+
+# 2. fixture 및 manifest 검증
+uv run python scripts/validate_llm_quality_fixture.py data/eval/llm_quality_fixture_v1.json
+
+# 3. 단위 테스트 수행
+uv run pytest tests/test_validate_llm_quality_fixture.py tests/test_build_llm_fixture_manifest.py -q
+```
+
+- **부분 생성 방지**: ChromaDB를 찾지 못하거나 fixture가 요구하는 ID 중 하나라도 ChromaDB에 없으면, 빈 파일이나 부분 manifest를 쓰지 않고 `exit code 1`로 즉시 중단합니다.
+
+---
+
+## 9. 산출물 및 파일 변경 내역 (v2.1 업데이트)
 
 | 파일 | 변경 유형 | 설명 |
 | --- | --- | --- |
-| `data/eval/llm_quality_fixture_v1.json` | **수정** | v2 스키마 적용: numeric 팩트 원자 분해(45→61개), forbidden_literals/semantic_forbidden_claims 분리, version 2.0.0 |
-| `scripts/validate_llm_quality_fixture.py` | **수정** | v2 스키마 검증: 복합 numeric 팩트 검출, forbidden_literals 4종 필수 확인, semantic_forbidden_claims 검증, numeric 필수 필드 검증 추가 |
-| `scripts/measure_llm_quality.py` | **수정** | v2 채점 로직: 원자 numeric 채점, forbidden_literal 대소문자 무시 검사+근거 기록, semantic 자동 판정 제외, refusal 채점(is_refusal), --expected-model 필수+검증, base_url 포트 결박, provenance 기록(benchmark_provenance 재사용), dirty/model mismatch 시 fail-closed |
-| `tests/test_validate_llm_quality_fixture.py` | **수정** | 복합 numeric 팩트 검출 테스트, forbidden_literals 누락/불일치 검출 테스트, semantic_forbidden_claims 비어있음 검출 테스트, numeric 필수 필드 검증 테스트 추가 |
-| `tests/test_measure_llm_quality.py` | **신규** | 단위 테스트 신규 작성: (a) 원자 numeric 누락 감지, (b) forbidden_literal 대소문자 무시 위반 감지, (c) semantic 규칙 자동 위반 오판 방지, (d) refusal 기대/실제 불일치 감지, (e) expected-model 불일치 시 비정상 종료 |
-
----
+| `scripts/build_llm_fixture_manifest.py` | **신규** | ChromaDB SQLite로부터 fixture 근거 ID의 SHA-256 해시 및 메타데이터를 추출하여 경량 manifest를 생성하는 스크립트 |
+| `scripts/validate_llm_quality_fixture.py` | **수정** | 경량 manifest 무결성 및 fixture 대조 검증 추가 (fail-closed, --skip-manifest-check 옵트아웃 지원) |
+| `tests/test_build_llm_fixture_manifest.py` | **신규** | manifest 생성기 단위 테스트 (ChromaDB 부재 fail-closed, 참조 ID 한정 추출, 부분 manifest 생성 방지) |
+| `tests/test_validate_llm_quality_fixture.py` | **수정** | manifest 부재 fail-closed, ID 불일치, manifest 무결성 위반, CLI 플래그 단위 테스트 추가 |
+| `docs/analysis/llm_quality_fixture_20260824.md` | **수정** | 경량 evidence manifest 체계 및 갱신 절차 문서화 |
+| `docs/analysis/task_fea75d942a16.md` | **신규** | Task 분석 및 검증 보고서 |
