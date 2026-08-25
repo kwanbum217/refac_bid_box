@@ -57,6 +57,7 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 | 백엔드 | FastAPI (ASGI) | 비동기 I/O, Pydantic v2, Swagger 자동화 |
 | DB | MySQL 8 (Docker) | 이중화(SQLite fallback) 제거, 스키마 100% 보존 |
 | 캐시/브로커 | Redis | 파일/locmem 캐시 대체 |
+| 검색 엔진 | Meilisearch | Compose 필수 서비스. `MEILI_ENABLED`로 제어, 공고·낙찰 목록 읽기 모델 전용 |
 | 태스크 큐 | Arq (asyncio + Redis) | 경량 비동기 태스크 큐 |
 | ML | LightGBM, CatBoost, scikit-learn | 기존 스택 유지 |
 | 벡터DB | ChromaDB (유지) | 원본 `bidding_kb` 1개 컬렉션 스냅샷 보존 최우선 (G1) |
