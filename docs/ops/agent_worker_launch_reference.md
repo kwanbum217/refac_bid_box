@@ -293,6 +293,17 @@ KIMI_CODE_HOME=/Users/kwanbum/.kimi-openrouter-free kimi -m <alias> -p "<preambl
 | `dispatch --inject` | Kimi TUI 는 주입된 Enter 로 **종료**합니다 |
 | `-p` 와 `-y`/`--auto` 병용 | 2026-08-20 실측에서 `error: Cannot combine --prompt with --yolo.` 와 `... with --auto.` 로 종료 코드 1 입니다. `--help` 에는 이 제약이 적혀 있지 않습니다 |
 | 대화형·다단계 감독 Task 배정 | `-p` 는 one-shot 입니다. 자족적 지시서 1개로 끝나는 Task 만 줍니다 |
+| 커밋을 acceptance 에 안 적고 쓰기 Task 배정 | 완료 요약만 출력하고 커밋 없이 세션이 끝납니다 ([`orca_do_not_repeat.md`](orca_do_not_repeat.md) 21.7) |
+
+**one-shot 워커는 완료 선언 뒤 사라집니다.** 세션이 끝나면
+`orca orchestration send` 도 `dispatch --inject` 도 닿지 않습니다. 완료 요약이
+터미널에 뜬 그 시점에 `git -C <워크트리> log --oneline main..HEAD | wc -l` 로
+커밋을 직접 확인하고, 0 이면 종료 시 출력된 재개 핸들로 다시 띄워 커밋만
+시키십시오.
+
+```bash
+KIMI_CODE_HOME=~/.kimi-openrouter-bakeoff kimi -r <session_id> -p "<커밋 지시>"
+```
 | 격리 모델(`laguna-s`, `north-mini`) 배정 | 위 표를 보십시오. 쓰기 과제에서 완주하지 못합니다 |
 | 공유 자원 소유·마감 있는 Task 배정 | `:free` 는 provider capacity 에 따라 429 가 납니다 |
 
