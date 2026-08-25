@@ -23,8 +23,9 @@ from src.rag.engine import (
     build_retrieval_plan,
     rag_engine,
 )
-from src.rag.schemas import RetrievalPlan
+from src.rag.schemas import Provenance, RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
+from src.rag.vector_store import SemanticSearchResult
 
 
 class _FakeStreamingBackend:
@@ -386,6 +387,45 @@ def test_prepare_context_timings_respects_skipped_stages():
     assert timings["plan_ms"] >= 0.0
     assert timings["assembly_ms"] >= 0.0
     assert timings["prepare_total_ms"] >= 0.0
+
+
+def test_prepare_context_propagates_vector_filter_provenance(monkeypatch):
+    """필터 원본·유효·지원 불가·완화 상태가 Provenance 와 insufficiency_hints 로 전달되어야 합니다."""
+    captured_plans: list[RetrievalPlan] = []
+
+    def mock_retrieve(plan: RetrievalPlan) -> SemanticSearchResult:
+        captured_plans.append(plan)
+        return SemanticSearchResult(
+            ok=True,
+            documents=[],
+            relaxed=False,
+            original_filters={"category": "Frgcpt", "date_from": "2026-01-01"},
+            effective_filters={"$and": [{"category": "Frgcpt"}, {"has_result": True}]},
+            unsupported_filters={"date_from": "2026-01-01"},
+        )
+
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_retrieve)
+
+    prepared = rag_engine._prepare_context("희귀 특수 공사의 낙찰업체와 낙찰금액")
+    plan, _structured_data, vector_docs, _kb_status, provenance, _context_text, _messages = prepared
+
+    assert plan.use_vector is True
+    assert vector_docs == []
+    assert isinstance(provenance, Provenance)
+
+    assert provenance.vector_filter_provenance is not None
+    filter_prov = provenance.vector_filter_provenance
+    assert filter_prov["original_filters"]["category"] == "Frgcpt"
+    assert filter_prov["effective_filters"] == {
+        "$and": [{"category": "Frgcpt"}, {"has_result": True}]
+    }
+    assert filter_prov["unsupported_filters"] == {"date_from": "2026-01-01"}
+    assert filter_prov["filter_relaxed"] is False
+
+    hint_text = "\n".join(provenance.insufficiency_hints)
+    assert "지원되지 않아 적용되지 않은 필터" in hint_text
+    assert "date_from" in hint_text
+    assert "필터 조건에 맞는 문서가 0건" in hint_text
 
 
 def test_get_answer_sync_logs_latency_success_path(caplog, monkeypatch):

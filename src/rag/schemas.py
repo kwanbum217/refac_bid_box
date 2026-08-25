@@ -56,6 +56,10 @@ class Provenance(BaseModel):
         default_factory=list, description="Limitations of the current evidence"
     )
     kb_version: str | None = Field(None, description="The version/timestamp of the KB used")
+    vector_filter_provenance: dict[str, Any] | None = Field(
+        None,
+        description="Vector search filter state: original/effective/unsupported filters and relaxation status",
+    )
 
 
 class AnswerBundle(BaseModel):

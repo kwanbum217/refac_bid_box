@@ -254,6 +254,8 @@ class HybridRAGEngine:
             sql_elapsed_ms = (time.perf_counter() - t_sql_start) * 1000.0
 
         vector_elapsed_ms = 0.0
+        vector_hints: list[str] = []
+        vector_filter_provenance: dict[str, Any] | None = None
         if plan.use_vector and not vector_docs:
             t_vector_start = time.perf_counter()
             result = retrieve_semantic_context(plan)
@@ -261,6 +263,21 @@ class HybridRAGEngine:
             vector_docs = result.documents
             if not result.ok:
                 vector_failed = True
+            else:
+                vector_filter_provenance = result.as_filter_provenance()
+                if result.filter_relaxed:
+                    vector_hints.append(
+                        "지식베이스 검색 필터가 완화되어 필터 조건 밖 문서가 반환되었을 수 있습니다."
+                    )
+                if result.unsupported_filters:
+                    unsupported_keys = ", ".join(sorted(result.unsupported_filters))
+                    vector_hints.append(
+                        f"지식베이스 검색에서 지원되지 않아 적용되지 않은 필터: {unsupported_keys}"
+                    )
+                if result.effective_filters and not result.documents:
+                    vector_hints.append(
+                        "지식베이스 필터 조건에 맞는 문서가 0건이라 문맥 없이 답변합니다."
+                    )
 
         kb_status_elapsed_ms = 0.0
         if plan.use_kb_status and kb_status is None and db is not None:
@@ -278,6 +295,7 @@ class HybridRAGEngine:
             dict.fromkeys(
                 plan.insufficiency_hints
                 + (structured_data.get("insufficiency_hints", []) if structured_data else [])
+                + vector_hints
             )
         )
         if vector_failed:
@@ -291,6 +309,7 @@ class HybridRAGEngine:
             items=evidence_items,
             insufficiency_hints=hints,
             kb_version=str(kb_status.get("updated_at", "")) if kb_status else None,
+            vector_filter_provenance=vector_filter_provenance,
         )
 
         context_text = _compose_context_text(plan, structured_data, vector_docs, kb_status)

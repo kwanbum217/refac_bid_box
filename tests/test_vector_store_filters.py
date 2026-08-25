@@ -1,13 +1,13 @@
 """
 tests/test_vector_store_filters.py
 
-ChromaDB 메타데이터 where 절 변환 및 완화(fallback) 재검색 단위 테스트.
+ChromaDB 메타데이터 where 절 변환 및 필터 검색 단위 테스트.
 - (a) category 가 있으면 where 에 들어가는지
 - (b) 결과 질의면 has_result=True 가 추가되는지
 - (c) 결과 질의가 아니면 has_result 가 없는지
 - (d) date_from/date_to/institution_name 이 where 로 새어 나가지 않는지
 - (e) 조건 둘 이상이면 $and 로 묶이는지
-- (f) 필터 결과 0건이면 완화 재검색이 일어나고 그 사실이 표시되는지
+- (f) 필터 결과 0건이면 무필터 재검색 없이 빈 결과로 처리하고 프로비넌스를 기록하는지
 """
 
 from typing import Any
@@ -151,8 +151,12 @@ def test_retrieve_semantic_context_applies_where_to_chroma(monkeypatch):
     assert {"has_result": True} in call["where"]["$and"]
 
 
-def test_retrieve_semantic_context_fallback_relaxation_when_zero_results(monkeypatch):
-    """(f) 필터 적용 검색 결과가 0건이면 필터 없이 완화 재검색을 수행하고 relaxed=True 가 설정되어야 합니다."""
+def test_retrieve_semantic_context_fail_closed_when_filter_miss(monkeypatch):
+    """P1 회귀: Frgcpt/has_result=True 필터 miss가 Cnstwk/has_result=False 문서를 반환해서는 안 됩니다.
+
+    필터 적용 검색 결과가 0건이면 무필터 재검색 없이 빈 결과(empty success)로
+    처리합니다. Chroma query 호출은 1회뿐이며, 완화 여부는 False 로 남습니다.
+    """
     recorded_calls: list[dict[str, Any]] = []
 
     class MockCollection:
@@ -161,15 +165,10 @@ def test_retrieve_semantic_context_fallback_relaxation_when_zero_results(monkeyp
             recorded_calls.append(
                 {"query_texts": query_texts, "n_results": n_results, "where": where}
             )
-            # 첫 번째 호출(where 필터 있음)에서는 0건 반환
             if where is not None:
                 return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
-            # 두 번째 호출(where 필터 없음)에서는 완화 결과 반환
-            return {
-                "documents": [["완화 재검색으로 발견된 대체 공고 문서"]],
-                "metadatas": [[{"category": "Cnstwk", "has_result": False}]],
-                "distances": [[0.35]],
-            }
+            # 무필터 재검색 경로가 호출되면 P1 이 재발한 것입니다.
+            raise AssertionError("필터 해제 재검색이 실행되었습니다 (fail-closed 위반)")
 
     class MockChroma:
         @staticmethod
@@ -183,22 +182,32 @@ def test_retrieve_semantic_context_fallback_relaxation_when_zero_results(monkeyp
 
     plan = RetrievalPlan(
         semantic_query="희귀 특수 공사의 낙찰업체와 낙찰금액",
-        filters={"category": "Frgcpt"},
+        filters={"category": "Frgcpt", "date_from": "2026-01-01"},
         top_k=5,
     )
     result = retrieve_semantic_context(plan)
 
     assert isinstance(result, SemanticSearchResult)
     assert result.ok is True
-    assert result.relaxed is True
-    assert result.filter_relaxed is True
-    assert len(result.documents) == 1
-    assert result.documents[0]["document"] == "완화 재검색으로 발견된 대체 공고 문서"
+    assert result.relaxed is False
+    assert result.filter_relaxed is False
+    assert result.documents == []
+    assert result.error is None
 
-    # 총 2회 호출: 1회차 where 포함, 2회차 where 없음
-    assert len(recorded_calls) == 2
-    assert recorded_calls[0]["where"] is not None
-    assert recorded_calls[1]["where"] is None
+    assert len(recorded_calls) == 1
+    call = recorded_calls[0]
+    assert call["where"] is not None
+    assert {"category": "Frgcpt"} in call["where"]["$and"]
+    assert {"has_result": True} in call["where"]["$and"]
+
+    assert result.original_filters == {"category": "Frgcpt", "date_from": "2026-01-01"}
+    assert result.effective_filters == {"$and": [{"category": "Frgcpt"}, {"has_result": True}]}
+    assert result.unsupported_filters == {"date_from": "2026-01-01"}
+
+    provenance = result.as_filter_provenance()
+    assert provenance["original_filters"]["category"] == "Frgcpt"
+    assert provenance["unsupported_filters"] == {"date_from": "2026-01-01"}
+    assert provenance["filter_relaxed"] is False
 
 
 @pytest.mark.asyncio
