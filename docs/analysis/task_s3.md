@@ -31,7 +31,7 @@
 ## 3. 결함 후보 상세 분석
 
 ### 3.1 [F1] 읽기 전용 워커의 파일 수정이 허용 범위 내로 판정되는 결함 (판정 오염)
-- **파일:줄번호**: [`scripts/orca_contract.py:228-230`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/scripts/orca_contract.py#L228-L230)
+- **파일:줄번호**: [`scripts/orca_contract.py:228-230`](../../scripts/orca_contract.py#L228-L230)
 - **삼키는 기전**:
   ```python
   def scope_excess(paths: list[str], allowed: list[str]) -> list[str]:
@@ -50,7 +50,7 @@
 ---
 
 ### 3.2 [F2] finalize 시 테스트가 생략된 채 게이트 통과로 승격되는 결함 (판정 오염 / 실행 은폐)
-- **파일:줄번호**: [`scripts/orca_taskctl.py:1005-1018`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/scripts/orca_taskctl.py#L1005-L1018)
+- **파일:줄번호**: [`scripts/orca_taskctl.py:1005-1018`](../../scripts/orca_taskctl.py#L1005-L1018)
 - **삼키는 기전**:
   `finalize_task`가 `orca_level1_gate.py`를 실행할 때 `--capsule`, `--repo`, `--base`, `--branch`, `--json`만 전달하고, Capsule 내의 `verification_commands`를 파싱하여 `--tests` 인자로 전달하지 않으며 `--strict` 플래그도 설정하지 않습니다.
   `orca_level1_gate.py` 내부에서는 `--tests`가 없으므로 Gate 3(테스트)를 `status="skipped"`로 설정하고, `--strict`가 아니므로 `failed_count == 0`에 따라 최종 판정을 `verdict="pass"`, `exit_code=0`으로 산출합니다 (`orca_level1_gate.py:633-634`).
@@ -62,7 +62,7 @@
 ---
 
 ### 3.3 [F3] 지정된 worktree 부재 시 메인 저장소로 자동 폴백하여 검증을 왜곡하는 결함 (실행 은폐)
-- **파일:줄번호**: [`scripts/orca_taskctl.py:1004`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/scripts/orca_taskctl.py#L1004)
+- **파일:줄번호**: [`scripts/orca_taskctl.py:1004`](../../scripts/orca_taskctl.py#L1004)
 - **삼키는 기전**:
   ```python
   target_repo = worktree_path if (worktree_path and worktree_path.exists()) else repo
@@ -76,7 +76,7 @@
 ---
 
 ### 3.4 [F4] 코드 변경 작업에서 커밋/변경 파일 0건이 성공으로 승격되는 결함 (판정 오염)
-- **파일:줄번호**: [`scripts/summarize_worker_done.py:175`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/scripts/summarize_worker_done.py#L175)
+- **파일:줄번호**: [`scripts/summarize_worker_done.py:175`](../../scripts/summarize_worker_done.py#L175)
 - **삼키는 기전**:
   ```python
   if status == "succeeded" and commit_count == 0 and len(changed_files) > 0:
@@ -91,7 +91,7 @@
 ---
 
 ### 3.5 [F5] 호스트-컨테이너 간 DB 불일치 시 종료 코드 0 반환 (데이터 무손실 직결)
-- **파일:줄번호**: [`scripts/compare_host_container_db.py:159-163`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/scripts/compare_host_container_db.py#L159-L163)
+- **파일:줄번호**: [`scripts/compare_host_container_db.py:159-163`](../../scripts/compare_host_container_db.py#L159-L163)
 - **삼키는 기전**:
   ```python
   if diff.empty and mismatch.empty:
@@ -109,7 +109,7 @@
 ---
 
 ### 3.6 [F6] CLI 비정상 텍스트 출력을 기동 성공으로 오인하는 결함 (실행 은폐)
-- **파일:줄번호**: [`scripts/orca_taskctl.py:741-749`](file:///Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/scripts/orca_taskctl.py#L741-L749)
+- **파일:줄번호**: [`scripts/orca_taskctl.py:741-749`](../../scripts/orca_taskctl.py#L741-L749)
 - **삼키는 기전**:
   ```python
   def _launch_succeeded(stdout: str) -> bool:

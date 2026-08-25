@@ -180,15 +180,13 @@ def resolve_link_target(
     target_as_path = Path(target_path)
 
     # 6. 절대 경로 처리
+    #
+    # 저장소 루트 기준 절대 표기(예: /docs/context/CURRENT_STATE.md)만 허용한다.
+    # 작성자 머신의 실제 절대 경로(/Users/..., C:\\...)를 존재한다는 이유로
+    # 통과시키면 그 머신에서만 green 이 된다. 2026-08-25 에 이 fail-open 때문에
+    # 로컬은 통과하고 CI 3플랫폼이 33건으로 실패했다.
     if target_as_path.is_absolute():
-        # 시스템 상에 실제로 존재하는 절대 경로인 경우
-        if target_as_path.exists():
-            return target_as_path, ""
-        # 저장소 루트 기준 절대 경로 표기 (예: /docs/context/CURRENT_STATE.md)
         rel_to_root = (root_dir / target_path.lstrip("/")).resolve()
-        if rel_to_root.exists():
-            return rel_to_root, ""
-        # 존재하지 않으면 루트 기준 또는 시스템 절대 경로로 반환
         return rel_to_root, ""
 
     # 7. 현재 마크다운 파일 위치 기준 상대 경로
