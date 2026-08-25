@@ -1,0 +1,2704 @@
+{
+  "schema": "LLM_QUALITY_MEASURE_V2",
+  "timestamp": "2026-08-25T05:10:09.724200+00:00",
+  "model_label": "gemma4:e4b",
+  "expected_model": "gemma4:e4b",
+  "serving_model_start": "gemma4:e4b",
+  "serving_model_end": "gemma4:e4b",
+  "serving_model_consistent": true,
+  "model_match_expected": true,
+  "base_url_validated": true,
+  "fixture_path": "data/eval/llm_quality_fixture_v1.json",
+  "fixture_version": "2.0.0",
+  "repetitions": 3,
+  "item_count": 19,
+  "request_failures": 0,
+  "provenance": {
+    "git_sha": "1d51d381fd27348466f62e6f0914f6f90fb854ef",
+    "git_dirty": false,
+    "source_identity_start": {
+      "git_sha": "1d51d381fd27348466f62e6f0914f6f90fb854ef",
+      "git_dirty": false
+    },
+    "source_identity_end": {
+      "git_sha": "1d51d381fd27348466f62e6f0914f6f90fb854ef",
+      "git_dirty": false
+    },
+    "serving_model_start": "gemma4:e4b",
+    "serving_model_end": "gemma4:e4b",
+    "serving_model_consistent": true,
+    "base_url": "http://localhost:8000",
+    "app_container": "refac_bid_box-app-1",
+    "timestamp_start_utc": "2026-08-25T05:10:09.723620+00:00",
+    "timestamp_end_utc": "2026-08-25T05:10:09.724200+00:00"
+  },
+  "results": [
+    {
+      "id": "q01",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 5474.06,
+      "ok": true,
+      "answer": "요청하신 '봉화 공설운동장 리모델링 사업 건축공사 감리 용역'에 대한 정보는 다음과 같습니다.\n\n**1. 낙찰된 건 (Source [3]):**\n*   **공고번호:** R26BK01659912-001 [3]\n*   **수요기관:** 경상북도 봉화군 체육시설사업소 [3]\n*   **낙찰업체:** 건축사사무소 가온 [3]\n*   **낙찰금액:** 46,602,100원 [3]\n\n**2. 진행 중이거나 결과 미수집된 건 (Source [4]):**\n*   이 건에 대한 정보는 낙찰업체 및 낙찰금액 정보가 포함되어 있지 않습니다. [4]\n\n**3. 건설폐기물 처리 용역 (Source [5]):**\n*   이것은 감리 용역이 아닌 '건설폐기물 처리 용역' 건입니다.\n*   **공고번호:** R26BK01671550-000 [5]\n*   **수요기관:** 경상북도 봉화군 체육시설사업소 [5]\n*   **낙찰업체:** 주식회사 영동환경 [5]\n*   **낙찰금액:** 21,999,000원 [5]\n\n근거: 혼합 근거",
+      "answer_chars": 511,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 46,602,100원 임",
+          "expected_value": "46602100",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.5100% 임",
+          "expected_value": "88.5100",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체를 다른 업체로 허위 기재하거나 금액 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015927"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015927",
+        "bid_10038558",
+        "bid_10151492",
+        "bid_7922364",
+        "bid_5987678"
+      ],
+      "evidence_hit": [
+        "bid_10015927"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q01",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 5451.757,
+      "ok": true,
+      "answer": "요청하신 '봉화 공설운동장 리모델링 사업 건축공사 감리 용역'에 대한 정보는 다음과 같습니다.\n\n**낙찰된 건:**\n*   **공고번호:** R26BK01659912-001 [3]\n*   **수요기관:** 경상북도 봉화군 체육시설사업소 [3]\n*   **낙찰업체:** 건축사사무소 가온 [3]\n*   **낙찰금액:** 46,602,100원 [3]\n\n**진행 중이거나 결과 미수집된 건:**\n*   **공고번호:** R26BK01659912-000 [4]\n*   **수요기관:** 경상북도 봉화군 체육시설사업소 [4]\n\n**참고:** '봉화 공설운동장 리모델링 사업 건축공사 감리 용역'과 관련된 다른 용역 건은 다음과 같습니다.\n*   **공고번호:** R26BK01671550-000 [5]\n*   **수요기관:** 경상북도 봉화군 체육시설사업소 [5]\n*   **낙찰업체:** 주식회사 영동환경 [5]\n*   **낙찰금액:** 21,999,000원 [5]\n\n근거: 혼합 근거",
+      "answer_chars": 491,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 46,602,100원 임",
+          "expected_value": "46602100",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.5100% 임",
+          "expected_value": "88.5100",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체를 다른 업체로 허위 기재하거나 금액 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015927"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015927",
+        "bid_10038558",
+        "bid_10151492",
+        "bid_7922364",
+        "bid_5987678"
+      ],
+      "evidence_hit": [
+        "bid_10015927"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q01",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 5194.174,
+      "ok": true,
+      "answer": "요청하신 '봉화 공설운동장 리모델링 사업 건축공사 감리 용역'에 대한 정보는 다음과 같습니다.\n\n**1. 낙찰된 건 (Source [3]):**\n*   **공고번호:** R26BK01659912-001\n*   **수요기관:** 경상북도 봉화군 체육시설사업소\n*   **낙찰업체:** 건축사사무소 가온\n*   **낙찰금액:** 46,602,100원\n\n**2. 진행 중 또는 결과 미수집 건 (Source [4]):**\n*   이 건은 낙찰 상태가 '진행 중 또는 결과 미수집' 상태입니다.\n\n**3. 참고 정보:**\n*   Source [5]에는 동일한 '봉화 공설운동장 리모델링 사업'과 관련된 '건설폐기물 처리 용역' 건이 있으며, 이 경우 낙찰업체는 주식회사 영동환경이고 낙찰금액은 21,999,000원입니다.\n\n<canvas class='chat-chart' data-type='bar' data-labels='낙찰 완료 건, 진행 중 건' data-values='1, 1' data-title='봉화 공설운동장 리모델링 사업 관련 공고 현황'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 552,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 46,602,100원 임",
+          "expected_value": "46602100",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.5100% 임",
+          "expected_value": "88.5100",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체를 다른 업체로 허위 기재하거나 금액 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015927"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015927",
+        "bid_10038558",
+        "bid_10151492",
+        "bid_7922364",
+        "bid_5987678"
+      ],
+      "evidence_hit": [
+        "bid_10015927"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q02",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 4083.29,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트 내에서는 '애니메이션 극장판 안녕 자두야 배추마을 엄마 구출 대작전 포스트프로덕션 용역'에 대한 정보가 없어 수요기관, 최종 낙찰금액 및 낙찰률을 확인할 수 없습니다 [1], [2], [3], [4], [5].\n\n근거: 혼합 근거",
+      "answer_chars": 140,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 33,000,000원 임",
+          "expected_value": "33000000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 100.0000% 임",
+          "expected_value": "100.0000",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률을 100%가 아닌 임의의 수치로 서술"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015878"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_40995",
+        "bid_21847",
+        "bid_9945772",
+        "bid_5841786",
+        "bid_9896831"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": 0.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": true,
+      "refusal_correct": false
+    },
+    {
+      "id": "q02",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1375.961,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트 내에서는 '애니메이션 극장판 안녕 자두야 배추마을 엄마 구출 대작전 포스트프로덕션 용역'에 대한 정보가 없어 수요기관, 최종 낙찰금액, 낙찰률을 확인할 수 없습니다. [1], [2], [3], [4], [5]\n\n근거: 혼합 근거",
+      "answer_chars": 139,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 33,000,000원 임",
+          "expected_value": "33000000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 100.0000% 임",
+          "expected_value": "100.0000",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률을 100%가 아닌 임의의 수치로 서술"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015878"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_40995",
+        "bid_21847",
+        "bid_9945772",
+        "bid_5841786",
+        "bid_9896831"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": 0.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": true,
+      "refusal_correct": false
+    },
+    {
+      "id": "q02",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1594.328,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트 내에서는 '애니메이션 극장판 안녕 자두야 배추마을 엄마 구출 대작전 포스트프로덕션 용역'에 대한 정보를 찾을 수 없습니다 [1], [2], [3], [4], [5].\n\n따라서 해당 용역의 수요기관, 최종 낙찰금액, 낙찰률에 대한 정보는 확인할 수 없습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 166,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 33,000,000원 임",
+          "expected_value": "33000000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 100.0000% 임",
+          "expected_value": "100.0000",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률을 100%가 아닌 임의의 수치로 서술"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015878"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_40995",
+        "bid_21847",
+        "bid_9945772",
+        "bid_5841786",
+        "bid_9896831"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": 0.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": true,
+      "refusal_correct": false
+    },
+    {
+      "id": "q03",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 82500.171,
+      "ok": true,
+      "answer": "요청하신 '대구불로초등학교 급식시설 환경개선 및 기타 전기공사 재해예방기술지도 용역'에 대한 낙찰 정보는 다음과 같습니다.\n\n*   **낙찰업체:** 대경안전전통소 [3]\n*   **낙찰금액:** 1,585,800원 [3]\n*   **낙찰률:** 90.1390% [3]\n\n이 공고는 대구광역시교육청 대구광역시동부교육지원청에서 진행된 용역 건입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 209,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 1,585,800원 임",
+          "expected_value": "1585800",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.1390% 임",
+          "expected_value": "90.1390",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액이나 낙찰률 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015925"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015925",
+        "bid_10015914",
+        "bid_10038652",
+        "bid_10022900",
+        "bid_7951662"
+      ],
+      "evidence_hit": [
+        "bid_10015925"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q03",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 2285.118,
+      "ok": true,
+      "answer": "요청하신 '대구불로초등학교 급식시설 환경개선 및 기타 전기공사 재해예방기술지도 용역'의 낙찰 정보는 다음과 같습니다.\n\n*   **낙찰업체:** 대경안전전통소 [3]\n*   **낙찰금액:** 1,585,800원 [3]\n*   **낙찰률:** 90.1390% [3]\n\n이 공고는 대구광역시교육청 대구광역시동부교육지원청에서 진행된 용역 건입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 206,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 1,585,800원 임",
+          "expected_value": "1585800",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.1390% 임",
+          "expected_value": "90.1390",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액이나 낙찰률 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015925"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015925",
+        "bid_10015914",
+        "bid_10038652",
+        "bid_10022900",
+        "bid_7951662"
+      ],
+      "evidence_hit": [
+        "bid_10015925"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q03",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 2288.937,
+      "ok": true,
+      "answer": "요청하신 '대구불로초등학교 급식시설 환경개선 및 기타 전기공사 재해예방기술지도 용역'의 낙찰 정보는 다음과 같습니다:\n\n*   **낙찰업체:** 대경안전전통소 [3]\n*   **낙찰금액:** 1,585,800원 [3]\n*   **낙찰률:** 90.1390% [3]\n\n이 공고는 대구광역시교육청 대구광역시동부교육지원청에서 진행된 용역 건입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 206,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 1,585,800원 임",
+          "expected_value": "1585800",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.1390% 임",
+          "expected_value": "90.1390",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액이나 낙찰률 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015925"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015925",
+        "bid_10015914",
+        "bid_10038652",
+        "bid_10022900",
+        "bid_7951662"
+      ],
+      "evidence_hit": [
+        "bid_10015925"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q04",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 71821.892,
+      "ok": true,
+      "answer": "요청하신 경기도 양평군의 2026년 통학버스 임차용역(동부권 및 서부권)에 대한 낙찰 결과 비교 분석입니다.\n\n**1. 2026년 통학버스 임차용역 비교 분석**\n\n| 구분 | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n| **서부권** | 2026년 통학버스 임차용역(서부권,단가계약)(입찰대행) | 경기도 양평군 | 주식회사 뉴월드컵고속관광여행사 | 742,500원 | 88.5470% |\n| **동부권** | 2026년 통학버스 임차용역(동부권,단가계약)(입찰대행) | 경기도 양평군 | 자유고속관광(주) | 1,070,000원 | 94.8500% |\n| **서부권 (추가)** | 2026년 통학버스 임차용역(서부권,단가계약)(입찰대행) | 경기도 양평군 | 주식회사 뉴월드컵고속관광여행사 | 941,800원 | 89.3550% |\n\n*   **서부권**의 경우, 두 건의 기록이 확인됩니다. 첫 번째 건(3월)의 낙찰률은 88.5470%였으며, 두 번째 건(8월)의 낙찰률은 89.3550%로 비교적 유사한 수준을 보였습니다 [3], [5].\n*   **동부권**의 경우, 낙찰률이 94.8500%로 세 건 중 가장 높은 낙찰률을 기록했습니다 [4].\n\n**2. 요약 비교**\n\n*   **낙찰업체:** 서부권은 '주식회사 뉴월드컵고속관광여행사'가 낙찰되었고, 동부권은 '자유고속관광(주)'가 낙찰되었습니다 [3], [4], [5].\n*   **낙찰금액 및 낙찰률:** 동부권의 낙찰률(94.8500%)이 서부권의 두 건(88.5470%, 89.3550%)보다 높게 나타났습니다 [3], [4], [5].\n\n<canvas class='chat-chart' data-type='bar' data-labels='서부권(3월), 동부권, 서부권(8월)' data-values='88.5470,94.8500,89.3550' data-title='통학버스 임차용역 낙찰률 비교'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 1013,
+      "numeric_facts": [
+        {
+          "statement": "동부권(bid_10015865)의 낙찰금액은 1,074,000원 임",
+          "expected_value": "1074000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "동부권(bid_10015865)의 낙찰률은 90.1950% 임",
+          "expected_value": "90.1950",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰금액은 941,800원 임",
+          "expected_value": "941800",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰률은 89.3550% 임",
+          "expected_value": "89.3550",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터나 통계가 없어 비교 분석이 불가능하다고 말한 뒤 곧바로 동부권과 서부권의 비교를 수행하는 자기모순",
+        "통계가 없다고 거절하면서 임의의 비교 수치를 제시하는 행위"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015865",
+        "bid_10015863"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10077126",
+        "bid_10077158",
+        "bid_10015863",
+        "bid_10015865",
+        "bid_9901274"
+      ],
+      "evidence_hit": [
+        "bid_10015865",
+        "bid_10015863"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q04",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 11670.014,
+      "ok": true,
+      "answer": "요청하신 경기도 양평군의 2026년 통학버스 임차용역(동부권 및 서부권)에 대한 낙찰 결과를 비교 분석해 드립니다.\n\n**1. 2026년 통학버스 임차용역 비교 분석**\n\n| 구분 | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n| **서부권** | 2026년 통학버스 임차용역(서부권,단가계약)(입찰대행) | 경기도 양평군 | 주식회사 뉴월드컵고속관광여행사 | 742,500원 | 88.5470% |\n| **동부권** | 2026년 통학버스 임차용역(동부권,단가계약)(입찰대행) | 경기도 양평군 | 자유고속관광(주) | 1,070,000원 | 94.8500% |\n| **서부권 (추가)** | 2026년 통학버스 임차용역(서부권,단가계약)(입찰대행) | 경기도 양평군 | 주식회사 뉴월드컵고속관광여행사 | 941,800원 | 89.3550% |\n\n*   **서부권**의 경우, 두 건의 기록이 확인됩니다. 첫 번째 건(3월)의 낙찰률은 88.5470%였으며, 두 번째 건(8월)의 낙찰률은 89.3550%로, 전반적으로 88%~89%대의 낙찰률을 보였습니다 [3], [5].\n*   **동부권**의 경우, 낙찰률이 94.8500%로, 비교된 세 건 중 가장 높은 낙찰률을 기록했습니다 [4].\n\n**2. 요약 비교**\n\n*   **낙찰률:** 동부권(94.8500%)이 서부권(88.5470% 및 89.3550%)보다 높은 낙찰률을 기록했습니다 [4], [3], [5].\n*   **낙찰업체:** 서부권의 두 건 모두 '주식회사 뉴월드컵고속관광여행사'가 낙찰되었으나, 동부권은 '자유고속관광(주)'가 낙찰되었습니다 [3], [5], [4].\n\n<canvas class='chat-chart' data-type='bar' data-labels='서부권 (3월), 동부권, 서부권 (8월)' data-values='88.5470,94.8500,89.3550' data-title='통학버스 임차용역 낙찰률 비교'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 1031,
+      "numeric_facts": [
+        {
+          "statement": "동부권(bid_10015865)의 낙찰금액은 1,074,000원 임",
+          "expected_value": "1074000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "동부권(bid_10015865)의 낙찰률은 90.1950% 임",
+          "expected_value": "90.1950",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰금액은 941,800원 임",
+          "expected_value": "941800",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰률은 89.3550% 임",
+          "expected_value": "89.3550",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터나 통계가 없어 비교 분석이 불가능하다고 말한 뒤 곧바로 동부권과 서부권의 비교를 수행하는 자기모순",
+        "통계가 없다고 거절하면서 임의의 비교 수치를 제시하는 행위"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015865",
+        "bid_10015863"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10077126",
+        "bid_10077158",
+        "bid_10015863",
+        "bid_10015865",
+        "bid_9901274"
+      ],
+      "evidence_hit": [
+        "bid_10015865",
+        "bid_10015863"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q04",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 11433.905,
+      "ok": true,
+      "answer": "요청하신 경기도 양평군의 2026년 통학버스 임차용역(동부권 및 서부권)에 대한 낙찰 결과 비교 분석입니다.\n\n**1. 2026년 통학버스 임차용역 비교 분석**\n\n| 구분 | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n| **서부권** | 2026년 통학버스 임차용역(서부권,단가계약)(입찰대행) | 경기도 양평군 | 주식회사 뉴월드컵고속관광여행사 | 742500원 | 88.5470% |\n| **동부권** | 2026년 통학버스 임차용역(동부권,단가계약)(입찰대행) | 경기도 양평군 | 자유고속관광(주) | 1070000원 | 94.8500% |\n| **서부권 (추가)** | 2026년 통학버스 임차용역(서부권,단가계약)(입찰대행) | 경기도 양평군 | 주식회사 뉴월드컵고속관광여행사 | 941800원 | 89.3550% |\n\n*   **서부권**의 경우, 두 건의 기록이 확인됩니다. 첫 번째 건(3월)의 낙찰률은 88.5470%였으며, 두 번째 건(8월)의 낙찰률은 89.3550%로 비교적 유사한 수준을 보였습니다 [3], [5].\n*   **동부권**의 경우, 낙찰률이 94.8500%로 세 건 중 가장 높은 낙찰률을 기록했습니다 [4].\n\n**2. 요약 비교**\n\n*   **낙찰업체:** 서부권은 '주식회사 뉴월드컵고속관광여행사'가 낙찰되었으며, 동부권은 '자유고속관광(주)'가 낙찰되었습니다 [3], [4], [5].\n*   **낙찰금액 및 낙찰률:** 동부권의 낙찰률(94.8500%)이 서부권의 낙찰률(88.5470% 및 89.3550%)보다 높게 나타났습니다 [3], [4], [5].\n\n<canvas class='chat-chart' data-type='bar' data-labels='서부권(3월),동부권,서부권(8월)' data-values='88.5470,94.8500,89.3550' data-title='통학버스 임차용역 낙찰률 비교'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 1009,
+      "numeric_facts": [
+        {
+          "statement": "동부권(bid_10015865)의 낙찰금액은 1,074,000원 임",
+          "expected_value": "1074000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "동부권(bid_10015865)의 낙찰률은 90.1950% 임",
+          "expected_value": "90.1950",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰금액은 941,800원 임",
+          "expected_value": "941800",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰률은 89.3550% 임",
+          "expected_value": "89.3550",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터나 통계가 없어 비교 분석이 불가능하다고 말한 뒤 곧바로 동부권과 서부권의 비교를 수행하는 자기모순",
+        "통계가 없다고 거절하면서 임의의 비교 수치를 제시하는 행위"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015865",
+        "bid_10015863"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10077126",
+        "bid_10077158",
+        "bid_10015863",
+        "bid_10015865",
+        "bid_9901274"
+      ],
+      "evidence_hit": [
+        "bid_10015865",
+        "bid_10015863"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q05",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 6965.317,
+      "ok": true,
+      "answer": "요청하신 '예일여중 인조잔디 철거운반 및 재활용처리(폐기물처리포함) 용역'에 대한 정보는 다음과 같습니다.\n\n**낙찰된 건:**\n*   **공고번호:** R26BK01660507-001 [3]\n*   **낙찰업체:** 장월조경(주) [3]\n*   **낙찰금액:** 59,716,640원 [3]\n\n**진행 중이거나 결과 미수집된 건:**\n*   **공고번호:** R26BK01660507-000 [4]\n\n참고로, 이 용역은 서울특별시서부교육청 예일여자중학교에서 발주한 용역이며, 최초 공고일은 2026-08-03 11:32:14입니다 [3].\n\n<canvas class='chat-chart' data-type='bar' data-labels='낙찰된 건,진행 중인 건' data-values='1,1' data-title='예일여중 인조잔디 용역 공고 현황'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 445,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 59,716,640원 임",
+          "expected_value": "59716640",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0510% 임",
+          "expected_value": "88.0510",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체나 금액 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015923"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015923",
+        "bid_10038649",
+        "bid_7951676",
+        "bid_10051260",
+        "bid_9970201"
+      ],
+      "evidence_hit": [
+        "bid_10015923"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q05",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 3457.493,
+      "ok": true,
+      "answer": "요청하신 '예일여중 인조잔디 철거운반 및 재활용처리(폐기물처리포함) 용역'에 대한 정보는 다음과 같습니다.\n\n**낙찰된 건:**\n\n*   **공고번호:** R26BK01660507-001 [3]\n*   **낙찰업체:** 장월조경(주) [3]\n*   **낙찰금액:** 59,716,640원 [3]\n\n**진행 중인/결과 미수집 건:**\n\n*   **공고번호:** R26BK01660507-000 [4]\n*   **낙찰업체:** 정보 없음 (낙찰상태: 진행 중 또는 결과 미수집) [4]\n*   **낙찰금액:** 정보 없음 [4]\n\n근거: 혼합 근거",
+      "answer_chars": 304,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 59,716,640원 임",
+          "expected_value": "59716640",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0510% 임",
+          "expected_value": "88.0510",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체나 금액 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015923"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015923",
+        "bid_10038649",
+        "bid_7951676",
+        "bid_10051260",
+        "bid_9970201"
+      ],
+      "evidence_hit": [
+        "bid_10015923"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q05",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 4177.023,
+      "ok": true,
+      "answer": "'예일여중 인조잔디 철거운반 및 재활용처리(폐기물처리포함) 용역'에 대한 정보는 다음과 같습니다.\n\n*   **공고번호:** R26BK01660507-001 [3]\n*   **낙찰업체:** 장월조경(주) [3]\n*   **낙찰금액:** 59,716,640원 [3]\n\n참고로, 해당 공고는 서울특별시서부교육청 예일여자중학교에서 진행된 용역이며, 낙찰률은 88.0510%입니다 [3].\n\n<canvas class='chat-chart' data-type='bar' data-labels='공고번호, 낙찰업체, 낙찰금액' data-values='R26BK01660507-001, 장월조경(주), 59716640원' data-title='예일여중 인조잔디 용역 상세 정보'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 393,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 59,716,640원 임",
+          "expected_value": "59716640",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0510% 임",
+          "expected_value": "88.0510",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체나 금액 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015923"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015923",
+        "bid_10038649",
+        "bid_7951676",
+        "bid_10051260",
+        "bid_9970201"
+      ],
+      "evidence_hit": [
+        "bid_10015923"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q06",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 4685.155,
+      "ok": true,
+      "answer": "'남정공공하수처리시설 증설사업 설계단계 건설사업관리용역'에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 경상북도 영덕군 물관리사업소 [3]\n*   **낙찰업체:** 주식회사 대흥토목이엔지 [3]\n*   **낙찰금액:** 50,329,400원 [3]\n\n이 공고는 2026년 8월 3일에 공고되었으며, 낙찰률은 88.2890%입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 206,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 50,329,400원 임",
+          "expected_value": "50329400",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.2890% 임",
+          "expected_value": "88.2890",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015920"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015920",
+        "bid_10087765",
+        "bid_10058137",
+        "bid_10066833",
+        "bid_10087764"
+      ],
+      "evidence_hit": [
+        "bid_10015920"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q06",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 2317.571,
+      "ok": true,
+      "answer": "'남정공공하수처리시설 증설사업 설계단계 건설사업관리용역'에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 경상북도 영덕군 물관리사업소 [3]\n*   **낙찰업체:** 주식회사 대흥토목이엔지 [3]\n*   **낙찰금액:** 50,329,400원 [3]\n\n이 공고는 2026년 8월 3일에 공고되었으며, 낙찰률은 88.2890%입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 206,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 50,329,400원 임",
+          "expected_value": "50329400",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.2890% 임",
+          "expected_value": "88.2890",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015920"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015920",
+        "bid_10087765",
+        "bid_10058137",
+        "bid_10066833",
+        "bid_10087764"
+      ],
+      "evidence_hit": [
+        "bid_10015920"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q06",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1722.161,
+      "ok": true,
+      "answer": "'남정공공하수처리시설 증설사업 설계단계 건설사업관리용역'에 대한 정보는 다음과 같습니다 [3]:\n\n*   **수요기관:** 경상북도 영덕군 물관리사업소 [3]\n*   **낙찰업체:** 주식회사 대흥토목이엔지 [3]\n*   **낙찰금액:** 50,329,400원 [3]\n\n근거: 혼합 근거",
+      "answer_chars": 160,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 50,329,400원 임",
+          "expected_value": "50329400",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.2890% 임",
+          "expected_value": "88.2890",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015920"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015920",
+        "bid_10087765",
+        "bid_10058137",
+        "bid_10066833",
+        "bid_10087764"
+      ],
+      "evidence_hit": [
+        "bid_10015920"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q07",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 65660.596,
+      "ok": true,
+      "answer": "'인천공항 T2 단기 주차타워 건립 사전 타당성조사 용역'에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 인천국제공항공사 [3]\n*   **낙찰업체:** 팀플렉사 주식회사 [3]\n*   **낙찰률:** 99.6120% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 143,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 31,460,000원 임",
+          "expected_value": "31460000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 99.6120% 임",
+          "expected_value": "99.6120",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 99.6120% 외 임의 수치 작성"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015856"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015856",
+        "bid_10153734",
+        "bid_10008428",
+        "bid_5973590",
+        "bid_5964736"
+      ],
+      "evidence_hit": [
+        "bid_10015856"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q07",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1622.597,
+      "ok": true,
+      "answer": "요청하신 '인천공항 T2 단기 주차타워 건립 사전 타당성조사 용역'에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 인천국제공항공사 [3]\n*   **낙찰업체:** 팀플렉사 주식회사 [3]\n*   **낙찰률:** 99.6120% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 148,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 31,460,000원 임",
+          "expected_value": "31460000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 99.6120% 임",
+          "expected_value": "99.6120",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 99.6120% 외 임의 수치 작성"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015856"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015856",
+        "bid_10153734",
+        "bid_10008428",
+        "bid_5973590",
+        "bid_5964736"
+      ],
+      "evidence_hit": [
+        "bid_10015856"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q07",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1536.128,
+      "ok": true,
+      "answer": "'인천공항 T2 단기 주차타워 건립 사전 타당성조사 용역'에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 인천국제공항공사 [3]\n*   **낙찰업체:** 팀플렉사 주식회사 [3]\n*   **낙찰률:** 99.6120% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 143,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 31,460,000원 임",
+          "expected_value": "31460000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 99.6120% 임",
+          "expected_value": "99.6120",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 99.6120% 외 임의 수치 작성"
+      ],
+      "expected_evidence_ids": [
+        "bid_10015856"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10015856",
+        "bid_10153734",
+        "bid_10008428",
+        "bid_5973590",
+        "bid_5964736"
+      ],
+      "evidence_hit": [
+        "bid_10015856"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q08",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 6729.564,
+      "ok": true,
+      "answer": "'2026년 금정산성 남문계단 및 문루 보수정비공사'의 정보는 다음과 같습니다:\n\n*   **수요기관:** 부산광역시 금정구 [3]\n*   **낙찰업체:** 주식회사 서오건설 [3]\n*   **낙찰금액:** 57,953,680원 [3]\n*   **낙찰률:** 90.5170% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 168,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 57,953,680원 임",
+          "expected_value": "57953680",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.5170% 임",
+          "expected_value": "90.5170",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952020"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952020",
+        "bid_1686308",
+        "bid_5971045",
+        "bid_5949324",
+        "bid_5988665"
+      ],
+      "evidence_hit": [
+        "bid_7952020"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q08",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1975.27,
+      "ok": true,
+      "answer": "요청하신 '2026년 금정산성 남문계단 및 문루 보수정비공사'의 정보는 다음과 같습니다:\n\n*   **수요기관:** 부산광역시 금정구 [3]\n*   **낙찰업체:** 주식회사 서오건설 [3]\n*   **낙찰금액:** 57,953,680원 [3]\n*   **낙찰률:** 90.5170% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 173,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 57,953,680원 임",
+          "expected_value": "57953680",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.5170% 임",
+          "expected_value": "90.5170",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952020"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952020",
+        "bid_1686308",
+        "bid_5971045",
+        "bid_5949324",
+        "bid_5988665"
+      ],
+      "evidence_hit": [
+        "bid_7952020"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q08",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1853.703,
+      "ok": true,
+      "answer": "2026년 금정산성 남문계단 및 문루 보수정비공사의 정보는 다음과 같습니다:\n\n*   **수요기관:** 부산광역시 금정구 [3]\n*   **낙찰업체:** 주식회사 서오건설 [3]\n*   **낙찰금액:** 57,953,680원 [3]\n*   **낙찰률:** 90.5170% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 166,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 57,953,680원 임",
+          "expected_value": "57953680",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.5170% 임",
+          "expected_value": "90.5170",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952020"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952020",
+        "bid_1686308",
+        "bid_5971045",
+        "bid_5949324",
+        "bid_5988665"
+      ],
+      "evidence_hit": [
+        "bid_7952020"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q09",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 3852.151,
+      "ok": true,
+      "answer": "'갈산고등학교 기숙사 수선 기계설비공사'의 정보는 다음과 같습니다:\n\n*   **공고번호**: R26BK01661156-000 [3]\n*   **낙찰업체**: 일진산업 주식회사 [3]\n*   **낙찰금액**: 127,963,740원 [3]\n\n근거: 혼합 근거",
+      "answer_chars": 144,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 127,963,740원 임",
+          "expected_value": "127963740",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.6140% 임",
+          "expected_value": "90.6140",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952018"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952018",
+        "bid_6003352",
+        "bid_9903075",
+        "bid_9902607",
+        "bid_5909143"
+      ],
+      "evidence_hit": [
+        "bid_7952018"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q09",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1669.635,
+      "ok": true,
+      "answer": "'갈산고등학교 기숙사 수선 기계설비공사'의 정보는 다음과 같습니다:\n\n*   **공고번호:** R26BK01661156-000 [3]\n*   **낙찰업체:** 일진산업 주식회사 [3]\n*   **낙찰금액:** 127,963,740원 [3]\n\n근거: 혼합 근거",
+      "answer_chars": 144,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 127,963,740원 임",
+          "expected_value": "127963740",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.6140% 임",
+          "expected_value": "90.6140",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952018"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952018",
+        "bid_6003352",
+        "bid_9903075",
+        "bid_9902607",
+        "bid_5909143"
+      ],
+      "evidence_hit": [
+        "bid_7952018"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q09",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1666.633,
+      "ok": true,
+      "answer": "'갈산고등학교 기숙사 수선 기계설비공사'의 정보는 다음과 같습니다:\n\n*   **공고번호**: R26BK01661156-000 [3]\n*   **낙찰업체**: 일진산업 주식회사 [3]\n*   **낙찰금액**: 127,963,740원 [3]\n\n근거: 혼합 근거",
+      "answer_chars": 144,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 127,963,740원 임",
+          "expected_value": "127963740",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.6140% 임",
+          "expected_value": "90.6140",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952018"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952018",
+        "bid_6003352",
+        "bid_9903075",
+        "bid_9902607",
+        "bid_5909143"
+      ],
+      "evidence_hit": [
+        "bid_7952018"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q10",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 5135.856,
+      "ok": true,
+      "answer": "'2026년 시공원 보수정비사업(봉제산)' 공사에 대한 정보는 다음과 같습니다.\n\n*   **수요기관:** 서울특별시 강서구 [3], [4], [5]\n*   **낙찰업체 및 낙찰금액:**\n    *   하나의 결과가 있는 건에 한해, 낙찰업체는 **(주)목전엘앤디**이며, 낙찰금액은 **151,886,530원**입니다 [3].\n    *   다른 두 건([4], [5])은 낙찰 상태가 '진행 중 또는 결과 미수집'입니다.\n\n이 정보는 2026년 8월 3일경에 공고된 건들을 기반으로 합니다 [3], [4], [5].\n\n근거: 혼합 근거",
+      "answer_chars": 301,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 151,886,530원 임",
+          "expected_value": "151886530",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.4670% 임",
+          "expected_value": "90.4670",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 및 금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952016"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952016",
+        "bid_7952007",
+        "bid_7952004",
+        "bid_7951732",
+        "bid_5950374"
+      ],
+      "evidence_hit": [
+        "bid_7952016"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q10",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 3560.439,
+      "ok": true,
+      "answer": "'2026년 시공원 보수정비사업(봉제산)' 공사에 대한 정보는 다음과 같습니다.\n\n*   **수요기관:** 서울특별시 강서구 [3], [4], [5]\n*   **낙찰업체 및 낙찰금액:**\n    *   한 건에 대해서는 **(주)목전엘앤디**가 낙찰했으며, 낙찰금액은 **151,886,530원**입니다 [3].\n    *   나머지 두 건([4], [5])은 낙찰 상태가 '진행 중 또는 결과 미수집'으로 확인됩니다.\n\n<canvas class='chat-chart' data-type='bar' data-labels='낙찰 완료 건수' data-values='1' data-title='2026년 시공원 보수정비사업(봉제산) 낙찰 현황'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 379,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 151,886,530원 임",
+          "expected_value": "151886530",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.4670% 임",
+          "expected_value": "90.4670",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 및 금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952016"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952016",
+        "bid_7952007",
+        "bid_7952004",
+        "bid_7951732",
+        "bid_5950374"
+      ],
+      "evidence_hit": [
+        "bid_7952016"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q10",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 3656.354,
+      "ok": true,
+      "answer": "'2026년 시공원 보수정비사업(봉제산)' 공사에 대한 정보는 다음과 같습니다.\n\n*   **수요기관:** 서울특별시 강서구 [3], [4], [5]\n*   **낙찰업체 및 낙찰금액:**\n    *   하나의 결과가 있는 경우: (주)목전엘앤디가 낙찰받았으며, 낙찰금액은 151,886,530원입니다 [3].\n    *   다른 두 건의 공고([4], [5])는 낙찰 상태가 '진행 중 또는 결과 미수집' 상태입니다.\n\n<canvas class='chat-chart' data-type='bar' data-labels='낙찰업체별 결과' data-values='1,0,0' data-title='2026년 시공원 보수정비사업(봉제산) 낙찰 결과 현황'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 385,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 151,886,530원 임",
+          "expected_value": "151886530",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.4670% 임",
+          "expected_value": "90.4670",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 및 금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952016"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952016",
+        "bid_7952007",
+        "bid_7952004",
+        "bid_7951732",
+        "bid_5950374"
+      ],
+      "evidence_hit": [
+        "bid_7952016"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q11",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 3824.916,
+      "ok": true,
+      "answer": "'매곡면 옥전리(남양동) 세천정비공사'의 정보는 다음과 같습니다:\n\n*   **수요기관:** 충청북도 영동군 [3]\n*   **낙찰업체:** (주)오대건설 [3]\n*   **낙찰률:** 90.3320% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 127,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 34,437,020원 임",
+          "expected_value": "34437020",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 90.3320% 임",
+          "expected_value": "90.3320",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952015"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952015",
+        "bid_5955503",
+        "bid_5948225",
+        "bid_5929516",
+        "bid_5931842"
+      ],
+      "evidence_hit": [
+        "bid_7952015"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q11",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1497.388,
+      "ok": true,
+      "answer": "'매곡면 옥전리(남양동) 세천정비공사'의 정보는 다음과 같습니다:\n\n*   **수요기관:** 충청북도 영동군 [3]\n*   **낙찰업체:** (주)오대건설 [3]\n*   **낙찰률:** 90.3320% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 127,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 34,437,020원 임",
+          "expected_value": "34437020",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 90.3320% 임",
+          "expected_value": "90.3320",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952015"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952015",
+        "bid_5955503",
+        "bid_5948225",
+        "bid_5929516",
+        "bid_5931842"
+      ],
+      "evidence_hit": [
+        "bid_7952015"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q11",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1506.147,
+      "ok": true,
+      "answer": "'매곡면 옥전리(남양동) 세천정비공사'의 정보는 다음과 같습니다:\n\n*   **수요기관:** 충청북도 영동군 [3]\n*   **낙찰업체:** (주)오대건설 [3]\n*   **낙찰률:** 90.3320% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 127,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 34,437,020원 임",
+          "expected_value": "34437020",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 90.3320% 임",
+          "expected_value": "90.3320",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952015"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952015",
+        "bid_5955503",
+        "bid_5948225",
+        "bid_5929516",
+        "bid_5931842"
+      ],
+      "evidence_hit": [
+        "bid_7952015"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q12",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 68454.42,
+      "ok": true,
+      "answer": "'충북대학교병원 노후 실습공간(71,85병동) 개선공사(소방설비)'의 낙찰업체는 **주식회사 명문전기**이며, 낙찰금액은 **15,098,070원**입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 102,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 15,098,070원 임",
+          "expected_value": "15098070",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.0930% 임",
+          "expected_value": "90.0930",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952013"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952013",
+        "bid_7951982",
+        "bid_7951990",
+        "bid_7951968",
+        "bid_7952006"
+      ],
+      "evidence_hit": [
+        "bid_7952013"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q12",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1265.505,
+      "ok": true,
+      "answer": "'충북대학교병원 노후 실습공간(71,85병동) 개선공사(소방설비)'의 낙찰업체는 **주식회사 명문전기**이며, 낙찰금액은 **15,098,070원**입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 102,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 15,098,070원 임",
+          "expected_value": "15098070",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.0930% 임",
+          "expected_value": "90.0930",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952013"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952013",
+        "bid_7951982",
+        "bid_7951990",
+        "bid_7951968",
+        "bid_7952006"
+      ],
+      "evidence_hit": [
+        "bid_7952013"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q12",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1244.029,
+      "ok": true,
+      "answer": "'충북대학교병원 노후 실습공간(71,85병동) 개선공사(소방설비)'의 낙찰업체는 **주식회사 명문전기**이며, 낙찰금액은 **15,098,070원**입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 102,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 15,098,070원 임",
+          "expected_value": "15098070",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 90.0930% 임",
+          "expected_value": "90.0930",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952013"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952013",
+        "bid_7951982",
+        "bid_7951990",
+        "bid_7951968",
+        "bid_7952006"
+      ],
+      "evidence_hit": [
+        "bid_7952013"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q13",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 3757.345,
+      "ok": true,
+      "answer": "'양강면 두릉리 마을안길 사면보강 공사'의 정보는 다음과 같습니다:\n\n*   **공고번호:** R26BK01661650-000 [3]\n*   **낙찰업체:** 효성건설 (주) [3]\n*   **낙찰률:** 90.3160% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 138,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 27,324,730원 임",
+          "expected_value": "27324730",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 90.3160% 임",
+          "expected_value": "90.3160",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952012"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952012",
+        "bid_5958348",
+        "bid_5943860",
+        "bid_5959691",
+        "bid_5975930"
+      ],
+      "evidence_hit": [
+        "bid_7952012"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q13",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1613.974,
+      "ok": true,
+      "answer": "'양강면 두릉리 마을안길 사면보강 공사'의 정보는 다음과 같습니다:\n\n*   **공고번호:** R26BK01661650-000 [3]\n*   **낙찰업체:** 효성건설 (주) [3]\n*   **낙찰률:** 90.3160% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 138,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 27,324,730원 임",
+          "expected_value": "27324730",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 90.3160% 임",
+          "expected_value": "90.3160",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952012"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952012",
+        "bid_5958348",
+        "bid_5943860",
+        "bid_5959691",
+        "bid_5975930"
+      ],
+      "evidence_hit": [
+        "bid_7952012"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q13",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1605.726,
+      "ok": true,
+      "answer": "'양강면 두릉리 마을안길 사면보강 공사'의 정보는 다음과 같습니다:\n\n*   **공고번호:** R26BK01661650-000 [3]\n*   **낙찰업체:** 효성건설 (주) [3]\n*   **낙찰률:** 90.3160% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 138,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 27,324,730원 임",
+          "expected_value": "27324730",
+          "unit": "원",
+          "tolerance": 1,
+          "found": false
+        },
+        {
+          "statement": "낙찰률은 90.3160% 임",
+          "expected_value": "90.3160",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰률 오기"
+      ],
+      "expected_evidence_ids": [
+        "bid_7952012"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_7952012",
+        "bid_5958348",
+        "bid_5943860",
+        "bid_5959691",
+        "bid_5975930"
+      ],
+      "evidence_hit": [
+        "bid_7952012"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q14",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 5330.288,
+      "ok": true,
+      "answer": "'2026년 김량장 브랜드 홍보물품 제작'에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 경기도 용인시 [3]\n*   **낙찰업체:** 디혜 협동조합 [3]\n*   **낙찰금액:** 26,400,000원 [3]\n*   **낙찰률:** 88.0000% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 161,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 26,400,000원 임",
+          "expected_value": "26400000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0000% 임",
+          "expected_value": "88.0000",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880526"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880526",
+        "bid_5869172",
+        "bid_9991156",
+        "bid_5825288",
+        "bid_5845518"
+      ],
+      "evidence_hit": [
+        "bid_5880526"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q14",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1801.557,
+      "ok": true,
+      "answer": "'2026년 김량장 브랜드 홍보물품 제작'에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 경기도 용인시 [3]\n*   **낙찰업체:** 디혜 협동조합 [3]\n*   **낙찰금액:** 26,400,000원 [3]\n*   **낙찰률:** 88.0000% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 161,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 26,400,000원 임",
+          "expected_value": "26400000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0000% 임",
+          "expected_value": "88.0000",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880526"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880526",
+        "bid_5869172",
+        "bid_9991156",
+        "bid_5825288",
+        "bid_5845518"
+      ],
+      "evidence_hit": [
+        "bid_5880526"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q14",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1845.122,
+      "ok": true,
+      "answer": "요청하신 '2026년 김량장 브랜드 홍보물품 제작'의 정보는 다음과 같습니다:\n\n*   **수요기관:** 경기도 용인시 [3]\n*   **낙찰업체:** 디혜 협동조합 [3]\n*   **낙찰금액:** 26,400,000원 [3]\n*   **낙찰률:** 88.0000% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 163,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 26,400,000원 임",
+          "expected_value": "26400000",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0000% 임",
+          "expected_value": "88.0000",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880526"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880526",
+        "bid_5869172",
+        "bid_9991156",
+        "bid_5825288",
+        "bid_5845518"
+      ],
+      "evidence_hit": [
+        "bid_5880526"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q15",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 4410.445,
+      "ok": true,
+      "answer": "'앵커사업] 바이오헬스 연구용 시료분석 장비 구매' 건의 낙찰업체는 **유비코리아**이며, 낙찰금액은 **19,000,300원**입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 91,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 19,000,300원 임",
+          "expected_value": "19000300",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 95.0010% 임",
+          "expected_value": "95.0010",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 및 금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880502"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880502",
+        "bid_5878178",
+        "bid_10142395",
+        "bid_15234",
+        "bid_10152738"
+      ],
+      "evidence_hit": [
+        "bid_5880502"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q15",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1037.578,
+      "ok": true,
+      "answer": "'앵커사업] 바이오헬스 연구용 시료분석 장비 구매'의 낙찰업체는 **유비코리아**이며, 낙찰금액은 **19,000,300원**입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 89,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 19,000,300원 임",
+          "expected_value": "19000300",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 95.0010% 임",
+          "expected_value": "95.0010",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 및 금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880502"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880502",
+        "bid_5878178",
+        "bid_10142395",
+        "bid_15234",
+        "bid_10152738"
+      ],
+      "evidence_hit": [
+        "bid_5880502"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q15",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1025.963,
+      "ok": true,
+      "answer": "'앵커사업] 바이오헬스 연구용 시료분석 장비 구매' 건의 낙찰업체는 **유비코리아**이며, 낙찰금액은 **19,000,300원**입니다 [3].\n\n근거: 혼합 근거",
+      "answer_chars": 91,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 19,000,300원 임",
+          "expected_value": "19000300",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 95.0010% 임",
+          "expected_value": "95.0010",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰업체 및 금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880502"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880502",
+        "bid_5878178",
+        "bid_10142395",
+        "bid_15234",
+        "bid_10152738"
+      ],
+      "evidence_hit": [
+        "bid_5880502"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q16",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 3866.719,
+      "ok": true,
+      "answer": "요청하신 '굴포하수처리시설 슬러지수집기 등 3개소 제어반 PLC 구매설치' 건에 대한 정보는 다음과 같습니다.\n\n*   **수요기관:** 경기도 부천시 [3]\n*   **낙찰업체:** 주식회사 진성 [3]\n*   **낙찰금액:** 44,108,495원 [3]\n\n근거: 혼합 근거",
+      "answer_chars": 155,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 44,108,495원 임",
+          "expected_value": "44108495",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0710% 임",
+          "expected_value": "88.0710",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880499"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880499",
+        "bid_5861272",
+        "bid_5864555",
+        "bid_5864203",
+        "bid_28663"
+      ],
+      "evidence_hit": [
+        "bid_5880499"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q16",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 1677.71,
+      "ok": true,
+      "answer": "요청하신 '굴포하수처리시설 슬러지수집기 등 3개소 제어반 PLC 구매설치' 건에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 경기도 부천시 [3]\n*   **낙찰업체:** 주식회사 진성 [3]\n*   **낙찰금액:** 44,108,495원 [3]\n\n근거: 혼합 근거",
+      "answer_chars": 155,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 44,108,495원 임",
+          "expected_value": "44108495",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0710% 임",
+          "expected_value": "88.0710",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880499"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880499",
+        "bid_5861272",
+        "bid_5864555",
+        "bid_5864203",
+        "bid_28663"
+      ],
+      "evidence_hit": [
+        "bid_5880499"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q16",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 1671.953,
+      "ok": true,
+      "answer": "요청하신 '굴포하수처리시설 슬러지수집기 등 3개소 제어반 PLC 구매설치' 건에 대한 정보는 다음과 같습니다:\n\n*   **수요기관:** 경기도 부천시 [3]\n*   **낙찰업체:** 주식회사 진성 [3]\n*   **낙찰금액:** 44,108,495원 [3]\n\n근거: 혼합 근거",
+      "answer_chars": 155,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 44,108,495원 임",
+          "expected_value": "44108495",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 88.0710% 임",
+          "expected_value": "88.0710",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": false
+        }
+      ],
+      "numeric_all_found": false,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "낙찰금액 허위 기재"
+      ],
+      "expected_evidence_ids": [
+        "bid_5880499"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_5880499",
+        "bid_5861272",
+        "bid_5864555",
+        "bid_5864203",
+        "bid_28663"
+      ],
+      "evidence_hit": [
+        "bid_5880499"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q17",
+      "repetition": 1,
+      "context_sufficient": false,
+      "elapsed_ms": 4390.447,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트를 기반으로 2029년 '화성 우주기지 3단계 건설공사'에 대한 최종 낙찰자나 낙찰금액 정보를 확인할 수 없습니다 [1], [2], [3], [4], [5].\n\n검색 결과에 따르면, 2029년 기간에 대한 통계 데이터는 다음과 같습니다:\n*   낙찰 결과 수: 0건 [1]\n*   공고 수: 0건 [1]\n\n따라서 해당 공사에 대한 정보는 컨텍스트에 존재하지 않습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 227,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "임의의 낙찰자나 가상의 금액을 생성하는 환각(hallucination)"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_1707718",
+        "bid_10084894",
+        "bid_5922915",
+        "bid_1707694",
+        "bid_10060143"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q17",
+      "repetition": 2,
+      "context_sufficient": false,
+      "elapsed_ms": 1210.173,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 2029년 화성 우주기지 3단계 건설공사에 대한 정보가 없습니다 [1], [2], [3], [4], [5].\n\n따라서 해당 공사의 최종 낙찰자와 낙찰금액을 알려드릴 수 없습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 124,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "임의의 낙찰자나 가상의 금액을 생성하는 환각(hallucination)"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_1707718",
+        "bid_10084894",
+        "bid_5922915",
+        "bid_1707694",
+        "bid_10060143"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q17",
+      "repetition": 3,
+      "context_sufficient": false,
+      "elapsed_ms": 1190.267,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 2029년 화성 우주기지 3단계 건설공사에 대한 정보가 없습니다 [1], [2], [3], [4], [5].\n\n따라서 해당 공사의 최종 낙찰자와 낙찰금액을 알려드릴 수 없습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 124,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "임의의 낙찰자나 가상의 금액을 생성하는 환각(hallucination)"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_1707718",
+        "bid_10084894",
+        "bid_5922915",
+        "bid_1707694",
+        "bid_10060143"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q18",
+      "repetition": 1,
+      "context_sufficient": false,
+      "elapsed_ms": 7936.777,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 **내일 오후 2시에 개찰 예정인 기상청 차세대 슈퍼컴퓨터 사업**에 대한 정보가 없습니다. [1], [2], [3], [4], [5]의 모든 소스 정보는 특정 날짜와 시간의 개찰 예정 정보가 아니며, 요청하신 조건에 맞는 실시간 또는 예정된 정보를 확인할 수 없습니다.\n\n다만, 기상청과 관련된 과거 또는 최근의 유사한 사업 정보는 다음과 같이 확인됩니다:\n\n*   **기상청 국립기상과학원**에서 진행된 **[공고명] 기후예측시스템 현업운영 및 예측실험 수행지원** 용역 건은 추정가격이 1,090,909,091원이었으며, 낙찰업체는 **주식회사 포디솔루션**이었습니다 [4].\n*   **기상청**에서 진행된 **[공고명] 2026년 재생에너지 기상정보 플랫폼 개선(SW개발)** 용역 건은 추정가격이 145,454,545원이었고, 낙찰업체는 **(주)동녘**이었습니다 [5].\n\n정확한 정보를 얻기 위해서는 해당 사업의 **정확한 공고번호**나 **공고명**을 다시 확인하시거나, 해당 정보가 공개되는 **공식적인 채널**을 통해 확인하시는 것이 필요합니다.\n\n근거: 혼합 근거",
+      "answer_chars": 565,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "사전 유출된 예정가격이나 특정 업체를 낙찰자로 허위 확정 서술"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_9905255",
+        "bid_9908396",
+        "bid_10046798",
+        "bid_5843453",
+        "bid_9907422"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q18",
+      "repetition": 2,
+      "context_sufficient": false,
+      "elapsed_ms": 7001.221,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 **내일 오후 2시에 개찰 예정인 기상청 차세대 슈퍼컴퓨터 사업**에 대한 정보가 없습니다. [1], [2], [3], [4], [5] 모두 특정 날짜의 개찰 예정 정보나 해당 조건에 맞는 공고 정보는 포함하고 있지 않습니다.\n\n다만, 기상청과 관련된 최근의 공고 정보는 다음과 같습니다:\n\n*   **[공고명] 기후예측시스템 현업운영 및 예측실험 수행지원**:\n    *   **수요기관**: 기상청 국립기상과학원 [4]\n    *   **기초금액**: 1,209,757,000원 [4]\n    *   **추정가격**: 1,090,909,091원 [4]\n    *   **낙찰업체**: 주식회사 포디솔루션 [4]\n    *   **낙찰률**: 100.0000% [4]\n\n*   **[공고명] 2026년 재생에너지 기상정보 플랫폼 개선(SW개발)**:\n    *   **수요기관**: 기상청 [5]\n    *   **기초금액**: 161,678,600원 [5]\n    *   **추정가격**: 145,454,545원 [5]\n    *   **낙찰업체**: (주)동녘 [5]\n    *   **낙찰률**: None% [5]\n\n정확한 정보를 위해서는 **개찰 예정일**이나 **공고번호** 등 더 구체적인 정보를 제공해 주시거나, 해당 정보가 포함된 최신 공고 데이터를 확인해 주시기 바랍니다.\n\n근거: 혼합 근거",
+      "answer_chars": 691,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "사전 유출된 예정가격이나 특정 업체를 낙찰자로 허위 확정 서술"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_9905255",
+        "bid_9908396",
+        "bid_10046798",
+        "bid_5843453",
+        "bid_9907422"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q18",
+      "repetition": 3,
+      "context_sufficient": false,
+      "elapsed_ms": 5786.093,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 **내일 오후 2시에 개찰 예정인 기상청 차세대 슈퍼컴퓨터 사업**에 대한 정보가 없습니다 [1], [2], [3], [4], [5].\n\n다만, 기상청과 관련된 최근의 용역 사업 정보는 다음과 같이 확인됩니다:\n\n1.  **[공고명] 기후예측시스템 현업운영 및 예측실험 수행지원**\n    *   **수요기관:** 기상청 국립기상과학원 [4]\n    *   **추정가격:** 1,090,909,091원 [4]\n    *   **낙찰업체:** 주식회사 포디솔루션 [4]\n    *   **개찰일시:** 2025-12-30 16:00:00 [4]\n\n2.  **[공고명] 2026년 재생에너지 기상정보 플랫폼 개선(SW개발)**\n    *   **수요기관:** 기상청 [5]\n    *   **추정가격:** 145,454,545원 [5]\n    *   **낙찰업체:** (주)동녘 [5]\n    *   **개찰일시:** 2026-03-31 11:00:00 [5]\n\n따라서 요청하신 특정 시점의 정보는 현재 컨텍스트에서 확인할 수 없습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 547,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "사전 유출된 예정가격이나 특정 업체를 낙찰자로 허위 확정 서술"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_9905255",
+        "bid_9908396",
+        "bid_10046798",
+        "bid_5843453",
+        "bid_9907422"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q19",
+      "repetition": 1,
+      "context_sufficient": false,
+      "elapsed_ms": 8594.672,
+      "ok": true,
+      "answer": "제공해주신 검색 컨텍스트와 필터 조건(시작일: 2030-01-01, 종료일: 2030-12-31)을 기반으로 분석한 결과, **2030년 유럽연합(EU) 회원국 간 고속철도 통합 신호체계 구축 사업**에 대한 입찰 참가 조건이나 낙찰 통계는 확인할 수 없습니다 [1].\n\n**주요 분석 결과:**\n\n1.  **통계 데이터 부재:**\n    *   2030년 기간에 대한 **낙찰 결과 수, 공고 수, 평균 낙찰률, 총 낙찰 금액** 등 정형 통계 데이터가 모두 0건입니다 [1].\n    *   따라서 해당 기간의 입찰 참가 조건이나 낙찰 통계 분석은 불가능합니다 [1].\n\n2.  **공고 데이터 부재:**\n    *   검색된 모든 문맥 검색 결과는 2025년 또는 2026년의 데이터이며, 요청하신 **2030년** 기간의 공고 데이터는 존재하지 않습니다 [3], [4], [5].\n    *   따라서 해당 사업과 관련된 추세 해석도 제한적입니다 [1].\n\n**요약:**\n\n현재 제공된 정보만으로는 2030년 유럽연합(EU) 회원국 간 고속철도 통합 신호체계 구축 사업에 대한 입찰 참가 조건이나 낙찰 통계를 분석할 수 없습니다.\n\n<canvas class='chat-chart' data-type='bar' data-labels='2030년 통계' data-values='0' data-title='2030년 입찰 통계 현황'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 712,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "해외 철도 입찰 통계 데이터를 허위로 창작하여 제시"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_10369",
+        "bid_120890",
+        "bid_25972",
+        "bid_21635",
+        "bid_10106311"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q19",
+      "repetition": 2,
+      "context_sufficient": false,
+      "elapsed_ms": 6511.285,
+      "ok": true,
+      "answer": "제공해주신 검색 컨텍스트와 적용 필터(시작일: 2030-01-01, 종료일: 2030-12-31)를 기반으로 분석한 결과, **2030년 유럽연합(EU) 회원국 간 고속철도 통합 신호체계 구축 사업**에 대한 입찰 참가 조건이나 낙찰 통계는 확인할 수 없습니다 [1].\n\n**주요 분석 결과:**\n\n1.  **통계 데이터 부재:**\n    *   적용된 기간(2030년)에 대한 낙찰 결과 수, 공고 수, 평균 낙찰률, 총 낙찰 금액 등 모든 정형 통계 데이터가 0건으로 집계되었습니다 [1].\n    *   따라서 해당 기간의 입찰 참가 조건이나 낙찰 통계 분석은 불가능합니다 [1].\n\n2.  **공고 데이터 부재:**\n    *   검색된 모든 공고 데이터는 2025년 또는 2026년의 사례이며, 2030년의 데이터는 없습니다 [3], [4], [5].\n    *   따라서 해당 사업과 관련된 추세 분석이나 구체적인 공고 정보는 제공할 수 없습니다 [1].\n\n**요약:**\n\n현재 검색된 정보만으로는 2030년 유럽연합(EU) 회원국 간 고속철도 통합 신호체계 구축 사업에 대한 입찰 통계나 참가 조건을 분석할 수 없습니다.\n\n<canvas class='chat-chart' data-type='bar' data-labels='낙찰 결과 수' data-values='0' data-title='2030년 입찰 통계'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 706,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "해외 철도 입찰 통계 데이터를 허위로 창작하여 제시"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_10369",
+        "bid_120890",
+        "bid_25972",
+        "bid_21635",
+        "bid_10106311"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q19",
+      "repetition": 3,
+      "context_sufficient": false,
+      "elapsed_ms": 7608.693,
+      "ok": true,
+      "answer": "제공해주신 검색 컨텍스트와 필터 조건(시작일: 2030-01-01, 종료일: 2030-12-31)을 기반으로 분석한 결과, **2030년 유럽연합(EU) 회원국 간 고속철도 통합 신호체계 구축 사업**에 대한 입찰 참가 조건이나 낙찰 통계는 확인할 수 없습니다 [1].\n\n**주요 분석 결과:**\n\n1.  **통계 데이터 부족:**\n    *   요청하신 기간(2030년)에 해당하는 **낙찰 결과 수, 공고 수, 평균 낙찰률, 총 낙찰 금액** 등 통계 데이터가 모두 0건입니다 [1].\n    *   따라서 해당 기간의 입찰 경향이나 통계 분석은 불가능합니다 [1].\n\n2.  **최근/과거 유사 사업 정보:**\n    *   컨텍스트에는 2030년 데이터는 없으나, 과거의 유사한 **물품** 관련 사업 사례가 존재합니다 [3], [4], [5].\n        *   예시로, '전동차 구동장치 상태 분석 및 검증용 센서 시스템 설계·제작'과 관련된 물품 공고가 한국철도기술연구원에서 진행된 기록이 있습니다 [3], [5].\n        *   또 다른 물품 공고로는 '차량용 유선 고속통신 반도체 신호 무결·적합성 평가 시스템'이 한국자동차연구원에서 진행된 기록이 있습니다 [4].\n\n**결론:**\n\n요청하신 **2030년 EU 고속철도 통합 신호체계 구축 사업**에 대한 구체적인 입찰 정보나 통계는 현재 검색된 데이터 범위 내에서 검색되지 않았습니다.\n\n<canvas class='chat-chart' data-type='bar' data-labels='낙찰 결과 수' data-values='0' data-title='2030년 입찰 통계'></canvas>\n\n근거: 혼합 근거",
+      "answer_chars": 836,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "해외 철도 입찰 통계 데이터를 허위로 창작하여 제시"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_10369",
+        "bid_120890",
+        "bid_25972",
+        "bid_21635",
+        "bid_10106311"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    }
+  ]
+}

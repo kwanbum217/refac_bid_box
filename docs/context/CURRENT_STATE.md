@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-24
-> **source_commit**: `f727aeb`
+> **source_commit**: `1d51d38`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -65,8 +65,8 @@
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1. **운영 검증**: Windows CI는 main 병합 run `32703990405`(`a203286`)에서 green 실측. 이후 커밋이 쌓였으므로 현재 HEAD 의 3플랫폼 green 근거는 아직 없습니다. Windows Docker Desktop 실기도 남았습니다.
-1-2. **LLM 경로 최적화**: 부하 규약을 지킨 조건의 e4b 정본은 `llm_ms` P50 2,839.93ms이며 총합의 97.5%입니다. `gemma4:e2b` 비교에서 `llm_ms` P50 -54.1%, P95 -26.2%로 속도 우세가 확정됐으나 **품질 표본이 5문항뿐이라 승격하지 않았습니다**. 19문항 fixture 실측에서 지연은 P50 -43.9%/P95 -57.7% 로 개선되나 품질이 검색에 지배됐습니다. 원인인 의도 라우팅 오분류와 채점기 결함을 2026-08-25 에 고쳤으므로 **동일 19문항 재측정 전에는 승격 판정을 하지 않습니다**([`llm_model_comparison_e4b_e2b_20260824.md`](../analysis/llm_model_comparison_e4b_e2b_20260824.md)).
+1. **운영 검증**: 2026-08-25 `1d51d38` 에서 **3플랫폼 CI 전량 green** 을 확보했습니다(run `32810364619`, lint-and-validate/ubuntu/macOS/windows/Docker 빌드 5개 잡). Windows Docker Desktop 실기 검증만 남았습니다.
+1-2. **LLM 경로 최적화**: 2026-08-25 v2 재측정에서 e2b 는 P50 -50.8%, numeric 62.7% 대 58.8% 로 앞서고 근거 검색은 동일(45/48, recall 0.938)했으나, 미개찰 공고를 묻는 q18 에서 3회 중 2회 과잉응답이 나와 **승격하지 않았습니다**. e4b 는 과잉응답 0 입니다([`llm_quality_v2_e4b_e2b_20260825.md`](../analysis/llm_quality_v2_e4b_e2b_20260825.md)).
 1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션으로 확정했습니다. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하). 잠정값 900/600 은 제거했고 기준선은 캘리브레이션 호스트에 결박됩니다([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
 1-3. **감사 후속 P1 4건**: 2026-08-25 에 RAG 의도 라우팅 오분류, LLM 품질 하네스의 복합 numeric·refusal 미채점, 모델 라벨 미결박, Arq 기준선 호스트 미결박을 닫았습니다. 기존 `llm_quality_*_20260824.json` 은 v1 기준이라 무효입니다.
 2. **프론트엔드**: HTMX 는 2026-08-25 기각하고 ADR 을 SSR + Jinja2 + jQuery 로 개정했습니다. `base.html` 의 외부 CDN 7곳은 같은 날 로컬 벤더 자산으로 대체해 https 참조 0건입니다. Chart.js 3개 템플릿과 Tailwind 운영 빌드는 후속 과제입니다.

@@ -107,6 +107,20 @@ class TestIsRefusal:
         for text in refusals:
             assert is_refusal(text) is True, f"거절로 판정되어야 함: {text}"
 
+    def test_context_not_included_phrasing_is_refusal(self):
+        """근거 부재를 '포함되어 있지 않습니다' 로 말하는 거절도 잡아야 합니다.
+
+        2026-08-25 v2 측정에서 이 표현이 패턴에 없어 정상 거절이 과잉응답으로
+        오분류됐고, e2b 의 거절 오답이 7건으로 부풀려졌습니다(실제 2건).
+        """
+        for answer in (
+            "제공된 검색 컨텍스트에는 요청하신 사업에 대한 낙찰 결과 정보가 포함되어 있지 않습니다.",
+            "해당 공고는 검색 결과에 포함되지 않습니다.",
+            "요청하신 자료는 제공되지 않습니다.",
+            "관련 근거를 찾을 수 없습니다.",
+        ):
+            assert is_refusal(answer), answer
+
     def test_non_refusal_answers(self):
         non_refusals = [
             "낙찰금액은 46,602,100원입니다.",
