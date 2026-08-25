@@ -1736,3 +1736,116 @@ Capsule 경로를 **주 저장소 절대 경로**로 넣었습니다.
 `allowed_read_files` 와 `report_path` 는 Intent 작성자가 직접 씁니다. 여기에
 절대 경로를 쓰면 같은 일이 재발합니다. Intent 를 쓸 때 경로는 항상 저장소
 루트 기준 상대 경로로 적으십시오 (AGENTS.md 3장 3호).
+
+---
+
+## 21. 워커 3대가 동시에 없는 Capsule 을 열었다 (2026-08-25)
+
+### 21.1 증상
+
+`orca_taskctl.py create` 로 만든 Task 3건을 각각 다른 CLI 워커에 Dispatch 하자
+세 워커가 모두 존재하지 않는 파일을 열었습니다. Gemini 워커의 터미널에는
+다음이 남았습니다.
+
+    === TASK ===
+    ... 정본 사양(Capsule): 현재 작업 디렉터리의
+    .orca/capsules/task_rag_intent_routing_fix/capsule.yaml
+
+실제 Capsule 은 `.orca/capsules/task_76587799510f/capsule.yaml` 이었습니다.
+워커는 파일을 찾지 못하자 워크트리 전체를 glob 으로 뒤졌습니다. 이번에는
+워크트리에 Capsule 이 한 벌뿐이라 우연히 찾아냈지만, 여러 벌이 있었으면
+남의 Task 사양을 읽었을 것입니다.
+
+### 21.2 원인
+
+**Orca 의 Task ID 는 서버가 발급하고, `spec` 은 생성 후 변경할 수 없습니다.**
+
+`orca orchestration task-update` 는 `--status` 만 받습니다. `--spec` 이
+없으므로 한 번 만든 Task 의 본문은 고칠 수 없습니다.
+
+`cmd_create` 는 이 두 사실과 어긋나게 동작했습니다.
+
+| 순서 | 하던 일 |
+| --- | --- |
+| 1 | Intent 파일명으로 잠정 ID(`task_<stem>`)를 만들어 그 경로에 Capsule 을 쓴다 |
+| 2 | 그 잠정 경로를 담아 `spec` 을 만들고 `task-create` 를 호출한다 |
+| 3 | Orca 가 실제 ID(`task_76587799510f`)를 돌려준다 |
+| 4 | Capsule 을 실제 ID 디렉터리로 옮기고 **잠정 경로를 지운다** |
+| 5 | `final_spec` 을 새로 만들지만 **어디에도 반영하지 않는다** |
+
+4단계에서 지우는 파일이 2단계에서 Orca 에 박아 넣은 경로입니다. `dispatch
+--inject` 가 워커에게 전달하는 본문은 오직 이 `spec` 이므로, 워커는 항상 지워진
+경로를 받습니다.
+
+**회귀 테스트가 결함을 불변식으로 고정하고 있었습니다.**
+`test_cmd_create_syncs_actual_task_id_to_capsule_and_spec` 에
+`assert not provisional_dir.exists()` 가 있었습니다. 정리라고 이름 붙은
+동작이 실제로는 워커 지시를 깨뜨리는 동작이었고, 테스트는 그것을 지켰습니다.
+
+### 21.3 조치
+
+`cmd_create` 는 이제 잠정 경로의 Capsule 을 지우지 않고 실제 ID 경로와 **같은
+내용으로 함께 유지**합니다. `spec` 이 가리키는 곳과 도구가 `task_id` 로 찾는
+곳이 둘 다 성립합니다. `--json` 출력에 `spec_capsule` 과
+`spec_capsule_relative` 를 추가했고, 사람이 읽는 경로에서는 두 경로를 함께
+출력하며 stderr 로 워크트리 복사 안내를 냅니다.
+
+**워크트리에는 `.orca/capsules/` 를 통째로 복사하십시오.** Task 하나에 대응하는
+디렉터리 하나만 복사하면 `spec` 이 가리키는 쪽이 빠집니다.
+
+```bash
+cp -R <주 저장소>/.orca/capsules <워크트리>/.orca/
+```
+
+테스트는 반대 방향으로 다시 썼습니다. 잠정 경로의 Capsule 이 남아 있고 실제
+경로와 내용이 같으며 `spec` 이 잠정 ID 를 담고 있어야 통과합니다.
+
+### 21.4 `create` 와 `dispatch` 는 Task ID 로 이어지지 않습니다
+
+같은 뿌리에서 나온 두 번째 결함입니다. `cmd_dispatch` 도 `--task-id` 가 없으면
+Intent 파일명으로 ID 를 유추하는데, `create` 가 만든 Task 는 Orca 발급 ID 를
+가지므로 다음이 반드시 실패합니다.
+
+```bash
+python3 scripts/orca_taskctl.py create   --intent <intent>   # task_76587799510f 생성
+python3 scripts/orca_taskctl.py dispatch --intent <intent>   # task_<stem> 을 찾다가 실패
+#   -> 오류: 워커 기동 실패 (종료 코드 1): Task not found: task_rag_intent_routing_fix
+```
+
+`Task not found` 는 Task 가 사라졌다는 뜻이 아니라 **ID 를 유추한 것이 틀렸다는
+뜻입니다.** `create` 의 출력에서 `task_id` 와 `capsule` 을 받아
+`--task-id`, `--capsule` 로 넘겨야 이어집니다. 오류 메시지에 이 안내를
+넣었습니다.
+
+### 21.5 CLI 자체가 죽어 있으면 Dispatch 오류가 모델 문제처럼 보입니다
+
+같은 세션에서 OpenCode 워커가 다음으로 실패했습니다.
+
+    Cannot dispatch --inject to terminal <handle>:
+    no recognized agent detected.
+
+원인은 모델도 터미널도 아니고 CLI 설치였습니다.
+
+    Error: opencode-ai's postinstall script was not run.
+
+`terminal create --command "opencode"` 는 명령이 즉시 죽어도 터미널을 만들고
+셸 프롬프트를 남깁니다. Orca 는 에이전트를 찾지 못했다고만 말하므로 원인이
+가려집니다. 조치는 1.3 절과 같습니다.
+
+```bash
+cd /opt/homebrew/lib/node_modules/opencode-ai && node postinstall.mjs
+opencode --version    # 판이 나와야 정상
+```
+
+**터미널을 만든 직후 `orca terminal read` 로 CLI 가 실제로 떴는지 한 번
+보십시오.** Dispatch 를 먼저 하면 오류 문구가 원인을 가립니다.
+
+### 21.6 모델 ID 는 라우터 등록값이 아니라 CLI 목록이 정본입니다
+
+`scripts/orca_model_router.py list` 는 OpenCode DeepSeek 을
+`opencode/deepseek-v4-flash-free` 로 등록하고 있으나, 2026-08-25
+`opencode models` 의 실제 ID 는 `opencode-go/deepseek-v4-flash` 입니다.
+등록값으로 기동하면 모델을 찾지 못합니다.
+
+**기동 전에 `opencode run -m <id> "reply with OK only"` 로 1회 호출해
+응답을 확인하십시오.** 목록에 보이는 것과 호출되는 것은 다릅니다 (1.3 절).

@@ -2104,9 +2104,17 @@ scope:
     final_capsule_path = capsules_dir / actual_orca_id / "capsule.yaml"
     assert final_capsule_path.exists()
 
-    # 가계정 task_id 디렉터리는 정리되었어야 함
-    provisional_dir = capsules_dir / "task_provisional_id"
-    assert not provisional_dir.exists()
+    # 잠정 task_id 경로의 Capsule 은 지우면 안 된다. Orca 의 task-update 는
+    # status 만 바꾸고 spec 은 바꾸지 못하는데, spec 은 실제 Task ID 를 알기
+    # 전에 확정되어 잠정 경로를 가리킨다. 지우면 워커가 첫 턴에 없는 파일을
+    # 연다 (2026-08-25 워커 3대 동시 오조준).
+    provisional_capsule = capsules_dir / "task_provisional_id" / "capsule.yaml"
+    assert provisional_capsule.exists()
+    assert provisional_capsule.read_text(encoding="utf-8") == final_capsule_path.read_text(
+        encoding="utf-8"
+    )
+    assert out_data["spec_capsule"] == str(provisional_capsule.resolve())
+    assert "task_provisional_id" in out_data["spec"]
 
     capsule_content = final_capsule_path.read_text(encoding="utf-8")
     assert parse_capsule_scalar(capsule_content, "task_id") == actual_orca_id
