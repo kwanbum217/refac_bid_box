@@ -1833,12 +1833,16 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     actual_capsule_path.write_text(final_capsule, encoding="utf-8")
 
+    # Orca 의 task-update 는 status 만 바꾸고 spec 은 바꾸지 못합니다. spec 은
+    # 실제 Task ID 를 알기 전에 확정되므로 잠정 경로를 가리키고, 그 경로의
+    # Capsule 을 지우면 워커가 첫 턴에 없는 파일을 엽니다. 두 경로를 모두
+    # 남겨 spec 이 가리키는 곳과 도구가 task_id 로 찾는 곳이 함께 성립하게
+    # 합니다 (2026-08-25 워커 3대 동시 오조준).
     if capsule_path != actual_capsule_path:
-        capsule_path.unlink(missing_ok=True)
-        with suppress(OSError):
-            task_capsule_dir.rmdir()
+        capsule_path.write_text(final_capsule, encoding="utf-8")
 
     final_spec = build_task_spec(intent.get("objective", ""), actual_capsule_path)
+    spec_capsule = worktree_relative_capsule_path(capsule_path)
 
     if args.json:
         print(
@@ -1846,7 +1850,10 @@ def cmd_create(args: argparse.Namespace) -> int:
                 {
                     "task_id": actual_task_id,
                     "capsule": str(actual_capsule_path),
-                    "spec": final_spec,
+                    "spec_capsule": str(capsule_path),
+                    "spec_capsule_relative": spec_capsule,
+                    "spec": spec,
+                    "canonical_spec": final_spec,
                     "char_count": char_len(final_capsule),
                 },
                 ensure_ascii=False,
@@ -1856,6 +1863,13 @@ def cmd_create(args: argparse.Namespace) -> int:
     else:
         print(f"Task 생성 완료: {actual_task_id}")
         print(f"Capsule: {actual_capsule_path}")
+        if capsule_path != actual_capsule_path:
+            print(f"spec 이 가리키는 Capsule 사본: {capsule_path}")
+    if capsule_path != actual_capsule_path:
+        sys.stderr.write(
+            "안내: 워크트리에는 .orca/capsules/ 전체를 복사하십시오. "
+            f"spec 은 {spec_capsule} 를 가리킵니다.\n"
+        )
     return 0
 
 
@@ -2138,6 +2152,16 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     # 두는 경우가 있다. stderr 만 읽으면 원인이 사라지므로 stdout 도 함께 본다.
     err_msg = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
     sys.stderr.write(f"오류: 워커 기동 실패 (종료 코드 {code}): {err_msg}\n")
+    if "Task not found" in err_msg:
+        # Orca 는 Task ID 를 스스로 발급하므로 Intent 파일명에서 만든 잠정 ID 로는
+        # 찾을 수 없다. create 를 먼저 돌리고 그 ID 를 --task-id 로 넘겨야 한다.
+        sys.stderr.write(
+            f"안내: Task {task_id} 는 Orca 에 없습니다. Task ID 는 Orca 가 발급하므로 "
+            "Intent 파일명으로 유추할 수 없습니다. "
+            f"먼저 `orca_taskctl.py create --intent {intent_path} --run-id {args.run_id}` 를 "
+            "돌리고, 그 결과의 task_id 와 capsule 을 "
+            "`--task-id`, `--capsule` 로 넘겨 다시 Dispatch 하십시오.\n"
+        )
     sys.stderr.write(f"실행할 명령: {launch_cmd}\n")
     if args.json:
         print(

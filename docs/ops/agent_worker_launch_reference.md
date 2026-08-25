@@ -366,6 +366,22 @@ orca orchestration dispatch-show --task <task_id> --json
 
 `terminal create` 에는 `--repo` 플래그가 없습니다. `--worktree` 만 받습니다.
 
+**3 단계와 4 단계 사이에 두 가지를 반드시 하십시오.** 빠뜨리면 오류 문구가
+원인을 가립니다 ([`orca_do_not_repeat.md`](orca_do_not_repeat.md) 21장).
+
+| 조치 | 이유 |
+| --- | --- |
+| `orca terminal read` 로 CLI 가 실제로 떴는지 확인 | 명령이 즉시 죽어도 터미널은 만들어지고, Dispatch 는 `no recognized agent detected` 로만 말합니다 |
+| `.orca/capsules/` 를 **통째로** 워크트리에 복사 | Task `spec` 은 생성 후 변경할 수 없어 잠정 ID 경로를 가리킵니다. 실제 ID 디렉터리 하나만 복사하면 워커가 없는 파일을 엽니다 |
+
+```bash
+cp -R <주 저장소>/.orca/capsules <워크트리>/.orca/
+```
+
+`create` 로 만든 Task 를 `dispatch` 로 이을 때는 `create` 출력의 `task_id` 와
+`capsule` 을 `--task-id`, `--capsule` 로 넘기십시오. 넘기지 않으면 Intent
+파일명으로 ID 를 유추하다 `Task not found` 로 끝납니다.
+
 > **미해결 항목**: `source_commit` 자동 갱신은 코디네이터 소유 파일 충돌 방지를 위해 이번 워커 준비 범위에서 제외되었습니다.
 
 ### 2.1 워크트리 준비 도구 (`scripts/orca_prepare_worktree.py`)
