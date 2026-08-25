@@ -279,7 +279,10 @@ def validate_base_url_port(base_url: str, app_container: str) -> tuple[bool, str
             f"(허용 목록: {sorted(ALLOWED_LOOPBACK_HOSTNAMES)})."
         )
 
-    req_port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    try:
+        req_port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+    except ValueError as exc:
+        return False, f"base_url 포트가 올바르지 않습니다: {exc}"
 
     try:
         # docker inspect 로 컨테이너 포트 매핑 조회
@@ -299,6 +302,38 @@ def validate_base_url_port(base_url: str, app_container: str) -> tuple[bool, str
             )
     except (subprocess.SubprocessError, OSError, ValueError) as exc:
         return False, f"포트 검증 실패: {exc}"
+
+
+def _identity_field_known(value: Any) -> bool:
+    """provenance source identity 필드 값이 known 인지 판정한다.
+
+    git_sha 는 "unknown" 문자열이 아닌 str 이 known 이고, git_dirty 는
+    bool(True/False) 이 known 이며 None 은 unknown 이다.
+    """
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, str):
+        return value != "unknown"
+    return value is not None
+
+
+def _compare_known_identity(start: dict[str, Any], end: dict[str, Any]) -> list[str]:
+    """--allow-unknown-provenance 모드에서 양쪽 모두 known 인 필드만 비교한다.
+
+    한쪽이 unknown/None 인 필드는 noncanonical 로 허용하고 비교에서 제외하며,
+    양쪽 모두 known 인데 실제 값이 다르면 mismatch 목록에 남긴다.
+    """
+    mismatches: list[str] = []
+    for key in start.keys() | end.keys():
+        start_val = start.get(key)
+        end_val = end.get(key)
+        if (
+            _identity_field_known(start_val)
+            and _identity_field_known(end_val)
+            and start_val != end_val
+        ):
+            mismatches.append(f"{key} changed from '{start_val}' to '{end_val}'")
+    return mismatches
 
 
 def build_provenance(
@@ -473,19 +508,32 @@ def main(argv: list[str] | None = None) -> int:
             return 3
 
     # mid-run source mutation 검증 (시작/종료 SHA 및 dirty 상태 변경 여부)
-    if start_sha != end_sha:
-        print(
-            f"오류: 측정 도중 Git SHA 가 변경되었습니다 (start: '{start_sha}' -> end: '{end_sha}').",
-            file=sys.stderr,
+    if args.allow_unknown_provenance:
+        identity_mismatches = _compare_known_identity(
+            {"git_sha": start_sha, "git_dirty": start_dirty},
+            {"git_sha": end_sha, "git_dirty": end_dirty},
         )
-        return 4
+        if identity_mismatches:
+            print(
+                "오류: 측정 도중 소스 identity 가 변경되었습니다 "
+                f"(start->end: {', '.join(identity_mismatches)}).",
+                file=sys.stderr,
+            )
+            return 4
+    else:
+        if start_sha != end_sha:
+            print(
+                f"오류: 측정 도중 Git SHA 가 변경되었습니다 (start: '{start_sha}' -> end: '{end_sha}').",
+                file=sys.stderr,
+            )
+            return 4
 
-    if start_dirty != end_dirty:
-        print(
-            f"오류: 측정 도중 Git dirty 상태가 변경되었습니다 (start: '{start_dirty}' -> end: '{end_dirty}').",
-            file=sys.stderr,
-        )
-        return 4
+        if start_dirty != end_dirty:
+            print(
+                f"오류: 측정 도중 Git dirty 상태가 변경되었습니다 (start: '{start_dirty}' -> end: '{end_dirty}').",
+                file=sys.stderr,
+            )
+            return 4
 
     # expected-model 검증: 시작/종료 모두 expected-model 과 정확히 일치해야 통과
     model_mismatch = False
@@ -528,9 +576,18 @@ def main(argv: list[str] | None = None) -> int:
 
     # provenance 일관성 검증 (시작/종료 source identity 비교)
     try:
-        verify_provenance_consistency(
-            provenance["source_identity_start"], provenance["source_identity_end"], strict=True
-        )
+        if args.allow_unknown_provenance:
+            identity_mismatches = _compare_known_identity(
+                provenance["source_identity_start"], provenance["source_identity_end"]
+            )
+            if identity_mismatches:
+                raise RuntimeError(
+                    "source identity changed during measurement: " + ", ".join(identity_mismatches)
+                )
+        else:
+            verify_provenance_consistency(
+                provenance["source_identity_start"], provenance["source_identity_end"], strict=True
+            )
     except Exception as exc:
         print(f"오류: Provenance 일관성 검증 실패 - {exc}", file=sys.stderr)
         return 4
