@@ -90,23 +90,16 @@ RESULT_QUERY_MARKERS = (
 )
 RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
 
-ENTITY_ATTRIBUTE_KEYWORDS = (
-    "공고번호",
-    "수요기관",
-    "낙찰업체",
-    "낙찰자",
-    "최종 낙찰자",
-    "최종낙찰자",
-    "낙찰금액",
-    "낙찰 금액",
-    "예정가격",
-    "1순위",
-    "입찰 참가 조건",
-    "참가 조건",
-    "입찰조건",
-    "참가조건",
-)
-ENTITY_ORG_KEYWORDS = (
+ENTITY_ORG_SUFFIXES = (
+    "주식회사",
+    "(주)",
+    "㈜",
+    "(유)",
+    "유한회사",
+    "합자회사",
+    "협동조합",
+    "법률사무소",
+    "회계법인",
     "초등학교",
     "중학교",
     "고등학교",
@@ -114,8 +107,6 @@ ENTITY_ORG_KEYWORDS = (
     "대학원",
     "유치원",
     "어린이집",
-    "교육지원청",
-    "교육청",
     "여중",
     "남중",
     "여고",
@@ -124,65 +115,21 @@ ENTITY_ORG_KEYWORDS = (
     "의료원",
     "보건소",
     "공항공사",
-    "인천공항",
-    "한국전력",
     "철도공사",
     "도로공사",
     "수자원공사",
     "토지주택공사",
     "가스공사",
-    "시설관리공단",
     "시설공단",
-    "체육시설사업소",
-    "물관리사업소",
+    "관리공단",
     "사업소",
+    "교육청",
+    "지원청",
     "기상청",
-    "주식회사",
-    "(주)",
-    "㈜",
-    "(유)",
-    "유한회사",
-    "합자회사",
-    "협동조합",
-    "건축사사무소",
-    "읍사무소",
-    "면사무소",
+    "경찰서",
+    "소방서",
     "주민센터",
     "행정복지센터",
-)
-ENTITY_PROJECT_SUFFIXES = (
-    "감리 용역",
-    "감리용역",
-    "기술지도 용역",
-    "기술지도용역",
-    "타당성조사",
-    "타당성 조사",
-    "임차용역",
-    "임차 용역",
-    "포스트프로덕션",
-    "폐기물처리",
-    "건설사업관리",
-    "관리용역",
-    "정비공사",
-    "개선공사",
-    "보수공사",
-    "설비공사",
-    "수선공사",
-    "사면보강",
-    "세천정비",
-    "기계설비",
-    "보수정비",
-    "건설공사",
-    "전기공사",
-    "구매설치",
-    "물품 제작",
-    "물품제작",
-    "장비 구매",
-    "장비구매",
-    "시료분석",
-    "리모델링",
-    "증설사업",
-    "철거운반",
 )
 
 
@@ -200,38 +147,38 @@ def _query_lower(query: str) -> str:
 
 
 def is_entity_specific_query(query: str) -> bool:
-    """특정 공고나 사업, 기관, 업체를 지목하는 개체 조회 질의인지 판정합니다."""
-    lowered = _query_lower(query)
+    """특정 공고나 사업, 기관, 업체를 지목하는 개체 조회 질의인지 판정합니다.
 
-    # 1. 따옴표나 괄호 인용구 (예: "안녕 자두야", [소방설비], (봉제산))
+    속성어(낙찰금액, 낙찰업체 등)의 단순 출현이나 단순 카테고리 괄호는 개체로 판정하지 않으며,
+    구조적 개체 식별 신호(인용구, 공고번호 패턴, 기관/법인 형태, '~의 [속성]' 지목 수식 구조)가
+    존재할 때만 True를 반환합니다.
+    """
+    normalized = _normalize_text(query)
+    lowered = normalized.lower()
+
+    # 1. 따옴표나 각괄호 인용구 (예: "안녕 자두야", '도로 포장', [소방설비], 「...」, 『...』)
     if re.search(
         r'["\'\u2018\u201c\u300c\u300e\[][^"\'\u2019\u201d\u300d\u300f\]]{2,}["\'\u2019\u201d\u300d\u300f\]]',
-        query,
+        normalized,
     ):
-        return True
-    if re.search(r"\([^\)]{2,}\)", query):
         return True
 
     # 2. 공고번호 또는 문서 ID 패턴 (예: R26BK01659912-001, bid_10015925)
     if re.search(r"\b(?:[A-Za-z0-9]{8,15}-\d{2,3}|bid_\d{6,10})\b", lowered):
         return True
 
-    # 3. 특정 기관/학교/병원/법인/사업소 지목
-    if any(keyword in lowered for keyword in ENTITY_ORG_KEYWORDS):
+    # 3. 법인 형태 또는 공공/교육/의료 기관 접미사 지목
+    if any(suffix in lowered for suffix in ENTITY_ORG_SUFFIXES):
         return True
 
-    # 4. 세부 사업/공사/용역/구매/제작 명칭 수식
-    if any(keyword in lowered for keyword in ENTITY_PROJECT_SUFFIXES):
-        return True
-
-    # 5. 특정 공고의 속성을 지목하여 묻는 표현 (예: '~의 낙찰업체', '~의 공고번호', '~의 낙찰금액')
-    if any(keyword in lowered for keyword in ENTITY_ATTRIBUTE_KEYWORDS):
-        return True
-
-    # 6. 개체 대상 수식 조사 결합 ('...용역의 낙찰업체', '...공사의 낙찰자' 등)
+    # 4. 대상 지목 수식 구조 ('...의 [속성]': 예: '...공사의 수요기관', '...용역의 낙찰업체', '...사업의 입찰 참가 조건')
     return bool(
         re.search(
-            r"(?:용역|공사|구매|사업|제작|설치|공고|입찰)\s*의\s*(?:공고번호|수요기관|낙찰업체|낙찰자|낙찰금액|예정가격|최종|1순위|입찰\s*참가|참가자격)",
+            r"(?:용역|공사|구매|사업|제작|설치|공고|입찰|권)\s*의\s*(?:공고번호|수요기관|낙찰업체|낙찰자|최종\s*낙찰|낙찰금액|예정가격|1순위|입찰\s*참가|참가자격)",
+            lowered,
+        )
+        or re.search(
+            r"\b\S+\s*의\s*(?:공고번호|수요기관|낙찰업체|낙찰자|최종\s*낙찰자|1순위\s*낙찰업체|입찰\s*참가\s*조건)",
             lowered,
         )
     )
@@ -273,7 +220,7 @@ def _parse_year_month_window(lowered: str) -> tuple[date, date] | None:
 
     월을 넘길 때 30일을 더하는 방식은 말일이 어긋나므로 달력 말일을 씁니다.
     """
-    # 연도가 양쪽에 다 붙은 경우를 먼저 봅니다. 뒤 연도를 앞 연도로 덮어쓰면
+    # 연도가 양쪽에 다 붙은 경우를 먼저 봅니다. 뒤 연도를 앞 연도를 덮어쓰면
     # 해를 넘기는 기간이 뒤집힙니다.
     cross_year = re.search(
         r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(?:부터|~|-)\s*(\d{4})\s*년\s*(\d{1,2})\s*월", lowered
@@ -409,7 +356,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_sql = False
         use_vector = False
     else:
-        # 일반/기본 질의는 벡터 검색 기본값으로 처리
+        # 일반/기본 질의는 기본 벡터 검색
         use_sql = False
         use_vector = True
 
@@ -441,12 +388,16 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         route_reason_parts.append("개체 지정 질의")
     if result_list_query:
         route_reason_parts.append("낙찰 결과 목록 질의")
-    if use_sql:
+    if has_stat_keywords:
         route_reason_parts.append("정형 통계 질의")
-    if use_vector:
+    if has_semantic_keywords:
         route_reason_parts.append("문맥/의미 질의")
     if use_kb_status:
         route_reason_parts.append("KB 상태 질의")
+
+    route_reason = ", ".join(route_reason_parts)
+    if not route_reason:
+        route_reason = "기본 벡터 질의"
 
     plan = RetrievalPlan(
         use_sql=use_sql,
@@ -456,7 +407,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         semantic_query=normalized_query,
         top_k=DEFAULT_VECTOR_TOP_K,
         time_bias=time_bias,
-        route_reason=", ".join(route_reason_parts) or "기본 하이브리드 질의",
+        route_reason=route_reason,
     )
 
     if use_sql and not filters.get("date_from"):

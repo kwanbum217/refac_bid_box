@@ -155,9 +155,26 @@ def test_various_entity_specific_signals(query):
     assert plan.use_sql is True
 
 
+def test_coordinator_counterexamples_pure_aggregation():
+    """코디네이터 지적 반례: 속성어(낙찰금액) 혼합이나 단순 카테고리 괄호가 개체로 오분류되지 않아야 합니다."""
+    q1 = "최근 3개월 평균 낙찰금액 추세를 알려줘"
+    assert not is_entity_specific_query(q1)
+    plan1 = build_retrieval_plan(q1)
+    assert plan1.use_sql is True
+    assert plan1.use_vector is False
+    assert plan1.route_reason == "정형 통계 질의"
+
+    q2 = "평균 낙찰률(용역) 추세"
+    assert not is_entity_specific_query(q2)
+    plan2 = build_retrieval_plan(q2)
+    assert plan2.use_sql is True
+    assert plan2.use_vector is False
+    assert plan2.route_reason == "정형 통계 질의"
+
+
 def test_unclassified_general_queries_default_to_vector():
     """특정 통계/문맥/개체 키워드가 없는 일반/모호한 질의는 기본 벡터 질의로 처리합니다."""
     plan = build_retrieval_plan("안내 부탁드립니다")
     assert plan.use_sql is False
     assert plan.use_vector is True
-    assert "문맥/의미 질의" in plan.route_reason
+    assert "기본 벡터 질의" in plan.route_reason
