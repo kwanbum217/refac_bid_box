@@ -278,10 +278,15 @@ class RepetitionVerdict:
 
 @dataclass
 class RepetitionGateResult:
-    """최소 반복 회차와 회차별 절대 기준을 함께 판정한 결과."""
+    """최소 반복 회차와 회차별 절대 기준을 함께 판정한 결과.
 
+    thresholds 는 필수 인자다. RepetitionThresholds 는 두 필수 값을 가지므로
+    default_factory 로 인스턴스화할 수 없고, 누락 생성은 TypeError 로 드러난다.
+    폐기된 잠정 기준선이 기본값으로 되살아나는 경로를 막는다.
+    """
+
+    thresholds: RepetitionThresholds
     verdicts: list[RepetitionVerdict] = field(default_factory=list)
-    thresholds: RepetitionThresholds = field(default_factory=RepetitionThresholds)
     errors: list[str] = field(default_factory=list)
 
     @property

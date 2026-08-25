@@ -11,6 +11,7 @@ from scripts.arq_gate import (
     CALIBRATION_HOST_CPU_COUNT,
     IN_PROCESS_THRESHOLDS,
     GateThresholds,
+    RepetitionGateResult,
     RepetitionThresholds,
     ThroughputGateResult,
     ThroughputSample,
@@ -364,6 +365,26 @@ def test_repetition_gate_requires_thresholds():
 
     with pytest.raises(TypeError):
         evaluate_repetition_gate([_make_sample(600, 0, 499.0, tasks_per_second=1150.0)])
+
+
+def test_repetition_gate_result_requires_thresholds():
+    """RepetitionGateResult 는 thresholds 없이 생성할 수 없습니다.
+
+    thresholds 는 필수 생성자 인자여야 하며, default_factory 로 RepetitionThresholds 를
+    다시 만들 수 없습니다. 무인자 생성은 TypeError 여야 합니다.
+    """
+    with pytest.raises(TypeError):
+        RepetitionGateResult()
+
+
+def test_repetition_gate_result_missing_thresholds_raises_type_error():
+    """verdicts 만 넘기고 thresholds 를 누락한 생성도 TypeError 여야 합니다."""
+    samples = [
+        _make_sample(600, 0, 499.0, tasks_per_second=1150.0),
+    ]
+
+    with pytest.raises(TypeError):
+        RepetitionGateResult(verdicts=samples)
 
 
 def _calibration_environment() -> dict:

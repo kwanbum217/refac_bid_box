@@ -20,9 +20,9 @@
 ## 현재 구현 상태 (실측 및 코드베이스 확인)
 
 - **실제 템플릿 위치**: `src/app/templates/` (총 12종 Jinja2 템플릿 이식 완료)
-- **정적 자산 위치**: `src/app/static/` (하위는 `css/`, `images/` 뿐이며 JS 번들 없음)
-- **HTMX 미사용**: `src/app/templates/` 전체에서 HTMX 로드와 `hx-*` 속성이 **0건**입니다. 동적 처리는 jQuery 3.7.1(`base.html:268`)이 담당하며 `$()` 호출은 `chatbot/chat.html` 과 `bids/detail.html` 두 파일에 83건입니다. 이 상태가 기각 결정에 따른 **정본 구현**입니다
-- **Chart.js**: 파일이 아니라 CDN 로드입니다 (`bids/dashboard.html:6` 등 3개 템플릿)
+- **정적 자산 위치**: `src/app/static/` (`css/`, `images/`, `vendor/`). `base.html` 핵심 자산(bootstrap, daisyui, tailwindcss, jquery, font-awesome, fonts)은 전부 `vendor/` 로컬 파일이며 **외부 CDN 참조 0건**입니다 (2026-08-25 로컬라이즈, 검증: `tests/test_static_assets.py`)
+- **HTMX 미사용**: `src/app/templates/` 전체에서 HTMX 로드와 `hx-*` 속성이 **0건**입니다. 동적 처리는 jQuery 3.7.1(`base.html:266`)이 담당하며 `$()` 호출은 `chatbot/chat.html` 과 `bids/detail.html` 두 파일에 83건입니다. 이 상태가 기각 결정에 따른 **정본 구현**입니다
+- **Chart.js**: 아직 CDN 로드입니다 (`bids/dashboard.html:6`, `bids/compare.html:7`, `chatbot/chat.html:657` 등 3개 템플릿). **잔여 과업**으로 아래 '이 결정이 닫지 않는 것' 절과 '남은 작업' 절에 기록합니다
 - **SSR 라우팅 진입점**: `src/app/api/ui.py` (`/`, `/bids/`, `/bids/results/`, `/bids/dashboard/`, `/chatbot/` 등)
 - **챗봇 SSE 스트리밍**: `POST /api/v1/chatbot/chat/stream` (단일 파이프라인 스트리밍 완료)
 - **React SPA 격리**: `docker-compose.yml`에서 `profiles: ["legacy"]`로 격리, 기본 기동 제외
@@ -46,17 +46,22 @@
 
 ### 이 결정이 닫지 않는 것
 
-HTMX 기각은 **외부 CDN 의존과 무관합니다.** `base.html` 은 렌더링에 필요한
-자산을 실행 시점에 외부 호스트 7곳에서 받습니다.
+HTMX 기각은 **잔여 외부 CDN 의존과 무관합니다.** `base.html` 의 핵심 자산
+(bootstrap CSS/JS, daisyui, tailwindcss, jquery, font-awesome, Google Fonts) 은
+2026-08-25 에 `src/app/static/vendor/` 로 **전부 로컬화**되어 실행 시점의 외부
+참조가 **0건**입니다 (검증: [`cdn_asset_localization_20260825.md`](../analysis/cdn_asset_localization_20260825.md),
+`tests/test_static_assets.py`).
 
-    cdn.jsdelivr.net (bootstrap CSS/JS, daisyui)   cdn.tailwindcss.com
-    code.jquery.com  cdnjs.cloudflare.com (font-awesome)
-    fonts.googleapis.com  fonts.gstatic.com
+여전히 외부 호스트에 묶인 잔여 범위는 아래 둘뿐이며, 둘 다 UI 프레임워크 선택과
+별개의 과제로 남은 작업 절에 기록되어 있습니다.
 
-G2(크로스 플랫폼, Docker 표준)를 표방하면서 화면이 외부 네트워크에 묶여 있고,
-CDN 이 버전을 바꾸면 재현성이 사라집니다. `cdn.tailwindcss.com` 은 브라우저에서
-CSS 를 생성하는 개발용 배포판이라 운영 사용 대상이 아닙니다. 이 항목은 UI
-프레임워크 선택과 별개의 과제로 분리해 다룹니다.
+1. **Chart.js CDN 3개 템플릿**: `bids/dashboard.html:6`, `bids/compare.html:7`,
+   `chatbot/chat.html:657` 이 `cdn.jsdelivr.net/npm/chart.js` 를 받습니다
+   (`chatbot/chat.html:658` 의 marked 도 동일 호스트).
+2. **Tailwind browser JIT**: `cdn.tailwindcss.com` 은 로컬 파일
+   `vendor/tailwindcss/3.4.16/tailwindcss.js` 로 내려받았지만, 여전히 브라우저에서
+   CSS 를 생성하는 개발용 배포판입니다. 운영 배포를 위한 정적 컴파일 CSS 빌드
+   체인 도입은 후속 과제로 남아 있습니다.
 
 ---
 
@@ -194,4 +199,7 @@ React 를 원본 디자인으로 전면 재구현하는 방안을 설계까지 �
 1. ~~챗봇 탭 SSE 스트리밍 전환~~ → **완료: `POST /api/v1/chatbot/chat/stream`** (2026-08-04)
 2. ~~로그인/회원가입 POST 처리를 SSR 폼으로 연결~~ → **완료: fetch JSON POST → API 연결** (2026-08-01)
 3. ~~원본 `re_path` 이중 슬래시 교정 이식~~ → **완료: `collapse_bids_double_slash` 미들웨어** (2026-08-04)
-4. Django admin 은 이식하지 않습니다. 원본에서 사용하지 않았음을 담당자가 확인했습니다 (2026-08-04)
+4. ~~base.html 핵심 자산 CDN 의존 제거~~ → **완료: `src/app/static/vendor/` 로컬화, 외부 참조 0건** (2026-08-25)
+5. Chart.js CDN 3개 템플릿 로컬화 — `bids/dashboard.html:6`, `bids/compare.html:7`, `chatbot/chat.html:657` (marked 포함) 을 `vendor/` 로 이관 (2026-08-25 기준 미완료)
+6. Tailwind browser JIT 를 운영용 정적 컴파일 CSS 로 교체 — 로컬 `tailwindcss.js` 는 개발용 브라우저 JIT (2026-08-25 기준 미완료)
+7. Django admin 은 이식하지 않습니다. 원본에서 사용하지 않았음을 담당자가 확인했습니다 (2026-08-04)
