@@ -1,8 +1,8 @@
 # 프론트엔드 아키텍처 결정 (ADR)
 
 > **작성일**: 2026-07-31
-> **상태**: 목표 아키텍처 확정 / 구현 미완 (HTMX 미도입)
-> **수정일**: 2026-08-23
+> **상태**: 확정 (2026-08-25 HTMX 기각으로 목표와 구현 일치)
+> **수정일**: 2026-08-25
 > **근거**: [`REFACTORING_DESIGN.md`](REFACTORING_DESIGN.md) 3.7절
 
 ---
@@ -11,7 +11,7 @@
 
 | 항목 | 선택 | 근거 |
 | --- | --- | --- |
-| 1차 UI | **SSR + HTMX + Jinja2** | 원본 Django Templates UX 유지, 점진적 이행 |
+| 1차 UI | **SSR + Jinja2 (+ jQuery)** | 원본 Django Templates UX 재현 완료. HTMX 는 2026-08-25 기각 (아래 절) |
 | 챗봇 스트리밍 | **SSE (FastAPI StreamingResponse)** | 설계서 G3 레이턴시 목표 달성 |
 | React SPA (`frontend/`) | **레거시 스캐폴드 보존, 신규 개발 중단** | Antigravity가 설계와 무관하게 생성한 스캐폴드 동결 |
 
@@ -21,11 +21,42 @@
 
 - **실제 템플릿 위치**: `src/app/templates/` (총 12종 Jinja2 템플릿 이식 완료)
 - **정적 자산 위치**: `src/app/static/` (하위는 `css/`, `images/` 뿐이며 JS 번들 없음)
-- **HTMX 미도입**: `src/app/templates/` 전체에서 HTMX 로드와 `hx-*` 속성이 **0건**입니다. `base.html:268`은 jQuery 3.7.1을 CDN에서 로드합니다. 목표 아키텍처의 1차 UI 선택(SSR + HTMX)은 **아직 이행되지 않았습니다**
+- **HTMX 미사용**: `src/app/templates/` 전체에서 HTMX 로드와 `hx-*` 속성이 **0건**입니다. 동적 처리는 jQuery 3.7.1(`base.html:268`)이 담당하며 `$()` 호출은 `chatbot/chat.html` 과 `bids/detail.html` 두 파일에 83건입니다. 이 상태가 기각 결정에 따른 **정본 구현**입니다
 - **Chart.js**: 파일이 아니라 CDN 로드입니다 (`bids/dashboard.html:6` 등 3개 템플릿)
 - **SSR 라우팅 진입점**: `src/app/api/ui.py` (`/`, `/bids/`, `/bids/results/`, `/bids/dashboard/`, `/chatbot/` 등)
 - **챗봇 SSE 스트리밍**: `POST /api/v1/chatbot/chat/stream` (단일 파이프라인 스트리밍 완료)
 - **React SPA 격리**: `docker-compose.yml`에서 `profiles: ["legacy"]`로 격리, 기본 기동 제외
+
+---
+
+## HTMX 기각 (2026-08-25)
+
+목표 아키텍처의 1차 UI 를 **SSR + Jinja2 (+ jQuery)** 로 개정하고 HTMX 도입을
+기각합니다. 구현을 목표에 맞추는 대신 목표를 구현에 맞추는 선택이며, 근거는
+셋입니다.
+
+| 근거 | 내용 |
+| --- | --- |
+| 채택 명분의 소멸 | HTMX 를 고른 이유는 "원본 UX 유지, **점진적 이행**" 이었습니다. 이 문서의 '검토 후 기각된 대안' 절이 React 재구현을 기각하며 "원본 재현이 SSR 에서 **이미 완료**" 라고 적고 있습니다. 이행이 끝났으므로 이행 수단은 목적을 잃었습니다 |
+| 비용은 실제, 이득은 가설 | 전환 대상은 동작 중인 템플릿 2개이고 그중 하나가 RAG 챗봇 경로입니다. 의도 라우팅 수정 직후이며 19문항 품질 재측정이 걸려 있어, 측정 대상 경로를 측정 전에 다시 건드리는 것은 G3(실측으로 성능 확인)에 손해입니다 |
+| 동적 요구는 이미 해결 | 유일한 실시간 요구인 챗봇 스트리밍은 SSE 로 동작합니다. HTMX SSE 확장으로 바꿔도 기능상 이득이 없고 의존성만 늘어납니다 |
+
+**jQuery 부담론은 성립하지 않습니다.** 로드는 한 줄이며, HTMX 로 바꿔도 그
+한 줄이 다른 한 줄이 될 뿐입니다.
+
+### 이 결정이 닫지 않는 것
+
+HTMX 기각은 **외부 CDN 의존과 무관합니다.** `base.html` 은 렌더링에 필요한
+자산을 실행 시점에 외부 호스트 7곳에서 받습니다.
+
+    cdn.jsdelivr.net (bootstrap CSS/JS, daisyui)   cdn.tailwindcss.com
+    code.jquery.com  cdnjs.cloudflare.com (font-awesome)
+    fonts.googleapis.com  fonts.gstatic.com
+
+G2(크로스 플랫폼, Docker 표준)를 표방하면서 화면이 외부 네트워크에 묶여 있고,
+CDN 이 버전을 바꾸면 재현성이 사라집니다. `cdn.tailwindcss.com` 은 브라우저에서
+CSS 를 생성하는 개발용 배포판이라 운영 사용 대상이 아닙니다. 이 항목은 UI
+프레임워크 선택과 별개의 과제로 분리해 다룹니다.
 
 ---
 
