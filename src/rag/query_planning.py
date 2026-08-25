@@ -184,6 +184,24 @@ def is_entity_specific_query(query: str) -> bool:
     )
 
 
+RESULT_ATTRIBUTE_PATTERN = re.compile(
+    r"(?:최종\s*낙찰(?:자)?|낙찰\s*업체|낙찰업체|낙찰\s*자|낙찰자|낙찰\s*금액|낙찰금액|1순위\s*낙찰(?:업체)?|낙찰\s*내역|낙찰내역)"
+)
+
+
+def is_result_query(query: str) -> bool:
+    """질의가 낙찰 결과(낙찰업체, 낙찰자, 낙찰금액, 낙찰률 등)를 묻는지 판정합니다.
+
+    기존 결과 질의 마커(RESULT_QUERY_MARKERS), 통계 키워드(낙찰률), 개체 속성 지목 패턴을 재사용합니다.
+    """
+    lowered = _query_lower(query)
+    if any(marker in lowered for marker in RESULT_QUERY_MARKERS):
+        return True
+    if "낙찰률" in lowered:
+        return True
+    return bool(RESULT_ATTRIBUTE_PATTERN.search(lowered))
+
+
 def is_result_list_query(query: str) -> bool:
     """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다."""
     lowered = _query_lower(query)

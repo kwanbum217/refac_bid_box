@@ -18,6 +18,7 @@ from src.rag.query_planning import (
     extract_result_limit,
     is_entity_specific_query,
     is_result_list_query,
+    is_result_query,
 )
 
 
@@ -178,3 +179,26 @@ def test_unclassified_general_queries_default_to_vector():
     assert plan.use_sql is False
     assert plan.use_vector is True
     assert "기본 벡터 질의" in plan.route_reason
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("봉화 공설운동장 리모델링 사업 감리 용역의 낙찰업체와 낙찰금액을 알려줘", True),
+        ("안녕 자두야 포스트프로덕션 용역의 최종 낙찰금액 및 낙찰률", True),
+        ("대구불로초등학교 급식시설 개선공사의 낙찰업체", True),
+        ("도로포장 공사의 낙찰자 알려줘", True),
+        ("공고번호 R26BK01659912-001 낙찰 정보 확인해줘", True),
+        ("bid_10015925 건의 낙찰금액이 얼마인가요?", True),
+        ("최근 낙찰된 용역 사업 목록", True),
+        ("주식회사 진성의 낙찰 내역", True),
+        ("서울 지역 공사 공고 목록", False),
+        ("충북대학교병원 개선공사의 수요기관과 입찰 참가 조건", False),
+        ("2026년 봉화 도로포장 공사의 공고번호와 수요기관", False),
+        ("적격심사 세부기준 안내", False),
+        ("안내 부탁드립니다", False),
+    ],
+)
+def test_is_result_query_detection(query: str, expected: bool):
+    """낙찰 결과를 묻는 질의와 단순 공고/기준 질의를 정확히 변별해야 합니다."""
+    assert is_result_query(query) is expected
