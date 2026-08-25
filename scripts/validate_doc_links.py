@@ -186,7 +186,13 @@ def resolve_link_target(
     # 통과시키면 그 머신에서만 green 이 된다. 2026-08-25 에 이 fail-open 때문에
     # 로컬은 통과하고 CI 3플랫폼이 33건으로 실패했다.
     if target_as_path.is_absolute():
-        rel_to_root = (root_dir / target_path.lstrip("/")).resolve()
+        # anchor 를 떼어 저장소 루트 기준으로만 해석한다. lstrip("/") 만 하면
+        # Windows 의 드라이브 절대 경로(C:\\...)가 남아 Path 조인이 root_dir 를
+        # 통째로 무시하고 그 절대 경로를 그대로 돌려준다. 그러면 작성자 머신에
+        # 존재하는 경로가 다시 통과한다.
+        anchor = target_as_path.anchor
+        relative_part = target_path[len(anchor) :] if anchor else target_path
+        rel_to_root = (root_dir / relative_part.lstrip("/\\")).resolve()
         return rel_to_root, ""
 
     # 7. 현재 마크다운 파일 위치 기준 상대 경로

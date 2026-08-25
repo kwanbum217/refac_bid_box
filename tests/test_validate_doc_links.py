@@ -217,6 +217,20 @@ def test_file_uri_to_host_path_is_broken(tmp_path):
     assert len(validate_markdown_file(md, root_dir=repo)) == 1
 
 
+def test_windows_drive_absolute_path_is_broken(tmp_path):
+    """드라이브 문자가 붙은 절대 경로도 저장소 밖이면 깨진 링크여야 합니다.
+
+    Windows 에서 Path 조인은 드라이브 절대 경로를 만나면 root_dir 를 통째로
+    버리므로, anchor 를 떼지 않으면 작성자 머신 경로가 그대로 통과합니다.
+    """
+    repo = tmp_path / "repo_win"
+    (repo / "docs").mkdir(parents=True)
+    md = repo / "docs" / "doc.md"
+    md.write_text("[바깥](C:/Users/kwanbum/outside.txt)\n", encoding="utf-8")
+
+    assert len(validate_markdown_file(md, root_dir=repo)) == 1
+
+
 def test_cli_execution():
     """CLI 형태로 스크립트를 호출했을 때 정상 종료(exit code 0)하는지 검증합니다."""
     proc = subprocess.run(
