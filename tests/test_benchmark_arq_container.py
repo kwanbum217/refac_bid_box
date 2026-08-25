@@ -480,6 +480,13 @@ async def test_run_container_worker_benchmark_bypass_marks_load_violation(tmp_pa
             "scripts.benchmark_arq_container.inspect_image_id",
             return_value="sha256:workerimg",
         ),
+        # Docker 가 없는 러너(GitHub macOS)에서는 실제 조회가 unknown 을 돌려주고
+        # provenance 필수 필드 검사에서 실패한다. 이 테스트가 검증하는 것은 부하
+        # 규약 우회 표시이므로 docker 버전은 다른 테스트와 같이 고정한다.
+        patch(
+            "scripts.benchmark_arq_container.get_docker_version",
+            return_value="Docker version 29.7.2",
+        ),
     ):
 
         def fake_start(self, *args, **kwargs):

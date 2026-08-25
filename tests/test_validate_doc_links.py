@@ -183,6 +183,40 @@ def test_find_markdown_files(tmp_path: Path):
     assert "ignored.md" not in file_names
 
 
+def test_host_absolute_path_is_broken_even_if_it_exists(tmp_path):
+    """작성자 머신에 실재하는 절대 경로도 깨진 링크로 잡아야 합니다.
+
+    존재한다는 이유로 통과시키면 그 머신에서만 green 이 됩니다. 2026-08-25 에
+    이 fail-open 으로 로컬은 통과하고 CI 3플랫폼이 33건으로 실패했습니다.
+    """
+    existing_abs = tmp_path / "outside.txt"
+    existing_abs.write_text("x", encoding="utf-8")
+    assert existing_abs.is_absolute()
+    assert existing_abs.exists()
+
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    md = repo / "docs" / "doc.md"
+    md.write_text(f"[바깥]({existing_abs})\n", encoding="utf-8")
+
+    broken = validate_markdown_file(md, root_dir=repo)
+    assert len(broken) == 1
+    assert str(existing_abs) in broken[0].raw_target
+
+
+def test_file_uri_to_host_path_is_broken(tmp_path):
+    """file:// 로 감싼 머신 절대 경로도 같은 이유로 잡아야 합니다."""
+    existing_abs = tmp_path / "outside2.txt"
+    existing_abs.write_text("x", encoding="utf-8")
+
+    repo = tmp_path / "repo2"
+    (repo / "docs").mkdir(parents=True)
+    md = repo / "docs" / "doc.md"
+    md.write_text(f"[바깥](file://{existing_abs})\n", encoding="utf-8")
+
+    assert len(validate_markdown_file(md, root_dir=repo)) == 1
+
+
 def test_cli_execution():
     """CLI 형태로 스크립트를 호출했을 때 정상 종료(exit code 0)하는지 검증합니다."""
     proc = subprocess.run(

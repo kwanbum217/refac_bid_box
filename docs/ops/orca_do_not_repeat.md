@@ -1921,3 +1921,37 @@ macOS 기본 셸은 bash 3.2 라 **연상 배열(`declare -A`)을 지원하지 �
 
 **시작했다는 것과 돌고 있다는 것은 다릅니다.** 감시는 실패해도 조용하므로,
 확인하지 않으면 없는 감시를 있다고 믿게 됩니다.
+
+### 21.9 로컬 green 은 CI green 이 아닙니다
+
+2026-08-25 세션에서 워커 산출물 3건을 Level 1 게이트와 로컬 전체 테스트 통과만
+보고 병합했습니다. **원격 CI 는 그 시점에 이미 빨간불이었습니다.** 세션 시작
+커밋 `3e9d014` 의 run `32727481204` 은 `lint-and-validate` 와 3플랫폼 테스트가
+모두 실패한 상태였고, 병합 판정에는 이 사실이 전혀 반영되지 않았습니다.
+
+원인은 두 가지였고 **둘 다 로컬에서는 재현되지 않습니다.**
+
+| 실패 | 기전 |
+| --- | --- |
+| 문서 링크 33건 | `validate_doc_links.py` 가 절대 경로를 **작성자 머신에 존재하면 통과**시켰습니다. `/Users/kwanbum/orca/...` 와 `file:///Users/kwanbum/...` 링크가 이 경로로 살아남았습니다 |
+| macOS 테스트 1건 | GitHub macOS 러너에는 Docker 가 없어 `docker.docker_version` 이 unknown 이 되고 provenance 필수 필드 검사가 실패합니다 |
+
+**병합 전에 원격 CI 상태를 확인하십시오.** 로컬 통과는 필요조건이지 충분조건이
+아닙니다.
+
+```bash
+gh run list --branch main --limit 1 --json headSha,conclusion
+```
+
+**OS 의존 fail-open 은 Docker 로 재현하십시오.** macOS 는 대소문자를 구분하지
+않고 개발자 홈 디렉터리가 실재하므로, 경로를 다루는 검증기는 로컬에서 항상
+후하게 통과합니다.
+
+```bash
+docker run --rm -v "$PWD":/w -w /w python:3.12-slim python3 scripts/validate_doc_links.py
+```
+
+검증기는 이제 저장소 루트 기준 절대 표기(`/docs/...`)만 허용하고, 머신 절대
+경로는 존재해도 깨진 링크로 잡습니다. 회귀 테스트는
+`test_host_absolute_path_is_broken_even_if_it_exists` 와
+`test_file_uri_to_host_path_is_broken` 입니다.

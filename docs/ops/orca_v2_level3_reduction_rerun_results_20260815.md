@@ -84,12 +84,16 @@
 
 ## 5. 원시 산출물 참조
 
-- **실험 요약 메타데이터**: [`/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/experiment_summary.json`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/experiment_summary.json)
+> 아래 산출물은 저장소 밖 Orca capsule 디렉터리에 있습니다. 기준 경로는
+> `~/orca/capsules/run_12cd21f3a5e1/experiment/results/` 이며, 저장소 체크아웃에는
+> 존재하지 않으므로 링크가 아니라 경로 표기로 남깁니다.
+
+- **실험 요약 메타데이터**: `/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/experiment_summary.json`
 - **팔 A 실행 결과**:
-  - Run 1: [`arm_a_run_1.json`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_a_run_1.json) | [`arm_a_run_1.stdout.txt`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_a_run_1.stdout.txt)
-  - Run 2: [`arm_a_run_2.json`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_a_run_2.json) | [`arm_a_run_2.stdout.txt`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_a_run_2.stdout.txt)
-  - Run 3: [`arm_a_run_3.json`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_a_run_3.json) | [`arm_a_run_3.stdout.txt`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_a_run_3.stdout.txt)
+  - Run 1: `arm_a_run_1.json` | `arm_a_run_1.stdout.txt`
+  - Run 2: `arm_a_run_2.json` | `arm_a_run_2.stdout.txt`
+  - Run 3: `arm_a_run_3.json` | `arm_a_run_3.stdout.txt`
 - **팔 B 실행 결과**:
-  - Run 1: [`arm_b_run_1.json`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_b_run_1.json) | [`arm_b_run_1.stdout.txt`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_b_run_1.stdout.txt)
-  - Run 2: [`arm_b_run_2.json`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_b_run_2.json) | [`arm_b_run_2.stdout.txt`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_b_run_2.stdout.txt)
-  - Run 3: [`arm_b_run_3.json`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_b_run_3.json) | [`arm_b_run_3.stdout.txt`](/Users/kwanbum/orca/capsules/run_12cd21f3a5e1/experiment/results/arm_b_run_3.stdout.txt)
+  - Run 1: `arm_b_run_1.json` | `arm_b_run_1.stdout.txt`
+  - Run 2: `arm_b_run_2.json` | `arm_b_run_2.stdout.txt`
+  - Run 3: `arm_b_run_3.json` | `arm_b_run_3.stdout.txt`
