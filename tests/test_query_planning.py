@@ -202,3 +202,40 @@ def test_unclassified_general_queries_default_to_vector():
 def test_is_result_query_detection(query: str, expected: bool):
     """낙찰 결과를 묻는 질의와 단순 공고/기준 질의를 정확히 변별해야 합니다."""
     assert is_result_query(query) is expected
+
+
+def test_category_keyword_last_occurrence_precedence_with_fixture():
+    """복합 카테고리 수식어(예: 공사 감리 용역)에서 마지막에 등장하는 핵어가 카테고리로 판정되어야 합니다."""
+    # q01: "봉화 공설운동장 리모델링 사업 건축공사 감리 용역..." -> 용역 (Servc)
+    q01_text = _get_fixture_question("q01")
+    plan_q01 = build_retrieval_plan(q01_text)
+    assert plan_q01.filters.get("category") == "Servc"
+
+    # q02: "애니메이션 극장판 ... 포스트프로덕션 용역..." -> 용역 (Servc)
+    q02_text = _get_fixture_question("q02")
+    plan_q02 = build_retrieval_plan(q02_text)
+    assert plan_q02.filters.get("category") == "Servc"
+
+    # q03: "대구불로초등학교 급식시설 환경개선 및 기타 전기공사 재해예방기술지도 용역..." -> 용역 (Servc)
+    q03_text = _get_fixture_question("q03")
+    plan_q03 = build_retrieval_plan(q03_text)
+    assert plan_q03.filters.get("category") == "Servc"
+
+    # q08: "2026년 금정산성 남문계단 및 문루 보수정비공사..." -> 공사 (Cnstwk)
+    q08_text = _get_fixture_question("q08")
+    plan_q08 = build_retrieval_plan(q08_text)
+    assert plan_q08.filters.get("category") == "Cnstwk"
+
+    # q09: "갈산고등학교 기숙사 수선 기계설비공사..." -> 공사 (Cnstwk)
+    q09_text = _get_fixture_question("q09")
+    plan_q09 = build_retrieval_plan(q09_text)
+    assert plan_q09.filters.get("category") == "Cnstwk"
+
+    # q14: "2026년 김량장 브랜드 홍보물품 제작..." -> 물품 (Thng)
+    q14_text = _get_fixture_question("q14")
+    plan_q14 = build_retrieval_plan(q14_text)
+    assert plan_q14.filters.get("category") == "Thng"
+
+    # 카테고리 키워드가 없는 질의는 category 필터가 생성되지 않아야 함
+    plan_none = build_retrieval_plan("안내 부탁드립니다")
+    assert "category" not in plan_none.filters

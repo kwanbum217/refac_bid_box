@@ -385,10 +385,18 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if date_to:
         filters["date_to"] = date_to
 
+    # 한국어 명사구 구조상 수식어 뒤에 오는 마지막 카테고리 단어가 핵어(예: "~공사 감리 용역" -> 용역)이므로
+    # 질의에서 가장 뒤에 나타나는 카테고리 키워드를 채택합니다.
+    last_cat_pos = -1
+    matched_category = None
     for keyword, category in CATEGORY_KEYWORDS.items():
-        if keyword in lowered:
-            filters["category"] = category
-            break
+        pos = lowered.rfind(keyword)
+        if pos > last_cat_pos:
+            last_cat_pos = pos
+            matched_category = category
+
+    if matched_category is not None:
+        filters["category"] = matched_category
 
     for region in REGION_KEYWORDS:
         if region in lowered:
