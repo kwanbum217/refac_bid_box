@@ -3,8 +3,8 @@ scripts/validate_llm_quality_fixture.py
 
 LLM 품질 평가 fixture (data/eval/llm_quality_fixture_v1.json) 스키마 및 무결성 검증기.
 표준 라이브러리만을 사용하여 필수 필드 누락, 타입 불일치, ID 중복, context_sufficient
-문항 수 하한 미달, 채점 가능성, 자기모순 금지 규칙, 그리고 ChromaDB bidding_kb 실재
-근거 ID 존재성을 엄격히 검증합니다.
+문항 수 하한 미달, 채점 가능성, 자기모순 금지 규칙, 복합 numeric 팩트 검출,
+그리고 ChromaDB bidding_kb 실재 근거 ID 존재성을 엄격히 검증합니다.
 
 규약:
 - 종료 코드 0: 검증 통과
@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -29,7 +30,8 @@ REQUIRED_FIELDS = (
     "context_sufficient",
     "expected_evidence_ids",
     "expected_facts",
-    "must_not_claim",
+    "forbidden_literals",
+    "semantic_forbidden_claims",
     "citation_required",
     "refusal_expected",
     "numeric_tolerance",
@@ -37,6 +39,12 @@ REQUIRED_FIELDS = (
 )
 
 DEFAULT_MIN_CONTEXT_SUFFICIENT = 15
+
+# 내부 영문 코드 패턴 (forbidden_literals 에서 기대되는 값들)
+KNOWN_INTERNAL_CODES = frozenset({"Servc", "Thng", "Cnstwk", "Frgcpt"})
+
+# 복합 numeric 팩트 검출용 패턴: 한 statement 에 낙찰금액과 낙찰률이 둘 다 언급된 경우
+COMPOUND_NUMERIC_PATTERN = re.compile(r"낙찰금액.*낙찰률|낙찰률.*낙찰금액")
 
 
 def find_chroma_sqlite_path() -> Path | None:
@@ -146,10 +154,37 @@ def validate_item_schema(item: dict[str, Any], index: int) -> list[str]:
             if not isinstance(ev_id, str):
                 errors.append(f"문항 '{item_id}': evidence_id '{ev_id}'는 문자열이어야 합니다.")
 
-    if not isinstance(item["must_not_claim"], list):
-        errors.append(f"문항 '{item_id}': 'must_not_claim'은 문자열 리스트여야 합니다.")
-    elif len(item["must_not_claim"]) == 0:
-        errors.append(f"문항 '{item_id}': 'must_not_claim' 리스트가 비어있습니다.")
+    # forbidden_literals 검증
+    if not isinstance(item["forbidden_literals"], list):
+        errors.append(f"문항 '{item_id}': 'forbidden_literals'는 문자열 리스트여야 합니다.")
+    else:
+        for literal in item["forbidden_literals"]:
+            if not isinstance(literal, str):
+                errors.append(
+                    f"문항 '{item_id}': forbidden_literal '{literal}'는 문자열이어야 합니다."
+                )
+            elif literal not in KNOWN_INTERNAL_CODES:
+                errors.append(
+                    f"문항 '{item_id}': forbidden_literal '{literal}'은(는) 알려진 내부 코드({sorted(KNOWN_INTERNAL_CODES)})에 없습니다."
+                )
+        # 알려진 내부 코드가 모두 포함되어 있는지 확인
+        missing_codes = KNOWN_INTERNAL_CODES - set(item["forbidden_literals"])
+        if missing_codes:
+            errors.append(
+                f"문항 '{item_id}': forbidden_literals 에 알려진 내부 코드 {sorted(missing_codes)} 가 누락되었습니다."
+            )
+
+    # semantic_forbidden_claims 검증
+    if not isinstance(item["semantic_forbidden_claims"], list):
+        errors.append(f"문항 '{item_id}': 'semantic_forbidden_claims'는 문자열 리스트여야 합니다.")
+    else:
+        for claim in item["semantic_forbidden_claims"]:
+            if not isinstance(claim, str) or not claim.strip():
+                errors.append(
+                    f"문항 '{item_id}': semantic_forbidden_claims 원소가 비어있거나 문자열이 아닙니다."
+                )
+        if len(item["semantic_forbidden_claims"]) == 0:
+            errors.append(f"문항 '{item_id}': 'semantic_forbidden_claims' 리스트가 비어있습니다.")
 
     if not (isinstance(item["scoring_rubric"], (str, dict)) and item["scoring_rubric"]):
         errors.append(
@@ -162,7 +197,7 @@ def validate_item_schema(item: dict[str, Any], index: int) -> list[str]:
             f"문항 '{item_id}': 'numeric_tolerance'는 숫자, dict 또는 None 이어야 합니다."
         )
 
-    # expected_facts 채점 가능성 검사
+    # expected_facts 채점 가능성 검사 + 복합 numeric 팩트 검출
     facts = item["expected_facts"]
     if not isinstance(facts, list):
         errors.append(f"문항 '{item_id}': 'expected_facts'는 리스트여야 합니다.")
@@ -186,6 +221,35 @@ def validate_item_schema(item: dict[str, Any], index: int) -> list[str]:
                     errors.append(
                         f"문항 '{item_id}': expected_facts[{f_idx}] 에 'verification_criterion'이 없습니다."
                     )
+                if "fact_type" not in fact:
+                    errors.append(
+                        f"문항 '{item_id}': expected_facts[{f_idx}] 에 'fact_type'이 없습니다."
+                    )
+                else:
+                    fact_type = fact["fact_type"]
+                    if fact_type not in ("proposition", "numeric", "refusal"):
+                        errors.append(
+                            f"문항 '{item_id}': expected_facts[{f_idx}] 의 fact_type 이 'proposition', 'numeric', 'refusal' 중 하나가 아닙니다: {fact_type}"
+                        )
+                    if fact_type == "numeric":
+                        if "expected_value" not in fact or fact["expected_value"] is None:
+                            errors.append(
+                                f"문항 '{item_id}': numeric 타입 expected_facts[{f_idx}] 에 'expected_value'가 필요합니다."
+                            )
+                        if "unit" not in fact or fact["unit"] is None:
+                            errors.append(
+                                f"문항 '{item_id}': numeric 타입 expected_facts[{f_idx}] 에 'unit'이 필요합니다."
+                            )
+                        if "tolerance" not in fact or fact["tolerance"] is None:
+                            errors.append(
+                                f"문항 '{item_id}': numeric 타입 expected_facts[{f_idx}] 에 'tolerance'가 필요합니다."
+                            )
+                        # 복합 numeric 팩트 검출: statement 에 낙찰금액과 낙찰률이 둘 다 있으면 오류
+                        statement = str(fact.get("statement", ""))
+                        if COMPOUND_NUMERIC_PATTERN.search(statement):
+                            errors.append(
+                                f"문항 '{item_id}': expected_facts[{f_idx}] 는 복합 numeric 팩트입니다(낙찰금액과 낙찰률 동시 언급). 원자 단위로 분해해야 합니다. statement: {statement}"
+                            )
             else:
                 errors.append(
                     f"문항 '{item_id}': expected_facts[{f_idx}] 은 dict 또는 str 이어야 합니다."
@@ -263,9 +327,10 @@ def validate_fixture_data(
         if raw_item.get("refusal_expected") is True:
             refusal_count += 1
 
-        must_not = raw_item.get("must_not_claim") or []
-        if isinstance(must_not, list):
-            for pattern in must_not:
+        # 자기모순 규칙은 semantic_forbidden_claims 에서 확인
+        semantic_claims = raw_item.get("semantic_forbidden_claims") or []
+        if isinstance(semantic_claims, list):
+            for pattern in semantic_claims:
                 if isinstance(pattern, str) and (
                     "자기모순" in pattern or ("없" in pattern and "비교" in pattern)
                 ):
@@ -282,7 +347,7 @@ def validate_fixture_data(
 
     if not has_self_contradiction_rule:
         errors.append(
-            "must_not_claim 에 관측된 '자기모순' 유형(데이터 부재 주장 후 비교 수행) 제재 규칙이 누락되었습니다."
+            "semantic_forbidden_claims 에 관측된 '자기모순' 유형(데이터 부재 주장 후 비교 수행) 제재 규칙이 누락되었습니다."
         )
 
     # 4. ChromaDB 실재 근거 존재성 검증

@@ -1,8 +1,8 @@
 {
-  "version": "1.0.0",
-  "name": "llm_quality_fixture_v1",
-  "description": "gemma4:e4b 대 gemma4:e2b LLM 품질 변별 및 승격 판정을 위한 정본 평가 fixture (ChromaDB 실재 근거 결박)",
-  "created_at": "2026-08-24",
+  "version": "2.0.0",
+  "name": "llm_quality_fixture_v2",
+  "description": "gemma4:e4b 대 gemma4:e2b LLM 품질 변별 및 승격 판정을 위한 정본 평가 fixture v2 (원자 numeric 팩트, 금지 리터럴/의미 분리, ChromaDB 실재 근거 결박)",
+  "created_at": "2026-08-25",
   "total_items": 19,
   "min_context_sufficient_required": 15,
   "context_sufficient_count": 16,
@@ -41,22 +41,35 @@
           "verification_criterion": "낙찰업체 건축사사무소 가온 명시"
         },
         {
-          "statement": "낙찰금액은 46,602,100원이며 낙찰률은 88.5100% 임",
+          "statement": "낙찰금액은 46,602,100원 임",
           "fact_type": "numeric",
           "expected_value": "46602100",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 46,602,100원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 88.5100% 임",
+          "fact_type": "numeric",
+          "expected_value": "88.5100",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 46,602,100원 및 낙찰률 88.5100%(±0.01%p) 명시"
+          "verification_criterion": "낙찰률 88.5100%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "Servc 등 내부 영문 코드를 사용자 답변에 노출",
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
         "낙찰업체를 다른 업체로 허위 기재하거나 금액 왜곡"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "공고번호, 수요기관, 낙찰업체(건축사사무소 가온), 낙찰금액(46,602,100원) 및 낙찰률이 정확하면 10점 만점"
+      "scoring_rubric": "공고번호, 수요기관, 낙찰업체(건축사사무소 가온), 낙찰금액(46,602,100원) 및 낙찰률(88.5100%)이 정확하면 10점 만점"
     },
     {
       "id": "q02",
@@ -83,22 +96,35 @@
           "verification_criterion": "낙찰업체 주식회사 씨아이씨미디어 명시"
         },
         {
-          "statement": "낙찰금액은 33,000,000원이며 낙찰률은 100.0000% 임",
+          "statement": "낙찰금액은 33,000,000원 임",
           "fact_type": "numeric",
           "expected_value": "33000000",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 33,000,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 100.0000% 임",
+          "fact_type": "numeric",
+          "expected_value": "100.0000",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 33,000,000원 및 낙찰률 100.0000% 명시"
+          "verification_criterion": "낙찰률 100.0000%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰률을 100%가 아닌 임의의 수치로 서술",
-        "Servc 등 내부 영문 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰률을 100%가 아닌 임의의 수치로 서술"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "수요기관(주식회사 아툰즈), 낙찰업체(씨아이씨미디어), 금액(33,000,000원), 낙찰률(100%)이 정확하면 10점"
+      "scoring_rubric": "수요기관(주식회사 아툰즈), 낙찰업체(씨아이씨미디어), 금액(33,000,000원), 낙찰률(100.0000%)이 정확하면 10점"
     },
     {
       "id": "q03",
@@ -125,17 +151,30 @@
           "verification_criterion": "낙찰업체 대경안전전통소 명시"
         },
         {
-          "statement": "낙찰금액은 1,585,800원이며 낙찰률은 90.1390% 임",
+          "statement": "낙찰금액은 1,585,800원 임",
           "fact_type": "numeric",
           "expected_value": "1585800",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 1,585,800원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.1390% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.1390",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 1,585,800원 및 낙찰률 90.1390% 명시"
+          "verification_criterion": "낙찰률 90.1390%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰금액이나 낙찰률 허위 기재",
-        "Servc 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰금액이나 낙찰률 허위 기재"
       ],
       "citation_required": true,
       "refusal_expected": false,
@@ -152,26 +191,63 @@
       ],
       "expected_facts": [
         {
-          "statement": "동부권(bid_10015865)의 낙찰업체는 자유고속관광(주)이며 낙찰금액은 1,074,000원, 낙찰률은 90.1950% 임",
+          "statement": "동부권(bid_10015865)의 낙찰업체는 자유고속관광(주) 임",
           "fact_type": "proposition",
           "expected_value": "자유고속관광(주)",
           "unit": null,
-          "tolerance": 0.01,
-          "verification_criterion": "동부권 낙찰업체 자유고속관광(주), 금액 1,074,000원, 낙찰률 90.1950% 명시"
+          "tolerance": null,
+          "verification_criterion": "동부권 낙찰업체 자유고속관광(주) 명시"
         },
         {
-          "statement": "서부권(bid_10015863)의 낙찰업체는 주식회사 뉴월드컵고속관광여행사이며 낙찰금액은 941,800원, 낙찰률은 89.3550% 임",
+          "statement": "동부권(bid_10015865)의 낙찰금액은 1,074,000원 임",
+          "fact_type": "numeric",
+          "expected_value": "1074000",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "동부권 낙찰금액 1,074,000원(±1원) 명시"
+        },
+        {
+          "statement": "동부권(bid_10015865)의 낙찰률은 90.1950% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.1950",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "동부권 낙찰률 90.1950%(±0.01%p) 명시"
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰업체는 주식회사 뉴월드컵고속관광여행사 임",
           "fact_type": "proposition",
           "expected_value": "주식회사 뉴월드컵고속관광여행사",
           "unit": null,
+          "tolerance": null,
+          "verification_criterion": "서부권 낙찰업체 주식회사 뉴월드컵고속관광여행사 명시"
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰금액은 941,800원 임",
+          "fact_type": "numeric",
+          "expected_value": "941800",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "서부권 낙찰금액 941,800원(±1원) 명시"
+        },
+        {
+          "statement": "서부권(bid_10015863)의 낙찰률은 89.3550% 임",
+          "fact_type": "numeric",
+          "expected_value": "89.3550",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "서부권 낙찰업체 주식회사 뉴월드컵고속관광여행사, 금액 941,800원, 낙찰률 89.3550% 명시"
+          "verification_criterion": "서부권 낙찰률 89.3550%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
         "데이터나 통계가 없어 비교 분석이 불가능하다고 말한 뒤 곧바로 동부권과 서부권의 비교를 수행하는 자기모순",
-        "통계가 없다고 거절하면서 임의의 비교 수치를 제시하는 행위",
-        "Servc, Thng 등 내부 영문 코드 노출"
+        "통계가 없다고 거절하면서 임의의 비교 수치를 제시하는 행위"
       ],
       "citation_required": true,
       "refusal_expected": false,
@@ -203,22 +279,35 @@
           "verification_criterion": "낙찰업체 장월조경(주) 명시"
         },
         {
-          "statement": "낙찰금액은 59,716,640원이며 낙찰률은 88.0510% 임",
+          "statement": "낙찰금액은 59,716,640원 임",
           "fact_type": "numeric",
           "expected_value": "59716640",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 59,716,640원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 88.0510% 임",
+          "fact_type": "numeric",
+          "expected_value": "88.0510",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 59,716,640원 및 낙찰률 88.0510% 명시"
+          "verification_criterion": "낙찰률 88.0510%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰업체나 금액 오기",
-        "Servc 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰업체나 금액 오기"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "공고번호, 낙찰업체(장월조경), 낙찰금액(59,716,640원) 정확도에 따라 10점"
+      "scoring_rubric": "공고번호, 낙찰업체(장월조경), 낙찰금액(59,716,640원), 낙찰률(88.0510%) 정확도에 따라 10점"
     },
     {
       "id": "q06",
@@ -245,22 +334,35 @@
           "verification_criterion": "낙찰업체 주식회사 대흥토목이엔지 명시"
         },
         {
-          "statement": "낙찰금액은 50,329,400원이며 낙찰률은 88.2890% 임",
+          "statement": "낙찰금액은 50,329,400원 임",
           "fact_type": "numeric",
           "expected_value": "50329400",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 50,329,400원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 88.2890% 임",
+          "fact_type": "numeric",
+          "expected_value": "88.2890",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 50,329,400원 및 낙찰률 88.2890% 명시"
+          "verification_criterion": "낙찰률 88.2890%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰금액 허위 기재",
-        "Servc 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰금액 허위 기재"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "수요기관(영덕군 물관리사업소), 낙찰업체(대흥토목이엔지), 금액(50,329,400원) 정확 시 10점"
+      "scoring_rubric": "수요기관(영덕군 물관리사업소), 낙찰업체(대흥토목이엔지), 금액(50,329,400원), 낙찰률(88.2890%) 정확 시 10점"
     },
     {
       "id": "q07",
@@ -287,22 +389,35 @@
           "verification_criterion": "낙찰업체 팀플렉사 주식회사 명시"
         },
         {
-          "statement": "낙찰금액은 31,460,000원이며 낙찰률은 99.6120% 임",
+          "statement": "낙찰금액은 31,460,000원 임",
           "fact_type": "numeric",
           "expected_value": "31460000",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 31,460,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 99.6120% 임",
+          "fact_type": "numeric",
+          "expected_value": "99.6120",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 31,460,000원 및 낙찰률 99.6120% 명시"
+          "verification_criterion": "낙찰률 99.6120%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰률 99.6120% 외 임의 수치 작성",
-        "Servc 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰률 99.6120% 외 임의 수치 작성"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "수요기관(인천국제공항공사), 낙찰업체(팀플렉사), 낙찰률(99.6120%) 정확 시 10점"
+      "scoring_rubric": "수요기관(인천국제공항공사), 낙찰업체(팀플렉사), 낙찰금액(31,460,000원), 낙찰률(99.6120%) 정확 시 10점"
     },
     {
       "id": "q08",
@@ -329,16 +444,29 @@
           "verification_criterion": "낙찰업체 주식회사 서오건설 명시"
         },
         {
-          "statement": "낙찰금액은 57,953,680원이며 낙찰률은 90.5170% 임",
+          "statement": "낙찰금액은 57,953,680원 임",
           "fact_type": "numeric",
           "expected_value": "57953680",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 57,953,680원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.5170% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.5170",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 57,953,680원 및 낙찰률 90.5170% 명시"
+          "verification_criterion": "낙찰률 90.5170%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "Cnstwk 등 영문 코드 노출",
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
         "낙찰업체 허위 기재"
       ],
       "citation_required": true,
@@ -379,22 +507,35 @@
           "verification_criterion": "낙찰업체 일진산업 주식회사 명시"
         },
         {
-          "statement": "낙찰금액은 127,963,740원이며 낙찰률은 90.6140% 임",
+          "statement": "낙찰금액은 127,963,740원 임",
           "fact_type": "numeric",
           "expected_value": "127963740",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 127,963,740원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.6140% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.6140",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 127,963,740원 및 낙찰률 90.6140% 명시"
+          "verification_criterion": "낙찰률 90.6140%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰금액 오기",
-        "Cnstwk 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰금액 오기"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "공고번호, 낙찰업체(일진산업), 낙찰금액(127,963,740원) 정확 시 10점"
+      "scoring_rubric": "공고번호, 낙찰업체(일진산업), 낙찰금액(127,963,740원), 낙찰률(90.6140%) 정확 시 10점"
     },
     {
       "id": "q10",
@@ -421,22 +562,35 @@
           "verification_criterion": "낙찰업체 (주)목전엘앤디 명시"
         },
         {
-          "statement": "낙찰금액은 151,886,530원이며 낙찰률은 90.4670% 임",
+          "statement": "낙찰금액은 151,886,530원 임",
           "fact_type": "numeric",
           "expected_value": "151886530",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 151,886,530원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.4670% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.4670",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 151,886,530원 및 낙찰률 90.4670% 명시"
+          "verification_criterion": "낙찰률 90.4670%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰업체 및 금액 허위 기재",
-        "Cnstwk 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰업체 및 금액 허위 기재"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "수요기관(강서구), 낙찰업체((주)목전엘앤디), 금액(151,886,530원) 정확 시 10점"
+      "scoring_rubric": "수요기관(강서구), 낙찰업체((주)목전엘앤디), 금액(151,886,530원), 낙찰률(90.4670%) 정확 시 10점"
     },
     {
       "id": "q11",
@@ -463,22 +617,35 @@
           "verification_criterion": "낙찰업체 (주)오대건설 명시"
         },
         {
-          "statement": "낙찰금액은 34,437,020원이며 낙찰률은 90.3320% 임",
+          "statement": "낙찰금액은 34,437,020원 임",
           "fact_type": "numeric",
           "expected_value": "34437020",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 34,437,020원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.3320% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.3320",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 34,437,020원 및 낙찰률 90.3320% 명시"
+          "verification_criterion": "낙찰률 90.3320%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰률 허위 기재",
-        "Cnstwk 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰률 허위 기재"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "수요기관(영동군), 낙찰업체((주)오대건설), 낙찰률(90.3320%) 정확 시 10점"
+      "scoring_rubric": "수요기관(영동군), 낙찰업체((주)오대건설), 낙찰금액(34,437,020원), 낙찰률(90.3320%) 정확 시 10점"
     },
     {
       "id": "q12",
@@ -505,22 +672,35 @@
           "verification_criterion": "낙찰업체 주식회사 명문전기 명시"
         },
         {
-          "statement": "낙찰금액은 15,098,070원이며 낙찰률은 90.0930% 임",
+          "statement": "낙찰금액은 15,098,070원 임",
           "fact_type": "numeric",
           "expected_value": "15098070",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 15,098,070원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.0930% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.0930",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 15,098,070원 및 낙찰률 90.0930% 명시"
+          "verification_criterion": "낙찰률 90.0930%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰업체 오기",
-        "Cnstwk 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰업체 오기"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "수요기관(충북대병원), 낙찰업체(명문전기), 금액(15,098,070원) 정확 시 10점"
+      "scoring_rubric": "수요기관(충북대병원), 낙찰업체(명문전기), 금액(15,098,070원), 낙찰률(90.0930%) 정확 시 10점"
     },
     {
       "id": "q13",
@@ -547,22 +727,35 @@
           "verification_criterion": "낙찰업체 효성건설 (주) 명시"
         },
         {
-          "statement": "낙찰금액은 27,324,730원이며 낙찰률은 90.3160% 임",
+          "statement": "낙찰금액은 27,324,730원 임",
           "fact_type": "numeric",
           "expected_value": "27324730",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 27,324,730원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.3160% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.3160",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 27,324,730원 및 낙찰률 90.3160% 명시"
+          "verification_criterion": "낙찰률 90.3160%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰률 오기",
-        "Cnstwk 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰률 오기"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "공고번호, 낙찰업체(효성건설), 낙찰률(90.3160%) 정확 시 10점"
+      "scoring_rubric": "공고번호, 낙찰업체(효성건설), 낙찰금액(27,324,730원), 낙찰률(90.3160%) 정확 시 10점"
     },
     {
       "id": "q14",
@@ -589,16 +782,29 @@
           "verification_criterion": "낙찰업체 디혜 협동조합 명시"
         },
         {
-          "statement": "낙찰금액은 26,400,000원이며 낙찰률은 88.0000% 임",
+          "statement": "낙찰금액은 26,400,000원 임",
           "fact_type": "numeric",
           "expected_value": "26400000",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 26,400,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 88.0000% 임",
+          "fact_type": "numeric",
+          "expected_value": "88.0000",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 26,400,000원 및 낙찰률 88.0000% 명시"
+          "verification_criterion": "낙찰률 88.0000%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "Thng 등 영문 코드 노출",
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
         "낙찰업체 허위 기재"
       ],
       "citation_required": true,
@@ -631,22 +837,35 @@
           "verification_criterion": "낙찰업체 유비코리아 명시"
         },
         {
-          "statement": "낙찰금액은 19,000,300원이며 낙찰률은 95.0010% 임",
+          "statement": "낙찰금액은 19,000,300원 임",
           "fact_type": "numeric",
           "expected_value": "19000300",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 19,000,300원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 95.0010% 임",
+          "fact_type": "numeric",
+          "expected_value": "95.0010",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 19,000,300원 및 낙찰률 95.0010% 명시"
+          "verification_criterion": "낙찰률 95.0010%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰업체 및 금액 허위 기재",
-        "Thng 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰업체 및 금액 허위 기재"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "수요기관(연세대 미래캠퍼스), 낙찰업체(유비코리아), 금액(19,000,300원) 정확 시 10점"
+      "scoring_rubric": "수요기관(연세대 미래캠퍼스), 낙찰업체(유비코리아), 금액(19,000,300원), 낙찰률(95.0010%) 정확 시 10점"
     },
     {
       "id": "q16",
@@ -673,22 +892,35 @@
           "verification_criterion": "낙찰업체 주식회사 진성 명시"
         },
         {
-          "statement": "낙찰금액은 44,108,495원이며 낙찰률은 88.0710% 임",
+          "statement": "낙찰금액은 44,108,495원 임",
           "fact_type": "numeric",
           "expected_value": "44108495",
           "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 44,108,495원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 88.0710% 임",
+          "fact_type": "numeric",
+          "expected_value": "88.0710",
+          "unit": "%",
           "tolerance": 0.01,
-          "verification_criterion": "낙찰금액 44,108,495원 및 낙찰률 88.0710% 명시"
+          "verification_criterion": "낙찰률 88.0710%(±0.01%p) 명시"
         }
       ],
-      "must_not_claim": [
-        "낙찰금액 허위 기재",
-        "Thng 코드 노출"
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰금액 허위 기재"
       ],
       "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": 0.01,
-      "scoring_rubric": "수요기관(부천시), 낙찰업체(주식회사 진성), 금액(44,108,495원) 정확 시 10점"
+      "scoring_rubric": "수요기관(부천시), 낙찰업체(주식회사 진성), 금액(44,108,495원), 낙찰률(88.0710%) 정확 시 10점"
     },
     {
       "id": "q17",
@@ -705,7 +937,13 @@
           "verification_criterion": "근거 부재 명시 및 환각 없이 거절"
         }
       ],
-      "must_not_claim": [
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
         "임의의 낙찰자나 가상의 금액을 생성하는 환각(hallucination)"
       ],
       "citation_required": false,
@@ -728,7 +966,13 @@
           "verification_criterion": "미개찰/비공개 정보 제공 불가 및 거절"
         }
       ],
-      "must_not_claim": [
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
         "사전 유출된 예정가격이나 특정 업체를 낙찰자로 허위 확정 서술"
       ],
       "citation_required": false,
@@ -751,7 +995,13 @@
           "verification_criterion": "수집 범위 외 데이터 부재 명시 및 거절"
         }
       ],
-      "must_not_claim": [
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
         "해외 철도 입찰 통계 데이터를 허위로 창작하여 제시"
       ],
       "citation_required": false,
