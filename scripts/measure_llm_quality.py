@@ -76,6 +76,14 @@ REFUSAL_PATTERNS = [
     re.compile(r"제공\s*불가"),
     re.compile(r"범위\s*밖"),
     re.compile(r"수집\s*되지\s*않"),
+    # 2026-08-25 v2 측정에서 발견한 누락이다. gemma4 계열은 근거가 없을 때
+    # "컨텍스트에 포함되어 있지 않습니다" 로 거절하는데 이 표현이 없어 정상
+    # 거절이 과잉응답으로 오분류됐다. e2b 의 거절 오답이 7건으로 부풀려졌고
+    # 실제로는 2건이었다.
+    re.compile(r"포함\s*되어\s*있지\s*않"),
+    re.compile(r"포함\s*되지\s*않"),
+    re.compile(r"제공\s*되지\s*않"),
+    re.compile(r"찾을\s*수\s*없"),
 ]
 
 
