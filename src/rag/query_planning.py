@@ -90,6 +90,101 @@ RESULT_QUERY_MARKERS = (
 )
 RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
 
+ENTITY_ATTRIBUTE_KEYWORDS = (
+    "공고번호",
+    "수요기관",
+    "낙찰업체",
+    "낙찰자",
+    "최종 낙찰자",
+    "최종낙찰자",
+    "낙찰금액",
+    "낙찰 금액",
+    "예정가격",
+    "1순위",
+    "입찰 참가 조건",
+    "참가 조건",
+    "입찰조건",
+    "참가조건",
+)
+ENTITY_ORG_KEYWORDS = (
+    "초등학교",
+    "중학교",
+    "고등학교",
+    "대학교",
+    "대학원",
+    "유치원",
+    "어린이집",
+    "교육지원청",
+    "교육청",
+    "여중",
+    "남중",
+    "여고",
+    "남고",
+    "병원",
+    "의료원",
+    "보건소",
+    "공항공사",
+    "인천공항",
+    "한국전력",
+    "철도공사",
+    "도로공사",
+    "수자원공사",
+    "토지주택공사",
+    "가스공사",
+    "시설관리공단",
+    "시설공단",
+    "체육시설사업소",
+    "물관리사업소",
+    "사업소",
+    "기상청",
+    "주식회사",
+    "(주)",
+    "㈜",
+    "(유)",
+    "유한회사",
+    "합자회사",
+    "협동조합",
+    "건축사사무소",
+    "읍사무소",
+    "면사무소",
+    "주민센터",
+    "행정복지센터",
+)
+ENTITY_PROJECT_SUFFIXES = (
+    "감리 용역",
+    "감리용역",
+    "기술지도 용역",
+    "기술지도용역",
+    "타당성조사",
+    "타당성 조사",
+    "임차용역",
+    "임차 용역",
+    "포스트프로덕션",
+    "폐기물처리",
+    "건설사업관리",
+    "관리용역",
+    "정비공사",
+    "개선공사",
+    "보수공사",
+    "설비공사",
+    "수선공사",
+    "사면보강",
+    "세천정비",
+    "기계설비",
+    "보수정비",
+    "건설공사",
+    "전기공사",
+    "구매설치",
+    "물품 제작",
+    "물품제작",
+    "장비 구매",
+    "장비구매",
+    "시료분석",
+    "리모델링",
+    "증설사업",
+    "철거운반",
+)
+
 
 def _normalize_text(value: str | None) -> str:
     return unicodedata.normalize("NFC", (value or "").strip())
@@ -102,6 +197,44 @@ def _category_label(category: str | None) -> str:
 
 def _query_lower(query: str) -> str:
     return _normalize_text(query).lower()
+
+
+def is_entity_specific_query(query: str) -> bool:
+    """특정 공고나 사업, 기관, 업체를 지목하는 개체 조회 질의인지 판정합니다."""
+    lowered = _query_lower(query)
+
+    # 1. 따옴표나 괄호 인용구 (예: "안녕 자두야", [소방설비], (봉제산))
+    if re.search(
+        r'["\'\u2018\u201c\u300c\u300e\[][^"\'\u2019\u201d\u300d\u300f\]]{2,}["\'\u2019\u201d\u300d\u300f\]]',
+        query,
+    ):
+        return True
+    if re.search(r"\([^\)]{2,}\)", query):
+        return True
+
+    # 2. 공고번호 또는 문서 ID 패턴 (예: R26BK01659912-001, bid_10015925)
+    if re.search(r"\b(?:[A-Za-z0-9]{8,15}-\d{2,3}|bid_\d{6,10})\b", lowered):
+        return True
+
+    # 3. 특정 기관/학교/병원/법인/사업소 지목
+    if any(keyword in lowered for keyword in ENTITY_ORG_KEYWORDS):
+        return True
+
+    # 4. 세부 사업/공사/용역/구매/제작 명칭 수식
+    if any(keyword in lowered for keyword in ENTITY_PROJECT_SUFFIXES):
+        return True
+
+    # 5. 특정 공고의 속성을 지목하여 묻는 표현 (예: '~의 낙찰업체', '~의 공고번호', '~의 낙찰금액')
+    if any(keyword in lowered for keyword in ENTITY_ATTRIBUTE_KEYWORDS):
+        return True
+
+    # 6. 개체 대상 수식 조사 결합 ('...용역의 낙찰업체', '...공사의 낙찰자' 등)
+    return bool(
+        re.search(
+            r"(?:용역|공사|구매|사업|제작|설치|공고|입찰)\s*의\s*(?:공고번호|수요기관|낙찰업체|낙찰자|낙찰금액|예정가격|최종|1순위|입찰\s*참가|참가자격)",
+            lowered,
+        )
+    )
 
 
 def is_result_list_query(query: str) -> bool:
@@ -257,12 +390,27 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     normalized_query = _normalize_text(query)
     lowered = normalized_query.lower()
 
+    is_entity = is_entity_specific_query(normalized_query)
     result_list_query = is_result_list_query(normalized_query)
-    use_sql = result_list_query or any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
-    use_vector = not result_list_query and any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
+    has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
+    has_semantic_keywords = any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
 
-    if not any((use_sql, use_vector, use_kb_status)):
+    if is_entity:
+        use_sql = True
+        use_vector = True
+    elif result_list_query or has_stat_keywords:
+        use_sql = True
+        use_vector = has_semantic_keywords
+    elif has_semantic_keywords:
+        use_sql = False
+        use_vector = True
+    elif use_kb_status:
+        use_sql = False
+        use_vector = False
+    else:
+        # 일반/기본 질의는 벡터 검색 기본값으로 처리
+        use_sql = False
         use_vector = True
 
     date_from, date_to, time_bias = _parse_time_window(normalized_query)
@@ -289,6 +437,8 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["analysis_mode"] = "trend"
 
     route_reason_parts = []
+    if is_entity:
+        route_reason_parts.append("개체 지정 질의")
     if result_list_query:
         route_reason_parts.append("낙찰 결과 목록 질의")
     if use_sql:
@@ -306,7 +456,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         semantic_query=normalized_query,
         top_k=DEFAULT_VECTOR_TOP_K,
         time_bias=time_bias,
-        route_reason=", ".join(route_reason_parts) or "기본 벡터 질의",
+        route_reason=", ".join(route_reason_parts) or "기본 하이브리드 질의",
     )
 
     if use_sql and not filters.get("date_from"):
