@@ -19,7 +19,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from scripts.measure_llm_quality import (
+    _compare_known_identity,
+    _identity_field_known,
+    build_provenance,
     is_refusal,
+    main,
     numeric_fact_found,
     retrieved_ids,
     score_item,
@@ -313,14 +317,56 @@ class TestValidateBaseUrlPort:
     """validate_base_url_port 함수 단위 테스트 (mock 사용)."""
 
     @patch("scripts.measure_llm_quality.subprocess.check_output")
-    def test_port_match_passes(self, mock_check_output):
-        """컨테이너 발행 포트와 base_url 포트가 일치하면 통과."""
-        # docker inspect 가 포트 8000 발행함을 반환
+    def test_localhost_port_match_passes(self, mock_check_output):
+        """localhost 와 발행 포트가 일치하면 통과."""
         mock_check_output.return_value = '{"8000/tcp": [{"HostPort": "8000"}]}'
 
         ok, msg = validate_base_url_port("http://localhost:8000", "test-container")
         assert ok is True
         assert "matches" in msg
+
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    def test_127_0_0_1_port_match_passes(self, mock_check_output):
+        """127.0.0.1 과 발행 포트가 일치하면 통과."""
+        mock_check_output.return_value = '{"8000/tcp": [{"HostPort": "8000"}]}'
+
+        ok, msg = validate_base_url_port("http://127.0.0.1:8000", "test-container")
+        assert ok is True
+        assert "matches" in msg
+
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    def test_ipv6_loopback_bracketed_passes(self, mock_check_output):
+        """IPv6 loopback [::1] 과 발행 포트가 일치하면 통과."""
+        mock_check_output.return_value = '{"8000/tcp": [{"HostPort": "8000"}]}'
+
+        ok, msg = validate_base_url_port("http://[::1]:8000", "test-container")
+        assert ok is True
+        assert "matches" in msg
+
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    def test_remote_hostname_fails_even_if_port_matches(self, mock_check_output):
+        """비로컬 hostname은 발행 포트가 일치해도 거부 (fail-closed)."""
+        mock_check_output.return_value = '{"8000/tcp": [{"HostPort": "8000"}]}'
+
+        ok, msg = validate_base_url_port("http://other-host:8000", "test-container")
+        assert ok is False
+        assert "호스트명" in msg
+
+        ok, msg = validate_base_url_port("http://192.168.1.100:8000", "test-container")
+        assert ok is False
+        assert "호스트명" in msg
+
+    def test_userinfo_in_base_url_fails(self):
+        """사용자 정보(userinfo)가 포함된 base_url 은 거부."""
+        ok, msg = validate_base_url_port("http://user:pass@localhost:8000", "test-container")
+        assert ok is False
+        assert "사용자 정보" in msg
+
+    def test_invalid_scheme_fails(self):
+        """http/https 외의 scheme 은 거부."""
+        ok, msg = validate_base_url_port("ftp://localhost:8000", "test-container")
+        assert ok is False
+        assert "scheme" in msg
 
     @patch("scripts.measure_llm_quality.subprocess.check_output")
     def test_port_mismatch_fails(self, mock_check_output):
@@ -340,71 +386,770 @@ class TestValidateBaseUrlPort:
         assert ok is False
         assert "포트 검증 실패" in msg
 
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    def test_malformed_port_returns_false_without_exception(self, mock_check_output):
+        """malformed port(비숫자)는 예외 없이 false 를 반환한다."""
+        mock_check_output.return_value = '{"8000/tcp": [{"HostPort": "8000"}]}'
 
-class TestIntegrationExpectedModel:
-    """--expected-model 검증 통합 테스트 (mock 사용)."""
+        ok, msg = validate_base_url_port("http://localhost:abc", "test-container")
+        assert ok is False
+        assert "포트가 올바르지 않습니다" in msg
+
+        ok, msg = validate_base_url_port("http://localhost:80abc", "test-container")
+        assert ok is False
+        assert "포트가 올바르지 않습니다" in msg
+
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    def test_out_of_range_port_returns_false_without_exception(self, mock_check_output):
+        """범위 밖 port(65535 초과)는 예외 없이 false 를 반환한다."""
+        mock_check_output.return_value = '{"8000/tcp": [{"HostPort": "8000"}]}'
+
+        for url in ("http://localhost:99999", "http://localhost:70000"):
+            ok, msg = validate_base_url_port(url, "test-container")
+            assert ok is False
+            assert "포트가 올바르지 않습니다" in msg
+
+
+class TestCompareKnownIdentity:
+    """_compare_known_identity 헬퍼 단위 테스트."""
+
+    def test_known_identity_field_known(self):
+        assert _identity_field_known("abc1234") is True
+        assert _identity_field_known(False) is True
+        assert _identity_field_known(True) is True
+        assert _identity_field_known("unknown") is False
+        assert _identity_field_known(None) is False
+
+    def test_both_known_equal_no_mismatch(self):
+        mismatches = _compare_known_identity(
+            {"git_sha": "abc1234", "git_dirty": False},
+            {"git_sha": "abc1234", "git_dirty": False},
+        )
+        assert mismatches == []
+
+    def test_both_known_dirty_mismatch(self):
+        mismatches = _compare_known_identity(
+            {"git_sha": "abc1234", "git_dirty": False},
+            {"git_sha": "abc1234", "git_dirty": True},
+        )
+        assert any("git_dirty" in m for m in mismatches)
+
+    def test_one_side_unknown_sha_ignored(self):
+        mismatches = _compare_known_identity(
+            {"git_sha": "abc1234", "git_dirty": False},
+            {"git_sha": "unknown", "git_dirty": False},
+        )
+        assert mismatches == []
+
+    def test_one_side_none_dirty_ignored(self):
+        mismatches = _compare_known_identity(
+            {"git_sha": "abc1234", "git_dirty": None},
+            {"git_sha": "abc1234", "git_dirty": False},
+        )
+        assert mismatches == []
+
+    def test_both_known_sha_mismatch_detected(self):
+        mismatches = _compare_known_identity(
+            {"git_sha": "sha_start", "git_dirty": False},
+            {"git_sha": "sha_end", "git_dirty": False},
+        )
+        assert any("git_sha" in m for m in mismatches)
+
+
+class TestBuildProvenance:
+    """build_provenance 함수 단위 테스트."""
+
+    def test_build_provenance_preserves_start_and_end_identities(self):
+        provenance = build_provenance(
+            start_sha="sha_start",
+            start_dirty=False,
+            end_sha="sha_end",
+            end_dirty=False,
+            started_model="gemma4:e4b",
+            ended_model="gemma4:e4b",
+            base_url="http://localhost:8000",
+            app_container="test-container",
+            canonical=True,
+        )
+
+        assert provenance["git_sha"] == "sha_start"
+        assert provenance["git_dirty"] is False
+        assert provenance["canonical"] is True
+        assert provenance["source_identity_start"] == {
+            "git_sha": "sha_start",
+            "git_dirty": False,
+        }
+        assert provenance["source_identity_end"] == {
+            "git_sha": "sha_end",
+            "git_dirty": False,
+        }
+        assert provenance["serving_model_consistent"] is True
+
+
+class TestIntegrationMainHarness:
+    """main() 실측 하네스 통합 및 provenance fail-closed 테스트 (mock 사용)."""
+
+    def _setup_mocks(
+        self,
+        mock_validate_port,
+        mock_check_output,
+        mock_urlopen,
+        mock_git_status,
+        mock_verify=None,
+        *,
+        git_status_return=None,
+        git_status_side_effect=None,
+        started_model="gemma4:e4b",
+        ended_model="gemma4:e4b",
+    ):
+        mock_validate_port.return_value = (True, "ok")
+        if git_status_side_effect is not None:
+            mock_git_status.side_effect = git_status_side_effect
+        else:
+            mock_git_status.return_value = git_status_return or ("abc1234", False)
+
+        mock_check_output.side_effect = [started_model, ended_model]
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps(
+            {"response": "낙찰금액은 46,602,100원입니다. [1]", "retrieved_docs": []}
+        ).encode()
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+        if mock_verify is not None:
+            mock_verify.return_value = True
 
     @patch("scripts.measure_llm_quality.validate_base_url_port")
     @patch("scripts.measure_llm_quality.subprocess.check_output")
     @patch("scripts.measure_llm_quality.urlrequest.urlopen")
     @patch("scripts.measure_llm_quality.get_git_status")
     @patch("scripts.measure_llm_quality.verify_provenance_consistency")
-    def test_expected_model_mismatch_returns_nonzero(
-        self, mock_verify, mock_git_status, mock_urlopen, mock_check_output, mock_validate_port
+    def test_git_status_called_exactly_twice_start_and_end(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
     ):
-        """(e) --expected-model 과 실제 모델이 다르면 0 이 아닌 종료 코드로 끝나는지."""
-        from scripts.measure_llm_quality import main
+        """get_git_status mock 호출 순서가 시작 1회, 측정 종료 1회로 총 2회 관측되고 start identity 가 보존되는지 검증."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            git_status_side_effect=[("start_sha_123", False), ("start_sha_123", False)],
+        )
 
-        # base_url 포트 검증 통과
-        mock_validate_port.return_value = (True, "ok")
-
-        # Git 상태: clean
-        mock_git_status.return_value = ("abc123", False)
-
-        # docker exec printenv OLLAMA_MODEL: 시작/종료 모두 다른 모델 반환
-        mock_check_output.side_effect = [
-            "gemma4:e2b",  # started_model
-            "gemma4:e2b",  # ended_model
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--app-container",
+            "test-container",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
         ]
+        with patch("sys.argv", argv):
+            code = main()
 
-        # HTTP 응답 mock
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps(
-            {"response": "답변", "retrieved_docs": []}
-        ).encode()
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+        assert code == 0
+        assert mock_git_status.call_count == 2
+        assert out_file.exists()
+        saved = json.loads(out_file.read_text(encoding="utf-8"))
+        assert saved["canonical"] is True
+        assert saved["provenance"]["source_identity_start"]["git_sha"] == "start_sha_123"
+        assert saved["provenance"]["source_identity_end"]["git_sha"] == "start_sha_123"
 
-        # verify_provenance_consistency 통과
-        mock_verify.return_value = True
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    @patch("scripts.measure_llm_quality.verify_provenance_consistency")
+    def test_start_dirty_true_fails_closed(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """시작 시점에 dirty=True 이면 fail-closed 로 거부하고 파일 저장하지 않음."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            git_status_return=("abc1234", True),
+        )
 
-        # --expected-model=gemma4:e4b 로 실행하되 실제 모델은 gemma4:e2b
-        with patch(
-            "sys.argv",
-            [
-                "measure_llm_quality.py",
-                "--fixture",
-                "data/eval/llm_quality_fixture_v1.json",
-                "--base-url",
-                "http://localhost:8000",
-                "--model-label",
-                "test",
-                "--expected-model",
-                "gemma4:e4b",
-                "--repetitions",
-                "1",
-                "--app-container",
-                "test-container",
-                "--output",
-                "/tmp/test_output.json",
-                "--limit",
-                "1",
-            ],
-        ):
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--output",
+            str(out_file),
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 3
+        assert not out_file.exists()
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    @patch("scripts.measure_llm_quality.verify_provenance_consistency")
+    def test_start_dirty_true_cannot_be_bypassed_with_allow_unknown(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """--allow-unknown-provenance 옵션을 주어도 dirty=True 는 우회 불가."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            git_status_return=("abc1234", True),
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--allow-unknown-provenance",
+            "--output",
+            str(out_file),
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 3
+        assert not out_file.exists()
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    @patch("scripts.measure_llm_quality.verify_provenance_consistency")
+    def test_start_sha_unknown_fails_closed_by_default(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """기본 strict 모드에서 start SHA 가 unknown 이면 fail-closed."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            git_status_return=("unknown", False),
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--output",
+            str(out_file),
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 3
+        assert not out_file.exists()
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    @patch("scripts.measure_llm_quality.verify_provenance_consistency")
+    def test_allow_unknown_provenance_saves_with_canonical_false(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """--allow-unknown-provenance 가 주어지면 unknown SHA 가 허용되되 canonical=false 로 저장."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            git_status_side_effect=[("unknown", False), ("unknown", False)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--allow-unknown-provenance",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 0
+        assert out_file.exists()
+        saved = json.loads(out_file.read_text(encoding="utf-8"))
+        assert saved["canonical"] is False
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    @patch("scripts.measure_llm_quality.verify_provenance_consistency")
+    def test_mid_run_mutation_clean_to_dirty_fails_closed(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """측정 중 clean 에서 dirty 로 변하면 exit non-zero 이고 canonical 결과 파일을 저장하지 않음."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            git_status_side_effect=[("abc1234", False), ("abc1234", True)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code != 0
+        assert not out_file.exists()
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    @patch("scripts.measure_llm_quality.verify_provenance_consistency")
+    def test_mid_run_mutation_sha_change_fails_closed(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """측정 중 Git SHA 가 변하면 exit non-zero 이고 결과 파일을 저장하지 않음."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            git_status_side_effect=[("sha_start", False), ("sha_end", False)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 4
+        assert not out_file.exists()
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    @patch("scripts.measure_llm_quality.verify_provenance_consistency")
+    def test_end_sha_unknown_fails_closed(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """종료 시점 SHA 가 unknown 이면 strict 모드에서 fail-closed."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            git_status_side_effect=[("sha_start", False), ("unknown", False)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 3
+        assert not out_file.exists()
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    @patch("scripts.measure_llm_quality.verify_provenance_consistency")
+    def test_expected_model_mismatch_returns_5_and_saves_debug(
+        self,
+        mock_verify,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """(e) --expected-model 과 실제 모델이 다르면 5 반환 및 디버그 파일 저장."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            mock_verify,
+            started_model="gemma4:e2b",
+            ended_model="gemma4:e2b",
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--app-container",
+            "test-container",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
             exit_code = main()
 
-        assert exit_code == 5  # 모델 불일치 종료 코드
+        assert exit_code == 5
+        assert not out_file.exists()
+        debug_file = out_file.with_suffix(".debug.json")
+        assert debug_file.exists()
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    def test_strict_mode_uses_real_verify_provenance_consistency(
+        self,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """strict 모드에서 실제 verify_provenance_consistency 를 mock 없이 사용해 일치 시 통과한다.
+
+        identity 가 일치하면 실제 함수가 raise 하지 않고 통과해야 한다.
+        """
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            git_status_side_effect=[("abc1234", False), ("abc1234", False)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 0
+        saved = json.loads(out_file.read_text(encoding="utf-8"))
+        assert saved["canonical"] is True
+        assert saved["provenance"]["source_identity_start"]["git_sha"] == "abc1234"
+        assert saved["provenance"]["source_identity_end"]["git_sha"] == "abc1234"
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    def test_allow_unknown_side_unknown_sha_allowed_noncanonical(
+        self,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """allow-unknown 에서 한쪽만 unknown SHA 면 noncanonical 로 허용한다 (mock 없이 실제 경로)."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            git_status_side_effect=[("abc1234", False), ("unknown", False)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--allow-unknown-provenance",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 0
+        saved = json.loads(out_file.read_text(encoding="utf-8"))
+        assert saved["canonical"] is False
+        assert saved["provenance"]["source_identity_start"]["git_sha"] == "abc1234"
+        assert saved["provenance"]["source_identity_end"]["git_sha"] == "unknown"
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    def test_allow_unknown_side_dirty_none_allowed_noncanonical(
+        self,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """allow-unknown 에서 한쪽만 dirty None(확인 불가)이면 noncanonical 로 허용한다."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            git_status_side_effect=[("abc1234", None), ("abc1234", False)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--allow-unknown-provenance",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 0
+        saved = json.loads(out_file.read_text(encoding="utf-8"))
+        assert saved["canonical"] is False
+        assert saved["provenance"]["source_identity_start"]["git_dirty"] is None
+        assert saved["provenance"]["source_identity_end"]["git_dirty"] is False
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    def test_allow_unknown_both_known_sha_mutation_blocked(
+        self,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+    ):
+        """allow-unknown 이어도 양쪽 known SHA 가 실제로 다르면 차단한다."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            git_status_side_effect=[("sha_start", False), ("sha_end", False)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--allow-unknown-provenance",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 4
+        assert not out_file.exists()
 
 
 if __name__ == "__main__":
