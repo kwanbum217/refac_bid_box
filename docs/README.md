@@ -172,6 +172,7 @@ docs/
 | 2026-08-24 세션 종료 인수인계 | [`2026-08-24_session_close.md`](handoff/2026-08-24_session_close.md) | 감사 13항목 해소·3플랫폼 CI green·Arq 기준선·e2b 비교 보류 |
 | 기관 낙찰률 이력 구현 기록 | [`inst_hist_rate_impl_todo.md`](handoff/inst_hist_rate_impl_todo.md) | inst_hist_rate 구현 위치와 결정 사항, TODO에서 기록 문서로 전환 |
 | 2026-08-24 감사·기준선 세션 | [`session_20260824_audit_p1_and_calibration.md`](handoff/session_20260824_audit_p1_and_calibration.md) | 감사 P1 5건 해소·Arq 정식 기준선 확정·e4b/e2b 품질 실측 |
+| **2026-08-25 감사 종결·검색 수정 세션 (current)** | [`session_20260825_audit_closeout_and_retrieval_fix.md`](handoff/session_20260825_audit_closeout_and_retrieval_fix.md) | 외부 감사 2건 25항목 종결, 벡터 검색 필터 미적용 결함 해소(근거 적중 15/16 -> 16/16), LLM 품질 v2 재측정으로 e2b 미승격 판정 |
 
 ---
 

@@ -3,7 +3,7 @@
 > **작성일**: 2026-08-24 (Asia/Seoul)
 > **세션 종료 시 HEAD**: `0adbbb2`
 > **세션 시작 기준**: `b1c6af3`
-> **status**: current
+> **status**: historical (후속: [`session_20260825_audit_closeout_and_retrieval_fix.md`](session_20260825_audit_closeout_and_retrieval_fix.md))
 > **코디네이터**: Claude Opus 5 / 워커: OpenCode DeepSeek V4 Flash, Antigravity Gemini 3.7 Flash Medium
 
 ---
