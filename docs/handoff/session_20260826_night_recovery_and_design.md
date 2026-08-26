@@ -172,6 +172,19 @@ C 가 pre-commit 을 통과하려고 `CURRENT_STATE.md` 의 `source_commit` 을 
 
 ---
 
+### 4.6 모든 브랜치 판정이 끝났습니다
+
+마지막 미판정 2건을 감사해 둘 다 폐기 권고로 판정하고 삭제했습니다
+([`remaining_branch_verdict_20260826.md`](../ops/remaining_branch_verdict_20260826.md)).
+SHA 가 그 문서에 남아 있으므로 판정이 뒤집히면 되살릴 수 있습니다.
+
+| 브랜치 | SHA | 판정 근거 |
+| --- | --- | --- |
+| `feat/p1-reliability-lock` | `75dd019` | main 이 Protocol·cast 로 타입까지 좁힌 상위 구현 |
+| `kwanbum217/orca-w1-concurrency-2` | `12f88c3` | main 판본이 exitcode 단언과 Windows spawn 경로를 함께 가짐 |
+
+**저장소에 미판정 브랜치가 0 이 되었습니다.** 남은 로컬 브랜치는 `main` 뿐입니다.
+
 ## 5. 자원 정리 상태
 
 | 대상 | 상태 |
