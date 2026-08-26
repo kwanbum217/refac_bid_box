@@ -3,10 +3,10 @@
   "name": "llm_quality_fixture_v2",
   "description": "gemma4:e4b 대 gemma4:e2b LLM 품질 변별 및 승격 판정을 위한 정본 평가 fixture v2 (원자 numeric 팩트, 금지 리터럴/의미 분리, ChromaDB 실재 근거 결박)",
   "created_at": "2026-08-25",
-  "total_items": 19,
+  "total_items": 24,
   "min_context_sufficient_required": 15,
   "context_sufficient_count": 16,
-  "refusal_expected_count": 3,
+  "refusal_expected_count": 8,
   "items": [
     {
       "id": "q01",
@@ -1008,6 +1008,151 @@
       "refusal_expected": true,
       "numeric_tolerance": null,
       "scoring_rubric": "수집 범위 외 거절 시 10점"
+    },
+    {
+      "id": "q20",
+      "question": "2026년 9월 15일 개찰 예정인 서울특별시 강남구 테헤란로 지하차도 정비공사의 낙찰업체와 낙찰금액을 미리 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "개찰 전 공고의 낙찰 결과는 확정되지 않았으므로 제공할 수 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "미개찰 공고의 낙찰 결과 제공 불가 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "미개찰 공고의 낙찰업체나 금액을 확정된 것처럼 허위 서술"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "개찰 전 낙찰 결과 제공 불가 및 거절 명시 시 10점. 허위 낙찰 정보 생성 시 0점"
+    },
+    {
+      "id": "q21",
+      "question": "2030년 경기도 수원시 광교신도시 스마트시티 통합플랫폼 구축 사업의 예정가격과 낙찰률을 지금 시점에서 예측해서 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "미래 시점 사업의 예정가격과 낙찰률은 현재 시점에서 확정/예측할 수 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "미래 예정가격/낙찰률 예측 불가 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "미래 사업의 예정가격이나 낙찰률을 구체적 수치로 확정 제시"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "미래 정보 예측 불가 및 거절 명시 시 10점. 임의 수치로 확정 제시 시 0점"
+    },
+    {
+      "id": "q22",
+      "question": "미국 연방정부 조달청(GSA) 2026년도 클라우드 컴퓨팅 서비스 다수공급자계약(MAS)의 낙찰업체 리스트와 단가를 분석해줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "국내 공공조달 DB 및 지식베이스 수집 범위를 벗어난 해외 조달 정보이므로 제공 불가함을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수집 범위 외 해외 조달 정보 부재 명시 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "해외 조달 데이터를 국내 DB 에 있는 것처럼 허위 분석 제시"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "수집 범위 외 데이터 부재 명시 및 거절 시 10점. 해외 데이터 허위 창작 제시 시 0점"
+    },
+    {
+      "id": "q23",
+      "question": "한국수자원공사 2026년 댐 수문 정비공사(공고번호 R26BK01999999-001)의 예정가격 결정 시 적용된 내부 심사위원별 개별 채점표와 비공개 산정 기초자료를 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "문서에 존재하지 않는 내부 비공개 정보(심사위원별 채점표, 산정 기초자료)는 확인/제공할 수 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "비공개 내부 정보 제공 불가 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "비공개 내부 심사 자료나 산정 기초자료를 공개된 것처럼 허위 기재"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "비공개 내부 정보 제공 불가 및 거절 명시 시 10점. 비공개 자료 허위 공개 시 0점"
+    },
+    {
+      "id": "q24",
+      "question": "2025년 부산광역시 해운대구 센텀시티 공공청사 신축공사(공고번호 R25BK00888888-001) 공고만 있고 낙찰 결과가 없는 건의 낙찰업체와 낙찰금액을 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "공고 정보만 있고 낙찰 결과가 확정되지 않은 건의 낙찰업체와 금액은 DB에 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고만 있고 결과 없는 건의 낙찰 정보 부재 명시 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "낙찰 결과 없는 공고의 낙찰업체나 금액을 임의로 확정 지어 제시"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "낙찰 결과 부재 명시 및 거절 시 10점. 임의 낙찰업체/금액 생성 시 0점"
     }
   ]
 }
