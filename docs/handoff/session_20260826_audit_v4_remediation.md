@@ -182,3 +182,61 @@ uv run python scripts/measure_llm_quality.py \
 | 작업 브랜치 | W5 를 제외하고 전부 삭제 |
 | Docker | `refac_bid_box` compose 5개 기동 상태, 서빙 모델 `gemma4:e2b` |
 | 사용자 kimi 세션 | 주 저장소 경로에 활성. 대화용이며 파일 수정 안 함 |
+
+---
+
+## 8. 15:30 이후 후속 세션 결과
+
+> **Orca Run**: `run_174e3518fbbb`
+> **종료선**: 2026-08-26 18:30 KST
+> **통합 브랜치**: `kwanbum217/audit-v4-integration-20260826`
+
+### 8.1 `predict_price_api` 재측정
+
+선행 Task `task_7822e82af0b6`에서 clean `43a5fb7`을 동결해 재측정했습니다. 최초 4,000건 실행 중 읽기 전용 워커가 허용 범위 밖 문서를 생성해 즉시 측정을 중단했고, 해당 결과는 전량 폐기했습니다. 작업 트리를 clean으로 복구한 뒤 처음부터 재실행한 결과만 정본으로 사용합니다.
+
+| 측정 | 결과 |
+| --- | --- |
+| 운영 API 경로 | 300/300 평가, 제외 0, MAE 1.2686, 0.5%p 적중 63.33%, 피복률 89.67%, 구간 폭 중앙값 1.791%p |
+| 집단별 구간 | 3,996/4,000 평가, 전체 MAE 1.3840, 적중 64.74%, 피복률 89.64%, 구간 폭 중앙값 1.6351%p |
+| 하한율 존재 | 2,808건, MAE 0.8444, 적중 77.64%, 피복률 89.46%, 폭 1.1588%p |
+| 하한율 결측 | 1,188건, MAE 2.6593, 적중 34.26%, 피복률 90.07%, 폭 8.1985%p |
+
+근거는 [`servc_api_path_remeasurement_20260826.md`](../analysis/servc_api_path_remeasurement_20260826.md)입니다.
+
+### 8.2 mypy 부채 결과
+
+`pyproject.toml` override 블록을 워커별로 분리해 쓰기 워커 3대를 병렬 운용했습니다.
+
+| Task | 범위 | 결과 |
+| --- | --- | --- |
+| `task_2e60da21b7db` | 첫 arg-type 16모듈 | 16모듈·블록 전체 제거 |
+| `task_8a0cca3400f6` | special 11블록 13모듈 | 11블록·13모듈 전부 제거 |
+| `task_0806b3051833` | mixed 5블록 9모듈 | 4블록·6모듈 제거, 3모듈 최소 override 존치 |
+| `task_86895805ac12` | special 런타임 의미 보정 | 중복 관측 반환 의미를 원래대로 복구 |
+| `task_3d7bb40a0d2e` | mixed Any 보정 | 새 `cast(Any, ...)`·`dict[str, Any]` 제거 |
+
+세션 시작 17블록·38모듈·약 280건에서 **1블록·3모듈·15건**으로 줄었습니다. 약 265건을 해소해 목표 200~240건을 초과 달성했습니다. 남은 15건은 LightGBM `**dict`와 google-genai `list[Content]` 스텁 불일치이며, 임시 config에서 override를 제거해 실제로 재현했습니다. `Any`나 `type: ignore`를 확대하지 않기 위해 존치합니다.
+
+### 8.3 감시와 교차검토
+
+- 모든 진행·완료 보고 전에 `scripts/orca_worker_watch.py --json`을 실행하고, Dispatch ID에 연결된 정확한 터미널을 `worker-read`로 교차 확인했습니다.
+- 감시 과정에서 trust 화면, 잘못 선택된 일반 Gemini CLI, Antigravity credit 소진, Kimi/MiniMax M3의 429와 명령 승인 화면을 직접 발견해 조치했습니다.
+- 일반 Gemini CLI는 개인 계정 지원 종료, Antigravity `gemini-3.7-flash-medium`은 `AI: Out of credits`로 실행할 수 없었습니다.
+- Kimi Code CLI는 기본 `or-free/minimax-m3`로 실제 diff 검토를 수행했습니다. 공급자 429로 여러 차례 재시도했으며, 빌더 커밋 뒤 검토 기준을 `43a5fb7..e3862fc`로 교정했습니다.
+- 감시 스크립트는 동일 워크트리의 여러 터미널 중 검토 터미널을 빌더로 오인할 수 있어, 이번 세션에는 스크립트 결과만으로 완료를 판단하지 않았습니다.
+
+### 8.4 통합 검증
+
+| 검증 | 결과 |
+| --- | --- |
+| `uv run mypy src/ scripts/` | 198파일 통과 |
+| `uv run ruff check src scripts tests` | 통과 |
+| `python3 scripts/validate_agent_rules.py --quiet` | 12/12 통과 |
+| `uv run pytest tests/ -q -m 'not data_assets'` | 2,199 passed, 6 skipped, 3 deselected |
+
+### 8.5 다음 확인점
+
+1. Kimi/MiniMax M3의 `worker_done`이 아직 도착하지 않았다면 `ctx_24d85b00cbef`를 확인합니다.
+2. 통합 브랜치가 main에 병합·푸시되지 않았다면 전체 검증 결과를 유지한 채 `git merge --no-ff`로 병합합니다.
+3. 병합 후 워커·워크트리를 해제하고 원격 CI를 확인합니다.

@@ -24,7 +24,7 @@ import time
 import uuid
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, Protocol, cast
 
 try:
     import fcntl as _fcntl
@@ -45,12 +45,19 @@ except ImportError:
     try:
         import msvcrt as _msvcrt
 
+        class _MsvcrtLockModule(Protocol):
+            def locking(self, fd: int, mode: int, nbytes: int) -> None: ...
+
+            LK_NBLCK: int
+            LK_UNLCK: int
+
+        _msvcrt_lock = cast(_MsvcrtLockModule, _msvcrt)
         _LOCK_CHUNK = 1
 
         def _acquire_platform_lock(fobj: IO[Any]) -> bool:
             try:
                 fobj.seek(0)
-                _msvcrt.locking(fobj.fileno(), _msvcrt.LK_NBLCK, _LOCK_CHUNK)
+                _msvcrt_lock.locking(fobj.fileno(), _msvcrt_lock.LK_NBLCK, _LOCK_CHUNK)
                 return True
             except (BlockingIOError, OSError):
                 return False
@@ -58,7 +65,7 @@ except ImportError:
         def _release_platform_lock(fobj: IO[Any]) -> None:
             with suppress(OSError):
                 fobj.seek(0)
-                _msvcrt.locking(fobj.fileno(), _msvcrt.LK_UNLCK, _LOCK_CHUNK)
+                _msvcrt_lock.locking(fobj.fileno(), _msvcrt_lock.LK_UNLCK, _LOCK_CHUNK)
 
         _LOCK_AVAILABLE = True
     except ImportError:

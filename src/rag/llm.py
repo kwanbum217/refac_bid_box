@@ -223,12 +223,12 @@ def build_backend(provider: str | None = None) -> LLMBackend | None:
     resolved = (provider or settings.LLM_PROVIDER or "ollama").strip().lower()
 
     if resolved == "gemini":
-        backend = GeminiBackend()
-        return backend if backend.available() else None
+        gemini_backend = GeminiBackend()
+        return gemini_backend if gemini_backend.available() else None
 
-    backend = OllamaBackend()
-    if backend.available():
-        return backend
+    ollama_backend = OllamaBackend()
+    if ollama_backend.available():
+        return ollama_backend
 
     # Ollama 가 꺼져 있고 Gemini 키가 있으면 원본 경로로 자동 폴백합니다.
     gemini = GeminiBackend()

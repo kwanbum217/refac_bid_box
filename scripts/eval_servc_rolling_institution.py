@@ -26,6 +26,7 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -43,6 +44,20 @@ from src.ml.trainer import LGB_BASE_PARAMS  # noqa: E402
 
 POINT_OBJECTIVE = {"objective": "huber", "alpha": 1.0}
 GROUP_KEY = "dminstt_nm"
+
+
+class _LGBMKwargs(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+    objective: str
+    alpha: float
 
 
 def attach_rolling_history(df: pd.DataFrame, windows: list[int], halflife: int) -> list[str]:
@@ -96,7 +111,7 @@ def attach_rolling_history(df: pd.DataFrame, windows: list[int], halflife: int) 
 
 def evaluate(train: pd.DataFrame, valid: pd.DataFrame, features: list[str], label: str) -> dict:
     started = time.perf_counter()
-    model = lgb.LGBMRegressor(**{**LGB_BASE_PARAMS, **POINT_OBJECTIVE})
+    model = lgb.LGBMRegressor(**cast(_LGBMKwargs, {**LGB_BASE_PARAMS, **POINT_OBJECTIVE}))
     model.fit(train[features], train["winning_rate"])
     pred = model.predict(valid[features])
     actual = valid["winning_rate"].to_numpy(dtype=float)

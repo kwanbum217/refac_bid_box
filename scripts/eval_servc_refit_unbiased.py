@@ -39,15 +39,30 @@ import pandas as pd  # noqa: E402
 from scripts.eval_servc_year_holdout import ALL_FEATURES, build_frame  # noqa: E402
 from src.ml.trainer import DEFAULT_VALIDATION_SPLIT, LGB_BASE_PARAMS  # noqa: E402
 
-POINT_OBJECTIVE = {"objective": "huber", "alpha": 1.0}
 T_THRESHOLD = 2.0
 
 
-def fit_split_only(train: pd.DataFrame) -> tuple[object, int]:
+def _huber_regressor(*, n_estimators: int | None = None) -> lgb.LGBMRegressor:
+    return lgb.LGBMRegressor(
+        n_estimators=n_estimators or int(LGB_BASE_PARAMS["n_estimators"]),
+        learning_rate=float(LGB_BASE_PARAMS["learning_rate"]),
+        num_leaves=int(LGB_BASE_PARAMS["num_leaves"]),
+        min_child_samples=int(LGB_BASE_PARAMS["min_child_samples"]),
+        subsample=float(LGB_BASE_PARAMS["subsample"]),
+        colsample_bytree=float(LGB_BASE_PARAMS["colsample_bytree"]),
+        random_state=int(LGB_BASE_PARAMS["random_state"]),
+        verbose=int(LGB_BASE_PARAMS["verbose"]),
+        n_jobs=int(LGB_BASE_PARAMS["n_jobs"]),
+        objective="huber",
+        alpha=1.0,
+    )
+
+
+def fit_split_only(train: pd.DataFrame) -> tuple[lgb.LGBMRegressor, int]:
     """구 방식. 앞 80% 로만 학습하고 그 모델을 그대로 씁니다."""
     cut = int(len(train) * (1 - DEFAULT_VALIDATION_SPLIT))
     fit_part, valid_part = train.iloc[:cut], train.iloc[cut:]
-    model = lgb.LGBMRegressor(**{**LGB_BASE_PARAMS, **POINT_OBJECTIVE})
+    model = _huber_regressor()
     model.fit(
         fit_part[ALL_FEATURES],
         fit_part["winning_rate"],
@@ -57,10 +72,9 @@ def fit_split_only(train: pd.DataFrame) -> tuple[object, int]:
     return model, int(getattr(model, "best_iteration_", 0) or LGB_BASE_PARAMS["n_estimators"])
 
 
-def fit_refit_full(train: pd.DataFrame, best_iteration: int) -> object:
+def fit_refit_full(train: pd.DataFrame, best_iteration: int) -> lgb.LGBMRegressor:
     """신 방식. 조기 종료가 고른 트리 수를 고정해 전량으로 다시 적합합니다."""
-    params = {**LGB_BASE_PARAMS, **POINT_OBJECTIVE, "n_estimators": best_iteration}
-    model = lgb.LGBMRegressor(**params)
+    model = _huber_regressor(n_estimators=best_iteration)
     model.fit(train[ALL_FEATURES], train["winning_rate"])
     return model
 
@@ -128,8 +142,8 @@ def main() -> int:
     )
 
     actual = valid["winning_rate"].to_numpy(dtype=float)
-    old_pred = np.asarray(old_model.predict(valid[ALL_FEATURES]), dtype=float)
-    new_pred = np.asarray(new_model.predict(valid[ALL_FEATURES]), dtype=float)
+    old_pred = np.asarray(old_model.predict(valid[ALL_FEATURES]), dtype=np.float64)
+    new_pred = np.asarray(new_model.predict(valid[ALL_FEATURES]), dtype=np.float64)
 
     rows = [
         score(actual, old_pred, "구 방식 (앞 80%)"),

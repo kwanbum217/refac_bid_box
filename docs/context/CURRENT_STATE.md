@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-26
-> **source_commit**: `4604f69`
+> **source_commit**: `0ce3df7`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -70,6 +70,7 @@
 1-2. **LLM 경로 최적화**: 2026-08-26 v4(소스 `b4913fd`, canonical, 각 72회차)에서 **`gemma4:e2b` 를 서빙 기본 모델로 승격**했습니다. e2b 가 numeric 65.7% 대 61.8%, 문항 통과 16/48 대 12/48, P50 2,681.6ms 대 3,130.5ms 로 앞서고 evidence 51/51·인용 48/48·forbidden 0 은 동등합니다. 보류 사유였던 과잉응답은 거절 지시 추가와 fixture 3 → 8 문항 확대 뒤 **양쪽 0/24**, 과잉거절도 0/48 입니다([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)).
 1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션 확정. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하). 잠정값 900/600 제거, 기준선은 캘리브레이션 호스트에 결박([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
 1-3. **감사 후속 P1**: 2026-08-25 에 RAG 라우팅 오분류, 복합 numeric·refusal 미채점, 모델 라벨·Arq 호스트 미결박을 닫았습니다.
+1-5. **Servc 운영 경로 재측정**: 2026-08-26 수정된 `predict_price_api`로 2025년 300/300건을 제외 없이 평가했습니다. MAE 1.2686, 0.5%p 적중 63.33%, 피복률 89.67%이며, 집단별 3,996건에서도 전체 피복률 89.64%를 재확인했습니다([`servc_api_path_remeasurement_20260826.md`](../analysis/servc_api_path_remeasurement_20260826.md)).
 2. **프론트엔드**: HTMX 는 2026-08-25 기각하고 ADR 을 SSR + Jinja2 + jQuery 로 개정했습니다. `base.html` 외부 CDN 7곳(2026-08-25)에 이어 Chart.js 3개 템플릿과 marked 도 2026-08-26 에 로컬 벤더로 이관해 **애플리케이션 템플릿 외부 참조 0건**입니다. 같은 날 Tailwind 를 브라우저 JIT(407KB js)에서 **빌드타임 CSS(44KB)** 로 전환하고 클래스 대조 검증 테스트를 붙였습니다.
 3. **G3 컷오버 판정**: 위 항목이 닫힌 뒤 판정합니다. 개별 게이트 PASS 를 컷오버 PASS 로 승격하지 않습니다.
 
@@ -124,4 +125,5 @@
 - 블로킹 I/O 계측: [`predict_coldstart_instrumentation.md`](../analysis/predict_coldstart_instrumentation.md), [`query_rag_latency_instrumentation.md`](../analysis/query_rag_latency_instrumentation.md), [`arq_throughput_harness.md`](../analysis/arq_throughput_harness.md), [`arq_throughput_20260823.md`](../analysis/arq_throughput_20260823.md), [`arq_throughput_gate_20260823.md`](../analysis/arq_throughput_gate_20260823.md)
 - 워커 기동: [`agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
 - 용역 모델: [`servc_model_status.md`](../servc_model_status.md)
+- 용역 운영 API 경로 재측정: [`servc_api_path_remeasurement_20260826.md`](../analysis/servc_api_path_remeasurement_20260826.md)
 - 미병합 브랜치 판정: [`phase8_predict_tail_merge_verdict_20260814.md`](../ops/phase8_predict_tail_merge_verdict_20260814.md), [`codex_task_routing_branch_verdict_20260814.md`](../ops/codex_task_routing_branch_verdict_20260814.md)

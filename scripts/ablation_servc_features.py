@@ -20,6 +20,7 @@ import argparse
 import sys
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -76,6 +77,21 @@ LGB_PARAMS = {
     "verbose": -1,
     "n_jobs": -1,
 }
+
+
+class _LGBMKwargs(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+    objective: str
+    alpha: float
+
 
 BASE_FEATURES = [
     "log_price",
@@ -166,7 +182,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def evaluate(df: pd.DataFrame, columns: list[str], cut: int):
     features = df[columns]
-    model = lgb.LGBMRegressor(**LGB_PARAMS)
+    model = lgb.LGBMRegressor(**cast(_LGBMKwargs, LGB_PARAMS))
     model.fit(
         features[:cut],
         df.y[:cut],

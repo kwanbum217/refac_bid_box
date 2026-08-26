@@ -73,7 +73,7 @@ CATEGORICAL_INSTITUTION = [
     "sucsfbid_mthd_nm",
 ]
 
-LGB_PARAMS = {
+LGB_PARAMS: dict[str, int | float | str] = {
     "objective": "regression",
     "n_estimators": 400,
     "learning_rate": 0.05,
@@ -145,9 +145,17 @@ def fit_predict(
     valid: pd.DataFrame,
     columns: list[str],
 ) -> np.ndarray:
-    model = lgb.LGBMRegressor(**LGB_PARAMS)
+    model = lgb.LGBMRegressor(
+        objective="regression",
+        n_estimators=400,
+        learning_rate=0.05,
+        num_leaves=63,
+        min_child_samples=50,
+        random_state=42,
+        verbose=-1,
+    )
     model.fit(train[columns], train["winning_rate"])
-    return model.predict(valid[columns])
+    return np.asarray(model.predict(valid[columns]), dtype=np.float64)
 
 
 def score(y_true, y_pred) -> dict[str, float]:

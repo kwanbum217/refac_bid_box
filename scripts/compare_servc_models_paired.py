@@ -51,6 +51,17 @@ from src.ml.model_registry import ModelRegistry  # noqa: E402
 # 유의 판정 기준. 쌍대 t 통계량의 절댓값이 이보다 커야 방향을 말합니다.
 T_THRESHOLD = 2.0
 
+
+def _bind_registry_model_root(root: Path) -> None:
+    """비교용 모델 루트를 이 프로세스에서만 ModelRegistry 가 보도록 고정합니다."""
+    root_str = str(root)
+
+    def _get_model_root(cls: type[ModelRegistry]) -> str:
+        return root_str
+
+    object.__setattr__(ModelRegistry, "_get_model_root", classmethod(_get_model_root))
+
+
 # 제외 사유로 출력할 수 있는 유일한 범주입니다. 임의 문자열(예외 원문, fallback_reason,
 # 파일 경로)은 어떤 경로로도 stdout 에 싣지 않습니다.
 PROVENANCE_CATEGORIES = (
@@ -365,7 +376,7 @@ def main() -> int:
         if not model_root.is_dir():
             print(f"비교용 모델 루트가 없습니다: {model_root}")
             return 1
-        ModelRegistry._get_model_root = classmethod(lambda cls: str(model_root))
+        _bind_registry_model_root(model_root)
         ModelRegistry.load_all_models()
 
     session = SessionLocal()

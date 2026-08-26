@@ -23,7 +23,7 @@ import math
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.app.core.timeutil import utcnow
 
@@ -32,7 +32,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import pyarrow.parquet as pq  # noqa: E402
-from sqlalchemy import insert  # noqa: E402
+from sqlalchemy import Table, insert  # noqa: E402
 
 from src.app.core.db import Base, SessionLocal, engine  # noqa: E402
 from src.app.models.bids import BidAnnouncement, BidResult  # noqa: E402
@@ -236,7 +236,8 @@ def _load_dataset(name: str, path: Path, *, dry_run: bool) -> tuple[int, int]:
         print("  샘플 매핑:", mapper(record, category, tuple(raw_columns)))
         return total, 0
 
-    stmt = insert(model.__table__).prefix_with(_ignore_prefix())
+    table = cast(Table, model.__table__)
+    stmt = insert(table).prefix_with(_ignore_prefix())
     session = SessionLocal()
     try:
         for batch in parquet_file.iter_batches(batch_size=BATCH_ROWS, columns=read_columns):
@@ -283,7 +284,13 @@ def main() -> int:
     print("=" * 66)
 
     if not args.dry_run:
-        Base.metadata.create_all(engine, tables=[BidAnnouncement.__table__, BidResult.__table__])
+        Base.metadata.create_all(
+            engine,
+            tables=[
+                cast(Table, BidAnnouncement.__table__),
+                cast(Table, BidResult.__table__),
+            ],
+        )
 
     summary = []
     for name in targets:

@@ -23,18 +23,47 @@ import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으
 import sys
 import threading
 import time
+import types
 import urllib.request
 from datetime import UTC, datetime
+from typing import TypedDict
 
 logger = logging.getLogger(__name__)
+
+
+class LatencyMs(TypedDict):
+    p50: float
+    p95: float
+    p99: float
+    max: float
+
+
+class RssReport(TypedDict):
+    base_url: str
+    duration_seconds: int
+    concurrency: int
+    sample_interval_seconds: float
+    server_pid: int | None
+    total_requests: int
+    failed_requests: int
+    latency_ms: LatencyMs
+    rss_samples: list[dict[str, object]]
 
 
 # ---------------------------------------------------------------------------
 # RSS 측정 헬퍼 (psutil 우선, 없으면 ps(1) 폴백)
 # ---------------------------------------------------------------------------
 
+_psutil_module: types.ModuleType | None
 try:
-    import psutil as _psutil
+    import psutil as _psutil_import
+
+    _psutil_module = _psutil_import
+except ImportError:
+    _psutil_module = None
+
+if _psutil_module is not None:
+    _psutil = _psutil_module
 
     def _get_server_rss_kb(pid: int) -> int | None:
         try:
@@ -42,8 +71,7 @@ try:
         except _psutil.NoSuchProcess:
             return None
 
-except ImportError:
-    _psutil = None  # type: ignore[assignment]
+else:
 
     def _get_server_rss_kb(pid: int) -> int | None:
         try:
@@ -176,7 +204,7 @@ def run(
         t.join(timeout=5.0)
 
     lat_copy = list(latencies)
-    report = {
+    report: RssReport = {
         "base_url": base_url,
         "duration_seconds": duration_seconds,
         "concurrency": concurrency,
