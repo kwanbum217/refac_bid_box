@@ -594,3 +594,17 @@ def test_system_prompt_preserves_category_wording_and_canvas_instructions():
     ) in SYSTEM_PROMPT
     assert "용역, 물품, 공사, 외자처럼 사용자용 분류명만 쓰세요." in SYSTEM_PROMPT
     assert "data-type='bar'" in SYSTEM_PROMPT
+
+
+def test_system_prompt_mandates_both_winning_amount_and_rate_in_detail_and_comparison():
+    """개별 공고 및 비교 질의에서 컨텍스트의 낙찰금액과 낙찰률을 모두 명시하도록 지시해야 합니다."""
+    assert "개별 공고 질의나 여러 공고 간 비교 질의에서도" in SYSTEM_PROMPT
+    assert "검색 컨텍스트에 존재하는 낙찰금액과 낙찰률" in SYSTEM_PROMPT
+    assert "누락하지 말고 빠짐없이 모두 명시" in SYSTEM_PROMPT
+
+
+def test_system_prompt_mandates_source_isolation_in_comparison_queries():
+    """여러 공고 비교 시 각 공고의 값은 해당 공고 Source에서만 가져오고 소스 번호를 붙이도록 지시해야 합니다."""
+    assert "여러 공고를 비교할 때는" in SYSTEM_PROMPT
+    assert "해당 공고를 담은 Source에서만 가져오고 다른 Source의 값을 섞지 마세요" in SYSTEM_PROMPT
+    assert "각 비교 항목마다 출처 소스 번호를 명확히 붙이세요" in SYSTEM_PROMPT
