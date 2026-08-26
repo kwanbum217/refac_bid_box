@@ -8,6 +8,47 @@ APP_DIR = REPO_ROOT / "src" / "app"
 STATIC_DIR = APP_DIR / "static"
 TEMPLATES_DIR = APP_DIR / "templates"
 BASE_HTML = TEMPLATES_DIR / "base.html"
+CHARTJS_TEMPLATES = [
+    TEMPLATES_DIR / "bids" / "dashboard.html",
+    TEMPLATES_DIR / "bids" / "compare.html",
+    TEMPLATES_DIR / "chatbot" / "chat.html",
+]
+
+
+def _assert_no_external_asset_references(template_path: Path):
+    content = template_path.read_text(encoding="utf-8")
+
+    external_refs = re.findall(
+        r"""<(?:link|script)[^>]+(?:href|src)=["'](https?://[^"']+)["']""",
+        content,
+        re.IGNORECASE,
+    )
+    assert not external_refs, (
+        f"External asset references found in {template_path.name}: {external_refs}"
+    )
+
+    https_matches = [line.strip() for line in content.splitlines() if "https://" in line]
+    assert not https_matches, f"https:// found in {template_path.name} lines: {https_matches}"
+
+
+def _assert_static_assets_exist_on_disk(template_path: Path):
+    content = template_path.read_text(encoding="utf-8")
+    pattern = r"""url_for\(\s*['"]static['"]\s*,\s*path=['"]([^'"]+)['"]\s*\)"""
+    static_paths = re.findall(pattern, content)
+
+    assert len(static_paths) > 0, (
+        f"Expected at least one url_for static path in {template_path.name}"
+    )
+
+    missing_files = []
+    for rel_path in static_paths:
+        target = STATIC_DIR / rel_path
+        if not target.is_file():
+            missing_files.append(str(rel_path))
+
+    assert not missing_files, (
+        f"Missing static files referenced in {template_path.name}: {missing_files}"
+    )
 
 
 def test_base_html_has_no_external_asset_references():
@@ -98,3 +139,24 @@ def test_fonts_css_webfonts_exist_and_resolve():
             missing_fonts.append(f"{rel_url} -> {font_path}")
 
     assert not missing_fonts, f"Missing font files in fonts.css: {missing_fonts}"
+
+
+def test_chartjs_templates_have_no_external_asset_references():
+    """Verify dashboard, compare, and chat templates have no external CDN references."""
+    for template_path in CHARTJS_TEMPLATES:
+        _assert_no_external_asset_references(template_path)
+
+
+def test_chartjs_templates_static_assets_exist_on_disk():
+    """Verify vendor files referenced by chart-enabled templates exist on disk."""
+    for template_path in CHARTJS_TEMPLATES:
+        _assert_static_assets_exist_on_disk(template_path)
+
+    dashboard_content = (TEMPLATES_DIR / "bids" / "dashboard.html").read_text(encoding="utf-8")
+    compare_content = (TEMPLATES_DIR / "bids" / "compare.html").read_text(encoding="utf-8")
+    chat_content = (TEMPLATES_DIR / "chatbot" / "chat.html").read_text(encoding="utf-8")
+
+    assert "vendor/chartjs/4.5.1/chart.umd.min.js" in dashboard_content
+    assert "vendor/chartjs/4.5.1/chart.umd.min.js" in compare_content
+    assert "vendor/chartjs/4.5.1/chart.umd.min.js" in chat_content
+    assert "vendor/marked/15.0.12/marked.min.js" in chat_content
