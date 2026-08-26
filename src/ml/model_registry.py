@@ -4,7 +4,7 @@ import math
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -273,6 +273,7 @@ class ModelRegistry:
             model_id = entry
             model_type = metadata.get("type", "joblib")
             try:
+                wrapper: BaseModelWrapper
                 if model_id == "v25":
                     wrapper = EnsembleV25Wrapper(model_dir, metadata)
                 elif model_id == "v13_hybrid":
@@ -367,9 +368,10 @@ class ModelRegistry:
 
 
 # 런타임 종속성을 model_wrappers 모듈에 연결 (순환 import 방지)
-_wrappers._coerce_float = _coerce_float
-_wrappers._apply_inference_thread_budget = _apply_inference_thread_budget
-_wrappers._prepare_input_frame = _prepare_input_frame
+_wrappers_runtime = cast(Any, _wrappers)
+_wrappers_runtime._coerce_float = _coerce_float
+_wrappers_runtime._apply_inference_thread_budget = _apply_inference_thread_budget
+_wrappers_runtime._prepare_input_frame = _prepare_input_frame
 
 # 런타임 종속성을 prediction_api 모듈에 연결 (순환 import 방지)
 _pred_api.ModelRegistry = ModelRegistry

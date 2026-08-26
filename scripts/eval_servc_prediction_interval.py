@@ -18,6 +18,7 @@ from __future__ import annotations
 import sys
 import warnings
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -54,7 +55,7 @@ FIT_END_YEAR = 2023
 
 # 분위 회귀는 objective 와 alpha 로 분위를 지정합니다. 나머지 용량 설정은
 # 점 추정 모델과 같게 둬야 구간과 점 추정이 같은 복잡도에서 비교됩니다.
-QUANTILE_PARAMS = {
+QUANTILE_PARAMS: dict[str, Any] = {
     key: value for key, value in EVAL_PARAMS.items() if key not in ("objective", "alpha")
 }
 
@@ -64,7 +65,7 @@ def train_quantiles(X_train, y_train, X_valid) -> dict[float, np.ndarray]:
     for q in QUANTILES:
         model = lgb.LGBMRegressor(objective="quantile", alpha=q, **QUANTILE_PARAMS)
         model.fit(X_train, y_train, categorical_feature=list(CATEGORICAL_FEATURES))
-        preds[q] = model.predict(X_valid)
+        preds[q] = np.asarray(model.predict(X_valid))
         print(f"  분위 {q} 학습 완료", flush=True)
     return preds
 

@@ -256,7 +256,10 @@ def rebuild_knowledge_base(
 
         one_year_ago = utcnow() - timedelta(days=365)
         if delta_mode:
-            announcements, source_mode = _resolve_delta_announcements(db, collected_since)
+            delta_since = collected_since
+            if delta_since is None:
+                raise ValueError("delta_mode requires collected_since")
+            announcements, source_mode = _resolve_delta_announcements(db, delta_since)
         else:
             announcements, source_mode = _resolve_announcements(db, one_year_ago)
 
@@ -414,7 +417,7 @@ def _sync(
     ids: list[str],
     existing_hashes: dict[str, str],
     incremental: bool,
-) -> tuple[int, dict[str, int]]:
+) -> tuple[int, dict[str, Any]]:
     """컬렉션을 목표 상태에 맞춥니다.
 
     반환하는 건수는 **컬렉션에 있어야 할 전체 문서 수**입니다. 이번에 임베딩한

@@ -29,10 +29,11 @@ import subprocess  # nosec B404
 import sys
 import time
 import uuid
+from collections.abc import Awaitable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
@@ -622,7 +623,7 @@ async def run_container_worker_benchmark(
         async def result_listener() -> None:
             while len(collected_results) < total_jobs:
                 # blpop 으로 1초 단위 대기
-                pop_res = await redis_pool.blpop(done_key, timeout=1)
+                pop_res = await cast(Awaitable[Any], redis_pool.blpop([done_key], timeout=1))
                 if pop_res:
                     t_done = time.perf_counter()
                     _, raw_data = pop_res
@@ -643,7 +644,7 @@ async def run_container_worker_benchmark(
                         extra_errors.append(f"결과 파싱 오류: {parse_err}")
 
                     # 큐에 남아있는 추가 완료 건 일괄 drain (최대 100개)
-                    batch = await redis_pool.lpop(done_key, count=100)
+                    batch = await cast(Awaitable[Any], redis_pool.lpop(done_key, count=100))
                     if batch:
                         t_batch = time.perf_counter()
                         for raw_b in batch:
@@ -803,8 +804,8 @@ async def run_container_worker_benchmark(
     effective_dirty = git_dirty if git_dirty is not None else get_git_status(target_source)[1]
 
     provenance = build_provenance_dict(
-        host_cpu_count=int(load_sample.get("cpu_count") or os.cpu_count() or 1),
-        host_load_avg_1m=load_sample.get("load_1m"),  # type: ignore[arg-type]
+        host_cpu_count=int(cast(int, load_sample.get("cpu_count") or os.cpu_count() or 1)),
+        host_load_avg_1m=cast(float | None, load_sample.get("load_1m")),
         host_memory=host_mem,
         redis_url=redis_url,
         redis_container_id=redis_info.get("container_id", "unknown"),

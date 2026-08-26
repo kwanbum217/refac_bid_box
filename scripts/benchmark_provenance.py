@@ -30,7 +30,7 @@ import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -877,13 +877,17 @@ def single_host_load_sample(os_module: Any = None) -> dict[str, object]:
 
 def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, object]:
     """호스트 부하 표본 리스트로부터 min/median/max 통계를 계산합니다."""
-    load_values = [float(s["load_1m"]) for s in samples if s.get("load_1m") is not None]
+    load_values = [
+        float(cast(float, s["load_1m"])) for s in samples if s.get("load_1m") is not None
+    ]
     pct_values = [
-        float(s["per_core_percent"]) for s in samples if s.get("per_core_percent") is not None
+        float(cast(float, s["per_core_percent"]))
+        for s in samples
+        if s.get("per_core_percent") is not None
     ]
 
     if load_values:
-        load_stats = {
+        load_stats: dict[str, float | None] = {
             "min": min(load_values),
             "median": statistics.median(load_values),
             "max": max(load_values),
@@ -892,7 +896,7 @@ def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, objec
         load_stats = {"min": None, "median": None, "max": None}
 
     if pct_values:
-        pct_stats = {
+        pct_stats: dict[str, float | None] = {
             "min": min(pct_values),
             "median": statistics.median(pct_values),
             "max": max(pct_values),
@@ -1073,7 +1077,10 @@ def compute_baseline_summary(results: Sequence[Mapping[str, Any]]) -> dict[str, 
         if med is None or med == 0:
             return None
         deviations = [abs(v - med) for v in values]
-        return _median(deviations) / med
+        mad = _median(deviations)
+        if mad is None:
+            return None
+        return mad / med
 
     t_median = _median(t_values)
     p_median = _median(p_values)

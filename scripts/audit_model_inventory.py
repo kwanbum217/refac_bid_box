@@ -122,7 +122,8 @@ def _update_history(
     """조회 결과를 기록하고 반환된 카운터를 업데이트합니다."""
     history = _load_history(state_path)
     current = history.get(pool_name, {"status": "present", "counter": 0})
-    prev_counter = current.get("counter", 0)
+    prev_counter_raw = current.get("counter", 0)
+    prev_counter = prev_counter_raw if isinstance(prev_counter_raw, int) else 0
 
     if status == "present":
         # present 관측: 카운터 초기화
