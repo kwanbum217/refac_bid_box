@@ -27,10 +27,20 @@
 | `feat/codex-task-routing` | `70bd666` | 1 | 고유 파일 17건 전량 폐기 권고 |
 | `perf/predict-tail` | `0fd489a` | 4 | 계측 하네스 병합 불가 |
 
-## 3. 보존한 브랜치
+## 3. 회수 완료 후 삭제한 브랜치
+
+두 브랜치는 회수 후보였고, 2026-08-26 야간 세션에서 **변경 내용만 현재 main 코드에
+맞게 이식**했습니다(`f89c6a0`). 브랜치를 그대로 병합하지 않은 것은 둘 다
+2026-08-20 기준이라 이후 변경과 충돌하기 때문입니다. 이식이 끝나 삭제했습니다.
+
+| 브랜치 | 마지막 커밋 | 회수한 내용 |
+| --- | --- | --- |
+| `kwanbum217/b2-or_nemoultra` | `5dc2a2b` | `--json` 출력 옵션 |
+| `kwanbum217/bakeoff-mimo` | `c95cd60` | `audit_with_state()` 함수 분리 |
+
+## 4. 보존한 브랜치
 
 | 브랜치 | 사유 |
 | --- | --- |
-| `kwanbum217/b2-or_nemoultra` | 회수 후보. `--json` 출력의 가장 균형 잡힌 분리 |
-| `kwanbum217/bakeoff-mimo` | 회수 후보. `audit_with_state` 함수 분리 |
 | `kwanbum217/orca-w1-concurrency-2` | 동시성 테스트 병합 기각의 근거 |
+| `feat/p1-reliability-lock` | 미판정 |
