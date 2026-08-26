@@ -98,7 +98,10 @@ def test_base_html_static_assets_exist_on_disk():
     # Ensure vendor assets are among the parsed static paths
     assert any("vendor/bootstrap" in p for p in checked_files)
     assert any("vendor/daisyui" in p for p in checked_files)
-    assert any("vendor/tailwindcss" in p for p in checked_files)
+    # Tailwind 는 2026-08-26 에 브라우저 JIT(vendor/tailwindcss/*.js)에서
+    # 빌드타임 CSS(css/tailwind.css)로 전환했습니다. base.html 은 더 이상
+    # vendor 의 tailwindcss.js 를 로드하지 않습니다.
+    assert any("css/tailwind.css" in p for p in checked_files)
     assert any("vendor/jquery" in p for p in checked_files)
     assert any("vendor/fontawesome" in p for p in checked_files)
     assert any("vendor/fonts" in p for p in checked_files)
