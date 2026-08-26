@@ -132,7 +132,7 @@ class _PendingRagAnswer:
     message: str
     session_key: str
     history: list[dict]
-    kb_status: dict
+    kb_status: dict[str, Any] | None
     plan: Any
     tool_context: dict
     user_id: int | None

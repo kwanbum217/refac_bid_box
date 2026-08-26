@@ -27,6 +27,7 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from typing import cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -129,8 +130,9 @@ def main() -> int:
     resid = {name: pred - actual for name, pred in preds.items()}
     correlation = float(np.corrcoef(resid["lightgbm"], resid["catboost"])[0, 1])
 
-    best_single = min(rows[0]["mae"], rows[1]["mae"])
-    gain = best_single - rows[2]["mae"]
+    best_single = min(cast(float, rows[0]["mae"]), cast(float, rows[1]["mae"]))
+    blend_mae = cast(float, rows[2]["mae"])
+    gain = best_single - blend_mae
 
     # 가중치를 검증 연도에서 고르는 것은 오라클입니다. 실제로는 이 가중치를
     # 미리 알 수 없으므로 이 값은 상한이며, 상한조차 이득이 없으면 가중치

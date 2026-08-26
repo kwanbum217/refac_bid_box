@@ -274,10 +274,9 @@ def main() -> int:
         report("4. 실용 (전년 오프셋을 다음 해에)", practical)
         payload["reproducibility"] = repro.to_dict(orient="records")
         payload["practical"] = practical.to_dict(orient="records")
-        payload["practical_min_gain"] = float(
-            practical[practical["최소 표본"] == args.min_rows]["개선"].min()
-        )
-        payload["verdict"] = "open" if payload["practical_min_gain"] > 0 else "closed_at_practical"
+        practical_min_gain = float(practical[practical["최소 표본"] == args.min_rows]["개선"].min())
+        payload["practical_min_gain"] = practical_min_gain
+        payload["verdict"] = "open" if practical_min_gain > 0 else "closed_at_practical"
 
     variants = variant_table(by_year, args.min_rows, args.stat)
     report("5. 키 정의 대조 (교차가 단독을 이기는가)", variants)

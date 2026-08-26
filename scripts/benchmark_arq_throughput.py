@@ -469,7 +469,11 @@ def aggregate_benchmark_metrics(
     dock_ver = get_docker_version()
 
     provenance = build_provenance_dict(
-        host_cpu_count=int(load_sample.get("cpu_count") or os.cpu_count() or 1),
+        host_cpu_count=(
+            int(_cpu_raw)
+            if isinstance(_cpu_raw := load_sample.get("cpu_count"), (int, float))
+            else int(os.cpu_count() or 1)
+        ),
         host_load_avg_1m=load_sample.get("load_1m"),  # type: ignore[arg-type]
         host_memory=host_mem,
         redis_url=config.redis_url,

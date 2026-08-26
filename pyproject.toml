@@ -209,10 +209,8 @@ module = [
     "scripts.analyze_servc_error_concentration",
     "scripts.benchmark_latency",
     "scripts.diagnose_holdout_serving_gap",
-    "scripts.eval_servc_api_path",
     "scripts.eval_servc_excess_target",
     "scripts.eval_servc_flag_features",
-    "scripts.eval_servc_interval_by_group",
     "scripts.eval_servc_interval_width",
     "scripts.eval_servc_interval_width_by_group",
     "scripts.eval_servc_participant_effect",
@@ -221,25 +219,19 @@ module = [
     "scripts.eval_servc_rolling_institution",
     "scripts.eval_servc_year_holdout",
     "scripts.measure_servc_split_variance",
-    "src.app.api.v1.chatbot",
     "src.app.main",
     "src.app.services.collector_service",
-    "src.app.services.home_context",
-    "src.app.services.tools.trend_analyzer",
 ]
 disable_error_code = ["arg-type"]
 
 [[tool.mypy.overrides]]
 module = [
-    "scripts.audit_servc_rawdata_regime_scan",
-    "src.app.services.conversation_state",
     "src.ml.model_registry",
 ]
 disable_error_code = ["assignment"]
 
 [[tool.mypy.overrides]]
 module = [
-    "scripts.arq_gate",
     "scripts.eval_servc_prediction_interval",
     "src.app.services.kb_builder",
     "src.ml.trainer",
@@ -262,31 +254,19 @@ disable_error_code = ["arg-type", "call-overload", "misc", "unused-ignore"]
 
 [[tool.mypy.overrides]]
 module = [
-    "scripts.benchmark_arq_throughput",
-    "scripts.eval_servc_ensemble_headroom",
-]
-disable_error_code = ["call-overload"]
-
-[[tool.mypy.overrides]]
-module = [
     "scripts.benchmark_provenance",
 ]
 disable_error_code = ["arg-type", "dict-item", "operator"]
 
 [[tool.mypy.overrides]]
 module = [
-    "scripts.benchmark_rag_segments",
     "scripts.orca_trust_worktree",
-    "scripts.repair_contract_method",
-    "scripts.run_p9_sse_parallel_bench",
-    "scripts.run_p9_sse_rebaseline",
 ]
 disable_error_code = ["attr-defined"]
 
 [[tool.mypy.overrides]]
 module = [
     "scripts.benchmark_sse_gate",
-    "scripts.import_data_assets",
 ]
 disable_error_code = ["index"]
 
@@ -318,12 +298,6 @@ disable_error_code = ["arg-type", "attr-defined", "type-var"]
 
 [[tool.mypy.overrides]]
 module = [
-    "scripts.eval_servc_inst_clsfc_cross",
-]
-disable_error_code = ["operator"]
-
-[[tool.mypy.overrides]]
-module = [
     "scripts.orca_level1_gate",
 ]
 disable_error_code = ["union-attr", "unused-ignore"]
@@ -351,12 +325,6 @@ module = [
     "scripts.segment_servc_models",
 ]
 disable_error_code = ["arg-type", "return-value"]
-
-[[tool.mypy.overrides]]
-module = [
-    "scripts.summarize_worker_done",
-]
-disable_error_code = ["unused-ignore"]
 
 # ==========================================
 # bandit (보안 정적 스캔)

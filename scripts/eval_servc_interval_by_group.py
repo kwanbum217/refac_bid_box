@@ -43,6 +43,8 @@ from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(PROJECT_ROOT / ".env")
 
+from starlette.requests import Request  # noqa: E402
+
 from scripts.eval_servc_api_path import collect  # noqa: E402
 from src.app.api.v1.predictions import predict_price_api  # noqa: E402
 from src.app.core.db import SessionLocal  # noqa: E402
@@ -53,6 +55,17 @@ from src.ml.dataset import announcement_feature_payload  # noqa: E402
 # 집단 표가 읽히려면 이만큼은 있어야 합니다. 피복률은 비율이라 표본이 작으면
 # 표준오차가 커서 90% 와 80% 를 구분하지 못합니다.
 MIN_GROUP_ROWS = 50
+
+
+def _script_predict_request() -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/predictions/predict-price",
+            "headers": [],
+        }
+    )
 
 
 def summarize(part: pd.DataFrame) -> dict:
@@ -123,7 +136,9 @@ def main() -> int:
             payload = announcement_feature_payload(bid) if bid else {}
             try:
                 response = predict_price_api(
-                    PredictPriceRequest(bid_id=int(row.bid_id), user_price="0"), session
+                    PredictPriceRequest(bid_id=int(row.bid_id), user_price="0"),
+                    _script_predict_request(),
+                    db=session,
                 )
             except Exception as exc:
                 # 기초금액·예정가격이 모두 없는 공고는 422 로 끊깁니다. 정상 동작이며

@@ -35,6 +35,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(PROJECT_ROOT / ".env")
 
 from sqlalchemy import func, select  # noqa: E402
+from starlette.requests import Request  # noqa: E402
 
 from src.app.api.v1.predictions import predict_price_api  # noqa: E402
 from src.app.core.db import SessionLocal  # noqa: E402
@@ -42,6 +43,17 @@ from src.app.models.bids import BidAnnouncement, BidResult  # noqa: E402
 from src.app.schemas.predictions import PredictPriceRequest  # noqa: E402
 
 ERROR_BANDS = (0.5, 1.0, 2.0, 3.0, 5.0)
+
+
+def _script_predict_request() -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/predictions/predict-price",
+            "headers": [],
+        }
+    )
 
 
 def collect(
@@ -115,7 +127,9 @@ def main() -> int:
         for row in frame.itertuples():
             try:
                 response = predict_price_api(
-                    PredictPriceRequest(bid_id=int(row.bid_id), user_price="0"), session
+                    PredictPriceRequest(bid_id=int(row.bid_id), user_price="0"),
+                    _script_predict_request(),
+                    db=session,
                 )
             except Exception as exc:
                 # 기초금액·예정가격이 모두 없는 공고는 422 로 끊깁니다. 정상 동작이며
