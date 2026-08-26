@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-26
-> **source_commit**: `788ace9`
+> **source_commit**: `b4913fd`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -67,7 +67,7 @@
 
 1. **운영 검증**: 2026-08-25 최신 CI run `32815469127`(`c6ef35c`)에서 **3플랫폼 green**(Docker/lint/Ubuntu/macOS/Windows 5잡). Windows Docker Desktop 실기만 남음.
 1-4. **Vector fail-closed 수정**: 2026-08-25 검색 필터 누락(`where` 절 부재)과 category 첫 일치 오분류를 수정해 근거 적중 15/16 → **16/16**, fail-closed 정합(`284e49d`) 반영 완료.
-1-2. **LLM 경로 최적화**: v3(소스 `9516808`)에서 e2b 는 numeric 67.6% 대 61.8%, 지연 P50 3,005.4ms 대 3,593.7ms 로 앞섰으나 q18 과잉응답 2/3(e4b 1/3)로 **승격 보류**([`llm_quality_v3_e4b_e2b_20260825.md`](../analysis/llm_quality_v3_e4b_e2b_20260825.md)). 2026-08-26 에 원인인 거절 지시 부재를 `SYSTEM_PROMPT` 에 추가하고 거절 fixture 를 3 → 8 문항으로 확대했습니다. **v4 재측정 전까지 승격 판정을 하지 않습니다.**
+1-2. **LLM 경로 최적화**: 2026-08-26 v4(소스 `b4913fd`, canonical, 각 72회차)에서 **`gemma4:e2b` 를 서빙 기본 모델로 승격**했습니다. e2b 가 numeric 65.7% 대 61.8%, 문항 통과 16/48 대 12/48, P50 2,681.6ms 대 3,130.5ms 로 앞서고 evidence 51/51·인용 48/48·forbidden 0 은 동등합니다. 보류 사유였던 과잉응답은 거절 지시 추가와 fixture 3 → 8 문항 확대 뒤 **양쪽 0/24**, 과잉거절도 0/48 입니다([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)).
 1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션 확정. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하). 잠정값 900/600 제거, 기준선은 캘리브레이션 호스트에 결박([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
 1-3. **감사 후속 P1**: 2026-08-25 에 RAG 라우팅 오분류, 복합 numeric·refusal 미채점, 모델 라벨·Arq 호스트 미결박을 닫았습니다. `llm_quality_*_20260824.json` 은 v1 기준이라 무효입니다.
 2. **프론트엔드**: HTMX 는 2026-08-25 기각하고 ADR 을 SSR + Jinja2 + jQuery 로 개정했습니다. `base.html` 외부 CDN 7곳(2026-08-25)에 이어 Chart.js 3개 템플릿과 marked 도 2026-08-26 에 로컬 벤더로 이관해 **애플리케이션 템플릿 외부 참조 0건**입니다. Tailwind 운영 빌드만 후속 과제입니다.
@@ -101,7 +101,7 @@
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - Windows Docker Desktop 실기 검증 미수행.
-- **LLM v4 재측정 미실행**: v3 는 소스 `9516808` canonical(e4b/e2b 각 57회차, numeric 63/102 대 69/102, evidence hit 양쪽 51/51). 2026-08-26 의 거절 지시 추가와 fixture 24문항 확대는 아직 측정되지 않았으므로 **현 HEAD 의 품질 정본이 아닙니다**([`llm_quality_v3_e4b_e2b_20260825.md`](../analysis/llm_quality_v3_e4b_e2b_20260825.md)).
+- **LLM 품질 정본은 v4**(소스 `b4913fd`, 각 72회차, 실패 0). fixture 밖 일반화와 numeric 절대 수치(65.7%)는 이 측정이 답하지 않으므로 별도 과제입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
 - Ollama `gemma4:e4b` Predict c4·SSE c1·Query c1 2026-08-24 부하 규약 준수 3회 측정, 1차 r2 기각 후 재측정, 게이트 전 항목 통과.
 - Arq container synthetic 3회 raw 보존(1,681~1,764 jps, P95 325~342ms). production business-task E2E 미측정.
 - 벤치마크 provenance 는 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 됩니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 는 정본 evidence 가 아닙니다.
