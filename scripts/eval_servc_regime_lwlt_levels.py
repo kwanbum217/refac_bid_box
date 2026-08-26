@@ -21,6 +21,7 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -52,6 +53,20 @@ REGIME_STEP = 2.0
 T_THRESHOLD = 2.0
 
 
+class _LGBMKwargs(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+    objective: str
+    alpha: float
+
+
 def build_frame(path: Path) -> pd.DataFrame:
     """운영 trainer 와 같은 단일 특징 공급원으로 평가 프레임을 만듭니다."""
     raw = pd.read_parquet(path)
@@ -76,7 +91,8 @@ def fit_operational(train: pd.DataFrame, features: list[str]) -> lgb.LGBMRegress
 
     cut = int(len(train) * (1 - DEFAULT_VALIDATION_SPLIT))
     fit_part, valid_part = train.iloc[:cut], train.iloc[cut:]
-    probe = lgb.LGBMRegressor(**params)
+    lgb_params = cast(_LGBMKwargs, params)
+    probe = lgb.LGBMRegressor(**lgb_params)
     probe.fit(
         fit_part[features],
         fit_part["winning_rate"],
@@ -84,9 +100,9 @@ def fit_operational(train: pd.DataFrame, features: list[str]) -> lgb.LGBMRegress
         categorical_feature=categoricals,
         callbacks=[lgb.early_stopping(10, verbose=False)],
     )
-    best = int(getattr(probe, "best_iteration_", 0) or params["n_estimators"])
+    best = int(getattr(probe, "best_iteration_", 0) or cast(int, params["n_estimators"]))
 
-    model = lgb.LGBMRegressor(**{**params, "n_estimators": best})
+    model = lgb.LGBMRegressor(**cast(_LGBMKwargs, {**params, "n_estimators": best}))
     model.fit(train[features], train["winning_rate"], categorical_feature=categoricals)
     return model
 

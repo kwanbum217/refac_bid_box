@@ -4,6 +4,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TypedDict
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -116,6 +117,13 @@ async def lifespan(_: FastAPI):
 DOUBLE_SLASH_PREFIX = "/bids//"
 
 
+class _CorsKwargs(TypedDict):
+    allow_origins: list[str]
+    allow_credentials: bool
+    allow_methods: list[str]
+    allow_headers: list[str]
+
+
 def _docs_kwargs(app_settings: Settings) -> dict[str, str | None]:
     """production 에서 API 문서 표면을 닫습니다.
 
@@ -128,7 +136,7 @@ def _docs_kwargs(app_settings: Settings) -> dict[str, str | None]:
     return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
 
 
-def _cors_kwargs(app_settings: Settings) -> dict[str, object]:
+def _cors_kwargs(app_settings: Settings) -> _CorsKwargs:
     """자격증명 허용 CORS 의 오리진 범위를 환경에 따라 좁힙니다.
 
     Starlette 은 allow_origins=["*"] 와 allow_credentials=True 가 함께 오면
@@ -193,16 +201,26 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     앱 객체와 어긋납니다.
     """
     app_settings = app_settings or settings
+    docs_kwargs = _docs_kwargs(app_settings)
+    cors_kwargs = _cors_kwargs(app_settings)
 
     app = FastAPI(
         title="refac_bid_box API",
         description="Refactored Procurement Analytics, Hybrid RAG Chatbot, AI Prediction & MLOps Platform",
         version="0.1.0",
         lifespan=lifespan,
-        **_docs_kwargs(app_settings),
+        docs_url=docs_kwargs["docs_url"],
+        redoc_url=docs_kwargs["redoc_url"],
+        openapi_url=docs_kwargs["openapi_url"],
     )
 
-    app.add_middleware(CORSMiddleware, **_cors_kwargs(app_settings))
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_kwargs["allow_origins"],
+        allow_credentials=cors_kwargs["allow_credentials"],
+        allow_methods=cors_kwargs["allow_methods"],
+        allow_headers=cors_kwargs["allow_headers"],
+    )
     app.middleware("http")(collapse_bids_double_slash)
     app.middleware("http")(mark_prediction_dispatch)
 

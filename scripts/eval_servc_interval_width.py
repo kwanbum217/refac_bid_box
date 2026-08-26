@@ -24,6 +24,7 @@ import argparse
 import sys
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -49,6 +50,18 @@ from src.ml.trainer import (  # noqa: E402
 CURRENT_QUANTILE_LEAVES = QUANTILE_PARAM_OVERRIDES["num_leaves"]
 
 
+class _LGBMQuantileParams(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+
+
 def evaluate(train: pd.DataFrame, valid: pd.DataFrame, leaves: int) -> dict:
     """학습기와 같은 절차로 분위 모델을 만들고 보정한 뒤 폭을 잽니다.
 
@@ -63,7 +76,9 @@ def evaluate(train: pd.DataFrame, valid: pd.DataFrame, leaves: int) -> dict:
     params.pop("alpha", None)
 
     def _fit(frame: pd.DataFrame, q: float):
-        model = lgb.LGBMRegressor(objective="quantile", alpha=q, **params)
+        model = lgb.LGBMRegressor(
+            objective="quantile", alpha=q, **cast(_LGBMQuantileParams, params)
+        )
         model.fit(frame[ALL_FEATURES], frame["winning_rate"])
         return model
 

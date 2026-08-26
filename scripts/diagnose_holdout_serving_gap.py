@@ -27,6 +27,7 @@ import argparse
 import sys
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -43,6 +44,21 @@ from scripts.eval_servc_year_holdout import ALL_FEATURES, build_frame  # noqa: E
 from src.ml.trainer import LGB_BASE_PARAMS  # noqa: E402
 
 POINT_OBJECTIVE = {"objective": "huber", "alpha": 1.0}
+
+
+class _LGBMKwargs(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+    objective: str
+    alpha: float
+
 
 # 운영 측정(`eval_servc_api_path.py --require-lwlt`)이 보는 구간입니다.
 SERVING_SEGMENT = "하한율 보유"
@@ -80,7 +96,9 @@ def describe_composition(valid: pd.DataFrame) -> None:
 
 
 def fit(train: pd.DataFrame, leaves: int):
-    model = lgb.LGBMRegressor(**{**LGB_BASE_PARAMS, **POINT_OBJECTIVE, "num_leaves": leaves})
+    model = lgb.LGBMRegressor(
+        **cast(_LGBMKwargs, {**LGB_BASE_PARAMS, **POINT_OBJECTIVE, "num_leaves": leaves})
+    )
     model.fit(train[ALL_FEATURES], train["winning_rate"])
     return model
 

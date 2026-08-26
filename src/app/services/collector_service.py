@@ -230,7 +230,7 @@ async def collect_bids(
     target_categories = categories or tuple(BID_CATEGORIES.keys())
     # 체크포인트 조회는 동기 DB 질의입니다. 이 함수는 ASGI 요청 경로에서도
     # 호출되므로 스레드로 넘겨 이벤트 루프를 비웁니다.
-    start_date, end_date, is_catchup = await asyncio.to_thread(
+    resolved_start, resolved_end, is_catchup = await asyncio.to_thread(
         resolve_collection_window,
         db,
         start_date=start_date,
@@ -240,11 +240,11 @@ async def collect_bids(
         max_catchup_days=max_catchup_days,
     )
     if is_catchup:
-        logger.info("누락일 회수 모드: %s ~ %s", start_date, end_date)
+        logger.info("누락일 회수 모드: %s ~ %s", resolved_start, resolved_end)
 
     metrics: dict[str, Any] = {
-        "start_date": start_date,
-        "end_date": end_date,
+        "start_date": resolved_start,
+        "end_date": resolved_end,
         "fetch_type": fetch_type,
         "catchup": is_catchup,
         "announcement_count": 0,
@@ -268,8 +268,8 @@ async def collect_bids(
                 # 15일 구간이 끝나는 즉시 적재하고 버립니다. 전 구간을 모으면
                 # raw_data JSON 때문에 장기 백필에서 메모리가 터집니다.
                 saved = await stream_bid_announcements(
-                    start_date,
-                    end_date,
+                    resolved_start,
+                    resolved_end,
                     lambda rows: _bulk_insert(db, BidAnnouncement, rows),
                     category=cat_code,
                 )
@@ -289,8 +289,8 @@ async def collect_bids(
             metrics["attempted"] += 1
             try:
                 saved = await stream_bid_data(
-                    start_date,
-                    end_date,
+                    resolved_start,
+                    resolved_end,
                     lambda rows: _bulk_insert(db, BidResult, rows),
                     category=cat_code,
                 )

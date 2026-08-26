@@ -39,6 +39,7 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -67,6 +68,20 @@ from src.ml.trainer import (  # noqa: E402
 
 CATEGORY = "Servc"
 HIT_TOLERANCE = 0.5
+
+
+class _LGBMKwargs(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+    objective: str
+    alpha: float
 
 
 def build_frame(path: Path) -> pd.DataFrame:
@@ -103,7 +118,8 @@ def fit_operational(
     categoricals = [column for column in CATEGORICAL_FEATURES if column in features]
 
     cut = int(len(train) * (1 - DEFAULT_VALIDATION_SPLIT))
-    probe = lgb.LGBMRegressor(**params)
+    lgb_params = cast(_LGBMKwargs, params)
+    probe = lgb.LGBMRegressor(**lgb_params)
     probe.fit(
         train[features].iloc[:cut],
         y[:cut],
@@ -111,9 +127,9 @@ def fit_operational(
         categorical_feature=categoricals,
         callbacks=[lgb.early_stopping(10, verbose=False)],
     )
-    best = int(getattr(probe, "best_iteration_", 0) or params["n_estimators"])
+    best = int(getattr(probe, "best_iteration_", 0) or cast(int, params["n_estimators"]))
 
-    model = lgb.LGBMRegressor(**{**params, "n_estimators": best})
+    model = lgb.LGBMRegressor(**cast(_LGBMKwargs, {**params, "n_estimators": best}))
     model.fit(train[features], y, categorical_feature=categoricals)
     return model
 

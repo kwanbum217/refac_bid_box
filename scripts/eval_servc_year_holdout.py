@@ -19,6 +19,7 @@ import argparse
 import sys
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -44,6 +45,21 @@ from src.ml.repeat_history import REPEAT_FEATURES, attach_repeat_history  # noqa
 
 # 학습 경로와 같은 목적함수를 써야 평가가 운영을 대변합니다 (trainer.py 참조).
 EVAL_PARAMS = {**LGB_PARAMS, "objective": "huber", "alpha": 1.0}
+
+
+class _LGBMKwargs(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+    objective: str
+    alpha: float
+
 
 # 범주형 목록은 features.py 가 단일 공급원입니다. 여기에 따로 적으면 학습 경로와
 # 어긋나 평가가 운영과 다른 특징을 재게 됩니다 (AGENTS.md 6항).
@@ -215,9 +231,9 @@ def main() -> int:
         f"표준편차 {valid['winning_rate'].std():.3f}",
     )
 
-    model = lgb.LGBMRegressor(**EVAL_PARAMS)
+    model = lgb.LGBMRegressor(**cast(_LGBMKwargs, EVAL_PARAMS))
     model.fit(train[ALL_FEATURES], train["winning_rate"])
-    preds = apply_lower_limit(model.predict(valid[ALL_FEATURES]), valid)
+    preds = apply_lower_limit(np.asarray(model.predict(valid[ALL_FEATURES])), valid)
 
     valid["pred"] = preds
     valid["err"] = valid["pred"] - valid["winning_rate"]

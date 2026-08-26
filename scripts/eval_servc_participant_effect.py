@@ -27,6 +27,7 @@ import argparse
 import sys
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -44,6 +45,21 @@ from scripts.segment_servc_models import apply_lower_limit  # noqa: E402
 from src.ml.trainer import LGB_BASE_PARAMS  # noqa: E402
 
 EVAL_PARAMS = {**LGB_BASE_PARAMS, "objective": "huber", "alpha": 1.0}
+
+
+class _LGBMKwargs(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+    objective: str
+    alpha: float
+
 
 # 이력 특징을 붙이는 키. 좁은 키일수록 신호가 선명하나 결측이 늘어납니다.
 HISTORY_KEYS = [
@@ -85,9 +101,9 @@ def attach_participant_history(df: pd.DataFrame, split_dt: pd.Timestamp) -> pd.D
 
 
 def run(train: pd.DataFrame, valid: pd.DataFrame, features: list[str], label: str) -> dict:
-    model = lgb.LGBMRegressor(**EVAL_PARAMS)
+    model = lgb.LGBMRegressor(**cast(_LGBMKwargs, EVAL_PARAMS))
     model.fit(train[features], train["winning_rate"])
-    pred = apply_lower_limit(model.predict(valid[features]), valid)
+    pred = apply_lower_limit(np.asarray(model.predict(valid[features])), valid)
     actual = valid["winning_rate"].to_numpy(dtype=float)
     abs_err = np.abs(pred - actual)
     return {
