@@ -1,0 +1,116 @@
+{
+  "status": "success",
+  "timestamp": "2026-08-26T05:54:35.756553+00:00",
+  "started_at": "2026-08-26T05:54:33.949019+00:00",
+  "finished_at": "2026-08-26T05:54:35.756553+00:00",
+  "is_synthetic": false,
+  "target_tasks": [
+    "preflight_check_task",
+    "validate_model_task"
+  ],
+  "allowed_target_tasks": [
+    "preflight_check_task",
+    "validate_model_task"
+  ],
+  "rejected_target_tasks": [
+    "collect_bids_task",
+    "development_data_refresh_task",
+    "manual_full_task",
+    "manual_retrain_task",
+    "refresh_data_task",
+    "run_retrain_pipeline_task",
+    "update_kb_task"
+  ],
+  "production_queue": "arq:queue",
+  "isolated_queue": "arq:benchmark:business-e2e:0746d23764ff",
+  "timeout_sec": 120.0,
+  "summary": {
+    "repetitions": 3,
+    "jobs_per_repetition": 5,
+    "total_enqueued": 30,
+    "successful": 30,
+    "failed": 0,
+    "missing": 0,
+    "error_count": 0
+  },
+  "per_task": [
+    {
+      "task": "preflight_check_task",
+      "enqueued": 15,
+      "successful": 15,
+      "failed": 0,
+      "missing": 0,
+      "latency_ms": {
+        "p50_ms": 1.0,
+        "p95_ms": 8.3,
+        "p99_ms": 20.06,
+        "min_ms": 1.0,
+        "max_ms": 23.0,
+        "mean_ms": 2.8,
+        "values_ms": [
+          23.0,
+          2.0,
+          2.0,
+          1.0,
+          1.0,
+          2.0,
+          2.0,
+          1.0,
+          1.0,
+          1.0,
+          2.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "task": "validate_model_task",
+      "enqueued": 15,
+      "successful": 15,
+      "failed": 0,
+      "missing": 0,
+      "latency_ms": {
+        "p50_ms": 8.0,
+        "p95_ms": 1183.3,
+        "p99_ms": 1183.86,
+        "min_ms": 5.0,
+        "max_ms": 1184.0,
+        "mean_ms": 392.267,
+        "values_ms": [
+          1125.0,
+          1184.0,
+          1183.0,
+          1165.0,
+          1156.0,
+          8.0,
+          11.0,
+          7.0,
+          7.0,
+          6.0,
+          6.0,
+          8.0,
+          7.0,
+          6.0,
+          5.0
+        ]
+      }
+    }
+  ],
+  "latency_ms": {
+    "p50_ms": 5.5,
+    "p95_ms": 1174.9,
+    "p99_ms": 1183.71,
+    "min_ms": 1.0,
+    "max_ms": 1184.0,
+    "mean_ms": 197.533
+  },
+  "errors": [],
+  "environment": {
+    "python": "3.12.14",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "benchmark_worker_mode": "in_process_business"
+  }
+}

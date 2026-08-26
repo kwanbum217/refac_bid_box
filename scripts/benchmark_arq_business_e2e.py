@@ -38,7 +38,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import json
 import logging
 import math
 import platform
@@ -52,6 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from arq.connections import ArqRedis, RedisSettings
+from arq.jobs import Job
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -342,6 +342,44 @@ def build_business_e2e_config(
     )
 
 
+async def _start_isolated_worker(
+    redis_settings: RedisSettings,
+    queue_name: str,
+    task_names: tuple[str, ...],
+) -> Any:
+    """격리 큐만 소비하는 in-process arq 워커를 띄운다.
+
+    운영 워커는 arq:queue 를 보므로 격리 큐에 넣은 job 을 아무도 집지 않는다.
+    워커를 띄우지 않으면 모든 회차가 타임아웃으로 누락된다. 등록 함수는
+    허용 목록으로 이미 검증된 실제 업무 task 뿐이다.
+    """
+    assert_queue_isolation(queue_name)
+    from arq.worker import Worker
+
+    from src.tasks import automation_tasks
+
+    functions = [getattr(automation_tasks, name) for name in task_names]
+    worker = Worker(
+        functions=functions,
+        queue_name=queue_name,
+        redis_settings=redis_settings,
+        handle_signals=False,
+        max_jobs=10,
+        poll_delay=0.05,
+        keep_result=300,
+    )
+    task = asyncio.create_task(worker.async_run())
+    return worker, task
+
+
+async def _stop_isolated_worker(worker: Any, task: Any) -> None:
+    with contextlib.suppress(Exception):
+        await worker.close()
+    task.cancel()
+    with contextlib.suppress(Exception, asyncio.CancelledError):
+        await task
+
+
 async def enqueue_business_task(
     redis: ArqRedis,
     *,
@@ -364,68 +402,51 @@ async def enqueue_business_task(
 async def collect_business_results(
     redis: ArqRedis,
     queue_name: str,
-    expected_count: int,
+    job_ids: list[str],
     timeout_sec: float,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """격리 큐의 결과 키에서 회차별 완료 신호를 수집한다.
+    """enqueue 한 job 의 결과를 arq Job 객체로 직접 조회한다.
 
-    arq 는 정상 완료 시 `arq:result:<job_id>` 에 JSON 직렬화된
-    결과를 기록한다. 해당 키를 polldir 하여 회차 수만큼 모은다.
-    실제 측정 실행 시 호출되며 본 스크립트의 단위 테스트는
-    redis 를 mocking 하거나 호출하지 않는다.
+    arq 의 결과 키는 `arq:result:<job_id>` 이며 큐 이름을 포함하지 않는다.
+    따라서 키 문자열에 큐 이름이 있는지로 거르면 아무것도 못 찾는다.
+    우리가 발급한 job_id 목록으로 조회해야 한다. 그 job_id 에는 격리 큐
+    해시가 들어 있어 다른 실행과 섞이지 않는다.
     """
     assert_queue_isolation(queue_name)
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
+    pending = list(job_ids)
     deadline = time.perf_counter() + timeout_sec
-    seen_job_ids: set[str] = set()
-    while len(collected) < expected_count and time.perf_counter() < deadline:
-        cursor = 0
-        new_in_batch = 0
-        while True:
-            cursor, matched = await redis.scan(cursor=cursor, match="arq:result:*", count=200)
-            for key in matched:
-                key_str = (
-                    key.decode("utf-8", errors="ignore") if isinstance(key, bytes) else str(key)
-                )
-                if queue_name not in key_str:
-                    continue
-                job_id = key_str.split(":", 2)[-1]
-                if job_id in seen_job_ids:
-                    continue
-                try:
-                    raw = await redis.get(key_str)
-                except Exception as exc:  # pragma: no cover - 실측 경로
-                    errors.append(f"결과 조회 실패 ({job_id}): {exc}")
-                    continue
-                if raw is None:
-                    continue
-                try:
-                    payload = json.loads(
-                        raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
-                    )
-                except Exception as exc:  # pragma: no cover - 실측 경로
-                    errors.append(f"결과 파싱 실패 ({job_id}): {exc}")
-                    continue
-                seen_job_ids.add(job_id)
-                collected.append(
-                    {
-                        "job_id": job_id,
-                        "latency_ms": float(payload.get("latency_ms", 0.0)),
-                        "success": bool(payload.get("success", True)),
-                        "error": payload.get("error"),
-                    }
-                )
-                new_in_batch += 1
-            if cursor == 0:
-                break
-        if new_in_batch == 0:
-            await asyncio.sleep(0.05)
-    if len(collected) < expected_count:
-        errors.append(
-            f"타임아웃({timeout_sec}초) 내에 {expected_count}개 회차 결과를 수집하지 못했습니다 "
-            f"(수신: {len(collected)}/{expected_count})."
-        )
+
+    while pending and time.perf_counter() < deadline:
+        still_pending: list[str] = []
+        for job_id in pending:
+            job = Job(job_id, redis=redis, _queue_name=queue_name)
+            try:
+                info = await job.result_info()
+            except Exception as exc:  # pragma: no cover - 실측 경로
+                errors.append(f"결과 조회 실패 ({job_id}): {exc}")
+                continue
+            if info is None:
+                still_pending.append(job_id)
+                continue
+            elapsed_ms = 0.0
+            if info.finish_time and info.start_time:
+                elapsed_ms = (info.finish_time - info.start_time).total_seconds() * 1000.0
+            collected.append(
+                {
+                    "job_id": job_id,
+                    "latency_ms": elapsed_ms,
+                    "success": bool(info.success),
+                    "error": None if info.success else str(info.result),
+                }
+            )
+        pending = still_pending
+        if pending:
+            await asyncio.sleep(0.1)
+
+    for job_id in pending:
+        errors.append(f"결과 미수신 ({job_id})")
     return collected, errors
 
 
@@ -481,6 +502,42 @@ async def cleanup_business_e2e_resources(
     return deleted_count
 
 
+async def run_all_repetitions_async(
+    config: BusinessE2EConfig,
+    redis_url: str,
+    *,
+    on_start: Any = None,
+    on_done: Any = None,
+) -> list[dict[str, Any]]:
+    """전 회차를 하나의 이벤트 루프에서 돌린다.
+
+    회차마다 asyncio.run 으로 루프와 워커를 새로 만들면 업무 task 가 로드하는
+    ML 런타임이 반복 초기화되어 프로세스가 죽는다(2026-08-26 실측: 3회차에서
+    SIGSEGV). 격리 워커는 전체 측정에 한 번만 띄운다.
+    """
+    redis_settings = RedisSettings.from_dsn(redis_url)
+    worker_handle = await _start_isolated_worker(
+        redis_settings, config.queue_name, config.task_names
+    )
+    results: list[dict[str, Any]] = []
+    try:
+        for rep_idx in range(1, config.repetitions + 1):
+            if on_start is not None:
+                on_start(rep_idx)
+            rep_result = await run_single_repetition_async(
+                config=config,
+                redis_url=redis_url,
+                repetition_index=rep_idx,
+            )
+            results.append(rep_result)
+            if on_done is not None:
+                on_done(rep_idx, rep_result)
+    finally:
+        with contextlib.suppress(Exception):
+            await _stop_isolated_worker(*worker_handle)
+    return results
+
+
 def run_single_repetition_sync(
     config: BusinessE2EConfig,
     redis_url: str,
@@ -533,11 +590,10 @@ async def run_single_repetition_async(
                 except Exception as exc:  # pragma: no cover - 실측 경로
                     errors.append(f"enqueue 실패 ({task_name}/{job_id}): {exc}")
 
-        expected = len(config.task_names) * config.jobs_per_repetition
         collected, collect_errors = await collect_business_results(
             redis_pool,
             config.queue_name,
-            expected_count=expected,
+            job_ids=job_ids,
             timeout_sec=config.timeout_sec,
         )
         errors.extend(collect_errors)
@@ -733,25 +789,26 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     started_at = datetime.now(UTC)
-    repetition_results: list[dict[str, Any]] = []
-    for rep_idx in range(1, config.repetitions + 1):
+
+    def _on_start(rep_idx: int) -> None:
         if config.repetitions > 1 and not args.quiet:
-            print(f"\n>>> [회차 {rep_idx}/{config.repetitions}] 실측 시작...")
-        try:
-            rep_result = run_single_repetition_sync(
-                config=config,
-                redis_url=args.redis_url,
-                repetition_index=rep_idx,
-            )
-        except Exception as exc:
-            print(f"회차 {rep_idx} 실행 실패: {exc}", file=sys.stderr)
-            return 1
-        repetition_results.append(rep_result)
+            print(f"\n>>> [회차 {rep_idx}/{config.repetitions}] 실측 시작...", flush=True)
+
+    def _on_done(rep_idx: int, rep_result: dict[str, Any]) -> None:
         if config.repetitions > 1 and not args.quiet:
             print(
                 f"회차 {rep_idx} 완료: 소요 {rep_result['duration_sec']:.3f}초, "
-                f"per_task={rep_result['per_task']}"
+                f"per_task={rep_result['per_task']}",
+                flush=True,
             )
+
+    try:
+        repetition_results = asyncio.run(
+            run_all_repetitions_async(config, args.redis_url, on_start=_on_start, on_done=_on_done)
+        )
+    except Exception as exc:
+        print(f"측정 실행 실패: {exc}", file=sys.stderr)
+        return 1
 
     finished_at = datetime.now(UTC)
     result = aggregate_repetitions(
