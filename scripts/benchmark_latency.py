@@ -404,6 +404,9 @@ def build_evidence(
     elif start_meta is None and end_meta is not None:
         start_meta = end_meta
 
+    if start_meta is None or end_meta is None:
+        raise RuntimeError("provenance metadata must be resolved before building evidence")
+
     provenance_consistent = verify_provenance_consistency(
         start_meta, end_meta, strict=strict_provenance
     )

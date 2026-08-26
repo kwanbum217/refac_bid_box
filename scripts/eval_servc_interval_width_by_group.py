@@ -24,6 +24,7 @@ import argparse
 import sys
 import warnings
 from pathlib import Path
+from typing import TypedDict, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -47,6 +48,19 @@ from src.ml.trainer import (  # noqa: E402
 
 CURRENT_QUANTILE_LEAVES = QUANTILE_PARAM_OVERRIDES["num_leaves"]
 
+
+class _LGBMQuantileParams(TypedDict, total=False):
+    n_estimators: int
+    learning_rate: float
+    num_leaves: int
+    min_child_samples: int
+    subsample: float
+    colsample_bytree: float
+    random_state: int
+    verbose: int
+    n_jobs: int
+
+
 # build_frame 이 lwlt_rate 를 중앙값으로 채우면서 원래 결측 여부를 이 컬럼에
 # 남겨 둡니다. 원본 parquet 를 다시 읽어 위치로 붙이면 어긋납니다. build_frame 이
 # 마지막에 openg_dt 로 정렬하고 인덱스를 다시 매기기 때문입니다.
@@ -65,7 +79,9 @@ def _bounds(
     params.pop("alpha", None)
 
     def _fit(frame: pd.DataFrame, q: float):
-        model = lgb.LGBMRegressor(objective="quantile", alpha=q, **params)
+        model = lgb.LGBMRegressor(
+            objective="quantile", alpha=q, **cast(_LGBMQuantileParams, params)
+        )
         model.fit(frame[ALL_FEATURES], frame["winning_rate"])
         return model
 

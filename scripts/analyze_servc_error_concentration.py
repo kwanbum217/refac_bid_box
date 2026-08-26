@@ -31,6 +31,7 @@ import argparse
 import glob
 import sys
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -56,11 +57,11 @@ PRICE_BANDS = [
 ]
 
 SAMPLE_BANDS = [
-    ("0건", 0, 1),
-    ("1~9건", 1, 10),
-    ("10~49건", 10, 50),
-    ("50~199건", 50, 200),
-    ("200건 이상", 200, np.inf),
+    ("0건", 0.0, 1.0),
+    ("1~9건", 1.0, 10.0),
+    ("10~49건", 10.0, 50.0),
+    ("50~199건", 50.0, 200.0),
+    ("200건 이상", 200.0, np.inf),
 ]
 
 
@@ -77,7 +78,7 @@ def load(dump_dir: Path, year: int | None) -> dict[int, pd.DataFrame]:
     return frames
 
 
-def banded(series: pd.Series, bands: list[tuple[str, float, float]]) -> pd.Series:
+def banded(series: pd.Series, bands: Sequence[tuple[str, float, float]]) -> pd.Series:
     """구간 라벨을 붙입니다. 정렬이 유지되도록 범주형 순서를 고정합니다."""
     labels = pd.Series("기타", index=series.index, dtype=object)
     for name, low, high in bands:
