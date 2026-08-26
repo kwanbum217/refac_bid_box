@@ -35,7 +35,7 @@ import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, Protocol, cast
 
 try:
     from scripts._strict_json import dump_strict_json
@@ -44,7 +44,7 @@ except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
-    from scripts._strict_json import dump_strict_json  # type: ignore[no-redef]
+    from scripts._strict_json import dump_strict_json
     from scripts.orca_contract import load_capsule, parse_capsule_list, parse_capsule_scalar
 
 __all__ = [
@@ -643,6 +643,14 @@ except ImportError:
     try:
         import msvcrt as _msvcrt
 
+        class _MsvcrtLockModule(Protocol):
+            def locking(self, fd: int, mode: int, nbytes: int) -> None: ...
+
+            LK_LOCK: int
+            LK_UNLCK: int
+
+        _msvcrt_lock = cast(_MsvcrtLockModule, _msvcrt)
+
         _LOCK_CHUNK = 1
 
         # msvcrt 는 현재 파일 위치 기준으로 바이트 구간을 잠급니다. seek(0) 없이
@@ -651,11 +659,11 @@ except ImportError:
         # OSError 를 내므로 직렬화가 아니라 실패가 됩니다.
         def _platform_lock(fobj: IO[str]) -> None:
             fobj.seek(0)
-            _msvcrt.locking(fobj.fileno(), _msvcrt.LK_LOCK, _LOCK_CHUNK)
+            _msvcrt_lock.locking(fobj.fileno(), _msvcrt_lock.LK_LOCK, _LOCK_CHUNK)
 
         def _platform_unlock(fobj: IO[str]) -> None:
             fobj.seek(0)
-            _msvcrt.locking(fobj.fileno(), _msvcrt.LK_UNLCK, _LOCK_CHUNK)
+            _msvcrt_lock.locking(fobj.fileno(), _msvcrt_lock.LK_UNLCK, _LOCK_CHUNK)
 
         _LOCK_AVAILABLE = True
     except ImportError:
@@ -797,7 +805,9 @@ def record_reliability_outcome(
             isinstance(item, dict) and item.get("observation_id") == observation_id
             for item in recent
         ):
-            return role_record
+            if isinstance(role_record, dict):
+                return role_record
+            return {"recent": list(recent)}
         recent.append(
             {
                 "ok": bool(ok),

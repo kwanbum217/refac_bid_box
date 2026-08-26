@@ -30,7 +30,7 @@ except ModuleNotFoundError:
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
-    from scripts._strict_json import dump_strict_json  # type: ignore[no-redef]
+    from scripts._strict_json import dump_strict_json
     from scripts.orca_contract import (
         load_capsule,
         load_report,
@@ -450,7 +450,7 @@ def _parse_npm_command(source: str, tokens: list[str]) -> VerificationCommand:
         # 설치는 검증이 아니므로 어느 능력도 덮지 않습니다.
         return VerificationCommand(source, ["npm", "ci"], prefix, frozenset(), "npm")
     if len(rest) == 2 and rest[0] == "run" and NPM_SCRIPT_RE.match(rest[1]):
-        in_frontend = bool(prefix) and prefix.startswith("frontend")
+        in_frontend = prefix is not None and prefix.startswith("frontend")
         provides = NPM_SCRIPT_CAPABILITIES.get(rest[1], frozenset()) if in_frontend else frozenset()
         return VerificationCommand(source, ["npm", "run", rest[1]], prefix, provides, "npm")
     raise ValueError("허용되는 npm 명령은 'npm ci' 와 'npm run <script>' 뿐입니다")

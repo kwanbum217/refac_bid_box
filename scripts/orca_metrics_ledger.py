@@ -39,15 +39,15 @@ except (ModuleNotFoundError, ImportError):
     _REPO_ROOT = Path(__file__).resolve().parent.parent
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
-    from scripts._strict_json import dump_strict_json, load_strict_json  # type: ignore[no-redef]
-    from scripts.orca_contract import (  # type: ignore[no-redef]
+    from scripts._strict_json import dump_strict_json, load_strict_json
+    from scripts.orca_contract import (
         char_len,
         load_capsule,
         load_report,
         parse_capsule_scalar,
         string_list,
     )
-    from scripts.orca_coordinator_usage import (  # type: ignore[no-redef]
+    from scripts.orca_coordinator_usage import (
         collect_usage,
         default_transcript_dir,
     )
@@ -164,8 +164,11 @@ def cmd_record(args: argparse.Namespace) -> int:
 
     # 중복 검사: 같은 (task_id, dispatch_id) 는 재기록하지 않음
     existing_rows, _ = _load_rows(ledger_path)
-    for row in existing_rows:
-        if row.get("task_id") == args.task and row.get("dispatch_id") == args.dispatch:
+    for existing_row in existing_rows:
+        if (
+            existing_row.get("task_id") == args.task
+            and existing_row.get("dispatch_id") == args.dispatch
+        ):
             print(
                 f"중복: task_id={args.task}, dispatch_id={args.dispatch} 가 이미 원장에 있습니다. "
                 "덮어쓰지 않습니다.",
@@ -269,7 +272,7 @@ def cmd_record(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    row: dict[str, Any] = {
+    ledger_row: dict[str, Any] = {
         "ledger_schema": LEDGER_SCHEMA,
         "recorded_at": _now_iso(),
         "run_id": args.run,
@@ -302,10 +305,10 @@ def cmd_record(args: argparse.Namespace) -> int:
 
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     with ledger_path.open("a", encoding="utf-8") as f:
-        f.write(dump_strict_json(row, indent=None) + "\n")
+        f.write(dump_strict_json(ledger_row, indent=None) + "\n")
 
     if args.json:
-        print(dump_strict_json(row, indent=2))
+        print(dump_strict_json(ledger_row, indent=2))
     else:
         print(f"기록 완료: task_id={args.task}, dispatch_id={args.dispatch}")
         print(f"  capsule_chars={capsule_chars}, report_chars={report_chars}")

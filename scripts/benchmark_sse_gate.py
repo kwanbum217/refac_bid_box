@@ -20,7 +20,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from scripts.benchmark_latency import (
     BuildProvenanceError,
@@ -37,12 +37,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-try:
-    from scripts._strict_json import dump_strict_json
-except (ModuleNotFoundError, ImportError):
-    from _strict_json import dump_strict_json  # type: ignore[no-redef]
-
 import httpx  # noqa: E402
+
+from scripts._strict_json import dump_strict_json  # noqa: E402
 
 CHAT_QUERIES = [
     "적격심사 기준이 어떻게 되나요",
@@ -80,6 +77,32 @@ def percentile(values: list[float], q: float) -> float:
     upper = min(lower + 1, len(ordered) - 1)
     weight = position - lower
     return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+class MetricStats(TypedDict):
+    n: int
+    p50_ms: float | None
+    p95_ms: float | None
+    p99_ms: float | None
+    max_ms: float | None
+    min_ms: float | None
+    mean_ms: float | None
+    threshold_ms: float | None
+    exceeded_count: int
+    exceeded_rate_pct: float
+    wilson_upper_pct: float
+
+
+class BenchmarkSummary(TypedDict):
+    concurrency: int
+    rounds: int
+    round_num: int
+    total_requests: int
+    successful_requests: int
+    error_requests: int
+    first_stage_stats: MetricStats
+    first_token_stats: MetricStats
+    final_stats: MetricStats
 
 
 @dataclass
@@ -172,7 +195,7 @@ def execute_sse_request(
 def compute_metric_stats(
     values: list[float],
     threshold_ms: float | None = None,
-) -> dict[str, Any]:
+) -> MetricStats:
     if not values:
         return {
             "n": 0,
@@ -225,7 +248,7 @@ def run_benchmark(
     rounds: int,
     round_num: int,
     warmup: bool = True,
-) -> tuple[dict[str, Any], list[SingleRequestRecord]]:
+) -> tuple[BenchmarkSummary, list[SingleRequestRecord]]:
     print(
         f"\n[시작] SSE 게이트 측정 (동시성: c{concurrency}, 표본: {rounds}건, 회차: r{round_num})"
     )
@@ -283,7 +306,7 @@ def run_benchmark(
     ]
     final_vals = [r.final_ms for r in successful_records if r.final_ms is not None]
 
-    summary = {
+    summary: BenchmarkSummary = {
         "concurrency": concurrency,
         "rounds": rounds,
         "round_num": round_num,
