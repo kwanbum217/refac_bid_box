@@ -22,7 +22,7 @@ mypy 부채 감축과 `predict_price_api` 재측정은 이미 병합·푸시까�
 | --- | --- | --- |
 | W1 `task_cd26c794ab1e` | cursor Composer 2.5 | 커밋했으나 **병합 기각**. 3.1 절 |
 | W2 `task_49975ee8d7ea` | Antigravity Gemini 3.7 Flash Medium | **병합 완료** (`f69f0a7` -> `20bfb24`) |
-| W3 `task_4190ee358120` | Kimi Code `or-free/minimax-m3` | 종료선까지 미완. 3.2 절 |
+| W3 `task_4190ee358120` | Kimi Code `or-free/minimax-m3` | **병합 완료** (`df8bc9f`). 3.2 절 |
 
 ## 2. 병합한 산출물
 
@@ -69,15 +69,26 @@ W1 은 `worker_done` 에서 "잠금을 무력화하면 8건 중 1건만 남는 �
 `kwanbum217/orca-w1-concurrency-2` 에 보존만 했습니다. `feat/p1-reliability-lock`
 역시 코드 수정분이 이미 `main` 에 더 나은 형태로 들어가 있어 회수 가치가 없습니다.
 
-### 3.2 W3 베이크오프 브랜치 판정은 미완입니다
+### 3.2 W3 베이크오프 브랜치 판정은 종료선 직전에 도착했습니다
 
 `b2-*` 5개와 `bakeoff-*` 4개(총 9개, 전부 2026-08-20)는
 `scripts/audit_model_inventory.py` 에 같은 기능을 넣는 과제를 여러 모델에 태운
-산출물로 보입니다. 회수 가치 판정을 W3 에 맡겼으나 종료선까지 조사 단계에
-머물렀습니다. 브랜치는 **삭제하지 않고 전부 보존**했습니다.
+산출물이었습니다. W3 가 9개 전부를 main 과 대조해 **회수 후보 2건, 폐기 권고
+7건**으로 판정했습니다([`bakeoff_branches_verdict_20260826.md`](../ops/bakeoff_branches_verdict_20260826.md)).
 
-Capsule 은 `.orca/capsules/task_4190ee358120/capsule.yaml` 에 있으므로 다음 세션에서
-그대로 재 Dispatch 할 수 있습니다.
+| 계열 | 과제 | main 현황 | 판정 |
+| --- | --- | --- | --- |
+| `b2-*` 5개 | `--json` 출력 옵션 | **미보유** | `b2-or_nemoultra` 만 회수 후보. 나머지 4개 폐기 |
+| `bakeoff-*` 4개 | 연속 미관측 판정 | `counter` 키로 **개념 보유** | `bakeoff-mimo` 만 회수 후보. 나머지 3개 폐기 |
+
+검증은 Level 1 게이트 PASS 와 주장 표본 6건 대조(`--json` 부재, `counter` 보유,
+`--state`/`--reset-state`/`--with-agy` 보유, `absent_streak` 계열 부재, 두 회수
+후보의 함수 분리 실재)로 했으며 6/6 일치했습니다.
+
+**정리 직전에 도착했습니다.** 코디네이터가 종료선에서 W3 를 미완으로 보고한 뒤
+워크트리 정리에 들어갔고, 정리 전 병합 확인 단계에서 `df8bc9f` 를 발견했습니다.
+**8장 1절의 "삭제 전 `git log --oneline main..<branch>` 를 읽는다" 가 유일한
+방어선이었습니다.** 워커가 유휴로 보인다고 산출물이 없다고 단정하지 마십시오.
 
 ---
 
@@ -109,7 +120,6 @@ Capsule 은 `.orca/capsules/task_4190ee358120/capsule.yaml` 에 있으므로 다
 
 ## 6. 다음 세션 착수 순서
 
-1. **브랜치 일괄 정리**: ahead 0 인 8개를 `git branch -d` 로 삭제합니다. `-D` 는 쓰지 마십시오.
-2. **W3 재 Dispatch**: 베이크오프 9개 브랜치 판정. Capsule 재사용 가능합니다.
-3. **`integrate/arq-worker-cutover` 삭제**: 판정이 전량 폐기 권고이므로 삭제 가능합니다. 삭제 전 `git log --oneline main..integrate/arq-worker-cutover` 를 한 번 읽으십시오.
-4. **G3 잔여**: Windows Docker Desktop 실기는 장비 부재로 불가합니다. 남은 것은 LLM fixture 밖 일반화 측정과 numeric 절대 정확도(65.7%) 개선이며 둘 다 새 과제입니다.
+1. **회수 후보 2건 반영 여부 결정**: `b2-or_nemoultra` 의 `--json` 출력과 `bakeoff-mimo` 의 `audit_with_state` 분리입니다. 회수하기로 하면 브랜치 병합이 아니라 해당 변경만 새 브랜치에 옮기십시오.
+2. **폐기 권고 브랜치 삭제**: 베이크오프 7개와 `integrate/arq-worker-cutover` 입니다. 삭제 전 `git log --oneline main..<branch>` 를 한 번 읽으십시오.
+3. **G3 잔여**: Windows Docker Desktop 실기는 장비 부재로 불가합니다. 남은 것은 LLM fixture 밖 일반화 측정과 numeric 절대 정확도(65.7%) 개선이며 둘 다 새 과제입니다.
