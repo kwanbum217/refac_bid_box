@@ -23,7 +23,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.benchmark_sse_gate import get_git_sha, run_benchmark  # noqa: E402
+from scripts.benchmark_arq_throughput import get_git_sha  # noqa: E402
+from scripts.benchmark_sse_gate import run_benchmark  # noqa: E402
 
 
 class AmbientLoadLogger:

@@ -16,6 +16,7 @@ import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE = PROJECT_ROOT.parent / "bid_box"
@@ -70,7 +71,7 @@ def collect_chroma_baseline(chroma_dir: Path) -> dict:
     try:
         cursor = connection.cursor()
         cursor.execute("SELECT name FROM collections ORDER BY name")
-        collections = [row[0] for row in cursor.fetchall()]
+        collections: list[str] = [str(row[0]) for row in cursor.fetchall()]
         cursor.execute("SELECT COUNT(*) FROM embeddings")
         embedding_count = int(cursor.fetchone()[0])
     finally:
@@ -109,7 +110,7 @@ def main() -> int:
     copy_tree(chroma_src, chroma_dest)
 
     print("[4/4] SHA256 체크섬 manifest 생성...")
-    manifest = {
+    manifest: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "source_repo": str(source_root),
         "chroma_baseline": collect_chroma_baseline(chroma_source_backup),

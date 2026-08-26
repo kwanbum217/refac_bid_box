@@ -9,7 +9,7 @@ Django 세션 대신 session_key 를 명시 전달받아 chat_session_states 테
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -258,7 +258,7 @@ def remember_chat_interaction(
     state.last_filters_json = merged_filters
     if answer_text:
         state.last_result_summary = answer_text
-    state.last_chart_payload = chart_payload
+    state.last_chart_payload = cast(dict[str, Any], chart_payload)
     if stored_result_payload:
         state.last_result_payload = stored_result_payload
     if job_id:

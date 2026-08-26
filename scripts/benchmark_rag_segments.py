@@ -496,6 +496,9 @@ def main(
         "max_ms": max(roundtrip.values) if roundtrip.values else None,
     }
 
+    perf_config = start_meta.get("perf_config")
+    llm_provider = perf_config.get("LLM_PROVIDER") if isinstance(perf_config, dict) else None
+
     payload = {
         "status": status,
         "canonical_success": canonical_success,
@@ -507,7 +510,7 @@ def main(
             "target_container": args.target_container,
             "container_id": start_meta.get("container_id"),
             "image_id": start_meta.get("target_container_image_id"),
-            "llm_provider": (start_meta.get("perf_config") or {}).get("LLM_PROVIDER"),
+            "llm_provider": llm_provider,
             "llm_model": runtime_model,
             "git_sha": start_meta.get("git_sha"),
         },

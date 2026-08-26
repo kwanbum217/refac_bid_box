@@ -576,19 +576,20 @@ def main(argv: list[str] | None = None) -> int:
                     verify_calibration_host(load_environment(path))
             else:
                 thresholds = resolve_repetition_thresholds(args.repetitions)
-            result = evaluate_repetition_gate(
+            repetition_result = evaluate_repetition_gate(
                 load_benchmark_samples(args.repetitions), thresholds=thresholds
             )
-        else:
-            if args.current is None:
-                parser.error("--baseline 사용 시 --current가 필요합니다.")
-            result = evaluate_benchmark_files(args.baseline, args.current)
+            print(repetition_result.summary())
+            return 0 if repetition_result.passed else 1
+        if args.current is None:
+            parser.error("--baseline 사용 시 --current가 필요합니다.")
+        throughput_result = evaluate_benchmark_files(args.baseline, args.current)
     except (OSError, TypeError, ValueError) as exc:
         print(f"게이트 판정 불가: {exc}")
         return 2
 
-    print(result.summary())
-    return 0 if result.passed else 1
+    print(throughput_result.summary())
+    return 0 if throughput_result.passed else 1
 
 
 if __name__ == "__main__":

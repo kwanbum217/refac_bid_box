@@ -314,10 +314,10 @@ def main() -> int:
     with (out_dir / "jumps.csv").open("w", encoding="utf-8") as fh:
         fh.write("field,ym,metric,before,after,before_top,after_top,in_use\n")
         for j in jumps:
-            used = j.field in in_use_fields
+            in_use_flag = j.field in in_use_fields
             fh.write(
                 f"{j.field},{j.ym},{j.metric},{j.before:.2f},{j.after:.2f},"
-                f'"{j.before_top}","{j.after_top}",{used}\n'
+                f'"{j.before_top}","{j.after_top}",{in_use_flag}\n'
             )
     print(f"\n기록: {(out_dir / 'jumps.csv').relative_to(PROJECT_ROOT)}")
     return 0

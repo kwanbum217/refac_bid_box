@@ -6,7 +6,7 @@ src/app/services/tools/trend_analyzer.py
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 
 def _coerce_float(value: Any) -> float:
@@ -65,7 +65,7 @@ def execute(
     trough: dict[str, Any] = {}
 
     if series:
-        values: list[float] = [float(item["value"]) for item in series]
+        values: list[float] = [cast(float, item["value"]) for item in series]
         volatility = round(max(values) - min(values), 4)
         peak = max(series, key=lambda item: item["value"])
         trough = min(series, key=lambda item: item["value"])

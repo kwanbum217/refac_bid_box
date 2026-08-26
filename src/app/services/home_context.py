@@ -178,7 +178,11 @@ def _build_home_payload(
             if result_summary is not None
             else db.scalar(select(func.count(BidResult.id)))
         ),
-        "latest_result_rate": float(latest_result.sucsf_bid_rate) if latest_result else None,
+        "latest_result_rate": (
+            float(latest_result.sucsf_bid_rate)
+            if latest_result is not None and latest_result.sucsf_bid_rate is not None
+            else None
+        ),
         "latest_collected_at": announcement_latest_collected_at,
     }
 

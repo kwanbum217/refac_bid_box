@@ -20,6 +20,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -30,6 +31,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(PROJECT_ROOT / ".env")
 
 from sqlalchemy import text  # noqa: E402
+from sqlalchemy.engine import CursorResult  # noqa: E402
 
 from src.app.core.db import SessionLocal  # noqa: E402
 
@@ -76,7 +78,11 @@ def main() -> int:
         cursor = lo
         while cursor <= hi:
             end = cursor + BATCH_ROWS - 1
-            touched += session.execute(UPDATE_SQL, {"lo": cursor, "hi": end}).rowcount
+            update_result = cast(
+                CursorResult[Any],
+                session.execute(UPDATE_SQL, {"lo": cursor, "hi": end}),
+            )
+            touched += update_result.rowcount or 0
             session.commit()
             cursor = end + 1
             done = min(cursor - lo, hi - lo + 1)
