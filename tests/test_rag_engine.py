@@ -16,6 +16,7 @@ from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.tools.kb_status_tool import build_kb_status_summary
 from src.rag.engine import (
+    SYSTEM_PROMPT,
     PreparedContext,
     _build_evidence_items,
     _build_result_list_answer,
@@ -552,3 +553,44 @@ def test_latency_logs_do_not_leak_user_query_or_documents(caplog, monkeypatch):
     assert private_query not in record.message
     for _key, value in getattr(record, "extra", {}).items():
         assert private_query not in str(value)
+
+
+def test_system_prompt_refusal_instructions_unopened_and_unconfirmed():
+    """미개찰·개찰 전·미확정 정보 거절 지시 및 사유 명시 지시가 SYSTEM_PROMPT에 존재해야 합니다."""
+    assert "미개찰" in SYSTEM_PROMPT
+    assert "개찰 전" in SYSTEM_PROMPT
+    assert "미래 시점" in SYSTEM_PROMPT
+    assert "예정가격" in SYSTEM_PROMPT
+    assert "낙찰업체" in SYSTEM_PROMPT
+    assert "낙찰금액" in SYSTEM_PROMPT
+    assert "낙찰률" in SYSTEM_PROMPT
+    assert "확인 불가" in SYSTEM_PROMPT
+    assert "거절" in SYSTEM_PROMPT
+    assert "사유" in SYSTEM_PROMPT
+
+
+def test_system_prompt_refusal_exception_when_evidence_present():
+    """컨텍스트에 근거가 존재할 때는 거절하지 않고 정상 답변한다는 조건이 명시되어야 합니다."""
+    assert (
+        "다만 제공된 검색 컨텍스트에 실제 근거가 있으면 위 거절 지시를 적용하지 말고 정상적으로 답변하세요."
+    ) in SYSTEM_PROMPT
+
+
+def test_system_prompt_preserves_existing_instructions_and_zero_count():
+    """기존 목록 답변 지시 및 0건 설명 지시가 훼손 없이 보존되어야 합니다."""
+    assert "목록 데이터가 컨텍스트에 있으면 검색 결과가 없다고 말하지 마세요." in SYSTEM_PROMPT
+    assert (
+        "요청 기간에 목록이 없으면 컨텍스트 부족이라고 하지 말고, "
+        "요청 기간의 0건과 DB 최신 개찰일을 명확히 설명하세요."
+    ) in SYSTEM_PROMPT
+    assert "'최근 낙찰 결과', '낙찰된 사업 목록'처럼 개별 목록을 요청하면" in SYSTEM_PROMPT
+    assert "Source [1]의 '최근 낙찰 결과 목록'을 그대로 사용하여" in SYSTEM_PROMPT
+
+
+def test_system_prompt_preserves_category_wording_and_canvas_instructions():
+    """분야 코드 노출 금지 및 canvas 태그 지시가 보존되어야 합니다."""
+    assert (
+        "분야 코드는 내부 식별자입니다. 최종 답변에는 Servc, Thng, Cnstwk, Frgcpt 같은 코드를 쓰지 말고"
+    ) in SYSTEM_PROMPT
+    assert "용역, 물품, 공사, 외자처럼 사용자용 분류명만 쓰세요." in SYSTEM_PROMPT
+    assert "data-type='bar'" in SYSTEM_PROMPT
