@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     LLM_TIMEOUT_SECONDS: float = 120.0
     LLM_TEMPERATURE: float = 0.2
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "gemma4:e4b"
+    OLLAMA_MODEL: str = "gemma4:e2b"
     # 모델을 메모리에 붙잡아 두는 시간. 내려가면 다음 질의가 로드 비용을 전부
     # 냅니다(실측 11.78초). "-1" 은 무기한, "30m" 은 30분입니다.
     OLLAMA_KEEP_ALIVE: str = "-1"

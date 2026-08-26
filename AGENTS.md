@@ -61,7 +61,7 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 | 태스크 큐 | Arq (asyncio + Redis) | 경량 비동기 태스크 큐 |
 | ML | LightGBM, CatBoost, scikit-learn | 기존 스택 유지 |
 | 벡터DB | ChromaDB (유지) | 원본 `bidding_kb` 1개 컬렉션 스냅샷 보존 최우선 (G1) |
-| LLM | Ollama gemma4:e4b (기본), Google Gemini (대체/선택) | 의도 분류, 요약, RAG |
+| LLM | Ollama gemma4:e2b (기본), Google Gemini (대체/선택) | 의도 분류, 요약, RAG |
 | 패키지 관리 | uv + pyproject.toml | pip 대체 |
 | 컨테이너 | Docker + docker-compose | 크로스 플랫폼 표준 (G2) |
 
