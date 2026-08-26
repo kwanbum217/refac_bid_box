@@ -1,7 +1,8 @@
 # mypy 부채 현황 및 제거 계획 (mypy_debt_reduction)
 
 > **작성일**: 2026-08-25
-> **버전**: v1.0.0
+> **최종 갱신**: 2026-08-26
+> **버전**: v1.1.0
 > 이 문서는 mypy 전역 `disable_error_code` 를 제거하고 모듈별 `[[tool.mypy.overrides]]` 로 좁힌 뒤의 남은 부채를 기록합니다. 수치는 전부 `uv run mypy src/ scripts/` 를 직접 실행해 얻은 실측값입니다.
 
 ---
@@ -13,6 +14,31 @@
 - **변경**: 전역 `disable_error_code` 를 제거하고, 실제로 오류가 나는 모듈에만 `[[tool.mypy.overrides]]` 로 해당 오류 코드를 좁혀 끕니다.
 - **원칙**: 오류가 없는 모듈에는 override 를 붙이지 않습니다. `warn_unused_ignores` 취지에 따라 부채가 보이지 않게 하지 않습니다.
 - **현재 상태**: `uv run mypy src/ scripts/` 오류 0. override 는 전부 개별 파일 단위(`module` 목록에 파일명 명시)이며, `scripts.*` 나 `src.*` 같은 광역 패턴은 사용하지 않습니다.
+
+### 1.1 2026-08-26 감사 v4 조치 결과
+
+| 항목 | 세션 시작 | 현재 |
+| --- | ---: | ---: |
+| override 블록 | 17 | 1 |
+| override 대상 모듈 | 38 | 3 |
+| override 없이 재현되는 오류 | 약 280 | 15 |
+| 이번 세션 해소 | - | 16블록, 35모듈, 약 265건 |
+
+현재 남은 override는 다음 한 블록뿐입니다.
+
+```toml
+[[tool.mypy.overrides]]
+module = [
+    "scripts.eval_servc_prediction_interval",
+    "src.ml.trainer",
+    "src.rag.llm",
+]
+disable_error_code = ["arg-type", "assignment"]
+```
+
+임시 진단 config에서 이 블록만 제거해 재측정한 결과는 **15건**입니다. `eval_servc_prediction_interval` 6건과 `trainer` 7건은 LightGBM `**dict[str, object]` 스텁 불일치, `rag.llm` 2건은 google-genai의 불변 `list[Content]` union 스텁 불일치입니다. `Any`나 `type: ignore`를 확대하지 않기 위해 이 3모듈은 최소 override를 유지합니다.
+
+아래 2~4장은 제거 전 기준선과 당시 우선순위를 보존한 역사 기록입니다. 현재 잔여 판단에는 본 절과 `pyproject.toml`을 사용합니다.
 
 ### 측정 전제
 
@@ -193,3 +219,13 @@ override 를 없애는 순서는 "오류 수가 적고, 원인이 한두 줄에 
 | `uv run ruff check src/ scripts/` | 통과 |
 | `uv run pytest tests/ -q -m 'not data_assets'` | 2049 passed, 6 skipped |
 | `python3 scripts/validate_agent_rules.py --quiet` | 통과 (12/12) |
+
+### 5.1 2026-08-26 재검증
+
+| 검증 | 결과 |
+| --- | --- |
+| `uv run mypy src/ scripts/` | 오류 0 (198 source files, 최소 override 적용) |
+| 임시 config에서 잔여 3모듈 override 제거 | 15건 재현 |
+| 통합 전체 pytest | 2,199 passed, 6 skipped, 3 deselected |
+| mixed 관련 pytest | 134 passed |
+| special `orca_model_router` pytest | 125 passed |
