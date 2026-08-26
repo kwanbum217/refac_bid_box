@@ -141,7 +141,7 @@ def _to_numeric_matrix(X: pd.DataFrame) -> np.ndarray:
     numeric = X.copy()
     for column in _present_categoricals(numeric):
         numeric[column] = numeric[column].cat.codes.astype(float)
-    return numeric.to_numpy(dtype=float)
+    return np.asarray(numeric.to_numpy(dtype=float))
 
 
 def _train_ridge_cv(
@@ -171,7 +171,7 @@ class _RidgeFrameAdapter:
         self.model = model
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        return self.model.predict(_to_numeric_matrix(X))
+        return np.asarray(self.model.predict(_to_numeric_matrix(X)))
 
 
 def _train_lightgbm(
@@ -258,7 +258,7 @@ class _CatBoostFrameAdapter:
         frame = X.copy()
         for column in self.cat_features:
             frame[column] = frame[column].astype(str)
-        return self.model.predict(frame)
+        return np.asarray(self.model.predict(frame))
 
 
 def _cross_validate_model(
@@ -288,7 +288,7 @@ def _cross_validate_model(
     if not fold_metrics:
         return {}
 
-    aggregated = {}
+    aggregated: dict[str, object] = {}
     for key in fold_metrics[0]:
         aggregated[f"avg_{key}"] = round(float(np.mean([m[key] for m in fold_metrics])), 4)
         aggregated[f"std_{key}"] = round(float(np.std([m[key] for m in fold_metrics])), 4)

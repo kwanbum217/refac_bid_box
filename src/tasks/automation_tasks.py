@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -278,7 +279,8 @@ def _check_chroma_vectors() -> int | None:
         try:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM embeddings")
-            return cursor.fetchone()[0]
+            row = cursor.fetchone()
+            return int(row[0]) if row is not None else None
         finally:
             conn.close()
     except Exception:
@@ -403,7 +405,7 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
     return summary, metrics
 
 
-STEP_RUNNERS = {
+STEP_RUNNERS: dict[str, Callable[..., object]] = {
     "collect": _step_collect,
     "search": _step_search,
     "rag": _step_rag,
@@ -454,8 +456,9 @@ async def run_automation_pipeline(
                 execution.stage_name = step
                 execution.stage_status = STATUS_RUNNING
                 db.commit()
-            kwargs = {}
-            if "execution_id" in inspect.signature(runner).parameters:
+            runner_fn = runner
+            kwargs: dict[str, object] = {}
+            if "execution_id" in inspect.signature(runner_fn).parameters:
                 kwargs["execution_id"] = execution_id
             # 개발 최신화는 수집 직후 500만 행 대시보드 전수 집계를 하지 않습니다.
             # 이후 스냅샷·기관 통계 갱신으로 추론 경로의 최신성은 유지합니다.
@@ -468,10 +471,10 @@ async def run_automation_pipeline(
             if step == "search" and run_mode == "refresh_data":
                 # 수집 API 재시도와 워커 재기동을 고려해 24시간을 겹쳐 upsert 합니다.
                 kwargs["collected_since"] = utcnow() - timedelta(days=1)
-            if inspect.iscoroutinefunction(runner):
-                res = await runner(db, **kwargs)
+            if inspect.iscoroutinefunction(runner_fn):
+                res = await runner_fn(db, **kwargs)
             else:
-                outcome: Any = await asyncio.to_thread(runner, db, **kwargs)
+                outcome: object = await asyncio.to_thread(runner_fn, db, **kwargs)
                 res = await outcome if inspect.isawaitable(outcome) else outcome
 
             if isinstance(res, tuple) and len(res) == 3:
@@ -491,7 +494,15 @@ async def run_automation_pipeline(
             completed.append(step)
             step_statuses[step] = step_status
             await asyncio.to_thread(
-                _report, db, automation_request_id, step, step_status, summary, metrics, **delivery
+                _report,
+                db,
+                automation_request_id,
+                step,
+                step_status,
+                summary,
+                metrics,
+                callback_url=callback_url,
+                callback_token=callback_token,
             )
 
             if execution is not None:

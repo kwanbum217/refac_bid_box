@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import contextlib
 import importlib.metadata
+import inspect
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ import subprocess  # nosec B404
 import sys
 import time
 import uuid
+from collections.abc import Awaitable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -118,6 +120,12 @@ async def fetch_redis_server_info(redis: ArqRedis) -> dict[str, str]:
     except Exception as exc:
         logger.warning("Redis INFO server 조회 중 예외: %s", exc)
     return server_info
+
+
+async def _await_maybe(awaitable: Awaitable[object] | object) -> object:
+    if inspect.isawaitable(awaitable):
+        return await awaitable
+    return awaitable
 
 
 def verify_identity_consistency(
@@ -622,8 +630,8 @@ async def run_container_worker_benchmark(
         async def result_listener() -> None:
             while len(collected_results) < total_jobs:
                 # blpop 으로 1초 단위 대기
-                pop_res = await redis_pool.blpop(done_key, timeout=1)
-                if pop_res:
+                pop_res = await _await_maybe(redis_pool.blpop([done_key], timeout=1))
+                if isinstance(pop_res, tuple) and len(pop_res) == 2:
                     t_done = time.perf_counter()
                     _, raw_data = pop_res
                     try:
@@ -643,8 +651,8 @@ async def run_container_worker_benchmark(
                         extra_errors.append(f"결과 파싱 오류: {parse_err}")
 
                     # 큐에 남아있는 추가 완료 건 일괄 drain (최대 100개)
-                    batch = await redis_pool.lpop(done_key, count=100)
-                    if batch:
+                    batch = await _await_maybe(redis_pool.lpop(done_key, count=100))
+                    if isinstance(batch, list):
                         t_batch = time.perf_counter()
                         for raw_b in batch:
                             try:
@@ -794,7 +802,6 @@ async def run_container_worker_benchmark(
     }
 
     worker_image_id = inspect_image_id(container_image)
-    load_sample = single_host_load_sample()
     host_mem = get_host_memory()
     arq_ver = get_arq_version()
     redis_py_ver = get_redis_py_version()
@@ -802,9 +809,15 @@ async def run_container_worker_benchmark(
     effective_git_sha = git_sha or get_git_sha()
     effective_dirty = git_dirty if git_dirty is not None else get_git_status(target_source)[1]
 
+    load_sample = single_host_load_sample()
+    cpu_raw = load_sample.get("cpu_count")
+    load_raw = load_sample.get("load_1m")
+    host_cpu_count = int(cpu_raw if isinstance(cpu_raw, int) else os.cpu_count() or 1)
+    host_load_avg_1m: float | None = float(load_raw) if isinstance(load_raw, (int, float)) else None
+
     provenance = build_provenance_dict(
-        host_cpu_count=int(load_sample.get("cpu_count") or os.cpu_count() or 1),
-        host_load_avg_1m=load_sample.get("load_1m"),  # type: ignore[arg-type]
+        host_cpu_count=host_cpu_count,
+        host_load_avg_1m=host_load_avg_1m,
         host_memory=host_mem,
         redis_url=redis_url,
         redis_container_id=redis_info.get("container_id", "unknown"),

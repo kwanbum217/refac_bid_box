@@ -4,7 +4,7 @@ import math
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 import pandas as pd
 
@@ -39,6 +39,13 @@ from src.ml.prediction_api import (
 
 logger = logging.getLogger(__name__)
 latency_logger = logging.getLogger("uvicorn.error")
+
+
+class _WrappersRuntimeBinding(Protocol):
+    _coerce_float: object
+    _apply_inference_thread_budget: object
+    _prepare_input_frame: object
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # 경로 정본은 settings 입니다. 여기서 다시 조립하면 설정을 바꿔도 로더가
@@ -273,6 +280,7 @@ class ModelRegistry:
             model_id = entry
             model_type = metadata.get("type", "joblib")
             try:
+                wrapper: BaseModelWrapper
                 if model_id == "v25":
                     wrapper = EnsembleV25Wrapper(model_dir, metadata)
                 elif model_id == "v13_hybrid":
@@ -367,9 +375,10 @@ class ModelRegistry:
 
 
 # 런타임 종속성을 model_wrappers 모듈에 연결 (순환 import 방지)
-_wrappers._coerce_float = _coerce_float
-_wrappers._apply_inference_thread_budget = _apply_inference_thread_budget
-_wrappers._prepare_input_frame = _prepare_input_frame
+_wrappers_runtime = cast(_WrappersRuntimeBinding, _wrappers)
+_wrappers_runtime._coerce_float = _coerce_float
+_wrappers_runtime._apply_inference_thread_budget = _apply_inference_thread_budget
+_wrappers_runtime._prepare_input_frame = _prepare_input_frame
 
 # 런타임 종속성을 prediction_api 모듈에 연결 (순환 import 방지)
 _pred_api.ModelRegistry = ModelRegistry

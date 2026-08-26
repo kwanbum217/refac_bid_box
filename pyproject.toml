@@ -205,37 +205,11 @@ exclude = [
 # docs/ops/mypy_debt_reduction.md 를 참조합니다.
 [[tool.mypy.overrides]]
 module = [
-    "src.ml.model_registry",
-]
-disable_error_code = ["assignment"]
-
-[[tool.mypy.overrides]]
-module = [
     "scripts.eval_servc_prediction_interval",
-    "src.app.services.kb_builder",
     "src.ml.trainer",
     "src.rag.llm",
-    "src.tasks.automation_tasks",
 ]
 disable_error_code = ["arg-type", "assignment"]
-
-[[tool.mypy.overrides]]
-module = [
-    "scripts.audit_model_inventory",
-]
-disable_error_code = ["operator", "return-value"]
-
-[[tool.mypy.overrides]]
-module = [
-    "scripts.benchmark_arq_container",
-]
-disable_error_code = ["arg-type", "call-overload", "misc", "unused-ignore"]
-
-[[tool.mypy.overrides]]
-module = [
-    "scripts.benchmark_provenance",
-]
-disable_error_code = ["arg-type", "dict-item", "operator"]
 
 # ==========================================
 # bandit (보안 정적 스캔)

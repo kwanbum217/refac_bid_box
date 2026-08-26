@@ -64,7 +64,7 @@ def train_quantiles(X_train, y_train, X_valid) -> dict[float, np.ndarray]:
     for q in QUANTILES:
         model = lgb.LGBMRegressor(objective="quantile", alpha=q, **QUANTILE_PARAMS)
         model.fit(X_train, y_train, categorical_feature=list(CATEGORICAL_FEATURES))
-        preds[q] = model.predict(X_valid)
+        preds[q] = np.asarray(model.predict(X_valid))
         print(f"  분위 {q} 학습 완료", flush=True)
     return preds
 
