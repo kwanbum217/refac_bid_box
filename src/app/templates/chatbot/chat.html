@@ -654,8 +654,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="{{ url_for('static', path='vendor/chartjs/4.5.1/chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', path='vendor/marked/15.0.12/marked.min.js') }}"></script>
 <script>
 $(document).ready(function() {
     const chatContainer = $('#chat-messages');
