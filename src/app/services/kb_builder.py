@@ -24,7 +24,7 @@ import os
 import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TypedDict
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -49,6 +49,15 @@ from src.rag.embeddings import get_collection
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "bidding_kb"
+
+
+class KbSyncStats(TypedDict):
+    embedded: int
+    unchanged: int
+    removed: int
+    mode: str
+
+
 INDEX_BATCH_SIZE = 100
 # 50만 건 메타데이터를 한 응답으로 읽으면 Chroma 응답 객체가 워커 메모리를
 # 소진할 수 있습니다. 해시 비교용 조회도 페이지 단위로 제한합니다.
@@ -303,7 +312,7 @@ def rebuild_knowledge_base(
         if delta_mode:
             embedded = _flush(collection, documents, metadatas, ids) if documents else 0
             indexed_count = collection.count()
-            stats = {
+            stats: KbSyncStats = {
                 "mode": "delta",
                 "embedded": embedded,
                 "unchanged": 0,
@@ -417,7 +426,7 @@ def _sync(
     ids: list[str],
     existing_hashes: dict[str, str],
     incremental: bool,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, KbSyncStats]:
     """컬렉션을 목표 상태에 맞춥니다.
 
     반환하는 건수는 **컬렉션에 있어야 할 전체 문서 수**입니다. 이번에 임베딩한
@@ -425,12 +434,12 @@ def _sync(
     값이라, 증분 실행에서 변경분만 기록하면 KB 가 줄어든 것처럼 보입니다.
     """
     if not documents:
-        full_stats: dict[str, Any] = {"embedded": 0, "unchanged": 0, "removed": 0, "mode": "full"}
+        full_stats: KbSyncStats = {"embedded": 0, "unchanged": 0, "removed": 0, "mode": "full"}
         return 0, full_stats
 
     if not incremental:
         embedded = _flush(collection, documents, metadatas, ids)
-        non_incremental_stats: dict[str, Any] = {
+        non_incremental_stats: KbSyncStats = {
             "embedded": embedded,
             "unchanged": 0,
             "removed": 0,
@@ -465,7 +474,7 @@ def _sync(
     if removed_ids:
         collection.delete(ids=removed_ids)
 
-    incremental_stats: dict[str, Any] = {
+    incremental_stats: KbSyncStats = {
         "embedded": embedded,
         "unchanged": len(ids) - embedded,
         "removed": len(removed_ids),

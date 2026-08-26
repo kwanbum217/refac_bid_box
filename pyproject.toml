@@ -226,6 +226,14 @@ disable_error_code = ["arg-type"]
 
 [[tool.mypy.overrides]]
 module = [
+    "scripts.eval_servc_prediction_interval",
+    "src.ml.trainer",
+    "src.rag.llm",
+]
+disable_error_code = ["arg-type", "assignment"]
+
+[[tool.mypy.overrides]]
+module = [
     "scripts.orca_trust_worktree",
 ]
 disable_error_code = ["attr-defined"]

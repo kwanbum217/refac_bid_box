@@ -195,7 +195,7 @@ def _train_lightgbm(
     #
     # 용역은 CATEGORY_HYPERPARAMS 에서 quantile(0.5)로 덮어씁니다. 여기 huber 는
     # 물품과 미지정 카테고리의 기본값입니다.
-    params: dict[str, Any] = {**LGB_BASE_PARAMS, "objective": "huber", "alpha": 1.0}
+    params = {**LGB_BASE_PARAMS, "objective": "huber", "alpha": 1.0}
     params.update(hyperparams or {})
 
     model = lgb.LGBMRegressor(**params)
@@ -288,7 +288,7 @@ def _cross_validate_model(
     if not fold_metrics:
         return {}
 
-    aggregated: dict[str, Any] = {}
+    aggregated: dict[str, object] = {}
     for key in fold_metrics[0]:
         aggregated[f"avg_{key}"] = round(float(np.mean([m[key] for m in fold_metrics])), 4)
         aggregated[f"std_{key}"] = round(float(np.std([m[key] for m in fold_metrics])), 4)

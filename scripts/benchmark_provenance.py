@@ -30,7 +30,7 @@ import urllib.parse
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -877,14 +877,16 @@ def single_host_load_sample(os_module: Any = None) -> dict[str, object]:
 
 def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, object]:
     """호스트 부하 표본 리스트로부터 min/median/max 통계를 계산합니다."""
-    load_values = [
-        float(cast(float, s["load_1m"])) for s in samples if s.get("load_1m") is not None
-    ]
-    pct_values = [
-        float(cast(float, s["per_core_percent"]))
-        for s in samples
-        if s.get("per_core_percent") is not None
-    ]
+    load_values: list[float] = []
+    for sample in samples:
+        load_1m = sample.get("load_1m")
+        if isinstance(load_1m, (int, float)):
+            load_values.append(float(load_1m))
+    pct_values: list[float] = []
+    for sample in samples:
+        per_core_percent = sample.get("per_core_percent")
+        if isinstance(per_core_percent, (int, float)):
+            pct_values.append(float(per_core_percent))
 
     if load_values:
         load_stats: dict[str, float | None] = {

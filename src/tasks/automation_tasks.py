@@ -13,7 +13,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import func, select
 
@@ -405,7 +405,7 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
     return summary, metrics
 
 
-STEP_RUNNERS = {
+STEP_RUNNERS: dict[str, Callable[..., object]] = {
     "collect": _step_collect,
     "search": _step_search,
     "rag": _step_rag,
@@ -456,8 +456,8 @@ async def run_automation_pipeline(
                 execution.stage_name = step
                 execution.stage_status = STATUS_RUNNING
                 db.commit()
-            runner_fn = cast(Callable[..., Any], runner)
-            kwargs: dict[str, Any] = {}
+            runner_fn = runner
+            kwargs: dict[str, object] = {}
             if "execution_id" in inspect.signature(runner_fn).parameters:
                 kwargs["execution_id"] = execution_id
             # 개발 최신화는 수집 직후 500만 행 대시보드 전수 집계를 하지 않습니다.
@@ -474,7 +474,7 @@ async def run_automation_pipeline(
             if inspect.iscoroutinefunction(runner_fn):
                 res = await runner_fn(db, **kwargs)
             else:
-                outcome: Any = await asyncio.to_thread(runner_fn, db, **kwargs)
+                outcome: object = await asyncio.to_thread(runner_fn, db, **kwargs)
                 res = await outcome if inspect.isawaitable(outcome) else outcome
 
             if isinstance(res, tuple) and len(res) == 3:

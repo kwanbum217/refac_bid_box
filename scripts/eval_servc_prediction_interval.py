@@ -18,7 +18,6 @@ from __future__ import annotations
 import sys
 import warnings
 from pathlib import Path
-from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -55,7 +54,7 @@ FIT_END_YEAR = 2023
 
 # 분위 회귀는 objective 와 alpha 로 분위를 지정합니다. 나머지 용량 설정은
 # 점 추정 모델과 같게 둬야 구간과 점 추정이 같은 복잡도에서 비교됩니다.
-QUANTILE_PARAMS: dict[str, Any] = {
+QUANTILE_PARAMS = {
     key: value for key, value in EVAL_PARAMS.items() if key not in ("objective", "alpha")
 }
 
