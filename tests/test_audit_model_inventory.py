@@ -342,3 +342,123 @@ def test_reset_state_option(fake_pool, monkeypatch, temp_state_path):
 
     # 파일이 삭제되었는지 확인
     assert not temp_state_path.exists()
+
+
+# ============================================================
+# 신규 테스트: --json 출력 및 audit_with_state 함수 검증
+# ============================================================
+
+
+def test_audit_with_state_returns_pools_json(fake_pool, monkeypatch, temp_state_path):
+    """audit_with_state 함수가 missing, lines, pools_json 을 올바르게 반환한다."""
+    fake_pool(
+        {
+            "present_model": {
+                "id": "opencode/alive-free",
+                "provider": "opencode",
+                "suitable_for": ["investigator"],
+            },
+            "absent_model": {
+                "id": "opencode/absent-free",
+                "provider": "opencode",
+                "suitable_for": ["investigator"],
+            },
+            "skipped_model": {
+                "id": "opencode/skipped-free",
+                "provider": "opencode",
+                "suitable_for": [],
+            },
+        }
+    )
+    monkeypatch.setattr(audit_tool, "_run_listing", lambda cmd: {"opencode/alive-free"})
+
+    missing, _lines, pools_json = audit_tool.audit_with_state(state_path=temp_state_path)
+
+    assert missing == 0
+    assert "present_model" in pools_json
+    assert pools_json["present_model"] == {"status": "present", "streak": 0}
+    assert "absent_model" in pools_json
+    assert pools_json["absent_model"] == {"status": "absent", "streak": 1}
+    assert "skipped_model" in pools_json
+    assert pools_json["skipped_model"] == {"status": "skipped", "streak": 0}
+
+
+def test_json_flag_output_format(fake_pool, monkeypatch, temp_state_path, capsys):
+    """--json 플래그 실행 시 유효한 JSON 포맷을 출력하고 종료 코드 0 을 반환한다."""
+    fake_pool(
+        {
+            "alive": {
+                "id": "opencode/alive-free",
+                "provider": "opencode",
+                "suitable_for": ["investigator"],
+            }
+        }
+    )
+    monkeypatch.setattr(audit_tool, "_run_listing", lambda cmd: {"opencode/alive-free"})
+
+    ret = audit_tool.main(["--state", str(temp_state_path), "--json"])
+    assert ret == 0
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out.strip())
+    assert data["extinct"] == 0
+    assert "alive" in data["pools"]
+    assert data["pools"]["alive"]["status"] == "present"
+    assert data["pools"]["alive"]["streak"] == 0
+
+
+def test_json_flag_missing_model(fake_pool, monkeypatch, temp_state_path, capsys):
+    """3회 연속 absent 후 --json 플래그 실행 시 extinct=1 과 종료 코드 1 을 낸다."""
+    fake_pool(
+        {
+            "gone": {
+                "id": "opencode/vanished-free",
+                "provider": "opencode",
+                "suitable_for": ["investigator"],
+            }
+        }
+    )
+    monkeypatch.setattr(audit_tool, "_run_listing", lambda cmd: set())
+
+    # 1회, 2회 실행
+    audit_tool.audit(state_path=temp_state_path)
+    audit_tool.audit(state_path=temp_state_path)
+
+    # 3회 실행 (--json)
+    ret = audit_tool.main(["--state", str(temp_state_path), "--json"])
+    assert ret == 1
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out.strip())
+    assert data["extinct"] == 1
+    assert data["pools"]["gone"]["status"] == "absent"
+    assert data["pools"]["gone"]["streak"] == 3
+
+
+def test_json_flag_error_handling(fake_pool, monkeypatch, temp_state_path, capsys):
+    """도구 오류 발생 시 --json 플래그 실행이 extinct=0, 빈 pools JSON 을 내고 종료 코드 2 를 반환한다."""
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("예기치 못한 도구 오류")
+
+    monkeypatch.setattr(audit_tool, "audit_with_state", _boom)
+
+    ret = audit_tool.main(["--state", str(temp_state_path), "--json"])
+    assert ret == 2
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out.strip())
+    assert data == {"extinct": 0, "pools": {}}
+
+
+def test_json_flag_reset_state(fake_pool, monkeypatch, temp_state_path, capsys):
+    """--reset-state 와 --json 함께 사용 시 안내 문구를 출력하지 않고 정상 종료한다."""
+    temp_state_path.write_text("{}", encoding="utf-8")
+    assert temp_state_path.exists()
+
+    ret = audit_tool.main(["--state", str(temp_state_path), "--reset-state", "--json"])
+    assert ret == 0
+    assert not temp_state_path.exists()
+
+    captured = capsys.readouterr()
+    assert captured.out.strip() == ""
