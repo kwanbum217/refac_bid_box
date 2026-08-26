@@ -10,15 +10,20 @@ ChromaDB 메타데이터 where 절 변환 및 필터 검색 단위 테스트.
 - (f) 필터 결과 0건이면 무필터 재검색 없이 빈 결과로 처리하고 프로비넌스를 기록하는지
 """
 
+from datetime import date
 from typing import Any
 
 import pytest
 
 from src.rag.schemas import RetrievalPlan
 from src.rag.vector_store import (
+    POST_FILTER_FETCH_MULTIPLIER,
     AsyncVectorStore,
     SemanticSearchResult,
     build_vector_where,
+    extract_document_dates,
+    extract_document_institution,
+    extract_effective_document_date,
     retrieve_semantic_context,
 )
 
@@ -231,3 +236,347 @@ async def test_async_vector_store_passes_filters(monkeypatch):
     assert len(captured) == 1
     assert captured[0].filters == {"category": "Servc"}
     assert captured[0].top_k == 3
+
+
+# ===========================================================================
+# 문서 본문 메타데이터 파서 및 post-filter 단위/회귀 테스트
+# ===========================================================================
+
+
+def test_extract_document_institution():
+    """문서 본문에서 [수요기관] 파싱이 정상 동작해야 합니다."""
+    doc_text = "[수요기관] 경상북도 봉화군 체육시설사업소\n[공고명] 체육관 보수 공사"
+    assert extract_document_institution(doc_text) == "경상북도 봉화군 체육시설사업소"
+
+    # [수요기관] 없는 경우 None
+    assert extract_document_institution("[공고명] 체육관 보수 공사") is None
+    assert extract_document_institution("") is None
+    assert extract_document_institution(None) is None
+
+
+def test_extract_document_dates():
+    """문서 본문에서 [공고일시], [개찰일시] 파싱이 정상 동작해야 합니다."""
+    # 공고일시 + 개찰일시 모두 있는 경우
+    doc_both = (
+        "[수요기관] 경상북도 봉화군 체육시설사업소\n"
+        "[공고일시] 2026-08-03 12:07:05\n"
+        "[개찰일시] 2026-08-07 11:00:00"
+    )
+    notice, opening = extract_document_dates(doc_both)
+    assert notice == date(2026, 8, 3)
+    assert opening == date(2026, 8, 7)
+
+    # 개찰일시 없고 [낙찰상태] 만 있는 경우
+    doc_notice_only = (
+        "[수요기관] 경상북도 봉화군 체육시설사업소\n"
+        "[공고일시] 2026-08-03 12:07:05\n"
+        "[낙찰상태] 진행 중 또는 결과 미수집"
+    )
+    notice2, opening2 = extract_document_dates(doc_notice_only)
+    assert notice2 == date(2026, 8, 3)
+    assert opening2 is None
+
+    # 파싱 불가능한 텍스트
+    assert extract_document_dates("[공고일시] 알수없음") == (None, None)
+    assert extract_document_dates("") == (None, None)
+    assert extract_document_dates(None) == (None, None)
+
+
+def test_extract_effective_document_date():
+    """개찰일시 우선, 없으면 공고일시, 둘 다 없으면 None 이어야 합니다."""
+    doc_both = "[공고일시] 2026-08-03 12:07:05\n[개찰일시] 2026-08-07 11:00:00"
+    assert extract_effective_document_date(doc_both) == date(2026, 8, 7)
+
+    doc_notice_only = "[공고일시] 2026-08-03 12:07:05\n[낙찰상태] 진행 중"
+    assert extract_effective_document_date(doc_notice_only) == date(2026, 8, 3)
+
+    doc_none = "메타데이터 없는 일반 텍스트"
+    assert extract_effective_document_date(doc_none) is None
+
+
+def test_post_filter_institution_name_excludes_mismatch(monkeypatch):
+    """(a) institution_name 이 일치하지 않는 문서가 post-filter 에서 제외되어야 합니다."""
+    recorded_calls: list[dict[str, Any]] = []
+
+    doc_match = "[수요기관] 경상북도 봉화군 체육시설사업소\n[공고명] 체육관 보수"
+    doc_mismatch = "[수요기관] 서울특별시 강남구\n[공고명] 도로 보수"
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            recorded_calls.append({"n_results": n_results, "where": where})
+            return {
+                "documents": [[doc_match, doc_mismatch]],
+                "metadatas": [[{"category": "Servc"}, {"category": "Servc"}]],
+                "distances": [[0.1, 0.2]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="체육 시설 보수 용역",
+        filters={"institution_name": "봉화군"},
+        top_k=5,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert len(result.documents) == 1
+    assert "봉화군" in result.documents[0]["document"]
+    assert result.post_filtered_count == 1
+    assert result.applied_post_filters == {"institution_name": "봉화군"}
+
+    # provenance 확인
+    prov = result.as_filter_provenance()
+    assert prov["applied_post_filters"] == {"institution_name": "봉화군"}
+    assert prov["post_filtered_count"] == 1
+
+
+def test_post_filter_date_range_excludes_out_of_bounds(monkeypatch):
+    """(b) date_from/date_to 범위 밖 문서가 post-filter 에서 제외되어야 합니다."""
+    doc_in_range = "[공고일시] 2026-08-01 09:00:00\n[개찰일시] 2026-08-05 10:00:00"
+    doc_too_early = "[공고일시] 2026-07-20 09:00:00\n[개찰일시] 2026-07-25 10:00:00"
+    doc_too_late = "[공고일시] 2026-08-12 09:00:00\n[개찰일시] 2026-08-15 10:00:00"
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            return {
+                "documents": [[doc_in_range, doc_too_early, doc_too_late]],
+                "metadatas": [[{}, {}, {}]],
+                "distances": [[0.1, 0.2, 0.3]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="공사 입찰 공고",
+        filters={"date_from": "2026-08-01", "date_to": "2026-08-10"},
+        top_k=5,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert len(result.documents) == 1
+    assert "2026-08-05" in result.documents[0]["document"]
+    assert result.post_filtered_count == 2
+    assert result.applied_post_filters == {"date_from": "2026-08-01", "date_to": "2026-08-10"}
+
+
+def test_post_filter_fallback_to_notice_date_when_opening_date_absent(monkeypatch):
+    """(c) 개찰일시가 없는 문서는 공고일시로 판정되어야 합니다."""
+    doc_match = "[공고일시] 2026-08-03 12:00:00\n[낙찰상태] 진행 중"
+    doc_mismatch = "[공고일시] 2026-07-25 12:00:00\n[낙찰상태] 진행 중"
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            return {
+                "documents": [[doc_match, doc_mismatch]],
+                "metadatas": [[{}, {}]],
+                "distances": [[0.1, 0.2]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="진행 중 공고",
+        filters={"date_from": "2026-08-01", "date_to": "2026-08-05"},
+        top_k=5,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert len(result.documents) == 1
+    assert "2026-08-03" in result.documents[0]["document"]
+    assert result.post_filtered_count == 1
+
+
+def test_post_filter_unparseable_document_excluded_fail_closed(monkeypatch):
+    """(d) 파싱 불가 문서는 조건을 만족하지 않는 것으로 보고 제외(fail-closed)되어야 합니다."""
+    doc_unparseable = "대괄호 메타데이터가 전혀 없는 일반 텍스트 문서"
+    doc_invalid_dates = "[수요기관] 미정\n[공고일시] 알수없음"
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            return {
+                "documents": [[doc_unparseable, doc_invalid_dates]],
+                "metadatas": [[{}, {}]],
+                "distances": [[0.1, 0.2]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="서울 공고",
+        filters={"institution_name": "서울", "date_from": "2026-01-01"},
+        top_k=5,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert result.documents == []
+    assert result.post_filtered_count == 2
+    assert result.relaxed is False
+    assert result.filter_relaxed is False
+
+
+def test_post_filter_zero_results_does_not_relax_filters(monkeypatch):
+    """(e) post-filter 로 0건이 되면 필터를 풀지 않고 빈 결과를 반환해야 합니다 (fail-closed)."""
+    call_count = 0
+
+    doc_seoul = "[수요기관] 서울특별시 강남구\n[공고명] 도로 보수"
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            nonlocal call_count
+            call_count += 1
+            return {
+                "documents": [[doc_seoul]],
+                "metadatas": [[{}]],
+                "distances": [[0.1]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="제주 공고",
+        filters={"institution_name": "제주특별자치도"},
+        top_k=5,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert result.documents == []
+    assert result.relaxed is False
+    assert result.filter_relaxed is False
+    assert result.post_filtered_count == 1
+    # 재검색 없이 1회만 호출되어야 함
+    assert call_count == 1
+
+
+def test_post_filter_supported_only_filters_no_regression(monkeypatch):
+    """(f) 지원되는 메타데이터 필터만 있는 기존 경로는 over-fetching 없이 정상 동작해야 합니다."""
+    recorded_calls: list[dict[str, Any]] = []
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            recorded_calls.append({"n_results": n_results, "where": where})
+            return {
+                "documents": [["[공고명] 일반 문서"]],
+                "metadatas": [[{"category": "Servc"}]],
+                "distances": [[0.1]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="일반 용역 공고",
+        filters={"category": "Servc"},
+        top_k=5,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert len(result.documents) == 1
+    assert len(recorded_calls) == 1
+    # post-filter 가 없으므로 n_results == top_k (배수 적용 안 됨)
+    assert recorded_calls[0]["n_results"] == 5
+    assert result.applied_post_filters == {}
+    assert result.post_filtered_count == 0
+
+
+def test_post_filter_multiplier_and_top_k_trimming(monkeypatch):
+    """post-filter 활성화 시 top_k * 배수로 검색하고 최종 반환은 top_k 로 잘라야 합니다."""
+    recorded_calls: list[dict[str, Any]] = []
+
+    docs = [f"[수요기관] 서울특별시 {i}구\n[공고명] 사업 {i}" for i in range(1, 5)] + [
+        f"[수요기관] 부산광역시 {i}구\n[공고명] 사업 {i}" for i in range(1, 3)
+    ]
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            recorded_calls.append({"n_results": n_results, "where": where})
+            return {
+                "documents": [docs],
+                "metadatas": [[{} for _ in docs]],
+                "distances": [[0.1 * i for i in range(len(docs))]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="서울 사업",
+        filters={"institution_name": "서울"},
+        top_k=2,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    # top_k=2 이므로 2개만 반환되어야 함
+    assert len(result.documents) == 2
+    # 검색 요청은 2 * POST_FILTER_FETCH_MULTIPLIER = 6 이어야 함
+    assert recorded_calls[0]["n_results"] == 2 * POST_FILTER_FETCH_MULTIPLIER
+    # 부산 문서 2건이 제외됨
+    assert result.post_filtered_count == 2
+    assert result.applied_post_filters == {"institution_name": "서울"}
