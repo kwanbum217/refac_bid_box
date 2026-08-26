@@ -35,6 +35,13 @@
 | OpenCode Zen (MiMo, DeepSeek) | `terminal create --command "opencode"` 뒤 `dispatch --inject` | 예 |
 | Kimi Code (OpenRouter 무료) | `dispatch --return-preamble` 뒤 `kimi -m <alias> -p "<preamble>"` | 예 (Dispatch 계보만) |
 
+> **Gemini CLI(`gemini`)는 워커로 쓸 수 없습니다.** 개인 계정 지원이 종료되어
+> 인증 단계에서 `IneligibleTierError: UNSUPPORTED_CLIENT` 로 끊깁니다
+> ("This client is no longer supported for Gemini Code Assist for individuals").
+> 2026-08-26 에 워커 하나가 이 인증 대화창에 걸려 멈춰 있었습니다. Gemini 계열은
+> **반드시 Antigravity(`agy`)** 로 띄웁니다. 실패는 조용합니다. 워커가 인증 선택
+> 화면에서 대기할 뿐 오류로 종료되지 않으므로 `orca_worker_watch.py` 로 확인합니다.
+
 `worker-start --agent` 는 **claude·codex·cursor 만** 받습니다. 그 밖의 CLI 는
 2절의 터미널 부착 경로를 씁니다. 두 경로 모두 Task·Dispatch 계보가 남으므로
 `worker_done` 권한도 정상입니다.
