@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .border-white\/12 {
+    border-color: rgb(255 255 255 / 0.12);
+  }
+
+  .text-blue-100\/72 {
+    color: rgb(219 234 254 / 0.72);
+  }
+}

@@ -14,37 +14,7 @@
 
     <link rel="stylesheet" href="{{ url_for('static', path='vendor/bootstrap/5.3.3/css/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='vendor/daisyui/4.12.23/full.min.css') }}" type="text/css">
-    <script src="{{ url_for('static', path='vendor/tailwindcss/3.4.16/tailwindcss.js') }}"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        primary: {
-                            DEFAULT: '#0073E6',
-                            hover: '#005BB3',
-                            light: '#E6F1FF'
-                        },
-                        harness: {
-                            bg: '#F9FAFB',
-                            sidebar: '#020B1A',
-                            border: '#E6E9EF',
-                            text: '#1F2937',
-                            muted: '#6B7280'
-                        }
-                    },
-                    borderRadius: {
-                        enterprise: '0.75rem',
-                    },
-                    boxShadow: {
-                        'h-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-                        'h-md': '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                    }
-                }
-            }
-        }
-    </script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/tailwind.css') }}">
 
     <link rel="stylesheet" href="{{ url_for('static', path='vendor/fonts/fonts.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='vendor/fontawesome/6.4.0/css/all.min.css') }}">
