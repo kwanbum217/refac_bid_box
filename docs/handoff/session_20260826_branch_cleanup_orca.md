@@ -60,6 +60,11 @@ W1 이 만든 변경(`12f88c3`)은 `Pool.map` + 전역 Barrier 로 바꾸면서 
 | 프로세스별 `exitcode == 0` 단언 | `Pool.map` 은 개별 종료 코드를 노출하지 않습니다 |
 | Windows(spawn) 경로 커버리지 | fork 전용이 되어 `os.name == "nt"` 를 skip 합니다 |
 
+W1 은 `worker_done` 에서 "잠금을 무력화하면 8건 중 1건만 남는 것을 확인했다" 고
+보고했습니다. 그 판본이 회귀를 잡는다는 것은 사실로 보이나, 이는 자기 판본이
+작동한다는 증거일 뿐 `main` 보다 낫다는 증거가 아닙니다. **워커는 자신이 무엇을
+잃는지 보고하지 않았습니다.**
+
 **`main` 판본이 상위이므로 병합하지 않았습니다.** 브랜치
 `kwanbum217/orca-w1-concurrency-2` 에 보존만 했습니다. `feat/p1-reliability-lock`
 역시 코드 수정분이 이미 `main` 에 더 나은 형태로 들어가 있어 회수 가치가 없습니다.
@@ -85,6 +90,7 @@ Capsule 은 `.orca/capsules/task_4190ee358120/capsule.yaml` 에 있으므로 다
 | `worker-start` 실패의 잔재 | 실패해도 워크트리와 브랜치는 남습니다. 이 세션에서 고아 트리 하나가 감시 도구의 차단 신호를 계속 울렸습니다. 실패 직후 정리하십시오 |
 | Task 상태 전이 | 기동이 한 번 실패하면 Task 가 `failed`/`blocked` 로 굳고 재 Dispatch 가 거부됩니다. `orca orchestration task-update --id <task> --status ready` 로 되돌립니다. 플래그는 `--task` 가 아니라 `--id` 입니다 |
 | `taskctl dispatch --repo` | 생략하면 `repo_not_found` 입니다. 워크트리 경로를 명시해야 합니다 |
+| 재기동하면 `worker_done` 이 거부됩니다 | 터미널 부착 경로로 워커를 다시 띄우면 원래 Dispatch 의 capability 가 revoked 되어 `worker_done` 과 `escalation` 이 전부 반려됩니다. 이 세션에서 4건이 그렇게 반려됐습니다. **산출물은 멀쩡하므로 반려를 실패로 읽지 마십시오.** 커밋과 게이트로 직접 검증하고, 판정 근거는 Orca 메시지가 아니라 git 상태로 삼습니다 |
 
 ---
 
