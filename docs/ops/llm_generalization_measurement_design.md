@@ -88,7 +88,7 @@ WHERE r.bid_ntce_no NOT IN ('R26BK01659912-001', 'R26BK01660507-001', ...)
 1. 공고 선정 (스트라타 충족, fixture 중복 제외)
    ↓
 2. 자동 근거 추출 스크립트 실행
-   - bid_notice + bid_win + bid_org JOIN
+   - bid_announcements + bid_results JOIN (bid_ntce_no + category + 정규화된 bid_ntce_ord)
    - 공고번호, 수요기관, 낙찰업체, 낙찰금액, 낙찰률, 계약유형, 지역 추출
    ↓
 3. 사람 검증 (2인 교차)
