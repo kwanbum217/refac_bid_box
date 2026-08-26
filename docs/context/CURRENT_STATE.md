@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-26
-> **source_commit**: `70a4ec4`
+> **source_commit**: `ad0267a`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -126,4 +126,4 @@
 - 워커 기동: [`agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md)
 - 용역 모델: [`servc_model_status.md`](../servc_model_status.md)
 - 용역 운영 API 경로 재측정: [`servc_api_path_remeasurement_20260826.md`](../analysis/servc_api_path_remeasurement_20260826.md)
-- 미병합 브랜치 판정: [`phase8_predict_tail_merge_verdict_20260814.md`](../ops/phase8_predict_tail_merge_verdict_20260814.md), [`codex_task_routing_branch_verdict_20260814.md`](../ops/codex_task_routing_branch_verdict_20260814.md)
+- 미병합 브랜치 판정: `docs/ops/` 의 `*_verdict_*.md`. 2026-08-26 arq-cutover 와 베이크오프 9건 판정으로 전량 완결이며 회수 후보는 2건뿐
