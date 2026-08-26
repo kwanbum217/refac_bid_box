@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from datetime import date, datetime, timedelta
@@ -186,6 +187,95 @@ def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
 logger = logging.getLogger(__name__)
 
 
+def extract_numeric_context_values(context_text: str) -> dict[str, list[str]]:
+    """검색 컨텍스트에서 낙찰금액([낙찰금액])과 낙찰률([낙찰률]) 값을 추출합니다."""
+    if not context_text:
+        return {"amounts": [], "rates": []}
+
+    amount_matches = re.findall(r"\[낙찰금액\]\s*([0-9,]+)", context_text)
+    rate_matches = re.findall(r"\[낙찰률\]\s*([0-9]+(?:\.[0-9]+)?)", context_text)
+
+    amounts = list(dict.fromkeys(m.strip() for m in amount_matches if m.strip()))
+    rates = list(dict.fromkeys(r.strip() for r in rate_matches if r.strip()))
+    return {"amounts": amounts, "rates": rates}
+
+
+def check_numeric_omissions(
+    context_text: str,
+    answer_text: str,
+    trace_id: str = "",
+) -> dict[str, Any] | None:
+    """검색 컨텍스트에 존재하는 낙찰금액·낙찰률이 최종 답변에 누락되었는지 결정론적으로 검출해 로깅합니다."""
+    if not getattr(settings, "NUMERIC_OMISSION_DETECTION", False):
+        return None
+
+    if not context_text or not answer_text:
+        return None
+
+    extracted = extract_numeric_context_values(context_text)
+    amounts = extracted["amounts"]
+    rates = extracted["rates"]
+
+    if not amounts and not rates:
+        return None
+
+    missing_amounts: list[str] = []
+    for amt in amounts:
+        digits = amt.replace(",", "")
+        candidates = {amt, digits}
+        if digits.isdigit():
+            candidates.add(f"{int(digits):,}")
+        if not any(cand in answer_text for cand in candidates):
+            missing_amounts.append(amt)
+
+    missing_rates: list[str] = []
+    for r in rates:
+        candidates = {r}
+        try:
+            val = float(r)
+            candidates.add(f"{val:g}")
+            candidates.add(f"{val:.4f}".rstrip("0").rstrip("."))
+            candidates.add(f"{val:.2f}")
+        except ValueError:
+            pass
+        if not any(cand in answer_text for cand in candidates):
+            missing_rates.append(r)
+
+    missing_types: list[str] = []
+    if missing_amounts:
+        missing_types.append("amount")
+    if missing_rates:
+        missing_types.append("rate")
+
+    total_missing_count = len(missing_amounts) + len(missing_rates)
+
+    if total_missing_count > 0:
+        logger.warning(
+            "rag_numeric_omission: trace_id=%s missing_types=%s missing_count=%d missing_amounts=%s missing_rates=%s",
+            trace_id,
+            missing_types,
+            total_missing_count,
+            missing_amounts,
+            missing_rates,
+            extra={
+                "trace_id": trace_id,
+                "omission_detected": True,
+                "missing_types": missing_types,
+                "missing_count": total_missing_count,
+                "missing_amounts": missing_amounts,
+                "missing_rates": missing_rates,
+            },
+        )
+
+    return {
+        "omission_detected": total_missing_count > 0,
+        "missing_types": missing_types,
+        "missing_count": total_missing_count,
+        "missing_amounts": missing_amounts,
+        "missing_rates": missing_rates,
+    }
+
+
 class PreparedContext(tuple):
     """_prepare_context 반환 튜플 (기존 7개 요소와 세부 구간 계측 정보 보존)."""
 
@@ -352,8 +442,13 @@ class HybridRAGEngine:
         answer_text: str,
         structured_data: dict | None,
         plan: Any,
+        context_text: str = "",
+        trace_id: str = "",
     ) -> str:
-        """Answer Guard: 데이터가 있는데 없다고 답한 경우 강제 교정."""
+        """Answer Guard: 데이터가 있는데 없다고 답한 경우 강제 교정 및 수치 누락 검출."""
+        if context_text:
+            check_numeric_omissions(context_text, answer_text, trace_id=trace_id)
+
         if (structured_data or {}).get("query_skipped"):
             # 조회를 하지 않았으면 교정할 근거가 없습니다. 없다고 답한 것이 맞습니다.
             return _normalize_category_wording(answer_text, plan)
@@ -517,7 +612,13 @@ class HybridRAGEngine:
             llm_elapsed_ms = (time.perf_counter() - t_llm_start) * 1000.0
 
             t_guard_start = time.perf_counter()
-            answer_text = self._apply_answer_guard(answer_text, structured_data, plan)
+            answer_text = self._apply_answer_guard(
+                answer_text,
+                structured_data,
+                plan,
+                context_text=_context_text,
+                trace_id=provenance.trace_id,
+            )
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
@@ -658,7 +759,13 @@ class HybridRAGEngine:
                 raw_answer += token
                 yield {"type": "token", "text": token}
 
-            corrected_answer = self._apply_answer_guard(raw_answer, structured_data, plan)
+            corrected_answer = self._apply_answer_guard(
+                raw_answer,
+                structured_data,
+                plan,
+                context_text=_context_text,
+                trace_id=provenance.trace_id,
+            )
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
@@ -737,6 +844,8 @@ __all__ = [
     "_parse_year_month_window",
     "_query_lower",
     "build_retrieval_plan",
+    "check_numeric_omissions",
+    "extract_numeric_context_values",
     "extract_result_limit",
     "get_bidding_statistics",
     "get_chatbot_response",

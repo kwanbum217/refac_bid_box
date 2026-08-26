@@ -22,6 +22,8 @@ from src.rag.engine import (
     _build_result_list_answer,
     _normalize_category_wording,
     build_retrieval_plan,
+    check_numeric_omissions,
+    extract_numeric_context_values,
     rag_engine,
 )
 from src.rag.schemas import Provenance, RetrievalPlan
@@ -608,3 +610,186 @@ def test_system_prompt_mandates_source_isolation_in_comparison_queries():
     assert "여러 공고를 비교할 때는" in SYSTEM_PROMPT
     assert "해당 공고를 담은 Source에서만 가져오고 다른 Source의 값을 섞지 마세요" in SYSTEM_PROMPT
     assert "각 비교 항목마다 출처 소스 번호를 명확히 붙이세요" in SYSTEM_PROMPT
+
+
+# --------------------------------------------------------------------------- #
+# 낙찰금액·낙찰률 누락 결정론적 검출기 테스트
+# --------------------------------------------------------------------------- #
+
+
+def test_extract_numeric_context_values():
+    """검색 컨텍스트 내 대괄호 라벨의 낙찰금액과 낙찰률을 정확히 추출해야 합니다."""
+    context = (
+        "Source [3] (공고 R26BK0001):\n"
+        "[공고명] 2026 도로 정비 사업\n"
+        "[낙찰금액] 1074000원\n"
+        "[낙찰률] 90.1950%\n\n"
+        "Source [4] (공고 R26BK0002):\n"
+        "[공고명] 2026 하천 정비 사업\n"
+        "[낙찰금액] 5,200,000\n"
+        "[낙찰률] 87.745%\n"
+    )
+    result = extract_numeric_context_values(context)
+    assert result["amounts"] == ["1074000", "5,200,000"]
+    assert result["rates"] == ["90.1950", "87.745"]
+
+
+def test_extract_numeric_context_values_empty_and_no_match():
+    """빈 컨텍스트나 라벨이 없는 컨텍스트에서는 빈 목록을 반환해야 합니다."""
+    assert extract_numeric_context_values("") == {"amounts": [], "rates": []}
+    assert extract_numeric_context_values("일반 텍스트만 있는 컨텍스트") == {
+        "amounts": [],
+        "rates": [],
+    }
+
+
+def test_check_numeric_omissions_disabled_by_default(caplog):
+    """설정 플래그가 꺼져 있을 때는 검출 및 로깅이 전혀 발생하지 않아야 합니다."""
+    context = "[낙찰금액] 1074000원 [낙찰률] 90.1950%"
+    answer = "낙찰자는 (주)테스트입니다."  # 금액과 낙찰률 모두 누락됨
+
+    with caplog.at_level(logging.WARNING, logger="src.rag.engine"):
+        res = check_numeric_omissions(context, answer, trace_id="test-trace-1")
+
+    assert res is None
+    omission_logs = [r for r in caplog.records if "rag_numeric_omission:" in r.message]
+    assert len(omission_logs) == 0
+
+
+def test_check_numeric_omissions_all_present(caplog, monkeypatch):
+    """금액과 낙찰률이 모두 답변에 명시된 경우 누락 없음으로 판정되어야 합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+
+    context = "[낙찰금액] 1074000원 [낙찰률] 90.1950%"
+    # 콤마 포함 금액 및 소수점 낙찰률 포함
+    answer = "낙찰금액은 1,074,000원이고 낙찰률은 90.1950%입니다."
+
+    with caplog.at_level(logging.WARNING, logger="src.rag.engine"):
+        res = check_numeric_omissions(context, answer, trace_id="test-trace-2")
+
+    assert res is not None
+    assert res["omission_detected"] is False
+    assert res["missing_count"] == 0
+    assert res["missing_types"] == []
+    omission_logs = [r for r in caplog.records if "rag_numeric_omission:" in r.message]
+    assert len(omission_logs) == 0
+
+
+def test_check_numeric_omissions_detects_amount_omission(caplog, monkeypatch):
+    """낙찰금액만 답변에서 누락된 경우 amount 누락을 검출하고 구조화 로그를 남겨야 합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+
+    context = "[낙찰금액] 1074000원 [낙찰률] 90.1950%"
+    answer = "낙찰률은 90.1950%로 확인되었습니다."  # 금액 누락
+
+    with caplog.at_level(logging.WARNING, logger="src.rag.engine"):
+        res = check_numeric_omissions(context, answer, trace_id="trace-amount-missing")
+
+    assert res is not None
+    assert res["omission_detected"] is True
+    assert res["missing_types"] == ["amount"]
+    assert res["missing_count"] == 1
+    assert res["missing_amounts"] == ["1074000"]
+    assert res["missing_rates"] == []
+
+    omission_logs = [r for r in caplog.records if "rag_numeric_omission:" in r.message]
+    assert len(omission_logs) == 1
+    record = omission_logs[0]
+    assert "missing_types=['amount']" in record.message
+    assert "missing_count=1" in record.message
+    assert getattr(record, "omission_detected", False) is True
+    assert getattr(record, "missing_types", None) == ["amount"]
+
+
+def test_check_numeric_omissions_detects_rate_omission(caplog, monkeypatch):
+    """낙찰률만 답변에서 누락된 경우 rate 누락을 검출하고 구조화 로그를 남겨야 합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+
+    context = "[낙찰금액] 1074000원 [낙찰률] 90.1950%"
+    answer = "낙찰금액은 1074000원입니다."  # 낙찰률 누락
+
+    with caplog.at_level(logging.WARNING, logger="src.rag.engine"):
+        res = check_numeric_omissions(context, answer, trace_id="trace-rate-missing")
+
+    assert res is not None
+    assert res["omission_detected"] is True
+    assert res["missing_types"] == ["rate"]
+    assert res["missing_count"] == 1
+    assert res["missing_rates"] == ["90.1950"]
+    assert res["missing_amounts"] == []
+
+
+def test_check_numeric_omissions_detects_both_omissions(caplog, monkeypatch):
+    """금액과 낙찰률이 모두 누락된 경우 누락 건수 2와 구조화 로그를 남겨야 합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+
+    context = "[낙찰금액] 1074000원 [낙찰률] 90.1950%"
+    answer = "낙찰업체는 (주)한국건설입니다."  # 둘 다 누락
+
+    with caplog.at_level(logging.WARNING, logger="src.rag.engine"):
+        res = check_numeric_omissions(context, answer, trace_id="trace-both-missing")
+
+    assert res is not None
+    assert res["omission_detected"] is True
+    assert set(res["missing_types"]) == {"amount", "rate"}
+    assert res["missing_count"] == 2
+    assert res["missing_amounts"] == ["1074000"]
+    assert res["missing_rates"] == ["90.1950"]
+
+
+def test_apply_answer_guard_never_mutates_answer_text_for_omission_detection(monkeypatch):
+    """검출기가 동작하더라도 _apply_answer_guard는 답변 텍스트를 임의로 교정하거나 변경하지 않아야 합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+
+    context = "[낙찰금액] 1074000원 [낙찰률] 90.1950%"
+    raw_answer = "낙찰자는 테스트업체입니다."
+    plan = RetrievalPlan(use_sql=True, filters={})
+
+    guarded = rag_engine._apply_answer_guard(
+        raw_answer,
+        structured_data=None,
+        plan=plan,
+        context_text=context,
+        trace_id="test-guard-trace",
+    )
+
+    assert guarded == raw_answer, "답변 텍스트가 변경되어서는 안 됩니다."
+
+
+def test_get_answer_sync_with_numeric_omission_detection(caplog, monkeypatch):
+    """get_answer_sync 통합 호출 경로에서 누락 검출기가 올바르게 동작해야 합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+
+    class _MissingBackend:
+        name = "missing_test"
+
+        def available(self):
+            return True
+
+        def generate(self, system_prompt, messages):
+            # 컨텍스트에 있는 수치 정보 대신 단순 텍스트만 생성
+            return "분석 결과 낙찰업체는 테스트기업입니다."
+
+    rag_engine._backend = _MissingBackend()
+    rag_engine._backend_resolved = True
+
+    tool_context = {
+        "tool_results": {
+            "semantic_search": {
+                "documents": [
+                    {
+                        "document": "Source [3]:\n[공고명] 도로공사\n[낙찰금액] 1074000원\n[낙찰률] 90.1950%",
+                        "metadata": {},
+                    }
+                ]
+            }
+        }
+    }
+
+    with caplog.at_level(logging.WARNING, logger="src.rag.engine"):
+        bundle = rag_engine.get_answer_sync("도로공사 결과 알려줘", tool_context=tool_context)
+
+    assert "분석 결과 낙찰업체는 테스트기업입니다." in bundle.answer
+    omission_logs = [r for r in caplog.records if "rag_numeric_omission:" in r.message]
+    assert len(omission_logs) == 1
+    assert "missing_count=2" in omission_logs[0].message
