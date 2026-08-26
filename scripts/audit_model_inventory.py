@@ -143,20 +143,19 @@ def _update_history(
         return prev_counter
 
 
-def audit(with_agy: bool = False, state_path: Path | None = None) -> tuple[int, list[str]]:
-    """모델 존재 여부를 확인하고 관측 이력을 누적합니다.
-
-    종료 코드:
-        0: 모든 배정 대상 모델 확인됨 또는 의심(1~2회 absent)
-        1: 소멸 발견(3회 연속 absent)
-        2: 도구 오류(손상된 상태 파일 등)
-    """
+def audit_with_state(
+    with_agy: bool = False,
+    state_path: Path | None = None,
+) -> tuple[int, list[str], dict[str, dict[str, str | int]]]:
+    """실제 감사 로직. JSON 출력용 pools 데이터도 함께 반환합니다."""
     lines: list[str] = []
     listings: dict[str, set[str]] = {}
     missing = 0
+    pools_json: dict[str, dict[str, str | int]] = {}
 
     for pool_name, info in sorted(MODEL_POOL.items()):
         if not info["suitable_for"]:
+            pools_json[pool_name] = {"status": "skipped", "streak": 0}
             lines.append(f"  건너뜀   {pool_name:26} 배정 대상 아님 (suitable_for 비어 있음)")
             continue
 
@@ -172,6 +171,7 @@ def audit(with_agy: bool = False, state_path: Path | None = None) -> tuple[int, 
                 present = model_id in known
             elif provider in AGY_PROVIDERS:
                 if not with_agy:
+                    pools_json[pool_name] = {"status": "unknown", "streak": 0}
                     lines.append(f"  확인불가 {pool_name:26} agy 조회 생략 (--with-agy 로 활성화)")
                     _update_history(pool_name, "unknown", 0, state_path)
                     continue
@@ -180,33 +180,54 @@ def audit(with_agy: bool = False, state_path: Path | None = None) -> tuple[int, 
             else:
                 cmd = LISTING_COMMANDS.get(provider)
                 if cmd is None:
+                    pools_json[pool_name] = {"status": "unknown", "streak": 0}
                     lines.append(f"  확인불가 {pool_name:26} {provider} 목록 조회 경로 없음")
                     _update_history(pool_name, "unknown", 0, state_path)
                     continue
                 known = listings.setdefault(provider, _run_listing(cmd))
                 present = model_id in known
         except Exception as exc:
+            pools_json[pool_name] = {"status": "unknown", "streak": 0}
             lines.append(f"  확인불가 {pool_name:26} {exc}")
             _update_history(pool_name, "unknown", 0, state_path)
             continue
 
         if present:
+            pools_json[pool_name] = {"status": "present", "streak": 0}
             lines.append(f"  존재     {pool_name:26} {model_id}")
             _update_history(pool_name, "present", 0, state_path)
         else:
             counter = _update_history(pool_name, "absent", 0, state_path)
+            pools_json[pool_name] = {"status": "absent", "streak": counter}
             if counter >= 3:
                 missing += 1
                 lines.append(f"  소멸     {pool_name:26} {model_id}  <- 제공자 목록에 없음")
             else:
                 lines.append(f"  의심     {pool_name:26} {model_id}  <- 의심 {counter}/3")
 
+    return missing, lines, pools_json
+
+
+def audit(with_agy: bool = False, state_path: Path | None = None) -> tuple[int, list[str]]:
+    """모델 존재 여부를 확인하고 관측 이력을 누적합니다.
+
+    종료 코드:
+        0: 모든 배정 대상 모델 확인됨 또는 의심(1~2회 absent)
+        1: 소멸 발견(3회 연속 absent)
+        2: 도구 오류(손상된 상태 파일 등)
+    """
+    missing, lines, _ = audit_with_state(with_agy=with_agy, state_path=state_path)
     return missing, lines
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="등록 모델 실재 대조")
     parser.add_argument("--quiet", action="store_true", help="소멸 항목만 출력")
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="기계 판독용 JSON 만 출력합니다 (--quiet 무시)",
+    )
     parser.add_argument(
         "--with-agy",
         action="store_true",
@@ -233,14 +254,23 @@ def main(argv: list[str] | None = None) -> int:
             state_path.unlink()
         elif not state_path and STATUS_PATH.exists():
             STATUS_PATH.unlink()
-        print("상태 파일을 비활화했습니다.")
+        if not args.json:
+            print("상태 파일을 비활화했습니다.")
         return 0
 
     try:
-        missing, lines = audit(with_agy=args.with_agy, state_path=state_path)
+        missing, lines, pools_json = audit_with_state(with_agy=args.with_agy, state_path=state_path)
     except Exception as exc:
-        print(f"도구 오류: {exc}")
+        if args.json:
+            print(json.dumps({"extinct": 0, "pools": {}}))
+        else:
+            print(f"도구 오류: {exc}")
         return 2
+
+    if args.json:
+        result = {"extinct": missing, "pools": pools_json}
+        print(json.dumps(result, ensure_ascii=False))
+        return 1 if missing else 0
 
     for line in lines:
         if not args.quiet or "소멸" in line:
