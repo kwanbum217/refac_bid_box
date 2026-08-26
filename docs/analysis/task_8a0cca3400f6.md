@@ -32,7 +32,7 @@
 | `scripts.eval_servc_refit_unbiased` | (동일 블록) | (동일) |
 | `scripts.orca_level1_gate` | `union-attr`, `unused-ignore` | `prefix is not None` 가드, 불필요 `type: ignore` 제거 |
 | `scripts.orca_metrics_ledger` | `no-redef`, `unused-ignore` | 루프 변수 `existing_row`, `ledger_row` 분리 |
-| `scripts.orca_model_router` | `attr-defined`, `return-value`, `unused-ignore` | `msvcrt` `getattr`, 중복 관측 시 `dict` 반환 보장 |
+| `scripts.orca_model_router` | `attr-defined`, `return-value`, `unused-ignore` | `msvcrt` `Protocol`+`cast`, 중복 관측 분기는 `cast` 로 반환 타입만 보강 |
 | `scripts.restore_from_parquet` | `arg-type`, `list-item` | SQLAlchemy `Table` `cast` |
 | `scripts.segment_servc_models` | `arg-type`, `return-value` | `LGBMRegressor` 명시 kwargs, `np.float64` predict |
 
@@ -61,3 +61,9 @@
 ## 재개 조건
 
 소유 11블록은 모두 제거 완료. 후속 Task 는 다른 override 블록(`arg-type` 전역 이전 잔여 6블록 등)을 대상으로 합니다.
+
+---
+
+## 후속 보정 (task_86895805ac12)
+
+`record_reliability_outcome` 중복 `observation_id` 분기에서 `role_record` 가 dict 가 아닐 때 `{"recent": ...}` 를 새로 반환하던 변경을 제거하고, 원래대로 `role_record` 를 반환하되 `cast(dict[str, Any], role_record)` 로 정적 타입만 맞췄습니다.

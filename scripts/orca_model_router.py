@@ -805,9 +805,7 @@ def record_reliability_outcome(
             isinstance(item, dict) and item.get("observation_id") == observation_id
             for item in recent
         ):
-            if isinstance(role_record, dict):
-                return role_record
-            return {"recent": list(recent)}
+            return cast(dict[str, Any], role_record)
         recent.append(
             {
                 "ok": bool(ok),
