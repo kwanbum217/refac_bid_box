@@ -34,28 +34,28 @@
 
 ### 2.2 신규 문항 소스: 실제 DB 공고에서 추출
 
-**대상 테이블**: `bid_notice` (공고), `bid_win` (낙찰), `bid_org` (기관)
+**대상 테이블**: `bid_announcements` (입찰공고), `bid_results` (낙찰결과)
+
+두 테이블은 `bid_ntce_no`(공고번호) + `category`(업무구분) + `bid_ntce_ord`(공고차수)로 조인합니다. 차수는 `bid_announcements`가 3자리(`000`), `bid_results`가 2자리(`00`)로 오므로 정규화(`zfill(3)[-3:]`) 후 조인해야 합니다(`src/ml/dataset.py`의 `_normalized_ord` 참조).
 
 **추출 쿼리 원칙**:
 ```sql
--- fixture 기 사용 공고 제외
-WHERE notice_id NOT IN (10015927, 10015878, 10015925, 10015865, 10015863,
-                         10015923, 10015920, 10015856, 7952020, 7952018,
-                         7952016, 7952015, 7952013, 7952012, 5880526, 5880502,
-                         5880499)
-  AND win_id IS NOT NULL          -- 낙찰 결과 확정 건만
-  AND win_price IS NOT NULL       -- 낙찰금액 존재
-  AND win_rate IS NOT NULL        -- 낙찰률 존재
+-- fixture 기 사용 공고 제외 (bid_ntce_no 기준)
+WHERE r.bid_ntce_no NOT IN ('R26BK01659912-001', 'R26BK01660507-001', ...)
+  AND r.bidwinnr_nm IS NOT NULL       -- 낙찰업체 존재
+  AND r.sucsf_bid_amt IS NOT NULL     -- 낙찰금액 존재
+  AND r.sucsf_bid_rate IS NOT NULL    -- 낙찰률 존재
+  AND r.dminstt_nm IS NOT NULL        -- 수요기관명 존재
 ```
 
 **다양성 보장 스트라타(층화)**:
 | 스트라타 | 기준 | 최소 할당 |
 |----------|------|-----------|
-| 공사/용역/물품 | `bid_notice.contract_type` | 각 2건 이상 |
-| 기관 유형 | 광역/기초/교육청/공기업/기타 | 각 1건 이상 |
-| 금액 구간 | 1억 미만 / 1~5억 / 5~10억 / 10억 이상 | 각 2건 이상 |
-| 지역 | 수도권/비수도권 | 각 4건 이상 |
-| 낙찰률 구간 | 85% 미만 / 85~95% / 95% 초과 | 각 2건 이상 |
+| 공사/용역/물품 | `bid_results.category` (Cnstwk/Servc/Thng) | 각 2건 이상 |
+| 기관 유형 | 광역/기초/교육청/공기업/기타 (`dminstt_nm` 분석) | 각 1건 이상 |
+| 금액 구간 | 1억 미만 / 1~5억 / 5~10억 / 10억 이상 (`sucsf_bid_amt`) | 각 2건 이상 |
+| 지역 | 수도권/비수도권 (`dminstt_nm`에서 시도 추출) | 각 4건 이상 |
+| 낙찰률 구간 | 85% 미만 / 85~95% / 95% 초과 (`sucsf_bid_rate`) | 각 2건 이상 |
 
 ### 2.3 신규 문항 수: **32문항** (답변 가능 24 + 거절 8)
 
@@ -108,23 +108,35 @@ WHERE notice_id NOT IN (10015927, 10015878, 10015925, 10015865, 10015863,
 
 **파일**: `scripts/build_generalization_fixture.py`
 
-**입력**: 제외할 `notice_id` 리스트, 스트라타별 최소 할당 수
+**입력**: 제외할 `bid_ntce_no` 리스트, 스트라타별 최소 할당 수
 **출력**: fixture v2 포맷 JSON (사람 검증 전 초안)
+
+**조인 로직** (src/ml/dataset.py `_normalized_ord` 재사용):
+```python
+# bid_announcements(bid_ntce_ord: 3자리) ↔ bid_results(bid_ntce_ord: 2자리)
+normalized_ord = bid_ntce_ord.zfill(3)[-3:]  # 양쪽 모두 3자리로 정규화
+JOIN ON a.bid_ntce_no = r.bid_ntce_no
+    AND a.category = r.category
+    AND a.bid_ntce_ord = normalized_ord
+```
 
 **검증 규칙**:
 - `expected_value`의 numeric 타입은 문자열로 저장, `tolerance`는 float
 - 낙찰금액 tolerance=1원, 낙찰률 tolerance=0.01%p 고정
-- `expected_evidence_ids`는 `bid_{notice_id}` 형태
-- `context_sufficient`는 낙찰 결과 존재 여부로 자동 판정
+- `expected_evidence_ids`는 `bid_{bid_ntce_no}` 형태 (기존 fixture 호환)
+- `context_sufficient`는 낙찰 결과 존재 여부(`bidwinnr_nm` 및 `sucsf_bid_amt` 비NULL)로 자동 판정
+- 수요기관: `r.dminstt_nm` 우선, 없으면 `a.dminstt_nm` 사용
+- 공고명: `r.bid_ntce_nm` 우선, 없으면 `a.bid_ntce_nm` 사용
 
 ### 3.3 사람 검증 체크리스트 (필수)
 
-- [ ] 공고번호가 DB `bid_notice.notice_no`와 일치
-- [ ] 수요기관이 `bid_org.org_name`과 일치
-- [ ] 낙찰업체가 `bid_win.winner_name`과 일치
-- [ ] 낙찰금액이 `bid_win.win_price`와 ±1원 이내
-- [ ] 낙찰률이 `bid_win.win_rate`와 ±0.01%p 이내
-- [ ] 금지 리터럴 4개가 응답에 나오면 안 됨 확인
+- [ ] 공고번호가 DB `bid_results.bid_ntce_no` (또는 `bid_announcements.bid_ntce_no`)와 일치
+- [ ] 수요기관이 `bid_results.dminstt_nm` (우선) 또는 `bid_announcements.dminstt_nm`와 일치
+- [ ] 낙찰업체가 `bid_results.bidwinnr_nm`과 일치
+- [ ] 낙찰금액이 `bid_results.sucsf_bid_amt`와 ±1원 이내
+- [ ] 낙찰률이 `bid_results.sucsf_bid_rate`와 ±0.01%p 이내
+- [ ] 업무구분이 `bid_results.category` (Thng/Cnstwk/Servc/Frgcpt)와 일치
+- [ ] 금지 리터럴 4개(Servc, Thng, Cnstwk, Frgcpt)가 응답에 나오면 안 됨 확인
 - [ ] 거절 문항의 `refusal_expected=true` 및 `expected_facts[0].fact_type="refusal"`
 
 ---
