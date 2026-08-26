@@ -41,8 +41,23 @@ from src.ml.trainer import (  # noqa: E402
     TRAINING_FEATURES,
 )
 
-POINT_OBJECTIVE = {"objective": "huber", "alpha": 1.0}
 T_THRESHOLD = 2.0
+
+
+def _huber_regressor(*, num_leaves: int, n_estimators: int | None = None) -> lgb.LGBMRegressor:
+    return lgb.LGBMRegressor(
+        n_estimators=n_estimators or int(LGB_BASE_PARAMS["n_estimators"]),
+        learning_rate=float(LGB_BASE_PARAMS["learning_rate"]),
+        num_leaves=num_leaves,
+        min_child_samples=int(LGB_BASE_PARAMS["min_child_samples"]),
+        subsample=float(LGB_BASE_PARAMS["subsample"]),
+        colsample_bytree=float(LGB_BASE_PARAMS["colsample_bytree"]),
+        random_state=int(LGB_BASE_PARAMS["random_state"]),
+        verbose=int(LGB_BASE_PARAMS["verbose"]),
+        n_jobs=int(LGB_BASE_PARAMS["n_jobs"]),
+        objective="huber",
+        alpha=1.0,
+    )
 
 
 def attach_ewm_history(raw: pd.DataFrame, halflife: int) -> str:
@@ -84,14 +99,13 @@ def fit_refit_full(
     train: pd.DataFrame,
     features: list[str],
     leaves: int,
-) -> tuple[object, int]:
+) -> tuple[lgb.LGBMRegressor, int]:
     """내부 검증으로 트리 수를 고른 뒤 같은 학습 상한 전량에 재적합합니다."""
     cut = int(len(train) * (1 - DEFAULT_VALIDATION_SPLIT))
     fit_part, valid_part = train.iloc[:cut], train.iloc[cut:]
-    params = {**LGB_BASE_PARAMS, **POINT_OBJECTIVE, "num_leaves": leaves}
     categoricals = [column for column in CATEGORICAL_FEATURES if column in features]
 
-    selected = lgb.LGBMRegressor(**params)
+    selected = _huber_regressor(num_leaves=leaves)
     selected.fit(
         fit_part[features],
         fit_part["winning_rate"],
@@ -101,7 +115,7 @@ def fit_refit_full(
     )
     best_iteration = int(getattr(selected, "best_iteration_", 0) or LGB_BASE_PARAMS["n_estimators"])
 
-    refit = lgb.LGBMRegressor(**{**params, "n_estimators": best_iteration})
+    refit = _huber_regressor(num_leaves=leaves, n_estimators=best_iteration)
     refit.fit(
         train[features],
         train["winning_rate"],
@@ -197,7 +211,7 @@ def main() -> int:
     for label, leaves, features in candidates:
         fit_started = time.perf_counter()
         model, best_iteration = fit_refit_full(train, features, leaves)
-        pred = np.asarray(model.predict(valid[features]), dtype=float)
+        pred = np.asarray(model.predict(valid[features]), dtype=np.float64)
         predictions[label] = pred
         rows.append(
             {

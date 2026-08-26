@@ -56,6 +56,16 @@ SHALLOW_HISTORY_MAX = 50
 MIN_GROUP_ROWS = 200
 
 
+def _bind_registry_model_root(root: Path) -> None:
+    """비교용 모델 루트를 이 프로세스에서만 ModelRegistry 가 보도록 고정합니다."""
+    root_str = str(root)
+
+    def _get_model_root(cls: type[ModelRegistry]) -> str:
+        return root_str
+
+    object.__setattr__(ModelRegistry, "_get_model_root", classmethod(_get_model_root))
+
+
 def group_labels(session, bid_id: int) -> dict[str, str]:
     """공고 한 건의 집단 라벨입니다. 특징 생성은 운영과 같은 함수를 씁니다.
 
@@ -188,7 +198,7 @@ def main() -> int:
             if not model_root.is_dir():
                 print(f"비교용 모델 루트가 없습니다: {model_root}")
                 return 1
-            ModelRegistry._get_model_root = classmethod(lambda cls: str(model_root))
+            _bind_registry_model_root(model_root)
             ModelRegistry.load_all_models()
 
         session = SessionLocal()

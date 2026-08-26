@@ -31,6 +31,7 @@ import argparse
 import sys
 import warnings
 from pathlib import Path
+from typing import cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -39,6 +40,7 @@ if str(PROJECT_ROOT) not in sys.path:
 warnings.filterwarnings("ignore")
 
 import joblib  # noqa: E402
+import lightgbm as lgb  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
@@ -48,12 +50,12 @@ from src.ml.features import apply_categorical_dtypes  # noqa: E402
 SERVING_DIR = PROJECT_ROOT / "data" / "model_files" / "servc_institution_v1"
 
 
-def load_serving_model() -> tuple[object, list[str], dict]:
+def load_serving_model() -> tuple[lgb.LGBMRegressor, list[str], dict[str, list[str]]]:
     """서빙 아티팩트와 그것이 요구하는 특징 목록·범주 수준을 함께 읽습니다."""
     import json
 
     metadata = json.loads((SERVING_DIR / "metadata.json").read_text(encoding="utf-8"))
-    model = joblib.load(SERVING_DIR / "model.bin")
+    model = cast(lgb.LGBMRegressor, joblib.load(SERVING_DIR / "model.bin"))
     features = metadata.get("required_features") or []
     levels = metadata.get("category_levels") or metadata.get("categorical_levels") or {}
     return model, list(features), levels if isinstance(levels, dict) else {}
@@ -107,7 +109,7 @@ def main() -> int:
         return 1
 
     X = apply_categorical_dtypes(valid[features], levels)
-    pred = np.asarray(model.predict(X), dtype=float)
+    pred = np.asarray(model.predict(X), dtype=np.float64)
     actual = valid["winning_rate"].to_numpy(dtype=float)
 
     has_lwlt = (valid["lwlt_rate_missing"] == 0).to_numpy()
