@@ -1,9 +1,10 @@
 """Arq 큐 처리량 일관성 게이트 판정 모듈.
 
 처리량, P95 latency, 실패율 3개 지표에 대해 baseline과 current 표본을 비교해
-PASS/FAIL 을 결정합니다. 임계치는 호출 측에서 우선 주입되며, 미주입 시 기본
-보수값을 사용합니다. benchmark evidence 입력은 P2-3R의 strict JSON 파서를
-통해 읽습니다.
+PASS/FAIL 을 결정합니다. 상대 임계치(GateThresholds)는 호출 측에서 주입되거나
+기본 마진(10%/10%/1pp)을 사용하며, 반복 측정 절대 기준선(RepetitionThresholds)은
+기본값 없이 worker mode(in_process/docker_container)별로 fail-closed 검증됩니다.
+benchmark evidence 입력은 P2-3R의 strict JSON 파서를 통해 읽습니다.
 """
 
 from __future__ import annotations
