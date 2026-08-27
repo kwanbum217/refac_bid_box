@@ -34,6 +34,9 @@ POST_FILTER_KEYS = frozenset({"institution_name", "date_from", "date_to"})
 # post-filter 적용 시 top_k 보충을 위해 검색 단계에서 추가로 가져올 배수
 POST_FILTER_FETCH_MULTIPLIER = 3
 
+# ChromaDB 벡터 검색 시 기본 후보 확보 수 (정확 제목 재순위 및 근사 중복 해소용)
+DEFAULT_CANDIDATE_POOL_SIZE = 30
+
 
 @dataclass
 class SemanticSearchResult:
@@ -69,9 +72,13 @@ def _normalize_text(value: str | None) -> str:
 
 # 문서 본문 대괄호 키 파싱 정규식
 INSTITUTION_PATTERN = re.compile(r"\[수요기관\]\s*([^\r\n]+)")
+TITLE_PATTERN = re.compile(r"\[공고명\]\s*([^\r\n]+)")
 NOTICE_DATE_PATTERN = re.compile(r"\[공고일시\]\s*([^\r\n]+)")
 OPENING_DATE_PATTERN = re.compile(r"\[개찰일시\]\s*([^\r\n]+)")
 DATE_ISO_PATTERN = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
+MATCH_KEY_CLEAN_PATTERN = re.compile(
+    r"[\s\(\)\[\]\{\}\uff08\uff09\uff3b\uff3d\uff5b\uff5d\u3010\u3011\u3014\u3015\u3008\u3009\u300a\u300b\u300c\u300d\u300e\u300f]"
+)
 
 
 def _parse_iso_date(value: str | None) -> date | None:
@@ -104,6 +111,68 @@ def extract_document_institution(document_text: str | None) -> str | None:
     except Exception:
         return None
     return None
+
+
+def extract_document_title(document_text: str | None) -> str | None:
+    """문서 본문에서 [공고명] 값을 추출합니다.
+    형식이 다르거나 없으면 예외 없이 None 을 반환합니다.
+    """
+    if not document_text:
+        return None
+    try:
+        match = TITLE_PATTERN.search(str(document_text))
+        if match:
+            val = _normalize_text(match.group(1))
+            return val if val else None
+    except Exception:
+        return None
+    return None
+
+
+def _normalize_match_key(value: str | None) -> str:
+    """공백과 괄호류를 제거하고 소문자 NFC 로 정규화하여 정확 일치 비교 키를 만듭니다."""
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFC", str(value)).strip().lower()
+    return MATCH_KEY_CLEAN_PATTERN.sub("", normalized)
+
+
+def _rerank_by_exact_title(
+    documents: list[dict[str, Any]],
+    semantic_query: str,
+) -> list[dict[str, Any]]:
+    """질의와 [공고명]이 정규화 정확 일치하는 문서를 최상위로 재순위합니다.
+
+    정규화(NFC, 소문자, 공백 및 괄호류 제거) 후 정확히 일치하는 문서만 우선 배치하고,
+    나머지 문서는 기존 상대적 순서(distance 순)를 그대로 유지합니다.
+    """
+    query_key = _normalize_match_key(semantic_query)
+    if not query_key:
+        return documents
+
+    exact_matches: list[dict[str, Any]] = []
+    others: list[dict[str, Any]] = []
+
+    for doc in documents:
+        doc_text = doc.get("document") or doc.get("content") or ""
+        doc_title = extract_document_title(doc_text)
+        if not doc_title and isinstance(doc.get("metadata"), dict):
+            doc_title = doc["metadata"].get("bid_ntce_nm") or doc["metadata"].get("title")
+
+        if doc_title and _normalize_match_key(doc_title) == query_key:
+            exact_matches.append(doc)
+        else:
+            others.append(doc)
+
+    if not exact_matches:
+        return documents
+
+    logger.info(
+        "정확 공고명 일치 문서 %d건 우선 재순위 (query_key=%s)",
+        len(exact_matches),
+        query_key,
+    )
+    return exact_matches + others
 
 
 def extract_document_dates(document_text: str | None) -> tuple[date | None, date | None]:
@@ -292,11 +361,9 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
             filter_date_to = parsed_to
 
     has_post_filter = bool(applied_post_filters)
-    query_top_k = (
-        max(int(plan.top_k or DEFAULT_VECTOR_TOP_K), 1) * POST_FILTER_FETCH_MULTIPLIER
-        if has_post_filter
-        else max(int(plan.top_k or DEFAULT_VECTOR_TOP_K), 1)
-    )
+    target_top_k = max(int(plan.top_k or DEFAULT_VECTOR_TOP_K), 1)
+    base_fetch_k = target_top_k * POST_FILTER_FETCH_MULTIPLIER if has_post_filter else target_top_k
+    query_top_k = max(base_fetch_k, DEFAULT_CANDIDATE_POOL_SIZE)
 
     try:
         import chromadb
@@ -368,8 +435,8 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
             }
         )
 
-    target_top_k = max(int(plan.top_k or DEFAULT_VECTOR_TOP_K), 1)
-    final_documents = structured_documents[:target_top_k]
+    reranked_documents = _rerank_by_exact_title(structured_documents, semantic_query)
+    final_documents = reranked_documents[:target_top_k]
 
     if has_post_filter and not final_documents and documents:
         logger.info(
