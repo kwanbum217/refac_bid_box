@@ -384,21 +384,23 @@ def check_numeric_omissions(
     # Provenance 기반 유효 출처 라벨 집합 구성
     valid_provenance_sources: set[str] | None = None
     if provenance is not None and getattr(provenance, "items", None) is not None:
-        valid_provenance_sources = set()
+        collected_sources: set[str] = set()
         for item in provenance.items:
             if isinstance(item, EvidenceItem):
                 lbl = item.metadata.get("citation_label")
                 if lbl:
-                    valid_provenance_sources.add(lbl)
+                    collected_sources.add(lbl)
                 elif "citation_number" in item.metadata:
-                    valid_provenance_sources.add(f"Source [{item.metadata['citation_number']}]")
+                    collected_sources.add(f"Source [{item.metadata['citation_number']}]")
             elif isinstance(item, dict):
                 meta = item.get("metadata") or {}
                 lbl = meta.get("citation_label")
                 if lbl:
-                    valid_provenance_sources.add(lbl)
+                    collected_sources.add(lbl)
                 elif "citation_number" in meta:
-                    valid_provenance_sources.add(f"Source [{meta['citation_number']}]")
+                    collected_sources.add(f"Source [{meta['citation_number']}]")
+        if collected_sources:
+            valid_provenance_sources = collected_sources
 
     # Plan 기반 대상 공고 Source 집합 식별
     targets = _extract_target_identifiers_from_plan(plan)

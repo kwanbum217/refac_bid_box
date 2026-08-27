@@ -411,3 +411,42 @@ def test_expected_fact_selection_conservatively_retains_unknown_sources(monkeypa
     assert res["omission_detected"] is True
     assert "99999" in res["missing_amounts"]
     assert res["missing_amount_sources"]["99999"] == ["unknown"]
+
+
+def test_expected_fact_selection_conservatively_retains_when_provenance_has_no_citation_labels(
+    monkeypatch,
+):
+    """provenance.items 에 citation_label/citation_number 가 없는 경우 보수적으로 전체 수치를 기대 사실로 유지합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+    from src.rag.schemas import EvidenceItem, Provenance
+
+    context = "Source [3]:\n[낙찰금액] 5,200,000\n[낙찰률] 90.1950"
+    provenance = Provenance(
+        trace_id="trace-no-citation-labels",
+        retrieval_mode="vector-only",
+        items=[
+            # metadata 에 citation_label 이나 citation_number 가 전혀 없는 항목
+            EvidenceItem(
+                id="doc_1",
+                type="vector_snippet",
+                content="...",
+                metadata={"title": "test document"},
+            )
+        ],
+    )
+    # 수치를 언급하지 않은 답변
+    answer = "관련 공고를 확인했습니다."
+
+    res = check_numeric_omissions(
+        context,
+        answer,
+        trace_id="trace-no-citation-labels",
+        provenance=provenance,
+    )
+    assert res is not None
+    # valid_provenance_sources 가 None 으로 되돌아가 수치가 제외되지 않고 실제 누락으로 검출됨
+    assert res["omission_detected"] is True
+    assert res["missing_amounts"] == ["5,200,000"]
+    assert res["missing_rates"] == ["90.1950"]
+    assert res["filtered_amounts"] == []
+    assert res["filtered_rates"] == []
