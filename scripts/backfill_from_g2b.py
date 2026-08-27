@@ -127,6 +127,21 @@ async def _backfill(
 
     print("-" * 60)
     print(f"백필 완료: 공고 {total_announcements:,}건, 낙찰 {total_results:,}건 신규 적재")
+
+    if total_announcements or total_results:
+        # 이 스크립트는 DB 적재와 대시보드 집계까지만 합니다. 야간 파이프라인이
+        # 이어서 하는 KB 색인, 검색 색인, 파생 집계는 하지 않습니다. 2026-08-27 에
+        # 이를 빠뜨려 낙찰 결과 9,798건이 DB 에만 있고 KB 에 없는 상태가 됐고,
+        # 챗봇이 해당 공고의 낙찰 정보를 답하지 못했습니다.
+        # docs/analysis/llm_generalization_judgment_20260827.md 6장.
+        print("")
+        print("주의: 이 스크립트는 KB·검색 색인과 파생 집계를 갱신하지 않습니다.")
+        print("      아래를 이어서 수행하지 않으면 챗봇과 검색이 신규분을 보지 못합니다.")
+        print(
+            "      - ChromaDB KB 색인: rebuild_knowledge_base(db, collected_since=<백필 시작 시각>)"
+        )
+        print("      - Meilisearch 색인: 검색 색인 갱신 경로")
+        print("      - 파생 집계: _rebuild_institution_stats(), _rebuild_ranking_snapshots()")
     return 0
 
 
