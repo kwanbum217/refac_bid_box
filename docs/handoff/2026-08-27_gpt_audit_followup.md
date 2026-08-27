@@ -58,13 +58,58 @@ v4 fixture 의 61.8% 는 분포가 다른 fixture 의 값이므로 blind fixture
 
 ## 4. 남은 과업
 
+### 4.1 GPT 지적별 종결 여부
+
+이번 세션은 **지적 전부를 종결하지 않았습니다.** GPT 가 P1 로 매긴 두 건은
+둘 다 미완결이며, 따라서 **"G3 최종 컷오버 보류" 판정은 그대로 유지됩니다.**
+
+| GPT 지적 | 판정 | 남은 부분 |
+| --- | --- | --- |
+| `audit_model_inventory` 상태 변경 (P2) | **종결** | 권고 5개 전부 반영 |
+| 문서·코드 드리프트 3건 (P3) | **종결** | 없음 |
+| Tailwind 빌드 재현성 | **종결** | 없음 |
+| Python 지원 범위 ↔ CI matrix | **종결** | macOS/Windows 는 3.11 만 유지 (비용 절충) |
+| 원격 브랜치 정리 | **종결** | ruleset 은 별건 |
+| e2b 승격 근거 (P1) | **부분** | 판정 기준만 확정. **측정 미실행** |
+| CPU 사용률 의미 (P1/P2) | **부분** | 명칭만 분리. **실제 CPU utilization 미도입** |
+| omission detector (P2) | **부분** | 경계·후단·Source 만. **expected-fact 선별 미구현** |
+| Windows Docker Desktop 실기 | **미착수** | 장비 부재 |
+| main ruleset | **미착수** | 이번 세션 범위 제외 |
+
+### 4.2 다음 착수 지점
+
+**우선순위 1순위는 blind fixture 측정입니다.** 판정 기준이 3절로 이미 확정돼
+있어 측정 결과가 그대로 판정이 됩니다.
+
+다만 **"측정만 남았다" 는 표현은 정확하지 않습니다.** 착수 전에 확인한 결과
+선행 산출물이 없습니다.
+
+| 선행물 | 상태 |
+| --- | --- |
+| `scripts/measure_llm_quality.py` | **있음** |
+| `data/eval/llm_quality_fixture_v1.json` | 있음 (기존 24문항) |
+| `data/eval/llm_quality_fixture_v2.json` | **없음.** 설계서 8.3 절 명령이 이 파일을 참조한다 |
+| `scripts/build_generalization_fixture.py` | **없음.** 설계서 109 행이 참조하는 파일이 존재하지 않는다 |
+
+따라서 다음 세션의 실제 첫 작업은 측정 실행이 아니라 **fixture 생성기 작성과
+v2 fixture 구축**입니다. 설계서 8.3 절 명령을 그대로 실행하면 파일 부재로
+실패합니다.
+
+순서는 다음과 같습니다.
+
+1. `scripts/build_generalization_fixture.py` 작성 (설계서 5장 fixture 사양 기준)
+2. `data/eval/llm_quality_fixture_v2.json` 생성 후 `validate_llm_quality_fixture.py` 로 검증
+3. 설계서 8.3 절 명령으로 e2b·e4b 를 **동일 fixture·동일 조건**으로 각각 3회 측정
+4. 3절 기준 (A)(B) 로 판정. 미달이면 e2b 승격 철회 후보 상정
+
+### 4.3 그 밖의 남은 과업
+
 | 과업 | 상태 | 비고 |
 | --- | --- | --- |
-| blind fixture 실측 실행 | 미착수 | 기준은 3절로 확정됨. 측정만 남음 |
-| 실제 CPU utilization 계측 | 미도입 | 새 의존성 필요. 현재는 정규화 load average 로 명시 |
-| detector 질문 관련성 선별 | 미구현 | RetrievalPlan·Provenance 연동은 후속 |
-| Windows Docker Desktop 실기 | 미검증 | 장비 부재 |
-| main ruleset (force-push·삭제 방지) | 미적용 | 이번 세션 범위에서 제외 |
+| 실제 CPU utilization 계측 | 미도입 | 새 의존성(psutil 등) 사전 합의 필요. 현재 지표는 정규화 load average 로 명시돼 있어 오해 소지는 없음 |
+| detector expected-fact 선별 | 미구현 | `RetrievalPlan` + `Provenance.items` 연동. 현재는 기본 비활성 관측 기능이라 운영 위험은 없음 |
+| Windows Docker Desktop 실기 | 미검증 | 장비 부재. G2 컷오버 차단 요인으로 유지 |
+| main ruleset (force-push·삭제 방지) | 미적용 | 사용자가 이번 범위에서 제외 |
 
 ---
 
