@@ -17,12 +17,15 @@ import pytest
 
 from src.rag.schemas import RetrievalPlan
 from src.rag.vector_store import (
-    POST_FILTER_FETCH_MULTIPLIER,
+    DEFAULT_CANDIDATE_POOL_SIZE,
     AsyncVectorStore,
     SemanticSearchResult,
+    _normalize_match_key,
+    _rerank_by_exact_title,
     build_vector_where,
     extract_document_dates,
     extract_document_institution,
+    extract_document_title,
     extract_effective_document_date,
     retrieve_semantic_context,
 )
@@ -498,7 +501,7 @@ def test_post_filter_zero_results_does_not_relax_filters(monkeypatch):
 
 
 def test_post_filter_supported_only_filters_no_regression(monkeypatch):
-    """(f) 지원되는 메타데이터 필터만 있는 기존 경로는 over-fetching 없이 정상 동작해야 합니다."""
+    """(f) 지원되는 메타데이터 필터만 있는 기존 경로는 후보 풀(기본 30건)을 확보하고 정상 동작해야 합니다."""
     recorded_calls: list[dict[str, Any]] = []
 
     class MockCollection:
@@ -531,14 +534,14 @@ def test_post_filter_supported_only_filters_no_regression(monkeypatch):
     assert result.ok is True
     assert len(result.documents) == 1
     assert len(recorded_calls) == 1
-    # post-filter 가 없으므로 n_results == top_k (배수 적용 안 됨)
-    assert recorded_calls[0]["n_results"] == 5
+    # 후보 수 확보는 max(top_k, DEFAULT_CANDIDATE_POOL_SIZE)
+    assert recorded_calls[0]["n_results"] == DEFAULT_CANDIDATE_POOL_SIZE
     assert result.applied_post_filters == {}
     assert result.post_filtered_count == 0
 
 
 def test_post_filter_multiplier_and_top_k_trimming(monkeypatch):
-    """post-filter 활성화 시 top_k * 배수로 검색하고 최종 반환은 top_k 로 잘라야 합니다."""
+    """post-filter 활성화 시 max(top_k * 배수, 30)으로 검색하고 최종 반환은 top_k 로 잘라야 합니다."""
     recorded_calls: list[dict[str, Any]] = []
 
     docs = [f"[수요기관] 서울특별시 {i}구\n[공고명] 사업 {i}" for i in range(1, 5)] + [
@@ -575,8 +578,209 @@ def test_post_filter_multiplier_and_top_k_trimming(monkeypatch):
     assert result.ok is True
     # top_k=2 이므로 2개만 반환되어야 함
     assert len(result.documents) == 2
-    # 검색 요청은 2 * POST_FILTER_FETCH_MULTIPLIER = 6 이어야 함
-    assert recorded_calls[0]["n_results"] == 2 * POST_FILTER_FETCH_MULTIPLIER
+    # 검색 요청은 max(2 * POST_FILTER_FETCH_MULTIPLIER, DEFAULT_CANDIDATE_POOL_SIZE) = 30 이어야 함
+    assert recorded_calls[0]["n_results"] == DEFAULT_CANDIDATE_POOL_SIZE
     # 부산 문서 2건이 제외됨
     assert result.post_filtered_count == 2
     assert result.applied_post_filters == {"institution_name": "서울"}
+
+
+# ===========================================================================
+# 공고명 추출, 정규화, 정확 일치 재순위 단위/회귀 테스트 (q21 해결 검증)
+# ===========================================================================
+
+
+def test_extract_document_title():
+    """문서 본문에서 [공고명] 파싱이 정상 동작해야 합니다."""
+    doc_text = (
+        "[수요기관] 충청남도 예산군\n"
+        "[공고명] 2026년 조림지 풀베기사업 2차(동부지구)\n"
+        "[공고일시] 2026-08-01 10:00:00"
+    )
+    assert extract_document_title(doc_text) == "2026년 조림지 풀베기사업 2차(동부지구)"
+
+    # 공백 포함된 공고명
+    doc_spaces = "[공고명]   2026년 9월분 학교급식물품 구매   \n[수요기관] 교육청"
+    assert extract_document_title(doc_spaces) == "2026년 9월분 학교급식물품 구매"
+
+    # [공고명] 없는 경우 None
+    assert extract_document_title("[수요기관] 충청남도 예산군\n내용") is None
+    assert extract_document_title("") is None
+    assert extract_document_title(None) is None
+
+
+def test_normalize_match_key():
+    """공백, 괄호류(반각/전각/대괄호/중괄호 등) 차이가 정규화되어 동일한 비교 키가 생성되어야 합니다."""
+    key1 = _normalize_match_key("2026년 조림지 풀베기사업 2차(동부지구)")
+    key2 = _normalize_match_key("2026년 조림지풀베기사업 2차 (동부지구)")
+    key3 = _normalize_match_key("2026년 조림지풀베기사업(2차)(동부지구)")
+    key4 = _normalize_match_key("2026년  조림지  풀베기사업 2차\uff08동부지구\uff09")
+    key5 = _normalize_match_key("2026년 조림지 풀베기사업 [2차] 【동부지구】")
+
+    assert key1 == "2026년조림지풀베기사업2차동부지구"
+    assert key1 == key2 == key3 == key4 == key5
+
+    # 지역명이 다른 경우는 달라야 함
+    diff_key = _normalize_match_key("2026년 조림지 풀베기사업(2차)(영암지구)")
+    assert diff_key == "2026년조림지풀베기사업2차영암지구"
+    assert key1 != diff_key
+
+    # 빈 값 안전 처리
+    assert _normalize_match_key("") == ""
+    assert _normalize_match_key(None) == ""
+
+
+def test_rerank_by_exact_title_q21_promotion():
+    """q21 시나리오: 10위에 있던 정확 제목 문서가 1위로 재순위되어야 합니다."""
+    candidate_titles = [
+        "2026년 조림지 풀베기사업(2차)(영암지구)",
+        "2026년 조림지풀베기사업 2차 (산동용방2지구)",
+        "2026년 2차 조림지 풀베기사업(산청오부지구)",
+        "2026년 조림지 풀베기 사업(대술지구 2차)",
+        "2026년 조림지 풀베기사업(신양2지구 2차)",
+        "2026년 조림지 풀베기사업(삽교지구 2차)",
+        "2026년 조림지 풀베기사업(신암지구 2차)",
+        "2026년 조림지 풀베기사업(봉산지구 2차)",
+        "2026년 조림지 풀베기사업(고덕지구 2차)",
+        "2026년 조림지 풀베기사업 2차(동부지구)",  # 10위 정답
+    ]
+
+    docs = [
+        {
+            "document": f"[공고명] {title}\n[수요기관] 산림청",
+            "content": f"[공고명] {title}\n[수요기관] 산림청",
+            "metadata": {},
+            "distance": 0.1 * (i + 1),
+        }
+        for i, title in enumerate(candidate_titles)
+    ]
+
+    query = "2026년 조림지 풀베기사업 2차(동부지구)"
+    reranked = _rerank_by_exact_title(docs, query)
+
+    # 10위였던 동부지구 문서가 1위로 승격
+    assert len(reranked) == 10
+    assert "동부지구" in reranked[0]["document"]
+    # 나머지 문서들은 기존 상대적 순서 보존
+    assert "영암지구" in reranked[1]["document"]
+    assert "산동용방2지구" in reranked[2]["document"]
+    assert "고덕지구" in reranked[9]["document"]
+
+
+def test_rerank_by_exact_title_negative_cases_no_false_promotion():
+    """음성 테스트: 부분 문자열 일치나 일반 질의로 인해 엉뚱한 문서가 승격되지 않아야 합니다."""
+    candidate_titles = [
+        "2026년 조림지 풀베기사업(2차)(영암지구)",
+        "2026년 조림지풀베기사업 2차 (산동용방2지구)",
+        "2026년 조림지 풀베기사업 2차(동부지구)",
+    ]
+    docs = [
+        {
+            "document": f"[공고명] {title}\n[수요기관] 산림청",
+            "content": f"[공고명] {title}\n[수요기관] 산림청",
+            "metadata": {},
+            "distance": 0.1 * (i + 1),
+        }
+        for i, title in enumerate(candidate_titles)
+    ]
+
+    # 1. 일반 질의 (부분 문자열 포함 질의) — 정확 일치가 아니므로 순서 불변
+    general_query = "조림지 풀베기사업"
+    reranked_general = _rerank_by_exact_title(docs, general_query)
+    assert [d["document"] for d in reranked_general] == [d["document"] for d in docs]
+
+    # 2. 지역명이 생략된 축약 질의 — 정확 일치가 아니므로 순서 불변
+    short_query = "2026년 조림지 풀베기사업 2차"
+    reranked_short = _rerank_by_exact_title(docs, short_query)
+    assert [d["document"] for d in reranked_short] == [d["document"] for d in docs]
+
+    # 3. 빈 질의
+    assert _rerank_by_exact_title(docs, "") == docs
+
+
+def test_retrieve_semantic_context_q21_end_to_end_in_top5(monkeypatch):
+    """retrieve_semantic_context 통합 검증: q21 질의 시 10위 후보가 1위로 승격되어 top-5 에 포함되어야 합니다."""
+    candidate_titles = [
+        "2026년 조림지 풀베기사업(2차)(영암지구)",
+        "2026년 조림지풀베기사업 2차 (산동용방2지구)",
+        "2026년 2차 조림지 풀베기사업(산청오부지구)",
+        "2026년 조림지 풀베기 사업(대술지구 2차)",
+        "2026년 조림지 풀베기사업(신양2지구 2차)",
+        "2026년 조림지 풀베기사업(삽교지구 2차)",
+        "2026년 조림지 풀베기사업(신암지구 2차)",
+        "2026년 조림지 풀베기사업(봉산지구 2차)",
+        "2026년 조림지 풀베기사업(고덕지구 2차)",
+        "2026년 조림지 풀베기사업 2차(동부지구)",  # 10위 정답
+    ]
+    docs = [f"[공고명] {t}\n[수요기관] 산림청" for t in candidate_titles]
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            return {
+                "documents": [docs],
+                "metadatas": [[{} for _ in docs]],
+                "distances": [[0.1 * (i + 1) for i in range(len(docs))]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="2026년 조림지 풀베기사업 2차(동부지구)",
+        top_k=5,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    # top_k=5 개만 반환
+    assert len(result.documents) == 5
+    # 10위였던 동부지구 정답 문서가 1위로 포함됨
+    assert "동부지구" in result.documents[0]["document"]
+
+
+def test_retrieve_semantic_context_post_filter_fail_closed_with_exact_title(monkeypatch):
+    """정확 제목 일치 문서가 있더라도 post-filter 조건을 불만족하면 제외(fail-closed)되어야 합니다."""
+    doc_exact_wrong_inst = (
+        "[공고명] 2026년 조림지 풀베기사업 2차(동부지구)\n"
+        "[수요기관] 전라남도\n"
+        "[공고일시] 2026-08-01"
+    )
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            return {
+                "documents": [[doc_exact_wrong_inst]],
+                "metadatas": [[{}]],
+                "distances": [[0.1]],
+            }
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+    plan = RetrievalPlan(
+        semantic_query="2026년 조림지 풀베기사업 2차(동부지구)",
+        filters={"institution_name": "경상북도"},
+        top_k=5,
+    )
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert result.documents == []
+    assert result.post_filtered_count == 1
+    assert result.applied_post_filters == {"institution_name": "경상북도"}
