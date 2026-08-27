@@ -226,7 +226,16 @@ def load_v1_exclusions(v1_path: Path | str = DEFAULT_V1_PATH) -> tuple[set[str],
 
 
 def load_chroma_embedding_ids(collection_name: str = "bidding_kb") -> set[int]:
-    """로컬 ChromaDB sqlite 에서 실재하는 bid_{id} 의 정수 PK 집합을 로드합니다."""
+    """낙찰 정보를 담은 bid_{id} 문서의 정수 PK 집합을 로드합니다.
+
+    **존재 확인만으로는 부족합니다.** 2026-08-27 측정에서 근거 문서 24건이 전부
+    컬렉션에 있었으나 22건의 본문이 `[낙찰상태] 진행 중 또는 결과 미수집` 이어서
+    fixture 가 묻는 낙찰업체·낙찰금액·낙찰률이 문서에 없었습니다. 그 결과
+    evidence recall 0.083 으로 측정 전체가 무효가 됐습니다
+    (`docs/analysis/llm_generalization_judgment_20260827.md`).
+
+    따라서 `has_result` 메타데이터가 참인 문서만 답변 가능 문항의 후보로 봅니다.
+    """
     db_path = find_chroma_sqlite_path()
     if not db_path or not db_path.exists():
         return set()
@@ -242,12 +251,15 @@ def load_chroma_embedding_ids(collection_name: str = "bidding_kb") -> set[int]:
 
     try:
         cur = conn.cursor()
+        # has_result 가 참인 문서만 남깁니다. Chroma 는 불리언 메타데이터를
+        # embedding_metadata.bool_value 에 둡니다.
         query = (
             "SELECT DISTINCT e.embedding_id "
             "FROM embeddings e "
             "JOIN segments s ON s.id = e.segment_id "
             "JOIN collections col ON col.id = s.collection "
-            "WHERE col.name = ?"
+            "JOIN embedding_metadata m ON m.id = e.id "
+            "WHERE col.name = ? AND m.key = 'has_result' AND m.bool_value = 1"
         )
         cur.execute(query, [collection_name])
         for row in cur.fetchall():
