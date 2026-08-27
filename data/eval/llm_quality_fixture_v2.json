@@ -1,7 +1,7 @@
 {
   "version": "2.0.0",
-  "name": "llm_quality_fixture_v2_draft",
-  "description": "gemma4:e4b 대 gemma4:e2b 일반화 능력 측정을 위한 blind fixture v2 초안 (32문항: 답변가능 24 + 거절 8)",
+  "name": "llm_quality_fixture_v2",
+  "description": "gemma4:e2b 대 gemma4:e4b 일반화 판정을 위한 blind fixture v2 (정본). v1 과 근거·공고 중복 0건, DB 원본 대조 불일치 0건, ChromaDB 근거 24/24 실재 확인",
   "created_at": "2026-08-27",
   "total_items": 32,
   "min_context_sufficient_required": 15,
