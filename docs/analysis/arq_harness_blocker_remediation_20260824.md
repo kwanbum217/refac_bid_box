@@ -24,7 +24,7 @@ Arq 정식 캘리브레이션 설계서([`arq_calibration_design_20260824.md`](a
 
 ### 2.1 주변 부하 규약 자동 강제 (`check_ambient_load_protocol`)
 
-`scripts/benchmark_provenance.py` 에 `check_ambient_load_protocol()` 을 추가했습니다. `compute_host_load_stats()` 의 `per_core_percent`(코어당 사용률 %)의 중앙값·최대값을 [`docs/ops/latency_gate_protocol.md`](../../docs/ops/latency_gate_protocol.md) 5.3 절 임계(중앙값 30% 이하, 최대 50% 이하)와 비교합니다.
+`scripts/benchmark_provenance.py` 에 `check_ambient_load_protocol()` 을 추가했습니다. `compute_host_load_stats()` 의 `normalized_load_1m_percent`(정규화 1분 load average %, 하위 호환 `per_core_percent` 유지)의 중앙값·최대값을 [`docs/ops/latency_gate_protocol.md`](../../docs/ops/latency_gate_protocol.md) 5.3 절 임계(중앙값 30% 이하, 최대 50% 이하)와 비교합니다.
 
 - 상수: `LOAD_PROTOCOL_MEDIAN_LIMIT_PERCENT = 30.0`, `LOAD_PROTOCOL_MAX_LIMIT_PERCENT = 50.0`
 - 두 하네스(`benchmark_arq_container.py`, `benchmark_arq_throughput.py`) 모두:
@@ -33,6 +33,7 @@ Arq 정식 캘리브레이션 설계서([`arq_calibration_design_20260824.md`](a
 - **우회 플래그**: `--allow-load-protocol-violation`. `--allow-unknown-provenance` 와 같은 규약을 따르며, 우회 측정은 결과 JSON 의 `load_protocol` 에 미준수 표시(`bypassed=true`, `canonical_evidence=false`)를 남겨 정본 evidence 가 아님을 기록합니다.
 - `build_load_protocol_record()` 가 결과 JSON 의 `load_protocol` 구조체를 만듭니다:
   - `enforced`, `bypassed`, `compliant`, `canonical_evidence`, `start`/`end` 상세.
+- **지표 정의 및 후속 과제**: 해당 지표는 1분 load average를 논리 코어 수로 나눈 정규화 1분 load average(%)이며, 실제 CPU utilization(사용률)이 아닙니다. psutil 또는 OS 커널 카운터 기반의 실제 CPU utilization 계측은 신규 외부 라이브러리 추가 금지 원칙에 따라 현재 미도입 상태이며, 향후 정밀 프로파일링을 위한 후속 과제로 분리합니다.
 
 ### 2.2 설계서 6장 중앙값 기준선 산식 자동 적용 (`compute_baseline_summary`)
 

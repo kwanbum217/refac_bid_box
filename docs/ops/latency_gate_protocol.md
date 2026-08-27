@@ -264,23 +264,25 @@ got=$(docker compose exec -T app printenv PREDICTION_GC_MODE | tr -d '\r\n')
 | 항목 | 규정 |
 | --- | --- |
 | 표본 간격 | 5초 |
-| 지표 | `sysctl -n vm.loadavg` 의 1분 값을 `hw.ncpu` 로 나눈 코어당 사용률 |
+| 지표 | `sysctl -n vm.loadavg` 의 1분 값을 `hw.ncpu` 로 나눈 정규화 1분 load average(%) |
 | 통과 임계 | **중앙값 30% 이하, 최대 50% 이하** |
 | 기록 | 최소·중앙·최대를 측정 문서에 싣습니다 |
 
 ```bash
 NC=$(sysctl -n hw.ncpu)
 L=$(sysctl -n vm.loadavg | awk '{print $2}')
-echo "$L $NC" | awk '{printf "코어당 %.1f%%\n", 100*$1/$2}'
+echo "$L $NC" | awk '{printf "정규화 load average %.1f%%\n", 100*$1/$2}'
 ```
 
 임계값 근거는 2026-08-14 실측입니다. 14코어 장비에서 다른 세션이 유휴로 살아
-있는 동안 c10 벤치마크를 돌린 코어당 사용률이 **중앙값 10.5%, 최대 13.3%**
+있는 동안 c10 벤치마크를 돌린 정규화 1분 load average 가 **중앙값 10.5%, 최대 13.3%**
 였습니다. 30% 는 다른 에이전트가 실제로 일하는 상태를 걸러내면서 자기 벤치마크
 부하는 통과시키는 선입니다.
 
 임계를 넘으면 측정을 버리고 다시 하십시오. **넘은 값을 그대로 쓰면서 "부하가
 있었다" 고 적는 것은 판정 근거가 되지 않습니다.**
+
+> **주의 (지표 정의 및 후속 과제)**: 본 지표는 1분 load average를 논리 코어 수로 나눈 정규화 1분 load average(%)이며, 실제 CPU utilization(사용률)이 아닙니다. psutil 또는 OS 커널 카운터 기반의 실제 CPU utilization 계측은 신규 외부 라이브러리 추가 금지 원칙에 따라 현재 미도입 상태이며, 향후 정밀 프로파일링을 위한 후속 과제로 분리합니다.
 
 ---
 

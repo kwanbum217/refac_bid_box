@@ -28,6 +28,11 @@ from scripts.benchmark_sse_gate import run_benchmark  # noqa: E402
 
 
 class AmbientLoadLogger:
+    """주변 부하(정규화 1분 load average %) 백그라운드 로거.
+
+    지표는 CPU 사용률이 아니라 1분 load average를 논리 코어 수로 나눈 정규화 1분 load average(%)입니다.
+    """
+
     def __init__(self, output_csv: Path, interval_sec: float = 5.0) -> None:
         self.output_csv = output_csv
         self.interval_sec = interval_sec
@@ -60,13 +65,13 @@ class AmbientLoadLogger:
         while not self._stop_event.is_set():
             now_str = time.strftime("%Y-%m-%d %H:%M:%S")
             load1 = self._get_load1()
-            core_pct = round(100.0 * load1 / self.ncpu, 2)
+            normalized_load_1m_pct = round(100.0 * load1 / self.ncpu, 2)
             entry = {
                 "sample": sample_idx,
                 "timestamp": now_str,
                 "load1": load1,
                 "ncpu": self.ncpu,
-                "load_per_core_pct": core_pct,
+                "load_per_core_pct": normalized_load_1m_pct,
             }
             self.samples.append(entry)
             sample_idx += 1
@@ -164,7 +169,7 @@ def run_c1_suite(
     print("\n" + "=" * 70)
     print("작업 1 완료 및 부하 통계:")
     print(
-        f"  - 주변 부하 (코어당): 최소 {stats['min']}%, 중앙값 {stats['median']}%, 최대 {stats['max']}%"
+        f"  - 주변 부하 (정규화 1분 load average): 최소 {stats['min']}%, 중앙값 {stats['median']}%, 최대 {stats['max']}%"
     )
     print(f"  - 부하 파일: {ambient_csv}")
     print("=" * 70)
