@@ -123,7 +123,7 @@ JOIN ON a.bid_ntce_no = r.bid_ntce_no
 **검증 규칙**:
 - `expected_value`의 numeric 타입은 문자열로 저장, `tolerance`는 float
 - 낙찰금액 tolerance=1원, 낙찰률 tolerance=0.01%p 고정
-- `expected_evidence_ids`는 `bid_{bid_ntce_no}` 형태 (기존 fixture 호환)
+- `expected_evidence_ids`는 `bid_{bid_announcements.id}` 형태다. ChromaDB 문서 ID 가 `src/app/services/kb_builder.py:310` 에서 PK 기준으로 만들어지며 v1 fixture 도 같은 형태다. 2026-08-27 이전 판본은 이를 `bid_{bid_ntce_no}` 로 잘못 적었다
 - `context_sufficient`는 낙찰 결과 존재 여부(`bidwinnr_nm` 및 `sucsf_bid_amt` 비NULL)로 자동 판정
 - 수요기관: `r.dminstt_nm` 우선, 없으면 `a.dminstt_nm` 사용
 - 공고명: `r.bid_ntce_nm` 우선, 없으면 `a.bid_ntce_nm` 사용
