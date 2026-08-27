@@ -187,17 +187,72 @@ def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
 logger = logging.getLogger(__name__)
 
 
-def extract_numeric_context_values(context_text: str) -> dict[str, list[str]]:
-    """검색 컨텍스트에서 낙찰금액([낙찰금액])과 낙찰률([낙찰률]) 값을 추출합니다."""
+def _contains_bounded_number(answer_text: str, candidate: str) -> bool:
+    """후보 문자열 앞뒤에 숫자, 쉼표, 마침표가 붙어 있지 않은 독립 수치인지 확인합니다."""
+    if not candidate:
+        return False
+    pattern = r"(?<![0-9,.])" + re.escape(candidate) + r"(?![0-9,.])"
+    return bool(re.search(pattern, answer_text))
+
+
+def extract_numeric_context_values(context_text: str) -> dict[str, Any]:
+    """검색 컨텍스트에서 Source 단위로 낙찰금액([낙찰금액])과 낙찰률([낙찰률]) 값 및 출처 라벨을 추출합니다."""
     if not context_text:
-        return {"amounts": [], "rates": []}
+        return {
+            "amounts": [],
+            "rates": [],
+            "amount_sources": {},
+            "rate_sources": {},
+        }
 
-    amount_matches = re.findall(r"\[낙찰금액\]\s*([0-9,]+)", context_text)
-    rate_matches = re.findall(r"\[낙찰률\]\s*([0-9]+(?:\.[0-9]+)?)", context_text)
+    # 'Source [n]' 머리글로 블록 분할
+    parts = re.split(r"(Source\s*\[\d+\])", context_text)
+    blocks: list[tuple[str, str]] = []
+    if parts and parts[0]:
+        blocks.append(("unknown", parts[0]))
+    for i in range(1, len(parts), 2):
+        raw_header = parts[i].strip()
+        m = re.search(r"Source\s*\[(\d+)\]", raw_header)
+        header = f"Source [{m.group(1)}]" if m else raw_header
+        content = parts[i + 1] if (i + 1) < len(parts) else ""
+        blocks.append((header, content))
 
-    amounts = list(dict.fromkeys(m.strip() for m in amount_matches if m.strip()))
-    rates = list(dict.fromkeys(r.strip() for r in rate_matches if r.strip()))
-    return {"amounts": amounts, "rates": rates}
+    amounts: list[str] = []
+    rates: list[str] = []
+    amount_sources: dict[str, list[str]] = {}
+    rate_sources: dict[str, list[str]] = {}
+
+    for source_label, block_text in blocks:
+        amt_matches = re.findall(r"\[낙찰금액\]\s*([0-9,]+)", block_text)
+        for m in amt_matches:
+            val = m.strip()
+            if not val:
+                continue
+            if val not in amounts:
+                amounts.append(val)
+            if val not in amount_sources:
+                amount_sources[val] = []
+            if source_label not in amount_sources[val]:
+                amount_sources[val].append(source_label)
+
+        rate_matches = re.findall(r"\[낙찰률\]\s*([0-9]+(?:\.[0-9]+)?)", block_text)
+        for r in rate_matches:
+            val = r.strip()
+            if not val:
+                continue
+            if val not in rates:
+                rates.append(val)
+            if val not in rate_sources:
+                rate_sources[val] = []
+            if source_label not in rate_sources[val]:
+                rate_sources[val].append(source_label)
+
+    return {
+        "amounts": amounts,
+        "rates": rates,
+        "amount_sources": amount_sources,
+        "rate_sources": rate_sources,
+    }
 
 
 def check_numeric_omissions(
@@ -213,22 +268,27 @@ def check_numeric_omissions(
         return None
 
     extracted = extract_numeric_context_values(context_text)
-    amounts = extracted["amounts"]
-    rates = extracted["rates"]
+    amounts = extracted.get("amounts", [])
+    rates = extracted.get("rates", [])
+    amount_sources = extracted.get("amount_sources", {})
+    rate_sources = extracted.get("rate_sources", {})
 
     if not amounts and not rates:
         return None
 
     missing_amounts: list[str] = []
+    missing_amount_sources: dict[str, list[str]] = {}
     for amt in amounts:
         digits = amt.replace(",", "")
         candidates = {amt, digits}
         if digits.isdigit():
             candidates.add(f"{int(digits):,}")
-        if not any(cand in answer_text for cand in candidates):
+        if not any(_contains_bounded_number(answer_text, cand) for cand in candidates):
             missing_amounts.append(amt)
+            missing_amount_sources[amt] = amount_sources.get(amt, ["unknown"])
 
     missing_rates: list[str] = []
+    missing_rate_sources: dict[str, list[str]] = {}
     for r in rates:
         candidates = {r}
         try:
@@ -238,8 +298,9 @@ def check_numeric_omissions(
             candidates.add(f"{val:.2f}")
         except ValueError:
             pass
-        if not any(cand in answer_text for cand in candidates):
+        if not any(_contains_bounded_number(answer_text, cand) for cand in candidates):
             missing_rates.append(r)
+            missing_rate_sources[r] = rate_sources.get(r, ["unknown"])
 
     missing_types: list[str] = []
     if missing_amounts:
@@ -251,12 +312,14 @@ def check_numeric_omissions(
 
     if total_missing_count > 0:
         logger.warning(
-            "rag_numeric_omission: trace_id=%s missing_types=%s missing_count=%d missing_amounts=%s missing_rates=%s",
+            "rag_numeric_omission: trace_id=%s missing_types=%s missing_count=%d missing_amounts=%s missing_rates=%s missing_amount_sources=%s missing_rate_sources=%s",
             trace_id,
             missing_types,
             total_missing_count,
             missing_amounts,
             missing_rates,
+            missing_amount_sources,
+            missing_rate_sources,
             extra={
                 "trace_id": trace_id,
                 "omission_detected": True,
@@ -264,6 +327,8 @@ def check_numeric_omissions(
                 "missing_count": total_missing_count,
                 "missing_amounts": missing_amounts,
                 "missing_rates": missing_rates,
+                "missing_amount_sources": missing_amount_sources,
+                "missing_rate_sources": missing_rate_sources,
             },
         )
 
@@ -273,6 +338,8 @@ def check_numeric_omissions(
         "missing_count": total_missing_count,
         "missing_amounts": missing_amounts,
         "missing_rates": missing_rates,
+        "missing_amount_sources": missing_amount_sources,
+        "missing_rate_sources": missing_rate_sources,
     }
 
 
@@ -445,28 +512,30 @@ class HybridRAGEngine:
         context_text: str = "",
         trace_id: str = "",
     ) -> str:
-        """Answer Guard: 데이터가 있는데 없다고 답한 경우 강제 교정 및 수치 누락 검출."""
-        if context_text:
-            check_numeric_omissions(context_text, answer_text, trace_id=trace_id)
-
+        """Answer Guard: 데이터가 있는데 없다고 답한 경우 강제 교정 및 최종 답변 기준 수치 누락 검출."""
         if (structured_data or {}).get("query_skipped"):
             # 조회를 하지 않았으면 교정할 근거가 없습니다. 없다고 답한 것이 맞습니다.
-            return _normalize_category_wording(answer_text, plan)
+            final_answer = _normalize_category_wording(answer_text, plan)
+        else:
+            summary_data = (structured_data or {}).get("summary") or {}
+            # 키는 있는데 값이 None 인 경우가 있습니다. get 의 기본값은 그때 쓰이지
+            # 않으므로 None 이 그대로 비교로 들어가 TypeError 가 납니다.
+            total_bids = summary_data.get("total_bids") or 0
+            total_ntce = summary_data.get("announcement_count") or 0
+            if "데이터가 없습니다" in answer_text and (total_bids > 0 or total_ntce > 0):
+                stats_msg = f"분석 결과 낙찰 {total_bids}건, 공고 {total_ntce}건이 확인되었습니다. "
+                answer_text = (
+                    stats_msg
+                    + answer_text.replace("데이터가 없습니다", "")
+                    .replace("관련 정보를 찾을 수 없습니다", "")
+                    .strip()
+                )
+            final_answer = _normalize_category_wording(answer_text, plan)
 
-        summary_data = (structured_data or {}).get("summary") or {}
-        # 키는 있는데 값이 None 인 경우가 있습니다. get 의 기본값은 그때 쓰이지
-        # 않으므로 None 이 그대로 비교로 들어가 TypeError 가 납니다.
-        total_bids = summary_data.get("total_bids") or 0
-        total_ntce = summary_data.get("announcement_count") or 0
-        if "데이터가 없습니다" in answer_text and (total_bids > 0 or total_ntce > 0):
-            stats_msg = f"분석 결과 낙찰 {total_bids}건, 공고 {total_ntce}건이 확인되었습니다. "
-            answer_text = (
-                stats_msg
-                + answer_text.replace("데이터가 없습니다", "")
-                .replace("관련 정보를 찾을 수 없습니다", "")
-                .strip()
-            )
-        return _normalize_category_wording(answer_text, plan)
+        if context_text:
+            check_numeric_omissions(context_text, final_answer, trace_id=trace_id)
+
+        return final_answer
 
     def get_answer_sync(
         self,

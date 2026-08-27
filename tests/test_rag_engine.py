@@ -635,12 +635,18 @@ def test_extract_numeric_context_values():
 
 
 def test_extract_numeric_context_values_empty_and_no_match():
-    """빈 컨텍스트나 라벨이 없는 컨텍스트에서는 빈 목록을 반환해야 합니다."""
-    assert extract_numeric_context_values("") == {"amounts": [], "rates": []}
-    assert extract_numeric_context_values("일반 텍스트만 있는 컨텍스트") == {
-        "amounts": [],
-        "rates": [],
-    }
+    """빈 컨텍스트나 라벨이 없는 컨텍스트에서는 빈 목록 및 빈 딕셔너리를 반환해야 합니다."""
+    empty_res = extract_numeric_context_values("")
+    assert empty_res["amounts"] == []
+    assert empty_res["rates"] == []
+    assert empty_res["amount_sources"] == {}
+    assert empty_res["rate_sources"] == {}
+
+    no_match_res = extract_numeric_context_values("일반 텍스트만 있는 컨텍스트")
+    assert no_match_res["amounts"] == []
+    assert no_match_res["rates"] == []
+    assert no_match_res["amount_sources"] == {}
+    assert no_match_res["rate_sources"] == {}
 
 
 def test_check_numeric_omissions_disabled_by_default(caplog):
