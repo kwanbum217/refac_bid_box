@@ -78,7 +78,7 @@ refusal 8/8 이 **3회 모두 동일**했습니다. 분산이 없습니다.
 
 | 과업 | 내용 |
 | --- | --- |
-| 검색 미스 3문항 조사 | q02, q21, q24 가 재색인 후에도 recall 0.0 이다. 근거 문서는 KB 에 있고 낙찰 정보도 담고 있으므로 검색 단계의 문제다 |
+| 검색 미스 3문항 조사 | **완료.** 원인은 두 가지다. q02·q24 는 제목 속 연도·월을 공고 게시 기간으로 오해석해 붙은 `date_from`/`date_to` 필터가 정답을 배제했고(필터 제거 시 둘 다 1위), q21 은 지역명만 다른 근사 중복 9건에 밀려 10위였다. 수정 방향 포함 상세는 [`retrieval_miss_investigation_20260827.md`](retrieval_miss_investigation_20260827.md) |
 | P50 기준 재정의 | 3,500ms 는 24문항 v4 fixture 기준이다. 32문항 blind fixture 에 그대로 적용할 근거가 없다 |
 | 수동 채점 축 | proposition 및 semantic_forbidden_claims 는 이번 범위 밖이다. 설계서 4.2 절 |
 
