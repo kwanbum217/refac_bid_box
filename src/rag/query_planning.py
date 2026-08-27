@@ -224,8 +224,13 @@ def _month_end(year: int, month: int) -> date:
     return date(year, month, calendar.monthrange(year, month)[1])
 
 
-def _parse_year_month_window(lowered: str) -> tuple[date, date] | None:
+def _parse_year_month_window(lowered: str) -> tuple[date, date, bool] | None:
     """일자 없이 연도와 월만 지정한 표현을 기간으로 바꿉니다.
+
+    반환값의 셋째 항목은 그 표현이 **명시적 기간 한정 표현**인지 여부입니다.
+    `2025년 1월부터 3월까지` 처럼 범위를 나타내는 조사가 붙으면 참이고,
+    `2025년` 이나 `2026년 9월분` 처럼 연월이 그냥 등장하면 거짓입니다.
+    후자는 공고명의 일부(사업연도, 대상월)일 수 있어 호출부가 다르게 다룹니다.
 
     지원하는 형태입니다.
 
@@ -247,20 +252,20 @@ def _parse_year_month_window(lowered: str) -> tuple[date, date] | None:
         y1, m1, y2, m2 = (int(g) for g in cross_year.groups())
         if 1 <= m1 <= 12 and 1 <= m2 <= 12:
             start, end = sorted((date(y1, m1, 1), date(y2, m2, 1)))
-            return start, _month_end(end.year, end.month)
+            return start, _month_end(end.year, end.month), True
 
     same_year = re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(?:부터|~|-)\s*(\d{1,2})\s*월", lowered)
     if same_year:
         year, m1, m2 = (int(g) for g in same_year.groups())
         if 1 <= m1 <= 12 and 1 <= m2 <= 12:
             first, second = sorted((m1, m2))
-            return date(year, first, 1), _month_end(year, second)
+            return date(year, first, 1), _month_end(year, second), True
 
     single_month = re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월", lowered)
     if single_month:
         year, month = (int(g) for g in single_month.groups())
         if 1 <= month <= 12:
-            return date(year, month, 1), _month_end(year, month)
+            return date(year, month, 1), _month_end(year, month), False
 
     # 연도만 말한 경우입니다. 네 자리 숫자면 무엇이든 연도로 보면 금액이나
     # 공고번호가 걸리므로 "년" 글자가 붙은 것만 인정합니다.
@@ -268,12 +273,18 @@ def _parse_year_month_window(lowered: str) -> tuple[date, date] | None:
     if year_only:
         year = int(year_only.group(1))
         if 1900 <= year <= 2999:
-            return date(year, 1, 1), date(year, 12, 31)
+            return date(year, 1, 1), date(year, 12, 31), False
 
     return None
 
 
-def _parse_time_window(query: str) -> tuple[str, str, str]:
+def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
+    """질의에서 기간을 뽑습니다.
+
+    넷째 반환값은 그 기간이 명시적 기간 한정 표현에서 나왔는지 여부입니다.
+    거짓이면 연월이 공고명 일부일 수 있으므로 호출부가 hard filter 승격을
+    보류할 수 있습니다.
+    """
     lowered = _query_lower(query)
     today = date.today()
 
@@ -289,7 +300,7 @@ def _parse_time_window(query: str) -> tuple[str, str, str]:
     if len(korean_dates) >= 2:
         start_date, end_date = sorted((korean_dates[0], korean_dates[1]))
         start, end = _to_iso(start_date, end_date)
-        return start, end, "recent"
+        return start, end, "recent", True
 
     iso_dates = [
         date(int(year), int(month), int(day))
@@ -298,57 +309,58 @@ def _parse_time_window(query: str) -> tuple[str, str, str]:
     if len(iso_dates) >= 2:
         start_date, end_date = sorted((iso_dates[0], iso_dates[1]))
         start, end = _to_iso(start_date, end_date)
-        return start, end, "recent"
+        return start, end, "recent", True
 
     # 일자 없이 연/월만 말하는 표현입니다. 위의 완전한 날짜 쌍보다 뒤에 두어야
     # "2026년 4월 19일부터 2026년 4월 25일까지" 가 연월 규칙에 먼저 잡히지 않습니다.
     year_month_window = _parse_year_month_window(lowered)
     if year_month_window is not None:
-        start, end = _to_iso(*year_month_window)
-        return start, end, "recent"
+        window_start, window_end, explicit_range = year_month_window
+        start, end = _to_iso(window_start, window_end)
+        return start, end, "recent", explicit_range
 
     if "오늘" in lowered:
         start, end = _to_iso(today, today)
-        return start, end, "today"
+        return start, end, "today", True
 
     if "어제" in lowered:
         yesterday = today - timedelta(days=1)
         start, end = _to_iso(yesterday, yesterday)
-        return start, end, "recent"
+        return start, end, "recent", True
 
     if "이번 주" in lowered:
         week_start = today - timedelta(days=today.weekday())
         start, end = _to_iso(week_start, today)
-        return start, end, "recent"
+        return start, end, "recent", True
 
     if "지난달" in lowered:
         first_this_month = today.replace(day=1)
         last_prev_month = first_this_month - timedelta(days=1)
         first_prev_month = last_prev_month.replace(day=1)
         start, end = _to_iso(first_prev_month, last_prev_month)
-        return start, end, "recent"
+        return start, end, "recent", True
 
     day_match = re.search(r"최근\s*(\d+)\s*일", lowered)
     if day_match:
         days = max(int(day_match.group(1)), 1)
         start, end = _to_iso(today - timedelta(days=days - 1), today)
-        return start, end, "recent"
+        return start, end, "recent", True
 
     month_match = re.search(r"최근\s*(\d+)\s*(?:개월|달)", lowered)
     if month_match:
         months = max(int(month_match.group(1)), 1)
         start, end = _to_iso(today - timedelta(days=(30 * months) - 1), today)
-        return start, end, "recent"
+        return start, end, "recent", True
 
     if "최근 한 달" in lowered or "최근 1달" in lowered or "최근 한달" in lowered:
         start, end = _to_iso(today - timedelta(days=29), today)
-        return start, end, "recent"
+        return start, end, "recent", True
 
     if "최근" in lowered or "요즘" in lowered:
         start, end = _to_iso(today - timedelta(days=6), today)
-        return start, end, "recent"
+        return start, end, "recent", True
 
-    return "", "", ""
+    return "", "", "", False
 
 
 def build_retrieval_plan(query: str) -> RetrievalPlan:
@@ -378,7 +390,22 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_sql = False
         use_vector = True
 
-    date_from, date_to, time_bias = _parse_time_window(normalized_query)
+    date_from, date_to, time_bias, explicit_range = _parse_time_window(normalized_query)
+
+    # 공고명에는 사업연도와 대상월이 흔히 들어갑니다. "2026년 9월분 학교급식물품"
+    # 의 9월은 급식 대상 월이지 공고 게시월이 아니고, "(긴급)2025년 조사료
+    # 지원사업" 의 2025년도 사업연도입니다. 이것을 게시 기간 hard filter 로
+    # 승격하면 정답 공고가 검색에서 배제됩니다. 2026-08-27 측정에서 q24 는
+    # 검색 결과가 0건이 됐고 q02 는 엉뚱한 연도의 공고를 가져왔으며, 필터만
+    # 제거하면 둘 다 1위로 적중했습니다
+    # (docs/analysis/retrieval_miss_investigation_20260827.md).
+    #
+    # 그래서 개체를 지목한 질의에서는 명시적 기간 한정 표현일 때만 필터로
+    # 씁니다. time_bias 는 그대로 두어 최신성 힌트는 유지합니다.
+    suppress_implicit_window = is_entity and not explicit_range
+    if suppress_implicit_window:
+        date_from, date_to = "", ""
+
     filters: dict[str, Any] = {}
     if date_from:
         filters["date_from"] = date_from
