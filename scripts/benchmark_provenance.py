@@ -79,7 +79,7 @@ PERF_CONFIG_ALLOWLIST: frozenset[str] = frozenset(
 # 다음 회차에서 fail-closed 로 거부되어 --repetitions 가 완주할 수 없습니다.
 MEASUREMENT_ARTIFACT_PREFIXES: tuple[str, ...] = ("data/benchmarks/",)
 
-# 주변 부하 규약 (docs/ops/latency_gate_protocol.md 5.3): 코어당 사용률 중앙값 30% 이하, 최대 50% 이하
+# 주변 부하 규약 (docs/ops/latency_gate_protocol.md 5.3): 정규화 1분 load average(%) 중앙값 30% 이하, 최대 50% 이하
 LOAD_PROTOCOL_MEDIAN_LIMIT_PERCENT = 30.0
 LOAD_PROTOCOL_MAX_LIMIT_PERCENT = 50.0
 
@@ -852,6 +852,8 @@ def verify_provenance_consistency(
 def single_host_load_sample(os_module: Any = None) -> dict[str, object]:
     """단일 호스트 부하 스냅샷을 측정합니다.
 
+    지표는 CPU 사용률(utilization)이 아니라 1분 load average를 논리 코어 수로 나눈
+    정규화 1분 load average(%)입니다.
     os.getloadavg가 없는 플랫폼(Windows 등)에서는 안전하게 None을 기록합니다.
     """
     target_os = os_module if os_module is not None else os
@@ -864,13 +866,16 @@ def single_host_load_sample(os_module: Any = None) -> dict[str, object]:
         except OSError:
             load_1m = None
 
-    per_core_percent: float | None = None
+    normalized_load_1m_percent: float | None = None
     if load_1m is not None and cpu_count:
-        per_core_percent = (load_1m / cpu_count) * 100.0
+        normalized_load_1m_percent = (load_1m / cpu_count) * 100.0
+    # per_core_percent 는 normalized_load_1m_percent 의 하위 호환 별칭이며 CPU 사용률이 아닙니다.
+    per_core_percent = normalized_load_1m_percent
     return {
         "observed_at_utc": datetime.now(UTC).isoformat(),
         "load_1m": load_1m,
         "cpu_count": cpu_count,
+        "normalized_load_1m_percent": normalized_load_1m_percent,
         "per_core_percent": per_core_percent,
     }
 
@@ -884,9 +889,11 @@ def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, objec
             load_values.append(float(load_1m))
     pct_values: list[float] = []
     for sample in samples:
-        per_core_percent = sample.get("per_core_percent")
-        if isinstance(per_core_percent, (int, float)):
-            pct_values.append(float(per_core_percent))
+        pct = sample.get("normalized_load_1m_percent")
+        if pct is None:
+            pct = sample.get("per_core_percent")
+        if isinstance(pct, (int, float)):
+            pct_values.append(float(pct))
 
     if load_values:
         load_stats: dict[str, float | None] = {
@@ -912,25 +919,31 @@ def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, objec
         "cpu_count": cpu_count,
         "samples": samples,
         "load_1m": load_stats,
-        "per_core_percent": pct_stats,
+        "normalized_load_1m_percent": pct_stats,
+        "per_core_percent": pct_stats,  # normalized_load_1m_percent 의 하위 호환 별칭 (CPU 사용률 아님)
     }
 
 
 def check_ambient_load_protocol(load_stats: Mapping[str, Any]) -> tuple[bool, dict[str, Any]]:
     """주변 부하 규약 준수 여부를 판정합니다.
 
-    load_stats 는 compute_host_load_stats() 산출물로, per_core_percent 의
-    median/max 가 코어당 사용률(%)입니다. 규약 임계(중앙값 30%, 최대 50%)를
-    초과하면 (False, detail) 를 반환합니다. 부하 표본이 없으면 False 를 반환합니다.
+    load_stats 는 compute_host_load_stats() 산출물로, normalized_load_1m_percent(또는
+    하위 호환 per_core_percent)의 median/max 가 정규화 1분 load average(%)입니다 (CPU 사용률 아님).
+    규약 임계(중앙값 30%, 최대 50%)를 초과하면 (False, detail) 를 반환합니다. 부하 표본이 없으면 False 를 반환합니다.
 
     Returns:
-        tuple[compliant, detail] - detail 에는 median_percent, max_percent,
+        tuple[compliant, detail] - detail 에는 normalized_load_median_percent,
+        normalized_load_max_percent, median_percent, max_percent,
         median_limit_percent, max_limit_percent 가 포함됩니다.
     """
-    pct = load_stats.get("per_core_percent") or {}
+    pct = load_stats.get("normalized_load_1m_percent")
+    if pct is None:
+        pct = load_stats.get("per_core_percent") or {}
     median_pct = pct.get("median")
     max_pct = pct.get("max")
     detail: dict[str, Any] = {
+        "normalized_load_median_percent": median_pct,
+        "normalized_load_max_percent": max_pct,
         "median_percent": median_pct,
         "max_percent": max_pct,
         "median_limit_percent": LOAD_PROTOCOL_MEDIAN_LIMIT_PERCENT,

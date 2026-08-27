@@ -395,6 +395,7 @@ class TestCrossPlatformHostLoad:
         sample = single_host_load_sample(os_module=MockOS)
         assert sample["cpu_count"] == 4
         assert sample["load_1m"] == 1.0
+        assert sample["normalized_load_1m_percent"] == 25.0
         assert sample["per_core_percent"] == 25.0
         assert "observed_at_utc" in sample
 
@@ -407,6 +408,7 @@ class TestCrossPlatformHostLoad:
         sample = single_host_load_sample(os_module=MockWindowsOS)
         assert sample["cpu_count"] == 8
         assert sample["load_1m"] is None
+        assert sample["normalized_load_1m_percent"] is None
         assert sample["per_core_percent"] is None
 
     def test_single_host_load_sample_getloadavg_oserror(self):
@@ -422,18 +424,41 @@ class TestCrossPlatformHostLoad:
         sample = single_host_load_sample(os_module=MockFailingOS)
         assert sample["cpu_count"] == 4
         assert sample["load_1m"] is None
+        assert sample["normalized_load_1m_percent"] is None
         assert sample["per_core_percent"] is None
 
     def test_compute_host_load_stats(self):
         samples = [
-            {"observed_at_utc": "t1", "load_1m": 1.0, "cpu_count": 4, "per_core_percent": 25.0},
+            {
+                "observed_at_utc": "t1",
+                "load_1m": 1.0,
+                "cpu_count": 4,
+                "normalized_load_1m_percent": 25.0,
+                "per_core_percent": 25.0,
+            },
             {"observed_at_utc": "t2", "load_1m": 2.0, "cpu_count": 4, "per_core_percent": 50.0},
-            {"observed_at_utc": "t3", "load_1m": 3.0, "cpu_count": 4, "per_core_percent": 75.0},
+            {
+                "observed_at_utc": "t3",
+                "load_1m": 3.0,
+                "cpu_count": 4,
+                "normalized_load_1m_percent": 75.0,
+                "per_core_percent": 75.0,
+            },
         ]
         stats = compute_host_load_stats(samples)
         assert stats["cpu_count"] == 4
         assert stats["load_1m"] == {"min": 1.0, "median": 2.0, "max": 3.0}
+        assert stats["normalized_load_1m_percent"] == {"min": 25.0, "median": 50.0, "max": 75.0}
         assert stats["per_core_percent"] == {"min": 25.0, "median": 50.0, "max": 75.0}
+
+    def test_compute_host_load_stats_legacy_per_core_percent_only(self):
+        legacy_samples = [
+            {"observed_at_utc": "t1", "load_1m": 1.0, "cpu_count": 4, "per_core_percent": 25.0},
+            {"observed_at_utc": "t2", "load_1m": 2.0, "cpu_count": 4, "per_core_percent": 50.0},
+        ]
+        stats = compute_host_load_stats(legacy_samples)
+        assert stats["normalized_load_1m_percent"] == {"min": 25.0, "median": 37.5, "max": 50.0}
+        assert stats["per_core_percent"] == {"min": 25.0, "median": 37.5, "max": 50.0}
 
     def test_host_load_metadata_with_custom_sampler(self):
         call_count = 0
@@ -445,6 +470,7 @@ class TestCrossPlatformHostLoad:
                 "observed_at_utc": f"t{call_count}",
                 "load_1m": float(call_count),
                 "cpu_count": 2,
+                "normalized_load_1m_percent": float(call_count) * 50.0,
                 "per_core_percent": float(call_count) * 50.0,
             }
 
@@ -453,6 +479,8 @@ class TestCrossPlatformHostLoad:
         assert len(meta["samples"]) == 3
         assert meta["load_1m"]["min"] == 1.0
         assert meta["load_1m"]["max"] == 3.0
+        assert meta["normalized_load_1m_percent"]["min"] == 50.0
+        assert meta["per_core_percent"]["min"] == 50.0
 
     def test_host_load_monitor_execution(self):
         monitor = HostLoadMonitor(interval_seconds=0.001, min_samples=3)
@@ -460,6 +488,96 @@ class TestCrossPlatformHostLoad:
         summary = monitor.stop()
         assert len(summary["samples"]) >= 3
         assert "min" in summary["load_1m"]
+        assert "min" in summary["normalized_load_1m_percent"]
+        assert "min" in summary["per_core_percent"]
+
+
+class TestAmbientLoadProtocol:
+    """주변 부하 규약(중앙값 30%, 최대 50%) 강제 검증."""
+
+    def test_compliant_load_passes(self):
+        stats = {
+            "normalized_load_1m_percent": {"min": 5.0, "median": 15.0, "max": 40.0},
+            "per_core_percent": {"min": 5.0, "median": 15.0, "max": 40.0},
+        }
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is True
+        assert detail["median_limit_percent"] == 30.0
+        assert detail["max_limit_percent"] == 50.0
+        assert detail["normalized_load_median_percent"] == 15.0
+        assert detail["normalized_load_max_percent"] == 40.0
+        assert detail["median_percent"] == 15.0
+        assert detail["max_percent"] == 40.0
+
+    def test_legacy_per_core_percent_only_passes(self):
+        # 구형 산출물(normalized_load_1m_percent 키 부재) 폴백 검증
+        stats = {
+            "per_core_percent": {"min": 5.0, "median": 15.0, "max": 40.0},
+        }
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is True
+        assert detail["median_percent"] == 15.0
+        assert detail["normalized_load_median_percent"] == 15.0
+
+    def test_median_over_30_fails(self):
+        stats = {"normalized_load_1m_percent": {"min": 5.0, "median": 31.0, "max": 45.0}}
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is False
+        assert detail["median_percent"] == 31.0
+        assert detail["normalized_load_median_percent"] == 31.0
+
+    def test_legacy_median_over_30_fails(self):
+        stats = {"per_core_percent": {"min": 5.0, "median": 31.0, "max": 45.0}}
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is False
+        assert detail["median_percent"] == 31.0
+        assert detail["normalized_load_median_percent"] == 31.0
+
+    def test_max_over_50_fails(self):
+        stats = {"normalized_load_1m_percent": {"min": 5.0, "median": 25.0, "max": 51.0}}
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is False
+        assert detail["max_percent"] == 51.0
+        assert detail["normalized_load_max_percent"] == 51.0
+
+    def test_legacy_max_over_50_fails(self):
+        stats = {"per_core_percent": {"min": 5.0, "median": 25.0, "max": 51.0}}
+        compliant, detail = check_ambient_load_protocol(stats)
+        assert compliant is False
+        assert detail["max_percent"] == 51.0
+        assert detail["normalized_load_max_percent"] == 51.0
+
+    def test_unavailable_load_stats_fails(self):
+        compliant, detail = check_ambient_load_protocol({})
+        assert compliant is False
+        assert detail["reason"] == "load_stats_unavailable"
+
+    def test_build_load_protocol_record_bypass_not_canonical(self):
+        record = build_load_protocol_record(
+            start_compliant=False,
+            start_detail={"median_percent": 50.0, "max_percent": 75.0},
+            end_compliant=False,
+            end_detail={"median_percent": 50.0, "max_percent": 75.0},
+            strict=True,
+            allow_violation=True,
+        )
+        assert record["enforced"] is False
+        assert record["bypassed"] is True
+        assert record["compliant"] is False
+        assert record["canonical_evidence"] is False
+
+    def test_build_load_protocol_record_strict_compliant_is_canonical(self):
+        record = build_load_protocol_record(
+            start_compliant=True,
+            start_detail={"median_percent": 10.0, "max_percent": 20.0},
+            end_compliant=True,
+            end_detail={"median_percent": 10.0, "max_percent": 20.0},
+            strict=True,
+            allow_violation=False,
+        )
+        assert record["enforced"] is True
+        assert record["bypassed"] is False
+        assert record["canonical_evidence"] is True
 
 
 class TestSubprocessSafety:
@@ -663,63 +781,6 @@ class TestRedisResolutionFailClosed:
         monkeypatch.setattr(benchmark_provenance, "_command_output", fake_cmd)
         with pytest.raises(BuildProvenanceError, match="image_id"):
             resolve_redis_container(redis_url="redis://localhost:6379/0", strict=True)
-
-
-class TestAmbientLoadProtocol:
-    """주변 부하 규약(중앙값 30%, 최대 50%) 강제 검증."""
-
-    def test_compliant_load_passes(self):
-        stats = {
-            "per_core_percent": {"min": 5.0, "median": 15.0, "max": 40.0},
-        }
-        compliant, detail = check_ambient_load_protocol(stats)
-        assert compliant is True
-        assert detail["median_limit_percent"] == 30.0
-        assert detail["max_limit_percent"] == 50.0
-
-    def test_median_over_30_fails(self):
-        stats = {"per_core_percent": {"min": 5.0, "median": 31.0, "max": 45.0}}
-        compliant, detail = check_ambient_load_protocol(stats)
-        assert compliant is False
-        assert detail["median_percent"] == 31.0
-
-    def test_max_over_50_fails(self):
-        stats = {"per_core_percent": {"min": 5.0, "median": 25.0, "max": 51.0}}
-        compliant, detail = check_ambient_load_protocol(stats)
-        assert compliant is False
-        assert detail["max_percent"] == 51.0
-
-    def test_unavailable_load_stats_fails(self):
-        compliant, detail = check_ambient_load_protocol({})
-        assert compliant is False
-        assert detail["reason"] == "load_stats_unavailable"
-
-    def test_build_load_protocol_record_bypass_not_canonical(self):
-        record = build_load_protocol_record(
-            start_compliant=False,
-            start_detail={"median_percent": 50.0, "max_percent": 75.0},
-            end_compliant=False,
-            end_detail={"median_percent": 50.0, "max_percent": 75.0},
-            strict=True,
-            allow_violation=True,
-        )
-        assert record["enforced"] is False
-        assert record["bypassed"] is True
-        assert record["compliant"] is False
-        assert record["canonical_evidence"] is False
-
-    def test_build_load_protocol_record_strict_compliant_is_canonical(self):
-        record = build_load_protocol_record(
-            start_compliant=True,
-            start_detail={"median_percent": 10.0, "max_percent": 20.0},
-            end_compliant=True,
-            end_detail={"median_percent": 10.0, "max_percent": 20.0},
-            strict=True,
-            allow_violation=False,
-        )
-        assert record["enforced"] is True
-        assert record["bypassed"] is False
-        assert record["canonical_evidence"] is True
 
 
 class TestBaselineSummaryFormula:
