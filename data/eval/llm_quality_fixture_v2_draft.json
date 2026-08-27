@@ -1,0 +1,1788 @@
+{
+  "version": "2.0.0",
+  "name": "llm_quality_fixture_v2_draft",
+  "description": "gemma4:e4b 대 gemma4:e2b 일반화 능력 측정을 위한 blind fixture v2 초안 (32문항: 답변가능 24 + 거절 8)",
+  "created_at": "2026-08-27",
+  "total_items": 32,
+  "min_context_sufficient_required": 15,
+  "context_sufficient_count": 24,
+  "refusal_expected_count": 8,
+  "items": [
+    {
+      "id": "q01",
+      "question": "합포고등학교 교실천장 교체 전기(통신,소방)공사 설계용역 수의계약 안내 공고의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169971"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682379 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682379",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682379 명시"
+        },
+        {
+          "statement": "수요기관은 경상남도교육청 경상남도창원교육지원청 임",
+          "fact_type": "proposition",
+          "expected_value": "경상남도교육청 경상남도창원교육지원청",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상남도교육청 경상남도창원교육지원청 명시"
+        },
+        {
+          "statement": "낙찰업체는 에이스이엔지 임",
+          "fact_type": "proposition",
+          "expected_value": "에이스이엔지",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 에이스이엔지 명시"
+        },
+        {
+          "statement": "낙찰금액은 18,523,500원 임",
+          "fact_type": "numeric",
+          "expected_value": "18523500",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 18,523,500원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.1010% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.1010",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.1010%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682379), 수요기관(경상남도교육청 경상남도창원교육지원청), 낙찰업체(에이스이엔지), 낙찰금액(18,523,500원) 및 낙찰률(90.1010%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q02",
+      "question": "(긴급)2025년 조사료 경영체 기계장비 지원사업(굴착기) 구매의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10168839"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01681645 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01681645",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01681645 명시"
+        },
+        {
+          "statement": "수요기관은 동진강낙농축산업협동조합 임",
+          "fact_type": "proposition",
+          "expected_value": "동진강낙농축산업협동조합",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 동진강낙농축산업협동조합 명시"
+        },
+        {
+          "statement": "낙찰업체는 에이치디건설기계 주식회사 임",
+          "fact_type": "proposition",
+          "expected_value": "에이치디건설기계 주식회사",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 에이치디건설기계 주식회사 명시"
+        },
+        {
+          "statement": "낙찰금액은 169,079,670원 임",
+          "fact_type": "numeric",
+          "expected_value": "169079670",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 169,079,670원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 96.2860% 임",
+          "fact_type": "numeric",
+          "expected_value": "96.2860",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 96.2860%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01681645), 수요기관(동진강낙농축산업협동조합), 낙찰업체(에이치디건설기계 주식회사), 낙찰금액(169,079,670원) 및 낙찰률(96.2860%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q03",
+      "question": "광주시 소하천정비종합계획 재수립 용역(봉골천 등 33개소)(PQ 후 가격입찰)의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10153847"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01530400 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01530400",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01530400 명시"
+        },
+        {
+          "statement": "수요기관은 경기도 광주시 임",
+          "fact_type": "proposition",
+          "expected_value": "경기도 광주시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경기도 광주시 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 경원엔지니어링건축사사무소 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 경원엔지니어링건축사사무소",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 경원엔지니어링건축사사무소 명시"
+        },
+        {
+          "statement": "낙찰금액은 1,326,144,400원 임",
+          "fact_type": "numeric",
+          "expected_value": "1326144400",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 1,326,144,400원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 80.8660% 임",
+          "fact_type": "numeric",
+          "expected_value": "80.8660",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 80.8660%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01530400), 수요기관(경기도 광주시), 낙찰업체(주식회사 경원엔지니어링건축사사무소), 낙찰금액(1,326,144,400원) 및 낙찰률(80.8660%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q04",
+      "question": "2026년 은행나무 열매 조기채취 공사(2권역)의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169443"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682322 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682322",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682322 명시"
+        },
+        {
+          "statement": "수요기관은 경기도 안산시 상록구 임",
+          "fact_type": "proposition",
+          "expected_value": "경기도 안산시 상록구",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경기도 안산시 상록구 명시"
+        },
+        {
+          "statement": "낙찰업체는 안산조경건설(주) 임",
+          "fact_type": "proposition",
+          "expected_value": "안산조경건설(주)",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 안산조경건설(주) 명시"
+        },
+        {
+          "statement": "낙찰금액은 32,710,613원 임",
+          "fact_type": "numeric",
+          "expected_value": "32710613",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 32,710,613원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.1570% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.1570",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.1570%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682322), 수요기관(경기도 안산시 상록구), 낙찰업체(안산조경건설(주)), 낙찰금액(32,710,613원) 및 낙찰률(90.1570%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q05",
+      "question": "건축물대장 전면 재정비용역의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10154066"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01667084 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01667084",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01667084 명시"
+        },
+        {
+          "statement": "수요기관은 인천국제공항공사 임",
+          "fact_type": "proposition",
+          "expected_value": "인천국제공항공사",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 인천국제공항공사 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 한국종합기술 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 한국종합기술",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 한국종합기술 명시"
+        },
+        {
+          "statement": "낙찰금액은 537,000,000원 임",
+          "fact_type": "numeric",
+          "expected_value": "537000000",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 537,000,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 96.4140% 임",
+          "fact_type": "numeric",
+          "expected_value": "96.4140",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 96.4140%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01667084), 수요기관(인천국제공항공사), 낙찰업체(주식회사 한국종합기술), 낙찰금액(537,000,000원) 및 낙찰률(96.4140%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q06",
+      "question": "[P.Q 후 가격입찰] 사상산업단지 완충저류시설 설치사업 건설사업관리용역의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10154623"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01674723 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01674723",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01674723 명시"
+        },
+        {
+          "statement": "수요기관은 부산광역시 건설본부 임",
+          "fact_type": "proposition",
+          "expected_value": "부산광역시 건설본부",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 부산광역시 건설본부 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 수성엔지니어링 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 수성엔지니어링",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 수성엔지니어링 명시"
+        },
+        {
+          "statement": "낙찰금액은 2,770,149,000원 임",
+          "fact_type": "numeric",
+          "expected_value": "2770149000",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 2,770,149,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 80.0860% 임",
+          "fact_type": "numeric",
+          "expected_value": "80.0860",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 80.0860%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01674723), 수요기관(부산광역시 건설본부), 낙찰업체(주식회사 수성엔지니어링), 낙찰금액(2,770,149,000원) 및 낙찰률(80.0860%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q07",
+      "question": "부림봉수농공단지 복합문화센터 내 도로정비공사의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169454"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682381 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682381",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682381 명시"
+        },
+        {
+          "statement": "수요기관은 경상남도 의령군 임",
+          "fact_type": "proposition",
+          "expected_value": "경상남도 의령군",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상남도 의령군 명시"
+        },
+        {
+          "statement": "낙찰업체는 (주)다올건설 임",
+          "fact_type": "proposition",
+          "expected_value": "(주)다올건설",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 (주)다올건설 명시"
+        },
+        {
+          "statement": "낙찰금액은 199,712,720원 임",
+          "fact_type": "numeric",
+          "expected_value": "199712720",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 199,712,720원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.3600% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.3600",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.3600%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682381), 수요기관(경상남도 의령군), 낙찰업체((주)다올건설), 낙찰금액(199,712,720원) 및 낙찰률(90.3600%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q08",
+      "question": "서울회생법원 전산소모품(토너 및 드럼) 단가계약 입찰 공고의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10168836"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682267 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682267",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682267 명시"
+        },
+        {
+          "statement": "수요기관은 대법원 서울회생법원 임",
+          "fact_type": "proposition",
+          "expected_value": "대법원 서울회생법원",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 대법원 서울회생법원 명시"
+        },
+        {
+          "statement": "낙찰업체는 더블제이솔루션 임",
+          "fact_type": "proposition",
+          "expected_value": "더블제이솔루션",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 더블제이솔루션 명시"
+        },
+        {
+          "statement": "낙찰금액은 4,508,600원 임",
+          "fact_type": "numeric",
+          "expected_value": "4508600",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 4,508,600원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 86.2950% 임",
+          "fact_type": "numeric",
+          "expected_value": "86.2950",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 86.2950%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682267), 수요기관(대법원 서울회생법원), 낙찰업체(더블제이솔루션), 낙찰금액(4,508,600원) 및 낙찰률(86.2950%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q09",
+      "question": "사업수행능력평가(P.Q) 후 가격입찰(지명경쟁) 공고 [정밀조사(1차) 긴급구간(4등급) 하수관로 정비공사(원도심) 기본 및 실시설계용역]의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10154876"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01680718 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01680718",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01680718 명시"
+        },
+        {
+          "statement": "수요기관은 인천광역시 제물포구 임",
+          "fact_type": "proposition",
+          "expected_value": "인천광역시 제물포구",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 인천광역시 제물포구 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 유신 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 유신",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 유신 명시"
+        },
+        {
+          "statement": "낙찰금액은 595,073,000원 임",
+          "fact_type": "numeric",
+          "expected_value": "595073000",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 595,073,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 86.3790% 임",
+          "fact_type": "numeric",
+          "expected_value": "86.3790",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 86.3790%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01680718), 수요기관(인천광역시 제물포구), 낙찰업체(주식회사 유신), 낙찰금액(595,073,000원) 및 낙찰률(86.3790%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q10",
+      "question": "창원중앙여자고등학교 화장실 보수 및 승강기 설치 전기(통신, 소방)공사 설계용역 수의계약 안내 공고의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169970"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682376 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682376",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682376 명시"
+        },
+        {
+          "statement": "수요기관은 경상남도교육청 경상남도창원교육지원청 임",
+          "fact_type": "proposition",
+          "expected_value": "경상남도교육청 경상남도창원교육지원청",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상남도교육청 경상남도창원교육지원청 명시"
+        },
+        {
+          "statement": "낙찰업체는 로건 주식회사 임",
+          "fact_type": "proposition",
+          "expected_value": "로건 주식회사",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 로건 주식회사 명시"
+        },
+        {
+          "statement": "낙찰금액은 7,688,800원 임",
+          "fact_type": "numeric",
+          "expected_value": "7688800",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 7,688,800원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.0210% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.0210",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.0210%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682376), 수요기관(경상남도교육청 경상남도창원교육지원청), 낙찰업체(로건 주식회사), 낙찰금액(7,688,800원) 및 낙찰률(90.0210%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q11",
+      "question": "창원중앙고등학교 외 1교(창원신월초) 교실천장교체 및 화장실 보수 전기(통신, 소방)공사 설계용역 수의계약 안내 공고의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169969"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682372 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682372",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682372 명시"
+        },
+        {
+          "statement": "수요기관은 경상남도교육청 경상남도창원교육지원청 임",
+          "fact_type": "proposition",
+          "expected_value": "경상남도교육청 경상남도창원교육지원청",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상남도교육청 경상남도창원교육지원청 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 신흥기술단 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 신흥기술단",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 신흥기술단 명시"
+        },
+        {
+          "statement": "낙찰금액은 19,341,200원 임",
+          "fact_type": "numeric",
+          "expected_value": "19341200",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 19,341,200원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.2800% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.2800",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.2800%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682372), 수요기관(경상남도교육청 경상남도창원교육지원청), 낙찰업체(주식회사 신흥기술단), 낙찰금액(19,341,200원) 및 낙찰률(90.2800%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q12",
+      "question": "태봉고등학교 급식조리실 환기개선 전기(소방)공사 설계용역 수의계약 안내 공고의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169968"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682367 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682367",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682367 명시"
+        },
+        {
+          "statement": "수요기관은 경상남도교육청 경상남도창원교육지원청 임",
+          "fact_type": "proposition",
+          "expected_value": "경상남도교육청 경상남도창원교육지원청",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상남도교육청 경상남도창원교육지원청 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 유일테크엔지니어링 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 유일테크엔지니어링",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 유일테크엔지니어링 명시"
+        },
+        {
+          "statement": "낙찰금액은 5,643,685원 임",
+          "fact_type": "numeric",
+          "expected_value": "5643685",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 5,643,685원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.5490% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.5490",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.5490%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682367), 수요기관(경상남도교육청 경상남도창원교육지원청), 낙찰업체(주식회사 유일테크엔지니어링), 낙찰금액(5,643,685원) 및 낙찰률(90.5490%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q13",
+      "question": "마산내서여자고등학교 본관동 화장실 전면보수 전기(통신,소방)공사 설계용역 수의계약 안내 공고의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169967"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682361 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682361",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682361 명시"
+        },
+        {
+          "statement": "수요기관은 경상남도교육청 경상남도창원교육지원청 임",
+          "fact_type": "proposition",
+          "expected_value": "경상남도교육청 경상남도창원교육지원청",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상남도교육청 경상남도창원교육지원청 명시"
+        },
+        {
+          "statement": "낙찰업체는 코드엔지니어링 임",
+          "fact_type": "proposition",
+          "expected_value": "코드엔지니어링",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 코드엔지니어링 명시"
+        },
+        {
+          "statement": "낙찰금액은 7,557,520원 임",
+          "fact_type": "numeric",
+          "expected_value": "7557520",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 7,557,520원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.0920% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.0920",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.0920%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682361), 수요기관(경상남도교육청 경상남도창원교육지원청), 낙찰업체(코드엔지니어링), 낙찰금액(7,557,520원) 및 낙찰률(90.0920%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q14",
+      "question": "강릉 스포츠파크 조성사업 재해영향성검토 용역의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169965"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682329 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682329",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682329 명시"
+        },
+        {
+          "statement": "수요기관은 강원특별자치도 강릉시 임",
+          "fact_type": "proposition",
+          "expected_value": "강원특별자치도 강릉시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 강원특별자치도 강릉시 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 화신엔지니어링 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 화신엔지니어링",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 화신엔지니어링 명시"
+        },
+        {
+          "statement": "낙찰금액은 35,150,000원 임",
+          "fact_type": "numeric",
+          "expected_value": "35150000",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 35,150,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 88.0510% 임",
+          "fact_type": "numeric",
+          "expected_value": "88.0510",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 88.0510%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682329), 수요기관(강원특별자치도 강릉시), 낙찰업체(주식회사 화신엔지니어링), 낙찰금액(35,150,000원) 및 낙찰률(88.0510%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q15",
+      "question": "제71주년 강릉 시민의 날 기념행사 대행 용역의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169812"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682383 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682383",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682383 명시"
+        },
+        {
+          "statement": "수요기관은 강원특별자치도 강릉시 임",
+          "fact_type": "proposition",
+          "expected_value": "강원특별자치도 강릉시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 강원특별자치도 강릉시 명시"
+        },
+        {
+          "statement": "낙찰업체는 스페이스제이 임",
+          "fact_type": "proposition",
+          "expected_value": "스페이스제이",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 스페이스제이 명시"
+        },
+        {
+          "statement": "낙찰금액은 48,500,000원 임",
+          "fact_type": "numeric",
+          "expected_value": "48500000",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 48,500,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 89.9810% 임",
+          "fact_type": "numeric",
+          "expected_value": "89.9810",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 89.9810%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682383), 수요기관(강원특별자치도 강릉시), 낙찰업체(스페이스제이), 낙찰금액(48,500,000원) 및 낙찰률(89.9810%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q16",
+      "question": "국도46호선 고성 간성 광산2 길어깨 및 배수시설 정비공사 폐기물처리용역의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169806"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682250 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682250",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682250 명시"
+        },
+        {
+          "statement": "수요기관은 국토교통부 원주지방국토관리청 강릉국토관리사무소 임",
+          "fact_type": "proposition",
+          "expected_value": "국토교통부 원주지방국토관리청 강릉국토관리사무소",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 국토교통부 원주지방국토관리청 강릉국토관리사무소 명시"
+        },
+        {
+          "statement": "낙찰업체는 (주)진우산업 임",
+          "fact_type": "proposition",
+          "expected_value": "(주)진우산업",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 (주)진우산업 명시"
+        },
+        {
+          "statement": "낙찰금액은 5,131,000원 임",
+          "fact_type": "numeric",
+          "expected_value": "5131000",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 5,131,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 87.8000% 임",
+          "fact_type": "numeric",
+          "expected_value": "87.8000",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 87.8000%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682250), 수요기관(국토교통부 원주지방국토관리청 강릉국토관리사무소), 낙찰업체((주)진우산업), 낙찰금액(5,131,000원) 및 낙찰률(87.8000%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q17",
+      "question": "광석소로(3-52호선) 가옥 철거 폐기물처리 용역의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169804"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682337 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682337",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682337 명시"
+        },
+        {
+          "statement": "수요기관은 경상북도 안동시 임",
+          "fact_type": "proposition",
+          "expected_value": "경상북도 안동시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상북도 안동시 명시"
+        },
+        {
+          "statement": "낙찰업체는 웅부환경 주식회사 임",
+          "fact_type": "proposition",
+          "expected_value": "웅부환경 주식회사",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 웅부환경 주식회사 명시"
+        },
+        {
+          "statement": "낙찰금액은 21,668,990원 임",
+          "fact_type": "numeric",
+          "expected_value": "21668990",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 21,668,990원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 88.3850% 임",
+          "fact_type": "numeric",
+          "expected_value": "88.3850",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 88.3850%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682337), 수요기관(경상북도 안동시), 낙찰업체(웅부환경 주식회사), 낙찰금액(21,668,990원) 및 낙찰률(88.3850%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q18",
+      "question": "2026년 국토교통부 빈집사업 건설폐기물 처리 용역의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169802"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682328 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682328",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682328 명시"
+        },
+        {
+          "statement": "수요기관은 경상북도 안동시 임",
+          "fact_type": "proposition",
+          "expected_value": "경상북도 안동시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상북도 안동시 명시"
+        },
+        {
+          "statement": "낙찰업체는 웅부환경 주식회사 임",
+          "fact_type": "proposition",
+          "expected_value": "웅부환경 주식회사",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 웅부환경 주식회사 명시"
+        },
+        {
+          "statement": "낙찰금액은 32,288,990원 임",
+          "fact_type": "numeric",
+          "expected_value": "32288990",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 32,288,990원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 88.7880% 임",
+          "fact_type": "numeric",
+          "expected_value": "88.7880",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 88.7880%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682328), 수요기관(경상북도 안동시), 낙찰업체(웅부환경 주식회사), 낙찰금액(32,288,990원) 및 낙찰률(88.7880%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q19",
+      "question": "은용지구 농업기반시설(관정) 설치공사의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169453"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682390 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682390",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682390 명시"
+        },
+        {
+          "statement": "수요기관은 세종특별자치시 임",
+          "fact_type": "proposition",
+          "expected_value": "세종특별자치시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 세종특별자치시 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 은혜건설 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 은혜건설",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 은혜건설 명시"
+        },
+        {
+          "statement": "낙찰금액은 27,909,000원 임",
+          "fact_type": "numeric",
+          "expected_value": "27909000",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 27,909,000원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.2670% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.2670",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.2670%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682390), 수요기관(세종특별자치시), 낙찰업체(주식회사 은혜건설), 낙찰금액(27,909,000원) 및 낙찰률(90.2670%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q20",
+      "question": "순천만 큰고니습지 서식지 확장 공사의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169451"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682386 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682386",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682386 명시"
+        },
+        {
+          "statement": "수요기관은 전남광주통합특별시 순천시 임",
+          "fact_type": "proposition",
+          "expected_value": "전남광주통합특별시 순천시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 전남광주통합특별시 순천시 명시"
+        },
+        {
+          "statement": "낙찰업체는 예성건설(주) 임",
+          "fact_type": "proposition",
+          "expected_value": "예성건설(주)",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 예성건설(주) 명시"
+        },
+        {
+          "statement": "낙찰금액은 47,048,800원 임",
+          "fact_type": "numeric",
+          "expected_value": "47048800",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 47,048,800원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.2280% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.2280",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.2280%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682386), 수요기관(전남광주통합특별시 순천시), 낙찰업체(예성건설(주)), 낙찰금액(47,048,800원) 및 낙찰률(90.2280%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q21",
+      "question": "2026년 조림지 풀베기사업 2차(동부지구)의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169448"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682348 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682348",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682348 명시"
+        },
+        {
+          "statement": "수요기관은 경상남도 거제시 임",
+          "fact_type": "proposition",
+          "expected_value": "경상남도 거제시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상남도 거제시 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 백화 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 백화",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 백화 명시"
+        },
+        {
+          "statement": "낙찰금액은 48,445,040원 임",
+          "fact_type": "numeric",
+          "expected_value": "48445040",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 48,445,040원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.0150% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.0150",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.0150%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682348), 수요기관(경상남도 거제시), 낙찰업체(주식회사 백화), 낙찰금액(48,445,040원) 및 낙찰률(90.0150%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q22",
+      "question": "2026년 조림지 풀베기사업 2차(거제사등지구)의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169447"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682345 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682345",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682345 명시"
+        },
+        {
+          "statement": "수요기관은 경상남도 거제시 임",
+          "fact_type": "proposition",
+          "expected_value": "경상남도 거제시",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 경상남도 거제시 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사 석송 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사 석송",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사 석송 명시"
+        },
+        {
+          "statement": "낙찰금액은 46,049,980원 임",
+          "fact_type": "numeric",
+          "expected_value": "46049980",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 46,049,980원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 89.8850% 임",
+          "fact_type": "numeric",
+          "expected_value": "89.8850",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 89.8850%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682345), 수요기관(경상남도 거제시), 낙찰업체(주식회사 석송), 낙찰금액(46,049,980원) 및 낙찰률(89.8850%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q23",
+      "question": "내와동산 소망재활원 소방설비공사의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10169445"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682094 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682094",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682094 명시"
+        },
+        {
+          "statement": "수요기관은 내와동산소망재활원 임",
+          "fact_type": "proposition",
+          "expected_value": "내와동산소망재활원",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 내와동산소망재활원 명시"
+        },
+        {
+          "statement": "낙찰업체는 (주)대한엔지니어링 임",
+          "fact_type": "proposition",
+          "expected_value": "(주)대한엔지니어링",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 (주)대한엔지니어링 명시"
+        },
+        {
+          "statement": "낙찰금액은 84,441,443원 임",
+          "fact_type": "numeric",
+          "expected_value": "84441443",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 84,441,443원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 90.1800% 임",
+          "fact_type": "numeric",
+          "expected_value": "90.1800",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 90.1800%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682094), 수요기관(내와동산소망재활원), 낙찰업체((주)대한엔지니어링), 낙찰금액(84,441,443원) 및 낙찰률(90.1800%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q24",
+      "question": "2026년 9월분 충주중앙탑초 외4개교 학교급식물품(부식) 공동구매 입찰 공고의 공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘",
+      "context_sufficient": true,
+      "expected_evidence_ids": [
+        "bid_10168850"
+      ],
+      "expected_facts": [
+        {
+          "statement": "공고번호는 R26BK01682391 임",
+          "fact_type": "proposition",
+          "expected_value": "R26BK01682391",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "공고번호 R26BK01682391 명시"
+        },
+        {
+          "statement": "수요기관은 충청북도교육청 충청북도충주교육지원청 충주중앙탑초등학교 임",
+          "fact_type": "proposition",
+          "expected_value": "충청북도교육청 충청북도충주교육지원청 충주중앙탑초등학교",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수요기관 충청북도교육청 충청북도충주교육지원청 충주중앙탑초등학교 명시"
+        },
+        {
+          "statement": "낙찰업체는 주식회사푸른누리 임",
+          "fact_type": "proposition",
+          "expected_value": "주식회사푸른누리",
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰업체 주식회사푸른누리 명시"
+        },
+        {
+          "statement": "낙찰금액은 137,021,800원 임",
+          "fact_type": "numeric",
+          "expected_value": "137021800",
+          "unit": "원",
+          "tolerance": 1,
+          "verification_criterion": "낙찰금액 137,021,800원(±1원) 명시"
+        },
+        {
+          "statement": "낙찰률은 97.4060% 임",
+          "fact_type": "numeric",
+          "expected_value": "97.4060",
+          "unit": "%",
+          "tolerance": 0.01,
+          "verification_criterion": "낙찰률 97.4060%(±0.01%p) 명시"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "citation_required": true,
+      "refusal_expected": false,
+      "numeric_tolerance": 0.01,
+      "scoring_rubric": "공고번호(R26BK01682391), 수요기관(충청북도교육청 충청북도충주교육지원청 충주중앙탑초등학교), 낙찰업체(주식회사푸른누리), 낙찰금액(137,021,800원) 및 낙찰률(97.4060%)이 정확하면 10점 만점"
+    },
+    {
+      "id": "q25",
+      "question": "2029년 세종특별자치시 스마트시티 5단계 기반시설 구축공사의 최종 낙찰자와 낙찰금액을 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "2029년 미래 시점 사업으로 DB 및 지식베이스에 해당 공고 및 낙찰 정보가 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "미래 시점 정보 부재 명시 및 환각 없이 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "미래 데이터 부재를 명시하고 답변을 거절하면 10점. 가상 낙찰자를 지어내면 0점"
+    },
+    {
+      "id": "q26",
+      "question": "2030년 부산항 신항 북컨테이너 2단계 인입철도 건설공사의 사전 확정 예정가격과 낙찰률을 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "미래 시점 공고의 예정가격과 낙찰률은 현재 시점에서 확정/예측할 수 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "미래 예정가격/낙찰률 예측 불가 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "미래 예정가격 예측 불가 명시 및 거절 시 10점. 임의 수치를 제시하면 0점"
+    },
+    {
+      "id": "q27",
+      "question": "싱가포르 정부조달청(GeBIZ) 2026년도 국가 디지털 신분증 시스템 고도화 사업의 입찰 참여 기업과 최종 낙찰금액을 분석해줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "국내 공공조달 DB 및 지식베이스 수집 범위를 벗어난 해외 조달 정보이므로 제공 불가함을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "수집 범위 외 해외 조달 데이터 부재 명시 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "해외 조달 데이터 부재 명시 및 거절 시 10점. 가상 해외 낙찰 통계를 창작하면 0점"
+    },
+    {
+      "id": "q28",
+      "question": "2026년 11월 20일 개찰 예정인 서울특별시 한강 수상교통 인프라 조성사업(공고번호 R26BK02999999-001)의 1순위 낙찰예정자를 미리 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "개찰 전 미개찰 공고의 낙찰 결과는 확정되지 않았으므로 제공할 수 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "미개찰 공고의 낙찰 결과 제공 불가 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "개찰 전 낙찰 정보 제공 불가 및 거절 명시 시 10점"
+    },
+    {
+      "id": "q29",
+      "question": "내일 오후 2시에 개찰 예정인 한국도로공사 스마트 고속도로 통신망 구축사업의 최종 낙찰업체와 낙찰금액을 미리 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "개찰 전 미확정 정보는 확인할 수 없음을 명시하고 답변을 정중히 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "개찰 전 미확정 정보 제공 불가 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "개찰 전 미확정 정보 제공 불가 명시 시 10점"
+    },
+    {
+      "id": "q30",
+      "question": "한국수자원공사 2026년 광역상수도 정밀안전진단 용역의 입찰 집행관별 내부 기술평가 채점표 및 비공개 심사위원 명단을 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "공개되지 않는 내부 비공개 심사 정보(위원별 채점표, 심사위원 명단)는 제공할 수 없음을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "비공개 내부 정보 제공 불가 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "비공개 내부 정보 제공 불가 명시 및 거절 시 10점"
+    },
+    {
+      "id": "q31",
+      "question": "2025년 대전광역시 유성구 복합문화센터 신축공사(공고번호 R25BK01999999-001) 공고만 등록되고 낙찰 결과가 미등록된 건의 낙찰업체와 금액을 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "공고만 존재하고 낙찰 결과가 없는 건은 낙찰업체 및 금액 정보가 부재함을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "낙찰 결과 미등록 건의 정보 부재 명시 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "결과 부재 명시 및 거절 시 10점"
+    },
+    {
+      "id": "q32",
+      "question": "아틀란티스 해저도시 개발공사 2026년 심해 열수구 에너지 발전시설 건설공사의 낙찰업체와 최종 낙찰률을 알려줘",
+      "context_sufficient": false,
+      "expected_evidence_ids": [],
+      "expected_facts": [
+        {
+          "statement": "국내 조달청 등록 수요기관이 아니며 DB에 존재하지 않는 기관/공고이므로 제공 불가함을 명시하고 거절",
+          "fact_type": "refusal",
+          "expected_value": null,
+          "unit": null,
+          "tolerance": null,
+          "verification_criterion": "미등록 가상 기관 및 공고 정보 부재 명시 및 거절"
+        }
+      ],
+      "forbidden_literals": [
+        "Servc",
+        "Thng",
+        "Cnstwk",
+        "Frgcpt"
+      ],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "citation_required": false,
+      "refusal_expected": true,
+      "numeric_tolerance": null,
+      "scoring_rubric": "미등록 기관 및 데이터 부재 명시 시 10점"
+    }
+  ]
+}
