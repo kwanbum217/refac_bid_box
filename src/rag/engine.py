@@ -56,6 +56,7 @@ from src.rag.query_planning import (
 from src.rag.schemas import (
     DEFAULT_VECTOR_TOP_K,
     AnswerBundle,
+    EvidenceItem,
     Provenance,
     RetrievalPlan,
 )
@@ -255,12 +256,116 @@ def extract_numeric_context_values(context_text: str) -> dict[str, Any]:
     }
 
 
+def _extract_target_identifiers_from_plan(plan: RetrievalPlan | None) -> set[str]:
+    """RetrievalPlan 에서 질의가 지목하는 특정 공고 식별자나 공고명을 추출합니다."""
+    if plan is None:
+        return set()
+    targets: set[str] = set()
+
+    # 1. filters 내 공고 식별자/명칭 추출
+    if plan.filters:
+        for key in (
+            "bid_ntce_no",
+            "announcement_no",
+            "announcement_id",
+            "bid_ntce_nm",
+            "announcement_name",
+        ):
+            val = plan.filters.get(key)
+            if val and isinstance(val, str) and val.strip():
+                targets.add(val.strip().lower())
+
+    # 2. semantic_query 에서 공고번호 패턴 및 인용구 추출
+    query = getattr(plan, "semantic_query", "") or ""
+    if query:
+        # 공고번호 또는 문서 ID 패턴 (예: R26BK0001, R26BK01659912-001, bid_10015925)
+        for m in re.finditer(
+            r"\b(?:[A-Za-z0-9]{6,20}-\d{2,3}|bid_\d{6,10}|[A-Z0-9]{8,20})\b",
+            query,
+            re.IGNORECASE,
+        ):
+            token = m.group(0).strip()
+            # 단순 연도-월 날짜 형식(2026-08 등)은 제외
+            if re.match(r"^\d{4}-\d{2}$", token):
+                continue
+            targets.add(token.lower())
+
+        # 인용구 (따옴표 또는 각괄호)
+        for m in re.finditer(
+            r'["\'\u2018\u201c\u300c\u300e\[]([^"\'\u2019\u201d\u300d\u300f\]]{2,})["\'\u2019\u201d\u300d\u300f\]]',
+            query,
+        ):
+            token = m.group(1).strip()
+            if token:
+                targets.add(token.lower())
+
+    return targets
+
+
+def _find_target_matching_sources(
+    targets: set[str],
+    context_text: str,
+    provenance: Provenance | None,
+) -> set[str]:
+    """추출된 대상 식별자/명칭과 일치하는 Source 라벨 집합을 찾습니다."""
+    if not targets:
+        return set()
+
+    matching_sources: set[str] = set()
+
+    # 1. provenance.items 에서 메타데이터 및 콘텐츠 매칭
+    if provenance is not None and getattr(provenance, "items", None) is not None:
+        for item in provenance.items:
+            source_label = ""
+            if isinstance(item, EvidenceItem):
+                source_label = item.metadata.get("citation_label") or (
+                    f"Source [{item.metadata['citation_number']}]"
+                    if "citation_number" in item.metadata
+                    else ""
+                )
+                meta_str = " ".join(str(v) for v in item.metadata.values()).lower()
+                content_str = str(item.content).lower()
+                item_id = str(item.id).lower()
+            elif isinstance(item, dict):
+                meta = item.get("metadata") or {}
+                source_label = meta.get("citation_label") or (
+                    f"Source [{meta['citation_number']}]" if "citation_number" in meta else ""
+                )
+                meta_str = " ".join(str(v) for v in meta.values()).lower()
+                content_str = str(item.get("content", "")).lower()
+                item_id = str(item.get("id", "")).lower()
+            else:
+                continue
+
+            for t in targets:
+                if (t in meta_str or t in content_str or t in item_id) and source_label:
+                    matching_sources.add(source_label)
+
+    # 2. context_text 의 Source 블록 텍스트에서 매칭
+    parts = re.split(r"(Source\s*\[\d+\])", context_text)
+    for i in range(1, len(parts), 2):
+        raw_header = parts[i].strip()
+        m = re.search(r"Source\s*\[(\d+)\]", raw_header)
+        header = f"Source [{m.group(1)}]" if m else raw_header
+        block_text = parts[i + 1].lower() if (i + 1) < len(parts) else ""
+        for t in targets:
+            if t in block_text or t in header.lower():
+                matching_sources.add(header)
+
+    return matching_sources
+
+
 def check_numeric_omissions(
     context_text: str,
     answer_text: str,
     trace_id: str = "",
+    plan: RetrievalPlan | None = None,
+    provenance: Provenance | None = None,
 ) -> dict[str, Any] | None:
-    """검색 컨텍스트에 존재하는 낙찰금액·낙찰률이 최종 답변에 누락되었는지 결정론적으로 검출해 로깅합니다."""
+    """검색 컨텍스트에 존재하는 낙찰금액·낙찰률이 최종 답변에 누락되었는지 결정론적으로 검출해 로깅합니다.
+
+    plan 과 provenance 가 주어지면 질의 의도 및 실제 근거에 부합하는 수치만 expected-fact 로 선별합니다.
+    """
     if not getattr(settings, "NUMERIC_OMISSION_DETECTION", False):
         return None
 
@@ -276,9 +381,77 @@ def check_numeric_omissions(
     if not amounts and not rates:
         return None
 
+    # Provenance 기반 유효 출처 라벨 집합 구성
+    valid_provenance_sources: set[str] | None = None
+    if provenance is not None and getattr(provenance, "items", None) is not None:
+        collected_sources: set[str] = set()
+        for item in provenance.items:
+            if isinstance(item, EvidenceItem):
+                lbl = item.metadata.get("citation_label")
+                if lbl:
+                    collected_sources.add(lbl)
+                elif "citation_number" in item.metadata:
+                    collected_sources.add(f"Source [{item.metadata['citation_number']}]")
+            elif isinstance(item, dict):
+                meta = item.get("metadata") or {}
+                lbl = meta.get("citation_label")
+                if lbl:
+                    collected_sources.add(lbl)
+                elif "citation_number" in meta:
+                    collected_sources.add(f"Source [{meta['citation_number']}]")
+        if collected_sources:
+            valid_provenance_sources = collected_sources
+
+    # Plan 기반 대상 공고 Source 집합 식별
+    targets = _extract_target_identifiers_from_plan(plan)
+    target_matching_sources: set[str] | None = None
+    if targets:
+        matched = _find_target_matching_sources(targets, context_text, provenance)
+        if matched:
+            target_matching_sources = matched
+
+    def _is_expected(val: str, sources: list[str]) -> bool:
+        # 출처를 특정할 수 없는 unknown 은 보수적으로 기대 사실에 남김
+        if not sources or "unknown" in sources:
+            return True
+
+        # (1) Provenance 검사: provenance 가 제공된 경우 적어도 하나의 source 가 근거 항목에 포함되어야 함
+        if valid_provenance_sources is not None and not any(
+            s in valid_provenance_sources for s in sources
+        ):
+            return False
+
+        # (2) Plan 의도 검사: 대상 공고가 특정된 경우 적어도 하나의 source 가 대상 공고 source 에 포함되어야 함
+        if target_matching_sources is not None:
+            return any(s in target_matching_sources for s in sources)
+
+        return True
+
+    expected_amounts: list[str] = []
+    filtered_amounts: list[str] = []
+    filtered_amount_sources: dict[str, list[str]] = {}
+    for amt in amounts:
+        srcs = amount_sources.get(amt, [])
+        if _is_expected(amt, srcs):
+            expected_amounts.append(amt)
+        else:
+            filtered_amounts.append(amt)
+            filtered_amount_sources[amt] = srcs
+
+    expected_rates: list[str] = []
+    filtered_rates: list[str] = []
+    filtered_rate_sources: dict[str, list[str]] = {}
+    for r in rates:
+        srcs = rate_sources.get(r, [])
+        if _is_expected(r, srcs):
+            expected_rates.append(r)
+        else:
+            filtered_rates.append(r)
+            filtered_rate_sources[r] = srcs
+
     missing_amounts: list[str] = []
     missing_amount_sources: dict[str, list[str]] = {}
-    for amt in amounts:
+    for amt in expected_amounts:
         digits = amt.replace(",", "")
         candidates = {amt, digits}
         if digits.isdigit():
@@ -289,7 +462,7 @@ def check_numeric_omissions(
 
     missing_rates: list[str] = []
     missing_rate_sources: dict[str, list[str]] = {}
-    for r in rates:
+    for r in expected_rates:
         candidates = {r}
         try:
             val = float(r)
@@ -312,7 +485,7 @@ def check_numeric_omissions(
 
     if total_missing_count > 0:
         logger.warning(
-            "rag_numeric_omission: trace_id=%s missing_types=%s missing_count=%d missing_amounts=%s missing_rates=%s missing_amount_sources=%s missing_rate_sources=%s",
+            "rag_numeric_omission: trace_id=%s missing_types=%s missing_count=%d missing_amounts=%s missing_rates=%s missing_amount_sources=%s missing_rate_sources=%s filtered_amounts=%s filtered_rates=%s filtered_amount_sources=%s filtered_rate_sources=%s",
             trace_id,
             missing_types,
             total_missing_count,
@@ -320,6 +493,10 @@ def check_numeric_omissions(
             missing_rates,
             missing_amount_sources,
             missing_rate_sources,
+            filtered_amounts,
+            filtered_rates,
+            filtered_amount_sources,
+            filtered_rate_sources,
             extra={
                 "trace_id": trace_id,
                 "omission_detected": True,
@@ -329,6 +506,10 @@ def check_numeric_omissions(
                 "missing_rates": missing_rates,
                 "missing_amount_sources": missing_amount_sources,
                 "missing_rate_sources": missing_rate_sources,
+                "filtered_amounts": filtered_amounts,
+                "filtered_rates": filtered_rates,
+                "filtered_amount_sources": filtered_amount_sources,
+                "filtered_rate_sources": filtered_rate_sources,
             },
         )
 
@@ -340,6 +521,10 @@ def check_numeric_omissions(
         "missing_rates": missing_rates,
         "missing_amount_sources": missing_amount_sources,
         "missing_rate_sources": missing_rate_sources,
+        "filtered_amounts": filtered_amounts,
+        "filtered_rates": filtered_rates,
+        "filtered_amount_sources": filtered_amount_sources,
+        "filtered_rate_sources": filtered_rate_sources,
     }
 
 
@@ -511,6 +696,7 @@ class HybridRAGEngine:
         plan: Any,
         context_text: str = "",
         trace_id: str = "",
+        provenance: Any = None,
     ) -> str:
         """Answer Guard: 데이터가 있는데 없다고 답한 경우 강제 교정 및 최종 답변 기준 수치 누락 검출."""
         if (structured_data or {}).get("query_skipped"):
@@ -533,7 +719,13 @@ class HybridRAGEngine:
             final_answer = _normalize_category_wording(answer_text, plan)
 
         if context_text:
-            check_numeric_omissions(context_text, final_answer, trace_id=trace_id)
+            check_numeric_omissions(
+                context_text,
+                final_answer,
+                trace_id=trace_id,
+                plan=plan if isinstance(plan, RetrievalPlan) else None,
+                provenance=provenance if isinstance(provenance, Provenance) else None,
+            )
 
         return final_answer
 
@@ -687,6 +879,7 @@ class HybridRAGEngine:
                 plan,
                 context_text=_context_text,
                 trace_id=provenance.trace_id,
+                provenance=provenance,
             )
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
@@ -834,6 +1027,7 @@ class HybridRAGEngine:
                 plan,
                 context_text=_context_text,
                 trace_id=provenance.trace_id,
+                provenance=provenance,
             )
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status

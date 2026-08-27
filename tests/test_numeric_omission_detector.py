@@ -136,7 +136,9 @@ def test_apply_answer_guard_inspects_final_postprocessed_answer(monkeypatch):
 
     inspected_answers: list[str] = []
 
-    def mock_check(context_text: str, answer_text: str, trace_id: str = ""):
+    def mock_check(
+        context_text: str, answer_text: str, trace_id: str = "", plan=None, provenance=None
+    ):
         inspected_answers.append(answer_text)
 
     monkeypatch.setattr("src.rag.engine.check_numeric_omissions", mock_check)
@@ -178,7 +180,9 @@ def test_apply_answer_guard_inspects_final_answer_on_skipped_query(monkeypatch):
 
     inspected_answers: list[str] = []
 
-    def mock_check(context_text: str, answer_text: str, trace_id: str = ""):
+    def mock_check(
+        context_text: str, answer_text: str, trace_id: str = "", plan=None, provenance=None
+    ):
         inspected_answers.append(answer_text)
 
     monkeypatch.setattr("src.rag.engine.check_numeric_omissions", mock_check)
@@ -199,3 +203,250 @@ def test_apply_answer_guard_inspects_final_answer_on_skipped_query(monkeypatch):
     assert final_result == "용역 조회를 건너뛰었습니다."
     assert len(inspected_answers) == 1
     assert inspected_answers[0] == "용역 조회를 건너뛰었습니다."
+
+
+def test_expected_fact_selection_backward_compatibility_without_plan_and_provenance(monkeypatch):
+    """(1) plan/provenance 미제공 시 기존 동작과 동일하게 컨텍스트의 모든 수치를 검사합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+
+    context = (
+        "Source [1]:\n[낙찰금액] 1,000,000\n[낙찰률] 88.5\n\n"
+        "Source [4]:\n[낙찰금액] 2,000,000\n[낙찰률] 95.0\n"
+    )
+    answer = "Source [1]의 낙찰금액은 1,000,000원이고 낙찰률은 88.5%입니다."
+
+    res = check_numeric_omissions(
+        context, answer, trace_id="trace-backward-compat", plan=None, provenance=None
+    )
+    assert res is not None
+    assert res["omission_detected"] is True
+    assert res["missing_amounts"] == ["2,000,000"]
+    assert res["missing_rates"] == ["95.0"]
+    assert res["filtered_amounts"] == []
+    assert res["filtered_rates"] == []
+    assert res["filtered_amount_sources"] == {}
+    assert res["filtered_rate_sources"] == {}
+
+
+def test_expected_fact_selection_filters_out_non_provenance_sources(monkeypatch):
+    """(2) 근거(Provenance.items) 밖 Source의 수치가 누락 후보에서 제외되고 filtered 필드로 보고됩니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+    from src.rag.schemas import EvidenceItem, Provenance
+
+    # context에는 Source [1]과 Source [4]가 있지만, provenance.items에는 Source [1]만 등록된 상황
+    context = (
+        "Source [1]:\n[낙찰금액] 1,000,000\n[낙찰률] 88.5\n\n"
+        "Source [4]:\n[낙찰금액] 2,000,000\n[낙찰률] 95.0\n"
+    )
+    provenance = Provenance(
+        trace_id="trace-prov-filter",
+        retrieval_mode="hybrid",
+        items=[
+            EvidenceItem(
+                id="sql_summary",
+                type="sql_stats",
+                content={},
+                metadata={"citation_label": "Source [1]", "citation_number": 1},
+            )
+        ],
+    )
+    # 답변에 Source [1] 수치만 언급됨
+    answer = "낙찰금액은 1,000,000원이며 낙찰률은 88.5%입니다."
+
+    res = check_numeric_omissions(
+        context,
+        answer,
+        trace_id="trace-prov-filter",
+        provenance=provenance,
+    )
+    assert res is not None
+    # Source [4]의 2,000,000 및 95.0은 근거 밖이므로 누락 오탐이 발생하지 않음
+    assert res["omission_detected"] is False
+    assert res["missing_amounts"] == []
+    assert res["missing_rates"] == []
+    # (4) 걸러진 수치가 별도 필드로 보고됨
+    assert res["filtered_amounts"] == ["2,000,000"]
+    assert res["filtered_rates"] == ["95.0"]
+    assert res["filtered_amount_sources"] == {"2,000,000": ["Source [4]"]}
+    assert res["filtered_rate_sources"] == {"95.0": ["Source [4]"]}
+
+
+def test_expected_fact_selection_retains_true_omissions_in_provenance(monkeypatch):
+    """(3) 근거(Provenance.items) 내에 속한 수치가 누락된 경우 실제 누락은 계속 검출됩니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+    from src.rag.schemas import EvidenceItem, Provenance
+
+    context = (
+        "Source [1]:\n[낙찰금액] 1,000,000\n[낙찰률] 88.5\n\n"
+        "Source [3]:\n[낙찰금액] 5,200,000\n[낙찰률] 90.1950\n"
+    )
+    provenance = Provenance(
+        trace_id="trace-true-omission",
+        retrieval_mode="hybrid",
+        items=[
+            EvidenceItem(
+                id="sql_summary",
+                type="sql_stats",
+                content={},
+                metadata={"citation_label": "Source [1]"},
+            ),
+            EvidenceItem(
+                id="vec_0",
+                type="vector_snippet",
+                content="...",
+                metadata={"citation_label": "Source [3]"},
+            ),
+        ],
+    )
+    # Source [1]의 낙찰금액만 언급하고 Source [1]의 낙찰률 및 Source [3]의 금액·낙찰률 모두 누락
+    answer = "낙찰금액은 1,000,000원입니다."
+
+    res = check_numeric_omissions(
+        context,
+        answer,
+        trace_id="trace-true-omission",
+        provenance=provenance,
+    )
+    assert res is not None
+    assert res["omission_detected"] is True
+    assert res["missing_amounts"] == ["5,200,000"]
+    assert res["missing_rates"] == ["88.5", "90.1950"]
+    assert res["missing_amount_sources"]["5,200,000"] == ["Source [3]"]
+    assert res["missing_rate_sources"]["88.5"] == ["Source [1]"]
+    assert res["missing_rate_sources"]["90.1950"] == ["Source [3]"]
+    assert res["filtered_amounts"] == []
+    assert res["filtered_rates"] == []
+
+
+def test_expected_fact_selection_narrows_by_plan_intent(monkeypatch):
+    """plan의 질의 의도(특정 대상 공고)에 따라 대상 공고에 귀속된 수치만 선별 검사합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+    from src.rag.schemas import EvidenceItem, Provenance
+
+    context = (
+        "Source [3] (공고 R26BK0001):\n"
+        "[공고명] 2026 도로 정비 사업\n"
+        "[낙찰금액] 5,200,000\n"
+        "[낙찰률] 90.1950\n\n"
+        "Source [4] (공고 R26BK0002):\n"
+        "[공고명] 2026 교량 보수 사업\n"
+        "[낙찰금액] 8,100,000\n"
+        "[낙찰률] 85.5\n"
+    )
+    plan = RetrievalPlan(
+        use_vector=True,
+        semantic_query="R26BK0001 공고의 낙찰 결과 확인",
+        filters={"bid_ntce_no": "R26BK0001"},
+    )
+    provenance = Provenance(
+        trace_id="trace-plan-target",
+        retrieval_mode="vector-only",
+        items=[
+            EvidenceItem(
+                id="vec_0",
+                type="vector_snippet",
+                content="공고 R26BK0001 도로 정비 사업",
+                metadata={"citation_label": "Source [3]", "bid_ntce_no": "R26BK0001"},
+            ),
+            EvidenceItem(
+                id="vec_1",
+                type="vector_snippet",
+                content="공고 R26BK0002 교량 보수 사업",
+                metadata={"citation_label": "Source [4]", "bid_ntce_no": "R26BK0002"},
+            ),
+        ],
+    )
+
+    # R26BK0001의 금액만 언급하고 낙찰률을 누락한 답변
+    answer = "R26BK0001 공고의 낙찰금액은 5,200,000원입니다."
+
+    res = check_numeric_omissions(
+        context,
+        answer,
+        trace_id="trace-plan-target",
+        plan=plan,
+        provenance=provenance,
+    )
+    assert res is not None
+    assert res["omission_detected"] is True
+    # R26BK0001의 낙찰률(90.1950)만 누락으로 잡힘
+    assert res["missing_rates"] == ["90.1950"]
+    assert res["missing_amounts"] == []
+    # 질의 대상이 아닌 R26BK0002(Source [4])의 수치들은 filtered 로 분리
+    assert "8,100,000" in res["filtered_amounts"]
+    assert "85.5" in res["filtered_rates"]
+    assert res["filtered_amount_sources"]["8,100,000"] == ["Source [4]"]
+    assert res["filtered_rate_sources"]["85.5"] == ["Source [4]"]
+
+
+def test_expected_fact_selection_conservatively_retains_unknown_sources(monkeypatch):
+    """출처를 특정할 수 없는 unknown 수치는 보수적으로 기대 사실에 남겨 검사합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+    from src.rag.schemas import EvidenceItem, Provenance
+
+    # 머리글 이전 unknown 수치
+    context = "[낙찰금액] 99999\nSource [1]:\n[낙찰금액] 1,000,000\n[낙찰률] 88.5\n"
+    provenance = Provenance(
+        trace_id="trace-unknown-retain",
+        retrieval_mode="hybrid",
+        items=[
+            EvidenceItem(
+                id="sql_summary",
+                type="sql_stats",
+                content={},
+                metadata={"citation_label": "Source [1]"},
+            )
+        ],
+    )
+    # Source [1]의 수치만 언급하고 unknown 수치(99999)는 누락
+    answer = "낙찰금액은 1,000,000원이며 낙찰률은 88.5%입니다."
+
+    res = check_numeric_omissions(
+        context,
+        answer,
+        trace_id="trace-unknown-retain",
+        provenance=provenance,
+    )
+    assert res is not None
+    assert res["omission_detected"] is True
+    assert "99999" in res["missing_amounts"]
+    assert res["missing_amount_sources"]["99999"] == ["unknown"]
+
+
+def test_expected_fact_selection_conservatively_retains_when_provenance_has_no_citation_labels(
+    monkeypatch,
+):
+    """provenance.items 에 citation_label/citation_number 가 없는 경우 보수적으로 전체 수치를 기대 사실로 유지합니다."""
+    monkeypatch.setattr("src.rag.engine.settings.NUMERIC_OMISSION_DETECTION", True)
+    from src.rag.schemas import EvidenceItem, Provenance
+
+    context = "Source [3]:\n[낙찰금액] 5,200,000\n[낙찰률] 90.1950"
+    provenance = Provenance(
+        trace_id="trace-no-citation-labels",
+        retrieval_mode="vector-only",
+        items=[
+            # metadata 에 citation_label 이나 citation_number 가 전혀 없는 항목
+            EvidenceItem(
+                id="doc_1",
+                type="vector_snippet",
+                content="...",
+                metadata={"title": "test document"},
+            )
+        ],
+    )
+    # 수치를 언급하지 않은 답변
+    answer = "관련 공고를 확인했습니다."
+
+    res = check_numeric_omissions(
+        context,
+        answer,
+        trace_id="trace-no-citation-labels",
+        provenance=provenance,
+    )
+    assert res is not None
+    # valid_provenance_sources 가 None 으로 되돌아가 수치가 제외되지 않고 실제 누락으로 검출됨
+    assert res["omission_detected"] is True
+    assert res["missing_amounts"] == ["5,200,000"]
+    assert res["missing_rates"] == ["90.1950"]
+    assert res["filtered_amounts"] == []
+    assert res["filtered_rates"] == []
