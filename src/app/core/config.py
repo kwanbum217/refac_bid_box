@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     MEILI_TIMEOUT_SECONDS: float = 5.0
 
     # LLM & RAG
-    # 생성 LLM 백엔드: "ollama"(기본, 로컬 gemma4:e4b) 또는 "gemini"(원본 경로)
+    # 생성 LLM 백엔드: "ollama"(기본, 로컬 gemma4:e2b) 또는 "gemini"(원본 경로)
     LLM_PROVIDER: str = "ollama"
     LLM_TIMEOUT_SECONDS: float = 120.0
     LLM_TEMPERATURE: float = 0.2
