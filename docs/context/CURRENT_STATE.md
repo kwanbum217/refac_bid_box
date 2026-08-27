@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-27
-> **source_commit**: `3a31b45`
+> **source_commit**: `3237666`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -67,7 +67,7 @@
 
 1. **운영 검증**: 2026-08-26 CI run `32930156938`(`5f8174a`) **3플랫폼 green**. Windows Docker Desktop 실기만 남음.
 1-4. **Vector fail-closed**: 2026-08-25 `where` 절 부재와 category 오분류를 고쳐 근거 적중 **16/16**. 2026-08-26 에 기간·기관 필터를 본문 파싱 post-filter 로 실제 적용해 SQL·vector scope 불일치를 닫았습니다.
-1-2. **LLM 경로 최적화**: 2026-08-26 v4(`b4913fd`, canonical, 각 72회차)에서 **`gemma4:e2b` 승격**. numeric 65.7% 대 61.8%, 문항 통과 16/48 대 12/48, P50 2,681.6 대 3,130.5ms 로 앞서고 evidence·인용·forbidden 은 동등합니다. 보류 사유였던 과잉응답은 거절 지시와 fixture 3 → 8 확대 뒤 **양쪽 0/24**, 과잉거절 0/48([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)).
+1-2. **LLM 경로 최적화**: 2026-08-26 v4(`b4913fd`, canonical, 각 72회차)에서 **`gemma4:e2b` 승격**. numeric 65.7% 대 61.8%, 문항 통과 16/48 대 12/48, P50 2,681.6 대 3,130.5ms 로 앞서고 evidence·인용·forbidden 은 동등합니다. 보류 사유였던 과잉응답은 거절 지시와 fixture 3 → 8 확대 뒤 **양쪽 0/24**, 과잉거절 0/48([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)). 2026-08-27 blind fixture v2 일반화 측정은 **무효**입니다. 근거 문서 24건 중 22건이 낙찰 정보를 담지 않아 evidence recall 0.083 이 되었고 두 모델의 문항 통과가 2/24 로 동일했습니다. 원인은 백필 후 KB 미색인이며 e2b 승격은 이 측정으로 흔들리지 않습니다([`llm_generalization_judgment_20260827.md`](../analysis/llm_generalization_judgment_20260827.md)).
 1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션 확정. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하). 잠정값 900/600 제거, 기준선은 캘리브레이션 호스트에 결박([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
 1-3. **감사 후속 P1**: 2026-08-25 에 RAG 라우팅 오분류, 복합 numeric·refusal 미채점, 모델 라벨·Arq 호스트 미결박을 닫았습니다.
 1-5. **Servc 운영 경로 재측정**: 2026-08-26 수정된 `predict_price_api`로 2025년 300/300건을 제외 없이 평가했습니다. MAE 1.2686, 0.5%p 적중 63.33%, 피복률 89.67%이며, 집단별 3,996건에서도 전체 피복률 89.64%를 재확인했습니다([`servc_api_path_remeasurement_20260826.md`](../analysis/servc_api_path_remeasurement_20260826.md)).
