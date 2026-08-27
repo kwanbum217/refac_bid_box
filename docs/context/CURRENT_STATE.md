@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-27
-> **source_commit**: `8315130`
+> **source_commit**: `395495f`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -66,11 +66,11 @@
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
 1. **운영 검증**: 2026-08-26 CI run `32930156938`(`5f8174a`) **3플랫폼 green**. Windows Docker Desktop 실기만 남음.
-1-4. **Vector fail-closed**: 2026-08-25 `where` 절 부재와 category 오분류를 고쳐 근거 적중 **16/16**. 2026-08-26 에 기간·기관 필터를 본문 파싱 post-filter 로 실제 적용해 SQL·vector scope 불일치를 닫았습니다.
+1-4. **Vector fail-closed·정확 제목**: 근거 적중 **16/16**, 기간·기관 post-filter를 유지합니다. 2026-08-27 후보 30건과 공고명 정규화 정확 일치 재순위로 q21 정답을 top-5에 포함했습니다([`task_9fe129597faf.md`](../analysis/task_9fe129597faf.md)).
 1-2. **LLM 경로 최적화**: 2026-08-26 v4(`b4913fd`, 각 72회차)에서 **`gemma4:e2b` 승격** ([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)). 2026-08-27 blind fixture v2(32문항) 측정에서 **e2b 승격 유지** 확정(동결 `13f947a`). numeric 양쪽 **87.5% 동률**이며 e2b 가 과잉응답 0 대 1, refusal 8/8 대 7/8, P50 3,990 대 6,459ms 로 앞섭니다. 과잉거절 12.5% 와 P50 은 두 모델 모두 미달이며 원인은 검색 미스 3문항입니다. 1차 측정은 백필 후 KB 미색인으로 **무효**([`llm_generalization_judgment_20260827.md`](../analysis/llm_generalization_judgment_20260827.md)).
 1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션 확정. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하). 잠정값 900/600 제거, 기준선은 캘리브레이션 호스트에 결박([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
 1-3. **감사 후속 P1**: 2026-08-25 에 RAG 라우팅 오분류, 복합 numeric·refusal 미채점, 모델 라벨·Arq 호스트 미결박을 닫았습니다.
-1-5. **Servc 운영 경로 재측정**: 2026-08-26 수정된 `predict_price_api`로 2025년 300/300건을 제외 없이 평가했습니다. MAE 1.2686, 0.5%p 적중 63.33%, 피복률 89.67%이며, 집단별 3,996건에서도 전체 피복률 89.64%를 재확인했습니다([`servc_api_path_remeasurement_20260826.md`](../analysis/servc_api_path_remeasurement_20260826.md)).
+1-5. **Servc 운영 경로**: 2025년 300/300건 평가에서 MAE 1.2686, 0.5%p 적중 63.33%, 피복률 89.67%입니다([`servc_api_path_remeasurement_20260826.md`](../analysis/servc_api_path_remeasurement_20260826.md)). 2026-08-27 유효 OOS는 3,589건으로 3,098건 게이트를 충족했습니다.
 2. **프론트엔드**: HTMX 를 2026-08-25 기각하고 ADR 을 SSR + Jinja2 + jQuery 로 개정했습니다. `base.html` CDN 7곳에 이어 Chart.js·marked 도 로컬 벤더로 옮겨 **템플릿 외부 참조 0건**이며, Tailwind 는 빌드타임 CSS(44KB)로 전환했습니다.
 3. **G3 컷오버 판정**: 위 항목이 닫힌 뒤 판정합니다. 개별 게이트 PASS 를 컷오버 PASS 로 승격하지 않습니다.
 
