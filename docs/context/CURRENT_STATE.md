@@ -101,11 +101,11 @@
 
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
-- Windows Docker Desktop 실기 검증 미수행.
-- **LLM 품질 정본은 v4**(소스 `b4913fd`, 각 72회차, 실패 0). fixture 밖 일반화와 numeric 절대 수치(65.7%)는 이 측정이 답하지 않으므로 별도 과제입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
-- Ollama `gemma4:e4b` Predict c4·SSE c1·Query c1 2026-08-24 부하 규약 준수 3회 측정, 1차 r2 기각 후 재측정, 게이트 전 항목 통과.
+- Windows Docker Desktop 실기 미검증.
+- **LLM 품질 정본은 2026-08-27 blind fixture v2 측정**(동결 `13f947a`, 각 96질의)입니다. fixture 밖 일반화가 닫혔고 e2b 승격이 유지됐습니다. 과잉거절과 P50 은 양쪽 미달이며 원인은 검색 미스 3문항입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
+- Ollama `gemma4:e4b` Predict c4·SSE c1·Query c1 2026-08-24 규약 준수 3회 측정, 게이트 전 항목 통과.
 - Arq container synthetic raw 보존(1,681~1,764 jps, P95 325~342ms). **business-task E2E 2026-08-26 실측**: 격리 큐 실제 task 2종 30/30 완주, P50 5.5ms·P95 1,174.9ms, DB 11행 불변·운영 큐 무영향([`arq_business_e2e_20260826.json`](../../data/benchmarks/arq_business_e2e_20260826.json)).
-- 벤치마크 provenance 는 시작·종료 양쪽을 결박해 대상 교체 시 strict 에서 fail-closed 됩니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 는 정본 evidence 가 아닙니다.
+- 벤치마크 provenance 는 시작·종료를 결박해 대상 교체 시 strict 에서 fail-closed 됩니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 는 정본이 아닙니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
