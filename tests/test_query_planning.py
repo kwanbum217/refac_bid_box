@@ -239,3 +239,45 @@ def test_category_keyword_last_occurrence_precedence_with_fixture():
     # 카테고리 키워드가 없는 질의는 category 필터가 생성되지 않아야 함
     plan_none = build_retrieval_plan("안내 부탁드립니다")
     assert "category" not in plan_none.filters
+
+
+def test_entity_query_does_not_promote_implicit_year_month_to_filter():
+    """공고명에 든 사업연도·대상월이 게시 기간 필터로 승격되면 안 됩니다.
+
+    2026-08-27 blind fixture 측정에서 "2026년 9월분 학교급식물품" 질의가
+    date_from=2026-09-01 필터를 얻어 검색 결과가 0건이 됐습니다. 실제 공고는
+    2026-08-13 게시분이었습니다.
+    docs/analysis/retrieval_miss_investigation_20260827.md
+    """
+    plan_month = build_retrieval_plan(
+        "2026년 9월분 충주중앙탑초 외4개교 학교급식물품(부식) 공동구매 입찰 공고의 "
+        "공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘"
+    )
+    assert "date_from" not in plan_month.filters
+    assert "date_to" not in plan_month.filters
+    # 카테고리 판정과 최신성 힌트는 유지되어야 합니다.
+    assert plan_month.filters.get("category") == "Thng"
+    assert plan_month.time_bias == "recent"
+
+    plan_year = build_retrieval_plan(
+        "(긴급)2025년 조사료 경영체 기계장비 지원사업(굴착기) 구매의 "
+        "공고번호, 수요기관, 낙찰업체 및 최종 낙찰금액과 낙찰률을 알려줘"
+    )
+    assert "date_from" not in plan_year.filters
+    assert "date_to" not in plan_year.filters
+
+
+def test_explicit_period_still_becomes_filter_even_for_entity_query():
+    """명시적 기간 한정 표현은 개체 질의에서도 그대로 필터가 되어야 합니다."""
+    plan = build_retrieval_plan(
+        "2025년 1월부터 3월까지 주식회사 백화가 낙찰받은 공고의 낙찰금액 알려줘"
+    )
+    assert plan.filters.get("date_from") == "2025-01-01"
+    assert plan.filters.get("date_to") == "2025-03-31"
+
+
+def test_non_entity_statistics_query_keeps_year_filter():
+    """개체를 지목하지 않은 통계 질의의 연도는 기간 필터로 유지되어야 합니다."""
+    plan = build_retrieval_plan("2025년 용역 낙찰률 평균 통계 알려줘")
+    assert plan.filters.get("date_from") == "2025-01-01"
+    assert plan.filters.get("date_to") == "2025-12-31"
