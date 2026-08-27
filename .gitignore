@@ -216,6 +216,8 @@ data/model_backups/
 *.manifest
 package-lock.json
 !frontend/package-lock.json
+# 루트 lockfile 은 tailwind.css 재현성 게이트가 npm ci 로 소비합니다.
+!/package-lock.json
 node_modules/
 
 # Orca Capsule 기본 출력 디렉터리 (orca_taskctl.py --capsule-dir 기본값)
