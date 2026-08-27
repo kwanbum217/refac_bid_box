@@ -2,7 +2,7 @@
   "name": "refac-bid-box-static",
   "private": true,
   "scripts": {
-    "build:css": "tailwindcss -c tailwind.config.js -i src/app/static/css/tailwind.input.css -o src/app/static/css/tailwind.css --minify"
+    "build:css": "tailwindcss -c tailwind.config.js -i src/app/static/css/tailwind.input.css -o src/app/static/css/tailwind.css --minify && printf '\\n' >> src/app/static/css/tailwind.css"
   },
   "devDependencies": {
     "tailwindcss": "3.4.16"
