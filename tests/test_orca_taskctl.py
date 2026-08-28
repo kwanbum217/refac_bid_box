@@ -17,6 +17,7 @@ from scripts.orca_taskctl import (
     ACTIVE_TASK_STATUSES,
     DEFAULT_RUN_ID,
     DEFAULT_VERIFICATION_COMMANDS,
+    FILE_EDIT_AUTO_APPROVE_SEQUENCE,
     MAX_CONCURRENT_WRITE_WORKERS,
     _format_review_checklist,
     _format_yaml_list,
@@ -25,15 +26,19 @@ from scripts.orca_taskctl import (
     _start_reliability_tracking,
     _to_glob,
     check_write_concurrency,
+    classify_file_edit_auto_approve_support,
     create_worktree,
     dispatch_worker,
+    enable_file_edit_auto_approve,
     expand_intent_to_capsule,
     finalize_task,
     list_dispatched_tasks,
     main,
     parse_intent,
     resolve_run_id,
+    strip_terminal_metadata_header,
     task_has_write_scope,
+    terminal_read,
     validate_contained_path,
     worker_start,
     worktree_relative_capsule_path,
@@ -3281,3 +3286,463 @@ def test_finalize_passes_diff_cap_flags_to_reviewer(tmp_path, monkeypatch):
     cmd = reviewer_cmds[0]
     assert "--max-diff-chars" not in cmd
     assert "--allow-truncated-diff" not in cmd
+
+
+def test_strip_terminal_metadata_header():
+    """orca terminal read 의 머리말 메타 줄(handle:, cursor: 등)이 정상적으로 제거되는지 검증."""
+    raw = """handle: term_test_123
+status: running
+source: stream
+cursor: 50894
+oldest cursor: 48894
+latest cursor: 50894
+warning: older output is no longer retained
+
+Antigravity CLI v1.2.3
+accept-edits · Gemini 3.7 Flash · high
+>"""
+    cleaned = strip_terminal_metadata_header(raw)
+    assert "handle:" not in cleaned
+    assert "cursor: 50894" not in cleaned
+    assert "warning:" not in cleaned
+    assert "Antigravity CLI v1.2.3" in cleaned
+    assert "accept-edits" in cleaned
+
+
+def test_terminal_read(monkeypatch: pytest.MonkeyPatch):
+    """terminal_read 가 orca terminal read --json 출력을 올바르게 파싱하는지 검증."""
+    sample_json = json.dumps(
+        {
+            "ok": True,
+            "result": {
+                "terminal": {
+                    "handle": "term_xyz",
+                    "status": "running",
+                    "tail": ["line 1", "line 2", "accept-edits · Gemini"],
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._run_command",
+        lambda cmd, timeout=30: (0, sample_json, ""),
+    )
+    res = terminal_read("term_xyz")
+    assert res == "line 1\nline 2\naccept-edits · Gemini"
+
+
+def test_classify_file_edit_auto_approve_support():
+    """터미널 화면 분류 함수가 Cursor(차단), Antigravity(허용), 미식별(fail-closed)을 올바르게 판정하는지 검증."""
+    # (a) Cursor 계열 (Plan Mode / Composer) -> 차단
+    cursor_samples = [
+        "Cursor Agent v0.4.0\nTip: Hit shift+tab to enable Plan Mode for large or complex changes.\n>",
+        "cursor-agent running\n--mode plan\n>",
+        "Composer 2.5 · 33.3% · 4 files edited   Run Everything\n~/wt-t2",
+        """handle: term_cursor_1
+status: running
+cursor: 50894
+oldest cursor: 48894
+
+Composer 2.5 · Run Everything
+Tip: Hit shift+tab to enable Plan Mode
+>""",
+    ]
+    for sample in cursor_samples:
+        ok, reason = classify_file_edit_auto_approve_support(sample)
+        assert ok is False
+        assert "Cursor" in reason or "Plan Mode" in reason
+
+    # (b) Antigravity 계열 (Accept-edits) -> 허용 (메타 줄 cursor: 32338 오탐 방지 포함)
+    antigravity_samples = [
+        "Antigravity CLI v1.2.3\nshift+tab to auto-approve file edits\n>",
+        "agy --model gemini-3.7-flash-high\n>",
+        "Accept-edits mode: file edits auto-approved\n>",
+        """handle: term_agy_1
+status: running
+source: stream
+cursor: 32338
+oldest cursor: 30338
+latest cursor: 32338
+
+● Read(scripts/orca_taskctl.py)
+▸ Thought for 4s, 500 tokens
+accept-edits · Gemini 3.7 Flash · high
+>""",
+    ]
+    for sample in antigravity_samples:
+        ok, reason = classify_file_edit_auto_approve_support(sample)
+        assert ok is True
+        assert "Antigravity" in reason
+
+    # (c) 판정 불가 / 미식별 화면 -> fail-closed 차단 (메타 줄이 있어도 fail-closed)
+    unknown_samples = [
+        "",
+        "   \n\t  ",
+        "bash-5.2$ ls -la\n>",
+        "claude code agent v1.0\n>",
+        "opencode TUI\nctrl+p commands\n>",
+        """handle: term_kimi_1
+status: running
+cursor: 560
+
+To resume this session: kimi -r session_123
+refac_bid_box/wt-t3-cpu-probe %""",
+    ]
+    for sample in unknown_samples:
+        ok, reason = classify_file_edit_auto_approve_support(sample)
+        assert ok is False
+        assert "fail-closed" in reason or "비어 있어" in reason
+
+
+def test_enable_file_edit_auto_approve_screens(monkeypatch: pytest.MonkeyPatch):
+    """enable_file_edit_auto_approve 가 화면에 따라 (a) Cursor 전송 안 함, (b) Antigravity 전송함, (c) 미식별 전송 안 함을 준수하는지 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, "ok", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    # (a) Cursor 화면 -> 전송하지 않음
+    cursor_text = "Cursor Agent\nTip: Hit shift+tab to enable Plan Mode"
+    ok, msg = enable_file_edit_auto_approve("term_cursor", screen_text=cursor_text)
+    assert ok is False
+    assert "Plan Mode" in msg
+    assert len(executed_cmds) == 0
+
+    # (b) Antigravity 화면 -> 전송함 (shift+tab, --enter 없음)
+    agy_text = "Antigravity CLI\nshift+tab to auto-approve file edits\n>"
+    ok, msg = enable_file_edit_auto_approve("term_agy", screen_text=agy_text)
+    assert ok is True
+    assert "term_agy" in msg
+    assert len(executed_cmds) == 1
+    cmd = executed_cmds[0]
+    expected = [
+        "orca",
+        "terminal",
+        "send",
+        "--terminal",
+        "term_agy",
+        "--text",
+        "\x1b[Z",
+    ]
+    assert cmd == expected
+    assert cmd[cmd.index("--text") + 1] == FILE_EDIT_AUTO_APPROVE_SEQUENCE
+    assert "--enter" not in cmd
+
+    # (c) 판정 불가 화면 -> 전송하지 않음 (fail-closed)
+    executed_cmds.clear()
+    ok, msg = enable_file_edit_auto_approve("term_unknown", screen_text="bash-5.2$ >")
+    assert ok is False
+    assert "fail-closed" in msg
+    assert len(executed_cmds) == 0
+
+    # (d) 판정 불가 화면이어도 force=True 이면 전송함 (opt-in)
+    executed_cmds.clear()
+    ok, msg = enable_file_edit_auto_approve("term_unknown", force=True, screen_text="bash-5.2$ >")
+    assert ok is True
+    assert len(executed_cmds) == 1
+
+
+def test_enable_file_edit_auto_approve_disabled_by_env(monkeypatch: pytest.MonkeyPatch):
+    """ORCA_DISABLE_AUTO_APPROVE=1 환경변수 설정 시 모드 전환 전송이 억제되는지 검증."""
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, "ok", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
+
+    ok, msg = enable_file_edit_auto_approve(
+        "term_target_123", screen_text="Antigravity CLI\nshift+tab to auto-approve file edits\n>"
+    )
+    assert ok is False
+    assert "ORCA_DISABLE_AUTO_APPROVE=1" in msg
+    assert len(executed_cmds) == 0
+
+
+def test_dispatch_calls_auto_approve_and_mode_switch_on_antigravity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """Antigravity 워커 터미널 dispatch 시 감시기와 모드 전환 전송이 순서대로 실행되는지 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.terminal_tail",
+        lambda handle, timeout=30: "Antigravity CLI\nshift+tab to auto-approve file edits\n>",
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda *args, **kwargs: (0, json.dumps({"ok": True}), ""),
+    )
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_target_agy",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "파일 편집 자동 승인 모드 전환을 전송했습니다 (term_target_agy)" in captured.err
+
+    # 모드 전환 시퀀스(\x1b[Z) 전송 확인
+    send_mode_cmds = [
+        cmd
+        for cmd in executed_cmds
+        if "terminal" in cmd and "send" in cmd and FILE_EDIT_AUTO_APPROVE_SEQUENCE in cmd
+    ]
+    assert len(send_mode_cmds) == 1
+
+
+def test_dispatch_skips_mode_switch_on_cursor_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """Cursor 워커 터미널 dispatch 시 shift+tab(Plan Mode 유발) 전송을 건너뛰고 사유를 출력하는지 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.terminal_tail",
+        lambda handle, timeout=30: "Cursor Agent v0.4.0\nTip: Hit shift+tab to enable Plan Mode\n>",
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda *args, **kwargs: (0, json.dumps({"ok": True}), ""),
+    )
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_target_cursor",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "Cursor CLI 는 shift+tab 이 Plan Mode(읽기 전용) 전환이므로" in captured.err
+
+    # 모드 전환 시퀀스(\x1b[Z) 전송 명령이 절대 실행되지 않았음을 단정
+    send_mode_cmds = [
+        cmd
+        for cmd in executed_cmds
+        if "terminal" in cmd and "send" in cmd and FILE_EDIT_AUTO_APPROVE_SEQUENCE in cmd
+    ]
+    assert len(send_mode_cmds) == 0
+
+
+def test_dispatch_skips_mode_switch_on_unrecognized_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """식별 불가능한 워커 터미널 dispatch 시 fail-closed 원칙에 따라 모드 전환을 건너뛰는지 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.terminal_tail",
+        lambda handle, timeout=30: "generic-shell-prompt\n>",
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda *args, **kwargs: (0, json.dumps({"ok": True}), ""),
+    )
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_target_generic",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "fail-closed" in captured.err
+
+    # 모드 전환 시퀀스(\x1b[Z) 전송 명령이 실행되지 않았음을 단정
+    send_mode_cmds = [
+        cmd
+        for cmd in executed_cmds
+        if "terminal" in cmd and "send" in cmd and FILE_EDIT_AUTO_APPROVE_SEQUENCE in cmd
+    ]
+    assert len(send_mode_cmds) == 0
+
+
+def test_dispatch_suppresses_mode_switch_when_env_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """ORCA_DISABLE_AUTO_APPROVE=1 일 때 dispatch 경로에서 감시기 및 모드 전환이 억제되는지 검증."""
+    monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_target_789",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+
+    # 모드 전환 시퀀스(\x1b[Z) 전송 명령이 실행되지 않았음을 단정
+    send_mode_cmds = [
+        cmd
+        for cmd in executed_cmds
+        if "terminal" in cmd and "send" in cmd and FILE_EDIT_AUTO_APPROVE_SEQUENCE in cmd
+    ]
+    assert len(send_mode_cmds) == 0
+
+    captured = capsys.readouterr()
+    assert (
+        "ORCA_DISABLE_AUTO_APPROVE=1 이므로 파일 편집 자동 승인 모드 전환을 건너뜁니다"
+        in captured.err
+    )
+
+
+def test_dispatch_handles_mode_switch_failure_and_exception_gracefully(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """모드 전환 전송 실패 또는 예외 발생 시에도 Dispatch 가 중단되지 않고 안내 및 경고를 출력하는지 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+
+    def mock_dispatch_worker(*args, **kwargs):
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    # 1. 실패 반환 시 정상 진행 및 안내 출력 확인
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.enable_file_edit_auto_approve",
+        lambda t, timeout=30, force=False: (False, "터미널 소켓 연결 끊김"),
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_err_1",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "터미널 소켓 연결 끊김" in captured.err
+
+    # 2. 예외 발생 시 정상 진행 및 경고 출력 확인
+    def mock_raise(t, timeout=30, force=False):
+        raise RuntimeError("심각한 IPC 예외")
+
+    monkeypatch.setattr("scripts.orca_taskctl.enable_file_edit_auto_approve", mock_raise)
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_err_2",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "심각한 IPC 예외" in captured.err

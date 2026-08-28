@@ -96,6 +96,8 @@ DEFAULT_RUN_ID = "run_auto"
 CAPSULE_VERSION = "2.1.0"
 MAX_CONCURRENT_WRITE_WORKERS = 3
 ROUTING_STATE_FILENAME = "routing.json"
+FILE_EDIT_AUTO_APPROVE_SEQUENCE = "\x1b[Z"
+
 
 # 검증 명령 기본값. Capsule 이 선언한 명령을 Level 1 게이트 3 이 그대로 실행하므로
 # 여기 적히지 않은 검증은 아무도 실행하지 않습니다. 반대로 변경과 무관한 검증을
@@ -1140,6 +1142,48 @@ def terminal_tail(handle: str, timeout: int = 30) -> str | None:
     return str(text)
 
 
+def terminal_read(handle: str, timeout: int = 30) -> str | None:
+    """터미널의 전체 화면/버퍼 출력을 읽습니다 (orca terminal read). 조회에 실패하면 None 을 돌려줍니다."""
+    cmd = ["orca", "terminal", "read", "--terminal", handle, "--json"]
+    code, stdout, _stderr = _run_command(cmd, timeout=timeout)
+    if code != 0 or not stdout.strip():
+        return None
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is False:
+        return None
+    terminal = (payload.get("result") or {}).get("terminal") or {}
+    tail = terminal.get("tail")
+    if isinstance(tail, list):
+        return "\n".join(str(line) for line in tail)
+    if isinstance(tail, str):
+        return tail
+    return None
+
+
+def strip_terminal_metadata_header(text: str) -> str:
+    """orca terminal read 의 머리말 메타 줄(handle:, cursor: 등)을 제외합니다."""
+    meta_prefixes = (
+        "handle:",
+        "status:",
+        "source:",
+        "cursor:",
+        "oldest cursor:",
+        "latest cursor:",
+        "next cursor:",
+        "warning:",
+    )
+    cleaned_lines = []
+    for line in text.splitlines():
+        stripped = line.strip().lower()
+        if any(stripped.startswith(prefix) for prefix in meta_prefixes):
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines)
+
+
 def has_trust_prompt(text: str) -> bool:
     """워크스페이스 신뢰 확인 대화창이 떠 있는지 판정합니다."""
     lowered = text.lower()
@@ -1330,6 +1374,113 @@ def stop_auto_approve(terminal: str) -> tuple[bool, str]:
             os.kill(pid, signal.SIGTERM)
     remove_watcher_pid(pid_path)
     return True, f"자동 승인 감시기 중지 완료 ({terminal})"
+
+
+CURSOR_PLAN_MODE_MARKERS: tuple[str, ...] = (
+    "cursor-agent",
+    "cursor agent",
+    "composer",
+    "plan mode",
+    "enable plan mode",
+    "hit shift+tab to enable plan mode",
+    "run everything",
+    "cursoragent@",
+)
+
+# 판정 근거는 CLI 가 상태줄에 스스로 그리는 문자열로만 좁힙니다. 도구 호출 표기나
+# 사고 과정 표기 같은 범용 형식은 여러 CLI 가 공유하므로 쓰지 않습니다. 화면에는
+# 코디네이터가 보낸 지시문도 남으므로, 넓은 마커는 대화 내용에 오염됩니다.
+ACCEPT_EDITS_CLI_MARKERS: tuple[str, ...] = (
+    "accept-edits",
+    "auto-approve file edits",
+    "shift+tab to auto-approve",
+    "antigravity cli",
+    "agy --model",
+)
+
+
+def classify_file_edit_auto_approve_support(text: str) -> tuple[bool, str]:
+    """터미널 화면 텍스트를 분석하여 shift+tab 이 파일 편집 자동 승인(accept-edits)으로 동작하는 CLI 인지 판정합니다.
+
+    - Cursor 계열은 shift+tab 이 Plan Mode(읽기 전용/편집 금지) 전환이므로 False 를 반환합니다.
+    - Antigravity 계열은 shift+tab 이 파일 편집 자동 승인 전환이므로 True 를 반환합니다.
+    - 판정할 수 없는 알 수 없는 CLI 는 fail-closed 원칙에 따라 False 를 반환합니다.
+    """
+    if not text or not text.strip():
+        return False, "터미널 화면이 비어 있어 CLI 종류를 판정할 수 없습니다 (fail-closed)"
+
+    cleaned = strip_terminal_metadata_header(text)
+    lowered = cleaned.lower()
+
+    has_agy = any(marker in lowered for marker in ACCEPT_EDITS_CLI_MARKERS)
+    has_cursor = any(marker in lowered for marker in CURSOR_PLAN_MODE_MARKERS)
+
+    # 상태줄 고유 문자열이 확인되면 accept-edits 계열로 승인합니다. Cursor 마커가
+    # 함께 잡히는 것은 화면에 남은 대화 내용일 수 있으므로 상태줄 쪽을 우선합니다.
+    if has_agy:
+        return True, "Antigravity CLI 가 확인되어 파일 편집 자동 승인 모드 전환을 지원합니다"
+
+    if has_cursor:
+        return (
+            False,
+            "Cursor CLI 는 shift+tab 이 Plan Mode(읽기 전용) 전환이므로 파일 편집 모드 전환을 전송하지 않습니다",
+        )
+
+    return (
+        False,
+        "shift+tab 을 accept-edits 로 해석하는 CLI 가 아니므로 파일 편집 모드 전환을 전송하지 않습니다 (fail-closed)",
+    )
+
+
+def enable_file_edit_auto_approve(
+    terminal: str,
+    timeout: int = 30,
+    force: bool = False,
+    screen_text: str | None = None,
+) -> tuple[bool, str]:
+    """워커 터미널에 파일 편집 자동 승인 모드 전환 시퀀스(shift+tab, ESC [ Z)를 전송합니다.
+
+    Antigravity CLI 등은 파일 편집 시 확인 대화창을 띄우므로, shift+tab 시퀀스를
+    전송하여 accept-edits 모드로 자동 전환합니다 (--enter 는 붙이지 않습니다).
+    Cursor 등 Plan Mode 로 전환되는 CLI 나 미확인 CLI 에는 fail-closed 원칙에 따라 전송하지 않습니다.
+    """
+    if os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1":
+        return (
+            False,
+            "ORCA_DISABLE_AUTO_APPROVE=1 이므로 파일 편집 자동 승인 모드 전환을 건너뜁니다",
+        )
+
+    if not force:
+        text = (
+            screen_text
+            if screen_text is not None
+            else (
+                terminal_read(terminal, timeout=timeout) or terminal_tail(terminal, timeout=timeout)
+            )
+        )
+        if text is None:
+            return (
+                False,
+                f"터미널 {terminal} 출력을 읽을 수 없어 파일 편집 모드 전환을 건너뜁니다 (fail-closed)",
+            )
+        supported, reason = classify_file_edit_auto_approve_support(text)
+        if not supported:
+            return False, reason
+
+    cmd = [
+        "orca",
+        "terminal",
+        "send",
+        "--terminal",
+        terminal,
+        "--text",
+        FILE_EDIT_AUTO_APPROVE_SEQUENCE,
+    ]
+    code, stdout, stderr = _run_command(cmd, timeout=timeout)
+    if code != 0:
+        err = (stderr or stdout).strip() or f"종료 코드 {code}"
+        return False, f"파일 편집 자동 승인 모드 전환 전송 실패: {err}"
+    return True, f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({terminal})"
 
 
 def approve_trust_prompt(
@@ -2238,6 +2389,19 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 f"경고: {approve_detail}. 워커가 권한 대화창에서 멈출 수 있으니 "
                 f"python3 scripts/orca_auto_approve.py {args.terminal} 를 직접 띄우십시오.\n"
             )
+
+        # 파일 편집 자동 승인 모드 전환 (shift+tab, ESC [ Z) 전송
+        force_mode = getattr(args, "enable_file_edit_auto_approve", False)
+        try:
+            mode_ok, mode_detail = enable_file_edit_auto_approve(args.terminal, force=force_mode)
+            if mode_ok:
+                sys.stderr.write(
+                    f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({args.terminal}).\n"
+                )
+            else:
+                sys.stderr.write(f"파일 편집 자동 승인 모드 전환 건너뜀: {mode_detail}\n")
+        except Exception as exc:
+            sys.stderr.write(f"경고: 파일 편집 자동 승인 모드 전환 중 예외 발생 ({exc}).\n")
     else:
         if not args.agent:
             sys.stderr.write(
@@ -2528,6 +2692,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-capsule-notice",
         action="store_true",
         help="기동 직후 Capsule 정본 경로 고지문 전송을 생략합니다 (권장하지 않음).",
+    )
+    dsp.add_argument(
+        "--enable-file-edit-auto-approve",
+        action="store_true",
+        help="CLI 화면 감지와 무관하게 파일 편집 자동 승인 모드 전환(shift+tab)을 강제 전송합니다.",
     )
     dsp.add_argument(
         "--allow-unverified-delivery",
