@@ -746,35 +746,13 @@ class HybridRAGEngine:
             structured_data = retrieve_structured_data(db, plan)
             sql_elapsed_ms = (_safe_perf_counter() - t_sql_start) * 1000.0
 
-        vector_elapsed_ms = 0.0
         lexical_elapsed_ms = 0.0
+        vector_elapsed_ms = 0.0
         vector_hints: list[str] = []
         vector_filter_provenance: dict[str, Any] | None = None
-        if plan.use_vector and not vector_docs:
-            t_vector_start = _safe_perf_counter()
-            result = retrieve_semantic_context(plan)
-            vector_elapsed_ms = (_safe_perf_counter() - t_vector_start) * 1000.0
-            vector_docs = result.documents
-            if not result.ok:
-                vector_failed = True
-            else:
-                vector_filter_provenance = result.as_filter_provenance()
-                if result.filter_relaxed:
-                    vector_hints.append(
-                        "지식베이스 검색 필터가 완화되어 필터 조건 밖 문서가 반환되었을 수 있습니다."
-                    )
-                if result.unsupported_filters:
-                    unsupported_keys = ", ".join(sorted(result.unsupported_filters))
-                    vector_hints.append(
-                        f"지식베이스 검색에서 지원되지 않아 적용되지 않은 필터: {unsupported_keys}"
-                    )
-                if result.effective_filters and not result.documents:
-                    vector_hints.append(
-                        "지식베이스 필터 조건에 맞는 문서가 0건이라 문맥 없이 답변합니다."
-                    )
 
-        # Lexical (Meilisearch) 어휘 채널 호출 및 우선 합성
-        if plan.use_lexical:
+        # 1. Lexical (Meilisearch) 어휘 채널 선행 호출 및 정확 일치 검사
+        if plan.use_lexical and not vector_docs:
             t_lex_start = _safe_perf_counter()
             lexical_candidates = retrieve_lexical_context(plan, db=db)
             lexical_elapsed_ms = (_safe_perf_counter() - t_lex_start) * 1000.0
@@ -796,25 +774,36 @@ class HybridRAGEngine:
 
                 if exact_lexical_matches:
                     exact_lexical_matches.sort(key=_extract_doc_sort_key, reverse=True)
-
-                    seen_keys = {
-                        d.get("metadata", {}).get("bid_ntce_no") or d.get("id")
-                        for d in exact_lexical_matches
-                        if (d.get("metadata", {}).get("bid_ntce_no") or d.get("id"))
-                    }
-                    remaining_vector_docs = [
-                        d
-                        for d in (vector_docs or [])
-                        if (d.get("metadata", {}).get("bid_ntce_no") or d.get("id"))
-                        not in seen_keys
-                    ]
-
                     target_k = plan.top_k or DEFAULT_VECTOR_TOP_K
-                    vector_docs = (exact_lexical_matches + remaining_vector_docs)[:target_k]
+                    vector_docs = exact_lexical_matches[:target_k]
                     logger.info(
-                        "Meilisearch 어휘 채널 정확 일치 문서 %d건 우선 배치 완료 (총 %d건 반환)",
+                        "Meilisearch 어휘 채널 정확 일치 문서 %d건 우선 채택 완료 (ChromaDB 벡터 검색 생략, 총 %d건)",
                         len(exact_lexical_matches),
                         len(vector_docs),
+                    )
+
+        # 2. Vector (ChromaDB) 의미 검색 (Lexical 정확 일치가 없을 때만 실행)
+        if plan.use_vector and not vector_docs:
+            t_vector_start = _safe_perf_counter()
+            result = retrieve_semantic_context(plan)
+            vector_elapsed_ms = (_safe_perf_counter() - t_vector_start) * 1000.0
+            vector_docs = result.documents
+            if not result.ok:
+                vector_failed = True
+            else:
+                vector_filter_provenance = result.as_filter_provenance()
+                if result.filter_relaxed:
+                    vector_hints.append(
+                        "지식베이스 검색 필터가 완화되어 필터 조건 밖 문서가 반환되었을 수 있습니다."
+                    )
+                if result.unsupported_filters:
+                    unsupported_keys = ", ".join(sorted(result.unsupported_filters))
+                    vector_hints.append(
+                        f"지식베이스 검색에서 지원되지 않아 적용되지 않은 필터: {unsupported_keys}"
+                    )
+                if result.effective_filters and not result.documents:
+                    vector_hints.append(
+                        "지식베이스 필터 조건에 맞는 문서가 0건이라 문맥 없이 답변합니다."
                     )
 
         kb_status_elapsed_ms = 0.0

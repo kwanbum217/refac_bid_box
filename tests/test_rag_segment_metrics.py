@@ -236,3 +236,65 @@ def test_rest_query_segment_metrics_omitted_when_flag_disabled(client, monkeypat
     assert response.status_code == 200
     data = response.json()
     assert "segment_metrics" not in data
+
+
+def test_segment_metrics_vector_bypass_when_lexical_exact_hit(monkeypatch):
+    """Lexical 정확 일치로 Vector 를 바이패스한 경우 vector_ms 는 0.0 이고 lexical_ms 는 계측되어야 합니다."""
+    monkeypatch.setattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", True)
+    monkeypatch.setattr(settings, "MEILI_ENABLED", True)
+
+    target_title = "2026년 도로포장공사 1차"
+    lexical_hit = {
+        "id": "announcement_Servc_2026001",
+        "bid_ntce_no": "2026001",
+        "bid_ntce_nm": target_title,
+        "dminstt_nm": "충남도청",
+        "category": "Servc",
+        "bid_ntce_dt": "2026-08-01 09:00:00",
+    }
+
+    class MockMeiliClient:
+        def _request(self, method: str, path: str, **kwargs) -> dict:
+            return {"hits": [lexical_hit]}
+
+    monkeypatch.setattr(
+        "src.app.services.search_index.MeiliSearchClient",
+        lambda *a, **kw: MockMeiliClient(),
+    )
+
+    mock_semantic = patch("src.rag.engine.retrieve_semantic_context")
+    mock_semantic_fn = mock_semantic.start()
+
+    try:
+        engine = HybridRAGEngine()
+        engine._backend = DummyBackend()
+        engine._backend_resolved = True
+
+        bundle = engine.get_answer_sync(f'"{target_title}" 공고의 수요기관')
+        assert isinstance(bundle, AnswerBundle)
+        metrics = bundle.segment_metrics
+        assert isinstance(metrics, dict)
+
+        # Vector 는 호출되지 않고 vector_ms 는 0.0 이어야 함
+        mock_semantic_fn.assert_not_called()
+        assert metrics["vector_ms"] == 0.0
+        assert metrics["lexical_ms"] >= 0.0
+        assert metrics["llm_ms"] >= 0.0
+        assert metrics["total_ms"] >= 0.0
+
+        # 필수 키 집합 불변 확인
+        expected_keys = {
+            "plan_ms",
+            "sql_ms",
+            "vector_ms",
+            "lexical_ms",
+            "kb_status_ms",
+            "assembly_ms",
+            "prepare_total_ms",
+            "llm_ms",
+            "guard_ms",
+            "total_ms",
+        }
+        assert set(metrics.keys()) == expected_keys
+    finally:
+        mock_semantic.stop()
