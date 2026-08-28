@@ -1,7 +1,7 @@
 # Task task_5c9b902db68f 산출물 요약
 
 > **Task ID**: task_5c9b902db68f
-> **정본 보고서**: [docs/analysis/conditional_vector_bypass_survey_20260828.md](docs/analysis/conditional_vector_bypass_survey_20260828.md)
+> **정본 보고서**: [conditional_vector_bypass_survey_20260828.md](conditional_vector_bypass_survey_20260828.md)
 > **상태**: 조사 완료
 
 ## 요약
