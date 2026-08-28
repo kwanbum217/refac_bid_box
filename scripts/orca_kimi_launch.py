@@ -7,7 +7,10 @@ Kimi TUI 는 주입된 Enter 를 종료로 처리하므로 `dispatch --inject` �
 목록에 워커 행이 생기지 않아 진행 상태를 눈으로 볼 수 없었습니다.
 
 이 런처가 그 순서를 뒤집습니다. 터미널을 **런처를 명령으로 지정해** 먼저 만들고,
-런처는 preamble 파일이 나타날 때까지 기다렸다가 kimi 를 exec 합니다.
+런처는 preamble 파일이 나타날 때까지 기다렸다가 kimi 를 자식 프로세스로 실행합니다.
+`-p` 는 단발 모드이므로 작업이 끝나면 kimi 가 종료됩니다. 예전에는 `os.execvpe` 로
+프로세스를 kimi 에 넘겨 창까지 함께 닫혔지만, 이제는 종료 코드와 완료 안내를 남긴 뒤
+대화형 셸로 이어받아 cursor·Antigravity 워커처럼 사후에 출력을 확인할 수 있습니다.
 
     orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
       --command "uv run python scripts/orca_kimi_launch.py --model or-free/nemotron-ultra"
@@ -19,12 +22,14 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess  # nosec B404 - 코디네이터가 만든 고정 인자 목록으로만 kimi 를 호출합니다
 import sys
 import time
 from pathlib import Path
 
 DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
 DEFAULT_HOME = Path.home() / ".kimi-openrouter-bakeoff"
+DEFAULT_SHELL = "/bin/bash"
 COMMIT_NOTICE = (
     "\n\n추가 지시: 작업을 마치면 반드시 변경 파일을 스테이징하고 커밋하십시오. "
     "git add -A 는 쓰지 마십시오. 커밋 없이 완료를 선언하면 계약 위반입니다. "
@@ -52,6 +57,29 @@ def build_command(model: str, prompt: str) -> list[str]:
     return ["kimi", "-m", model, "-p", prompt]
 
 
+def build_completion_message(exit_code: int, model: str) -> str:
+    """kimi 종료 후 터미널에 남길 완료 안내 문구를 조립합니다."""
+    return (
+        f"\n---\nKimi 작업 완료 (종료 코드: {exit_code})\n세션 이어가기: kimi -m {model} -c\n---\n"
+    )
+
+
+def resolve_shell(env: dict[str, str]) -> str:
+    return env.get("SHELL") or DEFAULT_SHELL
+
+
+def run_kimi(cmd: list[str], env: dict[str, str]) -> int:
+    """kimi 를 자식 프로세스로 실행하고 표준 입출력은 터미널에 그대로 둡니다."""
+    completed = subprocess.run(cmd, env=env)  # nosec B603 - shell 없이 고정 인자 목록으로 호출합니다
+    return completed.returncode
+
+
+def open_interactive_shell(env: dict[str, str]) -> None:
+    """대화형 셸로 프로세스를 대체해 터미널 창을 유지합니다."""
+    shell = resolve_shell(env)
+    os.execvpe(shell, [shell], env)  # noqa: S606  # nosec B606
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Kimi Code 워커 런처")
     parser.add_argument(
@@ -64,6 +92,11 @@ def main(argv: list[str] | None = None) -> int:
         "--no-commit-notice",
         action="store_true",
         help="커밋 고지문을 붙이지 않습니다. one-shot 워커는 기본으로 붙입니다.",
+    )
+    parser.add_argument(
+        "--no-keep-open",
+        action="store_true",
+        help="kimi 종료 후 셸로 이어받지 않고 kimi 종료 코드를 그대로 반환합니다.",
     )
     args = parser.parse_args(argv)
 
@@ -83,8 +116,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"기동: kimi -m {args.model} (지시문 {len(prompt)}자)", flush=True)
     # 인자는 셸을 거치지 않고 그대로 전달되므로 주입 위험이 없습니다. 모델 별칭과
     # 지시문 모두 코디네이터가 만든 값입니다.
-    os.execvpe(cmd[0], cmd, env)  # noqa: S606  # nosec B606
-    return 0  # execvpe 가 성공하면 여기에 도달하지 않습니다.
+    exit_code = run_kimi(cmd, env)
+
+    if args.no_keep_open:
+        return exit_code
+
+    print(build_completion_message(exit_code, args.model), end="", flush=True)
+    open_interactive_shell(env)
+    return exit_code
 
 
 if __name__ == "__main__":
