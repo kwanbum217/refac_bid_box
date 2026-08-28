@@ -1142,6 +1142,48 @@ def terminal_tail(handle: str, timeout: int = 30) -> str | None:
     return str(text)
 
 
+def terminal_read(handle: str, timeout: int = 30) -> str | None:
+    """터미널의 전체 화면/버퍼 출력을 읽습니다 (orca terminal read). 조회에 실패하면 None 을 돌려줍니다."""
+    cmd = ["orca", "terminal", "read", "--terminal", handle, "--json"]
+    code, stdout, _stderr = _run_command(cmd, timeout=timeout)
+    if code != 0 or not stdout.strip():
+        return None
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is False:
+        return None
+    terminal = (payload.get("result") or {}).get("terminal") or {}
+    tail = terminal.get("tail")
+    if isinstance(tail, list):
+        return "\n".join(str(line) for line in tail)
+    if isinstance(tail, str):
+        return tail
+    return None
+
+
+def strip_terminal_metadata_header(text: str) -> str:
+    """orca terminal read 의 머리말 메타 줄(handle:, cursor: 등)을 제외합니다."""
+    meta_prefixes = (
+        "handle:",
+        "status:",
+        "source:",
+        "cursor:",
+        "oldest cursor:",
+        "latest cursor:",
+        "next cursor:",
+        "warning:",
+    )
+    cleaned_lines = []
+    for line in text.splitlines():
+        stripped = line.strip().lower()
+        if any(stripped.startswith(prefix) for prefix in meta_prefixes):
+            continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines)
+
+
 def has_trust_prompt(text: str) -> bool:
     """워크스페이스 신뢰 확인 대화창이 떠 있는지 판정합니다."""
     lowered = text.lower()
@@ -1336,17 +1378,28 @@ def stop_auto_approve(terminal: str) -> tuple[bool, str]:
 
 CURSOR_PLAN_MODE_MARKERS: tuple[str, ...] = (
     "cursor-agent",
-    "cursor",
+    "cursor agent",
+    "composer",
     "plan mode",
     "enable plan mode",
+    "hit shift+tab to enable plan mode",
+    "run everything",
+    "cursoragent@",
 )
 
 ACCEPT_EDITS_CLI_MARKERS: tuple[str, ...] = (
-    "antigravity",
-    "agy",
     "accept-edits",
+    "antigravity",
+    "gemini 3.",
+    "gemini 3.7",
+    "thought for ",
+    "● read(",
+    "● edit(",
+    "● bash(",
+    "● search(",
     "auto-approve file edits",
     "shift+tab to auto-approve",
+    "agy",
 )
 
 
@@ -1360,15 +1413,35 @@ def classify_file_edit_auto_approve_support(text: str) -> tuple[bool, str]:
     if not text or not text.strip():
         return False, "터미널 화면이 비어 있어 CLI 종류를 판정할 수 없습니다 (fail-closed)"
 
-    lowered = text.lower()
-    if any(marker in lowered for marker in CURSOR_PLAN_MODE_MARKERS):
+    cleaned = strip_terminal_metadata_header(text)
+    lowered = cleaned.lower()
+
+    has_agy = any(marker in lowered for marker in ACCEPT_EDITS_CLI_MARKERS)
+    has_cursor = any(marker in lowered for marker in CURSOR_PLAN_MODE_MARKERS)
+
+    # Antigravity 전용 시그니처가 확인되면 Antigravity 로 승인
+    if has_agy and (
+        not has_cursor
+        or any(
+            sig in lowered
+            for sig in (
+                "accept-edits",
+                "thought for ",
+                "● read(",
+                "● edit(",
+                "● bash(",
+                "auto-approve file edits",
+                "shift+tab to auto-approve",
+            )
+        )
+    ):
+        return True, "Antigravity CLI 가 확인되어 파일 편집 자동 승인 모드 전환을 지원합니다"
+
+    if has_cursor:
         return (
             False,
             "Cursor CLI 는 shift+tab 이 Plan Mode(읽기 전용) 전환이므로 파일 편집 모드 전환을 전송하지 않습니다",
         )
-
-    if any(marker in lowered for marker in ACCEPT_EDITS_CLI_MARKERS):
-        return True, "Antigravity CLI 가 확인되어 파일 편집 자동 승인 모드 전환을 지원합니다"
 
     return (
         False,
@@ -1395,7 +1468,13 @@ def enable_file_edit_auto_approve(
         )
 
     if not force:
-        text = screen_text if screen_text is not None else terminal_tail(terminal, timeout=timeout)
+        text = (
+            screen_text
+            if screen_text is not None
+            else (
+                terminal_read(terminal, timeout=timeout) or terminal_tail(terminal, timeout=timeout)
+            )
+        )
         if text is None:
             return (
                 False,

@@ -36,7 +36,9 @@ from scripts.orca_taskctl import (
     main,
     parse_intent,
     resolve_run_id,
+    strip_terminal_metadata_header,
     task_has_write_scope,
+    terminal_read,
     validate_contained_path,
     worker_start,
     worktree_relative_capsule_path,
@@ -3286,37 +3288,105 @@ def test_finalize_passes_diff_cap_flags_to_reviewer(tmp_path, monkeypatch):
     assert "--allow-truncated-diff" not in cmd
 
 
+def test_strip_terminal_metadata_header():
+    """orca terminal read 의 머리말 메타 줄(handle:, cursor: 등)이 정상적으로 제거되는지 검증."""
+    raw = """handle: term_test_123
+status: running
+source: stream
+cursor: 50894
+oldest cursor: 48894
+latest cursor: 50894
+warning: older output is no longer retained
+
+Antigravity CLI v1.2.3
+accept-edits · Gemini 3.7 Flash · high
+>"""
+    cleaned = strip_terminal_metadata_header(raw)
+    assert "handle:" not in cleaned
+    assert "cursor: 50894" not in cleaned
+    assert "warning:" not in cleaned
+    assert "Antigravity CLI v1.2.3" in cleaned
+    assert "accept-edits" in cleaned
+
+
+def test_terminal_read(monkeypatch: pytest.MonkeyPatch):
+    """terminal_read 가 orca terminal read --json 출력을 올바르게 파싱하는지 검증."""
+    sample_json = json.dumps(
+        {
+            "ok": True,
+            "result": {
+                "terminal": {
+                    "handle": "term_xyz",
+                    "status": "running",
+                    "tail": ["line 1", "line 2", "accept-edits · Gemini"],
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._run_command",
+        lambda cmd, timeout=30: (0, sample_json, ""),
+    )
+    res = terminal_read("term_xyz")
+    assert res == "line 1\nline 2\naccept-edits · Gemini"
+
+
 def test_classify_file_edit_auto_approve_support():
     """터미널 화면 분류 함수가 Cursor(차단), Antigravity(허용), 미식별(fail-closed)을 올바르게 판정하는지 검증."""
-    # (a) Cursor 계열 (Plan Mode) -> 차단
+    # (a) Cursor 계열 (Plan Mode / Composer) -> 차단
     cursor_samples = [
         "Cursor Agent v0.4.0\nTip: Hit shift+tab to enable Plan Mode for large or complex changes.\n>",
         "cursor-agent running\n--mode plan\n>",
-        "Active mode: cursor plan mode",
+        "Composer 2.5 · 33.3% · 4 files edited   Run Everything\n~/wt-t2",
+        """handle: term_cursor_1
+status: running
+cursor: 50894
+oldest cursor: 48894
+
+Composer 2.5 · Run Everything
+Tip: Hit shift+tab to enable Plan Mode
+>""",
     ]
     for sample in cursor_samples:
         ok, reason = classify_file_edit_auto_approve_support(sample)
         assert ok is False
         assert "Cursor" in reason or "Plan Mode" in reason
 
-    # (b) Antigravity 계열 (Accept-edits) -> 허용
+    # (b) Antigravity 계열 (Accept-edits) -> 허용 (메타 줄 cursor: 32338 오탐 방지 포함)
     antigravity_samples = [
         "Antigravity CLI v1.2.3\nshift+tab to auto-approve file edits\n>",
         "agy --model gemini-3.7-flash-high\n>",
         "Accept-edits mode: file edits auto-approved\n>",
+        """handle: term_agy_1
+status: running
+source: stream
+cursor: 32338
+oldest cursor: 30338
+latest cursor: 32338
+
+● Read(scripts/orca_taskctl.py)
+▸ Thought for 4s, 500 tokens
+accept-edits · Gemini 3.7 Flash · high
+>""",
     ]
     for sample in antigravity_samples:
         ok, reason = classify_file_edit_auto_approve_support(sample)
         assert ok is True
         assert "Antigravity" in reason
 
-    # (c) 판정 불가 / 미식별 화면 -> fail-closed 차단
+    # (c) 판정 불가 / 미식별 화면 -> fail-closed 차단 (메타 줄이 있어도 fail-closed)
     unknown_samples = [
         "",
         "   \n\t  ",
         "bash-5.2$ ls -la\n>",
         "claude code agent v1.0\n>",
         "opencode TUI\nctrl+p commands\n>",
+        """handle: term_kimi_1
+status: running
+cursor: 560
+
+To resume this session: kimi -r session_123
+refac_bid_box/wt-t3-cpu-probe %""",
     ]
     for sample in unknown_samples:
         ok, reason = classify_file_edit_auto_approve_support(sample)
