@@ -319,6 +319,64 @@ def test_verify_verification_truth_count_match_passes(tmp_path):
     assert details[0]["count_match"] is True
 
 
+def test_verify_verification_truth_omitted_warning_count_passes(tmp_path):
+    """warning 건수를 적지 않은 정직한 보고가 실패하면 안 됩니다.
+
+    실제 출력에는 거의 항상 warning 이 섞이지만 워커 보고서는 대개 이를 적지
+    않습니다. 누락을 0 으로 간주해 대조하면 참인 보고가 전부 실패합니다.
+    """
+    actual_output = "2495 passed, 6 skipped, 3 deselected, 306 warnings in 67.28s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "2495 passed, 6 skipped, 3 deselected in 117.47s",
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    assert ok
+    assert violations == []
+    assert details[0]["count_match"] is True
+
+
+def test_verify_verification_truth_omitted_skipped_count_passes(tmp_path):
+    """skipped 를 적지 않은 축약 보고는 위반이 아닙니다."""
+    actual_output = "43 passed, 2 skipped in 12.34s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "43 passed",
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    assert ok
+    assert violations == []
+    assert details[0]["count_match"] is True
+
+
+def test_verify_verification_truth_reported_warning_mismatch_ignored(tmp_path):
+    """보고서가 warning 을 적었더라도 그 수치 차이는 위반이 아닙니다."""
+    actual_output = "43 passed, 306 warnings in 12.34s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "43 passed, 1 warning in 12.34s",
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    assert ok
+    assert violations == []
+    assert details[0]["count_match"] is True
+
+
 def test_verify_verification_truth_no_counts_in_report_passes(tmp_path):
     """(g) 보고서가 건수를 안 적었으면 기존처럼 PASS 합니다(하위 호환)."""
     actual_output = "43 passed in 1.0s"

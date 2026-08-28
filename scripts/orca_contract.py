@@ -468,6 +468,15 @@ _PYTEST_SUMMARY_MARKER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 건수 동일성 대조에서 제외하는 범주.
+# warning 은 결과가 아니라 환경과 의존성 버전에 따라 흔들리는 부수 정보이며
+# 정직한 보고서도 대개 적지 않습니다. 대조에 넣으면 참인 보고가 실패합니다.
+_COUNT_COMPARE_IGNORED = {"warning"}
+
+# 보고서가 적지 않았는데 실제에만 있을 때 위반으로 볼 범주.
+# 실패와 에러를 누락하면 진실성 문제이지만 skipped, deselected 누락은 아닙니다.
+_COUNT_OMISSION_CRITICAL = {"failed", "errors"}
+
 
 def parse_pytest_summary(text: str) -> dict[str, int] | None:
     """pytest -q 출력 전체에서 요약 줄을 찾아 건수 사전을 돌려줍니다.
@@ -782,13 +791,18 @@ def verify_verification_truth(
                 # 보고서가 건수를 적었을 때만 대조한다
                 mismatches: list[str] = []
                 for key in reported_counts:
+                    if key in _COUNT_COMPARE_IGNORED:
+                        continue
                     reported_val = reported_counts[key]
                     actual_val = actual_counts.get(key, 0)
                     if reported_val != actual_val:
                         mismatches.append(f"{key}: 보고={reported_val}, 실제={actual_val}")
-                # 실제에만 있고 보고서에서 0 이 아닌 것도 비교
+                # 보고서가 적지 않은 범주는 대조하지 않습니다. 누락을 0 으로 간주하면
+                # 정직한 축약 보고가 실패합니다. 실패와 에러 누락만 위반입니다.
                 for key in actual_counts:
-                    if key not in reported_counts and actual_counts[key] != 0:
+                    if key in _COUNT_COMPARE_IGNORED or key in reported_counts:
+                        continue
+                    if key in _COUNT_OMISSION_CRITICAL and actual_counts[key] != 0:
                         mismatches.append(f"{key}: 보고=0(미기재), 실제={actual_counts[key]}")
                 if mismatches:
                     count_match = False
