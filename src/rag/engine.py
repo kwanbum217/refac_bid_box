@@ -69,6 +69,9 @@ from src.rag.snapshots import (
 from src.rag.structured_data import retrieve_structured_data
 from src.rag.vector_store import (
     SemanticSearchResult,
+    _extract_doc_sort_key,
+    _normalize_match_key,
+    extract_document_title,
     retrieve_semantic_context,
 )
 
@@ -559,6 +562,139 @@ class PreparedContext(tuple):
         instance.timings = timings or {}
         return instance
 
+    @property
+    def plan(self) -> Any:
+        return self[0]
+
+    @property
+    def structured_data(self) -> Any:
+        return self[1]
+
+    @property
+    def vector_docs(self) -> Any:
+        return self[2]
+
+    @property
+    def kb_status(self) -> Any:
+        return self[3]
+
+    @property
+    def provenance(self) -> Any:
+        return self[4]
+
+    @property
+    def context_text(self) -> Any:
+        return self[5]
+
+    @property
+    def messages(self) -> Any:
+        return self[6]
+
+
+def retrieve_lexical_context(
+    plan: RetrievalPlan,
+    db: Session | None = None,
+) -> list[dict[str, Any]]:
+    """Meilisearch 어휘(Lexical) 인덱스에서 공고명(bid_ntce_nm) 일치 문서를 검색합니다.
+
+    비활성화(MEILI_ENABLED=False), 서버 미기동, 타임아웃, 예외 발생 시 빈 리스트를 반환하여
+    호출부가 안전하게 기존 벡터 검색 결과로 폴백할 수 있게 합니다.
+    """
+    if not getattr(settings, "MEILI_ENABLED", False):
+        return []
+
+    lexical_query = plan.lexical_query or plan.semantic_query
+    if not lexical_query:
+        return []
+
+    try:
+        from src.app.services.search_index import INDEX_UID, MeiliSearchClient
+
+        client = MeiliSearchClient()
+        filters = ['dataset = "announcement"']
+
+        category = plan.filters.get("category")
+        if category:
+            filters.append(f"category = {json.dumps(category, ensure_ascii=False)}")
+
+        institution = plan.filters.get("institution_name")
+        if institution:
+            from src.app.services.search_index import _region_codes
+
+            regions = _region_codes(institution)
+            if regions:
+                filters.append(f"region_codes = {json.dumps(regions[0], ensure_ascii=False)}")
+
+        fetch_limit = max(plan.top_k or DEFAULT_VECTOR_TOP_K, 10)
+
+        payload = client._request(
+            "POST",
+            f"/indexes/{INDEX_UID}/search",
+            json={
+                "q": lexical_query,
+                "filter": " AND ".join(filters),
+                "limit": fetch_limit,
+                "attributesToRetrieve": [
+                    "id",
+                    "source_id",
+                    "dataset",
+                    "bid_ntce_no",
+                    "bid_ntce_nm",
+                    "dminstt_nm",
+                    "ntce_instt_nm",
+                    "category",
+                    "bid_ntce_dt",
+                    "bid_clse_dt",
+                    "base_amount",
+                    "collected_at",
+                ],
+            },
+        )
+        hits = payload.get("hits", [])
+        if not hits:
+            return []
+
+        results: list[dict[str, Any]] = []
+        for hit in hits:
+            bid_ntce_nm = hit.get("bid_ntce_nm") or ""
+            dminstt_nm = hit.get("dminstt_nm") or hit.get("ntce_instt_nm") or ""
+            bid_ntce_dt = hit.get("bid_ntce_dt") or ""
+            bid_ntce_no = hit.get("bid_ntce_no") or ""
+            category_val = hit.get("category") or ""
+
+            doc_lines = []
+            if dminstt_nm:
+                doc_lines.append(f"[수요기관] {dminstt_nm}")
+            if bid_ntce_nm:
+                doc_lines.append(f"[공고명] {bid_ntce_nm}")
+            if bid_ntce_dt:
+                doc_lines.append(f"[공고일시] {bid_ntce_dt}")
+
+            doc_text = "\n".join(doc_lines)
+
+            results.append(
+                {
+                    "id": hit.get("id") or f"announcement_{category_val}_{bid_ntce_no}",
+                    "document": doc_text,
+                    "content": doc_text,
+                    "metadata": {
+                        "bid_ntce_no": bid_ntce_no,
+                        "bid_ntce_nm": bid_ntce_nm,
+                        "dminstt_nm": dminstt_nm,
+                        "category": category_val,
+                        "bid_ntce_dt": bid_ntce_dt,
+                        "source_id": hit.get("source_id"),
+                        "id": hit.get("id"),
+                    },
+                    "distance": 0.0,
+                    "source": "meilisearch_lexical",
+                }
+            )
+        return results
+    except Exception as exc:
+        logger.warning("Meilisearch 어휘 검색 중 오류 발생 (벡터 경로로 폴백): %s", exc)
+        return []
+
 
 class HybridRAGEngine:
     def __init__(self, provider: str | None = None):
@@ -602,6 +738,7 @@ class HybridRAGEngine:
             sql_elapsed_ms = (time.perf_counter() - t_sql_start) * 1000.0
 
         vector_elapsed_ms = 0.0
+        lexical_elapsed_ms = 0.0
         vector_hints: list[str] = []
         vector_filter_provenance: dict[str, Any] | None = None
         if plan.use_vector and not vector_docs:
@@ -625,6 +762,47 @@ class HybridRAGEngine:
                 if result.effective_filters and not result.documents:
                     vector_hints.append(
                         "지식베이스 필터 조건에 맞는 문서가 0건이라 문맥 없이 답변합니다."
+                    )
+
+        # Lexical (Meilisearch) 어휘 채널 호출 및 우선 합성
+        if plan.use_lexical:
+            t_lex_start = time.perf_counter()
+            lexical_candidates = retrieve_lexical_context(plan, db=db)
+            lexical_elapsed_ms = (time.perf_counter() - t_lex_start) * 1000.0
+
+            if lexical_candidates:
+                query_key = _normalize_match_key(plan.lexical_query or plan.semantic_query)
+                exact_lexical_matches: list[dict[str, Any]] = []
+
+                for doc in lexical_candidates:
+                    doc_meta = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+                    doc_title = doc_meta.get("bid_ntce_nm") or extract_document_title(
+                        doc.get("document")
+                    )
+                    if doc_title and _normalize_match_key(doc_title) == query_key:
+                        exact_lexical_matches.append(doc)
+
+                if exact_lexical_matches:
+                    exact_lexical_matches.sort(key=_extract_doc_sort_key, reverse=True)
+
+                    seen_keys = {
+                        d.get("metadata", {}).get("bid_ntce_no") or d.get("id")
+                        for d in exact_lexical_matches
+                        if (d.get("metadata", {}).get("bid_ntce_no") or d.get("id"))
+                    }
+                    remaining_vector_docs = [
+                        d
+                        for d in (vector_docs or [])
+                        if (d.get("metadata", {}).get("bid_ntce_no") or d.get("id"))
+                        not in seen_keys
+                    ]
+
+                    target_k = plan.top_k or DEFAULT_VECTOR_TOP_K
+                    vector_docs = (exact_lexical_matches + remaining_vector_docs)[:target_k]
+                    logger.info(
+                        "Meilisearch 어휘 채널 정확 일치 문서 %d건 우선 배치 완료 (총 %d건 반환)",
+                        len(exact_lexical_matches),
+                        len(vector_docs),
                     )
 
         kb_status_elapsed_ms = 0.0
@@ -673,6 +851,7 @@ class HybridRAGEngine:
             "plan_ms": round(plan_elapsed_ms, 2),
             "sql_ms": round(sql_elapsed_ms, 2),
             "vector_ms": round(vector_elapsed_ms, 2),
+            "lexical_ms": round(lexical_elapsed_ms, 2),
             "kb_status_ms": round(kb_status_elapsed_ms, 2),
             "assembly_ms": round(assembly_elapsed_ms, 2),
             "prepare_total_ms": round(prepare_total_ms, 2),

@@ -76,9 +76,13 @@ TITLE_PATTERN = re.compile(r"\[공고명\]\s*([^\r\n]+)")
 NOTICE_DATE_PATTERN = re.compile(r"\[공고일시\]\s*([^\r\n]+)")
 OPENING_DATE_PATTERN = re.compile(r"\[개찰일시\]\s*([^\r\n]+)")
 DATE_ISO_PATTERN = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
-MATCH_KEY_CLEAN_PATTERN = re.compile(
-    r"[\s\(\)\[\]\{\}\uff08\uff09\uff3b\uff3d\uff5b\uff5d\u3010\u3011\u3014\u3015\u3008\u3009\u300a\u300b\u300c\u300d\u300e\u300f]"
+OPEN_BRACKETS_PATTERN = re.compile(
+    r"[\(\[\{\uff08\uff3b\uff5b\u3010\u3014\u3008\u300a\u300c\u300e]"
 )
+CLOSE_BRACKETS_PATTERN = re.compile(
+    r"[\)\]\}\uff09\uff3d\uff5d\u3011\u3015\u3009\u300b\u300d\u300f]"
+)
+WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 def _parse_iso_date(value: str | None) -> date | None:
@@ -130,11 +134,46 @@ def extract_document_title(document_text: str | None) -> str | None:
 
 
 def _normalize_match_key(value: str | None) -> str:
-    """공백과 괄호류를 제거하고 소문자 NFC 로 정규화하여 정확 일치 비교 키를 만듭니다."""
+    """공백을 제거하고 소문자 NFC 및 표준 괄호('(', ')')로 정규화하여 정확 일치 비교 키를 만듭니다.
+
+    괄호 내용을 통째로 삭제하지 않고 보존하여 '공사(1차)'와 '공사 1차'가 서로 다른 키가 되도록 합니다.
+    """
     if not value:
         return ""
     normalized = unicodedata.normalize("NFC", str(value)).strip().lower()
-    return MATCH_KEY_CLEAN_PATTERN.sub("", normalized)
+    normalized = OPEN_BRACKETS_PATTERN.sub("(", normalized)
+    normalized = CLOSE_BRACKETS_PATTERN.sub(")", normalized)
+    return WHITESPACE_PATTERN.sub("", normalized)
+
+
+def _extract_doc_sort_key(doc: dict[str, Any]) -> tuple[str, str, str, str]:
+    """정확 일치 복수 문서 간 결정적 동점 해소(tie-breaking) 키를 추출합니다.
+    1순위: 공고일시 (최신 우선, 내림차순 정렬)
+    2순위: 개찰일시 (최신 우선)
+    3순위: 공고번호 / 고유 식별자
+    4순위: 공고 차수
+    """
+    metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    doc_text = doc.get("document") or doc.get("content") or ""
+
+    notice_dt = metadata.get("bid_ntce_dt") or metadata.get("notice_date") or ""
+    if not notice_dt and doc_text:
+        n_match = NOTICE_DATE_PATTERN.search(str(doc_text))
+        if n_match:
+            notice_dt = n_match.group(1).strip()
+    notice_dt_str = str(notice_dt or "")
+
+    opening_dt = metadata.get("rl_openg_dt") or metadata.get("opening_date") or ""
+    if not opening_dt and doc_text:
+        o_match = OPENING_DATE_PATTERN.search(str(doc_text))
+        if o_match:
+            opening_dt = o_match.group(1).strip()
+    opening_dt_str = str(opening_dt or "")
+
+    ntce_no = str(metadata.get("bid_ntce_no") or metadata.get("id") or doc.get("id") or "")
+    ord_no = str(metadata.get("bid_ntce_ord") or "")
+
+    return (notice_dt_str, opening_dt_str, ntce_no, ord_no)
 
 
 def _rerank_by_exact_title(
@@ -143,7 +182,8 @@ def _rerank_by_exact_title(
 ) -> list[dict[str, Any]]:
     """질의와 [공고명]이 정규화 정확 일치하는 문서를 최상위로 재순위합니다.
 
-    정규화(NFC, 소문자, 공백 및 괄호류 제거) 후 정확히 일치하는 문서만 우선 배치하고,
+    정규화(NFC, 소문자, 공백 제거, 괄호 표준화) 후 정확히 일치하는 문서만 우선 배치하고,
+    복수 일치 시 결정적 기준(공고일시 최신순)으로 정렬합니다.
     나머지 문서는 기존 상대적 순서(distance 순)를 그대로 유지합니다.
     """
     query_key = _normalize_match_key(semantic_query)
@@ -166,6 +206,8 @@ def _rerank_by_exact_title(
 
     if not exact_matches:
         return documents
+
+    exact_matches.sort(key=_extract_doc_sort_key, reverse=True)
 
     logger.info(
         "정확 공고명 일치 문서 %d건 우선 재순위 (query_key=%s)",
