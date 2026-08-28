@@ -191,6 +191,15 @@ def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
 logger = logging.getLogger(__name__)
 
 
+def _safe_perf_counter() -> float:
+    """계측 예외가 주 실행 경로를 중단하지 않도록 보호하는 안전한 time.perf_counter 래퍼입니다."""
+    try:
+        return time.perf_counter()
+    except Exception as exc:
+        logger.warning("RAG 구간 계측 시계 조회 중 예외 발생 (무시됨): %s", exc)
+        return 0.0
+
+
 def _contains_bounded_number(answer_text: str, candidate: str) -> bool:
     """후보 문자열 앞뒤에 숫자, 쉼표, 마침표가 붙어 있지 않은 독립 수치인지 확인합니다."""
     if not candidate:
@@ -531,6 +540,18 @@ def check_numeric_omissions(
     }
 
 
+# AnswerBundle 에 segment_metrics 프로퍼티 동적 바인딩 (스키마 호환성 및 선택적 노출 지원)
+if not hasattr(AnswerBundle, "segment_metrics"):
+
+    def _get_segment_metrics(self: AnswerBundle) -> dict[str, float] | None:
+        return getattr(self, "_segment_metrics_val", None)
+
+    def _set_segment_metrics(self: AnswerBundle, val: dict[str, float] | None) -> None:
+        object.__setattr__(self, "_segment_metrics_val", val)
+
+    AnswerBundle.segment_metrics = property(_get_segment_metrics, _set_segment_metrics)  # type: ignore[assignment]
+
+
 class PreparedContext(tuple):
     """_prepare_context 반환 튜플 (기존 7개 요소와 세부 구간 계측 정보 보존)."""
 
@@ -722,29 +743,29 @@ class HybridRAGEngine:
         tool_context: dict | None = None,
     ) -> PreparedContext:
         """검색 계획 수립과 컨텍스트 조회를 수행하고 세부 구간을 계측합니다."""
-        t_prep_start = time.perf_counter()
+        t_prep_start = _safe_perf_counter()
 
-        t_plan_start = time.perf_counter()
+        t_plan_start = _safe_perf_counter()
         plan = build_retrieval_plan(user_query)
-        plan_elapsed_ms = (time.perf_counter() - t_plan_start) * 1000.0
+        plan_elapsed_ms = (_safe_perf_counter() - t_plan_start) * 1000.0
 
         structured_data, vector_docs, kb_status = _normalize_tool_context(tool_context)
         vector_failed = False
 
         sql_elapsed_ms = 0.0
         if plan.use_sql and structured_data is None and db is not None:
-            t_sql_start = time.perf_counter()
+            t_sql_start = _safe_perf_counter()
             structured_data = retrieve_structured_data(db, plan)
-            sql_elapsed_ms = (time.perf_counter() - t_sql_start) * 1000.0
+            sql_elapsed_ms = (_safe_perf_counter() - t_sql_start) * 1000.0
 
         vector_elapsed_ms = 0.0
         lexical_elapsed_ms = 0.0
         vector_hints: list[str] = []
         vector_filter_provenance: dict[str, Any] | None = None
         if plan.use_vector and not vector_docs:
-            t_vector_start = time.perf_counter()
+            t_vector_start = _safe_perf_counter()
             result = retrieve_semantic_context(plan)
-            vector_elapsed_ms = (time.perf_counter() - t_vector_start) * 1000.0
+            vector_elapsed_ms = (_safe_perf_counter() - t_vector_start) * 1000.0
             vector_docs = result.documents
             if not result.ok:
                 vector_failed = True
@@ -766,9 +787,9 @@ class HybridRAGEngine:
 
         # Lexical (Meilisearch) 어휘 채널 호출 및 우선 합성
         if plan.use_lexical:
-            t_lex_start = time.perf_counter()
+            t_lex_start = _safe_perf_counter()
             lexical_candidates = retrieve_lexical_context(plan, db=db)
-            lexical_elapsed_ms = (time.perf_counter() - t_lex_start) * 1000.0
+            lexical_elapsed_ms = (_safe_perf_counter() - t_lex_start) * 1000.0
 
             if lexical_candidates:
                 query_key = _normalize_match_key(plan.lexical_query or plan.semantic_query)
@@ -807,13 +828,13 @@ class HybridRAGEngine:
 
         kb_status_elapsed_ms = 0.0
         if plan.use_kb_status and kb_status is None and db is not None:
-            t_kb_start = time.perf_counter()
+            t_kb_start = _safe_perf_counter()
             from src.app.services.tools.kb_status_tool import get_latest_kb_status_payload
 
             kb_status = get_latest_kb_status_payload(db)
-            kb_status_elapsed_ms = (time.perf_counter() - t_kb_start) * 1000.0
+            kb_status_elapsed_ms = (_safe_perf_counter() - t_kb_start) * 1000.0
 
-        t_assembly_start = time.perf_counter()
+        t_assembly_start = _safe_perf_counter()
         trace_id = datetime.now().strftime("%Y%m%d%H%M%S") + os.urandom(4).hex()
         evidence_items = _build_evidence_items(structured_data, vector_docs, kb_status)
 
@@ -843,19 +864,31 @@ class HybridRAGEngine:
         messages = [{"role": item["role"], "content": item["text"]} for item in history or []]
         messages.append({"role": "user", "content": f"검색 컨텍스트:\n{context_text}"})
         messages.append({"role": "user", "content": _normalize_text(user_query)})
-        assembly_elapsed_ms = (time.perf_counter() - t_assembly_start) * 1000.0
+        assembly_elapsed_ms = (_safe_perf_counter() - t_assembly_start) * 1000.0
 
-        prepare_total_ms = (time.perf_counter() - t_prep_start) * 1000.0
+        prepare_total_ms = (_safe_perf_counter() - t_prep_start) * 1000.0
 
-        timings = {
-            "plan_ms": round(plan_elapsed_ms, 2),
-            "sql_ms": round(sql_elapsed_ms, 2),
-            "vector_ms": round(vector_elapsed_ms, 2),
-            "lexical_ms": round(lexical_elapsed_ms, 2),
-            "kb_status_ms": round(kb_status_elapsed_ms, 2),
-            "assembly_ms": round(assembly_elapsed_ms, 2),
-            "prepare_total_ms": round(prepare_total_ms, 2),
-        }
+        try:
+            timings = {
+                "plan_ms": round(plan_elapsed_ms, 2),
+                "sql_ms": round(sql_elapsed_ms, 2),
+                "vector_ms": round(vector_elapsed_ms, 2),
+                "lexical_ms": round(lexical_elapsed_ms, 2),
+                "kb_status_ms": round(kb_status_elapsed_ms, 2),
+                "assembly_ms": round(assembly_elapsed_ms, 2),
+                "prepare_total_ms": round(prepare_total_ms, 2),
+            }
+        except Exception as exc:
+            logger.warning("RAG 준비 구간 계측 중 예외 발생 (무시됨): %s", exc)
+            timings = {
+                "plan_ms": 0.0,
+                "sql_ms": 0.0,
+                "vector_ms": 0.0,
+                "lexical_ms": 0.0,
+                "kb_status_ms": 0.0,
+                "assembly_ms": 0.0,
+                "prepare_total_ms": 0.0,
+            }
 
         return PreparedContext(
             plan,
@@ -915,7 +948,7 @@ class HybridRAGEngine:
         history: list[dict] | None = None,
         tool_context: dict | None = None,
     ) -> AnswerBundle:
-        t_start = time.perf_counter()
+        t_start = _safe_perf_counter()
         prepared = self._prepare_context(
             user_query, db=db, history=history, tool_context=tool_context
         )
@@ -933,11 +966,38 @@ class HybridRAGEngine:
         plan_ms = float(timings.get("plan_ms", 0.0))
         sql_ms = float(timings.get("sql_ms", 0.0))
         vector_ms = float(timings.get("vector_ms", 0.0))
+        lexical_ms = float(timings.get("lexical_ms", 0.0))
         kb_status_ms = float(timings.get("kb_status_ms", 0.0))
         assembly_ms = float(timings.get("assembly_ms", 0.0))
         prepare_total_ms = float(
-            timings.get("prepare_total_ms", (time.perf_counter() - t_start) * 1000.0)
+            timings.get("prepare_total_ms", (_safe_perf_counter() - t_start) * 1000.0)
         )
+
+        def _calc_segment_metrics(
+            llm_ms: float, guard_ms: float, total_ms: float
+        ) -> dict[str, float]:
+            try:
+                return {
+                    "plan_ms": round(plan_ms, 2),
+                    "sql_ms": round(sql_ms, 2),
+                    "vector_ms": round(vector_ms, 2),
+                    "lexical_ms": round(lexical_ms, 2),
+                    "kb_status_ms": round(kb_status_ms, 2),
+                    "assembly_ms": round(assembly_ms, 2),
+                    "prepare_total_ms": round(prepare_total_ms, 2),
+                    "llm_ms": round(llm_ms, 2),
+                    "guard_ms": round(guard_ms, 2),
+                    "total_ms": round(total_ms, 2),
+                }
+            except Exception as exc:
+                logger.warning("RAG 구간 지표 계산 중 예외 발생 (무시됨): %s", exc)
+                return {
+                    "sql_ms": 0.0,
+                    "vector_ms": 0.0,
+                    "lexical_ms": 0.0,
+                    "llm_ms": 0.0,
+                    "total_ms": 0.0,
+                }
 
         def _log_latency(
             status: str,
@@ -946,74 +1006,91 @@ class HybridRAGEngine:
             total_ms: float,
             backend_name: str,
         ) -> None:
-            if not settings.LATENCY_SEGMENT_LOGGING:
+            if not getattr(settings, "LATENCY_SEGMENT_LOGGING", False):
                 return
-            logger.info(
-                "rag_engine_latency: trace_id=%s status=%s route=%s use_sql=%s use_vector=%s use_kb=%s "
-                "plan_ms=%.2f sql_ms=%.2f vector_ms=%.2f kb_ms=%.2f assembly_ms=%.2f prepare_ms=%.2f "
-                "llm_ms=%.2f guard_ms=%.2f total_ms=%.2f backend=%s",
-                provenance.trace_id,
-                status,
-                plan.route_reason or "unknown",
-                plan.use_sql,
-                plan.use_vector,
-                plan.use_kb_status,
-                plan_ms,
-                sql_ms,
-                vector_ms,
-                kb_status_ms,
-                assembly_ms,
-                prepare_total_ms,
-                llm_ms,
-                guard_ms,
-                total_ms,
-                backend_name,
-                extra={
-                    "trace_id": provenance.trace_id,
-                    "status": status,
-                    "route": plan.route_reason,
-                    "use_sql": plan.use_sql,
-                    "use_vector": plan.use_vector,
-                    "use_kb_status": plan.use_kb_status,
-                    "plan_ms": plan_ms,
-                    "sql_ms": sql_ms,
-                    "vector_ms": vector_ms,
-                    "kb_status_ms": kb_status_ms,
-                    "assembly_ms": assembly_ms,
-                    "prepare_ms": prepare_total_ms,
-                    "llm_ms": llm_ms,
-                    "guard_ms": guard_ms,
-                    "total_ms": total_ms,
-                    "backend": backend_name,
-                },
-            )
+            try:
+                logger.info(
+                    "rag_engine_latency: trace_id=%s status=%s route=%s use_sql=%s use_vector=%s use_lexical=%s use_kb=%s "
+                    "plan_ms=%.2f sql_ms=%.2f vector_ms=%.2f lexical_ms=%.2f kb_ms=%.2f assembly_ms=%.2f prepare_ms=%.2f "
+                    "llm_ms=%.2f guard_ms=%.2f total_ms=%.2f backend=%s",
+                    provenance.trace_id,
+                    status,
+                    plan.route_reason or "unknown",
+                    plan.use_sql,
+                    plan.use_vector,
+                    getattr(plan, "use_lexical", False),
+                    plan.use_kb_status,
+                    plan_ms,
+                    sql_ms,
+                    vector_ms,
+                    lexical_ms,
+                    kb_status_ms,
+                    assembly_ms,
+                    prepare_total_ms,
+                    llm_ms,
+                    guard_ms,
+                    total_ms,
+                    backend_name,
+                    extra={
+                        "trace_id": provenance.trace_id,
+                        "status": status,
+                        "route": plan.route_reason,
+                        "use_sql": plan.use_sql,
+                        "use_vector": plan.use_vector,
+                        "use_lexical": getattr(plan, "use_lexical", False),
+                        "use_kb_status": plan.use_kb_status,
+                        "plan_ms": plan_ms,
+                        "sql_ms": sql_ms,
+                        "vector_ms": vector_ms,
+                        "lexical_ms": lexical_ms,
+                        "kb_status_ms": kb_status_ms,
+                        "assembly_ms": assembly_ms,
+                        "prepare_ms": prepare_total_ms,
+                        "llm_ms": llm_ms,
+                        "guard_ms": guard_ms,
+                        "total_ms": total_ms,
+                        "backend": backend_name,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("RAG 레이턴시 로깅 중 예외 발생 (무시됨): %s", exc)
 
         def _bundle(
             answer: str,
             citations: list[str] | None = None,
             total_elapsed_ms: float | None = None,
+            segment_metrics: dict[str, float] | None = None,
         ) -> AnswerBundle:
             elapsed = (
                 total_elapsed_ms
                 if total_elapsed_ms is not None
-                else (time.perf_counter() - t_start) * 1000.0
+                else (_safe_perf_counter() - t_start) * 1000.0
             )
-            return AnswerBundle(
+            bundle = AnswerBundle(
                 answer=answer,
                 provenance=provenance,
                 citations=citations or [],
                 retrieved_docs=vector_docs,
                 latency_ms=elapsed,
             )
+            try:
+                expose_flag = getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
+                if expose_flag and segment_metrics is not None:
+                    bundle.segment_metrics = segment_metrics
+                else:
+                    bundle.segment_metrics = None
+            except Exception as exc:
+                logger.warning("RAG 구간 지표 응답 설정 중 예외 발생 (무시됨): %s", exc)
+            return bundle
 
-        t_direct_start = time.perf_counter()
+        t_direct_start = _safe_perf_counter()
         direct_result_list_answer = _build_result_list_answer(plan, structured_data)
         if direct_result_list_answer:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
-            guard_elapsed_ms = (time.perf_counter() - t_direct_start) * 1000.0
-            total_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            guard_elapsed_ms = (_safe_perf_counter() - t_direct_start) * 1000.0
+            total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
             _log_latency(
                 status="direct_result_list",
                 llm_ms=0.0,
@@ -1021,21 +1098,23 @@ class HybridRAGEngine:
                 total_ms=total_elapsed_ms,
                 backend_name="none",
             )
+            seg_metrics = _calc_segment_metrics(0.0, guard_elapsed_ms, total_elapsed_ms)
             return _bundle(
                 f"{direct_result_list_answer}{citation_suffix}",
                 [citation_suffix.strip()] if citation_suffix.strip() else [],
                 total_elapsed_ms=total_elapsed_ms,
+                segment_metrics=seg_metrics,
             )
 
         backend = self.backend
         if backend is None:
-            t_fallback_start = time.perf_counter()
+            t_fallback_start = _safe_perf_counter()
             fallback_text = _fallback_answer(
                 user_query, plan, structured_data, vector_docs, kb_status
             )
             normalized = _normalize_category_wording(fallback_text, plan)
-            guard_elapsed_ms = (time.perf_counter() - t_fallback_start) * 1000.0
-            total_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            guard_elapsed_ms = (_safe_perf_counter() - t_fallback_start) * 1000.0
+            total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
             _log_latency(
                 status="fallback_no_backend",
                 llm_ms=0.0,
@@ -1043,15 +1122,20 @@ class HybridRAGEngine:
                 total_ms=total_elapsed_ms,
                 backend_name="fallback",
             )
-            return _bundle(normalized, total_elapsed_ms=total_elapsed_ms)
+            seg_metrics = _calc_segment_metrics(0.0, guard_elapsed_ms, total_elapsed_ms)
+            return _bundle(
+                normalized,
+                total_elapsed_ms=total_elapsed_ms,
+                segment_metrics=seg_metrics,
+            )
 
         backend_name = getattr(backend, "name", "unknown")
-        t_llm_start = time.perf_counter()
+        t_llm_start = _safe_perf_counter()
         try:
             answer_text = backend.generate(SYSTEM_PROMPT, messages)
-            llm_elapsed_ms = (time.perf_counter() - t_llm_start) * 1000.0
+            llm_elapsed_ms = (_safe_perf_counter() - t_llm_start) * 1000.0
 
-            t_guard_start = time.perf_counter()
+            t_guard_start = _safe_perf_counter()
             answer_text = self._apply_answer_guard(
                 answer_text,
                 structured_data,
@@ -1063,9 +1147,9 @@ class HybridRAGEngine:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
-            guard_elapsed_ms = (time.perf_counter() - t_guard_start) * 1000.0
+            guard_elapsed_ms = (_safe_perf_counter() - t_guard_start) * 1000.0
 
-            total_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
             _log_latency(
                 status="success",
                 llm_ms=llm_elapsed_ms,
@@ -1073,20 +1157,22 @@ class HybridRAGEngine:
                 total_ms=total_elapsed_ms,
                 backend_name=backend_name,
             )
+            seg_metrics = _calc_segment_metrics(llm_elapsed_ms, guard_elapsed_ms, total_elapsed_ms)
             return _bundle(
                 f"{answer_text}{citation_suffix}",
                 [citation_suffix.strip()] if citation_suffix.strip() else [],
                 total_elapsed_ms=total_elapsed_ms,
+                segment_metrics=seg_metrics,
             )
         except Exception as exc:
-            llm_elapsed_ms = (time.perf_counter() - t_llm_start) * 1000.0
-            t_fallback_start = time.perf_counter()
+            llm_elapsed_ms = (_safe_perf_counter() - t_llm_start) * 1000.0
+            t_fallback_start = _safe_perf_counter()
             fallback_text = _fallback_answer(
                 user_query, plan, structured_data, vector_docs, kb_status
             )
             normalized = _normalize_category_wording(fallback_text, plan)
-            guard_elapsed_ms = (time.perf_counter() - t_fallback_start) * 1000.0
-            total_elapsed_ms = (time.perf_counter() - t_start) * 1000.0
+            guard_elapsed_ms = (_safe_perf_counter() - t_fallback_start) * 1000.0
+            total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
             logger.warning(
                 "LLM 생성 실패로 fallback 전환 (trace_id=%s, backend=%s, error=%s)",
                 provenance.trace_id,
@@ -1100,7 +1186,12 @@ class HybridRAGEngine:
                 total_ms=total_elapsed_ms,
                 backend_name=backend_name,
             )
-            return _bundle(normalized, total_elapsed_ms=total_elapsed_ms)
+            seg_metrics = _calc_segment_metrics(llm_elapsed_ms, guard_elapsed_ms, total_elapsed_ms)
+            return _bundle(
+                normalized,
+                total_elapsed_ms=total_elapsed_ms,
+                segment_metrics=seg_metrics,
+            )
 
     async def get_answer(
         self,
@@ -1139,6 +1230,14 @@ class HybridRAGEngine:
         """
         # tool_context 가 비어 있으면 여기서 동기 DB 질의와 ChromaDB 임베딩 검색이
         # 일어납니다. SSE 제너레이터는 이벤트 루프에서 돌므로 스레드로 넘깁니다.
+        t_stream_start = _safe_perf_counter()
+        prepared = await asyncio.to_thread(
+            self._prepare_context,
+            user_query,
+            db=db,
+            history=history,
+            tool_context=tool_context,
+        )
         (
             plan,
             structured_data,
@@ -1147,13 +1246,41 @@ class HybridRAGEngine:
             provenance,
             _context_text,
             messages,
-        ) = await asyncio.to_thread(
-            self._prepare_context,
-            user_query,
-            db=db,
-            history=history,
-            tool_context=tool_context,
-        )
+        ) = prepared
+
+        timings = getattr(prepared, "timings", {})
+        plan_ms = float(timings.get("plan_ms", 0.0))
+        sql_ms = float(timings.get("sql_ms", 0.0))
+        vector_ms = float(timings.get("vector_ms", 0.0))
+        lexical_ms = float(timings.get("lexical_ms", 0.0))
+        kb_status_ms = float(timings.get("kb_status_ms", 0.0))
+        assembly_ms = float(timings.get("assembly_ms", 0.0))
+        prepare_total_ms = float(timings.get("prepare_total_ms", 0.0))
+
+        def _calc_stream_metrics(llm_ms: float, guard_ms: float) -> dict[str, float]:
+            try:
+                total_ms = (_safe_perf_counter() - t_stream_start) * 1000.0
+                return {
+                    "plan_ms": round(plan_ms, 2),
+                    "sql_ms": round(sql_ms, 2),
+                    "vector_ms": round(vector_ms, 2),
+                    "lexical_ms": round(lexical_ms, 2),
+                    "kb_status_ms": round(kb_status_ms, 2),
+                    "assembly_ms": round(assembly_ms, 2),
+                    "prepare_total_ms": round(prepare_total_ms, 2),
+                    "llm_ms": round(llm_ms, 2),
+                    "guard_ms": round(guard_ms, 2),
+                    "total_ms": round(total_ms, 2),
+                }
+            except Exception as exc:
+                logger.warning("RAG 스트림 구간 지표 계산 중 예외 발생 (무시됨): %s", exc)
+                return {
+                    "sql_ms": 0.0,
+                    "vector_ms": 0.0,
+                    "lexical_ms": 0.0,
+                    "llm_ms": 0.0,
+                    "total_ms": 0.0,
+                }
 
         yield {"type": "docs", "docs": vector_docs}
 
@@ -1164,12 +1291,15 @@ class HybridRAGEngine:
             )
             final_answer = f"{direct_result_list_answer}{citation_suffix}"
             yield {"type": "token", "text": final_answer}
-            yield {
+            done_event = {
                 "type": "done",
                 "citations": [citation_suffix.strip()] if citation_suffix.strip() else [],
                 "trace_id": provenance.trace_id,
                 "final_answer": final_answer,
             }
+            if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
+                done_event["segment_metrics"] = _calc_stream_metrics(0.0, 0.0)
+            yield done_event
             return
 
         backend = self.backend
@@ -1182,16 +1312,20 @@ class HybridRAGEngine:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
-            yield {
+            done_event = {
                 "type": "done",
                 "citations": [citation_suffix.strip()] if citation_suffix.strip() else [],
                 "trace_id": provenance.trace_id,
                 "final_answer": f"{normalized}{citation_suffix}",
             }
+            if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
+                done_event["segment_metrics"] = _calc_stream_metrics(0.0, 0.0)
+            yield done_event
             return
 
         try:
             raw_answer = ""
+            t_llm_stream_start = _safe_perf_counter()
             token_gen = backend.stream_generate(SYSTEM_PROMPT, messages)
             while True:
                 token = await asyncio.to_thread(next, token_gen, None)
@@ -1200,6 +1334,8 @@ class HybridRAGEngine:
                 raw_answer += token
                 yield {"type": "token", "text": token}
 
+            llm_stream_elapsed_ms = (_safe_perf_counter() - t_llm_stream_start) * 1000.0
+            t_guard_stream_start = _safe_perf_counter()
             corrected_answer = self._apply_answer_guard(
                 raw_answer,
                 structured_data,
@@ -1211,6 +1347,7 @@ class HybridRAGEngine:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
+            guard_stream_elapsed_ms = (_safe_perf_counter() - t_guard_stream_start) * 1000.0
             final_answer = f"{corrected_answer}{citation_suffix}"
             final_citations = [citation_suffix.strip()] if citation_suffix.strip() else []
 
@@ -1222,6 +1359,10 @@ class HybridRAGEngine:
             }
             if corrected_answer != raw_answer:
                 done_event["corrected_answer"] = final_answer
+            if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
+                done_event["segment_metrics"] = _calc_stream_metrics(
+                    llm_stream_elapsed_ms, guard_stream_elapsed_ms
+                )
             yield done_event
         except Exception:
             fallback_text = _fallback_answer(
@@ -1229,12 +1370,15 @@ class HybridRAGEngine:
             )
             normalized = _normalize_category_wording(fallback_text, plan)
             yield {"type": "token", "text": normalized}
-            yield {
+            done_event = {
                 "type": "done",
                 "citations": [],
                 "trace_id": provenance.trace_id,
                 "final_answer": normalized,
             }
+            if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
+                done_event["segment_metrics"] = _calc_stream_metrics(0.0, 0.0)
+            yield done_event
 
 
 rag_engine = HybridRAGEngine()
