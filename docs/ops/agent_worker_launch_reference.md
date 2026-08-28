@@ -40,6 +40,17 @@
 두 층은 서로를 대체하지 않습니다. `shift+tab` 만 보내고 감시기를 띄우지 않으면
 `cat > file`, `mkdir`, `top` 같은 명령에서 그대로 멈춥니다.
 
+### 0.5.1 터미널별 단일 감시기 보장 및 생명주기
+
+자동 승인 감시기는 터미널별로 정확히 1개의 프로세스만 유지되어야 하며, 작업 종료 시 명시적으로 정리됩니다.
+
+| 생명주기 단계 | 동작 메커니즘 | 관리 주체 |
+| --- | --- | --- |
+| 기동 및 중복 방지 | PID 레지스트리 파일(`orca_auto_approve/<terminal>.pid`)을 조회하여 프로세스 생존(`os.kill(pid, 0)`) 시 기존 감시기 재사용 | `scripts/orca_taskctl.py start_auto_approve` |
+| 비정상 프로세스 복구 | PID 파일이 손상되었거나 프로세스가 죽어 있으면 새 감시기를 띄우고 PID 갱신 | `scripts/orca_taskctl.py start_auto_approve` |
+| 명시적 종료 | Task 완료 시 SIGTERM 시그널을 전달하고 PID 파일을 삭제하여 고아 프로세스 방지 | `scripts/orca_taskctl.py finalize` (`stop_auto_approve`) |
+| 자체 종료 | 대상 터미널 읽기 연속 5회 실패(터미널 종료) 시 감시 대상에서 제외하며, 전체 대상 소진 시 자동 반환 및 PID 파일 정리 | `scripts/orca_auto_approve.py poll_loop` |
+
 `scripts/orca_taskctl.py dispatch --terminal ...` 은 Dispatch 직후 이 감시기를
 자동으로 붙이고 로그 경로를 알립니다. 붙이지 못하면 경고를 출력하므로, 그 경고를
 보면 직접 띄우십시오. 터미널을 `terminal create` 로 직접 만들고 taskctl 을 거치지

@@ -2,39 +2,59 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from scripts.orca_auto_approve import (
+    CATEGORY_READ_ONLY,
+    CATEGORY_TEST_EXECUTION,
+    SAFE_STANDALONE_COMMANDS,
+    SAFE_TEST_COMMANDS,
     classify_command,
+    get_watcher_pid_path,
     is_safe_git_branch,
+    is_safe_git_subcommand,
     parse_git_subcommand,
     pending_command,
     poll_loop,
     read,
     send,
+    write_watcher_pid,
 )
 
 
 class TestClassifyCommandSafe:
-    """안전한 읽기 전용 명령 자동 승인(approve) 검증."""
+    """안전한 읽기 전용 명령 및 테스트 코드 실행 검증 자동 승인(approve) 검증."""
 
     @pytest.mark.parametrize(
         "cmd",
         [
             "git status",
             "git status -s",
-            "git -C /tmp status",
+            "git status --short --branch",
+            "git status -uno",
+            "git status --porcelain",
             "git diff",
             "git diff HEAD~1",
-            "git --no-pager diff",
+            "git diff --stat",
+            "git diff --name-only",
+            "git diff -p src/main.py",
+            "git diff --cached",
+            "git diff --staged",
             "git log",
             "git log -n 10 --oneline",
+            "git log -5",
+            "git log --oneline",
+            "git log --graph --decorate",
             "git show HEAD",
             "git show HEAD:src/main.py",
+            "git show --stat HEAD",
             "git rev-parse HEAD",
             "git rev-parse --show-toplevel",
+            "git rev-parse --git-dir",
+            "git rev-parse --verify HEAD",
             "git branch --show-current",
             "git branch",
             "git branch -a",
@@ -68,12 +88,33 @@ class TestClassifyCommandSafe:
 
 
 class TestClassifyCommandHold:
-    """파괴적이거나 위험한 명령 보류(hold) 검증."""
+    """파괴적이거나 위험한 명령, git 전역 옵션, 허용 목록 밖 옵션 보류(hold) 검증."""
 
     @pytest.mark.parametrize(
         "cmd",
         [
-            # (b) Git 위험 명령
+            # (a)~(d) Git 전역 옵션 금지 (감사 지적 사항 고정)
+            "git -c core.pager=x diff",
+            "git -c diff.external=foo diff",
+            "git --exec-path=/tmp status",
+            "git --git-dir=/tmp/x log",
+            "git -C /tmp status",
+            "git --work-tree=/tmp diff",
+            "git --namespace=foo log",
+            "git --super-prefix=bar diff",
+            "git --no-pager diff",
+            "git --paginate log",
+            "git -p status",
+            "git --bare status",
+            # (f) Git diff 허용 목록 밖 옵션
+            "git diff --output=/tmp/out.patch",
+            "git diff --ext-diff",
+            "git diff --textconv",
+            "git diff --no-index /a /b",
+            # Git log / status 허용 목록 밖 옵션
+            "git log --exec=rm",
+            "git status --ignored=invalid_mode",
+            # (b) Git 위험/수정 명령
             "git clean -fdx",
             "git clean -f",
             "git branch -D x",
@@ -124,7 +165,7 @@ class TestClassifyCommandHold:
             "uv run python script.py",
             "uv add requests",
             "uv pip install flask",
-            # (f) Antigravity 파일 편집/생성 승인 대화창 (자동 승인하지 않고 보류)
+            # Antigravity 파일 편집/생성 승인 대화창 (자동 승인하지 않고 보류)
             "Accept this file edit?",
             "Allow creation of this file?",
             "  accept   THIS  file  edit?  ",
@@ -137,7 +178,7 @@ class TestClassifyCommandHold:
 
 
 class TestClassifyCommandMetacharacters:
-    """(f) 셸 메타문자 포함 명령 보류 검증."""
+    """셸 메타문자 포함 명령 보류 검증."""
 
     @pytest.mark.parametrize(
         "cmd",
@@ -164,7 +205,7 @@ class TestClassifyCommandMetacharacters:
 
 
 class TestClassifyCommandParsingAndEmpty:
-    """(g), (h) 파싱 실패 및 빈 문자열/알 수 없는 명령 검증."""
+    """파싱 실패 및 빈 문자열/알 수 없는 명령 검증."""
 
     @pytest.mark.parametrize(
         "cmd",
@@ -208,6 +249,34 @@ class TestClassifyCommandParsingAndEmpty:
         assert verdict == "hold"
 
 
+class TestPytestClassificationDistinct:
+    """(g) pytest 및 uv run pytest 가 approve 이면서 읽기 전용과 구분되는지 검증."""
+
+    def test_pytest_and_uv_run_pytest_distinct_category(self) -> None:
+        # pytest 는 SAFE_STANDALONE_COMMANDS 에 포함되지 않아야 함
+        assert "pytest" not in SAFE_STANDALONE_COMMANDS
+        assert "pytest" in SAFE_TEST_COMMANDS
+        assert CATEGORY_READ_ONLY != CATEGORY_TEST_EXECUTION
+
+        verdict_pytest, reason_pytest = classify_command("pytest")
+        assert verdict_pytest == "approve"
+        assert "테스트 코드 실행 검증" in reason_pytest
+        assert "읽기 전용" not in reason_pytest
+
+        verdict_pytest_args, reason_pytest_args = classify_command("pytest tests/ -q")
+        assert verdict_pytest_args == "approve"
+        assert "테스트 코드 실행 검증" in reason_pytest_args
+
+        verdict_uv_pytest, reason_uv_pytest = classify_command("uv run pytest")
+        assert verdict_uv_pytest == "approve"
+        assert "테스트 코드 실행 검증" in reason_uv_pytest
+        assert "읽기 전용" not in reason_uv_pytest
+
+        verdict_ro, reason_ro = classify_command("cat pyproject.toml")
+        assert verdict_ro == "approve"
+        assert "읽기 전용" in reason_ro
+
+
 class TestHelperFunctions:
     """보조 파싱 함수 및 pending_command 단위 테스트."""
 
@@ -216,17 +285,38 @@ class TestHelperFunctions:
         assert subcmd == "diff"
         assert args == ["HEAD"]
 
+        # 전역 옵션이 선행되면 None 반환
         subcmd, args = parse_git_subcommand(["-C", "/path/to/repo", "status", "-s"])
-        assert subcmd == "status"
-        assert args == ["-s"]
+        assert subcmd is None
+        assert args == []
 
         subcmd, args = parse_git_subcommand(["--no-pager", "log", "-n", "5"])
-        assert subcmd == "log"
-        assert args == ["-n", "5"]
+        assert subcmd is None
+        assert args == []
 
         subcmd, args = parse_git_subcommand(["--version"])
         assert subcmd is None
         assert args == []
+
+    def test_is_safe_git_subcommand(self) -> None:
+        safe, _ = is_safe_git_subcommand("diff", ["HEAD~1", "--stat"])
+        assert safe is True
+
+        safe, msg = is_safe_git_subcommand("diff", ["--output=/tmp/leak.patch"])
+        assert safe is False
+        assert "허용되지 않은" in msg
+
+        safe, _ = is_safe_git_subcommand("log", ["-n", "5", "--oneline"])
+        assert safe is True
+
+        safe, _ = is_safe_git_subcommand("log", ["-10"])
+        assert safe is True
+
+        safe, _ = is_safe_git_subcommand("status", ["-s", "-uno"])
+        assert safe is True
+
+        safe, _ = is_safe_git_subcommand("rev-parse", ["--show-toplevel"])
+        assert safe is True
 
     def test_is_safe_git_branch(self) -> None:
         assert is_safe_git_branch([]) is True
@@ -269,8 +359,9 @@ class TestSubprocessInteractionMocks:
     """read, send, poll_loop mock 기반 테스트 (외부 프로세스 실행 방지)."""
 
     @patch("subprocess.run")
-    def test_read_mocked(self, mock_run: MagicMock) -> None:
+    def test_read_mocked_success(self, mock_run: MagicMock) -> None:
         mock_run.return_value.stdout = "mocked terminal screen output"
+        mock_run.return_value.returncode = 0
         out = read("term_123")
         assert out == "mocked terminal screen output"
         mock_run.assert_called_once_with(
@@ -279,6 +370,13 @@ class TestSubprocessInteractionMocks:
             text=True,
             timeout=60,
         )
+
+    @patch("subprocess.run")
+    def test_read_mocked_failure_returns_none(self, mock_run: MagicMock) -> None:
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stdout = ""
+        out = read("term_missing")
+        assert out is None
 
     @patch("subprocess.run")
     def test_send_mocked(self, mock_run: MagicMock) -> None:
@@ -318,3 +416,33 @@ class TestSubprocessInteractionMocks:
         captured = capsys.readouterr()
         assert "[보류]" in captured.out
         assert "파일 편집/생성 승인은 수동 판단 필요" in captured.out
+
+    @patch("scripts.orca_auto_approve.time.sleep")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_terminates_on_consecutive_failures(
+        self, mock_read: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """연속 읽기 실패 시 감시 대상에서 제외되고 모든 대상 소진 시 루프가 정상 종료하는지 검증."""
+        mock_read.return_value = None
+        # max_failures=3 으로 2개 터미널 감시 시 총 6번 호출 후 정상 반환해야 함
+        poll_loop(["term_1", "term_2"], max_failures=3)
+        assert mock_read.call_count == 6
+
+    @patch("scripts.orca_auto_approve.time.sleep")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_cleans_up_pid_file_on_exit(
+        self,
+        mock_read: MagicMock,
+        mock_sleep: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """poll_loop 종료 시 감시 대상 터미널의 PID 파일이 자동 정리되는지 검증."""
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+        pid_path = get_watcher_pid_path("term_clean")
+        write_watcher_pid(pid_path, 98765)
+        assert pid_path.exists()
+
+        mock_read.return_value = None
+        poll_loop(["term_clean"], max_failures=1)
+        assert not pid_path.exists()

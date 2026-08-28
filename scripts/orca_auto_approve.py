@@ -1,6 +1,6 @@
 """워커 터미널의 권한 프롬프트를 화이트리스트 기반으로 자동 승인합니다.
 
-안전 목록에 없는 명령이나 셸 메타문자, 파괴적 패턴이 보이면 승인하지 않고 stdout 으로 알립니다.
+안전 목록에 없는 명령이나 셸 메타문자, 파괴적 패턴, git 전역 옵션이 보이면 승인하지 않고 보류합니다.
 """
 
 from __future__ import annotations
@@ -10,7 +10,10 @@ import re
 import shlex
 import subprocess  # nosec B404  고정된 orca 명령만 실행하며 사용자 입력을 받지 않습니다
 import sys
+import tempfile
 import time
+from contextlib import suppress
+from pathlib import Path
 
 try:
     from scripts.orca_worker_watch import FILE_EDIT_DIALOG_SIGNALS, normalize_text
@@ -26,6 +29,10 @@ DANGEROUS = re.compile(
     re.IGNORECASE,
 )
 
+# 명령 분류 식별 상수
+CATEGORY_READ_ONLY = "read_only"
+CATEGORY_TEST_EXECUTION = "test_execution"
+
 SAFE_STANDALONE_COMMANDS = {
     "cat",
     "diff",
@@ -34,10 +41,13 @@ SAFE_STANDALONE_COMMANDS = {
     "head",
     "jq",
     "ls",
-    "pytest",
     "rg",
     "tail",
     "wc",
+}
+
+SAFE_TEST_COMMANDS = {
+    "pytest",
 }
 
 SAFE_GIT_SUBCOMMANDS = {
@@ -56,6 +66,190 @@ GIT_GLOBAL_OPTIONS_WITH_ARG = {
     "--namespace",
     "--super-prefix",
     "--work-tree",
+}
+
+GIT_FORBIDDEN_GLOBAL_OPTIONS = {
+    "-C",
+    "-c",
+    "--exec-path",
+    "--git-dir",
+    "--namespace",
+    "--super-prefix",
+    "--work-tree",
+    "--no-pager",
+    "--paginate",
+    "-p",
+    "--bare",
+    "--no-replace-objects",
+}
+
+# git 서브커맨드별 허용 옵션 화이트리스트
+SAFE_GIT_OPTIONS: dict[str, set[str]] = {
+    "status": {
+        "-s",
+        "--short",
+        "-b",
+        "--branch",
+        "-u",
+        "--untracked-files",
+        "-uno",
+        "-unormal",
+        "-uall",
+        "--untracked-files=no",
+        "--untracked-files=normal",
+        "--untracked-files=all",
+        "--ignored",
+        "--ignored=traditional",
+        "--ignored=no",
+        "--ignored=matching",
+        "--porcelain",
+        "--porcelain=v1",
+        "--porcelain=v2",
+        "--porcelain=1",
+        "--porcelain=2",
+        "-v",
+        "-vv",
+        "--verbose",
+        "--no-ahead-behind",
+        "--ahead-behind",
+        "--renames",
+        "--no-renames",
+        "--show-stash",
+        "-z",
+        "--null",
+    },
+    "diff": {
+        "--stat",
+        "--numstat",
+        "--shortstat",
+        "--summary",
+        "--dirstat",
+        "--name-only",
+        "--name-status",
+        "-p",
+        "-u",
+        "--patch",
+        "--no-patch",
+        "-s",
+        "--no-stat",
+        "-w",
+        "--ignore-all-space",
+        "-b",
+        "--ignore-space-change",
+        "--ignore-space-at-eol",
+        "--ignore-blank-lines",
+        "--color",
+        "--no-color",
+        "--cached",
+        "--staged",
+        "--word-diff",
+        "--check",
+        "--quiet",
+        "--binary",
+        "--exit-code",
+        "-z",
+        "-R",
+        "--relative",
+    },
+    "log": {
+        "--oneline",
+        "-n",
+        "--max-count",
+        "--stat",
+        "--shortstat",
+        "--name-only",
+        "--name-status",
+        "-p",
+        "-u",
+        "--patch",
+        "--graph",
+        "--decorate",
+        "--no-decorate",
+        "--all",
+        "--branches",
+        "--remotes",
+        "--tags",
+        "--merges",
+        "--no-merges",
+        "--first-parent",
+        "--reverse",
+        "--no-color",
+        "--color",
+        "--follow",
+        "--topo-order",
+        "--date-order",
+        "--author-date-order",
+        "-z",
+    },
+    "show": {
+        "--stat",
+        "--shortstat",
+        "--name-only",
+        "--name-status",
+        "-s",
+        "--no-patch",
+        "--oneline",
+        "--no-color",
+        "--color",
+        "--word-diff",
+        "-p",
+        "-u",
+        "--patch",
+        "-z",
+    },
+    "rev-parse": {
+        "--show-toplevel",
+        "--show-prefix",
+        "--show-cdup",
+        "--git-dir",
+        "--git-path",
+        "--is-inside-work-tree",
+        "--is-inside-git-dir",
+        "--is-bare-repository",
+        "--is-shallow-repository",
+        "--verify",
+        "--short",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "--all",
+        "--branches",
+        "--tags",
+        "--remotes",
+        "-q",
+        "--quiet",
+    },
+}
+
+SAFE_GIT_OPTION_PREFIXES: dict[str, tuple[str, ...]] = {
+    "status": (),
+    "diff": (
+        "-U",
+        "--unified=",
+        "--diff-filter=",
+        "--word-diff=",
+        "--color=",
+        "--relative=",
+        "--ignore-matching-lines=",
+    ),
+    "log": (
+        "-n",
+        "--max-count=",
+        "--format=",
+        "--pretty=",
+        "--date=",
+        "--since=",
+        "--after=",
+        "--until=",
+        "--before=",
+        "--author=",
+        "--committer=",
+        "--grep=",
+        "--diff-filter=",
+        "--color=",
+        "--decorate=",
+    ),
+    "show": ("--format=", "--pretty=", "--color="),
+    "rev-parse": ("--short=", "--git-path="),
 }
 
 GIT_BRANCH_READ_ONLY_FLAGS = {
@@ -86,19 +280,103 @@ FIND_DANGEROUS_FLAGS = {
     "-okdir",
 }
 
+# 터미널 연속 읽기 실패 허용 상한 (초과 시 감시 대상에서 제외)
+MAX_CONSECUTIVE_READ_FAILURES = 5
+
+
+def get_watcher_pid_path(terminal: str) -> Path:
+    """터미널 핸들에 대응하는 PID 파일 경로를 반환합니다."""
+    return Path(tempfile.gettempdir()) / "orca_auto_approve" / f"{terminal}.pid"
+
+
+def get_watcher_log_path(terminal: str) -> Path:
+    """터미널 핸들에 대응하는 로그 파일 경로를 반환합니다."""
+    return Path(tempfile.gettempdir()) / "orca_auto_approve" / f"{terminal}.log"
+
+
+def read_watcher_pid(path: Path) -> int | None:
+    """PID 파일을 안전하게 읽어 유효한 정수 PID 를 반환합니다. 빈 파일이나 손상된 내용은 None."""
+    try:
+        if not path.exists():
+            return None
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        pid = int(content)
+        return pid if pid > 0 else None
+    except Exception:
+        return None
+
+
+def watcher_alive(pid: int | None) -> bool:
+    """주어진 PID 프로세스가 실제로 살아 있는지 확인합니다."""
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def write_watcher_pid(path: Path, pid: int) -> None:
+    """PID 파일을 생성하고 PID 를 기록합니다."""
+    with suppress(OSError):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{pid}\n", encoding="utf-8")
+
+
+def remove_watcher_pid(path: Path) -> None:
+    """PID 파일을 안전하게 삭제합니다."""
+    with suppress(OSError):
+        if path.exists():
+            path.unlink(missing_ok=True)
+
 
 def parse_git_subcommand(args: list[str]) -> tuple[str | None, list[str]]:
-    """git 명령어의 글로벌 옵션을 건너뛰고 서브커맨드와 그 이후 인자를 반환합니다."""
+    """git 명령어의 서브커맨드와 그 이후 인자를 반환합니다. 전역 옵션이 선행되면 None 을 반환합니다."""
+    if not args:
+        return None, []
+    if args[0].startswith("-"):
+        return None, []
+    return args[0], args[1:]
+
+
+def is_safe_git_subcommand(subcmd: str, sub_args: list[str]) -> tuple[bool, str]:
+    """git 서브커맨드 인자가 화이트리스트에 부합하는지 검사합니다."""
+    allowed_flags = SAFE_GIT_OPTIONS.get(subcmd, set())
+    allowed_prefixes = SAFE_GIT_OPTION_PREFIXES.get(subcmd, ())
+
     i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg in GIT_GLOBAL_OPTIONS_WITH_ARG:
-            i += 2
-        elif arg.startswith("-"):
-            i += 1
-        else:
-            return arg, args[i + 1 :]
-    return None, []
+    while i < len(sub_args):
+        arg = sub_args[i]
+        if arg == "--":
+            # -- 이후는 모두 파일/경로/리비전 인자로 간주
+            break
+        if arg.startswith("-"):
+            if arg in allowed_flags:
+                if (
+                    arg in ("-n", "--max-count")
+                    and subcmd == "log"
+                    and i + 1 < len(sub_args)
+                    and not sub_args[i + 1].startswith("-")
+                ):
+                    i += 1
+                i += 1
+                continue
+            if any(arg.startswith(prefix) for prefix in allowed_prefixes):
+                i += 1
+                continue
+            if subcmd == "log" and re.match(r"^-\d+$", arg):
+                i += 1
+                continue
+            return False, f"허용되지 않은 git {subcmd} 옵션 ({arg})"
+        i += 1
+    return True, f"안전한 git {subcmd} 명령"
 
 
 def is_safe_git_branch(sub_args: list[str]) -> bool:
@@ -152,14 +430,30 @@ def classify_command(cmd: str) -> tuple[str, str]:
     if exe in SAFE_STANDALONE_COMMANDS:
         return "approve", f"안전한 읽기 전용 명령 ({exe})"
 
+    # 4.1.1. 테스트 코드 실행 검증 명령
+    if exe in SAFE_TEST_COMMANDS:
+        return "approve", f"신뢰된 워크트리 안의 테스트 코드 실행 검증 ({exe})"
+
     # 4.2. git 세부 서브커맨드 검사
     if exe == "git":
-        subcmd, sub_args = parse_git_subcommand(argv[1:])
+        git_args = argv[1:]
+        if not git_args:
+            return "hold", "git 서브커맨드 없음"
+
+        # 전역 옵션 검출: 첫 인자가 '-' 로 시작하면 전역 옵션 사용으로 간주하고 hold
+        if git_args[0].startswith("-"):
+            opt = git_args[0]
+            return "hold", f"git 전역 옵션 사용 금지 ({opt})"
+
+        subcmd, sub_args = parse_git_subcommand(git_args)
         if subcmd is None:
             return "hold", "git 서브커맨드 없음"
 
         if subcmd in SAFE_GIT_SUBCOMMANDS:
-            return "approve", f"안전한 git 서브커맨드 (git {subcmd})"
+            safe, msg = is_safe_git_subcommand(subcmd, sub_args)
+            if safe:
+                return "approve", f"안전한 git 서브커맨드 (git {subcmd})"
+            return "hold", msg
 
         if subcmd == "branch":
             if is_safe_git_branch(sub_args):
@@ -168,7 +462,9 @@ def classify_command(cmd: str) -> tuple[str, str]:
 
         if subcmd == "worktree":
             if sub_args and sub_args[0] == "list":
-                return "approve", "안전한 git worktree list 조회"
+                if len(sub_args) == 1 or (len(sub_args) == 2 and sub_args[1] == "--porcelain"):
+                    return "approve", "안전한 git worktree list 조회"
+                return "hold", "git worktree list 에 허용되지 않은 옵션"
             return "hold", "git worktree 변경 명령은 보류"
 
         return "hold", f"git 서브커맨드 보류: {subcmd}"
@@ -194,7 +490,7 @@ def classify_command(cmd: str) -> tuple[str, str]:
     if exe == "uv":
         args = argv[1:]
         if len(args) >= 2 and args[0] == "run" and args[1] == "pytest":
-            return "approve", "안전한 uv run pytest 실행"
+            return "approve", "신뢰된 워크트리 안의 테스트 코드 실행 검증 (uv run pytest)"
         return "hold", "uv 명령은 uv run pytest 만 허용"
 
     # 4.6. 보류 대상 명령 명시적 사유 반환
@@ -211,18 +507,20 @@ def classify_command(cmd: str) -> tuple[str, str]:
     return "hold", f"안전목록 밖: {exe}"
 
 
-def read(handle: str) -> str:
+def read(handle: str) -> str | None:
+    """orca terminal read 로 터미널 화면을 읽습니다. 실패 시 None 을 반환합니다."""
     try:
-        # 고정 인자 배열만 넘기고 shell 을 쓰지 않습니다.
         out = subprocess.run(  # nosec B603 B607
             ["orca", "terminal", "read", "--terminal", handle],
             capture_output=True,
             text=True,
             timeout=60,
         )
+        if out.returncode != 0:
+            return None
         return out.stdout
     except Exception:
-        return ""
+        return None
 
 
 def send(handle: str, text: str) -> None:
@@ -259,26 +557,40 @@ def pending_command(screen: str) -> str | None:
     return body.strip()
 
 
-def poll_loop(terminals: list[str]) -> None:
-    seen: dict[str, str] = {}
-    while True:
+def poll_loop(terminals: list[str], max_failures: int = MAX_CONSECUTIVE_READ_FAILURES) -> None:
+    """터미널 목록을 순회하며 권한 대화창을 자동 승인합니다. 감시 대상이 모두 소진되면 종료합니다."""
+    try:
+        active = list(terminals)
+        fail_counts: dict[str, int] = dict.fromkeys(active, 0)
+        seen: dict[str, str] = {}
+        while active:
+            for h in list(active):
+                screen = read(h)
+                if screen is None:
+                    fail_counts[h] = fail_counts.get(h, 0) + 1
+                    if fail_counts[h] >= max_failures:
+                        active.remove(h)
+                    continue
+                fail_counts[h] = 0
+                cmd = pending_command(screen)
+                if cmd is None:
+                    continue
+                short = " ".join(cmd.split())[:160]
+                verdict, reason = classify_command(cmd)
+                if verdict == "approve":
+                    send(h, "2")
+                    print(f"[승인] {h[:16]} {short}", flush=True)
+                    seen.pop(h, None)
+                    time.sleep(2)
+                else:
+                    if seen.get(h) != short:
+                        print(f"[보류] {h[:16]} {reason}: {short}", flush=True)
+                        seen[h] = short
+            if active:
+                time.sleep(8)
+    finally:
         for h in terminals:
-            screen = read(h)
-            cmd = pending_command(screen)
-            if cmd is None:
-                continue
-            short = " ".join(cmd.split())[:160]
-            verdict, reason = classify_command(cmd)
-            if verdict == "approve":
-                send(h, "2")
-                print(f"[승인] {h[:16]} {short}", flush=True)
-                seen.pop(h, None)
-                time.sleep(2)
-            else:
-                if seen.get(h) != short:
-                    print(f"[보류] {h[:16]} {reason}: {short}", flush=True)
-                    seen[h] = short
-        time.sleep(8)
+            remove_watcher_pid(get_watcher_pid_path(h))
 
 
 if __name__ == "__main__":

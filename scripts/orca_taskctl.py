@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 import tempfile
@@ -1223,32 +1224,112 @@ def verify_instruction_delivered(
         time.sleep(max(0.2, poll_seconds))
 
 
-def start_auto_approve(terminal: str) -> tuple[bool, str]:
-    """워커 터미널에 권한 프롬프트 자동 승인 감시기를 배경으로 붙인다.
+def get_watcher_pid_path(terminal: str) -> Path:
+    """터미널 핸들에 대응하는 PID 파일 경로를 반환합니다."""
+    return Path(tempfile.gettempdir()) / "orca_auto_approve" / f"{terminal}.pid"
 
-    붙이지 않으면 셸 명령 승인 대화창마다 워커가 멈춘다. shift+tab(accept-edits)은
-    파일 편집만 자동 승인하므로 명령 대화창은 이 감시기가 없으면 사람이 눌러야 한다.
+
+def get_watcher_log_path(terminal: str) -> Path:
+    """터미널 핸들에 대응하는 로그 파일 경로를 반환합니다."""
+    return Path(tempfile.gettempdir()) / "orca_auto_approve" / f"{terminal}.log"
+
+
+def read_watcher_pid(path: Path) -> int | None:
+    """PID 파일을 안전하게 읽어 유효한 정수 PID 를 반환합니다. 빈 파일이나 손상된 내용은 None."""
+    try:
+        if not path.exists():
+            return None
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        pid = int(content)
+        return pid if pid > 0 else None
+    except Exception:
+        return None
+
+
+def watcher_alive(pid: int | None) -> bool:
+    """주어진 PID 프로세스가 실제로 살아 있는지 확인합니다."""
+    if pid is None or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def write_watcher_pid(path: Path, pid: int) -> None:
+    """PID 파일을 생성하고 PID 를 기록합니다."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{pid}\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def remove_watcher_pid(path: Path) -> None:
+    """PID 파일을 안전하게 삭제합니다."""
+    try:
+        if path.exists():
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def start_auto_approve(terminal: str) -> tuple[bool, str]:
+    """워커 터미널에 권한 프롬프트 자동 승인 감시기를 단일 인스턴스로 붙인다.
+
+    이미 살아 있는 감시기가 있으면 새로 띄우지 않고 기존 로그 경로를 돌려줍니다.
+    붙이지 않으면 셸 명령 승인 대화창마다 워커가 멈춥니다.
     """
     if os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1":
         return False, "ORCA_DISABLE_AUTO_APPROVE=1 이므로 자동 승인 감시기를 띄우지 않았습니다"
     script = Path(__file__).resolve().parent / "orca_auto_approve.py"
     if not script.exists():
         return False, f"자동 승인 감시기를 찾지 못했습니다: {script}"
-    log_dir = Path(tempfile.gettempdir()) / "orca_auto_approve"
+
+    pid_path = get_watcher_pid_path(terminal)
+    log_path = get_watcher_log_path(terminal)
+    log_dir = log_path.parent
+
+    # 1. 기존 PID 생존 여부 확인 (단일 인스턴스 보장)
+    existing_pid = read_watcher_pid(pid_path)
+    if existing_pid is not None and watcher_alive(existing_pid):
+        return True, str(log_path)
+
+    # 2. 없거나 죽어 있으면 새로 기동하고 PID 기록
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{terminal}.log"
         with log_path.open("ab") as log_file:
-            subprocess.Popen(  # nosec B603  고정된 스크립트 경로와 터미널 핸들만 넘깁니다
+            proc = subprocess.Popen(  # nosec B603  고정된 스크립트 경로와 터미널 핸들만 넘깁니다
                 [sys.executable, str(script), terminal],
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
             )
+            pid = getattr(proc, "pid", None)
+            if pid is not None:
+                write_watcher_pid(pid_path, pid)
     except OSError as exc:
         return False, f"자동 승인 감시기 기동 실패: {exc}"
     return True, str(log_path)
+
+
+def stop_auto_approve(terminal: str) -> tuple[bool, str]:
+    """워커 터미널에 붙은 권한 자동 승인 감시기를 명시적으로 중지하고 PID 파일을 정리합니다."""
+    pid_path = get_watcher_pid_path(terminal)
+    pid = read_watcher_pid(pid_path)
+    if pid is not None and watcher_alive(pid):
+        with suppress(OSError):
+            os.kill(pid, signal.SIGTERM)
+    remove_watcher_pid(pid_path)
+    return True, f"자동 승인 감시기 중지 완료 ({terminal})"
 
 
 def approve_trust_prompt(
@@ -1459,8 +1540,19 @@ def finalize_task(
     strict: bool = True,
     max_diff_chars: int | None = None,
     allow_truncated_diff: bool = False,
+    terminal: str | None = None,
 ) -> dict[str, Any]:
     """worker_done 보고를 검증하고 Level 1/Reviewer 검증 파이프라인을 실행합니다."""
+    # 자동 승인 감시기 중지 (Task 종료 시 명시적으로 내림)
+    target_terminal = terminal
+    if not target_terminal and capsule_path.exists():
+        with suppress(Exception):
+            cap_data = load_capsule(capsule_path)
+            if isinstance(cap_data, dict):
+                target_terminal = cap_data.get("terminal") or cap_data.get("terminal_handle")
+    if target_terminal:
+        stop_auto_approve(target_terminal)
+
     scripts_dir = Path(__file__).resolve().parent
     result: dict[str, Any] = {
         "execution_mode": "strict" if strict else "allow_skipped_gates",
@@ -2303,6 +2395,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         return 2
 
     sys.stderr.write("검증 파이프라인 실행 중...\n")
+    terminal = getattr(args, "terminal", None)
     result = finalize_task(
         report_path=report_path,
         capsule_path=capsule_path,
@@ -2315,6 +2408,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         strict=not args.allow_skipped_gates,
         max_diff_chars=args.max_diff_chars,
         allow_truncated_diff=args.allow_truncated_diff,
+        terminal=terminal,
     )
     try:
         result["reliability"] = _record_finalize_reliability(capsule_path, result)
@@ -2479,6 +2573,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="건너뛴 Level 1 게이트를 실패로 보지 않습니다 (기본은 실패 처리)",
     )
+    fin.add_argument("--terminal", help="워커 터미널 핸들 (지정 시 종료 시 자동 승인 감시기 중지)")
     fin.add_argument("--json", action="store_true", help="JSON 출력")
 
     # status
