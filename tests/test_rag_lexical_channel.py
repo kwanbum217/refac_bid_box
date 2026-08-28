@@ -1,15 +1,17 @@
 """
 tests/test_rag_lexical_channel.py
 
-정확 공고명 어휘(Lexical) 채널 및 동점 해소(Tie-breaking), 안전 폴백 회귀 테스트.
-- (a) 개체 질의 및 따옴표 질의에서 use_lexical 및 lexical_query 가 정상 설정되는지
-- (b) Meilisearch 대역이 정확 일치 문서를 반환할 때 벡터 결과보다 최상위에 우선 배치되는지
-- (c) Meilisearch 비활성/서버 미기동/예외 발생 시 기존 벡터 검색 경로로 안전하게 폴백하는지
-- (d) 괄호 유무 및 표기 차이가 나는 제목들이 동일 키로 뭉개지지 않고 정확히 식별되는지
+정확 공고명 어휘(Lexical) 채널, 조건부 벡터 바이패스(Conditional Vector Bypass),
+동점 해소(Tie-breaking) 및 안전 폴백 회귀 테스트.
+- (a) lexical 정확 일치가 있을 때 retrieve_semantic_context 가 호출되지 않는지 (Vector 바이패스)
+- (b) lexical 적중 0건 또는 비정확 일치 시 retrieve_semantic_context 가 호출되는지
+- (c) plan.use_lexical 이 거짓일 때 기존 Vector 경로가 그대로 동작하는지
+- (d) Meilisearch 비활성/서버 미기동/예외 발생 시 기존 벡터 검색 경로로 안전하게 폴백하는지
 - (e) 복수 정확 일치 발생 시 공고일시(최신 우선) 기준 결정적 동점 해소(tie-breaker)가 동작하는지
 """
 
 from typing import Any
+from unittest.mock import MagicMock
 
 from src.rag.engine import (
     HybridRAGEngine,
@@ -58,12 +60,12 @@ def test_planner_keeps_use_lexical_false_for_pure_aggregation():
 
 
 # ===========================================================================
-# (b) Meilisearch 정확 일치 문서 우선 배치 검증
+# (b) Lexical 정확 일치 시 ChromaDB Vector 완전 바이패스 검증
 # ===========================================================================
 
 
-def test_engine_promotes_lexical_exact_match_above_vector_results(monkeypatch):
-    """Meilisearch 어휘 검색에서 정확 일치한 문서가 벡터 유사도 문서보다 최상위에 우선 배치되어야 합니다."""
+def test_engine_bypasses_vector_when_lexical_exact_hit_found(monkeypatch):
+    """Meilisearch 어휘 검색에서 정확 일치한 문서가 확보되면 ChromaDB retrieve_semantic_context 가 호출되지 않아야 합니다."""
     target_title = "2026년 조림지 풀베기사업 2차(동부지구)"
     lexical_hit = {
         "id": "announcement_Servc_20260801001",
@@ -86,29 +88,67 @@ def test_engine_promotes_lexical_exact_match_above_vector_results(monkeypatch):
         lambda *a, **kw: MockMeiliClient(),
     )
 
-    vector_docs = [
-        {
-            "id": "vec_doc_1",
-            "document": "[공고명] 2026년 조림지 풀베기사업(2차)(영암지구)\n[수요기관] 영암군",
-            "metadata": {"bid_ntce_nm": "2026년 조림지 풀베기사업(2차)(영암지구)"},
-            "distance": 0.05,
-        },
-        {
-            "id": "vec_doc_2",
-            "document": "[공고명] 2026년 조림지 풀베기사업 2차(동부지구)\n[수요기관] 산림청",
-            "metadata": {"bid_ntce_no": "20260801001", "bid_ntce_nm": target_title},
-            "distance": 0.35,
-        },
-    ]
-
-    monkeypatch.setattr(
-        "src.rag.engine.retrieve_semantic_context",
-        lambda plan: SemanticSearchResult(ok=True, documents=vector_docs),
-    )
+    mock_semantic = MagicMock()
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_semantic)
 
     engine = HybridRAGEngine()
     context = engine._prepare_context(f'"{target_title}" 공고의 수요기관은 어디인가요?')
 
+    # Vector 검색이 호출되지 않았음을 확인 (바이패스)
+    mock_semantic.assert_not_called()
+    assert context.vector_docs is not None
+    assert len(context.vector_docs) == 1
+    top_doc = context.vector_docs[0]
+    assert "동부지구" in top_doc["document"]
+    assert top_doc["metadata"]["bid_ntce_nm"] == target_title
+    assert top_doc.get("source") == "meilisearch_lexical"
+    assert context.timings.get("vector_ms") == 0.0
+    assert context.timings.get("lexical_ms", 0.0) >= 0.0
+
+
+def test_engine_promotes_lexical_exact_match_above_vector_results(monkeypatch):
+    """기존 호환성 검증: 정확 일치 시 Vector 가 생략되고 Lexical 결과가 vector_docs 로 채택됩니다."""
+    target_title = "2026년 조림지 풀베기사업 2차(동부지구)"
+    lexical_hit = {
+        "id": "announcement_Servc_20260801001",
+        "source_id": 101,
+        "dataset": "announcement",
+        "bid_ntce_no": "20260801001",
+        "bid_ntce_nm": target_title,
+        "dminstt_nm": "산림청",
+        "category": "Servc",
+        "bid_ntce_dt": "2026-08-01 10:00:00",
+    }
+
+    class MockMeiliClient:
+        def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+            return {"hits": [lexical_hit]}
+
+    monkeypatch.setattr("src.app.core.config.settings.MEILI_ENABLED", True)
+    monkeypatch.setattr(
+        "src.app.services.search_index.MeiliSearchClient",
+        lambda *a, **kw: MockMeiliClient(),
+    )
+
+    mock_semantic = MagicMock(
+        return_value=SemanticSearchResult(
+            ok=True,
+            documents=[
+                {
+                    "id": "vec_doc_1",
+                    "document": "[공고명] 2026년 조림지 풀베기사업(2차)(영암지구)\n[수요기관] 영암군",
+                    "metadata": {"bid_ntce_nm": "2026년 조림지 풀베기사업(2차)(영암지구)"},
+                    "distance": 0.05,
+                }
+            ],
+        )
+    )
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_semantic)
+
+    engine = HybridRAGEngine()
+    context = engine._prepare_context(f'"{target_title}" 공고의 수요기관은 어디인가요?')
+
+    mock_semantic.assert_not_called()
     assert context.vector_docs is not None
     assert len(context.vector_docs) >= 1
     top_doc = context.vector_docs[0]
@@ -118,12 +158,12 @@ def test_engine_promotes_lexical_exact_match_above_vector_results(monkeypatch):
 
 
 # ===========================================================================
-# (c) Meilisearch 비활성/예외/0건 안전 폴백 검증
+# (c) Meilisearch 비활성/예외/0건/부분일치 시 Vector 안전 폴백 검증
 # ===========================================================================
 
 
 def test_engine_fallback_when_meili_disabled(monkeypatch):
-    """MEILI_ENABLED=False 일 때 에러 없이 기존 벡터 검색 결과로 안전하게 폴백해야 합니다."""
+    """MEILI_ENABLED=False 일 때 에러 없이 기존 벡터 검색 경로를 호출하여 안전하게 폴백해야 합니다."""
     monkeypatch.setattr("src.app.core.config.settings.MEILI_ENABLED", False)
 
     fallback_docs = [
@@ -135,19 +175,18 @@ def test_engine_fallback_when_meili_disabled(monkeypatch):
         }
     ]
 
-    monkeypatch.setattr(
-        "src.rag.engine.retrieve_semantic_context",
-        lambda plan: SemanticSearchResult(ok=True, documents=fallback_docs),
-    )
+    mock_semantic = MagicMock(return_value=SemanticSearchResult(ok=True, documents=fallback_docs))
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_semantic)
 
     engine = HybridRAGEngine()
     context = engine._prepare_context("도로 정비 공사 수요기관")
 
+    mock_semantic.assert_called_once()
     assert context.vector_docs == fallback_docs
 
 
 def test_engine_fallback_when_meili_raises_exception(monkeypatch):
-    """Meilisearch 호출 중 HTTPError/커넥션 에러 등 예외가 발생해도 전체 RAG 요청이 실패하지 않고 폴백해야 합니다."""
+    """Meilisearch 호출 중 HTTPError/커넥션 에러 등 예외가 발생해도 전체 RAG 요청이 실패하지 않고 벡터로 폴백해야 합니다."""
     monkeypatch.setattr("src.app.core.config.settings.MEILI_ENABLED", True)
 
     class BrokenMeiliClient:
@@ -168,21 +207,20 @@ def test_engine_fallback_when_meili_raises_exception(monkeypatch):
         }
     ]
 
-    monkeypatch.setattr(
-        "src.rag.engine.retrieve_semantic_context",
-        lambda plan: SemanticSearchResult(ok=True, documents=fallback_docs),
-    )
+    mock_semantic = MagicMock(return_value=SemanticSearchResult(ok=True, documents=fallback_docs))
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_semantic)
 
     engine = HybridRAGEngine()
     context = engine._prepare_context('"안녕 자두야 포스트프로덕션" 낙찰자')
 
+    mock_semantic.assert_called_once()
     assert context.vector_docs == fallback_docs
     assert len(context.vector_docs) == 1
     assert "안녕 자두야" in context.vector_docs[0]["document"]
 
 
 def test_engine_fallback_when_meili_returns_zero_hits(monkeypatch):
-    """Meilisearch 결과가 0건일 때도 예외 없이 벡터 결과로 정상 폴백해야 합니다."""
+    """Meilisearch 결과가 0건일 때도 벡터 검색을 호출하여 정상 폴백해야 합니다."""
     monkeypatch.setattr("src.app.core.config.settings.MEILI_ENABLED", True)
 
     class EmptyMeiliClient:
@@ -203,15 +241,79 @@ def test_engine_fallback_when_meili_returns_zero_hits(monkeypatch):
         }
     ]
 
-    monkeypatch.setattr(
-        "src.rag.engine.retrieve_semantic_context",
-        lambda plan: SemanticSearchResult(ok=True, documents=fallback_docs),
-    )
+    mock_semantic = MagicMock(return_value=SemanticSearchResult(ok=True, documents=fallback_docs))
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_semantic)
 
     engine = HybridRAGEngine()
     context = engine._prepare_context('"특수 용역 공고" 상세 내용')
 
+    mock_semantic.assert_called_once()
     assert context.vector_docs == fallback_docs
+
+
+def test_engine_fallback_when_meili_returns_only_partial_match(monkeypatch):
+    """Meilisearch 결과가 있으나 공고명이 정확 일치하지 않는 경우 벡터 검색으로 폴백해야 합니다."""
+    monkeypatch.setattr("src.app.core.config.settings.MEILI_ENABLED", True)
+
+    partial_hit = {
+        "id": "announcement_Servc_9999",
+        "bid_ntce_no": "9999",
+        "bid_ntce_nm": "2026년 유사 도로포장공사 3차",  # 질의와 불일치
+        "dminstt_nm": "한국도로공사",
+        "category": "Servc",
+        "bid_ntce_dt": "2026-08-01 10:00:00",
+    }
+
+    class PartialMeiliClient:
+        def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+            return {"hits": [partial_hit]}
+
+    monkeypatch.setattr(
+        "src.app.services.search_index.MeiliSearchClient",
+        lambda *a, **kw: PartialMeiliClient(),
+    )
+
+    fallback_docs = [
+        {
+            "id": "vec_doc_fallback",
+            "document": "[공고명] 2026년 도로포장공사 1차\n[수요기관] 도로공사",
+            "metadata": {"bid_ntce_nm": "2026년 도로포장공사 1차"},
+            "distance": 0.1,
+        }
+    ]
+
+    mock_semantic = MagicMock(return_value=SemanticSearchResult(ok=True, documents=fallback_docs))
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_semantic)
+
+    engine = HybridRAGEngine()
+    context = engine._prepare_context('"2026년 도로포장공사 1차" 상세')
+
+    mock_semantic.assert_called_once()
+    assert context.vector_docs == fallback_docs
+
+
+def test_engine_calls_vector_when_plan_use_lexical_is_false(monkeypatch):
+    """plan.use_lexical 이 False 인 일반 질의에서는 기존 Vector 경로가 호출되어야 합니다."""
+    fallback_docs = [
+        {
+            "id": "vec_doc_stat",
+            "document": "[공고명] 일반 공사\n[수요기관] 서울시",
+            "metadata": {"bid_ntce_nm": "일반 공사"},
+            "distance": 0.1,
+        }
+    ]
+
+    mock_semantic = MagicMock(return_value=SemanticSearchResult(ok=True, documents=fallback_docs))
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_semantic)
+
+    engine = HybridRAGEngine()
+    # 통계/비교 질의 등 use_lexical=False 질의
+    context = engine._prepare_context("최근 소프트웨어 개발 입찰 정보")
+
+    # plan.use_vector 가 True 라면 vector 검색이 호출됨
+    if context.plan.use_vector:
+        mock_semantic.assert_called_once()
+        assert context.vector_docs == fallback_docs
 
 
 # ===========================================================================
@@ -245,8 +347,54 @@ def test_normalize_key_handles_various_bracket_styles():
 
 
 # ===========================================================================
-# (e) 복수 정확 일치 시 결정적 Tie-breaking 검증
+# (e) 복수 정확 일치 시 결정적 Tie-breaking 및 Vector 바이패스 검증
 # ===========================================================================
+
+
+def test_engine_multiple_exact_matches_sorted_by_sort_key_and_bypasses_vector(monkeypatch):
+    """동일 공고명의 복수 공고가 Meilisearch 에서 반환될 때 최신 공고 순으로 정렬되고 Vector 는 바이패스되어야 합니다."""
+    target_title = "도로포장공사 1차"
+    hits = [
+        {
+            "id": "announcement_Servc_2025001",
+            "bid_ntce_no": "2025001",
+            "bid_ntce_nm": target_title,
+            "dminstt_nm": "충남도청",
+            "category": "Servc",
+            "bid_ntce_dt": "2025-08-01 09:00:00",
+        },
+        {
+            "id": "announcement_Servc_2026001",
+            "bid_ntce_no": "2026001",
+            "bid_ntce_nm": target_title,
+            "dminstt_nm": "충남도청",
+            "category": "Servc",
+            "bid_ntce_dt": "2026-08-01 09:00:00",
+        },
+    ]
+
+    class MultiMeiliClient:
+        def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+            return {"hits": hits}
+
+    monkeypatch.setattr("src.app.core.config.settings.MEILI_ENABLED", True)
+    monkeypatch.setattr(
+        "src.app.services.search_index.MeiliSearchClient",
+        lambda *a, **kw: MultiMeiliClient(),
+    )
+
+    mock_semantic = MagicMock()
+    monkeypatch.setattr("src.rag.engine.retrieve_semantic_context", mock_semantic)
+
+    engine = HybridRAGEngine()
+    context = engine._prepare_context(f'"{target_title}" 공고의 수요기관')
+
+    mock_semantic.assert_not_called()
+    assert context.vector_docs is not None
+    assert len(context.vector_docs) == 2
+    # 최신(2026) 공고가 1순위
+    assert context.vector_docs[0]["metadata"]["bid_ntce_dt"] == "2026-08-01 09:00:00"
+    assert context.vector_docs[1]["metadata"]["bid_ntce_dt"] == "2025-08-01 09:00:00"
 
 
 def test_deterministic_tie_breaking_prefers_latest_notice_date():
