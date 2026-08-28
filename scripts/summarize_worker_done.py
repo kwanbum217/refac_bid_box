@@ -38,6 +38,7 @@ try:
         truncate,
         verify_branch_exists,
         verify_commit_exists,
+        verify_verification_truth,
         write_scope_excess,
     )
 except ImportError:
@@ -56,6 +57,7 @@ except ImportError:
         truncate,
         verify_branch_exists,
         verify_commit_exists,
+        verify_verification_truth,
         write_scope_excess,
     )
 
@@ -130,6 +132,18 @@ def check_field_types(report_data: dict[str, Any]) -> list[str]:
             )
         elif not all(isinstance(item, dict) for item in verification):
             violations.append("타입 위반: verification 의 원소는 전부 객체여야 함")
+        else:
+            for idx, item in enumerate(verification):
+                cmd = item.get("command")
+                res = item.get("result")
+                if not isinstance(cmd, str) or not cmd.strip():
+                    violations.append(
+                        f"형식 위반: verification[{idx}].command 는 비어 있지 않은 문자열이어야 함"
+                    )
+                if not isinstance(res, str) or not res.strip():
+                    violations.append(
+                        f"형식 위반: verification[{idx}].result 는 비어 있지 않은 문자열이어야 함"
+                    )
 
     return violations
 
@@ -237,7 +251,9 @@ def summarize_worker_report(
     changed_files = string_list(report_data.get("changed_files"))
     read_files = string_list(report_data.get("read_files"))
 
-    # 1-1. commit 및 branch 진실성(실존성) 검증 (repo_path 가 명시된 경우 실행)
+    # 1-1. commit, branch 및 verification 진실성(실존성) 검증 (repo_path 가 명시된 경우 실행)
+    verif_details: list[dict[str, Any]] = []
+    unverified_cmds: list[str] = []
     if repo_path is not None:
         target_repo = Path(repo_path).resolve()
         commit_raw = str(report_data.get("commit", "")).strip()
@@ -252,6 +268,18 @@ def summarize_worker_report(
             branch_ok, branch_msg = verify_branch_exists(target_repo, branch_raw)
             if not branch_ok:
                 violations.append(branch_msg)
+
+        verif_data = report_data.get("verification")
+        if isinstance(verif_data, list):
+            v_ok, v_violations, verif_details = verify_verification_truth(
+                repo=target_repo,
+                verification=verif_data,
+            )
+            if not v_ok:
+                violations.extend(v_violations)
+            unverified_cmds = [
+                d["command"] for d in verif_details if d.get("status") == "unverified"
+            ]
 
     # 2. 위반 검사 A: status == succeeded 인데 commit_count == 0 이면 무작업 완료 보고 (규약 3.3)
     #    읽기 전용 Task(allowed_write_files 가 빈 목록)는 커밋이 없는 것이 정상이므로 예외로 둔다.
@@ -385,7 +413,21 @@ def summarize_worker_report(
     # 5) Verification (우선순위 4: 최하위 - 상한이 빡빡하면 개수만 요약)
     verifications = report_data.get("verification")
     verification_items: list[str] = []
-    if isinstance(verifications, list):
+    if verif_details:
+        for d in verif_details:
+            cmd_str = truncate(str(d.get("command", "")), 60)
+            res_str = truncate(str(d.get("reported_result", "")), 30)
+            st = str(d.get("status", "")).upper()
+            if st == "UNVERIFIED":
+                verification_items.append(f"  * [UNVERIFIED] {cmd_str} ({res_str})")
+            elif st == "FAIL":
+                reason = d.get("reason", "실패")
+                verification_items.append(
+                    f"  * [FAIL] {cmd_str} ({res_str}) - {truncate(reason, 40)}"
+                )
+            else:
+                verification_items.append(f"  * [PASS] {cmd_str} ({res_str})")
+    elif isinstance(verifications, list):
         for v in verifications:
             if isinstance(v, dict):
                 cmd = truncate(str(v.get("command", "")), 80)
@@ -435,6 +477,8 @@ def summarize_worker_report(
         "read_scope_excess": read_excess,
         "write_scope_excess": write_excess,
         "verification_count": len(verification_items),
+        "verification_details": verif_details,
+        "unverified_commands": unverified_cmds,
         "blocking_issues_count": len(blocking_items),
         "violations": violations,
         "violations_count": len(violations),
