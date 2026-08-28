@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess  # nosec B404
-from pathlib import Path
+import sys
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -398,3 +400,263 @@ def verify_changed_files_match(
     if phantom_in_report:
         parts.append(f"허위 보고(diff 에 없음): {', '.join(phantom_in_report)}")
     return False, f"changed_files 불일치 ({'; '.join(parts)})"
+
+
+def is_whitelisted_verification_command(command: str) -> tuple[bool, list[str] | None]:
+    """검증 명령이 게이트 재실행 화이트리스트(pytest, validate_agent_rules)에 해당하는지 판별합니다.
+
+    화이트리스트에 해당하면 (True, argv_list) 를 반환하고, 아니면 (False, None) 을 반환합니다.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False, None
+
+    if not tokens:
+        return False, None
+
+    # uv run 접두사 제거
+    if tokens[:2] == ["uv", "run"]:
+        tokens = tokens[2:]
+    if not tokens:
+        return False, None
+
+    head = tokens[0]
+
+    # 1. pytest 계열
+    if head == "pytest":
+        argv = ["uv", "run", "pytest", *tokens[1:]]
+        if "-q" not in argv and "--quiet" not in argv:
+            argv.append("-q")
+        return True, argv
+
+    if (
+        head in {"python", "python3", sys.executable}
+        and len(tokens) > 2
+        and tokens[1] == "-m"
+        and tokens[2] == "pytest"
+    ):
+        argv = ["uv", "run", "pytest", *tokens[3:]]
+        if "-q" not in argv and "--quiet" not in argv:
+            argv.append("-q")
+        return True, argv
+
+    # 2. validate_agent_rules 계열
+    if head in {"python", "python3", sys.executable} and len(tokens) > 1:
+        script_name = PurePosixPath(tokens[1]).name
+        if script_name == "validate_agent_rules.py":
+            return True, [sys.executable, tokens[1], *tokens[2:]]
+
+    if PurePosixPath(head).name == "validate_agent_rules.py":
+        return True, [sys.executable, head, *tokens[1:]]
+
+    return False, None
+
+
+def _is_failure_result_str(result_str: str) -> bool:
+    """결과 문자열이 실패/에러를 나타내는지 검사합니다."""
+    cleaned = (result_str or "").strip().lower()
+    if not cleaned:
+        return False
+    # "0 failed", "0 errors", "0 failure" 등은 성공 표기
+    if re.search(r"\b0\s*(?:failed|errors?|failures?)\b", cleaned):
+        return False
+    return bool(re.search(r"\b(?:fail|failed|failure|errors?|blocked|exception|crash)\b", cleaned))
+
+
+def verify_verification_truth(
+    repo: str | Path,
+    verification: list[Any],
+    timeout: int = 30,
+) -> tuple[bool, list[str], list[dict[str, Any]]]:
+    """worker_done 의 verification 배열 진실성을 검증합니다.
+
+    1. 각 항목의 형식(dict 여부, 비어있지 않은 command 및 result 문자열)을 엄격 검증합니다.
+    2. 화이트리스트(pytest, validate_agent_rules) 명령은 repo 에서 실제로 재실행하고 결과와 대조합니다.
+    3. 화이트리스트 밖 명령은 unverified 로 표기하여 기록합니다.
+    4. 재실행 타임아웃 및 실행 실패는 fail-closed 로 처리합니다.
+
+    반환값: (all_ok, violations, detailed_results)
+    """
+    repo_path = Path(repo).resolve()
+    violations: list[str] = []
+    detailed_results: list[dict[str, Any]] = []
+
+    if not isinstance(verification, list):
+        return False, ["타입 위반: verification 은 배열이어야 함"], []
+
+    for idx, item in enumerate(verification):
+        if not isinstance(item, dict):
+            msg = f"형식 위반: verification[{idx}] 은 객체여야 함 ({type(item).__name__})"
+            violations.append(msg)
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "status": "fail",
+                    "reason": msg,
+                }
+            )
+            continue
+
+        cmd = item.get("command")
+        res = item.get("result")
+
+        if not isinstance(cmd, str) or not cmd.strip():
+            msg = f"형식 위반: verification[{idx}].command 는 비어 있지 않은 문자열이어야 함"
+            violations.append(msg)
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": str(cmd or ""),
+                    "reported_result": str(res or ""),
+                    "status": "fail",
+                    "reason": msg,
+                }
+            )
+            continue
+
+        if not isinstance(res, str) or not res.strip():
+            msg = f"형식 위반: verification[{idx}].result 는 비어 있지 않은 문자열이어야 함"
+            violations.append(msg)
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": cmd,
+                    "reported_result": str(res or ""),
+                    "status": "fail",
+                    "reason": msg,
+                }
+            )
+            continue
+
+        cmd_clean = cmd.strip()
+        res_clean = res.strip()
+
+        is_wl, argv = is_whitelisted_verification_command(cmd_clean)
+        if not is_wl or argv is None:
+            # 화이트리스트 밖 명령: unverified 로 명시
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": cmd_clean,
+                    "reported_result": res_clean,
+                    "status": "unverified",
+                    "reason": "화이트리스트 외 명령 (게이트 재실행 대상 아님)",
+                }
+            )
+            continue
+
+        # 화이트리스트 명령: repo 에서 재실행
+        try:
+            proc = subprocess.run(  # nosec B603
+                argv,
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            code = proc.returncode
+            stdout = proc.stdout
+            stderr = proc.stderr
+            timed_out = False
+        except subprocess.TimeoutExpired as exc:
+            code = -1
+            stdout = (
+                exc.stdout
+                if isinstance(exc.stdout, str)
+                else (exc.stdout or b"").decode("utf-8", errors="replace")
+            )
+            stderr = (
+                exc.stderr
+                if isinstance(exc.stderr, str)
+                else (exc.stderr or b"").decode("utf-8", errors="replace")
+            )
+            timed_out = True
+        except Exception as exc:
+            msg = f"재실행 실패: '{cmd_clean}' 실행 불가 ({exc})"
+            violations.append(msg)
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": cmd_clean,
+                    "reported_result": res_clean,
+                    "status": "fail",
+                    "reason": msg,
+                }
+            )
+            continue
+
+        if timed_out:
+            msg = f"재실행 타임아웃 ({timeout}초): '{cmd_clean}'"
+            violations.append(msg)
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": cmd_clean,
+                    "reported_result": res_clean,
+                    "status": "fail",
+                    "reason": msg,
+                }
+            )
+            continue
+
+        # 출력 요약 추출
+        summary_text = (stdout + "\n" + stderr).strip()
+        summary_line = (
+            summary_text.splitlines()[-1].strip() if summary_text.splitlines() else "출력 없음"
+        )
+
+        # 결과 대조
+        if code != 0:
+            # 실제 실행 실패 (테스트 실패, assertion error 등)
+            msg = (
+                f"검증 불일치/실패: '{cmd_clean}' 실제 실행 실패 (exit code {code}), "
+                f"보고서에는 '{res_clean}' 로 기재됨 (출력: {summary_line})"
+            )
+            violations.append(msg)
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": cmd_clean,
+                    "reported_result": res_clean,
+                    "actual_exit_code": code,
+                    "actual_summary": summary_line,
+                    "status": "fail",
+                    "reason": msg,
+                }
+            )
+        elif _is_failure_result_str(res_clean):
+            # 실제로는 성공(code==0)인데 보고서에 실패라고 적은 경우
+            msg = (
+                f"검증 불일치: '{cmd_clean}' 실제 실행 통과 (exit code 0)이나 "
+                f"보고서에는 실패('{res_clean}')로 기재됨"
+            )
+            violations.append(msg)
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": cmd_clean,
+                    "reported_result": res_clean,
+                    "actual_exit_code": code,
+                    "actual_summary": summary_line,
+                    "status": "fail",
+                    "reason": msg,
+                }
+            )
+        else:
+            # 성공 및 결과 일치
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": cmd_clean,
+                    "reported_result": res_clean,
+                    "actual_exit_code": code,
+                    "actual_summary": summary_line,
+                    "status": "pass",
+                    "reason": "재실행 결과 일치 (통과)",
+                }
+            )
+
+    all_ok = len(violations) == 0
+    return all_ok, violations, detailed_results
