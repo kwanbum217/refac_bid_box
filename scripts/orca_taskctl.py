@@ -1387,19 +1387,13 @@ CURSOR_PLAN_MODE_MARKERS: tuple[str, ...] = (
     "cursoragent@",
 )
 
+# 판정 근거는 CLI 가 상태줄에 스스로 그리는 문자열로만 좁힙니다. 도구 호출 표기나
+# 사고 과정 표기 같은 범용 형식은 여러 CLI 가 공유하므로 쓰지 않습니다. 화면에는
+# 코디네이터가 보낸 지시문도 남으므로, 넓은 마커는 대화 내용에 오염됩니다.
 ACCEPT_EDITS_CLI_MARKERS: tuple[str, ...] = (
     "accept-edits",
-    "antigravity",
-    "gemini 3.",
-    "gemini 3.7",
-    "thought for ",
-    "● read(",
-    "● edit(",
-    "● bash(",
-    "● search(",
     "auto-approve file edits",
     "shift+tab to auto-approve",
-    "agy",
 )
 
 
@@ -1419,22 +1413,9 @@ def classify_file_edit_auto_approve_support(text: str) -> tuple[bool, str]:
     has_agy = any(marker in lowered for marker in ACCEPT_EDITS_CLI_MARKERS)
     has_cursor = any(marker in lowered for marker in CURSOR_PLAN_MODE_MARKERS)
 
-    # Antigravity 전용 시그니처가 확인되면 Antigravity 로 승인
-    if has_agy and (
-        not has_cursor
-        or any(
-            sig in lowered
-            for sig in (
-                "accept-edits",
-                "thought for ",
-                "● read(",
-                "● edit(",
-                "● bash(",
-                "auto-approve file edits",
-                "shift+tab to auto-approve",
-            )
-        )
-    ):
+    # 상태줄 고유 문자열이 확인되면 accept-edits 계열로 승인합니다. Cursor 마커가
+    # 함께 잡히는 것은 화면에 남은 대화 내용일 수 있으므로 상태줄 쪽을 우선합니다.
+    if has_agy:
         return True, "Antigravity CLI 가 확인되어 파일 편집 자동 승인 모드 전환을 지원합니다"
 
     if has_cursor:
