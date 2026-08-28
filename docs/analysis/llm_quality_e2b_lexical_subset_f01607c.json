@@ -1,0 +1,525 @@
+{
+  "schema": "LLM_QUALITY_MEASURE_V2",
+  "canonical": false,
+  "timestamp": "2026-08-28T05:42:32.707403+00:00",
+  "model_label": "gemma4:e2b@f01607c-lexical",
+  "expected_model": "gemma4:e2b",
+  "serving_model_start": "gemma4:e2b",
+  "serving_model_end": "gemma4:e2b",
+  "serving_model_consistent": true,
+  "model_match_expected": true,
+  "base_url_validated": true,
+  "fixture_path": "/private/tmp/claude-501/-Users-kwanbum-Documents-korea-IT-lanhchain-ai-vision-refac-bid-box/a578e5a2-5592-4a4e-a0f5-1df0b73f2034/scratchpad/slow_subset.json",
+  "fixture_version": "2.0.0",
+  "repetitions": 3,
+  "item_count": 4,
+  "request_failures": 0,
+  "provenance": {
+    "git_sha": "f01607c0829b2eafb366d50bb61dc4c4631af7cc",
+    "git_dirty": false,
+    "canonical": false,
+    "source_identity_start": {
+      "git_sha": "f01607c0829b2eafb366d50bb61dc4c4631af7cc",
+      "git_dirty": false
+    },
+    "source_identity_end": {
+      "git_sha": "f01607c0829b2eafb366d50bb61dc4c4631af7cc",
+      "git_dirty": false
+    },
+    "serving_model_start": "gemma4:e2b",
+    "serving_model_end": "gemma4:e2b",
+    "serving_model_consistent": true,
+    "base_url": "http://localhost:8000",
+    "app_container": "refac_bid_box-app-1",
+    "timestamp_start_utc": "2026-08-28T05:40:20.321273+00:00",
+    "timestamp_end_utc": "2026-08-28T05:42:32.707403+00:00"
+  },
+  "results": [
+    {
+      "id": "q03",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 41874.392,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트를 기반으로 요청하신 정보는 다음과 같습니다.\n\n*   **공고명:** 광주시 소하천정비종합계획 재수립 용역(봉골천 등 33개소)(PQ 후 가격입찰)\n*   **공고번호:** R26BK01530400-001 [3]\n*   **수요기관:** 경기도 광주시 [3]\n*   **낙찰업체:** 주식회사 경원엔지니어링건축사사무소 [3]\n*   **낙찰금액:** 1,326,144,400원 [3]\n*   **낙찰률:** 80.8660% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 263,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 1,326,144,400원 임",
+          "expected_value": "1326144400",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 80.8660% 임",
+          "expected_value": "80.8660",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10153847"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10153847",
+        "bid_10021792",
+        "bid_10088705",
+        "bid_10087916",
+        "bid_10087904"
+      ],
+      "evidence_hit": [
+        "bid_10153847"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q03",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 17685.8,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트를 기반으로 요청하신 정보는 다음과 같습니다.\n\n*   **공고명:** 광주시 소하천정비종합계획 재수립 용역(봉골천 등 33개소)(PQ 후 가격입찰)\n*   **공고번호:** R26BK01530400-001 [3]\n*   **수요기관:** 경기도 광주시 [3]\n*   **낙찰업체:** 주식회사 경원엔지니어링건축사사무소 [3]\n*   **낙찰금액:** 1,326,144,400원 [3]\n*   **낙찰률:** 80.8660% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 263,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 1,326,144,400원 임",
+          "expected_value": "1326144400",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 80.8660% 임",
+          "expected_value": "80.8660",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10153847"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10153847",
+        "bid_10021792",
+        "bid_10088705",
+        "bid_10087916",
+        "bid_10087904"
+      ],
+      "evidence_hit": [
+        "bid_10153847"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q03",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 5940.778,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트를 기반으로 요청하신 정보는 다음과 같습니다.\n\n*   **공고명:** 광주시 소하천정비종합계획 재수립 용역(봉골천 등 33개소)(PQ 후 가격입찰)\n*   **공고번호:** R26BK01530400-001 [3]\n*   **수요기관:** 경기도 광주시 [3]\n*   **낙찰업체:** 주식회사 경원엔지니어링건축사사무소 [3]\n*   **낙찰금액:** 1,326,144,400원 [3]\n*   **낙찰률:** 80.8660% [3]\n\n근거: 혼합 근거",
+      "answer_chars": 263,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 1,326,144,400원 임",
+          "expected_value": "1326144400",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 80.8660% 임",
+          "expected_value": "80.8660",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10153847"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_10153847",
+        "bid_10021792",
+        "bid_10088705",
+        "bid_10087916",
+        "bid_10087904"
+      ],
+      "evidence_hit": [
+        "bid_10153847"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q08",
+      "repetition": 1,
+      "context_sufficient": true,
+      "elapsed_ms": 19798.977,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트를 기반으로 '서울회생법원 전산소모품(토너 및 드럼) 단가계약 입찰 공고'에 대한 정보를 다음과 같이 알려드립니다.\n\n**1. 공고번호: R26BK01341078-000**\n*   **수요기관:** 대법원 서울회생법원 [3]\n*   **낙찰업체:** 현진통상 [3]\n*   **낙찰금액:** 3,701,680원 [3]\n*   **낙찰률:** 84.2720% [3]\n\n**2. 공고번호: R26BK01682267-000**\n*   **수요기관:** 대법원 서울회생법원 [4]\n*   **낙찰업체:** 더블제이솔루션 [4]\n*   **낙찰금액:** 4,508,600원 [4]\n*   **낙찰률:** 86.2950% [4]\n\n**3. 공고번호: R25BK01115156-000** (참고: 서울남부지방법원의 유사 공고)\n*   **수요기관:** 대법원 서울남부지방법원 [5]\n*   **낙찰업체:** 오리의세상 [5]\n*   **낙찰금액:** 2,865,560원 [5]\n*   **낙찰률:** 84.2460% [5]\n\n근거: 혼합 근거",
+      "answer_chars": 531,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 4,508,600원 임",
+          "expected_value": "4508600",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 86.2950% 임",
+          "expected_value": "86.2950",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10168836"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_6482",
+        "bid_10168836",
+        "bid_33509",
+        "bid_5861505",
+        "bid_142838"
+      ],
+      "evidence_hit": [
+        "bid_10168836"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q08",
+      "repetition": 2,
+      "context_sufficient": true,
+      "elapsed_ms": 20324.318,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트를 기반으로 '서울회생법원 전산소모품(토너 및 드럼) 단가계약 입찰 공고'에 대한 정보를 다음과 같이 알려드립니다.\n\n**1. 공고번호: R26BK01341078-000**\n*   **수요기관:** 대법원 서울회생법원 [3]\n*   **낙찰업체:** 현진통상 [3]\n*   **낙찰금액:** 3,701,680원 [3]\n*   **낙찰률:** 84.2720% [3]\n\n**2. 공고번호: R26BK01682267-000**\n*   **수요기관:** 대법원 서울회생법원 [4]\n*   **낙찰업체:** 더블제이솔루션 [4]\n*   **낙찰금액:** 4,508,600원 [4]\n*   **낙찰률:** 86.2950% [4]\n\n**3. 공고번호: R25BK01115156-000** (참고로 유사 공고)\n*   **수요기관:** 대법원 서울남부지방법원 [5]\n*   **낙찰업체:** 오리의세상 [5]\n*   **낙찰금액:** 2,865,560원 [5]\n*   **낙찰률:** 84.2460% [5]\n\n근거: 혼합 근거",
+      "answer_chars": 521,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 4,508,600원 임",
+          "expected_value": "4508600",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 86.2950% 임",
+          "expected_value": "86.2950",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10168836"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_6482",
+        "bid_10168836",
+        "bid_33509",
+        "bid_5861505",
+        "bid_142838"
+      ],
+      "evidence_hit": [
+        "bid_10168836"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q08",
+      "repetition": 3,
+      "context_sufficient": true,
+      "elapsed_ms": 6967.395,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트를 기반으로 '서울회생법원 전산소모품(토너 및 드럼) 단가계약 입찰 공고'에 대한 정보를 다음과 같이 알려드립니다.\n\n**1. 공고번호: R26BK01341078-000**\n*   **수요기관:** 대법원 서울회생법원 [3]\n*   **낙찰업체:** 현진통상 [3]\n*   **낙찰금액:** 3,701,680원 [3]\n*   **낙찰률:** 84.2720% [3]\n\n**2. 공고번호: R26BK01682267-000**\n*   **수요기관:** 대법원 서울회생법원 [4]\n*   **낙찰업체:** 더블제이솔루션 [4]\n*   **낙찰금액:** 4,508,600원 [4]\n*   **낙찰률:** 86.2950% [4]\n\n**3. 공고번호: R25BK01115156-000** (참고: 서울남부지방법원의 유사 공고)\n*   **수요기관:** 대법원 서울남부지방법원 [5]\n*   **낙찰업체:** 오리의세상 [5]\n*   **낙찰금액:** 2,865,560원 [5]\n*   **낙찰률:** 84.2460% [5]\n\n근거: 혼합 근거",
+      "answer_chars": 531,
+      "numeric_facts": [
+        {
+          "statement": "낙찰금액은 4,508,600원 임",
+          "expected_value": "4508600",
+          "unit": "원",
+          "tolerance": 1,
+          "found": true
+        },
+        {
+          "statement": "낙찰률은 86.2950% 임",
+          "expected_value": "86.2950",
+          "unit": "%",
+          "tolerance": 0.01,
+          "found": true
+        }
+      ],
+      "numeric_all_found": true,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "낙찰업체를 다른 업체로 허위 기재하거나 낙찰금액 및 낙찰률 왜곡"
+      ],
+      "expected_evidence_ids": [
+        "bid_10168836"
+      ],
+      "retrieved_evidence_ids": [
+        "bid_6482",
+        "bid_10168836",
+        "bid_33509",
+        "bid_5861505",
+        "bid_142838"
+      ],
+      "evidence_hit": [
+        "bid_10168836"
+      ],
+      "evidence_recall": 1.0,
+      "citation_required": true,
+      "citation_present": true,
+      "refusal_expected": false,
+      "actual_refusal": false,
+      "refusal_correct": true
+    },
+    {
+      "id": "q25",
+      "repetition": 1,
+      "context_sufficient": false,
+      "elapsed_ms": 4140.841,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 '2029년 세종특별자치시 스마트시티 5단계 기반시설 구축공사'에 대한 낙찰 결과 정보가 포함되어 있지 않아 해당 정보를 제공할 수 없습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 104,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_5933348",
+        "bid_7921607",
+        "bid_5886197",
+        "bid_7921994",
+        "bid_1683024"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q25",
+      "repetition": 2,
+      "context_sufficient": false,
+      "elapsed_ms": 2042.653,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 '2029년 세종특별자치시 스마트시티 5단계 기반시설 구축공사'에 대한 낙찰 결과 정보가 포함되어 있지 않아 해당 정보를 제공할 수 없습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 104,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_5933348",
+        "bid_7921607",
+        "bid_5886197",
+        "bid_7921994",
+        "bid_1683024"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q25",
+      "repetition": 3,
+      "context_sufficient": false,
+      "elapsed_ms": 2390.953,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 '2029년 세종특별자치시 스마트시티 5단계 기반시설 구축공사'에 대한 낙찰 결과 정보가 포함되어 있지 않아 해당 정보를 제공할 수 없습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 104,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_5933348",
+        "bid_7921607",
+        "bid_5886197",
+        "bid_7921994",
+        "bid_1683024"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q31",
+      "repetition": 1,
+      "context_sufficient": false,
+      "elapsed_ms": 4808.542,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 요청하신 '2025년 대전광역시 유성구 복합문화센터 신축공사(공고번호 R25BK01999999-001)'에 대한 낙찰 결과 정보가 포함되어 있지 않아 해당 정보를 제공할 수 없습니다. 개찰 전 미확정 정보이거나 비공개 내부 정보여서 제공할 수 없다는 사유로 답변을 거절합니다.\n\n근거: 혼합 근거",
+      "answer_chars": 179,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_1748237",
+        "bid_1687778",
+        "bid_5970008",
+        "bid_5894362",
+        "bid_1749695"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q31",
+      "repetition": 2,
+      "context_sufficient": false,
+      "elapsed_ms": 3351.233,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 요청하신 '2025년 대전광역시 유성구 복합문화센터 신축공사(공고번호 R25BK01999999-001)'에 대한 낙찰 결과 정보가 포함되어 있지 않습니다.\n개찰 전 미확정 정보이거나 비공개 내부 정보이어서 제공할 수 없습니다.\n\n근거: 혼합 근거",
+      "answer_chars": 151,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_1748237",
+        "bid_1687778",
+        "bid_5970008",
+        "bid_5894362",
+        "bid_1749695"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    },
+    {
+      "id": "q31",
+      "repetition": 3,
+      "context_sufficient": false,
+      "elapsed_ms": 2859.375,
+      "ok": true,
+      "answer": "제공된 검색 컨텍스트에는 요청하신 '2025년 대전광역시 유성구 복합문화센터 신축공사(공고번호 R25BK01999999-001)'에 대한 낙찰 결과 정보가 포함되어 있지 않아 해당 정보를 제공할 수 없습니다. 개찰 전 미확정 정보이거나 비공개 내부 정보여서 제공할 수 없다는 사유로 답변을 거절합니다.\n\n근거: 혼합 근거",
+      "answer_chars": 179,
+      "numeric_facts": [],
+      "numeric_all_found": null,
+      "forbidden_literal_violations": [],
+      "semantic_forbidden_claims": [
+        "데이터 부재 주장 후 비교를 수행하는 자기모순",
+        "임의의 가상 낙찰자나 조작된 수치를 확정된 것처럼 서술하는 환각"
+      ],
+      "expected_evidence_ids": [],
+      "retrieved_evidence_ids": [
+        "bid_1748237",
+        "bid_1687778",
+        "bid_5970008",
+        "bid_5894362",
+        "bid_1749695"
+      ],
+      "evidence_hit": [],
+      "evidence_recall": null,
+      "citation_required": false,
+      "citation_present": null,
+      "refusal_expected": true,
+      "actual_refusal": true,
+      "refusal_correct": true
+    }
+  ]
+}
