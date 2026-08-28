@@ -16,6 +16,7 @@ PyYAML 을 새로 추가하지 않습니다. Capsule 은 중첩이 얕고 형식
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shlex
@@ -453,6 +454,64 @@ def is_whitelisted_verification_command(command: str) -> tuple[bool, list[str] |
     return False, None
 
 
+# ANSI 색상 이스케이프 제거 패턴
+_ANSI_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+# pytest -q 요약 줄에서 건수를 추출하는 패턴
+# 예: "43 passed, 2 skipped in 12.34s", "3 failed, 40 passed in 9.9s"
+_PYTEST_COUNT_RE = re.compile(
+    r"\b(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?)\b",
+    re.IGNORECASE,
+)
+_PYTEST_SUMMARY_MARKER_RE = re.compile(
+    r"\b(?:passed|failed|errors?|skipped|xfailed|xpassed)\b",
+    re.IGNORECASE,
+)
+
+# 건수 동일성 대조에서 제외하는 범주.
+# warning 은 결과가 아니라 환경과 의존성 버전에 따라 흔들리는 부수 정보이며
+# 정직한 보고서도 대개 적지 않습니다. 대조에 넣으면 참인 보고가 실패합니다.
+_COUNT_COMPARE_IGNORED = {"warning"}
+
+# 보고서가 적지 않았는데 실제에만 있을 때 위반으로 볼 범주.
+# 실패와 에러를 누락하면 진실성 문제이지만 skipped, deselected 누락은 아닙니다.
+_COUNT_OMISSION_CRITICAL = {"failed", "errors"}
+
+
+def parse_pytest_summary(text: str) -> dict[str, int] | None:
+    """pytest -q 출력 전체에서 요약 줄을 찾아 건수 사전을 돌려줍니다.
+
+    출력 뒤에서부터 요약 형태의 줄을 탐색합니다. ANSI 색상 이스케이프와
+    '=' 로 둘러싸인 장식 문자를 제거한 뒤 판정합니다. passed/failed/
+    errors/skipped/xfailed/xpassed 건수를 정수 사전으로 돌려줍니다.
+    요약 줄을 찾지 못하면 None 을 돌려줍니다.
+    """
+    if not text:
+        return None
+    lines = text.splitlines()
+    for raw in reversed(lines):
+        # ANSI 이스케이프 제거
+        cleaned = _ANSI_RE.sub("", raw)
+        # '=' 장식 제거
+        cleaned = re.sub(r"^=+\s*|\s*=+$", "", cleaned).strip()
+        if not cleaned:
+            continue
+        # 요약 줄 특징: 건수 토큰이 있어야 함
+        if not _PYTEST_SUMMARY_MARKER_RE.search(cleaned):
+            continue
+        counts: dict[str, int] = {}
+        for m in _PYTEST_COUNT_RE.finditer(cleaned):
+            count = int(m.group(1))
+            label = m.group(2).lower().rstrip("s")  # errors -> error, warnings -> warning
+            # 정규화: error -> errors 를 하나의 키로
+            if label in ("error",):
+                label = "errors"
+            counts[label] = counts.get(label, 0) + count
+        if counts:
+            return counts
+    return None
+
+
 def _is_failure_result_str(result_str: str) -> bool:
     """결과 문자열이 실패/에러를 나타내는지 검사합니다."""
     cleaned = (result_str or "").strip().lower()
@@ -475,6 +534,8 @@ def verify_verification_truth(
     2. 화이트리스트(pytest, validate_agent_rules) 명령은 repo 에서 실제로 재실행하고 결과와 대조합니다.
     3. 화이트리스트 밖 명령은 unverified 로 표기하여 기록합니다.
     4. 재실행 타임아웃 및 실행 실패는 fail-closed 로 처리합니다.
+    5. pytest 결과 건수를 파싱해 보고서 건수와 대조합니다 (결과 동일성 게이트).
+    6. 보고서가 건수를 적지 않은 경우 건너뛰고 기존 pass/fail 판정만 적용합니다(하위 호환).
 
     반환값: (all_ok, violations, detailed_results)
     """
@@ -542,6 +603,11 @@ def verify_verification_truth(
                     "reported_result": res_clean,
                     "status": "unverified",
                     "reason": "화이트리스트 외 명령 (게이트 재실행 대상 아님)",
+                    "actual_counts": None,
+                    "reported_counts": None,
+                    "count_match": None,
+                    "actual_exit_code": None,
+                    "stdout_digest": None,
                 }
             )
             continue
@@ -583,6 +649,11 @@ def verify_verification_truth(
                     "reported_result": res_clean,
                     "status": "fail",
                     "reason": msg,
+                    "actual_counts": None,
+                    "reported_counts": None,
+                    "count_match": None,
+                    "actual_exit_code": None,
+                    "stdout_digest": None,
                 }
             )
             continue
@@ -597,17 +668,76 @@ def verify_verification_truth(
                     "reported_result": res_clean,
                     "status": "fail",
                     "reason": msg,
+                    "actual_counts": None,
+                    "reported_counts": None,
+                    "count_match": None,
+                    "actual_exit_code": code,
+                    "stdout_digest": None,
                 }
             )
             continue
 
+        # stdout_digest: 재실행 stdout+stderr 의 sha256 앞 16 자리 (기록용)
+        combined_output = stdout + stderr
+        stdout_digest = hashlib.sha256(
+            combined_output.encode("utf-8", errors="replace")
+        ).hexdigest()[:16]
+
         # 출력 요약 추출
-        summary_text = (stdout + "\n" + stderr).strip()
+        summary_text = combined_output.strip()
         summary_line = (
             summary_text.splitlines()[-1].strip() if summary_text.splitlines() else "출력 없음"
         )
 
-        # 결과 대조
+        # 실제 건수 파싱
+        actual_counts = parse_pytest_summary(combined_output)
+
+        # 보고서 건수 파싱: 명시적 필드 우선, 없으면 result 문자열에서 파싱
+        reported_counts: dict[str, int] | None = None
+        explicit_fields_present = False
+
+        explicit_passed = item.get("passed")
+        explicit_failed = item.get("failed")
+        explicit_skipped = item.get("skipped")
+        explicit_exit_code = item.get("exit_code")
+
+        if any(v is not None for v in (explicit_passed, explicit_failed, explicit_skipped)):
+            explicit_fields_present = True
+            reported_counts = {}
+            if explicit_passed is not None:
+                reported_counts["passed"] = int(explicit_passed)
+            if explicit_failed is not None:
+                reported_counts["failed"] = int(explicit_failed)
+            if explicit_skipped is not None:
+                reported_counts["skipped"] = int(explicit_skipped)
+        else:
+            reported_counts = parse_pytest_summary(res_clean)
+
+        # 명시적 exit_code 필드 대조
+        if explicit_exit_code is not None and code != int(explicit_exit_code):
+            msg = (
+                f"검증 불일치: '{cmd_clean}' 명시 exit_code={explicit_exit_code} 이지만 "
+                f"실제 exit code={code}"
+            )
+            violations.append(msg)
+            detailed_results.append(
+                {
+                    "index": idx,
+                    "command": cmd_clean,
+                    "reported_result": res_clean,
+                    "actual_exit_code": code,
+                    "actual_summary": summary_line,
+                    "actual_counts": actual_counts,
+                    "reported_counts": reported_counts,
+                    "count_match": False,
+                    "stdout_digest": stdout_digest,
+                    "status": "fail",
+                    "reason": msg,
+                }
+            )
+            continue
+
+        # 결과 대조: exit code 우선
         if code != 0:
             # 실제 실행 실패 (테스트 실패, assertion error 등)
             msg = (
@@ -622,11 +752,15 @@ def verify_verification_truth(
                     "reported_result": res_clean,
                     "actual_exit_code": code,
                     "actual_summary": summary_line,
+                    "actual_counts": actual_counts,
+                    "reported_counts": reported_counts,
+                    "count_match": None,
+                    "stdout_digest": stdout_digest,
                     "status": "fail",
                     "reason": msg,
                 }
             )
-        elif _is_failure_result_str(res_clean):
+        elif _is_failure_result_str(res_clean) and not explicit_fields_present:
             # 실제로는 성공(code==0)인데 보고서에 실패라고 적은 경우
             msg = (
                 f"검증 불일치: '{cmd_clean}' 실제 실행 통과 (exit code 0)이나 "
@@ -640,23 +774,84 @@ def verify_verification_truth(
                     "reported_result": res_clean,
                     "actual_exit_code": code,
                     "actual_summary": summary_line,
+                    "actual_counts": actual_counts,
+                    "reported_counts": reported_counts,
+                    "count_match": None,
+                    "stdout_digest": stdout_digest,
                     "status": "fail",
                     "reason": msg,
                 }
             )
         else:
-            # 성공 및 결과 일치
-            detailed_results.append(
-                {
-                    "index": idx,
-                    "command": cmd_clean,
-                    "reported_result": res_clean,
-                    "actual_exit_code": code,
-                    "actual_summary": summary_line,
-                    "status": "pass",
-                    "reason": "재실행 결과 일치 (통과)",
-                }
-            )
+            # exit code 통과: 건수 동일성 대조
+            count_match: bool | None = None
+            count_violation_msg: str | None = None
+
+            if reported_counts is not None and actual_counts is not None:
+                # 보고서가 건수를 적었을 때만 대조한다
+                mismatches: list[str] = []
+                for key in reported_counts:
+                    if key in _COUNT_COMPARE_IGNORED:
+                        continue
+                    reported_val = reported_counts[key]
+                    actual_val = actual_counts.get(key, 0)
+                    if reported_val != actual_val:
+                        mismatches.append(f"{key}: 보고={reported_val}, 실제={actual_val}")
+                # 보고서가 적지 않은 범주는 대조하지 않습니다. 누락을 0 으로 간주하면
+                # 정직한 축약 보고가 실패합니다. 실패와 에러 누락만 위반입니다.
+                for key in actual_counts:
+                    if key in _COUNT_COMPARE_IGNORED or key in reported_counts:
+                        continue
+                    if key in _COUNT_OMISSION_CRITICAL and actual_counts[key] != 0:
+                        mismatches.append(f"{key}: 보고=0(미기재), 실제={actual_counts[key]}")
+                if mismatches:
+                    count_match = False
+                    count_violation_msg = (
+                        f"건수 불일치: '{cmd_clean}' 보고 건수와 실제 건수가 다름 "
+                        f"({'; '.join(mismatches)})"
+                    )
+                else:
+                    count_match = True
+            elif reported_counts is not None and actual_counts is None:
+                # 보고는 있는데 실제 출력에서 파싱 불가 -> 대조 불가 (건너뜀)
+                count_match = None
+            else:
+                # 보고서가 건수를 적지 않음 -> 하위 호환, 대조 건너뜀
+                count_match = None
+
+            if count_violation_msg is not None:
+                violations.append(count_violation_msg)
+                detailed_results.append(
+                    {
+                        "index": idx,
+                        "command": cmd_clean,
+                        "reported_result": res_clean,
+                        "actual_exit_code": code,
+                        "actual_summary": summary_line,
+                        "actual_counts": actual_counts,
+                        "reported_counts": reported_counts,
+                        "count_match": count_match,
+                        "stdout_digest": stdout_digest,
+                        "status": "fail",
+                        "reason": count_violation_msg,
+                    }
+                )
+            else:
+                detailed_results.append(
+                    {
+                        "index": idx,
+                        "command": cmd_clean,
+                        "reported_result": res_clean,
+                        "actual_exit_code": code,
+                        "actual_summary": summary_line,
+                        "actual_counts": actual_counts,
+                        "reported_counts": reported_counts,
+                        "count_match": count_match,
+                        "stdout_digest": stdout_digest,
+                        "status": "pass",
+                        "reason": "재실행 결과 일치 (통과)",
+                    }
+                )
 
     all_ok = len(violations) == 0
     return all_ok, violations, detailed_results
