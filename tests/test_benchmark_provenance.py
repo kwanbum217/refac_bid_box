@@ -399,7 +399,7 @@ class TestCrossPlatformHostLoad:
         monkeypatch.setattr(
             benchmark_provenance,
             "measure_cpu_utilization",
-            lambda **_: (12.5, None, CPU_UTILIZATION_METHOD_PROC_STAT_DELTA, 1.0),
+            lambda **_: (12.5, None, CPU_UTILIZATION_METHOD_PROC_STAT_DELTA, 1.0, 0.9),
         )
         sample = single_host_load_sample(os_module=MockOS, platform_name="linux")
         assert sample["cpu_count"] == 4
@@ -408,6 +408,7 @@ class TestCrossPlatformHostLoad:
         assert sample["per_core_percent"] == 25.0
         assert sample["cpu_utilization_method"] == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
         assert sample["cpu_utilization_probe_ms"] == 1.0
+        assert sample["cpu_utilization_observation_ms"] == 0.9
         assert "observed_at_utc" in sample
 
     def test_single_host_load_sample_without_getloadavg_windows(self):
@@ -438,7 +439,13 @@ class TestCrossPlatformHostLoad:
         monkeypatch.setattr(
             benchmark_provenance,
             "measure_cpu_utilization",
-            lambda **_: (None, "proc_stat_not_found", CPU_UTILIZATION_METHOD_PROC_STAT_DELTA, 0.0),
+            lambda **_: (
+                None,
+                "proc_stat_not_found",
+                CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
+                0.0,
+                0.0,
+            ),
         )
         sample = single_host_load_sample(os_module=MockFailingOS, platform_name="linux")
         assert sample["cpu_count"] == 4
@@ -450,7 +457,7 @@ class TestCrossPlatformHostLoad:
         proc_stat_path = tmp_path / "stat"
         proc_stat_path.write_text("cpu  100 0 100 800 0 0 0 0\n", encoding="utf-8")
 
-        utilization, reason, method, probe_ms = measure_cpu_utilization(
+        utilization, reason, method, probe_ms, observation_ms = measure_cpu_utilization(
             interval_seconds=0.0,
             platform_name="linux",
             proc_stat_path=str(proc_stat_path),
@@ -460,9 +467,10 @@ class TestCrossPlatformHostLoad:
         assert reason == "non_positive_total_ticks_delta"
         assert method == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
         assert probe_ms >= 0.0
+        assert observation_ms >= 0.0
 
     def test_measure_cpu_utilization_macos_records_method_and_probe_time(self):
-        utilization, reason, method, probe_ms = measure_cpu_utilization(
+        utilization, reason, method, probe_ms, observation_ms = measure_cpu_utilization(
             platform_name="darwin",
             command_runner=lambda _: "%CPU\n25.0\n75.0\n",
             cpu_count=2,
@@ -472,9 +480,11 @@ class TestCrossPlatformHostLoad:
         assert reason is None
         assert method == CPU_UTILIZATION_METHOD_PS_PROCESS_SUM
         assert probe_ms >= 0.0
+        # macOS 경로는 의도적 대기가 없으므로 observation_ms == probe_ms.
+        assert observation_ms == probe_ms
 
     def test_measure_cpu_utilization_unsupported_records_method_and_reason(self):
-        utilization, reason, method, probe_ms = measure_cpu_utilization(
+        utilization, reason, method, probe_ms, observation_ms = measure_cpu_utilization(
             platform_name="win32",
         )
 
@@ -482,12 +492,13 @@ class TestCrossPlatformHostLoad:
         assert method == CPU_UTILIZATION_METHOD_UNSUPPORTED
         assert reason == "unsupported_platform: win32"
         assert probe_ms >= 0.0
+        assert observation_ms >= 0.0
 
     def test_measure_cpu_utilization_macos_failure_keeps_method(self):
         def fail_command(_: list[str]) -> str:
             raise OSError("ps unavailable")
 
-        utilization, reason, method, probe_ms = measure_cpu_utilization(
+        utilization, reason, method, probe_ms, observation_ms = measure_cpu_utilization(
             platform_name="darwin",
             command_runner=fail_command,
         )
@@ -497,6 +508,7 @@ class TestCrossPlatformHostLoad:
         assert reason is not None
         assert reason.startswith("macos_ps_failed:")
         assert probe_ms >= 0.0
+        assert observation_ms >= 0.0
 
     def test_compute_host_load_stats(self):
         samples = [
