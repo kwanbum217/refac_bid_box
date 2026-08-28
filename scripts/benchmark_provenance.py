@@ -83,6 +83,11 @@ MEASUREMENT_ARTIFACT_PREFIXES: tuple[str, ...] = ("data/benchmarks/",)
 LOAD_PROTOCOL_MEDIAN_LIMIT_PERCENT = 30.0
 LOAD_PROTOCOL_MAX_LIMIT_PERCENT = 50.0
 
+# CPU utilization 수치의 물리적 의미를 provenance에 함께 보존하는 식별자입니다.
+CPU_UTILIZATION_METHOD_PROC_STAT_DELTA = "proc_stat_delta"
+CPU_UTILIZATION_METHOD_PS_PROCESS_SUM = "ps_process_sum"
+CPU_UTILIZATION_METHOD_UNSUPPORTED = "unsupported"
+
 # 설계서 6장 반복 안정성 임계값 (docs/analysis/arq_calibration_design_20260824.md 6.3/6.4)
 CALIBRATION_CV_MAX = 0.05
 CALIBRATION_MAD_MEDIAN_MAX = 0.03
@@ -923,7 +928,11 @@ def measure_macos_cpu_utilization(
     command_runner: Any = None,
     cpu_count: int | None = None,
 ) -> tuple[float | None, str | None]:
-    """macOS에서 ps -A -o %cpu 출력을 파싱하여 시스템 CPU utilization(%)을 계산합니다.
+    """macOS에서 ps -A -o %cpu 스냅샷을 합산해 CPU utilization(%)을 계산합니다.
+
+    프로세스별 ``%CPU`` 스냅샷 합을 논리 CPU 수로 나눈 값이므로, Linux의
+    커널 ``/proc/stat`` tick delta 기반 값과 물리적 의미가 다릅니다. 두 방식의
+    절대값은 크로스플랫폼에서 직접 비교해서는 안 됩니다.
 
     Returns:
         (utilization_percent, None) 또는 (None, reason)
@@ -975,34 +984,65 @@ def measure_cpu_utilization(
     proc_stat_path: str = "/proc/stat",
     command_runner: Any = None,
     cpu_count: int | None = None,
-) -> tuple[float | None, str | None]:
+) -> tuple[float | None, str | None, str, float]:
     """크로스플랫폼 호스트 CPU utilization(%)을 계측합니다.
 
-    - Linux: /proc/stat 차분 기반
-    - macOS (darwin): ps -A -o %cpu 기반
-    - 기타/미지원 플랫폼 (Windows 등): (None, "unsupported_platform: {platform}")
+    - Linux: /proc/stat 차분 기반 (proc_stat_delta)
+    - macOS (darwin): ps -A -o %cpu 기반 (ps_process_sum)
+    - 기타/미지원 플랫폼 (Windows 등): unsupported
 
     Returns:
-        (utilization_percent, None) 또는 (None, reason)
+        (utilization_percent, reason, method, probe_ms)
     """
     plat = platform_name if platform_name is not None else sys.platform
+    probe_started_at = time.perf_counter()
 
     if plat.startswith("linux"):
         start_ticks, start_err = read_proc_stat_ticks(proc_stat_path)
         if start_ticks is None:
-            return None, start_err
+            return (
+                None,
+                start_err,
+                CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
+                (time.perf_counter() - probe_started_at) * 1000.0,
+            )
         sleep_dur = interval_seconds if interval_seconds > 0 else 0.05
         time.sleep(sleep_dur)
         end_ticks, end_err = read_proc_stat_ticks(proc_stat_path)
         if end_ticks is None:
-            return None, end_err
-        return calculate_cpu_utilization_from_ticks(start_ticks, end_ticks)
+            return (
+                None,
+                end_err,
+                CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
+                (time.perf_counter() - probe_started_at) * 1000.0,
+            )
+        utilization, reason = calculate_cpu_utilization_from_ticks(start_ticks, end_ticks)
+        return (
+            utilization,
+            reason,
+            CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
+            (time.perf_counter() - probe_started_at) * 1000.0,
+        )
 
     elif plat == "darwin":
-        return measure_macos_cpu_utilization(command_runner=command_runner, cpu_count=cpu_count)
+        utilization, reason = measure_macos_cpu_utilization(
+            command_runner=command_runner,
+            cpu_count=cpu_count,
+        )
+        return (
+            utilization,
+            reason,
+            CPU_UTILIZATION_METHOD_PS_PROCESS_SUM,
+            (time.perf_counter() - probe_started_at) * 1000.0,
+        )
 
     else:
-        return None, f"unsupported_platform: {plat}"
+        return (
+            None,
+            f"unsupported_platform: {plat}",
+            CPU_UTILIZATION_METHOD_UNSUPPORTED,
+            (time.perf_counter() - probe_started_at) * 1000.0,
+        )
 
 
 def single_host_load_sample(
@@ -1018,6 +1058,8 @@ def single_host_load_sample(
     - normalized_load_1m_percent: 1분 load average를 논리 코어 수로 나눈 정규화 부하(%)
     - per_core_percent: normalized_load_1m_percent의 하위 호환 별칭
     - cpu_utilization_percent: 실제 CPU utilization(%) (Linux /proc/stat, macOS ps 기반)
+    - cpu_utilization_method: CPU utilization 측정 방식 식별자
+    - cpu_utilization_probe_ms: CPU utilization 관측에 걸린 실측 시간(ms)
     - cpu_utilization_unavailable_reason: 측정 불가 시 사유 문자열 (정상 측정 시 None)
     os.getloadavg 또는 CPU utilization 계측이 지원되지 않는 플랫폼(Windows 등)에서는 안전하게 None을 기록합니다.
     """
@@ -1039,35 +1081,24 @@ def single_host_load_sample(
 
     cpu_util: float | None = None
     cpu_util_reason: str | None = None
+    cpu_util_method = CPU_UTILIZATION_METHOD_UNSUPPORTED
+    cpu_util_probe_ms = 0.0
 
     if cpu_util_sampler is not None:
-        cpu_util, cpu_util_reason = cpu_util_sampler()
+        cpu_util, cpu_util_reason, cpu_util_method, cpu_util_probe_ms = cpu_util_sampler()
     else:
         plat = (
             platform_name
             if platform_name is not None
             else ("win32" if getattr(target_os, "name", None) == "nt" else sys.platform)
         )
-        if plat.startswith("linux"):
-            start_ticks, start_err = read_proc_stat_ticks(proc_stat_path)
-            if start_ticks is not None:
-                time.sleep(0.02)
-                end_ticks, end_err = read_proc_stat_ticks(proc_stat_path)
-                if end_ticks is not None:
-                    cpu_util, cpu_util_reason = calculate_cpu_utilization_from_ticks(
-                        start_ticks, end_ticks
-                    )
-                else:
-                    cpu_util_reason = end_err
-            else:
-                cpu_util_reason = start_err
-        elif plat == "darwin":
-            cpu_util, cpu_util_reason = measure_macos_cpu_utilization(
-                command_runner=command_runner,
-                cpu_count=cpu_count,
-            )
-        else:
-            cpu_util_reason = f"unsupported_platform: {plat}"
+        cpu_util, cpu_util_reason, cpu_util_method, cpu_util_probe_ms = measure_cpu_utilization(
+            interval_seconds=0.02,
+            platform_name=plat,
+            proc_stat_path=proc_stat_path,
+            command_runner=command_runner,
+            cpu_count=cpu_count,
+        )
 
     return {
         "observed_at_utc": datetime.now(UTC).isoformat(),
@@ -1076,6 +1107,8 @@ def single_host_load_sample(
         "normalized_load_1m_percent": normalized_load_1m_percent,
         "per_core_percent": per_core_percent,
         "cpu_utilization_percent": cpu_util,
+        "cpu_utilization_method": cpu_util_method,
+        "cpu_utilization_probe_ms": cpu_util_probe_ms,
         "cpu_utilization_unavailable_reason": cpu_util_reason,
     }
 
@@ -1142,6 +1175,13 @@ def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, objec
         "per_core_percent": pct_stats,  # normalized_load_1m_percent 의 하위 호환 별칭 (CPU 사용률 아님)
         "cpu_utilization_percent": util_stats,
     }
+    methods = {
+        method
+        for sample in samples
+        if isinstance(method := sample.get("cpu_utilization_method"), str)
+    }
+    if len(methods) == 1:
+        result["cpu_utilization_method"] = methods.pop()
     if not util_values:
         if reasons:
             result["cpu_utilization_unavailable_reason"] = "; ".join(reasons)
@@ -1239,6 +1279,7 @@ class HostLoadMonitor:
 
     def _sample(self) -> None:
         if not self._custom_sampler and sys.platform.startswith("linux"):
+            probe_started_at = time.perf_counter()
             cur_ticks, cur_err = read_proc_stat_ticks(self.proc_stat_path)
             sample = self.sampler()
             if cur_ticks is not None and self._last_linux_ticks is not None:
@@ -1250,6 +1291,8 @@ class HostLoadMonitor:
             elif cur_ticks is None:
                 sample["cpu_utilization_percent"] = None
                 sample["cpu_utilization_unavailable_reason"] = cur_err
+            sample["cpu_utilization_method"] = CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
+            sample["cpu_utilization_probe_ms"] = (time.perf_counter() - probe_started_at) * 1000.0
             self._last_linux_ticks = cur_ticks
             self.samples.append(sample)
         else:

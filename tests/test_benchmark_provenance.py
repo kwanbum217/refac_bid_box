@@ -14,6 +14,9 @@ import pytest
 
 from scripts import benchmark_provenance
 from scripts.benchmark_provenance import (
+    CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
+    CPU_UTILIZATION_METHOD_PS_PROCESS_SUM,
+    CPU_UTILIZATION_METHOD_UNSUPPORTED,
     PERF_CONFIG_ALLOWLIST,
     PROVENANCE_REQUIRED_FIELDS,
     BuildProvenanceError,
@@ -32,6 +35,7 @@ from scripts.benchmark_provenance import (
     get_host_memory,
     host_load_metadata,
     is_source_dirty,
+    measure_cpu_utilization,
     provenance_unknown_required_fields,
     reproducibility_metadata,
     resolve_redis_container,
@@ -392,11 +396,18 @@ class TestCrossPlatformHostLoad:
             def getloadavg():
                 return (1.0, 0.8, 0.5)
 
-        sample = single_host_load_sample(os_module=MockOS)
+        monkeypatch.setattr(
+            benchmark_provenance,
+            "measure_cpu_utilization",
+            lambda **_: (12.5, None, CPU_UTILIZATION_METHOD_PROC_STAT_DELTA, 1.0),
+        )
+        sample = single_host_load_sample(os_module=MockOS, platform_name="linux")
         assert sample["cpu_count"] == 4
         assert sample["load_1m"] == 1.0
         assert sample["normalized_load_1m_percent"] == 25.0
         assert sample["per_core_percent"] == 25.0
+        assert sample["cpu_utilization_method"] == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
+        assert sample["cpu_utilization_probe_ms"] == 1.0
         assert "observed_at_utc" in sample
 
     def test_single_host_load_sample_without_getloadavg_windows(self):
@@ -405,13 +416,16 @@ class TestCrossPlatformHostLoad:
             def cpu_count():
                 return 8
 
-        sample = single_host_load_sample(os_module=MockWindowsOS)
+        sample = single_host_load_sample(os_module=MockWindowsOS, platform_name="win32")
         assert sample["cpu_count"] == 8
         assert sample["load_1m"] is None
         assert sample["normalized_load_1m_percent"] is None
         assert sample["per_core_percent"] is None
+        assert sample["cpu_utilization_percent"] is None
+        assert sample["cpu_utilization_method"] == CPU_UTILIZATION_METHOD_UNSUPPORTED
+        assert sample["cpu_utilization_unavailable_reason"] == "unsupported_platform: win32"
 
-    def test_single_host_load_sample_getloadavg_oserror(self):
+    def test_single_host_load_sample_getloadavg_oserror(self, monkeypatch):
         class MockFailingOS:
             @staticmethod
             def cpu_count():
@@ -421,11 +435,68 @@ class TestCrossPlatformHostLoad:
             def getloadavg():
                 raise OSError("unsupported syscall")
 
-        sample = single_host_load_sample(os_module=MockFailingOS)
+        monkeypatch.setattr(
+            benchmark_provenance,
+            "measure_cpu_utilization",
+            lambda **_: (None, "proc_stat_not_found", CPU_UTILIZATION_METHOD_PROC_STAT_DELTA, 0.0),
+        )
+        sample = single_host_load_sample(os_module=MockFailingOS, platform_name="linux")
         assert sample["cpu_count"] == 4
         assert sample["load_1m"] is None
         assert sample["normalized_load_1m_percent"] is None
         assert sample["per_core_percent"] is None
+
+    def test_measure_cpu_utilization_linux_records_method_and_probe_time(self, tmp_path):
+        proc_stat_path = tmp_path / "stat"
+        proc_stat_path.write_text("cpu  100 0 100 800 0 0 0 0\n", encoding="utf-8")
+
+        utilization, reason, method, probe_ms = measure_cpu_utilization(
+            interval_seconds=0.0,
+            platform_name="linux",
+            proc_stat_path=str(proc_stat_path),
+        )
+
+        assert utilization is None
+        assert reason == "non_positive_total_ticks_delta"
+        assert method == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
+        assert probe_ms >= 0.0
+
+    def test_measure_cpu_utilization_macos_records_method_and_probe_time(self):
+        utilization, reason, method, probe_ms = measure_cpu_utilization(
+            platform_name="darwin",
+            command_runner=lambda _: "%CPU\n25.0\n75.0\n",
+            cpu_count=2,
+        )
+
+        assert utilization == 50.0
+        assert reason is None
+        assert method == CPU_UTILIZATION_METHOD_PS_PROCESS_SUM
+        assert probe_ms >= 0.0
+
+    def test_measure_cpu_utilization_unsupported_records_method_and_reason(self):
+        utilization, reason, method, probe_ms = measure_cpu_utilization(
+            platform_name="win32",
+        )
+
+        assert utilization is None
+        assert method == CPU_UTILIZATION_METHOD_UNSUPPORTED
+        assert reason == "unsupported_platform: win32"
+        assert probe_ms >= 0.0
+
+    def test_measure_cpu_utilization_macos_failure_keeps_method(self):
+        def fail_command(_: list[str]) -> str:
+            raise OSError("ps unavailable")
+
+        utilization, reason, method, probe_ms = measure_cpu_utilization(
+            platform_name="darwin",
+            command_runner=fail_command,
+        )
+
+        assert utilization is None
+        assert method == CPU_UTILIZATION_METHOD_PS_PROCESS_SUM
+        assert reason is not None
+        assert reason.startswith("macos_ps_failed:")
+        assert probe_ms >= 0.0
 
     def test_compute_host_load_stats(self):
         samples = [

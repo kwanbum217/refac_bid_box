@@ -10,6 +10,8 @@ CPU utilization 계측 및 정규화 부하 지표 정합성 회귀 테스트.
 from __future__ import annotations
 
 from scripts.benchmark_provenance import (
+    CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
+    CPU_UTILIZATION_METHOD_UNSUPPORTED,
     HostLoadMonitor,
     calculate_cpu_utilization_from_ticks,
     check_ambient_load_protocol,
@@ -127,9 +129,11 @@ class TestMeasurementFailureAndGracefulFallback:
         assert reason == "empty_ps_output"
 
     def test_unsupported_platform_returns_none_with_reason(self):
-        util, reason = measure_cpu_utilization(platform_name="win32")
+        util, reason, method, probe_ms = measure_cpu_utilization(platform_name="win32")
         assert util is None
         assert reason == "unsupported_platform: win32"
+        assert method == CPU_UTILIZATION_METHOD_UNSUPPORTED
+        assert probe_ms >= 0.0
 
     def test_single_host_load_sample_unsupported_platform(self):
         class MockWindowsOS:
@@ -145,6 +149,8 @@ class TestMeasurementFailureAndGracefulFallback:
         assert sample["normalized_load_1m_percent"] is None
         assert sample["per_core_percent"] is None
         assert sample["cpu_utilization_percent"] is None
+        assert sample["cpu_utilization_method"] == CPU_UTILIZATION_METHOD_UNSUPPORTED
+        assert sample["cpu_utilization_probe_ms"] >= 0.0
         assert sample["cpu_utilization_unavailable_reason"] == "unsupported_platform: win32"
 
     def test_host_load_monitor_on_unsupported_platform_does_not_crash(self):
@@ -156,6 +162,8 @@ class TestMeasurementFailureAndGracefulFallback:
                 "normalized_load_1m_percent": None,
                 "per_core_percent": None,
                 "cpu_utilization_percent": None,
+                "cpu_utilization_method": CPU_UTILIZATION_METHOD_UNSUPPORTED,
+                "cpu_utilization_probe_ms": 0.0,
                 "cpu_utilization_unavailable_reason": "unsupported_platform: win32",
             }
 
@@ -189,7 +197,7 @@ class TestPreservationOfExistingLoadFields:
 
         sample = single_host_load_sample(
             os_module=MockLinuxOS,
-            cpu_util_sampler=lambda: (15.5, None),
+            cpu_util_sampler=lambda: (15.5, None, CPU_UTILIZATION_METHOD_PROC_STAT_DELTA, 0.25),
         )
         # 기존 필드 불변 검증
         assert sample["cpu_count"] == 4
@@ -200,6 +208,8 @@ class TestPreservationOfExistingLoadFields:
 
         # 신규 필드 공존 검증
         assert sample["cpu_utilization_percent"] == 15.5
+        assert sample["cpu_utilization_method"] == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
+        assert sample["cpu_utilization_probe_ms"] == 0.25
         assert sample["cpu_utilization_unavailable_reason"] is None
 
     def test_compute_host_load_stats_preserves_and_computes_all_metrics(self):
