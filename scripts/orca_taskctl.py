@@ -1229,6 +1229,8 @@ def start_auto_approve(terminal: str) -> tuple[bool, str]:
     붙이지 않으면 셸 명령 승인 대화창마다 워커가 멈춘다. shift+tab(accept-edits)은
     파일 편집만 자동 승인하므로 명령 대화창은 이 감시기가 없으면 사람이 눌러야 한다.
     """
+    if os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1":
+        return False, "ORCA_DISABLE_AUTO_APPROVE=1 이므로 자동 승인 감시기를 띄우지 않았습니다"
     script = Path(__file__).resolve().parent / "orca_auto_approve.py"
     if not script.exists():
         return False, f"자동 승인 감시기를 찾지 못했습니다: {script}"

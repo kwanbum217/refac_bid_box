@@ -59,3 +59,9 @@ def isolated_db():
 def client(isolated_db):
     """isolated_db 위에서 동작하는 TestClient."""
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _disable_orca_auto_approve(monkeypatch):
+    """테스트가 실제 권한 자동 승인 감시기 프로세스를 띄우지 않게 막습니다."""
+    monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")

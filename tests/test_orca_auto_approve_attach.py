@@ -24,6 +24,25 @@ def taskctl():
     return _load_module()
 
 
+@pytest.fixture(autouse=True)
+def _enable_auto_approve(monkeypatch):
+    """이 파일은 부착 동작 자체를 검증하므로 전역 차단 가드를 해제합니다."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+
+
+def test_start_auto_approve_is_disabled_by_env_guard(taskctl, monkeypatch):
+    def fail_popen(args, **kwargs):
+        raise AssertionError("가드가 걸린 상태에서 프로세스를 띄우면 안 됩니다")
+
+    monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
+    monkeypatch.setattr(taskctl.subprocess, "Popen", fail_popen)
+
+    started, detail = taskctl.start_auto_approve("term_abc")
+
+    assert started is False
+    assert "ORCA_DISABLE_AUTO_APPROVE" in detail
+
+
 def test_start_auto_approve_spawns_watcher(taskctl, monkeypatch):
     captured = {}
 
