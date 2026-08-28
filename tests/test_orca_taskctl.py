@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -432,7 +433,7 @@ def test_worker_start_command(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
 
-    code, _stdout, _stderr = worker_start(
+    code, _stdout, _stderr, executed_cmd = worker_start(
         task_id="task_123",
         agent_id="agent_abc",
         terminal_handle=None,
@@ -463,6 +464,7 @@ def test_worker_start_command(monkeypatch: pytest.MonkeyPatch):
         "--json",
     ]
     assert executed_cmds[0] == expected
+    assert executed_cmd == expected
 
 
 def test_worker_start_with_terminal(monkeypatch: pytest.MonkeyPatch):
@@ -475,12 +477,12 @@ def test_worker_start_with_terminal(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
 
-    code, _stdout, _stderr = worker_start(
+    code, _stdout, _stderr, executed_cmd = worker_start(
         task_id="task_123",
         terminal_handle="term_123",
     )
     assert code == 0
-    assert executed_cmds[0] == [
+    expected = [
         "orca",
         "orchestration",
         "worker-start",
@@ -489,6 +491,8 @@ def test_worker_start_with_terminal(monkeypatch: pytest.MonkeyPatch):
         "--terminal",
         "term_123",
     ]
+    assert executed_cmds[0] == expected
+    assert executed_cmd == expected
 
 
 def test_dispatch_worker_command(monkeypatch: pytest.MonkeyPatch):
@@ -501,7 +505,7 @@ def test_dispatch_worker_command(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
 
-    code, _stdout, _stderr = dispatch_worker(
+    code, _stdout, _stderr, executed_cmd = dispatch_worker(
         task_id="task_123",
         to_handle="term_target",
         from_handle="term_source",
@@ -531,6 +535,7 @@ def test_dispatch_worker_command(monkeypatch: pytest.MonkeyPatch):
         "--json",
     ]
     assert executed_cmds[0] == expected
+    assert executed_cmd == expected
     # --inject 뒤에 별도의 인자 값이 붙지 않고 불리언 플래그로만 전달됨을 단정
     inject_idx = executed_cmds[0].index("--inject")
     assert executed_cmds[0][inject_idx + 1] in ("--dry-run", "--return-preamble", "--json")
@@ -619,7 +624,7 @@ def test_cmd_dispatch_success(
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
     def mock_worker_start(**kwargs):
-        return 0, '{"status": "dispatched"}', ""
+        return 0, '{"status": "dispatched"}', "", ["orca", "orchestration", "worker-start"]
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
     monkeypatch.setattr(
@@ -654,7 +659,7 @@ def test_cmd_dispatch_failure_prints_command_to_stderr(
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
     def mock_worker_start(**kwargs):
-        return 1, "", "Connection refused"
+        return 1, "", "Connection refused", ["orca", "orchestration", "worker-start"]
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
     monkeypatch.setattr(
@@ -688,7 +693,7 @@ def test_cmd_dispatch_failure_json(
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
     def mock_worker_start(**kwargs):
-        return 1, "", "Connection refused"
+        return 1, "", "Connection refused", ["orca", "orchestration", "worker-start"]
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
     monkeypatch.setattr(
@@ -1393,7 +1398,7 @@ def test_cmd_dispatch_skip_concurrency_check(
     capsule_dir = tmp_path / "capsules"
 
     def mock_worker_start(**kwargs):
-        return 0, '{"status": "dispatched"}', ""
+        return 0, '{"status": "dispatched"}', "", ["orca", "orchestration", "worker-start"]
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
 
@@ -1527,7 +1532,7 @@ def test_cmd_dispatch_terminal_uses_attach_path(tmp_path: Path, monkeypatch: pyt
 
     def mock_dispatch_worker(**kwargs):
         calls.update(kwargs)
-        return 0, json.dumps({"ok": True}), ""
+        return 0, json.dumps({"ok": True}), "", ["orca", "orchestration", "dispatch"]
 
     def fail_worker_start(**kwargs):
         raise AssertionError("터미널 부착 경로에서는 worker_start 를 호출해서는 안 됩니다.")
@@ -1581,7 +1586,7 @@ def test_cmd_dispatch_worker_start_passes_worktree_name(
 
     def mock_worker_start(**kwargs):
         calls.update(kwargs)
-        return 0, json.dumps({"ok": True}), ""
+        return 0, json.dumps({"ok": True}), "", ["orca", "orchestration", "worker-start"]
 
     monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
     monkeypatch.setattr(
@@ -1616,7 +1621,10 @@ def test_cmd_dispatch_ok_false_is_failure(
 
     payload = json.dumps({"ok": False, "error": {"message": "New worktrees require --name."}})
 
-    monkeypatch.setattr("scripts.orca_taskctl.worker_start", lambda **k: (0, payload, ""))
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.worker_start",
+        lambda **k: (0, payload, "", ["orca", "orchestration", "worker-start"]),
+    )
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
     )
@@ -1634,6 +1642,197 @@ def test_cmd_dispatch_ok_false_is_failure(
     )
     assert code == 1
     assert "New worktrees require --name." in capsys.readouterr().err
+
+
+def test_cmd_dispatch_worker_start_worktree_path_omits_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """(a) worktree 선택자가 path: 일 때 실제 실행 명령에 --name 이 없어야 함."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--agent",
+            "claude",
+            "--worktree",
+            "path:/Users/test/existing-worktree",
+        ]
+    )
+    assert code == 0
+    assert len(executed_cmds) == 1
+    cmd = executed_cmds[0]
+    assert "--worktree" in cmd
+    wt_idx = cmd.index("--worktree")
+    assert cmd[wt_idx + 1] == "path:/Users/test/existing-worktree"
+    assert "--name" not in cmd
+
+
+def test_cmd_dispatch_worker_start_worktree_new_child_includes_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """(b) worktree 선택자가 new-child 일 때는 실행 명령에 --name 이 있어야 함."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--agent",
+            "claude",
+            "--worktree",
+            "new-child",
+            "--worktree-name",
+            "orca-test-worktree-name",
+        ]
+    )
+    assert code == 0
+    assert len(executed_cmds) == 1
+    cmd = executed_cmds[0]
+    assert "--worktree" in cmd
+    wt_idx = cmd.index("--worktree")
+    assert cmd[wt_idx + 1] == "new-child"
+    assert "--name" in cmd
+    name_idx = cmd.index("--name")
+    assert cmd[name_idx + 1] == "orca-test-worktree-name"
+
+
+def test_cmd_dispatch_worker_start_failure_display_matches_executed_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """(c) worker-start 실패 시 표시되는 명령 문자열이 실제 실행 명령과 문자열로 정확히 일치해야 함."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return (
+            1,
+            "",
+            "Creation and setup options apply only to new-child or new-top-level worktrees.",
+        )
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+
+    # 1. path: 선택자 실패 시
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--agent",
+            "cursor",
+            "--worktree",
+            "path:/Users/test/existing-wt",
+        ]
+    )
+    assert code == 1
+    captured = capsys.readouterr()
+    expected_cmd_str = shlex.join(executed_cmds[0])
+    assert f"실행할 명령: {expected_cmd_str}\n" in captured.err
+    assert "--name" not in expected_cmd_str
+
+    # 2. new-child 선택자 실패 시
+    code2 = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--agent",
+            "cursor",
+            "--worktree",
+            "new-child",
+            "--worktree-name",
+            "orca-my-child-wt",
+        ]
+    )
+    assert code2 == 1
+    captured2 = capsys.readouterr()
+    expected_cmd_str2 = shlex.join(executed_cmds[1])
+    assert f"실행할 명령: {expected_cmd_str2}\n" in captured2.err
+    assert "--name orca-my-child-wt" in expected_cmd_str2
+
+
+def test_cmd_dispatch_terminal_failure_display_matches_executed_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """(d) --terminal 경로에서도 실패 시 표시되는 명령 문자열이 실제 실행 명령과 일치해야 함."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 1, "", "Terminal not reachable"
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "approved")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (False, "auto approve skipped")
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_target_999",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 1
+    captured = capsys.readouterr()
+    expected_cmd_str = shlex.join(executed_cmds[0])
+    assert f"실행할 명령: {expected_cmd_str}\n" in captured.err
+    assert "--to term_target_999" in expected_cmd_str
+    assert "--inject" in expected_cmd_str
 
 
 # ---------------------------------------------------------------------------
@@ -1888,7 +2087,8 @@ def test_cmd_dispatch_sends_capsule_notice_on_attach(
         return 0, json.dumps({"ok": True}), ""
 
     monkeypatch.setattr(
-        "scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), "")
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda **k: (0, json.dumps({"ok": True}), "", ["orca", "orchestration", "dispatch"]),
     )
     monkeypatch.setattr("scripts.orca_taskctl.terminal_send", mock_terminal_send)
     monkeypatch.setattr("scripts.orca_taskctl.resolve_dispatch_id", lambda *a, **k: "ctx_live")
@@ -1931,7 +2131,8 @@ def test_cmd_dispatch_capsule_notice_failure_is_surfaced(
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
     monkeypatch.setattr(
-        "scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), "")
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda **k: (0, json.dumps({"ok": True}), "", ["orca", "orchestration", "dispatch"]),
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl.terminal_send",
@@ -1976,7 +2177,8 @@ def test_cmd_dispatch_no_capsule_notice_flag(tmp_path: Path, monkeypatch: pytest
         raise AssertionError("--no-capsule-notice 에서는 전송하지 않아야 합니다.")
 
     monkeypatch.setattr(
-        "scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), "")
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda **k: (0, json.dumps({"ok": True}), "", ["orca", "orchestration", "dispatch"]),
     )
     monkeypatch.setattr("scripts.orca_taskctl.terminal_send", fail_send)
     monkeypatch.setattr(
@@ -2250,7 +2452,8 @@ def test_cmd_dispatch_reuses_existing_capsule(
 
     monkeypatch.setattr("scripts.orca_taskctl.expand_intent_to_capsule", fail_expand)
     monkeypatch.setattr(
-        "scripts.orca_taskctl.dispatch_worker", lambda **k: (0, json.dumps({"ok": True}), "")
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda **k: (0, json.dumps({"ok": True}), "", ["orca", "orchestration", "dispatch"]),
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl.terminal_send", lambda *a, **k: (0, json.dumps({"ok": True}), "")
@@ -2531,7 +2734,9 @@ def test_cmd_dispatch_aborts_when_trust_prompt_persists(tmp_path: Path, monkeypa
     monkeypatch.setattr(
         orca_taskctl,
         "dispatch_worker",
-        lambda **kw: dispatched.append("called") or (0, "{}", ""),
+        lambda **kw: (
+            dispatched.append("called") or (0, "{}", "", ["orca", "orchestration", "dispatch"])
+        ),
     )
     monkeypatch.setattr(
         orca_taskctl,
@@ -2659,7 +2864,12 @@ def test_cmd_dispatch_returns_3_when_delivery_unverified(
 
     monkeypatch.setattr(
         "scripts.orca_taskctl.dispatch_worker",
-        lambda **kwargs: (0, json.dumps({"ok": True}), ""),
+        lambda **kwargs: (
+            0,
+            json.dumps({"ok": True}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
@@ -2707,7 +2917,12 @@ def test_cmd_dispatch_not_settled_alone_is_not_a_delivery_failure(
 
     monkeypatch.setattr(
         "scripts.orca_taskctl.dispatch_worker",
-        lambda **kwargs: (0, json.dumps({"ok": True}), ""),
+        lambda **kwargs: (
+            0,
+            json.dumps({"ok": True}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
@@ -3490,7 +3705,12 @@ def test_dispatch_calls_auto_approve_and_mode_switch_on_antigravity(
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl.dispatch_worker",
-        lambda *args, **kwargs: (0, json.dumps({"ok": True}), ""),
+        lambda *args, **kwargs: (
+            0,
+            json.dumps({"ok": True}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
     )
 
     intent_file = tmp_path / "intent.yaml"
@@ -3546,7 +3766,12 @@ def test_dispatch_skips_mode_switch_on_cursor_terminal(
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl.dispatch_worker",
-        lambda *args, **kwargs: (0, json.dumps({"ok": True}), ""),
+        lambda *args, **kwargs: (
+            0,
+            json.dumps({"ok": True}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
     )
 
     intent_file = tmp_path / "intent.yaml"
@@ -3602,7 +3827,12 @@ def test_dispatch_skips_mode_switch_on_unrecognized_terminal(
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl.dispatch_worker",
-        lambda *args, **kwargs: (0, json.dumps({"ok": True}), ""),
+        lambda *args, **kwargs: (
+            0,
+            json.dumps({"ok": True}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
     )
 
     intent_file = tmp_path / "intent.yaml"
@@ -3692,7 +3922,7 @@ def test_dispatch_handles_mode_switch_failure_and_exception_gracefully(
     )
 
     def mock_dispatch_worker(*args, **kwargs):
-        return 0, json.dumps({"ok": True}), ""
+        return 0, json.dumps({"ok": True}), "", ["orca", "orchestration", "dispatch"]
 
     monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
     monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
