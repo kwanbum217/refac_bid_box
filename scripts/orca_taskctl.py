@@ -2372,21 +2372,14 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             )
 
         sys.stderr.write(f"터미널 부착 Dispatch 중... (task={task_id}, terminal={args.terminal})\n")
-        launch_res = dispatch_worker(
+        code, stdout, stderr, executed_cmd = dispatch_worker(
             task_id=task_id,
             to_handle=args.terminal,
             run_id=args.run_id if args.run_id != DEFAULT_RUN_ID else None,
             inject=True,
             as_json=args.json,
         )
-        if len(launch_res) == 4:
-            code, stdout, stderr, executed_cmd = launch_res
-            launch_cmd = shlex.join(executed_cmd)
-        else:
-            code, stdout, stderr = launch_res  # type: ignore[misc]
-            launch_cmd = (
-                f"orca orchestration dispatch --task {task_id} --to {args.terminal} --inject"
-            )
+        launch_cmd = shlex.join(executed_cmd)
 
         # 권한 프롬프트 자동 승인 감시기는 선택이 아니라 기동 절차의 일부입니다.
         # 붙이지 않으면 워커가 셸 명령 승인 대화창마다 멈추고, 감시 도구는 이를
@@ -2435,7 +2428,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         worktree_name = args.worktree_name or f"orca-{task_id}"
         sys.stderr.write(f"워커 기동 시작 중... (task={task_id}, model={model})\n")
-        launch_res = worker_start(
+        code, stdout, stderr, executed_cmd = worker_start(
             task_id=task_id,
             agent_id=args.agent,
             model=model,
@@ -2444,25 +2437,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             repo=args.repo,
             as_json=args.json,
         )
-        if len(launch_res) == 4:
-            code, stdout, stderr, executed_cmd = launch_res
-            launch_cmd = shlex.join(executed_cmd)
-        else:
-            code, stdout, stderr = launch_res  # type: ignore[misc]
-            fallback_cmd = ["orca", "orchestration", "worker-start", "--task", task_id]
-            if args.agent:
-                fallback_cmd.extend(["--agent", args.agent])
-            if model:
-                fallback_cmd.extend(["--model", model])
-            if args.worktree:
-                fallback_cmd.extend(["--worktree", args.worktree])
-            if args.worktree and args.worktree.startswith("new-") and worktree_name:
-                fallback_cmd.extend(["--name", worktree_name])
-            if args.repo:
-                fallback_cmd.extend(["--repo", args.repo])
-            if args.json:
-                fallback_cmd.append("--json")
-            launch_cmd = shlex.join(fallback_cmd)
+        launch_cmd = shlex.join(executed_cmd)
 
     if code == 0 and _launch_succeeded(stdout, expect_json=args.json):
         try:
