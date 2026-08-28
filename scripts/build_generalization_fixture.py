@@ -225,7 +225,14 @@ def load_v1_exclusions(v1_path: Path | str = DEFAULT_V1_PATH) -> tuple[set[str],
     return ev_ids, notice_nos
 
 
-def load_chroma_embedding_ids(collection_name: str = "bidding_kb") -> set[int]:
+class ChromaLoadError(RuntimeError):
+    """ChromaDB 지식베이스 조회 중 발생하는 예외."""
+
+
+def load_chroma_embedding_ids(
+    collection_name: str = "bidding_kb",
+    chroma_db_path: Path | str | None = None,
+) -> set[int]:
     """낙찰 정보를 담은 bid_{id} 문서의 정수 PK 집합을 로드합니다.
 
     **존재 확인만으로는 부족합니다.** 2026-08-27 측정에서 근거 문서 24건이 전부
@@ -235,19 +242,22 @@ def load_chroma_embedding_ids(collection_name: str = "bidding_kb") -> set[int]:
     (`docs/analysis/llm_generalization_judgment_20260827.md`).
 
     따라서 `has_result` 메타데이터가 참인 문서만 답변 가능 문항의 후보로 봅니다.
+    Chroma DB 파일 부재, sqlite 연결 실패, 쿼리 실패 시 ChromaLoadError 를 발생시켜
+    fixture 생성이 fail-closed 로 중단되도록 합니다.
     """
-    db_path = find_chroma_sqlite_path()
-    if not db_path or not db_path.exists():
-        return set()
+    db_path = Path(chroma_db_path) if chroma_db_path is not None else find_chroma_sqlite_path()
 
-    ann_ids: set[int] = set()
+    if db_path is None or not db_path.exists():
+        raise ChromaLoadError(f"Chroma DB 파일이 존재하지 않습니다: {db_path}")
+
+    conn: sqlite3.Connection | None = None
     try:
-        conn = sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True)
-    except Exception:
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True)
         except Exception:
-            return set()
+            conn = sqlite3.connect(str(db_path))
+    except Exception as exc:
+        raise ChromaLoadError(f"Chroma sqlite DB 연결 실패 ({db_path}): {exc}") from exc
 
     try:
         cur = conn.cursor()
@@ -262,19 +272,22 @@ def load_chroma_embedding_ids(collection_name: str = "bidding_kb") -> set[int]:
             "WHERE col.name = ? AND m.key = 'has_result' AND m.bool_value = 1"
         )
         cur.execute(query, [collection_name])
+        ann_ids: set[int] = set()
         for row in cur.fetchall():
             cid = str(row[0])
             if cid.startswith("bid_"):
                 suffix = cid.split("_", 1)[1]
                 if suffix.isdigit():
                     ann_ids.add(int(suffix))
-        conn.close()
-    except Exception:
-        with contextlib.suppress(Exception):
-            conn.close()
-        return set()
-
-    return ann_ids
+        return ann_ids
+    except Exception as exc:
+        raise ChromaLoadError(
+            f"Chroma DB 쿼리 실행 실패 (collection={collection_name}): {exc}"
+        ) from exc
+    finally:
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                conn.close()
 
 
 def fetch_candidates_from_db(
@@ -317,7 +330,7 @@ def fetch_candidates_from_db(
         ann_id = int(r.ann_id)
         ev_id = f"bid_{ann_id}"
 
-        if chroma_ann_ids and ann_id not in chroma_ann_ids:
+        if chroma_ann_ids is not None and ann_id not in chroma_ann_ids:
             continue
 
         if ev_id in exclude_evidence_ids or r.bid_ntce_no in exclude_notice_nos:
@@ -588,17 +601,25 @@ def build_fixture_v2(
     limit_refusal: int = 8,
     min_context_sufficient: int = 15,
     custom_exclude_notice_ids: list[str] | None = None,
+    chroma_db_path: Path | str | None = None,
+    chroma_ann_ids: set[int] | None = None,
+    skip_chroma_filter: bool = False,
 ) -> dict[str, Any]:
     """v2 blind fixture 데이터 구조 전체를 조립합니다."""
     v1_ev_ids, v1_notice_nos = load_v1_exclusions(v1_path)
     if custom_exclude_notice_ids:
         v1_notice_nos.update(custom_exclude_notice_ids)
 
-    chroma_ann_ids = load_chroma_embedding_ids()
+    if skip_chroma_filter:
+        effective_chroma_ids: set[int] | None = None
+    elif chroma_ann_ids is not None:
+        effective_chroma_ids = chroma_ann_ids
+    else:
+        effective_chroma_ids = load_chroma_embedding_ids(chroma_db_path=chroma_db_path)
 
     candidates = fetch_candidates_from_db(
         db_session=db_session,
-        chroma_ann_ids=chroma_ann_ids,
+        chroma_ann_ids=effective_chroma_ids,
         exclude_evidence_ids=v1_ev_ids,
         exclude_notice_nos=v1_notice_nos,
         limit=5000,
