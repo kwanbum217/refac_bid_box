@@ -212,9 +212,16 @@ TAIL_LINES = 15
 
 
 def is_shell_default_title(title: Any) -> bool:
-    """셸 기본 제목(예: Terminal 1)이면 True. None/빈 문자열은 False."""
-    if not title or not isinstance(title, str):
-        return False
+    """워커 터미널로 볼 근거가 없는 제목이면 True.
+
+    셸 기본 제목(예: Terminal 1)과 제목이 없는 터미널이 여기 해당합니다. CLI 워커는
+    코디네이터가 준 제목을 갖거나 CLI 가 제목을 갱신하므로, 제목이 비어 있다는 것은
+    아무 명령 없이 열린 셸이라는 뜻입니다. 2026-08-28 에 실제로 제목이 없는 셸이
+    같은 워크트리에 함께 있었고, 이를 워커 후보로 보면 핸들 정렬 우연에 따라
+    엉뚱한 터미널이 선택됩니다.
+    """
+    if not isinstance(title, str) or not title.strip():
+        return True
     return title.startswith("Terminal")
 
 
