@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.orca_contract import char_len
 from scripts.summarize_worker_done import (
@@ -417,3 +418,33 @@ def test_valid_report_passes_type_checks(tmp_path: Path):
 
     result = summarize_worker_report(report)
     assert not [v for v in result["violations"] if "타입 위반" in v or "값 위반" in v]
+
+
+def test_summarize_worker_report_full_pytest_uses_extended_timeout(tmp_path: Path):
+    """전량 pytest 형태의 검증 명령이 30초가 아닌 900초 타임아웃을 적용받아 정상 통과합니다."""
+    data = dict(
+        SAMPLE_VALID_REPORT,
+        verification=[
+            {
+                "command": "uv run pytest tests/ -q",
+                "result": "2495 passed, 6 skipped, 3 deselected in 117.47s",
+            }
+        ],
+    )
+    report_file = _write_report(tmp_path / "full_pytest_report.json", data)
+    capsule_file = _write_capsule(tmp_path / "capsule.yaml")
+
+    class _MockProc:
+        returncode = 0
+        stdout = "2495 passed, 6 skipped, 3 deselected in 117.47s"
+        stderr = ""
+
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _MockProc()
+        result = summarize_worker_report(report_file, capsule_file, repo_path=tmp_path)
+
+    # 1. subprocess.run 에 전달된 timeout 이 30 이 아니라 900 임을 검증
+    assert mock_run.call_args.kwargs["timeout"] == 900
+    assert result["exit_code"] == 0
+    assert result["violations_count"] == 0
+    assert result["effective_verdict"] == "pass"

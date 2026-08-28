@@ -288,6 +288,22 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
 `result` 에서 건수를 파싱할 수 없으므로 건수 대조를 건너뛰고 기존 `pass/fail` 진위 판정만 적용합니다.
 
 
+### 3.1.2 verification 재실행 타임아웃 규칙
+
+Level 1 게이트 6 및 `summarize_worker_report`는 `verification` 항목 중 화이트리스트 명령을 저장소 환경에서 재실행하여 진실성을 대조합니다. 이때 명령의 특성에 따라 서로 다른 타임아웃을 적용합니다.
+
+| 명령 종류 | 판별 기준 | 기본 타임아웃 | 설정 근거 |
+| --- | --- | --- | --- |
+| `pytest` 계열 | `pytest ...`, `uv run pytest ...`, `python -m pytest ...` | 900초 (15분) | 저장소 전량 pytest 실행 실측이 63~117초 소요되며, 단일 고정 30초 적용 시 정상 실행이 잘리는 형식 실패를 방지 |
+| `validate_agent_rules` 계열 | `validate_agent_rules.py`, `python3 scripts/validate_agent_rules.py` | 30초 | 규칙 정적 검사 스크립트로 수 초 이내에 완료 |
+| 기타 화이트리스트 외 명령 | 화이트리스트 외 명령 | 재실행하지 않음 (`unverified` 기록) | 게이트 재실행 대상이 아니며 비검증 상태로 다이제스트에 표기 |
+
+**타임아웃 처리 원칙:**
+
+1. **명령별 차등 적용**: `verify_verification_truth`는 명령 종류를 자동으로 판별하여 위 기본값을 적용합니다. 호출자가 `timeout` 인자를 명시적으로 전달한 경우 해당 값이 최우선 적용됩니다.
+2. **Fail-Closed 유지**: 재실행 중 타임아웃이 발생하면 게이트는 실패(fail-closed)로 처리되며 실효 verdict는 `blocked`로 격하됩니다.
+3. **타임아웃과 실행 실패의 구분**: 타임아웃 발생 시 결과 상세(`detailed_results`)에 `timed_out: true` 및 적용된 `timeout_seconds`, `command_type`이 기록되며 위반 메시지에 `재실행 타임아웃 ({command_type}, {timeout_seconds}초)` 형태로 명시됩니다.
+
 `read_files`는 작업 중 실제로 읽은 파일 목록을 담는 필수 필드입니다 (규약 2.9.2 참조).
 
 ### 3.2 아티팩트 보고서와 Orca 수명주기 완료 통보의 관계 (중요)

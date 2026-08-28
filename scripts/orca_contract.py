@@ -403,24 +403,36 @@ def verify_changed_files_match(
     return False, f"changed_files 불일치 ({'; '.join(parts)})"
 
 
-def is_whitelisted_verification_command(command: str) -> tuple[bool, list[str] | None]:
-    """검증 명령이 게이트 재실행 화이트리스트(pytest, validate_agent_rules)에 해당하는지 판별합니다.
+# 검증 재실행 타임아웃 기본값 (초)
+# pytest 계열은 전량 pytest 실행 실측이 63~117초 소요되므로 scripts/orca_level1_gate.py 의 DEFAULT_PYTEST_TIMEOUT 과 동일하게 900초(15분)를 적용합니다.
+# validate_agent_rules.py 계열은 정적 규칙 검사이므로 30초를 적용합니다.
+DEFAULT_VERIFY_PYTEST_TIMEOUT = 900
+DEFAULT_VERIFY_VALIDATE_TIMEOUT = 30
+DEFAULT_VERIFY_TIMEOUT = 30
 
-    화이트리스트에 해당하면 (True, argv_list) 를 반환하고, 아니면 (False, None) 을 반환합니다.
+
+def classify_verification_command(command: str) -> tuple[str, list[str] | None]:
+    """검증 명령 문자열의 종류(command_type)와 재실행 인자(argv)를 판별합니다.
+
+    화이트리스트에 해당하는 경우:
+    - pytest 계열: ("pytest", argv)
+    - validate_agent_rules 계열: ("validate_agent_rules", argv)
+    화이트리스트 외인 경우:
+    - ("unknown", None)
     """
     try:
         tokens = shlex.split(command)
     except ValueError:
-        return False, None
+        return "unknown", None
 
     if not tokens:
-        return False, None
+        return "unknown", None
 
     # uv run 접두사 제거
     if tokens[:2] == ["uv", "run"]:
         tokens = tokens[2:]
     if not tokens:
-        return False, None
+        return "unknown", None
 
     head = tokens[0]
 
@@ -429,7 +441,7 @@ def is_whitelisted_verification_command(command: str) -> tuple[bool, list[str] |
         argv = ["uv", "run", "pytest", *tokens[1:]]
         if "-q" not in argv and "--quiet" not in argv:
             argv.append("-q")
-        return True, argv
+        return "pytest", argv
 
     if (
         head in {"python", "python3", sys.executable}
@@ -440,17 +452,47 @@ def is_whitelisted_verification_command(command: str) -> tuple[bool, list[str] |
         argv = ["uv", "run", "pytest", *tokens[3:]]
         if "-q" not in argv and "--quiet" not in argv:
             argv.append("-q")
-        return True, argv
+        return "pytest", argv
 
     # 2. validate_agent_rules 계열
     if head in {"python", "python3", sys.executable} and len(tokens) > 1:
         script_name = PurePosixPath(tokens[1]).name
         if script_name == "validate_agent_rules.py":
-            return True, [sys.executable, tokens[1], *tokens[2:]]
+            return "validate_agent_rules", [sys.executable, tokens[1], *tokens[2:]]
 
     if PurePosixPath(head).name == "validate_agent_rules.py":
-        return True, [sys.executable, head, *tokens[1:]]
+        return "validate_agent_rules", [sys.executable, head, *tokens[1:]]
 
+    return "unknown", None
+
+
+def get_verification_timeout(command: str, custom_timeout: int | None = None) -> int:
+    """검증 명령에 적용할 타임아웃(초)을 결정합니다.
+
+    custom_timeout 이 명시된 경우(None 이 아님) 해당 값을 최우선으로 사용합니다.
+    명시되지 않은 경우 명령 종류에 따라 적절한 기본값을 반환합니다:
+    - pytest 계열: DEFAULT_VERIFY_PYTEST_TIMEOUT (900초)
+    - validate_agent_rules 계열: DEFAULT_VERIFY_VALIDATE_TIMEOUT (30초)
+    - 기타/미분류: DEFAULT_VERIFY_TIMEOUT (30초)
+    """
+    if custom_timeout is not None:
+        return custom_timeout
+    cmd_type, _ = classify_verification_command(command)
+    if cmd_type == "pytest":
+        return DEFAULT_VERIFY_PYTEST_TIMEOUT
+    if cmd_type == "validate_agent_rules":
+        return DEFAULT_VERIFY_VALIDATE_TIMEOUT
+    return DEFAULT_VERIFY_TIMEOUT
+
+
+def is_whitelisted_verification_command(command: str) -> tuple[bool, list[str] | None]:
+    """검증 명령이 게이트 재실행 화이트리스트(pytest, validate_agent_rules)에 해당하는지 판별합니다.
+
+    화이트리스트에 해당하면 (True, argv_list) 를 반환하고, 아니면 (False, None) 을 반환합니다.
+    """
+    cmd_type, argv = classify_verification_command(command)
+    if cmd_type != "unknown" and argv is not None:
+        return True, argv
     return False, None
 
 
@@ -526,14 +568,14 @@ def _is_failure_result_str(result_str: str) -> bool:
 def verify_verification_truth(
     repo: str | Path,
     verification: list[Any],
-    timeout: int = 30,
+    timeout: int | None = None,
 ) -> tuple[bool, list[str], list[dict[str, Any]]]:
     """worker_done 의 verification 배열 진실성을 검증합니다.
 
     1. 각 항목의 형식(dict 여부, 비어있지 않은 command 및 result 문자열)을 엄격 검증합니다.
     2. 화이트리스트(pytest, validate_agent_rules) 명령은 repo 에서 실제로 재실행하고 결과와 대조합니다.
     3. 화이트리스트 밖 명령은 unverified 로 표기하여 기록합니다.
-    4. 재실행 타임아웃 및 실행 실패는 fail-closed 로 처리합니다.
+    4. 재실행 타임아웃 및 실행 실패는 fail-closed 로 처리합니다. 타임아웃 발생 시 status='fail' 및 timed_out=True 로 구분 표기합니다.
     5. pytest 결과 건수를 파싱해 보고서 건수와 대조합니다 (결과 동일성 게이트).
     6. 보고서가 건수를 적지 않은 경우 건너뛰고 기존 pass/fail 판정만 적용합니다(하위 호환).
 
@@ -593,8 +635,8 @@ def verify_verification_truth(
         cmd_clean = cmd.strip()
         res_clean = res.strip()
 
-        is_wl, argv = is_whitelisted_verification_command(cmd_clean)
-        if not is_wl or argv is None:
+        cmd_type, argv = classify_verification_command(cmd_clean)
+        if cmd_type == "unknown" or argv is None:
             # 화이트리스트 밖 명령: unverified 로 명시
             detailed_results.append(
                 {
@@ -612,6 +654,8 @@ def verify_verification_truth(
             )
             continue
 
+        effective_timeout = get_verification_timeout(cmd_clean, timeout)
+
         # 화이트리스트 명령: repo 에서 재실행
         try:
             proc = subprocess.run(  # nosec B603
@@ -619,7 +663,7 @@ def verify_verification_truth(
                 cwd=str(repo_path),
                 capture_output=True,
                 text=True,
-                timeout=timeout,
+                timeout=effective_timeout,
                 check=False,
             )
             code = proc.returncode
@@ -659,7 +703,7 @@ def verify_verification_truth(
             continue
 
         if timed_out:
-            msg = f"재실행 타임아웃 ({timeout}초): '{cmd_clean}'"
+            msg = f"재실행 타임아웃 ({cmd_type}, {effective_timeout}초): '{cmd_clean}'"
             violations.append(msg)
             detailed_results.append(
                 {
@@ -667,6 +711,9 @@ def verify_verification_truth(
                     "command": cmd_clean,
                     "reported_result": res_clean,
                     "status": "fail",
+                    "timed_out": True,
+                    "timeout_seconds": effective_timeout,
+                    "command_type": cmd_type,
                     "reason": msg,
                     "actual_counts": None,
                     "reported_counts": None,
