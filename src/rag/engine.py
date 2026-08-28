@@ -540,20 +540,6 @@ def check_numeric_omissions(
     }
 
 
-# AnswerBundle 에 segment_metrics 프로퍼티 동적 바인딩 (스키마 호환성 및 선택적 노출 지원)
-if not hasattr(AnswerBundle, "segment_metrics"):
-
-    def _get_segment_metrics(self: AnswerBundle) -> dict[str, float] | None:
-        return getattr(self, "_segment_metrics_val", None)
-
-    def _set_segment_metrics(self: AnswerBundle, val: dict[str, float] | None) -> None:
-        object.__setattr__(self, "_segment_metrics_val", val)
-
-    setattr(  # noqa: B010
-        AnswerBundle, "segment_metrics", property(_get_segment_metrics, _set_segment_metrics)
-    )
-
-
 class PreparedContext(tuple):
     """_prepare_context 반환 튜플 (기존 7개 요소와 세부 구간 계측 정보 보존)."""
 
@@ -1071,22 +1057,18 @@ class HybridRAGEngine:
                 if total_elapsed_ms is not None
                 else (_safe_perf_counter() - t_start) * 1000.0
             )
-            bundle = AnswerBundle(
+            expose_flag = getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
+            metrics_to_include = (
+                segment_metrics if (expose_flag and segment_metrics is not None) else None
+            )
+            return AnswerBundle(
                 answer=answer,
                 provenance=provenance,
                 citations=citations or [],
                 retrieved_docs=vector_docs,
                 latency_ms=elapsed,
+                segment_metrics=metrics_to_include,
             )
-            try:
-                expose_flag = getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
-                if expose_flag and segment_metrics is not None:
-                    setattr(bundle, "segment_metrics", segment_metrics)  # noqa: B010
-                else:
-                    setattr(bundle, "segment_metrics", None)  # noqa: B010
-            except Exception as exc:
-                logger.warning("RAG 구간 지표 응답 설정 중 예외 발생 (무시됨): %s", exc)
-            return bundle
 
         t_direct_start = _safe_perf_counter()
         direct_result_list_answer = _build_result_list_answer(plan, structured_data)

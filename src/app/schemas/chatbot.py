@@ -71,3 +71,6 @@ class ChatbotQueryResponse(BaseModel):
     route_reason: str = ""
     citations: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
+    segment_metrics: dict[str, float] | None = Field(
+        default=None, description="RAG 처리 구간별 소요 시간 (ms, 활성화 시에만 포함)"
+    )
