@@ -610,19 +610,34 @@ def test_extract_document_title():
 
 
 def test_normalize_match_key():
-    """공백, 괄호류(반각/전각/대괄호/중괄호 등) 차이가 정규화되어 동일한 비교 키가 생성되어야 합니다."""
+    """공백 제거 및 다양한 괄호류의 표준 괄호('(', ')') 변환이 수행되며, 괄호 유무에 따른 차수/구분이 보존되어야 합니다."""
+    # 1. 동일한 괄호 구조 내에서 공백 및 괄호 종류(반각/전각) 차이는 동일하게 정규화
     key1 = _normalize_match_key("2026년 조림지 풀베기사업 2차(동부지구)")
     key2 = _normalize_match_key("2026년 조림지풀베기사업 2차 (동부지구)")
-    key3 = _normalize_match_key("2026년 조림지풀베기사업(2차)(동부지구)")
     key4 = _normalize_match_key("2026년  조림지  풀베기사업 2차\uff08동부지구\uff09")
-    key5 = _normalize_match_key("2026년 조림지 풀베기사업 [2차] 【동부지구】")
 
-    assert key1 == "2026년조림지풀베기사업2차동부지구"
-    assert key1 == key2 == key3 == key4 == key5
+    assert key1 == "2026년조림지풀베기사업2차(동부지구)"
+    assert key1 == key2 == key4
+
+    # 2. 괄호 표기 형태(대괄호/렌티큘러 등)는 표준 괄호로 통일됨
+    key3 = _normalize_match_key("2026년 조림지풀베기사업(2차)(동부지구)")
+    key5 = _normalize_match_key("2026년 조림지 풀베기사업 [2차] 【동부지구】")
+    assert key3 == "2026년조림지풀베기사업(2차)(동부지구)"
+    assert key3 == key5
+
+    # 3. 괄호 유무 차이('2차' vs '(2차)')는 충돌 없이 구별되어야 함
+    assert key1 != key3
+
+    # 4. 도로포장공사(1차) vs 도로포장공사 1차 충돌 방지 검증
+    assert _normalize_match_key("2026년 도로포장공사(1차)") == "2026년도로포장공사(1차)"
+    assert _normalize_match_key("2026년 도로포장공사 1차") == "2026년도로포장공사1차"
+    assert _normalize_match_key("2026년 도로포장공사(1차)") != _normalize_match_key(
+        "2026년 도로포장공사 1차"
+    )
 
     # 지역명이 다른 경우는 달라야 함
-    diff_key = _normalize_match_key("2026년 조림지 풀베기사업(2차)(영암지구)")
-    assert diff_key == "2026년조림지풀베기사업2차영암지구"
+    diff_key = _normalize_match_key("2026년 조림지 풀베기사업 2차(영암지구)")
+    assert diff_key == "2026년조림지풀베기사업2차(영암지구)"
     assert key1 != diff_key
 
     # 빈 값 안전 처리
