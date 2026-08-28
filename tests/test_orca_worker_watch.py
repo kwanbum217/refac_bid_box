@@ -345,6 +345,23 @@ def test_select_worker_terminal_handles_none_title() -> None:
     assert any("터미널 2개" in note for note in notes)
 
 
+def test_select_worker_terminal_prefers_titled_worker_over_untitled_shell() -> None:
+    """제목 없는 셸은 워커 후보가 아닙니다.
+
+    2026-08-28 에 제목이 없는 셸이 워커와 같은 워크트리에 있었고, 이를 후보로 보면
+    선택이 핸들 정렬 우연에 좌우됩니다. 핸들이 앞서더라도 워커가 선택되어야 합니다.
+    """
+    for blank in (None, "", "   "):
+        untitled = _terminal_item("term_aaa", blank)
+        worker = _terminal_item("term_zzz", "worker-n9")
+        chosen, _ = watch.select_worker_terminal([untitled, worker])
+        assert chosen is not None
+        assert chosen["handle"] == "term_zzz"
+        chosen_reversed, _ = watch.select_worker_terminal([worker, untitled])
+        assert chosen_reversed is not None
+        assert chosen_reversed["handle"] == "term_zzz"
+
+
 def test_select_worker_terminal_all_shell_defaults_use_first_with_note() -> None:
     first = _terminal_item("term_a", "Terminal 1")
     second = _terminal_item("term_b", "Terminal 2")
