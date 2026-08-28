@@ -6,8 +6,13 @@ from unittest.mock import patch
 import pytest
 
 from scripts.orca_contract import (
+    DEFAULT_VERIFY_PYTEST_TIMEOUT,
+    DEFAULT_VERIFY_TIMEOUT,
+    DEFAULT_VERIFY_VALIDATE_TIMEOUT,
     ContractError,
     char_len,
+    classify_verification_command,
+    get_verification_timeout,
     load_capsule,
     load_report,
     matches_any,
@@ -456,3 +461,136 @@ def test_verify_verification_truth_details_have_required_fields(tmp_path):
     # stdout_digest 는 16 자리 hex
     assert d["stdout_digest"] is not None
     assert len(d["stdout_digest"]) == 16
+
+
+# ---------------------------------------------------------------------------
+# 명령 종류 판별 및 타임아웃 테스트 (Task t6)
+# ---------------------------------------------------------------------------
+
+
+def test_classify_verification_command():
+    """classify_verification_command 순수 함수가 명령 종류와 argv 를 올바르게 반환합니다."""
+    # 1. pytest 계열
+    cmd_type, argv = classify_verification_command("uv run pytest tests/ -q")
+    assert cmd_type == "pytest"
+    assert argv == ["uv", "run", "pytest", "tests/", "-q"]
+
+    cmd_type, argv = classify_verification_command("pytest tests/test_app.py")
+    assert cmd_type == "pytest"
+    assert argv == ["uv", "run", "pytest", "tests/test_app.py", "-q"]
+
+    cmd_type, argv = classify_verification_command("python3 -m pytest tests/")
+    assert cmd_type == "pytest"
+    assert argv == ["uv", "run", "pytest", "tests/", "-q"]
+
+    # 2. validate_agent_rules 계열
+    cmd_type, argv = classify_verification_command(
+        "python3 scripts/validate_agent_rules.py --quiet"
+    )
+    assert cmd_type == "validate_agent_rules"
+    assert argv is not None
+    assert argv[1] == "scripts/validate_agent_rules.py"
+
+    cmd_type, argv = classify_verification_command("scripts/validate_agent_rules.py")
+    assert cmd_type == "validate_agent_rules"
+    assert argv is not None
+
+    # 3. 화이트리스트 밖 명령
+    cmd_type, argv = classify_verification_command("npm test")
+    assert cmd_type == "unknown"
+    assert argv is None
+
+    cmd_type, argv = classify_verification_command("")
+    assert cmd_type == "unknown"
+    assert argv is None
+
+
+def test_get_verification_timeout():
+    """get_verification_timeout 이 명령 종류별 기본값 및 사용자 지정값을 올바르게 반환합니다."""
+    # (a) pytest 기본값 900
+    assert get_verification_timeout("uv run pytest tests/ -q") == DEFAULT_VERIFY_PYTEST_TIMEOUT
+    assert get_verification_timeout("uv run pytest tests/ -q") == 900
+
+    # (b) validate_agent_rules 기본값 30 (pytest 와 다름)
+    assert (
+        get_verification_timeout("python3 scripts/validate_agent_rules.py --quiet")
+        == DEFAULT_VERIFY_VALIDATE_TIMEOUT
+    )
+    assert get_verification_timeout("python3 scripts/validate_agent_rules.py --quiet") == 30
+    assert DEFAULT_VERIFY_PYTEST_TIMEOUT != DEFAULT_VERIFY_VALIDATE_TIMEOUT
+
+    # (c) 기타 미분류 명령 기본값 30
+    assert get_verification_timeout("npm test") == DEFAULT_VERIFY_TIMEOUT
+
+    # (d) custom_timeout 명시 시 최우선 적용
+    assert get_verification_timeout("uv run pytest tests/ -q", custom_timeout=45) == 45
+    assert (
+        get_verification_timeout(
+            "python3 scripts/validate_agent_rules.py --quiet", custom_timeout=10
+        )
+        == 10
+    )
+
+
+def test_verify_verification_truth_applies_pytest_timeout(tmp_path):
+    """(a) pytest 계열 명령에 적용되는 기본 타임아웃이 30 이 아니라 900 초입니다."""
+    verification = [{"command": "uv run pytest tests/ -q", "result": "1 passed"}]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc("1 passed in 1.0s", 0)
+        ok, _violations, _details = verify_verification_truth(str(tmp_path), verification)
+
+    assert ok
+    assert mock_run.call_args.kwargs["timeout"] == DEFAULT_VERIFY_PYTEST_TIMEOUT
+    assert mock_run.call_args.kwargs["timeout"] == 900
+
+
+def test_verify_verification_truth_applies_validate_timeout(tmp_path):
+    """(b) validate_agent_rules 계열에 적용되는 기본 타임아웃이 pytest 용 값과 다릅니다."""
+    verification = [
+        {
+            "command": "python3 scripts/validate_agent_rules.py --quiet",
+            "result": "검증 통과: 12/12 건.",
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc("검증 통과: 12/12 건.", 0)
+        ok, _violations, _details = verify_verification_truth(str(tmp_path), verification)
+
+    assert ok
+    assert mock_run.call_args.kwargs["timeout"] == DEFAULT_VERIFY_VALIDATE_TIMEOUT
+    assert mock_run.call_args.kwargs["timeout"] == 30
+
+
+def test_verify_verification_truth_explicit_timeout_takes_precedence(tmp_path):
+    """(c) 호출자가 timeout 을 명시하면 그 값이 우선합니다."""
+    verification = [{"command": "uv run pytest tests/ -q", "result": "1 passed"}]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc("1 passed in 1.0s", 0)
+        ok, _violations, _details = verify_verification_truth(
+            str(tmp_path), verification, timeout=120
+        )
+
+    assert ok
+    assert mock_run.call_args.kwargs["timeout"] == 120
+
+
+def test_verify_verification_truth_timeout_marks_status_and_fails_closed(tmp_path):
+    """(d), (e) 타임아웃 발생 시 status 가 fail 및 timed_out=True 로 표기되고, 게이트는 fail-closed 로 처리됩니다."""
+    import subprocess as sp
+
+    verification = [{"command": "uv run pytest tests/ -q", "result": "2495 passed"}]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.side_effect = sp.TimeoutExpired(
+            cmd=["uv", "run", "pytest", "tests/", "-q"], timeout=900
+        )
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    # (e) fail-closed 검증
+    assert ok is False
+    assert len(violations) == 1
+    # (d) 타임아웃 표기 및 위반 메시지에 timeout 초와 명령 종류가 기재됨
+    assert "재실행 타임아웃 (pytest, 900초)" in violations[0]
+    assert details[0]["status"] == "fail"
+    assert details[0]["timed_out"] is True
+    assert details[0]["timeout_seconds"] == 900
+    assert details[0]["command_type"] == "pytest"
