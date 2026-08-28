@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess  # nosec B404
 from pathlib import Path
 from typing import Any
 
@@ -307,3 +308,93 @@ def truncate(text: str, limit: int) -> str:
     if limit <= char_len(marker):
         return text[:limit]
     return text[: limit - char_len(marker)] + marker
+
+
+def _run_git_command(repo: str | Path, args: list[str], timeout: int = 10) -> tuple[int, str, str]:
+    """git 하위 명령을 실행하고 (returncode, stdout, stderr) 를 반환합니다.
+
+    실패 시 예외를 삼키지 않고 반환 코드로 fail-closed 처리합니다.
+    """
+    repo_path = Path(repo).resolve()
+    try:
+        proc = subprocess.run(  # nosec B603 B607
+            ["git", *args],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+    except Exception as exc:
+        return -1, "", str(exc)
+
+
+def verify_commit_exists(repo: str | Path, commit_sha: str) -> tuple[bool, str]:
+    """commit SHA 가 실제 git 역사에 존재하는지 검증합니다.
+
+    `git rev-parse --verify <commit_sha>^{commit}` 로 대조합니다.
+    """
+    cleaned = (commit_sha or "").strip()
+    if not cleaned:
+        return False, "commit SHA 가 비어 있음"
+    code, stdout, stderr = _run_git_command(
+        repo, ["rev-parse", "--verify", f"{cleaned}^{{commit}}"]
+    )
+    if code == 0 and stdout.strip():
+        return True, "commit SHA 실존 확인"
+    err = stderr.strip() or "존재하지 않는 commit SHA"
+    return False, f"commit SHA '{cleaned}' 실존성 검증 실패: {err}"
+
+
+def verify_branch_exists(repo: str | Path, branch: str) -> tuple[bool, str]:
+    """branch 가 refs/heads/ 아래에 실제로 존재하는지 검증합니다.
+
+    `git show-ref --verify refs/heads/<branch>` 로 대조합니다.
+    """
+    cleaned = (branch or "").strip()
+    if not cleaned:
+        return False, "브랜치명이 비어 있음"
+    ref_name = cleaned if cleaned.startswith("refs/heads/") else f"refs/heads/{cleaned}"
+    code, _stdout, stderr = _run_git_command(repo, ["show-ref", "--verify", ref_name])
+    if code == 0:
+        return True, "브랜치 실존 확인"
+    err = stderr.strip() or "존재하지 않는 브랜치"
+    return False, f"브랜치 '{cleaned}' 실존성 검증 실패: {err}"
+
+
+def verify_changed_files_match(
+    repo: str | Path, base: str, branch: str, reported_files: list[str]
+) -> tuple[bool, str]:
+    """보고된 changed_files 목록이 실제 git diff 와 일치하는지 검증합니다.
+
+    `git diff --name-only <base>..<branch>` 로 대조합니다.
+    """
+    base_clean = (base or "").strip() or "main"
+    branch_clean = (branch or "").strip() or "HEAD"
+    code, stdout, stderr = _run_git_command(
+        repo, ["diff", "--name-only", f"{base_clean}..{branch_clean}"]
+    )
+    if code != 0:
+        err = stderr.strip() or "git diff 실패"
+        return False, f"git diff 실행 실패 ({base_clean}..{branch_clean}): {err}"
+
+    actual_files = {
+        _strip_leading_dot_slash(line.strip()) for line in stdout.splitlines() if line.strip()
+    }
+    normalized_reported = {
+        _strip_leading_dot_slash(p.strip()) for p in reported_files if p and p.strip()
+    }
+
+    missing_in_report = sorted(actual_files - normalized_reported)
+    phantom_in_report = sorted(normalized_reported - actual_files)
+
+    if not missing_in_report and not phantom_in_report:
+        return True, "변경 파일 목록 일치"
+
+    parts: list[str] = []
+    if missing_in_report:
+        parts.append(f"보고 누락: {', '.join(missing_in_report)}")
+    if phantom_in_report:
+        parts.append(f"허위 보고(diff 에 없음): {', '.join(phantom_in_report)}")
+    return False, f"changed_files 불일치 ({'; '.join(parts)})"
