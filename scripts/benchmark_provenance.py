@@ -849,12 +849,177 @@ def verify_provenance_consistency(
     return True
 
 
-def single_host_load_sample(os_module: Any = None) -> dict[str, object]:
-    """단일 호스트 부하 스냅샷을 측정합니다.
+def parse_proc_stat(stat_text: str) -> tuple[int, int] | None:
+    """Linux /proc/stat 내용에서 총 tick과 idle tick(idle + iowait)을 파싱합니다.
 
-    지표는 CPU 사용률(utilization)이 아니라 1분 load average를 논리 코어 수로 나눈
-    정규화 1분 load average(%)입니다.
-    os.getloadavg가 없는 플랫폼(Windows 등)에서는 안전하게 None을 기록합니다.
+    Returns:
+        (total_ticks, idle_ticks) 또는 파싱 실패 시 None
+    """
+    if not stat_text:
+        return None
+    for line in stat_text.splitlines():
+        tokens = line.strip().split()
+        if tokens and tokens[0] == "cpu":
+            try:
+                values = [int(v) for v in tokens[1:]]
+                if len(values) < 4:
+                    return None
+                idle = values[3]
+                iowait = values[4] if len(values) > 4 else 0
+                total = sum(values)
+                idle_total = idle + iowait
+                return total, idle_total
+            except (ValueError, IndexError):
+                return None
+    return None
+
+
+def read_proc_stat_ticks(
+    proc_stat_path: str = "/proc/stat",
+) -> tuple[tuple[int, int] | None, str | None]:
+    """/proc/stat 파일을 읽어 (total_ticks, idle_ticks)를 반환합니다.
+
+    Returns:
+        ((total, idle), None) 또는 (None, reason)
+    """
+    try:
+        if not os.path.exists(proc_stat_path):
+            return None, "proc_stat_not_found"
+        with open(proc_stat_path, encoding="utf-8") as f:
+            content = f.read()
+        ticks = parse_proc_stat(content)
+        if ticks is None:
+            return None, "proc_stat_parse_failed"
+        return ticks, None
+    except OSError as err:
+        return None, f"proc_stat_read_error: {err}"
+
+
+def calculate_cpu_utilization_from_ticks(
+    start_ticks: tuple[int, int],
+    end_ticks: tuple[int, int],
+) -> tuple[float | None, str | None]:
+    """두 시점의 (total_ticks, idle_ticks) 차분으로부터 CPU utilization(%)을 계산합니다.
+
+    Returns:
+        (utilization_percent, None) 또는 (None, reason)
+    """
+    total_delta = end_ticks[0] - start_ticks[0]
+    idle_delta = end_ticks[1] - start_ticks[1]
+
+    if total_delta <= 0:
+        return None, "non_positive_total_ticks_delta"
+
+    busy_delta = total_delta - idle_delta
+    if busy_delta < 0:
+        busy_delta = 0
+
+    util_pct = (busy_delta / total_delta) * 100.0
+    util_pct = min(100.0, max(0.0, util_pct))
+    return round(util_pct, 4), None
+
+
+def measure_macos_cpu_utilization(
+    command_runner: Any = None,
+    cpu_count: int | None = None,
+) -> tuple[float | None, str | None]:
+    """macOS에서 ps -A -o %cpu 출력을 파싱하여 시스템 CPU utilization(%)을 계산합니다.
+
+    Returns:
+        (utilization_percent, None) 또는 (None, reason)
+    """
+    cmd = ["ps", "-A", "-o", "%cpu"]
+    effective_cpu_count = cpu_count or os.cpu_count() or 1
+    try:
+        if command_runner is not None:
+            output = command_runner(cmd)
+        else:
+            res = subprocess.run(  # nosec B603
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=5.0,
+            )
+            output = res.stdout
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as err:
+        return None, f"macos_ps_failed: {err}"
+
+    lines = output.strip().splitlines()
+    if not lines:
+        return None, "empty_ps_output"
+
+    pct_values: list[float] = []
+    data_lines = lines[1:] if lines[0].strip().upper() == "%CPU" else lines
+    for line in data_lines:
+        line_str = line.strip()
+        if not line_str:
+            continue
+        try:
+            pct_values.append(float(line_str))
+        except ValueError:
+            continue
+
+    if not pct_values:
+        return None, "no_valid_cpu_samples_in_ps"
+
+    total_proc_cpu = sum(pct_values)
+    util_pct = total_proc_cpu / effective_cpu_count
+    util_pct = min(100.0, max(0.0, util_pct))
+    return round(util_pct, 4), None
+
+
+def measure_cpu_utilization(
+    interval_seconds: float = 0.0,
+    platform_name: str | None = None,
+    proc_stat_path: str = "/proc/stat",
+    command_runner: Any = None,
+    cpu_count: int | None = None,
+) -> tuple[float | None, str | None]:
+    """크로스플랫폼 호스트 CPU utilization(%)을 계측합니다.
+
+    - Linux: /proc/stat 차분 기반
+    - macOS (darwin): ps -A -o %cpu 기반
+    - 기타/미지원 플랫폼 (Windows 등): (None, "unsupported_platform: {platform}")
+
+    Returns:
+        (utilization_percent, None) 또는 (None, reason)
+    """
+    plat = platform_name if platform_name is not None else sys.platform
+
+    if plat.startswith("linux"):
+        start_ticks, start_err = read_proc_stat_ticks(proc_stat_path)
+        if start_ticks is None:
+            return None, start_err
+        sleep_dur = interval_seconds if interval_seconds > 0 else 0.05
+        time.sleep(sleep_dur)
+        end_ticks, end_err = read_proc_stat_ticks(proc_stat_path)
+        if end_ticks is None:
+            return None, end_err
+        return calculate_cpu_utilization_from_ticks(start_ticks, end_ticks)
+
+    elif plat == "darwin":
+        return measure_macos_cpu_utilization(command_runner=command_runner, cpu_count=cpu_count)
+
+    else:
+        return None, f"unsupported_platform: {plat}"
+
+
+def single_host_load_sample(
+    os_module: Any = None,
+    platform_name: str | None = None,
+    proc_stat_path: str = "/proc/stat",
+    command_runner: Any = None,
+    cpu_util_sampler: Any = None,
+) -> dict[str, object]:
+    """단일 호스트 부하 및 CPU utilization 스냅샷을 측정합니다.
+
+    - load_1m: 1분 load average
+    - normalized_load_1m_percent: 1분 load average를 논리 코어 수로 나눈 정규화 부하(%)
+    - per_core_percent: normalized_load_1m_percent의 하위 호환 별칭
+    - cpu_utilization_percent: 실제 CPU utilization(%) (Linux /proc/stat, macOS ps 기반)
+    - cpu_utilization_unavailable_reason: 측정 불가 시 사유 문자열 (정상 측정 시 None)
+    os.getloadavg 또는 CPU utilization 계측이 지원되지 않는 플랫폼(Windows 등)에서는 안전하게 None을 기록합니다.
     """
     target_os = os_module if os_module is not None else os
     cpu_count = target_os.cpu_count() if hasattr(target_os, "cpu_count") else None
@@ -871,17 +1036,52 @@ def single_host_load_sample(os_module: Any = None) -> dict[str, object]:
         normalized_load_1m_percent = (load_1m / cpu_count) * 100.0
     # per_core_percent 는 normalized_load_1m_percent 의 하위 호환 별칭이며 CPU 사용률이 아닙니다.
     per_core_percent = normalized_load_1m_percent
+
+    cpu_util: float | None = None
+    cpu_util_reason: str | None = None
+
+    if cpu_util_sampler is not None:
+        cpu_util, cpu_util_reason = cpu_util_sampler()
+    else:
+        plat = (
+            platform_name
+            if platform_name is not None
+            else ("win32" if getattr(target_os, "name", None) == "nt" else sys.platform)
+        )
+        if plat.startswith("linux"):
+            start_ticks, start_err = read_proc_stat_ticks(proc_stat_path)
+            if start_ticks is not None:
+                time.sleep(0.02)
+                end_ticks, end_err = read_proc_stat_ticks(proc_stat_path)
+                if end_ticks is not None:
+                    cpu_util, cpu_util_reason = calculate_cpu_utilization_from_ticks(
+                        start_ticks, end_ticks
+                    )
+                else:
+                    cpu_util_reason = end_err
+            else:
+                cpu_util_reason = start_err
+        elif plat == "darwin":
+            cpu_util, cpu_util_reason = measure_macos_cpu_utilization(
+                command_runner=command_runner,
+                cpu_count=cpu_count,
+            )
+        else:
+            cpu_util_reason = f"unsupported_platform: {plat}"
+
     return {
         "observed_at_utc": datetime.now(UTC).isoformat(),
         "load_1m": load_1m,
         "cpu_count": cpu_count,
         "normalized_load_1m_percent": normalized_load_1m_percent,
         "per_core_percent": per_core_percent,
+        "cpu_utilization_percent": cpu_util,
+        "cpu_utilization_unavailable_reason": cpu_util_reason,
     }
 
 
 def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, object]:
-    """호스트 부하 표본 리스트로부터 min/median/max 통계를 계산합니다."""
+    """호스트 부하 및 CPU utilization 표본 리스트로부터 min/median/max 통계를 계산합니다."""
     load_values: list[float] = []
     for sample in samples:
         load_1m = sample.get("load_1m")
@@ -894,6 +1094,16 @@ def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, objec
             pct = sample.get("per_core_percent")
         if isinstance(pct, (int, float)):
             pct_values.append(float(pct))
+
+    util_values: list[float] = []
+    reasons: list[str] = []
+    for sample in samples:
+        util = sample.get("cpu_utilization_percent")
+        if isinstance(util, (int, float)):
+            util_values.append(float(util))
+        reason = sample.get("cpu_utilization_unavailable_reason")
+        if reason and isinstance(reason, str) and reason not in reasons:
+            reasons.append(reason)
 
     if load_values:
         load_stats: dict[str, float | None] = {
@@ -913,15 +1123,32 @@ def compute_host_load_stats(samples: list[dict[str, object]]) -> dict[str, objec
     else:
         pct_stats = {"min": None, "median": None, "max": None}
 
+    if util_values:
+        util_stats: dict[str, float | None] = {
+            "min": min(util_values),
+            "median": statistics.median(util_values),
+            "max": max(util_values),
+        }
+    else:
+        util_stats = {"min": None, "median": None, "max": None}
+
     cpu_count = samples[0].get("cpu_count") if samples else os.cpu_count()
 
-    return {
+    result: dict[str, object] = {
         "cpu_count": cpu_count,
         "samples": samples,
         "load_1m": load_stats,
         "normalized_load_1m_percent": pct_stats,
         "per_core_percent": pct_stats,  # normalized_load_1m_percent 의 하위 호환 별칭 (CPU 사용률 아님)
+        "cpu_utilization_percent": util_stats,
     }
+    if not util_values:
+        if reasons:
+            result["cpu_utilization_unavailable_reason"] = "; ".join(reasons)
+        elif samples:
+            result["cpu_utilization_unavailable_reason"] = "not_measured"
+
+    return result
 
 
 def check_ambient_load_protocol(load_stats: Mapping[str, Any]) -> tuple[bool, dict[str, Any]]:
@@ -991,23 +1218,42 @@ def host_load_metadata(
 
 
 class HostLoadMonitor:
-    """벤치마크 실행 동안 지정된 간격으로 호스트 부하를 수집하는 백그라운드 모니터입니다."""
+    """벤치마크 실행 동안 지정된 간격으로 호스트 부하 및 CPU utilization을 수집하는 백그라운드 모니터입니다."""
 
     def __init__(
         self,
         interval_seconds: float = 5.0,
         min_samples: int = 3,
         sampler: Any = None,
+        proc_stat_path: str = "/proc/stat",
     ) -> None:
         self.interval_seconds = interval_seconds
         self.min_samples = min_samples
         self.sampler = sampler if sampler is not None else single_host_load_sample
+        self.proc_stat_path = proc_stat_path
         self.samples: list[dict[str, object]] = []
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._last_linux_ticks: tuple[int, int] | None = None
+        self._custom_sampler = sampler is not None
 
     def _sample(self) -> None:
-        self.samples.append(self.sampler())
+        if not self._custom_sampler and sys.platform.startswith("linux"):
+            cur_ticks, cur_err = read_proc_stat_ticks(self.proc_stat_path)
+            sample = self.sampler()
+            if cur_ticks is not None and self._last_linux_ticks is not None:
+                util, reason = calculate_cpu_utilization_from_ticks(
+                    self._last_linux_ticks, cur_ticks
+                )
+                sample["cpu_utilization_percent"] = util
+                sample["cpu_utilization_unavailable_reason"] = reason
+            elif cur_ticks is None:
+                sample["cpu_utilization_percent"] = None
+                sample["cpu_utilization_unavailable_reason"] = cur_err
+            self._last_linux_ticks = cur_ticks
+            self.samples.append(sample)
+        else:
+            self.samples.append(self.sampler())
 
     def _run(self) -> None:
         self._sample()
@@ -1016,6 +1262,8 @@ class HostLoadMonitor:
 
     def start(self) -> HostLoadMonitor:
         self._stop_event.clear()
+        if not self._custom_sampler and sys.platform.startswith("linux"):
+            self._last_linux_ticks, _ = read_proc_stat_ticks(self.proc_stat_path)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         return self

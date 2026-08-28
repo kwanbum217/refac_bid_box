@@ -52,7 +52,12 @@ from scripts.benchmark_provenance import (  # noqa: E402
     _parse_env_vars,
     _parse_port_bindings,
     _parse_source_mount,
+    calculate_cpu_utilization_from_ticks,
     compute_host_load_stats,
+    measure_cpu_utilization,
+    measure_macos_cpu_utilization,
+    parse_proc_stat,
+    read_proc_stat_ticks,
     verify_provenance_consistency,
 )
 from scripts.benchmark_provenance import (  # noqa: E402
@@ -94,11 +99,16 @@ __all__ = [
     "benchmark_query",
     "benchmark_sse_canonical",
     "build_evidence",
+    "calculate_cpu_utilization_from_ticks",
     "collect_host_load_samples",
     "compute_host_load_stats",
     "dump_strict_json",
     "host_load_metadata",
     "main",
+    "measure_cpu_utilization",
+    "measure_macos_cpu_utilization",
+    "parse_proc_stat",
+    "read_proc_stat_ticks",
     "reproducibility_metadata",
     "runtime_config_snapshot",
     "sanitize_nan_to_none",
@@ -123,9 +133,21 @@ def _command_output(command: list[str], allow_empty: bool = False) -> str:
         return "unknown"
 
 
-def single_host_load_sample(os_module: Any = None) -> dict[str, object]:
+def single_host_load_sample(
+    os_module: Any = None,
+    platform_name: str | None = None,
+    proc_stat_path: str = "/proc/stat",
+    command_runner: Any = None,
+    cpu_util_sampler: Any = None,
+) -> dict[str, object]:
     target_os = os_module if os_module is not None else os
-    return _default_single_host_load_sample(os_module=target_os)
+    return _default_single_host_load_sample(
+        os_module=target_os,
+        platform_name=platform_name,
+        proc_stat_path=proc_stat_path,
+        command_runner=command_runner,
+        cpu_util_sampler=cpu_util_sampler,
+    )
 
 
 def runtime_config_snapshot(
