@@ -147,6 +147,8 @@ def test_collect_adds_advice_note_on_blocked() -> None:
         ("HTTP 401 unauthorized", "인증"),
         ("token expired at 2026-08-28", "토큰"),
         ("model not found: gemini-foo", "모델"),
+        ("HTTP 429 Too Many Requests", "rate limit"),
+        ("upstream returned status 502", "502"),
     ],
 )
 def test_detect_block_classifies_failure_signals(
@@ -173,6 +175,36 @@ def test_detect_block_failure_takes_priority_over_prompt() -> None:
     reason, _fix, kind = found
     assert kind == "failure"
     assert "네트워크" in reason
+
+
+@pytest.mark.parametrize(
+    "screen",
+    [
+        "2537 passed, 6 skipped in 429.31s",
+        "Editing 7.59k tokens 502 lines changed",
+        "tests/test_foo.py:429: assert x",
+        "Read(scripts/orca_taskctl.py) 1502 lines",
+    ],
+)
+def test_detect_block_ignores_bare_status_code_substrings(screen: str) -> None:
+    assert watch.detect_block(screen) is None
+
+
+def test_detect_block_contextual_status_codes_still_match() -> None:
+    cases = [
+        ("HTTP 429 Too Many Requests", "rate limit"),
+        ("error 429: rate limit exceeded", "rate limit"),
+        ("received status 429 from upstream", "rate limit"),
+        ("HTTP 502 Bad Gateway", "502"),
+        ("error 502 while contacting model", "502"),
+        ("upstream returned status code 502", "502"),
+    ]
+    for screen, fragment in cases:
+        found = watch.detect_block(screen)
+        assert found is not None, screen
+        reason, _fix, kind = found
+        assert kind == "failure"
+        assert fragment in reason
 
 
 def test_existing_prompt_signals_keep_reason_and_fix() -> None:
