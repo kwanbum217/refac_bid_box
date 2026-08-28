@@ -984,7 +984,7 @@ def measure_cpu_utilization(
     proc_stat_path: str = "/proc/stat",
     command_runner: Any = None,
     cpu_count: int | None = None,
-) -> tuple[float | None, str | None, str, float]:
+) -> tuple[float | None, str | None, str, float, float]:
     """크로스플랫폼 호스트 CPU utilization(%)을 계측합니다.
 
     - Linux: /proc/stat 차분 기반 (proc_stat_delta)
@@ -992,29 +992,41 @@ def measure_cpu_utilization(
     - 기타/미지원 플랫폼 (Windows 등): unsupported
 
     Returns:
-        (utilization_percent, reason, method, probe_ms)
+        (utilization_percent, reason, method, probe_ms, observation_ms)
+        - probe_ms: 대기 시간을 포함한 총 관측 소요 시간(ms)
+        - observation_ms: 의도적 대기 시간(sleep)을 제외한 순수 관측 시간(ms).
+          Linux 경로에서는 두 번의 read_proc_stat_ticks 호출 시간의 합이고,
+          macOS 경로에서는 의도적 대기가 없으므로 probe_ms 와 동일하며,
+          미지원 플랫폼에서도 probe_ms 와 동일합니다.
     """
     plat = platform_name if platform_name is not None else sys.platform
     probe_started_at = time.perf_counter()
+    observation_ms = 0.0
 
     if plat.startswith("linux"):
+        read_start_at = time.perf_counter()
         start_ticks, start_err = read_proc_stat_ticks(proc_stat_path)
+        observation_ms += (time.perf_counter() - read_start_at) * 1000.0
         if start_ticks is None:
             return (
                 None,
                 start_err,
                 CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
                 (time.perf_counter() - probe_started_at) * 1000.0,
+                observation_ms,
             )
         sleep_dur = interval_seconds if interval_seconds > 0 else 0.05
         time.sleep(sleep_dur)
+        read_start_at = time.perf_counter()
         end_ticks, end_err = read_proc_stat_ticks(proc_stat_path)
+        observation_ms += (time.perf_counter() - read_start_at) * 1000.0
         if end_ticks is None:
             return (
                 None,
                 end_err,
                 CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
                 (time.perf_counter() - probe_started_at) * 1000.0,
+                observation_ms,
             )
         utilization, reason = calculate_cpu_utilization_from_ticks(start_ticks, end_ticks)
         return (
@@ -1022,6 +1034,7 @@ def measure_cpu_utilization(
             reason,
             CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
             (time.perf_counter() - probe_started_at) * 1000.0,
+            observation_ms,
         )
 
     elif plat == "darwin":
@@ -1029,19 +1042,23 @@ def measure_cpu_utilization(
             command_runner=command_runner,
             cpu_count=cpu_count,
         )
+        probe_ms = (time.perf_counter() - probe_started_at) * 1000.0
         return (
             utilization,
             reason,
             CPU_UTILIZATION_METHOD_PS_PROCESS_SUM,
-            (time.perf_counter() - probe_started_at) * 1000.0,
+            probe_ms,
+            probe_ms,
         )
 
     else:
+        probe_ms = (time.perf_counter() - probe_started_at) * 1000.0
         return (
             None,
             f"unsupported_platform: {plat}",
             CPU_UTILIZATION_METHOD_UNSUPPORTED,
-            (time.perf_counter() - probe_started_at) * 1000.0,
+            probe_ms,
+            probe_ms,
         )
 
 
@@ -1059,7 +1076,9 @@ def single_host_load_sample(
     - per_core_percent: normalized_load_1m_percent의 하위 호환 별칭
     - cpu_utilization_percent: 실제 CPU utilization(%) (Linux /proc/stat, macOS ps 기반)
     - cpu_utilization_method: CPU utilization 측정 방식 식별자
-    - cpu_utilization_probe_ms: CPU utilization 관측에 걸린 실측 시간(ms)
+    - cpu_utilization_probe_ms: CPU utilization 관측에 걸린 실측 총 시간(ms) (대기 포함)
+    - cpu_utilization_observation_ms: 의도적 대기를 제외한 순수 관측 시간(ms)
+      (Linux: 두 read_proc_stat_ticks 호출 합, macOS/미지원: probe_ms 와 동일)
     - cpu_utilization_unavailable_reason: 측정 불가 시 사유 문자열 (정상 측정 시 None)
     os.getloadavg 또는 CPU utilization 계측이 지원되지 않는 플랫폼(Windows 등)에서는 안전하게 None을 기록합니다.
     """
@@ -1083,16 +1102,29 @@ def single_host_load_sample(
     cpu_util_reason: str | None = None
     cpu_util_method = CPU_UTILIZATION_METHOD_UNSUPPORTED
     cpu_util_probe_ms = 0.0
+    cpu_util_observation_ms = 0.0
 
     if cpu_util_sampler is not None:
-        cpu_util, cpu_util_reason, cpu_util_method, cpu_util_probe_ms = cpu_util_sampler()
+        (
+            cpu_util,
+            cpu_util_reason,
+            cpu_util_method,
+            cpu_util_probe_ms,
+            cpu_util_observation_ms,
+        ) = cpu_util_sampler()
     else:
         plat = (
             platform_name
             if platform_name is not None
             else ("win32" if getattr(target_os, "name", None) == "nt" else sys.platform)
         )
-        cpu_util, cpu_util_reason, cpu_util_method, cpu_util_probe_ms = measure_cpu_utilization(
+        (
+            cpu_util,
+            cpu_util_reason,
+            cpu_util_method,
+            cpu_util_probe_ms,
+            cpu_util_observation_ms,
+        ) = measure_cpu_utilization(
             interval_seconds=0.02,
             platform_name=plat,
             proc_stat_path=proc_stat_path,
@@ -1109,6 +1141,7 @@ def single_host_load_sample(
         "cpu_utilization_percent": cpu_util,
         "cpu_utilization_method": cpu_util_method,
         "cpu_utilization_probe_ms": cpu_util_probe_ms,
+        "cpu_utilization_observation_ms": cpu_util_observation_ms,
         "cpu_utilization_unavailable_reason": cpu_util_reason,
     }
 
@@ -1280,7 +1313,10 @@ class HostLoadMonitor:
     def _sample(self) -> None:
         if not self._custom_sampler and sys.platform.startswith("linux"):
             probe_started_at = time.perf_counter()
+            observation_ms = 0.0
+            read_start_at = time.perf_counter()
             cur_ticks, cur_err = read_proc_stat_ticks(self.proc_stat_path)
+            observation_ms += (time.perf_counter() - read_start_at) * 1000.0
             sample = self.sampler()
             if cur_ticks is not None and self._last_linux_ticks is not None:
                 util, reason = calculate_cpu_utilization_from_ticks(
@@ -1292,7 +1328,9 @@ class HostLoadMonitor:
                 sample["cpu_utilization_percent"] = None
                 sample["cpu_utilization_unavailable_reason"] = cur_err
             sample["cpu_utilization_method"] = CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
-            sample["cpu_utilization_probe_ms"] = (time.perf_counter() - probe_started_at) * 1000.0
+            probe_ms = (time.perf_counter() - probe_started_at) * 1000.0
+            sample["cpu_utilization_probe_ms"] = probe_ms
+            sample["cpu_utilization_observation_ms"] = observation_ms
             self._last_linux_ticks = cur_ticks
             self.samples.append(sample)
         else:
