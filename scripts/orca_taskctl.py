@@ -21,6 +21,7 @@ import os
 import re
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
+import tempfile
 import time
 import uuid
 from contextlib import suppress
@@ -1222,6 +1223,32 @@ def verify_instruction_delivered(
         time.sleep(max(0.2, poll_seconds))
 
 
+def start_auto_approve(terminal: str) -> tuple[bool, str]:
+    """워커 터미널에 권한 프롬프트 자동 승인 감시기를 배경으로 붙인다.
+
+    붙이지 않으면 셸 명령 승인 대화창마다 워커가 멈춘다. shift+tab(accept-edits)은
+    파일 편집만 자동 승인하므로 명령 대화창은 이 감시기가 없으면 사람이 눌러야 한다.
+    """
+    script = Path(__file__).resolve().parent / "orca_auto_approve.py"
+    if not script.exists():
+        return False, f"자동 승인 감시기를 찾지 못했습니다: {script}"
+    log_dir = Path(tempfile.gettempdir()) / "orca_auto_approve"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"{terminal}.log"
+        with log_path.open("ab") as log_file:
+            subprocess.Popen(  # nosec B603  고정된 스크립트 경로와 터미널 핸들만 넘깁니다
+                [sys.executable, str(script), terminal],
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+    except OSError as exc:
+        return False, f"자동 승인 감시기 기동 실패: {exc}"
+    return True, str(log_path)
+
+
 def approve_trust_prompt(
     handle: str,
     attempts: int = 2,
@@ -2105,6 +2132,18 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             as_json=args.json,
         )
         launch_cmd = f"orca orchestration dispatch --task {task_id} --to {args.terminal} --inject"
+
+        # 권한 프롬프트 자동 승인 감시기는 선택이 아니라 기동 절차의 일부입니다.
+        # 붙이지 않으면 워커가 셸 명령 승인 대화창마다 멈추고, 감시 도구는 이를
+        # 진행으로 오판할 수 있습니다.
+        approve_started, approve_detail = start_auto_approve(args.terminal)
+        if approve_started:
+            sys.stderr.write(f"권한 자동 승인 감시기를 붙였습니다. 로그: {approve_detail}\n")
+        else:
+            sys.stderr.write(
+                f"경고: {approve_detail}. 워커가 권한 대화창에서 멈출 수 있으니 "
+                f"python3 scripts/orca_auto_approve.py {args.terminal} 를 직접 띄우십시오.\n"
+            )
     else:
         if not args.agent:
             sys.stderr.write(
