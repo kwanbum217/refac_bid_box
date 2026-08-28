@@ -12,6 +12,11 @@ import subprocess  # nosec B404  고정된 orca 명령만 실행하며 사용자
 import sys
 import time
 
+try:
+    from scripts.orca_worker_watch import FILE_EDIT_DIALOG_SIGNALS, normalize_text
+except ImportError:
+    from orca_worker_watch import FILE_EDIT_DIALOG_SIGNALS, normalize_text
+
 SHELL_METACHARS = re.compile(r"[\n\r|<>;`&]|\$\(")
 
 DANGEROUS = re.compile(
@@ -113,6 +118,13 @@ def classify_command(cmd: str) -> tuple[str, str]:
     """명령어 문자열을 분석하여 자동 승인(approve) 또는 보류(hold) 여부와 사유를 반환합니다."""
     if not cmd or not cmd.strip():
         return "hold", "빈 명령"
+
+    # 파일 편집/생성 승인 대화창 신호 검사 (자동 승인하지 않고 보류)
+    norm_cmd = normalize_text(cmd)
+    for sig in FILE_EDIT_DIALOG_SIGNALS:
+        norm_sig = normalize_text(sig)
+        if norm_sig == norm_cmd or norm_sig in norm_cmd:
+            return "hold", f"파일 편집/생성 승인은 수동 판단 필요 ({sig})"
 
     # 1. 셸 메타문자 검사 (argv 파싱 전 수행)
     if SHELL_METACHARS.search(cmd):
@@ -223,11 +235,25 @@ def send(handle: str, text: str) -> None:
 
 
 def pending_command(screen: str) -> str | None:
-    if "Do you want to proceed?" not in screen:
+    norm_screen = normalize_text(screen)
+
+    # 1. Antigravity 파일 편집/생성 승인 대화창 검사
+    for sig in FILE_EDIT_DIALOG_SIGNALS:
+        if normalize_text(sig) in norm_screen:
+            return sig
+
+    # 2. 기존 도구/명령 실행 승인 프롬프트 검사
+    if "Do you want to proceed?" not in screen and "do you want to proceed?" not in norm_screen:
         return None
     marker = "Requesting permission for:"
     if marker not in screen:
-        return ""
+        marker_low = "requesting permission for:"
+        if marker_low not in norm_screen:
+            return ""
+        low_screen = screen.lower()
+        start_idx = low_screen.find(marker_low) + len(marker_low)
+        end_idx = low_screen.find("do you want to proceed?", start_idx)
+        return screen[start_idx:end_idx].strip()
     body = screen.split(marker, 1)[1]
     body = body.split("Do you want to proceed?", 1)[0]
     return body.strip()

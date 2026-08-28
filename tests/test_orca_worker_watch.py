@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from scripts import orca_worker_watch as watch
@@ -18,6 +20,12 @@ from scripts import orca_worker_watch as watch
         ("▶ [a] Trust this workspace", "신뢰"),
         ("Welcome to the Antigravity CLI. You are currently not signed in.", "인증"),
         ("How's the CLI experience so far? Help us improve:", "설문"),
+        ("Accept this file edit?", "파일 편집"),
+        ("Allow creation of this file?", "파일 생성"),
+        ("  ACCEPT   this\n  FILE edit?  ", "파일 편집"),
+        ("ALLOW  creation OF this file?", "파일 생성"),
+        ("Allow this", "도구 실행 권한"),
+        ("Do you want to proceed?", "진행 확인"),
     ],
 )
 def test_detect_block_finds_known_signals(needle: str, expected_fragment: str) -> None:
@@ -26,6 +34,14 @@ def test_detect_block_finds_known_signals(needle: str, expected_fragment: str) -
     reason, fix = found
     assert expected_fragment in reason
     assert fix
+
+
+def test_file_edit_signals_have_shift_tab_fix() -> None:
+    for sig in watch.FILE_EDIT_DIALOG_SIGNALS:
+        found = watch.detect_block(sig)
+        assert found is not None
+        _reason, fix = found
+        assert "shift+tab" in fix
 
 
 def test_detect_block_returns_none_for_working_screen() -> None:
@@ -67,3 +83,51 @@ def test_block_signals_all_have_reason_and_fix() -> None:
         assert needle
         assert reason
         assert fix
+
+
+def test_main_exit_code_blocked_returns_1() -> None:
+    blocked_state = watch.WorkerState(
+        name="orca-w1",
+        path="/tmp/w1",
+        branch="b1",
+        commits=0,
+        dirty=0,
+        terminal="term_1",
+        blocked_reason="Antigravity 파일 편집 승인 대화창",
+        blocked_fix="화면을 읽고 판단",
+    )
+    with patch("scripts.orca_worker_watch.collect", return_value=[blocked_state]):
+        exit_code = watch.main([])
+        assert exit_code == 1
+
+
+def test_main_exit_code_clean_returns_0() -> None:
+    clean_state = watch.WorkerState(
+        name="orca-w1",
+        path="/tmp/w1",
+        branch="b1",
+        commits=2,
+        dirty=1,
+        terminal="term_1",
+    )
+    with patch("scripts.orca_worker_watch.collect", return_value=[clean_state]):
+        exit_code = watch.main([])
+        assert exit_code == 0
+
+
+def test_collect_adds_advice_note_on_blocked() -> None:
+    fake_worktrees = [("w1", "/tmp/w1", "feature")]
+    fake_terminals = {"/tmp/w1": {"handle": "term_123"}}
+    with (
+        patch("scripts.orca_worker_watch.list_worktrees", return_value=fake_worktrees),
+        patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
+        patch("scripts.orca_worker_watch.terminal_map", return_value=fake_terminals),
+        patch(
+            "scripts.orca_worker_watch.terminal_tail", return_value="Accept this file edit?\n[Y/n]"
+        ),
+    ):
+        states = watch.collect(watch.Path("/tmp/repo"), "main")
+        assert len(states) == 1
+        assert states[0].blocked is True
+        assert "파일 편집" in (states[0].blocked_reason or "")
+        assert any("터미널을 직접 확인" in note for note in states[0].notes)

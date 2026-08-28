@@ -547,6 +547,23 @@ orca orchestration check --ack <delivery_id> --json
 `json.JSONDecoder().raw_decode` 를 반복 호출하십시오. 단순 `json.load` 는
 실패합니다.
 
+### 6.6 워커 차단 신호 감시 및 대화창 해제 절차
+
+워커 터미널이 사람 개입을 기다리며 멈춰 있는 경우 `orca_worker_watch.py` 가 터미널 tail 을 분석하여 차단으로 보고하고 종료 코드 1 로 끝납니다. 신규 파일 편집/생성 승인 대화창은 자동 승인(`orca_auto_approve.py`)하지 않고 보류(hold)하며 직접 확인 후 해제합니다.
+
+| 신호 문자열 (Needle) | 대상 대화창 / 정체 원인 | 해제 방법 및 조치 절차 | 자동 승인 (Auto-approve) 정책 |
+| --- | --- | --- | --- |
+| `Do you trust` | Antigravity 폴더 신뢰 대화창 | `orca terminal send --terminal <handle> --enter --text ''` (기본 선택이 신뢰) | 수동 또는 초기 기동 처리 |
+| `Trust this workspace` | Cursor 워크스페이스 신뢰 대화창 | `orca terminal send --terminal <handle> --text 'a'` | 수동 |
+| `not signed in` | Antigravity 부팅이 인증 단계에서 정체 | 터미널 닫고 재기동 (`--model` 플래그 없이 `agy` 로 띄울 것) | 수동 재기동 |
+| `How's the CLI experience` | CLI 만족도 설문 프롬프트 | `orca terminal send --terminal <handle> --text '0'` (Skip) | 수동 |
+| `Accept this file edit?` | Antigravity 파일 편집 승인 대화창 | 화면 검토 후 `shift+tab`(ESC `[ Z`) 전송으로 auto-approve 전환 또는 직접 승인 | **보류 (hold)**, 자동 입력 전송 안 함 |
+| `Allow creation of this file?` | Antigravity 파일 생성 승인 대화창 | 화면 검토 후 `shift+tab`(ESC `[ Z`) 전송으로 auto-approve 전환 또는 직접 승인 | **보류 (hold)**, 자동 입력 전송 안 함 |
+| `Allow this` | 도구 실행 권한 요청 | 화면 검토 후 승인 여부 판단 (`shift+tab` 으로 auto-approve 전환 가능) | 수동 판단 |
+| `Do you want to proceed` / `Requesting permission for:` | 도구/명령 실행 승인 프롬프트 | `orca_auto_approve.py` 화이트리스트 명령 자동 승인 (`2` 전송) | 화이트리스트 일치 시 승인, 외 보류 |
+
+> **주의 (원인 오인 방지)**: 감시 신호 탐지 시 실제 원인이 다를 수 있습니다(네트워크 지연, 비정상 턴 종료 등). 차단이 보고되면 반드시 `orca terminal read --terminal <handle>` 로 터미널 화면을 직접 확인하십시오.
+
 ---
 
 ## 7. 병합

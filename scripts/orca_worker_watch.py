@@ -30,6 +30,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+# Antigravity 파일 편집/생성 승인 대화창 신호 상수 (단일 진실 원천)
+FILE_EDIT_DIALOG_SIGNALS: tuple[str, ...] = (
+    "Accept this file edit?",
+    "Allow creation of this file?",
+)
+
+
+def normalize_text(text: str) -> str:
+    """대소문자와 공백(줄바꿈, 연속 공백)을 정규화합니다."""
+    return " ".join(text.lower().split())
+
+
 # 터미널 화면에서 워커가 사람 개입을 기다리고 있음을 뜻하는 신호.
 # 값은 (사유, 해제 방법) 이며 코디네이터가 바로 조치할 수 있게 적습니다.
 BLOCK_SIGNALS: list[tuple[str, str, str]] = [
@@ -45,6 +57,16 @@ BLOCK_SIGNALS: list[tuple[str, str, str]] = [
         "터미널을 닫고 재기동. --model 플래그 없이 agy 로 띄울 것",
     ),
     ("How's the CLI experience", "CLI 만족도 설문 프롬프트", "terminal send --text '0' (Skip)"),
+    (
+        "Accept this file edit?",
+        "Antigravity 파일 편집 승인 대화창",
+        "화면을 읽고 승인 여부를 판단. shift+tab(ESC [ Z)으로 auto-approve 전환 가능",
+    ),
+    (
+        "Allow creation of this file?",
+        "Antigravity 파일 생성 승인 대화창",
+        "화면을 읽고 승인 여부를 판단. shift+tab(ESC [ Z)으로 auto-approve 전환 가능",
+    ),
     (
         "Allow this",
         "도구 실행 권한 요청",
@@ -154,8 +176,9 @@ def terminal_tail(handle: str, lines: int = TAIL_LINES) -> str:
 
 
 def detect_block(screen_tail: str) -> tuple[str, str] | None:
+    norm_tail = normalize_text(screen_tail)
     for needle, reason, fix in BLOCK_SIGNALS:
-        if needle in screen_tail:
+        if normalize_text(needle) in norm_tail:
             return reason, fix
     return None
 
@@ -173,6 +196,9 @@ def collect(repo: Path, base: str) -> list[WorkerState]:
                 found = detect_block(terminal_tail(state.terminal))
                 if found:
                     state.blocked_reason, state.blocked_fix = found
+                    state.notes.append(
+                        "감시 신호와 실제 원인이 다를 수 있으니(네트워크 오류로 인한 턴 종료 등) 터미널을 직접 확인하십시오"
+                    )
         else:
             state.notes.append(
                 "연결된 터미널이 없습니다. 워커가 종료됐거나 아직 기동되지 않았습니다"

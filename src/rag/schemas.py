@@ -18,6 +18,8 @@ class RetrievalPlan(BaseModel):
     use_sql: bool = False
     use_vector: bool = False
     use_kb_status: bool = False
+    use_lexical: bool = False
+    lexical_query: str | None = None
     filters: dict[str, Any] = Field(default_factory=dict)
     semantic_query: str = ""
     top_k: int = DEFAULT_VECTOR_TOP_K

@@ -146,6 +146,11 @@ def _query_lower(query: str) -> str:
     return _normalize_text(query).lower()
 
 
+QUOTED_TITLE_PATTERN = re.compile(
+    r'["\'\u2018\u201c\u300c\u300e\[]([^"\'\u2019\u201d\u300d\u300f\]]{2,})["\'\u2019\u201d\u300d\u300f\]]'
+)
+
+
 def is_entity_specific_query(query: str) -> bool:
     """특정 공고나 사업, 기관, 업체를 지목하는 개체 조회 질의인지 판정합니다.
 
@@ -157,10 +162,7 @@ def is_entity_specific_query(query: str) -> bool:
     lowered = normalized.lower()
 
     # 1. 따옴표나 각괄호 인용구 (예: "안녕 자두야", '도로 포장', [소방설비], 「...」, 『...』)
-    if re.search(
-        r'["\'\u2018\u201c\u300c\u300e\[][^"\'\u2019\u201d\u300d\u300f\]]{2,}["\'\u2019\u201d\u300d\u300f\]]',
-        normalized,
-    ):
+    if QUOTED_TITLE_PATTERN.search(normalized):
         return True
 
     # 2. 공고번호 또는 문서 ID 패턴 (예: R26BK01659912-001, bid_10015925)
@@ -452,10 +454,19 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if not route_reason:
         route_reason = "기본 벡터 질의"
 
+    quote_match = QUOTED_TITLE_PATTERN.search(normalized_query)
+    has_quoted_title = bool(quote_match)
+    use_lexical = is_entity or has_quoted_title
+    lexical_query = (
+        quote_match.group(1).strip() if quote_match else (normalized_query if is_entity else None)
+    )
+
     plan = RetrievalPlan(
         use_sql=use_sql,
         use_vector=use_vector,
         use_kb_status=use_kb_status,
+        use_lexical=use_lexical,
+        lexical_query=lexical_query,
         filters=filters,
         semantic_query=normalized_query,
         top_k=DEFAULT_VECTOR_TOP_K,
