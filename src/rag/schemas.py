@@ -74,6 +74,9 @@ class AnswerBundle(BaseModel):
     )
     retrieved_docs: list[dict[str, Any]] = Field(default_factory=list)
     latency_ms: float = 0.0
+    segment_metrics: dict[str, float] | None = Field(
+        default=None, description="Detailed stage latency metrics in milliseconds"
+    )
 
     @property
     def route_reason(self) -> str:

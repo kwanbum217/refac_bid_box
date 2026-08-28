@@ -8,13 +8,13 @@ RAG 구간별 소요 시간(sql, vector, lexical, llm, total 등) 계측, 구조
 from __future__ import annotations
 
 import logging
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from src.app.core.config import settings
 from src.rag.engine import HybridRAGEngine
-from src.rag.schemas import AnswerBundle
+from src.rag.schemas import AnswerBundle, Provenance
 
 
 class DummyBackend:
@@ -138,3 +138,101 @@ def test_instrumentation_exception_resilience(monkeypatch, caplog):
         bundle = engine.get_answer_sync("예외 안전성 검증")
         assert isinstance(bundle, AnswerBundle)
         assert bundle.answer is not None
+
+
+def test_answer_bundle_model_dump_flag_enabled(monkeypatch):
+    """플래그 ON 상태에서 AnswerBundle.model_dump() 에 segment_metrics 키가 있고 dict 타입이어야 합니다."""
+    monkeypatch.setattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", True)
+
+    engine = HybridRAGEngine()
+    engine._backend = DummyBackend()
+    engine._backend_resolved = True
+
+    bundle = engine.get_answer_sync("모델 덤프 테스트")
+    dumped = bundle.model_dump()
+    assert "segment_metrics" in dumped
+    assert isinstance(dumped["segment_metrics"], dict)
+    assert "sql_ms" in dumped["segment_metrics"]
+    assert "total_ms" in dumped["segment_metrics"]
+
+
+def test_answer_bundle_model_dump_flag_disabled(monkeypatch):
+    """플래그 OFF 상태에서 AnswerBundle.model_dump() 의 segment_metrics 는 None 이어야 합니다."""
+    monkeypatch.setattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
+
+    engine = HybridRAGEngine()
+    engine._backend = DummyBackend()
+    engine._backend_resolved = True
+
+    bundle = engine.get_answer_sync("모델 덤프 테스트")
+    dumped = bundle.model_dump()
+    assert "segment_metrics" in dumped
+    assert dumped["segment_metrics"] is None
+
+
+def test_rest_query_segment_metrics_included_when_flag_enabled(client, monkeypatch):
+    """플래그 ON 상태에서 POST /api/v1/chatbot/query 호출 시 JSON 응답에 segment_metrics 가 포함되어야 합니다."""
+    monkeypatch.setattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", True)
+
+    mock_bundle = AnswerBundle(
+        answer="모의 답변입니다.",
+        provenance=Provenance(trace_id="trace-test-123", retrieval_mode="hybrid"),
+        citations=["[1] 공고"],
+        retrieved_docs=[],
+        latency_ms=45.2,
+        segment_metrics={
+            "plan_ms": 2.1,
+            "sql_ms": 10.5,
+            "vector_ms": 15.3,
+            "lexical_ms": 5.2,
+            "kb_status_ms": 1.1,
+            "assembly_ms": 1.0,
+            "prepare_total_ms": 35.2,
+            "llm_ms": 8.0,
+            "guard_ms": 2.0,
+            "total_ms": 45.2,
+        },
+    )
+
+    with patch(
+        "src.app.api.v1.chatbot.rag_engine.get_answer", new_callable=AsyncMock
+    ) as mock_get_answer:
+        mock_get_answer.return_value = mock_bundle
+        response = client.post(
+            "/api/v1/chatbot/query", json={"query": "구간 지표 노출 테스트", "stream": False}
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "segment_metrics" in data
+    assert isinstance(data["segment_metrics"], dict)
+    assert data["segment_metrics"]["sql_ms"] == 10.5
+    assert data["segment_metrics"]["vector_ms"] == 15.3
+    assert data["segment_metrics"]["llm_ms"] == 8.0
+    assert data["segment_metrics"]["total_ms"] == 45.2
+
+
+def test_rest_query_segment_metrics_omitted_when_flag_disabled(client, monkeypatch):
+    """플래그 OFF 상태에서 POST /api/v1/chatbot/query 호출 시 JSON 응답 본문에 segment_metrics 키가 없어야 합니다."""
+    monkeypatch.setattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
+
+    mock_bundle = AnswerBundle(
+        answer="모의 답변입니다.",
+        provenance=Provenance(trace_id="trace-test-456", retrieval_mode="hybrid"),
+        citations=[],
+        retrieved_docs=[],
+        latency_ms=30.0,
+        segment_metrics=None,
+    )
+
+    with patch(
+        "src.app.api.v1.chatbot.rag_engine.get_answer", new_callable=AsyncMock
+    ) as mock_get_answer:
+        mock_get_answer.return_value = mock_bundle
+        response = client.post(
+            "/api/v1/chatbot/query", json={"query": "구간 지표 비노출 테스트", "stream": False}
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "segment_metrics" not in data

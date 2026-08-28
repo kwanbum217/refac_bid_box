@@ -424,13 +424,8 @@ def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> 
         history=prepared.history,
         tool_context=prepared.tool_context or None,
     )
-    return _finalize_rag_answer(
-        db,
-        prepared,
-        bundle.answer,
-        bundle.provenance.model_dump(),
-        bundle.latency_ms,
-    )
+    provenance = bundle.provenance.model_dump()
+    return _finalize_rag_answer(db, prepared, bundle.answer, provenance, bundle.latency_ms)
 
 
 @router.post("/chat", response_model=ChatResponse, summary="챗봇 대화")
@@ -540,7 +535,12 @@ def new_chat_session_api():
     return {"status": "success", "session_key": ensure_session_key()}
 
 
-@router.post("/query", response_model=ChatbotQueryResponse, summary="단발 질의 (간이 계약)")
+@router.post(
+    "/query",
+    response_model=ChatbotQueryResponse,
+    response_model_exclude_none=True,
+    summary="단발 질의 (간이 계약)",
+)
 async def query_chatbot(
     payload: ChatbotQueryRequest,
     response: Response,
@@ -556,4 +556,5 @@ async def query_chatbot(
         latency_ms=bundle.latency_ms,
         route_reason=bundle.route_reason,
         citations=bundle.citations,
+        segment_metrics=bundle.segment_metrics,
     )
