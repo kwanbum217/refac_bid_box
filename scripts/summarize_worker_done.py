@@ -237,20 +237,21 @@ def summarize_worker_report(
     changed_files = string_list(report_data.get("changed_files"))
     read_files = string_list(report_data.get("read_files"))
 
-    # 1-1. commit 및 branch 진실성(실존성) 검증
-    target_repo = Path(repo_path).resolve() if repo_path else Path.cwd()
-    commit_raw = str(report_data.get("commit", "")).strip()
-    branch_raw = str(report_data.get("branch", "")).strip()
+    # 1-1. commit 및 branch 진실성(실존성) 검증 (repo_path 가 명시된 경우 실행)
+    if repo_path is not None:
+        target_repo = Path(repo_path).resolve()
+        commit_raw = str(report_data.get("commit", "")).strip()
+        branch_raw = str(report_data.get("branch", "")).strip()
 
-    if commit_raw:
-        commit_ok, commit_msg = verify_commit_exists(target_repo, commit_raw)
-        if not commit_ok:
-            violations.append(commit_msg)
+        if commit_raw:
+            commit_ok, commit_msg = verify_commit_exists(target_repo, commit_raw)
+            if not commit_ok:
+                violations.append(commit_msg)
 
-    if branch_raw:
-        branch_ok, branch_msg = verify_branch_exists(target_repo, branch_raw)
-        if not branch_ok:
-            violations.append(branch_msg)
+        if branch_raw:
+            branch_ok, branch_msg = verify_branch_exists(target_repo, branch_raw)
+            if not branch_ok:
+                violations.append(branch_msg)
 
     # 2. 위반 검사 A: status == succeeded 인데 commit_count == 0 이면 무작업 완료 보고 (규약 3.3)
     #    읽기 전용 Task(allowed_write_files 가 빈 목록)는 커밋이 없는 것이 정상이므로 예외로 둔다.
@@ -297,12 +298,13 @@ def summarize_worker_report(
     elif blocking_issues:
         has_blocking_issues = True
 
-    if declared_verdict in ("pass", "candidate") and (has_blocking_issues or violations):
+    if declared_verdict in ("pass", "candidate") and has_blocking_issues:
         effective_verdict = "blocked"
-        reason = "blocking_issues 가 존재함" if has_blocking_issues else "계약/진실성 위반이 존재함"
         violations.append(
-            f"verdict 격하: 선언값 '{declared_verdict}' -> 실효값 'blocked' ({reason})"
+            f"verdict 격하: 선언값 '{declared_verdict}' -> 실효값 'blocked' (blocking_issues 가 존재함)"
         )
+    elif declared_verdict in ("pass", "candidate") and violations:
+        effective_verdict = "blocked"
     else:
         effective_verdict = declared_verdict
 
