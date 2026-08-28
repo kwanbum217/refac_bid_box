@@ -30,23 +30,23 @@
 
 | 순번 | 필드명 | REQUIRED_FIELDS 포함 여부 |
 | --- | --- | --- |
-| 1 | schema | ✅ |
-| 2 | version | ✅ |
-| 3 | task_id | ✅ |
-| 4 | dispatch_id | ❌ (템플릿만 존재) |
-| 5 | status | ✅ |
-| 6 | branch | ✅ |
-| 7 | commit | ✅ |
-| 8 | commit_count | ✅ |
-| 9 | changed_files | ✅ |
-| 10 | read_files | ✅ |
-| 11 | verification | ✅ |
-| 12 | metrics | ❌ (템플릿만 존재) |
-| 13 | verdict | ✅ |
-| 14 | blocking_issues | ✅ |
-| 15 | remaining_risks | ❌ (템플릿만 존재) |
-| 16 | artifacts | ❌ (템플릿만 존재) |
-| 17 | reproduce | ❌ (템플릿만 존재) |
+| 1 | schema | 포함 |
+| 2 | version | 포함 |
+| 3 | task_id | 포함 |
+| 4 | dispatch_id | 미포함 (템플릿만 존재) |
+| 5 | status | 포함 |
+| 6 | branch | 포함 |
+| 7 | commit | 포함 |
+| 8 | commit_count | 포함 |
+| 9 | changed_files | 포함 |
+| 10 | read_files | 포함 |
+| 11 | verification | 포함 |
+| 12 | metrics | 미포함 (템플릿만 존재) |
+| 13 | verdict | 포함 |
+| 14 | blocking_issues | 포함 |
+| 15 | remaining_risks | 미포함 (템플릿만 존재) |
+| 16 | artifacts | 미포함 (템플릿만 존재) |
+| 17 | reproduce | 미포함 (템플릿만 존재) |
 
 ### 1.3 어긋난 항목 명시
 
