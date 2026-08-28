@@ -1447,6 +1447,7 @@ def finalize_task(
 
     tool_error = False
     gate_fail = False
+    target_repo = worktree_path if worktree_path else repo
 
     # Level 1 은 리뷰어보다 먼저 돌므로 그 시점에는 리뷰 보고서가 존재할 수
     # 없습니다. 그래서 게이트 5 는 이 호출의 적용 대상이 아니며, 리뷰 계약은
@@ -1472,6 +1473,8 @@ def finalize_task(
         str(report_path),
         "--capsule",
         str(capsule_path),
+        "--repo",
+        str(target_repo),
         "--json",
     ]
     code_summ, stdout_summ, stderr_summ = _run_command(summarize_cmd, timeout=30)
@@ -1507,7 +1510,6 @@ def finalize_task(
 
     # 검증 명령은 게이트가 Capsule 에서 직접 읽습니다. 여기서 pytest 만 뽑아
     # 넘기던 종전 방식은 npm 등 나머지 검증을 조용히 버렸습니다.
-    target_repo = worktree_path if worktree_path else repo
     commit_cmd = ["git", "rev-parse", "--verify", f"{branch}^{{commit}}"]
     code_commit, stdout_commit, stderr_commit = _run_command(
         commit_cmd, cwd=target_repo, timeout=30
@@ -1543,6 +1545,8 @@ def finalize_task(
         str(target_repo),
         "--capsule",
         str(capsule_path),
+        "--report",
+        str(report_path),
         "--json",
     ]
     if strict:
@@ -1566,6 +1570,35 @@ def finalize_task(
                 "raw": truncate(stdout_l1, 200),
                 "exit_code": 2,
             }
+
+    # summarize 결과의 changed_files 와 Level 1 게이트 1 의 git diff 결과 대조
+    if isinstance(result.get("summarize"), dict) and isinstance(result.get("level1"), dict):
+        summ_data = result["summarize"]
+        l1_data = result["level1"]
+        summ_changed = summ_data.get("changed_files")
+        l1_gates = l1_data.get("gates", {})
+        l1_gate1 = l1_gates.get("gate1_changed_files", {})
+        l1_changed = l1_gate1.get("changed_files")
+        if isinstance(summ_changed, list) and isinstance(l1_changed, list):
+            norm_summ = {
+                p.strip().lstrip("./").lstrip("/")
+                for p in summ_changed
+                if isinstance(p, str) and p.strip()
+            }
+            norm_l1 = {
+                p.strip().lstrip("./").lstrip("/")
+                for p in l1_changed
+                if isinstance(p, str) and p.strip()
+            }
+            if norm_summ != norm_l1:
+                gate_fail = True
+                missing = sorted(norm_l1 - norm_summ)
+                phantom = sorted(norm_summ - norm_l1)
+                result["changed_files_mismatch"] = {
+                    "error": "worker_done 보고의 changed_files 가 실제 git diff 와 일치하지 않습니다.",
+                    "missing_in_report": missing,
+                    "phantom_in_report": phantom,
+                }
 
     # 3. orca_run_reviewer.py 실행 (선택)
     if run_reviewer:

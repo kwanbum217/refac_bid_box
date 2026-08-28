@@ -36,6 +36,8 @@ try:
         scope_excess,
         string_list,
         truncate,
+        verify_branch_exists,
+        verify_commit_exists,
         write_scope_excess,
     )
 except ImportError:
@@ -52,6 +54,8 @@ except ImportError:
         scope_excess,
         string_list,
         truncate,
+        verify_branch_exists,
+        verify_commit_exists,
         write_scope_excess,
     )
 
@@ -207,6 +211,7 @@ def _format_section_with_budget(
 def summarize_worker_report(
     report_path: str | Path,
     capsule_path: str | Path | None = None,
+    repo_path: str | Path | None = None,
     max_chars: int = 1200,
     field_max_chars: int = 600,
 ) -> dict[str, Any]:
@@ -231,6 +236,22 @@ def summarize_worker_report(
     commit_count = report_data.get("commit_count")
     changed_files = string_list(report_data.get("changed_files"))
     read_files = string_list(report_data.get("read_files"))
+
+    # 1-1. commit 및 branch 진실성(실존성) 검증 (repo_path 가 명시된 경우 실행)
+    if repo_path is not None:
+        target_repo = Path(repo_path).resolve()
+        commit_raw = str(report_data.get("commit", "")).strip()
+        branch_raw = str(report_data.get("branch", "")).strip()
+
+        if commit_raw:
+            commit_ok, commit_msg = verify_commit_exists(target_repo, commit_raw)
+            if not commit_ok:
+                violations.append(commit_msg)
+
+        if branch_raw:
+            branch_ok, branch_msg = verify_branch_exists(target_repo, branch_raw)
+            if not branch_ok:
+                violations.append(branch_msg)
 
     # 2. 위반 검사 A: status == succeeded 인데 commit_count == 0 이면 무작업 완료 보고 (규약 3.3)
     #    읽기 전용 Task(allowed_write_files 가 빈 목록)는 커밋이 없는 것이 정상이므로 예외로 둔다.
@@ -261,7 +282,14 @@ def summarize_worker_report(
         if write_excess:
             violations.append(f"allowed_write_files 범위 초과: {', '.join(write_excess)}")
 
-    # 4. 위반 검사 D: verdict 격하 검사
+    # 4. 위반 검사 D: 계약 비대 (contract bloat) 검사
+    bloated = _find_bloated_fields(report_data, field_max_chars)
+    for field_path, length in bloated:
+        violations.append(
+            f"계약 비대 (contract bloat): 필드 '{field_path}' 길이 {length}자가 field_max_chars({field_max_chars}) 초과"
+        )
+
+    # 5. 위반 검사 E: verdict 격하 검사
     declared_verdict = str(report_data.get("verdict", ""))
     blocking_issues = report_data.get("blocking_issues")
     has_blocking_issues = False
@@ -275,15 +303,10 @@ def summarize_worker_report(
         violations.append(
             f"verdict 격하: 선언값 '{declared_verdict}' -> 실효값 'blocked' (blocking_issues 가 존재함)"
         )
+    elif declared_verdict in ("pass", "candidate") and violations:
+        effective_verdict = "blocked"
     else:
         effective_verdict = declared_verdict
-
-    # 5. 위반 검사 E: 계약 비대 (contract bloat) 검사
-    bloated = _find_bloated_fields(report_data, field_max_chars)
-    for field_path, length in bloated:
-        violations.append(
-            f"계약 비대 (contract bloat): 필드 '{field_path}' 길이 {length}자가 field_max_chars({field_max_chars}) 초과"
-        )
 
     # 다이제스트 포맷 구성 (결정 중요도 우선순위 적용)
     commit_raw = str(report_data.get("commit", ""))
@@ -426,6 +449,7 @@ def main() -> int:
     )
     parser.add_argument("--report", required=True, help="워커 완료 보고 JSON 경로")
     parser.add_argument("--capsule", default=None, help="Orca Task Capsule YAML 경로")
+    parser.add_argument("--repo", default=None, help="저장소 루트 경로 (기본: 현재 디렉터리)")
     parser.add_argument(
         "--max-chars",
         type=int,
@@ -446,6 +470,7 @@ def main() -> int:
         result = summarize_worker_report(
             report_path=args.report,
             capsule_path=args.capsule,
+            repo_path=args.repo,
             max_chars=args.max_chars,
             field_max_chars=args.field_max_chars,
         )

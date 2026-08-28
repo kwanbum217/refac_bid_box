@@ -22,9 +22,12 @@ try:
         load_capsule,
         load_report,
         parse_capsule_list,
+        parse_capsule_scalar,
         truncate,
+        verify_changed_files_match,
         write_scope_excess,
     )
+    from scripts.summarize_worker_done import summarize_worker_report
     from scripts.validate_review_report import evaluate, parse_checklist
 except ModuleNotFoundError:
     _repo_root = Path(__file__).resolve().parent.parent
@@ -35,9 +38,12 @@ except ModuleNotFoundError:
         load_capsule,
         load_report,
         parse_capsule_list,
+        parse_capsule_scalar,
         truncate,
+        verify_changed_files_match,
         write_scope_excess,
     )
+    from scripts.summarize_worker_done import summarize_worker_report
     from scripts.validate_review_report import evaluate, parse_checklist
 
 # 타임아웃 기본 상한 (초)
@@ -853,6 +859,106 @@ def run_gate5_review_report(
     )
 
 
+def run_gate6_worker_done(
+    report_path: Path | None,
+    capsule_path: Path | None,
+    repo_path: Path,
+    base: str = "main",
+    branch: str = "HEAD",
+    allow_missing: bool = False,
+) -> GateResult:
+    """게이트 6: 워커 완료 보고(worker_done) 진실성 및 계약 검증.
+
+    보고 파일이 없거나(allow_missing 제외) commit/branch 실존성,
+    changed_files 일치 검증에 실패하면 fail 로 판정합니다.
+    """
+    resolved_report = report_path
+    capsule_has_report_decl = False
+    if capsule_path is not None and capsule_path.exists():
+        capsule_text = load_capsule(capsule_path)
+        reported_path_str = parse_capsule_scalar(capsule_text, "report_path")
+        if reported_path_str:
+            capsule_has_report_decl = True
+            if resolved_report is None:
+                resolved_report = repo_path / reported_path_str
+
+    if resolved_report is None and not capsule_has_report_decl:
+        return GateResult(
+            name="게이트 6 worker_done 보고",
+            status="skipped",
+            summary="Capsule 에 report_path 미지정으로 이 호출의 적용 대상이 아님",
+            details=[],
+            raw_data={},
+            required=False,
+        )
+
+    if resolved_report is None or not resolved_report.exists():
+        if allow_missing:
+            return GateResult(
+                name="게이트 6 worker_done 보고",
+                status="skipped",
+                summary="--allow-missing-report 명시로 보고서 검증 건너뜀",
+                details=[],
+                raw_data={},
+                required=False,
+            )
+        missing_target = str(resolved_report) if resolved_report else "(미지정)"
+        return GateResult(
+            name="게이트 6 worker_done 보고",
+            status="fail",
+            summary=f"worker_done 보고 파일 없음: {missing_target}",
+            details=["worker_done.json 이 없으면 Level 1 판정이 PASS 될 수 없습니다."],
+            raw_data={},
+            required=True,
+        )
+
+    try:
+        summ = summarize_worker_report(
+            report_path=resolved_report,
+            capsule_path=capsule_path,
+            repo_path=repo_path,
+        )
+    except Exception as exc:
+        return GateResult(
+            name="게이트 6 worker_done 보고",
+            status="fail",
+            summary=f"worker_done 보고서 파싱/요약 실패: {exc}",
+            details=[str(exc)],
+            raw_data={"error": str(exc)},
+            required=True,
+        )
+
+    violations = list(summ.get("violations", []))
+    effective_verdict = summ.get("effective_verdict", "")
+
+    # changed_files 실제 git diff 대조
+    reported_changed_files = summ.get("changed_files", [])
+    diff_ok, diff_reason = verify_changed_files_match(
+        repo_path, base, branch, reported_changed_files
+    )
+    if not diff_ok:
+        violations.append(diff_reason)
+
+    if violations or effective_verdict == "blocked" or summ.get("exit_code") != 0:
+        return GateResult(
+            name="게이트 6 worker_done 보고",
+            status="fail",
+            summary=f"worker_done 보고 진실성/계약 검증 실패 (위반 {len(violations)}건)",
+            details=violations,
+            raw_data={**summ, "diff_match": diff_ok, "diff_reason": diff_reason},
+            required=True,
+        )
+
+    return GateResult(
+        name="게이트 6 worker_done 보고",
+        status="pass",
+        summary=f"worker_done 보고 진실성 검증 통과 (실효 verdict: {effective_verdict})",
+        details=[],
+        raw_data={**summ, "diff_match": True},
+        required=True,
+    )
+
+
 def format_human_output(
     gates: list[GateResult],
     verdict: str,
@@ -899,9 +1005,7 @@ def build_json_output(
     error_message: str = "",
 ) -> dict[str, Any]:
     """기계용 JSON 구조를 생성합니다."""
-    # run_all 이 append 하는 순서와 1:1 로 맞춥니다. 4b 린터가 빠져 있어
-    # 린터 결과가 gate5_review_report 로, 실제 리뷰 결과가 gate_6 으로
-    # 밀려 나가 있었습니다.
+    # run_all 이 append 하는 순서와 1:1 로 맞춥니다.
     gate_keys = [
         "gate1_changed_files",
         "gate2_scope",
@@ -909,17 +1013,18 @@ def build_json_output(
         "gate4_rules",
         "gate4b_lint",
         "gate5_review_report",
+        "gate6_worker_done",
     ]
     gates_dict: dict[str, Any] = {}
     for i, g in enumerate(gates):
         key = gate_keys[i] if i < len(gate_keys) else f"gate_{i + 1}"
         gates_dict[key] = {
+            **g.raw_data,
             "name": g.name,
             "status": g.status,
             "required": g.required,
             "summary": g.summary,
             "details": g.details,
-            **g.raw_data,
         }
 
     return {
@@ -959,6 +1064,12 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--capsule", default=None, help="Task Capsule 파일 경로")
     parser.add_argument("--review-report", default=None, help="리뷰 보고서 JSON 파일 경로")
+    parser.add_argument("--report", default=None, help="worker_done 보고서 JSON 파일 경로")
+    parser.add_argument(
+        "--allow-missing-report",
+        action="store_true",
+        help="worker_done 보고서 부재 허용 (기본값: 차단)",
+    )
     parser.add_argument(
         "--max-chars",
         type=int,
@@ -982,6 +1093,8 @@ def run_level1_gate(
     verify: list[str] | None = None,
     capsule: str | Path | None = None,
     review_report: str | Path | None = None,
+    report: str | Path | None = None,
+    allow_missing_report: bool = False,
     max_chars: int = DEFAULT_MAX_CHARS,
     as_json: bool = False,
     strict: bool = False,
@@ -997,6 +1110,7 @@ def run_level1_gate(
     repo_path = Path(repo).resolve()
     capsule_path = Path(capsule).resolve() if capsule else None
     review_report_path = Path(review_report).resolve() if review_report else None
+    report_path = Path(report).resolve() if report else None
 
     if not repo_path.exists() or not repo_path.is_dir():
         error_msg = f"저장소 경로가 존재하지 않거나 디렉터리가 아님: {repo_path}"
@@ -1045,6 +1159,18 @@ def run_level1_gate(
         # 게이트 5: 리뷰 보고
         g5 = run_gate5_review_report(review_report_path, capsule_path)
         gates.append(g5)
+
+        # 게이트 6: worker_done 보고 (진실성 검증)
+        if capsule_path is not None or report_path is not None or allow_missing_report:
+            g6 = run_gate6_worker_done(
+                report_path=report_path,
+                capsule_path=capsule_path,
+                repo_path=repo_path,
+                base=base,
+                branch=branch,
+                allow_missing=allow_missing_report,
+            )
+            gates.append(g6)
 
     except GateToolError as exc:
         error_msg = str(exc)
@@ -1100,6 +1226,8 @@ def main(argv: list[str] | None = None) -> int:
         verify=args.verify,
         capsule=args.capsule,
         review_report=args.review_report,
+        report=args.report,
+        allow_missing_report=args.allow_missing_report,
         max_chars=args.max_chars,
         as_json=args.json,
         strict=args.strict,
