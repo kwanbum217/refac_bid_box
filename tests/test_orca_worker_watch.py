@@ -122,7 +122,7 @@ def test_main_exit_code_clean_returns_0() -> None:
 
 def test_collect_adds_advice_note_on_blocked() -> None:
     fake_worktrees = [("w1", "/tmp/w1", "feature")]
-    fake_terminals = {"/tmp/w1": {"handle": "term_123"}}
+    fake_terminals = {"/tmp/w1": [{"handle": "term_123"}]}
     with (
         patch("scripts.orca_worker_watch.list_worktrees", return_value=fake_worktrees),
         patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
@@ -289,7 +289,7 @@ def test_main_exit_code_failure_blocked_returns_1() -> None:
 
 def test_collect_adds_failure_note_on_failure_block() -> None:
     fake_worktrees = [("w1", "/tmp/w1", "feature")]
-    fake_terminals = {"/tmp/w1": {"handle": "term_123"}}
+    fake_terminals = {"/tmp/w1": [{"handle": "term_123"}]}
     with (
         patch("scripts.orca_worker_watch.list_worktrees", return_value=fake_worktrees),
         patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
@@ -303,3 +303,93 @@ def test_collect_adds_failure_note_on_failure_block() -> None:
         assert len(states) == 1
         assert states[0].blocked_kind == "failure"
         assert any("재전송" in note for note in states[0].notes)
+
+
+def _terminal_item(handle: str, title: str | None = None) -> dict[str, str | None]:
+    return {"handle": handle, "title": title, "worktreePath": "/tmp/wt"}
+
+
+def test_select_worker_terminal_prefers_agent_over_shell() -> None:
+    worker = _terminal_item("term_worker", "Cursor Agent")
+    shell = _terminal_item("term_shell", "Terminal 1")
+    chosen, notes = watch.select_worker_terminal([shell, worker])
+    assert chosen is not None
+    assert chosen["handle"] == "term_worker"
+    assert any("터미널 2개" in note and "term_worker" in note for note in notes)
+
+
+def test_select_worker_terminal_order_independent() -> None:
+    worker = _terminal_item("term_worker", "Cursor Agent")
+    shell = _terminal_item("term_shell", "Terminal 1")
+    chosen_forward, _ = watch.select_worker_terminal([worker, shell])
+    chosen_reverse, _ = watch.select_worker_terminal([shell, worker])
+    assert chosen_forward is not None
+    assert chosen_reverse is not None
+    assert chosen_forward["handle"] == chosen_reverse["handle"] == "term_worker"
+
+
+def test_select_worker_terminal_single_candidate() -> None:
+    only = _terminal_item("term_only", "Terminal 1")
+    chosen, notes = watch.select_worker_terminal([only])
+    assert chosen is not None
+    assert chosen["handle"] == "term_only"
+    assert notes == []
+
+
+def test_select_worker_terminal_handles_none_title() -> None:
+    none_title = _terminal_item("term_none", None)
+    shell = _terminal_item("term_shell", "Terminal 1")
+    chosen, notes = watch.select_worker_terminal([none_title, shell])
+    assert chosen is not None
+    assert chosen["handle"] == "term_none"
+    assert any("터미널 2개" in note for note in notes)
+
+
+def test_select_worker_terminal_all_shell_defaults_use_first_with_note() -> None:
+    first = _terminal_item("term_a", "Terminal 1")
+    second = _terminal_item("term_b", "Terminal 2")
+    chosen, notes = watch.select_worker_terminal([first, second])
+    assert chosen is not None
+    assert chosen["handle"] == "term_a"
+    assert any("모두 셸 기본 제목" in note for note in notes)
+
+
+def test_collect_selects_worker_terminal_over_shell(capsys: pytest.CaptureFixture[str]) -> None:
+    fake_worktrees = [("w1", "/tmp/w1", "feature")]
+    fake_terminals = {
+        "/tmp/w1": [
+            {"handle": "term_shell", "title": "Terminal 1"},
+            {"handle": "term_worker", "title": "Cursor Agent"},
+        ]
+    }
+    with (
+        patch("scripts.orca_worker_watch.list_worktrees", return_value=fake_worktrees),
+        patch("scripts.orca_worker_watch.worktree_progress", return_value=(1, 0)),
+        patch("scripts.orca_worker_watch.terminal_map", return_value=fake_terminals),
+        patch("scripts.orca_worker_watch.terminal_tail", return_value="working normally"),
+    ):
+        states = watch.collect(watch.Path("/tmp/repo"), "main")
+        assert len(states) == 1
+        assert states[0].terminal == "term_worker"
+        assert any("터미널 2개" in note for note in states[0].notes)
+
+        exit_code = watch.main([])
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        assert "터미널: term_worker" in out
+
+
+def test_main_json_always_includes_terminal(capsys: pytest.CaptureFixture[str]) -> None:
+    clean_state = watch.WorkerState(
+        name="orca-w1",
+        path="/tmp/w1",
+        branch="b1",
+        commits=2,
+        dirty=1,
+        terminal="term_worker",
+    )
+    with patch("scripts.orca_worker_watch.collect", return_value=[clean_state]):
+        exit_code = watch.main(["--json"])
+        assert exit_code == 0
+        payload = capsys.readouterr().out
+        assert '"terminal": "term_worker"' in payload
