@@ -375,11 +375,11 @@ def verify_changed_files_match(
     base_clean = (base or "").strip() or "main"
     branch_clean = (branch or "").strip() or "HEAD"
     code, stdout, stderr = _run_git_command(
-        repo, ["diff", "--name-only", f"{base_clean}..{branch_clean}"]
+        repo, ["diff", "--name-only", f"{base_clean}...{branch_clean}"]
     )
     if code != 0:
         err = stderr.strip() or "git diff 실패"
-        return False, f"git diff 실행 실패 ({base_clean}..{branch_clean}): {err}"
+        return False, f"git diff 실행 실패 ({base_clean}...{branch_clean}): {err}"
 
     actual_files = {
         _strip_leading_dot_slash(line.strip()) for line in stdout.splitlines() if line.strip()
