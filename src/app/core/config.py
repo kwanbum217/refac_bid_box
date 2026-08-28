@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # 구간별 지연 구조화 로그는 진단 전용입니다. 정식 레이턴시 게이트에서는
     # 로그 포매팅·출력 오버헤드를 배제하기 위해 기본적으로 끕니다.
     LATENCY_SEGMENT_LOGGING: bool = False
+    # RAG 질의 처리 구간별 계측 지표(sql_ms, vector_ms, lexical_ms, llm_ms, total_ms 등)를
+    # 응답 메타데이터에 노출할지 여부입니다. 기본값은 False (비노출)입니다.
+    RAG_EXPOSE_SEGMENT_METRICS: bool = False
     # RAG 답변에서 검색 컨텍스트의 낙찰금액·낙찰률 누락 여부를 결정론적으로 검출해 로깅합니다.
     NUMERIC_OMISSION_DETECTION: bool = False
     # MLOps 알림 웹훅(Slack/Discord). 비면 알림을 보내지 않습니다.
