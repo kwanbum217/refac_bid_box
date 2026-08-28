@@ -9,6 +9,10 @@ CPU utilization 계측 및 정규화 부하 지표 정합성 회귀 테스트.
 
 from __future__ import annotations
 
+import functools
+import time
+
+from scripts import benchmark_provenance
 from scripts.benchmark_provenance import (
     CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
     CPU_UTILIZATION_METHOD_UNSUPPORTED,
@@ -129,11 +133,14 @@ class TestMeasurementFailureAndGracefulFallback:
         assert reason == "empty_ps_output"
 
     def test_unsupported_platform_returns_none_with_reason(self):
-        util, reason, method, probe_ms = measure_cpu_utilization(platform_name="win32")
+        util, reason, method, probe_ms, observation_ms = measure_cpu_utilization(
+            platform_name="win32"
+        )
         assert util is None
         assert reason == "unsupported_platform: win32"
         assert method == CPU_UTILIZATION_METHOD_UNSUPPORTED
         assert probe_ms >= 0.0
+        assert observation_ms >= 0.0
 
     def test_single_host_load_sample_unsupported_platform(self):
         class MockWindowsOS:
@@ -197,7 +204,13 @@ class TestPreservationOfExistingLoadFields:
 
         sample = single_host_load_sample(
             os_module=MockLinuxOS,
-            cpu_util_sampler=lambda: (15.5, None, CPU_UTILIZATION_METHOD_PROC_STAT_DELTA, 0.25),
+            cpu_util_sampler=lambda: (
+                15.5,
+                None,
+                CPU_UTILIZATION_METHOD_PROC_STAT_DELTA,
+                0.25,
+                0.20,
+            ),
         )
         # 기존 필드 불변 검증
         assert sample["cpu_count"] == 4
@@ -295,3 +308,169 @@ class TestMacOSPsUtilCalculation:
         assert reason is None
         # sum = 600.0, cpu_count = 2 -> 300% -> clamped to 100.0%
         assert util == 100.0
+
+
+class TestObservationTimeSeparation:
+    """cpu_utilization_observation_ms (의도적 대기 제외) vs probe_ms (대기 포함) 분리 회귀.
+
+    - (a) Linux 경로에서 observation_ms < probe_ms 이다.
+    - (b) sleep 시간을 모킹해 대기 시간이 observation_ms 에 포함되지 않는다.
+    - (c) macOS 경로에서 observation_ms == probe_ms 이다.
+    - (d) proc/stat 읽기 실패 경로에서도 두 키가 모두 기록된다.
+    - (e) HostLoadMonitor 백그라운드 샘플러 표본에도 두 키가 들어간다.
+    """
+
+    def test_linux_observation_ms_strictly_less_than_probe_ms(self, tmp_path, monkeypatch):
+        proc_file = tmp_path / "proc_stat"
+        proc_file.write_text("cpu  100 0 100 800 0 0 0 0\n", encoding="utf-8")
+
+        real_sleep = time.sleep
+
+        def fake_sleep(seconds):
+            # sleep 자체는 실제 시간이 흐르지 않도록 즉시 반환.
+            return None
+
+        monkeypatch.setattr(time, "sleep", fake_sleep)
+
+        (
+            _util,
+            _reason,
+            method,
+            probe_ms,
+            observation_ms,
+        ) = measure_cpu_utilization(
+            interval_seconds=0.05,
+            platform_name="linux",
+            proc_stat_path=str(proc_file),
+        )
+        assert method == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
+        assert observation_ms < probe_ms
+        # 가짜 sleep 으로 probe_ms 가 sleep 시간만큼 늘어나도 observation_ms 는 변하지 않는다.
+        # 가짜 sleep 이 0 초이므로 probe_ms 도 매우 작아야 한다.
+        assert observation_ms >= 0.0
+        assert probe_ms >= 0.0
+        # time.sleep 모킹을 복원하지 않으면 다른 테스트가 영향을 받을 수 있다.
+        monkeypatch.setattr(time, "sleep", real_sleep)
+
+    def test_linux_observation_ms_excludes_sleep_when_sleep_elapses(self, tmp_path):
+        """실제 sleep 으로 시간을 보내면 observation_ms 가 sleep 만큼 늘어나지 않는다."""
+        proc_file = tmp_path / "proc_stat"
+        proc_file.write_text("cpu  100 0 100 800 0 0 0 0\n", encoding="utf-8")
+
+        sleep_seconds = 0.08
+        (
+            _util,
+            _reason,
+            method,
+            probe_ms,
+            observation_ms,
+        ) = measure_cpu_utilization(
+            interval_seconds=sleep_seconds,
+            platform_name="linux",
+            proc_stat_path=str(proc_file),
+        )
+        assert method == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
+        # observation_ms 는 두 read_proc_stat_ticks 호출의 합이므로 sleep_seconds 보다는 작다.
+        assert observation_ms < sleep_seconds * 1000.0
+        # probe_ms 는 sleep 을 포함하므로 sleep_seconds * 1000 이상.
+        assert probe_ms >= sleep_seconds * 1000.0
+        # probe_ms - observation_ms 가 sleep 시간 근처여야 한다 (허용 오차 50ms).
+        assert (probe_ms - observation_ms) >= (sleep_seconds * 1000.0 - 50.0)
+
+    def test_macos_observation_ms_equals_probe_ms(self, monkeypatch):
+        def mock_runner(cmd):
+            return "%CPU\n 20.0\n 10.0\n 10.0\n"
+
+        (
+            util,
+            reason,
+            method,
+            probe_ms,
+            observation_ms,
+        ) = measure_cpu_utilization(
+            platform_name="darwin",
+            command_runner=mock_runner,
+            cpu_count=4,
+        )
+        assert reason is None
+        assert method == "ps_process_sum"
+        assert util is not None
+        # macOS 경로는 의도적 대기가 없으므로 두 값이 같다.
+        assert probe_ms == observation_ms
+
+    def test_proc_stat_read_failure_records_both_keys(self, monkeypatch):
+        """proc/stat 읽기 실패 경로에서도 두 키가 모두 반환된다."""
+        (
+            util,
+            reason,
+            method,
+            probe_ms,
+            observation_ms,
+        ) = measure_cpu_utilization(
+            platform_name="linux",
+            proc_stat_path="/non/existent/path/proc_stat",
+        )
+        assert util is None
+        assert reason == "proc_stat_not_found"
+        assert method == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
+        # 실패 경로에서도 두 키가 모두 기록되어 호출부가 누락 없이 받을 수 있다.
+        assert probe_ms >= 0.0
+        assert observation_ms >= 0.0
+
+    def test_end_ticks_read_failure_records_both_keys(self, tmp_path, monkeypatch):
+        """두 번째 read_proc_stat_ticks 가 실패해도 두 키가 모두 반환된다."""
+        proc_file = tmp_path / "proc_stat"
+        proc_file.write_text("cpu  100 0 100 800 0 0 0 0\n", encoding="utf-8")
+        original_read = benchmark_provenance.read_proc_stat_ticks
+        call_count = {"n": 0}
+
+        def flaky_read(path):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                return None, "proc_stat_parse_failed"
+            return original_read(path)
+
+        monkeypatch.setattr(benchmark_provenance, "read_proc_stat_ticks", flaky_read)
+        (
+            util,
+            reason,
+            method,
+            probe_ms,
+            observation_ms,
+        ) = measure_cpu_utilization(
+            platform_name="linux",
+            proc_stat_path=str(proc_file),
+        )
+        assert util is None
+        assert reason == "proc_stat_parse_failed"
+        assert method == CPU_UTILIZATION_METHOD_PROC_STAT_DELTA
+        assert probe_ms >= 0.0
+        assert observation_ms >= 0.0
+
+    def test_host_load_monitor_linux_samples_include_observation_key(self, tmp_path, monkeypatch):
+        proc_file = tmp_path / "proc_stat"
+        proc_file.write_text("cpu  100 0 100 800 0 0 0 0\n", encoding="utf-8")
+
+        class _OS:
+            @staticmethod
+            def cpu_count():
+                return 4
+
+            @staticmethod
+            def getloadavg():
+                return (0.5, 0.4, 0.3)
+
+        monitor = HostLoadMonitor(
+            interval_seconds=0.001,
+            min_samples=2,
+            sampler=functools.partial(single_host_load_sample, os_module=_OS),
+            proc_stat_path=str(proc_file),
+        )
+        monitor.start()
+        summary = monitor.stop()
+        assert len(summary["samples"]) >= 2
+        for sample in summary["samples"]:
+            assert "cpu_utilization_probe_ms" in sample
+            assert "cpu_utilization_observation_ms" in sample
+            # Linux 경로의 표본은 observation_ms 가 probe_ms 보다 작거나 같아야 한다.
+            assert sample["cpu_utilization_observation_ms"] <= sample["cpu_utilization_probe_ms"]
