@@ -211,8 +211,48 @@ def worktree_progress(path: str, base: str = "main") -> tuple[int, int]:
 TAIL_LINES = 15
 
 
-def terminal_map() -> dict[str, dict[str, Any]]:
-    """워크트리 경로 -> 터미널 정보. orca 를 쓸 수 없으면 빈 딕셔너리."""
+def is_shell_default_title(title: Any) -> bool:
+    """워커 터미널로 볼 근거가 없는 제목이면 True.
+
+    셸 기본 제목(예: Terminal 1)과 제목이 없는 터미널이 여기 해당합니다. CLI 워커는
+    코디네이터가 준 제목을 갖거나 CLI 가 제목을 갱신하므로, 제목이 비어 있다는 것은
+    아무 명령 없이 열린 셸이라는 뜻입니다. 2026-08-28 에 실제로 제목이 없는 셸이
+    같은 워크트리에 함께 있었고, 이를 워커 후보로 보면 핸들 정렬 우연에 따라
+    엉뚱한 터미널이 선택됩니다.
+    """
+    if not isinstance(title, str) or not title.strip():
+        return True
+    return title.startswith("Terminal")
+
+
+def select_worker_terminal(
+    candidates: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """후보 중 워커 터미널을 고릅니다. (선택 항목, note 목록)."""
+    notes: list[str] = []
+    if not candidates:
+        return None, notes
+
+    if len(candidates) == 1:
+        return candidates[0], notes
+
+    worker_likes = [c for c in candidates if not is_shell_default_title(c.get("title"))]
+    if worker_likes:
+        chosen = sorted(worker_likes, key=lambda c: str(c.get("handle") or ""))[0]
+        handle = chosen.get("handle")
+        notes.append(f"워크트리에 터미널 {len(candidates)}개. 선택: {handle}")
+        return chosen, notes
+
+    chosen = candidates[0]
+    handle = chosen.get("handle")
+    notes.append(
+        f"워크트리에 터미널 {len(candidates)}개. 모두 셸 기본 제목이어서 첫 항목 사용: {handle}"
+    )
+    return chosen, notes
+
+
+def terminal_map() -> dict[str, list[dict[str, Any]]]:
+    """워크트리 경로 -> 터미널 후보 목록. orca 를 쓸 수 없으면 빈 딕셔너리."""
     raw = _run(["orca", "terminal", "list", "--json"], timeout=60)
     try:
         payload = json.loads(raw)
@@ -220,11 +260,11 @@ def terminal_map() -> dict[str, dict[str, Any]]:
         return {}
     result = payload.get("result") or {}
     terminals = result.get("terminals") or result.get("sessions") or []
-    mapping: dict[str, dict[str, Any]] = {}
+    mapping: dict[str, list[dict[str, Any]]] = {}
     for item in terminals:
         path = item.get("worktreePath")
         if path:
-            mapping[str(path)] = item
+            mapping.setdefault(str(path), []).append(item)
     return mapping
 
 
@@ -253,7 +293,9 @@ def collect(repo: Path, base: str) -> list[WorkerState]:
     for name, path, branch in list_worktrees(repo):
         commits, dirty = worktree_progress(path, base)
         state = WorkerState(name=name, path=path, branch=branch, commits=commits, dirty=dirty)
-        info = terminals.get(path)
+        candidates = terminals.get(path, [])
+        info, select_notes = select_worker_terminal(candidates)
+        state.notes.extend(select_notes)
         if info:
             state.terminal = info.get("handle")
             if state.terminal:
@@ -301,12 +343,13 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 mark = "진행"
             print(f"[{mark}] {s.name}  branch={s.branch}  commits={s.commits}  dirty={s.dirty}")
+            if s.terminal:
+                print(f"        터미널: {s.terminal}")
             if s.blocked:
                 kind_label = BLOCK_KIND_LABELS.get(s.blocked_kind or "", s.blocked_kind or "")
                 print(f"        분류: {kind_label}")
                 print(f"        사유: {s.blocked_reason}")
                 print(f"        조치: {s.blocked_fix}")
-                print(f"        터미널: {s.terminal}")
             for note in s.notes:
                 print(f"        참고: {note}")
 
