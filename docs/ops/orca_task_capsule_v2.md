@@ -220,7 +220,11 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
   "verification": [
     {
       "command": "uv run pytest tests/test_example.py -q",
-      "result": "5 passed"
+      "result": "5 passed",
+      "exit_code": 0,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0
     },
     {
       "command": "python3 scripts/validate_agent_rules.py --quiet",
@@ -242,6 +246,47 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
   ]
 }
 ```
+
+### 3.1.1 verification 배열 항목의 선택 필드와 건수 대조 규칙
+
+`verification` 배열의 각 항목은 `command`와 `result` 외에 아래 선택 필드를 추가할 수 있습니다. 선택 필드를 적으면 게이트가 결과 문자열 파싱보다 선택 필드를 우선하여 실제 재실행 결과와 대조합니다.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `exit_code` | integer (선택) | 실제 실행 종료 코드. 기재 시 재실행 종료 코드와 일치해야 합니다. |
+| `passed` | integer (선택) | 통과 테스트 건수. 기재 시 재실행 출력에서 파싱한 건수와 일치해야 합니다. |
+| `failed` | integer (선택) | 실패 테스트 건수. 기재 시 재실행 출력에서 파싱한 건수와 일치해야 합니다. |
+| `skipped` | integer (선택) | 건너뜀 테스트 건수. 기재 시 재실행 출력에서 파싱한 건수와 일치해야 합니다. |
+
+**건수 대조 규칙:**
+
+1. `passed`, `failed`, `skipped` 중 하나라도 기재하면 게이트가 재실행 출력과 건수를 대조합니다. 실제와 다르면 Level 1 게이트를 실패시킵니다.
+2. 위 선택 필드를 하나도 적지 않으면 `result` 문자열에서 건수를 파싱합니다. `result` 문자열에서도 건수를 파싱하지 못하면 대조를 건너뜁니다(하위 호환).
+3. `exit_code`를 기재하면 실제 종료 코드와 대조합니다. 불일치 시 건수 대조 전에 먼저 실패 처리합니다.
+4. `result` 문자열만 있고 건수가 없는 기존 형식 보고서는 건수 대조를 건너뛰고 `pass/fail` 진위 판정만 적용합니다.
+
+**예시 — 건수 불일치가 게이트 실패를 유발하는 경우:**
+
+```json
+{
+  "command": "uv run pytest tests/ -q",
+  "result": "500 passed in 9.9s"
+}
+```
+
+실제 재실행이 `43 passed in 1.0s` 를 출력하면 보고된 `500 passed` 와 실제 `43 passed` 가 다르므로 Level 1 게이트가 실패합니다.
+
+**예시 — 건수를 적지 않은 기존 형식 보고서(통과):**
+
+```json
+{
+  "command": "uv run pytest tests/ -q",
+  "result": "all tests passed"
+}
+```
+
+`result` 에서 건수를 파싱할 수 없으므로 건수 대조를 건너뛰고 기존 `pass/fail` 진위 판정만 적용합니다.
+
 
 `read_files`는 작업 중 실제로 읽은 파일 목록을 담는 필수 필드입니다 (규약 2.9.2 참조).
 

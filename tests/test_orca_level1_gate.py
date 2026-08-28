@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+from scripts.orca_contract import verify_verification_truth
 from scripts.orca_level1_gate import (
     format_failed_nodes,
     format_human_output,
@@ -824,3 +825,42 @@ def test_root_docker_build_does_not_cover_frontend_dockerfile():
         )
 
     assert g_ok.status == "pass"
+
+
+# ---------------------------------------------------------------------------
+# 건수 불일치 게이트 실패 전파 회귀 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_count_mismatch_propagates_to_gate6_failure(tmp_path: Path):
+    """건수 불일치가 gate6 (worker_done 보고) 실패로 전파됩니다.
+
+    verify_verification_truth 가 건수 불일치를 violations 로 반환하면
+    summarize_worker_report 가 이를 violations 에 포함시키고
+    gate6 가 fail 로 판정합니다. 이 경로의 회귀를 고정합니다.
+    """
+    # 실제 43 passed 인데 보고서가 500 passed 라고 기재한 경우
+    actual_output = "43 passed in 1.0s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "500 passed in 9.9s",
+        }
+    ]
+
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+
+        class _Proc:
+            returncode = 0
+            stdout = actual_output
+            stderr = ""
+
+        mock_run.return_value = _Proc()
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    # Level 1 게이트 기준: violations 가 있으면 fail
+    assert not ok, "건수 불일치가 있으면 verify_verification_truth 는 False 여야 합니다"
+    assert len(violations) >= 1
+    assert any("건수 불일치" in v or "passed" in v.lower() for v in violations)
+    assert details[0]["status"] == "fail"
+    assert details[0]["count_match"] is False

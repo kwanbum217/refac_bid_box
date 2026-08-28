@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
 
 import pytest
 
@@ -12,9 +13,11 @@ from scripts.orca_contract import (
     matches_any,
     parse_capsule_list,
     parse_capsule_scalar,
+    parse_pytest_summary,
     scope_excess,
     string_list,
     truncate,
+    verify_verification_truth,
     write_scope_excess,
 )
 
@@ -208,3 +211,190 @@ def test_parse_capsule_scalar_folded_scalar():
     """결함 6: YAML folded scalar (>)를 실제 문장으로 파싱합니다."""
     capsule = "objective: >\n  abc def\n"
     assert parse_capsule_scalar(capsule, "objective") == "abc def"
+
+
+# ---------------------------------------------------------------------------
+# parse_pytest_summary 순수 함수 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_parse_pytest_summary_passed_and_skipped():
+    """(a) '43 passed, 2 skipped in 12.34s' 를 정확히 파싱합니다."""
+    result = parse_pytest_summary("43 passed, 2 skipped in 12.34s")
+    assert result is not None
+    assert result["passed"] == 43
+    assert result["skipped"] == 2
+
+
+def test_parse_pytest_summary_failed_and_passed():
+    """(b) '3 failed, 40 passed in 9.9s' 를 파싱합니다."""
+    result = parse_pytest_summary("3 failed, 40 passed in 9.9s")
+    assert result is not None
+    assert result["failed"] == 3
+    assert result["passed"] == 40
+
+
+def test_parse_pytest_summary_no_summary_returns_none():
+    """(c) 요약이 없는 출력에서 None 을 돌려줍니다."""
+    result = parse_pytest_summary("collecting ... done\nsome debug output\n")
+    assert result is None
+
+
+def test_parse_pytest_summary_with_ansi_and_decoration():
+    """(d) 색상 이스케이프와 '=' 장식이 섞인 줄도 파싱됩니다."""
+    ansi_line = "\x1b[32m43 passed\x1b[0m, 2 skipped in 12.34s"
+    result = parse_pytest_summary(ansi_line)
+    assert result is not None
+    assert result["passed"] == 43
+    assert result["skipped"] == 2
+
+    decorated = "====== 10 passed in 1.0s ======"
+    result2 = parse_pytest_summary(decorated)
+    assert result2 is not None
+    assert result2["passed"] == 10
+
+
+def test_parse_pytest_summary_finds_summary_not_only_last_line():
+    """요약 줄이 마지막이 아닌 경우에도 탐색합니다."""
+    output = "43 passed in 1.0s\nDocs: https://docs.pytest.org/...\n"
+    result = parse_pytest_summary(output)
+    assert result is not None
+    assert result["passed"] == 43
+
+
+# ---------------------------------------------------------------------------
+# verify_verification_truth 결과 동일성 대조 테스트
+# ---------------------------------------------------------------------------
+
+
+def _mock_proc(stdout: str = "", returncode: int = 0):
+    """subprocess.run 모의 반환값을 생성합니다."""
+
+    class _Proc:
+        pass
+
+    p = _Proc()
+    p.returncode = returncode
+    p.stdout = stdout
+    p.stderr = ""
+    return p
+
+
+def test_verify_verification_truth_count_mismatch_fails(tmp_path):
+    """(e) 실제 43 passed 인데 보고서가 500 passed 라고 적으면 FAIL 합니다."""
+    actual_output = "43 passed, 2 skipped in 12.34s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "500 passed in 9.9s",
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    assert not ok
+    assert len(violations) == 1
+    assert "건수 불일치" in violations[0]
+    assert details[0]["count_match"] is False
+    assert details[0]["actual_counts"]["passed"] == 43
+    assert details[0]["reported_counts"]["passed"] == 500
+
+
+def test_verify_verification_truth_count_match_passes(tmp_path):
+    """(f) 실제와 보고 건수가 같으면 PASS 합니다."""
+    actual_output = "43 passed, 2 skipped in 12.34s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "43 passed, 2 skipped in 12.34s",
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    assert ok
+    assert violations == []
+    assert details[0]["count_match"] is True
+
+
+def test_verify_verification_truth_no_counts_in_report_passes(tmp_path):
+    """(g) 보고서가 건수를 안 적었으면 기존처럼 PASS 합니다(하위 호환)."""
+    actual_output = "43 passed in 1.0s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "tests passed",  # 건수 없는 간단한 보고
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    assert ok
+    assert violations == []
+    assert details[0]["count_match"] is None
+    assert details[0]["status"] == "pass"
+
+
+def test_verify_verification_truth_explicit_passed_mismatch_fails(tmp_path):
+    """(h) 명시적 passed 필드가 실제와 다르면 FAIL 합니다."""
+    actual_output = "43 passed in 1.0s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "43 passed in 1.0s",
+            "passed": 999,  # 명시적으로 잘못 기재
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    assert not ok
+    assert "건수 불일치" in violations[0]
+    assert details[0]["count_match"] is False
+
+
+def test_verify_verification_truth_explicit_exit_code_mismatch_fails(tmp_path):
+    """(i) 명시적 exit_code 가 실제와 다르면 FAIL 합니다."""
+    actual_output = "43 passed in 1.0s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "43 passed in 1.0s",
+            "exit_code": 1,  # 실제는 0 인데 1 로 기재
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        ok, violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    assert not ok
+    assert "exit_code" in violations[0]
+    assert details[0]["count_match"] is False
+
+
+def test_verify_verification_truth_details_have_required_fields(tmp_path):
+    """detailed_results 각 항목에 actual_counts, reported_counts, count_match, actual_exit_code, stdout_digest 가 있습니다."""
+    actual_output = "43 passed, 2 skipped in 12.34s"
+    verification = [
+        {
+            "command": "uv run pytest tests/ -q",
+            "result": "43 passed, 2 skipped in 12.34s",
+        }
+    ]
+    with patch("scripts.orca_contract.subprocess.run") as mock_run:
+        mock_run.return_value = _mock_proc(actual_output, 0)
+        _ok, _violations, details = verify_verification_truth(str(tmp_path), verification)
+
+    d = details[0]
+    assert "actual_counts" in d
+    assert "reported_counts" in d
+    assert "count_match" in d
+    assert "actual_exit_code" in d
+    assert "stdout_digest" in d
+    # stdout_digest 는 16 자리 hex
+    assert d["stdout_digest"] is not None
+    assert len(d["stdout_digest"]) == 16
