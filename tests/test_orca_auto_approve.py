@@ -124,6 +124,11 @@ class TestClassifyCommandHold:
             "uv run python script.py",
             "uv add requests",
             "uv pip install flask",
+            # (f) Antigravity 파일 편집/생성 승인 대화창 (자동 승인하지 않고 보류)
+            "Accept this file edit?",
+            "Allow creation of this file?",
+            "  accept   THIS  file  edit?  ",
+            "ALLOW CREATION OF THIS FILE?",
         ],
     )
     def test_hold_commands(self, cmd: str) -> None:
@@ -247,6 +252,18 @@ class TestHelperFunctions:
         screen_missing_marker = "Some strange prompt\nDo you want to proceed?\n"
         assert pending_command(screen_missing_marker) == ""
 
+    @pytest.mark.parametrize(
+        "screen, expected_sig",
+        [
+            ("Antigravity CLI\nAccept this file edit?\n[Y]es / [N]o", "Accept this file edit?"),
+            ("Allow creation of this file?\n[Y/n]", "Allow creation of this file?"),
+            ("  accept   THIS\n  file  edit?  ", "Accept this file edit?"),
+            ("ALLOW CREATION OF THIS FILE?", "Allow creation of this file?"),
+        ],
+    )
+    def test_pending_command_file_edit_dialog(self, screen: str, expected_sig: str) -> None:
+        assert pending_command(screen) == expected_sig
+
 
 class TestSubprocessInteractionMocks:
     """read, send, poll_loop mock 기반 테스트 (외부 프로세스 실행 방지)."""
@@ -283,3 +300,21 @@ class TestSubprocessInteractionMocks:
         with pytest.raises(StopIteration):
             poll_loop(["term_abc"])
         mock_send.assert_called_once_with("term_abc", "2")
+
+    @patch("scripts.orca_auto_approve.time.sleep", side_effect=StopIteration)
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_holds_file_edit_dialog(
+        self,
+        mock_read: MagicMock,
+        mock_send: MagicMock,
+        mock_sleep: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        mock_read.return_value = "Accept this file edit?\n[Y]es / [N]o"
+        with pytest.raises(StopIteration):
+            poll_loop(["term_xyz"])
+        mock_send.assert_not_called()
+        captured = capsys.readouterr()
+        assert "[보류]" in captured.out
+        assert "파일 편집/생성 승인은 수동 판단 필요" in captured.out
