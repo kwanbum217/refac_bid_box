@@ -1394,6 +1394,8 @@ ACCEPT_EDITS_CLI_MARKERS: tuple[str, ...] = (
     "accept-edits",
     "auto-approve file edits",
     "shift+tab to auto-approve",
+    "antigravity cli",
+    "agy --model",
 )
 
 
