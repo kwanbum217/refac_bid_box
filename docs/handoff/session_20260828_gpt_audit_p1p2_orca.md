@@ -4,14 +4,15 @@
 > **Run**: `run_94b40787bca0`
 > **코디네이터**: Claude Opus 5
 > **워커**: Antigravity 4대(`gemini-3.7-flash-high` 2, `claude-sonnet-4-6` 1, `gemini-3.7-flash-medium` 1), Codex `gpt-5.6-terra` 1대
-> **시작 HEAD**: `da7287c` / **종료 HEAD**: `ba45c1f`
-> **결과**: Task 5건 전부 병합. 통합 전량 **2521 passed**, `validate_agent_rules.py` **12/12**, `validate_doc_links.py` 통과
+> **시작 HEAD**: `da7287c` / **종료 HEAD**: `a0b767c`
+> **결과**: Task 7건 전부 병합. 통합 전량 **2537 passed**, CI 7개 job success
 
 ---
 
 ## 1. 이번 세션이 닫은 것
 
-GPT 감사가 남긴 P1/P2 다섯 건을 전부 종결했습니다.
+GPT 감사가 남긴 P1/P2 다섯 건을 전부 종결하고, 그 과정에서 드러난 게이트 결함과
+조사 보고서의 권장안까지 같은 세션에서 이어 닫았습니다(8장). Task 는 모두 7건입니다.
 
 | 감사 항목 | Task | 브랜치 | 상태 |
 | --- | --- | --- | --- |
@@ -21,9 +22,9 @@ GPT 감사가 남긴 P1/P2 다섯 건을 전부 종결했습니다.
 | P2 CPU utilization 측정 방식 명기 | `task_9ac5a04f4eb1` | `t4-cpu-util` | **병합** |
 | P1 conditional vector bypass 설계 조사 | `task_5c9b902db68f` | `t5-bypass-survey` | **병합** |
 
-워크트리 5개, 작업 브랜치 7개를 모두 반납·삭제했습니다. 남은 워크트리는 주 저장소 하나입니다.
+워크트리 7개, 작업 브랜치 10개를 모두 반납·삭제했습니다. 남은 워크트리는 주 저장소 하나입니다.
 
-**RAG 32문항 x 3회 정본 재측정은 하지 않았습니다.** 4장을 보십시오.
+**RAG 32문항 x 3회 정본 재측정은 하지 않았습니다.** 4장을 보십시오. T7 이 검색 경로를 바꿨으므로 이 측정은 이제 품질 회귀 판정까지 겸합니다(8.2, 9장).
 
 ---
 
@@ -61,7 +62,7 @@ Task 는 병합 전에 두 검증을 모두 돌리십시오.
 
 ---
 
-## 3. Level 1 게이트의 구조적 결함 (다음 세션이 반드시 고칠 것)
+## 3. Level 1 게이트의 구조적 결함 (T6 에서 해소, 8.1 절)
 
 **`orca_taskctl.py finalize` 의 verification 재실행 타임아웃 기본값 30초는 이
 저장소의 전량 테스트를 통과시킬 수 없습니다.** 전량 pytest 는 63~117초가 걸립니다.
@@ -76,9 +77,11 @@ T1 의 게이트 6 이 이 사유로 형식상 실패했습니다.
 `2495 passed, 6 skipped, 3 deselected in 67.28s` 를 확인한 뒤 병합했습니다.
 
 **전량 pytest 를 검증 명령으로 요구하면서 30초에 자르면 앞으로 모든 Task 가
-같은 사유로 게이트 6 을 실패합니다.** 명령별 타임아웃을 두거나 기본값을
-올려야 합니다. 2.1 의 건수 대조 게이트가 이제 붙었으므로, 타임아웃으로 재실행이
-아예 안 되면 그 게이트도 무력화됩니다.
+같은 사유로 게이트 6 을 실패합니다.** 2.1 의 건수 대조 게이트가 이제 붙었으므로,
+타임아웃으로 재실행이 아예 안 되면 그 게이트도 함께 무력화됩니다. 보안을 올려
+놓고 실효를 잃는 상태입니다.
+
+**이 결함은 같은 세션의 T6 에서 해소했습니다. 8.1 절을 보십시오.**
 
 ---
 
@@ -145,33 +148,116 @@ T4 워크트리가 2.2 수정 **이전**의 main 에서 갈라져 나와, 워커
 
 ---
 
-## 7. 현재 기동 상태
+## 7. 세션 중 기동했던 것 (종료 시 전부 내렸습니다)
 
-| 대상 | 주소 | 비고 |
+세션 중 사용자의 프론트·백엔드 확인을 위해 다음을 띄웠고, 세션 종료 시
+10장 절차로 전부 내렸습니다.
+
+| 대상 | 주소 | 기동 방법 |
 | --- | --- | --- |
-| 백엔드 `app` | http://127.0.0.1:8000 | healthy. 루트는 `/accounts/login/?next=/` 리다이렉트 |
-| Swagger | http://127.0.0.1:8000/docs | |
-| 프론트엔드 (Vite dev) | http://localhost:5173 | compose 밖. `make dev-fe` 로 별도 기동 |
-| `db` / `redis` / `meilisearch` | 3306 / 6379 / 7700 | 전부 healthy |
+| 백엔드 `app` | http://127.0.0.1:8000 | `docker compose up --build -d`. 루트는 `/accounts/login/?next=/` 리다이렉트 |
+| Swagger | http://127.0.0.1:8000/docs | 위와 동일 |
+| 프론트엔드 (Vite dev) | http://localhost:5173 | compose 밖. `make dev-fe` |
+| `db` / `redis` / `meilisearch` | 3306 / 6379 / 7700 | compose |
 
 **Redis 를 내릴 때는 `SHUTDOWN NOSAVE` 를 쓰십시오.** `dump.rdb` 재생성을 막습니다.
 
 ---
 
-## 8. 다음 착수 순위
+## 8. 2차 투입 (T6, T7) — 같은 세션에서 이어 처리
 
-| 순위 | 작업 | 비고 |
-| --- | --- | --- |
-| 1 | `finalize` verification 재실행 타임아웃 교정 | 3장. 이걸 두면 이후 모든 Task 의 게이트가 형식 실패합니다 |
-| 2 | 조용한 기계에서 e2b 32문항 x 3회 전량 재측정 | 4장 |
-| 3 | 구간 계측으로 q03 잔여 41.9초 분해 | 이번에 REST 노출까지 열렸습니다 |
-| 4 | `benchmark_rag_segments.py` 규약 레이턴시 재측정 | G3 판정 정본 |
-| 5 | conditional vector bypass 구현 | T5 보고서 7장의 권장안 |
-| 6 | Servc 3,589 OOS 현 Champion 고정 평가 | 재학습 게이트 3,098 을 491 초과 |
-| 7 | Windows Docker Desktop 실기 | 장비 확보 시. G2 완전 PASS 조건 |
+1차 5건을 병합·푸시하고 CI green 을 확인한 뒤, 3장의 게이트 결함과 T5 권장안을
+같은 세션에서 이어 닫았습니다.
+
+| Task | 내용 | 워커 | 병합 |
+| --- | --- | --- | --- |
+| `task_ea8ae09336e5` | verification 재실행 타임아웃을 명령 종류별로 분리 | Antigravity `gemini-3.7-flash-medium` | `c7fc0dd` |
+| `task_7ba76bc4cb71` | conditional vector bypass 구현 | Antigravity `gemini-3.7-flash-high` | `07bc710` |
+
+### 8.1 T6 — 3장의 게이트 교착 해소
+
+| 명령 종류 | 적용 타임아웃 |
+| --- | --- |
+| pytest 계열 | `DEFAULT_VERIFY_PYTEST_TIMEOUT = 900` |
+| `validate_agent_rules` 계열 | `DEFAULT_VERIFY_VALIDATE_TIMEOUT = 30` |
+| 기타 미분류 | `DEFAULT_VERIFY_TIMEOUT = 30` |
+
+**타임아웃은 여전히 fail-closed 입니다.** 타임아웃이 나면 violations 에 들어가
+게이트가 실패합니다. 이 Task 는 타임아웃을 통과로 바꾼 것이 아니라 정상 소요
+시간에 걸리지 않도록 값을 맞춘 것입니다.
+
+900 을 `orca_level1_gate.py` 에서 임포트하지 않고 `orca_contract.py` 에 상수로
+중복 정의했습니다. `level1_gate` 가 `contract` 를 임포트하므로 역방향 임포트는
+순환이 됩니다. 근거 주석을 남긴 중복이 옳은 선택입니다. **코디네이터가 작성한
+review_checklist 의 `magic_number_duplicated` 항목이 이 점에서 틀렸습니다.**
+
+### 8.2 T7 — conditional vector bypass
+
+실행 순서가 `SQL -> Lexical -> Vector` 로 바뀌었습니다. 정확 제목 적중 시
+`vector_docs` 가 채워져 `retrieve_semantic_context` 호출이 생략됩니다.
+
+폴백은 코드로 확인했습니다. 적중 0건, `plan.use_lexical` 거짓, Meilisearch 장애
+어느 경우에도 `if plan.use_vector and not vector_docs:` 가 참이 되어 기존 후보 30
+조회와 `_rerank_by_exact_title` 재순위가 그대로 동작합니다. `vector_filter_provenance`
+와 `vector_hints` 는 블록 앞에서 초기화되어 건너뛴 요청에 오염되지 않습니다.
+회귀 테스트 6건을 넣었습니다.
+
+**동작이 실제로 달라진 변경입니다.** 정확 제목 적중 시 이전에는 lexical 결과에
+vector 문서를 `target_k` 까지 채웠으나, 이제는 lexical 결과만 반환합니다. 설계
+의도대로이고 T5 보고서 3장이 q01~q24 를 단일 공고 사실 조회로 분류한 근거가
+있지만, **품질 회귀 여부는 32문항 실측으로만 확인됩니다. 테스트 통과는 품질
+보증이 아닙니다.**
+
+레이턴시 개선 수치는 만들지 않았습니다. Capsule 에 금지 조항을 두었고 워커가
+지켰습니다.
 
 ---
 
-## 9. 미푸시 상태
+## 9. 다음 착수 순위
 
-`main` 이 `origin/main` 대비 크게 앞서 있습니다. 푸시는 담당자 확인 후 수행합니다.
+| 순위 | 작업 | 비고 |
+| --- | --- | --- |
+| 1 | 조용한 기계에서 e2b 32문항 x 3회 전량 재측정 | 4장. **T7 품질 회귀 판정을 겸합니다** |
+| 2 | 구간 계측으로 q03 잔여 41.9초 분해 | REST 노출까지 열렸습니다 |
+| 3 | `benchmark_rag_segments.py` 규약 레이턴시 재측정 | G3 판정 정본 |
+| 4 | Servc 3,589 OOS 현 Champion 고정 평가 | 재학습 게이트 3,098 을 491 초과 |
+| 5 | Windows Docker Desktop 실기 | 장비 확보 시. G2 완전 PASS 조건 |
+
+**1 순위의 성격이 이번 세션으로 바뀌었습니다.** 이전에는 레이턴시 정본 갱신만이
+목적이었으나, 이제 T7 이 검색 경로를 바꿨으므로 **품질(numeric, evidence, refusal)
+회귀 여부 판정이 함께 걸려 있습니다.** 품질이 떨어지면 T7 을 되돌리거나 조건을
+좁혀야 합니다. 측정 전에는 T7 을 완료로 선언하지 마십시오.
+
+측정 전 준비입니다.
+
+1. Docker 스택과 프론트엔드 개발 서버를 내립니다 (10장).
+2. Orca 워커를 전부 종료합니다.
+3. 저장소를 동결합니다. 측정 중 병합하지 않습니다.
+4. `uv run python scripts/measure_llm_quality.py --model-label e2b --expected-model <값> --repetitions 3 --output <경로>`
+5. `LATENCY_SEGMENT_LOGGING` 을 켜고 구간 계측을 함께 수집합니다.
+
+---
+
+## 10. 세션 종료 시 정리 절차
+
+컴퓨터를 끄기 전에 다음을 수행합니다.
+
+```bash
+docker compose exec redis redis-cli SHUTDOWN NOSAVE   # dump.rdb 재생성 방지
+docker compose down
+```
+
+프론트엔드 개발 서버(`npm run dev`, 포트 5173)는 별도 프로세스이므로 함께
+종료합니다. Orca 터미널은 `orca terminal close --terminal <handle> --tab` 으로
+닫습니다.
+
+**Redis 를 그냥 내리면 `dump.rdb` 가 다시 생깁니다.** 반드시 `SHUTDOWN NOSAVE`
+를 먼저 보내십시오.
+
+---
+
+## 11. 푸시 상태
+
+1차 5건은 `da7287c..185ac1e`, 2차 2건은 `185ac1e..a0b767c` 로 `origin/main` 에
+푸시 완료했습니다. 두 푸시 모두 GitHub Actions 7개 job 전부 success 입니다
+(run `33154033954`, `33157232612`).
