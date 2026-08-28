@@ -17,6 +17,7 @@ from scripts.orca_taskctl import (
     ACTIVE_TASK_STATUSES,
     DEFAULT_RUN_ID,
     DEFAULT_VERIFICATION_COMMANDS,
+    FILE_EDIT_AUTO_APPROVE_SEQUENCE,
     MAX_CONCURRENT_WRITE_WORKERS,
     _format_review_checklist,
     _format_yaml_list,
@@ -27,6 +28,7 @@ from scripts.orca_taskctl import (
     check_write_concurrency,
     create_worktree,
     dispatch_worker,
+    enable_file_edit_auto_approve,
     expand_intent_to_capsule,
     finalize_task,
     list_dispatched_tasks,
@@ -3281,3 +3283,230 @@ def test_finalize_passes_diff_cap_flags_to_reviewer(tmp_path, monkeypatch):
     cmd = reviewer_cmds[0]
     assert "--max-diff-chars" not in cmd
     assert "--allow-truncated-diff" not in cmd
+
+
+def test_enable_file_edit_auto_approve_command_format(monkeypatch: pytest.MonkeyPatch):
+    """enable_file_edit_auto_approve 가 shift+tab 시퀀스를 --enter 없이 전송하는지 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, "ok", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    ok, msg = enable_file_edit_auto_approve("term_target_123")
+    assert ok is True
+    assert "term_target_123" in msg
+    assert len(executed_cmds) == 1
+    cmd = executed_cmds[0]
+    expected = [
+        "orca",
+        "terminal",
+        "send",
+        "--terminal",
+        "term_target_123",
+        "--text",
+        "\x1b[Z",
+    ]
+    assert cmd == expected
+    assert cmd[cmd.index("--text") + 1] == FILE_EDIT_AUTO_APPROVE_SEQUENCE
+    assert "--enter" not in cmd
+
+    # 전송 실패 시 bool=False 및 에러 메시지 반환 검증
+    executed_cmds.clear()
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._run_command",
+        lambda cmd, cwd=None, timeout=30: (1, "", "terminal not found"),
+    )
+    ok_fail, msg_fail = enable_file_edit_auto_approve("term_target_123")
+    assert ok_fail is False
+    assert "terminal not found" in msg_fail
+
+
+def test_enable_file_edit_auto_approve_disabled_by_env(monkeypatch: pytest.MonkeyPatch):
+    """ORCA_DISABLE_AUTO_APPROVE=1 환경변수 설정 시 모드 전환 전송이 억제되는지 검증."""
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, "ok", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
+
+    ok, msg = enable_file_edit_auto_approve("term_target_123")
+    assert ok is False
+    assert "ORCA_DISABLE_AUTO_APPROVE=1" in msg
+    assert len(executed_cmds) == 0
+
+
+def test_dispatch_calls_auto_approve_and_mode_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """dispatch 경로에서 start_auto_approve 와 enable_file_edit_auto_approve 가 순서대로 실행되는지 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    call_order: list[str] = []
+
+    def mock_start_auto_approve(terminal: str):
+        call_order.append(f"start_auto_approve:{terminal}")
+        return True, "/tmp/mock_auto_approve.log"
+
+    def mock_enable_file_edit_auto_approve(terminal: str, timeout: int = 30):
+        call_order.append(f"enable_file_edit_auto_approve:{terminal}")
+        return True, f"모드 전환 완료 ({terminal})"
+
+    def mock_dispatch_worker(*args, **kwargs):
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl.start_auto_approve", mock_start_auto_approve)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.enable_file_edit_auto_approve",
+        mock_enable_file_edit_auto_approve,
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_target_456",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+    assert call_order == [
+        "start_auto_approve:term_target_456",
+        "enable_file_edit_auto_approve:term_target_456",
+    ]
+    captured = capsys.readouterr()
+    assert "파일 편집 자동 승인 모드 전환을 전송했습니다 (term_target_456)" in captured.err
+
+
+def test_dispatch_suppresses_mode_switch_when_env_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """ORCA_DISABLE_AUTO_APPROVE=1 일 때 dispatch 경로에서 감시기 및 모드 전환이 억제되는지 검증."""
+    monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_target_789",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+
+    # 모드 전환 시퀀스(\x1b[Z) 전송 명령이 실행되지 않았음을 단정
+    send_mode_cmds = [
+        cmd
+        for cmd in executed_cmds
+        if "terminal" in cmd and "send" in cmd and FILE_EDIT_AUTO_APPROVE_SEQUENCE in cmd
+    ]
+    assert len(send_mode_cmds) == 0
+
+    captured = capsys.readouterr()
+    assert (
+        "ORCA_DISABLE_AUTO_APPROVE=1 이므로 파일 편집 자동 승인 모드 전환을 건너뜁니다"
+        in captured.err
+    )
+
+
+def test_dispatch_handles_mode_switch_failure_and_exception_gracefully(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """모드 전환 전송 실패 또는 예외 발생 시에도 Dispatch 가 중단되지 않고 수동 조치 안내를 출력하는지 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+
+    def mock_dispatch_worker(*args, **kwargs):
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    # 1. 실패 반환 시 정상 진행 및 경고 출력 확인
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.enable_file_edit_auto_approve",
+        lambda t, timeout=30: (False, "터미널 소켓 연결 끊김"),
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_err_1",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "터미널 소켓 연결 끊김" in captured.err
+    assert "orca terminal send --terminal term_err_1" in captured.err
+
+    # 2. 예외 발생 시 정상 진행 및 경고 출력 확인
+    def mock_raise(t, timeout=30):
+        raise RuntimeError("심각한 IPC 예외")
+
+    monkeypatch.setattr("scripts.orca_taskctl.enable_file_edit_auto_approve", mock_raise)
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_err_2",
+            "--allow-unverified-delivery",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "심각한 IPC 예외" in captured.err
+    assert "orca terminal send --terminal term_err_2" in captured.err

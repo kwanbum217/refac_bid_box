@@ -1,8 +1,8 @@
 # 에이전트 워커 기동 정본 참조
 
 > **작성일**: 2026-08-14
-> **수정일**: 2026-08-21
-> **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과. Task Capsule v2 워커 실행 계약 반영. 1.5 절은 2026-08-20 Run `run_a32b6b614996` 의 모델별 실측 검증 결과
+> **수정일**: 2026-08-28
+> **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과. Task Capsule v2 워커 실행 계약 반영. 1.5 절은 2026-08-20 Run `run_a32b6b614996` 의 모델별 실측 검증 결과. 2026-08-28 dispatch 경로 파일 편집 자동 승인 모드 전환(shift+tab) 자동화 반영
 > **적용 대상**: 이 저장소에서 Orca 워커·코디네이터를 배정하는 모든 에이전트
 > **관련 문서**: [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md), [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md), [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md)
 
@@ -34,8 +34,8 @@
 
 | 층 | 무엇을 막아 주는가 | 조치 |
 | --- | --- | --- |
-| `shift+tab` (accept-edits) | **파일 편집 대화창만** 자동 승인 | 기동 직후 `terminal send --text $'\x1b[Z'` |
-| `scripts/orca_auto_approve.py` | **셸 명령 승인 대화창** 화이트리스트 자동 승인 | `python3 scripts/orca_auto_approve.py <handle> [...]` 를 배경으로 상시 실행 |
+| `shift+tab` (accept-edits) | **파일 편집 대화창만** 자동 승인 | `taskctl dispatch` 가 자동 전송 (`\x1b[Z`). 실패 시 수동: `orca terminal send --terminal <handle> --text $'\x1b[Z'` |
+| `scripts/orca_auto_approve.py` | **셸 명령 승인 대화창** 화이트리스트 자동 승인 | `taskctl dispatch` 가 자동 기동. 실패 시 수동: `python3 scripts/orca_auto_approve.py <handle> [...]` 를 배경으로 상시 실행 |
 
 두 층은 서로를 대체하지 않습니다. `shift+tab` 만 보내고 감시기를 띄우지 않으면
 `cat > file`, `mkdir`, `top` 같은 명령에서 그대로 멈춥니다.
@@ -52,9 +52,9 @@
 | 자체 종료 | 대상 터미널 읽기 연속 5회 실패(터미널 종료) 시 감시 대상에서 제외하며, 전체 대상 소진 시 자동 반환 및 PID 파일 정리 | `scripts/orca_auto_approve.py poll_loop` |
 
 `scripts/orca_taskctl.py dispatch --terminal ...` 은 Dispatch 직후 이 감시기를
-자동으로 붙이고 로그 경로를 알립니다. 붙이지 못하면 경고를 출력하므로, 그 경고를
-보면 직접 띄우십시오. 터미널을 `terminal create` 로 직접 만들고 taskctl 을 거치지
-않았다면 **감시기도 직접 띄워야 합니다.**
+자동으로 붙이고 파일 편집 자동 승인 모드 전환(`shift+tab`, `\x1b[Z`)까지 함께 전송합니다.
+감시기 기동 또는 모드 전환 전송에 실패하면 stderr 로 경고 및 수동 복구 명령을 안내합니다.
+터미널을 `terminal create` 로 직접 만들고 taskctl 을 거치지 않았다면 **감시기와 모드 전환을 직접 실행해야 합니다.**
 
 ---
 
@@ -423,11 +423,11 @@ uv run python scripts/orca_prepare_worktree.py <워크트리>
 orca terminal create --worktree path:<워크트리> \
   --title "<섹션명>" --command "agy --model gemini-3.7-flash-high" --json
 
-# 4. Task 투입
-orca orchestration dispatch --task <task_id> --to <handle> --inject --json
+# 4. Task 투입 (dispatch 경로가 자동 승인 감시기와 파일 편집 자동 승인 모드 전환을 함께 처리합니다)
+uv run python scripts/orca_taskctl.py dispatch --intent <의도.yaml> --terminal <handle>
 
-# 5. 파일 편집 자동 승인 (shift+tab. 빠뜨리면 첫 편집에서 멈춥니다. 2.2 절 참조)
-orca terminal send --terminal <handle> --text $'\x1b[Z'
+# 5. 파일 편집 자동 승인 확인 (dispatch 가 shift+tab 을 자동 전송하므로 수동 전송은 실패 시 대체 수단입니다)
+# 자동 전송 실패 경고 시 수동 실행: orca terminal send --terminal <handle> --text $'\x1b[Z'
 
 # 6. 실존 확인
 orca orchestration dispatch-show --task <task_id> --json
@@ -485,7 +485,7 @@ Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 2026-08-22 에 터미널 3대를 연속 생성하면서 이 순서로 실패했고, 결국 사용자가
 세 번 직접 승인했습니다.
 
-### 2.2 파일 편집 승인은 Dispatch 직후 자동 승인으로 바꿉니다
+### 2.2 파일 편집 승인은 Dispatch 시 자동 승인 모드로 자동 전환됩니다
 
 폴더 신뢰를 미리 등록해도 **파일 편집·생성 승인은 따로 뜹니다.** 전역
 `permissions.allow` 와도 무관합니다. 워커는 첫 편집에서 멈추고, 코디네이터가
@@ -493,9 +493,20 @@ Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 막을 수 없습니다. 워크트리가 아니라 터미널 세션마다 걸리는 상태이기 때문입니다.
 
 다이얼로그 하단의 `shift+tab to auto-approve file edits` 가 해제 수단입니다.
-Dispatch 직후 각 터미널에 한 번 보내면 그 세션 내내 다시 묻지 않습니다.
+현재 `scripts/orca_taskctl.py dispatch` 경로는 `start_auto_approve` 직후
+`enable_file_edit_auto_approve` 를 호출하여 `shift+tab`(`\x1b[Z`) 시퀀스를 각 터미널에
+1회 자동 전송하므로 사람이 매번 보낼 필요가 없습니다.
+
+| 구분 | 자동 처리 (`scripts/orca_taskctl.py dispatch`) | 수동 대체 (자동 실패 또는 직결 시) |
+| --- | --- | --- |
+| 동작 방식 | `start_auto_approve` 직후 `enable_file_edit_auto_approve` 호출 | `orca terminal send --terminal <handle> --text $'\x1b[Z'` |
+| 비활성화 | `ORCA_DISABLE_AUTO_APPROVE=1` 환경변수 시 자동 억제 | 해당 없음 |
+| 실패 처리 | Dispatch 중단 없이 stderr 경고 및 수동 조치 명령 안내 | 사용자가 직접 실행 후 상태 확인 |
+
+수동 확인 및 복구 명령:
 
 ```bash
+# 수동 모드 전환 전송 (자동 전송 실패 시)
 orca terminal send --terminal <handle> --text $'\x1b[Z'
 orca terminal read --terminal <handle> | tail -3   # Accept-edits mode 확인
 ```

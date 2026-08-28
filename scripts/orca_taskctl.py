@@ -96,6 +96,8 @@ DEFAULT_RUN_ID = "run_auto"
 CAPSULE_VERSION = "2.1.0"
 MAX_CONCURRENT_WRITE_WORKERS = 3
 ROUTING_STATE_FILENAME = "routing.json"
+FILE_EDIT_AUTO_APPROVE_SEQUENCE = "\x1b[Z"
+
 
 # 검증 명령 기본값. Capsule 이 선언한 명령을 Level 1 게이트 3 이 그대로 실행하므로
 # 여기 적히지 않은 검증은 아무도 실행하지 않습니다. 반대로 변경과 무관한 검증을
@@ -1332,6 +1334,37 @@ def stop_auto_approve(terminal: str) -> tuple[bool, str]:
     return True, f"자동 승인 감시기 중지 완료 ({terminal})"
 
 
+def enable_file_edit_auto_approve(
+    terminal: str,
+    timeout: int = 30,
+) -> tuple[bool, str]:
+    """워커 터미널에 파일 편집 자동 승인 모드 전환 시퀀스(shift+tab, ESC [ Z)를 전송합니다.
+
+    Antigravity CLI 등은 파일 편집 시 확인 대화창을 띄우므로, shift+tab 시퀀스를
+    전송하여 accept-edits 모드로 자동 전환합니다 (--enter 는 붙이지 않습니다).
+    """
+    if os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1":
+        return (
+            False,
+            "ORCA_DISABLE_AUTO_APPROVE=1 이므로 파일 편집 자동 승인 모드 전환을 건너뜁니다",
+        )
+
+    cmd = [
+        "orca",
+        "terminal",
+        "send",
+        "--terminal",
+        terminal,
+        "--text",
+        FILE_EDIT_AUTO_APPROVE_SEQUENCE,
+    ]
+    code, stdout, stderr = _run_command(cmd, timeout=timeout)
+    if code != 0:
+        err = (stderr or stdout).strip() or f"종료 코드 {code}"
+        return False, f"파일 편집 자동 승인 모드 전환 전송 실패: {err}"
+    return True, f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({terminal})"
+
+
 def approve_trust_prompt(
     handle: str,
     attempts: int = 2,
@@ -2237,6 +2270,24 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             sys.stderr.write(
                 f"경고: {approve_detail}. 워커가 권한 대화창에서 멈출 수 있으니 "
                 f"python3 scripts/orca_auto_approve.py {args.terminal} 를 직접 띄우십시오.\n"
+            )
+
+        # 파일 편집 자동 승인 모드 전환 (shift+tab, ESC [ Z) 전송
+        try:
+            mode_ok, mode_detail = enable_file_edit_auto_approve(args.terminal)
+            if mode_ok:
+                sys.stderr.write(
+                    f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({args.terminal}).\n"
+                )
+            else:
+                sys.stderr.write(
+                    f"경고: {mode_detail}. 워커가 파일 편집 대화창에서 멈출 수 있으니 "
+                    f"orca terminal send --terminal {args.terminal} --text \"$'\\x1b[Z'\" 를 직접 실행하십시오.\n"
+                )
+        except Exception as exc:
+            sys.stderr.write(
+                f"경고: 파일 편집 자동 승인 모드 전환 중 예외 발생 ({exc}). "
+                f"orca terminal send --terminal {args.terminal} --text \"$'\\x1b[Z'\" 를 직접 실행하십시오.\n"
             )
     else:
         if not args.agent:
