@@ -549,7 +549,9 @@ if not hasattr(AnswerBundle, "segment_metrics"):
     def _set_segment_metrics(self: AnswerBundle, val: dict[str, float] | None) -> None:
         object.__setattr__(self, "_segment_metrics_val", val)
 
-    AnswerBundle.segment_metrics = property(_get_segment_metrics, _set_segment_metrics)  # type: ignore[assignment]
+    setattr(  # noqa: B010
+        AnswerBundle, "segment_metrics", property(_get_segment_metrics, _set_segment_metrics)
+    )
 
 
 class PreparedContext(tuple):
@@ -796,7 +798,10 @@ class HybridRAGEngine:
                 exact_lexical_matches: list[dict[str, Any]] = []
 
                 for doc in lexical_candidates:
-                    doc_meta = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+                    raw_doc_meta = doc.get("metadata")
+                    doc_meta: dict[str, Any] = (
+                        raw_doc_meta if isinstance(raw_doc_meta, dict) else {}
+                    )
                     doc_title = doc_meta.get("bid_ntce_nm") or extract_document_title(
                         doc.get("document")
                     )
@@ -1076,9 +1081,9 @@ class HybridRAGEngine:
             try:
                 expose_flag = getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
                 if expose_flag and segment_metrics is not None:
-                    bundle.segment_metrics = segment_metrics
+                    setattr(bundle, "segment_metrics", segment_metrics)  # noqa: B010
                 else:
-                    bundle.segment_metrics = None
+                    setattr(bundle, "segment_metrics", None)  # noqa: B010
             except Exception as exc:
                 logger.warning("RAG 구간 지표 응답 설정 중 예외 발생 (무시됨): %s", exc)
             return bundle
@@ -1351,7 +1356,7 @@ class HybridRAGEngine:
             final_answer = f"{corrected_answer}{citation_suffix}"
             final_citations = [citation_suffix.strip()] if citation_suffix.strip() else []
 
-            done_event: dict[str, Any] = {
+            done_event = {
                 "type": "done",
                 "citations": final_citations,
                 "trace_id": provenance.trace_id,

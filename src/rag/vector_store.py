@@ -153,7 +153,8 @@ def _extract_doc_sort_key(doc: dict[str, Any]) -> tuple[str, str, str, str]:
     3순위: 공고번호 / 고유 식별자
     4순위: 공고 차수
     """
-    metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    raw_metadata = doc.get("metadata")
+    metadata: dict[str, Any] = raw_metadata if isinstance(raw_metadata, dict) else {}
     doc_text = doc.get("document") or doc.get("content") or ""
 
     notice_dt = metadata.get("bid_ntce_dt") or metadata.get("notice_date") or ""
