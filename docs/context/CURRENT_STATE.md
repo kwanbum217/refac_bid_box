@@ -106,6 +106,8 @@
 - **정확 제목 lexical 채널 효과 실측**: 느린 4문항(q03·q08·q25·q31) x 3회에서 요청 실패 2/12 -> **0/12**, 대표값 58,352ms -> **5,941ms**, 최대 180,045ms -> 41,874ms 로 꼬리 지연이 제거됐습니다. 정확도 손실은 없습니다([`lexical_channel_latency_effect_20260828.md`](../analysis/lexical_channel_latency_effect_20260828.md)). 같은 부분집합 e4b 대조는 품질 동률에 P50 6,245ms·최대 81,234ms 로 e2b 가 앞서 **e2b 승격 유지 근거가 보강**됐습니다. 부분집합 12회 표본이므로 전량 재측정으로 정본을 갱신해야 합니다.
 - Ollama `gemma4:e4b` Predict c4·SSE c1·Query c1 2026-08-24 규약 준수 3회 측정, 게이트 전 항목 통과.
 - Arq container synthetic raw 보존(1,681~1,764 jps, P95 325~342ms). **business-task E2E 2026-08-26 실측**: 격리 큐 실제 task 2종 30/30 완주, P50 5.5ms·P95 1,174.9ms, DB 11행 불변·운영 큐 무영향([`arq_business_e2e_20260826.json`](../../data/benchmarks/arq_business_e2e_20260826.json)).
+- **공고 상세 페이지 로딩 지연 (미해결, 다음 세션 1순위)**: `latest_announcement_filter` 의 서브쿼리에 WHERE 절이 없어 공고 테이블 전체에 `row_number()` 파티션 정렬을 겁니다. 상세 페이지는 similar_bids 5건을 고르기 전에 전체 랭킹을 계산합니다. 원인은 코드로 특정했고 실측은 미수행입니다([`session_20260828_orca_tooling_and_measurement.md`](../handoff/session_20260828_orca_tooling_and_measurement.md) 6장).
+- **RAG 정본 재측정 미완 (T7 품질 회귀 판정 미결)**: 2026-08-28 두 차례 시도가 모두 실패했습니다. 1차는 fixture 오지정(v1 24문항), 2차는 측정 중 Docker 데몬 다운으로 `canonical=false` 무효 처리입니다. 이전 정본(`d9a0536`)이 유효하며 conditional vector bypass 를 완료로 선언하지 마십시오.
 - 벤치마크 provenance 는 시작·종료를 결박해 대상 교체 시 strict 에서 fail-closed 됩니다([`prov_start_end_invalidation_20260823.md`](../analysis/prov_start_end_invalidation_20260823.md)). `--allow-unknown-provenance` 는 정본이 아닙니다.
 
 ### 6.2 정본 갱신 규약 (Update Protocol)
