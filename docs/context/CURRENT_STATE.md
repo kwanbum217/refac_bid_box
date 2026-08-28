@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-28
-> **source_commit**: `c7fc0dd`
+> **source_commit**: `821e48f`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -80,8 +80,8 @@
 
 - **안전·품질 게이트**: fail-open 제거, 상태 전파 경계, frontend·Docker·CI 검증 능력과 `source_commit` 신선도 게이트를 갖췄습니다.
 - **구조·데이터**: 9개 모듈을 AST 동일성으로 분할했고 ORM 13모델·137컬럼을 `Mapped[]`로 전환했습니다. DDL 지문은 불변입니다.
-- **실측·계측**: 예측 웜 P95 c1 15.39ms·c4 34.32ms·c10 47.77ms, SSE c1 첫 토큰 1297.73ms·전체 6716.22ms. 블로킹 I/O·Arq 계측 배선 완료, 최적화 판정 미확정.
-- **조율 인프라**: 워커 준비 안전성(Git common directory 검증), ModelRegistry single-flight(로드 1회), finalize/Level 1 PASS 없는 병합 차단을 닫았습니다. 벤치마크 provenance 는 `base_url`↔컨테이너 결박·시작/종료 교체 무효화·런타임 revision·dirty 거부로 결박했습니다. Arq 하네스 2종 헬퍼는 단일화하고 Redis 는 fail-closed 결박입니다.
+- **실측·계측**: 예측 웜 P95 c1 15.39ms·c4 34.32ms·c10 47.77ms, SSE c1 첫 토큰 1297.73ms·전체 6716.22ms. 블로킹 I/O·Arq 계측 배선 완료, 최적화 판정 미확정. CPU utilization 은 대기를 포함한 `cpu_utilization_probe_ms` 와 대기를 제외한 `cpu_utilization_observation_ms` 를 분리해 기록합니다.
+- **조율 인프라**: 워커 준비 안전성(Git common directory 검증), ModelRegistry single-flight(로드 1회), finalize/Level 1 PASS 없는 병합 차단을 닫았습니다. 워커 감시는 정체를 승인 대기(prompt)와 실패 정체(failure)로 분류하고 실패 정체를 우선합니다. Dispatch 는 파일 편집 자동 승인 모드 전환을 함께 보내되, `shift+tab` 의미가 CLI 마다 다르므로 Antigravity 계열로 판정될 때만 전송하고 그 밖에는 fail-closed 입니다. 벤치마크 provenance 는 `base_url`↔컨테이너 결박·시작/종료 교체 무효화·런타임 revision·dirty 거부로 결박했습니다. Arq 하네스 2종 헬퍼는 단일화하고 Redis 는 fail-closed 결박입니다.
 - **신뢰 설정 잠금**: PID stale 회수 제거, POSIX `fcntl.flock`·Windows `msvcrt.locking` advisory lock으로 교체. 미지원 플랫폼은 fail-closed 중단. 회귀 테스트 완료, 원격 Windows CI 확인은 별도입니다.
 - **운영 준비**: 워커 기동 자동화, mypy·bandit·CI 게이트, 프론트엔드 lockfile·`npm ci`를 반영했습니다.
 
