@@ -52,9 +52,25 @@
 | 자체 종료 | 대상 터미널 읽기 연속 5회 실패(터미널 종료) 시 감시 대상에서 제외하며, 전체 대상 소진 시 자동 반환 및 PID 파일 정리 | `scripts/orca_auto_approve.py poll_loop` |
 
 `scripts/orca_taskctl.py dispatch --terminal ...` 은 Dispatch 직후 이 감시기를
-자동으로 붙이고 파일 편집 자동 승인 모드 전환(`shift+tab`, `\x1b[Z`)까지 함께 전송합니다.
+자동으로 붙이고 대상 CLI 화면을 검사하여 Antigravity 계열인 경우에만 파일 편집 자동 승인 모드 전환(`shift+tab`, `\x1b[Z`)을 전송합니다.
+Cursor 등 Plan Mode 로 전환되는 CLI 나 미식별 CLI 는 fail-closed 원칙에 따라 전송을 건너뛰고 안내 로그를 남깁니다.
 감시기 기동 또는 모드 전환 전송에 실패하면 stderr 로 경고 및 수동 복구 명령을 안내합니다.
 터미널을 `terminal create` 로 직접 만들고 taskctl 을 거치지 않았다면 **감시기와 모드 전환을 직접 실행해야 합니다.**
+
+### 0.5.2 CLI별 `shift+tab` 해석 차이 및 안전 가드 (fail-closed)
+
+`shift+tab`(`\x1b[Z`) 키 시퀀스는 모든 CLI 에서 동일한 의미를 갖지 않습니다.
+특히 **Cursor Agent 에서 `shift+tab` 은 Plan Mode(읽기 전용, 파일 편집 금지) 전환**입니다.
+따라서 `scripts/orca_taskctl.py dispatch` 는 터미널 화면을 먼저 읽어 대상 CLI 가
+파일 편집 자동 승인(Accept-edits)을 지원하는 계열인지 검사한 후 안전하게 전송합니다.
+
+| CLI / 에이전트 | `shift+tab` 동작 및 의미 | `taskctl dispatch` 전송 여부 | 비고 |
+| --- | --- | :---: | --- |
+| **Antigravity** (`agy`) | **Accept-edits mode** (파일 편집·생성 확인 대화창 자동 승인) | **자동 전송** | 첫 파일 편집 시 대화창 차단 방지 |
+| **Cursor** (`cursor-agent`) | **Plan Mode** (읽기 전용 계획 수립 모드, 파일 편집 금지) | **차단 (전송 안 함)** | 전송 시 워커가 편집 불가 상태로 빠지므로 절대 전송 금지 |
+| **OpenCode Zen** | 탭/포커스 전환 (파일 편집 승인과 무관) | **차단 (전송 안 함)** | 상태줄 조작 안내 표지 |
+| **Claude / Codex** | 미지원 또는 터미널 단축키 | **차단 (전송 안 함)** | `worker-start` 감독 경로 사용 |
+| **미식별 / 일반 셸** | 미확인 | **차단 (fail-closed)** | 안전을 위해 기본 미전송 (`--enable-file-edit-auto-approve` 로 opt-in 가능) |
 
 ---
 
@@ -494,14 +510,18 @@ Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 
 다이얼로그 하단의 `shift+tab to auto-approve file edits` 가 해제 수단입니다.
 현재 `scripts/orca_taskctl.py dispatch` 경로는 `start_auto_approve` 직후
-`enable_file_edit_auto_approve` 를 호출하여 `shift+tab`(`\x1b[Z`) 시퀀스를 각 터미널에
-1회 자동 전송하므로 사람이 매번 보낼 필요가 없습니다.
+`enable_file_edit_auto_approve` 를 호출하여 대상 CLI 화면을 검사합니다.
+Antigravity 계열임이 확인된 경우에만 `shift+tab`(`\x1b[Z`) 시퀀스를 자동 전송합니다.
+**Cursor CLI 는 `shift+tab` 이 Plan Mode(읽기 전용, 편집 금지) 전환이므로 전송하지 않고 차단합니다.**
+미식별 CLI 역시 fail-closed 원칙에 따라 전송하지 않습니다.
 
-| 구분 | 자동 처리 (`scripts/orca_taskctl.py dispatch`) | 수동 대체 (자동 실패 또는 직결 시) |
+| 구분 | 자동 처리 (`scripts/orca_taskctl.py dispatch`) | 수동 대체 (Antigravity 전용 수동 실행) |
 | --- | --- | --- |
-| 동작 방식 | `start_auto_approve` 직후 `enable_file_edit_auto_approve` 호출 | `orca terminal send --terminal <handle> --text $'\x1b[Z'` |
+| 동작 방식 | `start_auto_approve` 직후 화면 검사 후 Antigravity 만 자동 전송 | `orca terminal send --terminal <handle> --text $'\x1b[Z'` |
+| Cursor 대응 | Cursor 계열 감지 시 자동 전송 차단 (Plan Mode 오전환 방지) | 수동 전송 금지 |
+| 미식별 대응 | 식별 불가 시 자동 전송 차단 (fail-closed, `--enable-file-edit-auto-approve` 로 강제 가능) | 신중 확인 후 필요 시에만 수동 실행 |
 | 비활성화 | `ORCA_DISABLE_AUTO_APPROVE=1` 환경변수 시 자동 억제 | 해당 없음 |
-| 실패 처리 | Dispatch 중단 없이 stderr 경고 및 수동 조치 명령 안내 | 사용자가 직접 실행 후 상태 확인 |
+| 실패 처리 | Dispatch 중단 없이 stderr 안내 및 수동 조치 명령 안내 | 사용자가 직접 실행 후 상태 확인 |
 
 수동 확인 및 복구 명령:
 

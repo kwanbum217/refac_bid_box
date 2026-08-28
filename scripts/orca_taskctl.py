@@ -1334,20 +1334,76 @@ def stop_auto_approve(terminal: str) -> tuple[bool, str]:
     return True, f"자동 승인 감시기 중지 완료 ({terminal})"
 
 
+CURSOR_PLAN_MODE_MARKERS: tuple[str, ...] = (
+    "cursor-agent",
+    "cursor",
+    "plan mode",
+    "enable plan mode",
+)
+
+ACCEPT_EDITS_CLI_MARKERS: tuple[str, ...] = (
+    "antigravity",
+    "agy",
+    "accept-edits",
+    "auto-approve file edits",
+    "shift+tab to auto-approve",
+)
+
+
+def classify_file_edit_auto_approve_support(text: str) -> tuple[bool, str]:
+    """터미널 화면 텍스트를 분석하여 shift+tab 이 파일 편집 자동 승인(accept-edits)으로 동작하는 CLI 인지 판정합니다.
+
+    - Cursor 계열은 shift+tab 이 Plan Mode(읽기 전용/편집 금지) 전환이므로 False 를 반환합니다.
+    - Antigravity 계열은 shift+tab 이 파일 편집 자동 승인 전환이므로 True 를 반환합니다.
+    - 판정할 수 없는 알 수 없는 CLI 는 fail-closed 원칙에 따라 False 를 반환합니다.
+    """
+    if not text or not text.strip():
+        return False, "터미널 화면이 비어 있어 CLI 종류를 판정할 수 없습니다 (fail-closed)"
+
+    lowered = text.lower()
+    if any(marker in lowered for marker in CURSOR_PLAN_MODE_MARKERS):
+        return (
+            False,
+            "Cursor CLI 는 shift+tab 이 Plan Mode(읽기 전용) 전환이므로 파일 편집 모드 전환을 전송하지 않습니다",
+        )
+
+    if any(marker in lowered for marker in ACCEPT_EDITS_CLI_MARKERS):
+        return True, "Antigravity CLI 가 확인되어 파일 편집 자동 승인 모드 전환을 지원합니다"
+
+    return (
+        False,
+        "shift+tab 을 accept-edits 로 해석하는 CLI 가 아니므로 파일 편집 모드 전환을 전송하지 않습니다 (fail-closed)",
+    )
+
+
 def enable_file_edit_auto_approve(
     terminal: str,
     timeout: int = 30,
+    force: bool = False,
+    screen_text: str | None = None,
 ) -> tuple[bool, str]:
     """워커 터미널에 파일 편집 자동 승인 모드 전환 시퀀스(shift+tab, ESC [ Z)를 전송합니다.
 
     Antigravity CLI 등은 파일 편집 시 확인 대화창을 띄우므로, shift+tab 시퀀스를
     전송하여 accept-edits 모드로 자동 전환합니다 (--enter 는 붙이지 않습니다).
+    Cursor 등 Plan Mode 로 전환되는 CLI 나 미확인 CLI 에는 fail-closed 원칙에 따라 전송하지 않습니다.
     """
     if os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1":
         return (
             False,
             "ORCA_DISABLE_AUTO_APPROVE=1 이므로 파일 편집 자동 승인 모드 전환을 건너뜁니다",
         )
+
+    if not force:
+        text = screen_text if screen_text is not None else terminal_tail(terminal, timeout=timeout)
+        if text is None:
+            return (
+                False,
+                f"터미널 {terminal} 출력을 읽을 수 없어 파일 편집 모드 전환을 건너뜁니다 (fail-closed)",
+            )
+        supported, reason = classify_file_edit_auto_approve_support(text)
+        if not supported:
+            return False, reason
 
     cmd = [
         "orca",
@@ -2273,22 +2329,17 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             )
 
         # 파일 편집 자동 승인 모드 전환 (shift+tab, ESC [ Z) 전송
+        force_mode = getattr(args, "enable_file_edit_auto_approve", False)
         try:
-            mode_ok, mode_detail = enable_file_edit_auto_approve(args.terminal)
+            mode_ok, mode_detail = enable_file_edit_auto_approve(args.terminal, force=force_mode)
             if mode_ok:
                 sys.stderr.write(
                     f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({args.terminal}).\n"
                 )
             else:
-                sys.stderr.write(
-                    f"경고: {mode_detail}. 워커가 파일 편집 대화창에서 멈출 수 있으니 "
-                    f"orca terminal send --terminal {args.terminal} --text \"$'\\x1b[Z'\" 를 직접 실행하십시오.\n"
-                )
+                sys.stderr.write(f"파일 편집 자동 승인 모드 전환 건너뜀: {mode_detail}\n")
         except Exception as exc:
-            sys.stderr.write(
-                f"경고: 파일 편집 자동 승인 모드 전환 중 예외 발생 ({exc}). "
-                f"orca terminal send --terminal {args.terminal} --text \"$'\\x1b[Z'\" 를 직접 실행하십시오.\n"
-            )
+            sys.stderr.write(f"경고: 파일 편집 자동 승인 모드 전환 중 예외 발생 ({exc}).\n")
     else:
         if not args.agent:
             sys.stderr.write(
@@ -2579,6 +2630,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-capsule-notice",
         action="store_true",
         help="기동 직후 Capsule 정본 경로 고지문 전송을 생략합니다 (권장하지 않음).",
+    )
+    dsp.add_argument(
+        "--enable-file-edit-auto-approve",
+        action="store_true",
+        help="CLI 화면 감지와 무관하게 파일 편집 자동 승인 모드 전환(shift+tab)을 강제 전송합니다.",
     )
     dsp.add_argument(
         "--allow-unverified-delivery",
