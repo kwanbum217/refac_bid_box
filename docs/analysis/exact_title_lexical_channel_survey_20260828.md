@@ -8,25 +8,25 @@
 
 ## 1. `_rerank_by_exact_title` 제목 정규화 단계 분석
 
-[`src/rag/vector_store.py:140-176`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L140-L176)에 정의된 `_rerank_by_exact_title` 함수는 질의(`semantic_query`)와 각 문서의 공고명(`doc_title`)을 정규화 키로 변환한 후 상호 일치 여부를 비교합니다.
+[`src/rag/vector_store.py:140-176`](../../src/rag/vector_store.py#L140-L176)에 정의된 `_rerank_by_exact_title` 함수는 질의(`semantic_query`)와 각 문서의 공고명(`doc_title`)을 정규화 키로 변환한 후 상호 일치 여부를 비교합니다.
 
 ### 1.1 정규화 함수 및 정규식 정의
 
-제목 정규화는 [`src/rag/vector_store.py:79-81`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L79-L81)의 정규식 패턴과 [`src/rag/vector_store.py:132-138`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L132-L138)의 `_normalize_match_key` 함수를 통해 수행됩니다.
+제목 정규화는 [`src/rag/vector_store.py:79-81`](../../src/rag/vector_store.py#L79-L81)의 정규식 패턴과 [`src/rag/vector_store.py:132-138`](../../src/rag/vector_store.py#L132-L138)의 `_normalize_match_key` 함수를 통해 수행됩니다.
 
 | 단계 | 적용 코드 / 정규식 | 수행 내용 및 변환 규칙 |
 | :--- | :--- | :--- |
-| **단계 1** | [`src/rag/vector_store.py:136`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L136)<br>`unicodedata.normalize("NFC", str(value))` | 입력값을 문자열로 변환하고 유니코드 NFC(정규 결합) 형식으로 정규화합니다. |
-| **단계 2** | [`src/rag/vector_store.py:136`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L136)<br>`.strip()` | 문자열 양 끝의 공백 문자를 제거합니다. |
-| **단계 3** | [`src/rag/vector_store.py:136`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L136)<br>`.lower()` | 모든 영문 대문자를 소문자로 변환합니다. |
-| **단계 4** | [`src/rag/vector_store.py:79-81`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L79-L81)<br>`MATCH_KEY_CLEAN_PATTERN.sub("", normalized)` | 정규식 `[\s\(\)\[\]\{\}\uff08\uff09\uff3b\uff3d\uff5b\uff5d\u3010\u3011\u3014\u3015\u3008\u3009\u300a\u300b\u300c\u300d\u300e\u300f]`을 매칭하여 모든 공백(`\s`)과 반각/전각 괄호 기호류(`()[]{}` 및 `（）［］｛｝【】〔〕〈〉《》「」『』`)를 빈 문자열(`""`)로 치환하여 완전히 제거합니다. |
+| **단계 1** | [`src/rag/vector_store.py:136`](../../src/rag/vector_store.py#L136)<br>`unicodedata.normalize("NFC", str(value))` | 입력값을 문자열로 변환하고 유니코드 NFC(정규 결합) 형식으로 정규화합니다. |
+| **단계 2** | [`src/rag/vector_store.py:136`](../../src/rag/vector_store.py#L136)<br>`.strip()` | 문자열 양 끝의 공백 문자를 제거합니다. |
+| **단계 3** | [`src/rag/vector_store.py:136`](../../src/rag/vector_store.py#L136)<br>`.lower()` | 모든 영문 대문자를 소문자로 변환합니다. |
+| **단계 4** | [`src/rag/vector_store.py:79-81`](../../src/rag/vector_store.py#L79-L81)<br>`MATCH_KEY_CLEAN_PATTERN.sub("", normalized)` | 정규식 `[\s\(\)\[\]\{\}\uff08\uff09\uff3b\uff3d\uff5b\uff5d\u3010\u3011\u3014\u3015\u3008\u3009\u300a\u300b\u300c\u300d\u300e\u300f]`을 매칭하여 모든 공백(`\s`)과 반각/전각 괄호 기호류(`()[]{}` 및 `（）［］｛｝【】〔〕〈〉《》「」『』`)를 빈 문자열(`""`)로 치환하여 완전히 제거합니다. |
 
 ### 1.2 재순위 처리 흐름
 
-1. **질의 키 생성**: [`src/rag/vector_store.py:149`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L149)에서 `query_key = _normalize_match_key(semantic_query)`를 생성합니다. 키가 빈 문자열이면 원본 문서를 그대로 반환합니다.
-2. **문서 제목 추출**: [`src/rag/vector_store.py:157-160`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L157-L160)에서 문서 본문의 `[공고명]` 정규식 매칭([`src/rag/vector_store.py:75`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L75), [`src/rag/vector_store.py:116-129`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L116-L129)) 또는 메타데이터의 `bid_ntce_nm`/`title`로부터 제목을 획득합니다.
-3. **일치 판정 및 분리**: [`src/rag/vector_store.py:162-165`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L162-L165)에서 `_normalize_match_key(doc_title) == query_key`를 평가하여 일치하는 문서는 `exact_matches` 리스트에, 불일치 문서는 `others` 리스트에 분류합니다.
-4. **결합 반환**: [`src/rag/vector_store.py:175`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L175)에서 `exact_matches + others` 형태로 정확 일치 문서를 상단으로 재배치합니다.
+1. **질의 키 생성**: [`src/rag/vector_store.py:149`](../../src/rag/vector_store.py#L149)에서 `query_key = _normalize_match_key(semantic_query)`를 생성합니다. 키가 빈 문자열이면 원본 문서를 그대로 반환합니다.
+2. **문서 제목 추출**: [`src/rag/vector_store.py:157-160`](../../src/rag/vector_store.py#L157-L160)에서 문서 본문의 `[공고명]` 정규식 매칭([`src/rag/vector_store.py:75`](../../src/rag/vector_store.py#L75), [`src/rag/vector_store.py:116-129`](../../src/rag/vector_store.py#L116-L129)) 또는 메타데이터의 `bid_ntce_nm`/`title`로부터 제목을 획득합니다.
+3. **일치 판정 및 분리**: [`src/rag/vector_store.py:162-165`](../../src/rag/vector_store.py#L162-L165)에서 `_normalize_match_key(doc_title) == query_key`를 평가하여 일치하는 문서는 `exact_matches` 리스트에, 불일치 문서는 `others` 리스트에 분류합니다.
+4. **결합 반환**: [`src/rag/vector_store.py:175`](../../src/rag/vector_store.py#L175)에서 `exact_matches + others` 형태로 정확 일치 문서를 상단으로 재배치합니다.
 
 ---
 
@@ -55,7 +55,7 @@
 
 ### 3.1 현재 코드의 처리 순서
 
-[`src/rag/vector_store.py:153-175`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L153-L175)의 구현은 다음과 같이 순회합니다:
+[`src/rag/vector_store.py:153-175`](../../src/rag/vector_store.py#L153-L175)의 구현은 다음과 같이 순회합니다:
 
 ```python
     exact_matches: list[dict[str, Any]] = []
@@ -71,7 +71,7 @@
     return exact_matches + others
 ```
 
-1. 입력된 `documents` 리스트는 ChromaDB의 벡터 임베딩 유사도 질의 결과([`src/rag/vector_store.py:377-390`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L377-L390))로서, 거리(`distance`) 오름차순으로 정렬되어 있습니다.
+1. 입력된 `documents` 리스트는 ChromaDB의 벡터 임베딩 유사도 질의 결과([`src/rag/vector_store.py:377-390`](../../src/rag/vector_store.py#L377-L390))로서, 거리(`distance`) 오름차순으로 정렬되어 있습니다.
 2. `exact_matches`에는 `documents` 리스트에 처음 등장한 순서(즉, ChromaDB의 임베딩 거리 순서)대로 차례로 누적(`append`)됩니다.
 
 ### 3.2 동점 해소(Tie-breaking) 근거 유무 판정
@@ -87,7 +87,7 @@
 
 ### 4.1 코드 근거 및 계산 로직
 
-[`src/rag/vector_store.py:364-366`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L364-L366)에 정의된 쿼리 대상 후보 수(`query_top_k`) 계산 로직은 다음과 같습니다:
+[`src/rag/vector_store.py:364-366`](../../src/rag/vector_store.py#L364-L366)에 정의된 쿼리 대상 후보 수(`query_top_k`) 계산 로직은 다음과 같습니다:
 
 ```python
     target_top_k = max(int(plan.top_k or DEFAULT_VECTOR_TOP_K), 1)
@@ -96,9 +96,9 @@
 ```
 
 상수 정의:
-- [`src/rag/schemas.py:22`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/schemas.py#L22): `DEFAULT_VECTOR_TOP_K = 5`
-- [`src/rag/vector_store.py:35`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L35): `POST_FILTER_FETCH_MULTIPLIER = 3`
-- [`src/rag/vector_store.py:38`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L38): `DEFAULT_CANDIDATE_POOL_SIZE = 30`
+- [`src/rag/schemas.py:22`](../../src/rag/schemas.py#L22): `DEFAULT_VECTOR_TOP_K = 5`
+- [`src/rag/vector_store.py:35`](../../src/rag/vector_store.py#L35): `POST_FILTER_FETCH_MULTIPLIER = 3`
+- [`src/rag/vector_store.py:38`](../../src/rag/vector_store.py#L38): `DEFAULT_CANDIDATE_POOL_SIZE = 30`
 
 ### 4.2 적용 대상 및 조건별 판정
 
@@ -122,12 +122,12 @@
 
 | 번호 | 파일 경로 및 위치 | 함수 / 클래스명 | 입력 매개변수 | 반환 형태 | 정확 공고명 일치 조회 활용 가능 여부 및 사유 |
 | :---: | :--- | :--- | :--- | :--- | :--- |
-| **1** | [`src/app/services/search_index.py:106-219`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/app/services/search_index.py#L106-L219) | `MeiliSearchClient.search` | `query: str`,<br>`dataset: str` (`"announcement"` \| `"result"`),<br>`category: str \| None`,<br>`region: str \| None`,<br>`sort: list[str]`,<br>`offset: int`,<br>`limit: int` | `SearchPage`<br>(`ids: list[int]`, `has_next: bool`) | **활용 가능 (핵심 후보)**<br>- Meilisearch 인덱스 `bid_records`의 `searchableAttributes`에 `bid_ntce_nm`이 등록되어 있음([`src/app/services/search_index.py:146`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/app/services/search_index.py#L146)).<br>- 따옴표 구문 검색(`"..."`)을 질의로 넘기면 정확 어휘 일치 검색 가능.<br>- 단, 현재 반환값은 `source_id` 리스트이므로 RAG 문서 포맷 매핑 또는 DB 재조회가 필요함. |
-| **2** | [`src/app/services/search_index.py:115-133`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/app/services/search_index.py#L115-L133) | `MeiliSearchClient._request` | `method: str`,<br>`path: str`,<br>`**kwargs: Any` | `dict[str, Any]`<br>(HTTP JSON 응답) | **활용 가능 (저수준 확장용)**<br>- 임의의 Meilisearch 엔드포인트(`POST /indexes/bid_records/search`)로 필터 및 검색 옵션을 직접 구성하여 호출 가능. |
-| **3** | [`src/app/services/bid_queries.py:323-392`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/app/services/bid_queries.py#L323-L392) | `list_announcements` | `db: Session`,<br>`q: str \| None`,<br>`cat: str \| None`,<br>`region: str \| None`,<br>`sort: str \| None`,<br>`page: int` | `OffsetPage`<br>(`items: list[BidAnnouncement]`, `total`, `page`, 등) | **제한적 활용 가능**<br>- Meilisearch 활성화 시 `_search_index_page`를 거쳐 ORM 객체를 반환하고, 비활성화 시 MySQL `contains` 쿼리를 수행함([`src/app/services/bid_queries.py:340-368`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/app/services/bid_queries.py#L340-L368)).<br>- 페이지네이션 UI 전용 모델이므로 RAG 검색 파이프라인에 직접 끼우기에는 오버헤드가 있음. |
-| **4** | [`src/app/services/bid_queries.py:394-455`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/app/services/bid_queries.py#L394-L455) | `list_results` | `db: Session`,<br>`q: str \| None`,<br>`cat: str \| None`,<br>`region: str \| None`,<br>`sort: str \| None`,<br>`page: int` | `OffsetPage`<br>(`items: list[BidResult]`, 등) | **제한적 활용 가능**<br>- 낙찰 결과에 대한 어휘 검색 지원. 위 3번과 동일한 제약. |
-| **5** | [`src/rag/structured_data.py:1-400`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/structured_data.py#L1-L400) | `retrieve_structured_data` | `db: Session`,<br>`plan: RetrievalPlan` | `dict[str, Any]` | **활용 불가 (기능 불일치)**<br>- SQL 기반 통계, 집계 및 최근 목록 질의 전용 함수. 공고명 텍스트에 대한 어휘 검색 기능은 없음. |
-| **6** | [`src/rag/vector_store.py:320-460`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L320-L460) | `retrieve_semantic_context` | `plan: RetrievalPlan` | `SemanticSearchResult` | **독립 어휘 채널 아님**<br>- ChromaDB 벡터 검색 후 `_rerank_by_exact_title`로 후처리하는 구조임. |
+| **1** | [`src/app/services/search_index.py:106-219`](../../src/app/services/search_index.py#L106-L219) | `MeiliSearchClient.search` | `query: str`,<br>`dataset: str` (`"announcement"` \| `"result"`),<br>`category: str \| None`,<br>`region: str \| None`,<br>`sort: list[str]`,<br>`offset: int`,<br>`limit: int` | `SearchPage`<br>(`ids: list[int]`, `has_next: bool`) | **활용 가능 (핵심 후보)**<br>- Meilisearch 인덱스 `bid_records`의 `searchableAttributes`에 `bid_ntce_nm`이 등록되어 있음([`src/app/services/search_index.py:146`](../../src/app/services/search_index.py#L146)).<br>- 따옴표 구문 검색(`"..."`)을 질의로 넘기면 정확 어휘 일치 검색 가능.<br>- 단, 현재 반환값은 `source_id` 리스트이므로 RAG 문서 포맷 매핑 또는 DB 재조회가 필요함. |
+| **2** | [`src/app/services/search_index.py:115-133`](../../src/app/services/search_index.py#L115-L133) | `MeiliSearchClient._request` | `method: str`,<br>`path: str`,<br>`**kwargs: Any` | `dict[str, Any]`<br>(HTTP JSON 응답) | **활용 가능 (저수준 확장용)**<br>- 임의의 Meilisearch 엔드포인트(`POST /indexes/bid_records/search`)로 필터 및 검색 옵션을 직접 구성하여 호출 가능. |
+| **3** | [`src/app/services/bid_queries.py:323-392`](../../src/app/services/bid_queries.py#L323-L392) | `list_announcements` | `db: Session`,<br>`q: str \| None`,<br>`cat: str \| None`,<br>`region: str \| None`,<br>`sort: str \| None`,<br>`page: int` | `OffsetPage`<br>(`items: list[BidAnnouncement]`, `total`, `page`, 등) | **제한적 활용 가능**<br>- Meilisearch 활성화 시 `_search_index_page`를 거쳐 ORM 객체를 반환하고, 비활성화 시 MySQL `contains` 쿼리를 수행함([`src/app/services/bid_queries.py:340-368`](../../src/app/services/bid_queries.py#L340-L368)).<br>- 페이지네이션 UI 전용 모델이므로 RAG 검색 파이프라인에 직접 끼우기에는 오버헤드가 있음. |
+| **4** | [`src/app/services/bid_queries.py:394-455`](../../src/app/services/bid_queries.py#L394-L455) | `list_results` | `db: Session`,<br>`q: str \| None`,<br>`cat: str \| None`,<br>`region: str \| None`,<br>`sort: str \| None`,<br>`page: int` | `OffsetPage`<br>(`items: list[BidResult]`, 등) | **제한적 활용 가능**<br>- 낙찰 결과에 대한 어휘 검색 지원. 위 3번과 동일한 제약. |
+| **5** | [`src/rag/structured_data.py:1-400`](../../src/rag/structured_data.py#L1-L400) | `retrieve_structured_data` | `db: Session`,<br>`plan: RetrievalPlan` | `dict[str, Any]` | **활용 불가 (기능 불일치)**<br>- SQL 기반 통계, 집계 및 최근 목록 질의 전용 함수. 공고명 텍스트에 대한 어휘 검색 기능은 없음. |
+| **6** | [`src/rag/vector_store.py:320-460`](../../src/rag/vector_store.py#L320-L460) | `retrieve_semantic_context` | `plan: RetrievalPlan` | `SemanticSearchResult` | **독립 어휘 채널 아님**<br>- ChromaDB 벡터 검색 후 `_rerank_by_exact_title`로 후처리하는 구조임. |
 
 ---
 
@@ -150,9 +150,9 @@
 
 | 구분 | 통합 지점 후보 | 분기 위치 (행 번호) | 설계 개요 | 잠재적 위험 및 주의사항 |
 | :--- | :--- | :--- | :--- | :--- |
-| **후보 A** | **쿼리 플래너 수준 분기**<br>(Planner-level Routing) | [`src/rag/query_planning.py:366-475`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/query_planning.py#L366-L475)<br>및 [`src/rag/schemas.py:50-62`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/schemas.py#L50-L62) | - `RetrievalPlan`에 `use_lexical: bool`, `lexical_query: str` 필드 추가.<br>- 질의에 따옴표(`"..."`)나 특정 공고명 개체 신호가 있을 경우 플래너가 `use_lexical=True` 설정.<br>- [`src/rag/engine.py:590-630`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/engine.py#L590-L630)에서 플랜에 따라 Meilisearch 채널을 직접 호출. | - 플래너의 정규식/키워드 판정이 실패할 경우 lexical 조회가 트리거되지 않고 누락될 위험.<br>- 플래너 규칙 복잡도 증가. |
-| **후보 B** | **리트리버 저장소 수준 통합**<br>(Retriever-level Hybrid) | [`src/rag/vector_store.py:364-440`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/vector_store.py#L364-L440) | - `retrieve_semantic_context` 내부에서 ChromaDB 조회 전/병렬로 Meilisearch 정확 검색을 수행.<br>- 정확 일치 문서가 발견되면 Chroma 후보 30개 확대 없이 즉시 상위에 배치하거나 Chroma 검색을 생략. | - `src/rag/vector_store.py`가 ChromaDB뿐만 아니라 Meilisearch 클라이언트와 DB Session에 직접 의존하게 되어 모듈 결합도 증가.<br>- `DEFAULT_CANDIDATE_POOL_SIZE = 30` 제거를 위한 내부 흐름 분기 복잡화. |
-| **후보 C** | **엔진 컨텍스트 준비 수준 다중 채널 합성**<br>(Engine-level Orchestration) | [`src/rag/engine.py:607-630`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/engine.py#L607-L630) | - `_prepare_context`에서 `use_sql`, `use_vector`와 대등하게 `lexical_search`를 수행.<br>- 어휘 검색 결과(`lexical_docs`)가 충분하면 `vector_docs`의 후보 풀을 기본 `top_k`(5)로 유지하거나 가중치 결합(RRF 등) 수행. | - `PreparedContext`, `_build_evidence_items`([`src/rag/answer_format.py:25`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/t4-lexical-survey/src/rag/answer_format.py#L25)) 등 다운스트림 파이프라인의 증거 수집 포맷 수정 필요. |
+| **후보 A** | **쿼리 플래너 수준 분기**<br>(Planner-level Routing) | [`src/rag/query_planning.py:366-475`](../../src/rag/query_planning.py#L366-L475)<br>및 [`src/rag/schemas.py:50-62`](../../src/rag/schemas.py#L50-L62) | - `RetrievalPlan`에 `use_lexical: bool`, `lexical_query: str` 필드 추가.<br>- 질의에 따옴표(`"..."`)나 특정 공고명 개체 신호가 있을 경우 플래너가 `use_lexical=True` 설정.<br>- [`src/rag/engine.py:590-630`](../../src/rag/engine.py#L590-L630)에서 플랜에 따라 Meilisearch 채널을 직접 호출. | - 플래너의 정규식/키워드 판정이 실패할 경우 lexical 조회가 트리거되지 않고 누락될 위험.<br>- 플래너 규칙 복잡도 증가. |
+| **후보 B** | **리트리버 저장소 수준 통합**<br>(Retriever-level Hybrid) | [`src/rag/vector_store.py:364-440`](../../src/rag/vector_store.py#L364-L440) | - `retrieve_semantic_context` 내부에서 ChromaDB 조회 전/병렬로 Meilisearch 정확 검색을 수행.<br>- 정확 일치 문서가 발견되면 Chroma 후보 30개 확대 없이 즉시 상위에 배치하거나 Chroma 검색을 생략. | - `src/rag/vector_store.py`가 ChromaDB뿐만 아니라 Meilisearch 클라이언트와 DB Session에 직접 의존하게 되어 모듈 결합도 증가.<br>- `DEFAULT_CANDIDATE_POOL_SIZE = 30` 제거를 위한 내부 흐름 분기 복잡화. |
+| **후보 C** | **엔진 컨텍스트 준비 수준 다중 채널 합성**<br>(Engine-level Orchestration) | [`src/rag/engine.py:607-630`](../../src/rag/engine.py#L607-L630) | - `_prepare_context`에서 `use_sql`, `use_vector`와 대등하게 `lexical_search`를 수행.<br>- 어휘 검색 결과(`lexical_docs`)가 충분하면 `vector_docs`의 후보 풀을 기본 `top_k`(5)로 유지하거나 가중치 결합(RRF 등) 수행. | - `PreparedContext`, `_build_evidence_items`([`src/rag/answer_format.py:25`](../../src/rag/answer_format.py#L25)) 등 다운스트림 파이프라인의 증거 수집 포맷 수정 필요. |
 
 ### 6.2 권고 방향
 
