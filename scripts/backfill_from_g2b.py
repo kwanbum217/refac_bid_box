@@ -64,7 +64,9 @@ async def _backfill(
     *,
     until: str | None = None,
     fetch_types: tuple[str, ...] = ("announce", "result"),
+    sync_downstream: bool = False,
 ) -> int:
+    started_at = utcnow()
     today = utcnow().date()
     session = SessionLocal()
     total_announcements = 0
@@ -128,6 +130,17 @@ async def _backfill(
     print("-" * 60)
     print(f"백필 완료: 공고 {total_announcements:,}건, 낙찰 {total_results:,}건 신규 적재")
 
+    if not dry_run and sync_downstream:
+        print("\n하류 데이터 동기화(--sync-downstream)를 시작합니다...")
+        from scripts.run_data_reconciliation import run_reconciliation
+
+        sync_code = run_reconciliation(
+            collected_since=started_at,
+            since=since,
+            until=until,
+        )
+        return sync_code
+
     if total_announcements or total_results:
         # 이 스크립트는 DB 적재와 대시보드 집계까지만 합니다. 야간 파이프라인이
         # 이어서 하는 KB 색인, 검색 색인, 파생 집계는 하지 않습니다. 2026-08-27 에
@@ -142,6 +155,7 @@ async def _backfill(
         )
         print("      - Meilisearch 색인: 검색 색인 갱신 경로")
         print("      - 파생 집계: _rebuild_institution_stats(), _rebuild_ranking_snapshots()")
+        print("      (또는 --sync-downstream 옵션으로 자동 실행할 수 있습니다.)")
     return 0
 
 
@@ -179,6 +193,11 @@ def main() -> int:
         help="수집 대상. 지정하지 않으면 둘 다",
     )
     parser.add_argument("--dry-run", action="store_true", help="수집 구간만 출력")
+    parser.add_argument(
+        "--sync-downstream",
+        action="store_true",
+        help="백필 완료 후 하류 동기화(파생 집계, KB 색인, 검색 색인, 정합성 검사)를 자동 실행",
+    )
     args = parser.parse_args()
 
     if not get_service_key():
@@ -194,6 +213,7 @@ def main() -> int:
             args.dry_run,
             until=args.until,
             fetch_types=fetch_types,
+            sync_downstream=args.sync_downstream,
         )
     )
 
