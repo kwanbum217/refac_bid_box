@@ -1,7 +1,7 @@
 """
 scripts/orca_worker_watch.py
 
-활성 Orca 워커의 진척과 차단 상태를 한 번에 점검합니다.
+활성 Orca 워커의 진척과 차단 상태를 한 번에 점검하거나 상시 감시합니다.
 
 코디네이터가 Dispatch 후 감시를 잊지 않도록, 워커별 커밋 수·미커밋 변경 수와
 터미널 화면의 차단 신호(신뢰 대화창, 설문, 인증 정체, 권한 요청)를 한 명령으로
@@ -10,11 +10,17 @@ scripts/orca_worker_watch.py
 세 번 있었습니다.
 
 사용법:
+    # 1회 점검 (기본)
     uv run python scripts/orca_worker_watch.py
     uv run python scripts/orca_worker_watch.py --json
 
+    # 상시 감시 루프
+    uv run python scripts/orca_worker_watch.py --watch
+    uv run python scripts/orca_worker_watch.py --watch --interval 10 --max-iterations 30
+    uv run python scripts/orca_worker_watch.py --watch --min-commits 1
+
 종료 코드:
-    0  모든 워커가 정상 진행 중이거나 감시 대상 없음
+    0  모든 워커가 정상 진행 중이거나 감시 대상 없음, 또는 완료 조건(min-commits) 충족, 또는 최대 반복 완료
     1  차단 신호가 감지된 워커가 있음 (코디네이터 개입 필요)
     2  도구 오류
 """
@@ -26,9 +32,15 @@ import json
 import re
 import subprocess  # nosec B404  고정된 git·orca 명령만 실행하며 사용자 입력을 받지 않습니다
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# 기본 주기 및 정체 후보 판정 기준 시간 (초 단위)
+DEFAULT_INTERVAL_SECONDS: float = 10.0
+DEFAULT_STALL_THRESHOLD_SECONDS: float = 300.0
 
 # Antigravity 파일 편집/생성 승인 대화창 신호 상수 (단일 진실 원천)
 FILE_EDIT_DIALOG_SIGNALS: tuple[str, ...] = (
@@ -145,6 +157,8 @@ class WorkerState:
     blocked_reason: str | None = None
     blocked_fix: str | None = None
     blocked_kind: BlockKind | None = None
+    stall_candidate: bool = False
+    unchanged_seconds: float = 0.0
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -163,8 +177,33 @@ class WorkerState:
             "blocked_kind": self.blocked_kind,
             "blocked_reason": self.blocked_reason,
             "blocked_fix": self.blocked_fix,
+            "stall_candidate": self.stall_candidate,
+            "unchanged_seconds": round(self.unchanged_seconds, 1),
             "notes": list(self.notes),
         }
+
+
+def format_worker_state(s: WorkerState) -> list[str]:
+    """워커 상태를 터미널 출력용 문자열 줄 목록으로 변환합니다."""
+    lines: list[str] = []
+    if s.blocked:
+        kind_label = BLOCK_KIND_LABELS.get(s.blocked_kind or "", s.blocked_kind or "")
+        mark = f"차단:{kind_label}"
+    elif s.stall_candidate:
+        mark = "정체후보"
+    else:
+        mark = "진행"
+    lines.append(f"[{mark}] {s.name}  branch={s.branch}  commits={s.commits}  dirty={s.dirty}")
+    if s.terminal:
+        lines.append(f"        터미널: {s.terminal}")
+    if s.blocked:
+        kind_label = BLOCK_KIND_LABELS.get(s.blocked_kind or "", s.blocked_kind or "")
+        lines.append(f"        분류: {kind_label}")
+        lines.append(f"        사유: {s.blocked_reason}")
+        lines.append(f"        조치: {s.blocked_fix}")
+    for note in s.notes:
+        lines.append(f"        참고: {note}")
+    return lines
 
 
 def _run(args: list[str], timeout: int = 30) -> str:
@@ -287,7 +326,52 @@ def detect_block(screen_tail: str) -> tuple[str, str, BlockKind] | None:
     return prompt_match
 
 
-def collect(repo: Path, base: str) -> list[WorkerState]:
+def update_history(
+    states: list[WorkerState],
+    history: dict[str, dict[str, Any]],
+    now: float,
+    stall_threshold: float = DEFAULT_STALL_THRESHOLD_SECONDS,
+) -> None:
+    """워커 상태 목록의 변화 이력을 갱신하고 정체 후보 여부를 판정합니다."""
+    for s in states:
+        key = s.path or s.name
+        entry = history.get(key)
+        if entry is None:
+            history[key] = {
+                "commits": s.commits,
+                "dirty": s.dirty,
+                "last_change_time": now,
+                "first_seen_time": now,
+            }
+            s.unchanged_seconds = 0.0
+        else:
+            if s.commits != entry["commits"] or s.dirty != entry["dirty"]:
+                entry["commits"] = s.commits
+                entry["dirty"] = s.dirty
+                entry["last_change_time"] = now
+                s.unchanged_seconds = 0.0
+            else:
+                s.unchanged_seconds = max(0.0, now - entry["last_change_time"])
+
+        if s.unchanged_seconds >= stall_threshold and not s.blocked:
+            s.stall_candidate = True
+            stall_sec = int(s.unchanged_seconds)
+            stall_note = (
+                f"정체 후보: {stall_sec}초 동안 커밋/미커밋 변화가 없습니다 "
+                f"(임계값 {int(stall_threshold)}초). 터미널을 확인하십시오"
+            )
+            s.notes = [n for n in s.notes if not n.startswith("커밋 0 · 미커밋 0")]
+            if stall_note not in s.notes:
+                s.notes.append(stall_note)
+
+
+def collect(
+    repo: Path,
+    base: str = "main",
+    history: dict[str, dict[str, Any]] | None = None,
+    now: float | None = None,
+    stall_threshold: float = DEFAULT_STALL_THRESHOLD_SECONDS,
+) -> list[WorkerState]:
     terminals = terminal_map()
     states: list[WorkerState] = []
     for name, path, branch in list_worktrees(repo):
@@ -315,7 +399,98 @@ def collect(repo: Path, base: str) -> list[WorkerState]:
                 "커밋 0 · 미커밋 0. 조사 단계이거나 정체일 수 있으니 터미널을 확인하십시오"
             )
         states.append(state)
+
+    if history is not None:
+        current_time = time.time() if now is None else now
+        update_history(states, history, current_time, stall_threshold)
+
     return states
+
+
+def watch_loop(
+    repo: Path,
+    base: str = "main",
+    interval: float = DEFAULT_INTERVAL_SECONDS,
+    max_iterations: int | None = 1,
+    min_commits: int | None = None,
+    stall_threshold: float = DEFAULT_STALL_THRESHOLD_SECONDS,
+    json_output: bool = False,
+    time_func: Callable[[], float] | None = None,
+    sleep_func: Callable[[float], None] | None = None,
+) -> int:
+    """워커 상태를 주기적으로 감시하고 차단 또는 완료 조건을 판정합니다."""
+    get_time = time_func or time.time
+    do_sleep = sleep_func or time.sleep
+
+    history: dict[str, dict[str, Any]] = {}
+    prev_signatures: dict[str, tuple[Any, ...]] = {}
+    iteration = 0
+
+    while True:
+        now = get_time()
+        states = collect(
+            repo,
+            base=base,
+            history=history,
+            now=now,
+            stall_threshold=stall_threshold,
+        )
+        if history and not any(s.unchanged_seconds > 0 or s.stall_candidate for s in states):
+            update_history(states, history, now, stall_threshold)
+
+        current_signatures = {
+            s.path or s.name: (
+                s.name,
+                s.branch,
+                s.commits,
+                s.dirty,
+                s.terminal,
+                s.blocked,
+                s.blocked_kind,
+                s.blocked_reason,
+                s.stall_candidate,
+            )
+            for s in states
+        }
+
+        has_changes = iteration == 0 or current_signatures != prev_signatures
+
+        if has_changes:
+            if json_output:
+                print(json.dumps([s.as_dict() for s in states], ensure_ascii=False, indent=2))
+            else:
+                if iteration == 0:
+                    if not states:
+                        print("감시 대상 워커 워크트리가 없습니다.")
+                    for s in states:
+                        for line in format_worker_state(s):
+                            print(line)
+                else:
+                    for s in states:
+                        key = s.path or s.name
+                        if (
+                            key not in prev_signatures
+                            or prev_signatures[key] != current_signatures[key]
+                        ):
+                            for line in format_worker_state(s):
+                                print(line)
+
+        prev_signatures = current_signatures
+
+        # 1. 차단 신호 감지 시 즉시 종료 (코디네이터 개입 필요)
+        if any(s.blocked for s in states):
+            return 1
+
+        # 2. 지정된 최소 커밋 수 도달 완료 조건 충족 시 정상 종료
+        if min_commits is not None and states and all(s.commits >= min_commits for s in states):
+            return 0
+
+        # 3. 최대 반복 횟수 도달 확인
+        iteration += 1
+        if max_iterations is not None and iteration >= max_iterations:
+            return 1 if any(s.blocked for s in states) else 0
+
+        do_sleep(interval)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -323,37 +498,68 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", type=Path, default=Path.cwd(), help="주 저장소 경로")
     parser.add_argument("--base", default="main", help="진척 비교 기준 브랜치")
     parser.add_argument("--json", action="store_true", help="기계 판독 출력")
+    parser.add_argument("--watch", action="store_true", help="상시 감시 모드 활성화")
+    parser.add_argument(
+        "--interval",
+        "--interval-sec",
+        dest="interval",
+        type=float,
+        default=None,
+        help="감시 주기 (초 단위, 기본 10초)",
+    )
+    parser.add_argument(
+        "--max-iterations",
+        "--max-iter",
+        dest="max_iterations",
+        type=int,
+        default=None,
+        help="최대 감시 반복 횟수 (기본: 1회, --watch 시 무제한)",
+    )
+    parser.add_argument(
+        "--min-commits",
+        type=int,
+        default=None,
+        help="모든 워크트리가 도달해야 하는 최소 커밋 수 (도달 시 0 종료)",
+    )
+    parser.add_argument(
+        "--stall-threshold",
+        "--stall-sec",
+        dest="stall_threshold",
+        type=float,
+        default=DEFAULT_STALL_THRESHOLD_SECONDS,
+        help="정체 후보 판정 기준 시간(초, 기본 300초)",
+    )
     args = parser.parse_args(argv)
 
+    if (
+        args.watch
+        or args.interval is not None
+        or args.min_commits is not None
+        or args.max_iterations is not None
+    ):
+        max_iterations = args.max_iterations
+        interval = args.interval if args.interval is not None else DEFAULT_INTERVAL_SECONDS
+    else:
+        max_iterations = 1
+        interval = DEFAULT_INTERVAL_SECONDS
+
+    stall_threshold = args.stall_threshold
+
     try:
-        states = collect(args.repo, args.base)
-    except Exception as exc:  # 도구 오류와 차단을 구분합니다
+        return watch_loop(
+            repo=args.repo,
+            base=args.base,
+            interval=interval,
+            max_iterations=max_iterations,
+            min_commits=args.min_commits,
+            stall_threshold=stall_threshold,
+            json_output=args.json,
+        )
+    except KeyboardInterrupt:
+        return 0
+    except Exception as exc:
         print(f"감시 실패: {exc}", file=sys.stderr)
         return 2
-
-    if args.json:
-        print(json.dumps([s.as_dict() for s in states], ensure_ascii=False, indent=2))
-    else:
-        if not states:
-            print("감시 대상 워커 워크트리가 없습니다.")
-        for s in states:
-            if s.blocked:
-                kind_label = BLOCK_KIND_LABELS.get(s.blocked_kind or "", s.blocked_kind or "")
-                mark = f"차단:{kind_label}"
-            else:
-                mark = "진행"
-            print(f"[{mark}] {s.name}  branch={s.branch}  commits={s.commits}  dirty={s.dirty}")
-            if s.terminal:
-                print(f"        터미널: {s.terminal}")
-            if s.blocked:
-                kind_label = BLOCK_KIND_LABELS.get(s.blocked_kind or "", s.blocked_kind or "")
-                print(f"        분류: {kind_label}")
-                print(f"        사유: {s.blocked_reason}")
-                print(f"        조치: {s.blocked_fix}")
-            for note in s.notes:
-                print(f"        참고: {note}")
-
-    return 1 if any(s.blocked for s in states) else 0
 
 
 if __name__ == "__main__":
