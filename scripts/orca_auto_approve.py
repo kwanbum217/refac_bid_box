@@ -14,6 +14,7 @@ import tempfile
 import time
 from contextlib import suppress
 from pathlib import Path
+from typing import Any
 
 try:
     from scripts.orca_worker_watch import FILE_EDIT_DIALOG_SIGNALS, normalize_text
@@ -279,6 +280,93 @@ FIND_DANGEROUS_FLAGS = {
     "-ok",
     "-okdir",
 }
+
+# 비명령 프롬프트 반복 자동 응답 상한 (초과 시 자동 응답 중단 및 사람 개입 로그 기록)
+MAX_PROMPT_REPEATS = 3
+
+# 자동 해제 대상 안전한 비명령 프롬프트 화이트리스트
+# 각 항목별 전송 키 및 안전 사유:
+# 1. cli_satisfaction_survey: "0" 전송 - 단순 CLI 피드백 설문 건너뛰기로 파일/시스템/Git 상태를 변경하지 않아 안전함.
+SAFE_NON_COMMAND_PROMPTS: list[dict[str, Any]] = [
+    {
+        "id": "cli_satisfaction_survey",
+        # CLI 만족도 설문 건너뛰기: "0"을 전송하여 설문을 무응답 건너뛰기 처리하며 시스템 및 작업 결과에 부작용 없음
+        "keywords": (
+            "how's the cli experience so far",
+            "[0] skip",
+        ),
+        "response": "0",
+        "description": "CLI 만족도 설문 건너뛰기 ('0' 전송)",
+    },
+]
+
+# 되돌리기 어렵거나 외부에 영향을 주는 위험한 프롬프트 패턴 (자동 응답 절대 금지 및 사람 개입 로그 기록)
+DANGEROUS_PROMPT_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "파일 삭제 확인",
+        re.compile(
+            r"(delete|remove|erase|unlink|destroy)\s+(file|directory|folder|all|database|table|\S+)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "자격증명/인증 입력",
+        re.compile(
+            r"(password|passphrase|secret\s*key|api\s*key|access\s*token|credentials?)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "결제/과금 확인",
+        re.compile(
+            r"(confirm|process)?\s*(payment|billing|charge|purchase|subscription)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "원격 반영/배포 확인",
+        re.compile(
+            r"(push|publish|deploy|release).*(remote|production|prod|master|main|npm|pypi|registry)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "권한 상승 확인",
+        re.compile(
+            r"(sudo|root\s*access|elevated\s*privileges?|run\s+as\s+admin)",
+            re.IGNORECASE,
+        ),
+    ),
+]
+
+
+def match_safe_prompt(screen: str) -> dict[str, Any] | None:
+    """화면에서 화이트리스트에 등록된 안전한 비명령 프롬프트를 탐색합니다.
+
+    매칭 성공 시 해당 프롬프트 정보 dict를 반환하고, 일치하는 항목이 없으면 None을 반환합니다.
+    """
+    if not isinstance(screen, str) or not screen:
+        return None
+    norm_screen = normalize_text(screen)
+    for prompt_info in SAFE_NON_COMMAND_PROMPTS:
+        keywords = prompt_info.get("keywords", ())
+        if keywords and all(kw in norm_screen for kw in keywords):
+            return prompt_info
+    return None
+
+
+def check_dangerous_prompt(screen: str) -> str | None:
+    """되돌리기 어렵거나 외부 영향이 있는 위험 프롬프트가 화면에 있는지 검사합니다.
+
+    위험 프롬프트 감지 시 사유 문자열을 반환하고, 없으면 None을 반환합니다.
+    """
+    if not isinstance(screen, str) or not screen:
+        return None
+    for label, pattern in DANGEROUS_PROMPT_PATTERNS:
+        if pattern.search(screen):
+            return f"위험 프롬프트 감지 ({label})"
+    return None
+
 
 # 터미널 연속 읽기 실패 허용 상한 (초과 시 감시 대상에서 제외)
 MAX_CONSECUTIVE_READ_FAILURES = 5
@@ -558,11 +646,13 @@ def pending_command(screen: str) -> str | None:
 
 
 def poll_loop(terminals: list[str], max_failures: int = MAX_CONSECUTIVE_READ_FAILURES) -> None:
-    """터미널 목록을 순회하며 권한 대화창을 자동 승인합니다. 감시 대상이 모두 소진되면 종료합니다."""
+    """터미널 목록을 순회하며 권한 대화창 및 안전한 비명령 프롬프트를 자동 승인/해제합니다. 감시 대상이 모두 소진되면 종료합니다."""
     try:
         active = list(terminals)
         fail_counts: dict[str, int] = dict.fromkeys(active, 0)
-        seen: dict[str, str] = {}
+        seen_cmds: dict[str, str] = {}
+        prompt_repeat_counts: dict[tuple[str, str], int] = {}
+        seen_prompts: dict[str, str] = {}
         while active:
             for h in list(active):
                 screen = read(h)
@@ -572,20 +662,71 @@ def poll_loop(terminals: list[str], max_failures: int = MAX_CONSECUTIVE_READ_FAI
                         active.remove(h)
                     continue
                 fail_counts[h] = 0
+
                 cmd = pending_command(screen)
-                if cmd is None:
+                if cmd is not None:
+                    short = " ".join(cmd.split())[:160]
+                    verdict, reason = classify_command(cmd)
+                    if verdict == "approve":
+                        send(h, "2")
+                        print(f"[승인] {h[:16]} {short}", flush=True)
+                        seen_cmds.pop(h, None)
+                        time.sleep(2)
+                    else:
+                        if seen_cmds.get(h) != short:
+                            print(f"[보류] {h[:16]} {reason}: {short}", flush=True)
+                            seen_cmds[h] = short
                     continue
-                short = " ".join(cmd.split())[:160]
-                verdict, reason = classify_command(cmd)
-                if verdict == "approve":
-                    send(h, "2")
-                    print(f"[승인] {h[:16]} {short}", flush=True)
-                    seen.pop(h, None)
-                    time.sleep(2)
+
+                # 비명령 프롬프트 판정 계층 (명령 승인과는 별도 경로)
+                safe_prompt = match_safe_prompt(screen)
+                if safe_prompt is not None:
+                    prompt_id = safe_prompt["id"]
+                    resp = str(safe_prompt["response"])
+                    desc = safe_prompt.get("description", prompt_id)
+                    key = (h, prompt_id)
+                    current_count = prompt_repeat_counts.get(key, 0)
+
+                    if current_count >= MAX_PROMPT_REPEATS:
+                        if seen_prompts.get(h) != f"limit_{prompt_id}":
+                            print(
+                                f"[경고] {h[:16]} 프롬프트 반복 상한({MAX_PROMPT_REPEATS}회) 초과로 자동 응답 중단: {prompt_id} (사람 개입 필요)",
+                                flush=True,
+                            )
+                            seen_prompts[h] = f"limit_{prompt_id}"
+                    else:
+                        prompt_repeat_counts[key] = current_count + 1
+                        send(h, resp)
+                        print(
+                            f"[자동해제] {h[:16]} 비명령 프롬프트 '{prompt_id}' 응답 '{resp}' 전송 ({desc}, 시도 {prompt_repeat_counts[key]}/{MAX_PROMPT_REPEATS})",
+                            flush=True,
+                        )
+                        seen_prompts[h] = f"answered_{prompt_id}"
+                        time.sleep(2)
+                    continue
+
+                # 안전 비명령 프롬프트가 해제되었거나 감지되지 않으면 카운트 및 상태 초기화
+                for k in list(prompt_repeat_counts.keys()):
+                    if k[0] == h:
+                        prompt_repeat_counts.pop(k, None)
+                if seen_prompts.get(h, "").startswith("answered_") or seen_prompts.get(
+                    h, ""
+                ).startswith("limit_"):
+                    seen_prompts.pop(h, None)
+
+                # 위험 프롬프트 감지 검사 (자동 응답 금지, 사람 개입 보류 로그 기록)
+                danger_reason = check_dangerous_prompt(screen)
+                if danger_reason:
+                    if seen_prompts.get(h) != f"danger_{danger_reason}":
+                        print(
+                            f"[보류] {h[:16]} {danger_reason}: 자동 응답하지 않고 사람에게 보류",
+                            flush=True,
+                        )
+                        seen_prompts[h] = f"danger_{danger_reason}"
                 else:
-                    if seen.get(h) != short:
-                        print(f"[보류] {h[:16]} {reason}: {short}", flush=True)
-                        seen[h] = short
+                    if seen_prompts.get(h, "").startswith("danger_"):
+                        seen_prompts.pop(h, None)
+
             if active:
                 time.sleep(8)
     finally:

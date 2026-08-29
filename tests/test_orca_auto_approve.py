@@ -10,12 +10,17 @@ import pytest
 from scripts.orca_auto_approve import (
     CATEGORY_READ_ONLY,
     CATEGORY_TEST_EXECUTION,
+    DANGEROUS_PROMPT_PATTERNS,
+    MAX_PROMPT_REPEATS,
+    SAFE_NON_COMMAND_PROMPTS,
     SAFE_STANDALONE_COMMANDS,
     SAFE_TEST_COMMANDS,
+    check_dangerous_prompt,
     classify_command,
     get_watcher_pid_path,
     is_safe_git_branch,
     is_safe_git_subcommand,
+    match_safe_prompt,
     parse_git_subcommand,
     pending_command,
     poll_loop,
@@ -446,3 +451,236 @@ class TestSubprocessInteractionMocks:
         mock_read.return_value = None
         poll_loop(["term_clean"], max_failures=1)
         assert not pid_path.exists()
+
+
+class TestNonCommandPromptWhitelist:
+    """비명령 프롬프트 화이트리스트 탐색 및 안전성 단위 검증."""
+
+    def test_cli_satisfaction_survey_detected(self) -> None:
+        """관측된 CLI 만족도 설문 화면이 정확히 감지되고 '0'(Skip) 응답이 지정되어 있는지 검증."""
+        screen = (
+            "How's the CLI experience so far? Help us improve:\n"
+            "[1] Good  [2] Fine  [3] Bad  [0] Skip"
+        )
+        matched = match_safe_prompt(screen)
+        assert matched is not None
+        assert matched["id"] == "cli_satisfaction_survey"
+        assert matched["response"] == "0"
+
+    @pytest.mark.parametrize(
+        "screen",
+        [
+            "How's the CLI experience so far?\n[1] Good [2] Fine [3] Bad [0] Skip",
+            "  HOW'S THE CLI EXPERIENCE SO FAR?  \n  [1] Good  [0] SKIP  ",
+            "CLI tool running\nHow's the CLI experience so far? Help us improve:\n[1] Good [2] Fine [3] Bad [0] Skip\nWaiting for input...",
+        ],
+    )
+    def test_cli_satisfaction_survey_variations(self, screen: str) -> None:
+        """공백 및 대소문자 변형에서도 설문 화면이 정상 인식되는지 검증."""
+        matched = match_safe_prompt(screen)
+        assert matched is not None
+        assert matched["id"] == "cli_satisfaction_survey"
+        assert matched["response"] == "0"
+
+    def test_safe_prompt_constants_validity(self) -> None:
+        """화이트리스트 상수 정의가 필수 키(id, keywords, response, description)를 모두 갖추고 있는지 검증."""
+        assert len(SAFE_NON_COMMAND_PROMPTS) > 0
+        for item in SAFE_NON_COMMAND_PROMPTS:
+            assert item["id"]
+            assert len(item["keywords"]) > 0
+            assert item["response"] != ""
+            assert item["description"]
+
+    @pytest.mark.parametrize(
+        "screen",
+        [
+            "Do you want to enable experimental features? [y/n]",
+            "Would you like to install recommended extensions? [Y/n]",
+            "Send anonymous usage telemetry? [y/N]",
+            "Select language: [1] Python [2] Rust [3] Go",
+            "Press Enter to continue...",
+            "Random terminal message without any prompt structure",
+        ],
+    )
+    def test_unlisted_prompts_return_none(self, screen: str) -> None:
+        """화이트리스트에 등록되지 않은 임의의 프롬프트는 안전하게 None을 반환(fail-closed)하는지 검증."""
+        assert match_safe_prompt(screen) is None
+
+
+class TestNonCommandPromptDangerous:
+    """되돌리기 어렵거나 외부에 영향을 주는 위험 프롬프트 보류 검증."""
+
+    def test_dangerous_prompt_constants_validity(self) -> None:
+        """위험 프롬프트 패턴 상수가 라벨과 컴파일된 정규식을 정상 포함하는지 검증."""
+        assert len(DANGEROUS_PROMPT_PATTERNS) > 0
+        for label, pattern in DANGEROUS_PROMPT_PATTERNS:
+            assert label
+            assert hasattr(pattern, "search")
+
+    @pytest.mark.parametrize(
+        "screen, expected_label",
+        [
+            ("Are you sure you want to delete file /tmp/data.csv? [y/N]", "파일 삭제"),
+            ("Remove directory /var/data? [yes/no]", "파일 삭제"),
+            ("Enter password for user:", "자격증명/인증"),
+            ("Please enter your API Key:", "자격증명/인증"),
+            ("Confirm payment of $50.00 for subscription? [y/N]", "결제/과금"),
+            ("Deploy to production cluster? [y/N]", "원격 반영/배포"),
+            ("Publish package to npm registry? [y/N]", "원격 반영/배포"),
+            ("Enter sudo command to continue:", "권한 상승"),
+            ("Run as administrator? [Y/n]", "권한 상승"),
+        ],
+    )
+    def test_dangerous_prompts_detected_and_not_in_safe_whitelist(
+        self, screen: str, expected_label: str
+    ) -> None:
+        """위험 프롬프트가 감지되고 화이트리스트에는 매칭되지 않는지 검증."""
+        danger_reason = check_dangerous_prompt(screen)
+        assert danger_reason is not None
+        assert expected_label in danger_reason
+        assert match_safe_prompt(screen) is None
+
+
+class TestPollLoopNonCommandPrompts:
+    """poll_loop 에서의 비명령 프롬프트 자동 해제, 위험 보류 및 반복 상한 검증."""
+
+    @patch("scripts.orca_auto_approve.time.sleep", side_effect=StopIteration)
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_answers_satisfaction_survey(
+        self,
+        mock_read: MagicMock,
+        mock_send: MagicMock,
+        mock_sleep: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """(a) CLI 만족도 설문 화면 인식 시 '0' 건너뛰기를 전송하고 자동 해제 로그를 남기는지 검증."""
+        mock_read.return_value = (
+            "How's the CLI experience so far? Help us improve:\n"
+            "[1] Good  [2] Fine  [3] Bad  [0] Skip"
+        )
+        with pytest.raises(StopIteration):
+            poll_loop(["term_survey"])
+
+        mock_send.assert_called_once_with("term_survey", "0")
+        captured = capsys.readouterr()
+        assert "[자동해제]" in captured.out
+        assert "cli_satisfaction_survey" in captured.out
+        assert "0" in captured.out
+
+    @patch("scripts.orca_auto_approve.time.sleep", side_effect=StopIteration)
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_ignores_unlisted_prompt(
+        self,
+        mock_read: MagicMock,
+        mock_send: MagicMock,
+        mock_sleep: MagicMock,
+    ) -> None:
+        """(b) 화이트리스트에 없는 확인 화면에는 아무것도 전송하지 않는지 검증."""
+        mock_read.return_value = "Do you want to enable experimental features? [y/n]"
+        with pytest.raises(StopIteration):
+            poll_loop(["term_unlisted"])
+
+        mock_send.assert_not_called()
+
+    @patch("scripts.orca_auto_approve.time.sleep", side_effect=StopIteration)
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_holds_dangerous_prompt(
+        self,
+        mock_read: MagicMock,
+        mock_send: MagicMock,
+        mock_sleep: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """(c) 파일 삭제·자격증명 등 위험 프롬프트에는 응답하지 않고 보류 로그를 남기는지 검증."""
+        mock_read.return_value = "Are you sure you want to delete file database.db? [y/N]"
+        with pytest.raises(StopIteration):
+            poll_loop(["term_danger"])
+
+        mock_send.assert_not_called()
+        captured = capsys.readouterr()
+        assert "[보류]" in captured.out
+        assert "위험 프롬프트 감지" in captured.out
+
+    @patch("scripts.orca_auto_approve.time.sleep")
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_repeat_limit_stops_answering(
+        self,
+        mock_read: MagicMock,
+        mock_send: MagicMock,
+        mock_sleep: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """(d) 동일 비명령 프롬프트가 반복될 때 MAX_PROMPT_REPEATS(3회)까지만 응답하고 이후 중단되는지 검증."""
+        mock_read.return_value = (
+            "How's the CLI experience so far? Help us improve:\n"
+            "[1] Good  [2] Fine  [3] Bad  [0] Skip"
+        )
+        sleep_count = 0
+
+        def fake_sleep(sec: float) -> None:
+            nonlocal sleep_count
+            sleep_count += 1
+            # 반복 3회(각 2회 sleep: send 후 2s + 루프 말단 8s) + 상한 초과 2회(각 1회 sleep: 루프 말단 8s)
+            if sleep_count >= 8:
+                raise StopIteration
+
+        mock_sleep.side_effect = fake_sleep
+
+        with pytest.raises(StopIteration):
+            poll_loop(["term_repeat"])
+
+        # 3회까지만 send 호출되어야 함
+        assert mock_send.call_count == MAX_PROMPT_REPEATS
+        assert mock_send.call_args_list == [
+            (("term_repeat", "0"),),
+            (("term_repeat", "0"),),
+            (("term_repeat", "0"),),
+        ]
+        captured = capsys.readouterr()
+        assert "[경고]" in captured.out
+        assert f"반복 상한({MAX_PROMPT_REPEATS}회) 초과" in captured.out
+        assert "사람 개입 필요" in captured.out
+
+    @patch("scripts.orca_auto_approve.time.sleep")
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_resets_count_when_prompt_cleared(
+        self,
+        mock_read: MagicMock,
+        mock_send: MagicMock,
+        mock_sleep: MagicMock,
+    ) -> None:
+        """프롬프트 해제 후 일반 화면으로 전환되면 카운트가 정상 초기화되는지 검증."""
+        survey_screen = (
+            "How's the CLI experience so far? Help us improve:\n"
+            "[1] Good  [2] Fine  [3] Bad  [0] Skip"
+        )
+        normal_screen = "Build completed successfully."
+
+        # 순서: 설문(1회응답) -> 일반화면(초기화) -> 설문(1회응답)
+        screens = [survey_screen, normal_screen, survey_screen]
+        screen_idx = 0
+
+        def fake_read(handle: str) -> str:
+            nonlocal screen_idx
+            idx = min(screen_idx, len(screens) - 1)
+            return screens[idx]
+
+        def fake_sleep(sec: float) -> None:
+            nonlocal screen_idx
+            screen_idx += 1
+            if screen_idx >= 3:
+                raise StopIteration
+
+        mock_read.side_effect = fake_read
+        mock_sleep.side_effect = fake_sleep
+
+        with pytest.raises(StopIteration):
+            poll_loop(["term_reset"])
+
+        # 2번의 설문 노출에 대해 각각 응답하여 총 2회 전송
+        assert mock_send.call_count == 2
