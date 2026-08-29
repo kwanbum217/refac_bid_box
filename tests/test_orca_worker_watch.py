@@ -410,3 +410,167 @@ def test_main_json_always_includes_terminal(capsys: pytest.CaptureFixture[str]) 
         assert exit_code == 0
         payload = capsys.readouterr().out
         assert '"terminal": "term_worker"' in payload
+
+
+def test_default_no_args_is_one_shot_without_sleep() -> None:
+    """인자 없이 호출 시 1회 점검으로 끝나며 sleep 이 호출되지 않는다."""
+    clean_state = watch.WorkerState(
+        name="orca-w1",
+        path="/tmp/w1",
+        branch="b1",
+        commits=1,
+        dirty=0,
+    )
+    mock_sleep = patch("time.sleep")
+    with (
+        patch("scripts.orca_worker_watch.collect", return_value=[clean_state]),
+        mock_sleep as sleep_mock,
+    ):
+        exit_code = watch.main([])
+        assert exit_code == 0
+        assert sleep_mock.call_count == 0
+
+
+def test_watch_mode_immediate_exit_on_block() -> None:
+    """반복 모드에서 차단을 만나면 남은 반복 없이 즉시 종료 코드 1로 끝난다."""
+    clean_state = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=0, dirty=0)
+    blocked_state = watch.WorkerState(
+        name="orca-w1",
+        path="/tmp/w1",
+        branch="b1",
+        commits=0,
+        dirty=0,
+        blocked_reason="CLI 만족도 설문 프롬프트",
+        blocked_fix="terminal send --text '0'",
+        blocked_kind="prompt",
+    )
+    mock_sleep = patch("time.sleep")
+    with (
+        patch("scripts.orca_worker_watch.collect", side_effect=[[clean_state], [blocked_state]]),
+        mock_sleep as sleep_mock,
+    ):
+        exit_code = watch.main(["--watch", "--max-iterations", "10", "--interval", "5"])
+        assert exit_code == 1
+        assert sleep_mock.call_count == 1
+
+
+def test_watch_mode_min_commits_completion() -> None:
+    """완료 조건(min-commits) 만족 시 즉시 종료 코드 0으로 정상 종료한다."""
+    iter0_state = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=0, dirty=1)
+    iter1_state = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=2, dirty=0)
+    mock_sleep = patch("time.sleep")
+    with (
+        patch("scripts.orca_worker_watch.collect", side_effect=[[iter0_state], [iter1_state]]),
+        mock_sleep as sleep_mock,
+    ):
+        exit_code = watch.main(["--watch", "--min-commits", "2", "--max-iterations", "10"])
+        assert exit_code == 0
+        assert sleep_mock.call_count == 1
+
+
+def test_watch_mode_quiet_output_no_repetition_on_identical_state(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """상태가 직전 주기와 같으면 요약을 반복 출력하지 않는다."""
+    same_state = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=1, dirty=0)
+    mock_sleep = patch("time.sleep")
+    with (
+        patch(
+            "scripts.orca_worker_watch.collect",
+            side_effect=[[same_state], [same_state], [same_state]],
+        ),
+        mock_sleep,
+    ):
+        exit_code = watch.main(["--watch", "--max-iterations", "3", "--interval", "10"])
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        assert out.count("[진행] orca-w1") == 1
+
+
+def test_watch_mode_prints_only_changed_worker(capsys: pytest.CaptureFixture[str]) -> None:
+    """반복 모드에서 특정 워커만 변경되면 변경된 워커만 출력한다."""
+    w1_v0 = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=0, dirty=0)
+    w2_v0 = watch.WorkerState(name="orca-w2", path="/tmp/w2", branch="b2", commits=0, dirty=0)
+
+    w1_v1 = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=1, dirty=0)
+    w2_v1 = watch.WorkerState(name="orca-w2", path="/tmp/w2", branch="b2", commits=0, dirty=0)
+
+    mock_sleep = patch("time.sleep")
+    with (
+        patch(
+            "scripts.orca_worker_watch.collect",
+            side_effect=[[w1_v0, w2_v0], [w1_v1, w2_v1]],
+        ),
+        mock_sleep,
+    ):
+        exit_code = watch.main(["--watch", "--max-iterations", "2"])
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        assert out.count("orca-w1") == 2
+        assert out.count("orca-w2") == 1
+
+
+def test_stall_candidate_tracking_and_display() -> None:
+    """변화 없는 경과 시간이 임계값을 넘으면 정체 후보로 표시된다."""
+    history: dict[str, dict[str, float | int]] = {}
+    state = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=0, dirty=0)
+
+    watch.update_history([state], history, now=1000.0, stall_threshold=300.0)
+    assert state.unchanged_seconds == 0.0
+    assert state.stall_candidate is False
+
+    state2 = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=0, dirty=0)
+    watch.update_history([state2], history, now=1200.0, stall_threshold=300.0)
+    assert state2.unchanged_seconds == 200.0
+    assert state2.stall_candidate is False
+
+    state3 = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=0, dirty=0)
+    watch.update_history([state3], history, now=1350.0, stall_threshold=300.0)
+    assert state3.unchanged_seconds == 350.0
+    assert state3.stall_candidate is True
+    assert any("정체 후보" in note for note in state3.notes)
+
+    lines = watch.format_worker_state(state3)
+    assert any("[정체후보]" in line for line in lines)
+
+
+def test_stall_candidate_alone_does_not_exit_1() -> None:
+    """정체 후보만으로는 종료 코드가 1이 되지 않고 0을 반환한다."""
+    stall_state = watch.WorkerState(
+        name="orca-w1",
+        path="/tmp/w1",
+        branch="b1",
+        commits=0,
+        dirty=0,
+        stall_candidate=True,
+        unchanged_seconds=400.0,
+    )
+    mock_sleep = patch("time.sleep")
+    with (
+        patch("scripts.orca_worker_watch.collect", return_value=[stall_state]),
+        mock_sleep,
+    ):
+        exit_code = watch.main([])
+        assert exit_code == 0
+
+        exit_code_watch = watch.main(["--watch", "--max-iterations", "2"])
+        assert exit_code_watch == 0
+
+
+def test_json_output_includes_stall_fields(capsys: pytest.CaptureFixture[str]) -> None:
+    """--json 출력에 stall_candidate 및 unchanged_seconds 가 포함된다."""
+    state = watch.WorkerState(
+        name="orca-w1",
+        path="/tmp/w1",
+        branch="b1",
+        commits=1,
+        dirty=0,
+        stall_candidate=True,
+        unchanged_seconds=312.4,
+    )
+    with patch("scripts.orca_worker_watch.collect", return_value=[state]):
+        exit_code = watch.main(["--json"])
+        assert exit_code == 0
+        payload = capsys.readouterr().out
+        assert '"stall_candidate": true' in payload
+        assert '"unchanged_seconds": 312.4' in payload
