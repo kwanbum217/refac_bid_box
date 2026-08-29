@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-30
-> **source_commit**: `af4631a`
+> **source_commit**: `09634b3`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -108,7 +108,7 @@
 - Arq container synthetic raw 보존(1,681~1,764 jps, P95 325~342ms). **business-task E2E 2026-08-26 실측**: 격리 큐 실제 task 2종 30/30 완주, P50 5.5ms·P95 1,174.9ms, DB 11행 불변·운영 큐 무영향([`arq_business_e2e_20260826.json`](../../data/benchmarks/arq_business_e2e_20260826.json)).
 - **공고 상세 페이지 쿼리 (코드 수정 완료, 실측 미수행)**: 2026-08-30 `similar_announcement_latest_filter` 로 전환해 후보를 기관·카테고리로 먼저 좁힌 뒤 동일 그룹 최신 차수 여부를 `NOT EXISTS` 로 판정합니다. 전체 테이블 `row_number()` 랭킹을 제거했고 window 의 결과 의미(`bid_ntce_dt` NULL-last 포함)는 동치 테스트로 고정했습니다. `latest_announcement_filter` 는 목록·색인 경로용으로 불변입니다. **EXPLAIN ANALYZE 전후 비교와 상세 API 레이턴시 실측은 미수행**이며, 인덱스 추가 여부는 실측 뒤 판단합니다.
 - **RAG 정본 갱신 및 T7 판정 종료 (2026-08-30)**: HEAD `6210ee1` 에서 v2 32문항 x 3회를 측정해 `canonical=true`, 요청 실패 0/96 으로 정본을 갱신했습니다([`blind_fixture_v2_canonical_20260830.md`](../analysis/blind_fixture_v2_canonical_20260830.md)). numeric 95.8%(138/144), evidence recall 0.958, refusal 24/24, 금지 표현 위반 0, P50 3,147ms, P95 19,897ms 입니다. **T7 conditional vector bypass 는 품질 회귀가 없습니다.** 근거는 지표가 아니라 검색 동일성입니다. 두 측정에서 성공한 공통 94개 요청의 `retrieved_evidence_ids` 가 순서까지 한 건도 다르지 않습니다. T7 판정을 종료합니다.
-- **채점 규약 결함 (미해결)**: fixture 의 `context_sufficient` 는 검색 성공을 전제하므로, 검색이 기대 문서를 못 가져온 상태의 정직한 거부가 과잉응답으로, 거부 답변의 인용 부재가 citation 누락으로 집계됩니다. **환각을 보상하고 정직을 벌하는 집계**입니다. 2026-08-30 측정에서 q21 이 여기 해당하며(이전에는 다른 지구 공고를 사실처럼 답한 환각, 이번에는 정직한 거부), 이 때문에 citation 이 100% 에서 97.2% 로 보입니다. `evidence_recall == 0` 인 요청을 두 집계에서 분리해야 합니다.
+- **채점 규약 결함 해소 (2026-08-30)**: fixture 의 `context_sufficient` 는 검색 성공을 전제하므로, 검색이 기대 문서를 못 가져온 상태의 정직한 거부가 과잉응답으로, 거부 답변의 인용 부재가 citation 누락으로 집계됐습니다. 하네스가 이제 `retrieval_miss` 를 판정해 citation 과 과잉응답 집계에서 분리하고, 제외 전 원시값과 제외된 문항 ID 를 `summary` 블록에 함께 남깁니다. numeric 과 evidence recall 은 검색 성능을 그대로 드러내야 하므로 제외하지 않습니다. **보정 후 2026-08-30 정본은 citation 69/69(100%), 과잉응답 0 으로 T7 이전 기준선과 일치**합니다.
 - **q21 검색 실패 (미해결, T7 과 무관)**: "2026년 조림지 풀베기사업 2차(동부지구)" 질의가 기대 근거 `bid_10169448` 을 lexical·vector 어느 경로에서도 후보에 올리지 못합니다. 두 측정 모두 recall 0.0 입니다.
 - **정본 판정 게이트 결박 (2026-08-30)**: `measure_llm_quality.py` 의 `canonical` 판정이 provenance·모델·포트만 보던 결함을 닫았습니다. fixture sha256 이 정본 레지스트리(v2 32문항)에 있고, `--limit` 0, 전량 측정, 3회 이상 반복, 요청 실패 0 을 모두 만족해야 `canonical=true` 입니다. `--fixture` 는 필수 인자이며 실패 게이트는 `canonical_failed_gates` 에 남습니다. 이 결함으로 `canonical=true` 로 잘못 저장됐던 v1 24문항 측정은 `data/benchmarks/noncanonical/blind_fixture_v1_20260828_reference.json` 로 격리했습니다(측정값 불변). v1 로 측정된 과거 파일 4건은 당시 기록으로 보존하며 현재 정본과 직접 비교하지 않습니다([`data/benchmarks/README.md`](../../data/benchmarks/README.md)).
 - **조율 도구 결함 3건 정리 (2026-08-30 Wave A)**: 기동 준비를 런처·직접 Dispatch 공통 상태 기계로 통합하고 CLI 판정을 기동 시 기록한 메타데이터 우선으로 바꿨습니다. 모드 판정은 상태줄로 한정해 대화 본문 오염을 막고, accept-edits 는 현재 모드 확인 후 상한 안에서만 전환합니다. `orca_worker_watch.py` 에 `--watch`·`--min-commits`·`--stall-threshold` 를 넣어 자작 감시 루프를 없앴고(정체 후보와 차단은 구분, 정체만으로는 종료 코드 1 아님), `orca_auto_approve.py` 가 CLI 설문 같은 비명령 프롬프트를 화이트리스트로 해제합니다(되돌리기 어려운 확인은 제외).
