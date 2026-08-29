@@ -1,6 +1,6 @@
 {
   "schema": "LLM_QUALITY_MEASURE_V2",
-  "canonical": true,
+  "canonical": false,
   "timestamp": "2026-08-28T11:45:40.873392+00:00",
   "model_label": "e2b",
   "expected_model": "gemma4:e2b",
@@ -17,7 +17,7 @@
   "provenance": {
     "git_sha": "412f5c1ccf8d70388a5020b68c7a2f6eea3b22af",
     "git_dirty": false,
-    "canonical": true,
+    "canonical": false,
     "source_identity_start": {
       "git_sha": "412f5c1ccf8d70388a5020b68c7a2f6eea3b22af",
       "git_dirty": false
@@ -3158,5 +3158,6 @@
       "actual_refusal": true,
       "refusal_correct": true
     }
-  ]
+  ],
+  "noncanonical_reason": "정본 기준(v2 32문항)이 아닌 v1 24문항 fixture로 측정된 참조용 결과입니다."
 }
