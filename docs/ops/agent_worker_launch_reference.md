@@ -51,22 +51,26 @@
 | 명시적 종료 | Task 완료 시 SIGTERM 시그널을 전달하고 PID 파일을 삭제하여 고아 프로세스 방지 | `scripts/orca_taskctl.py finalize` (`stop_auto_approve`) |
 | 자체 종료 | 대상 터미널 읽기 연속 5회 실패(터미널 종료) 시 감시 대상에서 제외하며, 전체 대상 소진 시 자동 반환 및 PID 파일 정리 | `scripts/orca_auto_approve.py poll_loop` |
 
-`scripts/orca_taskctl.py dispatch --terminal ...` 은 Dispatch 직후 이 감시기를
-자동으로 붙이고 대상 CLI 화면을 검사하여 Antigravity 계열인 경우에만 파일 편집 자동 승인 모드 전환(`shift+tab`, `\x1b[Z`)을 전송합니다.
-Cursor 등 Plan Mode 로 전환되는 CLI 나 미식별 CLI 는 fail-closed 원칙에 따라 전송을 건너뛰고 안내 로그를 남깁니다.
+`scripts/orca_taskctl.py dispatch --terminal ...` 및 런처 경로는 통합 준비 상태 기계(`prepare_worker_terminal`, `scripts/orca_taskctl.py prepare-worker`)를
+실행하여 (1) 워커 메타데이터 등록, (2) 신뢰 확인 대화창 승인, (3) 권한 자동 승인 감시기 부착, (4) 파일 편집 자동 승인 모드 전환(`shift+tab`, `\x1b[Z`)을 단일 절차로 처리합니다.
+기동 시점에 기록된 메타데이터를 기반으로 CLI 종류를 판정하므로 화면 오염에 영향을 받지 않으며, Cursor 등 Plan Mode 로 전환되는 CLI 나 미식별 CLI 는 fail-closed 원칙에 따라 전송을 건너뛰고 안내 로그를 남깁니다.
 감시기 기동 또는 모드 전환 전송에 실패하면 stderr 로 경고 및 수동 복구 명령을 안내합니다.
-터미널을 `terminal create` 로 직접 만들고 taskctl 을 거치지 않았다면 **감시기와 모드 전환을 직접 실행해야 합니다.**
 
-### 0.5.2 CLI별 `shift+tab` 해석 차이 및 안전 가드 (fail-closed)
+### 0.5.2 CLI별 `shift+tab` 해석 차이, 메타데이터 판정 및 안전 가드 (fail-closed)
 
 `shift+tab`(`\x1b[Z`) 키 시퀀스는 모든 CLI 에서 동일한 의미를 갖지 않습니다.
 특히 **Cursor Agent 에서 `shift+tab` 은 Plan Mode(읽기 전용, 파일 편집 금지) 전환**입니다.
-따라서 `scripts/orca_taskctl.py dispatch` 는 터미널 화면을 먼저 읽어 대상 CLI 가
-파일 편집 자동 승인(Accept-edits)을 지원하는 계열인지 검사한 후 안전하게 전송합니다.
+또한 **Antigravity CLI 의 `shift+tab` 은 3단계 순환(normal -> accept-edits -> plan -> normal)** 구조를 가집니다. 이미 `accept-edits` 상태인 워커에 추가로 키를 보내면 오히려 `plan`(읽기 전용) 모드로 빠져 파일 편집이 차단됩니다.
+
+따라서 `scripts/orca_taskctl.py` 의 준비 절차는 다음과 같이 안전 가드를 적용합니다:
+1. **메타데이터 우선 판정**: 기동 시점에 기록한 메타데이터(`{terminal}.meta.json`)를 화면 텍스트보다 우선하여 CLI 종류를 식별합니다.
+2. **현재 모드 선확인**: 화면 상태줄을 먼저 읽어 이미 `accept-edits` 면 추가 키를 전송하지 않습니다.
+3. **Plan 모드 안전 복구**: 워커가 `plan` 모드로 빠진 경우 shift+tab 을 순환 전송하여 `accept-edits` 로 안전하게 복구합니다.
+4. **시도 상한 제한**: 최대 3회 시도 상한을 두어 무한 순환을 방지합니다.
 
 | CLI / 에이전트 | `shift+tab` 동작 및 의미 | `taskctl dispatch` 전송 여부 | 비고 |
 | --- | --- | :---: | --- |
-| **Antigravity** (`agy`) | **Accept-edits mode** (파일 편집·생성 확인 대화창 자동 승인) | **자동 전송** | 첫 파일 편집 시 대화창 차단 방지 |
+| **Antigravity** (`agy`) | **Accept-edits mode** (파일 편집·생성 확인 대화창 자동 승인, 3단계 순환) | **안전 순환 전송** (현재 모드 확인 후 필요 시에만 전송) | 첫 파일 편집 시 대화창 차단 방지, 이미 활성 시 키 미전송 |
 | **Cursor** (`cursor-agent`) | **Plan Mode** (읽기 전용 계획 수립 모드, 파일 편집 금지) | **차단 (전송 안 함)** | 전송 시 워커가 편집 불가 상태로 빠지므로 절대 전송 금지 |
 | **OpenCode Zen** | 탭/포커스 전환 (파일 편집 승인과 무관) | **차단 (전송 안 함)** | 상태줄 조작 안내 표지 |
 | **Claude / Codex** | 미지원 또는 터미널 단축키 | **차단 (전송 안 함)** | `worker-start` 감독 경로 사용 |
@@ -80,7 +84,9 @@ Cursor 등 Plan Mode 로 전환되는 CLI 나 미식별 CLI 는 fail-closed 원�
 | --- | --- | --- |
 | Claude | `worker-start --agent claude --model <id> --effort <level>` | 예 |
 | Codex | `worker-start --agent codex --model <id> --effort <level>` | 예 |
-| Antigravity (Gemini) | `terminal create --command "agy ..."` 뒤 `dispatch --inject` | 예 |
+| Antigravity (Gemini) | `terminal create --command "agy ..."` 또는 런처 뒤 `dispatch` (preamble 대체 자동 지원) | 예 |
+| OpenCode Zen (MiMo, DeepSeek) | `terminal create --command "opencode"` 뒤 `dispatch --inject` | 예 |
+| Kimi Code (OpenRouter 무료) | `dispatch --return-preamble` 뒤 `kimi -m <alias> -p "<preamble>"` | 예 (Dispatch 계보만) |
 | OpenCode Zen (MiMo, DeepSeek) | `terminal create --command "opencode"` 뒤 `dispatch --inject` | 예 |
 | Kimi Code (OpenRouter 무료) | `dispatch --return-preamble` 뒤 `kimi -m <alias> -p "<preamble>"` | 예 (Dispatch 계보만) |
 
@@ -501,40 +507,42 @@ Antigravity 는 승인 결과를 `~/.gemini/antigravity-cli/settings.json` 의
 2026-08-22 에 터미널 3대를 연속 생성하면서 이 순서로 실패했고, 결국 사용자가
 세 번 직접 승인했습니다.
 
-### 2.2 파일 편집 승인은 Dispatch 시 자동 승인 모드로 자동 전환됩니다
+### 2.2 파일 편집 승인은 통합 준비 상태 기계(prepare_worker_terminal)를 통해 자동 전환됩니다
 
 폴더 신뢰를 미리 등록해도 **파일 편집·생성 승인은 따로 뜹니다.** 전역
 `permissions.allow` 와도 무관합니다. 워커는 첫 편집에서 멈추고, 코디네이터가
-알아채지 못하면 사람이 발견할 때까지 유휴로 남습니다. 준비 스크립트로도
-막을 수 없습니다. 워크트리가 아니라 터미널 세션마다 걸리는 상태이기 때문입니다.
+알아채지 못하면 사람이 발견할 때까지 유휴로 남습니다.
 
 다이얼로그 하단의 `shift+tab to auto-approve file edits` 가 해제 수단입니다.
-현재 `scripts/orca_taskctl.py dispatch` 경로는 `start_auto_approve` 직후
-`enable_file_edit_auto_approve` 를 호출하여 대상 CLI 화면을 검사합니다.
-Antigravity 계열임이 확인된 경우에만 `shift+tab`(`\x1b[Z`) 시퀀스를 자동 전송합니다.
-**Cursor CLI 는 `shift+tab` 이 Plan Mode(읽기 전용, 편집 금지) 전환이므로 전송하지 않고 차단합니다.**
-미식별 CLI 역시 fail-closed 원칙에 따라 전송하지 않습니다.
+현재 `scripts/orca_taskctl.py dispatch` 및 런처 경로는 통합 준비 함수 `prepare_worker_terminal` (또는 CLI 서브커맨드 `prepare-worker`)을 통해 다음을 자동으로 수행합니다:
+1. **메타데이터 우선 판정**: 기동 시점에 기록한 메타데이터(`{terminal}.meta.json`)를 통해 대상 CLI 가 Antigravity 계열인지 판정합니다.
+2. **모드 선확인 및 안전 순환**: 현재 화면을 먼저 읽어 이미 `accept-edits` 면 추가 전송을 건너뛰고, `plan` 모드로 빠져 있으면 `accept-edits` 로 복구 순환 전송을 수행합니다.
+3. **Cursor 및 미식별 CLI 차단 (fail-closed)**: **Cursor CLI 는 `shift+tab` 이 Plan Mode(읽기 전용, 편집 금지) 전환이므로 전송하지 않고 차단합니다.** 미식별 CLI 역시 기본 차단됩니다.
+4. **Antigravity 지시 투입 대체 경로**: `--inject` 가 `agent_prompt_blocked` 로 실패하는 경우 자동으로 `--return-preamble` 로 지시문을 추출하여 `terminal send` 로 전달하고 Enter 투입 및 사후 도달 검증을 완료합니다.
 
-| 구분 | 자동 처리 (`scripts/orca_taskctl.py dispatch`) | 수동 대체 (Antigravity 전용 수동 실행) |
+| 구분 | 자동 처리 (`scripts/orca_taskctl.py dispatch` / `prepare-worker`) | 수동 대체 (Antigravity 전용 수동 실행) |
 | --- | --- | --- |
-| 동작 방식 | `start_auto_approve` 직후 화면 검사 후 Antigravity 만 자동 전송 | `orca terminal send --terminal <handle> --text $'\x1b[Z'` |
+| 동작 방식 | `prepare_worker_terminal` 상태 기계를 통해 메타데이터 확인 -> 신뢰 승인 -> 감시기 -> 모드 안전 순환 | `orca_taskctl.py prepare-worker --terminal <handle>` |
+| 순환 가드 | 이미 `accept-edits` 면 키 미전송, `plan` 상태면 `accept-edits` 로 안전 복구 (상한 3회) | 화면 확인 후 필요한 경우에만 `$'\x1b[Z'` 전송 |
 | Cursor 대응 | Cursor 계열 감지 시 자동 전송 차단 (Plan Mode 오전환 방지) | 수동 전송 금지 |
 | 미식별 대응 | 식별 불가 시 자동 전송 차단 (fail-closed, `--enable-file-edit-auto-approve` 로 강제 가능) | 신중 확인 후 필요 시에만 수동 실행 |
+| 지시 투입 fallback | Antigravity `--inject` 실패 시 `--return-preamble` + `terminal send` 자동 전환 | 수동으로 preamble 추출 후 `terminal send` |
 | 비활성화 | `ORCA_DISABLE_AUTO_APPROVE=1` 환경변수 시 자동 억제 | 해당 없음 |
 | 실패 처리 | Dispatch 중단 없이 stderr 안내 및 수동 조치 명령 안내 | 사용자가 직접 실행 후 상태 확인 |
 
 수동 확인 및 복구 명령:
 
 ```bash
-# 수동 모드 전환 전송 (자동 전송 실패 시)
+# 통합 준비 절차 수동 실행
+python3 scripts/orca_taskctl.py prepare-worker --terminal <handle> --cli-type antigravity
+
+# 수동 모드 전환 전송 (직접 키 전송 시)
 orca terminal send --terminal <handle> --text $'\x1b[Z'
 orca terminal read --terminal <handle> | tail -3   # Accept-edits mode 확인
 ```
 
-`\x1b[Z` 가 shift+tab 입니다. 성공하면 하단에
-`Accept-edits mode: file edits auto-approved` 가 뜹니다. 2026-08-22 에 이
-단계를 빠뜨려 워커 5대가 각각 편집 승인에서 멈췄고 전부 사용자가 직접
-눌러야 했습니다.
+`\x1b[Z` 가 shift+tab 입니다. 성공하면 하단 상태줄에
+`accept-edits` 표지가 나타납니다.
 
 자동 승인은 쓰기 범위를 넓히지 않습니다. Capsule 의 `allowed_write_files` 는
 Level 1 게이트 2 가 병합 전에 따로 검사하므로, 범위 밖 파일을 만들면 승인
