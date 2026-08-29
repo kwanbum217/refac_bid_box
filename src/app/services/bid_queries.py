@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy import Integer, and_, case, func, or_, select
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from src.app.core.config import settings
 from src.app.models.bids import BidAnnouncement, BidResult
@@ -192,6 +192,57 @@ def latest_announcement_filter(stmt):
     return stmt.join(ranked_ids, ranked_ids.c.id == BidAnnouncement.id).where(
         ranked_ids.c.latest_rank == 1
     )
+
+
+def _is_newer_announcement_clause(other, current) -> Any:
+    return or_(
+        other.bid_ntce_ord > current.bid_ntce_ord,
+        and_(
+            other.bid_ntce_ord == current.bid_ntce_ord,
+            or_(
+                and_(other.bid_ntce_dt.is_not(None), current.bid_ntce_dt.is_(None)),
+                and_(
+                    other.bid_ntce_dt.is_not(None),
+                    current.bid_ntce_dt.is_not(None),
+                    other.bid_ntce_dt > current.bid_ntce_dt,
+                ),
+            ),
+        ),
+        and_(
+            other.bid_ntce_ord == current.bid_ntce_ord,
+            or_(
+                other.bid_ntce_dt == current.bid_ntce_dt,
+                and_(other.bid_ntce_dt.is_(None), current.bid_ntce_dt.is_(None)),
+            ),
+            other.collected_at > current.collected_at,
+        ),
+        and_(
+            other.bid_ntce_ord == current.bid_ntce_ord,
+            or_(
+                other.bid_ntce_dt == current.bid_ntce_dt,
+                and_(other.bid_ntce_dt.is_(None), current.bid_ntce_dt.is_(None)),
+            ),
+            other.collected_at == current.collected_at,
+            other.id > current.id,
+        ),
+    )
+
+
+def similar_announcement_latest_filter(stmt):
+    """테이블 전체 랭킹 대신 후보 공고를 먼저 좁힌 뒤 동일 그룹 내 최신 차수 존재 여부를 NOT EXISTS로 판정합니다.
+    다른 차수에서 기관이 변경된 공고를 배제하는 기존 window 함수의 결과 의미를 완전히 보존합니다.
+    """
+    newer_ann = aliased(BidAnnouncement)
+    has_newer = (
+        select(1)
+        .where(
+            newer_ann.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+            newer_ann.category == BidAnnouncement.category,
+            _is_newer_announcement_clause(newer_ann, BidAnnouncement),
+        )
+        .exists()
+    )
+    return stmt.where(~has_newer)
 
 
 def latest_announcement_for_instance(db: Session, instance: BidAnnouncement | None):
@@ -463,7 +514,7 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
 
     bid = latest_announcement_for_instance(db, instance)
 
-    similar_stmt = latest_announcement_filter(
+    similar_stmt = similar_announcement_latest_filter(
         select(BidAnnouncement).where(
             BidAnnouncement.category == bid.category,
             BidAnnouncement.dminstt_nm == bid.dminstt_nm,
