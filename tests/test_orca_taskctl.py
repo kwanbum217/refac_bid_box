@@ -41,6 +41,7 @@ from scripts.orca_taskctl import (
     prepare_worker_terminal,
     read_worker_meta,
     remove_worker_meta,
+    resolve_dispatch_model,
     resolve_run_id,
     strip_terminal_metadata_header,
     task_has_write_scope,
@@ -4439,3 +4440,228 @@ def test_cmd_prepare_worker_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.
     data = json.loads(captured.out)
     assert data["ok"] is True
     assert data["terminal"] == terminal_handle
+
+
+def test_resolve_dispatch_model_risk_medium():
+    """(a) risk medium 인 Capsule 은 flash-medium 을 배정받음."""
+    capsule_text = "role: builder\nrisk: medium\nobjective: refactor code\n"
+    res = resolve_dispatch_model(
+        args_model=None,
+        capsule_text=capsule_text,
+    )
+    assert res["model"] == "gemini-3.7-flash-medium"
+    assert res["source"] == "router"
+    assert res["risk"] == "medium"
+    assert res["warning"] is None
+
+
+def test_resolve_dispatch_model_risk_high():
+    """(b) risk high 인 Capsule 은 flash-high 를 배정받음."""
+    capsule_text = "role: builder\nrisk: high\nobjective: database schema migration\n"
+    res = resolve_dispatch_model(
+        args_model=None,
+        capsule_text=capsule_text,
+    )
+    assert res["model"] == "gemini-3.7-flash-high"
+    assert res["source"] == "router"
+    assert res["risk"] == "high"
+    assert res["warning"] is None
+
+
+def test_resolve_dispatch_model_explicit_override():
+    """(c) --model 명시 지정이 라우터보다 우선함."""
+    capsule_text = "role: builder\nrisk: medium\nobjective: simple task\n"
+    res = resolve_dispatch_model(
+        args_model="custom-model-id",
+        capsule_text=capsule_text,
+    )
+    assert res["model"] == "custom-model-id"
+    assert res["source"] == "explicit"
+
+
+def test_resolve_dispatch_model_higher_model_warning(capsys: pytest.CaptureFixture):
+    """(d) --model 로 상위 모델을 지정하면 경고가 남음."""
+    capsule_text = "role: builder\nrisk: medium\nobjective: simple task\n"
+    res = resolve_dispatch_model(
+        args_model="gemini-3.7-flash-high",
+        capsule_text=capsule_text,
+    )
+    assert res["model"] == "gemini-3.7-flash-high"
+    assert res["source"] == "explicit"
+    assert res["warning"] is not None
+    assert "상위 모델" in res["warning"]
+    captured = capsys.readouterr()
+    assert "상위 모델" in captured.err
+
+
+def test_dispatch_dry_run_matches_actual_resolution(tmp_path: Path, capsys: pytest.CaptureFixture):
+    """(e) dry-run 과 실제 Dispatch 의 모델 결정이 일치함."""
+    intent_file = tmp_path / "intent_medium.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")  # risk: medium
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--dry-run",
+            "--json",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["dry_run"] is True
+    assert data["model"] == "gemini-3.7-flash-medium"
+    assert data["model_source"] == "router"
+    assert data["risk"] == "medium"
+
+
+def test_resolve_dispatch_model_fallback_on_router_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """(f) 라우터가 실패하면 기본값(DEFAULT_MODEL)으로 떨어짐."""
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.select_model",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("router connection failed")),
+    )
+    capsule_text = "role: builder\nrisk: medium\nobjective: task\n"
+    res = resolve_dispatch_model(
+        args_model=None,
+        capsule_text=capsule_text,
+    )
+    assert res["model"] == "gemini-3.7-flash-high"
+    assert res["source"] == "fallback_default"
+    assert res["warning"] is not None
+    captured = capsys.readouterr()
+    assert "기본값" in captured.err
+
+
+def test_cmd_rework_preserves_history_and_creates_new_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """(g) 재작업 명령이 반려 사유와 새 보고 경로를 전달하고 이력을 보존함."""
+    capsule_dir = tmp_path / "capsules"
+    task_dir = capsule_dir / "task_orig"
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    capsule_file = task_dir / "capsule.yaml"
+    capsule_file.write_text(
+        "schema: ORCA_TASK_CAPSULE_V2\n"
+        'task_id: "task_orig"\n'
+        "why_now: >\n"
+        "  최초 작업\n"
+        "ground_truth:\n"
+        '  - fact: "사실1"\n'
+        "required_change:\n"
+        '  - "변경1"\n'
+        'report_path: ".orca/capsules/task_orig/worker_done.json"\n'
+        "allowed_read_files:\n"
+        '  - ".orca/capsules/task_orig/capsule.yaml"\n',
+        encoding="utf-8",
+    )
+
+    report_file = task_dir / "worker_done.json"
+    report_file.write_text(
+        json.dumps({"commit": "abc1234", "verdict": "candidate"}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._run_command",
+        lambda cmd, cwd=None, timeout=30: (
+            0,
+            json.dumps({"result": {"task": {"id": "task_orig_rework"}}}),
+            "",
+        ),
+    )
+
+    code = main(
+        [
+            "rework",
+            "--task-id",
+            "task_orig",
+            "--reason",
+            "테스트 1건 실패 및 린트 오류",
+            "--capsule-dir",
+            str(capsule_dir),
+            "--json",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+
+    assert data["status"] == "rework_created"
+    assert data["original_task_id"] == "task_orig"
+    assert data["new_task_id"] == "task_orig_rework"
+    assert data["rejection_reason"] == "테스트 1건 실패 및 린트 오류"
+    assert data["new_report_path"] == ".orca/capsules/task_orig_rework/worker_done.json"
+
+    # 반려 이력 파일 검증
+    rejection_file = task_dir / "rejection.json"
+    assert rejection_file.exists()
+    rej_data = json.loads(rejection_file.read_text(encoding="utf-8"))
+    assert rej_data["reason"] == "테스트 1건 실패 및 린트 오류"
+    assert rej_data["previous_report"]["commit"] == "abc1234"
+
+    # 새 Capsule 내용 검증
+    new_capsule_file = capsule_dir / "task_orig_rework" / "capsule.yaml"
+    assert new_capsule_file.exists()
+    new_capsule_content = new_capsule_file.read_text(encoding="utf-8")
+    assert 'task_id: "task_orig_rework"' in new_capsule_content
+    assert 'report_path: ".orca/capsules/task_orig_rework/worker_done.json"' in new_capsule_content
+    assert "반려 사유: 테스트 1건 실패 및 린트 오류" in new_capsule_content
+    assert "이전 시도 커밋: abc1234" in new_capsule_content
+
+
+def test_detect_antigravity_mode_unknown_and_spinner():
+    """(h) 빈 문자열, 공백, 스피너만 있는 짧은 화면이 각각 unknown 으로 판정됨."""
+    assert detect_antigravity_mode("") == "unknown"
+    assert detect_antigravity_mode("   \n\t  ") == "unknown"
+    assert detect_antigravity_mode(None) == "unknown"
+    assert detect_antigravity_mode("⠋ Thinking...") == "unknown"
+    assert detect_antigravity_mode("⠸") == "unknown"
+    assert detect_antigravity_mode("Generating response...") == "unknown"
+
+    # 정상 Antigravity 상태줄이 포함된 경우 판정
+    normal_screen = (
+        "Thinking done.\ngemini-3.7-flash-medium · 12k tokens · shift+tab to auto-approve"
+    )
+    assert detect_antigravity_mode(normal_screen) == "normal"
+
+    accept_screen = "gemini-3.7-flash-medium · accept-edits · 12k tokens"
+    assert detect_antigravity_mode(accept_screen) == "accept-edits"
+
+    plan_screen = "gemini-3.7-flash-medium · plan mode · 12k tokens"
+    assert detect_antigravity_mode(plan_screen) == "plan"
+
+
+def test_enable_file_edit_auto_approve_unknown_skips_keys(monkeypatch: pytest.MonkeyPatch):
+    """(i) 모드가 unknown 일 때 키를 전송하지 않고 fail-closed 로 건너뜁니다."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.read_worker_meta",
+        lambda handle: {"cli_type": "antigravity"},
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.terminal_read",
+        lambda handle, timeout=30: "⠋ Thinking...",
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.terminal_tail",
+        lambda handle, timeout=30: "⠋ Thinking...",
+    )
+
+    sent_keys = []
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._run_command",
+        lambda cmd, timeout=30: sent_keys.append(cmd) or (0, "", ""),
+    )
+
+    ok, reason = enable_file_edit_auto_approve("term_unknown_test", timeout=10)
+    assert ok is False
+    assert "unknown" in reason
+    assert len(sent_keys) == 0, "unknown 모드일 때는 shift+tab 키를 전송하지 않아야 합니다."
