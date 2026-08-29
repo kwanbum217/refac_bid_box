@@ -26,6 +26,7 @@ provenance 결박:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess  # nosec B404
@@ -56,6 +57,13 @@ except ModuleNotFoundError:  # pragma: no cover - 직접 실행 경로
         get_git_status,
         verify_provenance_consistency,
     )
+
+# 정본 fixture sha256 레지스트리 (현재 정본: data/eval/llm_quality_fixture_v2.json 32문항)
+CANONICAL_FIXTURE_HASHES: frozenset[str] = frozenset(
+    {
+        "2c98c636a478cfc92870533513b4442704d8441bd217e303489c9bcf0752e483",
+    }
+)
 
 DEFAULT_BASE_URL = "http://localhost:8000"
 QUERY_PATH = "/api/v1/chatbot/query"
@@ -380,10 +388,77 @@ def build_provenance(
     }
 
 
+def compute_file_sha256(path: Path | str) -> str:
+    """파일 내용의 sha256 해시를 계산한다."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def evaluate_canonical(
+    *,
+    fixture_sha256: str,
+    limit: int,
+    item_count: int,
+    total_fixture_items: int,
+    repetitions: int,
+    request_failures: int,
+    start_sha: str | None = None,
+    start_dirty: bool | None = None,
+    end_sha: str | None = None,
+    end_dirty: bool | None = None,
+    model_mismatch: bool = False,
+    port_ok: bool = True,
+    allow_unknown_provenance: bool = False,
+) -> tuple[bool, list[str]]:
+    """측정 산출물의 정본(canonical) 적격성을 판정하고 실패 게이트 목록을 반환한다."""
+    failed_gates: list[str] = []
+
+    # 1. fixture 정체 (sha256 해시 등록 여부)
+    if fixture_sha256 not in CANONICAL_FIXTURE_HASHES:
+        failed_gates.append("fixture_sha256_canonical")
+
+    # 2. 문항 수 제한 여부 (0이어야 전체 측정)
+    if limit != 0:
+        failed_gates.append("limit_zero")
+
+    # 3. 전체 문항 측정 완결성
+    if item_count != total_fixture_items or item_count <= 0:
+        failed_gates.append("item_count_full")
+
+    # 4. 최소 반복 횟수 (3회 이상)
+    if repetitions < 3:
+        failed_gates.append("repetitions_minimum")
+
+    # 5. 요청 실패 건수 (0건이어야 함)
+    if request_failures > 0:
+        failed_gates.append("no_request_failures")
+
+    # 6. provenance 및 환경 결박 조건
+    if allow_unknown_provenance:
+        failed_gates.append("provenance_strict")
+    if start_sha == "unknown" or not start_sha:
+        failed_gates.append("start_sha_known")
+    if start_dirty is not False:
+        failed_gates.append("start_clean")
+    if end_sha == "unknown" or not end_sha:
+        failed_gates.append("end_sha_known")
+    if end_dirty is not False:
+        failed_gates.append("end_clean")
+    if model_mismatch:
+        failed_gates.append("model_match_expected")
+    if not port_ok:
+        failed_gates.append("port_validated")
+
+    is_canonical = len(failed_gates) == 0
+    return is_canonical, failed_gates
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LLM 품질 평가 fixture 실측 하네스")
     parser.add_argument(
-        "--fixture", type=Path, default=Path("data/eval/llm_quality_fixture_v1.json")
+        "--fixture",
+        type=Path,
+        required=True,
+        help="품질 평가 fixture JSON 파일 경로 (필수)",
     )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--model-label", required=True, help="측정 대상 모델 라벨 (기록용)")
@@ -450,8 +525,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"오류: base_url 포트 검증 실패 - {port_msg}", file=sys.stderr)
         return 2
 
-    fixture = json.loads(args.fixture.read_text(encoding="utf-8"))
-    items = fixture["items"] if isinstance(fixture, dict) and "items" in fixture else fixture
+    fixture_path = args.fixture
+    fixture_raw = fixture_path.read_bytes()
+    fixture_sha256 = hashlib.sha256(fixture_raw).hexdigest()
+    fixture = json.loads(fixture_raw.decode("utf-8"))
+    raw_items = fixture["items"] if isinstance(fixture, dict) and "items" in fixture else fixture
+    total_fixture_items = len(raw_items) if isinstance(raw_items, list) else 0
+    items = raw_items
     if args.limit:
         items = items[: args.limit]
 
@@ -550,14 +630,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         model_mismatch = True
 
-    is_canonical = (
-        (not args.allow_unknown_provenance)
-        and (start_sha != "unknown")
-        and (start_dirty is False)
-        and (end_sha != "unknown")
-        and (end_dirty is False)
-        and (not model_mismatch)
-        and port_ok
+    is_canonical, failed_gates = evaluate_canonical(
+        fixture_sha256=fixture_sha256,
+        limit=args.limit,
+        item_count=len(items),
+        total_fixture_items=total_fixture_items,
+        repetitions=args.repetitions,
+        request_failures=failures,
+        start_sha=start_sha,
+        start_dirty=start_dirty,
+        end_sha=end_sha,
+        end_dirty=end_dirty,
+        model_mismatch=model_mismatch,
+        port_ok=port_ok,
+        allow_unknown_provenance=args.allow_unknown_provenance,
     )
 
     provenance = build_provenance(
@@ -595,6 +681,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "schema": "LLM_QUALITY_MEASURE_V2",
         "canonical": is_canonical,
+        "canonical_failed_gates": failed_gates,
         "timestamp": provenance["timestamp_end_utc"],
         "model_label": args.model_label,
         "expected_model": args.expected_model,
@@ -604,7 +691,11 @@ def main(argv: list[str] | None = None) -> int:
         "model_match_expected": not model_mismatch,
         "base_url_validated": port_ok,
         "fixture_path": str(args.fixture),
-        "fixture_version": fixture.get("version", "unknown"),
+        "fixture_sha256": fixture_sha256,
+        "fixture_version": fixture.get("version", "unknown")
+        if isinstance(fixture, dict)
+        else "unknown",
+        "limit": args.limit,
         "repetitions": args.repetitions,
         "item_count": len(items),
         "request_failures": failures,
@@ -632,6 +723,11 @@ def main(argv: list[str] | None = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(dump_strict_json(payload), encoding="utf-8")
     print(f"\n저장 완료: {args.output} (실패 {failures}건)")
+    if not is_canonical:
+        print(
+            f"경고: 측정이 비정본(canonical=false)으로 판정되었습니다. 실패 게이트: {', '.join(failed_gates)}",
+            file=sys.stderr,
+        )
     return exit_code
 
 

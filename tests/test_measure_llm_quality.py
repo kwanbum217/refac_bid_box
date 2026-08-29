@@ -19,9 +19,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from scripts.measure_llm_quality import (
+    CANONICAL_FIXTURE_HASHES,
     _compare_known_identity,
     _identity_field_known,
     build_provenance,
+    compute_file_sha256,
+    evaluate_canonical,
     is_refusal,
     main,
     numeric_fact_found,
@@ -486,6 +489,146 @@ class TestBuildProvenance:
         assert provenance["serving_model_consistent"] is True
 
 
+class TestComputeFileSha256:
+    """compute_file_sha256 함수 단위 테스트."""
+
+    def test_compute_file_sha256(self, tmp_path):
+        f = tmp_path / "test.json"
+        f.write_text("hello world", encoding="utf-8")
+        import hashlib
+
+        expected = hashlib.sha256(b"hello world").hexdigest()
+        assert compute_file_sha256(f) == expected
+
+
+class TestEvaluateCanonical:
+    """evaluate_canonical 순수 함수 단위 테스트 및 각 게이트 검증."""
+
+    CANONICAL_HASH = "2c98c636a478cfc92870533513b4442704d8441bd217e303489c9bcf0752e483"
+    NON_CANONICAL_HASH = "af7ab5fa35ee9cb94592b6e2cfd5c47db0184c2ea28c561918ec484eda6ac36f"
+
+    def _valid_kwargs(self, **overrides) -> dict[str, Any]:
+        kwargs = {
+            "fixture_sha256": self.CANONICAL_HASH,
+            "limit": 0,
+            "item_count": 32,
+            "total_fixture_items": 32,
+            "repetitions": 3,
+            "request_failures": 0,
+            "start_sha": "abc1234",
+            "start_dirty": False,
+            "end_sha": "abc1234",
+            "end_dirty": False,
+            "model_mismatch": False,
+            "port_ok": True,
+            "allow_unknown_provenance": False,
+        }
+        kwargs.update(overrides)
+        return kwargs
+
+    def test_canonical_fixture_registry(self):
+        """정본 fixture 해시 레지스트리에 v2 32문항 해시가 포함되어 있는지 검증."""
+        assert self.CANONICAL_HASH in CANONICAL_FIXTURE_HASHES
+        assert len(CANONICAL_FIXTURE_HASHES) >= 1
+
+    def test_canonical_passes_all_gates(self):
+        """(f) 정본 fixture 로 전량 3회 무실패면 true 이고 canonical_failed_gates 는 빈 목록."""
+        is_canonical, failed_gates = evaluate_canonical(**self._valid_kwargs())
+        assert is_canonical is True
+        assert failed_gates == []
+
+    def test_noncanonical_fixture_hash_fails(self):
+        """(a) 비정본 fixture 해시면 canonical 이 false 이고 fixture_sha256_canonical 게이트 실패."""
+        is_canonical, failed_gates = evaluate_canonical(
+            **self._valid_kwargs(fixture_sha256=self.NON_CANONICAL_HASH)
+        )
+        assert is_canonical is False
+        assert "fixture_sha256_canonical" in failed_gates
+
+    def test_limit_nonzero_fails(self):
+        """(b) limit 이 0 이 아니면 false 이고 limit_zero 게이트 실패."""
+        is_canonical, failed_gates = evaluate_canonical(
+            **self._valid_kwargs(limit=10, item_count=10)
+        )
+        assert is_canonical is False
+        assert "limit_zero" in failed_gates
+
+    def test_item_count_less_than_total_fails(self):
+        """(c) item_count 가 fixture 전체 문항 수보다 적으면 false 이고 item_count_full 게이트 실패."""
+        is_canonical, failed_gates = evaluate_canonical(
+            **self._valid_kwargs(item_count=20, total_fixture_items=32)
+        )
+        assert is_canonical is False
+        assert "item_count_full" in failed_gates
+
+    def test_repetitions_less_than_three_fails(self):
+        """(d) repetitions 가 3 미만(예: 1 또는 2)이면 false 이고 repetitions_minimum 게이트 실패."""
+        for rep in (1, 2):
+            is_canonical, failed_gates = evaluate_canonical(**self._valid_kwargs(repetitions=rep))
+            assert is_canonical is False
+            assert "repetitions_minimum" in failed_gates
+
+    def test_request_failures_present_fails(self):
+        """(e) request_failures 가 1 이상이면 false 이고 no_request_failures 게이트 실패."""
+        is_canonical, failed_gates = evaluate_canonical(**self._valid_kwargs(request_failures=1))
+        assert is_canonical is False
+        assert "no_request_failures" in failed_gates
+
+    def test_multiple_failed_gates_recorded(self):
+        """여러 게이트 위반 시 모든 실패 게이트가 canonical_failed_gates 에 기록."""
+        is_canonical, failed_gates = evaluate_canonical(
+            **self._valid_kwargs(
+                fixture_sha256=self.NON_CANONICAL_HASH,
+                limit=5,
+                repetitions=1,
+                request_failures=2,
+            )
+        )
+        assert is_canonical is False
+        assert "fixture_sha256_canonical" in failed_gates
+        assert "limit_zero" in failed_gates
+        assert "repetitions_minimum" in failed_gates
+        assert "no_request_failures" in failed_gates
+
+    def test_provenance_gates_still_enforced(self):
+        """기존 provenance / 모델 / 포트 게이트 검증 유지 확인."""
+        is_canonical, failed_gates = evaluate_canonical(**self._valid_kwargs(start_dirty=True))
+        assert is_canonical is False
+        assert "start_clean" in failed_gates
+
+        is_canonical, failed_gates = evaluate_canonical(**self._valid_kwargs(model_mismatch=True))
+        assert is_canonical is False
+        assert "model_match_expected" in failed_gates
+
+        is_canonical, failed_gates = evaluate_canonical(**self._valid_kwargs(port_ok=False))
+        assert is_canonical is False
+        assert "port_validated" in failed_gates
+
+
+class TestCliArguments:
+    """CLI 인자 파싱 단위 테스트."""
+
+    def test_missing_fixture_arg_fails(self, capsys):
+        """(g) --fixture 없이 호출하면 인자 파싱이 실패하는지 검증."""
+        argv = [
+            "measure_llm_quality.py",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--output",
+            "output.json",
+        ]
+        with patch("sys.argv", argv):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code != 0
+        captured = capsys.readouterr()
+        assert "required" in captured.err.lower() or "--fixture" in captured.err
+
+
 class TestIntegrationMainHarness:
     """main() 실측 하네스 통합 및 provenance fail-closed 테스트 (mock 사용)."""
 
@@ -548,7 +691,7 @@ class TestIntegrationMainHarness:
         argv = [
             "measure_llm_quality.py",
             "--fixture",
-            "data/eval/llm_quality_fixture_v1.json",
+            "data/eval/llm_quality_fixture_v2.json",
             "--base-url",
             "http://localhost:8000",
             "--model-label",
@@ -556,13 +699,11 @@ class TestIntegrationMainHarness:
             "--expected-model",
             "gemma4:e4b",
             "--repetitions",
-            "1",
+            "3",
             "--app-container",
             "test-container",
             "--output",
             str(out_file),
-            "--limit",
-            "1",
         ]
         with patch("sys.argv", argv):
             code = main()
@@ -984,7 +1125,7 @@ class TestIntegrationMainHarness:
         argv = [
             "measure_llm_quality.py",
             "--fixture",
-            "data/eval/llm_quality_fixture_v1.json",
+            "data/eval/llm_quality_fixture_v2.json",
             "--base-url",
             "http://localhost:8000",
             "--model-label",
@@ -992,11 +1133,9 @@ class TestIntegrationMainHarness:
             "--expected-model",
             "gemma4:e4b",
             "--repetitions",
-            "1",
+            "3",
             "--output",
             str(out_file),
-            "--limit",
-            "1",
         ]
         with patch("sys.argv", argv):
             code = main()
@@ -1150,6 +1289,62 @@ class TestIntegrationMainHarness:
 
         assert code == 4
         assert not out_file.exists()
+
+    @patch("scripts.measure_llm_quality.validate_base_url_port")
+    @patch("scripts.measure_llm_quality.subprocess.check_output")
+    @patch("scripts.measure_llm_quality.urlrequest.urlopen")
+    @patch("scripts.measure_llm_quality.get_git_status")
+    def test_noncanonical_measurement_saves_failed_gates_and_warns(
+        self,
+        mock_git_status,
+        mock_urlopen,
+        mock_check_output,
+        mock_validate_port,
+        tmp_path,
+        capsys,
+    ):
+        """v1 fixture 및 limit 지정 시 canonical=false, failed_gates 및 stderr 경고 검증."""
+        out_file = tmp_path / "result.json"
+        self._setup_mocks(
+            mock_validate_port,
+            mock_check_output,
+            mock_urlopen,
+            mock_git_status,
+            git_status_side_effect=[("sha_clean", False), ("sha_clean", False)],
+        )
+
+        argv = [
+            "measure_llm_quality.py",
+            "--fixture",
+            "data/eval/llm_quality_fixture_v1.json",
+            "--base-url",
+            "http://localhost:8000",
+            "--model-label",
+            "test-model",
+            "--expected-model",
+            "gemma4:e4b",
+            "--repetitions",
+            "1",
+            "--output",
+            str(out_file),
+            "--limit",
+            "1",
+        ]
+        with patch("sys.argv", argv):
+            code = main()
+
+        assert code == 0
+        assert out_file.exists()
+        saved = json.loads(out_file.read_text(encoding="utf-8"))
+        assert saved["canonical"] is False
+        assert "fixture_sha256_canonical" in saved["canonical_failed_gates"]
+        assert "limit_zero" in saved["canonical_failed_gates"]
+        assert "repetitions_minimum" in saved["canonical_failed_gates"]
+        assert "item_count_full" in saved["canonical_failed_gates"]
+        assert "fixture_sha256" in saved
+        assert saved["limit"] == 1
+        captured = capsys.readouterr()
+        assert "비정본(canonical=false)" in captured.err
 
 
 if __name__ == "__main__":
