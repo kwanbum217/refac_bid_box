@@ -1281,6 +1281,46 @@ def get_watcher_log_path(terminal: str) -> Path:
     return Path(tempfile.gettempdir()) / "orca_auto_approve" / f"{terminal}.log"
 
 
+def get_worker_meta_path(terminal: str) -> Path:
+    """터미널 핸들에 대응하는 워커 메타데이터 파일 경로를 반환합니다."""
+    return Path(tempfile.gettempdir()) / "orca_auto_approve" / f"{terminal}.meta.json"
+
+
+def read_worker_meta(terminal: str) -> dict[str, Any] | None:
+    """터미널 핸들에 대응하는 워커 메타데이터를 안전하게 읽습니다."""
+    path = get_worker_meta_path(terminal)
+    try:
+        if not path.exists():
+            return None
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        payload = json.loads(content)
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def write_worker_meta(terminal: str, meta: dict[str, Any]) -> None:
+    """터미널 핸들에 대응하는 워커 메타데이터를 저장합니다."""
+    path = get_worker_meta_path(terminal)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def remove_worker_meta(terminal: str) -> None:
+    """터미널 핸들에 대응하는 워커 메타데이터를 삭제합니다."""
+    path = get_worker_meta_path(terminal)
+    try:
+        if path.exists():
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def read_watcher_pid(path: Path) -> int | None:
     """PID 파일을 안전하게 읽어 유효한 정수 PID 를 반환합니다. 빈 파일이나 손상된 내용은 None."""
     try:
@@ -1369,7 +1409,7 @@ def start_auto_approve(terminal: str) -> tuple[bool, str]:
 
 
 def stop_auto_approve(terminal: str) -> tuple[bool, str]:
-    """워커 터미널에 붙은 권한 자동 승인 감시기를 명시적으로 중지하고 PID 파일을 정리합니다."""
+    """워커 터미널에 붙은 권한 자동 승인 감시기를 명시적으로 중지하고 PID 파일 및 메타데이터를 정리합니다."""
     pid_path = get_watcher_pid_path(terminal)
     pid = read_watcher_pid(pid_path)
     if pid is not None and watcher_alive(pid):
@@ -1402,13 +1442,82 @@ ACCEPT_EDITS_CLI_MARKERS: tuple[str, ...] = (
 )
 
 
-def classify_file_edit_auto_approve_support(text: str) -> tuple[bool, str]:
-    """터미널 화면 텍스트를 분석하여 shift+tab 이 파일 편집 자동 승인(accept-edits)으로 동작하는 CLI 인지 판정합니다.
+def detect_antigravity_mode(text: str | None) -> str:
+    """Antigravity CLI 터미널 화면의 하단 상태줄을 분석하여 현재 모드를 감지합니다.
 
-    - Cursor 계열은 shift+tab 이 Plan Mode(읽기 전용/편집 금지) 전환이므로 False 를 반환합니다.
-    - Antigravity 계열은 shift+tab 이 파일 편집 자동 승인 전환이므로 True 를 반환합니다.
-    - 판정할 수 없는 알 수 없는 CLI 는 fail-closed 원칙에 따라 False 를 반환합니다.
+    대화 본문(본문 텍스트나 사용자 지시문)에 'accept-edits' 또는 'plan' 단어가
+    포함되어도 오판하지 않도록 화면 하단(최근 5줄)의 각 상태줄 단위로 판정합니다.
+
+    반환값:
+    - 'accept-edits': 파일 편집 자동 승인 모드 활성화 상태
+    - 'plan': Plan Mode(읽기 전용 계획 수립 모드) 활성화 상태
+    - 'normal': 기본 대화 모드 (모드 표시 없음)
     """
+    if not text or not text.strip():
+        return "normal"
+
+    cleaned = strip_terminal_metadata_header(text)
+    lines = [line.strip().lower() for line in cleaned.splitlines() if line.strip()]
+    footer_lines = lines[-5:] if len(lines) >= 5 else lines
+
+    # 가장 최근 상태줄(아래쪽 줄)부터 역순으로 상태 표지 검사
+    for line in reversed(footer_lines):
+        # 1. accept-edits 모드 판정
+        if (
+            "accept-edits ·" in line
+            or "· accept-edits" in line
+            or "accept-edits mode" in line
+            or "file edits auto-approved" in line
+            or (
+                "accept-edits" in line
+                and any(
+                    m in line
+                    for m in (
+                        "gemini",
+                        "claude",
+                        "flash",
+                        "high",
+                        "medium",
+                        "low",
+                        "out of credits",
+                        "·",
+                    )
+                )
+            )
+        ):
+            return "accept-edits"
+
+        # 2. plan 모드 판정
+        if (
+            "plan ·" in line
+            or "· plan" in line
+            or "plan mode" in line
+            or "enable plan mode" in line
+            or "hit shift+tab to enable plan mode" in line
+            or (
+                "plan" in line
+                and any(
+                    m in line
+                    for m in (
+                        "gemini",
+                        "claude",
+                        "flash",
+                        "high",
+                        "medium",
+                        "low",
+                        "out of credits",
+                        "·",
+                    )
+                )
+            )
+        ):
+            return "plan"
+
+    return "normal"
+
+
+def _classify_from_screen_text(text: str | None) -> tuple[bool, str]:
+    """화면 문자열을 기반으로 CLI 종류를 판정합니다."""
     if not text or not text.strip():
         return False, "터미널 화면이 비어 있어 CLI 종류를 판정할 수 없습니다 (fail-closed)"
 
@@ -1418,8 +1527,6 @@ def classify_file_edit_auto_approve_support(text: str) -> tuple[bool, str]:
     has_agy = any(marker in lowered for marker in ACCEPT_EDITS_CLI_MARKERS)
     has_cursor = any(marker in lowered for marker in CURSOR_PLAN_MODE_MARKERS)
 
-    # 상태줄 고유 문자열이 확인되면 accept-edits 계열로 승인합니다. Cursor 마커가
-    # 함께 잡히는 것은 화면에 남은 대화 내용일 수 있으므로 상태줄 쪽을 우선합니다.
     if has_agy:
         return True, "Antigravity CLI 가 확인되어 파일 편집 자동 승인 모드 전환을 지원합니다"
 
@@ -1435,17 +1542,82 @@ def classify_file_edit_auto_approve_support(text: str) -> tuple[bool, str]:
     )
 
 
+def classify_file_edit_auto_approve_support(
+    text: str | None = None,
+    terminal: str | None = None,
+) -> tuple[bool, str]:
+    """워커의 CLI 종류를 판정하여 shift+tab 이 파일 편집 자동 승인(accept-edits)으로 동작하는지 여부를 반환합니다.
+
+    1. 터미널 핸들(terminal)이 주어지면 기동 시점에 기록된 메타데이터를 우선 신뢰합니다.
+    2. 기록된 메타데이터와 화면 판정 결과가 다르면 기록을 우선하되 경고를 출력합니다.
+    3. 메타데이터가 없으면 화면 문자열(text) 판정으로 fallback 합니다.
+    4. 판정할 수 없는 알 수 없는 CLI 는 fail-closed 원칙에 따라 False 를 반환합니다.
+    """
+    # 1. 메타데이터 기록 확인
+    meta = read_worker_meta(terminal) if terminal else None
+    if meta and isinstance(meta, dict):
+        cli_type = str(meta.get("cli_type") or meta.get("agent") or "").lower().strip()
+        launcher = str(meta.get("launcher") or "").lower().strip()
+        model = str(meta.get("model") or "").lower().strip()
+
+        is_agy_record = (
+            "antigravity" in cli_type
+            or "agy" in cli_type
+            or "agy" in launcher
+            or (not cli_type and "gemini" in model)
+        )
+        is_cursor_record = "cursor" in cli_type or (not cli_type and "cursor" in model)
+
+        record_supported: bool | None = None
+        record_reason: str | None = None
+
+        if is_cursor_record:
+            record_supported = False
+            record_reason = (
+                f"기록된 메타데이터(cli={cli_type or 'cursor'})에 따라 Cursor CLI 로 판정되어 "
+                "파일 편집 모드 전환을 전송하지 않습니다"
+            )
+        elif is_agy_record:
+            record_supported = True
+            record_reason = (
+                f"기록된 메타데이터(cli={cli_type or 'antigravity'})에 따라 Antigravity CLI 로 판정되어 "
+                "파일 편집 자동 승인 모드 전환을 지원합니다"
+            )
+        elif cli_type in ("opencode", "claude", "codex", "kimi"):
+            record_supported = False
+            record_reason = (
+                f"기록된 메타데이터(cli={cli_type})에 따라 shift+tab 을 accept-edits 로 "
+                "해석하는 CLI 가 아니므로 모드 전환을 전송하지 않습니다"
+            )
+
+        if record_supported is not None and record_reason is not None:
+            # 화면 문자열도 있으면 대조하여 불일치 시 경고 출력
+            if text and text.strip():
+                screen_supp, _ = _classify_from_screen_text(text)
+                if screen_supp != record_supported:
+                    sys.stderr.write(
+                        f"경고: CLI 화면 판정({screen_supp})과 메타데이터 기록({record_supported})이 "
+                        f"일치하지 않아 기록({cli_type or model})을 우선합니다.\n"
+                    )
+            return record_supported, record_reason
+
+    # 2. 메타데이터가 없으면 화면 문자열(text) 판정으로 fallback
+    return _classify_from_screen_text(text)
+
+
 def enable_file_edit_auto_approve(
     terminal: str,
     timeout: int = 30,
     force: bool = False,
-    screen_text: str | None = None,
+    max_attempts: int = 3,
 ) -> tuple[bool, str]:
-    """워커 터미널에 파일 편집 자동 승인 모드 전환 시퀀스(shift+tab, ESC [ Z)를 전송합니다.
+    """워커 터미널에 파일 편집 자동 승인 모드(accept-edits)를 안전하게 확보합니다.
 
-    Antigravity CLI 등은 파일 편집 시 확인 대화창을 띄우므로, shift+tab 시퀀스를
-    전송하여 accept-edits 모드로 자동 전환합니다 (--enter 는 붙이지 않습니다).
-    Cursor 등 Plan Mode 로 전환되는 CLI 나 미확인 CLI 에는 fail-closed 원칙에 따라 전송하지 않습니다.
+    현재 모드를 먼저 읽어 이미 accept-edits 면 아무 키도 보내지 않습니다.
+    plan 이나 normal 이면 accept-edits 가 될 때까지 필요한 횟수(최대 max_attempts 회)만
+    shift+tab(ESC [ Z) 시퀀스를 전송하고 매 전송 후 화면으로 모드를 재확인합니다.
+    force=True 지정 시 CLI 미식별 상태에서도 모드 확보를 시도하되 현재 모드 확인과 상한은 동일하게 준수합니다.
+    모드가 실제로 accept-edits 로 확인되지 않으면 성공으로 처리하지 않고 실패(False)를 반환합니다.
     """
     if os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1":
         return (
@@ -1453,37 +1625,60 @@ def enable_file_edit_auto_approve(
             "ORCA_DISABLE_AUTO_APPROVE=1 이므로 파일 편집 자동 승인 모드 전환을 건너뜁니다",
         )
 
+    text = terminal_read(terminal, timeout=timeout) or terminal_tail(terminal, timeout=timeout)
+
     if not force:
-        text = (
-            screen_text
-            if screen_text is not None
-            else (
-                terminal_read(terminal, timeout=timeout) or terminal_tail(terminal, timeout=timeout)
-            )
-        )
         if text is None:
             return (
                 False,
                 f"터미널 {terminal} 출력을 읽을 수 없어 파일 편집 모드 전환을 건너뜁니다 (fail-closed)",
             )
-        supported, reason = classify_file_edit_auto_approve_support(text)
+        supported, reason = classify_file_edit_auto_approve_support(text, terminal=terminal)
         if not supported:
             return False, reason
 
-    cmd = [
-        "orca",
-        "terminal",
-        "send",
-        "--terminal",
-        terminal,
-        "--text",
-        FILE_EDIT_AUTO_APPROVE_SEQUENCE,
-    ]
-    code, stdout, stderr = _run_command(cmd, timeout=timeout)
-    if code != 0:
-        err = (stderr or stdout).strip() or f"종료 코드 {code}"
-        return False, f"파일 편집 자동 승인 모드 전환 전송 실패: {err}"
-    return True, f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({terminal})"
+    if text is None:
+        text = ""
+
+    # 1. 현재 모드 확인: 이미 accept-edits 이면 키 전송 없이 즉시 반환
+    current_mode = detect_antigravity_mode(text)
+    if current_mode == "accept-edits":
+        return True, f"이미 파일 편집 자동 승인(accept-edits) 모드입니다 ({terminal})"
+
+    # 2. 실물 순환 전송 루프: 매 전송 후 화면에서 accept-edits 모드가 확인될 때만 성공 반환
+    attempts = 0
+    while attempts < max_attempts:
+        cmd = [
+            "orca",
+            "terminal",
+            "send",
+            "--terminal",
+            terminal,
+            "--text",
+            FILE_EDIT_AUTO_APPROVE_SEQUENCE,
+        ]
+        code, stdout, stderr = _run_command(cmd, timeout=timeout)
+        if code != 0:
+            err = (stderr or stdout).strip() or f"종료 코드 {code}"
+            return False, f"파일 편집 자동 승인 모드 전환 전송 실패: {err}"
+        attempts += 1
+
+        time.sleep(0.3)
+        after_text = terminal_read(terminal, timeout=timeout) or terminal_tail(
+            terminal, timeout=timeout
+        )
+        if after_text:
+            new_mode = detect_antigravity_mode(after_text)
+            if new_mode == "accept-edits":
+                return (
+                    True,
+                    f"파일 편집 자동 승인(accept-edits) 모드로 전환했습니다 ({terminal}, 시도 {attempts}회)",
+                )
+
+    return (
+        False,
+        f"파일 편집 자동 승인 모드 전환 시도 상한({max_attempts}회)을 초과했으나 accept-edits 모드가 확인되지 않았습니다 ({terminal})",
+    )
 
 
 def approve_trust_prompt(
@@ -1538,6 +1733,82 @@ def approve_trust_prompt(
         if time.monotonic() >= deadline:
             return "not_settled"
         time.sleep(max(1, poll_seconds))
+
+
+def prepare_worker_terminal(
+    terminal: str,
+    cli_type: str | None = None,
+    model: str | None = None,
+    launcher: str | None = None,
+    force_file_edit: bool = False,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    """워커 기동 후 준비 절차를 순서대로 수행하는 통합 상태 기계입니다.
+
+    1. 메타데이터 기록 (워커 종류, 모델, 런처 등)
+    2. 신뢰 확인 대화창 승인 (approve_trust_prompt)
+    3. 권한 자동 승인 감시기 부착 (start_auto_approve)
+    4. 파일 편집 자동 승인 모드 확보 (enable_file_edit_auto_approve)
+
+    직접 Dispatch 경로와 런처 기동 경로가 모두 이 함수를 공통으로 호출합니다.
+    """
+    # 1. 메타데이터 기록 갱신 (명시된 정보만 기록)
+    meta = read_worker_meta(terminal) or {}
+    if cli_type:
+        meta["cli_type"] = cli_type
+    if model:
+        meta["model"] = model
+    if launcher:
+        meta["launcher"] = launcher
+    if cli_type or model or launcher or not meta:
+        meta["terminal"] = terminal
+        meta["updated_at"] = time.time()
+        write_worker_meta(terminal, meta)
+
+    # 2. 신뢰 확인 대화창 승인
+    try:
+        trust_status = approve_trust_prompt(terminal, timeout=timeout)
+    except Exception:
+        trust_status = "unreadable"
+    trust_ok = trust_status in ("approved", "not_present")
+
+    # 3. 권한 자동 승인 감시기 부착
+    try:
+        approve_started, approve_detail = start_auto_approve(terminal)
+    except Exception as exc:
+        approve_started, approve_detail = False, f"자동 승인 감시기 기동 중 예외 발생 ({exc})"
+
+    # 4. 파일 편집 자동 승인 모드 확보 (shift+tab 안전 순환)
+    try:
+        mode_ok, mode_detail = enable_file_edit_auto_approve(
+            terminal,
+            timeout=timeout,
+            force=force_file_edit,
+        )
+    except Exception as exc:
+        mode_ok, mode_detail = False, f"파일 편집 자동 승인 모드 전환 중 예외 발생 ({exc})"
+
+    overall_ok = (trust_status != "still_present") and approve_started
+
+    return {
+        "terminal": terminal,
+        "ok": overall_ok,
+        "meta": meta,
+        "trust_prompt": {
+            "status": trust_status,
+            "ok": trust_ok,
+        },
+        "auto_approve_watcher": {
+            "status": "started" if approve_started else "failed",
+            "detail": approve_detail,
+            "ok": approve_started,
+        },
+        "file_edit_auto_approve": {
+            "status": "enabled" if mode_ok else "skipped_or_failed",
+            "detail": mode_detail,
+            "ok": mode_ok,
+        },
+    }
 
 
 def resolve_dispatch_id(task_id: str, timeout: int = 30) -> str | None:
@@ -2210,6 +2481,93 @@ def cmd_create(args: argparse.Namespace) -> int:
     return 0
 
 
+def _extract_preamble(stdout: str) -> str | None:
+    """orca orchestration dispatch --return-preamble 결과 JSON 에서 preamble 을 추출합니다."""
+    if not stdout or not stdout.strip():
+        return None
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    res = payload.get("result")
+    if isinstance(res, dict) and "preamble" in res:
+        return str(res["preamble"])
+    if "preamble" in payload:
+        return str(payload["preamble"])
+    return None
+
+
+def dispatch_with_fallback(
+    task_id: str,
+    terminal: str,
+    run_id: str | None = None,
+    as_json: bool = False,
+    timeout: int = 30,
+) -> tuple[int, str, str, list[str], dict[str, Any]]:
+    """orca orchestration dispatch 를 실행하되, --inject 가 agent_prompt_blocked 로 실패하면
+    --return-preamble 로 지시문을 받아 terminal send 로 직접 투입하는 대체 경로를 실행합니다.
+    """
+    code, stdout, stderr, executed_cmd = dispatch_worker(
+        task_id=task_id,
+        to_handle=terminal,
+        run_id=run_id,
+        inject=True,
+        as_json=as_json,
+        timeout=timeout,
+    )
+
+    fallback_info: dict[str, Any] = {
+        "fallback_used": False,
+        "reason": None,
+    }
+
+    err_msg = stderr.strip() or _extract_cli_error(stdout) or ""
+    is_blocked = (
+        "agent_prompt_blocked" in err_msg.lower()
+        or "agent_prompt_blocked" in (stdout or "").lower()
+        or "agent_prompt_blocked" in (stderr or "").lower()
+    )
+
+    if (code != 0 or not _launch_succeeded(stdout, expect_json=as_json)) and is_blocked:
+        sys.stderr.write(
+            "경고: orca orchestration dispatch --inject 가 agent_prompt_blocked 로 실패했습니다. "
+            "--return-preamble + terminal send 대체 경로로 전환합니다.\n"
+        )
+        code_p, stdout_p, stderr_p, executed_cmd_p = dispatch_worker(
+            task_id=task_id,
+            to_handle=terminal,
+            run_id=run_id,
+            return_preamble=True,
+            as_json=True,
+            timeout=timeout,
+        )
+        if code_p == 0 and _launch_succeeded(stdout_p, expect_json=True):
+            preamble = _extract_preamble(stdout_p)
+            if preamble:
+                send_code, send_out, send_err = terminal_send(terminal, preamble, timeout=timeout)
+                if send_code != 0:
+                    fallback_info["error"] = f"terminal_send_failed: {send_err or send_out}"
+                    return send_code, send_out, send_err, executed_cmd_p, fallback_info
+
+                time.sleep(1.0)
+                tail_text = terminal_tail(terminal, timeout=timeout) or ""
+                if agent_prompt_is_input_caret(tail_text):
+                    terminal_send(terminal, "", timeout=timeout)
+
+                fallback_info["fallback_used"] = True
+                fallback_info["reason"] = "agent_prompt_blocked"
+                fallback_info["preamble_char_len"] = len(preamble)
+                return 0, stdout_p, "", executed_cmd_p, fallback_info
+            else:
+                fallback_info["error"] = "preamble_extraction_failed"
+        else:
+            fallback_info["error"] = f"return_preamble_failed: {stderr_p or stdout_p}"
+
+    return code, stdout, stderr, executed_cmd, fallback_info
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
     intent_path = Path(args.intent)
     if not intent_path.exists():
@@ -2340,14 +2698,22 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     # 없으면 worker-start 로 새 워커를 감독 기동한다. worker-start --agent 는
     # claude, codex, cursor 만 받으므로 Antigravity 계열은 터미널 부착 경로만 쓸 수 있다.
     delivery_unverified: list[str] = []
-    # Dispatch 전 관찰은 최종 실패 후보가 아닙니다. 사후 확인 결과와 함께
-    # 판정하기 위해 따로 모읍니다.
     pre_dispatch_warnings: list[str] = []
     dispatch_started_at = time.time()
+    fallback_info: dict[str, Any] = {"fallback_used": False}
+
     if args.terminal:
-        # 신뢰 확인 대화창을 먼저 치운다. 떠 있는 상태로 Dispatch 하면 주입한
-        # 지시와 Capsule 고지문이 대화창에 먹혀 워커가 시작하지 못한다.
-        trust_status = approve_trust_prompt(args.terminal)
+        detected_cli = args.agent or (
+            "antigravity" if (args.model and "gemini" in args.model.lower()) else None
+        )
+        prep = prepare_worker_terminal(
+            terminal=args.terminal,
+            cli_type=detected_cli,
+            model=args.model,
+            force_file_edit=getattr(args, "enable_file_edit_auto_approve", False),
+        )
+
+        trust_status = prep["trust_prompt"]["status"]
         if trust_status == "approved":
             sys.stderr.write("신뢰 확인 대화창을 승인했습니다.\n")
         elif trust_status == "still_present":
@@ -2358,9 +2724,6 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             )
             return 2
         elif trust_status in ("unreadable", "not_settled"):
-            # Dispatch 전의 준비 상태만으로 전달 실패를 단정하면 오탐입니다.
-            # CLI 가 아직 뜨는 중이어도 주입은 큐에 남아 정상 도달합니다.
-            # 실제 도달 여부는 Dispatch 이후에 화면으로 확인합니다.
             pre_dispatch_warnings.append(
                 "trust_prompt_unreadable"
                 if trust_status == "unreadable"
@@ -2371,40 +2734,32 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 "Dispatch 이후 도달을 확인합니다.\n"
             )
 
+        if prep["auto_approve_watcher"]["ok"]:
+            sys.stderr.write(
+                f"권한 자동 승인 감시기를 붙였습니다. 로그: {prep['auto_approve_watcher']['detail']}\n"
+            )
+        else:
+            sys.stderr.write(f"경고: {prep['auto_approve_watcher']['detail']}\n")
+
+        if prep["file_edit_auto_approve"]["ok"]:
+            sys.stderr.write(f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({args.terminal}).\n")
+        else:
+            sys.stderr.write(
+                f"파일 편집 자동 승인 모드 전환 건너뜀: {prep['file_edit_auto_approve']['detail']}\n"
+            )
+
         sys.stderr.write(f"터미널 부착 Dispatch 중... (task={task_id}, terminal={args.terminal})\n")
-        code, stdout, stderr, executed_cmd = dispatch_worker(
+        code, stdout, stderr, executed_cmd, fallback_info = dispatch_with_fallback(
             task_id=task_id,
-            to_handle=args.terminal,
+            terminal=args.terminal,
             run_id=args.run_id if args.run_id != DEFAULT_RUN_ID else None,
-            inject=True,
             as_json=args.json,
         )
         launch_cmd = shlex.join(executed_cmd)
-
-        # 권한 프롬프트 자동 승인 감시기는 선택이 아니라 기동 절차의 일부입니다.
-        # 붙이지 않으면 워커가 셸 명령 승인 대화창마다 멈추고, 감시 도구는 이를
-        # 진행으로 오판할 수 있습니다.
-        approve_started, approve_detail = start_auto_approve(args.terminal)
-        if approve_started:
-            sys.stderr.write(f"권한 자동 승인 감시기를 붙였습니다. 로그: {approve_detail}\n")
-        else:
+        if fallback_info.get("fallback_used"):
             sys.stderr.write(
-                f"경고: {approve_detail}. 워커가 권한 대화창에서 멈출 수 있으니 "
-                f"python3 scripts/orca_auto_approve.py {args.terminal} 를 직접 띄우십시오.\n"
+                "안내: --inject 실패로 --return-preamble 대체 경로를 통해 지시를 투입했습니다.\n"
             )
-
-        # 파일 편집 자동 승인 모드 전환 (shift+tab, ESC [ Z) 전송
-        force_mode = getattr(args, "enable_file_edit_auto_approve", False)
-        try:
-            mode_ok, mode_detail = enable_file_edit_auto_approve(args.terminal, force=force_mode)
-            if mode_ok:
-                sys.stderr.write(
-                    f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({args.terminal}).\n"
-                )
-            else:
-                sys.stderr.write(f"파일 편집 자동 승인 모드 전환 건너뜀: {mode_detail}\n")
-        except Exception as exc:
-            sys.stderr.write(f"경고: 파일 편집 자동 승인 모드 전환 중 예외 발생 ({exc}).\n")
     else:
         if not args.agent:
             sys.stderr.write(
@@ -2490,6 +2845,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             payload["pre_dispatch_warnings"] = pre_dispatch_warnings
             payload["delivery_check"] = delivery_check
             payload["delivery_unverified"] = delivery_unverified
+            payload["dispatch_fallback"] = fallback_info
             payload["reliability_tracking"] = reliability_tracking
             payload["exit_code"] = exit_code
             print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -2539,6 +2895,31 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_prepare_worker(args: argparse.Namespace) -> int:
+    """워커 터미널의 준비 절차(신뢰 대화창, 감시기 부착, 파일 편집 승인)를 실행합니다."""
+    prep = prepare_worker_terminal(
+        terminal=args.terminal,
+        cli_type=args.cli_type,
+        model=args.model,
+        launcher=args.launcher,
+        force_file_edit=getattr(args, "enable_file_edit_auto_approve", False),
+    )
+    if args.json:
+        print(json.dumps(prep, ensure_ascii=False, indent=2))
+    else:
+        print(f"워커 터미널 준비 결과 ({args.terminal}):")
+        print(f"  - 신뢰 대화창: {prep['trust_prompt']['status']}")
+        print(
+            f"  - 승인 감시기: {prep['auto_approve_watcher']['status']} ({prep['auto_approve_watcher']['detail']})"
+        )
+        print(
+            f"  - 파일 편집 승인: {prep['file_edit_auto_approve']['status']} ({prep['file_edit_auto_approve']['detail']})"
+        )
+        print(f"  - 종합 상태: {'성공' if prep['ok'] else '실패/주의'}")
+
+    return 0 if prep["ok"] else 1
+
+
 def cmd_finalize(args: argparse.Namespace) -> int:
     report_path = Path(args.report)
     capsule_path = Path(args.capsule)
@@ -2574,6 +2955,8 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         allow_truncated_diff=args.allow_truncated_diff,
         terminal=terminal,
     )
+    if terminal:
+        remove_worker_meta(terminal)
     try:
         result["reliability"] = _record_finalize_reliability(capsule_path, result)
     except Exception as exc:
@@ -2650,6 +3033,24 @@ def _build_parser() -> argparse.ArgumentParser:
     exp.add_argument("--task-id", help="Task ID (미지정 시 자동 생성)")
     exp.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Run ID")
     exp.add_argument("--json", action="store_true", help="JSON 출력")
+
+    # prepare-worker
+    prp = sub.add_parser(
+        "prepare-worker",
+        help="워커 터미널 준비 절차(신뢰 대화창, 승인 감시기, accept-edits) 실행",
+    )
+    prp.add_argument("--terminal", required=True, help="워커 터미널 핸들")
+    prp.add_argument(
+        "--cli-type", help="CLI 종류 (antigravity, cursor, opencode, claude, codex, kimi)"
+    )
+    prp.add_argument("--model", help="워커 모델 ID")
+    prp.add_argument("--launcher", help="런처 스크립트/방법")
+    prp.add_argument(
+        "--enable-file-edit-auto-approve",
+        action="store_true",
+        help="CLI 식별 여부와 무관하게 accept-edits 모드 확보를 시도합니다.",
+    )
+    prp.add_argument("--json", action="store_true", help="JSON 출력")
 
     # dispatch
     dsp = sub.add_parser("dispatch", help="Task Intent -> Capsule -> Dispatch 파이프라인")
@@ -2760,6 +3161,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "expand":
         return cmd_expand(args)
+    if args.command in ("prepare-worker", "prepare"):
+        return cmd_prepare_worker(args)
     if args.command == "create":
         return cmd_create(args)
     if args.command == "dispatch":

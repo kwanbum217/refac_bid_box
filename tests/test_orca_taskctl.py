@@ -4,6 +4,7 @@ import json
 import shlex
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -29,6 +30,7 @@ from scripts.orca_taskctl import (
     check_write_concurrency,
     classify_file_edit_auto_approve_support,
     create_worktree,
+    detect_antigravity_mode,
     dispatch_worker,
     enable_file_edit_auto_approve,
     expand_intent_to_capsule,
@@ -36,6 +38,9 @@ from scripts.orca_taskctl import (
     list_dispatched_tasks,
     main,
     parse_intent,
+    prepare_worker_terminal,
+    read_worker_meta,
+    remove_worker_meta,
     resolve_run_id,
     strip_terminal_metadata_header,
     task_has_write_scope,
@@ -43,6 +48,7 @@ from scripts.orca_taskctl import (
     validate_contained_path,
     worker_start,
     worktree_relative_capsule_path,
+    write_worker_meta,
 )
 from scripts.validate_review_report import parse_checklist
 
@@ -3622,14 +3628,27 @@ def test_enable_file_edit_auto_approve_screens(monkeypatch: pytest.MonkeyPatch):
 
     # (a) Cursor 화면 -> 전송하지 않음
     cursor_text = "Cursor Agent\nTip: Hit shift+tab to enable Plan Mode"
-    ok, msg = enable_file_edit_auto_approve("term_cursor", screen_text=cursor_text)
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_read", lambda *a, **k: cursor_text)
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_tail", lambda *a, **k: None)
+    ok, msg = enable_file_edit_auto_approve("term_cursor")
     assert ok is False
     assert "Plan Mode" in msg
     assert len(executed_cmds) == 0
 
     # (b) Antigravity 화면 -> 전송함 (shift+tab, --enter 없음)
-    agy_text = "Antigravity CLI\nshift+tab to auto-approve file edits\n>"
-    ok, msg = enable_file_edit_auto_approve("term_agy", screen_text=agy_text)
+    agy_screens = [
+        "Antigravity CLI\nshift+tab to auto-approve file edits\nGemini 3.7 Flash · high\n>",
+        "Antigravity CLI\naccept-edits · Gemini 3.7 Flash · high\n>",
+    ]
+    agy_idx = [0]
+
+    def mock_agy_read(*a, **k):
+        curr = agy_screens[min(agy_idx[0], len(agy_screens) - 1)]
+        agy_idx[0] += 1
+        return curr
+
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_read", mock_agy_read)
+    ok, msg = enable_file_edit_auto_approve("term_agy")
     assert ok is True
     assert "term_agy" in msg
     assert len(executed_cmds) == 1
@@ -3649,14 +3668,27 @@ def test_enable_file_edit_auto_approve_screens(monkeypatch: pytest.MonkeyPatch):
 
     # (c) 판정 불가 화면 -> 전송하지 않음 (fail-closed)
     executed_cmds.clear()
-    ok, msg = enable_file_edit_auto_approve("term_unknown", screen_text="bash-5.2$ >")
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_read", lambda *a, **k: "bash-5.2$ >")
+    ok, msg = enable_file_edit_auto_approve("term_unknown")
     assert ok is False
     assert "fail-closed" in msg
     assert len(executed_cmds) == 0
 
-    # (d) 판정 불가 화면이어도 force=True 이면 전송함 (opt-in)
+    # (d) 판정 불가 화면이어도 force=True 이면 전송하여 accept-edits 가 되면 성공 (opt-in)
     executed_cmds.clear()
-    ok, msg = enable_file_edit_auto_approve("term_unknown", force=True, screen_text="bash-5.2$ >")
+    force_screens = [
+        "bash-5.2$ >",
+        "Antigravity CLI\naccept-edits · Gemini 3.7 Flash\n>",
+    ]
+    force_idx = [0]
+
+    def mock_force_read(*a, **k):
+        curr = force_screens[min(force_idx[0], len(force_screens) - 1)]
+        force_idx[0] += 1
+        return curr
+
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_read", mock_force_read)
+    ok, msg = enable_file_edit_auto_approve("term_unknown", force=True)
     assert ok is True
     assert len(executed_cmds) == 1
 
@@ -3671,10 +3703,13 @@ def test_enable_file_edit_auto_approve_disabled_by_env(monkeypatch: pytest.Monke
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
     monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
-
-    ok, msg = enable_file_edit_auto_approve(
-        "term_target_123", screen_text="Antigravity CLI\nshift+tab to auto-approve file edits\n>"
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.terminal_read",
+        lambda *a, **k: "Antigravity CLI\nshift+tab to auto-approve file edits\n>",
     )
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_tail", lambda *a, **k: None)
+
+    ok, msg = enable_file_edit_auto_approve("term_target_123")
     assert ok is False
     assert "ORCA_DISABLE_AUTO_APPROVE=1" in msg
     assert len(executed_cmds) == 0
@@ -3695,9 +3730,23 @@ def test_dispatch_calls_auto_approve_and_mode_switch_on_antigravity(
         return 0, json.dumps({"ok": True}), ""
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    agy_screens = [
+        "Antigravity CLI\nshift+tab to auto-approve file edits\nGemini 3.7 Flash · high\n>",
+        "Antigravity CLI\naccept-edits · Gemini 3.7 Flash · high\n>",
+    ]
+    agy_idx = [0]
+
+    def mock_agy_read(*a, **k):
+        curr = agy_screens[min(agy_idx[0], len(agy_screens) - 1)]
+        agy_idx[0] += 1
+        return curr
+
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_read", mock_agy_read)
     monkeypatch.setattr(
         "scripts.orca_taskctl.terminal_tail",
-        lambda handle, timeout=30: "Antigravity CLI\nshift+tab to auto-approve file edits\n>",
+        lambda handle, timeout=30: (
+            "Antigravity CLI\nshift+tab to auto-approve file edits\nGemini 3.7 Flash · high\n>"
+        ),
     )
     monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
     monkeypatch.setattr(
@@ -3976,3 +4025,417 @@ def test_dispatch_handles_mode_switch_failure_and_exception_gracefully(
     assert code == 0
     captured = capsys.readouterr()
     assert "심각한 IPC 예외" in captured.err
+
+
+def test_detect_antigravity_mode_scoped_to_statusline():
+    """대화 본문에 'accept-edits' 가 언급되어도 하단 상태줄이 normal/plan 이면 오판하지 않음을 검증."""
+    # 1. 대화 본문에 accept-edits 가 있지만 하단 상태줄은 일반 모드
+    body_with_polluted_text = """
+Antigravity CLI
+User: Please make sure accept-edits is configured properly in scripts/orca_taskctl.py.
+Assistant: I am checking the accept-edits implementation.
+Gemini 3.7 Flash · high
+>
+"""
+    assert detect_antigravity_mode(body_with_polluted_text) == "normal"
+
+    # 2. 대화 본문에 accept-edits 가 있지만 하단 상태줄은 plan 모드
+    body_with_plan_footer = """
+Antigravity CLI
+User: Why did accept-edits fail?
+Assistant: It switched to plan mode.
+plan · Gemini 3.7 Flash · high
+>
+"""
+    assert detect_antigravity_mode(body_with_plan_footer) == "plan"
+
+    # 3. 하단 상태줄에 실제 accept-edits 가 뜬 경우
+    body_with_actual_accept_edits = """
+Antigravity CLI
+User: Hello
+Assistant: Ready
+accept-edits · Gemini 3.7 Flash · high · AI: Out of credits
+>
+"""
+    assert detect_antigravity_mode(body_with_actual_accept_edits) == "accept-edits"
+
+
+def test_enable_file_edit_already_accept_edits_no_key_sent(monkeypatch: pytest.MonkeyPatch):
+    """(a) 이미 accept-edits 인 화면에는 키를 전송하지 않고 성공 반환함을 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, "ok", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    agy_active_screen = (
+        "Antigravity CLI\naccept-edits · Gemini 3.7 Flash · high · AI: Out of credits\n>"
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_read", lambda *a, **k: agy_active_screen)
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_tail", lambda *a, **k: None)
+
+    ok, msg = enable_file_edit_auto_approve("term_already_active")
+    assert ok is True
+    assert "이미" in msg
+    assert "accept-edits" in msg
+    assert len(executed_cmds) == 0
+
+
+def test_enable_file_edit_plan_mode_restores_to_accept_edits(monkeypatch: pytest.MonkeyPatch):
+    """(b) plan 모드(읽기 전용)로 빠진 워커에 shift+tab 을 순환 전송하여 accept-edits 로 복구함을 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, "ok", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    screens = [
+        "Antigravity CLI\nplan · Gemini 3.7 Flash · high\n>",
+        "Antigravity CLI\nGemini 3.7 Flash · high\n>",
+        "Antigravity CLI\naccept-edits · Gemini 3.7 Flash · high\n>",
+    ]
+    call_idx = [0]
+
+    def mock_read(terminal, timeout=30):
+        curr = screens[min(call_idx[0], len(screens) - 1)]
+        call_idx[0] += 1
+        return curr
+
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_read", mock_read)
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_tail", lambda *a, **k: None)
+
+    ok, msg = enable_file_edit_auto_approve("term_plan_recovery")
+    assert ok is True
+    assert "accept-edits" in msg
+    assert len(executed_cmds) == 2
+    for cmd in executed_cmds:
+        assert cmd[cmd.index("--text") + 1] == FILE_EDIT_AUTO_APPROVE_SEQUENCE
+
+
+def test_enable_file_edit_max_attempts_no_infinite_loop(monkeypatch: pytest.MonkeyPatch):
+    """(c) 화면이 accept-edits 로 전환되지 않아도 상한(3회)에서 멈추고 무한 순환하지 않음을 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    executed_cmds: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        executed_cmds.append(cmd)
+        return 0, "ok", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    screens = [
+        "Antigravity CLI\nGemini 3.7 Flash\n>",
+        "Antigravity CLI\nplan · Gemini 3.7 Flash\n>",
+        "Antigravity CLI\nplan · Gemini 3.7 Flash\n>",
+        "Antigravity CLI\nplan · Gemini 3.7 Flash\n>",
+    ]
+    call_idx = [0]
+
+    def mock_read(t, timeout=30):
+        curr = screens[min(call_idx[0], len(screens) - 1)]
+        call_idx[0] += 1
+        return curr
+
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_read", mock_read)
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_tail", lambda *a, **k: None)
+
+    ok, msg = enable_file_edit_auto_approve("term_stuck", max_attempts=3)
+    assert ok is False
+    assert "상한(3회)을 초과" in msg
+    assert len(executed_cmds) == 3
+
+
+def test_classify_uses_recorded_meta_over_screen(capsys: pytest.CaptureFixture):
+    """(d) 기동 시점에 기록된 CLI 종류가 화면 판정보다 우선함을 검증."""
+    terminal_handle = "term_recorded_agy"
+    meta = {
+        "terminal": terminal_handle,
+        "cli_type": "antigravity",
+        "model": "gemini-3.7-flash-medium",
+        "launcher": "orca_agy_launch",
+    }
+    write_worker_meta(terminal_handle, meta)
+
+    try:
+        screen_with_cursor_prompt = "Cursor Agent\nTip: Hit shift+tab to enable Plan Mode"
+        supported, reason = classify_file_edit_auto_approve_support(
+            text=screen_with_cursor_prompt,
+            terminal=terminal_handle,
+        )
+        assert supported is True
+        assert "Antigravity CLI" in reason
+
+        captured = capsys.readouterr()
+        assert "메타데이터 기록" in captured.err
+        assert "우선합니다" in captured.err
+    finally:
+        remove_worker_meta(terminal_handle)
+
+
+def test_classify_falls_back_to_screen_when_no_record():
+    """(e) 메타데이터 기록이 없으면 화면 문자열 판정으로 정상 fallback 함을 검증."""
+    terminal_handle = "term_unrecorded_999"
+    remove_worker_meta(terminal_handle)
+
+    agy_screen = "Antigravity CLI\nshift+tab to auto-approve file edits\n>"
+    supp_agy, reason_agy = classify_file_edit_auto_approve_support(
+        text=agy_screen,
+        terminal=terminal_handle,
+    )
+    assert supp_agy is True
+    assert "Antigravity CLI" in reason_agy
+
+    cursor_screen = "Cursor Agent\nTip: Hit shift+tab to enable Plan Mode"
+    supp_cur, reason_cur = classify_file_edit_auto_approve_support(
+        text=cursor_screen,
+        terminal=terminal_handle,
+    )
+    assert supp_cur is False
+    assert "Plan Mode" in reason_cur
+
+
+def test_dispatch_fallback_to_preamble_on_inject_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """(f) --inject 가 agent_prompt_blocked 로 실패하면 --return-preamble 대체 경로로 지시를 전달함을 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.enable_file_edit_auto_approve",
+        lambda t, timeout=30, force=False: (True, "accept-edits"),
+    )
+
+    dispatched_calls: list[dict[str, Any]] = []
+    sent_texts: list[str] = []
+
+    def mock_dispatch_worker(
+        task_id,
+        to_handle=None,
+        run_id=None,
+        inject=False,
+        return_preamble=False,
+        as_json=False,
+        timeout=30,
+        dry_run=False,
+        from_handle=None,
+    ):
+        dispatched_calls.append({"inject": inject, "return_preamble": return_preamble})
+        if inject:
+            return (
+                1,
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": {"message": "Agent startup blocked: agent_prompt_blocked"},
+                    }
+                ),
+                "agent_prompt_blocked",
+                ["orca", "orchestration", "dispatch", "--inject"],
+            )
+        if return_preamble:
+            preamble_content = f"=== TASK ===\nExecute task {task_id}\n(전달 확인 표지: ORCA_DELIVERY_PROBE_testprobe123 - 별도 조치 불필요)"
+            return (
+                0,
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": {"preamble": preamble_content, "dispatch": {"id": "ctx_123"}},
+                    }
+                ),
+                "",
+                ["orca", "orchestration", "dispatch", "--return-preamble"],
+            )
+        return 0, json.dumps({"ok": True}), "", ["orca", "orchestration", "dispatch"]
+
+    def mock_terminal_send(handle, text, timeout=30):
+        sent_texts.append(text)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_send", mock_terminal_send)
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_tail", lambda *a, **k: "Working on task...")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered",
+        lambda handle, markers, timeout=30, wait_seconds=30, poll_seconds=1.0: "delivered",
+    )
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_fallback_test",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "agent_prompt_blocked 로 실패했습니다" in captured.err
+    assert "--return-preamble + terminal send 대체 경로로 전환합니다" in captured.err
+
+    assert len(dispatched_calls) == 2
+    assert dispatched_calls[0]["inject"] is True
+    assert dispatched_calls[1]["return_preamble"] is True
+    assert any("=== TASK ===" in t for t in sent_texts)
+
+
+def test_dispatch_fallback_fails_if_delivery_unverified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """(g) 대체 경로에서 지시 도달 확인이 실패하면 성공으로 처리하지 않고 종료 코드 3을 반환함을 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.enable_file_edit_auto_approve",
+        lambda t, timeout=30, force=False: (True, "accept-edits"),
+    )
+
+    def mock_dispatch_worker(
+        task_id,
+        to_handle=None,
+        run_id=None,
+        inject=False,
+        return_preamble=False,
+        as_json=False,
+        timeout=30,
+        dry_run=False,
+        from_handle=None,
+    ):
+        if inject:
+            return (
+                1,
+                json.dumps({"ok": False, "error": {"message": "agent_prompt_blocked"}}),
+                "agent_prompt_blocked",
+                ["orca", "dispatch"],
+            )
+        if return_preamble:
+            return (
+                0,
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": {"preamble": "task prompt", "dispatch": {"id": "ctx_123"}},
+                    }
+                ),
+                "",
+                ["orca", "dispatch"],
+            )
+        return 0, json.dumps({"ok": True}), "", ["orca", "dispatch"]
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_send", lambda *a, **k: (0, "ok", ""))
+    monkeypatch.setattr("scripts.orca_taskctl.terminal_tail", lambda *a, **k: "some output")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered",
+        lambda handle, markers, timeout=30, wait_seconds=30, poll_seconds=1.0: "not_observed",
+    )
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_fallback_unverified",
+        ]
+    )
+    assert code == 3
+    captured = capsys.readouterr()
+    assert "지시 도달을 확인하지 못했습니다" in captured.err
+
+
+def test_prepare_worker_terminal_unified(monkeypatch: pytest.MonkeyPatch):
+    """런처 경로와 직접 Dispatch 경로가 공통으로 타는 prepare_worker_terminal 상태 기계 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    terminal_handle = "term_prep_unified"
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.approve_trust_prompt", lambda t, timeout=30: "approved"
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/watcher.log")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.enable_file_edit_auto_approve",
+        lambda t, timeout=30, force=False: (True, "accept-edits 활성화 완료"),
+    )
+
+    result = prepare_worker_terminal(
+        terminal=terminal_handle,
+        cli_type="antigravity",
+        model="gemini-3.7-flash-medium",
+        launcher="orca_agy_launch",
+    )
+
+    assert result["terminal"] == terminal_handle
+    assert result["ok"] is True
+    assert result["trust_prompt"]["status"] == "approved"
+    assert result["auto_approve_watcher"]["status"] == "started"
+    assert result["file_edit_auto_approve"]["status"] == "enabled"
+
+    meta = read_worker_meta(terminal_handle)
+    assert meta is not None
+    assert meta["cli_type"] == "antigravity"
+    assert meta["model"] == "gemini-3.7-flash-medium"
+
+    remove_worker_meta(terminal_handle)
+
+
+def test_cmd_prepare_worker_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+    """prepare-worker CLI 서브커맨드 동작 검증."""
+    terminal_handle = "term_cli_prep"
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.prepare_worker_terminal",
+        lambda terminal, cli_type=None, model=None, launcher=None, force_file_edit=False, timeout=30: {
+            "terminal": terminal,
+            "ok": True,
+            "trust_prompt": {"status": "not_present", "ok": True},
+            "auto_approve_watcher": {"status": "started", "detail": "/tmp/log", "ok": True},
+            "file_edit_auto_approve": {"status": "enabled", "detail": "accept-edits", "ok": True},
+        },
+    )
+
+    code = main(
+        [
+            "prepare-worker",
+            "--terminal",
+            terminal_handle,
+            "--cli-type",
+            "antigravity",
+            "--model",
+            "gemini-3.7-flash-medium",
+            "--json",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["ok"] is True
+    assert data["terminal"] == terminal_handle
