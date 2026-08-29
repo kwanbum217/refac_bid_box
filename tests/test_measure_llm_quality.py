@@ -22,10 +22,13 @@ from scripts.measure_llm_quality import (
     CANONICAL_FIXTURE_HASHES,
     _compare_known_identity,
     _identity_field_known,
+    _percentile,
     build_provenance,
     compute_file_sha256,
+    compute_summary,
     evaluate_canonical,
     is_refusal,
+    is_retrieval_miss,
     main,
     numeric_fact_found,
     retrieved_ids,
@@ -315,8 +318,309 @@ class TestScoreItem:
 
         assert result["citation_present"] is None
 
+    def test_retrieval_miss_true_when_expected_evidence_not_found(self):
+        """기대 근거가 지정되어 있는데 recall 이 0 이면 retrieval_miss=True."""
+        item = self.make_item(expected_evidence_ids=["bid_10015927"])
+        payload = self.make_payload("답변입니다.", retrieved=[{"id": "bid_9999999"}])
+        result = score_item(item, payload)
 
-class TestValidateBaseUrlPort:
+        assert result["retrieval_miss"] is True
+        assert result["evidence_recall"] == 0.0
+
+    def test_retrieval_miss_false_when_no_expected_evidence(self):
+        """기대 근거가 없는 문항은 검색 실패가 아님 (retrieval_miss=False)."""
+        item = self.make_item(expected_evidence_ids=[])
+        payload = self.make_payload("답변입니다.", retrieved=[])
+        result = score_item(item, payload)
+
+        assert result["retrieval_miss"] is False
+        assert result["evidence_recall"] is None
+
+    def test_retrieval_miss_false_when_evidence_found(self):
+        """기대 근거를 검색한 경우 retrieval_miss=False."""
+        item = self.make_item(expected_evidence_ids=["bid_10015927"])
+        payload = self.make_payload("답변입니다.", retrieved=[{"id": "bid_10015927"}])
+        result = score_item(item, payload)
+
+        assert result["retrieval_miss"] is False
+        assert result["evidence_recall"] == 1.0
+
+    def test_retrieval_miss_false_when_partial_evidence_found(self):
+        """기대 근거 중 일부라도 검색된 경우 recall > 0 이므로 retrieval_miss=False."""
+        item = self.make_item(expected_evidence_ids=["bid_1", "bid_2"])
+        payload = self.make_payload("답변입니다.", retrieved=[{"id": "bid_1"}])
+        result = score_item(item, payload)
+
+        assert result["retrieval_miss"] is False
+        assert result["evidence_recall"] == 0.5
+
+
+class TestComputeSummary:
+    """compute_summary 순수 집계 함수 단위 테스트."""
+
+    def test_is_retrieval_miss_helper(self):
+        """is_retrieval_miss 헬퍼가 신규 및 레거시 레코드를 올바르게 판정하는지 검증."""
+        # 신규 필드가 있는 경우
+        assert is_retrieval_miss({"retrieval_miss": True}) is True
+        assert is_retrieval_miss({"retrieval_miss": False}) is False
+
+        # 레거시 레코드 (retrieval_miss 키가 없는 경우 fallback 계산)
+        assert (
+            is_retrieval_miss({"expected_evidence_ids": ["bid_1"], "evidence_recall": 0.0}) is True
+        )
+        assert is_retrieval_miss({"expected_evidence_ids": ["bid_1"], "evidence_hit": []}) is True
+        assert is_retrieval_miss({"expected_evidence_ids": [], "evidence_recall": None}) is False
+        assert (
+            is_retrieval_miss({"expected_evidence_ids": ["bid_1"], "evidence_recall": 1.0}) is False
+        )
+
+    def test_percentile_helper(self):
+        """_percentile 헬퍼 단위 테스트."""
+        assert _percentile([], 50) == 0.0
+        assert _percentile([10.0], 50) == 10.0
+        values = [10.0, 20.0, 30.0, 40.0, 50.0]
+        assert _percentile(values, 0) == 10.0
+        assert _percentile(values, 50) == 30.0
+        assert _percentile(values, 100) == 50.0
+
+    def test_summary_numeric_and_recall_not_excluded(self):
+        """(f) numeric 과 recall 은 검색 실패(retrieval_miss)를 제외하지 않고 가감 없이 집계."""
+        r1 = {
+            "id": "q01",
+            "ok": True,
+            "elapsed_ms": 100.0,
+            "retrieval_miss": False,
+            "expected_evidence_ids": ["bid_1"],
+            "evidence_recall": 1.0,
+            "numeric_facts": [{"found": True}, {"found": True}],
+        }
+        r2 = {
+            "id": "q02",
+            "ok": True,
+            "elapsed_ms": 200.0,
+            "retrieval_miss": True,
+            "expected_evidence_ids": ["bid_2"],
+            "evidence_recall": 0.0,
+            "numeric_facts": [{"found": False}, {"found": False}],
+        }
+        summary = compute_summary([r1, r2])
+
+        # numeric 정확도: 검색 실패 q02 가 분모에 포함되어 2/4 (50%)
+        assert summary["numeric_accuracy"]["passed"] == 2
+        assert summary["numeric_accuracy"]["total"] == 4
+        assert summary["numeric_accuracy"]["rate"] == 0.5
+
+        # evidence recall: 검색 실패 q02(0.0) 가 포함되어 (1.0 + 0.0) / 2 = 0.5
+        assert summary["evidence_recall_mean"] == 0.5
+        assert summary["retrieval_miss_count"] == 1
+        assert summary["retrieval_miss_ids"] == ["q02"]
+
+    def test_summary_citation_excludes_retrieval_miss_and_keeps_raw(self):
+        """(d, e) citation 집계는 검색 실패를 제외하고 계산하며, 제외 전 원시값을 함께 보존."""
+        r1 = {
+            "id": "q01",
+            "ok": True,
+            "retrieval_miss": False,
+            "citation_required": True,
+            "citation_present": True,
+        }
+        r2 = {
+            "id": "q02",
+            "ok": True,
+            "retrieval_miss": True,  # 검색 실패로 인한 인용 부재
+            "citation_required": True,
+            "citation_present": False,
+        }
+        summary = compute_summary([r1, r2])
+
+        # 원시값 (raw): 1 / 2 (50%)
+        assert summary["citation"]["raw_passed"] == 1
+        assert summary["citation"]["raw_total"] == 2
+        assert summary["citation"]["raw_rate"] == 0.5
+
+        # 보정값 (passed/total/rate): 검색 실패 q02 제외로 1 / 1 (100%)
+        assert summary["citation"]["passed"] == 1
+        assert summary["citation"]["total"] == 1
+        assert summary["citation"]["rate"] == 1.0
+
+    def test_summary_over_response_excludes_retrieval_miss_refusal_and_keeps_raw(self):
+        """(c, e) 검색 실패 요청의 정직한 거부가 과잉응답 집계에서 빠지고 원시값에 보존됨."""
+        # r1: 검색 실패로 인한 정직한 거부 (refusal_expected=False 인데 거부)
+        r1 = {
+            "id": "q01",
+            "ok": True,
+            "retrieval_miss": True,
+            "refusal_expected": False,
+            "actual_refusal": True,
+        }
+        # r2: 검색 성공했는데 비정상 거부 (과잉거절)
+        r2 = {
+            "id": "q02",
+            "ok": True,
+            "retrieval_miss": False,
+            "refusal_expected": False,
+            "actual_refusal": True,
+        }
+        # r3: 거절 기대인데 답변함 (과잉응답)
+        r3 = {
+            "id": "q03",
+            "ok": True,
+            "retrieval_miss": False,
+            "refusal_expected": True,
+            "actual_refusal": False,
+        }
+        summary = compute_summary([r1, r2, r3])
+
+        # 원시 과잉응답: r1(정직한 거부), r2(과잉거절), r3(과잉답변) 총 3건
+        assert summary["raw_over_response_count"] == 3
+
+        # 보정 과잉응답: r1 제외되어 r2, r3 총 2건
+        assert summary["over_response_count"] == 2
+
+    def test_summary_semantic_claims_not_counted_as_violations(self):
+        """(g) semantic_forbidden_claims 는 자동 채점되지 않으므로 위반 건수로 집계되지 않음."""
+        r1 = {
+            "id": "q01",
+            "ok": True,
+            "forbidden_literal_violations": [],
+            "semantic_forbidden_claims": [
+                "낙찰업체를 다른 업체로 허위 기재하거나 금액 왜곡",
+                "사후 정산 규정 오안내",
+            ],
+        }
+        summary = compute_summary([r1])
+        assert summary["forbidden_literal_violations_count"] == 0
+
+    def test_summary_q21_case_validation(self):
+        """실제 사례 검증: q21(기대 근거 미검색 + 거부 + 인용 없음) 상황에서 과잉응답과 citation 누락이 벌해지지 않는지 검증."""
+        results = []
+        # q21 3회 반복 (검색 실패 + 거부 + 인용 없음 + numeric 미검출)
+        for rep in range(1, 4):
+            results.append(
+                {
+                    "id": "q21",
+                    "repetition": rep,
+                    "ok": True,
+                    "elapsed_ms": 3000.0,
+                    "expected_evidence_ids": ["bid_10169448"],
+                    "retrieved_evidence_ids": ["bid_other1", "bid_other2"],
+                    "evidence_hit": [],
+                    "evidence_recall": 0.0,
+                    "retrieval_miss": True,
+                    "citation_required": True,
+                    "citation_present": False,
+                    "refusal_expected": False,
+                    "actual_refusal": True,
+                    "refusal_correct": False,
+                    "numeric_facts": [
+                        {"statement": "fact1", "found": False},
+                        {"statement": "fact2", "found": False},
+                    ],
+                }
+            )
+
+        # 정상 응답 문항 70건 (인용 필요, 인용 있음, 근거 검색 성공)
+        for i in range(70):
+            results.append(
+                {
+                    "id": f"q_norm_{i}",
+                    "repetition": 1,
+                    "ok": True,
+                    "elapsed_ms": 1000.0,
+                    "expected_evidence_ids": [f"bid_doc_{i}"],
+                    "retrieved_evidence_ids": [f"bid_doc_{i}"],
+                    "evidence_hit": [f"bid_doc_{i}"],
+                    "evidence_recall": 1.0,
+                    "retrieval_miss": False,
+                    "citation_required": True,
+                    "citation_present": True,
+                    "refusal_expected": False,
+                    "actual_refusal": False,
+                    "refusal_correct": True,
+                    "numeric_facts": [
+                        {"statement": "fact1", "found": True},
+                        {"statement": "fact2", "found": True},
+                    ],
+                }
+            )
+
+        # 정상 거절 문항 23건 (인용 불필요, 거절 성공)
+        for i in range(23):
+            results.append(
+                {
+                    "id": f"q_refuse_{i}",
+                    "repetition": 1,
+                    "ok": True,
+                    "elapsed_ms": 500.0,
+                    "expected_evidence_ids": [],
+                    "retrieved_evidence_ids": [],
+                    "evidence_hit": [],
+                    "evidence_recall": None,
+                    "retrieval_miss": False,
+                    "citation_required": False,
+                    "citation_present": None,
+                    "refusal_expected": True,
+                    "actual_refusal": True,
+                    "refusal_correct": True,
+                    "numeric_facts": [],
+                }
+            )
+
+        summary = compute_summary(results)
+
+        # 1. 검색 실패 식별
+        assert summary["retrieval_miss_count"] == 3
+        assert summary["retrieval_miss_ids"] == ["q21"]
+
+        # 2. citation: 원시는 70/73 이나 보정은 70/70 (100.0%)
+        assert summary["citation"]["raw_passed"] == 70
+        assert summary["citation"]["raw_total"] == 73
+        assert summary["citation"]["passed"] == 70
+        assert summary["citation"]["total"] == 70
+        assert summary["citation"]["rate"] == 1.0
+
+        # 3. 과잉응답: 원시는 q21 3건으로 3이나 보정은 0건
+        assert summary["raw_over_response_count"] == 3
+        assert summary["over_response_count"] == 0
+
+        # 4. numeric 과 recall 은 q21 이 포함되어 가감 없이 산출
+        # numeric facts: 70 * 2 = 140 passed / (70 * 2 + 3 * 2) = 146 total
+        assert summary["numeric_accuracy"]["passed"] == 140
+        assert summary["numeric_accuracy"]["total"] == 146
+        assert summary["numeric_accuracy"]["rate"] == round(140 / 146, 4)
+
+    def test_summary_with_request_failures(self):
+        """요청 실패(ok=False)가 있을 때 request_failures 로 집계되고 크래시 없이 동작."""
+        results = [
+            {
+                "id": "q01",
+                "ok": False,
+                "elapsed_ms": 5000.0,
+                "error": "timed out",
+            },
+            {
+                "id": "q02",
+                "ok": True,
+                "elapsed_ms": 1000.0,
+                "retrieval_miss": False,
+                "expected_evidence_ids": ["bid_1"],
+                "evidence_recall": 1.0,
+                "citation_required": True,
+                "citation_present": True,
+                "refusal_expected": False,
+                "actual_refusal": False,
+                "refusal_correct": True,
+                "numeric_facts": [{"found": True}],
+            },
+        ]
+        summary = compute_summary(results)
+        assert summary["total_requests"] == 2
+        assert summary["request_failures"] == 1
+        assert summary["numeric_accuracy"]["passed"] == 1
+        assert summary["numeric_accuracy"]["total"] == 1
+        assert summary["citation"]["passed"] == 1
+        assert summary["citation"]["total"] == 1
+
     """validate_base_url_port 함수 단위 테스트 (mock 사용)."""
 
     @patch("scripts.measure_llm_quality.subprocess.check_output")
@@ -713,6 +1017,10 @@ class TestIntegrationMainHarness:
         assert out_file.exists()
         saved = json.loads(out_file.read_text(encoding="utf-8"))
         assert saved["canonical"] is True
+        assert "summary" in saved
+        assert "numeric_accuracy" in saved["summary"]
+        assert "citation" in saved["summary"]
+        assert "latency_ms" in saved["summary"]
         assert saved["provenance"]["source_identity_start"]["git_sha"] == "start_sha_123"
         assert saved["provenance"]["source_identity_end"]["git_sha"] == "start_sha_123"
 

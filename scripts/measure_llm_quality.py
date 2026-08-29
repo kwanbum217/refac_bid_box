@@ -213,6 +213,8 @@ def score_item(item: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
 
     expected_ids = list(item.get("expected_evidence_ids") or [])
     evidence_hit = [eid for eid in expected_ids if eid in found_ids]
+    evidence_recall = (len(evidence_hit) / len(expected_ids)) if expected_ids else None
+    retrieval_miss = bool(expected_ids) and (len(evidence_hit) == 0)
 
     citation_ok: bool | None = None
     if item.get("citation_required"):
@@ -233,12 +235,173 @@ def score_item(item: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         "expected_evidence_ids": expected_ids,
         "retrieved_evidence_ids": found_ids,
         "evidence_hit": evidence_hit,
-        "evidence_recall": (len(evidence_hit) / len(expected_ids)) if expected_ids else None,
+        "evidence_recall": evidence_recall,
+        "retrieval_miss": retrieval_miss,
         "citation_required": bool(item.get("citation_required")),
         "citation_present": citation_ok,
         "refusal_expected": refusal_expected,
         "actual_refusal": actual_refusal,
         "refusal_correct": refusal_correct,
+    }
+
+
+def is_retrieval_miss(record: dict[str, Any]) -> bool:
+    """결과 항목의 검색 실패 여부를 판정한다.
+
+    기대 근거가 지정되어 있는데 evidence_recall 이 0 인 경우가 검색 실패다.
+    기대 근거가 없는 문항은 검색 실패가 아니다.
+    """
+    if "retrieval_miss" in record:
+        return bool(record["retrieval_miss"])
+    expected_ids = record.get("expected_evidence_ids") or []
+    if not expected_ids:
+        return False
+    recall = record.get("evidence_recall")
+    if recall is not None:
+        return recall == 0.0
+    evidence_hit = record.get("evidence_hit") or []
+    return len(evidence_hit) == 0
+
+
+def _percentile(values: list[float], p: float) -> float:
+    """정렬된 float 리스트의 백분위수(p in [0, 100])를 선형 보간으로 계산한다."""
+    if not values:
+        return 0.0
+    if len(values) == 1:
+        return values[0]
+    k = (len(values) - 1) * (p / 100.0)
+    f = int(k)
+    c = f + 1 if f + 1 < len(values) else f
+    if f == c:
+        return values[f]
+    d0 = values[f] * (c - k)
+    d1 = values[c] * (k - f)
+    return d0 + d1
+
+
+def compute_summary(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """측정 결과 목록으로부터 최상위 집계 요약 블록을 계산한다.
+
+    측정 실행 없이 결과 목록만으로 동작하는 순수 함수다.
+
+    지표 산출 규칙:
+    - numeric 정확도와 evidence recall: 검색 실패(retrieval_miss) 요청을 제외하지 않는다.
+      검색 실패는 그 자체로 시스템 품질 문제이므로 이 두 지표에서는 가감 없이 반영되어야 한다.
+    - citation 및 과잉응답: 검색 실패 요청을 제외하고 계산한다.
+      검색이 기대 근거를 가져오지 못한 상태에서의 거부나 인용 부재는 모델의 잘못이 아니므로 벌하지 않는다.
+    - 제외한 요청 수, 대상 문항 ID 목록, 제외 전 원시 집계값을 요약 블록에 함께 남겨 판정의 투명성을 보장한다.
+    - semantic_forbidden_claims: 자동 채점 대상이 아니므로 위반 수로 집계하지 않는다.
+    """
+    total_requests = len(results)
+    request_failures = sum(1 for r in results if not r.get("ok", True))
+    successful_results = [r for r in results if r.get("ok", True)]
+
+    # 1. 검색 실패 (retrieval miss) 집계
+    retrieval_miss_count = sum(1 for r in successful_results if is_retrieval_miss(r))
+    retrieval_miss_ids = sorted(
+        {r["id"] for r in successful_results if is_retrieval_miss(r) and "id" in r}
+    )
+
+    # 2. 레이턴시 통계 (ms)
+    latencies = sorted([float(r["elapsed_ms"]) for r in results if r.get("elapsed_ms") is not None])
+    p50_ms = round(_percentile(latencies, 50), 3) if latencies else 0.0
+    p95_ms = round(_percentile(latencies, 95), 3) if latencies else 0.0
+    max_ms = round(max(latencies), 3) if latencies else 0.0
+
+    # 3. Numeric 정확도 (검색 실패 미제외: 검색 실패 자체도 품질 지표에 반영)
+    num_passed = 0
+    num_total = 0
+    for r in successful_results:
+        for fact in r.get("numeric_facts") or []:
+            num_total += 1
+            if fact.get("found"):
+                num_passed += 1
+    numeric_rate = round(num_passed / num_total, 4) if num_total > 0 else 0.0
+
+    # 4. Evidence recall 평균 (검색 실패 미제외: 검색 성능을 그대로 반영)
+    recalls = [
+        float(r["evidence_recall"])
+        for r in successful_results
+        if r.get("evidence_recall") is not None
+    ]
+    evidence_recall_mean = round(sum(recalls) / len(recalls), 4) if recalls else None
+
+    # 5. 문자 금지 표현 위반 (forbidden literals)
+    # semantic_forbidden_claims 는 자동 채점 대상이 아니므로 위반 수로 집계하지 않는다.
+    forbidden_literal_violations_count = sum(
+        len(r.get("forbidden_literal_violations") or []) for r in successful_results
+    )
+
+    # 6. Citation (검색 실패 제외 / 원시값 보존)
+    citation_req_raw = [r for r in successful_results if r.get("citation_required")]
+    citation_passed_raw = sum(1 for r in citation_req_raw if r.get("citation_present") is True)
+    citation_total_raw = len(citation_req_raw)
+    citation_rate_raw = (
+        round(citation_passed_raw / citation_total_raw, 4) if citation_total_raw > 0 else 0.0
+    )
+
+    citation_req_adj = [r for r in citation_req_raw if not is_retrieval_miss(r)]
+    citation_passed_adj = sum(1 for r in citation_req_adj if r.get("citation_present") is True)
+    citation_total_adj = len(citation_req_adj)
+    citation_rate_adj = (
+        round(citation_passed_adj / citation_total_adj, 4) if citation_total_adj > 0 else 0.0
+    )
+
+    # 7. Refusal 및 과잉응답 (검색 실패 제외 / 원시값 보존)
+    # refusal_expected == True 인 항목: 거절해야 정답 (미거절 시 과잉응답)
+    refusal_exp_raw = [r for r in successful_results if r.get("refusal_expected")]
+    refusal_correct_raw = sum(1 for r in refusal_exp_raw if r.get("refusal_correct"))
+    refusal_total_raw = len(refusal_exp_raw)
+    refusal_rate_raw = (
+        round(refusal_correct_raw / refusal_total_raw, 4) if refusal_total_raw > 0 else 0.0
+    )
+    over_response_on_refusal_exp = sum(1 for r in refusal_exp_raw if not r.get("actual_refusal"))
+
+    # refusal_expected == False 인 항목: 답변해야 정답 (거절 시 과잉거절)
+    # 단, 검색 실패인 경우의 거부는 정직한 거부이므로 과잉응답/과잉거절에서 제외
+    unexpected_refusals_raw = [
+        r for r in successful_results if not r.get("refusal_expected") and r.get("actual_refusal")
+    ]
+    unexpected_refusals_adj = [r for r in unexpected_refusals_raw if not is_retrieval_miss(r)]
+
+    raw_over_response_count = over_response_on_refusal_exp + len(unexpected_refusals_raw)
+    over_response_count = over_response_on_refusal_exp + len(unexpected_refusals_adj)
+
+    return {
+        "total_requests": total_requests,
+        "request_failures": request_failures,
+        "retrieval_miss_count": retrieval_miss_count,
+        "retrieval_miss_ids": retrieval_miss_ids,
+        "numeric_accuracy": {
+            "passed": num_passed,
+            "total": num_total,
+            "rate": numeric_rate,
+        },
+        "evidence_recall_mean": evidence_recall_mean,
+        "citation": {
+            "passed": citation_passed_adj,
+            "total": citation_total_adj,
+            "rate": citation_rate_adj,
+            "raw_passed": citation_passed_raw,
+            "raw_total": citation_total_raw,
+            "raw_rate": citation_rate_raw,
+        },
+        "refusal_accuracy": {
+            "passed": refusal_correct_raw,
+            "total": refusal_total_raw,
+            "rate": refusal_rate_raw,
+            "raw_passed": refusal_correct_raw,
+            "raw_total": refusal_total_raw,
+            "raw_rate": refusal_rate_raw,
+        },
+        "over_response_count": over_response_count,
+        "raw_over_response_count": raw_over_response_count,
+        "forbidden_literal_violations_count": forbidden_literal_violations_count,
+        "latency_ms": {
+            "p50": p50_ms,
+            "p95": p95_ms,
+            "max": max_ms,
+        },
     }
 
 
@@ -678,8 +841,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"오류: Provenance 일관성 검증 실패 - {exc}", file=sys.stderr)
         return 4
 
+    summary = compute_summary(results)
+
     payload = {
         "schema": "LLM_QUALITY_MEASURE_V2",
+        "summary": summary,
         "canonical": is_canonical,
         "canonical_failed_gates": failed_gates,
         "timestamp": provenance["timestamp_end_utc"],
