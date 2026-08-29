@@ -79,12 +79,28 @@ except (ModuleNotFoundError, ImportError):
     )
 
 try:
-    from scripts.orca_model_router import MODEL_POOL, pool_for_model, record_reliability_outcome
+    from scripts.orca_model_router import (
+        MODEL_POOL,
+        capsule_has_write_scope,
+        classify_from_capsule,
+        classify_risk,
+        pool_for_model,
+        record_reliability_outcome,
+        select_model,
+    )
 except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
-    from scripts.orca_model_router import MODEL_POOL, pool_for_model, record_reliability_outcome
+    from scripts.orca_model_router import (
+        MODEL_POOL,
+        capsule_has_write_scope,
+        classify_from_capsule,
+        classify_risk,
+        pool_for_model,
+        record_reliability_outcome,
+        select_model,
+    )
 
 # ---------------------------------------------------------------------------
 # 상수
@@ -98,6 +114,23 @@ CAPSULE_VERSION = "2.1.0"
 MAX_CONCURRENT_WRITE_WORKERS = 3
 ROUTING_STATE_FILENAME = "routing.json"
 FILE_EDIT_AUTO_APPROVE_SEQUENCE = "\x1b[Z"
+
+MODEL_TIER_RANK: dict[str, int] = {
+    "gemini-3.7-flash-low": 1,
+    "gemini-flash-low": 1,
+    "gemini-3.7-flash-medium": 2,
+    "gemini-flash-medium": 2,
+    "gemini-3.7-flash-high": 3,
+    "gemini-flash-high": 3,
+    "claude-sonnet-4-6": 4,
+    "claude-sonnet": 4,
+    "claude-opus-4-6-thinking": 5,
+    "claude-opus-thinking": 5,
+    "claude-opus-5": 5,
+    "claude-opus": 5,
+    "gpt-5.6-terra": 6,
+    "codex": 6,
+}
 
 
 # 검증 명령 기본값. Capsule 이 선언한 명령을 Level 1 게이트 3 이 그대로 실행하므로
@@ -1441,6 +1474,20 @@ ACCEPT_EDITS_CLI_MARKERS: tuple[str, ...] = (
     "agy --model",
 )
 
+ANTIGRAVITY_STATUS_LINE_MARKERS: tuple[str, ...] = (
+    "accept-edits",
+    "plan",
+    "shift+tab",
+    "gemini",
+    "claude",
+    "flash",
+    "·",
+    "out of credits",
+    "antigravity cli",
+    "auto-approve",
+    "agy --model",
+)
+
 
 def detect_antigravity_mode(text: str | None) -> str:
     """Antigravity CLI 터미널 화면의 하단 상태줄을 분석하여 현재 모드를 감지합니다.
@@ -1451,16 +1498,21 @@ def detect_antigravity_mode(text: str | None) -> str:
     반환값:
     - 'accept-edits': 파일 편집 자동 승인 모드 활성화 상태
     - 'plan': Plan Mode(읽기 전용 계획 수립 모드) 활성화 상태
-    - 'normal': 기본 대화 모드 (모드 표시 없음)
+    - 'normal': 기본 대화 모드 (상태줄이 확인되었으나 모드 전환되지 않은 상태)
+    - 'unknown': 화면이 비어 있거나 상태줄을 식별할 수 없는 상태 (스피너만 있는 경우 등)
     """
     if not text or not text.strip():
-        return "normal"
+        return "unknown"
 
     cleaned = strip_terminal_metadata_header(text)
     lines = [line.strip().lower() for line in cleaned.splitlines() if line.strip()]
+    if not lines:
+        return "unknown"
+
     footer_lines = lines[-5:] if len(lines) >= 5 else lines
 
     # 가장 최근 상태줄(아래쪽 줄)부터 역순으로 상태 표지 검사
+    has_status_line = False
     for line in reversed(footer_lines):
         # 1. accept-edits 모드 판정
         if (
@@ -1513,7 +1565,16 @@ def detect_antigravity_mode(text: str | None) -> str:
         ):
             return "plan"
 
-    return "normal"
+        if any(marker in line for marker in ANTIGRAVITY_STATUS_LINE_MARKERS):
+            has_status_line = True
+
+    if has_status_line:
+        return "normal"
+
+    if any(any(m in line for m in ANTIGRAVITY_STATUS_LINE_MARKERS) for line in lines):
+        return "normal"
+
+    return "unknown"
 
 
 def _classify_from_screen_text(text: str | None) -> tuple[bool, str]:
@@ -1644,6 +1705,12 @@ def enable_file_edit_auto_approve(
     current_mode = detect_antigravity_mode(text)
     if current_mode == "accept-edits":
         return True, f"이미 파일 편집 자동 승인(accept-edits) 모드입니다 ({terminal})"
+    if not force and current_mode == "unknown":
+        return (
+            False,
+            f"터미널 {terminal} 의 화면에서 상태줄을 식별하지 못해(모드: unknown) "
+            "파일 편집 모드 전환을 건너뜁니다 (fail-closed)",
+        )
 
     # 2. 실물 순환 전송 루프: 매 전송 후 화면에서 accept-edits 모드가 확인될 때만 성공 반환
     attempts = 0
@@ -2568,6 +2635,326 @@ def dispatch_with_fallback(
     return code, stdout, stderr, executed_cmd, fallback_info
 
 
+def resolve_dispatch_model(
+    args_model: str | None,
+    capsule_text: str,
+    capsule_path: Path | str | None = None,
+    intent: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Dispatch 시 사용할 모델, 배정 근거, 경고 등을 판정합니다.
+
+    우선순위:
+      1. args_model (명시 지정) -> 그대로 사용하되 상위 모델 지정 시 경고.
+      2. orca_model_router.select_model(role, risk) -> 배정표 기반 최적 모델 선택.
+      3. 실패 시 DEFAULT_MODEL 로 fallback.
+    """
+    role = (
+        (intent.get("role") if intent else None)
+        or parse_capsule_scalar(capsule_text, "role")
+        or "builder"
+    )
+    risk = (intent.get("risk") if intent else None) or parse_capsule_scalar(capsule_text, "risk")
+    if not risk:
+        if capsule_path and Path(capsule_path).is_file():
+            try:
+                classified = classify_from_capsule(capsule_path)
+                risk = classified.get("risk")
+            except Exception:
+                risk = None
+        if not risk:
+            risk = classify_risk(capsule_text)
+
+    if risk not in ("low", "medium", "high"):
+        risk = "medium"
+
+    has_write = (
+        capsule_has_write_scope(capsule_path)
+        if (capsule_path and Path(capsule_path).is_file())
+        else len(parse_capsule_list(capsule_text, "allowed_write_files")) > 0
+    )
+
+    recommended_pool: str | None = None
+    recommended_model: str | None = None
+    router_error: str | None = None
+
+    try:
+        routed = select_model(
+            role=role,
+            risk=risk,
+            allow_free=False,
+            has_write_scope=has_write,
+        )
+        recommended_pool = routed.get("primary_pool")
+        recommended_model = routed.get("primary_model")
+    except Exception as exc:
+        router_error = str(exc)
+
+    warning: str | None = None
+    if args_model:
+        model = args_model
+        source = "explicit"
+        reason = f"명시 지정: {args_model} (선언 role={role}, risk={risk})"
+        if recommended_model:
+            model_rank = MODEL_TIER_RANK.get(args_model, 0)
+            rec_rank = MODEL_TIER_RANK.get(recommended_model, 0)
+            if model_rank > rec_rank:
+                warning = (
+                    f"배정표 기준 권장 모델({recommended_model}, role={role}, risk={risk})보다 "
+                    f"상위 모델({args_model})이 명시 지정되었습니다."
+                )
+                sys.stderr.write(f"경고: {warning}\n")
+    else:
+        if recommended_model:
+            model = recommended_model
+            source = "router"
+            reason = (
+                f"라우터 자동 배정: {model} (role={role}, risk={risk}, pool={recommended_pool})"
+            )
+        else:
+            model = DEFAULT_MODEL
+            source = "fallback_default"
+            reason = (
+                f"라우터 호출 실패({router_error})로 기본 모델({DEFAULT_MODEL}) 배정 "
+                f"(role={role}, risk={risk})"
+            )
+            warning = f"모델 라우팅 실패로 기본값({DEFAULT_MODEL})으로 대체합니다: {router_error}"
+            sys.stderr.write(f"경고: {warning}\n")
+
+    return {
+        "model": model,
+        "source": source,
+        "role": role,
+        "risk": risk,
+        "reason": reason,
+        "warning": warning,
+        "recommended_model": recommended_model,
+        "recommended_pool": recommended_pool,
+    }
+
+
+def create_rework_capsule(
+    original_capsule_text: str,
+    new_task_id: str,
+    new_capsule_path: Path,
+    rejection_reason: str,
+    previous_report: dict[str, Any] | None = None,
+    run_id: str = DEFAULT_RUN_ID,
+) -> str:
+    """기존 Capsule 과 반려 사유를 바탕으로 재작업용 Capsule YAML 을 생성합니다."""
+    # 1. task_id 교체
+    new_text = re.sub(
+        r'task_id:\s*"?[^"\n]+"?',
+        f'task_id: "{new_task_id}"',
+        original_capsule_text,
+        count=1,
+    )
+    if run_id:
+        new_text = re.sub(
+            r'run_id:\s*"?[^"\n]+"?',
+            f'run_id: "{run_id}"',
+            new_text,
+            count=1,
+        )
+
+    # 2. report_path 교체 (새 Task ID 에 맞게)
+    new_report_rel = f".orca/capsules/{new_task_id}/worker_done.json"
+    new_text = re.sub(
+        r'report_path:\s*"?[^"\n]+"?',
+        f'report_path: "{new_report_rel}"',
+        new_text,
+        count=1,
+    )
+
+    # 3. why_now 블록에 반려 사유 추가
+    orig_id = parse_capsule_scalar(original_capsule_text, "task_id") or "이전 시도"
+    rework_why_now = (
+        f"\n  이전 시도(task_id: {orig_id})가 반려되었습니다. 반려 사유: {rejection_reason}"
+    )
+    if "why_now: >" in new_text:
+        new_text = new_text.replace(
+            "why_now: >",
+            f"why_now: >{rework_why_now}",
+            1,
+        )
+    elif "why_now:" in new_text:
+        new_text = re.sub(
+            r"(why_now:\s*>[^\n]*\n)",
+            rf"\1  {rework_why_now.strip()}\n",
+            new_text,
+            count=1,
+        )
+
+    # 4. ground_truth 에 반려 사실 추가
+    escaped_reason = _escape(rejection_reason)
+    gt_addition = (
+        f'  - fact: "이전 시도({orig_id}) 반려 사유: {escaped_reason}"\n'
+        f'    evidence: "코디네이터 반려 기록"\n'
+        f"    recheck: false\n"
+    )
+    if previous_report and isinstance(previous_report, dict):
+        prev_commit = previous_report.get("commit") or ""
+        if prev_commit:
+            gt_addition += (
+                f'  - fact: "이전 시도 커밋: {prev_commit}"\n'
+                f'    evidence: "이전 worker_done 보고서"\n'
+                f"    recheck: false\n"
+            )
+
+    if "ground_truth:\n" in new_text:
+        new_text = new_text.replace("ground_truth:\n", f"ground_truth:\n{gt_addition}", 1)
+
+    # 5. required_change 에 반려 사유 해결 지시 추가
+    rc_addition = f'  - "반려 사유 해결: {escaped_reason}"\n'
+    if "required_change:\n" in new_text:
+        new_text = new_text.replace("required_change:\n", f"required_change:\n{rc_addition}", 1)
+
+    # 6. allowed_read_files 에 새 capsule.yaml 경로 추가
+    new_relative_capsule = worktree_relative_capsule_path(new_capsule_path)
+    old_read_files = parse_capsule_list(original_capsule_text, "allowed_read_files")
+    if new_relative_capsule not in old_read_files and "allowed_read_files:\n" in new_text:
+        new_text = new_text.replace(
+            "allowed_read_files:\n",
+            f'allowed_read_files:\n  - "{new_relative_capsule}"\n',
+            1,
+        )
+
+    return new_text
+
+
+def cmd_rework(args: argparse.Namespace) -> int:
+    task_id = args.task_id
+    if not task_id:
+        sys.stderr.write("오류: --task-id 는 필수입니다.\n")
+        return 2
+
+    reason = (args.reason or "").strip()
+    if not reason:
+        sys.stderr.write("오류: --reason (반려 사유)는 필수입니다.\n")
+        return 2
+
+    capsule_dir = Path(args.capsule_dir)
+    capsule_path = (
+        Path(args.capsule).resolve()
+        if args.capsule
+        else (capsule_dir / task_id / "capsule.yaml").resolve()
+    )
+    if not capsule_path.is_file():
+        sys.stderr.write(f"오류: 기존 Capsule 파일을 찾을 수 없습니다: {capsule_path}\n")
+        return 2
+
+    capsule_text = load_capsule(capsule_path)
+
+    report_path = (
+        Path(args.report).resolve()
+        if args.report
+        else (capsule_dir / task_id / "worker_done.json").resolve()
+    )
+    prev_report = None
+    if report_path.is_file():
+        try:
+            prev_report = load_report(report_path)
+        except Exception:
+            prev_report = None
+
+    rejection_record = {
+        "task_id": task_id,
+        "rejected_at": time.time(),
+        "reason": reason,
+        "report_path": str(report_path) if report_path.is_file() else None,
+        "previous_report": prev_report,
+    }
+    rejection_file = capsule_path.parent / "rejection.json"
+    _write_json_atomic(rejection_file, rejection_record)
+
+    new_task_id = args.new_task_id or f"{task_id}_rework"
+    new_task_dir = capsule_dir / new_task_id
+    new_task_dir.mkdir(parents=True, exist_ok=True)
+    new_capsule_path = (new_task_dir / "capsule.yaml").resolve()
+
+    new_capsule_text = create_rework_capsule(
+        original_capsule_text=capsule_text,
+        new_task_id=new_task_id,
+        new_capsule_path=new_capsule_path,
+        rejection_reason=reason,
+        previous_report=prev_report,
+        run_id=args.run_id,
+    )
+    new_capsule_path.write_text(new_capsule_text, encoding="utf-8")
+
+    spec = build_task_spec(
+        parse_capsule_scalar(new_capsule_text, "objective") or "", new_capsule_path
+    )
+    cmd = [
+        "orca",
+        "orchestration",
+        "task-create",
+        "--run",
+        args.run_id,
+        "--spec",
+        spec,
+        "--json",
+    ]
+    if args.task_title:
+        cmd.extend(["--task-title", args.task_title])
+    elif args.task_id:
+        cmd.extend(["--task-title", f"재작업: {args.task_id} ({reason[:30]})"])
+    if args.display_name:
+        cmd.extend(["--display-name", args.display_name])
+
+    code, stdout, _stderr = _run_command(cmd)
+    actual_task_id = new_task_id
+    actual_capsule_path = new_capsule_path
+
+    if code == 0:
+        payload = _maybe_json(stdout)
+        created_id = None
+        if isinstance(payload, dict):
+            created_id = ((payload.get("result") or {}).get("task") or {}).get("id")
+        if created_id and str(created_id) != new_task_id:
+            actual_task_id = str(created_id)
+            actual_capsule_dir = capsule_dir / actual_task_id
+            actual_capsule_dir.mkdir(parents=True, exist_ok=True)
+            actual_capsule_path = (actual_capsule_dir / "capsule.yaml").resolve()
+            final_capsule_text = create_rework_capsule(
+                original_capsule_text=capsule_text,
+                new_task_id=actual_task_id,
+                new_capsule_path=actual_capsule_path,
+                rejection_reason=reason,
+                previous_report=prev_report,
+                run_id=args.run_id,
+            )
+            actual_capsule_path.write_text(final_capsule_text, encoding="utf-8")
+            if new_capsule_path != actual_capsule_path:
+                new_capsule_path.write_text(final_capsule_text, encoding="utf-8")
+
+    new_report_rel = (
+        parse_capsule_scalar(new_capsule_text, "report_path")
+        or f".orca/capsules/{actual_task_id}/worker_done.json"
+    )
+
+    result_payload = {
+        "status": "rework_created",
+        "original_task_id": task_id,
+        "new_task_id": actual_task_id,
+        "rejection_reason": reason,
+        "rejection_record": str(rejection_file),
+        "capsule": str(actual_capsule_path),
+        "new_report_path": new_report_rel,
+        "exit_code": 0,
+    }
+
+    if args.json:
+        print(json.dumps(result_payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"재작업 Task 생성 완료: {actual_task_id} (원래 Task: {task_id})")
+        print(f"반려 사유: {reason}")
+        print(f"반려 기록 저장: {rejection_file}")
+        print(f"새 Capsule: {actual_capsule_path}")
+        print(f"새 보고 경로: {new_report_rel}")
+
+    return 0
+
+
 def cmd_dispatch(args: argparse.Namespace) -> int:
     intent_path = Path(args.intent)
     if not intent_path.exists():
@@ -2625,7 +3012,13 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
         capsule_path.write_text(capsule, encoding="utf-8")
 
-    model = args.model or DEFAULT_MODEL
+    model_resolution = resolve_dispatch_model(
+        args_model=args.model,
+        capsule_text=capsule,
+        capsule_path=capsule_path,
+        intent=intent,
+    )
+    model = model_resolution["model"]
 
     if args.dry_run:
         if args.json:
@@ -2635,6 +3028,11 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                         "dry_run": True,
                         "capsule": str(capsule_path),
                         "model": model,
+                        "model_source": model_resolution["source"],
+                        "model_reason": model_resolution["reason"],
+                        "role": model_resolution["role"],
+                        "risk": model_resolution["risk"],
+                        "warning": model_resolution["warning"],
                         "task_id": task_id,
                         "char_count": char_len(capsule),
                     },
@@ -2644,7 +3042,12 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             )
         else:
             print(f"[Dry-run] Capsule: {capsule_path}")
-            print(f"[Dry-run] Model:   {model}")
+            print(f"[Dry-run] Model:   {model} ({model_resolution['source']})")
+            print(f"[Dry-run] Role:    {model_resolution['role']}")
+            print(f"[Dry-run] Risk:    {model_resolution['risk']}")
+            print(f"[Dry-run] Reason:  {model_resolution['reason']}")
+            if model_resolution["warning"]:
+                print(f"[Dry-run] 경고:    {model_resolution['warning']}")
             print(f"[Dry-run] 문자 수: {char_len(capsule)}")
         return 0
 
@@ -2841,6 +3244,12 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         if args.json:
             payload: dict[str, Any] = {"launch": _maybe_json(stdout)}
             payload["capsule"] = str(capsule_path)
+            payload["model"] = model
+            payload["model_source"] = model_resolution["source"]
+            payload["model_reason"] = model_resolution["reason"]
+            payload["role"] = model_resolution["role"]
+            payload["risk"] = model_resolution["risk"]
+            payload["model_warning"] = model_resolution["warning"]
             payload["capsule_notice"] = notice
             payload["pre_dispatch_warnings"] = pre_dispatch_warnings
             payload["delivery_check"] = delivery_check
@@ -2851,6 +3260,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             print(f"워커 기동 완료:\n{stdout}")
+            print(
+                f"모델 배정: {model} ({model_resolution['source']}, {model_resolution['reason']})"
+            )
             print(f"Capsule 고지: {notice['status']}")
             if reliability_tracking["status"] == "tracking":
                 print(f"신뢰도 추적: {reliability_tracking['pool']}/{reliability_tracking['role']}")
@@ -2884,9 +3296,18 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 {
                     "error": err_msg,
                     "task_id": task_id,
-                    "model": model,
                     "capsule": str(capsule_path),
-                    "exit_code": code,
+                    "code": code,
+                    "model": model,
+                    "model_source": model_resolution["source"],
+                    "model_reason": model_resolution["reason"],
+                    "role": model_resolution["role"],
+                    "risk": model_resolution["risk"],
+                    "model_warning": model_resolution["warning"],
+                    "stdout": stdout.strip(),
+                    "stderr": stderr.strip(),
+                    "command": launch_cmd,
+                    "exit_code": 1,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -3117,6 +3538,19 @@ def _build_parser() -> argparse.ArgumentParser:
     crt.add_argument("--deps", help="선행 Task ID JSON 배열")
     crt.add_argument("--json", action="store_true", help="JSON 출력")
 
+    # rework
+    rwk = sub.add_parser("rework", help="반려 후 재작업 Task 를 발급하고 이력을 보존합니다.")
+    rwk.add_argument("--task-id", required=True, help="반려 대상 기존 Task ID")
+    rwk.add_argument("--reason", required=True, help="반려 사유")
+    rwk.add_argument("--capsule", help="기존 Capsule YAML 경로 (미지정 시 자동 탐색)")
+    rwk.add_argument("--report", help="기존 worker_done JSON 보고서 경로 (미지정 시 자동 탐색)")
+    rwk.add_argument("--new-task-id", help="새로 발급할 재작업 Task ID")
+    rwk.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Run ID")
+    rwk.add_argument("--capsule-dir", default=".orca/capsules", help="Capsule 저장 디렉터리")
+    rwk.add_argument("--task-title", help="새 Task 제목")
+    rwk.add_argument("--display-name", help="워커 행에 표시할 이름")
+    rwk.add_argument("--json", action="store_true", help="JSON 출력")
+
     # finalize
     fin = sub.add_parser("finalize", help="worker_done -> 검증 파이프라인 실행")
     fin.add_argument("--report", required=True, help="worker_done 보고 JSON 경로")
@@ -3165,6 +3599,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_prepare_worker(args)
     if args.command == "create":
         return cmd_create(args)
+    if args.command == "rework":
+        return cmd_rework(args)
     if args.command == "dispatch":
         return cmd_dispatch(args)
     if args.command == "finalize":
