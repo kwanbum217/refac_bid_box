@@ -3,7 +3,7 @@
 > **작성일**: 2026-08-30
 > **Task ID**: `task_26056df2c840`
 > **관련 커밋/Wave**: Wave E1(`a53b01a`), Wave E5
-> **대상 파일**: [`src/rag/structured_data.py`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/orca-e5-live-hint/src/rag/structured_data.py), [`tests/test_ranking_snapshots.py`](file:///Users/kwanbum/orca/workspaces/refac_bid_box/orca-e5-live-hint/tests/test_ranking_snapshots.py)
+> **대상 파일**: [`src/rag/structured_data.py`](file://../../src/rag/structured_data.py), [`tests/test_ranking_snapshots.py`](file://../../tests/test_ranking_snapshots.py)
 
 ---
 
@@ -25,38 +25,53 @@ Wave E1(`a53b01a`)에서는 콜드 스타트 시 최대 27.6초를 소모하던 
 ## 2. 채택한 설계 및 동작 원리
 
 ### 2.1 설계 내용
-실시간 집계 경로(`live_stmt`)에서 SQL 단계의 `exclude_corrupted()` 필터를 제거하고, `LIVE_OVERFETCH_FACTOR`(3배 오버페치, 상위 5건 기준 15건 조회)를 통해 파이썬 계층 `_drop_corrupted()`에서 손상값을 직접 판독·제외하고 제외 건수를 산출하도록 변경했습니다.
+SQL 의 `exclude_corrupted()` 는 **그대로 둡니다.** 순위 품질을 지키기 위해서입니다.
+제외 여부만 세 단계로 확인하며, 앞 단계에서 답이 나오면 뒤 단계는 실행하지 않습니다.
 
-```
-[클라이언트 정형 질의 (날짜/기관 필터 포함)]
-                │
-                ▼
-        [_top_rows() 호출]
-                │
-  ┌─────────────┴─────────────┐
-  │                           │
-[스냅샷 사용 가능]            [실시간 집계 경로]
-  │                           │
-  ▼                           ▼
-get_top_rankings()       live_stmt.limit(5 * 3) 실행 (새 쿼리/풀스캔 없음)
-get_skipped_count()           │
-                              ▼
-                         _drop_corrupted() 에서 손상값 필터링 및 dropped 카운트
-                              │
-                              ▼
-                         dropped > 0 이면 insufficiency_hints 에 인코딩 안내 추가
-```
+| 순서 | 확인 수단 | 비용 | 언제 답이 나오는가 |
+| :---: | --- | --- | --- |
+| 1 | 파이썬 계층 `_drop_corrupted` | 0 (이미 가져온 행) | 오버페치 구간에 손상값이 섞여 온 경우 |
+| 2 | 스냅샷 손상 마커 `get_skipped_count` | O(1) 단건 조회 | 야간 스냅샷이 있는 **운영 환경** |
+| 3 | `corrupted_probe` `LIMIT 1` | 창 1회 스캔 | 스냅샷이 아직 없는 환경 |
+
+운영 환경은 2단계에서 끝나므로 **추가 비용이 붙지 않습니다.** 실제로 이 저장소
+DB 에서 `main` 과 수정본 모두 마커로 안내를 붙였고, 3단계 탐침은 실행되지 않았습니다.
+3단계는 스냅샷이 아직 만들어지지 않은 환경에서만 돌며, 그때만 창 1회 스캔
+(2026-08-30 실측 522~2,252ms) 을 씁니다.
 
 ### 2.2 핵심 변경 사항
-1. **`src/rag/structured_data.py` `retrieve_structured_data`**:
-   - `winner_rows`, `institution_rows`, `announcement_rows`의 `live_stmt`에서 `exclude_corrupted(...)`를 제거하고 `column.is_not(None)`으로 정리.
-2. **`src/rag/structured_data.py` `_top_rows`**:
-   - `_drop_corrupted(db.execute(stmt).all(), limit)`가 반환한 `dropped`를 우선 사용하고, 스냅샷 마커가 있는 경우를 위한 `get_skipped_count` 보조 확인 유지.
-   - 전체 테이블 스캔을 유발하는 별도 probe 쿼리를 일체 실행하지 않음.
+`src/rag/structured_data.py` 의 `_top_rows` 에 3단계 조건부 탐침을 추가하고,
+세 호출부(`bidwinnr_nm`, `dminstt_nm`, `bid_ntce_nm`)가 각자 탐침 쿼리를
+넘기도록 배선했습니다. **순위 쿼리 자체는 한 글자도 바뀌지 않았습니다.**
 
 ---
 
 ## 3. 기각된 대안 및 기각 사유
+
+### 3.0 SQL 손상 필터 제거 (실측으로 기각)
+
+`exclude_corrupted()` 를 SQL 에서 빼고 오버페치로 파이썬이 걸러내는 안을 먼저
+구현했으나 실측에서 기각했습니다. **실시간 낙찰업체 순위가 빈 목록이 됩니다.**
+
+| 대상 | 상위 15건 중 손상 | 정상 잔여 |
+| --- | ---: | ---: |
+| `bid_results.bidwinnr_nm` | **15 / 15** | **0건** |
+| `bid_announcements.dminstt_nm` | 0 / 15 | 15건 |
+| `bid_announcements.bid_ntce_nm` | 0 / 15 | 15건 |
+
+낙찰업체는 손상값이 상위를 점유합니다(최상위 31,095건). 정상 5건을 채우려면
+**상위 81위까지** 필요한데 오버페치는 `limit(5) x 3 = 15` 건뿐입니다.
+`LIVE_OVERFETCH_FACTOR` 를 17배 이상으로 올리는 안도 정렬 비용이 커지고 데이터
+분포가 바뀌면 다시 깨지므로 함께 기각했습니다.
+
+손상 그룹을 뒤로 미는 정렬과 윈도우 집계로 한 스캔에 해결하는 안도 구현해
+측정했으나, 손상값이 그룹 수를 크게 늘려 같은 질의가 6,436ms 에서 35,934ms 로
+**5.6배 느려져** 기각했습니다.
+
+> 단위 테스트로는 이 결함이 드러나지 않습니다. fixture 규모가 손상 3건·정상 1건이라
+> 오버페치 15칸 안에 정상값이 항상 들어옵니다. **실 데이터 분포에서만 드러납니다.**
+
+### 3.1 그 밖의 기각 대안
 
 | 대안 | 설명 | 기각 사유 |
 | --- | --- | --- |
