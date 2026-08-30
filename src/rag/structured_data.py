@@ -160,6 +160,31 @@ def _result_limit(plan: RetrievalPlan) -> int:
         return 0
 
 
+# 낙찰업체 집계는 날짜만 걸리고 category 가 없을 때 옵티마이저가 그룹 인덱스
+# (ix_bid_results_bidwinnr_nm)를 골라 3,267,347행 전부를 훑습니다(filtered 15.29%).
+# 버퍼 풀이 식어 있으면 이 스캔이 최대 97초를 씁니다(2026-08-30 실측).
+# 날짜 인덱스를 강제하면 범위 스캔으로 좁혀져 13,412ms 가 714ms 로 떨어집니다.
+# category 가 함께 걸리면 옵티마이저가 ix_bid_results_cat_dt_stats 로 182,902행까지
+# 이미 좁히므로 그때는 힌트를 주지 않습니다.
+RESULT_DATE_INDEX_HINT = "FORCE INDEX (ix_bid_results_dt_cat)"
+
+
+def _needs_result_date_index_hint(plan: RetrievalPlan) -> bool:
+    """날짜 범위는 있고 category 가 없는 낙찰 집계인지 판정합니다."""
+    filters = plan.filters or {}
+    date_from, date_to = _resolve_window(filters)
+    if not (date_from or date_to):
+        return False
+    return not _normalize_text(str(filters.get("category") or ""))
+
+
+def _hint_result_date_index(stmt, plan: RetrievalPlan):
+    """조건이 맞을 때만 날짜 인덱스 힌트를 붙입니다. 결과 집합은 바뀌지 않습니다."""
+    if not _needs_result_date_index_hint(plan):
+        return stmt
+    return stmt.with_hint(BidResult, RESULT_DATE_INDEX_HINT, dialect_name="mysql")
+
+
 def _result_availability_conditions(plan: RetrievalPlan) -> list:
     """날짜 필터를 제외한 결과 보유 범위 확인 조건을 만듭니다."""
     filters = plan.filters or {}
@@ -510,10 +535,13 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         scope=snapshot_scope,
         dataset=DATASET_RESULT,
         dimension="bidwinnr_nm",
-        live_stmt=select(BidResult.bidwinnr_nm, func.count(BidResult.id))
-        .where(exclude_corrupted(BidResult.bidwinnr_nm), *result_conditions)
-        .group_by(BidResult.bidwinnr_nm)
-        .order_by(func.count(BidResult.id).desc()),
+        live_stmt=_hint_result_date_index(
+            select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+            .where(exclude_corrupted(BidResult.bidwinnr_nm), *result_conditions)
+            .group_by(BidResult.bidwinnr_nm)
+            .order_by(func.count(BidResult.id).desc()),
+            plan,
+        ),
         corrupted_probe=select(BidResult.id).where(
             BidResult.bidwinnr_nm.contains(REPLACEMENT_CHAR), *result_conditions
         ),

@@ -182,3 +182,64 @@ def test_top_rows_caches_corruption_flag():
 
     assert first_dropped == cached_dropped == 1
     assert db.executions == executions_after_first
+
+
+# ===========================================================================
+# 낙찰업체 집계의 날짜 인덱스 힌트 조건 검증
+# ===========================================================================
+
+
+def _plan(**filters):
+    from src.rag.schemas import RetrievalPlan
+
+    return RetrievalPlan(semantic_query="", filters=filters)
+
+
+def test_date_index_hint_applies_only_without_category():
+    """날짜만 걸린 낙찰 집계에만 힌트를 붙입니다.
+
+    category 가 없으면 옵티마이저가 그룹 인덱스(ix_bid_results_bidwinnr_nm)를 골라
+    3,267,347행 전부를 훑습니다(2026-08-30 실측 13,446ms, 버퍼 풀이 식으면 최대
+    97초). 날짜 인덱스를 강제하면 698ms 로 떨어지며 결과 15행은 완전히 동일합니다.
+    category 가 있으면 ix_bid_results_cat_dt_stats 로 182,902행까지 이미 좁혀지므로
+    힌트를 주지 않습니다.
+    """
+    assert structured_data._needs_result_date_index_hint(_plan(date_from="2026-01-01"))
+    assert structured_data._needs_result_date_index_hint(_plan(date_to="2026-12-31"))
+    assert not structured_data._needs_result_date_index_hint(
+        _plan(date_from="2026-01-01", category="Servc")
+    )
+    assert not structured_data._needs_result_date_index_hint(_plan(category="Servc"))
+    assert not structured_data._needs_result_date_index_hint(_plan())
+
+
+def test_date_index_hint_emits_force_index_for_mysql_only():
+    """힌트는 MySQL 방언에서만 나타나고 결과 집합에는 영향을 주지 않습니다."""
+    base = (
+        select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+        .group_by(BidResult.bidwinnr_nm)
+        .order_by(func.count(BidResult.id).desc())
+    )
+    hinted = structured_data._hint_result_date_index(base, _plan(date_from="2026-01-01"))
+    unhinted = structured_data._hint_result_date_index(
+        base, _plan(date_from="2026-01-01", category="Servc")
+    )
+
+    from sqlalchemy.dialects import mysql, sqlite
+
+    mysql_sql = str(hinted.compile(dialect=mysql.dialect()))
+    assert "FORCE INDEX (ix_bid_results_dt_cat)" in mysql_sql
+    assert "FORCE INDEX" not in str(hinted.compile(dialect=sqlite.dialect()))
+    assert "FORCE INDEX" not in str(unhinted.compile(dialect=mysql.dialect()))
+
+
+def test_date_index_hint_preserves_select_and_grouping():
+    """힌트가 선택 컬럼, 그룹 기준, 정렬 기준을 바꾸지 않습니다."""
+    base = (
+        select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+        .group_by(BidResult.bidwinnr_nm)
+        .order_by(func.count(BidResult.id).desc())
+    )
+    hinted = structured_data._hint_result_date_index(base, _plan(date_from="2026-01-01"))
+    assert [c.name for c in base.selected_columns] == [c.name for c in hinted.selected_columns]
+    assert str(base.whereclause) == str(hinted.whereclause)
