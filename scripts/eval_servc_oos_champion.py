@@ -323,11 +323,18 @@ def evaluate_oos_sample_row(
     bid_id = int(row.bid_id)
     actual_rate = float(row.actual_rate)
 
-    # 하한율 결측 여부 판정 (dataset.announcement_feature_payload 활용)
-    bid = session.get(BidAnnouncement, bid_id)
-    payload = announcement_feature_payload(bid) if bid else {}
-    raw_lwlt = payload.get("lwlt_rate")
-    is_missing = raw_lwlt in (None, "", 0, "0")
+    # 하한율 결측 여부 판정.
+    # predict_fn 주입 모드에서는 session 이 사용 불가할 수 있으므로 DB 조회를 건너뜁니다.
+    if session is not None and predict_fn is None:
+        # 운영 API 경로에서만 DB 에서 announcement 를 읽어 하한율 결측을 판정합니다.
+        # (dataset.announcement_feature_payload 활용)
+        bid = session.get(BidAnnouncement, bid_id)
+        payload = announcement_feature_payload(bid) if bid else {}
+        raw_lwlt = payload.get("lwlt_rate")
+        is_missing = raw_lwlt in (None, "", 0, "0")
+    else:
+        # 주입 모드 또는 session 이 없는 경우: 결측 여부를 미지(False)로 처리합니다.
+        is_missing = False
 
     if predict_fn is not None:
         pred_res = predict_fn(bid_id, session)

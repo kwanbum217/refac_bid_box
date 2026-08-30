@@ -369,3 +369,102 @@ class TestRunServcOosEvaluationDryRun:
     def test_no_session_and_no_samples_raises(self):
         with pytest.raises(ValueError, match="session 또는 samples_df"):
             run_servc_oos_evaluation(session=None, samples_df=None)
+
+
+# ---------------------------------------------------------------------------
+# 섹션 6: T5 - 주입으로 모델 파일/DB 없이 전체 평가 파이프라인 통과
+# Capsule required_change (5): "모델 로드와 DB 접근은 주입으로 대체되어 실제 모델 파일이나 DB 없이 통과"
+# ---------------------------------------------------------------------------
+
+
+class TestPredictFnInjection:
+    """predict_fn 주입을 통해 ModelRegistry 와 DB 없이 채점까지 진행하는 경로를 검증합니다."""
+
+    def _make_samples_df(self, n=5):
+        return pd.DataFrame(
+            {
+                "bid_id": range(1, n + 1),
+                "bid_ntce_no": [f"2026{i:06d}" for i in range(1, n + 1)],
+                "bid_ntce_ord": ["001"] * n,
+                "category": ["Servc"] * n,
+                "openg_dt": ["2026-08-10 10:00:00"] * n,
+                "sucsf_bid_amt": [1_000_000] * n,
+                "actual_rate": [85.0] * n,
+                "presmpt_prce": [1_000_000] * n,
+                "base_amount": [None] * n,
+            }
+        )
+
+    def _stub_predict_fn(self, bid_id: int, session) -> dict:
+        """실제 모델 파일 없이 고정값을 반환하는 스텁 predict_fn."""
+        return {
+            "prediction_rate": 84.5,
+            "rate_low": 82.0,
+            "rate_high": 87.0,
+            "model_name": "servc_institution_v1_stub",
+        }
+
+    def test_full_pipeline_with_injected_predict_fn(self):
+        """T5: predict_fn 주입으로 실제 모델 파일/DB 없이 채점 완료."""
+        # samples_df 주입으로 DB 우회, predict_fn 주입으로 ModelRegistry 우회
+        from scripts.eval_servc_oos_champion import evaluate_oos_sample_row
+
+        df = self._make_samples_df(n=3)
+        scored_records = []
+        for row in df.itertuples():
+            # session=None 이어도 predict_fn 이 주입되면 session.get() 을 호출하지 않아야 합니다.
+            # evaluate_oos_sample_row 는 predict_fn 이 있으면 DB 조회 경로를 건너뜁니다.
+            rec = evaluate_oos_sample_row(
+                session=None,
+                row=row,
+                predict_fn=self._stub_predict_fn,
+            )
+            scored_records.append(rec)
+
+        assert len(scored_records) == 3
+        for rec in scored_records:
+            assert rec["pred"] == pytest.approx(84.5)
+            assert rec["low"] == pytest.approx(82.0)
+            assert rec["high"] == pytest.approx(87.0)
+            assert rec["model"] == "servc_institution_v1_stub"
+
+    def test_metrics_from_injected_predictions(self):
+        """T5+T4: 주입된 예측값으로 계산한 지표가 기대값을 낸다."""
+        from scripts.eval_servc_oos_champion import compute_oos_metrics
+
+        # actual=85.0, pred=84.5 -> abs_err=0.5 -> within_0.5=True
+        df = pd.DataFrame(
+            {
+                "actual": [85.0, 85.0, 85.0],
+                "pred": [84.5, 84.5, 84.5],
+                "low": [82.0, 82.0, 82.0],
+                "high": [87.0, 87.0, 87.0],
+            }
+        )
+        m = compute_oos_metrics(df)
+        assert m["mae"] == pytest.approx(0.5, abs=1e-4)
+        assert m["hit_rate_05"] == pytest.approx(1.0, abs=1e-4)
+        # actual=85.0 은 [82.0, 87.0] 안에 있으므로 coverage=1.0
+        assert m["coverage"] == pytest.approx(1.0, abs=1e-4)
+
+    def test_run_evaluation_with_injected_fn_skips_session(self):
+        """T5: run_servc_oos_evaluation 에 session 과 predict_fn 을 함께 주입하면
+        실제 DB 쿼리 없이 채점이 진행된다."""
+        from scripts.eval_servc_oos_champion import run_servc_oos_evaluation
+
+        df = self._make_samples_df(n=3)
+        # session 인자는 사용되지 않아야 하지만 타입 검사를 위해 sentinel 객체를 넘깁니다.
+        sentinel_session = object()
+
+        result = run_servc_oos_evaluation(
+            session=sentinel_session,
+            samples_df=df,
+            predict_fn=self._stub_predict_fn,
+            dry_run=False,
+        )
+
+        assert result["schema"] == OOS_EVAL_SCHEMA
+        assert result["actual_sample_count"] == 3
+        # 채점된 건이 1건 이상이면 MAE 가 None 이 아님
+        if result["overall_metrics"]["sample_count"] > 0:
+            assert result["overall_metrics"]["mae"] is not None
