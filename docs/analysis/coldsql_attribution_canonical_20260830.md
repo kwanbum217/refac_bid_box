@@ -5,7 +5,7 @@
 > **fixture SHA-256**: `2c98c636a478cfc92870533513b4442704d8441bd217e303489c9bcf0752e483`
 > **fixture 경로**: `data/eval/llm_quality_fixture_v2.json` (32문항 정본)
 > **원시 JSON**: [`../../data/benchmarks/coldsql_attribution_canonical_20260830.json`](../../data/benchmarks/coldsql_attribution_canonical_20260830.json)
-> **결론 한 줄**: 동일 표본 32문항 × 3회 반복에서 Redis 캐시가 차가운 상태의 총 SQL 비용은 **223.77초**, 데운 상태는 **0.15초**이며 그 차이의 99.9%는 5개 digest(상위 누적 134.62초)에 귀속된다. 지배 패턴은 카테고리 필터 유무와 무관하게 발생하는 `LIKE concat('%', ?, '%')` (선행 와일드카드) 계열이다. **접두 일치 전환은 권고하지 않는다.**
+> **결론 한 줄**: 동일 표본 32문항 × 3회 반복에서 Redis 캐시가 차가운 상태의 총 SQL 비용은 **223.77초**, 데운 상태는 **0.15초**이며 그 차이의 64.2%는 상위 5개 digest(누적 143.59초)에 귀속되고, 상위 10개가 92.0%(누적 205.78초)를 차지한다. 지배 패턴은 카테고리 필터 유무와 무관하게 발생하는 `LIKE concat('%', ?, '%')` (선행 와일드카드) 계열이다. **접두 일치 전환은 권고하지 않는다.**
 
 ---
 
@@ -51,7 +51,7 @@ Canonical 게이트 결과:
 | warm (적중 상태) | **0.151175** | 10 | 96 |
 
 - cold 총 비용은 warm 대비 약 **1,480배** 크다.
-- 5개 digest 만 누적 cold 비용의 약 **60%** (134.62 / 223.77) 를 차지한다.
+- 상위 5개 digest 만 누적 cold 비용의 **64.2%** (143.59 / 223.77) 를 차지한다.
 - warm 의 digest 수는 10개로 cold (38개) 의 26% 수준이다. cold 에서만 등장하는 28개 digest 는 **cold 일 때만 실행되는 캐시 미스 경로의 쿼리들**이며 warm 에서는 캐시 적중으로 아예 실행되지 않는다.
 
 ---
@@ -73,7 +73,7 @@ Canonical 게이트 결과:
 | 9 | `COUNT(bid_announcements.id)` + `bid_ntce_nm LIKE concat('%', ?, '%')` (category 없음) | 1 | 0 | 4.432 | 0.000 | 4.432 | 4,432.3 | 0.0 |
 | 10 | `bid_results.bidwinnr_nm` GROUP BY + `LIKE concat('%', ?, '%')` ×2 + `category=?` | 3 | 0 | 4.088 | 0.000 | 4.088 | 1,507.0 | 0.0 |
 
-상위 10개 누적 `delta_sum_sec` = **205.778 sec** (총 cold 비용의 약 **91.9%**).
+상위 10개 누적 `delta_sum_sec` = **205.78초** (총 cold 비용의 **92.0%**).
 
 ### 3.1 패턴 정리
 
@@ -90,7 +90,7 @@ Canonical 게이트 결과:
 
 1. **지배 비용은 선행 와일드카드 `LIKE concat('%', ?, '%')` 가 포함된 모든 쿼리**다. 카테고리 필터가 있어도 (그룹 A·B) cold 에서 ~10초 / 호출이 발생한다. 카테고리가 없는 경우 (#6·#7·#8·#9) 는 4~18초 / 호출까지 늘어난다.
 2. 카테고리 필터가 **있고** 그룹 A·B 의 쿼리 형태(컬럼이 `dminstt_nm` / `bid_ntce_nm` 이고 인덱스가 `ix_bid_ann_dt_cat`)는 Wave E1 의 날짜 인덱스 힌트로 이미 ~13초대에서 ~10초대로 시정됐다. Wave E3 의 `corrupted_probe` 제거도 정상 상태에서 3회 × ~9초 = ~27초의 비용을 제거했다. 이 두 시정이 없었다면 cold 총 비용은 약 250~270초였을 것으로 추정된다.
-3. 그룹 C·D·E 는 **카테고리 필터가 없는 선행 와일드 LIKE + GROUP BY / 단순 SELECT** 로, 현재 시정(날짜 인덱스 힌트) 의 적용 범위에서 벗어나 있다. 같은 코드가 카테고리 유무에 따라 4배 이상 차이 (A 평균 ~10초 vs E 평균 ~14초 vs C·D 단일 호출 18초) 를 보인다.
+3. 그룹 C·D·E 는 **카테고리 필터가 없는 선행 와일드 LIKE + GROUP BY / 단순 SELECT** 로, 현재 시정(날짜 인덱스 힌트) 의 적용 범위에서 벗어나 있다. 같은 코드가 카테고리 유무에 따라 1.83배 차이 (cold max 기준 A 평균 10,088ms vs C·D 평균 18,497ms) 를 보인다. 그룹 E 의 호출당 평균은 10.56초다.
 4. warm 에서도 10개 digest 가 보이는데, 그 합은 0.15초로 cold 의 0.07% 수준이다. warm 에서도 실행되는 쿼리는 캐시 미스키가 짧게 끝나는 형태 (메타·벡터 채널 일부) 다.
 
 ---
@@ -101,9 +101,9 @@ Canonical 게이트 결과:
 
 | 이전 수치 | 출처 | 비교 가능 여부 | 이유 |
 | --- | --- | :---: | --- |
-| `sql_ms=97,087.81` (cold max) | `rag_structured_sql_coldstart_20260830.md` 1장 표 | 비교 대상 | 단일 호출 wall-clock (end-to-end), 본 정본은 digest 단위 합산이라 단위가 다름 |
-| `q08/q25/q03/q31` cold sql 합계 60~97초 | `rag_structured_sql_coldstart_20260830.md` 1장 | 비교 대상 | 4문항만 측정, 본 정본은 32문항 × 3회 (96 cold / 96 warm 호출) |
-| `13,446ms → 698ms` (bidwinnr_nm GROUP BY 시정 효과) | `task_4a485df361bd.md` 3.1 절 | 비교 대상 | 시점: 캐시 데운 상태 + 단일 호출 wall-clock, 본 정본은 digest SUM |
+| `sql_ms=97,087.81` (cold max) | `rag_structured_sql_coldstart_20260830.md` 1장 표 | **비교 불가** | 단일 호출 wall-clock (end-to-end), 본 정본은 digest 단위 합산이라 단위가 다름 |
+| `q08/q25/q03/q31` cold sql 합계 60~97초 | `rag_structured_sql_coldstart_20260830.md` 1장 | **비교 불가** | 4문항만 측정, 본 정본은 32문항 × 3회 (96 cold / 96 warm 호출) |
+| `13,446ms → 698ms` (bidwinnr_nm GROUP BY 시정 효과) | `task_4a485df361bd.md` 3.1 절 | **비교 불가** | 시점: 캐시 데운 상태 + 단일 호출 wall-clock, 본 정본은 digest SUM |
 | 8개 digest 별 누적 (`89.09s`, `78.41s`, `72.09s`, …) | `rag_structured_sql_coldstart_20260830.md` 9장 표 | 비교 가능 (같은 digest_text 매칭은 직접 비교) | 측정 조건이 cold·cache cold 4문항 × 2회 였고, 본 정본은 cold·cache cold 32문항 × 3회 |
 
 따라서 본 문서의 수치는 **정본 환경(병합 revision 7dcc771, 32문항 × 3회, 캐시 비움 직후 동일 표본, 3회 warm)** 에 한정해 해석한다. 이전 문서의 97초 / 13,446ms / 698ms 와 본 문서의 223.77초 / 10,074.7ms 는 같은 코드에서 나온 수치지만 호출 표본·캐시 상태·측정 단위가 달라 직접 비교 대상이 아니다.
@@ -128,7 +128,7 @@ Canonical 게이트 결과:
 
 1. **canonical=true** 이며 모든 acceptance 조건을 충족한다 (1·2장).
 2. cold 223.77초, warm 0.15초, 차이 1,480배. 캐시 비움이 콜드 SQL 비용을 그대로 드러내는지 확인됐다.
-3. 상위 10개 digest 의 누적 `delta_sum_sec` = **205.78초** (cold 총 비용의 91.9%) 이며 모두 `LIKE concat('%', ?, '%')` 패턴이다.
+3. 상위 10개 digest 의 누적 `delta_sum_sec` = **205.78초** (cold 총 비용의 92.0%) 이며 모두 `LIKE concat('%', ?, '%')` 패턴이다.
 4. 그룹 A·B 의 비용은 이미 Wave E1·E3 의 시정으로 부분 개선된 상태이며, **그룹 C·D·E 가 잔여 지배 SQL** 이다.
 5. **접두 일치 전환은 권고하지 않는다** (capsule 금지 + 의미 변화 위험). 다음 시정은 (1) 날짜 인덱스 힌트 적용 범위 확대, (2) 카테고리 있는 단순 SELECT 의 인덱스/캐시 위임 검토, (3) 의도 재점검, (4) 캐시 갱신 전략, (5) 정책 일관성이다.
 
