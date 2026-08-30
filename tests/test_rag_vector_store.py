@@ -327,3 +327,67 @@ def test_engine_strict_equality_match_bypasses_vector_search(monkeypatch):
     assert len(context.vector_docs) == 1
     assert context.vector_docs[0]["metadata"]["bid_ntce_nm"] == Q21_TARGET_TITLE
     assert "동부지구" in context.vector_docs[0]["document"]
+
+
+# ===========================================================================
+# 8. Lexical 공고 전용 문서가 낙찰 결과 문서를 밀어내지 않는지 검증
+# ===========================================================================
+
+
+def test_lexical_announcement_docs_do_not_displace_vector_result_docs(monkeypatch):
+    """Lexical 채널은 dataset="announcement" 만 조회해 낙찰 결과 필드를 담지 않습니다.
+
+    포함 매칭만 성립한 공고 전용 문서를 상위로 승격하면 결과를 담은 벡터 문서가
+    top_k 절단선 밖으로 밀려 낙찰 질의가 답을 잃습니다. 2026-08-30 정본 측정에서
+    q05, q08 이 이 기전으로 회귀했습니다(evidence recall 은 1.0 을 유지한 채
+    numeric 미검출과 과잉거절만 발생해 검색 지표로는 드러나지 않았습니다).
+    """
+    monkeypatch.setattr("src.app.core.config.settings.MEILI_ENABLED", True)
+
+    announcement_only_hits = [
+        {
+            "id": f"announcement_Cnstwk_R26BK0168{idx:04d}",
+            "source_id": 10169000 + idx,
+            "dataset": "announcement",
+            "bid_ntce_no": f"R26BK0168{idx:04d}",
+            "bid_ntce_nm": Q21_TARGET_TITLE,
+            "dminstt_nm": "경상남도 거제시",
+            "category": "Cnstwk",
+            "bid_ntce_dt": "2026-08-13 20:01:17",
+        }
+        for idx in range(1, 5)
+    ]
+
+    class MockMeiliClient:
+        def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+            return {"hits": announcement_only_hits}
+
+    monkeypatch.setattr(
+        "src.app.services.search_index.MeiliSearchClient",
+        lambda *a, **kw: MockMeiliClient(),
+    )
+
+    result_doc = {
+        "id": "vec_doc_10169448",
+        "document": (
+            f"[공고명] {Q21_TARGET_TITLE}\n[수요기관] 경상남도 거제시\n"
+            "[낙찰업체] 주식회사 백화\n[낙찰금액] 48,445,040\n[낙찰률] 90.0150"
+        ),
+        "metadata": {"bid_ntce_nm": Q21_TARGET_TITLE, "has_result": True},
+        "distance": 0.3161,
+    }
+
+    monkeypatch.setattr(
+        "src.rag.engine.retrieve_semantic_context",
+        MagicMock(return_value=SemanticSearchResult(ok=True, documents=[result_doc])),
+    )
+
+    engine = HybridRAGEngine()
+    context = engine._prepare_context(Q21_QUERY)
+
+    assert context.vector_docs, "벡터 문서가 비어서는 안 됩니다"
+    documents = [doc.get("document") or "" for doc in context.vector_docs]
+    assert any("낙찰금액" in text for text in documents), (
+        "낙찰 결과를 담은 벡터 문서가 공고 전용 Lexical 문서에 밀려났습니다"
+    )
+    assert context.vector_docs[0]["id"] == "vec_doc_10169448"
