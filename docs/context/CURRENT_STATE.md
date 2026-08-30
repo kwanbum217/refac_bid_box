@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-30
-> **source_commit**: `2930a7b`
+> **source_commit**: `7a8dee5`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -129,10 +129,35 @@ G5·G6 자유 검색은 Meilisearch fail-closed 운영 검증 후 위임할 수 
 소비를 같은 표본에서 귀속하는 `scripts/measure_coldsql_attribution.py`를 추가했습니다.
 캐시 비움 요청과 실제 성공이 모두 확인되지 않으면 `canonical=false`로 닫힙니다.
 
-기존 97초 수치는 E1 병합 전 기준입니다. 병합 revision을 동결하고 명시적으로 캐시를
-비운 정본 실측 전에는 개선폭이나 잔여 지배 SQL을 확정하지 않습니다.
+**Wave E4 정본 실측 완료(`2ba8f68`, 문서 정정 `683d705`)**: `7dcc771` 동결에서
+32문항 x 3회 cold/warm 을 같은 표본으로 측정했습니다. `canonical=true`,
+`failed_gates=[]`, 요청 실패 0 입니다([`coldsql_attribution_canonical_20260830.md`](../analysis/coldsql_attribution_canonical_20260830.md)).
 
-**G3 컷오버 판정 전에 닫아야 합니다.**
+| 지표 | 값 |
+| --- | ---: |
+| cold 총 SQL 소비 | **223.77초** |
+| warm 총 SQL 소비 | **0.15초** |
+| 최대 단일 쿼리 delta | 29.67초 |
+| 상위 10개 누적 비중 | **92.0%** (205.78초) |
+
+상위 10개가 전부 `LIKE concat('%', ?, '%')` 선행 와일드카드입니다. E1 이 겨눈
+`bidwinnr_nm` 집계는 7위(18.19초)로 내려갔고, 잔여 지배 SQL 은 **`bid_announcements`
+선행 와일드카드 5종**입니다. E2 가 접두 전환을 이미 기각했으므로 다음 후보는
+Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
+
+**Wave E5 회귀 시정 완료(`33bfdf8`)**: E1 이 실시간 경로 손상 탐침을 스냅샷 마커로
+바꾸면서, 스냅샷이 없는 경로에서 제외 안내가 사라졌습니다. E1 을 "안내 문구 의미
+유지" 로 적었던 종전 서술은 **사실이 아니었습니다.** 제외 확인을 파이썬 판독 ->
+스냅샷 마커 -> `LIMIT 1` 탐침 3단계로 두고 앞 단계에서 끝나면 뒤를 실행하지
+않습니다. 운영 환경은 마커에서 끝나 추가 비용이 없고 순위 쿼리는 불변입니다.
+
+> **기각 기록**: SQL `exclude_corrupted()` 를 빼고 오버페치로 거르는 안은 실측
+> 기각입니다. `bid_results` 낙찰업체 상위 15건이 **전부 손상값**이라 실시간 순위가
+> 빈 목록이 됩니다(정상 5건을 채우려면 81위까지 필요, 오버페치는 15건). 윈도우
+> 집계로 한 스캔에 푸는 안은 6,436ms -> 35,934ms 로 5.6배 느려져 기각했습니다.
+> **단위 테스트는 이 결함을 못 잡습니다.** fixture 규모에서는 항상 통과합니다.
+
+**G3 컷오버 판정 전에 잔여 지배 SQL 시정을 닫아야 합니다.**
 
 ---
 
@@ -152,9 +177,10 @@ G5·G6 자유 검색은 Meilisearch fail-closed 운영 검증 후 위임할 수 
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1-0. **RAG 콜드 SQL 정본 재측정**: Wave E1·E2·E3 병합 revision을 동결하고 Redis
-캐시 비움이 확인된 cold·warm 표본을 `performance_schema`로 귀속합니다. 결과 전에는
-접두 일치 전환이나 잔여 SQL 개선 대상을 확정하지 않습니다.
+1-0. **RAG 콜드 SQL 잔여 시정**: E4 정본 실측이 끝나 잔여 지배 SQL 이
+`bid_announcements` 선행 와일드카드 5종(cold 누적 134.6초)으로 특정됐습니다.
+접두 전환은 E2 에서 기각됐으므로 Meilisearch 위임 또는 인덱스·스냅샷 경로
+재설계를 검토합니다.
 1. **운영 검증**: 2026-08-26 CI run `32930156938`(`5f8174a`) **3플랫폼 green**. Windows Docker Desktop 실기만 남음.
 1-4. **Vector fail-closed·정확 제목**: 근거 적중 **16/16**, 기간·기관 post-filter를 유지합니다. 2026-08-27 후보 30건과 공고명 정규화 정확 일치 재순위로 q21 정답을 top-5에 포함했습니다([`task_9fe129597faf.md`](../analysis/task_9fe129597faf.md)).
 1-2. **LLM 경로 최적화**: 2026-08-26 v4(`b4913fd`, 각 72회차)에서 **`gemma4:e2b` 승격** ([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)). 2026-08-27 blind fixture v2(32문항) 측정에서 **e2b 승격 유지** 확정(동결 `13f947a`). numeric 양쪽 **87.5% 동률**이며 e2b 가 과잉응답 0 대 1, refusal 8/8 대 7/8, P50 3,990 대 6,459ms 로 앞섭니다. 과잉거절 12.5% 와 P50 은 두 모델 모두 미달이며 원인은 검색 미스 3문항입니다. 1차 측정은 백필 후 KB 미색인으로 **무효**([`llm_generalization_judgment_20260827.md`](../analysis/llm_generalization_judgment_20260827.md)).
