@@ -68,6 +68,7 @@ from src.rag.snapshots import (
 )
 from src.rag.structured_data import retrieve_structured_data
 from src.rag.vector_store import (
+    RERANK_MIN_TITLE_LENGTH,
     SemanticSearchResult,
     _extract_doc_sort_key,
     _normalize_match_key,
@@ -752,6 +753,7 @@ class HybridRAGEngine:
         vector_filter_provenance: dict[str, Any] | None = None
 
         # 1. Lexical (Meilisearch) 어휘 채널 선행 호출 및 정확 일치 검사
+        lexical_containment_matches: list[dict[str, Any]] = []
         if plan.use_lexical and not vector_docs:
             t_lex_start = _safe_perf_counter()
             lexical_candidates = retrieve_lexical_context(plan, db=db)
@@ -769,8 +771,13 @@ class HybridRAGEngine:
                     doc_title = doc_meta.get("bid_ntce_nm") or extract_document_title(
                         doc.get("document")
                     )
-                    if doc_title and _normalize_match_key(doc_title) == query_key:
-                        exact_lexical_matches.append(doc)
+                    title_key = _normalize_match_key(doc_title) if doc_title else ""
+                    if title_key:
+                        # 엄격 동치(==)는 벡터 호출 자체를 생략(bypass)하는 용도로 사용하고, 포함 매칭(in)은 대상 질의 급증 및 회귀 방지를 위해 벡터 검색을 유지한 채 상위로 승격하는 용도로 분리합니다.
+                        if title_key == query_key:
+                            exact_lexical_matches.append(doc)
+                        elif len(title_key) >= RERANK_MIN_TITLE_LENGTH and title_key in query_key:
+                            lexical_containment_matches.append(doc)
 
                 if exact_lexical_matches:
                     exact_lexical_matches.sort(key=_extract_doc_sort_key, reverse=True)
@@ -805,6 +812,25 @@ class HybridRAGEngine:
                     vector_hints.append(
                         "지식베이스 필터 조건에 맞는 문서가 0건이라 문맥 없이 답변합니다."
                     )
+
+        # Lexical 포함 매칭 문서는 벡터 호출을 생략하지 않고 수행한 뒤 벡터 결과 상위로 승격
+        if lexical_containment_matches:
+            target_k = plan.top_k or DEFAULT_VECTOR_TOP_K
+            lexical_containment_matches.sort(key=_extract_doc_sort_key, reverse=True)
+            seen_ids: set[str] = set()
+            merged_docs: list[dict[str, Any]] = []
+            for doc in lexical_containment_matches:
+                doc_id = str(doc.get("id") or (doc.get("metadata") or {}).get("id") or "")
+                if doc_id and doc_id not in seen_ids:
+                    seen_ids.add(doc_id)
+                    merged_docs.append(doc)
+            for doc in vector_docs or []:
+                doc_id = str(doc.get("id") or (doc.get("metadata") or {}).get("id") or "")
+                if not doc_id or doc_id not in seen_ids:
+                    if doc_id:
+                        seen_ids.add(doc_id)
+                    merged_docs.append(doc)
+            vector_docs = merged_docs[:target_k]
 
         kb_status_elapsed_ms = 0.0
         if plan.use_kb_status and kb_status is None and db is not None:
