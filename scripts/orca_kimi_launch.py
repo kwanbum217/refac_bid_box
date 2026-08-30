@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess  # nosec B404 - 코디네이터가 만든 고정 인자 목록으로만 kimi 를 호출합니다
 import sys
 import time
@@ -35,6 +36,39 @@ COMMIT_NOTICE = (
     "git add -A 는 쓰지 마십시오. 커밋 없이 완료를 선언하면 계약 위반입니다. "
     "커밋 후 git log --oneline main..HEAD 로 확인하고 해시를 보고하십시오."
 )
+
+
+def available_models(home: Path) -> list[str]:
+    """지정한 KIMI_CODE_HOME 프로필의 config.toml 에 등록된 모델 별칭을 돌려줍니다."""
+    config = home / "config.toml"
+    if not config.exists():
+        return []
+    pattern = re.compile(r'^\s*\[models\."([^"]+)"\]', re.MULTILINE)
+    return pattern.findall(config.read_text(encoding="utf-8"))
+
+
+def assert_model_available(model: str, home: Path) -> None:
+    """기동 전에 모델이 그 프로필에 있는지 확인합니다.
+
+    프로필마다 등록된 모델이 다릅니다. 2026-08-30 에 코디네이터가 기본 프로필
+    (~/.kimi-code)에서 or-free/minimax-m3 응답을 확인한 뒤 런처로 띄웠는데, 런처의
+    DEFAULT_HOME 은 ~/.kimi-openrouter-bakeoff 라 그 프로필에는 해당 모델이 없어
+    기동 직후 종료했습니다. 화면에는 워커가 뜬 것처럼 보이므로 사람이 원인을
+    찾기 어렵습니다. 여기서 미리 걸러 어느 프로필에 무엇이 있는지 알려 줍니다.
+    """
+    models = available_models(home)
+    if not models:
+        raise SystemExit(
+            f"KIMI_CODE_HOME 프로필에 config.toml 이 없거나 모델이 없습니다: {home}\n"
+            "  --home 으로 올바른 프로필을 지정하십시오."
+        )
+    if model not in models:
+        listed = "\n".join(f"    {m}" for m in sorted(models))
+        raise SystemExit(
+            f"모델 {model!r} 이 프로필 {home} 에 등록되어 있지 않습니다.\n"
+            f"  이 프로필에서 쓸 수 있는 모델:\n{listed}\n"
+            "  --home 으로 다른 프로필을 지정하거나 등록된 모델을 쓰십시오."
+        )
 
 
 def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> str:
@@ -99,6 +133,10 @@ def main(argv: list[str] | None = None) -> int:
         help="kimi 종료 후 셸로 이어받지 않고 kimi 종료 코드를 그대로 반환합니다.",
     )
     args = parser.parse_args(argv)
+
+    # preamble 을 기다리기 전에 검사합니다. 모델이 없으면 최대 300초를 기다린 뒤에야
+    # 실패하게 되고, 그동안 코디네이터는 워커가 도는 줄 압니다.
+    assert_model_available(args.model, args.home)
 
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
