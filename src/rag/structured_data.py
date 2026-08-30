@@ -28,7 +28,6 @@ from src.app.models.bids import (
 from src.app.services.ranking_snapshots import (
     DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
-    REPLACEMENT_CHAR,
     exclude_corrupted,
     get_skipped_count,
     get_top_rankings,
@@ -167,6 +166,7 @@ def _result_limit(plan: RetrievalPlan) -> int:
 # category 가 함께 걸리면 옵티마이저가 ix_bid_results_cat_dt_stats 로 182,902행까지
 # 이미 좁히므로 그때는 힌트를 주지 않습니다.
 RESULT_DATE_INDEX_HINT = "FORCE INDEX (ix_bid_results_dt_cat)"
+ANNOUNCEMENT_DATE_INDEX_HINT = "FORCE INDEX (ix_bid_ann_dt_cat)"
 
 
 def _needs_result_date_index_hint(plan: RetrievalPlan) -> bool:
@@ -183,6 +183,22 @@ def _hint_result_date_index(stmt, plan: RetrievalPlan):
     if not _needs_result_date_index_hint(plan):
         return stmt
     return stmt.with_hint(BidResult, RESULT_DATE_INDEX_HINT, dialect_name="mysql")
+
+
+def _needs_announcement_date_index_hint(plan: RetrievalPlan) -> bool:
+    """날짜 범위는 있고 category 가 없는 공고 집계인지 판정합니다."""
+    filters = plan.filters or {}
+    date_from, date_to = _resolve_window(filters)
+    if not (date_from or date_to):
+        return False
+    return not _normalize_text(str(filters.get("category") or ""))
+
+
+def _hint_announcement_date_index(stmt, plan: RetrievalPlan):
+    """조건이 맞을 때만 공고 날짜 인덱스 힌트를 붙입니다. 결과 집합은 바뀌지 않습니다."""
+    if not _needs_announcement_date_index_hint(plan):
+        return stmt
+    return stmt.with_hint(BidAnnouncement, ANNOUNCEMENT_DATE_INDEX_HINT, dialect_name="mysql")
 
 
 def _result_availability_conditions(plan: RetrievalPlan) -> list:
@@ -243,7 +259,8 @@ def _top_rows(
     dataset: str,
     dimension: str,
     live_stmt,
-    corrupted_probe,
+    category: str = "",
+    corrupted_probe: Any = None,
     limit: int = 5,
     ttl: int = AGGREGATE_CACHE_TTL,
 ) -> tuple[list, int]:
@@ -260,7 +277,8 @@ def _top_rows(
 
     # 스냅샷은 날짜 필터가 붙는 순간 포기합니다(_snapshot_scope). "2026년" 같은
     # 흔한 표현이 곧 날짜 필터이므로 실시간 경로가 자주 타며, 그 경로가 캐시
-    # 없이는 매번 2초를 씁니다. 같은 창을 다시 묻는 일이 잦으므로 캐시합니다.
+    # 없이는 매번 46~97초를 씁니다(2026-08-30 실측). 같은 창을 다시 묻는 일이
+    # 잦으므로 캐시합니다.
     stmt = live_stmt.limit(limit * LIVE_OVERFETCH_FACTOR)
     key = _stmt_cache_key("rag:top:", stmt)
     cached_live = cache.get(key)
@@ -270,9 +288,11 @@ def _top_rows(
 
     kept, dropped = _drop_corrupted(db.execute(stmt).all(), limit)
     if not dropped:
-        # SQL 이 이미 U+FFFD 를 쳐냈으므로, 제외가 있었는지는 따로 확인합니다.
-        # 첫 건에서 멈추므로 전체 스캔이 되지 않습니다.
-        dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
+        # 실시간 경로에서 U+FFFD 탐침(corrupted_probe)을 매번 전체 스캔(최대 27.6초)
+        # 하는 대신, 야간에 이미 계산해 둔 스냅샷의 손상 여부 마커(rank=0)를 O(1)로
+        # 재사용합니다. 스냅샷에 마커가 없으면 파이썬 계층(_drop_corrupted)의
+        # 손상 판독 결과만 반영합니다.
+        dropped = get_skipped_count(db, dataset, dimension, category)
 
     # 손상 탐지 결과까지 함께 담습니다. 순위만 캐시하면 적중할 때마다 탐지
     # 질의가 다시 돌아 절반만 아끼게 됩니다.
@@ -530,20 +550,20 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
 
     recent_results = _fetch_recent_results(db, result_conditions, result_limit)
 
+    category_filter = _normalize_text(str((plan.filters or {}).get("category") or ""))
+
     winner_rows, dropped_winners = _top_rows(
         db,
         scope=snapshot_scope,
         dataset=DATASET_RESULT,
         dimension="bidwinnr_nm",
+        category=category_filter,
         live_stmt=_hint_result_date_index(
             select(BidResult.bidwinnr_nm, func.count(BidResult.id))
             .where(exclude_corrupted(BidResult.bidwinnr_nm), *result_conditions)
             .group_by(BidResult.bidwinnr_nm)
             .order_by(func.count(BidResult.id).desc()),
             plan,
-        ),
-        corrupted_probe=select(BidResult.id).where(
-            BidResult.bidwinnr_nm.contains(REPLACEMENT_CHAR), *result_conditions
         ),
     )
     top_winners = [
@@ -556,12 +576,13 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         scope=snapshot_scope,
         dataset=DATASET_ANNOUNCEMENT,
         dimension="dminstt_nm",
-        live_stmt=select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
-        .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *announcement_conditions)
-        .group_by(BidAnnouncement.dminstt_nm)
-        .order_by(func.count(BidAnnouncement.id).desc()),
-        corrupted_probe=select(BidAnnouncement.id).where(
-            BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+        category=category_filter,
+        live_stmt=_hint_announcement_date_index(
+            select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+            .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *announcement_conditions)
+            .group_by(BidAnnouncement.dminstt_nm)
+            .order_by(func.count(BidAnnouncement.id).desc()),
+            plan,
         ),
     )
     top_institutions = [
@@ -574,12 +595,13 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         scope=snapshot_scope,
         dataset=DATASET_ANNOUNCEMENT,
         dimension="bid_ntce_nm",
-        live_stmt=select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
-        .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
-        .group_by(BidAnnouncement.bid_ntce_nm)
-        .order_by(func.count(BidAnnouncement.id).desc()),
-        corrupted_probe=select(BidAnnouncement.id).where(
-            BidAnnouncement.bid_ntce_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+        category=category_filter,
+        live_stmt=_hint_announcement_date_index(
+            select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+            .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
+            .group_by(BidAnnouncement.bid_ntce_nm)
+            .order_by(func.count(BidAnnouncement.id).desc()),
+            plan,
         ),
     )
     top_announcements = [
