@@ -241,50 +241,51 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "max_tokens": 1_000_000,
         "suitable_for": [
             "builder",
+            "reviewer",
             "investigator",
             "benchmarker",
             "documenter",
         ],
-        "notes": "Alibaba Token Plan 기본 범용 워커. 일반 구현, 테스트 수정, 문서 정합성, 읽기 전용 조사에 배정한다. 리뷰어 주 모델로는 쓰지 않는다.",
+        "notes": "Alibaba Token Plan 에서 유일하게 자동 배정되는 모델. 리뷰어 주 모델이며, 빌더가 gemini 계열인 동안 다른 계열로 독립 검토를 맡는다. 빌더·조사·계측에는 gemini 할당량이 소진됐을 때 fallback 으로 들어간다.",
     },
     "deepseek-pro": {
         "id": "deepseek-v4-pro",
         "provider": "qwen",
         "tier": "primary",
-        "auto_selectable": True,
+        "auto_selectable": False,
         "max_tokens": 1_000_000,
         "suitable_for": [
             "builder",
             "investigator",
             "benchmarker",
         ],
-        "notes": "복잡한 SQL·RAG·레이턴시 회귀 원인 분석 전문 워커. 가설과 반증이 오가는 high 위험도 구현·조사에 배정한다. 범용 배정에는 쓰지 않는다.",
+        "notes": "복잡한 SQL·RAG·레이턴시 회귀 원인 분석 전문. Alibaba Token Plan 잔량이 크지 않아 자동 배정에서 제외한다. qwen-plus 가 두 번 실패했거나 원인 분석이 막혔을 때 --model 로 명시 지정하고 WORKER_MODEL_NOTICE 를 남긴다.",
     },
     "glm": {
         "id": "glm-5.2",
         "provider": "qwen",
         "tier": "primary",
-        "auto_selectable": True,
+        "auto_selectable": False,
         "max_tokens": 1_000_000,
         "suitable_for": [
             "reviewer",
             "investigator",
             "documenter",
         ],
-        "notes": "독립 리뷰어. 빌더와 다른 모델 계열을 써서 추론 편향을 분리하는 것이 목적이므로 같은 Task 의 빌더와 겹쳐 배정하지 않는다.",
+        "notes": "독립 리뷰어. Alibaba Token Plan 잔량 보호를 위해 자동 배정에서 제외한다. 리뷰어 자동 배정은 별도 할당량인 gemini 계열이 맡으며, 빌더와 다른 계열이라는 조건은 그대로 지켜진다. 교차검토가 특별히 필요할 때만 명시 지정한다.",
     },
     "qwen-max": {
         "id": "qwen3.8-max-preview",
         "provider": "qwen",
         "tier": "secondary",
-        "auto_selectable": True,
+        "auto_selectable": False,
         "max_tokens": 1_000_000,
         "suitable_for": [
             "builder",
             "reviewer",
             "investigator",
         ],
-        "notes": "escalation 전용. 다른 워커가 실패했거나 두 워커의 결론이 충돌할 때 제3 판정으로만 호출한다. G1·G3·병합·컷오버 최종 판정은 코디네이터 몫이며 이 모델에 위임하지 않는다.",
+        "notes": "escalation 전용이며 자동 배정하지 않는다. 다른 워커가 실패했거나 두 워커의 결론이 충돌할 때만 명시 지정한다. G1·G3·병합·컷오버 최종 판정은 코디네이터 몫이며 이 모델에 위임하지 않는다.",
     },
     "qwen-max-legacy": {
         "id": "qwen3.7-max",
@@ -1033,41 +1034,41 @@ def apply_inventory_history(
 # 리뷰어는 판정이 병합 결정에 쓰이므로 주 모델을 low 등급으로 내리지 않습니다.
 
 TIER_POLICY: dict[tuple[str, str], list[str]] = {
-    # 2026-08-30 부터 Alibaba Token Plan(Qwen Code CLI) 을 1차 풀로 씁니다.
-    #   L1 범용   qwen-plus       일반 구현, 테스트, 문서 정합성, 읽기 전용 조사
-    #   L2 전문   deepseek-pro    SQL·RAG·레이턴시 회귀 원인 분석
-    #   L3 리뷰   glm             빌더와 다른 계열의 독립 검토
-    #   L4 상신   qwen-max        앞의 셋이 실패했거나 결론이 충돌할 때만
-    # Gemini 계열은 제거하지 않고 fallback 으로 남깁니다. 분석·감사·측정에서
-    # 검증된 이력이 있는 주력이었으므로, 신규 풀의 실적이 쌓이기 전에 유일한
-    # 경로를 갈아치우지 않습니다.
+    # 예산 구조가 배정을 정합니다. Antigravity Gemini 는 5시간마다 리셋되는 별도
+    # 할당량이고, Alibaba Token Plan 은 충전한 잔량을 깎아 씁니다. 그래서 건수가
+    # 많은 빌더·조사·문서·계측은 Gemini 가 맡고, Alibaba 는 qwen-plus 하나만
+    # 자동 배정 대상으로 남깁니다.
     #
-    # 리뷰어는 빌더와 다른 모델 계열을 주 모델로 씁니다. 같은 계열로 빌더와
-    # 리뷰어를 묶으면 같은 추론 편향이 검토를 통과시킵니다.
-    ("reviewer", "high"): ["glm", "qwen-max", "claude-sonnet"],
-    ("reviewer", "medium"): ["glm", "gemini-flash-medium"],
+    # 리뷰어만 qwen-plus 를 주 모델로 씁니다. 리뷰어와 빌더가 같은 계열이면 같은
+    # 추론 편향이 검토를 그대로 통과시키므로, 빌더가 Gemini 인 동안 리뷰어는
+    # 다른 계열이어야 합니다. 리뷰어 Task 는 빌더보다 건수가 적어 잔량 부담도
+    # 작습니다.
+    #
+    # deepseek-pro, glm, qwen-max 는 auto_selectable=False 입니다. 자동으로는
+    # 배정되지 않고 --model 명시 지정과 WORKER_MODEL_NOTICE 를 거쳐야 씁니다.
+    ("reviewer", "high"): ["qwen-plus", "gemini-flash-high"],
+    ("reviewer", "medium"): ["qwen-plus", "gemini-flash-medium"],
     # gemini-flash-low 는 메타데이터 notes 에서 "리뷰어와 빌더에는 배정하지
     # 않는다" 고 명시한 모델입니다. fallback 으로 넣어 두면 주 모델 장애 시
     # 금지한 등급이 코드 작성과 병합 판정으로 승격됩니다.
-    ("reviewer", "low"): ["glm", "gemini-flash-medium"],
-    # high 위험도 구현은 원인 분석 전문 모델이 먼저입니다.
-    ("builder", "high"): ["deepseek-pro", "qwen-max", "gemini-flash-high"],
-    ("builder", "medium"): ["qwen-plus", "gemini-flash-medium"],
-    ("builder", "low"): ["qwen-plus", "gemini-flash-medium"],
-    ("investigator", "high"): ["deepseek-pro", "qwen-plus", "gemini-flash-high"],
-    ("investigator", "medium"): ["qwen-plus", "glm", "gemini-flash-medium"],
-    ("investigator", "low"): ["qwen-plus", "gemini-flash-low"],
+    ("reviewer", "low"): ["qwen-plus", "gemini-flash-medium"],
+    ("builder", "high"): ["gemini-flash-high", "qwen-plus"],
+    ("builder", "medium"): ["gemini-flash-medium", "qwen-plus"],
+    ("builder", "low"): ["gemini-flash-medium", "qwen-plus"],
+    ("investigator", "high"): ["gemini-flash-high", "qwen-plus"],
+    ("investigator", "medium"): ["gemini-flash-medium", "qwen-plus"],
+    ("investigator", "low"): ["gemini-flash-low", "gemini-flash-medium"],
     # 계측·벤치마크는 수치 해석 오류가 그대로 정본이 되므로 low 에도
     # 초안용 등급을 주 모델로 두지 않습니다.
-    ("benchmarker", "high"): ["deepseek-pro", "gemini-flash-high"],
-    ("benchmarker", "medium"): ["qwen-plus", "deepseek-pro", "gemini-flash-medium"],
-    ("benchmarker", "low"): ["qwen-plus", "gemini-flash-low"],
-    ("documenter", "high"): ["qwen-plus", "glm", "gemini-flash-high"],
-    ("documenter", "medium"): ["qwen-plus", "gemini-flash-medium"],
-    ("documenter", "low"): ["qwen-plus", "gemini-flash-low"],
-    ("__default__", "high"): ["deepseek-pro", "gemini-flash-high"],
-    ("__default__", "medium"): ["qwen-plus", "gemini-flash-medium"],
-    ("__default__", "low"): ["qwen-plus", "gemini-flash-medium"],
+    ("benchmarker", "high"): ["gemini-flash-high", "qwen-plus"],
+    ("benchmarker", "medium"): ["gemini-flash-medium", "qwen-plus"],
+    ("benchmarker", "low"): ["gemini-flash-medium", "gemini-flash-low"],
+    ("documenter", "high"): ["gemini-flash-high", "qwen-plus"],
+    ("documenter", "medium"): ["gemini-flash-medium", "qwen-plus"],
+    ("documenter", "low"): ["gemini-flash-low", "gemini-flash-medium"],
+    ("__default__", "high"): ["gemini-flash-high", "qwen-plus"],
+    ("__default__", "medium"): ["gemini-flash-medium", "qwen-plus"],
+    ("__default__", "low"): ["gemini-flash-medium", "qwen-plus"],
 }
 
 # ---------------------------------------------------------------------------
