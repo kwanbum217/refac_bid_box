@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import func, select
 
 from src.app.core.cache import cache
-from src.app.models.bids import BidResult
+from src.app.models.bids import BidAnnouncement, BidResult
 from src.rag import structured_data
 
 
@@ -101,11 +101,12 @@ def test_none_aggregate_is_preserved():
 
 
 class RowSession:
-    """상위 N 실시간 경로용 세션 대역. 순위 질의와 손상 탐지를 구분해 셉니다."""
+    """상위 N 실시간 경로용 세션 대역. 순위 질의와 손상 스냅샷 마커를 구분해 반환합니다."""
 
-    def __init__(self, rows, corrupted=None):
+    def __init__(self, rows, corrupted=None, skipped: int = 0):
         self.rows = rows
         self.corrupted = corrupted
+        self.skipped = skipped if skipped else (1 if corrupted else 0)
         self.executions = 0
 
     def execute(self, _stmt):
@@ -119,6 +120,9 @@ class RowSession:
     def first(self):
         return self.corrupted
 
+    def scalar(self, _stmt=None):
+        return self.skipped
+
 
 def _live_stmt(category: str):
     return (
@@ -128,14 +132,14 @@ def _live_stmt(category: str):
     )
 
 
-def _top(db, category: str):
+def _top(db, category: str = "", dataset: str = "bid_results", dimension: str = "bidwinnr_nm"):
     return structured_data._top_rows(
         db,
         scope=None,
-        dataset="bid_results",
-        dimension="bidwinnr_nm",
+        dataset=dataset,
+        dimension=dimension,
+        category=category,
         live_stmt=_live_stmt(category),
-        corrupted_probe=select(BidResult.id),
     )
 
 
@@ -243,3 +247,86 @@ def test_date_index_hint_preserves_select_and_grouping():
     hinted = structured_data._hint_result_date_index(base, _plan(date_from="2026-01-01"))
     assert [c.name for c in base.selected_columns] == [c.name for c in hinted.selected_columns]
     assert str(base.whereclause) == str(hinted.whereclause)
+
+
+# ===========================================================================
+# 공고(발주기관/공고명) 집계의 날짜 인덱스 힌트 조건 검증
+# ===========================================================================
+
+
+def test_announcement_date_index_hint_applies_only_without_category():
+    """날짜만 걸린 공고 집계에만 힌트를 붙입니다."""
+    assert structured_data._needs_announcement_date_index_hint(_plan(date_from="2026-01-01"))
+    assert structured_data._needs_announcement_date_index_hint(_plan(date_to="2026-12-31"))
+    assert not structured_data._needs_announcement_date_index_hint(
+        _plan(date_from="2026-01-01", category="Servc")
+    )
+    assert not structured_data._needs_announcement_date_index_hint(_plan(category="Servc"))
+    assert not structured_data._needs_announcement_date_index_hint(_plan())
+
+
+def test_announcement_date_index_hint_emits_force_index_for_mysql_only():
+    """공고 힌트는 MySQL 방언에서만 나타나고 SQLite 등에는 나타나지 않습니다."""
+    base = (
+        select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+        .group_by(BidAnnouncement.dminstt_nm)
+        .order_by(func.count(BidAnnouncement.id).desc())
+    )
+    hinted = structured_data._hint_announcement_date_index(base, _plan(date_from="2026-01-01"))
+    unhinted = structured_data._hint_announcement_date_index(
+        base, _plan(date_from="2026-01-01", category="Servc")
+    )
+
+    from sqlalchemy.dialects import mysql, sqlite
+
+    mysql_sql = str(hinted.compile(dialect=mysql.dialect()))
+    assert "FORCE INDEX (ix_bid_ann_dt_cat)" in mysql_sql
+    assert "FORCE INDEX" not in str(hinted.compile(dialect=sqlite.dialect()))
+    assert "FORCE INDEX" not in str(unhinted.compile(dialect=mysql.dialect()))
+
+
+def test_announcement_date_index_hint_preserves_select_and_grouping():
+    """공고 힌트가 선택 컬럼, 그룹 기준, 정렬 기준, where 절을 바꾸지 않습니다."""
+    base = (
+        select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+        .group_by(BidAnnouncement.bid_ntce_nm)
+        .order_by(func.count(BidAnnouncement.id).desc())
+    )
+    hinted = structured_data._hint_announcement_date_index(base, _plan(date_from="2026-01-01"))
+    assert [c.name for c in base.selected_columns] == [c.name for c in hinted.selected_columns]
+    assert str(base.whereclause) == str(hinted.whereclause)
+
+
+# ===========================================================================
+# 손상 행 탐지 및 제외 플래그 판정 검증
+# ===========================================================================
+
+
+def test_top_rows_dropped_true_when_corrupted_rows_present():
+    """반환 행에 손상 문자가 포함되어 있으면 제외되고 dropped 가 참이 됩니다."""
+    db = RowSession([("손상업체\ufffd", 100), ("정상건설", 50)])
+
+    kept, dropped = _top(db, "Cnstwk")
+
+    assert dropped == 1
+    assert kept == [("정상건설", 50)]
+
+
+def test_top_rows_dropped_true_when_snapshot_marker_exists():
+    """반환 행은 정상이나 스냅샷에 손상 제외 마커(rank=0)가 있으면 dropped 가 참이 됩니다."""
+    db = RowSession([("정상건설", 50)], skipped=1)
+
+    kept, dropped = _top(db, "Cnstwk")
+
+    assert dropped == 1
+    assert kept == [("정상건설", 50)]
+
+
+def test_top_rows_dropped_false_when_clean_and_no_marker():
+    """반환 행도 정상이고 스냅샷 마커도 없으면 dropped 가 거짓이 됩니다."""
+    db = RowSession([("정상건설", 50)], skipped=0)
+
+    kept, dropped = _top(db, "Cnstwk")
+
+    assert dropped == 0
+    assert kept == [("정상건설", 50)]
