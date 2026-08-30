@@ -1,6 +1,9 @@
 """워커 터미널의 권한 프롬프트를 화이트리스트 기반으로 자동 승인합니다.
 
-안전 목록에 없는 명령이나 셸 메타문자, 파괴적 패턴, git 전역 옵션이 보이면 승인하지 않고 보류합니다.
+합성 명령은 따옴표 밖 구분자로 파이프라인 구간을 나눠 각 구간을 판정하며, 모든
+구간이 승인일 때만 승인합니다. 안전 목록에 없는 명령, 파괴적 패턴, git 전역 옵션,
+명령 치환과 프로세스 치환과 히어독, 워크트리 밖 리다이렉트, 비밀 파일 접근은
+승인하지 않고 보류합니다.
 """
 
 from __future__ import annotations
@@ -22,6 +25,28 @@ except ImportError:
     from orca_worker_watch import FILE_EDIT_DIALOG_SIGNALS, normalize_text
 
 SHELL_METACHARS = re.compile(r"[\n\r|<>;`&]|\$\(")
+
+# 되돌릴 수 없는 셸 기능. 분해해도 안전을 보장할 수 없으므로 항상 보류합니다.
+# 명령 치환과 프로세스 치환은 임의 명령을 숨길 수 있고, 백틱도 마찬가지입니다.
+UNSPLITTABLE_METACHARS = re.compile(r"[`]|\$\(|<\(|>\(")
+
+# 파이프라인 구분자. 따옴표 밖에서만 자릅니다. 개행과 캐리지 리턴도 셸에서는
+# 명령 구분자이므로 반드시 포함해야 합니다. 빠뜨리면 "git diff\recho x" 가 한
+# 구간으로 보여 승인되고 실제로는 두 명령이 실행됩니다.
+PIPELINE_SEPARATORS = ("&&", "||", ";", "|", "\n", "\r")
+
+# 리다이렉트 대상으로 허용하는 경로. 워크트리 상대 경로와 임시 디렉터리만 씁니다.
+# 절대 경로, 상위 참조, .env, .git 아래는 거부합니다.
+REDIRECT_DENY = re.compile(r"^/(?!tmp/|dev/null)|\.\.|(^|/)\.env|(^|/)\.git/")
+
+# 비밀 파일 경로. 읽기 전용 도구라도 화면에 찍히면 노출이므로 인자에서 막습니다.
+SECRET_PATH = re.compile(r"(^|/)\.env(\.|$)|(^|/)\.env$|id_rsa|credentials|secrets?\.(json|ya?ml)")
+
+# python 실행 본문에서 보류하는 토큰. 셸 탈출과 파일 삭제 경로입니다.
+PYTHON_ESCAPE_TOKENS = re.compile(
+    r"\bos\.system\b|\bsubprocess\b|\bshutil\.rmtree\b|\bos\.remove\b|"
+    r"\bos\.unlink\b|\bos\.rmdir\b|\bpty\b|\bos\.exec|\beval\s*\(|\bexec\s*\(",
+)
 
 DANGEROUS = re.compile(
     r"rm\s+-rf|git\s+push|git\s+reset\s+--hard|git\s+checkout\s+main|"
@@ -480,8 +505,132 @@ def is_safe_git_branch(sub_args: list[str]) -> bool:
     return True
 
 
+def split_pipeline(cmd: str) -> list[str] | None:
+    """따옴표 밖의 파이프라인 구분자로 명령을 자릅니다.
+
+    따옴표 안의 구분자는 데이터이므로 자르지 않습니다. 히어독(<<)이 있으면
+    본문에 무엇이든 들어올 수 있으므로 자르지 않고 None 을 돌려 상위에서
+    별도 처리하게 합니다.
+    """
+    if "<<" in cmd:
+        return None
+    segments: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    i = 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "\"'":
+            quote = ch
+            buf.append(ch)
+            i += 1
+            continue
+        matched = None
+        for sep in PIPELINE_SEPARATORS:
+            if cmd.startswith(sep, i):
+                matched = sep
+                break
+        if matched:
+            segments.append("".join(buf))
+            buf = []
+            i += len(matched)
+            continue
+        buf.append(ch)
+        i += 1
+    if quote:
+        return None
+    segments.append("".join(buf))
+    return [s.strip() for s in segments if s.strip()]
+
+
+def strip_redirections(segment: str) -> tuple[str, str | None]:
+    """구간 끝의 리다이렉트를 떼어냅니다.
+
+    반환값은 (리다이렉트를 뗀 명령, 거부 사유 또는 None) 입니다. 대상 경로가
+    워크트리 밖이거나 .env, .git 아래이면 사유를 돌려줍니다.
+    """
+    pattern = re.compile(r"\s*(?:\d?>>?|\d?>&\d)\s*([^\s]*)")
+    reason: str | None = None
+    out = segment
+    while True:
+        m = pattern.search(out)
+        if not m:
+            break
+        target = m.group(1)
+        # 2>&1 처럼 파일 디스크립터끼리 붙이는 형태는 대상이 비어 있습니다.
+        if target and not target.isdigit() and REDIRECT_DENY.search(target):
+            reason = f"리다이렉트 대상이 허용 범위 밖 ({target})"
+        out = out[: m.start()] + out[m.end() :]
+    return out.strip(), reason
+
+
+def classify_python_execution(argv: list[str], raw: str) -> tuple[str, str]:
+    """python 실행을 판정합니다.
+
+    워커의 조사와 검증은 거의 전부 python 으로 이뤄지므로 무조건 보류하면
+    작업이 멈춥니다. 셸로 빠져나가거나 파일을 지우는 토큰이 없을 때만 승인하고,
+    그 밖에는 종전대로 보류합니다.
+    """
+    if PYTHON_ESCAPE_TOKENS.search(raw):
+        return "hold", "python 본문에 셸 탈출/삭제 토큰 포함"
+    args = argv[1:]
+    if args and args[0] in ("-m", "-c"):
+        return "approve", f"python {args[0]} 실행 (탈출 토큰 없음)"
+    if args and not args[0].startswith("-"):
+        target = args[0]
+        if REDIRECT_DENY.search(target):
+            return "hold", f"python 실행 대상이 허용 범위 밖 ({target})"
+        return "approve", f"python 스크립트 실행 ({target})"
+    if not args:
+        return "hold", "python 대화형 실행은 보류"
+    return "approve", "python 실행 (탈출 토큰 없음)"
+
+
 def classify_command(cmd: str) -> tuple[str, str]:
-    """명령어 문자열을 분석하여 자동 승인(approve) 또는 보류(hold) 여부와 사유를 반환합니다."""
+    """명령을 파이프라인 구간으로 나눠 각각을 판정합니다.
+
+    종전에는 셸 메타문자가 하나라도 있으면 통째로 보류했습니다. 그 결과 워커의
+    조사와 검증 명령이 거의 전부 보류에 걸려 사람이 손으로 풀어 줄 때까지 작업이
+    멈췄습니다(2026-08-30 다수 발생).
+
+    구간을 나눠 각각을 기존 규칙으로 판정하면 판정이 느슨해지는 것이 아니라
+    정밀해집니다. 모든 구간이 승인일 때만 승인하고 하나라도 보류면 보류합니다.
+    되돌릴 수 없는 셸 기능(명령 치환, 프로세스 치환, 백틱)과 히어독은 종전대로
+    보류합니다.
+    """
+    if not cmd or not cmd.strip():
+        return "hold", "빈 명령"
+
+    if UNSPLITTABLE_METACHARS.search(cmd):
+        return "hold", "명령 치환/프로세스 치환 포함"
+
+    segments = split_pipeline(cmd)
+    if segments is None:
+        return "hold", "히어독 또는 따옴표 불일치"
+
+    for segment in segments:
+        stripped, redirect_reason = strip_redirections(segment)
+        if redirect_reason:
+            return "hold", redirect_reason
+        if not stripped:
+            continue
+        verdict, reason = classify_segment(stripped)
+        if verdict != "approve":
+            return verdict, reason
+
+    if len(segments) == 1:
+        return classify_segment(strip_redirections(segments[0])[0])
+    return "approve", f"파이프라인 {len(segments)}개 구간 전부 승인"
+
+
+def classify_segment(cmd: str) -> tuple[str, str]:
+    """파이프라인 한 구간을 판정합니다. 종전 classify_command 의 본체입니다."""
     if not cmd or not cmd.strip():
         return "hold", "빈 명령"
 
@@ -492,9 +641,10 @@ def classify_command(cmd: str) -> tuple[str, str]:
         if norm_sig == norm_cmd or norm_sig in norm_cmd:
             return "hold", f"파일 편집/생성 승인은 수동 판단 필요 ({sig})"
 
-    # 1. 셸 메타문자 검사 (argv 파싱 전 수행)
-    if SHELL_METACHARS.search(cmd):
-        return "hold", "셸 메타문자 포함"
+    # 1. 되돌릴 수 없는 셸 기능만 검사합니다. 파이프와 리다이렉트는 상위
+    #    classify_command 가 이미 분해하고 대상 경로를 검증했습니다.
+    if UNSPLITTABLE_METACHARS.search(cmd):
+        return "hold", "명령 치환/프로세스 치환 포함"
 
     # 2. argv 파싱
     try:
@@ -514,6 +664,11 @@ def classify_command(cmd: str) -> tuple[str, str]:
     exe = os.path.basename(argv[0])
 
     # 4. 정책 테이블 기반 판정
+    # 4.0. .env 는 어떤 명령으로도 열지 않습니다. AGENTS.md 7장이 실제 값 노출을
+    #      금지하며, 읽기 전용 도구라도 화면에 찍히면 노출입니다.
+    if any(SECRET_PATH.search(arg) for arg in argv[1:]):
+        return "hold", ".env 등 비밀 파일 접근은 보류"
+
     # 4.1. 단순 읽기 전용 도구
     if exe in SAFE_STANDALONE_COMMANDS:
         return "approve", f"안전한 읽기 전용 명령 ({exe})"
@@ -583,7 +738,7 @@ def classify_command(cmd: str) -> tuple[str, str]:
 
     # 4.6. 보류 대상 명령 명시적 사유 반환
     if exe in ("python", "python3") or exe.startswith("python3."):
-        return "hold", f"{exe} 임의 실행은 보류 대상"
+        return classify_python_execution(argv, cmd)
     if exe in ("npm", "npx", "yarn", "pnpm"):
         return "hold", f"{exe} 실행은 보류 대상"
     if exe in ("mv", "cp", "mkdir", "rm", "chmod", "chown", "touch"):
