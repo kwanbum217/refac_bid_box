@@ -89,5 +89,8 @@ uv run pytest tests/ -q -m 'not data_assets'
 python3 scripts/validate_agent_rules.py --quiet
 
 # 4. (코디네이터 전용) 컨테이너 기동 후 구간 레이턴시 정본 직렬 재측정
-# python3 scripts/benchmark_rag_segments.py --fixture tests/fixtures/blind_fixture_v2.json --repeats 3 --canonical
+# uv run python scripts/benchmark_rag_segments.py \
+#   --fixture data/eval/llm_quality_fixture_v2.json \
+#   --repetitions 3 --expected-llm-model gemma4:e2b \
+#   --output data/benchmarks/<산출물>.json
 ```
