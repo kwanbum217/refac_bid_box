@@ -1,7 +1,7 @@
-# Task task_259753e7edee: 콜드 스타트 SQL 비용 귀속 측정 하네스 구축
+# Task task_401e317324d6: 콜드 스타트 SQL 비용 귀속 측정 하네스 구축 (Level 3 보강)
 
 > **작성일**: 2026-08-30
-> **Task ID**: `task_259753e7edee`
+> **Task ID**: `task_401e317324d6` (이전 `task_259753e7edee` 재작업)
 > **역할**: `builder`
 > **대상 파일**:
 > - [`scripts/measure_coldsql_attribution.py`](../../scripts/measure_coldsql_attribution.py)
@@ -13,6 +13,8 @@
 
 2026-08-30 RAG 정형 질의 콜드 스타트 조사 과정에서 EXPLAIN 기반 단일 쿼리 추정에 의존하여 실제 97초 비용의 약 15%만 점유하는 쿼리를 수정하는 오류가 발생했습니다. 동일한 실수를 방지하고 실측 기반으로 쿼리별 소비를 정확히 규명하기 위해, MySQL `performance_schema.events_statements_summary_by_digest` 기반의 콜드/웜 SQL 비용 귀속 측정 하네스(`scripts/measure_coldsql_attribution.py`)를 구축했습니다.
 
+Level 3 반려 사유를 반영하여 `--flush-cache` 미지정 또는 캐시 비우기 미실행 상태에서 warm 측정이 cold 로 오표기된 채 canonical=true 로 오인되지 않도록, `flush_cache_requested` 와 `cache_flushed` 가 모두 `True` 일 때만 canonical 판정이 통과되도록 전용 failed gate(`flush_cache_executed`)를 결박했습니다.
+
 ---
 
 ## 2. 핵심 설계 원칙 및 구현
@@ -22,7 +24,7 @@
 | **쿼리별 귀속 정본** | `performance_schema.events_statements_summary_by_digest` 활용 (`DIGEST_TEXT`, `COUNT_STAR`, `SUM_TIMER_WAIT`, `MAX_TIMER_WAIT`) | 단위 변환: 피코초(ps) 기준 `SUM_TIMER_WAIT / 1e12` (초), `MAX_TIMER_WAIT / 1e9` (밀리초) |
 | **캐시 비우기 안전장치** | `--flush-cache` 명시적 CLI 플래그가 주어졌을 때만 Redis `FLUSHALL` 실행 (기본값: `False`) | 공유 자원 오염 방지 (`flush_requested=False` 시 호출 원천 차단) |
 | **Cold vs Warm 차이 계산** | 동일 질의 표본(Fixture 문항)에 대해 Cold(캐시 미스) 측정 후 Warm(캐시 적중) 측정을 직렬 수행하고 쿼리별 차이(`delta_sum_sec`, `delta_count`, `delta_max_ms`) 산출 | 절감 가능한 SQL 비용 기준 내림차순 정렬 (`calculate_attribution_diff`) |
-| **Canonical 게이트 판정** | `scripts/measure_llm_quality.py` 의 `CANONICAL_FIXTURE_HASHES`, `compute_file_sha256`, `evaluate_canonical` 직접 재사용 | 중복 코드 방지 및 정본 기준 일치성 보장 |
+| **Canonical 게이트 판정 결박** | `scripts/measure_llm_quality.py` 의 `CANONICAL_FIXTURE_HASHES`, `compute_file_sha256`, `evaluate_canonical` 재사용 + `flush_cache_requested` 및 `cache_flushed` 동시 충족 필수 | warm-first 상태의 cold 오표기 원천 차단 (`flush_cache_executed` 게이트) |
 | **Fail-Closed 검증** | `performance_schema` 비활성화(OFF) 또는 테이블 접근 실패 시 `PerformanceSchemaUnavailableError` 발생 (종료 코드 2) | 조용한 실패 및 빈 산출물 방지 |
 | **테스트 격리성 (DI)** | DB executor 및 Redis client 를 주입 가능한 콜러블/객체 형태로 구현 | 실제 MySQL/Redis 없이 Mock 기반 완전 격리 테스트 지원 |
 
@@ -36,7 +38,7 @@ uv run python scripts/measure_coldsql_attribution.py \
   --base-url http://127.0.0.1:8000 \
   --output data/benchmarks/coldsql_attribution_result.json
 
-# 명시적 캐시 비우기 포함 실행
+# 명시적 캐시 비우기 포함 실행 (정본 측정용, canonical 적격)
 uv run python scripts/measure_coldsql_attribution.py \
   --flush-cache \
   --base-url http://127.0.0.1:8000 \
@@ -63,8 +65,10 @@ uv run python scripts/measure_coldsql_attribution.py \
 - `test_main_returns_code_2_on_performance_schema_unavailable`: CLI 종료 코드 2 반환 검증 (PASSED)
 - `test_canonical_false_on_unregistered_fixture_hash`: 미등록 fixture hash 처리 검증 (PASSED)
 - `test_run_attribution_measurement_complete_flow`: Mock 기반 전 주기 측정 흐름 검증 (PASSED)
+- `test_canonical_failed_gate_when_flush_cache_not_requested`: flush_cache_requested=False 시 canonical=false 및 flush_cache_executed 실패 게이트 기록 검증 (PASSED)
+- `test_canonical_gate_cleared_when_both_flush_requested_and_cache_flushed`: flush_cache_requested 와 cache_flushed 모두 True 일 때만 게이트 해제 검증 (PASSED)
 
-총 12건 테스트 전량 통과 (`12 passed in 0.34s`).
+총 14건 테스트 전량 통과 (`14 passed in 0.25s`).
 
 ---
 
@@ -72,6 +76,7 @@ uv run python scripts/measure_coldsql_attribution.py \
 
 | 점검 ID | 질의 | 판정 | 설명 |
 | :--- | :--- | :---: | :--- |
+| `cold_cache_not_bound_to_canonical` | 캐시 비움 요청·성공 여부가 canonical 판정에 결박되지 않았는가? | **No** (정상) | `flush_cache_requested` 또는 `cache_flushed` 가 `False` 이면 `flush_cache_executed` 게이트가 실패하며 canonical=false 처리됨 |
 | `flush_by_default` | 캐시 비우기가 플래그 없이 실행되는가? | **No** (정상) | `flush_cache_requested` 기본값 `False`, 미지정 시 절대 실행되지 않음 |
 | `attribution_guessed` | 쿼리별 귀속을 digest 가 아니라 추정으로 계산하는가? | **No** (정상) | `performance_schema.events_statements_summary_by_digest` 실측치 집계 |
 | `silent_on_missing_perfschema` | performance_schema 를 못 쓸 때 조용히 빈 결과를 남기는가? | **No** (정상) | `PerformanceSchemaUnavailableError` 발생 및 exit code 2 종료 |

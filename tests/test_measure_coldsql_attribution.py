@@ -345,3 +345,62 @@ def test_run_attribution_measurement_complete_flow(tmp_path: Path):
     assert report["summary"]["total_cold_sql_sec"] == pytest.approx(20.0)
     assert report["summary"]["total_warm_sql_sec"] == 0.0
     assert report["summary"]["top_cost_query_delta_sec"] == pytest.approx(20.0)
+
+
+# ---------------------------------------------------------------------------
+# 7. Canonical 게이트의 캐시 비우기 결박 회귀 검증
+# ---------------------------------------------------------------------------
+def test_canonical_failed_gate_when_flush_cache_not_requested(tmp_path: Path):
+    """--flush-cache 가 지정되지 않으면 canonical=false 이고 flush_cache_executed 실패 게이트가 기록되어야 합니다."""
+    fixture_file = tmp_path / "fixture.json"
+    fixture_file.write_text(
+        json.dumps({"items": [{"id": "q03", "question": "테스트"}]}),
+        encoding="utf-8",
+    )
+    mock_db = MagicMock(return_value=[{"ps_enabled": "ON"}])
+    mock_sender = MagicMock(return_value={"ok": True, "elapsed_ms": 10.0, "payload": {}})
+
+    with patch(
+        "scripts.measure_coldsql_attribution.get_git_status", return_value=("abc1234", False)
+    ):
+        report = run_attribution_measurement(
+            db_executor=mock_db,
+            redis_client=None,
+            flush_cache_requested=False,
+            fixture_path=fixture_file,
+            item_ids=["q03"],
+            query_sender=mock_sender,
+            allow_unknown_provenance=True,
+        )
+
+    canonical_eval = report["canonical_evaluation"]
+    assert canonical_eval["is_canonical"] is False
+    assert "flush_cache_executed" in canonical_eval["failed_gates"]
+
+
+def test_canonical_gate_cleared_when_both_flush_requested_and_cache_flushed(tmp_path: Path):
+    """flush_cache_requested 와 cache_flushed 가 모두 True 일 때만 flush_cache_executed 게이트가 통과(해제)되어야 합니다."""
+    fixture_file = tmp_path / "fixture.json"
+    fixture_file.write_text(
+        json.dumps({"items": [{"id": "q03", "question": "테스트"}]}),
+        encoding="utf-8",
+    )
+    mock_db = MagicMock(return_value=[{"ps_enabled": "ON"}])
+    mock_redis = MagicMock()
+    mock_sender = MagicMock(return_value={"ok": True, "elapsed_ms": 10.0, "payload": {}})
+
+    with patch(
+        "scripts.measure_coldsql_attribution.get_git_status", return_value=("abc1234", False)
+    ):
+        report = run_attribution_measurement(
+            db_executor=mock_db,
+            redis_client=mock_redis,
+            flush_cache_requested=True,
+            fixture_path=fixture_file,
+            item_ids=["q03"],
+            query_sender=mock_sender,
+            allow_unknown_provenance=True,
+        )
+
+    canonical_eval = report["canonical_evaluation"]
+    assert "flush_cache_executed" not in canonical_eval["failed_gates"]

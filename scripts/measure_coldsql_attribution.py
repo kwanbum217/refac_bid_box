@@ -450,6 +450,12 @@ def run_attribution_measurement(
         allow_unknown_provenance=allow_unknown_provenance,
     )
 
+    # Cold SQL 귀속 측정의 Canonical 적격성 조건:
+    # flush_cache_requested 와 cache_flushed 가 모두 True 여야만 warm-first 가 cold 로 오표기되는 것을 방지합니다.
+    if not (flush_cache_requested and cache_flushed):
+        failed_gates.append("flush_cache_executed")
+        is_canonical = False
+
     report: dict[str, Any] = {
         "metadata": {
             "harness": "measure_coldsql_attribution",
