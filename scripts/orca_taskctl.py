@@ -1641,11 +1641,23 @@ def classify_file_edit_auto_approve_support(
             or (not cli_type and "gemini" in model)
         )
         is_cursor_record = "cursor" in cli_type or (not cli_type and "cursor" in model)
+        # Qwen Code 는 기동 시점부터 Auto mode 이고 shift+tab 은 그 모드를 벗어나는
+        # 순환 키입니다. 보내면 오히려 자동 승인을 끄게 되므로 전송하지 않습니다.
+        is_qwen_record = "qwen" in cli_type or (
+            not cli_type and any(tag in model for tag in ("qwen", "deepseek-v4", "glm-5"))
+        )
 
         record_supported: bool | None = None
         record_reason: str | None = None
 
-        if is_cursor_record:
+        if is_qwen_record:
+            record_supported = False
+            record_reason = (
+                f"기록된 메타데이터(cli={cli_type or 'qwen'})에 따라 Qwen Code 로 판정되어 "
+                "모드 전환을 전송하지 않습니다. Qwen Code 는 Auto mode 로 기동하며 "
+                "shift+tab 은 그 모드를 벗어나는 순환 키입니다"
+            )
+        elif is_cursor_record:
             record_supported = False
             record_reason = (
                 f"기록된 메타데이터(cli={cli_type or 'cursor'})에 따라 Cursor CLI 로 판정되어 "
@@ -1657,7 +1669,7 @@ def classify_file_edit_auto_approve_support(
                 f"기록된 메타데이터(cli={cli_type or 'antigravity'})에 따라 Antigravity CLI 로 판정되어 "
                 "파일 편집 자동 승인 모드 전환을 지원합니다"
             )
-        elif cli_type in ("opencode", "claude", "codex", "kimi"):
+        elif cli_type in ("opencode", "claude", "codex", "kimi", "qwen"):
             record_supported = False
             record_reason = (
                 f"기록된 메타데이터(cli={cli_type})에 따라 shift+tab 을 accept-edits 로 "

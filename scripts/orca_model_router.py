@@ -116,6 +116,19 @@ def resolve_kimi_bin() -> str:
 # 프로바이더별 probe 설정
 # ---------------------------------------------------------------------------
 
+# 종료 코드 0 으로 끝내면서 본문에 오류를 적는 CLI 를 걸러내는 표지입니다.
+# 이 목록에 걸리면 probe 는 fail-closed 로 사용 불가 판정합니다. 현재 등록된
+# CLI 중 이 경로가 필요한 것은 없으며, 향후 등록을 대비한 보강입니다.
+STDOUT_ERROR_MARKERS: tuple[str, ...] = (
+    "[api error",
+    "api error:",
+    "incorrect api key",
+    "invalid api key",
+    "unauthorized",
+    "model not found",
+)
+
+
 PROBE_CONFIG: dict[str, dict[str, Any]] = {
     "gemini": {
         "probe_cmd": ["agy", "--model", "{model}", "--print", "ping", "--print-timeout", "15s"],
@@ -142,6 +155,13 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         # --mode plan 은 읽기 전용이라 probe 가 저장소를 건드리지 않습니다.
         "probe_cmd": ["cursor-agent", "-p", "--model", "auto", "--mode", "plan", "ping"],
         "timeout": 60,
+    },
+    "qwen": {
+        # Qwen Code CLI 는 Alibaba Token Plan 자격증명으로 동작합니다. -p 는 단발
+        # 실행이라 probe 가 대화형으로 남지 않습니다. Token Plan 은 대화형 코딩
+        # 도구용이므로 probe 도 사람이 쓰는 것과 같은 CLI 경로를 씁니다.
+        "probe_cmd": ["qwen", "-m", "{model}", "-p", "ping"],
+        "timeout": 90,
     },
     "kimi-openrouter": {
         # resolve_kimi_bin() 으로 경로를 해석합니다. -p 는 단발 실행이라
@@ -204,6 +224,79 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "documenter",
         ],
         "notes": "공식 문서 기준 용도는 지연이 중요한 작업, 초안 작성, 빠른 데이터 분석. low 위험도 문서화·조사·계측에만 자동 선택된다. 리뷰어와 빌더에는 배정하지 않는다.",
+    },
+    # ------------------------------------------------------------------
+    # Alibaba Token Plan (Qwen Code CLI) 풀
+    # ------------------------------------------------------------------
+    # 2026-08-30 에 이 저장소의 Qwen Code v0.22.3 로 여섯 개 ID 를 직접 probe 했습니다.
+    # 응답한 것은 qwen3.7-plus, deepseek-v4-pro, glm-5.2, qwen3.7-max,
+    # qwen3.8-max-preview 입니다. qwen3.8-max 와 qwen3.8-flash 는 401 을 돌려주므로
+    # 등록하지 않습니다. 공개 문서가 qwen3.8-max-preview 를 qwen3.8-max 로 라우팅한다고
+    # 적고 있으나, 이 계정에서 실제로 동작하는 ID 는 preview 쪽입니다.
+    "qwen-plus": {
+        "id": "qwen3.7-plus",
+        "provider": "qwen",
+        "tier": "primary",
+        "auto_selectable": True,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": "Alibaba Token Plan 기본 범용 워커. 일반 구현, 테스트 수정, 문서 정합성, 읽기 전용 조사에 배정한다. 리뷰어 주 모델로는 쓰지 않는다.",
+    },
+    "deepseek-pro": {
+        "id": "deepseek-v4-pro",
+        "provider": "qwen",
+        "tier": "primary",
+        "auto_selectable": True,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+        ],
+        "notes": "복잡한 SQL·RAG·레이턴시 회귀 원인 분석 전문 워커. 가설과 반증이 오가는 high 위험도 구현·조사에 배정한다. 범용 배정에는 쓰지 않는다.",
+    },
+    "glm": {
+        "id": "glm-5.2",
+        "provider": "qwen",
+        "tier": "primary",
+        "auto_selectable": True,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "reviewer",
+            "investigator",
+            "documenter",
+        ],
+        "notes": "독립 리뷰어. 빌더와 다른 모델 계열을 써서 추론 편향을 분리하는 것이 목적이므로 같은 Task 의 빌더와 겹쳐 배정하지 않는다.",
+    },
+    "qwen-max": {
+        "id": "qwen3.8-max-preview",
+        "provider": "qwen",
+        "tier": "secondary",
+        "auto_selectable": True,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "builder",
+            "reviewer",
+            "investigator",
+        ],
+        "notes": "escalation 전용. 다른 워커가 실패했거나 두 워커의 결론이 충돌할 때 제3 판정으로만 호출한다. G1·G3·병합·컷오버 최종 판정은 코디네이터 몫이며 이 모델에 위임하지 않는다.",
+    },
+    "qwen-max-legacy": {
+        "id": "qwen3.7-max",
+        "provider": "qwen",
+        "tier": "secondary",
+        # 공급자가 legacy 로 옮기고 권장하지 않는다고 표시했으며, 상위 세대인
+        # qwen3.8-max-preview 보다 단가가 높고 처리량 한도는 낮습니다. probe 는
+        # 통과하지만 신규 자동 배정에서 제외합니다.
+        "auto_selectable": False,
+        "max_tokens": 256_000,
+        "suitable_for": [],
+        "notes": "legacy. 신규 자동 배정에서 제외한다. --model 로 명시 지정할 때만 쓰이며 그때도 경고가 남는다.",
     },
     "claude-sonnet": {
         "id": "claude-sonnet-4-6",
@@ -940,27 +1033,41 @@ def apply_inventory_history(
 # 리뷰어는 판정이 병합 결정에 쓰이므로 주 모델을 low 등급으로 내리지 않습니다.
 
 TIER_POLICY: dict[tuple[str, str], list[str]] = {
-    ("reviewer", "high"): ["claude-sonnet", "gemini-flash-high"],
-    ("reviewer", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
+    # 2026-08-30 부터 Alibaba Token Plan(Qwen Code CLI) 을 1차 풀로 씁니다.
+    #   L1 범용   qwen-plus       일반 구현, 테스트, 문서 정합성, 읽기 전용 조사
+    #   L2 전문   deepseek-pro    SQL·RAG·레이턴시 회귀 원인 분석
+    #   L3 리뷰   glm             빌더와 다른 계열의 독립 검토
+    #   L4 상신   qwen-max        앞의 셋이 실패했거나 결론이 충돌할 때만
+    # Gemini 계열은 제거하지 않고 fallback 으로 남깁니다. 분석·감사·측정에서
+    # 검증된 이력이 있는 주력이었으므로, 신규 풀의 실적이 쌓이기 전에 유일한
+    # 경로를 갈아치우지 않습니다.
+    #
+    # 리뷰어는 빌더와 다른 모델 계열을 주 모델로 씁니다. 같은 계열로 빌더와
+    # 리뷰어를 묶으면 같은 추론 편향이 검토를 통과시킵니다.
+    ("reviewer", "high"): ["glm", "qwen-max", "claude-sonnet"],
+    ("reviewer", "medium"): ["glm", "gemini-flash-medium"],
     # gemini-flash-low 는 메타데이터 notes 에서 "리뷰어와 빌더에는 배정하지
     # 않는다" 고 명시한 모델입니다. fallback 으로 넣어 두면 주 모델 장애 시
     # 금지한 등급이 코드 작성과 병합 판정으로 승격됩니다.
-    ("reviewer", "low"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("builder", "high"): ["gemini-flash-high", "claude-sonnet"],
-    ("builder", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("builder", "low"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("investigator", "high"): ["gemini-flash-high", "gemini-flash-medium"],
-    ("investigator", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("investigator", "low"): ["gemini-flash-low", "gemini-flash-medium"],
-    ("benchmarker", "high"): ["gemini-flash-high", "gemini-flash-medium"],
-    ("benchmarker", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("benchmarker", "low"): ["gemini-flash-low", "gemini-flash-medium"],
-    ("documenter", "high"): ["gemini-flash-high", "gemini-flash-medium"],
-    ("documenter", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("documenter", "low"): ["gemini-flash-low", "gemini-flash-medium"],
-    ("__default__", "high"): ["gemini-flash-high", "gemini-flash-medium"],
-    ("__default__", "medium"): ["gemini-flash-medium", "gemini-flash-high"],
-    ("__default__", "low"): ["gemini-flash-medium", "gemini-flash-high"],
+    ("reviewer", "low"): ["glm", "gemini-flash-medium"],
+    # high 위험도 구현은 원인 분석 전문 모델이 먼저입니다.
+    ("builder", "high"): ["deepseek-pro", "qwen-max", "gemini-flash-high"],
+    ("builder", "medium"): ["qwen-plus", "gemini-flash-medium"],
+    ("builder", "low"): ["qwen-plus", "gemini-flash-medium"],
+    ("investigator", "high"): ["deepseek-pro", "qwen-plus", "gemini-flash-high"],
+    ("investigator", "medium"): ["qwen-plus", "glm", "gemini-flash-medium"],
+    ("investigator", "low"): ["qwen-plus", "gemini-flash-low"],
+    # 계측·벤치마크는 수치 해석 오류가 그대로 정본이 되므로 low 에도
+    # 초안용 등급을 주 모델로 두지 않습니다.
+    ("benchmarker", "high"): ["deepseek-pro", "gemini-flash-high"],
+    ("benchmarker", "medium"): ["qwen-plus", "deepseek-pro", "gemini-flash-medium"],
+    ("benchmarker", "low"): ["qwen-plus", "gemini-flash-low"],
+    ("documenter", "high"): ["qwen-plus", "glm", "gemini-flash-high"],
+    ("documenter", "medium"): ["qwen-plus", "gemini-flash-medium"],
+    ("documenter", "low"): ["qwen-plus", "gemini-flash-low"],
+    ("__default__", "high"): ["deepseek-pro", "gemini-flash-high"],
+    ("__default__", "medium"): ["qwen-plus", "gemini-flash-medium"],
+    ("__default__", "low"): ["qwen-plus", "gemini-flash-medium"],
 }
 
 # ---------------------------------------------------------------------------
@@ -1414,6 +1521,16 @@ def probe_model(
         if not stdout_clean:
             stderr_clean = proc.stderr.strip()[:200] if proc.stderr else "없음"
             return False, f"probe 실패: 응답 본문(stdout)이 비어 있습니다. (stderr: {stderr_clean})"
+
+        # 방어적 보강입니다. 현재 등록된 CLI 는 인증 실패에 0 이 아닌 종료 코드를
+        # 돌려주므로 아래 분류 경로에서 이미 걸러집니다. 다만 종료 코드 0 으로
+        # 끝내면서 오류를 응답 본문에만 적는 CLI 가 등록되면 종료 코드만으로는
+        # 죽은 모델을 거를 수 없으므로, 본문의 오류 표지도 함께 봅니다.
+        if any(marker in stdout_clean.lower() for marker in STDOUT_ERROR_MARKERS):
+            return (
+                False,
+                f"probe 실패: 종료 코드는 0이나 응답 본문이 오류입니다: {stdout_clean[:200]}",
+            )
 
         if proc.stderr and proc.stderr.strip():
             stderr_lower = proc.stderr.lower()

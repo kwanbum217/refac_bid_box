@@ -4494,26 +4494,26 @@ def test_cmd_prepare_worker_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.
 
 
 def test_resolve_dispatch_model_risk_medium():
-    """(a) risk medium 인 Capsule 은 flash-medium 을 배정받음."""
+    """(a) risk medium 인 Capsule 은 범용 등급을 배정받음."""
     capsule_text = "role: builder\nrisk: medium\nobjective: refactor code\n"
     res = resolve_dispatch_model(
         args_model=None,
         capsule_text=capsule_text,
     )
-    assert res["model"] == "gemini-3.7-flash-medium"
+    assert res["model"] == "qwen3.7-plus"
     assert res["source"] == "router"
     assert res["risk"] == "medium"
     assert res["warning"] is None
 
 
 def test_resolve_dispatch_model_risk_high():
-    """(b) risk high 인 Capsule 은 flash-high 를 배정받음."""
+    """(b) risk high 인 Capsule 은 원인 분석 전문 등급을 배정받음."""
     capsule_text = "role: builder\nrisk: high\nobjective: database schema migration\n"
     res = resolve_dispatch_model(
         args_model=None,
         capsule_text=capsule_text,
     )
-    assert res["model"] == "gemini-3.7-flash-high"
+    assert res["model"] == "deepseek-v4-pro"
     assert res["source"] == "router"
     assert res["risk"] == "high"
     assert res["warning"] is None
@@ -4565,7 +4565,7 @@ def test_dispatch_dry_run_matches_actual_resolution(tmp_path: Path, capsys: pyte
     captured = capsys.readouterr()
     data = json.loads(captured.out)
     assert data["dry_run"] is True
-    assert data["model"] == "gemini-3.7-flash-medium"
+    assert data["model"] == "qwen3.7-plus"
     assert data["model_source"] == "router"
     assert data["risk"] == "medium"
 
