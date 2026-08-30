@@ -626,8 +626,36 @@ def _can_verify_commit_history(root: Path) -> bool:
         return False
 
 
+def _freshness_ref(root: Path) -> str:
+    """신선도를 재는 기준 ref 를 고릅니다.
+
+    HEAD 로 재면 작업 브랜치의 커밋까지 세어, 워커가 커밋을 낼수록 문서가 낡은
+    것으로 오판됩니다. 2026-08-30 세션에서 이 때문에 갱신을 네 번 반복했고 그중
+    두 번은 어떤 값으로도 수렴하지 않았습니다. 갱신 커밋 자체가 정본 브랜치를
+    두 커밋 앞세우고, 작업 브랜치가 그것을 병합하면 거리가 다시 늘기 때문입니다.
+
+    정본 문서의 신선도는 정본 브랜치 기준으로 재는 것이 맞습니다. main 이 있으면
+    HEAD 와 main 의 공통 조상을 기준으로 삼아 작업 브랜치의 자체 커밋을 제외합니다.
+    """
+    for ref in ("main", "origin/main"):
+        try:
+            out = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+                ["git", "-C", str(root), "merge-base", "HEAD", ref],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=GIT_PROBE_TIMEOUT_SECONDS,
+            )
+            base = out.stdout.strip()
+            if base:
+                return base
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+            continue
+    return "HEAD"
+
+
 def _commits_behind_head(root: Path, commit: str) -> int | None:
-    """기록된 커밋이 HEAD 보다 몇 커밋 뒤처졌는지 셉니다. 확인 불가면 None."""
+    """기록된 커밋이 정본 브랜치 기준으로 몇 커밋 뒤처졌는지 셉니다. 확인 불가면 None."""
     # timeout 을 두지 않으면 git 이 잠기거나 잠금 파일을 기다릴 때 검증기가 함께
     # 멈춥니다. 이 검증기는 pre-commit 에서 돌기 때문에 커밋 자체가 막힙니다.
     try:
@@ -637,8 +665,9 @@ def _commits_behind_head(root: Path, commit: str) -> int | None:
             capture_output=True,
             timeout=GIT_PROBE_TIMEOUT_SECONDS,
         )
+        ref = _freshness_ref(root)
         out = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
-            ["git", "-C", str(root), "rev-list", "--count", f"{commit}..HEAD"],
+            ["git", "-C", str(root), "rev-list", "--count", f"{commit}..{ref}"],
             check=True,
             capture_output=True,
             text=True,

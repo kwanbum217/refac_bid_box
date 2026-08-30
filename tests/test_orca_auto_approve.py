@@ -774,3 +774,42 @@ class TestSecretPathPolicy:
         verdict, reason = classify_command(cmd)
         assert verdict == "hold"
         assert "비밀" in reason or "보류" in reason
+
+
+class TestHeredocWritePolicy:
+    """히어독 보고서 쓰기 허용 경계 검증.
+
+    워커는 분석 보고서를 `cat <<'EOF' > docs/analysis/x.md` 로 씁니다. 이것을
+    보류하면 보고서를 쓸 때마다 승인 대기가 생깁니다(2026-08-30 다수 발생).
+    구분자를 따옴표로 감싸면 셸이 본문을 확장하지 않으므로 본문은 순수 데이터이며
+    남는 위험은 쓰기 대상뿐입니다.
+    """
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "cat <<'EOF' > docs/analysis/task_x.md\n# 보고서\nEOF",
+            "cat << 'EOF' > docs/analysis/y.md",
+            'cat <<"EOF" > notes.md',
+            "tee <<'EOF' >> notes.md",
+        ],
+    )
+    def test_quoted_heredoc_write_approves(self, cmd: str) -> None:
+        assert classify_command(cmd)[0] == "approve"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 따옴표 없는 구분자는 본문에서 확장이 일어납니다.
+            "cat <<EOF > x.md",
+            "cat <<EOF > x.md\n$(rm -rf /)\nEOF",
+            # 쓰기 대상이 워크트리 밖이거나 비밀 파일입니다.
+            "cat <<'EOF' > /etc/passwd",
+            "cat <<'EOF' > ../outside.md",
+            "cat <<'EOF' > .env",
+            # 파일 쓰기가 아니라 셸로 흘려보냅니다.
+            "cat <<'EOF' | sh",
+        ],
+    )
+    def test_unsafe_heredoc_holds(self, cmd: str) -> None:
+        assert classify_command(cmd)[0] == "hold"
