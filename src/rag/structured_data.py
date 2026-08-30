@@ -28,7 +28,6 @@ from src.app.models.bids import (
 from src.app.services.ranking_snapshots import (
     DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
-    exclude_corrupted,
     get_skipped_count,
     get_top_rankings,
 )
@@ -267,7 +266,10 @@ def _top_rows(
     """스냅샷이 있으면 그것을, 없으면 실시간 집계를 씁니다.
 
     스냅샷은 집계 시점에 이미 손상값을 걸러 두었으므로 그대로 씁니다.
-    실시간 경로는 여기서 걸러냅니다.
+    실시간 경로는 LIVE_OVERFETCH_FACTOR 배수만큼 가져온 뒤 파이썬 계층
+    _drop_corrupted 에서 손상값을 걸러내고 제외 건수를 구합니다.
+    별도 LIKE '%\\ufffd%' 탐침(corrupted_probe) 쿼리를 날리지 않아
+    손상값이 없는 경우 발생하는 전체 테이블 스캔(최대 27.6초)을 원천 차단합니다.
     """
     if scope is not None:
         cached = get_top_rankings(db, dataset, dimension, scope, limit)
@@ -289,9 +291,8 @@ def _top_rows(
     kept, dropped = _drop_corrupted(db.execute(stmt).all(), limit)
     if not dropped:
         # 실시간 경로에서 U+FFFD 탐침(corrupted_probe)을 매번 전체 스캔(최대 27.6초)
-        # 하는 대신, 야간에 이미 계산해 둔 스냅샷의 손상 여부 마커(rank=0)를 O(1)로
-        # 재사용합니다. 스냅샷에 마커가 없으면 파이썬 계층(_drop_corrupted)의
-        # 손상 판독 결과만 반영합니다.
+        # 하는 대신, 파이썬 계층 _drop_corrupted 가 판독하고, 필요한 경우
+        # 스냅샷의 손상 여부 마커(rank=0)를 O(1)로 확인합니다.
         dropped = get_skipped_count(db, dataset, dimension, category)
 
     # 손상 탐지 결과까지 함께 담습니다. 순위만 캐시하면 적중할 때마다 탐지
@@ -560,7 +561,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         category=category_filter,
         live_stmt=_hint_result_date_index(
             select(BidResult.bidwinnr_nm, func.count(BidResult.id))
-            .where(exclude_corrupted(BidResult.bidwinnr_nm), *result_conditions)
+            .where(BidResult.bidwinnr_nm.is_not(None), *result_conditions)
             .group_by(BidResult.bidwinnr_nm)
             .order_by(func.count(BidResult.id).desc()),
             plan,
@@ -579,7 +580,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         category=category_filter,
         live_stmt=_hint_announcement_date_index(
             select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
-            .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *announcement_conditions)
+            .where(BidAnnouncement.dminstt_nm.is_not(None), *announcement_conditions)
             .group_by(BidAnnouncement.dminstt_nm)
             .order_by(func.count(BidAnnouncement.id).desc()),
             plan,
@@ -598,7 +599,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         category=category_filter,
         live_stmt=_hint_announcement_date_index(
             select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
-            .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
+            .where(BidAnnouncement.bid_ntce_nm.is_not(None), *announcement_conditions)
             .group_by(BidAnnouncement.bid_ntce_nm)
             .order_by(func.count(BidAnnouncement.id).desc()),
             plan,
