@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
+from scripts import validate_agent_rules
 from scripts.validate_agent_rules import (
     AGENTS_CHAR_BUDGET,
     ANTIGRAVITY_CHAR_CAP,
@@ -600,3 +602,52 @@ def test_git_probe_has_timeout_constant():
     assert timeout_args == run_calls, (
         f"subprocess.run {run_calls}회 중 timeout 지정 {timeout_args}회. 전부 지정해야 합니다"
     )
+
+
+# ===========================================================================
+# CURRENT_STATE 신선도는 정본 브랜치 기준으로 잽니다
+# ===========================================================================
+
+
+def test_freshness_ref_uses_merge_base_with_main(monkeypatch, tmp_path):
+    """HEAD 로 재면 작업 브랜치 커밋까지 세어 문서가 낡은 것으로 오판됩니다.
+
+    2026-08-30 세션에서 워커 브랜치가 커밋을 낼 때마다 허용치를 넘겨 갱신을 네 번
+    반복했고, 그중 두 번은 어떤 값으로도 수렴하지 않았습니다. 갱신 커밋이 정본
+    브랜치를 두 커밋 앞세우고 작업 브랜치가 그것을 병합하면 거리가 다시 늘기
+    때문입니다.
+    """
+    calls: list[list[str]] = []
+
+    class _Result:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if "merge-base" in argv and "--is-ancestor" not in argv:
+            return _Result("abc1234\n")
+        if "rev-list" in argv:
+            return _Result("2\n")
+        return _Result("")
+
+    monkeypatch.setattr("scripts.validate_agent_rules.subprocess.run", fake_run)
+    behind = validate_agent_rules._commits_behind_head(tmp_path, "deadbee")
+
+    assert behind == 2
+    revlist = [c for c in calls if "rev-list" in c]
+    assert revlist, "rev-list 를 호출해야 합니다"
+    # 기준이 HEAD 가 아니라 merge-base 결과여야 합니다.
+    assert any("deadbee..abc1234" in arg for arg in revlist[0])
+
+
+def test_freshness_ref_falls_back_to_head_without_main(monkeypatch, tmp_path):
+    """main 을 찾을 수 없으면 종전대로 HEAD 를 기준으로 씁니다."""
+
+    def fake_run(argv, **kwargs):
+        if "merge-base" in argv:
+            raise subprocess.CalledProcessError(1, argv)
+        raise subprocess.CalledProcessError(1, argv)
+
+    monkeypatch.setattr("scripts.validate_agent_rules.subprocess.run", fake_run)
+    assert validate_agent_rules._freshness_ref(tmp_path) == "HEAD"

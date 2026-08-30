@@ -42,6 +42,15 @@ REDIRECT_DENY = re.compile(r"^/(?!tmp/|dev/null)|\.\.|(^|/)\.env|(^|/)\.git/")
 # 비밀 파일 경로. 읽기 전용 도구라도 화면에 찍히면 노출이므로 인자에서 막습니다.
 SECRET_PATH = re.compile(r"(^|/)\.env(\.|$)|(^|/)\.env$|id_rsa|credentials|secrets?\.(json|ya?ml)")
 
+# 따옴표로 감싼 구분자를 쓰는 히어독 쓰기. 구분자를 따옴표로 감싸면 셸이 본문에서
+# 변수 확장도 명령 치환도 하지 않으므로 본문은 순수 데이터입니다. 워커가 분석
+# 보고서를 쓰는 표준 방식이라 막으면 매번 승인 대기가 생깁니다. 리다이렉트 대상만
+# 검증하면 안전합니다. 따옴표 없는 <<EOF 는 확장이 일어나므로 계속 보류합니다.
+HEREDOC_WRITE = re.compile(
+    r"^\s*(?:cat|tee)\s+<<-?\s*(['\"])(\w+)\1\s*(?:>>?)\s*(?P<target>[^\s]+)\s*$",
+    re.MULTILINE,
+)
+
 # python 실행 본문에서 보류하는 토큰. 셸 탈출과 파일 삭제 경로입니다.
 PYTHON_ESCAPE_TOKENS = re.compile(
     r"\bos\.system\b|\bsubprocess\b|\bshutil\.rmtree\b|\bos\.remove\b|"
@@ -570,6 +579,27 @@ def strip_redirections(segment: str) -> tuple[str, str | None]:
     return out.strip(), reason
 
 
+def classify_heredoc_write(cmd: str) -> tuple[str, str] | None:
+    """따옴표 구분자를 쓰는 히어독 쓰기를 판정합니다. 해당 없으면 None.
+
+    워커는 분석 보고서를 `cat <<'EOF' > docs/analysis/x.md` 형태로 씁니다. 이것을
+    보류하면 보고서를 쓸 때마다 승인 대기가 생깁니다(2026-08-30 다수 발생).
+    구분자를 따옴표로 감싸면 셸이 본문을 확장하지 않으므로 본문은 순수 데이터이며,
+    남는 위험은 어디에 쓰느냐 뿐입니다. 그 대상만 검증합니다.
+    """
+    if "<<" not in cmd:
+        return None
+    first_line = cmd.split("\n", 1)[0]
+    match = HEREDOC_WRITE.match(first_line)
+    if not match:
+        # 따옴표 없는 구분자이거나 형태가 다르면 확장 가능성이 있어 보류합니다.
+        return "hold", "히어독 형태가 안전 목록 밖 (따옴표 구분자 쓰기만 허용)"
+    target = match.group("target")
+    if REDIRECT_DENY.search(target) or SECRET_PATH.search(target):
+        return "hold", f"히어독 쓰기 대상이 허용 범위 밖 ({target})"
+    return "approve", f"따옴표 구분자 히어독 쓰기 ({target})"
+
+
 def classify_python_execution(argv: list[str], raw: str) -> tuple[str, str]:
     """python 실행을 판정합니다.
 
@@ -609,6 +639,10 @@ def classify_command(cmd: str) -> tuple[str, str]:
 
     if UNSPLITTABLE_METACHARS.search(cmd):
         return "hold", "명령 치환/프로세스 치환 포함"
+
+    heredoc = classify_heredoc_write(cmd)
+    if heredoc is not None:
+        return heredoc
 
     segments = split_pipeline(cmd)
     if segments is None:
