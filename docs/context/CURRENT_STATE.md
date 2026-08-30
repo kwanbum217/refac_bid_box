@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-30
-> **source_commit**: `b368fa7`
+> **source_commit**: `3c27ed3`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -114,6 +114,10 @@ q21 재순위 결함이 닫혔습니다. 공통 96건 중 근거 ID 변경은 q2
 `GROUP BY bidwinnr_nm` 이 `bid_results` 인덱스 3,267,347행을, `GROUP BY dminstt_nm` 이 `bid_announcements` 2,179,319행을 훑고 `Using temporary; Using filesort` 를 수행합니다. `_snapshot_scope` 가 날짜·기관 필터에서 스냅샷을 포기하므로 `"2026년"` 같은 흔한 표현이 전부 이 경로를 탑니다.
 
 > **측정 함정**: `src/rag/structured_data.py:237` 주석은 이 비용을 "2초" 로 적고 있으며 실측의 **25~48배 과소평가**입니다. 2.4절 구간 정본도 같은 함정으로 sql P50 을 7.39ms 로 기록했습니다(직전 측정이 캐시를 데워 놓았음). **캐시 상태를 명시하지 않은 SQL 레이턴시 수치는 신뢰하지 마십시오.** 상세는 [`rag_structured_sql_coldstart_20260830.md`](../analysis/rag_structured_sql_coldstart_20260830.md).
+
+**부분 시정 완료(`3c27ed3`)**: `bidwinnr_nm` 집계에 날짜 인덱스를 강제해 13,446ms 를 698ms 로 낮췄습니다(19.3배, 반환 15행 동일).
+
+**그러나 이것은 8개 소비자 중 하나이며 전체의 약 15%입니다.** `performance_schema` 실측에서 지배 패턴은 선행 와일드카드 `LIKE '%...%'` 계열이고, 그중 `corrupted_probe` 3건은 최대 27,668ms 를 써서 안내 문구 한 줄의 표시 여부만 결정합니다.
 
 **G3 컷오버 판정 전에 닫아야 합니다.**
 

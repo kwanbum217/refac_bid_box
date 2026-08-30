@@ -147,3 +147,49 @@ with engine.connect() as conn:
         print(dict(r._mapping))
 EOF
 ```
+
+---
+
+## 9. 정정: 비용 귀속이 부분적으로 틀렸습니다 (2026-08-30 추가)
+
+3장에서 `GROUP BY bidwinnr_nm` 을 주 원인으로 지목했으나, **97초를 실제로 소비한
+쿼리를 확인하지 않고 EXPLAIN 결과가 나쁜 후보 하나를 고른 것이었습니다.**
+`performance_schema.events_statements_summary_by_digest` 로 확인한 실제 분포입니다.
+
+| 순위 | 쿼리 | 누적 | 최대 |
+| :---: | --- | ---: | ---: |
+| 1 | `COUNT(bid_announcements.id) WHERE dminstt_nm LIKE concat('%',?,'%')` | 89.09s | 15,539ms |
+| 2 | `bidwinnr_nm GROUP BY` (시정 완료) | 78.41s | 23,030ms |
+| 3 | `dminstt_nm GROUP BY` | 72.09s | 13,160ms |
+| 4 | `bid_ntce_nm GROUP BY` | 69.92s | 12,648ms |
+| 5~8 | `bid_announcements.id WHERE ... LIKE concat('%',?,'%')` | 67s, 67s, 46s | 최대 27,668ms |
+
+**시정한 것은 8개 중 하나이며 전체의 약 15%입니다.** 지배 패턴은 선행 와일드카드
+`LIKE '%...%'` 계열이며 어떤 인덱스도 쓸 수 없어 항상 2,179,319행을 훑습니다.
+SQLAlchemy 의 `.contains()` 가 이 형태로 컴파일됩니다.
+
+### 9.1 `corrupted_probe` 가 가장 부당한 비용입니다
+
+`structured_data.py:545,563,581` 의 `corrupted_probe` 는 `dminstt_nm.contains(U+FFFD)`
+로 손상 문자를 찾으며, 결과는 **안내 문구 한 줄의 표시 여부**에만 쓰입니다
+(`_build_hints` 의 "일부 항목은 원문 인코딩이 손상되어 순위 집계에서 제외했습니다").
+
+`structured_data.py:274` 주석은 "첫 건에서 멈추므로 전체 스캔이 되지 않습니다" 라고
+적고 있으나 **손상 행이 있을 때만 참입니다.** 없으면 없음을 증명하려고 전체를 훑고,
+그것이 정상 상태입니다. 실시간 집계마다 3회 돕니다.
+
+`structured_data.py:237` 의 "2초" 주석에 이어 **두 번째로 발견된 틀린 비용 주석**입니다.
+
+### 9.2 시정한 변경은 유지합니다
+
+같은 조건에서 13,446ms 가 698ms 로 떨어지고(19.3배) 반환 15행이 완전히 동일하며
+누적 2위 소비자이므로 되돌리지 않습니다. **부분 개선이지 해결이 아니라는 점만
+정정합니다.**
+
+### 9.3 남은 과업
+
+| 순서 | 작업 |
+| --- | --- |
+| 1 | `corrupted_probe` 3건의 비용 제거 |
+| 2 | `dminstt_nm`, `bid_ntce_nm` 의 `contains()` 선행 와일드카드 대체 |
+| 3 | `dminstt_nm`, `bid_ntce_nm` GROUP BY 에 날짜 인덱스 힌트 적용 |
