@@ -18,17 +18,23 @@ from urllib import error as urlerror
 
 import pytest
 
+from scripts.benchmark_latency import Samples
 from scripts.benchmark_rag_segments import (
+    CANONICAL_FIXTURE_HASHES,
     ModelMismatchError,
     SegmentLoggingDisabledError,
     aggregate,
     assert_expected_model_matches,
     assert_segment_logging_enabled,
+    build_query_plan,
     container_env_flag,
     docker_since_timestamp,
+    evaluate_canonical,
+    load_fixture,
     main,
     parse_segment_lines,
     send_query,
+    summarize_measurements,
     verify_trace_correlation,
 )
 from src.app.core.config import settings
@@ -462,7 +468,7 @@ def test_main_integrity_error_due_to_external_log_exits_1(tmp_path):
     assert payload["canonical_success"] is False
 
 
-def test_main_success_all_rounds_exits_0(tmp_path):
+def test_main_adhoc_rounds_exits_0_noncanonical(tmp_path):
     output_file = tmp_path / "result.json"
     logs = (
         "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
@@ -499,13 +505,318 @@ def test_main_success_all_rounds_exits_0(tmp_path):
     assert output_file.exists()
     payload = json.loads(output_file.read_text(encoding="utf-8"))
     assert payload["status"] == "ok"
-    assert payload["canonical_success"] is True
+    assert payload["canonical_success"] is False
+    assert (
+        "fixture_required" in payload["failed_gates"]
+        or "fixture_sha256_canonical" in payload["failed_gates"]
+    )
     assert payload["errors"] == 0
     assert payload["successful_traces_count"] == 2
     assert payload["segment_records_count"] == 2
+    assert payload["cold_records_count"] == 2
+    assert payload["warm_records_count"] == 0
     assert payload["expected_llm_model"] == "gemma4:e4b"
     assert "provenance" in payload
     assert "host_load" in payload["provenance"]
+    assert "summary_cold" in payload
+    assert "summary_warm" in payload
+
+
+def test_load_fixture_success(tmp_path):
+    fixture_file = tmp_path / "test_fixture.json"
+    fixture_file.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "q01", "question": "질문 1"},
+                    {"id": "q02", "question": "질문 2"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    items, sha256, total = load_fixture(fixture_file)
+    assert len(items) == 2
+    assert total == 2
+    assert sha256 is not None
+    assert items[0]["id"] == "q01"
+
+
+def test_load_fixture_with_limit(tmp_path):
+    fixture_file = tmp_path / "test_fixture.json"
+    fixture_file.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "q01", "question": "질문 1"},
+                    {"id": "q02", "question": "질문 2"},
+                    {"id": "q03", "question": "질문 3"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    items, _sha, total = load_fixture(fixture_file, limit=2)
+    assert len(items) == 2
+    assert total == 3
+
+
+def test_load_fixture_invalid_format(tmp_path):
+    fixture_file = tmp_path / "invalid.json"
+    fixture_file.write_text(json.dumps({"not_items": 123}), encoding="utf-8")
+    with pytest.raises(ValueError) as excinfo:
+        load_fixture(fixture_file)
+    assert "items 목록을 찾을 수 없습니다" in str(excinfo.value)
+
+
+def test_build_query_plan_fixture_repetitions_cold_and_warm():
+    fixture_items = [
+        {"id": "q01", "question": "질문 1"},
+        {"id": "q02", "question": "질문 2"},
+    ]
+    plan = build_query_plan(fixture_items=fixture_items, repetitions=3)
+    assert len(plan) == 6
+    # Repetition 0 (cold)
+    assert plan[0].item_id == "q01"
+    assert plan[0].is_cold is True
+    assert plan[0].repetition_index == 0
+
+    assert plan[1].item_id == "q02"
+    assert plan[1].is_cold is True
+    assert plan[1].repetition_index == 0
+
+    # Repetition 1 (warm)
+    assert plan[2].item_id == "q01"
+    assert plan[2].is_cold is False
+    assert plan[2].repetition_index == 1
+
+    assert plan[3].item_id == "q02"
+    assert plan[3].is_cold is False
+    assert plan[3].repetition_index == 1
+
+    # Repetition 2 (warm)
+    assert plan[4].item_id == "q01"
+    assert plan[4].is_cold is False
+    assert plan[4].repetition_index == 2
+
+    assert plan[5].item_id == "q02"
+    assert plan[5].is_cold is False
+    assert plan[5].repetition_index == 2
+
+
+def test_build_query_plan_adhoc_rounds():
+    plan = build_query_plan(fixture_items=None, rounds=7)
+    assert len(plan) == 7
+    # First 5 queries are unique -> cold
+    for idx in range(5):
+        assert plan[idx].is_cold is True
+    # Queries 5 and 6 repeat queries 0 and 1 -> warm
+    assert plan[5].is_cold is False
+    assert plan[6].is_cold is False
+
+
+def test_summarize_measurements_structure():
+    records: list[dict[str, float | str]] = [
+        {
+            "trace_id": "t1",
+            "plan_ms": 10.0,
+            "sql_ms": 20.0,
+            "vector_ms": 30.0,
+            "kb_ms": 0.0,
+            "assembly_ms": 5.0,
+            "llm_ms": 500.0,
+            "guard_ms": 10.0,
+            "total_ms": 575.0,
+        }
+    ]
+    roundtrip = Samples(label="rt")
+    roundtrip.add(600.0, "질문")
+    summary = summarize_measurements(records, roundtrip)
+    assert summary["llm_ms"]["p50_ms"] == pytest.approx(500.0)
+    assert summary["roundtrip_ms"]["n"] == 1
+    assert summary["roundtrip_ms"]["p50_ms"] == pytest.approx(600.0)
+
+
+def test_evaluate_canonical_all_pass():
+    canonical_hash = next(iter(CANONICAL_FIXTURE_HASHES))
+    is_canonical, failed_gates = evaluate_canonical(
+        fixture_sha256=canonical_hash,
+        limit=0,
+        item_count=32,
+        total_fixture_items=32,
+        repetitions=3,
+        request_failures=0,
+        start_sha="sha_valid",
+        start_dirty=False,
+        end_sha="sha_valid",
+        end_dirty=False,
+        model_mismatch=False,
+        port_ok=True,
+        allow_unknown_provenance=False,
+    )
+    assert is_canonical is True
+    assert failed_gates == []
+
+
+def test_evaluate_canonical_failed_gates_isolated():
+    canonical_hash = next(iter(CANONICAL_FIXTURE_HASHES))
+    base_kwargs = {
+        "fixture_sha256": canonical_hash,
+        "limit": 0,
+        "item_count": 32,
+        "total_fixture_items": 32,
+        "repetitions": 3,
+        "request_failures": 0,
+        "start_sha": "sha_valid",
+        "start_dirty": False,
+        "end_sha": "sha_valid",
+        "end_dirty": False,
+        "model_mismatch": False,
+        "port_ok": True,
+        "allow_unknown_provenance": False,
+    }
+
+    # Hash mismatch
+    ok, failed = evaluate_canonical(**{**base_kwargs, "fixture_sha256": "bad_hash"})
+    assert ok is False
+    assert "fixture_sha256_canonical" in failed
+
+    # Limit not zero
+    ok, failed = evaluate_canonical(**{**base_kwargs, "limit": 5})
+    assert ok is False
+    assert "limit_zero" in failed
+
+    # Item count partial
+    ok, failed = evaluate_canonical(**{**base_kwargs, "item_count": 10})
+    assert ok is False
+    assert "item_count_full" in failed
+
+    # Repetitions under 3
+    ok, failed = evaluate_canonical(**{**base_kwargs, "repetitions": 2})
+    assert ok is False
+    assert "repetitions_minimum" in failed
+
+    # Request failure
+    ok, failed = evaluate_canonical(**{**base_kwargs, "request_failures": 1})
+    assert ok is False
+    assert "no_request_failures" in failed
+
+    # Git dirty
+    ok, failed = evaluate_canonical(**{**base_kwargs, "start_dirty": True})
+    assert ok is False
+    assert "start_clean" in failed
+
+    # Unknown git sha
+    ok, failed = evaluate_canonical(**{**base_kwargs, "start_sha": "unknown"})
+    assert ok is False
+    assert "start_sha_known" in failed
+
+    # Model mismatch
+    ok, failed = evaluate_canonical(**{**base_kwargs, "model_mismatch": True})
+    assert ok is False
+    assert "model_match_expected" in failed
+
+    # Port invalid
+    ok, failed = evaluate_canonical(**{**base_kwargs, "port_ok": False})
+    assert ok is False
+    assert "port_validated" in failed
+
+    # Allow unknown provenance (non-strict)
+    ok, failed = evaluate_canonical(**{**base_kwargs, "allow_unknown_provenance": True})
+    assert ok is False
+    assert "provenance_strict" in failed
+
+
+def test_main_fixture_canonical_success_exits_0(tmp_path):
+    output_file = tmp_path / "fixture_result.json"
+    canonical_hash = next(iter(CANONICAL_FIXTURE_HASHES))
+
+    # Mock fixture file whose contents match canonical_hash
+    fixture_file = tmp_path / "canonical_fixture.json"
+    fixture_file.write_bytes(b'{"dummy": true}')
+
+    logs = (
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=510.0 guard_ms=10.0 total_ms=555.0\n"
+        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=520.0 guard_ms=10.0 total_ms=565.0\n"
+        "2026-08-24 10:00:04 INFO rag_engine_latency: trace_id=t4 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=480.0 guard_ms=10.0 total_ms=525.0\n"
+        "2026-08-24 10:00:05 INFO rag_engine_latency: trace_id=t5 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=490.0 guard_ms=10.0 total_ms=535.0\n"
+        "2026-08-24 10:00:06 INFO rag_engine_latency: trace_id=t6 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=495.0 guard_ms=10.0 total_ms=540.0\n"
+    )
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_call_count = 0
+
+    def mock_query(url, q, timeout):
+        nonlocal query_call_count
+        query_call_count += 1
+        return 500.0, True, f"t{query_call_count}"
+
+    with patch(
+        "scripts.benchmark_rag_segments.load_fixture",
+        return_value=(
+            [
+                {"id": "q01", "question": "질문 1"},
+                {"id": "q02", "question": "질문 2"},
+            ],
+            canonical_hash,
+            2,
+        ),
+    ):
+        code = main(
+            [
+                "--expected-llm-model",
+                "gemma4:e4b",
+                "--fixture",
+                str(fixture_file),
+                "--repetitions",
+                "3",
+                "--output",
+                str(output_file),
+            ],
+            command_runner=runner,
+            query_sender=mock_query,
+            host_load_sampler=lambda: {
+                "observed_at_utc": "2026-08-24T00:00:00Z",
+                "load_1m": 0.5,
+                "cpu_count": 8,
+                "per_core_percent": 6.25,
+            },
+        )
+
+    assert code == 0
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    assert payload["status"] == "ok"
+    assert payload["canonical"] is True
+    assert payload["canonical_success"] is True
+    assert payload["failed_gates"] == []
+    assert payload["canonical_failed_gates"] == []
+    assert payload["successful_traces_count"] == 6
+    assert payload["segment_records_count"] == 6
+    assert payload["cold_records_count"] == 2
+    assert payload["warm_records_count"] == 4
+    assert "summary_cold" in payload
+    assert "summary_warm" in payload
+    assert payload["summary_cold"]["llm_ms"]["n"] == 2
+    assert payload["summary_warm"]["llm_ms"]["n"] == 4
+    assert payload["summary"]["cold"]["llm_ms"]["n"] == 2
+    assert payload["summary"]["warm"]["llm_ms"]["n"] == 4
+
+
+def test_main_fixture_load_error_exits_2(tmp_path):
+    runner = _make_mock_docker_runner()
+    non_existent = tmp_path / "non_existent.json"
+    code = main(
+        [
+            "--expected-llm-model",
+            "gemma4:e4b",
+            "--fixture",
+            str(non_existent),
+        ],
+        command_runner=runner,
+    )
+    assert code == 2
 
 
 def test_enable_latency_segment_logging_with_root_handlers():
