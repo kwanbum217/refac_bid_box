@@ -38,6 +38,9 @@ try:
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
         CAP_WORKFLOW_LINT,
+        DEFAULT_GIT_TIMEOUT,
+        DEFAULT_PYTEST_TIMEOUT,
+        DEFAULT_VALIDATE_TIMEOUT,
         parse_verification_command,
         required_capabilities,
     )
@@ -52,6 +55,9 @@ except (ModuleNotFoundError, ImportError):
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
         CAP_WORKFLOW_LINT,
+        DEFAULT_GIT_TIMEOUT,
+        DEFAULT_PYTEST_TIMEOUT,
+        DEFAULT_VALIDATE_TIMEOUT,
         parse_verification_command,
         required_capabilities,
     )
@@ -131,6 +137,13 @@ MODEL_TIER_RANK: dict[str, int] = {
     "gpt-5.6-terra": 6,
     "codex": 6,
 }
+
+# Level 1은 전체 pytest, 규칙 검증, ruff, Git 검사를 자체 상한으로 순차 실행합니다.
+# finalize의 바깥 상한은 그 합보다 짧아서는 안 됩니다.
+LEVEL1_FINALIZE_TIMEOUT = (
+    DEFAULT_PYTEST_TIMEOUT + (2 * DEFAULT_VALIDATE_TIMEOUT) + (3 * DEFAULT_GIT_TIMEOUT) + 60
+)
+WORKER_SUMMARY_FINALIZE_TIMEOUT = LEVEL1_FINALIZE_TIMEOUT
 
 
 # 검증 명령 기본값. Capsule 이 선언한 명령을 Level 1 게이트 3 이 그대로 실행하므로
@@ -2090,7 +2103,9 @@ def finalize_task(
         str(target_repo),
         "--json",
     ]
-    code_summ, stdout_summ, stderr_summ = _run_command(summarize_cmd, timeout=30)
+    code_summ, stdout_summ, stderr_summ = _run_command(
+        summarize_cmd, timeout=WORKER_SUMMARY_FINALIZE_TIMEOUT
+    )
     if code_summ == 2:
         tool_error = True
         result["summarize"] = {
@@ -2164,7 +2179,7 @@ def finalize_task(
     ]
     if strict:
         level1_cmd.append("--strict")
-    code_l1, stdout_l1, stderr_l1 = _run_command(level1_cmd, timeout=120)
+    code_l1, stdout_l1, stderr_l1 = _run_command(level1_cmd, timeout=LEVEL1_FINALIZE_TIMEOUT)
     if code_l1 == 2:
         tool_error = True
         result["level1"] = {

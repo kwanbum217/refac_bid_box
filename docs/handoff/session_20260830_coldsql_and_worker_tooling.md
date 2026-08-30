@@ -25,12 +25,21 @@ orca status                 # runtime ready 확인
 
 | 대상 | 위치 | 상태 | 다음 행동 |
 | --- | --- | --- | --- |
-| **E1** probe 제거 + 공고 힌트 | 워크트리 `orca-e1-probe`, 브랜치 `kwanbum217/orca-e1-probe` | Level 2 **pass**, 커밋 1건 | Level 1 게이트 후 병합 |
-| **E3** 콜드SQL 귀속 하네스 | 워크트리 `orca-e3-harness`, 브랜치 `kwanbum217/orca-e3-harness` | Level 2 **pass**, 커밋 1건 | Level 1 게이트 후 병합 |
-| **E2** `contains()` 전수 조사 | 워크트리 `orca-e2-contains`, 브랜치 `kwanbum217/orca-e2-contains` | 진행 중, `worker_done` 없음 | 워커 상태 확인 후 이어가거나 재Dispatch |
+| **E1** probe 제거 + 공고 힌트 | 워크트리 `orca-e1-probe`, 브랜치 `kwanbum217/orca-e1-probe` | 표준 `finalize --reviewer` **pass**, `a53b01a` | 병합 후 워커·워크트리 회수 |
+| **E3** 콜드SQL 귀속 하네스 | 워크트리 `orca-e3-harness`, 브랜치 `kwanbum217/orca-e3-harness` | canonical 재작업 포함 표준 최종화 **pass**, `7ec1d23` | 병합 후 워커·워크트리 회수 |
+| **E2** `contains()` 전수 조사 | 워크트리 `orca-e2-contains`, 브랜치 `kwanbum217/orca-e2-contains` | 표준 `finalize --reviewer` **pass**, `500e70a` | 병합 후 워커·워크트리 회수. 결론은 2.5 절 |
 
 E1 과 E3 의 Level 2 리뷰 보고는 `/tmp/e1_review.json`, `/tmp/e3_review.json` 에 있으나
 **임시 디렉터리이므로 사라졌을 수 있습니다.** 없으면 리뷰어를 다시 돌리십시오.
+
+2026-08-30 인수 후 세 Task 모두 `scripts/orca_taskctl.py finalize --reviewer`로 다시
+검증했습니다. E1은 2,821건, E3는 2,829건의 전체 테스트를 통과했고 E2는 문서 전용
+게이트와 독립 Reviewer를 통과했습니다. E3는 캐시 비움 요청과 실제 성공을 canonical
+판정에 결박하는 재작업까지 포함합니다.
+
+표준 최종화 과정에서 바깥 `summarize` 30초와 Level 1 120초 상한이 내부 pytest 900초
+계약보다 짧아 JSON 출력 전에 종료되는 결함을 확인했습니다. `scripts/orca_taskctl.py`의
+두 바깥 상한을 내부 게이트 합계보다 길게 맞추고 회귀 테스트를 추가했습니다.
 
 ```bash
 python3 scripts/orca_level1_gate.py --base main --branch kwanbum217/orca-e1-probe \
@@ -89,6 +98,25 @@ python3 scripts/orca_level1_gate.py --base main --branch kwanbum217/orca-e1-prob
 1. E1 병합 후 **캐시를 비우고 재측정**해 실제 개선폭 확정
 2. E2 조사 결과로 `contains()` 대체 여부 판정
 3. `_snapshot_scope` 가 날짜 필터에서 스냅샷을 포기하는 설계 자체를 재검토
+
+### 2.5 E2 조사 결론: 접두 일치 전환은 기각, Meilisearch 위임은 즉시 가능
+
+상세 산출물은 E2 브랜치의 `docs/analysis/contains_scan_survey_20260830.md`입니다.
+`.contains()` 호출 13건을 4개 파일 7개 그룹으로 분류하고 DB 실측으로 판정했습니다.
+
+| 그룹 | 판정 | 근거 |
+| --- | --- | --- |
+| G1 RAG 기관명 | **대체 불가** | 접두 전환 시 "거제시" 입력이 10,148 + 3,742건에서 36 + 36건으로 **99.6% 손실** |
+| G5·G6 자유 검색 q | **부분 대체 가능 (최우선)** | `_meili_enabled()` 분기가 이미 있어 `MEILI_ENABLED=true` 만으로 풀스캔 우회 |
+| 손상값 probe 3건 | **중복 비용** | 질의당 약 27초. `bid_ranking_snapshots.rank=0` 이 같은 정보를 이미 관리 |
+
+**접두 일치로의 단순 전환을 제안하지 마십시오.** 사용자는 기관명을 부분 토큰으로
+입력하며(예: "경상남도 거제시" 대신 "거제시"), 접두 전환은 그 대부분을 잃습니다.
+
+**G5·G6 는 코드 변경 없이 설정만으로 해소됩니다.** 다만 Meilisearch 가 비정상일 때
+폴백이 같은 풀스캔이므로 **fail-closed 운영이 전제**입니다. 이것을 먼저 확인하십시오.
+
+손상값 probe 중복 비용은 E1 이 이미 스냅샷 마커 재사용으로 닫았습니다(미병합).
 
 ---
 
@@ -188,10 +216,10 @@ python3 scripts/orca_level1_gate.py --base main --branch kwanbum217/orca-e1-prob
 
 | 순서 | 작업 | 근거 |
 | --- | --- | --- |
-| **1** | E1, E3 게이트 통과 후 병합, 워크트리 반납 | 1장 |
-| **2** | E2 이어받기 또는 재Dispatch | 1장 |
+| **1** | E1·E2·E3 병합 후 워커·워크트리 반납 | 1장 |
+| **2** | 콜드 SQL 정본 측정의 revision 동결 | 2.4 |
 | **3** | 캐시 비우고 콜드 SQL 재측정으로 개선폭 확정 | 2.4 |
-| **4** | `contains()` 대체 판정 후 시정 | 2.2 |
+| **4** | `MEILI_ENABLED=true` 전환 검토 (fail-closed 확인 선행) | 2.5 |
 | 5 | Windows Docker Desktop 실기 | **장비 부재로 보류** |
 | 마지막 | G3 cutover 최종 판정 | 2장이 닫힌 뒤 |
 

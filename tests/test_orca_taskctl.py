@@ -766,6 +766,57 @@ def test_finalize_task_all_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert load_report(report_file)["status"] == "succeeded"
 
 
+def test_finalize_outer_timeouts_cover_inner_gate_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """finalize의 요약과 Level 1이 내부 pytest보다 먼저 종료하면 안 됩니다."""
+    from scripts.orca_level1_gate import (
+        DEFAULT_GIT_TIMEOUT,
+        DEFAULT_PYTEST_TIMEOUT,
+        DEFAULT_VALIDATE_TIMEOUT,
+    )
+    from scripts.orca_taskctl import (
+        LEVEL1_FINALIZE_TIMEOUT,
+        WORKER_SUMMARY_FINALIZE_TIMEOUT,
+    )
+
+    observed_timeouts = {}
+
+    def mock_run_command(cmd, cwd=None, timeout=30):
+        script = cmd[1]
+        if "summarize_worker_done" in script:
+            observed_timeouts["summarize"] = timeout
+            return 0, json.dumps({"violations_count": 0}), ""
+        if "orca_level1_gate" in script:
+            observed_timeouts["level1"] = timeout
+            return 0, json.dumps({"verdict": "pass"}), ""
+        if "orca_run_reviewer" in script:
+            return 0, json.dumps({"effective_verdict": "pass"}), ""
+        return 0, "{}", ""
+
+    report_file = tmp_path / "worker_done.json"
+    capsule_file = tmp_path / "capsule.yaml"
+    report_file.write_text(json.dumps({"status": "succeeded"}), encoding="utf-8")
+    capsule_file.write_text("schema: ORCA_TASK_CAPSULE_V2\n", encoding="utf-8")
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run_command)
+
+    result = finalize_task(
+        report_path=report_file,
+        capsule_path=capsule_file,
+        repo=tmp_path,
+        run_reviewer=True,
+    )
+
+    minimum_timeout = (
+        DEFAULT_PYTEST_TIMEOUT + (2 * DEFAULT_VALIDATE_TIMEOUT) + (3 * DEFAULT_GIT_TIMEOUT)
+    )
+    assert result["exit_code"] == 0
+    assert observed_timeouts["summarize"] == WORKER_SUMMARY_FINALIZE_TIMEOUT
+    assert observed_timeouts["level1"] == LEVEL1_FINALIZE_TIMEOUT
+    assert observed_timeouts["summarize"] > minimum_timeout
+    assert observed_timeouts["level1"] > minimum_timeout
+
+
 def test_finalize_task_violations_returns_exit_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """AC4: summarize 에서 계약 위반(코드 1)이 발생하면 finalize 종료 코드는 1이어야 함."""
     report_file = tmp_path / "worker_done.json"
