@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from scripts import orca_kimi_launch
 from scripts.orca_kimi_launch import (
     COMMIT_NOTICE,
     build_command,
@@ -19,6 +20,18 @@ from scripts.orca_kimi_launch import (
     run_kimi,
     wait_for_preamble,
 )
+
+
+@pytest.fixture(autouse=True)
+def _skip_model_registry_check(request, monkeypatch):
+    """기존 main() 테스트는 실제 프로필에 없는 가짜 모델명을 씁니다.
+
+    main() 은 기동 전에 모델 등록 여부를 검증하므로 그대로 두면 전부 SystemExit 이
+    납니다. 검증 자체는 아래 전용 테스트가 따로 다룹니다.
+    """
+    if request.node.name.startswith("test_assert_model_available"):
+        return
+    monkeypatch.setattr(orca_kimi_launch, "assert_model_available", lambda model, home: None)
 
 
 def test_wait_returns_content_once_written(tmp_path: Path):
@@ -260,3 +273,38 @@ def test_preamble_timeout_returns_nonzero(tmp_path: Path):
 def test_open_interactive_shell_uses_resolved_shell(mock_exec: MagicMock):
     open_interactive_shell({"SHELL": "/bin/fish"})
     mock_exec.assert_called_once_with("/bin/fish", ["/bin/fish"], {"SHELL": "/bin/fish"})
+
+
+# ===========================================================================
+# 기동 전 모델 등록 검증
+# ===========================================================================
+
+
+def test_assert_model_available_lists_profile_models(tmp_path: Path):
+    """모델이 없으면 그 프로필에서 쓸 수 있는 목록과 함께 중단합니다.
+
+    2026-08-30 에 기본 프로필에서 응답을 확인한 모델을 런처로 띄웠는데, 런처의
+    DEFAULT_HOME 이 다른 프로필이라 그곳에는 모델이 없어 기동 직후 종료했습니다.
+    화면에는 워커가 뜬 것처럼 보여 원인을 찾기 어려웠습니다.
+    """
+    (tmp_path / "config.toml").write_text(
+        '[models."or-free/alpha"]\nmodel = "x"\n[models."or-free/beta"]\nmodel = "y"\n',
+        encoding="utf-8",
+    )
+    assert orca_kimi_launch.available_models(tmp_path) == ["or-free/alpha", "or-free/beta"]
+
+    orca_kimi_launch.assert_model_available("or-free/alpha", tmp_path)
+
+    with pytest.raises(SystemExit) as err:
+        orca_kimi_launch.assert_model_available("or-free/missing", tmp_path)
+    message = str(err.value)
+    assert "or-free/missing" in message
+    assert "or-free/alpha" in message
+    assert "or-free/beta" in message
+
+
+def test_assert_model_available_without_config(tmp_path: Path):
+    """프로필에 config.toml 이 없으면 명확히 중단합니다."""
+    with pytest.raises(SystemExit) as err:
+        orca_kimi_launch.assert_model_available("or-free/alpha", tmp_path)
+    assert "config.toml" in str(err.value)
