@@ -102,6 +102,11 @@ SEGMENT_KEYS = (
 )
 TOTAL_KEY = "total_ms"
 
+# docs/ops/latency_gate_protocol.md 2장은 warmup 요청 수를 측정 동시성과 같은 수로 규정합니다.
+# 본 하네스는 직렬(단발) 질의 전송(concurrency=1)이므로 기동 직후 콜드 스타트(ChromaDB/임베딩/Ollama 연결)를
+# 해소하기 위한 최소 직렬 warmup 회수인 1회를 기본값으로 설정합니다.
+DEFAULT_WARMUP_ROUNDS = 1
+
 
 @dataclass(frozen=True)
 class PlannedQuery:
@@ -524,6 +529,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="기대 LLM 모델명 (런타임 OLLAMA_MODEL과 1:1 대조 필수, 예: gemma4:e4b)",
     )
+    parser.add_argument(
+        "--warmup-rounds",
+        type=int,
+        default=DEFAULT_WARMUP_ROUNDS,
+        help="본 측정 전 선행 실행할 Warmup 회수 (기본값: 1, 표본 제외)",
+    )
+    parser.add_argument(
+        "--no-warmup",
+        action="store_true",
+        default=False,
+        help="Warmup 단계 건너뛰기",
+    )
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--strict", action="store_true", default=True)
     parser.add_argument(
@@ -617,6 +634,23 @@ def main(
     cold_roundtrip = Samples(label="cold_roundtrip_ms")
     warm_roundtrip = Samples(label="warm_roundtrip_ms")
 
+    # 5-1. Warmup 단계 실행 (표본 및 집계 제외)
+    warmup_rounds = 0 if args.no_warmup else max(0, args.warmup_rounds)
+    warmup_traces: list[str] = []
+    if warmup_rounds > 0:
+        for w_idx in range(warmup_rounds):
+            if fixture_items and len(fixture_items) > 0:
+                w_q = str(
+                    fixture_items[w_idx % len(fixture_items)].get("question")
+                    or fixture_items[w_idx % len(fixture_items)].get("query")
+                    or QUERIES[0]
+                )
+            else:
+                w_q = QUERIES[w_idx % len(QUERIES)]
+            _elapsed_ms, ok, trace_id = query_fn(args.base_url, w_q, args.timeout_sec)
+            if ok and trace_id:
+                warmup_traces.append(trace_id)
+
     successful_traces: list[str] = []
     trace_metadata: dict[str, dict[str, Any]] = {}
     failures = 0
@@ -647,7 +681,14 @@ def main(
 
     # 8. 컨테이너 로그 수집 및 파싱
     raw_log = cmd_fn(["docker", "logs", "--since", since, args.target_container])
-    records = parse_segment_lines(raw_log)
+    all_records = parse_segment_lines(raw_log)
+
+    # trace 상관 검증 및 집계 무결성:
+    # warmup 요청으로 생성된 trace_id 집합(warmup_traces)을 추적하고,
+    # 컨테이너 로그에서 파싱된 세그먼트 레코드 중 warmup_traces 에 속하는 항목을
+    # 본 측정 표본(records) 및 1:1 trace 상관 검증(verify_trace_correlation)에서 완전히 제외합니다.
+    warmup_trace_set = set(warmup_traces)
+    records = [r for r in all_records if str(r.get("trace_id", "")).strip() not in warmup_trace_set]
 
     # 각 레코드에 cold/warm 메타데이터 매핑
     cold_records: list[dict[str, float | str]] = []
@@ -806,6 +847,8 @@ def main(
         "expected_llm_model": args.expected_llm_model,
         "git_sha": start_meta.get("git_sha"),
         "timestamp": datetime.now(UTC).isoformat(),
+        "warmup_rounds": warmup_rounds,
+        "warmup_excluded_count": len(warmup_traces),
         "environment": {
             "target_container": args.target_container,
             "container_id": start_meta.get("container_id"),
@@ -829,6 +872,9 @@ def main(
             "fixture_sha256": fixture_sha,
             "timeout_sec": args.timeout_sec,
             "expected_llm_model": args.expected_llm_model,
+            "warmup_rounds": warmup_rounds,
+            "no_warmup": args.no_warmup,
+            "warmup": (warmup_rounds > 0),
             "queries": [p.question for p in plan],
         },
         "summary": summary,

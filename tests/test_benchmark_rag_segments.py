@@ -389,17 +389,22 @@ def test_main_port_binding_mismatch_exits_2():
 
 def test_main_partial_http_failure_exits_1(tmp_path):
     output_file = tmp_path / "result.json"
-    logs = "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t1_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
     runner = _make_mock_docker_runner(logs_output=logs)
 
-    # 1 success, 1 failure
+    # 1 warmup success, 1 본측정 success, 1 본측정 failure
     query_call_count = 0
 
     def mock_query(url, q, timeout):
         nonlocal query_call_count
         query_call_count += 1
         if query_call_count == 1:
-            return 500.0, True, "t1"
+            return 500.0, True, "t1_warmup"
+        if query_call_count == 2:
+            return 500.0, True, "t2"
         return 1000.0, False, None
 
     code = main(
@@ -426,12 +431,15 @@ def test_main_partial_http_failure_exits_1(tmp_path):
     assert payload["status"] == "partial"
     assert payload["canonical_success"] is False
     assert payload["errors"] == 1
+    assert payload["warmup_rounds"] == 1
+    assert payload["warmup_excluded_count"] == 1
 
 
 def test_main_integrity_error_due_to_external_log_exits_1(tmp_path):
     output_file = tmp_path / "result.json"
     logs = (
-        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t1_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
         "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t_external plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
     )
     runner = _make_mock_docker_runner(logs_output=logs)
@@ -441,6 +449,8 @@ def test_main_integrity_error_due_to_external_log_exits_1(tmp_path):
     def mock_query(url, q, timeout):
         nonlocal query_call_count
         query_call_count += 1
+        if query_call_count == 1:
+            return 500.0, True, "t1_warmup"
         return 500.0, True, f"t{query_call_count}"
 
     code = main(
@@ -471,8 +481,9 @@ def test_main_integrity_error_due_to_external_log_exits_1(tmp_path):
 def test_main_adhoc_rounds_exits_0_noncanonical(tmp_path):
     output_file = tmp_path / "result.json"
     logs = (
-        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
-        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=600.0 guard_ms=10.0 total_ms=645.0\n"
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t1_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=600.0 guard_ms=10.0 total_ms=645.0\n"
     )
     runner = _make_mock_docker_runner(logs_output=logs)
 
@@ -481,6 +492,8 @@ def test_main_adhoc_rounds_exits_0_noncanonical(tmp_path):
     def mock_query(url, q, timeout):
         nonlocal query_call_count
         query_call_count += 1
+        if query_call_count == 1:
+            return 500.0, True, "t1_warmup"
         return 500.0, True, f"t{query_call_count}"
 
     code = main(
@@ -511,6 +524,8 @@ def test_main_adhoc_rounds_exits_0_noncanonical(tmp_path):
         or "fixture_sha256_canonical" in payload["failed_gates"]
     )
     assert payload["errors"] == 0
+    assert payload["warmup_rounds"] == 1
+    assert payload["warmup_excluded_count"] == 1
     assert payload["successful_traces_count"] == 2
     assert payload["segment_records_count"] == 2
     assert payload["cold_records_count"] == 2
@@ -736,12 +751,13 @@ def test_main_fixture_canonical_success_exits_0(tmp_path):
     fixture_file.write_bytes(b'{"dummy": true}')
 
     logs = (
-        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
-        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=510.0 guard_ms=10.0 total_ms=555.0\n"
-        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=520.0 guard_ms=10.0 total_ms=565.0\n"
-        "2026-08-24 10:00:04 INFO rag_engine_latency: trace_id=t4 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=480.0 guard_ms=10.0 total_ms=525.0\n"
-        "2026-08-24 10:00:05 INFO rag_engine_latency: trace_id=t5 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=490.0 guard_ms=10.0 total_ms=535.0\n"
-        "2026-08-24 10:00:06 INFO rag_engine_latency: trace_id=t6 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=495.0 guard_ms=10.0 total_ms=540.0\n"
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t1_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=510.0 guard_ms=10.0 total_ms=555.0\n"
+        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=t4 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=520.0 guard_ms=10.0 total_ms=565.0\n"
+        "2026-08-24 10:00:04 INFO rag_engine_latency: trace_id=t5 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=480.0 guard_ms=10.0 total_ms=525.0\n"
+        "2026-08-24 10:00:05 INFO rag_engine_latency: trace_id=t6 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=490.0 guard_ms=10.0 total_ms=535.0\n"
+        "2026-08-24 10:00:06 INFO rag_engine_latency: trace_id=t7 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=495.0 guard_ms=10.0 total_ms=540.0\n"
     )
     runner = _make_mock_docker_runner(logs_output=logs)
 
@@ -750,6 +766,8 @@ def test_main_fixture_canonical_success_exits_0(tmp_path):
     def mock_query(url, q, timeout):
         nonlocal query_call_count
         query_call_count += 1
+        if query_call_count == 1:
+            return 500.0, True, "t1_warmup"
         return 500.0, True, f"t{query_call_count}"
 
     with patch(
@@ -792,6 +810,8 @@ def test_main_fixture_canonical_success_exits_0(tmp_path):
     assert payload["canonical_success"] is True
     assert payload["failed_gates"] == []
     assert payload["canonical_failed_gates"] == []
+    assert payload["warmup_rounds"] == 1
+    assert payload["warmup_excluded_count"] == 1
     assert payload["successful_traces_count"] == 6
     assert payload["segment_records_count"] == 6
     assert payload["cold_records_count"] == 2
@@ -849,8 +869,20 @@ def test_build_query_plan_same_item_first_cold_subsequent_warm():
 def test_main_adhoc_rounds_preserves_legacy_output_structure(tmp_path):
     """(3) 문항 지정 없이 --rounds 만 쓰면 기존 산출물 구조가 그대로 유지됩니다."""
     output_file = tmp_path / "legacy_result.json"
-    logs = "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t1_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
     runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_call_count = 0
+
+    def mock_query(url, q, t):
+        nonlocal query_call_count
+        query_call_count += 1
+        if query_call_count == 1:
+            return 500.0, True, "t1_warmup"
+        return 500.0, True, "t2"
 
     code = main(
         [
@@ -862,7 +894,7 @@ def test_main_adhoc_rounds_preserves_legacy_output_structure(tmp_path):
             str(output_file),
         ],
         command_runner=runner,
-        query_sender=lambda url, q, t: (500.0, True, "t1"),
+        query_sender=mock_query,
         host_load_sampler=lambda: {
             "observed_at_utc": "2026-08-24T00:00:00Z",
             "load_1m": 0.5,
@@ -881,6 +913,8 @@ def test_main_adhoc_rounds_preserves_legacy_output_structure(tmp_path):
         "expected_llm_model",
         "git_sha",
         "timestamp",
+        "warmup_rounds",
+        "warmup_excluded_count",
         "environment",
         "provenance",
         "config",
@@ -907,9 +941,10 @@ def test_main_unregistered_fixture_hash_marks_noncanonical_with_failed_gates(tmp
     )
 
     logs = (
-        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
-        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
-        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t1_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=t4 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
     )
     runner = _make_mock_docker_runner(logs_output=logs)
 
@@ -918,6 +953,8 @@ def test_main_unregistered_fixture_hash_marks_noncanonical_with_failed_gates(tmp
     def mock_query(url, q, timeout):
         nonlocal query_count
         query_count += 1
+        if query_count == 1:
+            return 500.0, True, "t1_warmup"
         return 500.0, True, f"t{query_count}"
 
     with patch(
@@ -1030,3 +1067,287 @@ def test_enable_latency_segment_logging_disabled():
 
     assert len(segment_logger.handlers) == 0
     assert segment_logger.propagate is True
+
+
+# ==============================================================================
+# Warmup 단계 관련 단위 테스트 (Task task_7ab7d19b1a10)
+# ==============================================================================
+
+
+def test_warmup_excluded_from_all_summary(tmp_path):
+    """(1) warmup 요청(극단치 지연)이 전체 집계(summary, all_roundtrip)에 포함되지 않습니다."""
+    output_file = tmp_path / "warmup_all_result.json"
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=90000.0 guard_ms=10.0 total_ms=90045.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t_main1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=400.0 guard_ms=10.0 total_ms=445.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t_main2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=450.0 guard_ms=10.0 total_ms=495.0\n"
+    )
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_count = 0
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        query_count += 1
+        if query_count == 1:
+            return 99999.0, True, "t_warmup"
+        if query_count == 2:
+            return 500.0, True, "t_main1"
+        return 550.0, True, "t_main2"
+
+    code = main(
+        [
+            "--expected-llm-model",
+            "gemma4:e4b",
+            "--rounds",
+            "2",
+            "--warmup-rounds",
+            "1",
+            "--output",
+            str(output_file),
+        ],
+        command_runner=runner,
+        query_sender=mock_query,
+        host_load_sampler=lambda: {
+            "observed_at_utc": "2026-08-24T00:00:00Z",
+            "load_1m": 0.5,
+            "cpu_count": 8,
+            "per_core_percent": 6.25,
+        },
+    )
+    assert code == 0
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+
+    # 전체 집계에서 warmup 의 90,045ms / 99,999ms 가 제외되고 본 측정(445~495ms / 500~550ms)만 집계됨
+    assert payload["summary"]["total_ms"]["n"] == 2
+    assert payload["summary"]["total_ms"]["max_ms"] == pytest.approx(495.0)
+    assert payload["summary"]["llm_ms"]["max_ms"] == pytest.approx(450.0)
+    assert payload["summary"]["roundtrip_ms"]["n"] == 2
+    assert payload["summary"]["roundtrip_ms"]["max_ms"] == pytest.approx(550.0)
+    assert payload["successful_traces_count"] == 2
+    assert payload["segment_records_count"] == 2
+
+
+def test_warmup_excluded_from_cold_summary(tmp_path):
+    """(2) warmup 요청이 cold 집계(summary_cold, cold_records)에 포함되지 않습니다."""
+    output_file = tmp_path / "warmup_cold_result.json"
+    fixture_file = tmp_path / "fixture.json"
+    fixture_file.write_text(
+        json.dumps({"items": [{"id": "q01", "question": "질문"}]}),
+        encoding="utf-8",
+    )
+
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=88000.0 guard_ms=10.0 total_ms=88045.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t_cold plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=1000.0 guard_ms=10.0 total_ms=1045.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t_warm plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_count = 0
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        query_count += 1
+        if query_count == 1:
+            return 99999.0, True, "t_warmup"
+        if query_count == 2:
+            return 1200.0, True, "t_cold"
+        return 600.0, True, "t_warm"
+
+    with patch(
+        "scripts.benchmark_rag_segments.load_fixture",
+        return_value=(
+            [{"id": "q01", "question": "질문"}],
+            "hash_123",
+            1,
+        ),
+    ):
+        code = main(
+            [
+                "--expected-llm-model",
+                "gemma4:e4b",
+                "--fixture",
+                str(fixture_file),
+                "--repetitions",
+                "2",
+                "--warmup-rounds",
+                "1",
+                "--output",
+                str(output_file),
+            ],
+            command_runner=runner,
+            query_sender=mock_query,
+            host_load_sampler=lambda: {
+                "observed_at_utc": "2026-08-24T00:00:00Z",
+                "load_1m": 0.5,
+                "cpu_count": 8,
+                "per_core_percent": 6.25,
+            },
+        )
+
+    assert code == 0
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+
+    # cold 집계에는 오직 본 측정 1회차(cold)의 1,045ms / 1,200ms 만 포함됨 (warmup 의 88,045ms 제외)
+    assert payload["cold_records_count"] == 1
+    assert payload["warm_records_count"] == 1
+    assert payload["summary_cold"]["total_ms"]["n"] == 1
+    assert payload["summary_cold"]["total_ms"]["p50_ms"] == pytest.approx(1045.0)
+    assert payload["summary_cold"]["llm_ms"]["p50_ms"] == pytest.approx(1000.0)
+    assert payload["summary_cold"]["roundtrip_ms"]["p50_ms"] == pytest.approx(1200.0)
+    assert payload["summary_warm"]["total_ms"]["p50_ms"] == pytest.approx(545.0)
+
+
+def test_no_warmup_flag_skips_warmup(tmp_path):
+    """(3) --no-warmup 지정 시 warmup 질의를 보내지 않고 기존 동작과 동일하게 작동합니다."""
+    output_file = tmp_path / "no_warmup_result.json"
+    logs = (
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_count = 0
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        query_count += 1
+        return 500.0, True, f"t{query_count}"
+
+    code = main(
+        [
+            "--expected-llm-model",
+            "gemma4:e4b",
+            "--rounds",
+            "2",
+            "--no-warmup",
+            "--output",
+            str(output_file),
+        ],
+        command_runner=runner,
+        query_sender=mock_query,
+        host_load_sampler=lambda: {
+            "observed_at_utc": "2026-08-24T00:00:00Z",
+            "load_1m": 0.5,
+            "cpu_count": 8,
+            "per_core_percent": 6.25,
+        },
+    )
+    assert code == 0
+    # warmup 없이 정확히 본 측정 2건만 실행됨
+    assert query_count == 2
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    assert payload["warmup_rounds"] == 0
+    assert payload["warmup_excluded_count"] == 0
+    assert payload["config"]["no_warmup"] is True
+    assert payload["config"]["warmup"] is False
+    assert payload["successful_traces_count"] == 2
+    assert payload["segment_records_count"] == 2
+
+
+def test_warmup_metadata_recorded_in_payload(tmp_path):
+    """(4) 산출물 JSON에 warmup 수행 여부, 회수, 제외 요청 수가 정확히 기록됩니다."""
+    output_file = tmp_path / "warmup_meta_result.json"
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=w1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=w2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=m1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=m2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:04 INFO rag_engine_latency: trace_id=m3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_count = 0
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        query_count += 1
+        if query_count <= 2:
+            return 500.0, True, f"w{query_count}"
+        return 500.0, True, f"m{query_count - 2}"
+
+    code = main(
+        [
+            "--expected-llm-model",
+            "gemma4:e4b",
+            "--rounds",
+            "3",
+            "--warmup-rounds",
+            "2",
+            "--output",
+            str(output_file),
+        ],
+        command_runner=runner,
+        query_sender=mock_query,
+        host_load_sampler=lambda: {
+            "observed_at_utc": "2026-08-24T00:00:00Z",
+            "load_1m": 0.5,
+            "cpu_count": 8,
+            "per_core_percent": 6.25,
+        },
+    )
+    assert code == 0
+    assert query_count == 5
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    assert payload["warmup_rounds"] == 2
+    assert payload["warmup_excluded_count"] == 2
+    assert payload["config"]["warmup_rounds"] == 2
+    assert payload["config"]["no_warmup"] is False
+    assert payload["config"]["warmup"] is True
+    assert payload["successful_traces_count"] == 3
+    assert payload["segment_records_count"] == 3
+
+
+def test_warmup_trace_correlation_passes_with_warmup_records(tmp_path):
+    """(5) warmup 로그 레코드가 존재해도 1:1 trace 상관 및 무결성 검증이 올바르게 통과합니다."""
+    output_file = tmp_path / "warmup_corr_result.json"
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t_main1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t_main2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_count = 0
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        query_count += 1
+        if query_count == 1:
+            return 500.0, True, "t_warmup"
+        return 500.0, True, f"t_main{query_count - 1}"
+
+    code = main(
+        [
+            "--expected-llm-model",
+            "gemma4:e4b",
+            "--rounds",
+            "2",
+            "--warmup-rounds",
+            "1",
+            "--output",
+            str(output_file),
+        ],
+        command_runner=runner,
+        query_sender=mock_query,
+        host_load_sampler=lambda: {
+            "observed_at_utc": "2026-08-24T00:00:00Z",
+            "load_1m": 0.5,
+            "cpu_count": 8,
+            "per_core_percent": 6.25,
+        },
+    )
+    assert code == 0
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    assert payload["status"] == "ok"
+    assert payload["trace_correlation"]["matched_count"] == 2
+    assert payload["trace_correlation"]["duplicate_response_traces"] == 0
+    assert payload["trace_correlation"]["duplicate_log_traces"] == 0
+    assert payload["trace_correlation"]["unmatched_log_traces"] == []
+    assert payload["trace_correlation"]["missing_log_traces"] == []
