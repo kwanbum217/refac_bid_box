@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -70,7 +71,12 @@ class SemanticSearchResult:
 
 
 def _normalize_text(value: str | None) -> str:
-    return unicodedata.normalize("NFC", (value or "").strip())
+    if not value:
+        return ""
+    stripped = value.strip()
+    if not stripped:
+        return ""
+    return unicodedata.normalize("NFC", stripped)
 
 
 # 문서 본문 대괄호 키 파싱 정규식
@@ -143,7 +149,10 @@ def _normalize_match_key(value: str | None) -> str:
     """
     if not value:
         return ""
-    normalized = unicodedata.normalize("NFC", str(value)).strip().lower()
+    stripped = str(value).strip()
+    if not stripped:
+        return ""
+    normalized = unicodedata.normalize("NFC", stripped).lower()
     normalized = OPEN_BRACKETS_PATTERN.sub("(", normalized)
     normalized = CLOSE_BRACKETS_PATTERN.sub(")", normalized)
     return WHITESPACE_PATTERN.sub("", normalized)
@@ -192,7 +201,7 @@ def _rerank_by_exact_title(
     나머지 문서는 기존 상대적 순서(distance 순)를 그대로 유지합니다.
     """
     query_key = _normalize_match_key(semantic_query)
-    if not query_key:
+    if not query_key or len(query_key) < RERANK_MIN_TITLE_LENGTH:
         return documents
 
     exact_matches: list[dict[str, Any]] = []
@@ -213,7 +222,8 @@ def _rerank_by_exact_title(
     if not exact_matches:
         return documents
 
-    exact_matches.sort(key=_extract_doc_sort_key, reverse=True)
+    if len(exact_matches) > 1:
+        exact_matches.sort(key=_extract_doc_sort_key, reverse=True)
 
     logger.info(
         "정확 공고명 포함 일치 문서 %d건 우선 재순위 (query_key=%s)",
@@ -253,10 +263,27 @@ def extract_effective_document_date(document_text: str | None) -> date | None:
     """날짜 비교 기준: 개찰일시가 있으면 개찰일시, 없으면 공고일시.
     어느 쪽도 파싱되지 않으면 None 을 반환합니다.
     """
-    notice_date, opening_date = extract_document_dates(document_text)
-    if opening_date is not None:
-        return opening_date
-    return notice_date
+    if not document_text:
+        return None
+    text_str = str(document_text)
+    # 개찰일시가 우선이므로 개찰일시를 먼저 검색하여 존재 시 공고일시 정규식 탐색을 생략합니다.
+    try:
+        o_match = OPENING_DATE_PATTERN.search(text_str)
+        if o_match:
+            opening_date = _parse_iso_date(o_match.group(1))
+            if opening_date is not None:
+                return opening_date
+    except Exception:
+        opening_date = None
+
+    try:
+        n_match = NOTICE_DATE_PATTERN.search(text_str)
+        if n_match:
+            return _parse_iso_date(n_match.group(1))
+    except Exception:
+        return None
+
+    return None
 
 
 def _parse_filter_date(value: Any) -> date | None:
@@ -286,7 +313,7 @@ def _matches_post_filters(
         doc_inst = extract_document_institution(doc_text)
         if not doc_inst:
             return False
-        if target_institution not in _normalize_text(doc_inst):
+        if target_institution not in doc_inst:
             return False
 
     # 2. 날짜 필터 (date_from 이상, date_to 이하, fail-closed)
@@ -413,6 +440,8 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
     base_fetch_k = target_top_k * POST_FILTER_FETCH_MULTIPLIER if has_post_filter else target_top_k
     query_top_k = max(base_fetch_k, DEFAULT_CANDIDATE_POOL_SIZE)
 
+    t_start = time.perf_counter() if logger.isEnabledFor(logging.DEBUG) else 0.0
+
     try:
         import chromadb
 
@@ -455,6 +484,8 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
             post_filtered_count=0,
         )
 
+    t_queried = time.perf_counter() if logger.isEnabledFor(logging.DEBUG) else 0.0
+
     documents = (results.get("documents") or [[]])[0] if results else []
     metadatas = (results.get("metadatas") or [[]])[0] if results else []
     distances = (results.get("distances") or [[]])[0] if results else []
@@ -492,6 +523,17 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
             applied_post_filters,
             semantic_query,
             len(documents),
+        )
+
+    if logger.isEnabledFor(logging.DEBUG) and t_start:
+        t_end = time.perf_counter()
+        logger.debug(
+            "retrieve_semantic_context 구간 분해: query=%.2fms post_process=%.2fms total=%.2fms (후보=%d건 반환=%d건)",
+            (t_queried - t_start) * 1000.0,
+            (t_end - t_queried) * 1000.0,
+            (t_end - t_start) * 1000.0,
+            len(documents),
+            len(final_documents),
         )
 
     return SemanticSearchResult(
