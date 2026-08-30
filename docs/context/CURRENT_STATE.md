@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-30
-> **source_commit**: `7a8dee5`
+> **source_commit**: `b352ab4`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -157,6 +157,17 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 > 집계로 한 스캔에 푸는 안은 6,436ms -> 35,934ms 로 5.6배 느려져 기각했습니다.
 > **단위 테스트는 이 결함을 못 잡습니다.** fixture 규모에서는 항상 통과합니다.
 
+**Wave F 조사 완료(2026-08-30)**: 콜드 비용 223.77초의 92%는 **사용자 검색의 선행
+와일드카드 `LIKE '%키워드%'`** 하나에서 나옵니다. 후보 넷을 닫고 하나를 권고했습니다.
+접두 전환(E2), Meilisearch 위임(F2, 편차 최대 +1,267%·집계 불가), 손상 필터 제거
+(F1, EXPLAIN 동일하여 무효), 기관 스냅샷 확장(부분 문자열이라 부적용)은 전부 기각입니다.
+
+**권고**: ngram FULLTEXT 를 `dminstt_nm`(warm 1,719.6 -> 90.6ms, **19.0배**)과
+`bidwinnr_nm`(808.7 -> 283.8ms, **2.9배**)에만 적용하고 `bid_ntce_nm` 은 제외합니다
+(25%~2,500배 악화). 채택 형태는 `MATCH AGAINST` 로 좁힌 뒤 기존 `LIKE` 를 유지하는
+것입니다. **구현·회귀 테스트·운영 인덱스 생성은 미착수**이며 착수 순서와 위험 2건은
+[`handoff_wave_f_20260830.md`](../ops/handoff_wave_f_20260830.md)에 있습니다.
+
 **G3 컷오버 판정 전에 잔여 지배 SQL 시정을 닫아야 합니다.**
 
 ---
@@ -177,10 +188,16 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1-0. **RAG 콜드 SQL 잔여 시정**: E4 정본 실측이 끝나 잔여 지배 SQL 이
-`bid_announcements` 선행 와일드카드 5종(cold 누적 134.6초)으로 특정됐습니다.
-접두 전환은 E2 에서 기각됐으므로 Meilisearch 위임 또는 인덱스·스냅샷 경로
-재설계를 검토합니다.
+1-0. **RAG 콜드 SQL 잔여 시정 (다음 착수 지점)**: Wave F 조사가 끝나 방향이
+확정됐습니다. `dminstt_nm` 과 `bidwinnr_nm` 두 컬럼에만 ngram FULLTEXT 를 적용하고
+`bid_ntce_nm` 은 제외합니다. 남은 작업은 다음 순서입니다.
+  1. 구현: `src/rag/structured_data.py` 의 해당 두 컬럼 질의에 `MATCH AGAINST` 선행
+     필터를 추가하되 기존 `LIKE` 를 그대로 유지해 결과 의미를 보존합니다.
+  2. 누락 탐지 회귀 테스트 추가(위 주의 1). 이것 없이 병합하지 않습니다.
+  3. 운영 인덱스 생성은 **사용자 승인 후** 별도 수행합니다. 27.3GB 테이블 재구축과
+     쓰기 차단이 따르므로 수집이 멈춘 시간대를 고릅니다.
+  4. 적용 후 `scripts/measure_coldsql_attribution.py` 로 콜드 SQL 정본을 재측정해
+     개선을 확인합니다(E4 와 동일 규약, fixture v2 32문항 x 3회).
 1. **운영 검증**: 2026-08-26 CI run `32930156938`(`5f8174a`) **3플랫폼 green**. Windows Docker Desktop 실기만 남음.
 1-4. **Vector fail-closed·정확 제목**: 근거 적중 **16/16**, 기간·기관 post-filter를 유지합니다. 2026-08-27 후보 30건과 공고명 정규화 정확 일치 재순위로 q21 정답을 top-5에 포함했습니다([`task_9fe129597faf.md`](../analysis/task_9fe129597faf.md)).
 1-2. **LLM 경로 최적화**: 2026-08-26 v4(`b4913fd`, 각 72회차)에서 **`gemma4:e2b` 승격** ([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)). 2026-08-27 blind fixture v2(32문항) 측정에서 **e2b 승격 유지** 확정(동결 `13f947a`). numeric 양쪽 **87.5% 동률**이며 e2b 가 과잉응답 0 대 1, refusal 8/8 대 7/8, P50 3,990 대 6,459ms 로 앞섭니다. 과잉거절 12.5% 와 P50 은 두 모델 모두 미달이며 원인은 검색 미스 3문항입니다. 1차 측정은 백필 후 KB 미색인으로 **무효**([`llm_generalization_judgment_20260827.md`](../analysis/llm_generalization_judgment_20260827.md)).
