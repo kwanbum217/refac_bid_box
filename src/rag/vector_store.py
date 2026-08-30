@@ -37,6 +37,9 @@ POST_FILTER_FETCH_MULTIPLIER = 3
 # ChromaDB 벡터 검색 시 기본 후보 확보 수 (정확 제목 재순위 및 근사 중복 해소용)
 DEFAULT_CANDIDATE_POOL_SIZE = 30
 
+# 공고명 포함 관계 재순위 시 단어 수준 우연 일치 오탐을 방지하기 위한 최소 제목 키 길이 하한
+RERANK_MIN_TITLE_LENGTH = 5
+
 
 @dataclass
 class SemanticSearchResult:
@@ -181,10 +184,11 @@ def _rerank_by_exact_title(
     documents: list[dict[str, Any]],
     semantic_query: str,
 ) -> list[dict[str, Any]]:
-    """질의와 [공고명]이 정규화 정확 일치하는 문서를 최상위로 재순위합니다.
+    """질의에 [공고명]이 포함(정규화 부분 문자열)된 문서를 최상위로 재순위합니다.
 
-    정규화(NFC, 소문자, 공백 제거, 괄호 표준화) 후 정확히 일치하는 문서만 우선 배치하고,
-    복수 일치 시 결정적 기준(공고일시 최신순)으로 정렬합니다.
+    단어 수준 우연 일치 오탐을 방지하기 위해 정규화 공고명 키 길이가 RERANK_MIN_TITLE_LENGTH(5자) 이상이고,
+    질의 정규화 키에 포함되는 문서만 승격 대상으로 삼습니다.
+    복수 일치 시 결정적 기준(공고일시 최신순 등 _extract_doc_sort_key)으로 정렬합니다.
     나머지 문서는 기존 상대적 순서(distance 순)를 그대로 유지합니다.
     """
     query_key = _normalize_match_key(semantic_query)
@@ -200,7 +204,8 @@ def _rerank_by_exact_title(
         if not doc_title and isinstance(doc.get("metadata"), dict):
             doc_title = doc["metadata"].get("bid_ntce_nm") or doc["metadata"].get("title")
 
-        if doc_title and _normalize_match_key(doc_title) == query_key:
+        title_key = _normalize_match_key(doc_title) if doc_title else ""
+        if title_key and len(title_key) >= RERANK_MIN_TITLE_LENGTH and title_key in query_key:
             exact_matches.append(doc)
         else:
             others.append(doc)
@@ -211,7 +216,7 @@ def _rerank_by_exact_title(
     exact_matches.sort(key=_extract_doc_sort_key, reverse=True)
 
     logger.info(
-        "정확 공고명 일치 문서 %d건 우선 재순위 (query_key=%s)",
+        "정확 공고명 포함 일치 문서 %d건 우선 재순위 (query_key=%s)",
         len(exact_matches),
         query_key,
     )
