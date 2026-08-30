@@ -804,6 +804,161 @@ def test_main_fixture_canonical_success_exits_0(tmp_path):
     assert payload["summary"]["warm"]["llm_ms"]["n"] == 4
 
 
+def test_load_fixture_item_ids_filtering(tmp_path):
+    """(1) 문항 ID 지정 시 해당 문항만 필터링되어 전송 대상이 됩니다."""
+    fixture_file = tmp_path / "test_fixture.json"
+    fixture_file.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "q01", "question": "질문 1"},
+                    {"id": "q03", "question": "질문 3"},
+                    {"id": "q08", "question": "질문 8"},
+                    {"id": "q25", "question": "질문 25"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    items, _sha, total = load_fixture(fixture_file, item_ids="q03,q25")
+    assert len(items) == 2
+    assert total == 4
+    assert [it["id"] for it in items] == ["q03", "q25"]
+
+
+def test_build_query_plan_same_item_first_cold_subsequent_warm():
+    """(2) 같은 문항의 첫 호출이 cold, 이후가 warm 으로 분류됩니다."""
+    fixture_items = [
+        {"id": "q03", "question": "질문 3"},
+        {"id": "q08", "question": "질문 8"},
+    ]
+    plan = build_query_plan(fixture_items=fixture_items, repetitions=2)
+    assert len(plan) == 4
+    # 1회차: cold
+    assert plan[0].item_id == "q03"
+    assert plan[0].is_cold is True
+    assert plan[1].item_id == "q08"
+    assert plan[1].is_cold is True
+    # 2회차: warm
+    assert plan[2].item_id == "q03"
+    assert plan[2].is_cold is False
+    assert plan[3].item_id == "q08"
+    assert plan[3].is_cold is False
+
+
+def test_main_adhoc_rounds_preserves_legacy_output_structure(tmp_path):
+    """(3) 문항 지정 없이 --rounds 만 쓰면 기존 산출물 구조가 그대로 유지됩니다."""
+    output_file = tmp_path / "legacy_result.json"
+    logs = "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    code = main(
+        [
+            "--expected-llm-model",
+            "gemma4:e4b",
+            "--rounds",
+            "1",
+            "--output",
+            str(output_file),
+        ],
+        command_runner=runner,
+        query_sender=lambda url, q, t: (500.0, True, "t1"),
+        host_load_sampler=lambda: {
+            "observed_at_utc": "2026-08-24T00:00:00Z",
+            "load_1m": 0.5,
+            "cpu_count": 8,
+            "per_core_percent": 6.25,
+        },
+    )
+    assert code == 0
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    # 기존 필수 키 존재 여부 확인
+    legacy_keys = [
+        "status",
+        "canonical_success",
+        "canonical_rationale",
+        "expected_llm_model",
+        "git_sha",
+        "timestamp",
+        "environment",
+        "provenance",
+        "config",
+        "summary",
+        "errors",
+        "successful_traces_count",
+        "unique_successful_traces_count",
+        "segment_records_count",
+        "trace_correlation",
+    ]
+    for key in legacy_keys:
+        assert key in payload
+    assert payload["summary"]["total_ms"]["p50_ms"] == pytest.approx(545.0)
+    assert payload["summary"]["roundtrip_ms"]["n"] == 1
+
+
+def test_main_unregistered_fixture_hash_marks_noncanonical_with_failed_gates(tmp_path):
+    """(4) 등록되지 않은 fixture 해시에서 canonical=false 와 실패 게이트 이름이 나옵니다."""
+    output_file = tmp_path / "unregistered_result.json"
+    fixture_file = tmp_path / "unregistered_fixture.json"
+    fixture_file.write_text(
+        json.dumps({"items": [{"id": "q01", "question": "질문"}]}),
+        encoding="utf-8",
+    )
+
+    logs = (
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_count = 0
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        query_count += 1
+        return 500.0, True, f"t{query_count}"
+
+    with patch(
+        "scripts.benchmark_rag_segments.load_fixture",
+        return_value=(
+            [{"id": "q01", "question": "질문"}],
+            "unregistered_hash_12345",
+            1,
+        ),
+    ):
+        code = main(
+            [
+                "--expected-llm-model",
+                "gemma4:e4b",
+                "--fixture",
+                str(fixture_file),
+                "--repetitions",
+                "3",
+                "--output",
+                str(output_file),
+            ],
+            command_runner=runner,
+            query_sender=mock_query,
+            host_load_sampler=lambda: {
+                "observed_at_utc": "2026-08-24T00:00:00Z",
+                "load_1m": 0.5,
+                "cpu_count": 8,
+                "per_core_percent": 6.25,
+            },
+        )
+
+    assert code == 0
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    assert payload["status"] == "ok"
+    assert payload["canonical"] is False
+    assert payload["canonical_success"] is False
+    assert "fixture_sha256_canonical" in payload["failed_gates"]
+    assert "fixture_sha256_canonical" in payload["canonical_failed_gates"]
+
+
 def test_main_fixture_load_error_exits_2(tmp_path):
     runner = _make_mock_docker_runner()
     non_existent = tmp_path / "non_existent.json"

@@ -159,7 +159,11 @@ def _command_output(
         return "unknown"
 
 
-def load_fixture(path: Path | str, limit: int = 0) -> tuple[list[dict[str, Any]], str, int]:
+def load_fixture(
+    path: Path | str,
+    limit: int = 0,
+    item_ids: list[str] | set[str] | str | None = None,
+) -> tuple[list[dict[str, Any]], str, int]:
     """Fixture JSON 파일을 읽고 (항목 목록, SHA256 해시, 전체 항목 수)를 반환합니다."""
     raw_bytes = Path(path).read_bytes()
     sha256 = hashlib.sha256(raw_bytes).hexdigest()
@@ -168,7 +172,18 @@ def load_fixture(path: Path | str, limit: int = 0) -> tuple[list[dict[str, Any]]
     if not isinstance(items, list):
         raise ValueError(f"Fixture 파일 {path} 에서 items 목록을 찾을 수 없습니다.")
     total_items = len(items)
-    selected = items[:limit] if limit > 0 else items
+
+    selected = items
+    if item_ids:
+        if isinstance(item_ids, str):
+            target_ids = {x.strip() for x in item_ids.split(",") if x.strip()}
+        else:
+            target_ids = {str(x).strip() for x in item_ids if str(x).strip()}
+        selected = [it for it in selected if str(it.get("id", "")).strip() in target_ids]
+
+    if limit > 0:
+        selected = selected[:limit]
+
     return selected, sha256, total_items
 
 
@@ -494,6 +509,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="fixture 문항 수 제한 (0=전체, 시험용)",
     )
     parser.add_argument(
+        "--item-ids",
+        type=str,
+        default=None,
+        help="측정 대상 문항 ID 목록 (쉼표 구분, 예: q03,q08,q25,q31)",
+    )
+    parser.add_argument(
         "--rounds", type=int, default=20, help="보낼 질의 수 (fixture 미지정 시 사용)"
     )
     parser.add_argument("--timeout-sec", type=float, default=120.0)
@@ -571,7 +592,7 @@ def main(
     if args.fixture is not None:
         try:
             fixture_items, fixture_sha, total_fixture_items = load_fixture(
-                args.fixture, limit=args.limit
+                args.fixture, limit=args.limit, item_ids=args.item_ids
             )
         except Exception as exc:
             print(f"Fixture 파일 로드 실패 ({args.fixture}): {exc}", file=sys.stderr)
@@ -728,16 +749,48 @@ def main(
                 f"트레이스 정합성 검증 실패({trace_reason}): canonical baseline 자격 미충족"
             )
 
-    # 13. 집계 및 요약 (All / Cold / Warm 분리)
+    # 13. 집계 및 요약 (All / Cold / Warm 분리 및 문항별 분해)
     summary_all = summarize_measurements(records, all_roundtrip)
     summary_cold = summarize_measurements(cold_records, cold_roundtrip)
     summary_warm = summarize_measurements(warm_records, warm_roundtrip)
+
+    summary_by_item: dict[str, Any] = {}
+    unique_item_ids = sorted({str(p.item_id) for p in plan})
+    for item_id in unique_item_ids:
+        item_recs = [r for r in records if str(r.get("item_id")) == item_id]
+        item_cold_recs = [r for r in item_recs if r.get("is_cold") is True]
+        item_warm_recs = [r for r in item_recs if r.get("is_cold") is False]
+
+        item_all_rt = Samples(label=f"{item_id}_roundtrip_ms")
+        item_cold_rt = Samples(label=f"{item_id}_cold_roundtrip_ms")
+        item_warm_rt = Samples(label=f"{item_id}_warm_roundtrip_ms")
+
+        for meta in trace_metadata.values():
+            if str(meta.get("item_id")) == item_id:
+                ms = float(meta["elapsed_ms"])
+                q = str(meta["question"])
+                item_all_rt.add(ms, q)
+                if meta.get("is_cold"):
+                    item_cold_rt.add(ms, q)
+                else:
+                    item_warm_rt.add(ms, q)
+
+        item_sum_all = summarize_measurements(item_recs, item_all_rt)
+        item_sum_cold = summarize_measurements(item_cold_recs, item_cold_rt)
+        item_sum_warm = summarize_measurements(item_warm_recs, item_warm_rt)
+
+        summary_by_item[item_id] = {
+            "all": item_sum_all,
+            "cold": item_sum_cold,
+            "warm": item_sum_warm,
+        }
 
     summary = {
         **summary_all,
         "all": summary_all,
         "cold": summary_cold,
         "warm": summary_warm,
+        "by_item": summary_by_item,
     }
 
     perf_config = start_meta.get("perf_config")
@@ -771,6 +824,7 @@ def main(
             "rounds": expected_rounds,
             "repetitions": args.repetitions if args.fixture is not None else 1,
             "limit": args.limit,
+            "item_ids": args.item_ids,
             "fixture": str(args.fixture) if args.fixture else None,
             "fixture_sha256": fixture_sha,
             "timeout_sec": args.timeout_sec,
@@ -780,10 +834,12 @@ def main(
         "summary": summary,
         "summary_cold": summary_cold,
         "summary_warm": summary_warm,
+        "summary_by_item": summary_by_item,
         "summaries": {
             "all": summary_all,
             "cold": summary_cold,
             "warm": summary_warm,
+            "by_item": summary_by_item,
         },
         "errors": failures,
         "successful_traces_count": len(successful_traces),
