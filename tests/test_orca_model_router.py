@@ -228,16 +228,18 @@ class TestModelPoolAndSelection:
                 assert res["fallback_pool"] != COORDINATOR_POOL
 
     def test_select_model_high_risk_reviewer(self):
+        """리뷰어는 빌더와 다른 모델 계열을 주 모델로 씁니다."""
         res = select_model("reviewer", "high")
-        assert res["primary_pool"] == "claude-sonnet"
-        assert res["primary_model"] == "claude-sonnet-4-6"
+        assert res["primary_pool"] == "qwen-plus"
+        assert res["primary_model"] == "qwen3.7-plus"
         assert res["fallback_pool"] == "gemini-flash-high"
         assert res["fallback_model"] == "gemini-3.7-flash-high"
 
     def test_select_model_high_risk_builder(self):
+        """high 위험도 구현은 원인 분석 전문 등급이 주 모델입니다."""
         res = select_model("builder", "high")
         assert res["primary_pool"] == "gemini-flash-high"
-        assert res["fallback_pool"] == "claude-sonnet"
+        assert res["fallback_pool"] == "qwen-plus"
 
     def test_select_model_documenter_low_risk(self):
         """공식 문서가 low 등급 용도로 초안 작성과 빠른 분석을 규정합니다."""
@@ -249,11 +251,11 @@ class TestModelPoolAndSelection:
         """medium 이 문서상 기본값이므로 medium 위험도의 주 모델입니다."""
         res = select_model("investigator", "medium")
         assert res["primary_pool"] == "gemini-flash-medium"
-        assert res["fallback_pool"] == "gemini-flash-high"
+        assert res["fallback_pool"] == "qwen-plus"
 
     def test_select_model_exclude_filtering(self):
         res = select_model("builder", "high", exclude=["gemini-flash-high"])
-        assert res["primary_pool"] == "claude-sonnet"
+        assert res["primary_pool"] == "qwen-plus"
         assert res["fallback_pool"] is None
 
     def test_select_model_all_candidates_excluded_raises_model_routing_error(self):
@@ -262,14 +264,14 @@ class TestModelPoolAndSelection:
             select_model(
                 "builder",
                 "high",
-                exclude=["gemini-flash-high", "claude-sonnet"],
+                exclude=["gemini-flash-high", "qwen-plus"],
             )
 
         err = exc_info.value
         assert err.role == "builder"
         assert err.risk == "high"
         assert "gemini-flash-high" in err.exclude
-        assert "claude-sonnet" in err.exclude
+        assert "qwen-plus" in err.exclude
         assert "builder" in str(err)
         assert "high" in str(err)
         assert "gemini-flash-high" in str(err)
@@ -279,12 +281,12 @@ class TestModelPoolAndSelection:
         res_builder_high = select_model("builder", "high")
         assert res_builder_high["primary_pool"] == "gemini-flash-high"
         assert res_builder_high["primary_model"] == "gemini-3.7-flash-high"
-        assert res_builder_high["fallback_pool"] == "claude-sonnet"
-        assert res_builder_high["fallback_model"] == "claude-sonnet-4-6"
+        assert res_builder_high["fallback_pool"] == "qwen-plus"
+        assert res_builder_high["fallback_model"] == "qwen3.7-plus"
 
         res_reviewer_high = select_model("reviewer", "high")
-        assert res_reviewer_high["primary_pool"] == "claude-sonnet"
-        assert res_reviewer_high["primary_model"] == "claude-sonnet-4-6"
+        assert res_reviewer_high["primary_pool"] == "qwen-plus"
+        assert res_reviewer_high["primary_model"] == "qwen3.7-plus"
         assert res_reviewer_high["fallback_pool"] == "gemini-flash-high"
         assert res_reviewer_high["fallback_model"] == "gemini-3.7-flash-high"
 
@@ -304,6 +306,7 @@ class TestModelPoolAndSelection:
             "gemini-flash-medium",
             "gemini-flash-low",
             "claude-sonnet",
+            "qwen-plus",
         }
         assert non_auto_pools == {
             "claude-opus",
@@ -320,6 +323,10 @@ class TestModelPoolAndSelection:
             "or-free-north-mini",
             "opencode-nemotron3-ultra",
             "opencode-mimo",
+            "qwen-max-legacy",
+            "deepseek-pro",
+            "glm",
+            "qwen-max",
         }
 
 
@@ -544,7 +551,7 @@ class TestRoute:
         )
         assert res.risk == "high"
         assert res.primary_model == "gemini-3.7-flash-high"
-        assert res.fallback_model == "claude-sonnet-4-6"
+        assert res.fallback_model == "qwen3.7-plus"
         assert len(res.reasons) > 0
         assert any("high 키워드 매칭" in r for r in res.reasons)
 
@@ -585,7 +592,7 @@ class TestRoute:
         res = route(capsule_path=capsule_file, probe=False)
         assert res.risk == "high"
         assert res.role == "reviewer"
-        assert res.primary_model == "claude-sonnet-4-6"
+        assert res.primary_model == "qwen3.7-plus"
         assert res.fallback_model == "gemini-3.7-flash-high"
 
     def test_route_primary_fail_fallback_success(self, monkeypatch):
@@ -1292,29 +1299,37 @@ class TestRiskAwareTier:
                 assert select_model(role, risk)["primary_pool"] != "gemini-flash-high"
 
     def test_builder_medium_risk_uses_medium(self):
-        """문서가 복잡한 코드에 권장하는 등급이 medium 입니다."""
+        """medium 위험도 빌더는 범용 등급을 쓰고 전문·상신 등급으로 올리지 않습니다."""
         res = select_model("builder", "medium")
         assert res["primary_pool"] == "gemini-flash-medium"
-        assert res["fallback_pool"] == "gemini-flash-high"
+        assert res["fallback_pool"] == "qwen-plus"
 
     def test_builder_high_risk_uses_high(self):
+        """high 위험도 빌더만 전문 등급과 상신 등급을 씁니다."""
         res = select_model("builder", "high")
         assert res["primary_pool"] == "gemini-flash-high"
-        assert res["fallback_pool"] == "claude-sonnet"
+        assert res["fallback_pool"] == "qwen-plus"
 
     def test_reviewer_never_gets_low_tier_as_primary(self):
         """판정이 병합 결정에 쓰이므로 리뷰어 주 모델은 low 등급이 아닙니다."""
         for risk in ("low", "medium", "high"):
             assert select_model("reviewer", risk)["primary_pool"] != "gemini-flash-low"
 
-    def test_reviewer_high_risk_prefers_claude(self):
-        assert select_model("reviewer", "high")["primary_pool"] == "claude-sonnet"
+    def test_reviewer_high_risk_prefers_independent_family(self):
+        """리뷰어 주 모델은 빌더와 다른 계열이어야 같은 편향이 검토를 통과하지 않습니다."""
+        reviewer = select_model("reviewer", "high")["primary_pool"]
+        builder = select_model("builder", "high")["primary_pool"]
+        assert reviewer == "qwen-plus"
+        assert reviewer != builder
 
     def test_low_tier_only_for_low_risk_read_or_doc_roles(self):
         """low 등급은 low 위험도 조사와 문서화에만 주 모델이 됩니다."""
         assert select_model("investigator", "low")["primary_pool"] == "gemini-flash-low"
         assert select_model("documenter", "low")["primary_pool"] == "gemini-flash-low"
         assert select_model("builder", "low")["primary_pool"] == "gemini-flash-medium"
+        for role in ("reviewer", "builder"):
+            for risk in ("low", "medium", "high"):
+                assert select_model(role, risk)["primary_pool"] != "gemini-flash-low"
 
 
 def test_flash_low_is_never_assigned_to_reviewer_or_builder():
@@ -1849,3 +1864,37 @@ class TestResolveKimiBin:
         cmd = [arg.format(model="kimi-k2-free") for arg in cmd_template]
         cmd[0] = _router.resolve_kimi_bin()
         assert cmd[0] == fake_bin, f"probe 첫 인자가 KIMI_BIN 값이 아닙니다: {cmd}"
+
+
+def test_probe_rejects_stdout_error_body_with_zero_exit(monkeypatch):
+    """종료 코드 0 이어도 응답 본문이 오류면 사용 불가로 판정합니다.
+
+    현재 등록된 CLI 는 인증 실패에 0 이 아닌 종료 코드를 돌려주므로 이 경로가
+    당장 필요하지는 않습니다. 종료 코드 0 으로 끝내면서 오류를 본문에만 적는
+    CLI 가 등록될 때 죽은 모델이 가용으로 판정되는 것을 막는 보강입니다.
+    """
+    from scripts.orca_model_router import probe_model
+
+    def _mock_run(cmd, *args, **kwargs):
+        return MagicMock(
+            returncode=0,
+            stdout="[API Error: 401 Incorrect API key provided.]",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", _mock_run)
+    available, detail = probe_model("qwen3.7-plus")
+    assert available is False
+    assert "응답 본문이 오류" in detail
+
+
+def test_probe_accepts_normal_body_with_zero_exit(monkeypatch):
+    """정상 응답은 종전대로 가용으로 판정합니다."""
+    from scripts.orca_model_router import probe_model
+
+    def _mock_run(cmd, *args, **kwargs):
+        return MagicMock(returncode=0, stdout="pong", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _mock_run)
+    available, _detail = probe_model("qwen3.7-plus")
+    assert available is True

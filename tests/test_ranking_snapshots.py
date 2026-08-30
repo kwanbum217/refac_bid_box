@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from src.app.core.cache import cache
 from src.app.models.bids import (
     CORRUPTED_TEXT_FALLBACKS,
     BidAnnouncement,
@@ -32,6 +33,15 @@ from src.app.services.ranking_snapshots import (
 )
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import _snapshot_scope, retrieve_structured_data
+
+
+@pytest.fixture(autouse=True)
+def isolated_cache(monkeypatch):
+    """프로세스 공용 캐시를 테스트마다 비웁니다."""
+    monkeypatch.setattr(cache._conn, "_client", None)
+    monkeypatch.setattr(cache._conn, "_next_attempt_at", float("inf"))
+    monkeypatch.setattr(cache, "_local", {})
+    return cache
 
 
 def _seed(db):
@@ -347,6 +357,50 @@ def test_no_hint_when_nothing_was_excluded(seeded_db):
     plan = RetrievalPlan(use_sql=True, filters={"category": "Thng"})
     outcome = retrieve_structured_data(seeded_db, plan)
     assert not any("인코딩" in hint for hint in outcome["insufficiency_hints"])
+
+
+def test_live_path_no_hint_when_clean_data(seeded_db):
+    """스냅샷 없는 실시간 경로에서도 멀쩡한 데이터에는 안내가 붙지 않아야 합니다."""
+    plan = RetrievalPlan(use_sql=True, filters={"category": "Thng", "date_from": "2026-05-01"})
+    outcome = retrieve_structured_data(seeded_db, plan)
+    assert not any("인코딩" in hint for hint in outcome["insufficiency_hints"])
+
+
+def test_live_path_announcement_excludes_corrupted(isolated_db):
+    """실시간 경로에서 공고 테이블의 손상값도 정상 제외되고 안내가 붙어야 합니다."""
+    base = datetime(2026, 5, 1, 9, 0, 0)
+    # 손상 공고 3건, 정상 공고 1건
+    for i in range(3):
+        isolated_db.add(
+            BidAnnouncement(
+                bid_ntce_no=f"A_CORR_{i}",
+                bid_ntce_ord="000",
+                category="Cnstwk",
+                bid_ntce_nm=CORRUPTED_WINNER,
+                dminstt_nm=CORRUPTED_WINNER,
+                bid_ntce_dt=base + timedelta(days=i),
+                collected_at=base,
+            )
+        )
+    isolated_db.add(
+        BidAnnouncement(
+            bid_ntce_no="A_CLEAN_0",
+            bid_ntce_ord="000",
+            category="Cnstwk",
+            bid_ntce_nm="정상공고명",
+            dminstt_nm="정상기관",
+            bid_ntce_dt=base,
+            collected_at=base,
+        )
+    )
+    isolated_db.commit()
+
+    plan = RetrievalPlan(use_sql=True, filters={"category": "Cnstwk", "date_from": "2026-04-01"})
+    outcome = retrieve_structured_data(isolated_db, plan)
+
+    assert [row["dminstt_nm"] for row in outcome["summary"]["top_institutions"]] == ["정상기관"]
+    assert [row["bid_ntce_nm"] for row in outcome["summary"]["top_announcements"]] == ["정상공고명"]
+    assert any("인코딩" in hint for hint in outcome["insufficiency_hints"])
 
 
 def test_sample_announcements_use_display_fallback(isolated_db):

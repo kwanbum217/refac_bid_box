@@ -102,7 +102,7 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 - 복잡한 변경이나 설계 결정은 사전에 제안하고 합의 후 진행.
 - 파일 경로는 `file_path:line_number` 형식으로 참조 (클릭 가능).
 - 코디네이터의 기본값은 Codex `gpt-5.6-terra` + effort `medium`입니다. 기본값을 벗어나 모델 또는 effort를 변경하기 전에는 사용자에게 `MODEL_CHANGE_NOTICE`로 대상 작업, 변경 전·후 설정, 사유, 사용량 영향, 기본값 복귀 시점을 알립니다. `gpt-5.6-sol` + `high`는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 쓰며 사용자 승인 후에만 적용합니다. 상세 매트릭스는 [`docs/ops/orca_orchestration_playbook.md`](docs/ops/orca_orchestration_playbook.md) 4.2.1절을 따릅니다.
-- Gemini 워커의 기본값은 Antigravity `gemini-3.7-flash-medium`입니다. `flash-high`는 데이터 무손실 영향, 복잡한 구현·회귀 분석, 독립 교차검토처럼 high 위험도 Task에만 사용하며, Task Capsule과 사용자 대화에 `WORKER_MODEL_NOTICE`(대상, Medium에서의 변경, 사유, 사용량 영향, 복귀 시점)를 남깁니다. `flash-low`는 읽기 전용 조사·초안·경량 계측에만 사용하고, 빌더·리뷰어 Task에는 배정하지 않습니다.
+- 워커 기본 풀은 Alibaba Token Plan(Qwen Code) 4계층이며 Antigravity `gemini-3.7-flash-medium`은 fallback입니다. 리뷰어는 빌더와 다른 계열을 배정하고, 모델은 풀 등록 전에 그 CLI로 직접 probe합니다. 기본값을 벗어나면 `WORKER_MODEL_NOTICE`를 남깁니다. 배정표 정본은 `orca_model_router.py`의 `TIER_POLICY`, 상세는 [`docs/ops/orca_worker_model_pool.md`](docs/ops/orca_worker_model_pool.md)입니다.
 
 ---
 

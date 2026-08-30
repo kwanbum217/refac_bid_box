@@ -4494,7 +4494,7 @@ def test_cmd_prepare_worker_cli(monkeypatch: pytest.MonkeyPatch, capsys: pytest.
 
 
 def test_resolve_dispatch_model_risk_medium():
-    """(a) risk medium 인 Capsule 은 flash-medium 을 배정받음."""
+    """(a) risk medium 인 Capsule 은 medium 등급을 배정받음."""
     capsule_text = "role: builder\nrisk: medium\nobjective: refactor code\n"
     res = resolve_dispatch_model(
         args_model=None,
@@ -4507,7 +4507,7 @@ def test_resolve_dispatch_model_risk_medium():
 
 
 def test_resolve_dispatch_model_risk_high():
-    """(b) risk high 인 Capsule 은 flash-high 를 배정받음."""
+    """(b) risk high 인 Capsule 은 high 등급을 배정받음."""
     capsule_text = "role: builder\nrisk: high\nobjective: database schema migration\n"
     res = resolve_dispatch_model(
         args_model=None,
