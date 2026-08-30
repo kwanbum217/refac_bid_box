@@ -1,0 +1,123 @@
+{
+  "schema": "ORCA_SERVC_OOS_EVAL_V1",
+  "version": "1.0.0",
+  "evaluated_at": "2026-08-30T03:40:20.010291+00:00",
+  "dry_run": false,
+  "canonical": true,
+  "expected_sample_count": 3589,
+  "actual_sample_count": 3589,
+  "sample_count_diff": 0,
+  "sample_keys_sha256": "e913080cd9c6c2fdf0e652ee773d017abaadd724996cdbd1981fa1cd501ddb46",
+  "model_provenance": {
+    "model_id": "servc_institution_v1",
+    "model_dir": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/model_files/servc_institution_v1",
+    "weights_path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/model_files/servc_institution_v1/model.bin",
+    "weights_sha256": "53630e49d8221d3a0186bcd759dfc60976e5d54e037eba5189f13a7c3c230505",
+    "weights_exist": true,
+    "model_version": "v_20260807_043210_535",
+    "objective": "quantile(0.5)"
+  },
+  "overall_metrics": {
+    "sample_count": 3589,
+    "mae": 1.1825,
+    "rmse": 2.629,
+    "bias": -0.0955,
+    "median_abs_err": 0.2412,
+    "hit_rate_05": 0.6269,
+    "accuracy_bands": {
+      "within_0.5_pct": {
+        "count": 2250,
+        "ratio": 0.6269
+      },
+      "within_1.0_pct": {
+        "count": 2653,
+        "ratio": 0.7392
+      },
+      "within_2.0_pct": {
+        "count": 2995,
+        "ratio": 0.8345
+      },
+      "within_3.0_pct": {
+        "count": 3179,
+        "ratio": 0.8858
+      },
+      "within_5.0_pct": {
+        "count": 3355,
+        "ratio": 0.9348
+      }
+    },
+    "coverage": 0.9025,
+    "coverage_gap": 0.0025,
+    "median_interval_width": 2.0145
+  },
+  "group_metrics": {
+    "with_lwlt": {
+      "sample_count": 2233,
+      "mae": 0.6288,
+      "rmse": 1.8295,
+      "bias": -0.4329,
+      "median_abs_err": 0.1236,
+      "hit_rate_05": 0.7936,
+      "accuracy_bands": {
+        "within_0.5_pct": {
+          "count": 1772,
+          "ratio": 0.7936
+        },
+        "within_1.0_pct": {
+          "count": 1980,
+          "ratio": 0.8867
+        },
+        "within_2.0_pct": {
+          "count": 2084,
+          "ratio": 0.9333
+        },
+        "within_3.0_pct": {
+          "count": 2127,
+          "ratio": 0.9525
+        },
+        "within_5.0_pct": {
+          "count": 2154,
+          "ratio": 0.9646
+        }
+      },
+      "coverage": 0.8916,
+      "coverage_gap": -0.0084,
+      "median_interval_width": 1.0013
+    },
+    "missing_lwlt": {
+      "sample_count": 1356,
+      "mae": 2.0943,
+      "rmse": 3.5752,
+      "bias": 0.4601,
+      "median_abs_err": 1.0138,
+      "hit_rate_05": 0.3525,
+      "accuracy_bands": {
+        "within_0.5_pct": {
+          "count": 478,
+          "ratio": 0.3525
+        },
+        "within_1.0_pct": {
+          "count": 673,
+          "ratio": 0.4963
+        },
+        "within_2.0_pct": {
+          "count": 911,
+          "ratio": 0.6718
+        },
+        "within_3.0_pct": {
+          "count": 1052,
+          "ratio": 0.7758
+        },
+        "within_5.0_pct": {
+          "count": 1201,
+          "ratio": 0.8857
+        }
+      },
+      "coverage": 0.9204,
+      "coverage_gap": 0.0204,
+      "median_interval_width": 7.9906
+    }
+  },
+  "skipped_count": 0,
+  "sample_definition": "Servc bids with openg_dt > '2026-08-03 11:00:00', winning_rate in [70, 110], presmpt_prce in [100k, 1T], matched to bid_announcements"
+}
