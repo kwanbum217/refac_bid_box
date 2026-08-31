@@ -42,6 +42,14 @@ try:
 except ImportError:
     yaml = None
 
+try:
+    from scripts.orca_model_router import MODEL_POOL, TIER_POLICY
+except (ImportError, ModuleNotFoundError):
+    _repo_root = Path(__file__).resolve().parent.parent
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
+    from scripts.orca_model_router import MODEL_POOL, TIER_POLICY
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -744,6 +752,256 @@ def check_orca_coordination_skill(root: Path = PROJECT_ROOT) -> CheckResult:
     )
 
 
+def _parse_worker_model_table(content: str) -> dict[tuple[str, str], list[str]]:
+    """orca_worker_model_pool.md 문서 내 역할별 모델 배정 정책 표를 파싱합니다."""
+    lines = content.splitlines()
+    in_table = False
+    doc_policy: dict[tuple[str, str], list[str]] = {}
+    for line in lines:
+        stripped = line.strip()
+        if (
+            "역할" in stripped
+            and "위험도" in stripped
+            and ("1순위" in stripped or "Primary" in stripped)
+        ):
+            in_table = True
+            continue
+        if in_table:
+            if not stripped.startswith("|"):
+                if doc_policy:
+                    break
+                continue
+            cells = [c.strip().strip("`").strip() for c in stripped.split("|")[1:-1]]
+            if not cells or all(re.match(r"^:?-+:?$", c) for c in cells):
+                continue
+            if len(cells) >= 4:
+                role, risk, primary, fallback = cells[0], cells[1], cells[2], cells[3]
+                doc_policy[(role, risk)] = [primary, fallback]
+    return doc_policy
+
+
+def check_worker_model_pool_drift(
+    root: Path = PROJECT_ROOT,
+    tier_policy: dict[tuple[str, str], list[str]] | None = None,
+) -> CheckResult:
+    """TIER_POLICY 실행 정본과 docs/ops/orca_worker_model_pool.md 문서 표의 일치 여부를 검증합니다.
+
+    역할(role)과 위험도(risk) 조합별로 1순위(Primary)와 2순위(Fallback)가
+    완전 일치하는지 대조하며, 파싱 실패 시 반드시 FAIL로 처리합니다.
+    """
+    name = "워커 모델 배정표 정합성 (TIER_POLICY vs 문서)"
+    doc_path = root / "docs" / "ops" / "orca_worker_model_pool.md"
+    if not doc_path.exists():
+        return CheckResult(name, False, "문서 파일 없음: docs/ops/orca_worker_model_pool.md")
+
+    content = read_text(doc_path)
+    doc_policy = _parse_worker_model_table(content)
+    if not doc_policy:
+        return CheckResult(
+            name, False, "docs/ops/orca_worker_model_pool.md 에서 배정표를 찾을 수 없거나 파싱 실패"
+        )
+
+    expected_policy = tier_policy if tier_policy is not None else TIER_POLICY
+
+    doc_keys = set(doc_policy.keys())
+    code_keys = set(expected_policy.keys())
+
+    doc_only = sorted(doc_keys - code_keys)
+    code_only = sorted(code_keys - doc_keys)
+    common_keys = sorted(doc_keys & code_keys)
+
+    mismatches: list[str] = []
+    for k in common_keys:
+        d_val = doc_policy[k]
+        c_val = expected_policy[k][:2]  # primary, fallback
+        if d_val != c_val:
+            mismatches.append(f"{k}: 문서={d_val} != 코드={c_val}")
+
+    if not doc_only and not code_only and not mismatches:
+        return CheckResult(name, True, f"{len(common_keys)}개 역할/위험도 조합 완전 일치")
+
+    diff_details: list[str] = []
+    if mismatches:
+        diff_details.append(f"값 불일치 {len(mismatches)}건: {'; '.join(mismatches)}")
+    if code_only:
+        diff_details.append(f"코드에만 있는 조합 {len(code_only)}건: {code_only}")
+    if doc_only:
+        diff_details.append(f"문서에만 있는 조합 {len(doc_only)}건: {doc_only}")
+
+    return CheckResult(name, False, " | ".join(diff_details))
+
+
+def check_agents_model_table_absence(
+    root: Path = PROJECT_ROOT,
+    model_pool: dict[str, dict[str, Any]] | None = None,
+) -> CheckResult:
+    """AGENTS.md 에 구체 워커 모델 배정표가 다시 생기지 않았는지 검증합니다.
+
+    AGENTS.md 는 TIER_POLICY 정본 포인터만 유지해야 하며, MODEL_POOL 에 등록된
+    워커 모델 풀 키 및 모델 ID 문자열이 본문에 나타나면 실패로 판정합니다.
+    (코디네이터 전용 모델은 허용)
+    """
+    name = "AGENTS.md 워커 모델 배정표 부재"
+    target = root / "AGENTS.md"
+    if not target.exists():
+        return CheckResult(name, False, "AGENTS.md 파일 없음")
+    content = read_text(target)
+
+    pool = model_pool if model_pool is not None else MODEL_POOL
+    worker_tokens: set[str] = set()
+    for k, v in pool.items():
+        if v.get("tier") in ("coordinator", "coordinator_reserve"):
+            continue
+        worker_tokens.add(k)
+        if v.get("id"):
+            worker_tokens.add(v["id"])
+
+    found_tokens = [t for t in sorted(worker_tokens) if t in content]
+    if found_tokens:
+        return CheckResult(
+            name,
+            False,
+            f"AGENTS.md 내 워커 모델 풀 키/ID 발견 (배정표 drift 감지): {found_tokens}",
+        )
+    return CheckResult(
+        name,
+        True,
+        "AGENTS.md 에 개별 워커 모델 배정표 없음 (TIER_POLICY 포인터 유지)",
+    )
+
+
+def check_current_state_unknowns_contradictions(root: Path = PROJECT_ROOT) -> CheckResult:
+    """CURRENT_STATE.md 6.1절(알려진 미해결 사항) 내에서 동일 사안에 대한 상태 표기 모순(해소 vs 미해결)을 검사합니다.
+
+    [검사 대상 및 탐지 범위 (잡을 수 있는 범위)]:
+      1. 단일 항목 표제/상태 괄호 내에 해소 표지('해소', '완료', '종결', '해결' 등)와 미해결 표지('미해결', '미적용', '미수행', '미검증', '미착수', '수정 미적용' 등)가 동시에 존재하는 경우.
+      2. 6.1절 내 복수 항목이 동일/정규화된 표제(또는 공유 식별자)를 가지면서 한쪽은 해소 상태, 다른 쪽은 미해결 상태로 기술된 경우.
+
+    [탐지 제외 및 한계 (못 잡는 범위)]:
+      1. 6.1절 외 타 섹션(예: 2장 성능 정본, 4장 진행 과업)과의 문맥적/의미적 불일치.
+      2. 표제나 키워드가 전혀 다른 자연어 문장으로 서술된 의미적 모순.
+      3. 조건부 부분 해결 서술(예: 'Linux는 완료, Windows는 미검증'과 같은 플랫폼별 분기).
+      4. 수치 지표의 논리적 모순이나 날짜 선후 관계 불일치.
+    """
+    name = "CURRENT_STATE 6.1 상태 모순 검사"
+    target = _current_state_path(root)
+    if not target.exists():
+        return CheckResult(name, False, "docs/context/CURRENT_STATE.md 파일 없음")
+    content = read_text(target)
+
+    match = re.search(
+        r"### 6\.1 알려진 미해결 사항 \(Unknowns\)(.*?)(?=\n### 6\.2|\n## |\Z)",
+        content,
+        re.DOTALL,
+    )
+    if not match:
+        return CheckResult(name, False, "CURRENT_STATE.md 6.1절 (알려진 미해결 사항) 없음")
+
+    section_text = match.group(1)
+    items: list[str] = []
+    for block in re.split(r"\n(?=[-*\+]\s+)", section_text):
+        block = block.strip()
+        if block.startswith(("-", "*", "+")):
+            items.append(block)
+
+    if not items:
+        return CheckResult(name, True, "6.1절 미해결 항목 0건")
+
+    resolved_markers = (
+        "해소",
+        "해결",
+        "병합 완료",
+        "수정 완료",
+        "적용 완료",
+        "판정 종료",
+        "종결",
+        "종료",
+        "결함 해소",
+    )
+    unresolved_markers = (
+        "미해결",
+        "미적용",
+        "수정 미적용",
+        "적용 미완료",
+        "미수행",
+        "미검증",
+        "미실시",
+        "미착수",
+        "미완료",
+    )
+    antonym_pairs = [
+        ("해소", "미해결"),
+        ("해소", "미적용"),
+        ("해소", "수정 미적용"),
+        ("해소", "미수행"),
+        ("해소", "미완료"),
+        ("해결", "미해결"),
+        ("완료", "미완료"),
+        ("완료", "미적용"),
+        ("수정 완료", "수정 미적용"),
+        ("적용 완료", "미적용"),
+    ]
+
+    conflicts: list[str] = []
+    parsed_items: list[dict[str, Any]] = []
+
+    for item in items:
+        bold_match = re.search(r"^\s*[-*+]\s+\*\*(.*?)\*\*", item)
+        first_line = item.splitlines()[0]
+        header = bold_match.group(1) if bold_match else first_line.lstrip("-*+ ").split(":")[0]
+
+        paren_match = re.search(r"\((.*?)\)", header)
+        paren_text = paren_match.group(1) if paren_match else ""
+
+        # 1. 단일 항목 내부 상태 모순 검사
+        for res_term, unres_term in antonym_pairs:
+            if res_term in paren_text and unres_term in paren_text:
+                conflicts.append(
+                    f"단일 항목 내부 상태 모순: '{header}' (해소 '{res_term}' vs 미해결 '{unres_term}')"
+                )
+
+        # 항목 상태 분류
+        is_res = any(m in paren_text or m in header for m in resolved_markers)
+        is_unres = any(m in paren_text or m in header for m in unresolved_markers)
+
+        # 표제 정규화 및 식별자 추출
+        cleaned_header = re.sub(r"\([^\)]*\)", "", header)
+        norm_title = re.sub(r"[^a-zA-Z0-9가-힣]", "", cleaned_header).lower()
+        topic_ids = {
+            m.group(1).lower() for m in re.finditer(r"\b(q\d{1,3})\b", header, re.IGNORECASE)
+        }
+
+        parsed_items.append(
+            {
+                "header": header,
+                "norm": norm_title,
+                "ids": topic_ids,
+                "is_res": is_res,
+                "is_unres": is_unres,
+            }
+        )
+
+    # 2. 복수 항목 간 동일 사안 상반 상태 기술 검사
+    for i in range(len(parsed_items)):
+        for j in range(i + 1, len(parsed_items)):
+            a, b = parsed_items[i], parsed_items[j]
+            same_topic = bool(a["norm"] and b["norm"] and a["norm"] == b["norm"])
+            shared_ids = a["ids"].intersection(b["ids"])
+            if (same_topic or shared_ids) and (
+                (a["is_res"] and b["is_unres"]) or (a["is_unres"] and b["is_res"])
+            ):
+                topic_desc = (
+                    f"동일 표제 '{a['header']}' / '{b['header']}'"
+                    if same_topic
+                    else f"공유 식별자 {shared_ids}"
+                )
+                conflicts.append(f"복수 항목 간 상태 모순 ({topic_desc})")
+
+    if conflicts:
+        return CheckResult(name, False, "; ".join(conflicts))
+    return CheckResult(name, True, f"{len(parsed_items)}개 미해결 항목 모순 없음 확인")
+
+
 def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
     return [
         check_claude_is_pointer(root),
@@ -758,6 +1016,9 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_current_state_exists(root),
         check_current_state_sections(root),
         check_context_budgets(root),
+        check_worker_model_pool_drift(root),
+        check_agents_model_table_absence(root),
+        check_current_state_unknowns_contradictions(root),
     ]
 
 
