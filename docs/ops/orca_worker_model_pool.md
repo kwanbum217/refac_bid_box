@@ -8,19 +8,47 @@
 
 ---
 
-## 1. 4계층 구조
+## 1. 역할별 모델 배정 정책 (TIER_POLICY)
 
-| 계층 | 풀 키 | 모델 ID | 배정 대상 |
-| :---: | --- | --- | --- |
-| L1 범용 | `qwen-plus` | `qwen3.7-plus` | 일반 구현, 테스트 작성·수정, 문서 정합성, 읽기 전용 조사 |
-| L2 전문 | `deepseek-pro` | `deepseek-v4-pro` | 복잡한 SQL·RAG·레이턴시 회귀 원인 분석, high 위험도 구현 |
-| L3 리뷰 | `glm` | `glm-5.2` | 독립 검토, 교차검증, 긴 문서·로그 분석 |
-| L4 상신 | `qwen-max` | `qwen3.8-max-preview` | 앞의 셋이 실패했거나 두 워커의 결론이 충돌할 때의 제3 판정 |
-| fallback | `gemini-flash-*` | `gemini-3.7-flash-*` | 신규 풀 장애 시 대체. 분석·감사·측정의 검증된 이력 보유 |
-| 제외 | `qwen-max-legacy` | `qwen3.7-max` | 신규 자동 배정 제외 (`auto_selectable=False`) |
+이 표는 [`scripts/orca_model_router.py`](../../scripts/orca_model_router.py)의 `TIER_POLICY` 사본이며 불일치 시 코드가 정본입니다.
 
-리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를
-그대로 통과시키기 때문입니다. 그래서 빌더가 Qwen 계열일 때 리뷰어는 GLM 입니다.
+| 역할 (`role`) | 위험도 (`risk`) | 1순위 (Primary) | 2순위 (Fallback) |
+| --- | :---: | --- | --- |
+| `reviewer` | `high` | `qwen-plus` | `gemini-flash-high` |
+| `reviewer` | `medium` | `qwen-plus` | `gemini-flash-medium` |
+| `reviewer` | `low` | `qwen-plus` | `gemini-flash-medium` |
+| `builder` | `high` | `gemini-flash-high` | `qwen-plus` |
+| `builder` | `medium` | `gemini-flash-medium` | `qwen-plus` |
+| `builder` | `low` | `gemini-flash-medium` | `qwen-plus` |
+| `investigator` | `high` | `gemini-flash-high` | `qwen-plus` |
+| `investigator` | `medium` | `gemini-flash-medium` | `qwen-plus` |
+| `investigator` | `low` | `gemini-flash-low` | `gemini-flash-medium` |
+| `benchmarker` | `high` | `gemini-flash-high` | `qwen-plus` |
+| `benchmarker` | `medium` | `gemini-flash-medium` | `qwen-plus` |
+| `benchmarker` | `low` | `gemini-flash-medium` | `gemini-flash-low` |
+| `documenter` | `high` | `gemini-flash-high` | `qwen-plus` |
+| `documenter` | `medium` | `gemini-flash-medium` | `qwen-plus` |
+| `documenter` | `low` | `gemini-flash-low` | `gemini-flash-medium` |
+| `__default__` | `high` | `gemini-flash-high` | `qwen-plus` |
+| `__default__` | `medium` | `gemini-flash-medium` | `qwen-plus` |
+| `__default__` | `low` | `gemini-flash-medium` | `qwen-plus` |
+
+### 1.1 등록 모델 풀 현황
+
+| 풀 키 | 모델 ID | 제공자 | 자동 배정 (`auto_selectable`) | 배정 대상 및 용도 |
+| --- | --- | :---: | :---: | --- |
+| `gemini-flash-high` | `gemini-3.7-flash-high` | Gemini | O (`True`) | 고난도 추론·코딩, high 위험도 전용 |
+| `gemini-flash-medium` | `gemini-3.7-flash-medium` | Gemini | O (`True`) | 기본 주력 워커 (builder/investigator/benchmarker/documenter) |
+| `gemini-flash-low` | `gemini-3.7-flash-low` | Gemini | O (`True`) | low 위험도 investigator/documenter 주 모델, benchmarker fallback |
+| `qwen-plus` | `qwen3.7-plus` | Alibaba | O (`True`) | reviewer 주 모델, 기타 역할의 fallback |
+| `deepseek-pro` | `deepseek-v4-pro` | Alibaba | X (`False`) | 복잡한 SQL·RAG·레이턴시 회귀 분석 (자동 배정 제외, 명시 지정 전용) |
+| `glm` | `glm-5.2` | Alibaba | X (`False`) | 독립 교차 검토 (자동 배정 제외, 명시 지정 전용) |
+| `qwen-max` | `qwen3.8-max-preview` | Alibaba | X (`False`) | 상신/충돌 판정용 (자동 배정 제외, 명시 지정 전용) |
+| `qwen-max-legacy` | `qwen3.7-max` | Alibaba | X (`False`) | 레거시 모델 (신규 자동 배정 제외) |
+
+`deepseek-pro`, `glm`, `qwen-max` 세 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
+
+리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를 그대로 통과시키기 때문입니다. 현재 정책에서 빌더가 Gemini 계열(`gemini-flash-*`)인 동안 리뷰어는 `qwen-plus`(Alibaba Token Plan)입니다.
 
 ---
 
