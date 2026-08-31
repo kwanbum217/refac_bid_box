@@ -880,3 +880,46 @@ def test_check_current_state_unknowns_contradictions(tmp_path: Path):
     res = check_current_state_unknowns_contradictions(tmp_path)
     assert not res.ok
     assert "6.1절" in res.detail
+
+
+def test_unresolved_only_item_is_not_flagged_as_contradiction(tmp_path):
+    """미해결 표기만 있는 항목을 모순으로 잡으면 안 됩니다.
+
+    부분 문자열로 찾으면 "미해결" 안의 "해결" 과 "미완료" 안의 "완료" 가 해소
+    표지로 잡혀 정상 항목이 전부 오탐됩니다. 2026-08-31 에 실제로 발생했습니다.
+    """
+    from scripts.validate_agent_rules import check_current_state_unknowns_contradictions
+
+    doc = tmp_path / "docs" / "context" / "CURRENT_STATE.md"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text(
+        "# 정본\n\n"
+        "### 6.1 알려진 미해결 사항 (Unknowns)\n\n"
+        "- **ngram 경계값 7 클래스 미실측 (2026-08-31, 미해결)**: 실측이 필요합니다.\n"
+        "- **다른 항목 (2026-08-31, 미완료)**: 아직 남았습니다.\n\n"
+        "### 6.2 정본 갱신 규약 (Update Protocol)\n",
+        encoding="utf-8",
+    )
+
+    result = check_current_state_unknowns_contradictions(tmp_path)
+
+    assert result.ok, f"미해결 표기만 있는 항목을 모순으로 잡았습니다: {result.detail}"
+
+
+def test_genuine_contradiction_is_still_flagged(tmp_path):
+    """오탐을 없애면서 진짜 모순까지 놓치면 검사가 무의미해집니다."""
+    from scripts.validate_agent_rules import check_current_state_unknowns_contradictions
+
+    doc = tmp_path / "docs" / "context" / "CURRENT_STATE.md"
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text(
+        "# 정본\n\n"
+        "### 6.1 알려진 미해결 사항 (Unknowns)\n\n"
+        "- **q21 검색 실패 (2026-08-30, 해소, 수정 미적용)**: 서로 다른 상태입니다.\n\n"
+        "### 6.2 정본 갱신 규약 (Update Protocol)\n",
+        encoding="utf-8",
+    )
+
+    result = check_current_state_unknowns_contradictions(tmp_path)
+
+    assert not result.ok, "해소와 미적용이 함께 있는 항목을 잡지 못했습니다"

@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-31
-> **source_commit**: `9d38a2a`
+> **source_commit**: `231f9f0`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -234,6 +234,8 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
+- **Wave H 조율 평면 강화 (2026-08-31, 병합 완료)**: 문서 배정표가 `TIER_POLICY` 와 어긋나면 CI 가 실패합니다(검사 12개 -> 15개). ngram 선행필터는 기본값 OFF 플래그 뒤에 있고 기관명·업체명 집계 두 경로에만 붙습니다. 런처 승인 준비는 세 런처 공통 모듈로 통합했고 성공 판정을 `file_edit_auto_approve.ok` 로 합니다. 잔여는 [`handoff_20260831_wave_gh.md`](../ops/handoff_20260831_wave_gh.md) 3 장입니다.
+- **ngram 경계값 7 클래스 미실측 (2026-08-31, 미해결)**: `tests/fixtures/ngram_edge_keywords.json` 의 괄호·하이픈·영문숫자·`%`·`_`·따옴표·boolean 연산자 7건이 `is_safe_for_ngram: true` 인데 **실측이 아닙니다.** MySQL 통합 테스트가 실 DB 없이 skip 되어 검증된 적이 없습니다. 현재 코드는 보수적으로 제외합니다. `100%` 의 경우 `LIKE '%100%%'` 는 임의 문자열을 매칭하지만 `+"100%"` 는 리터럴을 요구해 MATCH 가 진부분집합이 되므로 픽스처 값이 틀렸을 가능성이 높습니다. **운영 FULLTEXT 인덱스 생성 후 실측하고 플래그를 켜기 전에 정정하십시오.**
 - **Wave G 조율 평면 정합성 (2026-08-31, 병합 완료)**: 외부 감사 두 건을 HEAD `d0cb3d7` 에서 교차 검증해 실제 잔여만 닫았습니다. 한쪽 보고서는 `4aa444f`(838 커밋 뒤처짐) 기준이라 10건 중 8건이 이미 수정 완료였습니다. **감사 보고서는 기준 커밋을 확인한 뒤 수용하십시오.** 닫은 것은 모델 정책 3중 분기, 리뷰어 provider 독립성 fail-closed, `commit_count` 타입 우회, `CURRENT_STATE` q21 모순, 2.4 절 warm 범위, EXPLAIN 추정치 표기, ngram 회귀 하네스입니다.
 - **리뷰어 실행 경로 (2026-08-31, 해소)**: `orca_run_reviewer.py` 가 모델 provider 로 CLI 를 정합니다. gemini·claude·cerebras 는 `agy`, qwen 계열은 `qwen -m <id> -p` 이며 미지원·판정불가는 `ReviewerToolError` 로 막습니다. `qwen3.7-plus` 로 실제 리뷰를 완주해 확인했습니다. **provider 와 CLI 는 1:1 이 아닙니다** (Antigravity 가 Gemini·Claude·GPT-OSS 를 함께 서빙).
 - **리뷰어 diff 상한 기본값이 실제 Task 규모에 미달 (2026-08-31)**: `--max-diff-chars` 기본값 20,000 자에 비해 Wave G 워커 diff 는 41,000 자대였습니다. 도구가 절단 시 fail-closed 로 막지만, `--allow-truncated-diff` 를 습관적으로 쓰면 리뷰가 형식만 남습니다. **상한을 올려 다시 돌리십시오.**
