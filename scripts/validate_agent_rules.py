@@ -1008,6 +1008,61 @@ def check_current_state_unknowns_contradictions(root: Path = PROJECT_ROOT) -> Ch
     return CheckResult(name, True, f"{len(parsed_items)}개 미해결 항목 모순 없음 확인")
 
 
+def check_analysis_metrics_docs(root: Path = PROJECT_ROOT) -> CheckResult:
+    """docs/analysis/ 의 마커 있는 문서를 원시 JSON 과 대조합니다.
+
+    METRICS_BEGIN 마커가 있는 문서만 검사 대상입니다.
+    마커가 없는 문서는 통과로 처리합니다.
+    종료 코드 1 은 수치 불일치, 2 는 파일/키 부재입니다.
+    """
+    name = "분석 문서 수치 정합성 (METRICS 마커)"
+    docs_dir = root / "docs" / "analysis"
+    if not docs_dir.exists():
+        return CheckResult(name, False, "docs/analysis/ 디렉터리 없음")
+
+    script = root / "scripts" / "render_analysis_metrics.py"
+    if not script.exists():
+        return CheckResult(name, False, "scripts/render_analysis_metrics.py 없음")
+
+    md_files = sorted(docs_dir.glob("*.md"))
+    if not md_files:
+        return CheckResult(name, True, "docs/analysis/ 에 .md 파일 없음")
+
+    marker_pattern = re.compile(r"<!--\s*METRICS_BEGIN\s+")
+    checked: list[str] = []
+    failed: list[str] = []
+
+    for md_path in md_files:
+        content = read_text(md_path)
+        if not marker_pattern.search(content):
+            continue  # 마커 없는 문서는 통과
+        checked.append(md_path.name)
+        try:
+            result = subprocess.run(  # nosec B603 B607 - 고정 인자 목록으로 호출합니다
+                [sys.executable, str(script), "verify", "--doc", str(md_path)],
+                capture_output=True,
+                text=True,
+                timeout=GIT_PROBE_TIMEOUT_SECONDS,
+                cwd=str(root),
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            return CheckResult(name, False, f"{md_path.name}: 실행 실패 ({exc})")
+
+        if result.returncode != 0:
+            detail_lines = (result.stdout + result.stderr).strip().splitlines()
+            summary = "; ".join(detail_lines[:3]) if detail_lines else "(출력 없음)"
+            failed.append(f"{md_path.name} (코드 {result.returncode}): {summary}")
+
+    if not checked:
+        return CheckResult(name, True, "docs/analysis/ 에 METRICS 마커 문서 없음 - 검사 대상 없음")
+    if failed:
+        detail = f"{len(failed)}/{len(checked)} 문서 실패: " + " | ".join(failed)
+        return CheckResult(name, False, detail)
+    return CheckResult(
+        name, True, f"{len(checked)}개 문서 METRICS 수치 검증 통과: {', '.join(checked)}"
+    )
+
+
 def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
     return [
         check_claude_is_pointer(root),
@@ -1025,6 +1080,7 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_worker_model_pool_drift(root),
         check_agents_model_table_absence(root),
         check_current_state_unknowns_contradictions(root),
+        check_analysis_metrics_docs(root),
     ]
 
 
