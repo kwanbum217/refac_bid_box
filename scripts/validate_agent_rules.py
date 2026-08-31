@@ -954,8 +954,14 @@ def check_current_state_unknowns_contradictions(root: Path = PROJECT_ROOT) -> Ch
         paren_text = paren_match.group(1) if paren_match else ""
 
         # 1. 단일 항목 내부 상태 모순 검사
+        # 미해결 표지를 먼저 지우고 해소 표지를 찾습니다. 부분 문자열로 그냥 찾으면
+        # "미해결" 안의 "해결" 과 "미완료" 안의 "완료" 가 해소 표지로 잡혀,
+        # 정상적으로 미해결이라고만 적은 항목이 전부 모순으로 오탐됩니다.
+        masked_paren = paren_text
+        for _unres in unresolved_markers:
+            masked_paren = masked_paren.replace(_unres, "")
         for res_term, unres_term in antonym_pairs:
-            if res_term in paren_text and unres_term in paren_text:
+            if res_term in masked_paren and unres_term in paren_text:
                 conflicts.append(
                     f"단일 항목 내부 상태 모순: '{header}' (해소 '{res_term}' vs 미해결 '{unres_term}')"
                 )
