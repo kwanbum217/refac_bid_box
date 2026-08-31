@@ -10,17 +10,32 @@ Antigravity TUI 는 `orca terminal create --command "agy --model <id>"` 로 띄�
       --command "uv run python scripts/orca_agy_launch.py --model gemini-3.7-flash-medium"
     orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json
     # 결과의 preamble 을 <워크트리>/.orca/preamble.txt 로 쓰면 런처가 이어받습니다
+
+이 경로는 `orca_taskctl.py dispatch` 를 거치지 않으므로 그 안에 있는 권한 자동
+승인 4단계가 통째로 빠집니다. 그래서 워커가 파일 편집 대화창마다 멈추고 사람이
+직접 승인하게 됩니다. 런처가 그 단계를 스스로 수행해 절차를 기억할 필요를
+없앱니다. `exec` 로 자리를 내주기 전에 분리된 자식을 띄우고, 자식이 agy TUI 가
+뜬 뒤 accept-edits 모드와 셸 명령 감시기를 확보합니다.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import subprocess  # nosec B404 - 자기 자신을 sys.executable 로 고정 인자로만 재호출합니다
 import sys
 import time
 from pathlib import Path
 
 DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
+# agy TUI 가 상태줄을 그리기 전에 키를 보내면 모드 판정이 unknown 이 되어
+# 아무것도 확보하지 못합니다. 첫 시도를 이만큼 미룹니다.
+PERMISSION_SETUP_DELAY_SEC = 10.0
+# 워커가 긴 생성 중이면 화면이 스피너뿐이라 모드를 읽을 수 없습니다. 그동안은
+# 키를 보내지 않고 기다려야 하므로 확보 시도 창을 넉넉히 잡습니다.
+PERMISSION_SETUP_DEADLINE_SEC = 600.0
+PERMISSION_SETUP_INTERVAL_SEC = 15.0
+PERMISSION_SETUP_FLAG = "--setup-permissions"
 COMMIT_NOTICE = (
     "\n\n추가 지시: 작업을 마치면 반드시 변경 파일을 스테이징하고 커밋하십시오. "
     "git add -A 는 쓰지 마십시오. 커밋 없이 완료를 선언하면 계약 위반입니다. "
@@ -54,7 +69,97 @@ def build_command(model: str, prompt: str) -> list[str]:
     return ["agy", "--model", model, "-i", prompt]
 
 
+def _load_approval_helpers():
+    """orca_taskctl 의 승인 헬퍼를 지연 로드합니다.
+
+    런처는 워크트리 안에서 실행되므로 저장소 루트를 sys.path 에 넣어야 합니다.
+    로직을 여기에 복제하지 않는 이유는 모드 순환(normal -> accept-edits -> plan)
+    처리와 화면 판정이 미묘해서, 두 곳에 두면 반드시 어긋나기 때문입니다.
+    """
+    root = Path(__file__).resolve().parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from scripts.orca_taskctl import (
+        enable_file_edit_auto_approve,
+        start_auto_approve,
+    )
+
+    return enable_file_edit_auto_approve, start_auto_approve
+
+
+def acquire_permissions(
+    terminal: str,
+    *,
+    delay_sec: float = PERMISSION_SETUP_DELAY_SEC,
+    deadline_sec: float = PERMISSION_SETUP_DEADLINE_SEC,
+    interval_sec: float = PERMISSION_SETUP_INTERVAL_SEC,
+    sleep=time.sleep,
+    helpers=None,
+) -> tuple[bool, str]:
+    """agy 기동 뒤 셸 명령 감시기와 accept-edits 모드를 확보합니다.
+
+    두 층은 서로를 대체하지 않습니다. 감시기는 셸 명령 대화창만 승인하고 파일
+    편집 대화창은 설계상 보류하므로, accept-edits 모드가 없으면 사람이 매번
+    손으로 눌러야 합니다.
+
+    `force=False` 로 호출하는 것이 핵심입니다. 화면이 스피너면 모드가 unknown 으로
+    읽히는데, 그때 키를 보내면 순환이 accept-edits 를 지나 plan 으로 넘어가
+    워커가 파일을 아예 못 고치게 됩니다. 판정 불가일 때는 보내지 않고 다음
+    주기를 기다립니다.
+    """
+    enable_file_edit_auto_approve, start_auto_approve = helpers or _load_approval_helpers()
+
+    sleep(delay_sec)
+    watchdog_ok, watchdog_detail = start_auto_approve(terminal)
+
+    deadline = time.monotonic() + deadline_sec
+    last_detail = "시도하지 않았습니다"
+    while True:
+        mode_ok, last_detail = enable_file_edit_auto_approve(terminal, force=False)
+        if mode_ok:
+            return True, f"감시기: {watchdog_detail} / 편집 모드: {last_detail}"
+        if time.monotonic() >= deadline:
+            break
+        sleep(interval_sec)
+
+    return False, (
+        f"accept-edits 모드를 {deadline_sec:.0f}초 안에 확보하지 못했습니다. "
+        f"감시기: {watchdog_detail} (성공={watchdog_ok}) / 마지막 사유: {last_detail}"
+    )
+
+
+def spawn_permission_setup(terminal: str, *, popen=subprocess.Popen) -> None:
+    """승인 설정을 분리된 자식으로 넘깁니다.
+
+    부모는 곧바로 agy 를 exec 해서 사라지므로 여기서 기다릴 수 없습니다. 자식은
+    자기 세션으로 떨어져 나가 agy TUI 가 뜬 뒤에 일을 합니다.
+    """
+    log_path = Path(".orca/permission_setup.log")
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = log_path.open("a", encoding="utf-8")
+    except OSError:
+        handle = subprocess.DEVNULL
+    popen(
+        [sys.executable, str(Path(__file__).resolve()), PERMISSION_SETUP_FLAG, terminal],
+        stdout=handle,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
+    # 자식 모드: 부모가 exec 로 사라진 뒤 승인 설정만 수행합니다. argparse 앞에서
+    # 갈라내야 런처 인자 규약을 건드리지 않습니다.
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] == PERMISSION_SETUP_FLAG:
+        if len(raw) < 2 or not raw[1].strip():
+            sys.stderr.write(f"오류: {PERMISSION_SETUP_FLAG} 에는 터미널 핸들이 필요합니다\n")
+            return 2
+        ok, detail = acquire_permissions(raw[1].strip())
+        print(f"[권한설정] {'확보' if ok else '실패'}: {detail}", flush=True)
+        return 0 if ok else 1
+
     parser = argparse.ArgumentParser(description="Antigravity 워커 런처")
     parser.add_argument(
         "--model",
@@ -82,6 +187,22 @@ def main(argv: list[str] | None = None) -> int:
 
     env = dict(os.environ)
     cmd = build_command(args.model, prompt)
+
+    # 이 런처 경로는 taskctl dispatch 를 거치지 않아 권한 자동 승인 4단계가
+    # 빠집니다. 코디네이터가 prepare-worker 를 따로 부르는 것을 잊으면 워커가
+    # 파일 편집 대화창마다 멈추고 사람이 손으로 승인하게 됩니다. 기억에 의존하지
+    # 않도록 런처가 직접 겁니다.
+    terminal = os.environ.get("ORCA_TERMINAL_HANDLE", "").strip()
+    if terminal:
+        spawn_permission_setup(terminal)
+        print(f"권한 설정 예약: {terminal} (.orca/permission_setup.log)", flush=True)
+    else:
+        # 조용히 넘어가면 승인이 걸린 줄 알고 기동합니다. 화면에 남겨야 합니다.
+        sys.stderr.write(
+            "경고: ORCA_TERMINAL_HANDLE 이 없어 권한 자동 승인을 걸지 못했습니다. "
+            "코디네이터가 orca_taskctl.py prepare-worker 를 직접 실행해야 합니다\n"
+        )
+
     print(f"기동: agy --model {args.model} (지시문 {len(prompt)}자)", flush=True)
     # 인자는 셸을 거치지 않고 그대로 전달되므로 주입 위험이 없습니다. 모델 ID 와
     # 지시문 모두 코디네이터가 만든 값입니다.

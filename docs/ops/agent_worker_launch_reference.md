@@ -38,7 +38,18 @@
 | `scripts/orca_auto_approve.py` | **셸 명령 승인 대화창** 화이트리스트 자동 승인 | `taskctl dispatch` 가 자동 기동. 실패 시 수동: `python3 scripts/orca_auto_approve.py <handle> [...]` 를 배경으로 상시 실행 |
 
 두 층은 서로를 대체하지 않습니다. `shift+tab` 만 보내고 감시기를 띄우지 않으면
-`cat > file`, `mkdir`, `top` 같은 명령에서 그대로 멈춥니다.
+`cat > file`, `mkdir`, `top` 같은 명령에서 그대로 멈춥니다. 반대로 감시기만 띄우면
+**파일 편집 대화창이 통째로 남습니다.** 감시기는 파일 편집을 승인하지 않고 보류하며
+(`[보류] 파일 편집/생성 승인은 수동 판단 필요`), 그때부터 사람이 매번 손으로
+눌러야 합니다. 2026-08-31 세션에서 이 조합으로 워커 한 대의 승인을 사용자가
+직접 처리했습니다.
+
+**`shift+tab` 을 연속으로 보내지 마십시오.** 순환은
+`normal -> accept-edits -> plan -> normal` 이라 과전송하면 `plan` 으로 넘어가
+워커가 파일을 아예 못 고칩니다. 한 번 보낼 때마다 `detect_antigravity_mode` 로
+모드를 확인하십시오. 화면이 스피너면 `unknown` 이 나오는데 이는 판정 불가일 뿐이므로
+**키를 더 보내지 말고 잠시 뒤 다시 읽습니다.** `enable_file_edit_auto_approve` 의
+`force=True` 는 이 판정 불가 가드를 꺼 버리므로 습관적으로 쓰지 마십시오.
 
 ### 0.5.1 터미널별 단일 감시기 보장 및 생명주기
 
@@ -362,6 +373,29 @@ orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
 # 2. Dispatch 해서 preamble 을 받고 워크트리에 씁니다
 orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json
 #    결과의 preamble 을 <워크트리>/.orca/preamble.txt 로 저장하면 런처가 이어받습니다
+```
+
+**이 경로는 `taskctl dispatch` 를 거치지 않습니다.** 그래서 0.5 절의 권한 자동 승인
+4단계가 빠지고, 코디네이터가 `prepare-worker` 를 따로 부르는 것을 잊으면 워커가
+파일 편집 대화창마다 멈춥니다. 2026-08-31 세션에서 실제로 이 일이 일어났고,
+절차를 기억에 의존하게 둔 것이 원인이었습니다.
+
+`scripts/orca_agy_launch.py` 는 이제 이를 **스스로 겁니다.** `ORCA_TERMINAL_HANDLE`
+환경변수로 자기 터미널을 알아내 `exec` 직전에 분리된 자식을 띄우고, 자식이 agy TUI
+기동을 기다렸다가 감시기 부착과 accept-edits 확보를 수행합니다. 결과는
+`<워크트리>/.orca/permission_setup.log` 에 남습니다. `ORCA_TERMINAL_HANDLE` 이 없으면
+조용히 넘어가지 않고 stderr 에 경고를 남깁니다.
+
+```bash
+tail -2 <워크트리>/.orca/permission_setup.log   # [권한설정] 확보: ... 를 확인
+```
+
+**다른 런처(`orca_kimi_launch.py`)에는 아직 이 자동화가 없습니다.** 그 경로로 띄웠다면
+터미널 생성 직후 다음을 직접 실행하십시오.
+
+```bash
+python3 scripts/orca_taskctl.py prepare-worker --terminal <handle> \
+  --cli-type <kimi|opencode|...> --model <id> --launcher <런처 경로>
 ```
 
 런처는 커밋 고지문을 자동으로 덧붙입니다. one-shot 워커가 커밋 없이 완료를
