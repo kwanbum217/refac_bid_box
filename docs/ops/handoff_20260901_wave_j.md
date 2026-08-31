@@ -41,6 +41,9 @@
 
 ## 4. 다음 세션에서 이어받을 것
 
+> **이 절은 구형입니다.** I-F 는 이후 `8b9e5e9` 로 병합됐습니다. 다음 착수는
+> [`handoff_20260901_session_close.md`](handoff_20260901_session_close.md) 3장을 따르십시오.
+
 | 순서 | 작업 | 근거 |
 | --- | --- | --- |
 | 1 | I-F 계약 강제 브랜치 finalize 후 병합 판정. MATCH AGAINST 코드와 혼동하지 말 것 | Wave J3 리뷰 `task_j3_if_review.md` |
@@ -60,5 +63,5 @@
 | --- | --- |
 | 수정 파일 | `docs/context/CURRENT_STATE.md`, `docs/ops/ngram_fulltext_cutover_runbook.md`, `docs/ops/handoff_20260901_wave_j.md`, `docs/analysis/task_d33cbcec73c1.md` |
 | 운영 DB / src / 기능 플래그 | 미수정 |
-| I-F / I-H 브랜치 | 미수정, 미병합 상태 유지 |
+| I-F / I-H 브랜치 | 당시 미수정. I-F 는 이후 세션에서 병합됨 |
 | 규칙 검증 | 커밋 전 통과 예정 |
