@@ -116,6 +116,7 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
 | `ground_truth` | list[object] | 예 | 이미 검증된 불변 사실 목록. `recheck: false` 명시로 재조사 방지 |
 | `allowed_read_files` | list[string] | 예 | 워커가 읽을 수 있는 파일 또는 경로 glob 목록 |
 | `allowed_write_files` | list[string] | 예 | 워커가 생성/수정할 수 있는 파일 목록 (최소 범위 격리) |
+| `required_write_files` | list[string] | 선택 | Intent 의 scope 에서 도출되는 필수 쓰기 파일 목록. `allowed_write_files` 의 부분집합이어야 함 |
 | `search_scope` | object | 예 | `mode: deny_by_default` 기본 적용. 허용 glob 외 전역 탐색 차단 |
 | `forbidden` | list[string] | 예 | 절대 금지 항목 (전역 문서 재독, DB 변경, main 직접 수정 등) |
 | `shared_resources` | list[object] | 예 | Docker, DB, 서빙 모델 루트 등 공유 자원의 소유권 수준 |
@@ -582,3 +583,16 @@ orca orchestration send --from <worker_handle> --dispatch-capability <dcap> \
 2. **스킬 미러 3종 일치**: `.agents/skills/orca-section-coordination/SKILL.md`, `.claude/skills/orca-section-coordination/SKILL.md`, `.opencode/skills/orca-section-coordination/SKILL.md` 파일이 상호 100% 바이트 단위로 동일해야 합니다 (`cmp -s`).
 3. **규칙 검증 통과**: `python3 scripts/validate_agent_rules.py --quiet` 검사에서 6/6 항목이 모두 PASS해야 합니다.
 4. **Git 체크 통과**: `git diff --check` 검사에서 후행 공백 및 포맷 위반이 없어야 합니다.
+
+---
+
+## 8. Fail-Closed 계약 강제 및 보호 장치
+
+사람의 주의에 의존하지 않고 계약 위반을 실행 단계에서 기계적으로 fail-closed 차단합니다.
+
+| 보호 단계 | 도구 / 장치 | 차단 대상 및 불변식 |
+| --- | --- | --- |
+| **Capsule 생성 / Dispatch** | `scripts/orca_taskctl.py` | `required_write_files` 가 `allowed_write_files` 의 부분집합이 아니면 create/dispatch 차단. 동일 Task 의 복수 사본(spec vs actual) 간 drift 발생 시 `capsule_spec_error` 로 dispatch 차단. |
+| **Git 커밋 단계 (Pre-commit)** | `scripts/orca_scope_guard.py` | 워크트리 설정 `orca.capsule` 을 읽고, staged 파일이 `allowed_write_files` 밖이면 커밋 거부 (`worker_scope_violation`). 읽기 전용 Task 는 모든 staged 커밋 거부. |
+| **완료 보고 전송 단계** | `scripts/orca_worker_done_guard.py` | 단일 완료 진입점. Capsule/Report 실존, 필수 필드, `task_id` 일치, `commit` 실존, `changed_files` 와 실제 git diff 일치, 쓰기 범위 준수 검증 통과 시에만 `orca orchestration send` 허용. |
+| **상시 감시 단계** | `scripts/orca_worker_watch.py` | `worker_done` 메시지에 `reportPath` 가 없거나 보고 파일이 실존하지 않으면 완료가 아닌 `[차단:failure]` 로 분류. |

@@ -7,6 +7,18 @@ exclude: '^(data/|chroma_db/|ml_registry/|migrations/|\.venv/)'
 
 repos:
   # ==========================================
+  # Orca Scope Guard (로컬 훅 - 최우선 실행)
+  # ==========================================
+  - repo: local
+    hooks:
+      - id: orca-scope-guard
+        name: Orca Worktree Scope Guard
+        entry: python3 scripts/orca_scope_guard.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # ==========================================
   # Ruff (Formatting & Linting)
   # ==========================================
   - repo: https://github.com/astral-sh/ruff-pre-commit

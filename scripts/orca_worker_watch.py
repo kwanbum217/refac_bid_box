@@ -313,7 +313,71 @@ def terminal_tail(handle: str, lines: int = TAIL_LINES) -> str:
     return "\n".join(detail.splitlines()[-lines:])
 
 
-def detect_block(screen_tail: str) -> tuple[str, str, BlockKind] | None:
+def check_worker_done_report(
+    screen_tail: str,
+    worktree_path: str | None = None,
+    repo: Path | None = None,
+) -> tuple[str, str, BlockKind] | None:
+    """worker_done 전송/완료 신호가 있으나 reportPath 가 없거나 보고 파일이 존재하지 않는 경우 차단으로 판정합니다."""
+    norm = normalize_text(screen_tail)
+    if "worker_done" not in norm and "orchestration send" not in norm:
+        return None
+
+    # worker_done 관련 명령/메시지가 포함된 줄 탐색
+    lines = [line.strip() for line in screen_tail.splitlines() if line.strip()]
+    done_lines = [
+        line
+        for line in lines
+        if "worker_done" in line.lower()
+        or ("send" in line.lower() and ("--type" in line.lower() or "worker_done" in line.lower()))
+    ]
+    if not done_lines:
+        return None
+
+    # report_path / --report-path / reportPath 탐색
+    target_path = None
+    for line in done_lines:
+        m_flag = re.search(r"--report(?:-path)?\s+[\"']?([^\s\"']+)[\"']?", line)
+        if m_flag:
+            target_path = m_flag.group(1).strip()
+            break
+        m_json = re.search(r'["\']?report(?:_p|P)ath["\']?\s*:\s*["\']([^"\']+)["\']', line)
+        if m_json:
+            target_path = m_json.group(1).strip()
+            break
+
+    if not target_path:
+        return (
+            "worker_done 완료 메시지에 reportPath 가 누락됨",
+            "worker_done_guard 를 통해 report_path 를 지정하여 전송하십시오",
+            "failure",
+        )
+
+    # 보고 파일 존재 여부 확인
+    base_dir = Path(worktree_path) if worktree_path else (repo or Path.cwd())
+    resolved_file = Path(target_path)
+    if not resolved_file.is_absolute():
+        resolved_file = base_dir / resolved_file
+
+    if not resolved_file.is_file():
+        return (
+            f"worker_done 보고 파일이 존재하지 않음 ({target_path})",
+            f"보고 JSON 파일({target_path})을 생성한 후 worker_done_guard 로 전송하십시오",
+            "failure",
+        )
+
+    return None
+
+
+def detect_block(
+    screen_tail: str,
+    worktree_path: str | None = None,
+    repo: Path | None = None,
+) -> tuple[str, str, BlockKind] | None:
+    done_block = check_worker_done_report(screen_tail, worktree_path, repo)
+    if done_block:
+        return done_block
+
     norm_tail = normalize_text(screen_tail)
     prompt_match: tuple[str, str, BlockKind] | None = None
     for needle, reason, fix, kind in BLOCK_SIGNALS:
@@ -384,7 +448,7 @@ def collect(
         if info:
             state.terminal = info.get("handle")
             if state.terminal:
-                found = detect_block(terminal_tail(state.terminal))
+                found = detect_block(terminal_tail(state.terminal), worktree_path=path, repo=repo)
                 if found:
                     state.blocked_reason, state.blocked_fix, state.blocked_kind = found
                     if state.blocked_kind == "failure":
