@@ -12,8 +12,8 @@
 
 | 조건 | 검증 방법 | 현재 상태 |
 | --- | --- | :---: |
-| I-F 병합 완료 (`kwanbum217/orca-i-f`) | `git log --oneline main` 으로 커밋 확인 | 미병합 |
-| I-H 병합 완료 (`kwanbum217/orca-i-h`) | `git log --oneline main` 으로 커밋 확인 | 미병합 |
+| ngram 선행필터 코드가 `main` 에 있고 기본값 OFF | `NGRAM_PREFILTER_ENABLED` 기본값과 `src/rag/structured_data.py` | Wave H2 로 충족. I-F 와 무관 |
+| I-H 경계값 7 클래스 픽스처 병합 | `git log --oneline main` 으로 `kwanbum217/orca-i-h` 확인 | 미병합 |
 | 경계값 7 클래스 실측 완료 | 5단계 하네스 실행 | 미실측 |
 | 수집 서비스 정지 또는 점검 시간대 확인 | 운영 캘린더 | 확인 필요 |
 | 디스크 여유 공간 >= 60GB | `df -h` | 확인 필요 |

@@ -193,11 +193,10 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 `bid_ntce_nm` 은 제외합니다. 남은 작업은 다음 순서입니다.
   1. 구현: `src/rag/structured_data.py` 의 해당 두 컬럼 질의에 `MATCH AGAINST` 선행
      필터를 추가하되 기존 `LIKE` 를 그대로 유지해 결과 의미를 보존합니다.
-     **I-F 브랜치(`kwanbum217/orca-i-f`)에서 구현 완료됐으나 미병합** 상태입니다
-     (diff 절단으로 `finalize` fail-closed 거부). **I-C 는 `citations_wrong` 으로 반려**됐습니다.
-  2. 누락 탐지 회귀 테스트 추가(위 주의 1). 이것 없이 병합하지 않습니다.
-     **I-H 브랜치(`kwanbum217/orca-i-h`)에서 경계값 7 클래스 픽스처까지 작성됐으나 미병합**
-     상태입니다(독립 리뷰 미실행).
+     **이 코드는 Wave H2 로 `main` 에 들어가 있고 기본값 OFF 입니다.** 운영 인덱스가
+     없고 플래그가 꺼져 있으므로 아직 질의 경로를 바꾸지 않습니다.
+  2. 누락 탐지 회귀 테스트 추가(위 주의 1). 이것 없이 플래그를 켜지 않습니다.
+     I-H 브랜치(`kwanbum217/orca-i-h`)에 경계값 7 클래스 픽스처가 있으나 **미병합**입니다.
   3. 운영 인덱스 생성은 **사용자 승인 후** 별도 수행합니다. 27.3GB 테이블 재구축과
      쓰기 차단이 따르므로 수집이 멈춘 시간대를 고릅니다. 실행 절차는
      [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md)를 따릅니다.
@@ -249,9 +248,10 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 - **ngram MySQL 8 격리 CI (2026-08-31, 병합 완료)**: 운영 DB와 분리된 MySQL 8 서비스에 최소 스키마와 ngram FULLTEXT 인덱스를 만들고 전용 통합 검증을 실행하는 CI job을 추가했습니다. 운영 FULLTEXT 인덱스 생성과 기능 플래그 활성화는 사용자 승인 전까지 보류합니다.
 - **Wave I 미병합 현황 (2026-09-01 기준)**: I-A/I-B/I-D/I-G 는 `main` 에 병합 완료입니다.
   I-C 는 `citations_wrong` 으로 반려됐습니다(브랜치 `kwanbum217/orca-i-c`, 커밋 `9210641` 보존).
-  I-F(MATCH AGAINST 구현)는 브랜치 `kwanbum217/orca-i-f`(커밋 `f9184f5`)에서 미병합 상태입니다
-  (diff 절단으로 `finalize` fail-closed 거부). I-H(경계값 7 클래스 픽스처)는 브랜치
-  `kwanbum217/orca-i-h`(커밋 `d8aa9a9`)에서 미병합 상태입니다(독립 리뷰 미실행).
+  I-F 는 **조율 계약 강제**(scope guard, worker_done guard)이며 MATCH AGAINST 구현이 아닙니다.
+  브랜치 `kwanbum217/orca-i-f`(커밋 `f9184f5`)는 미병합입니다. Wave J3 가 Intent 대조 리뷰를
+  남겼고(`docs/analysis/task_j3_if_review.md`), 병합은 코디네이터 finalize 판정 후입니다.
+  I-H 는 경계값 7 클래스 픽스처이며 브랜치 `kwanbum217/orca-i-h`(커밋 `d8aa9a9`)에서 미병합입니다.
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
 - Windows Docker Desktop 실기 미검증.
@@ -262,7 +262,8 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 - **공고 상세 페이지 쿼리 실측 완료 (2026-08-30)**: `similar_announcement_latest_filter` 로 전환해
   후보를 기관·카테고리로 먼저 좁힌 뒤 동일 그룹 최신 차수 여부를 `NOT EXISTS` 로 판정합니다.
   전체 테이블 `row_number()` 랭킹을 제거했고 window 의 결과 의미는 동치 테스트로 고정했습니다.
-  **EXPLAIN ANALYZE 전후 비교와 상세 API 레이턴시 실측 완료**
+  **EXPLAIN ANALYZE 전후 비교와 상세 API 레이턴시 실측 완료.**
+  신 구현 5.09ms, `GET /api/v1/bids/{pk}` P95 47.98ms, 추가 인덱스 불필요
   (커밋 `49bb224`, [`detail_query_explain_20260830.md`](../analysis/detail_query_explain_20260830.md)).
 - **RAG 정본 갱신 및 T7 판정 종료 (2026-08-30)**: HEAD `6210ee1` 에서 v2 32문항 x 3회를 측정해 `canonical=true`, 요청 실패 0/96 으로 정본을 갱신했습니다([`blind_fixture_v2_canonical_20260830.md`](../analysis/blind_fixture_v2_canonical_20260830.md)). numeric 95.8%(138/144), evidence recall 0.958, refusal 24/24, 금지 표현 위반 0, P50 3,147ms, P95 19,897ms 입니다. **T7 conditional vector bypass 는 품질 회귀가 없습니다.** 근거는 지표가 아니라 검색 동일성입니다. 두 측정에서 성공한 공통 94개 요청의 `retrieved_evidence_ids` 가 순서까지 한 건도 다르지 않습니다. T7 판정을 종료합니다.
 - **채점 규약 결함 해소 (2026-08-30)**: fixture 의 `context_sufficient` 는 검색 성공을 전제하므로, 검색이 기대 문서를 못 가져온 상태의 정직한 거부가 과잉응답으로, 거부 답변의 인용 부재가 citation 누락으로 집계됐습니다. 하네스가 이제 `retrieval_miss` 를 판정해 citation 과 과잉응답 집계에서 분리하고, 제외 전 원시값과 제외된 문항 ID 를 `summary` 블록에 함께 남깁니다. numeric 과 evidence recall 은 검색 성능을 그대로 드러내야 하므로 제외하지 않습니다. **보정 후 2026-08-30 정본은 citation 69/69(100%), 과잉응답 0 으로 T7 이전 기준선과 일치**합니다.

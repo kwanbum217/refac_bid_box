@@ -25,7 +25,8 @@
   이미 실측이 완료돼 있었습니다. 신 구현 5.09ms, API P95 47.98ms, 추가 인덱스 불필요.
   문서를 사실에 맞게 수정했습니다.
 
-- **Wave I 미병합 현황**: I-A/I-B/I-D/I-G 는 `main` 병합 완료. I-C 는 반려. I-F/I-H 는 미병합.
+- **Wave I 미병합 현황**: I-A/I-B/I-D/I-G 는 `main` 병합 완료. I-C 는 반려.
+  I-F 는 조율 계약 강제이며 MATCH AGAINST 구현이 아니다. I-H 는 경계값 픽스처. 둘 다 미병합.
 
 ---
 
@@ -42,8 +43,8 @@
 
 | 순서 | 작업 | 근거 |
 | --- | --- | --- |
-| 1 | I-F 재검증 (`finalize --max-diff-chars 120000`) 후 병합 | `handoff_20260831_wave_i_prep.md` 0절 |
-| 2 | I-H 독립 리뷰 후 병합 (I-F 병합 뒤 순서 준수) | `handoff_20260831_wave_i_prep.md` 0절 |
+| 1 | I-F 계약 강제 브랜치 finalize 후 병합 판정. MATCH AGAINST 코드와 혼동하지 말 것 | Wave J3 리뷰 `task_j3_if_review.md` |
+| 2 | I-H 경계값 픽스처 독립 리뷰 후 병합 | `handoff_20260831_wave_i_prep.md` 0절 |
 | 3 | 경계값 7 클래스 실측 (ngram 런북 5단계, 인덱스 생성 후) | `ngram_fulltext_cutover_runbook.md` |
 | 4 | 운영 FULLTEXT 인덱스 생성 — **사용자 승인 후** | `ngram_fulltext_cutover_runbook.md` |
 | 5 | Cold canonical 재측정 (E4 규약) | `ngram_fulltext_cutover_runbook.md` 7단계 |

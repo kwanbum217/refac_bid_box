@@ -27,7 +27,7 @@
 | ngram 선행필터: 기본값 OFF 플래그, 기관명·업체명 집계 두 경로만 적용 | 코디네이터 확인 사실 |
 | I-A/I-B/I-D/I-G: `main` 병합 완료 | `handoff_20260831_wave_i_prep.md` 0절 |
 | I-C: `citations_wrong` 반려 (`kwanbum217/orca-i-c`, `9210641`) | `handoff_20260831_wave_i_prep.md` 0절 |
-| I-F: 미병합 (`kwanbum217/orca-i-f`, `f9184f5`) | `handoff_20260831_wave_i_prep.md` 0절 |
+| I-F: 조율 계약 강제, MATCH AGAINST 아님. 미병합 (`kwanbum217/orca-i-f`, `f9184f5`) | `handoff_20260831_wave_i_prep.md` 0절 |
 | I-H: 미병합 (`kwanbum217/orca-i-h`, `d8aa9a9`) | `handoff_20260831_wave_i_prep.md` 0절 |
 | 운영 FULLTEXT 인덱스 생성: 사용자 승인 전 보류 | 코디네이터 확인 사실 |
 
