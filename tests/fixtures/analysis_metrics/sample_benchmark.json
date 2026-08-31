@@ -1,0 +1,22 @@
+{
+  "status": "ok",
+  "summary_cold": {
+    "total_ms": {
+      "n": 2,
+      "p99_ms": 69195.04,
+      "max_ms": 107952.75
+    },
+    "sql_ms": {
+      "n": 2,
+      "p99_ms": 63578.93,
+      "max_ms": 97087.81
+    }
+  },
+  "summary_warm": {
+    "sql_ms": {
+      "n": 4,
+      "p50_ms": 7.03,
+      "max_ms": 8.88
+    }
+  }
+}
