@@ -13,6 +13,7 @@ import re
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -322,29 +323,35 @@ def run_model(
 
 
 def extract_json_from_response(raw_text: str) -> tuple[dict[str, Any] | None, str]:
-    """모델 응답에서 JSON 객체를 관대하게 추출합니다.
+    """모델 응답에서 첫 번째 완전한 JSON 객체를 추출합니다.
 
-    첫 번째 여는 중괄호 '{' 부터 마지막 닫는 중괄호 '}' 까지를 추출하여 파싱합니다.
+    json.JSONDecoder().raw_decode 를 사용하여 다중 객체, 앞뒤 설명 텍스트,
+    마크다운 코드펜스 내의 첫 완전한 JSON 객체를 안전하게 파싱합니다.
     성공 시 (dict, ""), 실패 시 (None, 에러사유).
     """
     if not raw_text or not raw_text.strip():
         return None, "응답 텍스트가 비어 있음"
 
-    start = raw_text.find("{")
-    end = raw_text.rfind("}")
-    if start == -1 or end == -1 or end < start:
+    if "{" not in raw_text:
         return None, "응답에서 JSON 객체 중괄호({...})를 찾을 수 없음"
 
-    candidate = raw_text[start : end + 1]
-    try:
-        data = json.loads(candidate)
-    except json.JSONDecodeError as exc:
-        return None, f"JSON 디코딩 실패: {exc}"
+    decoder = json.JSONDecoder()
+    start_idx = 0
+    last_err: Exception | None = None
 
-    if not isinstance(data, dict):
-        return None, "추출된 JSON 최상위가 객체(dict)가 아님"
+    while True:
+        pos = raw_text.find("{", start_idx)
+        if pos == -1:
+            break
+        try:
+            obj, _ = decoder.raw_decode(raw_text, pos)
+            if isinstance(obj, dict):
+                return obj, ""
+        except json.JSONDecodeError as exc:
+            last_err = exc
+        start_idx = pos + 1
 
-    return data, ""
+    return None, f"JSON 디코딩 실패: {last_err or '유효한 JSON 객체를 파싱할 수 없음'}"
 
 
 def format_human_verdict(
@@ -543,8 +550,23 @@ def run_reviewer(
             return 2, json.dumps({"error": err_msg, "exit_code": 2}, ensure_ascii=False, indent=2)
         return 2, f"오류: {err_msg}"
 
-    # 7. JSON 추출 및 --out 저장
+    # 7. JSON 추출 및 파싱 실패 시 1회 재시도
     report_data, extract_err = extract_json_from_response(stdout)
+    if report_data is None:
+        # 파싱 실패 시 동일 프롬프트로 정확히 1회 재시도
+        retry_code, retry_stdout, retry_stderr = model_runner(prompt, model, timeout)
+        if retry_code == 0:
+            stdout = retry_stdout
+            report_data, extract_err = extract_json_from_response(stdout)
+        else:
+            stdout = retry_stdout if retry_stdout else stdout
+            if retry_code == -1:
+                extract_err = f"재시도 모델 호출 타임아웃 ({timeout}초 초과)"
+            else:
+                extract_err = (
+                    f"재시도 모델 호출 실패 (종료 코드 {retry_code}): {retry_stderr.strip()}"
+                )
+
     if report_data is None:
         raw_path = Path(str(out_path) + ".raw")
         try:
@@ -552,6 +574,16 @@ def run_reviewer(
             raw_path.write_text(stdout, encoding="utf-8")
         except Exception as write_raw_exc:
             sys.stderr.write(f"경고: raw 파일 쓰기 실패 ({raw_path}): {write_raw_exc}\n")
+
+        reports_dir = repo_path / ".orca" / "reports"
+        try:
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+            ts_raw_path = reports_dir / f"{out_path.stem}_{ts}.raw"
+            ts_raw_path.write_text(stdout, encoding="utf-8")
+        except Exception as write_reports_exc:
+            sys.stderr.write(f"경고: reports raw 파일 쓰기 실패: {write_reports_exc}\n")
+
         err_msg = f"모델 응답 JSON 파싱 실패 ({extract_err}). 원문을 {raw_path} 에 저장했습니다."
         if as_json:
             return 2, json.dumps(

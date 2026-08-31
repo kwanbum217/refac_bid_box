@@ -975,3 +975,116 @@ def test_allow_truncated_diff_permits_exit_code_zero_on_oversized_diff(tmp_path,
 
     assert code == 0
     assert "Diff 절단 여부:     절단됨 (상한 초과)" in output
+
+
+def test_extract_json_parses_first_complete_json_object_with_trailing_data():
+    """(37) 다중 JSON 객체 및 후속 데이터가 있어도 첫 번째 완전한 JSON 객체만 정상 추출합니다."""
+    # 1. 다중 JSON 객체 연결
+    multi_json = '{"a": 1, "b": "first"} {"c": 2, "d": "second"}'
+    data, err = extract_json_from_response(multi_json)
+    assert err == ""
+    assert data == {"a": 1, "b": "first"}
+
+    # 2. 설명 텍스트 + 다중 JSON 객체
+    surrounded_multi = (
+        "리뷰 결과입니다.\n"
+        '{"schema": "ORCA_REVIEW_DONE_V2", "verdict": "pass"}\n'
+        '{"extra_info": "ignored"}\n'
+        "이상입니다."
+    )
+    data, err = extract_json_from_response(surrounded_multi)
+    assert err == ""
+    assert data == {"schema": "ORCA_REVIEW_DONE_V2", "verdict": "pass"}
+
+    # 3. 앞쪽에 유효하지 않은 중괄호 텍스트가 있고 뒤에 유효한 JSON 이 오는 경우
+    invalid_then_valid = '다음은 {잘못된 텍스트} 이며 진짜는: {"valid": true} 입니다.'
+    data, err = extract_json_from_response(invalid_then_valid)
+    assert err == ""
+    assert data == {"valid": True}
+
+
+def test_retry_on_parse_failure_succeeds_on_second_attempt(tmp_path, mock_git):
+    """(38) 첫 번째 응답이 깨진 JSON 이어도 1회 재시도에서 유효한 JSON 을 받으면 성공(0) 처리됩니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    call_count = 0
+
+    def mock_runner(prompt, model, timeout):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return 0, "깨진 응답: {invalid json", ""
+        return 0, json.dumps(SAMPLE_VALID_REPORT, ensure_ascii=False), ""
+
+    code, output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        model_runner=mock_runner,
+    )
+
+    assert code == 0
+    assert call_count == 2
+    assert out_file.exists()
+    saved = json.loads(out_file.read_text(encoding="utf-8"))
+    assert saved["schema"] == "ORCA_REVIEW_DONE_V2"
+    assert "최종 판정: 통과 (pass)" in output
+
+
+def test_retry_on_parse_failure_fails_after_exactly_one_retry(tmp_path, mock_git):
+    """(39) 재시도에서도 JSON 파싱이 실패하면 정확히 2회 호출 후 종료 코드 2 로 실패합니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+    raw_file = Path(str(out_file) + ".raw")
+
+    call_count = 0
+
+    def mock_runner(prompt, model, timeout):
+        nonlocal call_count
+        call_count += 1
+        return 0, f"깨진 응답 회차 {call_count}: {{bad: json}}", ""
+
+    code, output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        repo=tmp_path,
+        model_runner=mock_runner,
+    )
+
+    assert code == 2
+    assert call_count == 2
+    assert raw_file.exists()
+    assert "깨진 응답 회차 2" in raw_file.read_text(encoding="utf-8")
+    assert "JSON 파싱 실패" in output
+
+    # .orca/reports/ 아래에도 타임스탬프 .raw 파일이 생성되었는지 검증
+    reports_dir = tmp_path / ".orca" / "reports"
+    assert reports_dir.exists()
+    report_raw_files = list(reports_dir.glob("*.raw"))
+    assert len(report_raw_files) == 1
+    assert "깨진 응답 회차 2" in report_raw_files[0].read_text(encoding="utf-8")
+
+
+def test_no_retry_when_first_attempt_succeeds(tmp_path, mock_git):
+    """(40) 첫 번째 시도에서 정상 파싱되면 추가 재시도 없이 1회만 호출합니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    call_count = 0
+
+    def mock_runner(prompt, model, timeout):
+        nonlocal call_count
+        call_count += 1
+        return 0, json.dumps(SAMPLE_VALID_REPORT, ensure_ascii=False), ""
+
+    code, _output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        model_runner=mock_runner,
+    )
+
+    assert code == 0
+    assert call_count == 1
