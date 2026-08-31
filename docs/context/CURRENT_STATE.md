@@ -65,9 +65,9 @@ q21 재순위 결함이 닫혔습니다. 공통 96건 중 근거 ID 변경은 q2
 
 > **주의**: Lexical 채널은 `dataset = "announcement"` 만 조회해 낙찰 결과 필드를 담지 않습니다. 포함 매칭 문서를 벡터 결과 상위로 승격하면 결과 보유 문서가 `top_k` 절단선 밖으로 밀려 낙찰 질의가 답을 잃습니다. 이때 evidence recall 과 citation 은 만점을 유지하므로 **검색 지표만으로는 회귀가 드러나지 않습니다.** 상세는 [`serial_measurement_20260830.md`](../analysis/serial_measurement_20260830.md) 3장.
 
-### 2.4 RAG 구간 레이턴시 정본 (2026-08-30)
+### 2.4 RAG 구간 레이턴시 정본 (2026-08-30, warm/steady-state 한정)
 
-- **측정 조건**: 동일 fixture 96요청, HEAD `a81f2d5` 동결, `canonical=true`, trace 1:1 상관 검증 통과
+- **측정 조건**: 동일 fixture 96요청, HEAD `a81f2d5` 동결, `canonical=true`, trace 1:1 상관 검증 통과 (Redis/DB 캐시가 활성화된 warm/steady-state 조건)
 - **산출물**: [`rag_segments_canonical_20260830.json`](../../data/benchmarks/rag_segments_canonical_20260830.json)
 
 | 구간 | P50 (ms) | P95 (ms) | 비중 |
@@ -79,7 +79,7 @@ q21 재순위 결함이 닫혔습니다. 공통 96건 중 근거 ID 변경은 q2
 | plan / assembly / guard | 0.14 / 0.09 / 0.12 | 0.29 / 0.18 / 0.35 | 합계 0.01% 미만 |
 | **total** | **3,969.43** | **6,318.07** | 100% |
 
-지연의 **98.8%가 vector 와 llm** 두 구간에 몰려 있습니다. 최적화 대상은 이 둘뿐입니다.
+**warm/steady-state 조건**에서 지연의 **98.8%가 vector 와 llm** 두 구간에 몰려 있으며, 캐시 적중 상태의 최적화 대상은 이 둘입니다. 단, 본 구간 정본은 직전 측정이 캐시를 데워 놓은 warm 상태에 한정되며, 캐시가 식은 cold 상태에서는 SQL 구간 지연이 최대 97초까지 치솟습니다(상세는 [2.6절](#26-rag-정형-질의-콜드-스타트-결함-2026-08-30-부분-시정재측정-대기) 참조).
 
 > **주의**: 이 산출물의 **P99 와 max 를 게이트 판정선으로 쓰지 마십시오.** `benchmark_rag_segments.py` 에 warmup 단계가 없어 프로세스 재기동 직후 첫 요청 비용이 그대로 실립니다. 두 측정에서 교차 확인했습니다(M2 q01 cold 벡터 26,097ms = 전 구간 max, M1 q01 r1 28,646ms 후 r2 19,620 -> r3 11,746 단조 감소). 구간별 비중은 워밍업과 무관하므로 유효합니다.
 
@@ -111,7 +111,7 @@ q21 재순위 결함이 닫혔습니다. 공통 96건 중 근거 ID 변경은 q2
 | 캐시 적중 (warm) | 7.03ms | 8.88ms |
 | 캐시 미스 (cold) | - | **97,087.81ms** |
 
-`GROUP BY bidwinnr_nm` 이 `bid_results` 인덱스 3,267,347행을, `GROUP BY dminstt_nm` 이 `bid_announcements` 2,179,319행을 훑고 `Using temporary; Using filesort` 를 수행합니다. `_snapshot_scope` 가 날짜·기관 필터에서 스냅샷을 포기하므로 `"2026년"` 같은 흔한 표현이 전부 이 경로를 탑니다.
+`GROUP BY bidwinnr_nm` 이 `bid_results`(실제 3,423,008행, EXPLAIN rows 추정 3,267,347행) 인덱스를, `GROUP BY dminstt_nm` 이 `bid_announcements`(실제 5,490,072행, EXPLAIN rows 추정 2,179,319행)를 훑고 `Using temporary; Using filesort` 를 수행합니다. `_snapshot_scope` 가 날짜·기관 필터에서 스냅샷을 포기하므로 `"2026년"` 같은 흔한 표현이 전부 이 경로를 탑니다.
 
 > **측정 함정**: `src/rag/structured_data.py:237` 주석은 이 비용을 "2초" 로 적고 있으며 실측의 **25~48배 과소평가**입니다. 2.4절 구간 정본도 같은 함정으로 sql P50 을 7.39ms 로 기록했습니다(직전 측정이 캐시를 데워 놓았음). **캐시 상태를 명시하지 않은 SQL 레이턴시 수치는 신뢰하지 마십시오.** 상세는 [`rag_structured_sql_coldstart_20260830.md`](../analysis/rag_structured_sql_coldstart_20260830.md).
 
@@ -242,7 +242,6 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 - **공고 상세 페이지 쿼리 (코드 수정 완료, 실측 미수행)**: 2026-08-30 `similar_announcement_latest_filter` 로 전환해 후보를 기관·카테고리로 먼저 좁힌 뒤 동일 그룹 최신 차수 여부를 `NOT EXISTS` 로 판정합니다. 전체 테이블 `row_number()` 랭킹을 제거했고 window 의 결과 의미(`bid_ntce_dt` NULL-last 포함)는 동치 테스트로 고정했습니다. `latest_announcement_filter` 는 목록·색인 경로용으로 불변입니다. **EXPLAIN ANALYZE 전후 비교와 상세 API 레이턴시 실측은 미수행**이며, 인덱스 추가 여부는 실측 뒤 판단합니다.
 - **RAG 정본 갱신 및 T7 판정 종료 (2026-08-30)**: HEAD `6210ee1` 에서 v2 32문항 x 3회를 측정해 `canonical=true`, 요청 실패 0/96 으로 정본을 갱신했습니다([`blind_fixture_v2_canonical_20260830.md`](../analysis/blind_fixture_v2_canonical_20260830.md)). numeric 95.8%(138/144), evidence recall 0.958, refusal 24/24, 금지 표현 위반 0, P50 3,147ms, P95 19,897ms 입니다. **T7 conditional vector bypass 는 품질 회귀가 없습니다.** 근거는 지표가 아니라 검색 동일성입니다. 두 측정에서 성공한 공통 94개 요청의 `retrieved_evidence_ids` 가 순서까지 한 건도 다르지 않습니다. T7 판정을 종료합니다.
 - **채점 규약 결함 해소 (2026-08-30)**: fixture 의 `context_sufficient` 는 검색 성공을 전제하므로, 검색이 기대 문서를 못 가져온 상태의 정직한 거부가 과잉응답으로, 거부 답변의 인용 부재가 citation 누락으로 집계됐습니다. 하네스가 이제 `retrieval_miss` 를 판정해 citation 과 과잉응답 집계에서 분리하고, 제외 전 원시값과 제외된 문항 ID 를 `summary` 블록에 함께 남깁니다. numeric 과 evidence recall 은 검색 성능을 그대로 드러내야 하므로 제외하지 않습니다. **보정 후 2026-08-30 정본은 citation 69/69(100%), 과잉응답 0 으로 T7 이전 기준선과 일치**합니다.
-- **q21 검색 실패 원인 규명 (2026-08-30, 수정 미적용)**: 기대 근거 `bid_10169448` 은 DB·ChromaDB·Meilisearch 모두에 정상 실재하며 벡터 후보 30건 중 9위(거리 0.3161)로 후보 풀에도 있습니다. 누락 기전은 `src/rag/vector_store.py:203` 의 `_rerank_by_exact_title` 이 **자연어 질의 전체 문자열과 공고명을 동치(`==`)로** 비교해 정확 일치 승격이 작동하지 않고, 동명 공고 밀집군에서 `top_k=5` 절단선 밖으로 밀리는 것입니다. 즉 색인 누락이 아니라 재순위 결함입니다. 포함 관계 기반 수정안이 제안됐으나 **아직 적용하지 않았습니다** ([`q21_retrieval_miss_20260830.md`](../analysis/q21_retrieval_miss_20260830.md)).
 - **워커 모델 배정 자동화 (2026-08-30)**: `orca_taskctl` Dispatch 가 `orca_model_router` 배정표를 실제로 사용합니다. role x risk 로 모델이 정해지고 배정 근거가 출력과 `--json` 에 남으며, dry-run 과 실제 Dispatch 가 같은 경로를 씁니다. `--model` 명시 지정은 계속 우선하되 배정표를 벗어나면 경고가 남습니다. 2026-08-29 에 medium 위험도 Task 두 건에 flash-high 가 배정된 사고가 이 결선으로 막힙니다. 아울러 Antigravity 모드 판정에 `unknown` 을 도입해, 생성 중 화면이 스피너만 남아 상태줄을 못 읽는 경우 키를 보내지 않고 건너뜁니다(기존에는 normal 로 오판해 accept-edits 워커를 plan 으로 밀어냈습니다). 반려 후 재작업 Task 를 발급하는 명령도 추가됐습니다.
 - **정본 판정 게이트 결박 (2026-08-30)**: `measure_llm_quality.py` 의 `canonical` 판정이 provenance·모델·포트만 보던 결함을 닫았습니다. fixture sha256 이 정본 레지스트리(v2 32문항)에 있고, `--limit` 0, 전량 측정, 3회 이상 반복, 요청 실패 0 을 모두 만족해야 `canonical=true` 입니다. `--fixture` 는 필수 인자이며 실패 게이트는 `canonical_failed_gates` 에 남습니다. 이 결함으로 `canonical=true` 로 잘못 저장됐던 v1 24문항 측정은 `data/benchmarks/noncanonical/blind_fixture_v1_20260828_reference.json` 로 격리했습니다(측정값 불변). v1 로 측정된 과거 파일 4건은 당시 기록으로 보존하며 현재 정본과 직접 비교하지 않습니다([`data/benchmarks/README.md`](../../data/benchmarks/README.md)).
 - **조율 도구 결함 3건 정리 (2026-08-30 Wave A)**: 기동 준비를 런처·직접 Dispatch 공통 상태 기계로 통합하고 CLI 판정을 기동 시 기록한 메타데이터 우선으로 바꿨습니다. 모드 판정은 상태줄로 한정해 대화 본문 오염을 막고, accept-edits 는 현재 모드 확인 후 상한 안에서만 전환합니다. `orca_worker_watch.py` 에 `--watch`·`--min-commits`·`--stall-threshold` 를 넣어 자작 감시 루프를 없앴고(정체 후보와 차단은 구분, 정체만으로는 종료 코드 1 아님), `orca_auto_approve.py` 가 CLI 설문 같은 비명령 프롬프트를 화이트리스트로 해제합니다(되돌리기 어려운 확인은 제외).
