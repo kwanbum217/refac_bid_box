@@ -3,7 +3,8 @@
 > **작성일**: 2026-08-31
 > **Run**: `run_cd97f1f89fb6`
 > **기준 커밋**: 본 문서 병합 시점 `main`
-> **작성 사유**: 마감(18:20) 내 Wave H 병합이 끝나지 않을 경우를 대비한 인수인계
+> **작성 사유**: Wave G·H 인수인계
+> **갱신**: 2026-08-31 17:59 에 Wave H 전량 병합 완료. 3 장을 그에 맞게 갱신했습니다.
 
 ---
 
@@ -45,51 +46,29 @@ GPT 보고서는 당시 HEAD 기준이라 7건이 전부 유효했으나, q21 �
 
 ## 3. 미완료 (다음 세션에서 이어받을 것)
 
-### 3.1 H2 ngram feature flag — 검증 완료, 병합 대기
+Wave H 세 건은 **2026-08-31 17:59 에 전부 병합 완료**했습니다. Level 1 게이트,
+독립 리뷰어(`claude-sonnet-4-6`), 코디네이터 diff 검토를 모두 거쳤습니다.
+워크트리와 브랜치도 반납했습니다. 아래는 실제 잔여입니다.
 
-- 브랜치: `kwanbum217/orca-h2-ngram` (커밋 2건, 최신 `dbd1fb2f`)
-- 워크트리: `/Users/kwanbum/orca/workspaces/refac_bid_box/orca-h2-ngram`
-- `worker_done`: `.orca/capsules/task_6d21228d563c_rework/worker_done.json` (위반 0)
-- **Level 1 게이트 통과**
-- **Level 2 리뷰어 미완**: `claude-sonnet-4-6` 과 `qwen3.7-plus` 모두 JSON 파싱
-  실패로 종료 코드 2. 결함 지적이 아니라 모델 출력 형식 문제입니다.
-- Level 3(코디네이터 검토) 완료. 이 검토에서 실제 결함 1건을 찾아 재작업으로
-  닫았습니다(3.4 절).
-
-**다음 명령**:
-
-```bash
-python3 scripts/orca_run_reviewer.py \
-  --capsule <워크트리>/.orca/capsules/task_6d21228d563c/capsule.yaml \
-  --repo <워크트리> --diff-base main --diff-branch kwanbum217/orca-h2-ngram \
-  --model claude-sonnet-4-6 --max-diff-chars 80000 --out /tmp/h2_review.json --json
-```
-
-### 3.2 H3 런처 승인 공통화 — 게이트 대기
-
-- 브랜치: `kwanbum217/orca-h3-launcher` (커밋 1건 `bde4908`)
-- 워크트리: `/Users/kwanbum/orca/workspaces/refac_bid_box/orca-h3-launcher`
-- `worker_done`: `.orca/capsules/task_b39d478921fd_rework/worker_done.json` (위반 0)
-- Level 1 게이트 재실행 중이었습니다. Level 2·3 미실시.
-- 산출물: `scripts/orca_worker_launch_common.py` 신설, 세 런처 공통화.
-
-### 3.3 Wave I (미착수) — 운영 FULLTEXT 인덱스
+### 3.1 Wave I (미착수) — 운영 FULLTEXT 인덱스
 
 **사용자 승인 없이 시작하지 마십시오.** 수 GB 테이블의 최초 FULLTEXT 생성은
 테이블 재구축과 쓰기 차단을 유발할 수 있습니다.
 
-순서를 지키십시오.
+순서를 지키십시오. 코드는 이미 배포됐고 플래그는 OFF 입니다.
 
 ```
-플래그 OFF 로 코드 배포 (H2 병합)
-  -> 운영 FULLTEXT 인덱스 생성 (별도 runbook, Alembic 자동 마이그레이션 금지)
+운영 FULLTEXT 인덱스 생성 (별도 runbook, Alembic 자동 마이그레이션 금지)
   -> 인덱스 존재 확인 + canary 질의
-  -> 경계값 7 클래스 실측 (3.4 절)
-  -> 플래그 ON
+  -> 경계값 7 클래스 실측 (3.2 절)
+  -> NGRAM_PREFILTER_ENABLED=true
   -> cold canonical 재측정 (32문항 x 3회 규약)
 ```
 
-### 3.4 경계값 7 클래스 실측 (Wave I 선행 조건)
+대상 인덱스는 `bid_results.dminstt_nm` 과 `bid_announcements.dminstt_nm` 입니다.
+F3 실측 빌드 시간은 각각 160.36초, 164.43초였습니다.
+
+### 3.2 경계값 7 클래스 실측 (Wave I 선행 조건)
 
 `tests/fixtures/ngram_edge_keywords.json` 의 다음 7건이 `is_safe_for_ngram: true`
 인데 **실측된 값이 아닙니다.** MySQL 통합 테스트는 실 DB 없이 skip 되므로 아무도
@@ -106,16 +85,21 @@ python3 scripts/orca_run_reviewer.py \
 누락**이 납니다. 픽스처 값이 틀렸을 가능성이 높습니다.
 
 실 MySQL + FULLTEXT 인덱스에서 G3 하네스로 확인한 뒤 픽스처를 정정하십시오.
+코드의 안전 판정이 픽스처의 부분집합인지 보는 테스트가 이미 있으므로, 픽스처만
+좁히면 검사가 따라옵니다.
 
-### 3.5 그 밖의 잔여
+### 3.3 그 밖의 잔여
 
 - 분석 문서 수치 자동 생성 (원시 JSON -> 요약 생성기). GPT 보고서 7 장.
 - `orca_run_reviewer.py` 의 `--max-diff-chars` 기본값 20,000 이 실제 Task diff
   규모(41,000자대)의 절반입니다. 기본값 상향 검토.
-- `qwen3.7-plus` 리뷰어 신뢰도: 2026-08-31 에 JSON 이 아닌 응답을 반환해 실패.
-  `TIER_POLICY` 의 리뷰어 주 모델이므로 재현되면 배정 재검토가 필요합니다.
-
----
+- **`qwen3.7-plus` 리뷰어 신뢰도**: 2026-08-31 에 JSON 이 아닌 응답을 반환해
+  두 번 실패했습니다. `TIER_POLICY` 의 리뷰어 주 모델이므로 재현되면 배정
+  재검토가 필요합니다. G4 검증 때는 정상 완주했으므로 간헐적입니다.
+  현재 실무는 `claude-sonnet-4-6`(Antigravity, Gemini 빌더와 계열 독립)로
+  대체하고 있습니다.
+- 리뷰어 호출을 **동시에 두 개 이상 띄우지 마십시오.** 2026-08-31 에 병렬
+  실행한 두 건 중 하나가 도구 오류로 끝났습니다.
 
 ## 4. 워커 승인 중단 — 오늘 드러난 네 층
 
@@ -154,8 +138,9 @@ acceptance 에 다음을 명시하십시오.
 
 ## 6. 정리 상태
 
-- Wave G 워크트리·브랜치: **반납 완료**
-- Wave H 워크트리 3개: **유지 중** (`orca-h1-drift`, `orca-h2-ngram`, `orca-h3-launcher`)
-  - `orca-h1-drift` 는 병합 완료이므로 정리 가능
-  - 나머지 둘은 미병합이므로 **삭제하지 마십시오**
-- Docker 컨테이너: 사용자가 웹 확인 중이라 **가동 유지**
+- Wave G·H 워크트리와 브랜치: **전부 반납 완료**. 활성 워커 0, 워크트리는 주
+  저장소 하나뿐입니다.
+- Docker 컨테이너: 사용자가 웹 확인 중이라 **가동 유지**. 내릴 때 Redis 는
+  `SHUTDOWN NOSAVE` 로 내리십시오.
+- Run `run_cd97f1f89fb6` 은 Wave G·H Task 를 담고 있습니다. Wave I 는 새 Run 을
+  만들거나 이 Run 에 바인딩하십시오.
