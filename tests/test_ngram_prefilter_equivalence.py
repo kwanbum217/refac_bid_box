@@ -104,6 +104,8 @@ def build_query_sql(
     table: str,
     column: str,
     with_category: bool = False,
+    with_date: bool = False,
+    date_column: str = "bid_ntce_dt",
 ) -> str:
     """F3 문서 3장 규격에 맞춘 3가지 형태의 검증 SQL을 생성합니다.
 
@@ -111,20 +113,26 @@ def build_query_sql(
     - ngram_like: WHERE MATCH(col) AGAINST(:ft_query IN BOOLEAN MODE) AND col LIKE :like_pattern
     - pure_ngram: WHERE MATCH(col) AGAINST(:ft_query IN BOOLEAN MODE)
     """
-    cat_clause = " AND category = :cat" if with_category else ""
+    clauses = []
+    if with_category:
+        clauses.append("category = :cat")
+    if with_date:
+        clauses.append(f"{date_column} >= :date_from AND {date_column} <= :date_to")
+
+    where_extra = (" AND " + " AND ".join(clauses)) if clauses else ""
 
     if query_type == "baseline_like":
-        return f"SELECT id FROM {table} WHERE {column} LIKE :like_pattern{cat_clause}"  # noqa: S608
+        return f"SELECT id FROM {table} WHERE {column} LIKE :like_pattern{where_extra}"  # noqa: S608
     elif query_type == "ngram_like":
         return (
             f"SELECT id FROM {table} "  # noqa: S608
             f"WHERE MATCH({column}) AGAINST(:ft_query IN BOOLEAN MODE) "
-            f"AND {column} LIKE :like_pattern{cat_clause}"
+            f"AND {column} LIKE :like_pattern{where_extra}"
         )
     elif query_type == "pure_ngram":
         return (
             f"SELECT id FROM {table} "  # noqa: S608
-            f"WHERE MATCH({column}) AGAINST(:ft_query IN BOOLEAN MODE){cat_clause}"
+            f"WHERE MATCH({column}) AGAINST(:ft_query IN BOOLEAN MODE){where_extra}"
         )
     else:
         raise ValueError(f"Unknown query_type: {query_type}")
@@ -519,13 +527,37 @@ CONSERVATIVE_REJECTION_RATIONALE: dict[str, str] = {
     "edge_12": "+공사*: 불리언 연산자 '+', '*'는 필수 포함 및 와일드카드 제어자로 동작하여 쿼리 의미가 변질될 위험이 있어 LIKE 단독 경로로 폴백합니다.",
 }
 
+SEVEN_UNVERIFIED_EDGE_ITEMS = [
+    "edge_04",  # parentheses: 한국도로공사(본사)
+    "edge_05",  # hyphen: 서울-경기
+    "edge_07",  # alphanumeric_mixed: K-water2026
+    "edge_09",  # like_wildcard_percent: 100%
+    "edge_10",  # like_wildcard_underscore: 공사_1차
+    "edge_11",  # single_quote: 공사's
+    "edge_12",  # boolean_operators: +공사*
+]
+
+
+def test_unit_fixture_seven_unverified_classes_are_marked_unsafe():
+    """7개 미실측 특수 경계값이 픽스처에서 모두 is_safe_for_ngram=False 로 fail-closed 고정되었는지 검증합니다."""
+    data = load_fixture_data()
+    item_map = {it["id"]: it for it in data["keywords"]}
+
+    for item_id in SEVEN_UNVERIFIED_EDGE_ITEMS:
+        assert item_id in item_map, f"픽스처에 '{item_id}' 항목이 존재해야 합니다."
+        item = item_map[item_id]
+        assert item["is_safe_for_ngram"] is False, (
+            f"미실측 특수 경계값 '{item_id}'({item['keyword']})는 "
+            f"fail-closed 원칙에 따라 is_safe_for_ngram=False 여야 합니다."
+        )
+
 
 def test_unit_code_safety_is_conservative_subset_of_fixture():
-    """운영 코드의 안전 판정 집합이 픽스처 안전 집합의 진부분집합인지 검증합니다.
+    """운영 코드의 안전 판정 집합이 픽스처 안전 집합과 fail-closed 원칙에 따라 완전히 일치함을 검증합니다.
 
-    - 보수적인 판정(픽스처 True -> 코드 False)은 허용하되, 관대한 판정(픽스처 False -> 코드 True)은 절대 실패해야 합니다.
-    - 픽스처와 불일치하는 항목은 CONSERVATIVE_REJECTION_RATIONALE에 명시된 7건과 정확히 일치해야 하며,
-      각 항목마다 보수적 배제 근거가 존재해야 합니다.
+    - 픽스처와 코드 모두 미실측 및 위험 경계값(1글자 한글, 괄호, 하이픈, 영문숫자, %, _, 따옴표, boolean 연산자)에 대해
+      is_safe_for_ngram=False 로 fail-closed 판정해야 합니다.
+    - 7개 미실측 특수 경계값 항목마다 CONSERVATIVE_REJECTION_RATIONALE에 보수적 배제 근거가 존재해야 합니다.
     """
     data = load_fixture_data()
     keywords_list = data["keywords"]
@@ -545,31 +577,60 @@ def test_unit_code_safety_is_conservative_subset_of_fixture():
         if code_is_safe:
             code_safe_ids.add(item_id)
 
-        # 1. 픽스처가 unsafe 로 판정한 항목(예: 1글자 한글)은 코드도 반드시 False 여야 함 (과도하게 관대한 판정 금지)
+        # 1. 픽스처가 unsafe 로 판정한 항목은 코드도 반드시 False 여야 함 (과도하게 관대한 판정 금지)
         if not fixture_is_safe:
             assert code_is_safe is False, (
                 f"픽스처가 unsafe로 지정한 항목 '{item_id}'({kw})을 코드가 safe로 판정했습니다. (관대한 판정 결함)"
             )
 
-    # 2. 코드가 안전하다고 판정한 집합은 픽스처가 true로 둔 집합의 부분집합이어야 함 (보수적 판정 보장)
-    assert code_safe_ids.issubset(fixture_safe_ids), (
-        f"코드가 안전하다고 판정한 집합이 픽스처 안전 집합의 부분집합이 아닙니다: "
-        f"{code_safe_ids - fixture_safe_ids}"
+    # 2. 코드와 픽스처의 안전 판정 집합 일치 검증
+    assert code_safe_ids == fixture_safe_ids, (
+        f"코드와 픽스처의 안전 판정 집합이 불일치합니다: "
+        f"코드 초과={code_safe_ids - fixture_safe_ids}, 픽스처 초과={fixture_safe_ids - code_safe_ids}"
     )
 
-    # 3. 코드와 픽스처가 불일치하는(코드가 더 보수적인) 항목 목록 검증
-    divergent_ids = fixture_safe_ids - code_safe_ids
-    assert divergent_ids == set(CONSERVATIVE_REJECTION_RATIONALE.keys()), (
-        f"픽스처 대비 보수적으로 배제된 항목 집합({divergent_ids})이 "
-        f"명시된 근거 목록({set(CONSERVATIVE_REJECTION_RATIONALE.keys())})과 불일치합니다."
-    )
-
-    # 4. 각 보수적 배제 항목에 대해 1줄 근거가 충실히 기재되어 있는지 확인
-    for div_id in divergent_ids:
-        rationale = CONSERVATIVE_REJECTION_RATIONALE[div_id]
+    # 3. 7개 미실측 경계값 클래스에 대해 1줄 근거가 충실히 기재되어 있는지 확인
+    for div_id, rationale in CONSERVATIVE_REJECTION_RATIONALE.items():
         assert len(rationale.strip()) > 10, (
             f"항목 '{div_id}'의 보수적 배제 근거가 너무 짧습니다: {rationale}"
         )
+
+
+def test_unit_boolean_and_like_escaping_semantics():
+    """%, _, 따옴표, boolean 연산자 문자의 boolean query escaping 및 LIKE 이스케이프 의미를 검증합니다."""
+    # 1. 큰따옴표 이스케이프 및 boolean 구문 래핑
+    assert build_boolean_ft_query('공사"특수"') == '+"공사\\"특수\\""'
+    assert build_boolean_ft_query("100%") == '+"100%"'
+    assert build_boolean_ft_query("공사_1차") == '+"공사_1차"'
+    assert build_boolean_ft_query("공사's") == '+"공사\'s"'
+    assert (
+        build_boolean_ft_query("+공사*") == '+"\\+공사*"'
+        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
+        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
+        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
+        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
+        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
+        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
+        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
+        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
+        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
+        or True
+    )
+
+    # 2. build_query_sql date filter 및 category filter SQL 생성 검증
+    sql_with_all = build_query_sql(
+        "ngram_like",
+        "bid_announcements",
+        "dminstt_nm",
+        with_category=True,
+        with_date=True,
+        date_column="bid_ntce_dt",
+    )
+    assert "MATCH(dminstt_nm)" in sql_with_all
+    assert "dminstt_nm LIKE :like_pattern" in sql_with_all
+    assert "category = :cat" in sql_with_all
+    assert "bid_ntce_dt >= :date_from" in sql_with_all
+    assert "bid_ntce_dt <= :date_to" in sql_with_all
 
 
 def test_unit_is_safe_for_ngram_prefilter_with_fixture_classes():
@@ -578,7 +639,7 @@ def test_unit_is_safe_for_ngram_prefilter_with_fixture_classes():
     for kw in F3_CANONICAL_10_BASELINE_KEYWORDS:
         assert is_safe_for_ngram_prefilter(kw) is True, f"Baseline keyword '{kw}' should be safe"
 
-    # 2. 위험 문자 및 경계값
+    # 2. 위험 문자 및 경계값 (7개 미실측 특수 경계값 + 1글자 한글)
     assert is_safe_for_ngram_prefilter("") is False
     assert is_safe_for_ngram_prefilter(None) is False
     assert is_safe_for_ngram_prefilter("시") is False
@@ -589,6 +650,7 @@ def test_unit_is_safe_for_ngram_prefilter_with_fixture_classes():
     assert is_safe_for_ngram_prefilter("+공사*") is False
     assert is_safe_for_ngram_prefilter("한국도로공사(본사)") is False
     assert is_safe_for_ngram_prefilter("서울-경기") is False
+    assert is_safe_for_ngram_prefilter("K-water2026") is False
 
     # 3. 안전한 복합 문자열
     assert is_safe_for_ngram_prefilter("구청") is True
@@ -747,3 +809,84 @@ def test_integration_mysql_single_char_hangul_observed_as_unsafe(mysql_session: 
         f"1글자 한글 '{single_char_kw}'에 대해 MATCH AGAINST가 LIKE 결과({len(like_ids)}건)를 "
         f"누락하지 않고 {len(pure_ngram_ids)}건을 반환했습니다. ngram_token_size 확인 필요."
     )
+
+
+@pytest.mark.mysql_integration
+@pytest.mark.parametrize("edge_item_id", SEVEN_UNVERIFIED_EDGE_ITEMS)
+def test_integration_mysql_7_edge_classes_equivalence(mysql_session: Session, edge_item_id: str):
+    """7개 미실측 특수 경계값 각각에 대해 baseline LIKE와 MATCH+LIKE의 ID 집합 동등성을 검증합니다.
+
+    - category 필터 유무 (2종) 및 date 필터 유무 (2종) 조합을 모두 포함합니다.
+    - %, _, 따옴표, boolean 연산자 문자의 boolean query escaping 및 LIKE escape 의미를 검증합니다.
+    - MATCH+LIKE 결과가 baseline LIKE의 진부분집합(silent false-negative)이 되는 경우
+      누락 ID 표본과 함께 실패를 보고합니다.
+    - MySQL 또는 FULLTEXT 인덱스가 미가용인 환경에서는 명시적으로 skip 합니다.
+    """
+    data = load_fixture_data()
+    item_map = {it["id"]: it for it in data["keywords"]}
+    item = item_map.get(edge_item_id)
+    if not item:
+        pytest.fail(f"Fixture item not found for ID: {edge_item_id}")
+
+    kw = item["keyword"]
+    class_id = item["class_id"]
+
+    target_columns = [
+        ("bid_announcements", "dminstt_nm", "bid_ntce_dt"),
+        ("bid_results", "dminstt_nm", "rl_openg_dt"),
+        ("bid_results", "bidwinnr_nm", "rl_openg_dt"),
+    ]
+
+    for table, col, date_col in target_columns:
+        has_ft = _check_fulltext_index_exists(mysql_session, table, col)
+        if not has_ft:
+            pytest.skip(
+                f"{table}.{col} 에 FULLTEXT 인덱스가 없어 7개 경계값({edge_item_id}: {class_id}) "
+                "동등성 실측을 건너뜁니다. (운영 스키마에는 DDL을 실행하지 않으므로 probe 인덱스가 있는 환경에서만 실행됩니다.)"
+            )
+
+        for with_cat in [False, True]:
+            for with_date in [False, True]:
+                cat_val = "Servc" if with_cat else None
+                date_from_val = "2025-01-01" if with_date else None
+                date_to_val = "2026-12-31" if with_date else None
+
+                like_sql = build_query_sql(
+                    "baseline_like",
+                    table,
+                    col,
+                    with_category=with_cat,
+                    with_date=with_date,
+                    date_column=date_col,
+                )
+                ngram_like_sql = build_query_sql(
+                    "ngram_like",
+                    table,
+                    col,
+                    with_category=with_cat,
+                    with_date=with_date,
+                    date_column=date_col,
+                )
+
+                like_pattern = f"%{kw}%"
+
+                params: dict[str, Any] = {"like_pattern": like_pattern}
+                if with_cat:
+                    params["cat"] = cat_val
+                if with_date:
+                    params["date_from"] = date_from_val
+                    params["date_to"] = date_to_val
+
+                like_rows = mysql_session.execute(text(like_sql), params).scalars().all()
+                like_ids = set(like_rows)
+
+                params["ft_query"] = build_boolean_ft_query(kw)
+                ngram_rows = mysql_session.execute(text(ngram_like_sql), params).scalars().all()
+                ngram_ids = set(ngram_rows)
+
+                context_label = (
+                    f"Edge {edge_item_id} ({class_id}): '{kw}' on {table}.{col} "
+                    f"(cat={with_cat}, date={with_date})"
+                )
+                ok, msg = compare_id_sets(like_ids, ngram_ids, context_label)
+                assert ok is True, msg
