@@ -46,12 +46,14 @@ def _normalize_text(value: str | None) -> str:
 # 2. LIKE 와일드카드(%, _): 패턴 매칭 문자로 ngram 역색인 검색 범위와 불일치 발생
 # 3. FULLTEXT boolean 연산자(+, -, *, >, <, (, ), ~, @): 구문 제어 연산자로 오작동 방지
 # 4. 따옴표('", `) 및 역슬래시(\): SQL 리터럴 파싱 및 구문 검색(phrase query) 왜곡 방지
-# 대응 픽스처 클래스 (tests/fixtures/ngram_edge_keywords.json):
-# - single_char_hangul: 1글자 한글 토큰 ('시', '청') -> is_safe_for_ngram=False
-# - like_wildcard_percent ('100%'), like_wildcard_underscore ('공사_1차') -> is_safe_for_ngram=False
-# - boolean_operators ('+공사*'), hyphen ('서울-경기'), parentheses ('한국도로공사(본사)') -> is_safe_for_ngram=False
-# - single_quote ('공사\'s') -> is_safe_for_ngram=False
-# - exact_two_char ('구청'), whitespace_delimited ('서울특별시 강남구'), very_long_exact_name -> is_safe_for_ngram=True
+# 픽스처(tests/fixtures/ngram_edge_keywords.json)와의 정합성:
+# - 픽스처에서는 구문 검색 래핑(+'"kw"') 전제로 edge_04(parentheses), edge_05(hyphen),
+#   edge_07(alphanumeric_mixed), edge_09(like_wildcard_percent), edge_10(like_wildcard_underscore),
+#   edge_11(single_quote), edge_12(boolean_operators)가 is_safe_for_ngram=True 로 기록되어 있습니다.
+# - 그러나 실제 운영 코드에서는 와일드카드 매칭 범위 불일치(100% 등), boolean 연산자 충돌(-, + 등),
+#   따옴표 파싱 리스크를 원천 차단하기 위해 픽스처보다 보수적으로 이들 문자가 포함된 키워드를
+#   안전하지 않음(False)으로 판정하여 기존 LIKE 단독 경로로 폴백합니다.
+# - 따라서 코드의 안전 판정 집합은 픽스처의 안전 집합(True)의 진부분집합(strict subset)을 형성합니다.
 UNSAFE_NGRAM_CHARS = frozenset("%_+-*><()~@'\"`\\")
 
 

@@ -509,6 +509,69 @@ def test_unit_flag_off_sql_identical_to_baseline(monkeypatch: pytest.MonkeyPatch
         assert sql_instt_pre == sql_instt_leg
 
 
+CONSERVATIVE_REJECTION_RATIONALE: dict[str, str] = {
+    "edge_04": "한국도로공사(본사): 괄호 '()'는 FULLTEXT boolean 모드에서 하위 표현식 그룹화 연산자로 파싱되어 쿼리 구조 왜곡 위험이 있어 LIKE 단독 경로로 폴백합니다.",
+    "edge_05": "서울-경기: 하이픈 '-'은 FULLTEXT boolean 모드에서 NOT(제외) 연산자로 해석되어 결과 누락을 유발할 위험이 있어 LIKE 단독 경로로 폴백합니다.",
+    "edge_07": "K-water2026: 하이픈 '-'이 포함되어 boolean NOT 연산자로 오작동할 위험이 있어 LIKE 단독 경로로 폴백합니다.",
+    "edge_09": "100%: LIKE '%100%%'는 100 뒤에 임의 문자열을 매칭하지만 구문 검색 +\"100%\"는 리터럴을 요구하므로 MATCH가 진부분집합이 되어 조용한 누락이 납니다.",
+    "edge_10": "공사_1차: LIKE에서 '_'는 임의 1문자를 매칭하지만 MATCH는 리터럴 언더스코어를 요구하여 매칭 범위가 축소(누락)될 위험이 있어 LIKE 단독 경로로 폴백합니다.",
+    "edge_11": "공사's: 작은따옴표 \"'\"는 SQL 구문 해석 및 따옴표 래핑 충돌을 방지하기 위해 보수적으로 LIKE 단독 경로로 폴백합니다.",
+    "edge_12": "+공사*: 불리언 연산자 '+', '*'는 필수 포함 및 와일드카드 제어자로 동작하여 쿼리 의미가 변질될 위험이 있어 LIKE 단독 경로로 폴백합니다.",
+}
+
+
+def test_unit_code_safety_is_conservative_subset_of_fixture():
+    """운영 코드의 안전 판정 집합이 픽스처 안전 집합의 진부분집합인지 검증합니다.
+
+    - 보수적인 판정(픽스처 True -> 코드 False)은 허용하되, 관대한 판정(픽스처 False -> 코드 True)은 절대 실패해야 합니다.
+    - 픽스처와 불일치하는 항목은 CONSERVATIVE_REJECTION_RATIONALE에 명시된 7건과 정확히 일치해야 하며,
+      각 항목마다 보수적 배제 근거가 존재해야 합니다.
+    """
+    data = load_fixture_data()
+    keywords_list = data["keywords"]
+
+    code_safe_ids = set()
+    fixture_safe_ids = set()
+
+    for item in keywords_list:
+        item_id = item["id"]
+        kw = item["keyword"]
+        fixture_is_safe = item["is_safe_for_ngram"]
+        code_is_safe = is_safe_for_ngram_prefilter(kw)
+
+        if fixture_is_safe:
+            fixture_safe_ids.add(item_id)
+
+        if code_is_safe:
+            code_safe_ids.add(item_id)
+
+        # 1. 픽스처가 unsafe 로 판정한 항목(예: 1글자 한글)은 코드도 반드시 False 여야 함 (과도하게 관대한 판정 금지)
+        if not fixture_is_safe:
+            assert code_is_safe is False, (
+                f"픽스처가 unsafe로 지정한 항목 '{item_id}'({kw})을 코드가 safe로 판정했습니다. (관대한 판정 결함)"
+            )
+
+    # 2. 코드가 안전하다고 판정한 집합은 픽스처가 true로 둔 집합의 부분집합이어야 함 (보수적 판정 보장)
+    assert code_safe_ids.issubset(fixture_safe_ids), (
+        f"코드가 안전하다고 판정한 집합이 픽스처 안전 집합의 부분집합이 아닙니다: "
+        f"{code_safe_ids - fixture_safe_ids}"
+    )
+
+    # 3. 코드와 픽스처가 불일치하는(코드가 더 보수적인) 항목 목록 검증
+    divergent_ids = fixture_safe_ids - code_safe_ids
+    assert divergent_ids == set(CONSERVATIVE_REJECTION_RATIONALE.keys()), (
+        f"픽스처 대비 보수적으로 배제된 항목 집합({divergent_ids})이 "
+        f"명시된 근거 목록({set(CONSERVATIVE_REJECTION_RATIONALE.keys())})과 불일치합니다."
+    )
+
+    # 4. 각 보수적 배제 항목에 대해 1줄 근거가 충실히 기재되어 있는지 확인
+    for div_id in divergent_ids:
+        rationale = CONSERVATIVE_REJECTION_RATIONALE[div_id]
+        assert len(rationale.strip()) > 10, (
+            f"항목 '{div_id}'의 보수적 배제 근거가 너무 짧습니다: {rationale}"
+        )
+
+
 def test_unit_is_safe_for_ngram_prefilter_with_fixture_classes():
     """안전성 판정 함수가 픽스처의 기준선 키워드(10종) 및 위험 경계값 클래스를 정확히 판정하는지 검증합니다."""
     # 1. 기준선 10종은 모두 True
