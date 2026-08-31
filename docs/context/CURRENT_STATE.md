@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-31
-> **source_commit**: `231f9f0`
+> **source_commit**: `88f81b7`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -238,7 +238,9 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 - **ngram 경계값 7 클래스 미실측 (2026-08-31, 미해결)**: `tests/fixtures/ngram_edge_keywords.json` 의 괄호·하이픈·영문숫자·`%`·`_`·따옴표·boolean 연산자 7건이 `is_safe_for_ngram: true` 인데 **실측이 아닙니다.** MySQL 통합 테스트가 실 DB 없이 skip 되어 검증된 적이 없습니다. 현재 코드는 보수적으로 제외합니다. `100%` 의 경우 `LIKE '%100%%'` 는 임의 문자열을 매칭하지만 `+"100%"` 는 리터럴을 요구해 MATCH 가 진부분집합이 되므로 픽스처 값이 틀렸을 가능성이 높습니다. **운영 FULLTEXT 인덱스 생성 후 실측하고 플래그를 켜기 전에 정정하십시오.**
 - **Wave G 조율 평면 정합성 (2026-08-31, 병합 완료)**: 외부 감사 두 건을 HEAD `d0cb3d7` 에서 교차 검증해 실제 잔여만 닫았습니다. 한쪽 보고서는 `4aa444f`(838 커밋 뒤처짐) 기준이라 10건 중 8건이 이미 수정 완료였습니다. **감사 보고서는 기준 커밋을 확인한 뒤 수용하십시오.** 닫은 것은 모델 정책 3중 분기, 리뷰어 provider 독립성 fail-closed, `commit_count` 타입 우회, `CURRENT_STATE` q21 모순, 2.4 절 warm 범위, EXPLAIN 추정치 표기, ngram 회귀 하네스입니다.
 - **리뷰어 실행 경로 (2026-08-31, 해소)**: `orca_run_reviewer.py` 가 모델 provider 로 CLI 를 정합니다. gemini·claude·cerebras 는 `agy`, qwen 계열은 `qwen -m <id> -p` 이며 미지원·판정불가는 `ReviewerToolError` 로 막습니다. `qwen3.7-plus` 로 실제 리뷰를 완주해 확인했습니다. **provider 와 CLI 는 1:1 이 아닙니다** (Antigravity 가 Gemini·Claude·GPT-OSS 를 함께 서빙).
-- **리뷰어 diff 상한 기본값이 실제 Task 규모에 미달 (2026-08-31)**: `--max-diff-chars` 기본값 20,000 자에 비해 Wave G 워커 diff 는 41,000 자대였습니다. 도구가 절단 시 fail-closed 로 막지만, `--allow-truncated-diff` 를 습관적으로 쓰면 리뷰가 형식만 남습니다. **상한을 올려 다시 돌리십시오.**
+- **리뷰어 diff 상한 (2026-08-31, 해소)**: I-A에서 리뷰어 diff 기본 상한을 실제 Wave G 규모보다 크게 올리고 절단 fail-closed 회귀 검증을 추가했습니다. Qwen 빌더 결과를 Gemini 계열 독립 리뷰어로 재검증해 통과한 뒤 병합했습니다.
+- **분석 문서 수치 정합성 (2026-08-31, 병합 완료)**: I-B에서 원시 JSON 기반 Markdown 표 생성기와 `verify` 명령을 추가하고, `METRICS` 마커가 있는 `docs/analysis/` 문서를 agent-rule 검사에 연결했습니다. 전체 테스트 2회 `2917 passed`, 규칙 검사 `16/16`, 독립 리뷰를 통과했습니다.
+- **Antigravity 편집 권한 선점 (2026-08-31, 검증 대기)**: I-D에서 `agy` 시작 명령에 `--mode accept-edits`를 넣어 첫 편집 전 모드 전환 경쟁 조건을 제거하는 변경과 회귀 테스트를 작성했습니다. `--dangerously-skip-permissions`는 사용하지 않으며 셸 승인 감시기는 유지합니다. 코드 검증·병합 전이므로 완료로 판정하지 않습니다.
 - Windows Docker Desktop 실기 미검증.
 - **LLM 품질 정본은 2026-08-28 현 HEAD 재측정**(동결 `d9a0536`, `gemma4:e2b` 32문항 x 3회)입니다. numeric 95.7%(67/70), evidence recall 0.957, citation 100%, refusal 24/24, 과잉응답 0 으로 2026-08-27 측정 대비 전 지표가 개선입니다. 다만 요청 2/96 이 타임아웃(q03)했고 긴 정확 공고명 질의가 58~180초를 소모하여 **레이턴시 꼬리는 회귀**입니다 ([`blind_fixture_remeasure_20260828.md`](../analysis/blind_fixture_remeasure_20260828.md)). e4b 동일 조건 재측정은 미실시입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
 - **정확 제목 lexical 채널 효과 실측**: 느린 4문항(q03·q08·q25·q31) x 3회에서 요청 실패 2/12 -> **0/12**, 대표값 58,352ms -> **5,941ms**, 최대 180,045ms -> 41,874ms 로 꼬리 지연이 제거됐습니다. 정확도 손실은 없습니다([`lexical_channel_latency_effect_20260828.md`](../analysis/lexical_channel_latency_effect_20260828.md)). 같은 부분집합 e4b 대조는 품질 동률에 P50 6,245ms·최대 81,234ms 로 e2b 가 앞서 **e2b 승격 유지 근거가 보강**됐습니다. 부분집합 12회 표본이므로 전량 재측정으로 정본을 갱신해야 합니다.
