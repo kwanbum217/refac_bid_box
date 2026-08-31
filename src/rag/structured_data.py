@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.core.cache import cache
+from src.app.core.config import settings
 from src.app.models.bids import (
     CATEGORY_LABELS,
     CORRUPTED_TEXT_FALLBACKS,
@@ -38,6 +39,43 @@ from src.rag.schemas import RetrievalPlan
 
 def _normalize_text(value: str | None) -> str:
     return unicodedata.normalize("NFC", (value or "").strip())
+
+
+# MySQL ngram 파서 기본 토큰 크기(ngram_token_size=2) 및 FULLTEXT boolean 모드 특수문자 정의
+# 1. 2글자 미만: 2-gram 토큰이 생성되지 않아 MATCH AGAINST가 0건을 반환 (조용한 누락 발생)
+# 2. LIKE 와일드카드(%, _): 패턴 매칭 문자로 ngram 역색인 검색 범위와 불일치 발생
+# 3. FULLTEXT boolean 연산자(+, -, *, >, <, (, ), ~, @): 구문 제어 연산자로 오작동 방지
+# 4. 따옴표('", `) 및 역슬래시(\): SQL 리터럴 파싱 및 구문 검색(phrase query) 왜곡 방지
+# 픽스처(tests/fixtures/ngram_edge_keywords.json)와의 정합성:
+# - 픽스처에서는 구문 검색 래핑(+'"kw"') 전제로 edge_04(parentheses), edge_05(hyphen),
+#   edge_07(alphanumeric_mixed), edge_09(like_wildcard_percent), edge_10(like_wildcard_underscore),
+#   edge_11(single_quote), edge_12(boolean_operators)가 is_safe_for_ngram=True 로 기록되어 있습니다.
+# - 그러나 실제 운영 코드에서는 와일드카드 매칭 범위 불일치(100% 등), boolean 연산자 충돌(-, + 등),
+#   따옴표 파싱 리스크를 원천 차단하기 위해 픽스처보다 보수적으로 이들 문자가 포함된 키워드를
+#   안전하지 않음(False)으로 판정하여 기존 LIKE 단독 경로로 폴백합니다.
+# - 따라서 코드의 안전 판정 집합은 픽스처의 안전 집합(True)의 진부분집합(strict subset)을 형성합니다.
+UNSAFE_NGRAM_CHARS = frozenset("%_+-*><()~@'\"`\\")
+
+
+def is_safe_for_ngram_prefilter(keyword: str | None) -> bool:
+    """키워드가 MySQL ngram FULLTEXT 선행필터(MATCH AGAINST)에 안전한지 판정합니다.
+
+    다음 조건 중 하나라도 해당하면 안전하지 않음(False)으로 판정하여 기존 LIKE 단독 경로로 폴백합니다:
+    1. 정규화(NFC) 후 길이가 2글자 미만인 경우 (1글자 한글 등 ngram_token_size=2 에서 누락 발생)
+    2. LIKE 와일드카드(%, _) 또는 따옴표('", `)가 포함된 경우
+    3. FULLTEXT boolean 모드 연산자(+, -, *, >, <, (, ), ~, @) 및 특수 제어 문자가 포함된 경우
+    """
+    if not keyword:
+        return False
+    normalized = _normalize_text(keyword)
+    if len(normalized) < 2:
+        return False
+    return not any(char in UNSAFE_NGRAM_CHARS for char in normalized)
+
+
+def _build_boolean_ft_query(keyword: str) -> str:
+    """MySQL BOOLEAN MODE 구문 검색 문자열(+'"kw"')을 생성합니다."""
+    return f'+"{keyword}"'
 
 
 def _category_label(category: str | None) -> str:
@@ -85,13 +123,19 @@ def _resolve_window(filters: dict[str, Any]) -> tuple[datetime | None, datetime 
     return date_from, date_to
 
 
-def _result_conditions(plan: RetrievalPlan) -> list:
+def _result_conditions(plan: RetrievalPlan, *, enable_ngram_prefilter: bool = False) -> list:
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
 
     conditions = []
+    if (
+        enable_ngram_prefilter
+        and settings.NGRAM_PREFILTER_ENABLED
+        and is_safe_for_ngram_prefilter(institution_name)
+    ):
+        conditions.append(BidResult.dminstt_nm.match(_build_boolean_ft_query(institution_name)))
     if date_from:
         conditions.append(BidResult.rl_openg_dt >= date_from)
     if date_to:
@@ -103,13 +147,21 @@ def _result_conditions(plan: RetrievalPlan) -> list:
     return conditions
 
 
-def _announcement_conditions(plan: RetrievalPlan) -> list:
+def _announcement_conditions(plan: RetrievalPlan, *, enable_ngram_prefilter: bool = False) -> list:
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
 
     conditions = []
+    if (
+        enable_ngram_prefilter
+        and settings.NGRAM_PREFILTER_ENABLED
+        and is_safe_for_ngram_prefilter(institution_name)
+    ):
+        conditions.append(
+            BidAnnouncement.dminstt_nm.match(_build_boolean_ft_query(institution_name))
+        )
     if date_from:
         conditions.append(BidAnnouncement.bid_ntce_dt >= date_from)
     if date_to:
@@ -561,6 +613,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
 
     category_filter = _normalize_text(str((plan.filters or {}).get("category") or ""))
 
+    winner_conditions = _result_conditions(plan, enable_ngram_prefilter=True)
     winner_rows, dropped_winners = _top_rows(
         db,
         scope=snapshot_scope,
@@ -569,7 +622,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         category=category_filter,
         live_stmt=_hint_result_date_index(
             select(BidResult.bidwinnr_nm, func.count(BidResult.id))
-            .where(exclude_corrupted(BidResult.bidwinnr_nm), *result_conditions)
+            .where(exclude_corrupted(BidResult.bidwinnr_nm), *winner_conditions)
             .group_by(BidResult.bidwinnr_nm)
             .order_by(func.count(BidResult.id).desc()),
             plan,
@@ -583,6 +636,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         for row in winner_rows
     ]
 
+    institution_conditions = _announcement_conditions(plan, enable_ngram_prefilter=True)
     institution_rows, dropped_institutions = _top_rows(
         db,
         scope=snapshot_scope,
@@ -591,7 +645,7 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         category=category_filter,
         live_stmt=_hint_announcement_date_index(
             select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
-            .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *announcement_conditions)
+            .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions)
             .group_by(BidAnnouncement.dminstt_nm)
             .order_by(func.count(BidAnnouncement.id).desc()),
             plan,

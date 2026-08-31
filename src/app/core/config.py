@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # Redis 설정
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # MySQL ngram FULLTEXT 선행필터 활성화 여부입니다.
+    # dminstt_nm, bidwinnr_nm 집계 쿼리에 MATCH AGAINST 선행필터를 AND 로 결합합니다.
+    # 기본값은 False 이며, 운영 DB 에 FULLTEXT 인덱스가 없거나 비활성화 시 기존 LIKE 로 동작합니다.
+    NGRAM_PREFILTER_ENABLED: bool = False
+
     # 검색 전용 Meilisearch 인덱스입니다. 원본 MySQL 테이블에는 검색용 DDL을 추가하지
     # 않고 별도 읽기 모델로 복제합니다. 기본값은 기존 개발 환경 호환을 위해 비활성입니다.
     MEILI_ENABLED: bool = False
