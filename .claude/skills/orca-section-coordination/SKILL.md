@@ -232,6 +232,7 @@ python3 scripts/orca_worker_watch.py --json   # 기계 판독
 | --- | --- |
 | Dispatch 직후 | 도달 확인과 함께 1회 |
 | 진행·완료·차단을 사용자에게 보고하기 전 | 반드시 1회 |
+| `worker_done` 을 ack 한 직후 | 완료 세션 회수. `python3 scripts/orca_settled_session_audit.py` |
 | 대기 중 주기적으로 | 터미널 폴링 대신 이 명령으로 |
 
 탐지하는 차단 신호는 신뢰 대화창(Antigravity·Cursor), 인증 정체, CLI 설문,
@@ -256,6 +257,7 @@ python3 scripts/orca_worker_watch.py --json   # 기계 판독
 | `.env` 를 워크트리에 배치했는가 | 10장 |
 | `escalate_when` 에 사실 불일치 조항이 있는가 | `ground_truth` 가 틀릴 수 있습니다. 2026-08-19 에 "호출부는 3곳" 이 실제로 4곳이었고, 이 조항 덕에 드러났습니다 |
 | 검증 명령이 acceptance 를 실제로 검사하는가 | 워커가 통과시킬 수 없는 사양은 왕복만 늘립니다 |
+| 직전 completed Task 의 워커 터미널을 회수했는가 | 안 하면 `orca_settled_session_audit.py` 가 Dispatch 를 거부합니다 |
 
 `dispatch` 가 `terminal_not_settled` 로 종료 코드 3 을 내는 것은 **오탐입니다.** 판정이
 Dispatch 전에 이루어지고 이후 재확인이 없습니다. `orca terminal read` 로 도달을 한 번
@@ -371,23 +373,30 @@ done
 
 ## 8. 완료한 섹션은 자원을 반납합니다
 
-Task 가 `worker_done` 으로 끝나고 산출물이 병합되면 **그 섹션이 잡고 있던
-자원을 그 자리에서 반납합니다.** 정리하지 않은 워크트리와 브랜치가 쌓이면
-Orca 좌측 목록에서 활성 섹션과 끝난 섹션이 구분되지 않고, 다음 사람이 어느
-트리를 건드려도 되는지 판단할 수 없게 됩니다.
+**회수는 병합의 후속 작업이 아니라 `worker_done` ack 의 일부입니다.**
+Task 가 `completed` 가 되었는데 워커 창이 남아 있으면 조율이 끝난 것이
+아닙니다. 2026-09-01 에 워커 4대의 `worker_done` 을 처리하고도 하위 세션을
+남겨 사용자가 먼저 지적했습니다. 원격 푸시나 `origin/main` 반영을 기다리면
+창은 그 사이 계속 점유됩니다.
+
+`python3 scripts/orca_settled_session_audit.py` 가 이 잔류를 검사합니다.
+`scripts/orca_taskctl.py dispatch` 는 잔류가 있으면 종료 코드 1 로 거부합니다.
+`orca_worker_watch.py` 는 같은 상태를 `[차단:회수 대기]` 로 표시합니다.
 
 ### 8.1 반납 순서
 
-| 순서 | 조치 | 명령 |
-| --- | --- | --- |
-| 1 | 산출물이 `origin/main` 에 완전 병합됐는지 확인 | `git branch --merged origin/main` |
-| 2 | 워커와 워크트리 해제 | `orca orchestration worker-release --dispatch <id>` |
-| 3 | 수동 생성 트리면 제거 | `git worktree remove <path>` |
-| 4 | 병합 완료 브랜치 삭제 | `git branch -d <branch>` |
+| 순서 | 조치 | 명령 | 시점 |
+| --- | --- | --- | --- |
+| 1 | Dispatch 가 `completed` 인지 확인 | `orca orchestration dispatch-show --task <id> --json` | `worker_done` ack 직후 |
+| 2 | 워커 터미널 해제 | `orca orchestration worker-release --dispatch <id>` | 병합 전 |
+| 3 | `retained` 로 남은 창만 닫기 | `orca terminal close --terminal <handle>` (`--tab` 금지) | 병합 전 |
+| 4 | 로컬 `main` 에 병합된 트리만 제거 | `git worktree remove <path>` | 로컬 병합 후 |
+| 5 | 병합 완료 브랜치 삭제 | `git log --oneline main..<branch>` 를 읽은 뒤 `git branch -d` | 로컬 병합 후 |
 
 `git branch -d` 는 병합되지 않은 브랜치를 거부합니다. **`-D` 로 강제하지
 마십시오.** 거부당했다는 것은 아직 병합되지 않았다는 뜻이고, 그때는
-정리 대상이 아닙니다.
+정리 대상이 아닙니다. 원격 `origin/main` 미반영은 터미널 회수를 미루는
+사유가 아닙니다.
 
 ### 8.2 정리하면 안 되는 것
 

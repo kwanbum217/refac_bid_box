@@ -55,7 +55,7 @@ def normalize_text(text: str) -> str:
 
 
 # 정체 신호 분류: prompt 는 키 입력으로 풀리는 승인 대기, failure 는 지시 재전송이 필요한 실패 정체.
-BlockKind = str  # "prompt" | "failure"
+BlockKind = str  # "prompt" | "failure" | "reclaim"
 
 FAILURE_REDEPLOY_FIX = (
     "코디네이터가 동일 Task 지시를 재전송(dispatch)하거나 워커 터미널을 재기동하십시오"
@@ -133,6 +133,7 @@ BLOCK_SIGNALS: list[tuple[str, str, str, BlockKind]] = [
 BLOCK_KIND_LABELS: dict[BlockKind, str] = {
     "prompt": "승인 대기",
     "failure": "실패 정체",
+    "reclaim": "회수 대기",
 }
 
 PROMPT_BLOCK_NOTE = (
@@ -399,6 +400,48 @@ def collect(
                 "커밋 0 · 미커밋 0. 조사 단계이거나 정체일 수 있으니 터미널을 확인하십시오"
             )
         states.append(state)
+
+    try:
+        from scripts.orca_settled_session_audit import audit_lingering_sessions
+    except (ModuleNotFoundError, ImportError):
+        from orca_settled_session_audit import audit_lingering_sessions
+    try:
+        lingering = audit_lingering_sessions().get("lingering") or []
+    except Exception:
+        lingering = []
+    lingering_by_handle = {item.get("handle"): item for item in lingering if item.get("handle")}
+    for state in states:
+        item = lingering_by_handle.get(state.terminal or "")
+        if not item:
+            continue
+        state.blocked_reason = (
+            f"completed Task {item.get('task_id')} 의 워커 터미널이 아직 열려 있습니다"
+        )
+        state.blocked_fix = (
+            "worker-release 후 terminal close 로 회수하고, 병합된 워크트리만 제거하십시오"
+        )
+        state.blocked_kind = "reclaim"
+    seen_handles = {s.terminal for s in states if s.terminal}
+    for item in lingering:
+        handle = item.get("handle") or ""
+        if handle in seen_handles:
+            continue
+        extra = WorkerState(
+            name=item.get("task_id") or "settled-session",
+            path="",
+            branch="",
+            commits=0,
+            dirty=0,
+            terminal=handle,
+            blocked_reason=(
+                f"completed Task {item.get('task_id')} 의 워커 터미널이 아직 열려 있습니다"
+            ),
+            blocked_fix=(
+                "worker-release 후 terminal close 로 회수하고, 병합된 워크트리만 제거하십시오"
+            ),
+            blocked_kind="reclaim",
+        )
+        states.append(extra)
 
     if history is not None:
         current_time = time.time() if now is None else now
