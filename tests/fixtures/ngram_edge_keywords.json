@@ -69,9 +69,9 @@
       "class_id": "parentheses",
       "class_name": "괄호",
       "is_baseline": false,
-      "is_safe_for_ngram": true,
-      "description": "기관명 내 괄호 포함 문자열",
-      "expected_behavior": "괄호가 포함되어도 구문 검색 래핑을 통해 문법 오류 없이 LIKE와 동등한 결과를 도출해야 함"
+      "is_safe_for_ngram": false,
+      "description": "기관명 내 괄호 포함 문자열 (FULLTEXT boolean 모드 하위 표현식 연산자 충돌 위험)",
+      "expected_behavior": "괄호는 FULLTEXT boolean 파서에서 연산자로 오해석되어 결과 누락/구문 오류 위험이 있으므로 fail-closed 원칙에 따라 LIKE 단독 경로로 폴백해야 함"
     },
     {
       "id": "edge_05",
@@ -79,9 +79,9 @@
       "class_id": "hyphen",
       "class_name": "하이픈",
       "is_baseline": false,
-      "is_safe_for_ngram": true,
-      "description": "하이픈이 포함된 기관/지역명 (FULLTEXT NOT 연산자 충돌 방지 검증)",
-      "expected_behavior": "하이픈이 boolean NOT 연산자로 오작동하지 않도록 구문 검색으로 래핑되어야 함"
+      "is_safe_for_ngram": false,
+      "description": "하이픈이 포함된 기관/지역명 (FULLTEXT NOT 연산자 충돌로 인한 누락 위험)",
+      "expected_behavior": "하이픈이 boolean NOT 연산자로 동작하여 검색 결과를 조용히 누락시킬 위험이 있으므로 fail-closed 원칙에 따라 LIKE 단독 경로로 폴백해야 함"
     },
     {
       "id": "edge_06",
@@ -99,9 +99,9 @@
       "class_id": "alphanumeric_mixed",
       "class_name": "영문과 숫자 혼합",
       "is_baseline": false,
-      "is_safe_for_ngram": true,
-      "description": "영문, 특수문자, 숫자가 혼합된 기관 또는 프로젝트 식별자",
-      "expected_behavior": "영숫자 혼합 문자열이 ngram 파서에서 정상 색인/검색되어 LIKE 결과와 일치해야 함"
+      "is_safe_for_ngram": false,
+      "description": "영문, 특수문자(하이픈), 숫자가 혼합된 식별자 (특수문자 충돌 위험)",
+      "expected_behavior": "하이픈 등 특수문자가 포함된 영숫자 혼합 식별자는 boolean 파서 충돌 위험이 있으므로 fail-closed 원칙에 따라 LIKE 단독 경로로 폴백해야 함"
     },
     {
       "id": "edge_08",
@@ -119,9 +119,9 @@
       "class_id": "like_wildcard_percent",
       "class_name": "LIKE 와일드카드 문자 퍼센트",
       "is_baseline": false,
-      "is_safe_for_ngram": true,
-      "description": "LIKE 와일드카드 문자(%)가 포함된 검색어",
-      "expected_behavior": "LIKE 와일드카드 문자가 포함되어도 MATCH 선행필터 후보가 LIKE 매칭 집합을 완전히 포함해야 함"
+      "is_safe_for_ngram": false,
+      "description": "LIKE 와일드카드 문자(%)가 포함된 검색어 (매칭 범위 불일치로 인한 조용한 누락 위험)",
+      "expected_behavior": "LIKE '%100%%'는 100 뒤 임의 문자열을 매칭하지만 MATCH +\"100%\"는 리터럴 퍼센트를 요구하여 MATCH가 진부분집합이 되므로 fail-closed 원칙에 따라 LIKE 단독 경로로 폴백해야 함"
     },
     {
       "id": "edge_10",
@@ -129,9 +129,9 @@
       "class_id": "like_wildcard_underscore",
       "class_name": "LIKE 와일드카드 문자 언더스코어",
       "is_baseline": false,
-      "is_safe_for_ngram": true,
-      "description": "LIKE 단일문자 와일드카드(_)가 포함된 검색어",
-      "expected_behavior": "언더스코어가 포함된 검색어에서 MATCH 선행필터와 후행 LIKE가 정상 동작해야 함"
+      "is_safe_for_ngram": false,
+      "description": "LIKE 단일문자 와일드카드(_)가 포함된 검색어 (매칭 범위 축소/누락 위험)",
+      "expected_behavior": "LIKE의 '_'는 임의 1문자를 매칭하지만 MATCH는 리터럴 언더스코어를 요구하여 매칭 결과가 누락되므로 fail-closed 원칙에 따라 LIKE 단독 경로로 폴백해야 함"
     },
     {
       "id": "edge_11",
@@ -139,9 +139,9 @@
       "class_id": "single_quote",
       "class_name": "작은따옴표",
       "is_baseline": false,
-      "is_safe_for_ngram": true,
-      "description": "작은따옴표가 포함된 검색어 (SQL injection 방지 및 바인딩 검증)",
-      "expected_behavior": "SQL 파라미터 바인딩을 통해 SQL 구문 오류 없이 안전하게 매칭되어야 함"
+      "is_safe_for_ngram": false,
+      "description": "작은따옴표가 포함된 검색어 (SQL 구문 해석 및 따옴표 래핑 충돌 방지)",
+      "expected_behavior": "작은따옴표 문자는 구문 해석 및 따옴표 래핑 충돌을 방지하기 위해 fail-closed 원칙에 따라 LIKE 단독 경로로 폴백해야 함"
     },
     {
       "id": "edge_12",
@@ -149,9 +149,9 @@
       "class_id": "boolean_operators",
       "class_name": "FULLTEXT boolean 연산자 성격 문자인 플러스 마이너스 별표 큰따옴표",
       "is_baseline": false,
-      "is_safe_for_ngram": true,
+      "is_safe_for_ngram": false,
       "description": "FULLTEXT boolean 모드 연산자 문자(+, -, *, \")가 포함된 검색어",
-      "expected_behavior": "불리언 연산자 문자가 쿼리 제어문으로 오해석되지 않도록 구문 따옴표 래핑 처리되어야 함"
+      "expected_behavior": "불리언 연산자 문자가 쿼리 제어문으로 오작동하여 검색 의미가 왜곡되므로 fail-closed 원칙에 따라 LIKE 단독 경로로 폴백해야 함"
     },
     {
       "id": "edge_13",
