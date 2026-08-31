@@ -12,6 +12,7 @@ import pytest
 from scripts import orca_kimi_launch
 from scripts.orca_kimi_launch import (
     COMMIT_NOTICE,
+    PERMISSION_SETUP_FLAG,
     build_command,
     build_completion_message,
     main,
@@ -308,3 +309,87 @@ def test_assert_model_available_without_config(tmp_path: Path):
     with pytest.raises(SystemExit) as err:
         orca_kimi_launch.assert_model_available("or-free/alpha", tmp_path)
     assert "config.toml" in str(err.value)
+
+
+# ===========================================================================
+# 권한 자동 승인 준비 계약 검증
+# ===========================================================================
+
+
+def test_permission_setup_child_in_kimi_launcher():
+    """Kimi 런처의 자식 모드 인자 검증 및 실행을 확인합니다."""
+    assert main([PERMISSION_SETUP_FLAG]) == 2
+    assert main([PERMISSION_SETUP_FLAG, "term_k"]) == 2
+    assert main([PERMISSION_SETUP_FLAG, "  ", "model_k"]) == 2
+
+    with patch("scripts.orca_kimi_launch.run_permission_setup_child", return_value=0) as mock_child:
+        code = main([PERMISSION_SETUP_FLAG, "term_k", "or-free/nemotron-ultra"])
+        assert code == 0
+        mock_child.assert_called_once()
+        args, kwargs = mock_child.call_args
+        assert args[0] == [PERMISSION_SETUP_FLAG, "term_k", "or-free/nemotron-ultra"]
+        assert kwargs.get("cli_type") == "kimi"
+
+
+@patch("scripts.orca_kimi_launch.run_kimi", return_value=0)
+@patch("scripts.orca_kimi_launch.wait_for_preamble", return_value="지시")
+def test_kimi_launcher_schedules_permission_setup(
+    mock_wait: MagicMock,
+    mock_run: MagicMock,
+    tmp_path: Path,
+    monkeypatch,
+):
+    preamble = tmp_path / "preamble.txt"
+    preamble.write_text("지시", encoding="utf-8")
+    monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "term_kimi_123")
+
+    spawned = []
+    monkeypatch.setattr(
+        "scripts.orca_kimi_launch.spawn_permission_setup",
+        lambda script, term, model: spawned.append((script, term, model)),
+    )
+
+    with patch("scripts.orca_kimi_launch.open_interactive_shell"):
+        main(
+            [
+                "--model",
+                "or-free/nemotron-ultra",
+                "--preamble",
+                str(preamble),
+                "--no-commit-notice",
+                "--no-keep-open",
+            ]
+        )
+
+    assert len(spawned) == 1
+    assert spawned[0][1] == "term_kimi_123"
+    assert spawned[0][2] == "or-free/nemotron-ultra"
+
+
+@patch("scripts.orca_kimi_launch.run_kimi", return_value=0)
+@patch("scripts.orca_kimi_launch.wait_for_preamble", return_value="지시")
+def test_kimi_launcher_warns_when_handle_absent(
+    mock_wait: MagicMock,
+    mock_run: MagicMock,
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    preamble = tmp_path / "preamble.txt"
+    preamble.write_text("지시", encoding="utf-8")
+    monkeypatch.delenv("ORCA_TERMINAL_HANDLE", raising=False)
+
+    with patch("scripts.orca_kimi_launch.open_interactive_shell"):
+        main(
+            [
+                "--model",
+                "or-free/nemotron-ultra",
+                "--preamble",
+                str(preamble),
+                "--no-commit-notice",
+                "--no-keep-open",
+            ]
+        )
+
+    err = capsys.readouterr().err
+    assert "ORCA_TERMINAL_HANDLE" in err

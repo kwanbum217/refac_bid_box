@@ -29,6 +29,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts import orca_worker_launch_common as common  # noqa: E402
+
+PERMISSION_SETUP_FLAG = common.PERMISSION_SETUP_FLAG
+run_permission_setup_child = common.run_permission_setup_child
+schedule_permission_setup = common.schedule_permission_setup
 
 DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
 DEFAULT_SHELL = "/bin/bash"
@@ -117,6 +125,15 @@ def open_interactive_shell(env: dict[str, str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # 자식 모드: 부모가 실행된 뒤 독립 세션에서 승인 설정만 수행합니다.
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] == PERMISSION_SETUP_FLAG:
+        return run_permission_setup_child(
+            raw,
+            cli_type="qwen",
+            launcher=str(Path(__file__).resolve().parent.name + "/" + Path(__file__).name),
+        )
+
     parser = argparse.ArgumentParser(description="Qwen Code 워커 런처")
     parser.add_argument(
         "--model",
@@ -158,6 +175,15 @@ def main(argv: list[str] | None = None) -> int:
 
     env = dict(os.environ)
     cmd = build_command(model_id, prompt, args.one_shot)
+
+    # Qwen Code 는 -i(대화형)과 -p(--one-shot 단발) 두 모드를 지원합니다.
+    # 단발 모드라도 워커가 긴 작업(파일 수정, 셸 명령 실행 등)을 수행하는 동안
+    # 셸 명령 승인 감시기 부착과 워커 메타데이터 기록(cli_type=qwen)이 반드시 필요합니다.
+    # 또한 prepare_worker_terminal 은 Qwen 메타데이터를 인식하여 shift+tab 전송을
+    # 안전하게 건너뛰므로(fail-closed/auto mode 보호), 두 모드 모두 동일하게
+    # 권한 자동 승인 준비 자식을 기동합니다.
+    schedule_permission_setup(Path(__file__).resolve(), model_id)
+
     mode = "-p 단발" if args.one_shot else "-i 대화형"
     print(f"기동: qwen -m {model_id} ({mode}, 지시문 {len(prompt)}자)", flush=True)
     # 인자는 셸을 거치지 않고 그대로 전달되므로 주입 위험이 없습니다. 모델 ID 와
