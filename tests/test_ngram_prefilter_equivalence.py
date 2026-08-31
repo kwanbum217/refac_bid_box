@@ -34,10 +34,20 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.dialects import mysql
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
+
+from src.app.core.config import Settings, settings
+from src.app.models.bids import BidAnnouncement, BidResult
+from src.rag.schemas import RetrievalPlan
+from src.rag.structured_data import (
+    _announcement_conditions,
+    _result_conditions,
+    is_safe_for_ngram_prefilter,
+)
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "ngram_edge_keywords.json"
 
@@ -248,6 +258,280 @@ def test_unit_compare_id_sets_detects_omission_and_extras():
     ok_miss, msg_miss = compare_id_sets({1, 2, 3}, {1, 2}, "test_missing")
     assert ok_miss is False
     assert "NGRAM 누락 건수(Missing in NGRAM): 1" in msg_miss
+
+
+def test_unit_flag_default_is_false():
+    """(1) config.py의 NGRAM_PREFILTER_ENABLED 기본값은 반드시 False여야 합니다."""
+    assert settings.NGRAM_PREFILTER_ENABLED is False
+    fresh_settings = Settings(
+        SECRET_KEY="test-secret-key-12345678901234567890",
+        DATABASE_URL="mysql+pymysql://root:rootpassword@localhost:3306/procurement",
+    )
+    assert fresh_settings.NGRAM_PREFILTER_ENABLED is False
+
+
+def test_unit_flag_off_generates_no_match_sql(monkeypatch: pytest.MonkeyPatch):
+    """(2) 플래그 OFF 일 때 생성 SQL 에 MATCH 구문이 전혀 없어야 합니다."""
+    monkeypatch.setattr(settings, "NGRAM_PREFILTER_ENABLED", False)
+
+    plan = RetrievalPlan(filters={"institution_name": "서울"})
+    winner_conds = _result_conditions(plan, enable_ngram_prefilter=True)
+    instt_conds = _announcement_conditions(plan, enable_ngram_prefilter=True)
+
+    stmt_winner = (
+        select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+        .where(*winner_conds)
+        .group_by(BidResult.bidwinnr_nm)
+    )
+    stmt_instt = (
+        select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+        .where(*instt_conds)
+        .group_by(BidAnnouncement.dminstt_nm)
+    )
+
+    sql_winner = str(
+        stmt_winner.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    sql_instt = str(
+        stmt_instt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "MATCH" not in sql_winner.upper()
+    assert "AGAINST" not in sql_winner.upper()
+    assert "LIKE" in sql_winner.upper()
+
+    assert "MATCH" not in sql_instt.upper()
+    assert "AGAINST" not in sql_instt.upper()
+    assert "LIKE" in sql_instt.upper()
+
+
+def test_unit_flag_on_safe_keyword_includes_match_and_like(monkeypatch: pytest.MonkeyPatch):
+    """(3) 플래그 ON 이고 안전한 키워드면 MATCH 와 LIKE 가 함께 포함되어야 합니다."""
+    monkeypatch.setattr(settings, "NGRAM_PREFILTER_ENABLED", True)
+
+    safe_keywords = ["서울", "한국도로공사", "부산광역시"]
+    for kw in safe_keywords:
+        plan = RetrievalPlan(filters={"institution_name": kw})
+        winner_conds = _result_conditions(plan, enable_ngram_prefilter=True)
+        instt_conds = _announcement_conditions(plan, enable_ngram_prefilter=True)
+
+        stmt_winner = (
+            select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+            .where(*winner_conds)
+            .group_by(BidResult.bidwinnr_nm)
+        )
+        stmt_instt = (
+            select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+            .where(*instt_conds)
+            .group_by(BidAnnouncement.dminstt_nm)
+        )
+
+        sql_winner = str(
+            stmt_winner.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+        sql_instt = str(
+            stmt_instt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+
+        assert "MATCH" in sql_winner.upper()
+        assert "AGAINST" in sql_winner.upper()
+        assert "LIKE" in sql_winner.upper()
+        assert f'+"{kw}"' in sql_winner
+
+        assert "MATCH" in sql_instt.upper()
+        assert "AGAINST" in sql_instt.upper()
+        assert "LIKE" in sql_instt.upper()
+        assert f'+"{kw}"' in sql_instt
+
+
+def test_unit_flag_on_single_char_keyword_generates_no_match_sql(monkeypatch: pytest.MonkeyPatch):
+    """(4) 플래그 ON 이어도 1글자 키워드에는 MATCH 가 들어가지 않고 LIKE 단독이어야 합니다."""
+    monkeypatch.setattr(settings, "NGRAM_PREFILTER_ENABLED", True)
+
+    single_char_keywords = ["시", "청", "A", "1"]
+    for kw in single_char_keywords:
+        assert is_safe_for_ngram_prefilter(kw) is False
+
+        plan = RetrievalPlan(filters={"institution_name": kw})
+        winner_conds = _result_conditions(plan, enable_ngram_prefilter=True)
+        instt_conds = _announcement_conditions(plan, enable_ngram_prefilter=True)
+
+        stmt_winner = select(BidResult.bidwinnr_nm).where(*winner_conds)
+        stmt_instt = select(BidAnnouncement.dminstt_nm).where(*instt_conds)
+
+        sql_winner = str(
+            stmt_winner.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+        sql_instt = str(
+            stmt_instt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+
+        assert "MATCH" not in sql_winner.upper()
+        assert "AGAINST" not in sql_winner.upper()
+        assert "LIKE" in sql_winner.upper()
+
+        assert "MATCH" not in sql_instt.upper()
+        assert "AGAINST" not in sql_instt.upper()
+        assert "LIKE" in sql_instt.upper()
+
+
+def test_unit_flag_on_unsafe_keywords_generate_no_match_sql(monkeypatch: pytest.MonkeyPatch):
+    """(5) 플래그 ON 이어도 와일드카드·boolean 연산자·따옴표 문자가 든 키워드에는 MATCH 가 들어가지 않아야 합니다."""
+    monkeypatch.setattr(settings, "NGRAM_PREFILTER_ENABLED", True)
+
+    unsafe_keywords = [
+        "100%",  # like_wildcard_percent
+        "공사_1차",  # like_wildcard_underscore
+        "공사's",  # single_quote
+        '공사"특수"',  # double quote
+        "+공사*",  # boolean_operators
+        "한국도로공사(본사)",  # parentheses
+        "서울-경기",  # hyphen
+    ]
+    for kw in unsafe_keywords:
+        assert is_safe_for_ngram_prefilter(kw) is False, f"Keyword '{kw}' should be marked unsafe"
+
+        plan = RetrievalPlan(filters={"institution_name": kw})
+        winner_conds = _result_conditions(plan, enable_ngram_prefilter=True)
+        instt_conds = _announcement_conditions(plan, enable_ngram_prefilter=True)
+
+        stmt_winner = select(BidResult.bidwinnr_nm).where(*winner_conds)
+        stmt_instt = select(BidAnnouncement.dminstt_nm).where(*instt_conds)
+
+        sql_winner = str(
+            stmt_winner.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+        sql_instt = str(
+            stmt_instt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+
+        assert "MATCH" not in sql_winner.upper()
+        assert "AGAINST" not in sql_winner.upper()
+        assert "LIKE" in sql_winner.upper()
+
+        assert "MATCH" not in sql_instt.upper()
+        assert "AGAINST" not in sql_instt.upper()
+        assert "LIKE" in sql_instt.upper()
+
+
+def test_unit_flag_on_bid_ntce_nm_query_generates_no_match_sql(monkeypatch: pytest.MonkeyPatch):
+    """(6) bid_ntce_nm 대상 쿼리 및 단건/목록 조회에는 플래그 ON 이어도 MATCH 가 없어야 합니다."""
+    monkeypatch.setattr(settings, "NGRAM_PREFILTER_ENABLED", True)
+
+    plan = RetrievalPlan(filters={"institution_name": "서울"})
+
+    # 1. bid_ntce_nm 집계 쿼리는 prefilter를 받지 않음
+    ann_conds = _announcement_conditions(plan, enable_ngram_prefilter=False)
+    stmt_top_ann = (
+        select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+        .where(*ann_conds)
+        .group_by(BidAnnouncement.bid_ntce_nm)
+    )
+    sql_top_ann = str(
+        stmt_top_ann.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert "MATCH" not in sql_top_ann.upper()
+    assert "LIKE" in sql_top_ann.upper()
+
+    # 2. recent_results (단건/목록 조회) 경로
+    res_conds = _result_conditions(plan, enable_ngram_prefilter=False)
+    stmt_recent = select(BidResult).where(*res_conds)
+    sql_recent = str(
+        stmt_recent.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert "MATCH" not in sql_recent.upper()
+    assert "LIKE" in sql_recent.upper()
+
+    # 3. 표본 공고 조회 경로
+    stmt_sample = select(BidAnnouncement.bid_ntce_no, BidAnnouncement.bid_ntce_nm).where(*ann_conds)
+    sql_sample = str(
+        stmt_sample.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    assert "MATCH" not in sql_sample.upper()
+
+
+def test_unit_flag_off_sql_identical_to_baseline(monkeypatch: pytest.MonkeyPatch):
+    """(7) 플래그 OFF 경로의 생성 SQL 이 변경 전과 100% 동일해야 합니다."""
+    monkeypatch.setattr(settings, "NGRAM_PREFILTER_ENABLED", False)
+
+    test_filter_cases = [
+        {},
+        {"institution_name": "서울"},
+        {"institution_name": "한국도로공사", "category": "Servc"},
+        {"institution_name": "부산광역시", "date_from": "2026-01-01", "date_to": "2026-06-30"},
+        {"category": "Cnstwk", "date_from": "2025-01-01"},
+    ]
+
+    for filters in test_filter_cases:
+        plan = RetrievalPlan(filters=filters)
+
+        # enable_ngram_prefilter=True 일 때도 플래그가 OFF면 False 호출과 동일
+        conds_winner_prefilter = _result_conditions(plan, enable_ngram_prefilter=True)
+        conds_winner_legacy = _result_conditions(plan, enable_ngram_prefilter=False)
+        stmt_pre = (
+            select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+            .where(*conds_winner_prefilter)
+            .group_by(BidResult.bidwinnr_nm)
+        )
+        stmt_leg = (
+            select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+            .where(*conds_winner_legacy)
+            .group_by(BidResult.bidwinnr_nm)
+        )
+
+        sql_pre = str(
+            stmt_pre.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+        sql_leg = str(
+            stmt_leg.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+        assert sql_pre == sql_leg
+
+        conds_instt_prefilter = _announcement_conditions(plan, enable_ngram_prefilter=True)
+        conds_instt_legacy = _announcement_conditions(plan, enable_ngram_prefilter=False)
+        stmt_instt_pre = (
+            select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+            .where(*conds_instt_prefilter)
+            .group_by(BidAnnouncement.dminstt_nm)
+        )
+        stmt_instt_leg = (
+            select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+            .where(*conds_instt_legacy)
+            .group_by(BidAnnouncement.dminstt_nm)
+        )
+
+        sql_instt_pre = str(
+            stmt_instt_pre.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+        sql_instt_leg = str(
+            stmt_instt_leg.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+        )
+        assert sql_instt_pre == sql_instt_leg
+
+
+def test_unit_is_safe_for_ngram_prefilter_with_fixture_classes():
+    """안전성 판정 함수가 픽스처의 기준선 키워드(10종) 및 위험 경계값 클래스를 정확히 판정하는지 검증합니다."""
+    # 1. 기준선 10종은 모두 True
+    for kw in F3_CANONICAL_10_BASELINE_KEYWORDS:
+        assert is_safe_for_ngram_prefilter(kw) is True, f"Baseline keyword '{kw}' should be safe"
+
+    # 2. 위험 문자 및 경계값
+    assert is_safe_for_ngram_prefilter("") is False
+    assert is_safe_for_ngram_prefilter(None) is False
+    assert is_safe_for_ngram_prefilter("시") is False
+    assert is_safe_for_ngram_prefilter("청") is False
+    assert is_safe_for_ngram_prefilter("100%") is False
+    assert is_safe_for_ngram_prefilter("공사_1차") is False
+    assert is_safe_for_ngram_prefilter("공사's") is False
+    assert is_safe_for_ngram_prefilter("+공사*") is False
+    assert is_safe_for_ngram_prefilter("한국도로공사(본사)") is False
+    assert is_safe_for_ngram_prefilter("서울-경기") is False
+
+    # 3. 안전한 복합 문자열
+    assert is_safe_for_ngram_prefilter("구청") is True
+    assert is_safe_for_ngram_prefilter("서울특별시 강남구") is True
+    assert is_safe_for_ngram_prefilter("한국농어촌공사전남지역본부영광지사") is True
+    assert is_safe_for_ngram_prefilter("토지주택") is True
 
 
 # ==============================================================================
