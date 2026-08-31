@@ -141,3 +141,57 @@ jobs:
         run: |
           docker run --rm -e SECRET_KEY=ci-smoke-placeholder-value-not-a-real-secret-0123456789 \
             refac-bid-box:ci python3 -c "import src.app.main"
+
+  mysql-ngram-integration:
+    name: MySQL 8 ngram Integration Test
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: testpassword
+          MYSQL_DATABASE: test_procurement_ngram
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -ptestpassword"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      # 격리된 MySQL 8 테스트 컨테이너에 전용 스키마와 ngram 인덱스 픽스처를 주입합니다.
+      # 운영 procurement DB나 운영 DDL/Alembic 마이그레이션을 전혀 건드리지 않습니다.
+      - name: Initialize Isolated MySQL Test Schema
+        env:
+          MYSQL_PWD: testpassword
+        run: |
+          mysql -h 127.0.0.1 -u root --default-character-set=utf8mb4 test_procurement_ngram < tests/fixtures/ngram_mysql_init.sql
+
+      # skip 은 성공으로 인정하지 않으며, 최소 1건 이상의 테스트가 실행되어 통과해야 합니다.
+      - name: Run MySQL ngram Integration Tests
+        env:
+          MYSQL_TEST_URL: mysql+pymysql://root:testpassword@127.0.0.1:3306/test_procurement_ngram
+        run: |
+          OUTPUT=$(uv run pytest tests/test_ngram_prefilter_equivalence.py -m mysql_integration -v)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -E "(SKIPPED|skipped)"; then
+            echo "Error: mysql_integration tests were skipped."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -E "([1-9][0-9]* passed)"; then
+            echo "Error: No tests passed in mysql_integration."
+            exit 1
+          fi
