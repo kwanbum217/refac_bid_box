@@ -76,6 +76,8 @@ def acquire_permissions(
     terminal: str,
     model: str,
     *,
+    cli_type: str = "antigravity",
+    launcher: str | None = None,
     delay_sec: float = PERMISSION_SETUP_DELAY_SEC,
     deadline_sec: float = PERMISSION_SETUP_DEADLINE_SEC,
     interval_sec: float = PERMISSION_SETUP_INTERVAL_SEC,
@@ -94,12 +96,18 @@ def acquire_permissions(
     읽히는데 그때 키를 보내면 순환이 accept-edits 를 지나 plan 으로 넘어가
     워커가 파일을 아예 못 고칩니다. 판정 불가일 때는 보내지 않고 다음 주기를
     기다립니다.
+
+    cli_type 과 launcher 를 키워드로 받는 이유는 이 함수가 acquire_fn 으로
+    common.run_permission_setup_child 에 넘겨지기 때문입니다. 그쪽은 항상 두
+    값을 키워드로 전달하므로 받지 않으면 TypeError 로 자식이 즉시 죽고,
+    부모는 이미 exec 로 사라진 뒤라 아무도 실패를 보지 못합니다. 2026-08-31
+    에 이 형태로 승인 자동화가 통째로 동작하지 않았습니다.
     """
     return common.acquire_permissions(
         terminal,
         model,
-        cli_type="antigravity",
-        launcher=str(Path(__file__).resolve().parent.name + "/" + Path(__file__).name),
+        cli_type=cli_type,
+        launcher=launcher or str(Path(__file__).resolve().parent.name + "/" + Path(__file__).name),
         delay_sec=delay_sec,
         deadline_sec=deadline_sec,
         interval_sec=interval_sec,
