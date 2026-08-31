@@ -52,6 +52,7 @@ from scripts.orca_model_router import (
     main,
     preflight,
     probe_model,
+    provider_for_model,
     record_reliability_outcome,
     resolve_kimi_bin,
     route,
@@ -1898,3 +1899,133 @@ def test_probe_accepts_normal_body_with_zero_exit(monkeypatch):
     monkeypatch.setattr(subprocess, "run", _mock_run)
     available, _detail = probe_model("qwen3.7-plus")
     assert available is True
+
+
+# ---------------------------------------------------------------------------
+# Provider 판정 및 독립성 검증 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestProviderIndependence:
+    def test_provider_for_model_classifies_families(self):
+        """각 모델 풀 이름 및 모델 ID 가 올바른 provider 계열로 분류됩니다."""
+        expected_mappings = {
+            # Gemini 계열
+            "gemini-flash-high": "gemini",
+            "gemini-flash-medium": "gemini",
+            "gemini-flash-low": "gemini",
+            "gemini-3.7-flash-high": "gemini",
+            "gemini-3.7-flash-medium": "gemini",
+            "gemini-3.7-flash-low": "gemini",
+            "gemini-custom-model": "gemini",
+            # Qwen / Alibaba Token Plan 계열
+            "qwen-plus": "qwen",
+            "qwen3.7-plus": "qwen",
+            "deepseek-pro": "qwen",
+            "deepseek-v4-pro": "qwen",
+            "glm": "qwen",
+            "glm-5.2": "qwen",
+            "qwen-max": "qwen",
+            "qwen3.8-max-preview": "qwen",
+            # Claude 계열
+            "claude-sonnet": "claude",
+            "claude-sonnet-4-6": "claude",
+            "claude-opus": "claude",
+            "claude-opus-5": "claude",
+            # Codex 계열
+            "codex": "codex",
+            "gpt-5.6-terra": "codex",
+            # 기타 풀
+            "cursor-auto": "cursor",
+            "cursor-agent/auto": "cursor",
+            "opencode-deepseek": "opencode",
+            "opencode/deepseek-v4-flash-free": "opencode",
+            "cerebras-oss": "cerebras",
+            "cerebras/gpt-oss-120b": "cerebras",
+            "or-free-nemotron-ultra": "kimi-openrouter",
+            "or-free/nemotron-ultra": "kimi-openrouter",
+        }
+        for model_or_pool, expected_provider in expected_mappings.items():
+            assert provider_for_model(model_or_pool) == expected_provider, (
+                f"{model_or_pool} 은 {expected_provider} 로 판정되어야 합니다."
+            )
+
+    def test_provider_for_model_unknown_raises_or_marks(self):
+        """알 수 없는 모델 ID 는 strict=True 에서 조용히 넘기지 않고 ValueError 를 발생시킵니다."""
+        with pytest.raises(ValueError, match="알 수 없는 모델 ID"):
+            provider_for_model("unregistered-provider-xyz-999", strict=True)
+
+        # strict=False 에서는 'unknown' 으로 표시
+        assert provider_for_model("unregistered-provider-xyz-999", strict=False) == "unknown"
+
+        with pytest.raises(ValueError):
+            provider_for_model("", strict=True)
+
+        assert provider_for_model("", strict=False) == "unknown"
+
+    def test_select_model_exclude_providers_filters_primary_and_fallback(self):
+        """exclude_providers 에 지정된 계열은 primary 로도 fallback 으로도 선택되지 않습니다."""
+        # reviewer high: 기본 후보는 [qwen-plus, gemini-flash-high]
+        # gemini 제외 시 qwen-plus 만 남고 fallback 은 None
+        res_gemini_excluded = select_model("reviewer", "high", exclude_providers=["gemini"])
+        assert res_gemini_excluded["primary_pool"] == "qwen-plus"
+        assert res_gemini_excluded["primary_model"] == "qwen3.7-plus"
+        assert res_gemini_excluded["fallback_pool"] is None
+        assert res_gemini_excluded["fallback_model"] is None
+
+        # qwen 제외 시 gemini-flash-high 만 남고 fallback 은 None
+        res_qwen_excluded = select_model("reviewer", "high", exclude_providers=["qwen"])
+        assert res_qwen_excluded["primary_pool"] == "gemini-flash-high"
+        assert res_qwen_excluded["primary_model"] == "gemini-3.7-flash-high"
+        assert res_qwen_excluded["fallback_pool"] is None
+        assert res_qwen_excluded["fallback_model"] is None
+
+        # builder high: 기본 후보는 [gemini-flash-high, qwen-plus]
+        # gemini 제외 시 qwen-plus 만 primary 로 선택
+        res_b_gemini_excluded = select_model("builder", "high", exclude_providers=["gemini"])
+        assert res_b_gemini_excluded["primary_pool"] == "qwen-plus"
+        assert res_b_gemini_excluded["fallback_pool"] is None
+
+    def test_select_model_all_candidates_excluded_by_provider_raises_model_routing_error(self):
+        """provider 제외로 후보가 모두 소진되면 ModelRoutingError 로 fail-closed 되며 메시지에 제외된 provider 가 포함됩니다."""
+        with pytest.raises(ModelRoutingError) as exc_info:
+            select_model(
+                "reviewer",
+                "high",
+                exclude_providers=["qwen", "gemini"],
+            )
+
+        err = exc_info.value
+        assert err.role == "reviewer"
+        assert err.risk == "high"
+        assert "qwen" in err.exclude_providers
+        assert "gemini" in err.exclude_providers
+        assert "qwen" in str(err)
+        assert "gemini" in str(err)
+        assert "reviewer" in str(err)
+        assert "high" in str(err)
+
+    def test_select_model_without_exclude_providers_preserves_existing_behavior(self):
+        """exclude_providers 를 지정하지 않은 기존 호출은 동작이 변하지 않습니다."""
+        res_reviewer = select_model("reviewer", "high")
+        assert res_reviewer["primary_pool"] == "qwen-plus"
+        assert res_reviewer["primary_model"] == "qwen3.7-plus"
+        assert res_reviewer["fallback_pool"] == "gemini-flash-high"
+        assert res_reviewer["fallback_model"] == "gemini-3.7-flash-high"
+
+        res_builder = select_model("builder", "medium")
+        assert res_builder["primary_pool"] == "gemini-flash-medium"
+        assert res_builder["primary_model"] == "gemini-3.7-flash-medium"
+        assert res_builder["fallback_pool"] == "qwen-plus"
+        assert res_builder["fallback_model"] == "qwen3.7-plus"
+
+    def test_tier_policy_values_unmodified(self):
+        """TIER_POLICY 의 값이 임의로 변경되지 않았음을 단정합니다."""
+        from scripts.orca_model_router import TIER_POLICY
+
+        assert TIER_POLICY[("reviewer", "high")] == ["qwen-plus", "gemini-flash-high"]
+        assert TIER_POLICY[("reviewer", "medium")] == ["qwen-plus", "gemini-flash-medium"]
+        assert TIER_POLICY[("reviewer", "low")] == ["qwen-plus", "gemini-flash-medium"]
+        assert TIER_POLICY[("builder", "high")] == ["gemini-flash-high", "qwen-plus"]
+        assert TIER_POLICY[("builder", "medium")] == ["gemini-flash-medium", "qwen-plus"]
+        assert TIER_POLICY[("builder", "low")] == ["gemini-flash-medium", "qwen-plus"]

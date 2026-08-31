@@ -87,10 +87,12 @@ except (ModuleNotFoundError, ImportError):
 try:
     from scripts.orca_model_router import (
         MODEL_POOL,
+        ModelRoutingError,
         capsule_has_write_scope,
         classify_from_capsule,
         classify_risk,
         pool_for_model,
+        provider_for_model,
         record_reliability_outcome,
         select_model,
     )
@@ -100,10 +102,12 @@ except (ModuleNotFoundError, ImportError):
         sys.path.insert(0, str(_repo_root))
     from scripts.orca_model_router import (
         MODEL_POOL,
+        ModelRoutingError,
         capsule_has_write_scope,
         classify_from_capsule,
         classify_risk,
         pool_for_model,
+        provider_for_model,
         record_reliability_outcome,
         select_model,
     )
@@ -554,6 +558,32 @@ def validate_contained_path(path_str: str | Path, field_name: str = "경로") ->
         raise ValueError(f"{field_name} 에 빈 경로는 허용되지 않습니다: {raw}")
 
     return raw
+
+
+def validate_commit_count(
+    commit_count: Any,
+    status: str = "succeeded",
+    has_write_scope: bool = True,
+) -> list[str]:
+    """commit_count 의 타입과 값을 검증하여 위반 목록을 반환합니다.
+
+    - 정수만 허용 (bool 제외, 문자열 제외, float 제외)
+    - 음수 금지 (< 0)
+    - status == 'succeeded' 이고 쓰기 범위가 있는 작업에서 0 이면 무작업 위반
+    """
+    violations: list[str] = []
+    if isinstance(commit_count, bool) or not isinstance(commit_count, int):
+        violations.append(
+            f"타입 위반: commit_count 는 정수여야 하는데 "
+            f"{type(commit_count).__name__} ({commit_count!r})"
+        )
+    elif commit_count < 0:
+        violations.append(f"값 위반: commit_count 가 음수 ({commit_count})")
+    elif commit_count == 0 and status == "succeeded" and has_write_scope:
+        violations.append(
+            "규약 3.3 위반: status 가 succeeded 인데 commit_count 가 0 (무작업 완료 보고)"
+        )
+    return violations
 
 
 # ---------------------------------------------------------------------------
@@ -2053,11 +2083,13 @@ def finalize_task(
     base: str = "main",
     branch: str = "HEAD",
     run_reviewer: bool = False,
-    reviewer_model: str = DEFAULT_MODEL,
+    reviewer_model: str | None = None,
     strict: bool = True,
     max_diff_chars: int | None = None,
     allow_truncated_diff: bool = False,
     terminal: str | None = None,
+    builder_model: str | None = None,
+    builder_provider: str | None = None,
 ) -> dict[str, Any]:
     """worker_done 보고를 검증하고 Level 1/Reviewer 검증 파이프라인을 실행합니다."""
     # 자동 승인 감시기 중지 (Task 종료 시 명시적으로 내림)
@@ -2242,6 +2274,78 @@ def finalize_task(
 
     # 3. orca_run_reviewer.py 실행 (선택)
     if run_reviewer:
+        # 리뷰어 모델 결정 (독립 provider 강제)
+        actual_reviewer_model: str | None = None
+        if reviewer_model is not None:
+            actual_reviewer_model = reviewer_model
+        else:
+            # 빌더의 provider 파악
+            b_provider = builder_provider
+            if not b_provider and builder_model:
+                try:
+                    b_provider = provider_for_model(builder_model, strict=False)
+                except Exception:
+                    b_provider = None
+            if not b_provider and target_terminal:
+                meta = read_worker_meta(target_terminal)
+                if meta and meta.get("model"):
+                    try:
+                        b_provider = provider_for_model(meta["model"], strict=False)
+                    except Exception:
+                        b_provider = None
+            if not b_provider and capsule_path.exists():
+                with suppress(Exception):
+                    cap_data = load_capsule(capsule_path)
+                    b_model_cap = parse_capsule_scalar(
+                        cap_data, "builder_model"
+                    ) or parse_capsule_scalar(cap_data, "model")
+                    if b_model_cap:
+                        b_provider = provider_for_model(b_model_cap, strict=False)
+                    if not b_provider:
+                        b_provider = parse_capsule_scalar(cap_data, "builder_provider")
+            if not b_provider and report_path.exists():
+                with suppress(Exception):
+                    rep_data = load_report(report_path)
+                    if isinstance(rep_data, dict) and rep_data.get("model"):
+                        b_provider = provider_for_model(rep_data["model"], strict=False)
+
+            # 위험도 파악
+            risk = "medium"
+            if capsule_path.exists():
+                with suppress(Exception):
+                    risk = classify_from_capsule(capsule_path).get("risk", "medium")
+
+            # 독립 리뷰어 모델 라우팅
+            if b_provider and b_provider != "unknown":
+                try:
+                    routed = select_model(
+                        role="reviewer", risk=risk, exclude_providers=[b_provider]
+                    )
+                    actual_reviewer_model = routed["primary_model"]
+                except ModelRoutingError as exc:
+                    tool_error = True
+                    result["reviewer"] = {
+                        "error": truncate(f"독립 리뷰어 모델 라우팅 실패: {exc}", 400),
+                        "exit_code": 2,
+                    }
+                    result["exit_code"] = 2
+                    return result
+            else:
+                try:
+                    routed = select_model(role="reviewer", risk=risk)
+                    actual_reviewer_model = routed["primary_model"]
+                except ModelRoutingError as exc:
+                    tool_error = True
+                    result["reviewer"] = {
+                        "error": truncate(f"리뷰어 모델 라우팅 실패: {exc}", 400),
+                        "exit_code": 2,
+                    }
+                    result["exit_code"] = 2
+                    return result
+                result["reviewer_warning"] = (
+                    "빌더 provider 를 알 수 없어 독립 provider 제외를 적용하지 못했습니다."
+                )
+
         reviewer_out = report_path.parent / f"{report_path.stem}_review.json"
         reviewer_cmd = [
             sys.executable,
@@ -2257,7 +2361,7 @@ def finalize_task(
             "--repo",
             str(target_repo),
             "--model",
-            reviewer_model,
+            actual_reviewer_model,
             "--json",
         ]
         if max_diff_chars is not None:
@@ -2667,13 +2771,16 @@ def resolve_dispatch_model(
     capsule_text: str,
     capsule_path: Path | str | None = None,
     intent: dict[str, Any] | None = None,
+    builder_model: str | None = None,
+    builder_provider: str | None = None,
+    exclude_providers: list[str] | None = None,
 ) -> dict[str, Any]:
     """Dispatch 시 사용할 모델, 배정 근거, 경고 등을 판정합니다.
 
     우선순위:
       1. args_model (명시 지정) -> 그대로 사용하되 상위 모델 지정 시 경고.
       2. orca_model_router.select_model(role, risk) -> 배정표 기반 최적 모델 선택.
-      3. 실패 시 DEFAULT_MODEL 로 fallback.
+      3. 실패 시 DEFAULT_MODEL 로 fallback. (단, 리뷰어 독립성/provider 제외 실패는 fail-closed)
     """
     role = (
         (intent.get("role") if intent else None)
@@ -2704,17 +2811,65 @@ def resolve_dispatch_model(
     recommended_model: str | None = None
     router_error: str | None = None
 
+    # Reviewer 역할인 경우 빌더 provider 제외 적용
+    effective_exclude_providers: list[str] = list(exclude_providers) if exclude_providers else []
+    builder_prov_unknown = False
+    resolved_builder_provider: str | None = None
+
+    if role == "reviewer":
+        b_prov = builder_provider
+        if not b_prov and builder_model:
+            try:
+                b_prov = provider_for_model(builder_model, strict=False)
+            except Exception:
+                b_prov = None
+        if not b_prov and intent:
+            b_model = intent.get("builder_model")
+            if b_model:
+                try:
+                    b_prov = provider_for_model(b_model, strict=False)
+                except Exception:
+                    b_prov = None
+            if not b_prov:
+                b_prov = intent.get("builder_provider")
+        if not b_prov and capsule_path and Path(capsule_path).is_file():
+            with suppress(Exception):
+                cap_txt = load_capsule(capsule_path)
+                b_model = parse_capsule_scalar(cap_txt, "builder_model")
+                if b_model:
+                    b_prov = provider_for_model(b_model, strict=False)
+                if not b_prov:
+                    b_prov = parse_capsule_scalar(cap_txt, "builder_provider")
+        if not b_prov:
+            with suppress(Exception):
+                b_model = parse_capsule_scalar(capsule_text, "builder_model")
+                if b_model:
+                    b_prov = provider_for_model(b_model, strict=False)
+                if not b_prov:
+                    b_prov = parse_capsule_scalar(capsule_text, "builder_provider")
+
+        resolved_builder_provider = b_prov
+        if b_prov and b_prov != "unknown":
+            if b_prov not in effective_exclude_providers:
+                effective_exclude_providers.append(b_prov)
+        else:
+            builder_prov_unknown = True
+
     try:
         routed = select_model(
             role=role,
             risk=risk,
             allow_free=False,
             has_write_scope=has_write,
+            exclude_providers=effective_exclude_providers if effective_exclude_providers else None,
         )
         recommended_pool = routed.get("primary_pool")
         recommended_model = routed.get("primary_model")
     except Exception as exc:
         router_error = str(exc)
+        if not args_model and (role == "reviewer" or exclude_providers):
+            # 독립 provider 제외 실패 시 같은 계열로 fallback 하지 않고 fail-closed
+            raise
 
     warning: str | None = None
     if args_model:
@@ -2747,6 +2902,10 @@ def resolve_dispatch_model(
             warning = f"모델 라우팅 실패로 기본값({DEFAULT_MODEL})으로 대체합니다: {router_error}"
             sys.stderr.write(f"경고: {warning}\n")
 
+    if role == "reviewer" and builder_prov_unknown:
+        unknown_warn = "빌더 provider 를 알 수 없어 독립 provider 제외를 적용하지 못했습니다."
+        warning = f"{warning}; {unknown_warn}" if warning else unknown_warn
+
     return {
         "model": model,
         "source": source,
@@ -2754,6 +2913,8 @@ def resolve_dispatch_model(
         "risk": risk,
         "reason": reason,
         "warning": warning,
+        "builder_provider": resolved_builder_provider
+        or ("unknown" if role == "reviewer" else None),
         "recommended_model": recommended_model,
         "recommended_pool": recommended_pool,
     }
@@ -3587,7 +3748,11 @@ def _build_parser() -> argparse.ArgumentParser:
     fin.add_argument("--base", default="main", help="비교 기준 git ref")
     fin.add_argument("--branch", default="HEAD", help="검증 대상 git ref")
     fin.add_argument("--reviewer", action="store_true", help="Level 2 Reviewer 실행")
-    fin.add_argument("--reviewer-model", default=DEFAULT_MODEL, help="Reviewer 모델 ID")
+    fin.add_argument(
+        "--reviewer-model",
+        default=None,
+        help="Reviewer 모델 ID (미지정 시 빌더와 독립된 provider 계열로 자동 라우팅)",
+    )
     fin.add_argument(
         "--max-diff-chars",
         type=int,
