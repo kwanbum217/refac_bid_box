@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -574,3 +575,38 @@ def test_json_output_includes_stall_fields(capsys: pytest.CaptureFixture[str]) -
         payload = capsys.readouterr().out
         assert '"stall_candidate": true' in payload
         assert '"unchanged_seconds": 312.4' in payload
+
+
+def test_worker_done_missing_report_path_classified_as_blocked(tmp_path: Path) -> None:
+    """worker_done 전송 화면에 reportPath 가 없으면 [차단]으로 분류되어야 합니다."""
+    screen_tail = "orca orchestration send --type worker_done --outcome succeeded\n"
+    res = watch.detect_block(screen_tail, worktree_path=str(tmp_path))
+    assert res is not None
+    reason, _fix, kind = res
+    assert "reportPath 가 누락됨" in reason
+    assert kind == "failure"
+
+
+def test_worker_done_nonexistent_report_file_classified_as_blocked(tmp_path: Path) -> None:
+    """worker_done 에 지정된 보고 파일이 디스크에 없으면 [차단]으로 분류되어야 합니다."""
+    screen_tail = (
+        "orca orchestration send --type worker_done --report-path .orca/worker_done.json\n"
+    )
+    res = watch.detect_block(screen_tail, worktree_path=str(tmp_path))
+    assert res is not None
+    reason, _fix, kind = res
+    assert "보고 파일이 존재하지 않음" in reason
+    assert kind == "failure"
+
+
+def test_worker_done_valid_report_file_not_blocked(tmp_path: Path) -> None:
+    """worker_done 에 지정된 보고 파일이 디스크에 실존하면 차단되지 않아야 합니다."""
+    report_file = tmp_path / ".orca" / "worker_done.json"
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text("{}", encoding="utf-8")
+
+    screen_tail = (
+        "orca orchestration send --type worker_done --report-path .orca/worker_done.json\n"
+    )
+    res = watch.detect_block(screen_tail, worktree_path=str(tmp_path))
+    assert res is None

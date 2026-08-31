@@ -4845,3 +4845,95 @@ def test_validate_commit_count_valid_integers_pass():
 
     # 3. 읽기 전용 작업(has_write_scope=False)에서는 succeeded 여도 commit_count 0 허용
     assert validate_commit_count(0, status="succeeded", has_write_scope=False) == []
+
+
+def test_required_write_files_in_expanded_capsule(tmp_path: Path):
+    """Builder Intent 의 scope 가 required_write_files 필드로 정상 확장되어야 합니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    intent = parse_intent(
+        "schema: ORCA_TASK_INTENT_V1\n"
+        "role: builder\n"
+        "objective: 테스트 작업\n"
+        "scope:\n"
+        '  - "scripts/orca_taskctl.py"\n'
+    )
+    capsule = expand_intent_to_capsule(intent, task_id="task_req_test", capsule_path=capsule_file)
+    req_files = parse_capsule_list(capsule, "required_write_files")
+    assert req_files == ["scripts/orca_taskctl.py"]
+
+
+def test_required_write_files_not_subset_raises_value_error(tmp_path: Path):
+    """required_write_files 가 allowed_write_files 의 부분집합이 아니면 ValueError 가 발생해야 합니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    intent = parse_intent(
+        "schema: ORCA_TASK_INTENT_V1\n"
+        "role: builder\n"
+        "objective: 테스트 작업\n"
+        "scope:\n"
+        '  - "scripts/orca_taskctl.py"\n'
+        "required_write_files:\n"
+        '  - "scripts/orca_taskctl.py"\n'
+        '  - "src/unauthorized_leak.py"\n'
+    )
+    with pytest.raises(ValueError, match="required_write_files 는 allowed_write_files 의 부분집합"):
+        expand_intent_to_capsule(intent, task_id="task_req_bad", capsule_path=capsule_file)
+
+
+def test_capsule_copy_drift_detected_in_dispatch(tmp_path: Path, capsys):
+    """동일 Task 의 spec Capsule 과 실제 Task Capsule 간 drift 감지 시 dispatch 가 거부되어야 합니다."""
+    capsule_dir = tmp_path / ".orca" / "capsules"
+    task_id = "task_drift_001"
+
+    spec_dir = capsule_dir / "spec_copy"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    spec_file = spec_dir / "capsule.yaml"
+    spec_file.write_text(
+        "schema: ORCA_TASK_CAPSULE_V2\n"
+        'version: "2.1.0"\n'
+        f'task_id: "{task_id}"\n'
+        'role: "builder"\n'
+        'allowed_read_files:\n  - "src/..."\n'
+        'allowed_write_files:\n  - "src/app.py"\n',
+        encoding="utf-8",
+    )
+
+    actual_dir = capsule_dir / task_id
+    actual_dir.mkdir(parents=True, exist_ok=True)
+    actual_file = actual_dir / "capsule.yaml"
+    actual_file.write_text(
+        "schema: ORCA_TASK_CAPSULE_V2\n"
+        'version: "2.1.0"\n'
+        f'task_id: "{task_id}"\n'
+        'role: "builder"\n'
+        'allowed_read_files:\n  - "src/..."\n'
+        'allowed_write_files:\n  - "src/other.py"\n',
+        encoding="utf-8",
+    )
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(
+        f"schema: ORCA_TASK_INTENT_V1\nrole: builder\nobjective: 테스트\ntask_id: {task_id}\n",
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule",
+            str(spec_file),
+            "--capsule-dir",
+            str(capsule_dir),
+            "--task-id",
+            task_id,
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    assert code == 1
+    out = capsys.readouterr().out
+    payload = json.loads(out)
+    assert payload["error"] == "capsule_spec_drift"
+    assert payload["origin"] == "capsule_spec_error"

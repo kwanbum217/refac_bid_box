@@ -246,9 +246,73 @@ def check_or_prepare_pre_commit(worktree: Path, repo: Path, check: bool) -> tupl
     return install_pre_commit_hook(resolved_wt, repo)
 
 
+def set_worktree_capsule(worktree: Path, capsule_path: Path | str) -> tuple[bool, str]:
+    """워크트리의 Git 설정에 orca.capsule 경로를 기록합니다."""
+    resolved_wt = worktree.resolve()
+    cap_str = str(capsule_path)
+
+    # 1. extensions.worktreeConfig 활성화 시도
+    subprocess.run(  # nosec B603 B607
+        ["git", "-C", str(resolved_wt), "config", "extensions.worktreeConfig", "true"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    # 2. git config --worktree orca.capsule <cap_str> 설정 (실패 시 로컬 config fallback)
+    res = subprocess.run(  # nosec B603 B607
+        ["git", "-C", str(resolved_wt), "config", "--worktree", "orca.capsule", cap_str],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if res.returncode != 0:
+        res = subprocess.run(  # nosec B603 B607
+            ["git", "-C", str(resolved_wt), "config", "orca.capsule", cap_str],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    if res.returncode == 0:
+        return True, f"[Capsule 설정] 등록 완료: orca.capsule={cap_str}"
+    err = res.stderr.strip() or res.stdout.strip()
+    return False, f"[Capsule 설정] 등록 실패: {err}"
+
+
+def check_or_prepare_capsule(
+    worktree: Path,
+    capsule_path: Path | str | None,
+    check: bool,
+) -> tuple[bool, str]:
+    """4단계: Task Capsule 경로 설정 확인 및 기록."""
+    if not capsule_path:
+        return True, "[Capsule 설정] 명시된 Capsule 없음 (건너뜀)"
+
+    resolved_wt = worktree.resolve()
+    try:
+        proc = subprocess.run(  # nosec B603 B607
+            ["git", "-C", str(resolved_wt), "config", "--get", "orca.capsule"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        current = proc.stdout.strip() if proc.returncode == 0 else ""
+        if current == str(capsule_path):
+            return True, f"[Capsule 설정] 이미 준비됨: orca.capsule={current}"
+    except (subprocess.SubprocessError, OSError):  # nosec B110
+        pass
+
+    if check:
+        return False, f"[Capsule 설정] 미준비: orca.capsule 미설정 (예상: {capsule_path})"
+
+    return set_worktree_capsule(resolved_wt, capsule_path)
+
+
 def prepare_worktree(
     worktree_path: Path,
     main_repo_path: Path | None = None,
+    capsule_path: Path | str | None = None,
     check: bool = False,
 ) -> int:
     """워크트리 준비 전체 파이프라인을 실행합니다."""
@@ -268,6 +332,7 @@ def prepare_worktree(
         check_or_prepare_env(wt, repo, check),
         check_or_prepare_trust(wt, check),
         check_or_prepare_pre_commit(wt, repo, check),
+        check_or_prepare_capsule(wt, capsule_path, check),
     ]
 
     all_passed = True
@@ -281,7 +346,7 @@ def prepare_worktree(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="워커 워크트리 준비 도구 (.env 복사, Antigravity 신뢰 등록, pre-commit 훅 설치)"
+        description="워커 워크트리 준비 도구 (.env 복사, Antigravity 신뢰 등록, pre-commit 훅 설치, Capsule 설정)"
     )
     parser.add_argument("worktree", type=Path, help="준비할 워크트리 경로")
     parser.add_argument(
@@ -299,6 +364,12 @@ def main(argv: list[str] | None = None) -> int:
         help="주 저장소 경로 명시",
     )
     parser.add_argument(
+        "--capsule",
+        default=None,
+        type=Path,
+        help="워크트리에 바인딩할 Task Capsule YAML 경로",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="상태를 변경하지 않고 준비 여부만 검사 (미준비 시 종료 코드 1)",
@@ -306,7 +377,9 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     explicit_repo = args.repo_opt or args.repo
-    return prepare_worktree(args.worktree, explicit_repo, check=args.check)
+    return prepare_worktree(
+        args.worktree, explicit_repo, capsule_path=args.capsule, check=args.check
+    )
 
 
 if __name__ == "__main__":
