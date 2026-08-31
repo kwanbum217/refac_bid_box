@@ -161,7 +161,10 @@ def _result_limit(plan: RetrievalPlan) -> int:
 
 
 # 낙찰업체 집계는 날짜만 걸리고 category 가 없을 때 옵티마이저가 그룹 인덱스
-# (ix_bid_results_bidwinnr_nm)를 골라 3,267,347행 전부를 훑습니다(filtered 15.29%).
+# (ix_bid_results_bidwinnr_nm)를 골라 인덱스 전체를 훑습니다(filtered 15.29%).
+# EXPLAIN rows 추정은 약 3.27M 이고 bid_results 의 실제 행 수는 3,423,008 입니다.
+# 추정치를 실측처럼 읽으면 다음 최적화 판단이 다시 어긋납니다(2026-08-30 실측,
+# docs/analysis/task_f3_ngram_fulltext_probe.md 2.1 절).
 # 버퍼 풀이 식어 있으면 이 스캔이 최대 97초를 씁니다(2026-08-30 실측).
 # 날짜 인덱스를 강제하면 범위 스캔으로 좁혀져 13,412ms 가 714ms 로 떨어집니다.
 # category 가 함께 걸리면 옵티마이저가 ix_bid_results_cat_dt_stats 로 182,902행까지

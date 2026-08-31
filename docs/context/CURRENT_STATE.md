@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-31
-> **source_commit**: `fd84e0f`
+> **source_commit**: `9d38a2a`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -235,7 +235,7 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - **Wave G 조율 평면 정합성 (2026-08-31, 병합 완료)**: 외부 감사 두 건을 HEAD `d0cb3d7` 에서 교차 검증해 실제 잔여만 닫았습니다. 한쪽 보고서는 `4aa444f`(838 커밋 뒤처짐) 기준이라 10건 중 8건이 이미 수정 완료였습니다. **감사 보고서는 기준 커밋을 확인한 뒤 수용하십시오.** 닫은 것은 모델 정책 3중 분기, 리뷰어 provider 독립성 fail-closed, `commit_count` 타입 우회, `CURRENT_STATE` q21 모순, 2.4 절 warm 범위, EXPLAIN 추정치 표기, ngram 회귀 하네스입니다.
-- **리뷰어 실행 경로가 정책을 강제하지 못함 (2026-08-31, 미해결)**: `TIER_POLICY` 는 리뷰어 주 모델로 `qwen-plus` 를 지정하는데 `scripts/orca_run_reviewer.py:240` 이 CLI 를 `agy` 로 하드코딩해 그 모델을 실행할 수 없습니다. 모델 **선택**은 Wave G2 가 고쳤으나 **실행**은 여전히 어긋납니다. 현재는 Antigravity 가 함께 서빙하는 `claude-sonnet-4-6` 으로 계열 독립성을 지키고 있습니다. provider 와 CLI 는 1:1 이 아닙니다(Antigravity 가 Gemini·Claude·GPT-OSS 를 함께 서빙).
+- **리뷰어 실행 경로 (2026-08-31, 해소)**: `orca_run_reviewer.py` 가 모델 provider 로 CLI 를 정합니다. gemini·claude·cerebras 는 `agy`, qwen 계열은 `qwen -m <id> -p` 이며 미지원·판정불가는 `ReviewerToolError` 로 막습니다. `qwen3.7-plus` 로 실제 리뷰를 완주해 확인했습니다. **provider 와 CLI 는 1:1 이 아닙니다** (Antigravity 가 Gemini·Claude·GPT-OSS 를 함께 서빙).
 - **리뷰어 diff 상한 기본값이 실제 Task 규모에 미달 (2026-08-31)**: `--max-diff-chars` 기본값 20,000 자에 비해 Wave G 워커 diff 는 41,000 자대였습니다. 도구가 절단 시 fail-closed 로 막지만, `--allow-truncated-diff` 를 습관적으로 쓰면 리뷰가 형식만 남습니다. **상한을 올려 다시 돌리십시오.**
 - Windows Docker Desktop 실기 미검증.
 - **LLM 품질 정본은 2026-08-28 현 HEAD 재측정**(동결 `d9a0536`, `gemma4:e2b` 32문항 x 3회)입니다. numeric 95.7%(67/70), evidence recall 0.957, citation 100%, refusal 24/24, 과잉응답 0 으로 2026-08-27 측정 대비 전 지표가 개선입니다. 다만 요청 2/96 이 타임아웃(q03)했고 긴 정확 공고명 질의가 58~180초를 소모하여 **레이턴시 꼬리는 회귀**입니다 ([`blind_fixture_remeasure_20260828.md`](../analysis/blind_fixture_remeasure_20260828.md)). e4b 동일 조건 재측정은 미실시입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
