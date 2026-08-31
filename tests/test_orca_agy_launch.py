@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import functools
+import io
 import threading
 import time
 from pathlib import Path
 
 import pytest
 
+from scripts import orca_worker_launch_common as common
 from scripts.orca_agy_launch import (
     COMMIT_NOTICE,
     PERMISSION_SETUP_FLAG,
@@ -324,3 +327,51 @@ def test_main_warns_when_terminal_handle_missing(tmp_path: Path, monkeypatch, ca
     assert exc.value.code == 0
     err = capsys.readouterr().err
     assert "ORCA_TERMINAL_HANDLE" in err
+
+
+def test_permission_setup_child_accepts_common_keywords():
+    """자식 모드가 acquire_fn 에 cli_type 과 launcher 를 넘겨도 죽지 않아야 합니다.
+
+    2026-08-31 에 이 계약이 깨져 있었습니다. common.run_permission_setup_child 는
+    항상 두 값을 키워드로 전달하는데 런처의 래퍼가 그것을 받지 않아 자식이
+    TypeError 로 즉시 죽었습니다. 부모는 이미 exec 로 사라진 뒤라 실패가 화면에
+    남지 않았고, 승인 자동화가 통째로 동작하지 않은 채 워커가 대화창에 갇혔습니다.
+    """
+    prepare = _FakePrepare([{"ok": True, "file_edit_auto_approve": {"ok": True}}])
+    acquire = functools.partial(
+        acquire_permissions,
+        delay_sec=0,
+        sleep=lambda _: None,
+        prepare=prepare,
+    )
+
+    code = common.run_permission_setup_child(
+        [PERMISSION_SETUP_FLAG, "term_x", "claude-sonnet-4-6"],
+        cli_type="antigravity",
+        launcher="scripts/orca_agy_launch.py",
+        acquire_fn=acquire,
+        stderr=io.StringIO(),
+        stdout=io.StringIO(),
+    )
+
+    assert code == 0
+    assert prepare.calls[0]["cli_type"] == "antigravity"
+
+
+def test_acquire_permissions_forwards_given_cli_type():
+    """호출자가 cli_type 을 지정하면 그대로 prepare 에 전달돼야 합니다."""
+    prepare = _FakePrepare([{"ok": True, "file_edit_auto_approve": {"ok": True}}])
+
+    acquire_permissions(
+        "term_x",
+        "claude-sonnet-4-6",
+        cli_type="antigravity",
+        launcher="scripts/orca_agy_launch.py",
+        delay_sec=0,
+        sleep=lambda _: None,
+        prepare=prepare,
+    )
+
+    call = prepare.calls[0]
+    assert call["cli_type"] == "antigravity"
+    assert call["launcher"] == "scripts/orca_agy_launch.py"
