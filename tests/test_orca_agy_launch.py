@@ -148,93 +148,98 @@ def test_main_returns_nonzero_when_preamble_times_out(tmp_path: Path, capsys):
     assert "preamble" in err
 
 
-class _FakeHelpers:
-    """enable_file_edit_auto_approve / start_auto_approve 대역.
+class _FakePrepare:
+    """prepare_worker_terminal 대역.
 
-    실제 함수는 orca terminal 호출을 하므로 테스트에서 쓸 수 없습니다.
+    실제 함수는 orca terminal 을 호출하므로 테스트에서 쓸 수 없습니다.
     """
 
-    def __init__(self, mode_results):
-        self.mode_results = list(mode_results)
-        self.mode_calls = []
-        self.watchdog_calls = []
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = []
 
-    def enable(self, terminal, timeout=30, force=False, max_attempts=3):
-        self.mode_calls.append({"terminal": terminal, "force": force})
-        if self.mode_results:
-            return self.mode_results.pop(0)
-        return False, "후보 소진"
-
-    def start(self, terminal):
-        self.watchdog_calls.append(terminal)
-        return True, "감시기 기동"
-
-    def as_tuple(self):
-        return self.enable, self.start
+    def __call__(self, terminal, cli_type=None, model=None, launcher=None, **kwargs):
+        self.calls.append(
+            {
+                "terminal": terminal,
+                "cli_type": cli_type,
+                "model": model,
+                "launcher": launcher,
+                "kwargs": kwargs,
+            }
+        )
+        return self.results.pop(0) if self.results else {"ok": False, "detail": "후보 소진"}
 
 
-def test_acquire_permissions_never_forces_mode_transition():
-    """force=True 는 화면이 스피너여도 키를 보내 plan 으로 밀어 넣습니다.
+def test_acquire_permissions_records_cli_metadata():
+    """cli_type 을 넘기지 않으면 CLI 판정이 fail-closed 로 막혀 모드를 못 잡습니다.
 
-    2026-08-31 에 이 경로로 워커 하나가 plan 에 갇혀 파일을 못 고쳤습니다.
+    2026-08-31 에 감시기 헬퍼만 직접 불러 메타데이터가 비었고, 워커가 파일 편집
+    대화창에 그대로 갇혔습니다.
     """
-    helpers = _FakeHelpers([(True, "전환 완료")])
+    prepare = _FakePrepare([{"ok": True}])
 
-    ok, detail = acquire_permissions(
-        "term_x", delay_sec=0, sleep=lambda _: None, helpers=helpers.as_tuple()
+    ok, _ = acquire_permissions(
+        "term_x", "gemini-3.7-flash-high", delay_sec=0, sleep=lambda _: None, prepare=prepare
     )
 
     assert ok is True
-    assert helpers.mode_calls, "편집 모드 확보를 시도하지 않았습니다"
-    assert all(call["force"] is False for call in helpers.mode_calls)
-    assert "전환 완료" in detail
+    assert len(prepare.calls) == 1
+    call = prepare.calls[0]
+    assert call["cli_type"] == "antigravity"
+    assert call["model"] == "gemini-3.7-flash-high"
+    assert call["launcher"], "런처 경로를 기록하지 않았습니다"
 
 
-def test_acquire_permissions_retries_while_mode_unreadable():
-    """생성 중에는 모드가 unknown 이라 확보에 실패합니다. 포기하면 안 됩니다."""
-    helpers = _FakeHelpers([(False, "모드 unknown"), (False, "모드 unknown"), (True, "전환 완료")])
+def test_acquire_permissions_never_forces_mode_transition():
+    """force_file_edit 은 스피너 화면에서도 키를 보내 plan 으로 밀어 넣습니다."""
+    prepare = _FakePrepare([{"ok": True}])
+
+    acquire_permissions(
+        "term_x", "gemini-3.7-flash-high", delay_sec=0, sleep=lambda _: None, prepare=prepare
+    )
+
+    assert prepare.calls[0]["kwargs"].get("force_file_edit") in (None, False)
+
+
+def test_acquire_permissions_retries_while_not_ready():
+    """생성 중에는 모드가 unknown 이라 준비가 실패합니다. 포기하면 안 됩니다."""
+    prepare = _FakePrepare([{"ok": False}, {"ok": False}, {"ok": True}])
 
     ok, _ = acquire_permissions(
         "term_x",
+        "gemini-3.7-flash-high",
         delay_sec=0,
         deadline_sec=100.0,
         interval_sec=0,
         sleep=lambda _: None,
-        helpers=helpers.as_tuple(),
+        prepare=prepare,
     )
 
     assert ok is True
-    assert len(helpers.mode_calls) == 3
-
-
-def test_acquire_permissions_starts_shell_watchdog():
-    """감시기와 accept-edits 는 서로를 대체하지 않습니다. 둘 다 걸어야 합니다."""
-    helpers = _FakeHelpers([(True, "전환 완료")])
-
-    acquire_permissions("term_x", delay_sec=0, sleep=lambda _: None, helpers=helpers.as_tuple())
-
-    assert helpers.watchdog_calls == ["term_x"]
+    assert len(prepare.calls) == 3
 
 
 def test_acquire_permissions_reports_failure_after_deadline():
     """확보하지 못했는데 성공으로 보고하면 승인 중단이 조용히 남습니다."""
-    helpers = _FakeHelpers([(False, "모드 unknown")] * 50)
+    prepare = _FakePrepare([{"ok": False}] * 50)
 
     ok, detail = acquire_permissions(
         "term_x",
+        "gemini-3.7-flash-high",
         delay_sec=0,
         deadline_sec=0,
         interval_sec=0,
         sleep=lambda _: None,
-        helpers=helpers.as_tuple(),
+        prepare=prepare,
     )
 
     assert ok is False
-    assert "확보하지 못했습니다" in detail
+    assert "마치지 못했습니다" in detail
 
 
 def test_launcher_schedules_permission_setup(tmp_path: Path, monkeypatch):
-    """런처가 exec 전에 승인 설정 자식을 띄우지 않으면 4단계가 통째로 빠집니다."""
+    """런처가 exec 전에 준비 자식을 띄우지 않으면 4단계가 통째로 빠집니다."""
     monkeypatch.chdir(tmp_path)
     spawned = []
 
@@ -242,16 +247,19 @@ def test_launcher_schedules_permission_setup(tmp_path: Path, monkeypatch):
         spawned.append((cmd, kwargs))
         return object()
 
-    spawn_permission_setup("term_y", popen=fake_popen)
+    spawn_permission_setup("term_y", "gemini-3.7-flash-high", popen=fake_popen)
 
     assert len(spawned) == 1
     cmd, kwargs = spawned[0]
     assert PERMISSION_SETUP_FLAG in cmd
     assert "term_y" in cmd
+    assert "gemini-3.7-flash-high" in cmd, "자식이 모델을 몰라 메타데이터를 못 남깁니다"
     assert kwargs["start_new_session"] is True, "부모가 exec 되면 자식이 같이 죽습니다"
 
 
-def test_permission_setup_child_requires_handle():
-    """핸들 없이 자식 모드를 부르면 조용히 통과시키면 안 됩니다."""
+def test_permission_setup_child_requires_handle_and_model():
+    """핸들이나 모델 없이 자식 모드를 부르면 조용히 통과시키면 안 됩니다."""
     assert main([PERMISSION_SETUP_FLAG]) == 2
-    assert main([PERMISSION_SETUP_FLAG, "   "]) == 2
+    assert main([PERMISSION_SETUP_FLAG, "term_y"]) == 2
+    assert main([PERMISSION_SETUP_FLAG, "   ", "model"]) == 2
+    assert main([PERMISSION_SETUP_FLAG, "term_y", "  "]) == 2

@@ -26,6 +26,7 @@ import subprocess  # nosec B404 - 자기 자신을 sys.executable 로 고정 인
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
 # agy TUI 가 상태줄을 그리기 전에 키를 보내면 모드 판정이 unknown 이 되어
@@ -69,66 +70,64 @@ def build_command(model: str, prompt: str) -> list[str]:
     return ["agy", "--model", model, "-i", prompt]
 
 
-def _load_approval_helpers():
-    """orca_taskctl 의 승인 헬퍼를 지연 로드합니다.
+def _load_prepare_worker():
+    """orca_taskctl 의 준비 상태 기계를 지연 로드합니다.
 
     런처는 워크트리 안에서 실행되므로 저장소 루트를 sys.path 에 넣어야 합니다.
-    로직을 여기에 복제하지 않는 이유는 모드 순환(normal -> accept-edits -> plan)
-    처리와 화면 판정이 미묘해서, 두 곳에 두면 반드시 어긋나기 때문입니다.
     """
     root = Path(__file__).resolve().parent.parent
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-    from scripts.orca_taskctl import (
-        enable_file_edit_auto_approve,
-        start_auto_approve,
-    )
+    from scripts.orca_taskctl import prepare_worker_terminal
 
-    return enable_file_edit_auto_approve, start_auto_approve
+    return prepare_worker_terminal
 
 
 def acquire_permissions(
     terminal: str,
+    model: str,
     *,
     delay_sec: float = PERMISSION_SETUP_DELAY_SEC,
     deadline_sec: float = PERMISSION_SETUP_DEADLINE_SEC,
     interval_sec: float = PERMISSION_SETUP_INTERVAL_SEC,
     sleep=time.sleep,
-    helpers=None,
+    prepare=None,
 ) -> tuple[bool, str]:
-    """agy 기동 뒤 셸 명령 감시기와 accept-edits 모드를 확보합니다.
+    """agy 기동 뒤 워커 준비 4단계를 수행합니다.
 
-    두 층은 서로를 대체하지 않습니다. 감시기는 셸 명령 대화창만 승인하고 파일
-    편집 대화창은 설계상 보류하므로, accept-edits 모드가 없으면 사람이 매번
-    손으로 눌러야 합니다.
+    `prepare_worker_terminal` 을 통째로 부르는 것이 중요합니다. 감시기 부착과
+    모드 전환 헬퍼만 직접 부르면 **CLI 종류 메타데이터가 기록되지 않고**,
+    그 메타데이터로 CLI 를 판정하는 `classify_file_edit_auto_approve_support`
+    가 fail-closed 로 막혀 accept-edits 를 영영 확보하지 못합니다. 2026-08-31
+    에 이 방식으로 워커가 파일 편집 대화창에 그대로 갇혔습니다.
 
-    `force=False` 로 호출하는 것이 핵심입니다. 화면이 스피너면 모드가 unknown 으로
-    읽히는데, 그때 키를 보내면 순환이 accept-edits 를 지나 plan 으로 넘어가
-    워커가 파일을 아예 못 고치게 됩니다. 판정 불가일 때는 보내지 않고 다음
-    주기를 기다립니다.
+    `force_file_edit` 은 쓰지 않습니다. 화면이 스피너면 모드가 unknown 으로
+    읽히는데 그때 키를 보내면 순환이 accept-edits 를 지나 plan 으로 넘어가
+    워커가 파일을 아예 못 고칩니다. 판정 불가일 때는 보내지 않고 다음 주기를
+    기다립니다.
     """
-    enable_file_edit_auto_approve, start_auto_approve = helpers or _load_approval_helpers()
+    prepare_worker_terminal = prepare or _load_prepare_worker()
 
     sleep(delay_sec)
-    watchdog_ok, watchdog_detail = start_auto_approve(terminal)
-
     deadline = time.monotonic() + deadline_sec
-    last_detail = "시도하지 않았습니다"
+    last: dict[str, Any] = {}
     while True:
-        mode_ok, last_detail = enable_file_edit_auto_approve(terminal, force=False)
-        if mode_ok:
-            return True, f"감시기: {watchdog_detail} / 편집 모드: {last_detail}"
+        last = prepare_worker_terminal(
+            terminal,
+            cli_type="antigravity",
+            model=model,
+            launcher=str(Path(__file__).resolve().parent.name + "/" + Path(__file__).name),
+        )
+        if last.get("ok"):
+            return True, f"준비 완료: {last}"
         if time.monotonic() >= deadline:
             break
         sleep(interval_sec)
 
-    return False, (
-        f"accept-edits 모드를 {deadline_sec:.0f}초 안에 확보하지 못했습니다. "
-        f"감시기: {watchdog_detail} (성공={watchdog_ok}) / 마지막 사유: {last_detail}"
-    )
+    return False, (f"워커 준비를 {deadline_sec:.0f}초 안에 마치지 못했습니다. 마지막 상태: {last}")
 
 
-def spawn_permission_setup(terminal: str, *, popen=subprocess.Popen) -> None:
+def spawn_permission_setup(terminal: str, model: str, *, popen=subprocess.Popen) -> None:
     """승인 설정을 분리된 자식으로 넘깁니다.
 
     부모는 곧바로 agy 를 exec 해서 사라지므로 여기서 기다릴 수 없습니다. 자식은
@@ -141,7 +140,13 @@ def spawn_permission_setup(terminal: str, *, popen=subprocess.Popen) -> None:
     except OSError:
         handle = subprocess.DEVNULL
     popen(
-        [sys.executable, str(Path(__file__).resolve()), PERMISSION_SETUP_FLAG, terminal],
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            PERMISSION_SETUP_FLAG,
+            terminal,
+            model,
+        ],
         stdout=handle,
         stderr=subprocess.STDOUT,
         start_new_session=True,
@@ -153,10 +158,12 @@ def main(argv: list[str] | None = None) -> int:
     # 갈라내야 런처 인자 규약을 건드리지 않습니다.
     raw = list(sys.argv[1:] if argv is None else argv)
     if raw and raw[0] == PERMISSION_SETUP_FLAG:
-        if len(raw) < 2 or not raw[1].strip():
-            sys.stderr.write(f"오류: {PERMISSION_SETUP_FLAG} 에는 터미널 핸들이 필요합니다\n")
+        if len(raw) < 3 or not raw[1].strip() or not raw[2].strip():
+            sys.stderr.write(
+                f"오류: {PERMISSION_SETUP_FLAG} 에는 터미널 핸들과 모델 ID 가 필요합니다\n"
+            )
             return 2
-        ok, detail = acquire_permissions(raw[1].strip())
+        ok, detail = acquire_permissions(raw[1].strip(), raw[2].strip())
         print(f"[권한설정] {'확보' if ok else '실패'}: {detail}", flush=True)
         return 0 if ok else 1
 
@@ -194,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     # 않도록 런처가 직접 겁니다.
     terminal = os.environ.get("ORCA_TERMINAL_HANDLE", "").strip()
     if terminal:
-        spawn_permission_setup(terminal)
+        spawn_permission_setup(terminal, args.model)
         print(f"권한 설정 예약: {terminal} (.orca/permission_setup.log)", flush=True)
     else:
         # 조용히 넘어가면 승인이 걸린 줄 알고 기동합니다. 화면에 남겨야 합니다.
