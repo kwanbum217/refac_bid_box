@@ -56,6 +56,7 @@ __all__ = [
     "FREE_POOL_ORDER",
     "INVENTORY_MISSING_THRESHOLD",
     "MODEL_POOL",
+    "MODEL_PROVIDER_PREFIXES",
     "PROBE_CONFIG",
     "RELIABILITY_DEMOTE_RATE",
     "RELIABILITY_MIN_OBSERVATIONS",
@@ -86,6 +87,7 @@ __all__ = [
     "pool_for_model",
     "preflight",
     "probe_model",
+    "provider_for_model",
     "record_reliability_outcome",
     "resolve_kimi_bin",
     "route",
@@ -934,6 +936,64 @@ def pool_for_model(model_or_pool: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# 모델 제공자(Provider) 판정
+# ---------------------------------------------------------------------------
+#
+# 새 모델/제공자 추가 시:
+#   1. MODEL_POOL 에 새 풀 등록 및 "provider" 필드 명시
+#   2. MODEL_PROVIDER_PREFIXES 에 접두사-제공자 매핑 추가 (풀 미등록 임의 ID 판정용)
+#
+MODEL_PROVIDER_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("gemini", "gemini"),
+    ("qwen", "qwen"),
+    ("deepseek", "qwen"),
+    ("glm", "qwen"),
+    ("claude", "claude"),
+    ("gpt-", "codex"),
+    ("codex", "codex"),
+    ("cursor", "cursor"),
+    ("opencode", "opencode"),
+    ("cerebras", "cerebras"),
+    ("or-free", "kimi-openrouter"),
+    ("kimi", "kimi-openrouter"),
+)
+
+
+def provider_for_model(model_or_pool: str, strict: bool = True) -> str:
+    """모델 ID 또는 풀 이름에서 provider 계열을 판정합니다.
+
+    1. MODEL_POOL 등록 항목 검사 (풀 이름 또는 id 일치)
+    2. MODEL_PROVIDER_PREFIXES 접두사 매핑 검사
+    3. 미상인 경우: strict=True 이면 ValueError 발생, False 이면 'unknown' 반환
+    """
+    if not model_or_pool or not isinstance(model_or_pool, str):
+        if strict:
+            raise ValueError(f"유효하지 않은 모델 이름입니다: {model_or_pool!r}")
+        return "unknown"
+
+    cleaned = model_or_pool.strip()
+
+    # 1. MODEL_POOL 풀 이름 일치
+    if cleaned in MODEL_POOL:
+        return str(MODEL_POOL[cleaned].get("provider", "unknown"))
+
+    # 2. MODEL_POOL ID 일치
+    for pool_info in MODEL_POOL.values():
+        if cleaned == pool_info.get("id"):
+            return str(pool_info.get("provider", "unknown"))
+
+    # 3. 접두사 매핑 검사 (소문자 기준)
+    lowered = cleaned.lower()
+    for prefix, provider in MODEL_PROVIDER_PREFIXES:
+        if lowered.startswith(prefix):
+            return provider
+
+    if strict:
+        raise ValueError(f"알 수 없는 모델 ID 또는 제공자입니다: {model_or_pool}")
+    return "unknown"
+
+
 def free_order_for_role(role: str) -> list[str]:
     """역할에 맞는 무료 후보 순서를 돌려줍니다.
 
@@ -1149,11 +1209,13 @@ class ModelRoutingError(RuntimeError):
         role: str | None = None,
         risk: str | None = None,
         exclude: list[str] | None = None,
+        exclude_providers: list[str] | None = None,
     ) -> None:
         super().__init__(message)
         self.role = role
         self.risk = risk
         self.exclude = list(exclude) if exclude is not None else []
+        self.exclude_providers = list(exclude_providers) if exclude_providers is not None else []
 
 
 # ---------------------------------------------------------------------------
@@ -1324,6 +1386,7 @@ def select_model(
     exclude: list[str] | None = None,
     allow_free: bool = False,
     has_write_scope: bool = True,
+    exclude_providers: list[str] | str | None = None,
 ) -> dict[str, Any]:
     """역할과 위험도에 따라 최적 모델을 선택합니다.
 
@@ -1331,8 +1394,16 @@ def select_model(
     allow_free 가 True 이고 무료 풀 개방 조건을 충족하는 경우에만
     FREE_POOL_ORDER 의 모델이 후보 맨 앞에 추가됩니다.
     코디네이터 전용 모델은 절대 선택되지 않습니다.
+    exclude_providers 로 지정된 provider 계열 모델은 주 모델 및 대체 모델에서 모두 제외됩니다.
     """
     exclude = exclude or []
+    if isinstance(exclude_providers, str):
+        excluded_providers_set = {exclude_providers}
+    elif exclude_providers:
+        excluded_providers_set = set(exclude_providers)
+    else:
+        excluded_providers_set = set()
+
     inventory_notes: list[str] = []
 
     base_candidates = list(TIER_POLICY.get((role, risk), TIER_POLICY[("__default__", risk)]))
@@ -1363,20 +1434,28 @@ def select_model(
     primary: str | None = None
     fallback: str | None = None
     for c in candidates:
-        if c not in exclude:
-            if primary is None:
-                primary = c
-            elif fallback is None:
-                fallback = c
-                break
+        if c in exclude:
+            continue
+        c_provider = MODEL_POOL[c].get("provider")
+        if c_provider in excluded_providers_set:
+            continue
+        if primary is None:
+            primary = c
+        elif fallback is None:
+            fallback = c
+            break
 
     if primary is None:
         exclude_str = ", ".join(exclude) if exclude else "(없음)"
+        exclude_prov_str = (
+            ", ".join(sorted(excluded_providers_set)) if excluded_providers_set else "(없음)"
+        )
         raise ModelRoutingError(
-            f"선택 가능한 모델 후보가 없습니다. (role={role}, risk={risk}, exclude=[{exclude_str}])",
+            f"선택 가능한 모델 후보가 없습니다. (role={role}, risk={risk}, exclude=[{exclude_str}], exclude_providers=[{exclude_prov_str}])",
             role=role,
             risk=risk,
             exclude=exclude,
+            exclude_providers=list(excluded_providers_set),
         )
 
     primary_model = MODEL_POOL[primary]["id"]
@@ -1655,6 +1734,7 @@ def route(
     explicit_model: str | None = None,
     allow_free: bool = False,
     has_write_scope: bool | None = None,
+    exclude_providers: list[str] | str | None = None,
 ) -> RouteResult:
     """분류와 probe 를 종합하여 최종 워커 모델을 라우팅합니다."""
     reasons: list[str] = []
@@ -1690,6 +1770,7 @@ def route(
             risk=risk,
             allow_free=allow_free,
             has_write_scope=has_write_scope,
+            exclude_providers=exclude_providers,
         )
         primary_id = selection["primary_model"]
         fallback_id = selection.get("fallback_model")
@@ -1778,6 +1859,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="저가·무료 모델 풀 조건부 개방 (쓰기 권한 없는 investigator 및 low 위험도 전용)",
     )
+    cls.add_argument(
+        "--exclude-provider", action="append", help="제외할 provider 계열 (복수 지정 가능)"
+    )
     cls.add_argument("--json", action="store_true", help="JSON 출력")
 
     # probe
@@ -1800,6 +1884,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--allow-free",
         action="store_true",
         help="저가·무료 모델 풀 조건부 개방 (쓰기 권한 없는 investigator 및 low 위험도 전용)",
+    )
+    rt.add_argument(
+        "--exclude-provider", action="append", help="제외할 provider 계열 (복수 지정 가능)"
     )
     rt.add_argument("--no-probe", action="store_true", help="probe 생략")
     rt.add_argument("--probe-timeout", type=int, default=30, help="probe 타임아웃 (초)")
@@ -1833,6 +1920,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def cmd_classify(args: argparse.Namespace) -> int:
     reasons: list[str] = []
     allow_free = getattr(args, "allow_free", False)
+    exclude_providers = getattr(args, "exclude_provider", None)
     if args.capsule:
         info = classify_from_capsule(args.capsule)
         risk = info["risk"]
@@ -1854,6 +1942,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             risk=risk,
             allow_free=allow_free,
             has_write_scope=has_write_scope,
+            exclude_providers=exclude_providers,
         )
     except ModelRoutingError as exc:
         if args.json:
@@ -1919,6 +2008,7 @@ def cmd_route(args: argparse.Namespace) -> int:
             probe_timeout=args.probe_timeout,
             explicit_model=args.model,
             allow_free=getattr(args, "allow_free", False),
+            exclude_providers=getattr(args, "exclude_provider", None),
         )
     except (ValueError, ModelRoutingError) as exc:
         if args.json:

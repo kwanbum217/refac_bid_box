@@ -46,6 +46,7 @@ from scripts.orca_taskctl import (
     strip_terminal_metadata_header,
     task_has_write_scope,
     terminal_read,
+    validate_commit_count,
     validate_contained_path,
     worker_start,
     worktree_relative_capsule_path,
@@ -4716,3 +4717,131 @@ def test_enable_file_edit_auto_approve_unknown_skips_keys(monkeypatch: pytest.Mo
     assert ok is False
     assert "unknown" in reason
     assert len(sent_keys) == 0, "unknown 모드일 때는 shift+tab 키를 전송하지 않아야 합니다."
+
+
+# ---------------------------------------------------------------------------
+# Reviewer Independence & Commit Count Validation Tests
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_dispatch_model_reviewer_excludes_builder_provider():
+    """리뷰어 배정 시 빌더의 provider 계열을 제외하고 독립 모델을 배정합니다."""
+    from scripts.orca_model_router import ModelRoutingError
+
+    capsule_text = """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_rev_indep"
+role: "reviewer"
+risk: "high"
+"""
+    # 1. 빌더가 gemini 계열이면 리뷰어는 qwen 계열로 배정
+    res_gemini_builder = resolve_dispatch_model(
+        args_model=None,
+        capsule_text=capsule_text,
+        builder_model="gemini-3.7-flash-high",
+    )
+    assert res_gemini_builder["model"] == "qwen3.7-plus"
+    assert res_gemini_builder["builder_provider"] == "gemini"
+
+    # 2. 빌더가 qwen 계열이면 리뷰어는 gemini 계열로 배정
+    res_qwen_builder = resolve_dispatch_model(
+        args_model=None,
+        capsule_text=capsule_text,
+        builder_model="qwen3.7-plus",
+    )
+    assert "gemini" in res_qwen_builder["model"]
+    assert res_qwen_builder["builder_provider"] == "qwen"
+
+    # 3. 빌더 provider 를 알 수 없으면 경고에 기록됨
+    res_unknown_builder = resolve_dispatch_model(
+        args_model=None,
+        capsule_text=capsule_text,
+        builder_model=None,
+        builder_provider=None,
+    )
+    assert res_unknown_builder["builder_provider"] == "unknown"
+    assert "빌더 provider 를 알 수 없어" in (res_unknown_builder["warning"] or "")
+
+    # 4. 독립 provider 가 모두 제외되어 후보가 소진되면 fail-closed 로 ModelRoutingError 발생
+    with pytest.raises(ModelRoutingError):
+        resolve_dispatch_model(
+            args_model=None,
+            capsule_text=capsule_text,
+            exclude_providers=["qwen", "gemini"],
+        )
+
+
+def test_finalize_task_reviewer_wiring_excludes_builder_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """finalize_task 에서 리뷰어 실행 시 빌더 provider 가 제외된 모델이 orca_run_reviewer.py 에 전달됩니다."""
+    from scripts.orca_run_reviewer import _parse_args as reviewer_parse_args
+
+    # 빌더가 gemini 인 경우
+    captured_gemini, _res_gemini = _finalize_capturing(
+        tmp_path,
+        monkeypatch,
+        run_reviewer=True,
+        builder_model="gemini-3.7-flash-high",
+    )
+    args_gemini = _args_for("orca_run_reviewer.py", captured_gemini)
+    parsed_gemini = reviewer_parse_args(args_gemini)
+    assert parsed_gemini.model == "qwen3.7-plus"
+
+    # 빌더가 qwen 인 경우
+    captured_qwen, _res_qwen = _finalize_capturing(
+        tmp_path,
+        monkeypatch,
+        run_reviewer=True,
+        builder_model="qwen3.7-plus",
+    )
+    args_qwen = _args_for("orca_run_reviewer.py", captured_qwen)
+    parsed_qwen = reviewer_parse_args(args_qwen)
+    assert "gemini" in parsed_qwen.model
+
+
+def test_validate_commit_count_string_zero_rejected():
+    """commit_count 가 문자열 '0' 또는 '1' 이면 타입 위반으로 잡힙니다."""
+    violations_str_0 = validate_commit_count("0", status="succeeded", has_write_scope=True)
+    assert any("타입 위반: commit_count 는 정수여야" in v for v in violations_str_0)
+    assert any("str ('0')" in v for v in violations_str_0)
+
+    violations_str_1 = validate_commit_count("1", status="succeeded", has_write_scope=True)
+    assert any("타입 위반: commit_count 는 정수여야" in v for v in violations_str_1)
+
+
+def test_validate_commit_count_bool_float_negative_rejected():
+    """bool, float, 음수 commit_count 는 위반으로 잡힙니다."""
+    # bool 은 int 의 서브클래스이지만 따로 잡혀야 함
+    violations_bool_true = validate_commit_count(True)
+    assert any("타입 위반: commit_count 는 정수여야" in v for v in violations_bool_true)
+
+    violations_bool_false = validate_commit_count(False)
+    assert any("타입 위반: commit_count 는 정수여야" in v for v in violations_bool_false)
+
+    # float
+    violations_float = validate_commit_count(1.5)
+    assert any("타입 위반: commit_count 는 정수여야" in v for v in violations_float)
+
+    # 음수
+    violations_neg = validate_commit_count(-1)
+    assert any("값 위반: commit_count 가 음수" in v for v in violations_neg)
+
+
+def test_validate_commit_count_zero_on_succeeded_write_scope_rejected():
+    """쓰기 작업에서 status 가 succeeded 인데 commit_count 가 0 이면 무작업 완료 위반입니다."""
+    violations = validate_commit_count(0, status="succeeded", has_write_scope=True)
+    assert any("규약 3.3 위반: status 가 succeeded 인데 commit_count 가 0" in v for v in violations)
+
+
+def test_validate_commit_count_valid_integers_pass():
+    """정상 정수 commit_count 및 허용되는 0 commit_count (읽기 전용 / escalation) 는 통과합니다."""
+    # 1. 쓰기 작업 정상 커밋
+    assert validate_commit_count(1, status="succeeded", has_write_scope=True) == []
+    assert validate_commit_count(5, status="succeeded", has_write_scope=True) == []
+
+    # 2. escalation 상태에서는 commit_count 0 허용
+    assert validate_commit_count(0, status="escalation", has_write_scope=True) == []
+
+    # 3. 읽기 전용 작업(has_write_scope=False)에서는 succeeded 여도 commit_count 0 허용
+    assert validate_commit_count(0, status="succeeded", has_write_scope=False) == []
