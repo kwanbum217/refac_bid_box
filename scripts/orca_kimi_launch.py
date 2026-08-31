@@ -28,6 +28,17 @@ import sys
 import time
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts import orca_worker_launch_common as common  # noqa: E402
+
+PERMISSION_SETUP_FLAG = common.PERMISSION_SETUP_FLAG
+acquire_permissions = common.acquire_permissions
+run_permission_setup_child = common.run_permission_setup_child
+schedule_permission_setup = common.schedule_permission_setup
+
 DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
 DEFAULT_HOME = Path.home() / ".kimi-openrouter-bakeoff"
 DEFAULT_SHELL = "/bin/bash"
@@ -114,7 +125,27 @@ def open_interactive_shell(env: dict[str, str]) -> None:
     os.execvpe(shell, [shell], env)  # noqa: S606  # nosec B606
 
 
+def spawn_permission_setup(
+    launcher_script: str | Path, terminal: str, model: str, *, popen=subprocess.Popen
+) -> None:
+    common.spawn_permission_setup(
+        launcher_script,
+        terminal,
+        model,
+        popen=popen,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
+    # 자식 모드: 부모가 실행된 뒤 독립 세션에서 승인 설정만 수행합니다.
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] == PERMISSION_SETUP_FLAG:
+        return run_permission_setup_child(
+            raw,
+            cli_type="kimi",
+            launcher=str(Path(__file__).resolve().parent.name + "/" + Path(__file__).name),
+        )
+
     parser = argparse.ArgumentParser(description="Kimi Code 워커 런처")
     parser.add_argument(
         "--model", required=True, help="Kimi 모델 별칭 (예: or-free/nemotron-ultra)"
@@ -151,6 +182,15 @@ def main(argv: list[str] | None = None) -> int:
     env = dict(os.environ)
     env["KIMI_CODE_HOME"] = str(args.home)
     cmd = build_command(args.model, prompt)
+
+    # 이 런처 경로는 taskctl dispatch 를 거치지 않아 권한 자동 승인 준비가
+    # 빠집니다. 기억에 의존하지 않도록 런처가 직접 자식 프로세스를 분리 기동합니다.
+    schedule_permission_setup(
+        Path(__file__).resolve(),
+        args.model,
+        spawn_fn=spawn_permission_setup,
+    )
+
     print(f"기동: kimi -m {args.model} (지시문 {len(prompt)}자)", flush=True)
     # 인자는 셸을 거치지 않고 그대로 전달되므로 주입 위험이 없습니다. 모델 별칭과
     # 지시문 모두 코디네이터가 만든 값입니다.

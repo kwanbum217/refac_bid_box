@@ -177,7 +177,7 @@ def test_acquire_permissions_records_cli_metadata():
     2026-08-31 에 감시기 헬퍼만 직접 불러 메타데이터가 비었고, 워커가 파일 편집
     대화창에 그대로 갇혔습니다.
     """
-    prepare = _FakePrepare([{"ok": True}])
+    prepare = _FakePrepare([{"ok": True, "file_edit_auto_approve": {"ok": True}}])
 
     ok, _ = acquire_permissions(
         "term_x", "gemini-3.7-flash-high", delay_sec=0, sleep=lambda _: None, prepare=prepare
@@ -193,7 +193,7 @@ def test_acquire_permissions_records_cli_metadata():
 
 def test_acquire_permissions_never_forces_mode_transition():
     """force_file_edit 은 스피너 화면에서도 키를 보내 plan 으로 밀어 넣습니다."""
-    prepare = _FakePrepare([{"ok": True}])
+    prepare = _FakePrepare([{"ok": True, "file_edit_auto_approve": {"ok": True}}])
 
     acquire_permissions(
         "term_x", "gemini-3.7-flash-high", delay_sec=0, sleep=lambda _: None, prepare=prepare
@@ -204,7 +204,9 @@ def test_acquire_permissions_never_forces_mode_transition():
 
 def test_acquire_permissions_retries_while_not_ready():
     """생성 중에는 모드가 unknown 이라 준비가 실패합니다. 포기하면 안 됩니다."""
-    prepare = _FakePrepare([{"ok": False}, {"ok": False}, {"ok": True}])
+    prepare = _FakePrepare(
+        [{"ok": False}, {"ok": False}, {"ok": True, "file_edit_auto_approve": {"ok": True}}]
+    )
 
     ok, _ = acquire_permissions(
         "term_x",
@@ -218,6 +220,37 @@ def test_acquire_permissions_retries_while_not_ready():
 
     assert ok is True
     assert len(prepare.calls) == 3
+
+
+def test_acquire_permissions_retries_when_top_level_ok_but_file_edit_fails():
+    """최상위 ok 가 True 더라도 file_edit_auto_approve.ok 가 False 면 성공으로 처리하지 않고 재시도해야 합니다."""
+    prepare = _FakePrepare(
+        [
+            {
+                "ok": True,
+                "auto_approve_watcher": {"ok": True},
+                "file_edit_auto_approve": {"status": "skipped_or_failed", "ok": False},
+            },
+            {
+                "ok": True,
+                "auto_approve_watcher": {"ok": True},
+                "file_edit_auto_approve": {"status": "enabled", "ok": True},
+            },
+        ]
+    )
+
+    ok, _ = acquire_permissions(
+        "term_x",
+        "gemini-3.7-flash-high",
+        delay_sec=0,
+        deadline_sec=100.0,
+        interval_sec=0,
+        sleep=lambda _: None,
+        prepare=prepare,
+    )
+
+    assert ok is True
+    assert len(prepare.calls) == 2
 
 
 def test_acquire_permissions_reports_failure_after_deadline():
@@ -263,3 +296,31 @@ def test_permission_setup_child_requires_handle_and_model():
     assert main([PERMISSION_SETUP_FLAG, "term_y"]) == 2
     assert main([PERMISSION_SETUP_FLAG, "   ", "model"]) == 2
     assert main([PERMISSION_SETUP_FLAG, "term_y", "  "]) == 2
+
+
+def test_main_warns_when_terminal_handle_missing(tmp_path: Path, monkeypatch, capsys):
+    target = tmp_path / "preamble.txt"
+    target.write_text("지시문", encoding="utf-8")
+    from scripts import orca_agy_launch as mod
+
+    monkeypatch.delenv("ORCA_TERMINAL_HANDLE", raising=False)
+
+    def fake_execvpe(cmd0, cmd, env):
+        raise SystemExit(0)
+
+    monkeypatch.setattr(mod.os, "execvpe", fake_execvpe)
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--model",
+                "gemini-3.7-flash-medium",
+                "--preamble",
+                str(target),
+                "--timeout-sec",
+                "1.0",
+            ]
+        )
+    assert exc.value.code == 0
+    err = capsys.readouterr().err
+    assert "ORCA_TERMINAL_HANDLE" in err
