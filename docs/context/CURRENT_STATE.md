@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-08-31
-> **source_commit**: `98f5c4c`
+> **updated_at**: 2026-09-01
+> **source_commit**: `7f70ce5`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -193,9 +193,13 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 `bid_ntce_nm` 은 제외합니다. 남은 작업은 다음 순서입니다.
   1. 구현: `src/rag/structured_data.py` 의 해당 두 컬럼 질의에 `MATCH AGAINST` 선행
      필터를 추가하되 기존 `LIKE` 를 그대로 유지해 결과 의미를 보존합니다.
-  2. 누락 탐지 회귀 테스트 추가(위 주의 1). 이것 없이 병합하지 않습니다.
+     **이 코드는 Wave H2 로 `main` 에 들어가 있고 기본값 OFF 입니다.** 운영 인덱스가
+     없고 플래그가 꺼져 있으므로 아직 질의 경로를 바꾸지 않습니다.
+  2. 누락 탐지 회귀 테스트 추가(위 주의 1). 이것 없이 플래그를 켜지 않습니다.
+     I-H 브랜치(`kwanbum217/orca-i-h`)에 경계값 7 클래스 픽스처가 있으나 **미병합**입니다.
   3. 운영 인덱스 생성은 **사용자 승인 후** 별도 수행합니다. 27.3GB 테이블 재구축과
-     쓰기 차단이 따르므로 수집이 멈춘 시간대를 고릅니다.
+     쓰기 차단이 따르므로 수집이 멈춘 시간대를 고릅니다. 실행 절차는
+     [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md)를 따릅니다.
   4. 적용 후 `scripts/measure_coldsql_attribution.py` 로 콜드 SQL 정본을 재측정해
      개선을 확인합니다(E4 와 동일 규약, fixture v2 32문항 x 3회).
 1. **운영 검증**: 2026-08-26 CI run `32930156938`(`5f8174a`) **3플랫폼 green**. Windows Docker Desktop 실기만 남음.
@@ -242,12 +246,25 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 - **분석 문서 수치 정합성 (2026-08-31, 병합 완료)**: I-B에서 원시 JSON 기반 Markdown 표 생성기와 `verify` 명령을 추가하고, `METRICS` 마커가 있는 `docs/analysis/` 문서를 agent-rule 검사에 연결했습니다. 전체 테스트 2회 `2917 passed`, 규칙 검사 `16/16`, 독립 리뷰를 통과했습니다.
 - **Antigravity 편집 권한 선점 (2026-08-31, 해소)**: I-D에서 `agy` 시작 명령에 `--mode accept-edits`를 넣어 첫 편집 전 모드 전환 경쟁 조건을 제거했습니다. `--dangerously-skip-permissions`는 사용하지 않으며 셸 승인 감시기는 유지합니다. 전체 테스트 2,924건, 규칙 16/16, 독립 리뷰를 통과해 병합했습니다.
 - **ngram MySQL 8 격리 CI (2026-08-31, 병합 완료)**: 운영 DB와 분리된 MySQL 8 서비스에 최소 스키마와 ngram FULLTEXT 인덱스를 만들고 전용 통합 검증을 실행하는 CI job을 추가했습니다. 운영 FULLTEXT 인덱스 생성과 기능 플래그 활성화는 사용자 승인 전까지 보류합니다.
+- **Wave I 미병합 현황 (2026-09-01 기준)**: I-A/I-B/I-D/I-G 는 `main` 에 병합 완료입니다.
+  I-C 는 `citations_wrong` 으로 반려됐습니다(브랜치 `kwanbum217/orca-i-c`, 커밋 `9210641` 보존).
+  I-F 는 **조율 계약 강제**(scope guard, worker_done guard)이며 MATCH AGAINST 구현이 아닙니다.
+  브랜치 `kwanbum217/orca-i-f`(커밋 `f9184f5`)는 미병합입니다. Wave J3 가 Intent 대조 리뷰를
+  남겼고(`docs/analysis/task_j3_if_review.md`), 병합은 코디네이터 finalize 판정 후입니다.
+  I-H 는 경계값 7 클래스 픽스처이며 브랜치 `kwanbum217/orca-i-h`(커밋 `d8aa9a9`)에서 미병합입니다.
+  **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
+  실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
 - Windows Docker Desktop 실기 미검증.
 - **LLM 품질 정본은 2026-08-28 현 HEAD 재측정**(동결 `d9a0536`, `gemma4:e2b` 32문항 x 3회)입니다. numeric 95.7%(67/70), evidence recall 0.957, citation 100%, refusal 24/24, 과잉응답 0 으로 2026-08-27 측정 대비 전 지표가 개선입니다. 다만 요청 2/96 이 타임아웃(q03)했고 긴 정확 공고명 질의가 58~180초를 소모하여 **레이턴시 꼬리는 회귀**입니다 ([`blind_fixture_remeasure_20260828.md`](../analysis/blind_fixture_remeasure_20260828.md)). e4b 동일 조건 재측정은 미실시입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
 - **정확 제목 lexical 채널 효과 실측**: 느린 4문항(q03·q08·q25·q31) x 3회에서 요청 실패 2/12 -> **0/12**, 대표값 58,352ms -> **5,941ms**, 최대 180,045ms -> 41,874ms 로 꼬리 지연이 제거됐습니다. 정확도 손실은 없습니다([`lexical_channel_latency_effect_20260828.md`](../analysis/lexical_channel_latency_effect_20260828.md)). 같은 부분집합 e4b 대조는 품질 동률에 P50 6,245ms·최대 81,234ms 로 e2b 가 앞서 **e2b 승격 유지 근거가 보강**됐습니다. 부분집합 12회 표본이므로 전량 재측정으로 정본을 갱신해야 합니다.
 - Ollama `gemma4:e4b` Predict c4·SSE c1·Query c1 2026-08-24 규약 준수 3회 측정, 게이트 전 항목 통과.
 - Arq container synthetic raw 보존(1,681~1,764 jps, P95 325~342ms). **business-task E2E 2026-08-26 실측**: 격리 큐 실제 task 2종 30/30 완주, P50 5.5ms·P95 1,174.9ms, DB 11행 불변·운영 큐 무영향([`arq_business_e2e_20260826.json`](../../data/benchmarks/arq_business_e2e_20260826.json)).
-- **공고 상세 페이지 쿼리 (코드 수정 완료, 실측 미수행)**: 2026-08-30 `similar_announcement_latest_filter` 로 전환해 후보를 기관·카테고리로 먼저 좁힌 뒤 동일 그룹 최신 차수 여부를 `NOT EXISTS` 로 판정합니다. 전체 테이블 `row_number()` 랭킹을 제거했고 window 의 결과 의미(`bid_ntce_dt` NULL-last 포함)는 동치 테스트로 고정했습니다. `latest_announcement_filter` 는 목록·색인 경로용으로 불변입니다. **EXPLAIN ANALYZE 전후 비교와 상세 API 레이턴시 실측은 미수행**이며, 인덱스 추가 여부는 실측 뒤 판단합니다.
+- **공고 상세 페이지 쿼리 실측 완료 (2026-08-30)**: `similar_announcement_latest_filter` 로 전환해
+  후보를 기관·카테고리로 먼저 좁힌 뒤 동일 그룹 최신 차수 여부를 `NOT EXISTS` 로 판정합니다.
+  전체 테이블 `row_number()` 랭킹을 제거했고 window 의 결과 의미는 동치 테스트로 고정했습니다.
+  **EXPLAIN ANALYZE 전후 비교와 상세 API 레이턴시 실측 완료.**
+  신 구현 5.09ms, `GET /api/v1/bids/{pk}` P95 47.98ms, 추가 인덱스 불필요
+  (커밋 `49bb224`, [`detail_query_explain_20260830.md`](../analysis/detail_query_explain_20260830.md)).
 - **RAG 정본 갱신 및 T7 판정 종료 (2026-08-30)**: HEAD `6210ee1` 에서 v2 32문항 x 3회를 측정해 `canonical=true`, 요청 실패 0/96 으로 정본을 갱신했습니다([`blind_fixture_v2_canonical_20260830.md`](../analysis/blind_fixture_v2_canonical_20260830.md)). numeric 95.8%(138/144), evidence recall 0.958, refusal 24/24, 금지 표현 위반 0, P50 3,147ms, P95 19,897ms 입니다. **T7 conditional vector bypass 는 품질 회귀가 없습니다.** 근거는 지표가 아니라 검색 동일성입니다. 두 측정에서 성공한 공통 94개 요청의 `retrieved_evidence_ids` 가 순서까지 한 건도 다르지 않습니다. T7 판정을 종료합니다.
 - **채점 규약 결함 해소 (2026-08-30)**: fixture 의 `context_sufficient` 는 검색 성공을 전제하므로, 검색이 기대 문서를 못 가져온 상태의 정직한 거부가 과잉응답으로, 거부 답변의 인용 부재가 citation 누락으로 집계됐습니다. 하네스가 이제 `retrieval_miss` 를 판정해 citation 과 과잉응답 집계에서 분리하고, 제외 전 원시값과 제외된 문항 ID 를 `summary` 블록에 함께 남깁니다. numeric 과 evidence recall 은 검색 성능을 그대로 드러내야 하므로 제외하지 않습니다. **보정 후 2026-08-30 정본은 citation 69/69(100%), 과잉응답 0 으로 T7 이전 기준선과 일치**합니다.
 - **워커 모델 배정 자동화 (2026-08-30)**: `orca_taskctl` Dispatch 가 `orca_model_router` 배정표를 실제로 사용합니다. role x risk 로 모델이 정해지고 배정 근거가 출력과 `--json` 에 남으며, dry-run 과 실제 Dispatch 가 같은 경로를 씁니다. `--model` 명시 지정은 계속 우선하되 배정표를 벗어나면 경고가 남습니다. 2026-08-29 에 medium 위험도 Task 두 건에 flash-high 가 배정된 사고가 이 결선으로 막힙니다. 아울러 Antigravity 모드 판정에 `unknown` 을 도입해, 생성 중 화면이 스피너만 남아 상태줄을 못 읽는 경우 키를 보내지 않고 건너뜁니다(기존에는 normal 로 오판해 accept-edits 워커를 plan 으로 밀어냈습니다). 반려 후 재작업 Task 를 발급하는 명령도 추가됐습니다.
