@@ -8,12 +8,16 @@ import pytest
 from scripts.orca_contract import char_len
 from scripts.orca_run_reviewer import (
     DEFAULT_MAX_DIFF_CHARS,
+    ReviewerToolError,
     _extract_capsule_context,
     _parse_args,
+    build_cli_command,
+    build_model_command,
     build_prompt,
     extract_json_from_response,
     get_git_diff_and_files,
     main,
+    run_model,
     run_reviewer,
 )
 
@@ -746,3 +750,141 @@ def test_cli_paths_and_max_diff_chars_dry_run(tmp_path, capsys, monkeypatch):
     data = json.loads(captured.out)
     assert data["dry_run"] is True
     assert data["char_count"] > 0
+
+
+def test_build_model_command_gemini_generates_agy_command():
+    """(24) gemini 모델 ID 가 agy 명령 배열을 생성합니다."""
+    prompt = "Review this code"
+    cmd = build_model_command("gemini-3.7-flash-high", prompt, timeout=300)
+    assert cmd == [
+        "agy",
+        "--model",
+        "gemini-3.7-flash-high",
+        "--print",
+        prompt,
+        "--print-timeout",
+        "300s",
+    ]
+
+
+def test_build_model_command_claude_generates_agy_command():
+    """(25) claude 모델 ID 가 agy 명령 배열을 생성합니다."""
+    prompt = "Review this code"
+    cmd = build_model_command("claude-sonnet-4-6", prompt, timeout=120)
+    assert cmd == [
+        "agy",
+        "--model",
+        "claude-sonnet-4-6",
+        "--print",
+        prompt,
+        "--print-timeout",
+        "120s",
+    ]
+
+
+def test_build_model_command_cerebras_generates_agy_command():
+    """(26) cerebras 모델 ID 가 agy 명령 배열을 생성합니다."""
+    prompt = "Review this code"
+    cmd = build_model_command("cerebras/gpt-oss-120b", prompt, timeout=60)
+    assert cmd == [
+        "agy",
+        "--model",
+        "cerebras/gpt-oss-120b",
+        "--print",
+        prompt,
+        "--print-timeout",
+        "60s",
+    ]
+
+
+def test_build_model_command_qwen_generates_qwen_dash_p_and_no_dash_i():
+    """(27) qwen 계열 모델이 qwen -m <id> -p 명령을 만들고 -i 플래그를 쓰지 않습니다."""
+    prompt = "Review this code"
+    models_to_test = ["qwen3.7-plus", "qwen-plus", "deepseek-v4-pro", "glm-5.2"]
+
+    for model_id in models_to_test:
+        cmd = build_model_command(model_id, prompt, timeout=600)
+        assert cmd == ["qwen", "-m", model_id, "-p", prompt]
+        assert "-p" in cmd
+        assert "-i" not in cmd
+        assert cmd[0] == "qwen"
+
+
+def test_build_model_command_unsupported_provider_raises_exception():
+    """(28) 지원하지 않는 provider 는 예외가 발생하고 조용히 agy 로 흘러가지 않습니다."""
+    unsupported_models = [
+        ("gpt-5.6-terra", "codex"),
+        ("cursor-agent/auto", "cursor"),
+        ("opencode/deepseek-v4-flash-free", "opencode"),
+        ("or-free/nemotron-ultra", "kimi-openrouter"),
+    ]
+
+    for model_id, expected_provider in unsupported_models:
+        with pytest.raises(ReviewerToolError) as exc_info:
+            build_model_command(model_id, "prompt")
+
+        err_msg = str(exc_info.value)
+        assert model_id in err_msg
+        assert expected_provider in err_msg
+        assert "지원하지 않는 제공자" in err_msg or "지원 제공자 목록" in err_msg
+
+
+def test_build_model_command_unresolvable_model_raises_exception():
+    """(29) 판정 불가 모델 ID 도 예외가 발생하고 예외 메시지에 모델 ID 가 포함됩니다."""
+    unresolvable_model = "completely-unknown-custom-model-999"
+    with pytest.raises(ReviewerToolError) as exc_info:
+        build_model_command(unresolvable_model, "prompt")
+
+    err_msg = str(exc_info.value)
+    assert unresolvable_model in err_msg
+
+
+def test_existing_agy_argument_structure_unchanged():
+    """(30) 기존 agy 경로의 인자 형태(순서 및 플래그 이름)가 변경되지 않았습니다."""
+    prompt = "Sample prompt"
+    cmd = build_model_command("gemini-3.7-flash-high", prompt, timeout=600)
+    assert cmd[0] == "agy"
+    assert cmd[1] == "--model"
+    assert cmd[2] == "gemini-3.7-flash-high"
+    assert cmd[3] == "--print"
+    assert cmd[4] == prompt
+    assert cmd[5] == "--print-timeout"
+    assert cmd[6] == "600s"
+    assert len(cmd) == 7
+
+
+def test_build_cli_command_alias():
+    """(31) build_cli_command 별칭이 build_model_command 와 동일하게 작동합니다."""
+    prompt = "Sample prompt"
+    cmd1 = build_model_command("qwen3.7-plus", prompt)
+    cmd2 = build_cli_command("qwen3.7-plus", prompt)
+    assert cmd1 == cmd2 == ["qwen", "-m", "qwen3.7-plus", "-p", prompt]
+
+
+def test_run_model_file_not_found_reports_correct_cli_name(monkeypatch):
+    """(32) 실행 파일 없음(FileNotFoundError) 발생 시 실제로 호출한 CLI 이름을 정확히 보고합니다."""
+
+    def mock_subprocess_run(cmd, capture_output=True, text=True, timeout=None, check=False):
+        raise FileNotFoundError("command not found")
+
+    monkeypatch.setattr("scripts.orca_run_reviewer.subprocess.run", mock_subprocess_run)
+
+    # qwen 모델 호출 시: (qwen) 으로 보고되어야 함
+    code_qwen, _stdout_qwen, stderr_qwen = run_model("prompt", model="qwen3.7-plus")
+    assert code_qwen == -2
+    assert "실행 파일을 찾을 수 없음 (qwen)" in stderr_qwen
+    assert "실행 파일을 찾을 수 없음 (agy)" not in stderr_qwen
+
+    # gemini 모델 호출 시: (agy) 로 보고되어야 함
+    code_gemini, _stdout_gemini, stderr_gemini = run_model("prompt", model="gemini-3.7-flash-high")
+    assert code_gemini == -2
+    assert "실행 파일을 찾을 수 없음 (agy)" in stderr_gemini
+
+
+def test_run_model_unsupported_model_returns_code_minus_2():
+    """(33) 지원하지 않는 모델로 run_model 호출 시 종료 코드 -2와 에러 메시지를 반환합니다."""
+    code, stdout, stderr = run_model("prompt", model="unsupported-model-xyz")
+    assert code == -2
+    assert stdout == ""
+    assert "unsupported-model-xyz" in stderr
+    assert "모델 명령 생성 실패" in stderr

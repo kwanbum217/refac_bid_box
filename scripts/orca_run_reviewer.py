@@ -22,6 +22,7 @@ try:
         load_capsule,
         truncate,
     )
+    from scripts.orca_model_router import provider_for_model
     from scripts.validate_review_report import evaluate, parse_checklist
 except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
@@ -32,6 +33,7 @@ except (ModuleNotFoundError, ImportError):
         load_capsule,
         truncate,
     )
+    from scripts.orca_model_router import provider_for_model
     from scripts.validate_review_report import evaluate, parse_checklist
 
 DEFAULT_MODEL = "gemini-3.7-flash-high"
@@ -39,6 +41,7 @@ DEFAULT_MODEL_TIMEOUT = 600
 DEFAULT_GIT_TIMEOUT = 10
 DEFAULT_MAX_DIFF_CHARS = 20000
 DEFAULT_MAX_CHARS = 1500
+SUPPORTED_REVIEWER_PROVIDERS: frozenset[str] = frozenset({"gemini", "claude", "cerebras", "qwen"})
 
 
 class ReviewerToolError(Exception):
@@ -226,6 +229,58 @@ def build_prompt(
     return prompt.strip()
 
 
+def build_model_command(
+    model: str,
+    prompt: str,
+    timeout: int = DEFAULT_MODEL_TIMEOUT,
+) -> list[str]:
+    """모델 ID 와 프롬프트, 타임아웃으로부터 실행할 CLI 명령어 인자 배열을 생성합니다.
+
+    - gemini, claude, cerebras: agy CLI 사용
+      ['agy', '--model', model, '--print', prompt, '--print-timeout', f'{timeout}s']
+    - qwen: qwen CLI 단발 실행 (-p) 사용
+      ['qwen', '-m', model, '-p', prompt]
+    - 지원하지 않는 provider 또는 판정 불가 모델: ReviewerToolError 발생
+    """
+    try:
+        provider = provider_for_model(model, strict=True)
+    except Exception as exc:
+        raise ReviewerToolError(
+            f"모델 ID 에서 제공자를 판정할 수 없습니다 (모델: {model!r}): {exc}"
+        ) from exc
+
+    if provider not in SUPPORTED_REVIEWER_PROVIDERS:
+        supported_list = ", ".join(sorted(SUPPORTED_REVIEWER_PROVIDERS))
+        raise ReviewerToolError(
+            f"리뷰어로 지원하지 않는 제공자입니다 (모델: {model!r}, 판정된 제공자: {provider!r}, "
+            f"지원 제공자 목록: {supported_list})"
+        )
+
+    if provider in ("gemini", "claude", "cerebras"):
+        return [
+            "agy",
+            "--model",
+            model,
+            "--print",
+            prompt,
+            "--print-timeout",
+            f"{timeout}s",
+        ]
+    if provider == "qwen":
+        return [
+            "qwen",
+            "-m",
+            model,
+            "-p",
+            prompt,
+        ]
+
+    raise ReviewerToolError(f"처리되지 않은 제공자입니다 (모델: {model!r}, 제공자: {provider!r})")
+
+
+build_cli_command = build_model_command
+
+
 def run_model(
     prompt: str,
     model: str = DEFAULT_MODEL,
@@ -233,18 +288,14 @@ def run_model(
 ) -> tuple[int, str, str]:
     """일회성 모델 호출을 subprocess 로 실행합니다.
 
-    명령: agy --model <id> --print <프롬프트> --print-timeout <N>s
     반환값: (returncode, stdout, stderr)
     """
-    cmd = [
-        "agy",
-        "--model",
-        model,
-        "--print",
-        prompt,
-        "--print-timeout",
-        f"{timeout}s",
-    ]
+    try:
+        cmd = build_model_command(model=model, prompt=prompt, timeout=timeout)
+    except Exception as exc:
+        return -2, "", f"모델 명령 생성 실패: {exc}"
+
+    cli_name = cmd[0] if cmd else "unknown"
     try:
         proc = subprocess.run(  # nosec B603 - shell 없이 고정 인자 목록으로 호출합니다
             cmd,
@@ -263,7 +314,7 @@ def run_model(
             stderr = stderr.decode("utf-8", errors="replace")
         return -1, stdout, stderr
     except FileNotFoundError as exc:
-        return -2, "", f"실행 파일을 찾을 수 없음 (agy): {exc}"
+        return -2, "", f"실행 파일을 찾을 수 없음 ({cli_name}): {exc}"
     except Exception as exc:
         return -2, "", f"모델 실행 예외: {exc}"
 
