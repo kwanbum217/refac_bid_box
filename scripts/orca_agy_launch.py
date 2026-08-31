@@ -68,8 +68,11 @@ def build_command(model: str, prompt: str) -> list[str]:
     """agy 기동 명령 배열을 순수 함수로 조립합니다.
 
     Antigravity 는 추론 수준이 모델 ID 에 포함되므로 별도 effort 인자가 없습니다.
+    --mode accept-edits 를 시작 인자로 넣어 TUI 가 첫 프롬프트를 받기 전에 편집
+    모드를 확정합니다. 이렇게 하지 않으면 스피너 화면에서 shift+tab 전환을
+    시도하는 경쟁 조건이 생겨 첫 편집 대화창보다 모드 확신이 늦어집니다.
     """
-    return ["agy", "--model", model, "-i", prompt]
+    return ["agy", "--model", model, "--mode", "accept-edits", "-i", prompt]
 
 
 def acquire_permissions(

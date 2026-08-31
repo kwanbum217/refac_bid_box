@@ -50,13 +50,44 @@ def test_missing_file_times_out(tmp_path: Path):
 def test_build_command_passes_prompt_as_agy_argument():
     """-i 인자 경로여야 합니다. 스플래시 멈춤을 피하려면 지시문을 인자로 줘야 합니다."""
     cmd = build_command("gemini-3.7-flash-medium", "본문")
-    assert cmd == ["agy", "--model", "gemini-3.7-flash-medium", "-i", "본문"]
+    assert cmd == [
+        "agy",
+        "--model",
+        "gemini-3.7-flash-medium",
+        "--mode",
+        "accept-edits",
+        "-i",
+        "본문",
+    ]
 
 
 def test_build_command_supports_different_model_ids():
     """추론 수준이 모델 ID 에 포함되므로 어떤 ID 든 그대로 전달돼야 합니다."""
     high = build_command("claude-sonnet-4-6", "지시")
-    assert high == ["agy", "--model", "claude-sonnet-4-6", "-i", "지시"]
+    assert high == [
+        "agy",
+        "--model",
+        "claude-sonnet-4-6",
+        "--mode",
+        "accept-edits",
+        "-i",
+        "지시",
+    ]
+
+
+def test_build_command_includes_accept_edits_mode_at_startup():
+    """--mode accept-edits 가 시작 인자에 없으면 첫 편집 전에 승인 대화창이 뜹니다."""
+    cmd = build_command("gemini-3.7-flash-medium", "본문")
+    assert "--mode" in cmd
+    idx = cmd.index("--mode")
+    assert cmd[idx + 1] == "accept-edits"
+
+
+def test_build_command_never_includes_dangerously_skip_permissions():
+    """--dangerously-skip-permissions 는 범위 밖 명령까지 승인하므로 절대 쓰면 안 됩니다."""
+    for model in ("gemini-3.7-flash-medium", "claude-sonnet-4-6"):
+        cmd = build_command(model, "임의 지시")
+        assert "--dangerously-skip-permissions" not in cmd
 
 
 def test_commit_notice_mentions_commit_requirement():
