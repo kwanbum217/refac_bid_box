@@ -13,18 +13,21 @@ from scripts.validate_agent_rules import (
     CURRENT_STATE_LAG_TOLERANCE,
     GIT_PROBE_TIMEOUT_SECONDS,
     PROJECT_ROOT,
+    check_agents_model_table_absence,
     check_agents_single_root,
     check_antigravity_rules,
     check_claude_is_pointer,
     check_context_budgets,
     check_current_state_exists,
     check_current_state_sections,
+    check_current_state_unknowns_contradictions,
     check_cursor_references_agents,
     check_opencode_json,
     check_orca_coordination_skill,
     check_skills_mirror,
     check_task_capsule_v2_docs,
     check_v2_templates,
+    check_worker_model_pool_drift,
     get_all_checks,
     parse_yaml_keys_fallback,
     run_all_checks,
@@ -34,10 +37,13 @@ from scripts.validate_agent_rules import (
 def test_real_repo_validation_passes():
     """실제 저장소의 v2 정합성 검증이 100% 통과하는지 확인."""
     checks = get_all_checks(PROJECT_ROOT)
-    assert len(checks) == 12
+    assert len(checks) == 15
     for chk in checks:
         assert chk.ok, f"Check failed: {chk.name} -> {chk.detail}"
     assert run_all_checks(PROJECT_ROOT, quiet=True) == 0
+    assert check_worker_model_pool_drift(PROJECT_ROOT).ok
+    assert check_agents_model_table_absence(PROJECT_ROOT).ok
+    assert check_current_state_unknowns_contradictions(PROJECT_ROOT).ok
 
 
 def test_check_claude_is_pointer(tmp_path: Path):
@@ -651,3 +657,226 @@ def test_freshness_ref_falls_back_to_head_without_main(monkeypatch, tmp_path):
 
     monkeypatch.setattr("scripts.validate_agent_rules.subprocess.run", fake_run)
     assert validate_agent_rules._freshness_ref(tmp_path) == "HEAD"
+
+
+# ===========================================================================
+# 워커 모델 배정표 (TIER_POLICY) 정합성 검증 테스트
+# ===========================================================================
+
+
+def _write_model_pool_doc(root: Path, table_rows: list[tuple[str, str, str, str]]) -> Path:
+    target = root / "docs" / "ops" / "orca_worker_model_pool.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Orca 워커 모델 풀 정본",
+        "",
+        "## 1. 역할별 모델 배정 정책 (TIER_POLICY)",
+        "",
+        "| 역할 (`role`) | 위험도 (`risk`) | 1순위 (Primary) | 2순위 (Fallback) |",
+        "| --- | :---: | --- | --- |",
+    ]
+    for role, risk, prim, fb in table_rows:
+        lines.append(f"| `{role}` | `{risk}` | `{prim}` | `{fb}` |")
+    lines.append("")
+    target.write_text("\n".join(lines), encoding="utf-8")
+    return target
+
+
+def test_check_worker_model_pool_drift_match_passes(tmp_path: Path):
+    """문서 표가 TIER_POLICY 와 일치하면 통과합니다."""
+    from scripts.orca_model_router import TIER_POLICY
+
+    rows = [(k[0], k[1], v[0], v[1]) for k, v in TIER_POLICY.items()]
+    _write_model_pool_doc(tmp_path, rows)
+
+    res = check_worker_model_pool_drift(tmp_path)
+    assert res.ok
+    assert "완전 일치" in res.detail
+
+
+def test_check_worker_model_pool_drift_primary_mismatch_fails(tmp_path: Path):
+    """한 행의 primary 가 다르면 실패하고 그 조합이 detail 에 나와야 합니다."""
+    from scripts.orca_model_router import TIER_POLICY
+
+    rows = []
+    for k, v in TIER_POLICY.items():
+        if k == ("reviewer", "high"):
+            rows.append((k[0], k[1], "gemini-flash-high", v[1]))
+        else:
+            rows.append((k[0], k[1], v[0], v[1]))
+    _write_model_pool_doc(tmp_path, rows)
+
+    res = check_worker_model_pool_drift(tmp_path)
+    assert not res.ok
+    assert "값 불일치" in res.detail
+    assert "reviewer" in res.detail
+    assert "high" in res.detail
+
+
+def test_check_worker_model_pool_drift_fallback_mismatch_fails(tmp_path: Path):
+    """한 행의 fallback 이 다르면 실패하고 그 조합이 detail 에 나와야 합니다."""
+    from scripts.orca_model_router import TIER_POLICY
+
+    rows = []
+    for k, v in TIER_POLICY.items():
+        if k == ("builder", "low"):
+            rows.append((k[0], k[1], v[0], "gemini-flash-high"))
+        else:
+            rows.append((k[0], k[1], v[0], v[1]))
+    _write_model_pool_doc(tmp_path, rows)
+
+    res = check_worker_model_pool_drift(tmp_path)
+    assert not res.ok
+    assert "값 불일치" in res.detail
+    assert "builder" in res.detail
+    assert "low" in res.detail
+
+
+def test_check_worker_model_pool_drift_code_only_combination_fails(tmp_path: Path):
+    """코드에만 있는 조합이 있으면 실패해야 합니다."""
+    from scripts.orca_model_router import TIER_POLICY
+
+    # Omit __default__, low
+    rows = [(k[0], k[1], v[0], v[1]) for k, v in TIER_POLICY.items() if k != ("__default__", "low")]
+    _write_model_pool_doc(tmp_path, rows)
+
+    res = check_worker_model_pool_drift(tmp_path)
+    assert not res.ok
+    assert "코드에만 있는 조합" in res.detail
+    assert "__default__" in res.detail
+
+
+def test_check_worker_model_pool_drift_doc_only_combination_fails(tmp_path: Path):
+    """문서에만 있는 조합이 있으면 실패해야 합니다."""
+    from scripts.orca_model_router import TIER_POLICY
+
+    rows = [(k[0], k[1], v[0], v[1]) for k, v in TIER_POLICY.items()]
+    rows.append(("extra_role", "low", "qwen-plus", "gemini-flash-medium"))
+    _write_model_pool_doc(tmp_path, rows)
+
+    res = check_worker_model_pool_drift(tmp_path)
+    assert not res.ok
+    assert "문서에만 있는 조합" in res.detail
+    assert "extra_role" in res.detail
+
+
+def test_check_worker_model_pool_drift_missing_file_or_unparseable_fails(tmp_path: Path):
+    """표 파일이 없거나 표를 찾을 수 없으면 통과가 아니라 실패여야 합니다."""
+    # 1. File missing
+    res = check_worker_model_pool_drift(tmp_path)
+    assert not res.ok
+    assert "문서 파일 없음" in res.detail
+
+    # 2. File exists but without table
+    target = tmp_path / "docs" / "ops" / "orca_worker_model_pool.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# Title\nNo table here\n", encoding="utf-8")
+    res = check_worker_model_pool_drift(tmp_path)
+    assert not res.ok
+    assert "배정표를 찾을 수 없거나 파싱 실패" in res.detail
+
+
+# ===========================================================================
+# AGENTS.md 워커 모델 배정표 부재 검증 테스트
+# ===========================================================================
+
+
+def test_check_agents_model_table_absence(tmp_path: Path):
+    """AGENTS.md 에 구체 워커 모델 ID나 풀 키가 나타나면 실패해야 합니다."""
+    agents_md = tmp_path / "AGENTS.md"
+
+    # 1. Valid (only pointer, no worker model pool keys / IDs)
+    valid_content = """# AGENTS.md
+- 코디네이터의 기본값은 Codex `gpt-5.6-terra` + effort `medium`입니다.
+- 워커 모델 배정의 실행 정본은 scripts/orca_model_router.py의 TIER_POLICY 입니다.
+"""
+    agents_md.write_text(valid_content, encoding="utf-8")
+    res = check_agents_model_table_absence(tmp_path)
+    assert res.ok
+
+    # 2. Worker model ID present (e.g. gemini-3.7-flash-high)
+    bad_content_id = valid_content + "\n| builder | high | `gemini-3.7-flash-high` |\n"
+    agents_md.write_text(bad_content_id, encoding="utf-8")
+    res = check_agents_model_table_absence(tmp_path)
+    assert not res.ok
+    assert "gemini-3.7-flash-high" in res.detail
+
+    # 3. Worker pool key present (e.g. qwen-plus)
+    bad_content_key = valid_content + "\n- reviewer 모델: `qwen-plus`\n"
+    agents_md.write_text(bad_content_key, encoding="utf-8")
+    res = check_agents_model_table_absence(tmp_path)
+    assert not res.ok
+    assert "qwen-plus" in res.detail
+
+    # 4. Missing file
+    agents_md.unlink()
+    res = check_agents_model_table_absence(tmp_path)
+    assert not res.ok
+    assert "파일 없음" in res.detail
+
+
+# ===========================================================================
+# CURRENT_STATE 6.1 Unknowns 상태 모순 검사 테스트
+# ===========================================================================
+
+
+def test_check_current_state_unknowns_contradictions(tmp_path: Path):
+    """CURRENT_STATE 6.1 절의 동일 사안 상태 모순을 기계로 탐지합니다."""
+    # 1. Valid content with distinct topics
+    valid_body = """# CURRENT_STATE
+> updated_at: 2026-08-31
+> source_commit: `9d38a2a`
+
+### 6.1 알려진 미해결 사항 (Unknowns)
+
+- **Wave G 조율 평면 정합성 (2026-08-31, 병합 완료)**: 외부 감사 완료.
+- **리뷰어 실행 경로 (2026-08-31, 해소)**: 실행 경로 정상화.
+- **공고 상세 페이지 쿼리 (코드 수정 완료, 실측 미수행)**: 실측 대기.
+- Windows Docker Desktop 실기 미검증.
+
+### 6.2 정본 갱신 규약 (Update Protocol)
+"""
+    _write_current_state(tmp_path, valid_body)
+    res = check_current_state_unknowns_contradictions(tmp_path)
+    assert res.ok
+    assert "모순 없음 확인" in res.detail
+
+    # 2. Cross-item contradiction for same topic (e.g., q21)
+    cross_conflict_body = """# CURRENT_STATE
+### 6.1 알려진 미해결 사항 (Unknowns)
+
+- **q21 결함 (2026-08-31, 해소)**: q21 재순위 결함 닫힘.
+- **q21 결함 (2026-08-30, 수정 미적용)**: q21 아직 미적용 상태.
+
+### 6.2 정본 갱신 규약
+"""
+    _write_current_state(tmp_path, cross_conflict_body)
+    res = check_current_state_unknowns_contradictions(tmp_path)
+    assert not res.ok
+    assert "복수 항목 간 상태 모순" in res.detail
+    assert "q21 결함" in res.detail
+
+    # 3. Single-item contradiction (해소 and 수정 미적용 in same header)
+    single_conflict_body = """# CURRENT_STATE
+### 6.1 알려진 미해결 사항 (Unknowns)
+
+- **q21 결함 (2026-08-31, 해소, 수정 미적용)**: 모순된 상태 표기.
+
+### 6.2 정본 갱신 규약
+"""
+    _write_current_state(tmp_path, single_conflict_body)
+    res = check_current_state_unknowns_contradictions(tmp_path)
+    assert not res.ok
+    assert "단일 항목 내부 상태 모순" in res.detail
+
+    # 4. Missing file
+    (tmp_path / "docs" / "context" / "CURRENT_STATE.md").unlink()
+    res = check_current_state_unknowns_contradictions(tmp_path)
+    assert not res.ok
+    assert "파일 없음" in res.detail
+
+    # 5. Missing 6.1 section
+    _write_current_state(tmp_path, "# CURRENT_STATE\n## 1. 개요\n")
+    res = check_current_state_unknowns_contradictions(tmp_path)
+    assert not res.ok
+    assert "6.1절" in res.detail
