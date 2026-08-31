@@ -8,6 +8,45 @@
 
 ---
 
+## 0. 21:35 KST 종료 갱신 (Codex 코디네이터)
+
+이 절이 아래 인계 시점 기록보다 우선합니다. `main` 기준 커밋은 `d466ec6`이며 규칙
+검증은 16/16 통과 상태입니다.
+
+| 작업 | 최종 상태 | 다음 조치 |
+| --- | --- | --- |
+| I-A | 검증·병합·회수 완료 | 없음 |
+| I-B | 검증·병합·회수 완료 | 없음 |
+| I-C | Qwen 리뷰 `citations_wrong`으로 반려, 브랜치 `kwanbum217/orca-i-c`의 `9210641` 보존 | 필요할 때 새 Task로 재작업 |
+| I-D | `agy --mode accept-edits` 선점 기동 검증·병합·회수 완료 | 없음 |
+| I-E | `CURRENT_STATE` 갱신 병합 완료 | Run Task 상태 정리 필요 |
+| I-G | 격리 MySQL 8 ngram CI, Qwen 독립 리뷰·전체 2,924 테스트 통과 후 병합·회수 완료 | 원격 CI 확인 |
+| I-F | 브랜치 `kwanbum217/orca-i-f`, 커밋 `f9184f5`; 대상 261건·전체 2,946건·규칙 16/16·Ruff 통과. Qwen 내용 판정은 결함 0건이나 50,000자 diff 절단으로 finalize가 fail-closed 거부 | `finalize --max-diff-chars 120000 --reviewer-model qwen3.7-plus`로 재검증 후에만 병합 |
+| I-H | 브랜치 `kwanbum217/orca-i-h`, 커밋 `d8aa9a9`; `worker_done` 수신, 단위 18건·규칙 16/16 보고. 독립 리뷰 미실행 | I-F와 동시에 리뷰하지 말고 Qwen finalize 후 병합 판단 |
+
+I-F 재검증 경로는 다음과 같습니다.
+
+```bash
+python3 scripts/orca_taskctl.py finalize \
+  --report /Users/kwanbum/orca/workspaces/refac_bid_box/orca-i-f/.orca/capsules/task_22541627a79a/worker_done.json \
+  --capsule /Users/kwanbum/orca/workspaces/refac_bid_box/orca-i-f/.orca/capsules/task_i_f_contract_enforcement/capsule.yaml \
+  --repo /Users/kwanbum/orca/workspaces/refac_bid_box/orca-i-f \
+  --base main --branch kwanbum217/orca-i-f --reviewer \
+  --reviewer-model qwen3.7-plus --max-diff-chars 120000
+```
+
+I-H는 I-G 병합 뒤의 `main`에 rebase한 후 보고 커밋을 갱신하고 finalize하는 편이 안전합니다.
+두 워커 모두 종료 시점에는 커밋 1개, 미커밋 0개였습니다. 운영 FULLTEXT 인덱스와
+기능 플래그 활성화는 계속 사용자 승인 전 보류입니다. Docker 컨테이너는 종료 점검 시
+실행 중인 것이 없었습니다.
+
+GPT 감사 항목은 전부 완료된 상태가 아닙니다. 이번 회차는 모델 정책 문서 정합성,
+CURRENT_STATE 모순, 분석 수치 자동 검산, 승인 선점, 격리 MySQL CI를 닫거나 보강했습니다.
+I-F 계약 강제는 재검증 대기이며, ngram 기능의 운영 활성화·운영 인덱스·canonical 재측정과
+Windows Docker Desktop 실기는 남아 있습니다.
+
+---
+
 ## 1. 지금 돌고 있는 것 (인계 시점 활성)
 
 워커 3대가 Dispatch 되어 작업 중입니다. **아직 아무도 커밋하지 않았습니다.**
