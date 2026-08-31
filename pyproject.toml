@@ -231,4 +231,5 @@ pythonpath = ["."]
 python_files = ["test_*.py"]
 markers = [
     "data_assets: 로컬 데이터 자산(모델 가중치, chroma_db)이 있어야 하는 G1 검증. CI 에서는 -m 'not data_assets' 로 제외합니다.",
+    "mysql_integration: 실제 MySQL 8 인스턴스가 필요한 통합 테스트. CI 에서는 -m 'not mysql_integration' (또는 -m 'not data_assets and not mysql_integration') 로 제외합니다.",
 ]

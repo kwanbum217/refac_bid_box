@@ -1,0 +1,277 @@
+{
+  "version": "1.0.0",
+  "description": "MySQL ngram FULLTEXT 인덱스 및 LIKE 선행필터 동등성 검증용 경계값 및 기준선 키워드 픽스처",
+  "metadata": {
+    "ngram_token_size_default": 2,
+    "required_edge_classes_count": 14,
+    "baseline_keywords_count": 10
+  },
+  "required_edge_classes": [
+    "single_char_hangul",
+    "exact_two_char",
+    "whitespace_delimited",
+    "parentheses",
+    "hyphen",
+    "slash",
+    "alphanumeric_mixed",
+    "unicode_nfd_nfc",
+    "like_wildcard_percent",
+    "like_wildcard_underscore",
+    "single_quote",
+    "boolean_operators",
+    "very_long_exact_name",
+    "middle_substring"
+  ],
+  "keywords": [
+    {
+      "id": "edge_01",
+      "keyword": "시",
+      "class_id": "single_char_hangul",
+      "class_name": "1글자 한글",
+      "is_baseline": false,
+      "is_safe_for_ngram": false,
+      "description": "1글자 한글 토큰은 ngram_token_size=2 환경에서 2-gram 토큰을 생성하지 못해 MATCH AGAINST 결과가 0건(누락)이 됨",
+      "expected_behavior": "ngram 선행필터를 적용하면 조용한 누락이 발생하므로 LIKE 단독 경로로 폴백해야 함"
+    },
+    {
+      "id": "edge_01_b",
+      "keyword": "청",
+      "class_id": "single_char_hangul",
+      "class_name": "1글자 한글",
+      "is_baseline": false,
+      "is_safe_for_ngram": false,
+      "description": "1글자 한글 접미사 토큰 (교육청/경찰청의 1글자 축약 검색)",
+      "expected_behavior": "ngram 선행필터를 적용하면 조용한 누락이 발생하므로 LIKE 단독 경로로 폴백해야 함"
+    },
+    {
+      "id": "edge_02",
+      "keyword": "구청",
+      "class_id": "exact_two_char",
+      "class_name": "정확히 2글자 경계값",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "정확히 2글자 최소 ngram 토큰 크기 경계값",
+      "expected_behavior": "정확히 1개의 2-gram 토큰을 형성하여 MATCH AGAINST와 LIKE 결과가 100% 일치해야 함"
+    },
+    {
+      "id": "edge_03",
+      "keyword": "서울특별시 강남구",
+      "class_id": "whitespace_delimited",
+      "class_name": "공백을 포함한 기관명",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "공백으로 구분된 다중 어절 기관명",
+      "expected_behavior": "구문 검색(+\"...\") 또는 다중 토큰 결합 시 MATCH+LIKE가 공백을 포함한 문자열을 정확히 매칭해야 함"
+    },
+    {
+      "id": "edge_04",
+      "keyword": "한국도로공사(본사)",
+      "class_id": "parentheses",
+      "class_name": "괄호",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "기관명 내 괄호 포함 문자열",
+      "expected_behavior": "괄호가 포함되어도 구문 검색 래핑을 통해 문법 오류 없이 LIKE와 동등한 결과를 도출해야 함"
+    },
+    {
+      "id": "edge_05",
+      "keyword": "서울-경기",
+      "class_id": "hyphen",
+      "class_name": "하이픈",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "하이픈이 포함된 기관/지역명 (FULLTEXT NOT 연산자 충돌 방지 검증)",
+      "expected_behavior": "하이픈이 boolean NOT 연산자로 오작동하지 않도록 구문 검색으로 래핑되어야 함"
+    },
+    {
+      "id": "edge_06",
+      "keyword": "기획/관리",
+      "class_id": "slash",
+      "class_name": "슬래시",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "슬래시가 포함된 부서/기관 구분 명칭",
+      "expected_behavior": "슬래시가 단어 구분자로 처리되며 LIKE 조건과 결합되어 안전하게 필터링되어야 함"
+    },
+    {
+      "id": "edge_07",
+      "keyword": "K-water2026",
+      "class_id": "alphanumeric_mixed",
+      "class_name": "영문과 숫자 혼합",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "영문, 특수문자, 숫자가 혼합된 기관 또는 프로젝트 식별자",
+      "expected_behavior": "영숫자 혼합 문자열이 ngram 파서에서 정상 색인/검색되어 LIKE 결과와 일치해야 함"
+    },
+    {
+      "id": "edge_08",
+      "keyword": "\u1112\u1161\u11ab\u1100\u116e\u11a8",
+      "class_id": "unicode_nfd_nfc",
+      "class_name": "유니코드 조합형과 완성형이 다른 문자열",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "NFD(조합형)으로 입력된 한글 문자열 (정규화 후 NFC '한국'과 동일하게 처리되어야 함)",
+      "expected_behavior": "정규화 전처리(unicodedata.normalize NFC)를 거쳐 인덱스와 정합성을 유지해야 함"
+    },
+    {
+      "id": "edge_09",
+      "keyword": "100%",
+      "class_id": "like_wildcard_percent",
+      "class_name": "LIKE 와일드카드 문자 퍼센트",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "LIKE 와일드카드 문자(%)가 포함된 검색어",
+      "expected_behavior": "LIKE 와일드카드 문자가 포함되어도 MATCH 선행필터 후보가 LIKE 매칭 집합을 완전히 포함해야 함"
+    },
+    {
+      "id": "edge_10",
+      "keyword": "공사_1차",
+      "class_id": "like_wildcard_underscore",
+      "class_name": "LIKE 와일드카드 문자 언더스코어",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "LIKE 단일문자 와일드카드(_)가 포함된 검색어",
+      "expected_behavior": "언더스코어가 포함된 검색어에서 MATCH 선행필터와 후행 LIKE가 정상 동작해야 함"
+    },
+    {
+      "id": "edge_11",
+      "keyword": "공사's",
+      "class_id": "single_quote",
+      "class_name": "작은따옴표",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "작은따옴표가 포함된 검색어 (SQL injection 방지 및 바인딩 검증)",
+      "expected_behavior": "SQL 파라미터 바인딩을 통해 SQL 구문 오류 없이 안전하게 매칭되어야 함"
+    },
+    {
+      "id": "edge_12",
+      "keyword": "+공사*",
+      "class_id": "boolean_operators",
+      "class_name": "FULLTEXT boolean 연산자 성격 문자인 플러스 마이너스 별표 큰따옴표",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "FULLTEXT boolean 모드 연산자 문자(+, -, *, \")가 포함된 검색어",
+      "expected_behavior": "불리언 연산자 문자가 쿼리 제어문으로 오해석되지 않도록 구문 따옴표 래핑 처리되어야 함"
+    },
+    {
+      "id": "edge_13",
+      "keyword": "한국농어촌공사전남지역본부영광지사",
+      "class_id": "very_long_exact_name",
+      "class_name": "매우 긴 정확 기관명",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "20자 이상의 매우 긴 공공기관 공식 명칭",
+      "expected_behavior": "다수의 2-gram 토큰이 생성되어 후보군을 극도로 정밀하게 좁히며 100% 일치해야 함"
+    },
+    {
+      "id": "edge_14",
+      "keyword": "토지주택",
+      "class_id": "middle_substring",
+      "class_name": "부분문자열이 기관명 중앙에 위치하는 경우",
+      "is_baseline": false,
+      "is_safe_for_ngram": true,
+      "description": "'한국토지주택공사' 등 단어의 중앙에 위치하는 부분문자열 검색",
+      "expected_behavior": "ngram 역색인은 단어 중간의 2-gram도 색인하므로 중앙 부분문자열도 누락 없이 검색되어야 함"
+    },
+    {
+      "id": "base_01",
+      "keyword": "서울",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 2글자 흔한 대도시 토큰",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (2,256건 / 2,585건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_02",
+      "keyword": "거제",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 2글자 지역 토큰",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (93건 / 127건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_03",
+      "keyword": "공사",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 2글자 고빈도 명사 접미사",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (476건 / 700건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_04",
+      "keyword": "거제시",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 3글자 기초지자체 토큰",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (12건 / 21건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_05",
+      "keyword": "교육청",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 3글자 빈출 공공기관 분류",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (13,025건 / 15,280건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_06",
+      "keyword": "한국전",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 3글자 접두사형 공기업 토큰",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (49건 / 58건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_07",
+      "keyword": "한국토지주택공사",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 8글자 긴 특정 기관명",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (10건 / 26건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_08",
+      "keyword": "한국도로공사",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 6글자 긴 공기업 기관명",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (5건 / 57건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_09",
+      "keyword": "부산광역시",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 5글자 광역자치단체명",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (933건 / 1,039건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    },
+    {
+      "id": "base_10",
+      "keyword": "경찰청",
+      "class_id": "f3_baseline",
+      "class_name": "F3 기준선: 3글자 단독 중앙행정기관",
+      "is_baseline": true,
+      "is_safe_for_ngram": true,
+      "description": "F3 검증 완료 기준선 (448건 / 587건 100% 일치)",
+      "expected_behavior": "LIKE와 MATCH+LIKE 결과 100% 일치 (F3 실측 기준선)"
+    }
+  ]
+}
