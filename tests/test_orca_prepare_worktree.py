@@ -357,3 +357,29 @@ def test_get_git_hooks_path_fallback_and_failure(monkeypatch, tmp_path: Path):
     non_git = tmp_path / "not_git"
     non_git.mkdir()
     assert orca_prepare_worktree.get_git_hooks_path(non_git) is None
+
+
+def test_prepare_worktree_sets_capsule_config(
+    mock_gemini_env, fake_git_worktree, monkeypatch, capsys
+):
+    """--capsule 지정 시 git config orca.capsule 이 정상 기록되는지 검증합니다."""
+    wt = fake_git_worktree["worktree"]
+    repo = fake_git_worktree["repo"]
+    cap_path = wt / ".orca" / "capsules" / "task_123" / "capsule.yaml"
+
+    monkeypatch.setattr(
+        orca_prepare_worktree,
+        "install_pre_commit_hook",
+        _create_fake_pre_commit_installer(),
+    )
+
+    exit_code = orca_prepare_worktree.prepare_worktree(wt, repo, capsule_path=cap_path, check=False)
+    assert exit_code == 0
+
+    res = subprocess.run(  # noqa: S603
+        ["git", "-C", str(wt), "config", "--get", "orca.capsule"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert res.stdout.strip() == str(cap_path)

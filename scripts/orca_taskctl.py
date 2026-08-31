@@ -16,6 +16,7 @@ Capsule 확장, 모델 라우팅, Worktree 관리, Worker 기동, 완료 검증�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -70,6 +71,7 @@ try:
         parse_capsule_list,
         parse_capsule_scalar,
         truncate,
+        write_scope_excess,
     )
 except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
@@ -82,6 +84,7 @@ except (ModuleNotFoundError, ImportError):
         parse_capsule_list,
         parse_capsule_scalar,
         truncate,
+        write_scope_excess,
     )
 
 try:
@@ -210,6 +213,9 @@ allowed_read_files:
 allowed_write_files:
 {allowed_write_files}
 
+required_write_files:
+{required_write_files}
+
 search_scope:
   mode: deny_by_default
   allowed_globs:
@@ -250,6 +256,57 @@ escalate_when:
 report_path: "{report_path}"
 return_contract: {return_contract}
 {report_schema}"""
+
+CAPSULE_CONTRACT_SCALAR_FIELDS = (
+    "schema",
+    "version",
+    "role",
+    "mode",
+    "return_contract",
+    "report_path",
+)
+
+CAPSULE_CONTRACT_LIST_FIELDS = (
+    "allowed_write_files",
+    "allowed_read_files",
+    "required_write_files",
+    "required_change",
+    "acceptance",
+    "forbidden",
+    "verification_commands",
+)
+
+
+def compute_capsule_contract_digest(capsule_text: str) -> str:
+    """Capsule 의 핵심 계약 필드들을 정규화하여 SHA256 digest 를 산출합니다."""
+    payload: dict[str, Any] = {}
+    for f in CAPSULE_CONTRACT_SCALAR_FIELDS:
+        val = parse_capsule_scalar(capsule_text, f)
+        payload[f] = val.strip() if val else ""
+    for f in CAPSULE_CONTRACT_LIST_FIELDS:
+        items = parse_capsule_list(capsule_text, f)
+        payload[f] = sorted(item.strip() for item in items if item.strip())
+    canonical_json = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def compare_capsule_contracts(cap1_text: str, cap2_text: str) -> tuple[bool, str]:
+    """두 Capsule 간의 핵심 계약 필드 일치 여부를 비교합니다."""
+    mismatches: list[str] = []
+    for f in CAPSULE_CONTRACT_SCALAR_FIELDS:
+        v1 = (parse_capsule_scalar(cap1_text, f) or "").strip()
+        v2 = (parse_capsule_scalar(cap2_text, f) or "").strip()
+        if v1 != v2:
+            mismatches.append(f"{f}: '{v1}' vs '{v2}'")
+    for f in CAPSULE_CONTRACT_LIST_FIELDS:
+        l1 = sorted(item.strip() for item in parse_capsule_list(cap1_text, f) if item.strip())
+        l2 = sorted(item.strip() for item in parse_capsule_list(cap2_text, f) if item.strip())
+        if l1 != l2:
+            mismatches.append(f"{f}: {l1} vs {l2}")
+    if mismatches:
+        return False, "; ".join(mismatches)
+    return True, "계약 일치"
+
 
 REVIEW_REPORT_SCHEMA = """report_schema:
   schema: "ORCA_REVIEW_DONE_V2"
@@ -688,7 +745,14 @@ def parse_intent(text: str) -> dict[str, Any]:
             key = match.group(1)
             val = match.group(2).strip()
 
-            if key in ("scope", "read_scope", "acceptance", "ground_truth", "required_change"):
+            if key in (
+                "scope",
+                "read_scope",
+                "acceptance",
+                "ground_truth",
+                "required_change",
+                "required_write_files",
+            ):
                 items: list[str] = []
                 if val and val != "[]":
                     items.append(val.strip("\"'"))
@@ -730,6 +794,8 @@ def parse_intent(text: str) -> dict[str, Any]:
         validate_contained_path(item, field_name="scope")
     for item in result.get("read_scope", []):
         validate_contained_path(item, field_name="read_scope")
+    for item in result.get("required_write_files", []):
+        validate_contained_path(item, field_name="required_write_files")
     if result.get("report_path"):
         validate_contained_path(result["report_path"], field_name="report_path")
 
@@ -786,6 +852,28 @@ def expand_intent_to_capsule(
     if not is_reviewer and analysis_artifact not in write_files:
         write_files.append(analysis_artifact)
 
+    # required_write_files: Intent scope 또는 required_write_files 에서 도출
+    if is_reviewer:
+        required_write_files: list[str] = []
+    else:
+        raw_req_write = intent.get("required_write_files")
+        if raw_req_write is not None and isinstance(raw_req_write, list):
+            required_write_files = [str(item) for item in raw_req_write if str(item).strip()]
+        elif intent.get("scope"):
+            required_write_files = list(intent["scope"])
+        else:
+            required_write_files = ["src/...", "tests/..."]
+
+    for item in required_write_files:
+        validate_contained_path(item, field_name="required_write_files")
+
+    # required_write_files 가 allowed_write_files 의 부분집합인지 엄격 검증
+    excess_req = write_scope_excess(required_write_files, write_files)
+    if excess_req:
+        raise ValueError(
+            f"required_write_files 는 allowed_write_files 의 부분집합이어야 합니다 (초과 항목: {', '.join(excess_req)})"
+        )
+
     # 읽기만 필요한 경로. 감사나 조사 작업은 대상 파일을 읽어야 하지만 고쳐서는
     # 안 됩니다. read_scope 가 없으면 대상을 scope 에 넣어야 하고 그러면 쓰기까지
     # 열려 범위 게이트가 무단 수정을 잡지 못합니다.
@@ -806,6 +894,7 @@ def expand_intent_to_capsule(
 
     allowed_read_formatted = _format_yaml_list(read_files)
     allowed_write_formatted = _format_yaml_list(write_files)
+    required_write_formatted = _format_yaml_list(required_write_files)
 
     globs = [_to_glob(s) for s in list(dict.fromkeys(write_files + extra_read))]
     allowed_globs_formatted = _format_yaml_list(globs, indent="    - ")
@@ -851,6 +940,7 @@ def expand_intent_to_capsule(
         why_now=why_now,
         allowed_read_files=allowed_read_formatted,
         allowed_write_files=allowed_write_formatted,
+        required_write_files=required_write_formatted,
         allowed_globs=allowed_globs_formatted,
         ground_truth=_format_ground_truth(
             [str(item) for item in intent.get("ground_truth", []) if str(item).strip()]
@@ -2022,6 +2112,11 @@ def build_capsule_notice(
     if report_path:
         validate_contained_path(report_path, field_name="report_path")
         parts.append(f"보고 JSON 은 {report_path} 에 ORCA_WORKER_DONE_V2 계약으로 씁니다.")
+        parts.append(
+            f"완료 보고 전송 시에는 직접 orca orchestration send 를 실행하지 말고 "
+            f"`python3 scripts/orca_worker_done_guard.py --capsule {relative_capsule} --report {report_path} --send` "
+            "단일 검증 진입점 명령을 실행하십시오."
+        )
     if dispatch_id:
         parts.append(f"worker_done 전송 시 dispatchId 는 {dispatch_id} 입니다.")
     if delivery_probe:
@@ -3174,6 +3269,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 validate_contained_path(p, field_name="allowed_read_files")
             for p in parse_capsule_list(capsule, "allowed_write_files"):
                 validate_contained_path(p, field_name="allowed_write_files")
+            for p in parse_capsule_list(capsule, "required_write_files"):
+                validate_contained_path(p, field_name="required_write_files")
             rep_p = parse_capsule_scalar(capsule, "report_path")
             if rep_p:
                 validate_contained_path(rep_p, field_name="report_path")
@@ -3181,11 +3278,72 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             sys.stderr.write(f"오류: {err}\n")
             return 2
 
+        # 동일 Task 의 실제 Task Capsule 사본과 spec Capsule 사본 간의 drift 검사
+        actual_task_capsule_path = (capsule_dir / task_id / "capsule.yaml").resolve()
+        if (
+            actual_task_capsule_path != capsule_path
+            and actual_task_capsule_path.is_file()
+            and capsule_path.is_file()
+        ):
+            actual_capsule_text = actual_task_capsule_path.read_text(encoding="utf-8")
+            matched, diff_detail = compare_capsule_contracts(capsule, actual_capsule_text)
+            if not matched:
+                err_msg = f"동일 Task Capsule 사본 간 계약 불일치 (drift 감지): {diff_detail}"
+                sys.stderr.write(f"오류 [capsule_spec_error]: {err_msg}\n")
+                if args.json:
+                    print(
+                        json.dumps(
+                            {
+                                "error": "capsule_spec_drift",
+                                "origin": "capsule_spec_error",
+                                "task_id": task_id,
+                                "reason": err_msg,
+                                "spec_capsule": str(capsule_path),
+                                "actual_capsule": str(actual_task_capsule_path),
+                                "exit_code": 1,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+                return 1
+
     else:
         task_capsule_dir = capsule_dir / task_id
         task_capsule_dir.mkdir(parents=True, exist_ok=True)
         # 워커는 다른 워크트리에서 돌기 때문에 상대 경로로는 Capsule 을 찾지 못합니다.
         capsule_path = (task_capsule_dir / "capsule.yaml").resolve()
+
+        # Intent 파일명 기반 사본과 실제 task_id 사본 간 drift 검사
+        intent_stem_capsule = (capsule_dir / intent_path.stem / "capsule.yaml").resolve()
+        if (
+            intent_stem_capsule != capsule_path
+            and intent_stem_capsule.is_file()
+            and capsule_path.is_file()
+        ):
+            stem_text = intent_stem_capsule.read_text(encoding="utf-8")
+            task_text = capsule_path.read_text(encoding="utf-8")
+            matched, diff_detail = compare_capsule_contracts(stem_text, task_text)
+            if not matched:
+                err_msg = f"동일 Task Capsule 사본 간 계약 불일치 (drift 감지): {diff_detail}"
+                sys.stderr.write(f"오류 [capsule_spec_error]: {err_msg}\n")
+                if args.json:
+                    print(
+                        json.dumps(
+                            {
+                                "error": "capsule_spec_drift",
+                                "origin": "capsule_spec_error",
+                                "task_id": task_id,
+                                "reason": err_msg,
+                                "spec_capsule": str(intent_stem_capsule),
+                                "actual_capsule": str(capsule_path),
+                                "exit_code": 1,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+                return 1
 
         try:
             capsule = expand_intent_to_capsule(
@@ -3195,10 +3353,47 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 capsule_path=capsule_path,
             )
         except ValueError as err:
-            sys.stderr.write(f"오류: {err}\n")
+            sys.stderr.write(f"오류 [capsule_spec_error]: {err}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "capsule_expand_error",
+                            "origin": "capsule_spec_error",
+                            "task_id": task_id,
+                            "reason": str(err),
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
             return 2
 
         capsule_path.write_text(capsule, encoding="utf-8")
+
+    # required_write_files 가 allowed_write_files 의 부분집합인지 재확인 (fail-closed)
+    req_write_parsed = parse_capsule_list(capsule, "required_write_files")
+    all_write_parsed = parse_capsule_list(capsule, "allowed_write_files")
+    excess_req_parsed = write_scope_excess(req_write_parsed, all_write_parsed)
+    if excess_req_parsed:
+        err_msg = f"required_write_files 가 allowed_write_files 의 부분집합이 아닙니다: {', '.join(excess_req_parsed)}"
+        sys.stderr.write(f"오류 [capsule_spec_error]: {err_msg}\n")
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "error": "required_write_files_not_subset",
+                        "origin": "capsule_spec_error",
+                        "task_id": task_id,
+                        "violations": excess_req_parsed,
+                        "exit_code": 1,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        return 1
 
     model_resolution = resolve_dispatch_model(
         args_model=args.model,
