@@ -39,7 +39,9 @@ except (ModuleNotFoundError, ImportError):
 DEFAULT_MODEL = "gemini-3.7-flash-high"
 DEFAULT_MODEL_TIMEOUT = 600
 DEFAULT_GIT_TIMEOUT = 10
-DEFAULT_MAX_DIFF_CHARS = 20000
+# 2026-08-31 실측: 최근 Wave G/H Task diff 5건의 문자 수 = 5,066 / 9,153 / 23,916 / 24,232 / 38,401.
+# 최대 38,401 자를 약 30 % 여유로 넘긴 50,000 자를 기본 상한으로 한다.
+DEFAULT_MAX_DIFF_CHARS = 50000
 DEFAULT_MAX_CHARS = 1500
 SUPPORTED_REVIEWER_PROVIDERS: frozenset[str] = frozenset({"gemini", "claude", "cerebras", "qwen"})
 
@@ -665,7 +667,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--max-diff-chars",
         type=int,
         default=DEFAULT_MAX_DIFF_CHARS,
-        help=f"diff 본문 최대 허용 문자 수 (기본: {DEFAULT_MAX_DIFF_CHARS})",
+        help=(
+            f"diff 본문 최대 허용 문자 수 (기본: {DEFAULT_MAX_DIFF_CHARS}, "
+            f"실측 최대 38,401 자를 약 30 % 여유로 넘긴 값)"
+        ),
     )
     parser.add_argument("--json", action="store_true", help="결과를 JSON 으로 출력")
     parser.add_argument(
