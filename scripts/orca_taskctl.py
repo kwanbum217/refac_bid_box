@@ -3285,6 +3285,52 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 )
             return 1
 
+    if getattr(args, "skip_settled_session_check", False):
+        sys.stderr.write(
+            "경고: --skip-settled-session-check 지정으로 완료 세션 잔류 검사를 건너뜁니다.\n"
+        )
+    else:
+        try:
+            from scripts.orca_settled_session_audit import audit_lingering_sessions
+        except (ModuleNotFoundError, ImportError):
+            from orca_settled_session_audit import audit_lingering_sessions
+        try:
+            settled = audit_lingering_sessions(run_id=args.run_id)
+        except Exception as exc:
+            settled = {
+                "allowed": False,
+                "lingering": [],
+                "count": 0,
+                "reason": f"완료 세션 잔류 검사 실패로 인한 안전 거부: {exc}",
+            }
+        if not settled.get("allowed"):
+            lingering = settled.get("lingering") or []
+            occupying = [
+                f"{item.get('task_id')}@{item.get('handle')}"
+                for item in lingering
+                if isinstance(item, dict)
+            ]
+            err_msg = str(settled.get("reason") or "completed 워커 터미널이 남아 있습니다")
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if occupying:
+                sys.stderr.write(f"잔류: {', '.join(occupying)}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "settled_session_lingering",
+                            "allowed": False,
+                            "task_id": task_id,
+                            "lingering": lingering,
+                            "reason": err_msg,
+                            "exit_code": 1,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 1
+
     # 기동 경로 선택. --terminal 이 있으면 이미 떠 있는 터미널에 Dispatch 로 부착하고,
     # 없으면 worker-start 로 새 워커를 감독 기동한다. worker-start --agent 는
     # claude, codex, cursor 만 받으므로 Antigravity 계열은 터미널 부착 경로만 쓸 수 있다.
@@ -3697,6 +3743,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--skip-concurrency-check",
         action="store_true",
         help="동시 쓰기 워커 상한 검사를 건너뜁니다 (경고 출력).",
+    )
+    dsp.add_argument(
+        "--skip-settled-session-check",
+        action="store_true",
+        help="완료 세션 잔류 검사를 건너뜁니다 (경고 출력).",
     )
     dsp.add_argument(
         "--no-capsule-notice",

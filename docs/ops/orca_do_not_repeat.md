@@ -552,6 +552,7 @@ f"<module>.{func.name}"  # 모듈 수준 함수
 | 계약 이름만 적고 필드명 미열거 | `expand_intent_to_capsule` 이 역할별 `report_schema` 블록을 항상 삽입 | 5.4.1 |
 | 추론 등급을 항상 high 로 배정 | `TIER_POLICY` 표가 역할·위험도로 배정하고 high 를 high 위험도 전용으로 둠 | 4.2 |
 | 신뢰 대화창이 뜬 채로 Dispatch | `dispatch --terminal` 이 `approve_trust_prompt` 로 승인하고, 승인 실패 시 종료 코드 2 로 중단 | 4.1 |
+| completed 워커 창을 남긴 채 다음 Dispatch | `orca_settled_session_audit.py` 가 잔류를 찾고 `taskctl dispatch` 가 종료 코드 1 로 거부 | 25 |
 | `defect_when` 에 산문 기재 | `validate_review_report.py` 가 극성을 정규화하고 판정 불가 시 "극성을 알 수 없음" 위반으로 보고 | 6.2 |
 | `coordinator_input_tokens` 로 절감 비교 | `orca_metrics_ledger.py` 가 `fresh_input_tokens` 를 스스로 계산해 대표 지표로 기록 | 6.4 |
 
@@ -2043,3 +2044,18 @@ preamble 을 최대 300초 기다린 뒤에야 실패하므로 그동안 코디�
 
 **교훈**: 게이트가 반복해서 같은 아티팩트로 실패하면 워커를 탓하기 전에
 **게이트의 측정 기준이 옳은지** 보십시오.
+
+---
+
+## 25. 완료된 워커 하위 세션을 회수하지 않는다 (2026-09-01)
+
+Wave J 워커 4대가 `worker_done` 을 보낸 뒤에도 터미널과 워크트리가 남아
+있었습니다. 코디네이터는 병합 판정과 Level 1 을 우선했고, 기존 8.1 절이
+`origin/main` 병합을 회수의 첫 조건으로 적어 원격 미푸시를 핑계로 창을
+남겨 두었습니다. 사용자는 그 잔류를 먼저 발견했습니다.
+
+**회수는 병합의 후속이 아닙니다.** Task 가 `completed` 면 워커 창부터
+닫습니다. 워크트리와 브랜치는 로컬 `main` 병합 확인 뒤에만 지웁니다.
+
+강제 장치: `scripts/orca_settled_session_audit.py`, `taskctl dispatch` 의
+완료 세션 잔류 검사, `orca_worker_watch.py` 의 `[차단:회수 대기]`.
