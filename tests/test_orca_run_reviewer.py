@@ -453,9 +453,9 @@ def test_main_cli_invocation(tmp_path, monkeypatch):
     assert code == 0
 
 
-def test_default_max_diff_chars_is_20000():
-    """(12) DEFAULT_MAX_DIFF_CHARS 가 설계 권장값인 20000 이어야 합니다."""
-    assert DEFAULT_MAX_DIFF_CHARS == 20000
+def test_default_max_diff_chars_is_50000():
+    """(12) DEFAULT_MAX_DIFF_CHARS 가 실측 최대 38,401 자를 여유 있게 넘는 50000 이어야 합니다."""
+    assert DEFAULT_MAX_DIFF_CHARS == 50000
 
 
 def test_build_prompt_includes_how_field_when_present():
@@ -597,10 +597,10 @@ def test_max_diff_chars_small_triggers_truncation(tmp_path, monkeypatch):
     assert "[주의: diff 본문이 최대 허용 크기(50자)를 초과하여" in captured_prompt
 
 
-def test_max_diff_chars_default_value_is_20000():
-    """(19) CLI 인자 파서에서 --max-diff-chars 의 기본값은 20000 (DEFAULT_MAX_DIFF_CHARS) 입니다."""
+def test_max_diff_chars_default_value_is_50000():
+    """(19) CLI 인자 파서에서 --max-diff-chars 의 기본값은 50000 (DEFAULT_MAX_DIFF_CHARS) 입니다."""
     args = _parse_args(["--capsule", "cap.yaml", "--out", "out.json"])
-    assert args.max_diff_chars == 20000
+    assert args.max_diff_chars == 50000
     assert args.max_diff_chars == DEFAULT_MAX_DIFF_CHARS
 
 
@@ -888,3 +888,90 @@ def test_run_model_unsupported_model_returns_code_minus_2():
     assert stdout == ""
     assert "unsupported-model-xyz" in stderr
     assert "모델 명령 생성 실패" in stderr
+
+
+def test_real_world_max_diff_38401_not_truncated_at_default(tmp_path, monkeypatch):
+    """(34) 실측 최대치 38,401 자 diff 가 기본값 (50,000 자) 에서 절단되지 않습니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    real_world_diff = "+line\n" * 7680  # 7680 * 5 = 38,400 자 + header line
+    monkeypatch.setattr(
+        "scripts.orca_run_reviewer.get_git_diff_and_files",
+        lambda repo, base, branch, paths=None, timeout=10: (["large.py"], real_world_diff),
+    )
+
+    captured_prompt = ""
+
+    def dummy_runner(prompt, model, timeout):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return 0, json.dumps(SAMPLE_VALID_REPORT), ""
+
+    code, output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        model_runner=dummy_runner,
+    )
+
+    assert code == 0
+    assert "절단되었습니다" not in captured_prompt
+    assert "Diff 절단 여부:     정상 (전체 포함)" in output
+
+
+def test_diff_exceeding_new_default_is_truncated_and_blocks_pass(tmp_path, monkeypatch):
+    """(35) 새 기본값 50,000 자를 초과하는 diff 는 절단되고 exit_code 가 1 입니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    huge_diff = "+x\n" * 30000  # 90,000 자 > 50,000 자
+    monkeypatch.setattr(
+        "scripts.orca_run_reviewer.get_git_diff_and_files",
+        lambda repo, base, branch, paths=None, timeout=10: (["huge.py"], huge_diff),
+    )
+
+    captured_prompt = ""
+
+    def dummy_runner(prompt, model, timeout):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return 0, json.dumps(SAMPLE_VALID_REPORT), ""
+
+    code, output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        model_runner=dummy_runner,
+    )
+
+    assert code == 1
+    assert "절단되었습니다" in captured_prompt
+    assert "Diff 절단 여부:     절단됨 (상한 초과)" in output
+    assert "리뷰 범위가 불완전" in output
+
+
+def test_allow_truncated_diff_permits_exit_code_zero_on_oversized_diff(tmp_path, monkeypatch):
+    """(36) --allow-truncated-diff 를 주면 50,000 자 초과 diff 도 절단 후 exit_code 0 이 됩니다."""
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(SAMPLE_CAPSULE_VALID, encoding="utf-8")
+    out_file = tmp_path / "out.json"
+
+    huge_diff = "+x\n" * 30000  # 90,000 자 > 50,000 자
+    monkeypatch.setattr(
+        "scripts.orca_run_reviewer.get_git_diff_and_files",
+        lambda repo, base, branch, paths=None, timeout=10: (["huge.py"], huge_diff),
+    )
+
+    def dummy_runner(prompt, model, timeout):
+        return 0, json.dumps(SAMPLE_VALID_REPORT), ""
+
+    code, output = run_reviewer(
+        capsule=capsule_file,
+        out=out_file,
+        allow_truncated_diff=True,
+        model_runner=dummy_runner,
+    )
+
+    assert code == 0
+    assert "Diff 절단 여부:     절단됨 (상한 초과)" in output
