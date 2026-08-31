@@ -382,9 +382,18 @@ orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --j
 
 `scripts/orca_agy_launch.py` 는 이제 이를 **스스로 겁니다.** `ORCA_TERMINAL_HANDLE`
 환경변수로 자기 터미널을 알아내 `exec` 직전에 분리된 자식을 띄우고, 자식이 agy TUI
-기동을 기다렸다가 감시기 부착과 accept-edits 확보를 수행합니다. 결과는
+기동을 기다렸다가 `prepare_worker_terminal` 을 호출합니다. 결과는
 `<워크트리>/.orca/permission_setup.log` 에 남습니다. `ORCA_TERMINAL_HANDLE` 이 없으면
 조용히 넘어가지 않고 stderr 에 경고를 남깁니다.
+
+**`start_auto_approve` 와 `enable_file_edit_auto_approve` 를 직접 부르면 안 됩니다.**
+그 둘만 부르면 **CLI 종류 메타데이터가 기록되지 않고**, 그 메타데이터로 CLI 를
+판정하는 `classify_file_edit_auto_approve_support` 가 fail-closed 로 막혀
+accept-edits 를 영영 확보하지 못합니다. 감시기는 떠 있는데 파일 편집 대화창만
+계속 보류되는 상태가 되며, 겉으로는 준비가 된 것처럼 보입니다. 2026-08-31 에
+이 방식으로 워커가 대화창에 그대로 갇혔습니다. 반드시
+`prepare_worker_terminal(terminal, cli_type=..., model=..., launcher=...)` 를
+통째로 호출하십시오.
 
 ```bash
 tail -2 <워크트리>/.orca/permission_setup.log   # [권한설정] 확보: ... 를 확인
