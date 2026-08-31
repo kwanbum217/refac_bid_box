@@ -249,8 +249,8 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 - **Wave I 미병합 현황 (2026-09-01 기준)**: I-A/I-B/I-D/I-G 는 `main` 에 병합 완료입니다.
   I-C 는 `citations_wrong` 으로 반려됐습니다(브랜치 `kwanbum217/orca-i-c`, 커밋 `9210641` 보존).
   I-F 는 **조율 계약 강제**(scope guard, worker_done guard)이며 MATCH AGAINST 구현이 아닙니다.
-  브랜치 `kwanbum217/orca-i-f`(커밋 `f9184f5`)는 미병합입니다. Wave J3 가 Intent 대조 리뷰를
-  남겼고(`docs/analysis/task_j3_if_review.md`), 병합은 코디네이터 finalize 판정 후입니다.
+  브랜치 `kwanbum217/orca-i-f`(커밋 `f9184f5`)는 미병합입니다. Wave J3 가 Intent 대조 리뷰에서
+  PASS 를 보고했고, 병합은 코디네이터 finalize 판정 후입니다.
   I-H 는 경계값 7 클래스 픽스처이며 브랜치 `kwanbum217/orca-i-h`(커밋 `d8aa9a9`)에서 미병합입니다.
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
