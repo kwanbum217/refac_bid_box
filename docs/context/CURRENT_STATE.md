@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-08-31
-> **source_commit**: `88f81b7`
+> **source_commit**: `98f5c4c`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -240,7 +240,8 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 - **리뷰어 실행 경로 (2026-08-31, 해소)**: `orca_run_reviewer.py` 가 모델 provider 로 CLI 를 정합니다. gemini·claude·cerebras 는 `agy`, qwen 계열은 `qwen -m <id> -p` 이며 미지원·판정불가는 `ReviewerToolError` 로 막습니다. `qwen3.7-plus` 로 실제 리뷰를 완주해 확인했습니다. **provider 와 CLI 는 1:1 이 아닙니다** (Antigravity 가 Gemini·Claude·GPT-OSS 를 함께 서빙).
 - **리뷰어 diff 상한 (2026-08-31, 해소)**: I-A에서 리뷰어 diff 기본 상한을 실제 Wave G 규모보다 크게 올리고 절단 fail-closed 회귀 검증을 추가했습니다. Qwen 빌더 결과를 Gemini 계열 독립 리뷰어로 재검증해 통과한 뒤 병합했습니다.
 - **분석 문서 수치 정합성 (2026-08-31, 병합 완료)**: I-B에서 원시 JSON 기반 Markdown 표 생성기와 `verify` 명령을 추가하고, `METRICS` 마커가 있는 `docs/analysis/` 문서를 agent-rule 검사에 연결했습니다. 전체 테스트 2회 `2917 passed`, 규칙 검사 `16/16`, 독립 리뷰를 통과했습니다.
-- **Antigravity 편집 권한 선점 (2026-08-31, 검증 대기)**: I-D에서 `agy` 시작 명령에 `--mode accept-edits`를 넣어 첫 편집 전 모드 전환 경쟁 조건을 제거하는 변경과 회귀 테스트를 작성했습니다. `--dangerously-skip-permissions`는 사용하지 않으며 셸 승인 감시기는 유지합니다. 코드 검증·병합 전이므로 완료로 판정하지 않습니다.
+- **Antigravity 편집 권한 선점 (2026-08-31, 해소)**: I-D에서 `agy` 시작 명령에 `--mode accept-edits`를 넣어 첫 편집 전 모드 전환 경쟁 조건을 제거했습니다. `--dangerously-skip-permissions`는 사용하지 않으며 셸 승인 감시기는 유지합니다. 전체 테스트 2,924건, 규칙 16/16, 독립 리뷰를 통과해 병합했습니다.
+- **ngram MySQL 8 격리 CI (2026-08-31, 병합 완료)**: 운영 DB와 분리된 MySQL 8 서비스에 최소 스키마와 ngram FULLTEXT 인덱스를 만들고 전용 통합 검증을 실행하는 CI job을 추가했습니다. 운영 FULLTEXT 인덱스 생성과 기능 플래그 활성화는 사용자 승인 전까지 보류합니다.
 - Windows Docker Desktop 실기 미검증.
 - **LLM 품질 정본은 2026-08-28 현 HEAD 재측정**(동결 `d9a0536`, `gemma4:e2b` 32문항 x 3회)입니다. numeric 95.7%(67/70), evidence recall 0.957, citation 100%, refusal 24/24, 과잉응답 0 으로 2026-08-27 측정 대비 전 지표가 개선입니다. 다만 요청 2/96 이 타임아웃(q03)했고 긴 정확 공고명 질의가 58~180초를 소모하여 **레이턴시 꼬리는 회귀**입니다 ([`blind_fixture_remeasure_20260828.md`](../analysis/blind_fixture_remeasure_20260828.md)). e4b 동일 조건 재측정은 미실시입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
 - **정확 제목 lexical 채널 효과 실측**: 느린 4문항(q03·q08·q25·q31) x 3회에서 요청 실패 2/12 -> **0/12**, 대표값 58,352ms -> **5,941ms**, 최대 180,045ms -> 41,874ms 로 꼬리 지연이 제거됐습니다. 정확도 손실은 없습니다([`lexical_channel_latency_effect_20260828.md`](../analysis/lexical_channel_latency_effect_20260828.md)). 같은 부분집합 e4b 대조는 품질 동률에 P50 6,245ms·최대 81,234ms 로 e2b 가 앞서 **e2b 승격 유지 근거가 보강**됐습니다. 부분집합 12회 표본이므로 전량 재측정으로 정본을 갱신해야 합니다.
