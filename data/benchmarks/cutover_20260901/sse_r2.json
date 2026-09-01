@@ -1,0 +1,1487 @@
+{
+  "meta": {
+    "git_sha": "cee746380d36c945490d1e1aac6a573f3736bd66",
+    "measured_at_utc": "2026-09-01T06:45:39.268916+00:00",
+    "python_version": "3.12.14",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "docker_image_id": "39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+    "container_id": "dd2818540c8b9bde3bdae59aca73f7abb7e15ef77338f0b6a4ee5813beb03a5c",
+    "target_container_image_id": "sha256:39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+    "image_digest": "refac_bid_box-app@sha256:39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+    "container_name": "refac_bid_box-app-1",
+    "service_name": "app",
+    "base_url": "http://127.0.0.1:8000",
+    "bound_port": 8000,
+    "port_bindings": [
+      {
+        "container_port": 8000,
+        "host_ip": "0.0.0.0",
+        "host_port": 8000
+      },
+      {
+        "container_port": 8000,
+        "host_ip": "::",
+        "host_port": 8000
+      }
+    ],
+    "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+    "target_source_git_sha": "cee746380d36c945490d1e1aac6a573f3736bd66",
+    "target_source_git_dirty": false,
+    "perf_config": {
+      "GEMINI_MODEL": null,
+      "LATENCY_SEGMENT_LOGGING": "false",
+      "LLM_PROVIDER": "ollama",
+      "LLM_TEMPERATURE": null,
+      "LLM_TIMEOUT_SECONDS": null,
+      "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+      "OLLAMA_MODEL": "gemma4:e2b",
+      "PREDICTION_GC_MODE": "freeze",
+      "WEB_CONCURRENCY": null,
+      "container_command": [
+        "python3",
+        "-m",
+        "uvicorn",
+        "src.app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1"
+      ],
+      "effective_web_workers": 1,
+      "effective_web_workers_reason": null
+    },
+    "gc": {
+      "enabled": true,
+      "threshold": [
+        700,
+        10,
+        10
+      ]
+    },
+    "instrumentation": {
+      "timer": "time.perf_counter",
+      "timer_resolution_seconds": 4.166666666666667e-08,
+      "timer_monotonic": true
+    },
+    "start_provenance": {
+      "git_sha": "cee746380d36c945490d1e1aac6a573f3736bd66",
+      "measured_at_utc": "2026-09-01T06:45:39.268916+00:00",
+      "python_version": "3.12.14",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+      "container_id": "dd2818540c8b9bde3bdae59aca73f7abb7e15ef77338f0b6a4ee5813beb03a5c",
+      "target_container_image_id": "sha256:39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+      "image_digest": "refac_bid_box-app@sha256:39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://127.0.0.1:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "0.0.0.0",
+          "host_port": 8000
+        },
+        {
+          "container_port": 8000,
+          "host_ip": "::",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+      "target_source_git_sha": "cee746380d36c945490d1e1aac6a573f3736bd66",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      }
+    },
+    "end_provenance": {
+      "git_sha": "cee746380d36c945490d1e1aac6a573f3736bd66",
+      "measured_at_utc": "2026-09-01T06:47:40.736093+00:00",
+      "python_version": "3.12.14",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+      "container_id": "dd2818540c8b9bde3bdae59aca73f7abb7e15ef77338f0b6a4ee5813beb03a5c",
+      "target_container_image_id": "sha256:39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+      "image_digest": "refac_bid_box-app@sha256:39a3c075a634e97b52f0ae2b5971ded66fb3ae6562daad89eb5a9b29382bd012",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://127.0.0.1:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "0.0.0.0",
+          "host_port": 8000
+        },
+        {
+          "container_port": 8000,
+          "host_ip": "::",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+      "target_source_git_sha": "cee746380d36c945490d1e1aac6a573f3736bd66",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      }
+    },
+    "provenance_consistent": true,
+    "host_load": {
+      "cpu_count": 14,
+      "samples": [
+        {
+          "observed_at_utc": "2026-09-01T06:45:39.293891+00:00",
+          "load_1m": 3.26025390625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 23.287527901785715,
+          "per_core_percent": 23.287527901785715,
+          "cpu_utilization_percent": 13.5571,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 11.913583002751693,
+          "cpu_utilization_observation_ms": 11.913583002751693,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:45:44.309798+00:00",
+          "load_1m": 3.0791015625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 21.993582589285715,
+          "per_core_percent": 21.993582589285715,
+          "cpu_utilization_percent": 13.4429,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 10.831499999767402,
+          "cpu_utilization_observation_ms": 10.831499999767402,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:45:49.336168+00:00",
+          "load_1m": 3.55322265625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 25.380161830357146,
+          "per_core_percent": 25.380161830357146,
+          "cpu_utilization_percent": 24.7786,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 24.852124999597436,
+          "cpu_utilization_observation_ms": 24.852124999597436,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:45:54.349453+00:00",
+          "load_1m": 3.3486328125,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 23.918805803571427,
+          "per_core_percent": 23.918805803571427,
+          "cpu_utilization_percent": 10.3643,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 10.602540998661425,
+          "cpu_utilization_observation_ms": 10.602540998661425,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:45:59.375189+00:00",
+          "load_1m": 3.16015625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 22.572544642857142,
+          "per_core_percent": 22.572544642857142,
+          "cpu_utilization_percent": 10.2786,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 21.46737499788287,
+          "cpu_utilization_observation_ms": 21.46737499788287,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:04.388225+00:00",
+          "load_1m": 2.98681640625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 21.334402901785715,
+          "per_core_percent": 21.334402901785715,
+          "cpu_utilization_percent": 9.7357,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 10.911249999480788,
+          "cpu_utilization_observation_ms": 10.911249999480788,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:09.411768+00:00",
+          "load_1m": 3.30810546875,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 23.629324776785715,
+          "per_core_percent": 23.629324776785715,
+          "cpu_utilization_percent": 14.3571,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 18.390124998404644,
+          "cpu_utilization_observation_ms": 18.390124998404644,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:14.428250+00:00",
+          "load_1m": 3.123046875,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 22.307477678571427,
+          "per_core_percent": 22.307477678571427,
+          "cpu_utilization_percent": 9.75,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 14.930291999917245,
+          "cpu_utilization_observation_ms": 14.930291999917245,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:19.450197+00:00",
+          "load_1m": 3.35302734375,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 23.9501953125,
+          "per_core_percent": 23.9501953125,
+          "cpu_utilization_percent": 10.3643,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 20.638875001168344,
+          "cpu_utilization_observation_ms": 20.638875001168344,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:24.471366+00:00",
+          "load_1m": 3.16455078125,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 22.603934151785715,
+          "per_core_percent": 22.603934151785715,
+          "cpu_utilization_percent": 9.6,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 19.062958999711554,
+          "cpu_utilization_observation_ms": 19.062958999711554,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:29.495671+00:00",
+          "load_1m": 3.5517578125,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 25.369698660714285,
+          "per_core_percent": 25.369698660714285,
+          "cpu_utilization_percent": 11.2214,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 20.716375001939014,
+          "cpu_utilization_observation_ms": 20.716375001939014,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:34.514330+00:00",
+          "load_1m": 3.42724609375,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 24.480329241071427,
+          "per_core_percent": 24.480329241071427,
+          "cpu_utilization_percent": 9.1286,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 15.329166999435984,
+          "cpu_utilization_observation_ms": 15.329166999435984,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:39.543118+00:00",
+          "load_1m": 3.6328125,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 25.948660714285715,
+          "per_core_percent": 25.948660714285715,
+          "cpu_utilization_percent": 9.6143,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 23.614042002009228,
+          "cpu_utilization_observation_ms": 23.614042002009228,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:44.566347+00:00",
+          "load_1m": 3.58203125,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 25.5859375,
+          "per_core_percent": 25.5859375,
+          "cpu_utilization_percent": 32.0071,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 20.293666999350535,
+          "cpu_utilization_observation_ms": 20.293666999350535,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:49.589617+00:00",
+          "load_1m": 4.015625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 28.683035714285715,
+          "per_core_percent": 28.683035714285715,
+          "cpu_utilization_percent": 6.5214,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 19.45779100060463,
+          "cpu_utilization_observation_ms": 19.45779100060463,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:54.605568+00:00",
+          "load_1m": 3.77392578125,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 26.956612723214285,
+          "per_core_percent": 26.956612723214285,
+          "cpu_utilization_percent": 30.0214,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 11.562915999093093,
+          "cpu_utilization_observation_ms": 11.562915999093093,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:46:59.626675+00:00",
+          "load_1m": 4.0322265625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 28.80161830357143,
+          "per_core_percent": 28.80161830357143,
+          "cpu_utilization_percent": 33.8643,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 20.266083000024082,
+          "cpu_utilization_observation_ms": 20.266083000024082,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:47:04.649394+00:00",
+          "load_1m": 3.7890625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 27.064732142857146,
+          "per_core_percent": 27.064732142857146,
+          "cpu_utilization_percent": 13.1429,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 17.722541000694036,
+          "cpu_utilization_observation_ms": 17.722541000694036,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:47:09.673691+00:00",
+          "load_1m": 3.8056640625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 27.183314732142854,
+          "per_core_percent": 27.183314732142854,
+          "cpu_utilization_percent": 12.5,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 21.022291999543086,
+          "cpu_utilization_observation_ms": 21.022291999543086,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:47:14.697304+00:00",
+          "load_1m": 3.66064453125,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 26.1474609375,
+          "per_core_percent": 26.1474609375,
+          "cpu_utilization_percent": 10.2714,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 19.818124997982522,
+          "cpu_utilization_observation_ms": 19.818124997982522,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:47:19.722305+00:00",
+          "load_1m": 3.52734375,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 25.1953125,
+          "per_core_percent": 25.1953125,
+          "cpu_utilization_percent": 28.1357,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 19.84387499760487,
+          "cpu_utilization_observation_ms": 19.84387499760487,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:47:24.743234+00:00",
+          "load_1m": 3.40478515625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 24.319893973214285,
+          "per_core_percent": 24.319893973214285,
+          "cpu_utilization_percent": 31.3071,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 16.95920800193562,
+          "cpu_utilization_observation_ms": 16.95920800193562,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:47:29.756388+00:00",
+          "load_1m": 3.2119140625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 22.942243303571427,
+          "per_core_percent": 22.942243303571427,
+          "cpu_utilization_percent": 10.5357,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 11.803416000475409,
+          "cpu_utilization_observation_ms": 11.803416000475409,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:47:34.774862+00:00",
+          "load_1m": 3.03466796875,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 21.676199776785715,
+          "per_core_percent": 21.676199776785715,
+          "cpu_utilization_percent": 26.4071,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 14.689625000755768,
+          "cpu_utilization_observation_ms": 14.689625000755768,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-01T06:47:39.797691+00:00",
+          "load_1m": 2.79150390625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 19.939313616071427,
+          "per_core_percent": 19.939313616071427,
+          "cpu_utilization_percent": 24.0786,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 17.62208299987833,
+          "cpu_utilization_observation_ms": 17.62208299987833,
+          "cpu_utilization_unavailable_reason": null
+        }
+      ],
+      "load_1m": {
+        "min": 2.79150390625,
+        "median": 3.40478515625,
+        "max": 4.0322265625
+      },
+      "normalized_load_1m_percent": {
+        "min": 19.939313616071427,
+        "median": 24.319893973214285,
+        "max": 28.80161830357143
+      },
+      "per_core_percent": {
+        "min": 19.939313616071427,
+        "median": 24.319893973214285,
+        "max": 28.80161830357143
+      },
+      "cpu_utilization_percent": {
+        "min": 6.5214,
+        "median": 12.5,
+        "max": 33.8643
+      },
+      "cpu_utilization_method": "ps_process_sum"
+    }
+  },
+  "base_url": "http://127.0.0.1:8000",
+  "predict_rounds": 0,
+  "predict_concurrency": 10,
+  "predict_warmup_requests": 10,
+  "samples": {
+    "first_stage_new": {
+      "label": "정본 SSE 첫 stage (first_stage_ms)",
+      "values_ms": [
+        1.8979589985974599,
+        3.1796669973118696,
+        3.269249998993473,
+        3.0744590003450867,
+        3.929582999262493,
+        1.587957998708589,
+        3.6417500014067627,
+        2.8639999982260633,
+        2.4951250015874393,
+        3.238707999116741,
+        3.3161249994009268,
+        3.6027909991389606,
+        11.162958002387313,
+        2.551082998252241,
+        3.834834002191201,
+        3.706457999214763,
+        3.043291999347275,
+        3.0696670000907034,
+        2.194749999034684,
+        3.503374999127118,
+        3.258875000028638,
+        3.145708000374725,
+        2.8233749981154688,
+        2.4392910017922986,
+        2.7835000000777654,
+        1.9857499974023085,
+        2.5562090013409033,
+        2.3279579982045107,
+        3.7707500014221296,
+        3.0791249992034864,
+        3.3903749972523656,
+        3.175375000864733,
+        3.972874997998588,
+        2.127874999132473,
+        2.5777919981919695,
+        2.2852500005683396,
+        3.4442920004948974,
+        2.937792000011541,
+        1.8410829979984555,
+        3.5054580002906732,
+        2.522666000004392,
+        3.7352500003180467,
+        2.9780420009046793,
+        3.0076250004640315,
+        3.831333997368347,
+        2.8271250012039673,
+        2.4505830006091855,
+        2.323791999515379,
+        2.7692499970726203,
+        3.163291999953799,
+        3.386917000170797,
+        4.555167000944493,
+        5.145625000295695,
+        2.5983330015151296,
+        5.417833999672439,
+        5.078624999441672,
+        2.8489590004028287,
+        4.088958998181624,
+        2.5396669989277143,
+        2.8898749988002237
+      ],
+      "errors": 0,
+      "p50_ms": 3.072063000217895,
+      "p95_ms": 5.081974999484373,
+      "p99_ms": 7.773334840785518,
+      "tagged": [
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 1)",
+          1.8979589985974599
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 2)",
+          3.1796669973118696
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 3)",
+          3.269249998993473
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 4)",
+          3.0744590003450867
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 5)",
+          3.929582999262493
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 6)",
+          1.587957998708589
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 7)",
+          3.6417500014067627
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 8)",
+          2.8639999982260633
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 9)",
+          2.4951250015874393
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 10)",
+          3.238707999116741
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 11)",
+          3.3161249994009268
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 12)",
+          3.6027909991389606
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 13)",
+          11.162958002387313
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 14)",
+          2.551082998252241
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 15)",
+          3.834834002191201
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 16)",
+          3.706457999214763
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 17)",
+          3.043291999347275
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 18)",
+          3.0696670000907034
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 19)",
+          2.194749999034684
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 20)",
+          3.503374999127118
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 21)",
+          3.258875000028638
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 22)",
+          3.145708000374725
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 23)",
+          2.8233749981154688
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 24)",
+          2.4392910017922986
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 25)",
+          2.7835000000777654
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 26)",
+          1.9857499974023085
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 27)",
+          2.5562090013409033
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 28)",
+          2.3279579982045107
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 29)",
+          3.7707500014221296
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 30)",
+          3.0791249992034864
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 31)",
+          3.3903749972523656
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 32)",
+          3.175375000864733
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 33)",
+          3.972874997998588
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 34)",
+          2.127874999132473
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 35)",
+          2.5777919981919695
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 36)",
+          2.2852500005683396
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 37)",
+          3.4442920004948974
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 38)",
+          2.937792000011541
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 39)",
+          1.8410829979984555
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 40)",
+          3.5054580002906732
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 41)",
+          2.522666000004392
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 42)",
+          3.7352500003180467
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 43)",
+          2.9780420009046793
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 44)",
+          3.0076250004640315
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 45)",
+          3.831333997368347
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 46)",
+          2.8271250012039673
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 47)",
+          2.4505830006091855
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 48)",
+          2.323791999515379
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 49)",
+          2.7692499970726203
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 50)",
+          3.163291999953799
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 51)",
+          3.386917000170797
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 52)",
+          4.555167000944493
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 53)",
+          5.145625000295695
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 54)",
+          2.5983330015151296
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 55)",
+          5.417833999672439
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 56)",
+          5.078624999441672
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 57)",
+          2.8489590004028287
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 58)",
+          4.088958998181624
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 59)",
+          2.5396669989277143
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 60)",
+          2.8898749988002237
+        ]
+      ]
+    },
+    "first_token_new": {
+      "label": "정본 SSE 첫 token (first_token_ms)",
+      "values_ms": [
+        619.094416997541,
+        283.7981669981673,
+        2019.1642909994698,
+        2453.4772090009938,
+        1869.4934579980327,
+        560.34174999877,
+        309.42475000119884,
+        1985.4441249990487,
+        2418.2242500028224,
+        1800.3082909999648,
+        637.4245840015647,
+        381.7207909996796,
+        2051.0864999996556,
+        2423.817250000866,
+        1956.5565420016355,
+        652.9734169998846,
+        392.67054200172424,
+        2052.2251250004047,
+        2454.25350000005,
+        1893.8347080002131,
+        620.1519589994859,
+        391.6459579995717,
+        2049.7280419986055,
+        2446.385333001672,
+        1887.0166670021717,
+        578.5383749971515,
+        317.511375000322,
+        2035.399790998781,
+        2448.9361250016373,
+        1758.7316669996653,
+        681.8291249983304,
+        390.9816250015865,
+        1388.5379999992438,
+        2417.444708000403,
+        1863.4499170002528,
+        581.2655000008817,
+        316.6254169991589,
+        2063.7551250001707,
+        2390.9527079995314,
+        1877.5543330011715,
+        561.8328749987995,
+        315.9277499980817,
+        1999.8795420033275,
+        2435.784290999436,
+        1844.7430839987646,
+        577.8709170008369,
+        280.93791699939175,
+        2102.4737499974435,
+        2410.24912499779,
+        1278.5366249991057,
+        627.0619999995688,
+        374.49704200116685,
+        1979.8761660022137,
+        2453.4204170013254,
+        1346.4182499992603,
+        597.67812499922,
+        367.82166700140806,
+        2006.0876249990542,
+        2387.8907920006895,
+        1941.8660830015142
+      ],
+      "errors": 0,
+      "p50_ms": 1854.0965004995087,
+      "p95_ms": 2449.1603396016217,
+      "p99_ms": 2453.7954883106067,
+      "tagged": [
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 1)",
+          619.094416997541
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 2)",
+          283.7981669981673
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 3)",
+          2019.1642909994698
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 4)",
+          2453.4772090009938
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 5)",
+          1869.4934579980327
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 6)",
+          560.34174999877
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 7)",
+          309.42475000119884
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 8)",
+          1985.4441249990487
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 9)",
+          2418.2242500028224
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 10)",
+          1800.3082909999648
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 11)",
+          637.4245840015647
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 12)",
+          381.7207909996796
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 13)",
+          2051.0864999996556
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 14)",
+          2423.817250000866
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 15)",
+          1956.5565420016355
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 16)",
+          652.9734169998846
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 17)",
+          392.67054200172424
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 18)",
+          2052.2251250004047
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 19)",
+          2454.25350000005
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 20)",
+          1893.8347080002131
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 21)",
+          620.1519589994859
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 22)",
+          391.6459579995717
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 23)",
+          2049.7280419986055
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 24)",
+          2446.385333001672
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 25)",
+          1887.0166670021717
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 26)",
+          578.5383749971515
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 27)",
+          317.511375000322
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 28)",
+          2035.399790998781
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 29)",
+          2448.9361250016373
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 30)",
+          1758.7316669996653
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 31)",
+          681.8291249983304
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 32)",
+          390.9816250015865
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 33)",
+          1388.5379999992438
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 34)",
+          2417.444708000403
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 35)",
+          1863.4499170002528
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 36)",
+          581.2655000008817
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 37)",
+          316.6254169991589
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 38)",
+          2063.7551250001707
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 39)",
+          2390.9527079995314
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 40)",
+          1877.5543330011715
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 41)",
+          561.8328749987995
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 42)",
+          315.9277499980817
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 43)",
+          1999.8795420033275
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 44)",
+          2435.784290999436
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 45)",
+          1844.7430839987646
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 46)",
+          577.8709170008369
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 47)",
+          280.93791699939175
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 48)",
+          2102.4737499974435
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 49)",
+          2410.24912499779
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 50)",
+          1278.5366249991057
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 51)",
+          627.0619999995688
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 52)",
+          374.49704200116685
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 53)",
+          1979.8761660022137
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 54)",
+          2453.4204170013254
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 55)",
+          1346.4182499992603
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 56)",
+          597.67812499922
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 57)",
+          367.82166700140806
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 58)",
+          2006.0876249990542
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 59)",
+          2387.8907920006895
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 60)",
+          1941.8660830015142
+        ]
+      ]
+    },
+    "final_new": {
+      "label": "정본 SSE 완료 (final_ms)",
+      "values_ms": [
+        926.4501249999739,
+        1134.6067499980563,
+        2346.2374999980966,
+        2837.9586250011926,
+        2408.5479999994277,
+        847.8762909981015,
+        1130.011666999053,
+        2517.7176669967594,
+        2938.543459000357,
+        2395.595540998329,
+        944.545709000522,
+        1223.6419580003712,
+        2376.6908750003495,
+        5198.341750001418,
+        2493.0882090011437,
+        956.2796669997624,
+        1224.1519589988457,
+        2397.410208999645,
+        2712.399166000978,
+        2430.4999580017466,
+        1068.9121249997697,
+        1228.768624998338,
+        2384.661000000051,
+        2752.038499998889,
+        2418.9568330002658,
+        883.0714589967101,
+        1148.556791998999,
+        2385.433291001391,
+        3056.004166999628,
+        2345.809541999188,
+        985.1443329971517,
+        1229.2066250010976,
+        2153.0980829993496,
+        2774.855250001565,
+        2383.846332999383,
+        884.6228750007867,
+        1151.015457999165,
+        2404.55858399946,
+        2706.131707996974,
+        2481.6929580010765,
+        863.4707079982036,
+        1158.9361250007642,
+        2326.572167003178,
+        2927.8060409997124,
+        2385.0422089999483,
+        980.3142919990933,
+        1109.4296250012121,
+        2449.386833999597,
+        4321.233624999877,
+        1866.5192499975092,
+        935.3378340019844,
+        1206.9611670012819,
+        2322.1202080021612,
+        4002.7627080016828,
+        1687.514999997802,
+        1085.6099160009762,
+        1204.8071250028443,
+        2354.5698749985604,
+        2806.5379580002627,
+        2633.744750000915
+      ],
+      "errors": 0,
+      "p50_ms": 2346.023520998642,
+      "p95_ms": 3103.342094049728,
+      "p99_ms": 4680.847956250505,
+      "tagged": [
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 1)",
+          926.4501249999739
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 2)",
+          1134.6067499980563
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 3)",
+          2346.2374999980966
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 4)",
+          2837.9586250011926
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 5)",
+          2408.5479999994277
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 6)",
+          847.8762909981015
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 7)",
+          1130.011666999053
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 8)",
+          2517.7176669967594
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 9)",
+          2938.543459000357
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 10)",
+          2395.595540998329
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 11)",
+          944.545709000522
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 12)",
+          1223.6419580003712
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 13)",
+          2376.6908750003495
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 14)",
+          5198.341750001418
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 15)",
+          2493.0882090011437
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 16)",
+          956.2796669997624
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 17)",
+          1224.1519589988457
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 18)",
+          2397.410208999645
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 19)",
+          2712.399166000978
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 20)",
+          2430.4999580017466
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 21)",
+          1068.9121249997697
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 22)",
+          1228.768624998338
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 23)",
+          2384.661000000051
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 24)",
+          2752.038499998889
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 25)",
+          2418.9568330002658
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 26)",
+          883.0714589967101
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 27)",
+          1148.556791998999
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 28)",
+          2385.433291001391
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 29)",
+          3056.004166999628
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 30)",
+          2345.809541999188
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 31)",
+          985.1443329971517
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 32)",
+          1229.2066250010976
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 33)",
+          2153.0980829993496
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 34)",
+          2774.855250001565
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 35)",
+          2383.846332999383
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 36)",
+          884.6228750007867
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 37)",
+          1151.015457999165
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 38)",
+          2404.55858399946
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 39)",
+          2706.131707996974
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 40)",
+          2481.6929580010765
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 41)",
+          863.4707079982036
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 42)",
+          1158.9361250007642
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 43)",
+          2326.572167003178
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 44)",
+          2927.8060409997124
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 45)",
+          2385.0422089999483
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 46)",
+          980.3142919990933
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 47)",
+          1109.4296250012121
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 48)",
+          2449.386833999597
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 49)",
+          4321.233624999877
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 50)",
+          1866.5192499975092
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 51)",
+          935.3378340019844
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 52)",
+          1206.9611670012819
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 53)",
+          2322.1202080021612
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 54)",
+          4002.7627080016828
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 55)",
+          1687.514999997802
+        ],
+        [
+          "적격심사 기준이 어떻게 되나요 (성능 측정 표본 56)",
+          1085.6099160009762
+        ],
+        [
+          "2025년 물품 낙찰 평균 낙찰률 알려줘 (성능 측정 표본 57)",
+          1204.8071250028443
+        ],
+        [
+          "공사 부문 최근 낙찰 동향 알려줘 (성능 측정 표본 58)",
+          2354.5698749985604
+        ],
+        [
+          "수요기관별 낙찰 금액 상위는 어디야 (성능 측정 표본 59)",
+          2806.5379580002627
+        ],
+        [
+          "용역 계약 방법에는 어떤 것이 있나요 (성능 측정 표본 60)",
+          2633.744750000915
+        ]
+      ]
+    },
+    "predict": {
+      "label": "낙찰가 예측 API",
+      "values_ms": [],
+      "errors": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "tagged": []
+    },
+    "query": {
+      "label": "단발 질의 API (비스트리밍)",
+      "values_ms": [],
+      "errors": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "tagged": []
+    }
+  }
+}
