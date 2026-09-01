@@ -14,6 +14,9 @@ CREATE TABLE `bid_announcements` (
     `bid_ntce_nm` VARCHAR(255) DEFAULT NULL,
     `dminstt_nm` VARCHAR(255) NOT NULL,
     `category` VARCHAR(50) NOT NULL,
+    -- 운영 스키마와 같은 datetime(6) 이며, 하네스의 date 필터 조합이 대상 구간에 들어오도록
+    -- 기본값을 둡니다. 날짜 자체는 검증 대상이 아니라 조합을 성립시키는 상수입니다.
+    `bid_ntce_dt` DATETIME(6) DEFAULT '2025-06-01 00:00:00.000000',
     FULLTEXT KEY `ft_dminstt_nm` (`dminstt_nm`) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -23,6 +26,7 @@ CREATE TABLE `bid_results` (
     `dminstt_nm` VARCHAR(255) NOT NULL,
     `bidwinnr_nm` VARCHAR(255) NOT NULL,
     `category` VARCHAR(50) NOT NULL,
+    `rl_openg_dt` DATETIME(6) DEFAULT '2025-06-01 00:00:00.000000',
     FULLTEXT KEY `ft_dminstt_nm` (`dminstt_nm`) WITH PARSER ngram,
     FULLTEXT KEY `ft_bidwinnr_nm` (`bidwinnr_nm`) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

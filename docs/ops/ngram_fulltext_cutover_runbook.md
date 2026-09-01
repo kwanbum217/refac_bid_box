@@ -88,7 +88,7 @@ F3 실측은 격리 probe 스키마 기준이므로 운영 환경에서는 더 �
 ```sql
 -- bid_results 먼저 (크기가 작아 위험 낮음)
 ALTER TABLE bid_results
-  ADD FULLTEXT INDEX ft_bidwinnr_nm (bidwinnr_nm)
+  ADD FULLTEXT INDEX ft_result_dminstt_nm (dminstt_nm)
   WITH PARSER ngram;
 
 -- bid_announcements (수집 정지 후)
@@ -96,6 +96,15 @@ ALTER TABLE bid_announcements
   ADD FULLTEXT INDEX ft_dminstt_nm (dminstt_nm)
   WITH PARSER ngram;
 ```
+
+> **2026-09-01 정정**: 이 절은 원래 `bid_results` 에 `bidwinnr_nm` 인덱스를 지정했으나
+> **운영 코드가 MATCH 를 거는 컬럼과 다릅니다.** `src/rag/structured_data.py:138` 은
+> `BidResult.dminstt_nm.match(...)`, 같은 파일 `:163` 은 `BidAnnouncement.dminstt_nm.match(...)`
+> 이며 `bidwinnr_nm` 에는 MATCH 를 걸지 않습니다. Wave F 가 보고한 `bidwinnr_nm` 2.9배 개선은
+> 아직 구현되지 않은 집계 경로의 probe 값입니다. **선행필터가 실제로 쓰는 두 컬럼은
+> `bid_results.dminstt_nm` 과 `bid_announcements.dminstt_nm` 입니다.**
+> 이 오기 때문에 첫 실행에서 `ft_bidwinnr_nm` 을 만들었고, 경계값 하네스가 요구하는
+> `bid_results.dminstt_nm` 인덱스가 없어 7 클래스가 전부 skip 됐습니다.
 
 비밀번호를 명령줄에 노출하지 마십시오. MySQL 옵션 파일(`~/.my.cnf`)을 사용하거나
 표준 입력으로 전달하십시오.
@@ -111,7 +120,8 @@ WHERE TABLE_SCHEMA = DATABASE()
 ORDER BY TABLE_NAME, INDEX_NAME;
 ```
 
-기대 결과: `ft_bidwinnr_nm`(`bid_results`), `ft_dminstt_nm`(`bid_announcements`) 두 행.
+기대 결과: `ft_result_dminstt_nm`(`bid_results`), `ft_dminstt_nm`(`bid_announcements`) 두 행.
+(2026-09-01 운영 환경에는 오기로 만들어진 `ft_bidwinnr_nm` 이 함께 있습니다. 4절 참조.)
 
 ---
 
