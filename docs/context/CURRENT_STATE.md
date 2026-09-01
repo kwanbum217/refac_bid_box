@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-01
-> **source_commit**: `d3cad6c`
+> **source_commit**: `cf9c937`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -199,9 +199,13 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
 ([`ngram_edge_classes_measurement_20260901.md`](../analysis/ngram_edge_classes_measurement_20260901.md)).
 운영 FULLTEXT 인덱스 3개는 2026-09-01 에 **제거 완료**이며 (제거는 5초 이내, 재구축 없음)
 행 수 5,490,072 / 3,423,008 로 G1 무손실을 확인했습니다.
-**새로 드러난 과업**: 같은 플래그 OFF 조건에서 콜드 총량이 E4 `7dcc771` 223.77초에서
-`d3cad6c` 333.19초로 늘었습니다. ngram 과 무관하며 원인 분해는 미착수입니다.
-G3 컷오버 판정 전에 조사해야 합니다.
+**콜드 SQL 총량은 2026-09-01 결정으로 게이트에서 제외하고 관찰 지표로 강등했습니다**
+([`coldsql_metric_demotion_20260901.md`](../analysis/coldsql_metric_demotion_20260901.md)).
+동일 조건 재측정이 333.19초와 432.99초로 **99.8초(30%) 흔들려 재현되지 않습니다.**
+코드 기여는 0 이며(digest 38개 동일, 신규 0건) 원인은 `innodb_buffer_pool_size` 가
+기본값 128MB 인 채로 데이터가 27GB 였다는 것입니다. 버퍼풀을 2GB 로 배선했고
+측정 규약 5.4 절에 DB 상태 기록을 필수로 넣었습니다. **G3 컷오버는 재현되는
+지표로 판정합니다.**
 
 1-0-a. **(종결) 이전 계획**: Wave F 조사가 끝나 방향이
 확정됐습니다. `dminstt_nm` 과 `bidwinnr_nm` 두 컬럼에만 ngram FULLTEXT 를 적용하고
