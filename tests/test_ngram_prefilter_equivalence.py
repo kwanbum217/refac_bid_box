@@ -629,19 +629,9 @@ def test_unit_boolean_and_like_escaping_semantics():
     assert build_boolean_ft_query("100%") == '+"100%"'
     assert build_boolean_ft_query("공사_1차") == '+"공사_1차"'
     assert build_boolean_ft_query("공사's") == '+"공사\'s"'
-    assert (
-        build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or True
-    )
+    # 실제 반환값은 하나로 확정됩니다. 같은 단언을 or 로 이어 붙이고 끝에 `or True` 를
+    # 두면 어떤 값이 나와도 통과해 검증이 아니라 통과 장치가 됩니다.
+    assert build_boolean_ft_query("+공사*") == '+"+공사*"'
 
     # 2. build_query_sql date filter 및 category filter SQL 생성 검증
     sql_with_all = build_query_sql(
