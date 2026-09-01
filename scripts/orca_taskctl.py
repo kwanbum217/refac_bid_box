@@ -1656,12 +1656,20 @@ def start_worker_watch(repo: Path | str = ".") -> tuple[bool, str]:
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("ab") as log_file:
+            # start_new_session 은 POSIX 전용이라 Windows 에서는 무시됩니다. 분리하지
+            # 않으면 감시기가 부모와 같은 콘솔 그룹에 남아 Ctrl+C 가 서로 전파됩니다.
+            detach_kwargs: dict[str, object] = {"start_new_session": True}
+            if sys.platform == "win32":
+                detach_kwargs = {
+                    "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP
+                    | subprocess.DETACHED_PROCESS
+                }
             proc = subprocess.Popen(  # nosec B603  고정된 스크립트 경로와 인자만 넘깁니다
                 [sys.executable, str(script), "--repo", str(repo_path), "--watch"],
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
-                start_new_session=True,
+                **detach_kwargs,  # type: ignore[arg-type]
             )
             pid = getattr(proc, "pid", None)
             if pid is not None:
