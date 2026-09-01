@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-01
-> **source_commit**: `7832292`
+> **source_commit**: `d8deba1`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -285,6 +285,15 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
   다음 착수 순서는 [`../ops/handoff_20260901_cutover.md`](../ops/handoff_20260901_cutover.md) 4장입니다.
+- **RAG llm 구간 판정과 기동 예열 (2026-09-01)**: llm 후보 넷을 실측으로 닫았습니다.
+  `SYSTEM_PROMPT` 는 Ollama 가 접두사를 캐시해 46% 를 줄여도 prefill 이 9% 만 줄고,
+  컨텍스트는 이미 상위 3건 250자로 절제돼 있으며(평균 846자), 응답도 평균 248자로
+  짧습니다. 남는 것은 `gemma4:e2b` 의 **99 tok/s** decode 속도이며 손댈 수 없습니다.
+  **실질 문제는 콜드 비용**이었고 기동 예열로 첫 질의 중앙 31,398ms 를 18,784ms 로
+  낮췄습니다(콜드 초과분의 약 70% 제거, 결과 불변).
+  아울러 컨테이너 루트 로거 때문에 종전 예열 로그가 한 줄도 남지 않던 결함을 고쳤습니다.
+  상세는 [`rag_llm_segment_and_warmup_20260901.md`](../analysis/rag_llm_segment_and_warmup_20260901.md).
+  **RAG 최적화는 여기서 닫습니다.** 남은 지렛대는 모델·하드웨어 교체입니다.
 - **RAG vector 구간 최적화 판정 (2026-09-01)**: 종전 분석이 지목한 임베딩은 병목이
   아닙니다. 실측에서 Ollama 임베딩 45ms, ChromaDB HNSW 3.4ms 이며 **병목은 메타데이터
   `where` 절**입니다(`category` 하나로 3.4ms -> 1,170ms, 344배).
