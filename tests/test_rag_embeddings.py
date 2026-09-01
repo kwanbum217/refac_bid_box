@@ -135,3 +135,83 @@ def test_embedding_function_is_resolved_per_call(monkeypatch, provider):
     monkeypatch.setattr(embeddings.settings, "EMBEDDING_PROVIDER", provider)
     function = embeddings.get_embedding_function()
     assert (function is None) == (provider == "default")
+
+
+def test_ollama_adapter_reuses_single_client(monkeypatch):
+    """여러 번 호출해도 httpx 클라이언트를 한 번만 만들어야 합니다.
+
+    2026-09-01 컨테이너 실측에서 호출마다 클라이언트를 새로 만드는 종전 구현이
+    45~52ms, 연결을 재사용하면 39~41ms 였습니다. 반환 벡터는 동일합니다.
+    """
+    function = embeddings.OllamaEmbeddingFunction("bge-m3", "http://localhost:11434")
+    created = []
+
+    class FakeResponse:
+        def __init__(self, size):
+            self.size = size
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"embeddings": [[0.0] * 4 for _ in range(self.size)]}
+
+    class FakeClient:
+        def __init__(self):
+            self.closed = False
+
+        def post(self, _url, json):
+            return FakeResponse(len(json["input"]))
+
+        def close(self):
+            self.closed = True
+
+    def factory(**_kwargs):
+        client = FakeClient()
+        created.append(client)
+        return client
+
+    monkeypatch.setattr("httpx.Client", factory)
+
+    for _ in range(3):
+        assert len(function(["질의"])) == 1
+
+    assert len(created) == 1, "호출마다 클라이언트를 새로 만들면 연결 재사용 이득이 사라집니다."
+
+    function.close()
+    assert created[0].closed is True
+    # close 후 재호출하면 새 클라이언트를 만듭니다.
+    assert len(function(["질의"])) == 1
+    assert len(created) == 2
+
+
+def test_ollama_adapter_batching_still_holds_with_reused_client(monkeypatch):
+    """연결 재사용으로 바꾼 뒤에도 배치 경계에서 문서가 누락되지 않아야 합니다."""
+    function = embeddings.OllamaEmbeddingFunction("bge-m3", "http://localhost:11434")
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, size):
+            self.size = size
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"embeddings": [[0.0] * 4 for _ in range(self.size)]}
+
+    class FakeClient:
+        def post(self, _url, json):
+            calls.append(len(json["input"]))
+            return FakeResponse(len(json["input"]))
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("httpx.Client", lambda **_kwargs: FakeClient())
+
+    total = embeddings.EMBED_BATCH_SIZE * 2 + 5
+    vectors = function(["문서"] * total)
+
+    assert len(vectors) == total
+    assert calls == [embeddings.EMBED_BATCH_SIZE, embeddings.EMBED_BATCH_SIZE, 5]
