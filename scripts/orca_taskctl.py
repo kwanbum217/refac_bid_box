@@ -1148,6 +1148,33 @@ def check_write_concurrency(
     }
 
 
+def check_settled_sessions(
+    run_id: str | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    """실측으로 완료 세션 잔류를 검사합니다."""
+    try:
+        from scripts.orca_settled_session_audit import audit_lingering_sessions
+    except (ModuleNotFoundError, ImportError):
+        try:
+            from orca_settled_session_audit import audit_lingering_sessions
+        except (ModuleNotFoundError, ImportError):
+            _repo_root = Path(__file__).resolve().parent.parent
+            if str(_repo_root) not in sys.path:
+                sys.path.insert(0, str(_repo_root))
+            from scripts.orca_settled_session_audit import audit_lingering_sessions
+
+    try:
+        return audit_lingering_sessions(run_id=run_id, timeout=timeout)
+    except Exception as exc:
+        return {
+            "allowed": False,
+            "lingering": [],
+            "count": 0,
+            "reason": f"완료 세션 잔류 검사 실패로 인한 안전 거부: {exc}",
+        }
+
+
 # ---------------------------------------------------------------------------
 # Worktree 및 Worker 시작 (결함 6 해결: 실제 CLI 서명만 사용)
 # ---------------------------------------------------------------------------
@@ -3485,19 +3512,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             "경고: --skip-settled-session-check 지정으로 완료 세션 잔류 검사를 건너뜁니다.\n"
         )
     else:
-        try:
-            from scripts.orca_settled_session_audit import audit_lingering_sessions
-        except (ModuleNotFoundError, ImportError):
-            from orca_settled_session_audit import audit_lingering_sessions
-        try:
-            settled = audit_lingering_sessions(run_id=args.run_id)
-        except Exception as exc:
-            settled = {
-                "allowed": False,
-                "lingering": [],
-                "count": 0,
-                "reason": f"완료 세션 잔류 검사 실패로 인한 안전 거부: {exc}",
-            }
+        settled = check_settled_sessions(run_id=args.run_id)
         if not settled.get("allowed"):
             lingering = settled.get("lingering") or []
             occupying = [
