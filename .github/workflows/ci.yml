@@ -136,8 +136,12 @@ jobs:
       # --durations 는 어느 테스트가 오래 걸리는지 로그에 남깁니다. Windows 는 실기가
       # 없어 로컬에서 재현할 수 없으므로 이 출력이 유일한 관측 수단입니다.
       # -p no:cacheprovider 는 러너 캐시 상태에 따라 순서가 달라지는 것을 막습니다.
+      # Windows 는 2090 번째 부근에서 subprocess 대기 중 KeyboardInterrupt 로 끊겨
+      # 약 950 건이 실행되지 않습니다(2026-09-01 run 33517528907, 33510191592 동일).
+      # -v 는 완료된 테스트를 즉시 출력하므로 마지막 출력의 다음 테스트가 정지 지점입니다.
+      # 원인이 특정되면 -v 를 걷어내고 -q 로 되돌립니다.
       - name: Run pytest (SQLite in-memory)
-        run: uv run pytest -q -m "not data_assets" --durations=25 -p no:cacheprovider
+        run: uv run pytest ${{ matrix.os == 'windows-latest' && '-v' || '-q' }} -m "not data_assets" --durations=25 -p no:cacheprovider
 
   docker-build:
     name: Docker 이미지 빌드 검증
