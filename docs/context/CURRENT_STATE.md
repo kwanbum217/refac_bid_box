@@ -197,7 +197,8 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
 소규모 probe 의 warm 배율이라 운영 콜드에 이전되지 않았습니다. 경계값 7 클래스는
 **실측 완료**이며 `edge_07`·`edge_11` 이 조용한 누락을 일으켜 fail-closed 가 필수입니다
 ([`ngram_edge_classes_measurement_20260901.md`](../analysis/ngram_edge_classes_measurement_20260901.md)).
-운영 FULLTEXT 인덱스 3개 제거는 사용자 승인 대기입니다.
+운영 FULLTEXT 인덱스 3개는 2026-09-01 에 **제거 완료**이며 (제거는 5초 이내, 재구축 없음)
+행 수 5,490,072 / 3,423,008 로 G1 무손실을 확인했습니다.
 **새로 드러난 과업**: 같은 플래그 OFF 조건에서 콜드 총량이 E4 `7dcc771` 223.77초에서
 `d3cad6c` 333.19초로 늘었습니다. ngram 과 무관하며 원인 분해는 미착수입니다.
 G3 컷오버 판정 전에 조사해야 합니다.
