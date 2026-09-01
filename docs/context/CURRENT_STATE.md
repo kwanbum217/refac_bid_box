@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-01
-> **source_commit**: `32b2426`
+> **source_commit**: `1cdcb51`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -258,7 +258,13 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
   확인해 정정했습니다.
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
-  다음 착수 순서는 [`../ops/handoff_20260901_session_close.md`](../ops/handoff_20260901_session_close.md) 3장입니다.
+  다음 착수 순서는 [`../ops/handoff_20260901_wave_k.md`](../ops/handoff_20260901_wave_k.md) 4장입니다.
+- **Wave K 조율 평면 (2026-09-01, 병합 완료)**: I-H 경계값 픽스처(`a0ec7e3`)와 J3 리뷰 문서(`32b2426`)를
+  병합했고, `main` 에 남아 있던 테스트 실패 27건을 닫았습니다(`7dac20f`). 원인은 `b889ee6` 의 완료 세션
+  잔류 검사가 테스트 안에서 실제 Orca 런타임을 호출해 fail-closed 로 거부한 것이며, 검사를 주입 가능한
+  함수로 분리하고 운영 fail-closed 는 회귀 테스트로 고정했습니다. **직전 인수인계의 "테스트 2,928건 통과"
+  는 사실이 아니었습니다.** 아울러 Dispatch 가 권한 자동 승인 감시기 부착 실패 시 기본값에서 거부하고
+  워커 기동 성공 경로에서 상시 감시기를 단일 인스턴스로 자동 기동하도록 바꿨습니다(`1cdcb51`).
 - Windows Docker Desktop 실기 미검증.
 - **LLM 품질 정본은 2026-08-28 현 HEAD 재측정**(동결 `d9a0536`, `gemma4:e2b` 32문항 x 3회)입니다. numeric 95.7%(67/70), evidence recall 0.957, citation 100%, refusal 24/24, 과잉응답 0 으로 2026-08-27 측정 대비 전 지표가 개선입니다. 다만 요청 2/96 이 타임아웃(q03)했고 긴 정확 공고명 질의가 58~180초를 소모하여 **레이턴시 꼬리는 회귀**입니다 ([`blind_fixture_remeasure_20260828.md`](../analysis/blind_fixture_remeasure_20260828.md)). e4b 동일 조건 재측정은 미실시입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
 - **정확 제목 lexical 채널 효과 실측**: 느린 4문항(q03·q08·q25·q31) x 3회에서 요청 실패 2/12 -> **0/12**, 대표값 58,352ms -> **5,941ms**, 최대 180,045ms -> 41,874ms 로 꼬리 지연이 제거됐습니다. 정확도 손실은 없습니다([`lexical_channel_latency_effect_20260828.md`](../analysis/lexical_channel_latency_effect_20260828.md)). 같은 부분집합 e4b 대조는 품질 동률에 P50 6,245ms·최대 81,234ms 로 e2b 가 앞서 **e2b 승격 유지 근거가 보강**됐습니다. 부분집합 12회 표본이므로 전량 재측정으로 정본을 갱신해야 합니다.
