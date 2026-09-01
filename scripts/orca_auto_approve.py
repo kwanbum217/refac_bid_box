@@ -778,10 +778,68 @@ def classify_segment(cmd: str) -> tuple[str, str]:
     if exe in ("mv", "cp", "mkdir", "rm", "chmod", "chown", "touch"):
         return "hold", f"{exe} 파일/디렉토리 변경 명령은 보류 대상"
     if exe in ("docker", "docker-compose"):
-        return "hold", "docker 실행은 보류 대상"
+        return classify_docker_execution(argv, cmd)
 
     # 4.7. 기본값: fail-closed 보류
     return "hold", f"안전목록 밖: {exe}"
+
+
+READ_ONLY_SQL_PREFIXES = ("select", "show", "explain", "desc", "describe", "with")
+
+
+def classify_docker_execution(argv: list[str], cmd: str) -> tuple[str, str]:
+    """docker 명령 중 읽기 전용 DB 조회만 승인하고 나머지는 보류합니다.
+
+    조사 Task 는 DB 조회가 본질인데 docker 를 통째로 보류하면 질의마다 사람 승인을
+    기다립니다. 2026-09-01 에 낙찰하한율 결측 조사 워커가 이 지점에서 반복해서
+    멈췄습니다. 감시기는 정상 부착돼 있었고 정책이 막고 있었습니다.
+
+    **쓰기 가능성이 조금이라도 있으면 보류합니다.** `-e` 로 넘긴 SQL 이 전부
+    읽기 전용 키워드로 시작할 때만 승인하며, 세미콜론으로 이어 붙인 문장도 각각
+    검사합니다. 대화형 셸(`-e` 없음), `sh -c` 경유, 그 밖의 docker 하위 명령은
+    전부 보류입니다.
+    """
+    if len(argv) < 2:
+        return "hold", "docker 실행은 보류 대상"
+
+    # docker compose exec ... / docker exec ... 만 대상입니다.
+    sub = argv[1]
+    if sub == "compose":
+        rest = argv[2:]
+        if not rest or rest[0] != "exec":
+            return "hold", "docker compose 하위 명령은 보류 대상"
+        rest = rest[1:]
+    elif sub == "exec":
+        rest = argv[2:]
+    else:
+        return "hold", f"docker {sub} 는 보류 대상"
+
+    # sh -c 경유는 인용 안에서 무엇이든 할 수 있으므로 보류합니다.
+    if "sh" in rest or "bash" in rest or "-c" in rest:
+        return "hold", "셸 경유 docker 실행은 보류 대상"
+
+    if "mysql" not in rest:
+        return "hold", "mysql 이외의 docker exec 은 보류 대상"
+
+    # docker 자신의 -e(환경변수)와 mysql 의 -e(질의)가 같은 줄에 섞입니다.
+    # mysql 뒤쪽만 보아야 질의를 정확히 집습니다.
+    mysql_args = rest[rest.index("mysql") + 1 :]
+    if "-e" not in mysql_args:
+        return "hold", "대화형 mysql 세션은 보류 대상 (-e 로 질의를 명시하십시오)"
+
+    sql_index = mysql_args.index("-e") + 1
+    sql = mysql_args[sql_index] if sql_index < len(mysql_args) else ""
+    if not sql:
+        return "hold", "mysql -e 뒤에 질의가 없습니다"
+
+    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    if not statements:
+        return "hold", "실행할 질의를 판정할 수 없습니다"
+    for statement in statements:
+        if not statement.lower().startswith(READ_ONLY_SQL_PREFIXES):
+            return "hold", f"읽기 전용이 아닌 SQL 이 섞여 있습니다 ({statement[:40]})"
+
+    return "approve", f"읽기 전용 DB 조회 ({len(statements)}개 문장)"
 
 
 def read(handle: str) -> str | None:
