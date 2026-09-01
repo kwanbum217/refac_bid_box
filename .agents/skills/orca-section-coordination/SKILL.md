@@ -131,6 +131,26 @@ docker build -t refac-bid-box-frontend:orca-gate frontend # docker_build:fronten
 `measure_serving_model.py` 가 후자입니다. 이 작업들은 서빙 루트라는 **공유
 자원을 점유**하므로 Task 로 등록해 소유권을 명시하십시오.
 
+### 2.5 워커의 DB 조회는 전용 실행기로만 시키십시오
+
+**워커에게 `docker exec ... mysql` 을 손으로 조립하게 하지 마십시오.** 자동 승인은
+읽기 전용 `mysql -e` 만 허용하는데, 워커가 형태를 조금만 바꾸면(`sh -c` 로 감싸기,
+환경변수 참조 방식 변경) 화이트리스트를 벗어나 **질의마다 사람 승인을 기다립니다.**
+2026-09-01 에 낙찰하한율 조사 워커가 이 지점에서 반복해서 멈췄습니다.
+
+```bash
+uv run python scripts/db_readonly_query.py --sql "SELECT COUNT(*) FROM bid_results"
+uv run python scripts/db_readonly_query.py --sql "SHOW TABLES" --format json --limit 50
+```
+
+`uv run python scripts/...` 는 이미 자동 승인 대상이라 워커가 멈추지 않습니다.
+실행기는 `SELECT`·`SHOW`·`EXPLAIN`·`DESC`·`WITH` 로 시작하는 **단일 문장만** 통과시키고,
+세미콜론 다중 문장과 `INTO OUTFILE` 같은 우회를 거부하며, `READ ONLY` 트랜잭션으로
+드라이버 수준에서도 쓰기를 막습니다.
+
+Capsule 의 `ground_truth` 에 이 명령 형태를 못 박으십시오. 형태를 자유롭게 두면
+워커는 매번 다른 명령을 만들어 냅니다.
+
 ## 3. 감독 절차
 
 1. 각 Task는 `orca orchestration worker-start` 또는 `dispatch --inject`로 Dispatch합니다. 사용자 요청에 모델·추론 수준이 있으면 해당 값도 Dispatch 시 반영합니다.

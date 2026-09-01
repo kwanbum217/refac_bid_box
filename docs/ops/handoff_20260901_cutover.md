@@ -144,12 +144,22 @@ llm 구간도 후보 넷을 전부 닫았습니다. `SYSTEM_PROMPT` 는 Ollama �
 버퍼풀 2GB 조건에서 추세만 기록합니다. **통과·미달 판정에 쓰지 마십시오.**
 비교는 버퍼풀 크기와 DB 연속 가동 시간이 같은 측정끼리만 합니다.
 
-### 4.3 조사 Task 의 DB 접근 (미해결)
+### 4.3 조사 Task 의 DB 접근 (해소)
 
-읽기 전용 질의 승인을 열었으나 워커가 `sh -c` 로 감싸면 여전히 막힙니다. 근본
-해법은 **읽기 전용 질의 스크립트를 만들어 워커가 그것만 부르게** 하는 것입니다
-(`uv run python scripts/...` 는 이미 화이트리스트 안). 조사 Task 가 다시 필요할 때
-착수하십시오.
+`scripts/db_readonly_query.py` 를 추가했습니다. 워커가 `docker exec ... mysql` 을
+손으로 조립하면 형태가 바뀔 때마다 승인 대화창에 걸리므로, **전용 실행기만 부르게**
+합니다. `uv run python scripts/...` 는 이미 자동 승인 대상이라 멈추지 않습니다.
+
+```bash
+uv run python scripts/db_readonly_query.py --sql "SELECT COUNT(*) FROM bid_results"
+```
+
+`SELECT`·`SHOW`·`EXPLAIN`·`DESC`·`WITH` 단일 문장만 통과하고, 세미콜론 다중 문장과
+`INTO OUTFILE` 우회를 거부하며 `READ ONLY` 트랜잭션으로 드라이버 수준에서도 쓰기를
+막습니다. 조율 스킬 2.5 절에 반영했고 회귀 테스트 27건을 붙였습니다.
+
+**Capsule 의 `ground_truth` 에 이 명령 형태를 못 박으십시오.** 형태를 자유롭게 두면
+워커는 매번 다른 명령을 만들어 냅니다.
 
 ### 4.4 상시 과제
 
@@ -195,7 +205,7 @@ llm 구간도 후보 넷을 전부 닫았습니다. `SYSTEM_PROMPT` 는 Ollama �
 | 항목 | 값 |
 | --- | --- |
 | 주 저장소 | `main` `6b35a05` |
-| 전체 테스트 | 2,986 passed |
+| 전체 테스트 | 3,013 passed |
 | 규칙 검사 | 16/16 |
 | 활성 워커 / 잔류 세션 | 0 / 없음 |
 | 워크트리 | 주 저장소만 |
