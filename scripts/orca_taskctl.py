@@ -1689,10 +1689,13 @@ def stop_worker_watch(repo: Path | str = ".") -> tuple[bool, str]:
         return False, "실행 중인 상시 감시기가 없습니다"
     try:
         if watcher_alive(pid):
+            # SIGKILL 은 POSIX 전용입니다. Windows 에는 없어 참조만으로 AttributeError
+            # 가 나므로, 그 환경에서는 SIGTERM(내부적으로 TerminateProcess) 로 끝냅니다.
+            force_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
             os.kill(pid, signal.SIGTERM)
             time.sleep(0.1)
             if watcher_alive(pid):
-                os.kill(pid, signal.SIGKILL)
+                os.kill(pid, force_signal)
         remove_watcher_pid(pid_path)
         return True, f"상시 감시기 종료 (PID {pid})"
     except ProcessLookupError:
