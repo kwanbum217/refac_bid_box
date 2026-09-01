@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-01
-> **source_commit**: `c00c789`
+> **source_commit**: `32b2426`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -196,7 +196,9 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
      **이 코드는 Wave H2 로 `main` 에 들어가 있고 기본값 OFF 입니다.** 운영 인덱스가
      없고 플래그가 꺼져 있으므로 아직 질의 경로를 바꾸지 않습니다.
   2. 누락 탐지 회귀 테스트 추가(위 주의 1). 이것 없이 플래그를 켜지 않습니다.
-     I-H 브랜치(`kwanbum217/orca-i-h`)에 경계값 7 클래스 픽스처가 있으나 **미병합**입니다.
+     경계값 7 클래스 픽스처와 ID 집합 동등성 테스트는 2026-09-01 Wave K1 으로
+     `main` 에 병합됐습니다(`a0ec7e3`). 7 클래스는 실측 전까지 `is_safe_for_ngram: false`
+     로 닫혀 있으며, **실측은 운영 FULLTEXT 인덱스 생성 후에 합니다.**
   3. 운영 인덱스 생성은 **사용자 승인 후** 별도 수행합니다. 27.3GB 테이블 재구축과
      쓰기 차단이 따르므로 수집이 멈춘 시간대를 고릅니다. 실행 절차는
      [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md)를 따릅니다.
@@ -250,7 +252,10 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
   I-C 는 `citations_wrong` 으로 반려됐습니다(브랜치 `kwanbum217/orca-i-c`, 커밋 `9210641` 보존).
   I-F 조율 계약 강제(scope guard, worker_done guard)는 `8b9e5e9` 로 `main` 에 병합됐습니다.
   MATCH AGAINST 구현이 아닙니다.
-  I-H 는 경계값 7 클래스 픽스처이며 브랜치 `kwanbum217/orca-i-h`(커밋 `d8aa9a9`)에서 미병합입니다.
+  I-H 경계값 7 클래스 픽스처는 2026-09-01 Wave K1 으로 `main` 에 병합됐습니다(`a0ec7e3`).
+  J3 독립 리뷰 문서 2 건도 Wave K2 로 이식했고(`32b2426`), 그 과정에서 원 리뷰의
+  "CI `mysql-ngram-integration` 잡 삭제" 관찰이 브랜치 base 뒤처짐에 의한 착시였음을
+  확인해 정정했습니다.
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
   다음 착수 순서는 [`../ops/handoff_20260901_session_close.md`](../ops/handoff_20260901_session_close.md) 3장입니다.
