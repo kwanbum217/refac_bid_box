@@ -59,6 +59,7 @@ services:
       # batch-disable 은 기각됐으니 운영에 쓰지 마십시오(기본보다 꼬리가 나쁩니다).
       - PREDICTION_GC_MODE=${PREDICTION_GC_MODE-freeze}
       - LATENCY_SEGMENT_LOGGING=${LATENCY_SEGMENT_LOGGING:-false}
+      - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
       # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}
@@ -119,6 +120,7 @@ services:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
       # 개발 DB와 KB는 매일 최신화하되, 예측 검증·재학습은 운영 스케줄에만 둡니다.
+      - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
       - AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=true
       - AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false
       - ML_WEEKLY_RETRAIN_ENABLED=false
