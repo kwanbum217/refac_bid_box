@@ -882,3 +882,45 @@ class TestDockerReadOnlySql:
         ):
             verdict, _ = self._classify(cmd)
             assert verdict == "hold", cmd
+
+
+class TestUvRunAllowedScripts:
+    """`uv run python <스크립트>` 는 허용 목록만 승인해야 합니다.
+
+    2026-09-01 에 읽기 전용 질의 실행기를 만들고 "uv run python 은 이미 승인
+    대상" 이라고 문서에 적었으나 **사실이 아니었습니다.** `uv` 는 `uv run pytest`
+    만 허용하는 별도 분기에 걸려 실행기를 만들어도 워커가 그대로 막혔습니다.
+    문서 예시를 실제로 실행해 보고서야 드러났습니다.
+    """
+
+    @staticmethod
+    def _classify(cmd: str):
+        from scripts.orca_auto_approve import classify_command
+
+        return classify_command(cmd)
+
+    def test_readonly_query_runner_is_approved(self):
+        verdict, reason = self._classify(
+            'uv run python scripts/db_readonly_query.py --sql "SELECT 1"'
+        )
+        assert verdict == "approve"
+        assert "db_readonly_query.py" in reason
+
+    def test_pytest_still_approved(self):
+        verdict, _ = self._classify("uv run pytest tests/ -q")
+        assert verdict == "approve"
+
+    def test_arbitrary_script_is_held(self):
+        """허용 목록 밖 스크립트는 보류해야 합니다. 목록은 화이트리스트입니다."""
+        verdict, _ = self._classify("uv run python scripts/measure_coldsql_attribution.py")
+        assert verdict == "hold"
+
+    def test_inline_code_is_held(self):
+        """`uv run python -c` 로 임의 코드를 실행하는 경로를 막아야 합니다."""
+        verdict, _ = self._classify("uv run python -c \"import shutil; shutil.rmtree('/')\"")
+        assert verdict == "hold"
+
+    def test_other_uv_subcommands_are_held(self):
+        for cmd in ("uv sync", "uv pip install requests", "uv run ruff check ."):
+            verdict, _ = self._classify(cmd)
+            assert verdict == "hold", cmd
