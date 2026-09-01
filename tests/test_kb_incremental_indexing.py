@@ -12,11 +12,37 @@ from __future__ import annotations
 import time
 from datetime import timedelta
 
+# Windows CI 에서 chromadb.PersistentClient 의 디스크 I/O 비용이 테스트당
+# 수십 초를 차지해 CI 가 hang 됩니다(2026-09-01 run 33507615073).
+# 검증 의도는 컬렉션의 in-memory 상태 비교이므로, 이 파일에서는 PersistentClient
+# 를 공유 in-memory EphemeralClient 로 대체합니다. reset() 으로 테스트 간
+# 격리를 유지하므로 의미는 변하지 않습니다. 운영 경로(kb_builder.rebuild_knowledge_base)
+# 의 chroma_client = chromadb.PersistentClient(...) 호출은 그대로 통과합니다.
+import chromadb as _chromadb_module
 import pytest
+from chromadb.config import Settings as _ChromaSettings
 
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
 from src.app.services import kb_builder
+
+# allow_reset 은 클라이언트 설정으로 직접 넘깁니다. 환경변수로 두면 모듈 import
+# 만으로 프로세스 전역이 오염되어 다른 테스트의 chroma 동작까지 바뀝니다.
+_ephemeral_client_singleton = _chromadb_module.EphemeralClient(
+    settings=_ChromaSettings(allow_reset=True)
+)
+
+
+def _ephemeral_persistent_factory(*_args, **_kwargs):
+    return _ephemeral_client_singleton
+
+
+@pytest.fixture(autouse=True)
+def _reset_chroma_between_tests(monkeypatch):
+    """EphemeralClient 를 테스트 시작 시 reset 하고 PersistentClient 를 대체합니다."""
+    _ephemeral_client_singleton.reset()
+    monkeypatch.setattr(_chromadb_module, "PersistentClient", _ephemeral_persistent_factory)
+    return None
 
 
 @pytest.fixture
@@ -44,10 +70,8 @@ def _add_announcement(db, *, notice_no: str, name: str, institution: str = "테�
 
 
 def _collection(path):
-    import chromadb
-
-    client = chromadb.PersistentClient(path=str(path))
-    return client.get_collection(kb_builder.COLLECTION_NAME)
+    """테스트에서 색인 결과를 조회하는 헬퍼. in-memory 공유 클라이언트를 씁니다."""
+    return _ephemeral_client_singleton.get_collection(kb_builder.COLLECTION_NAME)
 
 
 def test_first_run_indexes_everything(isolated_db, chroma_path):
