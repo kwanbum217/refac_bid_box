@@ -23,8 +23,6 @@ LLM 품질 평가 fixture 검증기 (scripts/validate_llm_quality_fixture.py) �
 import copy
 import hashlib
 import json
-import subprocess  # nosec B404
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +30,7 @@ import pytest
 
 from scripts.validate_llm_quality_fixture import (
     DEFAULT_MIN_CONTEXT_SUFFICIENT,
+    main,
     validate_fixture_data,
     validate_manifest_data,
 )
@@ -85,6 +84,16 @@ def valid_manifest_file(tmp_path: Path, valid_manifest_dict: dict[str, Any]) -> 
         json.dumps(valid_manifest_dict, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return manifest_path
+
+
+@pytest.fixture(autouse=True)
+def mock_chroma_kb_if_not_explicit(monkeypatch, request):
+    if request.node.name == "test_non_existent_evidence_id_detected":
+        return
+    monkeypatch.setattr(
+        "scripts.validate_llm_quality_fixture.verify_evidence_ids_in_kb",
+        lambda *a, **kw: (True, set(), "로컬 ChromaDB 대조 완료"),
+    )
 
 
 def test_canonical_fixture_passes_with_valid_manifest(
@@ -188,17 +197,20 @@ def test_manifest_invalid_hash_format_detected(valid_manifest_dict: dict[str, An
     assert any("SHA-256 형식" in err for err in errors)
 
 
-def test_non_existent_evidence_id_detected(valid_fixture_dict: dict[str, Any]):
+def test_non_existent_evidence_id_detected(valid_fixture_dict: dict[str, Any], monkeypatch):
     """ChromaDB 에 실재하지 않는 가상의 evidence ID 가 포함되면 검출되는지 확인합니다."""
+    monkeypatch.setattr(
+        "scripts.validate_llm_quality_fixture.verify_evidence_ids_in_kb",
+        lambda *a, **kw: (True, {"bid_non_existent_99999999"}, "1건 누락"),
+    )
     tampered = copy.deepcopy(valid_fixture_dict)
     tampered["items"][0]["expected_evidence_ids"] = ["bid_non_existent_99999999"]
 
-    is_valid, errors, stats = validate_fixture_data(
+    is_valid, errors, _ = validate_fixture_data(
         tampered, check_kb_existence=True, check_manifest=False
     )
-    if "건너뜀" not in stats.get("kb_verification_status", ""):
-        assert is_valid is False
-        assert any("실재하지 않는" in err for err in errors)
+    assert is_valid is False
+    assert any("실재하지 않는" in err for err in errors)
 
 
 def test_missing_required_field_detected(valid_fixture_dict: dict[str, Any]):
@@ -313,47 +325,46 @@ def test_numeric_fact_missing_required_fields_detected(valid_fixture_dict: dict[
     assert any("unit" in err for err in errors)
 
 
-def test_cli_execution_with_valid_manifest(valid_manifest_file: Path):
+def test_cli_execution_with_valid_manifest(valid_manifest_file: Path, capsys):
     """CLI 실행 시 정상 manifest 파일과 함께 exit code 0을 반환하는지 확인합니다."""
-    cmd = [
-        sys.executable,
-        "scripts/validate_llm_quality_fixture.py",
-        str(FIXTURE_PATH),
-        "--manifest-path",
-        str(valid_manifest_file),
-        "--quiet",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
-    assert res.returncode == 0
-    assert res.stdout == ""
+    ret = main(
+        [
+            str(FIXTURE_PATH),
+            "--manifest-path",
+            str(valid_manifest_file),
+            "--quiet",
+        ]
+    )
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
 
 
 def test_cli_execution_fail_closed_without_manifest():
     """CLI 실행 시 manifest 가 없으면 기본값으로 exit code 1 (fail-closed)을 반환하는지 확인합니다."""
-    cmd = [
-        sys.executable,
-        "scripts/validate_llm_quality_fixture.py",
-        str(FIXTURE_PATH),
-        "--manifest-path",
-        "data/eval/non_existent_manifest.json",
-        "--quiet",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
-    assert res.returncode == 1
+    ret = main(
+        [
+            str(FIXTURE_PATH),
+            "--manifest-path",
+            "data/eval/non_existent_manifest.json",
+            "--quiet",
+        ]
+    )
+    assert ret == 1
 
 
-def test_cli_execution_optout_succeeds():
+def test_cli_execution_optout_succeeds(capsys):
     """CLI 실행 시 --skip-manifest-check 플래그를 주면 manifest 없이도 exit code 0을 반환하는지 확인합니다."""
-    cmd = [
-        sys.executable,
-        "scripts/validate_llm_quality_fixture.py",
-        str(FIXTURE_PATH),
-        "--skip-manifest-check",
-        "--quiet",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
-    assert res.returncode == 0
-    assert res.stdout == ""
+    ret = main(
+        [
+            str(FIXTURE_PATH),
+            "--skip-manifest-check",
+            "--quiet",
+        ]
+    )
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
 
 
 def test_cli_execution_failure_on_invalid_file(tmp_path: Path):
@@ -361,24 +372,22 @@ def test_cli_execution_failure_on_invalid_file(tmp_path: Path):
     bad_fixture = tmp_path / "bad_fixture.json"
     bad_fixture.write_text(json.dumps({"items": [{"id": "q01"}]}), encoding="utf-8")
 
-    cmd = [
-        sys.executable,
-        "scripts/validate_llm_quality_fixture.py",
-        str(bad_fixture),
-        "--skip-manifest-check",
-        "--quiet",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
-    assert res.returncode == 1
+    ret = main(
+        [
+            str(bad_fixture),
+            "--skip-manifest-check",
+            "--quiet",
+        ]
+    )
+    assert ret == 1
 
 
 def test_cli_execution_missing_file():
     """CLI 실행 시 존재하지 않는 파일에 대해 exit code 2를 반환하는지 확인합니다."""
-    cmd = [
-        sys.executable,
-        "scripts/validate_llm_quality_fixture.py",
-        "non_existent_file.json",
-        "--quiet",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)  # noqa: S603
-    assert res.returncode == 2
+    ret = main(
+        [
+            "non_existent_file.json",
+            "--quiet",
+        ]
+    )
+    assert ret == 2

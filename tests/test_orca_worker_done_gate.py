@@ -5,6 +5,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts.orca_contract import (
     verify_branch_exists,
     verify_changed_files_match,
@@ -15,6 +17,117 @@ from scripts.orca_taskctl import finalize_task
 from scripts.summarize_worker_done import summarize_worker_report
 
 GIT_BIN = shutil.which("git") or "/usr/bin/git"
+
+
+@pytest.fixture(autouse=True)
+def mock_subprocesses(monkeypatch):
+    """비-git 하위 프로세스 호출(pytest, validate_agent_rules, ruff, summarize/level1 subprocess)을 mock 하여 테스트 속도를 높입니다."""
+    import subprocess as real_subprocess
+
+    from scripts import orca_contract, orca_level1_gate, orca_taskctl
+
+    orig_run_command_safe = orca_level1_gate.run_command_safe
+    orig_subprocess_run = real_subprocess.run
+    orig_taskctl_run = orca_taskctl._run_command
+
+    def mock_run_command_safe(cmd, cwd, timeout):
+        cmd_str = " ".join(str(c) for c in cmd)
+        if cmd and "git" in Path(str(cmd[0])).name:
+            return orig_run_command_safe(cmd, cwd, timeout)
+        if "pytest" in cmd_str:
+            return 0, "1 passed in 0.01s", "", False
+        if "validate_agent_rules.py" in cmd_str:
+            return 0, "검증 통과: 12/12 건.", "", False
+        if "ruff" in cmd_str:
+            return 0, "All checks passed!", "", False
+        return orig_run_command_safe(cmd, cwd, timeout)
+
+    class MockCompletedProc:
+        def __init__(self, returncode: int, stdout: str, stderr: str = ""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def mock_contract_subprocess_run(cmd, *args, **kwargs):
+        cmd_str = " ".join(str(c) for c in cmd) if isinstance(cmd, (list, tuple)) else str(cmd)
+        if isinstance(cmd, (list, tuple)) and cmd and "git" in Path(str(cmd[0])).name:
+            return orig_subprocess_run(cmd, *args, **kwargs)
+        if "pytest" in cmd_str:
+            return MockCompletedProc(0, "1 passed in 0.01s", "")
+        if "validate_agent_rules.py" in cmd_str:
+            return MockCompletedProc(0, "검증 통과: 12/12 건.", "")
+        return orig_subprocess_run(cmd, *args, **kwargs)
+
+    def mock_run_command_taskctl(cmd, cwd=None, timeout=30):
+        cmd_str = " ".join(str(c) for c in cmd)
+        if "summarize_worker_done.py" in cmd_str:
+            report = None
+            capsule = None
+            repo = None
+            idx = 0
+            while idx < len(cmd):
+                if cmd[idx] == "--report":
+                    report = Path(cmd[idx + 1])
+                    idx += 2
+                    continue
+                if cmd[idx] == "--capsule":
+                    capsule = Path(cmd[idx + 1])
+                    idx += 2
+                    continue
+                if cmd[idx] == "--repo":
+                    repo = Path(cmd[idx + 1])
+                    idx += 2
+                    continue
+                idx += 1
+            res = summarize_worker_report(report, capsule_path=capsule, repo_path=repo)
+            return res["exit_code"], json.dumps(res), ""
+
+        if "orca_level1_gate.py" in cmd_str:
+            base = "main"
+            branch = "HEAD"
+            repo = Path(".")
+            capsule = None
+            report = None
+            strict = "--strict" in cmd
+            idx = 0
+            while idx < len(cmd):
+                if cmd[idx] == "--base":
+                    base = cmd[idx + 1]
+                    idx += 2
+                    continue
+                if cmd[idx] == "--branch":
+                    branch = cmd[idx + 1]
+                    idx += 2
+                    continue
+                if cmd[idx] == "--repo":
+                    repo = Path(cmd[idx + 1])
+                    idx += 2
+                    continue
+                if cmd[idx] == "--capsule":
+                    capsule = Path(cmd[idx + 1])
+                    idx += 2
+                    continue
+                if cmd[idx] == "--report":
+                    report = Path(cmd[idx + 1])
+                    idx += 2
+                    continue
+                idx += 1
+            code, out = run_level1_gate(
+                base=base,
+                branch=branch,
+                repo=repo,
+                capsule=capsule,
+                report=report,
+                as_json=True,
+                strict=strict,
+            )
+            return code, out, ""
+
+        return orig_taskctl_run(cmd, cwd=cwd, timeout=timeout)
+
+    monkeypatch.setattr(orca_level1_gate, "run_command_safe", mock_run_command_safe)
+    monkeypatch.setattr(orca_contract.subprocess, "run", mock_contract_subprocess_run)
+    monkeypatch.setattr(orca_taskctl, "_run_command", mock_run_command_taskctl)
 
 
 def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str, str]:
@@ -31,18 +144,6 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str, str]:
         check=True,
         capture_output=True,
     )
-    subprocess.run(  # noqa: S603
-        [GIT_BIN, "config", "user.email", "test@example.com"],
-        cwd=str(repo),
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(  # noqa: S603
-        [GIT_BIN, "config", "user.name", "Test"],
-        cwd=str(repo),
-        check=True,
-        capture_output=True,
-    )
 
     # 1. Base 커밋
     scripts_dir = repo / "scripts"
@@ -53,7 +154,16 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str, str]:
     (repo / "base.txt").write_text("base content\n", encoding="utf-8")
     subprocess.run([GIT_BIN, "add", "."], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
     subprocess.run(  # noqa: S603
-        [GIT_BIN, "commit", "-m", "chore: initial base commit"],
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            "chore: initial base commit",
+        ],
         cwd=str(repo),
         check=True,
         capture_output=True,
@@ -75,7 +185,16 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str, str]:
     (tests_dir / "test_app.py").write_text("def test_run():\n    assert True\n", encoding="utf-8")
     subprocess.run([GIT_BIN, "add", "."], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
     subprocess.run(  # noqa: S603
-        [GIT_BIN, "commit", "-m", "feat: implement truth gate logic"],
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            "feat: implement truth gate logic",
+        ],
         cwd=str(repo),
         check=True,
         capture_output=True,
