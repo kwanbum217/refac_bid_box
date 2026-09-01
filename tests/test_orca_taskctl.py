@@ -59,6 +59,21 @@ from scripts.validate_review_report import parse_checklist
 
 
 @pytest.fixture(autouse=True)
+def block_real_worker_watch(monkeypatch: pytest.MonkeyPatch):
+    """상시 감시기를 실제로 기동하지 않도록 막습니다.
+
+    dispatch 경로는 배경 감시기를 subprocess 로 띄웁니다. 테스트가 이를 실제로
+    실행하면 무한 --watch 루프가 러너에 남고, Windows 에서는 자식이 부모와 같은
+    콘솔 그룹을 공유해 pytest 가 KeyboardInterrupt 로 중단됩니다
+    (2026-09-01 run 33518498545, 2090 번째 이후 약 950 건 미실행).
+    """
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_worker_watch",
+        lambda *args, **kwargs: (True, "테스트용 감시기 기동 생략"),
+    )
+
+
+@pytest.fixture(autouse=True)
 def mock_settled_session_audit_default(monkeypatch: pytest.MonkeyPatch):
     """테스트 격리를 위해 기본적으로 잔류 세션 검사를 allowed=True 로 모의합니다.
     실제 fail-closed 검증 및 잔류 감지 테스트는 개별 테스트에서 mock 을 오버라이드합니다."""
