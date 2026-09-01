@@ -219,9 +219,12 @@ print(d['exit_code'], d.get('effective_verdict'), d.get('violations'))"
 프롬프트에 막혀 있었고, 부팅이 `not signed in` 에서 멈춘 사례가 세 번 있었으며,
 그 중 일부는 사용자가 먼저 발견했습니다.
 
+**상시 감시 자동 기동은 워커 기동 절차의 필수 강제 조항입니다.** `scripts/orca_taskctl.py dispatch` 는 워커 기동 성공 시 상시 감시기(`scripts/orca_worker_watch.py --watch`)를 배경 프로세스로 자동 기동하며, 이미 실행 중이면 단일 인스턴스로 재사용합니다. 또한 권한 자동 승인 감시기 부착 실패 시 `dispatch` 는 fail-closed 원칙에 따라 기본값에서 즉시 거부(종료 코드 2)합니다. 의도적 우회는 명시 플래그(`--skip-auto-approve-check`) 지정 시에만 허용되며 경고가 남습니다.
+
 ```bash
-python3 scripts/orca_worker_watch.py          # 사람이 읽는 요약
+python3 scripts/orca_worker_watch.py          # 사람이 읽는 요약 (1회)
 python3 scripts/orca_worker_watch.py --json   # 기계 판독
+python3 scripts/orca_worker_watch.py --watch  # 상시 감시 루프 (기동 시 자동 부착)
 ```
 
 워커별 커밋 수, 미커밋 변경 수, 연결된 터미널, 차단 신호와 해제 방법을 한 번에

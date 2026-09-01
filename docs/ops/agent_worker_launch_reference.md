@@ -25,24 +25,26 @@
 
 ---
 
-## 0.5 권한 자동 승인 감시기는 기동 절차의 필수 단계입니다
+## 0.5 권한 자동 승인 및 상시 감시기는 기동 절차의 필수 단계입니다
 
-**터미널 부착 경로로 워커를 띄웠다면 반드시 자동 승인 감시기를 붙이십시오.**
+**터미널 부착 경로로 워커를 띄웠다면 반드시 자동 승인 감시기를 붙이고 상시 감시기를 기동하십시오.**
 붙이지 않으면 워커는 셸 명령 승인 대화창마다 멈추고, 코디네이터가 손으로 누를
-때까지 아무 진행도 하지 않습니다. 2026-08-28 세션에서 이 단계를 빠뜨려 워커
+때까지 아무 진행도 하지 않습니다. 2026-08-28 및 2026-09-01 세션에서 이 단계를 빠뜨려 워커
 여러 대가 반복해서 정체했습니다.
 
 | 층 | 무엇을 막아 주는가 | 조치 |
 | --- | --- | --- |
 | `shift+tab` (accept-edits) | **파일 편집 대화창만** 자동 승인 | `taskctl dispatch` 가 자동 전송 (`\x1b[Z`). 실패 시 수동: `orca terminal send --terminal <handle> --text $'\x1b[Z'` |
-| `scripts/orca_auto_approve.py` | **셸 명령 승인 대화창** 화이트리스트 자동 승인 | `taskctl dispatch` 가 자동 기동. 실패 시 수동: `python3 scripts/orca_auto_approve.py <handle> [...]` 를 배경으로 상시 실행 |
+| `scripts/orca_auto_approve.py` | **셸 명령 승인 대화창** 화이트리스트 자동 승인 | `taskctl dispatch` 가 자동 기동. 실패 시 기본 fail-closed 로 dispatch 중단 (우회 시 `--skip-auto-approve-check` 필요) |
+| `scripts/orca_worker_watch.py --watch` | **워커 진척·차단 상시 감시** 및 정체 즉시 감지 | `taskctl dispatch` 성공 시 배경으로 자동 기동. 단일 인스턴스 자동 재사용 |
 
-두 층은 서로를 대체하지 않습니다. `shift+tab` 만 보내고 감시기를 띄우지 않으면
+세 층은 서로를 대체하지 않습니다. `shift+tab` 만 보내고 감시기를 띄우지 않으면
 `cat > file`, `mkdir`, `top` 같은 명령에서 그대로 멈춥니다. 반대로 감시기만 띄우면
 **파일 편집 대화창이 통째로 남습니다.** 감시기는 파일 편집을 승인하지 않고 보류하며
 (`[보류] 파일 편집/생성 승인은 수동 판단 필요`), 그때부터 사람이 매번 손으로
 눌러야 합니다. 2026-08-31 세션에서 이 조합으로 워커 한 대의 승인을 사용자가
-직접 처리했습니다.
+직접 처리했습니다. 또한 상시 감시기가 없으면 워커가 승인 대기나 네트워크 장애로 정체되어도
+코디네이터가 수동 폴링 전까지 인지하지 못합니다.
 
 **`shift+tab` 을 연속으로 보내지 마십시오.** 순환은
 `normal -> accept-edits -> plan -> normal` 이라 과전송하면 `plan` 으로 넘어가
@@ -51,21 +53,23 @@
 **키를 더 보내지 말고 잠시 뒤 다시 읽습니다.** `enable_file_edit_auto_approve` 의
 `force=True` 는 이 판정 불가 가드를 꺼 버리므로 습관적으로 쓰지 마십시오.
 
-### 0.5.1 터미널별 단일 감시기 보장 및 생명주기
+### 0.5.1 단일 감시기 보장 및 생명주기
 
-자동 승인 감시기는 터미널별로 정확히 1개의 프로세스만 유지되어야 하며, 작업 종료 시 명시적으로 정리됩니다.
+자동 승인 감시기와 상시 워커 감시기는 각각 단일 인스턴스로 유지되어야 하며, 작업 생명주기에 맞춰 관리됩니다.
 
-| 생명주기 단계 | 동작 메커니즘 | 관리 주체 |
+| 대상 / 생명주기 | 동작 메커니즘 | 관리 주체 |
 | --- | --- | --- |
-| 기동 및 중복 방지 | PID 레지스트리 파일(`orca_auto_approve/<terminal>.pid`)을 조회하여 프로세스 생존(`os.kill(pid, 0)`) 시 기존 감시기 재사용 | `scripts/orca_taskctl.py start_auto_approve` |
-| 비정상 프로세스 복구 | PID 파일이 손상되었거나 프로세스가 죽어 있으면 새 감시기를 띄우고 PID 갱신 | `scripts/orca_taskctl.py start_auto_approve` |
-| 명시적 종료 | Task 완료 시 SIGTERM 시그널을 전달하고 PID 파일을 삭제하여 고아 프로세스 방지 | `scripts/orca_taskctl.py finalize` (`stop_auto_approve`) |
+| 권한 승인 감시기 기동 및 중복 방지 | PID 레지스트리 파일(`orca_auto_approve/<terminal>.pid`)을 조회하여 프로세스 생존(`os.kill(pid, 0)`) 시 기존 감시기 재사용 | `scripts/orca_taskctl.py start_auto_approve` |
+| 권한 승인 감시기 부착 실패 거부 | 감시기 기동 실패 시 dispatch 기본 fail-closed 거부 (종료 코드 2, `--skip-auto-approve-check` 로만 우회) | `scripts/orca_taskctl.py cmd_dispatch` |
+| 상시 워커 감시기 자동 기동 | 워커 기동 성공 시 배경 프로세스로 `orca_worker_watch.py --watch` 기동 및 PID(`orca_worker_watch/watcher_<hash>.pid`) 기록/재사용 | `scripts/orca_taskctl.py start_worker_watch` |
+| 비정상 프로세스 복구 | PID 파일이 손상되었거나 프로세스가 죽어 있으면 새 감시기를 띄우고 PID 갱신 | `scripts/orca_taskctl.py` |
+| 명시적 종료 | Task 완료 시 SIGTERM 시그널을 전달하고 PID 파일을 삭제하여 고아 프로세스 방지 | `scripts/orca_taskctl.py finalize` (`stop_auto_approve`, `stop_worker_watch`) |
 | 자체 종료 | 대상 터미널 읽기 연속 5회 실패(터미널 종료) 시 감시 대상에서 제외하며, 전체 대상 소진 시 자동 반환 및 PID 파일 정리 | `scripts/orca_auto_approve.py poll_loop` |
 
 `scripts/orca_taskctl.py dispatch --terminal ...` 및 런처 경로는 통합 준비 상태 기계(`prepare_worker_terminal`, `scripts/orca_taskctl.py prepare-worker`)를
 실행하여 (1) 워커 메타데이터 등록, (2) 신뢰 확인 대화창 승인, (3) 권한 자동 승인 감시기 부착, (4) 파일 편집 자동 승인 모드 전환(`shift+tab`, `\x1b[Z`)을 단일 절차로 처리합니다.
 기동 시점에 기록된 메타데이터를 기반으로 CLI 종류를 판정하므로 화면 오염에 영향을 받지 않으며, Cursor 등 Plan Mode 로 전환되는 CLI 나 미식별 CLI 는 fail-closed 원칙에 따라 전송을 건너뛰고 안내 로그를 남깁니다.
-감시기 기동 또는 모드 전환 전송에 실패하면 stderr 로 경고 및 수동 복구 명령을 안내합니다.
+감시기 기동 실패 시 fail-closed 로 즉시 중단되며, 모드 전환 전송에 실패하면 stderr 로 경고 및 수동 복구 명령을 안내합니다.
 
 ### 0.5.2 CLI별 `shift+tab` 해석 차이, 메타데이터 판정 및 안전 가드 (fail-closed)
 
