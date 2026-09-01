@@ -3,7 +3,7 @@
 > **작성일**: 2026-09-01
 > **Run**: `run_6872c388bbf2` (K), `run_079be53ebd6e` (M), `run_81f81026d487` (R),
 > `run_aae381c7bbc0` (U), `run_3b75cc9989a0` (V), `run_28ccbb883837` (W)
-> **기준 HEAD**: `6a32332` (`main`)
+> **기준 HEAD**: `c21fabf` (`main`)
 > **이전 인수인계**: [`handoff_20260901_wave_k.md`](handoff_20260901_wave_k.md)
 > **이 문서가 우선하는 범위**: 3장 이후. 이전 문서 4장(ngram 순서)은 전부 닫혔습니다
 
@@ -29,8 +29,17 @@
 | 읽기 전용 질의 실행기 | `main` 병합 | `831c5ae`, `05984c9`. `db_readonly_query.py` + uv 화이트리스트 |
 | **외부 감사 P0/P1 대응** | **7건 중 6건 해소** | Wave U/V/W/X/Y. 상세는 2.8 절 |
 | **CI RED 복구** | **워크플로 success** | run `33508869670`. 감사 지적 이후 처음 |
+| Wave Z (Windows 테스트 비용, 상태 원장, 스킬 조항) | `main` 병합 | Z1 `beb61e4`, Z2 `b13b6db`·`9db5d58`, Z3 `390ee90` |
+| **Windows CI hang 규명** | **해소. 게이트 복귀** | 4.0 절. 원인은 도구의 이식성 결함 두 건. run `33521743699` 8 job 전부 green |
+| kimi 워커 대화형 가능성 | **불가로 확정** | 2.9 절. `tui-idle` 대기 후에도 주입 시 종료 |
 
-활성 워커 0, 워크트리는 주 저장소만, 완료 세션 잔류 없음입니다. **회수했습니다.**
+Z1 은 `-p` 단발 모드라 정체 해제 지시가 도달하지 않아 코디네이터가 직접
+마무리했습니다. 산출물 3건 중 `tiny_lgbm_cache` 는 **기각**했습니다. CI 가 매 실행
+새 러너라 이득이 0 이고, `tmp_path_factory` 를 버려 작업 트리를 오염시키며, 학습
+함수가 바뀌어도 낡은 `model.bin` 을 재사용하는 캐시 무효화 결함이 있습니다.
+
+활성 워커 0, 워크트리는 주 저장소만입니다. **회수했습니다.** 다만 Z1·Z2 의
+워크트리·터미널은 감사기가 잡지 못해 한 차례 늦었습니다(2.10 절).
 
 ---
 
@@ -127,7 +136,7 @@ llm 구간도 후보 넷을 전부 닫았습니다. `SYSTEM_PROMPT` 는 Ollama �
 | P1-4 약한 docker 승인 경로 | **해소** | `hold` 로 되돌려 단일 경로로 수렴 |
 | P1-5 리뷰어 unknown provider | **해소** | 고위험·쓰기 fail-closed |
 | P0-2 G2 문서 재평가 | **해소** | 구형 SHA 근거를 현 CI 사실로 교체 |
-| P0-1 Windows CI | **게이트 제외 + 조사 계속** | 아래 |
+| P0-1 Windows CI | **해소(게이트 복귀)** | 4.0 절. 원인은 오케스트레이션 도구의 이식성 결함 두 건이었습니다 |
 
 **감사가 옳았던 지점**: 제가 만든 `classify_docker_execution` 이 `WITH ... UPDATE` 와
 `SELECT ... INTO OUTFILE` 을 승인했습니다. 강한 실행기를 만들면서 약한 경로를 지우지
@@ -148,11 +157,54 @@ llm 구간도 후보 넷을 전부 닫았습니다. `SYSTEM_PROMPT` 는 Ollama �
 4 층에서는 `from ... import make_password` 로 가져간 이름이 **가져간 모듈의
 네임스페이스에 따로 존재**해 원본 모듈 패치가 닿지 않았습니다.
 
-잔여 원인이 남아 Windows job 을 `continue-on-error` 로 **게이트에서만 제외**했습니다.
-**job 은 지우지 않았습니다.** 지우면 회귀를 못 보므로 계속 돌려 로그를 남깁니다.
-근거와 되돌릴 조건은 [`../analysis/windows_ci_soft_fail_20260901.md`](../analysis/windows_ci_soft_fail_20260901.md).
+**이 네 층은 hang 과 무관했습니다.** 당시 게이트에서 제외하며 적은 "342초 ->
+212.90초" 는 완주 시간이 아니라 정지 시점까지의 시간이었고, 매 실행 2090 건에서
+끊겨 약 950 건이 실행되지 않았습니다. 속도 개선은 사실이나 그것이 통과를 뜻하지는
+않았습니다. 실제 원인과 해소는 4.0 절입니다.
 
-**게이트 제외를 통과로 올리지 않았습니다.** G2 는 "보류(Windows 조사 중)" 입니다.
+**같은 세션 후반에 원인을 규명해 `continue-on-error` 를 제거했습니다.** Windows 가
+게이트에 포함된 상태로 전 job green 입니다(run 33521743699).
+
+### 2.9 kimi 워커는 다른 워커와 같은 방식으로 쓸 수 없습니다
+
+**실측으로 확정했습니다.** kimi CLI 자체는 대화형 TUI 가 정상 동작하지만, Orca 의
+프롬프트 주입 경로를 TUI 가 종료로 처리합니다.
+
+| 시도 | 결과 |
+| --- | --- |
+| `--agent-file` 로 지시 로드 + 대화형 기동 | TUI 는 뜨지만 스스로 시작하지 않음 |
+| `sleep` 후 `terminal send --enter` | `Bye!` 종료 |
+| `terminal wait --for tui-idle`(`satisfied: true`) 후 `send --enter` | `Bye!` 종료 |
+| `--enter` 없이 텍스트만 `send` | `Bye!` 종료 |
+
+**타이밍 문제도, Enter 문제도 아닙니다.** 공식 스킬이 권하는
+`orca terminal wait --for tui-idle` 로 준비를 확인한 뒤 보내도 같습니다.
+`scripts/orca_kimi_launch.py` 주석의 "주입된 Enter" 설명보다 범위가 넓습니다.
+
+kimi 공식 문서상 대화형 TUI 에 외부에서 프롬프트를 넣는 수단은 **존재하지
+않습니다.** 프롬프트 입력은 `-p` 하나뿐이고 stdin·파일 리다이렉션도 없습니다.
+유일한 프로그램 제어 경로는 `kimi acp`(JSON-RPC over stdio)이며, 이는 Orca 가
+ACP 클라이언트로 붙어야 해서 **Orca 쪽 기능 없이는 쓸 수 없습니다.**
+
+| 결론 | 내용 |
+| --- | --- |
+| 배정 | `-p` 단발만 가능. **작업 중 개입 불가** |
+| 금지 | 임계 경로, 중간 조정이 필요한 작업 |
+| 정체 시 | 지시 재전송이 **도달하지 않습니다.** 재기동하거나 코디네이터가 직접 마무리합니다 |
+
+Z1 이 `"Now let me commit:"` 에서 토큰이 끊겼을 때 보낸 해제 지시는 화면에 글자로
+찍혔을 뿐 도달하지 않았습니다. **화면 표시를 도달로 판단하지 마십시오.**
+
+### 2.10 완료 세션 감사기에는 사각지대가 있습니다
+
+`scripts/orca_settled_session_audit.py` 는 **Task 가 `completed` 인 세션의 잔류만**
+검사합니다. 워커가 `worker_done` 없이 끝나면(토큰 소진, 창 이탈) Task 가
+`completed` 가 아니므로 "완료 세션 잔류 없음" 이 나옵니다.
+
+이번 세션에서 Z1·Z2 의 워크트리 2개와 터미널 2개가 그렇게 남았고, 감사기 출력만
+믿어 넘어갔다가 사용자가 먼저 발견했습니다. **감사기 출력과 별개로
+`git worktree list` 와 `orca_worker_watch.py` 를 함께 보십시오.** 후자는 같은
+잔류를 `[진행] commits=0 dirty=0` 으로 보여 줍니다.
 
 ---
 
@@ -175,24 +227,59 @@ llm 구간도 후보 넷을 전부 닫았습니다. `SYSTEM_PROMPT` 는 Ollama �
 
 ## 4. 후속 과업
 
-### 4.0 Windows CI 잔여 원인 (게이트 제외 상태, 조사 계속)
+### 4.0 Windows CI hang (해소, 게이트 복귀)
 
-**4.1 과 다른 문제입니다.** 이쪽은 장비 없이도 진행할 수 있습니다.
+**닫혔습니다.** Windows job 이 처음으로 전량을 완주했고 `continue-on-error` 를
+제거해 병합 게이트에 복귀시켰습니다. 근거는
+[`windows_ci_soft_fail_20260901.md`](../analysis/windows_ci_soft_fail_20260901.md)
+후속 절입니다.
 
-| 남은 원인 | Windows 소요 |
-| --- | ---: |
-| `test_kb_incremental_indexing::test_delta_run_*` | 18.54초 |
-| `test_kb_incremental_indexing::test_removed_document_*` | 17.75초 |
-| `test_feature_map_single_build` setup (LightGBM 학습 자체) | 9.09초 |
-| `test_benchmark_arq_container::test_run_container_worker_benchmark_mocked_success` | 7.37초 |
-| `subprocess.py` 대기 중 인터럽트의 실제 원인 | - |
+#### 종전 판단이 틀렸던 지점
 
-**212.90초는 종전 상한(300초)보다 짧은데도 중단됩니다.** 누적 시간 초과가 아닌 다른
-성격일 수 있습니다. 셋이 닫히면 `.github/workflows/ci.yml` 의 `continue-on-error` 줄을
-제거하십시오.
+soft-fail 을 결정할 때 인용한 "342초 -> 212.90초" 는 **완주 시간이 아니라 정지
+시점까지의 시간**이었습니다. Windows 는 매 실행 정확히 `2090 passed` 에서
+`subprocess.py:1282` 의 KeyboardInterrupt 로 끊겼고 약 950 건이 실행되지
+않았습니다. "Windows 도 통과한다" 는 근거는 성립한 적이 없습니다.
 
-**진단 수단은 CI 로그 하나뿐입니다.** `--durations=25` 가 이미 들어가 있으니 그
-출력을 먼저 보십시오. 추측으로 코드를 바꾸면 CI 왕복만 늘어납니다.
+위 표에 "남은 원인" 으로 적었던 느린 테스트 넷은 **hang 과 무관했습니다.**
+속도는 hang 의 원인이 아니며, 그쪽을 줄여도 정지 지점은 그대로였습니다.
+
+#### 정지 지점 특정 방법
+
+Windows 에만 `-v` 를 켜 마지막 완료 테스트를 남겼습니다(run 33518498545).
+`-q` 로는 알 수 없고, `-v` 는 **완료 시** 줄을 찍으므로 마지막 출력의 **다음**
+테스트가 정지 지점입니다.
+
+    tests/test_orca_taskctl.py::test_dispatch_suppresses_mode_switch_when_env_disabled PASSED
+    !!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!
+
+정지 지점은 `test_dispatch_handles_mode_switch_failure_and_exception_gracefully`
+입니다. 로컬 `--collect-only` 순서에서 2110 번째(2090 passed + 20 skipped)를
+계산해도 같은 위치가 나오므로, CI 왕복 전에 후보를 좁힐 수 있습니다.
+
+#### 원인 두 가지 (서비스 코드가 아니라 오케스트레이션 도구의 이식성 결함)
+
+| 원인 | 위치 | 수정 |
+| --- | --- | --- |
+| 테스트가 실제 배경 감시기를 기동 | `start_worker_watch` 미 mock | autouse 픽스처로 차단 |
+| `start_new_session` 이 Windows 에서 무시됨 | `scripts/orca_taskctl.py` | `CREATE_NEW_PROCESS_GROUP \| DETACHED_PROCESS` |
+| `signal.SIGKILL` 이 Windows 에 없음 | `scripts/orca_taskctl.py` | `getattr` 로 SIGTERM 폴백 |
+
+dispatch 테스트가 `orca_worker_watch.py --watch` 무한 루프를 러너에 실제로
+띄웠고, 분리되지 않아 부모와 같은 콘솔 그룹에서 인터럽트가 전파됐습니다.
+
+#### 결과
+
+| 실행 | Windows |
+| --- | --- |
+| 33517528907 | 2090 passed 후 hang |
+| 33518498545 | 2090 passed 후 hang (정지 지점 특정) |
+| 33519652341 | 3024 passed, 1 failed (SIGKILL) |
+| 33520619561 | 3025 passed, 0 failed |
+| **33521743699** | **3025 passed — 게이트 포함 전 job green** |
+
+**G2 판정의 근거가 처음으로 실제와 일치합니다.** 다만 4.1 의 실기 검증은
+그대로 미결입니다.
 
 ### 4.1 Windows Docker Desktop 실기 검증 (장비 대기)
 
@@ -280,6 +367,12 @@ review_checklist:
 | `mysql` 클라이언트 charset 미지정 | `--default-character-set=utf8mb4` 없으면 한글이 깨져 매칭이 0 이 됩니다 |
 | 워커가 셸 리다이렉션·heredoc 으로 파일 쓰기 | 자동 승인 화이트리스트 밖입니다. 편집 도구를 쓰라고 지시하십시오 |
 | 측정 중 저장소 수정 | `start_clean` 과 `target_source_git_dirty` 가 산출물을 무효로 만듭니다. 이 세션에서 두 번 겪었습니다 |
+| **정지한 CI 의 `passed` 수치를 완주로 읽기** | `... in N초` 앞의 `passed` 는 **끊긴 시점까지**의 수입니다. 수집된 전체 건수와 대조하십시오. 이 세션에서 950 건 미실행을 통과로 오독했습니다 |
+| **`-q` 로 hang 지점을 찾으려 하기** | `-v` 를 켜면 마지막 완료 테스트가 남고 그 **다음**이 정지 지점입니다. `--collect-only` 순서로 CI 전에 후보를 좁힐 수 있습니다 |
+| **테스트가 배경 프로세스를 실제로 띄우게 두기** | 러너에 무한 루프가 남고 Windows 에서는 콘솔 그룹을 공유해 pytest 를 죽입니다. autouse 픽스처로 차단하십시오 |
+| **POSIX 전용 API 를 플랫폼 분기 없이 쓰기** | `start_new_session`, `signal.SIGKILL` 은 Windows 에 없거나 무시됩니다. 크로스 플랫폼(G2)은 서비스 코드뿐 아니라 **도구 코드**에도 적용됩니다 |
+| **kimi 워커에 지시를 재전송하고 도달했다고 판단** | `-p` 단발이라 입력을 읽지 않습니다. 화면 표시는 도달이 아닙니다. 2.9 절 |
+| **완료 세션 감사기 출력만으로 회수 완료를 선언** | `worker_done` 없이 끝난 세션은 잡히지 않습니다. `git worktree list` 와 `orca_worker_watch.py` 를 함께 보십시오. 2.10 절 |
 | tail 분석 도구를 게이트 도구로 사용 | 게이트는 `benchmark_latency.py` 입니다 |
 | 배경 대기 루프를 회수하지 않기 | 측정을 중단하면 그 결과를 기다리던 루프도 함께 죽이십시오. 이 세션에서 좀비 4건이 남았습니다 |
 | 분석 문서의 구간 추정을 근거로 사용 | "실측 미수행" 이라고 적혀 있으면 추정입니다. 직접 재십시오 |
@@ -304,14 +397,14 @@ review_checklist:
 
 | 항목 | 값 |
 | --- | --- |
-| 주 저장소 HEAD | `main` `6a32332` |
+| 주 저장소 HEAD | `main` `c21fabf` |
 | 원격 동기 | `origin/main` 과 차이 **0** (푸시 완료) |
 | 워크트리 | 주 저장소만 |
-| 전체 테스트 | **3,040 passed**, 12 skipped, 실패 0 |
+| 전체 테스트 | **3,041 passed**, 12 skipped, 실패 0 |
 | 로컬 실행 시간 | 202초 -> **50초** |
-| 규칙 검사 | **16/16** |
-| **CI 워크플로** | **success** (run `33508869670`) |
-| CI job | 7개 green, Windows 1개는 게이트 제외 상태로 실패 |
+| 규칙 검사 | **17/17** (기계 상태 원장 검사 추가) |
+| **CI 워크플로** | **success** (run `33521743699`) |
+| CI job | **8개 전부 green.** Windows 포함, `continue-on-error` 제거 후 |
 
 ### 6.2 운영 환경
 
@@ -332,7 +425,7 @@ review_checklist:
 
 | 대상 | 상태 |
 | --- | --- |
-| 활성 워커 / 잔류 세션 | **0 / 없음** (`orca_settled_session_audit.py` 통과) |
+| 활성 워커 / 잔류 세션 | **0 / 없음.** 감사기 통과와 별개로 `git worktree list`·`orca_worker_watch.py` 로 재확인했습니다(2.10 절) |
 | 워커 터미널 | 코디네이터 1개만 남음 |
 | 배경 프로세스 | **0** (측정·감시·승인 감시기 전부 종료) |
 | 좀비 대기 루프 | **회수했다** (4건, 조건이 영영 충족되지 않던 것) |
