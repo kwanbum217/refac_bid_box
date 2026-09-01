@@ -607,7 +607,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.output:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        dump_strict_json(report, out_path)
+        out_path.write_text(dump_strict_json(report), encoding="utf-8")
         print(f"[INFO] 결과 저장 완료: {out_path}")
     else:
         print(json.dumps(report, ensure_ascii=False, indent=2))
