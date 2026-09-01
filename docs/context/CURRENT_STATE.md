@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-01
-> **source_commit**: `f2310c3`
+> **source_commit**: `e9934e9`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -284,7 +284,7 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
   확인해 정정했습니다.
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
-  다음 착수 순서는 [`../ops/handoff_20260901_wave_k.md`](../ops/handoff_20260901_wave_k.md) 4장입니다.
+  다음 착수 순서는 [`../ops/handoff_20260901_cutover.md`](../ops/handoff_20260901_cutover.md) 4장입니다.
 - **Wave K 조율 평면 (2026-09-01, 병합 완료)**: I-H 경계값 픽스처(`a0ec7e3`)와 J3 리뷰 문서(`32b2426`)를
   병합했고, `main` 에 남아 있던 테스트 실패 27건을 닫았습니다(`7dac20f`). 원인은 `b889ee6` 의 완료 세션
   잔류 검사가 테스트 안에서 실제 Orca 런타임을 호출해 fail-closed 로 거부한 것이며, 검사를 주입 가능한
