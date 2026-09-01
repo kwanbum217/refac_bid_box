@@ -884,6 +884,62 @@ def check_agents_model_table_absence(
     )
 
 
+def _parse_facts_without_yaml(text: str) -> dict:
+    """PyYAML 없이 상태 원장의 최소 구조만 읽습니다.
+
+    **pre-commit 은 이 스크립트를 시스템 `python3` 로 실행하며 거기에는 PyYAML 이
+    없습니다.** `uv run` 에서만 통과하고 커밋 훅에서는 실패하면 검사가 사실상
+    작동하지 않습니다(2026-09-01 실측: uv 17/17 통과, python3 16/17 실패).
+
+    들여쓰기로 항목 경계를 판정합니다. `related_documents` 처럼 중첩된 목록의
+    `- ` 항목을 새 fact 로 오인하지 않으려면 이 구분이 필요합니다.
+
+    중첩 매핑이나 인용 규칙을 온전히 다루지는 않으므로, **형식이 복잡해지면
+    PyYAML 을 의존성에 넣고 이 함수를 지우십시오.**
+    """
+    facts: list[dict] = []
+    current: dict | None = None
+    item_indent: int | None = None
+    pending_list_key: str | None = None
+
+    for raw in text.splitlines():
+        if not raw.strip() or raw.strip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        stripped = raw.strip()
+
+        if stripped.startswith("- "):
+            body = stripped[2:].strip()
+            is_new_fact = item_indent is None or indent <= item_indent
+            if is_new_fact and ":" in body:
+                item_indent = indent
+                current = {}
+                facts.append(current)
+                stripped = body
+            else:
+                # 중첩 목록의 값입니다. 직전 키의 목록에 담습니다.
+                if current is not None and pending_list_key:
+                    current.setdefault(pending_list_key, []).append(body)
+                continue
+        elif current is not None and item_indent is not None and indent <= item_indent:
+            # 항목보다 얕게 돌아오면 facts 블록을 벗어난 것입니다.
+            current = None
+            continue
+
+        if current is None or ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if value:
+            current[key] = value
+            pending_list_key = None
+        else:
+            # 값이 비면 다음 줄부터 목록이 이어집니다.
+            pending_list_key = key
+    return {"facts": facts}
+
+
 def check_current_state_fact_statuses(root: Path = PROJECT_ROOT) -> CheckResult:
     """기계 판독 상태 원장과 CURRENT_STATE 서술의 상태 정합성을 검사합니다."""
     name = "CURRENT_STATE 기계 상태 원장 정합성"
@@ -894,7 +950,11 @@ def check_current_state_fact_statuses(root: Path = PROJECT_ROOT) -> CheckResult:
     if not state_path.exists():
         return CheckResult(name, False, "docs/context/CURRENT_STATE.md 없음")
     try:
-        facts = yaml.safe_load(read_text(facts_path)) if yaml is not None else None
+        facts = (
+            yaml.safe_load(read_text(facts_path))
+            if yaml is not None
+            else _parse_facts_without_yaml(read_text(facts_path))
+        )
     except Exception as exc:
         return CheckResult(name, False, f"상태 원장 YAML 파싱 실패: {exc}")
     if not isinstance(facts, dict) or not isinstance(facts.get("facts"), list):
