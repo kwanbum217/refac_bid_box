@@ -112,11 +112,22 @@ def _count_builds(monkeypatch) -> list:
     return calls
 
 
-@pytest.fixture
-def tiny_model_dir(tmp_path):
+@pytest.fixture(scope="module")
+def tiny_model_dir(tmp_path_factory):
+    """소형 LGBM 을 모듈당 한 번만 학습해 재사용합니다.
+
+    함수 scope 로 두면 이 파일의 테스트 6건이 각각 LightGBM 학습과 joblib 저장을
+    반복합니다. Windows CI 에서 이 fixture setup 하나가 18.60초였습니다
+    (2026-09-01 CI run 33506224151). 학습 결과는 난수 시드가 고정돼 있어 매번
+    같으므로 재사용해도 검증 의미가 바뀌지 않습니다.
+
+    **모델 파일을 수정하는 테스트가 생기면 이 scope 를 되돌리십시오.** 지금은
+    읽기만 합니다.
+    """
     model = _fit_tiny_lgbm()
-    joblib.dump(model, tmp_path / "model.bin")
-    return str(tmp_path)
+    model_dir = tmp_path_factory.mktemp("tiny_model")
+    joblib.dump(model, model_dir / "model.bin")
+    return str(model_dir)
 
 
 def test_predict_request_builds_feature_map_once(monkeypatch, tiny_model_dir):

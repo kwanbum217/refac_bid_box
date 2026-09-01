@@ -139,6 +139,18 @@ def _fast_password(monkeypatch):
     monkeypatch.setattr(_accounts_mod, "check_password", _fast_check_password)
     monkeypatch.setattr(_ui_mod, "check_password", _fast_check_password)
 
+    # 테스트 5개 파일이 fixture 안에서 security.make_password 를 직접 불러 계정을
+    # 만듭니다. 위 모듈 패치는 API 경로만 덮으므로 그 fixture setup 이 그대로
+    # 600,000회를 돌았습니다. Windows CI 에서 setup 하나가 4.26초였습니다
+    # (2026-09-01 CI run 33506224151).
+    #
+    # 원본 모듈의 함수를 빠른 버전으로 바꾸되 **저장 형식(알고리즘$반복수$솔트$해시)은
+    # 그대로 유지**합니다. 검증 함수가 저장된 반복 횟수를 따라가므로 두 방식으로 만든
+    # 해시가 섞여도 정상 동작합니다.
+    import src.app.core.security as _security_mod
+
+    monkeypatch.setattr(_security_mod, "make_password", _fast_make_password)
+
 
 @pytest.fixture(autouse=True)
 def _disable_orca_auto_approve(monkeypatch):
