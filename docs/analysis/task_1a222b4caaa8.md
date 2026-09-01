@@ -1,7 +1,8 @@
 # MySQL ngram FULLTEXT 미실측 7개 특수 경계값 동등성 검증 및 Fail-Closed 정정 보고서
 
-> **작성일**: 2026-08-31
-> **Task ID**: `task_1a222b4caaa8` (Section I-H)
+> **작성일**: 2026-08-31 (2026-09-01 Rebase 갱신)
+> **Task ID**: `task_1a222b4caaa8` / `task_1584401ebfcf` (Section I-H / K1-IH Rebase)
+> **기준 커밋**: `5f09059` (main)
 > **관련 문서**: [`docs/context/CURRENT_STATE.md`](file://../../docs/context/CURRENT_STATE.md), [`tests/test_ngram_prefilter_equivalence.py`](file://../../tests/test_ngram_prefilter_equivalence.py), [`tests/fixtures/ngram_edge_keywords.json`](file://../../tests/fixtures/ngram_edge_keywords.json)
 > **검증 대상**: MySQL 8 ngram FULLTEXT 선행필터 적용 시 7개 미실측 특수 경계값의 결과 집합 동등성(ID set equality) 및 안전 판정
 
@@ -19,6 +20,7 @@
 2. 7개 특수 경계값 각각에 대해 baseline LIKE와 MATCH+LIKE의 ID 집합 동등성을 검증하는 `mysql_integration` 테스트 및 단위 테스트 구축.
 3. category(유/무) 및 date(유/무) 필터 조합을 모두 포괄하는 SQL 질의 하네스 확장.
 4. `%`, `_`, 따옴표, boolean 연산자 문자의 boolean query escaping 및 LIKE escape 의미 검증.
+5. 로컬 `main` 기준 최신 커밋(`5f09059`) 위로 rebase 후 정합성 검증.
 
 ---
 
@@ -59,9 +61,13 @@
 
 ## 4. 검증 결과 및 안전 원칙 준수 확인
 
-1. **단위 테스트**: `uv run pytest tests/test_ngram_prefilter_equivalence.py -k unit -v` 18개 전량 통과.
-2. **에이전트 규칙 검증**: `python3 scripts/validate_agent_rules.py` 16/16 전량 통과.
+1. **대상 테스트 실행 결과**:
+   - `uv run pytest tests/test_ngram_prefilter_equivalence.py -v`
+   - 결과: **18 passed, 9 skipped** (운영 DB probe index 미생성 상태에서 mysql_integration 9건 skip 정상 동작).
+2. **에이전트 규칙 검증**:
+   - `python3 scripts/validate_agent_rules.py --quiet`
+   - 결과: **16/16 건 전량 통과**.
 3. **운영 안전성 불변 원칙 준수**:
-   - `src/rag/structured_data.py` 및 운영 DDL은 전혀 수정하지 않았습니다.
+   - `src/rag/structured_data.py` 및 운영 DDL 무수정 유지.
    - 운영 MySQL 인스턴스에 대한 DDL 실행 0건.
    - 신규 외부 라이브러리 추가 0건.
