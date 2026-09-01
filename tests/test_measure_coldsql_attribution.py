@@ -404,3 +404,32 @@ def test_canonical_gate_cleared_when_both_flush_requested_and_cache_flushed(tmp_
 
     canonical_eval = report["canonical_evaluation"]
     assert "flush_cache_executed" not in canonical_eval["failed_gates"]
+
+
+# ---------------------------------------------------------------------------
+# 6. 산출물 저장 경로
+# ---------------------------------------------------------------------------
+def test_main_writes_output_file_when_output_given(tmp_path: Path):
+    """--output 지정 시 측정 보고서가 실제 파일로 저장되어야 합니다.
+
+    2026-09-01 에 이 경로가 dump_strict_json(report, out_path) 로 잘못 호출되어
+    32문항 x 3회 측정을 완주하고도 TypeError 로 결과 전량이 유실됐습니다.
+    측정은 되돌리기 비싼 작업이므로 저장 경로를 회귀로 고정합니다.
+    """
+    out_path = tmp_path / "nested" / "report.json"
+    report = {"metadata": {"item_count": 32}, "summary": {"cold_total_sql_sec": 1.5}}
+
+    with patch("scripts.measure_coldsql_attribution.run_attribution_measurement") as mock_run:
+        mock_run.return_value = report
+        exit_code = main(
+            [
+                "--fixture",
+                "data/eval/llm_quality_fixture_v2.json",
+                "--output",
+                str(out_path),
+            ]
+        )
+
+    assert exit_code == 0
+    assert out_path.exists(), "--output 경로에 보고서 파일이 생성되어야 합니다."
+    assert json.loads(out_path.read_text(encoding="utf-8")) == report
