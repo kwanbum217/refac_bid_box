@@ -31,6 +31,36 @@ from scripts.orca_level1_gate import (
 GIT_BIN = shutil.which("git") or "/usr/bin/git"
 
 
+@pytest.fixture(autouse=True)
+def mock_subprocesses(monkeypatch):
+    """비-git 하위 프로세스 호출(pytest, validate_agent_rules, ruff)을 mock 하여 Level 1 게이트 테스트 속도를 대폭 높입니다."""
+    from scripts import orca_level1_gate
+
+    orig_run_command_safe = orca_level1_gate.run_command_safe
+
+    def mock_run_command_safe(cmd, cwd, timeout):
+        cmd_str = " ".join(str(c) for c in cmd)
+        if cmd and "git" in Path(str(cmd[0])).name:
+            return orig_run_command_safe(cmd, cwd, timeout)
+
+        if "ruff" in cmd_str:
+            # ruff lint 시뮬레이션: cwd에 tests/test_x.py에 import json 이 있으면 위반 검출
+            test_x = Path(cwd) / "tests" / "test_x.py"
+            if test_x.exists() and "import json" in test_x.read_text(encoding="utf-8"):
+                return 1, "tests/test_x.py:1:1: F401 `json` imported but unused", "", False
+            return 0, "All checks passed!", "", False
+
+        if "validate_agent_rules.py" in cmd_str:
+            return 0, "검증 통과: 12/12 건.", "", False
+
+        if "pytest" in cmd_str:
+            return 0, "1 passed in 0.01s", "", False
+
+        return orig_run_command_safe(cmd, cwd, timeout)
+
+    monkeypatch.setattr(orca_level1_gate, "run_command_safe", mock_run_command_safe)
+
+
 def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str]:
     """테스트용 임시 git 저장소를 생성합니다.
 
@@ -41,18 +71,6 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str]:
 
     subprocess.run(  # noqa: S603
         [GIT_BIN, "init", "-b", "main"],
-        cwd=str(repo),
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(  # noqa: S603
-        [GIT_BIN, "config", "user.email", "test@example.com"],
-        cwd=str(repo),
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(  # noqa: S603
-        [GIT_BIN, "config", "user.name", "Test"],
         cwd=str(repo),
         check=True,
         capture_output=True,
@@ -73,7 +91,16 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str]:
         capture_output=True,
     )
     subprocess.run(  # noqa: S603
-        [GIT_BIN, "commit", "-m", "chore: initial base commit"],
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            "chore: initial base commit",
+        ],
         cwd=str(repo),
         check=True,
         capture_output=True,
@@ -96,7 +123,16 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str]:
         capture_output=True,
     )
     subprocess.run(  # noqa: S603
-        [GIT_BIN, "commit", "-m", "feat: branch changes"],
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            "feat: branch changes",
+        ],
         cwd=str(repo),
         check=True,
         capture_output=True,
@@ -117,7 +153,16 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str]:
         capture_output=True,
     )
     subprocess.run(  # noqa: S603
-        [GIT_BIN, "commit", "-m", "chore: main extra commit"],
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            "chore: main extra commit",
+        ],
         cwd=str(repo),
         check=True,
         capture_output=True,
@@ -616,14 +661,12 @@ def test_rename_to_document_suffix_does_not_exempt_verification(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-b", "main")
-    _git(repo, "config", "user.email", "t@example.com")
-    _git(repo, "config", "user.name", "t")
     (repo / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
     _git(repo, "add", "a.py")
-    _git(repo, "commit", "-m", "base")
+    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "base")
     _git(repo, "checkout", "-b", "feature")
     _git(repo, "mv", "a.py", "docs.md")
-    _git(repo, "commit", "-m", "rename")
+    _git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-m", "rename")
 
     changed, _unique, renames = get_git_changed_files(repo, "main", "feature")
     assert changed == ["docs.md"]

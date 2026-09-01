@@ -932,13 +932,30 @@ def test_benchmark_latency_main_fails_when_container_swapped_during_measurement(
 
     monkeypatch.setattr(benchmark_latency, "_command_output", mock_command_output)
 
-    # 벤치마크 루틴 mock
+    # 벤치마크 루틴 및 부하 모니터 mock
     sample = Samples("dummy", values=[10.0])
     monkeypatch.setattr(benchmark_latency, "benchmark_predict", lambda *a, **kw: sample)
     monkeypatch.setattr(
         benchmark_latency, "benchmark_sse_canonical", lambda *a, **kw: (sample, sample, sample)
     )
     monkeypatch.setattr(benchmark_latency, "benchmark_query", lambda *a, **kw: sample)
+
+    class FastLoadMonitor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            return self
+
+        def stop(self):
+            return {
+                "cpu_count": 4,
+                "samples": [],
+                "load_1m": {"min": None, "median": None, "max": None},
+                "per_core_percent": {"min": None, "median": None, "max": None},
+            }
+
+    monkeypatch.setattr(benchmark_latency, "HostLoadMonitor", FastLoadMonitor)
 
     out_file = tmp_path / "test_out.json"
     monkeypatch.setattr(
