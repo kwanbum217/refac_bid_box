@@ -131,6 +131,7 @@ def test_collect_adds_advice_note_on_blocked() -> None:
         patch(
             "scripts.orca_worker_watch.terminal_tail", return_value="Accept this file edit?\n[Y/n]"
         ),
+        patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
     ):
         states = watch.collect(watch.Path("/tmp/repo"), "main")
         assert len(states) == 1
@@ -299,6 +300,7 @@ def test_collect_adds_failure_note_on_failure_block() -> None:
             "scripts.orca_worker_watch.terminal_tail",
             return_value="Error: network error while streaming response",
         ),
+        patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
     ):
         states = watch.collect(watch.Path("/tmp/repo"), "main")
         assert len(states) == 1
@@ -385,6 +387,7 @@ def test_collect_selects_worker_terminal_over_shell(capsys: pytest.CaptureFixtur
         patch("scripts.orca_worker_watch.worktree_progress", return_value=(1, 0)),
         patch("scripts.orca_worker_watch.terminal_map", return_value=fake_terminals),
         patch("scripts.orca_worker_watch.terminal_tail", return_value="working normally"),
+        patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
     ):
         states = watch.collect(watch.Path("/tmp/repo"), "main")
         assert len(states) == 1
@@ -610,3 +613,49 @@ def test_worker_done_valid_report_file_not_blocked(tmp_path: Path) -> None:
     )
     res = watch.detect_block(screen_tail, worktree_path=str(tmp_path))
     assert res is None
+
+
+def test_collect_does_not_touch_real_runtime() -> None:
+    """collect 는 잔류 세션 조회를 주입 가능한 지점으로 통과해야 합니다.
+
+    2026-09-01 까지 collect 안에서 audit_lingering_sessions 를 직접 import 하고
+    불러 **단위 테스트가 실제 Orca 런타임에 붙었습니다.** list_worktrees 를 mock 해도
+    막히지 않아, 개발 머신에 열린 워크트리 수에 따라 통과 여부가 갈렸습니다
+    (워크트리 4개면 assert 1 == 4, 2개면 assert 1 == 2). CI 는 워크트리가 없어
+    통과하므로 로컬에서만 깨졌습니다.
+    """
+    fake_worktrees = [("w1", "/tmp/w1", "feature")]
+    called = []
+
+    def fake_lingering():
+        called.append(True)
+        return []
+
+    with (
+        patch("scripts.orca_worker_watch.list_worktrees", return_value=fake_worktrees),
+        patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
+        patch("scripts.orca_worker_watch.terminal_map", return_value={}),
+        patch("scripts.orca_worker_watch.collect_lingering_sessions", fake_lingering),
+    ):
+        states = watch.collect(watch.Path("/tmp/repo"), "main")
+
+    assert len(states) == 1, "주입한 워크트리 외의 상태가 섞이면 실환경에 붙은 것입니다."
+    assert called, "잔류 세션 조회는 주입 가능한 함수를 거쳐야 합니다."
+
+
+def test_collect_survives_lingering_lookup_failure() -> None:
+    """잔류 세션 조회가 실패해도 감시 자체는 계속돼야 합니다."""
+    fake_worktrees = [("w1", "/tmp/w1", "feature")]
+
+    def boom():
+        raise RuntimeError("orca runtime unavailable")
+
+    with (
+        patch("scripts.orca_worker_watch.list_worktrees", return_value=fake_worktrees),
+        patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
+        patch("scripts.orca_worker_watch.terminal_map", return_value={}),
+        patch("scripts.orca_worker_watch.collect_lingering_sessions", boom),
+    ):
+        states = watch.collect(watch.Path("/tmp/repo"), "main")
+
+    assert len(states) == 1

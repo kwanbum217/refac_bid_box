@@ -430,6 +430,24 @@ def update_history(
                 s.notes.append(stall_note)
 
 
+def collect_lingering_sessions() -> list[dict[str, Any]]:
+    """완료 세션 잔류 목록을 돌려줍니다.
+
+    `collect()` 안에서 직접 import 하고 부르면 **테스트가 대체할 지점이 없습니다.**
+    그 결과 `list_worktrees` 를 mock 한 단위 테스트가 실제 Orca 런타임에 붙어,
+    개발 머신에 워크트리가 몇 개 열려 있느냐에 따라 통과 여부가 갈렸습니다
+    (2026-09-01 실측: `assert 1 == 4`, 워크트리를 줄이면 `assert 1 == 2`).
+    CI 는 워크트리가 없어 통과하므로 로컬에서만 깨져 더 헷갈립니다.
+
+    모듈 수준 함수로 두면 단위 테스트가 이 이름 하나만 대체하면 됩니다.
+    """
+    try:
+        from scripts.orca_settled_session_audit import audit_lingering_sessions
+    except (ModuleNotFoundError, ImportError):
+        from orca_settled_session_audit import audit_lingering_sessions
+    return audit_lingering_sessions().get("lingering") or []
+
+
 def collect(
     repo: Path,
     base: str = "main",
@@ -466,11 +484,7 @@ def collect(
         states.append(state)
 
     try:
-        from scripts.orca_settled_session_audit import audit_lingering_sessions
-    except (ModuleNotFoundError, ImportError):
-        from orca_settled_session_audit import audit_lingering_sessions
-    try:
-        lingering = audit_lingering_sessions().get("lingering") or []
+        lingering = collect_lingering_sessions()
     except Exception:
         lingering = []
     lingering_by_handle = {item.get("handle"): item for item in lingering if item.get("handle")}
