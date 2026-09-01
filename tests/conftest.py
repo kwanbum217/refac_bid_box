@@ -147,9 +147,25 @@ def _fast_password(monkeypatch):
     # 원본 모듈의 함수를 빠른 버전으로 바꾸되 **저장 형식(알고리즘$반복수$솔트$해시)은
     # 그대로 유지**합니다. 검증 함수가 저장된 반복 횟수를 따라가므로 두 방식으로 만든
     # 해시가 섞여도 정상 동작합니다.
+    import sys
+
     import src.app.core.security as _security_mod
 
+    _original_make_password = _security_mod.make_password
     monkeypatch.setattr(_security_mod, "make_password", _fast_make_password)
+
+    # `from ... import make_password` 로 가져간 이름은 **가져간 모듈의 네임스페이스에
+    # 따로 존재**합니다. 원본 모듈만 패치하면 그 이름은 그대로 600,000회를 돕니다.
+    # 2026-09-01 CI 에서 원본 패치 후에도 test_home_list_parity 등의 setup 이 4.30초로
+    # 남은 것이 이 때문입니다.
+    #
+    # 이미 임포트된 테스트 모듈을 훑어 같은 함수를 참조하는 이름만 바꿉니다. 이름이
+    # 같아도 다른 함수를 가리키면 건드리지 않습니다.
+    for module in list(sys.modules.values()):
+        if module is None or not getattr(module, "__name__", "").startswith("tests"):
+            continue
+        if getattr(module, "make_password", None) is _original_make_password:
+            monkeypatch.setattr(module, "make_password", _fast_make_password)
 
 
 @pytest.fixture(autouse=True)
