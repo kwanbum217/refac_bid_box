@@ -1,0 +1,2396 @@
+{
+  "metadata": {
+    "harness": "measure_coldsql_attribution",
+    "version": "1.0.0",
+    "timestamp_start_utc": "2026-09-01T05:21:49.146453+00:00",
+    "timestamp_end_utc": "2026-09-01T05:39:32.919869+00:00",
+    "git_sha": "d3cad6c1dbe22a6061f79ca60afcba421b26bcc6",
+    "git_dirty": false,
+    "fixture_path": "data/eval/llm_quality_fixture_v2.json",
+    "fixture_sha256": "2c98c636a478cfc92870533513b4442704d8441bd217e303489c9bcf0752e483",
+    "target_item_ids": [
+      "q01",
+      "q02",
+      "q03",
+      "q04",
+      "q05",
+      "q06",
+      "q07",
+      "q08",
+      "q09",
+      "q10",
+      "q11",
+      "q12",
+      "q13",
+      "q14",
+      "q15",
+      "q16",
+      "q17",
+      "q18",
+      "q19",
+      "q20",
+      "q21",
+      "q22",
+      "q23",
+      "q24",
+      "q25",
+      "q26",
+      "q27",
+      "q28",
+      "q29",
+      "q30",
+      "q31",
+      "q32"
+    ],
+    "item_count": 32,
+    "total_fixture_items": 32,
+    "repetitions": 3,
+    "flush_cache_requested": true,
+    "cache_flushed": true,
+    "base_url": "http://127.0.0.1:8000"
+  },
+  "canonical_evaluation": {
+    "is_canonical": true,
+    "failed_gates": []
+  },
+  "cold_measurements": {
+    "queries": [
+      {
+        "item_id": "q01",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 19886.70812500095,
+        "error": null
+      },
+      {
+        "item_id": "q02",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 18572.722625000097,
+        "error": null
+      },
+      {
+        "item_id": "q03",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 103971.30925000056,
+        "error": null
+      },
+      {
+        "item_id": "q04",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4557.776833000389,
+        "error": null
+      },
+      {
+        "item_id": "q05",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3551.756082999418,
+        "error": null
+      },
+      {
+        "item_id": "q06",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3725.770292001471,
+        "error": null
+      },
+      {
+        "item_id": "q07",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3796.518458000719,
+        "error": null
+      },
+      {
+        "item_id": "q08",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 87523.28450000095,
+        "error": null
+      },
+      {
+        "item_id": "q09",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4678.983707999578,
+        "error": null
+      },
+      {
+        "item_id": "q10",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4074.3636669994885,
+        "error": null
+      },
+      {
+        "item_id": "q11",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 5161.191875000441,
+        "error": null
+      },
+      {
+        "item_id": "q12",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4087.6500840004155,
+        "error": null
+      },
+      {
+        "item_id": "q13",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3958.2633749996603,
+        "error": null
+      },
+      {
+        "item_id": "q14",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3784.0567500006728,
+        "error": null
+      },
+      {
+        "item_id": "q15",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3649.908208000852,
+        "error": null
+      },
+      {
+        "item_id": "q16",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4133.886667001207,
+        "error": null
+      },
+      {
+        "item_id": "q17",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4106.425374999162,
+        "error": null
+      },
+      {
+        "item_id": "q18",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3879.4051250006305,
+        "error": null
+      },
+      {
+        "item_id": "q19",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4014.3269170002895,
+        "error": null
+      },
+      {
+        "item_id": "q20",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3904.0000830009376,
+        "error": null
+      },
+      {
+        "item_id": "q21",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4291.924499999368,
+        "error": null
+      },
+      {
+        "item_id": "q22",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4195.876124998904,
+        "error": null
+      },
+      {
+        "item_id": "q23",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3771.959792000416,
+        "error": null
+      },
+      {
+        "item_id": "q24",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3462.8093330011325,
+        "error": null
+      },
+      {
+        "item_id": "q25",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 90050.94058400027,
+        "error": null
+      },
+      {
+        "item_id": "q26",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 1223.1343750008818,
+        "error": null
+      },
+      {
+        "item_id": "q27",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3155.389125000511,
+        "error": null
+      },
+      {
+        "item_id": "q28",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3089.649792000273,
+        "error": null
+      },
+      {
+        "item_id": "q29",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 2602.4044999994658,
+        "error": null
+      },
+      {
+        "item_id": "q30",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 2940.8654170001682,
+        "error": null
+      },
+      {
+        "item_id": "q31",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 95468.14187499876,
+        "error": null
+      },
+      {
+        "item_id": "q32",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3211.0801250000804,
+        "error": null
+      },
+      {
+        "item_id": "q01",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4258.336250000866,
+        "error": null
+      },
+      {
+        "item_id": "q02",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 5003.9370829999825,
+        "error": null
+      },
+      {
+        "item_id": "q03",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3823.4581250017072,
+        "error": null
+      },
+      {
+        "item_id": "q04",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3725.525125000786,
+        "error": null
+      },
+      {
+        "item_id": "q05",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3667.806458999621,
+        "error": null
+      },
+      {
+        "item_id": "q06",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3887.7054160002444,
+        "error": null
+      },
+      {
+        "item_id": "q07",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3920.7915829993,
+        "error": null
+      },
+      {
+        "item_id": "q08",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 6598.339250000208,
+        "error": null
+      },
+      {
+        "item_id": "q09",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4296.664499999679,
+        "error": null
+      },
+      {
+        "item_id": "q10",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3957.8554590007116,
+        "error": null
+      },
+      {
+        "item_id": "q11",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4689.615374998539,
+        "error": null
+      },
+      {
+        "item_id": "q12",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3916.643791999377,
+        "error": null
+      },
+      {
+        "item_id": "q13",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3886.7353749992617,
+        "error": null
+      },
+      {
+        "item_id": "q14",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3630.3360000001703,
+        "error": null
+      },
+      {
+        "item_id": "q15",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3602.006541999799,
+        "error": null
+      },
+      {
+        "item_id": "q16",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3836.8245420006133,
+        "error": null
+      },
+      {
+        "item_id": "q17",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4109.870374999446,
+        "error": null
+      },
+      {
+        "item_id": "q18",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3757.478875000743,
+        "error": null
+      },
+      {
+        "item_id": "q19",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4036.9949169999018,
+        "error": null
+      },
+      {
+        "item_id": "q20",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3729.4403340001736,
+        "error": null
+      },
+      {
+        "item_id": "q21",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4356.478540999888,
+        "error": null
+      },
+      {
+        "item_id": "q22",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4211.503208000067,
+        "error": null
+      },
+      {
+        "item_id": "q23",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4101.711167000758,
+        "error": null
+      },
+      {
+        "item_id": "q24",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 2992.84416699993,
+        "error": null
+      },
+      {
+        "item_id": "q25",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 1930.0230000008014,
+        "error": null
+      },
+      {
+        "item_id": "q26",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 988.0536250002478,
+        "error": null
+      },
+      {
+        "item_id": "q27",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3160.0252499993076,
+        "error": null
+      },
+      {
+        "item_id": "q28",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3049.1088749986375,
+        "error": null
+      },
+      {
+        "item_id": "q29",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 2221.6526250012976,
+        "error": null
+      },
+      {
+        "item_id": "q30",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 2130.41183399946,
+        "error": null
+      },
+      {
+        "item_id": "q31",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 2448.340041000847,
+        "error": null
+      },
+      {
+        "item_id": "q32",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3109.5149159991706,
+        "error": null
+      },
+      {
+        "item_id": "q01",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3753.2810000011523,
+        "error": null
+      },
+      {
+        "item_id": "q02",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4458.585000000312,
+        "error": null
+      },
+      {
+        "item_id": "q03",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3142.161166999358,
+        "error": null
+      },
+      {
+        "item_id": "q04",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3655.104166999081,
+        "error": null
+      },
+      {
+        "item_id": "q05",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3590.436624999711,
+        "error": null
+      },
+      {
+        "item_id": "q06",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3847.1074999997654,
+        "error": null
+      },
+      {
+        "item_id": "q07",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3680.8584999998857,
+        "error": null
+      },
+      {
+        "item_id": "q08",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 6567.598916999486,
+        "error": null
+      },
+      {
+        "item_id": "q09",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4141.732291998778,
+        "error": null
+      },
+      {
+        "item_id": "q10",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3960.5206249998446,
+        "error": null
+      },
+      {
+        "item_id": "q11",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4214.382374999332,
+        "error": null
+      },
+      {
+        "item_id": "q12",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3823.89004200013,
+        "error": null
+      },
+      {
+        "item_id": "q13",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3832.5140830002056,
+        "error": null
+      },
+      {
+        "item_id": "q14",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3524.986166999952,
+        "error": null
+      },
+      {
+        "item_id": "q15",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3504.052457999933,
+        "error": null
+      },
+      {
+        "item_id": "q16",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3806.5597500008153,
+        "error": null
+      },
+      {
+        "item_id": "q17",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3598.8428330001625,
+        "error": null
+      },
+      {
+        "item_id": "q18",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3510.1037499989616,
+        "error": null
+      },
+      {
+        "item_id": "q19",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3587.8327080008603,
+        "error": null
+      },
+      {
+        "item_id": "q20",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3459.3778749986086,
+        "error": null
+      },
+      {
+        "item_id": "q21",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4166.9620419997955,
+        "error": null
+      },
+      {
+        "item_id": "q22",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4161.093542001254,
+        "error": null
+      },
+      {
+        "item_id": "q23",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3621.8324580004264,
+        "error": null
+      },
+      {
+        "item_id": "q24",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 2781.1696249991655,
+        "error": null
+      },
+      {
+        "item_id": "q25",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 1835.784999999305,
+        "error": null
+      },
+      {
+        "item_id": "q26",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 1155.5982919999224,
+        "error": null
+      },
+      {
+        "item_id": "q27",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3061.450375000277,
+        "error": null
+      },
+      {
+        "item_id": "q28",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 2937.699916001293,
+        "error": null
+      },
+      {
+        "item_id": "q29",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 2062.534874999983,
+        "error": null
+      },
+      {
+        "item_id": "q30",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 1972.7850830004172,
+        "error": null
+      },
+      {
+        "item_id": "q31",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 2372.3439169989433,
+        "error": null
+      },
+      {
+        "item_id": "q32",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 2735.035625000819,
+        "error": null
+      }
+    ],
+    "digest_stats": [
+      {
+        "digest": "6f07b00e79acedb60eb42f6872b3200ce15a819d48f989a81d9330cafe5684a1",
+        "digest_text": "SELECT `bid_results` . `bidwinnr_nm` , COUNT ( `bid_results` . `id` ) AS `count_1` FROM `bid_results` WHERE `bid_results` . `bidwinnr_nm` IS NOT NULL AND ( `bid_results` . `bidwinnr_nm` NOT LIKE `concat` (...) ) AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ? GROUP BY `bid_results` . `bidwinnr_nm` ORDER BY COUNT ( `bid_results` . `id` ) DESC LIMIT ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 49283625952000,
+        "sum_timer_wait_sec": 49.283625952,
+        "min_timer_wait_ms": 15436.509993,
+        "avg_timer_wait_ms": 16427.875317,
+        "max_timer_wait_ms": 18402.878633
+      },
+      {
+        "digest": "d862a9b006454ba467cd85a3b98d16a68c46e83e9f2c808715fb922058aec171",
+        "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 42995220533000,
+        "sum_timer_wait_sec": 42.995220533,
+        "min_timer_wait_ms": 13306.275242,
+        "avg_timer_wait_ms": 14331.740177,
+        "max_timer_wait_ms": 15151.951451
+      },
+      {
+        "digest": "467c5dee467ac42c321e0add68c9cb4cedca6c2da2069b538f5beea5884f6362",
+        "digest_text": "SELECT `bid_announcements` . `dminstt_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `dminstt_nm` IS NOT NULL AND ( `bid_announcements` . `dminstt_nm` NOT LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? GROUP BY `bid_announcements` . `dminstt_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 41893428895000,
+        "sum_timer_wait_sec": 41.893428895,
+        "min_timer_wait_ms": 12476.393631,
+        "avg_timer_wait_ms": 13964.476298,
+        "max_timer_wait_ms": 14880.101548
+      },
+      {
+        "digest": "df07c484ff5a619eb3c0483a7066e5cdfae111e266c23908fdeb1c7faa2ab1a5",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_nm` IS NOT NULL AND ( `bid_announcements` . `bid_ntce_nm` NOT LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? GROUP BY `bid_announcements` . `bid_ntce_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 40739990908000,
+        "sum_timer_wait_sec": 40.739990908,
+        "min_timer_wait_ms": 13246.355632,
+        "avg_timer_wait_ms": 13579.996969,
+        "max_timer_wait_ms": 14149.05095
+      },
+      {
+        "digest": "b13528444781e906f28019834d06b34616b1baa8dfe590ba8456175ba13fb408",
+        "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? LIMIT ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 39592634380000,
+        "sum_timer_wait_sec": 39.59263438,
+        "min_timer_wait_ms": 12583.131923,
+        "avg_timer_wait_ms": 13197.544793,
+        "max_timer_wait_ms": 13658.807299
+      },
+      {
+        "digest": "cffc98fd43f8ff9a1a41e5130eef772f6c89d79236b90b1b1fd05c13f05363cb",
+        "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `bid_ntce_nm` LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? LIMIT ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 38468576004000,
+        "sum_timer_wait_sec": 38.468576004,
+        "min_timer_wait_ms": 12575.616825,
+        "avg_timer_wait_ms": 12822.858668,
+        "max_timer_wait_ms": 13087.493298
+      },
+      {
+        "digest": "e1604a3d38bc11a87ba5f8971251b1f22aaabde5d3476cd6bdeb002528e2763c",
+        "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `bid_ntce_nm` LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 27094817207000,
+        "sum_timer_wait_sec": 27.094817207,
+        "min_timer_wait_ms": 27094.817207,
+        "avg_timer_wait_ms": 27094.817207,
+        "max_timer_wait_ms": 27094.817207
+      },
+      {
+        "digest": "87d31d995cbb93d0bfce09aa6d49003d131c1b7b98ae1046d6841c77b33a6b33",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_nm` IS NOT NULL AND ( `bid_announcements` . `bid_ntce_nm` NOT LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) GROUP BY `bid_announcements` . `bid_ntce_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 26761892457000,
+        "sum_timer_wait_sec": 26.761892457,
+        "min_timer_wait_ms": 26761.892457,
+        "avg_timer_wait_ms": 26761.892457,
+        "max_timer_wait_ms": 26761.892457
+      },
+      {
+        "digest": "7db27a19885fb3c791b5c1011a058e0048dc2440cd7b9c774f88c53371141188",
+        "digest_text": "SELECT `bid_results` . `bidwinnr_nm` , COUNT ( `bid_results` . `id` ) AS `count_1` FROM `bid_results` WHERE `bid_results` . `bidwinnr_nm` IS NOT NULL AND ( `bid_results` . `bidwinnr_nm` NOT LIKE `concat` (...) ) AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) GROUP BY `bid_results` . `bidwinnr_nm` ORDER BY COUNT ( `bid_results` . `id` ) DESC LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 13410739742000,
+        "sum_timer_wait_sec": 13.410739742,
+        "min_timer_wait_ms": 13410.739742,
+        "avg_timer_wait_ms": 13410.739742,
+        "max_timer_wait_ms": 13410.739742
+      },
+      {
+        "digest": "983e28b2c7ee13c70b2dbdf1eb109ebce61958a9bfbac4b7602bc97fe07330e1",
+        "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results` WHERE ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 4303602793000,
+        "sum_timer_wait_sec": 4.303602793,
+        "min_timer_wait_ms": 1275.0525,
+        "avg_timer_wait_ms": 1434.534264,
+        "max_timer_wait_ms": 1658.905501
+      },
+      {
+        "digest": "5831c94412fa508c3c860bda0ea0b28c49d5e8aae9fd024cb61c5ce5074423cf",
+        "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results` WHERE ( `bid_results` . `dminstt_nm` LIKE `concat` (...) )",
+        "count_star": 1,
+        "sum_timer_wait_ps": 1639770959000,
+        "sum_timer_wait_sec": 1.639770959,
+        "min_timer_wait_ms": 1639.770959,
+        "avg_timer_wait_ms": 1639.770959,
+        "max_timer_wait_ms": 1639.770959
+      },
+      {
+        "digest": "88e54ef8c7cca45a79eec64797e5ee236fdd6987e4a1912452457ec8a27a4958",
+        "digest_text": "SELECT `bid_announcements` . `dminstt_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `dminstt_nm` IS NOT NULL AND ( `bid_announcements` . `dminstt_nm` NOT LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) GROUP BY `bid_announcements` . `dminstt_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 1112956751000,
+        "sum_timer_wait_sec": 1.112956751,
+        "min_timer_wait_ms": 1112.956751,
+        "avg_timer_wait_ms": 1112.956751,
+        "max_timer_wait_ms": 1112.956751
+      },
+      {
+        "digest": "9113ea4a63407c4a7aa1578bd240a56bace74dc7c04d15292d9e4fed5887ff51",
+        "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) )",
+        "count_star": 1,
+        "sum_timer_wait_ps": 960236833000,
+        "sum_timer_wait_sec": 0.960236833,
+        "min_timer_wait_ms": 960.236833,
+        "avg_timer_wait_ms": 960.236833,
+        "max_timer_wait_ms": 960.236833
+      },
+      {
+        "digest": "90742041910bb785b4f8c2422d2318ada234818815b340d26f22b0272e0f1c2d",
+        "digest_text": "SELECT `bid_results` . `id` FROM `bid_results` WHERE ( `bid_results` . `bidwinnr_nm` LIKE `concat` (...) ) AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ? LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 820454153000,
+        "sum_timer_wait_sec": 0.820454153,
+        "min_timer_wait_ms": 820.454153,
+        "avg_timer_wait_ms": 820.454153,
+        "max_timer_wait_ms": 820.454153
+      },
+      {
+        "digest": "2d77cddaa097c8e77c58ffd859d14cff906ab453e9d8f475f8f7487fed24e1ae",
+        "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results` WHERE `bid_results` . `category` = ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 807079709000,
+        "sum_timer_wait_sec": 0.807079709,
+        "min_timer_wait_ms": 197.841708,
+        "avg_timer_wait_ms": 269.026569,
+        "max_timer_wait_ms": 343.729001
+      },
+      {
+        "digest": "cd8db82d8a82d5aa38fafb9d6ed7fb8f9f6252c1756f217806db685d216e57a3",
+        "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements`",
+        "count_star": 1,
+        "sum_timer_wait_ps": 795975042000,
+        "sum_timer_wait_sec": 0.795975042,
+        "min_timer_wait_ms": 795.975042,
+        "avg_timer_wait_ms": 795.975042,
+        "max_timer_wait_ms": 795.975042
+      },
+      {
+        "digest": "ba930f10964e229bc604961ebdf3a2290886e05197b5b320a27aad83c4158f76",
+        "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `category` = ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 763508750000,
+        "sum_timer_wait_sec": 0.76350875,
+        "min_timer_wait_ms": 205.904333,
+        "avg_timer_wait_ms": 254.502916,
+        "max_timer_wait_ms": 322.536042
+      },
+      {
+        "digest": "fb6770dffb797bbd21ac5729b9210550da6b3adad28a39c6f96fe25177f0ed8c",
+        "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results`",
+        "count_star": 1,
+        "sum_timer_wait_ps": 762686251000,
+        "sum_timer_wait_sec": 0.762686251,
+        "min_timer_wait_ms": 762.686251,
+        "avg_timer_wait_ms": 762.686251,
+        "max_timer_wait_ms": 762.686251
+      },
+      {
+        "digest": "d76da7fe5e0218030051f5c7d1cbdc1e591144c4c260b5ea30a39de478bade4d",
+        "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 691440750000,
+        "sum_timer_wait_sec": 0.69144075,
+        "min_timer_wait_ms": 691.44075,
+        "avg_timer_wait_ms": 691.44075,
+        "max_timer_wait_ms": 691.44075
+      },
+      {
+        "digest": "c222fde3306167e2c691d6eb63ce7dc2f4c7f75fcc52ccee7918ea4839625f43",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 66,
+        "sum_timer_wait_ps": 67640956000,
+        "sum_timer_wait_sec": 0.067640956,
+        "min_timer_wait_ms": 0.14675,
+        "avg_timer_wait_ms": 1.024862,
+        "max_timer_wait_ms": 13.865208
+      },
+      {
+        "digest": "609f3ffa099a765a166dad4005e21623e85ac4493a19880c06f6a33c83a224e9",
+        "digest_text": "SELECT `bid_ranking_snapshots` . `label` , `bid_ranking_snapshots` . `metric_count` FROM `bid_ranking_snapshots` WHERE `bid_ranking_snapshots` . `dataset` = ? AND `bid_ranking_snapshots` . `dimension` = ? AND `bid_ranking_snapshots` . `category` = ? AND `bid_ranking_snapshots` . `rank` > ? ORDER BY `bid_ranking_snapshots` . `rank` LIMIT ?",
+        "count_star": 225,
+        "sum_timer_wait_ps": 58701798000,
+        "sum_timer_wait_sec": 0.058701798,
+        "min_timer_wait_ms": 0.047958,
+        "avg_timer_wait_ms": 0.260896,
+        "max_timer_wait_ms": 2.677167
+      },
+      {
+        "digest": "3e67fa9d38d82054e7fc01fe3ee8844dc76faaaefbd74d213a2af42e60e95520",
+        "digest_text": "ROLLBACK",
+        "count_star": 259,
+        "sum_timer_wait_ps": 42048830000,
+        "sum_timer_wait_sec": 0.04204883,
+        "min_timer_wait_ms": 0.016792,
+        "avg_timer_wait_ms": 0.16235,
+        "max_timer_wait_ms": 1.249375
+      },
+      {
+        "digest": "bbb7622dd18a3287f6daa5455201846977f05d81e3ddd1d481bfe78d81eb065f",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 9,
+        "sum_timer_wait_ps": 25351542000,
+        "sum_timer_wait_sec": 0.025351542,
+        "min_timer_wait_ms": 0.690541,
+        "avg_timer_wait_ms": 2.816838,
+        "max_timer_wait_ms": 5.677083
+      },
+      {
+        "digest": "e6b50e4f64cb612ed201b4e0320b8c73c010cfc49b1fdfd7e5c7f3eff10f2774",
+        "digest_text": "SELECT `bid_ranking_snapshots` . `metric_count` FROM `bid_ranking_snapshots` WHERE `bid_ranking_snapshots` . `dataset` = ? AND `bid_ranking_snapshots` . `dimension` = ? AND `bid_ranking_snapshots` . `category` = ? AND `bid_ranking_snapshots` . `rank` = ?",
+        "count_star": 240,
+        "sum_timer_wait_ps": 24683129000,
+        "sum_timer_wait_sec": 0.024683129,
+        "min_timer_wait_ms": 0.022833,
+        "avg_timer_wait_ms": 0.102846,
+        "max_timer_wait_ms": 1.388625
+      },
+      {
+        "digest": "d1b44b0c19af710b5a679907e284acd2ddc285201794bc69a2389d77baedddae",
+        "digest_text": "SELECT ?",
+        "count_star": 72,
+        "sum_timer_wait_ps": 23246547000,
+        "sum_timer_wait_sec": 0.023246547,
+        "min_timer_wait_ms": 0.0305,
+        "avg_timer_wait_ms": 0.322868,
+        "max_timer_wait_ms": 1.418834
+      },
+      {
+        "digest": "e3c9fc0aac7ee2363d7ec55fb625d04e9310cb4bc3217d7104449e86f675b673",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 13419834000,
+        "sum_timer_wait_sec": 0.013419834,
+        "min_timer_wait_ms": 0.464917,
+        "avg_timer_wait_ms": 4.473278,
+        "max_timer_wait_ms": 12.382292
+      },
+      {
+        "digest": "847499b6306a2b44d5b9a3f9a97076e81073231a3c3c38386ec37e3210a237af",
+        "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results` WHERE `bid_results` . `rl_openg_dt` >= ? AND `bid_results` . `rl_openg_dt` <= ? AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 11746791000,
+        "sum_timer_wait_sec": 0.011746791,
+        "min_timer_wait_ms": 11.746791,
+        "avg_timer_wait_ms": 11.746791,
+        "max_timer_wait_ms": 11.746791
+      },
+      {
+        "digest": "42ab2e5180781942dd1ab4958d4a4eea3ae7bd430aa34f309811b251ec67616b",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 6,
+        "sum_timer_wait_ps": 9626377000,
+        "sum_timer_wait_sec": 0.009626377,
+        "min_timer_wait_ms": 0.304167,
+        "avg_timer_wait_ms": 1.604396,
+        "max_timer_wait_ms": 3.046959
+      },
+      {
+        "digest": "1bf1be8765c42a05ec8755fa4823ea3cfe514fbc90c59982e330b360883caf55",
+        "digest_text": "SELECT `bid_results` . `bidwinnr_nm` , COUNT ( `bid_results` . `id` ) AS `count_1` FROM `bid_results` WHERE `bid_results` . `bidwinnr_nm` IS NOT NULL AND ( `bid_results` . `bidwinnr_nm` NOT LIKE `concat` (...) ) AND `bid_results` . `rl_openg_dt` >= ? AND `bid_results` . `rl_openg_dt` <= ? AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ? GROUP BY `bid_results` . `bidwinnr_nm` ORDER BY COUNT ( `bid_results` . `id` ) DESC LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 4494209000,
+        "sum_timer_wait_sec": 0.004494209,
+        "min_timer_wait_ms": 4.494209,
+        "avg_timer_wait_ms": 4.494209,
+        "max_timer_wait_ms": 4.494209
+      },
+      {
+        "digest": "ca629713ead1dd6fff2ee28a50cd26ebac3123e6ae6639928c31ac94e467a1ea",
+        "digest_text": "SELECT `bid_announcements` . `dminstt_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `dminstt_nm` IS NOT NULL AND ( `bid_announcements` . `dminstt_nm` NOT LIKE `concat` (...) ) AND `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? GROUP BY `bid_announcements` . `dminstt_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 4197417000,
+        "sum_timer_wait_sec": 0.004197417,
+        "min_timer_wait_ms": 4.197417,
+        "avg_timer_wait_ms": 4.197417,
+        "max_timer_wait_ms": 4.197417
+      },
+      {
+        "digest": "65a41604c9fb2d38b33f74bbcbd2a698ee70fbd4c1c343b5ac4ccc1dce8d60fa",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 9,
+        "sum_timer_wait_ps": 1377873000,
+        "sum_timer_wait_sec": 0.001377873,
+        "min_timer_wait_ms": 0.053334,
+        "avg_timer_wait_ms": 0.153097,
+        "max_timer_wait_ms": 0.290416
+      },
+      {
+        "digest": "aebec2248338be181889f76de9220abd62675408fc2e7ad4bff0e1dec3a16281",
+        "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 1343542000,
+        "sum_timer_wait_sec": 0.001343542,
+        "min_timer_wait_ms": 1.343542,
+        "avg_timer_wait_ms": 1.343542,
+        "max_timer_wait_ms": 1.343542
+      },
+      {
+        "digest": "2104f4baad78365d731f2229a490773268d006877eb22a5df00fd0c900489981",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_nm` IS NOT NULL AND ( `bid_announcements` . `bid_ntce_nm` NOT LIKE `concat` (...) ) AND `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? GROUP BY `bid_announcements` . `bid_ntce_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 139125000,
+        "sum_timer_wait_sec": 0.000139125,
+        "min_timer_wait_ms": 0.139125,
+        "avg_timer_wait_ms": 0.139125,
+        "max_timer_wait_ms": 0.139125
+      },
+      {
+        "digest": "3fec692cb8ba7aeec97a6e76256f1680785d2042bfc25b2373f97bab10cdd981",
+        "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 119917000,
+        "sum_timer_wait_sec": 0.000119917,
+        "min_timer_wait_ms": 0.119917,
+        "avg_timer_wait_ms": 0.119917,
+        "max_timer_wait_ms": 0.119917
+      },
+      {
+        "digest": "6d631211d940af327fe3f82a008b908dc6cba3912cae61881353006e73354eee",
+        "digest_text": "SET NAMES `utf8mb4`",
+        "count_star": 2,
+        "sum_timer_wait_ps": 86125000,
+        "sum_timer_wait_sec": 8.6125e-05,
+        "min_timer_wait_ms": 0.014,
+        "avg_timer_wait_ms": 0.043062,
+        "max_timer_wait_ms": 0.072125
+      },
+      {
+        "digest": "291cd3ae6e6ea05c1ae6181e892ff64b71d40dde755842a14686ede8f36a8be7",
+        "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `bid_ntce_nm` LIKE `concat` (...) ) AND `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? LIMIT ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 68666000,
+        "sum_timer_wait_sec": 6.8666e-05,
+        "min_timer_wait_ms": 0.068666,
+        "avg_timer_wait_ms": 0.068666,
+        "max_timer_wait_ms": 0.068666
+      },
+      {
+        "digest": "f2b9be5f0f32ca7507e4ddf133cd2fad0993a1c26fde9caa6f067b1af2b7603c",
+        "digest_text": "COMMIT",
+        "count_star": 1,
+        "sum_timer_wait_ps": 47917000,
+        "sum_timer_wait_sec": 4.7917e-05,
+        "min_timer_wait_ms": 0.047917,
+        "avg_timer_wait_ms": 0.047917,
+        "max_timer_wait_ms": 0.047917
+      },
+      {
+        "digest": "41eb3b98a0a8ca5242efb496b77bb03b31d873053653fed8bd7543d714afec7c",
+        "digest_text": "SET `AUTOCOMMIT` = ?",
+        "count_star": 1,
+        "sum_timer_wait_ps": 28708000,
+        "sum_timer_wait_sec": 2.8708e-05,
+        "min_timer_wait_ms": 0.028708,
+        "avg_timer_wait_ms": 0.028708,
+        "max_timer_wait_ms": 0.028708
+      }
+    ]
+  },
+  "warm_measurements": {
+    "queries": [
+      {
+        "item_id": "q01",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3819.759541998792,
+        "error": null
+      },
+      {
+        "item_id": "q02",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4351.704999999129,
+        "error": null
+      },
+      {
+        "item_id": "q03",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3245.872749999762,
+        "error": null
+      },
+      {
+        "item_id": "q04",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3572.142958000768,
+        "error": null
+      },
+      {
+        "item_id": "q05",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3440.1077080001414,
+        "error": null
+      },
+      {
+        "item_id": "q06",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3600.373082999795,
+        "error": null
+      },
+      {
+        "item_id": "q07",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3503.574041998945,
+        "error": null
+      },
+      {
+        "item_id": "q08",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 6489.621875000012,
+        "error": null
+      },
+      {
+        "item_id": "q09",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4101.4010420003615,
+        "error": null
+      },
+      {
+        "item_id": "q10",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3789.9260419999337,
+        "error": null
+      },
+      {
+        "item_id": "q11",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3926.244915999632,
+        "error": null
+      },
+      {
+        "item_id": "q12",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3880.0020839989884,
+        "error": null
+      },
+      {
+        "item_id": "q13",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3876.2425410004653,
+        "error": null
+      },
+      {
+        "item_id": "q14",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3546.1114999998244,
+        "error": null
+      },
+      {
+        "item_id": "q15",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3446.918208999705,
+        "error": null
+      },
+      {
+        "item_id": "q16",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3752.266875000714,
+        "error": null
+      },
+      {
+        "item_id": "q17",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3458.224791998873,
+        "error": null
+      },
+      {
+        "item_id": "q18",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3431.107250000423,
+        "error": null
+      },
+      {
+        "item_id": "q19",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3432.7290000001085,
+        "error": null
+      },
+      {
+        "item_id": "q20",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3519.5284580004227,
+        "error": null
+      },
+      {
+        "item_id": "q21",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4204.557541999748,
+        "error": null
+      },
+      {
+        "item_id": "q22",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 4361.1744589998125,
+        "error": null
+      },
+      {
+        "item_id": "q23",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3517.574916999365,
+        "error": null
+      },
+      {
+        "item_id": "q24",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 2739.7561660000065,
+        "error": null
+      },
+      {
+        "item_id": "q25",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 1833.8716250000289,
+        "error": null
+      },
+      {
+        "item_id": "q26",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 1151.622999999745,
+        "error": null
+      },
+      {
+        "item_id": "q27",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 3044.708041999911,
+        "error": null
+      },
+      {
+        "item_id": "q28",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 2990.4556659985246,
+        "error": null
+      },
+      {
+        "item_id": "q29",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 1952.4457499992423,
+        "error": null
+      },
+      {
+        "item_id": "q30",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 2004.874624999502,
+        "error": null
+      },
+      {
+        "item_id": "q31",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 2371.374000000287,
+        "error": null
+      },
+      {
+        "item_id": "q32",
+        "repetition": 0,
+        "ok": true,
+        "elapsed_ms": 2757.727000000159,
+        "error": null
+      },
+      {
+        "item_id": "q01",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3827.8711250004562,
+        "error": null
+      },
+      {
+        "item_id": "q02",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4434.664999998859,
+        "error": null
+      },
+      {
+        "item_id": "q03",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3080.8855410014075,
+        "error": null
+      },
+      {
+        "item_id": "q04",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3650.347208000312,
+        "error": null
+      },
+      {
+        "item_id": "q05",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3375.1493750005466,
+        "error": null
+      },
+      {
+        "item_id": "q06",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3592.94724999927,
+        "error": null
+      },
+      {
+        "item_id": "q07",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3498.941374999049,
+        "error": null
+      },
+      {
+        "item_id": "q08",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4920.922667000923,
+        "error": null
+      },
+      {
+        "item_id": "q09",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4103.052125001341,
+        "error": null
+      },
+      {
+        "item_id": "q10",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3769.916999999623,
+        "error": null
+      },
+      {
+        "item_id": "q11",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3927.315292001367,
+        "error": null
+      },
+      {
+        "item_id": "q12",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3834.612417000244,
+        "error": null
+      },
+      {
+        "item_id": "q13",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3783.483458999399,
+        "error": null
+      },
+      {
+        "item_id": "q14",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3613.4422499999346,
+        "error": null
+      },
+      {
+        "item_id": "q15",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3511.13366699974,
+        "error": null
+      },
+      {
+        "item_id": "q16",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3789.5286249986384,
+        "error": null
+      },
+      {
+        "item_id": "q17",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3657.2445000001608,
+        "error": null
+      },
+      {
+        "item_id": "q18",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3562.3782080001547,
+        "error": null
+      },
+      {
+        "item_id": "q19",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3474.3301669986977,
+        "error": null
+      },
+      {
+        "item_id": "q20",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3498.1046659995627,
+        "error": null
+      },
+      {
+        "item_id": "q21",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4199.568583000655,
+        "error": null
+      },
+      {
+        "item_id": "q22",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 4156.704208000519,
+        "error": null
+      },
+      {
+        "item_id": "q23",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3632.551417000286,
+        "error": null
+      },
+      {
+        "item_id": "q24",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 2739.012083999114,
+        "error": null
+      },
+      {
+        "item_id": "q25",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 1891.070249999757,
+        "error": null
+      },
+      {
+        "item_id": "q26",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 954.2348750001111,
+        "error": null
+      },
+      {
+        "item_id": "q27",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3086.535708000156,
+        "error": null
+      },
+      {
+        "item_id": "q28",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 2937.4669999997423,
+        "error": null
+      },
+      {
+        "item_id": "q29",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 1975.6759169995348,
+        "error": null
+      },
+      {
+        "item_id": "q30",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 1923.3112919991981,
+        "error": null
+      },
+      {
+        "item_id": "q31",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 2304.31045899968,
+        "error": null
+      },
+      {
+        "item_id": "q32",
+        "repetition": 1,
+        "ok": true,
+        "elapsed_ms": 3017.1896669999114,
+        "error": null
+      },
+      {
+        "item_id": "q01",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3669.094666000092,
+        "error": null
+      },
+      {
+        "item_id": "q02",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4321.580875001018,
+        "error": null
+      },
+      {
+        "item_id": "q03",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3157.931584000835,
+        "error": null
+      },
+      {
+        "item_id": "q04",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3590.7941250006843,
+        "error": null
+      },
+      {
+        "item_id": "q05",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3504.803374999028,
+        "error": null
+      },
+      {
+        "item_id": "q06",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3649.8083749993384,
+        "error": null
+      },
+      {
+        "item_id": "q07",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3504.161667000517,
+        "error": null
+      },
+      {
+        "item_id": "q08",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4939.2595420013095,
+        "error": null
+      },
+      {
+        "item_id": "q09",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3983.0483330006246,
+        "error": null
+      },
+      {
+        "item_id": "q10",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3684.172833000048,
+        "error": null
+      },
+      {
+        "item_id": "q11",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3886.7766250004934,
+        "error": null
+      },
+      {
+        "item_id": "q12",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3766.8213750002906,
+        "error": null
+      },
+      {
+        "item_id": "q13",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3734.172791999299,
+        "error": null
+      },
+      {
+        "item_id": "q14",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3507.68508299916,
+        "error": null
+      },
+      {
+        "item_id": "q15",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3464.416374999928,
+        "error": null
+      },
+      {
+        "item_id": "q16",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3739.9031249988184,
+        "error": null
+      },
+      {
+        "item_id": "q17",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3514.2764169995644,
+        "error": null
+      },
+      {
+        "item_id": "q18",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3539.1491659993335,
+        "error": null
+      },
+      {
+        "item_id": "q19",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3439.2799170000217,
+        "error": null
+      },
+      {
+        "item_id": "q20",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3458.533000000898,
+        "error": null
+      },
+      {
+        "item_id": "q21",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4127.789916999973,
+        "error": null
+      },
+      {
+        "item_id": "q22",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 4148.169209000116,
+        "error": null
+      },
+      {
+        "item_id": "q23",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3447.518291999586,
+        "error": null
+      },
+      {
+        "item_id": "q24",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 2739.0439999999217,
+        "error": null
+      },
+      {
+        "item_id": "q25",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 1829.3698329998733,
+        "error": null
+      },
+      {
+        "item_id": "q26",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 1117.2357499999634,
+        "error": null
+      },
+      {
+        "item_id": "q27",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3015.509791999648,
+        "error": null
+      },
+      {
+        "item_id": "q28",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 3086.705166999309,
+        "error": null
+      },
+      {
+        "item_id": "q29",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 1932.9936670001189,
+        "error": null
+      },
+      {
+        "item_id": "q30",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 1907.0030420007242,
+        "error": null
+      },
+      {
+        "item_id": "q31",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 2346.7902920001507,
+        "error": null
+      },
+      {
+        "item_id": "q32",
+        "repetition": 2,
+        "ok": true,
+        "elapsed_ms": 2846.6742920008983,
+        "error": null
+      }
+    ],
+    "digest_stats": [
+      {
+        "digest": "609f3ffa099a765a166dad4005e21623e85ac4493a19880c06f6a33c83a224e9",
+        "digest_text": "SELECT `bid_ranking_snapshots` . `label` , `bid_ranking_snapshots` . `metric_count` FROM `bid_ranking_snapshots` WHERE `bid_ranking_snapshots` . `dataset` = ? AND `bid_ranking_snapshots` . `dimension` = ? AND `bid_ranking_snapshots` . `category` = ? AND `bid_ranking_snapshots` . `rank` > ? ORDER BY `bid_ranking_snapshots` . `rank` LIMIT ?",
+        "count_star": 225,
+        "sum_timer_wait_ps": 45245075000,
+        "sum_timer_wait_sec": 0.045245075,
+        "min_timer_wait_ms": 0.048834,
+        "avg_timer_wait_ms": 0.201089,
+        "max_timer_wait_ms": 1.384083
+      },
+      {
+        "digest": "3e67fa9d38d82054e7fc01fe3ee8844dc76faaaefbd74d213a2af42e60e95520",
+        "digest_text": "ROLLBACK",
+        "count_star": 219,
+        "sum_timer_wait_ps": 32592416000,
+        "sum_timer_wait_sec": 0.032592416,
+        "min_timer_wait_ms": 0.018458,
+        "avg_timer_wait_ms": 0.148823,
+        "max_timer_wait_ms": 0.983875
+      },
+      {
+        "digest": "c222fde3306167e2c691d6eb63ce7dc2f4c7f75fcc52ccee7918ea4839625f43",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 66,
+        "sum_timer_wait_ps": 23231920000,
+        "sum_timer_wait_sec": 0.02323192,
+        "min_timer_wait_ms": 0.137292,
+        "avg_timer_wait_ms": 0.351998,
+        "max_timer_wait_ms": 1.0715
+      },
+      {
+        "digest": "bbb7622dd18a3287f6daa5455201846977f05d81e3ddd1d481bfe78d81eb065f",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 9,
+        "sum_timer_wait_ps": 18954208000,
+        "sum_timer_wait_sec": 0.018954208,
+        "min_timer_wait_ms": 0.624917,
+        "avg_timer_wait_ms": 2.106023,
+        "max_timer_wait_ms": 4.434833
+      },
+      {
+        "digest": "e6b50e4f64cb612ed201b4e0320b8c73c010cfc49b1fdfd7e5c7f3eff10f2774",
+        "digest_text": "SELECT `bid_ranking_snapshots` . `metric_count` FROM `bid_ranking_snapshots` WHERE `bid_ranking_snapshots` . `dataset` = ? AND `bid_ranking_snapshots` . `dimension` = ? AND `bid_ranking_snapshots` . `category` = ? AND `bid_ranking_snapshots` . `rank` = ?",
+        "count_star": 225,
+        "sum_timer_wait_ps": 17378411000,
+        "sum_timer_wait_sec": 0.017378411,
+        "min_timer_wait_ms": 0.0245,
+        "avg_timer_wait_ms": 0.077237,
+        "max_timer_wait_ms": 0.164208
+      },
+      {
+        "digest": "d1b44b0c19af710b5a679907e284acd2ddc285201794bc69a2389d77baedddae",
+        "digest_text": "SELECT ?",
+        "count_star": 32,
+        "sum_timer_wait_ps": 4477835000,
+        "sum_timer_wait_sec": 0.004477835,
+        "min_timer_wait_ms": 0.071167,
+        "avg_timer_wait_ms": 0.139932,
+        "max_timer_wait_ms": 0.605834
+      },
+      {
+        "digest": "42ab2e5180781942dd1ab4958d4a4eea3ae7bd430aa34f309811b251ec67616b",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 6,
+        "sum_timer_wait_ps": 3608999000,
+        "sum_timer_wait_sec": 0.003608999,
+        "min_timer_wait_ms": 0.375834,
+        "avg_timer_wait_ms": 0.601499,
+        "max_timer_wait_ms": 1.32425
+      },
+      {
+        "digest": "e3c9fc0aac7ee2363d7ec55fb625d04e9310cb4bc3217d7104449e86f675b673",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 3,
+        "sum_timer_wait_ps": 1897125000,
+        "sum_timer_wait_sec": 0.001897125,
+        "min_timer_wait_ms": 0.316167,
+        "avg_timer_wait_ms": 0.632375,
+        "max_timer_wait_ms": 0.871041
+      },
+      {
+        "digest": "65a41604c9fb2d38b33f74bbcbd2a698ee70fbd4c1c343b5ac4ccc1dce8d60fa",
+        "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+        "count_star": 9,
+        "sum_timer_wait_ps": 1065001000,
+        "sum_timer_wait_sec": 0.001065001,
+        "min_timer_wait_ms": 0.071125,
+        "avg_timer_wait_ms": 0.118333,
+        "max_timer_wait_ms": 0.186375
+      },
+      {
+        "digest": "f2b9be5f0f32ca7507e4ddf133cd2fad0993a1c26fde9caa6f067b1af2b7603c",
+        "digest_text": "COMMIT",
+        "count_star": 1,
+        "sum_timer_wait_ps": 43750000,
+        "sum_timer_wait_sec": 4.375e-05,
+        "min_timer_wait_ms": 0.04375,
+        "avg_timer_wait_ms": 0.04375,
+        "max_timer_wait_ms": 0.04375
+      }
+    ]
+  },
+  "attribution_diff_table": [
+    {
+      "digest": "6f07b00e79acedb60eb42f6872b3200ce15a819d48f989a81d9330cafe5684a1",
+      "digest_text": "SELECT `bid_results` . `bidwinnr_nm` , COUNT ( `bid_results` . `id` ) AS `count_1` FROM `bid_results` WHERE `bid_results` . `bidwinnr_nm` IS NOT NULL AND ( `bid_results` . `bidwinnr_nm` NOT LIKE `concat` (...) ) AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ? GROUP BY `bid_results` . `bidwinnr_nm` ORDER BY COUNT ( `bid_results` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 49.283625952,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 49.283626,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 18402.878633,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 18402.879
+    },
+    {
+      "digest": "d862a9b006454ba467cd85a3b98d16a68c46e83e9f2c808715fb922058aec171",
+      "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ?",
+      "cold_sum_sec": 42.995220533,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 42.995221,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 15151.951451,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 15151.951
+    },
+    {
+      "digest": "467c5dee467ac42c321e0add68c9cb4cedca6c2da2069b538f5beea5884f6362",
+      "digest_text": "SELECT `bid_announcements` . `dminstt_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `dminstt_nm` IS NOT NULL AND ( `bid_announcements` . `dminstt_nm` NOT LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? GROUP BY `bid_announcements` . `dminstt_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 41.893428895,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 41.893429,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 14880.101548,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 14880.102
+    },
+    {
+      "digest": "df07c484ff5a619eb3c0483a7066e5cdfae111e266c23908fdeb1c7faa2ab1a5",
+      "digest_text": "SELECT `bid_announcements` . `bid_ntce_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_nm` IS NOT NULL AND ( `bid_announcements` . `bid_ntce_nm` NOT LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? GROUP BY `bid_announcements` . `bid_ntce_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 40.739990908,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 40.739991,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 14149.05095,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 14149.051
+    },
+    {
+      "digest": "b13528444781e906f28019834d06b34616b1baa8dfe590ba8456175ba13fb408",
+      "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? LIMIT ?",
+      "cold_sum_sec": 39.59263438,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 39.592634,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 13658.807299,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 13658.807
+    },
+    {
+      "digest": "cffc98fd43f8ff9a1a41e5130eef772f6c89d79236b90b1b1fd05c13f05363cb",
+      "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `bid_ntce_nm` LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? LIMIT ?",
+      "cold_sum_sec": 38.468576004,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 38.468576,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 13087.493298,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 13087.493
+    },
+    {
+      "digest": "e1604a3d38bc11a87ba5f8971251b1f22aaabde5d3476cd6bdeb002528e2763c",
+      "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `bid_ntce_nm` LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) LIMIT ?",
+      "cold_sum_sec": 27.094817207,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 27.094817,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 27094.817207,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 27094.817
+    },
+    {
+      "digest": "87d31d995cbb93d0bfce09aa6d49003d131c1b7b98ae1046d6841c77b33a6b33",
+      "digest_text": "SELECT `bid_announcements` . `bid_ntce_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_nm` IS NOT NULL AND ( `bid_announcements` . `bid_ntce_nm` NOT LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) GROUP BY `bid_announcements` . `bid_ntce_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 26.761892457,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 26.761892,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 26761.892457,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 26761.892
+    },
+    {
+      "digest": "7db27a19885fb3c791b5c1011a058e0048dc2440cd7b9c774f88c53371141188",
+      "digest_text": "SELECT `bid_results` . `bidwinnr_nm` , COUNT ( `bid_results` . `id` ) AS `count_1` FROM `bid_results` WHERE `bid_results` . `bidwinnr_nm` IS NOT NULL AND ( `bid_results` . `bidwinnr_nm` NOT LIKE `concat` (...) ) AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) GROUP BY `bid_results` . `bidwinnr_nm` ORDER BY COUNT ( `bid_results` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 13.410739742,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 13.41074,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 13410.739742,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 13410.74
+    },
+    {
+      "digest": "983e28b2c7ee13c70b2dbdf1eb109ebce61958a9bfbac4b7602bc97fe07330e1",
+      "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results` WHERE ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ?",
+      "cold_sum_sec": 4.303602793,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 4.303603,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 1658.905501,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 1658.906
+    },
+    {
+      "digest": "5831c94412fa508c3c860bda0ea0b28c49d5e8aae9fd024cb61c5ce5074423cf",
+      "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results` WHERE ( `bid_results` . `dminstt_nm` LIKE `concat` (...) )",
+      "cold_sum_sec": 1.639770959,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 1.639771,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 1639.770959,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 1639.771
+    },
+    {
+      "digest": "88e54ef8c7cca45a79eec64797e5ee236fdd6987e4a1912452457ec8a27a4958",
+      "digest_text": "SELECT `bid_announcements` . `dminstt_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `dminstt_nm` IS NOT NULL AND ( `bid_announcements` . `dminstt_nm` NOT LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) GROUP BY `bid_announcements` . `dminstt_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 1.112956751,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 1.112957,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 1112.956751,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 1112.957
+    },
+    {
+      "digest": "9113ea4a63407c4a7aa1578bd240a56bace74dc7c04d15292d9e4fed5887ff51",
+      "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) )",
+      "cold_sum_sec": 0.960236833,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.960237,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 960.236833,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 960.237
+    },
+    {
+      "digest": "90742041910bb785b4f8c2422d2318ada234818815b340d26f22b0272e0f1c2d",
+      "digest_text": "SELECT `bid_results` . `id` FROM `bid_results` WHERE ( `bid_results` . `bidwinnr_nm` LIKE `concat` (...) ) AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ? LIMIT ?",
+      "cold_sum_sec": 0.820454153,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.820454,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 820.454153,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 820.454
+    },
+    {
+      "digest": "2d77cddaa097c8e77c58ffd859d14cff906ab453e9d8f475f8f7487fed24e1ae",
+      "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results` WHERE `bid_results` . `category` = ?",
+      "cold_sum_sec": 0.807079709,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.80708,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 343.729001,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 343.729
+    },
+    {
+      "digest": "cd8db82d8a82d5aa38fafb9d6ed7fb8f9f6252c1756f217806db685d216e57a3",
+      "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements`",
+      "cold_sum_sec": 0.795975042,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.795975,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 795.975042,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 795.975
+    },
+    {
+      "digest": "ba930f10964e229bc604961ebdf3a2290886e05197b5b320a27aad83c4158f76",
+      "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `category` = ?",
+      "cold_sum_sec": 0.76350875,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.763509,
+      "cold_count": 3,
+      "warm_count": 0,
+      "delta_count": 3,
+      "cold_max_ms": 322.536042,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 322.536
+    },
+    {
+      "digest": "fb6770dffb797bbd21ac5729b9210550da6b3adad28a39c6f96fe25177f0ed8c",
+      "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results`",
+      "cold_sum_sec": 0.762686251,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.762686,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 762.686251,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 762.686
+    },
+    {
+      "digest": "d76da7fe5e0218030051f5c7d1cbdc1e591144c4c260b5ea30a39de478bade4d",
+      "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) LIMIT ?",
+      "cold_sum_sec": 0.69144075,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.691441,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 691.44075,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 691.441
+    },
+    {
+      "digest": "c222fde3306167e2c691d6eb63ce7dc2f4c7f75fcc52ccee7918ea4839625f43",
+      "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+      "cold_sum_sec": 0.067640956,
+      "warm_sum_sec": 0.02323192,
+      "delta_sum_sec": 0.044409,
+      "cold_count": 66,
+      "warm_count": 66,
+      "delta_count": 0,
+      "cold_max_ms": 13.865208,
+      "warm_max_ms": 1.0715,
+      "delta_max_ms": 12.794
+    },
+    {
+      "digest": "d1b44b0c19af710b5a679907e284acd2ddc285201794bc69a2389d77baedddae",
+      "digest_text": "SELECT ?",
+      "cold_sum_sec": 0.023246547,
+      "warm_sum_sec": 0.004477835,
+      "delta_sum_sec": 0.018769,
+      "cold_count": 72,
+      "warm_count": 32,
+      "delta_count": 40,
+      "cold_max_ms": 1.418834,
+      "warm_max_ms": 0.605834,
+      "delta_max_ms": 0.813
+    },
+    {
+      "digest": "609f3ffa099a765a166dad4005e21623e85ac4493a19880c06f6a33c83a224e9",
+      "digest_text": "SELECT `bid_ranking_snapshots` . `label` , `bid_ranking_snapshots` . `metric_count` FROM `bid_ranking_snapshots` WHERE `bid_ranking_snapshots` . `dataset` = ? AND `bid_ranking_snapshots` . `dimension` = ? AND `bid_ranking_snapshots` . `category` = ? AND `bid_ranking_snapshots` . `rank` > ? ORDER BY `bid_ranking_snapshots` . `rank` LIMIT ?",
+      "cold_sum_sec": 0.058701798,
+      "warm_sum_sec": 0.045245075,
+      "delta_sum_sec": 0.013457,
+      "cold_count": 225,
+      "warm_count": 225,
+      "delta_count": 0,
+      "cold_max_ms": 2.677167,
+      "warm_max_ms": 1.384083,
+      "delta_max_ms": 1.293
+    },
+    {
+      "digest": "847499b6306a2b44d5b9a3f9a97076e81073231a3c3c38386ec37e3210a237af",
+      "digest_text": "SELECT COUNT ( `bid_results` . `id` ) AS `count_1` , AVG ( `bid_results` . `sucsf_bid_rate` ) AS `avg_1` , SUM ( `bid_results` . `sucsf_bid_amt` ) AS `sum_1` FROM `bid_results` WHERE `bid_results` . `rl_openg_dt` >= ? AND `bid_results` . `rl_openg_dt` <= ? AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ?",
+      "cold_sum_sec": 0.011746791,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.011747,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 11.746791,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 11.747
+    },
+    {
+      "digest": "e3c9fc0aac7ee2363d7ec55fb625d04e9310cb4bc3217d7104449e86f675b673",
+      "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+      "cold_sum_sec": 0.013419834,
+      "warm_sum_sec": 0.001897125,
+      "delta_sum_sec": 0.011523,
+      "cold_count": 3,
+      "warm_count": 3,
+      "delta_count": 0,
+      "cold_max_ms": 12.382292,
+      "warm_max_ms": 0.871041,
+      "delta_max_ms": 11.511
+    },
+    {
+      "digest": "3e67fa9d38d82054e7fc01fe3ee8844dc76faaaefbd74d213a2af42e60e95520",
+      "digest_text": "ROLLBACK",
+      "cold_sum_sec": 0.04204883,
+      "warm_sum_sec": 0.032592416,
+      "delta_sum_sec": 0.009456,
+      "cold_count": 259,
+      "warm_count": 219,
+      "delta_count": 40,
+      "cold_max_ms": 1.249375,
+      "warm_max_ms": 0.983875,
+      "delta_max_ms": 0.265
+    },
+    {
+      "digest": "e6b50e4f64cb612ed201b4e0320b8c73c010cfc49b1fdfd7e5c7f3eff10f2774",
+      "digest_text": "SELECT `bid_ranking_snapshots` . `metric_count` FROM `bid_ranking_snapshots` WHERE `bid_ranking_snapshots` . `dataset` = ? AND `bid_ranking_snapshots` . `dimension` = ? AND `bid_ranking_snapshots` . `category` = ? AND `bid_ranking_snapshots` . `rank` = ?",
+      "cold_sum_sec": 0.024683129,
+      "warm_sum_sec": 0.017378411,
+      "delta_sum_sec": 0.007305,
+      "cold_count": 240,
+      "warm_count": 225,
+      "delta_count": 15,
+      "cold_max_ms": 1.388625,
+      "warm_max_ms": 0.164208,
+      "delta_max_ms": 1.224
+    },
+    {
+      "digest": "bbb7622dd18a3287f6daa5455201846977f05d81e3ddd1d481bfe78d81eb065f",
+      "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+      "cold_sum_sec": 0.025351542,
+      "warm_sum_sec": 0.018954208,
+      "delta_sum_sec": 0.006397,
+      "cold_count": 9,
+      "warm_count": 9,
+      "delta_count": 0,
+      "cold_max_ms": 5.677083,
+      "warm_max_ms": 4.434833,
+      "delta_max_ms": 1.242
+    },
+    {
+      "digest": "42ab2e5180781942dd1ab4958d4a4eea3ae7bd430aa34f309811b251ec67616b",
+      "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+      "cold_sum_sec": 0.009626377,
+      "warm_sum_sec": 0.003608999,
+      "delta_sum_sec": 0.006017,
+      "cold_count": 6,
+      "warm_count": 6,
+      "delta_count": 0,
+      "cold_max_ms": 3.046959,
+      "warm_max_ms": 1.32425,
+      "delta_max_ms": 1.723
+    },
+    {
+      "digest": "1bf1be8765c42a05ec8755fa4823ea3cfe514fbc90c59982e330b360883caf55",
+      "digest_text": "SELECT `bid_results` . `bidwinnr_nm` , COUNT ( `bid_results` . `id` ) AS `count_1` FROM `bid_results` WHERE `bid_results` . `bidwinnr_nm` IS NOT NULL AND ( `bid_results` . `bidwinnr_nm` NOT LIKE `concat` (...) ) AND `bid_results` . `rl_openg_dt` >= ? AND `bid_results` . `rl_openg_dt` <= ? AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ? GROUP BY `bid_results` . `bidwinnr_nm` ORDER BY COUNT ( `bid_results` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 0.004494209,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.004494,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 4.494209,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 4.494
+    },
+    {
+      "digest": "ca629713ead1dd6fff2ee28a50cd26ebac3123e6ae6639928c31ac94e467a1ea",
+      "digest_text": "SELECT `bid_announcements` . `dminstt_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `dminstt_nm` IS NOT NULL AND ( `bid_announcements` . `dminstt_nm` NOT LIKE `concat` (...) ) AND `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? GROUP BY `bid_announcements` . `dminstt_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 0.004197417,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.004197,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 4.197417,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 4.197
+    },
+    {
+      "digest": "aebec2248338be181889f76de9220abd62675408fc2e7ad4bff0e1dec3a16281",
+      "digest_text": "SELECT COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ?",
+      "cold_sum_sec": 0.001343542,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.001344,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 1.343542,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 1.344
+    },
+    {
+      "digest": "65a41604c9fb2d38b33f74bbcbd2a698ee70fbd4c1c343b5ac4ccc1dce8d60fa",
+      "digest_text": "SELECT `bid_announcements` . `bid_ntce_no` , `bid_announcements` . `bid_ntce_nm` , `bid_announcements` . `dminstt_nm` FROM `bid_announcements` ORDER BY `bid_announcements` . `bid_ntce_dt` DESC LIMIT ?",
+      "cold_sum_sec": 0.001377873,
+      "warm_sum_sec": 0.001065001,
+      "delta_sum_sec": 0.000313,
+      "cold_count": 9,
+      "warm_count": 9,
+      "delta_count": 0,
+      "cold_max_ms": 0.290416,
+      "warm_max_ms": 0.186375,
+      "delta_max_ms": 0.104
+    },
+    {
+      "digest": "2104f4baad78365d731f2229a490773268d006877eb22a5df00fd0c900489981",
+      "digest_text": "SELECT `bid_announcements` . `bid_ntce_nm` , COUNT ( `bid_announcements` . `id` ) AS `count_1` FROM `bid_announcements` WHERE `bid_announcements` . `bid_ntce_nm` IS NOT NULL AND ( `bid_announcements` . `bid_ntce_nm` NOT LIKE `concat` (...) ) AND `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? GROUP BY `bid_announcements` . `bid_ntce_nm` ORDER BY COUNT ( `bid_announcements` . `id` ) DESC LIMIT ?",
+      "cold_sum_sec": 0.000139125,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.000139,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 0.139125,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 0.139
+    },
+    {
+      "digest": "3fec692cb8ba7aeec97a6e76256f1680785d2042bfc25b2373f97bab10cdd981",
+      "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? LIMIT ?",
+      "cold_sum_sec": 0.000119917,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 0.00012,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 0.119917,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 0.12
+    },
+    {
+      "digest": "6d631211d940af327fe3f82a008b908dc6cba3912cae61881353006e73354eee",
+      "digest_text": "SET NAMES `utf8mb4`",
+      "cold_sum_sec": 8.6125e-05,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 8.6e-05,
+      "cold_count": 2,
+      "warm_count": 0,
+      "delta_count": 2,
+      "cold_max_ms": 0.072125,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 0.072
+    },
+    {
+      "digest": "291cd3ae6e6ea05c1ae6181e892ff64b71d40dde755842a14686ede8f36a8be7",
+      "digest_text": "SELECT `bid_announcements` . `id` FROM `bid_announcements` WHERE ( `bid_announcements` . `bid_ntce_nm` LIKE `concat` (...) ) AND `bid_announcements` . `bid_ntce_dt` >= ? AND `bid_announcements` . `bid_ntce_dt` <= ? AND ( `bid_announcements` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_announcements` . `category` = ? LIMIT ?",
+      "cold_sum_sec": 6.8666e-05,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 6.9e-05,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 0.068666,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 0.069
+    },
+    {
+      "digest": "41eb3b98a0a8ca5242efb496b77bb03b31d873053653fed8bd7543d714afec7c",
+      "digest_text": "SET `AUTOCOMMIT` = ?",
+      "cold_sum_sec": 2.8708e-05,
+      "warm_sum_sec": 0.0,
+      "delta_sum_sec": 2.9e-05,
+      "cold_count": 1,
+      "warm_count": 0,
+      "delta_count": 1,
+      "cold_max_ms": 0.028708,
+      "warm_max_ms": 0.0,
+      "delta_max_ms": 0.029
+    },
+    {
+      "digest": "f2b9be5f0f32ca7507e4ddf133cd2fad0993a1c26fde9caa6f067b1af2b7603c",
+      "digest_text": "COMMIT",
+      "cold_sum_sec": 4.7917e-05,
+      "warm_sum_sec": 4.375e-05,
+      "delta_sum_sec": 4e-06,
+      "cold_count": 1,
+      "warm_count": 1,
+      "delta_count": 0,
+      "cold_max_ms": 0.047917,
+      "warm_max_ms": 0.04375,
+      "delta_max_ms": 0.004
+    }
+  ],
+  "summary": {
+    "total_cold_sql_sec": 333.187007,
+    "total_warm_sql_sec": 0.148495,
+    "top_cost_query_digest": "6f07b00e79acedb60eb42f6872b3200ce15a819d48f989a81d9330cafe5684a1",
+    "top_cost_query_text": "SELECT `bid_results` . `bidwinnr_nm` , COUNT ( `bid_results` . `id` ) AS `count_1` FROM `bid_results` WHERE `bid_results` . `bidwinnr_nm` IS NOT NULL AND ( `bid_results` . `bidwinnr_nm` NOT LIKE `concat` (...) ) AND ( `bid_results` . `dminstt_nm` LIKE `concat` (...) ) AND `bid_results` . `category` = ? GROUP BY `bid_results` . `bidwinnr_nm` ORDER BY COUNT ( `bid_results` . `id` ) DESC LIMIT ?",
+    "top_cost_query_delta_sec": 49.283626,
+    "request_failures": 0
+  }
+}
