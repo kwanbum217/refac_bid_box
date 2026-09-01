@@ -35,6 +35,7 @@ from scripts.orca_taskctl import (
     enable_file_edit_auto_approve,
     expand_intent_to_capsule,
     finalize_task,
+    get_worker_watch_pid_path,
     list_dispatched_tasks,
     main,
     parse_intent,
@@ -43,6 +44,8 @@ from scripts.orca_taskctl import (
     remove_worker_meta,
     resolve_dispatch_model,
     resolve_run_id,
+    start_worker_watch,
+    stop_worker_watch,
     strip_terminal_metadata_header,
     task_has_write_scope,
     terminal_read,
@@ -53,6 +56,20 @@ from scripts.orca_taskctl import (
     write_worker_meta,
 )
 from scripts.validate_review_report import parse_checklist
+
+
+@pytest.fixture(autouse=True)
+def _mock_settled_session_audit(monkeypatch: pytest.MonkeyPatch):
+    """테스트 환경에서 실제 orca CLI 세션 상태에 영향받지 않도록 기본 허용으로 모킹합니다."""
+    try:
+        from scripts.orca_settled_session_audit import audit_lingering_sessions
+
+        monkeypatch.setattr(
+            "scripts.orca_settled_session_audit.audit_lingering_sessions",
+            lambda *a, **k: {"allowed": True, "lingering": [], "count": 0, "reason": ""},
+        )
+    except Exception:
+        pass
 
 SAMPLE_BUILDER_INTENT = """schema: ORCA_TASK_INTENT_V1
 role: builder
@@ -4937,3 +4954,212 @@ def test_capsule_copy_drift_detected_in_dispatch(tmp_path: Path, capsys):
     payload = json.loads(out)
     assert payload["error"] == "capsule_spec_drift"
     assert payload["origin"] == "capsule_spec_error"
+
+
+def test_cmd_dispatch_fails_closed_when_auto_approve_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """권한 자동 승인 감시기 부착 실패 시 기본값에서 dispatch 가 fail-closed 로 거부(종료 코드 2)되어야 합니다."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "approved")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve",
+        lambda terminal: (False, "감시기 스크립트 실행 권한 오류"),
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_test_fail",
+            "--skip-settled-session-check",
+            "--json",
+        ]
+    )
+    assert code == 2
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["error"] == "auto_approve_watcher_failed"
+    assert "감시기 스크립트 실행 권한 오류" in payload["detail"]
+    assert "권한 자동 승인 감시기 부착 실패" in captured.err
+
+
+def test_cmd_dispatch_bypasses_auto_approve_failure_with_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """--skip-auto-approve-check 플래그를 지정하면 감시기 부착 실패 시에도 경고를 남기고 진행해야 합니다."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **k: "approved")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve",
+        lambda terminal: (False, "감시기 스크립트 미존재"),
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda *a, **k: (0, json.dumps({"ok": True}), "", ["orca", "orchestration", "dispatch"]),
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered", lambda *a, **k: "delivered"
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._deliver_capsule_notice",
+        lambda *a, **k: {
+            "status": "sent",
+            "dispatch_id": "d1",
+            "chars": 10,
+            "delivery_probe": "PROBE_ok",
+        },
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_test_bypass",
+            "--skip-settled-session-check",
+            "--skip-auto-approve-check",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert (
+        "경고: --skip-auto-approve-check 지정으로 권한 자동 승인 감시기 부착 실패를 무시하고 진행합니다"
+        in captured.err
+    )
+
+
+def test_start_worker_watch_lifecycle_and_deduplication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """start_worker_watch 의 자동 기동, PID 관리 및 중복 방지(재사용) 동작 검증."""
+    monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.delenv("ORCA_DISABLE_WORKER_WATCH", raising=False)
+
+    fake_pids: dict[Path, int] = {}
+    alive_pids: set[int] = set()
+    spawned_calls: list[list[str]] = []
+
+    def mock_write_pid(path: Path, pid: int):
+        fake_pids[path] = pid
+        alive_pids.add(pid)
+
+    def mock_read_pid(path: Path):
+        return fake_pids.get(path)
+
+    def mock_watcher_alive(pid: int | None):
+        return pid in alive_pids
+
+    class FakeProc:
+        def __init__(self, pid):
+            self.pid = pid
+
+    def mock_popen(cmd, **kwargs):
+        spawned_calls.append(cmd)
+        return FakeProc(pid=99991)
+
+    monkeypatch.setattr("scripts.orca_taskctl.write_watcher_pid", mock_write_pid)
+    monkeypatch.setattr("scripts.orca_taskctl.read_watcher_pid", mock_read_pid)
+    monkeypatch.setattr("scripts.orca_taskctl.watcher_alive", mock_watcher_alive)
+    monkeypatch.setattr("subprocess.Popen", mock_popen)
+
+    # 1. 첫 기동: 새 프로세스 스폰 및 PID 기록
+    ok1, msg1 = start_worker_watch(tmp_path)
+    assert ok1 is True
+    assert "기동 완료" in msg1
+    assert len(spawned_calls) == 1
+    assert "--watch" in spawned_calls[0]
+
+    # 2. 두 번째 호출: 이미 살아있는 PID 가 있으므로 스폰 없이 기존 프로세스 재사용
+    ok2, msg2 = start_worker_watch(tmp_path)
+    assert ok2 is True
+    assert "재사용" in msg2
+    assert len(spawned_calls) == 1  # 추가 스폰 없음
+
+
+def test_stop_worker_watch_terminates_and_cleans_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """stop_worker_watch 가 프로세스에 시그널을 보내고 PID 파일을 정리하는지 검증."""
+    pid_path = get_worker_watch_pid_path(tmp_path)
+    killed: list[tuple[int, int]] = []
+
+    monkeypatch.setattr("scripts.orca_taskctl.read_watcher_pid", lambda p: 99992)
+    monkeypatch.setattr("scripts.orca_taskctl.watcher_alive", lambda pid: True)
+    monkeypatch.setattr("os.kill", lambda pid, sig: killed.append((pid, sig)))
+
+    removed: list[Path] = []
+    monkeypatch.setattr("scripts.orca_taskctl.remove_watcher_pid", lambda p: removed.append(p))
+
+    ok, msg = stop_worker_watch(tmp_path)
+    assert ok is True
+    assert "종료" in msg
+    assert (99992, 15) in killed  # SIGTERM
+    assert pid_path in removed
+
+
+def test_cmd_dispatch_auto_starts_worker_watch_on_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """워커 dispatch 성공 시 상시 감시기(start_worker_watch)가 자동으로 호출되고 상태가 보고되는지 검증."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    watch_started_calls: list[Path | str] = []
+
+    def mock_start_worker_watch(repo):
+        watch_started_calls.append(repo)
+        return True, "상시 감시기 기동 완료 (PID 12345, 로그: /tmp/mock.log)"
+
+    monkeypatch.setattr("scripts.orca_taskctl.start_worker_watch", mock_start_worker_watch)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.worker_start",
+        lambda **kwargs: (
+            0,
+            '{"status": "dispatched"}',
+            "",
+            ["orca", "orchestration", "worker-start"],
+        ),
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--agent",
+            "claude",
+            "--skip-settled-session-check",
+            "--json",
+        ]
+    )
+    assert code == 0
+    assert len(watch_started_calls) == 1
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["worker_watch"]["ok"] is True
+    assert payload["worker_watch"]["status"] == "started"

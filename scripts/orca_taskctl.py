@@ -1585,6 +1585,83 @@ def stop_auto_approve(terminal: str) -> tuple[bool, str]:
     return True, f"자동 승인 감시기 중지 완료 ({terminal})"
 
 
+def get_worker_watch_pid_path(repo: Path | str | None = None) -> Path:
+    """주 저장소 경로에 대응하는 상시 감시기 PID 파일 경로를 반환합니다."""
+    repo_key = hashlib.sha256(str(Path(repo or ".").resolve()).encode("utf-8")).hexdigest()[:12]
+    return Path(tempfile.gettempdir()) / "orca_worker_watch" / f"watcher_{repo_key}.pid"
+
+
+def get_worker_watch_log_path(repo: Path | str | None = None) -> Path:
+    """주 저장소 경로에 대응하는 상시 감시기 로그 파일 경로를 반환합니다."""
+    repo_key = hashlib.sha256(str(Path(repo or ".").resolve()).encode("utf-8")).hexdigest()[:12]
+    return Path(tempfile.gettempdir()) / "orca_worker_watch" / f"watcher_{repo_key}.log"
+
+
+def start_worker_watch(repo: Path | str = ".") -> tuple[bool, str]:
+    """상시 워커 감시기(orca_worker_watch.py --watch)를 단일 인스턴스로 배경에 기동합니다.
+
+    이미 살아 있는 감시기가 있으면 새로 띄우지 않고 기존 프로세스를 재사용합니다.
+    """
+    if (
+        os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1"
+        or os.environ.get("ORCA_DISABLE_WORKER_WATCH") == "1"
+    ):
+        return False, "ORCA_DISABLE_AUTO_APPROVE=1 이므로 상시 감시기를 띄우지 않았습니다"
+    script = Path(__file__).resolve().parent / "orca_worker_watch.py"
+    if not script.exists():
+        return False, f"워커 감시 스크립트를 찾지 못했습니다: {script}"
+
+    repo_path = Path(repo).resolve()
+    pid_path = get_worker_watch_pid_path(repo_path)
+    log_path = get_worker_watch_log_path(repo_path)
+
+    # 1. 기존 PID 생존 여부 확인 (단일 인스턴스 보장 / 중복 방지)
+    existing_pid = read_watcher_pid(pid_path)
+    if existing_pid is not None and watcher_alive(existing_pid):
+        return True, f"기존 상시 감시기 재사용 (PID {existing_pid}, 로그: {log_path})"
+
+    # 2. 없거나 죽어 있으면 새로 기동하고 PID 기록
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("ab") as log_file:
+            proc = subprocess.Popen(  # nosec B603  고정된 스크립트 경로와 인자만 넘깁니다
+                [sys.executable, str(script), "--repo", str(repo_path), "--watch"],
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            pid = getattr(proc, "pid", None)
+            if pid is not None:
+                write_watcher_pid(pid_path, pid)
+    except OSError as exc:
+        return False, f"상시 감시기 기동 실패: {exc}"
+    return True, f"상시 감시기 기동 완료 (PID {pid}, 로그: {log_path})"
+
+
+def stop_worker_watch(repo: Path | str = ".") -> tuple[bool, str]:
+    """상시 워커 감시기를 중지하고 PID 파일을 정리합니다."""
+    repo_path = Path(repo).resolve()
+    pid_path = get_worker_watch_pid_path(repo_path)
+    pid = read_watcher_pid(pid_path)
+    if pid is None:
+        remove_watcher_pid(pid_path)
+        return False, "실행 중인 상시 감시기가 없습니다"
+    try:
+        if watcher_alive(pid):
+            os.kill(pid, signal.SIGTERM)
+            time.sleep(0.1)
+            if watcher_alive(pid):
+                os.kill(pid, signal.SIGKILL)
+        remove_watcher_pid(pid_path)
+        return True, f"상시 감시기 종료 (PID {pid})"
+    except ProcessLookupError:
+        remove_watcher_pid(pid_path)
+        return True, f"상시 감시기 프로세스가 이미 종료되었습니다 (PID {pid})"
+    except OSError as exc:
+        return False, f"상시 감시기 종료 실패 (PID {pid}): {exc}"
+
+
 CURSOR_PLAN_MODE_MARKERS: tuple[str, ...] = (
     "cursor-agent",
     "cursor agent",
@@ -3566,12 +3643,46 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 "Dispatch 이후 도달을 확인합니다.\n"
             )
 
+        skip_auto_approve = (
+            getattr(args, "skip_auto_approve_check", False)
+            or os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1"
+        )
         if prep["auto_approve_watcher"]["ok"]:
             sys.stderr.write(
                 f"권한 자동 승인 감시기를 붙였습니다. 로그: {prep['auto_approve_watcher']['detail']}\n"
             )
+        elif skip_auto_approve:
+            if getattr(args, "skip_auto_approve_check", False):
+                sys.stderr.write(
+                    f"경고: --skip-auto-approve-check 지정으로 권한 자동 승인 감시기 부착 실패를 무시하고 진행합니다: {prep['auto_approve_watcher']['detail']}\n"
+                )
+            else:
+                sys.stderr.write(
+                    f"안내: ORCA_DISABLE_AUTO_APPROVE=1 지정으로 권한 자동 승인 감시기 부착을 건너뜁니다: {prep['auto_approve_watcher']['detail']}\n"
+                )
         else:
-            sys.stderr.write(f"경고: {prep['auto_approve_watcher']['detail']}\n")
+            err_msg = (
+                f"권한 자동 승인 감시기 부착 실패: {prep['auto_approve_watcher']['detail']}. "
+                "기본값에서 fail-closed 로 Dispatch 를 중단합니다. "
+                "의도적으로 우회하려면 --skip-auto-approve-check 를 사용하십시오."
+            )
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "auto_approve_watcher_failed",
+                            "task_id": task_id,
+                            "capsule": str(capsule_path),
+                            "terminal": args.terminal,
+                            "detail": prep["auto_approve_watcher"]["detail"],
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
 
         if prep["file_edit_auto_approve"]["ok"]:
             sys.stderr.write(f"파일 편집 자동 승인 모드 전환을 전송했습니다 ({args.terminal}).\n")
@@ -3636,6 +3747,18 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             )
         except Exception as exc:
             reliability_tracking = {"status": "error", "reason": str(exc)}
+
+        # 상시 감시기(orca_worker_watch --watch) 자동 배경 기동
+        try:
+            watch_started, watch_detail = start_worker_watch(args.repo)
+            worker_watch_info = {
+                "status": "started" if watch_started else "skipped_or_failed",
+                "detail": watch_detail,
+                "ok": watch_started,
+            }
+        except Exception as exc:
+            worker_watch_info = {"status": "error", "detail": str(exc), "ok": False}
+
         notice = _deliver_capsule_notice(args, task_id, capsule_path, intent)
         if notice["status"] == "failed":
             delivery_unverified.append("capsule_notice_failed")
@@ -3685,6 +3808,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             payload["delivery_unverified"] = delivery_unverified
             payload["dispatch_fallback"] = fallback_info
             payload["reliability_tracking"] = reliability_tracking
+            payload["worker_watch"] = worker_watch_info
             payload["exit_code"] = exit_code
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
@@ -3695,6 +3819,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             print(f"Capsule 고지: {notice['status']}")
             if reliability_tracking["status"] == "tracking":
                 print(f"신뢰도 추적: {reliability_tracking['pool']}/{reliability_tracking['role']}")
+            if worker_watch_info.get("ok"):
+                print(f"상시 감시: {worker_watch_info['detail']}")
         if unverified:
             sys.stderr.write(
                 "오류: 워커는 기동했으나 지시 도달을 확인하지 못했습니다 "
@@ -3958,6 +4084,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--allow-unverified-delivery",
         action="store_true",
         help="지시 도달을 확인하지 못해도 종료 코드 0 으로 처리합니다 (권장하지 않음).",
+    )
+    dsp.add_argument(
+        "--skip-auto-approve-check",
+        "--allow-no-auto-approve",
+        action="store_true",
+        dest="skip_auto_approve_check",
+        help="권한 자동 승인 감시기 부착 실패 시에도 Dispatch 를 계속 진행합니다 (권장하지 않음, 경고 출력).",
     )
     dsp.add_argument("--json", action="store_true", help="JSON 출력")
 
