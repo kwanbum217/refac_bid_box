@@ -7,6 +7,37 @@ description: refac_bid_box에서 둘 이상의 에이전트·섹션을 의존성
 
 본 스킬은 섹션별 작업을 단순 대화나 터미널 상태가 아니라 Orca의 Run, Task, Dispatch, `worker_done` 기록으로 관리합니다. 작업이 다른 작업의 시작 조건이면, 의존 작업의 검증된 완료 전에는 시작하지 않습니다.
 
+## 0. 이 문서는 Orca 공식 스킬을 대체하지 않습니다
+
+**조율을 시작하기 전에 `orca skills get orchestration` 을 읽으십시오.** 그것이 Orca
+도구의 정본이고, 이 문서는 **이 저장소에서 그 도구를 어떻게 쓸지에 대한 합의**입니다.
+둘은 층이 다릅니다.
+
+| 문서 | 다루는 것 |
+| --- | --- |
+| `orca skills get orchestration` | `worker-start` 계약, 회수 시점, 실패 복구, 원격 워커 등 **도구 사용법** |
+| 이 문서 | 동시 쓰기 3대 상한, Level 1/2/3 검증, 격리 트리 예외, 읽기 전용 질의 실행기 등 **저장소 규칙** |
+
+**2026-09-01 에 이 구분을 놓쳐 같은 실패를 여러 번 냈습니다.** 공식 스킬에 답이
+있는데 손으로 우회한 사례입니다.
+
+| 공식 스킬이 규정한 것 | 그때 한 일 | 결과 |
+| --- | --- | --- |
+| `worker-start` 가 정규 감독 경로. 워크트리·터미널·readiness·dispatch 를 한 번에 조합하고 `launch.effective` 를 receipt 로 돌려준다 | `terminal create` + `dispatch --return-preamble` + preamble 파일 쓰기를 손으로 조립 | Kimi 프로필 불일치로 워커 2대가 조용히 기동 실패. 사용자가 먼저 발견 |
+| `dispatch --inject` 는 **의도적으로 비감독**이며 `worker_dispatches` 행을 만들지 않는다 | 그 경로로 띄우고 회수를 감사 도구에 의존 | `worker-release` 가 `no_owned_resource` 로 돌아오고 세션 잔류를 놓침 |
+| `worker_done` 은 성공·실패 모두 받은 직후 `worker-release` | 검증·병합 뒤로 미룸 | 자원 회수를 세 번 놓침 |
+| `worker-read --dispatch <id>` 로 출력을 읽는다 | 터미널 핸들을 추적하며 `terminal read` 반복 | 3.2 절이 금지한 폴링을 스스로 반복 |
+| 실패한 워커는 `worker-start --retry-of <id>` | 새 Task 흐름을 손으로 구성 | 이력이 끊김 |
+| `--on <saved-environment>` 로 **다른 Orca 서버에서 워커 실행** (Mac 홈 -> Windows 워커) | 존재를 몰라 "Windows 실기가 없어 재현 불가" 로 다섯 번 기록 | Windows CI 조사를 CI 왕복으로만 진행 |
+
+마지막 항목은 지금도 열려 있는 경로입니다. **Windows 머신에 Orca 를 띄우면 원격
+워커로 직접 재현할 수 있습니다.**
+
+**저수준 경로가 금지된 것은 아닙니다.** 공식 스킬도 "`worktree create`, `terminal
+create`, `dispatch --inject` 는 `worker-start` 가 표현하지 못하는 argv 나 토폴로지에
+유효한 recipe" 라고 적습니다. 다만 **그때는 감독이 빠진다는 것을 알고 선택해야** 하며,
+비감독을 고른 사실을 인수인계에 남기십시오.
+
 ## 1. 적용 조건
 
 **같은 프로젝트에서 동시에 일한다는 사실만으로는 조율 사유가 되지 않습니다.**
@@ -173,7 +204,11 @@ review_checklist:
 
 ## 3. 감독 절차
 
-1. 각 Task는 `orca orchestration worker-start` 또는 `dispatch --inject`로 Dispatch합니다. 사용자 요청에 모델·추론 수준이 있으면 해당 값도 Dispatch 시 반영합니다.
+1. 각 Task는 **`orca orchestration worker-start` 로 Dispatch합니다.** 이것이 감독 경로이며 워크트리·터미널·readiness·dispatch 를 한 번에 묶고 `launch.effective` 를 receipt 로 돌려줍니다. **기동 실패가 즉시 드러나는 유일한 경로입니다.** 사용자 요청에 모델·추론 수준이 있으면 `--model`·`--effort` 로 반영하되, `--effort` 는 `--model` 과 함께여야 하고 둘 다 `--terminal` 과는 못 씁니다.
+   - **`dispatch --inject` 를 기본으로 쓰지 마십시오.** 공식 스킬이 명시하듯 그 경로는 **의도적으로 비감독**이라 `worker_dispatches` 행을 만들지 않고, `worker-stop`·`worker-abandon` 이 그 프로세스를 닫지 못하며, `worker-release` 는 `no_owned_resource` 로 돌아옵니다. 저수준 argv 나 특수 토폴로지가 꼭 필요할 때만 고르고, **비감독을 선택했다는 사실을 인수인계에 적으십시오.**
+   - 기동 뒤에는 receipt 를 읽습니다. `ready` 와 setup `running` 은 정상이고, 실패나 미상은 종료 코드가 0 이 아닙니다. `stage`·`effects`·`residualResources` 를 보고 판단하며 **추측으로 재시도하지 않습니다.**
+   - 실패한 워커를 대체할 때는 `worker-start --task <task> --retry-of <dispatch>` 를 씁니다. 배치는 상속되지 않으므로 `--worktree` 와 `--agent`/`--terminal` 을 명시합니다.
+   - 워커 출력은 `worker-read --dispatch <id> --limit 50` 으로 읽습니다. 터미널 핸들을 따로 추적하지 마십시오(3.2 절).
 2. Dispatch 생성 직후 **워커가 지시를 실제로 받았는지**를 워커 쪽에서 확인합니다. `task-list`와 `dispatch-show`는 Orca 기록만 보여주므로 근거가 되지 않습니다. `dispatch --inject`가 `ok: true`를 반환하고 Task가 `dispatched`로 바뀌어도 전달은 실패할 수 있습니다. `orca terminal read --terminal <handle>`로 프롬프트가 비어 있지 않고 워커가 응답 중인지 확인합니다.
 3. 기동 후 2분 안에 2번 확인을 하고, 이후 커밋 0건과 미커밋 변경 0건이 5분 이상 이어지면 정체로 판정해 터미널 출력을 다시 읽습니다. 진행 중이라고 보고하기 전에 이 확인을 거칩니다.
 4. 장시간 작업은 터미널 출력만으로 완료라고 판단하지 않습니다. 코디네이터는 `check --wait --types worker_done,escalation,question`으로 상태를 기다립니다.
@@ -417,6 +452,25 @@ done
 ## 8. 완료한 섹션은 자원을 반납합니다
 
 **회수는 병합의 후속 작업이 아니라 `worker_done` ack 의 일부입니다.**
+
+공식 스킬의 계약을 그대로 따릅니다.
+
+- **성공과 실패 보고 모두** `worker-release` 대상입니다. 사용자가 명시적으로 살려
+  두라고 한 경우만 예외이며, 그때는 `worker-retain --dispatch <id>` 로 기록합니다.
+  **조용히 건너뛰지 마십시오.**
+- **타임아웃, TUI 유휴, heartbeat, status, question, escalation, 반려·stale
+  `worker_done` 은 회수 사유가 아닙니다.** 릴리스는 취소가 아니라 완료 후 정리입니다.
+- 같은 에이전트가 곧바로 다음 Task 를 맡으면 릴리스 대신
+  `worker-show --dispatch <id>` 의 `worker.agent_terminal_handle` 을 읽어
+  `worker-start --task <next> --terminal <handle>` 로 **소유권을 넘깁니다.**
+- `release_pending` 이나 `release_unknown` 이 오면 **`terminal close` 로 대체하지
+  말고** receipt 가 지시하는 복구 절차를 따릅니다.
+
+> **주의**: `scripts/orca_settled_session_audit.py` 통과가 회수 완료를 뜻하지
+> 않습니다. 그 검사는 Task 가 `completed` 인데 워커 터미널이 열린 경우를 잡는데,
+> `dispatch --inject` 로 띄운 비감독 터미널은 애초에 그 조건에 걸리지 않습니다.
+> 2026-09-01 에 이 착각으로 세션 하나를 남겼습니다. `git worktree list` 와
+> `orca terminal list` 로 실물을 함께 보십시오.
 Task 가 `completed` 가 되었는데 워커 창이 남아 있으면 조율이 끝난 것이
 아닙니다. 2026-09-01 에 워커 4대의 `worker_done` 을 처리하고도 하위 세션을
 남겨 사용자가 먼저 지적했습니다. 원격 푸시나 `origin/main` 반영을 기다리면
