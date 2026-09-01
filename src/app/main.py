@@ -136,8 +136,25 @@ def _enable_latency_segment_logging() -> None:
     segment_logger.propagate = False
 
 
+def _enable_warmup_logging() -> None:
+    """예열 로그가 실제로 나가도록 이 모듈 로거를 준비합니다.
+
+    예열 결과는 `logger.info` 로 나가는데 컨테이너 런타임의 루트 로거는 WARNING
+    이고 핸들러가 없을 수 있습니다. 그래서 2026-09-01 까지 `predictor_warmup` 과
+    `llm_warmup` 로그가 한 줄도 남지 않았고, **예열이 성공했는지 실패했는지
+    운영에서 알 수 없었습니다.** 실패해도 조용히 느려질 뿐이라 더 위험합니다.
+    """
+    if logger.level == logging.NOTSET or logger.level > logging.INFO:
+        logger.setLevel(logging.INFO)
+    if not logger.handlers and not logging.getLogger().handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    _enable_warmup_logging()
     _enable_latency_segment_logging()
     tasks = [
         asyncio.create_task(_warm_llm_backend()),
