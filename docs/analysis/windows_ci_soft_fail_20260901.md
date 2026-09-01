@@ -91,3 +91,52 @@
 | --- | --- | --- |
 | Windows Docker Desktop 실기 | 장비 부재 | 후속 과업 |
 | Windows CI 테스트 중단 | 테스트 인프라 비용 | 게이트 제외, 조사 계속 |
+
+---
+
+## 후속: 원인 규명과 게이트 복귀 (2026-09-01)
+
+본 문서의 soft-fail 판단은 **해소되었습니다.** 아래 근거로 `continue-on-error`
+를 제거하고 Windows 를 병합 게이트에 복귀시켰습니다.
+
+### 이전 판단이 놓친 사실
+
+soft-fail 을 결정할 때 인용한 "342초 -> 212.90초" 는 **완주 시간이 아니라 정지
+시점까지의 시간**이었습니다. Windows job 은 매 실행 정확히 `2090 passed` 에서
+`subprocess.py:1282` 의 KeyboardInterrupt 로 끊겼고, 약 950 건이 실행조차 되지
+않았습니다. 즉 "Windows 도 통과한다" 는 근거가 성립한 적이 없습니다.
+
+### 정지 지점 특정
+
+Windows 에만 `-v` 를 켜 마지막 완료 테스트를 남겼습니다(run 33518498545).
+
+    tests/test_orca_taskctl.py::test_dispatch_suppresses_mode_switch_when_env_disabled PASSED
+    !!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!
+
+다음 테스트인 `test_dispatch_handles_mode_switch_failure_and_exception_gracefully`
+가 정지 지점입니다.
+
+### 원인 두 가지
+
+| 원인 | 내용 |
+| --- | --- |
+| 테스트가 실제 배경 프로세스를 기동 | dispatch 경로의 `start_worker_watch` 가 mock 되지 않아 `orca_worker_watch.py --watch` 무한 루프가 러너에 실제로 떴습니다 |
+| `start_new_session` 이 Windows 에서 무시됨 | POSIX 전용이라 감시기가 부모와 같은 콘솔 그룹에 남아 인터럽트가 서로 전파됩니다 |
+
+전자는 autouse 픽스처로 차단하고, 후자는 Windows 에서
+`CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS` 로 분리했습니다.
+
+이어 `signal.SIGKILL` 이 Windows 에 없어 `stop_worker_watch` 가 AttributeError
+로 실패하던 것도 `getattr` 로 SIGTERM 에 내려앉게 고쳤습니다.
+
+### 결과
+
+| 실행 | Windows 결과 |
+| --- | --- |
+| 33517528907 | 2090 passed 후 KeyboardInterrupt |
+| 33518498545 | 2090 passed 후 KeyboardInterrupt (정지 지점 특정) |
+| 33519652341 | 3024 passed, 1 failed (SIGKILL) |
+| 33520619561 | **3025 passed, 0 failed, 281.08초** |
+
+Windows 가 처음으로 전량을 완주했습니다. 이 실패는 서비스 코드가 아니라
+오케스트레이션 도구의 **이식성 결함** 두 건이었습니다.
