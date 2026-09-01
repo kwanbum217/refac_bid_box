@@ -86,11 +86,19 @@ def test_docker_worker_container_manager_wait_ready_timeout():
         network="test-net",
         queue_name="arq:container-bench:test1234",
     )
+
+    # wait_ready 루프의 time.sleep(0.1) 호출을 no-op 으로 대체해 Windows CI 의
+    # sleep granularity 가 실제 대기 시간을 부풀리지 않도록 합니다. 검증 의도는
+    # timeout 내에 ContainerLifecycleError 가 발생하는지이며, 그 분기는 보존됩니다.
+    def _no_sleep(_seconds: float) -> None:
+        return None
+
     with (
         patch(
             "scripts.benchmark_arq_container.subprocess.check_output",
             return_value="Some other log output",
         ),
+        patch("scripts.benchmark_arq_container.time.sleep", _no_sleep),
         pytest.raises(ContainerLifecycleError, match="준비 상태에 도달하지 못했습니다"),
     ):
         mgr.wait_ready(timeout_sec=0.2)
