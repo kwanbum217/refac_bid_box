@@ -81,6 +81,42 @@ async def _warm_predictor() -> None:
         )
 
 
+async def _warm_vector_search() -> None:
+    """ChromaDB 컬렉션과 임베딩 경로를 미리 예열합니다.
+
+    2026-09-01 컨테이너 실측입니다. 프로세스 첫
+    `retrieve_semantic_context` 가 13,142ms 였고 이후 46~56ms 였습니다. 비용은
+    HNSW 인덱스 적재(첫 질의 4.7초)와 Ollama 임베딩 첫 연결에 몰려 있으며,
+    두 번째 요청부터는 사라집니다.
+
+    `keep_alive` 는 Ollama 모델 상주만 보장합니다. ChromaDB 인덱스와 이 프로세스의
+    연결·클라이언트 캐시는 그 대상이 아니므로 여기서 따로 예열합니다.
+
+    LLM·예측기 예열과 같은 이유로 배경 태스크이며, 실패해도 첫 질의가 지연 로드로
+    처리합니다. **결과에는 영향이 없습니다.** 같은 코드 경로를 한 번 더 부를 뿐입니다.
+    """
+    if not settings.VECTOR_WARMUP_ON_STARTUP:
+        return
+
+    from src.rag.schemas import RetrievalPlan
+    from src.rag.vector_store import retrieve_semantic_context
+
+    t_start = time.perf_counter()
+    try:
+        plan = RetrievalPlan(semantic_query="예열", filters={})
+        await asyncio.to_thread(retrieve_semantic_context, plan)
+        elapsed_ms = max(0.0, (time.perf_counter() - t_start) * 1000.0)
+        logger.info("event=vector_warmup, status=success, elapsed_ms=%.2f", elapsed_ms)
+    # 예열은 부가 기능입니다. 실패해도 첫 질의가 지연 로드로 처리합니다.
+    except Exception as exc:
+        elapsed_ms = max(0.0, (time.perf_counter() - t_start) * 1000.0)
+        logger.warning(
+            "event=vector_warmup, status=failed, elapsed_ms=%.2f, error=%s",
+            elapsed_ms,
+            exc,
+        )
+
+
 def _enable_latency_segment_logging() -> None:
     """구간 계측 로그가 실제로 나가도록 로거를 준비합니다.
 
@@ -106,6 +142,7 @@ async def lifespan(_: FastAPI):
     tasks = [
         asyncio.create_task(_warm_llm_backend()),
         asyncio.create_task(_warm_predictor()),
+        asyncio.create_task(_warm_vector_search()),
     ]
     try:
         yield

@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     OLLAMA_KEEP_ALIVE: str = "-1"
     # 기동 시 모델을 미리 올려 첫 질의가 로드 비용을 내지 않게 합니다.
     LLM_WARMUP_ON_STARTUP: bool = True
+    VECTOR_WARMUP_ON_STARTUP: bool = True
     # 사고(thinking) 단계 사용 여부. gemma4 는 사고를 끝낸 뒤에야 답변 본문을
     # 내보내므로, 켜 두면 첫 토큰이 9.73초, 끄면 0.41초입니다 (2026-08-05 실측).
     LLM_THINKING: bool = False
