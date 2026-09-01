@@ -148,7 +148,13 @@ llm 구간도 후보 넷을 전부 닫았습니다. `SYSTEM_PROMPT` 는 Ollama �
 
 `scripts/db_readonly_query.py` 를 추가했습니다. 워커가 `docker exec ... mysql` 을
 손으로 조립하면 형태가 바뀔 때마다 승인 대화창에 걸리므로, **전용 실행기만 부르게**
-합니다. `uv run python scripts/...` 는 이미 자동 승인 대상이라 멈추지 않습니다.
+합니다.
+
+> **주의**: `uv run python scripts/...` 가 원래부터 승인 대상인 것은 **아니었습니다.**
+> `uv` 는 `uv run pytest` 만 허용하는 분기에 걸려 있어, 실행기를 만들어도 워커가 그대로
+> 막혔습니다. 문서 예시를 실제로 실행해 보고서야 드러났습니다. 같은 날
+> `UV_RUN_ALLOWED_SCRIPTS` 화이트리스트를 추가해 이 실행기만 승인하도록 열었습니다.
+> **다른 스크립트를 그 목록에 넣을 때는 그 스크립트가 스스로 쓰기를 막는지 확인하십시오.**
 
 ```bash
 uv run python scripts/db_readonly_query.py --sql "SELECT COUNT(*) FROM bid_results"
@@ -159,7 +165,28 @@ uv run python scripts/db_readonly_query.py --sql "SELECT COUNT(*) FROM bid_resul
 막습니다. 조율 스킬 2.5 절에 반영했고 회귀 테스트 27건을 붙였습니다.
 
 **Capsule 의 `ground_truth` 에 이 명령 형태를 못 박으십시오.** 형태를 자유롭게 두면
-워커는 매번 다른 명령을 만들어 냅니다.
+워커는 매번 다른 명령을 만들어 냅니다. 2026-09-01 에 "docker compose exec 형태를
+쓰라" 고 적었는데도 워커가 `docker exec -i ... sh -c '...'` 로 감싸 반복해서 막혔습니다.
+**허용 형태를 적는 것만으로는 부족하고, 금지 형태와 그 이유를 함께 적어야 합니다.**
+
+Intent 의 `ground_truth` 에 그대로 넣을 문장입니다.
+
+```yaml
+ground_truth:
+  - "재조사 불필요: DB 조회는 반드시 uv run python scripts/db_readonly_query.py --sql \"<질의>\" 형태만 쓴다. docker exec, docker compose exec, mysql 을 직접 부르지 말라. sh -c 로 감싸지 말라. 그 형태들은 자동 승인 대상이 아니라 질의마다 사람 승인을 기다리게 되어 작업이 멈춘다."
+  - "재조사 불필요: 실행기는 SELECT, SHOW, EXPLAIN, DESC, WITH 로 시작하는 단일 문장만 받는다. 세미콜론으로 여러 문장을 이어 붙이면 거부된다. 질의를 나누어 여러 번 실행하라."
+  - "재조사 불필요: 결과가 많으면 --limit 로 조절하고 기계 판독이 필요하면 --format json 을 쓴다. 기본 상한은 200행이다."
+```
+
+`review_checklist` 에도 한 줄 넣어 두면 리뷰어가 잡습니다.
+
+```yaml
+review_checklist:
+  - id: raw_db_command
+    question: db_readonly_query.py 를 거치지 않고 docker 나 mysql 을 직접 불렀는가
+    defect_when: yes
+    how: 보고와 터미널 이력에서 docker exec, docker compose exec, mysql 을 검색한다
+```
 
 ### 4.4 상시 과제
 
@@ -205,7 +232,7 @@ uv run python scripts/db_readonly_query.py --sql "SELECT COUNT(*) FROM bid_resul
 | 항목 | 값 |
 | --- | --- |
 | 주 저장소 | `main` `6b35a05` |
-| 전체 테스트 | 3,013 passed |
+| 전체 테스트 | 3,018 passed |
 | 규칙 검사 | 16/16 |
 | 활성 워커 / 잔류 세션 | 0 / 없음 |
 | 워크트리 | 주 저장소만 |

@@ -763,12 +763,17 @@ def classify_segment(cmd: str) -> tuple[str, str]:
             return "approve", "안전한 sed -n 읽기"
         return "hold", "sed 명령은 -n 옵션(수정 없음)만 허용"
 
-    # 4.5. uv run pytest 검사
+    # 4.5. uv run 검사
     if exe == "uv":
         args = argv[1:]
         if len(args) >= 2 and args[0] == "run" and args[1] == "pytest":
             return "approve", "신뢰된 워크트리 안의 테스트 코드 실행 검증 (uv run pytest)"
-        return "hold", "uv 명령은 uv run pytest 만 허용"
+        if len(args) >= 3 and args[0] == "run" and args[1] in ("python", "python3"):
+            target = args[2]
+            if target in UV_RUN_ALLOWED_SCRIPTS:
+                return "approve", f"허용된 읽기 전용 실행기 ({target})"
+            return "hold", f"uv run python 은 허용 목록의 스크립트만 실행합니다 ({target})"
+        return "hold", "uv 명령은 uv run pytest 와 허용 스크립트만 실행합니다"
 
     # 4.6. 보류 대상 명령 명시적 사유 반환
     if exe in ("python", "python3") or exe.startswith("python3."):
@@ -783,6 +788,16 @@ def classify_segment(cmd: str) -> tuple[str, str]:
     # 4.7. 기본값: fail-closed 보류
     return "hold", f"안전목록 밖: {exe}"
 
+
+# `uv run python <스크립트>` 로 실행을 승인하는 목록.
+#
+# 워커의 조사가 DB 를 봐야 할 때 `docker exec ... mysql` 을 손으로 조립하면 형태가
+# 바뀔 때마다 승인 대화창에 걸립니다(2026-09-01 실증). 전용 실행기를 만들어 그것만
+# 부르게 하려면 그 실행기가 승인 대상이어야 합니다.
+#
+# **여기에 스크립트를 추가할 때는 그 스크립트가 스스로 쓰기를 막는지 확인하십시오.**
+# 이 목록은 "무엇을 실행해도 되는가" 가 아니라 "무엇이 스스로 안전한가" 입니다.
+UV_RUN_ALLOWED_SCRIPTS = frozenset({"scripts/db_readonly_query.py"})
 
 READ_ONLY_SQL_PREFIXES = ("select", "show", "explain", "desc", "describe", "with")
 

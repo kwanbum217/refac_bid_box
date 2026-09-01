@@ -143,13 +143,33 @@ uv run python scripts/db_readonly_query.py --sql "SELECT COUNT(*) FROM bid_resul
 uv run python scripts/db_readonly_query.py --sql "SHOW TABLES" --format json --limit 50
 ```
 
-`uv run python scripts/...` 는 이미 자동 승인 대상이라 워커가 멈추지 않습니다.
+`uv run python scripts/...` 는 기본적으로 승인 대상이 **아닙니다.** `uv` 는
+`uv run pytest` 만 허용하는 분기에 걸립니다. 이 실행기는 `orca_auto_approve.py` 의
+`UV_RUN_ALLOWED_SCRIPTS` 화이트리스트에 등록해 열어 두었습니다. **다른 스크립트를
+그 목록에 넣을 때는 그 스크립트가 스스로 쓰기를 막는지 확인하십시오.**
 실행기는 `SELECT`·`SHOW`·`EXPLAIN`·`DESC`·`WITH` 로 시작하는 **단일 문장만** 통과시키고,
 세미콜론 다중 문장과 `INTO OUTFILE` 같은 우회를 거부하며, `READ ONLY` 트랜잭션으로
 드라이버 수준에서도 쓰기를 막습니다.
 
 Capsule 의 `ground_truth` 에 이 명령 형태를 못 박으십시오. 형태를 자유롭게 두면
-워커는 매번 다른 명령을 만들어 냅니다.
+워커는 매번 다른 명령을 만들어 냅니다. 2026-09-01 에 "docker compose exec 형태를
+쓰라" 고 적었는데도 워커가 `docker exec -i ... sh -c '...'` 로 감싸 반복해서
+막혔습니다. **허용 형태만 적지 말고 금지 형태와 그 이유를 함께 적으십시오.**
+
+Intent 에 그대로 붙여 넣을 문장입니다.
+
+```yaml
+ground_truth:
+  - "재조사 불필요: DB 조회는 반드시 uv run python scripts/db_readonly_query.py --sql \"<질의>\" 형태만 쓴다. docker exec, docker compose exec, mysql 을 직접 부르지 말라. sh -c 로 감싸지 말라. 그 형태들은 자동 승인 대상이 아니라 질의마다 사람 승인을 기다리게 되어 작업이 멈춘다."
+  - "재조사 불필요: 실행기는 SELECT, SHOW, EXPLAIN, DESC, WITH 로 시작하는 단일 문장만 받는다. 세미콜론으로 여러 문장을 이어 붙이면 거부된다. 질의를 나누어 여러 번 실행하라."
+  - "재조사 불필요: 결과가 많으면 --limit 로 조절하고 기계 판독이 필요하면 --format json 을 쓴다. 기본 상한은 200행이다."
+
+review_checklist:
+  - id: raw_db_command
+    question: db_readonly_query.py 를 거치지 않고 docker 나 mysql 을 직접 불렀는가
+    defect_when: yes
+    how: 보고와 터미널 이력에서 docker exec, docker compose exec, mysql 을 검색한다
+```
 
 ## 3. 감독 절차
 
