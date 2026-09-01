@@ -1088,3 +1088,14 @@ def test_no_retry_when_first_attempt_succeeds(tmp_path, mock_git):
 
     assert code == 0
     assert call_count == 1
+
+
+def test_build_model_command_supported_independent_reviewer_models():
+    """(41) 지원되는 독립 리뷰어 모델들이 올바른 CLI 명령어로 빌드됩니다."""
+    cmd_qwen = build_model_command("qwen3.7-plus", "test prompt")
+    assert cmd_qwen[0] == "qwen"
+    assert "test prompt" in cmd_qwen
+
+    cmd_gemini = build_model_command("gemini-3.7-flash-high", "test prompt")
+    assert cmd_gemini[0] == "agy"
+    assert "test prompt" in cmd_gemini

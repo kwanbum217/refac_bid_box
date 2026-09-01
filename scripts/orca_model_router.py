@@ -32,7 +32,7 @@ import re
 import shutil
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any, Protocol, cast
@@ -1350,6 +1350,15 @@ def classify_from_capsule(capsule_path: str | Path) -> dict[str, Any]:
     objective = parse_capsule_scalar(capsule_text, "objective") or ""
     why_now = parse_capsule_scalar(capsule_text, "why_now") or ""
     role = parse_capsule_scalar(capsule_text, "role") or "builder"
+    builder_model = parse_capsule_scalar(capsule_text, "builder_model") or parse_capsule_scalar(
+        capsule_text, "model"
+    )
+    builder_provider = parse_capsule_scalar(capsule_text, "builder_provider")
+    if not builder_provider and builder_model:
+        with suppress(Exception):
+            b_prov = provider_for_model(builder_model, strict=False)
+            if b_prov != "unknown":
+                builder_provider = b_prov
 
     combined = f"{objective}\n{why_now}"
     risk, reasons = classify_risk_with_reasons(combined)
@@ -1358,6 +1367,8 @@ def classify_from_capsule(capsule_path: str | Path) -> dict[str, Any]:
         "role": role,
         "objective": objective[:100],
         "reasons": reasons,
+        "builder_provider": builder_provider,
+        "builder_model": builder_model,
     }
 
 
@@ -1387,6 +1398,7 @@ def select_model(
     allow_free: bool = False,
     has_write_scope: bool = True,
     exclude_providers: list[str] | str | None = None,
+    builder_provider: str | None = None,
 ) -> dict[str, Any]:
     """역할과 위험도에 따라 최적 모델을 선택합니다.
 
@@ -1395,6 +1407,12 @@ def select_model(
     FREE_POOL_ORDER 의 모델이 후보 맨 앞에 추가됩니다.
     코디네이터 전용 모델은 절대 선택되지 않습니다.
     exclude_providers 로 지정된 provider 계열 모델은 주 모델 및 대체 모델에서 모두 제외됩니다.
+
+    리뷰어 독립성 정책:
+    role == "reviewer" 인 경우, 빌더 provider 가 알려져 있으면 해당 provider 계열을 제외합니다.
+    빌더 provider 를 알 수 없는 경우(unknown / 미지정):
+      - 위험도가 medium 이상이거나 쓰기 범위(has_write_scope=True)가 있으면 독립성을 증명할 수 없으므로 fail-closed 로 ModelRoutingError 를 발생시킵니다.
+      - 위험도가 low 이고 읽기 전용(has_write_scope=False)인 경우에만 경고 후 진행을 허용합니다.
     """
     exclude = exclude or []
     if isinstance(exclude_providers, str):
@@ -1404,7 +1422,34 @@ def select_model(
     else:
         excluded_providers_set = set()
 
+    effective_builder_prov = builder_provider
+    if (
+        effective_builder_prov
+        and effective_builder_prov != "unknown"
+        and effective_builder_prov not in excluded_providers_set
+    ):
+        excluded_providers_set.add(effective_builder_prov)
+
     inventory_notes: list[str] = []
+
+    if role == "reviewer" and effective_builder_prov == "unknown":
+        if risk in ("high", "medium") or has_write_scope:
+            exclude_str = ", ".join(exclude) if exclude else "(없음)"
+            exclude_prov_str = (
+                ", ".join(sorted(excluded_providers_set)) if excluded_providers_set else "(없음)"
+            )
+            raise ModelRoutingError(
+                f"리뷰어 모델 선택 실패: 빌더 provider 를 알 수 없어 독립성을 보장할 수 없습니다 "
+                f"(role={role}, risk={risk}, has_write_scope={has_write_scope}). "
+                "위험도가 medium 이상이거나 쓰기 범위가 있는 Task 에서는 빌더 provider 가 필수입니다.",
+                role=role,
+                risk=risk,
+                exclude=exclude,
+                exclude_providers=list(excluded_providers_set),
+            )
+        inventory_notes.append(
+            "경고: 빌더 provider 를 알 수 없어 독립 provider 제외를 적용하지 못했습니다."
+        )
 
     base_candidates = list(TIER_POLICY.get((role, risk), TIER_POLICY[("__default__", risk)]))
 
@@ -1735,6 +1780,8 @@ def route(
     allow_free: bool = False,
     has_write_scope: bool | None = None,
     exclude_providers: list[str] | str | None = None,
+    builder_provider: str | None = None,
+    builder_model: str | None = None,
 ) -> RouteResult:
     """분류와 probe 를 종합하여 최종 워커 모델을 라우팅합니다."""
     reasons: list[str] = []
@@ -1745,6 +1792,10 @@ def route(
         reasons = info.get("reasons", [])
         if has_write_scope is None:
             has_write_scope = capsule_has_write_scope(capsule_path)
+        if not builder_provider:
+            builder_provider = info.get("builder_provider")
+        if not builder_model:
+            builder_model = info.get("builder_model")
     else:
         role = role or "builder"
         if risk is None:
@@ -1752,6 +1803,27 @@ def route(
             risk, reasons = classify_risk_with_reasons(combined)
         if has_write_scope is None:
             has_write_scope = True
+
+    if not builder_provider and builder_model:
+        with suppress(Exception):
+            b_prov = provider_for_model(builder_model, strict=False)
+            if b_prov != "unknown":
+                builder_provider = b_prov
+
+    if (
+        role == "reviewer"
+        and (not builder_provider or builder_provider == "unknown")
+        and not exclude_providers
+    ):
+        if risk in ("high", "medium") or has_write_scope:
+            raise ModelRoutingError(
+                f"리뷰어 모델 라우팅 실패: 빌더 provider 를 알 수 없어 독립성을 보장할 수 없습니다 "
+                f"(role={role}, risk={risk}, has_write_scope={has_write_scope}). "
+                "위험도가 medium 이상이거나 쓰기 범위가 있는 Task 에서는 빌더 provider 가 필수입니다.",
+                role=role,
+                risk=risk,
+            )
+        builder_provider = "unknown"
 
     warnings: list[str] = []
     if allow_free:
@@ -1771,9 +1843,12 @@ def route(
             allow_free=allow_free,
             has_write_scope=has_write_scope,
             exclude_providers=exclude_providers,
+            builder_provider=builder_provider,
         )
         primary_id = selection["primary_model"]
         fallback_id = selection.get("fallback_model")
+        if selection.get("inventory_notes"):
+            warnings.extend(selection["inventory_notes"])
 
     # 무료 풀이 실제로 주 모델로 선택된 경우 재검증 의무 경고 추가
     primary_pool_info = None
@@ -1862,6 +1937,8 @@ def _build_parser() -> argparse.ArgumentParser:
     cls.add_argument(
         "--exclude-provider", action="append", help="제외할 provider 계열 (복수 지정 가능)"
     )
+    cls.add_argument("--builder-provider", help="빌더 모델의 provider 계열")
+    cls.add_argument("--builder-model", help="빌더 모델 ID")
     cls.add_argument("--json", action="store_true", help="JSON 출력")
 
     # probe
@@ -1888,6 +1965,8 @@ def _build_parser() -> argparse.ArgumentParser:
     rt.add_argument(
         "--exclude-provider", action="append", help="제외할 provider 계열 (복수 지정 가능)"
     )
+    rt.add_argument("--builder-provider", help="빌더 모델의 provider 계열")
+    rt.add_argument("--builder-model", help="빌더 모델 ID")
     rt.add_argument("--no-probe", action="store_true", help="probe 생략")
     rt.add_argument("--probe-timeout", type=int, default=30, help="probe 타임아웃 (초)")
     rt.add_argument("--json", action="store_true", help="JSON 출력")
@@ -1921,6 +2000,8 @@ def cmd_classify(args: argparse.Namespace) -> int:
     reasons: list[str] = []
     allow_free = getattr(args, "allow_free", False)
     exclude_providers = getattr(args, "exclude_provider", None)
+    builder_provider = getattr(args, "builder_provider", None)
+    builder_model = getattr(args, "builder_model", None)
     if args.capsule:
         info = classify_from_capsule(args.capsule)
         risk = info["risk"]
@@ -1928,6 +2009,10 @@ def cmd_classify(args: argparse.Namespace) -> int:
         objective = info["objective"]
         reasons = info.get("reasons", [])
         has_write_scope = capsule_has_write_scope(args.capsule)
+        if not builder_provider:
+            builder_provider = info.get("builder_provider")
+        if not builder_model:
+            builder_model = info.get("builder_model")
     else:
         objective = args.objective or ""
         why_now = args.why_now or ""
@@ -1936,6 +2021,12 @@ def cmd_classify(args: argparse.Namespace) -> int:
         risk, reasons = classify_risk_with_reasons(combined)
         has_write_scope = True
 
+    if not builder_provider and builder_model:
+        with suppress(Exception):
+            b_prov = provider_for_model(builder_model, strict=False)
+            if b_prov != "unknown":
+                builder_provider = b_prov
+
     try:
         selection = select_model(
             role=role,
@@ -1943,6 +2034,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
             allow_free=allow_free,
             has_write_scope=has_write_scope,
             exclude_providers=exclude_providers,
+            builder_provider=builder_provider,
         )
     except ModelRoutingError as exc:
         if args.json:
@@ -2009,6 +2101,8 @@ def cmd_route(args: argparse.Namespace) -> int:
             explicit_model=args.model,
             allow_free=getattr(args, "allow_free", False),
             exclude_providers=getattr(args, "exclude_provider", None),
+            builder_provider=getattr(args, "builder_provider", None),
+            builder_model=getattr(args, "builder_model", None),
         )
     except (ValueError, ModelRoutingError) as exc:
         if args.json:
