@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-01
-> **source_commit**: `e9934e9`
+> **source_commit**: `7832292`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -285,6 +285,14 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
   다음 착수 순서는 [`../ops/handoff_20260901_cutover.md`](../ops/handoff_20260901_cutover.md) 4장입니다.
+- **RAG vector 구간 최적화 판정 (2026-09-01)**: 종전 분석이 지목한 임베딩은 병목이
+  아닙니다. 실측에서 Ollama 임베딩 45ms, ChromaDB HNSW 3.4ms 이며 **병목은 메타데이터
+  `where` 절**입니다(`category` 하나로 3.4ms -> 1,170ms, 344배).
+  넓게 받아 파이썬에서 거르는 안은 fixture 96건 중 **6건이 결과 불일치**해
+  **기각**했습니다(HNSW 근사 특성상 `n_results` 가 다르면 결과가 달라져 완전 동등성
+  달성 불가). 결과 불변인 임베딩 클라이언트 재사용만 병합했습니다(`7832292`).
+  상세는 [`vector_metadata_prefilter_verdict_20260901.md`](../analysis/vector_metadata_prefilter_verdict_20260901.md).
+  **남은 여지는 vector 가 아니라 llm 구간(warm P50 2,244ms, 62.5%)입니다.**
 - **Wave K 조율 평면 (2026-09-01, 병합 완료)**: I-H 경계값 픽스처(`a0ec7e3`)와 J3 리뷰 문서(`32b2426`)를
   병합했고, `main` 에 남아 있던 테스트 실패 27건을 닫았습니다(`7dac20f`). 원인은 `b889ee6` 의 완료 세션
   잔류 검사가 테스트 안에서 실제 Orca 런타임을 호출해 fail-closed 로 거부한 것이며, 검사를 주입 가능한
