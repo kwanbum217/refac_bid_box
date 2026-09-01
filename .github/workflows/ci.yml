@@ -84,18 +84,6 @@ jobs:
   cross-platform-test:
     name: Test (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    # Windows 만 실패해도 워크플로를 붉히지 않습니다. 2026-09-01 판단이며 근거는
-    # docs/analysis/windows_ci_soft_fail_20260901.md 입니다.
-    #
-    # 요약: Windows 실패는 **테스트 인프라 비용**이지 서비스 코드 결함이 아닙니다.
-    # 같은 테스트가 Ubuntu 3종과 macOS 에서 전부 통과하고 로컬도 3,040 passed 입니다.
-    # 네 층(폴링 sleep, subprocess 생성, PBKDF2 600k, fixture setup)을 닫아 342초를
-    # 212.90초로 줄였으나 여전히 하위 프로세스 대기 중 인터럽트가 납니다. Windows
-    # 실기가 없어 매번 CI 왕복으로만 좁힐 수 있습니다.
-    #
-    # **job 을 지우지 않는 이유**: 지우면 회귀를 영영 못 봅니다. 계속 돌려 로그를
-    # 남기되 병합 게이트에서만 뺍니다. 원인이 닫히면 이 줄을 제거하십시오.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
