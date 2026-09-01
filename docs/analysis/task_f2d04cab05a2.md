@@ -28,4 +28,4 @@
 - 전체 테스트 스위트: **`uv run pytest tests/ -q -m 'not data_assets'` 3031 passed (100% 통과, 0 실패)**
 - 규칙 검증: **`python3 scripts/validate_agent_rules.py --quiet` 16/16 통과**
 
-상세 분석 및 기각된 대안은 [`docs/analysis/task_v1_windows_subprocess.md`](docs/analysis/task_v1_windows_subprocess.md) 를 참조하십시오.
+상세 분석 및 기각된 대안은 [`task_v1_windows_subprocess.md`](task_v1_windows_subprocess.md) 를 참조하십시오.
