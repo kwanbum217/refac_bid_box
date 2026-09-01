@@ -816,10 +816,12 @@ class TestHeredocWritePolicy:
 
 
 class TestDockerReadOnlySql:
-    """읽기 전용 DB 조회만 승인하고 나머지 docker 는 보류해야 합니다.
+    """docker 직접 실행은 읽기 전용 SQL 이어도 보류하고 db_readonly_query.py 를 안내해야 합니다.
 
-    2026-09-01 에 조사 워커가 DB 질의마다 사람 승인을 기다리며 반복해서 멈췄습니다.
-    감시기는 정상 부착돼 있었고 docker 를 통째로 보류하는 정책이 원인이었습니다.
+    2026-09-01 외부 감사 지적: docker mysql -e 경로의 단순 시작 토큰 검사는
+    'WITH ... UPDATE', 'SELECT ... INTO OUTFILE' 같은 쓰기/탈출을 approve 로
+    통과시키는 결함이 있었습니다. 이제 docker 직접 실행은 읽기 전용 질의라도
+    보류하며, 전용 실행기인 scripts/db_readonly_query.py 경로를 쓰도록 안내합니다.
     """
 
     @staticmethod
@@ -830,48 +832,69 @@ class TestDockerReadOnlySql:
 
         return classify_docker_execution(shlex.split(cmd), cmd)
 
-    def test_select_is_approved(self):
-        verdict, _ = self._classify(
+    def test_select_is_held_and_instructs_readonly_query(self):
+        """읽기 전용 SELECT 질의라도 docker 직접 실행은 보류하고 db_readonly_query.py 를 안내합니다."""
+        verdict, reason = self._classify(
             'docker compose exec -T -e MYSQL_PWD=x db mysql -u root procurement -e "SELECT 1"'
         )
-        assert verdict == "approve"
+        assert verdict == "hold"
+        assert "db_readonly_query.py" in reason
 
-    def test_multiple_read_only_statements_are_approved(self):
-        verdict, _ = self._classify(
+    def test_multiple_read_only_statements_are_held(self):
+        verdict, reason = self._classify(
             "docker compose exec -T db mysql -u root procurement "
             '-e "SELECT COUNT(*) FROM t; SHOW TABLES; EXPLAIN SELECT 1"'
         )
-        assert verdict == "approve"
+        assert verdict == "hold"
+        assert "db_readonly_query.py" in reason
+
+    def test_with_update_is_held(self):
+        """WITH...UPDATE 가 approve 로 빠져나가지 않고 보류됨을 단언합니다."""
+        verdict, reason = self._classify(
+            "docker compose exec -T db mysql -u root procurement "
+            '-e "WITH x AS (SELECT 1) UPDATE t SET a=1"'
+        )
+        assert verdict == "hold"
+        assert "db_readonly_query.py" in reason
+
+    def test_select_into_outfile_is_held(self):
+        """SELECT...INTO OUTFILE 파일 쓰기 질의가 approve 로 빠져나가지 않고 보류됨을 단언합니다."""
+        verdict, reason = self._classify(
+            "docker compose exec -T db mysql -u root procurement "
+            "-e \"SELECT * INTO OUTFILE '/tmp/x' FROM t\""
+        )
+        assert verdict == "hold"
+        assert "db_readonly_query.py" in reason
 
     def test_update_mixed_with_select_is_held(self):
-        """읽기와 쓰기가 섞이면 보류해야 합니다. 마지막 문장까지 검사합니다."""
         verdict, reason = self._classify(
             "docker compose exec -T db mysql -u root procurement "
             '-e "SELECT 1; UPDATE servc_inst_verify SET lwlt_rate=0"'
         )
         assert verdict == "hold"
-        assert "읽기 전용이 아닌" in reason
+        assert "db_readonly_query.py" in reason
 
     def test_ddl_is_held(self):
-        verdict, _ = self._classify(
+        verdict, reason = self._classify(
             'docker compose exec -T db mysql -u root procurement -e "ALTER TABLE t DROP INDEX i"'
         )
         assert verdict == "hold"
+        assert "db_readonly_query.py" in reason
 
     def test_shell_wrapped_docker_is_held(self):
-        """sh -c 경유는 인용 안에서 무엇이든 할 수 있으므로 보류합니다."""
         verdict, reason = self._classify("docker exec -i db sh -c 'mysql -u root -e \"SELECT 1\"'")
         assert verdict == "hold"
-        assert "셸 경유" in reason
+        assert "db_readonly_query.py" in reason
 
     def test_interactive_mysql_is_held(self):
         verdict, reason = self._classify("docker compose exec -T db mysql -u root procurement")
         assert verdict == "hold"
-        assert "대화형" in reason
+        assert "db_readonly_query.py" in reason
 
     def test_non_mysql_exec_is_held(self):
-        verdict, _ = self._classify("docker compose exec -T app cat /etc/passwd")
+        verdict, reason = self._classify("docker compose exec -T app cat /etc/passwd")
         assert verdict == "hold"
+        assert "db_readonly_query.py" in reason
 
     def test_other_docker_subcommands_are_held(self):
         for cmd in (
@@ -880,8 +903,9 @@ class TestDockerReadOnlySql:
             "docker rm -f db",
             "docker run alpine",
         ):
-            verdict, _ = self._classify(cmd)
+            verdict, reason = self._classify(cmd)
             assert verdict == "hold", cmd
+            assert "db_readonly_query.py" in reason
 
 
 class TestUvRunAllowedScripts:

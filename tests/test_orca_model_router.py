@@ -222,7 +222,8 @@ class TestModelPoolAndSelection:
         risks = ["high", "medium", "low"]
         for r in roles:
             for k in risks:
-                res = select_model(r, k)
+                kwargs = {"builder_provider": "gemini"} if r == "reviewer" else {}
+                res = select_model(r, k, **kwargs)
                 assert res["primary_model"] != COORDINATOR_ID
                 assert res["primary_pool"] != COORDINATOR_POOL
                 assert res["fallback_model"] != COORDINATOR_ID
@@ -230,11 +231,11 @@ class TestModelPoolAndSelection:
 
     def test_select_model_high_risk_reviewer(self):
         """리뷰어는 빌더와 다른 모델 계열을 주 모델로 씁니다."""
-        res = select_model("reviewer", "high")
+        res = select_model("reviewer", "high", builder_provider="gemini")
         assert res["primary_pool"] == "qwen-plus"
         assert res["primary_model"] == "qwen3.7-plus"
-        assert res["fallback_pool"] == "gemini-flash-high"
-        assert res["fallback_model"] == "gemini-3.7-flash-high"
+        assert res["fallback_pool"] is None
+        assert res["fallback_model"] is None
 
     def test_select_model_high_risk_builder(self):
         """high 위험도 구현은 원인 분석 전문 등급이 주 모델입니다."""
@@ -285,11 +286,11 @@ class TestModelPoolAndSelection:
         assert res_builder_high["fallback_pool"] == "qwen-plus"
         assert res_builder_high["fallback_model"] == "qwen3.7-plus"
 
-        res_reviewer_high = select_model("reviewer", "high")
+        res_reviewer_high = select_model("reviewer", "high", builder_provider="gemini")
         assert res_reviewer_high["primary_pool"] == "qwen-plus"
         assert res_reviewer_high["primary_model"] == "qwen3.7-plus"
-        assert res_reviewer_high["fallback_pool"] == "gemini-flash-high"
-        assert res_reviewer_high["fallback_model"] == "gemini-3.7-flash-high"
+        assert res_reviewer_high["fallback_pool"] is None
+        assert res_reviewer_high["fallback_model"] is None
 
         res_investigator_low = select_model("investigator", "low")
         assert res_investigator_low["primary_pool"] == "gemini-flash-low"
@@ -584,6 +585,7 @@ class TestRoute:
         capsule_file.write_text(
             "schema: ORCA_TASK_CAPSULE_V2\n"
             "role: reviewer\n"
+            "builder_provider: gemini\n"
             "objective: >\n"
             "  Review DB schema migration and merge readiness.\n"
             "why_now: >\n"
@@ -594,7 +596,7 @@ class TestRoute:
         assert res.risk == "high"
         assert res.role == "reviewer"
         assert res.primary_model == "qwen3.7-plus"
-        assert res.fallback_model == "gemini-3.7-flash-high"
+        assert res.fallback_model is None
 
     def test_route_primary_fail_fallback_success(self, monkeypatch):
         """주 모델이 실패하고 대체 모델이 성공할 때 대체 모델로 전환됨을 확인합니다."""
@@ -1080,7 +1082,8 @@ class TestFreePoolOptIn:
         for r in roles:
             for k in risks:
                 for s in scopes:
-                    res = select_model(r, k, allow_free=False, has_write_scope=s)
+                    kwargs = {"builder_provider": "gemini"} if r == "reviewer" else {}
+                    res = select_model(r, k, allow_free=False, has_write_scope=s, **kwargs)
                     assert res["primary_pool"] != "opencode-free"
                     assert res["primary_model"] != "opencode/nemotron-3.5-lightning-free"
                     assert res["fallback_pool"] != "opencode-free"
@@ -1297,7 +1300,8 @@ class TestRiskAwareTier:
         """high 는 기본값이 아니라 high 위험도 전용입니다."""
         for role in ("builder", "reviewer", "investigator", "documenter"):
             for risk in ("low", "medium"):
-                assert select_model(role, risk)["primary_pool"] != "gemini-flash-high"
+                kwargs = {"builder_provider": "gemini"} if role == "reviewer" else {}
+                assert select_model(role, risk, **kwargs)["primary_pool"] != "gemini-flash-high"
 
     def test_builder_medium_risk_uses_medium(self):
         """medium 위험도 빌더는 범용 등급을 쓰고 전문·상신 등급으로 올리지 않습니다."""
@@ -1314,11 +1318,14 @@ class TestRiskAwareTier:
     def test_reviewer_never_gets_low_tier_as_primary(self):
         """판정이 병합 결정에 쓰이므로 리뷰어 주 모델은 low 등급이 아닙니다."""
         for risk in ("low", "medium", "high"):
-            assert select_model("reviewer", risk)["primary_pool"] != "gemini-flash-low"
+            assert (
+                select_model("reviewer", risk, builder_provider="gemini")["primary_pool"]
+                != "gemini-flash-low"
+            )
 
     def test_reviewer_high_risk_prefers_independent_family(self):
         """리뷰어 주 모델은 빌더와 다른 계열이어야 같은 편향이 검토를 통과하지 않습니다."""
-        reviewer = select_model("reviewer", "high")["primary_pool"]
+        reviewer = select_model("reviewer", "high", builder_provider="gemini")["primary_pool"]
         builder = select_model("builder", "high")["primary_pool"]
         assert reviewer == "qwen-plus"
         assert reviewer != builder
@@ -1330,7 +1337,8 @@ class TestRiskAwareTier:
         assert select_model("builder", "low")["primary_pool"] == "gemini-flash-medium"
         for role in ("reviewer", "builder"):
             for risk in ("low", "medium", "high"):
-                assert select_model(role, risk)["primary_pool"] != "gemini-flash-low"
+                kwargs = {"builder_provider": "gemini"} if role == "reviewer" else {}
+                assert select_model(role, risk, **kwargs)["primary_pool"] != "gemini-flash-low"
 
 
 def test_flash_low_is_never_assigned_to_reviewer_or_builder():
@@ -1350,7 +1358,8 @@ def test_flash_low_is_never_assigned_to_reviewer_or_builder():
 
     for role in ("reviewer", "builder"):
         for risk in ("low", "medium", "high"):
-            res = select_model(role, risk)
+            kwargs = {"builder_provider": "gemini"} if role == "reviewer" else {}
+            res = select_model(role, risk, **kwargs)
             assert res["primary_pool"] != "gemini-flash-low", res
             assert res["fallback_pool"] != "gemini-flash-low", res
 
@@ -2005,19 +2014,66 @@ class TestProviderIndependence:
         assert "reviewer" in str(err)
         assert "high" in str(err)
 
-    def test_select_model_without_exclude_providers_preserves_existing_behavior(self):
-        """exclude_providers 를 지정하지 않은 기존 호출은 동작이 변하지 않습니다."""
-        res_reviewer = select_model("reviewer", "high")
-        assert res_reviewer["primary_pool"] == "qwen-plus"
-        assert res_reviewer["primary_model"] == "qwen3.7-plus"
-        assert res_reviewer["fallback_pool"] == "gemini-flash-high"
-        assert res_reviewer["fallback_model"] == "gemini-3.7-flash-high"
-
+    def test_select_model_without_exclude_providers_preserves_builder_and_other_roles(self):
+        """exclude_providers 를 지정하지 않은 빌더 및 타 역할 호출은 동작이 변하지 않습니다."""
         res_builder = select_model("builder", "medium")
         assert res_builder["primary_pool"] == "gemini-flash-medium"
         assert res_builder["primary_model"] == "gemini-3.7-flash-medium"
         assert res_builder["fallback_pool"] == "qwen-plus"
         assert res_builder["fallback_model"] == "qwen3.7-plus"
+
+        res_investigator = select_model("investigator", "low")
+        assert res_investigator["primary_pool"] == "gemini-flash-low"
+        assert res_investigator["primary_model"] == "gemini-3.7-flash-low"
+
+    def test_select_model_reviewer_unknown_builder_provider_fails_closed_on_high_risk(self):
+        """리뷰어 역할에서 builder provider 를 알 수 없으면 high 위험도에서 fail-closed 로 ModelRoutingError 가 발생합니다."""
+        with pytest.raises(ModelRoutingError) as exc_info:
+            select_model("reviewer", "high", builder_provider="unknown")
+        err = exc_info.value
+        assert err.role == "reviewer"
+        assert err.risk == "high"
+        assert "독립성을 보장할 수 없습니다" in str(err)
+
+    def test_select_model_reviewer_unknown_builder_provider_fails_closed_on_medium_risk(self):
+        """리뷰어 역할에서 builder provider 를 알 수 없으면 medium 위험도에서 fail-closed 로 ModelRoutingError 가 발생합니다."""
+        with pytest.raises(ModelRoutingError) as exc_info:
+            select_model("reviewer", "medium", has_write_scope=False, builder_provider="unknown")
+        err = exc_info.value
+        assert err.role == "reviewer"
+        assert err.risk == "medium"
+        assert "독립성을 보장할 수 없습니다" in str(err)
+
+    def test_select_model_reviewer_unknown_builder_provider_fails_closed_on_write_scope(self):
+        """리뷰어 역할에서 builder provider 를 알 수 없고 쓰기 범위가 있으면 low 위험도라도 fail-closed 로 ModelRoutingError 가 발생합니다."""
+        with pytest.raises(ModelRoutingError) as exc_info:
+            select_model("reviewer", "low", has_write_scope=True, builder_provider="unknown")
+        err = exc_info.value
+        assert err.role == "reviewer"
+        assert err.risk == "low"
+        assert "독립성을 보장할 수 없습니다" in str(err)
+
+    def test_select_model_reviewer_unknown_builder_provider_allowed_on_low_risk_readonly(self):
+        """리뷰어 역할에서 builder provider 를 알 수 없더라도 low 위험 읽기 전용인 경우 경고와 함께 진행이 허용됩니다."""
+        res = select_model("reviewer", "low", has_write_scope=False, builder_provider="unknown")
+        assert res["primary_pool"] == "qwen-plus"
+        assert res["primary_model"] == "qwen3.7-plus"
+        assert any("알 수 없어" in note for note in res.get("inventory_notes", []))
+
+    def test_route_reviewer_unknown_builder_provider_fails_closed_on_high_medium_or_write(self):
+        """route() 에서 builder provider 미상 시 high/medium 위험도 또는 쓰기 범위가 있으면 fail-closed 로 닫힙니다."""
+        with pytest.raises(ModelRoutingError):
+            route(role="reviewer", risk="high", probe=False)
+        with pytest.raises(ModelRoutingError):
+            route(role="reviewer", risk="medium", has_write_scope=False, probe=False)
+        with pytest.raises(ModelRoutingError):
+            route(role="reviewer", risk="low", has_write_scope=True, probe=False)
+
+    def test_route_reviewer_unknown_builder_provider_allowed_on_low_risk_readonly(self):
+        """route() 에서 builder provider 미상 시 low 위험 읽기 전용은 경고를 포함하여 통과합니다."""
+        res = route(role="reviewer", risk="low", has_write_scope=False, probe=False)
+        assert res.primary_model == "qwen3.7-plus"
+        assert any("알 수 없어" in w for w in res.warnings)
 
     def test_tier_policy_values_unmodified(self):
         """TIER_POLICY 의 값이 임의로 변경되지 않았음을 단정합니다."""
