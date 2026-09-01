@@ -1438,6 +1438,9 @@ def verify_instruction_delivered(
     timeout: int = 30,
     wait_seconds: int = 30,
     poll_seconds: float = 1.0,
+    *,
+    _time_monotonic: Any = None,
+    _time_sleep: Any = None,
 ) -> str:
     """Dispatch 이후 지시가 워커 터미널에 도달했는지 확인합니다.
 
@@ -1451,7 +1454,9 @@ def verify_instruction_delivered(
 
     반환값: delivered | not_observed | unreadable
     """
-    deadline = time.monotonic() + max(0, wait_seconds)
+    get_time = _time_monotonic if _time_monotonic is not None else time.monotonic
+    sleep_fn = _time_sleep if _time_sleep is not None else time.sleep
+    deadline = get_time() + max(0, wait_seconds)
     unreadable_only = True
     while True:
         text = terminal_tail(handle, timeout=timeout)
@@ -1459,9 +1464,9 @@ def verify_instruction_delivered(
             unreadable_only = False
             if instruction_observed(text, markers):
                 return "delivered"
-        if time.monotonic() >= deadline:
+        if wait_seconds <= 0 or get_time() >= deadline:
             return "unreadable" if unreadable_only else "not_observed"
-        time.sleep(max(0.2, poll_seconds))
+        sleep_fn(max(0.2, poll_seconds))
 
 
 def get_watcher_pid_path(terminal: str) -> Path:

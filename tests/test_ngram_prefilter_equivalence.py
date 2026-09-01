@@ -527,6 +527,27 @@ CONSERVATIVE_REJECTION_RATIONALE: dict[str, str] = {
     "edge_12": "+공사*: 불리언 연산자 '+', '*'는 필수 포함 및 와일드카드 제어자로 동작하여 쿼리 의미가 변질될 위험이 있어 LIKE 단독 경로로 폴백합니다.",
 }
 
+SAFE_EDGE_ITEMS = [
+    "edge_02",  # exact_two_char: 구청
+    "edge_03",  # whitespace_delimited: 서울특별시 강남구
+    "edge_06",  # slash: 기획/관리
+    "edge_08",  # unicode_nfd_nfc: 조합형 한국
+    "edge_13",  # very_long_exact_name: 한국농어촌공사전남지역본부영광지사
+    "edge_14",  # middle_substring: 토지주택
+]
+
+UNSAFE_EDGE_ITEMS = [
+    "edge_01",  # single_char_hangul: 시
+    "edge_01_b",  # single_char_hangul: 청
+    "edge_04",  # parentheses: 한국도로공사(본사)
+    "edge_05",  # hyphen: 서울-경기
+    "edge_07",  # alphanumeric_mixed: K-water2026
+    "edge_09",  # like_wildcard_percent: 100%
+    "edge_10",  # like_wildcard_underscore: 공사_1차
+    "edge_11",  # single_quote: 공사's
+    "edge_12",  # boolean_operators: +공사*
+]
+
 SEVEN_UNVERIFIED_EDGE_ITEMS = [
     "edge_04",  # parentheses: 한국도로공사(본사)
     "edge_05",  # hyphen: 서울-경기
@@ -535,6 +556,11 @@ SEVEN_UNVERIFIED_EDGE_ITEMS = [
     "edge_10",  # like_wildcard_underscore: 공사_1차
     "edge_11",  # single_quote: 공사's
     "edge_12",  # boolean_operators: +공사*
+]
+
+OBSERVED_OMISSION_EDGE_ITEMS = [
+    "edge_07",  # alphanumeric_mixed: K-water2026
+    "edge_11",  # single_quote: 공사's
 ]
 
 
@@ -603,19 +629,9 @@ def test_unit_boolean_and_like_escaping_semantics():
     assert build_boolean_ft_query("100%") == '+"100%"'
     assert build_boolean_ft_query("공사_1차") == '+"공사_1차"'
     assert build_boolean_ft_query("공사's") == '+"공사\'s"'
-    assert (
-        build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or build_boolean_ft_query("+공사*") == '+"\\+공사*"'
-        or build_boolean_ft_query("+공사*") == '+"+\\공사*"'
-        or True
-    )
+    # 실제 반환값은 하나로 확정됩니다. 같은 단언을 or 로 이어 붙이고 끝에 `or True` 를
+    # 두면 어떤 값이 나와도 통과해 검증이 아니라 통과 장치가 됩니다.
+    assert build_boolean_ft_query("+공사*") == '+"+공사*"'
 
     # 2. build_query_sql date filter 및 category filter SQL 생성 검증
     sql_with_all = build_query_sql(
@@ -733,6 +749,7 @@ def test_integration_mysql_baseline_keywords_equivalence(mysql_session: Session)
         ("bid_results", "bidwinnr_nm"),
     ]
 
+    total_samples_checked = 0
     for table, col in target_columns:
         # FULLTEXT 인덱스가 없으면 MATCH AGAINST 실행 시 구문 에러가 발생하므로 확인
         has_ft = _check_fulltext_index_exists(mysql_session, table, col)
@@ -755,6 +772,7 @@ def test_integration_mysql_baseline_keywords_equivalence(mysql_session: Session)
 
                 like_rows = mysql_session.execute(text(like_sql), params).scalars().all()
                 like_ids = set(like_rows)
+                total_samples_checked += len(like_ids)
 
                 params["ft_query"] = build_boolean_ft_query(kw)
                 ngram_rows = mysql_session.execute(text(ngram_like_sql), params).scalars().all()
@@ -766,6 +784,11 @@ def test_integration_mysql_baseline_keywords_equivalence(mysql_session: Session)
                     f"Baseline: {kw} on {table}.{col} (cat={cat_val})",
                 )
                 assert ok is True, msg
+
+    assert total_samples_checked > 0, (
+        "기준선 키워드에 대한 표본 데이터가 최소 1건 이상 존재해야 합니다. "
+        "(표본 0건은 공집합 자명 통과 결함을 유발합니다.)"
+    )
 
 
 @pytest.mark.mysql_integration
@@ -812,15 +835,13 @@ def test_integration_mysql_single_char_hangul_observed_as_unsafe(mysql_session: 
 
 
 @pytest.mark.mysql_integration
-@pytest.mark.parametrize("edge_item_id", SEVEN_UNVERIFIED_EDGE_ITEMS)
-def test_integration_mysql_7_edge_classes_equivalence(mysql_session: Session, edge_item_id: str):
-    """7개 미실측 특수 경계값 각각에 대해 baseline LIKE와 MATCH+LIKE의 ID 집합 동등성을 검증합니다.
+@pytest.mark.parametrize("edge_item_id", SAFE_EDGE_ITEMS)
+def test_integration_mysql_safe_edge_classes_equivalence(mysql_session: Session, edge_item_id: str):
+    """안전한(safe) 경계값 클래스에 대해 baseline LIKE와 MATCH+LIKE의 ID 집합 동등성을 실측 검증합니다.
 
-    - category 필터 유무 (2종) 및 date 필터 유무 (2종) 조합을 모두 포함합니다.
-    - %, _, 따옴표, boolean 연산자 문자의 boolean query escaping 및 LIKE escape 의미를 검증합니다.
-    - MATCH+LIKE 결과가 baseline LIKE의 진부분집합(silent false-negative)이 되는 경우
-      누락 ID 표본과 함께 실패를 보고합니다.
-    - MySQL 또는 FULLTEXT 인덱스가 미가용인 환경에서는 명시적으로 skip 합니다.
+    - 픽스처에서 is_safe_for_ngram=True 로 지정된 클래스(2글자, 공백, 슬래시, NFD/NFC, 긴 기관명, 중앙 부분문자열)를 검증합니다.
+    - is_safe_for_ngram_prefilter(kw) 가 True 임을 확인합니다.
+    - MySQL 인스턴스에서 LIKE 결과 집합과 MATCH+LIKE 결과 집합이 100% 일치해야 합니다.
     """
     data = load_fixture_data()
     item_map = {it["id"]: it for it in data["keywords"]}
@@ -830,6 +851,11 @@ def test_integration_mysql_7_edge_classes_equivalence(mysql_session: Session, ed
 
     kw = item["keyword"]
     class_id = item["class_id"]
+
+    # 1. 안전성 판정 함수가 True 를 반환하는지 계약 검증
+    assert is_safe_for_ngram_prefilter(kw) is True, (
+        f"Safe 경계값 '{edge_item_id}'({kw})는 is_safe_for_ngram_prefilter 가 True 여야 합니다."
+    )
 
     target_columns = [
         ("bid_announcements", "dminstt_nm", "bid_ntce_dt"),
@@ -841,7 +867,7 @@ def test_integration_mysql_7_edge_classes_equivalence(mysql_session: Session, ed
         has_ft = _check_fulltext_index_exists(mysql_session, table, col)
         if not has_ft:
             pytest.skip(
-                f"{table}.{col} 에 FULLTEXT 인덱스가 없어 7개 경계값({edge_item_id}: {class_id}) "
+                f"{table}.{col} 에 FULLTEXT 인덱스가 없어 safe 경계값({edge_item_id}: {class_id}) "
                 "동등성 실측을 건너뜁니다. (운영 스키마에는 DDL을 실행하지 않으므로 probe 인덱스가 있는 환경에서만 실행됩니다.)"
             )
 
@@ -885,8 +911,117 @@ def test_integration_mysql_7_edge_classes_equivalence(mysql_session: Session, ed
                 ngram_ids = set(ngram_rows)
 
                 context_label = (
-                    f"Edge {edge_item_id} ({class_id}): '{kw}' on {table}.{col} "
+                    f"Safe Edge {edge_item_id} ({class_id}): '{kw}' on {table}.{col} "
                     f"(cat={with_cat}, date={with_date})"
                 )
                 ok, msg = compare_id_sets(like_ids, ngram_ids, context_label)
                 assert ok is True, msg
+
+
+@pytest.mark.mysql_integration
+@pytest.mark.parametrize("edge_item_id", UNSAFE_EDGE_ITEMS)
+def test_integration_mysql_unsafe_edge_classes_route_bypasses_match(
+    mysql_session: Session, edge_item_id: str, monkeypatch: pytest.MonkeyPatch
+):
+    """위험(unsafe) 경계값 클래스에 대해 MATCH 경로를 타지 않고 LIKE 단독 경로로 안전하게 폴백함을 검증합니다.
+
+    - 픽스처에서 is_safe_for_ngram=False 로 지정된 항목(1글자 한글 2종, 괄호, 하이픈, 영숫자, %, _, 따옴표, boolean 연산자)을 검증합니다.
+    - is_safe_for_ngram_prefilter(kw) 가 False 임을 확인합니다.
+    - 플래그가 ON(True)인 상태에서도 _announcement_conditions 및 _result_conditions 가
+      MATCH 구문을 생성하지 않고 LIKE 조건만 생성함을 검증합니다.
+    """
+    monkeypatch.setattr(settings, "NGRAM_PREFILTER_ENABLED", True)
+
+    data = load_fixture_data()
+    item_map = {it["id"]: it for it in data["keywords"]}
+    item = item_map.get(edge_item_id)
+    if not item:
+        pytest.fail(f"Fixture item not found for ID: {edge_item_id}")
+
+    kw = item["keyword"]
+    class_id = item["class_id"]
+
+    # 1. 안전성 판정 함수가 False 를 반환하는지 계약 검증
+    assert is_safe_for_ngram_prefilter(kw) is False, (
+        f"Unsafe 경계값 '{edge_item_id}'({class_id}: '{kw}')는 is_safe_for_ngram_prefilter 가 False 여야 합니다."
+    )
+
+    # 2. 플래그가 ON이어도 MATCH 조건이 생성되지 않음을 SQLAlchemy 컴파일로 검증
+    plan = RetrievalPlan(filters={"institution_name": kw})
+    winner_conds = _result_conditions(plan, enable_ngram_prefilter=True)
+    instt_conds = _announcement_conditions(plan, enable_ngram_prefilter=True)
+
+    stmt_winner = select(BidResult.bidwinnr_nm).where(*winner_conds)
+    stmt_instt = select(BidAnnouncement.dminstt_nm).where(*instt_conds)
+
+    sql_winner = str(
+        stmt_winner.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+    sql_instt = str(
+        stmt_instt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+    assert "MATCH" not in sql_winner.upper(), f"'{kw}' 낙찰업체 SQL에 MATCH가 포함됨"
+    assert "MATCH" not in sql_instt.upper(), f"'{kw}' 기관명 SQL에 MATCH가 포함됨"
+    assert "LIKE" in sql_winner.upper()
+    assert "LIKE" in sql_instt.upper()
+
+
+@pytest.mark.mysql_integration
+@pytest.mark.parametrize("edge_item_id", OBSERVED_OMISSION_EDGE_ITEMS)
+def test_integration_mysql_observed_unsafe_edge_classes_silent_omission(
+    mysql_session: Session, edge_item_id: str
+):
+    """2026-09-01 실측에서 조용한 누락(silent false-negative)이 확인된 edge_07(K-water2026) 및 edge_11(공사's)에 대해
+
+    실제 MySQL MATCH AGAINST 가 LIKE 결과를 누락함을 증거로 고정합니다.
+    - 픽스처 DB(test_procurement_ngram)에 해당 표본이 최소 1건 이상 존재함을 확인합니다 (표본 0건 자명 통과 방지).
+    - baseline LIKE 는 표본을 정상 매칭하지만, MATCH+LIKE 는 누락(0건 또는 진부분집합)을 일으킴을 실측 확인합니다.
+    - 이 비동등성이 왜 해당 키워드가 is_safe_for_ngram=False 로 fail-closed 되어야 하는지의 직접적 실측 근거입니다.
+    """
+    table = "bid_announcements"
+    col = "dminstt_nm"
+
+    has_ft = _check_fulltext_index_exists(mysql_session, table, col)
+    if not has_ft:
+        pytest.skip(f"{table}.{col} 에 FULLTEXT 인덱스가 없어 누락 관측 실측을 건너뜁니다.")
+
+    data = load_fixture_data()
+    item_map = {it["id"]: it for it in data["keywords"]}
+    item = item_map.get(edge_item_id)
+    if not item:
+        pytest.fail(f"Fixture item not found for ID: {edge_item_id}")
+
+    kw = item["keyword"]
+    class_id = item["class_id"]
+
+    like_sql = build_query_sql("baseline_like", table, col, with_category=False)
+    like_rows = mysql_session.execute(text(like_sql), {"like_pattern": f"%{kw}%"}).scalars().all()
+    like_ids = set(like_rows)
+
+    # 1. 표본 0건 비교를 통과로 세지 않도록 표본 수(최소 1건)를 필수 확인
+    assert len(like_ids) > 0, (
+        f"픽스처에 '{edge_item_id}'({kw})에 대한 LIKE 매칭 표본이 최소 1건 이상 존재해야 합니다. "
+        f"(표본 0건은 실측이 아니며 공집합 자명 통과 결함을 유발합니다.)"
+    )
+
+    # 2. MATCH+LIKE 실행 및 조용한 누락(false-negative) 확인
+    ngram_like_sql = build_query_sql("ngram_like", table, col, with_category=False)
+    ngram_rows = (
+        mysql_session.execute(
+            text(ngram_like_sql),
+            {"like_pattern": f"%{kw}%", "ft_query": build_boolean_ft_query(kw)},
+        )
+        .scalars()
+        .all()
+    )
+    ngram_ids = set(ngram_rows)
+
+    missing_in_ngram = like_ids - ngram_ids
+    assert len(missing_in_ngram) > 0, (
+        f"'{edge_item_id}'({class_id}: '{kw}')에 대해 MATCH+LIKE가 baseline LIKE 대비 "
+        f"누락을 일으키지 않았습니다. (실측 결함: LIKE {len(like_ids)}건 vs MATCH {len(ngram_ids)}건)"
+    )
+    assert is_safe_for_ngram_prefilter(kw) is False, (
+        f"누락이 실측된 '{edge_item_id}'({kw})는 is_safe_for_ngram_prefilter 가 False 여야 합니다."
+    )
