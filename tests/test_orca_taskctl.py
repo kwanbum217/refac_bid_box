@@ -3420,6 +3420,93 @@ def test_verify_instruction_delivered_distinguishes_unreadable_from_not_observed
     )
 
 
+def test_verify_instruction_delivered_wait_zero_never_calls_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """wait_seconds=0 일 때 지시 도달 여부나 unreadable 여부와 무관하게 sleep 을 단 한 번도 호출하지 않아야 합니다."""
+    from scripts import orca_taskctl
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(orca_taskctl.time, "sleep", lambda s: sleep_calls.append(s))
+
+    # 1. unreadable 경로
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: None)
+    res_unreadable = orca_taskctl.verify_instruction_delivered(
+        "term_x", ["task_abc"], wait_seconds=0
+    )
+    assert res_unreadable == "unreadable"
+    assert len(sleep_calls) == 0
+
+    # 2. not_observed 경로
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: "다른 내용")
+    res_not_observed = orca_taskctl.verify_instruction_delivered(
+        "term_x", ["task_abc"], wait_seconds=0
+    )
+    assert res_not_observed == "not_observed"
+    assert len(sleep_calls) == 0
+
+    # 3. delivered 경로
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: "도착: task_abc")
+    res_delivered = orca_taskctl.verify_instruction_delivered(
+        "term_x", ["task_abc"], wait_seconds=0
+    )
+    assert res_delivered == "delivered"
+    assert len(sleep_calls) == 0
+
+
+def test_verify_instruction_delivered_injected_clock_and_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """주입된 _time_monotonic 및 _time_sleep 함수를 사용하여 실제 지연 없이 polling 루프가 정상 동작하는지 검증."""
+    from scripts import orca_taskctl
+
+    clock = {"t": 100.0}
+    sleeps: list[float] = []
+
+    def mock_sleep(s: float) -> None:
+        sleeps.append(s)
+        clock["t"] += s
+
+    # 1. 2회차에 지시가 도달하는 경우
+    screens = ["기다리는 중...", "도착: task_target"]
+    idx = [0]
+
+    def mock_tail(h, timeout=30):
+        curr = screens[min(idx[0], len(screens) - 1)]
+        idx[0] += 1
+        return curr
+
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", mock_tail)
+
+    result = orca_taskctl.verify_instruction_delivered(
+        "term_x",
+        ["task_target"],
+        wait_seconds=10,
+        poll_seconds=1.0,
+        _time_monotonic=lambda: clock["t"],
+        _time_sleep=mock_sleep,
+    )
+    assert result == "delivered"
+    assert len(sleeps) == 1
+    assert sleeps[0] == 1.0
+
+    # 2. deadline 초과 시 not_observed
+    clock["t"] = 100.0
+    sleeps.clear()
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: "다른 내용만 계속")
+
+    result2 = orca_taskctl.verify_instruction_delivered(
+        "term_x",
+        ["task_target"],
+        wait_seconds=5,
+        poll_seconds=2.0,
+        _time_monotonic=lambda: clock["t"],
+        _time_sleep=mock_sleep,
+    )
+    assert result2 == "not_observed"
+    assert len(sleeps) == 3  # t=100 -> 102 -> 104 -> 106 >= 105(deadline)
+
+
 def test_status_bar_readiness_requires_settle_time(monkeypatch: pytest.MonkeyPatch):
     """상태줄 표지는 TUI 가 그려지자마자 나타나므로 즉시 준비로 보면 안 됩니다.
 
@@ -3690,6 +3777,7 @@ refac_bid_box/wt-t3-cpu-probe %""",
 def test_enable_file_edit_auto_approve_screens(monkeypatch: pytest.MonkeyPatch):
     """enable_file_edit_auto_approve 가 화면에 따라 (a) Cursor 전송 안 함, (b) Antigravity 전송함, (c) 미식별 전송 안 함을 준수하는지 검증."""
     monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr("scripts.orca_taskctl.time.sleep", lambda s: None)
     executed_cmds: list[list[str]] = []
 
     def mock_run(cmd, cwd=None, timeout=30):
@@ -3825,6 +3913,9 @@ def test_dispatch_calls_auto_approve_and_mode_switch_on_antigravity(
         "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
     )
     monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered", lambda *a, **k: "delivered"
+    )
+    monkeypatch.setattr(
         "scripts.orca_taskctl.dispatch_worker",
         lambda *args, **kwargs: (
             0,
@@ -3884,6 +3975,9 @@ def test_dispatch_skips_mode_switch_on_cursor_terminal(
     monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
     monkeypatch.setattr(
         "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered", lambda *a, **k: "delivered"
     )
     monkeypatch.setattr(
         "scripts.orca_taskctl.dispatch_worker",
@@ -3947,6 +4041,9 @@ def test_dispatch_skips_mode_switch_on_unrecognized_terminal(
         "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
     )
     monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered", lambda *a, **k: "delivered"
+    )
+    monkeypatch.setattr(
         "scripts.orca_taskctl.dispatch_worker",
         lambda *args, **kwargs: (
             0,
@@ -4000,6 +4097,9 @@ def test_dispatch_suppresses_mode_switch_when_env_disabled(
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
     monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered", lambda *a, **k: "delivered"
+    )
 
     intent_file = tmp_path / "intent.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
@@ -4049,6 +4149,9 @@ def test_dispatch_handles_mode_switch_failure_and_exception_gracefully(
     monkeypatch.setattr("scripts.orca_taskctl.approve_trust_prompt", lambda *a, **kw: "not_present")
     monkeypatch.setattr(
         "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "/tmp/mock.log")
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered", lambda *a, **k: "delivered"
     )
 
     intent_file = tmp_path / "intent.yaml"
@@ -4159,6 +4262,7 @@ def test_enable_file_edit_already_accept_edits_no_key_sent(monkeypatch: pytest.M
 def test_enable_file_edit_plan_mode_restores_to_accept_edits(monkeypatch: pytest.MonkeyPatch):
     """(b) plan 모드(읽기 전용)로 빠진 워커에 shift+tab 을 순환 전송하여 accept-edits 로 복구함을 검증."""
     monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr("scripts.orca_taskctl.time.sleep", lambda s: None)
     executed_cmds: list[list[str]] = []
 
     def mock_run(cmd, cwd=None, timeout=30):
@@ -4193,6 +4297,7 @@ def test_enable_file_edit_plan_mode_restores_to_accept_edits(monkeypatch: pytest
 def test_enable_file_edit_max_attempts_no_infinite_loop(monkeypatch: pytest.MonkeyPatch):
     """(c) 화면이 accept-edits 로 전환되지 않아도 상한(3회)에서 멈추고 무한 순환하지 않음을 검증."""
     monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr("scripts.orca_taskctl.time.sleep", lambda s: None)
     executed_cmds: list[list[str]] = []
 
     def mock_run(cmd, cwd=None, timeout=30):
@@ -4337,6 +4442,7 @@ def test_dispatch_fallback_to_preamble_on_inject_blocked(
     monkeypatch.setattr("scripts.orca_taskctl.dispatch_worker", mock_dispatch_worker)
     monkeypatch.setattr("scripts.orca_taskctl.terminal_send", mock_terminal_send)
     monkeypatch.setattr("scripts.orca_taskctl.terminal_tail", lambda *a, **k: "Working on task...")
+    monkeypatch.setattr("scripts.orca_taskctl.time.sleep", lambda s: None)
     monkeypatch.setattr(
         "scripts.orca_taskctl.verify_instruction_delivered",
         lambda handle, markers, timeout=30, wait_seconds=30, poll_seconds=1.0: "delivered",
@@ -4372,6 +4478,7 @@ def test_dispatch_fallback_fails_if_delivery_unverified(
 ):
     """(g) 대체 경로에서 지시 도달 확인이 실패하면 성공으로 처리하지 않고 종료 코드 3을 반환함을 검증."""
     monkeypatch.delenv("ORCA_DISABLE_AUTO_APPROVE", raising=False)
+    monkeypatch.setattr("scripts.orca_taskctl.time.sleep", lambda s: None)
     monkeypatch.setattr(
         "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
     )
