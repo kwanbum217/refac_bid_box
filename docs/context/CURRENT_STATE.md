@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-01
-> **source_commit**: `1cdcb51`
+> **source_commit**: `d3cad6c`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -188,7 +188,21 @@ Meilisearch 위임 또는 인덱스·스냅샷 경로 재설계입니다.
 
 ## 4. 현재 진행 과업 및 우선순위 (Active Priorities)
 
-1-0. **RAG 콜드 SQL 잔여 시정 (다음 착수 지점)**: Wave F 조사가 끝나 방향이
+1-0. **RAG 콜드 SQL 잔여 시정 (ngram 경로 기각, 2026-09-01)**: 운영 FULLTEXT 인덱스를
+생성하고 경계값 7 클래스를 실측한 뒤 같은 HEAD `d3cad6c` 에서 플래그만 바꾼 쌍대 측정을
+했습니다. **콜드 총 SQL 이 OFF 333.19초 대 ON 339.57초로 개선이 없어 선행필터를
+기각합니다**([`ngram_prefilter_paired_verdict_20260901.md`](../analysis/ngram_prefilter_paired_verdict_20260901.md)).
+MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporary; Using filesort` 가
+남고 콜드에서 1.4GB ngram 인덱스 적재 비용이 스캔 절감분을 상쇄합니다. Wave F3 의 19.0배는
+소규모 probe 의 warm 배율이라 운영 콜드에 이전되지 않았습니다. 경계값 7 클래스는
+**실측 완료**이며 `edge_07`·`edge_11` 이 조용한 누락을 일으켜 fail-closed 가 필수입니다
+([`ngram_edge_classes_measurement_20260901.md`](../analysis/ngram_edge_classes_measurement_20260901.md)).
+운영 FULLTEXT 인덱스 3개 제거는 사용자 승인 대기입니다.
+**새로 드러난 과업**: 같은 플래그 OFF 조건에서 콜드 총량이 E4 `7dcc771` 223.77초에서
+`d3cad6c` 333.19초로 늘었습니다. ngram 과 무관하며 원인 분해는 미착수입니다.
+G3 컷오버 판정 전에 조사해야 합니다.
+
+1-0-a. **(종결) 이전 계획**: Wave F 조사가 끝나 방향이
 확정됐습니다. `dminstt_nm` 과 `bidwinnr_nm` 두 컬럼에만 ngram FULLTEXT 를 적용하고
 `bid_ntce_nm` 은 제외합니다. 남은 작업은 다음 순서입니다.
   1. 구현: `src/rag/structured_data.py` 의 해당 두 컬럼 질의에 `MATCH AGAINST` 선행
