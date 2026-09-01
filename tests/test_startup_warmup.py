@@ -92,3 +92,61 @@ async def test_llm_warmup_skipped_when_disabled(monkeypatch):
     await main._warm_llm_backend()
 
     builder.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_vector_warmup_calls_retrieval_once(monkeypatch):
+    """기동 예열이 벡터 검색 경로를 한 번 부르고 성공 로그를 남겨야 합니다.
+
+    2026-09-01 컨테이너 실측에서 프로세스 첫 retrieve_semantic_context 가
+    13,142ms 였고 이후 46~56ms 였습니다. 비용은 HNSW 인덱스 적재와 Ollama 임베딩
+    첫 연결에 있으며 keep_alive 로는 덮이지 않습니다.
+    """
+    from src.app.core.config import settings
+
+    monkeypatch.setattr(settings, "VECTOR_WARMUP_ON_STARTUP", True, raising=False)
+    called = []
+
+    def fake_retrieve(plan):
+        called.append(plan)
+        return Mock(documents=[], ok=True)
+
+    monkeypatch.setattr("src.rag.vector_store.retrieve_semantic_context", fake_retrieve)
+
+    await main._warm_vector_search()
+
+    assert len(called) == 1
+    assert called[0].semantic_query == "예열"
+
+
+@pytest.mark.asyncio
+async def test_vector_warmup_skipped_when_disabled(monkeypatch):
+    from src.app.core.config import settings
+
+    monkeypatch.setattr(settings, "VECTOR_WARMUP_ON_STARTUP", False, raising=False)
+    retrieve = Mock()
+    monkeypatch.setattr("src.rag.vector_store.retrieve_semantic_context", retrieve)
+
+    await main._warm_vector_search()
+
+    retrieve.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_vector_warmup_failure_does_not_raise(monkeypatch):
+    """예열 실패가 기동을 막으면 안 됩니다. 서비스 정합성 요소가 아닙니다."""
+    from src.app.core.config import settings
+
+    monkeypatch.setattr(settings, "VECTOR_WARMUP_ON_STARTUP", True, raising=False)
+
+    def boom(_plan):
+        raise RuntimeError("ChromaDB 연결 실패")
+
+    monkeypatch.setattr("src.rag.vector_store.retrieve_semantic_context", boom)
+    warned = []
+    monkeypatch.setattr(main.logger, "warning", lambda *args, **kwargs: warned.append(args))
+
+    await main._warm_vector_search()
+
+    assert warned, "실패는 조용히 넘기지 말고 경고로 남겨야 합니다."
+    assert "vector_warmup" in str(warned[0][0])
