@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-01
-> **source_commit**: `cee7463`
+> **source_commit**: `f2310c3`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -12,10 +12,16 @@
 | 게이트 | 목표 정의 | 현재 판정 | 상세 상태 및 조건 |
 | --- | --- | :---: | --- |
 | **G1** | 데이터 무손실 | **통과 (불변)** | MySQL 8 스키마·행 수 보존, ML 가중치 체크섬 일치, ChromaDB `bidding_kb` 무결성 |
-| **G2** | 크로스 플랫폼 | **부분 통과** | 2026-08-26 CI run `32930156938`(`5f8174a`)에서 Docker/lint/Ubuntu/macOS/**Windows 5개 job 전부 green**입니다. Windows Docker Desktop 실기는 장비 부재로 미수행입니다 |
+| **G2** | 크로스 플랫폼 | **조건부 통과** | 2026-08-26 CI run `32930156938`(`5f8174a`) 5개 job 전부 green. **Windows Docker Desktop 실기는 후속 과업으로 분리**했습니다(2026-09-01 사용자 승인). 그 검증이 실패하면 컷오버는 철회 대상입니다 |
 | **G3** | 스택 최적화 | **통과** | 2026-09-01 `cee7463` 동결 재측정에서 **레이턴시 게이트 전 항목 통과**입니다([`g3_cutover_verdict_20260901.md`](../analysis/g3_cutover_verdict_20260901.md)). 예측 c1 15.03ms, c2 **19.66ms**, c4 32.77ms, c10 48.14ms, SSE 첫 토큰 2,664.19ms, 전체 3,353.98ms (전부 3회 최악, >100ms 0건/7,200요청). 종전 유일 미달이던 c2 는 **오염된 측정**이었고(당시 호스트 부하 42.45% 로 규약 임계 초과) 규약 안에서 재측정하니 통과했습니다. 콜드 SQL 총량은 관찰 지표로 강등했습니다. **전체 컷오버는 G2 Windows 실기 방침 확정 후 선언합니다** |
 
 > **주의**: G3 는 일괄 통과로 선언하지 않고 항목별 실측 상태로 기록합니다.
+
+> **컷오버 선언 (2026-09-01)**: 위 3대 목표 판정에 따라 **Phase 7 컷오버를 선언**했습니다
+> ([`../ops/phase7_cutover_declaration_20260901.md`](../ops/phase7_cutover_declaration_20260901.md)).
+> **조건부**이며 Windows Docker Desktop 실기 검증이 후속 과업으로 남습니다. 그 검증이
+> 실패하면 G2 를 미통과로 되돌리고 선언을 철회합니다. **컷오버는 최적화의 종료가 아니며
+> G3 는 계속 상시 과제입니다.**
 
 ---
 
@@ -224,7 +230,7 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
      [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md)를 따릅니다.
   4. 적용 후 `scripts/measure_coldsql_attribution.py` 로 콜드 SQL 정본을 재측정해
      개선을 확인합니다(E4 와 동일 규약, fixture v2 32문항 x 3회).
-1. **운영 검증**: 2026-08-26 CI run `32930156938`(`5f8174a`) **3플랫폼 green**. Windows Docker Desktop 실기만 남음.
+1. **운영 검증**: 2026-08-26 CI run `32930156938`(`5f8174a`) **3플랫폼 green**. Windows Docker Desktop 실기는 장비 확보 후 수행하는 **후속 과업**입니다.
 1-4. **Vector fail-closed·정확 제목**: 근거 적중 **16/16**, 기간·기관 post-filter를 유지합니다. 2026-08-27 후보 30건과 공고명 정규화 정확 일치 재순위로 q21 정답을 top-5에 포함했습니다([`task_9fe129597faf.md`](../analysis/task_9fe129597faf.md)).
 1-2. **LLM 경로 최적화**: 2026-08-26 v4(`b4913fd`, 각 72회차)에서 **`gemma4:e2b` 승격** ([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)). 2026-08-27 blind fixture v2(32문항) 측정에서 **e2b 승격 유지** 확정(동결 `13f947a`). numeric 양쪽 **87.5% 동률**이며 e2b 가 과잉응답 0 대 1, refusal 8/8 대 7/8, P50 3,990 대 6,459ms 로 앞섭니다. 과잉거절 12.5% 와 P50 은 두 모델 모두 미달이며 원인은 검색 미스 3문항입니다. 1차 측정은 백필 후 KB 미색인으로 **무효**([`llm_generalization_judgment_20260827.md`](../analysis/llm_generalization_judgment_20260827.md)).
 1-1. **Arq 정식 기준선**: 2026-08-24 경로별 10회 캘리브레이션 확정. In-Process 1,195.59 jps / 480.42ms, Container 1,756.94 jps / 327.06ms (CV 1.7% 이하). 잠정값 900/600 제거, 기준선은 캘리브레이션 호스트에 결박([`arq_baseline_calibration_20260824.md`](../analysis/arq_baseline_calibration_20260824.md)).
@@ -285,7 +291,7 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
   함수로 분리하고 운영 fail-closed 는 회귀 테스트로 고정했습니다. **직전 인수인계의 "테스트 2,928건 통과"
   는 사실이 아니었습니다.** 아울러 Dispatch 가 권한 자동 승인 감시기 부착 실패 시 기본값에서 거부하고
   워커 기동 성공 경로에서 상시 감시기를 단일 인스턴스로 자동 기동하도록 바꿨습니다(`1cdcb51`).
-- Windows Docker Desktop 실기 미검증.
+- **Windows Docker Desktop 실기 미검증 (후속 과업)**: 2026-09-01 컷오버 선언에서 차단 사유에서 제외했습니다. 장비 확보 시 `docker compose up` 전 서비스 healthy, 예측 API 응답, 마이그레이션을 검증하며, 실패 시 컷오버를 철회합니다.
 - **LLM 품질 정본은 2026-08-28 현 HEAD 재측정**(동결 `d9a0536`, `gemma4:e2b` 32문항 x 3회)입니다. numeric 95.7%(67/70), evidence recall 0.957, citation 100%, refusal 24/24, 과잉응답 0 으로 2026-08-27 측정 대비 전 지표가 개선입니다. 다만 요청 2/96 이 타임아웃(q03)했고 긴 정확 공고명 질의가 58~180초를 소모하여 **레이턴시 꼬리는 회귀**입니다 ([`blind_fixture_remeasure_20260828.md`](../analysis/blind_fixture_remeasure_20260828.md)). e4b 동일 조건 재측정은 미실시입니다. 지연 정본 판정은 `benchmark_rag_segments.py` 가 담당합니다.
 - **정확 제목 lexical 채널 효과 실측**: 느린 4문항(q03·q08·q25·q31) x 3회에서 요청 실패 2/12 -> **0/12**, 대표값 58,352ms -> **5,941ms**, 최대 180,045ms -> 41,874ms 로 꼬리 지연이 제거됐습니다. 정확도 손실은 없습니다([`lexical_channel_latency_effect_20260828.md`](../analysis/lexical_channel_latency_effect_20260828.md)). 같은 부분집합 e4b 대조는 품질 동률에 P50 6,245ms·최대 81,234ms 로 e2b 가 앞서 **e2b 승격 유지 근거가 보강**됐습니다. 부분집합 12회 표본이므로 전량 재측정으로 정본을 갱신해야 합니다.
 - Ollama `gemma4:e4b` Predict c4·SSE c1·Query c1 2026-08-24 규약 준수 3회 측정, 게이트 전 항목 통과.
