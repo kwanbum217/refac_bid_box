@@ -41,6 +41,18 @@ DEFAULT_CANDIDATE_POOL_SIZE = 30
 # 공고명 포함 관계 재순위 시 단어 수준 우연 일치 오탐을 방지하기 위한 최소 제목 키 길이 하한
 RERANK_MIN_TITLE_LENGTH = 5
 
+# 메타데이터 where 절을 파이썬에서 평가할 때 넓게 받아 오는 후보 수.
+#
+# ChromaDB 의 where 는 SQLite 로 후보를 먼저 좁힌 뒤 HNSW 를 도는데, 526,717 건
+# 컬렉션에서 `category` 하나만 걸어도 3.4ms 가 1,170ms 로 **344 배** 느려집니다
+# (2026-09-01 컨테이너 실측). where 없이 넓게 받아 파이썬에서 거르면 8.8ms 이며
+# 반환 ID 는 순서까지 동일합니다.
+#
+# 300 인 근거: 100 은 category 가 희소한 조합에서 목표 건수를 자주 못 채우고,
+# 3,000 은 HNSW 근사 탐색 경로가 달라져 상위 결과 자체가 바뀝니다(실측). 300 은
+# 동등성이 확인된 범위입니다. **이 값을 임의로 키우지 마십시오.**
+METADATA_WIDE_FETCH_SIZE = 300
+
 
 @dataclass
 class SemanticSearchResult:
@@ -392,6 +404,50 @@ def build_vector_where(
     return {"$and": conditions}
 
 
+def _flatten_where_conditions(where: dict[str, Any] | None) -> list[tuple[str, Any]] | None:
+    """where 절을 (키, 기대값) 목록으로 폅니다.
+
+    `build_vector_where` 는 단일 조건 dict 또는 `{"$and": [...]}` 만 만듭니다.
+    그 밖의 형태(연산자 표현 등)가 오면 파이썬 평가가 의미를 보존한다고 보장할
+    수 없으므로 `None` 을 돌려 호출부가 기존 where 경로를 쓰게 합니다.
+    """
+    if not where:
+        return None
+    conditions = where.get("$and") if "$and" in where else [where]
+    if not isinstance(conditions, list):
+        return None
+
+    flattened: list[tuple[str, Any]] = []
+    for condition in conditions:
+        if not isinstance(condition, dict) or len(condition) != 1:
+            return None
+        key, value = next(iter(condition.items()))
+        if key.startswith("$") or isinstance(value, (dict, list)):
+            return None
+        flattened.append((key, value))
+    return flattened
+
+
+def _metadata_matches(metadata: dict[str, Any] | None, conditions: list[tuple[str, Any]]) -> bool:
+    """메타데이터가 where 조건을 모두 만족하는지 판정합니다(동등 비교만)."""
+    if metadata is None:
+        return False
+    return all(metadata.get(key) == expected for key, expected in conditions)
+
+
+def _slice_query_result(results: dict[str, Any], keep_indexes: list[int]) -> dict[str, Any]:
+    """ChromaDB 질의 결과에서 지정한 인덱스만 남긴 동형 구조를 만듭니다."""
+    sliced: dict[str, Any] = {}
+    for result_field in ("ids", "documents", "metadatas", "distances"):
+        rows = results.get(result_field)
+        if not rows:
+            sliced[result_field] = rows
+            continue
+        row = rows[0] or []
+        sliced[result_field] = [[row[i] for i in keep_indexes if i < len(row)]]
+    return sliced
+
+
 def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
     """원본 rag_engine.retrieve_semantic_context 와 동일한 동기 검색 경로.
 
@@ -451,11 +507,41 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
         collection = get_collection(client, DEFAULT_COLLECTION)
 
         if where is not None:
-            results = collection.query(
-                query_texts=[semantic_query],
-                n_results=query_top_k,
-                where=where,
-            )
+            # where 를 ChromaDB 에 넘기면 SQLite 로 후보를 좁힌 뒤 HNSW 를 돌아
+            # 344 배까지 느려집니다(2026-09-01 실측). 넓게 받아 파이썬에서 같은
+            # 조건을 평가하고, 목표 후보 수를 채우지 못했을 때만 기존 where
+            # 경로로 되돌아갑니다. 되돌아가면 결과는 종전과 완전히 같습니다.
+            flattened_where = _flatten_where_conditions(where)
+            results = None
+
+            if flattened_where is not None:
+                wide_results = collection.query(
+                    query_texts=[semantic_query],
+                    n_results=max(query_top_k, METADATA_WIDE_FETCH_SIZE),
+                )
+                wide_metadatas = (wide_results.get("metadatas") or [[]])[0] if wide_results else []
+                keep_indexes = [
+                    index
+                    for index, metadata in enumerate(wide_metadatas)
+                    if _metadata_matches(metadata, flattened_where)
+                ]
+                if len(keep_indexes) >= query_top_k:
+                    results = _slice_query_result(wide_results, keep_indexes[:query_top_k])
+                else:
+                    logger.debug(
+                        "메타데이터 넓은 조회로 후보 %d/%d 만 확보해 where 경로로 되돌립니다 (where=%s)",
+                        len(keep_indexes),
+                        query_top_k,
+                        where,
+                    )
+
+            if results is None:
+                results = collection.query(
+                    query_texts=[semantic_query],
+                    n_results=query_top_k,
+                    where=where,
+                )
+
             raw_docs = (results.get("documents") or [[]])[0] if results else []
             if not raw_docs:
                 logger.info(
