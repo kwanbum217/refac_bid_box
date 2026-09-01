@@ -28,6 +28,6 @@
 
 ## 잔여 리스크
 
-1. CI `mysql-ngram-integration` 잡 삭제 (I-F 범위 외, 경미 - I-F 는 scope guard 및 worker_done guard 계약 강제 구현이며 ngram FULLTEXT / MATCH AGAINST 구현이 아닙니다)
+1. CI `mysql-ngram-integration` 잡 삭제 관찰은 브랜치 base 뒤처짐에 의한 착시였습니다 (2026-09-01 `main` 재확인 결과 잡과 픽스처 모두 존재)
 2. Capsule drift 검사는 기계 필드만 비교 (의미 필드 제외 -- 의도적 설계)
 3. worker_done_guard 단일 진입점 안내문 기반 (기계적 강제력은 pre-commit에 의존)

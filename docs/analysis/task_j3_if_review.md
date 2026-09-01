@@ -36,7 +36,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | **Intent 요구** | 워크트리 Git 설정의 활성 Capsule을 읽고, staged 파일이 `allowed_write_files` 밖이면 커밋 거부. 읽기 전용 Task는 모든 tracked staged 변경 거부. `.orca` 보고 파일은 Git 비추적이므로 예외 불필요 |
-| **구현 위치** | `scripts/orca_scope_guard.py` (신규 251줄) |
+| **구현 위치** | `scripts/orca_scope_guard.py` (신규 250줄) |
 | **구현 내용** | 1) `get_git_config_capsule()`: `git config --get orca.capsule` 조회. 2) `get_staged_files()`: `git diff --cached --name-only`. 3) `check_scope()`: Capsule 부재 -> 통과, Capsule 파일 없음/파싱 불가 -> fail-closed 거부 (종료 코드 1), `allowed_write_files` 빈 목록 -> 모든 staged 거부, `write_scope_excess()`로 범위 외 파일 거부. 4) 모든 오류 JSON에 `origin` 필드 포함 (`capsule_spec_error` 또는 `worker_scope_violation`) |
 | **테스트** | 7개: `test_scope_guard_no_capsule_allows_normal_dev`, `test_scope_guard_capsule_missing_fails_closed`, `test_scope_guard_capsule_unparseable_fails_closed`, `test_scope_guard_readonly_task_rejects_staged_files`, `test_scope_guard_out_of_scope_staged_files_rejected`, `test_scope_guard_in_scope_staged_files_allowed`, `test_scope_guard_json_output` |
 | **결함** | no |
@@ -56,7 +56,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | **Intent 요구** | Capsule과 report_path를 받아 파일 존재, ORCA_WORKER_DONE_V2 필수 필드, task_id, commit, changed_files와 실제 diff, 허용 쓰기 범위 검사. 통과 시에만 send 실행 |
-| **구현 위치** | `scripts/orca_worker_done_guard.py` (신규 338줄) |
+| **구현 위치** | `scripts/orca_worker_done_guard.py` (신규 337줄) |
 | **구현 내용** | 1) `validate_worker_done()`: (a) Capsule 파일 확인 + `load_capsule()` 파싱, (b) Report 파일 확인 + `load_report()` 파싱, (c) `REQUIRED_WORKER_DONE_FIELDS` 12개 필수 필드 검사, (d) schema == `ORCA_WORKER_DONE_V2` 검증, (e) Capsule vs Report task_id 대조, (f) `status == "succeeded"` 시: commit_count > 0 (쓰기 작업), `verify_commit_exists()`로 SHA 실존, `verify_changed_files_match()`로 diff 대조, `write_scope_excess()`로 범위 준수. 2) `main()`: `--send` 옵션으로 검증 통과 시에만 `execute_orca_send()` 실행. 3) 모든 오류에 `origin` 필드 |
 | **테스트** | 8개: capsule/report 누락, task_id 불일치, zero commit, out-of-scope, diff 불일치, 정상 통과, send 실행 |
 | **결함** | no |
@@ -120,9 +120,9 @@
 
 ## 4. 잔여 리스크
 
-### 4.1 CI mysql-ngram-integration 잡 삭제 (경미)
+### 4.1 CI mysql-ngram-integration 잡 삭제 관찰은 착시였습니다 (2026-09-01 정정)
 
-브랜치 diff에 `.github/workflows/ci.yml`에서 `mysql-ngram-integration` 잡 삭제와 `tests/fixtures/ngram_mysql_init.sql` 삭제가 포함됐습니다. I-F Intent scope에는 포함되지 않지만, Wave I 정리 과정에서 함께 정리된 것으로 보입니다. ngram 통합 테스트 자체는 `tests/test_ngram_prefilter_equivalence.py`에 남아 있으므로, 해당 테스트를 CI에서 다시 실행하려면 별도 복구가 필요합니다.
+리뷰 당시 브랜치 diff 에 `.github/workflows/ci.yml` 의 `mysql-ngram-integration` 잡 삭제와 `tests/fixtures/ngram_mysql_init.sql` 삭제가 나타났습니다. **이 관찰은 사실이 아닙니다.** `kwanbum217/orca-i-f` 가 갈라져 나온 base 가 해당 잡이 추가되기 전이라 세 점 diff 가 삭제로 보였을 뿐입니다. 2026-09-01 에 `main` 에서 재확인한 결과 잡과 픽스처가 모두 존재하며 복구할 것이 없습니다. **감사·리뷰 보고서는 기준 커밋을 먼저 확인해야 합니다.**
 
 **위험도**: 낮음. I-F 계약 강제 구현과 무관합니다 (I-F 는 scope guard 및 worker_done guard 조율 계약 강제 구현이며, ngram FULLTEXT / MATCH AGAINST 구현이 아닙니다).
 
