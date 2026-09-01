@@ -1,0 +1,67 @@
+# MySQL ngram 통합 CI 계약 정합성 및 로그 유실 시정 분석 보고서
+
+> **작성일**: 2026-09-01
+> **Task ID**: `task_d8f51c794b48` (`task_u2_ngram_ci_contract`)
+> **대상 파일**: `tests/test_ngram_prefilter_equivalence.py`, `.github/workflows/ci.yml`
+
+---
+
+## 1. 개요 및 배경
+
+CI run `33494985187` 의 `mysql-ngram-integration` (MySQL 8 ngram Integration Test) 잡이 실패하는 결함이 발생했습니다.
+원인 분석 결과, 서로 얽힌 두 가지 독립된 원인이 확인되었습니다:
+
+1. **테스트 계약 모순 (기각된 가설 강제)**:
+   - 2026-09-01 실측(`docs/analysis/ngram_edge_classes_measurement_20260901.md`)에서 `edge_07`(`K-water2026`)과 `edge_11`(`공사's`)은 `MATCH` 구문 적용 시 baseline `LIKE` 결과를 조용히 누락(silent false-negative)하는 것이 확인되었습니다.
+   - 이에 따라 픽스처(`tests/fixtures/ngram_edge_keywords.json`) 및 운영 코드(`src/rag/structured_data.py`)는 두 항목을 포함한 미실측/위험 경계값을 `is_safe_for_ngram=false` 로 fail-closed 처리하고 있습니다.
+   - 그러나 기존 통합 테스트(`test_integration_mysql_7_edge_classes_equivalence`)는 7개 경계값 전체에 대해 `MATCH+LIKE == LIKE` 완전 동등성을 일괄 단언하도록 작성되어 있어, 실측으로 기각된 가설을 강제하며 테스트가 실패했습니다.
+
+2. **CI 스텝 pytest 로그 유실**:
+   - `.github/workflows/ci.yml` 의 `Run MySQL ngram Integration Tests` 스텝이 `OUTPUT=$(uv run pytest ...)` 형태로 출력을 캡처하고 있었습니다.
+   - GitHub Actions 러너의 기본 셸 옵션인 `set -e`(`bash -e`) 환경에서 `pytest` 가 실패하여 종료 코드 1을 반환하면, 변수 할당 줄에서 즉시 스크립트 실행이 중단되어 후속 `echo "$OUTPUT"` 이 실행되지 못하고 모든 실패 로그가 삼켜졌습니다.
+
+---
+
+## 2. 시정 내용
+
+### 2.1 경계값 통합 테스트 계약 분리 (`tests/test_ngram_prefilter_equivalence.py`)
+
+기존의 단일 일괄 동등성 검증을 3단계 계약 체계로 분리했습니다:
+
+| 계약 구분 | 대상 클래스 / 항목 | 검증 내용 및 단언 |
+| --- | --- | --- |
+| **Safe 클래스 동등성** | `edge_02`, `03`, `06`, `08`, `13`, `14` (6종) 및 기준선 10종 | `is_safe_for_ngram_prefilter(kw) is True` 확인 및 MySQL 상에서 `LIKE` 와 `MATCH+LIKE` ID 집합 100% 일치 검증 |
+| **Unsafe 클래스 안전 우회** | `edge_01`, `01_b`, `04`, `05`, `07`, `09`, `10`, `11`, `12` (9종) | `is_safe_for_ngram_prefilter(kw) is False` 확인 및 플래그 활성화 시에도 RAG 쿼리 빌더가 `MATCH` 를 생성하지 않고 `LIKE` 로 안전 폴백함 검증 |
+| **실측 누락 증거 고정** | `edge_07`(`K-water2026`), `edge_11`(`공사's`) | 픽스처 표본 존재 확인(`len(like_ids) > 0`) 후 raw `MATCH+LIKE` 가 baseline `LIKE` 대비 누락을 일으킴을 실측 증거로 고정 |
+
+- **표본 0건 자명 통과 방지**:
+  - 누락 실측 검증 시 `assert len(like_ids) > 0` 을 선행 단언하여 표본이 없는 환경에서 공집합끼리 비교되어 자명 통과(false pass)하는 결함을 방지했습니다.
+  - 기준선 키워드 동등성 검증에서도 전체 검사 표본 수(`total_samples_checked > 0`)를 확인합니다.
+
+### 2.2 CI 스텝 로그 보존 및 오류 전파 개선 (`.github/workflows/ci.yml`)
+
+`mysql-ngram-integration` 잡의 테스트 실행 스크립트를 다음과 같이 개선했습니다:
+
+- `set +e` 로 일시적 오류 중단을 해제하고 `OUTPUT=$(uv run pytest ... 2>&1)` 로 stdout/stderr 및 종료 코드(`EXIT_CODE=$?`)를 안전하게 캡처합니다.
+- `set -e` 복구 후 `echo "$OUTPUT"` 을 무조건 실행하여 CI 실행 로그에 상세 pytest 결과 및 트레이스백이 항상 출력되도록 보장합니다.
+- `EXIT_CODE != 0` 이면 해당 종료 코드로 즉시 실패를 전파합니다.
+- 기존 CI 핵심 원칙인 **skip 미허용(`grep -E "(SKIPPED|skipped)"`)** 및 **최소 1건 이상 통과(`grep -E "([1-9][0-9]* passed)"`)** 검증을 그대로 유지합니다.
+
+---
+
+## 3. 검증 결과
+
+| 검증 항목 | 실행 명령 | 결과 | 비고 |
+| --- | --- | :---: | --- |
+| 단위 및 통합 회귀 테스트 | `uv run pytest tests/test_ngram_prefilter_equivalence.py -v` | **PASS** | 27 passed, 10 skipped (로컬 MySQL 부재 시 명시적 skip) |
+| 전체 단위 테스트 슈트 | `uv run pytest tests/ -q -m "not data_assets and not mysql_integration"` | **PASS** | 2,897 passed, 1 warning (격리 워크트리 기지 예외 외 전량 통과) |
+| GitHub Actions 워크플로우 린트 | `uv run actionlint` | **PASS** | 문법 및 스크립트 결함 0건 |
+| 다중 에이전트 규칙 정합성 | `python3 scripts/validate_agent_rules.py --quiet` | **PASS** | 16/16 전 항목 통과 |
+
+---
+
+## 4. 결론
+
+- 실측 판정(`edge_07`, `edge_11` unsafe)을 뒤집지 않고, 테스트 계약을 safe/unsafe/누락증거로 명확히 분리하여 CI 실패를 해소했습니다.
+- CI 에서 pytest 실패가 발생하더라도 로그가 삼켜지지 않고 전체 트레이스백이 출력되도록 개선했습니다.
+- `NGRAM_PREFILTER_ENABLED=false` 기본값 및 운영 인덱스 미생성 상태를 유지하여 불변 원칙을 준수했습니다.

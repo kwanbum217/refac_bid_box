@@ -181,12 +181,20 @@ jobs:
           mysql -h 127.0.0.1 -u root --default-character-set=utf8mb4 test_procurement_ngram < tests/fixtures/ngram_mysql_init.sql
 
       # skip 은 성공으로 인정하지 않으며, 최소 1건 이상의 테스트가 실행되어 통과해야 합니다.
+      # pytest 실패 시에도 로그가 삼켜지지 않도록 set +e 로 출력을 보존한 뒤 종료 코드를 전파합니다.
       - name: Run MySQL ngram Integration Tests
         env:
           MYSQL_TEST_URL: mysql+pymysql://root:testpassword@127.0.0.1:3306/test_procurement_ngram
         run: |
-          OUTPUT=$(uv run pytest tests/test_ngram_prefilter_equivalence.py -m mysql_integration -v)
+          set +e
+          OUTPUT=$(uv run pytest tests/test_ngram_prefilter_equivalence.py -m mysql_integration -v 2>&1)
+          EXIT_CODE=$?
+          set -e
           echo "$OUTPUT"
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "Error: pytest failed with exit code $EXIT_CODE."
+            exit $EXIT_CODE
+          fi
           if echo "$OUTPUT" | grep -E "(SKIPPED|skipped)"; then
             echo "Error: mysql_integration tests were skipped."
             exit 1
