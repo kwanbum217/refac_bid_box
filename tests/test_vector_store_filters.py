@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from src.rag import vector_store
 from src.rag.schemas import RetrievalPlan
 from src.rag.vector_store import (
     DEFAULT_CANDIDATE_POOL_SIZE,
@@ -151,19 +152,29 @@ def test_retrieve_semantic_context_applies_where_to_chroma(monkeypatch):
     assert result.relaxed is False
     assert result.filter_relaxed is False
 
-    assert len(recorded_calls) == 1
-    call = recorded_calls[0]
-    assert call["where"] is not None
-    assert "$and" in call["where"]
-    assert {"category": "Servc"} in call["where"]["$and"]
-    assert {"has_result": True} in call["where"]["$and"]
+    # 메타데이터 조건은 먼저 넓은 조회로 시도하고, 후보가 모자라면 where 로
+    # 되돌아갑니다. mock 이 1건만 돌려주므로 여기서는 되돌아가는 경로입니다.
+    assert len(recorded_calls) == 2
+    wide_call, fallback_call = recorded_calls
+    assert wide_call["where"] is None, "넓은 조회는 where 없이 나가야 합니다."
+    assert wide_call["n_results"] >= vector_store.METADATA_WIDE_FETCH_SIZE
+
+    assert fallback_call["where"] is not None
+    assert "$and" in fallback_call["where"]
+    assert {"category": "Servc"} in fallback_call["where"]["$and"]
+    assert {"has_result": True} in fallback_call["where"]["$and"]
 
 
 def test_retrieve_semantic_context_fail_closed_when_filter_miss(monkeypatch):
     """P1 회귀: Frgcpt/has_result=True 필터 miss가 Cnstwk/has_result=False 문서를 반환해서는 안 됩니다.
 
     필터 적용 검색 결과가 0건이면 무필터 재검색 없이 빈 결과(empty success)로
-    처리합니다. Chroma query 호출은 1회뿐이며, 완화 여부는 False 로 남습니다.
+    처리하며, 완화 여부는 False 로 남습니다.
+
+    2026-09-01 부터 메타데이터 조건은 where 없이 넓게 조회한 뒤 파이썬에서
+    평가합니다. 그래서 "where 없는 호출이 있었는가" 로는 fail-open 을 판정할 수
+    없습니다. **판정 기준은 호출 형태가 아니라 결과 의미입니다.** 넓은 조회가
+    조건에 맞지 않는 문서를 돌려주더라도 최종 결과에 섞이면 안 됩니다.
     """
     recorded_calls: list[dict[str, Any]] = []
 
@@ -175,8 +186,13 @@ def test_retrieve_semantic_context_fail_closed_when_filter_miss(monkeypatch):
             )
             if where is not None:
                 return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
-            # 무필터 재검색 경로가 호출되면 P1 이 재발한 것입니다.
-            raise AssertionError("필터 해제 재검색이 실행되었습니다 (fail-closed 위반)")
+            # 넓은 조회는 필터 조건과 무관한 문서를 돌려줍니다. 이것이 최종 결과에
+            # 섞이면 P1 fail-open 회귀입니다.
+            return {
+                "documents": [["조건에 맞지 않는 공사 문서"]],
+                "metadatas": [[{"category": "Cnstwk", "has_result": False}]],
+                "distances": [[0.1]],
+            }
 
     class MockChroma:
         @staticmethod
@@ -199,11 +215,14 @@ def test_retrieve_semantic_context_fail_closed_when_filter_miss(monkeypatch):
     assert result.ok is True
     assert result.relaxed is False
     assert result.filter_relaxed is False
-    assert result.documents == []
+    assert result.documents == [], "필터에 맞지 않는 문서가 결과에 섞이면 fail-open 회귀입니다."
     assert result.error is None
 
-    assert len(recorded_calls) == 1
-    call = recorded_calls[0]
+    # 넓은 조회에서 조건에 맞는 후보를 못 찾으면 where 경로로 되돌아가며,
+    # 그 결과가 0건이면 필터를 해제한 재검색 없이 빈 결과로 닫습니다.
+    assert len(recorded_calls) == 2
+    assert recorded_calls[0]["where"] is None
+    call = recorded_calls[1]
     assert call["where"] is not None
     assert {"category": "Frgcpt"} in call["where"]["$and"]
     assert {"has_result": True} in call["where"]["$and"]
@@ -533,9 +552,9 @@ def test_post_filter_supported_only_filters_no_regression(monkeypatch):
 
     assert result.ok is True
     assert len(result.documents) == 1
-    assert len(recorded_calls) == 1
-    # 후보 수 확보는 max(top_k, DEFAULT_CANDIDATE_POOL_SIZE)
-    assert recorded_calls[0]["n_results"] == DEFAULT_CANDIDATE_POOL_SIZE
+    assert len(recorded_calls) == 2
+    # 후보 수 확보는 max(top_k, DEFAULT_CANDIDATE_POOL_SIZE) 이며 where 경로에 적용됩니다.
+    assert recorded_calls[-1]["n_results"] == DEFAULT_CANDIDATE_POOL_SIZE
     assert result.applied_post_filters == {}
     assert result.post_filtered_count == 0
 
@@ -799,3 +818,123 @@ def test_retrieve_semantic_context_post_filter_fail_closed_with_exact_title(monk
     assert result.documents == []
     assert result.post_filtered_count == 1
     assert result.applied_post_filters == {"institution_name": "경상북도"}
+
+
+def _mock_chroma(monkeypatch, query_impl):
+    """chromadb 와 컬렉션을 mock 으로 갈아끼웁니다."""
+
+    class MockCollection:
+        @staticmethod
+        def query(query_texts, n_results, where=None):
+            return query_impl(query_texts, n_results, where)
+
+    class MockChroma:
+        @staticmethod
+        def PersistentClient(path):
+            return MockChroma()
+
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", MockChroma)
+    monkeypatch.setattr(
+        "src.rag.vector_store.get_collection", lambda client, name: MockCollection()
+    )
+
+
+def test_metadata_filter_uses_wide_fetch_when_candidates_suffice(monkeypatch):
+    """후보가 충분하면 where 를 ChromaDB 에 넘기지 않고 파이썬에서 평가해야 합니다.
+
+    526,717 건 컬렉션에서 where={'category': 'Servc'} 하나가 3.4ms 를 1,170ms 로
+    344 배 늘렸습니다(2026-09-01 실측). 넓게 받아 파이썬에서 거르면 8.8ms 이고
+    반환 ID 는 순서까지 같습니다.
+    """
+    calls: list[dict[str, Any]] = []
+    pool = DEFAULT_CANDIDATE_POOL_SIZE
+
+    def query_impl(query_texts, n_results, where):
+        calls.append({"n_results": n_results, "where": where})
+        # 조건에 맞는 문서와 맞지 않는 문서를 섞어 돌려줍니다.
+        docs, metas, dists = [], [], []
+        for index in range(n_results):
+            match = index % 2 == 0
+            docs.append(f"문서{index}")
+            metas.append({"category": "Servc" if match else "Cnstwk", "has_result": True})
+            dists.append(0.1 + index * 0.001)
+        return {"documents": [docs], "metadatas": [metas], "distances": [dists]}
+
+    _mock_chroma(monkeypatch, query_impl)
+
+    plan = RetrievalPlan(semantic_query="일반 용역 공고", filters={"category": "Servc"}, top_k=5)
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert len(calls) == 1, "후보가 충분하면 where 경로로 되돌아가지 않아야 합니다."
+    assert calls[0]["where"] is None
+    assert calls[0]["n_results"] >= vector_store.METADATA_WIDE_FETCH_SIZE
+    assert len(result.documents) == 5
+    # 파이썬 평가가 조건을 실제로 적용했는지 확인합니다.
+    assert all("문서" in doc["content"] for doc in result.documents)
+    assert [doc["metadata"]["category"] for doc in result.documents] == ["Servc"] * 5
+    assert pool >= 1
+
+
+def test_metadata_filter_falls_back_when_candidates_short(monkeypatch):
+    """넓은 조회로 목표 후보를 못 채우면 기존 where 경로로 되돌아가야 합니다."""
+    calls: list[dict[str, Any]] = []
+
+    def query_impl(query_texts, n_results, where):
+        calls.append({"n_results": n_results, "where": where})
+        if where is None:
+            # 조건에 맞는 문서가 2건뿐이라 목표(30건)를 채우지 못합니다.
+            metas = [{"category": "Servc"}, {"category": "Servc"}] + [
+                {"category": "Cnstwk"} for _ in range(n_results - 2)
+            ]
+            docs = [f"문서{i}" for i in range(n_results)]
+            return {
+                "documents": [docs],
+                "metadatas": [metas],
+                "distances": [[0.1] * n_results],
+            }
+        return {
+            "documents": [["where 경로 문서"]],
+            "metadatas": [[{"category": "Servc"}]],
+            "distances": [[0.2]],
+        }
+
+    _mock_chroma(monkeypatch, query_impl)
+
+    plan = RetrievalPlan(semantic_query="희소 조합 질의", filters={"category": "Servc"}, top_k=5)
+    result = retrieve_semantic_context(plan)
+
+    assert result.ok is True
+    assert len(calls) == 2
+    assert calls[0]["where"] is None
+    assert calls[1]["where"] == {"category": "Servc"}
+    assert [doc["content"] for doc in result.documents] == ["where 경로 문서"]
+
+
+def test_flatten_where_conditions_rejects_unknown_shapes():
+    """평가할 수 없는 where 형태는 None 을 돌려 기존 경로를 쓰게 해야 합니다."""
+    flatten = vector_store._flatten_where_conditions
+
+    assert flatten(None) is None
+    assert flatten({}) is None
+    assert flatten({"category": "Servc"}) == [("category", "Servc")]
+    assert flatten({"$and": [{"category": "Servc"}, {"has_result": True}]}) == [
+        ("category", "Servc"),
+        ("has_result", True),
+    ]
+    # 연산자 표현과 중첩 구조는 파이썬 동등 비교로 의미를 보존할 수 없습니다.
+    assert flatten({"price": {"$gt": 100}}) is None
+    assert flatten({"$or": [{"category": "Servc"}]}) is None
+    assert flatten({"$and": [{"category": "Servc", "has_result": True}]}) is None
+
+
+def test_metadata_matches_requires_all_conditions():
+    """조건 중 하나라도 어긋나면 통과시키면 안 됩니다."""
+    matches = vector_store._metadata_matches
+    conditions = [("category", "Servc"), ("has_result", True)]
+
+    assert matches({"category": "Servc", "has_result": True}, conditions) is True
+    assert matches({"category": "Servc", "has_result": False}, conditions) is False
+    assert matches({"category": "Cnstwk", "has_result": True}, conditions) is False
+    assert matches({"category": "Servc"}, conditions) is False
+    assert matches(None, conditions) is False
