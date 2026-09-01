@@ -19,6 +19,7 @@ from scripts.validate_agent_rules import (
     check_claude_is_pointer,
     check_context_budgets,
     check_current_state_exists,
+    check_current_state_fact_statuses,
     check_current_state_sections,
     check_current_state_unknowns_contradictions,
     check_cursor_references_agents,
@@ -37,7 +38,7 @@ from scripts.validate_agent_rules import (
 def test_real_repo_validation_passes():
     """실제 저장소의 v2 정합성 검증이 100% 통과하는지 확인."""
     checks = get_all_checks(PROJECT_ROOT)
-    assert len(checks) == 16
+    assert len(checks) == 17
     for chk in checks:
         assert chk.ok, f"Check failed: {chk.name} -> {chk.detail}"
     assert run_all_checks(PROJECT_ROOT, quiet=True) == 0
@@ -923,3 +924,40 @@ def test_genuine_contradiction_is_still_flagged(tmp_path):
     result = check_current_state_unknowns_contradictions(tmp_path)
 
     assert not result.ok, "해소와 미적용이 함께 있는 항목을 잡지 못했습니다"
+
+
+def test_check_current_state_fact_statuses_passes_and_rejects_drift(tmp_path: Path):
+    """상태 원장과 앵커 문구의 일치 및 rejected 상태 회귀를 검증합니다."""
+    context = tmp_path / "docs" / "context"
+    context.mkdir(parents=True)
+    facts = """version: '1.0'
+facts:
+  - id: ngram
+    status: rejected
+    decision_date: '2026-09-01'
+    document_anchor: 'ngram 선행필터 자체가 기각되고'
+    related_documents: [docs/context/CURRENT_STATE.md]
+  - id: edge
+    status: closed
+    decision_date: '2026-09-01'
+    document_anchor: '경계값 실측 완료·종결'
+    related_documents: [docs/context/CURRENT_STATE.md]
+"""
+    (context / "current_state_facts.yaml").write_text(facts, encoding="utf-8")
+    doc = context / "CURRENT_STATE.md"
+    doc.write_text(
+        "# 정본\n\nngram 선행필터 자체가 기각되고 다시 착수하지 않습니다.\n"
+        "경계값 실측 완료·종결 상태입니다.\n",
+        encoding="utf-8",
+    )
+    result = check_current_state_fact_statuses(tmp_path)
+    assert result.ok, result.detail
+
+    doc.write_text(
+        "# 정본\n\nngram 선행필터 자체가 기각되고, 동시에 미착수이며 착수 예정입니다.\n\n"
+        "경계값 실측 완료·종결 상태입니다.\n",
+        encoding="utf-8",
+    )
+    result = check_current_state_fact_statuses(tmp_path)
+    assert not result.ok
+    assert "status=rejected" in result.detail

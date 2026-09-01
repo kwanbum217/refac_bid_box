@@ -238,22 +238,11 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
 측정 규약 5.4 절에 DB 상태 기록을 필수로 넣었습니다. **G3 컷오버는 재현되는
 지표로 판정합니다.**
 
-1-0-a. **(종결) 이전 계획**: Wave F 조사가 끝나 방향이
-확정됐습니다. `dminstt_nm` 과 `bidwinnr_nm` 두 컬럼에만 ngram FULLTEXT 를 적용하고
-`bid_ntce_nm` 은 제외합니다. 남은 작업은 다음 순서입니다.
-  1. 구현: `src/rag/structured_data.py` 의 해당 두 컬럼 질의에 `MATCH AGAINST` 선행
-     필터를 추가하되 기존 `LIKE` 를 그대로 유지해 결과 의미를 보존합니다.
-     **이 코드는 Wave H2 로 `main` 에 들어가 있고 기본값 OFF 입니다.** 운영 인덱스가
-     없고 플래그가 꺼져 있으므로 아직 질의 경로를 바꾸지 않습니다.
-  2. 누락 탐지 회귀 테스트 추가(위 주의 1). 이것 없이 플래그를 켜지 않습니다.
-     경계값 7 클래스 픽스처와 ID 집합 동등성 테스트는 2026-09-01 Wave K1 으로
-     `main` 에 병합됐습니다(`a0ec7e3`). 7 클래스는 실측 전까지 `is_safe_for_ngram: false`
-     로 닫혀 있으며, **실측은 운영 FULLTEXT 인덱스 생성 후에 합니다.**
-  3. 운영 인덱스 생성은 **사용자 승인 후** 별도 수행합니다. 27.3GB 테이블 재구축과
-     쓰기 차단이 따르므로 수집이 멈춘 시간대를 고릅니다. 실행 절차는
-     [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md)를 따릅니다.
-  4. 적용 후 `scripts/measure_coldsql_attribution.py` 로 콜드 SQL 정본을 재측정해
-     개선을 확인합니다(E4 와 동일 규약, fixture v2 32문항 x 3회).
+1-0-a. **(종결) 이전 계획**: Wave F의 ngram FULLTEXT 선행필터 권고는 운영 쌍대
+측정에서 개선이 없어 **기각**됐습니다. 경계값 7 클래스 실측도 완료했으며,
+운영 FULLTEXT 인덱스는 제거됐고 플래그는 계속 OFF입니다. 구현·운영 인덱스 생성·
+재측정은 추가 착수 대상이 아니며, 근거와 상태는
+[`current_state_facts.yaml`](current_state_facts.yaml) 원장에서 관리합니다.
 1. **운영 검증**: 2026-08-26 CI run `32930156938`(`5f8174a`) **3플랫폼 green**. Windows Docker Desktop 실기는 장비 확보 후 수행하는 **후속 과업**입니다.
 1-4. **Vector fail-closed·정확 제목**: 근거 적중 **16/16**, 기간·기관 post-filter를 유지합니다. 2026-08-27 후보 30건과 공고명 정규화 정확 일치 재순위로 q21 정답을 top-5에 포함했습니다([`task_9fe129597faf.md`](../analysis/task_9fe129597faf.md)).
 1-2. **LLM 경로 최적화**: 2026-08-26 v4(`b4913fd`, 각 72회차)에서 **`gemma4:e2b` 승격** ([`llm_quality_v4_e4b_e2b_20260826.md`](../analysis/llm_quality_v4_e4b_e2b_20260826.md)). 2026-08-27 blind fixture v2(32문항) 측정에서 **e2b 승격 유지** 확정(동결 `13f947a`). numeric 양쪽 **87.5% 동률**이며 e2b 가 과잉응답 0 대 1, refusal 8/8 대 7/8, P50 3,990 대 6,459ms 로 앞섭니다. 과잉거절 12.5% 와 P50 은 두 모델 모두 미달이며 원인은 검색 미스 3문항입니다. 1차 측정은 백필 후 KB 미색인으로 **무효**([`llm_generalization_judgment_20260827.md`](../analysis/llm_generalization_judgment_20260827.md)).
@@ -354,6 +343,8 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
 - **동기 갱신**: 운영 지표, 게이트 판정, 불변 사실이 바뀌면 그 커밋에 본 문서 갱신을 포함합니다.
+- **과업 상태 원장**: 과업 상태는 [`current_state_facts.yaml`](current_state_facts.yaml)의 `status`와
+  문서 앵커를 같은 커밋에서 갱신합니다. CI가 앵커 주변의 상태 표지와 금지 상태를 대조합니다.
 - **간결성 유지**: 실험 로그나 분석 과정을 적지 않고 결론과 수치만 요약합니다 (8,000자 이내).
 - **진실 우선순위**: `실제 코드 / 실측 아티팩트 > CURRENT_STATE.md > README.md > 과거 handoff`
 

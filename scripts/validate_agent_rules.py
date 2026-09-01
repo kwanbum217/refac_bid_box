@@ -85,6 +85,20 @@ CURRENT_STATE_REQUIRED = [
     "G2",
     "G3",
 ]
+CURRENT_STATE_FACTS_PATH = ("docs", "context", "current_state_facts.yaml")
+CURRENT_STATE_FACT_STATUSES = {"active", "rejected", "closed", "blocked"}
+CURRENT_STATE_STATUS_TERMS = {
+    "active": ("진행", "착수", "추진"),
+    "rejected": ("기각", "반려"),
+    "closed": ("완료", "종결", "해소", "해결", "통과", "강등"),
+    "blocked": ("보류", "차단", "대기", "미검증"),
+}
+CURRENT_STATE_CONTRADICTORY_TERMS = {
+    "active": ("기각", "반려", "종결", "완료"),
+    "rejected": ("미착수", "착수 예정", "추진 예정", "권고"),
+    "closed": ("미해결", "미적용", "미착수", "착수 예정"),
+    "blocked": ("완료", "종결", "해소", "해결"),
+}
 
 # .antigravity/rules.md 요약본이 반드시 포함해야 할 핵심 키워드 (드리프트 탐지용)
 ANTIGRAVITY_REQUIRED_SECTIONS = [
@@ -870,6 +884,132 @@ def check_agents_model_table_absence(
     )
 
 
+def _parse_facts_without_yaml(text: str) -> dict:
+    """PyYAML 없이 상태 원장의 최소 구조만 읽습니다.
+
+    **pre-commit 은 이 스크립트를 시스템 `python3` 로 실행하며 거기에는 PyYAML 이
+    없습니다.** `uv run` 에서만 통과하고 커밋 훅에서는 실패하면 검사가 사실상
+    작동하지 않습니다(2026-09-01 실측: uv 17/17 통과, python3 16/17 실패).
+
+    들여쓰기로 항목 경계를 판정합니다. `related_documents` 처럼 중첩된 목록의
+    `- ` 항목을 새 fact 로 오인하지 않으려면 이 구분이 필요합니다.
+
+    중첩 매핑이나 인용 규칙을 온전히 다루지는 않으므로, **형식이 복잡해지면
+    PyYAML 을 의존성에 넣고 이 함수를 지우십시오.**
+    """
+    facts: list[dict] = []
+    current: dict | None = None
+    item_indent: int | None = None
+    pending_list_key: str | None = None
+
+    for raw in text.splitlines():
+        if not raw.strip() or raw.strip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        stripped = raw.strip()
+
+        if stripped.startswith("- "):
+            body = stripped[2:].strip()
+            is_new_fact = item_indent is None or indent <= item_indent
+            if is_new_fact and ":" in body:
+                item_indent = indent
+                current = {}
+                facts.append(current)
+                stripped = body
+            else:
+                # 중첩 목록의 값입니다. 직전 키의 목록에 담습니다.
+                if current is not None and pending_list_key:
+                    current.setdefault(pending_list_key, []).append(body)
+                continue
+        elif current is not None and item_indent is not None and indent <= item_indent:
+            # 항목보다 얕게 돌아오면 facts 블록을 벗어난 것입니다.
+            current = None
+            continue
+
+        if current is None or ":" not in stripped:
+            continue
+        key, _, value = stripped.partition(":")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if value:
+            current[key] = value
+            pending_list_key = None
+        else:
+            # 값이 비면 다음 줄부터 목록이 이어집니다.
+            pending_list_key = key
+    return {"facts": facts}
+
+
+def check_current_state_fact_statuses(root: Path = PROJECT_ROOT) -> CheckResult:
+    """기계 판독 상태 원장과 CURRENT_STATE 서술의 상태 정합성을 검사합니다."""
+    name = "CURRENT_STATE 기계 상태 원장 정합성"
+    facts_path = root.joinpath(*CURRENT_STATE_FACTS_PATH)
+    state_path = _current_state_path(root)
+    if not facts_path.exists():
+        return CheckResult(name, False, "docs/context/current_state_facts.yaml 없음")
+    if not state_path.exists():
+        return CheckResult(name, False, "docs/context/CURRENT_STATE.md 없음")
+    try:
+        facts = (
+            yaml.safe_load(read_text(facts_path))
+            if yaml is not None
+            else _parse_facts_without_yaml(read_text(facts_path))
+        )
+    except Exception as exc:
+        return CheckResult(name, False, f"상태 원장 YAML 파싱 실패: {exc}")
+    if not isinstance(facts, dict) or not isinstance(facts.get("facts"), list):
+        return CheckResult(name, False, "상태 원장은 facts 배열을 가져야 합니다")
+
+    content = read_text(state_path)
+    failures: list[str] = []
+    seen_ids: set[str] = set()
+    for index, fact in enumerate(facts["facts"], start=1):
+        if not isinstance(fact, dict):
+            failures.append(f"facts[{index}] 항목이 객체가 아님")
+            continue
+        fact_id = fact.get("id")
+        status = fact.get("status")
+        anchor = fact.get("document_anchor")
+        if not isinstance(fact_id, str) or not fact_id:
+            failures.append(f"facts[{index}] id 누락")
+            continue
+        if fact_id in seen_ids:
+            failures.append(f"중복 id: {fact_id}")
+        seen_ids.add(fact_id)
+        if status not in CURRENT_STATE_FACT_STATUSES:
+            failures.append(f"{fact_id}: 허용되지 않은 status '{status}'")
+        if not isinstance(fact.get("decision_date"), str) or not fact["decision_date"]:
+            failures.append(f"{fact_id}: decision_date 누락")
+        related = fact.get("related_documents")
+        if (
+            not isinstance(related, list)
+            or not related
+            or not all(isinstance(v, str) for v in related)
+        ):
+            failures.append(f"{fact_id}: related_documents 누락")
+        if not isinstance(anchor, str) or not anchor:
+            failures.append(f"{fact_id}: document_anchor 누락")
+            continue
+        position = content.find(anchor)
+        if position < 0:
+            failures.append(f"{fact_id}: CURRENT_STATE 앵커 없음 '{anchor}'")
+            continue
+        window = content[max(0, position - 160) : position + len(anchor) + 700]
+        expected = CURRENT_STATE_STATUS_TERMS.get(status, ())
+        contradictory = CURRENT_STATE_CONTRADICTORY_TERMS.get(status, ())
+        if not any(term in window for term in expected):
+            failures.append(f"{fact_id}: status={status} 상태 표지 없음")
+        found_contradictory = [term for term in contradictory if term in window]
+        if found_contradictory:
+            failures.append(f"{fact_id}: status={status} 와 충돌하는 표지 {found_contradictory}")
+
+    if failures:
+        return CheckResult(name, False, "; ".join(failures))
+    return CheckResult(
+        name, True, f"{len(facts['facts'])}개 과업 상태 원장과 문서 앵커 정합성 확인"
+    )
+
+
 def check_current_state_unknowns_contradictions(root: Path = PROJECT_ROOT) -> CheckResult:
     """CURRENT_STATE.md 6.1절(알려진 미해결 사항) 내에서 동일 사안에 대한 상태 표기 모순(해소 vs 미해결)을 검사합니다.
 
@@ -1079,6 +1219,7 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_context_budgets(root),
         check_worker_model_pool_drift(root),
         check_agents_model_table_absence(root),
+        check_current_state_fact_statuses(root),
         check_current_state_unknowns_contradictions(root),
         check_analysis_metrics_docs(root),
     ]

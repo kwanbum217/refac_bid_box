@@ -1,0 +1,31 @@
+version: "1.0"
+description: "CURRENT_STATE.md 과업 상태 원장. status 변경 시 document_anchor 주변 서술도 같은 커밋에서 갱신합니다."
+facts:
+  - id: ngram_prefilter
+    status: rejected
+    decision_date: "2026-09-01"
+    document_anchor: "ngram 선행필터 자체가 기각되고"
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/ngram_prefilter_paired_verdict_20260901.md
+  - id: ngram_edge_classes
+    status: closed
+    decision_date: "2026-09-01"
+    document_anchor: "ngram 경계값 7 클래스 (2026-09-01, 실측 완료·종결)"
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/ngram_edge_classes_measurement_20260901.md
+  - id: coldsql_metric
+    status: closed
+    decision_date: "2026-09-01"
+    document_anchor: "콜드 SQL 총량은 2026-09-01 결정으로 게이트에서 제외하고 관찰 지표로 강등했습니다"
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/coldsql_metric_demotion_20260901.md
+  - id: servc_lwlt_imputation
+    status: rejected
+    decision_date: "2026-09-01"
+    document_anchor: "추정 대입은 오차가 7~12%p 폭증해 기각됐습니다"
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/servc_lwlt_missing_20260830.md
