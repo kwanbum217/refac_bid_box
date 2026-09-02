@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-02
-> **source_commit**: `56ce0c2`
+> **source_commit**: `6acff93`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -89,6 +89,24 @@
 | 4.3 공급망 | Python 과 npm 의존성 취약점 스캔, Trivy 컨테이너 스캔, SPDX SBOM 생성과 업로드를 CI 에 추가했습니다. 초기에는 보고 전용이며 게이트 승격 조건은 [`../ops/supply_chain.md`](../ops/supply_chain.md) 에 있습니다. python, node, mysql, redis, meilisearch 다섯 이미지를 digest 로 고정했습니다 |
 | 4.4 버전 정본 | `pyproject.toml` 하나가 정본입니다. 앱이 하드코딩 대신 그 값을 읽고, 패키지 미설치 환경에서는 `pyproject.toml` 을 직접 읽습니다. 버전 값 0.1.0 은 바꾸지 않았습니다 |
 | 3.10 드리프트 연계 | baseline 과 평가를 `lwlt_rate_missing` 값별로 분리하고 with_lwlt 0.2, missing_lwlt 0.25 차등 임계를 적용합니다. 옛 baseline 과 해당 특징이 없는 모델은 기존 방식으로 동작합니다 |
+
+### 1.5.5 Wave E 해소 (2026-09-02)
+
+| 항목 | 조치 |
+| --- | --- |
+| 3.2 정기 스케줄 | 백업 태스크를 arq cron 에 등록했습니다. `BACKUP_SCHEDULE_ENABLED` 기본값 False 이며 보존은 개수 기준이고 삭제와 복원 리허설은 명시 지정을 요구합니다 |
+| 2.3 served-version | health 라우터에 읽기 전용 조회를 두어 인메모리 버전과 디스크 버전 불일치를 드러냅니다. 자동 리로드는 넣지 않았고 readiness 에도 결합하지 않았습니다 |
+| 4.3 관측성 조사 | 선택지 세 가지를 비교한 조사 보고서를 남겼습니다. 스택은 확정하지 않았고 SLO 값도 정하지 않았습니다 |
+
+**RPO 와 RTO 는 여전히 공란이고 restore drill 도 아직 수행하지 않았습니다.** 스케줄 주기가 RPO 를 사실상 결정하므로 주기를 정할 때 함께 판단하십시오.
+
+**관측성 스택은 담당자 결정 대기입니다.** 조사 보고서의 권고는 후보이며 확정이 아닙니다.
+
+**GitHub Actions 액션 버전은 실존을 조회해 확인하십시오.** `40e1721` 에서 존재하지 않는 trivy 버전 때문에 공급망 job 이 실패했습니다. actionlint 는 버전 실존을 검사하지 않습니다.
+
+**푸시 전에 `source_commit` 을 갱신하십시오.** `c5c35f3` 에서 이 누락 하나로 CI 의 job 여섯 개가 실패했습니다.
+
+---
 
 **본 문서의 v1.0.0 표기는 근거가 없습니다.** 실제 버전은 0.1.0 이며 릴리스 판단이 서지 않은 상태입니다. 상세는 [`../ops/versioning.md`](../ops/versioning.md) 를 보십시오.
 
