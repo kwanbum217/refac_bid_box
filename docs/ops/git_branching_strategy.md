@@ -75,9 +75,12 @@ uv run pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg
 python3 scripts/premerge_full_suite_gate.py --install-hooks
 ```
 
-#### 훅 미설치 시 현상 및 후속 과제
+#### 훅 미설치 시 현상 및 자동 검출
 - **미설치 시 현상**: `prepare-commit-msg` 훅이 설치되지 않으면 `merge_verified_branch.py` 헬퍼를 거치지 않고 수동으로 `git merge --no-ff`를 실행할 때 전량 테스트 증거 유무와 무관하게 병합이 통과(fail-open)됩니다.
-- **후속 과제**: 훅 미설치를 기계적으로 검출하는 검사(예: `scripts/validate_agent_rules.py` 또는 CI/로컬 검증 스크립트에 `.git/hooks/prepare-commit-msg` 실존 및 실행 권한 검사 추가)가 필요합니다. 현재 `scripts/validate_agent_rules.py`는 다른 동시 작업에서 사용 중이므로, 본 작업에서는 문서를 정비하고 후속 과제로 등록하여 다룹니다.
+- **자동 검출**: `scripts/validate_agent_rules.py`가 `.pre-commit-config.yaml`의 모든 `stages`를 읽어 대응하는 `.git/hooks/<stage>` 파일의 실존 및 실행 권한을 검사합니다. 실패 시 아래 설치 명령을 그대로 출력합니다.
+  `uv run pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg`
+- **CI 예외**: CI는 훅을 설치하지 않으므로 표준 환경변수 `CI=true`인 경우에만 이 로컬 훅 검사를 건너뜁니다. 로컬 실행에서 임의 환경변수로 검사를 끄는 용도는 지원하지 않습니다.
+- **워크트리 준비**: `scripts/orca_prepare_worktree.py`는 설정의 모든 stage를 확인·설치하며, 설치 명령은 주 저장소 루트에서 실행하여 워크트리 제거 후에도 훅이 깨지지 않게 합니다.
 
 ### 4.2 병합 단계
 1. `main`에서 작업 브랜치 분기.

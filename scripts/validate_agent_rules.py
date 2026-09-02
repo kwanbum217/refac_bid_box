@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import filecmp
 import json
+import os
 import re
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
@@ -200,6 +201,85 @@ def read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError):
         return ""
+
+
+def _pre_commit_stages(config_path: Path) -> list[str]:
+    """pre-commit 설정에서 요구하는 Git hook stage를 수집합니다."""
+    content = read_text(config_path)
+    if not content:
+        return []
+    if yaml is not None:
+        try:
+            config = yaml.safe_load(content) or {}
+            stages: set[str] = set()
+            for repo in config.get("repos", []):
+                for hook in repo.get("hooks", []):
+                    values = hook.get("stages", [])
+                    if isinstance(values, list):
+                        stages.update(str(value) for value in values if value)
+            return sorted(stages)
+        except (AttributeError, TypeError, ValueError):
+            pass
+    # pre-commit 설정의 stages는 단순한 인라인 목록이므로 PyYAML 없이도 읽습니다.
+    return sorted(
+        {
+            stage.strip().strip("'\"")
+            for match in re.finditer(r"^\s+stages:\s*\[([^]]*)\]", content, re.MULTILINE)
+            for stage in match.group(1).split(",")
+            if stage.strip()
+        }
+    )
+
+
+def _git_hooks_path(root: Path) -> Path | None:
+    """현재 저장소가 사용하는 hooks 디렉터리를 확인합니다."""
+    try:
+        result = subprocess.run(  # nosec B603 B607 - 고정 인자 목록으로 Git hooks 경로만 조회합니다
+            ["git", "-C", str(root), "rev-parse", "--git-path", "hooks"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
+        )
+        raw_path = result.stdout.strip()
+        if raw_path:
+            path = Path(raw_path)
+            return path if path.is_absolute() else (root / path).resolve()
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        pass
+    fallback = root / ".git" / "hooks"
+    return fallback if fallback.is_dir() else None
+
+
+def check_hook_installation(root: Path = PROJECT_ROOT) -> CheckResult:
+    """설정이 요구하는 모든 pre-commit hook stage의 설치 상태를 확인합니다."""
+    name = "pre-commit 훅 설치"
+    if os.environ.get("CI", "").lower() == "true":
+        return CheckResult(name, True, "CI=true 환경에서는 로컬 훅 설치 검사를 건너뜁니다")
+    config_path = root / ".pre-commit-config.yaml"
+    stages = _pre_commit_stages(config_path)
+    if not stages:
+        return CheckResult(name, False, f"{config_path}에서 요구 stage를 찾을 수 없습니다")
+    hooks_dir = _git_hooks_path(root)
+    if hooks_dir is None:
+        return CheckResult(name, False, "Git hooks 디렉터리를 찾을 수 없습니다")
+    missing = [stage for stage in stages if not (hooks_dir / stage).is_file()]
+    non_executable = [
+        stage
+        for stage in stages
+        if (hooks_dir / stage).is_file() and not os.access(hooks_dir / stage, os.X_OK)
+    ]
+    if not missing and not non_executable:
+        return CheckResult(
+            name, True, f"{len(stages)}개 stage 훅 설치·실행 권한 확인: {', '.join(stages)}"
+        )
+    problems = []
+    if missing:
+        problems.append(f"미설치={missing}")
+    if non_executable:
+        problems.append(f"실행 권한 없음={non_executable}")
+    command = "uv run pre-commit install" + "".join(f" --hook-type {stage}" for stage in stages)
+    return CheckResult(name, False, f"{'; '.join(problems)}. 해소 명령: {command}")
 
 
 def parse_yaml_keys_fallback(content: str) -> dict[str, Any]:
@@ -1253,6 +1333,7 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_current_state_fact_statuses(root),
         check_current_state_unknowns_contradictions(root),
         check_analysis_metrics_docs(root),
+        check_hook_installation(root),
     ]
 
 
