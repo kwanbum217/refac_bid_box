@@ -125,7 +125,6 @@ def test_splitters_functionality():
 def test_training_config_functionality():
     """training_config 모듈 및 trainer 재수출 설정/함수의 동작을 검증합니다."""
     from src.ml.trainer import (
-        DEFAULT_MODEL_NAME,
         SERVC_EXTRA_FEATURES,
         TRAINING_FEATURES,
         hyperparams_for_category,
@@ -133,8 +132,10 @@ def test_training_config_functionality():
         training_features_for_category,
     )
 
-    assert model_name_for_category(None) == DEFAULT_MODEL_NAME
-    assert model_name_for_category("") == DEFAULT_MODEL_NAME
+    with pytest.raises(ValueError):
+        model_name_for_category(None)
+    with pytest.raises(ValueError):
+        model_name_for_category("")
     assert model_name_for_category("Thng") == "quantum_leap_v25_pro"
     assert model_name_for_category("Servc") == "servc_institution_v1"
     assert model_name_for_category("Cnstwk") == "cnstwk_institution_v1"

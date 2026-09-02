@@ -25,6 +25,7 @@ from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import PipelineExecution
 from src.app.services.automation_orchestrator import STATUS_RUNNING
+from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.tasks.automation_tasks import run_automation_pipeline
 from src.tasks.notifier import notify_task_failure
 from src.tasks.retrain_task import run_retrain_pipeline_task
@@ -198,16 +199,55 @@ def _rebuild_institution_stats() -> dict[str, Any]:
 
 
 async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
-    """매주 월요일 03:00 재학습. 원본 Airflow narabid_weekly_retrain 대체."""
+    """매주 월요일 03:00 재학습. 원본 Airflow narabid_weekly_retrain 대체.
+
+    CATEGORY_MODEL_NAMES 의 각 카테고리에 대해 독립적으로 재학습을 수행(fan-out)합니다.
+    한 카테고리가 실패해도 다른 카테고리는 중단 없이 계속 실행되며 각 결과가 개별 기록됩니다.
+    """
     if not settings.ML_WEEKLY_RETRAIN_ENABLED:
         logger.info("주간 재학습이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
-    logger.info("주간 재학습 실행 시작")
-    try:
-        return await run_retrain_pipeline_task(ctx, trigger_source="weekly_schedule")
-    except Exception as exc:
-        # 스케줄 실패로 워커가 죽으면 이후 크론까지 함께 멈춥니다.
-        logger.exception("주간 재학습 실패")
-        await notify_task_failure("주간 재학습 스케줄", str(exc))
-        return {"status": "failed", "trigger_source": "weekly_schedule", "error": str(exc)}
+    logger.info("주간 재학습 실행 시작 (카테고리 fan-out)")
+    results: dict[str, Any] = {}
+    has_failure = False
+
+    for category in sorted(CATEGORY_MODEL_NAMES.keys()):
+        try:
+            logger.info("주간 재학습 시작: 카테고리 %s", category)
+            cat_result = await run_retrain_pipeline_task(
+                ctx,
+                trigger_source="weekly_schedule",
+                category_code=category,
+            )
+            results[category] = cat_result
+        except Exception as exc:
+            logger.exception("주간 재학습 카테고리 %s 실패", category)
+            has_failure = True
+            results[category] = {
+                "status": "failed",
+                "category": category,
+                "error": str(exc),
+            }
+
+    all_succeeded = not has_failure
+    any_succeeded = any(
+        isinstance(r, dict) and r.get("status") in ("success", "skipped") for r in results.values()
+    )
+    status = "success" if all_succeeded else ("partial_failure" if any_succeeded else "failed")
+    outcome: dict[str, Any] = {
+        "status": status,
+        "trigger_source": "weekly_schedule",
+        "categories": results,
+    }
+    if has_failure:
+        errors = [
+            f"{cat}: {res['error']}"
+            for cat, res in results.items()
+            if isinstance(res, dict) and res.get("status") == "failed"
+        ]
+        error_msg = "; ".join(errors)
+        outcome["error"] = error_msg
+        await notify_task_failure("주간 재학습 스케줄", error_msg)
+
+    return outcome

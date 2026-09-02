@@ -9,6 +9,8 @@ K-Fold 교차 검증 및 LightGBM/CatBoost 기반 사투가 예측 모델을 재
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -341,7 +343,6 @@ class ModelTrainer:
             version = f"v_{utcnow().strftime('%Y%m%d_%H%M%S_%f')[:-3]}_{suffix}"
             target_dir = self.registry_dir / self.model_name / version
             suffix += 1
-        target_dir.mkdir(parents=True, exist_ok=True)
 
         # 기관 이력을 프레임 단위로 먼저 붙입니다. features.py 는 입력에 있는
         # inst_hist_rate 를 그대로 쓰므로, 여기서 채우면 단일 공급원이 유지됩니다.
@@ -450,51 +451,63 @@ class ModelTrainer:
             effective_hyperparams.get(model_type),
         )
 
-        # 가중치 저장
-        model_file = target_dir / "model.bin"
-        joblib.dump(best_model, model_file)
+        # 아티팩트 원자적 저장: staging 에서 저장을 완료한 뒤 target_dir 로 이동합니다.
+        # 중단 시 불완전한 아티팩트가 남아 latest_version 으로 선택되는 것을 방지합니다.
+        model_dir = self.registry_dir / self.model_name
+        model_dir.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(dir=str(model_dir), prefix=".train_staging_"))
 
-        # 예측 구간. 큰 건일수록 산포가 커지는 이분산에 대한 설계서 6.3 의 대응입니다.
-        # 트리 모델을 못 쓸 만큼 표본이 적으면 구간도 만들지 않습니다.
-        interval_meta: dict[str, Any] = {"available": False}
-        if use_tree_models:
-            # 분위 모델도 같은 이유로 전량을 씁니다. 등각 보정 배율은 이 함수가
-            # 내부에서 뒷부분을 떼어 산정하므로 누수가 아닙니다.
-            quantile_models, _, interval_meta = _train_quantile_models(
-                X, y, effective_hyperparams.get(QUANTILE_HYPERPARAM_KEY)
-            )
-            for q, model in quantile_models.items():
-                joblib.dump(model, target_dir / f"model_q{int(q * 100):02d}.bin")
-            interval_meta["available"] = True
+        try:
+            # 가중치 저장
+            model_file = staging / "model.bin"
+            joblib.dump(best_model, model_file)
 
-        # 메타데이터 저장
-        metadata = {
-            "model_name": self.model_name,
-            "version": version,
-            "trained_at": utcnow().isoformat(),
-            "samples_count": len(df_raw),
-            "train_samples": len(train_idx),
-            "validation_samples": len(valid_idx),
-            # metrics 는 앞 80% 로 학습한 모델의 홀드아웃 값이고, 저장된 가중치는
-            # 전량으로 재적합한 것입니다. 두 학습 범위가 다르다는 표시입니다.
-            "refit_on_full": True,
-            "features": list(feature_columns),
-            "categorical_features": list(CATEGORICAL_FEATURES),
-            "category_levels": category_levels,
-            "model_type": model_type,
-            "metrics": valid_metrics,
-            "cv_metrics": cv_metrics,
-            "candidate_cv_metrics": cv_by_model,
-            "candidate_holdout_metrics": holdout_by_model,
-            # 아래 두 값이 참이면 metrics 를 승격 판단에 쓰면 안 됩니다.
-            "holdout_is_overfit": holdout_is_overfit,
-            "time_sorted_split": bool(has_time_column(df_feat)),
-            "hyperparams": effective_hyperparams,
-            "interval": interval_meta,
-            "status": "challenger",
-        }
-        with open(target_dir / "metadata.json", "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=2, ensure_ascii=False)
+            # 예측 구간. 큰 건일수록 산포가 커지는 이분산에 대한 설계서 6.3 의 대응입니다.
+            # 트리 모델을 못 쓸 만큼 표본이 적으면 구간도 만들지 않습니다.
+            interval_meta: dict[str, Any] = {"available": False}
+            if use_tree_models:
+                # 분위 모델도 같은 이유로 전량을 씁니다. 등각 보정 배율은 이 함수가
+                # 내부에서 뒷부분을 떼어 산정하므로 누수가 아닙니다.
+                quantile_models, _, interval_meta = _train_quantile_models(
+                    X, y, effective_hyperparams.get(QUANTILE_HYPERPARAM_KEY)
+                )
+                for q, model in quantile_models.items():
+                    joblib.dump(model, staging / f"model_q{int(q * 100):02d}.bin")
+                interval_meta["available"] = True
+
+            # 메타데이터 저장
+            metadata = {
+                "model_name": self.model_name,
+                "version": version,
+                "trained_at": utcnow().isoformat(),
+                "samples_count": len(df_raw),
+                "train_samples": len(train_idx),
+                "validation_samples": len(valid_idx),
+                # metrics 는 앞 80% 로 학습한 모델의 홀드아웃 값이고, 저장된 가중치는
+                # 전량으로 재적합한 것입니다. 두 학습 범위가 다르다는 표시입니다.
+                "refit_on_full": True,
+                "features": list(feature_columns),
+                "categorical_features": list(CATEGORICAL_FEATURES),
+                "category_levels": category_levels,
+                "model_type": model_type,
+                "metrics": valid_metrics,
+                "cv_metrics": cv_metrics,
+                "candidate_cv_metrics": cv_by_model,
+                "candidate_holdout_metrics": holdout_by_model,
+                # 아래 두 값이 참이면 metrics 를 승격 판단에 쓰면 안 됩니다.
+                "holdout_is_overfit": holdout_is_overfit,
+                "time_sorted_split": bool(has_time_column(df_feat)),
+                "hyperparams": effective_hyperparams,
+                "interval": interval_meta,
+                "status": "challenger",
+            }
+            with open(staging / "metadata.json", "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            shutil.move(str(staging), str(target_dir))
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
 
         return metadata
 

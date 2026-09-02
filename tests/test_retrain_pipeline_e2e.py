@@ -304,9 +304,11 @@ def test_category_model_namespaces_do_not_collide():
     assert names["Cnstwk"] != DEFAULT_MODEL_NAME
     assert ModelTrainer.for_category("Cnstwk").model_name == names["Cnstwk"]
 
-    # 카테고리를 지정하지 않은 전체 학습만 기본 네임스페이스를 씁니다.
-    assert model_name_for_category(None) == DEFAULT_MODEL_NAME
-    assert model_name_for_category("  ") == DEFAULT_MODEL_NAME
+    # 카테고리가 None 이거나 빈값이면 명시적으로 거부되어야 합니다.
+    with pytest.raises(ValueError):
+        model_name_for_category(None)
+    with pytest.raises(ValueError):
+        model_name_for_category("  ")
 
     # 미등록 카테고리는 조용히 물품으로 떨어지지 않고 실패해야 합니다.
     with pytest.raises(ValueError, match="Frgcpt"):

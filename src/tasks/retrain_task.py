@@ -24,6 +24,7 @@ from src.app.core.db import SessionLocal
 from src.app.models.predictions import RetrainLog
 from src.ml.dataset import build_training_dataset
 from src.ml.trainer import ModelTrainer, trainer
+from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.ml.validate_model import compare_champion_vs_challenger
 from src.tasks.notifier import (
     notify_empty_training_data,
@@ -130,12 +131,20 @@ async def run_retrain_pipeline_task(
     output_dir 을 노출하는 이유는 테스트 때문입니다. 기본값으로 두면 테스트가
     소량 픽스처로 만든 프레임이 운영 feature store 의 parquet 을 덮어씁니다.
     """
+    code = (category_code or "").strip()
+    if not code or code not in CATEGORY_MODEL_NAMES:
+        registered = sorted(CATEGORY_MODEL_NAMES.keys())
+        raise ValueError(
+            f"재학습 파이프라인에는 유효한 카테고리 코드가 필수입니다: {category_code!r}. "
+            f"CATEGORY_MODEL_NAMES 에 등록된 카테고리를 지정하십시오 (등록됨: {registered})"
+        )
+
     db = SessionLocal()
     try:
         df_train = await asyncio.to_thread(
             build_training_dataset,
             db,
-            category_code=category_code,
+            category_code=code,
             output_dir=output_dir,
             require_announcement=require_announcement,
         )
@@ -147,16 +156,14 @@ async def run_retrain_pipeline_task(
                 champion="",
                 challenger="",
                 status="skipped",
-                summary={"reason": "학습 데이터가 비었습니다.", "category": category_code},
+                summary={"reason": "학습 데이터가 비었습니다.", "category": code},
             )
-            await notify_empty_training_data(trigger_source, category_code)
-            return {"status": "skipped", "reason": "no_training_data", "category": category_code}
+            await notify_empty_training_data(trigger_source, code)
+            return {"status": "skipped", "reason": "no_training_data", "category": code}
 
         # 카테고리 전용 학습기를 씁니다. 분기가 없으면 용역 재학습이 물품
         # 디렉터리에 저장되고 물품 champion 과 비교됩니다.
-        category_trainer = ModelTrainer.for_category(
-            category_code, registry_dir=str(trainer.registry_dir)
-        )
+        category_trainer = ModelTrainer.for_category(code, registry_dir=str(trainer.registry_dir))
 
         # champion 지표는 학습 **전에** 읽습니다. 학습 후에 읽으면 방금 저장한
         # 챌린저가 최신 버전으로 잡혀 자기 자신과 비교하게 됩니다.
@@ -222,14 +229,14 @@ async def run_retrain_pipeline_task(
             champion_metrics=champion_metrics,
             challenger_metrics=challenger_metrics,
             samples=metadata["samples_count"],
-            category=category_code,
+            category=code,
             holdout_is_overfit=bool(metadata.get("holdout_is_overfit")),
             champion_comparable=verdict.get("champion_comparable", True),
         )
         return {
             "status": "success",
             "trigger_source": trigger_source,
-            "category": category_code,
+            "category": code,
             "version": metadata["version"],
             "champion_version": champion_version,
             "samples": metadata["samples_count"],
@@ -241,7 +248,7 @@ async def run_retrain_pipeline_task(
         await notify_task_failure(
             "재학습 파이프라인",
             str(exc),
-            detail=f"대상 {category_code or '전체'} / 트리거 {trigger_source}",
+            detail=f"대상 {category_code or '미지정'} / 트리거 {trigger_source}",
         )
         raise
     finally:
