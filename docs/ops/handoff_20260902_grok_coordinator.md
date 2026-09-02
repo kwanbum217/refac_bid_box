@@ -241,11 +241,11 @@ MYSQL_TEST_URL="mysql+pymysql://root:testpassword@127.0.0.1:3399/test_procuremen
 | **3.6 Windows 실기** | **차단.** 장비 부재. 워커로 해결 불가 |
 | 4.3 관측성 구현 | 조사 보고서만 있음. **스택 결정이 사용자 몫** |
 | 3.8 Arq heartbeat | 병합됨 (`bc4d3b9`) |
-| 3.4 MySQL 동시성 테스트 | G2 진행 중 |
-| 3.5 익명 API 쿼터 | Intent 준비됨 (`.orca/intents/wave_g/g3_anonymous_api_policy.yaml`) |
+| 3.4 MySQL 동시성 테스트 | 병합됨 (`e9d5792`). CI mysql job 에 합류 |
+| 3.5 익명 API 쿼터 | 병합됨 (`e1d589e`) |
 | 4.1 `CURRENT_STATE` 정규화 | **미착수.** 51KB 로 자체 규정 8,000자의 6배 |
 | 3.2 RPO/RTO, restore drill | 도구만 있음. 값 미확정, 리허설 미수행 |
-| 3.7 TLS ingress | 미착수 |
+| 3.7 TLS ingress | 병합됨 (`3275bf7`) |
 | 4.2 SSR 브라우저 E2E | 미착수 |
 
 ---
