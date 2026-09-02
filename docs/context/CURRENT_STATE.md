@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-02
-> **source_commit**: `b98bd98`
+> **source_commit**: `0e2da89`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -63,6 +63,23 @@
 | 3.5 GET 로그아웃 | 라우트를 제거하고 UI 링크를 POST form 으로 바꿨습니다 |
 | 3.8 RAG single-flight | 참조 계수 기반 키별 잠금. 마지막 대기자가 빠질 때 항목을 제거해 동적 SQL 리터럴 키가 누적되지 않습니다 |
 | 3.8 readiness | warmup 완료와 LLM 상태를 반영하되 기본값에서는 degraded 입니다. 게이트 승격은 `READINESS_REQUIRE_WARMUP` 과 `READINESS_REQUIRE_LLM` 으로 선택합니다 |
+
+### 1.5.2 P1 Wave B 해소 (2026-09-02)
+
+| 항목 | 조치 |
+| --- | --- |
+| 3.3 재학습 category | `None` 과 빈 문자열을 거부하고 주간 재학습을 등록 카테고리별 독립 실행으로 fan-out 합니다. 한 카테고리 실패가 나머지를 막지 않습니다. 학습 아티팩트는 staging 후 이동이라 부분 아티팩트가 `latest_version` 이 되지 않습니다 |
+| 3.1 G1 검증 | 전 테이블 스키마 서명(컬럼, 타입, nullable, 기본키, 외래키, 인덱스)을 기준선과 비교하고 날짜와 HEAD 가 담긴 보고서를 남깁니다. 스크립트는 읽기 전용이며 기존 4단계 통과 조건은 그대로입니다 |
+| 3.7 운영 Compose | `docker-compose.prod.yml` 신설. 전용 DB 계정, db 와 redis 와 meilisearch 포트 미노출, Redis `requirepass`, non-root, worker healthcheck, 자원 제한, 로그 회전. 개발용 `docker-compose.yml` 은 변경하지 않았습니다 |
+| 3.10 Servc 취약 집단 | 운영 정책안을 문서로 남겼습니다. 구현은 후속 과업이며 기각된 세 접근은 제안하지 않았습니다 |
+
+**행 수 판정은 여전히 하한 검사입니다.** 수집이 계속 돌아 행이 늘기 때문에 의도된 설계이며 정확 일치로 바꾸지 마십시오. 성장 데이터와 이행 원본을 구분하는 reconciliation 은 아직 없습니다.
+
+**검증 절차를 바꿨습니다.** `0295e3e` 푸시에서 CI 의 Test job 5개가 전부 실패했는데, 원인은 readiness 가 warmup 과 LLM 을 보게 되면서 Ollama 없는 CI 에서 `degraded` 가 된 것이었습니다. **로컬에 Ollama 가 떠 있어 코디네이터와 워커의 전량 테스트가 모두 통과했고 Level 1 게이트와 리뷰어도 놓쳤습니다.** 이후 병합 전 검증은 `.env` 를 제거하고 Ollama 와 Redis 를 미가용으로 만든 CI 모사 환경에서 수행합니다.
+
+**리뷰 체크리스트에 이모지 항목을 넣으십시오.** Wave B 에서 문서 이모지 위반 2건이 리뷰어를 통과했고 코디네이터 검토에서 발견됐습니다.
+
+---
 
 **시도 제한의 프록시 전제입니다.** IP 축은 `TRUSTED_PROXY_IPS` 에 등록된 피어에서만 `X-Forwarded-For` 를 해석합니다. **리버스 프록시나 로드밸런서를 앞에 두면서 이 값을 비워 두면 모든 요청이 프록시 IP 하나로 보여 전체 사용자가 잠깁니다.** 3.7 운영 Compose 작업과 반드시 함께 처리하십시오.
 
