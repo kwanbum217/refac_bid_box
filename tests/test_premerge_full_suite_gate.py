@@ -3,7 +3,8 @@
 scripts/premerge_full_suite_gate.py 단위 테스트.
 실제 55초 전량 pytest 실행 없이 모의 러너(mock runner)를 통해
 모든 분기(non-main, fail-closed, 커밋 불일치, exit_code, 우회, 증거 생성,
-부분/파일 단위 실행 기각, 훅 설치)를 검증합니다.
+부분/파일 단위 실행 기각, git-path 기반 MERGE_HEAD 조회,
+git-common-dir 기반 공통 증거 경로 해소, 훅 설치)를 검증합니다.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import pytest
 from scripts.premerge_full_suite_gate import (
     BYPASS_ENV_VAR,
     CANONICAL_FULL_SUITE_CMD,
+    get_merge_head_sha,
     install_git_hooks,
     is_bypass_active,
     is_full_suite_command,
@@ -25,16 +27,20 @@ from scripts.premerge_full_suite_gate import (
     main,
     parse_pytest_counts,
     record_evidence,
+    resolve_evidence_path,
     verify_premerge_gate,
 )
 
 
 def make_mock_runner(
     branch: str = "main",
-    merge_head: str = "abc1234def5678",
+    merge_head: str | None = "abc1234def5678",
     head_sha: str = "abc1234def5678",
     pytest_exit_code: int = 0,
     pytest_stdout: str = "3216 passed, 31 skipped in 55.0s",
+    git_path_merge_head: str | None = None,
+    git_common_dir: str = ".git",
+    git_dir: str = ".git",
 ):
     """git 및 subprocess 명령에 대한 결정론적 모의 러너를 생성합니다."""
 
@@ -42,6 +48,21 @@ def make_mock_runner(
         cmd_list = list(cmd)
         if cmd_list == ["git", "branch", "--show-current"]:
             return subprocess.CompletedProcess(cmd_list, 0, stdout=f"{branch}\n", stderr="")
+
+        if cmd_list == ["git", "rev-parse", "--git-path", "MERGE_HEAD"]:
+            if git_path_merge_head is not None:
+                return subprocess.CompletedProcess(
+                    cmd_list, 0, stdout=f"{git_path_merge_head}\n", stderr=""
+                )
+            return subprocess.CompletedProcess(
+                cmd_list, 1, stdout="", stderr="fatal: not a git path"
+            )
+
+        if cmd_list == ["git", "rev-parse", "--git-common-dir"]:
+            return subprocess.CompletedProcess(cmd_list, 0, stdout=f"{git_common_dir}\n", stderr="")
+
+        if cmd_list == ["git", "rev-parse", "--git-dir"]:
+            return subprocess.CompletedProcess(cmd_list, 0, stdout=f"{git_dir}\n", stderr="")
 
         if cmd_list == ["git", "rev-parse", "--verify", "MERGE_HEAD"]:
             if merge_head is None:
@@ -109,6 +130,55 @@ def test_main_branch_missing_merge_head():
     )
     assert code == 1
     assert "MERGE_HEAD" in msg
+
+
+def test_get_merge_head_sha_from_git_path_file(tmp_path: Path):
+    """git rev-parse --git-path MERGE_HEAD 파일에서 직접 SHA를 읽어옵니다."""
+    merge_head_file = tmp_path / "MERGE_HEAD"
+    expected_sha = "11223344556677889900aabbccddeeff11223344"
+    merge_head_file.write_text(f"{expected_sha}\n", encoding="utf-8")
+
+    runner = make_mock_runner(
+        git_path_merge_head=str(merge_head_file),
+        merge_head=None,  # --verify 는 실패하도록 설정
+    )
+
+    sha, err = get_merge_head_sha(runner=runner)
+    assert err == ""
+    assert sha == expected_sha
+
+
+def test_get_merge_head_sha_fallback_to_verify():
+    """git-path 파일이 없을 때 git rev-parse --verify MERGE_HEAD로 폴백합니다."""
+    expected_sha = "aabbccddeeff11223344556677889900aabbccdd"
+    runner = make_mock_runner(
+        git_path_merge_head=None,
+        merge_head=expected_sha,
+    )
+
+    sha, err = get_merge_head_sha(runner=runner)
+    assert err == ""
+    assert sha == expected_sha
+
+
+def test_resolve_evidence_path_worktree(tmp_path: Path):
+    """워크트리 환경에서 git-common-dir 를 기반으로 주 저장소 .cache 공통 경로를 해소합니다."""
+    common_git_dir = tmp_path / "main_repo" / ".git"
+    common_git_dir.mkdir(parents=True, exist_ok=True)
+
+    runner = make_mock_runner(git_common_dir=str(common_git_dir))
+    resolved = resolve_evidence_path(evidence_path=None, runner=runner)
+
+    expected = tmp_path / "main_repo" / ".cache" / "premerge_full_suite_evidence.json"
+    assert resolved == expected
+
+
+def test_resolve_evidence_path_explicit_override(tmp_path: Path):
+    """명시적으로 지정된 커스텀 증거 경로는 git-common-dir 해석 없이 그대로 사용합니다."""
+    custom_path = tmp_path / "custom_dir" / "my_evidence.json"
+    runner = make_mock_runner()
+    resolved = resolve_evidence_path(evidence_path=custom_path, runner=runner)
+    assert resolved == custom_path
 
 
 def test_main_branch_missing_evidence_file(tmp_path: Path):
@@ -348,6 +418,18 @@ def test_install_git_hooks():
     code, msg = install_git_hooks(runner=runner)
     assert code == 0
     assert "정상 설치되었습니다" in msg
+
+
+def test_install_git_hooks_worktree_warning():
+    """install_git_hooks 가 워크트리 환경에서 실행될 때 주의 경고 문구를 포함합니다."""
+    runner = make_mock_runner(
+        git_dir="/path/to/worktree/.git",
+        git_common_dir="/path/to/main_repo/.git",
+    )
+    code, msg = install_git_hooks(runner=runner)
+    assert code == 0
+    assert "정상 설치되었습니다" in msg
+    assert "[주의] 워크트리 환경에서 hook을 설치하면" in msg
 
 
 def test_main_cli_dispatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

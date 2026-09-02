@@ -65,27 +65,35 @@ docs: add phase5 retraining design
 
 ### 4.1 사전 준비: Git Hook 설치
 `pre-merge-commit` 훅이 활성화되어 있어야 `git merge` 시점에 게이트가 정상 동작합니다.
+
+> **설치 환경 주의사항**: Git 훅 설치는 반드시 **주 저장소(main repository) 루트**에서 실행해야 합니다. 격리 워크트리(worktree)에서 실행할 경우 생성되는 `.git/hooks/pre-merge-commit` 내부의 `INSTALL_PYTHON` 경로가 워크트리의 가상환경(`.venv`)을 가리키게 되어, 작업 완료 후 워크트리를 삭제했을 때 훅이 깨지는 현상이 발생합니다.
+
 ```bash
-# pre-commit 및 pre-merge-commit 훅을 모두 설치
+# 주 저장소 루트에서 pre-commit 및 pre-merge-commit 훅을 모두 설치
 uv run pre-commit install --hook-type pre-commit --hook-type pre-merge-commit
 # 또는
 python3 scripts/premerge_full_suite_gate.py --install-hooks
 ```
 
+#### 훅 미설치 시 현상 및 후속 과제
+- **미설치 시 현상**: `pre-merge-commit` 훅이 설치되지 않으면 `merge_verified_branch.py` 헬퍼를 거치지 않고 수동으로 `git merge --no-ff`를 실행할 때 전량 테스트 증거 유무와 무관하게 병합이 통과(fail-open)됩니다.
+- **후속 과제**: 훅 미설치를 기계적으로 검출하는 검사(예: `scripts/validate_agent_rules.py` 또는 CI/로컬 검증 스크립트에 `.git/hooks/pre-merge-commit` 실존 및 실행 권한 검사 추가)가 필요합니다. 현재 `scripts/validate_agent_rules.py`는 다른 동시 작업에서 사용 중이므로, 본 작업에서는 문서를 정비하고 후속 과제로 등록하여 다룹니다.
+
 ### 4.2 병합 단계
 1. `main`에서 작업 브랜치 분기.
 2. 작업 브랜치에서 커밋·푸시.
-3. 작업 브랜치에서 전량 테스트를 실행하여 증거를 기록합니다.
+3. 작업 브랜치(또는 워크트리)에서 전량 테스트를 실행하여 증거를 기록합니다.
    ```bash
    python3 scripts/premerge_full_suite_gate.py --record
    ```
-   이 명령은 `uv run pytest tests/ -q -m 'not data_assets'`를 실행하고 `.cache/premerge_full_suite_evidence.json`에 현재 커밋 SHA와 전량 테스트 통과 증거를 기록합니다. 개별 파일이나 하위 집합만 실행된 부분 테스트 증거는 게이트에서 기각됩니다.
+   이 명령은 `uv run pytest tests/ -q -m 'not data_assets'`를 실행하고 `git rev-parse --git-common-dir`를 기반으로 주 저장소의 공통 `.cache/premerge_full_suite_evidence.json`에 현재 커밋 SHA와 전량 테스트 통과 증거를 기록합니다. 워크트리에서 실행해도 주 저장소 공통 캐시에 기록되므로 주 저장소 병합 훅에서 즉시 공유됩니다. 개별 파일이나 하위 집합만 실행된 부분 테스트 증거는 게이트에서 기각됩니다.
 4. strict `finalize`와 Level 1 PASS가 기록된 JSON 증거를 생성합니다. 증거에는 `execution_mode: strict`, source/target branch, 그리고 검증한 source commit이 포함되어야 하며 helper는 현재 source ref와 대조한 뒤 검증된 불변 commit SHA를 `git merge` 인자로 사용합니다. 병합은 아래 helper로만 실행하며, 증거 누락·실패·재사용 시 helper는 `git merge`를 호출하지 않습니다.
    - 테스트 전량 통과 (`pytest`)
    - `python scripts/validate_agent_rules.py` 통과
    - 데이터 무손실 영향 시 [migration/](../migration/) 검증 결과 확인
 5. 담당자 확인 후 `main`으로 병합. 작업 단위를 이력에 남기기 위해 helper가 `--no-ff`를 사용합니다.
    - `main` 브랜치 병합 커밋 생성 시 pre-commit의 `pre-merge-commit` 훅인 [`scripts/premerge_full_suite_gate.py`](../../scripts/premerge_full_suite_gate.py)가 자동 실행됩니다.
+   - 훅 내부에서는 `git rev-parse --git-path MERGE_HEAD`로 대상 커밋을 안전하게 확인하고, 주 저장소 공통 `.cache/premerge_full_suite_evidence.json`을 검증합니다.
    - 전량 테스트 통과 증거가 없거나, 개별 파일만 돌린 부분 테스트 증거이거나, 증거의 커밋 해시가 병합 대상 커밋과 다르거나, 테스트 종료 코드가 0이 아닌 경우 fail-closed 방식으로 병합이 즉시 차단됩니다.
    - 비상 시 단일 우회 수단으로 `BYPASS_PREMERGE_FULL_SUITE_GATE=1` 환경변수를 사용할 수 있으며 사용 시 stderr에 경고가 출력됩니다.
 6. 병합 후 `main` 푸시.
@@ -95,7 +103,7 @@ git checkout -b feature/example
 # 작업, 커밋
 git push origin feature/example
 
-# 1) 전량 테스트 증거 기록
+# 1) 전량 테스트 증거 기록 (워크트리에서도 주 저장소 공통 위치에 기록됨)
 python3 scripts/premerge_full_suite_gate.py --record
 
 # 2) main 체크아웃 및 검증 기반 병합 (pre-merge-commit 게이트 자동 검증)

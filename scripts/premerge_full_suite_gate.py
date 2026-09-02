@@ -82,21 +82,98 @@ def parse_pytest_counts(summary: str) -> dict[str, int]:
     return counts
 
 
+def resolve_evidence_path(
+    evidence_path: Path | None = None,
+    runner: Runner = run_process,
+) -> Path:
+    """전량 테스트 증거 파일 경로를 해소합니다.
+
+    지정되지 않았거나 기본 경로인 경우, git rev-parse --git-common-dir 를 기준으로
+    주 저장소(main repo)의 .cache/premerge_full_suite_evidence.json 공통 위치를 반환합니다.
+    이를 통해 워크트리에서 --record 한 증거를 주 저장소의 병합 훅에서 즉시 공유할 수 있습니다.
+    """
+    if evidence_path is not None and evidence_path != DEFAULT_EVIDENCE_PATH:
+        return evidence_path
+
+    proc = runner(["git", "rev-parse", "--git-common-dir"])
+    if proc.returncode == 0 and proc.stdout.strip():
+        common_dir_str = proc.stdout.strip()
+        common_dir = Path(common_dir_str)
+        if not common_dir.is_absolute():
+            common_dir = (Path.cwd() / common_dir).resolve()
+        else:
+            common_dir = common_dir.resolve()
+
+        if common_dir.name == ".git":
+            repo_root = common_dir.parent
+            return repo_root / DEFAULT_EVIDENCE_PATH
+        return common_dir / DEFAULT_EVIDENCE_PATH
+
+    return (Path.cwd() / DEFAULT_EVIDENCE_PATH).resolve()
+
+
+def get_merge_head_sha(runner: Runner = run_process) -> tuple[str | None, str]:
+    """pre-merge-commit 훅 문맥에서 병합 대상 커밋(MERGE_HEAD) SHA를 조회합니다.
+
+    pre-commit 래퍼 문맥에서는 `git rev-parse --verify MERGE_HEAD`가 실패할 수 있으므로,
+    1) `git rev-parse --git-path MERGE_HEAD`로 파일 경로를 획득하여 직접 읽고,
+    2) 부재 시 `git rev-parse --verify MERGE_HEAD`로 조회합니다.
+    """
+    # 1. git rev-parse --git-path MERGE_HEAD 경로 확인 및 파일 직접 읽기
+    path_proc = runner(["git", "rev-parse", "--git-path", "MERGE_HEAD"])
+    if path_proc.returncode == 0 and path_proc.stdout.strip():
+        merge_head_file_str = path_proc.stdout.strip()
+        merge_head_path = Path(merge_head_file_str)
+        if not merge_head_path.is_absolute():
+            merge_head_path = (Path.cwd() / merge_head_path).resolve()
+
+        if merge_head_path.exists():
+            try:
+                content = merge_head_path.read_text(encoding="utf-8").strip()
+                lines = [line.strip() for line in content.splitlines() if line.strip()]
+                if lines:
+                    sha = lines[0]
+                    # 커밋 SHA 유효성 확인
+                    sha_proc = runner(["git", "rev-parse", "--verify", f"{sha}^{{commit}}"])
+                    if sha_proc.returncode == 0 and sha_proc.stdout.strip():
+                        return sha_proc.stdout.strip(), ""
+                    if re.fullmatch(r"[0-9a-fA-F]{7,64}", sha):
+                        return sha, ""
+            except OSError as exc:
+                return None, f"MERGE_HEAD 파일({merge_head_path})을 읽을 수 없습니다: {exc}"
+
+    # 2. 폴백: git rev-parse --verify MERGE_HEAD
+    verify_proc = runner(["git", "rev-parse", "--verify", "MERGE_HEAD"])
+    if verify_proc.returncode == 0 and verify_proc.stdout.strip():
+        return verify_proc.stdout.strip(), ""
+
+    return None, (
+        "병합 대상 커밋(MERGE_HEAD)을 확인할 수 없습니다.\n"
+        "pre-merge-commit 단계가 아니거나 병합 커밋 생성이 진행 중이 아닙니다."
+    )
+
+
 def load_evidence(evidence_path: Path) -> tuple[dict[str, Any] | None, list[str]]:
     """전량 테스트 증거 파일을 읽고 fail-closed 방식으로 구조를 검증합니다."""
-    if not evidence_path.exists():
-        return None, [
-            f"전량 테스트 증거 파일이 존재하지 않습니다 ({evidence_path}).\n"
-            f"병합 전에 작업 브랜치에서 전량 테스트를 실행하고 증거를 기록하십시오:\n"
-            f"  python3 scripts/premerge_full_suite_gate.py --record"
-        ]
+    target_path = evidence_path
+    if not target_path.exists():
+        # 로컬 기본 상대 경로 확인
+        local_fallback = Path.cwd() / DEFAULT_EVIDENCE_PATH
+        if local_fallback.exists():
+            target_path = local_fallback
+        else:
+            return None, [
+                f"전량 테스트 증거 파일이 존재하지 않습니다 ({evidence_path}).\n"
+                f"병합 전에 작업 브랜치에서 전량 테스트를 실행하고 증거를 기록하십시오:\n"
+                f"  python3 scripts/premerge_full_suite_gate.py --record"
+            ]
 
     try:
-        data = json.loads(evidence_path.read_text(encoding="utf-8"))
+        data = json.loads(target_path.read_text(encoding="utf-8"))
     except OSError as exc:
-        return None, [f"전량 테스트 증거 파일을 읽을 수 없습니다: {exc}"]
+        return None, [f"전량 테스트 증거 파일을 읽을 수 없습니다 ({target_path}): {exc}"]
     except json.JSONDecodeError as exc:
-        return None, [f"전량 테스트 증거 JSON 형식이 올바르지 않습니다: {exc.msg}"]
+        return None, [f"전량 테스트 증거 JSON 형식이 올바르지 않습니다 ({target_path}): {exc.msg}"]
 
     if not isinstance(data, dict):
         return None, ["전량 테스트 증거 데이터가 JSON 객체(dict) 형식이 아닙니다."]
@@ -107,7 +184,7 @@ def load_evidence(evidence_path: Path) -> tuple[dict[str, Any] | None, list[str]
 def verify_premerge_gate(
     *,
     target_branch: str = "main",
-    evidence_path: Path = DEFAULT_EVIDENCE_PATH,
+    evidence_path: Path | None = None,
     source_commit: str | None = None,
     runner: Runner = run_process,
 ) -> tuple[int, str]:
@@ -135,13 +212,10 @@ def verify_premerge_gate(
     # 3. 병합 대상 커밋(source_commit / MERGE_HEAD) 확인
     merge_sha = source_commit
     if not merge_sha:
-        merge_head_proc = runner(["git", "rev-parse", "--verify", "MERGE_HEAD"])
-        if merge_head_proc.returncode != 0 or not merge_head_proc.stdout.strip():
-            return 1, (
-                "병합 대상 커밋(MERGE_HEAD)을 확인할 수 없습니다.\n"
-                "pre-merge-commit 단계가 아니거나 병합 커밋 생성이 진행 중이 아닙니다."
-            )
-        merge_sha = merge_head_proc.stdout.strip()
+        head_sha, err_msg = get_merge_head_sha(runner=runner)
+        if head_sha is None:
+            return 1, err_msg
+        merge_sha = head_sha
     else:
         sha_proc = runner(["git", "rev-parse", "--verify", f"{merge_sha}^{{commit}}"])
         if sha_proc.returncode != 0 or not sha_proc.stdout.strip():
@@ -151,8 +225,9 @@ def verify_premerge_gate(
             )
         merge_sha = sha_proc.stdout.strip()
 
-    # 4. 증거 로드 및 fail-closed 검증
-    evidence, errors = load_evidence(evidence_path)
+    # 4. 증거 경로 해소 및 로드
+    resolved_path = resolve_evidence_path(evidence_path, runner=runner)
+    evidence, errors = load_evidence(resolved_path)
     if errors:
         return 1, "전량 테스트 게이트 검증 실패:\n" + "\n".join(errors)
 
@@ -207,10 +282,10 @@ def verify_premerge_gate(
 
 def record_evidence(
     *,
-    evidence_path: Path = DEFAULT_EVIDENCE_PATH,
+    evidence_path: Path | None = None,
     runner: Runner = run_process,
 ) -> tuple[int, str]:
-    """현재 HEAD 커밋에 대해 전량 테스트를 실행하고 증거 파일을 기록합니다."""
+    """현재 HEAD 커밋에 대해 전량 테스트를 실행하고 공통 증거 파일에 기록합니다."""
     # 1. 현재 커밋 및 브랜치 확인
     head_proc = runner(["git", "rev-parse", "--verify", "HEAD"])
     if head_proc.returncode != 0 or not head_proc.stdout.strip():
@@ -220,7 +295,10 @@ def record_evidence(
     branch_proc = runner(["git", "branch", "--show-current"])
     branch_name = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
 
-    # 2. 전량 테스트 정본 명령 실행 (임의의 부분 테스트 경로 허용 금지)
+    # 2. 증거 경로 해소
+    target_path = resolve_evidence_path(evidence_path, runner=runner)
+
+    # 3. 전량 테스트 정본 명령 실행 (임의의 부분 테스트 경로 허용 금지)
     cmd = list(CANONICAL_FULL_SUITE_CMD)
     print(f"[premerge-gate] 전량 테스트 실행 중: {' '.join(cmd)}")
 
@@ -236,8 +314,8 @@ def record_evidence(
 
     counts = parse_pytest_counts(summary_line)
 
-    # 3. 증거 디렉터리 생성 및 기록
-    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    # 4. 증거 디렉터리 생성 및 기록
+    target_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_data = {
         "suite": "full",
         "target": "tests/",
@@ -253,12 +331,12 @@ def record_evidence(
     }
 
     try:
-        evidence_path.write_text(
+        target_path.write_text(
             json.dumps(evidence_data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
     except OSError as exc:
-        return 1, f"증거 파일 작성 실패 ({evidence_path}): {exc}"
+        return 1, f"증거 파일 작성 실패 ({target_path}): {exc}"
 
     if test_proc.returncode != 0:
         return test_proc.returncode, (
@@ -270,12 +348,26 @@ def record_evidence(
         f"[premerge-gate] 전량 테스트 통과 및 증거 기록 완료\n"
         f"  commit: {head_sha[:8]}\n"
         f"  summary: {summary_line}\n"
-        f"  file: {evidence_path}"
+        f"  file: {target_path}"
     )
 
 
 def install_git_hooks(runner: Runner = run_process) -> tuple[int, str]:
     """pre-commit 및 pre-merge-commit git hook 을 모두 설치합니다."""
+    # 워크트리 설치 경고 확인
+    git_dir_proc = runner(["git", "rev-parse", "--git-dir"])
+    git_common_proc = runner(["git", "rev-parse", "--git-common-dir"])
+    warning_str = ""
+    if (
+        git_dir_proc.returncode == 0
+        and git_common_proc.returncode == 0
+        and git_dir_proc.stdout.strip() != git_common_proc.stdout.strip()
+    ):
+        warning_str = (
+            "\n[주의] 워크트리 환경에서 hook을 설치하면 INSTALL_PYTHON이 워크트리 venv를 가리켜 "
+            "워크트리 삭제 시 훅이 손상될 수 있습니다. 주 저장소 루트에서 설치를 수행하십시오.\n"
+        )
+
     cmd = [
         "uv",
         "run",
@@ -289,7 +381,10 @@ def install_git_hooks(runner: Runner = run_process) -> tuple[int, str]:
     proc = runner(cmd)
     if proc.returncode != 0:
         return proc.returncode, f"git hook 설치 실패:\n{proc.stderr.strip() or proc.stdout.strip()}"
-    return 0, "[premerge-gate] pre-commit 및 pre-merge-commit 훅이 정상 설치되었습니다."
+    return (
+        0,
+        f"[premerge-gate] pre-commit 및 pre-merge-commit 훅이 정상 설치되었습니다.{warning_str}",
+    )
 
 
 def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -314,8 +409,8 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--evidence-path",
         type=Path,
-        default=DEFAULT_EVIDENCE_PATH,
-        help=f"전량 테스트 증거 JSON 파일 경로 (기본값: {DEFAULT_EVIDENCE_PATH})",
+        default=None,
+        help=f"전량 테스트 증거 JSON 파일 경로 (기본값: 주 저장소 {DEFAULT_EVIDENCE_PATH})",
     )
     parser.add_argument(
         "--source-commit",
