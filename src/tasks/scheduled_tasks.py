@@ -18,8 +18,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -53,6 +55,31 @@ logger = logging.getLogger(__name__)
 SCHEDULER_SOURCE = "local_scheduler"
 
 
+def _record_schedule(
+    schedule_name: str,
+) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
+    """스케줄 결과를 기록하되 기록 실패가 작업을 방해하지 않게 합니다."""
+
+    def decorator(task: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+        @wraps(task)
+        async def tracked(*args: Any, **kwargs: Any) -> Any:
+            from src.tasks.worker import record_schedule_result
+
+            try:
+                outcome = await task(*args, **kwargs)
+            except Exception:
+                record_schedule_result(schedule_name, None, False)
+                raise
+            success = isinstance(outcome, dict) and outcome.get("status") in {"success", "skipped"}
+            record_schedule_result(schedule_name, outcome, success)
+            return outcome
+
+        return cast(Any, tracked)
+
+    return decorator
+
+
+@_record_schedule("backup")
 async def backup_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """매일 03:00 통합 백업을 실행하고 개수 기준 보존 상태를 보고합니다."""
     if not settings.BACKUP_SCHEDULE_ENABLED:
@@ -94,6 +121,7 @@ def _create_scheduled_execution(db, run_mode: str, trigger_name: str) -> str:
     return execution_id
 
 
+@_record_schedule("nightly_schedule")
 async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """매일 02:00 수집-KB-예측-점검 번들. 원본 Harness 야간 트리거 대체."""
     if not settings.AUTOMATION_NIGHTLY_SCHEDULE_ENABLED:
@@ -138,6 +166,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     return _mark_followup_failures(outcome)
 
 
+@_record_schedule("development_data_refresh")
 async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """개발 DB를 최신화하는 매일 수집·KB·집계 작업입니다."""
     if not settings.AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED:
@@ -234,6 +263,7 @@ def _rebuild_institution_stats() -> dict[str, Any]:
         db.close()
 
 
+@_record_schedule("weekly_retrain")
 async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """매주 월요일 03:00 재학습. 원본 Airflow narabid_weekly_retrain 대체.
 
@@ -319,6 +349,7 @@ def is_drift_monitor_enabled() -> bool:
     return bool(settings.ML_DRIFT_MONITOR_ENABLED)
 
 
+@_record_schedule("drift_monitor")
 async def drift_monitor_task(
     ctx: dict[str, Any],
     evaluation_window_days: int = 7,
