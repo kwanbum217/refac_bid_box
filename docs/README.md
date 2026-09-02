@@ -181,6 +181,8 @@ docs/
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
 | **Wave G 세션 종료 인수인계** | [`handoff_20260902_wave_g_session_close.md`](ops/handoff_20260902_wave_g_session_close.md) | 2026-09-02 세션 종료. 남은 항목과 재기동 절차. 이전 인계보다 이 문서가 우선 |
+| **웨이브별 해소 이력** | [`wave_resolution_history_20260902.md`](ops/wave_resolution_history_20260902.md) | CURRENT_STATE 에서 분리한 보안 P0·Wave A~G 해소 내역과 병합 커밋. 근거가 필요할 때만 조회 |
+| **SSR 브라우저 E2E 범위 조사** | [`ssr_e2e_scope_survey_20260902.md`](analysis/ssr_e2e_scope_survey_20260902.md) | 대상 화면 15종, 도구 4종 비교, 공유 자원 충돌, 4단계 분할안. 권장 pytest-playwright. 착수는 합의 대기 |
 | **레이턴시 게이트 측정 규약** | [`latency_gate_protocol.md`](ops/latency_gate_protocol.md) | **정본 규약.** 표본 `n >= 오염요청수 x 60`(예측 600, SSE 60), warmup 제외, 3회 최악값, c10 P95 100ms, 주변 부하 기록. 규약 제정 이전 측정은 통과·미달 어느 근거도 아님 |
 | Phase 7 검증 보고서 | [`phase7_cutover_report_20260804.md`](ops/phase7_cutover_report_20260804.md) | 과거 Phase 7 이행 보고서 (HISTORICAL, 현재 판정 근거 사용 금지) |
 | 크로스 플랫폼 가이드 | [`cross_platform_guide.md`](ops/cross_platform_guide.md) | macOS·Windows 재현 및 검증 절차 |
