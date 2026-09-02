@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [ main, "feature/**", "fix/**" ]
+    branches: [ '**' ]
+    tags-ignore: [ '**' ]
   pull_request:
     branches: [ main ]
 
@@ -32,6 +33,9 @@ jobs:
 
       - name: Run Ruff Lint
         run: uv run ruff check .
+
+      - name: Run Ruff Format Check
+        run: uv run ruff format --check .
 
       - name: Run Bandit Security Scan
         run: uv run bandit -c pyproject.toml -r src/ scripts/
@@ -124,8 +128,9 @@ jobs:
       # --durations 는 어느 테스트가 오래 걸리는지 로그에 남깁니다. Windows 는 실기가
       # 없어 로컬에서 재현할 수 없으므로 이 출력이 유일한 관측 수단입니다.
       # -p no:cacheprovider 는 러너 캐시 상태에 따라 순서가 달라지는 것을 막습니다.
-      - name: Run pytest (SQLite in-memory)
-        run: uv run pytest -q -m "not data_assets" --durations=25 -p no:cacheprovider
+      # 커버리지 측정과 fail-under 하한(80%) 게이트를 함께 수행합니다.
+      - name: Run pytest (SQLite in-memory with coverage)
+        run: uv run pytest -q -m "not data_assets" --cov=src --cov-report=term-missing --cov-fail-under=80 --durations=25 -p no:cacheprovider
 
   docker-build:
     name: Docker 이미지 빌드 검증
