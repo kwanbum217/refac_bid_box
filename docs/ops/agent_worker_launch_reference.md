@@ -490,9 +490,10 @@ Capsule 을 복사하면 워커가 그 사이에 정본을 찾으러 갔다가 �
 | E3 | Capsule 없음으로 조사 중단 |
 | G1 | Capsule 없음으로 Task 가 `failed` 로 종결 |
 
-터미널 부착 경로는 워크트리를 먼저 만들고 복사하므로 이 문제가 없습니다.
-Codex 를 띄울 때는 다음 런처를 쓰십시오. 워크트리가 생기는 즉시 Capsule 과
-`.env` 를 넣어 경합 창을 좁힙니다.
+공식 스킬의 기본은 `worker-start --worktree current` 입니다. 현재 트리에는
+`.orca/capsules` 가 이미 있으므로 이 경합이 없습니다. **새 워크트리를 만들
+때만** 아래 런처를 쓰십시오. 워크트리가 생기는 즉시 Capsule 과 `.env` 를 넣어
+경합 창을 좁힙니다.
 
 ```bash
 uv run python scripts/orca_codex_launch.py --task <task_id> --name <워크트리명>

@@ -40,7 +40,7 @@ Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다. 새 Run 을 만들지 않�
 
 동시 쓰기 워커 3대 상한. Dispatch 전 `orca_worker_watch.py`. 완료 세션은 그 자리에서 회수.
 
-Codex 워커는 `scripts/orca_codex_launch.py` 로 Capsule 을 기동 전에 배치합니다.
+워커 배치는 공식 스킬을 따른다. 기본은 `worker-start --worktree current` 로 현재 워크트리의 새 에이전트 터미널(왼쪽 하위 세션)에 붙인다. 새 git 워크트리는 사용자가 요청하거나 체크아웃이 겹칠 때만이며, 그때는 충돌을 먼저 말한다. `orca_codex_launch.py` 는 새 워크트리를 만들 때의 Capsule 경합 방지용이다. 현재 트리에는 쓰지 않는다.
 
 ## 검증
 

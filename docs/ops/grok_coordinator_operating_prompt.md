@@ -78,6 +78,22 @@ GPT 초안은 코디네이터를 구현 워커가 아니라 **감독·검증·�
 
 구현을 직접 하지 않는 것이 기본입니다. 예외는 상태 문서 갱신, `source_commit` 신선도, 병합, 워커가 막힌 조율 경로 수리입니다.
 
+### 4.1 워커 창 배치 (공식 스킬)
+
+정본은 `orca skills get orchestration` 입니다. 다음 작업부터 이 기본값을 지킵니다.
+
+```bash
+orca orchestration worker-start --task <task_id> --worktree current --agent <cli> --json
+```
+
+`Fresh worker` 는 새 git 워크트리가 아니라 **현재 워크트리의 새 에이전트 세션**입니다. 그래야 왼쪽 하위 세션에서 사용자가 워커를 봅니다. 병렬도 같은 트리에 터미널을 추가하는 것이 기본입니다.
+
+새 워크트리(`new-child` / `worktree create`)는 사용자가 요청하거나, 같은 트리에 두면 체크아웃이 충돌할 때만 만듭니다. 만들기 전에 그 충돌을 한 문장으로 말합니다. 독립 작업·병렬·편의를 이유로 워크트리를 나누지 않습니다.
+
+`worker-start` 를 못 쓰는 CLI(kimi 등)는 `orca terminal create --worktree active` 로 **같은 현재 트리**에 창을 만든 뒤 투입합니다. 그 경로는 비감독이므로 인수인계에 적습니다. 격리 워크트리로 숨기지 않습니다.
+
+같은 트리의 동시 쓰기가 `AGENTS.md` 4장과 겹치면 순차로 돌리거나, 충돌을 알린 뒤에만 `new-child` 를 씁니다.
+
 ---
 
 ## 5. 검증

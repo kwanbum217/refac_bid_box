@@ -127,11 +127,18 @@ docker build -t refac-bid-box-frontend:orca-gate frontend # docker_build:fronten
 `docker build`, `docker compose config`, `uv run actionlint`)으로 제한되며,
 그 밖의 문자열은 게이트 3 실패로 거부됩니다.
 
-### 2.2 작업 트리는 Orca 를 정본으로 씁니다
+### 2.2 워커 창은 현재 워크트리 하위 세션이 기본입니다
 
-섹션 작업용 격리 트리는 `orca worktree create` 로 만듭니다. `git worktree add`
-로 만든 트리는 `orca worktree list` 에 잡히지 않아 코디네이터가 실제 점유
-상태를 볼 수 없습니다.
+공식 스킬의 기본 배치는 `worker-start --worktree current` 입니다. 새 에이전트
+세션을 **현재 워크트리**에 만들어 왼쪽 하위 세션에 보이게 합니다. 병렬 작업도
+새 git 워크트리가 아니라 같은 트리의 새 터미널입니다.
+
+새 워크트리는 사용자가 요청하거나, 같은 체크아웃을 공유하면 충돌할 때만
+만듭니다. 만들기 전에 그 충돌을 말합니다. 독립·병렬·편의만으로는 나누지
+않습니다. 그때 격리 트리는 `orca worktree create` 또는
+`worker-start --worktree new-child` 로 만듭니다. `git worktree add` 로 만든
+트리는 `orca worktree list` 에 잡히지 않아 코디네이터가 실제 점유 상태를 볼
+수 없습니다.
 
 이미 수동으로 만든 트리가 있으면 **Task 사양의 공유 자원 항목에 경로를 적어**
 다른 섹션이 그 경로를 건드리지 않게 합니다. 작업이 끝나면 `git worktree remove`
@@ -204,7 +211,7 @@ review_checklist:
 
 ## 3. 감독 절차
 
-1. 각 Task는 **`orca orchestration worker-start` 로 Dispatch합니다.** 이것이 감독 경로이며 워크트리·터미널·readiness·dispatch 를 한 번에 묶고 `launch.effective` 를 receipt 로 돌려줍니다. **기동 실패가 즉시 드러나는 유일한 경로입니다.** 사용자 요청에 모델·추론 수준이 있으면 `--model`·`--effort` 로 반영하되, `--effort` 는 `--model` 과 함께여야 하고 둘 다 `--terminal` 과는 못 씁니다.
+1. 각 Task는 **`orca orchestration worker-start --worktree current` 로 Dispatch합니다.** 이것이 감독 경로이며 현재 워크트리에 새 에이전트 터미널을 만들고 readiness·dispatch 를 한 번에 묶고 `launch.effective` 를 receipt 로 돌려줍니다. **기동 실패가 즉시 드러나는 유일한 경로입니다.** 사용자가 왼쪽 하위 세션에서 워커를 보게 하려면 이 기본값을 유지합니다. `--worktree new-child` 는 사용자가 요청하거나 체크아웃 충돌을 말한 뒤에만 씁니다. 사용자 요청에 모델·추론 수준이 있으면 `--model`·`--effort` 로 반영하되, `--effort` 는 `--model` 과 함께여야 하고 둘 다 `--terminal` 과는 못 씁니다.
    - **`dispatch --inject` 를 기본으로 쓰지 마십시오.** 공식 스킬이 명시하듯 그 경로는 **의도적으로 비감독**이라 `worker_dispatches` 행을 만들지 않고, `worker-stop`·`worker-abandon` 이 그 프로세스를 닫지 못하며, `worker-release` 는 `no_owned_resource` 로 돌아옵니다. 저수준 argv 나 특수 토폴로지가 꼭 필요할 때만 고르고, **비감독을 선택했다는 사실을 인수인계에 적으십시오.**
    - 기동 뒤에는 receipt 를 읽습니다. `ready` 와 setup `running` 은 정상이고, 실패나 미상은 종료 코드가 0 이 아닙니다. `stage`·`effects`·`residualResources` 를 보고 판단하며 **추측으로 재시도하지 않습니다.**
    - 실패한 워커를 대체할 때는 `worker-start --task <task> --retry-of <dispatch>` 를 씁니다. 배치는 상속되지 않으므로 `--worktree` 와 `--agent`/`--terminal` 을 명시합니다.
