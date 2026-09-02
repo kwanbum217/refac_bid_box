@@ -292,6 +292,13 @@ MYSQL_TEST_URL="mysql+pymysql://root:testpassword@127.0.0.1:3399/test_procuremen
 
 ---
 
+## 11.1 워커 창 배치 (2026-09-02 정정)
+
+공식 스킬의 기본은 `worker-start --worktree current` 입니다. 다음 작업부터
+워커는 현재 워크트리의 하위 세션에 붙입니다. 새 git 워크트리는 사용자가
+요청하거나 체크아웃이 충돌할 때만 만듭니다. 이 인계 시점의 g1/g2 는
+`new-child` 격리 트리에 있어 코디네이터 하위 세션에 보이지 않았습니다.
+
 ## 11. Grok 코디네이터 프롬프트 채택 (2026-09-02)
 
 사용자가 전달한 GPT 코디네이터 프롬프트를 분석해 채택했습니다. 운영 정본은 [`grok_coordinator_operating_prompt.md`](grok_coordinator_operating_prompt.md) 이고, Grok 자동 로드 캐시 접두부는 [`.grok/rules/bidbox-orca-coordinator.md`](../../.grok/rules/bidbox-orca-coordinator.md) 입니다. 캐시 식별자는 `bidbox-orca-grok46-coordinator` 입니다. `prompt_cache_key` 설정 항목은 이 TUI 에 없어 등록하지 않았습니다.
