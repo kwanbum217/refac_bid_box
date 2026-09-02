@@ -8,7 +8,6 @@ src/app/api/v1/chatbot.py
 | `chatbot:chat_api` | `POST /api/v1/chatbot/chat` |
 | `chatbot:new_chat_session` | `POST /api/v1/chatbot/session/new` |
 | (신규) 스트리밍 정본 | `POST /api/v1/chatbot/chat/stream` |
-
 (legacy GET /api/v1/chatbot/stream 경로는 제거되었습니다.)
 """
 

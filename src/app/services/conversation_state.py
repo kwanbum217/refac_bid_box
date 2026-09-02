@@ -23,20 +23,39 @@ USER_MEMORY_PREFIX = "user:"
 
 
 def ensure_session_key(session_key: str | None = None) -> str:
-    return (session_key or "").strip() or uuid.uuid4().hex
+    cleaned = (session_key or "").strip()
+    if not cleaned or cleaned.startswith(USER_MEMORY_PREFIX):
+        return uuid.uuid4().hex
+    return cleaned
 
 
 def _get_state_by_key(
     db: Session, session_key: str, *, user_id: int | None = None, create: bool = True
 ) -> ChatSessionState | None:
+    if not session_key:
+        return None
+
     state = db.execute(
         select(ChatSessionState).where(ChatSessionState.session_key == session_key)
     ).scalar_one_or_none()
-    if state is None and create:
-        state = ChatSessionState(session_key=session_key, user_id=user_id)
-        db.add(state)
-        db.commit()
-        db.refresh(state)
+
+    if state is not None:
+        if state.user_id != user_id:
+            return None
+        return state
+
+    if not create:
+        return None
+
+    if session_key.startswith(USER_MEMORY_PREFIX):
+        expected_user_key = _resolve_user_memory_key(user_id)
+        if not expected_user_key or session_key != expected_user_key:
+            return None
+
+    state = ChatSessionState(session_key=session_key, user_id=user_id)
+    db.add(state)
+    db.commit()
+    db.refresh(state)
     return state
 
 
