@@ -118,7 +118,7 @@ def test_trailing_slash_does_not_duplicate(automation_settings):
 # --------------------------------------------------------------------------- #
 
 
-def _login(client) -> int:
+def _login(client, isolated_db=None) -> int:
     signup = client.post(
         "/api/v1/accounts/signup",
         json={
@@ -137,6 +137,16 @@ def _login(client) -> int:
         "/api/v1/accounts/login",
         json={"username": "delivery-user", "password": "StrongPass123!!"},
     )
+    if isolated_db is not None:
+        import sqlalchemy
+
+        from src.app.models.accounts import CustomUser
+
+        user = isolated_db.execute(
+            sqlalchemy.select(CustomUser).where(CustomUser.username == "delivery-user")
+        ).scalar_one()
+        user.is_staff = True
+        isolated_db.commit()
     return signup.json()["id"]
 
 
@@ -144,7 +154,7 @@ def _login(client) -> int:
 def test_request_records_resolved_delivery(mock_enqueue, client, isolated_db, automation_settings):
     """판정 결과가 요청 페이로드와 응답 job 계약에 그대로 실려야 합니다."""
     automation_settings(base_url="http://app:8000", shares_db=False)
-    _login(client)
+    _login(client, isolated_db)
 
     payload = client.post("/api/v1/automation/run/collect-bids", json={"reason": "수집"}).json()
     assert payload["job"]["callback_mode"] == "callback"
@@ -156,7 +166,7 @@ def test_request_records_resolved_delivery(mock_enqueue, client, isolated_db, au
 def test_direct_mode_is_reported_in_answer(mock_enqueue, client, isolated_db, automation_settings):
     """기본 구성은 polling 이 아니라 direct 로 안내되어야 합니다."""
     automation_settings(base_url="", shares_db=True)
-    _login(client)
+    _login(client, isolated_db)
 
     payload = client.post("/api/v1/automation/run/collect-bids", json={"reason": "수집"}).json()
     assert payload["job"]["callback_mode"] == "direct"
@@ -169,7 +179,7 @@ def test_callback_credentials_are_passed_to_worker_only_in_callback_mode(
 ):
     """direct 모드에서는 워커에 콜백 자격을 넘기지 않아야 합니다."""
     automation_settings(base_url="", shares_db=True)
-    _login(client)
+    _login(client, isolated_db)
     client.post("/api/v1/automation/run/collect-bids", json={"reason": "수집"})
     assert mock_enqueue.call_args.kwargs["callback_url"] == ""
     assert mock_enqueue.call_args.kwargs["callback_token"] == ""

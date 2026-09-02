@@ -41,12 +41,22 @@ VALID_SIGNUP = {
 }
 
 
-def _login(client) -> int:
+def _login(client, isolated_db=None) -> int:
     signup = client.post("/api/v1/accounts/signup", json=VALID_SIGNUP)
     client.post(
         "/api/v1/accounts/login",
         json={"username": "auto-status-user", "password": "StrongPass123!!"},
     )
+    if isolated_db is not None:
+        import sqlalchemy
+
+        from src.app.models.accounts import CustomUser
+
+        user = isolated_db.execute(
+            sqlalchemy.select(CustomUser).where(CustomUser.username == "auto-status-user")
+        ).scalar_one()
+        user.is_staff = True
+        isolated_db.commit()
     return signup.json()["id"]
 
 
@@ -332,7 +342,7 @@ def test_cancel_running_automation_request_aborts_worker_job(
     원본은 Harness abort API 를 호출했습니다. 이식본은 같은 자리에서 Arq 작업을
     중단해야 하며, DB 만 바꾸고 워커를 방치하면 안 됩니다.
     """
-    _login(client)
+    _login(client, isolated_db)
     _seed_kb_status(isolated_db)
     job_id = client.post("/api/v1/automation/run/collect-bids", json={"reason": "수집"}).json()[
         "job"
@@ -370,7 +380,7 @@ def test_cancel_pending_confirmation_does_not_abort_worker_job(
     mock_enqueue, mock_abort, client, isolated_db
 ):
     """확인 대기 건은 아직 큐에 없으므로 abort 를 부르면 안 됩니다 (원본 동일)."""
-    _login(client)
+    _login(client, isolated_db)
     _seed_kb_status(isolated_db)
     job_id = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"}).json()[
         "job"
@@ -408,7 +418,7 @@ def test_confirm_reuses_recent_success_without_new_run(mock_enqueue, client, iso
 
     최근 성공 이력이 있으면 고비용 전체 점검을 새로 돌리지 않습니다.
     """
-    _login(client)
+    _login(client, isolated_db)
     _seed_kb_status(isolated_db)
     _seed_successful_execution(
         isolated_db,
@@ -446,7 +456,7 @@ def test_confirm_ignores_stale_success_and_executes_new_run(mock_enqueue, client
 
     신선도 창(72시간)을 벗어난 이력은 재사용하지 않고 새로 실행합니다.
     """
-    _login(client)
+    _login(client, isolated_db)
     _seed_kb_status(isolated_db)
     _seed_successful_execution(
         isolated_db,
@@ -473,7 +483,7 @@ def test_confirm_ignores_stale_success_and_executes_new_run(mock_enqueue, client
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_collect_bids_is_not_reused(mock_enqueue, client, isolated_db):
     """재사용은 고비용 작업(full_validation)에만 적용됩니다 (원본 동일)."""
-    _login(client)
+    _login(client, isolated_db)
     _seed_kb_status(isolated_db)
     _seed_successful_execution(
         isolated_db,
@@ -493,7 +503,7 @@ def test_confirm_endpoint_executes_after_confirmation(mock_enqueue, client, isol
 
     확인 토큰으로 승인하면 confirmed_at 이 기록되고 실행 큐로 넘어가야 합니다.
     """
-    _login(client)
+    _login(client, isolated_db)
     _seed_kb_status(isolated_db)
     create_resp = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
     job_id = create_resp.json()["job"]["job_id"]
@@ -520,7 +530,7 @@ def test_confirm_does_not_reuse_other_run_mode(mock_enqueue, client, isolated_db
     무시하고 대체하면 collect_only 성공 하나로 전체 검증이 수행 없이 성공으로
     보고됩니다.
     """
-    _login(client)
+    _login(client, isolated_db)
     _seed_kb_status(isolated_db)
     _seed_successful_execution(
         isolated_db,
