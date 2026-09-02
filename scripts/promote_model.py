@@ -43,6 +43,7 @@ from src.ml.promotion import (  # noqa: E402
     latest_version,
     load_serving_metrics,
     promote,
+    read_paired_verdict,
     rollback,
 )
 
@@ -114,11 +115,14 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  학습   {version:<28} {_format_metrics(challenger_meta.get('metrics'))}")
         print(f"         표본 {challenger_meta.get('samples_count', 0):,}")
 
-        reasons = check_promotion_criteria(challenger_meta)
+        reasons = check_promotion_criteria(challenger_meta, registry_dir=registry_dir)
+        verdict_data = read_paired_verdict(model_name, version, registry_dir)
         if reasons:
             print("  판정   승격 불가")
             for reason in reasons:
                 print(f"         - {reason}")
+            if verdict_data and verdict_data.get("verdict") == "rejected":
+                print("         (운영 쌍대검정 기각 -- force 로도 우회 불가)")
         elif serving_meta.get("version") == version:
             print("  판정   이미 서빙 중")
         else:
@@ -141,7 +145,7 @@ def cmd_promote(args: argparse.Namespace) -> int:
         print(f"학습 메타데이터를 읽지 못했습니다: {args.model}/{version}")
         return 1
 
-    reasons = check_promotion_criteria(metadata)
+    reasons = check_promotion_criteria(metadata, registry_dir=registry_dir)
     print(f"[{args.model}] {version}")
     print(f"  지표 {_format_metrics(metadata.get('metrics'))}")
     print(f"  표본 {metadata.get('samples_count', 0):,}")

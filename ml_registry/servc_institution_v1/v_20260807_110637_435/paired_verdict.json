@@ -1,0 +1,11 @@
+{
+  "verdict": "rejected",
+  "champion_version": "v_20260807_043210_535",
+  "challenger_version": "v_20260807_110637_435",
+  "champion_checksum": "",
+  "challenger_checksum": "",
+  "sample_hash": "",
+  "code_commit": "",
+  "decided_at": "2026-08-07",
+  "evidence": "docs/changelogs/work_log.md 2026-08-07 절. 2025년 8,995건 운영 쌍대 검정에서 MAE 1.4050(base) -> 1.4188(challenger)로 악화. t=5.14로 base 우세(p<0.001). 6개 집단 전부 base 우세 또는 판별 불가. challenger 우세 비중 0.0%. 홀드아웃 MAE -0.0037이 운영에서 +0.0139로 부호 뒤집힘. 원인은 조기 종료 불일치(eval_set 유무)."
+}

@@ -53,6 +53,10 @@ def registry(tmp_path):
         (version_dir / "metadata.json").write_text(
             json.dumps(_training_metadata(version)), encoding="utf-8"
         )
+        # 쌍대검정 approved 판정이 있어야 승격 게이트를 통과합니다.
+        (version_dir / "paired_verdict.json").write_text(
+            json.dumps({"verdict": "approved", "evidence": ""}), encoding="utf-8"
+        )
     return root
 
 

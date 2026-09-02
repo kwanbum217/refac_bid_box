@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,21 @@ class PromotionRejected(RuntimeError):
     """승격 조건을 통과하지 못했습니다."""
 
 
+def read_paired_verdict(
+    model_name: str,
+    version: str,
+    registry_dir: Path | str = REGISTRY_ROOT,
+) -> dict[str, Any] | None:
+    """쌍대검정 판정 파일을 읽습니다. 없으면 None 입니다."""
+    path = Path(registry_dir) / model_name / version / "paired_verdict.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def latest_version(model_name: str, registry_dir: Path | str = REGISTRY_ROOT) -> str:
     versions = sorted(p.name for p in Path(registry_dir, model_name).iterdir() if p.is_dir())
     if not versions:
@@ -56,9 +72,25 @@ def latest_version(model_name: str, registry_dir: Path | str = REGISTRY_ROOT) ->
     return versions[-1]
 
 
-def check_promotion_criteria(metadata: dict[str, Any]) -> list[str]:
+def check_promotion_criteria(
+    metadata: dict[str, Any],
+    *,
+    registry_dir: Path | str = REGISTRY_ROOT,
+) -> list[str]:
     """승격을 막아야 하는 사유를 돌려줍니다. 빈 목록이면 통과입니다."""
     reasons: list[str] = []
+
+    model_name = metadata.get("model_name", "")
+    version = metadata.get("version", "")
+    if model_name and version:
+        verdict_data = read_paired_verdict(model_name, version, registry_dir)
+        if verdict_data is None:
+            reasons.append("운영 쌍대검정 미판정. paired_verdict.json 이 없습니다")
+        elif verdict_data.get("verdict") == "rejected":
+            evidence = verdict_data.get("evidence", "")
+            reasons.append(f"운영 쌍대검정 기각: {evidence}")
+        elif verdict_data.get("verdict") != "approved":
+            reasons.append(f"운영 쌍대검정 판정 불가. verdict={verdict_data.get('verdict')!r}")
 
     if metadata.get("holdout_is_overfit"):
         reasons.append("홀드아웃 분리 실패. 지표가 학습 구간 자기 점수입니다")
@@ -110,6 +142,21 @@ def build_serving_metadata(metadata: dict[str, Any], category_code: str | None) 
     }
 
 
+def _is_paired_rejected(metadata: dict[str, Any], registry_dir: Path) -> tuple[bool, str]:
+    """쌍대검정 기각 여부를 확인합니다.
+
+    (거부 여부, 증거 요약) 튜플을 돌려줍니다. 기각이 아니면 (False, "") 입니다.
+    """
+    model_name = metadata.get("model_name", "")
+    version = metadata.get("version", "")
+    if not model_name or not version:
+        return False, ""
+    verdict_data = read_paired_verdict(model_name, version, registry_dir)
+    if verdict_data is not None and verdict_data.get("verdict") == "rejected":
+        return True, verdict_data.get("evidence", "")
+    return False, ""
+
+
 def promote(
     model_name: str,
     version: str | None = None,
@@ -122,8 +169,8 @@ def promote(
 ) -> dict[str, Any]:
     """챌린저를 서빙 경로로 승격합니다.
 
-    force 는 승격 조건 위반을 무시합니다. 되돌리기 어려운 선택이므로 호출부가
-    담당자 확인을 거친 경우에만 씁니다.
+    force 는 구조적 승격 조건 위반을 무시합니다. 그러나 운영 쌍대검정에서
+    기각(rejected)된 버전은 force 로도 승격할 수 없습니다.
     """
     registry_dir = Path(registry_dir)
     serving_dir = Path(serving_dir)
@@ -131,7 +178,14 @@ def promote(
     source = registry_dir / model_name / version
     metadata = json.loads((source / "metadata.json").read_text(encoding="utf-8"))
 
-    reasons = check_promotion_criteria(metadata)
+    # 쌍대검정 기각은 force 로도 뚫리지 않습니다.
+    rejected, evidence = _is_paired_rejected(metadata, registry_dir)
+    if rejected:
+        raise PromotionRejected(
+            f"{model_name}/{version} 승격 불가 (운영 쌍대검정 기각): {evidence}"
+        )
+
+    reasons = check_promotion_criteria(metadata, registry_dir=registry_dir)
     if reasons and not force:
         raise PromotionRejected(f"{model_name}/{version} 승격 거부:\n- " + "\n- ".join(reasons))
 
@@ -143,7 +197,36 @@ def promote(
     if blocked and not force:
         raise PromotionRejected(f"{model_name}/{version} 가중치가 요구하는 미지원 특징: {blocked}")
 
+    # 원자적 교체: staging 에서 검증까지 마친 뒤 서빙 디렉터리를 바꿉니다.
+    # staging 실패 시 서빙 디렉터리는 손대지지 않은 채로 남습니다.
     target = serving_dir / model_name
+    serving_dir.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(dir=str(serving_dir), prefix=".promote_staging_"))
+
+    try:
+        shutil.copy2(source / "model.bin", staging / "model.bin")
+        for artifact in sorted(source.glob("model_q*.bin")):
+            shutil.copy2(artifact, staging / artifact.name)
+        serving_metadata = build_serving_metadata(metadata, category_code)
+        (staging / "metadata.json").write_text(
+            json.dumps(serving_metadata, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+        # staging 에서 모델 무결성을 한 번 더 확인합니다.
+        staging_model = joblib.load(staging / "model.bin")
+        staging_columns = list(
+            getattr(staging_model, "feature_name_", []) or metadata.get("features") or []
+        )
+        staging_blocked = unservable_features(staging_columns)
+        if staging_blocked and not force:
+            raise PromotionRejected(
+                f"{model_name}/{version} staging 가중치가 요구하는 미지원 특징: {staging_blocked}"
+            )
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+    # 검증 완료. 이제 서빙 디렉터리를 교체합니다.
     backup = None
     if target.exists():
         backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
@@ -151,25 +234,17 @@ def promote(
         backup = backup_root / model_name
         if backup.exists():
             shutil.rmtree(backup)
-        shutil.move(str(target), str(backup))
 
     try:
-        target.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source / "model.bin", target / "model.bin")
-        # 분위 아티팩트를 빠뜨리면 서빙에서 구간이 조용히 사라집니다.
-        for artifact in sorted(source.glob("model_q*.bin")):
-            shutil.copy2(artifact, target / artifact.name)
-        serving_metadata = build_serving_metadata(metadata, category_code)
-        (target / "metadata.json").write_text(
-            json.dumps(serving_metadata, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        if target.exists():
+            shutil.move(str(target), str(backup))
+        shutil.move(str(staging), str(target))
     except Exception:
-        # 교체 도중 실패하면 직전 서빙본을 되돌립니다. 반쯤 쓰인 디렉터리를
-        # 남기면 다음 기동에서 모델 로드가 깨집니다.
-        if backup is not None:
-            if target.exists():
-                shutil.rmtree(target)
+        # swap 실패 시: target 이 비었으면 backup 을 되돌립니다.
+        if backup is not None and not target.exists():
             shutil.move(str(backup), str(target))
+        elif staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
         raise
 
     return {
