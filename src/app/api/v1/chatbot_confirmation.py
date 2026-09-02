@@ -77,6 +77,7 @@ def _build_confirmed_automation_response(
         db, action_payload.get("suggestions"), user_id=user_id, request_obj=request_obj
     )
     answer_text = _append_kb_status(action_payload["answer"], kb_status)
+    # 승인 완료 대화 상호작용을 소유자 대조 하에 영속화합니다.
     remember_chat_interaction(
         db,
         session_key,
