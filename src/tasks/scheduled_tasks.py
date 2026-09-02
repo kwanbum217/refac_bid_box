@@ -336,7 +336,7 @@ async def drift_monitor_task(
                     model_name,
                     baseline_dir,
                 )
-                insufficient_summary = {
+                insufficient_summary: dict[str, Any] = {
                     "reason": f"Baseline 분포 아티팩트가 없습니다 ({baseline_dir}).",
                     "category": category,
                     "model_name": model_name,
