@@ -233,6 +233,30 @@ async def liveness_check():
     return {"status": "alive"}
 
 
+@router.get("/worker", summary="Arq 워커와 스케줄 관측 상태 조회")
+def worker_observation():
+    """워커 관측 기록을 조회합니다. Redis 장애 시 각 값은 미상으로 반환합니다."""
+    try:
+        from src.app.core.cache import CacheLayer
+        from src.tasks.worker import (
+            QUEUE_BACKLOG_KEY,
+            SCHEDULE_STATUS_KEY,
+            WORKER_HEARTBEAT_KEY,
+        )
+
+        observation_cache = CacheLayer()
+        worker = observation_cache.get(WORKER_HEARTBEAT_KEY)
+        queue = observation_cache.get(QUEUE_BACKLOG_KEY)
+        schedules = observation_cache.get(SCHEDULE_STATUS_KEY)
+        return {
+            "worker": worker if isinstance(worker, dict) else None,
+            "queue": queue if isinstance(queue, dict) else None,
+            "schedules": schedules if isinstance(schedules, dict) else None,
+        }
+    except Exception:
+        return {"worker": None, "queue": None, "schedules": None}
+
+
 @router.get("/ready")
 async def readiness_check(response: Response):
     checks = dict(

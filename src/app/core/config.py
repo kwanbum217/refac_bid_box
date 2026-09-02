@@ -116,6 +116,8 @@ class Settings(BaseSettings):
 
     # Redis 설정
     REDIS_URL: str = "redis://localhost:6379/0"
+    # Arq 워커 생존 기록 주기입니다. 관측 실패가 워커 실행에 영향을 주지 않습니다.
+    WORKER_HEARTBEAT_INTERVAL_SECONDS: int = 30
 
     # MySQL ngram FULLTEXT 선행필터 활성화 여부입니다.
     # dminstt_nm, bidwinnr_nm 집계 쿼리에 MATCH AGAINST 선행필터를 AND 로 결합합니다.
