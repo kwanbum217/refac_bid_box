@@ -8,6 +8,8 @@ Phase 1 데이터 보존 무손실 마이그레이션 검증 스크립트.
   3. DB 필수 테이블 존재 여부
   4. DB 전 테이블 스키마 서명 (컬럼명, 타입, nullable, PK, FK, 인덱스) 정합성
   5. 데이터 행 수 하한 검증
+  6. G1 reconciliation: collected_at 기준 이행 원본/수집 성장분 분리 대조
+     (수집이 늘어도 원본 구간이 줄면 즉시 실패)
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import os
 import sqlite3
 import subprocess  # nosec B404
 import sys
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -60,6 +62,22 @@ BASELINE_ROW_COUNTS = {
     "bid_results": 2_996_476,
 }
 MIN_ROW_COUNT_RATIO = 100.0
+
+# G1 Reconciliation — 이행 시점 경계의 단일 출처.
+#
+# 한 곳에 두어 여러 모듈에 하드코딩되지 않도록 한다. 운영 환경에서 실측으로
+# 더 정확한 시점이 확인되면 MIGRATION_CUTOVER_BASELINE_PATH 파일로 갱신한다.
+# 1차 기준 근거: data/backups/data_assets_checksums.json 의
+# generated_at = "2026-07-31T06:20:49.674634+00:00" — 원본 bid_box 자산을
+# 동결·체크섬화한 시점이며, 이 시점 이전에 수집된 행이 "이행 원본"이다.
+MIGRATION_CUTOVER_TS: datetime = datetime(2026, 7, 31, 6, 20, 49, tzinfo=UTC)
+MIGRATION_CUTOVER_BASELINE_PATH: Path = (
+    PROJECT_ROOT / "data" / "backups" / "row_count_reconciliation_baseline.json"
+)
+RECONCILIATION_TABLES: tuple[str, ...] = (
+    "bid_announcements",
+    "bid_results",
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -592,6 +610,181 @@ def verify_row_counts() -> tuple[bool, str]:
     return True, f"공고 {announcements:,}행 / 낙찰 {results:,}행 확인"
 
 
+def _count_rows_by_cutover(
+    session: object,
+    model_cls: type,
+    table_label: str,
+) -> tuple[int, int]:
+    """이행 시점 기준 원본/성장분 행 수를 한 번의 라운드트립으로 셉니다.
+
+    운영 경로에서는 누적 행 수가 매우 크므로(수백만 행) 두 번 셀 필요 없이
+    GROUP BY 절로 한 번에 집계한다. 테스트 경로의 SQLite 인메모리도 같은
+    쿼리로 검증한다.
+    """
+    from sqlalchemy import case, func, select
+
+    # 원본 = collected_at < MIGRATION_CUTOVER_TS, 성장분 = 그 외.
+    # DEFAULT 를 utcnow 로 두는 컬럼이지만 안전을 위해 NULL 은 성장분으로 본다
+    # (이행 시점 이전에 NULL 이 있었던 경우는 운영 데이터에서 관찰되지 않았다).
+    original_count = func.sum(
+        case(
+            (model_cls.collected_at < MIGRATION_CUTOVER_TS, 1),
+            else_=0,
+        )
+    )
+    stmt = select(
+        func.count(model_cls.id).label("total"),
+        original_count.label("original"),
+    )
+    row = session.execute(stmt).one()
+    total = int(row.total or 0)
+    original = int(row.original or 0)
+    growth = total - original
+    return original, growth
+
+
+def verify_reconciliation(
+    session_factory: object | None = None,
+    baseline_path: Path | None = None,
+    auto_save_baseline: bool = True,
+) -> tuple[bool, str]:
+    """이행 시점 이전에 수집된 행의 수를 baseline 과 대조합니다.
+
+    5단계 누적 하한 검사는 수집이 늘면 그대로 통과하므로, 이행 시점 유실을
+    성장분이 가리는 결함이 있다. 이 검증은 collected_at 으로 원본 구간을
+    따로 세어 baseline 과 비교한다. 원본이 줄면 즉시 실패하고, 성장분
+    증가는 검증 결과에 영향을 주지 않는다(관측값으로만 출력).
+
+    동작 규약:
+      - DB 조회 실패는 FAIL 로 보고하여 통과로 위장하지 않는다.
+      - baseline 파일이 없으면 현재 원본 행 수를 기록하고 PASS 한다
+        (스키마 서명 baseline 의 auto_save_baseline 패턴과 동일).
+      - 2회차부터 baseline 과 비교해 부족하면 FAIL, 같거나 많으면 PASS.
+      - 두 테이블 모두 누적 0(즉, DB 가 비어있음)이면 baseline 비교 대상이
+        의미 없으므로 "DB 가 비어있어 reconciliation 건너뜀" 메시지를 남기고
+        PASS 한다(누적 0 은 통과로 위장하지 않으며, 빈 DB 자체의 판정은
+        5단계가 담당한다).
+
+    읽기 전용이다. baseline 파일 기록 외 DDL 이나 DML 을 실행하지 않는다.
+    """
+    print("[6/6] G1 reconciliation: 원본/수집 성장분 분리 대조...")
+
+    if session_factory is None:
+        try:
+            from src.app.core.db import SessionLocal
+        except Exception as exc:
+            print(f"      DB 세션 팩토리 로드 실패: {exc}")
+            return False, f"reconciliation DB 세션 로드 실패: {exc}"
+        session_factory = SessionLocal
+
+    if baseline_path is None:
+        baseline_path = MIGRATION_CUTOVER_BASELINE_PATH
+
+    try:
+        from src.app.models.bids import BidAnnouncement, BidResult
+    except Exception as exc:
+        return False, f"reconciliation 모델 로드 실패: {exc}"
+
+    models = (
+        (RECONCILIATION_TABLES[0], BidAnnouncement),
+        (RECONCILIATION_TABLES[1], BidResult),
+    )
+
+    session = session_factory()
+    try:
+        original_counts: dict[str, int] = {}
+        growth_counts: dict[str, int] = {}
+        for table_label, model_cls in models:
+            try:
+                original, growth = _count_rows_by_cutover(session, model_cls, table_label)
+            except Exception as exc:
+                print(f"      DB 조회 실패 ({table_label}): {exc}")
+                return False, f"reconciliation DB 조회 실패 ({table_label}): {exc}"
+            original_counts[table_label] = original
+            growth_counts[table_label] = growth
+    finally:
+        # 운영 경로(SessionLocal) 는 close() 가 정의되어 있다. 테스트 픽스처가
+        # # session.close() 가 없는 가짜 팩토리를 넘기는 경우를 대비해
+        # close 가 없으면(=없으면) 조용히 건너뛴다. read-only 검증 경로이므로
+        # DB 자원 해제는 부차적이다.
+        close = getattr(session, "close", None)
+        if callable(close):
+            close()
+
+    total_now = sum(original_counts.values()) + sum(growth_counts.values())
+
+    # 누적 0 인 경우 — 두 테이블 모두 0행이면 빈 DB 또는 부재 상황이다.
+    # 5단계가 누적 하한을 별도로 보고하므로 여기서는 baseline 대조가
+    # 무의미함을 알리고 PASS 한다(통과로 위장하지 않음).
+    if total_now == 0:
+        print("      DB 가 비어있어 reconciliation 건너뜀 (누적 0행, baseline 대조 의미 없음)")
+        return True, "DB 가 비어있어 reconciliation 건너뜀 (누적 0행)"
+
+    # baseline 부재 — 스키마 서명 baseline 의 auto_save_baseline 패턴을 따른다.
+    if not baseline_path.exists():
+        if not auto_save_baseline:
+            return False, f"기준선 파일 없음: {baseline_path}"
+        baseline_payload = {
+            "schema_version": "1.0.0",
+            "cutover_timestamp": MIGRATION_CUTOVER_TS.isoformat(),
+            "rationale": (
+                "data/backups/data_assets_checksums.json 의 generated_at 와 "
+                "동일한 시각을 1차 기준점으로 둔다. 운영에서 더 정확한 "
+                "이행 시점이 확인되면 본 파일을 갱신하라."
+            ),
+            "tables": {table_label: original_counts[table_label] for table_label, _ in models},
+        }
+        try:
+            baseline_path.parent.mkdir(parents=True, exist_ok=True)
+            baseline_path.write_text(
+                json.dumps(baseline_payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            return False, f"reconciliation baseline 기록 실패: {exc}"
+        msg = (
+            f"최초 기준선 기록 — 원본 "
+            f"{original_counts[RECONCILIATION_TABLES[0]]:,}행 / "
+            f"{original_counts[RECONCILIATION_TABLES[1]]:,}행 "
+            f"({baseline_path.name})"
+        )
+        print(f"      {msg}")
+        return True, msg
+
+    # baseline 존재 — 로드 후 비교.
+    try:
+        baseline_payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"reconciliation baseline 로드 실패: {exc}"
+
+    baseline_tables = baseline_payload.get("tables", {})
+    failures: list[str] = []
+    for table_label, _model in models:
+        baseline_value = baseline_tables.get(table_label)
+        if not isinstance(baseline_value, int):
+            failures.append(f"{table_label} baseline 형식 오류")
+            continue
+        current_value = original_counts[table_label]
+        growth = growth_counts[table_label]
+        if current_value < baseline_value:
+            failures.append(
+                f"{table_label} 원본 {current_value:,}행 < baseline {baseline_value:,}행"
+            )
+        else:
+            print(
+                f"      {table_label}: 원본 {current_value:,}행 "
+                f"(baseline {baseline_value:,}), 성장분 {growth:,}행"
+            )
+
+    if failures:
+        return False, f"이행 원본 행 수 부족: {', '.join(failures)}"
+    return True, (
+        f"원본/성장분 대조 일치 — "
+        f"{RECONCILIATION_TABLES[0]} {original_counts[RECONCILIATION_TABLES[0]]:,}행 / "
+        f"{RECONCILIATION_TABLES[1]} {original_counts[RECONCILIATION_TABLES[1]]:,}행"
+    )
+
+
 def get_head_commit_sha() -> str:
     """현재 HEAD 커밋 SHA 를 조회합니다."""
     try:
@@ -672,6 +865,12 @@ def main() -> int:
         action="store_true",
         help="현재 DB 스키마 서명으로 기준선 파일 갱신",
     )
+    parser.add_argument(
+        "--reconciliation-baseline-path",
+        type=Path,
+        default=MIGRATION_CUTOVER_BASELINE_PATH,
+        help="reconciliation 원본 행 수 기준선 파일 경로",
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -692,6 +891,17 @@ def main() -> int:
     step3_ok, step3_msg = verify_db_schema()
     step4_ok, step4_msg = verify_schema_signature(baseline_path=args.baseline_path)
     step5_ok, step5_msg = verify_row_counts()
+    # 6단계: 5단계가 PASS 일 때만 reconciliation 을 수행한다.
+    # 5단계가 FAIL 이면 누적 행이 부족한 상태이므로 reconciliation 의
+    # baseline 비교도 같은 원인이 두 번 보고되어 판정을 흐린다. 원인을
+    # 단일화하기 위해 6단계를 생략하고 5단계의 FAIL 만 남긴다.
+    if step5_ok:
+        step6_ok, step6_msg = verify_reconciliation(
+            baseline_path=args.reconciliation_baseline_path,
+        )
+    else:
+        step6_ok = False
+        step6_msg = "5단계 실패로 reconciliation 생략 (누적 행 수 부족 판정 유지)"
 
     named_results = [
         ("ML 가중치 4종 무결성", step1_ok, step1_msg),
@@ -699,6 +909,7 @@ def main() -> int:
         ("DB 테이블 존재 여부", step3_ok, step3_msg),
         ("DB 전 테이블 스키마 서명 정합성", step4_ok, step4_msg),
         ("데이터 행 수 하한 검증", step5_ok, step5_msg),
+        ("G1 reconciliation: 원본/성장분 분리 대조", step6_ok, step6_msg),
     ]
 
     report = generate_verification_report(named_results, output_path=args.report_path)
