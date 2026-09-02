@@ -85,3 +85,15 @@ repos:
       - id: check-merge-conflict
         name: Check Merge Conflict
         stages: [pre-commit]
+
+  # ==========================================
+  # Pre-merge 전량 테스트 검증 게이트 (로컬 훅)
+  # ==========================================
+  - repo: local
+    hooks:
+      - id: premerge-full-suite-gate
+        name: Pre-merge Full Test Suite Gate
+        entry: python3 scripts/premerge_full_suite_gate.py
+        language: system
+        pass_filenames: false
+        stages: [pre-merge-commit]
