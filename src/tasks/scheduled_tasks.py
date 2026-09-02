@@ -425,6 +425,8 @@ async def drift_monitor_task(
                     "samples": drift_verdict["recent_samples"],
                     "drift_feature_count": drift_verdict["drift_feature_count"],
                     "drift_features": drift_verdict["drift_features"],
+                    "by_subgroup": drift_verdict.get("by_subgroup"),
+                    "drift_subgroup_type": drift_verdict.get("drift_subgroup_type"),
                 }
 
                 # 드리프트 감지 시 알림 발신 (자동 재학습·승격은 수행하지 않음)
@@ -437,6 +439,8 @@ async def drift_monitor_task(
                         evaluation_window_days=evaluation_window_days,
                         baseline_version=baseline_dist.get("model_version", "-"),
                         recent_samples=drift_verdict["recent_samples"],
+                        drift_by_subgroup=drift_verdict.get("by_subgroup"),
+                        drift_subgroup_type=drift_verdict.get("drift_subgroup_type"),
                     )
 
             except Exception as cat_exc:
