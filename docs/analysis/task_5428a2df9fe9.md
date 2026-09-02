@@ -1,11 +1,11 @@
-# Task 5428a2df9fe9 (Rework: task_ae2326230f1f, task_44fb2650dae9, task_b76567493e41) — main 병합 경로 전량 테스트 게이트 구축
+# Task 5428a2df9fe9 (Rework: task_8c3d4b4286d5, task_ae2326230f1f, task_44fb2650dae9, task_b76567493e41) — main 병합 경로 전량 테스트 게이트 구축
 
 > **작성일**: 2026-09-02
-> **수정일**: 2026-09-02 (Rework: task_ae2326230f1f)
-> **작업 ID**: task_ae2326230f1f (이전: task_44fb2650dae9, task_b76567493e41, task_5428a2df9fe9)
+> **수정일**: 2026-09-03 (Rework: task_8c3d4b4286d5)
+> **작업 ID**: task_8c3d4b4286d5 (이전: task_ae2326230f1f, task_44fb2650dae9, task_b76567493e41, task_5428a2df9fe9)
 > **작성자**: Antigravity (dispatched worker)
 > **상태**: 완료 (Succeeded)
-> **버전**: v1.3.0
+> **버전**: v1.4.0
 
 ---
 
@@ -41,7 +41,7 @@ AGENTS.md 6장은 `main` 병합 전 테스트 전량 통과를 필수로 규정�
 
 ---
 
-## 3. 재작업 결함 분석 및 조치 내역 (task_44fb2650dae9 / task_b76567493e41 피드백 해소)
+## 3. 재작업 결함 분석 및 조치 내역 (task_8c3d4b4286d5 / task_ae2326230f1f 피드백 해소)
 
 | 결함 | 원인 분석 | 조치 내역 |
 | --- | --- | --- |
@@ -49,6 +49,7 @@ AGENTS.md 6장은 `main` 병합 전 테스트 전량 통과를 필수로 규정�
 | **2. 일반 커밋 속도 저하 방지** | `prepare-commit-msg`는 일반 커밋 시에도 호출됨 | `sys.argv[2]`(`commit_source`)가 `merge`인 경우에만 게이트를 실행하고, `message`, `template`, `commit`, `squash` 및 소스 미지정 일반 커밋은 즉시 통과(exit 0)하도록 분기 처리 |
 | **3. 워크트리 증거 파일 불일치** | 상대 경로(`.cache/...`) 사용 시 워크트리의 `--record` 결과가 주 저장소 병합 훅에서 보이지 않음 | `resolve_evidence_path()`를 신설하여 `git rev-parse --git-common-dir`를 기준으로 주 저장소 공통 `.cache/premerge_full_suite_evidence.json`을 단일 경로로 사용 |
 | **4. 워크트리 훅 설치 시 .venv 깨짐** | 워크트리에서 `pre-commit install` 실행 시 훅의 `INSTALL_PYTHON`이 워크트리 `.venv`를 가리켜 워크트리 삭제 후 훅 파손 | 훅 설치는 반드시 주 저장소 루트에서 수행하도록 경고 메시지 출력 및 `git_branching_strategy.md`에 문서화. 미설치 시 fail-open 증상과 기계적 검증을 후속 과제로 명시 |
+| **5. load_evidence fallback 및 테스트의 증거 파일 의존** | `load_evidence` 내 `local_fallback`이 존재하여 미존재 경로 검사 시 저장소의 실제 `.cache` 파일을 읽어 `test_main_branch_missing_evidence_file` 등이 실패하고 연속 `--record` 시 자기 깨짐 현상 발생 | `load_evidence`의 `local_fallback`을 완전히 제거하고 모든 단위 테스트가 `tmp_path` 격리 경로를 주입받도록 수정하여 연속 `--record` 실행 시 100% 무결성 보장 |
 
 ---
 
