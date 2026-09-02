@@ -280,6 +280,9 @@ def verify_premerge_gate(
     return 0, f"[premerge-gate] 전량 테스트 증거 검증 통과 (commit: {merge_sha[:8]}, exit_code: 0)"
 
 
+UTC_TZ = getattr(datetime, "UTC", datetime.timezone.utc)  # noqa: UP017
+
+
 def record_evidence(
     *,
     evidence_path: Path | None = None,
@@ -327,7 +330,7 @@ def record_evidence(
         "skipped": counts["skipped"],
         "summary": summary_line,
         "command": " ".join(cmd),
-        "recorded_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "recorded_at": datetime.datetime.now(UTC_TZ).isoformat(),
     }
 
     try:
