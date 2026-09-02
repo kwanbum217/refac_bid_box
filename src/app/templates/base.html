@@ -94,9 +94,11 @@
                         <p class="text-xs font-bold truncate">{{ user.nickname|default(user.username, true) }}</p>
                         <p class="text-[10px] text-white/40 truncate">엔터프라이즈 사용자</p>
                     </div>
-                    <a href="{{ url('accounts:logout') }}" class="text-white/30 hover:text-red-400 transition-colors hidden lg:block">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </a>
+                    <form action="{{ url('accounts:logout') }}" method="POST" style="display:inline;margin:0;padding:0;">
+                        <button type="submit" class="text-white/30 hover:text-red-400 transition-colors hidden lg:block cursor-pointer" style="background:transparent;border:0;padding:0;" title="로그아웃" aria-label="로그아웃">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
+                    </form>
                 </div>
             {% else %}
                 <a href="{{ url('accounts:login') }}" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-white/10 transition-colors text-white/60">
@@ -139,10 +141,12 @@
 
                 {% if hide_sidebar %}
                     {% if user %}
-                        <a href="{{ url('accounts:logout') }}" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                            <i class="fas fa-sign-out-alt text-[11px]"></i>
-                            로그아웃
-                        </a>
+                        <form action="{{ url('accounts:logout') }}" method="POST" style="display:inline;margin:0;padding:0;">
+                            <button type="submit" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 cursor-pointer">
+                                <i class="fas fa-sign-out-alt text-[11px]"></i>
+                                로그아웃
+                            </button>
+                        </form>
                     {% else %}
                         <a href="{{ url('accounts:login') }}" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:border-blue-200 hover:text-primary dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
                             <i class="fas fa-sign-in-alt text-[11px]"></i>

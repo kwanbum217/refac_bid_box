@@ -144,19 +144,6 @@ def test_login_create_unavailable_does_not_expose_exception(client, login_user):
 # ---------------------------------------------------------------------------
 
 
-def test_logout_destroy_session_unavailable_get_returns_503(isolated_db):
-    """GET logout 에서 destroy_session 이 실패하면 503 이다."""
-    auth_client = TestClient(app, cookies={SESSION_COOKIE_NAME: "live-token"})
-    with patch(
-        "src.app.api.ui.destroy_session",
-        side_effect=SessionStoreUnavailable("Redis 다운"),
-    ):
-        response = auth_client.get("/accounts/logout/", follow_redirects=False)
-    assert response.status_code == 503
-    # 로그인 페이지로 리다이렉트되지 않아야 한다
-    assert response.headers.get("location") is None
-
-
 def test_logout_destroy_session_unavailable_post_returns_503(isolated_db):
     """POST logout 에서 destroy_session 이 실패하면 503 을 반환한다."""
     auth_client = TestClient(app, cookies={SESSION_COOKIE_NAME: "live-token"})
@@ -166,6 +153,8 @@ def test_logout_destroy_session_unavailable_post_returns_503(isolated_db):
     ):
         response = auth_client.post("/accounts/logout/", follow_redirects=False)
     assert response.status_code == 503
+    # 로그인 페이지로 리다이렉트되지 않아야 한다
+    assert response.headers.get("location") is None
 
 
 def test_logout_destroy_unavailable_does_not_delete_cookie(isolated_db):
@@ -175,7 +164,7 @@ def test_logout_destroy_unavailable_does_not_delete_cookie(isolated_db):
         "src.app.api.ui.destroy_session",
         side_effect=SessionStoreUnavailable("Redis 다운"),
     ):
-        response = auth_client.get("/accounts/logout/", follow_redirects=False)
+        response = auth_client.post("/accounts/logout/", follow_redirects=False)
     assert response.status_code == 503
     # set-cookie 헤더에 삭제(Max-Age=0) 지시가 없어야 한다
     cookie_header = response.headers.get("set-cookie", "").lower()
@@ -199,13 +188,11 @@ def test_normal_login_redirects_to_home(client, login_user):
     assert SESSION_COOKIE_NAME in response.cookies
 
 
-def test_normal_logout_get_redirects_to_login(isolated_db):
-    """정상 GET 로그아웃은 303 으로 로그인 화면에 보내고 쿠키를 삭제한다."""
+def test_logout_get_method_not_allowed(isolated_db):
+    """GET /accounts/logout/ 은 CSRF 방지를 위해 405 Method Not Allowed 로 거부된다."""
     auth_client = TestClient(app, cookies={SESSION_COOKIE_NAME: "normal-token"})
-    with patch("src.app.api.ui.destroy_session"):
-        response = auth_client.get("/accounts/logout/", follow_redirects=False)
-    assert response.status_code == 303
-    assert response.headers["location"] == "/accounts/login/"
+    response = auth_client.get("/accounts/logout/", follow_redirects=False)
+    assert response.status_code == 405
 
 
 def test_normal_logout_post_redirects_to_login(isolated_db):

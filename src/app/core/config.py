@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     # 기본 활성이며, production 에서는 이 값과 무관하게 항상 목록만 허용합니다.
     CORS_DEV_ALLOW_ALL: bool = True
 
+    # 인증 보안 및 DoS 방어 설정
+    # 로그인 시도 제한: IP 축 최대 허용 횟수 (기본 10회)
+    AUTH_RATE_LIMIT_IP_MAX_ATTEMPTS: int = 10
+    # 로그인 시도 제한: 계정 축 최대 허용 횟수 (기본 5회)
+    AUTH_RATE_LIMIT_ACCOUNT_MAX_ATTEMPTS: int = 5
+    # 로그인 시도 제한: 초과 시 잠금 유지 시간 (초, 기본 300초 = 5분)
+    AUTH_RATE_LIMIT_LOCKOUT_SECONDS: int = 300
+    # 요청 본문 크기 상한 (바이트, 기본 10MB = 10,485,760 bytes)
+    MAX_REQUEST_BODY_SIZE: int = 10 * 1024 * 1024
+
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"
     DB_HOST: str = "localhost"
