@@ -35,6 +35,7 @@ from src.app.core.security import (
     login_rate_limiter,
     make_password,
     read_session,
+    resolve_client_ip,
 )
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
@@ -136,9 +137,9 @@ def require_staff_user(user: CustomUser = Depends(require_current_user)) -> Cust
 
 
 def _client_ip(request: Request) -> str:
-    if request.client and request.client.host:
-        return request.client.host
-    return "127.0.0.1"
+    """시도 제한용 클라이언트 IP. 신뢰 프록시 뒤에서만 X-Forwarded-For 를 봅니다."""
+    peer = request.client.host if request.client and request.client.host else ""
+    return resolve_client_ip(peer, request.headers.get("x-forwarded-for"))
 
 
 def _issue_session(response: Response, user: CustomUser) -> None:

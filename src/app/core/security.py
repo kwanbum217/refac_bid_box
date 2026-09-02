@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import secrets
@@ -300,3 +301,58 @@ class LoginRateLimiter:
 
 
 login_rate_limiter = LoginRateLimiter()
+
+
+def _parse_trusted_proxies() -> list[ipaddress._BaseNetwork]:
+    """settings.TRUSTED_PROXY_IPS 를 네트워크 목록으로 해석합니다.
+
+    잘못된 항목은 조용히 버립니다. 설정 오타 하나로 인증 전체가 죽는 편보다
+    그 항목만 신뢰하지 않는 편이 안전합니다.
+    """
+    networks: list[ipaddress._BaseNetwork] = []
+    for raw in str(getattr(settings, "TRUSTED_PROXY_IPS", "") or "").split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            logger.warning("TRUSTED_PROXY_IPS 항목을 해석하지 못해 무시합니다: %s", item)
+    return networks
+
+
+def _is_trusted_proxy(addr: str, networks: list[ipaddress._BaseNetwork]) -> bool:
+    if not networks:
+        return False
+    try:
+        parsed = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return any(parsed in net for net in networks)
+
+
+def resolve_client_ip(peer_ip: str | None, forwarded_for: str | None) -> str:
+    """시도 제한에 쓸 클라이언트 IP 를 정합니다.
+
+    직접 연결한 피어가 신뢰 프록시일 때만 X-Forwarded-For 를 해석합니다.
+    검증 없이 헤더를 믿으면 공격자가 값을 위조해 IP 축 제한을 우회하거나
+    임의의 주소를 잠글 수 있으므로, 신뢰 목록이 비어 있으면 헤더를 무시합니다.
+
+    헤더는 왼쪽이 원 클라이언트이고 오른쪽으로 갈수록 가까운 프록시입니다.
+    오른쪽부터 신뢰 프록시를 걷어내고 처음 만나는 비신뢰 주소를 씁니다.
+    """
+    peer = (peer_ip or "").strip() or "127.0.0.1"
+    networks = _parse_trusted_proxies()
+    if not _is_trusted_proxy(peer, networks):
+        return peer
+
+    hops = [h.strip() for h in str(forwarded_for or "").split(",") if h.strip()]
+    for hop in reversed(hops):
+        if not _is_trusted_proxy(hop, networks):
+            try:
+                ipaddress.ip_address(hop)
+            except ValueError:
+                continue
+            return hop
+    # 모든 홉이 신뢰 프록시이거나 헤더가 비었으면 피어 주소로 되돌아갑니다.
+    return peer

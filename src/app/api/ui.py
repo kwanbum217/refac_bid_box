@@ -29,6 +29,7 @@ from src.app.core.security import (
     create_session,
     destroy_session,
     login_rate_limiter,
+    resolve_client_ip,
 )
 from src.app.core.templating import templates
 from src.app.core.timeutil import utcnow
@@ -438,7 +439,10 @@ async def login_submit(
     form_data = parse_qs((await request.body()).decode("utf-8"))
     username = (form_data.get("username") or [""])[0]
     password = (form_data.get("password") or [""])[0]
-    ip = request.client.host if request.client and request.client.host else "127.0.0.1"
+    ip = resolve_client_ip(
+        request.client.host if request.client and request.client.host else "",
+        request.headers.get("x-forwarded-for"),
+    )
 
     login_rate_limiter.check_rate_limit(ip, username)
 

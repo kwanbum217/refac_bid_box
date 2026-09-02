@@ -24,6 +24,7 @@ from src.app.core.security import (
     SESSION_COOKIE_NAME,
     create_session,
     login_rate_limiter,
+    resolve_client_ip,
 )
 from src.app.main import app, create_app
 from src.app.models.accounts import CustomUser
@@ -358,3 +359,62 @@ def test_api_post_logout_succeeds_and_deletes_session_cookie(isolated_db):
     response = auth_client.post("/api/v1/accounts/logout")
     assert response.status_code == 200
     assert response.json() == {"status": "success"}
+
+
+class TestResolveClientIpTrustedProxy:
+    """신뢰 프록시 기반 클라이언트 IP 해석.
+
+    코디네이터가 추가한 구간입니다. IP 축 시도 제한이 리버스 프록시 뒤에서
+    전체 사용자 잠금으로 바뀌는 문제와, 헤더를 무검증 신뢰할 때 생기는
+    제한 우회 및 타인 잠금 문제를 함께 막습니다.
+    """
+
+    def test_no_trusted_proxy_ignores_forwarded_header(self, monkeypatch):
+        """신뢰 목록이 비면 헤더를 일절 믿지 않습니다. 위조로 제한을 우회할 수 없습니다."""
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "", raising=False)
+        assert resolve_client_ip("203.0.113.9", "1.2.3.4") == "203.0.113.9"
+
+    def test_untrusted_peer_forged_header_is_ignored(self, monkeypatch):
+        """신뢰 목록이 있어도 피어가 그 목록 밖이면 헤더를 무시합니다."""
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "10.0.0.0/8", raising=False)
+        assert resolve_client_ip("203.0.113.9", "1.2.3.4") == "203.0.113.9"
+
+    def test_trusted_peer_uses_forwarded_client(self, monkeypatch):
+        """신뢰 프록시 뒤에서는 원 클라이언트 주소를 씁니다. 전체 잠금이 생기지 않습니다."""
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "10.0.0.0/8", raising=False)
+        assert resolve_client_ip("10.1.2.3", "198.51.100.7") == "198.51.100.7"
+
+    def test_multi_hop_strips_trusted_proxies_from_right(self, monkeypatch):
+        """오른쪽부터 신뢰 프록시를 걷어내고 처음 만나는 비신뢰 주소를 씁니다."""
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "10.0.0.0/8", raising=False)
+        assert resolve_client_ip("10.1.1.1", "198.51.100.7, 10.9.9.9, 10.8.8.8") == "198.51.100.7"
+
+    def test_spoofed_leading_hop_does_not_win(self, monkeypatch):
+        """공격자가 왼쪽에 값을 끼워 넣어도 실제 진입 주소가 선택됩니다."""
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "10.0.0.0/8", raising=False)
+        assert resolve_client_ip("10.1.1.1", "9.9.9.9, 203.0.113.5, 10.0.0.2") == "203.0.113.5"
+
+    def test_all_hops_trusted_falls_back_to_peer(self, monkeypatch):
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "10.0.0.0/8", raising=False)
+        assert resolve_client_ip("10.1.1.1", "10.2.2.2, 10.3.3.3") == "10.1.1.1"
+
+    def test_malformed_hop_is_skipped(self, monkeypatch):
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "10.0.0.0/8", raising=False)
+        assert resolve_client_ip("10.1.1.1", "not-an-ip, 198.51.100.7, 10.0.0.2") == "198.51.100.7"
+
+    def test_empty_header_falls_back_to_peer(self, monkeypatch):
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "10.0.0.0/8", raising=False)
+        assert resolve_client_ip("10.1.1.1", None) == "10.1.1.1"
+
+    def test_missing_peer_defaults_safely(self, monkeypatch):
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "", raising=False)
+        assert resolve_client_ip(None, None) == "127.0.0.1"
+
+    def test_invalid_trusted_entry_is_ignored_not_fatal(self, monkeypatch):
+        """설정 오타가 인증 전체를 죽이지 않고 그 항목만 무시됩니다."""
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "not-a-cidr, 10.0.0.0/8", raising=False)
+        assert resolve_client_ip("10.1.1.1", "198.51.100.7") == "198.51.100.7"
+
+    def test_ipv6_trusted_proxy(self, monkeypatch):
+        monkeypatch.setattr(settings, "TRUSTED_PROXY_IPS", "2001:db8::/32", raising=False)
+        assert resolve_client_ip("2001:db8::1", "198.51.100.7") == "198.51.100.7"
