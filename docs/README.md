@@ -180,6 +180,7 @@ docs/
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
+| **Wave H 세션 종료 인수인계** | [`handoff_20260903_wave_h_close.md`](ops/handoff_20260903_wave_h_close.md) | 2026-09-03 세션 종료. 병합 게이트·정본 영수증 게이트 도입, SSR E2E Phase 1 병합. 다음 착수는 Phase 2a. **가장 최신 인계** |
 | **Wave G 세션 종료 인수인계** | [`handoff_20260902_wave_g_session_close.md`](ops/handoff_20260902_wave_g_session_close.md) | 2026-09-02 세션 종료. 남은 항목과 재기동 절차. 이전 인계보다 이 문서가 우선 |
 | **웨이브별 해소 이력** | [`wave_resolution_history_20260902.md`](ops/wave_resolution_history_20260902.md) | CURRENT_STATE 에서 분리한 보안 P0·Wave A~G 해소 내역과 병합 커밋. 근거가 필요할 때만 조회 |
 | **SSR 브라우저 E2E 범위 조사** | [`ssr_e2e_scope_survey_20260902.md`](analysis/ssr_e2e_scope_survey_20260902.md) | 대상 화면 15종, 도구 4종 비교, 공유 자원 충돌, 4단계 분할안. 권장 pytest-playwright. 착수는 합의 대기 |

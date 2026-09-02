@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-09-02
-> **source_commit**: `dbb1705`
+> **updated_at**: 2026-09-03
+> **source_commit**: `aae5ab4`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -40,8 +40,14 @@
 로 옮겼습니다. 완료된 이력이므로 근거가 필요할 때만 조회하십시오.
 
 현재 열려 있는 잔여 항목은 본 문서 4장과
+[`../ops/handoff_20260903_wave_h_close.md`](../ops/handoff_20260903_wave_h_close.md)
+4장·5장을 정본으로 씁니다. **다음 착수는 SSR E2E Phase 2 이며 2a(DB 격리)와
+2b(시나리오)로 쪼개서 진행합니다.** 2026-09-02 Wave G 인계는
 [`../ops/handoff_20260902_wave_g_session_close.md`](../ops/handoff_20260902_wave_g_session_close.md)
-4장을 정본으로 씁니다.
+이며 4.1·4.2 항목은 Wave H 인계가 갱신했습니다.
+
+Wave H 는 병합 전 전량 테스트 게이트와 정본 스킬 영수증 게이트를 도입했습니다.
+**세션 시작 시 훅 설치와 영수증 발급을 먼저 하십시오.** 절차는 Wave H 인계 1장입니다.
 
 ---
 
@@ -374,8 +380,8 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
   ngram 컷오버 순서는 [`../ops/handoff_20260901_cutover.md`](../ops/handoff_20260901_cutover.md) 4장입니다.
-  GPT 2026-09-02 잔여(Windows 실기, 관측성 스택, RPO/RTO, SSR E2E)는
-  [`../ops/handoff_20260902_wave_g_session_close.md`](../ops/handoff_20260902_wave_g_session_close.md) 4장입니다.
+  잔여(Windows 실기, 관측성 스택, RPO/RTO, SSR E2E Phase 2~4, ngram 컷오버)는
+  [`../ops/handoff_20260903_wave_h_close.md`](../ops/handoff_20260903_wave_h_close.md) 4장·5장입니다.
   **CURRENT_STATE 정규화는 부분 해소입니다.** 웨이브별 해소 이력을
   [`../ops/wave_resolution_history_20260902.md`](../ops/wave_resolution_history_20260902.md) 로 분리해
   57,381바이트를 48,039바이트로 줄였습니다. 자체 권장 예산 8,000자에는 여전히 미달이며,
