@@ -108,16 +108,16 @@ docker compose -f docker-compose.prod.yml config -q
 
 | 기준 | 충족 여부 | 비고 |
 | --- | --- | --- |
-| docker-compose.prod.yml 신설, 기존 docker-compose.yml 미변경 | ✅ | git diff 확인 |
-| 앱/워커가 root 아닌 전용 DB 계정 환경변수로 주입 | ✅ | DATABASE_URL에 DB_USER/DB_PASSWORD 사용 |
-| db, redis, meilisearch 호스트 포트 미개방 | ✅ | ports 섹션 제거, internal 네트워크만 |
-| Redis requirepass 적용 | ✅ | 기동 명령에 --requirepass, URL에 비밀번호 포함 |
-| 컨테이너 non-root 실행 | ✅ | user 지시자로 UID/GID 지정 |
-| Worker 헬스체크 존재 | ✅ | Redis ping 기반 헬스체크 추가 |
-| 모든 서비스 자원 제한/로그 회전 | ✅ | deploy.resources, logging 적용 |
-| 자격 증명 실값 파일/문서 미포함, 필수값 기본값 없음 | ✅ | :? 구문으로 강제, 문서에 변수명만 |
-| TRUSTED_PROXY_IPS 경고 문서 포함 | ✅ | production_deployment.md에 명시 |
-| docker compose config -q 통과 | ✅ | 검증 완료 |
+| docker-compose.prod.yml 신설, 기존 docker-compose.yml 미변경 | [충족] | git diff 확인 |
+| 앱/워커가 root 아닌 전용 DB 계정 환경변수로 주입 | [충족] | DATABASE_URL에 DB_USER/DB_PASSWORD 사용 |
+| db, redis, meilisearch 호스트 포트 미개방 | [충족] | ports 섹션 제거, internal 네트워크만 |
+| Redis requirepass 적용 | [충족] | 기동 명령에 --requirepass, URL에 비밀번호 포함 |
+| 컨테이너 non-root 실행 | [충족] | user 지시자로 UID/GID 지정 |
+| Worker 헬스체크 존재 | [충족] | Redis ping 기반 헬스체크 추가 |
+| 모든 서비스 자원 제한/로그 회전 | [충족] | deploy.resources, logging 적용 |
+| 자격 증명 실값 파일/문서 미포함, 필수값 기본값 없음 | [충족] | :? 구문으로 강제, 문서에 변수명만 |
+| TRUSTED_PROXY_IPS 경고 문서 포함 | [충족] | production_deployment.md에 명시 |
+| docker compose config -q 통과 | [충족] | 검증 완료 |
 
 ## 리스크 및 후속 조치
 
