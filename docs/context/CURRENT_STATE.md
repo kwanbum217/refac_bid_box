@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-02
-> **source_commit**: `e1d589e`
+> **source_commit**: `565105f`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -106,7 +106,7 @@
 | 3.5 CSRF | signup, login, logout 세 SSR 폼에 이중 제출 토큰 검증을 겁니다. 토큰이 없으면 403 으로 fail-closed 입니다. JSON API 와 워커 콜백은 제외했습니다 |
 | 3.1 G1 대조 | 이행 시점 이전 구간의 행 수를 따로 세어 기준선과 대조합니다. 경계는 `data/backups/data_assets_checksums.json` 의 `generated_at` 에서 왔습니다 |
 
-> **코디네이터 인계 (2026-09-02)**: Opus 5 에서 Grok 4.6 으로 코디네이터를 넘겼습니다. 인계 시점 상태, 활성 워커, 이 세션에서 확인한 함정과 검증 절차는 [`../ops/handoff_20260902_grok_coordinator.md`](../ops/handoff_20260902_grok_coordinator.md) 에 있습니다. Grok 운영 절차와 캐시 접두부는 [`../ops/grok_coordinator_operating_prompt.md`](../ops/grok_coordinator_operating_prompt.md) 입니다. Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다.
+> **세션 종료 인수인계 (2026-09-02)**: Wave G 잔여를 `565105f` 까지 병합·푸시한 뒤 세션을 닫았습니다. 다음 코디네이터는 [`../ops/handoff_20260902_wave_g_session_close.md`](../ops/handoff_20260902_wave_g_session_close.md) 를 읽으십시오. 이전 인계는 [`../ops/handoff_20260902_grok_coordinator.md`](../ops/handoff_20260902_grok_coordinator.md) 입니다. Grok 운영 절차는 [`../ops/grok_coordinator_operating_prompt.md`](../ops/grok_coordinator_operating_prompt.md) 입니다. Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다.
 
 ### 1.5.7 Wave G 부분 해소 (2026-09-02)
 
@@ -450,7 +450,9 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
   확인해 정정했습니다.
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
-  다음 착수 순서는 [`../ops/handoff_20260901_cutover.md`](../ops/handoff_20260901_cutover.md) 4장입니다.
+  ngram 컷오버 순서는 [`../ops/handoff_20260901_cutover.md`](../ops/handoff_20260901_cutover.md) 4장입니다.
+  GPT 2026-09-02 잔여(Windows 실기, 관측성 스택, CURRENT_STATE 정규화, RPO/RTO, SSR E2E)는
+  [`../ops/handoff_20260902_wave_g_session_close.md`](../ops/handoff_20260902_wave_g_session_close.md) 4장입니다.
 - **RAG llm 구간 판정과 기동 예열 (2026-09-01)**: llm 후보 넷을 실측으로 닫았습니다.
   `SYSTEM_PROMPT` 는 Ollama 가 접두사를 캐시해 46% 를 줄여도 prefill 이 9% 만 줄고,
   컨텍스트는 이미 상위 3건 250자로 절제돼 있으며(평균 846자), 응답도 평균 248자로
