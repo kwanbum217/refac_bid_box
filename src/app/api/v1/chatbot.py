@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -46,6 +46,7 @@ from src.app.api.v1.chatbot_format import (
     _plan_steps_payload,
 )
 from src.app.core.db import get_db
+from src.app.core.security import enforce_anonymous_api_quota
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
 from src.app.schemas.chatbot import (
@@ -430,10 +431,12 @@ def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> 
 @router.post("/chat", response_model=ChatResponse, summary="챗봇 대화")
 async def chat_api(
     payload: ChatRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
 ):
     """계획 수립 -> 도구 실행 -> RAG 답변 생성의 원본 파이프라인을 그대로 수행합니다."""
+    enforce_anonymous_api_quota(request, user)
     return await asyncio.to_thread(_run_chat, db, payload, user.id if user else None)
 
 
@@ -459,6 +462,7 @@ def _new_trace_id() -> str:
 @router.post("/chat/stream", summary="챗봇 대화 (SSE 스트리밍)")
 async def chat_stream_api(
     payload: ChatRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
 ):
@@ -472,6 +476,7 @@ async def chat_stream_api(
     dependency_overrides 를 우회해 격리 DB 가 아닌 곳에 대화를 기록합니다.
     yield 의존성은 응답 본문 전송이 끝난 뒤 정리되므로 스트리밍 중에는 유효합니다.
     """
+    enforce_anonymous_api_quota(request, user)
     user_id = user.id if user else None
 
     async def event_generator():
@@ -530,7 +535,8 @@ async def chat_stream_api(
 
 
 @router.post("/session/new", summary="새 대화 세션 생성")
-def new_chat_session_api():
+def new_chat_session_api(request: Request, user: CustomUser | None = Depends(get_current_user)):
+    enforce_anonymous_api_quota(request, user)
     return {"status": "success", "session_key": ensure_session_key()}
 
 
