@@ -48,6 +48,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0.0",
+    "pytest-playwright>=0.5.0",
     "ruff>=0.6.0",
     "bandit>=1.7.0",
     "pre-commit>=3.7.0",
@@ -227,6 +228,7 @@ recursive = true
 # pytest
 # ==========================================
 [tool.pytest.ini_options]
+addopts = "-p no:base_url"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
@@ -234,6 +236,7 @@ python_files = ["test_*.py"]
 markers = [
     "data_assets: 로컬 데이터 자산(모델 가중치, chroma_db)이 있어야 하는 G1 검증. CI 에서는 -m 'not data_assets' 로 제외합니다.",
     "mysql_integration: 실제 MySQL 8 인스턴스가 필요한 통합 테스트. CI 에서는 -m 'not mysql_integration' (또는 -m 'not data_assets and not mysql_integration') 로 제외합니다.",
+    "e2e: 브라우저 E2E 테스트. Playwright 드라이버가 필요하며 브라우저 바이너리가 없는 환경에서는 skip 됩니다.",
 ]
 
 # ==========================================
