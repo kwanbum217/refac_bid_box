@@ -146,7 +146,7 @@ def _prepare_chat(
     _PendingRagAnswer 를 돌려줍니다.
     """
     message = (payload.message or "").strip()
-    session_key = ensure_session_key(payload.session_key)
+    session_key = ensure_session_key(payload.session_key, user_id=user_id)
     context_state = load_conversation_context(db, session_key, user_id=user_id)
     history = context_state.get("chat_history", [])
     kb_status = get_latest_kb_status_payload(db)
