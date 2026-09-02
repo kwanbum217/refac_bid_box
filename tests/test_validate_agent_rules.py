@@ -53,6 +53,9 @@ def test_real_repo_validation_passes():
 def test_check_hook_installation_reads_config_and_checks_isolated_hooks(
     tmp_path: Path, monkeypatch
 ):
+    # CI=true 환경에서는 훅 검사가 조기 통과하므로 이 테스트는 값을 지우고 검사 본문을
+    # 확인합니다. 지우지 않으면 로컬은 통과하고 GitHub Actions 에서만 실패합니다.
+    monkeypatch.delenv("CI", raising=False)
     (tmp_path / ".pre-commit-config.yaml").write_text(
         "repos:\n  - repo: local\n    hooks:\n      - id: one\n        stages: [pre-commit]\n      - id: two\n        stages: [prepare-commit-msg]\n",
         encoding="utf-8",
