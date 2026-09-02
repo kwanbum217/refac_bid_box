@@ -541,7 +541,7 @@ def check_dataset_drift(
 
         # 0.0 (with_lwlt) 집단 평가
         if len(recent_sub_0) < effective_min_samples:
-            sub_0_res = {
+            sub_0_res: dict[str, Any] = {
                 "status": "INSUFFICIENT_DATA",
                 "overall_action": "INSUFFICIENT_DATA",
                 "drift_feature_count": 0,
@@ -564,7 +564,7 @@ def check_dataset_drift(
 
         # 1.0 (missing_lwlt) 집단 평가
         if len(recent_sub_1) < effective_min_samples:
-            sub_1_res = {
+            sub_1_res: dict[str, Any] = {
                 "status": "INSUFFICIENT_DATA",
                 "overall_action": "INSUFFICIENT_DATA",
                 "drift_feature_count": 0,
