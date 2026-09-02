@@ -175,31 +175,61 @@ async def notify_drift_detected(
     evaluation_window_days: int,
     baseline_version: str,
     recent_samples: int,
+    drift_by_subgroup: dict[str, Any] | None = None,
+    drift_subgroup_type: str | None = None,
 ) -> None:
     """PSI 드리프트 감지 시 조치 필요 알림을 발신합니다.
 
     자동 재학습이나 자동 승격으로 이어지지 않으며, 사람이 데이터 품질 및
     시장 변화를 검토한 뒤 수동 재학습 여부를 결정하도록 권고합니다.
+    missing_lwlt 단독 미달 시 '결측 집단 드리프트' 라벨로 알림을 차별화합니다.
     """
+    if drift_subgroup_type == "missing_lwlt_only":
+        title = f"{model_name} 결측 집단 드리프트 감지 (missing_lwlt)"
+    elif drift_subgroup_type == "with_lwlt_only":
+        title = f"{model_name} 낙찰하한율 보유 집단 드리프트 감지 (with_lwlt)"
+    elif drift_subgroup_type == "both":
+        title = f"{model_name} 전체·결측 집단 드리프트 감지"
+    else:
+        title = f"{model_name} 드리프트 감지"
+
     lines = [
         f"모델: {model_name} (v{model_version})",
         f"기준 분포: {baseline_version}",
         f"평가 윈도우: 최근 {evaluation_window_days}일 / 표본 {recent_samples:,}건",
-        f"전체 특징 {total_features_checked}개 중 {len(drift_features)}개에서 드리프트 감지 (PSI >= 0.2)",
-        "",
     ]
+
+    if drift_by_subgroup:
+        lines.append("집단별 모니터링 현황:")
+        for grp_key, grp_data in drift_by_subgroup.items():
+            grp_name = "with_lwlt (정상 보유)" if grp_key == "0.0" else "missing_lwlt (하한율 결측)"
+            grp_samples = grp_data.get("recent_samples", grp_data.get("samples", 0))
+            grp_status = grp_data.get("status", "UNKNOWN")
+            grp_thresh = grp_data.get("threshold", 0.2)
+            grp_drift_cnt = grp_data.get("drift_feature_count", 0)
+            lines.append(
+                f"  - {grp_name}: 상태={grp_status}, 표본={grp_samples:,}건, 임계={grp_thresh}, 드리프트특징={grp_drift_cnt}개"
+            )
+
+    lines.append(
+        f"전체 특징 {total_features_checked}개 중 {len(drift_features)}개에서 드리프트 감지"
+    )
+    lines.append("")
+
     for feat in drift_features:
         feat_name = feat.get("feature", "unknown")
         psi_val = float(feat.get("psi", 0.0))
         sample_size = int(feat.get("sample_size", recent_samples))
-        lines.append(f"  - {feat_name}: PSI={psi_val:.4f} (임계 0.2, 표본 {sample_size:,})")
+        subgrp_label = f" [{feat.get('subgroup')}]" if feat.get("subgroup") else ""
+        lines.append(f"  - {feat_name}{subgrp_label}: PSI={psi_val:.4f} (표본 {sample_size:,})")
+
     lines.extend(
         [
             "",
             "권장 조치:",
             "  1. 수집 파이프라인 데이터 품질 확인",
-            "  2. 제도 변경·시장 환경 변화 여부 검토",
+            "  2. 제도 변경·시장 환경 변화 여부 검토 (수의계약·협상 비율 변동 등)",
             "  3. 필요 시 수동 재학습 실행: uv run python scripts/retrain.py --category <코드>",
         ]
     )
-    await notify(f"{model_name} 드리프트 감지", lines, level="action")
+    await notify(title, lines, level="action")

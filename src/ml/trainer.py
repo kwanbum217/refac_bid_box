@@ -505,7 +505,7 @@ class ModelTrainer:
             with open(staging / "metadata.json", "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2, ensure_ascii=False)
 
-            # baseline 분포 생성 및 staging 내 준비
+            # baseline 분포 생성 및 staging 내 준비 (lwlt_rate_missing 특징 존재 시 by_lwlt_missing 집단 분리 저장)
             baseline_staging = staging / "baseline"
             baseline_staging.mkdir(parents=True, exist_ok=True)
             save_baseline_distributions(
