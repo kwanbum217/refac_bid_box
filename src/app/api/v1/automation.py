@@ -24,7 +24,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
-from src.app.api.v1.accounts import require_current_user
+from src.app.api.v1.accounts import require_current_user, require_staff_user
 from src.app.core.db import get_db
 from src.app.models.accounts import CustomUser
 from src.app.models.chatbot import AutomationRequest
@@ -39,6 +39,10 @@ from src.app.services.automation_orchestrator import (
     resolve_confirmation_token,
     sync_automation_status,
     verify_callback_token,
+)
+from src.app.services.automation_tokens import (
+    is_confirmation_token_consumed,
+    mark_confirmation_token_consumed,
 )
 from src.app.services.tools.kb_status_tool import (
     build_kb_status_summary,
@@ -104,7 +108,7 @@ def _run_automation_by_action(
 def run_collect_bids_api(
     reason: str = Body("", embed=True),
     db: Session = Depends(get_db),
-    user: CustomUser = Depends(require_current_user),
+    user: CustomUser = Depends(require_staff_user),
 ):
     return _run_automation_by_action(db, "collect_refresh", reason, user)
 
@@ -113,7 +117,7 @@ def run_collect_bids_api(
 def run_update_kb_api(
     reason: str = Body("", embed=True),
     db: Session = Depends(get_db),
-    user: CustomUser = Depends(require_current_user),
+    user: CustomUser = Depends(require_staff_user),
 ):
     return _run_automation_by_action(db, "kb_refresh", reason, user)
 
@@ -122,7 +126,7 @@ def run_update_kb_api(
 def run_prediction_api(
     reason: str = Body("", embed=True),
     db: Session = Depends(get_db),
-    user: CustomUser = Depends(require_current_user),
+    user: CustomUser = Depends(require_staff_user),
 ):
     return _run_automation_by_action(db, "prediction_validate", reason, user)
 
@@ -131,7 +135,7 @@ def run_prediction_api(
 def run_manual_full_api(
     reason: str = Body("", embed=True),
     db: Session = Depends(get_db),
-    user: CustomUser = Depends(require_current_user),
+    user: CustomUser = Depends(require_staff_user),
 ):
     return _run_automation_by_action(db, "full_validation", reason, user)
 
@@ -140,7 +144,7 @@ def run_manual_full_api(
 def run_model_retrain_api(
     reason: str = Body("", embed=True),
     db: Session = Depends(get_db),
-    user: CustomUser = Depends(require_current_user),
+    user: CustomUser = Depends(require_staff_user),
 ):
     """재학습은 고비용 작업이므로 확인 API 호출 전에는 큐에 넣지 않습니다."""
     return _run_automation_by_action(db, "model_retrain", reason, user)
@@ -154,13 +158,17 @@ def automation_job_confirm_api(
     user: CustomUser = Depends(require_current_user),
 ):
     request_obj = _require_request(db, job_id, user)
-    if confirmation_token:
-        try:
-            resolved_job_id = resolve_confirmation_token(confirmation_token)
-        except AutomationError as exc:
-            raise HTTPException(status_code=403, detail=str(exc))
-        if resolved_job_id != str(job_id):
-            raise HTTPException(status_code=403, detail="확인 토큰이 일치하지 않습니다.")
+    if not confirmation_token:
+        raise HTTPException(status_code=403, detail="확인 토큰이 필요합니다.")
+    if is_confirmation_token_consumed(confirmation_token):
+        raise HTTPException(status_code=403, detail="이미 사용된 확인 토큰입니다.")
+    try:
+        resolved_job_id = resolve_confirmation_token(confirmation_token)
+    except AutomationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    if resolved_job_id != str(job_id):
+        raise HTTPException(status_code=403, detail="확인 토큰이 일치하지 않습니다.")
+    mark_confirmation_token_consumed(confirmation_token)
     return _envelope(db, confirm_automation_request(db, request_obj))
 
 

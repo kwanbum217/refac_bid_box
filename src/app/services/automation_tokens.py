@@ -16,6 +16,18 @@ from src.app.core.config import settings
 CONFIRMATION_SALT = "bidbox.automation.confirmation"
 CALLBACK_SALT = "bidbox.automation.callback"
 CONFIRMATION_MAX_AGE = 60 * 30
+
+_consumed_confirmation_tokens: set[str] = set()
+
+
+def mark_confirmation_token_consumed(token: str) -> None:
+    _consumed_confirmation_tokens.add(token)
+
+
+def is_confirmation_token_consumed(token: str) -> bool:
+    return token in _consumed_confirmation_tokens
+
+
 # 콜백 토큰은 실행 중인 작업이 결과를 보고하는 동안만 유효해야 합니다.
 # 만료가 없으면 유출된 토큰이 영구히 사용 가능하고, 종료된 지 한참 지난
 # 작업의 늦은 보고도 그대로 받아들여집니다. 재학습 등 장시간 작업을

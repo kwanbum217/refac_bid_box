@@ -124,6 +124,13 @@ def require_current_user(user: CustomUser | None = Depends(get_current_user)) ->
     return user
 
 
+def require_staff_user(user: CustomUser = Depends(require_current_user)) -> CustomUser:
+    """관리자 권한 검사. staff 또는 superuser 가 아니면 403 을 반환합니다."""
+    if not (user.is_staff or user.is_superuser):
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    return user
+
+
 def _issue_session(response: Response, user: CustomUser) -> None:
     try:
         token = create_session(user.id, user.username)
