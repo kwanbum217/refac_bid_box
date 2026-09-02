@@ -7,7 +7,7 @@ import os
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import OperationalError
 
 pytestmark = pytest.mark.mysql_integration
 
@@ -52,11 +52,14 @@ def test_mysql_integer_division_keeps_fraction_for_bid_rate_calculation(
 
 def test_mysql_only_full_group_by_rejects_ambiguous_aggregate(mysql_engine: Engine) -> None:
     """SQLite가 임의 값을 반환할 수 있는 모호한 집계를 MySQL이 거부하는지 확인합니다."""
-    with mysql_engine.connect() as connection, pytest.raises(ProgrammingError) as error:
+    # MySQL 8 은 only_full_group_by 위반을 OperationalError 1055 로 돌려줍니다.
+    # 1140 은 집계 함수와 비집계 컬럼을 GROUP BY 없이 섞었을 때의 코드라
+    # 이 질의에는 해당하지 않습니다. 2026-09-02 에 실제 MySQL 8 로 확인했습니다.
+    with mysql_engine.connect() as connection, pytest.raises(OperationalError) as error:
         connection.execute(
             text("SELECT category, dminstt_nm, COUNT(*) FROM bid_announcements GROUP BY category")
         )
-    assert error.value.orig.args[0] == 1140
+    assert error.value.orig.args[0] == 1055
 
 
 def test_mysql_datetime_bucket_uses_mysql_date_function(mysql_engine: Engine) -> None:
