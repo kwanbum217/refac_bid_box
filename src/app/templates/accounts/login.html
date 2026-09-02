@@ -16,6 +16,7 @@
             </div>
 
             <form method="POST" class="space-y-5">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="next" value="{{ next|default('/', true) }}">
 
                 <div class="space-y-1.5">

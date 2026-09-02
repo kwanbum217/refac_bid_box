@@ -22,13 +22,17 @@ from src.app.api.v1.accounts import SignUpRequest, get_current_user, register_us
 from src.app.core.config import settings
 from src.app.core.db import get_db
 from src.app.core.security import (
+    CSRF_COOKIE_NAME,
+    CSRF_FORM_FIELD,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
     SessionStoreUnavailable,
     check_password,
     create_session,
+    csrf_tokens_match,
     destroy_session,
     login_rate_limiter,
+    make_csrf_token,
     resolve_client_ip,
 )
 from src.app.core.templating import templates
@@ -90,13 +94,28 @@ SOCIAL_LOGIN_PROVIDERS = {"kakao": False, "naver": False, "google": False}
 
 
 def _render(request: Request, name: str, context: dict, user, active_nav: str = ""):
+    csrf_token = request.cookies.get(CSRF_COOKIE_NAME) or make_csrf_token()
     payload = {
         "user": user,
         "active_nav": active_nav,
+        "csrf_token": csrf_token,
         "social_login_providers": SOCIAL_LOGIN_PROVIDERS,
         **context,
     }
-    return templates.TemplateResponse(request, name, payload)
+    response = templates.TemplateResponse(request, name, payload)
+    if not request.cookies.get(CSRF_COOKIE_NAME):
+        response.set_cookie(CSRF_COOKIE_NAME, csrf_token, httponly=False, samesite="lax")
+    return response
+
+
+async def _verify_ssr_csrf(request: Request) -> None:
+    if not settings.CSRF_PROTECTION_ENABLED:
+        return
+    cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+    form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
+    request_token = (form_data.get(CSRF_FORM_FIELD) or [""])[0]
+    if not csrf_tokens_match(cookie_token, request_token):
+        raise HTTPException(status_code=403, detail="CSRF 토큰이 유효하지 않습니다.")
 
 
 def _result_analysis_prompt(db: Session, result_id: int | None) -> str:
@@ -355,6 +374,7 @@ def signup_page(request: Request, user: CustomUser | None = Depends(get_current_
 @router.post("/accounts/signup/")
 async def signup_submit(request: Request, db: Session = Depends(get_db)):
     """JavaScript 없이도 원본 SSR 회원가입 폼을 처리합니다."""
+    await _verify_ssr_csrf(request)
     form_data = parse_qs((await request.body()).decode("utf-8"))
 
     def value(name: str) -> str:
@@ -436,6 +456,7 @@ async def login_submit(
     파싱합니다. Starlette 의 request.form() 은 python-multipart 를 요구하는데,
     신규 의존성 추가는 사전 합의가 필요하므로 회피했습니다.
     """
+    await _verify_ssr_csrf(request)
     form_data = parse_qs((await request.body()).decode("utf-8"))
     username = (form_data.get("username") or [""])[0]
     password = (form_data.get("password") or [""])[0]
@@ -503,12 +524,16 @@ async def login_submit(
 
 
 @router.post("/accounts/logout/")
-def logout_submit(bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME)):
+async def logout_submit(
+    request: Request,
+    bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
+):
     """POST 로그아웃만 허용하여 GET 기반 CSRF 로그아웃 통로를 차단합니다.
 
     저장소 장애 시 서버측 무효화 없이 쿠키만 지우면 복구 후 토큰이 되살아납니다.
     API 경로와 동일하게 503 으로 차단합니다.
     """
+    await _verify_ssr_csrf(request)
     try:
         destroy_session(bidbox_session)
     except SessionStoreUnavailable as exc:

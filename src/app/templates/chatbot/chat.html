@@ -619,7 +619,7 @@
                      data-chat-url="{{ url('chatbot:chat_api') }}"
                      data-stream-url="{{ url('chatbot:chat_stream') }}"
                      data-new-session-url="{{ url('chatbot:new_chat_session') }}"
-                     data-csrf-token=""
+                     data-csrf-token="{{ csrf_token }}"
                      class="relative flex items-center gap-3">
                     <div class="relative flex-1">
                         <input type="text" id="chat-input"
@@ -1701,7 +1701,7 @@ $(document).ready(function() {
 
         fetch(CONFIG.streamUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CONFIG.csrfToken },
             body: JSON.stringify({ message: message }),
             signal: controller.signal
         }).then(async function(response) {
