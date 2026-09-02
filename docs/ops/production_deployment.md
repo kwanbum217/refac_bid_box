@@ -41,7 +41,7 @@
 
 ---
 
-## ⚠️ 중요: TRUSTED_PROXY_IPS 설정 필수
+## [중요] TRUSTED_PROXY_IPS 설정 필수
 
 **리버스 프록시(Nginx, Traefik, ALB 등)를 앞에 둘 경우 반드시 `.env` 의 `TRUSTED_PROXY_IPS` 에 해당 프록시의 IP 또는 CIDR을 넣으십시오.**
 
