@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     # 기동 시 모델을 미리 올려 첫 질의가 로드 비용을 내지 않게 합니다.
     LLM_WARMUP_ON_STARTUP: bool = True
     VECTOR_WARMUP_ON_STARTUP: bool = True
+    # Readiness 헬스체크 게이트 승격 설정입니다.
+    # 기본값은 False (미완료/미가용 시 degraded)이며, True 로 설정 시 not_ready (503)로 승격합니다.
+    READINESS_REQUIRE_WARMUP: bool = False
+    READINESS_REQUIRE_LLM: bool = False
     # 사고(thinking) 단계 사용 여부. gemma4 는 사고를 끝낸 뒤에야 답변 본문을
     # 내보내므로, 켜 두면 첫 토큰이 9.73초, 끄면 0.41초입니다 (2026-08-05 실측).
     LLM_THINKING: bool = False

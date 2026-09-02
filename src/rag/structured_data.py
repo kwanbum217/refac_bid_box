@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import unicodedata
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -309,18 +310,39 @@ def _drop_corrupted(rows, limit: int) -> tuple[list, int]:
     return kept, dropped
 
 
+class _FlightLockEntry:
+    __slots__ = ("lock", "ref_count")
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.ref_count = 0
+
+
 _flight_master_lock = threading.Lock()
-_flight_locks: dict[str, threading.Lock] = {}
+_flight_locks: dict[str, _FlightLockEntry] = {}
 
 
-def _get_flight_lock(key: str) -> threading.Lock:
-    """동일 캐시 키에 대한 동시 DB 조회를 1회로 병합(single-flight)하기 위한 잠금을 반환합니다."""
+@contextmanager
+def _flight_lock(key: str):
+    """동일 캐시 키에 대한 동시 DB 조회를 1회로 병합(single-flight)하기 위한 참조 계수 기반 잠금을 제공합니다.
+
+    마지막 대기자가 빠져나갈 때 딕셔너리에서 항목을 제거하여 동적 SQL 리터럴 키가 무한 누적되는 메모리 누수를 방지합니다.
+    """
     with _flight_master_lock:
-        lock = _flight_locks.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            _flight_locks[key] = lock
-        return lock
+        entry = _flight_locks.get(key)
+        if entry is None:
+            entry = _FlightLockEntry()
+            _flight_locks[key] = entry
+        entry.ref_count += 1
+
+    try:
+        with entry.lock:
+            yield
+    finally:
+        with _flight_master_lock:
+            entry.ref_count -= 1
+            if entry.ref_count == 0:
+                _flight_locks.pop(key, None)
 
 
 def _top_rows(
@@ -358,7 +380,7 @@ def _top_rows(
         rows, dropped = cached_live
         return [tuple(row) for row in rows], int(dropped)
 
-    with _get_flight_lock(key):
+    with _flight_lock(key):
         # 잠금 획득 후 캐시 재확인
         cached_live = cache.get(key)
         if cached_live is not None:
@@ -400,7 +422,7 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
     if cached is not None:
         return list(cached)
 
-    with _get_flight_lock(key):
+    with _flight_lock(key):
         # 잠금 획득 후 캐시 재확인
         cached = cache.get(key)
         if cached is not None:

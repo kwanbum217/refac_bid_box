@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from src.app.api.v1 import health
 from src.app.api.v1.health import warmup_state
 from src.app.core.cache import cache
+from src.app.core.config import settings
 from src.app.main import app
 from src.app.models.bids import BidResult
 from src.rag.structured_data import _cached_aggregate, _stmt_cache_key, _top_rows
@@ -279,7 +280,7 @@ def test_readiness_promotes_warmup_to_not_ready_with_settings(monkeypatch):
         "_check_llm",
         lambda: {"ok": True, "provider": "ollama", "detail": None, "latency_ms": 1.0},
     )
-    monkeypatch.setenv("READINESS_REQUIRE_WARMUP", "true")
+    monkeypatch.setattr(settings, "READINESS_REQUIRE_WARMUP", True)
 
     response = client.get("/api/v1/health/ready")
     assert response.status_code == 503
@@ -301,10 +302,57 @@ def test_readiness_promotes_llm_to_not_ready_with_settings(monkeypatch):
             "latency_ms": 2.0,
         },
     )
-    monkeypatch.setenv("READINESS_REQUIRE_LLM", "true")
+    monkeypatch.setattr(settings, "READINESS_REQUIRE_LLM", True)
 
     response = client.get("/api/v1/health/ready")
     assert response.status_code == 503
     data = response.json()
     assert data["status"] == "not_ready"
     assert data["llm"]["ok"] is False
+
+
+def test_flight_locks_dictionary_does_not_leak_memory():
+    from src.rag.structured_data import _flight_locks
+
+    mock_db = MagicMock()
+    mock_db.execute.return_value.one.return_value = (1, 80.0, 1000)
+
+    for i in range(100):
+        stmt = select(func.count(BidResult.id)).where(BidResult.id == 900000 + i)
+        _cached_aggregate(mock_db, stmt)
+
+    assert len(_flight_locks) == 0
+
+    stmt_concurrent = select(func.count(BidResult.id)).where(BidResult.id == 999999)
+    key_concurrent = _stmt_cache_key("rag:agg:", stmt_concurrent)
+    cache.delete(key_concurrent)
+
+    start_event = threading.Event()
+    finish_event = threading.Event()
+
+    def slow_exec(st):
+        start_event.set()
+        assert finish_event.wait(timeout=2)
+        mock_res = MagicMock()
+        mock_res.one.return_value = (2, 85.0, 2000)
+        return mock_res
+
+    mock_db.execute.side_effect = slow_exec
+
+    threads = [
+        threading.Thread(target=lambda: _cached_aggregate(mock_db, stmt_concurrent))
+        for _ in range(5)
+    ]
+    for t in threads:
+        t.start()
+
+    assert start_event.wait(timeout=2)
+    assert key_concurrent in _flight_locks
+    assert _flight_locks[key_concurrent].ref_count >= 1
+
+    finish_event.set()
+    for t in threads:
+        t.join(timeout=2)
+
+    assert key_concurrent not in _flight_locks
+    assert len(_flight_locks) == 0

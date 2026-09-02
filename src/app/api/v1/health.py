@@ -219,26 +219,6 @@ async def liveness_check():
     return {"status": "alive"}
 
 
-def _is_warmup_required() -> bool:
-    import os
-
-    return (
-        os.getenv("READINESS_REQUIRE_WARMUP", "").lower() in ("true", "1", "yes")
-        or getattr(settings, "READINESS_REQUIRE_WARMUP", False)
-        or getattr(settings, "READINESS_GATE_WARMUP", False)
-    )
-
-
-def _is_llm_required() -> bool:
-    import os
-
-    return (
-        os.getenv("READINESS_REQUIRE_LLM", "").lower() in ("true", "1", "yes")
-        or getattr(settings, "READINESS_REQUIRE_LLM", False)
-        or getattr(settings, "READINESS_GATE_LLM", False)
-    )
-
-
 @router.get("/ready")
 async def readiness_check(response: Response):
     checks = dict(
@@ -255,9 +235,9 @@ async def readiness_check(response: Response):
     warmup_status = warmup_state.get_summary()
 
     critical_checks = {"mysql", "redis", "model_registry"}
-    if _is_warmup_required():
+    if settings.READINESS_REQUIRE_WARMUP:
         critical_checks.add("warmup")
-    if _is_llm_required():
+    if settings.READINESS_REQUIRE_LLM:
         critical_checks.add("llm")
 
     critical_failed = False
