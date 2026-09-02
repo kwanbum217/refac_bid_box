@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-02
-> **source_commit**: `decb941`
+> **source_commit**: `56ce0c2`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -81,6 +81,22 @@
 | 3.9 PSI 드리프트 | 학습 성공 시 baseline 분포를 원자적으로 저장하고 크론 job 이 판정을 `retrain_logs` 에 기록하고 알림을 보냅니다. `ML_DRIFT_MONITOR_ENABLED` 기본값 False 로 꺼져 있습니다 |
 | 3.10 Servc 서빙 | 결측 공고의 불확실성 경고를 예측 응답과 상세 화면에 싣습니다. 결측 판정은 `features.py` 특징을 그대로 씁니다. 예측 하드 차단은 넣지 않았습니다 |
 | 4.2 CI 사각지대 | 커버리지 게이트 하한 80% 도입(실측 85.23%), push 트리거를 전체 브랜치로 확대, `docs/ops/ci_contract.md` 신설 |
+
+### 1.5.4 P2 Wave D 해소 (2026-09-02)
+
+| 항목 | 조치 |
+| --- | --- |
+| 4.3 공급망 | Python 과 npm 의존성 취약점 스캔, Trivy 컨테이너 스캔, SPDX SBOM 생성과 업로드를 CI 에 추가했습니다. 초기에는 보고 전용이며 게이트 승격 조건은 [`../ops/supply_chain.md`](../ops/supply_chain.md) 에 있습니다. python, node, mysql, redis, meilisearch 다섯 이미지를 digest 로 고정했습니다 |
+| 4.4 버전 정본 | `pyproject.toml` 하나가 정본입니다. 앱이 하드코딩 대신 그 값을 읽고, 패키지 미설치 환경에서는 `pyproject.toml` 을 직접 읽습니다. 버전 값 0.1.0 은 바꾸지 않았습니다 |
+| 3.10 드리프트 연계 | baseline 과 평가를 `lwlt_rate_missing` 값별로 분리하고 with_lwlt 0.2, missing_lwlt 0.25 차등 임계를 적용합니다. 옛 baseline 과 해당 특징이 없는 모델은 기존 방식으로 동작합니다 |
+
+**본 문서의 v1.0.0 표기는 근거가 없습니다.** 실제 버전은 0.1.0 이며 릴리스 판단이 서지 않은 상태입니다. 상세는 [`../ops/versioning.md`](../ops/versioning.md) 를 보십시오.
+
+**공급망 스캔은 아직 게이트가 아닙니다.** 기존 취약점 규모를 모르는 상태에서 실패로 걸면 CI 가 상시 red 가 되므로 보고 전용으로 두었습니다. 승격 조건을 충족하면 올리십시오.
+
+**병합 전 검증에 `make check-all` 을 포함하십시오.** `1364b46` 에서 mypy 오류가 CI 까지 흘러갔습니다. `typecheck` 와 `lint-workflows` 가 그 타깃에 있는데 pytest 와 규칙 검증만 돌린 것이 원인이었습니다. Wave D 에서는 같은 종류의 오류 4건을 병합 전에 잡았습니다.
+
+---
 
 **RPO 와 RTO 는 아직 정해지지 않았습니다.** 근거 없는 값을 넣지 않고 담당자 기입 공란으로 두었습니다. 정기 백업 스케줄과 restore drill 도 아직 없습니다. 도구와 절차만 마련된 상태입니다.
 
