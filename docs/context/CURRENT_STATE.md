@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-02
-> **source_commit**: `5b774d4`
+> **source_commit**: `bc4d3b9`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -113,6 +113,7 @@
 | 항목 | 조치 |
 | --- | --- |
 | 3.7 이미지 강화 | `Dockerfile` 을 builder 와 runtime 으로 나눠 빌드 도구를 런타임에서 빼고 `USER 1000:1000` 으로 비 root 실행합니다. 운영 compose 에서 호스트 소스 마운트를 제거하고 `read_only` 루트에 `noexec` `nosuid` 제한 `/tmp` tmpfs 를 붙였습니다 |
+| 3.8 Arq heartbeat | Redis 에 워커 식별자·마지막 생존 시각·큐 적체·스케줄 성공 여부를 기록하고 `/api/v1/health/worker` 로 조회합니다. readiness 와 분리했고 Redis 장애는 미상 처리입니다 |
 
 **코디네이터가 직접 빌드로 확인했습니다.** `docker build` 통과, 컨테이너에서 `uid=1000(app)`, `which gcc git` 결과 없음, prod compose config 통과입니다.
 
