@@ -28,6 +28,7 @@ from src.app.services.api_collector import (
     BID_CATEGORIES,
     RangeCollectionError,
     get_service_key,
+    mask_credentials,
     stream_bid_announcements,
     stream_bid_data,
 )
@@ -167,16 +168,23 @@ def _bulk_insert(db: Session, model, rows: list[dict[str, Any]]) -> int:
         return 0
     stmt = insert(model.__table__).prefix_with(_ignore_prefix(db))
     inserted = 0
-    for start in range(0, len(rows), BATCH_ROWS):
-        chunk = [row for row in rows[start : start + BATCH_ROWS] if row.get("bid_ntce_no")]
-        if not chunk:
-            continue
-        for row in chunk:
-            row.setdefault("collected_at", utcnow())
-        db.execute(stmt, chunk)
-        db.commit()
-        inserted += len(chunk)
-    return inserted
+    try:
+        for start in range(0, len(rows), BATCH_ROWS):
+            chunk = [row for row in rows[start : start + BATCH_ROWS] if row.get("bid_ntce_no")]
+            if not chunk:
+                continue
+            for row in chunk:
+                row.setdefault("collected_at", utcnow())
+            db.execute(stmt, chunk)
+            db.commit()
+            inserted += len(chunk)
+        return inserted
+    except Exception:
+        try:
+            db.rollback()
+        except Exception as rb_exc:
+            logger.debug("대량 삽입 실패 후 롤백 실패: %s", rb_exc)
+        raise
 
 
 def _record_partial_failure(
@@ -193,7 +201,7 @@ def _record_partial_failure(
     count_key = "announcement_count" if kind == "announcement" else "result_count"
     metrics[count_key] += exc.saved
     metrics["categories"][cat_code][count_key] += exc.saved
-    metrics["categories"][cat_code][f"{kind}_error"] = str(exc)
+    metrics["categories"][cat_code][f"{kind}_error"] = mask_credentials(exc)
     metrics["failed_ranges"].extend(
         {"category": cat_code, "kind": kind, "start_date": s, "end_date": e}
         for s, e in exc.failed_ranges
@@ -279,11 +287,15 @@ async def collect_bids(
             except RangeCollectionError as exc:
                 # 성공 구간은 이미 적재되었으므로 건수는 반영하되 실패로 표시합니다.
                 # 이것을 성공으로 두면 체크포인트가 실패 구간을 건너뛴 채 전진합니다.
-                logger.error("[%s] 입찰공고 부분 실패: %s", cat_name, exc)
+                logger.error("[%s] 입찰공고 부분 실패: %s", cat_name, mask_credentials(exc))
                 _record_partial_failure(metrics, cat_code, "announcement", exc)
             except Exception as exc:
                 logger.exception("[%s] 입찰공고 수집 실패", cat_name)
-                metrics["categories"][cat_code]["announcement_error"] = str(exc)
+                try:
+                    db.rollback()
+                except Exception as rb_exc:
+                    logger.debug("입찰공고 롤백 실패: %s", rb_exc)
+                metrics["categories"][cat_code]["announcement_error"] = mask_credentials(exc)
 
         if fetch_type in ("both", "result"):
             metrics["attempted"] += 1
@@ -298,11 +310,15 @@ async def collect_bids(
                 metrics["categories"][cat_code]["result_count"] += saved
                 logger.info("[%s] 낙찰정보 %s건 적재", cat_name, saved)
             except RangeCollectionError as exc:
-                logger.error("[%s] 낙찰정보 부분 실패: %s", cat_name, exc)
+                logger.error("[%s] 낙찰정보 부분 실패: %s", cat_name, mask_credentials(exc))
                 _record_partial_failure(metrics, cat_code, "result", exc)
             except Exception as exc:
                 logger.exception("[%s] 낙찰정보 수집 실패", cat_name)
-                metrics["categories"][cat_code]["result_error"] = str(exc)
+                try:
+                    db.rollback()
+                except Exception as rb_exc:
+                    logger.debug("낙찰정보 롤백 실패: %s", rb_exc)
+                metrics["categories"][cat_code]["result_error"] = mask_credentials(exc)
 
     metrics["total_records"] = metrics["announcement_count"] + metrics["result_count"]
 
@@ -323,7 +339,11 @@ async def collect_bids(
             await asyncio.to_thread(warm_home_page_cache, db)
             metrics["cache_warmed"] = True
         except Exception as exc:
-            logger.warning("대시보드 집계 또는 캐시 예열 실패: %s", exc)
+            logger.warning("대시보드 집계 또는 캐시 예열 실패: %s", mask_credentials(exc))
+            try:
+                db.rollback()
+            except Exception as rb_exc:
+                logger.debug("대시보드 예열 롤백 실패: %s", rb_exc)
             metrics["cache_warmed"] = False
 
     metrics["failed_count"] = sum(

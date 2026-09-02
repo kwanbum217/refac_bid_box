@@ -83,10 +83,17 @@ def _report(  # nosec B107
     if callback_url and _post_callback(callback_url, callback_token, payload):
         return
 
-    request_obj = get_automation_request(db, automation_request_id)
-    if request_obj is None:
-        return
-    apply_callback_payload(db, request_obj, payload)
+    try:
+        request_obj = get_automation_request(db, automation_request_id)
+        if request_obj is None:
+            return
+        apply_callback_payload(db, request_obj, payload)
+    except Exception as exc:
+        logger.warning("자동화 요청 결과 보고 DB 반영 실패 (%s): %s", automation_request_id, exc)
+        try:
+            db.rollback()
+        except Exception as rb_exc:
+            logger.debug("요청 보고 롤백 실패: %s", rb_exc)
 
 
 async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, str, dict[str, Any]]:
@@ -592,25 +599,42 @@ async def run_automation_pipeline(
             }
     except Exception as exc:
         logger.exception("자동화 파이프라인 실패 (%s)", run_mode)
-        await asyncio.to_thread(
-            _report,
-            db,
-            automation_request_id,
-            "final",
-            "failed",
-            f"실행 중 오류가 발생했습니다: {exc}",
-            {"completed_steps": completed},
-            final=True,
-            **delivery,
-        )
-        execution = db.execute(
-            select(PipelineExecution).where(PipelineExecution.execution_id == execution_id)
-        ).scalar_one_or_none()
-        if execution is not None:
-            execution.status = STATUS_FAILED
-            execution.ended_at = utcnow()
-            execution.logs_summary = str(exc)
-            db.commit()
+        try:
+            db.rollback()
+        except Exception as rb_err:
+            logger.warning("파이프라인 실패 후 세션 rollback 실패: %s", rb_err)
+
+        try:
+            await asyncio.to_thread(
+                _report,
+                db,
+                automation_request_id,
+                "final",
+                "failed",
+                f"실행 중 오류가 발생했습니다: {exc}",
+                {"completed_steps": completed},
+                final=True,
+                **delivery,
+            )
+        except Exception as rep_err:
+            logger.error("파이프라인 실패 보고 기록 실패: %s", rep_err)
+
+        try:
+            execution = db.execute(
+                select(PipelineExecution).where(PipelineExecution.execution_id == execution_id)
+            ).scalar_one_or_none()
+            if execution is not None:
+                execution.status = STATUS_FAILED
+                execution.ended_at = utcnow()
+                execution.logs_summary = str(exc)
+                db.commit()
+        except Exception as exec_err:
+            logger.error("PipelineExecution 상태 갱신 실패: %s", exec_err)
+            try:
+                db.rollback()
+            except Exception as rb_exc:
+                logger.debug("실행 상태 갱신 롤백 실패: %s", rb_exc)
+
         return {"status": "failed", "run_mode": run_mode, "error": str(exc)}
     finally:
         db.close()

@@ -15,8 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-
-# G2B 공공 API 응답 전용. 외부 사용자 입력이 아닙니다
+import re
 import xml.etree.ElementTree as ET  # nosec B405
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -77,6 +76,18 @@ def get_service_key() -> str:
         or os.getenv("serviceKey", "")
         or os.getenv("SERVICE_KEY", "")
     )
+
+
+CREDENTIAL_QUERY_PARAM_RE = re.compile(
+    r"(?i)(\b|[\?&])(service_?key|api_?key|access_?token|auth_?token|token|secret|client_?secret|auth(?:orization)?|password|pwd|passwd|key)=([^&\s\'\"\)]*)"
+)
+
+
+def mask_credentials(text_or_obj: Any) -> str:
+    """URL, 쿼리 스트링 또는 예외 메시지 내 자격 증명(serviceKey, key, apikey, token 등)을 마스킹합니다."""
+    if text_or_obj is None:
+        return ""
+    return CREDENTIAL_QUERY_PARAM_RE.sub(r"\1\2=***", str(text_or_obj))
 
 
 def _get_text(item: ET.Element, tag_name: str, default: str | None = None) -> str | None:
@@ -169,12 +180,15 @@ async def _make_request_with_retry(
             last_error = exc
             if attempt < max_retries - 1:
                 logger.warning(
-                    "서버 연결 오류(%s). %s/%s 재시도 대기", exc, attempt + 1, max_retries
+                    "서버 연결 오류(%s). %s/%s 재시도 대기",
+                    mask_credentials(exc),
+                    attempt + 1,
+                    max_retries,
                 )
                 await asyncio.sleep(3.0 * (attempt + 1))
                 continue
             raise
-    raise RuntimeError(f"재시도 한도를 초과했습니다: {last_error}")
+    raise RuntimeError(f"재시도 한도를 초과했습니다: {mask_credentials(last_error)}")
 
 
 def _item_raw_data(item: ET.Element) -> dict[str, str]:
@@ -218,7 +232,9 @@ async def _fetch_paged(
         result_code = root.findtext(".//resultCode", default="")
         if result_code != "00":
             result_msg = root.findtext(".//resultMsg", default="알 수 없는 오류")
-            raise RuntimeError(f"{error_label} API 오류 [{result_code}]: {result_msg}")
+            raise RuntimeError(
+                f"{error_label} API 오류 [{result_code}]: {mask_credentials(result_msg)}"
+            )
 
         rows = [mapper(item, _item_raw_data(item)) for item in root.findall(".//item")]
         return rows, int(root.findtext(".//totalCount", default="0"))
@@ -356,7 +372,13 @@ async def _run_ranges(
     failed_ranges: list[tuple[str, str]] = []
     for (step_start, step_end), result in zip(date_ranges, results, strict=True):
         if isinstance(result, BaseException):
-            logger.error("%s %s~%s 구간 수집 실패: %s", error_label, step_start, step_end, result)
+            logger.error(
+                "%s %s~%s 구간 수집 실패: %s",
+                error_label,
+                step_start,
+                step_end,
+                mask_credentials(result),
+            )
             failed_ranges.append((step_start, step_end))
             continue
         total += result
