@@ -462,7 +462,7 @@ def test_install_git_hooks_worktree_warning():
     assert "[주의] 워크트리 환경에서 hook을 설치하면" in msg
 
 
-def test_main_cli_dispatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_main_cli_dispatch(tmp_path: Path):
     """CLI 진입점 main() 함수가 --record 및 기본 검증 모드를 정상 호출합니다."""
     target_sha = "1234567890abcdef"
     evidence_path = tmp_path / "cli_evidence.json"
@@ -480,10 +480,8 @@ def test_main_cli_dispatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         encoding="utf-8",
     )
 
-    # 1. verify mode with source-commit
-    runner = make_mock_runner(branch="main")
-    monkeypatch.setattr("scripts.premerge_full_suite_gate.run_process", runner)
-
+    # 1. verify mode with source-commit on main
+    runner = make_mock_runner(branch="main", head_sha=target_sha)
     ret = main(
         [
             "--target-branch",
@@ -492,14 +490,29 @@ def test_main_cli_dispatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
             str(evidence_path),
             "--source-commit",
             target_sha,
-        ]
+        ],
+        runner=runner,
     )
     assert ret == 0
 
+    # 2. --record mode
+    record_evidence_path = tmp_path / "cli_record.json"
+    ret_record = main(
+        [
+            "--record",
+            "--evidence-path",
+            str(record_evidence_path),
+        ],
+        runner=runner,
+    )
+    assert ret_record == 0
 
-def test_main_cli_prepare_commit_msg_positional_args(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+    # 3. --install-hooks mode
+    ret_hooks = main(["--install-hooks"], runner=runner)
+    assert ret_hooks == 0
+
+
+def test_main_cli_prepare_commit_msg_positional_args(tmp_path: Path):
     """pre-commit prepare-commit-msg 훅의 위치 인자($1 msg_file, $2 source)를 올바르게 처리합니다."""
     target_sha = "1234567890abcdef"
     evidence_path = tmp_path / "cli_evidence2.json"
@@ -518,9 +531,8 @@ def test_main_cli_prepare_commit_msg_positional_args(
     )
 
     runner = make_mock_runner(branch="main", merge_head=target_sha)
-    monkeypatch.setattr("scripts.premerge_full_suite_gate.run_process", runner)
 
-    # 1. merge 소스 -> 게이트 실행 및 통과
+    # 1. merge 소스 -> 게이트 실행 및 통과 (main 브랜치에서도 격리된 러너로 검증)
     ret_merge = main(
         [
             ".git/MERGE_MSG",
@@ -529,14 +541,15 @@ def test_main_cli_prepare_commit_msg_positional_args(
             "main",
             "--evidence-path",
             str(evidence_path),
-        ]
+        ],
+        runner=runner,
     )
     assert ret_merge == 0
 
-    # 2. message 소스 (일반 커밋) -> 증거 없이도 즉시 통과
-    ret_msg = main([".git/COMMIT_EDITMSG", "message"])
+    # 2. message 소스 (일반 커밋) -> main 브랜치여도 증거 없이 즉시 통과
+    ret_msg = main([".git/COMMIT_EDITMSG", "message"], runner=runner)
     assert ret_msg == 0
 
-    # 3. 소스 생략된 일반 커밋 -> 증거 없이도 즉시 통과
-    ret_none = main([".git/COMMIT_EDITMSG"])
+    # 3. 소스 생략된 일반 커밋 -> main 브랜치여도 증거 없이 즉시 통과
+    ret_none = main([".git/COMMIT_EDITMSG"], runner=runner)
     assert ret_none == 0

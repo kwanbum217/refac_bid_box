@@ -1,11 +1,11 @@
-# Task 5428a2df9fe9 (Rework: task_8c3d4b4286d5, task_ae2326230f1f, task_44fb2650dae9, task_b76567493e41) — main 병합 경로 전량 테스트 게이트 구축
+# Task 5428a2df9fe9 (Rework: task_d60ea1f03ac2, task_8c3d4b4286d5, task_ae2326230f1f, task_44fb2650dae9, task_b76567493e41) — main 병합 경로 전량 테스트 게이트 구축
 
 > **작성일**: 2026-09-02
-> **수정일**: 2026-09-03 (Rework: task_8c3d4b4286d5)
-> **작업 ID**: task_8c3d4b4286d5 (이전: task_ae2326230f1f, task_44fb2650dae9, task_b76567493e41, task_5428a2df9fe9)
+> **수정일**: 2026-09-03 (Rework: task_d60ea1f03ac2)
+> **작업 ID**: task_d60ea1f03ac2 (이전: task_8c3d4b4286d5, task_ae2326230f1f, task_44fb2650dae9, task_b76567493e41, task_5428a2df9fe9)
 > **작성자**: Antigravity (dispatched worker)
 > **상태**: 완료 (Succeeded)
-> **버전**: v1.4.0
+> **버전**: v1.5.0
 
 ---
 
@@ -41,7 +41,7 @@ AGENTS.md 6장은 `main` 병합 전 테스트 전량 통과를 필수로 규정�
 
 ---
 
-## 3. 재작업 결함 분석 및 조치 내역 (task_8c3d4b4286d5 / task_ae2326230f1f 피드백 해소)
+## 3. 재작업 결함 분석 및 조치 내역 (task_d60ea1f03ac2 / task_8c3d4b4286d5 피드백 해소)
 
 | 결함 | 원인 분석 | 조치 내역 |
 | --- | --- | --- |
@@ -50,6 +50,7 @@ AGENTS.md 6장은 `main` 병합 전 테스트 전량 통과를 필수로 규정�
 | **3. 워크트리 증거 파일 불일치** | 상대 경로(`.cache/...`) 사용 시 워크트리의 `--record` 결과가 주 저장소 병합 훅에서 보이지 않음 | `resolve_evidence_path()`를 신설하여 `git rev-parse --git-common-dir`를 기준으로 주 저장소 공통 `.cache/premerge_full_suite_evidence.json`을 단일 경로로 사용 |
 | **4. 워크트리 훅 설치 시 .venv 깨짐** | 워크트리에서 `pre-commit install` 실행 시 훅의 `INSTALL_PYTHON`이 워크트리 `.venv`를 가리켜 워크트리 삭제 후 훅 파손 | 훅 설치는 반드시 주 저장소 루트에서 수행하도록 경고 메시지 출력 및 `git_branching_strategy.md`에 문서화. 미설치 시 fail-open 증상과 기계적 검증을 후속 과제로 명시 |
 | **5. load_evidence fallback 및 테스트의 증거 파일 의존** | `load_evidence` 내 `local_fallback`이 존재하여 미존재 경로 검사 시 저장소의 실제 `.cache` 파일을 읽어 `test_main_branch_missing_evidence_file` 등이 실패하고 연속 `--record` 시 자기 깨짐 현상 발생 | `load_evidence`의 `local_fallback`을 완전히 제거하고 모든 단위 테스트가 `tmp_path` 격리 경로를 주입받도록 수정하여 연속 `--record` 실행 시 100% 무결성 보장 |
+| **6. main() CLI 테스트의 실제 git 프로세스 호출 결함** | `main()` 호출 시 `verify_premerge_gate` 등의 기본 인자 `runner=run_process`가 모듈 임포트 시점에 평가되어 monkeypatch 이후에도 실제 git 서브프로세스가 호출되고, 주 저장소(`main` 브랜치)에서 실제 브랜치 판정으로 인해 `test_main_cli_*`가 실패함 | `main(argv, runner=run_process)`로 러너 인자를 지원하도록 확장하고, CLI 테스트에서 모의 러너(`make_mock_runner(branch="main")`)를 명시적으로 주입하여 실제 브랜치/저장소 상태와 무관하게 100% 격리 검증되도록 조치 |
 
 ---
 
