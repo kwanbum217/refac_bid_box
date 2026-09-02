@@ -444,14 +444,18 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(
+    argv: Sequence[str] | None = None,
+    runner: Runner = run_process,
+) -> int:
     args = parse_arguments(argv)
 
     if args.install_hooks:
-        code, message = install_git_hooks()
+        code, message = install_git_hooks(runner=runner)
     elif args.record:
         code, message = record_evidence(
             evidence_path=args.evidence_path,
+            runner=runner,
         )
     else:
         commit_src: str | None
@@ -469,6 +473,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             evidence_path=args.evidence_path,
             source_commit=args.source_commit,
             commit_source=commit_src,
+            runner=runner,
         )
 
     stream = sys.stdout if code == 0 else sys.stderr
