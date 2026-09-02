@@ -175,7 +175,7 @@ API 응답 생성부(`predictions.py:236-252`)에서 `features.get("lwlt_rate_mi
 
 1. **lwlt 결측값 대입(Imputation)**: 제도적 개념 부재인 1,356건에 가상 하한율(88.0% 등) 주입 시 실제 낙찰률(평균 94.95%)과 충돌해 오차 7~12%p 폭증. **절대 불가**([`servc_lwlt_missing_20260830.md`](../analysis/servc_lwlt_missing_20260830.md) 126-133행).
 2. **계약방식별 모델 분리**: 2026-08-03 실측에서 수의계약·경쟁_공고서참조·협상 세 세그먼트 전부 분리가 단일 모델보다 나빴음(전체 R² 0.6659 vs 0.6683). 2026-08-07 문서에서 "두 번 실패했으니 가지 마라" 못 박음. 범주형 특징(`cntrct_mthd_nm`, `sucsfbid_mthd_nm`)이 이미 트리 분기를 학습하므로 명시적 분리는 표본만 줄임([`servc_lwlt_missing_20260830.md`](../analysis/servc_lwlt_missing_20260830.md) 7-15행).
-3. **하이퍼파라미터 단순 재탐색**: 좌표 하강 17회 실측에서 값어치 있는 축은 `num_leaves` 하나뿐이었으며, 점 추정과 분위 모델이 설정을 공유하던 시절 리프를 올리면 구간 폭이 11.2% 악화돼 기각. 분리 후(`QUANTILE_PARAM_OVERRIDES`) 점 추정 리프 255로 올려도 구간 폭은 1.423%p로 불변([`training_config.py`](../src/ml/training_config.py) 17-38행, 96-104행).
+3. **하이퍼파라미터 단순 재탐색**: 좌표 하강 17회 실측에서 값어치 있는 축은 `num_leaves` 하나뿐이었으며, 점 추정과 분위 모델이 설정을 공유하던 시절 리프를 올리면 구간 폭이 11.2% 악화돼 기각. 분리 후(`QUANTILE_PARAM_OVERRIDES`) 점 추정 리프 255로 올려도 구간 폭은 1.423%p로 불변([`training_config.py`](../../src/ml/training_config.py) 17-38행, 96-104행).
 
 ---
 
