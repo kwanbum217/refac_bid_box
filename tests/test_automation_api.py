@@ -24,17 +24,26 @@ VALID_SIGNUP = {
 }
 
 
-def _login(client):
+def _login(client, isolated_db):
     client.post("/api/v1/accounts/signup", json=VALID_SIGNUP)
     client.post(
         "/api/v1/accounts/login",
         json={"username": "automation-user", "password": "StrongPass123!!"},
     )
+    import sqlalchemy
+
+    from src.app.models.accounts import CustomUser
+
+    user = isolated_db.execute(
+        sqlalchemy.select(CustomUser).where(CustomUser.username == "automation-user")
+    ).scalar_one()
+    user.is_staff = True
+    isolated_db.commit()
 
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_collect_bids_creates_automation_request(mock_enqueue, client, isolated_db):
-    _login(client)
+    _login(client, isolated_db)
     response = client.post("/api/v1/automation/run/collect-bids", json={"reason": "테스트"})
     assert response.status_code == 200
     payload = response.json()
@@ -44,7 +53,7 @@ def test_collect_bids_creates_automation_request(mock_enqueue, client, isolated_
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_manual_full_requires_confirmation(mock_enqueue, client, isolated_db):
-    _login(client)
+    _login(client, isolated_db)
     response = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
     assert response.status_code == 200
     payload = response.json()
@@ -54,7 +63,7 @@ def test_manual_full_requires_confirmation(mock_enqueue, client, isolated_db):
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_manual_retrain_requires_confirmation(mock_enqueue, client, isolated_db):
-    _login(client)
+    _login(client, isolated_db)
     response = client.post("/api/v1/automation/run/retrain", json={"reason": "운영자 검토"})
 
     assert response.status_code == 200
@@ -75,7 +84,7 @@ def test_manual_retrain_requires_confirmation(mock_enqueue, client, isolated_db)
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_cancel_pending_confirmation(mock_enqueue, client, isolated_db):
-    _login(client)
+    _login(client, isolated_db)
     create_resp = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
     job_id = create_resp.json()["job"]["job_id"]
 
@@ -86,7 +95,7 @@ def test_cancel_pending_confirmation(mock_enqueue, client, isolated_db):
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_status_query_returns_job_details(mock_enqueue, client, isolated_db):
-    _login(client)
+    _login(client, isolated_db)
     create_resp = client.post("/api/v1/automation/run/collect-bids", json={"reason": "테스트"})
     job_id = create_resp.json()["job"]["job_id"]
 
@@ -99,7 +108,7 @@ def test_status_query_returns_job_details(mock_enqueue, client, isolated_db):
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_confirm_executes_pending_request(mock_enqueue, client, isolated_db):
-    _login(client)
+    _login(client, isolated_db)
     create_resp = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
     job_id = create_resp.json()["job"]["job_id"]
     token = create_resp.json()["confirmation_token"]
@@ -125,7 +134,7 @@ def test_cancel_pending_confirmation_request_marks_canceled_without_harness_abor
     원본은 Harness abort API 호출 여부를 봤고, 이식본은 같은 자리의
     abort_arq_job 호출 여부를 봅니다.
     """
-    _login(client)
+    _login(client, isolated_db)
     create_resp = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
     job_id = create_resp.json()["job"]["job_id"]
 
@@ -151,7 +160,7 @@ def test_cancel_running_automation_request_aborts_harness_and_stops_polling_stat
     from src.app.models.chatbot import AutomationRequest, PipelineExecution
     from src.app.services.automation_orchestrator import make_callback_token  # noqa: F401
 
-    _login(client)
+    _login(client, isolated_db)
     me = client.get("/api/v1/accounts/me").json()
 
     isolated_db.add_all(
@@ -218,7 +227,7 @@ def test_automation_requires_authentication(client, isolated_db):
 def test_callback_updates_step_status(mock_enqueue, client, isolated_db):
     from src.app.services.automation_orchestrator import make_callback_token
 
-    _login(client)
+    _login(client, isolated_db)
     create_resp = client.post("/api/v1/automation/run/collect-bids", json={"reason": "테스트"})
     job_id = create_resp.json()["job"]["job_id"]
     token = make_callback_token(job_id)
