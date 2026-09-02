@@ -32,6 +32,7 @@
 | **opencode CLI** | `AGENTS.md` | instructions 단일 지정 | [OpenCode config](https://opencode.ai/docs/config/) — `instructions: ["AGENTS.md"]` |
 | **Antigravity CLI** | `AGENTS.md` | 정본 직접 | [Google 공식 best practices](https://antigravity.google/docs/cli/best-practices) — workspace root의 AGENTS.md 권장 |
 | **Claude Code CLI** | `CLAUDE.md` | thin pointer (`@AGENTS.md`) | Claude Code는 CLAUDE.md를 항상 읽음; import로 AGENTS.md 주입 |
+| **Grok CLI** | `AGENTS.md` + `.grok/rules/*.md` | 정본 직접 + 규칙 디렉터리 | Grok 은 `AGENTS.md` 와 `.grok/rules/` 를 세션 시작 시 자동 로드. 코디네이터 캐시 접두부는 `.grok/rules/bidbox-orca-coordinator.md` |
 | **Cursor CLI** | `.cursor/rules/*.mdc` | 간접 참조 | [Cursor Rules](https://cursor.com/docs/rules) — `00-core-guidelines.mdc`가 AGENTS.md 참조 |
 
 > 참고: `AGENTS.md`는 60,000개 이상의 오픈소스 프로젝트가 채택한 [교차 도구 표준](https://agents.md/)입니다. Codex, opencode, Antigravity 3개 CLI가 이를 직접 읽습니다.

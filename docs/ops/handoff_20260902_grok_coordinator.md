@@ -289,3 +289,9 @@ MYSQL_TEST_URL="mysql+pymysql://root:testpassword@127.0.0.1:3399/test_procuremen
 - **워커 보고 수치를 재실행으로 확인하십시오.** Level 1 게이트가 보고와 실측 불일치를 세 번 잡았습니다.
 - **리뷰어도 틀립니다.** 이 세션 결함 중 상당수가 리뷰어 `pass` 이후 코디네이터 검토에서 나왔습니다. 반대로 리뷰어가 코디네이터의 Capsule 범위 누락을 잡은 적도 한 번 있습니다.
 - **`gh run view --log-failed` 는 run 이 완료돼야 동작합니다.** Windows job 이 느려서 로그를 못 받는 경우가 잦습니다.
+
+---
+
+## 11. Grok 코디네이터 프롬프트 채택 (2026-09-02)
+
+사용자가 전달한 GPT 코디네이터 프롬프트를 분석해 채택했습니다. 운영 정본은 [`grok_coordinator_operating_prompt.md`](grok_coordinator_operating_prompt.md) 이고, Grok 자동 로드 캐시 접두부는 [`.grok/rules/bidbox-orca-coordinator.md`](../../.grok/rules/bidbox-orca-coordinator.md) 입니다. 캐시 식별자는 `bidbox-orca-grok46-coordinator` 입니다. `prompt_cache_key` 설정 항목은 이 TUI 에 없어 등록하지 않았습니다.

@@ -1,7 +1,7 @@
 # refac_bid_box — Agent Guidelines (정본)
 
 > **작성일**: 2026-07-31
-> **수정일**: 2026-09-01
+> **수정일**: 2026-09-02
 > **버전**: v0.2.1
 > 본 파일은 모든 AI 코딩 에이전트가 공유하는 **단일 진실 원천(Single Source of Truth)** 입니다.
 > 규칙을 편집할 때는 반드시 이 파일만 수정합니다. 상세한 다중 에이전트 매핑은 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md)를 참조하십시오.
@@ -16,6 +16,7 @@
 - 프로젝트 현재 운영 상태 정본: [`docs/context/CURRENT_STATE.md`](docs/context/CURRENT_STATE.md)를 읽습니다.
 - 현재 작업에 필요한 스킬 1개만 선택적으로 로드합니다 (예: `.agents/skills/project-orchestrator/SKILL.md`).
 - Orca 다중 Task/섹션 작업일 때만 [`.agents/skills/orca-section-coordination/SKILL.md`](.agents/skills/orca-section-coordination/SKILL.md)를 읽습니다.
+- Grok 가 코디네이터일 때는 [`docs/ops/grok_coordinator_operating_prompt.md`](docs/ops/grok_coordinator_operating_prompt.md)를 운영 절차로 따르고, 캐시 접두부는 [`.grok/rules/bidbox-orca-coordinator.md`](.grok/rules/bidbox-orca-coordinator.md)입니다.
 - 과거 인수인계 문서(handoff)나 전체 설계서([`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md))는 현재 Task의 근거가 부족할 때만 선택 조회합니다.
 
 ### 0.2 Orca Worker 모드
