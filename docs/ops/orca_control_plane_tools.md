@@ -11,12 +11,13 @@
 
 ## 1. 개요 및 구성
 
-본 문서는 Orca 다중 에이전트 환경에서 코디네이터의 제어 평면 자동화를 담당하는 두 핵심 CLI 도구의 인터페이스 규약과 동작 원칙을 정의합니다.
+본 문서는 Orca 다중 에이전트 환경에서 코디네이터의 제어 평면 자동화를 담당하는 핵심 CLI 도구들의 인터페이스 규약과 동작 원칙을 정의합니다.
 
 | 도구 | 스크립트 경로 | 핵심 역할 |
 | --- | --- | --- |
 | **`orca_taskctl`** | `scripts/orca_taskctl.py` | Task Intent 파싱, Capsule 자동 확장, 워커 기동(Dispatch), 완료 검증(Finalize) 파이프라인 |
 | **`orca_model_router`** | `scripts/orca_model_router.py` | 작업 위험도 분류, 모델 풀 선택·Probe, 역할별 rolling reliability 기록 |
+| **`orca_skill_receipt`** | `scripts/orca_skill_receipt.py` | Orca 정본 스킬(`orca skills get orchestration`) 영수증 발급 및 2층 fail-closed 게이트 검증 |
 
 ---
 
@@ -54,8 +55,8 @@
 | 서브커맨드 | 주요 인자 | 필수 여부 | 설명 |
 | --- | --- | --- | --- |
 | **`expand`** | `--intent <path>`<br>`--out <path>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--json` | `--intent` (필수)<br>`--out` (필수) | Task Intent YAML을 읽어 유효한 `ORCA_TASK_CAPSULE_V2` 파일로 확장합니다. |
-| **`create`** | `--intent <path>`<br>`--run-id <id>`<br>`--task-id <id>`<br>`--capsule-dir <dir>`<br>`--task-title <text>`<br>`--display-name <text>`<br>`--deps <json>`<br>`--json` | `--intent` (필수) | Intent를 Capsule로 확장하고 **Capsule 절대 경로를 담은 spec** 으로 Orca Task를 만듭니다. Dispatch 전에 이 명령을 씁니다. |
-| **`dispatch`** | `--intent <path>`<br>`--repo <path>`<br>`--model <id>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--capsule-dir <dir>`<br>`--agent <id>`<br>`--terminal <handle>`<br>`--worktree <sel>`<br>`--worktree-name <name>`<br>`--no-probe`<br>`--no-capsule-notice`<br>`--dry-run`<br>`--json` | `--intent` (필수)<br>`--agent` 또는 `--terminal` 중 하나 | Intent를 Capsule로 확장한 뒤 워커를 기동하고 **Capsule 정본 경로 고지문을 자동 투입**합니다. |
+| **`create`** | `--intent <path>`<br>`--run-id <id>`<br>`--task-id <id>`<br>`--capsule-dir <dir>`<br>`--task-title <text>`<br>`--display-name <text>`<br>`--deps <json>`<br>`--skip-skill-receipt`<br>`--json` | `--intent` (필수) | Intent를 Capsule로 확장하고 **Capsule 절대 경로를 담은 spec** 으로 Orca Task를 만듭니다. 정본 영수증 게이트를 기본 검증합니다. Dispatch 전에 이 명령을 씁니다. |
+| **`dispatch`** | `--intent <path>`<br>`--repo <path>`<br>`--model <id>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--capsule-dir <dir>`<br>`--agent <id>`<br>`--terminal <handle>`<br>`--worktree <sel>`<br>`--worktree-name <name>`<br>`--no-probe`<br>`--no-capsule-notice`<br>`--skip-skill-receipt`<br>`--dry-run`<br>`--json` | `--intent` (필수)<br>`--agent` 또는 `--terminal` 중 하나 | Intent를 Capsule로 확장한 뒤 워커를 기동하고 **Capsule 정본 경로 고지문을 자동 투입**합니다. 정본 영수증 게이트를 기본 검증합니다. |
 | **`finalize`** | `--report <path>`<br>`--capsule <path>`<br>`--repo <path>`<br>`--worktree <path>`<br>`--base <ref>`<br>`--branch <ref>`<br>`--reviewer`<br>`--reviewer-model <id>`<br>`--json` | `--report` (필수)<br>`--capsule` (필수) | `worker_done` 보고 요약 -> Level 1 게이트 -> Level 2 리뷰어 검증을 일괄 실행하고 최종 판정합니다. |
 | **`status`** | `--run-id <id>`<br>`--task-id <id>`<br>`--json` | 선택 | `orca orchestration task-list`를 호출하여 현재 Run/Task 상태를 조회합니다. |
 
@@ -113,7 +114,7 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 
 전송이 실패하면 `capsule_notice.status` 가 `failed` 가 되고 **종료 코드 3** 을 돌려줍니다. **조용히 넘어가지 않습니다.** `--no-capsule-notice` 는 습관적으로 쓰지 않습니다.
 
-**`dispatch` 종료 코드**입니다. 3 은 "워커는 떴지만 정본 지시가 도달했는지 확인하지 못했다" 는 뜻이며, 기동 실패(1)와 구분합니다.
+**`dispatch` 및 `create` 종료 코드**입니다. 3 은 "워커는 떴지만 정본 지시가 도달했는지 확인하지 못했다" 는 뜻이며, 4 는 "정본 스킬 영수증이 없거나 만료되어 조율 작업을 시작할 수 없다"는 뜻입니다.
 
 | 코드 | 의미 |
 | :---: | --- |
@@ -121,8 +122,9 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 | 1 | 워커 기동 실패, 또는 동시 쓰기 워커 상한 초과로 거부 |
 | 2 | 인자·파일·계약 오류 (Capsule 없음, `review_checklist` 누락 등) |
 | 3 | 기동은 성공했으나 지시 도달 미확인 (신뢰 대화창 판정 불가, 터미널 미정착, 고지 전송 실패) |
+| 4 | 정본 스킬(`orca skills get orchestration`) 영수증 부재·불일치·만료로 거부 |
 
-3 을 받으면 워커 터미널을 직접 확인한 뒤 진행합니다. 확인 없이 넘어가려면 `--allow-unverified-delivery` 를 명시해야 합니다. 2026-08-17 에 신뢰 대화창 때문에 지시가 유실된 사고가 있었으므로 이 확인을 생략하지 않습니다.
+3 을 받으면 워커 터미널을 직접 확인한 뒤 진행합니다. 확인 없이 넘어가려면 `--allow-unverified-delivery` 를 명시해야 합니다. 4 를 받으면 `python3 scripts/orca_skill_receipt.py issue` 로 영수증을 갱신하거나 의도적 우회 시 `--skip-skill-receipt` 를 지정합니다.
 
 ---
 
@@ -228,3 +230,53 @@ Finalize나 재수집도 한 번만 반영합니다.
 - 인증 실패: `unauthorized`, `forbidden`, `auth`, `api_key`, `401`, `403`
 - 명령어/모델 없음: `not found`, `no such file`
 - 타임아웃: 지정된 제한 시간 초과
+
+---
+
+## 5. `orca_skill_receipt` 도구 및 정본 영수증 게이트
+
+`scripts/orca_skill_receipt.py`는 코디네이터가 Orca 정본 스킬(`orca skills get orchestration`)을 확인하지 않고 워커를 띄우는 것을 기계적으로 방지하는 **2층 방어 체계**의 핵심 도구입니다.
+
+### 5.1 2층 방어 체계 아키텍처
+
+| 계층 | 구성 요소 | 동작 방식 | 실패 시 영향 |
+| --- | --- | --- | --- |
+| **1층 (자동 주입)** | `.claude/settings.json` `SessionStart` 훅 | 세션 시작 시 `python3 scripts/orca_skill_receipt.py issue \|\| true` 자동 실행 | 실패해도 세션 시작을 차단하지 않음 (fail-open) |
+| **2층 (엄격 게이트)** | `scripts/orca_taskctl.py` `create` / `dispatch` | 정본 영수증의 실시간 유효성(`sha256`, `appVersion`, 세션 핸들) 대조 | 영수증 부재 또는 불일치 시 종료 코드 `4`로 즉시 거부 (fail-closed) |
+
+### 5.2 영수증 데이터 스키마 (`ORCA_SKILL_RECEIPT_V1`)
+
+영수증 파일은 `.orca/skill_receipt.json` 에 Git 미추적으로 저장됩니다.
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `schema` | string | `ORCA_SKILL_RECEIPT_V1` |
+| `skill_name` | string | 대상 스킬 식별자 (`orchestration`) |
+| `canonical_command` | string | 정본 조회 명령 (`orca skills get orchestration`) |
+| `sha256` | string | 발급 시점의 정본 스킬 본문 SHA-256 다이제스트 |
+| `app_version` | string | 발급 시점의 Orca 런타임 버전 (`result.runtime.appVersion`) |
+| `coordinator_handle` | string \| null | 발급한 코디네이터 터미널 핸들 |
+| `issued_at` | number | 발급 시각 Unix 타임스탬프 |
+| `issued_at_iso` | string | 발급 시각 ISO 8601 문자열 |
+
+### 5.3 실시간 검증 (`verify`) 및 거부 기준
+
+게이트 검증(`verify_skill_receipt`)은 단순히 영수증 파일 존재 여부만 보지 않고, **그 자리에서 정본과 런타임 상태를 실시간 재조회**하여 대조합니다:
+
+1. **파일 존재 및 스키마 검증**: 영수증 파일이 없거나 JSON 파싱에 실패하면 즉시 거부.
+2. **런타임 버전 대조**: 실시간 `orca status --json` 의 `appVersion` 과 영수증의 `app_version` 이 다르면 거부 (Orca 업데이트 후 낡은 스킬 지침 방지).
+3. **정본 내용 SHA-256 대조**: 실시간 `orca skills get orchestration` 의 해시와 영수증의 `sha256` 이 다르면 거부 (정본 문서 갱신 후 낡은 지침 재사용 방지).
+4. **코디네이터 세션 대조**: 영수증의 `coordinator_handle` 과 현재 세션 핸들이 상이하면 타 세션 영수증 재사용으로 간주하여 거부. (핸들 조회가 불가한 환경에서는 해당 항목만 건너뛰고 나머지 검사 유지).
+
+### 5.4 CLI 서브커맨드 및 해소 명령
+
+- **발급 (단일 명령)**:
+  ```bash
+  python3 scripts/orca_skill_receipt.py issue
+  ```
+- **검증**:
+  ```bash
+  python3 scripts/orca_skill_receipt.py verify
+  ```
+- **단일 우회 플래그 (`--skip-skill-receipt`)**:
+  게이트를 의도적으로 우회해야 하는 긴급 상황에서는 `create` 및 `dispatch` 서브커맨드에 `--skip-skill-receipt` 를 지정합니다. 사용 시 stderr 에 경고가 출력되고 Dispatch 기록에 보존됩니다. 환경변수를 통한 추가 우회는 엄격히 금지됩니다.
