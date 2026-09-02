@@ -107,3 +107,4 @@ CI는 4개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해�
 - **벽시계 단언 정책**: 잠금 대기는 항상 예외 종류/원본 에러 코드로 판정합니다. 2026-09-02 의 0.1초 vs 0.08초 단언 회귀처럼, `time.sleep(N)` + 정해진 시간 내 완료 단언은 사용하지 않습니다.
 - **CI 합류**: 본 문서는 Capsule contract 대로 worker 의 ci.yml 수정 범위를 침범하지 않습니다. 실제 합류 명령 추가(`tests/test_mysql_concurrency.py` 의 mysql-ngram-integration 잡 pytest 명령 합류)는 코디네이터의 지시에 따르며, 합류 시 0건 skip / 1건 이상 pass 게이트가 동일하게 적용됩니다.
 - **skip 의 의미**: MySQL 부재 환경에서 5건 모두 skip 됩니다. skip 은 통과가 아니며, 보고서(`docs/analysis/task_bedb4b8bf44b.md`) 에 실행 여부가 정확히 기록됩니다.
+- **실측 결과 (2026-09-02)**: `MYSQL_TEST_URL`로 MySQL 8 인스턴스에 연결한 지정 명령에서 5건 모두 통과했으며 skip은 0건이었습니다. 상세 결과와 전체 회귀 검증 결과는 `docs/analysis/task_bedb4b8bf44b.md`에 기록합니다.

@@ -74,18 +74,20 @@ CI 워크플로우 파일(`.github/workflows/ci.yml`) 은 Capsule `forbidden` �
 
 ## 5. 실행 결과
 
-### 5.1 로컬(격리 워크트리) 실행 결과
+### 5.1 실제 MySQL 실행 결과
 
-- **MySQL 환경**: 격리 워크트리에는 MySQL 인스턴스가 없어 `MYSQL_TEST_URL` 이 설정되지 않습니다.
-- **테스트 실행 결과**: `uv run pytest tests/test_mysql_concurrency.py -m mysql_integration -v` 실행 시 5건 모두 `SKIPPED [100%]` 로 종료되며, 출력 마지막 줄은 `5 skipped, 1 warning in 0.01s` 입니다.
-- **skip 의 의미**: Capsule `fact` "MySQL 이 없는 환경에서는 skip 되어야 하며 skip 을 통과로 보고하지 말라" 를 그대로 따릅니다. 본 보고서도 skip 을 통과로 기술하지 않습니다.
-- **MySQL 이 있는 환경에서의 기대 동작**: 같은 pytest 명령이 5건 모두 `passed` 로 종료되어야 합니다. 본 작업자가 CI 통합 환경에서 직접 실행한 적은 없으므로, 실제 CI 머신에서 1회 회귀 검증이 필요합니다.
+- **MySQL 환경**: `127.0.0.1:3399`의 MySQL 8 테스트 인스턴스에 연결했습니다.
+- **테스트 실행 결과**: `MYSQL_TEST_URL="mysql+pymysql://root:testpassword@127.0.0.1:3399/test_procurement_ngram" uv run pytest tests/test_mysql_concurrency.py -m mysql_integration -v --tb=short` 실행 결과 `5 passed, 1 warning in 1.17s` 입니다.
+- **실측 의미**: `sessionmaker(execution_options=...)` TypeError를 제거한 뒤, 행 잠금·데드락·동시 INSERT를 각각 두 스레드의 별도 세션으로 실행하여 MySQL InnoDB 동작을 실제로 확인했습니다. skip은 발생하지 않았습니다.
 
 ### 5.2 검증 명령
 
 - `uv run ruff check tests/test_mysql_concurrency.py` → `All checks passed!`
 - `uv run ruff format --check tests/test_mysql_concurrency.py` → `1 file already formatted`
-- `uv run pytest tests/test_mysql_concurrency.py -m mysql_integration -v` → 5 skipped (MySQL 부재 환경 기준)
+- 지정된 실제 MySQL 명령 → 5 passed, 1 warning (1.17s)
+- `uv run mypy src/` → 성공 (89개 소스 파일)
+- `uv run pytest tests/ -q -m 'not data_assets'` → 3,200 passed, 35 skipped, 2 failed, 3 deselected (56.91s). 실패 2건은 작업 범위 밖의 `CURRENT_STATE.md` `source_commit` 지연(HEAD보다 7커밋, 허용 5)입니다.
+- `python3 scripts/validate_agent_rules.py --quiet` → 실패 1건. `CURRENT_STATE 필수 필드`의 동일한 `source_commit` 지연이며, 테스트 코드/운영 코드와 무관합니다.
 
 ---
 

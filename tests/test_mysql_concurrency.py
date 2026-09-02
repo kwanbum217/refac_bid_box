@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from typing import Any
 
 import pytest
@@ -158,7 +159,6 @@ def concurrency_session_factory(
         bind=mysql_engine,
         autocommit=False,
         autoflush=False,
-        execution_options={"schema_translate_map": {"": "concurrency_test"}},
     )
 
 
@@ -272,23 +272,27 @@ def test_mysql_concurrent_row_lock_blocks_second_writer_and_raises_on_timeout(
         holder.execute(
             text("SELECT balance FROM concurrency_wallet WHERE label = 'alpha' FOR UPDATE")
         ).fetchone()
-        holder.commit()
 
-        # 선행 세션이 명시적 트랜잭션을 열어 같은 행을 다시 잠근다.
-        holder.begin()
-        holder.execute(
-            text("SELECT balance FROM concurrency_wallet WHERE label = 'alpha' FOR UPDATE")
-        )
+        # 후행 세션은 별도 스레드에서 같은 행에 잠금을 시도한다. 실제로 잠금이
+        # 겹친 상태에서 MySQL의 대기 시간 초과를 관찰한다.
+        result: dict[str, BaseException] = {}
 
-        # 후행 세션은 같은 행에 FOR UPDATE 를 시도한다. holder 가 트랜잭션을
-        # 닫을 때까지 기다리다 timeout 이 되면 OperationalError 1205 를 던진다.
-        waiter.begin()
-        with pytest.raises(OperationalError) as error:
-            waiter.execute(
-                text("SELECT balance FROM concurrency_wallet WHERE label = 'alpha' FOR UPDATE")
-            )
+        def wait_for_lock() -> None:
+            try:
+                waiter.execute(
+                    text("SELECT balance FROM concurrency_wallet WHERE label = 'alpha' FOR UPDATE")
+                )
+            except BaseException as exc:  # 스레드 예외를 주 스레드에서 검증한다.
+                result["error"] = exc
+
+        thread = threading.Thread(target=wait_for_lock)
+        thread.start()
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "잠금 대기 스레드가 제한 시간 안에 종료되지 않았습니다."
+        error = result.get("error")
+        assert isinstance(error, OperationalError), f"잠금 대기 예외가 없습니다: {error!r}"
+        _assert_mysql_operational_error(error, (1205,))
         waiter.rollback()
-        _assert_mysql_operational_error(error.value, (1205,))
 
         # 후행 세션이 잠금 해제 후에는 정상 동작해야 한다.
         holder.rollback()
@@ -320,45 +324,49 @@ def test_mysql_deadlock_detection_raises_1213_and_session_still_usable(
     시간 단언 대신: 어떤 세션이 victim 이 되든 OperationalError 1213 이 한쪽에서
     발생하고, victim 세션이 rollback 으로 복구되어 다음 INSERT 가 가능한지만 봅니다.
     """
-    a: Session = concurrency_session_factory()
-    b: Session = concurrency_session_factory()
-    try:
-        _use_concurrency_schema(a.connection())
-        _use_concurrency_schema(b.connection())
-        a.execute(text("SET SESSION innodb_lock_wait_timeout = 5"))
-        b.execute(text("SET SESSION innodb_lock_wait_timeout = 5"))
+    sessions = [concurrency_session_factory(), concurrency_session_factory()]
+    barrier = threading.Barrier(2)
+    results: list[tuple[Session, BaseException | None]] = []
+    result_lock = threading.Lock()
 
-        # 잠금 경합이 짧게 끝나도록 deadlock detector 가 즉시 작동하도록 한다.
-        a.execute(text("SET SESSION innodb_lock_wait_timeout = 5"))
-        b.execute(text("SET SESSION innodb_lock_wait_timeout = 5"))
-
-        a.begin()
-        b.begin()
-        a.execute(text("SELECT balance FROM concurrency_wallet WHERE label = 'alpha' FOR UPDATE"))
-        b.execute(text("SELECT balance FROM concurrency_wallet WHERE label = 'beta' FOR UPDATE"))
-
-        # 반대편 행을 잠그면서 deadlock 이 발생한다.
-        victim: Session
-        survivor: Session
+    def create_deadlock(index: int) -> None:
+        session = sessions[index]
+        first = "alpha" if index == 0 else "beta"
+        second = "beta" if index == 0 else "alpha"
+        error: BaseException | None = None
         try:
-            b.execute(
-                text("SELECT balance FROM concurrency_wallet WHERE label = 'alpha' FOR UPDATE")
+            _use_concurrency_schema(session.connection())
+            session.execute(text("SET SESSION innodb_lock_wait_timeout = 5"))
+            session.execute(
+                text("SELECT balance FROM concurrency_wallet WHERE label = :label FOR UPDATE"),
+                {"label": first},
             )
-            # 위에서 deadlock 이 안 일어났다면 다음 줄에서 일어난다.
-            a.execute(
-                text("SELECT balance FROM concurrency_wallet WHERE label = 'beta' FOR UPDATE")
+            barrier.wait(timeout=10)
+            session.execute(
+                text("SELECT balance FROM concurrency_wallet WHERE label = :label FOR UPDATE"),
+                {"label": second},
             )
-            victim = a
-            survivor = b
-        except OperationalError as error:
-            _assert_mysql_operational_error(error, (1213,))
-            victim = b
-            survivor = a
+            session.commit()
+        except BaseException as exc:
+            error = exc
+            session.rollback()
+        with result_lock:
+            results.append((session, error))
 
-        victim.rollback()
-
-        # victim 세션이 복구되어 후속 INSERT 가 가능해야 한다.
-        survivor.rollback()
+    threads = [threading.Thread(target=create_deadlock, args=(index,)) for index in (0, 1)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert all(not thread.is_alive() for thread in threads), (
+            "데드락 스레드가 종료되지 않았습니다."
+        )
+        failures = [(session, error) for session, error in results if error is not None]
+        assert len(failures) == 1, f"데드락 victim은 정확히 하나여야 합니다: {results!r}"
+        victim, error = failures[0]
+        assert isinstance(error, OperationalError), f"데드락 예외가 아닙니다: {error!r}"
+        _assert_mysql_operational_error(error, (1213,))
         victim.execute(
             text(
                 "INSERT INTO concurrency_event_log (dedup_key, payload) "
@@ -367,8 +375,8 @@ def test_mysql_deadlock_detection_raises_1213_and_session_still_usable(
         )
         victim.commit()
     finally:
-        a.close()
-        b.close()
+        for session in sessions:
+            session.close()
 
 
 # ----------------------------------------------------------------------
@@ -444,42 +452,58 @@ def test_mysql_concurrent_increments_with_unique_constraint_are_resolved(
     전체 시스템은 (k1, payloadA) 또는 (k1, payloadB) 둘 중 하나로 결론이 난 상태가
     되며, 후속 SELECT 가 정확히 한 건만 반환함을 검증합니다.
     """
-    a: Session = concurrency_session_factory()
-    b: Session = concurrency_session_factory()
-    try:
-        _use_concurrency_schema(a.connection())
-        _use_concurrency_schema(b.connection())
+    sessions = [concurrency_session_factory(), concurrency_session_factory()]
+    barrier = threading.Barrier(2)
+    results: list[bool] = []
+    result_lock = threading.Lock()
 
-        # 두 세션이 같은 트랜잭션 안에서 같은 키를 INSERT 한다. 한쪽은 UNIQUE
-        # 위반으로 실패하지만 둘 중 하나는 성공해야 한다.
-        results: list[bool] = []
-        for attempt_session, payload in ((a, "payloadA"), (b, "payloadB")):
-            try:
-                attempt_session.execute(
-                    text(
-                        "INSERT INTO concurrency_event_log (dedup_key, payload) "
-                        "VALUES ('race_key', :payload)"
-                    ),
-                    {"payload": payload},
-                )
-                attempt_session.commit()
-                results.append(True)
-            except IntegrityError:
-                attempt_session.rollback()
-                results.append(False)
+    def insert_once(index: int) -> None:
+        session = sessions[index]
+        succeeded = False
+        try:
+            _use_concurrency_schema(session.connection())
+            barrier.wait(timeout=10)
+            session.execute(
+                text(
+                    "INSERT INTO concurrency_event_log (dedup_key, payload) "
+                    "VALUES ('race_key', :payload)"
+                ),
+                {"payload": "payloadA" if index == 0 else "payloadB"},
+            )
+            session.commit()
+            succeeded = True
+        except IntegrityError:
+            session.rollback()
+        finally:
+            with result_lock:
+                results.append(succeeded)
+
+    threads = [threading.Thread(target=insert_once, args=(index,)) for index in (0, 1)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert all(not thread.is_alive() for thread in threads), (
+            "동시 INSERT 스레드가 종료되지 않았습니다."
+        )
 
         assert sum(results) == 1, (
             f"두 세션 중 정확히 하나만 INSERT 에 성공해야 합니다. 실제 결과: {results}"
         )
 
         # 어느 세션이든 후속 SELECT 가 정확히 1건만 반환해야 한다.
-        count = a.execute(
-            text("SELECT COUNT(*) FROM concurrency_event_log WHERE dedup_key = 'race_key'")
-        ).scalar_one()
-        a.commit()
+        count = (
+            sessions[0]
+            .execute(
+                text("SELECT COUNT(*) FROM concurrency_event_log WHERE dedup_key = 'race_key'")
+            )
+            .scalar_one()
+        )
+        sessions[0].commit()
         assert int(count) == 1, (
             f"동시 INSERT 후 dedup_key='race_key' 가 정확히 1건만 존재해야 합니다. 실제: {count}"
         )
     finally:
-        a.close()
-        b.close()
+        for session in sessions:
+            session.close()
