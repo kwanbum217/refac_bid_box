@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets backup backup-dry-run restore-dry-run backup-verify backup-list
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets backup backup-dry-run restore-dry-run backup-verify backup-list
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -19,7 +19,8 @@ help:
 	@echo "  make build          - 컨테이너 이미지 빌드"
 	@echo "  make down           - 컨테이너 중지 및 네트워크 정리"
 	@echo "  make logs           - 컨테이너 실시간 로그 확인"
-	@echo "  make lint           - Ruff 포맷팅 및 린트 검사"
+	@echo "  make lint           - Ruff 린트 및 포맷 검사 (확인 전용)"
+	@echo "  make format         - Ruff 포맷팅 및 자동 수정 실행"
 	@echo "  make security       - Bandit 보안 스캔"
 	@echo "  make typecheck      - mypy 타입 검사 (릴리스 게이트 포함)"
 	@echo "  make quality        - typecheck & jscpd 중복 코드 검사"
@@ -118,6 +119,10 @@ backup-list:
 
 
 lint:
+	$(PYTHON) -m ruff check .
+	$(PYTHON) -m ruff format --check .
+
+format:
 	$(PYTHON) -m ruff check . --fix
 	$(PYTHON) -m ruff format .
 
@@ -140,7 +145,7 @@ check-all: lint security typecheck check-rules lint-workflows
 	@echo "전체 코드 품질 및 정합성 검사 통과"
 
 test:
-	$(PYTHON) -m pytest tests/ -m "not data_assets"
+	$(PYTHON) -m pytest tests/ -m "not data_assets" --cov=src --cov-report=term-missing
 
 test-data-assets:
 	$(PYTHON) -m pytest tests/ -m data_assets

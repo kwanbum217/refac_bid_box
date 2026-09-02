@@ -1,0 +1,97 @@
+# CI 운영 계약 및 워크플로우 명세 (CI Contract)
+
+> **작성일**: 2026-09-02
+> **버전**: v1.0.0
+> **관련 워크플로우**: `.github/workflows/ci.yml`
+> **단일 진실 원천**: `AGENTS.md` 및 `docs/context/CURRENT_STATE.md`
+
+---
+
+## 1. 개요 및 기본 원칙
+
+본 문서는 `refac_bid_box` 저장소의 지속적 통합(Continuous Integration, CI) 파이프라인 구성과 운영 계약을 정의합니다.
+
+본 저장소는 1인 개발 체계로 Pull Request(PR)를 생성하지 않고 작업 브랜치에서 직접 검증 후 `main`에 `git merge --no-ff`로 병합하는 방식을 따릅니다. 따라서 CI는 병합 전 모든 작업 브랜치에서의 푸시 이벤트를 완벽히 감지하여 회귀 및 결함을 사전 차단해야 합니다.
+
+### 3대 핵심 원칙
+
+1. **사각지대 없는 브랜치 검증**: 작업 브랜치 명명 규칙(`kwanbum217/**`, `feature/**`, `fix/**`, `docs/**` 등)에 관계없이 모든 브랜치 푸시에 대해 CI가 자동으로 실행됩니다.
+2. **확인 전용 린트 및 게이트 불변**: CI 및 로컬 전체 검증(`make check-all`)은 파일을 수정하지 않는 확인 전용 명령을 일관되게 사용하며, 실패를 묵인하는 `continue-on-error`는 절대 허용하지 않습니다.
+3. **실측 기반 커버리지 게이트**: 실측 테스트 커버리지(85.17%)를 기준으로 현실적이고 안전한 회귀 방지 하한선(80%)을 적용하여 품질 저하를 방지합니다.
+
+---
+
+## 2. 트리거 계약 (Trigger Contract)
+
+### 2.1 Push 트리거
+
+```yaml
+on:
+  push:
+    branches: [ '**' ]
+    tags-ignore: [ '**' ]
+  pull_request:
+    branches: [ main ]
+```
+
+- **모든 브랜치 수용 (`branches: ['**']`)**: 작업자가 생성하는 모든 접두사 및 브랜치에서의 변경 사항에 대해 CI가 트리거됩니다.
+- **태그 중복 실행 방지 (`tags-ignore: ['**']`)**: 릴리스 태그 푸시 시 동일 커밋에 대한 불필요한 중복 실행을 차단합니다.
+- **PR 보조 트리거**: 외부 기여 또는 PR 생성 상황에 대비한 보조 트리거로 유지됩니다.
+
+---
+
+## 3. Job 구성 및 게이트 명세
+
+CI는 4개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해야만 정상 상태로 판정됩니다.
+
+| Job 이름 | 실행 환경 | 주요 검증 항목 | 통과 조건 및 게이트 |
+| --- | --- | --- | --- |
+| `lint-and-validate` | Ubuntu 22.04 / Python 3.11 / Node 22 | Ruff 린트, Ruff 포맷 검사, Bandit 보안 스캔, Mypy 타입 검사, 다중 에이전트 규칙 정합성, 문서 링크 유효성, Actionlint, 프론트엔드 테스트 및 빌드, Tailwind CSS 재현성 | 전 단계 종료 코드 0 (확인 전용) |
+| `cross-platform-test` | Ubuntu (3.11, 3.12, 3.13), macOS (3.11), Windows (3.11) | SQLite 인메모리 기반 단위/통합/E2E 테스트, Pytest 커버리지 측정 | `not data_assets` 전량 통과, 커버리지 하한 80% 이상 |
+| `docker-build` | Ubuntu 22.04 | 운영 Dockerfile 빌드 및 앱 엔트리포인트 스모크 임포트 | 이미지 빌드 성공 및 `import src.app.main` 통과 |
+| `mysql-ngram-integration` | Ubuntu 22.04 / MySQL 8.0 컨테이너 | 격리 MySQL 인스턴스 기반 ngram 전문 검색 동등성 검증 | `tests/test_ngram_prefilter_equivalence.py` 통과, 0건 skip, 1건 이상 pass |
+
+---
+
+## 4. 커버리지 게이트 계약 (Coverage Gate Contract)
+
+### 4.1 실측치 및 하한선 기준
+
+- **실측 커버리지 (2026-09-02 기준)**: **85.17%** (전체 9,967 구문 중 8,489 구문 실행, 1,478 누락)
+- **CI 게이트 하한선 (`fail_under`)**: **80.00%**
+
+### 4.2 하한선 설정 근거
+
+1. **상시 Red 방지**: 실측치(85.17%)보다 임의로 높은 기준(예: 90%)을 부여할 경우 정상적인 리팩토링 및 기능 추가 시 CI가 상시 실패하여 게이트의 신뢰성이 상실됩니다.
+2. **회귀 차단**: 실측치보다 약 5%p 낮은 80%를 하한선으로 두어, 테스트가 누락된 대규모 코드 추가나 기존 테스트 삭제 시 즉시 CI가 차단되도록 방어선을 구축합니다.
+3. **환경 설정 통일**: `pyproject.toml`의 `[tool.coverage.report]`에 `fail_under = 80`을 명시하고, CI 실행 명령에 `--cov=src --cov-report=term-missing --cov-fail-under=80`을 결박하여 로컬과 CI가 동일하게 하한선을 강제합니다.
+
+---
+
+## 5. 로컬 검증(`make`)과 CI의 1:1 계약
+
+로컬 개발 환경에서의 사전 검증 도구와 CI 워크플로우 명령은 1:1로 일치해야 합니다.
+
+| 검증 단계 | 로컬 Makefile 타깃 | CI 실행 명령 | 비고 |
+| --- | --- | --- | --- |
+| Ruff 린트 | `make lint` | `uv run ruff check .` && `uv run ruff format --check .` | 파일 무수정 확인 전용 |
+| 코드 포맷팅 | `make format` | (CI에서는 실행하지 않음) | 로컬 전용 자동 수정 |
+| 보안 스캔 | `make security` | `uv run bandit -c pyproject.toml -r src/ scripts/` | 동일 설정 |
+| 정적 타입 검사 | `make typecheck` | `uv run mypy src/` | Python 3.12 스텁 기준 동일 |
+| 규칙 정합성 | `make check-rules` | `python3 scripts/validate_agent_rules.py --quiet` | 정본 규칙 일치 |
+| 워크플로우 린트 | `make lint-workflows` | `uv run actionlint` | 동일 도구 |
+| 전체 품질 검증 | `make check-all` | `lint-and-validate` Job 전반 | 단일 진입점 통일 |
+| 백엔드 테스트 | `make test` | `uv run pytest -q -m "not data_assets" --cov=src ...` | 커버리지 측정 포함 |
+
+---
+
+## 6. 후속 과업 (Future Work)
+
+### 6.1 MySQL 8 통합 테스트 범위 확대
+
+- **현황**: 현재 CI의 MySQL 전용 Job은 `tests/test_ngram_prefilter_equivalence.py` 1개 파일만 `mysql_integration` 마커로 실행하며, 나머지 3,100여 개 테스트는 SQLite 인메모리 환경에서 실행됩니다.
+- **과업 목표**: SQLite 인메모리와 실제 MySQL 8 간의 방언(Dialect) 차이, 트랜잭션 격리 수준, 락킹 동작, 윈도우 함수 및 JSON 처리 차이가 발생할 수 있는 주요 비즈니스 경로(예: `src/app/services/bid_queries.py`, `src/app/services/ranking_snapshots.py`, `src/tasks/automation_tasks.py` 등)를 선별하여 MySQL 통합 테스트 대상으로 확대합니다.
+- **선행 요건**:
+  1. 테스트 스위트 실행 시간 증가(CI latency budget) 영향도 분석
+  2. MySQL 인스턴스 셋업 및 병렬 실행 시 테이블 격리/클린업 전략 수립
+  3. 방언 차이가 유의미한 쿼리 목록 도출
