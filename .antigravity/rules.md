@@ -10,7 +10,7 @@
 
 ## 0. 에이전트 부트스트랩 모드
 
-- **Coordinator 모드**: `AGENTS.md` -> `docs/context/CURRENT_STATE.md` 확인 후 필요 스킬 1개만 선택 로드.
+- **Coordinator 모드**: `AGENTS.md` -> `docs/context/CURRENT_STATE.md` 확인 후 필요 스킬 1개만 선택 로드. Grok 코디네이터는 `docs/ops/grok_coordinator_operating_prompt.md` 를 따른다.
 - **Orca Worker 모드**: 코디네이터가 주입한 `ORCA_TASK_CAPSULE_V2`가 정본. 허용 목록 외 README/SKILLS/설계서 재독 금지. 확정 사실 재조사 금지.
 - **Reviewer 모드**: Task Capsule + diff + 검증 결과 중심 좁은 검토.
 - **Standalone 모드**: 전체 컨텍스트 필요 시 `SKILLS.md` 참조.

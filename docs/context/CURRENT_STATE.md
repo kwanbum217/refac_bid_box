@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-02
-> **source_commit**: `7a8c7b9`
+> **source_commit**: `5b774d4`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -106,7 +106,7 @@
 | 3.5 CSRF | signup, login, logout 세 SSR 폼에 이중 제출 토큰 검증을 겁니다. 토큰이 없으면 403 으로 fail-closed 입니다. JSON API 와 워커 콜백은 제외했습니다 |
 | 3.1 G1 대조 | 이행 시점 이전 구간의 행 수를 따로 세어 기준선과 대조합니다. 경계는 `data/backups/data_assets_checksums.json` 의 `generated_at` 에서 왔습니다 |
 
-> **코디네이터 인계 (2026-09-02)**: Opus 5 에서 Grok 4.6 으로 코디네이터를 넘겼습니다. 인계 시점 상태, 활성 워커, 이 세션에서 확인한 함정과 검증 절차는 [`../ops/handoff_20260902_grok_coordinator.md`](../ops/handoff_20260902_grok_coordinator.md) 에 있습니다. Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다.
+> **코디네이터 인계 (2026-09-02)**: Opus 5 에서 Grok 4.6 으로 코디네이터를 넘겼습니다. 인계 시점 상태, 활성 워커, 이 세션에서 확인한 함정과 검증 절차는 [`../ops/handoff_20260902_grok_coordinator.md`](../ops/handoff_20260902_grok_coordinator.md) 에 있습니다. Grok 운영 절차와 캐시 접두부는 [`../ops/grok_coordinator_operating_prompt.md`](../ops/grok_coordinator_operating_prompt.md) 입니다. Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다.
 
 ### 1.5.7 Wave G 부분 해소 (2026-09-02)
 
