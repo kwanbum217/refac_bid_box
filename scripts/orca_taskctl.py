@@ -115,6 +115,14 @@ except (ModuleNotFoundError, ImportError):
         select_model,
     )
 
+try:
+    from scripts.orca_skill_receipt import verify_skill_receipt
+except (ModuleNotFoundError, ImportError):
+    _repo_root = Path(__file__).resolve().parent.parent
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
+    from scripts.orca_skill_receipt import verify_skill_receipt
+
 # ---------------------------------------------------------------------------
 # 상수
 # ---------------------------------------------------------------------------
@@ -2763,6 +2771,37 @@ def cmd_create(args: argparse.Namespace) -> int:
         return 2
     task_id = args.task_id or intent.get("task_id") or f"task_{intent_path.stem}"
 
+    # 정본 스킬 영수증 게이트 (2층 검증)
+    if getattr(args, "skip_skill_receipt", False):
+        sys.stderr.write(
+            "경고: --skip-skill-receipt 지정으로 정본 스킬 영수증 검사를 건너뜁니다.\n"
+        )
+    else:
+        receipt_check = verify_skill_receipt()
+        if not receipt_check["ok"]:
+            err_msg = receipt_check["reason"]
+            fix_cmd = receipt_check.get(
+                "fix_command", "python3 scripts/orca_skill_receipt.py issue"
+            )
+            sys.stderr.write(f"오류 [skill_receipt_gate]: {err_msg}\n")
+            sys.stderr.write(f"해소 명령: {fix_cmd}\n")
+            if getattr(args, "json", False):
+                print(
+                    json.dumps(
+                        {
+                            "error": "skill_receipt_invalid",
+                            "origin": "skill_receipt_gate",
+                            "task_id": task_id,
+                            "reason": err_msg,
+                            "fix_command": fix_cmd,
+                            "exit_code": 4,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 4
+
     capsule_dir = Path(args.capsule_dir)
     task_capsule_dir = capsule_dir / task_id
     task_capsule_dir.mkdir(parents=True, exist_ok=True)
@@ -3371,6 +3410,37 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         sys.stderr.write(f"오류: {err}\n")
         return 2
     task_id = args.task_id or intent.get("task_id") or f"task_{intent_path.stem}"
+
+    # 정본 스킬 영수증 게이트 (2층 검증)
+    if getattr(args, "skip_skill_receipt", False):
+        sys.stderr.write(
+            "경고: --skip-skill-receipt 지정으로 정본 스킬 영수증 검사를 건너뜁니다.\n"
+        )
+    else:
+        receipt_check = verify_skill_receipt()
+        if not receipt_check["ok"]:
+            err_msg = receipt_check["reason"]
+            fix_cmd = receipt_check.get(
+                "fix_command", "python3 scripts/orca_skill_receipt.py issue"
+            )
+            sys.stderr.write(f"오류 [skill_receipt_gate]: {err_msg}\n")
+            sys.stderr.write(f"해소 명령: {fix_cmd}\n")
+            if getattr(args, "json", False):
+                print(
+                    json.dumps(
+                        {
+                            "error": "skill_receipt_invalid",
+                            "origin": "skill_receipt_gate",
+                            "task_id": task_id,
+                            "reason": err_msg,
+                            "fix_command": fix_cmd,
+                            "exit_code": 4,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 4
 
     capsule_dir = Path(args.capsule_dir)
     if args.capsule:
@@ -4123,6 +4193,11 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="skip_auto_approve_check",
         help="권한 자동 승인 감시기 부착 실패 시에도 Dispatch 를 계속 진행합니다 (권장하지 않음, 경고 출력).",
     )
+    dsp.add_argument(
+        "--skip-skill-receipt",
+        action="store_true",
+        help="정본 스킬 영수증 검증을 건너뜁니다 (경고 출력).",
+    )
     dsp.add_argument("--json", action="store_true", help="JSON 출력")
 
     # create
@@ -4134,6 +4209,11 @@ def _build_parser() -> argparse.ArgumentParser:
     crt.add_argument("--task-title", help="Task 제목")
     crt.add_argument("--display-name", help="워커 행에 표시할 이름")
     crt.add_argument("--deps", help="선행 Task ID JSON 배열")
+    crt.add_argument(
+        "--skip-skill-receipt",
+        action="store_true",
+        help="정본 스킬 영수증 검증을 건너뜁니다 (경고 출력).",
+    )
     crt.add_argument("--json", action="store_true", help="JSON 출력")
 
     # rework
