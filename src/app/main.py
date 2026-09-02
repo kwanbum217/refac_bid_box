@@ -2,13 +2,13 @@ import asyncio
 import logging
 import sys
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import TypedDict
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.app.api.ui import router as ui_router
@@ -246,6 +246,76 @@ async def mark_prediction_dispatch(request: Request, call_next):
     return await call_next(request)
 
 
+class LimitRequestBodySizeMiddleware:
+    """요청 본문 크기 상한을 검사하는 ASGI 미들웨어.
+
+    요청 헤더의 Content-Length 또는 실제 수신된 본문 누적 크기가 설정된 상한을
+    초과하면 413 (Payload Too Large) 상태 코드로 즉시 거부합니다.
+    서버의 응답 스트림(SSE 등)은 일절 건드리지 않고 클라이언트가 보내는 요청 본문만 제한합니다.
+    """
+
+    def __init__(self, app, max_body_size: int | None = None):
+        self.app = app
+        self._max_body_size = max_body_size
+
+    @property
+    def max_body_size(self) -> int:
+        if self._max_body_size is not None:
+            return self._max_body_size
+        return int(getattr(settings, "MAX_REQUEST_BODY_SIZE", 10 * 1024 * 1024))
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        limit = self.max_body_size
+
+        # 1. Content-Length 헤더 선행 검사 (대용량 메모리 적재 사전 차단)
+        content_length = None
+        for key, value in scope.get("headers", []):
+            if key.lower() == b"content-length":
+                with suppress(ValueError):
+                    content_length = int(value.decode("latin1"))
+                break
+
+        if content_length is not None and content_length > limit:
+            response = JSONResponse(
+                status_code=413,
+                content={"detail": "요청 본문 크기가 제한을 초과했습니다."},
+            )
+            await response(scope, receive, send)
+            return
+
+        # 2. 청크/스트리밍 수신 본문 누적 크기 검사
+        received_bytes = 0
+
+        async def wrapped_receive():
+            nonlocal received_bytes
+            message = await receive()
+            if message["type"] == "http.request":
+                body = message.get("body", b"")
+                received_bytes += len(body)
+                if received_bytes > limit:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="요청 본문 크기가 제한을 초과했습니다.",
+                    )
+            return message
+
+        try:
+            await self.app(scope, wrapped_receive, send)
+        except HTTPException as exc:
+            if exc.status_code == 413:
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": exc.detail or "요청 본문 크기가 제한을 초과했습니다."},
+                )
+                await response(scope, receive, send)
+            else:
+                raise
+
+
 def create_app(app_settings: Settings | None = None) -> FastAPI:
     """환경별 노출 정책을 적용한 앱을 만듭니다.
 
@@ -274,6 +344,10 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         allow_credentials=cors_kwargs["allow_credentials"],
         allow_methods=cors_kwargs["allow_methods"],
         allow_headers=cors_kwargs["allow_headers"],
+    )
+    app.add_middleware(
+        LimitRequestBodySizeMiddleware,
+        max_body_size=app_settings.MAX_REQUEST_BODY_SIZE,
     )
     app.middleware("http")(collapse_bids_double_slash)
     app.middleware("http")(mark_prediction_dispatch)

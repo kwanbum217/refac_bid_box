@@ -47,6 +47,24 @@ class Settings(BaseSettings):
     # 기본 활성이며, production 에서는 이 값과 무관하게 항상 목록만 허용합니다.
     CORS_DEV_ALLOW_ALL: bool = True
 
+    # 인증 보안 및 DoS 방어 설정
+    # 로그인 시도 제한: IP 축 최대 허용 횟수 (기본 10회)
+    # 신뢰 프록시 목록 (쉼표 구분 IP 또는 CIDR). 비어 있으면 X-Forwarded-For 를
+    # 일절 신뢰하지 않고 TCP 피어 주소를 그대로 씁니다.
+    #
+    # 이 값을 비운 채 리버스 프록시 뒤에 두면 모든 요청이 프록시 IP 하나로 보여
+    # IP 축 시도 제한이 전체 사용자 잠금으로 바뀝니다. 반대로 검증 없이 헤더를
+    # 믿으면 공격자가 헤더를 위조해 제한을 우회하거나 타인을 잠글 수 있습니다.
+    # 그래서 직접 연결한 피어가 이 목록에 있을 때만 헤더를 해석합니다.
+    TRUSTED_PROXY_IPS: str = ""
+    AUTH_RATE_LIMIT_IP_MAX_ATTEMPTS: int = 10
+    # 로그인 시도 제한: 계정 축 최대 허용 횟수 (기본 5회)
+    AUTH_RATE_LIMIT_ACCOUNT_MAX_ATTEMPTS: int = 5
+    # 로그인 시도 제한: 초과 시 잠금 유지 시간 (초, 기본 300초 = 5분)
+    AUTH_RATE_LIMIT_LOCKOUT_SECONDS: int = 300
+    # 요청 본문 크기 상한 (바이트, 기본 10MB = 10,485,760 bytes)
+    MAX_REQUEST_BODY_SIZE: int = 10 * 1024 * 1024
+
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"
     DB_HOST: str = "localhost"

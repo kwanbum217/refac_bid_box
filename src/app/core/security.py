@@ -18,11 +18,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import secrets
 import time
 from typing import Any
+
+from fastapi import HTTPException
 
 from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
@@ -188,3 +191,168 @@ def read_session(token: str | None) -> dict[str, Any] | None:
 def destroy_session(token: str | None) -> None:
     if token:
         session_store.destroy(token)
+
+
+RATE_LIMIT_IP_PREFIX = "auth:ratelimit:ip:"
+RATE_LIMIT_ACCOUNT_PREFIX = "auth:ratelimit:account:"
+RATE_LIMIT_EXCEEDED_DETAIL = "너무 많은 로그인 시도가 발생했습니다. 잠시 후 다시 시도해 주십시오."
+
+
+class LoginRateLimiter:
+    """로그인 시도 제한기 (IP 축 및 계정 축).
+
+    Redis 를 사용하여 로그인 실패 횟수를 기록하고 임계치 초과 시 429 로 차단합니다.
+    Redis 가 다운되거나 사용 불가할 때는 로그인을 차단하지 않고 제한만 건너뜁니다 (fail-open).
+    임계값과 잠금 시간은 settings 에서 동적으로 조회하여 변경에 즉각 반응합니다.
+    """
+
+    def __init__(self, connection: RedisConnection | None = None):
+        self._conn = connection or RedisConnection(label="rate_limit")
+
+    @property
+    def ip_max_attempts(self) -> int:
+        return int(getattr(settings, "AUTH_RATE_LIMIT_IP_MAX_ATTEMPTS", 10))
+
+    @property
+    def account_max_attempts(self) -> int:
+        return int(getattr(settings, "AUTH_RATE_LIMIT_ACCOUNT_MAX_ATTEMPTS", 5))
+
+    @property
+    def lockout_seconds(self) -> int:
+        return int(getattr(settings, "AUTH_RATE_LIMIT_LOCKOUT_SECONDS", 300))
+
+    def _ip_key(self, ip: str) -> str:
+        return f"{RATE_LIMIT_IP_PREFIX}{ip}"
+
+    def _account_key(self, username: str) -> str:
+        return f"{RATE_LIMIT_ACCOUNT_PREFIX}{username.strip().lower()}"
+
+    def check_rate_limit(self, ip: str | None, username: str | None) -> None:
+        """시도 제한 초과 여부를 검사합니다.
+
+        초과 시 429 HTTPException 을 발생시킵니다 (남은 시간은 노출하지 않음).
+        Redis 미가용 시에는 제한을 건너뛰고 정상 통과합니다.
+        """
+        client = self._conn.client()
+        if client is None:
+            return
+
+        try:
+            if ip:
+                ip_count = client.get(self._ip_key(ip))
+                if ip_count is not None and int(ip_count) >= self.ip_max_attempts:
+                    logger.warning("IP 로그인 시도 제한 초과: %s", ip)
+                    raise HTTPException(
+                        status_code=429,
+                        detail=RATE_LIMIT_EXCEEDED_DETAIL,
+                    )
+
+            if username:
+                acc_count = client.get(self._account_key(username))
+                if acc_count is not None and int(acc_count) >= self.account_max_attempts:
+                    logger.warning("계정 로그인 시도 제한 초과: %s", username)
+                    raise HTTPException(
+                        status_code=429,
+                        detail=RATE_LIMIT_EXCEEDED_DETAIL,
+                    )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("로그인 시도 제한 조회 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc)
+
+    def record_failure(self, ip: str | None, username: str | None) -> None:
+        """로그인 실패 시 카운터를 증가시킵니다.
+
+        Redis 미가용 시에는 조용히 무시합니다.
+        """
+        client = self._conn.client()
+        if client is None:
+            return
+
+        lockout = self.lockout_seconds
+        try:
+            pipe = client.pipeline()
+            if ip:
+                key_ip = self._ip_key(ip)
+                pipe.incr(key_ip)
+                pipe.expire(key_ip, lockout)
+            if username:
+                key_acc = self._account_key(username)
+                pipe.incr(key_acc)
+                pipe.expire(key_acc, lockout)
+            pipe.execute()
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("로그인 실패 카운터 기록 중 Redis 오류 발생: %s", exc)
+
+    def record_success(self, ip: str | None, username: str | None) -> None:
+        """로그인 성공 시 계정 카운터를 초기화합니다."""
+        client = self._conn.client()
+        if client is None:
+            return
+
+        try:
+            if username:
+                client.delete(self._account_key(username))
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("로그인 카운터 초기화 중 Redis 오류 발생: %s", exc)
+
+
+login_rate_limiter = LoginRateLimiter()
+
+
+def _parse_trusted_proxies() -> list[ipaddress._BaseNetwork]:
+    """settings.TRUSTED_PROXY_IPS 를 네트워크 목록으로 해석합니다.
+
+    잘못된 항목은 조용히 버립니다. 설정 오타 하나로 인증 전체가 죽는 편보다
+    그 항목만 신뢰하지 않는 편이 안전합니다.
+    """
+    networks: list[ipaddress._BaseNetwork] = []
+    for raw in str(getattr(settings, "TRUSTED_PROXY_IPS", "") or "").split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            logger.warning("TRUSTED_PROXY_IPS 항목을 해석하지 못해 무시합니다: %s", item)
+    return networks
+
+
+def _is_trusted_proxy(addr: str, networks: list[ipaddress._BaseNetwork]) -> bool:
+    if not networks:
+        return False
+    try:
+        parsed = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return any(parsed in net for net in networks)
+
+
+def resolve_client_ip(peer_ip: str | None, forwarded_for: str | None) -> str:
+    """시도 제한에 쓸 클라이언트 IP 를 정합니다.
+
+    직접 연결한 피어가 신뢰 프록시일 때만 X-Forwarded-For 를 해석합니다.
+    검증 없이 헤더를 믿으면 공격자가 값을 위조해 IP 축 제한을 우회하거나
+    임의의 주소를 잠글 수 있으므로, 신뢰 목록이 비어 있으면 헤더를 무시합니다.
+
+    헤더는 왼쪽이 원 클라이언트이고 오른쪽으로 갈수록 가까운 프록시입니다.
+    오른쪽부터 신뢰 프록시를 걷어내고 처음 만나는 비신뢰 주소를 씁니다.
+    """
+    peer = (peer_ip or "").strip() or "127.0.0.1"
+    networks = _parse_trusted_proxies()
+    if not _is_trusted_proxy(peer, networks):
+        return peer
+
+    hops = [h.strip() for h in str(forwarded_for or "").split(",") if h.strip()]
+    for hop in reversed(hops):
+        if not _is_trusted_proxy(hop, networks):
+            try:
+                ipaddress.ip_address(hop)
+            except ValueError:
+                continue
+            return hop
+    # 모든 홉이 신뢰 프록시이거나 헤더가 비었으면 피어 주소로 되돌아갑니다.
+    return peer

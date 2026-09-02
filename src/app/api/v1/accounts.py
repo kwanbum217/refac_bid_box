@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -32,8 +32,10 @@ from src.app.core.security import (
     check_password,
     create_session,
     destroy_session,
+    login_rate_limiter,
     make_password,
     read_session,
+    resolve_client_ip,
 )
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
@@ -107,14 +109,17 @@ def get_current_user(
     db: Session = Depends(get_db),
     bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ) -> CustomUser | None:
-    """세션 쿠키로 사용자를 해석합니다. 미인증이면 None."""
+    """세션 쿠키로 사용자를 해석합니다. 미인증이거나 비활성 계정이면 None."""
     try:
         payload = read_session(bidbox_session)
     except SessionStoreUnavailable as exc:
         raise _session_store_unavailable() from exc
     if not payload:
         return None
-    return db.get(CustomUser, int(payload.get("user_id") or 0))
+    user = db.get(CustomUser, int(payload.get("user_id") or 0))
+    if user is None or not user.is_active:
+        return None
+    return user
 
 
 def require_current_user(user: CustomUser | None = Depends(get_current_user)) -> CustomUser:
@@ -129,6 +134,12 @@ def require_staff_user(user: CustomUser = Depends(require_current_user)) -> Cust
     if not (user.is_staff or user.is_superuser):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     return user
+
+
+def _client_ip(request: Request) -> str:
+    """시도 제한용 클라이언트 IP. 신뢰 프록시 뒤에서만 X-Forwarded-For 를 봅니다."""
+    peer = request.client.host if request.client and request.client.host else ""
+    return resolve_client_ip(peer, request.headers.get("x-forwarded-for"))
 
 
 def _issue_session(response: Response, user: CustomUser) -> None:
@@ -188,15 +199,26 @@ def signup(payload: SignUpRequest, response: Response, db: Session = Depends(get
 
 
 @router.post("/login", response_model=UserResponse, summary="로그인")
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    payload: LoginRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    ip = _client_ip(request)
+    login_rate_limiter.check_rate_limit(ip, payload.username)
+
     user = db.execute(
         select(CustomUser).where(CustomUser.username == payload.username)
     ).scalar_one_or_none()
     if user is None or not check_password(payload.password, user.password):
+        login_rate_limiter.record_failure(ip, payload.username)
         raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
     if not user.is_active:
+        login_rate_limiter.record_failure(ip, payload.username)
         raise HTTPException(status_code=403, detail="비활성화된 계정입니다.")
 
+    login_rate_limiter.record_success(ip, payload.username)
     user.last_login = utcnow()
     db.commit()
     db.refresh(user)

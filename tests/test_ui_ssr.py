@@ -349,8 +349,8 @@ def test_signup_post_without_javascript_sets_session(client):
 
 
 def test_logout_clears_session(auth_client):
-    """원본은 링크(GET)로 로그아웃하므로 GET 도 동작해야 한다."""
-    response = auth_client.get("/accounts/logout/", follow_redirects=False)
+    """POST 로그아웃은 세션을 지우고 로그인 화면으로 리다이렉트한다."""
+    response = auth_client.post("/accounts/logout/", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"] == "/accounts/login/"
 

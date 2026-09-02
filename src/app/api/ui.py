@@ -28,6 +28,8 @@ from src.app.core.security import (
     check_password,
     create_session,
     destroy_session,
+    login_rate_limiter,
+    resolve_client_ip,
 )
 from src.app.core.templating import templates
 from src.app.core.timeutil import utcnow
@@ -437,12 +439,19 @@ async def login_submit(
     form_data = parse_qs((await request.body()).decode("utf-8"))
     username = (form_data.get("username") or [""])[0]
     password = (form_data.get("password") or [""])[0]
+    ip = resolve_client_ip(
+        request.client.host if request.client and request.client.host else "",
+        request.headers.get("x-forwarded-for"),
+    )
+
+    login_rate_limiter.check_rate_limit(ip, username)
 
     # 동기 DB 조회와 PBKDF2 검증을 루프 스레드에서 하면 무인증 요청만으로
     # 이벤트 루프를 점유할 수 있습니다.
     account, password_ok = await asyncio.to_thread(_load_account_and_verify, db, username, password)
 
     if account is None or not password_ok:
+        login_rate_limiter.record_failure(ip, username)
         context = {
             "hide_sidebar": True,
             "form": login_form(
@@ -456,6 +465,7 @@ async def login_submit(
         return response
 
     if not account.is_active:
+        login_rate_limiter.record_failure(ip, username)
         context = {
             "hide_sidebar": True,
             "form": login_form(
@@ -468,6 +478,7 @@ async def login_submit(
         response.status_code = 403
         return response
 
+    login_rate_limiter.record_success(ip, username)
     await asyncio.to_thread(_touch_last_login, db, account)
 
     try:
@@ -491,10 +502,9 @@ async def login_submit(
     return redirect
 
 
-@router.get("/accounts/logout/")
 @router.post("/accounts/logout/")
 def logout_submit(bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME)):
-    """원본은 링크(GET)로 로그아웃하므로 두 메서드를 모두 받습니다.
+    """POST 로그아웃만 허용하여 GET 기반 CSRF 로그아웃 통로를 차단합니다.
 
     저장소 장애 시 서버측 무효화 없이 쿠키만 지우면 복구 후 토큰이 되살아납니다.
     API 경로와 동일하게 503 으로 차단합니다.
