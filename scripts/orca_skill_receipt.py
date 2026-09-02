@@ -25,11 +25,17 @@ import subprocess  # nosec B404 - 고정된 orca 명령만 실행합니다
 import sys
 import time
 from contextlib import suppress
-from datetime import UTC, datetime, timezone
+from datetime import datetime
+
+try:
+    from datetime import UTC
+except ImportError:
+    from datetime import timezone
+
+    UTC = timezone.utc  # noqa: UP017
+
 from pathlib import Path
 from typing import Any
-
-UTC = getattr(timezone, "utc", UTC)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RECEIPT_PATH = PROJECT_ROOT / ".orca" / "skill_receipt.json"
@@ -147,13 +153,28 @@ def issue_skill_receipt(
     orca_skill_cmd: list[str] | None = None,
     orca_status_cmd: list[str] | None = None,
     orca_run_cmd: list[str] | None = None,
+    emit_stdout: bool = True,
 ) -> dict[str, Any]:
-    """정본 스킬을 조회하여 영수증 파일을 발급합니다."""
+    """정본 스킬을 조회하여 표준출력으로 주입하고 영수증 파일을 발급합니다.
+
+    본문 주입과 영수증 발급은 단일 원자적 동작으로 결합됩니다:
+    - 정본 조회에 성공하고 표준출력으로 방출한 경우에만 영수증이 발급됩니다.
+    - 실패 시에는 기존 영수증이 잔류하지 않도록 제거합니다.
+    """
     target_path = Path(receipt_path) if receipt_path is not None else DEFAULT_RECEIPT_PATH
     try:
         content, sha256_val = get_canonical_skill_content(timeout=timeout, orca_cmd=orca_skill_cmd)
         app_version = get_orca_app_version(timeout=timeout, orca_cmd=orca_status_cmd)
         coord_handle = get_coordinator_handle(timeout=timeout, orca_cmd=orca_run_cmd)
+
+        if not content.strip():
+            raise RuntimeError("정본 스킬 본문이 비어 있습니다.")
+
+        if emit_stdout:
+            sys.stdout.write(content)
+            if not content.endswith("\n"):
+                sys.stdout.write("\n")
+            sys.stdout.flush()
 
         now_epoch = time.time()
         now_iso = datetime.now(UTC).isoformat()
@@ -176,9 +197,14 @@ def issue_skill_receipt(
             "ok": True,
             "receipt": receipt_data,
             "path": str(target_path),
-            "reason": "영수증 발급 완료",
+            "reason": "정본 스킬 주입 및 영수증 발급 완료",
+            "content_chars": len(content),
         }
     except Exception as exc:
+        # 실패 시 잔류 영수증 제거 (fail-closed 보장)
+        with suppress(Exception):
+            if target_path.exists():
+                target_path.unlink(missing_ok=True)
         return {
             "ok": False,
             "error": "receipt_issue_failed",
@@ -316,15 +342,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "issue":
-        res = issue_skill_receipt(receipt_path=args.receipt_path, timeout=args.timeout)
+        res = issue_skill_receipt(
+            receipt_path=args.receipt_path,
+            timeout=args.timeout,
+            emit_stdout=not args.json,
+        )
         if args.json:
             print(json.dumps(res, ensure_ascii=False, indent=2))
         else:
             if res["ok"]:
                 r = res["receipt"]
-                print(
+                sys.stderr.write(
                     f"[정본 영수증 발급 완료] sha256: {r['sha256'][:8]}..., "
-                    f"appVersion: {r['app_version']}, 세션: {r['coordinator_handle'] or '미지정'}"
+                    f"appVersion: {r['app_version']}, 세션: {r['coordinator_handle'] or '미지정'}\n"
                 )
             else:
                 sys.stderr.write(f"오류: {res['reason']}\n")

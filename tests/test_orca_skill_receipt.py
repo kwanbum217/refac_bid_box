@@ -90,11 +90,17 @@ def test_get_coordinator_handle_from_run(monkeypatch, mock_orca_success):
     assert get_coordinator_handle() == mock_orca_success["coordinator_handle"]
 
 
-def test_issue_skill_receipt_success(tmp_path: Path, mock_orca_success):
+def test_issue_skill_receipt_success(
+    tmp_path: Path, mock_orca_success, capsys: pytest.CaptureFixture
+):
     receipt_file = tmp_path / "skill_receipt.json"
-    res = issue_skill_receipt(receipt_path=receipt_file)
+    res = issue_skill_receipt(receipt_path=receipt_file, emit_stdout=True)
     assert res["ok"] is True
     assert receipt_file.exists()
+
+    # 표준출력으로 정본 스킬 내용이 방출되었는지 확인
+    captured = capsys.readouterr()
+    assert mock_orca_success["text"] in captured.out
 
     data = json.loads(receipt_file.read_text(encoding="utf-8"))
     assert data["schema"] == "ORCA_SKILL_RECEIPT_V1"
@@ -106,14 +112,41 @@ def test_issue_skill_receipt_success(tmp_path: Path, mock_orca_success):
     assert "issued_at_iso" in data
 
 
-def test_issue_skill_receipt_failure(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(orca_skill_receipt, "_run_cmd", lambda cmd, timeout=15: (-1, "", "timeout"))
+def test_issue_skill_receipt_failure_cleans_up_stale_receipt(tmp_path: Path, monkeypatch):
     receipt_file = tmp_path / "skill_receipt.json"
+    # 기존 영수증이 존재하던 상태 모의
+    receipt_file.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(orca_skill_receipt, "_run_cmd", lambda cmd, timeout=15: (-1, "", "timeout"))
     res = issue_skill_receipt(receipt_path=receipt_file)
     assert res["ok"] is False
     assert res["error"] == "receipt_issue_failed"
     assert res["fix_command"] == RESOLUTION_COMMAND
+    # 실패 시 잔류 영수증이 깨끗이 삭제되었는지 확인 (fail-closed)
     assert not receipt_file.exists()
+
+
+def test_issue_cli_command(tmp_path: Path, mock_orca_success, capsys: pytest.CaptureFixture):
+    receipt_file = tmp_path / "skill_receipt.json"
+    code = orca_skill_receipt.main(["issue", "--receipt-path", str(receipt_file)])
+    assert code == 0
+    assert receipt_file.exists()
+
+    captured = capsys.readouterr()
+    assert mock_orca_success["text"] in captured.out
+    assert "[정본 영수증 발급 완료]" in captured.err
+
+
+def test_issue_cli_json_mode(tmp_path: Path, mock_orca_success, capsys: pytest.CaptureFixture):
+    receipt_file = tmp_path / "skill_receipt.json"
+    code = orca_skill_receipt.main(["issue", "--receipt-path", str(receipt_file), "--json"])
+    assert code == 0
+    assert receipt_file.exists()
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["ok"] is True
+    assert payload["receipt"]["sha256"] == mock_orca_success["sha256"]
 
 
 def test_verify_skill_receipt_success(tmp_path: Path, mock_orca_success):
