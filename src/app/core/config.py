@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     AUTH_RATE_LIMIT_LOCKOUT_SECONDS: int = 300
     # 요청 본문 크기 상한 (바이트, 기본 10MB = 10,485,760 bytes)
     MAX_REQUEST_BODY_SIZE: int = 10 * 1024 * 1024
+    # 익명 챗봇 API 요청 쿼터(기본 IP별 60초당 30회)
+    ANONYMOUS_API_RATE_LIMIT_MAX_REQUESTS: int = 30
+    ANONYMOUS_API_RATE_LIMIT_WINDOW_SECONDS: int = 60
 
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"
