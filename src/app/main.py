@@ -19,7 +19,7 @@ from src.app.api.v1.chatbot import router as chatbot_router
 from src.app.api.v1.health import router as health_router
 from src.app.api.v1.health import warmup_state
 from src.app.api.v1.predictions import router as predictions_router
-from src.app.core.config import Settings, settings
+from src.app.core.config import Settings, get_app_version, settings
 
 APP_DIR = Path(__file__).resolve().parent
 
@@ -346,7 +346,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="refac_bid_box API",
         description="Refactored Procurement Analytics, Hybrid RAG Chatbot, AI Prediction & MLOps Platform",
-        version="0.1.0",
+        version=get_app_version(),
         lifespan=lifespan,
         docs_url=docs_kwargs["docs_url"],
         redoc_url=docs_kwargs["redoc_url"],

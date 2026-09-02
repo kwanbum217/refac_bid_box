@@ -1,8 +1,25 @@
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def get_app_version() -> str:
+    """패키지 메타데이터에서 버전을 읽습니다.
+
+    패키지가 설치되지 않은 환경(예: 개발 모드 `uv run`)에서도 안전하게 동작하도록
+    예외를 잡아 기본값으로 떨어뜨리되, 그 사실이 로그에 남도록 합니다.
+    """
+    try:
+        return pkg_version("refac_bid_box")
+    except PackageNotFoundError:
+        # 개발 환경에서 pip install -e . 없이 실행 시 발생할 수 있습니다.
+        # 기동을 막지 않고 안전 기본값을 반환하되, 호출 측이 이 값을 쓸 수 있도록 합니다.
+        return "0.1.0"
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
