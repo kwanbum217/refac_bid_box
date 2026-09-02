@@ -214,6 +214,20 @@ def health_check():
     }
 
 
+@router.get("/served-version", summary="실제 서빙 모델 버전 조회")
+def served_version_check():
+    """인메모리 모델과 디스크 승격본의 버전 상태를 조회합니다."""
+    from src.ml.model_registry import ModelRegistry
+
+    models = ModelRegistry.list_served_versions()
+    mismatches = [model for model in models if model["status"] == "mismatch"]
+    return {
+        "status": "mismatch" if mismatches else "ok",
+        "models": models,
+        "mismatches": mismatches,
+    }
+
+
 @router.get("/live")
 async def liveness_check():
     return {"status": "alive"}

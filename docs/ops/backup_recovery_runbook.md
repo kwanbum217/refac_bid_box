@@ -31,6 +31,10 @@
 
 > **안내**: 근거 없는 수치를 기입하면 잘못된 정본이 형성되므로, 정식 인프라 용량 산정 및 장애 시나리오 실측 후 담당자가 위 항목을 확정합니다.
 
+정기 백업은 OS 크론이 아니라 Arq 워커의 `src/tasks/worker.py` `cron_jobs`에 등록된
+`backup_schedule_task`가 담당합니다. `BACKUP_SCHEDULE_ENABLED=false`가 기본값이며,
+활성화된 백업 주기가 RPO에 영향을 주지만 RPO/RTO 자체를 확정하지는 않습니다.
+
 ---
 
 ## 3. 백업 절차 (Backup Procedure)
@@ -161,6 +165,28 @@ python3 scripts/backup_recovery.py restore \
 5. **[5/5] 데이터 행 수 하한 검증**: 기준선 대비 데이터 보존율 검증
 
 검증 실패 시 즉시 에러를 반환하고 복원 결과를 검토할 수 있도록 로그를 남깁니다.
+
+### 4.4 복원 리허설
+
+리허설은 운영 DB를 대상으로 실행할 수 없으며, 프로젝트 루트 밖의 격리 대상 디렉토리를
+반드시 지정해야 합니다. 매니페스트와 체크섬만 검증하고 아카이브를 해제하거나 DB 클라이언트를
+호출하지 않으므로 실제 운영 데이터가 변경되지 않습니다.
+
+```bash
+python3 scripts/backup_recovery.py drill \
+  --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
+  --target-dir /srv/refac_bid_box_restore_drill \
+  --report-path data/backups/restore_drill_report.json
+```
+
+보존 정책은 스냅샷 개수 기준이며, 삭제 대상은 먼저 출력됩니다. 실제 삭제는 별도 운영
+승인 후에만 다음처럼 `--delete`를 명시하여 수행합니다. 플래그가 없으면 항상 점검만 합니다.
+
+```bash
+python3 scripts/backup_recovery.py prune --retain-count 7
+# 승인된 삭제 작업에서만 사용
+python3 scripts/backup_recovery.py prune --retain-count 7 --delete
+```
 
 ---
 

@@ -450,6 +450,32 @@ def verify_snapshot(snapshot_dir: Path) -> tuple[bool, list[str], dict[str, Any]
     return is_valid, errors, manifest
 
 
+def run_restore_drill(snapshot_dir: Path, target_dir: Path) -> dict[str, Any]:
+    """격리 대상에 대한 복원 계획만 검증합니다.
+
+    대상 디렉토리는 필수이며 프로젝트 루트 또는 운영 경로를 지정할 수 없습니다.
+    아카이브를 해제하거나 DB 클라이언트를 호출하지 않아 실제 복원이 발생하지 않습니다.
+    """
+    if not str(target_dir).strip():
+        raise ValueError("복원 리허설 대상 디렉토리를 지정해야 합니다.")
+    target = target_dir.resolve()
+    root = PROJECT_ROOT.resolve()
+    if target == root or root in target.parents:
+        raise ValueError("복원 리허설 대상은 프로젝트 루트 밖의 격리 디렉토리여야 합니다.")
+    valid, errors, manifest = verify_snapshot(snapshot_dir)
+    components = manifest.get("components", {})
+    return {
+        "schema": "RESTORE_DRILL_REPORT_V1",
+        "mode": "dry-run",
+        "snapshot_dir": str(snapshot_dir),
+        "target_dir": str(target),
+        "snapshot_valid": valid,
+        "components": sorted(components),
+        "errors": errors,
+        "success": valid,
+    }
+
+
 def run_post_restore_verification(project_root: Path | None = None) -> bool:
     """복원 후 scripts/verify_migration.py 를 실행하여 데이터 무손실 검증을 수행합니다."""
     root = project_root or PROJECT_ROOT
@@ -623,6 +649,33 @@ def list_snapshots(snapshots_dir: Path | None = None) -> list[dict[str, Any]]:
     return snapshots
 
 
+def prune_snapshots(
+    snapshots_dir: Path | None = None,
+    retain_count: int = 7,
+    delete: bool = False,
+) -> dict[str, Any]:
+    """개수 기준으로 오래된 스냅샷을 열거합니다. 삭제는 명시적으로만 수행합니다."""
+    if retain_count < 1:
+        raise ValueError("retain_count는 1 이상이어야 합니다.")
+    directory = snapshots_dir or DEFAULT_SNAPSHOTS_DIR
+    candidates = [item for item in directory.glob("snapshot_*") if item.is_dir()]
+    candidates.sort(key=lambda item: item.name, reverse=True)
+    stale = candidates[retain_count:]
+    print(f"보존 개수: {retain_count}, 삭제 대상: {len(stale)}개")
+    for item in stale:
+        print(f"  - {item}")
+    if delete:
+        for item in stale:
+            shutil.rmtree(item)
+        print("명시적 삭제 플래그가 지정되어 삭제를 완료했습니다.")
+    return {
+        "retain_count": retain_count,
+        "candidates": [str(item) for item in candidates],
+        "stale": [str(item) for item in stale],
+        "deleted": delete,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     """CLI 인자 파서를 구성합니다."""
     parser = argparse.ArgumentParser(
@@ -680,6 +733,19 @@ def build_parser() -> argparse.ArgumentParser:
     # list
     subparsers.add_parser("list", help="저장된 백업 스냅샷 목록 조회")
 
+    # restore drill
+    drill_parser = subparsers.add_parser("drill", help="격리 대상 복원 리허설(dry-run)")
+    drill_parser.add_argument("--snapshot-dir", type=Path, required=True)
+    drill_parser.add_argument(
+        "--target-dir", type=Path, required=True, help="프로젝트 루트 밖 격리 대상 디렉토리"
+    )
+    drill_parser.add_argument("--report-path", type=Path, default=None)
+
+    prune_parser = subparsers.add_parser("prune", help="스냅샷 개수 기준 보존 점검")
+    prune_parser.add_argument("--snapshots-dir", type=Path, default=DEFAULT_SNAPSHOTS_DIR)
+    prune_parser.add_argument("--retain-count", type=int, default=7)
+    prune_parser.add_argument("--delete", action="store_true", help="삭제를 명시적으로 승인")
+
     return parser
 
 
@@ -717,6 +783,28 @@ def main() -> int:
 
     if args.command == "list":
         list_snapshots()
+        return 0
+
+    if args.command == "drill":
+        try:
+            report = run_restore_drill(args.snapshot_dir, args.target_dir)
+        except ValueError as exc:
+            print(f"[오류] {exc}")
+            return 1
+        if args.report_path:
+            args.report_path.parent.mkdir(parents=True, exist_ok=True)
+            args.report_path.write_text(
+                json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0 if report["success"] else 1
+
+    if args.command == "prune":
+        try:
+            prune_snapshots(args.snapshots_dir, args.retain_count, args.delete)
+        except ValueError as exc:
+            print(f"[오류] {exc}")
+            return 1
         return 0
 
     return 1

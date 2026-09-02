@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import threading
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -341,6 +342,59 @@ class ModelRegistry:
     def available_models(cls):
         cls._sync_registry()
         return sorted(cls._models.keys())
+
+    @classmethod
+    def get_served_version(cls, model_id: str) -> dict[str, Any]:
+        """인메모리 서빙 모델과 디스크 승격본의 버전을 비교합니다.
+
+        파일이 교체되어도 이미 로드된 wrapper는 자동으로 바뀌지 않습니다.
+        따라서 ID 목록만 동기화하는 ``_sync_registry``와 달리 이 조회는
+        의도적으로 재로드하지 않고, 실제 요청에 사용될 인메모리 wrapper와
+        현재 디스크 metadata를 그대로 대조합니다.
+        """
+        resolved_id = _resolve_model_id(model_id)
+        wrapper = cls._models.get(resolved_id)
+        loaded_version = str((wrapper.metadata if wrapper else {}).get("version") or "")
+
+        disk_version = ""
+        metadata_path = Path(cls._get_model_root()) / resolved_id / "metadata.json"
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            disk_version = str(metadata.get("version") or "")
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        if not disk_version:
+            state = "not_on_disk"
+        elif not loaded_version:
+            state = "not_loaded"
+        elif loaded_version == disk_version:
+            state = "match"
+        else:
+            state = "mismatch"
+        return {
+            "id": resolved_id,
+            "loaded_version": loaded_version or None,
+            "in_memory_version": loaded_version or None,
+            "disk_version": disk_version or None,
+            "promoted_version": disk_version or None,
+            "matches": state == "match",
+            "consistent": state == "match",
+            "status": state,
+        }
+
+    @classmethod
+    def list_served_versions(cls) -> list[dict[str, Any]]:
+        """디스크에 있는 모델과 메모리에 로드된 모델의 버전 상태를 나열합니다."""
+        model_ids = set(cls._models)
+        with suppress(OSError):
+            model_ids.update(cls._discover_model_ids_on_disk())
+        return [cls.get_served_version(model_id) for model_id in sorted(model_ids)]
+
+    @classmethod
+    def served_version_mismatches(cls) -> list[dict[str, Any]]:
+        """재로드가 필요한 버전 불일치 항목만 반환합니다."""
+        return [item for item in cls.list_served_versions() if item["status"] == "mismatch"]
 
     @classmethod
     def get_model(cls, model_id):
