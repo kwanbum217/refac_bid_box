@@ -4,6 +4,8 @@
 > **인계 HEAD**: `46a5ebd`
 > **인계 사유**: Opus 5 의 5시간 토큰 사용량 95% 도달
 > **Orca Run**: `run_971584ddb4a0` (계속 사용하십시오. 새 Run 을 만들지 마십시오)
+>
+> **후속 문서가 우선합니다.** 2026-09-02 세션 종료 상태는 [`handoff_20260902_wave_g_session_close.md`](handoff_20260902_wave_g_session_close.md) 입니다. 본 문서 2장 활성 워커와 8장 Intent 상태는 인계 시점 스냅샷이며 현재가 아닙니다.
 
 ---
 
@@ -236,12 +238,14 @@ MYSQL_TEST_URL="mysql+pymysql://root:testpassword@127.0.0.1:3399/test_procuremen
 
 ### 남은 것
 
+이 표는 세션 종료 문서와 같아야 합니다. 상충하면 [`handoff_20260902_wave_g_session_close.md`](handoff_20260902_wave_g_session_close.md) 4장을 따릅니다.
+
 | 항목 | 상태 |
 | --- | --- |
 | **3.6 Windows 실기** | **차단.** 장비 부재. 워커로 해결 불가 |
 | 4.3 관측성 구현 | 조사 보고서만 있음. **스택 결정이 사용자 몫** |
 | 3.8 Arq heartbeat | 병합됨 (`bc4d3b9`) |
-| 3.4 MySQL 동시성 테스트 | 병합됨 (`e9d5792`). CI mysql job 에 합류 |
+| 3.4 MySQL 동시성 테스트 | 병합됨 (`e9d5792`). CI mysql job 에 합류 (`565105f`) |
 | 3.5 익명 API 쿼터 | 병합됨 (`e1d589e`) |
 | 4.1 `CURRENT_STATE` 정규화 | **미착수.** 51KB 로 자체 규정 8,000자의 6배 |
 | 3.2 RPO/RTO, restore drill | 도구만 있음. 값 미확정, 리허설 미수행 |
@@ -260,14 +264,7 @@ MYSQL_TEST_URL="mysql+pymysql://root:testpassword@127.0.0.1:3399/test_procuremen
 
 ## 8. 준비된 Intent
 
-바로 쓸 수 있습니다. 전부 게이트 검증을 통과했습니다.
-
-```
-.orca/intents/wave_g/g1_worker_heartbeat.yaml       진행 중
-.orca/intents/wave_g/g2_mysql_concurrency.yaml      진행 중
-.orca/intents/wave_g/g3_anonymous_api_policy.yaml   대기
-.orca/intents/wave_g/g4_image_hardening.yaml        완료
-```
+g1~g5 는 모두 병합됐습니다. 로컬 yaml 이 `.orca/intents/wave_g/` 에 남아 있어도 **재Dispatch 하지 마십시오.** 잔여 작업은 세션 종료 문서 4장입니다.
 
 ---
 
