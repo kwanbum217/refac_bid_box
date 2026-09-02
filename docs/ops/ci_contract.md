@@ -50,6 +50,7 @@ CI는 4개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해�
 | `cross-platform-test` | Ubuntu (3.11, 3.12, 3.13), macOS (3.11), Windows (3.11) | SQLite 인메모리 기반 단위/통합/E2E 테스트, Pytest 커버리지 측정 | `not data_assets` 전량 통과, 커버리지 하한 80% 이상 |
 | `docker-build` | Ubuntu 22.04 | 운영 Dockerfile 빌드 및 앱 엔트리포인트 스모크 임포트 | 이미지 빌드 성공 및 `import src.app.main` 통과 |
 | `mysql-ngram-integration` | Ubuntu 22.04 / MySQL 8.0 컨테이너 | 격리 MySQL 인스턴스 기반 ngram 전문 검색 및 방언 차이 검증 | `tests/test_ngram_prefilter_equivalence.py`, `tests/test_mysql_integration_queries.py` 통과, 0건 skip, 1건 이상 pass |
+| `mysql-concurrency-integration` (합류 대기) | Ubuntu 22.04 / MySQL 8.0 컨테이너 | 격리 MySQL 인스턴스 기반 동시성 및 세션 복구 검증 | `tests/test_mysql_concurrency.py` 의 5종 통합 테스트. CI 합류는 코디네이터 지시에 따르며, 합류 시 동일하게 0건 skip, 1건 이상 pass 게이트가 적용됨 |
 
 ---
 
@@ -97,3 +98,12 @@ CI는 4개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해�
   1. 테스트 스위트 실행 시간 증가(CI latency budget) 영향도 분석
   2. MySQL 인스턴스 셋업 및 병렬 실행 시 테이블 격리/클린업 전략 수립
   3. 방언 차이가 유의미한 쿼리 목록 도출
+
+### 6.2 동시성 및 세션 복구 통합 테스트
+
+- **현황**: 2026-09-02 Capsule `task_g2_mysql_concurrency` 결과로 `tests/test_mysql_concurrency.py` 가 추가되었습니다. 이 파일은 SQLite 인메모리로는 드러나지 않는 MySQL InnoDB 의 트랜잭션/세션 상태 동작 5종을 검증합니다.
+- **선정 기준**: 명시적 트랜잭션의 rollback 복구, `SELECT ... FOR UPDATE` 행 잠금 대기(`innodb_lock_wait_timeout`), 데드락 자동 감지(`OperationalError 1213`), UNIQUE 위반 commit 실패 후 복구, 동시 INSERT 후 멱등 결론 회복만 포함합니다.
+- **격리 스키마**: `concurrency_test` 라는 전용 스키마를 모듈 시작 시 생성·종료 시 DROP 합니다. 운영 스키마 `procurement` 및 운영 테이블(`bid_announcements`, `bid_results`, `automation_requests` 등)에는 어떤 영향도 주지 않습니다.
+- **벽시계 단언 정책**: 잠금 대기는 항상 예외 종류/원본 에러 코드로 판정합니다. 2026-09-02 의 0.1초 vs 0.08초 단언 회귀처럼, `time.sleep(N)` + 정해진 시간 내 완료 단언은 사용하지 않습니다.
+- **CI 합류**: 본 문서는 Capsule contract 대로 worker 의 ci.yml 수정 범위를 침범하지 않습니다. 실제 합류 명령 추가(`tests/test_mysql_concurrency.py` 의 mysql-ngram-integration 잡 pytest 명령 합류)는 코디네이터의 지시에 따르며, 합류 시 0건 skip / 1건 이상 pass 게이트가 동일하게 적용됩니다.
+- **skip 의 의미**: MySQL 부재 환경에서 5건 모두 skip 됩니다. skip 은 통과가 아니며, 보고서(`docs/analysis/task_bedb4b8bf44b.md`) 에 실행 여부가 정확히 기록됩니다.
