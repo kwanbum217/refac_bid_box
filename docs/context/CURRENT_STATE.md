@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-02
-> **source_commit**: `c5fca8d`
+> **source_commit**: `4a4aba5`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -60,6 +60,8 @@
 **GitHub Actions 액션 버전은 실존을 조회해 확인하십시오.** `40e1721` 에서 존재하지 않는 trivy 버전 때문에 공급망 job 이 실패했습니다. actionlint 는 버전 실존을 검사하지 않습니다.
 
 **푸시 전에 `source_commit` 을 갱신하십시오.** `c5c35f3` 에서 이 누락 하나로 CI 의 job 여섯 개가 실패했습니다. 2026-09-02 에도 같은 누락으로 `main` 이 두 번 적색이 됐습니다.
+
+**조율 시작 전 정본 스킬 영수증이 필요합니다.** `scripts/orca_taskctl.py` 의 `create` 와 `dispatch` 는 `.orca/skill_receipt.json` 이 없거나 정본 sha256 또는 Orca appVersion 이 달라지면 종료 코드 4 로 거부합니다. 해소는 `python3 scripts/orca_skill_receipt.py issue` 하나이며, 이 명령은 정본 본문 전체를 표준출력으로 방출한 경우에만 영수증을 씁니다. `--json` 같은 우회로로 주입 없이 영수증만 받을 수 없습니다. 우회는 `--skip-skill-receipt` 하나뿐이고 쓰면 경고가 남습니다. 세션 시작 훅이 같은 명령을 실행해 정본을 문맥에 넣습니다.
 
 **`main` 병합은 전량 테스트 증거를 요구합니다.** 작업 브랜치에서 `python3 scripts/premerge_full_suite_gate.py --record` 로 증거를 남긴 뒤 병합하십시오. 게이트는 `prepare-commit-msg` 단계에서 커밋 소스가 `merge` 일 때만 동작하며, 증거의 커밋이 병합 대상과 다르거나 전량 대상이 아니면 fail-closed 로 거부합니다. `pre-merge-commit` 단계는 그 시점에 `MERGE_HEAD` 가 아직 없어 쓸 수 없습니다. 훅 설치는 주 저장소에서 `uv run pre-commit install --hook-type prepare-commit-msg` 입니다.
 
