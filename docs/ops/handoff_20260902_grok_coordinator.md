@@ -49,6 +49,67 @@ gh run list --limit 1 --json headSha,status,conclusion
 
 ---
 
+## 2.5 인계되는 배경 작업과 감시기
+
+### 상시 감시기
+
+인계 시점에 `scripts/orca_worker_watch.py --watch` 를 하나 기동해 두었습니다. 워커별 커밋 수, 미커밋 수, 터미널 차단 신호를 감시합니다. 로그는 아래에 쌓입니다.
+
+```
+/var/folders/p1/7s1dlwjx1mq6727k1ry667nm0000gn/T/orca_worker_watch/
+```
+
+죽었으면 다시 띄우십시오. **종료 코드 1 은 사람 개입이 필요한 차단이 있다는 뜻이며, 그때는 조치 전에 다음 Task 를 Dispatch 하지 마십시오.**
+
+```bash
+python3 scripts/orca_worker_watch.py            # 1회 요약
+nohup python3 scripts/orca_worker_watch.py --watch >/dev/null 2>&1 &
+```
+
+### 승인 감시기
+
+살아 있는 워커 터미널마다 `scripts/orca_auto_approve.py` 가 하나씩 붙습니다. 인계 시점에는 `g2-mysqlconc` 워커용 하나만 남아 있습니다.
+
+**닫힌 터미널의 감시기가 고아로 남습니다.** 인계 직전에 16개를 정리했습니다. 주기적으로 확인하십시오.
+
+```bash
+LIVE=$(orca terminal list 2>&1 | grep -oE "term_[a-f0-9-]+" | tr '\n' ' ')
+ps aux | grep "[o]rca_auto_approve" | while read -r _ pid _; do
+  t=$(ps -o command= -p $pid | grep -oE "term_[a-f0-9-]+")
+  case "$LIVE" in *"$t"*) ;; *) echo "고아 $pid"; kill $pid;; esac
+done
+```
+
+### 대기 중인 CI 두 건
+
+인계 시점에 아직 결과가 안 나온 run 이 둘 있습니다. **반드시 확인하십시오.**
+
+| HEAD | 내용 |
+| --- | --- |
+| `46a5ebd` | 이미지 강화와 codex 런처 |
+| `1263629` | 인계 문서 |
+
+`gh run view --log-failed` 는 run 이 완료돼야 동작합니다. Windows job 이 느려 대기가 깁니다.
+
+```bash
+gh run list --limit 3 --json headSha,status,conclusion
+RID=$(gh run list --limit 3 --json databaseId,headSha --jq '.[] | select(.headSha|startswith("1263629")) | .databaseId')
+gh run view $RID --json jobs --jq '.jobs[] | "\(.conclusion // .status)  \(.name)"'
+```
+
+### 정리된 임시 자원
+
+인계 전에 제거했습니다. 다시 만들 필요는 없습니다.
+
+- `py311repo` 워크트리 (py3.11 플레이키 재현용)
+- `ci-mysql-repro` 컨테이너 (MySQL 오류 코드 실측용)
+- `refac-bid-box:g4-verify` 이미지 (이미지 강화 검증용)
+- 고아 승인 감시기 16개
+
+**Docker 데몬은 켜 둔 상태입니다.** 이미지 빌드 검증과 MySQL 통합 테스트 재현에 필요합니다.
+
+---
+
 ## 3. Orca Task 상태가 실제와 다릅니다
 
 `taskctl status` 에 `[ready]` 로 남은 Task 다섯 개는 **이미 병합 완료된 것**입니다.
