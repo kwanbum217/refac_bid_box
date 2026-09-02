@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets backup backup-dry-run restore-dry-run backup-verify backup-list
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets test-e2e backup backup-dry-run restore-dry-run backup-verify backup-list
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -43,6 +43,7 @@ help:
 	@echo "  make benchmark      - P95 레이턴시 벤치마크 (서버 기동 필요)"
 	@echo "  make test           - 외부 데이터 자산 없이 Pytest 단위/통합/E2E 테스트 실행"
 	@echo "  make test-data-assets - 모델·ChromaDB가 있는 환경의 G1 자산 테스트 실행"
+	@echo "  make test-e2e       - Playwright 기반 SSR 브라우저 E2E 테스트 실행"
 	@echo "  make dev-fe         - 프론트엔드 (Vite + React 19) 개발 서버 구동"
 
 setup:
@@ -149,3 +150,6 @@ test:
 
 test-data-assets:
 	$(PYTHON) -m pytest tests/ -m data_assets
+
+test-e2e:
+	$(PYTHON) -m pytest tests/e2e/ -m e2e
