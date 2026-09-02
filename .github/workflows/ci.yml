@@ -8,6 +8,60 @@ on:
     branches: [ main ]
 
 jobs:
+  supply-chain:
+    name: 공급망 보안 검증
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Scan Python dependencies
+        run: |
+          uv export --frozen --format requirements.txt --no-emit-project -o /tmp/requirements.txt
+          uvx --from pip-audit pip-audit -r /tmp/requirements.txt --strict || true
+
+      - name: Scan JavaScript dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high || true
+
+      - name: Build application image
+        run: docker build --pull=false -t refac-bid-box:ci .
+
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: refac-bid-box:ci
+          format: table
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Generate application SBOM
+        uses: anchore/sbom-action@v0.17.7
+        with:
+          image: refac-bid-box:ci
+          artifact-name: refac-bid-box-sbom.spdx.json
+          output-file: refac-bid-box-sbom.spdx.json
+          format: spdx-json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-sbom
+          path: refac-bid-box-sbom.spdx.json
+          if-no-files-found: error
+
   lint-and-validate:
     runs-on: ubuntu-latest
     steps:
