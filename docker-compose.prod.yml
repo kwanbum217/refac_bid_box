@@ -1,0 +1,252 @@
+services:
+  app:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - python3
+      - -m
+      - uvicorn
+      - src.app.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --workers
+      - "${WEB_CONCURRENCY:-1}"
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:?ENVIRONMENT must be set}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS must be set}
+      - CORS_DEV_ALLOW_ALL=${CORS_DEV_ALLOW_ALL:-false}
+      - DATABASE_URL=mysql+pymysql://${DB_USER:?DB_USER must be set}:${DB_PASSWORD:?DB_PASSWORD must be set}@db:3306/${DB_NAME:?DB_NAME must be set}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
+      - MEILI_ENABLED=${MEILI_ENABLED:-true}
+      - MEILI_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set}
+      - CHROMA_DB_PATH=/app/chroma_db
+      - PREDICTION_GC_MODE=${PREDICTION_GC_MODE-freeze}
+      - LATENCY_SEGMENT_LOGGING=${LATENCY_SEGMENT_LOGGING:-false}
+      - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
+      - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
+      - serviceKey=${serviceKey:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3); assert json.load(response)['status'] in ('ready', 'degraded')"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+    user: "1000:1000"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - ./src:/app/src:ro
+      - ./ml_registry:/app/ml_registry:ro
+      - ./data:/app/data:ro
+      - ./chroma_db:/app/chroma_db:ro
+    networks:
+      - internal
+
+  worker:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["arq", "src.tasks.worker.WorkerSettings"]
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:?ENVIRONMENT must be set}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS must be set}
+      - CORS_DEV_ALLOW_ALL=${CORS_DEV_ALLOW_ALL:-false}
+      - DATABASE_URL=mysql+pymysql://${DB_USER:?DB_USER must be set}:${DB_PASSWORD:?DB_PASSWORD must be set}@db:3306/${DB_NAME:?DB_NAME must be set}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
+      - MEILI_ENABLED=${MEILI_ENABLED:-true}
+      - MEILI_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set}
+      - CHROMA_DB_PATH=/app/chroma_db
+      - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
+      - serviceKey=${serviceKey:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
+      - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
+      - AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=${AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED:-true}
+      - AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=${AUTOMATION_NIGHTLY_SCHEDULE_ENABLED:-false}
+      - ML_WEEKLY_RETRAIN_ENABLED=${ML_WEEKLY_RETRAIN_ENABLED:-false}
+      - TZ=Asia/Seoul
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import redis, os; r = redis.from_url(os.environ['REDIS_URL'], socket_connect_timeout=2, socket_timeout=2); r.ping()"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    user: "1000:1000"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - ./src:/app/src:ro
+      - ./ml_registry:/app/ml_registry:ro
+      - ./data:/app/data:ro
+      - ./chroma_db:/app/chroma_db:ro
+    networks:
+      - internal
+
+  db:
+    image: mysql:8.0
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --innodb-redo-log-capacity=2147483648
+      --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL_SIZE:-2147483648}
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
+      MYSQL_DATABASE: ${DB_NAME:?DB_NAME must be set}
+      MYSQL_USER: ${DB_USER:?DB_USER must be set}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u ${DB_USER:?DB_USER must be set} -p${DB_PASSWORD:?DB_PASSWORD must be set} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    user: "999:999"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - internal
+
+  redis:
+    restart: unless-stopped
+    image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    user: "999:999"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - internal
+
+  meilisearch:
+    restart: unless-stopped
+    image: getmeili/meilisearch:v1.14
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set}
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    user: "1000:1000"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - internal
+
+volumes:
+  mysql_data:
+  redis_data:
+  meilisearch_data:
+
+networks:
+  internal:
+    driver: bridge
+    internal: true
