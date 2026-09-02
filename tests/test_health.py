@@ -30,6 +30,12 @@ def test_health():
 
 
 def _patch_checks_healthy(monkeypatch):
+    """readiness 가 보는 검사를 모두 정상 상태로 만듭니다.
+
+    readiness 는 5개 의존성 외에 warmup 완료와 LLM 가용성도 봅니다. 그 둘을
+    함께 세우지 않으면 CI 처럼 Ollama 가 없는 환경에서 degraded 가 나옵니다.
+    로컬에 Ollama 가 떠 있으면 우연히 통과하므로 반드시 명시적으로 세웁니다.
+    """
     for name in (
         "_check_mysql",
         "_check_redis",
@@ -38,6 +44,16 @@ def _patch_checks_healthy(monkeypatch):
         "_check_chromadb",
     ):
         monkeypatch.setattr(health, name, lambda: None)
+
+    monkeypatch.setattr(
+        health,
+        "_check_llm",
+        lambda: {"ok": True, "provider": "test", "detail": None, "latency_ms": 0.0},
+    )
+    health.warmup_state.mark_llm_done()
+    health.warmup_state.mark_predictor_done()
+    health.warmup_state.mark_vector_done()
+    monkeypatch.setattr(health.warmup_state, "_started", True, raising=False)
 
 
 def test_liveness_ignores_dependency_failures(monkeypatch):
