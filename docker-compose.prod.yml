@@ -148,7 +148,7 @@ services:
       - internal
 
   db:
-    image: mysql:8.0
+    image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
     command: >
       --default-authentication-plugin=mysql_native_password
       --innodb-redo-log-capacity=2147483648
@@ -185,7 +185,7 @@ services:
 
   redis:
     restart: unless-stopped
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -213,7 +213,7 @@ services:
 
   meilisearch:
     restart: unless-stopped
-    image: getmeili/meilisearch:v1.14
+    image: getmeili/meilisearch:v1.14@sha256:8cd411ba5d9ec2dfce02e241305208eebacce0fd74a72bece21cadd03dc566ce
     environment:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set}
       - MEILI_NO_ANALYTICS=true
