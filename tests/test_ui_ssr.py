@@ -21,6 +21,7 @@ from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import bid_queries
 from src.app.services.search_index import SearchBackendUnavailable
+from tests.test_csrf import csrf_form
 
 # 원본 Django URL(apps/bids/urls.py, config/urls.py)이 정본입니다.
 PROTECTED_PATHS = [
@@ -297,7 +298,9 @@ def test_login_post_success_sets_session(client, seeded_user):
     """SSR 로그인 폼 제출이 세션 쿠키를 발급하고 홈으로 보낸다."""
     response = client.post(
         "/accounts/login/",
-        data={"username": "ssr_tester", "password": "pw-test-1234"},
+        data=csrf_form(
+            client, "/accounts/login/", {"username": "ssr_tester", "password": "pw-test-1234"}
+        ),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -309,7 +312,9 @@ def test_login_post_failure_rerenders_with_error(client, seeded_user):
     """실패 시 401 과 함께 오류 메시지가 담긴 로그인 화면을 다시 그린다."""
     response = client.post(
         "/accounts/login/",
-        data={"username": "ssr_tester", "password": "wrong-password"},
+        data=csrf_form(
+            client, "/accounts/login/", {"username": "ssr_tester", "password": "wrong-password"}
+        ),
         follow_redirects=False,
     )
     assert response.status_code == 401
@@ -320,7 +325,9 @@ def test_login_post_honours_next_param(client, seeded_user):
     """로그인 리다이렉트의 next 파라미터가 실제로 반영된다."""
     response = client.post(
         "/accounts/login/?next=/bids/",
-        data={"username": "ssr_tester", "password": "pw-test-1234"},
+        data=csrf_form(
+            client, "/accounts/login/", {"username": "ssr_tester", "password": "pw-test-1234"}
+        ),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -330,17 +337,21 @@ def test_login_post_honours_next_param(client, seeded_user):
 def test_signup_post_without_javascript_sets_session(client):
     response = client.post(
         "/accounts/signup/",
-        data={
-            "username": "ssr_signup",
-            "password1": "pw-test-1234",
-            "password2": "pw-test-1234",
-            "nickname": "SSR 가입",
-            "email": "ssr-signup@example.com",
-            "birth_date": "1990-01-02",
-            "gender": "M",
-            "agree_terms": "on",
-            "agree_privacy": "on",
-        },
+        data=csrf_form(
+            client,
+            "/accounts/signup/",
+            {
+                "username": "ssr_signup",
+                "password1": "pw-test-1234",
+                "password2": "pw-test-1234",
+                "nickname": "SSR 가입",
+                "email": "ssr-signup@example.com",
+                "birth_date": "1990-01-02",
+                "gender": "M",
+                "agree_terms": "on",
+                "agree_privacy": "on",
+            },
+        ),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -350,7 +361,9 @@ def test_signup_post_without_javascript_sets_session(client):
 
 def test_logout_clears_session(auth_client):
     """POST 로그아웃은 세션을 지우고 로그인 화면으로 리다이렉트한다."""
-    response = auth_client.post("/accounts/logout/", follow_redirects=False)
+    response = auth_client.post(
+        "/accounts/logout/", data=csrf_form(auth_client, "/chatbot/", {}), follow_redirects=False
+    )
     assert response.status_code == 303
     assert response.headers["location"] == "/accounts/login/"
 

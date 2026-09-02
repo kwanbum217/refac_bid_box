@@ -112,10 +112,6 @@ async def _verify_ssr_csrf(request: Request) -> None:
     if not settings.CSRF_PROTECTION_ENABLED:
         return
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
-    # 토큰 쿠키를 아직 발급받지 않은 기존 비자바스크립트 소비자는 호환합니다.
-    # 로그인 페이지를 먼저 방문한 브라우저는 쿠키가 있으므로 반드시 검증됩니다.
-    if not cookie_token:
-        return
     form_data = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
     request_token = (form_data.get(CSRF_FORM_FIELD) or [""])[0]
     if not csrf_tokens_match(cookie_token, request_token):
@@ -378,6 +374,7 @@ def signup_page(request: Request, user: CustomUser | None = Depends(get_current_
 @router.post("/accounts/signup/")
 async def signup_submit(request: Request, db: Session = Depends(get_db)):
     """JavaScript 없이도 원본 SSR 회원가입 폼을 처리합니다."""
+    await _verify_ssr_csrf(request)
     form_data = parse_qs((await request.body()).decode("utf-8"))
 
     def value(name: str) -> str:
@@ -459,6 +456,7 @@ async def login_submit(
     파싱합니다. Starlette 의 request.form() 은 python-multipart 를 요구하는데,
     신규 의존성 추가는 사전 합의가 필요하므로 회피했습니다.
     """
+    await _verify_ssr_csrf(request)
     form_data = parse_qs((await request.body()).decode("utf-8"))
     username = (form_data.get("username") or [""])[0]
     password = (form_data.get("password") or [""])[0]

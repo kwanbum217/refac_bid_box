@@ -28,6 +28,7 @@ from src.app.core.security import (
 )
 from src.app.main import app, create_app
 from src.app.models.accounts import CustomUser
+from tests.test_csrf import csrf_form
 
 VALID_USER_DATA = {
     "username": "auth_hard_user",
@@ -274,14 +275,20 @@ def test_ssr_login_rate_limit(client, isolated_db, mock_redis_for_rate_limit, mo
     for i in range(2):
         res = client.post(
             "/accounts/login/",
-            data={"username": f"ssr_test_{i}", "password": "WrongPassword!"},
+            data=csrf_form(
+                client,
+                "/accounts/login/",
+                {"username": f"ssr_test_{i}", "password": "WrongPassword!"},
+            ),
             follow_redirects=False,
         )
         assert res.status_code == 401
 
     res_blocked = client.post(
         "/accounts/login/",
-        data={"username": "ssr_test_block", "password": "WrongPassword!"},
+        data=csrf_form(
+            client, "/accounts/login/", {"username": "ssr_test_block", "password": "WrongPassword!"}
+        ),
         follow_redirects=False,
     )
     assert res_blocked.status_code == 429
@@ -342,7 +349,9 @@ def test_post_logout_succeeds_and_deletes_session_cookie(isolated_db):
     token = create_session(user.id, user.username)
 
     auth_client = TestClient(app, cookies={SESSION_COOKIE_NAME: token})
-    response = auth_client.post("/accounts/logout/", follow_redirects=False)
+    response = auth_client.post(
+        "/accounts/logout/", data=csrf_form(auth_client, "/chatbot/", {}), follow_redirects=False
+    )
     assert response.status_code == 303
     assert response.headers["location"] == "/accounts/login/"
     # 쿠키 삭제 지시 확인

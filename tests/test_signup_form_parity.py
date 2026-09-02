@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from src.app.main import app
 from src.app.models.accounts import CustomUser
+from tests.test_csrf import csrf_form
 
 SIGNUP_URL = "/accounts/signup/"
 
@@ -49,7 +50,9 @@ def test_signup_form_saves_birth_date_parts_and_gender(isolated_db):
     """
     client = TestClient(app, follow_redirects=False)
 
-    response = client.post(SIGNUP_URL, data=_signup_payload())
+    response = client.post(
+        SIGNUP_URL, data=csrf_form(client, "/accounts/signup/", _signup_payload())
+    )
 
     assert response.status_code == 303, response.text
 
@@ -86,7 +89,12 @@ def test_signup_rejects_mismatched_password_without_creating_user(isolated_db):
     """
     client = TestClient(app, follow_redirects=False)
 
-    response = client.post(SIGNUP_URL, data=_signup_payload(password2="DifferentPass123!!"))
+    response = client.post(
+        SIGNUP_URL,
+        data=csrf_form(
+            client, "/accounts/signup/", _signup_payload(password2="DifferentPass123!!")
+        ),
+    )
 
     assert response.status_code == 400
     assert "회원가입" in response.text
