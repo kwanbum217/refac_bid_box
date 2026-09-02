@@ -319,6 +319,7 @@ class TestModelPoolAndSelection:
             "opencode-free",
             "cerebras-oss",
             "cerebras-gemma",
+            "or-free-minimax-m3",
             "or-free-nemotron-ultra",
             "or-free-laguna-s",
             "or-free-laguna-xs",
