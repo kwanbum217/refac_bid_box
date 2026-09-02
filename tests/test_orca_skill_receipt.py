@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -94,13 +95,14 @@ def test_issue_skill_receipt_success(
     tmp_path: Path, mock_orca_success, capsys: pytest.CaptureFixture
 ):
     receipt_file = tmp_path / "skill_receipt.json"
-    res = issue_skill_receipt(receipt_path=receipt_file, emit_stdout=True)
+    res = issue_skill_receipt(receipt_path=receipt_file)
     assert res["ok"] is True
     assert receipt_file.exists()
 
     # 표준출력으로 정본 스킬 내용이 방출되었는지 확인
     captured = capsys.readouterr()
     assert mock_orca_success["text"] in captured.out
+    assert len(captured.out.encode("utf-8")) >= len(mock_orca_success["text"].encode("utf-8"))
 
     data = json.loads(receipt_file.read_text(encoding="utf-8"))
     assert data["schema"] == "ORCA_SKILL_RECEIPT_V1"
@@ -126,6 +128,23 @@ def test_issue_skill_receipt_failure_cleans_up_stale_receipt(tmp_path: Path, mon
     assert not receipt_file.exists()
 
 
+def test_issue_skill_receipt_stdout_emission_failure_prevents_receipt(
+    tmp_path: Path, mock_orca_success, monkeypatch
+):
+    receipt_file = tmp_path / "skill_receipt.json"
+
+    def broken_stdout_write(s):
+        raise OSError("Broken pipe during stdout emission")
+
+    monkeypatch.setattr(sys.stdout, "write", broken_stdout_write)
+
+    res = issue_skill_receipt(receipt_path=receipt_file)
+    assert res["ok"] is False
+    assert res["error"] == "receipt_issue_failed"
+    assert "Broken pipe" in res["reason"]
+    assert not receipt_file.exists()
+
+
 def test_issue_cli_command(tmp_path: Path, mock_orca_success, capsys: pytest.CaptureFixture):
     receipt_file = tmp_path / "skill_receipt.json"
     code = orca_skill_receipt.main(["issue", "--receipt-path", str(receipt_file)])
@@ -137,16 +156,13 @@ def test_issue_cli_command(tmp_path: Path, mock_orca_success, capsys: pytest.Cap
     assert "[정본 영수증 발급 완료]" in captured.err
 
 
-def test_issue_cli_json_mode(tmp_path: Path, mock_orca_success, capsys: pytest.CaptureFixture):
+def test_issue_cli_rejects_json_bypass(tmp_path: Path, capsys: pytest.CaptureFixture):
+    # issue CLI 에는 --json 등의 우회 인자가 없어야 함 (SystemExit 코드 2)
     receipt_file = tmp_path / "skill_receipt.json"
-    code = orca_skill_receipt.main(["issue", "--receipt-path", str(receipt_file), "--json"])
-    assert code == 0
-    assert receipt_file.exists()
-
-    captured = capsys.readouterr()
-    payload = json.loads(captured.out)
-    assert payload["ok"] is True
-    assert payload["receipt"]["sha256"] == mock_orca_success["sha256"]
+    with pytest.raises(SystemExit) as exc_info:
+        orca_skill_receipt.main(["issue", "--receipt-path", str(receipt_file), "--json"])
+    assert exc_info.value.code == 2
+    assert not receipt_file.exists()
 
 
 def test_verify_skill_receipt_success(tmp_path: Path, mock_orca_success):

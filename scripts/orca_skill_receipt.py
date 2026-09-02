@@ -153,13 +153,14 @@ def issue_skill_receipt(
     orca_skill_cmd: list[str] | None = None,
     orca_status_cmd: list[str] | None = None,
     orca_run_cmd: list[str] | None = None,
-    emit_stdout: bool = True,
 ) -> dict[str, Any]:
     """정본 스킬을 조회하여 표준출력으로 주입하고 영수증 파일을 발급합니다.
 
     본문 주입과 영수증 발급은 단일 원자적 동작으로 결합됩니다:
-    - 정본 조회에 성공하고 표준출력으로 방출한 경우에만 영수증이 발급됩니다.
-    - 실패 시에는 기존 영수증이 잔류하지 않도록 제거합니다.
+    - 정본 스킬 본문(~400줄)을 sys.stdout으로 성공적으로 완전히 방출한 경우에만
+      영수증 파일(.orca/skill_receipt.json)이 발급됩니다.
+    - 본문 조회 실패, 본문 비어있음, 표준출력 방출 실패 시에는 즉시 거부하며
+      기존 잔류 영수증 파일이 있다면 즉시 삭제(unlink)합니다.
     """
     target_path = Path(receipt_path) if receipt_path is not None else DEFAULT_RECEIPT_PATH
     try:
@@ -170,11 +171,11 @@ def issue_skill_receipt(
         if not content.strip():
             raise RuntimeError("정본 스킬 본문이 비어 있습니다.")
 
-        if emit_stdout:
-            sys.stdout.write(content)
-            if not content.endswith("\n"):
-                sys.stdout.write("\n")
-            sys.stdout.flush()
+        # 표준출력으로 정본 스킬 전문 방출 (우회 불가능한 단일 경로)
+        sys.stdout.write(content)
+        if not content.endswith("\n"):
+            sys.stdout.write("\n")
+        sys.stdout.flush()
 
         now_epoch = time.time()
         now_iso = datetime.now(UTC).isoformat()
@@ -257,59 +258,56 @@ def verify_skill_receipt(
         return {
             "ok": False,
             "error": "app_version_probe_failed",
-            "reason": f"Orca 런타임 버전 실시간 조회 실패: {exc}",
+            "reason": f"Orca 앱 버전 실시간 확인 실패: {exc}",
             "fix_command": RESOLUTION_COMMAND,
         }
 
-    recorded_version = str(receipt.get("app_version") or "")
-    if curr_version != recorded_version:
+    if receipt.get("app_version") != curr_version:
         return {
             "ok": False,
             "error": "app_version_mismatch",
-            "reason": f"Orca 앱 버전 변경으로 영수증 만료 (영수증: {recorded_version}, 현재: {curr_version})",
+            "reason": (
+                f"Orca 앱 버전 불일치 (영수증: {receipt.get('app_version')} vs 실시간: {curr_version}). "
+                "Orca 버전 변경 후 정본 스킬을 재독하지 않았습니다."
+            ),
             "fix_command": RESOLUTION_COMMAND,
         }
 
-    # 2. sha256 실시간 대조
+    # 2. 정본 내용 SHA-256 실시간 대조
     try:
         _, curr_sha256 = get_canonical_skill_content(timeout=timeout, orca_cmd=orca_skill_cmd)
     except Exception as exc:
         return {
             "ok": False,
-            "error": "skill_content_probe_failed",
+            "error": "canonical_skill_probe_failed",
             "reason": f"정본 스킬 실시간 조회 실패: {exc}",
             "fix_command": RESOLUTION_COMMAND,
         }
 
-    recorded_sha256 = str(receipt.get("sha256") or "")
-    if curr_sha256 != recorded_sha256:
+    if receipt.get("sha256") != curr_sha256:
         return {
             "ok": False,
             "error": "sha256_mismatch",
             "reason": (
-                f"정본 스킬 내용 변경으로 영수증 만료 "
-                f"(영수증: {recorded_sha256[:8]}, 현재: {curr_sha256[:8]})"
+                f"정본 스킬 SHA-256 불일치 (영수증: {receipt.get('sha256')} vs 실시간: {curr_sha256}). "
+                "정본 스킬 내용이 갱신되었습니다. 최신 지침을 재독하십시오."
             ),
             "fix_command": RESOLUTION_COMMAND,
         }
 
-    # 3. 코디네이터 터미널 핸들 대조 (조회 가능한 경우에만 대조, 불가하면 건너뜀)
-    recorded_handle = receipt.get("coordinator_handle")
-    live_handle = (
-        current_handle
-        if current_handle is not None
-        else get_coordinator_handle(timeout=timeout, orca_cmd=orca_run_cmd)
-    )
+    # 3. 코디네이터 터미널 핸들 대조 (가능한 경우)
+    receipt_handle = receipt.get("coordinator_handle")
+    active_handle = current_handle or get_coordinator_handle(timeout=timeout, orca_cmd=orca_run_cmd)
 
     handle_check_status = "skipped_unprobed"
-    if recorded_handle and live_handle:
-        if str(recorded_handle).strip() != str(live_handle).strip():
+    if active_handle and receipt_handle:
+        if active_handle != receipt_handle:
             return {
                 "ok": False,
                 "error": "coordinator_handle_mismatch",
                 "reason": (
-                    f"다른 세션에서 발급된 영수증 재사용 거부 "
-                    f"(영수증 세션: {recorded_handle}, 현재 세션: {live_handle})"
+                    f"코디네이터 핸들 불일치 (영수증: {receipt_handle} vs 현재: {active_handle}). "
+                    "다른 세션에서 발급된 영수증 재사용 거부."
                 ),
                 "fix_command": RESOLUTION_COMMAND,
             }
@@ -327,12 +325,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Orca 정본 스킬 영수증 관리")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    iss = sub.add_parser("issue", help="Orca 정본 스킬 영수증 발급")
+    iss = sub.add_parser("issue", help="Orca 정본 스킬 영수증 발급 (정본 본문을 표준출력으로 주입)")
     iss.add_argument(
         "--receipt-path", type=Path, default=DEFAULT_RECEIPT_PATH, help="영수증 저장 경로"
     )
     iss.add_argument("--timeout", type=int, default=15, help="타임아웃(초)")
-    iss.add_argument("--json", action="store_true", help="JSON 출력")
 
     ver = sub.add_parser("verify", help="Orca 정본 스킬 영수증 실시간 검증")
     ver.add_argument("--receipt-path", type=Path, default=DEFAULT_RECEIPT_PATH, help="영수증 경로")
@@ -345,20 +342,16 @@ def main(argv: list[str] | None = None) -> int:
         res = issue_skill_receipt(
             receipt_path=args.receipt_path,
             timeout=args.timeout,
-            emit_stdout=not args.json,
         )
-        if args.json:
-            print(json.dumps(res, ensure_ascii=False, indent=2))
+        if res["ok"]:
+            r = res["receipt"]
+            sys.stderr.write(
+                f"[정본 영수증 발급 완료] sha256: {r['sha256'][:8]}..., "
+                f"appVersion: {r['app_version']}, 세션: {r['coordinator_handle'] or '미지정'}\n"
+            )
         else:
-            if res["ok"]:
-                r = res["receipt"]
-                sys.stderr.write(
-                    f"[정본 영수증 발급 완료] sha256: {r['sha256'][:8]}..., "
-                    f"appVersion: {r['app_version']}, 세션: {r['coordinator_handle'] or '미지정'}\n"
-                )
-            else:
-                sys.stderr.write(f"오류: {res['reason']}\n")
-                sys.stderr.write(f"해소 명령: {res['fix_command']}\n")
+            sys.stderr.write(f"오류: {res['reason']}\n")
+            sys.stderr.write(f"해소 명령: {res['fix_command']}\n")
         return 0 if res["ok"] else 1
 
     if args.command == "verify":
