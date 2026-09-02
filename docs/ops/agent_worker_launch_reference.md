@@ -475,6 +475,36 @@ KIMI_CODE_HOME=~/.kimi-openrouter-bakeoff kimi -m <alias> -p "<preamble>"
 
 ---
 
+### 1.6 Codex 는 Capsule 배치 경합에 주의하십시오
+
+`worker-start` 는 워크트리 생성과 워커 기동을 한 번에 합니다. 그래서 기동 뒤에
+Capsule 을 복사하면 워커가 그 사이에 정본을 찾으러 갔다가 없는 것을 봅니다.
+`.orca/` 는 gitignore 대상이라 새 워크트리에 따라가지 않습니다.
+
+**2026-09-02 세션에서 이 경합으로 워커 네 대가 계약 없이 작업했거나 멈췄습니다.**
+
+| 워커 | 결과 |
+| --- | --- |
+| E1 | arq cron 대신 OS cron 생성기를 만들고 코디네이터 소유 문서를 수정 |
+| E2 | 지정한 라우터가 아닌 다른 라우터에 엔드포인트 추가 |
+| E3 | Capsule 없음으로 조사 중단 |
+| G1 | Capsule 없음으로 Task 가 `failed` 로 종결 |
+
+터미널 부착 경로는 워크트리를 먼저 만들고 복사하므로 이 문제가 없습니다.
+Codex 를 띄울 때는 다음 런처를 쓰십시오. 워크트리가 생기는 즉시 Capsule 과
+`.env` 를 넣어 경합 창을 좁힙니다.
+
+```bash
+uv run python scripts/orca_codex_launch.py --task <task_id> --name <워크트리명>
+# 추론 수준을 올릴 때만 --effort high 를 붙입니다
+```
+
+`worker-start` 를 직접 부르는 저수준 경로도 여전히 유효하지만, **그때는
+워크트리가 생기자마자 Capsule 을 넣고 워커에게 배치 사실을 즉시 고지해야
+합니다.** 고지 없이 두면 워커는 이미 없는 파일을 본 상태로 진행합니다.
+
+---
+
 ## 2. 비 Claude·Codex CLI 를 워커로 붙이는 절차
 
 ```bash
