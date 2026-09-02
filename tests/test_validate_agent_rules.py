@@ -16,6 +16,7 @@ from scripts.validate_agent_rules import (
     check_agents_model_table_absence,
     check_agents_single_root,
     check_antigravity_rules,
+    check_canonical_skill_pointer,
     check_claude_is_pointer,
     check_context_budgets,
     check_current_state_exists,
@@ -38,13 +39,14 @@ from scripts.validate_agent_rules import (
 def test_real_repo_validation_passes():
     """실제 저장소의 v2 정합성 검증이 100% 통과하는지 확인."""
     checks = get_all_checks(PROJECT_ROOT)
-    assert len(checks) == 17
+    assert len(checks) == 18
     for chk in checks:
         assert chk.ok, f"Check failed: {chk.name} -> {chk.detail}"
     assert run_all_checks(PROJECT_ROOT, quiet=True) == 0
     assert check_worker_model_pool_drift(PROJECT_ROOT).ok
     assert check_agents_model_table_absence(PROJECT_ROOT).ok
     assert check_current_state_unknowns_contradictions(PROJECT_ROOT).ok
+    assert check_canonical_skill_pointer(PROJECT_ROOT).ok
 
 
 def test_check_claude_is_pointer(tmp_path: Path):
@@ -407,6 +409,34 @@ def test_check_orca_coordination_skill(tmp_path: Path):
     skill_file.write_text("# Skill\n", encoding="utf-8")
     res = check_orca_coordination_skill(tmp_path)
     assert not res.ok
+
+
+def test_check_canonical_skill_pointer(tmp_path: Path):
+    skill_dir = tmp_path / ".agents" / "skills" / "orca-section-coordination"
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+
+    # 1. Valid (contains canonical command)
+    valid_content = """# Orca Section Coordination
+## 0. 이 문서는 Orca 공식 스킬을 대체하지 않습니다
+**조율을 시작하기 전에 `orca skills get orchestration` 을 읽으십시오.**
+"""
+    skill_file.write_text(valid_content, encoding="utf-8")
+    res = check_canonical_skill_pointer(tmp_path)
+    assert res.ok
+    assert "정본 스킬 포인터 확인" in res.detail
+
+    # 2. Missing file
+    skill_file.unlink()
+    res = check_canonical_skill_pointer(tmp_path)
+    assert not res.ok
+    assert "스킬 파일 없음" in res.detail
+
+    # 3. Missing canonical command
+    skill_file.write_text("# Orca Section Coordination\nNo canonical command\n", encoding="utf-8")
+    res = check_canonical_skill_pointer(tmp_path)
+    assert not res.ok
+    assert "누락" in res.detail
 
 
 def test_fallback_yaml_parser():

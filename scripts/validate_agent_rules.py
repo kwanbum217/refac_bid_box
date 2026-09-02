@@ -1203,6 +1203,36 @@ def check_analysis_metrics_docs(root: Path = PROJECT_ROOT) -> CheckResult:
     )
 
 
+CANONICAL_ORCHESTRATION_SKILL_COMMAND = "orca skills get orchestration"
+
+
+def check_canonical_skill_pointer(root: Path = PROJECT_ROOT) -> CheckResult:
+    """AGENTS.md 및 저장소 스킬 0장의 Orca 정본 명령 포인터 정합성을 검증합니다.
+
+    .agents/skills/orca-section-coordination/SKILL.md 0장에 명시된 정본 조회 명령이
+    'orca skills get orchestration' 과 일치하는지 확인하여 정본 포인터가 갈라지는 것을 방지합니다.
+    """
+    name = "Orca 정본 스킬 포인터 정합성"
+    skill_path = root / ".agents" / "skills" / "orca-section-coordination" / "SKILL.md"
+    if not skill_path.exists():
+        return CheckResult(name, False, f"스킬 파일 없음: {skill_path}")
+
+    content = read_text(skill_path)
+    if CANONICAL_ORCHESTRATION_SKILL_COMMAND not in content:
+        rel_path = skill_path.relative_to(root) if skill_path.is_relative_to(root) else skill_path
+        return CheckResult(
+            name,
+            False,
+            f"{rel_path} 0장에 정본 명령 '{CANONICAL_ORCHESTRATION_SKILL_COMMAND}' 누락",
+        )
+
+    return CheckResult(
+        name,
+        True,
+        f"정본 스킬 포인터 확인 ('{CANONICAL_ORCHESTRATION_SKILL_COMMAND}')",
+    )
+
+
 def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
     return [
         check_claude_is_pointer(root),
@@ -1214,6 +1244,7 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_task_capsule_v2_docs(root),
         check_v2_templates(root),
         check_orca_coordination_skill(root),
+        check_canonical_skill_pointer(root),
         check_current_state_exists(root),
         check_current_state_sections(root),
         check_context_budgets(root),

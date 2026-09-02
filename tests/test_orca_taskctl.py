@@ -88,6 +88,20 @@ def mock_settled_session_audit_default(monkeypatch: pytest.MonkeyPatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def mock_skill_receipt_default(monkeypatch: pytest.MonkeyPatch):
+    """테스트 격리를 위해 기본적으로 정본 스킬 영수증 검사를 통과(ok=True)로 모의합니다.
+    실제 fail-closed 거부 및 우회 테스트는 개별 테스트에서 mock 을 오버라이드합니다."""
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_skill_receipt",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "reason": "테스트용 정본 스킬 영수증 검증 통과",
+            "coordinator_handle_check": "verified",
+        },
+    )
+
+
 SAMPLE_BUILDER_INTENT = """schema: ORCA_TASK_INTENT_V1
 role: builder
 objective: >
@@ -5412,3 +5426,105 @@ def test_cmd_dispatch_auto_starts_worker_watch_on_success(
     payload = json.loads(captured.out)
     assert payload["worker_watch"]["ok"] is True
     assert payload["worker_watch"]["status"] == "started"
+
+
+def test_cmd_dispatch_refuses_when_skill_receipt_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """정본 스킬 영수증이 유효하지 않을 때 dispatch 가 종료 코드 4로 fail-closed 거부되는지 검증."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_skill_receipt",
+        lambda *args, **kwargs: {
+            "ok": False,
+            "error": "receipt_missing",
+            "reason": "정본 스킬 영수증 파일이 없습니다",
+            "fix_command": "python3 scripts/orca_skill_receipt.py issue",
+        },
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_test",
+            "--json",
+        ]
+    )
+    assert code == 4
+    captured = capsys.readouterr()
+    assert "skill_receipt_invalid" in captured.out
+    assert "python3 scripts/orca_skill_receipt.py issue" in captured.out
+
+
+def test_cmd_dispatch_bypasses_skill_receipt_with_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """--skip-skill-receipt 플래그 지정 시 영수증 검사를 우회하고 진행하는지 검증."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_skill_receipt",
+        lambda *args, **kwargs: {
+            "ok": False,
+            "error": "receipt_missing",
+            "reason": "정본 스킬 영수증 파일이 없습니다",
+            "fix_command": "python3 scripts/orca_skill_receipt.py issue",
+        },
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--dry-run",
+            "--skip-skill-receipt",
+            "--json",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "--skip-skill-receipt 지정으로 정본 스킬 영수증 검사를 건너뜁니다" in captured.err
+
+
+def test_cmd_create_refuses_when_skill_receipt_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """정본 스킬 영수증이 유효하지 않을 때 create 가 종료 코드 4로 fail-closed 거부되는지 검증."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_skill_receipt",
+        lambda *args, **kwargs: {
+            "ok": False,
+            "error": "receipt_missing",
+            "reason": "정본 스킬 영수증 파일이 없습니다",
+            "fix_command": "python3 scripts/orca_skill_receipt.py issue",
+        },
+    )
+
+    code = main(
+        [
+            "create",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--json",
+        ]
+    )
+    assert code == 4
+    captured = capsys.readouterr()
+    assert "skill_receipt_invalid" in captured.out
+    assert "python3 scripts/orca_skill_receipt.py issue" in captured.out
