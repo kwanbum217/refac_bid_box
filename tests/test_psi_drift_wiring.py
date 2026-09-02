@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.app.core.config import settings
 from src.app.models.predictions import RetrainLog
 from src.ml.monitoring import (
     InsufficientSampleError,
@@ -222,7 +223,7 @@ def test_worker_settings_cron_jobs_wired():
 @pytest.mark.asyncio
 async def test_drift_monitor_task_disabled_by_default(isolated_db, monkeypatch):
     """기본값에서 ML_DRIFT_MONITOR_ENABLED 가 False 이면 스킵됩니다."""
-    monkeypatch.setenv("ML_DRIFT_MONITOR_ENABLED", "0")
+    monkeypatch.setattr(settings, "ML_DRIFT_MONITOR_ENABLED", False)
 
     outcome = await drift_monitor_task({})
     assert outcome["status"] == "skipped"
@@ -232,7 +233,7 @@ async def test_drift_monitor_task_disabled_by_default(isolated_db, monkeypatch):
 @pytest.mark.asyncio
 async def test_drift_monitor_task_records_and_notifies(isolated_db, tmp_path, monkeypatch):
     """드리프트 감지 시 retrain_logs 에 기록되고 notify_drift_detected 가 호출되며 자동 재학습은 발화하지 않습니다."""
-    monkeypatch.setenv("ML_DRIFT_MONITOR_ENABLED", "1")
+    monkeypatch.setattr(settings, "ML_DRIFT_MONITOR_ENABLED", True)
     monkeypatch.setattr("src.tasks.scheduled_tasks.SessionLocal", lambda: isolated_db)
 
     np.random.seed(42)

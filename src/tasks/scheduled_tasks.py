@@ -296,12 +296,7 @@ def _record_drift_log(
 
 def is_drift_monitor_enabled() -> bool:
     """PSI 드리프트 모니터링 활성화 여부 확인. (기본값: False)"""
-    val = getattr(settings, "ML_DRIFT_MONITOR_ENABLED", None)
-    if val is not None:
-        return bool(val)
-    import os
-
-    return os.getenv("ML_DRIFT_MONITOR_ENABLED", "false").lower() in ("true", "1", "yes")
+    return bool(settings.ML_DRIFT_MONITOR_ENABLED)
 
 
 async def drift_monitor_task(
