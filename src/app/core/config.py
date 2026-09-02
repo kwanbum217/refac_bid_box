@@ -43,6 +43,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 class Settings(BaseSettings):
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
     DEBUG: bool = False
+    CSRF_PROTECTION_ENABLED: bool = True
     SECRET_KEY: str
     # 고비용 자동화는 최근 성공 이력이 있으면 재실행하지 않습니다 (원본 동일 기본값 on).
     AUTOMATION_REUSE_RECENT: bool = True

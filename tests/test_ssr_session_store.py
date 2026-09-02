@@ -20,6 +20,7 @@ from src.app.core.security import (
 from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
+from tests.test_csrf import csrf_form
 
 
 @pytest.fixture
@@ -49,7 +50,9 @@ def test_login_cookie_development_not_secure(client, login_user):
     """development 환경에서는 secure 쿠키를 발급하지 않는다."""
     response = client.post(
         "/accounts/login/",
-        data={"username": "a2_tester", "password": "a2-pass-1234"},
+        data=csrf_form(
+            client, "/accounts/login/", {"username": "a2_tester", "password": "a2-pass-1234"}
+        ),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -64,7 +67,9 @@ def test_login_cookie_production_is_secure(client, login_user):
         mock_settings.ENVIRONMENT = "production"
         response = client.post(
             "/accounts/login/",
-            data={"username": "a2_tester", "password": "a2-pass-1234"},
+            data=csrf_form(
+                client, "/accounts/login/", {"username": "a2_tester", "password": "a2-pass-1234"}
+            ),
             follow_redirects=False,
         )
     assert response.status_code == 303
@@ -79,7 +84,9 @@ def test_login_cookie_has_correct_ttl(client, login_user):
     """SSR 쿠키의 max-age 가 SESSION_TTL_SECONDS 와 일치한다."""
     response = client.post(
         "/accounts/login/",
-        data={"username": "a2_tester", "password": "a2-pass-1234"},
+        data=csrf_form(
+            client, "/accounts/login/", {"username": "a2_tester", "password": "a2-pass-1234"}
+        ),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -91,7 +98,9 @@ def test_login_cookie_has_httponly_and_samesite(client, login_user):
     """development 에서도 httponly 와 samesite=lax 는 반드시 포함된다."""
     response = client.post(
         "/accounts/login/",
-        data={"username": "a2_tester", "password": "a2-pass-1234"},
+        data=csrf_form(
+            client, "/accounts/login/", {"username": "a2_tester", "password": "a2-pass-1234"}
+        ),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -113,7 +122,9 @@ def test_login_create_session_unavailable_returns_503(client, login_user):
     ):
         response = client.post(
             "/accounts/login/",
-            data={"username": "a2_tester", "password": "a2-pass-1234"},
+            data=csrf_form(
+                client, "/accounts/login/", {"username": "a2_tester", "password": "a2-pass-1234"}
+            ),
             follow_redirects=False,
         )
     assert response.status_code == 503
@@ -132,7 +143,9 @@ def test_login_create_unavailable_does_not_expose_exception(client, login_user):
     ):
         response = client.post(
             "/accounts/login/",
-            data={"username": "a2_tester", "password": "a2-pass-1234"},
+            data=csrf_form(
+                client, "/accounts/login/", {"username": "a2_tester", "password": "a2-pass-1234"}
+            ),
             follow_redirects=False,
         )
     assert response.status_code == 503
@@ -151,7 +164,11 @@ def test_logout_destroy_session_unavailable_post_returns_503(isolated_db):
         "src.app.api.ui.destroy_session",
         side_effect=SessionStoreUnavailable("Redis 다운"),
     ):
-        response = auth_client.post("/accounts/logout/", follow_redirects=False)
+        response = auth_client.post(
+            "/accounts/logout/",
+            data=csrf_form(auth_client, "/accounts/login/", {}),
+            follow_redirects=False,
+        )
     assert response.status_code == 503
     # 로그인 페이지로 리다이렉트되지 않아야 한다
     assert response.headers.get("location") is None
@@ -164,7 +181,11 @@ def test_logout_destroy_unavailable_does_not_delete_cookie(isolated_db):
         "src.app.api.ui.destroy_session",
         side_effect=SessionStoreUnavailable("Redis 다운"),
     ):
-        response = auth_client.post("/accounts/logout/", follow_redirects=False)
+        response = auth_client.post(
+            "/accounts/logout/",
+            data=csrf_form(auth_client, "/accounts/login/", {}),
+            follow_redirects=False,
+        )
     assert response.status_code == 503
     # set-cookie 헤더에 삭제(Max-Age=0) 지시가 없어야 한다
     cookie_header = response.headers.get("set-cookie", "").lower()
@@ -180,7 +201,9 @@ def test_normal_login_redirects_to_home(client, login_user):
     """정상 로그인은 303 으로 홈에 보내고 세션 쿠키를 발급한다."""
     response = client.post(
         "/accounts/login/",
-        data={"username": "a2_tester", "password": "a2-pass-1234"},
+        data=csrf_form(
+            client, "/accounts/login/", {"username": "a2_tester", "password": "a2-pass-1234"}
+        ),
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -199,6 +222,10 @@ def test_normal_logout_post_redirects_to_login(isolated_db):
     """정상 POST 로그아웃도 303 으로 로그인 화면에 보낸다."""
     auth_client = TestClient(app, cookies={SESSION_COOKIE_NAME: "normal-token-post"})
     with patch("src.app.api.ui.destroy_session"):
-        response = auth_client.post("/accounts/logout/", follow_redirects=False)
+        response = auth_client.post(
+            "/accounts/logout/",
+            data=csrf_form(auth_client, "/accounts/login/", {}),
+            follow_redirects=False,
+        )
     assert response.status_code == 303
     assert response.headers["location"] == "/accounts/login/"

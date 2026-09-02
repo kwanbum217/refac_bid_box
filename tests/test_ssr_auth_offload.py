@@ -18,6 +18,7 @@ import src.app.api.ui as ui
 from src.app.core.security import make_password
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
+from tests.test_csrf import csrf_form
 
 
 def _on_loop_thread() -> bool:
@@ -58,7 +59,11 @@ def test_login_password_verification_runs_off_loop_thread(client, offload_user, 
 
     response = client.post(
         "/accounts/login/",
-        data={"username": "offload_tester", "password": "offload-pass-1234"},
+        data=csrf_form(
+            client,
+            "/accounts/login/",
+            {"username": "offload_tester", "password": "offload-pass-1234"},
+        ),
         follow_redirects=False,
     )
 
@@ -78,17 +83,21 @@ def test_signup_registration_runs_off_loop_thread(client, monkeypatch):
 
     response = client.post(
         "/accounts/signup/",
-        data={
-            "username": "offload_new",
-            "password1": "offload-pass-1234",
-            "password2": "offload-pass-1234",
-            "nickname": "신규 오프로드",
-            "email": "offload_new@example.com",
-            "birth_date": "1990-01-01",
-            "gender": "M",
-            "agree_terms": "on",
-            "agree_privacy": "on",
-        },
+        data=csrf_form(
+            client,
+            "/accounts/signup/",
+            {
+                "username": "offload_new",
+                "password1": "offload-pass-1234",
+                "password2": "offload-pass-1234",
+                "nickname": "신규 오프로드",
+                "email": "offload_new@example.com",
+                "birth_date": "1990-01-01",
+                "gender": "M",
+                "agree_terms": "on",
+                "agree_privacy": "on",
+            },
+        ),
         follow_redirects=False,
     )
 
