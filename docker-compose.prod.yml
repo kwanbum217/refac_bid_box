@@ -1,4 +1,24 @@
 services:
+  proxy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    environment:
+      - TLS_DOMAIN=${TLS_DOMAIN:?TLS_DOMAIN must be set}
+      - TLS_CERT_FILE=${TLS_CERT_FILE:-/etc/caddy/certs/fullchain.pem}
+      - TLS_KEY_FILE=${TLS_KEY_FILE:-/etc/caddy/certs/privkey.pem}
+    ports:
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${TLS_CERT_DIR:?TLS_CERT_DIR must be set}:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - internal
+
   app:
     restart: unless-stopped
     read_only: true
@@ -18,8 +38,6 @@ services:
       - "8000"
       - --workers
       - "${WEB_CONCURRENCY:-1}"
-    ports:
-      - "8000:8000"
     environment:
       - ENVIRONMENT=${ENVIRONMENT:?ENVIRONMENT must be set}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
@@ -40,6 +58,7 @@ services:
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
+      - TRUSTED_PROXY_IPS=${TRUSTED_PROXY_IPS:?TRUSTED_PROXY_IPS must be set}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -249,6 +268,8 @@ volumes:
   mysql_data:
   redis_data:
   meilisearch_data:
+  caddy_data:
+  caddy_config:
 
 networks:
   internal:
