@@ -249,7 +249,7 @@ jobs:
           MYSQL_TEST_URL: mysql+pymysql://root:testpassword@127.0.0.1:3306/test_procurement_ngram
         run: |
           set +e
-          OUTPUT=$(uv run pytest tests/test_ngram_prefilter_equivalence.py tests/test_mysql_integration_queries.py -m mysql_integration -v 2>&1)
+          OUTPUT=$(uv run pytest tests/test_ngram_prefilter_equivalence.py tests/test_mysql_integration_queries.py tests/test_mysql_concurrency.py -m mysql_integration -v 2>&1)
           EXIT_CODE=$?
           set -e
           echo "$OUTPUT"
