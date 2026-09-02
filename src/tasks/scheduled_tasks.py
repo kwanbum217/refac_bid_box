@@ -23,6 +23,7 @@ from typing import Any
 
 import pandas as pd
 
+from scripts.backup_recovery import execute_backup, prune_snapshots
 from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
@@ -50,6 +51,25 @@ logger = logging.getLogger(__name__)
 
 # 원본 run_local_automation_bundle 의 기본 source 라벨과 동일하게 맞춥니다.
 SCHEDULER_SOURCE = "local_scheduler"
+
+
+async def backup_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """매일 03:00 통합 백업을 실행하고 개수 기준 보존 상태를 보고합니다."""
+    if not settings.BACKUP_SCHEDULE_ENABLED:
+        logger.info("백업 스케줄이 비활성화되어 있어 건너뜁니다.")
+        return {"status": "skipped", "reason": "disabled"}
+    try:
+        manifest = await asyncio.to_thread(execute_backup, execute=True)
+        retention = await asyncio.to_thread(
+            prune_snapshots,
+            retain_count=settings.BACKUP_RETENTION_COUNT,
+            delete=False,
+        )
+        return {"status": "success", "manifest": manifest, "retention": retention}
+    except Exception as exc:
+        logger.exception("정기 백업 실패")
+        await notify_task_failure("통합 백업 스케줄", str(exc))
+        return {"status": "failed", "error": str(exc)}
 
 
 def _create_scheduled_execution(db, run_mode: str, trigger_name: str) -> str:
