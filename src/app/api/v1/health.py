@@ -76,6 +76,108 @@ def _check_chromadb() -> None:
     collection.count()
 
 
+class WarmupState:
+    """애플리케이션 기동 시점의 백그라운드 예열(warmup) 진행 및 완료 상태를 추적합니다."""
+
+    def __init__(self) -> None:
+        self._started: bool = False
+        self._llm: bool = True
+        self._predictor: bool = True
+        self._vector: bool = True
+        self._llm_error: str | None = None
+        self._predictor_error: str | None = None
+        self._vector_error: str | None = None
+
+    def start(self) -> None:
+        self._started = True
+        self._llm = False
+        self._predictor = False
+        self._vector = False
+        self._llm_error = None
+        self._predictor_error = None
+        self._vector_error = None
+
+    def reset(self) -> None:
+        self._started = False
+        self._llm = True
+        self._predictor = True
+        self._vector = True
+        self._llm_error = None
+        self._predictor_error = None
+        self._vector_error = None
+
+    def mark_llm_done(
+        self, success: bool = True, skipped: bool = False, error: str | None = None
+    ) -> None:
+        self._llm = success or skipped
+        self._llm_error = error
+
+    def mark_predictor_done(
+        self, success: bool = True, skipped: bool = False, error: str | None = None
+    ) -> None:
+        self._predictor = success or skipped
+        self._predictor_error = error
+
+    def mark_vector_done(
+        self, success: bool = True, skipped: bool = False, error: str | None = None
+    ) -> None:
+        self._vector = success or skipped
+        self._vector_error = error
+
+    @property
+    def is_started(self) -> bool:
+        return self._started
+
+    @property
+    def completed(self) -> bool:
+        if not self._started:
+            return True
+        return self._llm and self._predictor and self._vector
+
+    def get_summary(self) -> dict[str, Any]:
+        return {
+            "completed": self.completed,
+            "started": self._started,
+            "details": {
+                "llm": {"ok": self._llm, "error": self._llm_error},
+                "predictor": {"ok": self._predictor, "error": self._predictor_error},
+                "vector_search": {"ok": self._vector, "error": self._vector_error},
+            },
+        }
+
+
+warmup_state = WarmupState()
+
+
+def _check_llm() -> dict[str, Any]:
+    started_at = time.perf_counter()
+    try:
+        from src.rag.llm import build_backend
+
+        backend = build_backend()
+        if backend is None:
+            return {
+                "ok": False,
+                "provider": getattr(settings, "LLM_PROVIDER", "unknown"),
+                "detail": "llm_backend_unavailable",
+                "latency_ms": round((time.perf_counter() - started_at) * 1000, 3),
+            }
+        available = backend.available()
+        return {
+            "ok": bool(available),
+            "provider": getattr(backend, "name", settings.LLM_PROVIDER),
+            "detail": None if available else "llm_service_unavailable",
+            "latency_ms": round((time.perf_counter() - started_at) * 1000, 3),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "provider": getattr(settings, "LLM_PROVIDER", "unknown"),
+            "detail": f"{type(exc).__name__}: {exc}",
+            "latency_ms": round((time.perf_counter() - started_at) * 1000, 3),
+        }
+
+
 def _safe_failure_detail(exc: BaseException) -> str:
     classification = "timeout" if isinstance(exc, TimeoutError) else "dependency_check_failed"
     return f"{type(exc).__name__}: {classification}"
@@ -117,6 +219,26 @@ async def liveness_check():
     return {"status": "alive"}
 
 
+def _is_warmup_required() -> bool:
+    import os
+
+    return (
+        os.getenv("READINESS_REQUIRE_WARMUP", "").lower() in ("true", "1", "yes")
+        or getattr(settings, "READINESS_REQUIRE_WARMUP", False)
+        or getattr(settings, "READINESS_GATE_WARMUP", False)
+    )
+
+
+def _is_llm_required() -> bool:
+    import os
+
+    return (
+        os.getenv("READINESS_REQUIRE_LLM", "").lower() in ("true", "1", "yes")
+        or getattr(settings, "READINESS_REQUIRE_LLM", False)
+        or getattr(settings, "READINESS_GATE_LLM", False)
+    )
+
+
 @router.get("/ready")
 async def readiness_check(response: Response):
     checks = dict(
@@ -129,12 +251,40 @@ async def readiness_check(response: Response):
         )
     )
 
-    if not all(checks[name]["ok"] for name in ("mysql", "redis", "model_registry")):
+    llm_status = await asyncio.to_thread(_check_llm)
+    warmup_status = warmup_state.get_summary()
+
+    critical_checks = {"mysql", "redis", "model_registry"}
+    if _is_warmup_required():
+        critical_checks.add("warmup")
+    if _is_llm_required():
+        critical_checks.add("llm")
+
+    critical_failed = False
+    for name in ("mysql", "redis", "model_registry"):
+        if not checks[name]["ok"]:
+            critical_failed = True
+            break
+    if "warmup" in critical_checks and not warmup_status["completed"]:
+        critical_failed = True
+    if "llm" in critical_checks and not llm_status["ok"]:
+        critical_failed = True
+
+    if critical_failed:
         readiness_status = "not_ready"
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    elif not all(check["ok"] for check in checks.values()):
+    elif (
+        not all(check["ok"] for check in checks.values())
+        or not warmup_status["completed"]
+        or not llm_status["ok"]
+    ):
         readiness_status = "degraded"
     else:
         readiness_status = "ready"
 
-    return {"status": readiness_status, "checks": checks}
+    return {
+        "status": readiness_status,
+        "checks": checks,
+        "warmup": warmup_status,
+        "llm": llm_status,
+    }

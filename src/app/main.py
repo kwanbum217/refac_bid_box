@@ -17,6 +17,7 @@ from src.app.api.v1.automation import router as automation_router
 from src.app.api.v1.bids import router as bids_router
 from src.app.api.v1.chatbot import router as chatbot_router
 from src.app.api.v1.health import router as health_router
+from src.app.api.v1.health import warmup_state
 from src.app.api.v1.predictions import router as predictions_router
 from src.app.core.config import Settings, settings
 
@@ -35,14 +36,21 @@ async def _warm_llm_backend() -> None:
     실패해도 첫 질의가 느려질 뿐입니다.
     """
     if not settings.LLM_WARMUP_ON_STARTUP:
+        warmup_state.mark_llm_done(skipped=True)
         return
     from src.rag.llm import build_backend
 
-    backend = await asyncio.to_thread(build_backend)
-    if backend is None:
-        logger.warning("LLM 백엔드가 없어 예열을 건너뜁니다.")
-        return
-    await asyncio.to_thread(backend.warmup)
+    try:
+        backend = await asyncio.to_thread(build_backend)
+        if backend is None:
+            logger.warning("LLM 백엔드가 없어 예열을 건너뜁니다.")
+            warmup_state.mark_llm_done(success=False, error="no_backend")
+            return
+        success = await asyncio.to_thread(backend.warmup)
+        warmup_state.mark_llm_done(success=bool(success))
+    except Exception as exc:
+        logger.warning("LLM 예열 실패: %s", exc)
+        warmup_state.mark_llm_done(success=False, error=str(exc))
 
 
 async def _warm_predictor() -> None:
@@ -58,6 +66,7 @@ async def _warm_predictor() -> None:
 
     if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
         logger.info("event=predictor_warmup, status=skipped, elapsed_ms=0.00")
+        warmup_state.mark_predictor_done(skipped=True)
         return
 
     from src.ml.model_registry import ModelRegistry
@@ -71,6 +80,7 @@ async def _warm_predictor() -> None:
             elapsed_ms,
             count if isinstance(count, int) else 0,
         )
+        warmup_state.mark_predictor_done(success=True)
     # 예열은 부가 기능입니다. 실패해도 첫 요청이 지연 로드로 처리합니다.
     except Exception as exc:
         elapsed_ms = max(0.0, (time.perf_counter() - t_start) * 1000.0)
@@ -79,6 +89,7 @@ async def _warm_predictor() -> None:
             elapsed_ms,
             exc,
         )
+        warmup_state.mark_predictor_done(success=False, error=str(exc))
 
 
 async def _warm_vector_search() -> None:
@@ -96,6 +107,7 @@ async def _warm_vector_search() -> None:
     처리합니다. **결과에는 영향이 없습니다.** 같은 코드 경로를 한 번 더 부를 뿐입니다.
     """
     if not settings.VECTOR_WARMUP_ON_STARTUP:
+        warmup_state.mark_vector_done(skipped=True)
         return
 
     from src.rag.schemas import RetrievalPlan
@@ -107,6 +119,7 @@ async def _warm_vector_search() -> None:
         await asyncio.to_thread(retrieve_semantic_context, plan)
         elapsed_ms = max(0.0, (time.perf_counter() - t_start) * 1000.0)
         logger.info("event=vector_warmup, status=success, elapsed_ms=%.2f", elapsed_ms)
+        warmup_state.mark_vector_done(success=True)
     # 예열은 부가 기능입니다. 실패해도 첫 질의가 지연 로드로 처리합니다.
     except Exception as exc:
         elapsed_ms = max(0.0, (time.perf_counter() - t_start) * 1000.0)
@@ -115,6 +128,7 @@ async def _warm_vector_search() -> None:
             elapsed_ms,
             exc,
         )
+        warmup_state.mark_vector_done(success=False, error=str(exc))
 
 
 def _enable_latency_segment_logging() -> None:
@@ -156,6 +170,7 @@ def _enable_warmup_logging() -> None:
 async def lifespan(_: FastAPI):
     _enable_warmup_logging()
     _enable_latency_segment_logging()
+    warmup_state.start()
     tasks = [
         asyncio.create_task(_warm_llm_backend()),
         asyncio.create_task(_warm_predictor()),
