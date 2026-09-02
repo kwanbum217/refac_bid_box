@@ -13,6 +13,8 @@ import argparse
 import datetime
 import json
 import os
+import re
+import shlex
 import subprocess  # nosec B404 - 고정된 인자 목록으로만 git 및 pytest를 호출합니다
 import sys
 from collections.abc import Callable, Sequence
@@ -23,6 +25,7 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 DEFAULT_EVIDENCE_PATH = Path(".cache/premerge_full_suite_evidence.json")
 BYPASS_ENV_VAR = "BYPASS_PREMERGE_FULL_SUITE_GATE"
+CANONICAL_FULL_SUITE_CMD = ["uv", "run", "pytest", "tests/", "-q", "-m", "not data_assets"]
 
 
 def run_process(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -39,6 +42,44 @@ def is_bypass_active() -> bool:
     """우회 환경변수가 설정되어 있는지 단일 판정합니다."""
     val = os.environ.get(BYPASS_ENV_VAR, "").strip().lower()
     return val in {"1", "true", "yes"}
+
+
+def is_full_suite_command(command: str) -> tuple[bool, str]:
+    """테스트 실행 명령이 개별 파일/노드가 아닌 전량 테스트(tests/)를 대상으로 하는지 검증합니다."""
+    if not command or not command.strip():
+        return False, "증거에 테스트 실행 명령(command)이 누락되었거나 비어 있습니다."
+
+    try:
+        tokens = shlex.split(command)
+    except ValueError as exc:
+        return False, f"명령 구문 분석 실패: {exc}"
+
+    if not any("pytest" in tok for tok in tokens):
+        return False, f"pytest 실행 명령이 아닙니다: {command}"
+
+    # 개별 테스트 파일(.py)이나 노드 ID(::)가 인자로 포함되어 있는지 검사
+    for tok in tokens:
+        if tok.endswith(".py") or ".py::" in tok or "::" in tok:
+            return False, f"전체 테스트가 아닌 특정 파일/테스트 대상 실행입니다: {tok}"
+
+    # tests 전체 디렉터리가 대상에 포함되어 있는지 검사
+    has_tests_target = any(tok in {"tests", "tests/", "./tests", "./tests/"} for tok in tokens)
+    if not has_tests_target:
+        return False, f"전체 테스트 디렉터리(tests/)가 대상에 포함되지 않았습니다: {command}"
+
+    return True, ""
+
+
+def parse_pytest_counts(summary: str) -> dict[str, int]:
+    """pytest 요약 줄에서 passed, failed, skipped 건수를 추출합니다."""
+    counts = {"passed": 0, "failed": 0, "skipped": 0}
+    for match in re.finditer(r"(\d+)\s+(passed|failed|skipped|error|errors)", summary):
+        val = int(match.group(1))
+        key = match.group(2)
+        if key.startswith("error"):
+            key = "failed"
+        counts[key] = counts.get(key, 0) + val
+    return counts
 
 
 def load_evidence(evidence_path: Path) -> tuple[dict[str, Any] | None, list[str]]:
@@ -118,19 +159,36 @@ def verify_premerge_gate(
     if evidence is None:
         return 1, "전량 테스트 증거가 없습니다."
 
-    # 5. 증거 필드 검증: exit_code == 0
+    # 5. 전량 테스트 대상 검증 (개별 파일/부분 테스트 증거 기각)
+    command_str = str(evidence.get("command", "")).strip()
+    is_full_suite, cmd_err = is_full_suite_command(command_str)
+    if not is_full_suite:
+        return 1, (
+            f"전량 테스트 증거가 아닙니다. 개별 파일이나 하위 집합만 실행된 증거는 병합 게이트를 통과할 수 없습니다.\n"
+            f"  사유: {cmd_err}\n"
+            f"  실행 명령: {command_str or '(없음)'}\n"
+            f"전량 테스트 증거를 다시 생성하십시오:\n"
+            f"  python3 scripts/premerge_full_suite_gate.py --record"
+        )
+
+    if evidence.get("suite") != "full" or evidence.get("target") != "tests/":
+        return 1, (
+            "증거의 suite 속성이 'full' 또는 target 속성이 'tests/'가 아닙니다. "
+            "전량 테스트 증거가 필요합니다."
+        )
+
+    # 6. 증거 필드 검증: exit_code == 0
     ev_exit_code = evidence.get("exit_code")
     if ev_exit_code != 0:
         return 1, f"전량 테스트 증거의 종료 코드가 0이 아닙니다 (exit_code: {ev_exit_code})."
 
-    # 6. 증거 필드 검증: commit 일치 여부
+    # 7. 증거 필드 검증: commit 일치 여부
     ev_commit = str(evidence.get("commit", "")).strip()
     if not ev_commit:
         return 1, "전량 테스트 증거에 커밋 해시(commit)가 누락되었거나 비어 있습니다."
 
     ev_commit_proc = runner(["git", "rev-parse", "--verify", f"{ev_commit}^{{commit}}"])
     if ev_commit_proc.returncode != 0 or not ev_commit_proc.stdout.strip():
-        # git rev-parse 가 안 되더라도 문자열 일치 검사
         if ev_commit != merge_sha:
             return 1, (
                 f"전량 테스트 증거의 커밋({ev_commit})이 "
@@ -150,7 +208,6 @@ def verify_premerge_gate(
 def record_evidence(
     *,
     evidence_path: Path = DEFAULT_EVIDENCE_PATH,
-    pytest_args: Sequence[str] | None = None,
     runner: Runner = run_process,
 ) -> tuple[int, str]:
     """현재 HEAD 커밋에 대해 전량 테스트를 실행하고 증거 파일을 기록합니다."""
@@ -163,9 +220,8 @@ def record_evidence(
     branch_proc = runner(["git", "branch", "--show-current"])
     branch_name = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
 
-    # 2. 테스트 명령 조립 및 실행
-    args = list(pytest_args) if pytest_args else ["tests/", "-q"]
-    cmd = ["uv", "run", "pytest", *args]
+    # 2. 전량 테스트 정본 명령 실행 (임의의 부분 테스트 경로 허용 금지)
+    cmd = list(CANONICAL_FULL_SUITE_CMD)
     print(f"[premerge-gate] 전량 테스트 실행 중: {' '.join(cmd)}")
 
     test_proc = runner(cmd)
@@ -178,12 +234,19 @@ def record_evidence(
             summary_line = line_clean
             break
 
+    counts = parse_pytest_counts(summary_line)
+
     # 3. 증거 디렉터리 생성 및 기록
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_data = {
+        "suite": "full",
+        "target": "tests/",
         "commit": head_sha,
         "branch": branch_name,
         "exit_code": test_proc.returncode,
+        "passed": counts["passed"],
+        "failed": counts["failed"],
+        "skipped": counts["skipped"],
         "summary": summary_line,
         "command": " ".join(cmd),
         "recorded_at": datetime.datetime.now(datetime.UTC).isoformat(),
@@ -211,6 +274,24 @@ def record_evidence(
     )
 
 
+def install_git_hooks(runner: Runner = run_process) -> tuple[int, str]:
+    """pre-commit 및 pre-merge-commit git hook 을 모두 설치합니다."""
+    cmd = [
+        "uv",
+        "run",
+        "pre-commit",
+        "install",
+        "--hook-type",
+        "pre-commit",
+        "--hook-type",
+        "pre-merge-commit",
+    ]
+    proc = runner(cmd)
+    if proc.returncode != 0:
+        return proc.returncode, f"git hook 설치 실패:\n{proc.stderr.strip() or proc.stdout.strip()}"
+    return 0, "[premerge-gate] pre-commit 및 pre-merge-commit 훅이 정상 설치되었습니다."
+
+
 def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="main 브랜치 병합 시 전량 테스트 통과 증거를 검증하는 게이트"
@@ -219,6 +300,11 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--record",
         action="store_true",
         help="현재 HEAD 커밋에 대해 전량 테스트를 실행하고 증거 파일을 기록합니다.",
+    )
+    parser.add_argument(
+        "--install-hooks",
+        action="store_true",
+        help="pre-commit 및 pre-merge-commit 훅을 Git 저장소에 설치합니다.",
     )
     parser.add_argument(
         "--target-branch",
@@ -235,21 +321,17 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--source-commit",
         help="검증할 소스 커밋 SHA (미지정 시 git MERGE_HEAD 사용)",
     )
-    parser.add_argument(
-        "--pytest-args",
-        nargs=argparse.REMAINDER,
-        help="--record 시 pytest 에 추가로 넘길 인자들",
-    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_arguments(argv)
 
-    if args.record:
+    if args.install_hooks:
+        code, message = install_git_hooks()
+    elif args.record:
         code, message = record_evidence(
             evidence_path=args.evidence_path,
-            pytest_args=args.pytest_args,
         )
     else:
         code, message = verify_premerge_gate(

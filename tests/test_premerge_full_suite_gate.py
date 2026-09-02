@@ -2,7 +2,8 @@
 
 scripts/premerge_full_suite_gate.py 단위 테스트.
 실제 55초 전량 pytest 실행 없이 모의 러너(mock runner)를 통해
-모든 분기(non-main, fail-closed, 커밋 불일치, exit_code, 우회, 증거 생성)를 검증합니다.
+모든 분기(non-main, fail-closed, 커밋 불일치, exit_code, 우회, 증거 생성,
+부분/파일 단위 실행 기각, 훅 설치)를 검증합니다.
 """
 
 from __future__ import annotations
@@ -16,9 +17,13 @@ import pytest
 
 from scripts.premerge_full_suite_gate import (
     BYPASS_ENV_VAR,
+    CANONICAL_FULL_SUITE_CMD,
+    install_git_hooks,
     is_bypass_active,
+    is_full_suite_command,
     load_evidence,
     main,
+    parse_pytest_counts,
     record_evidence,
     verify_premerge_gate,
 )
@@ -55,6 +60,11 @@ def make_mock_runner(
         if cmd_list[:3] == ["uv", "run", "pytest"]:
             return subprocess.CompletedProcess(
                 cmd_list, pytest_exit_code, stdout=pytest_stdout, stderr=""
+            )
+
+        if cmd_list[:4] == ["uv", "run", "pre-commit", "install"]:
+            return subprocess.CompletedProcess(
+                cmd_list, 0, stdout="pre-commit installed\n", stderr=""
             )
 
         return subprocess.CompletedProcess(cmd_list, 0, stdout="", stderr="")
@@ -138,6 +148,9 @@ def test_main_branch_failed_test_evidence(tmp_path: Path):
     evidence_path.write_text(
         json.dumps(
             {
+                "suite": "full",
+                "target": "tests/",
+                "command": " ".join(CANONICAL_FULL_SUITE_CMD),
                 "commit": "c0ffee1234567890",
                 "exit_code": 1,
                 "summary": "1 failed, 3215 passed",
@@ -152,12 +165,88 @@ def test_main_branch_failed_test_evidence(tmp_path: Path):
     assert "종료 코드가 0이 아닙니다" in msg
 
 
+def test_main_branch_partial_test_evidence_rejected(tmp_path: Path):
+    """특정 파일이나 하위 집합만 실행한 증거는 전량 증거로 인정하지 않고 거부합니다."""
+    # 1. 특정 파일 실행 증거
+    evidence_path = tmp_path / "partial_file_evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "suite": "full",
+                "target": "tests/",
+                "command": "uv run pytest tests/test_chatbot_api_split.py -q",
+                "commit": "c0ffee1234567890",
+                "exit_code": 0,
+                "summary": "5 passed in 0.1s",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = make_mock_runner(branch="main", merge_head="c0ffee1234567890")
+    code, msg = verify_premerge_gate(evidence_path=evidence_path, runner=runner)
+    assert code == 1
+    assert "전량 테스트 증거가 아닙니다" in msg
+    assert "특정 파일/테스트 대상" in msg
+
+    # 2. suite / target 속성 불일치 증거
+    bad_suite_path = tmp_path / "bad_suite_evidence.json"
+    bad_suite_path.write_text(
+        json.dumps(
+            {
+                "suite": "partial",
+                "target": "tests/test_api_v1.py",
+                "command": "uv run pytest tests/ -q",
+                "commit": "c0ffee1234567890",
+                "exit_code": 0,
+                "summary": "3216 passed",
+            }
+        ),
+        encoding="utf-8",
+    )
+    code2, msg2 = verify_premerge_gate(evidence_path=bad_suite_path, runner=runner)
+    assert code2 == 1
+    assert "suite 속성" in msg2
+
+
+def test_is_full_suite_command():
+    """is_full_suite_command 가 전량 실행과 파일별 부분 실행을 정확히 구분합니다."""
+    # 전량 테스트 인정
+    assert is_full_suite_command("uv run pytest tests/ -q -m 'not data_assets'")[0] is True
+    assert is_full_suite_command("pytest tests/ -q")[0] is True
+    assert is_full_suite_command("uv run pytest tests")[0] is True
+
+    # 부분 테스트 기각
+    assert is_full_suite_command("uv run pytest tests/test_chatbot.py")[0] is False
+    assert (
+        is_full_suite_command("uv run pytest tests/test_chatbot.py::test_chatbot_line_counts")[0]
+        is False
+    )
+    assert is_full_suite_command("uv run pytest src/")[0] is False
+    assert is_full_suite_command("")[0] is False
+
+
+def test_parse_pytest_counts():
+    """parse_pytest_counts 가 passed, failed, skipped 숫자를 올바르게 추출합니다."""
+    counts = parse_pytest_counts("3209 passed, 35 skipped, 3 deselected, 311 warnings in 85.28s")
+    assert counts["passed"] == 3209
+    assert counts["skipped"] == 35
+    assert counts["failed"] == 0
+
+    counts_fail = parse_pytest_counts("1 failed, 3208 passed in 50s")
+    assert counts_fail["passed"] == 3208
+    assert counts_fail["failed"] == 1
+
+
 def test_main_branch_stale_commit_evidence_rejected(tmp_path: Path):
     """다른 커밋의 증거는 재사용할 수 없으며 커밋 불일치 시 거부합니다."""
     evidence_path = tmp_path / "stale_evidence.json"
     evidence_path.write_text(
         json.dumps(
             {
+                "suite": "full",
+                "target": "tests/",
+                "command": " ".join(CANONICAL_FULL_SUITE_CMD),
                 "commit": "old_commit_sha_1111",
                 "exit_code": 0,
                 "summary": "3216 passed, 31 skipped",
@@ -173,12 +262,15 @@ def test_main_branch_stale_commit_evidence_rejected(tmp_path: Path):
 
 
 def test_main_branch_valid_evidence_passes(tmp_path: Path):
-    """증거의 커밋이 MERGE_HEAD와 일치하고 exit_code가 0이면 통과합니다."""
+    """증거의 커밋이 MERGE_HEAD와 일치하고 전량 테스트 exit_code가 0이면 통과합니다."""
     target_sha = "c0ffee1234567890"
     evidence_path = tmp_path / "valid_evidence.json"
     evidence_path.write_text(
         json.dumps(
             {
+                "suite": "full",
+                "target": "tests/",
+                "command": " ".join(CANONICAL_FULL_SUITE_CMD),
                 "commit": target_sha,
                 "exit_code": 0,
                 "summary": "3216 passed, 31 skipped in 55.0s",
@@ -216,10 +308,14 @@ def test_record_evidence_success(tmp_path: Path):
     data, errs = load_evidence(evidence_path)
     assert not errs
     assert data is not None
+    assert data["suite"] == "full"
+    assert data["target"] == "tests/"
     assert data["commit"] == head_sha
     assert data["branch"] == "feature/record-test"
     assert data["exit_code"] == 0
-    assert "3216 passed" in data["summary"]
+    assert data["passed"] == 3216
+    assert data["skipped"] == 31
+    assert data["failed"] == 0
 
 
 def test_record_evidence_failure(tmp_path: Path):
@@ -243,6 +339,15 @@ def test_record_evidence_failure(tmp_path: Path):
     data, _ = load_evidence(evidence_path)
     assert data is not None
     assert data["exit_code"] == 1
+    assert data["failed"] == 1
+
+
+def test_install_git_hooks():
+    """install_git_hooks 가 pre-commit 및 pre-merge-commit 을 모두 설치합니다."""
+    runner = make_mock_runner()
+    code, msg = install_git_hooks(runner=runner)
+    assert code == 0
+    assert "정상 설치되었습니다" in msg
 
 
 def test_main_cli_dispatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -252,6 +357,9 @@ def test_main_cli_dispatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     evidence_path.write_text(
         json.dumps(
             {
+                "suite": "full",
+                "target": "tests/",
+                "command": " ".join(CANONICAL_FULL_SUITE_CMD),
                 "commit": target_sha,
                 "exit_code": 0,
                 "summary": "3216 passed",
