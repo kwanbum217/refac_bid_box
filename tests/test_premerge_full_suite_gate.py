@@ -93,13 +93,15 @@ def make_mock_runner(
     return mock_runner
 
 
-def test_bypass_active(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+def test_bypass_active(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+):
     """BYPASS_PREMERGE_FULL_SUITE_GATE 환경변수가 설정되면 즉시 통과하고 stderr에 경고를 남깁니다."""
     monkeypatch.setenv(BYPASS_ENV_VAR, "1")
     assert is_bypass_active() is True
 
     runner = make_mock_runner(branch="main")
-    code, msg = verify_premerge_gate(runner=runner)
+    code, msg = verify_premerge_gate(evidence_path=tmp_path / "dummy.json", runner=runner)
     assert code == 0
     assert BYPASS_ENV_VAR in msg
 
@@ -108,12 +110,12 @@ def test_bypass_active(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFi
     assert BYPASS_ENV_VAR in captured.err
 
 
-def test_non_main_branch_skips_gate():
+def test_non_main_branch_skips_gate(tmp_path: Path):
     """현재 브랜치가 main이 아니면 증거 파일 검사 없이 0을 반환하고 건너뜁니다."""
     runner = make_mock_runner(branch="feature/my-task")
     code, msg = verify_premerge_gate(
         target_branch="main",
-        evidence_path=Path("/non/existent/path.json"),
+        evidence_path=tmp_path / "non_existent.json",
         runner=runner,
     )
     assert code == 0
@@ -121,11 +123,12 @@ def test_non_main_branch_skips_gate():
     assert "feature/my-task" in msg
 
 
-def test_main_branch_missing_merge_head():
+def test_main_branch_missing_merge_head(tmp_path: Path):
     """main 브랜치에서 MERGE_HEAD를 확인할 수 없으면 fail-closed로 거부합니다."""
     runner = make_mock_runner(branch="main", merge_head=None)
     code, msg = verify_premerge_gate(
         target_branch="main",
+        evidence_path=tmp_path / "dummy.json",
         runner=runner,
     )
     assert code == 1
@@ -412,14 +415,14 @@ def test_record_evidence_failure(tmp_path: Path):
     assert data["failed"] == 1
 
 
-def test_commit_source_non_merge_bypasses_gate():
+def test_commit_source_non_merge_bypasses_gate(tmp_path: Path):
     """prepare-commit-msg 단계에서 merge가 아닌 커밋 소스(message, template, commit, squash, none)는 즉시 통과합니다."""
     runner = make_mock_runner(branch="main")
     for src in ["message", "template", "commit", "squash", "none"]:
         code, msg = verify_premerge_gate(
             target_branch="main",
             commit_source=src,
-            evidence_path=Path("/non/existent/path.json"),
+            evidence_path=tmp_path / "dummy.json",
             runner=runner,
         )
         assert code == 0

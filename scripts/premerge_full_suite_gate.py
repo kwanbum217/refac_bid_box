@@ -154,24 +154,21 @@ def get_merge_head_sha(runner: Runner = run_process) -> tuple[str | None, str]:
 
 def load_evidence(evidence_path: Path) -> tuple[dict[str, Any] | None, list[str]]:
     """전량 테스트 증거 파일을 읽고 fail-closed 방식으로 구조를 검증합니다."""
-    target_path = evidence_path
-    if not target_path.exists():
-        local_fallback = Path.cwd() / DEFAULT_EVIDENCE_PATH
-        if local_fallback.exists():
-            target_path = local_fallback
-        else:
-            return None, [
-                f"전량 테스트 증거 파일이 존재하지 않습니다 ({evidence_path}).\n"
-                f"병합 전에 작업 브랜치에서 전량 테스트를 실행하고 증거를 기록하십시오:\n"
-                f"  python3 scripts/premerge_full_suite_gate.py --record"
-            ]
+    if not evidence_path.exists():
+        return None, [
+            f"전량 테스트 증거 파일이 존재하지 않습니다 ({evidence_path}).\n"
+            f"병합 전에 작업 브랜치에서 전량 테스트를 실행하고 증거를 기록하십시오:\n"
+            f"  python3 scripts/premerge_full_suite_gate.py --record"
+        ]
 
     try:
-        data = json.loads(target_path.read_text(encoding="utf-8"))
+        data = json.loads(evidence_path.read_text(encoding="utf-8"))
     except OSError as exc:
-        return None, [f"전량 테스트 증거 파일을 읽을 수 없습니다 ({target_path}): {exc}"]
+        return None, [f"전량 테스트 증거 파일을 읽을 수 없습니다 ({evidence_path}): {exc}"]
     except json.JSONDecodeError as exc:
-        return None, [f"전량 테스트 증거 JSON 형식이 올바르지 않습니다 ({target_path}): {exc.msg}"]
+        return None, [
+            f"전량 테스트 증거 JSON 형식이 올바르지 않습니다 ({evidence_path}): {exc.msg}"
+        ]
 
     if not isinstance(data, dict):
         return None, ["전량 테스트 증거 데이터가 JSON 객체(dict) 형식이 아닙니다."]
