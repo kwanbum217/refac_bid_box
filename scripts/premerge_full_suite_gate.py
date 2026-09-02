@@ -3,8 +3,9 @@
 scripts/premerge_full_suite_gate.py
 
 main 브랜치 병합 시 전량 테스트 실행 및 통과 증거를 기계적으로 검증하는 게이트 스크립트입니다.
-pre-commit 프레임워크의 pre-merge-commit 스테이지에서 실행되어, 전량 테스트 통과 증거 없이
-수동 git merge 또는 도구 병합이 이루어지는 것을 fail-closed 방식으로 차단합니다.
+pre-commit 프레임워크의 prepare-commit-msg 스테이지에서 실행되어, 병합 커밋(commit source == "merge")
+생성 시점에 전량 테스트 통과 증거 없이 수동 git merge 또는 도구 병합이 이루어지는 것을
+fail-closed 방식으로 차단합니다. 일반 커밋(message, template, squash, commit 등)은 즉시 통과합니다.
 """
 
 from __future__ import annotations
@@ -113,13 +114,17 @@ def resolve_evidence_path(
 
 
 def get_merge_head_sha(runner: Runner = run_process) -> tuple[str | None, str]:
-    """pre-merge-commit 훅 문맥에서 병합 대상 커밋(MERGE_HEAD) SHA를 조회합니다.
+    """prepare-commit-msg 훅 문맥에서 병합 대상 커밋(MERGE_HEAD) SHA를 조회합니다.
 
-    pre-commit 래퍼 문맥에서는 `git rev-parse --verify MERGE_HEAD`가 실패할 수 있으므로,
-    1) `git rev-parse --git-path MERGE_HEAD`로 파일 경로를 획득하여 직접 읽고,
-    2) 부재 시 `git rev-parse --verify MERGE_HEAD`로 조회합니다.
+    1) `git rev-parse --verify MERGE_HEAD`로 조회하고,
+    2) `git rev-parse --git-path MERGE_HEAD`로 파일 경로를 획득하여 직접 읽습니다.
     """
-    # 1. git rev-parse --git-path MERGE_HEAD 경로 확인 및 파일 직접 읽기
+    # 1. git rev-parse --verify MERGE_HEAD
+    verify_proc = runner(["git", "rev-parse", "--verify", "MERGE_HEAD"])
+    if verify_proc.returncode == 0 and verify_proc.stdout.strip():
+        return verify_proc.stdout.strip(), ""
+
+    # 2. git rev-parse --git-path MERGE_HEAD 파일 직접 읽기
     path_proc = runner(["git", "rev-parse", "--git-path", "MERGE_HEAD"])
     if path_proc.returncode == 0 and path_proc.stdout.strip():
         merge_head_file_str = path_proc.stdout.strip()
@@ -133,7 +138,6 @@ def get_merge_head_sha(runner: Runner = run_process) -> tuple[str | None, str]:
                 lines = [line.strip() for line in content.splitlines() if line.strip()]
                 if lines:
                     sha = lines[0]
-                    # 커밋 SHA 유효성 확인
                     sha_proc = runner(["git", "rev-parse", "--verify", f"{sha}^{{commit}}"])
                     if sha_proc.returncode == 0 and sha_proc.stdout.strip():
                         return sha_proc.stdout.strip(), ""
@@ -142,14 +146,9 @@ def get_merge_head_sha(runner: Runner = run_process) -> tuple[str | None, str]:
             except OSError as exc:
                 return None, f"MERGE_HEAD 파일({merge_head_path})을 읽을 수 없습니다: {exc}"
 
-    # 2. 폴백: git rev-parse --verify MERGE_HEAD
-    verify_proc = runner(["git", "rev-parse", "--verify", "MERGE_HEAD"])
-    if verify_proc.returncode == 0 and verify_proc.stdout.strip():
-        return verify_proc.stdout.strip(), ""
-
     return None, (
         "병합 대상 커밋(MERGE_HEAD)을 확인할 수 없습니다.\n"
-        "pre-merge-commit 단계가 아니거나 병합 커밋 생성이 진행 중이 아닙니다."
+        "prepare-commit-msg 단계가 아니거나 병합 커밋 생성이 진행 중이 아닙니다."
     )
 
 
@@ -157,7 +156,6 @@ def load_evidence(evidence_path: Path) -> tuple[dict[str, Any] | None, list[str]
     """전량 테스트 증거 파일을 읽고 fail-closed 방식으로 구조를 검증합니다."""
     target_path = evidence_path
     if not target_path.exists():
-        # 로컬 기본 상대 경로 확인
         local_fallback = Path.cwd() / DEFAULT_EVIDENCE_PATH
         if local_fallback.exists():
             target_path = local_fallback
@@ -186,6 +184,7 @@ def verify_premerge_gate(
     target_branch: str = "main",
     evidence_path: Path | None = None,
     source_commit: str | None = None,
+    commit_source: str | None = "merge",
     runner: Runner = run_process,
 ) -> tuple[int, str]:
     """main 브랜치 병합 시점에 전량 테스트 통과 증거를 검증합니다."""
@@ -197,7 +196,14 @@ def verify_premerge_gate(
         print(warning_msg, file=sys.stderr)
         return 0, warning_msg
 
-    # 2. 현재 브랜치 확인 (main 브랜치 병합 커밋만 게이트 대상)
+    # 2. 커밋 소스(commit_source) 검사: prepare-commit-msg 단계에서 commit_source가 "merge"가 아니면
+    # (예: 일반 커밋인 "message", "template", "commit", "squash", "none" 등) 즉시 통과
+    if commit_source is not None and commit_source != "merge" and not source_commit:
+        return 0, (
+            f"[premerge-gate] 커밋 소스('{commit_source}')가 병합('merge')이 아니므로 검사를 건너뜁니다."
+        )
+
+    # 3. 현재 브랜치 확인 (main 브랜치 병합 커밋만 게이트 대상)
     current_branch_proc = runner(["git", "branch", "--show-current"])
     if current_branch_proc.returncode != 0:
         return 1, f"현재 브랜치를 확인할 수 없습니다: {current_branch_proc.stderr.strip()}"
@@ -209,7 +215,7 @@ def verify_premerge_gate(
             f"게이트 대상 브랜치('{target_branch}')가 아니므로 검사를 건너뜁니다."
         )
 
-    # 3. 병합 대상 커밋(source_commit / MERGE_HEAD) 확인
+    # 4. 병합 대상 커밋(source_commit / MERGE_HEAD) 확인
     merge_sha = source_commit
     if not merge_sha:
         head_sha, err_msg = get_merge_head_sha(runner=runner)
@@ -225,7 +231,7 @@ def verify_premerge_gate(
             )
         merge_sha = sha_proc.stdout.strip()
 
-    # 4. 증거 경로 해소 및 로드
+    # 5. 증거 경로 해소 및 로드
     resolved_path = resolve_evidence_path(evidence_path, runner=runner)
     evidence, errors = load_evidence(resolved_path)
     if errors:
@@ -234,7 +240,7 @@ def verify_premerge_gate(
     if evidence is None:
         return 1, "전량 테스트 증거가 없습니다."
 
-    # 5. 전량 테스트 대상 검증 (개별 파일/부분 테스트 증거 기각)
+    # 6. 전량 테스트 대상 검증 (개별 파일/부분 테스트 증거 기각)
     command_str = str(evidence.get("command", "")).strip()
     is_full_suite, cmd_err = is_full_suite_command(command_str)
     if not is_full_suite:
@@ -252,12 +258,12 @@ def verify_premerge_gate(
             "전량 테스트 증거가 필요합니다."
         )
 
-    # 6. 증거 필드 검증: exit_code == 0
+    # 7. 증거 필드 검증: exit_code == 0
     ev_exit_code = evidence.get("exit_code")
     if ev_exit_code != 0:
         return 1, f"전량 테스트 증거의 종료 코드가 0이 아닙니다 (exit_code: {ev_exit_code})."
 
-    # 7. 증거 필드 검증: commit 일치 여부
+    # 8. 증거 필드 검증: commit 일치 여부
     ev_commit = str(evidence.get("commit", "")).strip()
     if not ev_commit:
         return 1, "전량 테스트 증거에 커밋 해시(commit)가 누락되었거나 비어 있습니다."
@@ -289,7 +295,6 @@ def record_evidence(
     runner: Runner = run_process,
 ) -> tuple[int, str]:
     """현재 HEAD 커밋에 대해 전량 테스트를 실행하고 공통 증거 파일에 기록합니다."""
-    # 1. 현재 커밋 및 브랜치 확인
     head_proc = runner(["git", "rev-parse", "--verify", "HEAD"])
     if head_proc.returncode != 0 or not head_proc.stdout.strip():
         return 1, f"현재 HEAD 커밋을 확인할 수 없습니다: {head_proc.stderr.strip()}"
@@ -298,10 +303,8 @@ def record_evidence(
     branch_proc = runner(["git", "branch", "--show-current"])
     branch_name = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
 
-    # 2. 증거 경로 해소
     target_path = resolve_evidence_path(evidence_path, runner=runner)
 
-    # 3. 전량 테스트 정본 명령 실행 (임의의 부분 테스트 경로 허용 금지)
     cmd = list(CANONICAL_FULL_SUITE_CMD)
     print(f"[premerge-gate] 전량 테스트 실행 중: {' '.join(cmd)}")
 
@@ -317,7 +320,6 @@ def record_evidence(
 
     counts = parse_pytest_counts(summary_line)
 
-    # 4. 증거 디렉터리 생성 및 기록
     target_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_data = {
         "suite": "full",
@@ -356,8 +358,7 @@ def record_evidence(
 
 
 def install_git_hooks(runner: Runner = run_process) -> tuple[int, str]:
-    """pre-commit 및 pre-merge-commit git hook 을 모두 설치합니다."""
-    # 워크트리 설치 경고 확인
+    """pre-commit 및 prepare-commit-msg git hook 을 모두 설치합니다."""
     git_dir_proc = runner(["git", "rev-parse", "--git-dir"])
     git_common_proc = runner(["git", "rev-parse", "--git-common-dir"])
     warning_str = ""
@@ -379,20 +380,38 @@ def install_git_hooks(runner: Runner = run_process) -> tuple[int, str]:
         "--hook-type",
         "pre-commit",
         "--hook-type",
-        "pre-merge-commit",
+        "prepare-commit-msg",
     ]
     proc = runner(cmd)
     if proc.returncode != 0:
         return proc.returncode, f"git hook 설치 실패:\n{proc.stderr.strip() or proc.stdout.strip()}"
     return (
         0,
-        f"[premerge-gate] pre-commit 및 pre-merge-commit 훅이 정상 설치되었습니다.{warning_str}",
+        f"[premerge-gate] pre-commit 및 prepare-commit-msg 훅이 정상 설치되었습니다.{warning_str}",
     )
 
 
 def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="main 브랜치 병합 시 전량 테스트 통과 증거를 검증하는 게이트"
+    )
+    parser.add_argument(
+        "commit_msg_file",
+        nargs="?",
+        default=None,
+        help="커밋 메시지 파일 경로 (prepare-commit-msg 훅 1번째 인자)",
+    )
+    parser.add_argument(
+        "commit_source",
+        nargs="?",
+        default=None,
+        help="커밋 소스 유형 (prepare-commit-msg 훅 2번째 인자: merge, message, template, commit, squash 등)",
+    )
+    parser.add_argument(
+        "commit_sha",
+        nargs="?",
+        default=None,
+        help="커밋 SHA (prepare-commit-msg 훅 3번째 인자)",
     )
     parser.add_argument(
         "--record",
@@ -402,7 +421,7 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--install-hooks",
         action="store_true",
-        help="pre-commit 및 pre-merge-commit 훅을 Git 저장소에 설치합니다.",
+        help="pre-commit 및 prepare-commit-msg 훅을 Git 저장소에 설치합니다.",
     )
     parser.add_argument(
         "--target-branch",
@@ -419,6 +438,12 @@ def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--source-commit",
         help="검증할 소스 커밋 SHA (미지정 시 git MERGE_HEAD 사용)",
     )
+    parser.add_argument(
+        "--commit-source",
+        dest="opt_commit_source",
+        default=None,
+        help="명시적 커밋 소스 지정 (merge, message 등)",
+    )
     return parser.parse_args(argv)
 
 
@@ -432,10 +457,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             evidence_path=args.evidence_path,
         )
     else:
+        commit_src: str | None
+        if args.opt_commit_source:
+            commit_src = args.opt_commit_source
+        elif args.commit_source:
+            commit_src = args.commit_source
+        elif args.commit_msg_file:
+            commit_src = "none"
+        else:
+            commit_src = "merge"
+
         code, message = verify_premerge_gate(
             target_branch=args.target_branch,
             evidence_path=args.evidence_path,
             source_commit=args.source_commit,
+            commit_source=commit_src,
         )
 
     stream = sys.stdout if code == 0 else sys.stderr

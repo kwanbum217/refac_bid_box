@@ -412,8 +412,35 @@ def test_record_evidence_failure(tmp_path: Path):
     assert data["failed"] == 1
 
 
+def test_commit_source_non_merge_bypasses_gate():
+    """prepare-commit-msg 단계에서 merge가 아닌 커밋 소스(message, template, commit, squash, none)는 즉시 통과합니다."""
+    runner = make_mock_runner(branch="main")
+    for src in ["message", "template", "commit", "squash", "none"]:
+        code, msg = verify_premerge_gate(
+            target_branch="main",
+            commit_source=src,
+            evidence_path=Path("/non/existent/path.json"),
+            runner=runner,
+        )
+        assert code == 0
+        assert "건너뜁니다" in msg
+
+
+def test_commit_source_merge_executes_gate(tmp_path: Path):
+    """commit_source가 'merge'이면 main 브랜치에서 게이트를 엄격히 실행합니다."""
+    runner = make_mock_runner(branch="main", merge_head="c0ffee1234567890")
+    code, msg = verify_premerge_gate(
+        target_branch="main",
+        commit_source="merge",
+        evidence_path=tmp_path / "missing.json",
+        runner=runner,
+    )
+    assert code == 1
+    assert "존재하지 않습니다" in msg
+
+
 def test_install_git_hooks():
-    """install_git_hooks 가 pre-commit 및 pre-merge-commit 을 모두 설치합니다."""
+    """install_git_hooks 가 pre-commit 및 prepare-commit-msg 를 모두 설치합니다."""
     runner = make_mock_runner()
     code, msg = install_git_hooks(runner=runner)
     assert code == 0
@@ -465,3 +492,48 @@ def test_main_cli_dispatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         ]
     )
     assert ret == 0
+
+
+def test_main_cli_prepare_commit_msg_positional_args(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """pre-commit prepare-commit-msg 훅의 위치 인자($1 msg_file, $2 source)를 올바르게 처리합니다."""
+    target_sha = "1234567890abcdef"
+    evidence_path = tmp_path / "cli_evidence2.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "suite": "full",
+                "target": "tests/",
+                "command": " ".join(CANONICAL_FULL_SUITE_CMD),
+                "commit": target_sha,
+                "exit_code": 0,
+                "summary": "3216 passed",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = make_mock_runner(branch="main", merge_head=target_sha)
+    monkeypatch.setattr("scripts.premerge_full_suite_gate.run_process", runner)
+
+    # 1. merge 소스 -> 게이트 실행 및 통과
+    ret_merge = main(
+        [
+            ".git/MERGE_MSG",
+            "merge",
+            "--target-branch",
+            "main",
+            "--evidence-path",
+            str(evidence_path),
+        ]
+    )
+    assert ret_merge == 0
+
+    # 2. message 소스 (일반 커밋) -> 증거 없이도 즉시 통과
+    ret_msg = main([".git/COMMIT_EDITMSG", "message"])
+    assert ret_msg == 0
+
+    # 3. 소스 생략된 일반 커밋 -> 증거 없이도 즉시 통과
+    ret_none = main([".git/COMMIT_EDITMSG"])
+    assert ret_none == 0

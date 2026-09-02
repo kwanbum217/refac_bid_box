@@ -96,4 +96,4 @@ repos:
         entry: python3 scripts/premerge_full_suite_gate.py
         language: system
         pass_filenames: false
-        stages: [pre-merge-commit]
+        stages: [prepare-commit-msg]
