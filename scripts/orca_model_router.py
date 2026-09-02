@@ -445,6 +445,24 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "따라서 도구 호출이 손에 꼽는 작업에만 배정한다."
         ),
     },
+    "or-free-minimax-m3": {
+        "id": "or-free/minimax-m3",
+        "provider": "kimi-openrouter",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 1_048_576,
+        # 2026-09-02 읽기 전용 probe 통과. 쓰기 과제 실측 이력은 아직 없다.
+        "suitable_for": [
+            "investigator",
+        ],
+        "notes": (
+            "OpenRouter minimax/minimax-m3:free. kimi 프로필에는 정의돼 있었으나 "
+            "풀에 등록되지 않아 라우터가 보지 못했다. 2026-09-02 probe 로 가용성만 "
+            "확인했고 컨텍스트 1,048,576 에 thinking 과 tool_use 를 선언한다. "
+            "2026-08-20 쓰기 경합에 참여하지 않았으므로 builder 는 아직 열지 "
+            "않는다. 쓰기 과제 실측 후 다른 무료 항목과 같은 기준으로 판정하라."
+        ),
+    },
     "or-free-nemotron-ultra": {
         "id": "or-free/nemotron-ultra",
         "provider": "kimi-openrouter",
@@ -507,6 +525,10 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "tier": "free",
         "auto_selectable": False,
         "max_tokens": None,
+        # 2026-09-02 배정 보류. E3 관측성 조사에서 컨텍스트 15% 를 쓰는 동안
+        # 산출물이 0 이었고 codex 로 교체했다. 무료 풀 전반이 한 과제에
+        # 9분에서 14분을 쓰는데, 코디네이터가 하나뿐인 조율에서는 그 대기가
+        # 전체 웨이브를 늦춘다. 시간이 여유로운 병렬 조사에만 붙인다.
         # 2026-08-20 builder 경합 1위. 9분01초로 전체 최속, 중립 시나리오 8/8,
         # 테스트 9건. 그전까지 MODEL_POOL 에 등록조차 되어 있지 않았습니다.
         "suitable_for": [

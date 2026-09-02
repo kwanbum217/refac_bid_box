@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # PSI 드리프트 모니터링 정기 검사(매일 04:00) 활성화 여부.
     # 초기 기동 시 baseline 분포 아티팩트 부재로 인한 오경보를 방지하기 위해 기본값은 비활성(False)입니다.
     ML_DRIFT_MONITOR_ENABLED: bool = False
+    # 통합 백업 크론(매일 03:00). 디스크·DB 부하가 있으므로 기본값은 비활성입니다.
+    BACKUP_SCHEDULE_ENABLED: bool = False
+    # 유지할 스냅샷 개수. 삭제는 별도 명시 플래그 없이는 수행하지 않습니다.
+    BACKUP_RETENTION_COUNT: int = 7
     # 구간별 지연 구조화 로그는 진단 전용입니다. 정식 레이턴시 게이트에서는
     # 로그 포매팅·출력 오버헤드를 배제하기 위해 기본적으로 끕니다.
     LATENCY_SEGMENT_LOGGING: bool = False

@@ -38,7 +38,7 @@ jobs:
         run: docker build --pull=false -t refac-bid-box:ci .
 
       - name: Scan container image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: refac-bid-box:ci
           format: table
@@ -48,7 +48,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Generate application SBOM
-        uses: anchore/sbom-action@v0.17.7
+        uses: anchore/sbom-action@v0.24.2
         with:
           image: refac-bid-box:ci
           artifact-name: refac-bid-box-sbom.spdx.json
