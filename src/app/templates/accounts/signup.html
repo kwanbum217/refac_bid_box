@@ -16,6 +16,7 @@
             </div>
 
             <form method="POST" class="space-y-5">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
                 {% if form.non_field_errors %}
                 <div class="p-4 bg-red-50 border border-red-100 rounded-lg">

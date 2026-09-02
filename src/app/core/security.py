@@ -37,6 +37,43 @@ DEFAULT_ITERATIONS = 600_000
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
 SESSION_COOKIE_NAME = "bidbox_session"
 SESSION_CACHE_PREFIX = "auth:session:"
+CSRF_COOKIE_NAME = "bidbox_csrf"
+CSRF_HEADER_NAME = "X-CSRF-Token"
+CSRF_FORM_FIELD = "csrf_token"
+CSRF_SALT = "bidbox.csrf"
+CSRF_MAX_AGE = 60 * 60 * 24
+
+
+def make_csrf_token() -> str:
+    """기존 자동화 토큰과 동일한 SECRET_KEY/HMAC 형식의 토큰을 발급합니다."""
+    timestamp = str(int(time.time()))
+    value = secrets.token_urlsafe(32)
+    payload = f"{value}:{timestamp}"
+    digest = hmac.new(
+        f"{settings.SECRET_KEY}:{CSRF_SALT}".encode(), payload.encode(), hashlib.sha256
+    ).digest()
+    signature = base64.urlsafe_b64encode(digest).decode().rstrip("=")
+    return f"{payload}:{signature}"
+
+
+def csrf_tokens_match(cookie_token: str | None, request_token: str | None) -> bool:
+    """서명된 이중 제출 토큰을 상수 시간으로 비교·검증합니다."""
+    if not cookie_token or not request_token:
+        return False
+    if not hmac.compare_digest(cookie_token, request_token):
+        return False
+    try:
+        value, timestamp, signature = cookie_token.rsplit(":", 2)
+        payload = f"{value}:{timestamp}"
+        expected = hmac.new(
+            f"{settings.SECRET_KEY}:{CSRF_SALT}".encode(), payload.encode(), hashlib.sha256
+        ).digest()
+        expected_signature = base64.urlsafe_b64encode(expected).decode().rstrip("=")
+        if not hmac.compare_digest(signature, expected_signature):
+            return False
+        return time.time() - int(timestamp) <= CSRF_MAX_AGE
+    except (TypeError, ValueError):
+        return False
 
 
 def make_password(
