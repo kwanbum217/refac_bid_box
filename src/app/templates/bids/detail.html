@@ -203,6 +203,29 @@
                                             <div id="res-interval-price" class="text-sm font-black text-slate-800 tabular-nums">-</div>
                                         </div>
                                     </div>
+
+                                    <!-- 결측 집단(missing_lwlt) 안내 배지 (docs/analysis/servc_missing_lwlt_policy_20260902.md 3.3절) -->
+                                    <div id="res-lwlt-missing" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-amber-700">
+                                        <div class="flex items-start gap-2">
+                                            <i class="fas fa-triangle-exclamation text-amber-500 mt-0.5 shrink-0"></i>
+                                            <div>
+                                                <div class="font-bold text-amber-700 flex items-center gap-1.5">
+                                                    <span>근거 데이터 부족 (낙찰하한율 부재)</span>
+                                                    <span id="res-lwlt-reason" class="text-[10px] text-amber-700"></span>
+                                                </div>
+                                                <div class="mt-0.5 text-[11px] leading-relaxed text-amber-700">
+                                                    낙찰하한율 정보가 없는 공고 유형(수의시담·협상·규격가격동시 등)입니다.
+                                                    예측 구간이 통상보다 넓게 산출되며, 점 추정값의 신뢰도가 낮음을 의미합니다.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 넓은 구간 경고 배지 (docs/analysis/servc_missing_lwlt_policy_20260902.md 4.2절) -->
+                                    <div id="res-wide-interval" class="hidden mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] font-semibold text-amber-700 flex items-center gap-2">
+                                        <i class="fas fa-circle-exclamation text-amber-500 shrink-0"></i>
+                                        <span>예측 구간이 매우 넓어 불확실성이 큽니다. 참고용으로만 활용하십시오.</span>
+                                    </div>
                                 </div>
 
                                 <div class="space-y-4 relative z-10">
@@ -553,6 +576,24 @@ $(document).ready(function() {
                         $('#res-interval').removeClass('hidden');
                     } else {
                         $('#res-interval').addClass('hidden');
+                    }
+
+                    // 낙찰하한율 결측(missing_lwlt) 및 구간 불확실성 안내 배지 (docs/analysis/servc_missing_lwlt_policy_20260902.md 3.3절/4.2절)
+                    if (data.lwlt_missing) {
+                        if (data.lwlt_missing_reason) {
+                            $('#res-lwlt-reason').text('(' + data.lwlt_missing_reason + ')');
+                        } else {
+                            $('#res-lwlt-reason').text('');
+                        }
+                        $('#res-lwlt-missing').removeClass('hidden');
+                    } else {
+                        $('#res-lwlt-missing').addClass('hidden');
+                    }
+
+                    if (data.wide_interval_warning) {
+                        $('#res-wide-interval').removeClass('hidden');
+                    } else {
+                        $('#res-wide-interval').addClass('hidden');
                     }
 
                     // 색은 근접도 자체를 나타냅니다. 추천가에 가까울수록 초록입니다.

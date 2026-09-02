@@ -61,3 +61,13 @@ class PredictPriceResponse(BaseModel):
     price_low: int | None = Field(None, description="예상 낙찰가 하단")
     price_high: int | None = Field(None, description="예상 낙찰가 상단")
     interval_coverage: float | None = Field(None, description="구간 명목 피복률")
+    # missing_lwlt 취약 집단 및 불확실성 경고 필드 (docs/analysis/servc_missing_lwlt_policy_20260902.md)
+    lwlt_missing: bool = Field(False, description="낙찰하한율 결측 여부 (제도적 부재)")
+    lwlt_missing_reason: str | None = Field(
+        None, description="낙찰하한율 결측 사유 (제도적 부재 구분)"
+    )
+    wide_interval_warning: bool = Field(False, description="예측 구간 폭이 임계값(15%p) 초과 여부")
+    extreme_prediction_warning: bool = Field(
+        False, description="클리핑 전 예측 낙찰률이 정상 범위(80%~100%) 이탈 여부"
+    )
+    uncertainty_warning: str | None = Field(None, description="불확실성 안내 및 경고 메시지")
