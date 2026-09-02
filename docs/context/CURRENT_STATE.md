@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-02
-> **source_commit**: `0a77ea5`
+> **source_commit**: `7a8c7b9`
 > **version**: v1.0.0
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -105,6 +105,18 @@
 | 4.2 MySQL 통합 | 콜레이션, 정수 나눗셈, `ONLY_FULL_GROUP_BY`, 날짜 함수, JSON 추출 다섯 영역을 통합 테스트로 검증합니다. 기존 SQLite 테스트는 회귀 안전망으로 남겼습니다 |
 | 3.5 CSRF | signup, login, logout 세 SSR 폼에 이중 제출 토큰 검증을 겁니다. 토큰이 없으면 403 으로 fail-closed 입니다. JSON API 와 워커 콜백은 제외했습니다 |
 | 3.1 G1 대조 | 이행 시점 이전 구간의 행 수를 따로 세어 기준선과 대조합니다. 경계는 `data/backups/data_assets_checksums.json` 의 `generated_at` 에서 왔습니다 |
+
+### 1.5.7 Wave G 부분 해소 (2026-09-02)
+
+| 항목 | 조치 |
+| --- | --- |
+| 3.7 이미지 강화 | `Dockerfile` 을 builder 와 runtime 으로 나눠 빌드 도구를 런타임에서 빼고 `USER 1000:1000` 으로 비 root 실행합니다. 운영 compose 에서 호스트 소스 마운트를 제거하고 `read_only` 루트에 `noexec` `nosuid` 제한 `/tmp` tmpfs 를 붙였습니다 |
+
+**코디네이터가 직접 빌드로 확인했습니다.** `docker build` 통과, 컨테이너에서 `uid=1000(app)`, `which gcc git` 결과 없음, prod compose config 통과입니다.
+
+**Codex 워커의 Capsule 배치 경합을 제거했습니다.** `scripts/orca_codex_launch.py` 를 쓰십시오. `worker-start` 는 워크트리 생성과 워커 기동을 한 번에 하므로 기동 뒤에 Capsule 을 복사하면 워커가 그 사이에 정본을 못 찾습니다. 이 경합으로 워커 네 대가 계약 없이 작업했거나 멈췄습니다. 상세는 [`../ops/agent_worker_launch_reference.md`](../ops/agent_worker_launch_reference.md) 1.6 절입니다.
+
+---
 
 **CSRF 는 SSR 폼에만 걸려 있습니다.** JSON API 소비자는 토큰 없이 동작합니다. 그 경로의 보호는 세션 쿠키의 `samesite=lax` 와 인증에 의존합니다.
 
