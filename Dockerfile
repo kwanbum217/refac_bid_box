@@ -1,31 +1,47 @@
-FROM python:3.11-slim@sha256:d1e9ca7c4e78d1e8ecadb5d44bfc8e956e7a65b659a9950f569f243d72b326d0
+FROM python:3.11-slim@sha256:d1e9ca7c4e78d1e8ecadb5d44bfc8e956e7a65b659a9950f569f243d72b326d0 AS builder
+
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
-# 시스템 패키지 설치
+# 컴파일러와 패키지 관리 도구는 의존성 빌드가 끝난 스테이지에만 둡니다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     git \
+    && python -m venv "$VIRTUAL_ENV" \
     && rm -rf /var/lib/apt/lists/*
 
-# uv 패키지 매니저 복사. latest 는 빌드 시점마다 달라져 이미지가 재현되지
-# 않으므로 버전을 고정합니다.
 COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
+COPY pyproject.toml uv.lock ./
 
-# 프로젝트 소스 및 설정 전체 복사
-COPY . /app/
-
-# 의존성 설치. uv.lock 에서 정확한 버전을 뽑아 설치합니다.
-# `uv pip install -e .` 만 쓰면 pyproject.toml 의 >= 범위가 빌드 시점마다
-# 다시 해석되어 CI 가 검증한 의존성 집합과 운영 이미지가 어긋납니다.
+# uv.lock 에서 운영 의존성만 설치하여 빌드 시점의 재해석을 막습니다.
 RUN uv export --frozen --no-dev --no-emit-project --format requirements.txt -o /tmp/requirements.txt \
-    && uv pip install --system -r /tmp/requirements.txt \
-    && uv pip install --system --no-deps -e . \
+    && uv pip install --python "$VIRTUAL_ENV/bin/python" -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 
-# 개발 의존성은 운영 이미지에 넣지 않습니다. 컨테이너 안에서 테스트를 돌려야 하면
-# `uv pip install --system --group dev` 를 별도 빌드 스테이지에서 수행하십시오.
+COPY . /app/
+RUN uv pip install --python "$VIRTUAL_ENV/bin/python" --no-deps -e .
+
+FROM python:3.11-slim@sha256:d1e9ca7c4e78d1e8ecadb5d44bfc8e956e7a65b659a9950f569f243d72b326d0 AS runtime
+
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH" \
+    HOME=/tmp
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app /app
+
+# 운영 프로세스는 고정 UID의 비-root 계정으로 실행합니다. Compose의 bind
+# mount도 같은 UID를 사용하므로 모델·데이터 읽기 권한이 일관됩니다.
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/app --shell /usr/sbin/nologin app \
+    && chown -R 1000:1000 /app /home/app
+
+USER 1000:1000
 
 EXPOSE 8000
 
