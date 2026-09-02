@@ -130,6 +130,9 @@ def test_readiness_is_degraded_when_only_meilisearch_fails(monkeypatch):
     assert data["checks"]["meilisearch"]["detail"] == "ConnectionError: dependency_check_failed"
 
 
+_HANG_SECONDS = 2.0
+
+
 def test_readiness_times_out_without_hanging(monkeypatch):
     _patch_checks_healthy(monkeypatch)
     monkeypatch.setattr(health, "CHECK_TIMEOUT_SECONDS", 0.02)
@@ -139,7 +142,11 @@ def test_readiness_times_out_without_hanging(monkeypatch):
 
     async def controlled_to_thread(check):
         if check is slow_mysql:
-            await health.asyncio.sleep(0.1)
+            # 행이 걸렸을 때와 타임아웃했을 때의 차이를 크게 벌립니다. 아래
+            # 벽시계 단언은 러너 부하와 커버리지 계측 오버헤드를 함께 견뎌야
+            # 하는데, 대비가 작으면 정상 동작에서도 실패합니다. 2026-09-02 에
+            # CI 의 py3.11 러너에서 0.29초가 나와 0.08초 단언이 깨졌습니다.
+            await health.asyncio.sleep(_HANG_SECONDS)
         else:
             check()
 
@@ -150,7 +157,9 @@ def test_readiness_times_out_without_hanging(monkeypatch):
     response = client.get("/api/v1/health/ready")
 
     elapsed = time.perf_counter() - started_at
-    assert elapsed < 0.08
+    # 타임아웃이 실제로 걸렸다는 증거는 아래 503 과 TimeoutError 단언입니다.
+    # 이 단언은 행이 걸리지 않았다는 것만 확인하므로 여유를 크게 둡니다.
+    assert elapsed < _HANG_SECONDS / 2
     assert response.status_code == 503
     data = response.json()
     assert data["status"] == "not_ready"
