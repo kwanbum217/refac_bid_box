@@ -1,8 +1,41 @@
+import logging
+import tomllib
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_VERSION_FALLBACK = "0.0.0+unknown"
+
+
+def get_app_version() -> str:
+    """패키지 메타데이터에서 버전을 읽습니다.
+
+    정본은 pyproject.toml 의 version 하나입니다. 패키지가 설치되지 않은
+    환경에서는 메타데이터가 없으므로 pyproject.toml 을 직접 읽어 같은 값을
+    씁니다. 여기에 값을 하드코딩하면 정본이 둘로 갈립니다.
+
+    두 경로가 모두 실패해도 기동을 막지 않고 표지가 분명한 값으로 떨어지되,
+    그 사실을 경고 로그로 남깁니다.
+    """
+    try:
+        return pkg_version("refac_bid_box")
+    except PackageNotFoundError:
+        pass
+
+    pyproject = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    try:
+        with pyproject.open("rb") as fh:
+            return str(tomllib.load(fh)["project"]["version"])
+    except (OSError, KeyError, tomllib.TOMLDecodeError) as exc:
+        logging.getLogger(__name__).warning(
+            "앱 버전을 확인하지 못해 %s 로 대체합니다: %s", _VERSION_FALLBACK, exc
+        )
+        return _VERSION_FALLBACK
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
