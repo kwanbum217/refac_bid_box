@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess  # nosec B404 - 고정된 인자 목록으로만 git 및 pre-commit 을 호출합니다
 import sys
@@ -172,30 +173,56 @@ def get_git_hooks_path(worktree: Path) -> Path | None:
 
 
 def is_pre_commit_installed(worktree: Path) -> bool:
-    """Git hooks 디렉터리에 pre-commit 실행 스크립트가 설치되어 있는지 확인합니다."""
-    hooks_dir = get_git_hooks_path(worktree)
-    if not hooks_dir:
-        return False
-    hook_file = hooks_dir / "pre-commit"
-    if not hook_file.is_file():
-        return False
-    if not os.access(hook_file, os.X_OK):
-        return False
+    """기존 호출 호환을 위한 pre-commit stage 훅 확인 함수입니다."""
+    return is_hooks_installed(worktree, ["pre-commit"])
+
+
+def required_hook_stages(repo: Path) -> list[str]:
+    """pre-commit 설정에서 요구하는 모든 Git hook stage를 수집합니다."""
+    config = repo / ".pre-commit-config.yaml"
     try:
-        content = hook_file.read_text(encoding="utf-8", errors="ignore")
-        return "pre-commit" in content or "pre_commit" in content
-    except OSError:
+        import yaml
+
+        data = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
+        stages: set[str] = set()
+        for pre_commit_repo in data.get("repos", []):
+            for hook in pre_commit_repo.get("hooks", []):
+                values = hook.get("stages", [])
+                if isinstance(values, list):
+                    stages.update(str(value) for value in values if value)
+        return sorted(stages) or ["pre-commit"]
+    except (ImportError, OSError, ValueError, AttributeError, TypeError):
+        content = config.read_text(encoding="utf-8") if config.is_file() else ""
+        stages = {
+            stage.strip().strip("'\"")
+            for match in re.finditer(r"^\s+stages:\s*\[([^]]*)\]", content, re.MULTILINE)
+            for stage in match.group(1).split(",")
+            if stage.strip()
+        }
+        return sorted(stages) or ["pre-commit"]
+
+
+def is_hooks_installed(worktree: Path, stages: list[str]) -> bool:
+    """Git hooks 디렉터리에 지정된 모든 실행 스크립트가 설치됐는지 확인합니다."""
+    hooks_dir = get_git_hooks_path(worktree)
+    if not hooks_dir or not stages:
         return False
+    return all(
+        (hooks_dir / stage).is_file() and os.access(hooks_dir / stage, os.X_OK) for stage in stages
+    )
 
 
 def install_pre_commit_hook(worktree: Path, repo: Path) -> tuple[bool, str]:
-    """Git pre-commit 훅을 설치합니다."""
+    """주 저장소 기준으로 설정이 요구하는 모든 Git hook을 설치합니다."""
     resolved_wt = worktree.resolve()
     resolved_repo = repo.resolve()
+    stages = required_hook_stages(resolved_repo)
+    if not stages:
+        return False, "[pre-commit] .pre-commit-config.yaml에서 요구 stage를 찾을 수 없습니다"
+    hook_args = [arg for stage in stages for arg in ("--hook-type", stage)]
+    config_path = str(resolved_repo / ".pre-commit-config.yaml")
 
-    # uv run --project <repo> pre-commit install 시도
     candidates = [
-        ["uv", "run", "pre-commit", "install", "--config", ".pre-commit-config.yaml"],
         [
             "uv",
             "run",
@@ -203,10 +230,11 @@ def install_pre_commit_hook(worktree: Path, repo: Path) -> tuple[bool, str]:
             str(resolved_repo),
             "pre-commit",
             "install",
+            *hook_args,
             "--config",
-            ".pre-commit-config.yaml",
+            config_path,
         ],
-        ["pre-commit", "install", "--config", ".pre-commit-config.yaml"],
+        ["pre-commit", "install", *hook_args, "--config", config_path],
     ]
 
     last_error = ""
@@ -214,7 +242,7 @@ def install_pre_commit_hook(worktree: Path, repo: Path) -> tuple[bool, str]:
         try:
             res = subprocess.run(  # nosec B603 B607 - 고정 인자로 pre-commit install 실행
                 cmd,
-                cwd=str(resolved_wt),
+                cwd=str(resolved_repo),
                 capture_output=True,
                 text=True,
                 check=False,
@@ -232,16 +260,17 @@ def install_pre_commit_hook(worktree: Path, repo: Path) -> tuple[bool, str]:
 
 
 def check_or_prepare_pre_commit(worktree: Path, repo: Path, check: bool) -> tuple[bool, str]:
-    """3단계: pre-commit 훅 확인 및 설치."""
+    """3단계: 설정이 요구하는 모든 pre-commit 훅 확인 및 설치."""
     resolved_wt = worktree.resolve()
+    stages = required_hook_stages(repo.resolve())
     hooks_dir = get_git_hooks_path(resolved_wt)
-    hook_file = (hooks_dir / "pre-commit") if hooks_dir else Path("pre-commit")
+    hook_files = [hooks_dir / stage for stage in stages] if hooks_dir else []
 
-    if is_pre_commit_installed(resolved_wt):
-        return True, f"[pre-commit] 이미 준비됨: pre-commit 훅 정상 ({hook_file})"
+    if is_hooks_installed(resolved_wt, stages):
+        return True, f"[pre-commit] 이미 준비됨: {', '.join(str(path) for path in hook_files)}"
 
     if check:
-        return False, f"[pre-commit] 미준비: pre-commit 훅이 설치되지 않음 ({hook_file})"
+        return False, f"[pre-commit] 미준비: 요구 stage 훅이 설치되지 않음 ({', '.join(stages)})"
 
     return install_pre_commit_hook(resolved_wt, repo)
 

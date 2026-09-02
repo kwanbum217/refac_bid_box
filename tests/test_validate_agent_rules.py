@@ -24,6 +24,7 @@ from scripts.validate_agent_rules import (
     check_current_state_sections,
     check_current_state_unknowns_contradictions,
     check_cursor_references_agents,
+    check_hook_installation,
     check_opencode_json,
     check_orca_coordination_skill,
     check_skills_mirror,
@@ -39,7 +40,7 @@ from scripts.validate_agent_rules import (
 def test_real_repo_validation_passes():
     """실제 저장소의 v2 정합성 검증이 100% 통과하는지 확인."""
     checks = get_all_checks(PROJECT_ROOT)
-    assert len(checks) == 18
+    assert len(checks) == 19
     for chk in checks:
         assert chk.ok, f"Check failed: {chk.name} -> {chk.detail}"
     assert run_all_checks(PROJECT_ROOT, quiet=True) == 0
@@ -47,6 +48,39 @@ def test_real_repo_validation_passes():
     assert check_agents_model_table_absence(PROJECT_ROOT).ok
     assert check_current_state_unknowns_contradictions(PROJECT_ROOT).ok
     assert check_canonical_skill_pointer(PROJECT_ROOT).ok
+
+
+def test_check_hook_installation_reads_config_and_checks_isolated_hooks(
+    tmp_path: Path, monkeypatch
+):
+    (tmp_path / ".pre-commit-config.yaml").write_text(
+        "repos:\n  - repo: local\n    hooks:\n      - id: one\n        stages: [pre-commit]\n      - id: two\n        stages: [prepare-commit-msg]\n",
+        encoding="utf-8",
+    )
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    monkeypatch.setattr(validate_agent_rules, "_git_hooks_path", lambda root: hooks)
+
+    missing = check_hook_installation(tmp_path)
+    assert not missing.ok
+    assert (
+        "uv run pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg"
+        in missing.detail
+    )
+
+    for stage in ("pre-commit", "prepare-commit-msg"):
+        hook = hooks / stage
+        hook.write_text("#!/bin/sh\n", encoding="utf-8")
+        hook.chmod(0o755)
+    assert check_hook_installation(tmp_path).ok
+
+
+def test_check_hook_installation_skips_only_ci(tmp_path: Path, monkeypatch):
+    (tmp_path / ".pre-commit-config.yaml").write_text("repos: []\n", encoding="utf-8")
+    monkeypatch.setenv("CI", "true")
+    result = check_hook_installation(tmp_path)
+    assert result.ok
+    assert "CI=true" in result.detail
 
 
 def test_check_claude_is_pointer(tmp_path: Path):
