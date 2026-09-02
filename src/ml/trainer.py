@@ -35,6 +35,7 @@ from src.ml.features import (
     collect_category_levels,
 )
 from src.ml.institution_history import attach_institution_history
+from src.ml.monitoring import save_baseline_distributions
 from src.ml.repeat_history import attach_repeat_history
 from src.ml.splitters import (
     DEFAULT_N_FOLDS,
@@ -504,12 +505,50 @@ class ModelTrainer:
             with open(staging / "metadata.json", "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2, ensure_ascii=False)
 
+            # baseline 분포 생성 및 staging 내 준비
+            baseline_staging = staging / "baseline"
+            baseline_staging.mkdir(parents=True, exist_ok=True)
+            save_baseline_distributions(
+                df_feat=df_feat,
+                feature_columns=list(feature_columns),
+                target_dir=baseline_staging,
+                model_name=self.model_name,
+                model_version=version,
+            )
+
             shutil.move(str(staging), str(target_dir))
+
+            # baseline 디렉터리 원자적 갱신: ml_registry/{model_name}/baseline/
+            self._update_baseline_atomically(target_dir / "baseline")
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise
 
         return metadata
+
+    def _update_baseline_atomically(self, source_baseline_dir: Path) -> None:
+        """성공한 학습 버전의 baseline 을 ml_registry/{model_name}/baseline/ 으로 원자적 복사/이동."""
+        model_dir = self.registry_dir / self.model_name
+        target_baseline = model_dir / "baseline"
+        staging_baseline = Path(tempfile.mkdtemp(dir=str(model_dir), prefix=".baseline_staging_"))
+        try:
+            for item in source_baseline_dir.iterdir():
+                if item.is_file():
+                    shutil.copy2(item, staging_baseline / item.name)
+
+            backup_dir = Path(tempfile.mkdtemp(dir=str(model_dir), prefix=".baseline_backup_"))
+            try:
+                shutil.rmtree(backup_dir, ignore_errors=True)
+                if target_baseline.exists():
+                    shutil.move(str(target_baseline), str(backup_dir))
+                shutil.move(str(staging_baseline), str(target_baseline))
+                shutil.rmtree(backup_dir, ignore_errors=True)
+            except Exception:
+                if backup_dir.exists() and not target_baseline.exists():
+                    shutil.move(str(backup_dir), str(target_baseline))
+                raise
+        finally:
+            shutil.rmtree(staging_baseline, ignore_errors=True)
 
 
 trainer = ModelTrainer()

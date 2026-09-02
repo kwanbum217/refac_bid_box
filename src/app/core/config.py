@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED: bool = False
     # 원본 Airflow narabid_weekly_retrain(매주 월요일 03:00) 대체.
     ML_WEEKLY_RETRAIN_ENABLED: bool = True
+    # PSI 드리프트 모니터링 정기 검사(매일 04:00) 활성화 여부.
+    # 초기 기동 시 baseline 분포 아티팩트 부재로 인한 오경보를 방지하기 위해 기본값은 비활성(False)입니다.
+    ML_DRIFT_MONITOR_ENABLED: bool = False
     # 구간별 지연 구조화 로그는 진단 전용입니다. 정식 레이턴시 게이트에서는
     # 로그 포매팅·출력 오버헤드를 배제하기 위해 기본적으로 끕니다.
     LATENCY_SEGMENT_LOGGING: bool = False
