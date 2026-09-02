@@ -296,3 +296,38 @@ async def test_collect_bids_handles_partial_failure_with_masked_error(isolated_d
     assert metrics["result_count"] == 10
     assert "announcement_error" in metrics["categories"]["Thng"]
     assert isolated_db.scalar(text("SELECT 1")) == 1
+
+
+@pytest.mark.asyncio
+async def test_pipeline_failure_summary_masks_service_key(worker_db, monkeypatch):
+    """파이프라인 실패 요약은 사용자 응답으로 나가므로 자격 증명이 남으면 안 됩니다.
+
+    코디네이터 심층 검토에서 발견한 누출 경로입니다. automation_tasks 의 예외
+    핸들러가 예외를 그대로 문자열화해 result_summary 에 넣고, 그 값이
+    automation.py 의 상태 조회 응답에 그대로 실려 나갔습니다.
+    """
+    from src.tasks import automation_tasks
+
+    leaked = (
+        "Client error '400 Bad Request' for url "
+        "'https://apis.data.go.kr/x?serviceKey=SECRETVALUE123&numOfRows=100'"
+    )
+    captured: dict[str, str] = {}
+
+    def fake_report(db, request_id, step, status, summary, metrics, **kwargs):
+        captured["summary"] = summary
+
+    monkeypatch.setattr(automation_tasks, "_report", fake_report)
+    monkeypatch.setattr(
+        automation_tasks,
+        "get_run_mode_steps",
+        lambda run_mode: (_ for _ in ()).throw(RuntimeError(leaked)),
+    )
+
+    result = await automation_tasks.run_automation_pipeline(
+        {}, execution_id="exec-mask", run_mode="collect_only", automation_request_id="req-mask"
+    )
+
+    assert result["status"] == "failed"
+    assert "SECRETVALUE123" not in captured.get("summary", "")
+    assert "serviceKey=***" in captured.get("summary", "")

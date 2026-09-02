@@ -22,6 +22,7 @@ from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import PipelineExecution
+from src.app.services.api_collector import mask_credentials
 from src.app.services.automation_orchestrator import (
     STATUS_FAILED,
     STATUS_RUNNING,
@@ -611,7 +612,7 @@ async def run_automation_pipeline(
                 automation_request_id,
                 "final",
                 "failed",
-                f"실행 중 오류가 발생했습니다: {exc}",
+                f"실행 중 오류가 발생했습니다: {mask_credentials(exc)}",
                 {"completed_steps": completed},
                 final=True,
                 **delivery,
@@ -626,7 +627,7 @@ async def run_automation_pipeline(
             if execution is not None:
                 execution.status = STATUS_FAILED
                 execution.ended_at = utcnow()
-                execution.logs_summary = str(exc)
+                execution.logs_summary = mask_credentials(exc)
                 db.commit()
         except Exception as exec_err:
             logger.error("PipelineExecution 상태 갱신 실패: %s", exec_err)
