@@ -45,6 +45,42 @@ from src.ml.predictor import predictor
 logger = logging.getLogger(__name__)
 latency_logger = logging.getLogger("uvicorn.error")
 
+# ==============================================================================
+# Servc missing_lwlt 및 불확실성 경고 임계값 (docs/analysis/servc_missing_lwlt_policy_20260902.md)
+# ==============================================================================
+# 구간 폭 임계값 (15.0%p):
+# OOS 3,589건 실측(servc_missing_lwlt_policy_20260902.md 2.2절 및 4.2절)에서
+# 결측 집단(missing_lwlt)의 구간 폭 중앙값(~10-12%p) 대비 15.0%p는 상위 25% 분위에 해당하며,
+# "비정상적으로 넓은 구간(불확실성 과대)"을 식별하는 운영 경고 기준입니다.
+WIDE_INTERVAL_THRESHOLD_PERCENT: float = 15.0
+
+# 극단 낙찰률 경고 범위 (80.0% ~ 100.0%):
+# 클리핑 전 점 추정 낙찰률이 정상 조달 낙찰률 범위(80%~100%)를 벗어나는 경우
+# 비정상 예측값으로 soft 경고 플래그를 부착합니다.
+EXTREME_RATE_MIN_PERCENT: float = 80.0
+EXTREME_RATE_MAX_PERCENT: float = 100.0
+
+
+def _classify_lwlt_missing_reason(
+    features: dict[str, Any], bid: BidAnnouncement | None = None
+) -> str:
+    """features.py 가 추출한 단일 특징을 기반으로 결측의 제도적 사유를 분류합니다."""
+    cntrct_mthd = str(features.get("cntrct_mthd_nm") or (bid.cntrct_mthd_nm if bid else "") or "")
+    bid_methd = str(features.get("bid_methd_nm") or (bid.bid_methd_nm if bid else "") or "")
+    sucsfbid_mthd = str(features.get("sucsfbid_mthd_nm") or "")
+
+    combined = f"{cntrct_mthd} {bid_methd} {sucsfbid_mthd}"
+    if "수의" in combined:
+        return "제도적 부재 (수의계약·수의시담)"
+    if "협상" in combined:
+        return "제도적 부재 (협상에 의한 계약)"
+    if "규격" in combined or "동시" in combined:
+        return "제도적 부재 (규격가격동시입찰)"
+    if "최저" in combined:
+        return "제도적 부재 (최저가낙찰제)"
+    return "제도적 부재 (낙찰하한율 미적용 공고)"
+
+
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
 
@@ -202,6 +238,30 @@ def predict_price_api(
         price_low = int(estimated_price * low / 100)
         price_high = int(estimated_price * high / 100)
 
+    # missing_lwlt 취약 집단 판정 (features.py 의 단일 특징 공급원 기준)
+    lwlt_missing = bool(features.get("lwlt_rate_missing", 0.0) == 1.0)
+    lwlt_missing_reason = _classify_lwlt_missing_reason(features, bid) if lwlt_missing else None
+
+    # 구간 폭 및 극단 예측 경고 판정 (docs/analysis/servc_missing_lwlt_policy_20260902.md 4.2절)
+    wide_interval_warning = False
+    if rate_low is not None and rate_high is not None:
+        interval_width = rate_high - rate_low
+        wide_interval_warning = interval_width > WIDE_INTERVAL_THRESHOLD_PERCENT
+
+    extreme_prediction_warning = (
+        prediction_rate_percent < EXTREME_RATE_MIN_PERCENT
+        or prediction_rate_percent > EXTREME_RATE_MAX_PERCENT
+    )
+
+    uncertainty_warning: str | None = None
+    if lwlt_missing:
+        uncertainty_warning = (
+            "낙찰하한율 정보가 없는 공고 유형(수의시담·협상·규격가격동시 등)으로 "
+            "예측 불확실성이 큽니다. 예측 구간을 반드시 참고하십시오."
+        )
+    elif wide_interval_warning:
+        uncertainty_warning = "예측 구간 폭이 넓어 불확실성이 큽니다. 참고용으로만 활용하십시오."
+
     message = (
         f"{model_name} 분석이 완료되었습니다. 예상 낙찰률은 {prediction_rate_percent}% 입니다."
     )
@@ -211,6 +271,8 @@ def predict_price_api(
             f"{base_name} 으로 예측했습니다. "
             f"예상 낙찰률은 {prediction_rate_percent}% 입니다."
         )
+    if lwlt_missing:
+        message += " (낙찰하한율 부재 공고로 예측 불확실성이 큽니다)"
 
     t_model = t_point_infer + t_interval_infer
     c_model = c_point_infer + c_interval_infer
@@ -248,6 +310,11 @@ def predict_price_api(
         price_low=price_low,
         price_high=price_high,
         interval_coverage=coverage,
+        lwlt_missing=lwlt_missing,
+        lwlt_missing_reason=lwlt_missing_reason,
+        wide_interval_warning=wide_interval_warning,
+        extreme_prediction_warning=extreme_prediction_warning,
+        uncertainty_warning=uncertainty_warning,
         message=message,
     )
 
