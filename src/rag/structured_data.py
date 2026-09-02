@@ -8,7 +8,9 @@ RAG 정형 검색 (원본 rag_engine.retrieve_structured_data / _apply_*_filters
 from __future__ import annotations
 
 import hashlib
+import threading
 import unicodedata
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -308,6 +310,41 @@ def _drop_corrupted(rows, limit: int) -> tuple[list, int]:
     return kept, dropped
 
 
+class _FlightLockEntry:
+    __slots__ = ("lock", "ref_count")
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.ref_count = 0
+
+
+_flight_master_lock = threading.Lock()
+_flight_locks: dict[str, _FlightLockEntry] = {}
+
+
+@contextmanager
+def _flight_lock(key: str):
+    """동일 캐시 키에 대한 동시 DB 조회를 1회로 병합(single-flight)하기 위한 참조 계수 기반 잠금을 제공합니다.
+
+    마지막 대기자가 빠져나갈 때 딕셔너리에서 항목을 제거하여 동적 SQL 리터럴 키가 무한 누적되는 메모리 누수를 방지합니다.
+    """
+    with _flight_master_lock:
+        entry = _flight_locks.get(key)
+        if entry is None:
+            entry = _FlightLockEntry()
+            _flight_locks[key] = entry
+        entry.ref_count += 1
+
+    try:
+        with entry.lock:
+            yield
+    finally:
+        with _flight_master_lock:
+            entry.ref_count -= 1
+            if entry.ref_count == 0:
+                _flight_locks.pop(key, None)
+
+
 def _top_rows(
     db: Session,
     *,
@@ -324,6 +361,7 @@ def _top_rows(
 
     스냅샷은 집계 시점에 이미 손상값을 걸러 두었으므로 그대로 씁니다.
     실시간 경로는 여기서 걸러냅니다.
+    키별 single-flight 로 동시 cold miss 가 같은 순위 집계를 중복 실행하지 않게 합니다.
     """
     if scope is not None:
         cached = get_top_rankings(db, dataset, dimension, scope, limit)
@@ -342,23 +380,30 @@ def _top_rows(
         rows, dropped = cached_live
         return [tuple(row) for row in rows], int(dropped)
 
-    kept, dropped = _drop_corrupted(db.execute(stmt).all(), limit)
-    if not dropped:
-        # 실시간 경로에서 U+FFFD 탐침을 매번 돌리는 대신, 야간에 이미 계산해 둔
-        # 스냅샷의 손상 여부 마커(rank=0)를 O(1)로 재사용합니다.
-        dropped = get_skipped_count(db, dataset, dimension, category)
-    if not dropped and corrupted_probe is not None:
-        # 마커까지 없으면 제외 여부를 알 방법이 없습니다. SQL 이 exclude_corrupted 로
-        # 이미 손상값을 걸러 보내기 때문에 파이썬 계층이 셀 것이 남지 않습니다.
-        # 그 상태로 0 을 확정하면 실제로 제외했는데도 안내가 사라집니다(Wave E1 회귀).
-        # 마커가 있는 운영 환경에서는 이 줄에 오지 않으므로 비용이 붙지 않고,
-        # 스냅샷이 아직 없는 환경에서만 LIMIT 1 탐침 한 번을 씁니다.
-        dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
+    with _flight_lock(key):
+        # 잠금 획득 후 캐시 재확인
+        cached_live = cache.get(key)
+        if cached_live is not None:
+            rows, dropped = cached_live
+            return [tuple(row) for row in rows], int(dropped)
 
-    # 손상 탐지 결과까지 함께 담습니다. 순위만 캐시하면 적중할 때마다 탐지
-    # 질의가 다시 돌아 절반만 아끼게 됩니다.
-    cache.set(key, [[[_cacheable(v) for v in row] for row in kept], dropped], ttl)
-    return kept, dropped
+        kept, dropped = _drop_corrupted(db.execute(stmt).all(), limit)
+        if not dropped:
+            # 실시간 경로에서 U+FFFD 탐침을 매번 돌리는 대신, 야간에 이미 계산해 둔
+            # 스냅샷의 손상 여부 마커(rank=0)를 O(1)로 재사용합니다.
+            dropped = get_skipped_count(db, dataset, dimension, category)
+        if not dropped and corrupted_probe is not None:
+            # 마커까지 없으면 제외 여부를 알 방법이 없습니다. SQL 이 exclude_corrupted 로
+            # 이미 손상값을 걸러 보내기 때문에 파이썬 계층이 셀 것이 남지 않습니다.
+            # 그 상태로 0 을 확정하면 실제로 제외했는데도 안내가 사라집니다(Wave E1 회귀).
+            # 마커가 있는 운영 환경에서는 이 줄에 오지 않으므로 비용이 붙지 않고,
+            # 스냅샷이 아직 없는 환경에서만 LIMIT 1 탐침 한 번을 씁니다.
+            dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
+
+        # 손상 탐지 결과까지 함께 담습니다. 순위만 캐시하면 적중할 때마다 탐지
+        # 질의가 다시 돌아 절반만 아끼게 됩니다.
+        cache.set(key, [[[_cacheable(v) for v in row] for row in kept], dropped], ttl)
+        return kept, dropped
 
 
 def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list[Any]:
@@ -369,6 +414,7 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
 
     캐시가 없어도(Redis 미가용) CacheLayer 가 메모리 캐시로 내려가므로 동작은
     같습니다. 값이 없으면 그냥 DB 를 칩니다.
+    키별 single-flight 로 동시 cold miss 가 같은 대규모 집계를 중복 실행하지 않게 합니다.
     """
     key = _stmt_cache_key("rag:agg:", stmt)
 
@@ -376,13 +422,19 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
     if cached is not None:
         return list(cached)
 
-    row = list(db.execute(stmt).one())
-    # Redis 경로는 JSON 직렬화라 Decimal 이 문자열이 됩니다. 메모리 캐시와 값
-    # 종류가 달라지지 않도록 여기서 미리 float 로 맞춥니다. 호출부는 어차피
-    # int()/float() 로 다시 감쌉니다.
-    normalized = [_numeric_or_none(value) for value in row]
-    cache.set(key, normalized, ttl)
-    return normalized
+    with _flight_lock(key):
+        # 잠금 획득 후 캐시 재확인
+        cached = cache.get(key)
+        if cached is not None:
+            return list(cached)
+
+        row = list(db.execute(stmt).one())
+        # Redis 경로는 JSON 직렬화라 Decimal 이 문자열이 됩니다. 메모리 캐시와 값
+        # 종류가 달라지지 않도록 여기서 미리 float 로 맞춥니다. 호출부는 어차피
+        # int()/float() 로 다시 감쌉니다.
+        normalized = [_numeric_or_none(value) for value in row]
+        cache.set(key, normalized, ttl)
+        return normalized
 
 
 def _cacheable(value: Any) -> Any:
