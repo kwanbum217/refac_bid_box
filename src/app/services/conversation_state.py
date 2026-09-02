@@ -8,24 +8,80 @@ Django 세션 대신 session_key 를 명시 전달받아 chat_session_states 테
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import uuid
 from typing import Any, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.app.core.config import settings
 from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import ChatSessionState
 from src.app.schemas.chat import ChatPlan
 
 MAX_HISTORY_TURNS = 10
 USER_MEMORY_PREFIX = "user:"
+SESSION_KEY_SALT = "bidbox.chatbot.session_key"
+_UNSET = object()
 
 
-def ensure_session_key(session_key: str | None = None) -> str:
+def sign_session_key(raw_id: str) -> str:
+    """uuid 문자열에 HMAC 서명을 부여합니다."""
+    digest = hmac.new(
+        f"{settings.SECRET_KEY}:{SESSION_KEY_SALT}".encode(),
+        raw_id.encode(),
+        hashlib.sha256,
+    ).digest()
+    signature = base64.urlsafe_b64encode(digest).decode().rstrip("=")
+    return f"{raw_id}:{signature}"
+
+
+def verify_session_key(token: str | None) -> bool:
+    """세션 키 서명의 유효성을 검증합니다 (만료 없음)."""
+    if not token or not isinstance(token, str):
+        return False
+    if ":" not in token:
+        return False
+    try:
+        raw_id, signature = token.rsplit(":", 1)
+    except ValueError:
+        return False
+    if not raw_id or not signature:
+        return False
+    expected = hmac.new(
+        f"{settings.SECRET_KEY}:{SESSION_KEY_SALT}".encode(),
+        raw_id.encode(),
+        hashlib.sha256,
+    ).digest()
+    expected_signature = base64.urlsafe_b64encode(expected).decode().rstrip("=")
+    return hmac.compare_digest(signature, expected_signature)
+
+
+def generate_signed_session_key() -> str:
+    """서버 발급 새 세션 키(uuid4 + 서명)를 생성합니다."""
+    return sign_session_key(uuid.uuid4().hex)
+
+
+def ensure_session_key(
+    session_key: str | None = None,
+    *,
+    user_id: int | object | None = _UNSET,
+) -> str:
     cleaned = (session_key or "").strip()
     if not cleaned or cleaned.startswith(USER_MEMORY_PREFIX):
-        return uuid.uuid4().hex
+        return generate_signed_session_key()
+
+    if user_id is _UNSET:
+        return cleaned
+
+    if user_id is None:
+        if verify_session_key(cleaned):
+            return cleaned
+        return generate_signed_session_key()
+
     return cleaned
 
 
