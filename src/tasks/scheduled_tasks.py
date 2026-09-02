@@ -18,16 +18,32 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import PipelineExecution
+from src.app.models.predictions import RetrainLog
 from src.app.services.automation_orchestrator import STATUS_RUNNING
+from src.ml.dataset import build_training_dataset
+from src.ml.features import (
+    apply_categorical_dtypes,
+    build_feature_frame,
+    collect_category_levels,
+)
+from src.ml.institution_history import attach_institution_history
+from src.ml.monitoring import (
+    check_dataset_drift,
+    load_baseline_distributions,
+)
+from src.ml.repeat_history import attach_repeat_history
 from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.tasks.automation_tasks import run_automation_pipeline
-from src.tasks.notifier import notify_task_failure
+from src.tasks.notifier import notify_drift_detected, notify_task_failure
 from src.tasks.retrain_task import run_retrain_pipeline_task
 
 logger = logging.getLogger(__name__)
@@ -250,4 +266,211 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
         outcome["error"] = error_msg
         await notify_task_failure("주간 재학습 스케줄", error_msg)
 
+    return outcome
+
+
+def _record_drift_log(
+    db,
+    *,
+    trigger_source: str = "drift_monitor",
+    champion_version: str,
+    baseline_version: str,
+    status: str,
+    metrics_summary: dict[str, Any],
+) -> None:
+    """
+    드리프트 검사 판정 결과를 retrain_logs 테이블에 기록합니다.
+    테이블 스키마 변경 없이 challenger_version 필드를 baseline_version 으로 해석하여 사용합니다.
+    """
+    db.add(
+        RetrainLog(
+            trigger_source=trigger_source,
+            champion_version=champion_version or "-",
+            challenger_version=baseline_version or "-",  # baseline_version 을 의미함
+            status=status,
+            metrics_summary=metrics_summary,
+        )
+    )
+    db.commit()
+
+
+def is_drift_monitor_enabled() -> bool:
+    """PSI 드리프트 모니터링 활성화 여부 확인. (기본값: False)"""
+    val = getattr(settings, "ML_DRIFT_MONITOR_ENABLED", None)
+    if val is not None:
+        return bool(val)
+    import os
+
+    return os.getenv("ML_DRIFT_MONITOR_ENABLED", "false").lower() in ("true", "1", "yes")
+
+
+async def drift_monitor_task(
+    ctx: dict[str, Any],
+    evaluation_window_days: int = 7,
+    registry_dir: str = "ml_registry",
+) -> dict[str, Any]:
+    """매일 04:00 주기적 PSI 드리프트 검사 태스크.
+
+    - settings/환경변수 ML_DRIFT_MONITOR_ENABLED 플래그로 활성화 제어 (기본값: False)
+    - CATEGORY_MODEL_NAMES 의 각 카테고리별 모델에 대해 baseline 아티팩트 조회
+    - Single Source of Truth features.py 를 통해 최근 N일 평가 데이터의 특징 프레임 산출
+    - check_dataset_drift 호출하여 다차원 PSI 계산 및 판정
+    - 판정 결과를 retrain_logs 테이블에 기록 (스키마 변경 없이 challenger_version 에 baseline_version 기록)
+    - 드리프트 감지(PSI >= 0.2) 시 notify_drift_detected 로 운영 알림 발신
+    - 자동 재학습이나 자동 승격은 수행하지 않음 (사람이 수동 개입 판단)
+    """
+    if not is_drift_monitor_enabled():
+        logger.info("PSI 드리프트 모니터링이 비활성화되어 있어 건너뜁니다.")
+        return {"status": "skipped", "reason": "disabled"}
+
+    logger.info("PSI 드리프트 모니터링 태스크 시작 (평가 윈도우=%d일)", evaluation_window_days)
+    results: dict[str, Any] = {}
+    has_failure = False
+
+    db = SessionLocal()
+    try:
+        for category in sorted(CATEGORY_MODEL_NAMES.keys()):
+            model_name = CATEGORY_MODEL_NAMES[category]
+            baseline_dir = Path(registry_dir) / model_name / "baseline"
+
+            baseline_dist = await asyncio.to_thread(load_baseline_distributions, baseline_dir)
+            if not baseline_dist:
+                logger.info(
+                    "카테고리 %s (%s)의 baseline 분포 아티팩트가 없습니다 (%s). 판정 보류.",
+                    category,
+                    model_name,
+                    baseline_dir,
+                )
+                insufficient_summary = {
+                    "reason": f"Baseline 분포 아티팩트가 없습니다 ({baseline_dir}).",
+                    "category": category,
+                    "model_name": model_name,
+                }
+                await asyncio.to_thread(
+                    _record_drift_log,
+                    db,
+                    trigger_source="drift_monitor",
+                    champion_version=model_name,
+                    baseline_version="-",
+                    status="INSUFFICIENT_DATA",
+                    metrics_summary=insufficient_summary,
+                )
+                results[category] = {
+                    "status": "skipped",
+                    "reason": "no_baseline",
+                    "category": category,
+                    "model_name": model_name,
+                }
+                continue
+
+            try:
+                # 최근 데이터셋 수집 (Single Source of Truth features.py 사용)
+                df_raw = await asyncio.to_thread(
+                    build_training_dataset,
+                    db,
+                    category_code=category,
+                )
+
+                if df_raw.empty:
+                    insufficient_summary = {
+                        "reason": f"카테고리 {category}에 대한 최근 평가 데이터가 없습니다.",
+                        "category": category,
+                        "model_name": model_name,
+                        "recent_samples": 0,
+                    }
+                    await asyncio.to_thread(
+                        _record_drift_log,
+                        db,
+                        trigger_source="drift_monitor",
+                        champion_version=model_name,
+                        baseline_version=baseline_dist.get("model_version", "-"),
+                        status="INSUFFICIENT_DATA",
+                        metrics_summary=insufficient_summary,
+                    )
+                    results[category] = {
+                        "status": "INSUFFICIENT_DATA",
+                        "category": category,
+                        "model_name": model_name,
+                        "samples": 0,
+                    }
+                    continue
+
+                # 단일 특징 공급원(features.py) 거침
+                df_raw = attach_institution_history(df_raw)
+                df_raw = attach_repeat_history(df_raw)
+                records = df_raw.to_dict(orient="records")
+                features_list = build_feature_frame(records)
+                df_feat = pd.DataFrame(features_list)
+                category_levels = collect_category_levels(df_feat)
+                df_feat = apply_categorical_dtypes(df_feat, category_levels)
+
+                # 드리프트 판정
+                drift_verdict = check_dataset_drift(
+                    baseline_dist,
+                    df_feat,
+                    evaluation_window_days=evaluation_window_days,
+                )
+
+                # retrain_logs 에 기록
+                await asyncio.to_thread(
+                    _record_drift_log,
+                    db,
+                    trigger_source="drift_monitor",
+                    champion_version=model_name,
+                    baseline_version=baseline_dist.get("model_version", "-"),
+                    status=drift_verdict["status"],
+                    metrics_summary=drift_verdict,
+                )
+
+                results[category] = {
+                    "status": drift_verdict["status"],
+                    "category": category,
+                    "model_name": model_name,
+                    "baseline_version": baseline_dist.get("model_version", "-"),
+                    "samples": drift_verdict["recent_samples"],
+                    "drift_feature_count": drift_verdict["drift_feature_count"],
+                    "drift_features": drift_verdict["drift_features"],
+                }
+
+                # 드리프트 감지 시 알림 발신 (자동 재학습·승격은 수행하지 않음)
+                if drift_verdict["status"] == "DRIFT_DETECTED":
+                    await notify_drift_detected(
+                        model_name=model_name,
+                        model_version=baseline_dist.get("model_version", "-"),
+                        drift_features=drift_verdict["drift_features"],
+                        total_features_checked=drift_verdict["total_features_checked"],
+                        evaluation_window_days=evaluation_window_days,
+                        baseline_version=baseline_dist.get("model_version", "-"),
+                        recent_samples=drift_verdict["recent_samples"],
+                    )
+
+            except Exception as cat_exc:
+                logger.exception("카테고리 %s 드리프트 검사 실패", category)
+                has_failure = True
+                results[category] = {
+                    "status": "failed",
+                    "category": category,
+                    "error": str(cat_exc),
+                }
+
+    except Exception as exc:
+        logger.exception("PSI 드리프트 모니터링 스케줄 실패")
+        await notify_task_failure("PSI 드리프트 모니터링", str(exc))
+        raise
+    finally:
+        db.close()
+
+    outcome: dict[str, Any] = {
+        "status": (
+            "failed"
+            if has_failure
+            and not any(
+                r.get("status") in ("STABLE", "DRIFT_DETECTED", "INSUFFICIENT_DATA", "skipped")
+                for r in results.values()
+            )
+            else ("partial_failure" if has_failure else "success")
+        ),
+        "trigger_source": "drift_monitor",
+        "categories": results,
+    }
     return outcome

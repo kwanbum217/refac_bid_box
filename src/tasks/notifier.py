@@ -164,3 +164,42 @@ async def notify_empty_training_data(trigger_source: str, category: str | None) 
         ],
         level="warning",
     )
+
+
+async def notify_drift_detected(
+    *,
+    model_name: str,
+    model_version: str,
+    drift_features: list[dict[str, Any]],
+    total_features_checked: int,
+    evaluation_window_days: int,
+    baseline_version: str,
+    recent_samples: int,
+) -> None:
+    """PSI 드리프트 감지 시 조치 필요 알림을 발신합니다.
+
+    자동 재학습이나 자동 승격으로 이어지지 않으며, 사람이 데이터 품질 및
+    시장 변화를 검토한 뒤 수동 재학습 여부를 결정하도록 권고합니다.
+    """
+    lines = [
+        f"모델: {model_name} (v{model_version})",
+        f"기준 분포: {baseline_version}",
+        f"평가 윈도우: 최근 {evaluation_window_days}일 / 표본 {recent_samples:,}건",
+        f"전체 특징 {total_features_checked}개 중 {len(drift_features)}개에서 드리프트 감지 (PSI >= 0.2)",
+        "",
+    ]
+    for feat in drift_features:
+        feat_name = feat.get("feature", "unknown")
+        psi_val = float(feat.get("psi", 0.0))
+        sample_size = int(feat.get("sample_size", recent_samples))
+        lines.append(f"  - {feat_name}: PSI={psi_val:.4f} (임계 0.2, 표본 {sample_size:,})")
+    lines.extend(
+        [
+            "",
+            "권장 조치:",
+            "  1. 수집 파이프라인 데이터 품질 확인",
+            "  2. 제도 변경·시장 환경 변화 여부 검토",
+            "  3. 필요 시 수동 재학습 실행: uv run python scripts/retrain.py --category <코드>",
+        ]
+    )
+    await notify(f"{model_name} 드리프트 감지", lines, level="action")

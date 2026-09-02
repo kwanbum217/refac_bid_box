@@ -66,7 +66,12 @@ def read_paired_verdict(
 
 
 def latest_version(model_name: str, registry_dir: Path | str = REGISTRY_ROOT) -> str:
-    versions = sorted(p.name for p in Path(registry_dir, model_name).iterdir() if p.is_dir())
+    model_path = Path(registry_dir, model_name)
+    if not model_path.exists():
+        raise FileNotFoundError(f"학습 아티팩트가 없습니다: {model_name}")
+    versions = sorted(
+        p.name for p in model_path.iterdir() if p.is_dir() and p.name.startswith("v_")
+    )
     if not versions:
         raise FileNotFoundError(f"학습 아티팩트가 없습니다: {model_name}")
     return versions[-1]

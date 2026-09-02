@@ -218,8 +218,6 @@ def test_atomic_artifact_saving_aborts_on_failure_leaves_no_partial_artifact(tmp
     assert len(staging_dirs) == 0
 
     # 버전 디렉터리는 v1 하나만 존재해야 하며, 깨진 버전이 latest_version 이 되지 않아야 함
-    version_dirs = [
-        p.name for p in model_dir.iterdir() if p.is_dir() and not p.name.startswith(".")
-    ]
+    version_dirs = [p.name for p in model_dir.iterdir() if p.is_dir() and p.name.startswith("v_")]
     assert version_dirs == [v1]
     assert latest_version("quantum_leap_v25_pro", registry_dir=tmp_path) == v1

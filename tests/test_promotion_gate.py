@@ -260,3 +260,25 @@ def test_status_shows_rejected_verdict(dirs, capsys):
     assert "기각" in out
     assert "t=5.14" in out
     assert "force" in out
+
+
+def test_latest_version_ignores_baseline_directory(tmp_path):
+    """baseline 만 있는 모델 디렉터리에서 latest_version 이 baseline 을 버전으로 반환하지 않고 FileNotFoundError 를 발생시킵니다."""
+    from src.ml.promotion import latest_version
+
+    model_dir = tmp_path / "ml_registry" / "only_baseline_model"
+    baseline_dir = model_dir / "baseline"
+    baseline_dir.mkdir(parents=True)
+    (baseline_dir / "feature_distributions_v1.json").write_text("{}", encoding="utf-8")
+    (baseline_dir / "metadata.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="학습 아티팩트가 없습니다"):
+        latest_version("only_baseline_model", registry_dir=tmp_path / "ml_registry")
+
+    # v_ 버전이 추가되면 정상 반환
+    v1_dir = model_dir / "v_20260901_120000_000"
+    v1_dir.mkdir()
+    assert (
+        latest_version("only_baseline_model", registry_dir=tmp_path / "ml_registry")
+        == "v_20260901_120000_000"
+    )

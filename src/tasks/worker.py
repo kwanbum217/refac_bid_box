@@ -25,6 +25,7 @@ from src.tasks.automation_tasks import (
 from src.tasks.retrain_task import run_retrain_pipeline_task
 from src.tasks.scheduled_tasks import (
     development_data_refresh_task,
+    drift_monitor_task,
     nightly_schedule_task,
     weekly_retrain_task,
 )
@@ -41,6 +42,7 @@ class WorkerSettings:
         manual_retrain_task,
         run_retrain_pipeline_task,
         development_data_refresh_task,
+        drift_monitor_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
     # 워커가 여러 대여도 arq 는 크론을 한 번만 실행합니다.
@@ -55,6 +57,13 @@ class WorkerSettings:
             minute=0,
             run_at_startup=False,
             timeout=10800,
+        ),
+        cron(
+            drift_monitor_task,
+            hour=4,
+            minute=0,
+            run_at_startup=False,
+            timeout=3600,
         ),
     ]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
