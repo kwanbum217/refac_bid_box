@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets backup backup-dry-run restore-dry-run backup-verify backup-list
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -34,6 +34,11 @@ help:
 	@echo "  make model-verify   - 모델 직렬화 버전과 서빙 특징 호환성 검증"
 	@echo "  make rebuild-rankings - 상위 N 집계 스냅샷 재생성"
 	@echo "  make rebuild-institution-stats - 기관별 낙찰률 사전 집계 재생성"
+	@echo "  make backup         - 운영 DB·ChromaDB·모델 통합 백업 실행"
+	@echo "  make backup-dry-run - 통합 백업 사전 점검 (dry-run)"
+	@echo "  make restore-dry-run - 통합 복원 대상 사전 점검 (dry-run)"
+	@echo "  make backup-verify  - 최신/지정 백업 스냅샷 무결성 검증"
+	@echo "  make backup-list    - 등록된 백업 스냅샷 목록 조회"
 	@echo "  make benchmark      - P95 레이턴시 벤치마크 (서버 기동 필요)"
 	@echo "  make test           - 외부 데이터 자산 없이 Pytest 단위/통합/E2E 테스트 실행"
 	@echo "  make test-data-assets - 모델·ChromaDB가 있는 환경의 G1 자산 테스트 실행"
@@ -94,6 +99,21 @@ rebuild-institution-stats:
 # 기동 중인 서버에 HTTP 로 붙습니다. 먼저 uvicorn 을 띄우십시오.
 benchmark:
 	$(PYTHON) scripts/benchmark_latency.py
+
+backup-dry-run:
+	$(PYTHON) scripts/backup_recovery.py backup
+
+backup:
+	$(PYTHON) scripts/backup_recovery.py backup --execute
+
+restore-dry-run:
+	$(PYTHON) scripts/backup_recovery.py restore --snapshot-dir $$(ls -td data/backups/snapshots/snapshot_* 2>/dev/null | head -n 1)
+
+backup-verify:
+	$(PYTHON) scripts/backup_recovery.py verify --snapshot-dir $$(ls -td data/backups/snapshots/snapshot_* 2>/dev/null | head -n 1)
+
+backup-list:
+	$(PYTHON) scripts/backup_recovery.py list
 
 
 
