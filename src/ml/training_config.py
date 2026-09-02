@@ -124,17 +124,17 @@ CATEGORY_HYPERPARAMS = {
 def model_name_for_category(category_code: str | None) -> str:
     """카테고리 코드를 모델 네임스페이스로 옮깁니다.
 
-    모르는 코드를 조용히 DEFAULT_MODEL_NAME 으로 떨어뜨리지 않습니다. 그 동작은
-    다른 제도의 학습 산출물을 물품 이름으로 저장해 물품 champion 을 덮어씁니다.
-    카테고리를 새로 학습하려면 CATEGORY_MODEL_NAMES 에 먼저 등록하십시오.
+    None 이나 빈 값을 허용하지 않습니다. 모르는 코드를 조용히 DEFAULT_MODEL_NAME 으로
+    떨어뜨리지 않습니다. 그 동작은 다른 제도의 학습 산출물을 물품 이름으로 저장해
+    물품 champion 을 덮어씁니다. 카테고리를 새로 학습하려면 CATEGORY_MODEL_NAMES 에
+    먼저 등록하십시오.
     """
     code = (category_code or "").strip()
-    if not code:
-        return DEFAULT_MODEL_NAME
-    if code not in CATEGORY_MODEL_NAMES:
+    if not code or code not in CATEGORY_MODEL_NAMES:
+        registered = sorted(CATEGORY_MODEL_NAMES.keys())
         raise ValueError(
-            f"모델 네임스페이스가 없는 카테고리입니다: {code}. "
-            f"CATEGORY_MODEL_NAMES 에 등록하십시오 (등록됨: {sorted(CATEGORY_MODEL_NAMES)})"
+            f"카테고리 코드가 지정되지 않았거나 유효하지 않습니다: {category_code!r}. "
+            f"CATEGORY_MODEL_NAMES 에 등록된 카테고리를 지정하십시오 (등록됨: {registered})"
         )
     return CATEGORY_MODEL_NAMES[code]
 

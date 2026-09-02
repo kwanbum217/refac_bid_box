@@ -59,6 +59,7 @@ from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidAnnouncement, BidResult
+from src.ml.training_config import CATEGORY_MODEL_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +150,7 @@ def _normalized_ord():
 
 def build_training_dataset(
     db_session: Session,
-    category_code: str | None = None,
+    category_code: str,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     *,
     require_announcement: bool = True,
@@ -161,6 +162,14 @@ def build_training_dataset(
     공고 수집률이 낮은 용역/건설에서 표본을 확보할 때 씁니다. 이때 가격 컬럼은
     낙찰금액으로 채워지므로 특징 설계에서 반드시 감안해야 합니다.
     """
+    code = (category_code or "").strip()
+    if not code or code not in CATEGORY_MODEL_NAMES:
+        registered = sorted(CATEGORY_MODEL_NAMES.keys())
+        raise ValueError(
+            f"학습 데이터셋 빌드에는 유효한 카테고리 코드가 필수입니다: {category_code!r}. "
+            f"CATEGORY_MODEL_NAMES 에 등록된 카테고리를 지정하십시오 (등록됨: {registered})"
+        )
+
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
@@ -207,8 +216,7 @@ def build_training_dataset(
         )
 
     stmt = stmt.where(BidResult.sucsf_bid_rate.is_not(None))
-    if category_code:
-        stmt = stmt.where(BidResult.category == category_code)
+    stmt = stmt.where(BidResult.category == code)
 
     # 정렬을 걸지 않으면 행 순서가 DB 반환 순서에 좌우되어 홀드아웃 구간이 매번
     # 달라지고, limit 을 걸었을 때 어떤 표본이 뽑힐지도 알 수 없습니다.
@@ -226,7 +234,7 @@ def build_training_dataset(
         logger.warning(
             "학습 데이터가 비었습니다 (category=%s, require_announcement=%s). "
             "용역/건설은 공고 조인율이 5%% 대라 require_announcement=False 를 검토하십시오.",
-            category_code,
+            code,
             require_announcement,
         )
         return df
@@ -255,7 +263,7 @@ def build_training_dataset(
 
     logger.info("정제 후 %d행 (제외 %d행)", len(df), before - len(df))
 
-    parquet_file = out_path / f"dataset_{category_code or 'all'}.parquet"
+    parquet_file = out_path / f"dataset_{code}.parquet"
     df.to_parquet(parquet_file, index=False)
     return df
 
