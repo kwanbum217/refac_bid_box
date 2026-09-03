@@ -56,6 +56,11 @@
         display: flex;
         align-items: flex-start;
         overflow-x: auto;
+        /* overflow-x 를 auto 로 두면 브라우저가 overflow-y 도 auto 로 계산해 트랙이
+           세로 스크롤 컨테이너가 됩니다. 그러면 커서가 목록 위에 있을 때 휠이
+           페이지로 전달되지 않아 화면이 움직이지 않습니다. 세로는 넘칠 일이
+           없으므로 명시적으로 잠급니다. */
+        overflow-y: hidden;
         scroll-snap-type: x mandatory;
         scroll-behavior: smooth;
         overscroll-behavior-x: contain;
@@ -93,29 +98,17 @@
         box-shadow: 0 20px 40px -30px rgba(15, 23, 42, 0.42);
     }
 
-    /* 데스크톱에서는 최근 항목을 한 번에 확인할 수 있도록 패널을 이어서 노출합니다. */
+    /* 스와이프는 모든 화면폭에서 동일하게 동작합니다.
+       한때 데스크톱에서만 패널을 세로로 쌓아 한 번에 보여 주었으나, 원본 사이트의
+       조작감과 달라 2026-09-03 에 되돌렸습니다. 넓은 화면에서는 패널을 세로로
+       늘리는 대신 아래의 내부 격자만 넓게 씁니다. */
     @media (min-width: 1024px) {
-        .home-swipe-track {
-            display: block;
-            overflow: visible;
-            height: auto !important;
-        }
-
-        .home-swipe-slide {
-            min-width: 100%;
-            margin-bottom: 1.5rem;
-        }
-
-        .home-swipe-slide:last-child {
-            margin-bottom: 0;
-        }
-
-        .home-category-slide > div {
+        /* 낙찰 결과 패널도 같은 골격을 씁니다. 예전에는 이 규칙이 카테고리에만
+           걸려 사이드바 폭이 260px 과 320px 로 갈렸고, 스와이프로 넘길 때
+           레이아웃이 어긋나 보였습니다. */
+        .home-category-slide > div,
+        .home-result-slide > div {
             grid-template-columns: 260px minmax(0, 1fr) !important;
-        }
-
-        .home-nav-arrow {
-            display: none;
         }
 
         .home-category-entries {
@@ -557,8 +550,8 @@
                 {% endfor %}
 
                 <article class="home-swipe-slide home-result-slide" data-home-swipe-slide>
-                    <div class="grid gap-6 px-6 py-6 xl:grid-cols-[320px_1fr] xl:px-8 xl:py-8">
-                        <div class="rounded-[26px] bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white shadow-sm xl:self-start">
+                    <div class="grid gap-6 px-6 py-6 xl:grid-cols-[300px_1fr] xl:px-8 xl:py-8">
+                        <div class="rounded-[26px] bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white shadow-sm">
                             <span class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white">
                                 <i class="fas fa-chart-column text-lg"></i>
                             </span>
@@ -578,7 +571,7 @@
                             </a>
                         </div>
 
-                        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <div class="home-category-entries grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                             {% for result in recent_results %}
                             <a href="{{ url('bids:result_detail', result.id) }}" class="home-slide-card flex h-full flex-col rounded-[24px] border border-slate-200 bg-white p-5">
                                 <div class="flex items-center justify-between gap-3">
@@ -686,11 +679,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function syncTrackHeight(index) {
-        if (window.matchMedia('(min-width: 1024px)').matches) {
-            track.style.height = 'auto';
-            return;
-        }
-
         const target = slides[clampIndex(index)];
         if (!target) {
             return;
@@ -722,15 +710,9 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        if (window.matchMedia('(min-width: 1024px)').matches) {
-            target.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start',
-            });
-            syncControls(nextIndex);
-            return;
-        }
-
+        // scrollIntoView 는 페이지를 세로로 굴립니다. 패널이 세로로 쌓여 있던 시절에는
+        // 맞았지만 지금은 모든 화면폭에서 가로 스와이프이므로, 세로 이동은 커서가
+        // 목록에 닿기만 해도 화면이 아래로 끌려가는 것으로 나타납니다.
         track.scrollTo({
             left: target.offsetLeft,
             behavior: 'smooth',
