@@ -23,7 +23,10 @@ def test_split_line_counts_within_cap():
         # 2026-09-03: 직접 실행 부트스트랩(sys.path 삽입과 사유 주석) 6줄로 513 -> 519 가
         # 됐습니다. 로직은 늘지 않았습니다. 재증가를 막도록 실측값에 여유 6줄만 둡니다.
         "backup_recovery.py": (REPO_ROOT / "scripts" / "backup_recovery.py", 525),
-        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 298),
+        # 2026-09-03: mysql_client_command 헬퍼 도입으로 298 -> 318 이 됐습니다.
+        # 호스트 클라이언트가 서버 인증 플러그인을 못 읽어 백업이 불가능하던 것을
+        # 컨테이너 클라이언트로 우회할 수 있게 한 변경입니다. 여유 12줄만 둡니다.
+        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 330),
         "backup_snapshots.py": (REPO_ROOT / "scripts" / "backup_snapshots.py", 151),
     }
     for name, (path, cap) in paths.items():
