@@ -141,18 +141,24 @@ def spawn_permission_setup(
         handle = log_path.open("a", encoding="utf-8")
     except OSError:
         handle = subprocess.DEVNULL
-    return popen(
-        [
-            sys.executable,
-            str(Path(launcher_script).resolve()),
-            PERMISSION_SETUP_FLAG,
-            terminal,
-            model,
-        ],
-        stdout=handle,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
+    try:
+        return popen(
+            [
+                sys.executable,
+                str(Path(launcher_script).resolve()),
+                PERMISSION_SETUP_FLAG,
+                terminal,
+                model,
+            ],
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    finally:
+        # 자식이 자기 복제본을 갖고 떠나므로 부모 쪽 핸들은 남겨 둘 이유가 없습니다.
+        # 닫지 않으면 ResourceWarning("unclosed file") 이 테스트마다 쌓입니다.
+        if handle is not subprocess.DEVNULL:
+            handle.close()
 
 
 def run_permission_setup_child(
