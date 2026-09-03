@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 from urllib.parse import parse_qs, quote
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
@@ -20,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import SignUpRequest, get_current_user, register_user
 from src.app.core.config import settings
-from src.app.core.db import get_db
+from src.app.core.db import SessionLocal, get_db
 from src.app.core.security import (
     CSRF_COOKIE_NAME,
     CSRF_FORM_FIELD,
@@ -371,8 +372,34 @@ def signup_page(request: Request, user: CustomUser | None = Depends(get_current_
     return _render(request, "accounts/signup.html", context, None)
 
 
+def _open_session() -> tuple[Session, bool]:
+    """스레드 작업용 세션을 엽니다.
+
+    테스트 환경에서 app.dependency_overrides[get_db] 가 등록되어 있으면
+    해당 세션을 사용하고, 운영 환경에서는 SessionLocal() 을 생성합니다.
+    """
+    from src.app.main import app
+
+    if get_db in app.dependency_overrides:
+        override = app.dependency_overrides[get_db]
+        res = override()
+        if hasattr(res, "__next__"):
+            return next(res), False
+        return res, True
+    return SessionLocal(), True
+
+
+def _register_user_sync(payload: SignUpRequest, response: Response) -> None:
+    db, should_close = _open_session()
+    try:
+        register_user(payload, response, db)
+    finally:
+        if should_close:
+            db.close()
+
+
 @router.post("/accounts/signup/")
-async def signup_submit(request: Request, db: Session = Depends(get_db)):
+async def signup_submit(request: Request):
     """JavaScript 없이도 원본 SSR 회원가입 폼을 처리합니다."""
     await _verify_ssr_csrf(request)
     form_data = parse_qs((await request.body()).decode("utf-8"))
@@ -396,7 +423,7 @@ async def signup_submit(request: Request, db: Session = Depends(get_db)):
         signup_payload = SignUpRequest.model_validate(payload)
         response = RedirectResponse(url="/", status_code=303)
         # register_user 는 동기 DB 트랜잭션과 PBKDF2 해싱을 함께 수행합니다.
-        await asyncio.to_thread(register_user, signup_payload, response, db)
+        await asyncio.to_thread(_register_user_sync, signup_payload, response)
         return response
     except ValidationError as exc:
         errors: dict[str, list[str]] = {}
@@ -425,30 +452,40 @@ async def signup_submit(request: Request, db: Session = Depends(get_db)):
     return render_response
 
 
-def _load_account_and_verify(db: Session, username: str, password: str) -> tuple:
-    """계정 조회와 비밀번호 검증을 한 스레드에서 수행합니다.
+def _authenticate_and_update_login(username: str, password: str) -> dict[str, Any]:
+    """계정 조회, 비밀번호 검증, last_login 갱신을 스레드 내 전용 세션에서 수행합니다.
 
     check_password 는 PBKDF2 600,000 회로 CPU 를 수백 밀리초 점유합니다.
     조회와 검증을 따로 오프로드하면 왕복이 두 번이라 한 번에 묶습니다.
+    반환값은 순수 데이터(dict)이며 ORM 인스턴스는 스레드 경계를 넘지 않습니다.
     """
-    account = db.execute(
-        select(CustomUser).where(CustomUser.username == username)
-    ).scalar_one_or_none()
-    if account is None:
-        return None, False
-    return account, check_password(password, account.password)
-
-
-def _touch_last_login(db: Session, account: CustomUser) -> None:
-    account.last_login = utcnow()
-    db.commit()
+    db, should_close = _open_session()
+    try:
+        account = db.execute(
+            select(CustomUser).where(CustomUser.username == username)
+        ).scalar_one_or_none()
+        if account is None:
+            return {"status": "not_found"}
+        if not check_password(password, account.password):
+            return {"status": "invalid_password"}
+        if not account.is_active:
+            return {"status": "inactive"}
+        account.last_login = utcnow()
+        db.commit()
+        return {
+            "status": "success",
+            "user_id": account.id,
+            "username": account.username,
+        }
+    finally:
+        if should_close:
+            db.close()
 
 
 @router.post("/accounts/login/")
 async def login_submit(
     request: Request,
     next: str = Query("/"),
-    db: Session = Depends(get_db),
 ):
     """원본 Django LoginView 대응. 실패 시 폼 오류와 함께 같은 화면을 다시 그립니다.
 
@@ -469,9 +506,9 @@ async def login_submit(
 
     # 동기 DB 조회와 PBKDF2 검증을 루프 스레드에서 하면 무인증 요청만으로
     # 이벤트 루프를 점유할 수 있습니다.
-    account, password_ok = await asyncio.to_thread(_load_account_and_verify, db, username, password)
+    auth_result = await asyncio.to_thread(_authenticate_and_update_login, username, password)
 
-    if account is None or not password_ok:
+    if auth_result["status"] in ("not_found", "invalid_password"):
         login_rate_limiter.record_failure(ip, username)
         context = {
             "hide_sidebar": True,
@@ -485,7 +522,7 @@ async def login_submit(
         response.status_code = 401
         return response
 
-    if not account.is_active:
+    if auth_result["status"] == "inactive":
         login_rate_limiter.record_failure(ip, username)
         context = {
             "hide_sidebar": True,
@@ -500,10 +537,11 @@ async def login_submit(
         return response
 
     login_rate_limiter.record_success(ip, username)
-    await asyncio.to_thread(_touch_last_login, db, account)
 
     try:
-        token = await asyncio.to_thread(create_session, account.id, account.username)
+        token = await asyncio.to_thread(
+            create_session, auth_result["user_id"], auth_result["username"]
+        )
     except SessionStoreUnavailable as exc:
         logger.exception("SSR 로그인 세션 저장 실패")
         raise HTTPException(

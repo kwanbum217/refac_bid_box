@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
 from src.app.core.db import SessionLocal
@@ -55,12 +56,12 @@ def _post_callback(callback_url: str, callback_token: str, payload: dict) -> boo
 
 # 비밀번호가 아니라 확인 토큰 기본값입니다
 def _report(  # nosec B107
-    db,
-    automation_request_id: str,
-    step: str,
-    status: str,
-    summary: str,
-    metrics: dict,
+    db: Session | str | None = None,
+    automation_request_id: str = "",
+    step: str = "",
+    status: str = "",
+    summary: str = "",
+    metrics: dict | None = None,
     final: bool = False,
     callback_url: str = "",
     callback_token: str = "",
@@ -70,31 +71,57 @@ def _report(  # nosec B107
     callback_url 이 있으면 API 로 보냅니다 (워커가 DB 를 공유하지 않는 배포).
     없거나 전송에 실패하면 같은 페이로드를 DB 에 직접 기록합니다.
     """
-    if not automation_request_id:
+    caller_db = None
+    if isinstance(db, Session):
+        caller_db = db
+        req_id = automation_request_id
+        st = step
+        sta = status
+        summ = summary
+        met = metrics if isinstance(metrics, dict) else {}
+        fin = final
+        cb_url = callback_url
+        cb_token = callback_token
+    else:
+        req_id = str(db or automation_request_id or "")
+        st = step
+        sta = status
+        summ = summary
+        met = metrics if isinstance(metrics, dict) else {}
+        fin = final
+        cb_url = callback_url
+        cb_token = callback_token
+
+    if not req_id:
         return
 
     payload = {
-        "step": step,
-        "status": status,
-        "summary": summary,
-        "metrics": metrics,
-        "final": final,
+        "step": st,
+        "status": sta,
+        "summary": summ,
+        "metrics": met,
+        "final": fin,
     }
 
-    if callback_url and _post_callback(callback_url, callback_token, payload):
+    if cb_url and _post_callback(cb_url, cb_token, payload):
         return
 
+    own_session = caller_db is None
+    session = SessionLocal() if own_session else caller_db
     try:
-        request_obj = get_automation_request(db, automation_request_id)
+        request_obj = get_automation_request(session, req_id)
         if request_obj is None:
             return
-        apply_callback_payload(db, request_obj, payload)
+        apply_callback_payload(session, request_obj, payload)
     except Exception as exc:
-        logger.warning("자동화 요청 결과 보고 DB 반영 실패 (%s): %s", automation_request_id, exc)
+        logger.warning("자동화 요청 결과 보고 DB 반영 실패 (%s): %s", req_id, exc)
         try:
-            db.rollback()
+            session.rollback()
         except Exception as rb_exc:
             logger.debug("요청 보고 롤백 실패: %s", rb_exc)
+    finally:
+        if own_session:
+            session.close()
 
 
 async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, str, dict[str, Any]]:
@@ -413,6 +440,17 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
     return summary, metrics
 
 
+def _invoke_sync_runner(runner_fn: Callable[..., object], kwargs: dict[str, object]) -> object:
+    sig = inspect.signature(runner_fn)
+    if "db" in sig.parameters:
+        runner_db = SessionLocal()
+        try:
+            return runner_fn(runner_db, **kwargs)
+        finally:
+            runner_db.close()
+    return runner_fn(**kwargs)
+
+
 STEP_RUNNERS: dict[str, Callable[..., object]] = {
     "collect": _step_collect,
     "search": _step_search,
@@ -438,10 +476,12 @@ async def run_automation_pipeline(
     delivery = {"callback_url": callback_url, "callback_token": callback_token}
     db = SessionLocal()
     completed: list[str] = []
+
     try:
         execution = db.execute(
             select(PipelineExecution).where(PipelineExecution.execution_id == execution_id)
         ).scalar_one_or_none()
+
         if execution is not None:
             execution.status = STATUS_RUNNING
             execution.started_at = execution.started_at or utcnow()
@@ -482,7 +522,7 @@ async def run_automation_pipeline(
             if inspect.iscoroutinefunction(runner_fn):
                 res = await runner_fn(db, **kwargs)
             else:
-                outcome: object = await asyncio.to_thread(runner_fn, db, **kwargs)
+                outcome: object = await asyncio.to_thread(_invoke_sync_runner, runner_fn, kwargs)
                 res = await outcome if inspect.isawaitable(outcome) else outcome
 
             if isinstance(res, tuple) and len(res) == 3:
@@ -503,7 +543,7 @@ async def run_automation_pipeline(
             step_statuses[step] = step_status
             await asyncio.to_thread(
                 _report,
-                db,
+                None,
                 automation_request_id,
                 step,
                 step_status,
@@ -539,7 +579,7 @@ async def run_automation_pipeline(
             )
             await asyncio.to_thread(
                 _report,
-                db,
+                None,
                 automation_request_id,
                 "final",
                 STATUS_SUCCESS,
@@ -566,7 +606,7 @@ async def run_automation_pipeline(
             )
             await asyncio.to_thread(
                 _report,
-                db,
+                None,
                 automation_request_id,
                 "final",
                 STATUS_FAILED,
@@ -608,7 +648,7 @@ async def run_automation_pipeline(
         try:
             await asyncio.to_thread(
                 _report,
-                db,
+                None,
                 automation_request_id,
                 "final",
                 "failed",
@@ -618,6 +658,7 @@ async def run_automation_pipeline(
                 **delivery,
             )
         except Exception as rep_err:
+            logger.error("파이프라인 실패 보고 기록 실패: %s", rep_err)
             logger.error("파이프라인 실패 보고 기록 실패: %s", rep_err)
 
         try:
