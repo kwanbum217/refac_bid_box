@@ -22,6 +22,22 @@ from src.tasks.run_mode_matrix import get_run_mode_steps
 from src.tasks.worker import WorkerSettings
 
 
+@pytest.fixture(autouse=True)
+def mock_schedule_claim(monkeypatch):
+    """테스트 실행 환경에서 Redis 서버 없이도 스케줄 태스크가 정상 실행되도록 claim 모의 객체를 기본 제공합니다."""
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "acquire_schedule_claim",
+        lambda owner, **kwargs: scheduled_tasks.ScheduleClaimResult(
+            status=scheduled_tasks.ScheduleClaimStatus.ACQUIRED,
+            key=scheduled_tasks.SCHEDULE_COLLECTION_CLAIM_KEY,
+            owner=owner,
+            ttl=21600,
+            detail="test claim granted",
+        ),
+    )
+
+
 def _cron_by_name(name: str):
     for job in WorkerSettings.cron_jobs:
         if job.name.endswith(name):

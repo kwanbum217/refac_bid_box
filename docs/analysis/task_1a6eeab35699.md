@@ -78,3 +78,15 @@
    - `test_catchup_needed_when_threshold_exceeded`: 기본 대상 태스크로 `development_data_refresh`가 자동 선정됨을 검증
    - `test_catchup_uses_existing_development_refresh_path`: 따라잡기 실행 시 `development_data_refresh_task`를 그대로 호출함을 검증
    - `test_catchup_handles_failure_and_prevents_restart_loop`: `development_data_refresh_task` 실패 시에도 예외를 처리하고 쿨다운을 유지함을 검증
+
+---
+
+## 6. 코디네이터 Level 3 검토 및 후속 재작업 (Task 0bba466af5f3)
+
+독립 리뷰(`task_794ea3b9cf87`)는 통과를 보고했으나, 코디네이터 Level 3 아키텍처 심층 검토에서 다음 3가지 결함이 발견되어 반려 및 재작업(`task_0bba466af5f3`)이 진행되었습니다:
+
+1. **CacheLayer 프로세스 로컬 메모리 degrade**: Redis 장애 시 `CacheLayer`가 프로세스 로컬 딕셔너리로 폴백하여 다중 워커 분산 환경에서 상호 배타성을 보장하지 못함.
+2. **비원자적 GET-SET 경합**: `is_catchup_in_cooldown`의 GET 판정 후 `record_catchup_attempt`의 SET 호출 사이에 동시 기동 워커 간 레이스 컨디션 발생 가능.
+3. **정규 cron 공유 락 부재**: `nightly_schedule_task`와 `development_data_refresh_task`에 실행 claim이 없어 정규 스케줄 시각과 기동 따라잡기 간 중복 실행 방어 불가.
+
+해당 결함들은 후속 작업 `task_0bba466af5f3`에서 Redis `SET NX EX` 기반의 단일 원자 claim(`SCHEDULE_COLLECTION_CLAIM_KEY`), 장애 시 fail-closed 차단, 정규 cron과 catch-up의 공통 단일 가드로 완전 재설계·해결되었습니다. 상세 내용은 `docs/analysis/task_0bba466af5f3.md`를 참조하십시오.

@@ -1,7 +1,7 @@
 """
 tests/test_schedule_catchup.py
 
-기동 시 스케줄 따라잡기(catch-up) 검증 테스트.
+기동 시 스케줄 따라잡기(catch-up) 및 공통 Redis 원자 claim 검증 테스트.
 
 검증 항목:
 1. 설정 기본값 일치성 (비활성 기본값, 데이터 최신화 활성, 야간 비활성)
@@ -10,6 +10,12 @@ tests/test_schedule_catchup.py
 4. 임계 시간 초과 시 따라잡기 실행 및 기존 스케줄 경로 재사용
 5. 쿨다운(6시간) 내 재시작 루프 방어
 6. 워커 startup 비차단(non-blocking) 및 예외 격리
+7. Redis SET NX EX 기반 공통 원자 claim 획득 (ACQUIRED)
+8. 이미 claim된 경우 단일 실행 보장 (ALREADY_CLAIMED) 및 파이프라인/집계 미호출
+9. Redis 미가용 시 fail-closed 정책 (REDIS_UNAVAILABLE) 및 파이프라인 미호출
+10. Redis 명령 오류 시 fail-closed 정책 (COMMAND_ERROR) 및 파이프라인 미호출
+11. 정규 cron 2종(nightly, refresh)과 catch-up의 동일 claim 키 공유 및 상호 배타성
+12. catch-up의 기존 경로 재사용 시 자기 충돌(self-collision) 방지
 """
 
 from __future__ import annotations
@@ -21,19 +27,62 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
 from src.tasks import scheduled_tasks, worker
 from src.tasks.scheduled_tasks import (
+    SCHEDULE_COLLECTION_CLAIM_KEY,
+    ScheduleClaimStatus,
+    acquire_schedule_claim,
     check_schedule_catchup_needed,
+    development_data_refresh_task,
     is_catchup_in_cooldown,
+    nightly_schedule_task,
     record_catchup_attempt,
+    release_schedule_claim,
     run_schedule_catchup_task,
+    set_schedule_redis_conn,
 )
+from tests.fake_redis import FakeRedisClient, FakeRedisConnection
+
+
+class UnreachableRedisConnection(RedisConnection):
+    """Redis 서버 미기동/연결 불가를 모의하는 대역 연결입니다."""
+
+    def __init__(self, label: str = "test_unreachable") -> None:
+        super().__init__(label=label)
+
+    def client(self) -> Any:
+        return None
+
+    def invalidate(self, exc: Exception) -> None:
+        pass
+
+
+class ErrorRedisClient:
+    """Redis 명령 실행 중 예외(네트워크 순단 등)를 발생시키는 모의 클라이언트입니다."""
+
+    def set(self, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Redis I/O error")
+
+    def get(self, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Redis I/O error")
+
+    def delete(self, *args: Any, **kwargs: Any) -> int:
+        raise RuntimeError("Redis I/O error")
+
+
+@pytest.fixture(autouse=True)
+def isolate_schedule_redis():
+    """모든 테스트에 격리된 FakeRedisConnection 을 기본 제공하여 실제 Redis 와의 결합 및 테스트 순서 의존성을 방지합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+    yield fake_conn
+    set_schedule_redis_conn(None)
 
 
 def test_catchup_defaults_and_env_consistency():
     """설정 기본값이 .env.example 및 docker-compose.yml 사양과 일치하는지 확인합니다."""
-    # 따라잡기는 기본적으로 꺼져 있어야 합니다 (기동 시 과부하 방지).
     assert settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED is False
     assert settings.AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS == 24
     assert settings.AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS == 6
@@ -141,7 +190,7 @@ def test_catchup_skipped_when_in_cooldown(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_catchup_uses_existing_development_refresh_path(monkeypatch):
-    """따라잡기는 새 수집 로직을 만들지 않고 development_data_refresh_task 를 재사용합니다."""
+    """따라잡기는 새 수집 로직이나 중복 claim을 만들지 않고 development_data_refresh_task 를 재사용합니다."""
     monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
     monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
     monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
@@ -156,7 +205,6 @@ async def test_catchup_uses_existing_development_refresh_path(monkeypatch):
         patch.object(scheduled_tasks, "utcnow", return_value=now),
         patch.object(scheduled_tasks, "get_latest_collection_time", return_value=old_collected),
         patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
-        patch.object(scheduled_tasks, "record_catchup_attempt") as mock_record_attempt,
         patch.object(scheduled_tasks, "development_data_refresh_task", mock_refresh),
         patch.object(scheduled_tasks, "nightly_schedule_task", mock_nightly),
     ):
@@ -166,7 +214,6 @@ async def test_catchup_uses_existing_development_refresh_path(monkeypatch):
     assert outcome["status"] == "success"
     mock_refresh.assert_awaited_once_with(ctx)
     mock_nightly.assert_not_awaited()
-    mock_record_attempt.assert_called_once()
     assert outcome["catchup_details"]["target_task"] == "development_data_refresh"
 
 
@@ -187,7 +234,6 @@ async def test_catchup_uses_existing_nightly_path_when_nightly_enabled(monkeypat
         patch.object(scheduled_tasks, "utcnow", return_value=now),
         patch.object(scheduled_tasks, "get_latest_collection_time", return_value=old_collected),
         patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
-        patch.object(scheduled_tasks, "record_catchup_attempt") as mock_record_attempt,
         patch.object(scheduled_tasks, "nightly_schedule_task", mock_nightly),
         patch.object(scheduled_tasks, "development_data_refresh_task", mock_refresh),
     ):
@@ -197,13 +243,12 @@ async def test_catchup_uses_existing_nightly_path_when_nightly_enabled(monkeypat
     assert outcome["status"] == "success"
     mock_nightly.assert_awaited_once_with(ctx)
     mock_refresh.assert_not_awaited()
-    mock_record_attempt.assert_called_once()
     assert outcome["catchup_details"]["target_task"] == "nightly_schedule"
 
 
 @pytest.mark.asyncio
 async def test_catchup_handles_failure_and_prevents_restart_loop(monkeypatch):
-    """따라잡기 실행 중 예외가 발생해도 상태를 failed 로 반환하고, 시도 기록은 유지됩니다."""
+    """따라잡기 실행 중 예외가 발생해도 상태를 failed 로 반환합니다."""
     monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
 
     mock_refresh = AsyncMock(side_effect=RuntimeError("G2B 통신 장애"))
@@ -218,7 +263,6 @@ async def test_catchup_handles_failure_and_prevents_restart_loop(monkeypatch):
                 {"target_task": "development_data_refresh", "elapsed_hours": 30.0},
             ),
         ),
-        patch.object(scheduled_tasks, "record_catchup_attempt") as mock_record_attempt,
         patch.object(scheduled_tasks, "development_data_refresh_task", mock_refresh),
     ):
         outcome = await run_schedule_catchup_task({})
@@ -226,8 +270,6 @@ async def test_catchup_handles_failure_and_prevents_restart_loop(monkeypatch):
     assert outcome["status"] == "failed"
     assert outcome["reason"] == "execution_failed"
     assert "G2B 통신 장애" in outcome["error"]
-    # 실패했더라도 시도 기록이 선제 저장되어 즉시 재시작 루프에 걸리지 않음
-    mock_record_attempt.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -258,37 +300,193 @@ async def test_worker_startup_spawns_catchup_in_background(monkeypatch):
     await asyncio.sleep(0.01)
 
 
-def test_cooldown_cache_roundtrip(monkeypatch):
-    """CacheLayer 모의 환경에서 쿨다운 판정이 정상 동작하는지 확인합니다."""
-    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS", 6)
+# --------------------------------------------------------------------------- #
+# 원자적 Redis claim 핵심 사양 검증 (SET NX EX, fail-closed, 공유 락, 충돌 방지)
+# --------------------------------------------------------------------------- #
 
-    fake_cache_storage: dict[str, Any] = {}
 
-    class FakeCache:
-        def get(self, key: str):
-            return fake_cache_storage.get(key)
+def test_acquire_schedule_claim_atomic_set_nx_ex():
+    """claim 획득이 Redis SET NX EX 한 번으로 원자적으로 수행되는지 검증합니다."""
+    fake_client = FakeRedisClient()
+    fake_conn = FakeRedisConnection(fake_client)
 
-        def set(self, key: str, value: Any, ttl: int):
-            fake_cache_storage[key] = value
+    claim = acquire_schedule_claim("test_worker", ttl_seconds=3600, conn=fake_conn)
+    assert claim.status == ScheduleClaimStatus.ACQUIRED
+    assert claim.acquired is True
+    assert claim.key == SCHEDULE_COLLECTION_CLAIM_KEY
+    assert SCHEDULE_COLLECTION_CLAIM_KEY in fake_client._store
+
+    # 동일 키 재시도 시 원자적으로 거부됨 (ALREADY_CLAIMED)
+    second_claim = acquire_schedule_claim("test_worker_2", ttl_seconds=3600, conn=fake_conn)
+    assert second_claim.status == ScheduleClaimStatus.ALREADY_CLAIMED
+    assert second_claim.acquired is False
+
+
+def test_acquire_schedule_claim_redis_unavailable_fails_closed():
+    """Redis 연결 불가 시 fail-closed 로 처리하여 작업을 불허함을 검증합니다."""
+    unreachable_conn = UnreachableRedisConnection()
+
+    claim = acquire_schedule_claim("test_worker", conn=unreachable_conn)
+    assert claim.status == ScheduleClaimStatus.REDIS_UNAVAILABLE
+    assert claim.acquired is False
+    assert "Redis 연결이 불가능하여" in claim.detail
+
+
+def test_acquire_schedule_claim_command_error_fails_closed():
+    """Redis 명령 실행 중 예외 발생 시 fail-closed 로 거부하고 연결을 폐기함을 검증합니다."""
+    fake_conn = FakeRedisConnection(ErrorRedisClient())
+
+    with patch.object(fake_conn, "invalidate") as mock_invalidate:
+        claim = acquire_schedule_claim("test_worker", conn=fake_conn)
+        assert claim.status == ScheduleClaimStatus.COMMAND_ERROR
+        assert claim.acquired is False
+        assert "Redis claim 명령 실행 중 오류" in claim.detail
+        mock_invalidate.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_nightly_and_refresh_share_same_claim_key(isolated_db, monkeypatch):
+    """정규 수집 cron 2종이 동일한 claim 키를 공유하여 상호 배타적으로 실행됨을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    session_factory = lambda: isolated_db  # noqa: E731
+    isolated_db.close = lambda: None
+
+    mock_pipeline = AsyncMock(return_value={"status": "success", "completed_steps": ["collect"]})
+
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", session_factory),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+        patch.object(
+            scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}
+        ),
+    ):
+        # 1. 수동으로 claim 키를 선점 (다른 프로세스 또는 선행 스케줄이 실행 중임을 모의)
+        pre_claim = acquire_schedule_claim("pre_existing_runner", conn=fake_conn)
+        assert pre_claim.acquired is True
+
+        # 2. nightly_schedule_task 실행 시 claim 획득 실패로 즉시 건너뜀 (파이프라인 미호출)
+        nightly_res = await nightly_schedule_task({})
+        assert nightly_res["status"] == "skipped"
+        assert nightly_res["reason"] == "already_claimed"
+        mock_pipeline.assert_not_awaited()
+
+        # 3. development_data_refresh_task 실행 시도 역시 동일한 키 충돌로 즉시 건너뜀
+        # (nightly 설정과 무관하게 claim 단계 검증을 위해 bypass monkeypatch)
+        monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+        refresh_res = await development_data_refresh_task({})
+        assert refresh_res["status"] == "skipped"
+        assert refresh_res["reason"] == "already_claimed"
+        mock_pipeline.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_nightly_aborts_pipeline_when_redis_unavailable(isolated_db, monkeypatch):
+    """Redis 장애 시 nightly_schedule_task 가 fail-closed 로 종료되고 파이프라인을 실행하지 않음을 검증합니다."""
+    unreachable_conn = UnreachableRedisConnection()
+    set_schedule_redis_conn(unreachable_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True)
+    mock_pipeline = AsyncMock()
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+    ):
+        isolated_db.close = lambda: None
+        result = await nightly_schedule_task({})
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "redis_unavailable"
+    mock_pipeline.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_development_refresh_aborts_pipeline_when_redis_unavailable(isolated_db, monkeypatch):
+    """Redis 장애 시 development_data_refresh_task 가 fail-closed 로 종료되고 파이프라인을 실행하지 않음을 검증합니다."""
+    unreachable_conn = UnreachableRedisConnection()
+    set_schedule_redis_conn(unreachable_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+    mock_pipeline = AsyncMock()
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+    ):
+        isolated_db.close = lambda: None
+        result = await development_data_refresh_task({})
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "redis_unavailable"
+    mock_pipeline.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_catchup_does_not_self_collide_with_target_task(isolated_db, monkeypatch):
+    """따라잡기가 타겟 태스크를 호출할 때 외부에서 중복 claim을 걸어 자기 충돌(self-collision)을 일으키지 않음을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+
+    now = datetime(2026, 9, 3, 12, 0, 0, tzinfo=UTC)
+    old_collected = now - timedelta(hours=48)
+
+    mock_pipeline = AsyncMock(return_value={"status": "success", "completed_steps": ["collect"]})
+
+    with (
+        patch.object(scheduled_tasks, "utcnow", return_value=now),
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=old_collected),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+        patch.object(
+            scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}
+        ),
+    ):
+        isolated_db.close = lambda: None
+        outcome = await run_schedule_catchup_task({})
+
+    assert outcome["status"] == "success"
+    mock_pipeline.assert_awaited_once()
+
+
+def test_cooldown_via_claim_roundtrip():
+    """RedisConnection 기반에서 is_catchup_in_cooldown 및 record_catchup_attempt 가 정상 동작함을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
 
     now = datetime(2026, 9, 3, 15, 0, 0, tzinfo=UTC)
 
-    with (
-        patch("src.app.core.cache.CacheLayer", return_value=FakeCache()),
-        patch.object(scheduled_tasks, "utcnow", return_value=now),
-    ):
-        # 1. 초기 상태: 쿨다운 아님
-        in_cd, attempt = is_catchup_in_cooldown()
+    with patch.object(scheduled_tasks, "utcnow", return_value=now):
+        # 1. 초기 상태: claim 없음 -> 쿨다운 아님
+        in_cd, attempt = is_catchup_in_cooldown(conn=fake_conn)
         assert in_cd is False
         assert attempt is None
 
-        # 2. 1시간 전 시도 기록
-        record_catchup_attempt(now - timedelta(hours=1))
-        in_cd, attempt = is_catchup_in_cooldown()
-        assert in_cd is True
-        assert attempt == (now - timedelta(hours=1)).isoformat()
+        # 2. claim 시도 및 성공
+        claim = record_catchup_attempt(now, conn=fake_conn)
+        assert claim.status == ScheduleClaimStatus.ACQUIRED
 
-        # 3. 7시간 전 시도 기록 (쿨다운 6시간 경과)
-        record_catchup_attempt(now - timedelta(hours=7))
-        in_cd, attempt = is_catchup_in_cooldown()
+        # 3. 쿨다운 확인: claim 존재 -> 쿨다운 상태
+        in_cd, attempt = is_catchup_in_cooldown(conn=fake_conn)
+        assert in_cd is True
+        assert attempt == now.isoformat()
+
+        # 4. 해제 시 정상적으로 쿨다운 해제됨
+        release_schedule_claim(conn=fake_conn)
+        in_cd, attempt = is_catchup_in_cooldown(conn=fake_conn)
         assert in_cd is False

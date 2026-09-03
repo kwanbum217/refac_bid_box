@@ -16,10 +16,13 @@ src/tasks/scheduled_tasks.py
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from functools import wraps
 from pathlib import Path
 from typing import Any, cast
@@ -28,6 +31,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from scripts.backup_recovery import execute_backup, prune_snapshots
+from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
@@ -140,6 +144,27 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info("야간 스케줄이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
+    claim = acquire_schedule_claim("nightly_schedule")
+    if not claim.acquired:
+        if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+            logger.info("야간 스케줄 실행 건너뜀 (이미 claim됨, key=%s)", claim.key)
+            return {
+                "status": "skipped",
+                "reason": "already_claimed",
+                "claim": claim.to_dict(),
+            }
+        logger.error(
+            "야간 스케줄 claim 획득 실패 (fail-closed, status=%s): %s",
+            claim.status.value,
+            claim.detail,
+        )
+        return {
+            "status": "failed",
+            "reason": claim.status.value,
+            "error": claim.detail,
+            "claim": claim.to_dict(),
+        }
+
     execution_id = await asyncio.to_thread(
         _create_scheduled_execution, None, "nightly_schedule", "nightly"
     )
@@ -171,6 +196,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     # 추론 경로가 쓰는 기관 이력 집계도 함께 갱신합니다. 이 표가 낡으면
     # 학습과 추론의 inst_hist_rate 정의가 갈립니다 (AGENTS.md 6항).
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
+    release_schedule_claim(claim.key)
     return _mark_followup_failures(outcome)
 
 
@@ -183,6 +209,27 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     if settings.AUTOMATION_NIGHTLY_SCHEDULE_ENABLED:
         logger.info("운영 야간 번들이 활성화되어 개발 데이터 최신화를 건너뜁니다.")
         return {"status": "skipped", "reason": "nightly_schedule_enabled"}
+
+    claim = acquire_schedule_claim("development_data_refresh")
+    if not claim.acquired:
+        if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+            logger.info("개발 데이터 최신화 실행 건너뜀 (이미 claim됨, key=%s)", claim.key)
+            return {
+                "status": "skipped",
+                "reason": "already_claimed",
+                "claim": claim.to_dict(),
+            }
+        logger.error(
+            "개발 데이터 최신화 claim 획득 실패 (fail-closed, status=%s): %s",
+            claim.status.value,
+            claim.detail,
+        )
+        return {
+            "status": "failed",
+            "reason": claim.status.value,
+            "error": claim.detail,
+            "claim": claim.to_dict(),
+        }
 
     execution_id = await asyncio.to_thread(
         _create_scheduled_execution,
@@ -212,6 +259,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
+    release_schedule_claim(claim.key)
     return _mark_followup_failures(outcome)
 
 
@@ -565,10 +613,163 @@ async def drift_monitor_task(
 
 
 # --------------------------------------------------------------------------- #
-# 기동 시 스케줄 따라잡기 (Startup Catch-up)
+# 수집 스케줄 공통 Redis 원자 claim 및 기동 시 따라잡기 (Startup Catch-up)
 # --------------------------------------------------------------------------- #
 
-CATCHUP_LAST_ATTEMPT_KEY = "bidbox:worker:catchup_last_attempt"
+SCHEDULE_COLLECTION_CLAIM_KEY = "bidbox:schedule:collection_claim"
+CATCHUP_LAST_ATTEMPT_KEY = SCHEDULE_COLLECTION_CLAIM_KEY
+
+
+class ScheduleClaimStatus(StrEnum):
+    ACQUIRED = "acquired"
+    ALREADY_CLAIMED = "already_claimed"
+    REDIS_UNAVAILABLE = "redis_unavailable"
+    COMMAND_ERROR = "command_error"
+
+
+@dataclass(frozen=True)
+class ScheduleClaimResult:
+    status: ScheduleClaimStatus
+    key: str
+    owner: str
+    ttl: int
+    detail: str | None = None
+    error: str | None = None
+
+    @property
+    def acquired(self) -> bool:
+        return self.status == ScheduleClaimStatus.ACQUIRED
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status.value,
+            "acquired": self.acquired,
+            "key": self.key,
+            "owner": self.owner,
+            "ttl": self.ttl,
+            "detail": self.detail,
+            "error": self.error,
+        }
+
+
+_schedule_redis_conn: RedisConnection | None = None
+
+
+def get_schedule_redis_conn() -> RedisConnection:
+    global _schedule_redis_conn
+    if _schedule_redis_conn is None:
+        _schedule_redis_conn = RedisConnection(label="schedule_guard")
+    return _schedule_redis_conn
+
+
+def set_schedule_redis_conn(conn: RedisConnection | None) -> None:
+    global _schedule_redis_conn
+    _schedule_redis_conn = conn
+
+
+def get_schedule_claim_ttl() -> int:
+    cooldown_hours = getattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS", 6)
+    return max(int(cooldown_hours * 3600), 60)
+
+
+def acquire_schedule_claim(
+    owner: str,
+    *,
+    key: str = SCHEDULE_COLLECTION_CLAIM_KEY,
+    ttl_seconds: int | None = None,
+    conn: RedisConnection | None = None,
+) -> ScheduleClaimResult:
+    """수집 스케줄 단일 실행을 위한 Redis SET NX EX 원자적 claim을 수행합니다.
+
+    CacheLayer 의 로컬 fallback을 일절 사용하지 않고 RedisConnection 을 직접 사용합니다.
+    Redis 가 연결되지 않거나 명령 실패 시 fail-closed 로 처리하여 작업을 시작하지 않습니다.
+    """
+    ttl = ttl_seconds if ttl_seconds is not None else get_schedule_claim_ttl()
+    redis_conn = conn or get_schedule_redis_conn()
+    client = redis_conn.client()
+    if client is None:
+        logger.warning(
+            "[%s] Redis 연결 불가로 스케줄 실행 claim을 획득하지 못했습니다 (fail-closed, key=%s)",
+            owner,
+            key,
+        )
+        return ScheduleClaimResult(
+            status=ScheduleClaimStatus.REDIS_UNAVAILABLE,
+            key=key,
+            owner=owner,
+            ttl=ttl,
+            detail="Redis 연결이 불가능하여 스케줄 실행 claim을 획득할 수 없습니다.",
+            error="Redis client unavailable",
+        )
+
+    now_iso = utcnow().isoformat()
+    payload = json.dumps(
+        {"owner": owner, "claimed_at": now_iso, "ttl": ttl},
+        ensure_ascii=False,
+    )
+    try:
+        acquired = bool(client.set(key, payload, ex=ttl, nx=True))
+    except Exception as exc:
+        redis_conn.invalidate(exc)
+        logger.warning(
+            "[%s] Redis claim 명령 실패 (fail-closed, key=%s): %s",
+            owner,
+            key,
+            exc,
+        )
+        return ScheduleClaimResult(
+            status=ScheduleClaimStatus.COMMAND_ERROR,
+            key=key,
+            owner=owner,
+            ttl=ttl,
+            detail=f"Redis claim 명령 실행 중 오류가 발생했습니다: {exc}",
+            error=str(exc),
+        )
+
+    if not acquired:
+        logger.info(
+            "[%s] 스케줄 실행 claim이 이미 존재하여 건너뜁니다 (key=%s)",
+            owner,
+            key,
+        )
+        return ScheduleClaimResult(
+            status=ScheduleClaimStatus.ALREADY_CLAIMED,
+            key=key,
+            owner=owner,
+            ttl=ttl,
+            detail="이미 다른 스케줄 또는 워커가 실행 claim을 획득했습니다.",
+        )
+
+    logger.info(
+        "[%s] 스케줄 실행 claim 획득 성공 (key=%s, ttl=%d초)",
+        owner,
+        key,
+        ttl,
+    )
+    return ScheduleClaimResult(
+        status=ScheduleClaimStatus.ACQUIRED,
+        key=key,
+        owner=owner,
+        ttl=ttl,
+        detail="스케줄 실행 claim 획득 성공",
+    )
+
+
+def release_schedule_claim(
+    key: str = SCHEDULE_COLLECTION_CLAIM_KEY,
+    conn: RedisConnection | None = None,
+) -> bool:
+    """테스트 또는 수동 조작 시 점유된 claim 키를 해제합니다."""
+    redis_conn = conn or get_schedule_redis_conn()
+    client = redis_conn.client()
+    if client is None:
+        return False
+    try:
+        return bool(client.delete(key))
+    except Exception as exc:
+        redis_conn.invalidate(exc)
+        logger.warning("스케줄 claim 해제 중 오류 발생 (key=%s): %s", key, exc)
+        return False
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -596,38 +797,51 @@ def get_latest_collection_time(db: Session | None = None) -> datetime | None:
             session.close()
 
 
-def record_catchup_attempt(attempt_time: datetime | None = None) -> None:
-    """따라잡기 실행 시각을 캐시에 기록하여 재시작 루프 시 중복 실행을 방지합니다."""
-    from src.app.core.cache import CacheLayer
+def record_catchup_attempt(
+    attempt_time: datetime | None = None,
+    *,
+    key: str = SCHEDULE_COLLECTION_CLAIM_KEY,
+    ttl_seconds: int | None = None,
+    conn: RedisConnection | None = None,
+) -> ScheduleClaimResult:
+    """하위 호환성을 위한 claim 기록 함수.
 
+    CacheLayer 대신 RedisConnection 을 사용하여 SET NX EX 원자적 claim을 수행합니다.
+    예외를 삼키지 않고 명시적 ScheduleClaimResult 를 반환합니다.
+    """
+    return acquire_schedule_claim(
+        "catchup_attempt",
+        key=key,
+        ttl_seconds=ttl_seconds,
+        conn=conn,
+    )
+
+
+def is_catchup_in_cooldown(
+    conn: RedisConnection | None = None,
+    key: str = SCHEDULE_COLLECTION_CLAIM_KEY,
+) -> tuple[bool, str | None]:
+    """공통 claim 키를 확인하여 쿨다운 상태 여부와 마지막 시도 시각(ISO 문자열)을 반환합니다.
+
+    CacheLayer 의 로컬 fallback을 사용하지 않고 RedisConnection 으로 직접 확인합니다.
+    """
+    redis_conn = conn or get_schedule_redis_conn()
+    client = redis_conn.client()
+    if client is None:
+        return False, None
     try:
-        cache = CacheLayer()
-        now_dt = attempt_time or utcnow()
-        iso = now_dt.isoformat()
-        ttl = max(settings.AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS * 3600 * 2, 86400)
-        cache.set(CATCHUP_LAST_ATTEMPT_KEY, {"attempted_at": iso}, ttl)
-    except Exception:
-        logger.exception("스케줄 따라잡기 시도 기록 실패")
-
-
-def is_catchup_in_cooldown() -> tuple[bool, str | None]:
-    """따라잡기 쿨다운 상태 여부와 마지막 시도 시각(ISO 문자열)을 반환합니다."""
-    from src.app.core.cache import CacheLayer
-
-    try:
-        cache = CacheLayer()
-        data = cache.get(CATCHUP_LAST_ATTEMPT_KEY)
-        if isinstance(data, dict) and "attempted_at" in data:
-            attempted_at_str = data["attempted_at"]
-            attempted_at = datetime.fromisoformat(attempted_at_str)
-            now = utcnow()
-            elapsed_seconds = (_as_utc(now) - _as_utc(attempted_at)).total_seconds()
-            cooldown_seconds = settings.AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS * 3600
-            if 0 <= elapsed_seconds < cooldown_seconds:
-                return True, attempted_at_str
-    except Exception:
-        logger.warning("스케줄 따라잡기 쿨다운 확인 중 예외 발생, 진행을 계속합니다.")
-    return False, None
+        raw = client.get(key)
+        if not raw:
+            return False, None
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            attempted = data.get("claimed_at") or data.get("attempted_at")
+            return True, attempted
+        return True, str(data)
+    except Exception as exc:
+        redis_conn.invalidate(exc)
+        logger.warning("스케줄 쿨다운 상태 확인 중 오류 발생: %s", exc)
+        return False, None
 
 
 def check_schedule_catchup_needed(
@@ -736,9 +950,6 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
             "details": details,
         }
 
-    # 실패 시 재시작 루프에 의한 연속 실행을 방지하기 위해 시도 시각을 즉시 기록합니다.
-    record_catchup_attempt()
-
     target_task = details["target_task"]
     logger.info(
         "스케줄 따라잡기 실행 시작 (target_task=%s, details=%s)",
@@ -746,6 +957,9 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
         details,
     )
 
+    # 주의: target_task(nightly_schedule 또는 development_data_refresh) 내부에서
+    # 동일한 공통 Redis 원자 claim을 획득하므로, 바깥에서 별도로 claim을 획득하여
+    # 자기 충돌(self-collision)을 만들지 않습니다.
     try:
         if target_task == "nightly_schedule":
             outcome = await nightly_schedule_task(ctx)
