@@ -17,7 +17,7 @@ services:
       app:
         condition: service_healthy
     networks:
-      - internal
+      - egress
 
   app:
     restart: unless-stopped
@@ -59,6 +59,8 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
       - TRUSTED_PROXY_IPS=${TRUSTED_PROXY_IPS:?TRUSTED_PROXY_IPS must be set}
+      - READINESS_REQUIRE_WARMUP=true
+      - READINESS_REQUIRE_LLM=true
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -73,7 +75,7 @@ services:
         - CMD
         - python
         - -c
-        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3); assert json.load(response)['status'] in ('ready', 'degraded')"
+        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3); assert json.load(response)['status'] == 'ready'"
       interval: 10s
       timeout: 5s
       retries: 12
@@ -98,6 +100,7 @@ services:
       - ./chroma_db:/app/chroma_db:ro
     networks:
       - internal
+      - egress
 
   worker:
     restart: unless-stopped
@@ -129,6 +132,7 @@ services:
       - AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=${AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED:-true}
       - AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=${AUTOMATION_NIGHTLY_SCHEDULE_ENABLED:-false}
       - ML_WEEKLY_RETRAIN_ENABLED=${ML_WEEKLY_RETRAIN_ENABLED:-false}
+      - WORKER_HEARTBEAT_MAX_AGE_SECONDS=${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
       - TZ=Asia/Seoul
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -144,7 +148,16 @@ services:
         - CMD
         - python
         - -c
-        - "import redis, os; r = redis.from_url(os.environ['REDIS_URL'], socket_connect_timeout=2, socket_timeout=2); r.ping()"
+        - >-
+          import datetime as dt, json, os, time, redis; r = redis.from_url(os.environ['REDIS_URL'],
+          socket_connect_timeout=2, socket_timeout=2); r.ping(); heartbeat =
+          r.get('bidbox:worker:heartbeat'); assert heartbeat is not None, 'worker heartbeat missing';
+          payload = json.loads(heartbeat); last_seen_at = payload.get('last_seen_at');
+          assert isinstance(last_seen_at, str) and last_seen_at; last_seen =
+          dt.datetime.fromisoformat(last_seen_at.replace('Z', '+00:00')); age_seconds =
+          time.time() - last_seen.timestamp(); max_age_seconds =
+          float(os.environ['WORKER_HEARTBEAT_MAX_AGE_SECONDS']); assert 0 <= age_seconds <=
+          max_age_seconds, f'worker heartbeat is stale: {age_seconds:.1f}s'
       interval: 10s
       timeout: 5s
       retries: 5
@@ -169,6 +182,7 @@ services:
       - ./chroma_db:/app/chroma_db
     networks:
       - internal
+      - egress
 
   db:
     image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
@@ -275,3 +289,5 @@ networks:
   internal:
     driver: bridge
     internal: true
+  egress:
+    driver: bridge

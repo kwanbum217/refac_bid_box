@@ -183,6 +183,35 @@ def _safe_failure_detail(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {classification}"
 
 
+def _determine_readiness_status(
+    checks: dict[str, dict[str, Any]],
+    warmup_status: dict[str, Any],
+    llm_status: dict[str, Any],
+) -> tuple[str, bool]:
+    """운영 게이트를 적용해 readiness 상태와 503 여부를 결정합니다."""
+    critical_checks = {"mysql", "redis", "model_registry"}
+    if settings.READINESS_REQUIRE_WARMUP:
+        critical_checks.add("warmup")
+    if settings.READINESS_REQUIRE_LLM:
+        critical_checks.add("llm")
+
+    critical_failed = any(not checks[name]["ok"] for name in ("mysql", "redis", "model_registry"))
+    if "warmup" in critical_checks and not warmup_status["completed"]:
+        critical_failed = True
+    if "llm" in critical_checks and not llm_status["ok"]:
+        critical_failed = True
+
+    if critical_failed:
+        return "not_ready", True
+    if (
+        not all(check["ok"] for check in checks.values())
+        or not warmup_status["completed"]
+        or not llm_status["ok"]
+    ):
+        return "degraded", False
+    return "ready", False
+
+
 async def _run_check(name: str, check: Callable[[], None]) -> tuple[str, dict[str, Any]]:
     started_at = time.perf_counter()
     try:
@@ -272,33 +301,13 @@ async def readiness_check(response: Response):
     llm_status = await asyncio.to_thread(_check_llm)
     warmup_status = warmup_state.get_summary()
 
-    critical_checks = {"mysql", "redis", "model_registry"}
-    if settings.READINESS_REQUIRE_WARMUP:
-        critical_checks.add("warmup")
-    if settings.READINESS_REQUIRE_LLM:
-        critical_checks.add("llm")
-
-    critical_failed = False
-    for name in ("mysql", "redis", "model_registry"):
-        if not checks[name]["ok"]:
-            critical_failed = True
-            break
-    if "warmup" in critical_checks and not warmup_status["completed"]:
-        critical_failed = True
-    if "llm" in critical_checks and not llm_status["ok"]:
-        critical_failed = True
-
-    if critical_failed:
-        readiness_status = "not_ready"
+    readiness_status, not_ready = _determine_readiness_status(
+        checks,
+        warmup_status,
+        llm_status,
+    )
+    if not_ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    elif (
-        not all(check["ok"] for check in checks.values())
-        or not warmup_status["completed"]
-        or not llm_status["ok"]
-    ):
-        readiness_status = "degraded"
-    else:
-        readiness_status = "ready"
 
     return {
         "status": readiness_status,
