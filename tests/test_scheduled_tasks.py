@@ -114,7 +114,8 @@ def test_nightly_schedule_uses_original_run_mode():
 
 
 @pytest.mark.asyncio
-async def test_nightly_schedule_records_execution_and_runs_pipeline(isolated_db):
+async def test_nightly_schedule_records_execution_and_runs_pipeline(monkeypatch, isolated_db):
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True, raising=False)
     session_factory = lambda: isolated_db  # noqa: E731
     with (
         patch.object(scheduled_tasks, "SessionLocal", session_factory),

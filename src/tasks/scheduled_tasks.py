@@ -19,7 +19,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Any, cast
@@ -562,3 +562,202 @@ async def drift_monitor_task(
         "categories": results,
     }
     return outcome
+
+
+# --------------------------------------------------------------------------- #
+# 기동 시 스케줄 따라잡기 (Startup Catch-up)
+# --------------------------------------------------------------------------- #
+
+CATCHUP_LAST_ATTEMPT_KEY = "bidbox:worker:catchup_last_attempt"
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """datetime 객체를 UTC aware datetime 으로 정규화합니다."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def get_latest_collection_time(db: Session | None = None) -> datetime | None:
+    """bid_announcements 테이블의 최신 collected_at 시각을 조회합니다.
+
+    데이터가 없으면 None 을 반환합니다.
+    """
+    from sqlalchemy import func, select
+
+    from src.app.models.bids import BidAnnouncement
+
+    own_session = db is None
+    session = SessionLocal() if own_session else db
+    try:
+        return session.execute(select(func.max(BidAnnouncement.collected_at))).scalar()
+    finally:
+        if own_session:
+            session.close()
+
+
+def record_catchup_attempt(attempt_time: datetime | None = None) -> None:
+    """따라잡기 실행 시각을 캐시에 기록하여 재시작 루프 시 중복 실행을 방지합니다."""
+    from src.app.core.cache import CacheLayer
+
+    try:
+        cache = CacheLayer()
+        now_dt = attempt_time or utcnow()
+        iso = now_dt.isoformat()
+        ttl = max(settings.AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS * 3600 * 2, 86400)
+        cache.set(CATCHUP_LAST_ATTEMPT_KEY, {"attempted_at": iso}, ttl)
+    except Exception:
+        logger.exception("스케줄 따라잡기 시도 기록 실패")
+
+
+def is_catchup_in_cooldown() -> tuple[bool, str | None]:
+    """따라잡기 쿨다운 상태 여부와 마지막 시도 시각(ISO 문자열)을 반환합니다."""
+    from src.app.core.cache import CacheLayer
+
+    try:
+        cache = CacheLayer()
+        data = cache.get(CATCHUP_LAST_ATTEMPT_KEY)
+        if isinstance(data, dict) and "attempted_at" in data:
+            attempted_at_str = data["attempted_at"]
+            attempted_at = datetime.fromisoformat(attempted_at_str)
+            now = utcnow()
+            elapsed_seconds = (_as_utc(now) - _as_utc(attempted_at)).total_seconds()
+            cooldown_seconds = settings.AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS * 3600
+            if 0 <= elapsed_seconds < cooldown_seconds:
+                return True, attempted_at_str
+    except Exception:
+        logger.warning("스케줄 따라잡기 쿨다운 확인 중 예외 발생, 진행을 계속합니다.")
+    return False, None
+
+
+def check_schedule_catchup_needed(
+    db: Session | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
+    """기동 시 스케줄 따라잡기 필요 여부를 판정합니다.
+
+    Returns:
+        (needed, reason, details)
+    """
+    if not settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED:
+        return (
+            False,
+            "disabled",
+            {
+                "enabled": False,
+                "reason": "AUTOMATION_SCHEDULE_CATCHUP_ENABLED is False",
+            },
+        )
+
+    # 활성 스케줄 태스크 선택 (운영 nightly_schedule 우선, 없으면 development_data_refresh)
+    if settings.AUTOMATION_NIGHTLY_SCHEDULE_ENABLED:
+        target_task = "nightly_schedule"
+    elif settings.AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED:
+        target_task = "development_data_refresh"
+    else:
+        return (
+            False,
+            "no_active_schedule",
+            {
+                "enabled": True,
+                "reason": "모든 자동화 수집 스케줄 태스크가 비활성화되어 있습니다.",
+            },
+        )
+
+    # 쿨다운 확인 (재시작 루프 방어)
+    in_cooldown, last_attempt = is_catchup_in_cooldown()
+    if in_cooldown:
+        return (
+            False,
+            "in_cooldown",
+            {
+                "enabled": True,
+                "target_task": target_task,
+                "last_attempt": last_attempt,
+                "cooldown_hours": settings.AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS,
+                "reason": f"최근 시도 쿨다운({settings.AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS}시간) 이내입니다.",
+            },
+        )
+
+    latest_collected_at = get_latest_collection_time(db)
+    threshold_hours = settings.AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS
+    now = utcnow()
+
+    if latest_collected_at is None:
+        return (
+            True,
+            "no_previous_collection",
+            {
+                "enabled": True,
+                "target_task": target_task,
+                "latest_collected_at": None,
+                "threshold_hours": threshold_hours,
+                "reason": "이전 공고 수집 이력이 존재하지 않아 따라잡기를 실행합니다.",
+            },
+        )
+
+    elapsed = _as_utc(now) - _as_utc(latest_collected_at)
+    elapsed_hours = elapsed.total_seconds() / 3600.0
+
+    details: dict[str, Any] = {
+        "enabled": True,
+        "target_task": target_task,
+        "latest_collected_at": latest_collected_at.isoformat(),
+        "elapsed_hours": round(elapsed_hours, 2),
+        "threshold_hours": threshold_hours,
+    }
+
+    if elapsed_hours >= threshold_hours:
+        details["reason"] = (
+            f"마지막 수집 후 {elapsed_hours:.1f}시간 경과하여 임계치({threshold_hours}시간)를 초과했습니다."
+        )
+        return True, "threshold_exceeded", details
+
+    details["reason"] = (
+        f"마지막 수집 후 {elapsed_hours:.1f}시간 경과하여 임계치({threshold_hours}시간) 이내입니다."
+    )
+    return False, "threshold_not_exceeded", details
+
+
+@_record_schedule("schedule_catchup")
+async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """기동 시 누락된 스케줄 수집을 따라잡는 진입점 태스크입니다."""
+    needed, reason, details = check_schedule_catchup_needed()
+    logger.info(
+        "스케줄 따라잡기 판정: needed=%s, reason=%s, details=%s",
+        needed,
+        reason,
+        details,
+    )
+
+    if not needed:
+        return {
+            "status": "skipped",
+            "reason": reason,
+            "details": details,
+        }
+
+    # 실패 시 재시작 루프에 의한 연속 실행을 방지하기 위해 시도 시각을 즉시 기록합니다.
+    record_catchup_attempt()
+
+    target_task = details["target_task"]
+    logger.info(
+        "스케줄 따라잡기 실행 시작 (target_task=%s, details=%s)",
+        target_task,
+        details,
+    )
+
+    try:
+        if target_task == "nightly_schedule":
+            outcome = await nightly_schedule_task(ctx)
+        else:
+            outcome = await development_data_refresh_task(ctx)
+        outcome["catchup_details"] = details
+        return outcome
+    except Exception as exc:
+        logger.exception("스케줄 따라잡기 실행 실패: %s", exc)
+        return {
+            "status": "failed",
+            "reason": "execution_failed",
+            "error": str(exc),
+            "catchup_details": details,
+        }
