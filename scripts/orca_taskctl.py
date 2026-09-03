@@ -3908,9 +3908,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 )
             return 2
 
-        detected_cli = args.agent or (
-            "antigravity" if (args.model and "gemini" in args.model.lower()) else "antigravity"
-        )
+        # 런처 경로는 Antigravity 전용입니다. worker-start 가 받는 claude/codex/cursor 는
+        # 이 분기로 오지 않으므로 --agent 가 없으면 antigravity 로 확정합니다.
+        detected_cli = args.agent or "antigravity"
         launcher_val = (
             args.launcher
             if isinstance(args.launcher, str) and args.launcher
