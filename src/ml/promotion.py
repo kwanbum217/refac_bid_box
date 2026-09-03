@@ -13,6 +13,7 @@ required_features 가 비어 모델이 어떤 특징도 요구하지 않는 것�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -39,6 +40,19 @@ BACKUP_ROOT = Path(settings.MODEL_BACKUPS_DIR)
 # v13_hybrid)의 metadata.json 은 **체크섬 매니페스트에 포함돼 있습니다.**
 # 거기에 지표를 써넣으면 G1 무손실 검증이 깨지므로 별도 파일에 둡니다.
 METRICS_ROOT = Path(settings.MODEL_METRICS_DIR)
+# 승격 시도는 append-only 런타임 로그에 남깁니다. .gitignore 의 *.log 대상입니다.
+AUDIT_LOG_PATH = PROJECT_ROOT / "data" / "promotion_audit.log"
+
+# 판정 파일에 결속할 아티팩트. 순서와 framing 을 고정해야 판정 생성·검증이
+# 동일한 바이트 규칙을 사용하고 파일 경계가 모호해지지 않습니다.
+PROMOTION_ARTIFACTS = ("model.bin", "metadata.json")
+PROMOTION_EVIDENCE_FIELDS = (
+    "champion_checksum",
+    "challenger_checksum",
+    "sample_hash",
+    "code_commit",
+    "decided_at",
+)
 
 # 승격 필수 조건. 설계서 7장을 코드로 옮긴 것입니다.
 # 필수 4(어느 폴드도 R2 > 0.99 아닐 것)는 ssh_hist_premium 타깃 누수 사고의
@@ -50,13 +64,150 @@ class PromotionRejected(RuntimeError):
     """승격 조건을 통과하지 못했습니다."""
 
 
+def compute_artifact_checksum(model_dir: Path | str) -> str:
+    """모델 승격 아티팩트의 SHA-256 매니페스트 해시를 계산합니다.
+
+    판정 생성과 승격 검증이 반드시 이 함수를 함께 사용하도록 합니다. 모델
+    가중치와 학습 메타데이터가 같은 버전 디렉터리에 있어야만 해시를 만들 수
+    있습니다.
+    """
+    model_dir = Path(model_dir)
+    digest = hashlib.sha256()
+    for name in PROMOTION_ARTIFACTS:
+        path = model_dir / name
+        data = path.read_bytes()
+        name_bytes = name.encode("utf-8")
+        digest.update(len(name_bytes).to_bytes(4, "big"))
+        digest.update(name_bytes)
+        digest.update(len(data).to_bytes(8, "big"))
+        digest.update(data)
+    return digest.hexdigest()
+
+
+def _safe_artifact_checksum(model_dir: Path | str) -> str:
+    try:
+        return compute_artifact_checksum(model_dir)
+    except (OSError, OverflowError):
+        return ""
+
+
+def _paired_verdict_path(
+    model_name: str, version: str, registry_dir: Path | str = REGISTRY_ROOT
+) -> Path:
+    return Path(registry_dir) / model_name / version / "paired_verdict.json"
+
+
+def _safe_registry_version(version: str) -> bool:
+    value = Path(version)
+    return (
+        bool(version)
+        and not value.is_absolute()
+        and len(value.parts) == 1
+        and version not in {".", ".."}
+    )
+
+
+def _paired_verdict_checksum(model_name: str, version: str, registry_dir: Path | str) -> str:
+    path = _paired_verdict_path(model_name, version, registry_dir)
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _promotion_evidence_reasons(
+    model_name: str,
+    version: str,
+    verdict_data: dict[str, Any],
+    registry_dir: Path | str,
+) -> tuple[list[str], dict[str, str]]:
+    """approved 판정과 양쪽 실제 아티팩트의 결속 상태를 검증합니다."""
+    reasons: list[str] = []
+    registry_dir = Path(registry_dir)
+    challenger_dir = registry_dir / model_name / version
+    actual_challenger = _safe_artifact_checksum(challenger_dir)
+    champion_version = str(verdict_data.get("champion_version") or "")
+    champion_dir = registry_dir / model_name / champion_version
+    actual_champion = _safe_artifact_checksum(champion_dir) if champion_version else ""
+    actual = {"challenger": actual_challenger, "champion": actual_champion}
+
+    for field in PROMOTION_EVIDENCE_FIELDS:
+        if not str(verdict_data.get(field) or "").strip():
+            reasons.append(f"승격 증거 필드가 비었습니다: {field}")
+
+    if str(verdict_data.get("challenger_version") or "") != version:
+        reasons.append("판정 파일의 challenger_version 이 승격 대상 버전과 다릅니다")
+    if not champion_version:
+        reasons.append("판정 파일의 champion_version 이 비었습니다")
+    elif not champion_dir.is_dir():
+        reasons.append(f"champion 아티팩트 디렉터리가 없습니다: {champion_dir}")
+
+    if not actual_challenger:
+        reasons.append("challenger 아티팩트(model.bin, metadata.json)를 읽을 수 없습니다")
+    elif verdict_data.get("challenger_checksum") != actual_challenger:
+        reasons.append("challenger 아티팩트 체크섬이 판정 파일과 다릅니다")
+
+    if not actual_champion:
+        reasons.append("champion 아티팩트(model.bin, metadata.json)를 읽을 수 없습니다")
+    elif verdict_data.get("champion_checksum") != actual_champion:
+        reasons.append("champion 아티팩트 체크섬이 판정 파일과 다릅니다")
+    return reasons, actual
+
+
+def check_promotion_evidence(
+    metadata: dict[str, Any],
+    *,
+    registry_dir: Path | str = REGISTRY_ROOT,
+) -> list[str]:
+    """approved 판정의 증거 결속 사유만 돌려줍니다.
+
+    구조적 게이트의 `force` 처리와 분리해 호출부가 증거 실패를 우회하지
+    않도록 하는 공개 검사 함수입니다.
+    """
+    model_name = str(metadata.get("model_name") or "")
+    version = str(metadata.get("version") or "")
+    if not model_name or not version:
+        return []
+    verdict_data = read_paired_verdict(model_name, version, registry_dir)
+    if verdict_data is None or verdict_data.get("verdict") != "approved":
+        return []
+    reasons, _ = _promotion_evidence_reasons(model_name, version, verdict_data, registry_dir)
+    return reasons
+
+
+def _append_promotion_audit(
+    *,
+    model_name: str,
+    version: str,
+    verdict_file_hash: str,
+    artifact_hashes: dict[str, str],
+    result: str,
+    rejection_reasons: list[str],
+    audit_log_path: Path | str | None = None,
+) -> None:
+    """승격 결과를 기존 로그를 보존하는 JSON Lines 형식으로 기록합니다."""
+    path = Path(audit_log_path) if audit_log_path is not None else AUDIT_LOG_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "timestamp": utcnow().isoformat(),
+        "model_name": model_name,
+        "version": version,
+        "verdict_file_hash": verdict_file_hash,
+        "artifact_hashes": artifact_hashes,
+        "result": result,
+        "rejection_reasons": rejection_reasons,
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+
+
 def read_paired_verdict(
     model_name: str,
     version: str,
     registry_dir: Path | str = REGISTRY_ROOT,
 ) -> dict[str, Any] | None:
     """쌍대검정 판정 파일을 읽습니다. 없으면 None 입니다."""
-    path = Path(registry_dir) / model_name / version / "paired_verdict.json"
+    path = _paired_verdict_path(model_name, version, registry_dir)
     if not path.exists():
         return None
     try:
@@ -96,6 +247,8 @@ def check_promotion_criteria(
             reasons.append(f"운영 쌍대검정 기각: {evidence}")
         elif verdict_data.get("verdict") != "approved":
             reasons.append(f"운영 쌍대검정 판정 불가. verdict={verdict_data.get('verdict')!r}")
+        else:
+            reasons.extend(check_promotion_evidence(metadata, registry_dir=registry_dir))
 
     if metadata.get("holdout_is_overfit"):
         reasons.append("홀드아웃 분리 실패. 지표가 학습 구간 자기 점수입니다")
@@ -171,6 +324,82 @@ def promote(
     serving_dir: Path | str = SERVING_ROOT,
     backup_dir: Path | str | None = None,
     force: bool = False,
+    audit_log_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """승격을 시도하고 성공·거부 결과를 append-only 감사 로그에 남깁니다."""
+    registry_dir = Path(registry_dir)
+    resolved_version = version
+    if not resolved_version:
+        try:
+            resolved_version = latest_version(model_name, registry_dir)
+        except Exception as exc:
+            _append_promotion_audit(
+                model_name=model_name,
+                version="",
+                verdict_file_hash="",
+                artifact_hashes={"challenger": "", "champion": ""},
+                result="rejected",
+                rejection_reasons=[str(exc)],
+                audit_log_path=audit_log_path,
+            )
+            raise
+
+    source = registry_dir / model_name / resolved_version
+    verdict_data = read_paired_verdict(model_name, resolved_version, registry_dir)
+    champion_version = str((verdict_data or {}).get("champion_version") or "")
+    artifact_hashes = {
+        "challenger": _safe_artifact_checksum(source),
+        "champion": _safe_artifact_checksum(registry_dir / model_name / champion_version)
+        if champion_version
+        else "",
+    }
+    verdict_file_hash = _paired_verdict_checksum(model_name, resolved_version, registry_dir)
+
+    try:
+        if not _safe_registry_version(resolved_version):
+            raise PromotionRejected("승격 버전 경로가 안전하지 않습니다")
+        result = _promote_unlogged(
+            model_name,
+            resolved_version,
+            category_code=category_code,
+            registry_dir=registry_dir,
+            serving_dir=serving_dir,
+            backup_dir=backup_dir,
+            force=force,
+        )
+    except Exception as exc:
+        _append_promotion_audit(
+            model_name=model_name,
+            version=resolved_version,
+            verdict_file_hash=verdict_file_hash,
+            artifact_hashes=artifact_hashes,
+            result="rejected",
+            rejection_reasons=[str(exc)],
+            audit_log_path=audit_log_path,
+        )
+        raise
+
+    _append_promotion_audit(
+        model_name=model_name,
+        version=resolved_version,
+        verdict_file_hash=verdict_file_hash,
+        artifact_hashes=artifact_hashes,
+        result="promoted",
+        rejection_reasons=[],
+        audit_log_path=audit_log_path,
+    )
+    return result
+
+
+def _promote_unlogged(
+    model_name: str,
+    version: str | None = None,
+    *,
+    category_code: str | None = None,
+    registry_dir: Path | str = REGISTRY_ROOT,
+    serving_dir: Path | str = SERVING_ROOT,
+    backup_dir: Path | str | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     """챌린저를 서빙 경로로 승격합니다.
 
@@ -183,11 +412,20 @@ def promote(
     source = registry_dir / model_name / version
     metadata = json.loads((source / "metadata.json").read_text(encoding="utf-8"))
 
+    if metadata.get("model_name") != model_name or metadata.get("version") != version:
+        raise PromotionRejected("메타데이터의 모델명 또는 버전이 승격 대상과 다릅니다")
+
     # 쌍대검정 기각은 force 로도 뚫리지 않습니다.
     rejected, evidence = _is_paired_rejected(metadata, registry_dir)
     if rejected:
         raise PromotionRejected(
             f"{model_name}/{version} 승격 불가 (운영 쌍대검정 기각): {evidence}"
+        )
+
+    evidence_reasons = check_promotion_evidence(metadata, registry_dir=registry_dir)
+    if evidence_reasons:
+        raise PromotionRejected(
+            f"{model_name}/{version} 승격 거부:\n- " + "\n- ".join(evidence_reasons)
         )
 
     reasons = check_promotion_criteria(metadata, registry_dir=registry_dir)

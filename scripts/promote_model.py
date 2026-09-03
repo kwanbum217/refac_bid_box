@@ -33,13 +33,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.app.core.timeutil import utcnow  # noqa: E402
 from src.ml.promotion import (  # noqa: E402
+    AUDIT_LOG_PATH,
     BACKUP_ROOT,
     REGISTRY_ROOT,
     SERVING_ROOT,
     PromotionRejected,
     RollbackUnavailable,
     check_promotion_criteria,
+    check_promotion_evidence,
+    compute_artifact_checksum,
     latest_version,
     load_serving_metrics,
     promote,
@@ -156,7 +160,8 @@ def cmd_promote(args: argparse.Namespace) -> int:
         verdict = "거부됨" if reasons else "통과"
         print(f"\n예행 결과: {verdict}. 실제 교체는 --apply 를 붙이십시오.")
         print("교체 전 운영 경로 쌍대 비교를 거치십시오: scripts/compare_servc_models_paired.py")
-        return 1 if reasons and not args.force else 0
+        evidence_reasons = check_promotion_evidence(metadata, registry_dir=registry_dir)
+        return 1 if reasons and (not args.force or evidence_reasons) else 0
 
     try:
         result = promote(
@@ -167,6 +172,7 @@ def cmd_promote(args: argparse.Namespace) -> int:
             serving_dir=Path(args.serving_dir),
             backup_dir=Path(args.backup_dir),
             force=args.force,
+            audit_log_path=Path(args.audit_log),
         )
     except PromotionRejected as exc:
         print(f"\n승격이 거부되었습니다.\n{exc}")
@@ -177,6 +183,47 @@ def cmd_promote(args: argparse.Namespace) -> int:
     print(f"  백업     {result['backup'] or '없음 (최초 승격)'}")
     print(f"  요구 특징 {len(result['required_features'])}종 / 범주 {result['category_levels']}종")
     print(f"\n되돌리려면: uv run python scripts/promote_model.py rollback --model {args.model}")
+    return 0
+
+
+def cmd_create_verdict(args: argparse.Namespace) -> int:
+    """실제 아티팩트 해시를 채운 쌍대검정 판정 파일을 생성합니다."""
+    registry_dir = Path(args.registry_dir)
+    challenger_dir = registry_dir / args.model / args.version
+    if not challenger_dir.is_dir():
+        print(f"챌린저 아티팩트 디렉터리가 없습니다: {challenger_dir}")
+        return 1
+    champion_dir = registry_dir / args.model / args.champion_version
+    if not champion_dir.is_dir():
+        print(f"champion 아티팩트 디렉터리가 없습니다: {champion_dir}")
+        return 1
+    decided_at = args.decided_at or utcnow().isoformat()
+    if args.verdict == "approved" and (
+        not args.sample_hash or not args.code_commit or not decided_at
+    ):
+        print("approved 판정에는 --sample-hash, --code-commit, --decided-at 이 필요합니다")
+        return 1
+
+    challenger_checksum = compute_artifact_checksum(challenger_dir)
+    champion_checksum = compute_artifact_checksum(champion_dir)
+    verdict_path = challenger_dir / "paired_verdict.json"
+    payload = {
+        "verdict": args.verdict,
+        "champion_version": args.champion_version,
+        "challenger_version": args.version,
+        "champion_checksum": champion_checksum,
+        "challenger_checksum": challenger_checksum,
+        "sample_hash": args.sample_hash,
+        "code_commit": args.code_commit,
+        "decided_at": decided_at,
+        "evidence": args.evidence,
+    }
+    verdict_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    print(f"판정 파일 생성: {verdict_path}")
+    print(f"  champion_checksum   {champion_checksum}")
+    print(f"  challenger_checksum {challenger_checksum}")
     return 0
 
 
@@ -203,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--registry-dir", default=str(REGISTRY_ROOT))
     parser.add_argument("--serving-dir", default=str(SERVING_ROOT))
     parser.add_argument("--backup-dir", default=str(BACKUP_ROOT))
+    parser.add_argument("--audit-log", default=str(AUDIT_LOG_PATH))
     sub = parser.add_subparsers(dest="command", required=True)
 
     status = sub.add_parser("status", help="서빙본과 학습 최신본 비교")
@@ -216,6 +264,21 @@ def build_parser() -> argparse.ArgumentParser:
     promote_cmd.add_argument("--apply", action="store_true", help="실제로 교체합니다")
     promote_cmd.add_argument("--force", action="store_true", help="승격 조건 위반을 무시합니다")
     promote_cmd.set_defaults(func=cmd_promote)
+
+    verdict_cmd = sub.add_parser(
+        "create-verdict",
+        aliases=["write-verdict", "verdict"],
+        help="실제 아티팩트 증거를 채운 쌍대검정 판정 파일 생성",
+    )
+    verdict_cmd.add_argument("--model", required=True)
+    verdict_cmd.add_argument("--version", required=True)
+    verdict_cmd.add_argument("--champion-version", required=True)
+    verdict_cmd.add_argument("--verdict", choices=("approved", "rejected"), required=True)
+    verdict_cmd.add_argument("--sample-hash", default="")
+    verdict_cmd.add_argument("--code-commit", default="")
+    verdict_cmd.add_argument("--decided-at", default="")
+    verdict_cmd.add_argument("--evidence", default="")
+    verdict_cmd.set_defaults(func=cmd_create_verdict)
 
     rollback_cmd = sub.add_parser("rollback", help="직전 서빙본으로 되돌리기")
     rollback_cmd.add_argument("--model", required=True)
