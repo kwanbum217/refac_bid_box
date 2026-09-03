@@ -137,30 +137,46 @@ Chart.js 캔버스(`canvas#monthlyTrendChart`, `canvas#agencyChart`) 검증 시 
 
 ---
 
-## 5. CI 워크플로 최적화 및 크로스 플랫폼 정책
+## 5. CI 워크플로 최적화 및 독립 Job 운영 정책
 
-### 5.1 CI 러너 Chromium 설치 정책
+### 5.1 CI 독립 Job (`e2e-browser-test`) 아키텍처
 
-`.github/workflows/ci.yml`의 `cross-platform-test` 잡은 5개의 매트릭스(Ubuntu 3.11/3.12/3.13, macOS 3.11, Windows 3.11)로 구성됩니다.
+기존에는 `cross-platform-test` 매트릭스(Ubuntu 3.11) 러너에서 E2E 테스트가 전량 백엔드 테스트와 혼합 실행되어, 실패 시 화면 상태를 확인할 수 없고 매트릭스 실행 시간이 지연되는 문제가 있었습니다.
 
-전체 매트릭스에 브라우저 바이너리를 설치할 경우 다음과 같은 문제가 발생합니다:
-- Windows 러너의 실행 시간이 과도하게 증가하여 타임아웃 위험 초과
-- 불필요한 네트워크 대역폭 및 CI 다운로드 시간 소모
+이를 개선하여 `.github/workflows/ci.yml`에 **독립된 `e2e-browser-test` Job**을 신설하고 다음과 같이 최적화하였습니다:
 
-따라서 **배포 기준 플랫폼인 Ubuntu 3.11 러너에만 최소 범위로 Chromium을 설치**합니다:
+1. **매트릭스 중복 실행 차단**:
+   - `cross-platform-test` 잡은 `-m "not data_assets and not e2e"` 마커를 적용하여 E2E 테스트를 완전히 제외하고, Chromium 설치 스텝을 제거하여 매트릭스 리소스를 절감합니다.
+   - E2E 브라우저 테스트는 배포 기준 플랫폼인 `ubuntu-latest`의 `e2e-browser-test` 독립 Job에서만 단독 실행(`-m e2e`)됩니다.
 
-```yaml
-# .github/workflows/ci.yml
-- name: Install Playwright Chromium (Ubuntu 3.11 E2E baseline only)
-  if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
-  run: uv run playwright install --with-deps chromium
-```
+2. **React SPA 의존성 번들링**:
+   - React SPA 시나리오(`tests/e2e/test_react_spa.py`)는 `frontend/dist/index.html`을 요구합니다.
+   - 본 Job에 Node 22 셋업 및 `npm ci && npm run build` 단계를 포함하여 SSR뿐만 아니라 React SPA 5개 탭 시나리오까지 100% 실기 검증합니다.
+   - 프론트엔드 빌드 오버헤드는 실측 **3.60초**에 불과합니다.
 
-### 5.2 브라우저 부재 시 자동 Skip 메커니즘
+3. **실행 시간 예산 (Execution Time Budget)**:
+   - Job 전체 완주 예산: **최대 60초 이내**
+   - 실측 소요 시간: 프론트엔드 빌드 약 3.6초, E2E 31개 시나리오 실행 약 33초로 총 40초 내외에 완주됩니다.
 
-`tests/e2e/conftest.py`의 `pytest_runtest_setup` 훅은 테스트 실행 전 `is_chromium_available()`을 호출하여 Playwright Chromium 바이너리의 실행 가능 여부를 동적으로 판정합니다.
+4. **0건 Skip 엄격 게이트 (`Zero-Skip Gate`)**:
+   - Chromium 및 Node 환경이 온전히 갖추어진 독립 Job에서는 단 1건의 skip도 허용되지 않습니다.
+   - 테스트 실행 결과에 `SKIPPED` 또는 `skipped`가 포함될 경우 즉시 종료 코드 1로 실패 처리합니다.
+   - 단, `tests/e2e/conftest.py`의 skip 정책(브라우저 부재, npm 부재 시 skip) 자체는 보존하여 로컬 개발 환경에서의 유연성을 유지합니다.
 
-바이너리가 설치되지 않은 러너(macOS, Windows, Ubuntu 3.12/3.13)에서는 E2E 테스트가 실패(fail)하지 않고 **자동 skip** 처리되어 CI 파이프라인의 안정성을 유지합니다.
+### 5.2 실패 시 Playwright Trace 및 Screenshot 아티팩트 자동 수집
+
+`tests/e2e/conftest.py`와 CI 워크플로가 연계하여 테스트 실패 시의 화면 증거를 자동으로 보존합니다:
+
+1. **자동 추적 시작 및 보존**:
+   - 모든 브라우저 컨텍스트 생성 시 `tracing.start(screenshots=True, snapshots=True, sources=True)`를 비동기로 시작합니다.
+   - 테스트 실패(`pytest_runtest_makereport` 기준) 감지 시:
+     - `test-results/{test_name}.png`: 전체 페이지 스크린샷 캡처
+     - `test-results/{test_name}_trace.zip`: Playwright Trace 파일 저장
+2. **성공 시 무비용 정리**:
+   - 테스트가 성공하면 `tracing.stop()`으로 메모리 버퍼를 즉시 폐기하며, 파일 시스템에 어떤 아티팩트도 남기지 않습니다 (`test-results/` 미생성).
+3. **CI 조건부 아티팩트 업로드**:
+   - CI의 `Upload Playwright Trace and Screenshot Artifacts on Failure` 스텝은 `if: failure()` 조건으로 설정되어, **테스트가 실패했을 때만** `test-results/` 아티팩트를 `actions/upload-artifact@v4`로 GitHub Actions에 업로드합니다 (보존 기간 7일).
+   - 성공 시에는 아티팩트가 업로드되지 않아 CI 스토리지와 대역폭을 절약합니다.
 
 ---
 

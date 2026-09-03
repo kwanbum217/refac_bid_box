@@ -42,14 +42,31 @@ on:
 
 ## 3. Job 구성 및 게이트 명세
 
-CI는 4개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해야만 정상 상태로 판정됩니다.
+CI는 5개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해야만 정상 상태로 판정됩니다.
 
 | Job 이름 | 실행 환경 | 주요 검증 항목 | 통과 조건 및 게이트 |
 | --- | --- | --- | --- |
 | `lint-and-validate` | Ubuntu 22.04 / Python 3.11 / Node 22 | Ruff 린트, Ruff 포맷 검사, Bandit 보안 스캔, Mypy 타입 검사, 다중 에이전트 규칙 정합성, 문서 링크 유효성, Actionlint, 프론트엔드 테스트 및 빌드, Tailwind CSS 재현성 | 전 단계 종료 코드 0 (확인 전용) |
-| `cross-platform-test` | Ubuntu (3.11, 3.12, 3.13), macOS (3.11), Windows (3.11) | SQLite 인메모리 기반 단위/통합/E2E 테스트, Pytest 커버리지 측정 | `not data_assets` 전량 통과, 커버리지 하한 80% 이상 |
+| `cross-platform-test` | Ubuntu (3.11, 3.12, 3.13), macOS (3.11), Windows (3.11) | SQLite 인메모리 기반 단위/통합 테스트, Pytest 커버리지 측정 (E2E는 독립 Job으로 분리되어 제외) | `not data_assets and not e2e` 전량 통과, 커버리지 하한 80% 이상 |
+| `e2e-browser-test` | Ubuntu 22.04 / Python 3.11 / Node 22 / Chromium | Playwright 기반 SSR 및 React SPA 브라우저 E2E 테스트 슈트 전량 검증 (`-m e2e`) | 전 시나리오 통과, **0건 skip 필수** (1건이라도 skip 시 실패), 1건 이상 pass, **실행 시간 예산 60초 이내** |
 | `docker-build` | Ubuntu 22.04 | 운영 Dockerfile 빌드 및 앱 엔트리포인트 스모크 임포트 | 이미지 빌드 성공 및 `import src.app.main` 통과 |
 | `mysql-ngram-integration` | Ubuntu 22.04 / MySQL 8.0 컨테이너 | 격리 MySQL 인스턴스 기반 ngram, 방언 차이, 동시성 검증 | `tests/test_ngram_prefilter_equivalence.py`, `tests/test_mysql_integration_queries.py`, `tests/test_mysql_concurrency.py` 통과, 0건 skip, 1건 이상 pass |
+
+### 3.1 브라우저 E2E 독립 Job 운영 계약 (`e2e-browser-test`)
+
+1. **독립 Job 분리 및 중복 실행 차단**:
+   - `cross-platform-test` 매트릭스에서는 `-m "not data_assets and not e2e"`로 E2E를 제외하고 Chromium 설치 단계를 제거하여 매트릭스 러너 오버헤드를 대폭 경감합니다.
+   - `e2e-browser-test` 독립 Job에서만 배포 표준 환경(Ubuntu 3.11)으로 Chromium 바이너리를 설치하고 `-m e2e`로 E2E 시나리오 31건을 집중 검증합니다.
+2. **0건 Skip 엄격 게이트**:
+   - 브라우저 바이너리가 설치된 환경임에도 테스트가 skip되는 것은 환경 오설정 또는 회귀 결함이므로 성공으로 간주하지 않습니다.
+   - 출력에 `SKIPPED` 또는 `skipped` 문자열이 감지되면 종료 코드 1로 즉시 Job을 실패 처리합니다.
+3. **실패 시 아티팩트 보존 및 성공 시 미업로드 원칙**:
+   - 모든 테스트가 통과했을 때는 아티팩트를 업로드하지 않아 CI 스토리지 및 전송 대역폭 낭비를 차단합니다.
+   - 테스트 실패 시에만(`if: failure()`) `test-results/` 디렉터리에 자동 생성된 Playwright Trace(`.zip`)와 스크린샷(`.png`)을 `playwright-e2e-failure-artifacts` 아티팩트로 자동 업로드합니다 (보관 기간 7일).
+4. **React SPA 의존성 정책 및 실행 시간 예산 (Execution Time Budget)**:
+   - **정책 및 근거**: React SPA 탭(대시보드, 투찰가 예측기, RAG 챗봇) E2E 시나리오는 `frontend/dist` 번들을 요구합니다. 이를 위해 본 Job에 Node 22 셋업 및 `npm ci && npm run build`를 통합합니다.
+   - **실측 오버헤드**: `npm ci && npm run build` 소요 시간은 실측 **3.60초**에 불과하며, 5개 SPA 테스트를 온전히 실기 검증할 수 있습니다.
+   - **실행 시간 예산**: 브라우저 설치 및 프론트엔드 빌드를 포함한 E2E 테스트 전체 완주 예산은 **최대 60초**로 결박합니다 (실측 순수 E2E 실행 시간: 약 33초).
 
 ---
 

@@ -178,20 +178,77 @@ jobs:
           HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
         run: brew install libomp
 
-      # E2E 브라우저 테스트를 위해 배포 기준 플랫폼인 Ubuntu 3.11 러너에만 최소 범위로 Chromium 을 설치합니다.
-      # 전체 5개 매트릭스에 브라우저를 모두 설치하면 CI 실행 시간과 네트워크 대역폭이 불필요하게 낭비되므로,
-      # 배포 기준 환경(Ubuntu 3.11)에서만 E2E 를 실기 검증하고 타 플랫폼은 자동 skip 됩니다.
-      - name: Install Playwright Chromium (Ubuntu 3.11 E2E baseline only)
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
-        run: uv run playwright install --with-deps chromium
-
       # 데이터 자산(모델 가중치, chroma_db)은 저장소에 없으므로 G1 검증은 로컬 전용입니다.
+      # E2E 브라우저 테스트는 전용 독립 Job(e2e-browser-test)에서 집중 검증하므로 본 매트릭스에서는 제외합니다.
       # --durations 는 어느 테스트가 오래 걸리는지 로그에 남깁니다. Windows 는 실기가
       # 없어 로컬에서 재현할 수 없으므로 이 출력이 유일한 관측 수단입니다.
       # -p no:cacheprovider 는 러너 캐시 상태에 따라 순서가 달라지는 것을 막습니다.
       # 커버리지 측정과 fail-under 하한(80%) 게이트를 함께 수행합니다.
       - name: Run pytest (SQLite in-memory with coverage)
-        run: uv run pytest -q -m "not data_assets" --cov=src --cov-report=term-missing --cov-fail-under=80 --durations=25 -p no:cacheprovider
+        run: uv run pytest -q -m "not data_assets and not e2e" --cov=src --cov-report=term-missing --cov-fail-under=80 --durations=25 -p no:cacheprovider
+
+  e2e-browser-test:
+    name: Browser E2E Tests (Playwright Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install Playwright Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Frontend Dependencies & Build SPA
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+      # E2E 브라우저 테스트 전량(-m e2e)을 독립 실행하며, skip 이 1건이라도 발생하면 실패 처리합니다.
+      # 실패 시 스크린샷과 Playwright trace 아티팩트를 보존하기 위해 출력을 캡처하고 종료 코드를 검증합니다.
+      - name: Run Playwright E2E Tests
+        run: |
+          set +e
+          OUTPUT=$(uv run pytest tests/e2e -m e2e -v 2>&1)
+          EXIT_CODE=$?
+          set -e
+          echo "$OUTPUT"
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "Error: E2E pytest failed with exit code $EXIT_CODE."
+            exit $EXIT_CODE
+          fi
+          if echo "$OUTPUT" | grep -E "(SKIPPED|skipped)"; then
+            echo "Error: E2E tests contained skipped tests, but 0 skip is required in e2e-browser-test."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -E "([1-9][0-9]* passed)"; then
+            echo "Error: No tests passed in E2E suite."
+            exit 1
+          fi
+
+      # 실패 시에만 Playwright trace 및 screenshot 아티팩트를 업로드합니다. 성공 시에는 업로드하지 않습니다.
+      - name: Upload Playwright Trace and Screenshot Artifacts on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e-failure-artifacts
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   docker-build:
     name: Docker 이미지 빌드 검증
