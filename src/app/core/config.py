@@ -177,6 +177,17 @@ class Settings(BaseSettings):
     MODEL_REGISTRY_DIR: str = "ml_registry"
     FEATURE_STORE_DIR: str = "data/feature_store"
 
+    # OpenTelemetry 관측성 설정
+    # 기본값은 비활성(False)이며 플래그 하나로 제어됩니다. 비활성 시 계측 비용이 발생하지 않습니다.
+    OTEL_ENABLED: bool = False
+    OTEL_SERVICE_NAME: str = "refac_bid_box"
+    # OTLP HTTP 수집기 엔드포인트 (예: http://localhost:4318 또는 http://collector:4318/v1/traces)
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    # Exporter 유형: "none"(내보내지 않음), "console"(디버그용 stdout), "otlp"(표준 OTLP HTTP)
+    OTEL_EXPORTER_TYPE: Literal["none", "console", "otlp"] = "none"
+    # 트레이스 샘플링 비율 (0.0 ~ 1.0)
+    OTEL_SAMPLING_RATIO: float = 1.0
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property

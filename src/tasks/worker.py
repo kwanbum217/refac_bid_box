@@ -21,6 +21,7 @@ from arq.connections import RedisSettings
 
 from src.app.core.cache import CacheLayer
 from src.app.core.config import settings
+from src.app.core.observability import arq_on_job_end, arq_on_job_start, setup_observability
 from src.tasks.automation_tasks import (
     collect_bids_task,
     manual_full_task,
@@ -105,6 +106,10 @@ async def _heartbeat_loop() -> None:
 
 
 async def _on_startup(ctx: dict[str, Any]) -> None:
+    if settings.OTEL_ENABLED:
+        from src.app.core.db import engine
+
+        setup_observability(engine=engine)
     record_worker_heartbeat()
     ctx["worker_heartbeat_task"] = asyncio.create_task(_heartbeat_loop())
 
@@ -179,3 +184,5 @@ class WorkerSettings:
     allow_abort_jobs = True
     on_startup = _on_startup
     on_shutdown = _on_shutdown
+    on_job_start = arq_on_job_start
+    on_job_end = arq_on_job_end
