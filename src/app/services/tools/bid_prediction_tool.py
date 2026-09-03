@@ -18,6 +18,8 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidAnnouncement
+from src.ml.dataset import announcement_feature_payload
+from src.ml.features import build_feature_dict
 from src.ml.model_registry import (
     CATEGORY_DEFAULT_MODELS,
     ModelRegistry,
@@ -94,9 +96,23 @@ def coerce_limit(value: Any, query: str = "") -> int:
     return max(1, min(limit, MAX_PREDICTION_LIMIT))
 
 
-def _build_prediction_features(bid: BidAnnouncement) -> dict[str, Any]:
+def _build_prediction_features(
+    bid: BidAnnouncement,
+    db: Session | None = None,
+) -> dict[str, Any]:
+    """공고 상세 API 와 같은 특징을 만듭니다.
+
+    제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 채울 수 없습니다.
+    기관 이력과 재발주 이력은 DB 조회가 필요하므로 db 세션을 넘겨
+    build_feature_dict 로 채웁니다.
+    원본 키 위에 덮어씁니다. 통째로 갈아끼우면 규칙 기반 구 모델이 쓰는
+    title / agency_name / scenario_mode 가 사라집니다.
+
+    두 경로가 다른 특징을 쓰는 것은 AGENTS.md 가 금지한 train/serve skew 입니다.
+    """
     reference_amount = float(bid.prediction_reference_amount or 0)
-    return {
+    features = {
+        **announcement_feature_payload(bid),
         "title": bid.bid_ntce_nm or "",
         "agency_name": bid.dminstt_nm or bid.ntce_instt_nm or "",
         "scenario_mode": "2",
@@ -114,6 +130,7 @@ def _build_prediction_features(bid: BidAnnouncement) -> dict[str, Any]:
         "bid_clse_dt": bid.bid_clse_dt,
         "openg_dt": bid.openg_dt,
     }
+    return {**features, **build_feature_dict(features, db)}
 
 
 def _latest_predictable_bids(db: Session, category: str = "", limit: int = 1):
@@ -146,14 +163,18 @@ def _model_display_name(model_id: str) -> str:
     return wrapper.get_display_name() if wrapper else model_id
 
 
-def _predict_bid(bid: BidAnnouncement, requested_model: str) -> dict[str, Any]:
+def _predict_bid(
+    bid: BidAnnouncement,
+    requested_model: str,
+    db: Session | None = None,
+) -> dict[str, Any]:
     """공고 한 건에 대해 투찰가를 예측한다.
 
     비예가 공고는 낙찰률 모델로 보내지 않고 사유를 반환한다.
     모델 출처는 predict_optimal_price_with_provenance 가 추적하므로
     이 함수에서 별도 재시도를 하지 않는다.
     """
-    features = _build_prediction_features(bid)
+    features = _build_prediction_features(bid, db)
 
     # 비예가 판정: model_registry.classify_price_decision_method 단일 함수 사용.
     # 명시적 Servc 비예가만 차단하고 missing/unknown/non-Servc는 pass-through 한다.
@@ -283,7 +304,7 @@ def execute(
         }
 
     first_model = _resolve_model_id(query, model_id) or _default_model_for_bid(bids[0])
-    predictions = [_predict_bid(bid, first_model) for bid in bids]
+    predictions = [_predict_bid(bid, first_model, db=db) for bid in bids]
     first_prediction = predictions[0]
 
     return {

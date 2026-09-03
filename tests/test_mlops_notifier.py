@@ -24,6 +24,24 @@ CHAMPION_METRICS = {"r2": 0.6824, "rmse": 2.6998, "mape": 3.1}
 CHALLENGER_METRICS = {"r2": 0.6901, "rmse": 2.6670, "mape": 3.0}
 
 
+@pytest.fixture(autouse=True)
+def mock_schedule_claim(monkeypatch):
+    """스케줄 태스크 실패 알림 테스트 시 Redis claim 이 기본적으로 통과하도록 모의합니다."""
+    from src.tasks import scheduled_tasks
+
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "acquire_schedule_claim",
+        lambda owner, **kwargs: scheduled_tasks.ScheduleClaimResult(
+            status=scheduled_tasks.ScheduleClaimStatus.ACQUIRED,
+            key=scheduled_tasks.SCHEDULE_COLLECTION_CLAIM_KEY,
+            owner=owner,
+            ttl=21600,
+            detail="test claim granted",
+        ),
+    )
+
+
 @pytest.fixture
 def webhook_enabled(monkeypatch):
     monkeypatch.setattr(settings, "MLOPS_WEBHOOK_URL", "http://webhook.test/hook", raising=False)
@@ -232,10 +250,11 @@ async def test_weekly_retrain_failure_notifies():
 
 
 @pytest.mark.asyncio
-async def test_nightly_schedule_failure_notifies(isolated_db):
+async def test_nightly_schedule_failure_notifies(monkeypatch, isolated_db):
     """02:00 수집이 실패하면 03:00 재학습이 옛 데이터로 돕니다."""
     from src.tasks import scheduled_tasks
 
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True, raising=False)
     session_factory = lambda: isolated_db  # noqa: E731
     isolated_db.close = lambda: None
 

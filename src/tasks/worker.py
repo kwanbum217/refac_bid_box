@@ -10,6 +10,7 @@ Arq 워커 진입점. 원본 Harness 파이프라인 실행 백엔드를 대체�
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import socket
 import uuid
@@ -37,8 +38,11 @@ from src.tasks.scheduled_tasks import (
     development_data_refresh_task,
     drift_monitor_task,
     nightly_schedule_task,
+    run_schedule_catchup_task,
     weekly_retrain_task,
 )
+
+logger = logging.getLogger(__name__)
 
 WORKER_HEARTBEAT_KEY = "bidbox:worker:heartbeat"
 QUEUE_BACKLOG_KEY = "bidbox:worker:queue_backlog"
@@ -105,6 +109,15 @@ async def _heartbeat_loop() -> None:
         await asyncio.sleep(settings.WORKER_HEARTBEAT_INTERVAL_SECONDS)
 
 
+async def _run_catchup_background(ctx: dict[str, Any]) -> None:
+    """스케줄 따라잡기를 백그라운드에서 실행하며 예외를 격리합니다."""
+    try:
+        await run_schedule_catchup_task(ctx)
+    except Exception:
+        # 따라잡기 실패가 워커 프로세스를 종료시켜서는 안 됩니다.
+        logger.exception("스케줄 따라잡기 백그라운드 태스크 실행 중 예외 발생")
+
+
 async def _on_startup(ctx: dict[str, Any]) -> None:
     if settings.OTEL_ENABLED:
         from src.app.core.db import engine
@@ -112,6 +125,8 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
         setup_observability(engine=engine)
     record_worker_heartbeat()
     ctx["worker_heartbeat_task"] = asyncio.create_task(_heartbeat_loop())
+    if settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED:
+        ctx["schedule_catchup_task"] = asyncio.create_task(_run_catchup_background(ctx))
 
 
 async def _on_shutdown(ctx: dict[str, Any]) -> None:
@@ -119,6 +134,11 @@ async def _on_shutdown(ctx: dict[str, Any]) -> None:
     if heartbeat_task is not None:
         heartbeat_task.cancel()
         await asyncio.gather(heartbeat_task, return_exceptions=True)
+
+    catchup_task = ctx.pop("schedule_catchup_task", None)
+    if catchup_task is not None and not catchup_task.done():
+        catchup_task.cancel()
+        await asyncio.gather(catchup_task, return_exceptions=True)
 
 
 class WorkerSettings:
@@ -134,6 +154,7 @@ class WorkerSettings:
         development_data_refresh_task,
         drift_monitor_task,
         backup_schedule_task,
+        run_schedule_catchup_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
     # 워커가 여러 대여도 arq 는 크론을 한 번만 실행합니다.
