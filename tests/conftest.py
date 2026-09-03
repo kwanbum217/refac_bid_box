@@ -174,38 +174,70 @@ def _disable_orca_auto_approve(monkeypatch):
     monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
 
 
+class _InMemoryRateLimitPipeline:
+    def __init__(self, outer: "_InMemoryRateLimitClient") -> None:
+        self.outer = outer
+        self.ops: list[tuple[str, tuple]] = []
+
+    def incr(self, key: str, amount: int = 1) -> "_InMemoryRateLimitPipeline":
+        self.ops.append(("incr", (key, amount)))
+        return self
+
+    def expire(self, key: str, time: int) -> "_InMemoryRateLimitPipeline":
+        self.ops.append(("expire", (key, time)))
+        return self
+
+    def execute(self) -> list[int]:
+        results: list[int] = []
+        for op, args in self.ops:
+            if op == "incr":
+                key, amount = args
+                current = int(self.outer.store.get(key, "0"))
+                new_val = current + amount
+                self.outer.store[key] = str(new_val)
+                results.append(new_val)
+            elif op == "expire":
+                key, ttl = args
+                self.outer.ttls[key] = ttl
+                results.append(1)
+        self.ops.clear()
+        return results
+
+
+class _InMemoryRateLimitClient:
+    """LoginRateLimiter 운영 계약(get, delete, pipeline)을 지원하는 인메모리 Redis 대역."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def delete(self, *keys: str) -> int:
+        deleted = 0
+        for key in keys:
+            if self.store.pop(key, None) is not None:
+                deleted += 1
+            self.ttls.pop(key, None)
+        return deleted
+
+    def pipeline(self) -> _InMemoryRateLimitPipeline:
+        return _InMemoryRateLimitPipeline(self)
+
+
 @pytest.fixture(autouse=True)
-def _reset_login_rate_limit():
-    """로그인 시도 제한 상태를 테스트마다 비웁니다.
+def _reset_login_rate_limit(monkeypatch):
+    """로그인 시도 제한 상태를 인메모리 대역으로 격리합니다.
 
-    제한기는 Redis 에 IP 축과 계정 축 카운터를 남깁니다. 그 상태가 테스트 사이에
-    남으면 앞선 테스트의 로그인 실패가 뒤 테스트를 429 로 막습니다. 2026-09-03 에
-    Redis 를 올린 뒤 로그인 관련 16건이 한꺼번에 429 로 실패했습니다.
-
-    이 결함은 Redis 가 꺼져 있으면 드러나지 않습니다. 제한기가 fail-open 이라
-    카운트 자체를 하지 않기 때문입니다. 그래서 로컬과 CI 는 통과하고 실제 스택을
-    띄운 환경에서만 깨졌습니다. Redis 유무와 무관하게 같은 결과가 나오도록
-    양쪽에서 상태를 지웁니다.
+    실제 Redis 에 scan/delete 를 실행하지 않고, 테스트마다 격리된 인메모리
+    client 대역을 login_rate_limiter._conn.client 에 주입하여 테스트 간 누적 간섭을
+    차단하고 불필요한 네트워크 지연을 방지합니다.
+    테스트가 자체적으로 mock_redis_for_rate_limit 이나 client=None 으로 재패치할 수 있으며,
+    teardown 시 monkeypatch 가 원래 상태로 복구합니다.
     """
-    from src.app.core.security import (
-        RATE_LIMIT_ACCOUNT_PREFIX,
-        RATE_LIMIT_IP_PREFIX,
-        login_rate_limiter,
-    )
+    from src.app.core.security import login_rate_limiter
 
-    def _clear() -> None:
-        client = login_rate_limiter._conn.client()
-        if client is None:
-            return
-        try:
-            for prefix in (RATE_LIMIT_IP_PREFIX, RATE_LIMIT_ACCOUNT_PREFIX):
-                keys = list(client.scan_iter(match=f"{prefix}*"))
-                if keys:
-                    client.delete(*keys)
-        except Exception:
-            # 제한기 자체가 fail-open 이므로 정리 실패로 테스트를 깨뜨리지 않습니다.
-            return
-
-    _clear()
-    yield
-    _clear()
+    fake_client = _InMemoryRateLimitClient()
+    monkeypatch.setattr(login_rate_limiter._conn, "client", lambda: fake_client)
+    return fake_client
