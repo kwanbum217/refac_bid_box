@@ -25,27 +25,83 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
 
+      # 공급망 스캔은 모두 차단 모드다. CRITICAL 과 HIGH 가 검출되면 CI 가 붉어진다.
+      # || true 나 exit-code 0 으로 실패를 삼키지 않는다.
+      # 사유와 만료가 박힌 예외만 .github/vulnerability-allowlist.yml 에서 통과시킨다.
       - name: Scan Python dependencies
         run: |
           uv export --frozen --format requirements.txt --no-emit-project -o /tmp/requirements.txt
-          uvx --from pip-audit pip-audit -r /tmp/requirements.txt --strict || true
+          # allowlist 의 python 식별자 항목에서 --ignore-vuln 인자를 만든다. 항목이
+          # 비어 있으면 IGNORE_ARGS 가 빈 문자열이 되어 pip-audit 가 그대로 실패한다.
+          IGNORE_ARGS=$(python3 -c "import yaml
+          data = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
+          print(' '.join('--ignore-vuln ' + e['id'] for e in data.get('python', [])))")
+          uvx --from pip-audit pip-audit -r /tmp/requirements.txt --strict $IGNORE_ARGS
 
       - name: Scan JavaScript dependencies
         working-directory: frontend
-        run: npm audit --audit-level=high || true
+        # npm audit 은 HIGH 이상 발견 시 비정상 종료한다. allowlist 의 npm 패키지에
+        # 매칭되지 않는 HIGH/CRITICAL 취약점이 남아 있으면 그대로 실패한다.
+        run: |
+          set +e
+          OUTPUT=$(npm audit --audit-level=high --json 2>/dev/null)
+          EXIT_CODE=$?
+          set -e
+          if [ $EXIT_CODE -eq 0 ]; then
+            exit 0
+          fi
+          echo "$OUTPUT" | python3 -c "import sys, json, yaml
+          audit = json.loads(sys.stdin.read())
+          data = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
+          allowed = {e['package'] for e in data.get('npm', [])}
+          remaining = [(n, v.get('severity')) for n, v in audit.get('vulnerabilities', {}).items() if v.get('severity') in ('high','critical') and n not in allowed]
+          if remaining:
+              print('npm audit failed; HIGH/CRITICAL not in allowlist:', file=sys.stderr)
+              [print(f'  - {n} ({s})', file=sys.stderr) for n, s in remaining]
+              sys.exit(1)
+          print('npm audit: all HIGH/CRITICAL vulnerabilities are in allowlist')"
 
       - name: Build application image
         run: docker build --pull=false -t refac-bid-box:ci .
 
+      # Trivy 는 CRITICAL 과 HIGH 에서 비정상 종료한다. ignore-unfixed 는 유지한다.
+      # 상류에 고칠 방법이 없는 항목은 후처리 step 에서 allowlist 와 대조해 통과시킨다.
       - name: Scan container image
+        id: trivy-scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: refac-bid-box:ci
-          format: table
+          format: json
           vuln-type: os,library
           severity: CRITICAL,HIGH
-          exit-code: '0'
+          exit-code: '1'
           ignore-unfixed: true
+          output: trivy-results.json
+
+      - name: Filter Trivy results against allowlist
+        if: always()
+        run: |
+          # Trivy 가 정상 종료(0)이면 아무 취약점이 없다는 뜻이므로 그대로 통과한다.
+          if [ "${{ steps.trivy-scan.outcome }}" = "success" ]; then
+            exit 0
+          fi
+          RESULT_PATH=${TRIVY_OUTPUT:-trivy-results.json}
+          if [ ! -f "$RESULT_PATH" ]; then
+            echo "Trivy failed but result file not found: $RESULT_PATH" >&2
+            exit 1
+          fi
+          python3 -c "import sys, json, yaml
+          data = json.load(open('$RESULT_PATH'))
+          allow = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
+          allowed_ids = {e['id'] for e in allow.get('trivy', [])}
+          remaining = [(v.get('VulnerabilityID'), v.get('PkgName'), v.get('Severity')) for r in data.get('Results', []) for v in (r.get('Vulnerabilities') or []) if v.get('Severity') in ('CRITICAL','HIGH') and v.get('VulnerabilityID') not in allowed_ids]
+          if remaining:
+              print('Trivy failed; CRITICAL/HIGH not in allowlist:', file=sys.stderr)
+              [print(f'  - {vid} {pkg} {sev}', file=sys.stderr) for vid, pkg, sev in remaining]
+              sys.exit(1)
+          print('Trivy: all CRITICAL/HIGH vulnerabilities are in allowlist')"
+        env:
+          TRIVY_OUTPUT: trivy-results.json
 
       - name: Generate application SBOM
         uses: anchore/sbom-action@v0.24.2
