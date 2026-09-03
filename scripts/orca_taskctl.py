@@ -3020,6 +3020,142 @@ def dispatch_with_fallback(
     return code, stdout, stderr, executed_cmd, fallback_info
 
 
+LAUNCHER_WAIT_MARKERS: tuple[str, ...] = (
+    "preamble 대기 중",
+    "preamble 대기 중:",
+    "wait_for_preamble",
+)
+
+LAUNCHER_STARTED_MARKERS: tuple[str, ...] = (
+    "기동: agy",
+    "기동: opencode",
+    "기동: kimi",
+    "기동:",
+)
+
+
+def resolve_terminal_worktree(terminal: str, repo: Path | str = ".") -> Path | None:
+    """터미널이 속한 워크트리 경로를 확인합니다.
+
+    1. 터미널 메타데이터 ({terminal}.meta.json) 에서 worktree 조회
+    2. orca terminal show --terminal <handle> --json 에서 worktree/worktreePath/cwd 조회
+    3. orca terminal list --json 에서 handle 일치 항목의 worktree/worktreePath/cwd 조회
+    """
+    meta = read_worker_meta(terminal)
+    if meta and isinstance(meta, dict):
+        wt = meta.get("worktree") or meta.get("worktree_path")
+        if wt and isinstance(wt, str) and wt.strip():
+            cleaned = wt.strip()
+            if cleaned.startswith("path:"):
+                cleaned = cleaned[5:]
+            return Path(cleaned).resolve()
+
+    cmd = ["orca", "terminal", "show", "--terminal", terminal, "--json"]
+    code, stdout, _ = _run_command(cmd, timeout=10)
+    if code == 0 and stdout.strip():
+        try:
+            payload = json.loads(stdout)
+            if isinstance(payload, dict) and payload.get("ok") is not False:
+                t_info = (payload.get("result") or {}).get("terminal") or {}
+                wt = (
+                    t_info.get("worktree")
+                    or t_info.get("worktreePath")
+                    or t_info.get("worktree_path")
+                    or t_info.get("cwd")
+                )
+                if wt and isinstance(wt, str) and wt.strip():
+                    cleaned = wt.strip()
+                    if cleaned.startswith("path:"):
+                        cleaned = cleaned[5:]
+                    return Path(cleaned).resolve()
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    cmd = ["orca", "terminal", "list", "--json"]
+    code, stdout, _ = _run_command(cmd, timeout=10)
+    if code == 0 and stdout.strip():
+        try:
+            payload = json.loads(stdout)
+            if isinstance(payload, dict) and payload.get("ok") is not False:
+                terminals = (payload.get("result") or {}).get("terminals") or []
+                for item in terminals:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("handle") == terminal or item.get("id") == terminal:
+                        wt = (
+                            item.get("worktree")
+                            or item.get("worktreePath")
+                            or item.get("worktree_path")
+                            or item.get("cwd")
+                        )
+                        if wt and isinstance(wt, str) and wt.strip():
+                            cleaned = wt.strip()
+                            if cleaned.startswith("path:"):
+                                cleaned = cleaned[5:]
+                            return Path(cleaned).resolve()
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return None
+
+
+def verify_launcher_pickup(
+    terminal: str,
+    timeout_sec: float = 30.0,
+    poll_interval_sec: float = 0.5,
+    sleep_fn=time.sleep,
+    read_fn=None,
+) -> tuple[bool, str]:
+    """런처가 preamble 파일을 읽고 실제 CLI 를 기동했는지 확인합니다.
+
+    1. 터미널 출력에서 'preamble 대기 중' 대기 상태가 해소되었는지 확인
+    2. '기동:' 문구 또는 에이전트 프롬프트/신뢰 확인 대화창/모드 표지 출현 확인
+    3. 시한(timeout_sec) 초과 시 실패(False) 반환
+    """
+    if read_fn is None:
+
+        def _default_read(h: str) -> str | None:
+            return terminal_read(h) or terminal_tail(h)
+
+        read_fn = _default_read
+
+    deadline = time.monotonic() + max(0.0, timeout_sec)
+    last_text = ""
+    while True:
+        text = read_fn(terminal)
+        if text:
+            last_text = text
+            lowered = text.lower()
+            has_started = any(marker in text for marker in LAUNCHER_STARTED_MARKERS)
+            has_agent = (
+                agent_prompt_ready(text)
+                or has_trust_prompt(text)
+                or detect_antigravity_mode(text) in ("accept-edits", "normal", "plan")
+                or "gemini" in lowered
+                or "antigravity" in lowered
+            )
+            is_still_waiting = (
+                any(marker in text for marker in LAUNCHER_WAIT_MARKERS)
+                and not has_started
+                and not has_agent
+            )
+
+            if (has_started or has_agent) and not is_still_waiting:
+                return (
+                    True,
+                    f"런처가 preamble 을 성공적으로 이어받아 에이전트를 기동했습니다 ({terminal})",
+                )
+
+        if time.monotonic() >= deadline:
+            break
+        sleep_fn(poll_interval_sec)
+
+    return (
+        False,
+        f"런처 기동 확인 시한({timeout_sec:.0f}초) 초과: 터미널 {terminal} 에서 preamble 이어받기가 확인되지 않았습니다 (최근 출력: {truncate(last_text, 100)!r})",
+    )
+
+
 def resolve_dispatch_model(
     args_model: str | None,
     capsule_text: str,
@@ -3711,8 +3847,199 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     pre_dispatch_warnings: list[str] = []
     dispatch_started_at = time.time()
     fallback_info: dict[str, Any] = {"fallback_used": False}
+    launcher_mode = bool(getattr(args, "launcher", None))
+    worktree_path: Path | None = None
+    preamble_file: Path | None = None
+    launcher_pickup_detail: str | None = None
 
-    if args.terminal:
+    if args.terminal and launcher_mode:
+        # 런처 경로: --return-preamble 로 지시문을 받아 <워크트리>/.orca/preamble.txt 에 쓴 뒤 기동 확인
+        if getattr(args, "worktree", None) and args.worktree != "new-child":
+            wt_raw = args.worktree.strip()
+            if wt_raw.startswith("path:"):
+                wt_raw = wt_raw[5:]
+            worktree_path = Path(wt_raw).resolve()
+        else:
+            worktree_path = resolve_terminal_worktree(args.terminal, repo=args.repo)
+
+        repo_root = Path(args.repo).resolve()
+        if worktree_path is None:
+            err_msg = (
+                f"런처 기동 실패: 워커 터미널 {args.terminal} 의 워크트리 경로를 확인할 수 없습니다. "
+                "--worktree 로 워크트리 경로를 명시하십시오."
+            )
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "launcher_worktree_unresolved",
+                            "task_id": task_id,
+                            "capsule": str(capsule_path),
+                            "terminal": args.terminal,
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
+
+        if worktree_path == repo_root:
+            err_msg = (
+                f"런처 기동 실패: 주 저장소({repo_root})에는 preamble.txt 를 쓸 수 없습니다. "
+                "격리 워크트리 경로를 지정하십시오."
+            )
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "launcher_main_repo_write_forbidden",
+                            "task_id": task_id,
+                            "capsule": str(capsule_path),
+                            "terminal": args.terminal,
+                            "worktree": str(worktree_path),
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
+
+        # 런처 경로는 Antigravity 전용입니다. worker-start 가 받는 claude/codex/cursor 는
+        # 이 분기로 오지 않으므로 --agent 가 없으면 antigravity 로 확정합니다.
+        detected_cli = args.agent or "antigravity"
+        launcher_val = (
+            args.launcher
+            if isinstance(args.launcher, str) and args.launcher
+            else "scripts/orca_agy_launch.py"
+        )
+        meta = read_worker_meta(args.terminal) or {}
+        meta["cli_type"] = detected_cli
+        meta["model"] = model
+        meta["launcher"] = launcher_val
+        meta["worktree"] = str(worktree_path)
+        meta["terminal"] = args.terminal
+        meta["updated_at"] = time.time()
+        write_worker_meta(args.terminal, meta)
+
+        skip_auto_approve = (
+            getattr(args, "skip_auto_approve_check", False)
+            or os.environ.get("ORCA_DISABLE_AUTO_APPROVE") == "1"
+        )
+        approve_started, approve_detail = start_auto_approve(args.terminal)
+        if approve_started:
+            sys.stderr.write(f"권한 자동 승인 감시기를 붙였습니다. 로그: {approve_detail}\n")
+        elif skip_auto_approve:
+            if getattr(args, "skip_auto_approve_check", False):
+                sys.stderr.write(
+                    f"경고: --skip-auto-approve-check 지정으로 권한 자동 승인 감시기 부착 실패를 무시하고 진행합니다: {approve_detail}\n"
+                )
+            else:
+                sys.stderr.write(
+                    f"안내: ORCA_DISABLE_AUTO_APPROVE=1 지정으로 권한 자동 승인 감시기 부착을 건너뜁니다: {approve_detail}\n"
+                )
+        else:
+            err_msg = (
+                f"권한 자동 승인 감시기 부착 실패: {approve_detail}. "
+                "기본값에서 fail-closed 로 Dispatch 를 중단합니다. "
+                "의도적으로 우회하려면 --skip-auto-approve-check 를 사용하십시오."
+            )
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "auto_approve_watcher_failed",
+                            "task_id": task_id,
+                            "capsule": str(capsule_path),
+                            "terminal": args.terminal,
+                            "detail": approve_detail,
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
+
+        sys.stderr.write(
+            f"런처 경로 Dispatch 중... (task={task_id}, terminal={args.terminal}, worktree={worktree_path})\n"
+        )
+        code, stdout, stderr, executed_cmd = dispatch_worker(
+            task_id=task_id,
+            to_handle=args.terminal,
+            run_id=args.run_id if args.run_id != DEFAULT_RUN_ID else None,
+            return_preamble=True,
+            as_json=True,
+        )
+        launch_cmd = shlex.join(executed_cmd)
+        if code != 0 or not _launch_succeeded(stdout, expect_json=True):
+            err_msg = stderr.strip() or _extract_cli_error(stdout) or "알 수 없는 오류"
+            sys.stderr.write(f"오류: 런처 Dispatch 실패 (종료 코드 {code}): {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "launcher_dispatch_failed",
+                            "task_id": task_id,
+                            "detail": err_msg,
+                            "exit_code": code or 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return code or 2
+
+        preamble = _extract_preamble(stdout)
+        if not preamble:
+            err_msg = f"런처 Dispatch 결과에서 preamble 추출 실패: {stdout}"
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "preamble_extraction_failed",
+                            "task_id": task_id,
+                            "detail": err_msg,
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
+
+        preamble_file = worktree_path / ".orca" / "preamble.txt"
+        preamble_file.parent.mkdir(parents=True, exist_ok=True)
+        preamble_file.write_text(preamble, encoding="utf-8")
+        sys.stderr.write(f"preamble 작성 완료: {preamble_file} ({len(preamble)}자)\n")
+
+        pickup_ok, launcher_pickup_detail = verify_launcher_pickup(args.terminal, timeout_sec=30.0)
+        if not pickup_ok:
+            sys.stderr.write(f"오류: {launcher_pickup_detail}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "launcher_pickup_timeout",
+                            "task_id": task_id,
+                            "terminal": args.terminal,
+                            "detail": launcher_pickup_detail,
+                            "exit_code": 3,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 3
+
+        sys.stderr.write(f"{launcher_pickup_detail}\n")
+
+    elif args.terminal:
         detected_cli = args.agent or (
             "antigravity" if (args.model and "gemini" in args.model.lower()) else None
         )
@@ -3805,6 +4132,26 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 "안내: --inject 실패로 --return-preamble 대체 경로를 통해 지시를 투입했습니다.\n"
             )
     else:
+        if launcher_mode:
+            sys.stderr.write(
+                "오류: --launcher 는 --terminal 과 함께 사용해야 합니다. "
+                "런처가 실행 중인 터미널 핸들을 --terminal 로 지정하십시오.\n"
+            )
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "launcher_terminal_missing",
+                            "task_id": task_id,
+                            "capsule": str(capsule_path),
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
+
         if not args.agent:
             sys.stderr.write(
                 "오류: --agent 또는 --terminal 중 하나가 필요합니다. "
@@ -3838,7 +4185,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         )
         launch_cmd = shlex.join(executed_cmd)
 
-    if code == 0 and _launch_succeeded(stdout, expect_json=args.json):
+    if code == 0 and _launch_succeeded(stdout, expect_json=args.json or launcher_mode):
         try:
             reliability_tracking = _start_reliability_tracking(
                 capsule_path,
@@ -3860,33 +4207,40 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         except Exception as exc:
             worker_watch_info = {"status": "error", "detail": str(exc), "ok": False}
 
-        notice = _deliver_capsule_notice(args, task_id, capsule_path, intent)
-        if notice["status"] == "failed":
-            delivery_unverified.append("capsule_notice_failed")
+        if launcher_mode:
+            notice = {
+                "status": "launcher_preamble_delivered",
+                "preamble_file": str(preamble_file),
+            }
+            delivery_check = "verified_launcher_pickup"
+        else:
+            notice = _deliver_capsule_notice(args, task_id, capsule_path, intent)
+            if notice["status"] == "failed":
+                delivery_unverified.append("capsule_notice_failed")
 
-        # 사후 확인: 주입한 문자열이 실제로 화면에 나타났는지 본다. Dispatch
-        # 전의 준비 상태 판정만으로 실패를 단정하면 오탐이 난다. 도달을
-        # 확인하면 사전 경고는 해소된 것으로 본다.
-        delivery_check = "skipped"
-        probe = notice.get("delivery_probe")
-        if args.terminal and probe:
-            # 이번 시도의 표지만 찾습니다. task_id 나 Capsule 경로로 찾으면
-            # 재 Dispatch 시 화면에 남은 이전 시도의 잔상이 그대로 통과합니다.
-            delivery_check = verify_instruction_delivered(args.terminal, [probe])
-            if delivery_check == "not_observed":
-                delivery_unverified.append("instruction_not_observed")
-            elif delivery_check == "unreadable":
-                delivery_unverified.append("terminal_unreadable_after_dispatch")
-        elif args.terminal:
-            # 표지가 없으면 이번 시도의 도달을 증명할 수단이 없습니다. 고지문
-            # 전송 실패나 --no-capsule-notice 가 여기 해당합니다. 증명 없음을
-            # 성공으로 돌리면 검증 자체가 성립하지 않습니다.
-            delivery_check = "no_probe"
-            delivery_unverified.append("delivery_probe_missing")
-        elif pre_dispatch_warnings:
-            # worker-start 경로는 핸들을 즉시 알 수 없어 사후 확인을 못 한다.
-            # 이때만 사전 경고를 그대로 미확인으로 승계한다.
-            delivery_unverified.extend(pre_dispatch_warnings)
+            # 사후 확인: 주입한 문자열이 실제로 화면에 나타났는지 본다. Dispatch
+            # 전의 준비 상태 판정만으로 실패를 단정하면 오탐이 난다. 도달을
+            # 확인하면 사전 경고는 해소된 것으로 본다.
+            delivery_check = "skipped"
+            probe = notice.get("delivery_probe")
+            if args.terminal and probe:
+                # 이번 시도의 표지만 찾습니다. task_id 나 Capsule 경로로 찾으면
+                # 재 Dispatch 시 화면에 남은 이전 시도의 잔상이 그대로 통과합니다.
+                delivery_check = verify_instruction_delivered(args.terminal, [probe])
+                if delivery_check == "not_observed":
+                    delivery_unverified.append("instruction_not_observed")
+                elif delivery_check == "unreadable":
+                    delivery_unverified.append("terminal_unreadable_after_dispatch")
+            elif args.terminal:
+                # 표지가 없으면 이번 시도의 도달을 증명할 수단이 없습니다. 고지문
+                # 전송 실패나 --no-capsule-notice 가 여기 해당합니다. 증명 없음을
+                # 성공으로 돌리면 검증 자체가 성립하지 않습니다.
+                delivery_check = "no_probe"
+                delivery_unverified.append("delivery_probe_missing")
+            elif pre_dispatch_warnings:
+                # worker-start 경로는 핸들을 즉시 알 수 없어 사후 확인을 못 한다.
+                # 이때만 사전 경고를 그대로 미확인으로 승계한다.
+                delivery_unverified.extend(pre_dispatch_warnings)
 
         # 워커 기동 성공만으로 0 을 돌려주면 "정본 지시가 워커에게 도달했는가"
         # 라는 제어 평면의 핵심 불변식이 검증되지 않은 채 성공으로 보고된다.
@@ -3910,6 +4264,14 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             payload["dispatch_fallback"] = fallback_info
             payload["reliability_tracking"] = reliability_tracking
             payload["worker_watch"] = worker_watch_info
+            if launcher_mode:
+                payload["launcher"] = {
+                    "used": True,
+                    "launcher": launcher_val if "launcher_val" in locals() else str(args.launcher),
+                    "worktree": str(worktree_path) if worktree_path else None,
+                    "preamble_file": str(preamble_file) if preamble_file else None,
+                    "pickup": launcher_pickup_detail,
+                }
             payload["exit_code"] = exit_code
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
@@ -3918,6 +4280,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 f"모델 배정: {model} ({model_resolution['source']}, {model_resolution['reason']})"
             )
             print(f"Capsule 고지: {notice['status']}")
+            if launcher_mode and launcher_pickup_detail:
+                print(f"런처 기동: {launcher_pickup_detail}")
             if reliability_tracking["status"] == "tracking":
                 print(f"신뢰도 추적: {reliability_tracking['pool']}/{reliability_tracking['role']}")
             if worker_watch_info.get("ok"):
@@ -4180,6 +4544,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--enable-file-edit-auto-approve",
         action="store_true",
         help="CLI 화면 감지와 무관하게 파일 편집 자동 승인 모드 전환(shift+tab)을 강제 전송합니다.",
+    )
+    dsp.add_argument(
+        "--launcher",
+        nargs="?",
+        const="scripts/orca_agy_launch.py",
+        default=None,
+        help="런처 경로 사용 (지정 시 --return-preamble 로 받은 지시문을 <워크트리>/.orca/preamble.txt 에 기록하고 런처 기동을 확인합니다)",
     )
     dsp.add_argument(
         "--allow-unverified-delivery",
