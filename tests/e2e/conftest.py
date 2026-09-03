@@ -15,6 +15,7 @@ import collections.abc
 import concurrent.futures
 import contextlib
 import http.server
+import re
 import shutil
 import socket
 import subprocess
@@ -91,6 +92,30 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         pytest.skip(
             "Playwright Chromium 브라우저 바이너리가 설치되어 있지 않아 E2E 테스트를 건너뜁니다."
         )
+
+
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[Any]
+) -> collections.abc.Generator[None, None, None]:
+    """테스트 단계별(setup, call) 실행 결과를 기록하여 실패 여부를 판정합니다."""
+    outcome = yield
+    report = outcome.get_result()
+    setattr(item, f"rep_{report.when}", report)
+
+
+def _sanitize_artifact_name(name: str) -> str:
+    """테스트 케이스 명칭을 파일 시스템에 안전한 문자열로 정제합니다."""
+    return re.sub(r"[^\w\-.]", "_", name)
+
+
+def _is_test_failed(request: pytest.FixtureRequest) -> bool:
+    """현재 테스트가 setup 또는 call 단계에서 실패했는지 판정합니다."""
+    for when in ("setup", "call"):
+        rep = getattr(request.node, f"rep_{when}", None)
+        if rep is not None and rep.failed:
+            return True
+    return False
 
 
 class E2EMockModelWrapper:
@@ -314,22 +339,44 @@ async def browser() -> collections.abc.AsyncIterator[Browser]:
 
 
 @pytest.fixture
-async def context(browser: Browser) -> collections.abc.AsyncIterator[BrowserContext]:
-    """새로운 비인증 브라우저 컨텍스트를 생성합니다."""
+async def context(
+    browser: Browser, request: pytest.FixtureRequest
+) -> collections.abc.AsyncIterator[BrowserContext]:
+    """새로운 비인증 브라우저 컨텍스트를 생성하고 실패 시 Playwright Trace 를 보존합니다."""
     ctx = await browser.new_context()
+    await ctx.tracing.start(screenshots=True, snapshots=True, sources=True)
     try:
         yield ctx
     finally:
+        if _is_test_failed(request):
+            artifacts_dir = Path("test-results")
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = _sanitize_artifact_name(request.node.name)
+            trace_path = artifacts_dir / f"{safe_name}_trace.zip"
+            with contextlib.suppress(Exception):
+                await ctx.tracing.stop(path=str(trace_path))
+        else:
+            with contextlib.suppress(Exception):
+                await ctx.tracing.stop()
         await ctx.close()
 
 
 @pytest.fixture
-async def page(context: BrowserContext) -> collections.abc.AsyncIterator[Page]:
-    """새로운 비인증 브라우저 페이지 인스턴스를 생성합니다."""
+async def page(
+    context: BrowserContext, request: pytest.FixtureRequest
+) -> collections.abc.AsyncIterator[Page]:
+    """새로운 비인증 브라우저 페이지 인스턴스를 생성하고 실패 시 스크린샷을 저장합니다."""
     pg = await context.new_page()
     try:
         yield pg
     finally:
+        if _is_test_failed(request):
+            artifacts_dir = Path("test-results")
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = _sanitize_artifact_name(request.node.name)
+            screenshot_path = artifacts_dir / f"{safe_name}.png"
+            with contextlib.suppress(Exception):
+                await pg.screenshot(path=str(screenshot_path), full_page=True)
         await pg.close()
 
 
@@ -338,9 +385,11 @@ async def authenticated_context(
     browser: Browser,
     live_server_url: str,
     e2e_session_token: str,
+    request: pytest.FixtureRequest,
 ) -> collections.abc.AsyncIterator[BrowserContext]:
-    """인증 세션 쿠키(bidbox_session)가 주입된 브라우저 컨텍스트를 생성합니다."""
+    """인증 세션 쿠키(bidbox_session)가 주입된 브라우저 컨텍스트를 생성하고 실패 시 Playwright Trace 를 보존합니다."""
     ctx = await browser.new_context()
+    await ctx.tracing.start(screenshots=True, snapshots=True, sources=True)
     await ctx.add_cookies(
         [
             {
@@ -355,18 +404,35 @@ async def authenticated_context(
     try:
         yield ctx
     finally:
+        if _is_test_failed(request):
+            artifacts_dir = Path("test-results")
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = _sanitize_artifact_name(request.node.name)
+            trace_path = artifacts_dir / f"{safe_name}_trace.zip"
+            with contextlib.suppress(Exception):
+                await ctx.tracing.stop(path=str(trace_path))
+        else:
+            with contextlib.suppress(Exception):
+                await ctx.tracing.stop()
         await ctx.close()
 
 
 @pytest.fixture
 async def authenticated_page(
-    authenticated_context: BrowserContext,
+    authenticated_context: BrowserContext, request: pytest.FixtureRequest
 ) -> collections.abc.AsyncIterator[Page]:
-    """인증 세션 쿠키가 적용된 브라우저 페이지 인스턴스를 생성합니다."""
+    """인증 세션 쿠키가 적용된 브라우저 페이지 인스턴스를 생성하고 실패 시 스크린샷을 저장합니다."""
     pg = await authenticated_context.new_page()
     try:
         yield pg
     finally:
+        if _is_test_failed(request):
+            artifacts_dir = Path("test-results")
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = _sanitize_artifact_name(request.node.name)
+            screenshot_path = artifacts_dir / f"{safe_name}.png"
+            with contextlib.suppress(Exception):
+                await pg.screenshot(path=str(screenshot_path), full_page=True)
         await pg.close()
 
 
