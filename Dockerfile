@@ -32,6 +32,14 @@ ENV VIRTUAL_ENV=/opt/venv \
 
 WORKDIR /app
 
+# LightGBM 은 OpenMP 런타임을 동적으로 링크합니다. 빌더 스테이지에만 있고
+# 런타임에는 없어서 2026-09-03 에 v25, v13_hybrid, quantum_leap_v25_pro,
+# servc_institution_v1 네 모델이 전부 libgomp.so.1 없음으로 로드에 실패했습니다.
+# 공고 상세 화면에 SSH 모델 하나만 뜨던 원인입니다.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
 
