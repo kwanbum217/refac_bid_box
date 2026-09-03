@@ -11,6 +11,7 @@ SSR 챗봇 브라우저 E2E 실시간 SSE 스트리밍 및 인터랙션 검증 �
 
 from __future__ import annotations
 
+import itertools
 from datetime import timedelta
 from typing import Any
 
@@ -76,7 +77,27 @@ async def test_ssr_chatbot_streaming_token_accumulation(
     user_bubble = authenticated_page.locator("text=" + question).first
     await expect(user_bubble).to_be_visible()
 
-    # 2. 중간 토큰 누적 상태 검증 (스트림 진행 중 텍스트가 점진적으로 증가하는지 확인)
+    # 2. 중간 토큰 누적 상태 검증
+    #
+    # 최종 문장만 확인하면 서버가 한 번에 렌더링해도 통과하므로 스트리밍을 증명하지
+    # 못합니다. 그렇다고 중간 상태를 폴링으로 잡으려 하면 토큰 간격이 수십 밀리초라
+    # 느린 러너에서 놓쳐 간헐 실패가 됩니다. MutationObserver 를 전송 전에 걸어 두면
+    # 타이밍과 무관하게 모든 변화가 기록되므로 두 문제를 함께 피합니다.
+    lengths = await authenticated_page.evaluate(
+        """() => new Promise((resolve) => {
+            const container = document.querySelector('#chat-messages');
+            const seen = [];
+            const observer = new MutationObserver(() => {
+                seen.push(container.textContent.length);
+            });
+            observer.observe(container, {childList: true, subtree: true, characterData: true});
+            setTimeout(() => { observer.disconnect(); resolve(seen); }, 3000);
+        })"""
+    )
+    growing = [b for a, b in itertools.pairwise(lengths) if b > a]
+    assert len(growing) >= 2, (
+        f"SSE 토큰이 점진적으로 누적되지 않았습니다. 관측된 길이 변화: {lengths}"
+    )
     first_token_locator = authenticated_page.locator("text=조달청").first
     await expect(first_token_locator).to_be_visible()
 
