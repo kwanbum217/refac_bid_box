@@ -508,6 +508,8 @@ uv run python scripts/orca_codex_launch.py --task <task_id> --name <워크트리
 
 ## 2. 비 Claude·Codex CLI 를 워커로 붙이는 절차
 
+Antigravity(`agy`) 워커는 직접 TUI를 띄울 경우 스플래시 화면에서 정체되는 현상이 있으므로, **런처(`scripts/orca_agy_launch.py`)를 터미널 명령으로 지정하고 `dispatch --launcher`로 투입하는 경로**가 표준 정본입니다.
+
 ```bash
 # 1. 격리 워크트리 생성
 orca worktree create --name <이름> \
@@ -519,17 +521,15 @@ uv run python scripts/orca_prepare_worktree.py <워크트리>
 # 준비 여부만 판정할 때:
 # uv run python scripts/orca_prepare_worktree.py <워크트리> --check
 
-# 3. 그 워크트리에 CLI 를 띄운 터미널 생성
+# 3. 그 워크트리에 런처를 명령으로 지정한 터미널 생성 (스플래시 정체 방지)
 orca terminal create --worktree path:<워크트리> \
-  --title "<섹션명>" --command "agy --model gemini-3.7-flash-high" --json
+  --title "<섹션명>" \
+  --command "uv run python scripts/orca_agy_launch.py --model gemini-3.7-flash-high" --json
 
-# 4. Task 투입 (dispatch 경로가 자동 승인 감시기와 파일 편집 자동 승인 모드 전환을 함께 처리합니다)
-uv run python scripts/orca_taskctl.py dispatch --intent <의도.yaml> --terminal <handle>
+# 4. Task 투입 (dispatch --launcher 가 preamble 추출 -> <워크트리>/.orca/preamble.txt 기록 -> 런처 기동 확인 -> 감시기 부착을 일괄 처리합니다)
+uv run python scripts/orca_taskctl.py dispatch --intent <의도.yaml> --terminal <handle> --launcher
 
-# 5. 파일 편집 자동 승인 확인 (dispatch 가 shift+tab 을 자동 전송하므로 수동 전송은 실패 시 대체 수단입니다)
-# 자동 전송 실패 경고 시 수동 실행: orca terminal send --terminal <handle> --text $'\x1b[Z'
-
-# 6. 실존 확인
+# 5. 실존 및 진행 확인
 orca orchestration dispatch-show --task <task_id> --json
 ```
 
@@ -540,7 +540,7 @@ orca orchestration dispatch-show --task <task_id> --json
 
 | 조치 | 이유 |
 | --- | --- |
-| `orca terminal read` 로 CLI 가 실제로 떴는지 확인 | 명령이 즉시 죽어도 터미널은 만들어지고, Dispatch 는 `no recognized agent detected` 로만 말합니다 |
+| `orca terminal read` 로 런처가 대기 중인지 확인 | `preamble 대기 중: .orca/preamble.txt` 출력이 화면에 떠 있는지 확인합니다 |
 | `.orca/capsules/` 를 **통째로** 워크트리에 복사 | Task `spec` 은 생성 후 변경할 수 없어 잠정 ID 경로를 가리킵니다. 실제 ID 디렉터리 하나만 복사하면 워커가 없는 파일을 엽니다 |
 
 ```bash

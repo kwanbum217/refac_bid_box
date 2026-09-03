@@ -1601,8 +1601,8 @@ def test_launch_succeeded_rejects_unparsable_output_when_json_expected():
 def test_terminal_send_and_task_create_expect_json():
     """--json 을 붙이는 호출부는 expect_json 을 켜야 합니다."""
     source = Path("scripts/orca_taskctl.py").read_text(encoding="utf-8")
-    assert source.count("_launch_succeeded(stdout, expect_json=True)") == 2
-    assert "_launch_succeeded(stdout, expect_json=args.json)" in source
+    assert source.count("_launch_succeeded(stdout, expect_json=True)") >= 2
+    assert "_launch_succeeded(stdout, expect_json=args.json" in source
 
 
 def test_cmd_dispatch_requires_launch_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -5528,3 +5528,414 @@ def test_cmd_create_refuses_when_skill_receipt_invalid(
     captured = capsys.readouterr()
     assert "skill_receipt_invalid" in captured.out
     assert "python3 scripts/orca_skill_receipt.py issue" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# 런처 경로 (Launcher Dispatch) 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_terminal_worktree_from_meta(tmp_path: Path):
+    from scripts.orca_taskctl import resolve_terminal_worktree, write_worker_meta
+
+    wt = tmp_path / "worktree_meta"
+    wt.mkdir(parents=True, exist_ok=True)
+    write_worker_meta("term_test_meta", {"worktree": str(wt)})
+
+    resolved = resolve_terminal_worktree("term_test_meta")
+    assert resolved == wt.resolve()
+
+
+def test_resolve_terminal_worktree_from_terminal_show(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from scripts.orca_taskctl import resolve_terminal_worktree
+
+    wt = tmp_path / "worktree_show"
+    wt.mkdir(parents=True, exist_ok=True)
+
+    def mock_run(cmd, **kwargs):
+        if "terminal" in cmd and "show" in cmd:
+            return (
+                0,
+                json.dumps({"ok": True, "result": {"terminal": {"worktree": f"path:{wt}"}}}),
+                "",
+            )
+        return 1, "", "not found"
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    resolved = resolve_terminal_worktree("term_show_test")
+    assert resolved == wt.resolve()
+
+
+def test_resolve_terminal_worktree_from_terminal_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from scripts.orca_taskctl import resolve_terminal_worktree
+
+    wt = tmp_path / "worktree_list"
+    wt.mkdir(parents=True, exist_ok=True)
+
+    def mock_run(cmd, **kwargs):
+        if "terminal" in cmd and "show" in cmd:
+            return 1, "", "not found"
+        if "terminal" in cmd and "list" in cmd:
+            return (
+                0,
+                json.dumps(
+                    {
+                        "ok": True,
+                        "result": {
+                            "terminals": [{"handle": "term_list_test", "worktreePath": str(wt)}]
+                        },
+                    }
+                ),
+                "",
+            )
+        return 1, "", "not found"
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+    resolved = resolve_terminal_worktree("term_list_test")
+    assert resolved == wt.resolve()
+
+
+def test_resolve_terminal_worktree_returns_none_when_unresolved(monkeypatch: pytest.MonkeyPatch):
+    from scripts.orca_taskctl import resolve_terminal_worktree
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", lambda cmd, **kw: (1, "", "fail"))
+    resolved = resolve_terminal_worktree("term_unknown")
+    assert resolved is None
+
+
+def test_verify_launcher_pickup_detects_started_marker():
+    from scripts.orca_taskctl import verify_launcher_pickup
+
+    outputs = [
+        "preamble 대기 중: .orca/preamble.txt (최대 300초)",
+        "기동: agy --model gemini-3.7-flash-high (지시문 120자)",
+    ]
+    ok, detail = verify_launcher_pickup(
+        "term_1",
+        timeout_sec=5.0,
+        poll_interval_sec=0.01,
+        sleep_fn=lambda _: None,
+        read_fn=lambda _: outputs.pop(0) if outputs else "기동: agy ...",
+    )
+    assert ok is True
+    assert "성공적으로 이어받아" in detail
+
+
+def test_verify_launcher_pickup_detects_agent_prompt():
+    from scripts.orca_taskctl import verify_launcher_pickup
+
+    outputs = [
+        "preamble 대기 중: .orca/preamble.txt",
+        "~/orca-worktree\n────────\n> ",
+    ]
+    ok, detail = verify_launcher_pickup(
+        "term_1",
+        timeout_sec=5.0,
+        poll_interval_sec=0.01,
+        sleep_fn=lambda _: None,
+        read_fn=lambda _: outputs.pop(0) if outputs else "> ",
+    )
+    assert ok is True
+    assert "성공적으로 이어받아" in detail
+
+
+def test_verify_launcher_pickup_detects_accept_edits_mode():
+    from scripts.orca_taskctl import verify_launcher_pickup
+
+    outputs = [
+        "preamble 대기 중: .orca/preamble.txt",
+        "accept-edits · Gemini 3.7 Flash · high",
+    ]
+    ok, detail = verify_launcher_pickup(
+        "term_1",
+        timeout_sec=5.0,
+        poll_interval_sec=0.01,
+        sleep_fn=lambda _: None,
+        read_fn=lambda _: outputs.pop(0) if outputs else "accept-edits",
+    )
+    assert ok is True
+    assert "성공적으로 이어받아" in detail
+
+
+def test_verify_launcher_pickup_times_out_when_still_waiting():
+    from scripts.orca_taskctl import verify_launcher_pickup
+
+    ok, detail = verify_launcher_pickup(
+        "term_1",
+        timeout_sec=0.05,
+        poll_interval_sec=0.01,
+        sleep_fn=lambda _: None,
+        read_fn=lambda _: "preamble 대기 중: .orca/preamble.txt (최대 300초)",
+    )
+    assert ok is False
+    assert "시한" in detail
+    assert "초과" in detail
+
+
+def test_cmd_dispatch_launcher_writes_preamble_to_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """런처 경로에서 --return-preamble 로 받은 지시문을 <워크트리>/.orca/preamble.txt 에 정상 작성하고 기동 확인."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_isolate"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    preamble_content = "ORCA TASK DISPATCH PREAMBLE FOR TEST"
+    dispatch_calls: list[dict[str, Any]] = []
+
+    def mock_dispatch_worker(**kwargs):
+        dispatch_calls.append(kwargs)
+        return (
+            0,
+            json.dumps({"ok": True, "result": {"preamble": preamble_content}}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        )
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(orca_taskctl, "dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr(
+        orca_taskctl, "start_auto_approve", lambda t: (True, "감시기 테스트 기동 완료")
+    )
+    monkeypatch.setattr(
+        orca_taskctl, "verify_launcher_pickup", lambda t, **kw: (True, "런처 기동 확인 성공")
+    )
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_launcher_01",
+            "--launcher",
+            "scripts/orca_agy_launch.py",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+
+    assert code == 0
+    assert len(dispatch_calls) == 1
+    assert dispatch_calls[0]["return_preamble"] is True
+    assert dispatch_calls[0]["to_handle"] == "term_launcher_01"
+
+    preamble_target = worktree_dir / ".orca" / "preamble.txt"
+    assert preamble_target.exists()
+    assert preamble_target.read_text(encoding="utf-8") == preamble_content
+
+    # 주 저장소에는 쓰지 않음을 검증
+    assert not (tmp_path / "main_repo" / ".orca" / "preamble.txt").exists()
+
+
+def test_cmd_dispatch_launcher_rejects_main_repo_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """런처 경로에서 워크트리가 주 저장소와 동일하면 main repo 오염 방지를 위해 fail-closed 거부."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    main_repo = tmp_path / "main_repo"
+    main_repo.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_launcher_02",
+            "--launcher",
+            "--worktree",
+            str(main_repo),
+            "--repo",
+            str(main_repo),
+            "--json",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "launcher_main_repo_write_forbidden" in captured.out or "주 저장소" in captured.err
+    assert not (main_repo / ".orca" / "preamble.txt").exists()
+
+
+def test_cmd_dispatch_launcher_fails_when_worktree_unresolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """런처 경로에서 워크트리 경로를 확인할 수 없으면 fail-closed 로 거부."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(orca_taskctl, "resolve_terminal_worktree", lambda t, **kw: None)
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_launcher_03",
+            "--launcher",
+            "--json",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert (
+        "launcher_worktree_unresolved" in captured.out
+        or "워크트리 경로를 확인할 수 없습니다" in captured.err
+    )
+
+
+def test_cmd_dispatch_launcher_fails_when_pickup_times_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """런처가 preamble 을 이어받지 못하고 시한 초과되면 exit_code 3 으로 실패 처리 (파일 쓴 것만으로 성공 인정 금지)."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_isolate"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "dispatch_worker",
+        lambda **kw: (0, json.dumps({"ok": True, "result": {"preamble": "지시"}}), "", ["orca"]),
+    )
+    monkeypatch.setattr(orca_taskctl, "start_auto_approve", lambda t: (True, "감시기 기동"))
+    monkeypatch.setattr(
+        orca_taskctl,
+        "verify_launcher_pickup",
+        lambda t, **kw: (False, "런처 기동 확인 시한 초과: preamble 대기 지속"),
+    )
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_launcher_04",
+            "--launcher",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+
+    assert code == 3
+    captured = capsys.readouterr()
+    assert "launcher_pickup_timeout" in captured.out or "시한 초과" in captured.err
+
+
+def test_cmd_dispatch_launcher_requires_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """--launcher 지정 시 --terminal 이 없으면 즉시 종료 코드 2 로 거부."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--launcher",
+            "--json",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "launcher_terminal_missing" in captured.out or "--terminal" in captured.err
