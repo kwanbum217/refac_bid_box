@@ -9,23 +9,62 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import time
 
+from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 CONFIRMATION_SALT = "bidbox.automation.confirmation"
 CALLBACK_SALT = "bidbox.automation.callback"
 CONFIRMATION_MAX_AGE = 60 * 30
 
-_consumed_confirmation_tokens: set[str] = set()
+_confirmation_redis_conn: RedisConnection | None = None
 
 
-def mark_confirmation_token_consumed(token: str) -> None:
-    _consumed_confirmation_tokens.add(token)
+def get_confirmation_redis_conn() -> RedisConnection:
+    global _confirmation_redis_conn
+    if _confirmation_redis_conn is None:
+        _confirmation_redis_conn = RedisConnection(label="automation_tokens")
+    return _confirmation_redis_conn
 
 
-def is_confirmation_token_consumed(token: str) -> bool:
-    return token in _consumed_confirmation_tokens
+def set_confirmation_redis_conn(conn: RedisConnection | None) -> None:
+    global _confirmation_redis_conn
+    _confirmation_redis_conn = conn
+
+
+def consume_confirmation_token(
+    token: str,
+    conn: RedisConnection | None = None,
+    ttl: int = CONFIRMATION_MAX_AGE,
+) -> None:
+    """확인 토큰을 Redis 에서 원자적으로 단일 소비합니다 (SET NX EX).
+
+    이미 소비되었거나 Redis 연결이 불가능한 경우 AutomationError 를 발생시킵니다 (fail-closed).
+    """
+    if not token:
+        raise AutomationError("확인 토큰이 필요합니다.")
+
+    redis_conn = conn or get_confirmation_redis_conn()
+    client = redis_conn.client()
+    if client is None:
+        raise AutomationError("Redis 연결이 불가능하여 확인 토큰을 검증할 수 없습니다.")
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    key = f"bidbox:automation:consumed_token:{token_hash}"
+
+    try:
+        acquired = client.set(key, "1", ex=ttl, nx=True)
+    except Exception as exc:
+        redis_conn.invalidate(exc)
+        logger.warning("Redis 토큰 소비 처리 중 오류 발생: %s", exc)
+        raise AutomationError("Redis 오류로 확인 토큰을 처리할 수 없습니다.") from exc
+
+    if not acquired:
+        raise AutomationError("이미 사용된 확인 토큰입니다.")
 
 
 # 콜백 토큰은 실행 중인 작업이 결과를 보고하는 동안만 유효해야 합니다.

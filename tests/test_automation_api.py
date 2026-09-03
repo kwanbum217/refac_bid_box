@@ -9,7 +9,71 @@ tests/test_automation_api.py
  - 미인증 차단
 """
 
+from typing import Any
 from unittest.mock import patch
+
+import pytest
+
+from src.app.core.cache import RedisConnection
+
+
+class FakeRedisClient:
+    def __init__(self, store: dict[str, Any] | None = None):
+        self._store: dict[str, Any] = store if store is not None else {}
+
+    def set(
+        self,
+        key: str,
+        value: Any,
+        ex: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+    ) -> bool | None:
+        if nx:
+            if key in self._store:
+                return None
+            self._store[key] = value
+            return True
+        if xx:
+            if key in self._store:
+                self._store[key] = value
+                return True
+            return None
+        self._store[key] = value
+        return True
+
+    def get(self, key: str) -> Any:
+        return self._store.get(key)
+
+    def delete(self, *keys: str) -> int:
+        count = 0
+        for k in keys:
+            if self._store.pop(k, None) is not None:
+                count += 1
+        return count
+
+    def ping(self) -> bool:
+        return True
+
+
+class FakeRedisConnection(RedisConnection):
+    def __init__(self, client: Any = None):
+        super().__init__(label="fake_automation_tokens")
+        self._client = client or FakeRedisClient()
+
+    def client(self) -> Any:
+        return self._client
+
+    def invalidate(self, exc: Exception) -> None:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def fake_redis_for_automation():
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    with patch("src.app.services.automation_tokens._confirmation_redis_conn", fake_conn):
+        yield fake_conn
+
 
 VALID_SIGNUP = {
     "username": "automation-user",
@@ -81,6 +145,13 @@ def test_manual_retrain_requires_confirmation(mock_enqueue, client, isolated_db)
     assert confirm_response.status_code == 200
     assert mock_enqueue.call_args.args[0] == "manual_retrain_task"
 
+    reuse_response = client.post(
+        f"/api/v1/automation/job/{payload['job']['job_id']}/confirm",
+        json={"confirmation_token": payload["confirmation_token"]},
+    )
+    assert reuse_response.status_code == 403
+    assert "이미 사용된 확인 토큰입니다" in reuse_response.json()["detail"]
+
 
 @patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
 def test_cancel_pending_confirmation(mock_enqueue, client, isolated_db):
@@ -119,6 +190,38 @@ def test_confirm_executes_pending_request(mock_enqueue, client, isolated_db):
     )
     assert confirm_resp.status_code == 200
     assert confirm_resp.json()["job"]["status"] in ("running", "queued", "success")
+
+    reuse_resp = client.post(
+        f"/api/v1/automation/job/{job_id}/confirm",
+        json={"confirmation_token": token},
+    )
+    assert reuse_resp.status_code == 403
+    assert "이미 사용된 확인 토큰입니다" in reuse_resp.json()["detail"]
+
+
+@patch("src.app.services.automation_orchestrator._enqueue_arq_job", return_value=True)
+def test_confirm_fails_closed_when_redis_unavailable(mock_enqueue, client, isolated_db):
+    """Redis 가 가용하지 않을 때 확인 요청이 fail-closed 정책에 따라 거부(403)되는지 검증."""
+    _login(client, isolated_db)
+    create_resp = client.post("/api/v1/automation/run/manual-full", json={"reason": "전체 점검"})
+    job_id = create_resp.json()["job"]["job_id"]
+    token = create_resp.json()["confirmation_token"]
+
+    class UnreachableRedisConnection(RedisConnection):
+        def client(self) -> Any:
+            return None
+
+    with patch(
+        "src.app.services.automation_tokens._confirmation_redis_conn",
+        UnreachableRedisConnection(label="test_unreachable"),
+    ):
+        confirm_resp = client.post(
+            f"/api/v1/automation/job/{job_id}/confirm",
+            json={"confirmation_token": token},
+        )
+        assert confirm_resp.status_code == 403
+        assert "Redis 연결이 불가능" in confirm_resp.json()["detail"]
+        mock_enqueue.assert_not_called()
 
 
 @patch("src.app.services.automation_orchestrator.abort_arq_job", return_value=False)
