@@ -52,10 +52,21 @@ class Settings(BaseSettings):
     # 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소입니다.
     # 워커가 도달할 수 있는 주소여야 하며, 컨테이너 분리 시 서비스명(http://app:8000)을 씁니다.
     AUTOMATION_CALLBACK_BASE_URL: str = ""
-    # 원본 Harness 야간 트리거(매일 02:00) 대체. 개발 장비에서는 꺼둘 수 있습니다.
-    AUTOMATION_NIGHTLY_SCHEDULE_ENABLED: bool = True
-    # 개발 DB 최신화 전용 크론. 수집·KB·집계만 수행하며 예측 검증과 재학습은 포함하지 않습니다.
-    AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED: bool = False
+    # 개발 DB 최신화 전용 크론(매일 02:00). 수집·KB·집계를 수행하며 기본값은 활성(True)입니다.
+    AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED: bool = True
+    # 원본 Harness 야간 트리거(매일 02:00) 대체. 전체 예측 검증·재학습을 포함하며 기본값은 비활성(False)입니다.
+    AUTOMATION_NIGHTLY_SCHEDULE_ENABLED: bool = False
+    # 기동 시 스케줄 따라잡기(catch-up) 활성화 여부.
+    # 워커 오프라인 중 누락된 일일 정기 수집을 프로세스 기동 시점에 1회 따라잡습니다.
+    # 기동 시 무거운 작업이 자동으로 도는 것을 방지하기 위해 기본값은 비활성(False)입니다.
+    AUTOMATION_SCHEDULE_CATCHUP_ENABLED: bool = False
+    # 스케줄 따라잡기 판정 임계 시간(시간 단위).
+    # 최신 공고 수집 시각(collected_at)으로부터 경과한 시간이 이 임계를 초과하면 따라잡기를 실행합니다.
+    # 일일 스케줄 주기(24시간)에 맞추어 기본값은 24시간입니다.
+    AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS: int = 24
+    # 스케줄 따라잡기 재시도 방지 쿨다운 시간(시간 단위).
+    # 워커 재시작 루프나 수집 실패 시 반복 실행을 방지하기 위한 최소 재시도 간격입니다.
+    AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS: int = 6
     # 원본 Airflow narabid_weekly_retrain(매주 월요일 03:00) 대체.
     ML_WEEKLY_RETRAIN_ENABLED: bool = True
     # PSI 드리프트 모니터링 정기 검사(매일 04:00) 활성화 여부.

@@ -43,6 +43,29 @@ class FakeRedisClient:
     def delete(self, *keys: str) -> int:
         return sum(1 for k in keys if self._store.pop(k, None) is not None)
 
+    def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
+        import json
+
+        keys = list(keys_and_args[:numkeys])
+        args = list(keys_and_args[numkeys:])
+        if not keys:
+            return 0
+        key = keys[0]
+        raw = self._store.get(key)
+        if raw is None:
+            return 0
+        with contextlib.suppress(Exception):
+            data = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+            expected_token = str(args[0]) if args else None
+            if (
+                isinstance(data, dict)
+                and data.get("token")
+                and str(data.get("token")) == expected_token
+            ):
+                del self._store[key]
+                return 1
+        return 0
+
     def ping(self) -> bool:
         return True
 
