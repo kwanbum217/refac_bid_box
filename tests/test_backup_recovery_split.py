@@ -20,8 +20,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def test_split_line_counts_within_cap():
     paths = {
-        "backup_recovery.py": (REPO_ROOT / "scripts" / "backup_recovery.py", 513),
-        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 298),
+        # 2026-09-03: 직접 실행 부트스트랩(sys.path 삽입과 사유 주석) 6줄로 513 -> 519 가
+        # 됐습니다. 로직은 늘지 않았습니다. 재증가를 막도록 실측값에 여유 6줄만 둡니다.
+        "backup_recovery.py": (REPO_ROOT / "scripts" / "backup_recovery.py", 525),
+        # 2026-09-03: mysql_client_command 헬퍼 도입으로 298 -> 318 이 됐습니다.
+        # 호스트 클라이언트가 서버 인증 플러그인을 못 읽어 백업이 불가능하던 것을
+        # 컨테이너 클라이언트로 우회할 수 있게 한 변경입니다. 여유 12줄만 둡니다.
+        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 330),
         "backup_snapshots.py": (REPO_ROOT / "scripts" / "backup_snapshots.py", 151),
     }
     for name, (path, cap) in paths.items():
@@ -117,3 +122,25 @@ def test_existing_import_paths_still_resolve():
     ]
     for name in public_names:
         assert hasattr(backup_recovery_mod, name), f"backup_recovery.{name} import path broken"
+
+
+def test_cli_runs_by_direct_invocation():
+    """runbook 이 안내하는 python3 scripts/backup_recovery.py 형태가 동작해야 합니다.
+
+    scripts/ 는 패키지가 아니라 직접 실행하면 저장소 루트가 sys.path 에 없습니다.
+    2026-09-03 모듈 분할 이후 이 경로가 ModuleNotFoundError 로 죽었고, 문서가
+    안내하는 명령이 그대로 실패했습니다.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(repo_root / "scripts" / "backup_recovery.py"), "--help"],
+        capture_output=True,
+        text=True,
+        cwd=str(repo_root),
+    )
+    assert result.returncode == 0, f"직접 실행 실패: {result.stderr[-400:]}"
+    assert "backup" in result.stdout
