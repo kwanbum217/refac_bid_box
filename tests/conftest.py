@@ -172,3 +172,72 @@ def _fast_password(monkeypatch):
 def _disable_orca_auto_approve(monkeypatch):
     """테스트가 실제 권한 자동 승인 감시기 프로세스를 띄우지 않게 막습니다."""
     monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
+
+
+class _InMemoryRateLimitPipeline:
+    def __init__(self, outer: "_InMemoryRateLimitClient") -> None:
+        self.outer = outer
+        self.ops: list[tuple[str, tuple]] = []
+
+    def incr(self, key: str, amount: int = 1) -> "_InMemoryRateLimitPipeline":
+        self.ops.append(("incr", (key, amount)))
+        return self
+
+    def expire(self, key: str, time: int) -> "_InMemoryRateLimitPipeline":
+        self.ops.append(("expire", (key, time)))
+        return self
+
+    def execute(self) -> list[int]:
+        results: list[int] = []
+        for op, args in self.ops:
+            if op == "incr":
+                key, amount = args
+                current = int(self.outer.store.get(key, "0"))
+                new_val = current + amount
+                self.outer.store[key] = str(new_val)
+                results.append(new_val)
+            elif op == "expire":
+                key, ttl = args
+                self.outer.ttls[key] = ttl
+                results.append(1)
+        self.ops.clear()
+        return results
+
+
+class _InMemoryRateLimitClient:
+    """LoginRateLimiter 운영 계약(get, delete, pipeline)을 지원하는 인메모리 Redis 대역."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def delete(self, *keys: str) -> int:
+        deleted = 0
+        for key in keys:
+            if self.store.pop(key, None) is not None:
+                deleted += 1
+            self.ttls.pop(key, None)
+        return deleted
+
+    def pipeline(self) -> _InMemoryRateLimitPipeline:
+        return _InMemoryRateLimitPipeline(self)
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_rate_limit(monkeypatch):
+    """로그인 시도 제한 상태를 인메모리 대역으로 격리합니다.
+
+    실제 Redis 에 scan/delete 를 실행하지 않고, 테스트마다 격리된 인메모리
+    client 대역을 login_rate_limiter._conn.client 에 주입하여 테스트 간 누적 간섭을
+    차단하고 불필요한 네트워크 지연을 방지합니다.
+    테스트가 자체적으로 mock_redis_for_rate_limit 이나 client=None 으로 재패치할 수 있으며,
+    teardown 시 monkeypatch 가 원래 상태로 복구합니다.
+    """
+    from src.app.core.security import login_rate_limiter
+
+    fake_client = _InMemoryRateLimitClient()
+    monkeypatch.setattr(login_rate_limiter._conn, "client", lambda: fake_client)
+    return fake_client
