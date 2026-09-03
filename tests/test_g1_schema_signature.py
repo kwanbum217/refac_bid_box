@@ -5,7 +5,7 @@ G1(데이터 무손실) 전 테이블 스키마 서명 검증 및 보고서 생�
 - 스키마 서명 생성 및 정규화
 - 순서 무관성(Order Independence) 및 해시 결정론성
 - 컬럼 추가/삭제/타입변경/nullable변경/PK/FK/인덱스 차이 검출
-- 기준 서명 부재 시 최초 기준선 자동 생성 및 통과 처리
+- 기준 서명 부재 시 fail-closed 처리
 - 검증 결과 보고서(JSON) 생성
 - 읽기 전용 안전성
 """
@@ -221,8 +221,8 @@ def test_compare_schema_signatures_diff_detection():
     assert any("인덱스 제약조건 변경" in m for m in diff_messages)
 
 
-def test_first_run_creates_baseline_and_passes(tmp_path, sample_engine_a):
-    """기준 서명 파일이 없으면 현재 서명을 기준선으로 저장하고 통과(PASS) 처리하는지 검증."""
+def test_first_run_without_baseline_fails_closed(tmp_path, sample_engine_a):
+    """기준선 부재 시 파일을 만들지 않고 실패 처리하는지 검증."""
     baseline_file = tmp_path / "schema_signature_baseline.json"
     assert not baseline_file.exists()
 
@@ -230,17 +230,29 @@ def test_first_run_creates_baseline_and_passes(tmp_path, sample_engine_a):
         engine=sample_engine_a,
         baseline_path=baseline_file,
         auto_save_baseline=True,
+        tables=("test_users", "test_posts"),
     )
 
-    assert ok is True
-    assert "신규 기록" in msg
-    assert baseline_file.exists()
+    assert ok is False
+    assert "기준 서명 파일 없음" in msg
+    assert not baseline_file.exists()
+
+    baseline_file.write_text(
+        json.dumps(
+            generate_schema_signature(
+                sample_engine_a,
+                tables=("test_users", "test_posts"),
+            ),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
     # 2회차 실행 시 기준선과 비교하여 일치로 통과
     ok2, msg2 = verify_schema_signature(
         engine=sample_engine_a,
         baseline_path=baseline_file,
-        auto_save_baseline=True,
+        tables=("test_users", "test_posts"),
     )
     assert ok2 is True
     assert "일치" in msg2
