@@ -17,6 +17,7 @@ v2 자동 주입 계약:
   7. Task Capsule v2 규약 문서 (docs/ops/orca_task_capsule_v2.md) 정합성
   8. Task Capsule v2 템플릿 (.agents/templates/*) 스키마 및 필수 필드 정합성
   9. orca-section-coordination 스킬의 v2 계약 포함 여부
+  10. CURRENT_STATE 판정 사실 원장의 주장·앵커·증거 정합성
 
 사용:
   python3 scripts/validate_agent_rules.py          # 전체 검증
@@ -88,6 +89,7 @@ CURRENT_STATE_REQUIRED = [
 ]
 CURRENT_STATE_FACTS_PATH = ("docs", "context", "current_state_facts.yaml")
 CURRENT_STATE_FACT_STATUSES = {"active", "rejected", "closed", "blocked"}
+CURRENT_STATE_FACT_LEDGER_VERSION = "2.0"
 CURRENT_STATE_STATUS_TERMS = {
     "active": ("진행", "착수", "추진"),
     "rejected": ("기각", "반려"),
@@ -1084,7 +1086,22 @@ def check_current_state_fact_statuses(root: Path = PROJECT_ROOT) -> CheckResult:
         if position < 0:
             failures.append(f"{fact_id}: CURRENT_STATE 앵커 없음 '{anchor}'")
             continue
-        window = content[max(0, position - 160) : position + len(anchor) + 700]
+        # 앵커가 속한 Markdown 문단 또는 목록 항목만 상태 문맥으로 삼습니다.
+        # 고정 길이 창은 인접 항목의 기각·미해결 표지를 현재 항목의 모순으로
+        # 오인하므로, 항목 경계를 보존하면서 같은 항목의 줄바꿈 서술은 포함합니다.
+        line_start = content.rfind("\n", 0, position) + 1
+        block_start = line_start
+        while block_start > 0:
+            previous_end = block_start - 1
+            previous_start = content.rfind("\n", 0, previous_end) + 1
+            previous_line = content[previous_start:previous_end].strip()
+            if not previous_line or previous_line.startswith(("- ", "* ", "+ ", "#")):
+                break
+            block_start = previous_start
+        block_end = content.find("\n\n", position)
+        if block_end < 0:
+            block_end = len(content)
+        window = content[block_start:block_end]
         expected = CURRENT_STATE_STATUS_TERMS.get(status, ())
         contradictory = CURRENT_STATE_CONTRADICTORY_TERMS.get(status, ())
         if not any(term in window for term in expected):
@@ -1097,6 +1114,84 @@ def check_current_state_fact_statuses(root: Path = PROJECT_ROOT) -> CheckResult:
         return CheckResult(name, False, "; ".join(failures))
     return CheckResult(
         name, True, f"{len(facts['facts'])}개 과업 상태 원장과 문서 앵커 정합성 확인"
+    )
+
+
+def check_current_state_fact_ledger(root: Path = PROJECT_ROOT) -> CheckResult:
+    """판정 사실 원장과 부팅 문서의 주장·증거 정합성을 검사합니다.
+
+    상태 표지만 확인하면 원장 항목의 주장 자체가 문서에서 바뀌는 drift를
+    놓칠 수 있습니다. 각 항목의 claim과 document_anchor를 CURRENT_STATE.md와
+    대조하고, 기계 판정에 사용할 증거 경로를 요구합니다.
+    """
+    name = "CURRENT_STATE 판정 사실 원장 검증"
+    facts_path = root.joinpath(*CURRENT_STATE_FACTS_PATH)
+    state_path = _current_state_path(root)
+    if not facts_path.exists():
+        return CheckResult(name, False, "docs/context/current_state_facts.yaml 없음")
+    if not state_path.exists():
+        return CheckResult(name, False, "docs/context/CURRENT_STATE.md 없음")
+    try:
+        facts = (
+            yaml.safe_load(read_text(facts_path))
+            if yaml is not None
+            else _parse_facts_without_yaml(read_text(facts_path))
+        )
+    except Exception as exc:
+        return CheckResult(name, False, f"판정 사실 원장 YAML 파싱 실패: {exc}")
+    if not isinstance(facts, dict) or not isinstance(facts.get("facts"), list):
+        return CheckResult(name, False, "판정 사실 원장은 facts 배열을 가져야 합니다")
+    if facts.get("version") != CURRENT_STATE_FACT_LEDGER_VERSION:
+        return CheckResult(
+            name,
+            False,
+            "판정 사실 원장 version이 "
+            f"{CURRENT_STATE_FACT_LEDGER_VERSION}이 아닙니다: {facts.get('version')!r}",
+        )
+
+    content = read_text(state_path)
+    failures: list[str] = []
+    seen_ids: set[str] = set()
+    for index, fact in enumerate(facts["facts"], start=1):
+        if not isinstance(fact, dict):
+            failures.append(f"facts[{index}] 항목이 객체가 아님")
+            continue
+        fact_id = fact.get("id")
+        if not isinstance(fact_id, str) or not fact_id:
+            failures.append(f"facts[{index}] id 누락")
+            continue
+        if fact_id in seen_ids:
+            failures.append(f"중복 id: {fact_id}")
+        seen_ids.add(fact_id)
+
+        claim = fact.get("claim") or fact.get("fact")
+        if not isinstance(claim, str) or not claim.strip():
+            failures.append(f"{fact_id}: claim 또는 fact 누락")
+        elif content.count(claim) != 1:
+            failures.append(
+                f"{fact_id}: CURRENT_STATE claim 일치 실패 (발견 {content.count(claim)}회)"
+            )
+
+        anchor = fact.get("document_anchor")
+        if not isinstance(anchor, str) or not anchor.strip():
+            failures.append(f"{fact_id}: document_anchor 누락")
+        elif content.count(anchor) < 1:
+            failures.append(f"{fact_id}: CURRENT_STATE document_anchor 일치 실패 (발견 0회)")
+
+        evidence = fact.get("evidence")
+        if isinstance(evidence, str):
+            evidence = [evidence]
+        if (
+            not isinstance(evidence, list)
+            or not evidence
+            or not all(isinstance(value, str) and value.strip() for value in evidence)
+        ):
+            failures.append(f"{fact_id}: evidence 경로 누락")
+
+    if failures:
+        return CheckResult(name, False, "; ".join(failures))
+    return CheckResult(
+        name, True, f"{len(facts['facts'])}개 판정 사실의 claim·anchor·evidence 정합성 확인"
     )
 
 
@@ -1341,6 +1436,7 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_worker_model_pool_drift(root),
         check_agents_model_table_absence(root),
         check_current_state_fact_statuses(root),
+        check_current_state_fact_ledger(root),
         check_current_state_unknowns_contradictions(root),
         check_analysis_metrics_docs(root),
         check_hook_installation(root),

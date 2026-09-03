@@ -20,6 +20,7 @@ from scripts.validate_agent_rules import (
     check_claude_is_pointer,
     check_context_budgets,
     check_current_state_exists,
+    check_current_state_fact_ledger,
     check_current_state_fact_statuses,
     check_current_state_sections,
     check_current_state_unknowns_contradictions,
@@ -40,7 +41,7 @@ from scripts.validate_agent_rules import (
 def test_real_repo_validation_passes():
     """실제 저장소의 v2 정합성 검증이 100% 통과하는지 확인."""
     checks = get_all_checks(PROJECT_ROOT)
-    assert len(checks) == 19
+    assert len(checks) == 20
     for chk in checks:
         assert chk.ok, f"Check failed: {chk.name} -> {chk.detail}"
     assert run_all_checks(PROJECT_ROOT, quiet=True) == 0
@@ -1037,3 +1038,67 @@ facts:
     result = check_current_state_fact_statuses(tmp_path)
     assert not result.ok
     assert "status=rejected" in result.detail
+
+
+def test_check_current_state_fact_ledger_requires_claim_anchor_and_evidence(tmp_path: Path):
+    """원장의 판정 주장과 증거 경로가 부팅 문서에 그대로 있어야 합니다."""
+    context = tmp_path / "docs" / "context"
+    context.mkdir(parents=True)
+    (context / "current_state_facts.yaml").write_text(
+        """version: '2.0'
+facts:
+  - id: gate
+    status: closed
+    decision_date: '2026-09-03'
+    claim: 'G1은 통과 상태입니다.'
+    document_anchor: 'G1은 통과 상태'
+    evidence:
+      - docs/migration/db_migration_runbook.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+""",
+        encoding="utf-8",
+    )
+    _write_current_state(
+        tmp_path,
+        "# CURRENT_STATE\n\n- **gate**: G1은 통과 상태입니다.\n",
+    )
+
+    result = check_current_state_fact_ledger(tmp_path)
+    assert result.ok, result.detail
+
+    (context / "current_state_facts.yaml").write_text(
+        (context / "current_state_facts.yaml")
+        .read_text(encoding="utf-8")
+        .replace("evidence:\n", "evidence:\n      - \n", 1),
+        encoding="utf-8",
+    )
+    result = check_current_state_fact_ledger(tmp_path)
+    assert not result.ok
+    assert "evidence" in result.detail
+
+
+def test_check_current_state_fact_ledger_rejects_claim_drift(tmp_path: Path):
+    """문서의 주장 문구가 원장과 달라지면 실패합니다."""
+    context = tmp_path / "docs" / "context"
+    context.mkdir(parents=True)
+    (context / "current_state_facts.yaml").write_text(
+        """version: '2.0'
+facts:
+  - id: gate
+    status: closed
+    decision_date: '2026-09-03'
+    claim: 'G1은 통과 상태입니다.'
+    document_anchor: 'G1은 통과 상태'
+    evidence:
+      - docs/migration/db_migration_runbook.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+""",
+        encoding="utf-8",
+    )
+    _write_current_state(tmp_path, "# CURRENT_STATE\n\nG1은 보류 상태입니다.\n")
+
+    result = check_current_state_fact_ledger(tmp_path)
+    assert not result.ok
+    assert "claim" in result.detail

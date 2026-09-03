@@ -1,31 +1,334 @@
-version: "1.0"
-description: "CURRENT_STATE.md 과업 상태 원장. status 변경 시 document_anchor 주변 서술도 같은 커밋에서 갱신합니다."
+version: "2.0"
+description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
+updated_at: "2026-09-03"
 facts:
-  - id: ngram_prefilter
-    status: rejected
-    decision_date: "2026-09-01"
-    document_anchor: "ngram 선행필터 자체가 기각되고"
+  - id: gate_g1
+    status: closed
+    decision_date: "2026-09-03"
+    claim: "G1 데이터 무손실은 통과(불변)이며 MySQL 8 스키마·행 수, ML 가중치 체크섬, ChromaDB bidding_kb를 보존합니다."
+    document_anchor: "G1 데이터 무손실"
+    evidence:
+      - docs/migration/db_migration_runbook.md
     related_documents:
       - docs/context/CURRENT_STATE.md
-      - docs/analysis/ngram_prefilter_paired_verdict_20260901.md
+      - docs/migration/db_migration_runbook.md
+  - id: gate_g3
+    status: closed
+    decision_date: "2026-09-01"
+    claim: "G3 스택 최적화 레이턴시 게이트는 전 항목 통과이며 전체 컷오버는 G2 확인 후입니다."
+    document_anchor: "G3 스택 최적화 레이턴시 게이트"
+    evidence:
+      - docs/ops/latency_gate_protocol.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/latency_gate_protocol.md
+  - id: project_version
+    status: closed
+    decision_date: "2026-09-03"
+    claim: "프로젝트 버전은 0.1.0이며 pyproject.toml이 SSoT이고 버전 표기를 통과 기준으로 유지합니다."
+    document_anchor: "프로젝트 버전은 0.1.0"
+    evidence:
+      - pyproject.toml
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - pyproject.toml
+  - id: features_single_source
+    status: closed
+    decision_date: "2026-09-03"
+    claim: "Train/Serve 특징 생성은 src/ml/features.py 단일 함수만 사용하며 단일화 원칙을 통과 기준으로 유지합니다."
+    document_anchor: "Train/Serve 특징 생성"
+    evidence:
+      - src/ml/features.py
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - src/ml/features.py
+  - id: git_one_person
+    status: closed
+    decision_date: "2026-09-03"
+    claim: "1인 작업 정책은 Pull Request 생성 금지와 main 직접 커밋 금지이며 규칙을 통과 기준으로 유지합니다."
+    document_anchor: "1인 작업 정책"
+    evidence:
+      - AGENTS.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - AGENTS.md
+  - id: prediction_gc_flag
+    status: closed
+    decision_date: "2026-09-01"
+    claim: "PREDICTION_GC_MODE=freeze를 정본 측정 설정으로 통과 유지합니다."
+    document_anchor: "PREDICTION_GC_MODE=freeze"
+    evidence:
+      - docs/ops/latency_gate_protocol.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/latency_gate_protocol.md
+  - id: prediction_latency
+    status: closed
+    decision_date: "2026-09-01"
+    claim: "예측 API 정본 P95는 c1 15.03ms·c2 19.66ms·c4 32.77ms·c10 48.14ms이며 모두 통과입니다."
+    document_anchor: "예측 API 정본 P95"
+    evidence:
+      - docs/analysis/g3_cutover_verdict_20260901.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/g3_cutover_verdict_20260901.md
+  - id: rag_sse_latency
+    status: closed
+    decision_date: "2026-09-01"
+    claim: "RAG SSE 정본은 첫 토큰 P95 2664.19ms·전체 P95 3353.98ms로 목표를 통과했습니다."
+    document_anchor: "RAG SSE 정본"
+    evidence:
+      - docs/ops/sse_gate_baseline_20260814.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/sse_gate_baseline_20260814.md
+  - id: rag_quality
+    status: closed
+    decision_date: "2026-08-30"
+    claim: "RAG 품질 정본은 blind_fixture_v2 96요청에서 numeric 144/144·evidence recall 1.0000·citation 72/72·refusal 24/24·과잉응답 0으로 통과했습니다."
+    document_anchor: "RAG 품질 정본"
+    evidence:
+      - data/benchmarks/blind_fixture_v2_e2b_20260830_v2.json
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - data/benchmarks/blind_fixture_v2_e2b_20260830_v2.json
+  - id: servc_oos
+    status: closed
+    decision_date: "2026-08-30"
+    claim: "Servc Champion OOS 3,589건 MAE는 1.1825이며 즉시 재학습 근거가 없어 현 모델을 통과 상태로 유지합니다."
+    document_anchor: "Servc Champion OOS 3,589건"
+    evidence:
+      - docs/analysis/servc_oos_champion_20260830.json
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/servc_oos_champion_20260830.json
   - id: ngram_edge_classes
     status: closed
     decision_date: "2026-09-01"
-    document_anchor: "ngram 경계값 7 클래스 (2026-09-01, 실측 완료·종결)"
+    claim: "ngram 경계값 7 클래스 실측은 완료·종결되었고 보수적 false를 유지합니다."
+    document_anchor: "ngram 경계값 7 클래스 실측"
+    evidence:
+      - docs/analysis/ngram_edge_classes_measurement_20260901.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/ngram_edge_classes_measurement_20260901.md
   - id: coldsql_metric
     status: closed
     decision_date: "2026-09-01"
-    document_anchor: "콜드 SQL 총량은 2026-09-01 결정으로 게이트에서 제외하고 관찰 지표로 강등했습니다"
+    claim: "콜드 SQL 총량은 게이트에서 제외하고 관찰 지표로 강등했습니다."
+    document_anchor: "콜드 SQL 총량은 게이트에서 제외"
+    evidence:
+      - docs/analysis/coldsql_metric_demotion_20260901.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/coldsql_metric_demotion_20260901.md
+  - id: source_commit_protocol
+    status: closed
+    decision_date: "2026-09-03"
+    claim: "source_commit은 푸시 전에 갱신하고 현재 브랜치 기준 신선도 검사를 통과시킵니다."
+    document_anchor: "source_commit은 푸시 전에 갱신"
+    evidence:
+      - scripts/validate_agent_rules.py
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - scripts/validate_agent_rules.py
+  - id: premerge_gate
+    status: closed
+    decision_date: "2026-09-03"
+    claim: "main 병합 전에는 make check-all와 전량 테스트 증거를 확인하는 규칙을 통과 기준으로 유지합니다."
+    document_anchor: "main 병합 전에는 make check-all"
+    evidence:
+      - docs/ops/ci_contract.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/ci_contract.md
+  - id: history_preservation
+    status: closed
+    decision_date: "2026-09-03"
+    claim: "CURRENT_STATE의 상세 로그와 과거 경위는 current_state_history.md로 보존하고 분리 상태를 통과 기준으로 유지합니다."
+    document_anchor: "CURRENT_STATE의 상세 로그와 과거 경위"
+    evidence:
+      - docs/context/current_state_history.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/context/current_state_history.md
+  - id: ci_windows
+    status: active
+    decision_date: "2026-09-02"
+    claim: "CI Windows job은 continue-on-error 없이 정규 게이트로 통과 중이며 병합 후 결과 재확인을 진행합니다."
+    document_anchor: "CI Windows job은 continue-on-error 없이"
+    evidence:
+      - docs/ops/ci_contract.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/ci_contract.md
+  - id: row_reconciliation
+    status: active
+    decision_date: "2026-09-03"
+    claim: "행 수 판정은 하한 검사이며 성장 데이터와 이행 원본 reconciliation은 미구현으로 개선을 추진합니다."
+    document_anchor: "행 수 판정은 하한 검사"
+    evidence:
+      - docs/migration/db_migration_runbook.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/migration/db_migration_runbook.md
+  - id: confirmation_token_redis
+    status: active
+    decision_date: "2026-09-03"
+    claim: "확인 토큰 소비 기록은 프로세스 지역 집합이고 Redis TTL 이전을 추진합니다."
+    document_anchor: "확인 토큰 소비 기록"
+    evidence:
+      - docs/ops/api_access_policy.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/api_access_policy.md
+  - id: model_swap_gap
+    status: active
+    decision_date: "2026-09-03"
+    claim: "서빙 모델 교체는 rename 사이 미세 부재 구간이 있어 심볼릭 링크 교체를 추진합니다."
+    document_anchor: "서빙 모델 교체는 rename 사이"
+    evidence:
+      - docs/ops/model_promotion_runbook.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/model_promotion_runbook.md
+  - id: promotion_status_check
+    status: active
+    decision_date: "2026-09-03"
+    claim: "promote_model.py status의 레지스트리 차단 동작은 병합 후 검증을 진행합니다."
+    document_anchor: "promote_model.py status의 레지스트리 차단"
+    evidence:
+      - docs/ops/model_promotion_runbook.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/model_promotion_runbook.md
+  - id: lexical_full_rerun
+    status: active
+    decision_date: "2026-08-28"
+    claim: "정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다."
+    document_anchor: "정확 제목 lexical 채널"
+    evidence:
+      - docs/analysis/lexical_channel_latency_effect_20260828.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/lexical_channel_latency_effect_20260828.md
+  - id: missing_lwlt_intervals
+    status: active
+    decision_date: "2026-08-30"
+    claim: "missing_lwlt 집단은 MAE 2.0943으로 결측 집단 전용 예측구간 관리를 추진합니다."
+    document_anchor: "missing_lwlt 집단은 MAE 2.0943"
+    evidence:
+      - docs/analysis/servc_lwlt_missing_20260830.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/servc_lwlt_missing_20260830.md
+  - id: state_budget
+    status: active
+    decision_date: "2026-09-03"
+    claim: "CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 8,000자 이하를 목표로 진행합니다."
+    document_anchor: "CURRENT_STATE 부팅 요약은 facts.yaml"
+    evidence:
+      - docs/context/current_state_facts.yaml
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/context/current_state_facts.yaml
+  - id: gate_g2
+    status: blocked
+    decision_date: "2026-09-01"
+    claim: "G2 크로스 플랫폼은 보류이며 Windows Docker Desktop 실기 검증은 미검증입니다."
+    document_anchor: "G2 크로스 플랫폼은 보류"
+    evidence:
+      - docs/ops/cross_platform_guide.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/cross_platform_guide.md
+  - id: ngram_flag
+    status: blocked
+    decision_date: "2026-09-01"
+    claim: "NGRAM_PREFILTER_ENABLED=false이며 true 전환과 운영 FULLTEXT 인덱스 생성은 사용자 승인 전 보류입니다."
+    document_anchor: "NGRAM_PREFILTER_ENABLED=false"
+    evidence:
+      - docs/ops/ngram_fulltext_cutover_runbook.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/ngram_fulltext_cutover_runbook.md
+  - id: ssr_e2e
+    status: blocked
+    decision_date: "2026-09-02"
+    claim: "SSR E2E Phase 2~4는 범위 조사만 끝났고 착수는 사용자 합의 대기입니다."
+    document_anchor: "SSR E2E Phase 2~4는 범위 조사"
+    evidence:
+      - docs/analysis/ssr_e2e_scope_survey_20260902.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/ssr_e2e_scope_survey_20260902.md
+  - id: rpo_rto
+    status: blocked
+    decision_date: "2026-09-03"
+    claim: "RPO/RTO와 정기 백업 스케줄·restore drill은 미정이며 담당자 결정을 대기합니다."
+    document_anchor: "RPO/RTO와 정기 백업 스케줄"
+    evidence:
+      - docs/ops/backup_recovery_runbook.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/backup_recovery_runbook.md
+  - id: observability
+    status: blocked
+    decision_date: "2026-09-03"
+    claim: "관측성 스택은 후보만 있고 담당자 결정을 대기합니다."
+    document_anchor: "관측성 스택은 후보만"
+    evidence:
+      - docs/ops/scale_and_silent_failure_audit_20260807.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/scale_and_silent_failure_audit_20260807.md
+  - id: drift_job
+    status: blocked
+    decision_date: "2026-09-03"
+    claim: "드리프트 job은 baseline이 생길 때까지 꺼져 있으며 재학습 후 활성화를 대기합니다."
+    document_anchor: "드리프트 job은 baseline"
+    evidence:
+      - docs/ops/psi_drift_monitoring.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/psi_drift_monitoring.md
+  - id: coldsql_rerun
+    status: blocked
+    decision_date: "2026-08-30"
+    claim: "RAG 정형 질의 cold SQL은 최대 97,087.81ms이며 재측정을 대기합니다."
+    document_anchor: "RAG 정형 질의 cold SQL"
+    evidence:
+      - docs/analysis/rag_structured_sql_coldstart_20260830.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/rag_structured_sql_coldstart_20260830.md
+  - id: supply_chain_gate
+    status: blocked
+    decision_date: "2026-09-03"
+    claim: "공급망 스캔은 보고 전용이며 게이트 승격 조건 확인을 대기합니다."
+    document_anchor: "공급망 스캔은 보고 전용"
+    evidence:
+      - docs/ops/supply_chain_policy.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/supply_chain_policy.md
+  - id: ngram_prefilter
+    status: rejected
+    decision_date: "2026-09-01"
+    claim: "ngram 선행필터 자체가 기각되고 운영 FULLTEXT 인덱스도 제거되었습니다."
+    document_anchor: "ngram 선행필터 자체가 기각"
+    evidence:
+      - docs/analysis/ngram_prefilter_paired_verdict_20260901.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/ngram_prefilter_paired_verdict_20260901.md
   - id: servc_lwlt_imputation
     status: rejected
     decision_date: "2026-09-01"
-    document_anchor: "추정 대입은 오차가 7~12%p 폭증해 기각됐습니다"
+    claim: "낙찰하한율 추정 대입은 오차가 7~12%p 폭증해 기각되었고 결측 집단은 별도 모집단입니다."
+    document_anchor: "낙찰하한율 추정 대입은 오차"
+    evidence:
+      - docs/analysis/servc_lwlt_missing_20260830.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/servc_lwlt_missing_20260830.md

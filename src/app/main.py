@@ -379,6 +379,12 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     # SSR 화면은 원본 Django 경로를 그대로 사용하므로 prefix 없이 마지막에 포함합니다.
     app.include_router(ui_router)
 
+    # OpenTelemetry 계측 배선 (비활성화 상태에서는 비용 0)
+    from src.app.core.db import engine
+    from src.app.core.observability import setup_observability
+
+    setup_observability(app=app, engine=engine)
+
     return app
 
 
