@@ -1099,3 +1099,20 @@ def test_build_model_command_supported_independent_reviewer_models():
     cmd_gemini = build_model_command("gemini-3.7-flash-high", "test prompt")
     assert cmd_gemini[0] == "agy"
     assert "test prompt" in cmd_gemini
+
+    cmd_grok = build_model_command("grok-4.6", "test prompt")
+    assert cmd_grok[0] == "grok"
+    assert "test prompt" in cmd_grok
+
+
+def test_build_model_command_grok_generates_grok_dash_p():
+    """(42) grok 계열 모델이 grok -p <prompt> --model <id> --output-format plain 명령을 만듭니다."""
+    prompt = "Review this code"
+    for model_id in ["grok-4.6", "grok-4.5"]:
+        cmd = build_model_command(model_id, prompt)
+        assert cmd == ["grok", "-p", prompt, "--model", model_id, "--output-format", "plain"]
+        assert cmd[0] == "grok"
+        assert "-p" in cmd
+        assert "--model" in cmd
+        assert "--output-format" in cmd
+        assert "plain" in cmd

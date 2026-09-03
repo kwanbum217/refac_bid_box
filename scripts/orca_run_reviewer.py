@@ -44,7 +44,9 @@ DEFAULT_GIT_TIMEOUT = 10
 # 최대 38,401 자를 약 30 % 여유로 넘긴 50,000 자를 기본 상한으로 한다.
 DEFAULT_MAX_DIFF_CHARS = 50000
 DEFAULT_MAX_CHARS = 1500
-SUPPORTED_REVIEWER_PROVIDERS: frozenset[str] = frozenset({"gemini", "claude", "cerebras", "qwen"})
+SUPPORTED_REVIEWER_PROVIDERS: frozenset[str] = frozenset(
+    {"gemini", "claude", "cerebras", "qwen", "grok"}
+)
 
 
 class ReviewerToolError(Exception):
@@ -243,6 +245,8 @@ def build_model_command(
       ['agy', '--model', model, '--print', prompt, '--print-timeout', f'{timeout}s']
     - qwen: qwen CLI 단발 실행 (-p) 사용
       ['qwen', '-m', model, '-p', prompt]
+    - grok: grok CLI 단발 실행 (-p) 사용
+      ['grok', '-p', prompt, '--model', model, '--output-format', 'plain']
     - 지원하지 않는 provider 또는 판정 불가 모델: ReviewerToolError 발생
     """
     try:
@@ -276,6 +280,16 @@ def build_model_command(
             model,
             "-p",
             prompt,
+        ]
+    if provider == "grok":
+        return [
+            "grok",
+            "-p",
+            prompt,
+            "--model",
+            model,
+            "--output-format",
+            "plain",
         ]
 
     raise ReviewerToolError(f"처리되지 않은 제공자입니다 (모델: {model!r}, 제공자: {provider!r})")

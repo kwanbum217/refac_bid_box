@@ -1923,7 +1923,7 @@ def classify_file_edit_auto_approve_support(
                 f"기록된 메타데이터(cli={cli_type or 'antigravity'})에 따라 Antigravity CLI 로 판정되어 "
                 "파일 편집 자동 승인 모드 전환을 지원합니다"
             )
-        elif cli_type in ("opencode", "claude", "codex", "kimi", "qwen"):
+        elif cli_type in ("opencode", "claude", "codex", "kimi", "qwen", "grok"):
             record_supported = False
             record_reason = (
                 f"기록된 메타데이터(cli={cli_type})에 따라 shift+tab 을 accept-edits 로 "

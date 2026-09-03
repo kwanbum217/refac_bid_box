@@ -165,6 +165,8 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 | `gemini-3.7-flash-medium` | `gemini-3.7-flash-medium` | gemini | secondary | **비대상 (False)** | builder, reviewer, investigator, benchmarker, documenter | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
 | `gemini-3.7-flash-low` | `gemini-3.7-flash-low` | gemini | secondary | **비대상 (False)** | investigator, benchmarker, documenter | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
 | `claude-sonnet` | `claude-sonnet-5` | claude | secondary | **대상 (True)** | reviewer, builder | 로컬 Claude Pro 전용 풀 (/opt/homebrew/bin/claude). contextWindow 1M, effort medium. WORKER_MODEL_NOTICE 후 명시 배정하는 수동 보조 워커. probe 전송은 claude-cli 경로 분리 |
+| `grok-4.6` | `grok-4.6` | grok | secondary | **비대상 (False)** | reviewer, builder, investigator | SuperGrok 로컬 Grok CLI (/opt/homebrew/bin/grok). effort high 는 코디네이터 등급으로 워커 자동 배정 제외, 워커 등급은 medium/low. WORKER_MODEL_NOTICE 후 명시 배정 |
+| `grok-4.5` | `grok-4.5` | grok | secondary | **비대상 (False)** | reviewer, builder, investigator | SuperGrok 로컬 Grok CLI (/opt/homebrew/bin/grok). grok-4.5 워커 모델. WORKER_MODEL_NOTICE 후 명시 배정 |
 | `claude-opus` | `claude-opus-5` | claude | coordinator_reserve | **비대상 (False)** | (워커 사용 불가) | 예비 코디네이터. 워커 지정 시 거부 |
 | `codex` | `gpt-5.6-terra` | codex | coordinator | **비대상 (False)** | (워커 사용 불가) | **기본 코디네이터 (medium). 기본값 변경 전 `MODEL_CHANGE_NOTICE`, Sol High는 사용자 승인 후 고위험 최종 판정에만 수동 사용하며 워커 지정 시 거부(오류)** |
 | `opencode-free` | `opencode/nemotron-3.5-lightning-free` | opencode | free | **비대상 (False)** | (격리) | 장문 지시 붕괴 실측으로 재시험 전 배정 중단 |

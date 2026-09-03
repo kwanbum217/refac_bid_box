@@ -197,6 +197,20 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         ],
         "timeout": 120,
     },
+    "grok": {
+        # SuperGrok 로컬 Grok CLI 전용 probe 설정.
+        # grok -p ping --model {model} --output-format plain
+        "probe_cmd": [
+            "grok",
+            "-p",
+            "ping",
+            "--model",
+            "{model}",
+            "--output-format",
+            "plain",
+        ],
+        "timeout": 60,
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -379,6 +393,49 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "로컬 Claude Pro 전용 풀 (/opt/homebrew/bin/claude). "
             "canonical model claude-sonnet-5, context 1M, effort medium. "
             "WORKER_MODEL_NOTICE 후 명시 배정하는 수동 보조 워커."
+        ),
+    },
+    "grok-4.6": {
+        "id": "grok-4.6",
+        "provider": "grok",
+        "probe_provider": "grok",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "worker_efforts": ["medium", "low"],
+        "coordinator_efforts": ["high"],
+        "default_effort": "medium",
+        "suitable_for": [
+            "reviewer",
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "SuperGrok 구독 기반 로컬 Grok CLI (/opt/homebrew/bin/grok). "
+            "effort high 는 코디네이터 등급으로 워커 자동 배정에서 제외한다. "
+            "워커 등급은 medium 과 low 다. "
+            "WORKER_MODEL_NOTICE 후 명시 배정으로만 사용한다."
+        ),
+    },
+    "grok-4.5": {
+        "id": "grok-4.5",
+        "provider": "grok",
+        "probe_provider": "grok",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "worker_efforts": ["medium", "low"],
+        "coordinator_efforts": ["high"],
+        "default_effort": "medium",
+        "suitable_for": [
+            "reviewer",
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "SuperGrok 구독 기반 로컬 Grok CLI (/opt/homebrew/bin/grok). "
+            "grok-4.5 워커 모델. "
+            "WORKER_MODEL_NOTICE 후 명시 배정으로만 사용한다."
         ),
     },
     "claude-opus-thinking": {
@@ -1040,6 +1097,7 @@ MODEL_PROVIDER_PREFIXES: tuple[tuple[str, str], ...] = (
     ("deepseek", "qwen"),
     ("glm", "qwen"),
     ("claude", "claude"),
+    ("grok", "grok"),
     ("gpt-", "codex"),
     ("codex", "codex"),
     ("cursor", "cursor"),
@@ -1705,6 +1763,9 @@ def probe_model(
             provider = "codex"
         elif "cerebras" in model_id.lower():
             provider = "cerebras"
+        elif "grok" in model_id.lower():
+            provider = "grok"
+            probe_key = "grok"
         else:
             provider = "opencode"
 
