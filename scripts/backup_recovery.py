@@ -12,7 +12,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from scripts.backup_recovery_core import (
+# scripts/ 는 패키지가 아니라서 직접 실행하면 sys.path 에 저장소 루트가 없습니다.
+# 2026-09-03 모듈 분할 이후 runbook 이 안내하는 python3 scripts/backup_recovery.py 가
+# ModuleNotFoundError 로 죽었습니다. verify_migration.py 와 같은 방식으로 루트를 넣습니다.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from scripts.backup_recovery_core import (  # noqa: E402
     DEFAULT_SNAPSHOTS_DIR,
     MANIFEST_FILENAME,
     PROJECT_ROOT,
@@ -36,7 +43,7 @@ from scripts.backup_recovery_core import (
     sha256_file,
     validate_backup_output,
 )
-from scripts.backup_snapshots import (
+from scripts.backup_snapshots import (  # noqa: E402
     list_snapshots,
     prune_snapshots,
     verify_snapshot,
