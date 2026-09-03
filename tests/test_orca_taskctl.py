@@ -189,7 +189,7 @@ def test_reliability_tracking_skips_non_free_pool(tmp_path):
     result = _start_reliability_tracking(
         capsule,
         "task_primary",
-        "gemini-3.7-flash-medium",
+        "gemini-3.8-flash-medium",
         started_at=1.0,
     )
 
@@ -4656,7 +4656,7 @@ def test_resolve_dispatch_model_risk_medium():
         args_model=None,
         capsule_text=capsule_text,
     )
-    assert res["model"] == "gemini-3.7-flash-medium"
+    assert res["model"] == "gemini-3.8-flash-medium"
     assert res["source"] == "router"
     assert res["risk"] == "medium"
     assert res["warning"] is None
@@ -4669,7 +4669,7 @@ def test_resolve_dispatch_model_risk_high():
         args_model=None,
         capsule_text=capsule_text,
     )
-    assert res["model"] == "gemini-3.7-flash-high"
+    assert res["model"] == "gemini-3.8-flash-high"
     assert res["source"] == "router"
     assert res["risk"] == "high"
     assert res["warning"] is None
@@ -4690,10 +4690,10 @@ def test_resolve_dispatch_model_higher_model_warning(capsys: pytest.CaptureFixtu
     """(d) --model 로 상위 모델을 지정하면 경고가 남음."""
     capsule_text = "role: builder\nrisk: medium\nobjective: simple task\n"
     res = resolve_dispatch_model(
-        args_model="gemini-3.7-flash-high",
+        args_model="gemini-3.8-flash-high",
         capsule_text=capsule_text,
     )
-    assert res["model"] == "gemini-3.7-flash-high"
+    assert res["model"] == "gemini-3.8-flash-high"
     assert res["source"] == "explicit"
     assert res["warning"] is not None
     assert "상위 모델" in res["warning"]
@@ -4721,7 +4721,7 @@ def test_dispatch_dry_run_matches_actual_resolution(tmp_path: Path, capsys: pyte
     captured = capsys.readouterr()
     data = json.loads(captured.out)
     assert data["dry_run"] is True
-    assert data["model"] == "gemini-3.7-flash-medium"
+    assert data["model"] == "gemini-3.8-flash-medium"
     assert data["model_source"] == "router"
     assert data["risk"] == "medium"
 
@@ -4739,7 +4739,7 @@ def test_resolve_dispatch_model_fallback_on_router_error(
         args_model=None,
         capsule_text=capsule_text,
     )
-    assert res["model"] == "gemini-3.7-flash-high"
+    assert res["model"] == "gemini-3.8-flash-high"
     assert res["source"] == "fallback_default"
     assert res["warning"] is not None
     captured = capsys.readouterr()

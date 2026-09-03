@@ -7,7 +7,7 @@ Antigravity TUI 는 `orca terminal create --command "agy --model <id>"` 로 띄�
 먼저 만들고, 런처는 preamble 파일이 나타날 때까지 기다렸다가 agy 를 exec 합니다.
 
     orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
-      --command "uv run python scripts/orca_agy_launch.py --model gemini-3.7-flash-medium"
+      --command "uv run python scripts/orca_agy_launch.py --model gemini-3.8-flash-medium"
     orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json
     # 결과의 preamble 을 <워크트리>/.orca/preamble.txt 로 쓰면 런처가 이어받습니다
 
@@ -149,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--model",
         required=True,
-        help="Antigravity 모델 ID (예: gemini-3.7-flash-medium, claude-sonnet-4-6)",
+        help="Antigravity 모델 ID (예: gemini-3.8-flash-medium, claude-sonnet-4-6)",
     )
     parser.add_argument("--preamble", type=Path, default=DEFAULT_PREAMBLE)
     parser.add_argument("--timeout-sec", type=float, default=300.0)

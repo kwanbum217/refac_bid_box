@@ -282,7 +282,7 @@ class TestModelPoolAndSelection:
         """제외하지 않은 정상 경로가 종전과 동일한 모델을 반환합니다."""
         res_builder_high = select_model("builder", "high")
         assert res_builder_high["primary_pool"] == "gemini-flash-high"
-        assert res_builder_high["primary_model"] == "gemini-3.7-flash-high"
+        assert res_builder_high["primary_model"] == "gemini-3.8-flash-high"
         assert res_builder_high["fallback_pool"] == "qwen-plus"
         assert res_builder_high["fallback_model"] == "qwen3.7-plus"
 
@@ -294,9 +294,9 @@ class TestModelPoolAndSelection:
 
         res_investigator_low = select_model("investigator", "low")
         assert res_investigator_low["primary_pool"] == "gemini-flash-low"
-        assert res_investigator_low["primary_model"] == "gemini-3.7-flash-low"
+        assert res_investigator_low["primary_model"] == "gemini-3.8-flash-low"
         assert res_investigator_low["fallback_pool"] == "gemini-flash-medium"
-        assert res_investigator_low["fallback_model"] == "gemini-3.7-flash-medium"
+        assert res_investigator_low["fallback_model"] == "gemini-3.8-flash-medium"
 
     def test_auto_selectable_pools_distinction(self):
         """자동 선택 대상 풀과 비대상 풀이 명확히 구분됨을 검증합니다."""
@@ -311,6 +311,9 @@ class TestModelPoolAndSelection:
             "qwen-plus",
         }
         assert non_auto_pools == {
+            "gemini-3.7-flash-high",
+            "gemini-3.7-flash-medium",
+            "gemini-3.7-flash-low",
             "claude-opus",
             "claude-opus-thinking",
             "codex",
@@ -542,7 +545,7 @@ class TestRoute:
         assert isinstance(res, RouteResult)
         assert res.risk == "medium"
         assert res.role == "builder"
-        assert res.primary_model == "gemini-3.7-flash-medium"
+        assert res.primary_model == "gemini-3.8-flash-medium"
         assert res.primary_available is True
         assert res.fallback_available is None
 
@@ -553,7 +556,7 @@ class TestRoute:
             probe=False,
         )
         assert res.risk == "high"
-        assert res.primary_model == "gemini-3.7-flash-high"
+        assert res.primary_model == "gemini-3.8-flash-high"
         assert res.fallback_model == "qwen3.7-plus"
         assert len(res.reasons) > 0
         assert any("high 키워드 매칭" in r for r in res.reasons)
@@ -603,7 +606,7 @@ class TestRoute:
         """주 모델이 실패하고 대체 모델이 성공할 때 대체 모델로 전환됨을 확인합니다."""
 
         def _mock_run(cmd, *args, **kwargs):
-            if "gemini-3.7-flash-high" in cmd:
+            if "gemini-3.8-flash-high" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="quota exhausted 429")
             return MagicMock(returncode=0, stdout="ok", stderr="")
 
@@ -664,7 +667,7 @@ class TestCLI:
         captured = capsys.readouterr().out
         data = json.loads(captured)
         assert data["risk"] == "high"
-        assert data["primary_model"] == "gemini-3.7-flash-high"
+        assert data["primary_model"] == "gemini-3.8-flash-high"
         assert len(data["reasons"]) > 0
 
     def test_classify_text(self, capsys):
@@ -680,7 +683,7 @@ class TestCLI:
         assert ret == 0
         captured = capsys.readouterr().out
         assert "위험도:       low" in captured
-        assert "주 모델:      gemini-3.7-flash-low" in captured
+        assert "주 모델:      gemini-3.8-flash-low" in captured
 
     def test_probe_cli_success(self, monkeypatch, capsys):
         mock_proc = MagicMock(returncode=0, stdout="ok", stderr="")
@@ -714,7 +717,7 @@ class TestCLI:
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
         assert data["risk"] == "medium"
-        assert data["recommended"] == "gemini-3.7-flash-medium"
+        assert data["recommended"] == "gemini-3.8-flash-medium"
 
     def test_route_cli_coordinator_model_rejected(self, capsys):
         parser = argparse.ArgumentParser()
@@ -1924,6 +1927,9 @@ class TestProviderIndependence:
             "gemini-flash-high": "gemini",
             "gemini-flash-medium": "gemini",
             "gemini-flash-low": "gemini",
+            "gemini-3.8-flash-high": "gemini",
+            "gemini-3.8-flash-medium": "gemini",
+            "gemini-3.8-flash-low": "gemini",
             "gemini-3.7-flash-high": "gemini",
             "gemini-3.7-flash-medium": "gemini",
             "gemini-3.7-flash-low": "gemini",
@@ -1986,7 +1992,7 @@ class TestProviderIndependence:
         # qwen 제외 시 gemini-flash-high 만 남고 fallback 은 None
         res_qwen_excluded = select_model("reviewer", "high", exclude_providers=["qwen"])
         assert res_qwen_excluded["primary_pool"] == "gemini-flash-high"
-        assert res_qwen_excluded["primary_model"] == "gemini-3.7-flash-high"
+        assert res_qwen_excluded["primary_model"] == "gemini-3.8-flash-high"
         assert res_qwen_excluded["fallback_pool"] is None
         assert res_qwen_excluded["fallback_model"] is None
 
@@ -2019,13 +2025,13 @@ class TestProviderIndependence:
         """exclude_providers 를 지정하지 않은 빌더 및 타 역할 호출은 동작이 변하지 않습니다."""
         res_builder = select_model("builder", "medium")
         assert res_builder["primary_pool"] == "gemini-flash-medium"
-        assert res_builder["primary_model"] == "gemini-3.7-flash-medium"
+        assert res_builder["primary_model"] == "gemini-3.8-flash-medium"
         assert res_builder["fallback_pool"] == "qwen-plus"
         assert res_builder["fallback_model"] == "qwen3.7-plus"
 
         res_investigator = select_model("investigator", "low")
         assert res_investigator["primary_pool"] == "gemini-flash-low"
-        assert res_investigator["primary_model"] == "gemini-3.7-flash-low"
+        assert res_investigator["primary_model"] == "gemini-3.8-flash-low"
 
     def test_select_model_reviewer_unknown_builder_provider_fails_closed_on_high_risk(self):
         """리뷰어 역할에서 builder provider 를 알 수 없으면 high 위험도에서 fail-closed 로 ModelRoutingError 가 발생합니다."""
@@ -2086,3 +2092,19 @@ class TestProviderIndependence:
         assert TIER_POLICY[("builder", "high")] == ["gemini-flash-high", "qwen-plus"]
         assert TIER_POLICY[("builder", "medium")] == ["gemini-flash-medium", "qwen-plus"]
         assert TIER_POLICY[("builder", "low")] == ["gemini-flash-medium", "qwen-plus"]
+
+    def test_gemini_38_and_37_pool_registration(self):
+        """Gemini 3.8 이 주력으로 등록되고 3.7 은 수동 지정용으로 보존됨을 검증합니다."""
+        assert MODEL_POOL["gemini-flash-high"]["id"] == "gemini-3.8-flash-high"
+        assert MODEL_POOL["gemini-flash-high"]["auto_selectable"] is True
+        assert MODEL_POOL["gemini-flash-medium"]["id"] == "gemini-3.8-flash-medium"
+        assert MODEL_POOL["gemini-flash-medium"]["auto_selectable"] is True
+        assert MODEL_POOL["gemini-flash-low"]["id"] == "gemini-3.8-flash-low"
+        assert MODEL_POOL["gemini-flash-low"]["auto_selectable"] is True
+
+        assert MODEL_POOL["gemini-3.7-flash-high"]["id"] == "gemini-3.7-flash-high"
+        assert MODEL_POOL["gemini-3.7-flash-high"]["auto_selectable"] is False
+        assert MODEL_POOL["gemini-3.7-flash-medium"]["id"] == "gemini-3.7-flash-medium"
+        assert MODEL_POOL["gemini-3.7-flash-medium"]["auto_selectable"] is False
+        assert MODEL_POOL["gemini-3.7-flash-low"]["id"] == "gemini-3.7-flash-low"
+        assert MODEL_POOL["gemini-3.7-flash-low"]["auto_selectable"] is False

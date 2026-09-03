@@ -129,7 +129,7 @@ except (ModuleNotFoundError, ImportError):
 
 CAPSULE_BUDGET = 8000
 COMPLEX_CAPSULE_BUDGET = 12000
-DEFAULT_MODEL = "gemini-3.7-flash-high"
+DEFAULT_MODEL = "gemini-3.8-flash-high"
 DEFAULT_RUN_ID = "run_auto"
 CAPSULE_VERSION = "2.1.0"
 MAX_CONCURRENT_WRITE_WORKERS = 3
@@ -137,10 +137,13 @@ ROUTING_STATE_FILENAME = "routing.json"
 FILE_EDIT_AUTO_APPROVE_SEQUENCE = "\x1b[Z"
 
 MODEL_TIER_RANK: dict[str, int] = {
+    "gemini-3.8-flash-low": 1,
     "gemini-3.7-flash-low": 1,
     "gemini-flash-low": 1,
+    "gemini-3.8-flash-medium": 2,
     "gemini-3.7-flash-medium": 2,
     "gemini-flash-medium": 2,
+    "gemini-3.8-flash-high": 3,
     "gemini-3.7-flash-high": 3,
     "gemini-flash-high": 3,
     "claude-sonnet-4-6": 4,

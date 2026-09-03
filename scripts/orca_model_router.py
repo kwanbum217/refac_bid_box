@@ -185,7 +185,7 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
 
 MODEL_POOL: dict[str, dict[str, Any]] = {
     "gemini-flash-high": {
-        "id": "gemini-3.7-flash-high",
+        "id": "gemini-3.8-flash-high",
         "provider": "gemini",
         "tier": "primary",
         "auto_selectable": True,
@@ -197,10 +197,10 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "benchmarker",
             "documenter",
         ],
-        "notes": "공식 문서 기준 가장 어려운 추론·코딩 전용. high 위험도에만 배정한다. 토큰 소모가 크다.",
+        "notes": "Gemini 3.8 Flash 공식 문서 기준 가장 어려운 추론·코딩 전용. high 위험도에만 배정한다. 토큰 소모가 크다.",
     },
     "gemini-flash-medium": {
-        "id": "gemini-3.7-flash-medium",
+        "id": "gemini-3.8-flash-medium",
         "provider": "gemini",
         "tier": "primary",
         "auto_selectable": True,
@@ -212,10 +212,10 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "benchmarker",
             "documenter",
         ],
-        "notes": "공식 문서 기준 기본값이며 복잡한 코드와 에이전트 용도에 권장되는 등급. medium 위험도 이하의 주력 워커.",
+        "notes": "Gemini 3.8 Flash 공식 문서 기준 기본값이며 복잡한 코드와 에이전트 용도에 권장되는 등급. medium 위험도 이하의 주력 워커.",
     },
     "gemini-flash-low": {
-        "id": "gemini-3.7-flash-low",
+        "id": "gemini-3.8-flash-low",
         "provider": "gemini",
         "tier": "primary",
         "auto_selectable": True,
@@ -225,7 +225,50 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "benchmarker",
             "documenter",
         ],
-        "notes": "공식 문서 기준 용도는 지연이 중요한 작업, 초안 작성, 빠른 데이터 분석. low 위험도 문서화·조사·계측에만 자동 선택된다. 리뷰어와 빌더에는 배정하지 않는다.",
+        "notes": "Gemini 3.8 Flash 공식 문서 기준 용도는 지연이 중요한 작업, 초안 작성, 빠른 데이터 분석. low 위험도 문서화·조사·계측에만 자동 선택된다. 리뷰어와 빌더에는 배정하지 않는다.",
+    },
+    "gemini-3.7-flash-high": {
+        "id": "gemini-3.7-flash-high",
+        "provider": "gemini",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "builder",
+            "reviewer",
+            "investigator",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": "Gemini 3.7 Flash 수동 지정 전용. 3.8 롤백 및 비교 검증용.",
+    },
+    "gemini-3.7-flash-medium": {
+        "id": "gemini-3.7-flash-medium",
+        "provider": "gemini",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "builder",
+            "reviewer",
+            "investigator",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": "Gemini 3.7 Flash 수동 지정 전용. 3.8 롤백 및 비교 검증용.",
+    },
+    "gemini-3.7-flash-low": {
+        "id": "gemini-3.7-flash-low",
+        "provider": "gemini",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "investigator",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": "Gemini 3.7 Flash 수동 지정 전용. 3.8 롤백 및 비교 검증용.",
     },
     # ------------------------------------------------------------------
     # Alibaba Token Plan (Qwen Code CLI) 풀
@@ -1102,7 +1145,7 @@ def apply_inventory_history(
 # 역할별 추론 등급 정책
 # ---------------------------------------------------------------------------
 #
-# 배정 근거는 Gemini 3.7 Flash 공식 문서입니다.
+# 배정 근거는 Gemini 3.8 Flash 공식 문서입니다.
 #   low    : 지연이 중요한 작업, 초안 작성, 빠른 데이터 분석
 #   medium : 기본값. 대부분의 작업에서 최고 품질이며 "복잡한 코드와 에이전트
 #            용도에 권장" 되고 첫 시도 정확도가 더 높음
@@ -1610,7 +1653,7 @@ def probe_model(
     비정상 종료 시에만 할당량 초과, 인증 실패 등의 원인을 상세 분류합니다.
     """
     provider = None
-    # 풀 키(gemini-flash-medium)와 실제 모델 ID(gemini-3.7-flash-medium)는
+    # 풀 키(gemini-flash-medium)와 실제 모델 ID(gemini-3.8-flash-medium)는
     # 다릅니다. 풀 키로 provider 만 찾고 명령에는 풀 키를 그대로 넘기면
     # CLI 가 "알 수 없는 모델" 로 거부해, 살아 있는 모델이 사용 불가로
     # 판정됩니다. 문서와 list 출력이 안내하는 이름이 풀 키이므로 이 경로가

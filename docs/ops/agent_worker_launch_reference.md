@@ -149,7 +149,7 @@ Codex 는 `~/.codex/models_cache.json`, Antigravity 는 `agy models` 로 확인�
 | 제공자 | 확인된 ID |
 | --- | --- |
 | Codex | **2026-08-20 재확인**: `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`. 08-14 에 있던 `gpt-5.6-sol-wm` 은 캐시에서 사라졌다 |
-| Antigravity | `gemini-3.7-flash-high`, `-medium`, `-low` (3.6·3.5 도 동일 3단), `gemini-3.1-pro-high`, `gemini-3.1-pro-low`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium` |
+| Antigravity | `gemini-3.8-flash-high`, `-medium`, `-low` (3.7·3.6·3.5 도 동일 3단), `gemini-3.1-pro-high`, `gemini-3.1-pro-low`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking`, `gpt-oss-120b-medium` |
 | OpenCode Zen | `opencode models` 로 조회합니다. 1.3 절 참조 |
 
 Antigravity 는 추론 수준이 모델 ID 에 포함되어 있어 `--effort` 를 따로 주지
@@ -164,7 +164,7 @@ Antigravity 쪽 허용량이 적지만, 다음 상황에서 쓸 자리가 분명
 | 상황 | 선택 |
 | --- | --- |
 | Claude 주간 한도가 얼마 남지 않았고 판정 품질이 필요하다 | Antigravity `claude-opus-4-6-thinking` |
-| 구현·검증이 절차적이고 양이 많다 | Antigravity `gemini-3.7-flash-high` 또는 Codex |
+| 구현·검증이 절차적이고 양이 많다 | Antigravity `gemini-3.8-flash-high` 또는 Codex |
 | 최종 승격·컷오버 판정 | 코디네이터가 직접 (위임하지 않습니다) |
 
 한도가 여러 풀로 나뉘어 있다는 점이 핵심입니다. 한 풀이 마르면 작업 등급을
@@ -312,7 +312,7 @@ opencode run --dir <워크트리> -m opencode/mimo-v2.5-free "<preamble>"
 1. OpenRouter 에 `meta/muse-spark-1.2:free` 변종이 등장
 2. opencode contributor-free 의 지역 차단 해제
 
-유료 풀 편입은 권하지 않습니다. 유료 자리에는 `gemini-3.7-flash` 와
+유료 풀 편입은 권하지 않습니다. 유료 자리에는 `gemini-3.8-flash` 와
 `claude-sonnet-4-6` 이 실측 기반으로 있고, muse spark 는 능력 데이터가 0 인
 상태로 비용을 씁니다. 1M 컨텍스트 축은 `or-free/nemotron-ultra` 가 무료로
 이미 커버합니다.
@@ -524,7 +524,7 @@ uv run python scripts/orca_prepare_worktree.py <워크트리>
 # 3. 그 워크트리에 런처를 명령으로 지정한 터미널 생성 (스플래시 정체 방지)
 orca terminal create --worktree path:<워크트리> \
   --title "<섹션명>" \
-  --command "uv run python scripts/orca_agy_launch.py --model gemini-3.7-flash-high" --json
+  --command "uv run python scripts/orca_agy_launch.py --model gemini-3.8-flash-high" --json
 
 # 4. Task 투입 (dispatch --launcher 가 preamble 추출 -> <워크트리>/.orca/preamble.txt 기록 -> 런처 기동 확인 -> 감시기 부착을 일괄 처리합니다)
 uv run python scripts/orca_taskctl.py dispatch --intent <의도.yaml> --terminal <handle> --launcher
