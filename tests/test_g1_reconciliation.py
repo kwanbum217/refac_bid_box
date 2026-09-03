@@ -91,8 +91,22 @@ def _add_result(session, *, collected_at: datetime, idx: int, prefix: str = "RES
     return obj
 
 
-def test_reconciliation_creates_baseline_and_passes(tmp_path, recon_session, monkeypatch):
-    """최초 실행은 baseline 부재 분기에서 현재 원본 행 수를 기록하고 PASS 한다."""
+def _write_reconciliation_baseline(path: Path, tables: dict[str, int], engine) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0.0",
+                "cutover_timestamp": CUTOVER_TS.isoformat(),
+                "tables": tables,
+                "metadata": verify_migration.build_source_metadata(engine),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_reconciliation_creates_baseline_and_passes(tmp_path, recon_session):
+    """기준선 부재는 FAIL 하고 명시적 생성 후 검증은 PASS 한다."""
     baseline_path = tmp_path / "row_count_reconciliation_baseline.json"
     assert not baseline_path.exists()
 
@@ -111,28 +125,35 @@ def test_reconciliation_creates_baseline_and_passes(tmp_path, recon_session, mon
         auto_save_baseline=True,
     )
 
-    assert ok is True
-    assert "최초 기준선 기록" in msg
+    assert ok is False
+    assert "기준선 파일 없음" in msg
+    assert not baseline_path.exists()
+
+    generated, generated_msg = verify_migration.generate_reconciliation_baseline(
+        session_factory=session_factory,
+        baseline_path=baseline_path,
+    )
+
+    assert generated is True
+    assert "기준선 생성 완료" in generated_msg
     assert baseline_path.exists()
     saved = json.loads(baseline_path.read_text(encoding="utf-8"))
     assert saved["cutover_timestamp"] == CUTOVER_TS.isoformat()
     assert saved["tables"]["bid_announcements"] == 3
     assert saved["tables"]["bid_results"] == 2
+    assert "metadata" in saved
+
+    ok2, msg2 = verify_migration.verify_reconciliation(
+        session_factory=session_factory,
+        baseline_path=baseline_path,
+    )
+    assert ok2 is True
+    assert "원본/성장분 대조 일치" in msg2
 
 
 def test_reconciliation_passes_when_baseline_matches(tmp_path, recon_session):
-    """2회차 실행은 baseline 일치 시 PASS 한다."""
+    """명시적으로 생성한 baseline과 일치하면 PASS 한다."""
     baseline_path = tmp_path / "row_count_reconciliation_baseline.json"
-    baseline_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "1.0.0",
-                "cutover_timestamp": CUTOVER_TS.isoformat(),
-                "tables": {"bid_announcements": 5, "bid_results": 4},
-            }
-        ),
-        encoding="utf-8",
-    )
 
     for i in range(5):
         _add_announcement(recon_session, collected_at=CUTOVER_TS - timedelta(minutes=10), idx=i)
@@ -141,6 +162,13 @@ def test_reconciliation_passes_when_baseline_matches(tmp_path, recon_session):
     recon_session.commit()
 
     session_factory = sessionmaker(bind=recon_session.get_bind())
+    generated, generated_msg = verify_migration.generate_reconciliation_baseline(
+        session_factory=session_factory,
+        baseline_path=baseline_path,
+    )
+    assert generated is True
+    assert "기준선 생성 완료" in generated_msg
+
     ok, msg = verify_migration.verify_reconciliation(
         session_factory=session_factory,
         baseline_path=baseline_path,
@@ -150,18 +178,37 @@ def test_reconciliation_passes_when_baseline_matches(tmp_path, recon_session):
     assert "원본/성장분 대조 일치" in msg
 
 
-def test_reconciliation_fails_when_original_rows_decrease(tmp_path, recon_session):
-    """이행 원본 행이 줄면 즉시 FAIL 한다(가장 중요한 단언)."""
+def test_reconciliation_rejects_baseline_without_metadata(tmp_path, recon_session):
+    """출처 메타데이터가 없는 baseline은 DB 대조 전에 거부한다."""
     baseline_path = tmp_path / "row_count_reconciliation_baseline.json"
     baseline_path.write_text(
         json.dumps(
             {
                 "schema_version": "1.0.0",
                 "cutover_timestamp": CUTOVER_TS.isoformat(),
-                "tables": {"bid_announcements": 10, "bid_results": 10},
+                "tables": {"bid_announcements": 0, "bid_results": 0},
             }
         ),
         encoding="utf-8",
+    )
+    session_factory = sessionmaker(bind=recon_session.get_bind())
+
+    ok, msg = verify_migration.verify_reconciliation(
+        session_factory=session_factory,
+        baseline_path=baseline_path,
+    )
+
+    assert ok is False
+    assert "기준선 메타데이터 누락" in msg
+
+
+def test_reconciliation_fails_when_original_rows_decrease(tmp_path, recon_session):
+    """이행 원본 행이 줄면 즉시 FAIL 한다(가장 중요한 단언)."""
+    baseline_path = tmp_path / "row_count_reconciliation_baseline.json"
+    _write_reconciliation_baseline(
+        baseline_path,
+        {"bid_announcements": 10, "bid_results": 10},
+        recon_session.get_bind(),
     )
 
     # 원본 5행만 남긴다(baseline 10행 대비 5행 부족)
@@ -189,15 +236,10 @@ def test_reconciliation_ignores_growth_rows(tmp_path, recon_session, capsys):
     원본 3행을 유지하면서 성장분 1,000행을 추가해도 PASS 여야 한다.
     """
     baseline_path = tmp_path / "row_count_reconciliation_baseline.json"
-    baseline_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "1.0.0",
-                "cutover_timestamp": CUTOVER_TS.isoformat(),
-                "tables": {"bid_announcements": 3, "bid_results": 3},
-            }
-        ),
-        encoding="utf-8",
+    _write_reconciliation_baseline(
+        baseline_path,
+        {"bid_announcements": 3, "bid_results": 3},
+        recon_session.get_bind(),
     )
 
     for i in range(3):
@@ -231,7 +273,7 @@ def test_reconciliation_ignores_growth_rows(tmp_path, recon_session, capsys):
     assert "성장분 1,000행" in captured.out
 
 
-def test_reconciliation_fails_when_db_session_factory_raises(tmp_path, monkeypatch):
+def test_reconciliation_fails_when_db_session_factory_raises(tmp_path):
     """DB 조회 자체가 실패하면 FAIL 로 보고한다(통과로 위장 금지)."""
 
     def _raising_session_factory():
@@ -247,9 +289,16 @@ def test_reconciliation_fails_when_db_session_factory_raises(tmp_path, monkeypat
 
         return _Session()
 
+    baseline_path = tmp_path / "nope.json"
+    _write_reconciliation_baseline(
+        baseline_path,
+        {"bid_announcements": 1, "bid_results": 1},
+        None,
+    )
+
     ok, msg = verify_migration.verify_reconciliation(
         session_factory=_raising_session_factory,
-        baseline_path=tmp_path / "nope.json",
+        baseline_path=baseline_path,
     )
 
     assert ok is False
@@ -269,6 +318,13 @@ def test_reconciliation_skips_when_db_is_empty(tmp_path, recon_session, capsys):
     baseline_path = tmp_path / "row_count_reconciliation_baseline.json"
 
     session_factory = sessionmaker(bind=recon_session.get_bind())
+    generated, generated_msg = verify_migration.generate_reconciliation_baseline(
+        session_factory=session_factory,
+        baseline_path=baseline_path,
+    )
+    assert generated is True
+    assert "기준선 생성 완료" in generated_msg
+
     ok, msg = verify_migration.verify_reconciliation(
         session_factory=session_factory,
         baseline_path=baseline_path,
@@ -277,9 +333,8 @@ def test_reconciliation_skips_when_db_is_empty(tmp_path, recon_session, capsys):
     assert ok is True
     assert "DB 가 비어있어" in msg
     assert "건너뜀" in msg
-    # baseline 파일이 생성되지 않아야 한다(빈 DB 에서 baseline 을 굳이
-    # 기록할 이유가 없고, 0 baseline 으로 운영을 오염시키지 않는다).
-    assert not baseline_path.exists()
+    # 명시적 생성 경로가 만든 baseline은 검증 경로에서 유지되어야 한다.
+    assert baseline_path.exists()
 
     captured = capsys.readouterr()
     assert "DB 가 비어있어 reconciliation 건너뜀" in captured.out
@@ -288,12 +343,9 @@ def test_reconciliation_skips_when_db_is_empty(tmp_path, recon_session, capsys):
 def test_reconciliation_does_not_run_ddl_or_dml(tmp_path, recon_session):
     """read-only 검증: 운영 경로가 DDL 이나 DML 을 실행하지 않음을 단언한다.
 
-    `verify_reconciliation` 이 baseline 파일을 기록하는 것 외에는 DB 에
-    어떤 변경도 가하지 않음을 확인한다. baseline 파일이 없는 상태에서
-    호출하면 baseline 파일이 *추가로* 생기지만 이는 baseline_path 외부
-    파일시스템일 뿐 DB 자체는 불변이다. 따라서 DB 의 행 수가 호출
-    전후로 같은지, 그리고 baseline_path 가 DB 가 아닌 tmp_path 라면
-    그 외 파일시스템 변경이 없는지 본다.
+    `verify_reconciliation` 이 기준선을 읽는 검증 경로에서 DB에 어떤 변경도
+    가하지 않음을 확인한다. 기준선은 명시적 생성 경로로 먼저 만들며, 검증
+    경로가 해당 파일을 수정하지 않는지도 함께 확인합니다.
     """
     baseline_path = tmp_path / "outside_db" / "row_count_reconciliation_baseline.json"
     for i in range(2):
@@ -306,17 +358,28 @@ def test_reconciliation_does_not_run_ddl_or_dml(tmp_path, recon_session):
     initial_res = recon_session.query(BidResult).count()
 
     session_factory = sessionmaker(bind=recon_session.get_bind())
-    verify_migration.verify_reconciliation(
+    generated, generated_msg = verify_migration.generate_reconciliation_baseline(
+        session_factory=session_factory,
+        baseline_path=baseline_path,
+    )
+    assert generated is True
+    assert "기준선 생성 완료" in generated_msg
+    before_baseline = baseline_path.read_text(encoding="utf-8")
+
+    ok, msg = verify_migration.verify_reconciliation(
         session_factory=session_factory,
         baseline_path=baseline_path,
         auto_save_baseline=True,
     )
+    assert ok is True
+    assert "원본/성장분 대조 일치" in msg
 
     # DB 행 수는 그대로여야 한다(read-only).
     assert recon_session.query(BidAnnouncement).count() == initial_ann
     assert recon_session.query(BidResult).count() == initial_res
-    # baseline 파일은 디스크에 기록된다 — 이건 의도된 동작이며 DB 변경이 아니다.
+    # 명시적 생성 경로의 baseline은 검증 경로에서 변경되지 않는다.
     assert baseline_path.exists()
+    assert baseline_path.read_text(encoding="utf-8") == before_baseline
 
 
 def test_reconciliation_baseline_path_constant_is_single_source():
