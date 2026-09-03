@@ -18,6 +18,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidAnnouncement
+from src.ml.dataset import announcement_feature_payload
 from src.ml.model_registry import (
     CATEGORY_DEFAULT_MODELS,
     ModelRegistry,
@@ -95,8 +96,19 @@ def coerce_limit(value: Any, query: str = "") -> int:
 
 
 def _build_prediction_features(bid: BidAnnouncement) -> dict[str, Any]:
+    """공고 상세 API 와 같은 특징을 만듭니다.
+
+    제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 채울 수 없습니다.
+    2026-09-03 실측에서 이 병합이 빠져 있어 같은 공고를 챗봇에 물으면 상세
+    화면과 다른 답이 나왔습니다. 용역 모델 기준 낙찰률이 6.6에서 11.5%p 높게
+    나왔고, 1억 4천만 원 공고에서 투찰가가 1,600만 원 벌어졌습니다. 제도 특징이
+    기본값으로 떨어지면 모델이 정보 없는 상태로 100%에 가깝게 답합니다.
+
+    두 경로가 다른 특징을 쓰는 것은 AGENTS.md 가 금지한 train/serve skew 입니다.
+    """
     reference_amount = float(bid.prediction_reference_amount or 0)
     return {
+        **announcement_feature_payload(bid),
         "title": bid.bid_ntce_nm or "",
         "agency_name": bid.dminstt_nm or bid.ntce_instt_nm or "",
         "scenario_mode": "2",
