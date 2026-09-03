@@ -162,6 +162,23 @@ Kimi 런처와 다른 점은 기본이 `-i` 라는 것입니다. 지시문을 �
 남으므로 코디네이터가 `orca terminal send` 로 후속 지시와 반려 사유를 같은 세션에
 보낼 수 있습니다. `--one-shot` 을 주면 `-p` 단발 실행으로 바뀝니다.
 
+### 6.1 Grok 워커 기동
+
+Grok 워커는 `orca terminal create --worktree path:<워크트리> --command grok` 으로 로컬 grok CLI TUI 대화형 터미널을 띄운 뒤 `dispatch --terminal` 로 붙입니다.
+
+```bash
+# 1. Grok TUI 터미널 생성 (대화형 TUI 기동)
+orca terminal create --worktree path:<워크트리> --title "<섹션명>" --command grok
+
+# 2. (선택) 워커 터미널 사전 준비 절차
+uv run python scripts/orca_taskctl.py prepare-worker --terminal <handle> --cli-type grok
+
+# 3. Task Dispatch 및 터미널 부착
+uv run python scripts/orca_taskctl.py dispatch --intent <intent_path> --terminal <handle> --model grok-4.6
+```
+
+`orca terminal create --worktree path:<워크트리> --command grok` 으로 TUI 를 띄운 후 `dispatch --terminal` 로 붙이면, `orca_taskctl` 이 터미널 메타데이터, `--agent`/`--model` 플래그, 또는 `orca terminal show` 명령 조회를 통해 CLI 종류를 `grok` 으로 자동 인식하여 안전하게 작업을 투입합니다.
+
 ---
 
 ## 7. 자동 승인 모드

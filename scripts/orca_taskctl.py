@@ -1854,6 +1854,7 @@ def _classify_from_screen_text(text: str | None) -> tuple[bool, str]:
 
     has_agy = any(marker in lowered for marker in ACCEPT_EDITS_CLI_MARKERS)
     has_cursor = any(marker in lowered for marker in CURSOR_PLAN_MODE_MARKERS)
+    has_grok = any(marker in lowered for marker in ("grok", "grok cli"))
 
     if has_agy:
         return True, "Antigravity CLI 가 확인되어 파일 편집 자동 승인 모드 전환을 지원합니다"
@@ -1862,6 +1863,12 @@ def _classify_from_screen_text(text: str | None) -> tuple[bool, str]:
         return (
             False,
             "Cursor CLI 는 shift+tab 이 Plan Mode(읽기 전용) 전환이므로 파일 편집 모드 전환을 전송하지 않습니다",
+        )
+
+    if has_grok:
+        return (
+            False,
+            "Grok CLI 는 shift+tab 을 파일 편집 모드 전환으로 해석하지 않으므로 전송하지 않습니다",
         )
 
     return (
@@ -1900,6 +1907,7 @@ def classify_file_edit_auto_approve_support(
         is_qwen_record = "qwen" in cli_type or (
             not cli_type and any(tag in model for tag in ("qwen", "deepseek-v4", "glm-5"))
         )
+        is_grok_record = "grok" in cli_type or (not cli_type and "grok" in model)
 
         record_supported: bool | None = None
         record_reason: str | None = None
@@ -1915,6 +1923,12 @@ def classify_file_edit_auto_approve_support(
             record_supported = False
             record_reason = (
                 f"기록된 메타데이터(cli={cli_type or 'cursor'})에 따라 Cursor CLI 로 판정되어 "
+                "파일 편집 모드 전환을 전송하지 않습니다"
+            )
+        elif is_grok_record:
+            record_supported = False
+            record_reason = (
+                f"기록된 메타데이터(cli={cli_type or 'grok'})에 따라 Grok CLI 로 판정되어 "
                 "파일 편집 모드 전환을 전송하지 않습니다"
             )
         elif is_agy_record:
@@ -4066,8 +4080,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{launcher_pickup_detail}\n")
 
     elif args.terminal:
-        detected_cli = args.agent or (
-            "antigravity" if (args.model and "gemini" in args.model.lower()) else None
+        meta_existing = read_worker_meta(args.terminal) or {}
+        detected_cli = (
+            args.agent
+            or meta_existing.get("cli_type")
+            or (
+                "antigravity"
+                if (args.model and "gemini" in args.model.lower())
+                else ("grok" if (args.model and "grok" in args.model.lower()) else None)
+            )
         )
         prep = prepare_worker_terminal(
             terminal=args.terminal,
@@ -4509,7 +4530,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     prp.add_argument("--terminal", required=True, help="워커 터미널 핸들")
     prp.add_argument(
-        "--cli-type", help="CLI 종류 (antigravity, cursor, opencode, claude, codex, kimi)"
+        "--cli-type", help="CLI 종류 (antigravity, cursor, opencode, claude, codex, kimi, grok)"
     )
     prp.add_argument("--model", help="워커 모델 ID")
     prp.add_argument("--launcher", help="런처 스크립트/방법")
@@ -4537,7 +4558,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="이미 만들어 둔 Capsule 경로. 지정하면 재확장하지 않고 그 파일을 그대로 씁니다 "
         "(create 로 만든 Capsule 을 재사용할 때).",
     )
-    dsp.add_argument("--agent", help="워커 agent ID (worker-start 경로. claude, codex, cursor 만)")
+    dsp.add_argument(
+        "--agent",
+        help="워커 agent ID (worker-start 경로: claude, codex, cursor. terminal 경로: CLI 종류 힌트)",
+    )
     dsp.add_argument("--terminal", help="워커 터미널 핸들 (터미널 부착 Dispatch 경로)")
     dsp.add_argument(
         "--worktree",

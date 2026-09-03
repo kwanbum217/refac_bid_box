@@ -126,6 +126,24 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 
 3 을 받으면 워커 터미널을 직접 확인한 뒤 진행합니다. 확인 없이 넘어가려면 `--allow-unverified-delivery` 를 명시해야 합니다. 4 를 받으면 `python3 scripts/orca_skill_receipt.py issue` 로 영수증을 갱신하거나 의도적 우회 시 `--skip-skill-receipt` 를 지정합니다.
 
+### 3.5 Grok 워커 기동 및 터미널 부착 절차
+
+Grok 워커는 `orca terminal create --worktree path:<워크트리> --command grok` 으로 TUI 대화형 세션을 먼저 띄운 뒤, `orca_taskctl dispatch --terminal <handle>` 로 붙입니다.
+
+```bash
+# 1. Grok TUI 터미널 생성 (대화형 TUI 기동)
+orca terminal create --worktree path:<워크트리> --title "<섹션명>" --command grok
+
+# 2. (선택) 워커 터미널 사전 준비
+python3 scripts/orca_taskctl.py prepare-worker --terminal <handle> --cli-type grok
+
+# 3. Task 생성 및 터미널 부착 Dispatch
+python3 scripts/orca_taskctl.py create --intent <intent> --run-id <run> --capsule-dir .orca/capsules --json
+python3 scripts/orca_taskctl.py dispatch --intent <intent> --terminal <handle> --capsule <capsule_path> --model grok-4.6 --json
+```
+
+`orca_taskctl` 은 `prepare-worker --cli-type grok` 및 `dispatch --terminal` 시 메타데이터, `--model` 또는 `orca terminal show` 명령을 통해 CLI 종류를 `grok` 으로 자동 식별하여 파일 편집 모드 전환 오동작 없이 안전하게 작업을 투입합니다.
+
 ---
 
 ## 4. `orca_model_router` 도구 규약
