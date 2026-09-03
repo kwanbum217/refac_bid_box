@@ -1,7 +1,7 @@
 # 운영 데이터 통합 백업 및 복원 런북 (Backup & Recovery Runbook)
 
 > **작성일**: 2026-09-02
-> **상태**: 확정 및 구현 완료
+> **상태**: 필수 자산 실패 종료 및 부분 백업 표기 적용
 > **관련 문서**: [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md), [`docs/migration/db_migration_runbook.md`](../migration/db_migration_runbook.md)
 
 ---
@@ -17,6 +17,29 @@
 2. **DB와 ChromaDB 지식베이스 불일치**: 공고 데이터(MySQL)와 벡터 색인(ChromaDB `bidding_kb`)의 시점이 다르면 챗봇 RAG가 존재하지 않거나 삭제된 공고를 인용하는 검색 정합성 결함이 발생합니다.
 
 따라서 모든 백업과 복원은 세 가지 요소를 하나의 스냅샷 디렉토리와 단일 매니페스트(`backup_manifest.json`)로 결박하여 처리합니다.
+
+### 1.2 필수 자산과 실패 기본값
+
+코드의 `scripts.backup_recovery_core.REQUIRED_BACKUP_ASSETS` 상수는
+`database`, `chroma_db`, `models`를 필수 백업 자산으로 정의합니다. 파일 자산의
+정본 경로는 다음과 같습니다.
+
+| 자산 | 정본 경로 및 조건 | 누락 시 기본 동작 |
+| --- | --- | --- |
+| `database` | `db_dump.sql.gz`가 생성되고 0바이트가 아니어야 함 | 백업 실패 |
+| `chroma_db` | `CHROMA_DB_PATH` 또는 `chroma_db/`에 0바이트가 아닌 파일이 있어야 함 | 백업 실패 |
+| `models` | `data/model_files/`에 0바이트가 아닌 모델 파일이 있어야 함 | 백업 실패 |
+
+`data/model_backups`, `data/model_metrics`, `ml_registry`는 존재하는 경우 모델
+아카이브에 함께 수집하지만, 위의 정본 모델 파일을 대신하지 않습니다. 자산이
+없거나 내용이 0바이트인 상태에서 `--allow-partial` 없이 실행하면
+`BackupAssetError`가 발생하며 매니페스트를 작성하지 않습니다. 이 기본값은
+복구할 수 없는 백업을 성공으로 기록하지 않기 위한 실패 종료(fail closed) 계약입니다.
+
+개발 머신이나 CI에서 자산이 의도적으로 없는 경우에만 백업 명령의 유일한
+허용 플래그인 `--allow-partial`을 사용합니다. 이 플래그를 사용하면 누락 자산을
+매니페스트에 기록하고 `partial_backup: true`, `recovery_trusted: false`를 남깁니다.
+부분 백업은 복원 및 복원 리허설의 성공 대상으로 사용할 수 없습니다.
 
 ---
 
@@ -62,6 +85,9 @@ make backup
 # 또는 직접 실행
 python3 scripts/backup_recovery.py backup --execute
 
+# 개발 머신 또는 CI에서 의도적으로 자산이 없는 경우에만 사용
+python3 scripts/backup_recovery.py backup --execute --allow-partial
+
 # 특정 디렉토리에 스냅샷 저장 시
 python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/snapshots/snapshot_custom
 ```
@@ -75,7 +101,7 @@ python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/sn
 | `db_dump.sql.gz` | MySQL 운영 DB | gzip 압축 SQL | `mysqldump` InnoDB 일관성 스냅샷 (`--single-transaction`) |
 | `chroma_db.tar.gz` | ChromaDB | tar.gz 아카이브 | `chroma_db/` 디렉토리 전체 아카이브 |
 | `models.tar.gz` | 모델 및 MLOps | tar.gz 아카이브 | `data/model_files`, `data/model_backups`, `data/model_metrics`, `ml_registry` |
-| `backup_manifest.json` | 백업 매니페스트 | JSON | 생성 시각, Git HEAD, 컴포넌트별 크기/체크섬, DB 행 수 요약 |
+| `backup_manifest.json` | 백업 매니페스트 | JSON | 생성 시각, Git HEAD, 필수 자산 상태, 컴포넌트별 크기/체크섬, DB 행 수 요약, 일관성 윈도우 |
 
 ### 3.4 백업 매니페스트 예시
 
@@ -84,6 +110,15 @@ python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/sn
   "schema": "BACKUP_MANIFEST_V1",
   "created_at": "2026-09-02T15:30:00.000000+00:00",
   "head_commit": "5d8ad9760773d2a...",
+  "partial_backup": false,
+  "recovery_trusted": true,
+  "required_assets": ["database", "chroma_db", "models"],
+  "missing_assets": [],
+  "consistency_window": {
+    "db_dump_started_at": "2026-09-02T15:29:40.000000+00:00",
+    "db_dump_finished_at": "2026-09-02T15:30:10.000000+00:00",
+    "file_assets_collected_at": "2026-09-02T15:30:15.000000+00:00"
+  },
   "components": {
     "database": {
       "path": "db_dump.sql.gz",
@@ -99,6 +134,7 @@ python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/sn
       "path": "chroma_db.tar.gz",
       "size_bytes": 108520120,
       "sha256": "e3b0c44298fc1c1...",
+      "status": "available",
       "source_path": "chroma_db"
     },
     "models": {
@@ -115,6 +151,14 @@ python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/sn
   }
 }
 ```
+
+부분 백업에서는 누락 자산 컴포넌트의 `path`, `size_bytes`, `sha256`가 각각
+`null`로 기록되며 해당 아카이브를 생성하지 않습니다. 따라서 무결성 검증과
+복원은 실패하고, 매니페스트의 `recovery_trusted: false` 표기가 유지됩니다.
+
+매니페스트의 `consistency_window`는 동일 시점 스냅샷을 보장하는 값이 아닙니다.
+DB 덤프 시작·종료 시각과 파일 자산 수집 시각을 기록하여 복원 시
+DB와 파일 자산 사이에 발생할 수 있는 시점 차이를 판정할 수 있게 합니다.
 
 ### 3.5 스냅샷 무결성 검증 및 목록 조회
 
@@ -200,14 +244,14 @@ python3 scripts/backup_recovery.py prune --retain-count 7 --delete
 
 ## 6. 후속 과업 (Future Work / Out of Scope)
 
-본 작업 범위에서는 단일 복구 단위 도구와 표준 절차를 구현하였으며, 다음 항목은 외부 인프라 연동이 필요하여 후속 과업으로 추진합니다:
+본 작업 범위에서는 단일 복구 단위 도구와 표준 절차를 구현하였으며, 다음 항목은 외부 인프라 연동이 필요하여 미결 상태로 남깁니다. 이 런북의 구현 범위에는 포함하지 않습니다:
 
-1. **백업 아카이브 암호화**:
-   - GPG 대칭키 또는 비대칭키(AES-256) 암호화 레이어 적용.
-   - 사내 KMS(Key Management Service) 또는 HashiCorp Vault와 연동하여 암호화 키 관리 선행 필요.
-2. **오프호스트(Off-host) 원격 사본 보관**:
-   - AWS S3, Google Cloud Storage 등 원격 오브젝트 스토리지로의 자동 복제.
-   - 불변(WORM) 스토리지 잠금 및 30일/90일 수명주기(Lifecycle) 보관 정책 수립.
+1. **백업 아카이브 암호화 미결**:
+   - GPG 대칭키 또는 비대칭키(AES-256) 암호화 레이어와 키 관리 방식을 결정해야 합니다.
+   - 사내 KMS(Key Management Service) 또는 HashiCorp Vault 연동 여부를 결정해야 합니다.
+2. **오프사이트 원격 사본 보관 미결**:
+   - AWS S3, Google Cloud Storage 등 보관 위치와 자동 복제 방식을 결정해야 합니다.
+   - 불변(WORM) 스토리지 잠금 및 보관 기간 정책을 결정해야 합니다.
 
 ---
 
@@ -215,7 +259,9 @@ python3 scripts/backup_recovery.py prune --retain-count 7 --delete
 
 - [ ] `make backup-dry-run`으로 백업 대상 경로 및 설정 사전 점검
 - [ ] `make backup`으로 통합 백업 스냅샷 정상 생성 확인
-- [ ] `backup_manifest.json` 내 컴포넌트 체크섬 및 DB 행 수 기록 확인
+- [ ] 실행 환경에서 ChromaDB와 `data/model_files` 필수 자산이 존재하고 0바이트가 아닌지 확인
+- [ ] `backup_manifest.json` 내 `partial_backup: false`, `recovery_trusted: true` 확인
+- [ ] `backup_manifest.json` 내 컴포넌트 체크섬, DB 행 수, `consistency_window` 기록 확인
 - [ ] `make backup-verify`로 생성된 스냅샷 아카이브 무결성 검증
 - [ ] 복원 모의 훈련 시 `restore-dry-run`으로 덮어쓸 대상 목록 확인
 - [ ] 복원 완료 후 `scripts/verify_migration.py` 5단계 검증 전량 통과 확인

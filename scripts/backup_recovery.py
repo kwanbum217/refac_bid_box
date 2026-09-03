@@ -15,7 +15,6 @@ refac_bid_box 통합 백업 및 복원 도구 (Backup & Recovery Tool)
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess  # nosec B404
 import sys
@@ -27,9 +26,14 @@ from scripts.backup_recovery_core import (
     DEFAULT_SNAPSHOTS_DIR,
     MANIFEST_FILENAME,
     PROJECT_ROOT,
+    REQUIRED_BACKUP_ASSETS,
+    REQUIRED_MODEL_SOURCE_PATH,
+    REQUIRED_SOURCE_ASSETS,
+    BackupAssetError,
     create_tar_archive,
     dump_mysql_database,
     extract_tar_archive,
+    get_asset_state,
     get_chroma_source_path,
     get_db_config,
     get_head_commit_sha,
@@ -37,6 +41,7 @@ from scripts.backup_recovery_core import (
     query_db_row_counts,
     restore_mysql_database,
     sha256_file,
+    validate_backup_output,
 )
 from scripts.backup_snapshots import (
     list_snapshots,
@@ -48,6 +53,10 @@ __all__ = [
     "DEFAULT_SNAPSHOTS_DIR",
     "MANIFEST_FILENAME",
     "PROJECT_ROOT",
+    "REQUIRED_BACKUP_ASSETS",
+    "REQUIRED_MODEL_SOURCE_PATH",
+    "REQUIRED_SOURCE_ASSETS",
+    "BackupAssetError",
     "create_tar_archive",
     "dump_mysql_database",
     "execute_backup",
@@ -80,16 +89,25 @@ def execute_backup(
     output_dir: Path | None = None,
     execute: bool = False,
     project_root: Path | None = None,
+    allow_partial: bool = False,
 ) -> dict[str, Any]:
     """운영 DB, ChromaDB, 서빙 모델을 단일 복구 단위로 백업합니다."""
     root = project_root or PROJECT_ROOT
     db_config = get_db_config()
     chroma_path = get_chroma_source_path(root)
     model_paths = get_model_source_paths(root)
-
+    asset_states = dict(
+        zip(
+            REQUIRED_SOURCE_ASSETS,
+            (get_asset_state(path) for path in (chroma_path, root / REQUIRED_MODEL_SOURCE_PATH)),
+            strict=True,
+        )
+    )
+    missing_assets = [
+        f"{name} ({state})" for name, state in asset_states.items() if state != "available"
+    ]
     timestamp_str = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     target_dir = output_dir or (DEFAULT_SNAPSHOTS_DIR / f"snapshot_{timestamp_str}")
-
     print("=" * 60)
     print("refac_bid_box 통합 백업 (Unified Backup)")
     print("=" * 60)
@@ -102,7 +120,6 @@ def execute_backup(
     print(
         f"  모델/MLOps 대상: {len(model_paths)}개 디렉토리 ({', '.join(p.name for p in model_paths)})"
     )
-
     if not execute:
         print("-" * 60)
         print("[DRY-RUN] 백업 대상과 경로를 확인했습니다. 파일 쓰기는 수행되지 않았습니다.")
@@ -113,52 +130,54 @@ def execute_backup(
             "db_target": f"{db_config['user']}@{db_config['host']}:{db_config['port']}/{db_config['name']}",
             "chroma_path": str(chroma_path),
             "model_paths": [str(p) for p in model_paths],
+            "required_assets": asset_states,
         }
-
+    if missing_assets and not allow_partial:
+        raise BackupAssetError("필수 백업 자산을 확인할 수 없습니다: " + ", ".join(missing_assets))
     print("-" * 60)
     target_dir.mkdir(parents=True, exist_ok=True)
     head_commit = get_head_commit_sha(root)
     print(f"[1/4] Git HEAD 커밋 확인: {head_commit}")
-
-    # 1. DB 덤프
     print(f"[2/4] MySQL DB 덤프 생성 중... ({db_config['name']})")
     db_dump_file = target_dir / "db_dump.sql.gz"
-    db_size, db_sha256 = dump_mysql_database(db_config, db_dump_file)
+    db_dump_started_at = datetime.now(UTC).isoformat()
+    dump_mysql_database(db_config, db_dump_file)
+    db_dump_finished_at = datetime.now(UTC).isoformat()
+    db_size, db_sha256 = validate_backup_output(db_dump_file, "database")
     row_counts = query_db_row_counts(db_config)
     print(
         f"      DB 덤프 완료: {db_dump_file.name} ({db_size:,} bytes, sha256: {db_sha256[:12]}...)"
     )
-
-    # 2. ChromaDB 아카이브
     print(f"[3/4] ChromaDB 아카이브 생성 중... ({chroma_path.name})")
     chroma_dump_file = target_dir / "chroma_db.tar.gz"
-    if chroma_path.exists():
-        chroma_size, chroma_sha256 = create_tar_archive(
-            [chroma_path], chroma_dump_file, base_dir=root
-        )
+    if asset_states["chroma_db"] == "available":
+        create_tar_archive([chroma_path], chroma_dump_file, base_dir=root)
+        chroma_size, chroma_sha256 = validate_backup_output(chroma_dump_file, "chroma_db")
     else:
-        # 빈 더미 아카이브
-        chroma_dump_file.touch()
-        chroma_size, chroma_sha256 = 0, hashlib.sha256(b"").hexdigest()
-    print(f"      ChromaDB 아카이브 완료: {chroma_dump_file.name} ({chroma_size:,} bytes)")
-
-    # 3. 모델 아카이브
+        chroma_size, chroma_sha256 = None, None
+    print(f"      ChromaDB 아카이브 완료: {chroma_dump_file.name} ({chroma_size})")
     print(f"[4/4] 모델 및 레지스트리 아카이브 생성 중... ({len(model_paths)}개 경로)")
     models_dump_file = target_dir / "models.tar.gz"
-    if model_paths:
-        models_size, models_sha256 = create_tar_archive(
-            model_paths, models_dump_file, base_dir=root
-        )
+    if asset_states["models"] == "available":
+        create_tar_archive(model_paths, models_dump_file, base_dir=root)
+        models_size, models_sha256 = validate_backup_output(models_dump_file, "models")
     else:
-        models_dump_file.touch()
-        models_size, models_sha256 = 0, hashlib.sha256(b"").hexdigest()
-    print(f"      모델 아카이브 완료: {models_dump_file.name} ({models_size:,} bytes)")
-
-    # 4. 매니페스트 작성
+        models_size, models_sha256 = None, None
+    print(f"      모델 아카이브 완료: {models_dump_file.name} ({models_size})")
+    file_assets_collected_at = datetime.now(UTC).isoformat()
     manifest_data = {
         "schema": "BACKUP_MANIFEST_V1",
         "created_at": datetime.now(UTC).isoformat(),
         "head_commit": head_commit,
+        "partial_backup": bool(missing_assets),
+        "recovery_trusted": not missing_assets,
+        "required_assets": list(REQUIRED_BACKUP_ASSETS),
+        "missing_assets": missing_assets,
+        "consistency_window": {
+            "db_dump_started_at": db_dump_started_at,
+            "db_dump_finished_at": db_dump_finished_at,
+            "file_assets_collected_at": file_assets_collected_at,
+        },
         "components": {
             "database": {
                 "path": db_dump_file.name,
@@ -167,17 +186,19 @@ def execute_backup(
                 "row_counts": row_counts,
             },
             "chroma_db": {
-                "path": chroma_dump_file.name,
+                "path": chroma_dump_file.name if chroma_size is not None else None,
                 "size_bytes": chroma_size,
                 "sha256": chroma_sha256,
+                "status": asset_states["chroma_db"],
                 "source_path": str(chroma_path.relative_to(root))
                 if chroma_path.is_relative_to(root)
                 else str(chroma_path),
             },
             "models": {
-                "path": models_dump_file.name,
+                "path": models_dump_file.name if models_size is not None else None,
                 "size_bytes": models_size,
                 "sha256": models_sha256,
+                "status": asset_states["models"],
                 "source_paths": [
                     str(p.relative_to(root)) if p.is_relative_to(root) else str(p)
                     for p in model_paths
@@ -185,7 +206,6 @@ def execute_backup(
             },
         },
     }
-
     manifest_file = target_dir / MANIFEST_FILENAME
     manifest_file.write_text(
         json.dumps(manifest_data, indent=2, ensure_ascii=False),
@@ -211,6 +231,9 @@ def run_restore_drill(snapshot_dir: Path, target_dir: Path) -> dict[str, Any]:
         raise ValueError("복원 리허설 대상은 프로젝트 루트 밖의 격리 디렉토리여야 합니다.")
     valid, errors, manifest = verify_snapshot(snapshot_dir)
     components = manifest.get("components", {})
+    if manifest.get("partial_backup") or manifest.get("recovery_trusted") is False:
+        errors.append("부분 백업은 복구용으로 신뢰할 수 없습니다.")
+        valid = False
     return {
         "schema": "RESTORE_DRILL_REPORT_V1",
         "mode": "dry-run",
@@ -261,19 +284,21 @@ def execute_restore(
     db_config = get_db_config()
     chroma_path = get_chroma_source_path(root)
     model_paths = get_model_source_paths(root)
-
     print("=" * 60)
     print("refac_bid_box 통합 복원 (Unified Recovery)")
     print("=" * 60)
     print(f"  복원 소스 스냅샷: {snapshot_dir}")
     print(f"  실행 모드: {'[실제 실행 (EXECUTE)]' if execute else '[사전 점검 (DRY-RUN)]'}")
-
     # 1. 스냅샷 무결성 사전 검증
     is_valid, errors, manifest = verify_snapshot(snapshot_dir)
     if not is_valid:
         print("[오류] 스냅샷 매니페스트 무결성 검증 실패:")
         for err in errors:
             print(f"  - {err}")
+        return False
+
+    if manifest.get("partial_backup") or manifest.get("recovery_trusted") is False:
+        print("[오류] 부분 백업 스냅샷은 복구용으로 신뢰할 수 없습니다.")
         return False
 
     components = manifest.get("components", {})
@@ -293,7 +318,6 @@ def execute_restore(
     for p in model_paths:
         print(f"     - {p}")
     print("-" * 60)
-
     if not execute:
         print(
             "[DRY-RUN] 복원 계획 및 덮어쓸 대상을 확인했습니다. 실제 데이터는 변경되지 않았습니다."
@@ -319,28 +343,22 @@ def execute_restore(
         else:
             print("[오류] 비대화형 환경에서 실제 복원을 실행하려면 --confirm 플래그가 필수입니다.")
             return False
-
     # 3. 실제 복원 실행
     # 3.1 DB 복원
     db_dump_file = snapshot_dir / components["database"]["path"]
     print(f"[1/3] MySQL DB 복원 중... ({db_dump_file.name})")
     restore_mysql_database(db_config, db_dump_file)
     print("      MySQL DB 복원 완료")
-
     # 3.2 ChromaDB 복원
     chroma_dump_file = snapshot_dir / components["chroma_db"]["path"]
     print(f"[2/3] ChromaDB 복원 중... ({chroma_dump_file.name})")
-    if chroma_dump_file.exists() and chroma_dump_file.stat().st_size > 0:
-        extract_tar_archive(chroma_dump_file, target_base_dir=root)
+    extract_tar_archive(chroma_dump_file, target_base_dir=root)
     print("      ChromaDB 복원 완료")
-
     # 3.3 모델 아카이브 복원
     models_dump_file = snapshot_dir / components["models"]["path"]
     print(f"[3/3] 모델 및 레지스트리 복원 중... ({models_dump_file.name})")
-    if models_dump_file.exists() and models_dump_file.stat().st_size > 0:
-        extract_tar_archive(models_dump_file, target_base_dir=root)
+    extract_tar_archive(models_dump_file, target_base_dir=root)
     print("      모델 및 레지스트리 복원 완료")
-
     print("-" * 60)
     print("통합 복원 완료. 사후 무손실 검증을 시작합니다.")
 
@@ -351,7 +369,6 @@ def execute_restore(
             print("[경고] 복원 후 무손실 마이그레이션 검증에 실패했습니다. 로그를 확인하십시오.")
             return False
         print("[성공] 복원 후 무손실 마이그레이션 검증을 통과했습니다.")
-
     return True
 
 
@@ -374,6 +391,9 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="백업 스냅샷 생성 경로 (기본값: data/backups/snapshots/snapshot_YYYYMMDD_HHMMSS)",
+    )
+    backup_parser.add_argument(
+        "--allow-partial", action="store_true", help="누락 자산을 부분 백업으로 기록하도록 허용"
     )
 
     # restore
@@ -431,11 +451,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-
     if args.command == "backup":
-        execute_backup(output_dir=args.output_dir, execute=args.execute)
+        execute_backup(
+            output_dir=args.output_dir, execute=args.execute, allow_partial=args.allow_partial
+        )
         return 0
-
     if args.command == "restore":
         success = execute_restore(
             snapshot_dir=args.snapshot_dir,
