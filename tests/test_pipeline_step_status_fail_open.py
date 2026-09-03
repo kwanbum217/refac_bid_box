@@ -68,7 +68,7 @@ def test_step_inspect_missing_tables_is_not_success():
 
     with (
         patch("sqlalchemy.inspect", return_value=inspector),
-        patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=100),
+        patch("src.tasks.automation_steps._check_chroma_vectors", return_value=100),
     ):
         status, summary, metrics = _unpack(_step_inspect(_inspect_db()))
 
@@ -88,7 +88,7 @@ def test_step_inspect_empty_vector_store_is_not_success():
 
     with (
         patch("sqlalchemy.inspect", return_value=inspector),
-        patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=0),
+        patch("src.tasks.automation_steps._check_chroma_vectors", return_value=0),
     ):
         status, _summary, metrics = _unpack(_step_inspect(_inspect_db()))
 
@@ -107,7 +107,7 @@ def test_step_inspect_healthy_state_stays_success():
 
     with (
         patch("sqlalchemy.inspect", return_value=inspector),
-        patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=100),
+        patch("src.tasks.automation_steps._check_chroma_vectors", return_value=100),
     ):
         result = _step_inspect(_inspect_db())
 
@@ -218,7 +218,7 @@ def test_step_inspect_unavailable_vector_count_is_not_success():
 
     with (
         patch("sqlalchemy.inspect", return_value=inspector),
-        patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=None),
+        patch("src.tasks.automation_steps._check_chroma_vectors", return_value=None),
     ):
         status, _summary, metrics = _unpack(_step_inspect(_inspect_db()))
 
@@ -232,7 +232,7 @@ def test_step_inspect_unavailable_table_count_is_not_success():
     """DB 테이블 목록 확인 실패(None)는 치명 처리합니다."""
     with (
         patch("sqlalchemy.inspect", side_effect=RuntimeError("검사 불능")),
-        patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=100),
+        patch("src.tasks.automation_steps._check_chroma_vectors", return_value=100),
     ):
         status, _summary, metrics = _unpack(_step_inspect(_inspect_db()))
 
@@ -252,7 +252,7 @@ def test_vector_count_zero_and_none_warnings_differ():
     def metrics_with_vector_count(value: int | None) -> dict[str, Any]:
         with (
             patch("sqlalchemy.inspect", return_value=inspector),
-            patch("src.tasks.automation_tasks._check_chroma_vectors", return_value=value),
+            patch("src.tasks.automation_steps._check_chroma_vectors", return_value=value),
         ):
             _status, _summary, metrics = _unpack(_step_inspect(_inspect_db()))
         return metrics
