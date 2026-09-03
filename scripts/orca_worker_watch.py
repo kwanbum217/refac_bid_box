@@ -55,7 +55,7 @@ def normalize_text(text: str) -> str:
 
 
 # 정체 신호 분류: prompt 는 키 입력으로 풀리는 승인 대기, failure 는 지시 재전송이 필요한 실패 정체.
-BlockKind = str  # "prompt" | "failure" | "reclaim"
+BlockKind = str  # "prompt" | "failure" | "reclaim" | "answer_pending"
 
 FAILURE_REDEPLOY_FIX = (
     "코디네이터가 동일 Task 지시를 재전송(dispatch)하거나 워커 터미널을 재기동하십시오"
@@ -131,6 +131,7 @@ BLOCK_SIGNALS: list[tuple[str, str, str, BlockKind]] = [
 ]
 
 BLOCK_KIND_LABELS: dict[BlockKind, str] = {
+    "answer_pending": "답변 대기",
     "prompt": "승인 대기",
     "failure": "실패 정체",
     "reclaim": "회수 대기",
@@ -448,6 +449,57 @@ def collect_lingering_sessions() -> list[dict[str, Any]]:
     return audit_lingering_sessions().get("lingering") or []
 
 
+def collect_unanswered_questions(limit: int = 60) -> list[dict[str, Any]]:
+    """코디네이터 답변을 기다리는 question·escalation 을 돌려줍니다.
+
+    **화면 신호만으로는 이 차단을 잡을 수 없습니다.** 2026-09-03 에 cursor 워커가
+    `orca orchestration ask` 로 7분 40초 동안 막혀 있었는데, 화면에는 CLI 마다 다른
+    문구("Waiting ... for shell")만 나오고 git 상태는 미커밋이 늘고 있어 정상 진행으로
+    보였습니다. 코디네이터의 `check` 배달 소진에도 그 질문이 나오지 않아, 결국
+    사용자가 먼저 발견했습니다.
+
+    답변 여부는 화면이 아니라 기록으로 판정합니다. 답변 메시지는 원 질문의 id 를
+    `thread_id` 로 가리키므로, 스레드에 답이 없는 질문이 곧 차단입니다.
+    """
+    raw = _run(["orca", "orchestration", "inbox", "--limit", str(limit), "--full", "--json"])
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    result = payload.get("result") or {}
+    messages = result.get("messages") or result.get("items") or []
+    if not isinstance(messages, list):
+        return []
+
+    answered_threads = {
+        str(m.get("thread_id"))
+        for m in messages
+        if isinstance(m, dict) and m.get("thread_id") not in (None, "None", "")
+    }
+    pending: list[dict[str, Any]] = []
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        if m.get("type") not in ("question", "escalation"):
+            continue
+        msg_id = str(m.get("id") or "")
+        if not msg_id or msg_id in answered_threads:
+            continue
+        pending.append(
+            {
+                "id": msg_id,
+                "type": m.get("type"),
+                "from_handle": m.get("from_handle") or "",
+                "subject": m.get("subject") or "",
+                "body": (m.get("body") or "")[:200],
+                "created_at": m.get("created_at") or "",
+            }
+        )
+    return pending
+
+
 def collect(
     repo: Path,
     base: str = "main",
@@ -520,6 +572,57 @@ def collect(
             blocked_kind="reclaim",
         )
         states.append(extra)
+
+    try:
+        pending_questions = collect_unanswered_questions()
+    except Exception:
+        pending_questions = []
+    # 살아 있는 터미널의 질문만 차단입니다. 종료된 워커의 질문은 답해도 도착하지
+    # 않으므로 조치 대상이 아니고, 남겨 두면 매 순회마다 오탐으로 뜹니다.
+    # thread_id 로 답을 걸지 않은 옛 회신(send --type status)도 여기서 걸러집니다.
+    live_handles = {
+        info.get("handle")
+        for infos in terminals.values()
+        for info in infos
+        if isinstance(info, dict) and info.get("handle")
+    }
+    pending_by_handle: dict[str, dict[str, Any]] = {}
+    for item in pending_questions:
+        handle = str(item.get("from_handle") or "")
+        if handle and handle in live_handles and handle not in pending_by_handle:
+            pending_by_handle[handle] = item
+    for state in states:
+        item = pending_by_handle.pop(state.terminal or "", None)
+        if not item:
+            continue
+        # 답변 대기는 실패 정체나 회수 대기보다 먼저 풀어야 합니다. 워커가 그 자리에서
+        # 멈춰 있고, 코디네이터의 한 번의 reply 로 즉시 재개되기 때문입니다.
+        state.blocked_reason = (
+            f"{item.get('type')} 에 코디네이터 답변이 없습니다: {item.get('subject')}"
+        )
+        state.blocked_fix = (
+            f"orca orchestration reply --id {item.get('id')} --run <run_id> --body '<답변>'"
+        )
+        state.blocked_kind = "answer_pending"
+        state.notes.append(f"질문 요지: {item.get('body')}")
+    for handle, item in pending_by_handle.items():
+        states.append(
+            WorkerState(
+                name=item.get("id") or "unanswered",
+                path="",
+                branch="",
+                commits=0,
+                dirty=0,
+                terminal=handle,
+                blocked_reason=(
+                    f"{item.get('type')} 에 코디네이터 답변이 없습니다: {item.get('subject')}"
+                ),
+                blocked_fix=(
+                    f"orca orchestration reply --id {item.get('id')} --run <run_id> --body '<답변>'"
+                ),
+                blocked_kind="answer_pending",
+            )
+        )
 
     if history is not None:
         current_time = time.time() if now is None else now

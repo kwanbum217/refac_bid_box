@@ -10,14 +10,19 @@ SSR 및 프론트엔드 브라우저 E2E 테스트용 공통 Fixture 및 설정.
 
 from __future__ import annotations
 
+import asyncio
 import collections.abc
 import concurrent.futures
 import contextlib
+import http.server
 import shutil
 import socket
+import subprocess
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,6 +38,7 @@ from src.app.core.db import Base, get_db
 from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_password
 from src.app.main import app
 from src.app.models.accounts import CustomUser
+from src.app.models.bids import BidAnnouncement, BidResult
 
 _CHROMIUM_AVAILABLE: bool | None = None
 
@@ -152,13 +158,22 @@ def e2e_db_engine() -> collections.abc.Generator[Engine, None, None]:
         finally:
             db.close()
 
-    # FastAPI 의존성 오버라이드 등록 (백그라운드 Uvicorn 스레드에 즉시 전파)
+    # FastAPI 의존성 오버라이드 등록 및 글로벌 SessionLocal 교체 (백그라운드 스레드 및 open_thread_session 지원)
     app.dependency_overrides[get_db] = override_get_db
+
+    import src.app.core.db as core_db
+
+    orig_session_local = core_db.SessionLocal
+    orig_engine = core_db.engine
+    core_db.SessionLocal = isolated_session_factory
+    core_db.engine = engine
 
     try:
         yield engine
     finally:
         app.dependency_overrides.pop(get_db, None)
+        core_db.SessionLocal = orig_session_local
+        core_db.engine = orig_engine
         engine.dispose()
         shutil.rmtree(temp_dir, ignore_errors=True)
 
@@ -353,3 +368,267 @@ async def authenticated_page(
         yield pg
     finally:
         await pg.close()
+
+
+@pytest.fixture(autouse=True)
+def _e2e_mock_rag_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """E2E 테스트 시 실제 외부 LLM(Ollama/Gemini)이나 ChromaDB 호출 없이 비동기 SSE 스트리밍을 검증하도록 Mock을 주입합니다."""
+    from src.rag.engine import rag_engine
+
+    async def mock_stream_tokens(
+        query: str,
+        history: list[dict[str, Any]] | None = None,
+        tool_context: dict[str, Any] | None = None,
+    ) -> collections.abc.AsyncIterator[dict[str, Any]]:
+        if "오류발생" in query or "simulate_stream_error" in query:
+            yield {"type": "token", "text": "스트림 처리 시작 "}
+            await asyncio.sleep(0.01)
+            raise RuntimeError("시뮬레이션된 LLM 스트림 오류 발생")
+
+        yield {
+            "type": "docs",
+            "docs": [
+                {"title": "공공조달 계약사무처리기준", "content": "제12조 적격심사 세부배점표"}
+            ],
+        }
+        await asyncio.sleep(0.02)
+
+        tokens = [
+            "조달청 ",
+            "적격심사 ",
+            "입찰가격 평점산식 ",
+            "분석 결과입니다. ",
+            "최적 투찰 전략을 제안합니다.",
+        ]
+        accumulated = ""
+        for t in tokens:
+            accumulated += t
+            yield {"type": "token", "text": t}
+            await asyncio.sleep(0.03)
+
+        yield {
+            "type": "done",
+            "final_answer": accumulated,
+            "trace_id": "e2e_trace_stream_001",
+        }
+
+    class MockProvenance:
+        def __init__(self, trace_id: str = "e2e_trace_001") -> None:
+            self.trace_id = trace_id
+
+        def model_dump(self) -> dict[str, Any]:
+            return {"trace_id": self.trace_id, "backend": "mock_e2e"}
+
+    class MockAnswerBundle:
+        def __init__(self, answer: str = "E2E 테스트용 단발 질의 응답입니다.") -> None:
+            self.answer = answer
+            self.provenance = MockProvenance()
+            self.retrieved_docs = [{"title": "참조규정", "content": "내용"}]
+            self.latency_ms = 25.0
+            self.route_reason = "e2e_mock"
+            self.citations = []
+            self.segment_metrics = {}
+
+    async def mock_get_answer(query: str, db: Any = None) -> MockAnswerBundle:
+        return MockAnswerBundle(answer=f"'{query}'에 대한 E2E 모의 응답입니다.")
+
+    def mock_get_answer_sync(
+        query: str, db: Any = None, history: Any = None, tool_context: Any = None
+    ) -> MockAnswerBundle:
+        return MockAnswerBundle(answer=f"'{query}'에 대한 E2E 모의 동기 응답입니다.")
+
+    monkeypatch.setattr(rag_engine, "stream_tokens", mock_stream_tokens)
+    monkeypatch.setattr(rag_engine, "get_answer", mock_get_answer)
+    monkeypatch.setattr(rag_engine, "get_answer_sync", mock_get_answer_sync)
+
+
+class _SPAProxyHandler(http.server.SimpleHTTPRequestHandler):
+    """React SPA 정적 파일 서빙 및 백엔드 API 요청(/api/*)을 live_server_url 로 중계하는 프록시 핸들러입니다."""
+
+    def __init__(self, *args: Any, live_url: str, dist_dir: str, **kwargs: Any) -> None:
+        self.live_url = live_url.rstrip("/")
+        self.dist_dir = dist_dir
+        super().__init__(*args, directory=dist_dir, **kwargs)
+
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
+    def do_GET(self) -> None:
+        if self.path.startswith("/api/"):
+            self._proxy_request("GET")
+        else:
+            file_path = Path(self.dist_dir) / self.path.lstrip("/").split("?")[0]
+            if not file_path.exists() and not self.path.startswith("/assets/"):
+                self.path = "/index.html"
+            super().do_GET()
+
+    def do_POST(self) -> None:
+        if self.path.startswith("/api/"):
+            self._proxy_request("POST")
+        else:
+            self.send_error(405)
+
+    def _proxy_request(self, method: str) -> None:
+        target_url = f"{self.live_url}{self.path}"
+        headers = {
+            k: v for k, v in self.headers.items() if k.lower() not in ("host", "content-length")
+        }
+        body: bytes | None = None
+        if method == "POST":
+            content_length = int(self.headers.get("Content-Length", 0))
+            if content_length > 0:
+                body = self.rfile.read(content_length)
+
+        req = urllib.request.Request(target_url, data=body, headers=headers, method=method)  # noqa: S310
+        try:
+            with urllib.request.urlopen(req, timeout=30.0) as resp:  # noqa: S310
+                self.send_response(resp.status)
+                for k, v in resp.getheaders():
+                    if k.lower() not in ("transfer-encoding",):
+                        self.send_header(k, v)
+                self.end_headers()
+                while chunk := resp.read(1024):
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+        except urllib.error.HTTPError as e:
+            self.send_response(e.code)
+            for k, v in e.headers.items():
+                if k.lower() not in ("transfer-encoding",):
+                    self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(e.read())
+        except Exception as exc:
+            self.send_response(502)
+            self.end_headers()
+            self.wfile.write(str(exc).encode())
+
+
+@pytest.fixture(scope="session")
+def react_spa_url(live_server_url: str) -> collections.abc.Generator[str, None, None]:
+    """React SPA(frontend/dist)를 빌드 및 서빙하고 백엔드 API를 live_server_url로 프록시합니다."""
+    frontend_dir = Path(__file__).parent.parent.parent / "frontend"
+    dist_dir = frontend_dir / "dist"
+
+    if not (dist_dir / "index.html").exists():
+        npm_bin = shutil.which("npm") or "npm"
+        subprocess.run(  # noqa: S603
+            [npm_bin, "run", "build"],
+            cwd=str(frontend_dir),
+            check=True,
+            capture_output=True,
+        )
+
+    spa_port = find_free_port()
+
+    class CustomHandler(_SPAProxyHandler):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, live_url=live_server_url, dist_dir=str(dist_dir), **kwargs)
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", spa_port), CustomHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    url = f"http://127.0.0.1:{spa_port}"
+    try:
+        yield url
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.fixture
+def e2e_seeded_bids(e2e_db_session: Session) -> list[BidAnnouncement]:
+    """React SPA 및 SSR E2E 테스트용 공고 및 낙찰 데이터를 격리 DB에 시딩합니다."""
+    from datetime import timedelta
+
+    from src.app.core.timeutil import utcnow
+    from src.app.models.bids import BidAnnouncement
+
+    now = utcnow()
+    announcements: list[BidAnnouncement] = []
+
+    bids_data = [
+        (
+            "20260901-SPA-THNG-01",
+            "00",
+            "고성능 AI 분석 서버 및 스토리지 구매",
+            "한국지능정보사회진흥원",
+            "조달청",
+            "Thng",
+            500_000_000,
+            495_000_000,
+            1,
+        ),
+        (
+            "20260901-SPA-SERVC-01",
+            "00",
+            "차세대 공공조달 빅데이터 AI 플랫폼 고도화 용역",
+            "조달청 정보기획과",
+            "조달청",
+            "Servc",
+            850_000_000,
+            840_000_000,
+            2,
+        ),
+        (
+            "20260901-SPA-CNST-01",
+            "00",
+            "스마트 데이터센터 전력 설비 보강 공사",
+            "한국전력공사",
+            "한국전력공사",
+            "Cnstwk",
+            1_200_000_000,
+            1_180_000_000,
+            3,
+        ),
+    ]
+
+    for no, ord_val, nm, dminstt, ntce_instt, cat, presmpt, base, day_offset in bids_data:
+        item = (
+            e2e_db_session.query(BidAnnouncement)
+            .filter_by(bid_ntce_no=no, bid_ntce_ord=ord_val)
+            .first()
+        )
+        if not item:
+            item = BidAnnouncement(
+                bid_ntce_no=no,
+                bid_ntce_ord=ord_val,
+                bid_ntce_nm=nm,
+                dminstt_nm=dminstt,
+                ntce_instt_nm=ntce_instt,
+                category=cat,
+                presmpt_prce=presmpt,
+                base_amount=base,
+                bid_ntce_dt=now - timedelta(days=day_offset),
+                bid_clse_dt=now + timedelta(days=5),
+                openg_dt=now + timedelta(days=5, hours=1),
+                collected_at=now,
+            )
+            e2e_db_session.add(item)
+        announcements.append(item)
+
+    r1 = (
+        e2e_db_session.query(BidResult)
+        .filter_by(bid_ntce_no="20260901-SPA-THNG-01", bid_ntce_ord="00")
+        .first()
+    )
+    if not r1:
+        r1 = BidResult(
+            bid_ntce_no="20260901-SPA-THNG-01",
+            bid_ntce_ord="00",
+            bid_ntce_nm="고성능 AI 분석 서버 및 스토리지 구매",
+            dminstt_nm="한국지능정보사회진흥원",
+            category="Thng",
+            sucsf_bid_amt=435_000_000,
+            sucsf_bid_rate=87.88,
+            bidwinnr_nm="(주)에이아이인프라",
+            rl_openg_dt=now - timedelta(days=10),
+            collected_at=now,
+        )
+        e2e_db_session.add(r1)
+
+    e2e_db_session.commit()
+    for item in announcements:
+        e2e_db_session.refresh(item)
+
+    return announcements
