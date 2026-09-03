@@ -11,7 +11,6 @@ import hashlib
 import hmac
 import logging
 import time
-from typing import Any
 
 from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
@@ -37,59 +36,6 @@ def set_confirmation_redis_conn(conn: RedisConnection | None) -> None:
     _confirmation_redis_conn = conn
 
 
-class InMemoryRedisClient:
-    """개발/테스트 환경에서 Redis 서버가 내려가 있을 때 SET NX 의미론을 유지하는 대역."""
-
-    def __init__(self) -> None:
-        self._store: dict[str, float] = {}
-
-    def set(
-        self,
-        key: str,
-        value: Any,
-        ex: int | None = None,
-        nx: bool = False,
-        xx: bool = False,
-    ) -> bool | None:
-        now = time.time()
-        if key in self._store and self._store[key] <= now:
-            del self._store[key]
-
-        if nx:
-            if key in self._store:
-                return None
-            self._store[key] = now + (ex if ex is not None else 1800)
-            return True
-        if xx:
-            if key in self._store:
-                self._store[key] = now + (ex if ex is not None else 1800)
-                return True
-            return None
-        self._store[key] = now + (ex if ex is not None else 1800)
-        return True
-
-    def get(self, key: str) -> Any:
-        now = time.time()
-        if key in self._store:
-            if self._store[key] > now:
-                return "1"
-            del self._store[key]
-        return None
-
-    def delete(self, *keys: str) -> int:
-        count = 0
-        for k in keys:
-            if self._store.pop(k, None) is not None:
-                count += 1
-        return count
-
-    def ping(self) -> bool:
-        return True
-
-
-_fallback_client = InMemoryRedisClient()
-
-
 def consume_confirmation_token(
     token: str,
     conn: RedisConnection | None = None,
@@ -105,14 +51,7 @@ def consume_confirmation_token(
     redis_conn = conn or get_confirmation_redis_conn()
     client = redis_conn.client()
     if client is None:
-        if (
-            conn is not None
-            or getattr(redis_conn, "_label", "") == "test_unreachable"
-            or settings.ENVIRONMENT != "development"
-        ):
-            raise AutomationError("Redis 연결이 불가능하여 확인 토큰을 검증할 수 없습니다.")
-        logger.warning("[automation_tokens] Redis 미연결로 개발 대역 클라이언트를 사용합니다.")
-        client = _fallback_client
+        raise AutomationError("Redis 연결이 불가능하여 확인 토큰을 검증할 수 없습니다.")
 
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
     key = f"bidbox:automation:consumed_token:{token_hash}"
