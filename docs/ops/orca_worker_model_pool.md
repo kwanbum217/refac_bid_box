@@ -48,6 +48,7 @@
 | `glm` | `glm-5.2` | Alibaba | X (`False`) | 독립 교차 검토 (자동 배정 제외, 명시 지정 전용) |
 | `qwen-max` | `qwen3.8-max-preview` | Alibaba | X (`False`) | 상신/충돌 판정용 (자동 배정 제외, 명시 지정 전용) |
 | `qwen-max-legacy` | `qwen3.7-max` | Alibaba | X (`False`) | 레거시 모델 (신규 자동 배정 제외) |
+| `claude-sonnet` | `claude-sonnet-5` | Claude | O (`True`) | 로컬 Claude Pro 수동 보조 워커 (TIER_POLICY 자동 배정 제외, WORKER_MODEL_NOTICE 후 명시 배정) |
 
 `gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
 
@@ -82,7 +83,25 @@
 
 ---
 
-## 3. probe 응답 본문 검사 (방어적 보강)
+## 3. 가용성 실측 (2026-09-04, Claude Code v2.1.259)
+
+등록 전에 이 환경의 로컬 Claude Code CLI(`/opt/homebrew/bin/claude`)로 직접 확인한 결과입니다.
+
+| 모델 ID | 결과 | canonicalModel | provider | contextWindow | 조치 |
+| --- | :---: | :---: | :---: | :---: | --- |
+| `claude-sonnet-5` | 응답 (코드 0) | `claude-sonnet-5` | `firstParty` | 1,000,000 | 풀 등록 (`claude-sonnet`) |
+| `sonnet` | 응답 (코드 0) | `claude-sonnet-5` | `firstParty` | 1,000,000 | 별칭 확인 |
+
+핵심 확인 사실 및 운용 정책:
+
+1. **실행 환경 및 실측 결과**: `/opt/homebrew/bin/claude` 2.1.259 (Claude Code)가 Claude Pro 구독 기반으로 canonical model `claude-sonnet-5`, contextWindow 1,000,000, effort `medium`에서 정상 응답함을 확인했다.
+2. **성공 호출 형식**: `claude -p ping --model claude-sonnet-5 --effort medium --output-format json --tools "" --no-session-persistence --safe-mode` 형식으로 호출하며 정상 응답(`result: pong`, 종료 코드 0)을 수신한다.
+3. **전송 경로와 모델 패밀리 분리**: 기존 `claude-sonnet-4-6`은 Antigravity(`agy`) 경로였으며 이번 워커 대상이 아니다. `claude-opus-thinking` 등 Antigravity Claude 풀은 `agy` probe 경로를 유지하고, `claude-sonnet` 풀만 로컬 Claude CLI(`claude-cli`) 전용 probe 전송 경로를 사용한다. 리뷰어 독립성 판정을 위한 모델 패밀리 `provider_for_model`은 `claude` 값을 그대로 유지한다.
+4. **수동 보조 워커 정책**: Gemini `TIER_POLICY` 자동 배정은 변경하지 않으며, `claude-sonnet`은 자동 fallback에 추가되지 않는다. Claude Pro Sonnet 5는 `WORKER_MODEL_NOTICE`를 남긴 후 `--model claude-sonnet-5 --effort medium`으로 명시 배정하는 수동 보조 워커로 운용한다.
+
+---
+
+## 4. probe 응답 본문 검사 (방어적 보강)
 
 `probe_model` 은 종료 코드로 가용성을 판정합니다. 2026-08-30 실측에서 Qwen Code
 CLI 는 인증 실패와 미지원 모델에 **종료 코드 1 과 stderr 오류**를 돌려주므로 기존
@@ -102,7 +121,7 @@ CLI 는 인증 실패와 미지원 모델에 **종료 코드 1 과 stderr 오류
 
 ---
 
-## 4. 워커 기동
+## 5. 워커 기동
 
 Qwen Code 워커는 [`scripts/orca_qwen_launch.py`](../../scripts/orca_qwen_launch.py)
 로 띄웁니다. 터미널을 먼저 만들고 나중에 명령을 밀어 넣으면 Orca 가 그 터미널을
@@ -125,7 +144,7 @@ Kimi 런처와 다른 점은 기본이 `-i` 라는 것입니다. 지시문을 �
 
 ---
 
-## 5. 자동 승인 모드
+## 6. 자동 승인 모드
 
 Qwen Code 는 **기동 시점부터 Auto mode** 이고 `shift+tab` 은 그 모드를 벗어나는
 순환 키입니다. 따라서 Antigravity 계열과 달리 모드 전환 키를 보내지 않습니다.
@@ -135,7 +154,7 @@ Qwen Code 는 **기동 시점부터 Auto mode** 이고 `shift+tab` 은 그 모�
 
 ---
 
-## 6. 워커에 위임하지 않는 판정
+## 7. 워커에 위임하지 않는 판정
 
 다음은 모델 등급과 무관하게 코디네이터가 직접 판단합니다.
 
@@ -148,7 +167,7 @@ L4 상신 모델을 쓰더라도 이 네 가지는 위임하지 않습니다.
 
 ---
 
-## 7. 실적 관찰 항목
+## 8. 실적 관찰 항목
 
 단가만으로 워커를 고르지 않습니다. **싼 워커가 코디네이터 검증을 30분 더 쓰게
 만들면 실제로는 비싼 워커입니다.** 이 저장소의 조율 설계는 코디네이터 검증 비용을

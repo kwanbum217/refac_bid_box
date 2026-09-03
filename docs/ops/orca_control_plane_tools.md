@@ -56,7 +56,7 @@
 | --- | --- | --- | --- |
 | **`expand`** | `--intent <path>`<br>`--out <path>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--json` | `--intent` (필수)<br>`--out` (필수) | Task Intent YAML을 읽어 유효한 `ORCA_TASK_CAPSULE_V2` 파일로 확장합니다. |
 | **`create`** | `--intent <path>`<br>`--run-id <id>`<br>`--task-id <id>`<br>`--capsule-dir <dir>`<br>`--task-title <text>`<br>`--display-name <text>`<br>`--deps <json>`<br>`--skip-skill-receipt`<br>`--json` | `--intent` (필수) | Intent를 Capsule로 확장하고 **Capsule 절대 경로를 담은 spec** 으로 Orca Task를 만듭니다. 정본 영수증 게이트를 기본 검증합니다. Dispatch 전에 이 명령을 씁니다. |
-| **`dispatch`** | `--intent <path>`<br>`--repo <path>`<br>`--model <id>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--capsule-dir <dir>`<br>`--agent <id>`<br>`--terminal <handle>`<br>`--worktree <sel>`<br>`--worktree-name <name>`<br>`--no-probe`<br>`--no-capsule-notice`<br>`--skip-skill-receipt`<br>`--dry-run`<br>`--json` | `--intent` (필수)<br>`--agent` 또는 `--terminal` 중 하나 | Intent를 Capsule로 확장한 뒤 워커를 기동하고 **Capsule 정본 경로 고지문을 자동 투입**합니다. 정본 영수증 게이트를 기본 검증합니다. |
+| **`dispatch`** | `--intent <path>`<br>`--repo <path>`<br>`--model <id>`<br>`--effort <level>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--capsule-dir <dir>`<br>`--agent <id>`<br>`--terminal <handle>`<br>`--worktree <sel>`<br>`--worktree-name <name>`<br>`--no-probe`<br>`--no-capsule-notice`<br>`--skip-skill-receipt`<br>`--dry-run`<br>`--json` | `--intent` (필수)<br>`--agent` 또는 `--terminal` 중 하나 | Intent를 Capsule로 확장한 뒤 워커를 기동하고 **Capsule 정본 경로 고지문을 자동 투입**합니다. `--effort`는 worker-start 경로에 전달되며 `--model`과 함께 지정해야 합니다 (모델 없는 effort 단독 지정 시 fail-closed 거부). 정본 영수증 게이트를 기본 검증합니다. |
 | **`finalize`** | `--report <path>`<br>`--capsule <path>`<br>`--repo <path>`<br>`--worktree <path>`<br>`--base <ref>`<br>`--branch <ref>`<br>`--reviewer`<br>`--reviewer-model <id>`<br>`--json` | `--report` (필수)<br>`--capsule` (필수) | `worker_done` 보고 요약 -> Level 1 게이트 -> Level 2 리뷰어 검증을 일괄 실행하고 최종 판정합니다. |
 | **`status`** | `--run-id <id>`<br>`--task-id <id>`<br>`--json` | 선택 | `orca orchestration task-list`를 호출하여 현재 Run/Task 상태를 조회합니다. |
 
@@ -164,7 +164,7 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 | `gemini-3.7-flash-high` | `gemini-3.7-flash-high` | gemini | secondary | **비대상 (False)** | builder, reviewer, investigator, benchmarker, documenter | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
 | `gemini-3.7-flash-medium` | `gemini-3.7-flash-medium` | gemini | secondary | **비대상 (False)** | builder, reviewer, investigator, benchmarker, documenter | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
 | `gemini-3.7-flash-low` | `gemini-3.7-flash-low` | gemini | secondary | **비대상 (False)** | investigator, benchmarker, documenter | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
-| `claude-sonnet` | `claude-sonnet-4-6` | claude | secondary | **대상 (True)** | reviewer, builder | 고품질 판정 필요 작업 |
+| `claude-sonnet` | `claude-sonnet-5` | claude | secondary | **대상 (True)** | reviewer, builder | 로컬 Claude Pro 전용 풀 (/opt/homebrew/bin/claude). contextWindow 1M, effort medium. WORKER_MODEL_NOTICE 후 명시 배정하는 수동 보조 워커. probe 전송은 claude-cli 경로 분리 |
 | `claude-opus` | `claude-opus-5` | claude | coordinator_reserve | **비대상 (False)** | (워커 사용 불가) | 예비 코디네이터. 워커 지정 시 거부 |
 | `codex` | `gpt-5.6-terra` | codex | coordinator | **비대상 (False)** | (워커 사용 불가) | **기본 코디네이터 (medium). 기본값 변경 전 `MODEL_CHANGE_NOTICE`, Sol High는 사용자 승인 후 고위험 최종 판정에만 수동 사용하며 워커 지정 시 거부(오류)** |
 | `opencode-free` | `opencode/nemotron-3.5-lightning-free` | opencode | free | **비대상 (False)** | (격리) | 장문 지시 붕괴 실측으로 재시험 전 배정 중단 |

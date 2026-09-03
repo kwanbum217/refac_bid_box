@@ -1210,6 +1210,7 @@ def worker_start(
     repo: str | None = None,
     as_json: bool = False,
     timeout: int = 30,
+    effort: str | None = None,
 ) -> tuple[int, str, str, list[str]]:
     """orca orchestration worker-start 명령을 실행합니다."""
     cmd = ["orca", "orchestration", "worker-start", "--task", task_id]
@@ -1220,6 +1221,8 @@ def worker_start(
 
     if model:
         cmd.extend(["--model", model])
+    if effort:
+        cmd.extend(["--effort", effort])
     if worktree:
         cmd.extend(["--worktree", worktree])
     if name:
@@ -3550,6 +3553,26 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         return 2
     task_id = args.task_id or intent.get("task_id") or f"task_{intent_path.stem}"
 
+    if getattr(args, "effort", None) and not getattr(args, "model", None):
+        err_msg = (
+            "오류: --effort 는 --model 과 함께 지정해야 합니다 (모델 없는 effort 단독 지정 불가)."
+        )
+        sys.stderr.write(f"{err_msg}\n")
+        if getattr(args, "json", False):
+            print(
+                json.dumps(
+                    {
+                        "error": "effort_without_model",
+                        "origin": "dispatch_arg_error",
+                        "task_id": task_id,
+                        "exit_code": 2,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        return 2
+
     # 정본 스킬 영수증 게이트 (2층 검증)
     if getattr(args, "skip_skill_receipt", False):
         sys.stderr.write(
@@ -4181,6 +4204,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             task_id=task_id,
             agent_id=args.agent,
             model=model,
+            effort=getattr(args, "effort", None),
             worktree=args.worktree,
             name=worktree_name if args.worktree.startswith("new-") else None,
             repo=args.repo,
@@ -4501,6 +4525,10 @@ def _build_parser() -> argparse.ArgumentParser:
     dsp.add_argument("--intent", required=True, help="Task Intent YAML 파일 경로")
     dsp.add_argument("--repo", default=".", help="저장소 루트 경로")
     dsp.add_argument("--model", help="모델 ID (미지정 시 자동 선택)")
+    dsp.add_argument(
+        "--effort",
+        help="워커 추론 등급 (low, medium, high 등. worker-start 에 전달. --model 지정 필수)",
+    )
     dsp.add_argument("--task-id", help="Task ID")
     dsp.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Run ID")
     dsp.add_argument("--capsule-dir", default=".orca/capsules", help="Capsule 저장 디렉터리")
