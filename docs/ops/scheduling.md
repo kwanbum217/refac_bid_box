@@ -54,10 +54,11 @@ flowchart TD
    - 기동만으로 대량의 공고/낙찰 데이터를 외부 API로부터 수집하는 무거운 작업이 자동 발화되는 것은 의도치 않은 리소스 점유를 유발합니다.
    - 따라서 `AUTOMATION_SCHEDULE_CATCHUP_ENABLED`의 기본값은 `False`이며, 컨테이너 환경변수나 `.env`를 통해 명시적으로 켠 경우에만 동작합니다.
 
-2. **Redis SET NX EX 기반 공통 원자 claim (Atomic Claim & Mutual Exclusion)**:
+2. **Redis SET NX EX 기반 공통 원자 claim 및 고유 소유 토큰 (Atomic Claim & Unique Ownership Token)**:
    - `CacheLayer`는 Redis 장애 시 프로세스 로컬 메모리로 degrade하므로 분산 단일 실행 가드로 사용할 수 없습니다.
    - 따라서 `RedisConnection`을 직접 사용하여 `SET bidbox:schedule:collection_claim payload EX {ttl} NX` 단일 원자 명령으로 실행 권한을 선점합니다.
-   - GET 후 SET과 같은 비원자적 읽기-쓰기 조합을 배제하여 다중 워커 기동 시의 경합(Race Condition)을 원천 차단합니다.
+   - 각 실행은 획득 시 발급되는 UUID 고유 소유 토큰(`token`)을 payload에 포함합니다.
+   - 해제(`release_schedule_claim`)는 단순 DEL이나 GET 후 DEL 조합이 아니라 Redis Lua 스크립트(`RELEASE_SCHEDULE_CLAIM_SCRIPT`)를 통한 **단일 원자 비교-삭제**로 수행됩니다. 이를 통해 이전 실행(stale owner)이 지연 후 완료될 때 TTL 만료 뒤 새로 생성된 후속 실행의 claim을 잘못 삭제하는 경합을 원천 차단합니다.
 
 3. **공통 정규 진입점 단일 가드 (Shared Entrypoint Guard & Zero Self-Collision)**:
    - 정규 cron 2종(`nightly_schedule_task`, `development_data_refresh_task`)과 기동 따라잡기가 동일한 claim 키(`bidbox:schedule:collection_claim`)와 TTL 계약을 공유합니다.
@@ -72,9 +73,10 @@ flowchart TD
    - 워커의 `_on_startup` 훅에서 동기(`await`)로 대기하지 않고, `asyncio.create_task`를 통해 비동기 백그라운드 태스크로 분리 실행합니다.
    - 따라잡기 작업 중 예외가 발생하더라도 워커 프로세스의 생존과 다른 Arq 큐 작업 처리에 일절 영향을 주지 않도록 예외를 완전 격리합니다.
 
-6. **재시작 루프 방어 쿨다운 (Crash-Loop Protection & Cooldown)**:
+6. **성공 해제 및 실패/부분실패 쿨다운 유지 (Success-Only Release & Failure Cooldown)**:
    - 외부 API 장애, 네트워크 순단 등으로 수집이 실패한 상태에서 워커 컨테이너가 재시작을 반복할 경우, 매 기동마다 수집을 재시도하여 외부 API 쿼터를 소진하거나 부하를 가중시키는 사고가 발생할 수 있습니다.
-   - 작업 실패 시에는 claim 키가 TTL(`AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS`, 기본 6시간) 동안 Redis에 유지되므로 컨테이너 재시작 루프가 발생해도 중복 시도를 완벽히 차단합니다.
+   - 파이프라인 실행 중 예외 발생뿐만 아니라, 파이프라인이 예외 없이 `status=failed` 또는 `partial` 결과 dict를 반환한 경우, 그리고 후속 집계 실패로 `partial_success`가 된 경우에도 claim을 해제하지 않고 유지합니다.
+   - 오직 파이프라인 및 후속 집계가 전량 정상 완료(`status == "success"`)된 경우에만 자기 토큰으로 claim을 해제합니다. 실패 시에는 claim 키가 TTL(`AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS`, 기본 6시간) 동안 유지되어 재시작 루프에 의한 반복 수집을 완벽히 방어합니다.
 
 ---
 
@@ -101,9 +103,19 @@ flowchart TD
 
 2. **Redis 상태 원장 및 단일 실행 claim**:
    - 실행 claim 키: `bidbox:schedule:collection_claim` (SET NX EX, TTL 기본 6시간)
+     - 페이로드 스키마:
+       ```json
+       {
+         "owner": "nightly_schedule",
+         "token": "4f9b8c2e0a1b4c6d8e9f0a1b2c3d4e5f",
+         "claimed_at": "2026-09-03T02:00:00+00:00",
+         "ttl": 21600
+       }
+       ```
      - `nightly_schedule_task`, `development_data_refresh_task`, 기동 따라잡기가 공통 사용
      - 분산 환경 다중 워커 및 동시 스케줄 발화 시 단일 실행 보장
      - Redis 장애 시 fail-closed 정책으로 비정상 중복 수집 원천 차단
+     - 정상 완료 시 자기 토큰 비교를 통한 원자적 해제 (`RELEASE_SCHEDULE_CLAIM_SCRIPT`)
    - 스케줄 결과 원장 키: `bidbox:worker:schedules`
    - 필드 `schedule_catchup`:
      ```json

@@ -40,7 +40,8 @@
 ### 2.3 정규 진입점 단일 가드 및 자기 충돌(Self-Collision) 원천 방지
 - `nightly_schedule_task`와 `development_data_refresh_task` 진입부에서 `acquire_schedule_claim`을 호출하여 선점합니다.
 - 기동 따라잡기(`run_schedule_catchup_task`)는 바깥에서 별도의 claim을 획득하지 않고 호출 대상 스케줄 태스크 내부의 claim을 그대로 재사용합니다. 이를 통해 바깥 claim과 내부 claim 간의 자기 충돌(self-collision)을 방지하고 코드 중복을 0으로 유지합니다.
-- 작업 완료 시 성공 상태인 경우 claim을 해제(`release_schedule_claim`)하여 다음 작업 준비를 마치며, 작업 실패 또는 크래시 시에는 6시간 동안 claim 키가 유지되어 컨테이너 재시작 루프에 의한 반복 수집 시도를 방어합니다.
+- 작업 완료 시 오직 정상 완료(`status == "success"`)인 경우에만 발급받은 소유 토큰(`token`)을 전달하여 Redis Lua 스크립트로 원자적 claim 해제(`release_schedule_claim`)를 수행합니다.
+- 파이프라인 실행 예외뿐만 아니라 `status=failed` 또는 `partial` 결과 dict 반환, 후속 집계 실패(`partial_success`) 시에는 claim을 해제하지 않고 6시간 TTL 동안 유지하여 재시작 루프에 의한 반복 수집을 방어합니다.
 
 ---
 
@@ -80,9 +81,23 @@
 ## 5. 리뷰 체크리스트 자체 점검
 
 | 항목 ID | 점검 질문 | 판정 | 근거 |
-| --- | --- | :---: | --- |
+| --- | --- | --- | --- |
 | `atomic_claim` | 단일 실행 claim이 Redis SET NX EX 한 번이 아닌 비원자적 읽기-쓰기 또는 프로세스 로컬 fallback을 사용하는가 | **통과 (No)** | `acquire_schedule_claim`에서 `client.set(..., ex=ttl, nx=True)` 단일 명령 사용, `CacheLayer` 미사용 |
 | `shared_entrypoint_guard` | nightly, development refresh, catch-up 중 하나라도 공통 claim을 우회하거나 자기 자신과 이중 claim하는가 | **통과 (No)** | 세 경로 모두 동일한 `SCHEDULE_COLLECTION_CLAIM_KEY` 사용, catch-up은 타겟 태스크 claim 재사용 |
 | `redis_fail_open` | Redis 연결 없음 또는 SET 예외에서도 수집 파이프라인이 실행되는가 | **통과 (No)** | `REDIS_UNAVAILABLE`, `COMMAND_ERROR` 시 `status=failed` 반환하며 pipeline 호출 0회 보장 |
 | `external_test_state` | 회귀 테스트가 실제 Redis, DB, Docker 또는 실행 순서에 의존하는가 | **통과 (No)** | `FakeRedisConnection`, `mock_schedule_claim` 등 테스트 격리 완료, 외부 Redis 없이 결정론적 통과 |
 | `scope_exceeded` | 허용된 파일 밖을 수정하거나 새 의존성을 추가했는가 | **통과 (No)** | 허용된 7개 파일만 수정/생성, 신규 외부 라이브러리 추가 0건 |
+
+---
+
+## 6. Level 3 후속 지적 사항 및 후속 재작업(task_4b88e29dc3f9) 인계
+
+본 태스크 이후 코디네이터 Level 3 심층 아키텍처 검토에서 다음 3가지 추가 결함이 발견되어 후속 태스크(`task_4b88e29dc3f9`)로 인계 및 완전 해결되었습니다:
+
+1. **실패 결과 dict 반환 시 claim 조기 소멸 결함**:
+   - `run_automation_pipeline`이 예외 없이 `status=failed` dict를 반환했을 때 `nightly_schedule_task`가 claim을 해제하던 결함 -> `status != "success"` 시 즉시 반환 및 claim 유지로 해결.
+2. **무조건 DEL로 인한 Stale Owner 경합**:
+   - `release_schedule_claim`이 단순 DEL을 수행하여 TTL 만료 후 생성된 후속 실행의 claim을 삭제할 위험 -> UUID 기반 고유 소유 토큰(`token`) 및 Redis Lua 원자 비교-삭제(`RELEASE_SCHEDULE_CLAIM_SCRIPT`)로 해결.
+3. **실패 응답 dict 내 중복 `error` 키**:
+   - `development_data_refresh_task`의 Redis 실패 응답 dict에서 최상위 중복 `error` 키 제거.
+- 상세 해결 내용 및 51개 회귀 테스트 검증 내역은 `docs/analysis/task_4b88e29dc3f9.md`를 참조하십시오.

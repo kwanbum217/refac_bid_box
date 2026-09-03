@@ -487,6 +487,235 @@ def test_cooldown_via_claim_roundtrip():
         assert attempt == now.isoformat()
 
         # 4. 해제 시 정상적으로 쿨다운 해제됨
-        release_schedule_claim(conn=fake_conn)
+        assert claim.token is not None
+        released = release_schedule_claim(token=claim.token, conn=fake_conn)
+        assert released is True
         in_cd, attempt = is_catchup_in_cooldown(conn=fake_conn)
         assert in_cd is False
+
+
+def test_release_schedule_claim_atomic_ownership():
+    """소유 토큰 일치 여부에 따른 원자적 해제 및 불일치 시 보존을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    # 1. claim 획득
+    claim = acquire_schedule_claim("runner_1", conn=fake_conn)
+    assert claim.acquired is True
+    assert claim.token is not None
+
+    # 2. 토큰 없이 해제 시도 -> 실패 및 키 유지
+    assert release_schedule_claim(token=None, conn=fake_conn) is False
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is True
+
+    # 3. 잘못된 토큰으로 해제 시도 -> 실패 및 키 유지
+    assert release_schedule_claim(token="wrong_token_hex", conn=fake_conn) is False
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is True
+
+    # 4. 올바른 토큰으로 해제 시도 -> 성공 및 키 삭제
+    assert release_schedule_claim(token=claim.token, conn=fake_conn) is True
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is False
+
+    # 5. 이미 삭제된 키에 대해 재해제 시도 -> False
+    assert release_schedule_claim(token=claim.token, conn=fake_conn) is False
+
+
+def test_stale_owner_cannot_release_subsequent_claim():
+    """이전 실행(stale owner)이 TTL 경과 후 생성된 후속 실행의 새 claim을 삭제하지 못함을 검증합니다."""
+    fake_client = FakeRedisClient()
+    fake_conn = FakeRedisConnection(fake_client)
+    set_schedule_redis_conn(fake_conn)
+
+    # 1. 첫 번째 실행 A 가 claim 획득
+    claim_a = acquire_schedule_claim("stale_runner_a", conn=fake_conn)
+    assert claim_a.acquired is True
+    token_a = claim_a.token
+    assert token_a is not None
+
+    # 2. TTL 만료로 키가 삭제되고 새 실행 B 가 claim 획득한 상황 모의
+    fake_client.delete(SCHEDULE_COLLECTION_CLAIM_KEY)
+    claim_b = acquire_schedule_claim("fresh_runner_b", conn=fake_conn)
+    assert claim_b.acquired is True
+    token_b = claim_b.token
+    assert token_b is not None
+    assert token_a != token_b
+
+    # 3. 뒤늦게 종료된 실행 A 가 이전 token_a 로 해제를 시도
+    released_a = release_schedule_claim(token=token_a, conn=fake_conn)
+    assert released_a is False
+
+    # 4. 실행 B 의 claim 이 삭제되지 않고 온전히 보존되어 있음을 확인
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is True
+    raw_data = fake_client.get(SCHEDULE_COLLECTION_CLAIM_KEY)
+    import json
+
+    data = json.loads(raw_data)
+    assert data["token"] == token_b
+    assert data["owner"] == "fresh_runner_b"
+
+    # 5. 오직 실행 B 만이 자기 토큰으로 해제 가능
+    released_b = release_schedule_claim(token=token_b, conn=fake_conn)
+    assert released_b is True
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is False
+
+
+@pytest.mark.asyncio
+async def test_nightly_retains_claim_on_pipeline_failure_dict(isolated_db, monkeypatch):
+    """nightly_schedule_task 가 예외 없는 failure dict 반환 시 claim을 유지하여 후속 실행을 차단함을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True)
+    mock_pipeline = AsyncMock(
+        return_value={"status": "failed", "error": "External API timeout", "step": "collect"}
+    )
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+    ):
+        isolated_db.close = lambda: None
+        result = await nightly_schedule_task({})
+
+    # 1. 실패 dict 반환 확인
+    assert result["status"] == "failed"
+    assert result["error"] == "External API timeout"
+
+    # 2. claim 이 해제되지 않고 쿨다운이 유지되는지 확인
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is True
+
+    # 3. 직후 재실행 시 already_claimed 로 실행 차단됨을 확인
+    second_result = await nightly_schedule_task({})
+    assert second_result["status"] == "skipped"
+    assert second_result["reason"] == "already_claimed"
+    # 파이프라인이 두 번째 호출에서는 실행되지 않았어야 함
+    mock_pipeline.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_development_refresh_retains_claim_on_pipeline_failure_dict(isolated_db, monkeypatch):
+    """development_data_refresh_task 가 예외 없는 failure dict 반환 시 claim을 유지하여 후속 실행을 차단함을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+    mock_pipeline = AsyncMock(
+        return_value={"status": "failed", "error": "DB connection dropped", "step": "collect"}
+    )
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+    ):
+        isolated_db.close = lambda: None
+        result = await development_data_refresh_task({})
+
+    assert result["status"] == "failed"
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is True
+
+    # 후속 재실행 차단
+    second_result = await development_data_refresh_task({})
+    assert second_result["status"] == "skipped"
+    assert second_result["reason"] == "already_claimed"
+    mock_pipeline.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_nightly_retains_claim_on_partial_failure(isolated_db, monkeypatch):
+    """후속 집계 실패로 partial_success 가 된 경우에도 claim을 유지함을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True)
+    mock_pipeline = AsyncMock(return_value={"status": "success", "completed_steps": ["collect"]})
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+        patch.object(
+            scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks,
+            "_rebuild_institution_stats",
+            return_value={"status": "failed", "error": "calc error"},
+        ),
+    ):
+        isolated_db.close = lambda: None
+        result = await nightly_schedule_task({})
+
+    assert result["status"] == "partial_success"
+    assert "institution_stats" in result["failed_followups"]
+
+    # claim 이 해제되지 않고 유지됨
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is True
+
+    # 후속 실행 시 already_claimed 로 차단
+    second_result = await nightly_schedule_task({})
+    assert second_result["status"] == "skipped"
+    assert second_result["reason"] == "already_claimed"
+
+
+@pytest.mark.asyncio
+async def test_nightly_releases_claim_on_success(isolated_db, monkeypatch):
+    """nightly_schedule_task 가 성공(success)한 경우 자기 토큰으로 정상 해제되어 후속 실행이 가능함을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True)
+    mock_pipeline = AsyncMock(return_value={"status": "success", "completed_steps": ["collect"]})
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+        patch.object(
+            scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}
+        ),
+    ):
+        isolated_db.close = lambda: None
+        result = await nightly_schedule_task({})
+
+    assert result["status"] == "success"
+    # claim 이 정상 해제되어 쿨다운이 아님
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is False
+
+
+@pytest.mark.asyncio
+async def test_development_refresh_releases_claim_on_success(isolated_db, monkeypatch):
+    """development_data_refresh_task 가 성공(success)한 경우 자기 토큰으로 정상 해제되어 후속 실행이 가능함을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+    mock_pipeline = AsyncMock(return_value={"status": "success", "completed_steps": ["collect"]})
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+        patch.object(
+            scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}
+        ),
+    ):
+        isolated_db.close = lambda: None
+        result = await development_data_refresh_task({})
+
+    assert result["status"] == "success"
+    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is False

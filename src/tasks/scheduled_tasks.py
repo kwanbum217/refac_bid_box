@@ -161,7 +161,6 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         return {
             "status": "failed",
             "reason": claim.status.value,
-            "error": claim.detail,
             "claim": claim.to_dict(),
         }
 
@@ -189,6 +188,9 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         )
         raise
 
+    if outcome.get("status") != "success":
+        return outcome
+
     # 수집으로 원본 데이터가 바뀌었으니 상위 N 스냅샷을 다시 만듭니다.
     # 원본 스텝 구성(run_mode_matrix)을 건드리지 않으려고 파이프라인 밖에 둡니다.
     outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
@@ -196,8 +198,10 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     # 추론 경로가 쓰는 기관 이력 집계도 함께 갱신합니다. 이 표가 낡으면
     # 학습과 추론의 inst_hist_rate 정의가 갈립니다 (AGENTS.md 6항).
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
-    release_schedule_claim(claim.key)
-    return _mark_followup_failures(outcome)
+    final_outcome = _mark_followup_failures(outcome)
+    if final_outcome.get("status") == "success":
+        release_schedule_claim(claim.key, token=claim.token)
+    return final_outcome
 
 
 @_record_schedule("development_data_refresh")
@@ -227,7 +231,6 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
         return {
             "status": "failed",
             "reason": claim.status.value,
-            "error": claim.detail,
             "claim": claim.to_dict(),
         }
 
@@ -259,8 +262,10 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
-    release_schedule_claim(claim.key)
-    return _mark_followup_failures(outcome)
+    final_outcome = _mark_followup_failures(outcome)
+    if final_outcome.get("status") == "success":
+        release_schedule_claim(claim.key, token=claim.token)
+    return final_outcome
 
 
 FOLLOWUP_KEYS = ("ranking_snapshots", "institution_stats")
@@ -619,6 +624,19 @@ async def drift_monitor_task(
 SCHEDULE_COLLECTION_CLAIM_KEY = "bidbox:schedule:collection_claim"
 CATCHUP_LAST_ATTEMPT_KEY = SCHEDULE_COLLECTION_CLAIM_KEY
 
+RELEASE_SCHEDULE_CLAIM_SCRIPT = """
+local val = redis.call('GET', KEYS[1])
+if not val then
+    return 0
+end
+local ok, data = pcall(cjson.decode, val)
+if ok and type(data) == 'table' and data['token'] == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+else
+    return 0
+end
+"""
+
 
 class ScheduleClaimStatus(StrEnum):
     ACQUIRED = "acquired"
@@ -633,6 +651,7 @@ class ScheduleClaimResult:
     key: str
     owner: str
     ttl: int
+    token: str | None = None
     detail: str | None = None
     error: str | None = None
 
@@ -647,6 +666,7 @@ class ScheduleClaimResult:
             "key": self.key,
             "owner": self.owner,
             "ttl": self.ttl,
+            "token": self.token,
             "detail": self.detail,
             "error": self.error,
         }
@@ -698,13 +718,15 @@ def acquire_schedule_claim(
             key=key,
             owner=owner,
             ttl=ttl,
+            token=None,
             detail="Redis 연결이 불가능하여 스케줄 실행 claim을 획득할 수 없습니다.",
             error="Redis client unavailable",
         )
 
     now_iso = utcnow().isoformat()
+    token = uuid.uuid4().hex
     payload = json.dumps(
-        {"owner": owner, "claimed_at": now_iso, "ttl": ttl},
+        {"owner": owner, "token": token, "claimed_at": now_iso, "ttl": ttl},
         ensure_ascii=False,
     )
     try:
@@ -722,6 +744,7 @@ def acquire_schedule_claim(
             key=key,
             owner=owner,
             ttl=ttl,
+            token=None,
             detail=f"Redis claim 명령 실행 중 오류가 발생했습니다: {exc}",
             error=str(exc),
         )
@@ -737,35 +760,53 @@ def acquire_schedule_claim(
             key=key,
             owner=owner,
             ttl=ttl,
+            token=None,
             detail="이미 다른 스케줄 또는 워커가 실행 claim을 획득했습니다.",
         )
 
     logger.info(
-        "[%s] 스케줄 실행 claim 획득 성공 (key=%s, ttl=%d초)",
+        "[%s] 스케줄 실행 claim 획득 성공 (key=%s, ttl=%d초, token=%s)",
         owner,
         key,
         ttl,
+        token,
     )
     return ScheduleClaimResult(
         status=ScheduleClaimStatus.ACQUIRED,
         key=key,
         owner=owner,
         ttl=ttl,
+        token=token,
         detail="스케줄 실행 claim 획득 성공",
     )
 
 
 def release_schedule_claim(
     key: str = SCHEDULE_COLLECTION_CLAIM_KEY,
+    token: str | None = None,
+    *,
     conn: RedisConnection | None = None,
 ) -> bool:
-    """테스트 또는 수동 조작 시 점유된 claim 키를 해제합니다."""
+    """소유 토큰이 일치하는 경우에만 Redis Lua 스크립트로 원자적 claim 해제를 수행합니다.
+
+    GET 후 DEL 조합이 아닌 단일 원자 연산으로, 이전 실행이 TTL 경과 후 생성된 후속 실행의
+    새 claim을 잘못 삭제하는 경합(stale owner deletion)을 원천 방지합니다.
+    토큰이 누락되었거나 일치하지 않으면 해제를 거부하고 후속 claim을 보존합니다.
+    """
+    if not token:
+        logger.warning(
+            "스케줄 claim 해제 건너뜀 (소유 토큰이 누락됨, key=%s)",
+            key,
+        )
+        return False
+
     redis_conn = conn or get_schedule_redis_conn()
     client = redis_conn.client()
     if client is None:
         return False
     try:
-        return bool(client.delete(key))
+        deleted = client.eval(RELEASE_SCHEDULE_CLAIM_SCRIPT, 1, key, token)
+        return bool(deleted)
     except Exception as exc:
         redis_conn.invalidate(exc)
         logger.warning("스케줄 claim 해제 중 오류 발생 (key=%s): %s", key, exc)
