@@ -22,6 +22,7 @@ from scripts.promote_model import main
 from src.ml.promotion import RollbackUnavailable, promote, rollback
 
 MODEL_NAME = "test_model"
+CHAMPION_VERSION = "v_20260731_000000_000"
 
 # features.py 가 만들어 줄 수 있는 특징이어야 승격 검사를 통과합니다.
 SERVABLE_FEATURES = ["log_price", "month", "inst_hist_rate"]
@@ -43,9 +44,10 @@ def _training_metadata(version: str) -> dict:
 
 @pytest.fixture
 def registry(tmp_path):
-    """학습 아티팩트 두 버전을 만듭니다."""
+    """학습 아티팩트와 유효한 증거 판정 두 버전을 만듭니다."""
     root = tmp_path / "ml_registry"
-    for version in ("v_20260801_000000_000", "v_20260802_000000_000"):
+    versions = (CHAMPION_VERSION, "v_20260801_000000_000", "v_20260802_000000_000")
+    for version in versions:
         version_dir = root / MODEL_NAME / version
         version_dir.mkdir(parents=True)
         model = LinearRegression().fit([[0.0, 1.0, 0.9], [1.0, 2.0, 0.8]], [1.0, 2.0])
@@ -53,10 +55,8 @@ def registry(tmp_path):
         (version_dir / "metadata.json").write_text(
             json.dumps(_training_metadata(version)), encoding="utf-8"
         )
-        # 쌍대검정 approved 판정이 있어야 승격 게이트를 통과합니다.
-        (version_dir / "paired_verdict.json").write_text(
-            json.dumps({"verdict": "approved", "evidence": ""}), encoding="utf-8"
-        )
+    for version in versions[1:]:
+        _create_verdict(root, version, CHAMPION_VERSION)
     return root
 
 
@@ -86,6 +86,32 @@ def _cli_args(dirs, *rest) -> list[str]:
     ]
 
 
+def _create_verdict(registry_dir, version, champion_version):
+    """운영 경로와 동일한 CLI 생성 경로로 증거를 채웁니다."""
+    assert (
+        main(
+            [
+                "--registry-dir",
+                str(registry_dir),
+                "create-verdict",
+                "--model",
+                MODEL_NAME,
+                "--version",
+                version,
+                "--champion-version",
+                champion_version,
+                "--verdict",
+                "approved",
+                "--sample-hash",
+                "sample-sha256",
+                "--code-commit",
+                "deadbeef",
+            ]
+        )
+        == 0
+    )
+
+
 # --------------------------------------------------------------------------- #
 # 예행이 기본
 # --------------------------------------------------------------------------- #
@@ -108,6 +134,28 @@ def test_promote_dry_run_reports_rejection(dirs, capsys):
     exit_code = main(_cli_args(dirs, "promote", "--model", MODEL_NAME))
     assert exit_code == 1
     assert "시계열 분할" in capsys.readouterr().out
+
+
+def test_approved_empty_evidence_is_rejected(dirs, capsys):
+    """approved 문자열만 남긴 위조 판정은 승격되지 않습니다."""
+    version_dir = dirs["registry_dir"] / MODEL_NAME / "v_20260802_000000_000"
+    verdict_path = version_dir / "paired_verdict.json"
+    verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+    for field in (
+        "champion_checksum",
+        "challenger_checksum",
+        "sample_hash",
+        "code_commit",
+        "decided_at",
+    ):
+        verdict[field] = ""
+    verdict_path.write_text(json.dumps(verdict), encoding="utf-8")
+
+    exit_code = main(_cli_args(dirs, "promote", "--model", MODEL_NAME, "--apply"))
+
+    assert exit_code == 1
+    assert not (dirs["serving_dir"] / MODEL_NAME).exists()
+    assert "증거 필드" in capsys.readouterr().out
 
 
 def test_status_reports_serving_and_challenger(dirs, capsys):
