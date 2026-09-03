@@ -28,6 +28,11 @@ jobs:
       # 공급망 스캔은 모두 차단 모드다. CRITICAL 과 HIGH 가 검출되면 CI 가 붉어진다.
       # || true 나 exit-code 0 으로 실패를 삼키지 않는다.
       # 사유와 만료가 박힌 예외만 .github/vulnerability-allowlist.yml 에서 통과시킨다.
+      # 예외 목록이 게이트를 뚫는 유일한 통로이므로 그 목록 자체를 먼저 검사합니다.
+      # 사유나 만료가 없거나 만료일이 지난 항목이 있으면 스캔 전에 실패합니다.
+      - name: Validate vulnerability allowlist
+        run: uv run python scripts/check_vulnerability_allowlist.py
+
       - name: Scan Python dependencies
         run: |
           uv export --frozen --format requirements.txt --no-emit-project -o /tmp/requirements.txt
