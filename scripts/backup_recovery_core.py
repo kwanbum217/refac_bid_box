@@ -154,25 +154,55 @@ def create_tar_archive(
     return output_archive.stat().st_size, sha256_file(output_archive)
 
 
-def dump_mysql_database(db_config: dict[str, Any], output_gz_path: Path) -> tuple[int, str]:
-    output_gz_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        "mysqldump",
+def mysql_client_command(
+    binary: str, db_config: dict[str, Any]
+) -> tuple[list[str], dict[str, str]]:
+    """mysql 계열 클라이언트 실행 명령과 환경변수를 만듭니다.
+
+    2026-09-03 실측: 호스트의 mysqldump 26.7 에는 mysql_native_password 플러그인이
+    없습니다. 이 저장소의 compose 는 서버를 그 플러그인으로 띄우므로 호스트에서
+    백업하면 'Authentication plugin cannot be loaded' 로 실패합니다. 이 구성에서는
+    호스트 클라이언트로 백업할 수 없습니다.
+
+    MYSQL_CLIENT_CONTAINER 를 지정하면 그 컨테이너 안의 클라이언트를 씁니다.
+    DB 가 컨테이너에 있는 배포에서는 이것이 실제 경로입니다. 지정하지 않으면
+    지금까지처럼 호스트 클라이언트를 씁니다.
+    """
+    container = os.environ.get("MYSQL_CLIENT_CONTAINER", "").strip()
+    args = [
+        binary,
         "-h",
-        str(db_config["host"]),
+        "127.0.0.1" if container else str(db_config["host"]),
         "-P",
-        str(db_config["port"]),
+        "3306" if container else str(db_config["port"]),
         "-u",
         str(db_config["user"]),
+        # host 가 localhost 면 mysql 클라이언트는 포트를 무시하고 유닉스 소켓으로
+        # 붙습니다. 포트를 지정한 이상 TCP 를 쓰는 것이 의도입니다.
+        "--protocol=TCP",
+    ]
+    env = os.environ.copy()
+    password = str(db_config.get("password") or "")
+    if container:
+        prefix = ["docker", "exec", "-i"]
+        if password:
+            prefix += ["-e", f"MYSQL_PWD={password}"]
+        return [*prefix, container, *args], env
+    if password:
+        env["MYSQL_PWD"] = password
+    return args, env
+
+
+def dump_mysql_database(db_config: dict[str, Any], output_gz_path: Path) -> tuple[int, str]:
+    output_gz_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd, env = mysql_client_command("mysqldump", db_config)
+    cmd += [
         "--single-transaction",
         "--routines",
         "--triggers",
         "--default-character-set=utf8mb4",
         str(db_config["name"]),
     ]
-    env = os.environ.copy()
-    if db_config.get("password"):
-        env["MYSQL_PWD"] = str(db_config["password"])
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)  # nosec B603, B607
     with gzip.open(output_gz_path, "wb") as gz_out:
         if proc.stdout:
@@ -187,20 +217,11 @@ def dump_mysql_database(db_config: dict[str, Any], output_gz_path: Path) -> tupl
 def restore_mysql_database(db_config: dict[str, Any], input_gz_path: Path) -> None:
     if not input_gz_path.exists():
         raise FileNotFoundError(f"복원할 DB 덤프 파일 없음: {input_gz_path}")
-    cmd = [
-        "mysql",
-        "-h",
-        str(db_config["host"]),
-        "-P",
-        str(db_config["port"]),
-        "-u",
-        str(db_config["user"]),
+    cmd, env = mysql_client_command("mysql", db_config)
+    cmd += [
         "--default-character-set=utf8mb4",
         str(db_config["name"]),
     ]
-    env = os.environ.copy()
-    if db_config.get("password"):
-        env["MYSQL_PWD"] = str(db_config["password"])
     with gzip.open(input_gz_path, "rb") as gz_in:
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
@@ -233,6 +254,10 @@ def _run_mysql_cmd(db_config: dict[str, Any], sql: str, err_prefix: str) -> None
         str(db_config["host"]),
         "-P",
         str(db_config["port"]),
+        # host 가 localhost 면 mysql 클라이언트는 포트를 무시하고 유닉스 소켓으로
+        # 붙습니다. DB 가 컨테이너에 있으면 그 소켓이 없어 백업과 복원이 모두
+        # 실패합니다. 포트를 지정한 이상 TCP 를 쓰는 것이 의도입니다.
+        "--protocol=TCP",
         "-u",
         str(db_config["user"]),
         "-e",
