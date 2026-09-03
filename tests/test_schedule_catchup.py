@@ -21,6 +21,7 @@ tests/test_schedule_catchup.py
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -389,7 +390,7 @@ async def test_nightly_and_refresh_share_same_claim_key(isolated_db, monkeypatch
 
 @pytest.mark.asyncio
 async def test_nightly_aborts_pipeline_when_redis_unavailable(isolated_db, monkeypatch):
-    """Redis 장애 시 nightly_schedule_task 가 fail-closed 로 종료되고 파이프라인을 실행하지 않음을 검증합니다."""
+    """Redis 장애 시 nightly_schedule_task 가 fail-closed 로 종료되고 최상위 error 계약을 유지하며 파이프라인을 실행하지 않음을 검증합니다."""
     unreachable_conn = UnreachableRedisConnection()
     set_schedule_redis_conn(unreachable_conn)
 
@@ -405,12 +406,41 @@ async def test_nightly_aborts_pipeline_when_redis_unavailable(isolated_db, monke
 
     assert result["status"] == "failed"
     assert result["reason"] == "redis_unavailable"
+    assert result["error"] == result["claim"]["detail"]
+    assert "Redis 연결이 불가능하여" in result["error"]
+    assert isinstance(result["claim"], dict)
+    assert result["claim"]["acquired"] is False
+    mock_pipeline.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_nightly_aborts_pipeline_on_command_error(isolated_db, monkeypatch):
+    """Redis 명령 예외 시 nightly_schedule_task 가 fail-closed 로 종료되고 최상위 error 계약을 유지하며 파이프라인을 실행하지 않음을 검증합니다."""
+    fake_conn = FakeRedisConnection(ErrorRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True)
+    mock_pipeline = AsyncMock()
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+    ):
+        isolated_db.close = lambda: None
+        result = await nightly_schedule_task({})
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "command_error"
+    assert result["error"] == result["claim"]["detail"]
+    assert "Redis claim 명령 실행 중 오류" in result["error"]
+    assert isinstance(result["claim"], dict)
+    assert result["claim"]["acquired"] is False
     mock_pipeline.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_development_refresh_aborts_pipeline_when_redis_unavailable(isolated_db, monkeypatch):
-    """Redis 장애 시 development_data_refresh_task 가 fail-closed 로 종료되고 파이프라인을 실행하지 않음을 검증합니다."""
+    """Redis 장애 시 development_data_refresh_task 가 fail-closed 로 종료되고 최상위 error 계약을 유지하며 파이프라인을 실행하지 않음을 검증합니다."""
     unreachable_conn = UnreachableRedisConnection()
     set_schedule_redis_conn(unreachable_conn)
 
@@ -427,7 +457,55 @@ async def test_development_refresh_aborts_pipeline_when_redis_unavailable(isolat
 
     assert result["status"] == "failed"
     assert result["reason"] == "redis_unavailable"
+    assert result["error"] == result["claim"]["detail"]
+    assert "Redis 연결이 불가능하여" in result["error"]
+    assert isinstance(result["claim"], dict)
+    assert result["claim"]["acquired"] is False
     mock_pipeline.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_development_refresh_aborts_pipeline_on_command_error(isolated_db, monkeypatch):
+    """Redis 명령 예외 시 development_data_refresh_task 가 fail-closed 로 종료되고 최상위 error 계약을 유지하며 파이프라인을 실행하지 않음을 검증합니다."""
+    fake_conn = FakeRedisConnection(ErrorRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+    mock_pipeline = AsyncMock()
+
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+    ):
+        isolated_db.close = lambda: None
+        result = await development_data_refresh_task({})
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "command_error"
+    assert result["error"] == result["claim"]["detail"]
+    assert "Redis claim 명령 실행 중 오류" in result["error"]
+    assert isinstance(result["claim"], dict)
+    assert result["claim"]["acquired"] is False
+    mock_pipeline.assert_not_awaited()
+
+
+def test_acquire_schedule_claim_log_does_not_expose_token(caplog):
+    """claim 성공 시 INFO 로그에 소유 토큰 원문이 노출되지 않고 owner, key, ttl 만 기록됨을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    with caplog.at_level(logging.INFO, logger="src.tasks.scheduled_tasks"):
+        claim = acquire_schedule_claim("secure_test_owner", ttl_seconds=180, conn=fake_conn)
+
+    assert claim.acquired is True
+    assert claim.token is not None
+    # 1. 반환된 토큰 원문이 로그 전체에 전혀 나타나지 않음을 확인
+    assert claim.token not in caplog.text
+    # 2. owner, key, ttl 은 정상 기록됨을 확인
+    assert "secure_test_owner" in caplog.text
+    assert SCHEDULE_COLLECTION_CLAIM_KEY in caplog.text
+    assert "180초" in caplog.text
 
 
 @pytest.mark.asyncio

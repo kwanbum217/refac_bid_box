@@ -161,6 +161,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         return {
             "status": "failed",
             "reason": claim.status.value,
+            "error": claim.detail,
             "claim": claim.to_dict(),
         }
 
@@ -231,6 +232,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
         return {
             "status": "failed",
             "reason": claim.status.value,
+            "error": claim.detail,
             "claim": claim.to_dict(),
         }
 
@@ -765,11 +767,10 @@ def acquire_schedule_claim(
         )
 
     logger.info(
-        "[%s] 스케줄 실행 claim 획득 성공 (key=%s, ttl=%d초, token=%s)",
+        "[%s] 스케줄 실행 claim 획득 성공 (key=%s, ttl=%d초)",
         owner,
         key,
         ttl,
-        token,
     )
     return ScheduleClaimResult(
         status=ScheduleClaimStatus.ACQUIRED,
