@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -132,6 +133,7 @@ def test_collect_adds_advice_note_on_blocked() -> None:
             "scripts.orca_worker_watch.terminal_tail", return_value="Accept this file edit?\n[Y/n]"
         ),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
+        patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
     ):
         states = watch.collect(watch.Path("/tmp/repo"), "main")
         assert len(states) == 1
@@ -301,6 +303,7 @@ def test_collect_adds_failure_note_on_failure_block() -> None:
             return_value="Error: network error while streaming response",
         ),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
+        patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
     ):
         states = watch.collect(watch.Path("/tmp/repo"), "main")
         assert len(states) == 1
@@ -388,6 +391,7 @@ def test_collect_selects_worker_terminal_over_shell(capsys: pytest.CaptureFixtur
         patch("scripts.orca_worker_watch.terminal_map", return_value=fake_terminals),
         patch("scripts.orca_worker_watch.terminal_tail", return_value="working normally"),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
+        patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
     ):
         states = watch.collect(watch.Path("/tmp/repo"), "main")
         assert len(states) == 1
@@ -636,6 +640,7 @@ def test_collect_does_not_touch_real_runtime() -> None:
         patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
         patch("scripts.orca_worker_watch.terminal_map", return_value={}),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", fake_lingering),
+        patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
     ):
         states = watch.collect(watch.Path("/tmp/repo"), "main")
 
@@ -655,7 +660,155 @@ def test_collect_survives_lingering_lookup_failure() -> None:
         patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
         patch("scripts.orca_worker_watch.terminal_map", return_value={}),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", boom),
+        patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
     ):
         states = watch.collect(watch.Path("/tmp/repo"), "main")
 
     assert len(states) == 1
+
+
+# ---------------------------------------------------------------------------
+# 미답변 질문 탐지
+# ---------------------------------------------------------------------------
+
+
+def _inbox_payload(messages):
+    return json.dumps({"result": {"messages": messages}})
+
+
+def test_unanswered_question_is_detected():
+    """스레드에 답이 없는 question 은 미답변으로 잡혀야 합니다."""
+    payload = _inbox_payload(
+        [
+            {
+                "id": "msg_q",
+                "type": "question",
+                "from_handle": "term_a",
+                "subject": "물음",
+                "body": "본문",
+            },
+        ]
+    )
+    with patch("scripts.orca_worker_watch._run", return_value=payload):
+        pending = watch.collect_unanswered_questions()
+    assert [p["id"] for p in pending] == ["msg_q"]
+
+
+def test_answered_question_is_not_reported():
+    """thread_id 로 답이 걸린 question 은 미답변이 아닙니다."""
+    payload = _inbox_payload(
+        [
+            {
+                "id": "msg_q",
+                "type": "question",
+                "from_handle": "term_a",
+                "subject": "물음",
+                "body": "",
+            },
+            {
+                "id": "msg_r",
+                "type": "status",
+                "thread_id": "msg_q",
+                "from_handle": "run:r",
+                "subject": "Re",
+            },
+        ]
+    )
+    with patch("scripts.orca_worker_watch._run", return_value=payload):
+        pending = watch.collect_unanswered_questions()
+    assert pending == []
+
+
+def test_escalation_is_treated_as_pending():
+    """escalation 도 코디네이터 조치를 기다리는 상태입니다."""
+    payload = _inbox_payload(
+        [
+            {
+                "id": "msg_e",
+                "type": "escalation",
+                "from_handle": "term_a",
+                "subject": "막힘",
+                "body": "",
+            },
+        ]
+    )
+    with patch("scripts.orca_worker_watch._run", return_value=payload):
+        pending = watch.collect_unanswered_questions()
+    assert [p["type"] for p in pending] == ["escalation"]
+
+
+def test_heartbeat_and_worker_done_are_not_pending():
+    """답변을 요구하지 않는 유형은 잡지 않습니다."""
+    payload = _inbox_payload(
+        [
+            {"id": "msg_h", "type": "heartbeat", "from_handle": "term_a", "subject": "alive"},
+            {"id": "msg_d", "type": "worker_done", "from_handle": "term_a", "subject": "완료"},
+        ]
+    )
+    with patch("scripts.orca_worker_watch._run", return_value=payload):
+        pending = watch.collect_unanswered_questions()
+    assert pending == []
+
+
+def test_unanswered_question_from_dead_terminal_is_ignored():
+    """종료된 워커의 질문은 답해도 도착하지 않으므로 차단으로 보지 않습니다."""
+    with (
+        patch(
+            "scripts.orca_worker_watch.list_worktrees",
+            return_value=[("wt", "/tmp/wt", "feat/x")],
+        ),
+        patch("scripts.orca_worker_watch.worktree_progress", return_value=(1, 0)),
+        patch(
+            "scripts.orca_worker_watch.terminal_map",
+            return_value={"/tmp/wt": [{"handle": "term_live", "title": "worker"}]},
+        ),
+        patch("scripts.orca_worker_watch.terminal_tail", return_value=""),
+        patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
+        patch(
+            "scripts.orca_worker_watch.collect_unanswered_questions",
+            return_value=[
+                {
+                    "id": "msg_old",
+                    "type": "question",
+                    "from_handle": "term_closed",
+                    "subject": "옛 질문",
+                    "body": "",
+                }
+            ],
+        ),
+    ):
+        states = watch.collect(Path("/tmp/repo"))
+    assert all(s.blocked_kind != "answer_pending" for s in states)
+
+
+def test_unanswered_question_from_live_terminal_blocks():
+    """살아 있는 워커의 미답변 질문은 차단으로 보고되어야 합니다."""
+    with (
+        patch(
+            "scripts.orca_worker_watch.list_worktrees",
+            return_value=[("wt", "/tmp/wt", "feat/x")],
+        ),
+        patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 3)),
+        patch(
+            "scripts.orca_worker_watch.terminal_map",
+            return_value={"/tmp/wt": [{"handle": "term_live", "title": "worker"}]},
+        ),
+        patch("scripts.orca_worker_watch.terminal_tail", return_value=""),
+        patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
+        patch(
+            "scripts.orca_worker_watch.collect_unanswered_questions",
+            return_value=[
+                {
+                    "id": "msg_q",
+                    "type": "question",
+                    "from_handle": "term_live",
+                    "subject": "범위 확장 요청",
+                    "body": "본문",
+                }
+            ],
+        ),
+    ):
+        states = watch.collect(Path("/tmp/repo"))
+    blocked = [s for s in states if s.blocked_kind == "answer_pending"]
+    assert len(blocked) == 1
+    assert "msg_q" in blocked[0].blocked_fix
