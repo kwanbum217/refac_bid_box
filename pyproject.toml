@@ -238,6 +238,21 @@ markers = [
     "mysql_integration: 실제 MySQL 8 인스턴스가 필요한 통합 테스트. CI 에서는 -m 'not mysql_integration' (또는 -m 'not data_assets and not mysql_integration') 로 제외합니다.",
     "e2e: 브라우저 E2E 테스트. Playwright 드라이버가 필요하며 브라우저 바이너리가 없는 환경에서는 skip 됩니다.",
 ]
+# 테스트 경고 예산.
+# 계약: 전역 ignore 금지. 각 항목은 module= 또는 message= 로 발원지를 좁게 지정합니다.
+# 사유와 재검토 시점은 docs/ops/warning_budget.md 에 1:1 로 대응합니다.
+# 항목 추가 시 filter_id 와 문서의 항목을 반드시 같이 갱신하십시오.
+# 형식: action:message_regex:category:module:lineno
+filterwarnings = [
+    "ignore:.*:DeprecationWarning:chromadb.types",
+    "ignore:.*:DeprecationWarning:joblib.numpy_pickle",
+    "ignore:.*:DeprecationWarning:multiprocessing.popen_fork",
+    "ignore:The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.*:FutureWarning:lightgbm.sklearn",
+    "ignore:Only training set found, disabling early stopping.*:UserWarning:lightgbm.callback",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:UserWarning:fastapi.testclient",
+    "ignore:subprocess \\d+ is still running.*:ResourceWarning",
+    "ignore:unclosed file.*:ResourceWarning:_pytest.python",
+]
 
 # ==========================================
 # Coverage (pytest-cov / coverage.py)
