@@ -15,7 +15,9 @@ Phase 1 데이터 보존 무손실 마이그레이션 검증 스크립트.
 from __future__ import annotations
 
 import argparse
+import getpass
 import hashlib
+import importlib
 import json
 import os
 import sqlite3
@@ -29,21 +31,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 EXPECTED_MODELS = ("v25", "quantum_leap_v25_pro", "ssh_hist_premium", "v13_hybrid")
-EXPECTED_TABLES = (
-    # 원본 bid_box 에서 보존해야 하는 테이블
-    "accounts_customuser",
-    "automation_requests",
-    "automation_subscriptions",
-    "bid_announcements",
-    "bid_dataset_summaries",
-    "bid_results",
-    "chat_session_states",
-    "knowledge_base_status",
-    "pipeline_executions",
-    "prediction_results",
-    # 리팩토링에서 추가된 MLOps 테이블
-    "retrain_logs",
-)
+G1_TOOL_VERSION = "2.0.0"
+# ORM에 포함되지 않는 외부 테이블은 이 목록에 명시적으로 승인해야 합니다.
+# 목록 밖의 테이블은 검증 보고서에 경고를 남기고 실패 처리합니다.
+APPROVED_EXTERNAL_TABLES: frozenset[str] = frozenset()
 MANIFEST_PATH = PROJECT_ROOT / "data" / "backups" / "data_assets_checksums.json"
 SCHEMA_BASELINE_PATH = PROJECT_ROOT / "data" / "backups" / "schema_signature_baseline.json"
 DEFAULT_REPORT_PATH = PROJECT_ROOT / "data" / "backups" / "data_preservation_report.json"
@@ -78,6 +69,67 @@ RECONCILIATION_TABLES: tuple[str, ...] = (
     "bid_announcements",
     "bid_results",
 )
+
+
+def get_orm_table_names() -> set[str]:
+    """모든 등록된 SQLAlchemy ORM 테이블 이름을 반환합니다."""
+    # models 패키지 초기화 과정에서 모든 선언형 모델을 등록합니다.
+    from src.app.core.db import Base
+
+    importlib.import_module("src.app.models")
+    return set(Base.metadata.tables)
+
+
+def _database_identifier(engine_or_inspector: object = None) -> str:
+    """비밀번호를 숨긴 DB URL을 기준선 출처 식별자로 반환합니다."""
+    candidate = engine_or_inspector
+    if candidate is not None and hasattr(candidate, "bind"):
+        candidate = candidate.bind
+    url = getattr(candidate, "url", None)
+    if url is None:
+        try:
+            from src.app.core.db import engine as default_engine
+
+            url = default_engine.url
+        except Exception:
+            return "unknown"
+    try:
+        return url.render_as_string(hide_password=True)
+    except Exception:
+        return str(url).replace(str(getattr(url, "password", "")), "***")
+
+
+def build_source_metadata(engine_or_inspector: object = None) -> dict[str, str]:
+    """기준선 생성 시점의 출처 메타데이터를 생성합니다."""
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "database_identifier": _database_identifier(engine_or_inspector),
+        "generated_by": getpass.getuser(),
+        "tool_version": G1_TOOL_VERSION,
+        "git_head": get_head_commit_sha(),
+    }
+
+
+def validate_source_metadata(payload: object) -> str | None:
+    """기준선 출처 메타데이터가 완전한지 검증하고 오류를 반환합니다."""
+    if not isinstance(payload, dict):
+        return "기준선 메타데이터 형식 오류"
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return "기준선 메타데이터 누락"
+    required = (
+        "generated_at",
+        "database_identifier",
+        "generated_by",
+        "tool_version",
+        "git_head",
+    )
+    missing = [
+        key for key in required if not isinstance(metadata.get(key), str) or not metadata[key]
+    ]
+    if missing:
+        return f"기준선 메타데이터 필드 누락: {', '.join(missing)}"
+    return None
 
 
 def sha256_file(path: Path) -> str:
@@ -285,16 +337,31 @@ def verify_db_schema() -> tuple[bool, str]:
 
         inspector = inspect(engine)
         existing = set(inspector.get_table_names())
+        orm_tables = get_orm_table_names()
     except Exception as exc:
         print(f"      DB 연결 실패: {exc}")
         return False, f"DB 연결 실패로 스키마를 검증하지 못했습니다: {exc}"
 
-    missing = [t for t in EXPECTED_TABLES if t not in existing]
-    print(f"      연결된 테이블: {len(existing)}개")
+    missing = sorted(orm_tables - existing)
+    db_only = sorted(existing - orm_tables)
+    unapproved = sorted(set(db_only) - APPROVED_EXTERNAL_TABLES)
+    print(f"      ORM 테이블: {len(orm_tables)}개 / 연결된 테이블: {len(existing)}개")
     if missing:
         print(f"      누락 테이블: {', '.join(missing)}")
-        return False, f"필수 테이블 누락: {', '.join(missing)}"
-    return True, "DB 필수 테이블 존재 확인"
+    if db_only:
+        print(f"      DB에만 존재하는 테이블: {', '.join(db_only)}")
+    if unapproved:
+        print(f"      [경고] 승인되지 않은 DB 테이블: {', '.join(unapproved)}")
+    if missing or unapproved:
+        details = []
+        if missing:
+            details.append(f"ORM에 있으나 DB에 없는 테이블: {', '.join(missing)}")
+        if unapproved:
+            details.append(f"DB에만 있고 승인되지 않은 테이블: {', '.join(unapproved)}")
+        return False, "; ".join(details)
+    if db_only:
+        return True, f"ORM 테이블 존재 확인 (승인된 외부 테이블 {len(db_only)}개 포함)"
+    return True, "ORM 전체 테이블 존재 확인"
 
 
 def normalize_type_string(col_type: object) -> str:
@@ -410,8 +477,9 @@ def generate_schema_signature(
 
         inspector = inspect(engine_or_inspector)
 
-    target_tables = sorted(tables if tables is not None else EXPECTED_TABLES)
     existing_tables = set(inspector.get_table_names())
+    orm_tables = get_orm_table_names() if tables is None else set(tables)
+    target_tables = sorted(orm_tables | existing_tables)
 
     tables_sig: dict[str, dict | None] = {}
     table_hashes: dict[str, str | None] = {}
@@ -432,6 +500,9 @@ def generate_schema_signature(
     canonical_json = json.dumps(schema_manifest, sort_keys=True, separators=(",", ":"))
     overall_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
     schema_manifest["overall_hash"] = overall_hash
+    schema_manifest["orm_tables"] = sorted(orm_tables)
+    schema_manifest["database_tables"] = sorted(existing_tables)
+    schema_manifest["metadata"] = build_source_metadata(engine_or_inspector)
     return schema_manifest
 
 
@@ -533,33 +604,29 @@ def compare_schema_signatures(
 def verify_schema_signature(
     engine: object = None,
     baseline_path: Path | None = None,
-    auto_save_baseline: bool = True,
+    auto_save_baseline: bool = False,
+    tables: tuple[str, ...] | list[str] | None = None,
 ) -> tuple[bool, str]:
     """전 테이블 스키마 서명을 생성하고 기준선과 비교 검증합니다."""
     print("[4/5] DB 전 테이블 스키마 서명 검증...")
     path = baseline_path or SCHEMA_BASELINE_PATH
+    if not path.exists():
+        return False, f"기준 서명 파일 없음: {path} (명시적 기준선 생성 명령 필요)"
+
     try:
-        current_sig = generate_schema_signature(engine_or_inspector=engine)
+        current_sig = generate_schema_signature(engine_or_inspector=engine, tables=tables)
     except Exception as exc:
         print(f"      스키마 서명 생성 실패: {exc}")
         return False, f"스키마 서명 생성 실패: {exc}"
-
-    if not path.exists():
-        if auto_save_baseline:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                json.dumps(current_sig, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            msg = f"기준 서명 파일 없음: 현재 스키마 서명을 기준선으로 신규 기록 ({path.name})"
-            print(f"      {msg}")
-            return True, msg
-        return False, f"기준 서명 파일 없음: {path}"
 
     try:
         baseline_sig = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return False, f"기준 서명 파일 로드 실패: {exc}"
+
+    metadata_error = validate_source_metadata(baseline_sig)
+    if metadata_error:
+        return False, metadata_error
 
     is_match, diff_messages, _ = compare_schema_signatures(baseline_sig, current_sig)
     if not is_match:
@@ -646,7 +713,7 @@ def _count_rows_by_cutover(
 def verify_reconciliation(
     session_factory: object | None = None,
     baseline_path: Path | None = None,
-    auto_save_baseline: bool = True,
+    auto_save_baseline: bool = False,
 ) -> tuple[bool, str]:
     """이행 시점 이전에 수집된 행의 수를 baseline 과 대조합니다.
 
@@ -657,15 +724,16 @@ def verify_reconciliation(
 
     동작 규약:
       - DB 조회 실패는 FAIL 로 보고하여 통과로 위장하지 않는다.
-      - baseline 파일이 없으면 현재 원본 행 수를 기록하고 PASS 한다
-        (스키마 서명 baseline 의 auto_save_baseline 패턴과 동일).
-      - 2회차부터 baseline 과 비교해 부족하면 FAIL, 같거나 많으면 PASS.
+      - baseline 파일이 없으면 FAIL 한다. 기준선 생성은 명시적 생성 명령에서만
+        수행하며 검증 경로에서는 파일을 기록하지 않는다.
+      - baseline 메타데이터가 없거나 불완전하면 FAIL 한다.
+      - baseline 과 비교해 부족하면 FAIL, 같거나 많으면 PASS 한다.
       - 두 테이블 모두 누적 0(즉, DB 가 비어있음)이면 baseline 비교 대상이
         의미 없으므로 "DB 가 비어있어 reconciliation 건너뜀" 메시지를 남기고
         PASS 한다(누적 0 은 통과로 위장하지 않으며, 빈 DB 자체의 판정은
         5단계가 담당한다).
 
-    읽기 전용이다. baseline 파일 기록 외 DDL 이나 DML 을 실행하지 않는다.
+    읽기 전용이며 DDL 이나 DML 을 실행하지 않는다.
     """
     print("[6/6] G1 reconciliation: 원본/수집 성장분 분리 대조...")
 
@@ -679,6 +747,28 @@ def verify_reconciliation(
 
     if baseline_path is None:
         baseline_path = MIGRATION_CUTOVER_BASELINE_PATH
+
+    if not baseline_path.exists():
+        return False, f"기준선 파일 없음: {baseline_path} (명시적 기준선 생성 명령 필요)"
+
+    try:
+        baseline_payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"reconciliation baseline 로드 실패: {exc}"
+
+    metadata_error = validate_source_metadata(baseline_payload)
+    if metadata_error:
+        return False, metadata_error
+    baseline_tables = baseline_payload.get("tables")
+    if not isinstance(baseline_tables, dict):
+        return False, "reconciliation baseline 테이블 형식 오류"
+    malformed_tables = [
+        table_label
+        for table_label in RECONCILIATION_TABLES
+        if not isinstance(baseline_tables.get(table_label), int)
+    ]
+    if malformed_tables:
+        return False, f"reconciliation baseline 형식 오류: {', '.join(malformed_tables)}"
 
     try:
         from src.app.models.bids import BidAnnouncement, BidResult
@@ -720,50 +810,9 @@ def verify_reconciliation(
         print("      DB 가 비어있어 reconciliation 건너뜀 (누적 0행, baseline 대조 의미 없음)")
         return True, "DB 가 비어있어 reconciliation 건너뜀 (누적 0행)"
 
-    # baseline 부재 — 스키마 서명 baseline 의 auto_save_baseline 패턴을 따른다.
-    if not baseline_path.exists():
-        if not auto_save_baseline:
-            return False, f"기준선 파일 없음: {baseline_path}"
-        baseline_payload = {
-            "schema_version": "1.0.0",
-            "cutover_timestamp": MIGRATION_CUTOVER_TS.isoformat(),
-            "rationale": (
-                "data/backups/data_assets_checksums.json 의 generated_at 와 "
-                "동일한 시각을 1차 기준점으로 둔다. 운영에서 더 정확한 "
-                "이행 시점이 확인되면 본 파일을 갱신하라."
-            ),
-            "tables": {table_label: original_counts[table_label] for table_label, _ in models},
-        }
-        try:
-            baseline_path.parent.mkdir(parents=True, exist_ok=True)
-            baseline_path.write_text(
-                json.dumps(baseline_payload, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            return False, f"reconciliation baseline 기록 실패: {exc}"
-        msg = (
-            f"최초 기준선 기록 — 원본 "
-            f"{original_counts[RECONCILIATION_TABLES[0]]:,}행 / "
-            f"{original_counts[RECONCILIATION_TABLES[1]]:,}행 "
-            f"({baseline_path.name})"
-        )
-        print(f"      {msg}")
-        return True, msg
-
-    # baseline 존재 — 로드 후 비교.
-    try:
-        baseline_payload = json.loads(baseline_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        return False, f"reconciliation baseline 로드 실패: {exc}"
-
-    baseline_tables = baseline_payload.get("tables", {})
     failures: list[str] = []
     for table_label, _model in models:
-        baseline_value = baseline_tables.get(table_label)
-        if not isinstance(baseline_value, int):
-            failures.append(f"{table_label} baseline 형식 오류")
-            continue
+        baseline_value = baseline_tables[table_label]
         current_value = original_counts[table_label]
         growth = growth_counts[table_label]
         if current_value < baseline_value:
@@ -800,6 +849,60 @@ def get_head_commit_sha() -> str:
     except Exception:
         return "unknown"
     return "unknown"
+
+
+def generate_reconciliation_baseline(
+    session_factory: object | None = None,
+    baseline_path: Path | None = None,
+) -> tuple[bool, str]:
+    """현재 DB의 reconciliation 기준선을 명시적으로 생성합니다."""
+    if session_factory is None:
+        try:
+            from src.app.core.db import SessionLocal
+        except Exception as exc:
+            return False, f"reconciliation DB 세션 로드 실패: {exc}"
+        session_factory = SessionLocal
+    path = baseline_path or MIGRATION_CUTOVER_BASELINE_PATH
+
+    try:
+        from src.app.models.bids import BidAnnouncement, BidResult
+    except Exception as exc:
+        return False, f"reconciliation 모델 로드 실패: {exc}"
+
+    models = (
+        (RECONCILIATION_TABLES[0], BidAnnouncement),
+        (RECONCILIATION_TABLES[1], BidResult),
+    )
+    session = session_factory()
+    try:
+        original_counts: dict[str, int] = {}
+        for table_label, model_cls in models:
+            original, _growth = _count_rows_by_cutover(session, model_cls, table_label)
+            original_counts[table_label] = original
+        bind = getattr(session, "bind", None)
+        if bind is None:
+            factory_options = getattr(session_factory, "kw", {})
+            bind = factory_options.get("bind")
+        payload = {
+            "schema_version": "1.0.0",
+            "cutover_timestamp": MIGRATION_CUTOVER_TS.isoformat(),
+            "rationale": ("명시적 기준선 생성 명령으로 수집한 이행 시점 이전 원본 행 수입니다."),
+            "tables": original_counts,
+            "metadata": build_source_metadata(bind),
+        }
+    except Exception as exc:
+        return False, f"reconciliation 기준선 생성 실패: {exc}"
+    finally:
+        close = getattr(session, "close", None)
+        if callable(close):
+            close()
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as exc:
+        return False, f"reconciliation 기준선 기록 실패: {exc}"
+    return True, f"reconciliation 기준선 생성 완료: {path}"
 
 
 def generate_verification_report(
@@ -861,9 +964,16 @@ def main() -> int:
         help="스키마 서명 기준선 파일 경로 (기본값: data/backups/schema_signature_baseline.json)",
     )
     parser.add_argument(
+        "--generate-schema-baseline",
         "--update-baseline",
+        dest="generate_schema_baseline",
         action="store_true",
-        help="현재 DB 스키마 서명으로 기준선 파일 갱신",
+        help="현재 DB 스키마 서명으로 기준선을 생성하고 검증 없이 종료",
+    )
+    parser.add_argument(
+        "--generate-reconciliation-baseline",
+        action="store_true",
+        help="현재 DB 원본 행 수로 reconciliation 기준선을 생성하고 검증 없이 종료",
     )
     parser.add_argument(
         "--reconciliation-baseline-path",
@@ -877,14 +987,28 @@ def main() -> int:
     print("refac_bid_box Phase 1 데이터 보존 무손실 검증")
     print("=" * 60)
 
-    if args.update_baseline:
-        sig = generate_schema_signature()
-        args.baseline_path.parent.mkdir(parents=True, exist_ok=True)
-        args.baseline_path.write_text(
-            json.dumps(sig, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        print(f"기준선 스키마 서명 갱신 완료: {args.baseline_path}")
+    if args.generate_schema_baseline or args.generate_reconciliation_baseline:
+        generation_results: list[tuple[bool, str]] = []
+        if args.generate_schema_baseline:
+            try:
+                sig = generate_schema_signature()
+                args.baseline_path.parent.mkdir(parents=True, exist_ok=True)
+                args.baseline_path.write_text(
+                    json.dumps(sig, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                generation_results.append((True, f"스키마 기준선 생성 완료: {args.baseline_path}"))
+            except Exception as exc:
+                generation_results.append((False, f"스키마 기준선 생성 실패: {exc}"))
+        if args.generate_reconciliation_baseline:
+            generation_results.append(
+                generate_reconciliation_baseline(
+                    baseline_path=args.reconciliation_baseline_path,
+                )
+            )
+        for ok, message in generation_results:
+            print(("PASS" if ok else "FAIL") + f": {message}")
+        return 0 if all(ok for ok, _ in generation_results) else 1
 
     step1_ok, step1_msg = verify_model_weights()
     step2_ok, step2_msg = verify_chroma_db()
