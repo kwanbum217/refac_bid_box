@@ -122,7 +122,7 @@ def test_retries_when_top_level_ok_but_file_edit_not_ok_for_antigravity():
 
     ok, detail = acquire_permissions(
         "term_1",
-        "gemini-3.7-flash-medium",
+        "gemini-3.8-flash-medium",
         cli_type="antigravity",
         delay_sec=0,
         deadline_sec=100.0,
@@ -167,7 +167,7 @@ def test_spawn_permission_setup_detaches_child_session(tmp_path: Path, monkeypat
     spawn_permission_setup(
         "scripts/orca_agy_launch.py",
         "term_z",
-        "gemini-3.7-flash-medium",
+        "gemini-3.8-flash-medium",
         popen=fake_popen,
     )
 
@@ -175,7 +175,7 @@ def test_spawn_permission_setup_detaches_child_session(tmp_path: Path, monkeypat
     cmd, kwargs = spawned[0]
     assert PERMISSION_SETUP_FLAG in cmd
     assert "term_z" in cmd
-    assert "gemini-3.7-flash-medium" in cmd
+    assert "gemini-3.8-flash-medium" in cmd
     assert kwargs.get("start_new_session") is True
 
 

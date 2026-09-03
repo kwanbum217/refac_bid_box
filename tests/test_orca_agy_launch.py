@@ -49,11 +49,11 @@ def test_missing_file_times_out(tmp_path: Path):
 
 def test_build_command_passes_prompt_as_agy_argument():
     """-i 인자 경로여야 합니다. 스플래시 멈춤을 피하려면 지시문을 인자로 줘야 합니다."""
-    cmd = build_command("gemini-3.7-flash-medium", "본문")
+    cmd = build_command("gemini-3.8-flash-medium", "본문")
     assert cmd == [
         "agy",
         "--model",
-        "gemini-3.7-flash-medium",
+        "gemini-3.8-flash-medium",
         "--mode",
         "accept-edits",
         "-i",
@@ -77,7 +77,7 @@ def test_build_command_supports_different_model_ids():
 
 def test_build_command_includes_accept_edits_mode_at_startup():
     """--mode accept-edits 가 시작 인자에 없으면 첫 편집 전에 승인 대화창이 뜹니다."""
-    cmd = build_command("gemini-3.7-flash-medium", "본문")
+    cmd = build_command("gemini-3.8-flash-medium", "본문")
     assert "--mode" in cmd
     idx = cmd.index("--mode")
     assert cmd[idx + 1] == "accept-edits"
@@ -85,7 +85,7 @@ def test_build_command_includes_accept_edits_mode_at_startup():
 
 def test_build_command_never_includes_dangerously_skip_permissions():
     """--dangerously-skip-permissions 는 범위 밖 명령까지 승인하므로 절대 쓰면 안 됩니다."""
-    for model in ("gemini-3.7-flash-medium", "claude-sonnet-4-6"):
+    for model in ("gemini-3.8-flash-medium", "claude-sonnet-4-6"):
         cmd = build_command(model, "임의 지시")
         assert "--dangerously-skip-permissions" not in cmd
 
@@ -118,7 +118,7 @@ def test_commit_notice_is_appended_when_enabled(tmp_path: Path, monkeypatch, cap
         mod.main(
             [
                 "--model",
-                "gemini-3.7-flash-medium",
+                "gemini-3.8-flash-medium",
                 "--preamble",
                 str(target),
                 "--timeout-sec",
@@ -148,7 +148,7 @@ def test_commit_notice_omitted_when_disabled(tmp_path: Path, monkeypatch):
         mod.main(
             [
                 "--model",
-                "gemini-3.7-flash-medium",
+                "gemini-3.8-flash-medium",
                 "--preamble",
                 str(target),
                 "--timeout-sec",
@@ -170,7 +170,7 @@ def test_main_returns_nonzero_when_preamble_times_out(tmp_path: Path, capsys):
     code = mod.main(
         [
             "--model",
-            "gemini-3.7-flash-medium",
+            "gemini-3.8-flash-medium",
             "--preamble",
             str(target),
             "--timeout-sec",
@@ -214,14 +214,14 @@ def test_acquire_permissions_records_cli_metadata():
     prepare = _FakePrepare([{"ok": True, "file_edit_auto_approve": {"ok": True}}])
 
     ok, _ = acquire_permissions(
-        "term_x", "gemini-3.7-flash-high", delay_sec=0, sleep=lambda _: None, prepare=prepare
+        "term_x", "gemini-3.8-flash-high", delay_sec=0, sleep=lambda _: None, prepare=prepare
     )
 
     assert ok is True
     assert len(prepare.calls) == 1
     call = prepare.calls[0]
     assert call["cli_type"] == "antigravity"
-    assert call["model"] == "gemini-3.7-flash-high"
+    assert call["model"] == "gemini-3.8-flash-high"
     assert call["launcher"], "런처 경로를 기록하지 않았습니다"
 
 
@@ -230,7 +230,7 @@ def test_acquire_permissions_never_forces_mode_transition():
     prepare = _FakePrepare([{"ok": True, "file_edit_auto_approve": {"ok": True}}])
 
     acquire_permissions(
-        "term_x", "gemini-3.7-flash-high", delay_sec=0, sleep=lambda _: None, prepare=prepare
+        "term_x", "gemini-3.8-flash-high", delay_sec=0, sleep=lambda _: None, prepare=prepare
     )
 
     assert prepare.calls[0]["kwargs"].get("force_file_edit") in (None, False)
@@ -244,7 +244,7 @@ def test_acquire_permissions_retries_while_not_ready():
 
     ok, _ = acquire_permissions(
         "term_x",
-        "gemini-3.7-flash-high",
+        "gemini-3.8-flash-high",
         delay_sec=0,
         deadline_sec=100.0,
         interval_sec=0,
@@ -275,7 +275,7 @@ def test_acquire_permissions_retries_when_top_level_ok_but_file_edit_fails():
 
     ok, _ = acquire_permissions(
         "term_x",
-        "gemini-3.7-flash-high",
+        "gemini-3.8-flash-high",
         delay_sec=0,
         deadline_sec=100.0,
         interval_sec=0,
@@ -293,7 +293,7 @@ def test_acquire_permissions_reports_failure_after_deadline():
 
     ok, detail = acquire_permissions(
         "term_x",
-        "gemini-3.7-flash-high",
+        "gemini-3.8-flash-high",
         delay_sec=0,
         deadline_sec=0,
         interval_sec=0,
@@ -314,13 +314,13 @@ def test_launcher_schedules_permission_setup(tmp_path: Path, monkeypatch):
         spawned.append((cmd, kwargs))
         return object()
 
-    spawn_permission_setup("term_y", "gemini-3.7-flash-high", popen=fake_popen)
+    spawn_permission_setup("term_y", "gemini-3.8-flash-high", popen=fake_popen)
 
     assert len(spawned) == 1
     cmd, kwargs = spawned[0]
     assert PERMISSION_SETUP_FLAG in cmd
     assert "term_y" in cmd
-    assert "gemini-3.7-flash-high" in cmd, "자식이 모델을 몰라 메타데이터를 못 남깁니다"
+    assert "gemini-3.8-flash-high" in cmd, "자식이 모델을 몰라 메타데이터를 못 남깁니다"
     assert kwargs["start_new_session"] is True, "부모가 exec 되면 자식이 같이 죽습니다"
 
 
@@ -348,7 +348,7 @@ def test_main_warns_when_terminal_handle_missing(tmp_path: Path, monkeypatch, ca
         mod.main(
             [
                 "--model",
-                "gemini-3.7-flash-medium",
+                "gemini-3.8-flash-medium",
                 "--preamble",
                 str(target),
                 "--timeout-sec",

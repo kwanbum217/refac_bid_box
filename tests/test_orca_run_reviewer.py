@@ -395,7 +395,7 @@ def test_json_output_mode_returns_valid_json(tmp_path, mock_git):
 
     assert code == 0
     parsed = json.loads(output)
-    assert parsed["model"] == "gemini-3.7-flash-high"
+    assert parsed["model"] == "gemini-3.8-flash-high"
     assert parsed["checklist_count"] == 2
     assert parsed["ok"] is True
     assert parsed["exit_code"] == 0

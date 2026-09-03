@@ -37,7 +37,7 @@ except (ModuleNotFoundError, ImportError):
     from scripts.orca_model_router import provider_for_model
     from scripts.validate_review_report import evaluate, parse_checklist
 
-DEFAULT_MODEL = "gemini-3.7-flash-high"
+DEFAULT_MODEL = "gemini-3.8-flash-high"
 DEFAULT_MODEL_TIMEOUT = 600
 DEFAULT_GIT_TIMEOUT = 10
 # 2026-08-31 실측: 최근 Wave G/H Task diff 5건의 문자 수 = 5,066 / 9,153 / 23,916 / 24,232 / 38,401.
