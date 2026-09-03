@@ -87,6 +87,38 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         )
 
 
+class E2EMockModelWrapper:
+    """E2E 테스트 시 무거운 ML 가중치 로드 없이 UI 예측 인터랙션을 검증하기 위한 경량 Mock 어댑터입니다."""
+
+    def __init__(self, name: str = "Quantum Leap V25 Pro") -> None:
+        self.metadata = {
+            "name": name,
+            "required_features": [],
+            "interval": {"target_coverage": 0.9},
+        }
+
+    def get_display_name(self) -> str:
+        return str(self.metadata["name"])
+
+    def get_features(self) -> list[str]:
+        return []
+
+    def get_serving_columns(self) -> list[str]:
+        return []
+
+    def get_category_levels(self) -> None:
+        return None
+
+    def run_preprocess(self, features_dict: dict[str, Any]) -> None:
+        return None
+
+    def predict(self, df: Any) -> float:
+        return 0.8752
+
+    def predict_interval(self, df: Any) -> tuple[float, float]:
+        return (0.8500, 0.9000)
+
+
 @pytest.fixture(scope="session")
 def e2e_db_engine() -> collections.abc.Generator[Engine, None, None]:
     """E2E 테스트 전용 임시 SQLite 격리 DB 엔진을 생성하고 FastAPI 의존성에 주입합니다.
@@ -129,6 +161,30 @@ def e2e_db_engine() -> collections.abc.Generator[Engine, None, None]:
         app.dependency_overrides.pop(get_db, None)
         engine.dispose()
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _e2e_mock_prediction_models(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """E2E 테스트 실행 시에만 한정하여 가중치 없는 경량 Mock 모델을 안전하게 주입합니다."""
+    from src.ml.model_registry import ModelRegistry
+
+    mock_wrapper = E2EMockModelWrapper("Quantum Leap V25 Pro")
+    mock_models: dict[str, Any] = {
+        "quantum_leap_v25_pro": mock_wrapper,
+        "v25": mock_wrapper,
+        "servc_institution_v1": mock_wrapper,
+    }
+
+    monkeypatch.setattr(ModelRegistry, "_sync_registry", classmethod(lambda cls, force=False: None))
+    monkeypatch.setattr(
+        ModelRegistry,
+        "get_model",
+        classmethod(lambda cls, model_id: mock_models.get(str(model_id), mock_wrapper)),
+    )
+    monkeypatch.setattr(ModelRegistry, "_models", mock_models)
 
 
 @pytest.fixture(scope="session")
