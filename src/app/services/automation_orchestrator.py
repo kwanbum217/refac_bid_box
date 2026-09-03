@@ -15,7 +15,7 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
@@ -432,13 +432,25 @@ def _try_reuse_recent_execution(
 
 
 def confirm_automation_request(db: Session, request_obj: AutomationRequest) -> AutomationRequest:
-    if request_obj.confirmed_at:
-        return request_obj
-    request_obj.confirmed_at = utcnow()
-    request_obj.status = STATUS_QUEUED
-    request_obj.result_summary = "실행 확인이 완료되었습니다."
+    now = utcnow()
+    stmt = (
+        update(AutomationRequest)
+        .where(
+            AutomationRequest.id == request_obj.id,
+            AutomationRequest.confirmed_at.is_(None),
+        )
+        .values(
+            confirmed_at=now,
+            status=STATUS_QUEUED,
+            result_summary="실행 확인이 완료되었습니다.",
+        )
+    )
+    result = db.execute(stmt)
     db.commit()
     db.refresh(request_obj)
+
+    if result.rowcount == 0:
+        return request_obj
 
     reused = _try_reuse_recent_execution(db, request_obj)
     if reused is not None:

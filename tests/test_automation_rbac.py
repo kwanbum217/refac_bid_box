@@ -12,9 +12,20 @@ tests/test_automation_rbac.py
 
 from unittest.mock import patch
 
+import pytest
+
 from src.app.services.automation_tokens import (
     _sign,
 )
+from tests.fake_redis import fake_confirmation_redis
+
+
+@pytest.fixture(autouse=True)
+def fake_redis_for_automation_tokens():
+    """확인 토큰 소비 경로에 대역 Redis 연결을 주입합니다 (운영 코드는 fail-closed 유지)."""
+    with fake_confirmation_redis():
+        yield
+
 
 VALID_SIGNUP = {
     "username": "rbac-user",
