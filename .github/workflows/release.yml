@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    name: 수동 릴리스
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check release readiness
+        id: readiness
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_API_URL: ${{ github.api_url }}
+        run: |
+          python scripts/check_release_readiness.py \
+            --commit "$(git rev-parse HEAD)" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Generate grouped release notes
+        run: |
+          python scripts/check_release_readiness.py \
+            --tag "${{ steps.readiness.outputs.tag }}" \
+            --notes-output "$RUNNER_TEMP/release-notes.md"
+
+      - name: Create and push release tag
+        env:
+          RELEASE_TAG: ${{ steps.readiness.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$RELEASE_TAG" "$(git rev-parse HEAD)"
+          git push origin "$RELEASE_TAG"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.readiness.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
