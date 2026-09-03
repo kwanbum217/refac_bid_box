@@ -19,6 +19,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Any, cast
@@ -359,6 +360,8 @@ async def drift_monitor_task(
 
     - settings/환경변수 ML_DRIFT_MONITOR_ENABLED 플래그로 활성화 제어 (기본값: False)
     - CATEGORY_MODEL_NAMES 의 각 카테고리별 모델에 대해 baseline 아티팩트 조회
+    - 평가 윈도우 [now - evaluation_window_days, now) 반열림 구간(개찰일 기준)으로 최근 데이터만 조회
+    - persist=False 로 운영 학습 데이터셋 Parquet 덮어쓰기 방지
     - Single Source of Truth features.py 를 통해 최근 N일 평가 데이터의 특징 프레임 산출
     - check_dataset_drift 호출하여 다차원 PSI 계산 및 판정
     - 판정 결과를 retrain_logs 테이블에 기록 (스키마 변경 없이 challenger_version 에 baseline_version 기록)
@@ -411,18 +414,31 @@ async def drift_monitor_task(
 
             try:
                 # 최근 데이터셋 수집 (Single Source of Truth features.py 사용)
+                # 평가 윈도우 [now - evaluation_window_days, now) 반열림 구간 적용 (개찰일 기준 start_at 이상, end_at 미만)
+                # 모니터링 경로는 persist=False 로 운영 Parquet 덮어쓰기 방지
+                now = utcnow()
+                start_at = now - timedelta(days=evaluation_window_days)
+                end_at = now
+
                 df_raw = await asyncio.to_thread(
                     build_training_dataset,
                     db,
                     category_code=category,
+                    start_at=start_at,
+                    end_at=end_at,
+                    persist=False,
                 )
 
                 if df_raw.empty:
                     insufficient_summary = {
-                        "reason": f"카테고리 {category}에 대한 최근 평가 데이터가 없습니다.",
+                        "reason": (
+                            f"카테고리 {category}에 대한 최근 평가 데이터가 없습니다 "
+                            f"(평가 윈도우={evaluation_window_days}일, 구간: [{start_at.isoformat()}, {end_at.isoformat()}))."
+                        ),
                         "category": category,
                         "model_name": model_name,
                         "recent_samples": 0,
+                        "evaluation_window_days": evaluation_window_days,
                     }
                     await asyncio.to_thread(
                         _record_drift_log,
