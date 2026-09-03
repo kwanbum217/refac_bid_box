@@ -251,8 +251,6 @@ filterwarnings = [
     "ignore:Only training set found, disabling early stopping.*:UserWarning:lightgbm.callback",
     "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:UserWarning:fastapi.testclient",
     "ignore:subprocess \\d+ is still running.*:ResourceWarning",
-    "ignore:unclosed file.*:ResourceWarning:scripts.orca_kimi_launch",
-    "ignore:unclosed file.*:ResourceWarning:scripts.orca_agy_launch",
     "ignore:unclosed file.*:ResourceWarning:_pytest.python",
 ]
 

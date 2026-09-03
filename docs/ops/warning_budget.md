@@ -153,35 +153,11 @@ orca 런처 관련 테스트는 의도적으로 자식 프로세스를 백그라
 
 ---
 
-### filter_id : `F008_orca_kimi_launch_unclosed_file`
-
-- module : `scripts.orca_kimi_launch`
-- category : `ResourceWarning`
-- message : `unclosed file.*`
-- 발원: `scripts/orca_kimi_launch.py:131` 의 `common.spawn_permission_setup` 호출 경로에서 `.orca/permission_setup.log` 를 열고 닫지 않는 문제.
-
-### 사유
-scripts/orca_kimi_launch.py 는 이 Task 의 `allowed_write_files` 밖이다. 캡슐 사양의 escalate_when ("allowed_write_files 범위를 벗어난 파일 수정이 필요한 경우") 에 따라 별도 Task (`scripts/orca_*_launch.py` unclosed file 정리) 에서 수정한다. 현재는 경고를 노출하지 않되, 사유를 명시해 영구 부채가 되지 않게 한다.
-
-### 재검토 시점
-- scripts/orca_kimi_launch.py 를 수정하는 별도 Task 착수 시 (즉시 — 2026-Q4 시작 시점)
-
----
-
-### filter_id : `F009_orca_agy_launch_unclosed_file`
-
-- module : `scripts.orca_agy_launch`
-- category : `ResourceWarning`
-- message : `unclosed file.*`
-- 발원: `scripts/orca_agy_launch.py:128` 의 `common.spawn_permission_setup` 호출 경로에서 `.orca/permission_setup.log` 를 열고 닫지 않는 문제.
-
-### 사유
-scripts/orca_agy_launch.py 도 이 Task 의 `allowed_write_files` 밖. F008 과 동일하게 별도 Task 에서 수정하며, 현재는 사유를 명시해 필터로 처리한다.
-
-### 재검토 시점
-- scripts/orca_agy_launch.py 를 수정하는 별도 Task 착수 시 (즉시 — 2026-Q4 시작 시점)
-
----
+> **F008·F009 제거 (2026-09-03)**: `scripts/orca_kimi_launch.py` 와
+> `scripts/orca_agy_launch.py` 의 unclosed file 경고는 필터가 아니라 수정으로
+> 해결했습니다. `scripts/orca_worker_launch_common.py` 의 승인 설정 자식 기동에서
+> 부모가 로그 핸들을 닫지 않던 것이 원인이며, 실측 3건에서 0건이 됐습니다.
+> 정책 1번(우리 코드는 필터로 덮지 않는다)에 맞춘 조치입니다.
 
 ### filter_id : `F010_pytest_python_unclosed_file`
 
