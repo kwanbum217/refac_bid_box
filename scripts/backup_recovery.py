@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
-"""
-refac_bid_box 통합 백업 및 복원 도구 (Backup & Recovery Tool)
-
-운영 DB(MySQL), ChromaDB, 서빙 모델 및 레지스트리를
-단일 복구 단위(Unified Recovery Unit)로 묶어 백업/복원/검증을 수행합니다.
-
-안전 규칙:
-  1. dry-run 이 기본값이며, 실제 실행은 --execute 플래그를 요구합니다.
-  2. 복원 시 덮어쓸 대상을 먼저 출력하고 --confirm 플래그(또는 대화형 확인) 없이는 진행되지 않습니다.
-  3. 백업 시 생성 시각, 대상별 경로/크기/체크섬, DB 행 수 요약, Git HEAD 커밋이 담긴 매니페스트를 기록합니다.
-  4. 복원 완료 후 scripts/verify_migration.py 를 재사용해 무손실 무결성을 검증합니다.
-"""
+"""refac_bid_box 통합 백업 및 복원 도구 (Backup & Recovery Tool)."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess  # nosec B404
 import sys
 from datetime import UTC, datetime
@@ -30,7 +20,10 @@ from scripts.backup_recovery_core import (
     REQUIRED_MODEL_SOURCE_PATH,
     REQUIRED_SOURCE_ASSETS,
     BackupAssetError,
+    cleanup_drill_target_dir,
+    create_mysql_database,
     create_tar_archive,
+    drop_mysql_database,
     dump_mysql_database,
     extract_tar_archive,
     get_asset_state,
@@ -57,7 +50,10 @@ __all__ = [
     "REQUIRED_MODEL_SOURCE_PATH",
     "REQUIRED_SOURCE_ASSETS",
     "BackupAssetError",
+    "cleanup_drill_target_dir",
+    "create_mysql_database",
     "create_tar_archive",
+    "drop_mysql_database",
     "dump_mysql_database",
     "execute_backup",
     "execute_restore",
@@ -71,6 +67,7 @@ __all__ = [
     "prune_snapshots",
     "query_db_row_counts",
     "restore_mysql_database",
+    "run_drill_g1_verification",
     "run_post_restore_verification",
     "run_restore_drill",
     "sha256_file",
@@ -80,9 +77,7 @@ __all__ = [
 
 def mask_secret(value: str) -> str:
     """비밀번호 등 시크릿 문자열을 마스킹 처리합니다."""
-    if not value:
-        return "<empty>"
-    return "******"
+    return "******" if value else "<empty>"
 
 
 def execute_backup(
@@ -93,38 +88,27 @@ def execute_backup(
 ) -> dict[str, Any]:
     """운영 DB, ChromaDB, 서빙 모델을 단일 복구 단위로 백업합니다."""
     root = project_root or PROJECT_ROOT
-    db_config = get_db_config()
-    chroma_path = get_chroma_source_path(root)
-    model_paths = get_model_source_paths(root)
-    asset_states = dict(
-        zip(
-            REQUIRED_SOURCE_ASSETS,
-            (get_asset_state(path) for path in (chroma_path, root / REQUIRED_MODEL_SOURCE_PATH)),
-            strict=True,
-        )
+    db_config, chroma_path, model_paths = (
+        get_db_config(),
+        get_chroma_source_path(root),
+        get_model_source_paths(root),
     )
-    missing_assets = [
-        f"{name} ({state})" for name, state in asset_states.items() if state != "available"
-    ]
-    timestamp_str = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    target_dir = output_dir or (DEFAULT_SNAPSHOTS_DIR / f"snapshot_{timestamp_str}")
-    print("=" * 60)
-    print("refac_bid_box 통합 백업 (Unified Backup)")
-    print("=" * 60)
-    print(f"  실행 모드: {'[실제 실행 (EXECUTE)]' if execute else '[사전 점검 (DRY-RUN)]'}")
-    print(f"  대상 스냅샷 경로: {target_dir}")
+    asset_states = {
+        k: get_asset_state(p)
+        for k, p in (("chroma_db", chroma_path), ("models", root / REQUIRED_MODEL_SOURCE_PATH))
+    }
+    missing_assets = [f"{n} ({s})" for n, s in asset_states.items() if s != "available"]
+
+    ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    target_dir = output_dir or (DEFAULT_SNAPSHOTS_DIR / f"snapshot_{ts}")
     print(
-        f"  DB 대상: {db_config['user']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
-    )
-    print(f"  ChromaDB 대상: {chroma_path} ({'존재' if chroma_path.exists() else '미존재'})")
-    print(
-        f"  모델/MLOps 대상: {len(model_paths)}개 디렉토리 ({', '.join(p.name for p in model_paths)})"
+        "=" * 60
+        + f"\nrefac_bid_box 통합 백업 | {'[EXECUTE]' if execute else '[DRY-RUN]'}\n대상: {target_dir}\n"
+        + "=" * 60
     )
     if not execute:
-        print("-" * 60)
-        print("[DRY-RUN] 백업 대상과 경로를 확인했습니다. 파일 쓰기는 수행되지 않았습니다.")
-        print("[DRY-RUN] 실제 백업을 실행하려면 --execute 플래그를 추가하십시오.")
-        return {
+        print("[DRY-RUN] 백업 대상 확인 완료. 파일 쓰기는 수행되지 않았습니다.")
+        ret = {
             "mode": "dry-run",
             "target_dir": str(target_dir),
             "db_target": f"{db_config['user']}@{db_config['host']}:{db_config['port']}/{db_config['name']}",
@@ -132,39 +116,32 @@ def execute_backup(
             "model_paths": [str(p) for p in model_paths],
             "required_assets": asset_states,
         }
+        return ret
     if missing_assets and not allow_partial:
         raise BackupAssetError("필수 백업 자산을 확인할 수 없습니다: " + ", ".join(missing_assets))
-    print("-" * 60)
     target_dir.mkdir(parents=True, exist_ok=True)
     head_commit = get_head_commit_sha(root)
-    print(f"[1/4] Git HEAD 커밋 확인: {head_commit}")
-    print(f"[2/4] MySQL DB 덤프 생성 중... ({db_config['name']})")
     db_dump_file = target_dir / "db_dump.sql.gz"
     db_dump_started_at = datetime.now(UTC).isoformat()
     dump_mysql_database(db_config, db_dump_file)
     db_dump_finished_at = datetime.now(UTC).isoformat()
     db_size, db_sha256 = validate_backup_output(db_dump_file, "database")
     row_counts = query_db_row_counts(db_config)
-    print(
-        f"      DB 덤프 완료: {db_dump_file.name} ({db_size:,} bytes, sha256: {db_sha256[:12]}...)"
+
+    def _dump_asset(key, paths, out_name):
+        f, sz, sha = target_dir / out_name, None, None
+        if asset_states[key] == "available":
+            create_tar_archive(paths, f, base_dir=root)
+            sz, sha = validate_backup_output(f, key)
+        return f, sz, sha
+
+    chroma_dump_file, chroma_size, chroma_sha256 = _dump_asset(
+        "chroma_db", [chroma_path], "chroma_db.tar.gz"
     )
-    print(f"[3/4] ChromaDB 아카이브 생성 중... ({chroma_path.name})")
-    chroma_dump_file = target_dir / "chroma_db.tar.gz"
-    if asset_states["chroma_db"] == "available":
-        create_tar_archive([chroma_path], chroma_dump_file, base_dir=root)
-        chroma_size, chroma_sha256 = validate_backup_output(chroma_dump_file, "chroma_db")
-    else:
-        chroma_size, chroma_sha256 = None, None
-    print(f"      ChromaDB 아카이브 완료: {chroma_dump_file.name} ({chroma_size})")
-    print(f"[4/4] 모델 및 레지스트리 아카이브 생성 중... ({len(model_paths)}개 경로)")
-    models_dump_file = target_dir / "models.tar.gz"
-    if asset_states["models"] == "available":
-        create_tar_archive(model_paths, models_dump_file, base_dir=root)
-        models_size, models_sha256 = validate_backup_output(models_dump_file, "models")
-    else:
-        models_size, models_sha256 = None, None
-    print(f"      모델 아카이브 완료: {models_dump_file.name} ({models_size})")
-    file_assets_collected_at = datetime.now(UTC).isoformat()
+    models_dump_file, models_size, models_sha256 = _dump_asset(
+        "models", model_paths, "models.tar.gz"
+    )
+
     manifest_data = {
         "schema": "BACKUP_MANIFEST_V1",
         "created_at": datetime.now(UTC).isoformat(),
@@ -176,7 +153,7 @@ def execute_backup(
         "consistency_window": {
             "db_dump_started_at": db_dump_started_at,
             "db_dump_finished_at": db_dump_finished_at,
-            "file_assets_collected_at": file_assets_collected_at,
+            "file_assets_collected_at": datetime.now(UTC).isoformat(),
         },
         "components": {
             "database": {
@@ -186,7 +163,7 @@ def execute_backup(
                 "row_counts": row_counts,
             },
             "chroma_db": {
-                "path": chroma_dump_file.name if chroma_size is not None else None,
+                "path": chroma_dump_file.name if chroma_size else None,
                 "size_bytes": chroma_size,
                 "sha256": chroma_sha256,
                 "status": asset_states["chroma_db"],
@@ -195,7 +172,7 @@ def execute_backup(
                 else str(chroma_path),
             },
             "models": {
-                "path": models_dump_file.name if models_size is not None else None,
+                "path": models_dump_file.name if models_size else None,
                 "size_bytes": models_size,
                 "sha256": models_sha256,
                 "status": asset_states["models"],
@@ -208,68 +185,224 @@ def execute_backup(
     }
     manifest_file = target_dir / MANIFEST_FILENAME
     manifest_file.write_text(
-        json.dumps(manifest_data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
+        json.dumps(manifest_data, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    print("-" * 60)
-    print(f"통합 백업 스냅샷 생성 완료: {target_dir}")
-    print(f"매니페스트: {manifest_file.name}")
+    print(f"통합 백업 완료: {target_dir} ({manifest_file.name})")
     return manifest_data
 
 
-def run_restore_drill(snapshot_dir: Path, target_dir: Path) -> dict[str, Any]:
-    """격리 대상에 대한 복원 계획만 검증합니다.
+def run_drill_g1_verification(
+    target_dir: Path,
+    drill_db_config: dict[str, Any],
+    report_path: Path | None = None,
+    project_root: Path | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
+    root = project_root or PROJECT_ROOT
+    script = root / "scripts" / "verify_migration.py"
+    if not script.exists():
+        return False, f"검증 스크립트 없음: {script}", {}
+    rep = report_path or (target_dir / "drill_g1_verification_report.json")
+    env = {
+        **os.environ,
+        "DB_NAME": str(drill_db_config["name"]),
+        "DB_HOST": str(drill_db_config["host"]),
+        "DB_PORT": str(drill_db_config["port"]),
+        "DB_USER": str(drill_db_config["user"]),
+        "DATA_ASSET_ROOT": str(target_dir),
+        "CHROMA_DB_PATH": str(target_dir / "chroma_db"),
+        "MODEL_FILES_DIR": str(target_dir / "data" / "model_files"),
+        "MODEL_BACKUPS_DIR": str(target_dir / "data" / "model_backups"),
+    }
+    if drill_db_config.get("password"):
+        env["DB_PASSWORD"] = str(drill_db_config["password"])
+    proc = subprocess.run(
+        [sys.executable, str(script), "--report-path", str(rep)],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )  # nosec B603, B607
+    try:
+        rep_data = json.loads(rep.read_text(encoding="utf-8")) if rep.exists() else {}
+    except Exception:
+        rep_data = {}
+    return (
+        proc.returncode == 0,
+        (
+            "G1 무손실 검증 통과"
+            if proc.returncode == 0
+            else (proc.stderr or proc.stdout or "G1 검증 실패").strip()
+        ),
+        rep_data,
+    )
 
-    대상 디렉토리는 필수이며 프로젝트 루트 또는 운영 경로를 지정할 수 없습니다.
-    아카이브를 해제하거나 DB 클라이언트를 호출하지 않아 실제 복원이 발생하지 않습니다.
-    """
-    if not str(target_dir).strip():
+
+def _measure_rpo(manifest: dict[str, Any], st: datetime) -> dict[str, Any]:
+    w, c = manifest.get("consistency_window", {}), manifest.get("created_at")
+
+    def _diff(s: str | None) -> float | None:
+        return (st - datetime.fromisoformat(s)).total_seconds() if s else None
+
+    return {
+        "snapshot_created_at": c,
+        "consistency_window": w,
+        "drill_started_at": st.isoformat(),
+        "created_at_to_drill_start_seconds": _diff(c),
+        "db_dump_finished_to_drill_start_seconds": _diff(w.get("db_dump_finished_at")),
+        "file_assets_to_drill_start_seconds": _diff(w.get("file_assets_collected_at")),
+    }
+
+
+def _record_timing(
+    timings: dict[str, Any],
+    name: str,
+    start: datetime,
+    end: datetime,
+    status: str,
+    err: Exception | None = None,
+) -> None:
+    timings[name] = {
+        "started_at": start.isoformat(),
+        "finished_at": end.isoformat(),
+        "duration_seconds": (end - start).total_seconds(),
+        "status": status,
+        **({"error": str(err)} if err else {}),
+    }
+
+
+def run_restore_drill(
+    snapshot_dir: Path,
+    target_dir: Path,
+    drill_db_config: dict[str, Any] | None = None,
+    keep_artifacts: bool = False,
+    project_root: Path | None = None,
+) -> dict[str, Any]:
+    """격리 대상에 대해 아카이브 해제, DB import, G1 무손실 검증을 실제로 수행하는 복원 리허설 도구입니다."""
+    raw_target = str(target_dir).strip()
+    if not raw_target or raw_target in (".", "./", "..", "../"):
         raise ValueError("복원 리허설 대상 디렉토리를 지정해야 합니다.")
-    target = target_dir.resolve()
-    root = PROJECT_ROOT.resolve()
-    if target == root or root in target.parents:
-        raise ValueError("복원 리허설 대상은 프로젝트 루트 밖의 격리 디렉토리여야 합니다.")
-    valid, errors, manifest = verify_snapshot(snapshot_dir)
-    components = manifest.get("components", {})
+    real_root, cwd, target = PROJECT_ROOT.resolve(), Path.cwd().resolve(), target_dir.resolve()
+    for root in (real_root, cwd, project_root.resolve() if project_root else None):
+        if root and (target == root or root in target.parents or target in root.parents):
+            raise ValueError("복원 리허설 대상은 프로젝트 루트 밖의 격리 디렉토리여야 합니다.")
+    prod_db = get_db_config()
+    drill_db = (
+        drill_db_config.copy()
+        if drill_db_config
+        else {**prod_db, "name": f"{prod_db['name']}_restore_drill"}
+    )
+    d_name, p_name = str(drill_db.get("name", "")).strip(), str(prod_db.get("name", "")).strip()
+    if not d_name:
+        raise ValueError("복원 리허설 대상 DB 이름을 지정해야 합니다.")
+    if d_name == p_name or (
+        str(drill_db.get("host")) == str(prod_db.get("host"))
+        and int(drill_db.get("port", 3306)) == int(prod_db.get("port", 3306))
+        and d_name == p_name
+    ):
+        raise ValueError("복원 리허설 대상 DB는 운영 DB와 동일할 수 없습니다.")
+
+    drill_start, timings, errors = datetime.now(UTC), {}, []
+    v_st = datetime.now(UTC)
+    valid, v_errs, manifest = verify_snapshot(snapshot_dir)
+    errors.extend(v_errs)
     if manifest.get("partial_backup") or manifest.get("recovery_trusted") is False:
         errors.append("부분 백업은 복구용으로 신뢰할 수 없습니다.")
         valid = False
-    return {
-        "schema": "RESTORE_DRILL_REPORT_V1",
-        "mode": "dry-run",
-        "snapshot_dir": str(snapshot_dir),
-        "target_dir": str(target),
-        "snapshot_valid": valid,
-        "components": sorted(components),
-        "errors": errors,
-        "success": valid,
-    }
+    _record_timing(
+        timings, "snapshot_verification", v_st, datetime.now(UTC), "PASS" if valid else "FAIL"
+    )
+    rpo, comps = _measure_rpo(manifest, drill_start), manifest.get("components", {})
+
+    def _drill_rep(ok: bool, g1_v: dict[str, Any], ext: list[str]) -> dict[str, Any]:
+        return {
+            "schema": "RESTORE_DRILL_REPORT_V2",
+            "snapshot_dir": str(snapshot_dir),
+            "target_dir": str(target),
+            "drill_db": {k: drill_db.get(k) for k in ("host", "port", "name", "user")},
+            "snapshot_valid": valid,
+            "components": sorted(comps),
+            "extracted_components": ext,
+            "timings": timings,
+            "total_duration_seconds": (datetime.now(UTC) - drill_start).total_seconds(),
+            "rpo_measurements": rpo,
+            "g1_verification": g1_v,
+            "keep_artifacts": keep_artifacts,
+            "errors": errors,
+            "success": ok,
+        }
+
+    if not valid:
+        return _drill_rep(
+            False, {"success": False, "message": "스냅샷 무결성 검증 실패로 건너뜀"}, []
+        )
+
+    extracted, g1_res, success, created_db = [], {}, False, False
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+
+        def _exec_step(name: str, fn: Any) -> None:
+            st = datetime.now(UTC)
+            try:
+                fn()
+                _record_timing(timings, name, st, datetime.now(UTC), "PASS")
+            except Exception as exc:
+                _record_timing(timings, name, st, datetime.now(UTC), "FAIL", exc)
+                errors.append(f"{name} 실패: {exc}")
+                raise
+
+        def _do_extract():
+            for k in ("chroma_db", "models"):
+                if comps.get(k, {}).get("path"):
+                    extract_tar_archive(snapshot_dir / comps[k]["path"], target_base_dir=target)
+                    extracted.append(k)
+
+        def _do_import():
+            nonlocal created_db
+            create_mysql_database(drill_db)
+            created_db = True
+            if not comps.get("database", {}).get("path"):
+                raise ValueError("매니페스트에 database 아카이브 경로가 없습니다.")
+            restore_mysql_database(drill_db, snapshot_dir / comps["database"]["path"])
+
+        def _do_g1():
+            nonlocal g1_res, success
+            ok, msg, rep = run_drill_g1_verification(
+                target, drill_db, target / "g1_drill_verify_report.json", project_root=project_root
+            )
+            g1_res = {"success": ok, "message": msg, "report": rep}
+            if not ok:
+                raise RuntimeError(f"G1 무손실 검증 실패: {msg}")
+            success = True
+
+        _exec_step("archive_extraction", _do_extract)
+        _exec_step("database_import", _do_import)
+        _exec_step("g1_verification", _do_g1)
+    except Exception:
+        success = False
+
+    finally:
+        c_st, c_status = datetime.now(UTC), "KEPT" if keep_artifacts else "PASS"
+        if not keep_artifacts:
+            try:
+                if created_db:
+                    drop_mysql_database(drill_db, prod_config=prod_db)
+                cleanup_drill_target_dir(target, project_root=project_root)
+            except Exception as exc:
+                c_status = "FAIL"
+                errors.append(f"리허설 산출물 정리 실패: {exc}")
+        _record_timing(timings, "cleanup", c_st, datetime.now(UTC), c_status)
+
+    return _drill_rep(success and (len(errors) == 0), g1_res, extracted)
 
 
 def run_post_restore_verification(project_root: Path | None = None) -> bool:
     """복원 후 scripts/verify_migration.py 를 실행하여 데이터 무손실 검증을 수행합니다."""
     root = project_root or PROJECT_ROOT
-    verify_script = root / "scripts" / "verify_migration.py"
-    if not verify_script.exists():
-        print(f"      [오류] 검증 스크립트 없음: {verify_script}")
+    script = root / "scripts" / "verify_migration.py"
+    if not script.exists():
         return False
-
-    print("=" * 60)
-    print("복원 후 무손실 마이그레이션 검증 (scripts/verify_migration.py 재사용)")
-    print("=" * 60)
-
-    try:
-        result = subprocess.run(  # nosec B603, B607
-            [sys.executable, str(verify_script)],
-            cwd=str(root),
-            capture_output=False,
-            text=True,
-            check=False,
-        )
-        return result.returncode == 0
-    except Exception as exc:
-        print(f"검증 스크립트 실행 실패: {exc}")
-        return False
+    return subprocess.run([sys.executable, str(script)], cwd=str(root), check=False).returncode == 0  # nosec B603, B607
 
 
 def execute_restore(
@@ -281,231 +414,97 @@ def execute_restore(
 ) -> bool:
     """단일 복구 단위 스냅샷으로부터 DB, ChromaDB, 모델을 복원합니다."""
     root = project_root or PROJECT_ROOT
-    db_config = get_db_config()
-    chroma_path = get_chroma_source_path(root)
-    model_paths = get_model_source_paths(root)
-    print("=" * 60)
-    print("refac_bid_box 통합 복원 (Unified Recovery)")
-    print("=" * 60)
-    print(f"  복원 소스 스냅샷: {snapshot_dir}")
-    print(f"  실행 모드: {'[실제 실행 (EXECUTE)]' if execute else '[사전 점검 (DRY-RUN)]'}")
-    # 1. 스냅샷 무결성 사전 검증
-    is_valid, errors, manifest = verify_snapshot(snapshot_dir)
-    if not is_valid:
-        print("[오류] 스냅샷 매니페스트 무결성 검증 실패:")
-        for err in errors:
-            print(f"  - {err}")
+    db = get_db_config()
+    valid, errors, m = verify_snapshot(snapshot_dir)
+
+    if not valid or m.get("partial_backup") or m.get("recovery_trusted") is False:
+        print("[오류] 스냅샷 무결성 실패 또는 비신뢰: " + ", ".join(errors))
         return False
-
-    if manifest.get("partial_backup") or manifest.get("recovery_trusted") is False:
-        print("[오류] 부분 백업 스냅샷은 복구용으로 신뢰할 수 없습니다.")
-        return False
-
-    components = manifest.get("components", {})
-    created_at = manifest.get("created_at", "unknown")
-    head_commit = manifest.get("head_commit", "unknown")
-
-    print("-" * 60)
-    print(f"  스냅샷 생성 시각: {created_at}")
-    print(f"  스냅샷 기준 커밋: {head_commit}")
-    print("-" * 60)
-    print("[경고] 복원 시 아래 대상의 기존 데이터가 덮어써집니다:")
-    print(
-        f"  1. MySQL 운영 DB: {db_config['user']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
-    )
-    print(f"  2. ChromaDB 디렉토리: {chroma_path}")
-    print("  3. 모델 및 MLOps 레지스트리 디렉토리:")
-    for p in model_paths:
-        print(f"     - {p}")
-    print("-" * 60)
     if not execute:
-        print(
-            "[DRY-RUN] 복원 계획 및 덮어쓸 대상을 확인했습니다. 실제 데이터는 변경되지 않았습니다."
-        )
-        print("[DRY-RUN] 실제 복원을 진행하려면 --execute 및 --confirm 플래그를 지정하십시오.")
+        print("[DRY-RUN] 복원 계획 점검 완료.")
         return True
-
-    # 2. 명시 확인 검사
     if not confirm:
-        if sys.stdin.isatty():
-            try:
-                user_input = (
-                    input("기존 데이터를 덮어쓰고 복원을 진행하시겠습니까? (yes/no): ")
-                    .strip()
-                    .lower()
-                )
-                if user_input != "yes":
-                    print("복원 작업이 사용자에 의해 취소되었습니다.")
-                    return False
-            except (KeyboardInterrupt, EOFError):
-                print("\n복원 작업이 취소되었습니다.")
-                return False
-        else:
-            print("[오류] 비대화형 환경에서 실제 복원을 실행하려면 --confirm 플래그가 필수입니다.")
-            return False
-    # 3. 실제 복원 실행
-    # 3.1 DB 복원
-    db_dump_file = snapshot_dir / components["database"]["path"]
-    print(f"[1/3] MySQL DB 복원 중... ({db_dump_file.name})")
-    restore_mysql_database(db_config, db_dump_file)
-    print("      MySQL DB 복원 완료")
-    # 3.2 ChromaDB 복원
-    chroma_dump_file = snapshot_dir / components["chroma_db"]["path"]
-    print(f"[2/3] ChromaDB 복원 중... ({chroma_dump_file.name})")
-    extract_tar_archive(chroma_dump_file, target_base_dir=root)
-    print("      ChromaDB 복원 완료")
-    # 3.3 모델 아카이브 복원
-    models_dump_file = snapshot_dir / components["models"]["path"]
-    print(f"[3/3] 모델 및 레지스트리 복원 중... ({models_dump_file.name})")
-    extract_tar_archive(models_dump_file, target_base_dir=root)
-    print("      모델 및 레지스트리 복원 완료")
-    print("-" * 60)
-    print("통합 복원 완료. 사후 무손실 검증을 시작합니다.")
-
-    # 4. 사후 무손실 검증
-    if not skip_verify:
-        verify_ok = run_post_restore_verification(root)
-        if not verify_ok:
-            print("[경고] 복원 후 무손실 마이그레이션 검증에 실패했습니다. 로그를 확인하십시오.")
-            return False
-        print("[성공] 복원 후 무손실 마이그레이션 검증을 통과했습니다.")
-    return True
+        print("[오류] 복원 실행을 위해 --confirm 플래그가 필요합니다.")
+        return False
+    restore_mysql_database(db, snapshot_dir / m["components"]["database"]["path"])
+    for k in ("chroma_db", "models"):
+        extract_tar_archive(snapshot_dir / m["components"][k]["path"], target_base_dir=root)
+    return True if skip_verify else run_post_restore_verification(root)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """CLI 인자 파서를 구성합니다."""
-    parser = argparse.ArgumentParser(
-        description="refac_bid_box 통합 백업 및 복원 도구 (Unified Backup & Recovery Tool)"
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # backup
-    backup_parser = subparsers.add_parser("backup", help="운영 DB, ChromaDB, 모델 통합 백업")
-    backup_parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="실제 백업 실행 (미지정 시 dry-run 으로 동작)",
-    )
-    backup_parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=None,
-        help="백업 스냅샷 생성 경로 (기본값: data/backups/snapshots/snapshot_YYYYMMDD_HHMMSS)",
-    )
-    backup_parser.add_argument(
-        "--allow-partial", action="store_true", help="누락 자산을 부분 백업으로 기록하도록 허용"
-    )
-
-    # restore
-    restore_parser = subparsers.add_parser("restore", help="통합 백업 스냅샷 복원")
-    restore_parser.add_argument(
-        "--snapshot-dir",
-        type=Path,
-        required=True,
-        help="복원할 스냅샷 디렉토리 경로 (manifest 파일 위치)",
-    )
-    restore_parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="실제 복원 실행 (미지정 시 dry-run 으로 동작)",
-    )
-    restore_parser.add_argument(
-        "--confirm",
-        action="store_true",
-        help="데이터 덮어쓰기 명시 확인 (비대화형 환경에서 필수)",
-    )
-    restore_parser.add_argument(
-        "--skip-verify",
-        action="store_true",
-        help="복원 후 scripts/verify_migration.py 검증 건너뛰기",
-    )
-
-    # verify
-    verify_parser = subparsers.add_parser("verify", help="스냅샷 매니페스트 및 체크섬 무결성 검증")
-    verify_parser.add_argument(
-        "--snapshot-dir",
-        type=Path,
-        required=True,
-        help="검증할 스냅샷 디렉토리 경로",
-    )
-
-    # list
-    subparsers.add_parser("list", help="저장된 백업 스냅샷 목록 조회")
-
-    # restore drill
-    drill_parser = subparsers.add_parser("drill", help="격리 대상 복원 리허설(dry-run)")
-    drill_parser.add_argument("--snapshot-dir", type=Path, required=True)
-    drill_parser.add_argument(
-        "--target-dir", type=Path, required=True, help="프로젝트 루트 밖 격리 대상 디렉토리"
-    )
-    drill_parser.add_argument("--report-path", type=Path, default=None)
-
-    prune_parser = subparsers.add_parser("prune", help="스냅샷 개수 기준 보존 점검")
-    prune_parser.add_argument("--snapshots-dir", type=Path, default=DEFAULT_SNAPSHOTS_DIR)
-    prune_parser.add_argument("--retain-count", type=int, default=7)
-    prune_parser.add_argument("--delete", action="store_true", help="삭제를 명시적으로 승인")
-
-    return parser
+    p = argparse.ArgumentParser(description="refac_bid_box 통합 백업 및 복원 도구")
+    sub = p.add_subparsers(dest="command", required=True)
+    b = sub.add_parser("backup")
+    b.add_argument("--execute", action="store_true")
+    b.add_argument("--output-dir", type=Path, default=None)
+    b.add_argument("--allow-partial", action="store_true")
+    r = sub.add_parser("restore")
+    for a in ("--execute", "--confirm", "--skip-verify"):
+        r.add_argument(a, action="store_true")
+    r.add_argument("--snapshot-dir", type=Path, required=True)
+    sub.add_parser("verify").add_argument("--snapshot-dir", type=Path, required=True)
+    sub.add_parser("list")
+    d = sub.add_parser("drill")
+    d.add_argument("--snapshot-dir", type=Path, required=True)
+    d.add_argument("--target-dir", type=Path, required=True)
+    d.add_argument("--report-path", type=Path, default=None)
+    d.add_argument("--db-name", type=str, default=None)
+    d.add_argument("--keep-artifacts", action="store_true")
+    pr = sub.add_parser("prune")
+    pr.add_argument("--snapshots-dir", type=Path, default=DEFAULT_SNAPSHOTS_DIR)
+    pr.add_argument("--retain-count", type=int, default=7)
+    pr.add_argument("--delete", action="store_true")
+    return p
 
 
 def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
-    if args.command == "backup":
+    args = build_parser().parse_args()
+    c = args.command
+    if c == "backup":
         execute_backup(
             output_dir=args.output_dir, execute=args.execute, allow_partial=args.allow_partial
         )
         return 0
-    if args.command == "restore":
-        success = execute_restore(
-            snapshot_dir=args.snapshot_dir,
-            execute=args.execute,
-            confirm=args.confirm,
-            skip_verify=args.skip_verify,
+    if c == "restore":
+        return (
+            0
+            if execute_restore(args.snapshot_dir, args.execute, args.confirm, args.skip_verify)
+            else 1
         )
-        return 0 if success else 1
-
-    if args.command == "verify":
-        is_valid, errors, manifest = verify_snapshot(args.snapshot_dir)
-        print("=" * 60)
-        print(f"스냅샷 무결성 검증: {args.snapshot_dir}")
-        print("=" * 60)
-        if is_valid:
-            print("[PASS] 매니페스트 및 모든 컴포넌트 아카이브 무결성 일치")
-            print(f"  생성 시각: {manifest.get('created_at')}")
-            print(f"  HEAD 커밋: {manifest.get('head_commit')}")
-            return 0
-        print("[FAIL] 스냅샷 무결성 오류 발견:")
-        for err in errors:
-            print(f"  - {err}")
-        return 1
-
-    if args.command == "list":
+    if c == "verify":
+        ok, _, _ = verify_snapshot(args.snapshot_dir)
+        print(f"스냅샷 검증: {'[PASS]' if ok else '[FAIL]'}")
+        return 0 if ok else 1
+    if c == "list":
         list_snapshots()
         return 0
-
-    if args.command == "drill":
+    if c == "drill":
+        db = {**get_db_config(), "name": args.db_name} if args.db_name else None
         try:
-            report = run_restore_drill(args.snapshot_dir, args.target_dir)
+            rep = run_restore_drill(
+                args.snapshot_dir,
+                args.target_dir,
+                drill_db_config=db,
+                keep_artifacts=args.keep_artifacts,
+            )
         except ValueError as exc:
             print(f"[오류] {exc}")
             return 1
         if args.report_path:
             args.report_path.parent.mkdir(parents=True, exist_ok=True)
             args.report_path.write_text(
-                json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+                json.dumps(rep, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
             )
-        print(json.dumps(report, indent=2, ensure_ascii=False))
-        return 0 if report["success"] else 1
-
-    if args.command == "prune":
+        print(json.dumps(rep, indent=2, ensure_ascii=False))
+        return 0 if rep.get("success") else 1
+    if c == "prune":
         try:
             prune_snapshots(args.snapshots_dir, args.retain_count, args.delete)
+            return 0
         except ValueError as exc:
             print(f"[오류] {exc}")
             return 1
-        return 0
-
     return 1
 
 

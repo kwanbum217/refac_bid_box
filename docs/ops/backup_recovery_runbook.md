@@ -210,18 +210,43 @@ python3 scripts/backup_recovery.py restore \
 
 검증 실패 시 즉시 에러를 반환하고 복원 결과를 검토할 수 있도록 로그를 남깁니다.
 
-### 4.4 복원 리허설
+### 4.4 복원 리허설 (Restore Drill)
 
-리허설은 운영 DB를 대상으로 실행할 수 없으며, 프로젝트 루트 밖의 격리 대상 디렉토리를
-반드시 지정해야 합니다. 매니페스트와 체크섬만 검증하고 아카이브를 해제하거나 DB 클라이언트를
-호출하지 않으므로 실제 운영 데이터가 변경되지 않습니다.
+과거 복원 리허설은 계획 검증과 체크섬 확인만 수행하고 실제 아카이브 해제나 DB import를 수행하지 않던 결함이 있었습니다. 2026-09-03 리팩토링을 통해 **실제로 아카이브를 풀고, 격리된 임시 DB에 import한 후, `scripts/verify_migration.py`를 재사용해 G1 무손실 검증까지 완결하는 실측 도구**로 고도화되었습니다.
+
+#### 4.4.1 격리 안전 가드 (Isolation Guard)
+1. **경로 격리 가드**:
+   - 대상 디렉토리(`--target-dir`)는 필수이며 프로젝트 루트, 루트 상위/하위 경로, 현재 작업 디렉토리(cwd)를 절대 지정할 수 없습니다.
+   - 비정상 경로(`.`, `..`, `/`)나 격리되지 않은 경로가 지정되면 작업을 시작하지 않고 거부합니다.
+2. **DB 격리 가드**:
+   - 리허설 대상 DB(`--db-name`, 기본값: `<운영DB>_restore_drill`)는 운영 DB와 이름이나 접속 대상(host/port)이 동일할 수 없습니다.
+   - 운영 DB 침범 가능성이 감지되면 즉시 실패 종료(fail-closed)합니다.
+3. **정리 안전 보장 (Cleanup Safety)**:
+   - 리허설 성공 또는 실패 시 생성된 임시 DB(`DROP DATABASE`)와 임시 디렉토리는 자동으로 삭제 정리됩니다.
+   - 정리 함수(`cleanup_drill_target_dir`, `drop_mysql_database`)에도 동일한 경로/DB 가드가 결박되어 운영 파일이나 DB가 삭제되는 사고를 원천 차단합니다.
+   - 실패 원인 분석 등을 위해 산출물을 유지해야 할 때만 `--keep-artifacts` 플래그를 명시합니다.
+
+#### 4.4.2 계측 및 RPO 산출 지표
+- **단계별 소요 시간 측정**: 스냅샷 검증, 아카이브 해제, DB import, G1 검증, 정리 각각의 시작·종료 시각과 소요 시간(초)을 기록합니다.
+- **RPO 관측값 산출**: 스냅샷 매니페스트의 일관성 윈도우(`consistency_window`: DB 덤프 완료 시각, 파일 수집 시각) 및 생성 시각과 리허설 시작 시각 간의 시차(초)를 정량 계산하여 기록합니다.
+- **목표값 비교 판정 유예**: RPO/RTO 공식 SLA 목표값이 미확정 상태이므로 인위적인 합격/불합격 판정(threshold 비교) 코드를 두지 않고 순수 측정값만 보고서에 남깁니다.
 
 ```bash
+# 기본 실행: 격리 디렉토리 및 격리 DB로 실제 복원 리허설 후 자동 정리
 python3 scripts/backup_recovery.py drill \
   --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
-  --target-dir /srv/refac_bid_box_restore_drill \
+  --target-dir /tmp/refac_bid_box_restore_drill \
+  --report-path data/backups/restore_drill_report.json
+
+# 커스텀 격리 DB 지정 및 조사용 산출물 보존 시
+python3 scripts/backup_recovery.py drill \
+  --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
+  --target-dir /tmp/refac_bid_box_restore_drill \
+  --db-name procurement_drill_manual \
+  --keep-artifacts \
   --report-path data/backups/restore_drill_report.json
 ```
+
 
 보존 정책은 스냅샷 개수 기준이며, 삭제 대상은 먼저 출력됩니다. 실제 삭제는 별도 운영
 승인 후에만 다음처럼 `--delete`를 명시하여 수행합니다. 플래그가 없으면 항상 점검만 합니다.
