@@ -26,6 +26,10 @@ if str(PROJECT_ROOT) not in sys.path:
 DEFAULT_SNAPSHOTS_DIR = PROJECT_ROOT / "data" / "backups" / "snapshots"
 MANIFEST_FILENAME = "backup_manifest.json"
 
+REQUIRED_BACKUP_ASSETS = ("database", "chroma_db", "models")
+REQUIRED_SOURCE_ASSETS = ("chroma_db", "models")
+REQUIRED_MODEL_SOURCE_PATH = Path("data") / "model_files"
+
 DEFAULT_TABLES = (
     "accounts_customuser",
     "automation_requests",
@@ -39,6 +43,28 @@ DEFAULT_TABLES = (
     "prediction_results",
     "retrain_logs",
 )
+
+
+class BackupAssetError(RuntimeError):
+    """백업에 필요한 자산이 유효하지 않을 때 발생하는 오류입니다."""
+
+
+def get_asset_state(path: Path) -> str:
+    if not path.exists():
+        return "missing"
+    if path.is_file():
+        return "available" if path.stat().st_size > 0 else "empty"
+    return (
+        "available"
+        if any(p.is_file() and p.stat().st_size > 0 for p in path.rglob("*"))
+        else "empty"
+    )
+
+
+def validate_backup_output(path: Path, asset_name: str) -> tuple[int, str]:
+    if not path.is_file() or path.stat().st_size <= 0:
+        raise BackupAssetError(f"필수 백업 자산 산출물이 비어 있습니다: {asset_name} ({path})")
+    return path.stat().st_size, sha256_file(path)
 
 
 def sha256_file(path: Path) -> str:
@@ -157,7 +183,6 @@ def create_tar_archive(
     """여러 디렉토리나 파일을 단일 tar.gz 아카이브로 묶고 크기와 SHA256을 반환합니다."""
     base = base_dir or PROJECT_ROOT
     output_archive.parent.mkdir(parents=True, exist_ok=True)
-
     with tarfile.open(output_archive, "w:gz") as tar:
         for src in source_paths:
             if src.exists():
@@ -175,7 +200,6 @@ def dump_mysql_database(
 ) -> tuple[int, str]:
     """mysqldump 를 실행하여 압축된 SQL 덤프 파일을 생성합니다."""
     output_gz_path.parent.mkdir(parents=True, exist_ok=True)
-
     cmd = [
         "mysqldump",
         "-h",
@@ -190,7 +214,6 @@ def dump_mysql_database(
         "--default-character-set=utf8mb4",
         str(db_config["name"]),
     ]
-
     env = os.environ.copy()
     if db_config["password"]:
         env["MYSQL_PWD"] = str(db_config["password"])
@@ -210,7 +233,6 @@ def dump_mysql_database(
     if proc.returncode != 0:
         err_msg = stderr_data.decode("utf-8", errors="replace") if stderr_data else "mysqldump 실패"
         raise RuntimeError(f"mysqldump 실행 실패 (코드 {proc.returncode}): {err_msg}")
-
     size_bytes = output_gz_path.stat().st_size
     sha256 = sha256_file(output_gz_path)
     return size_bytes, sha256
@@ -223,7 +245,6 @@ def restore_mysql_database(
     """압축된 SQL 덤프 파일을 MySQL 에 복원합니다."""
     if not input_gz_path.exists():
         raise FileNotFoundError(f"복원할 DB 덤프 파일 없음: {input_gz_path}")
-
     cmd = [
         "mysql",
         "-h",
@@ -239,7 +260,6 @@ def restore_mysql_database(
     env = os.environ.copy()
     if db_config["password"]:
         env["MYSQL_PWD"] = str(db_config["password"])
-
     with gzip.open(input_gz_path, "rb") as gz_in:
         proc = subprocess.Popen(  # nosec B603, B607
             cmd,
