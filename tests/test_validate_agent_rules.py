@@ -871,12 +871,12 @@ def test_check_agents_model_table_absence(tmp_path: Path):
     res = check_agents_model_table_absence(tmp_path)
     assert res.ok
 
-    # 2. Worker model ID present (e.g. gemini-3.7-flash-high)
-    bad_content_id = valid_content + "\n| builder | high | `gemini-3.7-flash-high` |\n"
+    # 2. Worker model ID present (e.g. gemini-3.8-flash-high)
+    bad_content_id = valid_content + "\n| builder | high | `gemini-3.8-flash-high` |\n"
     agents_md.write_text(bad_content_id, encoding="utf-8")
     res = check_agents_model_table_absence(tmp_path)
     assert not res.ok
-    assert "gemini-3.7-flash-high" in res.detail
+    assert "gemini-3.8-flash-high" in res.detail
 
     # 3. Worker pool key present (e.g. qwen-plus)
     bad_content_key = valid_content + "\n- reviewer 모델: `qwen-plus`\n"

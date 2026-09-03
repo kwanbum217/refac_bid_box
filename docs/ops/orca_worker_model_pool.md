@@ -37,16 +37,19 @@
 
 | 풀 키 | 모델 ID | 제공자 | 자동 배정 (`auto_selectable`) | 배정 대상 및 용도 |
 | --- | --- | :---: | :---: | --- |
-| `gemini-flash-high` | `gemini-3.7-flash-high` | Gemini | O (`True`) | 고난도 추론·코딩, high 위험도 전용 |
-| `gemini-flash-medium` | `gemini-3.7-flash-medium` | Gemini | O (`True`) | 기본 주력 워커 (builder/investigator/benchmarker/documenter) |
-| `gemini-flash-low` | `gemini-3.7-flash-low` | Gemini | O (`True`) | low 위험도 investigator/documenter 주 모델, benchmarker fallback |
+| `gemini-flash-high` | `gemini-3.8-flash-high` | Gemini | O (`True`) | 고난도 추론·코딩, high 위험도 전용 |
+| `gemini-flash-medium` | `gemini-3.8-flash-medium` | Gemini | O (`True`) | 기본 주력 워커 (builder/investigator/benchmarker/documenter) |
+| `gemini-flash-low` | `gemini-3.8-flash-low` | Gemini | O (`True`) | low 위험도 investigator/documenter 주 모델, benchmarker fallback |
+| `gemini-3.7-flash-high` | `gemini-3.7-flash-high` | Gemini | X (`False`) | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
+| `gemini-3.7-flash-medium` | `gemini-3.7-flash-medium` | Gemini | X (`False`) | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
+| `gemini-3.7-flash-low` | `gemini-3.7-flash-low` | Gemini | X (`False`) | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
 | `qwen-plus` | `qwen3.7-plus` | Alibaba | O (`True`) | reviewer 주 모델, 기타 역할의 fallback |
 | `deepseek-pro` | `deepseek-v4-pro` | Alibaba | X (`False`) | 복잡한 SQL·RAG·레이턴시 회귀 분석 (자동 배정 제외, 명시 지정 전용) |
 | `glm` | `glm-5.2` | Alibaba | X (`False`) | 독립 교차 검토 (자동 배정 제외, 명시 지정 전용) |
 | `qwen-max` | `qwen3.8-max-preview` | Alibaba | X (`False`) | 상신/충돌 판정용 (자동 배정 제외, 명시 지정 전용) |
 | `qwen-max-legacy` | `qwen3.7-max` | Alibaba | X (`False`) | 레거시 모델 (신규 자동 배정 제외) |
 
-`deepseek-pro`, `glm`, `qwen-max` 세 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
+`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
 
 리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를 그대로 통과시키기 때문입니다. 현재 정책에서 빌더가 Gemini 계열(`gemini-flash-*`)인 동안 리뷰어는 `qwen-plus`(Alibaba Token Plan)입니다.
 

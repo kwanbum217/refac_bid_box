@@ -183,7 +183,7 @@ tests/test_data_preservation.py::test_chroma_db_exists
 | --- | --- | --- |
 | Codex (`gpt-5.6-terra`, effort `medium`) | **기본 코디네이터.** 워커로 쓰지 않습니다. Sol High는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 수동 승격합니다 | 4.4 의 코디네이터 몫 |
 | Claude 구독 | 예비 코디네이터. 한도 여유가 있을 때만 수동 전환합니다 | 코디네이터 예비 |
-| Antigravity Google (`gemini-3.7-flash-medium`) | 허용량이 가장 큼. **기본 주력 워커** | 분석, 감사, 측정, 통계, 절차적 구현 |
+| Antigravity Google (`gemini-3.8-flash-medium`) | 허용량이 가장 큼. **기본 주력 워커** | 분석, 감사, 측정, 통계, 절차적 구현 |
 | Antigravity Claude (`claude-opus-4-6-thinking`, `claude-sonnet-4-6`) | 별도 풀. **허용량 적음** | 판정 품질이 필요한 감사, 신중한 리팩터 |
 | OpenCode 무료 (`opencode/*-free`) | 비용 0. **신뢰성 낮음** | 실패해도 손실이 없는 병렬 조사. 임계 경로에 두지 마십시오 |
 
@@ -229,7 +229,7 @@ tests/test_data_preservation.py::test_chroma_db_exists
 
 ### 4.2.2 Gemini 워커 모델 변경 및 사용자 알림
 
-기본 워커 설정은 Antigravity `gemini-3.7-flash-medium`입니다. Flash High는
+기본 워커 설정은 Antigravity `gemini-3.8-flash-medium`입니다. Flash High는
 데이터 무손실 영향, 복잡한 구현·회귀 분석, 독립 교차검토처럼 high 위험도 Task에만
 사용하고, Flash Low는 읽기 전용 조사·초안·경량 계측에만 사용합니다. Low는
 빌더·리뷰어 Task에 배정하지 않습니다.
@@ -316,7 +316,7 @@ d=json.load(open('/Users/<user>/.codex/models_cache.json'))
 
 | 역할 | 기본 배정 | 금지 |
 | --- | --- | --- |
-| **Gemini 워커 (주력)** | Antigravity Gemini Flash Medium (`gemini-3.7-flash-medium`) | 위험도 분류 없이 Flash High를 기본값으로 배정 |
+| **Gemini 워커 (주력)** | Antigravity Gemini Flash Medium (`gemini-3.8-flash-medium`) | 위험도 분류 없이 Flash High를 기본값으로 배정 |
 | **Gemini Flash High 승격** | 데이터 무손실 영향, 복잡한 구현·회귀 분석, 독립 교차검토. `WORKER_MODEL_NOTICE` 필수 | 일반 조사·문서화·반복 측정에 상시 사용 |
 | **OpenCode 무료** (`opencode/*-free`) | 결정론적·병렬 조사 전용 (자동 검증이 정오를 판정하는 작업) | 공유 자원 소유권, 승격·판정·병합 근거 |
 | **병합·판정·게이트** | 코디네이터 전용 | 워커 위임, `worker_done` 은 병합 권한이 아님 |

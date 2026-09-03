@@ -327,7 +327,7 @@ Orca rejected this worker_done: Dispatch <old_id> capability is revoked.
 
 계약 v2.1 체크리스트 도입 후 같은 모델이 0/3 에서 4/4 로 개선됐습니다. 다만 **체크리스트에 없던 결함은 절반만 찾습니다.** 따라서 Level 3 코디네이터 검토를 유지합니다.
 
-이 관찰 당시 Reviewer 기본 모델은 `gemini-3.7-flash-high`였고 Claude 계열과 검출 성적이 동일했습니다. 현재 정본 정책은 `gemini-3.7-flash-medium`을 기본으로 하며, High는 high 위험도 교차검토에만 `WORKER_MODEL_NOTICE`와 함께 승격합니다.
+이 관찰 당시 Reviewer 기본 모델은 `gemini-3.7-flash-high`였고 Claude 계열과 검출 성적이 동일했습니다. 현재 정본 정책은 `gemini-3.8-flash-medium`을 기본으로 하며, High는 high 위험도 교차검토에만 `WORKER_MODEL_NOTICE`와 함께 승격합니다.
 
 근거: [`orca_v2_reviewer_plane_20260815.md`](orca_v2_reviewer_plane_20260815.md), [`orca_v2_reviewer_sensitivity_20260815.md`](orca_v2_reviewer_sensitivity_20260815.md)
 

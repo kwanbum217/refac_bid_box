@@ -158,9 +158,12 @@ Capsule 경로는 항상 `resolve()` 로 절대화됩니다. 워커는 다른 �
 
 | 풀 이름 | 모델 ID | 프로바이더 | 티어 | 자동 선택 (`auto_selectable`) | 적합 역할 | 비고 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `gemini-flash-high` | `gemini-3.7-flash-high` | gemini | primary | **대상 (True)** | builder, reviewer, investigator, benchmarker, documenter | 주력 워커. 분석·감사·구현 |
-| `gemini-flash-medium` | `gemini-3.7-flash-medium` | gemini | primary | **대상 (True)** | builder, reviewer, investigator, benchmarker, documenter | medium 이하 주력 워커 |
-| `gemini-flash-low` | `gemini-3.7-flash-low` | gemini | primary | **대상 (True)** | investigator, benchmarker, documenter | 지연 우선 조사·계측·문서화 |
+| `gemini-flash-high` | `gemini-3.8-flash-high` | gemini | primary | **대상 (True)** | builder, reviewer, investigator, benchmarker, documenter | 주력 워커. 분석·감사·구현 |
+| `gemini-flash-medium` | `gemini-3.8-flash-medium` | gemini | primary | **대상 (True)** | builder, reviewer, investigator, benchmarker, documenter | medium 이하 주력 워커 |
+| `gemini-flash-low` | `gemini-3.8-flash-low` | gemini | primary | **대상 (True)** | investigator, benchmarker, documenter | 지연 우선 조사·계측·문서화 |
+| `gemini-3.7-flash-high` | `gemini-3.7-flash-high` | gemini | secondary | **비대상 (False)** | builder, reviewer, investigator, benchmarker, documenter | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
+| `gemini-3.7-flash-medium` | `gemini-3.7-flash-medium` | gemini | secondary | **비대상 (False)** | builder, reviewer, investigator, benchmarker, documenter | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
+| `gemini-3.7-flash-low` | `gemini-3.7-flash-low` | gemini | secondary | **비대상 (False)** | investigator, benchmarker, documenter | Gemini 3.7 Flash 수동 지정 전용 (3.8 롤백 및 비교 검증용) |
 | `claude-sonnet` | `claude-sonnet-4-6` | claude | secondary | **대상 (True)** | reviewer, builder | 고품질 판정 필요 작업 |
 | `claude-opus` | `claude-opus-5` | claude | coordinator_reserve | **비대상 (False)** | (워커 사용 불가) | 예비 코디네이터. 워커 지정 시 거부 |
 | `codex` | `gpt-5.6-terra` | codex | coordinator | **비대상 (False)** | (워커 사용 불가) | **기본 코디네이터 (medium). 기본값 변경 전 `MODEL_CHANGE_NOTICE`, Sol High는 사용자 승인 후 고위험 최종 판정에만 수동 사용하며 워커 지정 시 거부(오류)** |
