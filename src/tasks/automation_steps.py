@@ -130,7 +130,7 @@ def _step_search(db, collected_since: datetime | None = None) -> tuple[str, dict
 
 
 def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, Any]]:
-    """Champion 모델 로드 및 표본 가능 여부 검증.
+    """Champion 모델 로드 및 추론 가능 여부 검증.
 
     검증할 모델이나 표본이 없으면 성공이 아니라 partial_success 를 돌려줍니다.
     2요소 튜플은 디스패치 루프에서 성공으로 처리되므로, 아무것도 검증하지
