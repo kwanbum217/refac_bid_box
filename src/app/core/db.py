@@ -35,3 +35,27 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def open_thread_session() -> tuple[Session, bool]:
+    """asyncio.to_thread 로 도는 동기 작업이 쓸 세션을 엽니다.
+
+    두 번째 값은 호출자가 close 를 책임져야 하는지 여부입니다.
+
+    스레드 경로는 FastAPI 의존성 주입을 거치지 않으므로 그대로 두면
+    ``app.dependency_overrides[get_db]`` 로 건 격리 DB 를 무시하고 실제 DB 에
+    붙습니다. E2E 가 개발 DB 를 오염시키는 경로가 정확히 여기입니다.
+    그래서 오버라이드가 걸려 있으면 그것을 따릅니다.
+
+    오버라이드가 제너레이터를 돌려주면 그 정리는 오버라이드 소유이므로
+    호출자가 닫지 않습니다.
+    """
+    from src.app.main import app
+
+    override = app.dependency_overrides.get(get_db)
+    if override is not None:
+        produced = override()
+        if hasattr(produced, "__next__"):
+            return next(produced), False
+        return produced, True
+    return SessionLocal(), True

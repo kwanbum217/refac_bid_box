@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import SignUpRequest, get_current_user, register_user
 from src.app.core.config import settings
-from src.app.core.db import SessionLocal, get_db
+from src.app.core.db import get_db, open_thread_session
 from src.app.core.security import (
     CSRF_COOKIE_NAME,
     CSRF_FORM_FIELD,
@@ -372,25 +372,8 @@ def signup_page(request: Request, user: CustomUser | None = Depends(get_current_
     return _render(request, "accounts/signup.html", context, None)
 
 
-def _open_session() -> tuple[Session, bool]:
-    """스레드 작업용 세션을 엽니다.
-
-    테스트 환경에서 app.dependency_overrides[get_db] 가 등록되어 있으면
-    해당 세션을 사용하고, 운영 환경에서는 SessionLocal() 을 생성합니다.
-    """
-    from src.app.main import app
-
-    if get_db in app.dependency_overrides:
-        override = app.dependency_overrides[get_db]
-        res = override()
-        if hasattr(res, "__next__"):
-            return next(res), False
-        return res, True
-    return SessionLocal(), True
-
-
 def _register_user_sync(payload: SignUpRequest, response: Response) -> None:
-    db, should_close = _open_session()
+    db, should_close = open_thread_session()
     try:
         register_user(payload, response, db)
     finally:
@@ -459,7 +442,7 @@ def _authenticate_and_update_login(username: str, password: str) -> dict[str, An
     조회와 검증을 따로 오프로드하면 왕복이 두 번이라 한 번에 묶습니다.
     반환값은 순수 데이터(dict)이며 ORM 인스턴스는 스레드 경계를 넘지 않습니다.
     """
-    db, should_close = _open_session()
+    db, should_close = open_thread_session()
     try:
         account = db.execute(
             select(CustomUser).where(CustomUser.username == username)

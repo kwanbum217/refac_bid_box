@@ -34,7 +34,7 @@ from src.app.api.v1.chatbot_format import (
     _markdown_cell,
     _plan_steps_payload,
 )
-from src.app.core.db import SessionLocal, get_db
+from src.app.core.db import get_db, open_thread_session
 from src.app.core.security import enforce_anonymous_api_quota
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
@@ -368,20 +368,10 @@ def _finalize_rag_answer(
     )
 
 
-def _open_session() -> tuple[Session, bool]:
-    """스레드 작업용 세션을 엽니다. 테스트 환경의 dependency_overrides 를 반영합니다."""
-    from src.app.main import app
-
-    if get_db in app.dependency_overrides:
-        res = app.dependency_overrides[get_db]()
-        return (next(res), False) if hasattr(res, "__next__") else (res, True)
-    return SessionLocal(), True
-
-
 def _prepare_chat_sync(
     payload: ChatRequest, user_id: int | None = None
 ) -> ChatResponse | _PendingRagAnswer:
-    db, should_close = _open_session()
+    db, should_close = open_thread_session()
     try:
         return _prepare_chat(db, payload, user_id)
     finally:
@@ -395,7 +385,7 @@ def _finalize_rag_answer_sync(
     provenance: dict[str, Any] | None = None,
     latency_ms: float = 0.0,
 ) -> ChatResponse:
-    db, should_close = _open_session()
+    db, should_close = open_thread_session()
     try:
         return _finalize_rag_answer(db, pending, answer_text, provenance, latency_ms)
     finally:
@@ -417,7 +407,7 @@ def _run_chat(
     else:
         req_payload = payload_or_db
         uid = payload if isinstance(payload, int) else user_id
-        session, should_close = _open_session()
+        session, should_close = open_thread_session()
 
     try:
         prepared = _prepare_chat(session, req_payload, uid)
