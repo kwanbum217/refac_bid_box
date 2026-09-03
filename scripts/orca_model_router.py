@@ -18,7 +18,7 @@ Dispatch 전에 모델 가용성을 probe 합니다.
   - Gemini Flash    : 주력 워커. 추론 등급은 공식 문서 기준으로 위험도에 따라 배정합니다.
                       medium 이 기본값이며 복잡한 코드와 에이전트 용도에 권장됩니다.
                       high 는 가장 어려운 작업 전용, low 는 초안과 빠른 분석용입니다.
-  - Claude 계열     : 별도 풀 (claude-sonnet-4-6). 판정 품질이 필요한 작업.
+  - Claude 계열     : 별도 풀 (claude-sonnet-5). 판정 품질이 필요한 작업 및 수동 보조 워커.
   - OpenCode 무료   : 실패해도 손실 없는 병렬 조사. 임계 경로 금지.
 """
 
@@ -140,6 +140,26 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         "probe_cmd": ["agy", "--model", "{model}", "--print", "ping", "--print-timeout", "15s"],
         "timeout": 20,
     },
+    "claude-cli": {
+        # 로컬 Claude Code CLI 전용 probe 설정.
+        # claude -p ping --model {model} --effort medium --output-format json --tools "" --no-session-persistence --safe-mode
+        "probe_cmd": [
+            "claude",
+            "-p",
+            "ping",
+            "--model",
+            "{model}",
+            "--effort",
+            "medium",
+            "--output-format",
+            "json",
+            "--tools",
+            "",
+            "--no-session-persistence",
+            "--safe-mode",
+        ],
+        "timeout": 30,
+    },
     "opencode": {
         # 15초는 콜드스타트에 짧아 살아 있는 모델도 사용 불가로 판정됐습니다.
         "probe_cmd": ["opencode", "run", "--model", "{model}", "ping"],
@@ -176,6 +196,20 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
             "ping",
         ],
         "timeout": 120,
+    },
+    "grok": {
+        # SuperGrok 로컬 Grok CLI 전용 probe 설정.
+        # grok -p ping --model {model} --output-format plain
+        "probe_cmd": [
+            "grok",
+            "-p",
+            "ping",
+            "--model",
+            "{model}",
+            "--output-format",
+            "plain",
+        ],
+        "timeout": 60,
     },
 }
 
@@ -345,16 +379,64 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "notes": "legacy. 신규 자동 배정에서 제외한다. --model 로 명시 지정할 때만 쓰이며 그때도 경고가 남는다.",
     },
     "claude-sonnet": {
-        "id": "claude-sonnet-4-6",
+        "id": "claude-sonnet-5",
         "provider": "claude",
+        "probe_provider": "claude-cli",
         "tier": "secondary",
         "auto_selectable": True,
-        "max_tokens": 200_000,
+        "max_tokens": 1_000_000,
         "suitable_for": [
             "reviewer",
             "builder",
         ],
-        "notes": "별도 풀. 판정 품질이 필요한 작업에만 사용.",
+        "notes": (
+            "로컬 Claude Pro 전용 풀 (/opt/homebrew/bin/claude). "
+            "canonical model claude-sonnet-5, context 1M, effort medium. "
+            "WORKER_MODEL_NOTICE 후 명시 배정하는 수동 보조 워커."
+        ),
+    },
+    "grok-4.6": {
+        "id": "grok-4.6",
+        "provider": "grok",
+        "probe_provider": "grok",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "worker_efforts": ["medium", "low"],
+        "coordinator_efforts": ["high"],
+        "default_effort": "medium",
+        "suitable_for": [
+            "reviewer",
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "SuperGrok 구독 기반 로컬 Grok CLI (/opt/homebrew/bin/grok). "
+            "effort high 는 코디네이터 등급으로 워커 자동 배정에서 제외한다. "
+            "워커 등급은 medium 과 low 다. "
+            "WORKER_MODEL_NOTICE 후 명시 배정으로만 사용한다."
+        ),
+    },
+    "grok-4.5": {
+        "id": "grok-4.5",
+        "provider": "grok",
+        "probe_provider": "grok",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "worker_efforts": ["medium", "low"],
+        "coordinator_efforts": ["high"],
+        "default_effort": "medium",
+        "suitable_for": [
+            "reviewer",
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "SuperGrok 구독 기반 로컬 Grok CLI (/opt/homebrew/bin/grok). "
+            "grok-4.5 워커 모델. "
+            "WORKER_MODEL_NOTICE 후 명시 배정으로만 사용한다."
+        ),
     },
     "claude-opus-thinking": {
         "id": "claude-opus-4-6-thinking",
@@ -1015,6 +1097,7 @@ MODEL_PROVIDER_PREFIXES: tuple[tuple[str, str], ...] = (
     ("deepseek", "qwen"),
     ("glm", "qwen"),
     ("claude", "claude"),
+    ("grok", "grok"),
     ("gpt-", "codex"),
     ("codex", "codex"),
     ("cursor", "cursor"),
@@ -1653,6 +1736,7 @@ def probe_model(
     비정상 종료 시에만 할당량 초과, 인증 실패 등의 원인을 상세 분류합니다.
     """
     provider = None
+    probe_key = None
     # 풀 키(gemini-flash-medium)와 실제 모델 ID(gemini-3.8-flash-medium)는
     # 다릅니다. 풀 키로 provider 만 찾고 명령에는 풀 키를 그대로 넘기면
     # CLI 가 "알 수 없는 모델" 로 거부해, 살아 있는 모델이 사용 불가로
@@ -1663,23 +1747,34 @@ def probe_model(
         if pool_info["id"] == model_id or pool_name == model_id:
             provider = pool_info["provider"]
             resolved_id = pool_info["id"]
+            probe_key = pool_info.get("probe_provider") or pool_info.get("probe_transport")
             break
 
     if provider is None:
         if "gemini" in model_id.lower():
             provider = "gemini"
+        elif "claude-sonnet-5" in model_id.lower() or model_id.lower() == "claude-sonnet":
+            provider = "claude"
+            probe_key = "claude-cli"
+            resolved_id = "claude-sonnet-5"
         elif "claude" in model_id.lower():
             provider = "claude"
         elif "codex" in model_id.lower():
             provider = "codex"
         elif "cerebras" in model_id.lower():
             provider = "cerebras"
+        elif "grok" in model_id.lower():
+            provider = "grok"
+            probe_key = "grok"
         else:
             provider = "opencode"
 
-    probe_info = PROBE_CONFIG.get(provider)
+    if probe_key is None:
+        probe_key = provider
+
+    probe_info = PROBE_CONFIG.get(probe_key)
     if probe_info is None:
-        return False, f"알 수 없는 provider: {provider}"
+        return False, f"알 수 없는 provider: {probe_key}"
 
     probe_env, env_status = build_probe_env(repo_root)
     if provider == "cerebras" and "CEREBRAS_API_KEY 미설정" in env_status:

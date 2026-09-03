@@ -5939,3 +5939,192 @@ def test_cmd_dispatch_launcher_requires_terminal(
     assert code == 2
     captured = capsys.readouterr()
     assert "launcher_terminal_missing" in captured.out or "--terminal" in captured.err
+
+
+def test_worker_start_with_effort(monkeypatch: pytest.MonkeyPatch):
+    """worker_start 함수에 effort 가 전달될 때 CLI 명령어에 --effort 가 포함되는지 검증합니다."""
+    captured_cmd = []
+
+    def mock_run(cmd, *args, **kwargs):
+        captured_cmd.extend(cmd)
+        return 0, '{"status": "dispatched"}', ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    code, _stdout, _stderr, executed_cmd = worker_start(
+        task_id="task_test_effort",
+        agent_id="claude",
+        model="claude-sonnet-5",
+        effort="medium",
+    )
+    assert code == 0
+    assert "--effort" in executed_cmd
+    effort_idx = executed_cmd.index("--effort")
+    assert executed_cmd[effort_idx + 1] == "medium"
+    assert "--model" in executed_cmd
+    model_idx = executed_cmd.index("--model")
+    assert executed_cmd[model_idx + 1] == "claude-sonnet-5"
+
+
+def test_cmd_dispatch_passes_effort_to_worker_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """taskctl dispatch --agent claude --model claude-sonnet-5 --effort medium 이 worker-start 에 --effort medium 을 전달함을 검증합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    captured_kwargs = {}
+
+    def mock_worker_start(**kwargs):
+        captured_kwargs.update(kwargs)
+        return (
+            0,
+            '{"status": "dispatched"}',
+            "",
+            [
+                "orca",
+                "orchestration",
+                "worker-start",
+                "--task",
+                kwargs.get("task_id", ""),
+                "--agent",
+                kwargs.get("agent_id", ""),
+                "--model",
+                kwargs.get("model", ""),
+                "--effort",
+                kwargs.get("effort", ""),
+            ],
+        )
+
+    monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *args, **kwargs: {"allowed": True}
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--json",
+            "--agent",
+            "claude",
+            "--model",
+            "claude-sonnet-5",
+            "--effort",
+            "medium",
+        ]
+    )
+    assert code == 0
+    assert captured_kwargs.get("effort") == "medium"
+    assert captured_kwargs.get("model") == "claude-sonnet-5"
+    assert captured_kwargs.get("agent_id") == "claude"
+
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["launch"]["status"] == "dispatched"
+
+
+def test_cmd_dispatch_effort_without_model_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """--model 없이 --effort 만 단독 지정한 경우 fail-closed 로 종료 코드 2를 반환하는지 검증합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--json",
+            "--agent",
+            "claude",
+            "--effort",
+            "medium",
+        ]
+    )
+    assert code == 2
+    captured = capsys.readouterr()
+    assert (
+        "effort_without_model" in captured.out or "--effort 는 --model 과 함께 지정" in captured.err
+    )
+
+
+def test_classify_file_edit_auto_approve_support_grok(capsys: pytest.CaptureFixture):
+    """grok 메타데이터 기록 시 Grok CLI 로 판정되어 자동 승인 모드 전환을 전송하지 않음을 검증."""
+    terminal_handle = "term_test_grok_999"
+    meta = {
+        "terminal": terminal_handle,
+        "cli_type": "grok",
+        "model": "grok-4.6",
+    }
+    write_worker_meta(terminal_handle, meta)
+
+    try:
+        supported, reason = classify_file_edit_auto_approve_support(
+            text="Grok TUI ready",
+            terminal=terminal_handle,
+        )
+        assert supported is False
+        assert "Grok CLI" in reason
+    finally:
+        remove_worker_meta(terminal_handle)
+
+
+def test_classify_screen_text_grok():
+    """화면 텍스트에 grok 이 포함된 경우 파일 편집 모드 전환을 전송하지 않음을 검증."""
+    grok_screen = "Grok CLI v1.0.13\nType /help for instructions\n>"
+    supported, reason = classify_file_edit_auto_approve_support(
+        text=grok_screen,
+        terminal=None,
+    )
+    assert supported is False
+    assert "Grok CLI" in reason
+
+
+def test_prepare_worker_cli_type_grok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """prepare-worker --cli-type grok 실행 시 cli_type 이 grok 으로 기록되고 성공함을 검증."""
+    terminal_handle = "term_grok_prep_123"
+    remove_worker_meta(terminal_handle)
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.approve_trust_prompt", lambda t, timeout=30: "not_present"
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.start_auto_approve", lambda t: (True, "mock_auto_approve.log")
+    )
+
+    try:
+        code = main(
+            [
+                "prepare-worker",
+                "--terminal",
+                terminal_handle,
+                "--cli-type",
+                "grok",
+                "--model",
+                "grok-4.6",
+                "--json",
+            ]
+        )
+        assert code == 0
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["ok"] is True
+        assert data["meta"]["cli_type"] == "grok"
+        assert data["meta"]["model"] == "grok-4.6"
+        assert data["file_edit_auto_approve"]["ok"] is False
+
+        # 메타데이터 파일 확인
+        saved_meta = read_worker_meta(terminal_handle)
+        assert saved_meta is not None
+        assert saved_meta.get("cli_type") == "grok"
+    finally:
+        remove_worker_meta(terminal_handle)

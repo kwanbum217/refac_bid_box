@@ -333,6 +333,8 @@ class TestModelPoolAndSelection:
             "deepseek-pro",
             "glm",
             "qwen-max",
+            "grok-4.6",
+            "grok-4.5",
         }
 
 
@@ -1945,6 +1947,7 @@ class TestProviderIndependence:
             "qwen3.8-max-preview": "qwen",
             # Claude 계열
             "claude-sonnet": "claude",
+            "claude-sonnet-5": "claude",
             "claude-sonnet-4-6": "claude",
             "claude-opus": "claude",
             "claude-opus-5": "claude",
@@ -2108,3 +2111,148 @@ class TestProviderIndependence:
         assert MODEL_POOL["gemini-3.7-flash-medium"]["auto_selectable"] is False
         assert MODEL_POOL["gemini-3.7-flash-low"]["id"] == "gemini-3.7-flash-low"
         assert MODEL_POOL["gemini-3.7-flash-low"]["auto_selectable"] is False
+
+    def test_claude_sonnet_pool_registration(self):
+        """claude-sonnet 풀의 실제 모델 ID 가 claude-sonnet-5 로 등록되고 contextWindow 1M 임을 검증합니다."""
+        sonnet_info = MODEL_POOL["claude-sonnet"]
+        assert sonnet_info["id"] == "claude-sonnet-5"
+        assert sonnet_info["provider"] == "claude"
+        assert sonnet_info.get("probe_provider") == "claude-cli"
+        assert sonnet_info["max_tokens"] == 1_000_000
+        assert "reviewer" in sonnet_info["suitable_for"]
+        assert "builder" in sonnet_info["suitable_for"]
+
+    def test_probe_claude_sonnet_uses_local_claude_cli(self, monkeypatch):
+        """probe_model('claude-sonnet') 가 agy 가 아니라 claude 실행 파일과 claude-sonnet-5, effort medium 을 사용하는지 검증합니다."""
+        captured_cmd = []
+
+        def _mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return MagicMock(returncode=0, stdout='{"result":"pong"}', stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, _detail = probe_model("claude-sonnet")
+        assert available is True
+        assert captured_cmd[0] == "claude"
+        assert "agy" not in captured_cmd
+        assert "claude-sonnet-5" in captured_cmd
+        assert "--effort" in captured_cmd
+        effort_idx = captured_cmd.index("--effort")
+        assert captured_cmd[effort_idx + 1] == "medium"
+
+    def test_probe_claude_sonnet_5_uses_local_claude_cli(self, monkeypatch):
+        """probe_model('claude-sonnet-5') 도 로컬 claude CLI 경로를 타는지 검증합니다."""
+        captured_cmd = []
+
+        def _mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return MagicMock(returncode=0, stdout='{"result":"pong"}', stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, _detail = probe_model("claude-sonnet-5")
+        assert available is True
+        assert captured_cmd[0] == "claude"
+        assert "claude-sonnet-5" in captured_cmd
+        assert "--effort" in captured_cmd
+        effort_idx = captured_cmd.index("--effort")
+        assert captured_cmd[effort_idx + 1] == "medium"
+
+    def test_probe_claude_antigravity_model_uses_agy(self, monkeypatch):
+        """Antigravity Claude 풀(claude-opus-thinking 등)은 종전대로 agy 를 사용하는지 검증합니다 (회귀 방지)."""
+        captured_cmd = []
+
+        def _mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return MagicMock(returncode=0, stdout="pong", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, _detail = probe_model("claude-opus-thinking")
+        assert available is True
+        assert captured_cmd[0] == "agy"
+        assert "--model" in captured_cmd
+
+    def test_claude_sonnet_not_in_tier_policy(self):
+        """claude-sonnet 은 TIER_POLICY 자동 배정이나 자동 fallback 에 포함되지 않음을 검증합니다."""
+        from scripts.orca_model_router import TIER_POLICY
+
+        for (role, risk), candidates in TIER_POLICY.items():
+            assert "claude-sonnet" not in candidates, (
+                f"{role}, {risk} 에 claude-sonnet 이 포함되어 있습니다."
+            )
+            assert "claude-sonnet-5" not in candidates, (
+                f"{role}, {risk} 에 claude-sonnet-5 가 포함되어 있습니다."
+            )
+
+    def test_grok_pool_registration(self):
+        """grok-4.6 및 grok-4.5 풀 등록 및 속성을 검증합니다."""
+        for model_id in ["grok-4.6", "grok-4.5"]:
+            info = MODEL_POOL[model_id]
+            assert info["id"] == model_id
+            assert info["provider"] == "grok"
+            assert info.get("probe_provider") == "grok"
+            assert info["auto_selectable"] is False
+            assert "reviewer" in info["suitable_for"]
+            assert "builder" in info["suitable_for"]
+            assert "investigator" in info["suitable_for"]
+            assert provider_for_model(model_id) == "grok"
+
+        # effort high 는 코디네이터 등급으로 워커 자동 배정 제외, 워커 등급은 medium/low
+        grok_46 = MODEL_POOL["grok-4.6"]
+        assert "high" in grok_46.get("coordinator_efforts", [])
+        assert set(grok_46.get("worker_efforts", [])) == {"medium", "low"}
+
+    def test_provider_for_model_grok(self):
+        """provider_for_model 이 grok 계열을 grok 으로 올바르게 판정하는지 검증합니다."""
+        assert provider_for_model("grok-4.6") == "grok"
+        assert provider_for_model("grok-4.5") == "grok"
+        assert provider_for_model("grok") == "grok"
+
+    def test_probe_grok_uses_local_grok_cli(self, monkeypatch):
+        """probe_model('grok-4.6') 이 agy 가 아니라 grok 실행 파일과 --output-format plain 을 사용하는지 검증합니다."""
+        captured_cmd = []
+
+        def _mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return MagicMock(returncode=0, stdout="pong", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, _detail = probe_model("grok-4.6")
+        assert available is True
+        assert captured_cmd[0] == "grok"
+        assert "agy" not in captured_cmd
+        assert "-p" in captured_cmd
+        assert "ping" in captured_cmd
+        assert "--model" in captured_cmd
+        assert "grok-4.6" in captured_cmd
+        assert "--output-format" in captured_cmd
+        assert "plain" in captured_cmd
+
+    def test_probe_grok_4_5_uses_local_grok_cli(self, monkeypatch):
+        """probe_model('grok-4.5') 도 grok 실행 파일과 --output-format plain 을 사용하는지 검증합니다."""
+        captured_cmd = []
+
+        def _mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return MagicMock(returncode=0, stdout="pong", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, _detail = probe_model("grok-4.5")
+        assert available is True
+        assert captured_cmd[0] == "grok"
+        assert "grok-4.5" in captured_cmd
+        assert "--output-format" in captured_cmd
+        assert "plain" in captured_cmd
+
+    def test_grok_not_in_tier_policy(self):
+        """grok 모델은 TIER_POLICY 자동 배정이나 자동 fallback 에 포함되지 않음을 검증합니다."""
+        from scripts.orca_model_router import TIER_POLICY
+
+        for (role, risk), candidates in TIER_POLICY.items():
+            assert "grok" not in candidates, f"{role}, {risk} 에 grok 이 포함되어 있습니다."
+            assert "grok-4.6" not in candidates, f"{role}, {risk} 에 grok-4.6 이 포함되어 있습니다."
+            assert "grok-4.5" not in candidates, f"{role}, {risk} 에 grok-4.5 가 포함되어 있습니다."
