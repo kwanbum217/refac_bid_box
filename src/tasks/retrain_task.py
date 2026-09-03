@@ -20,6 +20,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+from sqlalchemy.orm import Session
+
 from src.app.core.db import SessionLocal
 from src.app.models.predictions import RetrainLog
 from src.ml.dataset import build_training_dataset
@@ -105,18 +108,50 @@ def _load_champion_metrics(model_name: str, registry_dir: str = "ml_registry") -
     return NO_CHAMPION, {}
 
 
-def _record(db, *, trigger_source: str, champion: str, challenger: str, status: str, summary: dict):
+def _record(
+    db: Session | None = None,
+    *,
+    trigger_source: str,
+    champion: str,
+    challenger: str,
+    status: str,
+    summary: dict,
+) -> None:
     """재학습 이력을 남깁니다. 지금까지 retrain_logs 는 비어 있었습니다."""
-    db.add(
-        RetrainLog(
-            trigger_source=trigger_source,
-            champion_version=champion or "-",
-            challenger_version=challenger or "-",
-            status=status,
-            metrics_summary=summary,
+    own_session = db is None
+    session = SessionLocal() if own_session else db
+    try:
+        session.add(
+            RetrainLog(
+                trigger_source=trigger_source,
+                champion_version=champion or "-",
+                challenger_version=challenger or "-",
+                status=status,
+                metrics_summary=summary,
+            )
         )
-    )
-    db.commit()
+        session.commit()
+    finally:
+        if own_session:
+            session.close()
+
+
+def _build_training_dataset_thread(
+    category_code: str,
+    output_dir: str,
+    require_announcement: bool,
+) -> pd.DataFrame:
+    """스레드 전용 세션에서 학습 데이터셋을 빌드합니다."""
+    db = SessionLocal()
+    try:
+        return build_training_dataset(
+            db,
+            category_code=category_code,
+            output_dir=output_dir,
+            require_announcement=require_announcement,
+        )
+    finally:
+        db.close()
 
 
 async def run_retrain_pipeline_task(
@@ -139,11 +174,9 @@ async def run_retrain_pipeline_task(
             f"CATEGORY_MODEL_NAMES 에 등록된 카테고리를 지정하십시오 (등록됨: {registered})"
         )
 
-    db = SessionLocal()
     try:
         df_train = await asyncio.to_thread(
-            build_training_dataset,
-            db,
+            _build_training_dataset_thread,
             category_code=code,
             output_dir=output_dir,
             require_announcement=require_announcement,
@@ -151,7 +184,6 @@ async def run_retrain_pipeline_task(
         if df_train.empty:
             await asyncio.to_thread(
                 _record,
-                db,
                 trigger_source=trigger_source,
                 champion="",
                 challenger="",
@@ -206,7 +238,6 @@ async def run_retrain_pipeline_task(
 
         await asyncio.to_thread(
             _record,
-            db,
             trigger_source=trigger_source,
             champion=champion_version,
             challenger=metadata["version"],
@@ -251,5 +282,3 @@ async def run_retrain_pipeline_task(
             detail=f"대상 {category_code or '미지정'} / 트리거 {trigger_source}",
         )
         raise
-    finally:
-        db.close()

@@ -20,8 +20,9 @@ from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import func, insert, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
+from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import DATASET_ANNOUNCEMENT, DATASET_RESULT, BidAnnouncement, BidResult
 from src.app.services.api_collector import (
@@ -208,6 +209,51 @@ def _record_partial_failure(
     )
 
 
+def _warm_aggregates_and_caches_sync(datasets: list[str], bind=None) -> None:
+    """대시보드 집계와 캐시 예열을 스레드 전용 세션에서 수행합니다."""
+    session_factory = (
+        sessionmaker(bind=bind, autocommit=False, autoflush=False)
+        if bind is not None
+        else SessionLocal
+    )
+    db = session_factory()
+    try:
+        rebuild_bid_dataset_summaries(db, datasets)
+        warm_dashboard_stats_cache(db)
+        warm_home_page_cache(db)
+    finally:
+        db.close()
+
+
+def _resolve_collection_window_thread(
+    *,
+    bind=None,
+    start_date: str | None,
+    end_date: str | None,
+    fetch_type: str,
+    categories: tuple[str, ...] | None = None,
+    max_catchup_days: int = MAX_CATCHUP_DAYS,
+) -> tuple[str, str, bool]:
+    """체크포인트 조회를 스레드 전용 세션에서 수행합니다."""
+    session_factory = (
+        sessionmaker(bind=bind, autocommit=False, autoflush=False)
+        if bind is not None
+        else SessionLocal
+    )
+    db = session_factory()
+    try:
+        return resolve_collection_window(
+            db,
+            start_date=start_date,
+            end_date=end_date,
+            fetch_type=fetch_type,
+            categories=categories,
+            max_catchup_days=max_catchup_days,
+        )
+    finally:
+        db.close()
+
+
 async def collect_bids(
     db: Session,
     *,
@@ -236,11 +282,10 @@ async def collect_bids(
         }
 
     target_categories = categories or tuple(BID_CATEGORIES.keys())
-    # 체크포인트 조회는 동기 DB 질의입니다. 이 함수는 ASGI 요청 경로에서도
-    # 호출되므로 스레드로 넘겨 이벤트 루프를 비웁니다.
+    engine = db.get_bind()
     resolved_start, resolved_end, is_catchup = await asyncio.to_thread(
-        resolve_collection_window,
-        db,
+        _resolve_collection_window_thread,
+        bind=engine,
         start_date=start_date,
         end_date=end_date,
         fetch_type=fetch_type,
@@ -333,10 +378,8 @@ async def collect_bids(
             datasets.append(DATASET_RESULT)
         try:
             # 300만 행 집계와 캐시 예열은 수 초에서 수십 초가 걸립니다.
-            # 같은 Session 을 쓰므로 순차로, 그러나 스레드에서 수행합니다.
-            await asyncio.to_thread(rebuild_bid_dataset_summaries, db, datasets)
-            await asyncio.to_thread(warm_dashboard_stats_cache, db)
-            await asyncio.to_thread(warm_home_page_cache, db)
+            # 스레드 전용 세션에서 순차 수행합니다.
+            await asyncio.to_thread(_warm_aggregates_and_caches_sync, datasets, bind=engine)
             metrics["cache_warmed"] = True
         except Exception as exc:
             logger.warning("대시보드 집계 또는 캐시 예열 실패: %s", mask_credentials(exc))

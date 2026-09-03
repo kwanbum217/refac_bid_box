@@ -19,12 +19,13 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Any, cast
 
 import pandas as pd
+from sqlalchemy.orm import Session
 
 from scripts.backup_recovery import execute_backup, prune_snapshots
 from src.app.core.config import settings
@@ -100,26 +101,36 @@ async def backup_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         return {"status": "failed", "error": str(exc)}
 
 
-def _create_scheduled_execution(db, run_mode: str, trigger_name: str) -> str:
+def _create_scheduled_execution(
+    db: Session | None = None,
+    run_mode: str = "nightly_schedule",
+    trigger_name: str = "nightly",
+) -> str:
     """스케줄 실행도 챗봇 실행과 같은 이력 테이블에 남깁니다."""
-    execution_id = f"{run_mode}-{uuid.uuid4().hex[:12]}"
-    db.add(
-        PipelineExecution(
-            execution_id=execution_id,
-            pipeline_name="refac_bid_box_pipeline",
-            run_mode=run_mode,
-            status=STATUS_RUNNING,
-            source=SCHEDULER_SOURCE,
-            started_at=utcnow(),
-            raw_status_payload={
-                "action_key": run_mode,
-                "trigger_name": trigger_name,
-                "scheduled": True,
-            },
+    own_session = db is None
+    session = SessionLocal() if own_session else db
+    try:
+        execution_id = f"{run_mode}-{uuid.uuid4().hex[:12]}"
+        session.add(
+            PipelineExecution(
+                execution_id=execution_id,
+                pipeline_name="refac_bid_box_pipeline",
+                run_mode=run_mode,
+                status=STATUS_RUNNING,
+                source=SCHEDULER_SOURCE,
+                started_at=utcnow(),
+                raw_status_payload={
+                    "action_key": run_mode,
+                    "trigger_name": trigger_name,
+                    "scheduled": True,
+                },
+            )
         )
-    )
-    db.commit()
-    return execution_id
+        session.commit()
+        return execution_id
+    finally:
+        if own_session:
+            session.close()
 
 
 @_record_schedule("nightly_schedule")
@@ -129,13 +140,9 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info("야간 스케줄이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
-    db = SessionLocal()
-    try:
-        execution_id = await asyncio.to_thread(
-            _create_scheduled_execution, db, "nightly_schedule", "nightly"
-        )
-    finally:
-        db.close()
+    execution_id = await asyncio.to_thread(
+        _create_scheduled_execution, None, "nightly_schedule", "nightly"
+    )
 
     logger.info("야간 스케줄 실행 시작 (execution_id=%s)", execution_id)
     try:
@@ -177,16 +184,12 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info("운영 야간 번들이 활성화되어 개발 데이터 최신화를 건너뜁니다.")
         return {"status": "skipped", "reason": "nightly_schedule_enabled"}
 
-    db = SessionLocal()
-    try:
-        execution_id = await asyncio.to_thread(
-            _create_scheduled_execution,
-            db,
-            "development_data_refresh",
-            "development_data_refresh",
-        )
-    finally:
-        db.close()
+    execution_id = await asyncio.to_thread(
+        _create_scheduled_execution,
+        None,
+        "development_data_refresh",
+        "development_data_refresh",
+    )
 
     logger.info("개발 데이터 최신화 시작 (execution_id=%s)", execution_id)
     try:
@@ -321,28 +324,54 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 def _record_drift_log(
-    db,
+    db: Session | None = None,
     *,
     trigger_source: str = "drift_monitor",
-    champion_version: str,
-    baseline_version: str,
-    status: str,
-    metrics_summary: dict[str, Any],
+    champion_version: str = "-",
+    baseline_version: str = "-",
+    status: str = "",
+    metrics_summary: dict[str, Any] | None = None,
 ) -> None:
-    """
-    드리프트 검사 판정 결과를 retrain_logs 테이블에 기록합니다.
+    """드리프트 검사 판정 결과를 retrain_logs 테이블에 기록합니다.
+
     테이블 스키마 변경 없이 challenger_version 필드를 baseline_version 으로 해석하여 사용합니다.
     """
-    db.add(
-        RetrainLog(
-            trigger_source=trigger_source,
-            champion_version=champion_version or "-",
-            challenger_version=baseline_version or "-",  # baseline_version 을 의미함
-            status=status,
-            metrics_summary=metrics_summary,
+    own_session = db is None
+    session = SessionLocal() if own_session else db
+    try:
+        session.add(
+            RetrainLog(
+                trigger_source=trigger_source,
+                champion_version=champion_version or "-",
+                challenger_version=baseline_version or "-",  # baseline_version 을 의미함
+                status=status,
+                metrics_summary=metrics_summary or {},
+            )
         )
-    )
-    db.commit()
+        session.commit()
+    finally:
+        if own_session:
+            session.close()
+
+
+def _build_training_dataset_thread(
+    category_code: str,
+    start_at: datetime,
+    end_at: datetime,
+    persist: bool = False,
+) -> pd.DataFrame:
+    """스레드 전용 세션에서 학습 데이터셋을 빌드합니다."""
+    db = SessionLocal()
+    try:
+        return build_training_dataset(
+            db,
+            category_code=category_code,
+            start_at=start_at,
+            end_at=end_at,
+            persist=persist,
+        )
+    finally:
+        db.close()
 
 
 def is_drift_monitor_enabled() -> bool:
@@ -376,7 +405,6 @@ async def drift_monitor_task(
     results: dict[str, Any] = {}
     has_failure = False
 
-    db = SessionLocal()
     try:
         for category in sorted(CATEGORY_MODEL_NAMES.keys()):
             model_name = CATEGORY_MODEL_NAMES[category]
@@ -397,7 +425,6 @@ async def drift_monitor_task(
                 }
                 await asyncio.to_thread(
                     _record_drift_log,
-                    db,
                     trigger_source="drift_monitor",
                     champion_version=model_name,
                     baseline_version="-",
@@ -421,8 +448,7 @@ async def drift_monitor_task(
                 end_at = now
 
                 df_raw = await asyncio.to_thread(
-                    build_training_dataset,
-                    db,
+                    _build_training_dataset_thread,
                     category_code=category,
                     start_at=start_at,
                     end_at=end_at,
@@ -442,7 +468,6 @@ async def drift_monitor_task(
                     }
                     await asyncio.to_thread(
                         _record_drift_log,
-                        db,
                         trigger_source="drift_monitor",
                         champion_version=model_name,
                         baseline_version=baseline_dist.get("model_version", "-"),
@@ -476,7 +501,6 @@ async def drift_monitor_task(
                 # retrain_logs 에 기록
                 await asyncio.to_thread(
                     _record_drift_log,
-                    db,
                     trigger_source="drift_monitor",
                     champion_version=model_name,
                     baseline_version=baseline_dist.get("model_version", "-"),
@@ -523,8 +547,6 @@ async def drift_monitor_task(
         logger.exception("PSI 드리프트 모니터링 스케줄 실패")
         await notify_task_failure("PSI 드리프트 모니터링", str(exc))
         raise
-    finally:
-        db.close()
 
     outcome: dict[str, Any] = {
         "status": (

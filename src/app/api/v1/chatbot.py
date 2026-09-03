@@ -1,15 +1,4 @@
-"""
-src/app/api/v1/chatbot.py
-
-챗봇 API (원본 apps/chatbot/views.py chat_api 이식).
-
-| 원본 Django 라우트 | 본 API |
-| --- | --- |
-| `chatbot:chat_api` | `POST /api/v1/chatbot/chat` |
-| `chatbot:new_chat_session` | `POST /api/v1/chatbot/session/new` |
-| (신규) 스트리밍 정본 | `POST /api/v1/chatbot/chat/stream` |
-(legacy GET /api/v1/chatbot/stream 경로는 제거되었습니다.)
-"""
+"""챗봇 API (POST /chat, POST /chat/stream, POST /session/new, POST /query)."""
 
 from __future__ import annotations
 
@@ -45,7 +34,7 @@ from src.app.api.v1.chatbot_format import (
     _markdown_cell,
     _plan_steps_payload,
 )
-from src.app.core.db import get_db
+from src.app.core.db import get_db, open_thread_session
 from src.app.core.security import enforce_anonymous_api_quota
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
@@ -71,50 +60,17 @@ from src.app.services.planner import plan_chat_request
 from src.app.services.tools.kb_status_tool import get_latest_kb_status_payload
 from src.rag.engine import rag_engine
 
-__all__ = [
-    "RESTRICTED_KEYWORDS",
-    "SECURITY_BLOCK_ANSWER",
-    "STREAM_ERROR_MESSAGE",
-    "_PendingRagAnswer",
-    "_append_kb_status",
-    "_build_advisory_bundle",
-    "_build_answer_tool_context",
-    "_build_automation_status_payload",
-    "_build_confirmed_automation_response",
-    "_build_direct_tool_answer",
-    "_build_missing_confirmation_response",
-    "_finalize_rag_answer",
-    "_find_pending_confirmation_request",
-    "_format_bid_number",
-    "_format_model_summary",
-    "_format_percent",
-    "_format_won",
-    "_is_text_confirmation_message",
-    "_markdown_cell",
-    "_new_trace_id",
-    "_plan_steps_payload",
-    "_prepare_chat",
-    "_run_chat",
-    "_sse",
-    "chat_api",
-    "chat_stream_api",
-    "new_chat_session_api",
-    "query_chatbot",
-    "router",
-]
+# fmt: off
+__all__ = ["RESTRICTED_KEYWORDS", "SECURITY_BLOCK_ANSWER", "STREAM_ERROR_MESSAGE", "_PendingRagAnswer", "_append_kb_status", "_build_advisory_bundle", "_build_answer_tool_context", "_build_automation_status_payload", "_build_confirmed_automation_response", "_build_direct_tool_answer", "_build_missing_confirmation_response", "_finalize_rag_answer", "_find_pending_confirmation_request", "_format_bid_number", "_format_model_summary", "_format_percent", "_format_won", "_is_text_confirmation_message", "_markdown_cell", "_new_trace_id", "_plan_steps_payload", "_prepare_chat", "_run_chat", "_sse", "chat_api", "chat_stream_api", "new_chat_session_api", "query_chatbot", "router"]
+# fmt: on
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chatbot", tags=["Chatbot"])
 
-RESTRICTED_KEYWORDS = (
-    "분류 코드체계",
-    "코드 베이스",
-    "베이스 코드",
-    "내부 식별",
-    "내부 코드",
-    "분류코드",
-)
+# fmt: off
+RESTRICTED_KEYWORDS = ("분류 코드체계", "코드 베이스", "베이스 코드", "내부 식별", "내부 코드", "분류코드")
+# fmt: on
 SECURITY_BLOCK_ANSWER = (
     "보안상의 이유로 시스템 내부 분류 코드체계 및 코드 베이스 관련 정보는 제공할 수 없습니다. "
     "시스템 관리자에게 문의하시기 바랍니다."
@@ -412,32 +368,74 @@ def _finalize_rag_answer(
     )
 
 
-def _run_chat(db: Session, payload: ChatRequest, user_id: int | None = None) -> ChatResponse:
-    """계획 수립 -> 도구 실행 -> RAG 답변 생성을 한 번에 수행합니다 (비스트리밍)."""
-    prepared = _prepare_chat(db, payload, user_id)
-    if isinstance(prepared, ChatResponse):
-        return prepared
+def _prepare_chat_sync(
+    payload: ChatRequest, user_id: int | None = None
+) -> ChatResponse | _PendingRagAnswer:
+    db, should_close = open_thread_session()
+    try:
+        return _prepare_chat(db, payload, user_id)
+    finally:
+        if should_close:
+            db.close()
 
-    bundle = rag_engine.get_answer_sync(
-        prepared.message,
-        db=db,
-        history=prepared.history,
-        tool_context=prepared.tool_context or None,
-    )
-    provenance = bundle.provenance.model_dump()
-    return _finalize_rag_answer(db, prepared, bundle.answer, provenance, bundle.latency_ms)
+
+def _finalize_rag_answer_sync(
+    pending: _PendingRagAnswer,
+    answer_text: str,
+    provenance: dict[str, Any] | None = None,
+    latency_ms: float = 0.0,
+) -> ChatResponse:
+    db, should_close = open_thread_session()
+    try:
+        return _finalize_rag_answer(db, pending, answer_text, provenance, latency_ms)
+    finally:
+        if should_close:
+            db.close()
+
+
+def _run_chat(
+    payload_or_db: Session | ChatRequest,
+    payload: ChatRequest | None = None,
+    user_id: int | None = None,
+) -> ChatResponse:
+    """계획 수립 -> 도구 실행 -> RAG 답변 생성을 한 번에 수행합니다 (비스트리밍)."""
+    if isinstance(payload_or_db, Session):
+        req_payload = payload or ChatRequest(message="")
+        uid = user_id
+        session = payload_or_db
+        should_close = False
+    else:
+        req_payload = payload_or_db
+        uid = payload if isinstance(payload, int) else user_id
+        session, should_close = open_thread_session()
+
+    try:
+        prepared = _prepare_chat(session, req_payload, uid)
+        if isinstance(prepared, ChatResponse):
+            return prepared
+        bundle = rag_engine.get_answer_sync(
+            prepared.message,
+            db=session,
+            history=prepared.history,
+            tool_context=prepared.tool_context or None,
+        )
+        return _finalize_rag_answer(
+            session, prepared, bundle.answer, bundle.provenance.model_dump(), bundle.latency_ms
+        )
+    finally:
+        if should_close:
+            session.close()
 
 
 @router.post("/chat", response_model=ChatResponse, summary="챗봇 대화")
 async def chat_api(
     payload: ChatRequest,
     request: Request,
-    db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
 ):
     """계획 수립 -> 도구 실행 -> RAG 답변 생성의 원본 파이프라인을 그대로 수행합니다."""
     enforce_anonymous_api_quota(request, user)
-    return await asyncio.to_thread(_run_chat, db, payload, user.id if user else None)
+    return await asyncio.to_thread(_run_chat, payload, user.id if user else None)
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -463,7 +461,6 @@ def _new_trace_id() -> str:
 async def chat_stream_api(
     payload: ChatRequest,
     request: Request,
-    db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
 ):
     """POST /chat 와 동일한 파이프라인을 SSE 로 흘립니다.
@@ -471,10 +468,6 @@ async def chat_stream_api(
     이벤트 순서는 stage -> (plan) -> (token...) -> final 입니다. `final` 은
     비스트리밍 응답과 완전히 같은 ChatResponse 라, 화면은 기존 렌더 로직을
     그대로 쓰면 됩니다. 토큰은 체감 속도를 위한 것이고 정본은 `final` 입니다.
-
-    세션은 Depends(get_db) 를 씁니다. 직접 SessionLocal() 을 열면 테스트의
-    dependency_overrides 를 우회해 격리 DB 가 아닌 곳에 대화를 기록합니다.
-    yield 의존성은 응답 본문 전송이 끝난 뒤 정리되므로 스트리밍 중에는 유효합니다.
     """
     enforce_anonymous_api_quota(request, user)
     user_id = user.id if user else None
@@ -484,7 +477,7 @@ async def chat_stream_api(
         try:
             yield _sse("stage", {"stage": "planning", "message": "요청을 분석하고 있습니다"})
 
-            prepared = await asyncio.to_thread(_prepare_chat, db, payload, user_id)
+            prepared = await asyncio.to_thread(_prepare_chat_sync, payload, user_id)
             if isinstance(prepared, ChatResponse):
                 yield _sse("final", prepared.model_dump())
                 return
@@ -502,7 +495,6 @@ async def chat_stream_api(
             latency_started = utcnow()
             async for event in rag_engine.stream_tokens(
                 prepared.message,
-                db=db,
                 history=prepared.history,
                 tool_context=prepared.tool_context or None,
             ):
@@ -520,7 +512,7 @@ async def chat_stream_api(
 
             latency_ms = (utcnow() - latency_started).total_seconds() * 1000
             final = await asyncio.to_thread(
-                _finalize_rag_answer, db, prepared, answer_text, None, round(latency_ms, 2)
+                _finalize_rag_answer_sync, prepared, answer_text, None, round(latency_ms, 2)
             )
             yield _sse("final", final.model_dump())
         except Exception:
