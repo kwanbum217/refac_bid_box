@@ -51,6 +51,7 @@ src/ml/dataset.py
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -155,12 +156,22 @@ def build_training_dataset(
     *,
     require_announcement: bool = True,
     limit: int | None = None,
+    start_at: datetime | str | None = None,
+    end_at: datetime | str | None = None,
+    persist: bool = True,
 ) -> pd.DataFrame:
     """DB 조인 및 정제를 거친 학습 데이터셋을 만들고 parquet 으로 캐싱합니다.
 
     require_announcement=False 면 공고를 붙이지 않고 낙찰 결과만 씁니다.
     공고 수집률이 낮은 용역/건설에서 표본을 확보할 때 씁니다. 이때 가격 컬럼은
     낙찰금액으로 채워지므로 특징 설계에서 반드시 감안해야 합니다.
+
+    start_at, end_at 은 개찰일(BidResult.rl_openg_dt) 기준 [start_at, end_at)
+    반열림 구간(start_at 이상, end_at 미만)으로 쿼리를 필터링합니다.
+    기본값 None 은 전체 이력을 조회합니다.
+
+    persist=False 면 Parquet 캐시 파일을 쓰지 않고 정제된 DataFrame 만 반환합니다.
+    모니터링 등 읽기 전용 관측 경로에서 운영 데이터셋 덮어쓰기를 방지합니다.
     """
     code = (category_code or "").strip()
     if not code or code not in CATEGORY_MODEL_NAMES:
@@ -170,8 +181,9 @@ def build_training_dataset(
             f"CATEGORY_MODEL_NAMES 에 등록된 카테고리를 지정하십시오 (등록됨: {registered})"
         )
 
-    out_path = Path(output_dir)
-    out_path.mkdir(parents=True, exist_ok=True)
+    if persist:
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
 
     if require_announcement:
         stmt = select(
@@ -218,6 +230,11 @@ def build_training_dataset(
     stmt = stmt.where(BidResult.sucsf_bid_rate.is_not(None))
     stmt = stmt.where(BidResult.category == code)
 
+    if start_at is not None:
+        stmt = stmt.where(BidResult.rl_openg_dt >= start_at)
+    if end_at is not None:
+        stmt = stmt.where(BidResult.rl_openg_dt < end_at)
+
     # 정렬을 걸지 않으면 행 순서가 DB 반환 순서에 좌우되어 홀드아웃 구간이 매번
     # 달라지고, limit 을 걸었을 때 어떤 표본이 뽑힐지도 알 수 없습니다.
     # limit 은 최근 구간을 보려는 용도이므로 내림차순으로 잘라냅니다.
@@ -263,8 +280,9 @@ def build_training_dataset(
 
     logger.info("정제 후 %d행 (제외 %d행)", len(df), before - len(df))
 
-    parquet_file = out_path / f"dataset_{code}.parquet"
-    df.to_parquet(parquet_file, index=False)
+    if persist:
+        parquet_file = out_path / f"dataset_{code}.parquet"
+        df.to_parquet(parquet_file, index=False)
     return df
 
 
