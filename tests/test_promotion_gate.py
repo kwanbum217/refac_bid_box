@@ -21,6 +21,7 @@ from scripts.promote_model import main as cli_main
 from src.ml.promotion import (
     PromotionRejected,
     check_promotion_criteria,
+    compute_artifact_checksum,
     promote,
     read_paired_verdict,
 )
@@ -56,6 +57,12 @@ def registry(tmp_path):
     (version_dir / "metadata.json").write_text(
         json.dumps(_training_metadata("v_20260801_000000_000")), encoding="utf-8"
     )
+    champion_dir = root / MODEL_NAME / "base"
+    champion_dir.mkdir()
+    joblib.dump(_make_model(), champion_dir / "model.bin")
+    (champion_dir / "metadata.json").write_text(
+        json.dumps(_training_metadata("base")), encoding="utf-8"
+    )
     return root
 
 
@@ -70,14 +77,16 @@ def dirs(tmp_path, registry):
 
 def _write_verdict(registry_dir, version, verdict, **extra):
     path = Path(registry_dir) / MODEL_NAME / version / "paired_verdict.json"
+    challenger_dir = path.parent
+    champion_dir = Path(registry_dir) / MODEL_NAME / "base"
     payload = {
         "verdict": verdict,
         "champion_version": "base",
         "challenger_version": version,
-        "champion_checksum": "",
-        "challenger_checksum": "",
-        "sample_hash": "",
-        "code_commit": "",
+        "champion_checksum": compute_artifact_checksum(champion_dir),
+        "challenger_checksum": compute_artifact_checksum(challenger_dir),
+        "sample_hash": "sample-sha256",
+        "code_commit": "deadbeef",
         "decided_at": "2026-08-07",
         "evidence": extra.get("evidence", "test evidence"),
     }
