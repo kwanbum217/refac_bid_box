@@ -114,9 +114,25 @@ async def test_dashboard_authenticated(
 
 ---
 
-## 4. CI 워크플로 최적화 및 크로스 플랫폼 정책
+## 4. SSR 핵심 화면 E2E 시나리오 구성
 
-### 4.1 CI 러너 Chromium 설치 정책
+SSR 핵심 화면에 대한 E2E 테스트는 총 4대 모듈, 22개 시나리오로 구성되며, 개별 테스트 간 독립성과 무결성을 철저히 보장합니다.
+
+| 테스트 모듈 | 파일 경로 | 주요 검증 시나리오 및 특화 단언 원칙 |
+| --- | --- | --- |
+| **인증 플로우** | `tests/e2e/test_ssr_auth.py` | 회원가입 폼 제출 및 DB 생성 확인, 로그인 성공 후 세션 발급, `next` 타깃 리다이렉트, POST 로그아웃 후 세션 무효화, CSRF 토큰 누락 403 거부, 잘못된 자격증명 실패 처리 |
+| **공고 목록·상세** | `tests/e2e/test_ssr_bids.py` | 검색어(`q`) 필터링, 카테고리(`cat`) 필터링, 정렬(`sort`) 및 지역(`region`) 필터링, 20건 초과 시 2페이지 이동, 상세 AI 최적 투찰가 예측 폼 비동기 계산 및 DOM 결과 렌더링, 기초금액 미공개 공고 예측 비활성화 |
+| **낙찰 목록·상세** | `tests/e2e/test_ssr_results.py` | 낙찰 목록 검색/카테고리 필터링, 2페이지 이동, 낙찰 상세 제원(업체, 금액, 낙찰률) 렌더링, AI 챗봇 인텔리전스 분석 연계 바로가기 링크(`result_id`) 검증 |
+| **대시보드** | `tests/e2e/test_ssr_dashboard.py` | 핵심 통계 지표(전체 건수, 누적 금액, 평균 낙찰률) 렌더링, Chart.js 캔버스 요소 DOM 가시성 검증 (**픽셀 단언 배제**, 요소 및 데이터 기반 단언), 총액 계약 상위 업체 랭킹 테이블 렌더링 |
+
+### 4.1 차트 시각화 단언 원칙 (픽셀 단언 배제)
+Chart.js 캔버스(`canvas#monthlyTrendChart`, `canvas#agencyChart`) 검증 시 브라우저 렌더링 픽셀이나 스크린샷 비교를 지양하고, 캔버스 DOM 요소의 존재성, 가시성, 상위 통계 수치 및 랭킹 테이블의 실제 데이터 바인딩 여부로 안정적인 검증을 수행합니다.
+
+---
+
+## 5. CI 워크플로 최적화 및 크로스 플랫폼 정책
+
+### 5.1 CI 러너 Chromium 설치 정책
 
 `.github/workflows/ci.yml`의 `cross-platform-test` 잡은 5개의 매트릭스(Ubuntu 3.11/3.12/3.13, macOS 3.11, Windows 3.11)로 구성됩니다.
 
@@ -133,7 +149,7 @@ async def test_dashboard_authenticated(
   run: uv run playwright install --with-deps chromium
 ```
 
-### 4.2 브라우저 부재 시 자동 Skip 메커니즘
+### 5.2 브라우저 부재 시 자동 Skip 메커니즘
 
 `tests/e2e/conftest.py`의 `pytest_runtest_setup` 훅은 테스트 실행 전 `is_chromium_available()`을 호출하여 Playwright Chromium 바이너리의 실행 가능 여부를 동적으로 판정합니다.
 
@@ -141,9 +157,9 @@ async def test_dashboard_authenticated(
 
 ---
 
-## 5. 실행 및 검증 가이드
+## 6. 실행 및 검증 가이드
 
-### 5.1 로컬 실행
+### 6.1 로컬 실행
 
 ```bash
 # 1. Playwright Chromium 브라우저 바이너리 설치 (최초 1회)
@@ -153,13 +169,16 @@ uv run playwright install chromium
 uv run pytest tests/e2e/ -v
 
 # 3. 특정 E2E 테스트 단독 실행
-uv run pytest tests/e2e/test_ssr_auth_session.py -v
+uv run pytest tests/e2e/test_ssr_auth.py -v
+uv run pytest tests/e2e/test_ssr_bids.py -v
+uv run pytest tests/e2e/test_ssr_results.py -v
+uv run pytest tests/e2e/test_ssr_dashboard.py -v
 
 # 4. 전체 백엔드 테스트 슈트 검증 (데이터 자산 제외)
 uv run pytest tests/ -q -m "not data_assets"
 ```
 
-### 5.2 CI 워크플로 정합성 검증
+### 6.2 CI 워크플로 정합성 검증
 
 ```bash
 # GitHub Actions 워크플로 린트 검증
