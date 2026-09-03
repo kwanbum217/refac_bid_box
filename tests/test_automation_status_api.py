@@ -11,10 +11,20 @@ tests/test_automation_status_api.py
 from datetime import timedelta
 from unittest.mock import patch
 
+import pytest
+
 from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import AutomationRequest, KnowledgeBaseStatus, PipelineExecution
 from src.app.services.action_catalog import get_action
 from src.app.services.automation_orchestrator import make_callback_token
+from tests.fake_redis import fake_confirmation_redis
+
+
+@pytest.fixture(autouse=True)
+def fake_redis_for_automation_tokens():
+    """확인 토큰 소비 경로에 대역 Redis 연결을 주입합니다 (운영 코드는 fail-closed 유지)."""
+    with fake_confirmation_redis():
+        yield
 
 
 def _full_validation_pipeline() -> str:

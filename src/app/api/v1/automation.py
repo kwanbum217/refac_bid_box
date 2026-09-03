@@ -40,10 +40,7 @@ from src.app.services.automation_orchestrator import (
     sync_automation_status,
     verify_callback_token,
 )
-from src.app.services.automation_tokens import (
-    is_confirmation_token_consumed,
-    mark_confirmation_token_consumed,
-)
+from src.app.services.automation_tokens import consume_confirmation_token
 from src.app.services.tools.kb_status_tool import (
     build_kb_status_summary,
     get_latest_kb_status_payload,
@@ -160,15 +157,16 @@ def automation_job_confirm_api(
     request_obj = _require_request(db, job_id, user)
     if not confirmation_token:
         raise HTTPException(status_code=403, detail="확인 토큰이 필요합니다.")
-    if is_confirmation_token_consumed(confirmation_token):
-        raise HTTPException(status_code=403, detail="이미 사용된 확인 토큰입니다.")
     try:
         resolved_job_id = resolve_confirmation_token(confirmation_token)
     except AutomationError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     if resolved_job_id != str(job_id):
         raise HTTPException(status_code=403, detail="확인 토큰이 일치하지 않습니다.")
-    mark_confirmation_token_consumed(confirmation_token)
+    try:
+        consume_confirmation_token(confirmation_token)
+    except AutomationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     return _envelope(db, confirm_automation_request(db, request_obj))
 
 
