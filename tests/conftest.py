@@ -172,3 +172,40 @@ def _fast_password(monkeypatch):
 def _disable_orca_auto_approve(monkeypatch):
     """테스트가 실제 권한 자동 승인 감시기 프로세스를 띄우지 않게 막습니다."""
     monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_rate_limit():
+    """로그인 시도 제한 상태를 테스트마다 비웁니다.
+
+    제한기는 Redis 에 IP 축과 계정 축 카운터를 남깁니다. 그 상태가 테스트 사이에
+    남으면 앞선 테스트의 로그인 실패가 뒤 테스트를 429 로 막습니다. 2026-09-03 에
+    Redis 를 올린 뒤 로그인 관련 16건이 한꺼번에 429 로 실패했습니다.
+
+    이 결함은 Redis 가 꺼져 있으면 드러나지 않습니다. 제한기가 fail-open 이라
+    카운트 자체를 하지 않기 때문입니다. 그래서 로컬과 CI 는 통과하고 실제 스택을
+    띄운 환경에서만 깨졌습니다. Redis 유무와 무관하게 같은 결과가 나오도록
+    양쪽에서 상태를 지웁니다.
+    """
+    from src.app.core.security import (
+        RATE_LIMIT_ACCOUNT_PREFIX,
+        RATE_LIMIT_IP_PREFIX,
+        login_rate_limiter,
+    )
+
+    def _clear() -> None:
+        client = login_rate_limiter._conn.client()
+        if client is None:
+            return
+        try:
+            for prefix in (RATE_LIMIT_IP_PREFIX, RATE_LIMIT_ACCOUNT_PREFIX):
+                keys = list(client.scan_iter(match=f"{prefix}*"))
+                if keys:
+                    client.delete(*keys)
+        except Exception:
+            # 제한기 자체가 fail-open 이므로 정리 실패로 테스트를 깨뜨리지 않습니다.
+            return
+
+    _clear()
+    yield
+    _clear()
