@@ -303,10 +303,10 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/rag_structured_sql_coldstart_20260830.md
   - id: supply_chain_gate
-    status: blocked
-    decision_date: "2026-09-03"
-    claim: "공급망 스캔은 보고 전용이며 게이트 승격 조건 확인을 대기합니다."
-    document_anchor: "공급망 스캔은 보고 전용"
+    status: closed
+    decision_date: "2026-09-04"
+    claim: "공급망 스캔은 모두 차단 모드로 운영하며 CRITICAL 및 HIGH 취약점 차단 게이트를 통과 기준으로 유지합니다."
+    document_anchor: "공급망 스캔은 모두 차단 모드로 운영"
     evidence:
       - docs/ops/supply_chain_policy.md
     related_documents:

@@ -53,6 +53,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **history_preservation**: CURRENT_STATE의 상세 로그와 과거 경위는 current_state_history.md로 보존하고 분리 상태를 통과 기준으로 유지합니다.
 
+- **supply_chain_gate**: 공급망 스캔은 모두 차단 모드로 운영하며 CRITICAL 및 HIGH 취약점 차단 게이트를 통과 기준으로 유지합니다.
+
 ### active 사실
 
 - **ci_windows**: CI Windows job은 continue-on-error 없이 정규 게이트로 통과 중이며 병합 후 결과 재확인을 진행합니다.
@@ -86,8 +88,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **drift_job**: 드리프트 job은 baseline이 생길 때까지 꺼져 있으며 재학습 후 활성화를 대기합니다.
 
 - **coldsql_rerun**: RAG 정형 질의 cold SQL은 최대 97,087.81ms이며 재측정을 대기합니다.
-
-- **supply_chain_gate**: 공급망 스캔은 보고 전용이며 게이트 승격 조건 확인을 대기합니다.
 
 ### rejected 사실
 
