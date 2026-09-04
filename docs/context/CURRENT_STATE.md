@@ -47,7 +47,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **coldsql_metric**: 콜드 SQL 총량은 게이트에서 제외하고 관찰 지표로 강등했습니다.
 
-- **source_commit_protocol**: source_commit은 푸시 전에 갱신하고 현재 브랜치 기준 신선도 검사를 통과시킵니다.
+- **source_commit_protocol**: source_commit은 기본 브랜치 병합 커밋에서 함께 갱신하고 작업 브랜치에서는 경고로 낮추는 규약으로 통과 기준을 유지합니다.
 
 - **premerge_gate**: main 병합 전에는 make check-all와 전량 테스트 증거를 확인하는 규칙을 통과 기준으로 유지합니다.
 

@@ -1131,3 +1131,67 @@ facts:
     )
     assert parsed["version"] == "2.0"
     assert [f["id"] for f in parsed["facts"]] == ["gate"]
+
+
+class TestSourceCommitFreshnessScope:
+    """source_commit 신선도는 기본 브랜치에서만 차단합니다.
+
+    main 이 갱신 없이 허용 범위를 넘으면 그 시점 이후 만든 모든 작업 브랜치가
+    자기 변경과 무관하게 같은 실패를 물려받습니다. 전량 테스트에도 걸려 사전
+    병합 게이트가 막히므로 워커가 원인을 모른 채 정본 문서를 고쳐도 되는지 묻게
+    됩니다. 2026-09-04 에 이 왕복이 네 번 났습니다.
+    """
+
+    BODY = (
+        "# state\n> updated_at: 2026-08-15\n> source_commit: `abc1234`\nG1 G2 G3\ndocs/ops/x.md\n"
+    )
+
+    def _stale(self, tmp_path: Path, monkeypatch, branch: str | None):
+        _write_current_state(tmp_path, self.BODY)
+        monkeypatch.setattr(
+            "scripts.validate_agent_rules._commits_behind_head",
+            lambda root, commit: validate_agent_rules.CURRENT_STATE_LAG_TOLERANCE + 1,
+        )
+        monkeypatch.setattr(
+            "scripts.validate_agent_rules._current_branch_name", lambda root: branch
+        )
+        return check_current_state_sections(tmp_path)
+
+    def test_main_blocks(self, tmp_path: Path, monkeypatch):
+        res = self._stale(tmp_path, monkeypatch, "main")
+        assert not res.ok
+        assert "뒤처짐" in res.detail
+
+    def test_master_blocks(self, tmp_path: Path, monkeypatch):
+        assert not self._stale(tmp_path, monkeypatch, "master").ok
+
+    def test_detached_head_blocks(self, tmp_path: Path, monkeypatch):
+        """detached HEAD 는 판정 불가이며 강제 쪽으로 기웁니다.
+
+        CI 는 detached 로 체크아웃합니다. 여기서 게이트가 조용히 꺼지면
+        main 이 뒤처진 채 초록으로 보입니다.
+        """
+        res = self._stale(tmp_path, monkeypatch, None)
+        assert not res.ok
+
+    def test_worker_branch_warns_instead_of_blocking(self, tmp_path: Path, monkeypatch):
+        res = self._stale(tmp_path, monkeypatch, "kwanbum217/wave_t_t1_supply")
+        assert res.ok
+        assert res.warn
+        assert "작업 브랜치" in res.detail
+
+    def test_worker_branch_within_tolerance_is_plain_pass(self, tmp_path: Path, monkeypatch):
+        _write_current_state(tmp_path, self.BODY)
+        monkeypatch.setattr(
+            "scripts.validate_agent_rules._commits_behind_head", lambda root, commit: 1
+        )
+        monkeypatch.setattr(
+            "scripts.validate_agent_rules._current_branch_name", lambda root: "feature/x"
+        )
+        res = check_current_state_sections(tmp_path)
+        assert res.ok
+        assert not res.warn
+
+    def test_tolerance_is_not_widened(self):
+        """완화는 브랜치 범위로만 합니다. 허용 커밋 수를 늘리면 안 됩니다."""
+        assert validate_agent_rules.CURRENT_STATE_LAG_TOLERANCE == 5
