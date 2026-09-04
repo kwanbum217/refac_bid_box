@@ -152,6 +152,9 @@ appendonlydir/
 # 체크섬(data/backups/data_assets_checksums.json)만 추적해 무결성을 검증합니다.
 data/backups/*.sql
 data/backups/*.sql.gz
+# 마이그레이션 체크포인트처럼 하위 디렉터리에 담기는 덤프도 추적하지 않습니다.
+data/backups/**/*.sql
+data/backups/**/*.sql.gz
 data/backups/*.tar.gz
 
 # ============================================================

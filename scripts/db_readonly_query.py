@@ -87,6 +87,16 @@ FORBIDDEN_TOKENS = (
 
 FORBIDDEN_RE = re.compile(r"\b(" + "|".join(FORBIDDEN_TOKENS) + r")\b", re.IGNORECASE)
 
+# 문장 키워드와 이름이 겹치는 읽기 전용 함수입니다. 함수 호출 형태(이름 바로 뒤에
+# 여는 괄호)일 때만 검사에서 제외합니다. `REPLACE(col, ',', '')` 로 콤마를 떼는
+# 금액 질의가 이 오탐에 막혔습니다. 문장 형태는 걸러지지 않습니다. REPLACE 문은
+# 테이블명이 먼저 와서 여는 괄호가 붙지 않고, 애초에 문장 시작 토큰 검사와
+# 다중 문장 금지를 함께 통과할 수 없습니다.
+READ_ONLY_FUNCTION_TOKENS = ("replace",)
+FUNCTION_CALL_RE = re.compile(
+    r"\b(" + "|".join(READ_ONLY_FUNCTION_TOKENS) + r")\s*\(", re.IGNORECASE
+)
+
 DEFAULT_LIMIT = 200
 
 
@@ -124,6 +134,10 @@ def assert_read_only(sql: str) -> str:
         raise UnsafeQueryError(
             f"읽기 전용 질의가 아닙니다 (시작 토큰: {head}). 허용: {', '.join(READ_ONLY_STARTS)}"
         )
+
+    # 함수 호출 형태의 읽기 전용 함수는 검사 대상에서 뺍니다. 원문은 그대로 두고
+    # 검사용 사본에서만 치환하므로 실행되는 질의는 바뀌지 않습니다.
+    probe = FUNCTION_CALL_RE.sub(" __readonly_fn__(", probe)
 
     found = FORBIDDEN_RE.search(probe)
     if found:

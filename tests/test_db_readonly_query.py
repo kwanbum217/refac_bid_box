@@ -101,3 +101,34 @@ class TestStripSqlNoise:
 
     def test_double_quoted_literal_removed(self):
         assert "alter" not in strip_sql_noise('SELECT "alter"').lower()
+
+
+class TestReadOnlyFunctionTokens:
+    """문장 키워드와 이름이 겹치는 읽기 전용 함수는 함수 형태일 때만 통과합니다."""
+
+    def test_replace_function_is_allowed(self):
+        sql = "SELECT REPLACE(bid_ntce_nm, ',', '') FROM bid_announcements"
+        assert assert_read_only(sql) == sql
+
+    def test_replace_function_with_space_before_paren_is_allowed(self):
+        sql = "SELECT REPLACE (bid_ntce_nm, ',', '') FROM bid_announcements"
+        assert assert_read_only(sql) == sql
+
+    def test_nested_replace_in_cast_is_allowed(self):
+        sql = (
+            "SELECT CAST(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.bdgtAmt')), ',', '') "
+            "AS DECIMAL(30,0)) FROM bid_announcements"
+        )
+        assert assert_read_only(sql) == sql
+
+    def test_replace_statement_is_still_rejected(self):
+        with pytest.raises(UnsafeQueryError):
+            assert_read_only("REPLACE INTO bid_announcements (id) VALUES (1)")
+
+    def test_replace_without_paren_is_still_rejected(self):
+        with pytest.raises(UnsafeQueryError):
+            assert_read_only("SELECT 1 FROM t WHERE 1=1 REPLACE bid_announcements SET id = 1")
+
+    def test_other_write_keywords_are_not_exempted_by_paren(self):
+        with pytest.raises(UnsafeQueryError):
+            assert_read_only("SELECT 1 FROM t WHERE id IN (SELECT 1) DELETE (x)")
