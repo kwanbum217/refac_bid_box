@@ -3082,6 +3082,7 @@ def test_cmd_dispatch_not_settled_alone_is_not_a_delivery_failure(
 FINALIZE_CAPSULE = """schema: ORCA_TASK_CAPSULE_V2
 version: "2.1.0"
 task_id: "task_fin"
+builder_provider: "gemini"
 allowed_write_files:
   - "src/x.py"
 verification_commands:
@@ -3679,6 +3680,11 @@ def test_finalize_passes_diff_cap_flags_to_reviewer(tmp_path, monkeypatch):
         return 0, "", ""
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    (tmp_path / "capsule.yaml").write_text(
+        "schema: ORCA_TASK_CAPSULE_V2\nbuilder_provider: gemini\n", encoding="utf-8"
+    )
+    (tmp_path / "report.json").write_text('{"status": "succeeded"}', encoding="utf-8")
 
     result = finalize_task(
         report_path=tmp_path / "report.json",
@@ -6403,3 +6409,48 @@ def test_resolve_dispatch_model_explicit_coordinator_model_rejected():
             args_model="codex",
             capsule_text=capsule_text,
         )
+
+
+def test_wait_for_preamble_multiple_candidates_rejected_unconsumed(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    """결함 2: wait_for_preamble 은 후보가 둘 이상이면 소비하지 않고 잔여 파일 목록을 출력한 뒤 거부합니다."""
+    from scripts.orca_agy_launch import wait_for_preamble
+
+    orca_dir = tmp_path / ".orca"
+    orca_dir.mkdir(parents=True, exist_ok=True)
+    c1 = orca_dir / "preamble_task1_ctx1_11111111.txt"
+    c2 = orca_dir / "preamble_task1_ctx1_22222222.txt"
+    c1.write_text("지시 1", encoding="utf-8")
+    c2.write_text("지시 2", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="다중 preamble 후보 발견"):
+        wait_for_preamble(orca_dir / "preamble.txt", timeout_sec=0.5)
+
+    captured = capsys.readouterr()
+    assert "둘 이상의 preamble 후보가 발견되었습니다" in captured.err
+    assert c1.name in captured.err
+    assert c2.name in captured.err
+    # 둘 중 어느 것도 소비(삭제)되지 않고 보존됨
+    assert c1.exists()
+    assert c2.exists()
+
+
+def test_resolve_dispatch_model_reviewer_whitespace_or_none_builder_provider_rejected():
+    """결함 3: resolve_dispatch_model 은 builder_provider 가 None 이거나 공백/탭/빈문자열일 때 fail-closed 거부합니다."""
+    from scripts.orca_model_router import ModelRoutingError
+
+    capsule_text = """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_rev_ws_prov"
+role: "reviewer"
+risk: "high"
+"""
+    for bad_prov in (None, "", "   ", "\t\n", "unknown"):
+        with pytest.raises(ModelRoutingError, match="빌더 provider 를 알 수 없어"):
+            resolve_dispatch_model(
+                args_model=None,
+                capsule_text=capsule_text,
+                builder_model=None,
+                builder_provider=bad_prov,
+            )

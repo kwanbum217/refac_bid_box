@@ -51,10 +51,12 @@ def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> 
 
     1. 기본 경로(.orca/preamble.txt) 또는 디렉터리로 대기 중일 때:
        - 워크트리 .orca 디렉터리 내에서 preamble_*.txt 고유 파일을 찾아 읽고 즉시 삭제합니다.
+       - 후보가 둘 이상이면 어느 것도 소비하지 않고 남아있는 파일 목록을 출력한 뒤 거부합니다.
        - 고유 preamble 없이 옛 형태의 고정 .orca/preamble.txt 만 남아있으면 격리 파손 위험으로 거부합니다.
     2. 명시적 파일 경로로 대기 중일 때:
        - 해당 파일이 나타나 내용이 채워질 때까지 기다립니다.
        - preamble_*.txt 파일인 경우 소비 후 즉시 삭제합니다.
+       - 동일 디렉터리에 preamble_*.txt 후보가 둘 이상이면 거부합니다.
     """
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
@@ -63,8 +65,18 @@ def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> 
             search_dir = path if path.is_dir() else path.parent
             if search_dir.exists():
                 candidates = sorted(search_dir.glob("preamble_*.txt"))
-                if candidates:
-                    chosen = candidates[-1]
+                if len(candidates) > 1:
+                    remaining = [c.name for c in candidates]
+                    sys.stderr.write(
+                        f"오류: 워크트리({search_dir})에 둘 이상의 preamble 후보가 발견되었습니다: {remaining}. "
+                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다.\n"
+                    )
+                    raise ValueError(
+                        f"다중 preamble 후보 발견 ({len(candidates)}개): {remaining}. "
+                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다."
+                    )
+                elif len(candidates) == 1:
+                    chosen = candidates[0]
                     text = chosen.read_text(encoding="utf-8").strip()
                     if text:
                         chosen.unlink(missing_ok=True)
@@ -81,6 +93,18 @@ def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> 
 
         # 2. 명시된 path 가 직접 존재하는 경우
         if path.is_file() and path.exists():
+            if path.name.startswith("preamble_"):
+                candidates = sorted(path.parent.glob("preamble_*.txt"))
+                if len(candidates) > 1:
+                    remaining = [c.name for c in candidates]
+                    sys.stderr.write(
+                        f"오류: 워크트리({path.parent})에 둘 이상의 preamble 후보가 발견되었습니다: {remaining}. "
+                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다.\n"
+                    )
+                    raise ValueError(
+                        f"다중 preamble 후보 발견 ({len(candidates)}개): {remaining}. "
+                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다."
+                    )
             text = path.read_text(encoding="utf-8").strip()
             if text:
                 if path.name.startswith("preamble_"):

@@ -2608,11 +2608,14 @@ def finalize_task(
                     if isinstance(rep_data, dict) and rep_data.get("model"):
                         b_provider = provider_for_model(rep_data["model"], strict=False)
 
-            # 위험도 파악
+            # 위험도 및 쓰기 범위 파악
             risk = "medium"
+            has_write_scope = False
             if capsule_path.exists():
                 with suppress(Exception):
+                    cap_data = load_capsule(capsule_path)
                     risk = classify_from_capsule(capsule_path).get("risk", "medium")
+                    has_write_scope = bool(parse_capsule_list(cap_data, "allowed_write_files"))
 
             # 독립 리뷰어 모델 라우팅
             if b_provider and b_provider != "unknown":
@@ -2620,6 +2623,7 @@ def finalize_task(
                     routed = select_model(
                         role="reviewer",
                         risk=risk,
+                        has_write_scope=has_write_scope,
                         builder_provider=b_provider,
                         exclude_providers=[b_provider],
                     )
@@ -2634,7 +2638,11 @@ def finalize_task(
                     return result
             else:
                 try:
-                    routed = select_model(role="reviewer", risk=risk)
+                    routed = select_model(
+                        role="reviewer",
+                        risk=risk,
+                        has_write_scope=has_write_scope,
+                    )
                     actual_reviewer_model = routed["primary_model"]
                 except ModelRoutingError as exc:
                     tool_error = True
@@ -3350,10 +3358,13 @@ def resolve_dispatch_model(
                 if not b_prov:
                     b_prov = parse_capsule_scalar(capsule_text, "builder_provider")
 
+        if isinstance(b_prov, str):
+            b_prov = b_prov.strip()
+            if not b_prov:
+                b_prov = None
+
         resolved_builder_provider = b_prov
-        builder_prov_missing = (
-            not b_prov or b_prov == "unknown" or (isinstance(b_prov, str) and not b_prov.strip())
-        )
+        builder_prov_missing = not b_prov or b_prov == "unknown"
         if builder_prov_missing:
             builder_prov_unknown = True
             if risk in ("high", "medium") or has_write:

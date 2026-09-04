@@ -645,11 +645,13 @@ Level 1 게이트 2 가 병합 전에 따로 검사하므로, 범위 밖 파일�
 #### 2.3.2 시도 단위 고유 Preamble 수명주기 및 격리 파손 방지
 - **고유 파일명 발행**: 고정 파일명(`.orca/preamble.txt`) 재사용을 전면 금지하고, 시도마다 고유한 파일명(`preamble_{task_id}_{dispatch_id}_{nonce}.txt`)을 워크트리 `.orca/` 에 발행합니다.
 - **런처 즉시 소비 및 삭제**: 런처(`scripts/orca_agy_launch.py`)는 워크트리 내의 고유 preamble 파일을 감지하여 읽은 즉시 삭제(`unlink`)하고 표준 출력에 소비 완료 표지를 남깁니다.
+- **다중 후보 거부(Fail-Closed)**: 런처 대기 시 워크트리에 둘 이상의 preamble 후보(`preamble_*.txt`)가 발견되면 어느 것도 조용히 고르거나 소비하지 않고, 남아 있는 후보 파일 목록을 표준 에러로 출력한 뒤 즉시 기동을 거부(`ValueError`)합니다.
 - **잔여 preamble 격리 가드**: 워크트리에 이전 시도의 소비되지 않은 잔여 preamble 파일(`preamble_*.txt`)이 남아 있으면 새 Dispatch 를 종료 코드 2(`unconsumed_preamble_exists`)로 거부하여 지시문 교차 오염을 원천 차단합니다.
 
 #### 2.3.3 리뷰어 독립 Provider 강제 및 명시 모델 우회 차단
 - **빌더 Provider 자동 배제**: 리뷰어 모델 배정 시 빌더의 provider 계열(예: gemini, qwen 등)을 `exclude_providers` 에 전달하여 동일 계열 모델이 배정되지 않도록 강제합니다.
-- **빌더 Provider 미상 시 Fail-Closed**: 위험도가 `medium` 또는 `high` 인 리뷰어 Task 에서 빌더 provider 가 확인되지 않으면 경고가 아닌 오류(`ModelRoutingError`)로 배정을 즉시 중단합니다.
+- **다층 방어 및 공백/None 정규화**: `select_model` 과 `resolve_dispatch_model` 양측에서 `builder_provider` 에 대해 `None`, 빈 문자열, 공백/탭(`\t`, `\n` 등)을 strip 정규화하여 `unknown` 으로 판정합니다.
+- **빌더 Provider 미상 시 Fail-Closed**: 위험도가 `medium` 또는 `high` 이거나 쓰기 권한이 있는 리뷰어 Task 에서 빌더 provider 가 확인되지 않으면 경고가 아닌 오류(`ModelRoutingError`)로 배정을 즉시 중단합니다.
 - **명시 모델(`--model`) 우회 차단**: 사용자가 `--model` 로 명시 지정하더라도 (1) `MODEL_POOL` 미등록 모델, (2) 코디네이터 전용 모델(`codex`), (3) 리뷰어인 경우 빌더와 동일한 provider 의 모델을 지정하면 오류를 발생시키고 기동을 거부합니다.
 
 ---

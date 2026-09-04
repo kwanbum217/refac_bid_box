@@ -1570,17 +1570,20 @@ def select_model(
     else:
         excluded_providers_set = set()
 
-    effective_builder_prov = builder_provider
-    if (
-        effective_builder_prov
-        and effective_builder_prov != "unknown"
-        and effective_builder_prov not in excluded_providers_set
-    ):
-        excluded_providers_set.add(effective_builder_prov)
+    # 빌더 provider 정규화: None, 빈 문자열, 공백/탭 등 공백 문자열, "unknown" 은 "unknown" 으로 통일
+    builder_prov_norm: str = "unknown"
+    if isinstance(builder_provider, str):
+        stripped = builder_provider.strip()
+        if stripped and stripped != "unknown":
+            builder_prov_norm = stripped
+
+    if builder_prov_norm != "unknown" and builder_prov_norm not in excluded_providers_set:
+        excluded_providers_set.add(builder_prov_norm)
 
     inventory_notes: list[str] = []
 
-    if role == "reviewer" and effective_builder_prov in ("unknown", ""):
+    builder_prov_missing = builder_prov_norm == "unknown" and not excluded_providers_set
+    if role == "reviewer" and builder_prov_missing:
         if risk in ("high", "medium") or has_write_scope:
             exclude_str = ", ".join(exclude) if exclude else "(없음)"
             exclude_prov_str = (
