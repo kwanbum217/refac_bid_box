@@ -37,12 +37,16 @@ jobs:
         run: |
           uv export --frozen --format requirements.txt --no-emit-project -o /tmp/requirements.txt
           # allowlist 의 python 식별자 항목에서 --ignore-vuln 인자를 만든다. 항목이
-          # 비어 있으면 IGNORE_ARGS 가 빈 문자열이 되어 pip-audit 가 그대로 실패한다.
+          # 비어 있으면 배열이 비어 pip-audit 가 그대로 실패한다.
           # runner 기본 python3에는 PyYAML이 없으므로 uv run python으로 실행합니다.
-          IGNORE_ARGS=$(uv run python -c "import yaml
+          # 인자는 한 줄에 하나씩 받아 배열로 담는다. 한 문자열로 받아 따옴표 없이
+          # 전개하면 셸 단어 분리에 의존하게 되고 shellcheck SC2086 이 이를 막는다.
+          mapfile -t IGNORE_ARGS < <(uv run python -c "import yaml
           data = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
-          print(' '.join('--ignore-vuln ' + e['id'] for e in data.get('python', [])))")
-          uvx --from pip-audit pip-audit -r /tmp/requirements.txt --strict $IGNORE_ARGS
+          for entry in data.get('python', []):
+              print('--ignore-vuln')
+              print(entry['id'])")
+          uvx --from pip-audit pip-audit -r /tmp/requirements.txt --strict "${IGNORE_ARGS[@]}"
 
       - name: Scan JavaScript dependencies
         working-directory: frontend

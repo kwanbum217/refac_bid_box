@@ -113,6 +113,7 @@ CI 와 pre-commit 은 시스템 `python3` 로 검증기를 돌리고 거기에�
 | --- | --- |
 | main | `0729aa6` 이후 본 커밋 (원격 반영) |
 | mypy | 0건 (CI 스텝 통과 확인) |
+| actionlint (shellcheck 포함) | 0 issues (docker `rhysd/actionlint` 실측) |
 | Trivy CRITICAL/HIGH | 0건 (로컬 컨테이너 실측) |
 | actionlint | 0 errors |
 | `validate_agent_rules` | 20/20 (PyYAML 유무 양쪽) |
@@ -168,6 +169,7 @@ CI 와 pre-commit 은 시스템 `python3` 로 검증기를 돌리고 거기에�
 | 교훈 | 근거 |
 | --- | --- |
 | **로컬 통과는 CI 통과의 근거가 아니다.** 검증기가 인터프리터에 따라 다른 경로를 타면 로컬은 영구히 초록일 수 있다 | 6장. PyYAML 유무로 갈렸고 회귀 테스트가 없었다 |
+| **`uv run actionlint` 은 로컬에서 shellcheck 를 실행하지 않는다.** CI 러너에는 shellcheck 가 있어 워크플로 셸 스크립트 지적이 CI 에서만 난다 | `ci.yml:37` 의 SC2086 이 로컬 0 errors 인데 CI 에서 실패. 재현 명령은 `docker run --rm -v $PWD:/repo -w /repo rhysd/actionlint:latest` |
 | **런처는 워크트리의 `preamble.txt` 를 재사용한다.** 같은 워크트리에 다음 워커를 띄우기 전에 지워야 한다 | 리뷰어가 빌더의 지시를 다시 집어 같은 작업을 시작했다 |
 | Antigravity Claude 계열은 실행 오류로 죽을 수 있다. 다른 계열 리뷰어가 필요하면 `gemini-3.1-pro-high` 가 대안이다 | `claude-sonnet-4-6` 이 Error ID 를 내고 종료 |
 | docker 를 쓰는 작업은 위임 대상이 아니다. 자동 승인이 docker 를 항상 보류한다 | 4장 |
