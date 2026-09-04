@@ -34,6 +34,7 @@ from src.app.services.dashboard import (
     DASHBOARD_STATS_CACHE_TTL,
     DASHBOARD_STATS_STALE_CACHE_TTL,
     SUMMARY_ALGORITHM_VERSIONS,
+    SUMMARY_INIT_LOCK_TIMEOUT,
     get_bid_dataset_summary,
     get_compare_stats_data,
     get_dashboard_stats,
@@ -188,7 +189,7 @@ def test_missing_summary_triggers_sync_rebuild_with_lock(isolated_db):
     mock_client.lock.return_value.__exit__ = MagicMock(return_value=False)
 
     with (
-        patch("src.app.services.dashboard.cache._conn.client", return_value=mock_client),
+        patch("src.app.services.dashboard.cache.client", return_value=mock_client),
         patch(
             "src.app.services.dashboard.rebuild_bid_dataset_summary",
             wraps=rebuild_bid_dataset_summary,
@@ -197,11 +198,15 @@ def test_missing_summary_triggers_sync_rebuild_with_lock(isolated_db):
         summary = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
 
         # 락이 올바른 키와 함께 획득되었는지 확인
+        # 타임아웃은 상수를 직접 참조합니다. 숫자를 적으면 상수를 낮춰도 테스트가
+        # 통과해, 락이 집계보다 먼저 풀리는 회귀를 잡지 못합니다.
         mock_client.lock.assert_called_once_with(
             f"lock:bid_dataset_summary:init:{DATASET_ANNOUNCEMENT}",
-            timeout=600,
+            timeout=SUMMARY_INIT_LOCK_TIMEOUT,
             blocking_timeout=30,
         )
+        # 실측 554초보다 확실히 길어야 합니다.
+        assert SUMMARY_INIT_LOCK_TIMEOUT > 554
         # 동기 rebuild 가 정확히 1회 수행됨
         assert spy_rebuild.call_count == 1
         assert summary is not None

@@ -50,6 +50,10 @@ SUMMARY_ALGORITHM_VERSIONS: dict[str, int] = {
 DASHBOARD_STATS_CACHE_TTL = 60 * 60 * 24
 COMPARE_STATS_CACHE_TTL = 60 * 60 * 24
 DASHBOARD_STATS_STALE_CACHE_TTL = 60
+# 최초 동기 집계용 분산 락의 수명입니다. announcement 전체 집계 실측이 콜드 버퍼풀에서
+# 554초였으므로 600초는 여유가 8퍼센트뿐입니다. 락이 집계보다 먼저 풀리면 두 번째
+# 요청이 같은 집계를 또 시작해 락이 있으나 없으나 같아집니다. 실측의 세 배로 둡니다.
+SUMMARY_INIT_LOCK_TIMEOUT = 1800
 COMPARE_STATS_STALE_CACHE_TTL = 60
 DASHBOARD_RESULT_SCOPE_START = datetime(2015, 1, 1, tzinfo=UTC).replace(tzinfo=None)
 DASHBOARD_RESULT_SCOPE_LABEL = "2015년 ~ 현재"
@@ -304,24 +308,24 @@ def _rebuild_with_lock(db: Session, dataset: str) -> BidDatasetSummary:
     Redis가 없을 때는 프로세스 내 락(threading.Lock)을 사용하여 fail-open으로
     인한 동시 대량 쿼리 부하를 차단합니다.
     """
-    client = cache._conn.client()
+    client = cache.client()
     lock_name = f"lock:bid_dataset_summary:init:{dataset}"
 
     if client is not None:
         try:
-            with client.lock(lock_name, timeout=600, blocking_timeout=30):
+            with client.lock(lock_name, timeout=SUMMARY_INIT_LOCK_TIMEOUT, blocking_timeout=30):
                 existing = db.get(BidDatasetSummary, dataset)
                 if existing is not None:
-                    existing.is_stale = False  # type: ignore[attr-defined]
+                    existing.is_stale = False
                     return existing
                 summary = rebuild_bid_dataset_summary(db, dataset)
-                summary.is_stale = False  # type: ignore[attr-defined]
+                summary.is_stale = False
                 return summary
         except Exception as exc:
             logger.warning("Redis 분산 락 획득 실패 (%s): %s", lock_name, exc)
             existing = db.get(BidDatasetSummary, dataset)
             if existing is not None:
-                existing.is_stale = False  # type: ignore[attr-defined]
+                existing.is_stale = False
                 return existing
             raise RuntimeError(f"데이터셋 요약 초기 집계 분산 락 획득 실패: {dataset}") from exc
     else:
@@ -330,10 +334,10 @@ def _rebuild_with_lock(db: Session, dataset: str) -> BidDatasetSummary:
         with process_lock:
             existing = db.get(BidDatasetSummary, dataset)
             if existing is not None:
-                existing.is_stale = False  # type: ignore[attr-defined]
+                existing.is_stale = False
                 return existing
             summary = rebuild_bid_dataset_summary(db, dataset)
-            summary.is_stale = False  # type: ignore[attr-defined]
+            summary.is_stale = False
             return summary
 
 
@@ -356,7 +360,7 @@ def get_bid_dataset_summary(db: Session, dataset: str) -> BidDatasetSummary:
         summary.source_latest_collected_at != latest_collected_at
         or summary.aggregation_version != expected_version
     )
-    summary.is_stale = is_stale  # type: ignore[attr-defined]
+    summary.is_stale = is_stale
 
     if is_stale:
         enqueue_rebuild_dataset_summary(dataset)
