@@ -1,0 +1,58 @@
+{
+  "schema": "ORCA_REVIEW_DONE_V2",
+  "version": "2.1.0",
+  "verdict": "fail",
+  "checklist_results": [
+    {
+      "id": "suppression_used",
+      "answer": "no",
+      "evidence": "git diff main..HEAD 및 pyproject.toml 에 type: ignore 추가나 설정 완화가 없습니다."
+    },
+    {
+      "id": "narrowing_changed_behavior",
+      "answer": "no",
+      "evidence": "src/tasks/automation_tasks.py, src/tasks/retrain_task.py, src/tasks/scheduled_tasks.py 모두 caller_db가 None인지에 따라 session과 own_session(True/False)을 올바르게 할당하여 세션 생성 및 종료(finally 블록)의 동작이 완전히 동일하게 유지되었습니다."
+    },
+    {
+      "id": "detach_failure_leaks_span",
+      "answer": "yes",
+      "evidence": "src/app/core/observability.py:236 에서 context.detach(token) 가 try/except(또는 finally) 없이 호출되므로, 예외 발생 시 하단의 span.set_status와 span.end()가 실행되지 않아 span이 누수됩니다."
+    },
+    {
+      "id": "cursorresult_isinstance_masks",
+      "answer": "yes",
+      "evidence": "src/app/services/automation_orchestrator.py:453 에서 isinstance(result, CursorResult) 를 추가하여, result가 CursorResult가 아닌 경우 이전처럼 AttributeError가 발생하지 않고 조용히 조기 반환을 건너뛰어 _try_reuse_recent_execution 로 진입하게 만드는 런타임 동작 변화가 발생했습니다."
+    },
+    {
+      "id": "chat_payload_behavior_change",
+      "answer": "yes",
+      "evidence": "src/app/api/v1/chatbot.py:403 에서 payload가 int 와 같이 truthy한 비 ChatRequest 값일 때, 이전 코드는 int 를 반환했으나 새 코드는 ChatRequest(message='') 를 생성하여 반환하므로 명백히 다른 런타임 결과로 이어집니다."
+    },
+    {
+      "id": "test_coverage_missing",
+      "answer": "yes",
+      "evidence": "tests/test_observability.py 에 추가된 test_arq_context_token_detach_lifecycle 테스트는 정상적인 attach/detach 흐름(happy path)만 검사하며, detach가 예외를 던졌을 때 span이 종료되는지 보장하는 실패 케이스 테스트가 누락되어 있습니다."
+    }
+  ],
+  "blocking_issues": [
+    {
+      "id": "detach_failure_leaks_span",
+      "file": "src/app/core/observability.py",
+      "description": "context.detach(token) 예외 발생 시 span.end() 호출이 누락되어 리소스가 누수될 위험이 있습니다. try/finally 구조로 span 종료를 보장해야 합니다."
+    },
+    {
+      "id": "cursorresult_isinstance_masks",
+      "file": "src/app/services/automation_orchestrator.py",
+      "description": "CursorResult 확인 시 isinstance로 분기함으로써, 의도치 않은 타입이 들어왔을 때 에러를 발생시키지 않고 조용히 다음 로직으로 넘어가 상태 오염을 유발할 수 있습니다. cast(CursorResult, result) 등 런타임 동작을 바꾸지 않는 타입 단언을 사용해야 합니다."
+    },
+    {
+      "id": "chat_payload_behavior_change",
+      "file": "src/app/api/v1/chatbot.py",
+      "description": "payload 타입 좁히기 과정에서 payload or ChatRequest 와 if isinstance(...) else ChatRequest 의 평가 방식 차이로 인해, 유효하지 않은 입력(int 등)에 대한 동작이 변경되었습니다."
+    }
+  ],
+  "unverified_claims": [],
+  "missing_tests": [
+    "context.detach 예외 발생 시 span 종료 보장 테스트"
+  ]
+}
