@@ -2038,37 +2038,47 @@ class TestProviderIndependence:
 
     def test_select_model_reviewer_unknown_builder_provider_fails_closed_on_high_risk(self):
         """리뷰어 역할에서 builder provider 를 알 수 없으면 high 위험도에서 fail-closed 로 ModelRoutingError 가 발생합니다."""
-        with pytest.raises(ModelRoutingError) as exc_info:
-            select_model("reviewer", "high", builder_provider="unknown")
-        err = exc_info.value
-        assert err.role == "reviewer"
-        assert err.risk == "high"
-        assert "독립성을 보장할 수 없습니다" in str(err)
+        for val in ("unknown", None, "", "   ", "\t\n"):
+            with pytest.raises(ModelRoutingError) as exc_info:
+                select_model("reviewer", "high", builder_provider=val)
+            err = exc_info.value
+            assert err.role == "reviewer"
+            assert err.risk == "high"
+            assert "독립성을 보장할 수 없습니다" in str(err)
 
     def test_select_model_reviewer_unknown_builder_provider_fails_closed_on_medium_risk(self):
         """리뷰어 역할에서 builder provider 를 알 수 없으면 medium 위험도에서 fail-closed 로 ModelRoutingError 가 발생합니다."""
-        with pytest.raises(ModelRoutingError) as exc_info:
-            select_model("reviewer", "medium", has_write_scope=False, builder_provider="unknown")
-        err = exc_info.value
-        assert err.role == "reviewer"
-        assert err.risk == "medium"
-        assert "독립성을 보장할 수 없습니다" in str(err)
+        for val in ("unknown", None, "", "   ", "\t"):
+            with pytest.raises(ModelRoutingError) as exc_info:
+                select_model("reviewer", "medium", has_write_scope=False, builder_provider=val)
+            err = exc_info.value
+            assert err.role == "reviewer"
+            assert err.risk == "medium"
+            assert "독립성을 보장할 수 없습니다" in str(err)
 
     def test_select_model_reviewer_unknown_builder_provider_fails_closed_on_write_scope(self):
         """리뷰어 역할에서 builder provider 를 알 수 없고 쓰기 범위가 있으면 low 위험도라도 fail-closed 로 ModelRoutingError 가 발생합니다."""
-        with pytest.raises(ModelRoutingError) as exc_info:
-            select_model("reviewer", "low", has_write_scope=True, builder_provider="unknown")
-        err = exc_info.value
-        assert err.role == "reviewer"
-        assert err.risk == "low"
-        assert "독립성을 보장할 수 없습니다" in str(err)
+        for val in ("unknown", None, "", "   "):
+            with pytest.raises(ModelRoutingError) as exc_info:
+                select_model("reviewer", "low", has_write_scope=True, builder_provider=val)
+            err = exc_info.value
+            assert err.role == "reviewer"
+            assert err.risk == "low"
+            assert "독립성을 보장할 수 없습니다" in str(err)
 
     def test_select_model_reviewer_unknown_builder_provider_allowed_on_low_risk_readonly(self):
         """리뷰어 역할에서 builder provider 를 알 수 없더라도 low 위험 읽기 전용인 경우 경고와 함께 진행이 허용됩니다."""
-        res = select_model("reviewer", "low", has_write_scope=False, builder_provider="unknown")
+        for val in ("unknown", None, "", "   ", "\t"):
+            res = select_model("reviewer", "low", has_write_scope=False, builder_provider=val)
+            assert res["primary_pool"] == "qwen-plus"
+            assert res["primary_model"] == "qwen3.7-plus"
+            assert any("알 수 없어" in note for note in res.get("inventory_notes", []))
+
+    def test_select_model_reviewer_whitespace_stripped_builder_provider_accepted(self):
+        """builder_provider 앞뒤 공백이 정상적으로 strip 정규화되어 올바른 provider 제외가 적용됩니다."""
+        res = select_model("reviewer", "high", builder_provider="  gemini  ")
         assert res["primary_pool"] == "qwen-plus"
         assert res["primary_model"] == "qwen3.7-plus"
-        assert any("알 수 없어" in note for note in res.get("inventory_notes", []))
 
     def test_route_reviewer_unknown_builder_provider_fails_closed_on_high_medium_or_write(self):
         """route() 에서 builder provider 미상 시 high/medium 위험도 또는 쓰기 범위가 있으면 fail-closed 로 닫힙니다."""
@@ -2256,3 +2266,37 @@ class TestProviderIndependence:
             assert "grok" not in candidates, f"{role}, {risk} 에 grok 이 포함되어 있습니다."
             assert "grok-4.6" not in candidates, f"{role}, {risk} 에 grok-4.6 이 포함되어 있습니다."
             assert "grok-4.5" not in candidates, f"{role}, {risk} 에 grok-4.5 가 포함되어 있습니다."
+
+    def test_route_model_explicit_unregistered_fails_closed(self):
+        """MODEL_POOL 에 등록되지 않은 모델을 명시 지정하면 ModelRoutingError 발생."""
+        from scripts.orca_model_router import route
+
+        with pytest.raises(ModelRoutingError, match="MODEL_POOL 에 등록되어 있지 않습니다"):
+            route(
+                role="builder",
+                risk="medium",
+                explicit_model="unregistered-custom-model",
+            )
+
+    def test_route_model_explicit_coordinator_fails_closed(self):
+        """코디네이터 전용 모델을 워커 명시 모델로 지정하면 ValueError 발생."""
+        from scripts.orca_model_router import route
+
+        with pytest.raises(ValueError, match="코디네이터 전용 모델"):
+            route(
+                role="builder",
+                risk="medium",
+                explicit_model="codex",
+            )
+
+    def test_route_model_explicit_reviewer_same_provider_fails_closed(self):
+        """리뷰어에게 빌더와 동일한 provider 의 모델을 명시 지정하면 ModelRoutingError 발생."""
+        from scripts.orca_model_router import route
+
+        with pytest.raises(ModelRoutingError, match="독립 리뷰 정책을 위반합니다"):
+            route(
+                role="reviewer",
+                risk="high",
+                explicit_model="gemini-3.7-flash-high",
+                builder_provider="gemini",
+            )
