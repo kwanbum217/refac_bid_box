@@ -2256,3 +2256,37 @@ class TestProviderIndependence:
             assert "grok" not in candidates, f"{role}, {risk} 에 grok 이 포함되어 있습니다."
             assert "grok-4.6" not in candidates, f"{role}, {risk} 에 grok-4.6 이 포함되어 있습니다."
             assert "grok-4.5" not in candidates, f"{role}, {risk} 에 grok-4.5 가 포함되어 있습니다."
+
+    def test_route_model_explicit_unregistered_fails_closed(self):
+        """MODEL_POOL 에 등록되지 않은 모델을 명시 지정하면 ModelRoutingError 발생."""
+        from scripts.orca_model_router import route
+
+        with pytest.raises(ModelRoutingError, match="MODEL_POOL 에 등록되어 있지 않습니다"):
+            route(
+                role="builder",
+                risk="medium",
+                explicit_model="unregistered-custom-model",
+            )
+
+    def test_route_model_explicit_coordinator_fails_closed(self):
+        """코디네이터 전용 모델을 워커 명시 모델로 지정하면 ValueError 발생."""
+        from scripts.orca_model_router import route
+
+        with pytest.raises(ValueError, match="코디네이터 전용 모델"):
+            route(
+                role="builder",
+                risk="medium",
+                explicit_model="codex",
+            )
+
+    def test_route_model_explicit_reviewer_same_provider_fails_closed(self):
+        """리뷰어에게 빌더와 동일한 provider 의 모델을 명시 지정하면 ModelRoutingError 발생."""
+        from scripts.orca_model_router import route
+
+        with pytest.raises(ModelRoutingError, match="독립 리뷰 정책을 위반합니다"):
+            route(
+                role="reviewer",
+                risk="high",
+                explicit_model="gemini-3.7-flash-high",
+                builder_provider="gemini",
+            )

@@ -1,8 +1,8 @@
 # 에이전트 워커 기동 정본 참조
 
 > **작성일**: 2026-08-14
-> **수정일**: 2026-08-28
-> **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과. Task Capsule v2 워커 실행 계약 반영. 1.5 절은 2026-08-20 Run `run_a32b6b614996` 의 모델별 실측 검증 결과. 2026-08-28 dispatch 경로 파일 편집 자동 승인 모드 전환(shift+tab) 자동화 반영
+> **수정일**: 2026-09-04
+> **작성 근거**: 2026-08-14 세션에서 코디네이터가 각 경로를 직접 실행해 확인한 결과. Task Capsule v2 워커 실행 계약 반영. 1.5 절은 2026-08-20 Run `run_a32b6b614996` 의 모델별 실측 검증 결과. 2026-08-28 dispatch 경로 파일 편집 자동 승인 모드 전환(shift+tab) 자동화 반영. 2026-09-04 Orca 통제면 3대 결함(역할별 고지문 분기 및 커밋 의무 제어, 시도 단위 고유 preamble 수명주기 및 격리 파손 방지, 리뷰어 독립 provider 강제 및 명시 모델 우회 차단) 반영
 > **적용 대상**: 이 저장소에서 Orca 워커·코디네이터를 배정하는 모든 에이전트
 > **관련 문서**: [`orca_orchestration_playbook.md`](orca_orchestration_playbook.md), [`orca_task_capsule_v2.md`](orca_task_capsule_v2.md), [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md)
 
@@ -526,7 +526,7 @@ orca terminal create --worktree path:<워크트리> \
   --title "<섹션명>" \
   --command "uv run python scripts/orca_agy_launch.py --model gemini-3.8-flash-high" --json
 
-# 4. Task 투입 (dispatch --launcher 가 preamble 추출 -> <워크트리>/.orca/preamble.txt 기록 -> 런처 기동 확인 -> 감시기 부착을 일괄 처리합니다)
+# 4. Task 투입 (dispatch --launcher 가 preamble 추출 -> <워크트리>/.orca/preamble_{task_id}_{dispatch_id}_{nonce}.txt 고유 파일 기록 -> 런처 소비 후 즉시 삭제 확인 -> 감시기 부착을 일괄 처리합니다)
 uv run python scripts/orca_taskctl.py dispatch --intent <의도.yaml> --terminal <handle> --launcher
 
 # 5. 실존 및 진행 확인
@@ -540,8 +540,9 @@ orca orchestration dispatch-show --task <task_id> --json
 
 | 조치 | 이유 |
 | --- | --- |
-| `orca terminal read` 로 런처가 대기 중인지 확인 | `preamble 대기 중: .orca/preamble.txt` 출력이 화면에 떠 있는지 확인합니다 |
+| `orca terminal read` 로 런처가 대기 중인지 확인 | `preamble 대기 중: .orca/preamble.txt` 또는 대기 안내 출력이 화면에 떠 있는지 확인합니다 |
 | `.orca/capsules/` 를 **통째로** 워크트리에 복사 | Task `spec` 은 생성 후 변경할 수 없어 잠정 ID 경로를 가리킵니다. 실제 ID 디렉터리 하나만 복사하면 워커가 없는 파일을 엽니다 |
+| 워크트리 잔여 preamble 부재 확인 | 워크트리에 이전 시도의 미소비 preamble(`preamble_*.txt`)이 남아있으면 새 dispatch 가 거부(종료 코드 2)됩니다 |
 
 ```bash
 cp -R <주 저장소>/.orca/capsules <워크트리>/.orca/
@@ -630,6 +631,26 @@ Level 1 게이트 2 가 병합 전에 따로 검사하므로, 범위 밖 파일�
 `git *`, `python3 *`, `pytest *` 같은 와일드카드가 이미 등록되어 있어 대개
 다시 묻지 않습니다. 워커 기동에서 걸리는 것은 대부분 명령 승인이 아니라 폴더
 신뢰입니다.
+
+### 2.3 통제면 3대 계약: 역할별 고지문 분기, Preamble 격리 수명주기, 리뷰어 독립성 강제
+
+2026-09-04 외부 진단 및 실측에서 발견된 통제면 3대 결함(역할 혼선으로 인한 리뷰어 불법 커밋, 고정 preamble 재사용으로 인한 지시문 오염, 리뷰어 독립 provider 정책 우회)을 영구 차단하기 위해 다음 3대 규약이 기계적으로 강제됩니다:
+
+#### 2.3.1 역할별 Capsule 고지문 분기 및 커밋 의무 제어
+`scripts/orca_taskctl.py` 의 `build_capsule_notice` 는 Task 의 역할(`role`)과 반환 계약(`return_contract`)을 파싱하여 고지문을 엄격하게 분기합니다:
+- **Reviewer 고지문**: 소스 코드 수정 금지, 커밋 생성 금지 명시, `ORCA_REVIEW_DONE_V2` 반환 계약 및 사전 검증 명령(`python3 scripts/validate_review_report.py --capsule <capsule> --report <report>`)만 주입합니다. 빌더용 커밋 의무(`commit_count` 검사, 0개 시 escalation), `allowed_write_files` 범위 문구, `ORCA_WORKER_DONE_V2`, guard 안내는 일절 주입하지 않습니다.
+- **Builder 고지문**: `allowed_write_files` 가 비어 있지 않은 경우에만 커밋 생성 의무(`commit_count` 가 0이면 escalation)와 `ORCA_WORKER_DONE_V2` 및 `orca_worker_done_guard.py` 안내를 주입합니다. 쓰기 범위가 없는 읽기 전용 빌더는 커밋 의무를 주입하지 않습니다.
+- **역할 불일치 방지**: Capsule 에 선언된 `role` 과 Intent 또는 CLI 인자로 지정된 `role` 이 상이하면 Dispatch 단계에서 종료 코드 1(`capsule_spec_error`)로 즉시 중단합니다.
+
+#### 2.3.2 시도 단위 고유 Preamble 수명주기 및 격리 파손 방지
+- **고유 파일명 발행**: 고정 파일명(`.orca/preamble.txt`) 재사용을 전면 금지하고, 시도마다 고유한 파일명(`preamble_{task_id}_{dispatch_id}_{nonce}.txt`)을 워크트리 `.orca/` 에 발행합니다.
+- **런처 즉시 소비 및 삭제**: 런처(`scripts/orca_agy_launch.py`)는 워크트리 내의 고유 preamble 파일을 감지하여 읽은 즉시 삭제(`unlink`)하고 표준 출력에 소비 완료 표지를 남깁니다.
+- **잔여 preamble 격리 가드**: 워크트리에 이전 시도의 소비되지 않은 잔여 preamble 파일(`preamble_*.txt`)이 남아 있으면 새 Dispatch 를 종료 코드 2(`unconsumed_preamble_exists`)로 거부하여 지시문 교차 오염을 원천 차단합니다.
+
+#### 2.3.3 리뷰어 독립 Provider 강제 및 명시 모델 우회 차단
+- **빌더 Provider 자동 배제**: 리뷰어 모델 배정 시 빌더의 provider 계열(예: gemini, qwen 등)을 `exclude_providers` 에 전달하여 동일 계열 모델이 배정되지 않도록 강제합니다.
+- **빌더 Provider 미상 시 Fail-Closed**: 위험도가 `medium` 또는 `high` 인 리뷰어 Task 에서 빌더 provider 가 확인되지 않으면 경고가 아닌 오류(`ModelRoutingError`)로 배정을 즉시 중단합니다.
+- **명시 모델(`--model`) 우회 차단**: 사용자가 `--model` 로 명시 지정하더라도 (1) `MODEL_POOL` 미등록 모델, (2) 코디네이터 전용 모델(`codex`), (3) 리뷰어인 경우 빌더와 동일한 provider 의 모델을 지정하면 오류를 발생시키고 기동을 거부합니다.
 
 ---
 

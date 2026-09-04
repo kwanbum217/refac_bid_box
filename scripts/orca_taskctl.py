@@ -94,6 +94,7 @@ try:
         capsule_has_write_scope,
         classify_from_capsule,
         classify_risk,
+        is_coordinator_model,
         pool_for_model,
         provider_for_model,
         record_reliability_outcome,
@@ -109,6 +110,7 @@ except (ModuleNotFoundError, ImportError):
         capsule_has_write_scope,
         classify_from_capsule,
         classify_risk,
+        is_coordinator_model,
         pool_for_model,
         provider_for_model,
         record_reliability_outcome,
@@ -2230,6 +2232,10 @@ def build_capsule_notice(
     dispatch_id: str | None = None,
     delivery_probe: str | None = None,
     worktree_path: str | None = None,
+    *,
+    role: str | None = None,
+    return_contract: str | None = None,
+    capsule_text: str | None = None,
 ) -> str:
     """Capsule 정본 경로 고지문을 만듭니다.
 
@@ -2239,34 +2245,84 @@ def build_capsule_notice(
 
     경로는 반드시 워크트리 상대 경로로 줍니다. 절대 경로를 주면 워커가 그
     저장소로 이동합니다 (2026-08-23, `worktree_relative_capsule_path` 참조).
+
+    역할(role)과 반환 계약(return_contract)에 따라 고지문 내용이 분기됩니다:
+      - reviewer: 소스 변경 금지, 커밋 금지 명시, ORCA_REVIEW_DONE_V2 및 validate_review_report.py 안내.
+      - builder: allowed_write_files 가 비어있지 않을 때만 커밋 의무 및 ORCA_WORKER_DONE_V2/guard 안내.
     """
     relative_capsule = worktree_relative_capsule_path(capsule_path)
     validate_contained_path(relative_capsule, field_name="capsule_path")
+
+    raw_capsule = capsule_text
+    if raw_capsule is None and capsule_path.is_file():
+        raw_capsule = capsule_path.read_text(encoding="utf-8")
+
+    capsule_role = parse_capsule_scalar(raw_capsule, "role") if raw_capsule else None
+    capsule_contract = parse_capsule_scalar(raw_capsule, "return_contract") if raw_capsule else None
+    allowed_write = parse_capsule_list(raw_capsule, "allowed_write_files") if raw_capsule else []
+
+    if role is not None and capsule_role is not None and role != capsule_role:
+        raise ValueError(f"Capsule 역할({capsule_role})과 고지문 역할({role})이 일치하지 않습니다.")
+
+    eff_role = role or capsule_role or "builder"
+    eff_contract = return_contract or capsule_contract
+
+    # 역할과 완료 계약 불일치 검증
+    if eff_role == "reviewer" and eff_contract in ("ORCA_WORKER_DONE_V2", "worker_done"):
+        raise ValueError(f"리뷰어 역할({eff_role})과 완료 계약({eff_contract})이 불일치합니다.")
+    if eff_role == "builder" and eff_contract in ("ORCA_REVIEW_DONE_V2", "review_done"):
+        raise ValueError(f"빌더 역할({eff_role})과 완료 계약({eff_contract})이 불일치합니다.")
+
+    if not eff_contract:
+        eff_contract = "ORCA_REVIEW_DONE_V2" if eff_role == "reviewer" else "ORCA_WORKER_DONE_V2"
+
     parts = [
         f"정본 사양은 현재 작업 디렉터리 기준 {relative_capsule} 입니다.",
         "지금 그 파일을 읽고 이 작업의 유일한 정본으로 삼으십시오.",
-        "현재 작업 디렉터리가 당신의 격리 작업 트리입니다. 절대 벗어나지 마십시오.",
-        "cd 로 다른 저장소로 이동하지 말고 모든 경로를 상대 경로로 다루십시오.",
-        "objective, acceptance, allowed_write_files, forbidden 을 그대로 지킵니다.",
-        "allowed_write_files 에 없는 파일명을 새로 만들지 마십시오.",
-        "README, AGENTS.md, SKILLS.md, 설계서는 읽지 않습니다.",
-        "코드 변경 작업은 커밋해야 완료입니다. commit_count 가 0 이면 succeeded 대신 escalation 을 보냅니다.",
     ]
     if worktree_path:
-        parts.insert(
-            2,
-            f"당신의 작업 트리는 {worktree_path} 이며 그 밖의 파일을 읽거나 쓰면 계약 위반입니다.",
-        )
-    if report_path:
-        validate_contained_path(report_path, field_name="report_path")
-        parts.append(f"보고 JSON 은 {report_path} 에 ORCA_WORKER_DONE_V2 계약으로 씁니다.")
         parts.append(
-            f"완료 보고 전송 시에는 직접 orca orchestration send 를 실행하지 말고 "
-            f"`python3 scripts/orca_worker_done_guard.py --capsule {relative_capsule} --report {report_path} --send` "
-            "단일 검증 진입점 명령을 실행하십시오."
+            f"당신의 작업 트리는 {worktree_path} 이며 그 밖의 파일을 읽거나 쓰면 계약 위반입니다."
         )
-    if dispatch_id:
-        parts.append(f"worker_done 전송 시 dispatchId 는 {dispatch_id} 입니다.")
+    parts.extend(
+        [
+            "현재 작업 디렉터리가 당신의 격리 작업 트리입니다. 절대 벗어나지 마십시오.",
+            "cd 로 다른 저장소로 이동하지 말고 모든 경로를 상대 경로로 다루십시오.",
+            "objective, acceptance, allowed_write_files, forbidden 을 그대로 지킵니다.",
+            "allowed_write_files 에 없는 파일명을 새로 만들지 마십시오.",
+            "README, AGENTS.md, SKILLS.md, 설계서는 읽지 않습니다.",
+        ]
+    )
+
+    if eff_role == "reviewer":
+        parts.append("리뷰어 역할입니다. 소스 코드를 변경하거나 커밋을 생성하지 마십시오.")
+        parts.append("파일 수정 없이 검토 및 판정 보고서만 작성합니다.")
+        if report_path:
+            validate_contained_path(report_path, field_name="report_path")
+            parts.append(f"보고 JSON 은 {report_path} 에 {eff_contract} 계약으로 씁니다.")
+            parts.append(
+                f"완료 보고 전송 전 `python3 scripts/validate_review_report.py --capsule {relative_capsule} --report {report_path}` "
+                "검증을 실행하십시오."
+            )
+        if dispatch_id:
+            parts.append(f"review_done 전송 시 dispatchId 는 {dispatch_id} 입니다.")
+    else:
+        if allowed_write:
+            parts.append(
+                "코드 변경 작업은 커밋해야 완료입니다. commit_count 가 0 이면 succeeded 대신 escalation 을 보냅니다."
+            )
+        if report_path:
+            validate_contained_path(report_path, field_name="report_path")
+            parts.append(f"보고 JSON 은 {report_path} 에 {eff_contract} 계약으로 씁니다.")
+            if eff_contract == "ORCA_WORKER_DONE_V2":
+                parts.append(
+                    f"완료 보고 전송 시에는 직접 orca orchestration send 를 실행하지 말고 "
+                    f"`python3 scripts/orca_worker_done_guard.py --capsule {relative_capsule} --report {report_path} --send` "
+                    "단일 검증 진입점 명령을 실행하십시오."
+                )
+        if dispatch_id:
+            parts.append(f"worker_done 전송 시 dispatchId 는 {dispatch_id} 입니다.")
+
     if delivery_probe:
         # 코디네이터가 이번 시도의 도달을 확인하는 표지입니다. 워커는 아무
         # 조치도 하지 않아도 되며, 화면에 남는 것만으로 목적을 다합니다.
@@ -2562,7 +2618,10 @@ def finalize_task(
             if b_provider and b_provider != "unknown":
                 try:
                     routed = select_model(
-                        role="reviewer", risk=risk, exclude_providers=[b_provider]
+                        role="reviewer",
+                        risk=risk,
+                        builder_provider=b_provider,
+                        exclude_providers=[b_provider],
                     )
                     actual_reviewer_model = routed["primary_model"]
                 except ModelRoutingError as exc:
@@ -2750,6 +2809,7 @@ def _deliver_capsule_notice(
             dispatch_id=dispatch_id,
             delivery_probe=delivery_probe,
             worktree_path=getattr(args, "worktree", None),
+            role=intent.get("role"),
         )
     except ValueError as err:
         sys.stderr.write(f"경고: Capsule 고지문 작성 실패: {err}\n")
@@ -3051,7 +3111,23 @@ LAUNCHER_STARTED_MARKERS: tuple[str, ...] = (
     "기동: opencode",
     "기동: kimi",
     "기동:",
+    "preamble 소비 완료",
 )
+
+
+def find_unconsumed_preambles(worktree_path: Path) -> list[Path]:
+    """워크트리 내에 소비되지 않고 남아있는 preamble 파일 목록을 반환합니다."""
+    orca_dir = worktree_path / ".orca"
+    if not orca_dir.is_dir():
+        return []
+    unconsumed: list[Path] = []
+    legacy = orca_dir / "preamble.txt"
+    if legacy.is_file():
+        unconsumed.append(legacy)
+    for p in sorted(orca_dir.glob("preamble_*.txt")):
+        if p.is_file():
+            unconsumed.append(p)
+    return unconsumed
 
 
 def resolve_terminal_worktree(terminal: str, repo: Path | str = ".") -> Path | None:
@@ -3076,7 +3152,7 @@ def resolve_terminal_worktree(terminal: str, repo: Path | str = ".") -> Path | N
         try:
             payload = json.loads(stdout)
             if isinstance(payload, dict) and payload.get("ok") is not False:
-                t_info = (payload.get("result") or {}).get("terminal") or {}
+                t_info = (payload.get("result") or {}).get("terminal") or payload
                 wt = (
                     t_info.get("worktree")
                     or t_info.get("worktreePath")
@@ -3098,10 +3174,16 @@ def resolve_terminal_worktree(terminal: str, repo: Path | str = ".") -> Path | N
             payload = json.loads(stdout)
             if isinstance(payload, dict) and payload.get("ok") is not False:
                 terminals = (payload.get("result") or {}).get("terminals") or []
+                if not terminals and isinstance(payload.get("terminals"), list):
+                    terminals = payload.get("terminals")
                 for item in terminals:
                     if not isinstance(item, dict):
                         continue
-                    if item.get("handle") == terminal or item.get("id") == terminal:
+                    if (
+                        item.get("handle") == terminal
+                        or item.get("id") == terminal
+                        or item.get("terminal") == terminal
+                    ):
                         wt = (
                             item.get("worktree")
                             or item.get("worktreePath")
@@ -3125,12 +3207,14 @@ def verify_launcher_pickup(
     poll_interval_sec: float = 0.5,
     sleep_fn=time.sleep,
     read_fn=None,
+    preamble_file: Path | None = None,
 ) -> tuple[bool, str]:
     """런처가 preamble 파일을 읽고 실제 CLI 를 기동했는지 확인합니다.
 
     1. 터미널 출력에서 'preamble 대기 중' 대기 상태가 해소되었는지 확인
     2. '기동:' 문구 또는 에이전트 프롬프트/신뢰 확인 대화창/모드 표지 출현 확인
-    3. 시한(timeout_sec) 초과 시 실패(False) 반환
+    3. preamble_file 이 지정된 경우 소비(삭제)되었는지 확인
+    4. 시한(timeout_sec) 초과 시 실패(False) 반환
     """
     if read_fn is None:
 
@@ -3143,10 +3227,13 @@ def verify_launcher_pickup(
     last_text = ""
     while True:
         text = read_fn(terminal)
+        preamble_consumed = bool(preamble_file and not preamble_file.exists())
         if text:
             last_text = text
             lowered = text.lower()
-            has_started = any(marker in text for marker in LAUNCHER_STARTED_MARKERS)
+            has_started = (
+                any(marker in text for marker in LAUNCHER_STARTED_MARKERS) or preamble_consumed
+            )
             has_agent = (
                 agent_prompt_ready(text)
                 or has_trust_prompt(text)
@@ -3161,6 +3248,11 @@ def verify_launcher_pickup(
             )
 
             if (has_started or has_agent) and not is_still_waiting:
+                if preamble_consumed:
+                    return (
+                        True,
+                        f"런처가 고유 preamble 을 성공적으로 소비하고 에이전트를 기동했습니다 ({terminal})",
+                    )
                 return (
                     True,
                     f"런처가 preamble 을 성공적으로 이어받아 에이전트를 기동했습니다 ({terminal})",
@@ -3259,11 +3351,22 @@ def resolve_dispatch_model(
                     b_prov = parse_capsule_scalar(capsule_text, "builder_provider")
 
         resolved_builder_provider = b_prov
-        if b_prov and b_prov != "unknown":
+        builder_prov_missing = (
+            not b_prov or b_prov == "unknown" or (isinstance(b_prov, str) and not b_prov.strip())
+        )
+        if builder_prov_missing:
+            builder_prov_unknown = True
+            if risk in ("high", "medium") or has_write:
+                raise ModelRoutingError(
+                    f"리뷰어 모델 선택 실패: 빌더 provider 를 알 수 없어 독립성을 보장할 수 없습니다 "
+                    f"(role={role}, risk={risk}). "
+                    "위험도가 medium 이상인 리뷰어 Task 에서는 빌더 provider 가 필수입니다.",
+                    role=role,
+                    risk=risk,
+                )
+        else:
             if b_prov not in effective_exclude_providers:
                 effective_exclude_providers.append(b_prov)
-        else:
-            builder_prov_unknown = True
 
     try:
         routed = select_model(
@@ -3271,6 +3374,7 @@ def resolve_dispatch_model(
             risk=risk,
             allow_free=False,
             has_write_scope=has_write,
+            builder_provider=resolved_builder_provider,
             exclude_providers=effective_exclude_providers if effective_exclude_providers else None,
         )
         recommended_pool = routed.get("primary_pool")
@@ -3283,6 +3387,33 @@ def resolve_dispatch_model(
 
     warning: str | None = None
     if args_model:
+        pool_name = pool_for_model(args_model)
+        if not pool_name:
+            raise ModelRoutingError(
+                f"명시 지정 모델({args_model})이 MODEL_POOL 에 등록되어 있지 않습니다.",
+                role=role,
+                risk=risk,
+            )
+        if is_coordinator_model(args_model):
+            raise ValueError(f"코디네이터 전용 모델은 워커로 지정할 수 없습니다: {args_model}")
+        if role == "reviewer":
+            explicit_prov = provider_for_model(args_model, strict=False)
+            if resolved_builder_provider and resolved_builder_provider != "unknown":
+                if explicit_prov == resolved_builder_provider:
+                    raise ModelRoutingError(
+                        f"리뷰어 명시 지정 모델({args_model}, provider={explicit_prov})이 "
+                        f"빌더 provider({resolved_builder_provider})와 동일하여 독립 리뷰 정책을 위반합니다.",
+                        role=role,
+                        risk=risk,
+                    )
+            elif risk in ("medium", "high"):
+                raise ModelRoutingError(
+                    f"리뷰어 명시 모델({args_model}) 지정 시 위험도 {risk} 에서는 "
+                    "빌더 provider 가 확인되어야 합니다.",
+                    role=role,
+                    risk=risk,
+                )
+
         model = args_model
         source = "explicit"
         reason = f"명시 지정: {args_model} (선언 role={role}, risk={risk})"
@@ -3761,6 +3892,31 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             )
         return 1
 
+    capsule_role = parse_capsule_scalar(capsule, "role") or "builder"
+    intent_role = intent.get("role")
+    if intent_role and capsule_role != intent_role:
+        err_msg = (
+            f"Capsule 역할({capsule_role})과 Intent/고지문 역할({intent_role})이 일치하지 않습니다."
+        )
+        sys.stderr.write(f"오류 [capsule_spec_error]: {err_msg}\n")
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "error": "capsule_role_mismatch",
+                        "origin": "capsule_spec_error",
+                        "task_id": task_id,
+                        "reason": err_msg,
+                        "capsule_role": capsule_role,
+                        "intent_role": intent_role,
+                        "exit_code": 1,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        return 1
+
     model_resolution = resolve_dispatch_model(
         args_model=args.model,
         capsule_text=capsule,
@@ -3948,6 +4104,32 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 )
             return 2
 
+        unconsumed = find_unconsumed_preambles(worktree_path)
+        if unconsumed:
+            file_names = ", ".join(p.name for p in unconsumed)
+            err_msg = (
+                f"런처 기동 실패: 워크트리({worktree_path})에 소비되지 않은 preamble 파일이 남아 있습니다: {file_names}. "
+                "이전 지시문 격리 파손을 방지하기 위해 새 Dispatch 를 거부합니다."
+            )
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "unconsumed_preamble_exists",
+                            "task_id": task_id,
+                            "capsule": str(capsule_path),
+                            "terminal": args.terminal,
+                            "worktree": str(worktree_path),
+                            "unconsumed_files": [str(p) for p in unconsumed],
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
+
         # 런처 경로는 Antigravity 전용입니다. worker-start 가 받는 claude/codex/cursor 는
         # 이 분기로 오지 않으므로 --agent 가 없으면 antigravity 로 확정합니다.
         detected_cli = args.agent or "antigravity"
@@ -4053,12 +4235,18 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 )
             return 2
 
-        preamble_file = worktree_path / ".orca" / "preamble.txt"
+        dispatch_id = resolve_dispatch_id(task_id)
+        nonce = uuid.uuid4().hex[:8]
+        preamble_file = worktree_path / ".orca" / f"preamble_{task_id}_{dispatch_id}_{nonce}.txt"
         preamble_file.parent.mkdir(parents=True, exist_ok=True)
         preamble_file.write_text(preamble, encoding="utf-8")
-        sys.stderr.write(f"preamble 작성 완료: {preamble_file} ({len(preamble)}자)\n")
+        sys.stderr.write(
+            f"고유 preamble 작성 완료: {preamble_file} ({len(preamble)}자, nonce={nonce})\n"
+        )
 
-        pickup_ok, launcher_pickup_detail = verify_launcher_pickup(args.terminal, timeout_sec=30.0)
+        pickup_ok, launcher_pickup_detail = verify_launcher_pickup(
+            args.terminal, timeout_sec=30.0, preamble_file=preamble_file
+        )
         if not pickup_ok:
             sys.stderr.write(f"오류: {launcher_pickup_detail}\n")
             if args.json:

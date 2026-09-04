@@ -1580,7 +1580,7 @@ def select_model(
 
     inventory_notes: list[str] = []
 
-    if role == "reviewer" and effective_builder_prov == "unknown":
+    if role == "reviewer" and effective_builder_prov in ("unknown", ""):
         if risk in ("high", "medium") or has_write_scope:
             exclude_str = ", ".join(exclude) if exclude else "(없음)"
             exclude_prov_str = (
@@ -1970,11 +1970,12 @@ def route(
             if b_prov != "unknown":
                 builder_provider = b_prov
 
-    if (
-        role == "reviewer"
-        and (not builder_provider or builder_provider == "unknown")
-        and not exclude_providers
-    ):
+    builder_prov_missing = (
+        not builder_provider
+        or builder_provider == "unknown"
+        or (isinstance(builder_provider, str) and not builder_provider.strip())
+    )
+    if role == "reviewer" and builder_prov_missing and not exclude_providers:
         if risk in ("high", "medium") or has_write_scope:
             raise ModelRoutingError(
                 f"리뷰어 모델 라우팅 실패: 빌더 provider 를 알 수 없어 독립성을 보장할 수 없습니다 "
@@ -1992,8 +1993,32 @@ def route(
             warnings.append(reason)
 
     if explicit_model:
+        pool_name = pool_for_model(explicit_model)
+        if not pool_name:
+            raise ModelRoutingError(
+                f"명시 지정 모델({explicit_model})이 MODEL_POOL 에 등록되어 있지 않습니다.",
+                role=role,
+                risk=risk,
+            )
         if is_coordinator_model(explicit_model):
             raise ValueError(f"코디네이터 전용 모델은 워커로 지정할 수 없습니다: {explicit_model}")
+        if role == "reviewer":
+            explicit_prov = provider_for_model(explicit_model, strict=False)
+            if builder_provider and builder_provider != "unknown":
+                if explicit_prov == builder_provider:
+                    raise ModelRoutingError(
+                        f"리뷰어 명시 지정 모델({explicit_model}, provider={explicit_prov})이 "
+                        f"빌더 provider({builder_provider})와 동일하여 독립 리뷰 정책을 위반합니다.",
+                        role=role,
+                        risk=risk,
+                    )
+            elif risk in ("medium", "high") or has_write_scope:
+                raise ModelRoutingError(
+                    f"리뷰어 명시 모델({explicit_model}) 지정 시 위험도 {risk} 에서는 "
+                    "빌더 provider 가 확인되어야 합니다.",
+                    role=role,
+                    risk=risk,
+                )
         primary_id = explicit_model
         fallback_id = None
     else:

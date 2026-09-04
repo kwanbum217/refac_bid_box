@@ -1947,17 +1947,31 @@ def test_cmd_dispatch_terminal_failure_display_matches_executed_command(
 # ---------------------------------------------------------------------------
 
 
-def test_build_capsule_notice_carries_path_contract_and_dispatch_id():
+def test_build_capsule_notice_carries_path_contract_and_dispatch_id(tmp_path: Path):
     """고지문은 경로, 커밋 계약, 유효 dispatchId 를 함께 담아야 합니다."""
     from scripts.orca_taskctl import build_capsule_notice
 
+    capsule_file = tmp_path / ".orca" / "capsules" / "task_x" / "capsule.yaml"
+    capsule_file.parent.mkdir(parents=True, exist_ok=True)
+    capsule_file.write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_x"
+role: "builder"
+allowed_write_files:
+  - "src/foo.py"
+""",
+        encoding="utf-8",
+    )
+
     text = build_capsule_notice(
-        Path("/abs/.orca/capsules/task_x/capsule.yaml"),
+        capsule_file,
         report_path=".orca/capsules/task_x/worker_done.json",
         dispatch_id="ctx_new",
+        role="builder",
     )
     # 절대 경로를 주면 워커가 그 저장소로 이동합니다. 상대 경로만 담습니다.
-    assert str(Path("/abs/.orca/capsules/task_x/capsule.yaml")) not in text
+    assert str(capsule_file) not in text
     assert ".orca/capsules/task_x/capsule.yaml" in text
     assert "벗어나지" in text
     assert "allowed_write_files" in text
@@ -4676,14 +4690,23 @@ def test_resolve_dispatch_model_risk_high():
 
 
 def test_resolve_dispatch_model_explicit_override():
-    """(c) --model 명시 지정이 라우터보다 우선함."""
+    """(c) --model 명시 지정이 라우터보다 우선함 (단 MODEL_POOL 등록 모델이어야 함)."""
+    from scripts.orca_model_router import ModelRoutingError
+
     capsule_text = "role: builder\nrisk: medium\nobjective: simple task\n"
     res = resolve_dispatch_model(
-        args_model="custom-model-id",
+        args_model="claude-sonnet",
         capsule_text=capsule_text,
     )
-    assert res["model"] == "custom-model-id"
+    assert res["model"] == "claude-sonnet"
     assert res["source"] == "explicit"
+
+    # 미등록 모델 지정 시 fail-closed 거부
+    with pytest.raises(ModelRoutingError, match="MODEL_POOL 에 등록되어 있지 않습니다"):
+        resolve_dispatch_model(
+            args_model="custom-model-id",
+            capsule_text=capsule_text,
+        )
 
 
 def test_resolve_dispatch_model_higher_model_warning(capsys: pytest.CaptureFixture):
@@ -4907,15 +4930,30 @@ risk: "high"
     assert "gemini" in res_qwen_builder["model"]
     assert res_qwen_builder["builder_provider"] == "qwen"
 
-    # 3. 빌더 provider 를 알 수 없으면 경고에 기록됨
-    res_unknown_builder = resolve_dispatch_model(
+    # 3. 빌더 provider 를 알 수 없으면 (위험도 medium/high) fail-closed 로 ModelRoutingError 발생
+    with pytest.raises(ModelRoutingError, match="빌더 provider 를 알 수 없어"):
+        resolve_dispatch_model(
+            args_model=None,
+            capsule_text=capsule_text,
+            builder_model=None,
+            builder_provider=None,
+        )
+
+    # 3-1. 위험도가 low 이고 쓰기 권한이 없는 경우 경고로 기록
+    low_capsule = """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_rev_low"
+role: "reviewer"
+risk: "low"
+"""
+    res_unknown_low = resolve_dispatch_model(
         args_model=None,
-        capsule_text=capsule_text,
+        capsule_text=low_capsule,
         builder_model=None,
         builder_provider=None,
     )
-    assert res_unknown_builder["builder_provider"] == "unknown"
-    assert "빌더 provider 를 알 수 없어" in (res_unknown_builder["warning"] or "")
+    assert res_unknown_low["builder_provider"] == "unknown"
+    assert "빌더 provider 를 알 수 없어" in (res_unknown_low["warning"] or "")
 
     # 4. 독립 provider 가 모두 제외되어 후보가 소진되면 fail-closed 로 ModelRoutingError 발생
     with pytest.raises(ModelRoutingError):
@@ -5743,9 +5781,11 @@ def test_cmd_dispatch_launcher_writes_preamble_to_worktree(
     assert dispatch_calls[0]["return_preamble"] is True
     assert dispatch_calls[0]["to_handle"] == "term_launcher_01"
 
-    preamble_target = worktree_dir / ".orca" / "preamble.txt"
-    assert preamble_target.exists()
-    assert preamble_target.read_text(encoding="utf-8") == preamble_content
+    written = list((worktree_dir / ".orca").glob("preamble_*.txt"))
+    assert len(written) == 1
+    assert written[0].name.startswith("preamble_task_intent_")
+    assert written[0].read_text(encoding="utf-8") == preamble_content
+    assert not (worktree_dir / ".orca" / "preamble.txt").exists()
 
     # 주 저장소에는 쓰지 않음을 검증
     assert not (tmp_path / "main_repo" / ".orca" / "preamble.txt").exists()
@@ -6128,3 +6168,238 @@ def test_prepare_worker_cli_type_grok(
         assert saved_meta.get("cli_type") == "grok"
     finally:
         remove_worker_meta(terminal_handle)
+
+
+# ---------------------------------------------------------------------------
+# Orca Control Plane 3대 결함 회귀 테스트 (task_6c66e96b551b)
+# 1. 역할 혼선 방지 (리뷰어 고지문 빌더 계약 주입 차단 및 역할 불일치 거부)
+# 2. 고유 Preamble 수명주기 및 미소비 잔여 preamble 격리 파손 방지
+# 3. 리뷰어 독립 Provider 검증 및 명시 모델 우회 차단
+# ---------------------------------------------------------------------------
+
+
+def test_build_capsule_notice_reviewer_role_no_builder_commit_obligations(tmp_path: Path):
+    """결함 1: 리뷰어 고지문에는 커밋 의무, write_files 범위, escalation 이 없고 읽기 전용 및 ORCA_REVIEW_DONE_V2 가 포함됨."""
+    from scripts.orca_taskctl import build_capsule_notice
+
+    capsule_file = tmp_path / ".orca" / "capsules" / "task_rev" / "capsule.yaml"
+    capsule_file.parent.mkdir(parents=True, exist_ok=True)
+    capsule_file.write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_rev"
+role: "reviewer"
+risk: "high"
+return_contract: "ORCA_REVIEW_DONE_V2"
+""",
+        encoding="utf-8",
+    )
+
+    notice = build_capsule_notice(
+        capsule_file,
+        report_path=".orca/capsules/task_rev/review_done.json",
+        dispatch_id="ctx_rev_01",
+        role="reviewer",
+        return_contract="ORCA_REVIEW_DONE_V2",
+    )
+
+    # 읽기 전용 및 리뷰 완료 형식 포함
+    assert "리뷰어 역할입니다" in notice
+    assert "소스 코드를 변경하거나 커밋을 생성하지 마십시오" in notice
+    assert "ORCA_REVIEW_DONE_V2" in notice
+    assert "validate_review_report.py" in notice
+    assert "ctx_rev_01" in notice
+
+    # 빌더 전용 문구 미포함 검증
+    assert "git commit" not in notice
+    assert "commit_count" not in notice
+    assert "escalation" not in notice
+    assert "ORCA_WORKER_DONE_V2" not in notice
+    assert "orca_worker_done_guard" not in notice
+
+
+def test_build_capsule_notice_role_return_contract_mismatch(tmp_path: Path):
+    """결함 1: role 과 return_contract 가 불일치할 경우 ValueError 발생."""
+    from scripts.orca_taskctl import build_capsule_notice
+
+    capsule_file = tmp_path / ".orca" / "capsules" / "task_x" / "capsule.yaml"
+    capsule_file.parent.mkdir(parents=True, exist_ok=True)
+    capsule_file.write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_x"
+role: "reviewer"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="불일치"):
+        build_capsule_notice(capsule_file, role="reviewer", return_contract="worker_done")
+
+    capsule_builder = tmp_path / ".orca" / "capsules" / "task_b" / "capsule.yaml"
+    capsule_builder.parent.mkdir(parents=True, exist_ok=True)
+    capsule_builder.write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_b"
+role: "builder"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="불일치"):
+        build_capsule_notice(capsule_builder, role="builder", return_contract="review_done")
+
+
+def test_cmd_dispatch_rejects_role_mismatch(tmp_path: Path, capsys: pytest.CaptureFixture):
+    """결함 1: Capsule role 과 Intent role 불일치 시 dispatch 거부 (exit code 1)."""
+    intent_path = tmp_path / "intent.yaml"
+    intent_path.write_text(
+        """role: builder
+objective: builder intent
+task_id: task_role_mismatch
+""",
+        encoding="utf-8",
+    )
+
+    capsule_path = tmp_path / "capsule.yaml"
+    capsule_path.write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_role_mismatch"
+role: "reviewer"
+""",
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_path),
+            "--capsule",
+            str(capsule_path),
+            "--terminal",
+            "term_mismatch",
+            "--skip-skill-receipt",
+            "--skip-concurrency-check",
+        ]
+    )
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "역할" in captured.err
+    assert "일치하지 않습니다" in captured.err
+
+
+def test_cmd_dispatch_rejects_unconsumed_residual_preamble(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """결함 2: 워크트리에 미소비된 residual preamble 파일이 존재하면 dispatch 거부 (exit code 2)."""
+    intent_path = tmp_path / "intent.yaml"
+    intent_path.write_text(
+        """role: builder
+objective: builder intent
+task_id: task_preamble_test
+""",
+        encoding="utf-8",
+    )
+
+    capsule_path = tmp_path / "capsule.yaml"
+    capsule_path.write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_preamble_test"
+role: "builder"
+allowed_write_files: []
+""",
+        encoding="utf-8",
+    )
+
+    worktree = tmp_path / "worktree"
+    worktree_orca = worktree / ".orca"
+    worktree_orca.mkdir(parents=True, exist_ok=True)
+    residual_file = worktree_orca / "preamble_task_old_ctx_old_12345678.txt"
+    residual_file.write_text("old preamble", encoding="utf-8")
+
+    monkeypatch.setattr("scripts.orca_taskctl.resolve_terminal_worktree", lambda t, **kw: worktree)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.read_worker_meta", lambda t: {"cli_type": "antigravity"}
+    )
+
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_path),
+            "--capsule",
+            str(capsule_path),
+            "--terminal",
+            "term_preamble_test",
+            "--launcher",
+            "scripts/orca_agy_launch.py",
+            "--worktree",
+            str(worktree),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--skip-skill-receipt",
+            "--skip-concurrency-check",
+        ]
+    )
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "소비되지 않은 preamble 파일" in captured.err
+
+
+def test_unique_preamble_naming_and_consumption(tmp_path: Path):
+    """결함 2: 고유 preamble 파일명 생성 및 find_unconsumed_preambles 탐지 검증."""
+    from scripts.orca_taskctl import find_unconsumed_preambles
+
+    worktree = tmp_path / "wt"
+    orca_dir = worktree / ".orca"
+    orca_dir.mkdir(parents=True, exist_ok=True)
+
+    # 처음에는 없음
+    assert find_unconsumed_preambles(worktree) == []
+
+    # 고유 preamble 파일 생성
+    p1 = orca_dir / "preamble_task_01_ctx_01_abcdef12.txt"
+    p1.write_text("content", encoding="utf-8")
+    unconsumed = find_unconsumed_preambles(worktree)
+    assert len(unconsumed) == 1
+    assert unconsumed[0] == p1
+
+    # 소비(삭제) 후에는 다시 빈 리스트
+    p1.unlink()
+    assert find_unconsumed_preambles(worktree) == []
+
+
+def test_resolve_dispatch_model_reviewer_explicit_same_provider_rejected():
+    """결함 3: 리뷰어로 빌더와 동일한 provider 의 모델을 --model 로 명시 지정 시 fail-closed 거부."""
+    from scripts.orca_model_router import ModelRoutingError
+
+    capsule_text = """schema: ORCA_TASK_CAPSULE_V2
+version: "2.1.0"
+task_id: "task_rev_same_prov"
+role: "reviewer"
+risk: "high"
+"""
+    # 빌더가 gemini 계열인데 리뷰어에게 gemini 명시 지정 -> 거부
+    with pytest.raises(
+        ModelRoutingError, match=r"빌더 provider.*동일하여 독립 리뷰 정책을 위반합니다"
+    ):
+        resolve_dispatch_model(
+            args_model="gemini-3.7-flash-high",
+            capsule_text=capsule_text,
+            builder_model="gemini-flash-medium",
+            builder_provider="gemini",
+        )
+
+
+def test_resolve_dispatch_model_explicit_coordinator_model_rejected():
+    """결함 3: 워커에게 코디네이터 전용 모델을 --model 로 명시 지정 시 거부."""
+    capsule_text = "role: builder\nrisk: low\n"
+    with pytest.raises(ValueError, match="코디네이터 전용 모델은 워커로 지정할 수 없습니다"):
+        resolve_dispatch_model(
+            args_model="codex",
+            capsule_text=capsule_text,
+        )
