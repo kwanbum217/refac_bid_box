@@ -606,6 +606,14 @@ BIDS_TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
                 "default": utcnow,
                 "onupdate": utcnow,
             },
+            "aggregation_version": {
+                "mysql_type": "INTEGER",
+                "sqlite_type": "INTEGER",
+                "nullable": False,
+                "primary_key": False,
+                "default": 1,
+                "onupdate": None,
+            },
         },
     },
     "bid_ranking_snapshots": {
