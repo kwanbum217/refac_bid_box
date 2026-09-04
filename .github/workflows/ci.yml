@@ -46,8 +46,8 @@ jobs:
 
       - name: Scan JavaScript dependencies
         working-directory: frontend
-        # npm audit 은 HIGH 이상 발견 시 비정상 종료한다. allowlist 의 npm 패키지에
-        # 매칭되지 않는 HIGH/CRITICAL 취약점이 남아 있으면 그대로 실패한다.
+        # npm audit 은 (패키지 이름 + advisory ID) 쌍으로 allowlist 와 대조하여 판정합니다.
+        # 동일 패키지에 다른 advisory 가 발생하거나 허용되지 않은 HIGH/CRITICAL 이 있으면 차단합니다.
         run: |
           set +e
           OUTPUT=$(npm audit --audit-level=high --json 2>/dev/null)
@@ -56,23 +56,14 @@ jobs:
           if [ $EXIT_CODE -eq 0 ]; then
             exit 0
           fi
-          echo "$OUTPUT" | uv run python -c "import sys, json, yaml
-          audit = json.loads(sys.stdin.read())
-          # working-directory 가 frontend 이므로 상위 디렉터리의 allowlist 파일을 참조합니다.
-          data = yaml.safe_load(open('../.github/vulnerability-allowlist.yml')) or {}
-          allowed = {e['package'] for e in data.get('npm', [])}
-          remaining = [(n, v.get('severity')) for n, v in audit.get('vulnerabilities', {}).items() if v.get('severity') in ('high','critical') and n not in allowed]
-          if remaining:
-              print('npm audit failed; HIGH/CRITICAL not in allowlist:', file=sys.stderr)
-              [print(f'  - {n} ({s})', file=sys.stderr) for n, s in remaining]
-              sys.exit(1)
-          print('npm audit: all HIGH/CRITICAL vulnerabilities are in allowlist')"
+          echo "$OUTPUT" | uv run python ../scripts/filter_npm_audit.py --allowlist ../.github/vulnerability-allowlist.yml
 
       - name: Build application image
+        id: build-image
         run: docker build --pull=false -t refac-bid-box:ci .
 
-      # Trivy 는 CRITICAL 과 HIGH 에서 비정상 종료한다. ignore-unfixed 는 유지한다.
-      # 상류에 고칠 방법이 없는 항목은 후처리 step 에서 allowlist 와 대조해 통과시킨다.
+      # Trivy 스텝은 결과 파일 생성만 담당하고(exit-code 0), 차단 결정은 후속 판정 스텝이 단독으로 내린다.
+      # ignore-unfixed 및 심각도 임계(CRITICAL,HIGH)는 게이트 강도 유지를 위해 그대로 유지한다.
       - name: Scan container image
         id: trivy-scan
         uses: aquasecurity/trivy-action@v0.36.0
@@ -81,36 +72,17 @@ jobs:
           format: json
           vuln-type: os,library
           severity: CRITICAL,HIGH
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
           output: trivy-results.json
 
       - name: Filter Trivy results against allowlist
-        if: always()
-        run: |
-          # Trivy 가 정상 종료(0)이면 아무 취약점이 없다는 뜻이므로 그대로 통과한다.
-          if [ "${{ steps.trivy-scan.outcome }}" = "success" ]; then
-            exit 0
-          fi
-          RESULT_PATH=${TRIVY_OUTPUT:-trivy-results.json}
-          if [ ! -f "$RESULT_PATH" ]; then
-            echo "Trivy failed but result file not found: $RESULT_PATH" >&2
-            exit 1
-          fi
-          uv run python -c "import sys, json, yaml
-          data = json.load(open('$RESULT_PATH'))
-          allow = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
-          allowed_ids = {e['id'] for e in allow.get('trivy', [])}
-          remaining = [(v.get('VulnerabilityID'), v.get('PkgName'), v.get('Severity')) for r in data.get('Results', []) for v in (r.get('Vulnerabilities') or []) if v.get('Severity') in ('CRITICAL','HIGH') and v.get('VulnerabilityID') not in allowed_ids]
-          if remaining:
-              print('Trivy failed; CRITICAL/HIGH not in allowlist:', file=sys.stderr)
-              [print(f'  - {vid} {pkg} {sev}', file=sys.stderr) for vid, pkg, sev in remaining]
-              sys.exit(1)
-          print('Trivy: all CRITICAL/HIGH vulnerabilities are in allowlist')"
-        env:
-          TRIVY_OUTPUT: trivy-results.json
+        run: uv run python scripts/filter_trivy_results.py --input trivy-results.json --allowlist .github/vulnerability-allowlist.yml
 
+      # 이미지 빌드가 성공했다면 보안 스캔의 성공/실패와 무관하게 해당 빌드의 SBOM 을 생성 및 업로드합니다.
+      # 이미지 빌드 자체가 실패한 경우에는 실행하지 않으며, 판정 스텝의 실패는 job 실패로 그대로 보존됩니다.
       - name: Generate application SBOM
+        if: always() && steps.build-image.outcome == 'success'
         uses: anchore/sbom-action@v0.24.2
         with:
           image: refac-bid-box:ci
@@ -119,6 +91,7 @@ jobs:
           format: spdx-json
 
       - name: Upload SBOM artifact
+        if: always() && steps.build-image.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: supply-chain-sbom
