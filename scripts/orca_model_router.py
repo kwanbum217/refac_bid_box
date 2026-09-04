@@ -1504,8 +1504,8 @@ def classify_from_capsule(capsule_path: str | Path) -> dict[str, Any]:
     builder_provider = parse_capsule_scalar(capsule_text, "builder_provider")
     if not builder_provider and builder_model:
         with suppress(Exception):
-            b_prov = provider_for_model(builder_model, strict=False)
-            if b_prov != "unknown":
+            b_prov = normalize_provider_hint(provider_for_model(builder_model, strict=False))
+            if b_prov != UNKNOWN_PROVIDER:
                 builder_provider = b_prov
 
     combined = f"{objective}\n{why_now}"
@@ -1539,6 +1539,31 @@ def is_coordinator_model(model_or_pool: str) -> bool:
     return False
 
 
+UNKNOWN_PROVIDER = "unknown"
+# provider 힌트가 미상임을 뜻하는 표기입니다. 대소문자와 앞뒤 공백을 무시하고 비교합니다.
+_UNKNOWN_PROVIDER_TOKENS = frozenset({"", "unknown", "none", "null", "n/a", "-"})
+
+
+def normalize_provider_hint(value: Any) -> str:
+    """provider 힌트를 정규화하고 미상 표기를 UNKNOWN_PROVIDER 로 통일합니다.
+
+    **이 함수를 거치지 않고 provider 문자열을 직접 비교하지 마십시오.** 2026-09-04 에
+    같은 결함이 세 번 반복됐습니다. 처음에는 문자열 'unknown' 만 검사해 None 을
+    놓쳤고, 시정본은 None 과 빈 문자열만 더해 공백을 놓쳤고, 그 시정본은 공백까지
+    처리하고도 대문자 ' UNKNOWN ' 을 통과시켰습니다. 미상 판정을 호출부마다 손으로
+    적는 한 다음 표기가 또 새어 나옵니다.
+
+    MODEL_POOL 의 provider 값은 모두 소문자이므로 소문자로 정규화해도 정보가
+    사라지지 않습니다.
+    """
+    if not isinstance(value, str):
+        return UNKNOWN_PROVIDER
+    token = value.strip().lower()
+    if token in _UNKNOWN_PROVIDER_TOKENS:
+        return UNKNOWN_PROVIDER
+    return token
+
+
 def select_model(
     role: str,
     risk: str,
@@ -1570,19 +1595,16 @@ def select_model(
     else:
         excluded_providers_set = set()
 
-    # 빌더 provider 정규화: None, 빈 문자열, 공백/탭 등 공백 문자열, "unknown" 은 "unknown" 으로 통일
-    builder_prov_norm: str = "unknown"
-    if isinstance(builder_provider, str):
-        stripped = builder_provider.strip()
-        if stripped and stripped != "unknown":
-            builder_prov_norm = stripped
+    # 미상 판정은 normalize_provider_hint 하나에만 둡니다. 호출부에서 문자열을 직접
+    # 비교하면 새 표기가 생길 때마다 구멍이 다시 열립니다.
+    builder_prov_norm = normalize_provider_hint(builder_provider)
 
-    if builder_prov_norm != "unknown" and builder_prov_norm not in excluded_providers_set:
+    if builder_prov_norm != UNKNOWN_PROVIDER and builder_prov_norm not in excluded_providers_set:
         excluded_providers_set.add(builder_prov_norm)
 
     inventory_notes: list[str] = []
 
-    builder_prov_missing = builder_prov_norm == "unknown" and not excluded_providers_set
+    builder_prov_missing = builder_prov_norm == UNKNOWN_PROVIDER and not excluded_providers_set
     if role == "reviewer" and builder_prov_missing:
         if risk in ("high", "medium") or has_write_scope:
             exclude_str = ", ".join(exclude) if exclude else "(없음)"

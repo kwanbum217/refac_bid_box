@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,6 +23,7 @@ _scripts = Path(__file__).resolve().parent.parent / "scripts"
 if str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
+from scripts import orca_model_router
 from scripts.orca_model_router import (
     FREE_BUILDER_ORDER,
     FREE_INVESTIGATOR_ORDER,
@@ -2300,3 +2302,66 @@ class TestProviderIndependence:
                 explicit_model="gemini-3.7-flash-high",
                 builder_provider="gemini",
             )
+
+
+class TestProviderHintNormalization:
+    """provider 미상 판정은 normalize_provider_hint 하나에만 둡니다.
+
+    2026-09-04 에 같은 결함이 세 번 반복됐습니다. 문자열 'unknown' 만 검사해 None 을
+    놓치고, 시정본이 None 과 빈 문자열만 더해 공백을 놓치고, 그 시정본이 공백까지
+    처리하고도 대문자 ' UNKNOWN ' 을 통과시켰습니다. 이 테스트가 표로 그 표기들을
+    한꺼번에 고정합니다. 새 표기를 발견하면 목록에 추가하십시오.
+    """
+
+    UNKNOWN_FORMS: ClassVar[list] = [
+        None,
+        "",
+        "   ",
+        "\t",
+        "\n",
+        "unknown",
+        "UNKNOWN",
+        " UNKNOWN ",
+        "Unknown",
+        "none",
+        "None",
+        "null",
+        "NULL",
+        "n/a",
+        "-",
+        123,
+        object(),
+    ]
+
+    @pytest.mark.parametrize("value", UNKNOWN_FORMS)
+    def test_unknown_forms_normalize_to_unknown(self, value):
+        assert orca_model_router.normalize_provider_hint(value) == (
+            orca_model_router.UNKNOWN_PROVIDER
+        )
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("gemini", "gemini"),
+            ("GEMINI", "gemini"),
+            (" Gemini ", "gemini"),
+            ("qwen", "qwen"),
+            (" GROK\t", "grok"),
+        ],
+    )
+    def test_real_providers_are_lowercased(self, value, expected):
+        assert orca_model_router.normalize_provider_hint(value) == expected
+
+    @pytest.mark.parametrize("value", UNKNOWN_FORMS)
+    def test_reviewer_high_rejects_every_unknown_form(self, value):
+        """미상 표기 전부에서 리뷰어 high 배정이 fail-closed 여야 합니다."""
+        with pytest.raises(orca_model_router.ModelRoutingError):
+            orca_model_router.select_model(role="reviewer", risk="high", builder_provider=value)
+
+    def test_reviewer_high_accepts_uppercase_provider(self):
+        """대문자 provider 는 미상이 아니므로 정상 배정되고 다른 계열이 나와야 합니다."""
+        routed = orca_model_router.select_model(
+            role="reviewer", risk="high", builder_provider=" GEMINI "
+        )
+        model = routed["primary_model"]
+        assert orca_model_router.provider_for_model(model, strict=False) != "gemini"
