@@ -12,7 +12,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import BigInteger, String, case, func, literal, or_, select
+from sqlalchemy import Numeric, String, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from src.app.core.cache import cache
@@ -27,6 +27,15 @@ from src.app.models.bids import (
 )
 
 logger = logging.getLogger(__name__)
+
+# 금액 집계는 DECIMAL 로 누적합니다. 자릿수는 조달 금액 규모에 비해 넉넉히 둡니다.
+AMOUNT_NUMERIC = Numeric(30, 0)
+# 집계에서 제외할 기초금액 상한(100조). 2026-09-04 기준 전체 5,497,840 건 중 이
+# 상한을 넘는 33건은 모두 조달청 원본 오류입니다. 자릿수 중복 입력(137150000137150000
+# 은 137150000 의 반복), 더미값(111111111111111 계열 27건), 그리고 원본이 BIGINT
+# 범위를 넘겨 적재 시점에 9223372036854775807 로 포화된 2건입니다. 실재하는 최대
+# 규모 사업(가덕도신공항 약 10.7조)은 상한 아래이므로 살아남습니다.
+MAX_REASONABLE_ANNOUNCEMENT_AMOUNT = 100_000_000_000_000
 
 DASHBOARD_STATS_CACHE_TTL = 60 * 60 * 24
 COMPARE_STATS_CACHE_TTL = 60 * 60 * 24
@@ -171,14 +180,31 @@ def _json_text(db: Session, column, key: str):
 
 
 def _announcement_amount_expr(db: Session):
-    raw_amount = func.coalesce(
+    """집계용 기초금액 표현식.
+
+    파이썬 경로(`models.bids._coerce_amount`)와 같은 규칙으로 읽습니다. 콤마 제거를
+    여기서만 빠뜨리면 같은 공고를 상세 화면과 집계가 다른 금액으로 봅니다.
+
+    누적은 BIGINT 가 아니라 DECIMAL 로 합니다. `bid_dataset_summaries.total_amount`
+    는 decimal(30,0) 이라 자릿수가 충분한데도 -6,063,896,128,872,295,352 이 저장돼
+    있었습니다. 행마다 BIGINT 로 캐스팅한 뒤 SUM 해서, 컬럼에 담기기 전에 이미
+    범위를 넘겨 wrap 된 값이었습니다.
+    """
+    raw_text = func.coalesce(
         func.nullif(_json_text(db, BidAnnouncement.raw_data, "asignBdgtAmt"), literal("")),
         func.nullif(_json_text(db, BidAnnouncement.raw_data, "bdgtAmt"), literal("")),
     )
-    return case(
-        (BidAnnouncement.raw_data.is_(None), BidAnnouncement.base_amount),
-        else_=func.cast(raw_amount, BigInteger),
+    raw_amount = func.cast(func.replace(raw_text, literal(","), literal("")), AMOUNT_NUMERIC)
+    resolved = case(
+        (
+            BidAnnouncement.raw_data.is_(None),
+            func.cast(BidAnnouncement.base_amount, AMOUNT_NUMERIC),
+        ),
+        else_=raw_amount,
     )
+    # 상한을 넘는 값은 조달청 원본이 깨진 것이므로 집계에서만 제외합니다. raw_data 는
+    # G1 원칙대로 그대로 둡니다. 근거는 docs/ops/announcement_amount_outliers_20260904.md.
+    return case((resolved > literal(MAX_REASONABLE_ANNOUNCEMENT_AMOUNT), None), else_=resolved)
 
 
 def _build_summary_defaults(db: Session, dataset: str) -> dict[str, Any]:
