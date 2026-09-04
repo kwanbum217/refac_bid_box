@@ -38,7 +38,8 @@ jobs:
           uv export --frozen --format requirements.txt --no-emit-project -o /tmp/requirements.txt
           # allowlist 의 python 식별자 항목에서 --ignore-vuln 인자를 만든다. 항목이
           # 비어 있으면 IGNORE_ARGS 가 빈 문자열이 되어 pip-audit 가 그대로 실패한다.
-          IGNORE_ARGS=$(python3 -c "import yaml
+          # runner 기본 python3에는 PyYAML이 없으므로 uv run python으로 실행합니다.
+          IGNORE_ARGS=$(uv run python -c "import yaml
           data = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
           print(' '.join('--ignore-vuln ' + e['id'] for e in data.get('python', [])))")
           uvx --from pip-audit pip-audit -r /tmp/requirements.txt --strict $IGNORE_ARGS
@@ -55,9 +56,10 @@ jobs:
           if [ $EXIT_CODE -eq 0 ]; then
             exit 0
           fi
-          echo "$OUTPUT" | python3 -c "import sys, json, yaml
+          echo "$OUTPUT" | uv run python -c "import sys, json, yaml
           audit = json.loads(sys.stdin.read())
-          data = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
+          # working-directory 가 frontend 이므로 상위 디렉터리의 allowlist 파일을 참조합니다.
+          data = yaml.safe_load(open('../.github/vulnerability-allowlist.yml')) or {}
           allowed = {e['package'] for e in data.get('npm', [])}
           remaining = [(n, v.get('severity')) for n, v in audit.get('vulnerabilities', {}).items() if v.get('severity') in ('high','critical') and n not in allowed]
           if remaining:
@@ -95,7 +97,7 @@ jobs:
             echo "Trivy failed but result file not found: $RESULT_PATH" >&2
             exit 1
           fi
-          python3 -c "import sys, json, yaml
+          uv run python -c "import sys, json, yaml
           data = json.load(open('$RESULT_PATH'))
           allow = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
           allowed_ids = {e['id'] for e in allow.get('trivy', [])}
