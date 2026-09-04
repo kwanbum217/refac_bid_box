@@ -3,9 +3,9 @@
 > **작성일**: 2026-09-04
 > **상태**: 운영 반영 완료
 > **대상 파일**:
-> - [src/app/services/dashboard.py](src/app/services/dashboard.py)
-> - [src/tasks/summary_tasks.py](src/tasks/summary_tasks.py)
-> - [src/tasks/worker.py](src/tasks/worker.py)
+> - [src/app/services/dashboard.py](../../src/app/services/dashboard.py)
+> - [src/tasks/summary_tasks.py](../../src/tasks/summary_tasks.py)
+> - [src/tasks/worker.py](../../src/tasks/worker.py)
 
 ---
 
@@ -30,8 +30,8 @@
 5. **비동기 재집계 등록**: stale 상태인 경우 Arq 큐에 백그라운드 재집계 작업을 등록합니다.
 
 ### 2.2 쓰기 경로 (비동기 워커)
-- **전담 태스크**: [src/tasks/summary_tasks.py](src/tasks/summary_tasks.py)의 `rebuild_dataset_summary_task`가 재집계를 전담합니다.
-- **워커 등록**: [src/tasks/worker.py](src/tasks/worker.py)의 `WorkerSettings.functions`에 등록되어 워커 프로세스에서 실행됩니다.
+- **전담 태스크**: [src/tasks/summary_tasks.py](../../src/tasks/summary_tasks.py)의 `rebuild_dataset_summary_task`가 재집계를 전담합니다.
+- **워커 등록**: [src/tasks/worker.py](../../src/tasks/worker.py)의 `WorkerSettings.functions`에 등록되어 워커 프로세스에서 실행됩니다.
 - **주기 실행 금지**: 본 작업은 stale이 감지되었을 때만 트리거되는 이벤트 기반 작업이므로, `cron_jobs`에는 등록하지 않습니다.
 
 ---
@@ -67,8 +67,8 @@
 
 ## 5. 검증 완료 내역
 
-- **단위/통합 테스트**: [tests/test_dashboard_summary_read_path.py](tests/test_dashboard_summary_read_path.py) 9건 전량 통과.
-- **버전 판정 테스트**: [tests/test_dashboard_summary_version.py](tests/test_dashboard_summary_version.py) 4건 전량 통과.
-- **통계 정합성 테스트**: [tests/test_dashboard_stats_parity.py](tests/test_dashboard_stats_parity.py) 16건 전량 통과.
+- **단위/통합 테스트**: [tests/test_dashboard_summary_read_path.py](../../tests/test_dashboard_summary_read_path.py) 9건 전량 통과.
+- **버전 판정 테스트**: [tests/test_dashboard_summary_version.py](../../tests/test_dashboard_summary_version.py) 4건 전량 통과.
+- **통계 정합성 테스트**: [tests/test_dashboard_stats_parity.py](../../tests/test_dashboard_stats_parity.py) 16건 전량 통과.
 - **전체 테스트 스위트**: `uv run pytest tests/ -q -m 'not data_assets'` (3,526 passed).
 - **타입 및 린터 검사**: `uv run mypy src` (0 issues), `uv run ruff check .` 및 `format` 통과.

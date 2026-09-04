@@ -35,6 +35,7 @@ from src.app.services.dashboard import (
     DASHBOARD_STATS_STALE_CACHE_TTL,
     SUMMARY_ALGORITHM_VERSIONS,
     SUMMARY_INIT_LOCK_TIMEOUT,
+    _summary_job_id,
     get_bid_dataset_summary,
     get_compare_stats_data,
     get_dashboard_stats,
@@ -111,7 +112,8 @@ def test_stale_summary_returns_previous_snapshot_without_rebuild(isolated_db):
         result = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
 
         mock_rebuild.assert_not_called()
-        mock_enqueue.assert_called_once_with(DATASET_ANNOUNCEMENT)
+        assert mock_enqueue.call_count == 1
+        assert mock_enqueue.call_args.args[0] == DATASET_ANNOUNCEMENT
 
     assert result.is_stale is True
     assert result.total_count == 10
@@ -139,7 +141,8 @@ def test_stale_summary_enqueues_rebuild_job_exactly_once(isolated_db):
 
     with patch("src.app.services.dashboard.enqueue_rebuild_dataset_summary") as mock_enqueue:
         get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
-        mock_enqueue.assert_called_once_with(DATASET_ANNOUNCEMENT)
+        assert mock_enqueue.call_count == 1
+        assert mock_enqueue.call_args.args[0] == DATASET_ANNOUNCEMENT
 
 
 def test_repeated_stale_reads_do_not_duplicate_enqueue(isolated_db):
@@ -159,7 +162,9 @@ def test_repeated_stale_reads_do_not_duplicate_enqueue(isolated_db):
     isolated_db.add(old_summary)
     isolated_db.commit()
 
-    with patch("src.app.services.automation_jobs._enqueue_arq_job") as mock_arq_push:
+    with patch(
+        "src.app.services.automation_jobs.enqueue_arq_job_reporting_dedupe"
+    ) as mock_arq_push:
         mock_arq_push.return_value = True
 
         # 연속 3회 stale 조회 수행
@@ -167,13 +172,16 @@ def test_repeated_stale_reads_do_not_duplicate_enqueue(isolated_db):
             summary = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
             assert summary.is_stale is True
 
-        # 매 호출 시 동일한 고정 job_id 로 enqueue 시도됨 (arq 내부에서 중복 등록 방지)
+        # 같은 stale 조건이므로 job_id 가 3회 모두 같아야 하고, arq 가 그 키로 합칩니다.
         assert mock_arq_push.call_count == 3
-        expected_job_id = f"rebuild_dataset_summary:{DATASET_ANNOUNCEMENT}"
+        expected_job_id = _summary_job_id(DATASET_ANNOUNCEMENT, expected_version, ann.collected_at)
         for call_args in mock_arq_push.call_args_list:
             assert call_args.args[0] == "rebuild_dataset_summary_task"
             assert call_args.kwargs["arq_job_id"] == expected_job_id
             assert call_args.kwargs["dataset"] == DATASET_ANNOUNCEMENT
+
+        # 데이터셋 이름만 담은 옛 형태로 되돌아가면 keep_result 동안 등록이 막힙니다.
+        assert expected_job_id != f"rebuild_dataset_summary:{DATASET_ANNOUNCEMENT}"
 
 
 def test_missing_summary_triggers_sync_rebuild_with_lock(isolated_db):
@@ -381,3 +389,76 @@ async def test_rebuild_dataset_summary_task_executes_successfully(isolated_db):
     assert result["total_amount"] == 2000000
     assert result["aggregation_version"] == SUMMARY_ALGORITHM_VERSIONS[DATASET_ANNOUNCEMENT]
     assert result["rebuilt_at"] is not None
+
+
+class TestSummaryJobIdDedupeKey:
+    """재집계 작업의 중복 판정 키가 stale 조건을 담아야 합니다.
+
+    데이터셋 단위 고정 job_id 는 arq 의 중복 검사와 keep_result 3600 이 겹쳐,
+    재집계가 끝난 뒤 한 시간 동안 새로 생긴 stale 을 큐에 넣지 못하게 만듭니다.
+    독립 리뷰어가 찾은 결함이며 이 테스트가 그 회귀를 막습니다.
+    """
+
+    def test_job_id_changes_when_source_marker_changes(self):
+        from src.app.services.dashboard import _summary_job_id
+
+        first = _summary_job_id(DATASET_ANNOUNCEMENT, 2, datetime(2026, 9, 4, 0, 43, 57))
+        second = _summary_job_id(DATASET_ANNOUNCEMENT, 2, datetime(2026, 9, 5, 1, 0, 0))
+        assert first != second
+
+    def test_job_id_changes_when_expected_version_changes(self):
+        from src.app.services.dashboard import _summary_job_id
+
+        marker = datetime(2026, 9, 4, 0, 43, 57)
+        assert _summary_job_id(DATASET_ANNOUNCEMENT, 2, marker) != _summary_job_id(
+            DATASET_ANNOUNCEMENT, 3, marker
+        )
+
+    def test_job_id_is_stable_for_same_stale_condition(self):
+        from src.app.services.dashboard import _summary_job_id
+
+        marker = datetime(2026, 9, 4, 0, 43, 57)
+        assert _summary_job_id(DATASET_ANNOUNCEMENT, 2, marker) == _summary_job_id(
+            DATASET_ANNOUNCEMENT, 2, marker
+        )
+
+    def test_job_id_handles_missing_marker(self):
+        from src.app.services.dashboard import _summary_job_id
+
+        assert _summary_job_id(DATASET_RESULT, 1, None).endswith(":none")
+
+    def test_datasets_do_not_share_job_id(self):
+        from src.app.services.dashboard import _summary_job_id
+
+        marker = datetime(2026, 9, 4, 0, 43, 57)
+        assert _summary_job_id(DATASET_ANNOUNCEMENT, 1, marker) != _summary_job_id(
+            DATASET_RESULT, 1, marker
+        )
+
+
+class TestEnqueueDedupeReporting:
+    """중복으로 합쳐진 것과 등록 실패는 다른 사건이며 호출부가 구분해야 합니다."""
+
+    def test_dedupe_is_reported_as_success(self):
+        from src.app.services import dashboard as dashboard_module
+
+        with patch(
+            "src.app.services.automation_jobs.enqueue_arq_job_reporting_dedupe",
+            return_value=False,
+        ):
+            assert (
+                dashboard_module.enqueue_rebuild_dataset_summary(DATASET_ANNOUNCEMENT, 2, None)
+                is True
+            )
+
+    def test_enqueue_failure_is_reported_as_failure(self):
+        from src.app.services import dashboard as dashboard_module
+
+        with patch(
+            "src.app.services.automation_jobs.enqueue_arq_job_reporting_dedupe",
+            return_value=None,
+        ):
+            assert (
+                dashboard_module.enqueue_rebuild_dataset_summary(DATASET_ANNOUNCEMENT, 2, None)
+                is False
+            )

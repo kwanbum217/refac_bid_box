@@ -101,7 +101,8 @@ def test_summary_rebuilds_when_stored_version_is_lower_than_expected(isolated_db
         # 동기 rebuild 는 호출되지 않아야 함
         mock_rebuild.assert_not_called()
         # 재집계 작업이 정확히 한 번 등록되어야 함
-        mock_enqueue.assert_called_once_with(DATASET_ANNOUNCEMENT)
+        assert mock_enqueue.call_count == 1
+        assert mock_enqueue.call_args.args[0] == DATASET_ANNOUNCEMENT
 
     # (a) 이전 스냅샷이 그대로 반환되고, stale 여부가 표시되어야 함
     assert returned_summary.is_stale is True
@@ -175,7 +176,8 @@ def test_existing_announcement_summary_with_default_version_is_stale(isolated_db
     ):
         summary = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
         mock_rebuild.assert_not_called()
-        mock_enqueue.assert_called_once_with(DATASET_ANNOUNCEMENT)
+        assert mock_enqueue.call_count == 1
+        assert mock_enqueue.call_args.args[0] == DATASET_ANNOUNCEMENT
 
     assert summary.is_stale is True
     assert summary.aggregation_version == legacy_summary.aggregation_version

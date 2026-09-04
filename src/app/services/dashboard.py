@@ -289,16 +289,43 @@ def _get_process_lock(dataset: str) -> threading.Lock:
         return _process_init_locks[dataset]
 
 
-def enqueue_rebuild_dataset_summary(dataset: str) -> bool:
+def _summary_job_id(dataset: str, expected_version: int, marker: datetime | None) -> str:
+    """재집계 작업의 중복 판정 키입니다.
+
+    데이터셋 단위 고정 job_id 를 쓰면 안 됩니다. arq 는 같은 job_id 의 결과 키가
+    남아 있는 동안 등록을 거부하고(`arq/connections.py` 중복 검사), 이 저장소의
+    `keep_result` 는 3600초입니다. 즉 재집계가 끝난 뒤 한 시간 동안은 새로 생긴
+    stale 을 큐에 넣을 수 없습니다. 독립 리뷰어가 이 결함을 찾았습니다.
+
+    그래서 **stale 조건 자체를 키로 씁니다.** 같은 조건의 반복 조회는 하나로
+    합쳐지고(원래 의도), 수집이나 알고리즘 변경으로 조건이 바뀌면 새 키가 되어
+    곧바로 등록됩니다.
+    """
+    marker_part = marker.isoformat() if marker is not None else "none"
+    return f"rebuild_dataset_summary:{dataset}:v{expected_version}:{marker_part}"
+
+
+def enqueue_rebuild_dataset_summary(
+    dataset: str, expected_version: int, marker: datetime | None
+) -> bool:
     """데이터셋 요약 재집계 작업을 Arq 큐에 등록합니다.
 
-    데이터셋마다 고정된 job_id를 사용하여 이미 대기 중이거나 실행 중인
-    중복 재집계가 큐에 쌓이지 않도록 방지합니다.
+    같은 stale 조건의 중복 등록은 arq 가 job_id 로 합칩니다. 중복으로 합쳐진 것과
+    등록 실패는 다른 사건이므로 로그에서 구분합니다. 구분하지 않으면 큐에 아무것도
+    들어가지 않았는데 성공으로 읽습니다.
     """
-    from src.app.services.automation_jobs import _enqueue_arq_job
+    from src.app.services.automation_jobs import enqueue_arq_job_reporting_dedupe
 
-    job_id = f"rebuild_dataset_summary:{dataset}"
-    return _enqueue_arq_job("rebuild_dataset_summary_task", arq_job_id=job_id, dataset=dataset)
+    job_id = _summary_job_id(dataset, expected_version, marker)
+    created = enqueue_arq_job_reporting_dedupe(
+        "rebuild_dataset_summary_task", arq_job_id=job_id, dataset=dataset
+    )
+    if created is None:
+        logger.warning("요약 재집계 작업 등록 실패: %s", job_id)
+        return False
+    if created is False:
+        logger.debug("요약 재집계 작업이 이미 등록돼 있어 합쳤습니다: %s", job_id)
+    return True
 
 
 def _rebuild_with_lock(db: Session, dataset: str) -> BidDatasetSummary:
@@ -363,7 +390,7 @@ def get_bid_dataset_summary(db: Session, dataset: str) -> BidDatasetSummary:
     summary.is_stale = is_stale
 
     if is_stale:
-        enqueue_rebuild_dataset_summary(dataset)
+        enqueue_rebuild_dataset_summary(dataset, expected_version, latest_collected_at)
 
     return summary
 
