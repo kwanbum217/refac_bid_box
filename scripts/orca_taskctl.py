@@ -90,11 +90,13 @@ except (ModuleNotFoundError, ImportError):
 try:
     from scripts.orca_model_router import (
         MODEL_POOL,
+        UNKNOWN_PROVIDER,
         ModelRoutingError,
         capsule_has_write_scope,
         classify_from_capsule,
         classify_risk,
         is_coordinator_model,
+        normalize_provider_hint,
         pool_for_model,
         provider_for_model,
         record_reliability_outcome,
@@ -106,11 +108,13 @@ except (ModuleNotFoundError, ImportError):
         sys.path.insert(0, str(_repo_root))
     from scripts.orca_model_router import (
         MODEL_POOL,
+        UNKNOWN_PROVIDER,
         ModelRoutingError,
         capsule_has_write_scope,
         classify_from_capsule,
         classify_risk,
         is_coordinator_model,
+        normalize_provider_hint,
         pool_for_model,
         provider_for_model,
         record_reliability_outcome,
@@ -2618,7 +2622,7 @@ def finalize_task(
                     has_write_scope = bool(parse_capsule_list(cap_data, "allowed_write_files"))
 
             # 독립 리뷰어 모델 라우팅
-            if b_provider and b_provider != "unknown":
+            if normalize_provider_hint(b_provider) != UNKNOWN_PROVIDER:
                 try:
                     routed = select_model(
                         role="reviewer",
@@ -3358,8 +3362,9 @@ def resolve_dispatch_model(
                 if not b_prov:
                     b_prov = parse_capsule_scalar(capsule_text, "builder_provider")
 
-        if isinstance(b_prov, str):
-            b_prov = b_prov.strip()
+        b_prov = normalize_provider_hint(b_prov)
+        if b_prov == UNKNOWN_PROVIDER:
+            b_prov = None
             if not b_prov:
                 b_prov = None
 
