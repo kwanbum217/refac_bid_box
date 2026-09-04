@@ -69,6 +69,42 @@ def load_npm_allowlist_pairs(allowlist_path: Path) -> set[tuple[str, str]]:
     return allowed
 
 
+def is_cause_resolved(
+    pkg_name: str, vuln_map: dict[str, Any], visited: set[str] | None = None
+) -> bool:
+    """원인 패키지가 궁극적으로 유효한 HIGH/CRITICAL advisory를 가지고 존재하는지 확인합니다."""
+    if visited is None:
+        visited = set()
+    if pkg_name in visited:
+        return False
+    visited.add(pkg_name)
+
+    info = vuln_map.get(pkg_name)
+    if not isinstance(info, dict):
+        return False
+
+    via_list = info.get("via") or []
+    pkg_sev = str(info.get("severity") or "").lower()
+
+    # 1. dict via에서 HIGH/CRITICAL advisory가 있는지 확인
+    for item in via_list:
+        if isinstance(item, dict):
+            item_sev = str(item.get("severity") or pkg_sev).lower()
+            if item_sev in ("high", "critical"):
+                return True
+
+    # 2. str via를 재귀적으로 추적
+    for item in via_list:
+        if (
+            isinstance(item, str)
+            and item.strip()
+            and is_cause_resolved(item.strip(), vuln_map, visited)
+        ):
+            return True
+
+    return False
+
+
 def validate_npm_audit_contract(audit_data: Any) -> str | None:
     """npm audit JSON 입력 계약을 검증합니다. 위반 시 오류 사유를 반환하고 유효하면 None을 반환합니다."""
     if not isinstance(audit_data, dict):
@@ -76,6 +112,13 @@ def validate_npm_audit_contract(audit_data: Any) -> str | None:
 
     if "error" in audit_data and audit_data["error"] is not None:
         return f"scanner error reported: {audit_data['error']}"
+
+    if "errors" in audit_data and audit_data["errors"] is not None:
+        errors_val = audit_data["errors"]
+        if (isinstance(errors_val, list) and len(errors_val) > 0) or (
+            not isinstance(errors_val, list) and errors_val
+        ):
+            return f"scanner errors reported: {errors_val}"
 
     if "auditReportVersion" not in audit_data or audit_data["auditReportVersion"] is None:
         return "missing required 'auditReportVersion' field"
@@ -129,21 +172,14 @@ def parse_npm_vulnerabilities(audit_data: dict[str, Any]) -> list[tuple[str, str
         else:
             # dict 항목이 없는 경우: 문자열 via(전이 의존성 링크) 또는 빈 via 목록
             str_entries = [v for v in via_list if isinstance(v, str) and v.strip()]
-            if str_entries:
-                # via에 명시된 원인 패키지가 vulnerabilities 맵에 실제 advisory(dict)를 가지고 존재하는지 확인
-                has_resolved_cause = False
-                for cause_pkg in str_entries:
-                    cause_info = vuln_map.get(cause_pkg)
-                    if isinstance(cause_info, dict):
-                        cause_via = cause_info.get("via") or []
-                        if any(isinstance(v, dict) for v in cause_via):
-                            has_resolved_cause = True
-                            break
-                if not has_resolved_cause:
-                    # 원인 패키지가 vulnerabilities에 없거나 advisory를 갖지 못해 해소되지 않은 경우 fail-closed
-                    vulnerabilities.append((pkg_name, "UNKNOWN", overall_sev.upper()))
+            if str_entries and any(
+                is_cause_resolved(cause, vuln_map, {pkg_name}) for cause in str_entries
+            ):
+                # 원인 패키지가 vulnerabilities에 유효한 HIGH/CRITICAL advisory를 가지고 존재하므로
+                # 해당 원인 패키지가 독립적으로 검사되며 여기서는 중복 차단하지 않습니다.
+                pass
             else:
-                # via가 완전히 비어있거나 유효한 문자열/딕셔너리가 없는 경우 fail-closed
+                # 원인 패키지가 없거나, advisory가 없거나, via가 비어있는 경우 fail-closed
                 vulnerabilities.append((pkg_name, "UNKNOWN", overall_sev.upper()))
 
     return vulnerabilities
@@ -191,14 +227,57 @@ def run_npm_filter(
 
     all_vulns = parse_npm_vulnerabilities(audit_data)
 
-    # metadata의 high + critical 합계와 파싱된 결과 개수 정합성 검증
+    # metadata의 high + critical 합계와 파싱 결과의 설명 가능성(explainability) 검증
     meta_vulns = audit_data["metadata"]["vulnerabilities"]
-    expected_count = meta_vulns["high"] + meta_vulns["critical"]
-    parsed_count = len(all_vulns)
-    if parsed_count != expected_count:
+    expected_pkg_count = meta_vulns["high"] + meta_vulns["critical"]
+
+    vuln_map = audit_data.get("vulnerabilities") or {}
+    target_pkgs = {
+        pkg_name
+        for pkg_name, info in vuln_map.items()
+        if isinstance(info, dict)
+        and str(info.get("severity") or "").lower() in ("high", "critical")
+    }
+
+    # 1. metadata의 high+critical 패키지 수와 vulnerabilities 맵 내의 high/critical 패키지 수 일치 검증
+    if len(target_pkgs) != expected_pkg_count:
         err_stream.write(
             f"npm audit input contract violation: metadata count mismatch "
-            f"(expected high+critical={expected_count}, parsed={parsed_count})\n"
+            f"(expected high+critical={expected_pkg_count} packages, found {len(target_pkgs)} in vulnerabilities mapping)\n"
+        )
+        return 1
+
+    # 2. metadata는 0건인데 파서가 high/critical 취약점을 찾은 경우
+    if expected_pkg_count == 0 and len(all_vulns) > 0:
+        err_stream.write(
+            "npm audit input contract violation: metadata reports 0 high/critical packages, "
+            f"but parser found {len(all_vulns)} vulnerabilities\n"
+        )
+        return 1
+
+    # 3. metadata는 1건 이상인데 파서가 0건을 찾은 경우
+    if expected_pkg_count > 0 and len(all_vulns) == 0:
+        err_stream.write(
+            f"npm audit input contract violation: metadata reports {expected_pkg_count} high/critical packages, "
+            "but parser found 0 vulnerabilities\n"
+        )
+        return 1
+
+    # 4. 대상 패키지들이 파싱된 취약점(all_vulns) 또는 유효한 전이 체인으로 완전히 설명되는지 검증
+    parsed_pkgs = {pkg for pkg, _adv_id, _sev in all_vulns}
+    unaccounted_pkgs: list[str] = []
+    for pkg in target_pkgs:
+        if pkg in parsed_pkgs:
+            continue
+        info = vuln_map[pkg]
+        via_list = info.get("via") or []
+        str_entries = [v for v in via_list if isinstance(v, str) and v.strip()]
+        if not any(is_cause_resolved(cause, vuln_map, {pkg}) for cause in str_entries):
+            unaccounted_pkgs.append(pkg)
+
+    if unaccounted_pkgs:
+        err_stream.write(
+            f"npm audit input contract violation: target packages not accounted for by parser: {unaccounted_pkgs}\n"
         )
         return 1
 
@@ -228,16 +307,33 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_ALLOWLIST_PATH,
         help="Path to vulnerability allowlist YAML",
     )
+    parser.add_argument(
+        "--stderr-file",
+        type=Path,
+        default=None,
+        help="Optional path to npm audit stderr log file for error diagnostics",
+    )
     args = parser.parse_args(argv)
+
+    stderr_diag = ""
+    if args.stderr_file is not None and args.stderr_file.exists():
+        try:
+            stderr_diag = args.stderr_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            stderr_diag = ""
 
     if args.input is not None:
         if not args.input.exists():
             sys.stderr.write(f"npm audit result file not found: {args.input}\n")
+            if stderr_diag:
+                sys.stderr.write(f"npm audit stderr log:\n{stderr_diag}\n")
             return 1
         try:
             content = args.input.read_text(encoding="utf-8")
         except Exception as exc:
             sys.stderr.write(f"Failed to read npm audit file: {exc}\n")
+            if stderr_diag:
+                sys.stderr.write(f"npm audit stderr log:\n{stderr_diag}\n")
             return 1
     else:
         if sys.stdin.isatty():
@@ -245,7 +341,10 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         content = sys.stdin.read()
 
-    return run_npm_filter(content, args.allowlist)
+    exit_code = run_npm_filter(content, args.allowlist)
+    if exit_code != 0 and stderr_diag:
+        sys.stderr.write(f"npm audit stderr log:\n{stderr_diag}\n")
+    return exit_code
 
 
 if __name__ == "__main__":

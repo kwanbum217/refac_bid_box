@@ -5,17 +5,18 @@ Trivy 스캔 결과 판정 스크립트(scripts/filter_trivy_results.py) 단위 
 검증 케이스:
 1. 결과 파일 부재 시 fail-closed (종료 코드 1)
 2. 빈 파일 시 fail-closed (종료 코드 1)
-3. 스캐너 오류 객체 입력 시 fail-closed 및 진단 메시지 확인 (종료 코드 1)
-4. 빈 객체 입력 시 fail-closed (종료 코드 1)
-5. 최상위 list 입력 시 트레이스백 없이 진단 메시지와 함께 fail-closed (종료 코드 1)
-6. 지원하지 않거나 누락된 SchemaVersion 입력 시 fail-closed (종료 코드 1)
-7. Results 키 부재(스캐너 결과 미생성) 시 fail-closed (종료 코드 1)
-8. Results 빈 list(정상 0건) 시 정상 통과 (종료 코드 0)
-9. Vulnerabilities 오타입 시 fail-closed (종료 코드 1)
-10. 취약점 없음(LOW/MEDIUM만 있음) 시 정상 통과 (종료 코드 0)
-11. allowlist 로 전부 허용 시 정상 통과 (종료 코드 0)
-12. allowlist 밖 항목 잔존 시 차단 (종료 코드 1)
-13. allowlist 에 있는 패키지의 다른 advisory(CVE) 잔존 시 차단 (종료 코드 1)
+3. 스캐너 오류 객체(최상위 Error) 입력 시 fail-closed 및 진단 메시지 확인 (종료 코드 1)
+4. 개별 결과 오류 객체(Results[].Error) 입력 시 fail-closed 및 진단 메시지 확인 (종료 코드 1)
+5. 빈 객체 입력 시 fail-closed (종료 코드 1)
+6. 최상위 list 입력 시 트레이스백 없이 진단 메시지와 함께 fail-closed (종료 코드 1)
+7. 지원하지 않거나 누락된 SchemaVersion 입력 시 fail-closed (종료 코드 1)
+8. Results 키 부재(스캐너 결과 미생성) 시 fail-closed (종료 코드 1)
+9. Results 빈 list(정상 0건) 시 정상 통과 (종료 코드 0)
+10. Vulnerabilities 오타입 시 fail-closed (종료 코드 1)
+11. 취약점 없음(LOW/MEDIUM만 있음) 시 정상 통과 (종료 코드 0)
+12. allowlist 로 전부 허용 시 정상 통과 (종료 코드 0)
+13. allowlist 밖 항목 잔존 시 차단 (종료 코드 1)
+14. allowlist 에 있는 패키지의 다른 advisory(CVE) 잔존 시 차단 (종료 코드 1)
 """
 
 from __future__ import annotations
@@ -101,6 +102,36 @@ def test_error_object_fails_with_diagnostic_message(tmp_path: Path):
     err_output = err.getvalue()
     assert "scanner error reported" in err_output
     assert "scanner failed to scan container image" in err_output
+
+
+def test_results_element_error_fails_with_diagnostic_message(tmp_path: Path):
+    """케이스 4: Results 원소에 Error가 있는 경우 종료 코드 1로 막고 대상 오류를 stderr에 출력합니다."""
+    element_error_file = tmp_path / "results_element_error_trivy.json"
+    element_error_file.write_text(
+        json.dumps(
+            {
+                "SchemaVersion": 2,
+                "Results": [
+                    {
+                        "Target": "refac-bid-box:ci",
+                        "Class": "os-pkgs",
+                        "Type": "debian",
+                        "Error": "target scanning failed: permission denied",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    allowlist_file = _make_allowlist_file(tmp_path, [])
+    err = io.StringIO()
+
+    exit_code = run_filter(element_error_file, allowlist_file, err_stream=err)
+
+    assert exit_code == 1
+    err_output = err.getvalue()
+    assert "Results[0] reported scanner error" in err_output
+    assert "target scanning failed: permission denied" in err_output
 
 
 def test_empty_object_fails_closed_without_traceback(tmp_path: Path):

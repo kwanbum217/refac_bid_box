@@ -54,18 +54,17 @@ jobs:
         # 동일 패키지에 다른 advisory 가 발생하거나 허용되지 않은 HIGH/CRITICAL 이 있으면 차단합니다.
         # 레지스트리 장애 등 스캐너 오류 설명을 보존하기 위해 stderr 를 버리지 않고 로그에 기록하며,
         # JSON 출력을 파일로 저장하여 판정 스크립트에 전달합니다.
+        # 스캐너가 오류 상태로 0을 반환하거나 깨끗한 스캔을 가장하는 결함을 차단하기 위해,
+        # npm audit 의 exit code 에 관계없이 항상 판정 스크립트의 입력 계약 검증을 거칩니다.
         run: |
           set +e
           npm audit --audit-level=high --json 2>/tmp/npm_audit_stderr.log >/tmp/npm_audit_stdout.json
-          EXIT_CODE=$?
+          NPM_EXIT=$?
           set -e
           if [ -s /tmp/npm_audit_stderr.log ]; then
             cat /tmp/npm_audit_stderr.log >&2
           fi
-          if [ "$EXIT_CODE" -eq 0 ]; then
-            exit 0
-          fi
-          uv run python ../scripts/filter_npm_audit.py --input /tmp/npm_audit_stdout.json --allowlist ../.github/vulnerability-allowlist.yml
+          uv run python ../scripts/filter_npm_audit.py --input /tmp/npm_audit_stdout.json --allowlist ../.github/vulnerability-allowlist.yml --stderr-file /tmp/npm_audit_stderr.log
 
       - name: Build application image
         id: build-image

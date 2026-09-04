@@ -20,6 +20,8 @@ import yaml
 
 DEFAULT_TRIVY_PATH = Path("trivy-results.json")
 DEFAULT_ALLOWLIST_PATH = Path(".github/vulnerability-allowlist.yml")
+# 핀된 aquasecurity/trivy-action@v0.36.0 이 실제로 생성하는 SchemaVersion 은 2 입니다.
+# 미지 스키마에 대해서는 fail-closed(차단)를 엄격히 유지합니다.
 SUPPORTED_SCHEMA_VERSIONS = (2, "2")
 
 
@@ -45,6 +47,8 @@ def validate_trivy_contract(trivy_data: Any) -> str | None:
     for index, res in enumerate(results):
         if not isinstance(res, dict):
             return f"Results[{index}] must be an object (got {type(res).__name__})"
+        if "Error" in res and res["Error"] is not None:
+            return f"Results[{index}] reported scanner error: {res['Error']}"
         if "Vulnerabilities" in res:
             vulns = res["Vulnerabilities"]
             if vulns is not None and not isinstance(vulns, list):
