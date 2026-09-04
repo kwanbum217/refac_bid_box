@@ -624,7 +624,8 @@ async def drift_monitor_task(
 # --------------------------------------------------------------------------- #
 
 SCHEDULE_COLLECTION_CLAIM_KEY = "bidbox:schedule:collection_claim"
-CATCHUP_LAST_ATTEMPT_KEY = SCHEDULE_COLLECTION_CLAIM_KEY
+SCHEDULE_CATCHUP_COOLDOWN_KEY = "bidbox:schedule:catchup_cooldown"
+CATCHUP_LAST_ATTEMPT_KEY = SCHEDULE_CATCHUP_COOLDOWN_KEY
 
 RELEASE_SCHEDULE_CLAIM_SCRIPT = """
 local val = redis.call('GET', KEYS[1])
@@ -842,28 +843,52 @@ def get_latest_collection_time(db: Session | None = None) -> datetime | None:
 def record_catchup_attempt(
     attempt_time: datetime | None = None,
     *,
-    key: str = SCHEDULE_COLLECTION_CLAIM_KEY,
+    key: str = SCHEDULE_CATCHUP_COOLDOWN_KEY,
     ttl_seconds: int | None = None,
     conn: RedisConnection | None = None,
-) -> ScheduleClaimResult:
-    """하위 호환성을 위한 claim 기록 함수.
+) -> bool:
+    """기동 시 catch-up 시도 완료 후 재시작 루프 방어용 쿨다운 키를 기록합니다.
 
-    CacheLayer 대신 RedisConnection 을 사용하여 SET NX EX 원자적 claim을 수행합니다.
-    예외를 삼키지 않고 명시적 ScheduleClaimResult 를 반환합니다.
+    성공/실패와 무관하게 호출되며, TTL(기본 6시간) 동안 유지됩니다.
+    CacheLayer 대신 RedisConnection 을 직접 사용합니다.
     """
-    return acquire_schedule_claim(
-        "catchup_attempt",
-        key=key,
-        ttl_seconds=ttl_seconds,
-        conn=conn,
+    ttl = ttl_seconds if ttl_seconds is not None else get_schedule_claim_ttl()
+    redis_conn = conn or get_schedule_redis_conn()
+    client = redis_conn.client()
+    if client is None:
+        logger.warning(
+            "Redis 연결 불가로 catch-up 쿨다운 키를 기록하지 못했습니다 (key=%s)",
+            key,
+        )
+        return False
+
+    ts = attempt_time or utcnow()
+    payload = json.dumps(
+        {
+            "attempted_at": ts.isoformat(),
+            "ttl": ttl,
+        },
+        ensure_ascii=False,
     )
+    try:
+        client.set(key, payload, ex=ttl)
+        logger.info(
+            "catch-up 쿨다운 키 기록 완료 (key=%s, ttl=%d초)",
+            key,
+            ttl,
+        )
+        return True
+    except Exception as exc:
+        redis_conn.invalidate(exc)
+        logger.warning("catch-up 쿨다운 키 기록 중 오류 발생 (key=%s): %s", key, exc)
+        return False
 
 
 def is_catchup_in_cooldown(
     conn: RedisConnection | None = None,
-    key: str = SCHEDULE_COLLECTION_CLAIM_KEY,
+    key: str = SCHEDULE_CATCHUP_COOLDOWN_KEY,
 ) -> tuple[bool, str | None]:
-    """공통 claim 키를 확인하여 쿨다운 상태 여부와 마지막 시도 시각(ISO 문자열)을 반환합니다.
+    """쿨다운 키를 확인하여 쿨다운 상태 여부와 마지막 시도 시각(ISO 문자열)을 반환합니다.
 
     CacheLayer 의 로컬 fallback을 사용하지 않고 RedisConnection 으로 직접 확인합니다.
     """
@@ -877,7 +902,7 @@ def is_catchup_in_cooldown(
             return False, None
         data = json.loads(raw)
         if isinstance(data, dict):
-            attempted = data.get("claimed_at") or data.get("attempted_at")
+            attempted = data.get("attempted_at") or data.get("claimed_at")
             return True, attempted
         return True, str(data)
     except Exception as exc:
@@ -1017,3 +1042,5 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
             "error": str(exc),
             "catchup_details": details,
         }
+    finally:
+        record_catchup_attempt()
