@@ -41,6 +41,7 @@ from src.tasks.scheduled_tasks import (
     run_schedule_catchup_task,
     weekly_retrain_task,
 )
+from src.tasks.summary_tasks import rebuild_dataset_summary_task
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,7 @@ class WorkerSettings:
         drift_monitor_task,
         backup_schedule_task,
         run_schedule_catchup_task,
+        rebuild_dataset_summary_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
     # 워커가 여러 대여도 arq 는 크론을 한 번만 실행합니다.
