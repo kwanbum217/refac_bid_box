@@ -47,19 +47,71 @@ COMMIT_NOTICE = (
 
 
 def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> str:
-    """preamble 파일이 나타나 내용이 채워질 때까지 기다립니다.
+    """고유한 파일명의 preamble 이 나타나 내용이 채워질 때까지 기다리고 소비(삭제)합니다.
 
-    코디네이터가 Dispatch 결과를 파일로 쓰기 전까지는 비어 있습니다. 크기가 0 인
-    상태로 읽고 넘어가면 워커가 빈 지시로 기동하므로 내용이 있을 때만 돌려줍니다.
-    시간이 지나도 내용이 채워지지 않으면 TimeoutError 를 던져 호출자가 종료 코드를
-    책임지게 합니다.
+    1. 기본 경로(.orca/preamble.txt) 또는 디렉터리로 대기 중일 때:
+       - 워크트리 .orca 디렉터리 내에서 preamble_*.txt 고유 파일을 찾아 읽고 즉시 삭제합니다.
+       - 후보가 둘 이상이면 어느 것도 소비하지 않고 남아있는 파일 목록을 출력한 뒤 거부합니다.
+       - 고유 preamble 없이 옛 형태의 고정 .orca/preamble.txt 만 남아있으면 격리 파손 위험으로 거부합니다.
+    2. 명시적 파일 경로로 대기 중일 때:
+       - 해당 파일이 나타나 내용이 채워질 때까지 기다립니다.
+       - preamble_*.txt 파일인 경우 소비 후 즉시 삭제합니다.
+       - 동일 디렉터리에 preamble_*.txt 후보가 둘 이상이면 거부합니다.
     """
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
-        if path.exists():
+        # 1. path 가 기본 경로이거나 디렉터리인 경우: .orca 내 고유 preamble 감지
+        if path == DEFAULT_PREAMBLE or path.is_dir() or not path.exists():
+            search_dir = path if path.is_dir() else path.parent
+            if search_dir.exists():
+                candidates = sorted(search_dir.glob("preamble_*.txt"))
+                if len(candidates) > 1:
+                    remaining = [c.name for c in candidates]
+                    sys.stderr.write(
+                        f"오류: 워크트리({search_dir})에 둘 이상의 preamble 후보가 발견되었습니다: {remaining}. "
+                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다.\n"
+                    )
+                    raise ValueError(
+                        f"다중 preamble 후보 발견 ({len(candidates)}개): {remaining}. "
+                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다."
+                    )
+                elif len(candidates) == 1:
+                    chosen = candidates[0]
+                    text = chosen.read_text(encoding="utf-8").strip()
+                    if text:
+                        chosen.unlink(missing_ok=True)
+                        print(f"preamble 소비 완료 ({chosen.name}): {len(text)}자", flush=True)
+                        return text
+                elif (search_dir / "preamble.txt").exists() and (
+                    path == DEFAULT_PREAMBLE or path.name == "preamble.txt"
+                ):
+                    sys.stderr.write(
+                        f"오류: 옛 형태의 고정 preamble({search_dir / 'preamble.txt'})이 발견되었습니다. "
+                        "이전 지시문 격리 파손 위험으로 기동을 거부합니다. 해당 파일을 삭제하고 고유 preamble 로 재기동하십시오.\n"
+                    )
+                    raise ValueError(f"옛 형태의 고정 preamble 발견: {search_dir / 'preamble.txt'}")
+
+        # 2. 명시된 path 가 직접 존재하는 경우
+        if path.is_file() and path.exists():
+            if path.name.startswith("preamble_"):
+                candidates = sorted(path.parent.glob("preamble_*.txt"))
+                if len(candidates) > 1:
+                    remaining = [c.name for c in candidates]
+                    sys.stderr.write(
+                        f"오류: 워크트리({path.parent})에 둘 이상의 preamble 후보가 발견되었습니다: {remaining}. "
+                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다.\n"
+                    )
+                    raise ValueError(
+                        f"다중 preamble 후보 발견 ({len(candidates)}개): {remaining}. "
+                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다."
+                    )
             text = path.read_text(encoding="utf-8").strip()
             if text:
+                if path.name.startswith("preamble_"):
+                    path.unlink(missing_ok=True)
+                    print(f"preamble 소비 완료 ({path.name}): {len(text)}자", flush=True)
                 return text
+
         time.sleep(poll_sec)
     raise TimeoutError(f"preamble 파일을 {timeout_sec:.0f}초 안에 받지 못했습니다: {path}")
 
@@ -163,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
         prompt = wait_for_preamble(args.preamble, args.timeout_sec)
-    except TimeoutError as err:
+    except (TimeoutError, ValueError) as err:
         sys.stderr.write(f"오류: {err}\n")
         return 2
 
