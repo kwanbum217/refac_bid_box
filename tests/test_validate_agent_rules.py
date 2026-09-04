@@ -1102,3 +1102,32 @@ facts:
     result = check_current_state_fact_ledger(tmp_path)
     assert not result.ok
     assert "claim" in result.detail
+
+
+def test_fact_ledger_passes_without_pyyaml(monkeypatch):
+    """PyYAML 이 없는 실행 경로에서도 실제 원장이 계약을 통과해야 합니다.
+
+    CI 와 pre-commit 은 이 스크립트를 시스템 python3 로 실행하고 그곳에는
+    PyYAML 이 없습니다. 2026-09-04 에 폴백 파서가 최상위 version 키를 버려
+    이 경로에서만 검사가 항상 실패했고, 로컬은 PyYAML 이 있어 통과했습니다.
+    """
+    monkeypatch.setattr(validate_agent_rules, "yaml", None)
+    ledger = check_current_state_fact_ledger(PROJECT_ROOT)
+    statuses = validate_agent_rules.check_current_state_fact_statuses(PROJECT_ROOT)
+    assert ledger.ok, ledger.detail
+    assert statuses.ok, statuses.detail
+
+
+def test_fallback_parser_reads_top_level_scalars():
+    """폴백 파서는 facts 배열과 함께 최상위 스칼라도 돌려주어야 합니다."""
+    parsed = validate_agent_rules._parse_facts_without_yaml(
+        """version: '2.0'
+facts:
+  - id: gate
+    status: closed
+    evidence:
+      - docs/context/CURRENT_STATE.md
+"""
+    )
+    assert parsed["version"] == "2.0"
+    assert [f["id"] for f in parsed["facts"]] == ["gate"]

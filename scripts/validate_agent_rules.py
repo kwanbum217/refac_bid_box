@@ -990,6 +990,7 @@ def _parse_facts_without_yaml(text: str) -> dict:
     PyYAML 을 의존성에 넣고 이 함수를 지우십시오.**
     """
     facts: list[dict] = []
+    top_level: dict[str, str] = {}
     current: dict | None = None
     item_indent: int | None = None
     pending_list_key: str | None = None
@@ -1018,18 +1019,27 @@ def _parse_facts_without_yaml(text: str) -> dict:
             current = None
             continue
 
-        if current is None or ":" not in stripped:
+        if ":" not in stripped:
             continue
         key, _, value = stripped.partition(":")
         key = key.strip()
         value = value.strip().strip('"').strip("'")
+        if current is None:
+            # facts 블록 밖의 최상위 스칼라입니다. version 처럼 원장 계약을
+            # 판정하는 데 쓰이므로 버리지 않습니다. 2026-09-04 에 이 누락으로
+            # 원장 version 검사가 폴백 경로에서 항상 실패했습니다.
+            if indent == 0 and value:
+                top_level[key] = value
+            continue
         if value:
             current[key] = value
             pending_list_key = None
         else:
             # 값이 비면 다음 줄부터 목록이 이어집니다.
             pending_list_key = key
-    return {"facts": facts}
+    result: dict = dict(top_level)
+    result["facts"] = facts
+    return result
 
 
 def check_current_state_fact_statuses(root: Path = PROJECT_ROOT) -> CheckResult:
