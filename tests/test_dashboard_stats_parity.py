@@ -31,7 +31,8 @@ from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_pass
 from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
-from src.app.models.bids import BidAnnouncement, BidResult
+from src.app.models.bids import BidAnnouncement, BidDatasetSummary, BidResult
+from src.app.services.dashboard import _compare_stats_cache_key, _dashboard_stats_cache_key
 
 STATS_URL = "/api/v1/bids/stats"
 COMPARE_URL = "/api/v1/bids/compare-stats"
@@ -432,3 +433,67 @@ def test_dashboard_stats_api_returns_json_error_when_backend_fails(auth_client):
 
     assert response.status_code == 500
     assert response.json()["status"] == "error"
+
+
+def test_dashboard_stats_cache_key_includes_aggregation_version():
+    """요약 집계 버전이 캐시 키에 포함되어 알고리즘 변경 시 캐시가 분리된다."""
+    t0 = utcnow()
+    summary_v1 = BidDatasetSummary(
+        dataset="result",
+        total_count=10,
+        total_amount=1000,
+        source_latest_collected_at=t0,
+        aggregation_version=1,
+        rebuilt_at=t0,
+    )
+    summary_v2 = BidDatasetSummary(
+        dataset="result",
+        total_count=10,
+        total_amount=1000,
+        source_latest_collected_at=t0,
+        aggregation_version=2,
+        rebuilt_at=t0,
+    )
+
+    key_v1 = _dashboard_stats_cache_key(summary_v1)
+    key_v2 = _dashboard_stats_cache_key(summary_v2)
+
+    assert "v1" in key_v1
+    assert "v2" in key_v2
+    assert key_v1 != key_v2
+
+
+def test_compare_stats_cache_key_includes_aggregation_versions():
+    """비교 통계 캐시 키에도 양쪽 데이터셋의 버전이 포함된다."""
+    t0 = utcnow()
+    ann_v1 = BidDatasetSummary(
+        dataset="announcement",
+        total_count=10,
+        total_amount=1000,
+        source_latest_collected_at=t0,
+        aggregation_version=1,
+        rebuilt_at=t0,
+    )
+    ann_v2 = BidDatasetSummary(
+        dataset="announcement",
+        total_count=10,
+        total_amount=1000,
+        source_latest_collected_at=t0,
+        aggregation_version=2,
+        rebuilt_at=t0,
+    )
+    res = BidDatasetSummary(
+        dataset="result",
+        total_count=5,
+        total_amount=500,
+        source_latest_collected_at=t0,
+        aggregation_version=1,
+        rebuilt_at=t0,
+    )
+
+    key_v1 = _compare_stats_cache_key(ann_v1, res)
+    key_v2 = _compare_stats_cache_key(ann_v2, res)
+
+    assert "v1" in key_v1
+    assert "v2" in key_v2
+    assert key_v1 != key_v2

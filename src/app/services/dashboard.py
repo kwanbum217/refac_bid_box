@@ -37,6 +37,15 @@ AMOUNT_NUMERIC = Numeric(30, 0)
 # 규모 사업(가덕도신공항 약 10.7조)은 상한 아래이므로 살아남습니다.
 MAX_REASONABLE_ANNOUNCEMENT_AMOUNT = 100_000_000_000_000
 
+# 데이터셋별 집계 알고리즘 기대 버전.
+# announcement 는 이상치 상한(100조) 적용 및 DECIMAL 누적으로 2로 상향되었습니다.
+# result 는 기존 알고리즘을 유지하므로 1입니다.
+# DB 에 저장된 버전이 기대 버전과 다르면 stale 로 판정해 재집계합니다.
+SUMMARY_ALGORITHM_VERSIONS: dict[str, int] = {
+    DATASET_ANNOUNCEMENT: 2,
+    DATASET_RESULT: 1,
+}
+
 DASHBOARD_STATS_CACHE_TTL = 60 * 60 * 24
 COMPARE_STATS_CACHE_TTL = 60 * 60 * 24
 DASHBOARD_RESULT_SCOPE_START = datetime(2015, 1, 1, tzinfo=UTC).replace(tzinfo=None)
@@ -148,6 +157,7 @@ def _dashboard_stats_cache_key(summary: BidDatasetSummary) -> str:
     return (
         "dashboard_basic_stats:v4:"
         f"{DASHBOARD_RESULT_SCOPE_START.isoformat()}:"
+        f"v{summary.aggregation_version}:"
         f"{_marker_value(summary.source_latest_collected_at)}:"
         f"{_marker_value(summary.rebuilt_at)}"
     )
@@ -159,8 +169,10 @@ def _compare_stats_cache_key(
 ) -> str:
     return (
         "dashboard_compare_stats:"
+        f"v{announcement_summary.aggregation_version}:"
         f"{_marker_value(announcement_summary.source_latest_collected_at)}:"
         f"{_marker_value(announcement_summary.rebuilt_at)}:"
+        f"v{result_summary.aggregation_version}:"
         f"{_marker_value(result_summary.source_latest_collected_at)}:"
         f"{_marker_value(result_summary.rebuilt_at)}"
     )
@@ -208,6 +220,7 @@ def _announcement_amount_expr(db: Session):
 
 
 def _build_summary_defaults(db: Session, dataset: str) -> dict[str, Any]:
+    expected_version = SUMMARY_ALGORITHM_VERSIONS.get(dataset, 1)
     if dataset == DATASET_ANNOUNCEMENT:
         row = db.execute(
             select(
@@ -234,6 +247,7 @@ def _build_summary_defaults(db: Session, dataset: str) -> dict[str, Any]:
         "total_amount": total_amount or 0,
         "avg_rate": avg_rate,
         "source_latest_collected_at": latest_collected_at,
+        "aggregation_version": expected_version,
     }
 
 
@@ -259,8 +273,13 @@ def rebuild_bid_dataset_summaries(db: Session, datasets=None) -> dict[str, BidDa
 
 def get_bid_dataset_summary(db: Session, dataset: str) -> BidDatasetSummary:
     latest_collected_at = _latest_collection_value(db, _model_for_dataset(dataset))
+    expected_version = SUMMARY_ALGORITHM_VERSIONS.get(dataset, 1)
     summary = db.get(BidDatasetSummary, dataset)
-    if summary is None or summary.source_latest_collected_at != latest_collected_at:
+    if (
+        summary is None
+        or summary.source_latest_collected_at != latest_collected_at
+        or summary.aggregation_version != expected_version
+    ):
         summary = rebuild_bid_dataset_summary(db, dataset)
     return summary
 
@@ -445,6 +464,7 @@ def warm_dashboard_caches(db: Session) -> dict[str, Any]:
 
 __all__ = [
     "DASHBOARD_RESULT_SCOPE_LABEL",
+    "SUMMARY_ALGORITHM_VERSIONS",
     "get_bid_dataset_summary",
     "get_compare_stats_data",
     "get_dashboard_stats",

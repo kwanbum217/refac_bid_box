@@ -17,6 +17,7 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     Index,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -408,6 +409,12 @@ class BidDatasetSummary(Base):
         default=utcnow,
         onupdate=utcnow,
         comment="집계 갱신 시각",
+    )
+    aggregation_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="집계 알고리즘 버전",
     )
 
     def __str__(self) -> str:
