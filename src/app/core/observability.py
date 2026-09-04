@@ -232,12 +232,20 @@ async def arq_on_job_end(ctx: dict[str, Any]) -> None:
     if not _registry.enabled:
         return
     token = ctx.pop("_otel_token", None)
-    if token is not None:
-        context.detach(token)
     span: trace.Span | None = ctx.pop("_otel_span", None)
-    if span is not None:
-        span.set_status(Status(StatusCode.OK))
-        span.end()
+    try:
+        if token is not None:
+            context.detach(token)
+    except Exception as exc:
+        # detach 실패를 삼키지 않고 남깁니다. 이전 구현은 debug 로 숨겨
+        # 존재하지 않는 API 호출이 매번 실패하는 것을 가렸습니다.
+        logger.warning("Arq 컨텍스트 detach 실패: %s", exc)
+    finally:
+        # detach 결과와 무관하게 span 은 반드시 종료합니다. 종료하지 않으면
+        # 그 작업의 span 이 누수되어 이후 계측이 어긋납니다.
+        if span is not None:
+            span.set_status(Status(StatusCode.OK))
+            span.end()
 
 
 @contextmanager
