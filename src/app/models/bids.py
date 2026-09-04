@@ -67,6 +67,13 @@ def _coerce_amount(value: Any) -> int | None:
         if not normalized:
             return None
         try:
+            return int(normalized)
+        except ValueError:
+            pass
+        # float 를 먼저 거치면 2^53 을 넘는 자릿수에서 값이 어긋납니다. 조달청 원본에
+        # 20 자리 금액(12240000012240000011)이 실재하며, float 경유 시
+        # 12240000012240001024 로 바뀝니다. 소수점 표기일 때만 float 로 내립니다.
+        try:
             return int(float(normalized))
         except ValueError:
             return None

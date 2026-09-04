@@ -346,6 +346,67 @@ def test_compare_stats_base_total_ignores_estimated_price_only_rows(auth_client,
     assert payload["announce_total_base_amount"] == 1100000
 
 
+def test_compare_stats_excludes_outlier_amounts_from_totals(auth_client, isolated_db):
+    """상한을 넘는 기초금액은 집계에서 뺀다.
+
+    2026-09-04 실측에서 조달청 원본 오류 33건(자릿수 중복 입력, 111111111111111
+    더미값, BIGINT 포화)이 공고 총액을 -6,063,896,128,872,295,352 로 만들었습니다.
+    상한 초과분을 빼지 않으면 화면 숫자가 통째로 뒤집힙니다.
+    """
+    _add_announcement(isolated_db)
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-OUTLIER",
+        bid_ntce_nm="자릿수가 깨진 공고",
+        base_amount=137150000137150000,
+        raw_data={"asignBdgtAmt": "137150000137150000"},
+    )
+
+    payload = auth_client.get(COMPARE_URL).json()
+
+    assert payload["announce_count"] == 2
+    assert payload["announce_total_base_amount"] == 1100000
+    assert [row["total_base_amount"] for row in payload["agency_announce_top10"]] == [1100000]
+
+
+def test_compare_stats_keeps_largest_realistic_amount(auth_client, isolated_db):
+    """상한 아래의 대형 사업은 그대로 집계한다.
+
+    실재하는 최대 규모(가덕도신공항 약 10.7조)까지 잘라내면 상한이 이상치 제거가
+    아니라 데이터 절단이 됩니다.
+    """
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-LARGE",
+        bid_ntce_nm="대형 사업 공고",
+        base_amount=10717478400000,
+        raw_data={"bdgtAmt": "10717478400000"},
+    )
+
+    payload = auth_client.get(COMPARE_URL).json()
+
+    assert payload["announce_total_base_amount"] == 10717478400000
+
+
+def test_compare_stats_reads_comma_separated_amount(auth_client, isolated_db):
+    """콤마가 섞인 금액을 파이썬 경로와 같게 읽는다.
+
+    `models.bids._coerce_amount` 는 콤마를 지우는데 집계 SQL 만 빠뜨리면, 같은
+    공고를 상세 화면과 대시보드가 다른 금액으로 보게 됩니다.
+    """
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-COMMA",
+        bid_ntce_nm="콤마 표기 공고",
+        base_amount=None,
+        raw_data={"asignBdgtAmt": "1,234,567"},
+    )
+
+    payload = auth_client.get(COMPARE_URL).json()
+
+    assert payload["announce_total_base_amount"] == 1234567
+
+
 def test_compare_stats_api_returns_json_error_when_backend_fails(auth_client):
     """집계 실패 시 원본과 같은 오류 계약을 돌려준다.
 
