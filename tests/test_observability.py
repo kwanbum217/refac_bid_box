@@ -195,6 +195,60 @@ def test_arq_lifecycle_hooks():
     assert attrs.get("task.try") == 2
 
 
+def test_arq_context_token_detach_lifecycle():
+    """Arq 작업 시작 시 context 에 span 이 바인딩되고 종료 시 token 이 detach 되는지 검증합니다."""
+    import asyncio
+
+    from opentelemetry import trace
+
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    ctx = {"job_id": "arq_job_test_detach", "job_try": 1}
+
+    async def _run():
+        before_span = trace.get_current_span()
+        await arq_on_job_start(ctx)
+        active_span = trace.get_current_span()
+        assert ctx.get("_otel_span") is not None
+        assert active_span is ctx["_otel_span"]
+        assert active_span is not before_span
+
+        await arq_on_job_end(ctx)
+        after_span = trace.get_current_span()
+        assert after_span is not active_span
+        assert "_otel_token" not in ctx
+        assert "_otel_span" not in ctx
+
+    asyncio.run(_run())
+
+
+def test_arq_job_end_closes_span_even_if_detach_fails(monkeypatch):
+    """detach 가 실패해도 span 은 종료되어야 합니다. 종료하지 않으면 span 이 누수됩니다."""
+    import asyncio
+
+    from src.app.core import observability as observability_module
+
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    ctx = {"job_id": "arq_job_detach_failure", "job_try": 1}
+
+    def _raising_detach(_token):
+        raise RuntimeError("detach 실패 모사")
+
+    async def _run():
+        await arq_on_job_start(ctx)
+        span = ctx["_otel_span"]
+        monkeypatch.setattr(observability_module.context, "detach", _raising_detach)
+        await arq_on_job_end(ctx)
+        assert span.end_time is not None
+        assert "_otel_span" not in ctx
+        assert "_otel_token" not in ctx
+
+    asyncio.run(_run())
+
+
 def test_safe_span_exporter_fault_tolerance():
     """내보내기 대상 수집기가 죽어 있어도 애플리케이션이 죽지 않고 상태가 관측 가능한지 검증합니다."""
     failing_exporter = FailingSpanExporter()

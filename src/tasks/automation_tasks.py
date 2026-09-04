@@ -137,8 +137,12 @@ def _report(  # nosec B107
     if cb_url and _post_callback(cb_url, cb_token, payload):
         return
 
-    own_session = caller_db is None
-    session = SessionLocal() if own_session else caller_db
+    if caller_db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = caller_db
+        own_session = False
     try:
         request_obj = get_automation_request(session, req_id)
         if request_obj is None:

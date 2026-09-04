@@ -309,7 +309,9 @@ def run_restore_drill(
     ):
         raise ValueError("복원 리허설 대상 DB는 운영 DB와 동일할 수 없습니다.")
 
-    drill_start, timings, errors = datetime.now(UTC), {}, []
+    drill_start = datetime.now(UTC)
+    timings: dict[str, Any] = {}
+    errors: list[str] = []
     v_st = datetime.now(UTC)
     valid, v_errs, manifest = verify_snapshot(snapshot_dir)
     errors.extend(v_errs)

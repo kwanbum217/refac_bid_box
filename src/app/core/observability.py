@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI
-from opentelemetry import trace
+from opentelemetry import context, trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import (
@@ -166,8 +166,9 @@ def setup_observability(
                 )
 
                 endpoint = settings.OTEL_EXPORTER_OTLP_ENDPOINT
-                otlp_kwargs = {"endpoint": endpoint} if endpoint else {}
-                raw_exporter = OTLPSpanExporter(**otlp_kwargs)
+                raw_exporter = (
+                    OTLPSpanExporter(endpoint=endpoint) if endpoint else OTLPSpanExporter()
+                )
                 safe_exporter = SafeSpanExporter(raw_exporter)
                 # 애플리케이션 지연 방지를 위해 BatchSpanProcessor 사용
                 provider.add_span_processor(BatchSpanProcessor(safe_exporter))
@@ -222,7 +223,7 @@ async def arq_on_job_start(ctx: dict[str, Any]) -> None:
     span.set_attribute("task.try", job_try)
     span.set_attribute("task.system", "arq")
     ctx["_otel_span"] = span
-    ctx["_otel_token"] = trace.use_span(span, end_on_exit=False)
+    ctx["_otel_token"] = context.attach(trace.set_span_in_context(span))
     _registry.arq_instrumented = True
 
 
@@ -231,15 +232,20 @@ async def arq_on_job_end(ctx: dict[str, Any]) -> None:
     if not _registry.enabled:
         return
     token = ctx.pop("_otel_token", None)
-    if token is not None:
-        try:
-            trace.reset_span(token)
-        except Exception as exc:
-            logger.debug("Arq token reset 예외 무시: %s", exc)
     span: trace.Span | None = ctx.pop("_otel_span", None)
-    if span is not None:
-        span.set_status(Status(StatusCode.OK))
-        span.end()
+    try:
+        if token is not None:
+            context.detach(token)
+    except Exception as exc:
+        # detach 실패를 삼키지 않고 남깁니다. 이전 구현은 debug 로 숨겨
+        # 존재하지 않는 API 호출이 매번 실패하는 것을 가렸습니다.
+        logger.warning("Arq 컨텍스트 detach 실패: %s", exc)
+    finally:
+        # detach 결과와 무관하게 span 은 반드시 종료합니다. 종료하지 않으면
+        # 그 작업의 span 이 누수되어 이후 계측이 어긋납니다.
+        if span is not None:
+            span.set_status(Status(StatusCode.OK))
+            span.end()
 
 
 @contextmanager

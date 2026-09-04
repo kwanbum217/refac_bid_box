@@ -118,8 +118,12 @@ def _record(
     summary: dict,
 ) -> None:
     """재학습 이력을 남깁니다. 지금까지 retrain_logs 는 비어 있었습니다."""
-    own_session = db is None
-    session = SessionLocal() if own_session else db
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
     try:
         session.add(
             RetrainLog(

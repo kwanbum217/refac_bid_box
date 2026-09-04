@@ -395,12 +395,12 @@ def _finalize_rag_answer_sync(
 
 def _run_chat(
     payload_or_db: Session | ChatRequest,
-    payload: ChatRequest | None = None,
+    payload: ChatRequest | int | None = None,
     user_id: int | None = None,
 ) -> ChatResponse:
     """계획 수립 -> 도구 실행 -> RAG 답변 생성을 한 번에 수행합니다 (비스트리밍)."""
     if isinstance(payload_or_db, Session):
-        req_payload = payload or ChatRequest(message="")
+        req_payload = payload if isinstance(payload, ChatRequest) else ChatRequest(message="")
         uid = user_id
         session = payload_or_db
         should_close = False
