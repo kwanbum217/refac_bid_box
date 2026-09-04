@@ -78,3 +78,88 @@ def test_mysql_json_extraction_returns_unquoted_scalar(mysql_engine: Engine) -> 
             text("SELECT JSON_UNQUOTE(JSON_EXTRACT('{\"category\": \"Servc\"}', '$.category'))")
         ).scalar_one()
     assert result == "Servc"
+
+
+def test_mysql_amount_column_aggregation_and_cast_dialects(mysql_engine: Engine) -> None:
+    """MySQL 8 방언에서 base_amount 집계 표현식과 금액 파싱(20자리, 소수점, 콤마, 상한초과, NULL)을 검증합니다.
+
+    SQLite 와 MySQL 간의 CAST(DECIMAL(30,0)) 및 BIGINT 범위 처리 차이를 방어합니다:
+    1. 20자리 값: DECIMAL(30,0) 캐스팅 시 오버플로우 없이 100조 상한 필터에 걸려 NULL 처리
+    2. 소수점 표기: MySQL CAST(DECIMAL(30,0)) 동작 확인 및 절단 적재 컬럼값과의 차이 검증
+    3. 콤마 포함 표기: REPLACE 후 DECIMAL 캐스팅 정상 동작 확인
+    4. 상한 초과(100조 초과): CASE WHEN 문으로 정확히 NULL 제외 확인
+    5. NULL: SUM 집계 시 오류 없이 무시됨 확인
+    """
+    with mysql_engine.connect() as connection:
+        # (1) MySQL CAST 방언 및 문자열 파싱 동작 검증
+        row = (
+            connection.execute(
+                text(
+                    """
+                SELECT
+                    -- 20자리 값 DECIMAL 캐스팅
+                    CAST('12240000012240000011' AS DECIMAL(30, 0)) AS val_20digit,
+                    -- 소수점 표기 DECIMAL 캐스팅
+                    CAST('3469575370.8' AS DECIMAL(30, 0)) AS val_fraction,
+                    -- 콤마 포함 표기
+                    CAST(REPLACE('1,234,567', ',', '') AS DECIMAL(30, 0)) AS val_comma
+                """
+                )
+            )
+            .mappings()
+            .one()
+        )
+
+        assert int(row["val_20digit"]) == 12240000012240000011
+        assert int(row["val_fraction"]) == 3469575371
+        assert int(row["val_comma"]) == 1234567
+
+        # (2) base_amount 컬럼 기반 집계 표현식 검증 (20자리 포화, 상한초과, 정상, 절단, NULL)
+        agg_result = (
+            connection.execute(
+                text(
+                    """
+                WITH test_cases AS (
+                    -- 정상 공고 (150만)
+                    SELECT 1500000 AS base_amount, '정상' AS label
+                    UNION ALL
+                    -- 20자리 원본으로 인한 BIGINT 포화값 (922경 -> 100조 초과로 제외)
+                    SELECT 9223372036854775807 AS base_amount, '포화건' AS label
+                    UNION ALL
+                    -- 100조 초과 자릿수 반복 이상치 (137경 -> 100조 초과로 제외)
+                    SELECT 137150000137150000 AS base_amount, '상한초과' AS label
+                    UNION ALL
+                    -- 소수점 절단 적재값 (34억)
+                    SELECT 3469575370 AS base_amount, '소수점절단' AS label
+                    UNION ALL
+                    -- 콤마 제거 적재값 (123만)
+                    SELECT 1234567 AS base_amount, '콤마정제' AS label
+                    UNION ALL
+                    -- raw 0.0 또는 결측으로 인한 NULL
+                    SELECT NULL AS base_amount, 'NULL' AS label
+                )
+                SELECT
+                    SUM(
+                        CASE
+                            WHEN CAST(base_amount AS DECIMAL(30, 0)) > 100000000000000 THEN NULL
+                            ELSE CAST(base_amount AS DECIMAL(30, 0))
+                        END
+                    ) AS total_amount,
+                    COUNT(*) AS total_rows,
+                    COUNT(base_amount) AS non_null_rows
+                FROM test_cases
+                """
+                )
+            )
+            .mappings()
+            .one()
+        )
+
+        # 총 6행 중 NULL 1행 제외 5행 non-null
+        assert agg_result["total_rows"] == 6
+        assert agg_result["non_null_rows"] == 5
+
+        # 집계 기대치: 1500000 + 3469575370 + 1234567 = 3472309937
+        # (포화건 9223372036854775807 및 상한초과건 137150000137150000 은 제외되어야 함)
+        expected_total = 1500000 + 3469575370 + 1234567
+        assert int(agg_result["total_amount"]) == expected_total

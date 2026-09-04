@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import (
@@ -60,25 +60,31 @@ def _coerce_amount(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
+        if value < 0:
+            return None
         return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        normalized = value.replace(",", "").strip()
-        if not normalized:
+
+    # Decimal 로 파싱을 통일하여 2^53 초과 자릿수 손실이나 지수 표기 왜곡을 방지합니다.
+    try:
+        text = str(value).replace(",", "").strip()
+        if not text:
             return None
-        try:
-            return int(normalized)
-        except ValueError:
-            pass
-        # float 를 먼저 거치면 2^53 을 넘는 자릿수에서 값이 어긋납니다. 조달청 원본에
-        # 20 자리 금액(12240000012240000011)이 실재하며, float 경유 시
-        # 12240000012240001024 로 바뀝니다. 소수점 표기일 때만 float 로 내립니다.
-        try:
-            return int(float(normalized))
-        except ValueError:
-            return None
-    return None
+        dec = Decimal(text)
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+    # NaN, Infinity, 음수는 공고 금액으로 유효하지 않으므로 명시적으로 제외합니다.
+    if dec.is_nan() or dec.is_infinite() or dec < Decimal(0):
+        return None
+
+    # 소수점 표기는 Decimal 로 읽은 뒤 정수부를 취합니다.
+    # 기존 불일치 107건이 소수점 절단(내림)으로 저장되어 있으므로,
+    # 과거 적재 데이터와의 정합성 및 일관성을 위해 내림(ROUND_DOWN) 규칙을 적용합니다.
+    try:
+        truncated = dec.to_integral_value(rounding=ROUND_DOWN)
+        return int(truncated)
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def _coerce_decimal(value: Any) -> Decimal | None:
