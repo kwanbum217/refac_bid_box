@@ -41,7 +41,9 @@ jobs:
           IGNORE_ARGS=$(python3 -c "import yaml
           data = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
           print(' '.join('--ignore-vuln ' + e['id'] for e in data.get('python', [])))")
-          uvx --from pip-audit pip-audit -r /tmp/requirements.txt --strict $IGNORE_ARGS
+          # pip-audit 에는 --strict 플래그가 없으며 -r 과 함께 전달되면 위치 인자(project_path)로
+          # 오인되어 상호 배타 에러로 비정상 종료합니다. 엄격 검사는 $IGNORE_ARGS 로 통제합니다.
+          uvx --from pip-audit pip-audit -r /tmp/requirements.txt $IGNORE_ARGS
 
       - name: Scan JavaScript dependencies
         working-directory: frontend
@@ -57,7 +59,8 @@ jobs:
           fi
           echo "$OUTPUT" | python3 -c "import sys, json, yaml
           audit = json.loads(sys.stdin.read())
-          data = yaml.safe_load(open('.github/vulnerability-allowlist.yml')) or {}
+          # working-directory 가 frontend 이므로 상위 디렉터리의 allowlist 파일을 참조합니다.
+          data = yaml.safe_load(open('../.github/vulnerability-allowlist.yml')) or {}
           allowed = {e['package'] for e in data.get('npm', [])}
           remaining = [(n, v.get('severity')) for n, v in audit.get('vulnerabilities', {}).items() if v.get('severity') in ('high','critical') and n not in allowed]
           if remaining:
