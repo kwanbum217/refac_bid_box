@@ -174,6 +174,8 @@ CI 와 pre-commit 은 시스템 `python3` 로 검증기를 돌리고 거기에�
 | Antigravity Claude 계열은 실행 오류로 죽을 수 있다. 다른 계열 리뷰어가 필요하면 `gemini-3.1-pro-high` 가 대안이다 | `claude-sonnet-4-6` 이 Error ID 를 내고 종료 |
 | docker 를 쓰는 작업은 위임 대상이 아니다. 자동 승인이 docker 를 항상 보류한다 | 4장 |
 | 리뷰어를 건너뛰면 우회 경로가 병합된다 | 5장 세 번째 항목 |
+| **`source_commit` 은 푸시할 커밋을 기준으로 마지막에 갱신한다.** 병합을 거듭하면 허용 5커밋을 금방 넘고, 갱신 커밋 자체가 거리를 다시 늘린다 | 이번 세션에서 두 번 걸렸다. 병합 직전 한 번에 갱신하는 것이 유일하게 안정적이다 |
+| **앞 스텝이 실패하면 뒤의 검사는 존재하지 않는 것과 같다.** `lint-and-validate` 를 초록으로 만드는 동안 가려져 있던 실패가 세 번 연달아 드러났다 | mypy -> actionlint(shellcheck) -> tailwind 재현성 -> source_commit 순으로 하나씩 나왔다 |
 
 ---
 
