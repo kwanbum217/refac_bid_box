@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -48,6 +49,12 @@ SUMMARY_ALGORITHM_VERSIONS: dict[str, int] = {
 
 DASHBOARD_STATS_CACHE_TTL = 60 * 60 * 24
 COMPARE_STATS_CACHE_TTL = 60 * 60 * 24
+DASHBOARD_STATS_STALE_CACHE_TTL = 60
+# 최초 동기 집계용 분산 락의 수명입니다. announcement 전체 집계 실측이 콜드 버퍼풀에서
+# 554초였으므로 600초는 여유가 8퍼센트뿐입니다. 락이 집계보다 먼저 풀리면 두 번째
+# 요청이 같은 집계를 또 시작해 락이 있으나 없으나 같아집니다. 실측의 세 배로 둡니다.
+SUMMARY_INIT_LOCK_TIMEOUT = 1800
+COMPARE_STATS_STALE_CACHE_TTL = 60
 DASHBOARD_RESULT_SCOPE_START = datetime(2015, 1, 1, tzinfo=UTC).replace(tzinfo=None)
 DASHBOARD_RESULT_SCOPE_LABEL = "2015년 ~ 현재"
 UNIT_PRICE_RESULT_KEYWORDS = (
@@ -271,23 +278,131 @@ def rebuild_bid_dataset_summaries(db: Session, datasets=None) -> dict[str, BidDa
     return {dataset: rebuild_bid_dataset_summary(db, dataset) for dataset in datasets}
 
 
+_process_init_locks: dict[str, threading.Lock] = {}
+_process_init_guard = threading.Lock()
+
+
+def _get_process_lock(dataset: str) -> threading.Lock:
+    with _process_init_guard:
+        if dataset not in _process_init_locks:
+            _process_init_locks[dataset] = threading.Lock()
+        return _process_init_locks[dataset]
+
+
+def _summary_job_id(dataset: str, expected_version: int, marker: datetime | None) -> str:
+    """재집계 작업의 중복 판정 키입니다.
+
+    데이터셋 단위 고정 job_id 를 쓰면 안 됩니다. arq 는 같은 job_id 의 결과 키가
+    남아 있는 동안 등록을 거부하고(`arq/connections.py` 중복 검사), 이 저장소의
+    `keep_result` 는 3600초입니다. 즉 재집계가 끝난 뒤 한 시간 동안은 새로 생긴
+    stale 을 큐에 넣을 수 없습니다. 독립 리뷰어가 이 결함을 찾았습니다.
+
+    그래서 **stale 조건 자체를 키로 씁니다.** 같은 조건의 반복 조회는 하나로
+    합쳐지고(원래 의도), 수집이나 알고리즘 변경으로 조건이 바뀌면 새 키가 되어
+    곧바로 등록됩니다.
+    """
+    marker_part = marker.isoformat() if marker is not None else "none"
+    return f"rebuild_dataset_summary:{dataset}:v{expected_version}:{marker_part}"
+
+
+def enqueue_rebuild_dataset_summary(
+    dataset: str, expected_version: int, marker: datetime | None
+) -> bool:
+    """데이터셋 요약 재집계 작업을 Arq 큐에 등록합니다.
+
+    같은 stale 조건의 중복 등록은 arq 가 job_id 로 합칩니다. 중복으로 합쳐진 것과
+    등록 실패는 다른 사건이므로 로그에서 구분합니다. 구분하지 않으면 큐에 아무것도
+    들어가지 않았는데 성공으로 읽습니다.
+    """
+    from src.app.services.automation_jobs import enqueue_arq_job_reporting_dedupe
+
+    job_id = _summary_job_id(dataset, expected_version, marker)
+    created = enqueue_arq_job_reporting_dedupe(
+        "rebuild_dataset_summary_task", arq_job_id=job_id, dataset=dataset
+    )
+    if created is None:
+        logger.warning("요약 재집계 작업 등록 실패: %s", job_id)
+        return False
+    if created is False:
+        logger.debug("요약 재집계 작업이 이미 등록돼 있어 합쳤습니다: %s", job_id)
+    return True
+
+
+def _rebuild_with_lock(db: Session, dataset: str) -> BidDatasetSummary:
+    """스냅샷이 아예 없는 최초 상태에서만 동기 집계를 수행합니다.
+
+    분산 락(Redis)을 우선 획득하여 동시 유입 요청 중 1개만 집계를 수행하도록 통제하며,
+    Redis가 없을 때는 프로세스 내 락(threading.Lock)을 사용하여 fail-open으로
+    인한 동시 대량 쿼리 부하를 차단합니다.
+    """
+    client = cache.client()
+    lock_name = f"lock:bid_dataset_summary:init:{dataset}"
+
+    if client is not None:
+        try:
+            with client.lock(lock_name, timeout=SUMMARY_INIT_LOCK_TIMEOUT, blocking_timeout=30):
+                existing = db.get(BidDatasetSummary, dataset)
+                if existing is not None:
+                    existing.is_stale = False
+                    return existing
+                summary = rebuild_bid_dataset_summary(db, dataset)
+                summary.is_stale = False
+                return summary
+        except Exception as exc:
+            logger.warning("Redis 분산 락 획득 실패 (%s): %s", lock_name, exc)
+            existing = db.get(BidDatasetSummary, dataset)
+            if existing is not None:
+                existing.is_stale = False
+                return existing
+            raise RuntimeError(f"데이터셋 요약 초기 집계 분산 락 획득 실패: {dataset}") from exc
+    else:
+        logger.warning("Redis 미가용 상태에서 프로세스 락으로 초기 집계를 제어합니다: %s", dataset)
+        process_lock = _get_process_lock(dataset)
+        with process_lock:
+            existing = db.get(BidDatasetSummary, dataset)
+            if existing is not None:
+                existing.is_stale = False
+                return existing
+            summary = rebuild_bid_dataset_summary(db, dataset)
+            summary.is_stale = False
+            return summary
+
+
 def get_bid_dataset_summary(db: Session, dataset: str) -> BidDatasetSummary:
+    """데이터셋 요약을 조회합니다.
+
+    조회 경로는 절대로 전체 재집계를 수행하지 않습니다.
+    1. 스냅샷이 없는 최초 상태: 분산 락 하에서 1회만 동기 집계 수행.
+    2. 스냅샷이 있는 stale 상태: 이전 스냅샷을 그대로 반환하고, is_stale=True 표시 후
+       비동기 재집계 작업을 Arq 큐에 등록(고정 job_id로 중복 방지).
+    3. fresh 상태: is_stale=False 표시 후 그대로 반환.
+    """
+    summary = db.get(BidDatasetSummary, dataset)
+    if summary is None:
+        return _rebuild_with_lock(db, dataset)
+
     latest_collected_at = _latest_collection_value(db, _model_for_dataset(dataset))
     expected_version = SUMMARY_ALGORITHM_VERSIONS.get(dataset, 1)
-    summary = db.get(BidDatasetSummary, dataset)
-    if (
-        summary is None
-        or summary.source_latest_collected_at != latest_collected_at
+    is_stale = (
+        summary.source_latest_collected_at != latest_collected_at
         or summary.aggregation_version != expected_version
-    ):
-        summary = rebuild_bid_dataset_summary(db, dataset)
+    )
+    summary.is_stale = is_stale
+
+    if is_stale:
+        enqueue_rebuild_dataset_summary(dataset, expected_version, latest_collected_at)
+
     return summary
 
 
 def get_dashboard_stats(db: Session) -> dict[str, Any]:
     """대시보드 기본 통계 데이터."""
     result_summary = get_bid_dataset_summary(db, DATASET_RESULT)
+    is_stale = getattr(result_summary, "is_stale", False)
     cache_key = _dashboard_stats_cache_key(result_summary)
+    if is_stale:
+        cache_key = f"{cache_key}:stale"
+
     data = cache.get(cache_key)
     if data:
         return data
@@ -367,7 +482,12 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
         "by_month": by_month,
     }
 
-    cache.set(cache_key, data, DASHBOARD_STATS_CACHE_TTL)
+    ttl = (
+        DASHBOARD_STATS_STALE_CACHE_TTL
+        if getattr(result_summary, "is_stale", False)
+        else DASHBOARD_STATS_CACHE_TTL
+    )
+    cache.set(cache_key, data, ttl)
     return data
 
 
@@ -375,7 +495,13 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
     """입찰공고 vs 낙찰 비교 통계."""
     announcement_summary = get_bid_dataset_summary(db, DATASET_ANNOUNCEMENT)
     result_summary = get_bid_dataset_summary(db, DATASET_RESULT)
+    is_stale = getattr(announcement_summary, "is_stale", False) or getattr(
+        result_summary, "is_stale", False
+    )
     cache_key = _compare_stats_cache_key(announcement_summary, result_summary)
+    if is_stale:
+        cache_key = f"{cache_key}:stale"
+
     data = cache.get(cache_key)
     if data:
         return data
@@ -440,7 +566,11 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         ],
     }
 
-    cache.set(cache_key, data, COMPARE_STATS_CACHE_TTL)
+    is_stale = getattr(announcement_summary, "is_stale", False) or getattr(
+        result_summary, "is_stale", False
+    )
+    ttl = COMPARE_STATS_STALE_CACHE_TTL if is_stale else COMPARE_STATS_CACHE_TTL
+    cache.set(cache_key, data, ttl)
     return data
 
 
@@ -465,6 +595,7 @@ def warm_dashboard_caches(db: Session) -> dict[str, Any]:
 __all__ = [
     "DASHBOARD_RESULT_SCOPE_LABEL",
     "SUMMARY_ALGORITHM_VERSIONS",
+    "enqueue_rebuild_dataset_summary",
     "get_bid_dataset_summary",
     "get_compare_stats_data",
     "get_dashboard_stats",

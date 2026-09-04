@@ -1,12 +1,13 @@
 """
 tests/test_dashboard_summary_version.py
 
-bid_dataset_summaries 집계 알고리즘 버전 기반 신선도 판정 및 재집계 검증 테스트.
+bid_dataset_summaries 집계 알고리즘 버전 기반 신선도 판정 및 비동기 재집계 등록 검증 테스트.
 
-Fact 48 검증 항목:
-1. 저장된 버전이 기대 버전보다 낮으면 원본 수집 시각이 같아도 재집계가 일어난다.
-2. 버전과 수집 시각이 모두 같으면 재집계가 일어나지 않는다.
+Fact 48 및 읽기/쓰기 분리 계약 검증 항목:
+1. 저장된 버전이 기대 버전보다 낮으면 stale로 판정되어 (a) 이전 스냅샷이 반환되고 (b) 재집계 작업이 1회 등록된다.
+2. 버전과 수집 시각이 모두 같으면 fresh로 판정되어 재집계 호출도 없고 작업 등록도 일어나지 않는다.
 3. 재집계된 요약에 기대 버전이 기록된다.
+4. 기존 announcement 행에 기본 버전 1이 부여되면 기대 버전 2와 달라 stale로 판정된다.
 """
 
 from datetime import datetime
@@ -72,7 +73,7 @@ def _seed_result(db, **overrides) -> BidResult:
 
 
 def test_summary_rebuilds_when_stored_version_is_lower_than_expected(isolated_db):
-    """저장된 버전이 기대 버전보다 낮으면 원본 수집 시각이 같아도 재집계가 일어난다."""
+    """저장된 버전이 기대 버전보다 낮으면 stale로 판정되어 이전 스냅샷이 반환되고 재집계 작업이 등록된다."""
     ann = _seed_announcement(isolated_db)
     expected_version = SUMMARY_ALGORITHM_VERSIONS[DATASET_ANNOUNCEMENT]
     assert expected_version > 1
@@ -90,16 +91,28 @@ def test_summary_rebuilds_when_stored_version_is_lower_than_expected(isolated_db
     isolated_db.add(old_summary)
     isolated_db.commit()
 
-    # get_bid_dataset_summary 호출 시 버전 불일치로 인해 재집계 발생 확인
-    fresh_summary = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
+    with (
+        patch("src.app.services.dashboard.rebuild_bid_dataset_summary") as mock_rebuild,
+        patch("src.app.services.dashboard.enqueue_rebuild_dataset_summary") as mock_enqueue,
+    ):
+        # get_bid_dataset_summary 호출 시 버전 불일치로 인해 stale 판정
+        returned_summary = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
 
-    assert fresh_summary.aggregation_version == expected_version
-    assert fresh_summary.total_amount == Decimal("1000000")
-    assert fresh_summary.total_count == 1
+        # 동기 rebuild 는 호출되지 않아야 함
+        mock_rebuild.assert_not_called()
+        # 재집계 작업이 정확히 한 번 등록되어야 함
+        assert mock_enqueue.call_count == 1
+        assert mock_enqueue.call_args.args[0] == DATASET_ANNOUNCEMENT
+
+    # (a) 이전 스냅샷이 그대로 반환되고, stale 여부가 표시되어야 함
+    assert returned_summary.is_stale is True
+    assert returned_summary.aggregation_version == old_summary.aggregation_version
+    assert returned_summary.total_amount == old_summary.total_amount
+    assert returned_summary.total_count == old_summary.total_count
 
 
 def test_summary_does_not_rebuild_when_version_and_collection_time_match(isolated_db):
-    """버전과 수집 시각이 모두 같으면 재집계가 일어나지 않는다."""
+    """버전과 수집 시각이 모두 같으면 재집계 및 작업 등록이 일어나지 않는다."""
     ann = _seed_announcement(isolated_db)
     expected_version = SUMMARY_ALGORITHM_VERSIONS[DATASET_ANNOUNCEMENT]
 
@@ -116,10 +129,15 @@ def test_summary_does_not_rebuild_when_version_and_collection_time_match(isolate
     isolated_db.add(existing_summary)
     isolated_db.commit()
 
-    with patch("src.app.services.dashboard.rebuild_bid_dataset_summary") as mock_rebuild:
+    with (
+        patch("src.app.services.dashboard.rebuild_bid_dataset_summary") as mock_rebuild,
+        patch("src.app.services.dashboard.enqueue_rebuild_dataset_summary") as mock_enqueue,
+    ):
         summary = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
         mock_rebuild.assert_not_called()
+        mock_enqueue.assert_not_called()
 
+    assert summary.is_stale is False
     assert summary.aggregation_version == expected_version
     assert summary.rebuilt_at == original_rebuilt_at
 
@@ -152,6 +170,16 @@ def test_existing_announcement_summary_with_default_version_is_stale(isolated_db
     isolated_db.add(legacy_summary)
     isolated_db.commit()
 
-    summary = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
-    assert summary.aggregation_version == 2
-    assert summary.total_amount == Decimal("1000000")
+    with (
+        patch("src.app.services.dashboard.rebuild_bid_dataset_summary") as mock_rebuild,
+        patch("src.app.services.dashboard.enqueue_rebuild_dataset_summary") as mock_enqueue,
+    ):
+        summary = get_bid_dataset_summary(isolated_db, DATASET_ANNOUNCEMENT)
+        mock_rebuild.assert_not_called()
+        assert mock_enqueue.call_count == 1
+        assert mock_enqueue.call_args.args[0] == DATASET_ANNOUNCEMENT
+
+    assert summary.is_stale is True
+    assert summary.aggregation_version == legacy_summary.aggregation_version
+    assert summary.total_amount == legacy_summary.total_amount
+    assert summary.total_count == legacy_summary.total_count

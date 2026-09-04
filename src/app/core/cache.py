@@ -98,6 +98,14 @@ class CacheLayer:
         self._conn = connection or RedisConnection(url, label="cache")
         self._local: dict[str, tuple[float, Any]] = {}
 
+    def client(self) -> Any:
+        """Redis 클라이언트를 돌려줍니다. 사용할 수 없으면 None 입니다.
+
+        분산 락처럼 캐시 get/set 으로 표현되지 않는 용도가 있어 공개합니다.
+        호출부가 `_conn` 을 직접 뒤지지 않게 하는 것이 목적입니다.
+        """
+        return self._conn.client()
+
     def get(self, key: str) -> Any:
         client = self._conn.client()
         if client is not None:

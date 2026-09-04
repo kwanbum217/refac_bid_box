@@ -105,6 +105,38 @@ def _enqueue_arq_job(task_name: str, arq_job_id: str = "", **kwargs: Any) -> boo
         return False
 
 
+def enqueue_arq_job_reporting_dedupe(
+    task_name: str, arq_job_id: str = "", **kwargs: Any
+) -> bool | None:
+    """작업을 등록하고 **새 작업이 실제로 만들어졌는지**를 돌려줍니다.
+
+    `_enqueue_arq_job` 은 등록 시도가 예외 없이 끝나면 항상 True 를 돌려줍니다.
+    그런데 arq 의 `enqueue_job` 은 같은 `_job_id` 의 작업 키나 결과 키가 남아 있으면
+    조용히 `None` 을 돌려줍니다(`arq/connections.py` 의 중복 검사). `keep_result`
+    동안 결과 키가 살아 있으므로, 고정 job_id 를 쓰면 완료된 작업 때문에 다음 등록이
+    거부되는데 호출부는 성공으로 읽습니다. 그 구분이 필요한 곳에서 이 함수를 씁니다.
+
+    True   새 작업이 큐에 들어갔습니다.
+    False  같은 job_id 가 이미 있어 arq 가 중복 등록을 거부했습니다.
+    None   등록 자체가 실패했습니다 (Redis 장애 등).
+    """
+    try:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+
+        async def _push() -> Any:
+            pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+            try:
+                return await pool.enqueue_job(task_name, _job_id=arq_job_id or None, **kwargs)
+            finally:
+                await pool.close()
+
+        return _run_arq_coroutine(_push) is not None
+    except Exception as exc:
+        logger.warning("Arq 작업 등록 실패 (%s): %s", task_name, exc)
+        return None
+
+
 def enqueue_pipeline_run(
     *,
     db: Session | None,

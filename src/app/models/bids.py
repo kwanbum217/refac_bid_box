@@ -390,6 +390,12 @@ class BidDatasetSummary(Base):
     __tablename__ = "bid_dataset_summaries"
     __table_args__ = (Index("bid_dataset_summaries_rebuilt_at_8d77f9db", "rebuilt_at"),)
 
+    # 조회 시점에 계산되는 신선도 표시입니다. 컬럼이 아니므로 저장되지 않습니다.
+    # 애노테이션을 붙이지 않는 것이 의도입니다. Mapped 가 아닌 애노테이션은
+    # 선언형 매핑이 컬럼으로 해석하려다 실패합니다. 기본값 False 를 클래스에 두어
+    # 재집계 경로를 거치지 않은 인스턴스도 이 속성을 안전하게 읽을 수 있습니다.
+    is_stale = False
+
     dataset: Mapped[str] = mapped_column(String(20), primary_key=True, comment="집계 대상")
     total_count: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=0, comment="전체 건수"
