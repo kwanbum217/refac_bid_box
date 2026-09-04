@@ -32,6 +32,8 @@ from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
 from src.tasks import scheduled_tasks, worker
 from src.tasks.scheduled_tasks import (
+    CATCHUP_LAST_ATTEMPT_KEY,
+    SCHEDULE_CATCHUP_COOLDOWN_KEY,
     SCHEDULE_COLLECTION_CLAIM_KEY,
     ScheduleClaimStatus,
     acquire_schedule_claim,
@@ -550,26 +552,32 @@ def test_cooldown_via_claim_roundtrip():
     now = datetime(2026, 9, 3, 15, 0, 0, tzinfo=UTC)
 
     with patch.object(scheduled_tasks, "utcnow", return_value=now):
-        # 1. 초기 상태: claim 없음 -> 쿨다운 아님
+        # 1. 초기 상태: cooldown 키 없음 -> 쿨다운 아님
         in_cd, attempt = is_catchup_in_cooldown(conn=fake_conn)
         assert in_cd is False
         assert attempt is None
 
-        # 2. claim 시도 및 성공
-        claim = record_catchup_attempt(now, conn=fake_conn)
-        assert claim.status == ScheduleClaimStatus.ACQUIRED
+        # 2. catch-up 시도 기록 및 성공
+        recorded = record_catchup_attempt(now, conn=fake_conn)
+        assert recorded is True
 
-        # 3. 쿨다운 확인: claim 존재 -> 쿨다운 상태
+        # 3. 쿨다운 확인: cooldown 키 존재 -> 쿨다운 상태
         in_cd, attempt = is_catchup_in_cooldown(conn=fake_conn)
         assert in_cd is True
         assert attempt == now.isoformat()
 
-        # 4. 해제 시 정상적으로 쿨다운 해제됨
+        # 4. claim 획득 및 해제 시에도 쿨다운 키는 보존됨 (claim 해제가 쿨다운을 지우지 않음)
+        claim = acquire_schedule_claim("test_runner", conn=fake_conn)
+        assert claim.acquired is True
         assert claim.token is not None
         released = release_schedule_claim(token=claim.token, conn=fake_conn)
         assert released is True
+
+        # claim 키는 삭제되었지만 쿨다운 키는 온전히 유지됨
+        assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is None
         in_cd, attempt = is_catchup_in_cooldown(conn=fake_conn)
-        assert in_cd is False
+        assert in_cd is True
+        assert attempt == now.isoformat()
 
 
 def test_release_schedule_claim_atomic_ownership():
@@ -584,18 +592,15 @@ def test_release_schedule_claim_atomic_ownership():
 
     # 2. 토큰 없이 해제 시도 -> 실패 및 키 유지
     assert release_schedule_claim(token=None, conn=fake_conn) is False
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is True
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is not None
 
     # 3. 잘못된 토큰으로 해제 시도 -> 실패 및 키 유지
     assert release_schedule_claim(token="wrong_token_hex", conn=fake_conn) is False
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is True
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is not None
 
     # 4. 올바른 토큰으로 해제 시도 -> 성공 및 키 삭제
     assert release_schedule_claim(token=claim.token, conn=fake_conn) is True
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is False
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is None
 
     # 5. 이미 삭제된 키에 대해 재해제 시도 -> False
     assert release_schedule_claim(token=claim.token, conn=fake_conn) is False
@@ -626,8 +631,7 @@ def test_stale_owner_cannot_release_subsequent_claim():
     assert released_a is False
 
     # 4. 실행 B 의 claim 이 삭제되지 않고 온전히 보존되어 있음을 확인
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is True
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is not None
     raw_data = fake_client.get(SCHEDULE_COLLECTION_CLAIM_KEY)
     import json
 
@@ -638,8 +642,7 @@ def test_stale_owner_cannot_release_subsequent_claim():
     # 5. 오직 실행 B 만이 자기 토큰으로 해제 가능
     released_b = release_schedule_claim(token=token_b, conn=fake_conn)
     assert released_b is True
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is False
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is None
 
 
 @pytest.mark.asyncio
@@ -664,9 +667,8 @@ async def test_nightly_retains_claim_on_pipeline_failure_dict(isolated_db, monke
     assert result["status"] == "failed"
     assert result["error"] == "External API timeout"
 
-    # 2. claim 이 해제되지 않고 쿨다운이 유지되는지 확인
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is True
+    # 2. claim 이 해제되지 않고 유지되는지 확인
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is not None
 
     # 3. 직후 재실행 시 already_claimed 로 실행 차단됨을 확인
     second_result = await nightly_schedule_task({})
@@ -696,8 +698,7 @@ async def test_development_refresh_retains_claim_on_pipeline_failure_dict(isolat
         result = await development_data_refresh_task({})
 
     assert result["status"] == "failed"
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is True
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is not None
 
     # 후속 재실행 차단
     second_result = await development_data_refresh_task({})
@@ -734,8 +735,7 @@ async def test_nightly_retains_claim_on_partial_failure(isolated_db, monkeypatch
     assert "institution_stats" in result["failed_followups"]
 
     # claim 이 해제되지 않고 유지됨
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is True
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is not None
 
     # 후속 실행 시 already_claimed 로 차단
     second_result = await nightly_schedule_task({})
@@ -766,9 +766,8 @@ async def test_nightly_releases_claim_on_success(isolated_db, monkeypatch):
         result = await nightly_schedule_task({})
 
     assert result["status"] == "success"
-    # claim 이 정상 해제되어 쿨다운이 아님
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is False
+    # claim 이 정상 해제되어 빈 상태임
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is None
 
 
 @pytest.mark.asyncio
@@ -795,5 +794,69 @@ async def test_development_refresh_releases_claim_on_success(isolated_db, monkey
         result = await development_data_refresh_task({})
 
     assert result["status"] == "success"
-    in_cd, _ = is_catchup_in_cooldown(conn=fake_conn)
-    assert in_cd is False
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is None
+
+
+def test_claim_key_and_cooldown_key_are_distinct():
+    """claim 키(lease)와 catch-up 쿨다운 키가 서로 다른 Redis 키임을 검증합니다."""
+    assert SCHEDULE_COLLECTION_CLAIM_KEY != SCHEDULE_CATCHUP_COOLDOWN_KEY
+    assert SCHEDULE_COLLECTION_CLAIM_KEY == "bidbox:schedule:collection_claim"
+    assert SCHEDULE_CATCHUP_COOLDOWN_KEY == "bidbox:schedule:catchup_cooldown"
+    assert CATCHUP_LAST_ATTEMPT_KEY == SCHEDULE_CATCHUP_COOLDOWN_KEY
+
+
+@pytest.mark.asyncio
+async def test_catchup_records_cooldown_on_both_success_and_failure(isolated_db, monkeypatch):
+    """기동 시 catch-up 완료 시 성공/실패와 무관하게 쿨다운 키가 기록되고, 성공 시에도 claim 만 해제되고 쿨다운 키는 보존됨을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+
+    now = datetime(2026, 9, 3, 12, 0, 0, tzinfo=UTC)
+    old_collected = now - timedelta(hours=48)
+
+    # 1. 성공 경로: catch-up 실행 후 쿨다운 키 기록, claim 키는 해제됨
+    mock_pipeline = AsyncMock(return_value={"status": "success", "completed_steps": ["collect"]})
+    with (
+        patch.object(scheduled_tasks, "utcnow", return_value=now),
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=old_collected),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_pipeline),
+        patch.object(
+            scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}
+        ),
+    ):
+        isolated_db.close = lambda: None
+        outcome = await run_schedule_catchup_task({})
+
+    assert outcome["status"] == "success"
+    # 쿨다운 키가 기록되었음을 확인
+    in_cd, last_attempt = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is True
+    assert last_attempt == now.isoformat()
+    # claim 키는 해제되어 비어있음
+    assert fake_conn.client().get(SCHEDULE_COLLECTION_CLAIM_KEY) is None
+
+    # 2. 실패 경로: catch-up 실행 실패 시에도 쿨다운 키가 기록됨
+    fake_conn.client().delete(SCHEDULE_CATCHUP_COOLDOWN_KEY)
+    fail_now = now + timedelta(hours=7)
+
+    mock_fail_pipeline = AsyncMock(side_effect=RuntimeError("G2B 통신 장애"))
+    with (
+        patch.object(scheduled_tasks, "utcnow", return_value=fail_now),
+        patch.object(scheduled_tasks, "SessionLocal", lambda: isolated_db),
+        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=old_collected),
+        patch.object(scheduled_tasks, "run_automation_pipeline", mock_fail_pipeline),
+    ):
+        fail_outcome = await run_schedule_catchup_task({})
+
+    assert fail_outcome["status"] == "failed"
+    in_cd, last_attempt = is_catchup_in_cooldown(conn=fake_conn)
+    assert in_cd is True
+    assert last_attempt == fail_now.isoformat()
