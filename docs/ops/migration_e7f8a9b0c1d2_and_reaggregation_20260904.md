@@ -29,9 +29,14 @@
 | 낙찰 1건당 평균 낙찰금액 | 856조 / 3,427,814 = 약 2.50억 |
 | 2026-06-07 스냅샷 기준 낙찰 1건당 평균 | 713.16조 / 2,995,004 = 약 2.38억 |
 
-낙찰 건당 평균이 과거 스냅샷과 같은 자리수·같은 추세이므로 집계가 어긋나지
-않았습니다. 공고 기초금액이 낙찰금액보다 큰 것은 기초금액이 예산 상한이고 모든
-공고에 낙찰 결과가 있는 것도 아니므로 정합합니다.
+낙찰 건당 평균이 과거 스냅샷과 같은 자리수·같은 추세입니다. 공고 기초금액이
+낙찰금액보다 큰 것은 기초금액이 예산 상한이고 모든 공고에 낙찰 결과가 있는 것도
+아니므로 정합합니다.
+
+**이 교차 확인의 한계를 분명히 적습니다.** 공고와 낙찰은 서로 다른 모집단이므로
+이 대조는 자리수 오류나 단위 오류를 잡는 sanity check 이고, 공고 총액의 정확성을
+독립적으로 입증하지는 않습니다. 총액을 독립 검증하려면 같은 산식을 다른 경로로
+계산해 대조해야 하며, 그 경로는 `base_amount` 컬럼 기반 집계 전환 이후에 생깁니다.
 
 ---
 
@@ -43,7 +48,7 @@
 | --- | --- | --- |
 | 1 | 원본 DB 식별 | 볼륨 3개 중 `refac_bid_box_mysql_data` 만 40.5G. 나머지는 4.0K 와 151.4M |
 | 2 | 적용 전 무손실 확인 | `bid_announcements` 5,497,840 / `bid_results` 3,427,814. 인수인계 기록과 일치 |
-| 3 | 백업 체크포인트 | `data/backups/migration_e7f8a9b0c1d2_20260904/` |
+| 3 | 백업 체크포인트 | 저장소 밖 `~/refac_bid_box_backups/migration_e7f8a9b0c1d2_20260904/` (권한 700) |
 | 4 | `alembic upgrade head` | `d4e5f6a7b8c9` -> `e7f8a9b0c1d2` |
 | 5 | 스키마 확인 | `aggregation_version int NOT NULL DEFAULT 1` |
 | 6 | 적용 후 무손실 확인 | 원본 행 수 변화 없음 |
@@ -62,9 +67,32 @@
 | 백업 항목 | 목적 |
 | --- | --- |
 | `bid_dataset_summaries.sql` (`mysqldump --single-transaction`) | 요약 테이블 완전 복원 |
-| `rowcounts.json` | 원본 테이블 무손실 대조 기준선 |
+| `evidence.json` | 적용 전후 리비전, 핵심 행 수와 기준선 대조, 요약 컬럼 정의, 두 요약 행 전량 |
 | `alembic_before.txt` (`d4e5f6a7b8c9`) | 리비전 되돌리기 기준 |
-| `checksum.txt` (SHA256) | 덤프 무결성 |
+| `dump.err` 와 `dump_err_classification.md` | 덤프 stderr 원문과 그 분류 |
+| `manifest.json` 과 `manifest.sha256` | 위 전부의 path·size·SHA256. `shasum -a 256 -c manifest.sha256` 로 검증 |
+
+**검증 명령과 결과입니다.**
+
+```
+cd ~/refac_bid_box_backups/migration_e7f8a9b0c1d2_20260904
+shasum -a 256 -c manifest.sha256
+  alembic_before.txt: OK
+  bid_dataset_summaries.sql: OK
+  dump.err: OK
+  dump_err_classification.md: OK
+  evidence.json: OK
+```
+
+`dump.err` 85바이트는 `mysqldump: [Warning] Using a password on the command line
+interface can be insecure.` 한 줄이며 **허용 경고**입니다. 덤프는 종료 코드 0 이었고
+stderr 에 다른 줄이 없습니다. 분류 근거는 같은 디렉터리의
+`dump_err_classification.md` 에 있습니다.
+
+백업은 **저장소 밖**(`~/refac_bid_box_backups/`, 권한 700)에 둡니다. 이전에는
+`data/backups/` 아래에 두었는데 `.gitignore` 의 `data/backups/*.sql` 패턴이 한 단계
+아래 경로를 덮지 않아 추적 대상으로 잡혔습니다. 패턴도 함께 고쳤지만, DB 덤프를
+작업 트리 안에 두지 않는 편이 낫습니다.
 
 마이그레이션 자체가 `add_column` 과 `drop_column` 짝을 가진 가역 변경이라는 것도
 근거입니다.
@@ -81,8 +109,10 @@
 ## 3. 실측 소요와 인수인계 수치의 차이
 
 인수인계는 **477초**, 이번 실측은 **554.0초** 입니다. 컨테이너를 방금 올린 콜드
-버퍼풀(`MYSQL_BUFFER_POOL_SIZE` 기본 2GB) 상태였습니다. 같은 조건이 아니므로 성능
-회귀로 읽지 마십시오. 이 저장소는 이미 콜드 SQL 수치를 게이트로 쓰지 않기로
+버퍼풀(`MYSQL_BUFFER_POOL_SIZE` 기본 2GB) 상태였다는 것이 **가장 개연성 있는 가설**
+입니다. 다만 버퍼풀 상태를 직접 계측하지 않았고 동일 조건 대조 실측도 없으므로
+**원인 확정값으로 쓰지 마십시오.** 같은 조건이 아니므로 성능 회귀로 읽는 것도
+틀립니다. 이 저장소는 이미 콜드 SQL 수치를 게이트로 쓰지 않기로
 판정한 이력이 있습니다.
 
 **두 수치 모두 요청 경로에 두기에는 너무 깁니다.** 근본 원인은
