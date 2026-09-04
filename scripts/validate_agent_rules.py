@@ -700,7 +700,16 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
     if behind > CURRENT_STATE_LAG_TOLERANCE:
         # 경고로 두면 아무도 고치지 않습니다. 2026-08-19 측정에서 6 커밋 뒤처진
         # 상태로 WARN 만 내고 exit 0 이었습니다. 정본이 실제 상태를 놓치기
-        # 시작하는 지점이므로 실패로 막습니다.
+        # 시작하는 지점이므로 기본 브랜치에서는 실패로 막습니다.
+        if not _enforces_source_commit_freshness(root):
+            return CheckResult(
+                name,
+                True,
+                f"필수 필드 완비. source_commit {recorded} 이 HEAD 보다 {behind} 커밋 "
+                f"뒤처졌으나 작업 브랜치이므로 경고입니다 "
+                f"(허용 {CURRENT_STATE_LAG_TOLERANCE}). 기본 브랜치 병합 커밋에서 갱신하십시오",
+                warn=True,
+            )
         return CheckResult(
             name,
             False,
@@ -712,6 +721,49 @@ def check_current_state_sections(root: Path = PROJECT_ROOT) -> CheckResult:
         True,
         f"필수 필드 완비. source_commit {recorded} 은 HEAD 대비 {behind} 커밋 (허용 {CURRENT_STATE_LAG_TOLERANCE})",
     )
+
+
+DEFAULT_BRANCH_NAMES = ("main", "master")
+
+
+def _current_branch_name(root: Path) -> str | None:
+    """현재 브랜치 이름을 돌려줍니다. detached HEAD 나 판정 실패면 None 입니다."""
+    try:
+        out = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+            ["git", "-C", str(root), "symbolic-ref", "--quiet", "--short", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    name = out.stdout.strip()
+    return name or None
+
+
+def _enforces_source_commit_freshness(root: Path) -> bool:
+    """source_commit 신선도를 차단으로 강제할 자리인지 판정합니다.
+
+    정본 문서가 기술하는 대상은 `main` 의 상태입니다. 그런데 `main` 이 갱신 없이
+    허용 범위를 넘으면 **그 시점 이후 만든 모든 작업 브랜치가 자기 변경과 무관하게
+    같은 실패를 물려받습니다.** 전량 테스트에도 걸려 사전 병합 게이트가 막히므로
+    워커는 원인을 모른 채 정본 문서를 고쳐도 되는지 묻게 됩니다. 2026-09-04 에
+    이 왕복이 네 번 났습니다.
+
+    그래서 작업 브랜치에서는 경고로 낮추고 기본 브랜치에서만 차단합니다. 병합
+    커밋은 `main` 위에서 만들어지므로 **강제 시점은 병합 그 자리로 옮겨질 뿐
+    사라지지 않습니다.**
+
+    판정 불가는 강제 쪽으로 기웁니다. detached HEAD 로 체크아웃하는 CI 에서
+    게이트가 조용히 꺼지면 안 되기 때문입니다.
+    """
+    branch = _current_branch_name(root)
+    if branch is None:
+        return True
+    return branch in DEFAULT_BRANCH_NAMES
 
 
 def _can_verify_commit_history(root: Path) -> bool:

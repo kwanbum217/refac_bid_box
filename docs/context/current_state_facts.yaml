@@ -124,9 +124,9 @@ facts:
       - docs/analysis/coldsql_metric_demotion_20260901.md
   - id: source_commit_protocol
     status: closed
-    decision_date: "2026-09-03"
-    claim: "source_commit은 푸시 전에 갱신하고 현재 브랜치 기준 신선도 검사를 통과시킵니다."
-    document_anchor: "source_commit은 푸시 전에 갱신"
+    decision_date: "2026-09-04"
+    claim: "source_commit은 기본 브랜치 병합 커밋에서 함께 갱신하고 작업 브랜치에서는 경고로 낮추는 규약으로 통과 기준을 유지합니다."
+    document_anchor: "source_commit은 기본 브랜치 병합 커밋에서 함께 갱신"
     evidence:
       - scripts/validate_agent_rules.py
     related_documents:
