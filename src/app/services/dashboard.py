@@ -39,11 +39,11 @@ AMOUNT_NUMERIC = Numeric(30, 0)
 MAX_REASONABLE_ANNOUNCEMENT_AMOUNT = 100_000_000_000_000
 
 # 데이터셋별 집계 알고리즘 기대 버전.
-# announcement 는 이상치 상한(100조) 적용 및 DECIMAL 누적으로 2로 상향되었습니다.
+# announcement 는 base_amount 컬럼 기반 집계 전환으로 3으로 상향되었습니다.
 # result 는 기존 알고리즘을 유지하므로 1입니다.
 # DB 에 저장된 버전이 기대 버전과 다르면 stale 로 판정해 재집계합니다.
 SUMMARY_ALGORITHM_VERSIONS: dict[str, int] = {
-    DATASET_ANNOUNCEMENT: 2,
+    DATASET_ANNOUNCEMENT: 3,
     DATASET_RESULT: 1,
 }
 
@@ -198,31 +198,21 @@ def _json_text(db: Session, column, key: str):
     return func.json_extract(column, f"$.{key}")
 
 
-def _announcement_amount_expr(db: Session):
+def _announcement_amount_expr(db: Session | None = None):
     """집계용 기초금액 표현식.
 
-    파이썬 경로(`models.bids._coerce_amount`)와 같은 규칙으로 읽습니다. 콤마 제거를
-    여기서만 빠뜨리면 같은 공고를 상세 화면과 집계가 다른 금액으로 봅니다.
+    base_amount 컬럼 기반으로 집계합니다. 수집 파서가 이미 raw_data 의
+    기초금액(asignBdgtAmt, bdgtAmt)을 Decimal 기반으로 정제하여 base_amount
+    컬럼에 적재하므로, 질의 시점의 반복적인 json_extract 와 형변환을 제거합니다.
 
-    누적은 BIGINT 가 아니라 DECIMAL 로 합니다. `bid_dataset_summaries.total_amount`
-    는 decimal(30,0) 이라 자릿수가 충분한데도 -6,063,896,128,872,295,352 이 저장돼
-    있었습니다. 행마다 BIGINT 로 캐스팅한 뒤 SUM 해서, 컬럼에 담기기 전에 이미
-    범위를 넘겨 wrap 된 값이었습니다.
+    누적은 BIGINT 가 아니라 DECIMAL(AMOUNT_NUMERIC)로 유지합니다.
+    MAX_REASONABLE_ANNOUNCEMENT_AMOUNT(100조)를 초과하는 이상치는
+    집계에서 제외(None 처리)합니다. 포화 2건(9223372036854775807)도
+    상한을 넘으므로 집계에서 안전하게 배제됩니다.
+    근거는 docs/ops/announcement_amount_outliers_20260904.md 및
+    docs/analysis/base_amount_column_mismatch_343_20260904.md.
     """
-    raw_text = func.coalesce(
-        func.nullif(_json_text(db, BidAnnouncement.raw_data, "asignBdgtAmt"), literal("")),
-        func.nullif(_json_text(db, BidAnnouncement.raw_data, "bdgtAmt"), literal("")),
-    )
-    raw_amount = func.cast(func.replace(raw_text, literal(","), literal("")), AMOUNT_NUMERIC)
-    resolved = case(
-        (
-            BidAnnouncement.raw_data.is_(None),
-            func.cast(BidAnnouncement.base_amount, AMOUNT_NUMERIC),
-        ),
-        else_=raw_amount,
-    )
-    # 상한을 넘는 값은 조달청 원본이 깨진 것이므로 집계에서만 제외합니다. raw_data 는
-    # G1 원칙대로 그대로 둡니다. 근거는 docs/ops/announcement_amount_outliers_20260904.md.
+    resolved = func.cast(BidAnnouncement.base_amount, AMOUNT_NUMERIC)
     return case((resolved > literal(MAX_REASONABLE_ANNOUNCEMENT_AMOUNT), None), else_=resolved)
 
 

@@ -31,7 +31,12 @@ from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_pass
 from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
-from src.app.models.bids import BidAnnouncement, BidDatasetSummary, BidResult
+from src.app.models.bids import (
+    BidAnnouncement,
+    BidDatasetSummary,
+    BidResult,
+    extract_business_budget,
+)
 from src.app.services.dashboard import _compare_stats_cache_key, _dashboard_stats_cache_key
 
 STATS_URL = "/api/v1/bids/stats"
@@ -390,17 +395,18 @@ def test_compare_stats_keeps_largest_realistic_amount(auth_client, isolated_db):
 
 
 def test_compare_stats_reads_comma_separated_amount(auth_client, isolated_db):
-    """콤마가 섞인 금액을 파이썬 경로와 같게 읽는다.
+    """콤마가 섞인 금액을 파이썬 경로와 같게 읽어 적재하고 집계한다.
 
-    `models.bids._coerce_amount` 는 콤마를 지우는데 집계 SQL 만 빠뜨리면, 같은
-    공고를 상세 화면과 대시보드가 다른 금액으로 보게 됩니다.
+    `models.bids._coerce_amount` 는 콤마를 지우고 base_amount 에 적재하며,
+    대시보드는 base_amount 컬럼 기반으로 동일한 금액을 집계합니다.
     """
+    raw_data = {"asignBdgtAmt": "1,234,567"}
     _add_announcement(
         isolated_db,
         bid_ntce_no="ANN-COMMA",
         bid_ntce_nm="콤마 표기 공고",
-        base_amount=None,
-        raw_data={"asignBdgtAmt": "1,234,567"},
+        base_amount=extract_business_budget(raw_data),
+        raw_data=raw_data,
     )
 
     payload = auth_client.get(COMPARE_URL).json()
@@ -497,3 +503,110 @@ def test_compare_stats_cache_key_includes_aggregation_versions():
     assert "v1" in key_v1
     assert "v2" in key_v2
     assert key_v1 != key_v2
+
+
+def test_announcement_amount_column_parity_with_legacy_json_path(isolated_db):
+    """옛 JSON 파싱 집계 경로와 새 base_amount 컬럼 기반 집계 경로의 산출값 동일성 대조.
+
+    343건 불일치 분석(docs/analysis/base_amount_column_mismatch_343_20260904.md)의 세 가지 형태:
+    1. raw 금액 '0.0', 컬럼 NULL (234건 형태): SUM 에서 NULL 무시 및 0 기여로 결과 동일
+    2. raw 금액 소수점 표기, 컬럼 정수 절단 (107건 형태): 소수점 표기 데이터의 정수 절단 적재로 결과 동일
+    3. 100조 초과 이상치 / BIGINT 포화 (2건 형태 + 31건 이상치): 양쪽 경로 모두 상한 초과로 제외(NULL)
+    """
+    from sqlalchemy import case, func, literal, select
+
+    from src.app.services.dashboard import (
+        AMOUNT_NUMERIC,
+        MAX_REASONABLE_ANNOUNCEMENT_AMOUNT,
+        _announcement_amount_expr,
+        _dialect_name,
+    )
+
+    def _legacy_json_text(db, column, key: str):
+        if _dialect_name(db) == "mysql":
+            return func.json_unquote(func.json_extract(column, f"$.{key}"))
+        return func.json_extract(column, f"$.{key}")
+
+    def _legacy_announcement_amount_expr(db):
+        raw_text = func.coalesce(
+            func.nullif(
+                _legacy_json_text(db, BidAnnouncement.raw_data, "asignBdgtAmt"), literal("")
+            ),
+            func.nullif(_legacy_json_text(db, BidAnnouncement.raw_data, "bdgtAmt"), literal("")),
+        )
+        raw_amount = func.cast(func.replace(raw_text, literal(","), literal("")), AMOUNT_NUMERIC)
+        resolved = case(
+            (
+                BidAnnouncement.raw_data.is_(None),
+                func.cast(BidAnnouncement.base_amount, AMOUNT_NUMERIC),
+            ),
+            else_=raw_amount,
+        )
+        return case((resolved > literal(MAX_REASONABLE_ANNOUNCEMENT_AMOUNT), None), else_=resolved)
+
+    # 1. 일반 정상 공고 (정상 값 기여)
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="PARITY-NORMAL",
+        base_amount=1500000,
+        raw_data={"asignBdgtAmt": "1500000"},
+    )
+
+    # 2. 형태 1 (234건 유형): raw 금액 '0.0', 컬럼 base_amount 는 NULL
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="PARITY-FORM-1",
+        base_amount=None,
+        raw_data={"asignBdgtAmt": "0.0"},
+    )
+
+    # 3. 형태 2 (107건 유형): raw 금액 소수점 표기('158420.00'), 컬럼 base_amount 는 정수 절단 158420
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="PARITY-FORM-2",
+        base_amount=158420,
+        raw_data={"asignBdgtAmt": "158420.00"},
+    )
+
+    # 4. 형태 3 (포화 2건 유형): 20자리 포화 건 (raw 12240000012240000011, 컬럼 9223372036854775807)
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="PARITY-FORM-3-SAT",
+        base_amount=9223372036854775807,
+        raw_data={"bdgtAmt": "12240000012240000011"},
+    )
+
+    # 5. 형태 3 추가 (자릿수 반복 이상치 유형): 137150000137150000 (100조 초과)
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="PARITY-FORM-3-REPEAT",
+        base_amount=137150000137150000,
+        raw_data={"asignBdgtAmt": "137150000137150000"},
+    )
+
+    legacy_sum = isolated_db.scalar(select(func.sum(_legacy_announcement_amount_expr(isolated_db))))
+    new_sum = isolated_db.scalar(select(func.sum(_announcement_amount_expr(isolated_db))))
+
+    # 세 가지 형태가 포함된 픽스처에서 두 경로의 전체 SUM 집계 결과가 완전히 일치해야 함
+    assert legacy_sum is not None
+    assert new_sum is not None
+    assert legacy_sum == new_sum
+
+    # 정상 공고(1,500,000) + 절단 공고(158,420) = 1,658,420 (형태 1은 0, 형태 3은 상한 초과 제외)
+    expected_sum = 1500000 + 158420
+    assert int(new_sum) == expected_sum
+
+    # 추가 검증: 과거 107건 실측 예시(raw '3469575370.8' vs 컬럼 3469575370)처럼
+    # 소수부 .8 로 인해 SQL CAST 반올림과 컬럼 절단 간 1원 차이가 발생하는 케이스에서도
+    # 차이가 정확히 1원(건당 1원 이하, 총액 대비 5e-17) 이내임을 확인
+    _add_announcement(
+        isolated_db,
+        bid_ntce_no="PARITY-FORM-2-FRACTION",
+        base_amount=3469575370,
+        raw_data={"asignBdgtAmt": "3469575370.8"},
+    )
+    legacy_sum_fraction = isolated_db.scalar(
+        select(func.sum(_legacy_announcement_amount_expr(isolated_db)))
+    )
+    new_sum_fraction = isolated_db.scalar(select(func.sum(_announcement_amount_expr(isolated_db))))
+    assert abs(legacy_sum_fraction - new_sum_fraction) <= 1

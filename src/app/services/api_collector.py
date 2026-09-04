@@ -68,6 +68,10 @@ BID_CATEGORIES: dict[str, dict[str, str]] = {
 MAX_CONCURRENT = int(os.getenv("G2B_MAX_CONCURRENT", "16"))
 RANGE_DAYS = 15
 
+# DB BigInteger(signed 64-bit int) 범위 (-2^63 ~ 2^63 - 1)
+BIGINT_MIN = -9_223_372_036_854_775_808
+BIGINT_MAX = 9_223_372_036_854_775_807
+
 
 def get_service_key() -> str:
     """G2B 서비스 키. 값은 .env 에서만 읽고 코드/로그에 노출하지 않습니다."""
@@ -252,12 +256,22 @@ async def _fetch_paged(
 
 def _map_result_item(category: str):
     def _mapper(item: ET.Element, raw_data: dict[str, str]) -> dict[str, Any]:
+        bid_ntce_no = _get_text(item, "bidNtceNo", "")
+        sucsf_bid_amt = _parse_amount(_get_text(item, "sucsfbidAmt"))
+        if sucsf_bid_amt is not None and not (BIGINT_MIN <= sucsf_bid_amt <= BIGINT_MAX):
+            logger.warning(
+                "낙찰 금액이 BIGINT 범위를 초과하여 NULL 로 저장합니다: bid_ntce_no=%s, sucsf_bid_amt=%s",
+                bid_ntce_no,
+                sucsf_bid_amt,
+            )
+            sucsf_bid_amt = None
+
         return {
             "bid_ntce_nm": _get_text(item, "bidNtceNm"),
-            "bid_ntce_no": _get_text(item, "bidNtceNo", ""),
+            "bid_ntce_no": bid_ntce_no,
             "bid_ntce_ord": _get_text(item, "bidNtceOrd", "00"),
             "bidwinnr_nm": _get_text(item, "bidwinnrNm"),
-            "sucsf_bid_amt": _parse_amount(_get_text(item, "sucsfbidAmt")),
+            "sucsf_bid_amt": sucsf_bid_amt,
             "sucsf_bid_rate": _parse_rate(_get_text(item, "sucsfbidRate")),
             "rl_openg_dt": _parse_datetime(_get_text(item, "rlOpengDt")),
             "dminstt_nm": _get_text(item, "dminsttNm"),
@@ -270,14 +284,33 @@ def _map_result_item(category: str):
 
 def _map_announcement_item(category: str):
     def _mapper(item: ET.Element, raw_data: dict[str, str]) -> dict[str, Any]:
+        bid_ntce_no = _get_text(item, "bidNtceNo", "")
+        base_amount = extract_business_budget(raw_data)
+        if base_amount is not None and not (BIGINT_MIN <= base_amount <= BIGINT_MAX):
+            logger.warning(
+                "공고 기초금액이 BIGINT 범위를 초과하여 NULL 로 저장합니다: bid_ntce_no=%s, base_amount=%s",
+                bid_ntce_no,
+                base_amount,
+            )
+            base_amount = None
+
+        presmpt_prce = _parse_amount(_get_text(item, "presmptPrce"))
+        if presmpt_prce is not None and not (BIGINT_MIN <= presmpt_prce <= BIGINT_MAX):
+            logger.warning(
+                "공고 추정가격이 BIGINT 범위를 초과하여 NULL 로 저장합니다: bid_ntce_no=%s, presmpt_prce=%s",
+                bid_ntce_no,
+                presmpt_prce,
+            )
+            presmpt_prce = None
+
         return {
             "bid_ntce_nm": _get_text(item, "bidNtceNm"),
-            "bid_ntce_no": _get_text(item, "bidNtceNo", ""),
+            "bid_ntce_no": bid_ntce_no,
             "bid_ntce_ord": _get_text(item, "bidNtceOrd", "000"),
             "ntce_instt_nm": _get_text(item, "ntceInsttNm"),
             "dminstt_nm": _get_text(item, "dminsttNm"),
-            "base_amount": extract_business_budget(raw_data),
-            "presmpt_prce": _parse_amount(_get_text(item, "presmptPrce")),
+            "base_amount": base_amount,
+            "presmpt_prce": presmpt_prce,
             "bid_ntce_dt": _parse_datetime(_get_text(item, "bidNtceDt")),
             "bid_clse_dt": _parse_datetime(_get_text(item, "bidClseDt")),
             "openg_dt": _parse_datetime(_get_text(item, "opengDt")),
