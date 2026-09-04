@@ -69,6 +69,35 @@ def load_npm_allowlist_pairs(allowlist_path: Path) -> set[tuple[str, str]]:
     return allowed
 
 
+def validate_npm_audit_contract(audit_data: Any) -> str | None:
+    """npm audit JSON 입력 계약을 검증합니다. 위반 시 오류 사유를 반환하고 유효하면 None을 반환합니다."""
+    if not isinstance(audit_data, dict):
+        return f"top-level JSON must be an object (got {type(audit_data).__name__})"
+
+    if "error" in audit_data and audit_data["error"] is not None:
+        return f"scanner error reported: {audit_data['error']}"
+
+    if "auditReportVersion" not in audit_data or audit_data["auditReportVersion"] is None:
+        return "missing required 'auditReportVersion' field"
+
+    if "vulnerabilities" not in audit_data or not isinstance(audit_data["vulnerabilities"], dict):
+        return "missing or invalid 'vulnerabilities' mapping"
+
+    if "metadata" not in audit_data or not isinstance(audit_data.get("metadata"), dict):
+        return "missing or invalid 'metadata' mapping"
+
+    meta_vulns = audit_data["metadata"].get("vulnerabilities")
+    if not isinstance(meta_vulns, dict):
+        return "missing or invalid 'metadata.vulnerabilities' mapping"
+
+    meta_high = meta_vulns.get("high")
+    meta_critical = meta_vulns.get("critical")
+    if not isinstance(meta_high, int) or not isinstance(meta_critical, int):
+        return "metadata.vulnerabilities 'high' and 'critical' counts must be integers"
+
+    return None
+
+
 def parse_npm_vulnerabilities(audit_data: dict[str, Any]) -> list[tuple[str, str, str]]:
     """npm audit JSON에서 HIGH 및 CRITICAL 취약점을 (package, advisory_id, severity)로 추출합니다."""
     vulnerabilities: list[tuple[str, str, str]] = []
@@ -98,10 +127,23 @@ def parse_npm_vulnerabilities(audit_data: dict[str, Any]) -> list[tuple[str, str
                             (pkg_name, f"UNKNOWN-{item.get('source', 'adv')}", item_sev.upper())
                         )
         else:
-            # 전이 의존성 링크만 있거나(via에 문자열만 있음) 비어 있는 경우
-            # via에 문자열(원인 패키지 이름)이 있다면 해당 원인 패키지가 vulnerabilities에 별도 존재하여 검사됨.
-            # via가 완전히 비어있다면 원인을 특정할 수 없으므로 fail-closed로 등록.
-            if not via_list:
+            # dict 항목이 없는 경우: 문자열 via(전이 의존성 링크) 또는 빈 via 목록
+            str_entries = [v for v in via_list if isinstance(v, str) and v.strip()]
+            if str_entries:
+                # via에 명시된 원인 패키지가 vulnerabilities 맵에 실제 advisory(dict)를 가지고 존재하는지 확인
+                has_resolved_cause = False
+                for cause_pkg in str_entries:
+                    cause_info = vuln_map.get(cause_pkg)
+                    if isinstance(cause_info, dict):
+                        cause_via = cause_info.get("via") or []
+                        if any(isinstance(v, dict) for v in cause_via):
+                            has_resolved_cause = True
+                            break
+                if not has_resolved_cause:
+                    # 원인 패키지가 vulnerabilities에 없거나 advisory를 갖지 못해 해소되지 않은 경우 fail-closed
+                    vulnerabilities.append((pkg_name, "UNKNOWN", overall_sev.upper()))
+            else:
+                # via가 완전히 비어있거나 유효한 문자열/딕셔너리가 없는 경우 fail-closed
                 vulnerabilities.append((pkg_name, "UNKNOWN", overall_sev.upper()))
 
     return vulnerabilities
@@ -136,6 +178,11 @@ def run_npm_filter(
         err_stream.write(f"Failed to parse npm audit result JSON: {exc}\n")
         return 1
 
+    contract_error = validate_npm_audit_contract(audit_data)
+    if contract_error:
+        err_stream.write(f"npm audit input contract violation: {contract_error}\n")
+        return 1
+
     try:
         allowed_pairs = load_npm_allowlist_pairs(allowlist_path)
     except Exception as exc:
@@ -143,6 +190,18 @@ def run_npm_filter(
         return 1
 
     all_vulns = parse_npm_vulnerabilities(audit_data)
+
+    # metadata의 high + critical 합계와 파싱된 결과 개수 정합성 검증
+    meta_vulns = audit_data["metadata"]["vulnerabilities"]
+    expected_count = meta_vulns["high"] + meta_vulns["critical"]
+    parsed_count = len(all_vulns)
+    if parsed_count != expected_count:
+        err_stream.write(
+            f"npm audit input contract violation: metadata count mismatch "
+            f"(expected high+critical={expected_count}, parsed={parsed_count})\n"
+        )
+        return 1
+
     remaining = filter_npm_vulnerabilities(all_vulns, allowed_pairs)
 
     if remaining:

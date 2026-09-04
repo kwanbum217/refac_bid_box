@@ -1,6 +1,6 @@
 # 공급망 스캔 정책
 
-> **버전**: 1.1.0
+> **버전**: 1.2.0
 > **최종 갱신**: 2026-09-04
 > **소유**: 플랫폼 팀
 
@@ -96,11 +96,12 @@ SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@v0.24.2` 가
 |---|---|---|
 | 2026-09-03 | 1.0.0 | 최초 도입. pip-audit/npm audit/Trivy 의 `|| true`/`exit-code 0` 제거 및 예외 목록 체계 신설 |
 | 2026-09-04 | 1.1.0 | 스캐너 스텝 exit-code 0 허용 예외 명시 (후속 단독 게이트 및 fail-closed 조건부) 및 스캐너/판정자 분리 규정 반영 |
+| 2026-09-04 | 1.2.0 | 판정 스크립트 입력 계약 검증 도입 (오류 객체, 빈 객체, 오타입 차단, Results 부재 vs 0건 구분, npm metadata 개수 검증, 미해소 전이 의존성 차단) |
 
 
-## 예외 목록 계약의 기계 강제
+## 8. 예외 목록 계약의 기계 강제
 
-사유와 만료를 문서로만 요구하면 지켜지지 않습니다. `scripts/check_vulnerability_allowlist.py`
+사유와 만료를 문서로만 요구하면 지켜지지 않습니다. [scripts/check_vulnerability_allowlist.py](../../scripts/check_vulnerability_allowlist.py)
 가 CI 의 스캔 단계보다 먼저 돌아 다음을 거부합니다.
 
 | 거부 조건 | 이유 |
@@ -110,3 +111,20 @@ SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@v0.24.2` 가
 | `expires_on` 이 오늘보다 이전 | 만료된 예외가 조용히 계속 억제되는 것을 막습니다 |
 
 만료일 당일까지는 유효합니다. 경계에서 갑자기 CI 가 붉어지지 않게 하기 위함입니다.
+
+
+## 9. 판정 스크립트 입력 계약 (Fail-Closed)
+
+스캐너 결과를 allowlist 와 대조하는 판정 스크립트([scripts/filter_npm_audit.py](../../scripts/filter_npm_audit.py), [scripts/filter_trivy_results.py](../../scripts/filter_trivy_results.py))는 단순 JSON 구문 해석에 그치지 않고, 엄격한 **입력 계약(Input Contract)**을 검증합니다.
+
+### 9.1 '취약점 0건'과 '결과 없음/스캐너 실패'의 구분
+
+스캐너가 정상 동작하여 보안 취약점이 0건으로 확인된 상태와, 스캐너가 네트워크 오류·레지스트리 장애·설정 오류 등으로 결과를 전혀 생성하지 못한 상태를 동일하게 "취약점 없음(통과)"으로 처리하면 치명적인 보안 게이트 무력화가 발생합니다.
+따라서 판정 스크립트는 스캐너가 산출하지 못한 빈 결과나 오류 객체를 '취약점 0건'으로 오인하지 않고 즉시 종료 코드 1로 차단(Fail-Closed)합니다. 트레이스백으로 중단되는 대신 stderr 에 원인 진단 메시지를 남깁니다.
+
+### 9.2 도구별 거부 조건
+
+| 도구 | 판정 스크립트 | 거부 조건 (Exit Code 1) | 이유 |
+|---|---|---|---|
+| npm audit | [scripts/filter_npm_audit.py](../../scripts/filter_npm_audit.py) | - 입력 부재, 빈 문자열, JSON 파싱 실패<br>- 최상위 구조가 객체(dict)가 아님 (list 등)<br>- `error` 키 존재 (스캐너 장애 보고)<br>- `auditReportVersion` 필드 누락<br>- `vulnerabilities` 또는 `metadata.vulnerabilities` 부재/오타입<br>- `metadata`의 HIGH+CRITICAL 수와 파싱 결과 불일치<br>- 문자열 `via`의 원인 패키지가 미해소 | 스캐너 레지스트리 장애나 스키마 불일치로 인한 조용한 통과 방지, 전이 의존성 누락 방지 |
+| Trivy | [scripts/filter_trivy_results.py](../../scripts/filter_trivy_results.py) | - 결과 파일 부재, 빈 파일, JSON 파싱 실패<br>- 최상위 구조가 객체(dict)가 아님 (list 등)<br>- `Error` 키 존재 (스캐너 장애 보고)<br>- `SchemaVersion` 누락 또는 미지원 버전 (2 외)<br>- `Results` 키 자체가 누락됨<br>- `Results` 내 `Vulnerabilities` 가 리스트가 아님 | 스캐너 비정상 중단과 정상 0건(`Results: []`)을 엄격히 구분하고 오타입 트레이스백 방지 |

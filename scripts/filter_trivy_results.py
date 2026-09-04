@@ -20,6 +20,37 @@ import yaml
 
 DEFAULT_TRIVY_PATH = Path("trivy-results.json")
 DEFAULT_ALLOWLIST_PATH = Path(".github/vulnerability-allowlist.yml")
+SUPPORTED_SCHEMA_VERSIONS = (2, "2")
+
+
+def validate_trivy_contract(trivy_data: Any) -> str | None:
+    """Trivy 스캔 결과 JSON 입력 계약을 검증합니다. 위반 시 오류 사유를 반환하고 정상이면 None을 반환합니다."""
+    if not isinstance(trivy_data, dict):
+        return f"top-level JSON must be an object (got {type(trivy_data).__name__})"
+
+    if "Error" in trivy_data and trivy_data["Error"] is not None:
+        return f"scanner error reported: {trivy_data['Error']}"
+
+    schema_version = trivy_data.get("SchemaVersion")
+    if schema_version is None or schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        return f"missing or unsupported SchemaVersion: {schema_version!r} (expected {list(SUPPORTED_SCHEMA_VERSIONS)})"
+
+    if "Results" not in trivy_data:
+        return "missing 'Results' key (scanner failed to produce results)"
+
+    results = trivy_data["Results"]
+    if not isinstance(results, list):
+        return f"'Results' must be a list (got {type(results).__name__})"
+
+    for index, res in enumerate(results):
+        if not isinstance(res, dict):
+            return f"Results[{index}] must be an object (got {type(res).__name__})"
+        if "Vulnerabilities" in res:
+            vulns = res["Vulnerabilities"]
+            if vulns is not None and not isinstance(vulns, list):
+                return f"Results[{index}].Vulnerabilities must be a list or absent (got {type(vulns).__name__})"
+
+    return None
 
 
 def load_allowlist_pairs(allowlist_path: Path) -> set[tuple[str, str]]:
@@ -94,6 +125,11 @@ def run_filter(
         trivy_data = json.loads(content)
     except Exception as exc:
         err_stream.write(f"Failed to parse Trivy result file: {exc}\n")
+        return 1
+
+    contract_error = validate_trivy_contract(trivy_data)
+    if contract_error:
+        err_stream.write(f"Trivy input contract violation: {contract_error}\n")
         return 1
 
     try:

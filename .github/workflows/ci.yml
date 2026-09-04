@@ -52,15 +52,20 @@ jobs:
         working-directory: frontend
         # npm audit 은 (패키지 이름 + advisory ID) 쌍으로 allowlist 와 대조하여 판정합니다.
         # 동일 패키지에 다른 advisory 가 발생하거나 허용되지 않은 HIGH/CRITICAL 이 있으면 차단합니다.
+        # 레지스트리 장애 등 스캐너 오류 설명을 보존하기 위해 stderr 를 버리지 않고 로그에 기록하며,
+        # JSON 출력을 파일로 저장하여 판정 스크립트에 전달합니다.
         run: |
           set +e
-          OUTPUT=$(npm audit --audit-level=high --json 2>/dev/null)
+          npm audit --audit-level=high --json 2>/tmp/npm_audit_stderr.log >/tmp/npm_audit_stdout.json
           EXIT_CODE=$?
           set -e
-          if [ $EXIT_CODE -eq 0 ]; then
+          if [ -s /tmp/npm_audit_stderr.log ]; then
+            cat /tmp/npm_audit_stderr.log >&2
+          fi
+          if [ "$EXIT_CODE" -eq 0 ]; then
             exit 0
           fi
-          echo "$OUTPUT" | uv run python ../scripts/filter_npm_audit.py --allowlist ../.github/vulnerability-allowlist.yml
+          uv run python ../scripts/filter_npm_audit.py --input /tmp/npm_audit_stdout.json --allowlist ../.github/vulnerability-allowlist.yml
 
       - name: Build application image
         id: build-image
