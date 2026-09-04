@@ -123,6 +123,12 @@ services:
       - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
       - AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=true
       - AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false
+      # 일일 수집 크론은 02:00 에만 돌기 때문에, 그 시각에 스택이 내려가 있었으면
+      # 그날치는 영영 비어 있고 재기동으로도 메워지지 않습니다. 2026-08-27 이후
+      # 스택이 꺼져 있는 동안 8일치 공백이 생긴 것이 이 경우입니다. 따라잡기는
+      # 마지막 collected_at 이 24시간을 넘겼을 때만 1회 실행되고 6시간 쿨다운이
+      # 걸리므로, 재시작 반복으로 수집이 중복해서 돌지 않습니다.
+      - AUTOMATION_SCHEDULE_CATCHUP_ENABLED=true
       - ML_WEEKLY_RETRAIN_ENABLED=false
       # Arq cron 은 워커의 로컬 시간을 사용하므로 운영 문서의 02:00을 KST로 고정합니다.
       - TZ=Asia/Seoul
