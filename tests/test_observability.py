@@ -195,6 +195,34 @@ def test_arq_lifecycle_hooks():
     assert attrs.get("task.try") == 2
 
 
+def test_arq_context_token_detach_lifecycle():
+    """Arq 작업 시작 시 context 에 span 이 바인딩되고 종료 시 token 이 detach 되는지 검증합니다."""
+    import asyncio
+
+    from opentelemetry import trace
+
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    ctx = {"job_id": "arq_job_test_detach", "job_try": 1}
+
+    async def _run():
+        before_span = trace.get_current_span()
+        await arq_on_job_start(ctx)
+        active_span = trace.get_current_span()
+        assert ctx.get("_otel_span") is not None
+        assert active_span is ctx["_otel_span"]
+        assert active_span is not before_span
+
+        await arq_on_job_end(ctx)
+        after_span = trace.get_current_span()
+        assert after_span is not active_span
+        assert "_otel_token" not in ctx
+        assert "_otel_span" not in ctx
+
+    asyncio.run(_run())
+
+
 def test_safe_span_exporter_fault_tolerance():
     """내보내기 대상 수집기가 죽어 있어도 애플리케이션이 죽지 않고 상태가 관측 가능한지 검증합니다."""
     failing_exporter = FailingSpanExporter()

@@ -111,8 +111,12 @@ def _create_scheduled_execution(
     trigger_name: str = "nightly",
 ) -> str:
     """스케줄 실행도 챗봇 실행과 같은 이력 테이블에 남깁니다."""
-    own_session = db is None
-    session = SessionLocal() if own_session else db
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
     try:
         execution_id = f"{run_mode}-{uuid.uuid4().hex[:12]}"
         session.add(
@@ -391,8 +395,12 @@ def _record_drift_log(
 
     테이블 스키마 변경 없이 challenger_version 필드를 baseline_version 으로 해석하여 사용합니다.
     """
-    own_session = db is None
-    session = SessionLocal() if own_session else db
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
     try:
         session.add(
             RetrainLog(
@@ -831,8 +839,12 @@ def get_latest_collection_time(db: Session | None = None) -> datetime | None:
 
     from src.app.models.bids import BidAnnouncement
 
-    own_session = db is None
-    session = SessionLocal() if own_session else db
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
     try:
         return session.execute(select(func.max(BidAnnouncement.collected_at))).scalar()
     finally:

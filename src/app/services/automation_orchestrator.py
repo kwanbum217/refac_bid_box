@@ -16,6 +16,7 @@ from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
@@ -449,7 +450,7 @@ def confirm_automation_request(db: Session, request_obj: AutomationRequest) -> A
     db.commit()
     db.refresh(request_obj)
 
-    if result.rowcount == 0:
+    if isinstance(result, CursorResult) and result.rowcount == 0:
         return request_obj
 
     reused = _try_reuse_recent_execution(db, request_obj)
