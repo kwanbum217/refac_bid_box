@@ -11,11 +11,13 @@ import logging
 from typing import Any
 
 from src.app.core.db import SessionLocal
+from src.app.core.observability import traced_worker_task
 from src.app.services.dashboard import rebuild_bid_dataset_summary
 
 logger = logging.getLogger(__name__)
 
 
+@traced_worker_task
 async def rebuild_dataset_summary_task(ctx: dict[str, Any], dataset: str) -> dict[str, Any]:
     """데이터셋 요약 통계를 전체 재집계하는 Arq 백그라운드 태스크."""
     logger.info("데이터셋 요약 재집계 작업 시작: dataset=%s", dataset)
