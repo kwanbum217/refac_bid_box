@@ -55,32 +55,38 @@ ruff 통과, mypy 93개 파일 0건, 문서 링크 601개 통과입니다.
 
 ## 5. 진행 중인 작업 — 즉시 이어받을 것
 
-**Run `run_febef4f1cee9` (Wave X) 가 살아 있습니다.**
+**Run `run_febef4f1cee9` (Wave X) 의 빌더 3대는 전부 끝났고 워커 터미널도 모두
+회수했습니다. 남은 것은 리뷰와 병합입니다.**
 
-| Task | 상태 | 브랜치 | 비고 |
+| Task | 상태 | 브랜치 / 커밋 | 남은 일 |
 | --- | --- | --- | --- |
-| `task_b6cef03e3887` X2 잔여정리 | **병합 완료** | - | 게이트 7/7, 리뷰 pass. 병합 커밋 `8db4353` |
-| `task_c6fcd549740e` X2 리뷰 | `completed` | - | Codex `gpt-5.6-terra`. 회수까지 정상 |
-| `task_7f0659b4d4fc` X4 승격전환 | `completed` | `kwanbum217/wave-x-x4-swap` (`902a046`) | **게이트 6 실패. 6.6 절 참조** |
-| `task_d9527d72e596` W2 catchup | `dispatched` | `kwanbum217/wave-x-w2-catchup` | grok-4.6, 미커밋 3. **살아 있음** |
+| `task_b6cef03e3887` X2 잔여정리 | 완료 | `9759735` | **`wave_t/handoff` 병합 완료**(`8db4353`). `main` 미반영 |
+| `task_c6fcd549740e` X2 리뷰 | 완료 | - | Codex `gpt-5.6-terra`, pass. 회수까지 정상 |
+| `task_d9527d72e596` W2 catchup | 완료 | `kwanbum217/wave-x-w2-catchup` | **게이트 6/6 PASS, mypy 0건. 리뷰어 미기동** |
+| `task_7f0659b4d4fc` X4 승격전환 | 완료 | `kwanbum217/wave-x-x4-swap` (`902a046`) | **게이트 6 실패(6.6 절). 리뷰어 미기동** |
 
-살아 있는 터미널은 W2 워커(`term_39276658-5fcb-4dfb-96c6-1c824f1aae27`)와
-X2 리뷰어입니다. 나머지는 회수했습니다.
+살아 있는 터미널은 코디네이터 것뿐입니다. 워크트리 3개
+(`wave-x-w2-catchup`, `wave-x-x4-swap`, `wave-x-x2-cleanup`)와 브랜치 3개는
+미병합이거나 `main` 미반영이라 **제거하지 마십시오.**
 
 ### 5.1 재개 절차
 
 1. `269c755` 의 CI 결과를 확인합니다.
-2. X4 의 `worker_done.json` 부재를 해소합니다(6.6 절). 그 뒤 게이트를 다시 돌리고
-   리뷰어를 붙입니다. 리뷰 Intent 는 `scripts/build_review_intent.py` 로 빌더
-   Capsule 에서 체크리스트를 복사해 만드십시오. 손으로 옮기면 id 와 극성이
+2. W2 에 리뷰어를 붙입니다. 게이트와 mypy 는 이미 통과했으므로 Level 2 만
+   남았습니다. 리뷰 Intent 는 `scripts/build_review_intent.py` 로 빌더 Capsule
+   에서 체크리스트를 복사해 만드십시오. 손으로 옮기면 id 와 `defect_when` 극성이
    어긋나 게이트 5 가 실패합니다.
-3. W2 를 끝까지 감시합니다. `src/tasks/worker.py` 를 쓰므로 다른 Task 를 그 파일에
-   붙이지 마십시오.
-4. X4 와 W2 를 `wave_t/handoff` 에 병합한 뒤 `main` 에 병합하고, 그 다음 별도
-   커밋으로 `source_commit` 을 갱신합니다(6.1 절).
+3. X4 의 `worker_done.json` 부재를 재작업 Task 로 해소하고(6.6 절), 게이트를 다시
+   돌린 뒤 리뷰어를 붙입니다.
+4. W2 와 X4 를 `wave_t/handoff` 에 병합합니다. X2 는 이미 병합돼 있습니다.
+5. `wave_t/handoff` 를 `main` 에 병합하고, **그 다음 별도 커밋으로**
+   `source_commit` 을 갱신합니다(6.1 절).
 
-**X2 는 이미 `wave_t/handoff` 에 병합했습니다(`8db4353`). `main` 에는 아직
-반영하지 않았습니다.**
+**W2 보고의 알려진 한계**: 워커가 Capsule 검증 명령에 적힌
+`tests/test_arq_worker.py` 를 실행하지 못했다고 보고했습니다. 그 파일이 저장소에
+없기 때문이며 **코디네이터의 Intent 작성 오류**입니다. 게이트 3 은 통과했으나
+어떤 테스트가 실제로 돌았는지 리뷰에서 함께 확인하십시오. 워커가 이를 숨기지
+않고 보고한 것은 정상 처리입니다.
 
 ### 5.2 미기동 Intent
 
