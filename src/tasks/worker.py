@@ -20,6 +20,7 @@ from typing import Any, cast
 
 from arq import cron
 from arq.connections import RedisSettings
+from arq.worker import func as arq_func
 
 from src.app.core.cache import CacheLayer
 from src.app.core.config import settings
@@ -56,6 +57,9 @@ QUEUE_BACKLOG_KEY = "bidbox:worker:queue_backlog"
 SCHEDULE_STATUS_KEY = "bidbox:worker:schedules"
 OBSERVATION_TTL_SECONDS = 7 * 24 * 60 * 60
 ARQ_QUEUE_KEY = "arq:queue"
+SCHEDULE_CATCHUP_JOB_NAME = "run_schedule_catchup_task"
+SCHEDULE_CATCHUP_JOB_ID = "schedule-catchup-startup"
+SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS = 10800
 _worker_cache = CacheLayer()
 _worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:12]}"
 
@@ -167,18 +171,58 @@ async def _heartbeat_loop() -> None:
         await asyncio.sleep(settings.WORKER_HEARTBEAT_INTERVAL_SECONDS)
 
 
+def _record_catchup_enqueue_failure(error: str) -> None:
+    """큐 적재 실패를 원장에 남기되, 기록 실패가 워커를 죽이지 않게 합니다."""
+    try:
+        from src.tasks.scheduled_tasks import build_catchup_ledger, record_catchup_attempt
+
+        record_catchup_attempt(
+            ledger=build_catchup_ledger(
+                status="failed",
+                reason="enqueue_failed",
+                failed=[{"name": "schedule_catchup", "error": error}],
+            ),
+            apply_cooldown=False,
+        )
+    except Exception:
+        logger.debug("따라잡기 원장 기록 실패 (무시됨)")
+
+
+async def _enqueue_startup_catchup(ctx: dict[str, Any]) -> None:
+    """따라잡기를 Arq 큐에 넣어 max_jobs 상한 안에서 실행되게 합니다."""
+    redis = ctx.get("redis")
+    enqueue_job = getattr(redis, "enqueue_job", None)
+    if redis is None or enqueue_job is None:
+        message = "Arq redis 연결이 없어 따라잡기를 큐에 넣을 수 없습니다."
+        logger.error(message)
+        _record_catchup_enqueue_failure(message)
+        return
+
+    job = await enqueue_job(
+        SCHEDULE_CATCHUP_JOB_NAME,
+        _job_id=SCHEDULE_CATCHUP_JOB_ID,
+    )
+    if job is None:
+        logger.info("스케줄 따라잡기 작업이 이미 큐에 있거나 결과가 남아 중복 등록을 건너뜁니다.")
+
+
 async def _run_catchup_background(ctx: dict[str, Any]) -> None:
-    """스케줄 따라잡기를 백그라운드에서 실행하며 예외를 격리합니다."""
+    """따라잡기 큐 적재를 백그라운드에서 수행하며 예외를 격리합니다.
+
+    실제 수집은 Arq 정규 잡으로 돌아가 max_jobs 에 포함됩니다. 기동 경로에서
+    run_schedule_catchup_task 를 직접 await 하지 않습니다.
+    """
     catchup_ctx = dict(ctx)
     catchup_ctx["is_background_catchup"] = True
     try:
-        await run_schedule_catchup_task(catchup_ctx)
+        await _enqueue_startup_catchup(catchup_ctx)
     except asyncio.CancelledError:
         logger.info("스케줄 따라잡기 백그라운드 태스크 정상 종료 (워커 셧다운)")
         raise
-    except Exception:
+    except Exception as exc:
         # 따라잡기 실패가 워커 프로세스를 종료시켜서는 안 됩니다.
         logger.exception("스케줄 따라잡기 백그라운드 태스크 실행 중 예외 발생")
+        _record_catchup_enqueue_failure(str(exc))
 
 
 async def _on_startup(ctx: dict[str, Any]) -> None:
@@ -308,4 +352,26 @@ def ensure_all_worker_tasks_traced() -> None:
     WorkerSettings.functions = new_functions
 
 
+def _apply_catchup_job_timeout(functions: list[Any]) -> list[Any]:
+    """따라잡기 잡은 야간 크론과 같은 3시간 제한을 쓰되 함수 목록의 __name__ 은 유지합니다."""
+    updated: list[Any] = []
+    for fn in functions:
+        target = getattr(fn, "coroutine", fn)
+        if getattr(target, "__name__", "") != SCHEDULE_CATCHUP_JOB_NAME:
+            updated.append(fn)
+            continue
+        if getattr(fn, "timeout_s", None) is not None:
+            updated.append(fn)
+            continue
+        wrapped = arq_func(
+            target,
+            name=SCHEDULE_CATCHUP_JOB_NAME,
+            timeout=SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS,
+        )
+        cast(Any, wrapped).__name__ = SCHEDULE_CATCHUP_JOB_NAME
+        updated.append(wrapped)
+    return updated
+
+
 ensure_all_worker_tasks_traced()
+WorkerSettings.functions = _apply_catchup_job_timeout(WorkerSettings.functions)

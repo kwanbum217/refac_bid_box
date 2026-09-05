@@ -40,6 +40,7 @@ from src.tasks.scheduled_tasks import (
     check_schedule_catchup_needed,
     development_data_refresh_task,
     is_catchup_in_cooldown,
+    load_catchup_ledger,
     nightly_schedule_task,
     record_catchup_attempt,
     release_schedule_claim,
@@ -860,3 +861,107 @@ async def test_catchup_records_cooldown_on_both_success_and_failure(isolated_db,
     in_cd, last_attempt = is_catchup_in_cooldown(conn=fake_conn)
     assert in_cd is True
     assert last_attempt == fail_now.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_catchup_cancellation_records_terminal_ledger_and_propagates(monkeypatch):
+    """실행 중인 따라잡기 태스크가 취소(cancel)되면 CancelledError가 전파되고 원장이 running이 아닌 취소 상태로 기록됨을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    started = asyncio.Event()
+    cancelled_event = asyncio.Event()
+
+    async def _blocking_refresh(ctx: dict[str, Any]) -> dict[str, Any]:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled_event.set()
+            raise
+        return {"status": "success"}
+
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "check_schedule_catchup_needed",
+        lambda db=None: (
+            True,
+            "stale",
+            {"target_task": "development_data_refresh"},
+        ),
+    )
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "development_data_refresh_task",
+        AsyncMock(side_effect=_blocking_refresh),
+    )
+
+    task = asyncio.create_task(run_schedule_catchup_task({}))
+    await started.wait()
+
+    # 원장이 최초에는 running 상태로 선점되었음을 확인
+    running_ledger = load_catchup_ledger(conn=fake_conn)
+    assert running_ledger is not None
+    assert running_ledger["status"] == "running"
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert task.cancelled() is True
+    assert cancelled_event.is_set() is True
+
+    # 취소 후 원장 확인: status 가 running 이 아니고 cancelled 로 종결 기록됨
+    ledger = load_catchup_ledger(conn=fake_conn)
+    assert ledger is not None
+    assert ledger["status"] != "running"
+    assert ledger["status"] == "cancelled"
+    assert ledger["reason"] == "cancelled"
+    assert len(ledger["failed"]) == 1
+    assert ledger["failed"][0]["name"] == "development_data_refresh"
+    assert ledger["failed"][0]["error"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_catchup_cancellation_with_reason_records_custom_reason(monkeypatch):
+    """취소 사유가 명시된 cancel 호출 시 해당 사유가 원장에 남고 CancelledError가 전파됨을 검증합니다."""
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    set_schedule_redis_conn(fake_conn)
+
+    started = asyncio.Event()
+
+    async def _blocking_refresh(ctx: dict[str, Any]) -> dict[str, Any]:
+        started.set()
+        await asyncio.Event().wait()
+        return {"status": "success"}
+
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "check_schedule_catchup_needed",
+        lambda db=None: (
+            True,
+            "stale",
+            {"target_task": "development_data_refresh"},
+        ),
+    )
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "development_data_refresh_task",
+        AsyncMock(side_effect=_blocking_refresh),
+    )
+
+    task = asyncio.create_task(run_schedule_catchup_task({}))
+    await started.wait()
+    task.cancel("worker_shutdown")
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert task.cancelled() is True
+    ledger = load_catchup_ledger(conn=fake_conn)
+    assert ledger is not None
+    assert ledger["status"] != "running"
+    assert ledger["status"] == "cancelled"
+    assert ledger["reason"] == "worker_shutdown"
+    assert ledger["failed"][0]["error"] == "worker_shutdown"

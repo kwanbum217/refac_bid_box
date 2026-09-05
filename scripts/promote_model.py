@@ -34,6 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.app.core.timeutil import utcnow  # noqa: E402
+from src.ml.model_registry import resolve_serving_tree  # noqa: E402
 from src.ml.promotion import (  # noqa: E402
     AUDIT_LOG_PATH,
     BACKUP_ROOT,
@@ -55,7 +56,8 @@ METRIC_KEYS = ("r2", "rmse", "mape")
 
 
 def _read_metadata(path: Path) -> dict:
-    meta = path / "metadata.json"
+    target = resolve_serving_tree(path) if path.is_dir() else path
+    meta = target / "metadata.json"
     if not meta.exists():
         return {}
     try:

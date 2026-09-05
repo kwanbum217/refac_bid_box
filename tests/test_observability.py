@@ -563,7 +563,7 @@ async def test_arq_worker_shutdown_cancellation_not_polluted():
 
     @traced_worker_task
     async def sample_shutdown_task(ctx: dict):
-        raise asyncio.CancelledError("worker_shutdown")
+        raise asyncio.CancelledError()
 
     with pytest.raises(asyncio.CancelledError):
         await sample_shutdown_task(ctx)
@@ -602,3 +602,64 @@ async def test_otel_disabled_cancellation_zero_overhead_and_transparent():
 
     assert "_otel_span" not in ctx
     assert "_task_cancelled" not in ctx
+
+
+@pytest.mark.asyncio
+async def test_cancel_reason_ignores_exception_args_and_uses_ctx():
+    """취소 원인 분류는 CancelledError 인자가 아니라 ctx 플래그만 본다.
+
+    예외 메시지에 shutdown 이 있어도 ctx 가 없으면 aborted 이고,
+    인자가 비어 있어도 worker_shutting_down 이면 worker_shutdown 이다.
+    """
+    import asyncio
+
+    from src.app.core.observability import _resolve_cancel_reason
+
+    assert _resolve_cancel_reason(ctx=None) == "aborted"
+    assert _resolve_cancel_reason(ctx={"job_id": "x"}) == "aborted"
+
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    ctx_abort = {"job_id": "job_args_ignored"}
+    await arq_on_job_start(ctx_abort)
+
+    @traced_worker_task
+    async def sample_args_ignored_task(ctx: dict):
+        raise asyncio.CancelledError("worker_shutdown")
+
+    with pytest.raises(asyncio.CancelledError):
+        await sample_args_ignored_task(ctx_abort)
+
+    await arq_on_job_end(ctx_abort)
+
+    abort_spans = [
+        s
+        for s in memory_exporter.get_finished_spans()
+        if s.name == "arq.task:sample_args_ignored_task"
+    ]
+    assert len(abort_spans) == 1
+    assert (abort_spans[0].attributes or {}).get("task.cancel_reason") == "aborted"
+    assert abort_spans[0].status.status_code != StatusCode.OK
+
+    ctx_shutdown = {"job_id": "job_ctx_shutdown", "is_background_catchup": True}
+    await arq_on_job_start(ctx_shutdown)
+
+    @traced_worker_task
+    async def sample_ctx_shutdown_task(ctx: dict):
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await sample_ctx_shutdown_task(ctx_shutdown)
+
+    await arq_on_job_end(ctx_shutdown)
+
+    shutdown_spans = [
+        s
+        for s in memory_exporter.get_finished_spans()
+        if s.name == "arq.task:sample_ctx_shutdown_task"
+    ]
+    assert len(shutdown_spans) == 1
+    assert (shutdown_spans[0].attributes or {}).get("task.cancel_reason") == "worker_shutdown"
+    assert shutdown_spans[0].status.status_code != StatusCode.OK
+    assert shutdown_spans[0].status.status_code != StatusCode.ERROR

@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import tempfile
+import uuid
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +28,11 @@ import joblib
 from src.app.core.config import settings
 from src.app.core.timeutil import utcnow
 from src.ml.features import unservable_features
+from src.ml.model_registry import (
+    GENERATIONS_DIRNAME,
+    LIVE_FILENAME,
+    resolve_serving_tree,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # 경로 정본은 settings 입니다 (src/app/core/config.py).
@@ -469,24 +477,53 @@ def _promote_unlogged(
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    # 검증 완료. 이제 서빙 디렉터리를 교체합니다.
+    # 검증 완료. 서빙 슬롯 디렉터리는 유지한 채 불변 세대 디렉터리와 LIVE 포인터로 원자 공개합니다.
+    # 1. 현재 해석된 트리를 백업으로 스냅샷 (기존 원본 바이트 보존 계약)
+    # 2. 고유 식별자를 가진 새 세대 디렉터리로 staging 이동 (제자리 덮어쓰기/삭제 배제)
+    # 3. LIVE 포인터를 새 세대 ID로 원자적 교체 (단일 파일 교체로 세트 원자성 확보)
+    # 4. 직전 세대와 현재 세대만 남기고 오래된 세대 정리
     backup = None
-    if target.exists():
-        backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
-        backup_root.mkdir(parents=True, exist_ok=True)
-        backup = backup_root / model_name
-        if backup.exists():
-            shutil.rmtree(backup)
+    dest_generation = None
+    generation_id = generate_generation_id(version)
+    target.mkdir(parents=True, exist_ok=True)
+    live_file = target / LIVE_FILENAME
+    previous_live = ""
+    if live_file.is_file():
+        with suppress(OSError):
+            previous_live = live_file.read_text(encoding="utf-8").strip()
 
     try:
-        if target.exists():
-            shutil.move(str(target), str(backup))
-        shutil.move(str(staging), str(target))
+        current_tree = resolve_serving_tree(target)
+        if (current_tree / "metadata.json").is_file() or (current_tree / "model.bin").is_file():
+            backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
+            backup_root.mkdir(parents=True, exist_ok=True)
+            backup = backup_root / model_name
+            _snapshot_directory(current_tree, backup)
+
+        generations_dir = target / GENERATIONS_DIRNAME
+        generations_dir.mkdir(parents=True, exist_ok=True)
+        dest_generation = generations_dir / generation_id
+        # 새 세대 디렉터리는 고유 ID를 가져 기존 목적지가 존재하지 않으므로,
+        # 공개된 세대를 제자리에서 지우지 않고 새 경로에 온전히 완성합니다.
+        _replace_path(staging, dest_generation)
+
+        publish_live(target, generation_id)
+
+        keep_generations = {generation_id}
+        if previous_live:
+            keep_generations.add(previous_live)
+        _prune_generations(target, keep_generations)
     except Exception:
-        # swap 실패 시: target 이 비었으면 backup 을 되돌립니다.
-        if backup is not None and not target.exists():
-            shutil.move(str(backup), str(target))
-        elif staging.exists():
+        # 실패 시: 새 세대 디렉터리가 생성되었으나 아직 LIVE 로 공개되지 않은 경우에만 정리합니다.
+        # 공개된 세대는 결코 삭제하지 않습니다.
+        if dest_generation is not None and dest_generation.exists():
+            current_live = ""
+            if live_file.is_file():
+                with suppress(OSError):
+                    current_live = live_file.read_text(encoding="utf-8").strip()
+            if current_live != generation_id:
+                shutil.rmtree(dest_generation, ignore_errors=True)
+        if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
         raise
 
@@ -521,7 +558,9 @@ def load_serving_metrics(
     serving_dir = SERVING_ROOT if serving_dir is None else serving_dir
     metrics_dir = METRICS_ROOT if metrics_dir is None else metrics_dir
 
-    meta_path = Path(serving_dir) / model_name / "metadata.json"
+    slot = Path(serving_dir) / model_name
+    serving_tree = resolve_serving_tree(slot)
+    meta_path = serving_tree / "metadata.json"
     if not meta_path.exists():
         return "", {}
     try:
@@ -570,6 +609,74 @@ def save_serving_metrics(
     return path
 
 
+def _replace_path(src: Path | str, dst: Path | str) -> None:
+    """같은 볼륨에서 경로를 원자적으로 교체합니다.
+
+    파일에 대해 POSIX rename(2) 과 Windows ReplaceFile 과 같이 목적지가
+    이미 있어도 한 연산으로 바뀝니다. 디렉터리 전체를 비어 있지 않은
+    디렉터리 위에 올리는 용도로는 쓰지 않습니다. 그 연산은 POSIX 에서도
+    Windows 에서도 실패합니다.
+    """
+    os.replace(src, dst)
+
+
+def _tree_files(root: Path) -> list[Path]:
+    return sorted(path for path in root.rglob("*") if path.is_file())
+
+
+def _snapshot_directory(source: Path, dest: Path) -> None:
+    """source 트리를 dest 로 복사합니다. source 자체는 지우지 않습니다."""
+    tmp = dest.with_name(f"{dest.name}.snapshot_tmp")
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    shutil.copytree(source, tmp)
+    if dest.exists():
+        shutil.rmtree(dest)
+    _replace_path(tmp, dest)
+
+
+def generate_generation_id(version: str) -> str:
+    """충돌 없는 세대 디렉터리 식별자를 생성합니다.
+
+    버전 식별자를 접두부로 두고 타임스탬프와 고유 토큰을 더해,
+    동일 버전의 재승격이나 롤백 시에도 기존 세대 디렉터리와 결코 충돌하지 않도록 보장합니다.
+    """
+    timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
+    token = uuid.uuid4().hex[:8]
+    return f"{version}_{timestamp}_{token}"
+
+
+def publish_live(slot: Path, generation_id: str) -> None:
+    """세대 디렉터리를 LIVE 파일의 원자적 os.replace 로 공개합니다."""
+    if not _safe_registry_version(generation_id):
+        raise ValueError(f"안전하지 않은 세대 이름입니다: {generation_id}")
+    gen_dir = slot / GENERATIONS_DIRNAME / generation_id
+    if not (gen_dir / "metadata.json").is_file():
+        raise FileNotFoundError(f"유효한 세대 트리가 아닙니다: {gen_dir}")
+    tmp_live = slot / f".LIVE_{os.getpid()}_{uuid.uuid4().hex[:6]}.tmp"
+    tmp_live.write_text(f"{generation_id}\n", encoding="utf-8")
+    _replace_path(tmp_live, slot / LIVE_FILENAME)
+
+
+def _prune_generations(slot: Path, keep_generations: set[str]) -> None:
+    """현재 세대와 보존 대상 세대만 남기고 나머지 오래된 세대 디렉터리를 정리합니다."""
+    generations_dir = slot / GENERATIONS_DIRNAME
+    if not generations_dir.is_dir():
+        return
+    live_path = slot / LIVE_FILENAME
+    active_live = ""
+    if live_path.is_file():
+        with suppress(OSError):
+            active_live = live_path.read_text(encoding="utf-8").strip()
+    safe_keep = set(keep_generations)
+    if active_live:
+        safe_keep.add(active_live)
+
+    for child in generations_dir.iterdir():
+        if child.is_dir() and child.name not in safe_keep and not child.name.startswith("."):
+            shutil.rmtree(child, ignore_errors=True)
+
+
 class RollbackUnavailable(RuntimeError):
     """되돌릴 백업본이 없습니다."""
 
@@ -582,11 +689,10 @@ def rollback(
 ) -> dict[str, Any]:
     """직전 서빙본으로 되돌립니다. `promote` 의 짝입니다.
 
-    "즉시 롤백 가능" 은 AGENTS.md 의 비협상 원칙인데, 백업 디렉터리를 사람이
-    직접 옮기는 것이 유일한 수단이면 그 원칙이 손 절차에 걸려 있는 셈입니다.
-
-    현재 서빙본은 버리지 않고 백업 자리로 넣습니다. 그래야 잘못 되돌렸을 때
-    한 번 더 되돌릴 수 있습니다.
+    설계 5.4절: 파일 단위 재설치를 제거하고 불변 세대 디렉터리와 LIVE 포인터 교체로 완결합니다.
+    1. 백업 스냅샷이 있으면 그것을 새 세대 디렉터리로 올리고 LIVE 를 그 이름으로 돌리거나,
+    2. 직전 세대가 generations/ 에 남아 있으면 LIVE 만 직전 이름으로 교체합니다.
+    현재 서빙본은 holding 에 보관했다가 백업으로 이동하여 왕복 롤백 계약을 유지합니다.
     """
     serving_dir = Path(serving_dir)
     backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
@@ -597,23 +703,66 @@ def rollback(
         )
 
     target = serving_dir / model_name
+    current_tree = resolve_serving_tree(target)
     restored_version = _metadata_version(backup)
-    replaced_version = _metadata_version(target)
+    replaced_version = _metadata_version(current_tree)
+    if not restored_version or not _safe_registry_version(restored_version):
+        raise RollbackUnavailable(
+            f"{model_name} 의 백업본({backup})에 안전한 버전 정보가 없습니다: {restored_version}"
+        )
 
-    # 교체 순서가 중요합니다. 백업을 먼저 옮기면 현재 서빙본을 둘 자리가 없습니다.
     holding = backup_root / f"{model_name}.rollback_tmp"
     if holding.exists():
         shutil.rmtree(holding)
-    if target.exists():
-        shutil.move(str(target), str(holding))
+    if current_tree.exists():
+        _snapshot_directory(current_tree, holding)
+
+    generations_dir = target / GENERATIONS_DIRNAME
+    generations_dir.mkdir(parents=True, exist_ok=True)
+    live_file = target / LIVE_FILENAME
+    current_live = ""
+    if live_file.is_file():
+        with suppress(OSError):
+            current_live = live_file.read_text(encoding="utf-8").strip()
+
+    # 백업본으로부터 새 불변 세대 디렉터리를 구성하여 원자 전환합니다.
+    # 기존 세대를 제자리에서 덮어쓰거나 지우지 않습니다.
+    rollback_gen_id = generate_generation_id(restored_version)
+    restored_generation = generations_dir / rollback_gen_id
+    restore_staging = (
+        target / f".rollback_staging_{model_name}_{os.getpid()}_{uuid.uuid4().hex[:6]}"
+    )
+    staging_created = False
     try:
-        shutil.move(str(backup), str(target))
+        shutil.copytree(backup, restore_staging)
+        staging_created = True
+        _replace_path(restore_staging, restored_generation)
+        staging_created = False
+
+        publish_live(target, rollback_gen_id)
+
+        keep_generations = {rollback_gen_id}
+        if current_live:
+            keep_generations.add(current_live)
+        _prune_generations(target, keep_generations)
     except Exception:
+        if staging_created and restore_staging.exists():
+            shutil.rmtree(restore_staging, ignore_errors=True)
+        if restored_generation.exists():
+            active_live = ""
+            if live_file.is_file():
+                with suppress(OSError):
+                    active_live = live_file.read_text(encoding="utf-8").strip()
+            if active_live != rollback_gen_id:
+                shutil.rmtree(restored_generation, ignore_errors=True)
         if holding.exists():
-            shutil.move(str(holding), str(target))
+            shutil.rmtree(holding, ignore_errors=True)
         raise
+
+    if backup.exists():
+        shutil.rmtree(backup)
     if holding.exists():
-        shutil.move(str(holding), str(backup))
+        _replace_path(holding, backup)
 
     return {
         "model_name": model_name,
@@ -625,7 +774,8 @@ def rollback(
 
 
 def _metadata_version(model_dir: Path) -> str:
-    meta_path = model_dir / "metadata.json"
+    serving_tree = resolve_serving_tree(model_dir)
+    meta_path = serving_tree / "metadata.json"
     if not meta_path.exists():
         return ""
     try:

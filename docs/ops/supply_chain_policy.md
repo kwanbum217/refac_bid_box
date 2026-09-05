@@ -1,6 +1,6 @@
 # 공급망 스캔 정책
 
-> **버전**: 1.4.0
+> **버전**: 1.4.1
 > **최종 갱신**: 2026-09-05
 > **소유**: 1인 개발 담당자
 
@@ -102,6 +102,7 @@ SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@3ad7283483fc7
 | 2026-09-04 | 1.3.0 | Trivy `Results[].Error` 대상 오류 차단, npm `errors` 배열 차단, npm `metadata` 패키지 수 대비 파서 설명 가능성(explainability) 정합성 검증, Trivy Action 핀 실측 기준 명시 |
 | 2026-09-05 | 1.3.1 | 1인 작업 체계(AGENTS.md 6장) 정합: PR 전제 절차 제거, 예외 추적을 allowlist 필수 필드 및 커밋 메시지 기록으로 일원화, 소유 주체 정정 (C-02) |
 | 2026-09-05 | 1.4.0 | GitHub Actions 7종 40자 커밋 SHA 불변 고정, pip-audit 2.10.1 명시 고정, actionlint 컨테이너 다이제스트 고정 및 1인 작업 갱신 절차 추가 (S-02) |
+| 2026-09-05 | 1.4.1 | Dockerfile 의 astral-sh/uv 빌드 이미지를 태그+인덱스 다이제스트로 고정 (R-15 잔여) |
 
 
 ## 8. 예외 목록 계약의 기계 강제
@@ -165,6 +166,11 @@ SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@3ad7283483fc7
    - 로컬 및 CI 환경의 shellcheck 연계 검증에 사용되는 actionlint 도커 이미지는 태그(`latest`) 대신 sha256 불변 다이제스트로 고정하여 사용 가능합니다:
    - 다이제스트 참조: `rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`
    - 실행 명령 예시: `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`
+3. **astral-sh/uv 빌드 이미지 다이제스트 고정**:
+   - Dockerfile 의 `COPY --from` 은 버전 태그만 두면 상류가 같은 태그에 다른 이미지를 붙일 수 있으므로, 사람이 읽는 태그와 OCI 인덱스 다이제스트를 함께 고정한다.
+   - 참조: `ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1`
+   - 실측 명령: `docker buildx imagetools inspect ghcr.io/astral-sh/uv:0.12.5`
+   - 최상위 `Digest` 가 멀티아키텍처 인덱스이며, 플랫폼별 매니페스트 다이제스트가 아니다. 갱신 시에도 인덱스를 핀한다.
 
 ### 10.3 불변 참조 갱신 절차 (1인 작업 체계)
 
@@ -179,5 +185,8 @@ SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@3ad7283483fc7
    - `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`를 실행하여 shellcheck 연계 린트 통과 확인 (종료 코드 0).
 3. **보안 게이트 강도 유지 확인**:
    - 버전 갱신 과정에서 기존 차단 임계(CRITICAL, HIGH), fail-closed 입력 계약, continue-on-error 부재 원칙이 축소되지 않았는지 확인합니다.
-4. **추적성 커밋 기록**:
+4. **컨테이너 이미지 다이제스트 실측**:
+   - 태그만 바뀌는 이미지는 `docker buildx imagetools inspect <image>:<tag>` 로 최상위 `Digest` 를 얻는다.
+   - Dockerfile 과 본 절의 고정 목록을 `tag@sha256:<64자>` 형식으로 동시에 갱신한다. 태그를 지우면 사람이 버전을 읽지 못하고, 다이제스트를 빼면 태그가 가리키는 대상이 바뀔 수 있다.
+5. **추적성 커밋 기록**:
    - 작업 브랜치 커밋 메시지에 갱신 대상 액션/도구, 이전/이후 SHA 또는 버전, 실측 검증 명령 수행 결과를 명시합니다.
