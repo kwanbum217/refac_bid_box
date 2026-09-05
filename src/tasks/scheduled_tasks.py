@@ -34,6 +34,7 @@ from scripts.backup_recovery import execute_backup, prune_snapshots
 from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
 from src.app.core.db import SessionLocal
+from src.app.core.observability import traced_worker_task
 from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import PipelineExecution
 from src.app.models.predictions import RetrainLog
@@ -85,6 +86,7 @@ def _record_schedule(
     return decorator
 
 
+@traced_worker_task
 @_record_schedule("backup")
 async def backup_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """매일 03:00 통합 백업을 실행하고 개수 기준 보존 상태를 보고합니다."""
@@ -141,6 +143,7 @@ def _create_scheduled_execution(
             session.close()
 
 
+@traced_worker_task
 @_record_schedule("nightly_schedule")
 async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """매일 02:00 수집-KB-예측-점검 번들. 원본 Harness 야간 트리거 대체."""
@@ -209,6 +212,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     return final_outcome
 
 
+@traced_worker_task
 @_record_schedule("development_data_refresh")
 async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """개발 DB를 최신화하는 매일 수집·KB·집계 작업입니다."""
@@ -326,6 +330,7 @@ def _rebuild_institution_stats() -> dict[str, Any]:
         db.close()
 
 
+@traced_worker_task
 @_record_schedule("weekly_retrain")
 async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """매주 월요일 03:00 재학습. 원본 Airflow narabid_weekly_retrain 대체.
@@ -442,6 +447,7 @@ def is_drift_monitor_enabled() -> bool:
     return bool(settings.ML_DRIFT_MONITOR_ENABLED)
 
 
+@traced_worker_task
 @_record_schedule("drift_monitor")
 async def drift_monitor_task(
     ctx: dict[str, Any],
@@ -1011,6 +1017,7 @@ def check_schedule_catchup_needed(
     return False, "threshold_not_exceeded", details
 
 
+@traced_worker_task
 @_record_schedule("schedule_catchup")
 async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """기동 시 누락된 스케줄 수집을 따라잡는 진입점 태스크입니다."""

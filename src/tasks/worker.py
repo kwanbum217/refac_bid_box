@@ -22,7 +22,12 @@ from arq.connections import RedisSettings
 
 from src.app.core.cache import CacheLayer
 from src.app.core.config import settings
-from src.app.core.observability import arq_on_job_end, arq_on_job_start, setup_observability
+from src.app.core.observability import (
+    arq_on_job_end,
+    arq_on_job_start,
+    setup_observability,
+    traced_worker_task,
+)
 from src.tasks.automation_tasks import (
     collect_bids_task,
     manual_full_task,
@@ -209,3 +214,40 @@ class WorkerSettings:
     on_shutdown = _on_shutdown
     on_job_start = arq_on_job_start
     on_job_end = arq_on_job_end
+
+
+def is_task_traced(fn: Any) -> bool:
+    """태스크 함수가 trace_worker_task 로 계측되었는지 확인합니다."""
+    target = getattr(fn, "coroutine", fn)
+    return getattr(target, "__traced_worker_task__", False) is True
+
+
+def get_all_worker_tasks() -> list[Any]:
+    """WorkerSettings 에 등록된 모든 고유 태스크 함수(일반 + 크론)를 반환합니다."""
+    seen = set()
+    tasks = []
+    all_raw = list(WorkerSettings.functions)
+    for c in WorkerSettings.cron_jobs:
+        all_raw.append(c)
+    for item in all_raw:
+        target = getattr(item, "coroutine", item)
+        if target not in seen:
+            seen.add(target)
+            tasks.append(target)
+    return tasks
+
+
+def ensure_all_worker_tasks_traced() -> None:
+    """새 태스크 등록 시 배선 누락을 방어하기 위해 WorkerSettings.functions 의 계측을 보장합니다."""
+    new_functions = []
+    for fn in WorkerSettings.functions:
+        target = getattr(fn, "coroutine", fn)
+        if not is_task_traced(target):
+            wrapped = traced_worker_task(target)
+            new_functions.append(wrapped)
+        else:
+            new_functions.append(fn)
+    WorkerSettings.functions = new_functions
+
+
+ensure_all_worker_tasks_traced()

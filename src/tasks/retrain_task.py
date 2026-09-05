@@ -24,6 +24,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from src.app.core.db import SessionLocal
+from src.app.core.observability import traced_worker_task
 from src.app.models.predictions import RetrainLog
 from src.ml.dataset import build_training_dataset
 from src.ml.trainer import ModelTrainer, trainer
@@ -158,6 +159,7 @@ def _build_training_dataset_thread(
         db.close()
 
 
+@traced_worker_task
 async def run_retrain_pipeline_task(
     ctx: dict[str, Any],
     trigger_source: str = "manual",
