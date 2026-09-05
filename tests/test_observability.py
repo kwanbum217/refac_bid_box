@@ -492,3 +492,113 @@ async def test_traced_worker_task_decorator_with_real_tasks(monkeypatch):
     assert task_span.status.status_code == StatusCode.OK
     job_span = next(s for s in spans if s.name == "arq.job:summary_job_test")
     assert job_span.status.status_code == StatusCode.OK
+
+
+@pytest.mark.asyncio
+async def test_arq_cancelled_task_top_level_span_not_ok_and_propagated():
+    """사용자 중단(abort)으로 취소된 태스크의 최상위 span 이 OK 가 아니고 CancelledError 가 전파되는지 검증합니다.
+
+    (a) 취소된 태스크의 최상위 arq.job span 상태가 OK 가 아니다.
+    (b) CancelledError 가 삼켜지지 않고 호출자에게 그대로 전파된다.
+    (c) task.cancelled=True 및 task.cancel_reason='aborted' 속성이 기록된다.
+    (d) span 이 정상 종료(closed)된다.
+    """
+    import asyncio
+
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    ctx = {"job_id": "job_cancelled_101", "job_try": 1}
+    await arq_on_job_start(ctx)
+
+    @traced_worker_task
+    async def sample_aborted_task(ctx: dict):
+        raise asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await sample_aborted_task(ctx)
+
+    await arq_on_job_end(ctx)
+
+    spans = memory_exporter.get_finished_spans()
+    assert len(spans) == 2
+
+    # 자식 태스크 span 검증
+    task_spans = [s for s in spans if s.name == "arq.task:sample_aborted_task"]
+    assert len(task_spans) == 1
+    task_span = task_spans[0]
+    assert task_span.status.status_code != StatusCode.OK
+    attrs_task = task_span.attributes or {}
+    assert attrs_task.get("task.cancelled") is True
+    assert attrs_task.get("task.cancel_reason") == "aborted"
+    assert task_span.end_time is not None
+
+    # 최상위 job span 검증
+    job_spans = [s for s in spans if s.name == "arq.job:job_cancelled_101"]
+    assert len(job_spans) == 1
+    job_span = job_spans[0]
+    assert job_span.status.status_code != StatusCode.OK
+    attrs_job = job_span.attributes or {}
+    assert attrs_job.get("task.cancelled") is True
+    assert attrs_job.get("task.cancel_reason") == "aborted"
+    assert job_span.end_time is not None
+
+
+@pytest.mark.asyncio
+async def test_arq_worker_shutdown_cancellation_not_polluted():
+    """워커 정상 셧다운 시 배경 catch-up 취소가 오류(ERROR)로 기록되지 않고 정상 취소로 기록되는지 검증합니다.
+
+    (a) task.cancelled=True 및 task.cancel_reason='worker_shutdown' 속성이 기록된다.
+    (b) status_code 가 StatusCode.ERROR 가 아니어서 운영 경보 노이즈를 만들지 않는다.
+    (c) status_code 가 StatusCode.OK 도 아니어서 취소된 작업이 성공으로 오인되지 않는다.
+    (d) CancelledError 가 정상적으로 전파된다.
+    """
+    import asyncio
+
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    ctx = {"job_id": "job_shutdown_catchup", "worker_shutting_down": True}
+    await arq_on_job_start(ctx)
+
+    @traced_worker_task
+    async def sample_shutdown_task(ctx: dict):
+        raise asyncio.CancelledError("worker_shutdown")
+
+    with pytest.raises(asyncio.CancelledError):
+        await sample_shutdown_task(ctx)
+
+    await arq_on_job_end(ctx)
+
+    spans = memory_exporter.get_finished_spans()
+    assert len(spans) == 2
+
+    for s in spans:
+        attrs = s.attributes or {}
+        assert attrs.get("task.cancelled") is True
+        assert attrs.get("task.cancel_reason") == "worker_shutdown"
+        # 운영 노이즈 방지: ERROR 로 기록되지 않음
+        assert s.status.status_code != StatusCode.ERROR
+        # 성공 오인 방지: OK 로 기록되지 않음
+        assert s.status.status_code != StatusCode.OK
+        # span 이 정상 종료됨
+        assert s.end_time is not None
+
+
+@pytest.mark.asyncio
+async def test_otel_disabled_cancellation_zero_overhead_and_transparent():
+    """OTEL_ENABLED=False 일 때 취소 예외가 삼켜지지 않고 투명하게 전파되며 비용이 0 인지 검증합니다."""
+    import asyncio
+
+    assert is_otel_enabled() is False
+
+    @traced_worker_task
+    async def cancelled_disabled_task(ctx: dict):
+        raise asyncio.CancelledError("aborted")
+
+    ctx = {"job_id": "disabled_cancel_job"}
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_disabled_task(ctx)
+
+    assert "_otel_span" not in ctx
+    assert "_task_cancelled" not in ctx

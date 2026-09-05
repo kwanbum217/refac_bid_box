@@ -117,8 +117,13 @@ async def _heartbeat_loop() -> None:
 
 async def _run_catchup_background(ctx: dict[str, Any]) -> None:
     """스케줄 따라잡기를 백그라운드에서 실행하며 예외를 격리합니다."""
+    catchup_ctx = dict(ctx)
+    catchup_ctx["is_background_catchup"] = True
     try:
-        await run_schedule_catchup_task(ctx)
+        await run_schedule_catchup_task(catchup_ctx)
+    except asyncio.CancelledError:
+        logger.info("스케줄 따라잡기 백그라운드 태스크 정상 종료 (워커 셧다운)")
+        raise
     except Exception:
         # 따라잡기 실패가 워커 프로세스를 종료시켜서는 안 됩니다.
         logger.exception("스케줄 따라잡기 백그라운드 태스크 실행 중 예외 발생")
@@ -136,6 +141,7 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
 
 
 async def _on_shutdown(ctx: dict[str, Any]) -> None:
+    ctx["worker_shutting_down"] = True
     heartbeat_task = ctx.pop("worker_heartbeat_task", None)
     if heartbeat_task is not None:
         heartbeat_task.cancel()
@@ -143,7 +149,7 @@ async def _on_shutdown(ctx: dict[str, Any]) -> None:
 
     catchup_task = ctx.pop("schedule_catchup_task", None)
     if catchup_task is not None and not catchup_task.done():
-        catchup_task.cancel()
+        catchup_task.cancel("worker_shutdown")
         await asyncio.gather(catchup_task, return_exceptions=True)
 
 
