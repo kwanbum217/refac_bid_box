@@ -7,6 +7,7 @@ HTTP(ASGI/FastAPI), DB(SQLAlchemy), Arq 워커 태스크의 지연과 오류를 
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -227,12 +228,39 @@ async def arq_on_job_start(ctx: dict[str, Any]) -> None:
     _registry.arq_instrumented = True
 
 
+def _resolve_cancel_reason(
+    exc: BaseException | None = None,
+    ctx: dict[str, Any] | None = None,
+) -> str:
+    """작업 취소 원인을 판별합니다.
+
+    정상 종료(워커 셧다운으로 인한 배경 태스크 취소)와 사용자 abort 등을 구분합니다.
+    """
+    if exc is not None and exc.args:
+        first_arg = str(exc.args[0]).lower()
+        if "shutdown" in first_arg:
+            return "worker_shutdown"
+        if "abort" in first_arg:
+            return "aborted"
+
+    if isinstance(ctx, dict):
+        if ctx.get("worker_shutting_down") or ctx.get("shutdown"):
+            return "worker_shutdown"
+        if ctx.get("cancel_reason"):
+            return str(ctx["cancel_reason"])
+        if ctx.get("is_background_catchup"):
+            return "worker_shutdown"
+
+    return "aborted"
+
+
 async def arq_on_job_end(ctx: dict[str, Any]) -> None:
     """Arq 워커 작업 종료 시 span 을 정상 완료하거나 예외 상태를 기록하고 닫습니다."""
     if not _registry.enabled:
         return
     token = ctx.pop("_otel_token", None)
     span: trace.Span | None = ctx.pop("_otel_span", None)
+    cancelled = ctx.pop("_task_cancelled", False)
     try:
         if token is not None:
             context.detach(token)
@@ -244,10 +272,11 @@ async def arq_on_job_end(ctx: dict[str, Any]) -> None:
         # detach 결과와 무관하게 span 은 반드시 종료합니다. 종료하지 않으면
         # 그 작업의 span 이 누수되어 이후 계측이 어긋납니다.
         if span is not None:
-            # 이미 ERROR 로 기록된 span 은 그대로 두고, 아닌 경우에만 OK 로 설정
+            # 이미 ERROR 로 기록되었거나 취소된 span 은 그대로 두고, 정상 완료인 경우에만 OK 로 설정
             status = getattr(span, "status", None)
             status_code = getattr(status, "status_code", None)
-            if status_code != StatusCode.ERROR:
+            span_cancelled = getattr(span, "_task_cancelled", False)
+            if not cancelled and not span_cancelled and status_code != StatusCode.ERROR:
                 span.set_status(Status(StatusCode.OK))
             span.end()
 
@@ -288,6 +317,19 @@ def trace_worker_task(
         try:
             yield span
             span.set_status(Status(StatusCode.OK))
+        except asyncio.CancelledError as exc:
+            cancel_reason = _resolve_cancel_reason(exc, ctx)
+            span.set_attribute("task.cancelled", True)
+            span.set_attribute("task.cancel_reason", cancel_reason)
+            setattr(span, "_task_cancelled", True)  # noqa: B010
+            if top_span is not None and top_span.is_recording():
+                top_span.set_attribute("task.cancelled", True)
+                top_span.set_attribute("task.cancel_reason", cancel_reason)
+                setattr(top_span, "_task_cancelled", True)  # noqa: B010
+            if isinstance(ctx, dict):
+                ctx["_task_cancelled"] = True
+                ctx["_task_cancel_reason"] = cancel_reason
+            raise
         except Exception as exc:
             span.record_exception(exc)
             span.set_status(Status(StatusCode.ERROR, str(exc)))
@@ -323,8 +365,11 @@ def traced_worker_task(
                 ctx = args[0] if args and isinstance(args[0], dict) else None
                 job_id = str(ctx.get("job_id")) if ctx and "job_id" in ctx else None
                 attrs = dict(default_attributes)
-                with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
-                    return await fn(*args, **kwargs)
+                try:
+                    with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
+                        return await fn(*args, **kwargs)
+                except asyncio.CancelledError:
+                    raise
 
             wrapper = async_wrapper
         else:
@@ -337,8 +382,11 @@ def traced_worker_task(
                 ctx = args[0] if args and isinstance(args[0], dict) else None
                 job_id = str(ctx.get("job_id")) if ctx and "job_id" in ctx else None
                 attrs = dict(default_attributes)
-                with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
-                    return fn(*args, **kwargs)
+                try:
+                    with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
+                        return fn(*args, **kwargs)
+                except asyncio.CancelledError:
+                    raise
 
             wrapper = sync_wrapper
 

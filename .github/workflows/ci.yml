@@ -15,15 +15,15 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
 
       # 공급망 스캔은 모두 차단 모드다. CRITICAL 과 HIGH 가 검출되면 CI 가 붉어진다.
       # || true 나 exit-code 0 으로 실패를 삼키지 않는다.
@@ -46,7 +46,7 @@ jobs:
           for entry in data.get('python', []):
               print('--ignore-vuln')
               print(entry['id'])")
-          uvx --from pip-audit pip-audit -r /tmp/requirements.txt --strict "${IGNORE_ARGS[@]}"
+          uvx --from 'pip-audit==2.10.1' pip-audit -r /tmp/requirements.txt --strict "${IGNORE_ARGS[@]}"
 
       - name: Scan JavaScript dependencies
         working-directory: frontend
@@ -73,7 +73,7 @@ jobs:
       # ignore-unfixed 및 심각도 임계(CRITICAL,HIGH)는 게이트 강도 유지를 위해 그대로 유지한다.
       - name: Scan container image
         id: trivy-scan
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: refac-bid-box:ci
           format: json
@@ -90,7 +90,7 @@ jobs:
       # 이미지 빌드 자체가 실패한 경우에는 실행하지 않으며, 판정 스텝의 실패는 job 실패로 그대로 보존됩니다.
       - name: Generate application SBOM
         if: always() && steps.build-image.outcome == 'success'
-        uses: anchore/sbom-action@v0.24.2
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: refac-bid-box:ci
           artifact-name: refac-bid-box-sbom.spdx.json
@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload SBOM artifact
         if: always() && steps.build-image.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: supply-chain-sbom
           path: refac-bid-box-sbom.spdx.json
@@ -108,7 +108,7 @@ jobs:
   lint-and-validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           # 얕은 클론에서는 CURRENT_STATE 의 source_commit 을 조회하지 못해
           # 신선도 검사가 항상 "미검증" 으로 내려앉습니다. 전체 이력을 받아야
@@ -116,14 +116,14 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           # Dockerfile 의 python:3.11-slim 과 맞춥니다. 어긋나면 CI 가 배포 런타임을
           # 검증하지 않게 됩니다.
           python-version: '3.11'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
 
       - name: Install dependencies
         run: uv sync
@@ -156,7 +156,7 @@ jobs:
         run: uv run actionlint
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
@@ -202,15 +202,15 @@ jobs:
     env:
       PYTHONUTF8: 1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
 
       - name: Install dependencies
         run: uv sync
@@ -234,15 +234,15 @@ jobs:
     name: Browser E2E Tests (Playwright Chromium)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
 
       - name: Install dependencies
         run: uv sync
@@ -251,7 +251,7 @@ jobs:
         run: uv run playwright install --with-deps chromium
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
@@ -286,7 +286,7 @@ jobs:
       # 실패 시에만 Playwright trace 및 screenshot 아티팩트를 업로드합니다. 성공 시에는 업로드하지 않습니다.
       - name: Upload Playwright Trace and Screenshot Artifacts on Failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-e2e-failure-artifacts
           path: test-results/
@@ -297,7 +297,7 @@ jobs:
     name: Docker 이미지 빌드 검증
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       # 운영 이미지가 uv.lock 기준으로 재현 가능하게 빌드되는지 확인합니다.
       # 이 잡이 없으면 Dockerfile 의 의존성 해석 오류를 배포 시점에야 알게 됩니다.
@@ -328,15 +328,15 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
 
       - name: Install dependencies
         run: uv sync

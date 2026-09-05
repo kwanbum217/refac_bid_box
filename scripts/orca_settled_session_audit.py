@@ -89,10 +89,13 @@ def load_unsupervised_receipts(
                 continue
             try:
                 data = json.loads(p.read_text(encoding="utf-8"))
-                if isinstance(data, dict) and data.get("task_id"):
-                    t_id = str(data["task_id"]).strip()
+                if isinstance(data, dict):
+                    t_id = str(data.get("task_id") or "").strip()
                     if t_id:
                         receipts[t_id] = data
+                    orig_id = str(data.get("original_task_id") or "").strip()
+                    if orig_id and orig_id not in receipts:
+                        receipts[orig_id] = data
             except Exception:  # nosec B112 # noqa: S112
                 continue
     return receipts

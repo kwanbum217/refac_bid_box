@@ -3721,6 +3721,7 @@ def cmd_rework(args: argparse.Namespace) -> int:
     code, stdout, _stderr = _run_command(cmd)
     actual_task_id = new_task_id
     actual_capsule_path = new_capsule_path
+    final_capsule_text = new_capsule_text
 
     if code == 0:
         payload = _maybe_json(stdout)
@@ -3740,25 +3741,54 @@ def cmd_rework(args: argparse.Namespace) -> int:
                 previous_report=prev_report,
                 run_id=args.run_id,
             )
+            # spec 이 가리키는 경로도 allowed_read_files 에 추가하여 워커가 spec 경로로 읽어도 허용
+            spec_rel = worktree_relative_capsule_path(new_capsule_path)
+            allowed_reads = parse_capsule_list(final_capsule_text, "allowed_read_files")
+            if spec_rel not in allowed_reads and "allowed_read_files:\n" in final_capsule_text:
+                final_capsule_text = final_capsule_text.replace(
+                    "allowed_read_files:\n",
+                    f'allowed_read_files:\n  - "{spec_rel}"\n',
+                    1,
+                )
             actual_capsule_path.write_text(final_capsule_text, encoding="utf-8")
             if new_capsule_path != actual_capsule_path:
                 new_capsule_path.write_text(final_capsule_text, encoding="utf-8")
 
+    # 워크트리 인자가 전달되었으면 워크트리에도 Capsule 사본을 자동 배치 (손으로 cp 방지)
+    worktree_capsule_paths: list[str] = []
+    worktree_raw = getattr(args, "worktree", None)
+    if worktree_raw:
+        wt_dir = Path(worktree_raw).resolve()
+        wt_actual_capsule = wt_dir / worktree_relative_capsule_path(actual_capsule_path)
+        wt_actual_capsule.parent.mkdir(parents=True, exist_ok=True)
+        wt_actual_capsule.write_text(final_capsule_text, encoding="utf-8")
+        worktree_capsule_paths.append(str(wt_actual_capsule))
+        if new_capsule_path != actual_capsule_path:
+            wt_spec_capsule = wt_dir / worktree_relative_capsule_path(new_capsule_path)
+            wt_spec_capsule.parent.mkdir(parents=True, exist_ok=True)
+            wt_spec_capsule.write_text(final_capsule_text, encoding="utf-8")
+            worktree_capsule_paths.append(str(wt_spec_capsule))
+
     new_report_rel = (
-        parse_capsule_scalar(new_capsule_text, "report_path")
+        parse_capsule_scalar(final_capsule_text, "report_path")
         or f".orca/capsules/{actual_task_id}/worker_done.json"
     )
 
-    result_payload = {
+    result_payload: dict[str, Any] = {
         "status": "rework_created",
         "original_task_id": task_id,
         "new_task_id": actual_task_id,
         "rejection_reason": reason,
         "rejection_record": str(rejection_file),
         "capsule": str(actual_capsule_path),
+        "spec_capsule": str(new_capsule_path),
+        "spec_capsule_relative": worktree_relative_capsule_path(new_capsule_path),
+        "spec": spec,
         "new_report_path": new_report_rel,
         "exit_code": 0,
     }
+    if worktree_capsule_paths:
+        result_payload["worktree_capsules"] = worktree_capsule_paths
 
     if args.json:
         print(json.dumps(result_payload, ensure_ascii=False, indent=2))
@@ -3766,7 +3796,11 @@ def cmd_rework(args: argparse.Namespace) -> int:
         print(f"재작업 Task 생성 완료: {actual_task_id} (원래 Task: {task_id})")
         print(f"반려 사유: {reason}")
         print(f"반려 기록 저장: {rejection_file}")
-        print(f"새 Capsule: {actual_capsule_path}")
+        print(f"새 Capsule (정본): {actual_capsule_path}")
+        if new_capsule_path != actual_capsule_path:
+            print(f"새 Capsule (Spec 경로): {new_capsule_path}")
+        if worktree_capsule_paths:
+            print(f"워크트리 Capsule 배치: {', '.join(worktree_capsule_paths)}")
         print(f"새 보고 경로: {new_report_rel}")
 
     return 0
@@ -3842,8 +3876,22 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         # create 가 이미 만든 Capsule 을 그대로 쓴다. 재확장하면 같은 Task 에
         # Capsule 이 두 벌 생기고 Task spec 이 가리키는 쪽과 어긋난다.
         capsule_path = Path(args.capsule).resolve()
-        if not capsule_path.exists():
+        if not capsule_path.is_file():
             sys.stderr.write(f"오류: Capsule 파일 없음: {capsule_path}\n")
+            if getattr(args, "json", False):
+                print(
+                    json.dumps(
+                        {
+                            "error": "capsule_not_found",
+                            "origin": "capsule_spec_error",
+                            "task_id": task_id,
+                            "capsule": str(capsule_path),
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
             return 2
         capsule = capsule_path.read_text(encoding="utf-8")
         capsule_task_id = parse_capsule_scalar(capsule, "task_id")
@@ -4135,18 +4183,126 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     worktree_path: Path | None = None
     preamble_file: Path | None = None
     launcher_pickup_detail: str | None = None
+    repo_root = Path(args.repo).resolve()
+    preflight_receipt_path: Path | None = None
 
-    if args.terminal and launcher_mode:
-        # 런처 경로: --return-preamble 로 지시문을 받아 <워크트리>/.orca/preamble.txt 에 쓴 뒤 기동 확인
+    if args.terminal:
+        # 워커 터미널의 워크트리 경로 확인
         if getattr(args, "worktree", None) and args.worktree != "new-child":
             wt_raw = args.worktree.strip()
             if wt_raw.startswith("path:"):
                 wt_raw = wt_raw[5:]
             worktree_path = Path(wt_raw).resolve()
-        else:
+        elif launcher_mode:
             worktree_path = resolve_terminal_worktree(args.terminal, repo=args.repo)
 
-        repo_root = Path(args.repo).resolve()
+        # 워크트리가 주 저장소와 다른 격리 워크트리인 경우 Capsule 실존 검사 및 자동 배치
+        if worktree_path and worktree_path != repo_root and worktree_path.is_dir():
+            rel_cap = worktree_relative_capsule_path(capsule_path)
+            wt_capsule_path = worktree_path / rel_cap
+            if not wt_capsule_path.is_file() and capsule_path.is_file():
+                try:
+                    wt_capsule_path.parent.mkdir(parents=True, exist_ok=True)
+                    wt_capsule_path.write_text(capsule, encoding="utf-8")
+                    sys.stderr.write(f"안내: 워크트리에 Capsule 자동 배치: {wt_capsule_path}\n")
+                except Exception as exc:
+                    sys.stderr.write(f"경고: 워크트리 Capsule 자동 배치 실패: {exc}\n")
+
+            # 추가로 spec 잠정 사본이 존재하는 경우 워크트리에도 동기화
+            spec_candidate = capsule_dir / f"{task_id}_rework" / "capsule.yaml"
+            if spec_candidate.is_file():
+                wt_spec_candidate = worktree_path / f".orca/capsules/{task_id}_rework/capsule.yaml"
+                if not wt_spec_candidate.is_file():
+                    with suppress(Exception):
+                        wt_spec_candidate.parent.mkdir(parents=True, exist_ok=True)
+                        wt_spec_candidate.write_text(
+                            spec_candidate.read_text(encoding="utf-8"), encoding="utf-8"
+                        )
+
+            if not wt_capsule_path.is_file():
+                err_msg = f"워크트리 내에 Capsule 정본 파일이 존재하지 않습니다: {wt_capsule_path}"
+                sys.stderr.write(f"오류 [capsule_missing]: {err_msg}\n")
+                if args.json:
+                    print(
+                        json.dumps(
+                            {
+                                "error": "capsule_not_found_in_worktree",
+                                "origin": "capsule_missing",
+                                "task_id": task_id,
+                                "worktree": str(worktree_path),
+                                "capsule": str(wt_capsule_path),
+                                "exit_code": 2,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+                return 2
+
+        # 비감독 Dispatch 영수증(receipt) 기동 전 preflight fail-closed 검증 및 기록 (신규 F)
+        skip_receipt = getattr(args, "skip_dispatch_receipt", False)
+        eff_disp_id = f"pending_{uuid.uuid4().hex[:12]}"
+        eff_wt = worktree_path or repo_root
+        try:
+            preflight_receipt_path = record_unsupervised_dispatch_receipt(
+                task_id=task_id,
+                dispatch_id=eff_disp_id,
+                terminal=args.terminal,
+                worktree_path=eff_wt,
+                started_at=dispatch_started_at,
+                capsule_dir=capsule_dir,
+                repo=args.repo,
+            )
+        except Exception as exc:
+            if skip_receipt:
+                sys.stderr.write(
+                    f"경고: --skip-dispatch-receipt 지정으로 비감독 Dispatch 영수증 기록 실패를 무시하고 진행합니다: {exc}\n"
+                )
+            else:
+                err_msg = (
+                    f"비감독 Dispatch 영수증 기록 실패: {exc}. "
+                    "기본값에서 fail-closed 로 Dispatch 를 중단합니다 (워커 미기동). "
+                    "의도적으로 우회하려면 --skip-dispatch-receipt 를 사용하십시오."
+                )
+                sys.stderr.write(f"오류 [dispatch_receipt_gate]: {err_msg}\n")
+                if args.json:
+                    print(
+                        json.dumps(
+                            {
+                                "error": "dispatch_receipt_failed",
+                                "origin": "dispatch_receipt_gate",
+                                "task_id": task_id,
+                                "reason": str(exc),
+                                "terminal": args.terminal,
+                                "exit_code": 2,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+                return 2
+
+    # 기동 직전 Capsule 정본 파일 최종 실존 확인
+    if not capsule_path.is_file():
+        sys.stderr.write(f"오류: Capsule 정본 파일 없음: {capsule_path}\n")
+        if getattr(args, "json", False):
+            print(
+                json.dumps(
+                    {
+                        "error": "capsule_not_found",
+                        "origin": "capsule_spec_error",
+                        "task_id": task_id,
+                        "capsule": str(capsule_path),
+                        "exit_code": 2,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        return 2
+
+    if args.terminal and launcher_mode:
+        # 런처 경로: --return-preamble 로 지시문을 받아 <워크트리>/.orca/preamble.txt 에 쓴 뒤 기동 확인
         if worktree_path is None:
             err_msg = (
                 f"런처 기동 실패: 워커 터미널 {args.terminal} 의 워크트리 경로를 확인할 수 없습니다. "
@@ -4510,7 +4666,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         launch_cmd = shlex.join(executed_cmd)
 
     if code == 0 and _launch_succeeded(stdout, expect_json=args.json or launcher_mode):
-        unsupervised_receipt: str | None = None
+        unsupervised_receipt: str | None = (
+            str(preflight_receipt_path) if preflight_receipt_path else None
+        )
         if args.terminal:
             eff_disp_id = resolve_dispatch_id(task_id) or f"ctx_{uuid.uuid4().hex[:12]}"
             eff_wt = (
@@ -4530,7 +4688,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 )
                 unsupervised_receipt = str(rec_path)
             except Exception as exc:
-                sys.stderr.write(f"경고: 비감독 Dispatch 영수증 기록 실패: {exc}\n")
+                if not getattr(args, "skip_dispatch_receipt", False):
+                    sys.stderr.write(f"경고: 비감독 Dispatch 영수증 갱신 실패: {exc}\n")
 
         try:
             reliability_tracking = _start_reliability_tracking(
@@ -4642,6 +4801,10 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 "--allow-unverified-delivery 를 쓰십시오.\n"
             )
         return exit_code
+
+    if preflight_receipt_path and preflight_receipt_path.is_file():
+        with suppress(Exception):
+            preflight_receipt_path.unlink(missing_ok=True)
 
     # Orca CLI 는 실패를 stdout JSON 의 error.message 로 내보내면서 stderr 를 비워
     # 두는 경우가 있다. stderr 만 읽으면 원인이 사라지므로 stdout 도 함께 본다.
@@ -4925,7 +5088,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="정본 스킬 영수증 검증을 건너뜁니다 (경고 출력).",
     )
     dsp.add_argument(
-        "--deps", help="선행 Task ID JSON 배열 (미지정 시 리뷰 Intent 의 대상 Task 에서 자동 추출)"
+        "--skip-dispatch-receipt",
+        action="store_true",
+        help="비감독 Dispatch 영수증 기록 실패 시에도 Dispatch 를 계속 진행합니다 (권장하지 않음, 경고 출력).",
     )
     dsp.add_argument("--json", action="store_true", help="JSON 출력")
 
@@ -4957,6 +5122,9 @@ def _build_parser() -> argparse.ArgumentParser:
     rwk.add_argument("--task-title", help="새 Task 제목")
     rwk.add_argument("--display-name", help="워커 행에 표시할 이름")
     rwk.add_argument("--deps", help="선행 Task ID JSON 배열 (미지정 시 반려 대상 Task ID)")
+    rwk.add_argument(
+        "--worktree", help="워크트리 경로 (지정 시 해당 워크트리에도 Capsule 사본 자동 배치)"
+    )
     rwk.add_argument("--json", action="store_true", help="JSON 출력")
 
     # finalize

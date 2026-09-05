@@ -140,3 +140,29 @@ def test_audit_lingering_sessions_detects_unsupervised_session(tmp_path, monkeyp
     assert res["lingering"][0]["task_id"] == "task_u"
     assert res["lingering"][0]["handle"] == "term_u"
     assert res["lingering"][0]["supervised"] is False
+
+
+def test_load_unsupervised_receipts_reads_original_task_id_mapping(tmp_path) -> None:
+    """rework 등으로 생성된 Task 도 original_task_id 로 receipt 가 매핑됨을 검증."""
+    import json
+
+    from scripts.orca_settled_session_audit import load_unsupervised_receipts
+
+    receipt_dir = tmp_path / ".orca" / "dispatch_receipts"
+    receipt_dir.mkdir(parents=True, exist_ok=True)
+    rec_file = receipt_dir / "task_rework_new.json"
+    rec_data = {
+        "task_id": "task_rework_new",
+        "original_task_id": "task_rework_orig",
+        "dispatch_id": "ctx_rw_123",
+        "terminal": "term_rw",
+        "worktree": "/tmp/wt",
+        "started_at": 2000.0,
+        "supervised": False,
+    }
+    rec_file.write_text(json.dumps(rec_data), encoding="utf-8")
+
+    loaded = load_unsupervised_receipts(repo_root=tmp_path)
+    assert "task_rework_new" in loaded
+    assert "task_rework_orig" in loaded
+    assert loaded["task_rework_orig"]["terminal"] == "term_rw"
