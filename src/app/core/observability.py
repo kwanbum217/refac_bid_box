@@ -311,7 +311,7 @@ def traced_worker_task(
     from functools import wraps
 
     def decorator(fn: Any) -> Any:
-        resolved_name = task_name or getattr(fn, "__name__", "unnamed_task")
+        resolved_name: str = str(task_name or getattr(fn, "__name__", "unnamed_task"))
 
         if inspect.iscoroutinefunction(fn):
 
