@@ -36,6 +36,168 @@ PATH_LIST_FIELDS = ("allowed_read_files", "allowed_write_files", "artifact_paths
 # 경로 패턴에서 "이 아래 전부" 를 뜻하는 접미사. Capsule 예시가 `src/...` 를 씁니다.
 _PREFIX_SUFFIXES = ("/...", "/**", "/")
 
+# ---------------------------------------------------------------------------
+# 워커 완료 보고(ORCA_WORKER_DONE_V2) 필드 정본 (Single Source of Truth)
+# ---------------------------------------------------------------------------
+# 필수 필드(required=True)와 부가 필드(required=False)의 명세입니다.
+# summarize_worker_done.py 의 REQUIRED_FIELDS, orca_taskctl.py 의 WORKER_REPORT_SCHEMA,
+# .agents/templates/worker_done_v2.json 템플릿이 모두 이 단일 정본에서 파생됩니다.
+WORKER_DONE_SCHEMA_SPEC: dict[str, dict[str, Any]] = {
+    "schema": {
+        "required": True,
+        "description": '"ORCA_WORKER_DONE_V2"',
+        "sample": "ORCA_WORKER_DONE_V2",
+    },
+    "version": {
+        "required": True,
+        "description": '"2.1.0"',
+        "sample": "2.1.0",
+    },
+    "task_id": {
+        "required": True,
+        "description": '"위 task_id 를 그대로 적는다"',
+        "sample": "<task_id>",
+    },
+    "dispatch_id": {
+        "required": False,
+        "description": '"위 dispatch_id 를 적는다. 없는 경우 생략 가능"',
+        "sample": "<dispatch_id>",
+    },
+    "status": {
+        "required": True,
+        "description": '"succeeded 또는 escalation 문자열 하나"',
+        "sample": "succeeded",
+    },
+    "branch": {
+        "required": True,
+        "description": '"작업한 브랜치 이름"',
+        "sample": "kwanbum217/feat-example",
+    },
+    "commit": {
+        "required": True,
+        "description": '"마지막 커밋 SHA. 커밋이 없으면 빈 문자열"',
+        "sample": "<commit_sha>",
+    },
+    "commit_count": {
+        "required": True,
+        "description": '"정수. 0 이면 status 를 escalation 으로 쓴다"',
+        "sample": 1,
+    },
+    "changed_files": {
+        "required": True,
+        "description": '"배열. 실제로 커밋한 파일 경로"',
+        "sample": [
+            "src/example.py",
+            "tests/test_example.py",
+        ],
+    },
+    "read_files": {
+        "required": True,
+        "description": '"배열. 실제로 읽은 파일 경로"',
+        "sample": [
+            "scripts/orca_contract.py",
+            "docs/ops/orca_task_capsule_v2.md",
+        ],
+    },
+    "verification": {
+        "required": True,
+        "description": '"배열. 각 항목은 command 와 result 키를 가진다"',
+        "sample": [
+            {
+                "command": "uv run pytest tests/test_example.py -q",
+                "result": "5 passed",
+            },
+            {
+                "command": "python3 scripts/validate_agent_rules.py --quiet",
+                "result": "PASS (6/6)",
+            },
+        ],
+    },
+    "metrics": {
+        "required": False,
+        "description": '"객체. before 및 after 지표"',
+        "sample": {
+            "before": None,
+            "after": None,
+        },
+    },
+    "verdict": {
+        "required": True,
+        "description": '"candidate 또는 blocked 문자열 하나"',
+        "sample": "candidate",
+    },
+    "blocking_issues": {
+        "required": True,
+        "description": '"배열. 차단 사유가 없으면 빈 배열"',
+        "sample": [],
+    },
+    "remaining_risks": {
+        "required": False,
+        "description": '"배열. 잔여 리스크"',
+        "sample": [],
+    },
+    "artifacts": {
+        "required": False,
+        "description": '"배열. 생성한 산출물 문서 경로"',
+        "sample": [
+            "docs/analysis/example_report.md",
+        ],
+    },
+    "reproduce": {
+        "required": False,
+        "description": '"배열. 재현 명령"',
+        "sample": [
+            "uv run pytest tests/test_example.py -q",
+        ],
+    },
+}
+
+
+def get_worker_done_required_fields(
+    spec: dict[str, dict[str, Any]] | None = None,
+) -> tuple[str, ...]:
+    """워커 완료 보고 필수 필드 튜플을 반환합니다."""
+    s = spec if spec is not None else WORKER_DONE_SCHEMA_SPEC
+    return tuple(k for k, v in s.items() if v.get("required", False))
+
+
+WORKER_DONE_REQUIRED_FIELDS: tuple[str, ...] = get_worker_done_required_fields()
+
+
+def render_worker_report_schema(
+    spec: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    """Capsule report_schema 블록 문자열을 생성합니다."""
+    s = spec if spec is not None else WORKER_DONE_SCHEMA_SPEC
+    lines = ["report_schema:"]
+    for k, v in s.items():
+        if v.get("required", False):
+            lines.append(f"  {k}: {v['description']}")
+    return "\n".join(lines) + "\n"
+
+
+def render_worker_done_template(
+    spec: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """worker_done_v2.json 템플릿 딕셔너리를 생성합니다."""
+    s = spec if spec is not None else WORKER_DONE_SCHEMA_SPEC
+    return {k: v["sample"] for k, v in s.items()}
+
+
+def sync_worker_done_template(
+    spec: dict[str, dict[str, Any]] | None = None,
+    path: Path | str | None = None,
+) -> Path:
+    """정본(WORKER_DONE_SCHEMA_SPEC)에서 worker_done_v2.json 템플릿 파일을 생성/동기화합니다."""
+    target = Path(path) if path else Path(".agents/templates/worker_done_v2.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    rendered = render_worker_done_template(spec=spec)
+    target.write_text(
+        json.dumps(rendered, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return target
+
 
 def char_len(text: str) -> int:
     """문자 수를 셉니다.

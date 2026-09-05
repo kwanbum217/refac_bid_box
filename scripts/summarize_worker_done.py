@@ -28,6 +28,7 @@ from typing import Any
 
 try:
     from scripts.orca_contract import (
+        WORKER_DONE_REQUIRED_FIELDS,
         ContractError,
         char_len,
         load_capsule,
@@ -47,6 +48,7 @@ except ImportError:
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
     from scripts.orca_contract import (
+        WORKER_DONE_REQUIRED_FIELDS,
         ContractError,
         char_len,
         load_capsule,
@@ -61,20 +63,8 @@ except ImportError:
         write_scope_excess,
     )
 
-REQUIRED_FIELDS = (
-    "schema",
-    "version",
-    "task_id",
-    "status",
-    "branch",
-    "commit",
-    "commit_count",
-    "changed_files",
-    "read_files",
-    "verification",
-    "verdict",
-    "blocking_issues",
-)
+# 필수 필드 정본(scripts/orca_contract.py)에서 직접 파생
+REQUIRED_FIELDS = WORKER_DONE_REQUIRED_FIELDS
 
 
 # 계약이 허용하는 값 집합입니다. 필드 존재 여부만 보고 타입을 보지 않으면

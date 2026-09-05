@@ -6454,3 +6454,158 @@ risk: "high"
                 builder_model=None,
                 builder_provider=bad_prov,
             )
+
+
+def test_cmd_create_auto_connects_target_task_as_deps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """O-04: 리뷰 Task 생성 시 target_task 가 deps 로 자동 연결됩니다."""
+    review_intent = """schema: ORCA_TASK_INTENT_V1
+role: reviewer
+task_id: task_review_1
+target_task: task_builder_99
+objective: 빌더 작업 검증
+review_checklist:
+  - id: check_1
+    question: 확인 질문
+    defect_when: "no"
+"""
+    intent_file = tmp_path / "review_intent.yaml"
+    intent_file.write_text(review_intent, encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        calls.append(cmd)
+        return 0, json.dumps({"ok": True, "result": {"task": {"id": "task_review_1"}}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    code = main(
+        [
+            "create",
+            "--intent",
+            str(intent_file),
+            "--run-id",
+            "run_test",
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--skip-skill-receipt",
+        ]
+    )
+    assert code == 0
+    assert len(calls) == 1
+    cmd = calls[0]
+    assert "--deps" in cmd
+    deps_val = cmd[cmd.index("--deps") + 1]
+    assert json.loads(deps_val) == ["task_builder_99"]
+
+
+def test_cmd_create_explicit_deps_takes_precedence_over_target_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """O-04: --deps 가 명시되면 target_task 대신 명시된 deps 가 사용됩니다."""
+    review_intent = """schema: ORCA_TASK_INTENT_V1
+role: reviewer
+task_id: task_review_2
+target_task: task_builder_old
+objective: 빌더 작업 검증
+review_checklist:
+  - id: check_1
+    question: 확인 질문
+    defect_when: "no"
+"""
+    intent_file = tmp_path / "review_intent2.yaml"
+    intent_file.write_text(review_intent, encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        calls.append(cmd)
+        return 0, json.dumps({"ok": True, "result": {"task": {"id": "task_review_2"}}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    code = main(
+        [
+            "create",
+            "--intent",
+            str(intent_file),
+            "--run-id",
+            "run_test",
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--deps",
+            '["task_explicit_override"]',
+            "--skip-skill-receipt",
+        ]
+    )
+    assert code == 0
+    cmd = calls[0]
+    assert "--deps" in cmd
+    deps_val = cmd[cmd.index("--deps") + 1]
+    assert json.loads(deps_val) == ["task_explicit_override"]
+
+
+def test_cmd_rework_auto_connects_original_task_as_deps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """O-04: rework 재작업 Task 생성 시 원본 Task 가 deps 로 연결됩니다."""
+    capsule_dir = tmp_path / "capsules"
+    task_dir = capsule_dir / "task_rejected_orig"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "capsule.yaml").write_text(
+        'schema: ORCA_TASK_CAPSULE_V2\ntask_id: "task_rejected_orig"\nobjective: "원래 목표"\n',
+        encoding="utf-8",
+    )
+    (task_dir / "worker_done.json").write_text(
+        json.dumps({"commit": "c1", "verdict": "blocked"}), encoding="utf-8"
+    )
+
+    calls: list[list[str]] = []
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        calls.append(cmd)
+        return 0, json.dumps({"result": {"task": {"id": "task_rejected_orig_rework"}}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    code = main(
+        [
+            "rework",
+            "--task-id",
+            "task_rejected_orig",
+            "--reason",
+            "테스트 미통과",
+            "--capsule-dir",
+            str(capsule_dir),
+        ]
+    )
+    assert code == 0
+    cmd = calls[0]
+    assert "--deps" in cmd
+    deps_val = cmd[cmd.index("--deps") + 1]
+    assert json.loads(deps_val) == ["task_rejected_orig"]
+
+
+def test_record_unsupervised_dispatch_receipt_writes_valid_json(tmp_path: Path):
+    """O-06: 비감독 Dispatch 영수증 기록이 모든 필수 필드를 갖춘 JSON 을 작성합니다."""
+    from scripts.orca_taskctl import record_unsupervised_dispatch_receipt
+
+    rec_path = record_unsupervised_dispatch_receipt(
+        task_id="task_unsup_test",
+        dispatch_id="ctx_unsup_test",
+        terminal="term_test_handle",
+        worktree_path=tmp_path / "wt",
+        started_at=12345.0,
+        repo=tmp_path,
+    )
+    assert rec_path.is_file()
+    rec_data = json.loads(rec_path.read_text(encoding="utf-8"))
+    assert rec_data["task_id"] == "task_unsup_test"
+    assert rec_data["dispatch_id"] == "ctx_unsup_test"
+    assert rec_data["terminal"] == "term_test_handle"
+    assert rec_data["handle"] == "term_test_handle"
+    assert rec_data["supervised"] is False
+    assert rec_data["started_at"] == 12345.0
+    assert "worktree" in rec_data
