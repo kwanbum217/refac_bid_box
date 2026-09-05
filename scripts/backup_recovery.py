@@ -21,6 +21,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from scripts.backup_recovery_core import (  # noqa: E402
     DEFAULT_SNAPSHOTS_DIR,
+    EXPECTED_MANIFEST_SCHEMA,
     MANIFEST_FILENAME,
     PROJECT_ROOT,
     REQUIRED_BACKUP_ASSETS,
@@ -51,6 +52,7 @@ from scripts.backup_snapshots import (  # noqa: E402
 
 __all__ = [
     "DEFAULT_SNAPSHOTS_DIR",
+    "EXPECTED_MANIFEST_SCHEMA",
     "MANIFEST_FILENAME",
     "PROJECT_ROOT",
     "REQUIRED_BACKUP_ASSETS",
@@ -150,7 +152,7 @@ def execute_backup(
     )
 
     manifest_data = {
-        "schema": "BACKUP_MANIFEST_V1",
+        "schema": EXPECTED_MANIFEST_SCHEMA,
         "created_at": datetime.now(UTC).isoformat(),
         "head_commit": head_commit,
         "partial_backup": bool(missing_assets),
@@ -315,7 +317,7 @@ def run_restore_drill(
     v_st = datetime.now(UTC)
     valid, v_errs, manifest = verify_snapshot(snapshot_dir)
     errors.extend(v_errs)
-    if manifest.get("partial_backup") or manifest.get("recovery_trusted") is False:
+    if manifest.get("partial_backup") or manifest.get("recovery_trusted") is not True:
         errors.append("부분 백업은 복구용으로 신뢰할 수 없습니다.")
         valid = False
     _record_timing(
@@ -426,8 +428,9 @@ def execute_restore(
     db = get_db_config()
     valid, errors, m = verify_snapshot(snapshot_dir)
 
-    if not valid or m.get("partial_backup") or m.get("recovery_trusted") is False:
-        print("[오류] 스냅샷 무결성 실패 또는 비신뢰: " + ", ".join(errors))
+    if not valid or m.get("partial_backup") or m.get("recovery_trusted") is not True:
+        err_msg = ", ".join(errors) if errors else "복원 신뢰 플래그(recovery_trusted) 미충족"
+        print(f"[오류] 스냅샷 무결성 실패 또는 비신뢰: {err_msg}")
         return False
     if not execute:
         print("[DRY-RUN] 복원 계획 점검 완료.")

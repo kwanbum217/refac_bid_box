@@ -15,13 +15,15 @@ from typing import Any
 
 from scripts.backup_recovery_core import (
     DEFAULT_SNAPSHOTS_DIR,
+    EXPECTED_MANIFEST_SCHEMA,
     MANIFEST_FILENAME,
+    REQUIRED_BACKUP_ASSETS,
     sha256_file,
 )
 
 
 def verify_snapshot(snapshot_dir: Path) -> tuple[bool, list[str], dict[str, Any]]:
-    """스냅샷 디렉토리의 매니페스트 및 체크섬 무결성을 검증합니다."""
+    """스냅샷 디렉토리의 매니페스트 및 체크섬 무결성을 엄격하게 검증합니다."""
     manifest_file = snapshot_dir / MANIFEST_FILENAME
     if not manifest_file.exists():
         return False, [f"매니페스트 파일 없음: {manifest_file}"], {}
@@ -31,36 +33,63 @@ def verify_snapshot(snapshot_dir: Path) -> tuple[bool, list[str], dict[str, Any]
     except Exception as exc:
         return False, [f"매니페스트 파싱 실패: {exc}"], {}
 
+    if not isinstance(manifest, dict):
+        return False, ["매니페스트 최상위 형식이 딕셔너리가 아닙니다"], {}
+
     errors: list[str] = []
-    components = manifest.get("components", {})
+    if manifest.get("schema") != EXPECTED_MANIFEST_SCHEMA:
+        errors.append(
+            f"매니페스트 스키마 불일치 또는 누락: 기대 {EXPECTED_MANIFEST_SCHEMA}, 실제 {manifest.get('schema')}"
+        )
+
+    components = manifest.get("components")
+    if not isinstance(components, dict):
+        errors.append("매니페스트 components 필드가 딕셔너리가 아닙니다")
+        return False, errors, manifest
+
+    for req_asset in REQUIRED_BACKUP_ASSETS:
+        if req_asset not in components:
+            errors.append(f"필수 백업 자산 누락: {req_asset}")
 
     for comp_name, comp_info in components.items():
+        if not isinstance(comp_info, dict):
+            errors.append(f"{comp_name}: 컴포넌트 정보 형식이 딕셔너리가 아닙니다")
+            continue
+
         rel_path = comp_info.get("path")
-        if not rel_path:
-            errors.append(f"{comp_name}: 매니페스트 내 파일 경로 정의 누락")
-            continue
+        file_path: Path | None = None
+        if not isinstance(rel_path, str) or not rel_path.strip():
+            errors.append(f"{comp_name}: 파일 경로 정의 누락 또는 유효하지 않음")
+        else:
+            file_path = snapshot_dir / rel_path
+            if not file_path.exists():
+                errors.append(f"{comp_name}: 아카이브 파일 누락 ({file_path.name})")
 
-        file_path = snapshot_dir / rel_path
-        if not file_path.exists():
-            errors.append(f"{comp_name}: 아카이브 파일 누락 ({file_path.name})")
-            continue
-
-        expected_size = comp_info.get("size_bytes")
-        if expected_size is not None and file_path.stat().st_size != expected_size:
+        exp_size = comp_info.get("size_bytes")
+        if exp_size is None or isinstance(exp_size, bool) or not isinstance(exp_size, int):
+            errors.append(f"{comp_name}: 파일 크기(size_bytes)가 정수가 아니거나 누락됨")
+        elif exp_size <= 0:
+            errors.append(f"{comp_name}: 파일 크기가 양수가 아님 ({exp_size})")
+        elif file_path and file_path.exists() and file_path.stat().st_size != exp_size:
             errors.append(
-                f"{comp_name}: 파일 크기 불일치 (기대 {expected_size:,} vs 실제 {file_path.stat().st_size:,})"
+                f"{comp_name}: 파일 크기 불일치 (기대 {exp_size:,} vs 실제 {file_path.stat().st_size:,})"
             )
 
-        expected_sha = comp_info.get("sha256")
-        if expected_sha:
+        exp_sha = comp_info.get("sha256")
+        if (
+            not isinstance(exp_sha, str)
+            or len(exp_sha) != 64
+            or not all(c in "0123456789abcdefABCDEF" for c in exp_sha)
+        ):
+            errors.append(f"{comp_name}: SHA256 체크섬 누락 또는 형식 오류")
+        elif file_path and file_path.exists():
             actual_sha = sha256_file(file_path)
-            if actual_sha != expected_sha:
+            if actual_sha.lower() != exp_sha.lower():
                 errors.append(
-                    f"{comp_name}: SHA256 체크섬 불일치 ({actual_sha[:12]} vs {expected_sha[:12]})"
+                    f"{comp_name}: SHA256 체크섬 불일치 ({actual_sha[:12]} vs {exp_sha[:12]})"
                 )
 
-    is_valid = len(errors) == 0
-    return is_valid, errors, manifest
+    return len(errors) == 0, errors, manifest
 
 
 def list_snapshots(snapshots_dir: Path | None = None) -> list[dict[str, Any]]:
