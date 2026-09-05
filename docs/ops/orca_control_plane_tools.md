@@ -56,7 +56,8 @@
 | --- | --- | --- | --- |
 | **`expand`** | `--intent <path>`<br>`--out <path>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--json` | `--intent` (필수)<br>`--out` (필수) | Task Intent YAML을 읽어 유효한 `ORCA_TASK_CAPSULE_V2` 파일로 확장합니다. |
 | **`create`** | `--intent <path>`<br>`--run-id <id>`<br>`--task-id <id>`<br>`--capsule-dir <dir>`<br>`--task-title <text>`<br>`--display-name <text>`<br>`--deps <json>`<br>`--skip-skill-receipt`<br>`--json` | `--intent` (필수) | Intent를 Capsule로 확장하고 **Capsule 절대 경로를 담은 spec** 으로 Orca Task를 만듭니다. 정본 영수증 게이트를 기본 검증합니다. Dispatch 전에 이 명령을 씁니다. |
-| **`dispatch`** | `--intent <path>`<br>`--repo <path>`<br>`--model <id>`<br>`--effort <level>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--capsule-dir <dir>`<br>`--agent <id>`<br>`--terminal <handle>`<br>`--worktree <sel>`<br>`--worktree-name <name>`<br>`--no-probe`<br>`--no-capsule-notice`<br>`--skip-skill-receipt`<br>`--dry-run`<br>`--json` | `--intent` (필수)<br>`--agent` 또는 `--terminal` 중 하나 | Intent를 Capsule로 확장한 뒤 워커를 기동하고 **Capsule 정본 경로 고지문을 자동 투입**합니다. `--effort`는 worker-start 경로에 전달되며 `--model`과 함께 지정해야 합니다 (모델 없는 effort 단독 지정 시 fail-closed 거부). 정본 영수증 게이트를 기본 검증합니다. |
+| **`rework`** | `--task-id <id>`<br>`--reason <text>`<br>`--capsule <path>`<br>`--report <path>`<br>`--new-task-id <id>`<br>`--worktree <path>`<br>`--deps <json>`<br>`--run-id <id>`<br>`--json` | `--task-id` (필수)<br>`--reason` (필수) | 반려 후 재작업 Task를 생성합니다. spec 경로와 새 Task ID 경로 양쪽에 Capsule 사본을 동기화하여 작성하며, `--worktree` 지정 시 워크트리에도 Capsule을 자동 배치합니다. 원본 Task를 `--deps`로 자동 연결합니다. |
+| **`dispatch`** | `--intent <path>`<br>`--repo <path>`<br>`--model <id>`<br>`--effort <level>`<br>`--task-id <id>`<br>`--run-id <id>`<br>`--capsule-dir <dir>`<br>`--capsule <path>`<br>`--agent <id>`<br>`--terminal <handle>`<br>`--worktree <sel>`<br>`--worktree-name <name>`<br>`--no-probe`<br>`--no-capsule-notice`<br>`--skip-skill-receipt`<br>`--skip-dispatch-receipt`<br>`--dry-run`<br>`--json` | `--intent` (필수)<br>`--agent` 또는 `--terminal` 중 하나 | Intent를 Capsule로 확장하거나 `--capsule`을 확인한 뒤 워커를 기동합니다. 기동 전 Capsule 실존 검증(부재 시 종료 코드 2), 워크트리 내 Capsule 자동 배치, 비감독 영수증 fail-closed(실패 시 종료 코드 2) 검증을 거치며 **Capsule 정본 경로 고지문을 자동 투입**합니다. 의존성 연결은 create/rework 전용이므로 `--deps`는 지원하지 않습니다. |
 | **`finalize`** | `--report <path>`<br>`--capsule <path>`<br>`--repo <path>`<br>`--worktree <path>`<br>`--base <ref>`<br>`--branch <ref>`<br>`--reviewer`<br>`--reviewer-model <id>`<br>`--json` | `--report` (필수)<br>`--capsule` (필수) | `worker_done` 보고 요약 -> Level 1 게이트 -> Level 2 리뷰어 검증을 일괄 실행하고 최종 판정합니다. |
 | **`status`** | `--run-id <id>`<br>`--task-id <id>`<br>`--json` | 선택 | `orca orchestration task-list`를 호출하여 현재 Run/Task 상태를 조회합니다. |
 
@@ -306,11 +307,11 @@ Finalize나 재수집도 한 번만 반영합니다.
 
 ---
 
-## 6. 통제면 무결성 보장 규약 (O-04, O-05, O-06)
+## 6. 통제면 무결성 보장 규약 (O-04, O-05, O-06 및 신규 D/E/F)
 
-### 6.1 DAG 의존성 자동 연결 (O-04)
+### 6.1 DAG 의존성 자동 연결 (O-04, 신규 E)
 
-- **리뷰 Task 자동 의존성**: `role: reviewer` Intent에 명시된 `target_task` (또는 `target_task_id`, `builder_task`)는 `create` 및 `dispatch` 시 `--deps` 인자가 명시되지 않으면 자동으로 `["<target_task>"]` JSON 배열로 변환되어 `orca orchestration task-create --deps` 에 연결됩니다.
+- **리뷰 Task 자동 의존성**: `role: reviewer` Intent에 명시된 `target_task` (또는 `target_task_id`, `builder_task`)는 `create` 시 `--deps` 인자가 명시되지 않으면 자동으로 `["<target_task>"]` JSON 배열로 변환되어 `orca orchestration task-create --deps` 에 연결됩니다. 의존성 연결은 Task 생성 시점(create/rework)의 고유 책임이며, 이미 생성된 Task에 워커를 배정하는 `dispatch` 단계에서는 `--deps`를 지원하지 않습니다 (과장된 옵션 및 도움말 제거).
 - **재작업(rework) Task DAG 이력 보존**: `rework` 하위 명령은 반려된 원본 Task ID를 새 재작업 Task의 `--deps` 로 기본 연결합니다. 이를 통해 반려 후 재작업 흐름이 Orca Orchestration DAG에 명시적으로 연결되어 보존됩니다.
 
 ### 6.2 완료 보고 스키마 단일 진실 원천 (O-05)
@@ -322,8 +323,15 @@ Finalize나 재수집도 한 번만 반영합니다.
   3. `.agents/templates/worker_done_v2.json` 은 `render_worker_done_template()` 출력과 100% 완전 일치하도록 강제되며, `sync_worker_done_template()` 으로 정본에서 직접 동기화됩니다.
 - **`dispatch_id` 선택 필드 유지 (optional)**: Orca 수명주기 메시지의 `dispatchId`와 보고 JSON의 `dispatch_id`는 계층이 다릅니다. 보고 JSON에서 이를 필수화하면 기존 검증 게이트 및 과거 완료 보고서와의 하위 호환성이 깨지므로 `required: False` 인 선택 필드로 정의하여 유연성과 하위 호환성을 유지하되, 템플릿(`worker_done_v2.json`)에는 일관되게 제공합니다.
 
-### 6.3 비감독 Dispatch 수명주기 영수증 및 잔류 검사 (O-06)
+### 6.3 비감독 Dispatch 수명주기 영수증 및 잔류 검사 (O-06, 신규 F)
 
-- **비감독 영수증 발급**: 터미널 부착(`--terminal`) 또는 `--inject` 기반 비감독 기동 시, Orca DB에 `worker_dispatches` 행이 남지 않는 문제를 해결하기 위해 `.orca/dispatch_receipts/<task_id>.json` 에 기계 판독 가능한 영수증을 기록합니다.
+- **비감독 영수증 발급 및 fail-closed 검증**: 터미널 부착(`--terminal`) 또는 `--inject` 기반 비감독 기동 시, Orca DB에 `worker_dispatches` 행이 남지 않는 문제를 해결하기 위해 `.orca/dispatch_receipts/<task_id>.json` 에 기계 판독 가능한 영수증을 기록합니다.
   - 필수 필드: `schema`, `task_id`, `dispatch_id`, `terminal`, `handle`, `worktree_path`, `started_at`, `supervised: false`
+  - **기동 전 사전 기록 (fail-closed)**: 비감독 기동 직전 preflight 단계에서 영수증 작성을 검증하며, 기록 실패 시 워커를 기동하지 않고 **종료 코드 2**로 거부합니다. 영수증이 없으면 잔류 감사가 불가능해지기 때문입니다. 오직 명시 플래그인 `--skip-dispatch-receipt` 로만 우회할 수 있으며 우회 시 경고가 출력됩니다. 기동 성공 후 최종 dispatch_id로 갱신되며, 기동 실패 시 사전 작성된 영수증 파일은 즉시 정리(삭제)됩니다.
 - **완료 세션 잔류 감사 연동**: `scripts/orca_settled_session_audit.py` 가 해당 영수증 디렉터리를 스캔하여, 비감독 경로로 기동된 세션이 완료(`completed`) 상태임에도 터미널이 열려 있는 경우 잔류 세션으로 검출하고 후속 Dispatch 를 차단합니다.
+
+### 6.4 Capsule 경로 정합성 및 워크트리 자동 배치 (신규 D)
+
+- **Task spec 경로와 실제 Task ID 경로의 완전 동기화**: `rework` 명령은 Task spec이 생성 시점에 가리킨 잠정 경로(`.orca/capsules/<task_id>_rework/capsule.yaml`)와 Orca가 발급한 실제 새 Task ID 경로(`.orca/capsules/<actual_task_id>/capsule.yaml`) 양쪽 모두에 Capsule 파일을 작성하며, 두 사본의 내용이 100% 동일함을 보장합니다.
+- **`--worktree` 자동 배치 지원**: `rework --worktree <path>` 를 지정하면 지정된 워크트리 디렉터리 내 `.orca/capsules/...` 에도 새 Capsule 사본이 자동으로 배치되어, 코디네이터가 수동으로 `cp` 할 필요가 없습니다.
+- **기동 전 Capsule 실존 검증 및 워크트리 자동 배치 (fail-closed)**: `dispatch` 실행 시 Capsule 정본 파일 실존 여부를 검증하며, 파일이 없으면 **종료 코드 2**로 기동을 거부합니다. 격리 워크트리가 지정되었거나 터미널에서 워크트리가 확인된 경우, 워크트리 내 Capsule 파일을 자동으로 배치하고 최종 부재 시 종료 코드 2로 거부하여 워커가 엉뚱한 Capsule을 열거나 실패하는 문제를 원천 차단합니다.
