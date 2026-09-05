@@ -640,6 +640,8 @@ async def drift_monitor_task(
 SCHEDULE_COLLECTION_CLAIM_KEY = "bidbox:schedule:collection_claim"
 SCHEDULE_CATCHUP_COOLDOWN_KEY = "bidbox:schedule:catchup_cooldown"
 CATCHUP_LAST_ATTEMPT_KEY = SCHEDULE_CATCHUP_COOLDOWN_KEY
+CATCHUP_LEDGER_KEY = "bidbox:schedule:catchup_ledger"
+CATCHUP_LEDGER_TTL_SECONDS = 7 * 24 * 60 * 60
 
 RELEASE_SCHEDULE_CLAIM_SCRIPT = """
 local val = redis.call('GET', KEYS[1])
@@ -858,17 +860,62 @@ def get_latest_collection_time(db: Session | None = None) -> datetime | None:
             session.close()
 
 
+def build_catchup_ledger(
+    *,
+    status: str,
+    reason: str,
+    details: dict[str, Any] | None = None,
+    executed: list[dict[str, Any]] | None = None,
+    failed: list[dict[str, Any]] | None = None,
+    skipped: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """따라잡기 원장 본문을 표준 필드로 만듭니다.
+
+    대상(targets), 실행(executed), 실패(failed), 건너뜀(skipped)을 구분합니다.
+    """
+    details = details or {}
+    target_name = details.get("target_task") or "schedule_catchup"
+    targets = [{"name": target_name, "reason": reason}]
+    if skipped is None and status == "skipped":
+        skipped = [{"name": target_name, "reason": reason}]
+    return {
+        "status": status,
+        "reason": reason,
+        "targets": targets,
+        "executed": list(executed or []),
+        "failed": list(failed or []),
+        "skipped": list(skipped or []),
+        "details": details,
+    }
+
+
+def _parse_catchup_payload(raw: Any) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def record_catchup_attempt(
     attempt_time: datetime | None = None,
     *,
     key: str = SCHEDULE_CATCHUP_COOLDOWN_KEY,
     ttl_seconds: int | None = None,
     conn: RedisConnection | None = None,
+    ledger: dict[str, Any] | None = None,
+    nx: bool = False,
+    apply_cooldown: bool = True,
 ) -> bool:
-    """기동 시 catch-up 시도 완료 후 재시작 루프 방어용 쿨다운 키를 기록합니다.
+    """따라잡기 원장과 재시작 루프 방어용 쿨다운을 같은 경로로 기록합니다.
 
-    성공/실패와 무관하게 호출되며, TTL(기본 6시간) 동안 유지됩니다.
-    CacheLayer 대신 RedisConnection 을 직접 사용합니다.
+    apply_cooldown 이 참이면 쿨다운 키를 갱신합니다. nx=True 이면 SET NX 로
+    단일 실행을 선점하며, 키가 이미 있으면 False 를 돌려 원장을 덮지 않습니다.
+    원장 키는 쿨다운보다 길게 남겨 사후 누락 확인에 씁니다.
     """
     ttl = ttl_seconds if ttl_seconds is not None else get_schedule_claim_ttl()
     redis_conn = conn or get_schedule_redis_conn()
@@ -881,15 +928,19 @@ def record_catchup_attempt(
         return False
 
     ts = attempt_time or utcnow()
-    payload = json.dumps(
-        {
-            "attempted_at": ts.isoformat(),
-            "ttl": ttl,
-        },
-        ensure_ascii=False,
-    )
+    payload_obj: dict[str, Any] = {
+        "attempted_at": ts.isoformat(),
+        "ttl": ttl,
+    }
+    if ledger:
+        payload_obj.update(ledger)
+    payload = json.dumps(payload_obj, ensure_ascii=False)
     try:
-        client.set(key, payload, ex=ttl)
+        if apply_cooldown:
+            result = client.set(key, payload, ex=ttl, nx=nx)
+            if nx and not result:
+                return False
+        client.set(CATCHUP_LEDGER_KEY, payload, ex=max(ttl, CATCHUP_LEDGER_TTL_SECONDS))
         logger.info(
             "catch-up 쿨다운 키 기록 완료 (key=%s, ttl=%d초)",
             key,
@@ -900,6 +951,25 @@ def record_catchup_attempt(
         redis_conn.invalidate(exc)
         logger.warning("catch-up 쿨다운 키 기록 중 오류 발생 (key=%s): %s", key, exc)
         return False
+
+
+def load_catchup_ledger(
+    conn: RedisConnection | None = None,
+) -> dict[str, Any] | None:
+    """따라잡기 원장을 읽습니다. 원장 키가 없으면 쿨다운 키 페이로드로 되돌립니다."""
+    redis_conn = conn or get_schedule_redis_conn()
+    client = redis_conn.client()
+    if client is None:
+        return None
+    try:
+        payload = _parse_catchup_payload(client.get(CATCHUP_LEDGER_KEY))
+        if payload is not None:
+            return payload
+        return _parse_catchup_payload(client.get(SCHEDULE_CATCHUP_COOLDOWN_KEY))
+    except Exception as exc:
+        redis_conn.invalidate(exc)
+        logger.warning("따라잡기 원장 조회 중 오류 발생: %s", exc)
+        return None
 
 
 def is_catchup_in_cooldown(
@@ -1030,6 +1100,12 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
     )
 
     if not needed:
+        # 쿨다운 중 재평가는 선점 워커의 원장을 덮지 않습니다.
+        if reason != "in_cooldown":
+            record_catchup_attempt(
+                ledger=build_catchup_ledger(status="skipped", reason=reason, details=details),
+                apply_cooldown=False,
+            )
         return {
             "status": "skipped",
             "reason": reason,
@@ -1037,12 +1113,26 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
         }
 
     target_task = details["target_task"]
+    running_ledger = build_catchup_ledger(
+        status="running",
+        reason=reason,
+        details=details,
+    )
+    if not record_catchup_attempt(ledger=running_ledger, nx=True):
+        logger.info("스케줄 따라잡기가 이미 선점되어 건너뜁니다 (target_task=%s)", target_task)
+        return {
+            "status": "skipped",
+            "reason": "already_running",
+            "details": details,
+        }
+
     logger.info(
         "스케줄 따라잡기 실행 시작 (target_task=%s, details=%s)",
         target_task,
         details,
     )
 
+    ledger = running_ledger
     # 주의: target_task(nightly_schedule 또는 development_data_refresh) 내부에서
     # 동일한 공통 Redis 원자 claim을 획득하므로, 바깥에서 별도로 claim을 획득하여
     # 자기 충돌(self-collision)을 만들지 않습니다.
@@ -1052,9 +1142,42 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
         else:
             outcome = await development_data_refresh_task(ctx)
         outcome["catchup_details"] = details
+        outcome_status = str(outcome.get("status") or "success")
+        if outcome_status == "failed":
+            ledger = build_catchup_ledger(
+                status="failed",
+                reason=str(outcome.get("reason") or "execution_failed"),
+                details=details,
+                failed=[
+                    {
+                        "name": target_task,
+                        "error": str(outcome.get("error") or outcome_status),
+                    }
+                ],
+            )
+        elif outcome_status == "skipped":
+            ledger = build_catchup_ledger(
+                status="skipped",
+                reason=str(outcome.get("reason") or "skipped"),
+                details=details,
+                skipped=[{"name": target_task, "reason": str(outcome.get("reason") or "skipped")}],
+            )
+        else:
+            ledger = build_catchup_ledger(
+                status="success",
+                reason=reason,
+                details=details,
+                executed=[{"name": target_task, "status": outcome_status}],
+            )
         return outcome
     except Exception as exc:
         logger.exception("스케줄 따라잡기 실행 실패: %s", exc)
+        ledger = build_catchup_ledger(
+            status="failed",
+            reason="execution_failed",
+            details=details,
+            failed=[{"name": target_task, "error": str(exc)}],
+        )
         return {
             "status": "failed",
             "reason": "execution_failed",
@@ -1062,4 +1185,4 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
             "catchup_details": details,
         }
     finally:
-        record_catchup_attempt()
+        record_catchup_attempt(ledger=ledger)

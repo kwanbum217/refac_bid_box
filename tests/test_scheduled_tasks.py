@@ -8,7 +8,10 @@ tests/test_scheduled_tasks.py
 같은지와 실행 이력이 남는지를 확인합니다.
 """
 
-from datetime import date, datetime
+import asyncio
+from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -17,9 +20,10 @@ from sqlalchemy import select
 
 from src.app.core.config import settings
 from src.app.models.chatbot import PipelineExecution
-from src.tasks import scheduled_tasks
+from src.tasks import scheduled_tasks, worker
 from src.tasks.run_mode_matrix import get_run_mode_steps
 from src.tasks.worker import WorkerSettings
+from tests.fake_redis import FakeRedisClient, FakeRedisConnection
 
 
 @pytest.fixture(autouse=True)
@@ -282,3 +286,186 @@ async def test_weekly_retrain_failure_does_not_propagate():
 
     assert result["status"] == "failed"
     assert "학습 데이터 부족" in result["error"]
+
+
+# --------------------------------------------------------------------------- #
+# 기동 따라잡기 동시성 제어 및 완결성 원장 (D-04)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def catchup_redis():
+    fake_conn = FakeRedisConnection(FakeRedisClient())
+    scheduled_tasks.set_schedule_redis_conn(fake_conn)
+    yield fake_conn
+    scheduled_tasks.set_schedule_redis_conn(None)
+
+
+def _enable_needed_catchup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS", 24)
+    now = datetime(2026, 9, 5, 12, 0, 0, tzinfo=UTC)
+    old_collected = now - timedelta(hours=48)
+    monkeypatch.setattr(scheduled_tasks, "utcnow", lambda: now)
+    monkeypatch.setattr(
+        scheduled_tasks, "get_latest_collection_time", lambda db=None: old_collected
+    )
+
+
+@pytest.mark.asyncio
+async def test_catchup_ledger_distinguishes_target_executed_failed_skipped(
+    monkeypatch, catchup_redis
+):
+    """원장이 대상, 실행, 실패, 건너뜀을 한 기록 경로에서 구분합니다."""
+    _enable_needed_catchup(monkeypatch)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "development_data_refresh_task",
+        AsyncMock(return_value={"status": "success"}),
+    )
+
+    outcome = await scheduled_tasks.run_schedule_catchup_task({})
+    assert outcome["status"] == "success"
+    success_ledger = scheduled_tasks.load_catchup_ledger(conn=catchup_redis)
+    assert success_ledger is not None
+    assert success_ledger["targets"][0]["name"] == "development_data_refresh"
+    assert success_ledger["executed"][0]["name"] == "development_data_refresh"
+    assert success_ledger["failed"] == []
+    assert success_ledger["skipped"] == []
+
+    catchup_redis.client().delete(
+        scheduled_tasks.SCHEDULE_CATCHUP_COOLDOWN_KEY,
+        scheduled_tasks.CATCHUP_LEDGER_KEY,
+    )
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "development_data_refresh_task",
+        AsyncMock(side_effect=RuntimeError("수집 실패")),
+    )
+
+    failed = await scheduled_tasks.run_schedule_catchup_task({})
+    assert failed["status"] == "failed"
+    failed_ledger = scheduled_tasks.load_catchup_ledger(conn=catchup_redis)
+    assert failed_ledger is not None
+    assert failed_ledger["failed"][0]["name"] == "development_data_refresh"
+    assert "수집 실패" in failed_ledger["failed"][0]["error"]
+    assert failed_ledger["executed"] == []
+
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", False)
+
+    skipped = await scheduled_tasks.run_schedule_catchup_task({})
+    assert skipped["status"] == "skipped"
+    skipped_ledger = scheduled_tasks.load_catchup_ledger(conn=catchup_redis)
+    assert skipped_ledger is not None
+    assert skipped_ledger["skipped"][0]["reason"] == "disabled"
+    assert skipped_ledger["executed"] == []
+    assert skipped_ledger["failed"] == []
+
+
+@pytest.mark.asyncio
+async def test_concurrent_catchup_does_not_run_twice(monkeypatch, catchup_redis):
+    """SET NX 선점으로 동시 기동에서 대상 스케줄이 한 번만 실행됩니다."""
+    _enable_needed_catchup(monkeypatch)
+    monkeypatch.setattr(
+        scheduled_tasks, "is_catchup_in_cooldown", lambda conn=None, key=None: (False, None)
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _slow_refresh(ctx: dict[str, Any]) -> dict[str, Any]:
+        started.set()
+        await release.wait()
+        return {"status": "success"}
+
+    mock_refresh = AsyncMock(side_effect=_slow_refresh)
+    monkeypatch.setattr(scheduled_tasks, "development_data_refresh_task", mock_refresh)
+
+    first = asyncio.create_task(scheduled_tasks.run_schedule_catchup_task({"worker": "a"}))
+    await started.wait()
+    second = await scheduled_tasks.run_schedule_catchup_task({"worker": "b"})
+    release.set()
+    first_outcome = await first
+
+    assert first_outcome["status"] == "success"
+    assert second["status"] == "skipped"
+    assert second["reason"] == "already_running"
+    assert mock_refresh.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_startup_enqueues_catchup_without_blocking(monkeypatch):
+    """기동은 큐 적재만 백그라운드로 띄우고 따라잡기 완료를 기다리지 않습니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "OTEL_ENABLED", False)
+    enqueue_started = asyncio.Event()
+    enqueue_finished = asyncio.Event()
+
+    async def _slow_enqueue(*args: Any, **kwargs: Any) -> object:
+        enqueue_started.set()
+        await asyncio.sleep(30)
+        enqueue_finished.set()
+        return object()
+
+    ctx: dict[str, Any] = {"redis": SimpleNamespace(enqueue_job=_slow_enqueue)}
+    with patch.object(worker, "record_worker_heartbeat"):
+        await worker._on_startup(ctx)
+        await asyncio.sleep(0)
+        assert enqueue_started.is_set()
+        assert not enqueue_finished.is_set()
+        assert not ctx["schedule_catchup_task"].done()
+        await worker._on_shutdown(ctx)
+    assert not enqueue_finished.is_set()
+
+
+@pytest.mark.asyncio
+async def test_startup_catchup_uses_arq_enqueue_not_direct_run(monkeypatch):
+    """redis 가 있으면 따라잡기를 직접 실행하지 않고 Arq 큐에 넣습니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "OTEL_ENABLED", False)
+    enqueue = AsyncMock(return_value=object())
+    direct = AsyncMock()
+    ctx: dict[str, Any] = {"redis": SimpleNamespace(enqueue_job=enqueue)}
+    with (
+        patch.object(worker, "record_worker_heartbeat"),
+        patch.object(worker, "run_schedule_catchup_task", direct),
+    ):
+        await worker._on_startup(ctx)
+        await asyncio.sleep(0)
+        await ctx["schedule_catchup_task"]
+        await worker._on_shutdown(ctx)
+    enqueue.assert_awaited()
+    assert enqueue.await_args.args[0] == worker.SCHEDULE_CATCHUP_JOB_NAME
+    assert enqueue.await_args.kwargs["_job_id"] == worker.SCHEDULE_CATCHUP_JOB_ID
+    direct.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_catchup_enqueue_failure_does_not_kill_worker(monkeypatch, catchup_redis):
+    """큐 적재 예외는 워커를 종료시키지 않고 원장에 실패로 남깁니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+
+    async def _boom(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("redis enqueue down")
+
+    ctx: dict[str, Any] = {"redis": SimpleNamespace(enqueue_job=_boom)}
+    await worker._run_catchup_background(ctx)
+    ledger = scheduled_tasks.load_catchup_ledger(conn=catchup_redis)
+    assert ledger is not None
+    assert ledger["status"] == "failed"
+    assert ledger["reason"] == "enqueue_failed"
+    assert "redis enqueue down" in ledger["failed"][0]["error"]
+
+
+def test_catchup_job_is_registered_with_nightly_timeout():
+    """따라잡기 잡은 max_jobs 대상 함수이며 야간 크론과 같은 제한 시간을 가집니다."""
+    catchup = None
+    for fn in WorkerSettings.functions:
+        target = getattr(fn, "coroutine", fn)
+        if getattr(target, "__name__", "") == "run_schedule_catchup_task":
+            catchup = fn
+            break
+    assert catchup is not None
+    assert getattr(catchup, "timeout_s", None) == float(worker.SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS)
+    assert WorkerSettings.max_jobs == 4
