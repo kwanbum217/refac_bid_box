@@ -175,6 +175,10 @@ def test_verify_snapshot_tampered_fails(tmp_path: Path):
 
     db_file = snapshot_dir / "db_dump.sql.gz"
     db_file.write_bytes(b"original_db")
+    chroma_file = snapshot_dir / "chroma_db.tar.gz"
+    chroma_file.write_bytes(b"original_chroma")
+    models_file = snapshot_dir / "models.tar.gz"
+    models_file.write_bytes(b"original_models")
 
     manifest_data = {
         "schema": "BACKUP_MANIFEST_V1",
@@ -186,9 +190,22 @@ def test_verify_snapshot_tampered_fails(tmp_path: Path):
                 "size_bytes": db_file.stat().st_size,
                 "sha256": sha256_file(db_file),
             },
+            "chroma_db": {
+                "path": "chroma_db.tar.gz",
+                "size_bytes": chroma_file.stat().st_size,
+                "sha256": sha256_file(chroma_file),
+            },
+            "models": {
+                "path": "models.tar.gz",
+                "size_bytes": models_file.stat().st_size,
+                "sha256": sha256_file(models_file),
+            },
         },
     }
     (snapshot_dir / MANIFEST_FILENAME).write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    # 변조 전에는 유효함 확인
+    assert verify_snapshot(snapshot_dir)[0] is True
 
     # 사후 파일 변조
     db_file.write_bytes(b"tampered_db_content")
@@ -204,15 +221,32 @@ def test_restore_dry_run_default_does_not_modify(tmp_path: Path):
     snapshot_dir.mkdir()
     db_file = snapshot_dir / "db_dump.sql.gz"
     db_file.write_bytes(b"db")
+    chroma_file = snapshot_dir / "chroma_db.tar.gz"
+    chroma_file.write_bytes(b"chroma")
+    models_file = snapshot_dir / "models.tar.gz"
+    models_file.write_bytes(b"models")
+
     (snapshot_dir / MANIFEST_FILENAME).write_text(
         json.dumps(
             {
                 "schema": "BACKUP_MANIFEST_V1",
+                "partial_backup": False,
+                "recovery_trusted": True,
                 "components": {
                     "database": {
                         "path": "db_dump.sql.gz",
-                        "size_bytes": 2,
+                        "size_bytes": db_file.stat().st_size,
                         "sha256": sha256_file(db_file),
+                    },
+                    "chroma_db": {
+                        "path": "chroma_db.tar.gz",
+                        "size_bytes": chroma_file.stat().st_size,
+                        "sha256": sha256_file(chroma_file),
+                    },
+                    "models": {
+                        "path": "models.tar.gz",
+                        "size_bytes": models_file.stat().st_size,
+                        "sha256": sha256_file(models_file),
                     },
                 },
             }
@@ -229,21 +263,55 @@ def test_restore_dry_run_default_does_not_modify(tmp_path: Path):
     assert success is True
 
 
+def test_restore_dry_run_incomplete_manifest_fails(tmp_path: Path):
+    """불완전하거나 검증 실패한 스냅샷은 dry-run 복원에서도 성공을 반환하지 않습니다."""
+    snapshot_dir = tmp_path / "incomplete_snap"
+    snapshot_dir.mkdir()
+    (snapshot_dir / MANIFEST_FILENAME).write_text(
+        json.dumps({"schema": "BACKUP_MANIFEST_V1", "components": {}}),
+        encoding="utf-8",
+    )
+    success = execute_restore(
+        snapshot_dir=snapshot_dir,
+        execute=False,
+        confirm=False,
+        project_root=tmp_path,
+    )
+    assert success is False
+
+
 def test_restore_without_confirm_in_non_interactive_aborts(tmp_path: Path):
     """비대화형 환경에서 --confirm 없이 --execute 시 복원이 거부되어야 합니다."""
     snapshot_dir = tmp_path / "snap"
     snapshot_dir.mkdir()
     db_file = snapshot_dir / "db_dump.sql.gz"
     db_file.write_bytes(b"db")
+    chroma_file = snapshot_dir / "chroma_db.tar.gz"
+    chroma_file.write_bytes(b"chroma")
+    models_file = snapshot_dir / "models.tar.gz"
+    models_file.write_bytes(b"models")
+
     (snapshot_dir / MANIFEST_FILENAME).write_text(
         json.dumps(
             {
                 "schema": "BACKUP_MANIFEST_V1",
+                "partial_backup": False,
+                "recovery_trusted": True,
                 "components": {
                     "database": {
                         "path": "db_dump.sql.gz",
-                        "size_bytes": 2,
+                        "size_bytes": db_file.stat().st_size,
                         "sha256": sha256_file(db_file),
+                    },
+                    "chroma_db": {
+                        "path": "chroma_db.tar.gz",
+                        "size_bytes": chroma_file.stat().st_size,
+                        "sha256": sha256_file(chroma_file),
+                    },
+                    "models": {
+                        "path": "models.tar.gz",
+                        "size_bytes": models_file.stat().st_size,
+                        "sha256": sha256_file(models_file),
                     },
                 },
             }
@@ -291,6 +359,8 @@ def test_restore_execute_with_confirm(
 
     manifest_data = {
         "schema": "BACKUP_MANIFEST_V1",
+        "partial_backup": False,
+        "recovery_trusted": True,
         "components": {
             "database": {
                 "path": "db_dump.sql.gz",

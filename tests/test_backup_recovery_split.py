@@ -27,7 +27,9 @@ def test_split_line_counts_within_cap():
         # 호스트 클라이언트가 서버 인증 플러그인을 못 읽어 백업이 불가능하던 것을
         # 컨테이너 클라이언트로 우회할 수 있게 한 변경입니다. 여유 12줄만 둡니다.
         "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 330),
-        "backup_snapshots.py": (REPO_ROOT / "scripts" / "backup_snapshots.py", 151),
+        # 2026-09-05: R-01 스냅샷 검증기 엄격화(스키마, 필수자산, SHA256/크기 형식 검증)로
+        # 132 -> 160 이 됐습니다. 실측값에 여유 10줄만 둡니다.
+        "backup_snapshots.py": (REPO_ROOT / "scripts" / "backup_snapshots.py", 170),
     }
     for name, (path, cap) in paths.items():
         lines = len(path.read_text(encoding="utf-8").splitlines())
@@ -58,6 +60,7 @@ def test_no_circular_imports_in_split_modules():
 
 def test_core_reexport_identities_from_backup_recovery():
     core_symbols = [
+        "EXPECTED_MANIFEST_SCHEMA",
         "sha256_file",
         "get_head_commit_sha",
         "get_db_config",

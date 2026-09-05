@@ -477,11 +477,134 @@ def summarize_worker_report(
     }
 
 
-def main() -> int:
+def summarize_worker_reports(
+    report_paths: list[str | Path],
+    capsule_path: str | Path | None = None,
+    repo_path: str | Path | None = None,
+    max_chars: int = 1200,
+    field_max_chars: int = 600,
+) -> dict[str, Any]:
+    """여러 워커 완료 보고를 검증하고 다이제스트 및 통합 요약 데이터를 생성합니다."""
+    if not report_paths:
+        raise ContractError("요약할 보고서 경로가 없습니다")
+    if len(report_paths) == 1:
+        return summarize_worker_report(
+            report_paths[0],
+            capsule_path=capsule_path,
+            repo_path=repo_path,
+            max_chars=max_chars,
+            field_max_chars=field_max_chars,
+        )
+
+    summaries: list[dict[str, Any]] = []
+    combined_violations: list[str] = []
+    all_changed_files: list[str] = []
+    all_read_files_count = 0
+    all_read_scope_excess: list[str] = []
+    all_write_scope_excess: list[str] = []
+    all_verification_count = 0
+    all_verification_details: list[dict[str, Any]] = []
+    all_unverified_cmds: list[str] = []
+    all_blocking_issues_count = 0
+    total_commit_count = 0
+
+    for r_path in report_paths:
+        s = summarize_worker_report(
+            r_path,
+            capsule_path=capsule_path,
+            repo_path=repo_path,
+            max_chars=max_chars,
+            field_max_chars=field_max_chars,
+        )
+        summaries.append(s)
+        p_name = Path(r_path).name
+        for v in s.get("violations", []):
+            combined_violations.append(f"[{p_name}] {v}")
+        all_changed_files.extend(s.get("changed_files", []))
+        all_read_files_count += s.get("read_files_count", 0)
+        all_read_scope_excess.extend(s.get("read_scope_excess", []))
+        all_write_scope_excess.extend(s.get("write_scope_excess", []))
+        all_verification_count += s.get("verification_count", 0)
+        all_verification_details.extend(s.get("verification_details", []))
+        all_unverified_cmds.extend(s.get("unverified_commands", []))
+        all_blocking_issues_count += s.get("blocking_issues_count", 0)
+        commit_cnt = s.get("commit_count")
+        if isinstance(commit_cnt, int):
+            total_commit_count += commit_cnt
+
+    union_changed_files = list(dict.fromkeys(all_changed_files))
+    union_read_scope_excess = list(dict.fromkeys(all_read_scope_excess))
+    union_write_scope_excess = list(dict.fromkeys(all_write_scope_excess))
+    union_unverified = list(dict.fromkeys(all_unverified_cmds))
+
+    any_blocked = any(s.get("effective_verdict") == "blocked" for s in summaries)
+    all_pass = all(s.get("effective_verdict") == "pass" for s in summaries)
+    effective_verdict = "blocked" if any_blocked else ("pass" if all_pass else "candidate")
+    declared_verdict = summaries[-1].get("declared_verdict", "")
+
+    all_succeeded = all(s.get("status") == "succeeded" for s in summaries)
+    status = "succeeded" if all_succeeded else "escalation"
+    any_nonzero_exit = any(s.get("exit_code") != 0 for s in summaries)
+    exit_code = (
+        1 if (any_nonzero_exit or combined_violations or effective_verdict == "blocked") else 0
+    )
+
+    digest_parts = [
+        f"[Multi-Worker Done Summary ({len(report_paths)} reports)]",
+        f"- Status: {status}",
+        f"- Verdict: {declared_verdict} (실효: {effective_verdict})",
+        f"- Branch: {summaries[-1].get('branch')} (commit: {summaries[-1].get('short_commit')}, total_count: {total_commit_count})",
+        f"- Union Changed files ({len(union_changed_files)}개): {', '.join(union_changed_files[:5]) if union_changed_files else '(없음)'}",
+        f"- Total Read files: {all_read_files_count}개",
+    ]
+    if combined_violations:
+        digest_parts.append(f"- Violations ({len(combined_violations)}건):")
+        for cv in combined_violations[:5]:
+            digest_parts.append(f"  * {cv}")
+        if len(combined_violations) > 5:
+            digest_parts.append(f"  * ... 외 {len(combined_violations) - 5}건 생략")
+    else:
+        digest_parts.append("- Violations: 0건 (전체 보고 계약 준수)")
+
+    raw_digest = "\n".join(digest_parts)
+    digest = truncate(raw_digest, max_chars)
+
+    return {
+        "schema": "ORCA_WORKER_DONE_SUMMARY",
+        "task_id": summaries[-1].get("task_id"),
+        "status": status,
+        "declared_verdict": declared_verdict,
+        "effective_verdict": effective_verdict,
+        "branch": summaries[-1].get("branch"),
+        "commit": summaries[-1].get("commit"),
+        "short_commit": summaries[-1].get("short_commit"),
+        "commit_count": total_commit_count,
+        "changed_files": union_changed_files,
+        "read_files_count": all_read_files_count,
+        "read_scope_excess": union_read_scope_excess,
+        "write_scope_excess": union_write_scope_excess,
+        "verification_count": all_verification_count,
+        "verification_details": all_verification_details,
+        "unverified_commands": union_unverified,
+        "blocking_issues_count": all_blocking_issues_count,
+        "violations": combined_violations,
+        "violations_count": len(combined_violations),
+        "digest": digest,
+        "exit_code": exit_code,
+        "reports": summaries,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="워커 완료 보고(ORCA_WORKER_DONE_V2) 요약 및 계약 검증"
     )
-    parser.add_argument("--report", required=True, help="워커 완료 보고 JSON 경로")
+    parser.add_argument(
+        "--report",
+        action="append",
+        required=True,
+        help="워커 완료 보고 JSON 경로 (반복 지정 가능, 쉼표 구분 가능)",
+    )
     parser.add_argument("--capsule", default=None, help="Orca Task Capsule YAML 경로")
     parser.add_argument("--repo", default=None, help="저장소 루트 경로 (기본: 현재 디렉터리)")
     parser.add_argument(
@@ -498,16 +621,31 @@ def main() -> int:
     )
     parser.add_argument("--json", action="store_true", help="JSON 형식 출력 여부")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    report_paths: list[str] = []
+    for r in args.report:
+        for sub in r.split(","):
+            if sub.strip():
+                report_paths.append(sub.strip())
 
     try:
-        result = summarize_worker_report(
-            report_path=args.report,
-            capsule_path=args.capsule,
-            repo_path=args.repo,
-            max_chars=args.max_chars,
-            field_max_chars=args.field_max_chars,
-        )
+        if len(report_paths) == 1:
+            result = summarize_worker_report(
+                report_path=report_paths[0],
+                capsule_path=args.capsule,
+                repo_path=args.repo,
+                max_chars=args.max_chars,
+                field_max_chars=args.field_max_chars,
+            )
+        else:
+            result = summarize_worker_reports(
+                report_paths=report_paths,
+                capsule_path=args.capsule,
+                repo_path=args.repo,
+                max_chars=args.max_chars,
+                field_max_chars=args.field_max_chars,
+            )
     except ContractError as err:
         sys.stderr.write(f"계약 오류: {err}\n")
         return 2

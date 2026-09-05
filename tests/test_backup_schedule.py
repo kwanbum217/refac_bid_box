@@ -44,3 +44,29 @@ async def test_backup_task_notifies_failure_without_running_real_dump():
         result = await scheduled_tasks.backup_schedule_task({})
     assert result["status"] == "failed"
     notify.assert_awaited_once()
+
+
+def test_restore_drill_rejects_empty_manifest_snapshot(tmp_path: Path):
+    """빈 매니페스트를 가진 스냅샷은 복원 드릴에서도 snapshot_valid=False 로 처리됩니다."""
+    from scripts.backup_recovery_core import MANIFEST_FILENAME
+
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    (snap / MANIFEST_FILENAME).write_text("{}", encoding="utf-8")
+    target = tmp_path.parent / f"{tmp_path.name}_drill_target"
+    target.mkdir(parents=True, exist_ok=True)
+
+    try:
+        report = run_restore_drill(
+            snap,
+            target,
+            drill_db_config={"name": "test_drill_db", "host": "127.0.0.1", "port": 3307},
+            project_root=tmp_path,
+        )
+        assert report["snapshot_valid"] is False
+        assert len(report["errors"]) > 0
+    finally:
+        import shutil
+
+        if target.exists():
+            shutil.rmtree(target)

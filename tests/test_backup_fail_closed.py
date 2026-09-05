@@ -18,6 +18,7 @@ from scripts.backup_recovery import (
     execute_backup,
     execute_restore,
     sha256_file,
+    verify_snapshot,
 )
 
 
@@ -194,3 +195,123 @@ def test_partial_flag_is_available_only_on_backup_parser():
     args = build_parser().parse_args(["backup", "--allow-partial"])
     assert args.allow_partial is True
     assert set(REQUIRED_BACKUP_ASSETS) == {"database", "chroma_db", "models"}
+
+
+def _create_valid_snapshot_dir(base_dir: Path) -> tuple[Path, dict]:
+    """테스트용 정상 스냅샷 디렉터리와 매니페스트 딕셔너리를 생성합니다."""
+    snap = base_dir / "valid_snap"
+    snap.mkdir(parents=True, exist_ok=True)
+    components = {}
+    for name, filename, content in (
+        ("database", "db_dump.sql.gz", b"valid_db_data"),
+        ("chroma_db", "chroma_db.tar.gz", b"valid_chroma_data"),
+        ("models", "models.tar.gz", b"valid_model_data"),
+    ):
+        file_path = snap / filename
+        file_path.write_bytes(content)
+        components[name] = {
+            "path": filename,
+            "size_bytes": len(content),
+            "sha256": sha256_file(file_path),
+        }
+    manifest = {
+        "schema": "BACKUP_MANIFEST_V1",
+        "partial_backup": False,
+        "recovery_trusted": True,
+        "components": components,
+    }
+    return snap, manifest
+
+
+def test_verify_snapshot_valid_manifest_passes(tmp_path: Path):
+    """정상 백업 형태는 검증과 복원 사전 점검을 통과합니다."""
+    snap, manifest = _create_valid_snapshot_dir(tmp_path)
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    is_valid, errors, _ = verify_snapshot(snap)
+    assert is_valid is True
+    assert len(errors) == 0
+    assert execute_restore(snap, execute=False, project_root=tmp_path) is True
+
+
+def test_verify_snapshot_empty_manifest_fails(tmp_path: Path):
+    """빈 매니페스트({})는 검증 실패로 판정됩니다."""
+    snap = tmp_path / "empty_manifest_snap"
+    snap.mkdir()
+    (snap / MANIFEST_FILENAME).write_text("{}", encoding="utf-8")
+    is_valid, errors, _ = verify_snapshot(snap)
+    assert is_valid is False
+    assert len(errors) > 0
+
+
+def test_verify_snapshot_empty_components_fails(tmp_path: Path):
+    """components 가 비어 있는 매니페스트는 검증 실패로 판정됩니다."""
+    snap = tmp_path / "empty_components_snap"
+    snap.mkdir()
+    (snap / MANIFEST_FILENAME).write_text(
+        json.dumps({"schema": "BACKUP_MANIFEST_V1", "components": {}}),
+        encoding="utf-8",
+    )
+    is_valid, errors, _ = verify_snapshot(snap)
+    assert is_valid is False
+    assert any("필수 백업 자산 누락" in err for err in errors)
+
+
+def test_verify_snapshot_missing_one_asset_fails(tmp_path: Path):
+    """필수 자산 1개(예: models)가 누락되면 검증 실패로 판정됩니다."""
+    snap, manifest = _create_valid_snapshot_dir(tmp_path)
+    del manifest["components"]["models"]
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    is_valid, errors, _ = verify_snapshot(snap)
+    assert is_valid is False
+    assert any("models" in err for err in errors)
+
+
+def test_verify_snapshot_missing_sha256_fails(tmp_path: Path):
+    """sha256 필드가 누락되거나 비어 있으면 검증 실패로 판정됩니다."""
+    snap, manifest = _create_valid_snapshot_dir(tmp_path)
+    del manifest["components"]["database"]["sha256"]
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    is_valid, errors, _ = verify_snapshot(snap)
+    assert is_valid is False
+    assert any("SHA256" in err for err in errors)
+
+
+def test_verify_snapshot_zero_size_fails(tmp_path: Path):
+    """size_bytes 가 0 이면 검증 실패로 판정됩니다."""
+    snap, manifest = _create_valid_snapshot_dir(tmp_path)
+    manifest["components"]["database"]["size_bytes"] = 0
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    is_valid, errors, _ = verify_snapshot(snap)
+    assert is_valid is False
+    assert any("양수" in err or "파일 크기" in err for err in errors)
+
+
+def test_verify_snapshot_string_size_fails(tmp_path: Path):
+    """size_bytes 가 문자열이면 자료형 오류로 검증 실패합니다."""
+    snap, manifest = _create_valid_snapshot_dir(tmp_path)
+    manifest["components"]["database"]["size_bytes"] = "100"
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    is_valid, errors, _ = verify_snapshot(snap)
+    assert is_valid is False
+    assert any("정수" in err for err in errors)
+
+
+def test_verify_snapshot_components_as_list_fails(tmp_path: Path):
+    """components 가 리스트이면 자료형 오류로 검증 실패합니다."""
+    snap = tmp_path / "list_components_snap"
+    snap.mkdir()
+    (snap / MANIFEST_FILENAME).write_text(
+        json.dumps({"schema": "BACKUP_MANIFEST_V1", "components": []}),
+        encoding="utf-8",
+    )
+    is_valid, errors, _ = verify_snapshot(snap)
+    assert is_valid is False
+    assert any("딕셔너리" in err for err in errors)
+
+
+def test_restore_rejects_missing_recovery_trusted_key(tmp_path: Path):
+    """recovery_trusted 키가 없는 매니페스트는 복원 사전 점검에서 거부됩니다."""
+    snap, manifest = _create_valid_snapshot_dir(tmp_path)
+    del manifest["recovery_trusted"]
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    assert execute_restore(snap, execute=False, project_root=tmp_path) is False
