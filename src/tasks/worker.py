@@ -13,6 +13,7 @@ import asyncio
 import logging
 import os
 import socket
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -63,31 +64,82 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _redis_queue_length() -> int | None:
-    """Arq 큐 길이를 조회합니다. Redis 장애는 관측 실패로만 처리합니다."""
+def _redis_queue_metrics(now_ms: int | None = None) -> dict[str, int] | None:
+    """Arq 큐 적체 지표를 정렬 집합(ZSET) 기준으로 조회합니다.
+
+    - pending: 현재 시각 이하 score (지금 즉시 실행 대기 중인 작업 수)
+    - total: 큐의 전체 작업 수 (zcard)
+    - deferred: 미래 예약 작업 수 (total - pending)
+
+    Redis 장애는 관측 실패(None)로 처리합니다.
+    """
     try:
-        client = _worker_cache._conn.client()
+        client = getattr(_worker_cache, "client", lambda: None)()
+        if client is None and hasattr(_worker_cache, "_conn"):
+            conn = _worker_cache._conn
+            if hasattr(conn, "client"):
+                client = conn.client()
         if client is None:
             return None
-        return int(client.llen(ARQ_QUEUE_KEY))
+
+        current_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        ready = int(client.zcount(ARQ_QUEUE_KEY, "-inf", current_ms))
+        total = int(client.zcard(ARQ_QUEUE_KEY))
+        deferred = max(0, total - ready)
+        return {
+            "pending": ready,
+            "total": total,
+            "deferred": deferred,
+        }
     except Exception:
         return None
 
 
+def _redis_queue_length() -> int | None:
+    """Arq 큐의 즉시 실행 대기 작업 수(pending)를 반환합니다.
+
+    하위 호환성을 위해 유지합니다.
+    """
+    metrics = _redis_queue_metrics()
+    return metrics["pending"] if metrics is not None else None
+
+
 def record_worker_heartbeat() -> None:
     """워커 생존 시각, 식별자와 관측 시점의 큐 적체를 기록합니다."""
+    now = _now_iso()
     try:
-        now = _now_iso()
         _worker_cache.set(
             WORKER_HEARTBEAT_KEY,
             {"worker_id": _worker_id, "last_seen_at": now},
             OBSERVATION_TTL_SECONDS,
         )
-        queue_length = _redis_queue_length()
-        if queue_length is not None:
+    except Exception:
+        logger.debug("워커 heartbeat 기록 실패 (무시됨)")
+
+    try:
+        metrics = _redis_queue_metrics()
+        if metrics is not None:
             _worker_cache.set(
                 QUEUE_BACKLOG_KEY,
-                {"pending": queue_length, "observed_at": now},
+                {
+                    "status": "ok",
+                    "pending": metrics["pending"],
+                    "total": metrics["total"],
+                    "deferred": metrics["deferred"],
+                    "observed_at": now,
+                },
+                OBSERVATION_TTL_SECONDS,
+            )
+        else:
+            _worker_cache.set(
+                QUEUE_BACKLOG_KEY,
+                {
+                    "status": "unavailable",
+                    "pending": None,
+                    "total": None,
+                    "deferred": None,
+                    "observed_at": now,
+                },
                 OBSERVATION_TTL_SECONDS,
             )
     except Exception:
