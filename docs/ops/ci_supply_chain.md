@@ -119,3 +119,38 @@ fi
    - 명령: `python3 scripts/validate_agent_rules.py --quiet`
    - exit_code: 0
    - 결과 요약: `검증 통과: 20/20 건.`
+
+## 5. 공급망 액션 및 도구 불변 참조 고정 실측 (S-02)
+
+2026-09-04 외부 진단 보고서 S-02 권고에 따라, 가변 태그(`v5`, `v4` 등) 및 최신 버전 동적 수신으로 인한 공급망 게이트 변조 위험을 원천 차단하기 위해 모든 액션과 스캐너 버전을 불변 참조로 고정하였습니다.
+
+### 5.1 액션 커밋 SHA 실측 및 태그 객체 해소
+
+GitHub API(`gh api`)를 통해 워크플로에서 사용하는 7종 액션의 태그 대상 커밋을 실측하였으며, annotated tag 객체(`tag`)인 경우 실제 대상 커밋(`commit`) SHA를 1회 더 조회하여 고정하였습니다.
+
+| 액션 | 태그 | GitHub API 실측 및 해소 과정 | 최종 고정 커밋 SHA |
+|---|---|---|---|
+| `actions/checkout` | `v5` | `ref/tags/v5` -> direct `commit` | `fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09` |
+| `actions/setup-python` | `v5` | `ref/tags/v5` -> direct `commit` | `a26af69be951a213d495a4c3e4e4022e16d87065` |
+| `actions/setup-node` | `v4` | `ref/tags/v4` -> direct `commit` | `49933ea5288caeca8642d1e84afbd3f7d6820020` |
+| `actions/upload-artifact` | `v4` | `ref/tags/v4` -> direct `commit` | `ea165f8d65b6e75b540449e92b4886f43607fa02` |
+| `astral-sh/setup-uv` | `v3` | `ref/tags/v3` -> tag `8d55fbe...` -> target `commit` | `caf0cab7a618c569241d31dcd442f54681755d39` |
+| `aquasecurity/trivy-action` | `v0.36.0` | `ref/tags/v0.36.0` -> tag `a9c7b0f...` -> target `commit` | `ed142fd0673e97e23eac54620cfb913e5ce36c25` |
+| `anchore/sbom-action` | `v0.24.2` | `ref/tags/v0.24.2` -> tag `006b7ce...` -> target `commit` | `3ad7283483fc7af8ff2b4ea19663c2d5ca935e26` |
+
+### 5.2 pip-audit 및 린터 컨테이너 불변 고정
+
+1. **pip-audit 고정**:
+   - `uvx --from pip-audit` 방식에서 `uvx --from 'pip-audit==2.10.1' pip-audit`로 고정하여 매 실행마다 재현 가능한 2.10.1 버전을 보장합니다.
+2. **rhysd/actionlint 도커 이미지 다이제스트 고정**:
+   - 로컬 및 CI에서 shellcheck 연계 검증을 수행하는 actionlint 컨테이너를 sha256 불변 다이제스트로 실측하여 확보하였습니다:
+   - 다이제스트: `rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`
+
+### 5.3 게이트 불변조건 검증 결과
+
+1. **워크플로 린트 (`uv run actionlint`)**: 오류 0건으로 정상 종료.
+2. **shellcheck 통합 린트 컨테이너**:
+   - 명령: `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`
+   - exit_code: 0, 오류 0건 정상 통과.
+3. **게이트 강도 보존**:
+   - 차단 임계(CRITICAL, HIGH), fail-closed 입력 계약, continue-on-error 부재 원칙 100% 보존.

@@ -1,6 +1,6 @@
 # 공급망 스캔 정책
 
-> **버전**: 1.3.1
+> **버전**: 1.4.0
 > **최종 갱신**: 2026-09-05
 > **소유**: 1인 개발 담당자
 
@@ -80,8 +80,8 @@ Trivy 의 `ignore-unfixed: true` 옵션은 유지한다. 상류에 픽스가 없
 
 ## 5. SBOM
 
-SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@v0.24.2` 가
-`refac-bid-box-sbom.spdx.json` 을 그대로 만들고, `actions/upload-artifact@v4` 로
+SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26` (`v0.24.2`) 가
+`refac-bid-box-sbom.spdx.json` 을 그대로 만들고, `actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02` (`v4`) 로
 업로드한다. SBOM 자체는 게이트와 무관한 감사 산출물이다.
 
 ## 6. 책임 및 1인 작업 운영
@@ -101,6 +101,7 @@ SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@v0.24.2` 가
 | 2026-09-04 | 1.2.0 | 판정 스크립트 입력 계약 검증 도입 (오류 객체, 빈 객체, 오타입 차단, Results 부재 vs 0건 구분, npm metadata 개수 검증, 미해소 전이 의존성 차단) |
 | 2026-09-04 | 1.3.0 | Trivy `Results[].Error` 대상 오류 차단, npm `errors` 배열 차단, npm `metadata` 패키지 수 대비 파서 설명 가능성(explainability) 정합성 검증, Trivy Action 핀 실측 기준 명시 |
 | 2026-09-05 | 1.3.1 | 1인 작업 체계(AGENTS.md 6장) 정합: PR 전제 절차 제거, 예외 추적을 allowlist 필수 필드 및 커밋 메시지 기록으로 일원화, 소유 주체 정정 (C-02) |
+| 2026-09-05 | 1.4.0 | GitHub Actions 7종 40자 커밋 SHA 불변 고정, pip-audit 2.10.1 명시 고정, actionlint 컨테이너 다이제스트 고정 및 1인 작업 갱신 절차 추가 (S-02) |
 
 
 ## 8. 예외 목록 계약의 기계 강제
@@ -137,3 +138,46 @@ SBOM 생성 단계는 변경하지 않는다. `anchore/sbom-action@v0.24.2` 가
 
 - **Trivy 스키마 고정**: 저장소 워크플로에 핀된 `aquasecurity/trivy-action@v0.36.0` 이 실제로 산출하는 스키마 버전은 `SchemaVersion: 2` 입니다. 각 `Results` 항목의 키는 `Class`, `Packages`, `Target`, `Type` 등으로 구성됩니다. 미지 스키마에 대해서는 임의 버전을 통과시키지 않고 fail-closed(차단)를 유지하며, 향후 상류 액션 업그레이드 시 실측 검증을 거쳐 지원 범위를 확장합니다.
 - **npm audit 설명 가능성 (Explainability)**: npm audit v2의 `metadata.vulnerabilities` 수치는 개별 advisory 수가 아닌 **취약 패키지 수** 단위입니다. 단일 패키지에 복수의 advisory 가 존재하거나 전이 의존성 링크(`via: ["cause-pkg"]`)가 존재하는 경우에도, 파서는 모든 대상 패키지가 유효한 advisory 또는 해소된 전이 체인으로 완전히 설명되는지 교차 검증하여 거짓 차단(False Positive)과 누락(False Negative)을 동시에 방지합니다.
+
+## 10. 워크플로 액션 및 도구 불변 참조 고정 (S-02)
+
+이동 가능한 Git 태그(예: `v5`, `v4`)나 도구의 암묵적 최신 버전(`latest`) 참조는 가리키는 대상이 상류 저장소에서 임의로 변경될 수 있어, 공급망 게이트가 예기치 않은 코드를 실행하게 만들 위험이 있습니다. 이에 따라 모든 GitHub Actions와 핵심 스캐너/린터 도구는 불변 참조(40자 커밋 SHA, 명시적 버전, 컨테이너 이미지 다이제스트)로 고정합니다.
+
+### 10.1 GitHub Actions 커밋 SHA 고정 목록
+
+모든 워크플로(`.github/workflows/ci.yml`, `.github/workflows/release.yml`)의 액션은 반드시 40자 전체 커밋 SHA로 고정하며, 가독성을 위해 주석으로 원래 태그를 명시합니다 (형식: `<action>@<40자 SHA> # <태그>`).
+
+| 액션 | 태그 | 고정 커밋 SHA | 유형 |
+|---|---|---|---|
+| `actions/checkout` | `v5` | `fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09` | direct commit |
+| `actions/setup-python` | `v5` | `a26af69be951a213d495a4c3e4e4022e16d87065` | direct commit |
+| `actions/setup-node` | `v4` | `49933ea5288caeca8642d1e84afbd3f7d6820020` | direct commit |
+| `actions/upload-artifact` | `v4` | `ea165f8d65b6e75b540449e92b4886f43607fa02` | direct commit |
+| `astral-sh/setup-uv` | `v3` | `caf0cab7a618c569241d31dcd442f54681755d39` | target commit (annotated tag 해소) |
+| `aquasecurity/trivy-action` | `v0.36.0` | `ed142fd0673e97e23eac54620cfb913e5ce36c25` | target commit (annotated tag 해소) |
+| `anchore/sbom-action` | `v0.24.2` | `3ad7283483fc7af8ff2b4ea19663c2d5ca935e26` | target commit (annotated tag 해소) |
+
+### 10.2 도구 및 컨테이너 불변 참조
+
+1. **pip-audit 고정**:
+   - 워크플로 내에서 `uvx --from pip-audit`로 최신 버전을 동적 수신하던 방식을 `uvx --from 'pip-audit==2.10.1' pip-audit`로 고정하여 매 실행마다 동일한 스캐너 버전을 보장합니다.
+2. **rhysd/actionlint 도커 이미지 다이제스트 고정**:
+   - 로컬 및 CI 환경의 shellcheck 연계 검증에 사용되는 actionlint 도커 이미지는 태그(`latest`) 대신 sha256 불변 다이제스트로 고정하여 사용 가능합니다:
+   - 다이제스트 참조: `rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`
+   - 실행 명령 예시: `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`
+
+### 10.3 불변 참조 갱신 절차 (1인 작업 체계)
+
+본 저장소는 1인 작업 체계([`AGENTS.md`](../../AGENTS.md) 6장)로 Pull Request 승인 절차를 전제하지 않습니다. 1인 개발 담당자가 의존 액션이나 도구 버전을 갱신할 때는 다음 기계적 검증 절차를 필수로 수행해야 합니다.
+
+1. **커밋 SHA 실측 및 annotated tag 해소**:
+   - GitHub API를 통해 해당 태그의 실제 커밋 SHA를 추출합니다.
+   - `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`
+   - 반환된 객체 타입이 `tag`(annotated tag)인 경우, 반드시 `gh api repos/<owner>/<repo>/git/tags/<tag_sha>`를 1회 더 호출하여 대상 `commit` SHA를 얻어야 합니다. (태그 객체 SHA를 액션 uses에 기재하면 액션 런타임이 커밋을 찾지 못해 CI가 즉시 실패합니다).
+2. **워크플로 구문 린트 및 shellcheck 검증**:
+   - `uv run actionlint` 실행으로 워크플로 구문 오류가 없음을 확인 (종료 코드 0).
+   - `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667`를 실행하여 shellcheck 연계 린트 통과 확인 (종료 코드 0).
+3. **보안 게이트 강도 유지 확인**:
+   - 버전 갱신 과정에서 기존 차단 임계(CRITICAL, HIGH), fail-closed 입력 계약, continue-on-error 부재 원칙이 축소되지 않았는지 확인합니다.
+4. **추적성 커밋 기록**:
+   - 작업 브랜치 커밋 메시지에 갱신 대상 액션/도구, 이전/이후 SHA 또는 버전, 실측 검증 명령 수행 결과를 명시합니다.
