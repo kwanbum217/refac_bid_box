@@ -102,8 +102,7 @@
 | Antigravity (Gemini) | `terminal create --command "agy ..."` 또는 런처 뒤 `dispatch` (preamble 대체 자동 지원) | 예 |
 | OpenCode Zen (MiMo, DeepSeek) | `terminal create --command "opencode"` 뒤 `dispatch --inject` | 예 |
 | Kimi Code (OpenRouter 무료) | `dispatch --return-preamble` 뒤 `kimi -m <alias> -p "<preamble>"` | 예 (Dispatch 계보만) |
-| OpenCode Zen (MiMo, DeepSeek) | `terminal create --command "opencode"` 뒤 `dispatch --inject` | 예 |
-| Kimi Code (OpenRouter 무료) | `dispatch --return-preamble` 뒤 `kimi -m <alias> -p "<preamble>"` | 예 (Dispatch 계보만) |
+| Grok Code (`grok`) | `dispatch --return-preamble` 뒤 `grok --model <id> --always-approve "<preamble>"` | 예 (Dispatch 계보만) |
 
 > **Gemini CLI(`gemini`)는 워커로 쓸 수 없습니다.** 개인 계정 지원이 종료되어
 > 인증 단계에서 `IneligibleTierError: UNSUPPORTED_CLIENT` 로 끊깁니다
@@ -503,6 +502,47 @@ uv run python scripts/orca_codex_launch.py --task <task_id> --name <워크트리
 `worker-start` 를 직접 부르는 저수준 경로도 여전히 유효하지만, **그때는
 워크트리가 생기자마자 Capsule 을 넣고 워커에게 배치 사실을 즉시 고지해야
 합니다.** 고지 없이 두면 워커는 이미 없는 파일을 본 상태로 진행합니다.
+
+### 1.7 Grok Code 는 독립 리뷰어의 기본 경로입니다
+
+리뷰어는 빌더와 다른 계열이어야 합니다. 빌더가 Antigravity Gemini 인 동안
+`TIER_POLICY` 의 리뷰어 주 모델은 `qwen-plus` 이지만, Alibaba Token Plan 잔량이
+마르면 대체 경로가 필요합니다. `grok` 이 그 자리입니다.
+
+| 항목 | 값 |
+| --- | --- |
+| 실행 파일 | `/opt/homebrew/bin/grok` |
+| 라우터 등록 모델 | `grok-4.6`, `grok-4.5` (둘 다 `auto_selectable=False`, 수동 지정 전용) |
+| provider | `grok` |
+| 기동 경로 | `dispatch --return-preamble` 뒤 `terminal send` |
+
+Kimi 와 같은 계열의 경로입니다. TUI 에 지시를 주입하지 않고 preamble 을
+런치 인자로 넘깁니다.
+
+```bash
+orca terminal create --worktree path:<워크트리> --title "리뷰어 grok" --command "zsh" --json
+orca orchestration dispatch --task <task_id> --to <handle> --run <run_id> --return-preamble --json
+# 반환된 preamble 을 <워크트리>/.orca/preamble_grok.txt 에 기록한 뒤
+orca terminal send --terminal <handle> \
+  --text 'grok --model grok-4.6 --always-approve "$(cat .orca/preamble_grok.txt)"' --enter --json
+```
+
+`--always-approve` 라 승인 대화창에 걸리지 않으므로 `shift+tab` 전송이나
+자동 승인 감시기가 필요 없습니다. 읽기 전용 리뷰어에게만 쓰십시오. 쓰기 범위가
+있는 빌더에 `--always-approve` 를 주면 승인 없이 파일을 고칩니다.
+
+**effort 를 올리지 마십시오.** 추론 등급 상향은 코디네이터 등급이며 워커에는
+쓰지 않습니다.
+
+**이 경로는 `worker-start` 가 아니므로 비감독입니다.** `worker_dispatches` 행이
+생기지 않아 `worker-release` 가 `retained` / `no_owned_resource` 로 돌아옵니다.
+회수는 `orca terminal close --terminal <handle>` 로 직접 하고, 비감독을 선택한
+사실을 인수인계에 적으십시오.
+
+2026-09-05 세션에서 이 경로로 리뷰어 세 대(T10, T-01, C-01/C-02)를 띄웠고
+전부 정상 판정을 반환했습니다. 같은 날 `qwen3.7-plus` 는 할당량 소진 상태였습니다.
+
+---
 
 ---
 
