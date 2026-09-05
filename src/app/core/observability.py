@@ -228,21 +228,13 @@ async def arq_on_job_start(ctx: dict[str, Any]) -> None:
     _registry.arq_instrumented = True
 
 
-def _resolve_cancel_reason(
-    exc: BaseException | None = None,
-    ctx: dict[str, Any] | None = None,
-) -> str:
+def _resolve_cancel_reason(ctx: dict[str, Any] | None = None) -> str:
     """작업 취소 원인을 판별합니다.
 
     정상 종료(워커 셧다운으로 인한 배경 태스크 취소)와 사용자 abort 등을 구분합니다.
+    asyncio.CancelledError 는 대개 인자를 갖지 않으므로 예외 문자열을 파싱하지 않고,
+    워커가 ctx 에 넣는 worker_shutting_down 과 is_background_catchup 만 본다.
     """
-    if exc is not None and exc.args:
-        first_arg = str(exc.args[0]).lower()
-        if "shutdown" in first_arg:
-            return "worker_shutdown"
-        if "abort" in first_arg:
-            return "aborted"
-
     if isinstance(ctx, dict):
         if ctx.get("worker_shutting_down") or ctx.get("shutdown"):
             return "worker_shutdown"
@@ -317,8 +309,8 @@ def trace_worker_task(
         try:
             yield span
             span.set_status(Status(StatusCode.OK))
-        except asyncio.CancelledError as exc:
-            cancel_reason = _resolve_cancel_reason(exc, ctx)
+        except asyncio.CancelledError:
+            cancel_reason = _resolve_cancel_reason(ctx)
             span.set_attribute("task.cancelled", True)
             span.set_attribute("task.cancel_reason", cancel_reason)
             setattr(span, "_task_cancelled", True)  # noqa: B010
@@ -365,11 +357,8 @@ def traced_worker_task(
                 ctx = args[0] if args and isinstance(args[0], dict) else None
                 job_id = str(ctx.get("job_id")) if ctx and "job_id" in ctx else None
                 attrs = dict(default_attributes)
-                try:
-                    with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
-                        return await fn(*args, **kwargs)
-                except asyncio.CancelledError:
-                    raise
+                with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
+                    return await fn(*args, **kwargs)
 
             wrapper = async_wrapper
         else:
@@ -382,11 +371,8 @@ def traced_worker_task(
                 ctx = args[0] if args and isinstance(args[0], dict) else None
                 job_id = str(ctx.get("job_id")) if ctx and "job_id" in ctx else None
                 attrs = dict(default_attributes)
-                try:
-                    with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
-                        return fn(*args, **kwargs)
-                except asyncio.CancelledError:
-                    raise
+                with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
+                    return fn(*args, **kwargs)
 
             wrapper = sync_wrapper
 

@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && python -m venv --without-pip "$VIRTUAL_ENV" \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 /uv /bin/uv
 COPY pyproject.toml uv.lock ./
 
 # uv.lock 에서 운영 의존성만 설치하여 빌드 시점의 재해석을 막습니다.
