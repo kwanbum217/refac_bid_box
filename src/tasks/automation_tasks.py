@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.app.core.db import SessionLocal
+from src.app.core.observability import traced_worker_task
 from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import PipelineExecution
 from src.app.services.api_collector import mask_credentials
@@ -401,36 +402,43 @@ async def run_automation_pipeline(
         db.close()
 
 
+@traced_worker_task
 async def preflight_check_task(ctx, **kwargs):
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="preflight_only", **kwargs)
 
 
+@traced_worker_task
 async def collect_bids_task(ctx, **kwargs):
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="collect_only", **kwargs)
 
 
+@traced_worker_task
 async def update_kb_task(ctx, **kwargs):
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="kb_only", **kwargs)
 
 
+@traced_worker_task
 async def validate_model_task(ctx, **kwargs):
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="predict_only", **kwargs)
 
 
+@traced_worker_task
 async def refresh_data_task(ctx, **kwargs):
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="refresh_data", **kwargs)
 
 
+@traced_worker_task
 async def manual_full_task(ctx, **kwargs):
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="manual_full", **kwargs)
 
 
+@traced_worker_task
 async def manual_retrain_task(ctx, **kwargs):
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="retrain_only", **kwargs)

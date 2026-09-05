@@ -244,7 +244,11 @@ async def arq_on_job_end(ctx: dict[str, Any]) -> None:
         # detach 결과와 무관하게 span 은 반드시 종료합니다. 종료하지 않으면
         # 그 작업의 span 이 누수되어 이후 계측이 어긋납니다.
         if span is not None:
-            span.set_status(Status(StatusCode.OK))
+            # 이미 ERROR 로 기록된 span 은 그대로 두고, 아닌 경우에만 OK 로 설정
+            status = getattr(span, "status", None)
+            status_code = getattr(status, "status_code", None)
+            if status_code != StatusCode.ERROR:
+                span.set_status(Status(StatusCode.OK))
             span.end()
 
 
@@ -252,6 +256,7 @@ async def arq_on_job_end(ctx: dict[str, Any]) -> None:
 def trace_worker_task(
     task_name: str,
     task_id: str | None = None,
+    ctx: dict[str, Any] | None = None,
     **attributes: Any,
 ) -> Iterator[trace.Span | None]:
     """워커 태스크 및 작업 구간을 계측하는 컨텍스트 매니저입니다.
@@ -261,6 +266,15 @@ def trace_worker_task(
     if not _registry.enabled:
         yield None
         return
+
+    # 최상위 span 참조 확보 (ctx 의 _otel_span 또는 현재 context 의 span)
+    top_span: trace.Span | None = None
+    if isinstance(ctx, dict):
+        top_span = ctx.get("_otel_span")
+    if top_span is None:
+        current_span = trace.get_current_span()
+        if current_span is not None and current_span.is_recording():
+            top_span = current_span
 
     tracer = trace.get_tracer("refac_bid_box.arq", tracer_provider=_registry.tracer_provider)
     with tracer.start_as_current_span(f"arq.task:{task_name}") as span:
@@ -277,7 +291,66 @@ def trace_worker_task(
         except Exception as exc:
             span.record_exception(exc)
             span.set_status(Status(StatusCode.ERROR, str(exc)))
+            if top_span is not None and top_span.is_recording():
+                top_span.record_exception(exc)
+                top_span.set_status(Status(StatusCode.ERROR, str(exc)))
             raise
+
+
+def traced_worker_task(
+    fn_or_name: Any = None,
+    *,
+    task_name: str | None = None,
+    **default_attributes: Any,
+) -> Any:
+    """Arq 워커 태스크 함수를 trace_worker_task 로 감싸는 데코레이터.
+
+    비활성화 상태(OTEL_ENABLED=False)에서는 오버헤드 없이 원래 함수를 즉시 호출합니다.
+    """
+    import inspect
+    from functools import wraps
+
+    def decorator(fn: Any) -> Any:
+        resolved_name: str = str(task_name or getattr(fn, "__name__", "unnamed_task"))
+
+        if inspect.iscoroutinefunction(fn):
+
+            @wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                if not _registry.enabled:
+                    return await fn(*args, **kwargs)
+
+                ctx = args[0] if args and isinstance(args[0], dict) else None
+                job_id = str(ctx.get("job_id")) if ctx and "job_id" in ctx else None
+                attrs = dict(default_attributes)
+                with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
+                    return await fn(*args, **kwargs)
+
+            wrapper = async_wrapper
+        else:
+
+            @wraps(fn)
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+                if not _registry.enabled:
+                    return fn(*args, **kwargs)
+
+                ctx = args[0] if args and isinstance(args[0], dict) else None
+                job_id = str(ctx.get("job_id")) if ctx and "job_id" in ctx else None
+                attrs = dict(default_attributes)
+                with trace_worker_task(resolved_name, task_id=job_id, ctx=ctx, **attrs):
+                    return fn(*args, **kwargs)
+
+            wrapper = sync_wrapper
+
+        wrapper.__traced_worker_task__ = True  # type: ignore[attr-defined]
+        wrapper.__task_name__ = resolved_name  # type: ignore[attr-defined]
+        return wrapper
+
+    if callable(fn_or_name):
+        return decorator(fn_or_name)
+    if isinstance(fn_or_name, str) and task_name is None:
+        task_name = fn_or_name
+    return decorator
 
 
 def get_observability_status() -> dict[str, Any]:
