@@ -33,6 +33,7 @@ from typing import Any
 
 try:
     from scripts.orca_level1_gate import (
+        CAP_BACKEND_MYPY,
         CAP_BACKEND_PYTEST,
         CAP_COMPOSE_CONFIG,
         CAP_DOCKER_BUILD,
@@ -50,6 +51,7 @@ except (ModuleNotFoundError, ImportError):
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
     from scripts.orca_level1_gate import (
+        CAP_BACKEND_MYPY,
         CAP_BACKEND_PYTEST,
         CAP_COMPOSE_CONFIG,
         CAP_DOCKER_BUILD,
@@ -177,12 +179,14 @@ WORKER_SUMMARY_FINALIZE_TIMEOUT = LEVEL1_FINALIZE_TIMEOUT
 # 넣으면 문서만 고친 Task 도 전량 pytest 를 돌립니다. 쓰기 범위 성격에 맞춰 붙입니다.
 RULES_VERIFICATION_COMMAND = "python3 scripts/validate_agent_rules.py --quiet"
 BACKEND_VERIFICATION_COMMAND = "uv run pytest tests/ -q -m 'not data_assets'"
+MYPY_VERIFICATION_COMMAND = "uv run mypy src"
 DEFAULT_VERIFICATION_COMMANDS = [BACKEND_VERIFICATION_COMMAND, RULES_VERIFICATION_COMMAND]
 
 # 검증 능력과 그것을 덮는 명령의 대응. 순서가 Capsule 에 적히는 순서입니다.
 # docker_build 는 빌드 컨텍스트별로 갈리므로 여기 두지 않고 따로 만듭니다.
 CAPABILITY_COMMANDS = [
     (CAP_BACKEND_PYTEST, BACKEND_VERIFICATION_COMMAND),
+    (CAP_BACKEND_MYPY, MYPY_VERIFICATION_COMMAND),
     (CAP_FRONTEND_TEST, "npm --prefix frontend run test"),
     (CAP_FRONTEND_BUILD, "npm --prefix frontend run build"),
     (CAP_COMPOSE_CONFIG, "docker compose config -q"),
@@ -482,18 +486,37 @@ def _uses_docker(capabilities: set[str]) -> bool:
     )
 
 
+def _parse_shared_resource_item(item: Any) -> tuple[str, str] | None:
+    """공유 자원 선언 항목을 (resource, ownership) 튜플로 파싱합니다."""
+    if isinstance(item, dict):
+        res = str(item.get("resource", "")).strip()
+        own = str(item.get("ownership", "exclusive")).strip()
+        if res:
+            return (res, own)
+    elif isinstance(item, (list, tuple)) and len(item) >= 2:
+        res = str(item[0]).strip()
+        own = str(item[1]).strip()
+        if res:
+            return (res, own)
+    elif isinstance(item, str) and item.strip():
+        raw = item.strip()
+        if ":" in raw:
+            parts = raw.split(":", 1)
+            return (parts[0].strip(), parts[1].strip())
+        return (raw, "exclusive")
+    return None
+
+
 def resolve_shared_resources(
     write_files: list[str],
     verification_commands: list[str] | None = None,
+    intent: dict[str, Any] | None = None,
 ) -> list[tuple[str, str]]:
     """점유하는 공유 자원과 소유권 수준을 정합니다.
 
-    docker 검증이 붙는 Task 는 docker 를 배타 점유합니다. 스킬 문서는 이를
-    요구하는데 템플릿은 features_py 만 고정으로 적고 있었습니다.
-
-    쓰기 범위뿐 아니라 실제로 실행할 검증 명령도 봅니다. Intent 가 docker 명령을
-    직접 적고 쓰기 범위에는 파이썬 파일만 두면, 범위만 보는 판정은 점유를
-    놓칩니다.
+    Intent 에 선언된 shared_resources 와 쓰기 범위/검증 명령에서 도출된
+    공유 자원(docker, features_py)을 합치되 계산이 요구하는 공유 자원 점유는
+    반드시 유지합니다.
     """
     paths = [str(path).strip() for path in write_files if str(path).strip()]
     capabilities = set(required_capabilities(paths))
@@ -504,10 +527,22 @@ def resolve_shared_resources(
             # 허용 목록 밖 명령은 게이트 3 이 거부합니다. 여기서는 무시합니다.
             continue
 
-    resources = list(BASE_SHARED_RESOURCES)
+    resource_map: dict[str, str] = {}
+    for resource, ownership in BASE_SHARED_RESOURCES:
+        resource_map[resource] = ownership
+
+    if intent:
+        raw_declared = intent.get("shared_resources", [])
+        if isinstance(raw_declared, list):
+            for item in raw_declared:
+                parsed = _parse_shared_resource_item(item)
+                if parsed:
+                    resource_map[parsed[0]] = parsed[1]
+
     if _uses_docker(capabilities):
-        resources.append(("docker", "exclusive"))
-    return resources
+        resource_map["docker"] = "exclusive"
+
+    return list(resource_map.items())
 
 
 def _format_shared_resources(resources: list[tuple[str, str]]) -> str:
@@ -525,14 +560,13 @@ def resolve_verification_commands(
 ) -> list[str]:
     """Task Intent 와 쓰기 범위로부터 Capsule 의 verification_commands 를 정합니다.
 
-    Intent 가 명시하면 그것을 씁니다. 종전에는 템플릿에 backend pytest 두 줄이
-    박혀 있어 Intent 가 무엇을 적든 무시됐습니다. 명시가 없으면 쓰기 범위가
-    요구하는 검증 능력을 게이트와 같은 함수로 구해 그 능력을 덮는 명령만
-    붙입니다. 판정 기준을 따로 구현하면 Capsule 이 붙이지 않은 검증을 게이트가
-    요구하는, 통과 불가능한 Task 가 생깁니다. 문서만 고치는 Task 에 전량
-    pytest 가 붙던 것도 이 기준을 쓰지 않았기 때문입니다.
+    Intent 가 명시하면 그것을 그대로 보존합니다. 명시가 없으면 쓰기 범위가
+    요구하는 검증 능력(src/ 변경 시 mypy 포함)을 게이트와 같은 함수로 구해
+    그 능력을 덮는 명령 목록을 계산하여 반환합니다.
     """
-    declared = [str(item).strip() for item in intent.get("verification_commands", [])]
+    declared = [
+        str(item).strip() for item in intent.get("verification_commands", []) if str(item).strip()
+    ]
     if declared:
         return list(dict.fromkeys(item for item in declared if item))
 
@@ -695,6 +729,8 @@ def parse_intent(text: str) -> dict[str, Any]:
         "ground_truth": [],
         "required_change": [],
         "review_checklist": [],
+        "shared_resources": [],
+        "verification_commands": [],
     }
 
     lines = text.splitlines()
@@ -743,6 +779,43 @@ def parse_intent(text: str) -> dict[str, Any]:
             result["review_checklist"] = checklist
             continue
 
+        # shared_resources 특별 처리
+        if re.match(r"^shared_resources:\s*(?:#.*)?$", stripped):
+            shared_res: list[Any] = []
+            i += 1
+            current_res: dict[str, str] = {}
+            while i < total_lines:
+                raw_sub = lines[i]
+                if raw_sub and not raw_sub[0].isspace() and not raw_sub.startswith("#"):
+                    break
+                sub_stripped = raw_sub.strip()
+                if not sub_stripped or sub_stripped.startswith("#"):
+                    i += 1
+                    continue
+
+                if sub_stripped.startswith("- "):
+                    if current_res:
+                        shared_res.append(current_res)
+                        current_res = {}
+                    sub_content = sub_stripped[2:].strip()
+                    m = re.match(r"^([a-z_]+):\s*(.*)$", sub_content)
+                    if m:
+                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        current_res[k] = v
+                    else:
+                        shared_res.append(sub_content.strip("\"'"))
+                else:
+                    m = re.match(r"^([a-z_]+):\s*(.*)$", sub_stripped)
+                    if m:
+                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        current_res[k] = v
+                i += 1
+
+            if current_res:
+                shared_res.append(current_res)
+            result["shared_resources"] = shared_res
+            continue
+
         # 최상위 키: 값 파싱
         match = re.match(r"^([a-z_]+):\s*(.*)$", stripped)
         if match:
@@ -758,6 +831,7 @@ def parse_intent(text: str) -> dict[str, Any]:
                 "required_write_files",
                 "deps",
                 "target_tasks",
+                "verification_commands",
             ):
                 items: list[str] = []
                 if val and val != "[]":
@@ -985,7 +1059,7 @@ def expand_intent_to_capsule(
         required_change=required_change_formatted,
         acceptance=acceptance_formatted,
         shared_resources=_format_shared_resources(
-            resolve_shared_resources(write_files, verification_commands)
+            resolve_shared_resources(write_files, verification_commands, intent=intent)
         ),
         verification_commands=_format_yaml_list(verification_commands),
         artifact_paths=artifact_paths_formatted,

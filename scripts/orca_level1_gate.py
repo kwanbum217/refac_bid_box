@@ -194,6 +194,8 @@ DOC_ONLY_SUFFIXES = frozenset({".md", ".rst", ".adoc"})
 # 2026-08-19 측정에서 frontend 를 영역으로만 두니 `npm run lint` 하나가 test 와
 # build 를 대신했고, Dockerfile 변경이 backend pytest 통과로 덮였습니다.
 CAP_BACKEND_PYTEST = "backend_pytest"
+CAP_BACKEND_MYPY = "backend_mypy"
+CAP_MYPY = CAP_BACKEND_MYPY
 CAP_FRONTEND_TEST = "frontend_test"
 CAP_FRONTEND_BUILD = "frontend_build"
 CAP_DOCKER_BUILD = "docker_build"
@@ -225,18 +227,31 @@ def docker_build_capability(context: str) -> str:
 
 def _path_capabilities(path: str) -> set[str]:
     """경로 하나가 요구하는 검증 능력을 판정합니다."""
-    name = Path(path).name
-    if path.startswith(WORKFLOW_PATH_PREFIX) and Path(path).suffix.lower() in {".yml", ".yaml"}:
+    cleaned = path.strip()
+    while cleaned.startswith("./"):
+        cleaned = cleaned[2:]
+    name = Path(cleaned).name
+    if cleaned.startswith(WORKFLOW_PATH_PREFIX) and Path(cleaned).suffix.lower() in {
+        ".yml",
+        ".yaml",
+    }:
         return {CAP_WORKFLOW_LINT}
     # .dockerignore 는 빌드 컨텍스트를 정합니다. 여기서 src/ 를 제외해 버리면
     # pytest 는 그대로 통과하면서 이미지 빌드만 깨집니다.
     if name == ".dockerignore" or name == "Dockerfile" or name.startswith("Dockerfile."):
-        parent = PurePosixPath(path).parent.as_posix()
+        parent = PurePosixPath(cleaned).parent.as_posix()
         return {docker_build_capability(parent)}
     if COMPOSE_NAME_RE.match(name):
         return {CAP_COMPOSE_CONFIG}
-    if path.startswith(FRONTEND_PATH_PREFIXES):
+    if cleaned.startswith(FRONTEND_PATH_PREFIXES):
         return {CAP_FRONTEND_TEST, CAP_FRONTEND_BUILD}
+    if cleaned.startswith("src/") and (
+        Path(cleaned).suffix.lower() == ".py"
+        or cleaned.endswith("/...")
+        or cleaned.endswith("/**")
+        or cleaned == "src/..."
+    ):
+        return {CAP_BACKEND_PYTEST, CAP_BACKEND_MYPY}
     return {CAP_BACKEND_PYTEST}
 
 
@@ -574,6 +589,14 @@ def parse_verification_command(command: str) -> VerificationCommand:
             None,
             frozenset({CAP_BACKEND_PYTEST}),
         )
+    if head == "mypy":
+        return VerificationCommand(
+            command,
+            ["uv", "run", "mypy", *tokens[1:]],
+            None,
+            frozenset({CAP_BACKEND_MYPY}),
+            "raw",
+        )
     if head == "npm":
         return _parse_npm_command(command, tokens)
     if head == "docker":
@@ -860,29 +883,51 @@ def run_gate5_review_report(
 
 
 def run_gate6_worker_done(
-    report_path: Path | None,
-    capsule_path: Path | None,
-    repo_path: Path,
+    report_path: Path | str | list[Path | str] | None = None,
+    capsule_path: Path | None = None,
+    repo_path: Path = Path("."),
     base: str = "main",
     branch: str = "HEAD",
     allow_missing: bool = False,
+    reports: list[Path | str] | None = None,
 ) -> GateResult:
     """게이트 6: 워커 완료 보고(worker_done) 진실성 및 계약 검증.
 
-    보고 파일이 없거나(allow_missing 제외) commit/branch 실존성,
-    changed_files 일치 검증에 실패하면 fail 로 판정합니다.
+    단일 보고 또는 복수 보고를 지원합니다. 복수 보고가 주어지면 changed_files 는
+    합집합으로 브랜치 diff 와 대조하고, 나머지 진실성 검사(계약 필드, 검증 명령 건수,
+    verdict)는 각 보고별로 개별 수행합니다. 어느 보고 하나라도 위반이면 fail 로 판정합니다.
     """
-    resolved_report = report_path
+    raw_inputs: list[Path | str] = []
+    if reports is not None:
+        if isinstance(reports, (list, tuple)):
+            raw_inputs.extend(reports)
+        else:
+            raw_inputs.append(reports)
+    if report_path is not None:
+        if isinstance(report_path, (list, tuple)):
+            raw_inputs.extend(report_path)
+        else:
+            raw_inputs.append(report_path)
+
+    candidate_reports: list[Path] = []
+    for item in raw_inputs:
+        if isinstance(item, str) and "," in item:
+            for sub in item.split(","):
+                if sub.strip():
+                    candidate_reports.append(Path(sub.strip()))
+        elif isinstance(item, (str, Path)) and str(item).strip():
+            candidate_reports.append(Path(item))
+
     capsule_has_report_decl = False
     if capsule_path is not None and capsule_path.exists():
         capsule_text = load_capsule(capsule_path)
         reported_path_str = parse_capsule_scalar(capsule_text, "report_path")
         if reported_path_str:
             capsule_has_report_decl = True
-            if resolved_report is None:
-                resolved_report = repo_path / reported_path_str
+            if not candidate_reports:
+                candidate_reports.append(repo_path / reported_path_str)
 
-    if resolved_report is None and not capsule_has_report_decl:
+    if not candidate_reports and not capsule_has_report_decl:
         return GateResult(
             name="게이트 6 worker_done 보고",
             status="skipped",
@@ -892,7 +937,7 @@ def run_gate6_worker_done(
             required=False,
         )
 
-    if resolved_report is None or not resolved_report.exists():
+    if not candidate_reports and capsule_has_report_decl:
         if allow_missing:
             return GateResult(
                 name="게이트 6 worker_done 보고",
@@ -902,59 +947,124 @@ def run_gate6_worker_done(
                 raw_data={},
                 required=False,
             )
-        missing_target = str(resolved_report) if resolved_report else "(미지정)"
         return GateResult(
             name="게이트 6 worker_done 보고",
             status="fail",
-            summary=f"worker_done 보고 파일 없음: {missing_target}",
+            summary="worker_done 보고 파일 없음: (미지정)",
             details=["worker_done.json 이 없으면 Level 1 판정이 PASS 될 수 없습니다."],
             raw_data={},
             required=True,
         )
 
-    try:
-        summ = summarize_worker_report(
-            report_path=resolved_report,
-            capsule_path=capsule_path,
-            repo_path=repo_path,
-        )
-    except Exception as exc:
+    resolved_reports: list[Path] = []
+    missing_reports: list[str] = []
+    for p in candidate_reports:
+        resolved = p if p.is_absolute() else (repo_path / p).resolve()
+        if not resolved.exists():
+            missing_reports.append(str(p))
+        else:
+            resolved_reports.append(resolved)
+
+    if missing_reports:
+        if allow_missing:
+            return GateResult(
+                name="게이트 6 worker_done 보고",
+                status="skipped",
+                summary="--allow-missing-report 명시로 보고서 검증 건너뜀",
+                details=[],
+                raw_data={},
+                required=False,
+            )
+        missing_str = ", ".join(missing_reports)
         return GateResult(
             name="게이트 6 worker_done 보고",
             status="fail",
-            summary=f"worker_done 보고서 파싱/요약 실패: {exc}",
-            details=[str(exc)],
-            raw_data={"error": str(exc)},
+            summary=f"worker_done 보고 파일 없음: {missing_str}",
+            details=["worker_done.json 이 없으면 Level 1 판정이 PASS 될 수 없습니다."],
+            raw_data={"missing_reports": missing_reports},
             required=True,
         )
 
-    violations = list(summ.get("violations", []))
-    effective_verdict = summ.get("effective_verdict", "")
+    summaries: list[dict[str, Any]] = []
+    all_violations: list[str] = []
+    is_multi = len(resolved_reports) > 1
 
-    # changed_files 실제 git diff 대조
-    reported_changed_files = summ.get("changed_files", [])
-    diff_ok, diff_reason = verify_changed_files_match(
-        repo_path, base, branch, reported_changed_files
+    for resolved in resolved_reports:
+        try:
+            summ = summarize_worker_report(
+                report_path=resolved,
+                capsule_path=capsule_path,
+                repo_path=repo_path,
+            )
+        except Exception as exc:
+            return GateResult(
+                name="게이트 6 worker_done 보고",
+                status="fail",
+                summary=f"worker_done 보고서 파싱/요약 실패 ({resolved.name}): {exc}",
+                details=[str(exc)],
+                raw_data={"error": str(exc)},
+                required=True,
+            )
+        summaries.append(summ)
+        report_prefix = f"[{resolved.name}] " if is_multi else ""
+        for v in summ.get("violations", []):
+            all_violations.append(f"{report_prefix}{v}")
+        eff_verdict = summ.get("effective_verdict", "")
+        if eff_verdict == "blocked":
+            all_violations.append(f"{report_prefix}verdict 가 blocked 상태임")
+        elif summ.get("exit_code") != 0 and not summ.get("violations"):
+            all_violations.append(f"{report_prefix}보고서 요약 종료 코드가 0이 아님")
+
+    # changed_files 실제 git diff 대조 (여러 보고인 경우 합집합으로 판정)
+    union_changed_files = list(
+        dict.fromkeys(
+            f for summ in summaries for f in summ.get("changed_files", []) if f and str(f).strip()
+        )
     )
+    diff_ok, diff_reason = verify_changed_files_match(repo_path, base, branch, union_changed_files)
     if not diff_ok:
-        violations.append(diff_reason)
+        all_violations.append(diff_reason)
 
-    if violations or effective_verdict == "blocked" or summ.get("exit_code") != 0:
+    effective_verdict = summaries[0].get("effective_verdict", "")
+
+    if all_violations:
+        raw_data = {
+            **summaries[0],
+            "diff_match": diff_ok,
+            "diff_reason": diff_reason,
+            "violations": all_violations,
+        }
+        if is_multi:
+            raw_data["reports"] = summaries
+            raw_data["union_changed_files"] = union_changed_files
         return GateResult(
             name="게이트 6 worker_done 보고",
             status="fail",
-            summary=f"worker_done 보고 진실성/계약 검증 실패 (위반 {len(violations)}건)",
-            details=violations,
-            raw_data={**summ, "diff_match": diff_ok, "diff_reason": diff_reason},
+            summary=f"worker_done 보고 진실성/계약 검증 실패 (위반 {len(all_violations)}건)",
+            details=all_violations,
+            raw_data=raw_data,
             required=True,
         )
+
+    summary_text = (
+        f"worker_done 보고 {len(resolved_reports)}건 진실성 검증 통과 (합집합 파일 대조 일치)"
+        if is_multi
+        else f"worker_done 보고 진실성 검증 통과 (실효 verdict: {effective_verdict})"
+    )
+    raw_data = {
+        **summaries[0],
+        "diff_match": True,
+    }
+    if is_multi:
+        raw_data["reports"] = summaries
+        raw_data["union_changed_files"] = union_changed_files
 
     return GateResult(
         name="게이트 6 worker_done 보고",
         status="pass",
-        summary=f"worker_done 보고 진실성 검증 통과 (실효 verdict: {effective_verdict})",
+        summary=summary_text,
         details=[],
-        raw_data={**summ, "diff_match": True},
+        raw_data=raw_data,
         required=True,
     )
 
@@ -1064,7 +1174,18 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--capsule", default=None, help="Task Capsule 파일 경로")
     parser.add_argument("--review-report", default=None, help="리뷰 보고서 JSON 파일 경로")
-    parser.add_argument("--report", default=None, help="worker_done 보고서 JSON 파일 경로")
+    parser.add_argument(
+        "--report",
+        action="append",
+        default=[],
+        help="worker_done 보고서 JSON 파일 경로 (반복 지정 가능, 쉼표 구분 가능)",
+    )
+    parser.add_argument(
+        "--reports",
+        action="append",
+        default=[],
+        help="worker_done 보고서 JSON 파일 경로 (반복 지정 가능, 쉼표 구분 가능)",
+    )
     parser.add_argument(
         "--allow-missing-report",
         action="store_true",
@@ -1093,11 +1214,12 @@ def run_level1_gate(
     verify: list[str] | None = None,
     capsule: str | Path | None = None,
     review_report: str | Path | None = None,
-    report: str | Path | None = None,
+    report: str | Path | list[str | Path] | None = None,
     allow_missing_report: bool = False,
     max_chars: int = DEFAULT_MAX_CHARS,
     as_json: bool = False,
     strict: bool = False,
+    reports: list[str | Path] | None = None,
 ) -> tuple[int, str]:
     """Level 1 게이트 전체를 실행하고 (exit_code, output_text) 를 반환합니다.
 
@@ -1110,7 +1232,27 @@ def run_level1_gate(
     repo_path = Path(repo).resolve()
     capsule_path = Path(capsule).resolve() if capsule else None
     review_report_path = Path(review_report).resolve() if review_report else None
-    report_path = Path(report).resolve() if report else None
+
+    raw_reports: list[str | Path] = []
+    if reports is not None:
+        if isinstance(reports, (list, tuple)):
+            raw_reports.extend(reports)
+        else:
+            raw_reports.append(reports)
+    if report is not None:
+        if isinstance(report, (list, tuple)):
+            raw_reports.extend(report)
+        else:
+            raw_reports.append(report)
+
+    resolved_report_paths: list[Path] = []
+    for r in raw_reports:
+        if isinstance(r, str) and "," in r:
+            for sub in r.split(","):
+                if sub.strip():
+                    resolved_report_paths.append(Path(sub.strip()).resolve())
+        elif r and str(r).strip():
+            resolved_report_paths.append(Path(r).resolve())
 
     if not repo_path.exists() or not repo_path.is_dir():
         error_msg = f"저장소 경로가 존재하지 않거나 디렉터리가 아님: {repo_path}"
@@ -1161,14 +1303,17 @@ def run_level1_gate(
         gates.append(g5)
 
         # 게이트 6: worker_done 보고 (진실성 검증)
-        if capsule_path is not None or report_path is not None or allow_missing_report:
+        if capsule_path is not None or resolved_report_paths or allow_missing_report:
             g6 = run_gate6_worker_done(
-                report_path=report_path,
+                report_path=resolved_report_paths
+                if len(resolved_report_paths) > 1
+                else (resolved_report_paths[0] if resolved_report_paths else None),
                 capsule_path=capsule_path,
                 repo_path=repo_path,
                 base=base,
                 branch=branch,
                 allow_missing=allow_missing_report,
+                reports=resolved_report_paths if len(resolved_report_paths) > 1 else None,
             )
             gates.append(g6)
 
@@ -1218,6 +1363,16 @@ def run_level1_gate(
 def main(argv: list[str] | None = None) -> int:
     """CLI 진입점."""
     args = parse_arguments(argv)
+    all_reports: list[str] = []
+    for r in args.report or []:
+        for sub in r.split(","):
+            if sub.strip():
+                all_reports.append(sub.strip())
+    for r in args.reports or []:
+        for sub in r.split(","):
+            if sub.strip():
+                all_reports.append(sub.strip())
+
     code, output = run_level1_gate(
         base=args.base,
         branch=args.branch,
@@ -1226,7 +1381,7 @@ def main(argv: list[str] | None = None) -> int:
         verify=args.verify,
         capsule=args.capsule,
         review_report=args.review_report,
-        report=args.report,
+        report=all_reports or None,
         allow_missing_report=args.allow_missing_report,
         max_chars=args.max_chars,
         as_json=args.json,
