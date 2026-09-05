@@ -594,3 +594,92 @@ def test_verify_verification_truth_timeout_marks_status_and_fails_closed(tmp_pat
     assert details[0]["timed_out"] is True
     assert details[0]["timeout_seconds"] == 900
     assert details[0]["command_type"] == "pytest"
+
+
+def test_single_source_of_truth_required_fields():
+    """O-05: 필수 필드 정본이 일관되게 공유되며 디스크 템플릿과 고지문이 정본과 100% 일치합니다."""
+    from pathlib import Path
+
+    from scripts.orca_contract import (
+        WORKER_DONE_REQUIRED_FIELDS,
+        WORKER_DONE_SCHEMA_SPEC,
+        render_worker_done_template,
+    )
+    from scripts.orca_taskctl import WORKER_REPORT_SCHEMA
+    from scripts.summarize_worker_done import REQUIRED_FIELDS
+
+    # 1. dispatch_id 는 하위 호환성을 위해 선택 필드(required: False)로 정의됨
+    assert "dispatch_id" in WORKER_DONE_SCHEMA_SPEC
+    assert WORKER_DONE_SCHEMA_SPEC["dispatch_id"]["required"] is False
+    assert "dispatch_id" not in WORKER_DONE_REQUIRED_FIELDS
+
+    # 2. summarize_worker_done 의 REQUIRED_FIELDS 가 정본과 동일
+    assert set(REQUIRED_FIELDS) == set(WORKER_DONE_REQUIRED_FIELDS)
+
+    # 3. orca_taskctl 의 WORKER_REPORT_SCHEMA 와 정본 필수 필드가 정확히 1:1 일치
+    taught = {
+        line.split(":", 1)[0].strip()
+        for line in WORKER_REPORT_SCHEMA.splitlines()
+        if line.startswith("  ") and ":" in line
+    }
+    assert taught == set(WORKER_DONE_REQUIRED_FIELDS)
+
+    # 4. .agents/templates/worker_done_v2.json 디스크 템플릿이 렌더러 출력과 100% 완전 일치
+    template_path = Path(".agents/templates/worker_done_v2.json")
+    assert template_path.is_file(), "템플릿 파일이 디스크에 존재해야 합니다"
+    disk_data = json.loads(template_path.read_text(encoding="utf-8"))
+    assert disk_data == render_worker_done_template(), (
+        "디스크 템플릿이 정본 렌더러와 100% 일치해야 합니다"
+    )
+
+
+def test_drift_detected_when_spec_modified_without_syncing_template_or_notice(monkeypatch):
+    """O-05: 정본(WORKER_DONE_SCHEMA_SPEC)에 새 필수 필드가 추가되었을 때 디스크 템플릿이나 고지문이 따라오지 않으면 검사가 실패함을 입증합니다."""
+    from pathlib import Path
+
+    from scripts.orca_contract import (
+        WORKER_DONE_SCHEMA_SPEC,
+        get_worker_done_required_fields,
+        render_worker_done_template,
+    )
+    from scripts.orca_taskctl import WORKER_REPORT_SCHEMA
+
+    # 1. 정본에 가상의 새 필수 필드 추가
+    augmented_spec = dict(WORKER_DONE_SCHEMA_SPEC)
+    augmented_spec["unpropagated_drift_field"] = {
+        "required": True,
+        "description": '"미동기화 검출용 필드"',
+        "sample": "drift_val",
+    }
+    monkeypatch.setattr("scripts.orca_contract.WORKER_DONE_SCHEMA_SPEC", augmented_spec)
+
+    # 2. 렌더러는 새 필드를 생성하지만, 디스크 파일은 이전 상태이므로 완전 일치 검사가 실패함
+    disk_template = json.loads(
+        Path(".agents/templates/worker_done_v2.json").read_text(encoding="utf-8")
+    )
+    assert disk_template != render_worker_done_template()
+    assert "unpropagated_drift_field" not in disk_template
+
+    # 3. 고지문(WORKER_REPORT_SCHEMA)도 갱신 전 상태이므로 필수 필드 일치 검사가 실패함
+    taught = {
+        line.split(":", 1)[0].strip()
+        for line in WORKER_REPORT_SCHEMA.splitlines()
+        if line.startswith("  ") and ":" in line
+    }
+    augmented_required = get_worker_done_required_fields(augmented_spec)
+    assert "unpropagated_drift_field" in augmented_required
+    assert taught != set(augmented_required)
+
+
+def test_sync_worker_done_template_updates_disk_file(tmp_path):
+    """O-05: sync_worker_done_template 이 정본으로부터 템플릿 파일을 정확히 동기화함을 검증합니다."""
+    from scripts.orca_contract import (
+        render_worker_done_template,
+        sync_worker_done_template,
+    )
+
+    out_file = tmp_path / "worker_done_v2.json"
+    sync_worker_done_template(path=out_file)
+    assert out_file.is_file()
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert data == render_worker_done_template()
