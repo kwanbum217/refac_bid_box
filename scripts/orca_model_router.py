@@ -682,6 +682,25 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "컨텍스트 한도 미확인이므로 Capsule 과 diff 를 작게 유지하십시오."
         ),
     },
+    "opencode-muse-spark": {
+        "id": "opencode/muse-spark-1.3-contributor-free",
+        "provider": "opencode",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": None,
+        "variant": "capability_unknown",
+        "suitable_for": [
+            "investigator",
+            "builder",
+        ],
+        "notes": (
+            "코디네이터가 도구 사용을 포함해 probe 완료 (pyproject.toml 프로젝트명 조회 및 종료 코드 0). "
+            "무료 기여자 티어(contributor-free). "
+            "유료 경로는 세션 쿠키 미설정으로 현재 사용 불가. "
+            "추론 등급(--variant) 적용 여부는 미검증 상태로 capability_unknown 기록. "
+            "승격 조건은 benchmarks/free_workers 쓰기 경합 실측 결과에 따름."
+        ),
+    },
     "or-free-north-mini": {
         "id": "or-free/north-mini",
         "provider": "kimi-openrouter",

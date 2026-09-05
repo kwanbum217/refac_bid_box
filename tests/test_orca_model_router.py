@@ -337,6 +337,7 @@ class TestModelPoolAndSelection:
             "qwen-max",
             "grok-4.6",
             "grok-4.5",
+            "opencode-muse-spark",
         }
 
 
@@ -1961,6 +1962,8 @@ class TestProviderIndependence:
             "cursor-agent/auto": "cursor",
             "opencode-deepseek": "opencode",
             "opencode/deepseek-v4-flash-free": "opencode",
+            "opencode-muse-spark": "opencode",
+            "opencode/muse-spark-1.3-contributor-free": "opencode",
             "cerebras-oss": "cerebras",
             "cerebras/gpt-oss-120b": "cerebras",
             "or-free-nemotron-ultra": "kimi-openrouter",
@@ -2268,6 +2271,100 @@ class TestProviderIndependence:
             assert "grok" not in candidates, f"{role}, {risk} 에 grok 이 포함되어 있습니다."
             assert "grok-4.6" not in candidates, f"{role}, {risk} 에 grok-4.6 이 포함되어 있습니다."
             assert "grok-4.5" not in candidates, f"{role}, {risk} 에 grok-4.5 가 포함되어 있습니다."
+
+    def test_muse_spark_pool_registration(self):
+        """opencode-muse-spark 풀 등록 및 속성을 검증합니다."""
+        assert "opencode-muse-spark" in MODEL_POOL
+        info = MODEL_POOL["opencode-muse-spark"]
+        assert info["id"] == "opencode/muse-spark-1.3-contributor-free"
+        assert info["provider"] == "opencode"
+        assert info["tier"] == "free"
+        assert info["auto_selectable"] is False
+        assert set(info["suitable_for"]) == {"investigator", "builder"}
+        assert "reviewer" not in info["suitable_for"]
+        assert info.get("variant") == "capability_unknown"
+        # 외부 미검증 벤치마크 수치 미포함 확인
+        assert "DeepSWE" not in info["notes"]
+        assert "Terminal-Bench" not in info["notes"]
+        assert "75.4" not in info["notes"]
+        assert "88.8" not in info["notes"]
+
+    def test_provider_for_model_muse_spark(self):
+        """provider_for_model 및 pool_for_model 이 opencode-muse-spark 를 올바르게 판정하는지 검증합니다."""
+        from scripts.orca_model_router import pool_for_model
+
+        assert provider_for_model("opencode-muse-spark") == "opencode"
+        assert provider_for_model("opencode/muse-spark-1.3-contributor-free") == "opencode"
+        assert pool_for_model("opencode-muse-spark") == "opencode-muse-spark"
+        assert pool_for_model("opencode/muse-spark-1.3-contributor-free") == "opencode-muse-spark"
+
+    def test_probe_muse_spark_uses_opencode_cli(self, monkeypatch):
+        """probe_model('opencode-muse-spark') 이 opencode CLI 와 정규화된 모델 ID 를 사용하는지 검증합니다."""
+        captured_cmd = []
+
+        def _mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return MagicMock(returncode=0, stdout="pong", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+
+        available, _detail = probe_model("opencode-muse-spark")
+        assert available is True
+        assert captured_cmd[0] == "opencode"
+        assert "run" in captured_cmd
+        assert "--model" in captured_cmd
+        assert "opencode/muse-spark-1.3-contributor-free" in captured_cmd
+        assert "ping" in captured_cmd
+
+    def test_muse_spark_not_in_tier_policy_or_free_candidate_orders(self):
+        """opencode-muse-spark 은 TIER_POLICY 및 자동 배정 후보 순서에 포함되지 않음을 검증합니다."""
+        from scripts.orca_model_router import (
+            FREE_BUILDER_ORDER,
+            FREE_INVESTIGATOR_ORDER,
+            FREE_ORDER_BY_ROLE,
+            FREE_POOL_ORDER,
+            TIER_POLICY,
+            select_model,
+        )
+
+        for (role, risk), candidates in TIER_POLICY.items():
+            assert "opencode-muse-spark" not in candidates, f"{role}, {risk} 에 포함되어 있습니다."
+            assert "opencode/muse-spark-1.3-contributor-free" not in candidates
+
+        assert "opencode-muse-spark" not in FREE_BUILDER_ORDER
+        assert "opencode-muse-spark" not in FREE_INVESTIGATOR_ORDER
+        assert "opencode-muse-spark" not in FREE_POOL_ORDER
+        assert "opencode-muse-spark" not in FREE_ORDER_BY_ROLE.get("builder", [])
+        assert "opencode-muse-spark" not in FREE_ORDER_BY_ROLE.get("investigator", [])
+
+        # 모든 역할과 위험도에서 자동 선택 시 Muse Spark 가 선택되지 않음을 확인
+        for role in ["builder", "reviewer", "investigator", "benchmarker", "documenter"]:
+            for risk in ["high", "medium", "low"]:
+                kwargs = {"builder_provider": "gemini"} if role == "reviewer" else {}
+                res = select_model(role, risk, **kwargs)
+                assert res["primary_pool"] != "opencode-muse-spark"
+                assert res["fallback_pool"] != "opencode-muse-spark"
+                # --allow-free 가 주어지더라도 자동 배정 풀에 없으므로 선택되지 않음
+                res_free = select_model(role, risk, allow_free=True, **kwargs)
+                assert res_free["primary_pool"] != "opencode-muse-spark"
+                assert res_free["fallback_pool"] != "opencode-muse-spark"
+
+    def test_route_muse_spark_explicit(self):
+        """opencode-muse-spark 명시 지정 시 builder/investigator 경로를 검증합니다."""
+        from scripts.orca_model_router import route
+
+        # builder 명시 지정 성공
+        res_b = route(role="builder", risk="low", explicit_model="opencode-muse-spark", probe=False)
+        assert res_b.primary_model == "opencode-muse-spark"
+
+        # investigator 명시 지정 성공
+        res_i = route(
+            role="investigator",
+            risk="low",
+            explicit_model="opencode/muse-spark-1.3-contributor-free",
+            probe=False,
+        )
+        assert res_i.primary_model == "opencode/muse-spark-1.3-contributor-free"
 
     def test_route_model_explicit_unregistered_fails_closed(self):
         """MODEL_POOL 에 등록되지 않은 모델을 명시 지정하면 ModelRoutingError 발생."""
