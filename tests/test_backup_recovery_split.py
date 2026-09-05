@@ -27,8 +27,11 @@ def test_split_line_counts_within_cap():
         # 320 -> 334 가 됐습니다. 여유 11줄만 둡니다.
         "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 345),
         # 2026-09-05: R-01 스냅샷 검증기 엄격화(스키마, 필수자산, SHA256/크기 형식 검증)로
-        # 132 -> 160 이 됐습니다. 실측값에 여유 10줄만 둡니다.
-        "backup_snapshots.py": (REPO_ROOT / "scripts" / "backup_snapshots.py", 170),
+        # 132 -> 160 이 됐고, 이어서 R-08 보존 정책 실동작 전환(삭제 전 무결성 검증,
+        # 경로 격리, 디스크 여유 경보)으로 160 -> 265 가 됐습니다. 실측값에 여유
+        # 10줄만 둡니다. 이 증가폭은 다른 항목보다 크므로 prune 과 디스크 경보를
+        # 별도 모듈로 분리할지 후속 과제로 남깁니다.
+        "backup_snapshots.py": (REPO_ROOT / "scripts" / "backup_snapshots.py", 275),
     }
     for name, (path, cap) in paths.items():
         lines = len(path.read_text(encoding="utf-8").splitlines())
