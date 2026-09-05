@@ -59,9 +59,9 @@ ruff 통과, mypy 93개 파일 0건, 문서 링크 601개 통과입니다.
 
 | Task | 상태 | 브랜치 | 비고 |
 | --- | --- | --- | --- |
-| `task_b6cef03e3887` X2 잔여정리 | `completed` | `kwanbum217/wave-x-x2-cleanup` (`9759735`) | 게이트 6/6, mypy 0건. **리뷰 진행 중** |
-| `task_c6fcd549740e` X2 리뷰 | `dispatched` | - | Codex `gpt-5.6-terra`, 감독 경로. escalation 회신 완료 |
-| `task_7f0659b4d4fc` X4 승격전환 | `completed` | `kwanbum217/wave-x-x4-swap` (`902a046`) | 워커 회수 완료. **게이트 실행 중, 리뷰 미착수** |
+| `task_b6cef03e3887` X2 잔여정리 | **병합 완료** | - | 게이트 7/7, 리뷰 pass. 병합 커밋 `8db4353` |
+| `task_c6fcd549740e` X2 리뷰 | `completed` | - | Codex `gpt-5.6-terra`. 회수까지 정상 |
+| `task_7f0659b4d4fc` X4 승격전환 | `completed` | `kwanbum217/wave-x-x4-swap` (`902a046`) | **게이트 6 실패. 6.6 절 참조** |
 | `task_d9527d72e596` W2 catchup | `dispatched` | `kwanbum217/wave-x-w2-catchup` | grok-4.6, 미커밋 3. **살아 있음** |
 
 살아 있는 터미널은 W2 워커(`term_39276658-5fcb-4dfb-96c6-1c824f1aae27`)와
@@ -70,13 +70,17 @@ X2 리뷰어입니다. 나머지는 회수했습니다.
 ### 5.1 재개 절차
 
 1. `269c755` 의 CI 결과를 확인합니다.
-2. X4 게이트 결과(`/tmp/g_x4.txt`)를 확인하고 리뷰어를 붙입니다. 리뷰 Intent 는
-   `scripts/build_review_intent.py` 로 빌더 Capsule 에서 체크리스트를 복사해
-   만드십시오. 손으로 옮기면 id 와 극성이 어긋나 게이트 5 가 실패합니다.
-3. X2 리뷰 결과를 받아 게이트 5 포함 재검증 후 병합합니다.
-4. W2 를 끝까지 감시합니다. `src/tasks/worker.py` 를 쓰므로 다른 Task 를 그 파일에
+2. X4 의 `worker_done.json` 부재를 해소합니다(6.6 절). 그 뒤 게이트를 다시 돌리고
+   리뷰어를 붙입니다. 리뷰 Intent 는 `scripts/build_review_intent.py` 로 빌더
+   Capsule 에서 체크리스트를 복사해 만드십시오. 손으로 옮기면 id 와 극성이
+   어긋나 게이트 5 가 실패합니다.
+3. W2 를 끝까지 감시합니다. `src/tasks/worker.py` 를 쓰므로 다른 Task 를 그 파일에
    붙이지 마십시오.
-5. 세 건 병합 후 `main` 병합, 그 다음 별도 커밋으로 `source_commit` 갱신(6.1 절).
+4. X4 와 W2 를 `wave_t/handoff` 에 병합한 뒤 `main` 에 병합하고, 그 다음 별도
+   커밋으로 `source_commit` 을 갱신합니다(6.1 절).
+
+**X2 는 이미 `wave_t/handoff` 에 병합했습니다(`8db4353`). `main` 에는 아직
+반영하지 않았습니다.**
 
 ### 5.2 미기동 Intent
 
@@ -136,6 +140,30 @@ Wave W 의 V1 빌더가 커밋과 `worker_done.json` 작성을 마친 **직후**
 커밋 0 인 워커에 대해 이전 세션의 `worker_done` 상태를 읽어 "worker_done 완료
 메시지에 reportPath 가 누락됨" 을 반복해서 냅니다. 이 세션에서 네 번 겪었고
 전부 정상 작업 중이었습니다. **터미널을 직접 읽어 확인하십시오.**
+
+### 6.6 X4 워커가 `worker_done.json` 을 쓰지 않았습니다
+
+`task_7f0659b4d4fc` 의 빌더(grok-4.6)가 `worker_done` CLI 메시지는 보냈으나
+`ORCA_WORKER_DONE_V2` 보고 파일을 워크트리에 쓰지 않았습니다. 그래서 Level 1
+게이트 6 이 "worker_done 보고 파일 없음" 으로 실패합니다. 게이트 1~5 는
+통과했고 커밋 `902a046` 자체는 온전합니다.
+
+**코디네이터가 그 파일을 대신 작성하면 안 됩니다.** 워커 산출물의 진실성을
+검증하는 파일을 검증자가 만들면 게이트 6 의 의미가 사라집니다.
+
+두 가지 방법이 있습니다.
+
+| 방법 | 내용 |
+| --- | --- |
+| 재작업 Task | `taskctl rework` 로 보고 작성만 요구하는 Task 를 만들어 같은 워크트리에 워커를 다시 붙입니다. 이력이 남고 계약이 지켜집니다 |
+| 게이트 우회 | 하지 마십시오. 이 세션은 게이트 실패를 우회한 적이 없습니다 |
+
+이 결함은 grok 빌더의 계약 준수 문제입니다. Antigravity 워커는 보고 파일은
+쓰고 수명주기 메시지를 빠뜨리는 반대 양상이었습니다(6.2 절). **두 CLI 모두
+`worker_done` 을 온전히 수행하지 않으므로 기동 시 고지문에 파일 작성과 메시지
+전송을 각각 명시하고, 완료 후 둘 다 확인하십시오.**
+
+---
 
 ---
 
