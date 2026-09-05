@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,11 @@ import joblib
 from src.app.core.config import settings
 from src.app.core.timeutil import utcnow
 from src.ml.features import unservable_features
+from src.ml.model_registry import (
+    GENERATIONS_DIRNAME,
+    LIVE_FILENAME,
+    resolve_serving_tree,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # 경로 정본은 settings 입니다 (src/app/core/config.py).
@@ -470,23 +476,47 @@ def _promote_unlogged(
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    # 검증 완료. 서빙 디렉터리 이름은 유지한 채 내용만 교체합니다.
-    # shutil.move(target -> backup) 후 move(staging -> target) 은 두 rename
-    # 사이에 serving_dir/<model_name> 이 없는 구간을 만듭니다. 비어 있지 않은
-    # 디렉터리 위의 os.replace 는 POSIX/Windows 모두 실패하고, 심볼릭 링크는
-    # Windows 권한과 Docker 바인드 마운트에서 깨질 수 있어 쓰지 않습니다.
+    # 검증 완료. 서빙 슬롯 디렉터리는 유지한 채 불변 세대 디렉터리와 LIVE 포인터로 원자 공개합니다.
+    # 1. 현재 해석된 트리를 백업으로 스냅샷 (기존 원본 바이트 보존 계약)
+    # 2. staging 디렉터리를 slot/generations/<version> 으로 원자적 rename
+    # 3. LIVE 포인터를 version 으로 원자적 교체
+    # 4. 직전 세대와 현재 세대만 남기고 오래된 세대 정리
     backup = None
+    dest_generation = None
     try:
-        if target.exists():
+        target.mkdir(parents=True, exist_ok=True)
+        current_tree = resolve_serving_tree(target)
+        if (current_tree / "metadata.json").is_file() or (current_tree / "model.bin").is_file():
             backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
             backup_root.mkdir(parents=True, exist_ok=True)
             backup = backup_root / model_name
-            _snapshot_directory(target, backup)
-        _install_staging_into_serving(staging, target)
-    except Exception:
+            _snapshot_directory(current_tree, backup)
+
+        generations_dir = target / GENERATIONS_DIRNAME
+        generations_dir.mkdir(parents=True, exist_ok=True)
+        dest_generation = generations_dir / version
+        if dest_generation.exists():
+            shutil.rmtree(dest_generation, ignore_errors=True)
+        _replace_path(staging, dest_generation)
+
+        publish_live(target, version)
+
+        keep_versions = {version}
         if backup is not None and backup.exists():
-            _restore_serving_from(backup, target)
-        elif staging.exists():
+            backup_ver = _metadata_version(backup)
+            if backup_ver and _safe_registry_version(backup_ver):
+                keep_versions.add(backup_ver)
+        _prune_generations(target, keep_versions)
+    except Exception:
+        if dest_generation is not None and dest_generation.exists():
+            live_path = target / LIVE_FILENAME
+            current_live = ""
+            if live_path.is_file():
+                with suppress(OSError):
+                    current_live = live_path.read_text(encoding="utf-8").strip()
+            if current_live != version:
+                shutil.rmtree(dest_generation, ignore_errors=True)
+        if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
         raise
 
@@ -521,7 +551,9 @@ def load_serving_metrics(
     serving_dir = SERVING_ROOT if serving_dir is None else serving_dir
     metrics_dir = METRICS_ROOT if metrics_dir is None else metrics_dir
 
-    meta_path = Path(serving_dir) / model_name / "metadata.json"
+    slot = Path(serving_dir) / model_name
+    serving_tree = resolve_serving_tree(slot)
+    meta_path = serving_tree / "metadata.json"
     if not meta_path.exists():
         return "", {}
     try:
@@ -596,40 +628,26 @@ def _snapshot_directory(source: Path, dest: Path) -> None:
     _replace_path(tmp, dest)
 
 
-def _install_staging_into_serving(staging: Path, target: Path) -> None:
-    """완성된 staging 트리를 서빙 경로로 올립니다.
+def publish_live(slot: Path, version: str) -> None:
+    """세대 디렉터리를 LIVE 파일의 원자적 os.replace 로 공개합니다."""
+    if not _safe_registry_version(version):
+        raise ValueError(f"안전하지 않은 세대 이름입니다: {version}")
+    gen_dir = slot / GENERATIONS_DIRNAME / version
+    if not (gen_dir / "metadata.json").is_file():
+        raise FileNotFoundError(f"유효한 세대 트리가 아닙니다: {gen_dir}")
+    tmp_live = slot / f".LIVE_{os.getpid()}_{id(version)}.tmp"
+    tmp_live.write_text(f"{version}\n", encoding="utf-8")
+    _replace_path(tmp_live, slot / LIVE_FILENAME)
 
-    target 이 없으면 디렉터리 rename 한 번으로 만듭니다. 이미 있으면
-    디렉터리를 옮기거나 지우지 않고, 같은 볼륨의 파일 단위 os.replace 로
-    내용만 바꿉니다. 서빙 경로 이름이 한 순간도 사라지지 않습니다.
-    """
-    if not target.exists():
-        _replace_path(staging, target)
+
+def _prune_generations(slot: Path, keep_versions: set[str]) -> None:
+    """직전 세대와 현재 세대만 남기고 나머지 오래된 세대 디렉터리를 정리합니다."""
+    generations_dir = slot / GENERATIONS_DIRNAME
+    if not generations_dir.is_dir():
         return
-
-    new_rels: list[Path] = []
-    try:
-        for src in _tree_files(staging):
-            rel = src.relative_to(staging)
-            dest = target / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            _replace_path(src, dest)
-            new_rels.append(rel)
-        keep = set(new_rels)
-        for existing in _tree_files(target):
-            if existing.relative_to(target) not in keep:
-                existing.unlink()
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
-
-
-def _restore_serving_from(backup: Path, target: Path) -> None:
-    """백업 트리를 서빙 경로에 다시 설치합니다. 백업 원본은 유지합니다."""
-    staging = target.parent / f".restore_staging_{target.name}"
-    if staging.exists():
-        shutil.rmtree(staging)
-    shutil.copytree(backup, staging)
-    _install_staging_into_serving(staging, target)
+    for child in generations_dir.iterdir():
+        if child.is_dir() and child.name not in keep_versions and not child.name.startswith("."):
+            shutil.rmtree(child, ignore_errors=True)
 
 
 class RollbackUnavailable(RuntimeError):
@@ -644,11 +662,10 @@ def rollback(
 ) -> dict[str, Any]:
     """직전 서빙본으로 되돌립니다. `promote` 의 짝입니다.
 
-    "즉시 롤백 가능" 은 AGENTS.md 의 비협상 원칙인데, 백업 디렉터리를 사람이
-    직접 옮기는 것이 유일한 수단이면 그 원칙이 손 절차에 걸려 있는 셈입니다.
-
-    현재 서빙본은 버리지 않고 백업 자리로 넣습니다. 그래야 잘못 되돌렸을 때
-    한 번 더 되돌릴 수 있습니다.
+    설계 5.4절: 파일 단위 재설치를 제거하고 불변 세대 디렉터리와 LIVE 포인터 교체로 완결합니다.
+    1. 백업 스냅샷이 있으면 그것을 새 세대 디렉터리로 올리고 LIVE 를 그 이름으로 돌리거나,
+    2. 직전 세대가 generations/ 에 남아 있으면 LIVE 만 직전 이름으로 교체합니다.
+    현재 서빙본은 holding 에 보관했다가 백업으로 이동하여 왕복 롤백 계약을 유지합니다.
     """
     serving_dir = Path(serving_dir)
     backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
@@ -659,26 +676,42 @@ def rollback(
         )
 
     target = serving_dir / model_name
+    current_tree = resolve_serving_tree(target)
     restored_version = _metadata_version(backup)
-    replaced_version = _metadata_version(target)
+    replaced_version = _metadata_version(current_tree)
+    if not restored_version or not _safe_registry_version(restored_version):
+        raise RollbackUnavailable(
+            f"{model_name} 의 백업본({backup})에 안전한 버전 정보가 없습니다: {restored_version}"
+        )
 
     holding = backup_root / f"{model_name}.rollback_tmp"
     if holding.exists():
         shutil.rmtree(holding)
-    if target.exists():
-        _snapshot_directory(target, holding)
+    if current_tree.exists():
+        _snapshot_directory(current_tree, holding)
 
-    restore_staging = serving_dir / f".rollback_staging_{model_name}"
+    generations_dir = target / GENERATIONS_DIRNAME
+    generations_dir.mkdir(parents=True, exist_ok=True)
+    restored_generation = generations_dir / restored_version
+
+    staging_created = False
+    restore_staging = target / f".rollback_staging_{model_name}_{os.getpid()}"
     try:
-        if restore_staging.exists():
-            shutil.rmtree(restore_staging)
-        shutil.copytree(backup, restore_staging)
-        _install_staging_into_serving(restore_staging, target)
+        if not (restored_generation / "metadata.json").is_file():
+            if restore_staging.exists():
+                shutil.rmtree(restore_staging)
+            shutil.copytree(backup, restore_staging)
+            staging_created = True
+            if restored_generation.exists():
+                shutil.rmtree(restored_generation)
+            _replace_path(restore_staging, restored_generation)
+
+        publish_live(target, restored_version)
     except Exception:
-        if holding.exists():
-            _restore_serving_from(holding, target)
-        elif restore_staging.exists():
+        if staging_created and restore_staging.exists():
             shutil.rmtree(restore_staging, ignore_errors=True)
+        if holding.exists():
+            shutil.rmtree(holding, ignore_errors=True)
         raise
 
     if backup.exists():
@@ -696,7 +729,8 @@ def rollback(
 
 
 def _metadata_version(model_dir: Path) -> str:
-    meta_path = model_dir / "metadata.json"
+    serving_tree = resolve_serving_tree(model_dir)
+    meta_path = serving_tree / "metadata.json"
     if not meta_path.exists():
         return ""
     try:

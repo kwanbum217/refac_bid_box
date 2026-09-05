@@ -68,6 +68,40 @@ CATEGORY_DEFAULT_MODELS = {
 DEFAULT_RATIO_MIN = 0.75
 DEFAULT_RATIO_MAX = 1.05
 
+LIVE_FILENAME = "LIVE"
+GENERATIONS_DIRNAME = "generations"
+
+
+def _safe_generation_version(version: str) -> bool:
+    value = Path(version)
+    return (
+        bool(version)
+        and not value.is_absolute()
+        and len(value.parts) == 1
+        and version not in {".", ".."}
+    )
+
+
+def resolve_serving_tree(slot: Path | str) -> Path:
+    """서빙 슬롯 디렉터리에서 실제 서빙할 모델 트리의 경로를 반환합니다.
+
+    1. slot / LIVE 파일이 존재하고 유효한 세대 이름을 가리키며,
+       slot / generations / <version> / metadata.json 이 존재하면 그 세대 경로를 반환합니다.
+    2. 그 외의 경우(LIVE 가 없거나 세대 디렉터리가 불완전한 경우) 레거시 슬롯 루트(slot)를 반환합니다.
+    """
+    slot_path = Path(slot)
+    live_file = slot_path / LIVE_FILENAME
+    if live_file.is_file():
+        try:
+            target_version = live_file.read_text(encoding="utf-8").strip()
+            if _safe_generation_version(target_version):
+                gen_dir = slot_path / GENERATIONS_DIRNAME / target_version
+                if (gen_dir / "metadata.json").is_file():
+                    return gen_dir
+        except (OSError, UnicodeDecodeError):
+            pass
+    return slot_path
+
 
 def _coerce_float(value, default=0.0):
     if value is None:
@@ -240,7 +274,7 @@ class ModelRegistry:
         return sorted(
             entry
             for entry in os.listdir(model_root)
-            if os.path.isdir(os.path.join(model_root, entry))
+            if not entry.startswith(".") and os.path.isdir(os.path.join(model_root, entry))
         )
 
     @classmethod
@@ -268,17 +302,24 @@ class ModelRegistry:
             return
 
         for entry in sorted(os.listdir(model_root)):
-            model_dir = os.path.join(model_root, entry)
-            if not os.path.isdir(model_dir):
+            if entry.startswith("."):
+                continue
+            slot_dir = Path(model_root) / entry
+            if not slot_dir.is_dir():
                 continue
 
+            serving_tree = resolve_serving_tree(slot_dir)
             metadata = {}
-            metadata_path = os.path.join(model_dir, "metadata.json")
-            if os.path.exists(metadata_path):
-                with open(metadata_path, encoding="utf-8") as handle:
-                    metadata = json.load(handle)
+            metadata_path = serving_tree / "metadata.json"
+            if metadata_path.exists():
+                try:
+                    with open(metadata_path, encoding="utf-8") as handle:
+                        metadata = json.load(handle)
+                except (OSError, json.JSONDecodeError):
+                    metadata = {}
 
             model_id = entry
+            model_dir = str(serving_tree)
             model_type = metadata.get("type", "joblib")
             try:
                 wrapper: BaseModelWrapper
@@ -357,7 +398,8 @@ class ModelRegistry:
         loaded_version = str((wrapper.metadata if wrapper else {}).get("version") or "")
 
         disk_version = ""
-        metadata_path = Path(cls._get_model_root()) / resolved_id / "metadata.json"
+        slot_path = Path(cls._get_model_root()) / resolved_id
+        metadata_path = resolve_serving_tree(slot_path) / "metadata.json"
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             disk_version = str(metadata.get("version") or "")
@@ -445,6 +487,8 @@ __all__ = [
     "CATEGORY_DEFAULT_MODELS",
     "DEFAULT_RATIO_MAX",
     "DEFAULT_RATIO_MIN",
+    "GENERATIONS_DIRNAME",
+    "LIVE_FILENAME",
     "MODEL_ALIASES",
     "MODEL_FILES_ROOT",
     "PROJECT_ROOT",
@@ -472,4 +516,5 @@ __all__ = [
     "predict_optimal_price",
     "predict_optimal_price_batch",
     "predict_optimal_price_with_provenance",
+    "resolve_serving_tree",
 ]

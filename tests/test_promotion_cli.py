@@ -22,6 +22,7 @@ from sklearn.linear_model import LinearRegression
 
 from scripts.promote_model import main
 from src.ml import promotion as promotion_mod
+from src.ml.model_registry import LIVE_FILENAME, resolve_serving_tree
 from src.ml.promotion import RollbackUnavailable, promote, rollback
 
 MODEL_NAME = "test_model"
@@ -73,7 +74,8 @@ def dirs(tmp_path, registry):
 
 
 def _serving_version(dirs) -> str:
-    meta = dirs["serving_dir"] / MODEL_NAME / "metadata.json"
+    serving_tree = resolve_serving_tree(dirs["serving_dir"] / MODEL_NAME)
+    meta = serving_tree / "metadata.json"
     return json.loads(meta.read_text(encoding="utf-8"))["version"]
 
 
@@ -253,7 +255,7 @@ def test_rollback_keeps_serving_path_present_during_swap(dirs, monkeypatch):
 
 
 def test_rollback_injected_replace_failure_leaves_valid_serving(dirs, monkeypatch):
-    """롤백 파일 교체 중 실패해도 서빙 경로는 롤백 직전 트리로 남습니다."""
+    """롤백 LIVE 교체 중 실패해도 서빙 경로는 롤백 직전 트리로 남습니다."""
     for version in ("v_20260801_000000_000", "v_20260802_000000_000"):
         promote(
             MODEL_NAME,
@@ -263,31 +265,30 @@ def test_rollback_injected_replace_failure_leaves_valid_serving(dirs, monkeypatc
             backup_dir=dirs["backup_dir"],
         )
     serving = dirs["serving_dir"] / MODEL_NAME
-    original_model = (serving / "model.bin").read_bytes()
-    original_meta = (serving / "metadata.json").read_text(encoding="utf-8")
+    orig_tree = resolve_serving_tree(serving)
+    original_model = (orig_tree / "model.bin").read_bytes()
+    original_meta = (orig_tree / "metadata.json").read_text(encoding="utf-8")
     original_version = _serving_version(dirs)
     assert original_version == "v_20260802_000000_000"
 
     real_replace = promotion_mod._replace_path
-    injected = {"count": 0}
 
-    def fail_on_first_model_bin(src, dst):
+    def fail_on_live_replace(src, dst):
         dst_path = Path(dst)
-        if dst_path.name == "model.bin" and dst_path.parent == serving:
-            injected["count"] += 1
-            if injected["count"] == 1:
-                raise OSError("injected rollback replace failure")
+        if dst_path.name == LIVE_FILENAME and dst_path.parent == serving:
+            raise OSError("injected rollback live replace failure")
         return real_replace(src, dst)
 
-    monkeypatch.setattr(promotion_mod, "_replace_path", fail_on_first_model_bin)
+    monkeypatch.setattr(promotion_mod, "_replace_path", fail_on_live_replace)
 
-    with pytest.raises(OSError, match="injected rollback replace failure"):
+    with pytest.raises(OSError, match="injected rollback live replace failure"):
         rollback(MODEL_NAME, serving_dir=dirs["serving_dir"], backup_dir=dirs["backup_dir"])
 
     assert serving.exists()
     assert _serving_version(dirs) == original_version
-    assert (serving / "model.bin").read_bytes() == original_model
-    assert (serving / "metadata.json").read_text(encoding="utf-8") == original_meta
+    cur_tree = resolve_serving_tree(serving)
+    assert (cur_tree / "model.bin").read_bytes() == original_model
+    assert (cur_tree / "metadata.json").read_text(encoding="utf-8") == original_meta
 
 
 def test_rollback_without_backup_fails_clearly(dirs):
@@ -311,5 +312,6 @@ def test_promotion_keeps_quantile_artifacts(dirs):
     main(_cli_args(dirs, "promote", "--model", MODEL_NAME, "--apply"))
 
     served = dirs["serving_dir"] / MODEL_NAME
-    assert (served / "model_q05.bin").exists()
-    assert (served / "model_q95.bin").exists()
+    cur_tree = resolve_serving_tree(served)
+    assert (cur_tree / "model_q05.bin").exists()
+    assert (cur_tree / "model_q95.bin").exists()
