@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import tempfile
+import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -478,13 +479,20 @@ def _promote_unlogged(
 
     # 검증 완료. 서빙 슬롯 디렉터리는 유지한 채 불변 세대 디렉터리와 LIVE 포인터로 원자 공개합니다.
     # 1. 현재 해석된 트리를 백업으로 스냅샷 (기존 원본 바이트 보존 계약)
-    # 2. staging 디렉터리를 slot/generations/<version> 으로 원자적 rename
-    # 3. LIVE 포인터를 version 으로 원자적 교체
+    # 2. 고유 식별자를 가진 새 세대 디렉터리로 staging 이동 (제자리 덮어쓰기/삭제 배제)
+    # 3. LIVE 포인터를 새 세대 ID로 원자적 교체 (단일 파일 교체로 세트 원자성 확보)
     # 4. 직전 세대와 현재 세대만 남기고 오래된 세대 정리
     backup = None
     dest_generation = None
+    generation_id = generate_generation_id(version)
+    target.mkdir(parents=True, exist_ok=True)
+    live_file = target / LIVE_FILENAME
+    previous_live = ""
+    if live_file.is_file():
+        with suppress(OSError):
+            previous_live = live_file.read_text(encoding="utf-8").strip()
+
     try:
-        target.mkdir(parents=True, exist_ok=True)
         current_tree = resolve_serving_tree(target)
         if (current_tree / "metadata.json").is_file() or (current_tree / "model.bin").is_file():
             backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
@@ -494,27 +502,26 @@ def _promote_unlogged(
 
         generations_dir = target / GENERATIONS_DIRNAME
         generations_dir.mkdir(parents=True, exist_ok=True)
-        dest_generation = generations_dir / version
-        if dest_generation.exists():
-            shutil.rmtree(dest_generation, ignore_errors=True)
+        dest_generation = generations_dir / generation_id
+        # 새 세대 디렉터리는 고유 ID를 가져 기존 목적지가 존재하지 않으므로,
+        # 공개된 세대를 제자리에서 지우지 않고 새 경로에 온전히 완성합니다.
         _replace_path(staging, dest_generation)
 
-        publish_live(target, version)
+        publish_live(target, generation_id)
 
-        keep_versions = {version}
-        if backup is not None and backup.exists():
-            backup_ver = _metadata_version(backup)
-            if backup_ver and _safe_registry_version(backup_ver):
-                keep_versions.add(backup_ver)
-        _prune_generations(target, keep_versions)
+        keep_generations = {generation_id}
+        if previous_live:
+            keep_generations.add(previous_live)
+        _prune_generations(target, keep_generations)
     except Exception:
+        # 실패 시: 새 세대 디렉터리가 생성되었으나 아직 LIVE 로 공개되지 않은 경우에만 정리합니다.
+        # 공개된 세대는 결코 삭제하지 않습니다.
         if dest_generation is not None and dest_generation.exists():
-            live_path = target / LIVE_FILENAME
             current_live = ""
-            if live_path.is_file():
+            if live_file.is_file():
                 with suppress(OSError):
-                    current_live = live_path.read_text(encoding="utf-8").strip()
-            if current_live != version:
+                    current_live = live_file.read_text(encoding="utf-8").strip()
+            if current_live != generation_id:
                 shutil.rmtree(dest_generation, ignore_errors=True)
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
@@ -628,25 +635,45 @@ def _snapshot_directory(source: Path, dest: Path) -> None:
     _replace_path(tmp, dest)
 
 
-def publish_live(slot: Path, version: str) -> None:
+def generate_generation_id(version: str) -> str:
+    """충돌 없는 세대 디렉터리 식별자를 생성합니다.
+
+    버전 식별자를 접두부로 두고 타임스탬프와 고유 토큰을 더해,
+    동일 버전의 재승격이나 롤백 시에도 기존 세대 디렉터리와 결코 충돌하지 않도록 보장합니다.
+    """
+    timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
+    token = uuid.uuid4().hex[:8]
+    return f"{version}_{timestamp}_{token}"
+
+
+def publish_live(slot: Path, generation_id: str) -> None:
     """세대 디렉터리를 LIVE 파일의 원자적 os.replace 로 공개합니다."""
-    if not _safe_registry_version(version):
-        raise ValueError(f"안전하지 않은 세대 이름입니다: {version}")
-    gen_dir = slot / GENERATIONS_DIRNAME / version
+    if not _safe_registry_version(generation_id):
+        raise ValueError(f"안전하지 않은 세대 이름입니다: {generation_id}")
+    gen_dir = slot / GENERATIONS_DIRNAME / generation_id
     if not (gen_dir / "metadata.json").is_file():
         raise FileNotFoundError(f"유효한 세대 트리가 아닙니다: {gen_dir}")
-    tmp_live = slot / f".LIVE_{os.getpid()}_{id(version)}.tmp"
-    tmp_live.write_text(f"{version}\n", encoding="utf-8")
+    tmp_live = slot / f".LIVE_{os.getpid()}_{uuid.uuid4().hex[:6]}.tmp"
+    tmp_live.write_text(f"{generation_id}\n", encoding="utf-8")
     _replace_path(tmp_live, slot / LIVE_FILENAME)
 
 
-def _prune_generations(slot: Path, keep_versions: set[str]) -> None:
-    """직전 세대와 현재 세대만 남기고 나머지 오래된 세대 디렉터리를 정리합니다."""
+def _prune_generations(slot: Path, keep_generations: set[str]) -> None:
+    """현재 세대와 보존 대상 세대만 남기고 나머지 오래된 세대 디렉터리를 정리합니다."""
     generations_dir = slot / GENERATIONS_DIRNAME
     if not generations_dir.is_dir():
         return
+    live_path = slot / LIVE_FILENAME
+    active_live = ""
+    if live_path.is_file():
+        with suppress(OSError):
+            active_live = live_path.read_text(encoding="utf-8").strip()
+    safe_keep = set(keep_generations)
+    if active_live:
+        safe_keep.add(active_live)
+
     for child in generations_dir.iterdir():
-        if child.is_dir() and child.name not in keep_versions and not child.name.startswith("."):
+        if child.is_dir() and child.name not in safe_keep and not child.name.startswith("."):
             shutil.rmtree(child, ignore_errors=True)
 
 
@@ -692,24 +719,42 @@ def rollback(
 
     generations_dir = target / GENERATIONS_DIRNAME
     generations_dir.mkdir(parents=True, exist_ok=True)
-    restored_generation = generations_dir / restored_version
+    live_file = target / LIVE_FILENAME
+    current_live = ""
+    if live_file.is_file():
+        with suppress(OSError):
+            current_live = live_file.read_text(encoding="utf-8").strip()
 
+    # 백업본으로부터 새 불변 세대 디렉터리를 구성하여 원자 전환합니다.
+    # 기존 세대를 제자리에서 덮어쓰거나 지우지 않습니다.
+    rollback_gen_id = generate_generation_id(restored_version)
+    restored_generation = generations_dir / rollback_gen_id
+    restore_staging = (
+        target / f".rollback_staging_{model_name}_{os.getpid()}_{uuid.uuid4().hex[:6]}"
+    )
     staging_created = False
-    restore_staging = target / f".rollback_staging_{model_name}_{os.getpid()}"
     try:
-        if not (restored_generation / "metadata.json").is_file():
-            if restore_staging.exists():
-                shutil.rmtree(restore_staging)
-            shutil.copytree(backup, restore_staging)
-            staging_created = True
-            if restored_generation.exists():
-                shutil.rmtree(restored_generation)
-            _replace_path(restore_staging, restored_generation)
+        shutil.copytree(backup, restore_staging)
+        staging_created = True
+        _replace_path(restore_staging, restored_generation)
+        staging_created = False
 
-        publish_live(target, restored_version)
+        publish_live(target, rollback_gen_id)
+
+        keep_generations = {rollback_gen_id}
+        if current_live:
+            keep_generations.add(current_live)
+        _prune_generations(target, keep_generations)
     except Exception:
         if staging_created and restore_staging.exists():
             shutil.rmtree(restore_staging, ignore_errors=True)
+        if restored_generation.exists():
+            active_live = ""
+            if live_file.is_file():
+                with suppress(OSError):
+                    active_live = live_file.read_text(encoding="utf-8").strip()
+            if active_live != rollback_gen_id:
+                shutil.rmtree(restored_generation, ignore_errors=True)
         if holding.exists():
             shutil.rmtree(holding, ignore_errors=True)
         raise

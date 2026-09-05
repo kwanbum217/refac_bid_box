@@ -400,7 +400,7 @@ def test_successful_promotion_consistent_set(dirs):
 
     serving = dirs["serving_dir"] / MODEL_NAME
     resolved = resolve_serving_tree(serving)
-    assert resolved.name == "v_20260802_000000_000"
+    assert resolved.name.startswith("v_20260802_000000_000")
     meta = json.loads((resolved / "metadata.json").read_text(encoding="utf-8"))
     assert meta["version"] == "v_20260802_000000_000"
     assert (resolved / "model.bin").exists()
@@ -472,6 +472,120 @@ def test_legacy_slot_root_fallback(dirs):
     assert (resolved / "model.bin").read_bytes() == b"legacy_weights"
     meta = json.loads((resolved / "metadata.json").read_text(encoding="utf-8"))
     assert meta["version"] == "legacy_v1"
+
+
+def test_same_version_repromotion_kill_preserves_serving_set(dirs, monkeypatch):
+    """동일 버전 재승격 도중 프로세스 킬 시뮬레이션 시 기존 공개 세대가 제자리에서 삭제되지 않고 온전히 보존됩니다."""
+    v1 = "v_20260801_000000_000"
+    v1_dir = dirs["registry_dir"] / MODEL_NAME / v1
+    v1_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(_make_model(), v1_dir / "model.bin")
+    (v1_dir / "metadata.json").write_text(json.dumps(_training_metadata(v1)), encoding="utf-8")
+    _write_verdict(dirs["registry_dir"], v1, "approved")
+
+    # 1. 초기 v1 승격 완료
+    promote(
+        MODEL_NAME,
+        v1,
+        registry_dir=dirs["registry_dir"],
+        serving_dir=dirs["serving_dir"],
+        backup_dir=dirs["backup_dir"],
+    )
+
+    serving = dirs["serving_dir"] / MODEL_NAME
+    initial_tree = resolve_serving_tree(serving)
+    initial_model = (initial_tree / "model.bin").read_bytes()
+    initial_meta = (initial_tree / "metadata.json").read_text(encoding="utf-8")
+
+    # 2. 동일 버전 v1 재승격 시도 중 publish_live 직전 프로세스 킬(SIGKILL) 시뮬레이션
+    def simulated_kill(slot, gen_id):
+        raise KeyboardInterrupt(
+            "Simulated SIGKILL before publish_live during same-version repromotion"
+        )
+
+    monkeypatch.setattr(promotion_mod, "publish_live", simulated_kill)
+
+    with pytest.raises(KeyboardInterrupt, match="Simulated SIGKILL"):
+        promote(
+            MODEL_NAME,
+            v1,
+            registry_dir=dirs["registry_dir"],
+            serving_dir=dirs["serving_dir"],
+            backup_dir=dirs["backup_dir"],
+        )
+
+    # 3. 단언: 현재 서빙 세트가 제자리에서 삭제(rmtree)되지 않고 온전하게 보존됨
+    assert serving.exists()
+    current_tree = resolve_serving_tree(serving)
+    assert current_tree == initial_tree
+    assert (current_tree / "model.bin").exists()
+    assert (current_tree / "metadata.json").exists()
+    assert (current_tree / "model.bin").read_bytes() == initial_model
+    assert (current_tree / "metadata.json").read_text(encoding="utf-8") == initial_meta
+
+    # 4. 프로세스 킬 시뮬레이션 해제 후 동일 버전 재승격 재시도 시 정상 성공
+    monkeypatch.undo()
+    promote(
+        MODEL_NAME,
+        v1,
+        registry_dir=dirs["registry_dir"],
+        serving_dir=dirs["serving_dir"],
+        backup_dir=dirs["backup_dir"],
+    )
+
+    repromoted_tree = resolve_serving_tree(serving)
+    assert (repromoted_tree / "model.bin").exists()
+    assert (repromoted_tree / "metadata.json").exists()
+    meta_json = json.loads((repromoted_tree / "metadata.json").read_text(encoding="utf-8"))
+    assert meta_json["version"] == v1
+
+
+def test_same_version_repromotion_staging_replace_failure_preserves_serving_set(dirs, monkeypatch):
+    """동일 버전 재승격 중 새 세대 디렉터리 rename 실패 시 기존 공개 세대가 온전히 보존됩니다."""
+    v1 = "v_20260801_000000_000"
+    v1_dir = dirs["registry_dir"] / MODEL_NAME / v1
+    v1_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(_make_model(), v1_dir / "model.bin")
+    (v1_dir / "metadata.json").write_text(json.dumps(_training_metadata(v1)), encoding="utf-8")
+    _write_verdict(dirs["registry_dir"], v1, "approved")
+
+    promote(
+        MODEL_NAME,
+        v1,
+        registry_dir=dirs["registry_dir"],
+        serving_dir=dirs["serving_dir"],
+        backup_dir=dirs["backup_dir"],
+    )
+
+    serving = dirs["serving_dir"] / MODEL_NAME
+    initial_tree = resolve_serving_tree(serving)
+    initial_model = (initial_tree / "model.bin").read_bytes()
+    initial_meta = (initial_tree / "metadata.json").read_text(encoding="utf-8")
+
+    # 동일 버전 재승격 중 세대 디렉터리로의 rename 실패 주입
+    real_replace = promotion_mod._replace_path
+
+    def fail_on_gen_replace(src, dst):
+        dst_path = Path(dst)
+        if dst_path.parent.name == "generations":
+            raise OSError("injected staging to generations replace failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(promotion_mod, "_replace_path", fail_on_gen_replace)
+
+    with pytest.raises(OSError, match="injected staging to generations replace failure"):
+        promote(
+            MODEL_NAME,
+            v1,
+            registry_dir=dirs["registry_dir"],
+            serving_dir=dirs["serving_dir"],
+            backup_dir=dirs["backup_dir"],
+        )
+
+    current_tree = resolve_serving_tree(serving)
+    assert current_tree == initial_tree
+    assert (current_tree / "model.bin").read_bytes() == initial_model
+    assert (current_tree / "metadata.json").read_text(encoding="utf-8") == initial_meta
 
 
 # --------------------------------------------------------------------------- #
