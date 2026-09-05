@@ -123,8 +123,8 @@ def get_chroma_source_path(project_root: Path | None = None) -> Path:
 
 def query_db_row_counts(
     db_config: dict[str, Any], tables: tuple[str, ...] = DEFAULT_TABLES
-) -> dict[str, int]:
-    row_counts: dict[str, int] = {}
+) -> dict[str, int | None]:
+    row_counts: dict[str, int | None] = {}
     try:
         from sqlalchemy import create_engine, text
 
@@ -134,12 +134,26 @@ def query_db_row_counts(
                 if tbl in DEFAULT_TABLES:
                     try:
                         query = text(f"SELECT COUNT(*) FROM `{tbl}`")  # noqa: S608 # nosec B608
-                        row_counts[tbl] = int(conn.execute(query).scalar() or 0)
+                        val = conn.execute(query).scalar()
+                        row_counts[tbl] = int(val) if val is not None else 0
                     except Exception:
-                        row_counts[tbl] = 0
+                        row_counts[tbl] = None
     except Exception as exc:
         print(f"      [주의] DB 행 수 조회 실패 ({exc})")
+        return {tbl: None for tbl in tables if tbl in DEFAULT_TABLES}
     return row_counts
+
+
+def evaluate_row_counts(
+    row_counts: dict[str, int | None], tables: tuple[str, ...] = DEFAULT_TABLES
+) -> tuple[str, str]:
+    """행 수 딕셔너리를 평가하여 상태('verified' | 'table_query_failed' | 'connection_failed')와 사유를 반환합니다."""
+    if not row_counts or (all(v is None for v in row_counts.values()) and len(row_counts) > 0):
+        return "connection_failed", "DB 접속 또는 전체 행 수 조회 실패"
+    if any(v is None for v in row_counts.values()):
+        failed = [t for t, v in row_counts.items() if v is None]
+        return "table_query_failed", f"일부 테이블 행 수 조회 실패: {', '.join(failed)}"
+    return "verified", "모든 대상 테이블 행 수 정상 확인"
 
 
 def create_tar_archive(

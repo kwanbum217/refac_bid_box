@@ -20,16 +20,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def test_split_line_counts_within_cap():
     paths = {
-        # 2026-09-03: 직접 실행 부트스트랩(sys.path 삽입과 사유 주석) 6줄로 513 -> 519 가
-        # 됐습니다. 로직은 늘지 않았습니다. 재증가를 막도록 실측값에 여유 6줄만 둡니다.
-        "backup_recovery.py": (REPO_ROOT / "scripts" / "backup_recovery.py", 525),
-        # 2026-09-03: mysql_client_command 헬퍼 도입으로 298 -> 318 이 됐습니다.
-        # 호스트 클라이언트가 서버 인증 플러그인을 못 읽어 백업이 불가능하던 것을
-        # 컨테이너 클라이언트로 우회할 수 있게 한 변경입니다. 여유 12줄만 둡니다.
-        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 330),
+        # 2026-09-05: R-09 행 수 조회 실패와 실제 0행 구분 및 과거 백업 정책 반영으로
+        # 525 -> 547 이 됐습니다. 여유 8줄만 둡니다.
+        "backup_recovery.py": (REPO_ROOT / "scripts" / "backup_recovery.py", 555),
+        # 2026-09-05: R-09 evaluate_row_counts 헬퍼 및 query_db_row_counts 개선으로
+        # 320 -> 334 가 됐습니다. 여유 11줄만 둡니다.
+        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 345),
         # 2026-09-05: R-01 스냅샷 검증기 엄격화(스키마, 필수자산, SHA256/크기 형식 검증)로
-        # 132 -> 160 이 됐습니다. 실측값에 여유 10줄만 둡니다.
-        "backup_snapshots.py": (REPO_ROOT / "scripts" / "backup_snapshots.py", 170),
+        # 132 -> 160 이 됐고, 이어서 R-08 보존 정책 실동작 전환(삭제 전 무결성 검증,
+        # 경로 격리, 디스크 여유 경보)으로 160 -> 265 가 됐습니다. 실측값에 여유
+        # 10줄만 둡니다. 이 증가폭은 다른 항목보다 크므로 prune 과 디스크 경보를
+        # 별도 모듈로 분리할지 후속 과제로 남깁니다.
+        "backup_snapshots.py": (REPO_ROOT / "scripts" / "backup_snapshots.py", 275),
     }
     for name, (path, cap) in paths.items():
         lines = len(path.read_text(encoding="utf-8").splitlines())
@@ -67,6 +69,7 @@ def test_core_reexport_identities_from_backup_recovery():
         "get_model_source_paths",
         "get_chroma_source_path",
         "query_db_row_counts",
+        "evaluate_row_counts",
         "create_tar_archive",
         "dump_mysql_database",
         "restore_mysql_database",

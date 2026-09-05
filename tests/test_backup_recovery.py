@@ -418,3 +418,175 @@ def test_no_secrets_in_manifest_or_config_defaults():
     assert isinstance(cfg, dict)
     assert "user" in cfg
     assert "password" in cfg
+
+
+@patch("scripts.backup_recovery.dump_mysql_database")
+@patch("scripts.backup_recovery.query_db_row_counts")
+@patch("scripts.backup_recovery.get_head_commit_sha")
+def test_backup_row_count_actual_zero_recorded_as_verified(
+    mock_head_sha: MagicMock,
+    mock_query_counts: MagicMock,
+    mock_dump_mysql: MagicMock,
+    tmp_path: Path,
+):
+    """실제 0행인 경우 행 수 0과 검증 완료(verified) 상태로 기록되며 recovery_trusted 가 유지됩니다."""
+    mock_head_sha.return_value = "commit_sha_zero"
+    mock_query_counts.return_value = {
+        "bid_announcements": 0,
+        "bid_results": 0,
+    }
+
+    def fake_dump_mysql(db_config, out_path):
+        out_path.write_bytes(b"dummy db dump")
+        return len(b"dummy db dump"), sha256_file(out_path)
+
+    mock_dump_mysql.side_effect = fake_dump_mysql
+    chroma_dir = tmp_path / "chroma_db"
+    chroma_dir.mkdir(parents=True)
+    (chroma_dir / "chroma.sqlite3").write_bytes(b"chroma")
+    models_dir = tmp_path / "data" / "model_files"
+    models_dir.mkdir(parents=True)
+    (models_dir / "model.bin").write_bytes(b"model")
+
+    target_out = tmp_path / "snap_zero"
+    with patch.dict("os.environ", {"CHROMA_DB_PATH": str(chroma_dir)}):
+        manifest = execute_backup(output_dir=target_out, execute=True, project_root=tmp_path)
+
+    db_comp = manifest["components"]["database"]
+    assert db_comp["row_counts"]["bid_announcements"] == 0
+    assert db_comp["row_counts"]["bid_announcements"] is not None
+    assert db_comp["row_count_status"] == "verified"
+    assert db_comp["row_count_evidence"] == "verified"
+    assert manifest["recovery_trusted"] is True
+    assert manifest["partial_backup"] is False
+    assert "timing_note" in manifest["consistency_window"]
+
+
+@patch("scripts.backup_recovery.dump_mysql_database")
+@patch("scripts.backup_recovery.query_db_row_counts")
+@patch("scripts.backup_recovery.get_head_commit_sha")
+def test_backup_row_count_table_query_failure_recorded_as_none_and_untrusted(
+    mock_head_sha: MagicMock,
+    mock_query_counts: MagicMock,
+    mock_dump_mysql: MagicMock,
+    tmp_path: Path,
+):
+    """테이블별 조회 실패 시 0이 아닌 None으로 기록되며 비신뢰(untrusted)로 처리됩니다."""
+    mock_head_sha.return_value = "commit_sha_fail"
+    mock_query_counts.return_value = {
+        "bid_announcements": 100,
+        "bid_results": None,
+    }
+
+    def fake_dump_mysql(db_config, out_path):
+        out_path.write_bytes(b"dummy db dump")
+        return len(b"dummy db dump"), sha256_file(out_path)
+
+    mock_dump_mysql.side_effect = fake_dump_mysql
+    chroma_dir = tmp_path / "chroma_db"
+    chroma_dir.mkdir(parents=True)
+    (chroma_dir / "chroma.sqlite3").write_bytes(b"chroma")
+    models_dir = tmp_path / "data" / "model_files"
+    models_dir.mkdir(parents=True)
+    (models_dir / "model.bin").write_bytes(b"model")
+
+    target_out = tmp_path / "snap_fail"
+    with patch.dict("os.environ", {"CHROMA_DB_PATH": str(chroma_dir)}):
+        manifest = execute_backup(
+            output_dir=target_out, execute=True, project_root=tmp_path, allow_partial=True
+        )
+
+    db_comp = manifest["components"]["database"]
+    assert db_comp["row_counts"]["bid_announcements"] == 100
+    assert db_comp["row_counts"]["bid_results"] is None
+    assert db_comp["row_count_status"] == "table_query_failed"
+    assert db_comp["row_count_evidence"] == "unverified"
+    assert manifest["recovery_trusted"] is False
+    assert manifest["partial_backup"] is True
+
+
+@patch("scripts.backup_recovery.dump_mysql_database")
+@patch("scripts.backup_recovery.query_db_row_counts")
+@patch("scripts.backup_recovery.get_head_commit_sha")
+def test_backup_row_count_connection_failure_recorded_as_connection_failed_and_untrusted(
+    mock_head_sha: MagicMock,
+    mock_query_counts: MagicMock,
+    mock_dump_mysql: MagicMock,
+    tmp_path: Path,
+):
+    """전체 연결 실패 시 빈 결과가 아닌 connection_failed 상태로 기록되며 비신뢰로 처리됩니다."""
+    mock_head_sha.return_value = "commit_sha_conn_fail"
+    mock_query_counts.return_value = {
+        "accounts_customuser": None,
+        "bid_announcements": None,
+    }
+
+    def fake_dump_mysql(db_config, out_path):
+        out_path.write_bytes(b"dummy db dump")
+        return len(b"dummy db dump"), sha256_file(out_path)
+
+    mock_dump_mysql.side_effect = fake_dump_mysql
+    chroma_dir = tmp_path / "chroma_db"
+    chroma_dir.mkdir(parents=True)
+    (chroma_dir / "chroma.sqlite3").write_bytes(b"chroma")
+    models_dir = tmp_path / "data" / "model_files"
+    models_dir.mkdir(parents=True)
+    (models_dir / "model.bin").write_bytes(b"model")
+
+    target_out = tmp_path / "snap_conn_fail"
+    with patch.dict("os.environ", {"CHROMA_DB_PATH": str(chroma_dir)}):
+        manifest = execute_backup(
+            output_dir=target_out, execute=True, project_root=tmp_path, allow_partial=True
+        )
+
+    db_comp = manifest["components"]["database"]
+    assert db_comp["row_count_status"] == "connection_failed"
+    assert db_comp["row_count_evidence"] == "unverified"
+    assert manifest["recovery_trusted"] is False
+    assert manifest["partial_backup"] is True
+    assert all(v is None for v in db_comp["row_counts"].values())
+
+
+def test_legacy_backup_without_row_counts_warns_and_allows_restore(tmp_path: Path, capsys):
+    """과거 백업 매니페스트(행 수 증거 부재)는 경고를 출력하되 복원을 차단하지 않습니다."""
+    snap = tmp_path / "legacy_snap"
+    snap.mkdir()
+    for name, content in (
+        ("db_dump.sql.gz", b"legacy_db"),
+        ("chroma_db.tar.gz", b"legacy_chroma"),
+        ("models.tar.gz", b"legacy_models"),
+    ):
+        (snap / name).write_bytes(content)
+
+    manifest_data = {
+        "schema": "BACKUP_MANIFEST_V1",
+        "created_at": "2026-08-01T00:00:00Z",
+        "head_commit": "legacy_head",
+        "partial_backup": False,
+        "recovery_trusted": True,
+        "components": {
+            "database": {
+                "path": "db_dump.sql.gz",
+                "size_bytes": len(b"legacy_db"),
+                "sha256": sha256_file(snap / "db_dump.sql.gz"),
+                "row_counts": {},
+            },
+            "chroma_db": {
+                "path": "chroma_db.tar.gz",
+                "size_bytes": len(b"legacy_chroma"),
+                "sha256": sha256_file(snap / "chroma_db.tar.gz"),
+            },
+            "models": {
+                "path": "models.tar.gz",
+                "size_bytes": len(b"legacy_models"),
+                "sha256": sha256_file(snap / "models.tar.gz"),
+            },
+        },
+    }
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest_data), encoding="utf-8")
+
+    res = execute_restore(snap, execute=False, project_root=tmp_path)
+    assert res is True
+    captured = capsys.readouterr()
+    assert "과거 백업 매니페스트" in captured.out
+    assert "행 수 증거가 없어" in captured.out

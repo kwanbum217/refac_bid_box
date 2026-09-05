@@ -248,12 +248,31 @@ python3 scripts/backup_recovery.py drill \
 ```
 
 
-보존 정책은 스냅샷 개수 기준이며, 삭제 대상은 먼저 출력됩니다. 실제 삭제는 별도 운영
-승인 후에만 다음처럼 `--delete`를 명시하여 수행합니다. 플래그가 없으면 항상 점검만 합니다.
+### 4.5 보존 정책 및 디스크 관리 (Retention Policy & Disk Management)
+
+스냅샷 디렉토리가 무제한 증식하여 디스크가 고갈되는 위험(R-08)을 방지하기 위해 개수 기준 보존 정책과 안전 삭제 메커니즘을 적용합니다.
+
+#### 4.5.1 설정값이 강제하는 것과 강제하지 않는 것
+
+| 설정 / 도구 | 동작 및 강제 범위 | 미강제 (예외 사항) |
+| --- | --- | --- |
+| **정기 백업 크론** (`backup_schedule_task`) | `BACKUP_SCHEDULE_ENABLED=true` 활성화 시, 백업 완료 후 `BACKUP_RETENTION_COUNT`(기본 7개)를 초과하는 오래된 스냅샷을 실제로 자동 삭제(`delete=True`)하여 **디스크상 최대 스냅샷 개수를 강제**합니다. | `BACKUP_SCHEDULE_ENABLED=false`(기본값)인 경우 정기 작업이 돌지 않으므로 디스크 상한이 강제되지 않습니다. |
+| **수동 백업 CLI** (`make backup`) | 명령 실행 시 새로운 스냅샷을 1건 생성합니다. | 수동 백업 명령은 보존 정리를 자동 호출하지 않으므로 디스크 상한을 강제하지 않습니다. 수동 백업 후 필요 시 `prune`을 실행해야 합니다. |
+| **수동 정리 CLI** (`prune`) | `scripts/backup_recovery.py prune --retain-count 7 --delete`로 명시적 플래그 지정 시 초과분을 즉시 삭제합니다. | `--delete` 플래그가 없으면 조회(dry-run)만 수행하며 실제 삭제를 강제하지 않습니다. |
+| **디스크 여유 경보** (`BACKUP_DISK_MIN_FREE_GB`) | 백업 실행 전 스토리지 여유 디스크가 설정값(기본 5.0GB) 미만이면 기존 `src/tasks/notifier.py`를 통해 경보를 발송합니다. | 경보는 알림만 수행하며, 백업 작업을 강제로 차단하지는 않습니다. |
+
+#### 4.5.2 다중 안전장치 (Fail-Closed Guard)
+
+스냅샷 삭제는 비가역적 조작이므로 다음 안전장치가 충족될 때만 삭제를 진행합니다:
+1. **최소 보존 수량 보장**: `retain_count`는 1 이상이어야 하며, 삭제 후에도 잔여 스냅샷이 최소 보존 개수 미만으로 떨어지는 경로를 원천 차단합니다.
+2. **보존 대상 무결성 검증**: 보존할 최신 스냅샷들에 매니페스트가 존재하는 경우 `verify_snapshot`을 통해 손상 여부를 검증합니다. 보존 대상이 손상되어 있으면 삭제 판정 실패로 처리하고 **아무것도 삭제하지 않습니다(fail-closed)**.
+3. **경로 격리 검증**: 삭제 대상이 스냅샷 디렉토리의 직계 하위인지 확인하며, 심볼릭 링크나 경로 이탈(`..` 등)은 삭제 대상에서 제외합니다.
 
 ```bash
+# 수동 점검 (dry-run): 삭제 후보 목록만 출력
 python3 scripts/backup_recovery.py prune --retain-count 7
-# 승인된 삭제 작업에서만 사용
+
+# 승인된 수동 삭제 실행
 python3 scripts/backup_recovery.py prune --retain-count 7 --delete
 ```
 
