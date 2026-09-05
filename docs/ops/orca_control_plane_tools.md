@@ -303,3 +303,27 @@ Finalize나 재수집도 한 번만 반영합니다.
   ```
 - **단일 우회 플래그 (`--skip-skill-receipt`)**:
   게이트를 의도적으로 우회해야 하는 긴급 상황에서는 `create` 및 `dispatch` 서브커맨드에 `--skip-skill-receipt` 를 지정합니다. 사용 시 stderr 에 경고가 출력되고 Dispatch 기록에 보존됩니다. 환경변수를 통한 추가 우회는 엄격히 금지됩니다.
+
+---
+
+## 6. 통제면 무결성 보장 규약 (O-04, O-05, O-06)
+
+### 6.1 DAG 의존성 자동 연결 (O-04)
+
+- **리뷰 Task 자동 의존성**: `role: reviewer` Intent에 명시된 `target_task` (또는 `target_task_id`, `builder_task`)는 `create` 및 `dispatch` 시 `--deps` 인자가 명시되지 않으면 자동으로 `["<target_task>"]` JSON 배열로 변환되어 `orca orchestration task-create --deps` 에 연결됩니다.
+- **재작업(rework) Task DAG 이력 보존**: `rework` 하위 명령은 반려된 원본 Task ID를 새 재작업 Task의 `--deps` 로 기본 연결합니다. 이를 통해 반려 후 재작업 흐름이 Orca Orchestration DAG에 명시적으로 연결되어 보존됩니다.
+
+### 6.2 완료 보고 스키마 단일 진실 원천 (O-05)
+
+- **단일 정본 (`WORKER_DONE_SCHEMA_SPEC`)**: `scripts/orca_contract.py` 에 모든 필드의 필수 여부, 고지문 설명, 템플릿 기본값을 단일 사전으로 정의합니다.
+- **파생 규약**:
+  1. `scripts/summarize_worker_done.py` 의 `REQUIRED_FIELDS` 는 정본에서 직접 import 됩니다.
+  2. `scripts/orca_taskctl.py` 의 `WORKER_REPORT_SCHEMA` 및 Capsule 고지문은 `render_worker_report_schema()` 로 정본에서 동적 생성됩니다.
+  3. `.agents/templates/worker_done_v2.json` 은 `render_worker_done_template()` 과 동기화됩니다.
+- **`dispatch_id` 필수화**: 재시도 및 지연 완료 보고의 혼선을 방지하기 위해 `dispatch_id` 가 필수 필드로 고정되었습니다.
+
+### 6.3 비감독 Dispatch 수명주기 영수증 및 잔류 검사 (O-06)
+
+- **비감독 영수증 발급**: 터미널 부착(`--terminal`) 또는 `--inject` 기반 비감독 기동 시, Orca DB에 `worker_dispatches` 행이 남지 않는 문제를 해결하기 위해 `.orca/dispatch_receipts/<task_id>.json` 에 기계 판독 가능한 영수증을 기록합니다.
+  - 필수 필드: `schema`, `task_id`, `dispatch_id`, `terminal`, `handle`, `worktree_path`, `started_at`, `supervised: false`
+- **완료 세션 잔류 감사 연동**: `scripts/orca_settled_session_audit.py` 가 해당 영수증 디렉터리를 스캔하여, 비감독 경로로 기동된 세션이 완료(`completed`) 상태임에도 터미널이 열려 있는 경우 잔류 세션으로 검출하고 후속 Dispatch 를 차단합니다.

@@ -594,3 +594,65 @@ def test_verify_verification_truth_timeout_marks_status_and_fails_closed(tmp_pat
     assert details[0]["timed_out"] is True
     assert details[0]["timeout_seconds"] == 900
     assert details[0]["command_type"] == "pytest"
+
+
+def test_single_source_of_truth_required_fields():
+    """O-05: 필수 필드 정본이 일관되게 공유되며 dispatch_id 가 포함되어 있습니다."""
+    from pathlib import Path
+
+    from scripts.orca_contract import (
+        WORKER_DONE_REQUIRED_FIELDS,
+        WORKER_DONE_SCHEMA_SPEC,
+    )
+    from scripts.orca_taskctl import WORKER_REPORT_SCHEMA
+    from scripts.summarize_worker_done import REQUIRED_FIELDS
+
+    # 1. dispatch_id 가 단일 정본 스키마에 정의되어 있고 고지문 및 템플릿에 일관되게 반영됨
+    assert "dispatch_id" in WORKER_DONE_SCHEMA_SPEC
+    assert WORKER_DONE_SCHEMA_SPEC["dispatch_id"]["required"] is False
+
+    # 2. summarize_worker_done 의 REQUIRED_FIELDS 가 정본과 동일
+    assert set(REQUIRED_FIELDS) == set(WORKER_DONE_REQUIRED_FIELDS)
+
+    # 3. orca_taskctl 의 WORKER_REPORT_SCHEMA 가 가르치는 필드에 필수 필드 전부 포함
+    taught = {
+        line.split(":", 1)[0].strip()
+        for line in WORKER_REPORT_SCHEMA.splitlines()
+        if line.startswith("  ") and ":" in line
+    }
+    assert set(WORKER_DONE_REQUIRED_FIELDS) <= taught
+
+    # 4. .agents/templates/worker_done_v2.json 에도 필수 필드 전부 포함
+    template_path = Path(".agents/templates/worker_done_v2.json")
+    if template_path.is_file():
+        template_data = json.loads(template_path.read_text(encoding="utf-8"))
+        assert set(WORKER_DONE_REQUIRED_FIELDS) <= set(template_data.keys())
+
+
+def test_schema_spec_field_addition_propagates_automatically():
+    """O-05 acceptance: 정본에 필드를 추가하면 검증기, 고지문, 템플릿이 자동으로 따라옵니다."""
+    from scripts.orca_contract import (
+        WORKER_DONE_SCHEMA_SPEC,
+        get_worker_done_required_fields,
+        render_worker_done_template,
+        render_worker_report_schema,
+    )
+
+    custom_spec = dict(WORKER_DONE_SCHEMA_SPEC)
+    custom_spec["test_auto_sync_field"] = {
+        "required": True,
+        "description": '"자동 동기화 테스트용 필드"',
+        "sample": "auto_value",
+    }
+
+    # 1. 필수 필드 목록에 자동 반영
+    req_fields = get_worker_done_required_fields(custom_spec)
+    assert "test_auto_sync_field" in req_fields
+
+    # 2. Capsule 고지문(report_schema)에 자동 반영
+    schema_yaml = render_worker_report_schema(custom_spec)
+    assert 'test_auto_sync_field: "자동 동기화 테스트용 필드"' in schema_yaml
+
+    # 3. 템플릿에 자동 반영
+    template = render_worker_done_template(custom_spec)
+    assert template["test_auto_sync_field"] == "auto_value"

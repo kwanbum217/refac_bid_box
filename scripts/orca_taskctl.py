@@ -70,6 +70,7 @@ try:
         load_report,
         parse_capsule_list,
         parse_capsule_scalar,
+        render_worker_report_schema,
         truncate,
         write_scope_excess,
     )
@@ -83,6 +84,7 @@ except (ModuleNotFoundError, ImportError):
         load_report,
         parse_capsule_list,
         parse_capsule_scalar,
+        render_worker_report_schema,
         truncate,
         write_scope_excess,
     )
@@ -335,23 +337,8 @@ REVIEW_REPORT_SCHEMA = """report_schema:
   missing_tests: "배열"
 """
 
-# 아래 키 목록은 scripts/summarize_worker_done.py 의 REQUIRED_FIELDS 와 일치해야
-# 합니다. 어긋나면 워커가 지시를 정확히 따를수록 검증기에서 필수 필드 누락으로
-# 거부됩니다. tests/test_orca_taskctl.py 가 이 일치를 강제합니다.
-WORKER_REPORT_SCHEMA = """report_schema:
-  schema: "ORCA_WORKER_DONE_V2"
-  version: "2.1.0"
-  task_id: "위 task_id 를 그대로 적는다"
-  status: "succeeded 또는 escalation 문자열 하나"
-  branch: "작업한 브랜치 이름"
-  commit: "마지막 커밋 SHA. 커밋이 없으면 빈 문자열"
-  commit_count: "정수. 0 이면 status 를 escalation 으로 쓴다"
-  changed_files: "배열. 실제로 커밋한 파일 경로"
-  read_files: "배열. 실제로 읽은 파일 경로"
-  verification: "배열. 각 항목은 command 와 result 키를 가진다"
-  verdict: "candidate 또는 blocked 문자열 하나"
-  blocking_issues: "배열. 차단 사유가 없으면 빈 배열"
-"""
+# 필수 필드 정본(scripts/orca_contract.py)에서 직접 파생
+WORKER_REPORT_SCHEMA = render_worker_report_schema()
 
 
 # ---------------------------------------------------------------------------
@@ -769,6 +756,8 @@ def parse_intent(text: str) -> dict[str, Any]:
                 "ground_truth",
                 "required_change",
                 "required_write_files",
+                "deps",
+                "target_tasks",
             ):
                 items: list[str] = []
                 if val and val != "[]":
@@ -817,6 +806,37 @@ def parse_intent(text: str) -> dict[str, Any]:
         validate_contained_path(result["report_path"], field_name="report_path")
 
     return result
+
+
+def resolve_intent_deps(intent: dict[str, Any]) -> str | None:
+    """Intent 에서 대상/선행 Task ID 를 추출하여 JSON 배열 문자열로 반환합니다.
+
+    리뷰 Intent 의 target_task(또는 target_task_id, builder_task 등)나
+    일반 Intent 의 deps 필드로부터 선행 Task 의존성을 도출합니다.
+    """
+    raw = (
+        intent.get("target_task")
+        or intent.get("target_task_id")
+        or intent.get("builder_task")
+        or intent.get("builder_task_id")
+        or intent.get("target_tasks")
+        or intent.get("deps")
+    )
+    if not raw:
+        return None
+    if isinstance(raw, list):
+        items = [str(x).strip() for x in raw if str(x).strip()]
+        return json.dumps(items) if items else None
+    cleaned = str(raw).strip()
+    if cleaned.startswith("[") and cleaned.endswith("]"):
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, list):
+                items = [str(x).strip() for x in parsed if str(x).strip()]
+                return json.dumps(items) if items else None
+        except Exception:  # nosec B110 # noqa: S110
+            pass
+    return json.dumps([cleaned]) if cleaned else None
 
 
 # ---------------------------------------------------------------------------
@@ -1537,6 +1557,53 @@ def remove_worker_meta(terminal: str) -> None:
             path.unlink(missing_ok=True)
     except OSError:
         pass
+
+
+UNSUPERVISED_RECEIPT_DIR = Path(".orca") / "dispatch_receipts"
+
+
+def record_unsupervised_dispatch_receipt(
+    task_id: str,
+    dispatch_id: str,
+    terminal: str,
+    worktree_path: str | Path | None,
+    started_at: float | None = None,
+    capsule_dir: Path | None = None,
+    repo: str | Path | None = None,
+    extra: dict[str, Any] | None = None,
+) -> Path:
+    """비감독 Dispatch 영수증(receipt)을 기계 판독 가능한 JSON 파일로 기록합니다."""
+    repo_root = Path(repo).resolve() if repo else Path.cwd()
+    receipt_dir = repo_root / UNSUPERVISED_RECEIPT_DIR
+    receipt_dir.mkdir(parents=True, exist_ok=True)
+    receipt_file = receipt_dir / f"{task_id}.json"
+
+    started_time = started_at if started_at is not None else time.time()
+    worktree_str = str(Path(worktree_path).resolve()) if worktree_path else str(repo_root)
+
+    record: dict[str, Any] = {
+        "schema": "ORCA_UNSUPERVISED_DISPATCH_RECEIPT_V1",
+        "task_id": task_id,
+        "dispatch_id": dispatch_id,
+        "terminal": terminal,
+        "handle": terminal,
+        "worktree": worktree_str,
+        "worktree_path": worktree_str,
+        "started_at": started_time,
+        "supervised": False,
+    }
+    if extra:
+        record.update(extra)
+
+    _write_json_atomic(receipt_file, record)
+
+    if capsule_dir is not None:
+        cap_task_dir = Path(capsule_dir) / task_id
+        if cap_task_dir.is_dir():
+            cap_receipt = cap_task_dir / "dispatch_receipt.json"
+            _write_json_atomic(cap_receipt, record)
+
+    return receipt_file
 
 
 def read_watcher_pid(path: Path) -> int | None:
@@ -2936,8 +3003,9 @@ def cmd_create(args: argparse.Namespace) -> int:
         cmd.extend(["--task-title", args.task_title])
     if args.display_name:
         cmd.extend(["--display-name", args.display_name])
-    if args.deps:
-        cmd.extend(["--deps", args.deps])
+    effective_deps = args.deps or resolve_intent_deps(intent)
+    if effective_deps:
+        cmd.extend(["--deps", effective_deps])
 
     code, stdout, stderr = _run_command(cmd)
     if code != 0 or not _launch_succeeded(stdout, expect_json=True):
@@ -3645,6 +3713,10 @@ def cmd_rework(args: argparse.Namespace) -> int:
         cmd.extend(["--task-title", f"재작업: {args.task_id} ({reason[:30]})"])
     if args.display_name:
         cmd.extend(["--display-name", args.display_name])
+    rework_deps = getattr(args, "deps", None)
+    if not rework_deps:
+        rework_deps = json.dumps([task_id])
+    cmd.extend(["--deps", rework_deps])
 
     code, stdout, _stderr = _run_command(cmd)
     actual_task_id = new_task_id
@@ -4438,6 +4510,28 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         launch_cmd = shlex.join(executed_cmd)
 
     if code == 0 and _launch_succeeded(stdout, expect_json=args.json or launcher_mode):
+        unsupervised_receipt: str | None = None
+        if args.terminal:
+            eff_disp_id = resolve_dispatch_id(task_id) or f"ctx_{uuid.uuid4().hex[:12]}"
+            eff_wt = (
+                worktree_path
+                or resolve_terminal_worktree(args.terminal, repo=args.repo)
+                or Path(args.repo).resolve()
+            )
+            try:
+                rec_path = record_unsupervised_dispatch_receipt(
+                    task_id=task_id,
+                    dispatch_id=eff_disp_id,
+                    terminal=args.terminal,
+                    worktree_path=eff_wt,
+                    started_at=dispatch_started_at,
+                    capsule_dir=capsule_dir,
+                    repo=args.repo,
+                )
+                unsupervised_receipt = str(rec_path)
+            except Exception as exc:
+                sys.stderr.write(f"경고: 비감독 Dispatch 영수증 기록 실패: {exc}\n")
+
         try:
             reliability_tracking = _start_reliability_tracking(
                 capsule_path,
@@ -4524,6 +4618,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                     "preamble_file": str(preamble_file) if preamble_file else None,
                     "pickup": launcher_pickup_detail,
                 }
+            if unsupervised_receipt:
+                payload["unsupervised_receipt"] = unsupervised_receipt
             payload["exit_code"] = exit_code
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
@@ -4828,6 +4924,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="정본 스킬 영수증 검증을 건너뜁니다 (경고 출력).",
     )
+    dsp.add_argument(
+        "--deps", help="선행 Task ID JSON 배열 (미지정 시 리뷰 Intent 의 대상 Task 에서 자동 추출)"
+    )
     dsp.add_argument("--json", action="store_true", help="JSON 출력")
 
     # create
@@ -4857,6 +4956,7 @@ def _build_parser() -> argparse.ArgumentParser:
     rwk.add_argument("--capsule-dir", default=".orca/capsules", help="Capsule 저장 디렉터리")
     rwk.add_argument("--task-title", help="새 Task 제목")
     rwk.add_argument("--display-name", help="워커 행에 표시할 이름")
+    rwk.add_argument("--deps", help="선행 Task ID JSON 배열 (미지정 시 반려 대상 Task ID)")
     rwk.add_argument("--json", action="store_true", help="JSON 출력")
 
     # finalize

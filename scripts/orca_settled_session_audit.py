@@ -11,6 +11,7 @@ import argparse
 import json
 import subprocess  # nosec B404 - 고정된 orca 인자만 호출합니다
 import sys
+from pathlib import Path
 from typing import Any
 
 
@@ -65,14 +66,47 @@ def assignee_handle_from_dispatch(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def load_unsupervised_receipts(
+    receipts_dir: Path | str | None = None,
+    repo_root: Path | str | None = None,
+) -> dict[str, dict[str, Any]]:
+    """비감독 Dispatch 영수증(receipt)을 수집하여 task_id -> receipt 매핑을 반환합니다."""
+    root = Path(repo_root).resolve() if repo_root else Path.cwd()
+    search_dirs: list[Path] = []
+    if receipts_dir:
+        search_dirs.append(Path(receipts_dir).resolve())
+    else:
+        search_dirs.append(root / ".orca" / "dispatch_receipts")
+        search_dirs.append(root / ".orca" / "capsules")
+
+    receipts: dict[str, dict[str, Any]] = {}
+    for sdir in search_dirs:
+        if not sdir.exists():
+            continue
+        pattern = "*/dispatch_receipt.json" if sdir.name == "capsules" else "*.json"
+        for p in sdir.glob(pattern):
+            if not p.is_file():
+                continue
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data.get("task_id"):
+                    t_id = str(data["task_id"]).strip()
+                    if t_id:
+                        receipts[t_id] = data
+            except Exception:  # nosec B112 # noqa: S112
+                continue
+    return receipts
+
+
 def lingering_settled_sessions(
     tasks: list[dict[str, Any]],
     live_terminals: dict[str, str],
     assignee_by_task: dict[str, str | None],
     coordinator_handle: str | None = None,
-) -> list[dict[str, str]]:
+    receipts: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """completed Task 인데 워커 터미널이 아직 살아 있는 항목을 돌려줍니다."""
-    lingering: list[dict[str, str]] = []
+    lingering: list[dict[str, Any]] = []
     for task in tasks:
         status = str(task.get("status") or "").strip().lower()
         if status != "completed":
@@ -81,18 +115,31 @@ def lingering_settled_sessions(
         if not task_id:
             continue
         handle = assignee_by_task.get(task_id)
+        receipt_item = None
+        if not handle and receipts and task_id in receipts:
+            receipt_item = receipts[task_id]
+            handle = (
+                str(receipt_item.get("terminal") or receipt_item.get("handle") or "").strip()
+                or None
+            )
         if not handle:
             continue
         if coordinator_handle and handle == coordinator_handle:
             continue
         if handle not in live_terminals:
             continue
+        is_supervised = True
+        if receipt_item:
+            is_supervised = bool(receipt_item.get("supervised", False))
+        elif receipts and task_id in receipts:
+            is_supervised = bool(receipts[task_id].get("supervised", False))
         lingering.append(
             {
                 "task_id": task_id,
                 "handle": handle,
                 "title": live_terminals.get(handle, ""),
                 "task_title": str(task.get("task_title") or task.get("display_name") or ""),
+                "supervised": is_supervised,
             }
         )
     return lingering
@@ -118,7 +165,12 @@ def _orca_json(args: list[str], timeout: int = 30) -> dict[str, Any]:
     return payload
 
 
-def audit_lingering_sessions(run_id: str | None = None, timeout: int = 30) -> dict[str, Any]:
+def audit_lingering_sessions(
+    run_id: str | None = None,
+    timeout: int = 30,
+    repo_root: Path | str | None = None,
+    receipts_dir: Path | str | None = None,
+) -> dict[str, Any]:
     """실측으로 완료 세션 잔류를 검사합니다."""
     task_args = ["orchestration", "task-list"]
     if run_id:
@@ -149,11 +201,14 @@ def audit_lingering_sessions(run_id: str | None = None, timeout: int = 30) -> di
         except RuntimeError:
             assignee_by_task[task_id] = None
 
+    receipts = load_unsupervised_receipts(receipts_dir=receipts_dir, repo_root=repo_root)
+
     lingering = lingering_settled_sessions(
         tasks,
         live,
         assignee_by_task,
         coordinator_handle=coordinator,
+        receipts=receipts,
     )
     return {
         "allowed": not lingering,
@@ -171,10 +226,16 @@ def audit_lingering_sessions(run_id: str | None = None, timeout: int = 30) -> di
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="완료된 워커 세션 잔류 검사")
     parser.add_argument("--run-id", help="Run ID (미지정 시 현재 바인딩)")
+    parser.add_argument("--repo", help="저장소 루트 경로")
+    parser.add_argument("--receipts-dir", help="비감독 receipt 디렉터리 경로")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
-        result = audit_lingering_sessions(run_id=args.run_id)
+        result = audit_lingering_sessions(
+            run_id=args.run_id,
+            repo_root=args.repo,
+            receipts_dir=args.receipts_dir,
+        )
     except RuntimeError as exc:
         if args.json:
             print(
