@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -469,23 +470,22 @@ def _promote_unlogged(
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
-    # 검증 완료. 이제 서빙 디렉터리를 교체합니다.
+    # 검증 완료. 서빙 디렉터리 이름은 유지한 채 내용만 교체합니다.
+    # shutil.move(target -> backup) 후 move(staging -> target) 은 두 rename
+    # 사이에 serving_dir/<model_name> 이 없는 구간을 만듭니다. 비어 있지 않은
+    # 디렉터리 위의 os.replace 는 POSIX/Windows 모두 실패하고, 심볼릭 링크는
+    # Windows 권한과 Docker 바인드 마운트에서 깨질 수 있어 쓰지 않습니다.
     backup = None
-    if target.exists():
-        backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
-        backup_root.mkdir(parents=True, exist_ok=True)
-        backup = backup_root / model_name
-        if backup.exists():
-            shutil.rmtree(backup)
-
     try:
         if target.exists():
-            shutil.move(str(target), str(backup))
-        shutil.move(str(staging), str(target))
+            backup_root = Path(backup_dir) if backup_dir else BACKUP_ROOT
+            backup_root.mkdir(parents=True, exist_ok=True)
+            backup = backup_root / model_name
+            _snapshot_directory(target, backup)
+        _install_staging_into_serving(staging, target)
     except Exception:
-        # swap 실패 시: target 이 비었으면 backup 을 되돌립니다.
-        if backup is not None and not target.exists():
-            shutil.move(str(backup), str(target))
+        if backup is not None and backup.exists():
+            _restore_serving_from(backup, target)
         elif staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -570,6 +570,68 @@ def save_serving_metrics(
     return path
 
 
+def _replace_path(src: Path | str, dst: Path | str) -> None:
+    """같은 볼륨에서 경로를 원자적으로 교체합니다.
+
+    파일에 대해 POSIX rename(2) 과 Windows ReplaceFile 과 같이 목적지가
+    이미 있어도 한 연산으로 바뀝니다. 디렉터리 전체를 비어 있지 않은
+    디렉터리 위에 올리는 용도로는 쓰지 않습니다. 그 연산은 POSIX 에서도
+    Windows 에서도 실패합니다.
+    """
+    os.replace(src, dst)
+
+
+def _tree_files(root: Path) -> list[Path]:
+    return sorted(path for path in root.rglob("*") if path.is_file())
+
+
+def _snapshot_directory(source: Path, dest: Path) -> None:
+    """source 트리를 dest 로 복사합니다. source 자체는 지우지 않습니다."""
+    tmp = dest.with_name(f"{dest.name}.snapshot_tmp")
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    shutil.copytree(source, tmp)
+    if dest.exists():
+        shutil.rmtree(dest)
+    _replace_path(tmp, dest)
+
+
+def _install_staging_into_serving(staging: Path, target: Path) -> None:
+    """완성된 staging 트리를 서빙 경로로 올립니다.
+
+    target 이 없으면 디렉터리 rename 한 번으로 만듭니다. 이미 있으면
+    디렉터리를 옮기거나 지우지 않고, 같은 볼륨의 파일 단위 os.replace 로
+    내용만 바꿉니다. 서빙 경로 이름이 한 순간도 사라지지 않습니다.
+    """
+    if not target.exists():
+        _replace_path(staging, target)
+        return
+
+    new_rels: list[Path] = []
+    try:
+        for src in _tree_files(staging):
+            rel = src.relative_to(staging)
+            dest = target / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _replace_path(src, dest)
+            new_rels.append(rel)
+        keep = set(new_rels)
+        for existing in _tree_files(target):
+            if existing.relative_to(target) not in keep:
+                existing.unlink()
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _restore_serving_from(backup: Path, target: Path) -> None:
+    """백업 트리를 서빙 경로에 다시 설치합니다. 백업 원본은 유지합니다."""
+    staging = target.parent / f".restore_staging_{target.name}"
+    if staging.exists():
+        shutil.rmtree(staging)
+    shutil.copytree(backup, staging)
+    _install_staging_into_serving(staging, target)
+
+
 class RollbackUnavailable(RuntimeError):
     """되돌릴 백업본이 없습니다."""
 
@@ -600,20 +662,29 @@ def rollback(
     restored_version = _metadata_version(backup)
     replaced_version = _metadata_version(target)
 
-    # 교체 순서가 중요합니다. 백업을 먼저 옮기면 현재 서빙본을 둘 자리가 없습니다.
     holding = backup_root / f"{model_name}.rollback_tmp"
     if holding.exists():
         shutil.rmtree(holding)
     if target.exists():
-        shutil.move(str(target), str(holding))
+        _snapshot_directory(target, holding)
+
+    restore_staging = serving_dir / f".rollback_staging_{model_name}"
     try:
-        shutil.move(str(backup), str(target))
+        if restore_staging.exists():
+            shutil.rmtree(restore_staging)
+        shutil.copytree(backup, restore_staging)
+        _install_staging_into_serving(restore_staging, target)
     except Exception:
         if holding.exists():
-            shutil.move(str(holding), str(target))
+            _restore_serving_from(holding, target)
+        elif restore_staging.exists():
+            shutil.rmtree(restore_staging, ignore_errors=True)
         raise
+
+    if backup.exists():
+        shutil.rmtree(backup)
     if holding.exists():
-        shutil.move(str(holding), str(backup))
+        _replace_path(holding, backup)
 
     return {
         "model_name": model_name,

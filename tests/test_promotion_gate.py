@@ -11,6 +11,7 @@ capsule task_t3_promotion 사양:
 """
 
 import json
+import shutil
 from pathlib import Path
 
 import joblib
@@ -18,6 +19,7 @@ import pytest
 from sklearn.linear_model import LinearRegression
 
 from scripts.promote_model import main as cli_main
+from src.ml import promotion as promotion_mod
 from src.ml.promotion import (
     PromotionRejected,
     check_promotion_criteria,
@@ -235,6 +237,90 @@ def test_promote_atomic_no_partial_serving(dirs):
 
     # 서빙 디렉터리가 아예 만들어지지 않았어야 합니다.
     assert not serving.exists()
+
+
+def test_promote_keeps_serving_path_present_during_swap(dirs, monkeypatch):
+    """기존 서빙본을 교체하는 동안 서빙 디렉터리가 한 번도 사라지지 않습니다."""
+    _write_verdict(dirs["registry_dir"], "v_20260801_000000_000", "approved")
+    promote(
+        MODEL_NAME,
+        "v_20260801_000000_000",
+        registry_dir=dirs["registry_dir"],
+        serving_dir=dirs["serving_dir"],
+        backup_dir=dirs["backup_dir"],
+    )
+    serving = dirs["serving_dir"] / MODEL_NAME
+    seen: list[bool] = []
+
+    def _watch(fn):
+        def wrapped(*args, **kwargs):
+            seen.append(serving.exists())
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                seen.append(serving.exists())
+
+        return wrapped
+
+    monkeypatch.setattr(promotion_mod, "_replace_path", _watch(promotion_mod._replace_path))
+    monkeypatch.setattr(promotion_mod.shutil, "rmtree", _watch(shutil.rmtree))
+    monkeypatch.setattr(promotion_mod.shutil, "copytree", _watch(shutil.copytree))
+
+    promote(
+        MODEL_NAME,
+        "v_20260801_000000_000",
+        registry_dir=dirs["registry_dir"],
+        serving_dir=dirs["serving_dir"],
+        backup_dir=dirs["backup_dir"],
+    )
+
+    assert seen
+    assert all(seen), "승격 교체 중 서빙 경로가 부재한 순간이 있습니다"
+    assert serving.exists()
+    assert (serving / "model.bin").exists()
+    assert (serving / "metadata.json").exists()
+
+
+def test_promote_injected_replace_failure_leaves_valid_serving(dirs, monkeypatch):
+    """파일 교체 중 실패해도 서빙 경로는 직전 유효 트리로 남습니다."""
+    _write_verdict(dirs["registry_dir"], "v_20260801_000000_000", "approved")
+    promote(
+        MODEL_NAME,
+        "v_20260801_000000_000",
+        registry_dir=dirs["registry_dir"],
+        serving_dir=dirs["serving_dir"],
+        backup_dir=dirs["backup_dir"],
+    )
+    serving = dirs["serving_dir"] / MODEL_NAME
+    original_model = (serving / "model.bin").read_bytes()
+    original_meta = (serving / "metadata.json").read_text(encoding="utf-8")
+
+    real_replace = promotion_mod._replace_path
+    injected = {"count": 0}
+
+    def fail_on_first_model_bin(src, dst):
+        dst_path = Path(dst)
+        if dst_path.name == "model.bin" and dst_path.parent == serving:
+            injected["count"] += 1
+            if injected["count"] == 1:
+                raise OSError("injected replace failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(promotion_mod, "_replace_path", fail_on_first_model_bin)
+
+    with pytest.raises(OSError, match="injected replace failure"):
+        promote(
+            MODEL_NAME,
+            "v_20260801_000000_000",
+            registry_dir=dirs["registry_dir"],
+            serving_dir=dirs["serving_dir"],
+            backup_dir=dirs["backup_dir"],
+        )
+
+    assert serving.exists()
+    assert (serving / "model.bin").read_bytes() == original_model
+    assert (serving / "metadata.json").read_text(encoding="utf-8") == original_meta
+    assert (dirs["backup_dir"] / MODEL_NAME / "model.bin").exists()
 
 
 # --------------------------------------------------------------------------- #
