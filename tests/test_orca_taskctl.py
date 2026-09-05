@@ -6609,3 +6609,301 @@ def test_record_unsupervised_dispatch_receipt_writes_valid_json(tmp_path: Path):
     assert rec_data["supervised"] is False
     assert rec_data["started_at"] == 12345.0
     assert "worktree" in rec_data
+
+
+def test_rework_spec_path_real_and_identical_copies_with_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """신규 D: rework 로 Task 를 생성하면 Task spec 이 가리키는 경로와 실제 새 Task ID 경로
+
+    두 곳 모두에 Capsule 이 실제로 존재하며, 두 사본의 내용이 100% 일치하고,
+    --worktree 지정 시 워크트리에도 Capsule 사본이 자동 배치됨을 검증합니다.
+    """
+    capsule_dir = tmp_path / ".orca" / "capsules"
+    task_dir = capsule_dir / "task_src_123"
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    capsule_file = task_dir / "capsule.yaml"
+    capsule_file.write_text(
+        "schema: ORCA_TASK_CAPSULE_V2\n"
+        'task_id: "task_src_123"\n'
+        "why_now: >\n"
+        "  최초 작업 시도\n"
+        "ground_truth:\n"
+        '  - fact: "기본 사실"\n'
+        "required_change:\n"
+        '  - "기본 변경"\n'
+        'report_path: ".orca/capsules/task_src_123/worker_done.json"\n'
+        "allowed_read_files:\n"
+        '  - ".orca/capsules/task_src_123/capsule.yaml"\n',
+        encoding="utf-8",
+    )
+
+    report_file = task_dir / "worker_done.json"
+    report_file.write_text(
+        json.dumps({"commit": "commit_111", "verdict": "blocked"}),
+        encoding="utf-8",
+    )
+
+    worktree_dir = tmp_path / "isolated_worktree"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    captured_cmds: list[list[str]] = []
+
+    def mock_task_create(cmd, cwd=None, timeout=30):
+        captured_cmds.append(cmd)
+        # Orca 는 임의의 새 task id 를 발급함 (task_src_123_rework 와 다른 실제 id)
+        return 0, json.dumps({"result": {"task": {"id": "task_actual_generated_999"}}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_task_create)
+
+    code = main(
+        [
+            "rework",
+            "--task-id",
+            "task_src_123",
+            "--reason",
+            "단위 테스트 실패",
+            "--capsule-dir",
+            str(capsule_dir),
+            "--worktree",
+            str(worktree_dir),
+            "--json",
+        ]
+    )
+    assert code == 0
+    captured = capsys.readouterr()
+    res = json.loads(captured.out)
+
+    assert res["status"] == "rework_created"
+    assert res["original_task_id"] == "task_src_123"
+    assert res["new_task_id"] == "task_actual_generated_999"
+
+    # 1. spec 이 가리키는 경로 검증
+    spec_str = res["spec"]
+    assert ".orca/capsules/task_src_123_rework/capsule.yaml" in spec_str
+
+    spec_capsule_file = capsule_dir / "task_src_123_rework" / "capsule.yaml"
+    actual_capsule_file = capsule_dir / "task_actual_generated_999" / "capsule.yaml"
+
+    # 2. 두 사본이 모두 실존함을 검증 (rework 직후 spec 경로에 Capsule 이 실존)
+    assert spec_capsule_file.is_file(), "spec 경로에 Capsule 파일이 존재해야 합니다"
+    assert actual_capsule_file.is_file(), "실제 task_id 경로에 Capsule 파일이 존재해야 합니다"
+
+    spec_text = spec_capsule_file.read_text(encoding="utf-8")
+    actual_text = actual_capsule_file.read_text(encoding="utf-8")
+
+    # 3. 두 사본 내용이 100% 일치함을 검증 (drift 방지 강제)
+    assert spec_text == actual_text, "두 Capsule 사본의 내용이 완벽히 일치해야 합니다"
+
+    # allowed_read_files 에 spec 경로와 실제 경로가 모두 유효하게 포함되어 있는지 확인
+    allowed_reads = parse_capsule_list(spec_text, "allowed_read_files")
+    assert ".orca/capsules/task_actual_generated_999/capsule.yaml" in allowed_reads
+    assert ".orca/capsules/task_src_123_rework/capsule.yaml" in allowed_reads
+
+    # 4. 워크트리에도 사본이 자동 배치되었는지 검증
+    wt_spec_capsule = worktree_dir / ".orca" / "capsules" / "task_src_123_rework" / "capsule.yaml"
+    wt_actual_capsule = (
+        worktree_dir / ".orca" / "capsules" / "task_actual_generated_999" / "capsule.yaml"
+    )
+    assert wt_spec_capsule.is_file(), "워크트리에도 spec 사본이 자동 배치되어야 합니다"
+    assert wt_actual_capsule.is_file(), "워크트리에도 실제 task_id 사본이 자동 배치되어야 합니다"
+    assert wt_spec_capsule.read_text(encoding="utf-8") == spec_text
+    assert wt_actual_capsule.read_text(encoding="utf-8") == actual_text
+
+
+def test_dispatch_missing_capsule_rejected_with_code_2(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """신규 D: Capsule 정본 파일이 없을 때 dispatch 가 워커를 기동하지 않고 종료 코드 2 로 거부함을 검증."""
+    intent_file = tmp_path / "test.intent.yaml"
+    intent_file.write_text(
+        "role: builder\n"
+        "objective: 테스트 태스크\n"
+        "why_now: 검증\n"
+        "ground_truth:\n"
+        '  - fact: "사실"\n'
+        "required_change:\n"
+        '  - "변경"\n'
+        "acceptance:\n"
+        '  - "통과"\n'
+        "allowed_read_files: []\n"
+        "allowed_write_files: []\n"
+        "required_write_files: []\n",
+        encoding="utf-8",
+    )
+
+    non_existent_capsule = tmp_path / ".orca" / "capsules" / "non_existent" / "capsule.yaml"
+
+    launched = False
+
+    def mock_worker_start(*args, **kwargs):
+        nonlocal launched
+        launched = True
+        return 0, "worker started", "", ["orca", "worker-start"]
+
+    def mock_dispatch_with_fallback(*args, **kwargs):
+        nonlocal launched
+        launched = True
+        return 0, "dispatched", "", ["orca", "dispatch"], {"fallback_used": False}
+
+    monkeypatch.setattr("scripts.orca_taskctl.worker_start", mock_worker_start)
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_with_fallback", mock_dispatch_with_fallback)
+
+    # 1. 존재하지 않는 --capsule 지정 시 종료 코드 2 거부
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule",
+            str(non_existent_capsule),
+            "--agent",
+            "codex",
+            "--json",
+        ]
+    )
+    assert code == 2
+    assert not launched, "Capsule 파일이 없으면 워커가 기동되지 않아야 합니다"
+    captured = capsys.readouterr()
+    res = json.loads(captured.out)
+    assert res["error"] == "capsule_not_found"
+    assert res["exit_code"] == 2
+
+
+def test_dispatch_receipt_failure_blocks_launch_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """신규 F: 비감독 Dispatch 시 receipt 기록 실패가 워커 기동을 막고(fail-closed) 종료 코드 2 를 반환하며,
+
+    --skip-dispatch-receipt 플래그로만 우회할 수 있음을 검증합니다.
+    """
+    intent_file = tmp_path / "test.intent.yaml"
+    intent_file.write_text(
+        "role: builder\n"
+        "objective: 테스트 태스크\n"
+        "why_now: 검증\n"
+        "ground_truth:\n"
+        '  - fact: "사실"\n'
+        "required_change:\n"
+        '  - "변경"\n'
+        "acceptance:\n"
+        '  - "통과"\n'
+        "allowed_read_files: []\n"
+        "allowed_write_files: []\n"
+        "required_write_files: []\n",
+        encoding="utf-8",
+    )
+
+    launched = False
+
+    def mock_dispatch_with_fallback(*args, **kwargs):
+        nonlocal launched
+        launched = True
+        return (
+            0,
+            json.dumps({"status": "dispatched"}),
+            "",
+            ["orca", "dispatch"],
+            {"fallback_used": False},
+        )
+
+    monkeypatch.setattr("scripts.orca_taskctl.dispatch_with_fallback", mock_dispatch_with_fallback)
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.prepare_worker_terminal",
+        lambda *args, **kwargs: {
+            "trust_prompt": {"status": "approved", "detail": ""},
+            "auto_approve_watcher": {"ok": True, "detail": "test"},
+            "file_edit_auto_approve": {"ok": True, "detail": "test"},
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._deliver_capsule_notice",
+        lambda *args, **kwargs: {"status": "delivered", "delivery_probe": "test_probe"},
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered",
+        lambda *args, **kwargs: "verified",
+    )
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency",
+        lambda *args, **kwargs: {
+            "allowed": True,
+            "active_write_count": 0,
+            "occupying": [],
+            "limit": 3,
+            "probe_error": None,
+            "reason": "테스트 통과",
+        },
+    )
+
+    # receipt 기록 실패 유발 mock
+    def mock_receipt_fail(*args, **kwargs):
+        raise OSError("디스크 공간 부족 또는 권한 없음")
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.record_unsupervised_dispatch_receipt", mock_receipt_fail
+    )
+
+    # 1. 기본 설정: receipt 기록 실패 시 fail-closed 로 기동 차단 (종료 코드 2)
+    code = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--terminal",
+            "term_unsup_fail_test",
+            "--model",
+            "gemini-3.8-flash-medium",
+            "--json",
+        ]
+    )
+    assert code == 2, "영수증 기록 실패 시 종료 코드 2 로 거부되어야 합니다"
+    assert not launched, (
+        "영수증 기록 실패 시 워커 기동(dispatch_with_fallback)이 호출되지 않아야 합니다"
+    )
+    captured = capsys.readouterr()
+    res = json.loads(captured.out)
+    assert res["error"] == "dispatch_receipt_failed"
+    assert res["origin"] == "dispatch_receipt_gate"
+    assert res["exit_code"] == 2
+
+    # 2. --skip-dispatch-receipt 지정 시: 경고를 출력하고 기동 진행
+    code_bypass = main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--terminal",
+            "term_unsup_fail_test",
+            "--model",
+            "gemini-3.8-flash-medium",
+            "--skip-dispatch-receipt",
+            "--json",
+        ]
+    )
+    assert code_bypass == 0, "--skip-dispatch-receipt 로 우회 시 기동 성공해야 합니다"
+    assert launched, "--skip-dispatch-receipt 지정 시 워커가 기동되어야 합니다"
+    captured_bypass = capsys.readouterr()
+    assert "경고: --skip-dispatch-receipt 지정" in captured_bypass.err
+
+
+def test_dispatch_no_deps_option_and_create_rework_only():
+    """신규 E: dispatch 하위 명령에는 --deps 옵션이 없고 create 및 rework 에만 존재함을 검증."""
+    from scripts.orca_taskctl import _build_parser
+
+    parser = _build_parser()
+
+    # dispatch 명령 파서에는 --deps 가 없어야 함
+    with pytest.raises(SystemExit):
+        parser.parse_args(["dispatch", "--deps", '["task_1"]', "--intent", "dummy.yaml"])
+
+    # create 와 rework 파서에는 --deps 가 있어야 함
+    create_args = parser.parse_args(["create", "--deps", '["task_1"]', "--intent", "dummy.yaml"])
+    assert create_args.deps == '["task_1"]'
+
+    rework_args = parser.parse_args(
+        ["rework", "--deps", '["task_1"]', "--task-id", "t1", "--reason", "test"]
+    )
+    assert rework_args.deps == '["task_1"]'
