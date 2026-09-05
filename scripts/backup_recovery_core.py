@@ -23,6 +23,7 @@ MANIFEST_FILENAME = "backup_manifest.json"
 REQUIRED_BACKUP_ASSETS = ("database", "chroma_db", "models")
 REQUIRED_SOURCE_ASSETS = ("chroma_db", "models")
 REQUIRED_MODEL_SOURCE_PATH = Path("data") / "model_files"
+EXPECTED_MANIFEST_SCHEMA = "BACKUP_MANIFEST_V1"
 DEFAULT_TABLES = tuple(
     "accounts_customuser automation_requests automation_subscriptions bid_announcements bid_dataset_summaries bid_results chat_session_states knowledge_base_status pipeline_executions prediction_results retrain_logs".split()  # noqa: SIM905
 )
