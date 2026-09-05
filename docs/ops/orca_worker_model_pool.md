@@ -51,8 +51,9 @@
 | `claude-sonnet` | `claude-sonnet-5` | Claude | O (`True`) | 로컬 Claude Pro 수동 보조 워커 (TIER_POLICY 자동 배정 제외, WORKER_MODEL_NOTICE 후 명시 배정) |
 | `grok-4.6` | `grok-4.6` | Grok | X (`False`) | SuperGrok 로컬 Grok CLI. effort high 는 코디네이터 등급으로 워커 자동 배정 제외, 워커 등급은 medium/low. WORKER_MODEL_NOTICE 후 명시 배정 |
 | `grok-4.5` | `grok-4.5` | Grok | X (`False`) | SuperGrok 로컬 Grok CLI. grok-4.5 워커 모델. WORKER_MODEL_NOTICE 후 명시 배정 |
+| `opencode-muse-spark` | `opencode/muse-spark-1.3-contributor-free` | OpenCode | X (`False`) | 수동 지정 전용 (builder, investigator 용도, reviewer 제외) |
 
-`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
+`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5`, `opencode-muse-spark` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
 
 리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를 그대로 통과시키기 때문입니다. 현재 정책에서 빌더가 Gemini 계열(`gemini-flash-*`)인 동안 리뷰어는 `qwen-plus`(Alibaba Token Plan)입니다.
 
@@ -121,7 +122,26 @@
 
 ---
 
-## 5. probe 응답 본문 검사 (방어적 보강)
+## 5. 가용성 실측 및 등록 (2026-09-05, OpenCode Muse Spark 1.3)
+
+등록 전에 OpenCode CLI로 직접 가용성과 도구 사용을 확인한 결과입니다.
+
+| 모델 ID | 결과 | provider | tier | auto_selectable | 조치 |
+| --- | :---: | :---: | :---: | :---: | --- |
+| `opencode/muse-spark-1.3-contributor-free` | 응답 (코드 0) | `opencode` | `free` | `False` | 풀 등록 (`opencode-muse-spark`, 수동 지정 전용) |
+| `opencode-go/muse-spark-1.3-contributor` | 세션 쿠키 미설정 | `opencode` | - | - | 미등록 (현재 사용 불가) |
+
+핵심 확인 사실 및 운용 정책:
+
+1. **실행 환경 및 실측 결과**: `opencode run --model opencode/muse-spark-1.3-contributor-free` 로 기본 응답과 도구 사용을 모두 확인했다. 파일 읽기 도구를 정상 호출하여 `pyproject.toml` 의 프로젝트 이름을 정확히 조회하고 종료 코드 0으로 완료됨을 실측 검증했다.
+2. **무료 기여자 티어 등록 및 유료 경로 제외**: 무료 경로인 `opencode/muse-spark-1.3-contributor-free` 만 등록한다. 유료 경로인 `opencode-go/muse-spark-1.3-contributor` 는 세션 쿠키가 설정되어 있지 않아 현재 사용할 수 없다.
+3. **추론 등급(--variant) 미검증 상태 보존**: `opencode run` 의 `--variant` 플래그가 실제 reasoning effort 에 유의미한 차이를 유발하는지 여부가 검증되지 않았으므로 임의로 등급을 매핑하지 않고 `variant: capability_unknown` 으로 보수적 기록한다.
+4. **역할 제한 및 수동 지정 전용**: 용도(역할)는 `builder` 와 `investigator` 로 설정하며, 임계 경로인 `reviewer` 에는 배정하지 않는다. `auto_selectable=False` 로 등록되어 자동 배정이나 자동 fallback 에 들어가지 않으며, `--model opencode-muse-spark` 또는 `--model opencode/muse-spark-1.3-contributor-free` 명시 지정으로만 사용된다.
+5. **승격 조건**: 외부의 검증되지 않은 벤치마크 수치는 인용하지 않으며, 이 저장소의 실측 기준인 `benchmarks/free_workers` 쓰기 경합을 통과한 뒤에만 정규 워커 및 자동 배정 승격을 검토한다.
+
+---
+
+## 6. probe 응답 본문 검사 (방어적 보강)
 
 `probe_model` 은 종료 코드로 가용성을 판정합니다. 2026-08-30 실측에서 Qwen Code
 CLI 는 인증 실패와 미지원 모델에 **종료 코드 1 과 stderr 오류**를 돌려주므로 기존
@@ -141,7 +161,7 @@ CLI 는 인증 실패와 미지원 모델에 **종료 코드 1 과 stderr 오류
 
 ---
 
-## 6. 워커 기동
+## 7. 워커 기동
 
 Qwen Code 워커는 [`scripts/orca_qwen_launch.py`](../../scripts/orca_qwen_launch.py)
 로 띄웁니다. 터미널을 먼저 만들고 나중에 명령을 밀어 넣으면 Orca 가 그 터미널을
@@ -162,7 +182,7 @@ Kimi 런처와 다른 점은 기본이 `-i` 라는 것입니다. 지시문을 �
 남으므로 코디네이터가 `orca terminal send` 로 후속 지시와 반려 사유를 같은 세션에
 보낼 수 있습니다. `--one-shot` 을 주면 `-p` 단발 실행으로 바뀝니다.
 
-### 6.1 Grok 워커 기동
+### 7.1 Grok 워커 기동
 
 Grok 워커는 `orca terminal create --worktree path:<워크트리> --command grok` 으로 로컬 grok CLI TUI 대화형 터미널을 띄운 뒤 `dispatch --terminal` 로 붙입니다.
 
@@ -181,7 +201,7 @@ uv run python scripts/orca_taskctl.py dispatch --intent <intent_path> --terminal
 
 ---
 
-## 7. 자동 승인 모드
+## 8. 자동 승인 모드
 
 Qwen Code 는 **기동 시점부터 Auto mode** 이고 `shift+tab` 은 그 모드를 벗어나는
 순환 키입니다. 따라서 Antigravity 계열과 달리 모드 전환 키를 보내지 않습니다.
@@ -191,7 +211,7 @@ Qwen Code 는 **기동 시점부터 Auto mode** 이고 `shift+tab` 은 그 모�
 
 ---
 
-## 8. 워커에 위임하지 않는 판정
+## 9. 워커에 위임하지 않는 판정
 
 다음은 모델 등급과 무관하게 코디네이터가 직접 판단합니다.
 
@@ -204,7 +224,7 @@ L4 상신 모델을 쓰더라도 이 네 가지는 위임하지 않습니다.
 
 ---
 
-## 9. 실적 관찰 항목
+## 10. 실적 관찰 항목
 
 단가만으로 워커를 고르지 않습니다. **싼 워커가 코디네이터 검증을 30분 더 쓰게
 만들면 실제로는 비싼 워커입니다.** 이 저장소의 조율 설계는 코디네이터 검증 비용을
