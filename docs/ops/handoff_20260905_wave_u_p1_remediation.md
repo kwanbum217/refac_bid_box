@@ -78,6 +78,10 @@ Windows job 성공은 `ci_windows` 판정의 실행 증거로 문서에 인용�
 | 신규 D | `taskctl rework` 의 Capsule 경로 불일치 | 7.1 절. 워커 두 대가 이 때문에 엉뚱한 Capsule 을 읽었다 |
 | 신규 E | `cmd_dispatch --deps` 도움말과 `orca_control_plane_tools.md` 6.1 절이 dispatch 시점 자동 연결을 주장하나 구현은 `create` 에만 있음 | O-05 리뷰가 지적한 문서 과장 |
 | 신규 F | 비감독 receipt 기록 실패가 fail-open | O-06 리뷰가 지적. 기존 fail-closed 게이트는 느슨해지지 않았다 |
+| R-01 | 백업 검증기가 빈 매니페스트를 유효로 판정 | 2026-09-05 외부 진단 보고서. 코디네이터가 격리 fixture 로 재현 확인. Intent 준비됨 |
+| R-02 | 정기 백업의 운영 컨테이너 배선 미완 | 같은 보고서. worker 환경변수에 BACKUP_SCHEDULE_ENABLED 와 DB_HOST 계열 부재, Dockerfile 에 mysql 클라이언트 부재를 실측 확인 |
+| R-03 | 큐 적체를 정렬 집합에 llen 으로 조회 | 같은 보고서. arq 소스 대조로 확인. Intent 준비됨 |
+| R-15 잔여 | Dockerfile 의 uv 이미지가 태그 참조 | V3 의 쓰기 범위 밖이라 별도 처리 필요 |
 
 ---
 
@@ -107,26 +111,38 @@ Windows job 성공은 `ci_windows` 판정의 실행 증거로 문서에 인용�
 
 ## 7. 인수자가 반드시 알아야 할 함정
 
-### 7.1 `taskctl rework` 는 Capsule 을 만든 곳과 다른 곳을 가리킵니다
+### 7.1 재작업 워커가 유사한 이름의 Capsule 로 이탈합니다
 
-`rework` 는 새 Capsule 을 `.orca/capsules/task_<새_task_id>/capsule.yaml` 에
-쓰지만 Task `spec` 은 `.orca/capsules/task_<원본_task_id>_rework/capsule.yaml` 을
-가리킵니다. **그 디렉터리는 만들어지지 않습니다.**
+**2026-09-05 최초 작성 시 이 절의 원인 진단이 틀렸습니다. 아래는 정정본입니다.**
 
-이번에 재작업 워커 두 대가 없는 경로를 열지 못하자 이름이 비슷한
-`task_<이름>_review/capsule.yaml`(리뷰 Capsule)을 대신 읽었습니다. 한 대는 그
-안의 `task_id` 와 `dispatch_id` 까지 그대로 베껴 **이미 끝난 리뷰 Task 앞으로
-`worker_done` 을 보냈습니다.** 사양 오독과 계보 오염이 함께 일어납니다.
+재작업 워커 두 대가 지정된 Capsule 대신
+`.orca/capsules/task_<이름>_review/capsule.yaml`(리뷰 Capsule)을 읽었습니다. 한 대는
+그 안의 `task_id` 와 `dispatch_id` 까지 그대로 베껴 **이미 끝난 리뷰 Task 앞으로
+`worker_done` 을 보냈고** Orca 가 거부했습니다.
 
-조치는 `rework` 직후 다음을 실행하는 것입니다.
+당시 코디네이터는 원인을 "`rework` 가 Capsule 을 만드는 곳과 Task spec 이 가리키는
+곳이 달라 파일이 없다" 로 진단했습니다. **틀린 진단입니다.**
+`scripts/orca_taskctl.py` 의 `cmd_rework` 는 3682~3695행에서 Task 를 만들기 **전에**
+`.orca/capsules/task_<원본ID>_rework/` 를 mkdir 하고 `capsule.yaml` 을 씁니다.
+3744~3745행은 실제 `task_id` 가 달라지면 새 경로와 옛 경로 양쪽에 씁니다. 파일은
+정상적으로 생성되며, 2026-09-05 외부 진단 보고서 4장이 이 줄들을 근거로 정정을
+요구했고 재확인 결과 두 경로 모두에 동일한 파일이 있었습니다.
 
-```bash
-mkdir -p .orca/capsules/task_<원본ID>_rework
-cp .orca/capsules/task_<새ID>/capsule.yaml .orca/capsules/task_<원본ID>_rework/capsule.yaml
-cp -R .orca/capsules <워크트리>/.orca/
-```
+**실제 원인은 워커가 이름이 비슷한 디렉터리로 스스로 이탈한 것입니다.** 파일 배치로
+막히지 않습니다.
 
-**기동 직후 `orca terminal read` 로 어떤 Capsule 을 읽었는지 반드시 확인하십시오.**
+| 조치 | 내용 |
+| --- | --- |
+| 즉시 | 재작업 Dispatch 직후 `orca terminal read` 로 워커가 연 Capsule 경로를 눈으로 확인하고, 다른 파일이면 정정 지시를 보낸다 |
+| 근본 | `dispatch` 가 기동 전에 Capsule 정본 실존을 확인해 fail-closed 로 거부한다. 준비된 `v2_control_plane_truth.yaml` 의 `required_change` 3번이다 |
+
+**이 오진은 V2 워커에게 그대로 주입됐습니다.** 기동 후 정정 지시를 보내
+`required_change` 1번과 2번을 전제 오류로 무효화하고 3~5번만 수행하도록 했습니다.
+V2 산출물을 검토할 때 그 지시가 반영됐는지 확인하십시오.
+
+교훈은 하나입니다. **증상에서 역추론한 원인을 `ground_truth` 에 "재조사 불필요" 로
+못박지 마십시오.** 해당 함수를 열어 줄 번호와 함께 확인한 사실만 적고, 확인하지
+못한 것은 `required_change` 의 조사 항목으로 내립니다.
 
 ### 7.2 `source_commit` 은 병합 직전 `main` HEAD 가 아니라 병합된 브랜치 끝점입니다
 
@@ -231,28 +247,39 @@ Docker Desktop 은 shellcheck 포함 actionlint 검증을 위해 이 세션에�
 
 | Intent | 닫는 항목 | 쓰기 범위 | 겹침 |
 | --- | --- | --- | --- |
-| `v1_gate_capability.yaml` | 신규 B, 신규 C | `orca_level1_gate.py`, `orca_taskctl.py`, `summarize_worker_done.py`, 스킬 미러 | V2 와 `orca_taskctl.py` 충돌 |
-| `v2_control_plane_truth.yaml` | 신규 D, 신규 E, 신규 F | `orca_taskctl.py`, `orca_settled_session_audit.py` | V1 과 `orca_taskctl.py` 충돌 |
+| `v1_gate_capability.yaml` | 신규 B, 신규 C | `orca_level1_gate.py`, `orca_taskctl.py`, `summarize_worker_done.py`, 스킬 미러 | V2 와 `orca_taskctl.py` |
+| `v2_control_plane_truth.yaml` | 신규 D, 신규 E, 신규 F | `orca_taskctl.py`, `orca_settled_session_audit.py` | V1 과 `orca_taskctl.py` |
 | `v3_supply_chain_pin.yaml` | S-02 | `.github/workflows/`, 공급망 문서 | 없음 |
-| `w1_arq_abort_span.yaml` | 신규 A | `observability.py`, `worker.py` | W2 와 `worker.py` 충돌 |
-| `w2_catchup_ledger.yaml` | D-04 | `worker.py`, `scheduled_tasks.py` | W1 과 `worker.py` 충돌 |
+| `v4_backup_verify_strict.yaml` | R-01 | `backup_snapshots.py`, `backup_recovery*.py`, 백업 테스트 | 없음 |
+| `w1_arq_abort_span.yaml` | 신규 A | `observability.py`, `worker.py` | W2·W3 와 `worker.py` |
+| `w2_catchup_ledger.yaml` | D-04, R-04 | `worker.py`, `scheduled_tasks.py` | W1·W3 와 `worker.py` |
+| `w3_queue_backlog_metric.yaml` | R-03 | `worker.py`, `test_worker_heartbeat.py` | W1·W2 와 `worker.py` |
 
-**V1 과 V2 는 둘 다 `scripts/orca_taskctl.py` 를 쓰므로 동시에 Dispatch 하지
-마십시오.** 같은 이유로 W1 과 W2 도 `src/tasks/worker.py` 가 겹칩니다. 권장 순서는
-다음과 같습니다.
+**`scripts/orca_taskctl.py` 를 V1 과 V2 가, `src/tasks/worker.py` 를 W1·W2·W3 가
+공유합니다.** 같은 파일에 동시 쓰기를 배정하지 마십시오. 권장 순서는 다음과 같습니다.
 
 | 웨이브 | 동시 Dispatch | 이유 |
 | --- | --- | --- |
-| 1 | V2 + V3 + W1 | 쓰기 범위가 서로 겹치지 않는 3대 |
-| 2 | V1 + W2 | V2 병합 후. 둘은 서로 겹치지 않는다 |
+| 1 (기동 완료) | V2 + V3 + W1 | 2026-09-05 세션에서 기동함 |
+| 2 | V1 + V4 + W3 | V2 와 W1 병합 후. 셋은 서로 겹치지 않는다 |
+| 3 | W2 | W3 병합 후 |
 
-**V2 를 V1 보다 먼저 돌리는 것을 권합니다.** V2 가 닫는 `rework` Capsule 경로
-결함은 이번 세션에서 워커 두 대의 사양 오독을 실제로 일으켰고, 재작업이 필요한
-순간마다 반복됩니다. V1 의 mypy 능력은 그동안 Capsule 검증 명령에 손으로
-`uv run mypy src` 를 넣어 우회할 수 있습니다.
+**웨이브 1 은 이미 돌고 있습니다.** Run `run_029274587357`, Task
+`task_490d6d4f7d1f`(V2), `task_63f8823e4969`(V3), `task_82b3c4587fbe`(W1) 입니다.
+그 산출물을 병합한 뒤 웨이브 2 를 시작하십시오.
 
-D-05(KB reconciliation 103건)는 조사 범위가 정해지지 않아 Intent 를 만들지
-않았습니다. 먼저 모집단 불일치의 원인을 좁히는 읽기 전용 조사 Task 가 필요합니다.
+**V2 워커에게는 기동 후 정정 지시를 보냈습니다.** Capsule 의 `required_change`
+1번과 2번이 7.1 절의 오진에 기반하므로 무효화하고 3~5번만 수행하도록 했습니다.
+V2 산출물 검토 시 그 지시가 반영됐는지 확인하십시오.
+
+R-02(백업 운영 배선)와 R-15 잔여(Dockerfile uv 이미지)는 Intent 를 만들지
+않았습니다. R-02 는 "백업을 어디서 실행할 것인가" 라는 운영 결정이 선행돼야
+하고, 그 결정 없이 코드를 고치면 방향이 틀립니다. R-15 잔여는 V3 병합 후
+같은 파일 계열에서 이어서 처리하는 편이 낫습니다.
+
+D-05(KB reconciliation)는 R-05 와 같은 항목입니다. 조사 범위가 정해지지 않아
+Intent 를 만들지 않았습니다. 먼저 모집단 불일치의 원인을 좁히는 읽기 전용 조사
+Task 가 필요합니다.
 
 ### 9.1 `expand` 가 Intent 선언을 덮어씁니다
 
@@ -264,6 +291,34 @@ dry-run 에서 확인한 별개의 결함입니다. `orca_taskctl.py expand` 는
 그래서 준비한 다섯 Intent 의 `ground_truth` 에 "Capsule 에 mypy 명령이 없더라도
 직접 실행하고 결과를 보고에 적어라" 를 못박아 두었습니다. 근본 해결은 V1 의
 required_change 7번입니다.
+
+---
+
+## 9.2 외부 진단 보고서 20260905 검증 결과
+
+`gpt6-astra medium` 이 작성한 읽기 전용 진단 보고서를 코디네이터가 코드로
+검증했습니다. **기준 커밋이 `9e4a074` / `c899365` 로 당시 `main` 과 같아 뒤처진
+보고서가 아닙니다.**
+
+| ID | 검증 방법 | 판정 |
+| --- | --- | --- |
+| R-01 | `verify_snapshot()` 을 격리 fixture 로 직접 호출 | **확정.** 빈 매니페스트, 빈 `components`, 체크섬 없는 0바이트 자산이 전부 `is_valid=True` |
+| R-02 | `docker-compose.prod.yml` worker 블록 전수 확인 | **확정.** `BACKUP_SCHEDULE_ENABLED` 미전달, `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_NAME` 미전달, Dockerfile 에 mysql 클라이언트 부재. 세 갈래 전부 |
+| R-03 | 설치된 arq 의 `connections.py` 소스 대조 | **확정.** arq 는 `zadd` 로 정렬 집합에 넣는데 `worker.py:71` 은 `llen`. 테스트의 가짜 Redis 가 잘못된 전제를 통과시킴 |
+| R-04 | `worker.py` 125~135행 | **확정.** 이미 `w2_catchup_ledger.yaml` 로 준비됨 |
+| R-05 | `verify_reconciliation` 로직 | **확정.** 낙찰 기준 집합을 공고 기준 ChromaDB 와 그대로 차집합 |
+| R-06 | `promotion.py:481-484` | **확정.** 다만 `model_swap_gap` 으로 이미 원장에 active 등록됨 |
+| R-08, R-09, R-11, R-15 | 각 지목 줄 | **전부 사실** |
+| 4장 mypy·게이트 6·receipt | 각 지목 줄 | **전부 사실.** 5 장 신규 B, C, F 와 같은 항목 |
+| 4장 rework 경로 | `cmd_rework` 3682~3745행 | **보고서가 옳고 이 문서의 최초 7.1 절이 틀렸습니다.** 7.1 절을 정정했습니다 |
+
+R-07, R-10, R-12, R-13, R-14 는 정책 결정과 실측이 필요한 항목이라 코드 검증
+대상이 아니며 보고서도 그렇게 밝히고 있습니다.
+
+**보고서의 가장 큰 기여는 4장의 rework 항목입니다.** 코디네이터가 증상에서
+역추론한 원인을 Capsule `ground_truth` 에 "재조사 불필요" 로 못박았고, 워커가
+이미 그 전제로 작업을 시작한 뒤였습니다. 보고서가 해당 줄을 읽어 정정을
+요구하지 않았다면 틀린 구현이 병합됐을 것입니다.
 
 ---
 
