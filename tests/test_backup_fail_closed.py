@@ -15,8 +15,10 @@ from scripts.backup_recovery import (
     REQUIRED_BACKUP_ASSETS,
     BackupAssetError,
     build_parser,
+    evaluate_row_counts,
     execute_backup,
     execute_restore,
+    query_db_row_counts,
     sha256_file,
     verify_snapshot,
 )
@@ -314,4 +316,93 @@ def test_restore_rejects_missing_recovery_trusted_key(tmp_path: Path):
     snap, manifest = _create_valid_snapshot_dir(tmp_path)
     del manifest["recovery_trusted"]
     (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+    assert execute_restore(snap, execute=False, project_root=tmp_path) is False
+
+
+def test_query_db_row_counts_distinguishes_zero_and_query_failure():
+    """query_db_row_counts 가 실제 0행과 테이블 조회 실패(None)를 명확히 구분하는지 검증합니다."""
+    from unittest.mock import MagicMock
+
+    mock_engine = MagicMock()
+    mock_conn = MagicMock()
+    mock_engine.connect.return_value.__enter__.return_value = mock_conn
+
+    def fake_execute(query_stmt):
+        sql = str(query_stmt)
+        res = MagicMock()
+        if "accounts_customuser" in sql:
+            res.scalar.return_value = 0
+        elif "bid_announcements" in sql:
+            raise RuntimeError("테이블 잠금 또는 쿼리 실패 시뮬레이션")
+        elif "bid_results" in sql:
+            res.scalar.return_value = 55
+        else:
+            res.scalar.return_value = 0
+        return res
+
+    mock_conn.execute.side_effect = fake_execute
+
+    with patch("sqlalchemy.create_engine", return_value=mock_engine):
+        counts = query_db_row_counts(
+            {"user": "u", "password": "p", "host": "h", "port": 3306, "name": "d"},
+            tables=("accounts_customuser", "bid_announcements", "bid_results"),
+        )
+
+    assert counts["accounts_customuser"] == 0
+    assert isinstance(counts["accounts_customuser"], int)
+    assert counts["bid_announcements"] is None
+    assert counts["bid_results"] == 55
+    # 실제 0행과 조회 실패가 구별됨을 엄격히 단언
+    assert counts["accounts_customuser"] != counts["bid_announcements"]
+    assert counts["bid_announcements"] is not 0  # noqa: F632
+
+
+def test_query_db_row_counts_connection_failure_maps_tables_to_none():
+    """전체 DB 연결 실패 시 빈 dict 가 아닌 모든 대상 테이블이 None 으로 매핑되는지 검증합니다."""
+    with patch("sqlalchemy.create_engine", side_effect=RuntimeError("MySQL 접속 거부")):
+        counts = query_db_row_counts(
+            {"user": "u", "password": "p", "host": "h", "port": 3306, "name": "d"},
+            tables=("accounts_customuser", "bid_announcements"),
+        )
+
+    assert len(counts) == 2
+    assert counts["accounts_customuser"] is None
+    assert counts["bid_announcements"] is None
+    # 빈 결과로 조용히 성공처럼 보이지 않음을 검증
+    status, _msg = evaluate_row_counts(counts)
+    assert status == "connection_failed"
+
+
+def test_restore_fails_closed_when_row_count_failure_makes_untrusted(tmp_path: Path):
+    """행 수 조회 실패로 recovery_trusted 가 False 인 스냅샷은 복원이 엄격히 차단됩니다."""
+    snap = tmp_path / "untrusted_due_to_rowcount"
+    snap.mkdir(parents=True, exist_ok=True)
+    components = {}
+    for name, filename, content in (
+        ("database", "db_dump.sql.gz", b"db_data"),
+        ("chroma_db", "chroma_db.tar.gz", b"chroma_data"),
+        ("models", "models.tar.gz", b"model_data"),
+    ):
+        p = snap / filename
+        p.write_bytes(content)
+        components[name] = {
+            "path": filename,
+            "size_bytes": len(content),
+            "sha256": sha256_file(p),
+        }
+    components["database"]["row_counts"] = {"bid_announcements": None}
+    components["database"]["row_count_status"] = "table_query_failed"
+    components["database"]["row_count_evidence"] = "unverified"
+
+    manifest = {
+        "schema": "BACKUP_MANIFEST_V1",
+        "partial_backup": True,
+        "recovery_trusted": False,
+        "row_count_status": "table_query_failed",
+        "row_count_evidence": "unverified",
+        "components": components,
+    }
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest), encoding="utf-8")
+
+    # dry-run 및 실제 복원 모두 실패 종료(fail-closed) 확인
     assert execute_restore(snap, execute=False, project_root=tmp_path) is False

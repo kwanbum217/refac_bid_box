@@ -33,6 +33,7 @@ from scripts.backup_recovery_core import (  # noqa: E402
     create_tar_archive,
     drop_mysql_database,
     dump_mysql_database,
+    evaluate_row_counts,
     extract_tar_archive,
     get_asset_state,
     get_chroma_source_path,
@@ -64,6 +65,7 @@ __all__ = [
     "create_tar_archive",
     "drop_mysql_database",
     "dump_mysql_database",
+    "evaluate_row_counts",
     "execute_backup",
     "execute_restore",
     "extract_tar_archive",
@@ -135,7 +137,11 @@ def execute_backup(
     dump_mysql_database(db_config, db_dump_file)
     db_dump_finished_at = datetime.now(UTC).isoformat()
     db_size, db_sha256 = validate_backup_output(db_dump_file, "database")
+    row_counts_queried_at = datetime.now(UTC).isoformat()
     row_counts = query_db_row_counts(db_config)
+    row_count_status, _row_count_msg = evaluate_row_counts(row_counts)
+    has_row_count_evidence = row_count_status == "verified"
+    recovery_trusted = (not missing_assets) and has_row_count_evidence
 
     def _dump_asset(key, paths, out_name):
         f, sz, sha = target_dir / out_name, None, None
@@ -155,14 +161,18 @@ def execute_backup(
         "schema": EXPECTED_MANIFEST_SCHEMA,
         "created_at": datetime.now(UTC).isoformat(),
         "head_commit": head_commit,
-        "partial_backup": bool(missing_assets),
-        "recovery_trusted": not missing_assets,
+        "partial_backup": bool(missing_assets) or not has_row_count_evidence,
+        "recovery_trusted": recovery_trusted,
         "required_assets": list(REQUIRED_BACKUP_ASSETS),
         "missing_assets": missing_assets,
+        "row_count_status": row_count_status,
+        "row_count_evidence": "verified" if has_row_count_evidence else "unverified",
         "consistency_window": {
             "db_dump_started_at": db_dump_started_at,
             "db_dump_finished_at": db_dump_finished_at,
+            "row_counts_queried_at": row_counts_queried_at,
             "file_assets_collected_at": datetime.now(UTC).isoformat(),
+            "timing_note": "덤프 완료 후 별도 조회한 행 수는 쓰기 중인 DB 의 덤프 시점 행 수와 다를 수 있습니다.",
         },
         "components": {
             "database": {
@@ -170,6 +180,9 @@ def execute_backup(
                 "size_bytes": db_size,
                 "sha256": db_sha256,
                 "row_counts": row_counts,
+                "row_count_status": row_count_status,
+                "row_count_evidence": "verified" if has_row_count_evidence else "unverified",
+                "timing_note": "덤프 완료 후 별도 조회한 행 수는 쓰기 중인 DB 의 덤프 시점 행 수와 다를 수 있습니다.",
             },
             "chroma_db": {
                 "path": chroma_dump_file.name if chroma_size else None,
@@ -320,6 +333,17 @@ def run_restore_drill(
     if manifest.get("partial_backup") or manifest.get("recovery_trusted") is not True:
         errors.append("부분 백업은 복구용으로 신뢰할 수 없습니다.")
         valid = False
+    db_comp = manifest.get("components", {}).get("database", {})
+    rc = db_comp.get("row_counts", {})
+    r_status = db_comp.get("row_count_status") or manifest.get("row_count_status")
+    if (
+        valid
+        and not (bool(rc) and all(v is not None for v in rc.values()))
+        and r_status != "verified"
+    ):
+        print(
+            "      [주의] 백업 매니페스트에 완전한 행 수 증거가 없습니다 (과거 백업 또는 미완 상태)."
+        )
     _record_timing(
         timings, "snapshot_verification", v_st, datetime.now(UTC), "PASS" if valid else "FAIL"
     )
@@ -432,6 +456,13 @@ def execute_restore(
         err_msg = ", ".join(errors) if errors else "복원 신뢰 플래그(recovery_trusted) 미충족"
         print(f"[오류] 스냅샷 무결성 실패 또는 비신뢰: {err_msg}")
         return False
+    db_comp = m.get("components", {}).get("database", {})
+    rc = db_comp.get("row_counts", {})
+    r_status = db_comp.get("row_count_status") or m.get("row_count_status")
+    if not (bool(rc) and all(v is not None for v in rc.values())) and r_status != "verified":
+        print(
+            "[경고] 과거 백업 매니페스트: 행 수 증거가 없어 무손실 검증이 미완료 상태입니다. 복원을 계속 진행합니다."
+        )
     if not execute:
         print("[DRY-RUN] 복원 계획 점검 완료.")
         return True
