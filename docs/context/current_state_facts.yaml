@@ -155,11 +155,12 @@ facts:
   - id: ci_windows
     status: closed
     decision_date: "2026-09-05"
-    claim: "CI Windows job은 continue-on-error 없이 정규 게이트로 통과 상태를 유지합니다."
+    claim: "CI Windows job은 continue-on-error 없이 정규 게이트로 통과 상태를 유지합니다 (GHA Run 33947859707, fa1202f 실측)."
     document_anchor: "CI Windows job은 continue-on-error 없이"
     evidence:
       - .github/workflows/ci.yml
       - docs/ops/ci_contract.md
+      - "GitHub Actions Run 33947859707 (fa1202f, Test windows-latest py3.11 success)"
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/ci_contract.md

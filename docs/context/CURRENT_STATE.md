@@ -15,7 +15,7 @@
 | G2 크로스 플랫폼 | 보류 | Windows Docker Desktop 실기 검증 |
 | G3 스택 최적화 | 통과 | 전체 컷오버는 G2 확인 후 |
 
-G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 참조하십시오. CI Windows job은 정규 게이트로 통과 상태를 유지합니다.
+G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 참조하십시오. CI Windows job은 정규 게이트로 통과 상태를 유지합니다(Run 33947859707, fa1202f).
 
 ## 2. 기계 검증 사실 (Machine Facts)
 
@@ -55,7 +55,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **supply_chain_gate**: 공급망 스캔은 모두 차단 모드로 운영하며 CRITICAL 및 HIGH 취약점 차단 게이트를 통과 기준으로 유지합니다.
 
-- **ci_windows**: CI Windows job은 continue-on-error 없이 정규 게이트로 통과 상태를 유지합니다.
+- **ci_windows**: CI Windows job은 continue-on-error 없이 정규 게이트로 통과 상태를 유지합니다 (GHA Run 33947859707, fa1202f 실측).
 
 - **row_reconciliation**: 행 수 판정은 하한 검사 및 성장 데이터와 이행 원본 reconciliation 분리 대조로 완료 상태를 유지합니다.
 
