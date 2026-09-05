@@ -221,15 +221,62 @@ Docker Desktop 은 shellcheck 포함 actionlint 검증을 위해 이 세션에�
 
 ---
 
-## 9. 다음 코디네이터가 먼저 할 일
+## 9. 다음 웨이브 Task Intent 는 준비돼 있습니다
 
-1. `5dc13cb` 의 GitHub Actions Run 이 전부 성공했는지 확인합니다. `main` 이
-   초록이 아니면 그것부터 처리합니다.
-2. 5 장의 신규 B(게이트 mypy 능력)와 신규 D(`rework` Capsule 경로)를 먼저
-   닫으십시오. **둘 다 다음 워커 운용의 정확도를 직접 올립니다.** 신규 D 는
-   이번 세션에서 워커 두 대의 사양 오독과 계보 오염을 실제로 일으켰습니다.
-3. 그 다음은 S-02 입니다. `.github/workflows/` 단독 작업이라 다른 섹션과 겹치지
-   않습니다.
-4. G-01 의 Windows 실기는 `worker-start --on <saved-environment>` 로 원격 워커를
+5 장의 항목 중 다섯 건을 Task Intent 로 미리 작성해 `.orca/capsules/intents/` 에
+두었습니다. `orca_taskctl.py expand` dry-run 으로 Capsule 확장까지 검증했습니다.
+`create` 와 `dispatch` 만 하면 바로 기동할 수 있습니다. **`.orca/` 는 gitignore
+대상이라 이 Intent 들은 이 기기 로컬에만 있습니다.** 다른 기기에서 이어받으면
+5 장의 항목 설명과 7 장의 함정을 근거로 다시 작성해야 합니다.
+
+| Intent | 닫는 항목 | 쓰기 범위 | 겹침 |
+| --- | --- | --- | --- |
+| `v1_gate_capability.yaml` | 신규 B, 신규 C | `orca_level1_gate.py`, `orca_taskctl.py`, `summarize_worker_done.py`, 스킬 미러 | V2 와 `orca_taskctl.py` 충돌 |
+| `v2_control_plane_truth.yaml` | 신규 D, 신규 E, 신규 F | `orca_taskctl.py`, `orca_settled_session_audit.py` | V1 과 `orca_taskctl.py` 충돌 |
+| `v3_supply_chain_pin.yaml` | S-02 | `.github/workflows/`, 공급망 문서 | 없음 |
+| `w1_arq_abort_span.yaml` | 신규 A | `observability.py`, `worker.py` | W2 와 `worker.py` 충돌 |
+| `w2_catchup_ledger.yaml` | D-04 | `worker.py`, `scheduled_tasks.py` | W1 과 `worker.py` 충돌 |
+
+**V1 과 V2 는 둘 다 `scripts/orca_taskctl.py` 를 쓰므로 동시에 Dispatch 하지
+마십시오.** 같은 이유로 W1 과 W2 도 `src/tasks/worker.py` 가 겹칩니다. 권장 순서는
+다음과 같습니다.
+
+| 웨이브 | 동시 Dispatch | 이유 |
+| --- | --- | --- |
+| 1 | V2 + V3 + W1 | 쓰기 범위가 서로 겹치지 않는 3대 |
+| 2 | V1 + W2 | V2 병합 후. 둘은 서로 겹치지 않는다 |
+
+**V2 를 V1 보다 먼저 돌리는 것을 권합니다.** V2 가 닫는 `rework` Capsule 경로
+결함은 이번 세션에서 워커 두 대의 사양 오독을 실제로 일으켰고, 재작업이 필요한
+순간마다 반복됩니다. V1 의 mypy 능력은 그동안 Capsule 검증 명령에 손으로
+`uv run mypy src` 를 넣어 우회할 수 있습니다.
+
+D-05(KB reconciliation 103건)는 조사 범위가 정해지지 않아 Intent 를 만들지
+않았습니다. 먼저 모집단 불일치의 원인을 좁히는 읽기 전용 조사 Task 가 필요합니다.
+
+### 9.1 `expand` 가 Intent 선언을 덮어씁니다
+
+dry-run 에서 확인한 별개의 결함입니다. `orca_taskctl.py expand` 는 Intent 에
+선언한 `verification_commands` 와 `shared_resources` 를 그대로 쓰지 않고 자체
+계산 결과로 **덮어씁니다.** Intent 에 적은 `uv run mypy src` 와 docker/redis 공유
+자원 선언이 전부 사라졌습니다.
+
+그래서 준비한 다섯 Intent 의 `ground_truth` 에 "Capsule 에 mypy 명령이 없더라도
+직접 실행하고 결과를 보고에 적어라" 를 못박아 두었습니다. 근본 해결은 V1 의
+required_change 7번입니다.
+
+---
+
+## 10. 다음 코디네이터가 먼저 할 일
+
+1. `5dc13cb` 의 GitHub Actions Run `33950212636` 은 **전 job success** 로
+   확인했습니다. `main` 은 초록입니다.
+2. 9 장의 웨이브 1(V2 + V3 + W1)을 그대로 Dispatch 하십시오. Intent 는 작성과
+   Capsule 확장 검증까지 끝나 있습니다.
+3. 웨이브 1 병합 후 웨이브 2(V1 + W2)를 돌립니다.
+4. D-05 는 Intent 가 없습니다. 모집단 불일치 원인을 좁히는 읽기 전용 조사 Task
+   부터 만드십시오. 읽기 전용 워커는 동시 쓰기 상한에 포함되지 않으므로 웨이브
+   1 과 함께 띄워도 됩니다.
+5. G-01 의 Windows 실기는 `worker-start --on <saved-environment>` 로 원격 워커를
    띄우는 경로가 열려 있습니다. Windows 머신에 Orca 를 띄우면 CI 왕복 없이
    직접 재현할 수 있습니다.
