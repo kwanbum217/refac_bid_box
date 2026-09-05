@@ -13,12 +13,16 @@ AGENTS.md 의 비협상 원칙은 "신규 모델은 champion 을 성능으로 �
 """
 
 import json
+import shutil
+from pathlib import Path
 
 import joblib
 import pytest
 from sklearn.linear_model import LinearRegression
 
 from scripts.promote_model import main
+from src.ml import promotion as promotion_mod
+from src.ml.model_registry import LIVE_FILENAME, resolve_serving_tree
 from src.ml.promotion import RollbackUnavailable, promote, rollback
 
 MODEL_NAME = "test_model"
@@ -70,7 +74,8 @@ def dirs(tmp_path, registry):
 
 
 def _serving_version(dirs) -> str:
-    meta = dirs["serving_dir"] / MODEL_NAME / "metadata.json"
+    serving_tree = resolve_serving_tree(dirs["serving_dir"] / MODEL_NAME)
+    meta = serving_tree / "metadata.json"
     return json.loads(meta.read_text(encoding="utf-8"))["version"]
 
 
@@ -215,6 +220,77 @@ def test_rollback_is_reversible(dirs):
     assert _serving_version(dirs) == "v_20260802_000000_000"
 
 
+def test_rollback_keeps_serving_path_present_during_swap(dirs, monkeypatch):
+    """롤백 교체 중에도 서빙 디렉터리가 한 번도 사라지지 않습니다."""
+    for version in ("v_20260801_000000_000", "v_20260802_000000_000"):
+        promote(
+            MODEL_NAME,
+            version,
+            registry_dir=dirs["registry_dir"],
+            serving_dir=dirs["serving_dir"],
+            backup_dir=dirs["backup_dir"],
+        )
+    serving = dirs["serving_dir"] / MODEL_NAME
+    seen: list[bool] = []
+
+    def _watch(fn):
+        def wrapped(*args, **kwargs):
+            seen.append(serving.exists())
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                seen.append(serving.exists())
+
+        return wrapped
+
+    monkeypatch.setattr(promotion_mod, "_replace_path", _watch(promotion_mod._replace_path))
+    monkeypatch.setattr(promotion_mod.shutil, "rmtree", _watch(shutil.rmtree))
+    monkeypatch.setattr(promotion_mod.shutil, "copytree", _watch(shutil.copytree))
+
+    rollback(MODEL_NAME, serving_dir=dirs["serving_dir"], backup_dir=dirs["backup_dir"])
+
+    assert seen
+    assert all(seen), "롤백 교체 중 서빙 경로가 부재한 순간이 있습니다"
+    assert _serving_version(dirs) == "v_20260801_000000_000"
+
+
+def test_rollback_injected_replace_failure_leaves_valid_serving(dirs, monkeypatch):
+    """롤백 LIVE 교체 중 실패해도 서빙 경로는 롤백 직전 트리로 남습니다."""
+    for version in ("v_20260801_000000_000", "v_20260802_000000_000"):
+        promote(
+            MODEL_NAME,
+            version,
+            registry_dir=dirs["registry_dir"],
+            serving_dir=dirs["serving_dir"],
+            backup_dir=dirs["backup_dir"],
+        )
+    serving = dirs["serving_dir"] / MODEL_NAME
+    orig_tree = resolve_serving_tree(serving)
+    original_model = (orig_tree / "model.bin").read_bytes()
+    original_meta = (orig_tree / "metadata.json").read_text(encoding="utf-8")
+    original_version = _serving_version(dirs)
+    assert original_version == "v_20260802_000000_000"
+
+    real_replace = promotion_mod._replace_path
+
+    def fail_on_live_replace(src, dst):
+        dst_path = Path(dst)
+        if dst_path.name == LIVE_FILENAME and dst_path.parent == serving:
+            raise OSError("injected rollback live replace failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(promotion_mod, "_replace_path", fail_on_live_replace)
+
+    with pytest.raises(OSError, match="injected rollback live replace failure"):
+        rollback(MODEL_NAME, serving_dir=dirs["serving_dir"], backup_dir=dirs["backup_dir"])
+
+    assert serving.exists()
+    assert _serving_version(dirs) == original_version
+    cur_tree = resolve_serving_tree(serving)
+    assert (cur_tree / "model.bin").read_bytes() == original_model
+    assert (cur_tree / "metadata.json").read_text(encoding="utf-8") == original_meta
+
+
 def test_rollback_without_backup_fails_clearly(dirs):
     with pytest.raises(RollbackUnavailable):
         rollback(MODEL_NAME, serving_dir=dirs["serving_dir"], backup_dir=dirs["backup_dir"])
@@ -236,5 +312,6 @@ def test_promotion_keeps_quantile_artifacts(dirs):
     main(_cli_args(dirs, "promote", "--model", MODEL_NAME, "--apply"))
 
     served = dirs["serving_dir"] / MODEL_NAME
-    assert (served / "model_q05.bin").exists()
-    assert (served / "model_q95.bin").exists()
+    cur_tree = resolve_serving_tree(served)
+    assert (cur_tree / "model_q05.bin").exists()
+    assert (cur_tree / "model_q95.bin").exists()
