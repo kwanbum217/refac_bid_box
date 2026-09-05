@@ -59,7 +59,6 @@ jobs:
         run: |
           set +e
           npm audit --audit-level=high --json 2>/tmp/npm_audit_stderr.log >/tmp/npm_audit_stdout.json
-          NPM_EXIT=$?
           set -e
           if [ -s /tmp/npm_audit_stderr.log ]; then
             cat /tmp/npm_audit_stderr.log >&2
