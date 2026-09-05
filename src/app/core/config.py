@@ -74,8 +74,13 @@ class Settings(BaseSettings):
     ML_DRIFT_MONITOR_ENABLED: bool = False
     # 통합 백업 크론(매일 03:00). 디스크·DB 부하가 있으므로 기본값은 비활성입니다.
     BACKUP_SCHEDULE_ENABLED: bool = False
-    # 유지할 스냅샷 개수. 삭제는 별도 명시 플래그 없이는 수행하지 않습니다.
+    # 유지할 스냅샷 개수. 정기 백업 시 이 개수를 초과하는 오래된 스냅샷은 안전 검증 후 자동 정리됩니다.
     BACKUP_RETENTION_COUNT: int = 7
+    # 백업 스토리지 최소 디스크 여유 공간 (GB 단위).
+    # 단일 통합 백업(DB 덤프, ChromaDB, ML 아카이브) 1회 생성 시 소요되는 용량(약 1GB)과
+    # 임시 압축 생성 공간 및 OS 기본 안전 마진을 감안하여 기본 5.0GB로 설정합니다.
+    # 여유 공간이 이 임계값 미만으로 떨어지면 기존 notifier 경로로 경보를 발송합니다.
+    BACKUP_DISK_MIN_FREE_GB: float = 5.0
     # 구간별 지연 구조화 로그는 진단 전용입니다. 정식 레이턴시 게이트에서는
     # 로그 포매팅·출력 오버헤드를 배제하기 위해 기본적으로 끕니다.
     LATENCY_SEGMENT_LOGGING: bool = False
