@@ -137,24 +137,129 @@ def prune_snapshots(
     snapshots_dir: Path | None = None,
     retain_count: int = 7,
     delete: bool = False,
+    validate_retained: bool = True,
 ) -> dict[str, Any]:
-    """개수 기준으로 오래된 스냅샷을 열거합니다. 삭제는 명시적으로만 수행합니다."""
+    """개수 기준으로 오래된 스냅샷을 열거하고 명시적 요청 시 안전하게 정리합니다.
+
+    안전장치:
+    1. retain_count가 1 미만이면 ValueError 발생 (최소 1개 이상 보존).
+    2. 삭제 전 남길 스냅샷(keep)과 삭제 대상(stale)의 분할 정합성을 검증합니다.
+    3. 보존 대상 스냅샷의 매니페스트가 존재할 경우 무결성을 검증하며,
+       판정 실패 또는 검증 오류 시 아무것도 삭제하지 않습니다 (fail-closed).
+    4. 삭제 대상 경로가 스냅샷 디렉토리 직계 하위인지 엄격히 검증합니다.
+    5. 삭제 후에도 보존 대상 스냅샷 개수가 retain_count보다 적게 남지 않음을 보장합니다.
+    """
     if retain_count < 1:
         raise ValueError("retain_count는 1 이상이어야 합니다.")
     directory = snapshots_dir or DEFAULT_SNAPSHOTS_DIR
-    candidates = [item for item in directory.glob("snapshot_*") if item.is_dir()]
-    candidates.sort(key=lambda item: item.name, reverse=True)
+    if not directory.exists() or not directory.is_dir():
+        return {
+            "retain_count": retain_count,
+            "candidates": [],
+            "stale": [],
+            "deleted": False,
+            "deleted_count": 0,
+            "errors": ["스냅샷 디렉토리가 존재하지 않습니다."],
+        }
+
+    errors: list[str] = []
+    try:
+        candidates = [item for item in directory.glob("snapshot_*") if item.is_dir()]
+        candidates.sort(key=lambda item: item.name, reverse=True)
+    except Exception as exc:
+        return {
+            "retain_count": retain_count,
+            "candidates": [],
+            "stale": [],
+            "deleted": False,
+            "deleted_count": 0,
+            "errors": [f"스냅샷 후보 탐색 실패: {exc}"],
+        }
+
+    keep = candidates[:retain_count]
     stale = candidates[retain_count:]
-    print(f"보존 개수: {retain_count}, 삭제 대상: {len(stale)}개")
+    print(f"보존 개수: {retain_count}, 전체 후보: {len(candidates)}개, 삭제 대상: {len(stale)}개")
     for item in stale:
         print(f"  - {item}")
-    if delete:
+
+    if not delete or not stale:
+        return {
+            "retain_count": retain_count,
+            "candidates": [str(item) for item in candidates],
+            "stale": [str(item) for item in stale],
+            "deleted": False,
+            "deleted_count": 0,
+            "errors": [],
+        }
+
+    # === 삭제 전 안전장치 검증 (Fail-Closed) ===
+    # 1. 분할 무결성: keep과 stale의 교집합이 없어야 함
+    if set(keep) & set(stale):
+        errors.append("보존 대상과 삭제 대상 간 중복이 감지되었습니다.")
+
+    # 2. 보존 개수 안전장치: 남겨야 할 스냅샷 개수가 최소 보존 수량을 충족하는지 검증
+    expected_keep_count = min(len(candidates), retain_count)
+    if len(keep) < expected_keep_count:
+        errors.append(f"보존 대상 수량 부족: 기대 {expected_keep_count}개, 실제 {len(keep)}개")
+
+    # 3. 경로 이탈 방지 검증: 삭제 대상 디렉토리가 directory의 직계 하위인지 확인
+    try:
+        resolved_dir = directory.resolve()
         for item in stale:
+            if item.is_symlink():
+                errors.append(f"심볼릭 링크는 안전을 위해 삭제 대상에서 제외됩니다: {item.name}")
+            elif item.resolve().parent != resolved_dir:
+                errors.append(f"비정상적인 삭제 대상 경로 감지: {item}")
+    except Exception as exc:
+        errors.append(f"경로 안전 검증 중 예외 발생: {exc}")
+
+    # 4. 보존 대상 스냅샷의 유효성 검증
+    if validate_retained:
+        for item in keep:
+            manifest_file = item / MANIFEST_FILENAME
+            if manifest_file.exists():
+                is_valid, v_errors, _ = verify_snapshot(item)
+                if not is_valid:
+                    errors.append(
+                        f"보존 대상 스냅샷 무결성 손상 ({item.name}): {', '.join(v_errors)}"
+                    )
+
+    # 안전 검증 실패 시 아무것도 삭제하지 않고 반환 (Fail-Closed)
+    if errors:
+        print(f"[안전장치 발동] 삭제 대상 판정 실패로 정리를 중단합니다: {errors}")
+        return {
+            "retain_count": retain_count,
+            "candidates": [str(item) for item in candidates],
+            "stale": [str(item) for item in stale],
+            "deleted": False,
+            "deleted_count": 0,
+            "errors": errors,
+        }
+
+    # 실제 삭제 수행
+    deleted_paths: list[str] = []
+    for item in stale:
+        try:
             shutil.rmtree(item)
-        print("명시적 삭제 플래그가 지정되어 삭제를 완료했습니다.")
+            deleted_paths.append(str(item))
+        except Exception as exc:
+            errors.append(f"스냅샷 삭제 실패 ({item.name}): {exc}")
+            break
+
+    # 사후 검증: 남아있는 스냅샷이 기대 보존 개수 미만으로 떨어지지 않았는지 확인
+    remaining_candidates = [item for item in directory.glob("snapshot_*") if item.is_dir()]
+    if len(remaining_candidates) < expected_keep_count:
+        errors.append(
+            f"삭제 후 잔여 스냅샷이 보존 개수보다 적습니다 (남은 수: {len(remaining_candidates)}, 기대: {expected_keep_count})"
+        )
+
+    print(f"정리 완료: {len(deleted_paths)}개 삭제, {len(remaining_candidates)}개 보존")
     return {
         "retain_count": retain_count,
         "candidates": [str(item) for item in candidates],
         "stale": [str(item) for item in stale],
-        "deleted": delete,
+        "deleted": len(deleted_paths) > 0,
+        "deleted_count": len(deleted_paths),
+        "deleted_paths": deleted_paths,
+        "errors": errors,
     }

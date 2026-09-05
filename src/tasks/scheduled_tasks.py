@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ import pandas as pd
 from sqlalchemy.orm import Session
 
 from scripts.backup_recovery import execute_backup, prune_snapshots
+from scripts.backup_recovery_core import DEFAULT_SNAPSHOTS_DIR
 from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
 from src.app.core.db import SessionLocal
@@ -53,7 +55,11 @@ from src.ml.monitoring import (
 from src.ml.repeat_history import attach_repeat_history
 from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.tasks.automation_tasks import run_automation_pipeline
-from src.tasks.notifier import notify_drift_detected, notify_task_failure
+from src.tasks.notifier import (
+    notify,
+    notify_drift_detected,
+    notify_task_failure,
+)
 from src.tasks.retrain_task import run_retrain_pipeline_task
 
 logger = logging.getLogger(__name__)
@@ -86,21 +92,64 @@ def _record_schedule(
     return decorator
 
 
+def check_backup_disk_space(target_dir: Path | None = None) -> tuple[float, bool]:
+    """백업 스토리지 디렉토리의 여유 공간(GB)과 임계값 미달 여부를 반환합니다."""
+    path = target_dir or DEFAULT_SNAPSHOTS_DIR
+    check_target = path
+    while not check_target.exists() and check_target.parent != check_target:
+        check_target = check_target.parent
+    try:
+        usage = shutil.disk_usage(check_target)
+        free_gb = usage.free / (1024**3)
+    except Exception as exc:
+        logger.warning("디스크 여유 공간 측정 실패 (%s): %s", check_target, exc)
+        return 0.0, True
+    is_low = free_gb < settings.BACKUP_DISK_MIN_FREE_GB
+    return free_gb, is_low
+
+
 @traced_worker_task
 @_record_schedule("backup")
 async def backup_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
-    """매일 03:00 통합 백업을 실행하고 개수 기준 보존 상태를 보고합니다."""
+    """매일 03:00 통합 백업을 실행하고 개수 기준 보존 정책을 적용합니다."""
     if not settings.BACKUP_SCHEDULE_ENABLED:
         logger.info("백업 스케줄이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
     try:
+        # 백업 실행 전 스토리지 디스크 여유 공간 검사
+        free_gb, is_low = check_backup_disk_space(DEFAULT_SNAPSHOTS_DIR)
+        if is_low:
+            logger.warning(
+                "백업 스토리지 디스크 여유 공간 부족: %.2f GB < %.2f GB",
+                free_gb,
+                settings.BACKUP_DISK_MIN_FREE_GB,
+            )
+            await notify(
+                "백업 스토리지 디스크 여유 공간 부족",
+                [
+                    f"스토리지 경로: {DEFAULT_SNAPSHOTS_DIR}",
+                    f"현재 여유 공간: {free_gb:.2f} GB (기준 임계값: {settings.BACKUP_DISK_MIN_FREE_GB:.2f} GB)",
+                    "디스크 상한 초과 방지를 위한 점검이 필요합니다.",
+                ],
+                level="warning",
+            )
+
         manifest = await asyncio.to_thread(execute_backup, execute=True)
         retention = await asyncio.to_thread(
             prune_snapshots,
+            snapshots_dir=DEFAULT_SNAPSHOTS_DIR,
             retain_count=settings.BACKUP_RETENTION_COUNT,
-            delete=False,
+            delete=True,
         )
-        return {"status": "success", "manifest": manifest, "retention": retention}
+        if retention.get("errors"):
+            logger.warning("정기 백업 스냅샷 정리 중 경고/에러: %s", retention["errors"])
+
+        return {
+            "status": "success",
+            "manifest": manifest,
+            "retention": retention,
+            "disk_free_gb": free_gb,
+        }
     except Exception as exc:
         logger.exception("정기 백업 실패")
         await notify_task_failure("통합 백업 스케줄", str(exc))
