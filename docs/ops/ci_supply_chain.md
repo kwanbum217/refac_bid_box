@@ -99,6 +99,7 @@ fi
 
 - 이전 시도에서 실측 근거 없이 추가되었던 Trivy 섹션 항목(`CVE-2026-23949`, `CVE-2026-24049`)을 제거하고 `trivy: []`로 원복하였습니다.
 - `scripts/check_vulnerability_allowlist.py` 검증 결과 현재 등록된 4건(python 3건, npm 1건)이 모두 사유와 유효한 만료일을 갖추어 정상 통과함을 확인하였습니다.
+- **1인 작업 예외 관리 원칙 준수**: 본 저장소는 1인 작업 체계([`AGENTS.md`](../../AGENTS.md) 6장)로 PR 절차가 없으므로, 예외 항목 추가/갱신 시 PR 리뷰 대신 `.github/vulnerability-allowlist.yml`의 필수 필드(`id`, `package`, `reason`, `expires_on`)와 커밋 메시지에 사유 및 만료일을 명시하여 추적성을 유지합니다.
 
 ## 4. 검증 결과
 
