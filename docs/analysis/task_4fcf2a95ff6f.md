@@ -13,7 +13,7 @@
 | 결함 ID | 결함 내용 | 조치 결과 |
 | --- | --- | --- |
 | **O-04** | 리뷰 Task 생성 시 빌더 Task 의존성 미연결, 반려 후 rework 시 DAG 이력 단절 | `target_task` / `target_task_id` 의존성 자동 추출 및 `--deps` 주입, `rework` 시 원본 Task ID 를 `--deps` 로 자동 연결하여 DAG 이력 영구 보존 |
-| **O-05** | 완료 보고 필수 필드 정의가 템플릿, 검증기(`REQUIRED_FIELDS`), Capsule 고지문 간 3중 불일치 및 `dispatch_id` 누락 | `scripts/orca_contract.py` 에 `WORKER_DONE_SCHEMA_SPEC` 단일 정본을 정의하고 검증기/고지문/템플릿을 정본으로부터 직접 파생. `dispatch_id` 필수화 |
+| **O-05** | 완료 보고 필수 필드 정의가 템플릿, 검증기(`REQUIRED_FIELDS`), Capsule 고지문 간 3중 불일치 및 `dispatch_id` 누락 | `scripts/orca_contract.py` 에 `WORKER_DONE_SCHEMA_SPEC` 단일 정본을 정의하고 검증기/고지문/템플릿을 정본으로부터 직접 파생. 하위 호환성을 위해 `dispatch_id` 는 선택 필드로 유지하고 템플릿 완전 동기화 강제 |
 | **O-06** | 비감독 경로(`dispatch --inject`, 터미널 부착) 기동 시 `worker_dispatches` 행 미생성으로 잔류 감사 누락 | 비감독 기동 시 `.orca/dispatch_receipts/<task_id>.json` 영수증 기록, `scripts/orca_settled_session_audit.py` 에서 영수증을 로드하여 완료된 비감독 세션 터미널 잔류 검출 |
 
 ---
@@ -27,15 +27,16 @@
    - `get_worker_done_required_fields()`: 필수 필드 튜플 도출.
    - `render_worker_report_schema()`: Capsule `report_schema:` 블록 동적 렌더링.
    - `render_worker_done_template()`: `.agents/templates/worker_done_v2.json` 구조 동적 렌더링.
+   - `sync_worker_done_template()`: 정본 렌더러에서 디스크 템플릿 파일 생성 및 동기화 함수 추가.
 2. **검증기 연동 (`scripts/summarize_worker_done.py`)**:
    - `REQUIRED_FIELDS = WORKER_DONE_REQUIRED_FIELDS` 로 정본에서 직접 참조 (12개 필수 필드).
 3. **고지문 연동 (`scripts/orca_taskctl.py`)**:
    - `WORKER_REPORT_SCHEMA = render_worker_report_schema()` 로 정본에서 직접 렌더링.
 4. **템플릿 정합성 (`.agents/templates/worker_done_v2.json`)**:
-   - `render_worker_done_template()` 과 100% 일치하도록 보장.
+   - `render_worker_done_template()` 출력과 100% 완전 일치하도록 테스트로 강제하고, `sync_worker_done_template()` 을 제공하여 정본으로부터 직접 동기화 보장.
 5. **`dispatch_id` 결정 근거**:
-   - 기존 검증 게이트(`tests/test_orca_worker_done_gate.py`, `tests/test_orca_verification_truth.py`) 및 레거시 워커 보고서와의 100% 하위 호환성을 유지하면서, 수동/독립 실행 시나리오의 유연성을 보장하기 위해 `dispatch_id` 는 정본에서 `required: False` 로 결정.
-   - 단일 정본 `WORKER_DONE_SCHEMA_SPEC` 에 정의되어 고지문(`WORKER_REPORT_SCHEMA`) 및 템플릿(`worker_done_v2.json`)에 모두 일관되게 포함되며, 검증기(`REQUIRED_FIELDS`)와의 3중 불일치가 완전히 해소됨.
+   - Orca 수명주기 메시지의 dispatchId 와 보고 JSON 의 dispatch_id 는 다른 계층이며, 기존 검증 게이트(`tests/test_orca_worker_done_gate.py`, `tests/test_orca_verification_truth.py`) 및 레거시 워커 보고서와의 100% 하위 호환성을 유지하기 위해 `dispatch_id` 는 정본에서 `required: False` 로 결정.
+   - 단일 정본 `WORKER_DONE_SCHEMA_SPEC` 에 정의되어 템플릿(`worker_done_v2.json`)에 일관되게 제공되며, 검증기(`REQUIRED_FIELDS`) 및 고지문(`WORKER_REPORT_SCHEMA`)의 필수 필드 12개와 100% 일치함.
 
 ### 2.2 O-04: 리뷰 및 재작업 Task DAG 의존성 자동 연결
 

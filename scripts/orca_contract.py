@@ -184,6 +184,21 @@ def render_worker_done_template(
     return {k: v["sample"] for k, v in s.items()}
 
 
+def sync_worker_done_template(
+    spec: dict[str, dict[str, Any]] | None = None,
+    path: Path | str | None = None,
+) -> Path:
+    """정본(WORKER_DONE_SCHEMA_SPEC)에서 worker_done_v2.json 템플릿 파일을 생성/동기화합니다."""
+    target = Path(path) if path else Path(".agents/templates/worker_done_v2.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    rendered = render_worker_done_template(spec=spec)
+    target.write_text(
+        json.dumps(rendered, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return target
+
+
 def char_len(text: str) -> int:
     """문자 수를 셉니다.
 

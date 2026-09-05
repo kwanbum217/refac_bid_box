@@ -319,8 +319,8 @@ Finalize나 재수집도 한 번만 반영합니다.
 - **파생 규약**:
   1. `scripts/summarize_worker_done.py` 의 `REQUIRED_FIELDS` 는 정본에서 직접 import 됩니다.
   2. `scripts/orca_taskctl.py` 의 `WORKER_REPORT_SCHEMA` 및 Capsule 고지문은 `render_worker_report_schema()` 로 정본에서 동적 생성됩니다.
-  3. `.agents/templates/worker_done_v2.json` 은 `render_worker_done_template()` 과 동기화됩니다.
-- **`dispatch_id` 필수화**: 재시도 및 지연 완료 보고의 혼선을 방지하기 위해 `dispatch_id` 가 필수 필드로 고정되었습니다.
+  3. `.agents/templates/worker_done_v2.json` 은 `render_worker_done_template()` 출력과 100% 완전 일치하도록 강제되며, `sync_worker_done_template()` 으로 정본에서 직접 동기화됩니다.
+- **`dispatch_id` 선택 필드 유지 (optional)**: Orca 수명주기 메시지의 `dispatchId`와 보고 JSON의 `dispatch_id`는 계층이 다릅니다. 보고 JSON에서 이를 필수화하면 기존 검증 게이트 및 과거 완료 보고서와의 하위 호환성이 깨지므로 `required: False` 인 선택 필드로 정의하여 유연성과 하위 호환성을 유지하되, 템플릿(`worker_done_v2.json`)에는 일관되게 제공합니다.
 
 ### 6.3 비감독 Dispatch 수명주기 영수증 및 잔류 검사 (O-06)
 
