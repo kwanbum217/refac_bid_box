@@ -335,3 +335,23 @@ Finalize나 재수집도 한 번만 반영합니다.
 - **Task spec 경로와 실제 Task ID 경로의 완전 동기화**: `rework` 명령은 Task spec이 생성 시점에 가리킨 잠정 경로(`.orca/capsules/<task_id>_rework/capsule.yaml`)와 Orca가 발급한 실제 새 Task ID 경로(`.orca/capsules/<actual_task_id>/capsule.yaml`) 양쪽 모두에 Capsule 파일을 작성하며, 두 사본의 내용이 100% 동일함을 보장합니다.
 - **`--worktree` 자동 배치 지원**: `rework --worktree <path>` 를 지정하면 지정된 워크트리 디렉터리 내 `.orca/capsules/...` 에도 새 Capsule 사본이 자동으로 배치되어, 코디네이터가 수동으로 `cp` 할 필요가 없습니다.
 - **기동 전 Capsule 실존 검증 및 워크트리 자동 배치 (fail-closed)**: `dispatch` 실행 시 Capsule 정본 파일 실존 여부를 검증하며, 파일이 없으면 **종료 코드 2**로 기동을 거부합니다. 격리 워크트리가 지정되었거나 터미널에서 워크트리가 확인된 경우, 워크트리 내 Capsule 파일을 자동으로 배치하고 최종 부재 시 종료 코드 2로 거부하여 워커가 엉뚱한 Capsule을 열거나 실패하는 문제를 원천 차단합니다.
+
+### 6.5 Level 1 검증 게이트의 backend_mypy 능력 검증 (신규 B)
+
+- **`src/` 파이썬 변경 시 mypy 필수화**: `scripts/orca_level1_gate.py` 의 `_path_capabilities` 는 `src/` 하위 `.py` 파일(또는 와일드카드) 변경에 대해 기존 `CAP_BACKEND_PYTEST` 뿐 아니라 신규 `CAP_BACKEND_MYPY` (`backend_mypy`) 능력을 필수로 부과합니다.
+- **허용 실행 러너 추가**: `parse_verification_command` 의 명령 허용 목록에 `uv run mypy ...` 가 등록되어 정규 검증 명령으로 파싱 및 실행됩니다.
+- **`--strict` 모드 fail-closed 강제**: 변경 범위에 `backend_mypy` 가 요구되는데 Capsule 의 검증 명령에 `uv run mypy` 가 누락되어 해당 능력이 미검증(`uncovered_capabilities`)으로 남으면, 게이트 3 은 `skipped` 로 판정되고 `--strict` 실행 시 최종 실패(`verdict: fail`, 종료 코드 1)로 병합이 차단됩니다.
+
+### 6.6 게이트 6 다중 worker_done 보고서 합집합 검증 (신규 C)
+
+- **재작업 브랜치 검증 지원**: 재작업 등으로 둘 이상의 `worker_done` 보고서가 존재하는 브랜치에 대해 `--report` 인자를 반복 지정하거나 쉼표(`,`)로 구분하여 전달할 수 있습니다.
+- **합집합 diff 대조 및 개별 계약 검증**:
+  - `changed_files` 는 모든 보고서의 합집합(`union_changed_files`)을 구해 실제 브랜치 diff(`git diff base...branch`)와 1:1 대조합니다.
+  - 나머지 진실성 검사(필수 계약 필드, 커밋/브랜치 실존성, 검증 명령 건수 일치, verdict)는 각 보고서별로 독립 수행하며, 어느 하나라도 위반이 있으면 게이트 6 은 `fail` 로 판정됩니다.
+- **단일 보고서 100% 하위 호환**: 단일 보고서 지정 시 기존과 동일한 단일 요약 `raw_data` 및 digest 출력을 유지합니다.
+
+### 6.7 Intent 선언 보존 및 Capsule 자동 확장 병합 (신규 G)
+
+- **`expand` 의 Intent 선언 보존**: `scripts/orca_taskctl.py` 의 `parse_intent` 는 Intent YAML 내 `verification_commands` 및 `shared_resources` 블록을 정식 파싱하여 보존합니다.
+- **공유 자원 안전 병합**: `resolve_shared_resources` 는 파일 경로에서 자동 감지된 공유 자원(`features_py`, `docker`)과 Intent 에 명시된 자원(`redis`, `docker` 등)을 누락 없이 병합합니다.
+- **미선언 시 mypy 자동 부착**: Intent 에 `verification_commands` 가 명시되지 않은 경우, `src/` 하위 변경에 대해 `CAPABILITY_COMMANDS` 에 따라 `uv run mypy src` 가 자동으로 부착되어 Capsule 이 생성됩니다.

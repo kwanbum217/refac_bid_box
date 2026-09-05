@@ -17,10 +17,13 @@ from scripts.orca_contract import (
 )
 from scripts.orca_taskctl import (
     ACTIVE_TASK_STATUSES,
+    BACKEND_VERIFICATION_COMMAND,
     DEFAULT_RUN_ID,
     DEFAULT_VERIFICATION_COMMANDS,
     FILE_EDIT_AUTO_APPROVE_SEQUENCE,
     MAX_CONCURRENT_WRITE_WORKERS,
+    MYPY_VERIFICATION_COMMAND,
+    RULES_VERIFICATION_COMMAND,
     _format_review_checklist,
     _format_yaml_list,
     _record_finalize_reliability,
@@ -3220,8 +3223,54 @@ def test_intent_verification_commands_are_honored():
         {"verification_commands": ["uv run pytest tests/test_x.py -q"]}, ["src/x.py"]
     ) == ["uv run pytest tests/test_x.py -q"]
 
-    # 미지정이면 backend 기본값입니다.
-    assert resolve_verification_commands({}, ["src/x.py"]) == DEFAULT_VERIFICATION_COMMANDS
+    # 미지정 시 src/ 하위는 backend pytest, mypy, rules 가 자동 부착됩니다.
+    assert resolve_verification_commands({}, ["src/x.py"]) == [
+        BACKEND_VERIFICATION_COMMAND,
+        MYPY_VERIFICATION_COMMAND,
+        RULES_VERIFICATION_COMMAND,
+    ]
+    # src/ 가 아닌 백엔드 파일은 기본값(pytest, rules)입니다.
+    assert resolve_verification_commands({}, ["manage.py"]) == DEFAULT_VERIFICATION_COMMANDS
+
+
+def test_intent_shared_resources_and_mypy_expand():
+    """expand 가 Intent 에 선언된 shared_resources 및 verification_commands 를 보존합니다."""
+    from scripts.orca_taskctl import (
+        expand_intent_to_capsule,
+        parse_intent,
+        resolve_shared_resources,
+    )
+
+    intent_text = """schema: ORCA_TASK_INTENT_V1
+role: builder
+objective: Intent 보존 검증
+scope:
+  - src/worker.py
+shared_resources:
+  - redis
+  - docker
+verification_commands:
+  - uv run pytest tests/test_w.py -q
+  - uv run mypy src
+"""
+    intent = parse_intent(intent_text)
+    assert intent["shared_resources"] == ["redis", "docker"]
+    assert intent["verification_commands"] == [
+        "uv run pytest tests/test_w.py -q",
+        "uv run mypy src",
+    ]
+
+    res = dict(resolve_shared_resources(["src/worker.py"], intent=intent))
+    assert "redis" in res
+    assert "docker" in res
+    assert "features_py" in res
+
+    capsule = expand_intent_to_capsule(intent, task_id="task_test_preserve")
+    cap_commands = parse_capsule_list(capsule, "verification_commands")
+    assert "uv run pytest tests/test_w.py -q" in cap_commands
+    assert "uv run mypy src" in cap_commands
+    assert "redis" in capsule
+    assert "docker" in capsule
 
 
 def test_frontend_scope_gets_frontend_verification_commands():

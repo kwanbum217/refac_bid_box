@@ -96,6 +96,7 @@ Level 1 게이트 3 은 변경 파일이 요구하는 **검증 능력(capability
 | `Dockerfile*`, `.dockerignore` | `docker_build:<컨텍스트>` | `docker build ... <컨텍스트>` |
 | `docker-compose*.yml` | `compose_config` | `docker compose config -q` |
 | `.github/workflows/*.yml` | `workflow_lint` | `uv run actionlint` |
+| `src/**/*.py` | `backend_pytest`, `backend_mypy` | `uv run pytest ...`, `uv run mypy src` |
 | 그 밖의 코드 | `backend_pytest` | `uv run pytest ...` |
 | 문서(`.md`/`.rst`/`.adoc`) | 없음 | - |
 
@@ -123,7 +124,7 @@ docker build -t refac-bid-box-frontend:orca-gate frontend # docker_build:fronten
 없는 능력을 미리 만들면 첫 파일이 생기는 순간 게이트가 교착합니다. 셸 스크립트를
 도입할 때 shellcheck 와 함께 능력을 추가합니다.
 
-실행되는 명령은 허용 목록(`uv run pytest ...`, `npm ci`, `npm run <script>`,
+실행되는 명령은 허용 목록(`uv run pytest ...`, `uv run mypy ...`, `npm ci`, `npm run <script>`,
 `docker build`, `docker compose config`, `uv run actionlint`)으로 제한되며,
 그 밖의 문자열은 게이트 3 실패로 거부됩니다.
 

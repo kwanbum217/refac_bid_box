@@ -25,6 +25,7 @@ from scripts.orca_level1_gate import (
     run_gate4_rules,
     run_gate4b_lint,
     run_gate5_review_report,
+    run_gate6_worker_done,
     run_level1_gate,
 )
 
@@ -55,6 +56,9 @@ def mock_subprocesses(monkeypatch):
 
         if "pytest" in cmd_str:
             return 0, "1 passed in 0.01s", "", False
+
+        if "mypy" in cmd_str:
+            return 0, "Success: no issues found in 24 source files", "", False
 
         return orig_run_command_safe(cmd, cwd, timeout)
 
@@ -682,7 +686,7 @@ def test_rename_to_document_suffix_does_not_exempt_verification(tmp_path: Path):
 
 def test_required_capabilities_separates_change_kinds():
     """영역 하나로 묶으면 그 영역의 아무 명령이나 하나로 덮인 것이 됩니다."""
-    assert required_capabilities(["src/a.py"]) == {"backend_pytest"}
+    assert required_capabilities(["src/a.py"]) == {"backend_pytest", "backend_mypy"}
     assert required_capabilities(["frontend/src/App.tsx"]) == {"frontend_test", "frontend_build"}
     assert required_capabilities(["frontend/README.md"]) == set()
 
@@ -707,6 +711,7 @@ def test_required_capabilities_separates_change_kinds():
 
     assert required_capabilities(["src/a.py", "frontend/src/App.tsx"]) == {
         "backend_pytest",
+        "backend_mypy",
         "frontend_test",
         "frontend_build",
     }
@@ -717,6 +722,10 @@ def test_parse_verification_command_allows_only_known_runners():
     pytest_cmd = parse_verification_command("uv run pytest tests/test_x.py -q")
     assert pytest_cmd.argv == ["uv", "run", "pytest", "tests/test_x.py", "-q"]
     assert pytest_cmd.provides == frozenset({"backend_pytest"})
+
+    mypy_cmd = parse_verification_command("uv run mypy src")
+    assert mypy_cmd.argv == ["uv", "run", "mypy", "src"]
+    assert mypy_cmd.provides == frozenset({"backend_mypy"})
 
     npm_cmd = parse_verification_command("npm --prefix frontend run build")
     assert npm_cmd.argv == ["npm", "run", "build"]
@@ -907,3 +916,191 @@ def test_count_mismatch_propagates_to_gate6_failure(tmp_path: Path):
     assert any("건수 불일치" in v or "passed" in v.lower() for v in violations)
     assert details[0]["status"] == "fail"
     assert details[0]["count_match"] is False
+
+
+def _make_clean_feature_repo(tmp_path: Path) -> tuple[Path, str, str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run([GIT_BIN, "init", "-b", "main"], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
+    scripts_dir = repo / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "validate_agent_rules.py").write_text(
+        "print('검증 통과: 12/12 건.')\n", encoding="utf-8"
+    )
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run([GIT_BIN, "add", "."], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, "-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-m", "chore: base"],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, "checkout", "-b", "feature"], cwd=str(repo), check=True, capture_output=True
+    )
+    return repo, "main", "feature"
+
+
+def test_src_change_without_mypy_fails_strict(tmp_path: Path):
+    """src/ 파이썬 변경 시 mypy 검증 명령이 없으면 Gate 3 skipped 및 strict=True 시 전체 실패."""
+    repo, base, branch = _make_clean_feature_repo(tmp_path)
+    (repo / "src").mkdir()
+    (repo / "src" / "worker.py").write_text("def run(): pass\n", encoding="utf-8")
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, "add", "src/worker.py"], cwd=str(repo), check=True, capture_output=True
+    )
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, "-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-m", "add worker"],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+    # pytest만 제공하는 명령 전달
+    g3 = run_gate3_tests(
+        ["src/worker.py"],
+        repo,
+        commands=["uv run pytest tests/ -q"],
+        capabilities=required_capabilities(["src/worker.py"]),
+    )
+    assert g3.status == "skipped"
+    assert "backend_mypy" in g3.raw_data["uncovered_capabilities"]
+
+    # strict 모드 실행 시 Gate 3 skipped 때문에 전체 결과 실패 (exit_code == 1)
+    capsule = repo / "capsule.yaml"
+    capsule.write_text(
+        "allowed_write_files:\n  - src/worker.py\nverification_commands:\n  - uv run pytest tests/ -q\n",
+        encoding="utf-8",
+    )
+    exit_code, output = run_level1_gate(
+        repo=repo,
+        base=base,
+        branch=branch,
+        capsule=capsule,
+        strict=True,
+        allow_missing_report=True,
+    )
+    assert exit_code == 1
+    assert "backend_mypy" in output
+
+
+def test_gate6_multi_report_union_diff_success_and_failure(tmp_path: Path):
+    """다중 worker_done 보고서의 changed_files 합집합이 git diff와 일치하면 통과, 누락 시 실패합니다."""
+    repo, base, branch = _make_clean_feature_repo(tmp_path)
+    src_dir = repo / "src"
+    src_dir.mkdir(exist_ok=True)
+    (src_dir / "mod_a.py").write_text("A = 1\n", encoding="utf-8")
+    (src_dir / "mod_b.py").write_text("B = 2\n", encoding="utf-8")
+    subprocess.run([GIT_BIN, "add", "src/"], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
+    subprocess.run(  # noqa: S603
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=t@e.com",
+            "-c",
+            "user.name=T",
+            "commit",
+            "-m",
+            "add mod_a and mod_b",
+        ],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+    commit_sha = subprocess.run(  # noqa: S603
+        [GIT_BIN, "rev-parse", "HEAD"],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    report_a = tmp_path / "report_a.json"
+    report_a.write_text(
+        json.dumps(
+            {
+                "schema": "ORCA_WORKER_DONE_V2",
+                "version": "2.1.0",
+                "task_id": "task_a",
+                "dispatch_id": "ctx_a",
+                "status": "succeeded",
+                "branch": branch,
+                "commit": commit_sha,
+                "commit_count": 1,
+                "changed_files": ["src/mod_a.py"],
+                "read_files": ["src/mod_a.py"],
+                "verification": [
+                    {
+                        "command": "uv run pytest tests/test_a.py -q",
+                        "result": "1 passed in 0.01s",
+                    }
+                ],
+                "verdict": "pass",
+                "blocking_issues": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report_b = tmp_path / "report_b.json"
+    report_b.write_text(
+        json.dumps(
+            {
+                "schema": "ORCA_WORKER_DONE_V2",
+                "version": "2.1.0",
+                "task_id": "task_b",
+                "dispatch_id": "ctx_b",
+                "status": "succeeded",
+                "branch": branch,
+                "commit": commit_sha,
+                "commit_count": 1,
+                "changed_files": ["src/mod_b.py"],
+                "read_files": ["src/mod_b.py"],
+                "verification": [
+                    {
+                        "command": "uv run pytest tests/test_b.py -q",
+                        "result": "1 passed in 0.01s",
+                    }
+                ],
+                "verdict": "pass",
+                "blocking_issues": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class _Proc:
+        returncode = 0
+        stdout = "1 passed in 0.01s"
+        stderr = ""
+
+    orig_run = subprocess.run
+
+    def mock_run(cmd, *args, **kwargs):
+        cmd_list = [str(c) for c in (cmd if isinstance(cmd, list) else [cmd])]
+        if cmd_list and "git" in Path(cmd_list[0]).name:
+            return orig_run(cmd, *args, **kwargs)
+        return _Proc()
+
+    with patch("scripts.orca_contract.subprocess.run", side_effect=mock_run):
+        # 1. 두 보고서를 모두 전달 -> 합집합(mod_a.py, mod_b.py)이 diff와 일치하여 PASS
+        g6_multi = run_gate6_worker_done(
+            repo_path=repo,
+            base=base,
+            branch=branch,
+            reports=[report_a, report_b],
+        )
+        assert g6_multi.status == "pass"
+        assert len(g6_multi.raw_data["reports"]) == 2
+        assert set(g6_multi.raw_data["union_changed_files"]) == {"src/mod_a.py", "src/mod_b.py"}
+
+        # 2. 하나의 보고서만 전달 -> mod_b.py가 누락되어 diff 불일치로 FAIL
+        g6_single = run_gate6_worker_done(
+            repo_path=repo,
+            base=base,
+            branch=branch,
+            report_path=report_a,
+        )
+        assert g6_single.status == "fail"
+        assert any("changed_files 불일치" in d for d in g6_single.details)

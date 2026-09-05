@@ -10,6 +10,7 @@ from scripts.summarize_worker_done import (
     REQUIRED_FIELDS,
     main,
     summarize_worker_report,
+    summarize_worker_reports,
 )
 
 SAMPLE_CAPSULE = """schema: ORCA_TASK_CAPSULE_V2
@@ -448,3 +449,47 @@ def test_summarize_worker_report_full_pytest_uses_extended_timeout(tmp_path: Pat
     assert result["exit_code"] == 0
     assert result["violations_count"] == 0
     assert result["effective_verdict"] == "pass"
+
+
+def test_summarize_worker_reports_multi_union_and_failure(tmp_path: Path):
+    """summarize_worker_reports 가 복수 보고서의 changed_files 를 합집합으로 집계하고 위반을 누적합니다."""
+    report1_data = dict(
+        SAMPLE_VALID_REPORT,
+        task_id="task_1",
+        changed_files=["src/a.py"],
+    )
+    report2_data = dict(
+        SAMPLE_VALID_REPORT,
+        task_id="task_2",
+        changed_files=["src/b.py"],
+    )
+    r1 = _write_report(tmp_path / "r1.json", report1_data)
+    r2 = _write_report(tmp_path / "r2.json", report2_data)
+
+    class _MockProc:
+        returncode = 0
+        stdout = "9 passed"
+        stderr = ""
+
+    with patch("scripts.orca_contract.subprocess.run", return_value=_MockProc()):
+        # 1. 정상 보고서 2건 -> exit_code 0, effective_verdict pass, changed_files 합집합
+        result = summarize_worker_reports([r1, r2], repo_path=tmp_path)
+        assert result["exit_code"] == 0
+        assert result["violations_count"] == 0
+        assert result["effective_verdict"] == "pass"
+        assert set(result["changed_files"]) == {"src/a.py", "src/b.py"}
+        assert len(result["reports"]) == 2
+
+        # 2. 하나의 보고서에 위반(필수 필드 누락) 포함 -> exit_code 1, blocked
+        bad_data = dict(SAMPLE_VALID_REPORT, task_id="task_bad")
+        del bad_data["status"]
+        r_bad = _write_report(tmp_path / "r_bad.json", bad_data)
+
+        bad_result = summarize_worker_reports([r1, r_bad], repo_path=tmp_path)
+        assert bad_result["exit_code"] == 1
+        assert bad_result["effective_verdict"] == "blocked"
+        assert any("필수 필드 누락: status" in v for v in bad_result["violations"])
+
+        # 3. CLI main() 다중 --report 지원 검증
+        exit_code = main(["--report", str(r1), "--report", str(r2)])
+        assert exit_code == 0
