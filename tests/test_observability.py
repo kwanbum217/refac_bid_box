@@ -25,6 +25,7 @@ from src.app.core.observability import (
     reset_observability_for_testing,
     setup_observability,
     trace_worker_task,
+    traced_worker_task,
 )
 
 
@@ -332,3 +333,162 @@ def test_existing_health_api_integrity():
     assert data["framework"] == "FastAPI (ASGI)"
     assert data["database"] == "MySQL 8 (Docker)"
     assert data["task_queue"] == "Arq (asyncio)"
+
+
+@pytest.mark.asyncio
+async def test_arq_failed_task_top_level_span_is_error():
+    """실패한 Arq 작업의 최상위 span 및 태스크 span 이 ERROR 로 기록되고 예외가 남는지 검증합니다.
+
+    arq_on_job_end 가 ERROR 로 설정된 최상위 span 을 OK 로 덮어쓰지 않고,
+    예외가 원래대로 호출자에게 전파되는지 확인합니다.
+    """
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    ctx = {"job_id": "job_fail_999", "job_try": 1}
+    await arq_on_job_start(ctx)
+
+    @traced_worker_task
+    async def sample_failing_task(ctx: dict):
+        raise RuntimeError("태스크 실행 중 치명적 오류 발생")
+
+    with pytest.raises(RuntimeError, match="태스크 실행 중 치명적 오류 발생"):
+        await sample_failing_task(ctx)
+
+    await arq_on_job_end(ctx)
+
+    spans = memory_exporter.get_finished_spans()
+    assert len(spans) == 2
+
+    # 자식 태스크 span 검증
+    task_spans = [s for s in spans if s.name == "arq.task:sample_failing_task"]
+    assert len(task_spans) == 1
+    task_span = task_spans[0]
+    assert task_span.status.status_code == StatusCode.ERROR
+    assert "태스크 실행 중 치명적 오류 발생" in str(task_span.status.description)
+    assert any(e.name == "exception" for e in task_span.events)
+
+    # 최상위 job span 검증
+    job_spans = [s for s in spans if s.name == "arq.job:job_fail_999"]
+    assert len(job_spans) == 1
+    job_span = job_spans[0]
+    assert job_span.status.status_code == StatusCode.ERROR
+    assert "태스크 실행 중 치명적 오류 발생" in str(job_span.status.description)
+    assert any(e.name == "exception" for e in job_span.events)
+
+
+@pytest.mark.asyncio
+async def test_arq_success_task_top_level_span_is_ok():
+    """성공한 Arq 작업의 최상위 span 및 태스크 span 이 모두 OK 상태로 종료되는지 검증합니다."""
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    ctx = {"job_id": "job_success_888", "job_try": 1}
+    await arq_on_job_start(ctx)
+
+    @traced_worker_task
+    async def sample_success_task(ctx: dict, key: str = "val"):
+        return {"status": "success", "echo": key}
+
+    result = await sample_success_task(ctx, key="hello")
+    assert result == {"status": "success", "echo": "hello"}
+
+    await arq_on_job_end(ctx)
+
+    spans = memory_exporter.get_finished_spans()
+    assert len(spans) == 2
+
+    task_spans = [s for s in spans if s.name == "arq.task:sample_success_task"]
+    assert len(task_spans) == 1
+    assert task_spans[0].status.status_code == StatusCode.OK
+
+    job_spans = [s for s in spans if s.name == "arq.job:job_success_888"]
+    assert len(job_spans) == 1
+    assert job_spans[0].status.status_code == StatusCode.OK
+
+
+def test_all_worker_settings_tasks_have_instrumentation():
+    """WorkerSettings 에 등록된 모든 태스크(functions 및 cron_jobs)가 계측 배선을 갖는지 검증합니다.
+
+    신규 태스크가 등록될 때 계측 누락을 컴파일/테스트 단계에서 차단합니다.
+    """
+    from src.tasks.worker import WorkerSettings, is_task_traced
+
+    # 1. functions 목록 검증
+    assert len(WorkerSettings.functions) >= 13
+    for fn in WorkerSettings.functions:
+        target = getattr(fn, "coroutine", fn)
+        name = getattr(target, "__name__", str(target))
+        assert is_task_traced(target), (
+            f"WorkerSettings.functions 의 {name} 태스크에 계측 배선이 누락되었습니다."
+        )
+
+    # 2. cron_jobs 목록 검증
+    assert len(WorkerSettings.cron_jobs) >= 4
+    for c in WorkerSettings.cron_jobs:
+        target = getattr(c, "coroutine", c)
+        name = getattr(target, "__name__", str(target))
+        assert is_task_traced(target), (
+            f"WorkerSettings.cron_jobs 의 {name} 태스크에 계측 배선이 누락되었습니다."
+        )
+
+
+@pytest.mark.asyncio
+async def test_otel_disabled_task_zero_overhead_and_identical_behavior():
+    """OTEL_ENABLED=False 일 때 태스크 실행 및 반환값, 예외가 배선 전과 완전히 동일함을 검증합니다."""
+    assert is_otel_enabled() is False
+
+    @traced_worker_task
+    async def multiply_task(ctx: dict, x: int, y: int) -> int:
+        return x * y
+
+    ctx = {"job_id": "disabled_job_1"}
+    ret = await multiply_task(ctx, 3, 7)
+    assert ret == 21
+
+    @traced_worker_task
+    async def throwing_task(ctx: dict):
+        raise KeyError("존재하지 않는 키")
+
+    with pytest.raises(KeyError, match="존재하지 않는 키"):
+        await throwing_task(ctx)
+
+
+@pytest.mark.asyncio
+async def test_traced_worker_task_decorator_with_real_tasks(monkeypatch):
+    """실제 등록된 태스크 함수(rebuild_dataset_summary_task) 호출 시 계측 span 이 정상 생성되는지 검증합니다."""
+    from types import SimpleNamespace
+
+    import src.tasks.summary_tasks as summary_tasks_module
+    from src.tasks.summary_tasks import rebuild_dataset_summary_task
+
+    memory_exporter = InMemorySpanExporter()
+    setup_observability(custom_exporter=memory_exporter)
+
+    # DB 의존성을 격리하기 위해 summary 함수 모킹
+    dummy_summary = SimpleNamespace(
+        dataset="bids",
+        total_count=500,
+        total_amount=1000000,
+        aggregation_version=1,
+        rebuilt_at=None,
+    )
+    monkeypatch.setattr(
+        summary_tasks_module,
+        "rebuild_bid_dataset_summary",
+        lambda db, ds: dummy_summary,
+    )
+
+    ctx = {"job_id": "summary_job_test"}
+    await arq_on_job_start(ctx)
+    res = await rebuild_dataset_summary_task(ctx, dataset="bids")
+    await arq_on_job_end(ctx)
+
+    assert res["total_count"] == 500
+    spans = memory_exporter.get_finished_spans()
+    assert len(spans) == 2
+
+    task_span = next(s for s in spans if s.name == "arq.task:rebuild_dataset_summary_task")
+    assert task_span.status.status_code == StatusCode.OK
+    job_span = next(s for s in spans if s.name == "arq.job:summary_job_test")
+    assert job_span.status.status_code == StatusCode.OK
