@@ -1,6 +1,6 @@
 version: "2.0"
 description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
-updated_at: "2026-09-03"
+updated_at: "2026-09-05"
 facts:
   - id: gate_g1
     status: closed
@@ -153,31 +153,34 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/context/current_state_history.md
   - id: ci_windows
-    status: active
-    decision_date: "2026-09-02"
-    claim: "CI Windows job은 continue-on-error 없이 정규 게이트로 통과 중이며 병합 후 결과 재확인을 진행합니다."
+    status: closed
+    decision_date: "2026-09-05"
+    claim: "CI Windows job은 continue-on-error 없이 정규 게이트로 통과 상태를 유지합니다."
     document_anchor: "CI Windows job은 continue-on-error 없이"
     evidence:
+      - .github/workflows/ci.yml
       - docs/ops/ci_contract.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/ci_contract.md
   - id: row_reconciliation
-    status: active
-    decision_date: "2026-09-03"
-    claim: "행 수 판정은 하한 검사이며 성장 데이터와 이행 원본 reconciliation은 미구현으로 개선을 추진합니다."
+    status: closed
+    decision_date: "2026-09-05"
+    claim: "행 수 판정은 하한 검사 및 성장 데이터와 이행 원본 reconciliation 분리 대조로 완료 상태를 유지합니다."
     document_anchor: "행 수 판정은 하한 검사"
     evidence:
+      - scripts/verify_migration.py
       - docs/migration/db_migration_runbook.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/migration/db_migration_runbook.md
   - id: confirmation_token_redis
-    status: active
-    decision_date: "2026-09-03"
-    claim: "확인 토큰 소비 기록은 프로세스 지역 집합이고 Redis TTL 이전을 추진합니다."
+    status: closed
+    decision_date: "2026-09-05"
+    claim: "확인 토큰 소비 기록은 Redis TTL 원자적 단일 소비(SET NX EX)로 완료 상태를 유지합니다."
     document_anchor: "확인 토큰 소비 기록"
     evidence:
+      - src/app/services/automation_tokens.py
       - docs/ops/api_access_policy.md
     related_documents:
       - docs/context/CURRENT_STATE.md
@@ -193,11 +196,13 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/ops/model_promotion_runbook.md
   - id: promotion_status_check
-    status: active
-    decision_date: "2026-09-03"
-    claim: "promote_model.py status의 레지스트리 차단 동작은 병합 후 검증을 진행합니다."
+    status: closed
+    decision_date: "2026-09-05"
+    claim: "promote_model.py status의 레지스트리 차단 동작은 쌍대 기각 검증 통과 상태를 유지합니다."
     document_anchor: "promote_model.py status의 레지스트리 차단"
     evidence:
+      - scripts/promote_model.py
+      - tests/test_promotion_gate.py
       - docs/ops/model_promotion_runbook.md
     related_documents:
       - docs/context/CURRENT_STATE.md

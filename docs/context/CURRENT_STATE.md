@@ -1,6 +1,6 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-09-04
+> **updated_at**: 2026-09-05
 > **source_commit**: `e66e3ae`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
@@ -15,7 +15,7 @@
 | G2 크로스 플랫폼 | 보류 | Windows Docker Desktop 실기 검증 |
 | G3 스택 최적화 | 통과 | 전체 컷오버는 G2 확인 후 |
 
-G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 참조하십시오. CI Windows job은 정규 게이트이고 현재 병합 커밋의 결과는 푸시 후 재확인합니다.
+G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 참조하십시오. CI Windows job은 정규 게이트로 통과 상태를 유지합니다.
 
 ## 2. 기계 검증 사실 (Machine Facts)
 
@@ -55,17 +55,17 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **supply_chain_gate**: 공급망 스캔은 모두 차단 모드로 운영하며 CRITICAL 및 HIGH 취약점 차단 게이트를 통과 기준으로 유지합니다.
 
+- **ci_windows**: CI Windows job은 continue-on-error 없이 정규 게이트로 통과 상태를 유지합니다.
+
+- **row_reconciliation**: 행 수 판정은 하한 검사 및 성장 데이터와 이행 원본 reconciliation 분리 대조로 완료 상태를 유지합니다.
+
+- **confirmation_token_redis**: 확인 토큰 소비 기록은 Redis TTL 원자적 단일 소비(SET NX EX)로 완료 상태를 유지합니다.
+
+- **promotion_status_check**: promote_model.py status의 레지스트리 차단 동작은 쌍대 기각 검증 통과 상태를 유지합니다.
+
 ### active 사실
 
-- **ci_windows**: CI Windows job은 continue-on-error 없이 정규 게이트로 통과 중이며 병합 후 결과 재확인을 진행합니다.
-
-- **row_reconciliation**: 행 수 판정은 하한 검사이며 성장 데이터와 이행 원본 reconciliation은 미구현으로 개선을 추진합니다.
-
-- **confirmation_token_redis**: 확인 토큰 소비 기록은 프로세스 지역 집합이고 Redis TTL 이전을 추진합니다.
-
 - **model_swap_gap**: 서빙 모델 교체는 rename 사이 미세 부재 구간이 있어 심볼릭 링크 교체를 추진합니다.
-
-- **promotion_status_check**: promote_model.py status의 레지스트리 차단 동작은 병합 후 검증을 진행합니다.
 
 - **lexical_full_rerun**: 정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다.
 
