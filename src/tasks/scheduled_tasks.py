@@ -1162,6 +1162,13 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
                 details=details,
                 skipped=[{"name": target_task, "reason": str(outcome.get("reason") or "skipped")}],
             )
+        elif outcome_status == "cancelled":
+            ledger = build_catchup_ledger(
+                status="cancelled",
+                reason=str(outcome.get("reason") or "cancelled"),
+                details=details,
+                failed=[{"name": target_task, "error": str(outcome.get("error") or "cancelled")}],
+            )
         else:
             ledger = build_catchup_ledger(
                 status="success",
@@ -1170,6 +1177,20 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
                 executed=[{"name": target_task, "status": outcome_status}],
             )
         return outcome
+    except asyncio.CancelledError as exc:
+        cancel_reason = str(exc.args[0]) if exc.args and str(exc.args[0]).strip() else "cancelled"
+        logger.warning(
+            "스케줄 따라잡기 실행이 취소되었습니다 (target_task=%s, reason=%s)",
+            target_task,
+            cancel_reason,
+        )
+        ledger = build_catchup_ledger(
+            status="cancelled",
+            reason=cancel_reason,
+            details=details,
+            failed=[{"name": target_task, "error": cancel_reason}],
+        )
+        raise
     except Exception as exc:
         logger.exception("스케줄 따라잡기 실행 실패: %s", exc)
         ledger = build_catchup_ledger(

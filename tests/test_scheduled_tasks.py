@@ -365,6 +365,45 @@ async def test_catchup_ledger_distinguishes_target_executed_failed_skipped(
 
 
 @pytest.mark.asyncio
+async def test_catchup_cancelled_records_ledger_and_propagates(monkeypatch, catchup_redis):
+    """취소 시 CancelledError가 전파되고 원장이 running이 아닌 cancelled 로 기록됩니다."""
+    _enable_needed_catchup(monkeypatch)
+    started = asyncio.Event()
+
+    async def _blocking_refresh(ctx: dict[str, Any]) -> dict[str, Any]:
+        started.set()
+        await asyncio.Event().wait()
+        return {"status": "success"}
+
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "development_data_refresh_task",
+        AsyncMock(side_effect=_blocking_refresh),
+    )
+
+    task = asyncio.create_task(scheduled_tasks.run_schedule_catchup_task({}))
+    await started.wait()
+
+    running_ledger = scheduled_tasks.load_catchup_ledger(conn=catchup_redis)
+    assert running_ledger is not None
+    assert running_ledger["status"] == "running"
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert task.cancelled() is True
+    ledger = scheduled_tasks.load_catchup_ledger(conn=catchup_redis)
+    assert ledger is not None
+    assert ledger["status"] != "running"
+    assert ledger["status"] == "cancelled"
+    assert ledger["reason"] == "cancelled"
+    assert ledger["failed"][0]["name"] == "development_data_refresh"
+    assert ledger["failed"][0]["error"] == "cancelled"
+
+
+@pytest.mark.asyncio
 async def test_concurrent_catchup_does_not_run_twice(monkeypatch, catchup_redis):
     """SET NX 선점으로 동시 기동에서 대상 스케줄이 한 번만 실행됩니다."""
     _enable_needed_catchup(monkeypatch)

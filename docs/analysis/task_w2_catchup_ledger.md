@@ -36,6 +36,8 @@
 
 판정만 하고 실행하지 않는 경우(비활성, 임계 미달 등)는 쿨다운을 걸지 않고 원장만 남긴다. `in_cooldown` 재평가는 선점 워커의 원장을 덮지 않는다.
 
+실행 중 태스크 취소(`asyncio.CancelledError`) 시에는 원장이 `running` 에 머물지 않도록 `status="cancelled"`, `reason=취소사유`, `failed=[{"name": target_task, "error": 취소사유}]` 로 종결 원장을 남기며, `CancelledError` 는 호출자에게 전파한다.
+
 ## 4. 단일 실행
 
 기존 쿨다운은 GET 이후 실행이 끝난 뒤에야 SET 하므로, 워커 두 대가 동시에 기동하면 둘 다 통과한다. 대상 스케줄의 collection claim 이 무거운 수집은 막지만, 따라잡기 태스크 자체는 두 번 돈다.
@@ -44,4 +46,4 @@
 
 ## 5. 검증
 
-`tests/test_scheduled_tasks.py` 에 (a) 원장 구분, (b) 동시 기동 1회 실행, (c) 적재 실패가 워커를 죽이지 않음, (d) 기동이 완료를 기다리지 않음, (e) redis 가 있으면 직접 실행하지 않고 enqueue 함을 추가했다.
+`tests/test_scheduled_tasks.py` 와 `tests/test_schedule_catchup.py` 에 (a) 원장 구분(성공/실패/스킵/취소), (b) 동시 기동 1회 실행, (c) 적재 실패가 워커를 죽이지 않음, (d) 기동이 완료를 기다리지 않음, (e) redis 가 있으면 직접 실행하지 않고 enqueue 함, (f) 취소 시 CancelledError 전파 및 status="cancelled" 종결 원장 기록을 추가하고 검증했다.
