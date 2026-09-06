@@ -46,14 +46,16 @@
 
 ---
 
-## 4. 검증 결과
+## 4. 검증 결과 (최종 커밋 기준 실측)
 
 - `tests/test_backup_recovery.py` 단독: 20건 전부 통과 (기존 17건 + 신규 3건).
 - 3종 백업 테스트 묶음(`test_backup_recovery.py`, `test_backup_schedule.py`, `test_backup_fail_closed.py`): 48건 통과, 2건 실패.
   - 실패 2건은 모두 `tests/test_backup_schedule.py` 의 `test_retention_prune_deletes_excess_snapshots_when_delete_is_true` 와 `test_backup_task_executes_retention_deletion` 이다.
   - 원인: 두 테스트가 매니페스트 없는 빈 디렉터리를 만들고 삭제를 기대하는데, 새 계약(매니페스트 없는 보존본은 fail-closed)이 정확히 그 삭제를 막는다. 구현이 계약대로 동작한 결과이며, 테스트 쪽 설정이 옛 동작을 전제로 한 레거시 결함이다.
   - 해당 파일은 본 Task 의 `allowed_write_files` 범위 밖이라 수정하지 않았다. 코디네이터에게 `ask` 로 진행 방침을 질의하였으나 600초 시간 초과로 응답이 없었고, `check` 에서도 수신 메시지가 없었다.
-- 남은 검증(`tests/` 전량 `-m 'not data_assets'`, `validate_agent_rules.py --quiet`)은 커밋 후 worker_done.json 기록 시점에 실행하였다.
+- `tests/` 전량 (`-m 'not data_assets'`): 3703건 통과, 41건 스킵, 3건 제외, 실패는 위와 동일한 2건이다.
+- `python3 scripts/validate_agent_rules.py --quiet`: 20/20 통과.
+- 줄 수 상한: 전량 테스트에서 `tests/test_backup_recovery_split.py` 의 상한 검사(275줄)가 최초 구현(281줄)을 적발하여, 보존 검증을 `verify_snapshot` 단일 호출로 합치고 목록 분기를 항목 조립형으로 고쳐 269줄로 맞췄다. 해당 검사는 통과한다.
 
 ---
 
