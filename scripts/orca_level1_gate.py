@@ -598,21 +598,52 @@ def _docker_build_context(tokens: list[str]) -> str:
     return context
 
 
+def _validate_compose_file_value(value: str) -> None:
+    """compose -f/--file 값이 저장소 안의 상대 경로인지 검증합니다."""
+    if not value or not value.strip():
+        raise ValueError("compose 파일 경로가 비어 있습니다")
+    cleaned = value.strip()
+    path = PurePosixPath(cleaned)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("compose 파일은 저장소 안의 상대 경로여야 합니다")
+
+
 def _parse_docker_command(source: str, tokens: list[str]) -> VerificationCommand:
     """docker 검증 명령을 해석합니다. `docker build` 와 `docker compose config` 만 허용합니다.
 
     docker 는 AGENTS.md 4장의 공유 자원입니다. 이 명령을 검증에 넣는 Task 는
     shared_resources 에 docker 를 선언해야 다른 섹션과 겹치지 않습니다.
+
+    compose 형태는 `docker compose config` 외에 compose 와 config 사이에
+    `-f <파일>` 또는 `--file <파일>` (또는 `--file=<파일>`) 만 추가로 받습니다.
+    그 밖의 옵션은 거부합니다. 파일 값은 저장소 안의 상대 경로여야 하며
+    절대 경로와 상위 디렉터리 탈출(..)을 거부합니다. 능력은 -f 유무와 무관하게
+    compose_config 하나로 계산합니다.
     """
     if tokens[1:2] == ["build"]:
         context = _docker_build_context(tokens)
         return VerificationCommand(
             source, list(tokens), None, frozenset({docker_build_capability(context)}), "raw"
         )
-    if tokens[1:3] == ["compose", "config"]:
-        return VerificationCommand(
-            source, list(tokens), None, frozenset({CAP_COMPOSE_CONFIG}), "raw"
-        )
+    if tokens[1:2] == ["compose"]:
+        idx = 2
+        while idx < len(tokens):
+            arg = tokens[idx]
+            if arg in ("-f", "--file"):
+                if idx + 1 >= len(tokens):
+                    raise ValueError("compose 파일 옵션 뒤에 경로가 없습니다")
+                _validate_compose_file_value(tokens[idx + 1])
+                idx += 2
+                continue
+            if arg.startswith("--file="):
+                _validate_compose_file_value(arg.split("=", 1)[1])
+                idx += 1
+                continue
+            break
+        if tokens[idx : idx + 1] == ["config"]:
+            return VerificationCommand(
+                source, list(tokens), None, frozenset({CAP_COMPOSE_CONFIG}), "raw"
+            )
     raise ValueError("허용되는 docker 명령은 'docker build' 와 'docker compose config' 뿐입니다")
 
 
