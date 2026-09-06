@@ -11,6 +11,7 @@ from scripts.orca_read_scope_audit import (
     is_system_path,
     main,
     parse_search_scope_allowed_globs,
+    read_terminal_scrollback,
 )
 
 
@@ -298,3 +299,321 @@ def test_parse_search_scope_allowed_globs():
     # 빈 리스트
     empty_yaml = "search_scope:\n  allowed_globs: []\n"
     assert parse_search_scope_allowed_globs(empty_yaml) == []
+
+
+def test_pagination_concatenates_all_pages(monkeypatch):
+    """여러 페이지를 이어 붙여 전부 읽고 순서대로 결합하는지 검증합니다."""
+
+    def mock_run(cmd, capture_output=True, text=True, timeout=30, check=False):
+        cursor_idx = cmd.index("--cursor")
+        cursor_val = int(cmd[cursor_idx + 1])
+        if cursor_val == 0:
+            payload = {
+                "ok": True,
+                "result": {
+                    "terminal": {
+                        "oldestCursor": 0,
+                        "nextCursor": 2,
+                        "latestCursor": 5,
+                        "returnedLineCount": 2,
+                        "tail": ["line 0", "line 1"],
+                    }
+                },
+            }
+        elif cursor_val == 2:
+            payload = {
+                "ok": True,
+                "result": {
+                    "terminal": {
+                        "oldestCursor": 0,
+                        "nextCursor": 4,
+                        "latestCursor": 5,
+                        "returnedLineCount": 2,
+                        "tail": ["line 2", "line 3"],
+                    }
+                },
+            }
+        elif cursor_val == 4:
+            payload = {
+                "ok": True,
+                "result": {
+                    "terminal": {
+                        "oldestCursor": 0,
+                        "nextCursor": 5,
+                        "latestCursor": 5,
+                        "returnedLineCount": 1,
+                        "tail": ["line 4"],
+                    }
+                },
+            }
+        else:
+            payload = {
+                "ok": True,
+                "result": {
+                    "terminal": {
+                        "oldestCursor": 0,
+                        "nextCursor": 5,
+                        "latestCursor": 5,
+                        "returnedLineCount": 0,
+                        "tail": [],
+                    }
+                },
+            }
+
+        class MockCompletedProcess:
+            returncode = 0
+            stdout = json.dumps(payload)
+            stderr = ""
+
+        return MockCompletedProcess()
+
+    monkeypatch.setattr("scripts.orca_read_scope_audit.subprocess.run", mock_run)
+
+    res = read_terminal_scrollback("term_mock")
+    assert res is not None
+    text, evidence = res
+    assert text == "line 0\nline 1\nline 2\nline 3\nline 4"
+    assert evidence["lines_read"] == 5
+    assert evidence["oldest_cursor"] == 0
+    assert evidence["latest_cursor"] == 5
+    assert evidence["complete"] is True
+
+
+def test_pagination_stops_when_cursor_does_not_advance(monkeypatch):
+    """nextCursor 가 전진하지 않으면 즉시 멈추는지 검증합니다."""
+    calls = []
+
+    def mock_run(cmd, capture_output=True, text=True, timeout=30, check=False):
+        calls.append(cmd)
+        payload = {
+            "ok": True,
+            "result": {
+                "terminal": {
+                    "oldestCursor": 0,
+                    "nextCursor": 0,
+                    "latestCursor": 10,
+                    "returnedLineCount": 2,
+                    "tail": ["item 1", "item 2"],
+                }
+            },
+        }
+
+        class MockCompletedProcess:
+            returncode = 0
+            stdout = json.dumps(payload)
+            stderr = ""
+
+        return MockCompletedProcess()
+
+    monkeypatch.setattr("scripts.orca_read_scope_audit.subprocess.run", mock_run)
+
+    res = read_terminal_scrollback("term_mock")
+    assert res is not None
+    _text, evidence = res
+    assert len(calls) == 1
+    assert evidence["lines_read"] == 2
+    assert evidence["complete"] is True
+
+
+def test_pagination_respects_max_pages_ceiling(monkeypatch):
+    """반복 상한(max_pages)을 넘지 않고 종료하는지 검증합니다."""
+    calls = []
+
+    def mock_run(cmd, capture_output=True, text=True, timeout=30, check=False):
+        calls.append(cmd)
+        cursor_idx = cmd.index("--cursor")
+        cursor_val = int(cmd[cursor_idx + 1])
+        payload = {
+            "ok": True,
+            "result": {
+                "terminal": {
+                    "oldestCursor": 0,
+                    "nextCursor": cursor_val + 1,
+                    "latestCursor": 99999,
+                    "returnedLineCount": 1,
+                    "tail": [f"line {cursor_val}"],
+                }
+            },
+        }
+
+        class MockCompletedProcess:
+            returncode = 0
+            stdout = json.dumps(payload)
+            stderr = ""
+
+        return MockCompletedProcess()
+
+    monkeypatch.setattr("scripts.orca_read_scope_audit.subprocess.run", mock_run)
+
+    res = read_terminal_scrollback("term_mock", max_pages=5)
+    assert res is not None
+    assert len(calls) == 5
+    _text, evidence = res
+    assert evidence["lines_read"] == 5
+
+
+def test_dropped_lines_sets_complete_false(tmp_path: Path, monkeypatch, capsys):
+    """oldestCursor 가 0 보다 크면 evidence.complete 가 False 로 기록되고 출력에 명시되는지 검증합니다."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    cap = _create_sample_capsule(repo, allowed_read=["src/..."])
+
+    def mock_run(cmd, capture_output=True, text=True, timeout=30, check=False):
+        cursor_idx = cmd.index("--cursor")
+        cursor_val = int(cmd[cursor_idx + 1])
+        if cursor_val == 0:
+            payload = {
+                "ok": True,
+                "result": {
+                    "terminal": {
+                        "oldestCursor": 150,
+                        "nextCursor": 160,
+                        "latestCursor": 200,
+                        "returnedLineCount": 1,
+                        "tail": ["src/app.py"],
+                    }
+                },
+            }
+        else:
+            payload = {
+                "ok": True,
+                "result": {
+                    "terminal": {
+                        "oldestCursor": 150,
+                        "nextCursor": 160,
+                        "latestCursor": 200,
+                        "returnedLineCount": 0,
+                        "tail": [],
+                    }
+                },
+            }
+
+        class MockCompletedProcess:
+            returncode = 0
+            stdout = json.dumps(payload)
+            stderr = ""
+
+        return MockCompletedProcess()
+
+    monkeypatch.setattr("scripts.orca_read_scope_audit.subprocess.run", mock_run)
+
+    out_file = tmp_path / "dropped_out.json"
+    code = main(
+        [
+            "--terminal",
+            "term_dropped",
+            "--capsule",
+            str(cap),
+            "--repo",
+            str(repo),
+            "--out",
+            str(out_file),
+        ]
+    )
+
+    assert code == 0
+    assert out_file.exists()
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert data["verdict"] == "clean"
+    assert data["evidence"]["complete"] is False
+    assert data["evidence"]["oldest_cursor"] == 150
+    assert data["evidence"]["lines_read"] == 1
+
+    captured = capsys.readouterr()
+    assert "[증거] 불완전" in captured.out
+    assert "oldest_cursor=150" in captured.out
+
+
+def test_mid_pagination_failure_fails_closed_exit_2(tmp_path: Path, monkeypatch, capsys):
+    """중간 페이지 읽기 실패 시 부분 결과로 통과시키지 않고 종료 코드 2 로 실패하는지 검증합니다."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    cap = _create_sample_capsule(repo, allowed_read=["src/..."])
+
+    def mock_run(cmd, capture_output=True, text=True, timeout=30, check=False):
+        cursor_idx = cmd.index("--cursor")
+        cursor_val = int(cmd[cursor_idx + 1])
+        if cursor_val == 0:
+            payload = {
+                "ok": True,
+                "result": {
+                    "terminal": {
+                        "oldestCursor": 0,
+                        "nextCursor": 10,
+                        "latestCursor": 20,
+                        "returnedLineCount": 1,
+                        "tail": ["src/app.py"],
+                    }
+                },
+            }
+
+            class MockSuccess:
+                returncode = 0
+                stdout = json.dumps(payload)
+                stderr = ""
+
+            return MockSuccess()
+        else:
+
+            class MockFailure:
+                returncode = 1
+                stdout = "Internal error"
+                stderr = "Terminal connection dropped"
+
+            return MockFailure()
+
+    monkeypatch.setattr("scripts.orca_read_scope_audit.subprocess.run", mock_run)
+
+    out_file = tmp_path / "failure_out.json"
+    code = main(
+        [
+            "--terminal",
+            "term_fail",
+            "--capsule",
+            str(cap),
+            "--repo",
+            str(repo),
+            "--out",
+            str(out_file),
+        ]
+    )
+
+    assert code == 2
+    assert not out_file.exists()
+    captured = capsys.readouterr()
+    assert "오류: 터미널 버퍼를 읽지 못했습니다" in captured.err
+
+
+def test_text_file_path_complete_true(tmp_path: Path, capsys):
+    """--text-file 경로는 페이지네이션 없이 그대로 동작하고 evidence.complete 가 참인지 검증합니다."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    cap = _create_sample_capsule(repo, allowed_read=["src/..."])
+
+    buf_file = tmp_path / "text_buffer.txt"
+    buf_file.write_text("src/app.py\nsrc/ml/features.py\n", encoding="utf-8")
+    out_file = tmp_path / "text_file_out.json"
+
+    code = main(
+        [
+            "--text-file",
+            str(buf_file),
+            "--capsule",
+            str(cap),
+            "--repo",
+            str(repo),
+            "--out",
+            str(out_file),
+        ]
+    )
+
+    assert code == 0
+    assert out_file.exists()
+    data = json.loads(out_file.read_text(encoding="utf-8"))
+    assert data["verdict"] == "clean"
+    assert data["evidence"]["complete"] is True
+    assert data["evidence"]["oldest_cursor"] == 0
+    assert data["evidence"]["lines_read"] == 2
+
+    captured = capsys.readouterr()
+    assert "[증거] 완전" in captured.out
