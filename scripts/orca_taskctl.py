@@ -253,6 +253,7 @@ forbidden:
   - "main 브랜치 직접 수정 및 커밋 금지"
   - "Pull Request 생성 금지"
   - "이모지 사용 금지 (주석, 커밋 메시지, 문서)"
+  - "패키지 관리자 교체 금지 (프런트엔드는 npm 을 쓴다. pnpm, yarn 실행 및 잠금 파일 생성 금지)"
 
 shared_resources:
 {shared_resources}
