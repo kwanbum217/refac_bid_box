@@ -1,0 +1,51 @@
+# OTel Collector 설정 (refac_bid_box 관측성 1단계)
+#
+# 역할: app 과 worker 가 OTLP HTTP 로 보낸 트레이스를 받아 Tempo 로 전달합니다.
+# 샘플링은 2층 구조입니다. 1층은 애플리케이션의 헤드 샘플링
+# (OTEL_SAMPLING_RATIO=0.1) 이며, 2층인 아래 tail_sampling 은 Collector 에
+# 도착한 span 중에서 오류 span 을 전량 보존합니다. 헤드 샘플링에서 탈락한
+# span 은 Collector 에 도달하지 않으므로, 오류 유입량을 늘리는 조정 수단은
+# OTEL_SAMPLING_RATIO 입니다.
+# 메트릭과 로그 파이프라인은 1단계 범위가 아니므로 두지 않습니다.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 50
+    policies:
+      - name: errors-always
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: probabilistic-passthrough
+        type: probabilistic
+        probabilistic:
+          sampling_ratio: 1.0
+  batch: {}
+
+exporters:
+  otlp/tempo:
+    endpoint: http://tempo:4318
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [tail_sampling, batch]
+      exporters: [otlp/tempo]
