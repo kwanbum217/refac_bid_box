@@ -38,6 +38,7 @@ forbidden:
   - "DB 스키마 및 원본 데이터 변경 금지"
   - "main 브랜치 직접 수정 및 커밋 금지"
   - "Pull Request 생성 금지"
+  - "패키지 관리자 교체 금지 (프런트엔드는 npm 을 쓴다. pnpm, yarn 실행 및 잠금 파일 생성 금지)"
 
 shared_resources:
   - resource: docker # docker | db | serving_model_root | features_py | main_merge
