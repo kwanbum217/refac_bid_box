@@ -1,0 +1,43 @@
+# Tempo 설정 (refac_bid_box 관측성 1단계, 단일 프로세스 모드)
+#
+# 트레이스 보존 기간은 7일입니다. 보존을 강제하는 설정은
+# compactor.compaction.block_retention: 168h 하나이며, 이 값이 유일한 정본입니다.
+# 7일은 트레이스 볼륨 실측에 근거한 값이 아니라 통상값입니다. 1주 운영 후
+# tempo_data 볼륨의 디스크 사용량을 재어 조정합니다.
+# 메트릭 보존 15일은 2단계 예정값이므로 설정으로 만들지 않습니다.
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester_client:
+  grpc_client_config:
+    max_recv_msg_size: 16777216
+    max_send_msg_size: 16777216
+
+compactor:
+  compaction:
+    block_retention: 168h
+
+storage:
+  trace:
+    backend: local
+    blocklist_poll: 5m
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+overrides:
+  defaults:
+    global:
+      max_bytes_per_trace: 20971520

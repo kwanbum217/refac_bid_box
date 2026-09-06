@@ -61,6 +61,11 @@ services:
       - TRUSTED_PROXY_IPS=${TRUSTED_PROXY_IPS:?TRUSTED_PROXY_IPS must be set}
       - READINESS_REQUIRE_WARMUP=true
       - READINESS_REQUIRE_LLM=true
+      - OTEL_ENABLED=${OTEL_ENABLED:-true}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-refac_bid_box}
+      - OTEL_EXPORTER_TYPE=${OTEL_EXPORTER_TYPE:-otlp}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      - OTEL_SAMPLING_RATIO=${OTEL_SAMPLING_RATIO:-0.1}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -137,6 +142,11 @@ services:
       # 정기 백업은 backup 전용 서비스가 담당합니다. 워커에서는 항상 비활성입니다.
       - BACKUP_SCHEDULE_ENABLED=false
       - WORKER_HEARTBEAT_MAX_AGE_SECONDS=${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
+      - OTEL_ENABLED=${OTEL_ENABLED:-true}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-refac_bid_box}
+      - OTEL_EXPORTER_TYPE=${OTEL_EXPORTER_TYPE:-otlp}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      - OTEL_SAMPLING_RATIO=${OTEL_SAMPLING_RATIO:-0.1}
       - TZ=Asia/Seoul
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -340,10 +350,88 @@ services:
     networks:
       - internal
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.141.0@sha256:b14234c4bc1b7364629af272e564913bb57bdc9736d45b8b6db5ab3417dc75f9
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./docker/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on:
+      tempo:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - internal
+
+  tempo:
+    image: grafana/tempo:2.9.2@sha256:3f0825e14397d3459e11e96f99ddd3976ec0cb75e328459e173298d9fb74b407
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./docker/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - internal
+
+  grafana:
+    image: grafana/grafana:12.2.0@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD must be set}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      tempo:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - internal
+
 volumes:
   mysql_data:
   redis_data:
   meilisearch_data:
+  tempo_data:
+  grafana_data:
   caddy_data:
   caddy_config:
 
