@@ -539,6 +539,8 @@ async def drift_monitor_task(
             baseline_dir = Path(registry_dir) / model_name / "baseline"
 
             baseline_dist = await asyncio.to_thread(load_baseline_distributions, baseline_dir)
+            # baseline 부재 모델(예: Thng)은 예외 없이 건너뜁니다. 거짓 드리프트를
+            # 보고하지 않고 INSUFFICIENT_DATA로 기록한 뒤 다음 카테고리로 계속합니다.
             if not baseline_dist:
                 logger.info(
                     "카테고리 %s (%s)의 baseline 분포 아티팩트가 없습니다 (%s). 판정 보류.",

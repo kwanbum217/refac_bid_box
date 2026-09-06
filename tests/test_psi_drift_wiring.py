@@ -306,3 +306,128 @@ async def test_drift_monitor_task_records_and_notifies(isolated_db, tmp_path, mo
     sample_log = drift_logs[0]
     assert sample_log.challenger_version == "v_20260901_001"  # baseline_version 으로 해석
     assert "drift_results" in sample_log.metrics_summary
+
+
+@pytest.mark.asyncio
+async def test_drift_monitor_task_missing_baseline_skips_safely(
+    isolated_db, tmp_path, monkeypatch, caplog
+):
+    """baseline이 없는 모델에서는 예외 없이 건너뛰고 로그로 남깁니다."""
+    import src.tasks.scheduled_tasks as sched
+
+    monkeypatch.setattr(settings, "ML_DRIFT_MONITOR_ENABLED", True)
+    monkeypatch.setattr("src.tasks.scheduled_tasks.SessionLocal", lambda: isolated_db)
+
+    def _must_not_be_called(*args, **kwargs):
+        raise AssertionError("baseline 부재 경로에서 데이터셋 조회가 호출되면 안 됩니다")
+
+    monkeypatch.setattr("src.tasks.scheduled_tasks.build_training_dataset", _must_not_be_called)
+
+    check_calls: list = []
+    real_check = sched.check_dataset_drift
+
+    def _spy_check(*args, **kwargs):
+        check_calls.append(args)
+        return real_check(*args, **kwargs)
+
+    monkeypatch.setattr("src.tasks.scheduled_tasks.check_dataset_drift", _spy_check)
+
+    mock_notify = AsyncMock()
+    monkeypatch.setattr("src.tasks.scheduled_tasks.notify_drift_detected", mock_notify)
+
+    with caplog.at_level("INFO"):
+        outcome = await drift_monitor_task({}, evaluation_window_days=7, registry_dir=str(tmp_path))
+
+    assert outcome["status"] == "success"
+    assert check_calls == []
+    assert mock_notify.await_count == 0
+    for _category, res in outcome["categories"].items():
+        assert res["status"] == "skipped"
+        assert res["reason"] == "no_baseline"
+
+    logs = isolated_db.query(RetrainLog).filter(RetrainLog.trigger_source == "drift_monitor").all()
+    assert len(logs) > 0
+    assert all(log_item.status == "INSUFFICIENT_DATA" for log_item in logs)
+    assert any(
+        "baseline 분포 아티팩트가 없습니다" in (record.message or "") for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_drift_monitor_task_present_baseline_evaluates(isolated_db, tmp_path, monkeypatch):
+    """baseline이 있는 모델에서는 평가가 수행되고 결과가 기록됩니다."""
+    monkeypatch.setattr(settings, "ML_DRIFT_MONITOR_ENABLED", True)
+    monkeypatch.setattr("src.tasks.scheduled_tasks.SessionLocal", lambda: isolated_db)
+
+    np.random.seed(7)
+    n_samples = 150
+    df_train = pd.DataFrame(
+        {
+            "log_price": np.random.normal(10.0, 0.5, n_samples),
+            "srvce_div_nm": ["일반용역"] * n_samples,
+        }
+    )
+
+    from src.ml.training_config import CATEGORY_MODEL_NAMES
+
+    for _category, model_name in CATEGORY_MODEL_NAMES.items():
+        save_baseline_distributions(
+            df_feat=df_train,
+            feature_columns=["log_price", "srvce_div_nm"],
+            target_dir=tmp_path / model_name / "baseline",
+            model_name=model_name,
+            model_version="v_20260906_test",
+        )
+
+    df_recent_raw = pd.DataFrame(
+        [
+            {
+                "presumed_price": 1000.0,
+                "base_price": 990.0,
+                "winning_rate": 88.0,
+                "openg_dt": "2026-08-01",
+                "srvce_div_nm": "일반용역",
+            }
+            for _ in range(n_samples)
+        ]
+    )
+
+    def _mock_build_dataset(db, category_code, **kwargs):
+        return df_recent_raw
+
+    monkeypatch.setattr("src.tasks.scheduled_tasks.build_training_dataset", _mock_build_dataset)
+
+    check_calls: list = []
+
+    def _spy_check(baseline_dist, df_feat, **kwargs):
+        check_calls.append({"baseline_version": baseline_dist.get("model_version", "-")})
+        return {
+            "status": "STABLE",
+            "overall_action": "STABLE",
+            "drift_feature_count": 0,
+            "drift_features": [],
+            "total_features_checked": 2,
+            "recent_samples": len(df_feat),
+            "baseline_version": baseline_dist.get("model_version", "-"),
+        }
+
+    monkeypatch.setattr("src.tasks.scheduled_tasks.check_dataset_drift", _spy_check)
+
+    mock_notify = AsyncMock()
+    monkeypatch.setattr("src.tasks.scheduled_tasks.notify_drift_detected", mock_notify)
+    mock_retrain = AsyncMock()
+    monkeypatch.setattr("src.tasks.scheduled_tasks.run_retrain_pipeline_task", mock_retrain)
+
+    outcome = await drift_monitor_task({}, evaluation_window_days=7, registry_dir=str(tmp_path))
+
+    assert outcome["status"] == "success"
+    assert len(check_calls) == len(CATEGORY_MODEL_NAMES)
+    assert mock_notify.await_count == 0
+    assert mock_retrain.await_count == 0
+    for _category, res in outcome["categories"].items():
+        assert res["status"] == "STABLE"
+        assert res["baseline_version"] == "v_20260906_test"
+
+    logs = isolated_db.query(RetrainLog).filter(RetrainLog.trigger_source == "drift_monitor").all()
+    assert len(logs) == len(CATEGORY_MODEL_NAMES)
+    assert all(log_item.status == "STABLE" for log_item in logs)
