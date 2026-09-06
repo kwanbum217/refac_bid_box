@@ -186,10 +186,33 @@ SQLAlchemy 의 `.contains()` 가 이 형태로 컴파일됩니다.
 누적 2위 소비자이므로 되돌리지 않습니다. **부분 개선이지 해결이 아니라는 점만
 정정합니다.**
 
-### 9.3 남은 과업
+### 9.3 남은 과업 처리 결과 (2026-09-06, task_ef2f12867e6a)
 
-| 순서 | 작업 |
-| --- | --- |
-| 1 | `corrupted_probe` 3건의 비용 제거 |
-| 2 | `dminstt_nm`, `bid_ntce_nm` 의 `contains()` 선행 와일드카드 대체 |
-| 3 | `dminstt_nm`, `bid_ntce_nm` GROUP BY 에 날짜 인덱스 힌트 적용 |
+| 순서 | 작업 | 판정 | 근거 |
+| --- | --- | --- | --- |
+| 1 | `corrupted_probe` 3건의 비용 제거 | 미처리 (유지) | 탐침 게이팅(순위가 채워지면 생략)을 시도했으나 기존 테스트 2건(`test_live_path_also_excludes_corrupted`, `test_live_path_announcement_excludes_corrupted`)이 깨졌습니다. SQL 이 `exclude_corrupted` 로 손상값을 먼저 걸러 보내므로 창이 깨끗해도 전체 무손상을 증명할 수 없고, 생략하면 안내가 사라집니다(Wave E1 회귀). 선행 와일드카드 exact 존재 확인을 스캔 없이 할 방법이 없으므로 탐침을 유지합니다. 대신 판단 근거를 코드 주석과 `tests/test_rag_structured_data.py` 회귀 테스트로 고정했습니다. |
+| 2 | `dminstt_nm`, `bid_ntce_nm` 의 `contains()` 선행 와일드카드 대체 | 미처리 | 날짜 필터가 없으면 `possible_keys: None` 으로 2,295,025행 전체를 훑습니다. B-트리로 선행 와일드카드를 탈 방법이 없고, 전방 일치·등가로 바꾸면 결과 집합이 달라지며, FULLTEXT·새 인덱스는 기각됐고 범위 밖입니다. |
+| 3 | `dminstt_nm`, `bid_ntce_nm` GROUP BY 에 날짜 인덱스 힌트 적용 | 확인 완료 (추가 변경 없음) | 두 집계에 `_hint_announcement_date_index` 가 이미 붙어 있습니다. EXPLAIN 에서 힌트 없이도 옵티마이저가 날짜 범위(`range`, 약 707,124행)를 자발 선택하고 힌트를 붙여도 같은 `range`(약 736,148행)라 경로 변화가 없습니다. |
+
+1번은 동작을 바꾸지 않았으므로 결과 집합과 안내 문구에 차이가 없습니다.
+탐침 유지의 대가는 차원당 스캔 1회이며, 마커가 있는 운영 환경에서는 탐침이
+원래도 돌지 않아 추가 비용이 없습니다.
+
+EXPLAIN 근거(2026-09-06 실측, `scripts/db_readonly_query.py`):
+
+- 탐침(날짜 무): `type: index`, `key: ix_bid_results_bidwinnr_nm`,
+  `rows: 3,118,641`, `possible_keys: None`, `Extra: Using where; Using index`
+- 탐침(날짜 유, 2026년): `type: range`, `key: bid_results_rl_openg_dt_00b70e7a`,
+  `rows: 501,266`, `Extra: Using index condition; Using where`
+- 사용자 기관명 `contains` COUNT(날짜 무): `type: index`,
+  `key: bid_announcements_dminstt_nm_952da702`, `rows: 2,295,025`,
+  `possible_keys: None`
+- 사용자 기관명 `contains` COUNT(날짜 유): `type: range`,
+  `key: bid_announcements_bid_ntce_dt_c42f1afb`, `rows: 707,124`
+- `dminstt_nm` GROUP BY(날짜 유, 힌트 무): `type: range`,
+  `key: bid_announcements_bid_ntce_dt_c42f1afb`, `rows: 707,124`,
+  `Extra: Using index condition; Using where; Using temporary; Using filesort`
+- `dminstt_nm` GROUP BY(날짜 유, 힌트 유): `type: range`,
+  `key: ix_bid_ann_dt_cat`, `rows: 736,148`, Extra 동일
+- `bid_ntce_nm` GROUP BY(날짜 유, 힌트 무/유): 위와 같은 계열로
+  `range` 707,124행과 힌트 시 `range` 736,148행, Extra 동일
