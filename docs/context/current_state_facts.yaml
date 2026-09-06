@@ -295,20 +295,22 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/ops/scale_and_silent_failure_audit_20260807.md
   - id: drift_job
-    status: blocked
-    decision_date: "2026-09-03"
-    claim: "드리프트 job은 baseline이 생길 때까지 꺼져 있으며 재학습 후 활성화를 대기합니다."
-    document_anchor: "드리프트 job은 baseline"
+    status: active
+    decision_date: "2026-09-06"
+    claim: "드리프트 감시는 Servc baseline(b_20260906_servc_post_regime) 기준으로 진행 중(ML_DRIFT_MONITOR_ENABLED 기본값 True)이며, Thng baseline은 없어 해당 모델만 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록합니다."
+    document_anchor: "드리프트 감시는 Servc baseline"
     evidence:
       - docs/ops/psi_drift_monitoring.md
+      - src/app/core/config.py
+      - tests/test_psi_drift_wiring.py
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/psi_drift_monitoring.md
   - id: coldsql_rerun
-    status: blocked
-    decision_date: "2026-08-30"
-    claim: "RAG 정형 질의 cold SQL은 최대 97,087.81ms이며 재측정을 대기합니다."
-    document_anchor: "RAG 정형 질의 cold SQL"
+    status: active
+    decision_date: "2026-09-06"
+    claim: "RAG 정형 질의 cold SQL 재측정(2026-09-06, 버퍼풀 콜드)은 sql 구간 콜드 P50 86,539.54ms·콜드 max 101,496.91ms·웜 P50 62.02ms·웜 max 1,015.64ms이며 콜드 표본 2건으로 측정 상태는 partial이고 이전 관찰치 97,087.81ms와 같은 계열이 재현됐으나 canonical 게이트 4건 미충족이라 정본 수치가 아니며 정본 측정을 추진합니다."
+    document_anchor: "RAG 정형 질의 cold SQL 재측정"
     evidence:
       - docs/analysis/rag_structured_sql_coldstart_20260830.md
     related_documents:
