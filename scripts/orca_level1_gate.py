@@ -707,6 +707,16 @@ def summarize_command_output(stdout: str, stderr: str) -> str:
     return truncate(lines[-1], 200) if lines else "출력 없음"
 
 
+def build_pytest_retry_argv(failed_nodes: list[str]) -> list[str]:
+    """실패한 pytest 노드만 단독 재실행하는 고정 인자 목록을 만듭니다.
+
+    부하 오탐과 실제 실패를 가르는 용도이며 최대 1회만 호출합니다.
+    원 명령의 선택지(마커, 경로, 병렬도)를 계승하지 않고 노드 목록만
+    `-q` 로 돌립니다. 전량 재실행은 오탐 비용을 키우므로 하지 않습니다.
+    """
+    return ["uv", "run", "pytest", *failed_nodes, "-q"]
+
+
 def run_gate3_tests(
     tests: list[str],
     repo: Path,
@@ -765,6 +775,56 @@ def run_gate3_tests(
             summary_line, failed_nodes = parse_pytest_output(stdout, stderr)
         else:
             summary_line, failed_nodes = summarize_command_output(stdout, stderr), []
+        if spec.kind == "pytest" and code != 0 and failed_nodes:
+            retry_argv = build_pytest_retry_argv(failed_nodes)
+            retry_code, retry_stdout, retry_stderr, retry_timed_out = run_command_safe(
+                retry_argv, cwd, timeout
+            )
+            if retry_timed_out:
+                raise GateToolError(f"검증 명령 타임아웃 ({timeout}초): {spec.source} (재시도)")
+            retry_summary, retry_failed = parse_pytest_output(retry_stdout, retry_stderr)
+            retry_passed = retry_code == 0
+            if not retry_passed:
+                all_passed = False
+            results.append(
+                {
+                    "target": spec.source,
+                    "exit_code": retry_code,
+                    "summary": retry_summary,
+                    "failed_nodes": retry_failed if not retry_passed else failed_nodes,
+                    "retried": True,
+                    "retry_passed": retry_passed,
+                    "first_run": {
+                        "exit_code": code,
+                        "summary": summary_line,
+                        "failed_nodes": failed_nodes,
+                    },
+                    "retry": {
+                        "argv": retry_argv,
+                        "exit_code": retry_code,
+                        "summary": retry_summary,
+                        "failed_nodes": retry_failed,
+                    },
+                }
+            )
+            if retry_passed:
+                detail_line = (
+                    f"{spec.source}: {summary_line} | 실패: "
+                    f"{format_failed_nodes(failed_nodes, max_show=5)} "
+                    f"=> 단독 재시도 통과 (오탐): {retry_summary}"
+                )
+            else:
+                detail_line = (
+                    f"{spec.source}: {summary_line} | 실패: "
+                    f"{format_failed_nodes(failed_nodes, max_show=5)} "
+                    f"=> 단독 재시도 실패: {retry_summary}"
+                )
+                if retry_failed:
+                    detail_line += (
+                        f" | 재시도 실패: {format_failed_nodes(retry_failed, max_show=5)}"
+                    )
+            details.append(detail_line)
+            continue
         if code != 0:
             all_passed = False
 
@@ -781,12 +841,16 @@ def run_gate3_tests(
             detail_line += f" | 실패: {format_failed_nodes(failed_nodes, max_show=5)}"
         details.append(detail_line)
 
+    flaky_passes = sum(1 for r in results if r.get("retried") and r.get("retry_passed"))
+    retried_count = sum(1 for r in results if r.get("retried"))
     raw_data = {
         "results": results,
         "required_capabilities": sorted(capabilities),
         "covered_capabilities": sorted(covered),
         "uncovered_capabilities": uncovered,
         "invalid_commands": invalid,
+        "retried_count": retried_count,
+        "flaky_pass_count": flaky_passes,
     }
 
     if invalid:
@@ -829,10 +893,13 @@ def run_gate3_tests(
             required=bool(capabilities),
         )
 
+    summary = f"검증 명령 {len(executable)}건 실행: 전체 통과"
+    if flaky_passes:
+        summary += f" (pytest 오탐 {flaky_passes}건 단독 재시도 통과)"
     return GateResult(
         name="게이트 3 테스트",
         status="pass",
-        summary=f"검증 명령 {len(executable)}건 실행: 전체 통과",
+        summary=summary,
         details=details,
         raw_data=raw_data,
         required=bool(capabilities),

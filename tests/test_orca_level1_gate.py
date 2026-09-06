@@ -1294,3 +1294,88 @@ def test_compose_rejects_options_outside_allowlist():
     ):
         with pytest.raises(ValueError):
             parse_verification_command(rejected)
+
+
+# ---------------------------------------------------------------------------
+# 게이트 3 pytest 실패 노드 단독 재시도 (2026-09-06)
+# ---------------------------------------------------------------------------
+
+
+def test_gate3_retries_failed_nodes_once_and_passes_on_flake():
+    """첫 실패 후 실패 노드만 한 번 재실행해 통과하면 게이트는 통과한다."""
+    from scripts.orca_level1_gate import build_pytest_retry_argv
+
+    assert build_pytest_retry_argv(["tests/test_a.py::test_bad"]) == [
+        "uv",
+        "run",
+        "pytest",
+        "tests/test_a.py::test_bad",
+        "-q",
+    ]
+
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.side_effect = [
+            (1, "FAILED tests/test_a.py::test_bad\n1 failed in 0.01s", "", False),
+            (0, "1 passed in 0.01s", "", False),
+        ]
+        g = run_gate3_tests(["tests/test_a.py"], Path("."))
+
+    assert g.status == "pass"
+    assert "오탐" in g.summary
+    assert mock_cmd.call_count == 2
+    retry_argv = mock_cmd.call_args_list[1].args[0]
+    assert retry_argv == ["uv", "run", "pytest", "tests/test_a.py::test_bad", "-q"]
+    entry = g.raw_data["results"][0]
+    assert entry["retried"] is True
+    assert entry["retry_passed"] is True
+    assert entry["exit_code"] == 0
+    assert entry["first_run"]["exit_code"] == 1
+    assert entry["first_run"]["failed_nodes"] == ["tests/test_a.py::test_bad"]
+    assert entry["retry"]["exit_code"] == 0
+    assert any("재시도 통과" in line for line in g.details)
+
+
+def test_gate3_retry_failure_keeps_fail():
+    """단독 재실행도 실패하면 게이트는 실패를 유지한다."""
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.side_effect = [
+            (1, "FAILED tests/test_a.py::test_bad\n1 failed in 0.01s", "", False),
+            (1, "FAILED tests/test_a.py::test_bad\n1 failed in 0.01s", "", False),
+        ]
+        g = run_gate3_tests(["tests/test_a.py"], Path("."))
+
+    assert g.status == "fail"
+    assert mock_cmd.call_count == 2
+    entry = g.raw_data["results"][0]
+    assert entry["retried"] is True
+    assert entry["retry_passed"] is False
+    assert entry["first_run"]["exit_code"] == 1
+    assert entry["retry"]["exit_code"] == 1
+    assert any("재시도 실패" in line for line in g.details)
+
+
+def test_gate3_no_retry_without_failed_nodes():
+    """실패 노드를 못 구하면 원 명령을 다시 돌리지 않고 실패로 남긴다."""
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (1, "1 failed in 0.01s", "", False)
+        g = run_gate3_tests(["tests/test_a.py"], Path("."))
+
+    assert g.status == "fail"
+    assert mock_cmd.call_count == 1
+    assert g.raw_data["results"][0].get("retried") is not True
+
+
+def test_gate3_non_pytest_command_is_not_retried():
+    """pytest 가 아닌 검증 명령은 실패해도 재시도하지 않는다."""
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (1, "mypy error", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["uv run mypy src"],
+            capabilities={"backend_mypy"},
+        )
+
+    assert g.status == "fail"
+    assert mock_cmd.call_count == 1
+    assert g.raw_data["results"][0].get("retried") is not True
