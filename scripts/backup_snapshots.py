@@ -109,26 +109,23 @@ def list_snapshots(snapshots_dir: Path | None = None) -> list[dict[str, Any]]:
             manifest_file = item / MANIFEST_FILENAME
             if manifest_file.exists():
                 is_valid, _, manifest = verify_snapshot(item)
-                snapshots.append(
-                    {
-                        "dir": str(item),
-                        "name": item.name,
-                        "created_at": manifest.get("created_at", "unknown"),
-                        "head_commit": manifest.get("head_commit", "unknown"),
-                        "valid": is_valid,
-                    }
-                )
+                entry = {
+                    "dir": str(item),
+                    "name": item.name,
+                    "created_at": manifest.get("created_at", "unknown"),
+                    "head_commit": manifest.get("head_commit", "unknown"),
+                    "valid": is_valid,
+                }
             else:
-                snapshots.append(
-                    {
-                        "dir": str(item),
-                        "name": item.name,
-                        "created_at": "unknown",
-                        "head_commit": "unknown",
-                        "valid": False,
-                        "error": f"매니페스트 파일 없음: {manifest_file.name}",
-                    }
-                )
+                entry = {
+                    "dir": str(item),
+                    "name": item.name,
+                    "created_at": "unknown",
+                    "head_commit": "unknown",
+                    "valid": False,
+                    "error": f"매니페스트 파일 없음: {manifest_file.name}",
+                }
+            snapshots.append(entry)
 
     if not snapshots:
         print("  유효한 백업 스냅샷이 없습니다.")
@@ -157,8 +154,7 @@ def prune_snapshots(
     2. 삭제 전 남길 스냅샷(keep)과 삭제 대상(stale)의 분할 정합성을 검증합니다.
     3. 보존 대상 스냅샷의 무결성을 검증하며, 매니페스트 부재도 실패로 처리해
        판정 실패 또는 검증 오류 시 아무것도 삭제하지 않습니다 (fail-closed).
-    4. 삭제 대상 경로가 스냅샷 디렉토리 직계 하위인지 엄격히 검증하며,
-       삭제 대상에 심볼릭 링크가 있으면 전체 정리를 중단합니다 (fail-closed).
+    4. 삭제 대상 경로가 스냅샷 디렉토리 직계 하위인지 엄격히 검증하며, 심볼릭 링크 감지 시 전체 정리를 중단합니다.
     5. 삭제 후에도 보존 대상 스냅샷 개수가 retain_count보다 적게 남지 않음을 보장합니다.
     """
     if retain_count < 1:
@@ -225,20 +221,12 @@ def prune_snapshots(
     except Exception as exc:
         errors.append(f"경로 안전 검증 중 예외 발생: {exc}")
 
-    # 4. 보존 대상 스냅샷의 유효성 검증 (매니페스트 부재는 실패로 처리)
+    # 4. 보존 대상 스냅샷의 유효성 검증 (매니페스트 부재 포함)
     if validate_retained:
         for item in keep:
-            manifest_file = item / MANIFEST_FILENAME
-            if not manifest_file.exists():
-                errors.append(
-                    f"보존 대상 스냅샷 매니페스트 없음 ({item.name}): {manifest_file.name}"
-                )
-            else:
-                is_valid, v_errors, _ = verify_snapshot(item)
-                if not is_valid:
-                    errors.append(
-                        f"보존 대상 스냅샷 무결성 손상 ({item.name}): {', '.join(v_errors)}"
-                    )
+            is_valid, v_errors, _ = verify_snapshot(item)
+            if not is_valid:
+                errors.append(f"보존 대상 스냅샷 무결성 손상 ({item.name}): {', '.join(v_errors)}")
 
     # 안전 검증 실패 시 아무것도 삭제하지 않고 반환 (Fail-Closed)
     if errors:

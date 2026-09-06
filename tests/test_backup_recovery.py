@@ -655,7 +655,7 @@ def test_prune_retained_manifestless_fails_closed(tmp_path: Path):
     result = prune_snapshots_new(tmp_path, retain_count=1, delete=True)
     assert result["deleted"] is False
     assert result["deleted_count"] == 0
-    assert any("매니페스트 없음" in err for err in result["errors"])
+    assert any("매니페스트 파일 없음" in err for err in result["errors"])
     assert keep_snap.exists()
     assert stale_snap.exists()
 
