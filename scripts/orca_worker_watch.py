@@ -42,6 +42,11 @@ from typing import Any
 DEFAULT_INTERVAL_SECONDS: float = 10.0
 DEFAULT_STALL_THRESHOLD_SECONDS: float = 300.0
 
+# fallback 경로 재확인 설정 (상수로 주입 가능, 기본 간격 3초)
+DEFAULT_FALLBACK_RECHECK_DELAY_SECONDS: float = 3.0
+FALLBACK_RECHECK_DELAY_SECONDS: float = DEFAULT_FALLBACK_RECHECK_DELAY_SECONDS
+FALLBACK_RECHECK_ENABLED: bool = True
+
 # Antigravity 파일 편집/생성 승인 대화창 신호 상수 (단일 진실 원천)
 FILE_EDIT_DIALOG_SIGNALS: tuple[str, ...] = (
     "Accept this file edit?",
@@ -159,6 +164,7 @@ class WorkerState:
     blocked_reason: str | None = None
     blocked_fix: str | None = None
     blocked_kind: BlockKind | None = None
+    blocked_source: str | None = None
     stall_candidate: bool = False
     unchanged_seconds: float = 0.0
     notes: list[str] = field(default_factory=list)
@@ -179,6 +185,7 @@ class WorkerState:
             "blocked_kind": self.blocked_kind,
             "blocked_reason": self.blocked_reason,
             "blocked_fix": self.blocked_fix,
+            "blocked_source": self.blocked_source,
             "stall_candidate": self.stall_candidate,
             "unchanged_seconds": round(self.unchanged_seconds, 1),
             "notes": list(self.notes),
@@ -203,6 +210,10 @@ def format_worker_state(s: WorkerState) -> list[str]:
         lines.append(f"        분류: {kind_label}")
         lines.append(f"        사유: {s.blocked_reason}")
         lines.append(f"        조치: {s.blocked_fix}")
+        if s.blocked_source == "screen":
+            lines.append("        근거: 화면")
+        elif s.blocked_source == "stream_fallback":
+            lines.append("        근거: 누적 출력 fallback (화면 아님, 2회 연속 관측)")
     for note in s.notes:
         lines.append(f"        참고: {note}")
     return lines
@@ -309,9 +320,99 @@ def terminal_map() -> dict[str, list[dict[str, Any]]]:
     return mapping
 
 
+def read_terminal_screen(handle: str) -> tuple[str, str] | None:
+    """orca terminal read --screen --json 을 호출하여 터미널의 렌더링된 화면을 조회합니다.
+
+    반환값:
+        (source, content) 튜플:
+        - source: "screen", "screen-unavailable", "stream", 또는 "" (source 필드가 없는 경우)
+        - content: 렌더링된 줄들을 개행으로 합친 텍스트 (ANSI escape 제거)
+        호출 실패나 JSON 파싱 실패 시 None 을 반환합니다.
+    """
+    raw = _run(
+        ["orca", "terminal", "read", "--terminal", handle, "--screen", "--json"],
+        timeout=60,
+    )
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is False:
+        return None
+    term = (payload.get("result") or {}).get("terminal") or {}
+    source = term.get("source")
+    if source is None:
+        source = ""
+    tail = term.get("tail")
+    if tail is None:
+        return None
+    content = "\n".join(str(line) for line in tail) if isinstance(tail, list) else str(tail)
+    return str(source), ANSI_RE.sub("", content)
+
+
 def terminal_tail(handle: str, lines: int = TAIL_LINES) -> str:
+    """터미널의 누적 스트림 출력의 마지막 N 줄을 읽습니다.
+
+    기존 누적 출력 fallback 및 레거시 인터페이스를 보존합니다.
+    """
     detail = ANSI_RE.sub("", _run(["orca", "terminal", "read", "--terminal", handle], timeout=60))
     return "\n".join(detail.splitlines()[-lines:])
+
+
+def inspect_terminal_block(
+    handle: str,
+    worktree_path: str | None = None,
+    repo: Path | None = None,
+    sleep_func: Callable[[float], None] | None = None,
+) -> tuple[tuple[str, str, BlockKind], str] | None:
+    """워커 터미널의 차단 상태를 점검합니다.
+
+    기본 경로는 렌더링된 화면(--screen)입니다.
+    화면을 얻지 못할 때(screen-unavailable, source 부재, 호출 실패 등)만
+    누적 출력으로 fallback 하되, 그때는 짧은 간격을 두고 2회 연속 지속을 요구합니다.
+
+    반환값:
+        ((reason, fix, kind), evidence_source) | None
+        evidence_source: "screen" | "stream_fallback"
+    """
+    screen_res = read_terminal_screen(handle)
+    if screen_res is not None:
+        source, screen_content = screen_res
+        if source == "screen":
+            # 기본 경로: 렌더링된 화면만으로 detect_block 수행
+            # 지나간 출력은 검사 대상이 아닙니다 (Fact 36).
+            found = detect_block(screen_content, worktree_path=worktree_path, repo=repo)
+            if found is not None:
+                return found, "screen"
+            return None
+
+    # Fallback 경로: 화면을 얻지 못함 (screen-unavailable, source 부재, 호출 실패 등)
+    if screen_res is not None and screen_res[1]:
+        stream_tail_1 = "\n".join(screen_res[1].splitlines()[-TAIL_LINES:])
+    else:
+        stream_tail_1 = terminal_tail(handle, lines=TAIL_LINES)
+
+    found1 = detect_block(stream_tail_1, worktree_path=worktree_path, repo=repo)
+    if found1 is None:
+        # 신호가 없으면 재확인 호출을 하지 않습니다 (루프 지연 방지, Fact 54).
+        return None
+
+    # 1회 신호 관측 -> 2회 연속 지속 확인 (Fact 39)
+    if not FALLBACK_RECHECK_ENABLED:
+        return found1, "stream_fallback"
+
+    do_sleep = sleep_func or time.sleep
+    if FALLBACK_RECHECK_DELAY_SECONDS > 0:
+        do_sleep(FALLBACK_RECHECK_DELAY_SECONDS)
+
+    stream_tail_2 = terminal_tail(handle, lines=TAIL_LINES)
+    found2 = detect_block(stream_tail_2, worktree_path=worktree_path, repo=repo)
+    if found2 is not None and found2[0] == found1[0]:
+        return found2, "stream_fallback"
+
+    return None
 
 
 def check_worker_done_report(
@@ -506,6 +607,7 @@ def collect(
     history: dict[str, dict[str, Any]] | None = None,
     now: float | None = None,
     stall_threshold: float = DEFAULT_STALL_THRESHOLD_SECONDS,
+    sleep_func: Callable[[float], None] | None = None,
 ) -> list[WorkerState]:
     terminals = terminal_map()
     states: list[WorkerState] = []
@@ -518,9 +620,20 @@ def collect(
         if info:
             state.terminal = info.get("handle")
             if state.terminal:
-                found = detect_block(terminal_tail(state.terminal), worktree_path=path, repo=repo)
-                if found:
+                blocked_res = inspect_terminal_block(
+                    state.terminal,
+                    worktree_path=path,
+                    repo=repo,
+                    sleep_func=sleep_func,
+                )
+                if blocked_res:
+                    found, evidence_source = blocked_res
                     state.blocked_reason, state.blocked_fix, state.blocked_kind = found
+                    state.blocked_source = evidence_source
+                    if evidence_source == "stream_fallback":
+                        state.notes.append(
+                            "차단 근거: 화면 미제공으로 인한 누적 출력 fallback (2회 연속 관측)"
+                        )
                     if state.blocked_kind == "failure":
                         state.notes.append(FAILURE_BLOCK_NOTE)
                     else:
@@ -658,6 +771,7 @@ def watch_loop(
             history=history,
             now=now,
             stall_threshold=stall_threshold,
+            sleep_func=do_sleep,
         )
         if history and not any(s.unchanged_seconds > 0 or s.stall_candidate for s in states):
             update_history(states, history, now, stall_threshold)
@@ -672,6 +786,7 @@ def watch_loop(
                 s.blocked,
                 s.blocked_kind,
                 s.blocked_reason,
+                s.blocked_source,
                 s.stall_candidate,
             )
             for s in states

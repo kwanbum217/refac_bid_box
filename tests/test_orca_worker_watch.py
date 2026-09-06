@@ -130,7 +130,8 @@ def test_collect_adds_advice_note_on_blocked() -> None:
         patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
         patch("scripts.orca_worker_watch.terminal_map", return_value=fake_terminals),
         patch(
-            "scripts.orca_worker_watch.terminal_tail", return_value="Accept this file edit?\n[Y/n]"
+            "scripts.orca_worker_watch.read_terminal_screen",
+            return_value=("screen", "Accept this file edit?\n[Y/n]"),
         ),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
         patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
@@ -139,6 +140,7 @@ def test_collect_adds_advice_note_on_blocked() -> None:
         assert len(states) == 1
         assert states[0].blocked is True
         assert states[0].blocked_kind == "prompt"
+        assert states[0].blocked_source == "screen"
         assert "파일 편집" in (states[0].blocked_reason or "")
         assert any("터미널을 직접 확인" in note for note in states[0].notes)
 
@@ -299,8 +301,8 @@ def test_collect_adds_failure_note_on_failure_block() -> None:
         patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
         patch("scripts.orca_worker_watch.terminal_map", return_value=fake_terminals),
         patch(
-            "scripts.orca_worker_watch.terminal_tail",
-            return_value="Error: network error while streaming response",
+            "scripts.orca_worker_watch.read_terminal_screen",
+            return_value=("screen", "Error: network error while streaming response"),
         ),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
         patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
@@ -308,6 +310,7 @@ def test_collect_adds_failure_note_on_failure_block() -> None:
         states = watch.collect(watch.Path("/tmp/repo"), "main")
         assert len(states) == 1
         assert states[0].blocked_kind == "failure"
+        assert states[0].blocked_source == "screen"
         assert any("재전송" in note for note in states[0].notes)
 
 
@@ -389,7 +392,10 @@ def test_collect_selects_worker_terminal_over_shell(capsys: pytest.CaptureFixtur
         patch("scripts.orca_worker_watch.list_worktrees", return_value=fake_worktrees),
         patch("scripts.orca_worker_watch.worktree_progress", return_value=(1, 0)),
         patch("scripts.orca_worker_watch.terminal_map", return_value=fake_terminals),
-        patch("scripts.orca_worker_watch.terminal_tail", return_value="working normally"),
+        patch(
+            "scripts.orca_worker_watch.read_terminal_screen",
+            return_value=("screen", "working normally"),
+        ),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
         patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
     ):
@@ -762,7 +768,7 @@ def test_unanswered_question_from_dead_terminal_is_ignored():
             "scripts.orca_worker_watch.terminal_map",
             return_value={"/tmp/wt": [{"handle": "term_live", "title": "worker"}]},
         ),
-        patch("scripts.orca_worker_watch.terminal_tail", return_value=""),
+        patch("scripts.orca_worker_watch.read_terminal_screen", return_value=("screen", "")),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
         patch(
             "scripts.orca_worker_watch.collect_unanswered_questions",
@@ -793,7 +799,7 @@ def test_unanswered_question_from_live_terminal_blocks():
             "scripts.orca_worker_watch.terminal_map",
             return_value={"/tmp/wt": [{"handle": "term_live", "title": "worker"}]},
         ),
-        patch("scripts.orca_worker_watch.terminal_tail", return_value=""),
+        patch("scripts.orca_worker_watch.read_terminal_screen", return_value=("screen", "")),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
         patch(
             "scripts.orca_worker_watch.collect_unanswered_questions",
@@ -812,3 +818,190 @@ def test_unanswered_question_from_live_terminal_blocks():
     blocked = [s for s in states if s.blocked_kind == "answer_pending"]
     assert len(blocked) == 1
     assert "msg_q" in blocked[0].blocked_fix
+
+
+# ---------------------------------------------------------------------------
+# 화면 기준 차단 검사 및 fallback 지속성 검증 (task_76e874acc927)
+# ---------------------------------------------------------------------------
+
+
+def test_screen_path_detects_block_signal() -> None:
+    """1. 화면 경로에서 신호가 있으면 즉시 차단으로 판정하고 근거를 screen 으로 기록한다."""
+    with patch(
+        "scripts.orca_worker_watch.read_terminal_screen",
+        return_value=("screen", "Accept this file edit?\n[Y/n]"),
+    ):
+        res = watch.inspect_terminal_block("term_test")
+        assert res is not None
+        (reason, _fix, kind), evidence = res
+        assert "파일 편집" in reason
+        assert kind == "prompt"
+        assert evidence == "screen"
+
+
+def test_screen_path_ignores_boot_string_absent_from_screen() -> None:
+    """2. 화면에는 없고 누적 출력에만 있는 부팅 문자열은 차단으로 잡지 않는다."""
+    boot_output = "Welcome to the Antigravity CLI. You are currently not signed in."
+    rendered_screen = (
+        "  Composer 2.5 · 34%\n  ~/workspaces/refac_bid_box\n> Accept-edits mode active"
+    )
+
+    with (
+        patch(
+            "scripts.orca_worker_watch.read_terminal_screen",
+            return_value=("screen", rendered_screen),
+        ),
+        patch(
+            "scripts.orca_worker_watch.terminal_tail",
+            return_value=boot_output,
+        ),
+    ):
+        res = watch.inspect_terminal_block("term_test")
+        assert res is None, "화면에 없는 지나간 부팅 출력은 차단으로 오판하지 않아야 한다"
+
+
+def test_screen_unavailable_single_observation_is_not_blocked() -> None:
+    """3-A. screen-unavailable 일 때 1회만 관측된 신호는 차단으로 판정하지 않는다."""
+    first_tail = "Accept this file edit?\n[Y/n]"
+    second_tail = "file edited successfully\n$ "
+    mock_sleep: list[float] = []
+
+    with (
+        patch(
+            "scripts.orca_worker_watch.read_terminal_screen",
+            return_value=("screen-unavailable", first_tail),
+        ),
+        patch("scripts.orca_worker_watch.terminal_tail", return_value=second_tail),
+    ):
+        res = watch.inspect_terminal_block(
+            "term_test",
+            sleep_func=lambda s: mock_sleep.append(s),
+        )
+        assert res is None, "2회차 관측에서 신호가 사라졌으므로 차단이 아니어야 한다"
+        assert len(mock_sleep) == 1
+        assert mock_sleep[0] == watch.FALLBACK_RECHECK_DELAY_SECONDS
+
+
+def test_screen_unavailable_two_consecutive_observations_is_blocked() -> None:
+    """3-B. screen-unavailable 일 때 2회 연속 관측되면 차단으로 판정한다."""
+    persistent_tail = "Accept this file edit?\n[Y/n]"
+    mock_sleep: list[float] = []
+
+    with (
+        patch(
+            "scripts.orca_worker_watch.read_terminal_screen",
+            return_value=("screen-unavailable", persistent_tail),
+        ),
+        patch(
+            "scripts.orca_worker_watch.terminal_tail",
+            return_value=persistent_tail,
+        ),
+    ):
+        res = watch.inspect_terminal_block(
+            "term_test",
+            sleep_func=lambda s: mock_sleep.append(s),
+        )
+        assert res is not None, "2회 연속 관측되었으므로 차단으로 판정되어야 한다"
+        (reason, _fix, kind), evidence = res
+        assert "파일 편집" in reason
+        assert kind == "prompt"
+        assert evidence == "stream_fallback"
+        assert len(mock_sleep) == 1
+        assert mock_sleep[0] == watch.FALLBACK_RECHECK_DELAY_SECONDS
+
+
+def test_fallback_block_evidence_labeled_in_output_and_json(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """4. fallback 판정 시 사람이 읽는 출력과 JSON 에 근거가 화면이 아니라는 표시가 드러난다."""
+    persistent_tail = "Error: network error while streaming response"
+    fake_worktrees = [("w1", "/tmp/w1", "feature")]
+    fake_terminals = {"/tmp/w1": [{"handle": "term_fb"}]}
+
+    with (
+        patch("scripts.orca_worker_watch.list_worktrees", return_value=fake_worktrees),
+        patch("scripts.orca_worker_watch.worktree_progress", return_value=(0, 0)),
+        patch("scripts.orca_worker_watch.terminal_map", return_value=fake_terminals),
+        patch(
+            "scripts.orca_worker_watch.read_terminal_screen",
+            return_value=("screen-unavailable", persistent_tail),
+        ),
+        patch("scripts.orca_worker_watch.terminal_tail", return_value=persistent_tail),
+        patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
+        patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
+    ):
+        states = watch.collect(
+            watch.Path("/tmp/repo"),
+            sleep_func=lambda s: None,
+        )
+        assert len(states) == 1
+        state = states[0]
+        assert state.blocked is True
+        assert state.blocked_source == "stream_fallback"
+        assert any("누적 출력 fallback" in note for note in state.notes)
+
+        # 1. 사람 판독 출력 확인
+        lines = watch.format_worker_state(state)
+        assert any("근거: 누적 출력 fallback" in line for line in lines)
+
+        # 2. JSON 직렬화 확인
+        payload = state.as_dict()
+        assert payload["blocked_source"] == "stream_fallback"
+
+        # 3. main --json 실행 확인
+        with patch("scripts.orca_worker_watch.collect", return_value=[state]):
+            code = watch.main(["--json"])
+            assert code == 1
+            out = capsys.readouterr().out
+            assert '"blocked_source": "stream_fallback"' in out
+
+
+def test_no_signal_does_not_call_recheck_sleep_or_tail() -> None:
+    """5. 신호가 없으면 재확인 sleep 이나 2회차 조회를 하지 않는다."""
+    clean_tail = "Running tests...\nAll 50 tests passed.\n$ "
+    sleep_calls: list[float] = []
+    tail_calls: list[str] = []
+
+    def mock_tail(handle: str, lines: int = watch.TAIL_LINES) -> str:
+        tail_calls.append(handle)
+        return clean_tail
+
+    with (
+        patch(
+            "scripts.orca_worker_watch.read_terminal_screen",
+            return_value=("screen-unavailable", clean_tail),
+        ),
+        patch("scripts.orca_worker_watch.terminal_tail", side_effect=mock_tail),
+    ):
+        res = watch.inspect_terminal_block(
+            "term_clean",
+            sleep_func=lambda s: sleep_calls.append(s),
+        )
+        assert res is None
+        assert len(sleep_calls) == 0, "신호가 없으면 sleep 을 호출하지 않아야 한다"
+        assert len(tail_calls) == 0, (
+            "screen_res 에서 이미 clean 을 확인했으므로 추가 조회가 없어야 한다"
+        )
+
+
+def test_no_signal_failed_screen_call_does_not_recheck() -> None:
+    """5-B. screen 호출 실패 fallback 에서도 1회차 누적 출력에 신호가 없으면 재확인 sleep 을 하지 않는다."""
+    clean_tail = "Running tests...\nAll 50 tests passed.\n$ "
+    sleep_calls: list[float] = []
+    tail_calls: list[str] = []
+
+    def mock_tail(handle: str, lines: int = watch.TAIL_LINES) -> str:
+        tail_calls.append(handle)
+        return clean_tail
+
+    with (
+        patch("scripts.orca_worker_watch.read_terminal_screen", return_value=None),
+        patch("scripts.orca_worker_watch.terminal_tail", side_effect=mock_tail),
+    ):
+        res = watch.inspect_terminal_block(
+            "term_clean",
+            sleep_func=lambda s: sleep_calls.append(s),
+        )
+        assert res is None
+        assert len(sleep_calls) == 0, "신호가 없으면 재확인 sleep 을 하지 않아야 한다"
+        assert len(tail_calls) == 1, "1회차 조회만 수행되어야 한다"
