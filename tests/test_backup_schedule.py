@@ -1,12 +1,38 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from scripts.backup_recovery import run_restore_drill
+from scripts.backup_recovery_core import MANIFEST_FILENAME, sha256_file
 from src.tasks import scheduled_tasks
+
+
+def _write_valid_snapshot_manifest(snap: Path) -> None:
+    """prune 보존 검증을 통과하는 정상 매니페스트를 작성합니다."""
+    components = {}
+    for name, filename, content in (
+        ("database", "db_dump.sql.gz", b"valid_db_data"),
+        ("chroma_db", "chroma_db.tar.gz", b"valid_chroma_data"),
+        ("models", "models.tar.gz", b"valid_model_data"),
+    ):
+        file_path = snap / filename
+        file_path.write_bytes(content)
+        components[name] = {
+            "path": filename,
+            "size_bytes": len(content),
+            "sha256": sha256_file(file_path),
+        }
+    manifest_data = {
+        "schema": "BACKUP_MANIFEST_V1",
+        "created_at": "2026-09-05T12:00:00Z",
+        "head_commit": "valid_head",
+        "components": components,
+    }
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest_data), encoding="utf-8")
 
 
 def test_retention_dry_run_lists_without_deleting(tmp_path: Path):
@@ -84,6 +110,9 @@ def test_retention_prune_deletes_excess_snapshots_when_delete_is_true(tmp_path: 
     ]
     for s in snapshots:
         (tmp_path / s).mkdir()
+    # 새 계약: 보존 대상(최신 2개)에 유효한 매니페스트를 갖춰 fail-closed 를 통과한다.
+    _write_valid_snapshot_manifest(tmp_path / "snapshot_20260903_010000")
+    _write_valid_snapshot_manifest(tmp_path / "snapshot_20260904_010000")
 
     # retain_count=2, delete=True -> 오래된 2개(0901, 0902) 삭제, 최신 2개(0903, 0904) 보존
     result = prune_snapshots(tmp_path, retain_count=2, delete=True)
@@ -119,6 +148,23 @@ def test_retention_fail_closed_on_corrupt_manifest(tmp_path: Path):
     assert old_snap.exists()
 
 
+def test_retention_manifestless_retained_fails_closed(tmp_path: Path):
+    """보존 대상에 매니페스트가 없으면 prune 이 fail-closed 로 아무것도 삭제하지 않습니다."""
+    from scripts.backup_snapshots import prune_snapshots
+
+    keep_snap = tmp_path / "snapshot_20260902_010000"
+    keep_snap.mkdir()
+    stale_snap = tmp_path / "snapshot_20260901_010000"
+    stale_snap.mkdir()
+
+    result = prune_snapshots(tmp_path, retain_count=1, delete=True)
+    assert result["deleted"] is False
+    assert result["deleted_count"] == 0
+    assert any("매니페스트 파일 없음" in err for err in result["errors"])
+    assert keep_snap.exists()
+    assert stale_snap.exists()
+
+
 def test_retention_never_leaves_less_than_retain_count(tmp_path: Path):
     """후보 개수가 retain_count 이하이면 삭제 대상이 0개이며 아무것도 삭제되지 않습니다."""
     from scripts.backup_snapshots import prune_snapshots
@@ -142,6 +188,9 @@ async def test_backup_task_executes_retention_deletion(tmp_path: Path):
     snap3 = tmp_path / "snapshot_20260903_010000"
     for s in (snap1, snap2, snap3):
         s.mkdir()
+    # 새 계약: 보존 대상(snap2, snap3)에 유효한 매니페스트를 갖춰 fail-closed 를 통과한다.
+    _write_valid_snapshot_manifest(snap2)
+    _write_valid_snapshot_manifest(snap3)
 
     with (
         patch.object(scheduled_tasks.settings, "BACKUP_SCHEDULE_ENABLED", True),
