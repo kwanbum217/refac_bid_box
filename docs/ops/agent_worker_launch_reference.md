@@ -581,16 +581,23 @@ orca terminal create --worktree path:<워크트리> \
   --title "<섹션명>" \
   --command "uv run python scripts/orca_agy_launch.py --model gemini-3.8-flash-high" --json
 
-# 4. Task 투입 (dispatch --launcher 가 preamble 추출 -> <워크트리>/.orca/preamble_{task_id}_{dispatch_id}_{nonce}.txt 고유 파일 기록 -> 런처 소비 후 즉시 삭제 확인 -> 감시기 부착을 일괄 처리합니다)
-uv run python scripts/orca_taskctl.py dispatch --intent <의도.yaml> --terminal <handle> --launcher
+# 4. Task 생성 (dispatch 는 Task 를 만들지 않습니다. 이 단계를 건너뛰면 Task not found 로 끝납니다)
+uv run python scripts/orca_taskctl.py create --intent <의도.yaml> --run-id <run_id> \
+  --task-title "<제목>" --display-name "<워커 행 이름>" --json
+# 출력의 task_id 와 capsule 을 다음 단계에 그대로 넘깁니다
 
-# 5. 실존 및 진행 확인
+# 5. Task 투입 (dispatch --launcher 가 preamble 추출 -> <워크트리>/.orca/preamble_{task_id}_{dispatch_id}_{nonce}.txt 고유 파일 기록 -> 런처 소비 후 즉시 삭제 확인 -> 감시기 부착을 일괄 처리합니다)
+uv run python scripts/orca_taskctl.py dispatch --intent <의도.yaml> --run-id <run_id> \
+  --task-id <4단계 출력의 task_id> --capsule <4단계 출력의 capsule> \
+  --terminal <handle> --launcher --model <모델>
+
+# 6. 실존 및 진행 확인
 orca orchestration dispatch-show --task <task_id> --json
 ```
 
 `terminal create` 에는 `--repo` 플래그가 없습니다. `--worktree` 만 받습니다.
 
-**3 단계와 4 단계 사이에 두 가지를 반드시 하십시오.** 빠뜨리면 오류 문구가
+**3 단계와 5 단계 사이에 두 가지를 반드시 하십시오.** 빠뜨리면 오류 문구가
 원인을 가립니다 ([`orca_do_not_repeat.md`](orca_do_not_repeat.md) 21장).
 
 | 조치 | 이유 |
