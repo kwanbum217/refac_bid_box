@@ -3,17 +3,19 @@
 
 Orca 워커 읽기 스코프 사후 감사 도구 (Read Scope Post-Audit).
 
-워커 터미널의 화면 버퍼(또는 버퍼 텍스트 파일)를 파싱하여 워커가 Capsule 의
+워커 터미널의 보관된 스크롤백(또는 버퍼 텍스트 파일)을 파싱하여 워커가 Capsule 의
 `search_scope.allowed_globs` 및 `allowed_read_files` 범위를 벗어난 경로를
 실제로 읽었거나 접근했는지 사후에 검사합니다.
 
 [중요 한계 및 주의사항 (Limitations)]
-본 도구는 워커 터미널의 화면 버퍼(tail/preview)에 남아 있는 출력 텍스트에만 의존합니다.
-화면 버퍼는 스크롤이나 긴 출력으로 인해 잘리거나(truncated) 밀려날 수 있습니다.
-따라서 본 감사는 '화면 버퍼에 증거가 남아 있는 범위'에서만 유효하며,
-'위반 없음(clean)' 판정이 '실제로 위반이 전혀 없었다'는 완전한 증명이 되지는 못합니다.
-이 도구의 결과를 절대적인 안전 게이트나 커밋 차단용 하드 게이트로 오해해서는 안 되며,
-사후 감사 및 이상 징후 조기 탐지 목적으로 활용해야 합니다.
+본 도구는 커서 페이지네이션을 통해 워커 터미널에 보관된 스크롤백 전체를 수집하여 감사합니다.
+그러나 워커의 누적 출력이 매우 방대하여 호스트 런타임의 보관 한도를 초과하면,
+오래된 출력 줄은 호스트에서 폐기(dropped)되어 읽을 수 없습니다.
+이 경우 첫 응답의 oldestCursor 가 0 보다 커지며, 결과 JSON 의 evidence.complete 가 False 로 기록되어
+증거 불완전 상태임을 명확히 드러냅니다.
+따라서 evidence.complete 가 False 일 때는 유실된 이전 출력에 대한 위반 여부를 완전히 증명하지 못하며,
+한계가 완전히 사라진 것이 아니므로 사후 감사 및 이상 징후 조기 탐지의 신뢰도 지표로 활용해야 합니다.
+이 도구의 결과를 무조건적인 절대 안전 보장으로 오해해서는 안 됩니다.
 """
 
 from __future__ import annotations
@@ -73,6 +75,13 @@ SYSTEM_ALLOWLIST_CONTAINS: tuple[str, ...] = (
     "node_modules",
     "__pycache__",
 )
+
+# 페이지네이션 기본 설정 상수 (테스트 주입 가능)
+DEFAULT_MAX_PAGES: int = 200
+DEFAULT_PAGE_LIMIT: int = 1000
+
+MAX_PAGES: int = DEFAULT_MAX_PAGES
+PAGE_LIMIT: int = DEFAULT_PAGE_LIMIT
 
 
 def parse_search_scope_allowed_globs(capsule_text: str) -> list[str]:
@@ -216,38 +225,134 @@ def extract_paths_from_text(text: str) -> list[str]:
     return sorted(extracted)
 
 
+def read_terminal_scrollback(
+    handle: str,
+    *,
+    timeout: int = 30,
+    max_pages: int | None = None,
+    page_limit: int | None = None,
+) -> tuple[str, dict[str, Any]] | None:
+    """orca terminal read 를 커서 페이지네이션으로 호출하여 보관된 스크롤백 전체를 읽습니다.
+
+    반환값: (누적된 전체 텍스트, evidence 딕셔너리) 또는 실패 시 None
+    evidence:
+      - oldest_cursor: int (첫 응답의 oldestCursor)
+      - latest_cursor: int (마지막 응답의 latestCursor)
+      - lines_read: int (실제로 읽은 총 줄 수)
+      - complete: bool (oldest_cursor == 0)
+    """
+    limit = page_limit if page_limit is not None else PAGE_LIMIT
+    pages_ceiling = max_pages if max_pages is not None else MAX_PAGES
+
+    cursor: int = 0
+    all_lines: list[str] = []
+    first_oldest_cursor: int | None = None
+    last_latest_cursor: int = 0
+    total_lines_read: int = 0
+
+    for _ in range(pages_ceiling):
+        cmd = [
+            "orca",
+            "terminal",
+            "read",
+            "--terminal",
+            handle,
+            "--cursor",
+            str(cursor),
+            "--limit",
+            str(limit),
+            "--json",
+        ]
+        try:
+            proc = subprocess.run(  # nosec B603 B607
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except (subprocess.SubprocessError, OSError):
+            return None
+
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return None
+
+        try:
+            payload = json.loads(proc.stdout)
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+        if not isinstance(payload, dict) or payload.get("ok") is False:
+            return None
+
+        terminal = (payload.get("result") or {}).get("terminal")
+        if not isinstance(terminal, dict):
+            return None
+
+        oldest_raw = terminal.get("oldestCursor")
+        next_raw = terminal.get("nextCursor")
+        latest_raw = terminal.get("latestCursor")
+        count_raw = terminal.get("returnedLineCount")
+
+        try:
+            oldest_val = int(oldest_raw) if oldest_raw is not None else 0
+        except (ValueError, TypeError):
+            oldest_val = 0
+
+        try:
+            next_val = int(next_raw) if next_raw is not None else None
+        except (ValueError, TypeError):
+            next_val = None
+
+        try:
+            latest_val = int(latest_raw) if latest_raw is not None else 0
+        except (ValueError, TypeError):
+            latest_val = 0
+
+        if first_oldest_cursor is None:
+            first_oldest_cursor = oldest_val
+        last_latest_cursor = latest_val
+
+        tail = terminal.get("tail")
+        page_lines: list[str] = []
+        if isinstance(tail, list):
+            page_lines = [str(line) for line in tail]
+        elif isinstance(tail, str):
+            page_lines = tail.splitlines()
+
+        try:
+            returned_count = int(count_raw) if count_raw is not None else len(page_lines)
+        except (ValueError, TypeError):
+            returned_count = len(page_lines)
+
+        all_lines.extend(page_lines)
+        total_lines_read += len(page_lines)
+
+        # 무한 루프 방지 및 종료 조건 (fact 36)
+        if returned_count == 0 or next_val is None or next_val <= cursor:
+            break
+
+        cursor = next_val
+
+    if first_oldest_cursor is None:
+        first_oldest_cursor = 0
+
+    evidence = {
+        "oldest_cursor": first_oldest_cursor,
+        "latest_cursor": last_latest_cursor,
+        "lines_read": total_lines_read,
+        "complete": (first_oldest_cursor == 0),
+    }
+
+    return "\n".join(all_lines), evidence
+
+
 def read_terminal_buffer(handle: str, timeout: int = 30) -> str | None:
-    """orca terminal read 명령으로 워커 터미널의 화면 버퍼를 읽습니다."""
-    cmd = ["orca", "terminal", "read", "--terminal", handle, "--json"]
-    try:
-        proc = subprocess.run(  # nosec B603 B607
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except (subprocess.SubprocessError, OSError):
+    """orca terminal read 로 워커 터미널의 화면 버퍼를 읽습니다 (단일 텍스트 반환)."""
+    res = read_terminal_scrollback(handle, timeout=timeout)
+    if res is None:
         return None
-
-    if proc.returncode != 0 or not proc.stdout.strip():
-        return None
-
-    try:
-        payload = json.loads(proc.stdout)
-    except (json.JSONDecodeError, ValueError):
-        return None
-
-    if not isinstance(payload, dict) or payload.get("ok") is False:
-        return None
-
-    terminal = (payload.get("result") or {}).get("terminal") or {}
-    tail = terminal.get("tail")
-    if isinstance(tail, list):
-        return "\n".join(str(line) for line in tail)
-    if isinstance(tail, str):
-        return tail
-    return None
+    return res[0]
 
 
 def audit_read_scope(
@@ -258,6 +363,7 @@ def audit_read_scope(
     no_system_allowlist: bool = False,
     terminal_label: str | list[str] | None = None,
     text_file_label: str | None = None,
+    evidence: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """텍스트에서 경로를 추출하고 Capsule 의 읽기 허용 범위와 대조하여 판정합니다.
 
@@ -330,6 +436,16 @@ def audit_read_scope(
 
     result["capsule"] = str(capsule_file)
     result["repo"] = str(repo_path)
+    if evidence is not None:
+        result["evidence"] = evidence
+    else:
+        lines_count = len(text.splitlines())
+        result["evidence"] = {
+            "oldest_cursor": 0,
+            "latest_cursor": lines_count,
+            "lines_read": lines_count,
+            "complete": True,
+        }
     result["read_paths"] = read_paths
     result["outside_worktree"] = outside_sorted
     result["scope_excess"] = excess_sorted
@@ -388,6 +504,20 @@ def main(argv: list[str] | None = None) -> int:
         dest="no_system_allowlist",
         help="시스템 경로 허용 목록을 끄고 전량 판정",
     )
+    parser.add_argument(
+        "--max-pages",
+        dest="max_pages",
+        type=int,
+        default=None,
+        help=f"페이지네이션 최대 반복 횟수 (기본값: {DEFAULT_MAX_PAGES})",
+    )
+    parser.add_argument(
+        "--page-limit",
+        dest="page_limit",
+        type=int,
+        default=None,
+        help=f"회당 읽을 최대 줄 수 (기본값: {DEFAULT_PAGE_LIMIT})",
+    )
 
     args = parser.parse_args(argv)
 
@@ -416,6 +546,7 @@ def main(argv: list[str] | None = None) -> int:
     text_content: str
     terminal_label: str | list[str] | None = None
     text_file_label: str | None = None
+    evidence: dict[str, Any]
 
     if args.text_file:
         text_file_path = args.text_file
@@ -428,16 +559,40 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write(f"오류: 텍스트 파일 읽기 실패: {exc}\n")
             return 2
         text_file_label = str(text_file_path)
+        lines_count = len(text_content.splitlines())
+        evidence = {
+            "oldest_cursor": 0,
+            "latest_cursor": lines_count,
+            "lines_read": lines_count,
+            "complete": True,
+        }
     else:
         buffer_chunks: list[str] = []
+        evidence_list: list[dict[str, Any]] = []
         for handle in args.terminals:
-            chunk = read_terminal_buffer(handle)
-            if chunk is None:
+            res = read_terminal_scrollback(
+                handle,
+                max_pages=args.max_pages,
+                page_limit=args.page_limit,
+            )
+            if res is None:
                 sys.stderr.write(f"오류: 터미널 버퍼를 읽지 못했습니다 (handle={handle})\n")
                 return 2
+            chunk, ev = res
             buffer_chunks.append(chunk)
+            evidence_list.append(ev)
         text_content = "\n".join(buffer_chunks)
         terminal_label = args.terminals[0] if len(args.terminals) == 1 else args.terminals
+
+        if len(evidence_list) == 1:
+            evidence = evidence_list[0]
+        else:
+            evidence = {
+                "oldest_cursor": min((ev["oldest_cursor"] for ev in evidence_list), default=0),
+                "latest_cursor": max((ev["latest_cursor"] for ev in evidence_list), default=0),
+                "lines_read": sum((ev["lines_read"] for ev in evidence_list), default=0),
+                "complete": all(ev["complete"] for ev in evidence_list),
+            }
 
     exit_code, result = audit_read_scope(
         text=text_content,
@@ -446,6 +601,7 @@ def main(argv: list[str] | None = None) -> int:
         no_system_allowlist=args.no_system_allowlist,
         terminal_label=terminal_label,
         text_file_label=text_file_label,
+        evidence=evidence,
     )
 
     if exit_code == 2:
@@ -476,6 +632,13 @@ def main(argv: list[str] | None = None) -> int:
             "위반 없음 (clean)" if result["verdict"] == "clean" else "위반 발견 (violations)"
         )
         sys.stdout.write(f"[판정] {status_msg}\n")
+        ev = result.get("evidence") or {}
+        if ev.get("complete", True):
+            sys.stdout.write(f"[증거] 완전 (lines_read={ev.get('lines_read', 0)})\n")
+        else:
+            sys.stdout.write(
+                f"[증거] 불완전 (oldest_cursor={ev.get('oldest_cursor', 0)} 이전 줄 유실, lines_read={ev.get('lines_read', 0)})\n"
+            )
         if result["outside_worktree"]:
             sys.stdout.write(
                 f"  - outside_worktree ({len(result['outside_worktree'])}건): {result['outside_worktree']}\n"
