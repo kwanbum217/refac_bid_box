@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess  # nosec B404
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +61,51 @@ REQUIRED_WORKER_DONE_FIELDS = [
     "verdict",
     "blocking_issues",
 ]
+
+FROM_HANDLE_ENV_VAR = "ORCA_TERMINAL_HANDLE"
+
+
+def resolve_sender_identity(
+    from_handle: str | None = None,
+    dispatch_id: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> tuple[str, str, list[str]]:
+    """전송 신원(--from, --dispatch-id)을 해소합니다.
+
+    명시 인자가 환경변수보다 우선합니다. --from 미지정 시에만
+    ORCA_TERMINAL_HANDLE 환경변수를 사용합니다. dispatch-id 는
+    워커 터미널 환경에서 대응 근거가 확인되지 않았으므로 인자 필수이며,
+    없으면 ValueError 로 종료합니다. 신원 없이 전송하는 경로는 없습니다.
+    """
+    source = env if env is not None else os.environ
+    provenance: list[str] = []
+
+    explicit_from = (from_handle or "").strip()
+    if explicit_from:
+        resolved_from = explicit_from
+    else:
+        env_from = str(source.get(FROM_HANDLE_ENV_VAR, "") or "").strip()
+        if not env_from:
+            raise ValueError(
+                "--from 미지정이며 ORCA_TERMINAL_HANDLE 환경변수도 비어 있어 "
+                "전송자 신원을 해소할 수 없습니다. --from 으로 명시하십시오."
+            )
+        resolved_from = env_from
+        provenance.append(
+            f"--from 값을 {FROM_HANDLE_ENV_VAR} 환경변수에서 해소했습니다: {resolved_from}"
+        )
+
+    explicit_dispatch = (dispatch_id or "").strip()
+    if explicit_dispatch:
+        resolved_dispatch = explicit_dispatch
+    else:
+        raise ValueError(
+            "--dispatch-id 인자가 필요합니다. 워커 터미널 환경에서 "
+            "dispatch-id 에 대응하는 환경변수가 확인되지 않았으므로 "
+            "--dispatch-id 를 명시하십시오."
+        )
+
+    return resolved_from, resolved_dispatch, provenance
 
 
 def validate_worker_done(
@@ -276,13 +323,36 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     send_result = None
+    identity_provenance: list[str] = []
     if args.send:
         task_id = details.get("task_id") or ""
+        try:
+            resolved_from, resolved_dispatch, identity_provenance = resolve_sender_identity(
+                from_handle=args.from_handle,
+                dispatch_id=args.dispatch_id,
+            )
+        except ValueError as exc:
+            sys.stderr.write(f"오류 [orca_worker_done_guard]: 전송 신원 해소 실패: {exc}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "origin": "identity_missing",
+                            "violations": [str(exc)],
+                            "details": details,
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
         code, stdout, stderr = execute_orca_send(
             task_id=task_id,
-            from_handle=args.from_handle,
+            from_handle=resolved_from,
             to_handle=args.to_handle,
-            dispatch_id=args.dispatch_id,
+            dispatch_id=resolved_dispatch,
             subject=args.subject,
             body=args.body,
             outcome=args.outcome,
@@ -319,6 +389,7 @@ def main(argv: list[str] | None = None) -> int:
                     "task_id": details.get("task_id"),
                     "send_executed": args.send,
                     "send_result": send_result,
+                    "identity_resolution": identity_provenance,
                     "exit_code": 0,
                 },
                 ensure_ascii=False,
@@ -328,6 +399,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("worker_done 검증 통과!")
         if args.send:
+            for note in identity_provenance:
+                print(note)
             print("orca orchestration send 전송 완료.")
 
     return 0

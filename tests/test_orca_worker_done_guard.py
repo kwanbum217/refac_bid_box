@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 
 from scripts.orca_worker_done_guard import (
+    FROM_HANDLE_ENV_VAR,
     main,
+    resolve_sender_identity,
     validate_worker_done,
 )
 
@@ -234,3 +236,147 @@ def test_worker_done_guard_main_send(tmp_path: Path, monkeypatch, capsys):
     assert len(captured_send) == 1
     assert captured_send[0]["from_handle"] == "term_123"
     assert captured_send[0]["dispatch_id"] == "ctx_456"
+
+
+def _stub_valid_repo(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "scripts.orca_worker_done_guard.verify_commit_exists",
+        lambda repo, sha: (True, "OK"),
+    )
+    monkeypatch.setattr(
+        "scripts.orca_worker_done_guard.verify_changed_files_match",
+        lambda repo, base, branch, files: (True, "OK"),
+    )
+
+
+def _stub_send(monkeypatch, captured_send: list[dict]):
+    monkeypatch.setattr(
+        "scripts.orca_worker_done_guard.execute_orca_send",
+        lambda **kwargs: (captured_send.append(kwargs), (0, "ok", ""))[1],
+    )
+
+
+def _valid_pair(tmp_path: Path):
+    cap = tmp_path / "capsule.yaml"
+    report = tmp_path / "worker_done.json"
+    create_sample_capsule(cap, allowed_write=["src/app.py"])
+    create_sample_report(report, changed_files=["src/app.py"])
+    return cap, report
+
+
+def test_worker_done_guard_from_resolved_from_env(tmp_path: Path, monkeypatch, capsys):
+    """--from 미지정 시 ORCA_TERMINAL_HANDLE 에서 해소합니다."""
+    cap, report = _valid_pair(tmp_path)
+    _stub_valid_repo(monkeypatch)
+    captured_send: list[dict] = []
+    _stub_send(monkeypatch, captured_send)
+    monkeypatch.setenv(FROM_HANDLE_ENV_VAR, "term_env_1")
+
+    code = main(
+        [
+            "--capsule",
+            str(cap),
+            "--report",
+            str(report),
+            "--repo",
+            str(tmp_path),
+            "--send",
+            "--dispatch-id",
+            "ctx_456",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert len(captured_send) == 1
+    assert captured_send[0]["from_handle"] == "term_env_1"
+    assert FROM_HANDLE_ENV_VAR in out
+
+
+def test_worker_done_guard_identity_fail_closed(tmp_path: Path, monkeypatch, capsys):
+    """신원 해소 실패 시 전송을 시도하지 않고 오류로 종료합니다."""
+    cap, report = _valid_pair(tmp_path)
+    _stub_valid_repo(monkeypatch)
+    captured_send: list[dict] = []
+    _stub_send(monkeypatch, captured_send)
+    monkeypatch.delenv(FROM_HANDLE_ENV_VAR, raising=False)
+
+    code = main(
+        [
+            "--capsule",
+            str(cap),
+            "--report",
+            str(report),
+            "--repo",
+            str(tmp_path),
+            "--send",
+            "--dispatch-id",
+            "ctx_456",
+        ]
+    )
+    err = capsys.readouterr().err
+    assert code != 0
+    assert len(captured_send) == 0
+    assert "ORCA_TERMINAL_HANDLE" in err
+
+
+def test_worker_done_guard_explicit_from_wins_over_env(tmp_path: Path, monkeypatch, capsys):
+    """명시 지정값이 환경변수보다 우선합니다."""
+    cap, report = _valid_pair(tmp_path)
+    _stub_valid_repo(monkeypatch)
+    captured_send: list[dict] = []
+    _stub_send(monkeypatch, captured_send)
+    monkeypatch.setenv(FROM_HANDLE_ENV_VAR, "term_env_1")
+
+    code = main(
+        [
+            "--capsule",
+            str(cap),
+            "--report",
+            str(report),
+            "--repo",
+            str(tmp_path),
+            "--send",
+            "--from",
+            "term_explicit",
+            "--dispatch-id",
+            "ctx_456",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert captured_send[0]["from_handle"] == "term_explicit"
+    assert FROM_HANDLE_ENV_VAR not in out
+
+
+def test_worker_done_guard_dispatch_id_required_without_env_basis(
+    tmp_path: Path, monkeypatch, capsys
+):
+    """dispatch-id 는 근거 있는 환경변수가 없으므로 인자 필수입니다."""
+    resolved_from, _, _ = resolve_sender_identity(
+        from_handle="term_explicit",
+        dispatch_id="ctx_456",
+        env={},
+    )
+    assert resolved_from == "term_explicit"
+
+    cap, report = _valid_pair(tmp_path)
+    _stub_valid_repo(monkeypatch)
+    captured_send: list[dict] = []
+    _stub_send(monkeypatch, captured_send)
+    monkeypatch.setenv(FROM_HANDLE_ENV_VAR, "term_env_1")
+
+    code = main(
+        [
+            "--capsule",
+            str(cap),
+            "--report",
+            str(report),
+            "--repo",
+            str(tmp_path),
+            "--send",
+        ]
+    )
+    err = capsys.readouterr().err
+    assert code != 0
+    assert len(captured_send) == 0
+    assert "--dispatch-id" in err
