@@ -218,6 +218,59 @@ def test_verify_reconciliation_logic():
     assert res2["missing_in_meili"] == {"B", "C"}
 
 
+def test_verify_fails_on_single_chroma_announcement_missing():
+    """DB 공고 대 ChromaDB 대조에서 1건 누락 시 passed가 거짓인지 검증."""
+    mock_db = MagicMock()
+    res = verify_reconciliation(
+        mock_db,
+        db_announcement_fetcher=lambda db, **kw: {"A", "B"},
+        db_result_fetcher=lambda db, **kw: {"R1"},
+        chroma_fetcher=lambda: {"A"},
+        meili_announcement_fetcher=lambda: {"A", "B"},
+        meili_result_fetcher=lambda: {"R1"},
+    )
+    assert res["passed"] is False
+    assert res["missing_in_chroma_announcement"] == {"B"}
+    assert res["missing_in_chroma"] == {"B"}
+    assert res["missing_in_meili_announcement"] == set()
+    assert res["missing_in_meili_result"] == set()
+
+
+def test_verify_fails_on_single_meili_announcement_missing():
+    """DB 공고 대 Meilisearch announcement 대조에서 1건 누락 시 passed가 거짓인지 검증."""
+    mock_db = MagicMock()
+    res = verify_reconciliation(
+        mock_db,
+        db_announcement_fetcher=lambda db, **kw: {"A", "B"},
+        db_result_fetcher=lambda db, **kw: {"R1"},
+        chroma_fetcher=lambda: {"A", "B"},
+        meili_announcement_fetcher=lambda: {"A"},
+        meili_result_fetcher=lambda: {"R1"},
+    )
+    assert res["passed"] is False
+    assert res["missing_in_meili_announcement"] == {"B"}
+    assert res["missing_in_chroma_announcement"] == set()
+    assert res["missing_in_meili_result"] == set()
+
+
+def test_verify_fails_on_single_meili_result_missing():
+    """DB 낙찰 대 Meilisearch result 대조에서 1건 누락 시 passed가 거짓인지 검증."""
+    mock_db = MagicMock()
+    res = verify_reconciliation(
+        mock_db,
+        db_announcement_fetcher=lambda db, **kw: {"A"},
+        db_result_fetcher=lambda db, **kw: {"R1", "R2"},
+        chroma_fetcher=lambda: {"A"},
+        meili_announcement_fetcher=lambda: {"A"},
+        meili_result_fetcher=lambda: {"R1"},
+    )
+    assert res["passed"] is False
+    assert res["missing_in_meili_result"] == {"R2"}
+    assert res["missing_in_meili"] == {"R2"}
+    assert res["missing_in_chroma_announcement"] == set()
+    assert res["missing_in_meili_announcement"] == set()
+
+
 @pytest.mark.asyncio
 async def test_backfill_sync_downstream_triggers_reconciliation():
     """scripts/backfill_from_g2b.py의 --sync-downstream 동작 검증."""
