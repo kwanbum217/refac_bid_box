@@ -117,3 +117,42 @@ uv run pytest tests/test_drift_monitor_window.py -v
 # 전체 드리프트 모니터링 관련 테스트
 uv run pytest tests/test_drift_monitor_window.py tests/test_psi_drift_wiring.py tests/test_drift_subgroup.py -v
 ```
+
+---
+
+## 8. 학습 없는 drift baseline 생성 절차 (`scripts/generate_drift_baseline.py`)
+
+학습 성공 경로(`ModelTrainer.train_and_register`)를 거치지 않고 지정한 데이터
+구간으로 `ml_registry/{model_name}/baseline/` 아티팩트를 만드는 정식 진입점입니다.
+분포 계산은 `save_baseline_distributions` 를 재사용하며 특징 생성은
+`src/ml/features.py` 단일 공급원만 사용합니다.
+
+- **기본 dry-run**: 인자 없이 실행하면 어떤 파일도 쓰지 않고 대상 구간, 조회 행 수,
+  특징 수, 저장될 경로만 출력합니다. 실제 기록은 `--write` 명시 플래그가 있을 때만
+  수행합니다. 이 Task 에서는 `--write` 를 실행하지 않으며 `ml_registry` 아래에 파일을
+  만들지 않습니다. 실제 baseline 생성은 코디네이터가 검토 후 직접 수행합니다.
+- **필수 인자**: `--category`(예: Servc), `--baseline-version`(필수),
+  `--start-at`, `--end-at`(선택), `--model-name`(선택, 미지정 시 category 매핑),
+  `--write`(기본 꺼짐), `--registry-dir`(선택).
+- **`--baseline-version` 은 학습 버전이 아니라 baseline 식별자입니다.**
+  존재하지 않는 학습 버전 문자열을 찍으면 provenance 가 거짓이 되므로 호출자가 명시합니다.
+- **`--start-at` 없이 `--write` 는 거부됩니다.** 구간 인자를 생략하면 전체 이력이 되어
+  레짐 전환 이전 구간이 섞인 baseline 이 만들어질 수 있기 때문입니다.
+- **구간 참고 기준**: `--start-at` 은 `BidResult.rl_openg_dt` 기준 반열림 구간이며,
+  `REGIME_SHIFT_DATE`(2026-05-26 낙찰하한율 2%p 일괄 인상 시행일, `src/ml/features.py`)를
+  참고 기준으로 안내합니다. 날짜를 스크립트에 하드코딩하지 않습니다.
+- **fail-closed**: 표본이 집단별 최소 기준(100건)에 못 미치면 `--write` 여도 기록하지
+  않고 실패로 끝납니다. `build_training_dataset` 호출에는 항상 `persist=False` 를 써서
+  운영 학습 데이터셋 parquet 캐시를 덮어쓰지 않습니다.
+- **원자적 교체**: `ModelTrainer._update_baseline_atomically` 를 재사용해 임시 디렉터리와
+  백업을 거쳐 교체하므로 중간 실패에서 기존 baseline 이 보존됩니다.
+
+```bash
+# 기록 없이 확인만 (dry-run)
+uv run python scripts/generate_drift_baseline.py \
+  --category Servc --start-at 2026-05-26 --baseline-version b_20260906_servc_post_regime
+
+# 실제 기록 (코디네이터 검토 후 직접 수행)
+uv run python scripts/generate_drift_baseline.py \
+  --category Servc --start-at 2026-05-26 --baseline-version b_20260906_servc_post_regime --write
+```
