@@ -54,9 +54,17 @@
 
 > **안내**: 근거 없는 수치를 기입하면 잘못된 정본이 형성되므로, 정식 인프라 용량 산정 및 장애 시나리오 실측 후 담당자가 위 항목을 확정합니다.
 
-정기 백업은 OS 크론이 아니라 Arq 워커의 `src/tasks/worker.py` `cron_jobs`에 등록된
-`backup_schedule_task`가 담당합니다. `BACKUP_SCHEDULE_ENABLED=false`가 기본값이며,
-활성화된 백업 주기가 RPO에 영향을 주지만 RPO/RTO 자체를 확정하지는 않습니다.
+정기 백업은 OS 크론이 아니라 `docker-compose.prod.yml`의 백업 전용 `backup`
+서비스에서 돌아가는 Arq 워커의 `src/tasks/worker.py` `cron_jobs`에 등록된
+`backup_schedule_task`가 담당합니다. `backup` 서비스는 `Dockerfile`의 `backup`
+스테이지(mysql 클라이언트 포함)로 빌드하고 `BACKUP_SCHEDULE_ENABLED=true`로
+백업 스케줄만 켜며, 나머지 스케줄 플래그는 전부 `false`로 둡니다. 백업 실행에
+필요한 환경변수는 `DB_HOST=db`, `DB_PORT=3306`, `DB_USER`, `DB_PASSWORD`,
+`DB_NAME`이며, 산출물이 컨테이너 밖에 남도록 `data`, `chroma_db`,
+`ml_registry` 볼륨을 마운트합니다. 기존 `worker` 서비스는
+`BACKUP_SCHEDULE_ENABLED=false`로 백업 역할을 맡지 않습니다.
+`BACKUP_SCHEDULE_ENABLED=false`가 기본값이며, 활성화된 백업 주기가 RPO에
+영향을 주지만 RPO/RTO 자체를 확정하지는 않습니다.
 
 ---
 

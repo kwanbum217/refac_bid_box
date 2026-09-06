@@ -72,3 +72,15 @@ USER 1000:1000
 EXPOSE 8000
 
 CMD ["python3", "-m", "uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# 정기 백업 전용 스테이지. mysqldump/mysql 클라이언트가 필요하며
+# 런타임 스테이지는 그대로 두어 앱 이미지를 가볍게 유지합니다.
+FROM runtime AS backup
+
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-mysql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+USER 1000:1000
