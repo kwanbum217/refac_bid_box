@@ -362,6 +362,60 @@ def run_gate2_scope(
     )
 
 
+def get_gitignored_committed_files(
+    repo: Path,
+    changed_files: list[str],
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+) -> list[str]:
+    """base..branch 변경 목록 중 gitignore 무시 대상을 가려냅니다.
+
+    판정은 오직 `git check-ignore` 에 묻습니다. 스크립트에 경로 패턴을
+    하드코딩하지 않으므로 .gitignore 가 바뀌면 검사도 따라 바뀝니다.
+    작업 트리의 미커밋/미추적 파일은 호출자가 전달한 목록에 없으므로
+    검사 대상이 될 수 없습니다. 커밋에 들어간 것만 봅니다.
+    """
+    targets = [p for p in (changed_files or []) if p and str(p).strip()]
+    if not targets:
+        return []
+    # --no-index: 검사 대상은 이미 커밋되어 추적 중인 파일이므로, 기본 동작은
+    # 추적 파일을 보고하지 않고 종료 코드 1 을 냅니다. 규칙 순수 매칭으로
+    # 판정하기 위해 인덱스를 보지 않습니다.
+    cmd = ["git", "check-ignore", "--no-index", "--", *targets]
+    code, stdout, stderr, timed_out = run_command_safe(cmd, repo, timeout)
+    if timed_out:
+        raise GateToolError(f"git check-ignore 타임아웃 ({timeout}초)")
+    if code == 0:
+        return [line for line in (stdout.splitlines()) if line.strip()]
+    if code == 1:
+        return []
+    raise GateToolError(f"git check-ignore 실패 (종료 코드 {code}): {stderr.strip()}")
+
+
+def run_gate7_gitignored(
+    repo: Path,
+    changed_files: list[str],
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+) -> GateResult:
+    """게이트 7: 커밋된 변경 중 gitignore 무시 대상 검증."""
+    violated = get_gitignored_committed_files(repo, changed_files, timeout)
+    if violated:
+        ordered = sorted(dict.fromkeys(violated))
+        return GateResult(
+            name="게이트 7 gitignore 검증",
+            status="fail",
+            summary=f"gitignore 대상 커밋 {len(ordered)}건 감지",
+            details=[f"위반 목록: {', '.join(ordered)}"],
+            raw_data={"violated_files": ordered},
+        )
+    return GateResult(
+        name="게이트 7 gitignore 검증",
+        status="pass",
+        summary=f"gitignore 대상 커밋 없음 (검사 {len([p for p in (changed_files or []) if p and str(p).strip()])}건)",
+        details=[],
+        raw_data={"violated_files": []},
+    )
+
+
 ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
@@ -1115,19 +1169,28 @@ def build_json_output(
     error_message: str = "",
 ) -> dict[str, Any]:
     """기계용 JSON 구조를 생성합니다."""
-    # run_all 이 append 하는 순서와 1:1 로 맞춥니다.
-    gate_keys = [
-        "gate1_changed_files",
-        "gate2_scope",
-        "gate3_tests",
-        "gate4_rules",
-        "gate4b_lint",
-        "gate5_review_report",
-        "gate6_worker_done",
-    ]
+    # 게이트 6 은 Capsule/report 지정이 없을 때 생략되므로 인덱스 대응은
+    # 뒤 게이트의 키를 한 칸씩 밀어 버립니다. 게이트 이름으로 키를 찾아
+    # 기존 키 대응을 고정하고, 새 게이트(게이트 7)는 끝에만 추가합니다.
+    gate_key_by_name = {
+        "게이트 1 변경 파일": "gate1_changed_files",
+        "게이트 2 범위 검증": "gate2_scope",
+        "게이트 3 테스트": "gate3_tests",
+        "게이트 4 규칙 검증": "gate4_rules",
+        "게이트 4b 린터": "gate4b_lint",
+        "게이트 5 리뷰 보고": "gate5_review_report",
+        "게이트 6 worker_done 보고": "gate6_worker_done",
+        "게이트 7 gitignore 검증": "gate7_gitignored",
+    }
     gates_dict: dict[str, Any] = {}
+    fallback_idx = 0
     for i, g in enumerate(gates):
-        key = gate_keys[i] if i < len(gate_keys) else f"gate_{i + 1}"
+        key = gate_key_by_name.get(g.name)
+        if key is None:
+            key = f"gate_{i + 1}"
+            while key in gates_dict:
+                fallback_idx += 1
+                key = f"gate_extra_{fallback_idx}"
         gates_dict[key] = {
             **g.raw_data,
             "name": g.name,
@@ -1316,6 +1379,13 @@ def run_level1_gate(
                 reports=resolved_report_paths if len(resolved_report_paths) > 1 else None,
             )
             gates.append(g6)
+
+        # 게이트 7: gitignore 무시 대상 커밋 검증. 기존 게이트 번호를 밀지
+        # 않기 위해 끝에만 추가합니다. 중간에 끼우면 gate_keys 대응이 밀려
+        # 뒤 게이트가 잘못된 키로 보고됩니다. 입력은 게이트 1 의 변경 목록
+        # 뿐이며 작업 트리 미커밋/미추적 파일은 보지 않습니다.
+        g7 = run_gate7_gitignored(repo_path, changed_files)
+        gates.append(g7)
 
     except GateToolError as exc:
         error_msg = str(exc)

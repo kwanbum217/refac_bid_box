@@ -13,6 +13,7 @@ from scripts.orca_level1_gate import (
     format_failed_nodes,
     format_human_output,
     get_git_changed_files,
+    get_gitignored_committed_files,
     parse_arguments,
     parse_pytest_output,
     parse_validate_agent_rules_output,
@@ -26,6 +27,7 @@ from scripts.orca_level1_gate import (
     run_gate4b_lint,
     run_gate5_review_report,
     run_gate6_worker_done,
+    run_gate7_gitignored,
     run_level1_gate,
 )
 
@@ -315,7 +317,7 @@ def test_timeout_reported_as_tool_error(tmp_path: Path):
 
 
 def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
-    """(7) --json 출력이 유효한 JSON 이고 6개 게이트 상태를 모두 담고 있음을 검증합니다."""
+    """(7) --json 출력이 유효한 JSON 이고 모든 게이트 상태를 담고 있음을 검증합니다."""
     repo, base, branch = _init_git_repo(tmp_path)
 
     code, output = run_level1_gate(
@@ -329,7 +331,7 @@ def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
     assert data["verdict"] == "pass"
     assert data["exit_code"] == 0
     assert "summary" in data
-    assert data["summary"]["total"] == 6
+    assert data["summary"]["total"] == 7
     assert data["summary"]["passed"] >= 1
 
     gates = data["gates"]
@@ -339,8 +341,10 @@ def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
     assert "gate4_rules" in gates
     assert "gate4b_lint" in gates
     assert "gate5_review_report" in gates
+    assert "gate7_gitignored" in gates
     assert gates["gate1_changed_files"]["status"] == "pass"
     assert gates["gate2_scope"]["status"] == "skipped"
+    assert gates["gate7_gitignored"]["status"] == "pass"
 
     # 키가 실제 게이트를 가리키는지 확인합니다. 키 목록이 append 순서보다
     # 짧으면 뒤 게이트가 한 칸씩 밀려 gate_6 으로 흘러나갑니다.
@@ -1104,3 +1108,113 @@ def test_gate6_multi_report_union_diff_success_and_failure(tmp_path: Path):
         )
         assert g6_single.status == "fail"
         assert any("changed_files 불일치" in d for d in g6_single.details)
+
+
+# ---------------------------------------------------------------------------
+# 게이트 7 gitignore 검증 (2026-09-06)
+# ---------------------------------------------------------------------------
+
+
+def _make_gitignore_repo(tmp_path: Path) -> tuple[Path, str, str]:
+    """gitignore 규칙과 강제 커밋을 재현하는 임시 저장소를 만듭니다."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "validate_agent_rules.py").write_text(
+        "print('검증 통과: 12/12 건.')\n", encoding="utf-8"
+    )
+    (repo / ".gitignore").write_text("ignored_dir/\n*.ignored\n", encoding="utf-8")
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", ".gitignore", "base.txt")
+    _git(
+        repo,
+        "-c",
+        "user.email=t@e.com",
+        "-c",
+        "user.name=T",
+        "commit",
+        "-m",
+        "chore: base with gitignore",
+    )
+    _git(repo, "checkout", "-b", "feature")
+    return repo, "main", "feature"
+
+
+def _commit(repo: Path, message: str) -> None:
+    _git(
+        repo,
+        "-c",
+        "user.email=t@e.com",
+        "-c",
+        "user.name=T",
+        "commit",
+        "-m",
+        message,
+    )
+
+
+def test_gate7_fails_on_committed_gitignored_file(tmp_path: Path):
+    """위반 있음: 강제 add 로 커밋된 gitignore 대상을 fail 로 잡고 전부 나열합니다."""
+    repo, base, branch = _make_gitignore_repo(tmp_path)
+    (repo / "ignored_dir").mkdir()
+    (repo / "ignored_dir" / "note.txt").write_text("forced\n", encoding="utf-8")
+    (repo / "extra.ignored").write_text("forced\n", encoding="utf-8")
+    (repo / "ok.txt").write_text("clean\n", encoding="utf-8")
+    _git(repo, "add", "-f", "ignored_dir/note.txt", "extra.ignored", "ok.txt")
+    _commit(repo, "feat: forced ignored files")
+
+    changed, _unique, _renames = get_git_changed_files(repo, base, branch)
+    assert "ignored_dir/note.txt" in changed
+    assert "extra.ignored" in changed
+
+    violated = get_gitignored_committed_files(repo, changed)
+    assert sorted(violated) == ["extra.ignored", "ignored_dir/note.txt"]
+
+    g7 = run_gate7_gitignored(repo, changed)
+    assert g7.status == "fail"
+    assert g7.raw_data["violated_files"] == ["extra.ignored", "ignored_dir/note.txt"]
+    assert "ok.txt" not in g7.raw_data["violated_files"]
+
+    code, output = run_level1_gate(base=base, branch=branch, repo=repo, as_json=True)
+    data = json.loads(output)
+    assert code == 1
+    assert data["verdict"] == "fail"
+    assert data["gates"]["gate7_gitignored"]["status"] == "fail"
+
+
+def test_gate7_passes_when_nothing_ignored(tmp_path: Path):
+    """위반 없음: 무시 대상이 없으면 check-ignore 종료 코드 1 을 정상으로 봅니다."""
+    repo, base, branch = _make_gitignore_repo(tmp_path)
+    (repo / "ok.txt").write_text("clean\n", encoding="utf-8")
+    _git(repo, "add", "ok.txt")
+    _commit(repo, "feat: clean file")
+
+    changed, _unique, _renames = get_git_changed_files(repo, base, branch)
+    assert changed == ["ok.txt"]
+    assert get_gitignored_committed_files(repo, changed) == []
+
+    g7 = run_gate7_gitignored(repo, changed)
+    assert g7.status == "pass"
+    assert g7.raw_data["violated_files"] == []
+
+    assert run_gate7_gitignored(repo, []).status == "pass"
+
+
+def test_gate7_ignores_untracked_files(tmp_path: Path):
+    """미추적 파일 무시: 커밋되지 않은 무시 대상이 작업 트리에 있어도 통과합니다."""
+    repo, base, branch = _make_gitignore_repo(tmp_path)
+    (repo / "ok.txt").write_text("clean\n", encoding="utf-8")
+    _git(repo, "add", "ok.txt")
+    _commit(repo, "feat: clean file")
+
+    # 커밋 후 작업 트리에만 두는 미추적 무시 대상 파일
+    (repo / "stray.ignored").write_text("untracked\n", encoding="utf-8")
+    assert (repo / "stray.ignored").exists()
+
+    changed, _unique, _renames = get_git_changed_files(repo, base, branch)
+    assert "stray.ignored" not in changed
+
+    g7 = run_gate7_gitignored(repo, changed)
+    assert g7.status == "pass"
+    assert g7.raw_data["violated_files"] == []
