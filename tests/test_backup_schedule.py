@@ -232,3 +232,122 @@ async def test_backup_task_notifies_low_disk_space(tmp_path: Path):
     args, kwargs = mock_notify.await_args
     assert "디스크 여유 공간 부족" in args[0]
     assert kwargs.get("level") == "warning"
+
+
+def _mock_disk_usage(free_gb: float):
+    from types import SimpleNamespace
+
+    free_bytes = int(free_gb * (1024**3))
+    return SimpleNamespace(total=free_bytes * 2, used=free_bytes, free=free_bytes)
+
+
+def test_check_backup_disk_space_threshold_above(tmp_path: Path):
+    with (
+        patch.object(scheduled_tasks.settings, "BACKUP_DISK_MIN_FREE_GB", 10.0),
+        patch.object(scheduled_tasks.shutil, "disk_usage", return_value=_mock_disk_usage(10.5)),
+    ):
+        free_gb, is_low = scheduled_tasks.check_backup_disk_space(tmp_path)
+    assert free_gb == pytest.approx(10.5, abs=0.01)
+    assert is_low is False
+
+
+def test_check_backup_disk_space_threshold_equal(tmp_path: Path):
+    with (
+        patch.object(scheduled_tasks.settings, "BACKUP_DISK_MIN_FREE_GB", 10.0),
+        patch.object(scheduled_tasks.shutil, "disk_usage", return_value=_mock_disk_usage(10.0)),
+    ):
+        free_gb, is_low = scheduled_tasks.check_backup_disk_space(tmp_path)
+    assert free_gb == pytest.approx(10.0, abs=0.01)
+    assert is_low is False
+
+
+def test_check_backup_disk_space_threshold_below(tmp_path: Path):
+    with (
+        patch.object(scheduled_tasks.settings, "BACKUP_DISK_MIN_FREE_GB", 10.0),
+        patch.object(scheduled_tasks.shutil, "disk_usage", return_value=_mock_disk_usage(9.5)),
+    ):
+        free_gb, is_low = scheduled_tasks.check_backup_disk_space(tmp_path)
+    assert free_gb == pytest.approx(9.5, abs=0.01)
+    assert is_low is True
+
+
+def test_check_backup_disk_space_measurement_failure(tmp_path: Path):
+    with patch.object(scheduled_tasks.shutil, "disk_usage", side_effect=OSError("disk fail")):
+        free_gb, is_low = scheduled_tasks.check_backup_disk_space(tmp_path)
+    assert free_gb == 0.0
+    assert is_low is True
+
+
+def test_retention_symlink_stale_aborts_without_deleting(tmp_path: Path):
+    """stale 항목이 심볼릭 링크면 errors에 담고 아무것도 삭제하지 않습니다."""
+    from scripts.backup_snapshots import prune_snapshots
+
+    keep_snap = tmp_path / "snapshot_20260902_010000"
+    keep_snap.mkdir()
+    _write_valid_snapshot_manifest(keep_snap)
+
+    real_stale = tmp_path / "real_stale_target"
+    real_stale.mkdir()
+    (real_stale / "data.txt").write_text("stale", encoding="utf-8")
+    stale_link = tmp_path / "snapshot_20260901_010000"
+    stale_link.symlink_to(real_stale, target_is_directory=True)
+
+    result = prune_snapshots(tmp_path, retain_count=1, delete=True)
+    assert result["deleted"] is False
+    assert result["deleted_count"] == 0
+    assert any("심볼릭 링크" in err for err in result["errors"])
+    assert keep_snap.exists()
+    assert stale_link.is_symlink()
+    assert real_stale.exists()
+
+
+@pytest.mark.asyncio
+async def test_backup_task_no_notify_when_prune_recovers_space(tmp_path: Path):
+    """정리 전 임계값 미만이라도 정리 후 회복되면 경보가 나가지 않습니다."""
+    with (
+        patch.object(scheduled_tasks.settings, "BACKUP_SCHEDULE_ENABLED", True),
+        patch.object(scheduled_tasks.settings, "BACKUP_DISK_MIN_FREE_GB", 10.0),
+        patch.object(scheduled_tasks, "DEFAULT_SNAPSHOTS_DIR", tmp_path),
+        patch.object(
+            scheduled_tasks,
+            "check_backup_disk_space",
+            side_effect=[(2.5, True), (50.0, False)],
+        ),
+        patch.object(
+            scheduled_tasks, "execute_backup", return_value={"schema": "BACKUP_MANIFEST_V1"}
+        ),
+        patch.object(scheduled_tasks, "prune_snapshots", return_value={"errors": []}),
+        patch.object(scheduled_tasks, "notify", new_callable=AsyncMock) as mock_notify,
+    ):
+        result = await scheduled_tasks.backup_schedule_task({})
+
+    assert result["status"] == "success"
+    mock_notify.assert_not_awaited()
+    assert result["disk_free_gb"] == pytest.approx(50.0)
+    assert result["disk_free_gb_before_prune"] == pytest.approx(2.5)
+
+
+@pytest.mark.asyncio
+async def test_backup_task_notifies_when_post_prune_still_low(tmp_path: Path):
+    """정리 후에도 임계값 미만이면 경보가 나갑니다."""
+    with (
+        patch.object(scheduled_tasks.settings, "BACKUP_SCHEDULE_ENABLED", True),
+        patch.object(scheduled_tasks.settings, "BACKUP_DISK_MIN_FREE_GB", 10.0),
+        patch.object(scheduled_tasks, "DEFAULT_SNAPSHOTS_DIR", tmp_path),
+        patch.object(
+            scheduled_tasks,
+            "check_backup_disk_space",
+            side_effect=[(2.5, True), (3.0, True)],
+        ),
+        patch.object(
+            scheduled_tasks, "execute_backup", return_value={"schema": "BACKUP_MANIFEST_V1"}
+        ),
+        patch.object(scheduled_tasks, "prune_snapshots", return_value={"errors": []}),
+        patch.object(scheduled_tasks, "notify", new_callable=AsyncMock) as mock_notify,
+    ):
+        result = await scheduled_tasks.backup_schedule_task({})
+
+    assert result["status"] == "success"
+    mock_notify.assert_awaited_once()
+    assert result["disk_free_gb"] == pytest.approx(3.0)
+    assert result["disk_free_gb_before_prune"] == pytest.approx(2.5)

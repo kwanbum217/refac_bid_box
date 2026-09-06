@@ -116,7 +116,26 @@ async def backup_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info("백업 스케줄이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
     try:
-        # 백업 실행 전 스토리지 디스크 여유 공간 검사
+        # 사전 측정은 로그로만 남긴다. 사용자에게 나가는 경보 판정은
+        # 스냅샷 정리(prune) 이후 재측정한 값으로만 내린다.
+        pre_free_gb, pre_is_low = check_backup_disk_space(DEFAULT_SNAPSHOTS_DIR)
+        if pre_is_low:
+            logger.warning(
+                "백업 전 스토리지 디스크 여유 공간 부족 (정리 전 측정): %.2f GB < %.2f GB",
+                pre_free_gb,
+                settings.BACKUP_DISK_MIN_FREE_GB,
+            )
+
+        manifest = await asyncio.to_thread(execute_backup, execute=True)
+        retention = await asyncio.to_thread(
+            prune_snapshots,
+            snapshots_dir=DEFAULT_SNAPSHOTS_DIR,
+            retain_count=settings.BACKUP_RETENTION_COUNT,
+            delete=True,
+        )
+        if retention.get("errors"):
+            logger.warning("정기 백업 스냅샷 정리 중 경고/에러: %s", retention["errors"])
+
         free_gb, is_low = check_backup_disk_space(DEFAULT_SNAPSHOTS_DIR)
         if is_low:
             logger.warning(
@@ -134,21 +153,12 @@ async def backup_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
                 level="warning",
             )
 
-        manifest = await asyncio.to_thread(execute_backup, execute=True)
-        retention = await asyncio.to_thread(
-            prune_snapshots,
-            snapshots_dir=DEFAULT_SNAPSHOTS_DIR,
-            retain_count=settings.BACKUP_RETENTION_COUNT,
-            delete=True,
-        )
-        if retention.get("errors"):
-            logger.warning("정기 백업 스냅샷 정리 중 경고/에러: %s", retention["errors"])
-
         return {
             "status": "success",
             "manifest": manifest,
             "retention": retention,
             "disk_free_gb": free_gb,
+            "disk_free_gb_before_prune": pre_free_gb,
         }
     except Exception as exc:
         logger.exception("정기 백업 실패")
