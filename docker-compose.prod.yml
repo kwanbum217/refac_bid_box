@@ -134,6 +134,8 @@ services:
       # 워커가 멈춰 있던 사이 누락된 일일 수집을 기동 시 1회 따라잡습니다.
       - AUTOMATION_SCHEDULE_CATCHUP_ENABLED=${AUTOMATION_SCHEDULE_CATCHUP_ENABLED:-true}
       - ML_WEEKLY_RETRAIN_ENABLED=${ML_WEEKLY_RETRAIN_ENABLED:-false}
+      # 정기 백업은 backup 전용 서비스가 담당합니다. 워커에서는 항상 비활성입니다.
+      - BACKUP_SCHEDULE_ENABLED=false
       - WORKER_HEARTBEAT_MAX_AGE_SECONDS=${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
       - TZ=Asia/Seoul
     extra_hosts:
@@ -164,6 +166,64 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    user: "1000:1000"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - ./ml_registry:/app/ml_registry
+      - ./data:/app/data
+      - ./chroma_db:/app/chroma_db
+    networks:
+      - internal
+      - egress
+
+  backup:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: backup
+    command: ["arq", "src.tasks.worker.WorkerSettings"]
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:?ENVIRONMENT must be set}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
+      - DATABASE_URL=mysql+pymysql://${DB_USER:?DB_USER must be set}:${DB_PASSWORD:?DB_PASSWORD must be set}@db:3306/${DB_NAME:?DB_NAME must be set}
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:?DB_USER must be set}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
+      - DB_NAME=${DB_NAME:?DB_NAME must be set}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
+      - CHROMA_DB_PATH=/app/chroma_db
+      - BACKUP_SCHEDULE_ENABLED=true
+      - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-7}
+      - BACKUP_DISK_MIN_FREE_GB=${BACKUP_DISK_MIN_FREE_GB:-5.0}
+      - AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=false
+      - AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false
+      - AUTOMATION_SCHEDULE_CATCHUP_ENABLED=false
+      - ML_WEEKLY_RETRAIN_ENABLED=false
+      - WORKER_HEARTBEAT_MAX_AGE_SECONDS=${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
+      - TZ=Asia/Seoul
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
     user: "1000:1000"
     deploy:
       resources:
