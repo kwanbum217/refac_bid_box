@@ -590,3 +590,93 @@ def test_legacy_backup_without_row_counts_warns_and_allows_restore(tmp_path: Pat
     captured = capsys.readouterr()
     assert "과거 백업 매니페스트" in captured.out
     assert "행 수 증거가 없어" in captured.out
+
+
+def _write_valid_snapshot_manifest(snap: Path) -> None:
+    """backup_snapshots.verify_snapshot 을 통과하는 정상 매니페스트를 작성합니다."""
+    components = {}
+    for name, filename, content in (
+        ("database", "db_dump.sql.gz", b"valid_db_data"),
+        ("chroma_db", "chroma_db.tar.gz", b"valid_chroma_data"),
+        ("models", "models.tar.gz", b"valid_model_data"),
+    ):
+        file_path = snap / filename
+        file_path.write_bytes(content)
+        components[name] = {
+            "path": filename,
+            "size_bytes": len(content),
+            "sha256": sha256_file(file_path),
+        }
+    manifest_data = {
+        "schema": "BACKUP_MANIFEST_V1",
+        "created_at": "2026-09-05T12:00:00Z",
+        "head_commit": "valid_head",
+        "components": components,
+    }
+    (snap / MANIFEST_FILENAME).write_text(json.dumps(manifest_data), encoding="utf-8")
+
+
+def test_list_snapshots_includes_manifestless_as_invalid(tmp_path: Path):
+    """매니페스트 없는 스냅샷 디렉터리도 목록에 무효 상태로 드러납니다."""
+    from scripts.backup_snapshots import list_snapshots as list_snapshots_new
+
+    snapshots_dir = tmp_path / "snapshots"
+    snapshots_dir.mkdir()
+
+    valid_snap = snapshots_dir / "snapshot_20260902_100000"
+    valid_snap.mkdir()
+    (valid_snap / MANIFEST_FILENAME).write_text(
+        json.dumps({"created_at": "2026-09-02T10:00:00Z", "head_commit": "c1", "components": {}}),
+        encoding="utf-8",
+    )
+
+    manifestless = snapshots_dir / "snapshot_20260901_090000"
+    manifestless.mkdir()
+
+    res = list_snapshots_new(snapshots_dir)
+    by_name = {entry["name"]: entry for entry in res}
+    assert "snapshot_20260902_100000" in by_name
+    assert "snapshot_20260901_090000" in by_name
+    invalid_entry = by_name["snapshot_20260901_090000"]
+    assert invalid_entry["valid"] is False
+    assert invalid_entry["created_at"] == "unknown"
+    assert invalid_entry["head_commit"] == "unknown"
+
+
+def test_prune_retained_manifestless_fails_closed(tmp_path: Path):
+    """매니페스트 없는 보존 대상이 있으면 prune 이 fail-closed 로 아무것도 삭제하지 않습니다."""
+    from scripts.backup_snapshots import prune_snapshots as prune_snapshots_new
+
+    keep_snap = tmp_path / "snapshot_20260902_010000"
+    keep_snap.mkdir()
+    stale_snap = tmp_path / "snapshot_20260901_010000"
+    stale_snap.mkdir()
+
+    result = prune_snapshots_new(tmp_path, retain_count=1, delete=True)
+    assert result["deleted"] is False
+    assert result["deleted_count"] == 0
+    assert any("매니페스트 파일 없음" in err for err in result["errors"])
+    assert keep_snap.exists()
+    assert stale_snap.exists()
+
+
+def test_prune_symlink_stale_aborts_with_matching_message(tmp_path: Path):
+    """삭제 대상 심볼릭 링크가 있으면 문구대로 전체 정리를 중단합니다."""
+    from scripts.backup_snapshots import prune_snapshots as prune_snapshots_new
+
+    keep_snap = tmp_path / "snapshot_20260902_010000"
+    keep_snap.mkdir()
+    _write_valid_snapshot_manifest(keep_snap)
+
+    real_target = tmp_path / "real_target_dir"
+    real_target.mkdir()
+    link_snap = tmp_path / "snapshot_20260901_010000"
+    link_snap.symlink_to(real_target, target_is_directory=True)
+
+    result = prune_snapshots_new(tmp_path, retain_count=1, delete=True)
+    assert result["deleted"] is False
+    assert result["deleted_count"] == 0
+    assert any("중단" in err for err in result["errors"])
+    assert not any("제외" in err for err in result["errors"])
+    assert keep_snap.exists()
+    assert link_snap.is_symlink()
