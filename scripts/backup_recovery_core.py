@@ -144,9 +144,7 @@ def query_db_row_counts(
     return row_counts
 
 
-def evaluate_row_counts(
-    row_counts: dict[str, int | None], tables: tuple[str, ...] = DEFAULT_TABLES
-) -> tuple[str, str]:
+def evaluate_row_counts(row_counts: dict[str, int | None]) -> tuple[str, str]:
     """행 수 딕셔너리를 평가하여 상태('verified' | 'table_query_failed' | 'connection_failed')와 사유를 반환합니다."""
     if not row_counts or (all(v is None for v in row_counts.values()) and len(row_counts) > 0):
         return "connection_failed", "DB 접속 또는 전체 행 수 조회 실패"

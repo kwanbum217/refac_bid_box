@@ -114,10 +114,14 @@ python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/sn
   "recovery_trusted": true,
   "required_assets": ["database", "chroma_db", "models"],
   "missing_assets": [],
+  "row_count_status": "verified",
+  "row_count_evidence": "verified",
   "consistency_window": {
     "db_dump_started_at": "2026-09-02T15:29:40.000000+00:00",
     "db_dump_finished_at": "2026-09-02T15:30:10.000000+00:00",
-    "file_assets_collected_at": "2026-09-02T15:30:15.000000+00:00"
+    "row_counts_queried_at": "2026-09-02T15:30:12.000000+00:00",
+    "file_assets_collected_at": "2026-09-02T15:30:15.000000+00:00",
+    "timing_note": "덤프 완료 후 별도 조회한 행 수는 쓰기 중인 DB 의 덤프 시점 행 수와 다를 수 있습니다."
   },
   "components": {
     "database": {
@@ -128,7 +132,10 @@ python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/sn
         "bid_announcements": 1839088,
         "bid_results": 3002254,
         "retrain_logs": 42
-      }
+      },
+      "row_count_status": "verified",
+      "row_count_evidence": "verified",
+      "timing_note": "덤프 완료 후 별도 조회한 행 수는 쓰기 중인 DB 의 덤프 시점 행 수와 다를 수 있습니다."
     },
     "chroma_db": {
       "path": "chroma_db.tar.gz",
@@ -159,6 +166,16 @@ python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/sn
 매니페스트의 `consistency_window`는 동일 시점 스냅샷을 보장하는 값이 아닙니다.
 DB 덤프 시작·종료 시각과 파일 자산 수집 시각을 기록하여 복원 시
 DB와 파일 자산 사이에 발생할 수 있는 시점 차이를 판정할 수 있게 합니다.
+`row_counts_queried_at`은 덤프 완료 후 행 수를 별도 조회한 시각입니다.
+
+`row_count_status`는 `scripts/backup_recovery_core.py`의 `evaluate_row_counts`가
+행 수 조회 결과를 평가하여 기록하는 값이며, 다음 세 가지 중 하나입니다.
+`verified`는 모든 대상 테이블의 행 수가 정상 확인된 상태,
+`table_query_failed`는 일부 테이블의 조회만 실패한 상태,
+`connection_failed`는 DB 접속 실패 등으로 전체 조회가 실패한 상태입니다.
+`verified`가 아닐 경우 매니페스트 최상위와 `components.database`에
+`row_count_evidence: unverified`가 함께 기록되고 `recovery_trusted: false`가 되어
+복원 및 복원 리허설의 성공 대상으로 사용할 수 없습니다.
 
 ### 3.5 스냅샷 무결성 검증 및 목록 조회
 
