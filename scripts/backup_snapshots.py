@@ -118,6 +118,17 @@ def list_snapshots(snapshots_dir: Path | None = None) -> list[dict[str, Any]]:
                         "valid": is_valid,
                     }
                 )
+            else:
+                snapshots.append(
+                    {
+                        "dir": str(item),
+                        "name": item.name,
+                        "created_at": "unknown",
+                        "head_commit": "unknown",
+                        "valid": False,
+                        "error": f"매니페스트 파일 없음: {manifest_file.name}",
+                    }
+                )
 
     if not snapshots:
         print("  유효한 백업 스냅샷이 없습니다.")
@@ -144,9 +155,10 @@ def prune_snapshots(
     안전장치:
     1. retain_count가 1 미만이면 ValueError 발생 (최소 1개 이상 보존).
     2. 삭제 전 남길 스냅샷(keep)과 삭제 대상(stale)의 분할 정합성을 검증합니다.
-    3. 보존 대상 스냅샷의 매니페스트가 존재할 경우 무결성을 검증하며,
+    3. 보존 대상 스냅샷의 무결성을 검증하며, 매니페스트 부재도 실패로 처리해
        판정 실패 또는 검증 오류 시 아무것도 삭제하지 않습니다 (fail-closed).
-    4. 삭제 대상 경로가 스냅샷 디렉토리 직계 하위인지 엄격히 검증합니다.
+    4. 삭제 대상 경로가 스냅샷 디렉토리 직계 하위인지 엄격히 검증하며,
+       삭제 대상에 심볼릭 링크가 있으면 전체 정리를 중단합니다 (fail-closed).
     5. 삭제 후에도 보존 대상 스냅샷 개수가 retain_count보다 적게 남지 않음을 보장합니다.
     """
     if retain_count < 1:
@@ -207,17 +219,21 @@ def prune_snapshots(
         resolved_dir = directory.resolve()
         for item in stale:
             if item.is_symlink():
-                errors.append(f"심볼릭 링크는 안전을 위해 삭제 대상에서 제외됩니다: {item.name}")
+                errors.append(f"심볼릭 링크 감지로 정리를 중단합니다: {item.name}")
             elif item.resolve().parent != resolved_dir:
                 errors.append(f"비정상적인 삭제 대상 경로 감지: {item}")
     except Exception as exc:
         errors.append(f"경로 안전 검증 중 예외 발생: {exc}")
 
-    # 4. 보존 대상 스냅샷의 유효성 검증
+    # 4. 보존 대상 스냅샷의 유효성 검증 (매니페스트 부재는 실패로 처리)
     if validate_retained:
         for item in keep:
             manifest_file = item / MANIFEST_FILENAME
-            if manifest_file.exists():
+            if not manifest_file.exists():
+                errors.append(
+                    f"보존 대상 스냅샷 매니페스트 없음 ({item.name}): {manifest_file.name}"
+                )
+            else:
                 is_valid, v_errors, _ = verify_snapshot(item)
                 if not is_valid:
                     errors.append(
