@@ -3421,6 +3421,9 @@ LAUNCHER_STARTED_MARKERS: tuple[str, ...] = (
     "preamble 소비 완료",
 )
 
+DEFAULT_LAUNCHER_READINESS_WAIT_SECONDS: float = 20.0
+DEFAULT_LAUNCHER_READINESS_POLL_INTERVAL_SEC: float = 1.0
+
 
 def find_unconsumed_preambles(worktree_path: Path) -> list[Path]:
     """워크트리 내에 소비되지 않고 남아있는 preamble 파일 목록을 반환합니다."""
@@ -3445,48 +3448,42 @@ def resolve_terminal_worktree(terminal: str, repo: Path | str = ".") -> Path | N
     3. orca terminal list --json 에서 handle 일치 항목의 worktree/worktreePath/cwd 조회
     """
     meta = read_worker_meta(terminal)
-    if meta and isinstance(meta, dict):
-        wt = meta.get("worktree") or meta.get("worktree_path")
-        if wt and isinstance(wt, str) and wt.strip():
-            cleaned = wt.strip()
-            if cleaned.startswith("path:"):
-                cleaned = cleaned[5:]
-            return Path(cleaned).resolve()
+    if meta and meta.get("worktree"):
+        return Path(meta["worktree"]).resolve()
 
-    cmd = ["orca", "terminal", "show", "--terminal", terminal, "--json"]
-    code, stdout, _ = _run_command(cmd, timeout=10)
+    code, stdout, _stderr = _run_command(
+        ["orca", "terminal", "show", "--terminal", terminal, "--json"],
+        timeout=10,
+    )
     if code == 0 and stdout.strip():
         try:
             payload = json.loads(stdout)
-            if isinstance(payload, dict) and payload.get("ok") is not False:
-                t_info = (payload.get("result") or {}).get("terminal") or payload
-                wt = (
-                    t_info.get("worktree")
-                    or t_info.get("worktreePath")
-                    or t_info.get("worktree_path")
-                    or t_info.get("cwd")
-                )
-                if wt and isinstance(wt, str) and wt.strip():
-                    cleaned = wt.strip()
-                    if cleaned.startswith("path:"):
-                        cleaned = cleaned[5:]
-                    return Path(cleaned).resolve()
+            term_obj = (payload.get("result") or {}).get("terminal") or {}
+            wt = (
+                term_obj.get("worktree")
+                or term_obj.get("worktreePath")
+                or term_obj.get("worktree_path")
+                or term_obj.get("cwd")
+            )
+            if wt and isinstance(wt, str) and wt.strip():
+                cleaned = wt.strip()
+                if cleaned.startswith("path:"):
+                    cleaned = cleaned[5:]
+                return Path(cleaned).resolve()
         except (json.JSONDecodeError, ValueError):
             pass
 
-    cmd = ["orca", "terminal", "list", "--json"]
-    code, stdout, _ = _run_command(cmd, timeout=10)
+    code, stdout, _stderr = _run_command(
+        ["orca", "terminal", "list", "--json"],
+        timeout=10,
+    )
     if code == 0 and stdout.strip():
         try:
             payload = json.loads(stdout)
-            if isinstance(payload, dict) and payload.get("ok") is not False:
-                terminals = (payload.get("result") or {}).get("terminals") or []
-                if not terminals and isinstance(payload.get("terminals"), list):
-                    terminals = payload.get("terminals")
-                for item in terminals:
-                    if not isinstance(item, dict):
-                        continue
-                    if (
+            items = (payload.get("result") or {}).get("terminals") or []
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict) and (
                         item.get("handle") == terminal
                         or item.get("id") == terminal
                         or item.get("terminal") == terminal
@@ -3506,6 +3503,53 @@ def resolve_terminal_worktree(terminal: str, repo: Path | str = ".") -> Path | N
             pass
 
     return None
+
+
+def wait_for_launcher_readiness(
+    terminal: str,
+    wait_seconds: float = DEFAULT_LAUNCHER_READINESS_WAIT_SECONDS,
+    poll_interval_sec: float = DEFAULT_LAUNCHER_READINESS_POLL_INTERVAL_SEC,
+    *,
+    timeout: int = 30,
+    _time_monotonic: Any = None,
+    _time_sleep: Any = None,
+) -> tuple[bool, str, float]:
+    """런처가 preamble 대기 상태가 될 때까지 폴링하며 대기합니다.
+
+    반환값: (ready: bool, status: "waiting" | "not_waiting" | "unreadable", waited_seconds: float)
+    """
+    get_time = _time_monotonic if _time_monotonic is not None else time.monotonic
+    sleep_fn = _time_sleep if _time_sleep is not None else time.sleep
+
+    start_time = get_time()
+    deadline = start_time + max(0.0, wait_seconds)
+    any_readable = False
+
+    while True:
+        tail_text = terminal_tail(terminal, timeout=timeout)
+        read_text = None
+        try:
+            read_text = terminal_read(terminal, timeout=timeout)
+        except Exception:
+            read_text = None
+
+        if tail_text is not None or read_text is not None:
+            any_readable = True
+            markers = list(LAUNCHER_WAIT_MARKERS)
+            if (tail_text and instruction_observed(tail_text, markers)) or (
+                read_text and instruction_observed(read_text, markers)
+            ):
+                now = get_time()
+                waited = max(0.0, now - start_time)
+                return True, "waiting", waited
+
+        now = get_time()
+        if wait_seconds <= 0 or now >= deadline:
+            waited = max(0.0, now - start_time)
+            status = "not_waiting" if any_readable else "unreadable"
+            return False, status, waited
+
+        sleep_fn(max(0.1, poll_interval_sec))
 
 
 def verify_launcher_pickup(
@@ -4601,6 +4645,53 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                 )
             return 2
 
+        if getattr(args, "allow_unready_launcher", False):
+            sys.stderr.write(
+                "경고: --allow-unready-launcher 지정으로 런처 preamble 대기 상태 검사를 건너뜁니다.\n"
+            )
+        else:
+            ready, status, waited_seconds = wait_for_launcher_readiness(
+                args.terminal,
+                wait_seconds=DEFAULT_LAUNCHER_READINESS_WAIT_SECONDS,
+                poll_interval_sec=DEFAULT_LAUNCHER_READINESS_POLL_INTERVAL_SEC,
+            )
+            if not ready:
+                if status == "unreadable":
+                    err_msg = (
+                        f"런처 기동 실패: 대상 터미널 {args.terminal} 의 화면 출력을 읽을 수 없습니다 "
+                        f"({waited_seconds:.1f}초 대기). 터미널이 비정상 종료되었거나 접근할 수 없습니다. "
+                        "해결책: 터미널을 생성할 때 --command 로 런처를 지정해야 합니다. "
+                        "예시: orca terminal create --worktree path:<워크트리> "
+                        "--command 'uv run python scripts/orca_agy_launch.py --model gemini-3.8-flash-medium'"
+                    )
+                else:
+                    err_msg = (
+                        f"런처 기동 실패: 대상 터미널 {args.terminal} 에서 preamble 대기 표지를 확인하지 못했습니다 "
+                        f"({waited_seconds:.1f}초 대기). 대상 터미널이 런처를 실행 중인 상태가 아닙니다. "
+                        "해결책: 터미널을 생성할 때 --command 로 런처를 지정해야 합니다. "
+                        "예시: orca terminal create --worktree path:<워크트리> "
+                        "--command 'uv run python scripts/orca_agy_launch.py --model gemini-3.8-flash-medium'"
+                    )
+                sys.stderr.write(f"오류: {err_msg}\n")
+                if args.json:
+                    print(
+                        json.dumps(
+                            {
+                                "error": "launcher_terminal_not_waiting",
+                                "task_id": task_id,
+                                "capsule": str(capsule_path),
+                                "terminal": args.terminal,
+                                "worktree": str(worktree_path),
+                                "waited_seconds": round(waited_seconds, 2),
+                                "reason": status,
+                                "exit_code": 2,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+                return 2
+
         # 런처 경로는 Antigravity 전용입니다. worker-start 가 받는 claude/codex/cursor 는
         # 이 분기로 오지 않으므로 --agent 가 없으면 antigravity 로 확정합니다.
         detected_cli = args.agent or "antigravity"
@@ -5314,6 +5405,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--allow-unverified-delivery",
         action="store_true",
         help="지시 도달을 확인하지 못해도 종료 코드 0 으로 처리합니다 (권장하지 않음).",
+    )
+    dsp.add_argument(
+        "--allow-unready-launcher",
+        action="store_true",
+        default=False,
+        help="런처의 preamble 대기 상태가 확인되지 않아도 경고 후 Dispatch 를 계속 진행합니다 (권장하지 않음).",
     )
     dsp.add_argument(
         "--skip-auto-approve-check",

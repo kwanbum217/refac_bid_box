@@ -5814,6 +5814,9 @@ def test_cmd_dispatch_launcher_writes_preamble_to_worktree(
     monkeypatch.setattr(
         orca_taskctl, "verify_launcher_pickup", lambda t, **kw: (True, "런처 기동 확인 성공")
     )
+    monkeypatch.setattr(
+        orca_taskctl, "wait_for_launcher_readiness", lambda *a, **kw: (True, "waiting", 0.0)
+    )
 
     code = orca_taskctl.main(
         [
@@ -5976,6 +5979,11 @@ def test_cmd_dispatch_launcher_fails_when_pickup_times_out(
         "verify_launcher_pickup",
         lambda t, **kw: (False, "런처 기동 확인 시한 초과: preamble 대기 지속"),
     )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "wait_for_launcher_readiness",
+        lambda *a, **kw: (True, "waiting", 0.0),
+    )
 
     code = orca_taskctl.main(
         [
@@ -6037,6 +6045,319 @@ def test_cmd_dispatch_launcher_requires_terminal(
     assert code == 2
     captured = capsys.readouterr()
     assert "launcher_terminal_missing" in captured.out or "--terminal" in captured.err
+
+
+def test_cmd_dispatch_launcher_readiness_success_writes_preamble(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """런처 경로에서 터미널 화면에 preamble 대기 표지가 있으면 통과하고 preamble 파일이 정상 작성됨."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_isolate"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    preamble_content = "ORCA TASK DISPATCH PREAMBLE FOR TEST"
+    dispatch_calls: list[dict[str, Any]] = []
+
+    def mock_dispatch_worker(**kwargs):
+        dispatch_calls.append(kwargs)
+        return (
+            0,
+            json.dumps({"ok": True, "result": {"preamble": preamble_content}}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        )
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(orca_taskctl, "dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr(
+        orca_taskctl, "start_auto_approve", lambda t: (True, "감시기 테스트 기동 완료")
+    )
+    monkeypatch.setattr(
+        orca_taskctl, "verify_launcher_pickup", lambda t, **kw: (True, "런처 기동 확인 성공")
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "terminal_read",
+        lambda h, **kw: "preamble 대기 중: .orca/preamble.txt (최대 300초)",
+    )
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, **kw: None)
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_launcher_ready",
+            "--launcher",
+            "scripts/orca_agy_launch.py",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+
+    assert code == 0
+    assert len(dispatch_calls) == 1
+    written = list((worktree_dir / ".orca").glob("preamble_*.txt"))
+    assert len(written) == 1
+    assert written[0].read_text(encoding="utf-8") == preamble_content
+
+
+def test_cmd_dispatch_launcher_readiness_fails_without_marker_no_preamble(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """표지가 없으면 종료 코드 2로 거부되고 preamble 파일이 생성되지 않음."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_isolate"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(orca_taskctl, "DEFAULT_LAUNCHER_READINESS_WAIT_SECONDS", 0.0)
+    monkeypatch.setattr(orca_taskctl, "DEFAULT_LAUNCHER_READINESS_POLL_INTERVAL_SEC", 0.01)
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, **kw: "bash-5.2$ ")
+    monkeypatch.setattr(orca_taskctl, "terminal_read", lambda h, **kw: "bash-5.2$ ls\n")
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_no_marker",
+            "--launcher",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["error"] == "launcher_terminal_not_waiting"
+    assert payload["reason"] == "not_waiting"
+    assert payload["terminal"] == "term_no_marker"
+    assert payload["worktree"] == str(worktree_dir)
+    assert "waited_seconds" in payload
+    assert payload["exit_code"] == 2
+    assert "해결책" in captured.err
+    assert "--command" in captured.err
+
+    # preamble 파일이 생성되지 않았음을 검증
+    written = list((worktree_dir / ".orca").glob("preamble*.txt"))
+    assert written == []
+
+
+def test_cmd_dispatch_launcher_readiness_fails_when_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """화면을 아예 읽지 못한 경우(unreadable)에도 fail-closed 로 거부되고 종료 코드 2 반환."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_isolate"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(orca_taskctl, "DEFAULT_LAUNCHER_READINESS_WAIT_SECONDS", 0.0)
+    monkeypatch.setattr(orca_taskctl, "DEFAULT_LAUNCHER_READINESS_POLL_INTERVAL_SEC", 0.01)
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, **kw: None)
+    monkeypatch.setattr(orca_taskctl, "terminal_read", lambda h, **kw: None)
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_unreadable",
+            "--launcher",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["error"] == "launcher_terminal_not_waiting"
+    assert payload["reason"] == "unreadable"
+    assert payload["terminal"] == "term_unreadable"
+    assert payload["exit_code"] == 2
+    assert "읽을 수 없습니다" in captured.err
+    assert "--command" in captured.err
+
+    # preamble 파일이 생성되지 않았음을 검증
+    written = list((worktree_dir / ".orca").glob("preamble*.txt"))
+    assert written == []
+
+
+def test_cmd_dispatch_launcher_readiness_bypassed_with_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """--allow-unready-launcher 지정 시 경고를 출력하고 대기 검사를 건너뛰어 preamble 작성 및 진행."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_isolate"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    preamble_content = "ORCA TASK DISPATCH PREAMBLE FOR TEST"
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "dispatch_worker",
+        lambda **kw: (
+            0,
+            json.dumps({"ok": True, "result": {"preamble": preamble_content}}),
+            "",
+            ["orca"],
+        ),
+    )
+    monkeypatch.setattr(orca_taskctl, "start_auto_approve", lambda t: (True, "감시기 기동"))
+    monkeypatch.setattr(
+        orca_taskctl, "verify_launcher_pickup", lambda t, **kw: (True, "런처 기동 확인 성공")
+    )
+    # 터미널 출력이 unreadable 이어도 플래그가 있으면 통과
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, **kw: None)
+    monkeypatch.setattr(orca_taskctl, "terminal_read", lambda h, **kw: None)
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_bypass",
+            "--launcher",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--allow-unready-launcher",
+            "--json",
+        ]
+    )
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "경고: --allow-unready-launcher" in captured.err
+
+    written = list((worktree_dir / ".orca").glob("preamble_*.txt"))
+    assert len(written) == 1
+    assert written[0].read_text(encoding="utf-8") == preamble_content
+
+
+def test_wait_for_launcher_readiness_polling_catches_late_marker(monkeypatch: pytest.MonkeyPatch):
+    """터미널 기동 직후에는 표지가 없다가 폴링 중 늦게 나타나는 표지를 정상 감지."""
+    from scripts import orca_taskctl
+
+    call_count = 0
+    outputs = [
+        "Python 3.11 starting...",
+        "Loading environment...",
+        "preamble 대기 중: .orca/preamble.txt (최대 300초)",
+    ]
+
+    def mock_read(handle, **kw):
+        nonlocal call_count
+        idx = min(call_count, len(outputs) - 1)
+        call_count += 1
+        return outputs[idx]
+
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, **kw: None)
+    monkeypatch.setattr(orca_taskctl, "terminal_read", mock_read)
+
+    fake_time = 100.0
+
+    def mock_monotonic():
+        nonlocal fake_time
+        return fake_time
+
+    def mock_sleep(secs):
+        nonlocal fake_time
+        fake_time += 1.0
+
+    ready, status, _waited = orca_taskctl.wait_for_launcher_readiness(
+        terminal="term_late",
+        wait_seconds=10.0,
+        poll_interval_sec=1.0,
+        _time_monotonic=mock_monotonic,
+        _time_sleep=mock_sleep,
+    )
+
+    assert ready is True
+    assert status == "waiting"
+    assert call_count == 3
 
 
 def test_worker_start_with_effort(monkeypatch: pytest.MonkeyPatch):
