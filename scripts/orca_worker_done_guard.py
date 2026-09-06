@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess  # nosec B404
 import sys
 from collections.abc import Mapping
@@ -63,6 +64,68 @@ REQUIRED_WORKER_DONE_FIELDS = [
 ]
 
 FROM_HANDLE_ENV_VAR = "ORCA_TERMINAL_HANDLE"
+
+DISPATCH_CAPABILITY_PATTERN = re.compile(r"dcap_[A-Za-z0-9]+")
+DISPATCH_CAPABILITY_DIRNAME = "dispatch_capabilities"
+
+
+def mask_dispatch_capability(token: str) -> str:
+    """토큰 앞 일부만 보여주고 나머지를 가립니다. 전체 토큰을 로그에 남기지 않습니다."""
+    text = (token or "").strip()
+    if len(text) <= 9:
+        return "***"
+    return f"{text[:9]}***"
+
+
+def dispatch_capability_file(repo: str | Path, task_id: str) -> Path:
+    """워크트리 안 task 별 capability 기록 파일 경로를 반환합니다 (.orca 아래)."""
+    safe_task = re.sub(r"[^A-Za-z0-9_-]", "_", (task_id or "unknown").strip() or "unknown")
+    return Path(repo) / ".orca" / DISPATCH_CAPABILITY_DIRNAME / f"{safe_task}.capability"
+
+
+def resolve_dispatch_capability(
+    explicit: str | None = None,
+    task_id: str | None = None,
+    repo: str | Path | None = None,
+) -> tuple[str, list[str]]:
+    """dispatch capability 토큰을 해소합니다.
+
+    명시 인자가 기록 파일보다 우선합니다. 미지정 시에만 워크트리 안
+    .orca/dispatch_capabilities/<task_id>.capability 파일을 읽습니다.
+    토큰을 구하지 못하면 전송하지 않도록 ValueError 로 종료합니다.
+    해소했다는 사실만 알리고 토큰 전체는 provenance 에 남기지 않습니다.
+    """
+    provenance: list[str] = []
+
+    explicit_token = (explicit or "").strip()
+    if explicit_token:
+        return explicit_token, provenance
+
+    tid = (task_id or "").strip()
+    if not tid:
+        raise ValueError(
+            "--dispatch-capability 미지정이며 task_id 없이 기록 파일도 해소할 수 없어 "
+            "capability 토큰을 구하지 못했습니다. --dispatch-capability 로 명시하십시오."
+        )
+    cap_file = dispatch_capability_file(repo if repo is not None else Path.cwd(), tid)
+    try:
+        stored = cap_file.read_text(encoding="utf-8").strip().split()[0]
+    except (OSError, IndexError):
+        raise ValueError(
+            "--dispatch-capability 미지정이며 기록 파일에서도 토큰을 해소하지 못했습니다 "
+            f"({cap_file}). dispatch 시점에 기록된 capability 가 없으므로 "
+            "--dispatch-capability 로 명시하십시오."
+        ) from None
+    if not DISPATCH_CAPABILITY_PATTERN.fullmatch(stored):
+        raise ValueError(
+            "--dispatch-capability 미지정이며 기록 파일의 값이 capability 형식이 아니므로 "
+            "전송하지 않습니다. --dispatch-capability 로 명시하십시오."
+        )
+    provenance.append(
+        f"--dispatch-capability 값을 기록 파일에서 해소했습니다 "
+        f"({cap_file}, 토큰={mask_dispatch_capability(stored)})"
+    )
+    return stored, provenance
 
 
 def resolve_sender_identity(
@@ -355,12 +418,38 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
             return 2
+        try:
+            resolved_capability, capability_provenance = resolve_dispatch_capability(
+                explicit=args.dispatch_capability,
+                task_id=task_id,
+                repo=repo_path,
+            )
+        except ValueError as exc:
+            sys.stderr.write(
+                f"오류 [orca_worker_done_guard]: dispatch capability 해소 실패: {exc}\n"
+            )
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "origin": "capability_missing",
+                            "violations": [str(exc)],
+                            "details": details,
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
+        identity_provenance.extend(capability_provenance)
         code, stdout, stderr = execute_orca_send(
             task_id=task_id,
             from_handle=resolved_from,
             to_handle=args.to_handle,
             dispatch_id=resolved_dispatch,
-            dispatch_capability=args.dispatch_capability,
+            dispatch_capability=resolved_capability,
             subject=args.subject,
             body=args.body,
             outcome=args.outcome,

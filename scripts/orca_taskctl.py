@@ -3185,12 +3185,102 @@ def _extract_preamble(stdout: str) -> str | None:
     return None
 
 
+DISPATCH_CAPABILITY_PATTERN = re.compile(r"dcap_[A-Za-z0-9]+")
+DISPATCH_CAPABILITY_DIRNAME = "dispatch_capabilities"
+
+
+def mask_dispatch_capability(token: str) -> str:
+    """토큰 앞 일부만 보여주고 나머지를 가립니다. 전체 토큰을 로그에 남기지 않습니다."""
+    text = (token or "").strip()
+    if len(text) <= 9:
+        return "***"
+    return f"{text[:9]}***"
+
+
+def dispatch_capability_file(worktree_path: str | Path, task_id: str) -> Path:
+    """워크트리 안 task 별 capability 기록 파일 경로를 반환합니다 (.orca 아래)."""
+    safe_task = re.sub(r"[^A-Za-z0-9_-]", "_", (task_id or "unknown").strip() or "unknown")
+    return Path(worktree_path) / ".orca" / DISPATCH_CAPABILITY_DIRNAME / f"{safe_task}.capability"
+
+
+def extract_dispatch_capability(text: str | None) -> str | None:
+    """preamble 텍스트에서 dcap_ 토큰을 추출합니다. 없으면 None 을 돌려줍니다."""
+    if not text:
+        return None
+    match = DISPATCH_CAPABILITY_PATTERN.search(text)
+    return match.group(0) if match else None
+
+
+def _dispatch_worktree_from_stdout(stdout: str | None) -> Path | None:
+    """worker-start 응답 JSON 에서 새 워크트리 경로를 찾습니다. 없으면 None 입니다."""
+    if not stdout or not stdout.strip():
+        return None
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    candidates: list[Any] = []
+    if isinstance(payload, dict):
+        result = payload.get("result")
+        if isinstance(result, dict):
+            for key in ("worktree", "worktree_path", "path", "worktreePath"):
+                candidates.append(result.get(key))
+            terminal = result.get("terminal")
+            if isinstance(terminal, dict):
+                candidates.append(terminal.get("worktree_path"))
+        for key in ("worktree", "worktree_path", "path"):
+            candidates.append(payload.get(key))
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate:
+            path = Path(candidate)
+            if path.is_dir():
+                return path
+    return None
+
+
+def record_dispatch_capability(
+    worktree_path: str | Path | None,
+    task_id: str,
+    *texts: str | None,
+) -> Path | None:
+    """preamble 텍스트에서 토큰을 추출해 워크트리 안 파일에 task 별로 기록합니다.
+
+    소비 후 삭제되는 preamble 파일에 의존하지 않고 dispatch 시점에 별도 파일로
+    기록합니다. 기록 실패는 Dispatch 자체를 막지 않고 경고만 남깁니다.
+    토큰 전체는 로그에 남기지 않습니다.
+    """
+    if worktree_path is None:
+        return None
+    token: str | None = None
+    for text in texts:
+        token = extract_dispatch_capability(text)
+        if token:
+            break
+    if not token:
+        return None
+    try:
+        dest = dispatch_capability_file(worktree_path, task_id)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(token + "\n", encoding="utf-8")
+        with suppress(OSError):
+            os.chmod(dest, 0o600)
+        sys.stderr.write(
+            f"안내: dispatch capability 기록 완료: {dest} "
+            f"(task={task_id}, 토큰={mask_dispatch_capability(token)})\n"
+        )
+        return dest
+    except Exception as exc:
+        sys.stderr.write(f"경고: dispatch capability 기록 실패: {exc}\n")
+        return None
+
+
 def dispatch_with_fallback(
     task_id: str,
     terminal: str,
     run_id: str | None = None,
     as_json: bool = False,
     timeout: int = 30,
+    record_worktree: str | Path | None = None,
 ) -> tuple[int, str, str, list[str], dict[str, Any]]:
     """orca orchestration dispatch 를 실행하되, --inject 가 agent_prompt_blocked 로 실패하면
     --return-preamble 로 지시문을 받아 terminal send 로 직접 투입하는 대체 경로를 실행합니다.
@@ -3232,6 +3322,7 @@ def dispatch_with_fallback(
         if code_p == 0 and _launch_succeeded(stdout_p, expect_json=True):
             preamble = _extract_preamble(stdout_p)
             if preamble:
+                record_dispatch_capability(record_worktree, task_id, preamble, stdout_p)
                 send_code, send_out, send_err = terminal_send(terminal, preamble, timeout=timeout)
                 if send_code != 0:
                     fallback_info["error"] = f"terminal_send_failed: {send_err or send_out}"
@@ -4561,6 +4652,9 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         sys.stderr.write(
             f"고유 preamble 작성 완료: {preamble_file} ({len(preamble)}자, nonce={nonce})\n"
         )
+        # preamble 파일은 런처가 소비 후 삭제하므로, 별도 capability 파일에
+        # dispatch 시점에 토큰을 기록합니다. guard 가 worker_done 전송 시 해소합니다.
+        record_dispatch_capability(worktree_path, task_id, preamble, stdout)
 
         pickup_ok, launcher_pickup_detail = verify_launcher_pickup(
             args.terminal, timeout_sec=30.0, preamble_file=preamble_file
@@ -4678,6 +4772,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             terminal=args.terminal,
             run_id=args.run_id if args.run_id != DEFAULT_RUN_ID else None,
             as_json=args.json,
+            record_worktree=worktree_path,
         )
         launch_cmd = shlex.join(executed_cmd)
         if fallback_info.get("fallback_used"):
@@ -4764,6 +4859,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             except Exception as exc:
                 if not getattr(args, "skip_dispatch_receipt", False):
                     sys.stderr.write(f"경고: 비감독 Dispatch 영수증 갱신 실패: {exc}\n")
+            # --inject 경로 등 preamble 원문을 손에 쥐지 못한 경우에도 dispatch
+            # 응답 안에 토큰이 있으면 기록합니다. 없으면 무시하고 넘어갑니다.
+            record_dispatch_capability(eff_wt, task_id, stdout, stderr)
+        else:
+            # worker-start 경로는 새 워크트리가 생기므로 응답에서 워크트리 경로를
+            # 찾아 기록하고, 못 찾으면 주 저장소에 남깁니다.
+            record_dispatch_capability(
+                _dispatch_worktree_from_stdout(stdout) or repo_root, task_id, stdout, stderr
+            )
 
         try:
             reliability_tracking = _start_reliability_tracking(
