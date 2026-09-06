@@ -17,10 +17,10 @@
 | `reviewer` | `high` | `qwen-plus` | `gemini-flash-high` |
 | `reviewer` | `medium` | `qwen-plus` | `gemini-flash-medium` |
 | `reviewer` | `low` | `qwen-plus` | `gemini-flash-medium` |
-| `builder` | `high` | `gemini-flash-high` | `qwen-plus` |
+| `builder` | `high` | `opencode-muse-spark` | `gemini-flash-high` |
 | `builder` | `medium` | `gemini-flash-medium` | `qwen-plus` |
 | `builder` | `low` | `gemini-flash-medium` | `qwen-plus` |
-| `investigator` | `high` | `gemini-flash-high` | `qwen-plus` |
+| `investigator` | `high` | `opencode-muse-spark` | `gemini-flash-high` |
 | `investigator` | `medium` | `gemini-flash-medium` | `qwen-plus` |
 | `investigator` | `low` | `gemini-flash-low` | `gemini-flash-medium` |
 | `benchmarker` | `high` | `gemini-flash-high` | `qwen-plus` |
@@ -51,9 +51,9 @@
 | `claude-sonnet` | `claude-sonnet-5` | Claude | O (`True`) | 로컬 Claude Pro 수동 보조 워커 (TIER_POLICY 자동 배정 제외, WORKER_MODEL_NOTICE 후 명시 배정) |
 | `grok-4.6` | `grok-4.6` | Grok | X (`False`) | SuperGrok 로컬 Grok CLI. effort high 는 코디네이터 등급으로 워커 자동 배정 제외, 워커 등급은 medium/low. WORKER_MODEL_NOTICE 후 명시 배정 |
 | `grok-4.5` | `grok-4.5` | Grok | X (`False`) | SuperGrok 로컬 Grok CLI. grok-4.5 워커 모델. WORKER_MODEL_NOTICE 후 명시 배정 |
-| `opencode-muse-spark` | `opencode/muse-spark-1.3-contributor-free` | OpenCode | X (`False`) | 수동 지정 전용 (builder, investigator 용도, reviewer 제외) |
+| `opencode-muse-spark` | `opencode/muse-spark-1.3-contributor-free` | OpenCode | O (`True`) | A+ 고난도 워커. `builder`/`investigator` 의 high 위험도에만 자동 배정. `reviewer`/`benchmarker` 는 명시 지정 전용 |
 
-`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5`, `opencode-muse-spark` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
+`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
 
 리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를 그대로 통과시키기 때문입니다. 현재 정책에서 빌더가 Gemini 계열(`gemini-flash-*`)인 동안 리뷰어는 `qwen-plus`(Alibaba Token Plan)입니다.
 
@@ -128,16 +128,28 @@
 
 | 모델 ID | 결과 | provider | tier | auto_selectable | 조치 |
 | --- | :---: | :---: | :---: | :---: | --- |
-| `opencode/muse-spark-1.3-contributor-free` | 응답 (코드 0) | `opencode` | `free` | `False` | 풀 등록 (`opencode-muse-spark`, 수동 지정 전용) |
+| `opencode/muse-spark-1.3-contributor-free` | 응답 (코드 0) | `opencode` | `free` | `True` | 풀 등록 (`opencode-muse-spark`). 2026-09-06 자동 배정 개방 |
 | `opencode-go/muse-spark-1.3-contributor` | 세션 쿠키 미설정 | `opencode` | - | - | 미등록 (현재 사용 불가) |
 
 핵심 확인 사실 및 운용 정책:
 
 1. **실행 환경 및 실측 결과**: `opencode run --model opencode/muse-spark-1.3-contributor-free` 로 기본 응답과 도구 사용을 모두 확인했다. 파일 읽기 도구를 정상 호출하여 `pyproject.toml` 의 프로젝트 이름을 정확히 조회하고 종료 코드 0으로 완료됨을 실측 검증했다.
 2. **무료 기여자 티어 등록 및 유료 경로 제외**: 무료 경로인 `opencode/muse-spark-1.3-contributor-free` 만 등록한다. 유료 경로인 `opencode-go/muse-spark-1.3-contributor` 는 세션 쿠키가 설정되어 있지 않아 현재 사용할 수 없다.
-3. **추론 등급(--variant) 미검증 상태 보존**: `opencode run` 의 `--variant` 플래그가 실제 reasoning effort 에 유의미한 차이를 유발하는지 여부가 검증되지 않았으므로 임의로 등급을 매핑하지 않고 `variant: capability_unknown` 으로 보수적 기록한다.
-4. **역할 제한 및 수동 지정 전용**: 용도(역할)는 `builder` 와 `investigator` 로 설정하며, 임계 경로인 `reviewer` 에는 배정하지 않는다. `auto_selectable=False` 로 등록되어 자동 배정이나 자동 fallback 에 들어가지 않으며, `--model opencode-muse-spark` 또는 `--model opencode/muse-spark-1.3-contributor-free` 명시 지정으로만 사용된다.
-5. **승격 조건**: 외부의 검증되지 않은 벤치마크 수치는 인용하지 않으며, 이 저장소의 실측 기준인 `benchmarks/free_workers` 쓰기 경합을 통과한 뒤에만 정규 워커 및 자동 배정 승격을 검토한다.
+3. **추론 등급(--variant) 은 검증 불가로 확정**: 2026-09-06 실측에서 `opencode run --variant high`, `--variant max`, 그리고 존재하지 않는 문자열 `--variant zzzznotavariant` 가 **모두 종료 코드 0 으로 정상 응답**했다. 아무 값이나 통과하므로 이 플래그로는 추론 등급을 확인할 수 없다. 또한 워커가 실제로 뜨는 TUI 형태(`opencode <project>`)에는 `--variant` 자체가 없고, Orca 는 `agent opencode` 에 대해 `Agent opencode does not support launch-time model selection` 으로 `--model`/`--effort` 주입을 거부한다. 세 경로가 모두 막혀 있으므로 등급 매핑을 넣지 않고 `variant: capability_unknown` 을 확정 상태로 유지한다.
+4. **역할과 자동 배정 범위**: `suitable_for` 는 `builder`, `investigator`, `reviewer`, `benchmarker` 네 가지다. 그중 **자동 배정은 `TIER_POLICY` 의 `(builder, high)` 와 `(investigator, high)` 두 조합뿐**이며 각각 후보 선두에 놓인다. `medium` 과 `low` 는 기존 워커가 그대로 맡는다. 단순 문서 수정, 포매팅, 변수명 변경, 단순 lint 수정 같은 과제까지 A+ 워커로 올리면 얻는 것 없이 토큰만 늘어나기 때문이다. `reviewer` 와 `benchmarker` 는 `suitable_for` 에만 두고 `TIER_POLICY` 에는 넣지 않는다. 병합 판정과 수치 해석은 임계 경로이며, 무료 티어 스택을 그 경로에 자동으로 올리지 않는다는 기존 규칙을 그대로 따른다. 두 역할은 `--model` 명시 지정과 `WORKER_MODEL_NOTICE` 를 거쳐야 쓴다.
+5. **승격 근거 (2026-09-06 확정)**: 외부의 검증되지 않은 벤치마크 수치는 인용하지 않는다. 승격 근거는 **합성 경합이 아니라 실제로 병합된 과제**다. 2026-09-06 Wave U 에서 이 스택이 동시 3대로 다음을 완주했고 전부 `main` 에 병합됐다.
+
+| Task | 내용 | 커밋 | Level 1 게이트 | 독립 리뷰 |
+| --- | --- | --- | :---: | :---: |
+| `task_22feaa12468c` | CI 타이밍 의존 테스트 결정화 | `6b7cabe` | PASS | `pass` (gemini-3.8-flash-high) |
+| `task_2e5e76ac2508` | R-05 정합성 검사 모집단 분리 | `5d93ec6` | PASS | `pass` (gemini-3.8-flash-high) |
+| `task_1be3814beb14` | Z2 후속 정리 | `b89b02e` | PASS | `pass` (gemini-3.8-flash-medium) |
+
+세 건 모두 계약 위반 0건, 범위 초과 0건이었고 전량 테스트를 통과했다. `6b7cabe` 는 GitHub Actions Run `34006441984` 에서 Windows 를 포함한 10개 작업 전량 통과로 목표를 실제로 달성했음이 확인됐다.
+
+**이 근거의 한계도 함께 적는다.** 표본은 하루, 과제 3건이다. `benchmarks/free_workers` README 4장이 지적하듯 이 수준의 표본으로 스택 간 순위를 말할 수는 없다. 여기서 말할 수 있는 것은 "이 스택이 이 저장소의 high 난이도 빌더 과제를 게이트와 독립 리뷰를 통과하는 품질로 완주한다" 까지다. 자동 배정을 `high` 두 조합으로만 좁힌 것도 그 때문이다.
+
+6. **임계 판정은 여전히 코디네이터 몫이다**: DB 스키마 변경, 데이터 무손실 최종 판정, 마이그레이션과 컷오버, 배포 결정, 보안 경계 변경, 여러 워커 결과의 최종 통합은 이 모델에 맡기지 않는다. `classify_risk` 가 그런 목적을 `high` 로 분류하므로 **구현 워커로는 배정될 수 있으나**, 병합 여부는 Level 3 에서 코디네이터가 판정한다. 워커 배정과 최종 결정권은 다른 층이다.
 
 ---
 

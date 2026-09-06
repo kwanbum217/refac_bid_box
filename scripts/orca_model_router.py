@@ -686,19 +686,39 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         "id": "opencode/muse-spark-1.3-contributor-free",
         "provider": "opencode",
         "tier": "free",
-        "auto_selectable": False,
+        # 2026-09-06 Wave U 실과제 3건(테스트 결정화, 정합성 검사 모집단 분리,
+        # 코드/문서 동기화)을 동시에 맡아 전부 완주했습니다. 각 건이 Level 1
+        # 게이트 6종과 독립 리뷰(Gemini)를 통과했고 전량 테스트도 통과했습니다.
+        # 합성 벤치마크가 아니라 실제 병합된 과제가 근거입니다.
+        "auto_selectable": True,
         "max_tokens": None,
+        # 2026-09-06 실측: `opencode run --variant high|max|<존재하지 않는 문자열>`
+        # 이 전부 종료 코드 0 으로 정상 응답합니다. 아무 값이나 통과하므로 이
+        # 플래그로는 추론 등급을 확인할 수 없습니다. 또한 워커가 뜨는 TUI 형태
+        # (`opencode <project>`)에는 --variant 자체가 없고, Orca 는 agent
+        # opencode 에 대해 launch-time model selection 을 지원하지 않습니다.
+        # 등급을 매핑하면 실제로 아무 일도 하지 않는 설정이 됩니다.
         "variant": "capability_unknown",
+        # reviewer 와 benchmarker 는 명시 지정으로만 씁니다. TIER_POLICY 에는
+        # 넣지 않습니다. 무료 티어 스택을 병합 판정과 수치 해석이라는 임계
+        # 경로에 자동으로 올리지 않는다는 기존 규칙을 그대로 따릅니다.
         "suitable_for": [
             "investigator",
             "builder",
+            "reviewer",
+            "benchmarker",
         ],
         "notes": (
-            "코디네이터가 도구 사용을 포함해 probe 완료 (pyproject.toml 프로젝트명 조회 및 종료 코드 0). "
-            "무료 기여자 티어(contributor-free). "
-            "유료 경로는 세션 쿠키 미설정으로 현재 사용 불가. "
-            "추론 등급(--variant) 적용 여부는 미검증 상태로 capability_unknown 기록. "
-            "승격 조건은 benchmarks/free_workers 쓰기 경합 실측 결과에 따름."
+            "고난도 리포지터리 코딩과 long-horizon 구현을 맡는 A+ 워커. "
+            "코디네이터가 아니며 코디네이터를 대체하지 않는다. "
+            "복잡한 다중 파일 리팩터링, 테스트 실패 원인 추적, 의존성 분석에 우선 배정하고 "
+            "단순 문서 수정, 포매팅, 변수명 변경, 단순 lint 수정에는 배정하지 않는다. "
+            "TIER_POLICY 자동 배정은 builder 와 investigator 의 high 위험도에 한정한다. "
+            "reviewer 와 benchmarker 는 suitable_for 에만 두어 명시 지정 전용이다. "
+            "DB 스키마 변경, 데이터 무손실 최종 판정, 컷오버, 배포 결정, 보안 경계 변경, "
+            "여러 워커 결과의 최종 통합은 코디네이터가 판정하며 이 모델에 맡기지 않는다. "
+            "무료 기여자 티어(contributor-free)이며 유료 경로는 세션 쿠키 미설정으로 사용 불가. "
+            "추론 등급은 capability_unknown 이다."
         ),
     },
     "or-free-north-mini": {
@@ -1279,10 +1299,13 @@ TIER_POLICY: dict[tuple[str, str], list[str]] = {
     # 않는다" 고 명시한 모델입니다. fallback 으로 넣어 두면 주 모델 장애 시
     # 금지한 등급이 코드 작성과 병합 판정으로 승격됩니다.
     ("reviewer", "low"): ["qwen-plus", "gemini-flash-medium"],
-    ("builder", "high"): ["gemini-flash-high", "qwen-plus"],
+    # 복잡한 다중 파일 구현과 깊은 원인 추적은 Muse 가 먼저 받습니다.
+    # medium 과 low 는 기존 워커가 그대로 맡습니다. 단순 과제까지 A+ 워커로
+    # 올리면 얻는 것 없이 비용만 늘어납니다.
+    ("builder", "high"): ["opencode-muse-spark", "gemini-flash-high", "qwen-plus"],
     ("builder", "medium"): ["gemini-flash-medium", "qwen-plus"],
     ("builder", "low"): ["gemini-flash-medium", "qwen-plus"],
-    ("investigator", "high"): ["gemini-flash-high", "qwen-plus"],
+    ("investigator", "high"): ["opencode-muse-spark", "gemini-flash-high", "qwen-plus"],
     ("investigator", "medium"): ["gemini-flash-medium", "qwen-plus"],
     ("investigator", "low"): ["gemini-flash-low", "gemini-flash-medium"],
     # 계측·벤치마크는 수치 해석 오류가 그대로 정본이 되므로 low 에도

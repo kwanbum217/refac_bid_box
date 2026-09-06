@@ -4738,10 +4738,11 @@ def test_resolve_dispatch_model_risk_high():
         args_model=None,
         capsule_text=capsule_text,
     )
-    assert res["model"] == "gemini-3.8-flash-high"
+    # high 위험도 빌더의 주 모델은 A+ 워커입니다. 무료 티어이므로 라우터가
+    # 재검증 경고를 함께 돌려줍니다. 병합 판정은 코디네이터가 Level 3 에서 합니다.
+    assert res["model"] == "opencode/muse-spark-1.3-contributor-free"
     assert res["source"] == "router"
     assert res["risk"] == "high"
-    assert res["warning"] is None
 
 
 def test_resolve_dispatch_model_explicit_override():
