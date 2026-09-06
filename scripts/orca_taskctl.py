@@ -1538,12 +1538,46 @@ def agent_prompt_is_input_caret(text: str) -> bool:
     return bool(lines) and lines[-1] == ">"
 
 
+ANSI_ESCAPE_PATTERN = re.compile(
+    r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b[()][0-9A-Za-z]|\x1b[=>MEHc7-8]"
+)
+
+
+def strip_ansi_sequences(text: str) -> str:
+    """터미널 화면의 ANSI 이스케이프를 걷어냅니다.
+
+    OpenCode TUI 는 색상·커서 제어 코드를 화면에 함께 남깁니다. 그대로 두면
+    도달 표지 문자열이 코드 사이에 끼어 단순 포함 검사에서 빗나갑니다.
+    """
+    if not text:
+        return ""
+    cleaned = ANSI_ESCAPE_PATTERN.sub("", text)
+    return "".join(ch for ch in cleaned if ch == "\n" or ch == "\t" or ord(ch) >= 32)
+
+
 def instruction_observed(text: str, markers: list[str]) -> bool:
-    """주입한 지시가 터미널에 실제로 도달했는지 판정합니다."""
+    """주입한 지시가 터미널에 실제로 도달했는지 판정합니다.
+
+    ANSI 코드를 걷은 뒤 대소문자 무시 포함 검사를 합니다. 그래도 없으면
+    공백을 모두 지운 형태로 한 번 더 봅니다. OpenCode TUI 는 긴 줄을
+    뷰포트 너비에 맞춰 자르거나 개행하므로 probe 중간에 개행이 끼어도
+    도달로 인정해야 합니다.
+    """
     if not markers:
         return False
-    lowered = text.lower()
-    return any(marker.lower() in lowered for marker in markers if marker)
+    cleaned = strip_ansi_sequences(text or "")
+    lowered = cleaned.lower()
+    for marker in markers:
+        if marker and marker.lower() in lowered:
+            return True
+    compact = re.sub(r"\s+", "", lowered)
+    for marker in markers:
+        if not marker:
+            continue
+        marker_compact = re.sub(r"\s+", "", marker.lower())
+        if marker_compact and marker_compact in compact:
+            return True
+    return False
 
 
 def verify_instruction_delivered(
@@ -1566,6 +1600,11 @@ def verify_instruction_delivered(
     출력을 쏟아내면 밀려납니다. 2026-08-19 실측에서 3초 간격으로는 Gemini 워커의
     표지를 놓쳐 도달했는데도 not_observed 로 판정했습니다.
 
+    OpenCode TUI 는 긴 고지문이 뷰포트(tail)에서 잘리거나 전체 버퍼(read)에만
+    남는 경우가 있습니다. 그래서 매 회차 tail 을 먼저 보고 없으면 read 로
+    전체 버퍼까지 봅니다. 둘 중 어디에도 없으면 not_observed, 둘 다 읽지
+    못하면 unreadable 입니다.
+
     반환값: delivered | not_observed | unreadable
     """
     get_time = _time_monotonic if _time_monotonic is not None else time.monotonic
@@ -1577,6 +1616,15 @@ def verify_instruction_delivered(
         if text is not None:
             unreadable_only = False
             if instruction_observed(text, markers):
+                return "delivered"
+        full_text = None
+        try:
+            full_text = terminal_read(handle, timeout=timeout)
+        except Exception:
+            full_text = None
+        if full_text is not None and full_text != text:
+            unreadable_only = False
+            if instruction_observed(full_text, markers):
                 return "delivered"
         if wait_seconds <= 0 or get_time() >= deadline:
             return "unreadable" if unreadable_only else "not_observed"
@@ -2970,6 +3018,20 @@ def _deliver_capsule_notice(
 
     code, stdout, stderr = terminal_send(args.terminal, text)
     if code == 0 and _launch_succeeded(stdout, expect_json=True):
+        # 긴 고지문은 OpenCode TUI 뷰포트에서 잘리거나 줄바꿈으로 밀려날 수
+        # 있습니다. 짧은 probe 확인문을 뒤이어 보내 도달 표지가 화면에 남도록
+        # 합니다. 실패해도 본문 전송 자체는 성립하므로 경고만 남깁니다.
+        try:
+            probe_code, probe_out, probe_err = terminal_send(
+                args.terminal, f"전달 확인 표지: {delivery_probe}", timeout=30
+            )
+            if probe_code != 0 or not _launch_succeeded(probe_out, expect_json=True):
+                detail = (
+                    (probe_err or "").strip() or _extract_cli_error(probe_out) or "알 수 없는 오류"
+                )
+                sys.stderr.write(f"경고: 도달 표지 확인문 전송 실패: {detail}\n")
+        except Exception as exc:
+            sys.stderr.write(f"경고: 도달 표지 확인문 전송 중 예외 발생: {exc}\n")
         return {
             "status": "sent",
             "dispatch_id": dispatch_id,

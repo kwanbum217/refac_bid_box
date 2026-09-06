@@ -2204,10 +2204,12 @@ def test_cmd_dispatch_sends_capsule_notice_on_attach(
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
     sent: dict[str, str] = {}
+    sent_texts: list[str] = []
 
     def mock_terminal_send(handle, text, timeout=30):
         sent["handle"] = handle
         sent["text"] = text
+        sent_texts.append(text)
         return 0, json.dumps({"ok": True}), ""
 
     monkeypatch.setattr(
@@ -2240,8 +2242,8 @@ def test_cmd_dispatch_sends_capsule_notice_on_attach(
     )
     assert code == 0
     assert sent["handle"] == "term_abc"
-    assert "capsule.yaml" in sent["text"]
-    assert "ctx_live" in sent["text"]
+    assert any("capsule.yaml" in text for text in sent_texts)
+    assert any("ctx_live" in text for text in sent_texts)
     data = json.loads(capsys.readouterr().out)
     assert data["capsule_notice"]["status"] == "sent"
     assert Path(data["capsule"]).is_absolute()
@@ -6957,3 +6959,212 @@ def test_dispatch_no_deps_option_and_create_rework_only():
         ["rework", "--deps", '["task_1"]', "--task-id", "t1", "--reason", "test"]
     )
     assert rework_args.deps == '["task_1"]'
+
+
+def test_instruction_observed_ignores_ansi_and_wrapping():
+    """OpenCode TUI 의 ANSI 코드나 줄바꿈에 probe 가 끼어도 도달로 인정합니다."""
+    from scripts.orca_taskctl import instruction_observed
+
+    probe = "ORCA_DELIVERY_PROBE_abc123"
+    ansi = "\x1b[32mORCA_DELIVERY_PROBE_\x1b[0mabc123"
+    assert instruction_observed(ansi, [probe]) is True
+    wrapped = "ORCA_DELIVERY_PROBE_\nabc123"
+    assert instruction_observed(wrapped, [probe]) is True
+    assert instruction_observed("다른 내용", [probe]) is False
+
+
+def test_verify_instruction_delivered_falls_back_to_terminal_read(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """뷰포트(tail)에는 없고 전체 버퍼(read)에만 probe 가 남아도 delivered 입니다.
+
+    OpenCode TUI 는 긴 고지문이 뷰포트에서 잘리고 전체 버퍼에만 남는 경우가
+    있어 tail 만 보면 도달했는데도 not_observed 로 판정했습니다.
+    """
+    from scripts import orca_taskctl
+
+    probe = "ORCA_DELIVERY_PROBE_readfallback"
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: "뷰포트에 표지 없음")
+    monkeypatch.setattr(
+        orca_taskctl, "terminal_read", lambda h, timeout=30: f"전체 버퍼 도달 {probe}"
+    )
+    assert (
+        orca_taskctl.verify_instruction_delivered("term_x", [probe], wait_seconds=0) == "delivered"
+    )
+
+
+def test_verify_instruction_delivered_both_missing_is_not_observed(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """tail 과 read 모두 probe 가 없으면 not_observed, 둘 다 읽지 못하면 unreadable 입니다."""
+    from scripts import orca_taskctl
+
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: "다른 내용")
+    monkeypatch.setattr(orca_taskctl, "terminal_read", lambda h, timeout=30: "역시 표지 없음")
+    assert (
+        orca_taskctl.verify_instruction_delivered(
+            "term_x", ["ORCA_DELIVERY_PROBE_x"], wait_seconds=0
+        )
+        == "not_observed"
+    )
+
+    monkeypatch.setattr(orca_taskctl, "terminal_tail", lambda h, timeout=30: None)
+    monkeypatch.setattr(orca_taskctl, "terminal_read", lambda h, timeout=30: None)
+    assert (
+        orca_taskctl.verify_instruction_delivered(
+            "term_x", ["ORCA_DELIVERY_PROBE_x"], wait_seconds=0
+        )
+        == "unreadable"
+    )
+
+
+def test_cmd_dispatch_opencode_probe_visible_succeeds_without_bypass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """OpenCode 화면에 probe 가 보이면 우회 플래그 없이 종료 코드 0 입니다.
+
+    tail(뷰포트)에는 OpenCode 상태줄만 있고 probe 는 전체 버퍼(read)에만
+    남는 배치를 실제 verify 로 통과시킵니다.
+    """
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    probe = "ORCA_DELIVERY_PROBE_opencode1"
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda **kwargs: (
+            0,
+            json.dumps({"ok": True}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._deliver_capsule_notice",
+        lambda *a, **k: {
+            "status": "sent",
+            "dispatch_id": "d1",
+            "chars": 10,
+            "delivery_probe": probe,
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.prepare_worker_terminal",
+        lambda *a, **k: {
+            "trust_prompt": {"status": "not_present", "ok": True},
+            "auto_approve_watcher": {"ok": True, "detail": "테스트"},
+            "file_edit_auto_approve": {"ok": False, "detail": "테스트 건너뜀"},
+        },
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "terminal_tail",
+        lambda h, timeout=30: "Build\n  esc interrupt      ctrl+p commands",
+    )
+    monkeypatch.setattr(
+        orca_taskctl, "terminal_read", lambda h, timeout=30: f"전달 확인 표지: {probe}"
+    )
+
+    argv = [
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--terminal",
+        "term_opencode",
+        "--repo",
+        str(tmp_path),
+        "--json",
+    ]
+    assert main(argv) == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["delivery_check"] == "delivered"
+    assert data["exit_code"] == 0
+
+
+def test_cmd_dispatch_probe_missing_still_fails_without_bypass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """probe 가 정말 안 보이면 우회 플래그 없이 실패합니다 (fail-closed 유지)."""
+    intent_file = tmp_path / "intent.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.dispatch_worker",
+        lambda **kwargs: (
+            0,
+            json.dumps({"ok": True}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.check_write_concurrency", lambda *a, **k: {"allowed": True}
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl._deliver_capsule_notice",
+        lambda *a, **k: {
+            "status": "sent",
+            "dispatch_id": "d1",
+            "chars": 10,
+            "delivery_probe": "ORCA_DELIVERY_PROBE_missing",
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.prepare_worker_terminal",
+        lambda *a, **k: {
+            "trust_prompt": {"status": "not_present", "ok": True},
+            "auto_approve_watcher": {"ok": True, "detail": "테스트"},
+            "file_edit_auto_approve": {"ok": False, "detail": "테스트 건너뜀"},
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.verify_instruction_delivered", lambda *a, **k: "not_observed"
+    )
+
+    argv = [
+        "dispatch",
+        "--intent",
+        str(intent_file),
+        "--capsule-dir",
+        str(tmp_path / "capsules"),
+        "--terminal",
+        "term_abc",
+        "--repo",
+        str(tmp_path),
+        "--json",
+    ]
+    assert main(argv) == 3
+    assert main([*argv, "--allow-unverified-delivery"]) == 0
+
+
+def test_deliver_capsule_notice_sends_short_probe_followup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """긴 고지문 뒤에 짧은 probe 확인문을 보내 TUI 잘림에 대비합니다."""
+    from types import SimpleNamespace
+
+    from scripts import orca_taskctl
+
+    capsule = tmp_path / "capsule.yaml"
+    capsule.write_text("role: builder\n", encoding="utf-8")
+    monkeypatch.setattr(orca_taskctl, "resolve_dispatch_id", lambda task_id, timeout=30: "d1")
+    sent: list[str] = []
+
+    def mock_send(handle: str, text: str, timeout: int = 30):
+        sent.append(text)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr(orca_taskctl, "terminal_send", mock_send)
+    args = SimpleNamespace(no_capsule_notice=False, terminal="term_x", worktree=None)
+    res = orca_taskctl._deliver_capsule_notice(args, "task_t", capsule, {"role": "builder"})
+    assert res["status"] == "sent"
+    assert len(sent) == 2
+    assert res["delivery_probe"] in sent[1]
