@@ -1,6 +1,6 @@
 version: "2.0"
 description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
-updated_at: "2026-09-05"
+updated_at: "2026-09-06"
 facts:
   - id: gate_g1
     status: closed
@@ -187,15 +187,18 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/ops/api_access_policy.md
   - id: model_swap_gap
-    status: active
-    decision_date: "2026-09-03"
-    claim: "서빙 모델 교체는 rename 사이 미세 부재 구간이 있어 심볼릭 링크 교체를 추진합니다."
+    status: closed
+    decision_date: "2026-09-06"
+    claim: "서빙 모델 교체는 rename 사이 미세 부재 구간을 해소했고 세대 디렉터리와 LIVE 포인터 os.replace 교체로 완료했습니다."
     document_anchor: "서빙 모델 교체는 rename 사이"
     evidence:
       - docs/ops/model_promotion_runbook.md
+      - docs/analysis/task_7f0659b4d4fc.md
+      - src/ml/promotion.py
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/model_promotion_runbook.md
+      - docs/analysis/task_7f0659b4d4fc.md
   - id: promotion_status_check
     status: closed
     decision_date: "2026-09-05"
@@ -229,12 +232,13 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/servc_lwlt_missing_20260830.md
   - id: state_budget
-    status: active
-    decision_date: "2026-09-03"
-    claim: "CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 8,000자 이하를 목표로 진행합니다."
+    status: closed
+    decision_date: "2026-09-06"
+    claim: "CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 8,000자 이하 목표를 통과했습니다."
     document_anchor: "CURRENT_STATE 부팅 요약은 facts.yaml"
     evidence:
       - docs/context/current_state_facts.yaml
+      - docs/context/CURRENT_STATE.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/context/current_state_facts.yaml
@@ -269,15 +273,17 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/ssr_e2e_scope_survey_20260902.md
   - id: rpo_rto
-    status: blocked
-    decision_date: "2026-09-03"
-    claim: "RPO/RTO와 정기 백업 스케줄·restore drill은 미정이며 담당자 결정을 대기합니다."
+    status: active
+    decision_date: "2026-09-06"
+    claim: "RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 실시를 추진합니다."
     document_anchor: "RPO/RTO와 정기 백업 스케줄"
     evidence:
       - docs/ops/backup_recovery_runbook.md
+      - docs/ops/rpo_rto_policy.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/backup_recovery_runbook.md
+      - docs/ops/rpo_rto_policy.md
   - id: observability
     status: blocked
     decision_date: "2026-09-03"
