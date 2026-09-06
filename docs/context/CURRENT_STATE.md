@@ -1,6 +1,6 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-09-05
+> **updated_at**: 2026-09-06
 > **source_commit**: `c639db3`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
@@ -63,15 +63,17 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **promotion_status_check**: promote_model.py status의 레지스트리 차단 동작은 쌍대 기각 검증 통과 상태를 유지합니다.
 
-### active 사실
+- **model_swap_gap**: 서빙 모델 교체는 rename 사이 미세 부재 구간을 해소했고 세대 디렉터리와 LIVE 포인터 os.replace 교체로 완료했습니다.
 
-- **model_swap_gap**: 서빙 모델 교체는 rename 사이 미세 부재 구간이 있어 심볼릭 링크 교체를 추진합니다.
+- **state_budget**: CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 8,000자 이하 목표를 통과했습니다.
+
+### active 사실
 
 - **lexical_full_rerun**: 정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다.
 
 - **missing_lwlt_intervals**: missing_lwlt 집단은 MAE 2.0943으로 결측 집단 전용 예측구간 관리를 추진합니다.
 
-- **state_budget**: CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 8,000자 이하를 목표로 진행합니다.
+- **rpo_rto**: RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 실시를 추진합니다.
 
 ### blocked 사실
 
@@ -80,8 +82,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **ngram_flag**: NGRAM_PREFILTER_ENABLED=false이며 true 전환과 운영 FULLTEXT 인덱스 생성은 사용자 승인 전 보류입니다.
 
 - **ssr_e2e**: SSR E2E Phase 2~4는 범위 조사만 끝났고 착수는 사용자 합의 대기입니다.
-
-- **rpo_rto**: RPO/RTO와 정기 백업 스케줄·restore drill은 미정이며 담당자 결정을 대기합니다.
 
 - **observability**: 관측성 스택은 후보만 있고 담당자 결정을 대기합니다.
 
@@ -101,7 +101,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
 - **SSR E2E Phase 2~4 (2026-09-03, 대기)**: 사용자 합의 후 DB 격리와 시나리오를 착수합니다.
-- **RPO/RTO·백업 (2026-09-03, 대기)**: 주기와 restore drill 담당자 결정을 기다립니다.
+- **RPO/RTO 복구 목표 (2026-09-06, 확정)**: RPO 24시간·RTO 4시간을 확정했습니다. 분기 1회 restore drill 실시가 남았습니다.
 - **관측성 스택 (2026-09-03, 대기)**: 후보 중 하나를 확정해야 합니다.
 - **RAG cold SQL (2026-09-03, 미검증)**: 최대 97,087.81ms 경로의 재측정이 필요합니다.
 - **lexical 전량 재측정 (2026-09-03, 진행)**: 부분집합 효과를 전량 fixture로 확인합니다.
