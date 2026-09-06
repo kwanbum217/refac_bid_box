@@ -41,7 +41,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 from src.app.core.config import settings  # noqa: E402
 from src.app.core.db import SessionLocal  # noqa: E402
 from src.app.core.timeutil import utcnow  # noqa: E402
-from src.app.models.bids import BidResult  # noqa: E402
+from src.app.models.bids import BidAnnouncement, BidResult  # noqa: E402
 from src.app.services.kb_builder import rebuild_knowledge_base  # noqa: E402
 from src.app.services.ranking_snapshots import rebuild_ranking_snapshots  # noqa: E402
 from src.app.services.search_index import (  # noqa: E402
@@ -85,6 +85,29 @@ def parse_date_or_datetime(value: str | None) -> datetime | None:
         return datetime.fromisoformat(val_str)
     except ValueError as exc:
         raise ValueError(f"유효하지 않은 날짜/시각 형식입니다: {value}") from exc
+
+
+def get_db_announcement_notice_numbers(
+    session: Session,
+    *,
+    collected_since: datetime | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> set[str]:
+    """대상 구간 DB 공고 식별자(공고번호) 집합을 조회합니다."""
+    stmt = select(BidAnnouncement.bid_ntce_no)
+    if collected_since is not None:
+        stmt = stmt.where(BidAnnouncement.collected_at >= collected_since)
+    elif start_date is not None:
+        stmt = stmt.where(
+            BidAnnouncement.bid_ntce_dt >= datetime.combine(start_date, datetime.min.time())
+        )
+        if end_date is not None:
+            stmt = stmt.where(
+                BidAnnouncement.bid_ntce_dt <= datetime.combine(end_date, datetime.max.time())
+            )
+    rows = session.execute(stmt).scalars().all()
+    return {str(r).strip() for r in rows if r}
 
 
 def get_db_result_notice_numbers(
@@ -145,8 +168,11 @@ def get_chroma_indexed_notice_numbers(
         raise RuntimeError(f"ChromaDB 식별자 조회 실패: {exc}") from exc
 
 
-def get_meilisearch_result_notice_numbers(client: Any | None = None) -> set[str]:
-    """Meilisearch bid_records 인덱스에서 dataset='result'인 공고번호 식별자 집합을 추출합니다."""
+def get_meilisearch_notice_numbers(
+    dataset: str = "result",
+    client: Any | None = None,
+) -> set[str]:
+    """Meilisearch bid_records 인덱스에서 지정 dataset의 공고번호 식별자 집합을 추출합니다."""
     try:
         if client is None:
             client = MeiliSearchClient()
@@ -159,7 +185,7 @@ def get_meilisearch_result_notice_numbers(client: Any | None = None) -> set[str]
                 f"/indexes/{INDEX_UID}/search",
                 json={
                     "q": "",
-                    "filter": 'dataset = "result"',
+                    "filter": f'dataset = "{dataset}"',
                     "offset": offset,
                     "limit": limit,
                     "attributesToRetrieve": ["bid_ntce_no", "source_id"],
@@ -177,6 +203,16 @@ def get_meilisearch_result_notice_numbers(client: Any | None = None) -> set[str]
         raise RuntimeError(f"Meilisearch 식별자 조회 실패: {exc}") from exc
 
 
+def get_meilisearch_result_notice_numbers(client: Any | None = None) -> set[str]:
+    """Meilisearch bid_records 인덱스에서 dataset='result'인 공고번호 식별자 집합을 추출합니다."""
+    return get_meilisearch_notice_numbers("result", client)
+
+
+def get_meilisearch_announcement_notice_numbers(client: Any | None = None) -> set[str]:
+    """Meilisearch bid_records 인덱스에서 dataset='announcement'인 공고번호 식별자 집합을 추출합니다."""
+    return get_meilisearch_notice_numbers("announcement", client)
+
+
 def verify_reconciliation(
     db: Session,
     *,
@@ -186,17 +222,56 @@ def verify_reconciliation(
     chroma_fetcher: Callable[[], set[str]] | None = None,
     meili_fetcher: Callable[[], set[str]] | None = None,
     db_fetcher: Callable[..., set[str]] | None = None,
+    db_announcement_fetcher: Callable[..., set[str]] | None = None,
+    db_result_fetcher: Callable[..., set[str]] | None = None,
+    meili_announcement_fetcher: Callable[[], set[str]] | None = None,
+    meili_result_fetcher: Callable[[], set[str]] | None = None,
 ) -> dict[str, Any]:
-    """DB 낙찰결과 식별자 집합과 ChromaDB, Meilisearch 색인 식별자 집합의 차집합을 계산합니다."""
-    if db_fetcher is not None:
-        db_notice_nos = db_fetcher(
+    """저장소마다 그 저장소가 실제로 담는 도메인과 1:1로 차집합을 계산합니다.
+
+    세 대조:
+      하나: DB 공고 대 ChromaDB bidding_kb
+      둘: DB 공고 대 Meilisearch announcement
+      셋: DB 낙찰 대 Meilisearch result
+    """
+    if db_announcement_fetcher is not None:
+        db_announcement_nos = db_announcement_fetcher(
+            db,
+            collected_since=collected_since,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    elif db_fetcher is not None:
+        db_announcement_nos = db_fetcher(
             db,
             collected_since=collected_since,
             start_date=start_date,
             end_date=end_date,
         )
     else:
-        db_notice_nos = get_db_result_notice_numbers(
+        db_announcement_nos = get_db_announcement_notice_numbers(
+            db,
+            collected_since=collected_since,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    if db_result_fetcher is not None:
+        db_result_nos = db_result_fetcher(
+            db,
+            collected_since=collected_since,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    elif db_fetcher is not None:
+        db_result_nos = db_fetcher(
+            db,
+            collected_since=collected_since,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    else:
+        db_result_nos = get_db_result_notice_numbers(
             db,
             collected_since=collected_since,
             start_date=start_date,
@@ -206,21 +281,42 @@ def verify_reconciliation(
     chroma_notice_nos = (
         chroma_fetcher() if chroma_fetcher is not None else get_chroma_indexed_notice_numbers()
     )
-    meili_notice_nos = (
-        meili_fetcher() if meili_fetcher is not None else get_meilisearch_result_notice_numbers()
+    if meili_announcement_fetcher is not None:
+        meili_announcement_nos = meili_announcement_fetcher()
+    elif meili_fetcher is not None:
+        meili_announcement_nos = meili_fetcher()
+    else:
+        meili_announcement_nos = get_meilisearch_notice_numbers("announcement")
+    if meili_result_fetcher is not None:
+        meili_result_nos = meili_result_fetcher()
+    elif meili_fetcher is not None:
+        meili_result_nos = meili_fetcher()
+    else:
+        meili_result_nos = get_meilisearch_notice_numbers("result")
+
+    diff_chroma_announcement = db_announcement_nos - chroma_notice_nos
+    diff_meili_announcement = db_announcement_nos - meili_announcement_nos
+    diff_meili_result = db_result_nos - meili_result_nos
+
+    passed = (
+        (len(diff_chroma_announcement) == 0)
+        and (len(diff_meili_announcement) == 0)
+        and (len(diff_meili_result) == 0)
     )
-
-    diff_chroma = db_notice_nos - chroma_notice_nos
-    diff_meili = db_notice_nos - meili_notice_nos
-
-    passed = (len(diff_chroma) == 0) and (len(diff_meili) == 0)
     return {
         "passed": passed,
-        "db_count": len(db_notice_nos),
+        "db_count": len(db_result_nos),
         "chroma_count": len(chroma_notice_nos),
-        "meili_count": len(meili_notice_nos),
-        "missing_in_chroma": diff_chroma,
-        "missing_in_meili": diff_meili,
+        "meili_count": len(meili_result_nos),
+        "missing_in_chroma": diff_chroma_announcement,
+        "missing_in_meili": diff_meili_result,
+        "db_announcement_count": len(db_announcement_nos),
+        "db_result_count": len(db_result_nos),
+        "meili_announcement_count": len(meili_announcement_nos),
+        "meili_result_count": len(meili_result_nos),
+        "missing_in_chroma_announcement": diff_chroma_announcement,
+        "missing_in_meili_announcement": diff_meili_announcement,
+        "missing_in_meili_result": diff_meili_result,
     }
 
 
@@ -254,6 +350,10 @@ def execute_consistency_check(
     chroma_fetcher: Callable[[], set[str]] | None = None,
     meili_fetcher: Callable[[], set[str]] | None = None,
     db_fetcher: Callable[..., set[str]] | None = None,
+    db_announcement_fetcher: Callable[..., set[str]] | None = None,
+    db_result_fetcher: Callable[..., set[str]] | None = None,
+    meili_announcement_fetcher: Callable[[], set[str]] | None = None,
+    meili_result_fetcher: Callable[[], set[str]] | None = None,
 ) -> dict[str, Any]:
     """4단계: 정합성 차집합 검사."""
     result = verify_reconciliation(
@@ -264,17 +364,25 @@ def execute_consistency_check(
         chroma_fetcher=chroma_fetcher,
         meili_fetcher=meili_fetcher,
         db_fetcher=db_fetcher,
+        db_announcement_fetcher=db_announcement_fetcher,
+        db_result_fetcher=db_result_fetcher,
+        meili_announcement_fetcher=meili_announcement_fetcher,
+        meili_result_fetcher=meili_result_fetcher,
     )
     if not result["passed"]:
-        missing_chroma = result.get("missing_in_chroma", set())
-        missing_meili = result.get("missing_in_meili", set())
+        missing_chroma_ann = result.get("missing_in_chroma_announcement", set())
+        missing_meili_ann = result.get("missing_in_meili_announcement", set())
+        missing_meili_res = result.get("missing_in_meili_result", set())
         errors = []
-        if missing_chroma:
-            sample = sorted(missing_chroma)[:5]
-            errors.append(f"ChromaDB 누락 {len(missing_chroma):,}건 (예시: {sample})")
-        if missing_meili:
-            sample = sorted(missing_meili)[:5]
-            errors.append(f"Meilisearch 누락 {len(missing_meili):,}건 (예시: {sample})")
+        if missing_chroma_ann:
+            sample = sorted(missing_chroma_ann)[:5]
+            errors.append(f"ChromaDB 공고 누락 {len(missing_chroma_ann):,}건 (예시: {sample})")
+        if missing_meili_ann:
+            sample = sorted(missing_meili_ann)[:5]
+            errors.append(f"Meilisearch 공고 누락 {len(missing_meili_ann):,}건 (예시: {sample})")
+        if missing_meili_res:
+            sample = sorted(missing_meili_res)[:5]
+            errors.append(f"Meilisearch 낙찰 누락 {len(missing_meili_res):,}건 (예시: {sample})")
         raise RuntimeError("정합성 차집합 불일치 발견:\n  - " + "\n  - ".join(errors))
     return result
 
@@ -291,6 +399,10 @@ def run_reconciliation(
     chroma_fetcher: Callable[[], set[str]] | None = None,
     meili_fetcher: Callable[[], set[str]] | None = None,
     db_fetcher: Callable[..., set[str]] | None = None,
+    db_announcement_fetcher: Callable[..., set[str]] | None = None,
+    db_result_fetcher: Callable[..., set[str]] | None = None,
+    meili_announcement_fetcher: Callable[[], set[str]] | None = None,
+    meili_result_fetcher: Callable[[], set[str]] | None = None,
 ) -> int:
     """하류 동기화 및 정합성 검사 오케스트레이션을 실행합니다.
 
@@ -355,6 +467,10 @@ def run_reconciliation(
             chroma_fetcher=chroma_fetcher,
             meili_fetcher=meili_fetcher,
             db_fetcher=db_fetcher,
+            db_announcement_fetcher=db_announcement_fetcher,
+            db_result_fetcher=db_result_fetcher,
+            meili_announcement_fetcher=meili_announcement_fetcher,
+            meili_result_fetcher=meili_result_fetcher,
         ),
     }
     if step_handlers:
