@@ -367,6 +367,11 @@ async def page(
 ) -> collections.abc.AsyncIterator[Page]:
     """새로운 비인증 브라우저 페이지 인스턴스를 생성하고 실패 시 스크린샷을 저장합니다."""
     pg = await context.new_page()
+    # 부하 시 기본 대기 한도(30초 탐색/5초 expect 혼재)로는 대기 종료 시점이
+    # 들쭉날쭉해지므로 탐색 대기의 상한을 명시한다. 개별 단언의 expect 타임아웃은
+    # 각 테스트에서 조건 대기 호출마다 명시한다.
+    pg.set_default_timeout(15_000)
+    pg.set_default_navigation_timeout(15_000)
     try:
         yield pg
     finally:
@@ -423,6 +428,8 @@ async def authenticated_page(
 ) -> collections.abc.AsyncIterator[Page]:
     """인증 세션 쿠키가 적용된 브라우저 페이지 인스턴스를 생성하고 실패 시 스크린샷을 저장합니다."""
     pg = await authenticated_context.new_page()
+    pg.set_default_timeout(15_000)
+    pg.set_default_navigation_timeout(15_000)
     try:
         yield pg
     finally:

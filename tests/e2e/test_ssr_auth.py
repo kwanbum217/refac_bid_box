@@ -11,10 +11,13 @@ SSR 브라우저 E2E 인증 플로우 검증 테스트.
 
 from __future__ import annotations
 
+import contextlib
+import re
 from typing import Any
 
 import pytest
 from playwright.async_api import Page, expect
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from sqlalchemy.orm import Session
 
 from src.app.models.accounts import CustomUser
@@ -56,8 +59,11 @@ async def test_ssr_auth_signup_flow(
     # 제출
     await page.get_by_role("button", name="계정 생성").click()
 
-    # 리다이렉트 대기 (홈 화면으로 이동)
-    await page.wait_for_load_state("networkidle")
+    # 회원가입 처리 완료 후 홈으로 이동할 때까지 조건 대기한다.
+    # networkidle 은 부하 시 유휴 구간이 없어 타임아웃 오탐을 내므로
+    # 실제 검증 대상인 URL 이동을 직접 기다린다.
+    await expect(page).not_to_have_url(re.compile(r".*/accounts/signup.*"), timeout=15_000)
+    await page.wait_for_load_state("domcontentloaded")
 
     # DB에 신규 사용자가 정상 생성되었는지 검증
     e2e_db_session.expire_all()
@@ -83,16 +89,17 @@ async def test_ssr_auth_login_success(
     await page.locator("#id_password").fill(e2e_test_user["password"])
     await page.get_by_role("button", name="로그인").click()
 
-    await page.wait_for_load_state("networkidle")
+    # 로그인 성공 후 로그인 페이지를 벗어날 때까지 조건 대기한다.
+    await expect(page).not_to_have_url(re.compile(r".*/accounts/login.*"), timeout=15_000)
 
     # 메인 홈으로 이동 확인
     assert "/accounts/login" not in page.url
     # 홈 헤더의 로그아웃 버튼 가시성 확인
-    await expect(page.get_by_role("button", name="로그아웃")).to_be_visible()
+    await expect(page.get_by_role("button", name="로그아웃")).to_be_visible(timeout=15_000)
 
     # 사이드바가 있는 대시보드 페이지 방문 시 닉네임 표시 검증
     await page.goto(f"{live_server_url}/bids/dashboard/")
-    await expect(page.locator("body")).to_contain_text(e2e_test_user["nickname"])
+    await expect(page.locator("body")).to_contain_text(e2e_test_user["nickname"], timeout=15_000)
 
 
 @pytest.mark.e2e
@@ -111,11 +118,12 @@ async def test_ssr_auth_login_with_next_redirect(
     await page.locator("#id_password").fill(e2e_test_user["password"])
     await page.get_by_role("button", name="로그인").click()
 
-    await page.wait_for_load_state("networkidle")
+    # next 타깃 경로(/bids/)로 이동할 때까지 조건 대기한다.
+    await page.wait_for_url(re.compile(r".*/bids/?(?:\?.*)?$"), timeout=15_000)
 
     # 타깃 경로(/bids/)로 이동 확인
     assert page.url.rstrip("/").endswith("/bids")
-    await expect(page.locator("h1")).to_contain_text("공고 탐색")
+    await expect(page.locator("h1")).to_contain_text("공고 탐색", timeout=15_000)
 
 
 @pytest.mark.e2e
@@ -134,7 +142,8 @@ async def test_ssr_auth_logout_post(
         'form[action*="/accounts/logout/"] button[type="submit"]'
     ).first
     await logout_btn.click()
-    await authenticated_page.wait_for_load_state("networkidle")
+    # 로그아웃 POST 처리 후 로그인 페이지로 이동할 때까지 조건 대기한다.
+    await authenticated_page.wait_for_url(re.compile(r".*/accounts/login.*"), timeout=15_000)
 
     # 3. 로그인 페이지로 리다이렉트 확인
     assert "/accounts/login/" in authenticated_page.url
@@ -142,6 +151,7 @@ async def test_ssr_auth_logout_post(
     # 4. 보호된 화면 재접근 시 로그인 리다이렉트 확인 (세션 무효화)
     re_response = await authenticated_page.goto(f"{live_server_url}/bids/dashboard/")
     assert re_response is not None
+    await authenticated_page.wait_for_url(re.compile(r".*/accounts/login.*"), timeout=15_000)
     assert "/accounts/login/" in authenticated_page.url
 
 
@@ -181,7 +191,12 @@ async def test_ssr_auth_login_invalid_credentials(
     await page.locator("#id_password").fill("wrong_password_1234")
     await page.get_by_role("button", name="로그인").click()
 
-    await page.wait_for_timeout(1000)
+    # 실패 알림 대화창이 나타날 때까지 조건 대기한다. 고정 대기는 부하 시
+    # 대화창이 늦게 나타나면 놓치고 부하가 없으면 낭비하므로, dialog 이벤트를
+    # 직접 기다린다. 대화창 없는 실패 응답도 허용하므로 타임아웃은 무시한다.
+    with contextlib.suppress(PlaywrightTimeoutError):
+        await page.wait_for_event("dialog", timeout=15_000)
+    await expect(page).to_have_url(re.compile(r".*/accounts/login.*"), timeout=15_000)
 
     # 실패 다이얼로그 확인 또는 로그인 URL 유지 확인
     assert "/accounts/login" in page.url
