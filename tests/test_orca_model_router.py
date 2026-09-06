@@ -321,6 +321,7 @@ class TestModelPoolAndSelection:
             "gemini-3.7-flash-low",
             "claude-opus",
             "claude-opus-thinking",
+            "claude-sonnet-thinking",
             "codex",
             "opencode-deepseek",
             "cursor-auto",

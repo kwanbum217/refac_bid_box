@@ -449,6 +449,17 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         ],
         "notes": "Antigravity 별도 풀. 2026-08-17 감사 1건 실측: 보고 11,773자로 최다, 줄 수 기준을 기계적으로 적용하지 않고 분할 불필요를 논증. 수동 지정 전용.",
     },
+    "claude-sonnet-thinking": {
+        "id": "claude-sonnet-4-6",
+        "provider": "claude",
+        "tier": "secondary",
+        "auto_selectable": False,
+        "max_tokens": 200_000,
+        "suitable_for": [
+            "reviewer",
+        ],
+        "notes": "Antigravity 별도 풀의 Sonnet 등급. claude-opus-4-6-thinking 보다 허용량 소모가 적어 Grok 풀이 마른 주간의 리뷰어 대체 자리다. 수동 지정 전용.",
+    },
     "claude-opus": {
         "id": "claude-opus-5",
         "provider": "claude",
