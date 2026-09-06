@@ -11,9 +11,38 @@ from src.app.core.cache import cache
 from src.app.core.config import settings
 from src.app.main import app
 from src.app.models.bids import BidResult
-from src.rag.structured_data import _cached_aggregate, _stmt_cache_key, _top_rows
+from src.rag.structured_data import (
+    _cached_aggregate,
+    _flight_locks,
+    _stmt_cache_key,
+    _top_rows,
+)
 
 client = TestClient(app)
+
+# Redis 가 없는 CI 에서 cache.get/set/delete 는 최대 CONNECT_TIMEOUT_SECONDS(2초)를
+# 쓴다. 조율 예산이 그 상한과 겹치면 느린 회차에서 리더 스레드가 예산을 넘긴다.
+# 모든 핸드셰이크와 join 예산을 상한과 겹치지 않게 넉넉히 잡는다.
+_HANDSHAKE_TIMEOUT = 20.0
+_JOIN_TIMEOUT = 20.0
+
+
+def _wait_for_flight_entries(key, expected):
+    """해당 키의 flight 에 expected 명이 등록될 때까지 기다린다.
+
+    고정 시간 sleep 으로 대기자를 짐작하는 대신 flight 등록 수(ref_count)라는
+    조건이 충족될 때까지 기다리는 핸드셰이크다. 폴링 간격에는 Event.wait 를
+    쓰며, 예산 안에 조건이 충족되지 않으면 False 를 돌려 호출부가 단언으로
+    실패하게 한다.
+    """
+    deadline = time.monotonic() + _HANDSHAKE_TIMEOUT
+    tick = threading.Event()
+    while time.monotonic() < deadline:
+        entry = _flight_locks.get(key)
+        if entry is not None and entry.ref_count >= expected:
+            return True
+        tick.wait(0.01)
+    return False
 
 
 def _patch_dependencies_healthy(monkeypatch):
@@ -44,7 +73,7 @@ def test_concurrent_cold_aggregate_single_flight():
         nonlocal calls
         calls += 1
         start_event.set()
-        assert finish_event.wait(timeout=2)
+        assert finish_event.wait(timeout=_HANDSHAKE_TIMEOUT)
         return MockResult()
 
     mock_db = MagicMock()
@@ -65,17 +94,19 @@ def test_concurrent_cold_aggregate_single_flight():
     t3 = threading.Thread(target=run_query)
 
     t1.start()
-    assert start_event.wait(timeout=2)
+    assert start_event.wait(timeout=_HANDSHAKE_TIMEOUT)
 
     t2.start()
     t3.start()
 
-    time.sleep(0.05)
+    # 리더가 DB 호출 안에 머문 동안 두 대기자가 같은 flight 에 등록됐음을
+    # 확인한 뒤에야 리더를 놓아준다. 고정 sleep 추측이 아니다.
+    assert _wait_for_flight_entries(key, 3)
     finish_event.set()
 
-    t1.join(timeout=2)
-    t2.join(timeout=2)
-    t3.join(timeout=2)
+    t1.join(timeout=_JOIN_TIMEOUT)
+    t2.join(timeout=_JOIN_TIMEOUT)
+    t3.join(timeout=_JOIN_TIMEOUT)
 
     assert not t1.is_alive()
     assert not t2.is_alive()
@@ -101,7 +132,7 @@ def test_concurrent_cold_top_rows_single_flight():
         nonlocal calls
         calls += 1
         start_event.set()
-        assert finish_event.wait(timeout=2)
+        assert finish_event.wait(timeout=_HANDSHAKE_TIMEOUT)
         mock_res = MagicMock()
         mock_res.all.return_value = [("업체A", 10), ("업체B", 5)]
         return mock_res
@@ -130,14 +161,16 @@ def test_concurrent_cold_top_rows_single_flight():
     t2 = threading.Thread(target=run_query)
 
     t1.start()
-    assert start_event.wait(timeout=2)
+    assert start_event.wait(timeout=_HANDSHAKE_TIMEOUT)
     t2.start()
 
-    time.sleep(0.05)
+    # 리더가 DB 호출 안에 머문 동안 대기자가 같은 flight 에 등록됐음을
+    # 확인한 뒤에야 리더를 놓아준다. 고정 sleep 추측이 아니다.
+    assert _wait_for_flight_entries(key, 2)
     finish_event.set()
 
-    t1.join(timeout=2)
-    t2.join(timeout=2)
+    t1.join(timeout=_JOIN_TIMEOUT)
+    t2.join(timeout=_JOIN_TIMEOUT)
 
     assert not t1.is_alive()
     assert not t2.is_alive()
@@ -162,7 +195,7 @@ def test_single_flight_error_does_not_deadlock_subsequent_callers():
         calls += 1
         if calls == 1:
             t1_started.set()
-            assert t1_allow_fail.wait(timeout=2)
+            assert t1_allow_fail.wait(timeout=_HANDSHAKE_TIMEOUT)
             raise RuntimeError("DB connection dropped")
         mock_res = MagicMock()
         mock_res.one.return_value = (42, 90.0, 1000)
@@ -192,14 +225,17 @@ def test_single_flight_error_does_not_deadlock_subsequent_callers():
     t2 = threading.Thread(target=run_t2)
 
     t1.start()
-    assert t1_started.wait(timeout=2)
+    assert t1_started.wait(timeout=_HANDSHAKE_TIMEOUT)
     t2.start()
 
-    time.sleep(0.05)
+    # t2 가 같은 flight 의 대기자가 됐음을 확인한 뒤에야 t1 의 실패를
+    # 허락한다. 고정 sleep 추측이 아니다.
+    t2_key = _stmt_cache_key("rag:agg:", stmt)
+    assert _wait_for_flight_entries(t2_key, 2)
     t1_allow_fail.set()
 
-    t1.join(timeout=2)
-    t2.join(timeout=2)
+    t1.join(timeout=_JOIN_TIMEOUT)
+    t2.join(timeout=_JOIN_TIMEOUT)
 
     assert not t1.is_alive()
     assert not t2.is_alive()
@@ -332,7 +368,7 @@ def test_flight_locks_dictionary_does_not_leak_memory():
 
     def slow_exec(st):
         start_event.set()
-        assert finish_event.wait(timeout=2)
+        assert finish_event.wait(timeout=_HANDSHAKE_TIMEOUT)
         mock_res = MagicMock()
         mock_res.one.return_value = (2, 85.0, 2000)
         return mock_res
@@ -346,13 +382,13 @@ def test_flight_locks_dictionary_does_not_leak_memory():
     for t in threads:
         t.start()
 
-    assert start_event.wait(timeout=2)
+    assert start_event.wait(timeout=_HANDSHAKE_TIMEOUT)
     assert key_concurrent in _flight_locks
     assert _flight_locks[key_concurrent].ref_count >= 1
 
     finish_event.set()
     for t in threads:
-        t.join(timeout=2)
+        t.join(timeout=_JOIN_TIMEOUT)
 
     assert key_concurrent not in _flight_locks
     assert len(_flight_locks) == 0

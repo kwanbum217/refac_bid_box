@@ -5,7 +5,6 @@ from __future__ import annotations
 import functools
 import io
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -23,14 +22,29 @@ from scripts.orca_agy_launch import (
 
 
 def test_wait_returns_content_once_written(tmp_path: Path):
-    target = tmp_path / "preamble.txt"
+    # 고유명 preamble_*.txt 로 대기한다. 고정명 preamble.txt 로 대기하면
+    # 폴링 루프 경계에서 옛 형태 격리 파손 거부와 경합해 드물게
+    # ValueError 로 실패한다. 고유명은 소비 경로가 하나로 확정된다.
+    target = tmp_path / "preamble_u1wait.txt"
+    waiter_ready = threading.Event()
+    outcome: dict = {}
 
-    def writer():
-        time.sleep(0.2)
-        target.write_text("지시문 본문", encoding="utf-8")
+    def waiter():
+        waiter_ready.set()
+        outcome["text"] = wait_for_preamble(target, timeout_sec=20.0, poll_sec=0.05)
 
-    threading.Thread(target=writer, daemon=True).start()
-    assert wait_for_preamble(target, timeout_sec=5.0, poll_sec=0.05) == "지시문 본문"
+    t = threading.Thread(target=waiter, daemon=True)
+    t.start()
+
+    # 대기자가 폴링에 들어갔음을 확인한 뒤에야 내용을 쓴다.
+    # 고정 sleep 추측이 아니다.
+    assert waiter_ready.wait(timeout=20.0)
+    target.write_text("지시문 본문", encoding="utf-8")
+
+    t.join(timeout=20.0)
+    assert not t.is_alive()
+    assert outcome["text"] == "지시문 본문"
+    assert not target.exists()
 
 
 def test_empty_file_is_not_accepted(tmp_path: Path):
