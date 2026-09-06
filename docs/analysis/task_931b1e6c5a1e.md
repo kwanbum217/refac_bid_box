@@ -35,6 +35,11 @@
 - 자동 해소가 일어나면 어떤 값을 어디서 가져왔는지 `stdout` 에 출력하고,
   `--json` 모드에서는 `identity_resolution` 필드에 포함합니다.
 - 보고 계약 검증 로직(`validate_worker_done` 및 하위 함수)은 변경하지 않았습니다.
+- `--dispatch-capability` 전달 인자를 추가했습니다. `--send` 검증 후 실제
+  전송이 `The Dispatch capability is missing` 으로 거부되는 것을 확인했고,
+  워커 터미널 환경에 해당 토큰의 근거가 없으므로 환경변수 추측 없이
+  플래그 전달만 지원합니다. 토큰 값은 Dispatch 서문에서 가져오며 파일에
+  기록하지 않습니다.
 
 `tests/test_orca_worker_done_guard.py`
 

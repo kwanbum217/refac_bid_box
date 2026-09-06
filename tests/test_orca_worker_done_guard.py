@@ -5,6 +5,7 @@ from pathlib import Path
 
 from scripts.orca_worker_done_guard import (
     FROM_HANDLE_ENV_VAR,
+    execute_orca_send,
     main,
     resolve_sender_identity,
     validate_worker_done,
@@ -380,3 +381,30 @@ def test_worker_done_guard_dispatch_id_required_without_env_basis(
     assert code != 0
     assert len(captured_send) == 0
     assert "--dispatch-id" in err
+
+
+def test_worker_done_guard_send_forwards_dispatch_capability(monkeypatch):
+    """--dispatch-capability 는 orca send 명령에 그대로 전달됩니다."""
+
+    class _Proc:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    captured_cmd: list[list[str]] = []
+
+    def _fake_run(cmd, **kwargs):
+        captured_cmd.append(list(cmd))
+        return _Proc()
+
+    monkeypatch.setattr("scripts.orca_worker_done_guard.subprocess.run", _fake_run)
+
+    code, _out, _err = execute_orca_send(
+        task_id="task_sample",
+        from_handle="term_123",
+        dispatch_id="ctx_456",
+        dispatch_capability="dcap_test",
+    )
+    assert code == 0
+    assert "--dispatch-capability" in captured_cmd[0]
+    assert captured_cmd[0][captured_cmd[0].index("--dispatch-capability") + 1] == "dcap_test"

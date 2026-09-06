@@ -222,6 +222,7 @@ def execute_orca_send(
     from_handle: str | None = None,
     to_handle: str | None = None,
     dispatch_id: str | None = None,
+    dispatch_capability: str | None = None,
     subject: str = "I-F contract enforcement complete",
     body: str = "",
     outcome: str = "succeeded",
@@ -238,6 +239,8 @@ def execute_orca_send(
         cmd.extend(["--task-id", task_id])
     if dispatch_id:
         cmd.extend(["--dispatch-id", dispatch_id])
+    if dispatch_capability:
+        cmd.extend(["--dispatch-capability", dispatch_capability])
     if subject:
         cmd.extend(["--subject", subject])
     if body:
@@ -281,6 +284,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--from", dest="from_handle", help="전송자 터미널 핸들")
     parser.add_argument("--to", dest="to_handle", help="수신자 (예: run:<run_id>)")
     parser.add_argument("--dispatch-id", help="Dispatch ID")
+    parser.add_argument(
+        "--dispatch-capability",
+        help="Dispatch 능력 토큰 (워커 Dispatch 서문에서 전달된 값)",
+    )
     parser.add_argument("--subject", default="Task completed", help="메시지 제목")
     parser.add_argument("--body", default="Task completion report verified.", help="메시지 본문")
     parser.add_argument("--outcome", default="succeeded", help="결과 (succeeded 또는 escalation)")
@@ -353,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
             from_handle=resolved_from,
             to_handle=args.to_handle,
             dispatch_id=resolved_dispatch,
+            dispatch_capability=args.dispatch_capability,
             subject=args.subject,
             body=args.body,
             outcome=args.outcome,
