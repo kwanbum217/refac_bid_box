@@ -1218,3 +1218,79 @@ def test_gate7_ignores_untracked_files(tmp_path: Path):
     g7 = run_gate7_gitignored(repo, changed)
     assert g7.status == "pass"
     assert g7.raw_data["violated_files"] == []
+
+
+# ---------------------------------------------------------------------------
+# docker compose -f/--file 허용 (2026-09-06)
+# ---------------------------------------------------------------------------
+
+
+def test_compose_file_option_is_allowed():
+    """-f 와 --file 로 compose 파일을 지정한 config 형태가 허용됩니다."""
+    short = parse_verification_command("docker compose -f docker-compose.prod.yml config -q")
+    assert short.provides == frozenset({"compose_config"})
+
+    long = parse_verification_command("docker compose --file docker-compose.prod.yml config")
+    assert long.provides == frozenset({"compose_config"})
+
+    equals = parse_verification_command("docker compose --file=docker-compose.prod.yml config")
+    assert equals.provides == frozenset({"compose_config"})
+
+    multi = parse_verification_command(
+        "docker compose -f docker-compose.yml -f docker-compose.prod.yml config"
+    )
+    assert multi.provides == frozenset({"compose_config"})
+
+    plain = parse_verification_command("docker compose config -q")
+    assert plain.provides == frozenset({"compose_config"})
+
+
+def test_compose_file_option_rejects_absolute_and_escape():
+    """절대 경로와 상위 디렉터리 탈출은 거부됩니다."""
+    for rejected in (
+        "docker compose -f /abs/docker-compose.yml config",
+        "docker compose --file /abs/docker-compose.yml config",
+        "docker compose --file=/abs/docker-compose.yml config",
+        "docker compose -f ../outside.yml config",
+        "docker compose --file ../outside.yml config",
+        "docker compose -f sub/../../outside.yml config",
+        "docker compose -f docker-compose.yml config",
+    ):
+        if rejected == "docker compose -f docker-compose.yml config":
+            assert parse_verification_command(rejected).provides == frozenset({"compose_config"})
+            continue
+        with pytest.raises(ValueError):
+            parse_verification_command(rejected)
+
+
+def test_compose_file_option_same_capability_regardless_of_flag():
+    """-f 유무와 무관하게 같은 compose_config 능력을 덮습니다."""
+    plain = parse_verification_command("docker compose config")
+    flagged = parse_verification_command("docker compose -f docker-compose.prod.yml config")
+    assert plain.provides == flagged.provides == frozenset({"compose_config"})
+
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "ok", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["docker compose -f docker-compose.prod.yml config -q"],
+            capabilities=required_capabilities(["docker-compose.prod.yml"]),
+        )
+    assert g.status == "pass"
+    assert g.raw_data["uncovered_capabilities"] == []
+
+
+def test_compose_rejects_options_outside_allowlist():
+    """허용 목록 밖 옵션은 여전히 거부됩니다."""
+    for rejected in (
+        "docker compose --profile foo config",
+        "docker compose -p myproject config",
+        "docker compose --project-name foo config",
+        "docker compose -f",
+        "docker compose --file= config",
+        "docker compose -f docker-compose.yml up -d",
+        "docker compose up -d",
+    ):
+        with pytest.raises(ValueError):
+            parse_verification_command(rejected)
