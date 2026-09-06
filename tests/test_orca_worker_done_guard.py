@@ -3,10 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from scripts.orca_taskctl import (
+    extract_dispatch_capability as taskctl_extract_capability,
+)
+from scripts.orca_taskctl import (
+    record_dispatch_capability as taskctl_record_capability,
+)
 from scripts.orca_worker_done_guard import (
     FROM_HANDLE_ENV_VAR,
+    dispatch_capability_file,
     execute_orca_send,
     main,
+    mask_dispatch_capability,
+    resolve_dispatch_capability,
     resolve_sender_identity,
     validate_worker_done,
 )
@@ -230,6 +239,8 @@ def test_worker_done_guard_main_send(tmp_path: Path, monkeypatch, capsys):
             "term_123",
             "--dispatch-id",
             "ctx_456",
+            "--dispatch-capability",
+            "dcap_explicit001",
             "--json",
         ]
     )
@@ -237,6 +248,7 @@ def test_worker_done_guard_main_send(tmp_path: Path, monkeypatch, capsys):
     assert len(captured_send) == 1
     assert captured_send[0]["from_handle"] == "term_123"
     assert captured_send[0]["dispatch_id"] == "ctx_456"
+    assert captured_send[0]["dispatch_capability"] == "dcap_explicit001"
 
 
 def _stub_valid_repo(monkeypatch) -> None:
@@ -284,6 +296,8 @@ def test_worker_done_guard_from_resolved_from_env(tmp_path: Path, monkeypatch, c
             "--send",
             "--dispatch-id",
             "ctx_456",
+            "--dispatch-capability",
+            "dcap_explicit002",
         ]
     )
     out = capsys.readouterr().out
@@ -341,6 +355,8 @@ def test_worker_done_guard_explicit_from_wins_over_env(tmp_path: Path, monkeypat
             "term_explicit",
             "--dispatch-id",
             "ctx_456",
+            "--dispatch-capability",
+            "dcap_explicit003",
         ]
     )
     out = capsys.readouterr().out
@@ -408,3 +424,116 @@ def test_worker_done_guard_send_forwards_dispatch_capability(monkeypatch):
     assert code == 0
     assert "--dispatch-capability" in captured_cmd[0]
     assert captured_cmd[0][captured_cmd[0].index("--dispatch-capability") + 1] == "dcap_test"
+
+
+def _write_capability_file(repo: Path, task_id: str, token: str) -> Path:
+    cap_file = dispatch_capability_file(repo, task_id)
+    cap_file.parent.mkdir(parents=True, exist_ok=True)
+    cap_file.write_text(token + "\n", encoding="utf-8")
+    return cap_file
+
+
+def _send_args(cap: Path, report: Path, repo: Path) -> list[str]:
+    return [
+        "--capsule",
+        str(cap),
+        "--report",
+        str(report),
+        "--repo",
+        str(repo),
+        "--send",
+        "--from",
+        "term_123",
+        "--dispatch-id",
+        "ctx_456",
+    ]
+
+
+def test_worker_done_guard_capability_auto_resolved_from_file(tmp_path: Path, monkeypatch, capsys):
+    """기록 파일이 있으면 --dispatch-capability 미지정 시 자동 해소됩니다."""
+    cap, report = _valid_pair(tmp_path)
+    _stub_valid_repo(monkeypatch)
+    captured_send: list[dict] = []
+    _stub_send(monkeypatch, captured_send)
+    _write_capability_file(tmp_path, "task_sample", "dcap_fileToken001")
+
+    code = main(_send_args(cap, report, tmp_path))
+    assert code == 0
+    assert len(captured_send) == 1
+    assert captured_send[0]["dispatch_capability"] == "dcap_fileToken001"
+
+
+def test_worker_done_guard_capability_fail_closed(tmp_path: Path, monkeypatch, capsys):
+    """토큰을 구하지 못하면 전송하지 않고 실패합니다."""
+    cap, report = _valid_pair(tmp_path)
+    _stub_valid_repo(monkeypatch)
+    captured_send: list[dict] = []
+    _stub_send(monkeypatch, captured_send)
+
+    code = main(_send_args(cap, report, tmp_path))
+    err = capsys.readouterr().err
+    assert code != 0
+    assert len(captured_send) == 0
+    assert "--dispatch-capability" in err
+
+
+def test_worker_done_guard_explicit_capability_wins_over_file(tmp_path: Path, monkeypatch, capsys):
+    """명시 인자가 기록 파일보다 우선합니다."""
+    cap, report = _valid_pair(tmp_path)
+    _stub_valid_repo(monkeypatch)
+    captured_send: list[dict] = []
+    _stub_send(monkeypatch, captured_send)
+    _write_capability_file(tmp_path, "task_sample", "dcap_fileToken002")
+
+    code = main([*_send_args(cap, report, tmp_path), "--dispatch-capability", "dcap_explicit999"])
+    assert code == 0
+    assert len(captured_send) == 1
+    assert captured_send[0]["dispatch_capability"] == "dcap_explicit999"
+
+
+def test_worker_done_guard_capability_not_logged(tmp_path: Path, monkeypatch, capsys):
+    """토큰 전체가 표준출력이나 오류에 노출되지 않습니다."""
+    cap, report = _valid_pair(tmp_path)
+    _stub_valid_repo(monkeypatch)
+    captured_send: list[dict] = []
+    _stub_send(monkeypatch, captured_send)
+    cap_value = "dcap_superSecretToken007"
+    _write_capability_file(tmp_path, "task_sample", cap_value)
+    assert mask_dispatch_capability(cap_value) != cap_value
+
+    code = main([*_send_args(cap, report, tmp_path), "--json"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert cap_value not in captured.out
+    assert cap_value not in captured.err
+
+    resolved, provenance = resolve_dispatch_capability(
+        explicit=None, task_id="task_sample", repo=tmp_path
+    )
+    assert resolved == cap_value
+    assert cap_value not in " ".join(provenance)
+
+
+def test_dispatch_capability_extracted_from_preamble_text():
+    """preamble 텍스트에서 dcap_ 토큰을 추출하고 없으면 None 입니다."""
+    text = "worker_done 전송 시 --dispatch-capability dcap_abc123XYZ 를 붙이십시오."
+    assert taskctl_extract_capability(text) == "dcap_abc123XYZ"
+    assert taskctl_extract_capability("토큰이 없는 지시문") is None
+    assert taskctl_extract_capability(None) is None
+
+
+def test_dispatch_capability_recorded_per_task_under_orca(tmp_path: Path, capsys):
+    """dispatch 시점에 워크트리 .orca 아래 task 별 파일로 기록되며 전체 토큰을 로그에 남기지 않습니다."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    cap_value = "dcap_recordMe001"
+    dest = taskctl_record_capability(
+        worktree, "task_sample", f"preamble ... {cap_value} ... 끝", None
+    )
+    assert dest is not None
+    assert dest.read_text(encoding="utf-8").strip() == cap_value
+    assert str(dest.relative_to(worktree)).startswith(".orca/")
+    err = capsys.readouterr().err
+    assert cap_value not in err
+
+    assert taskctl_record_capability(worktree, "task_sample", "토큰 없음") is None
