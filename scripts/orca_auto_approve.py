@@ -27,8 +27,12 @@ except ImportError:
 SHELL_METACHARS = re.compile(r"[\n\r|<>;`&]|\$\(")
 
 # 되돌릴 수 없는 셸 기능. 분해해도 안전을 보장할 수 없으므로 항상 보류합니다.
-# 명령 치환과 프로세스 치환은 임의 명령을 숨길 수 있고, 백틱도 마찬가지입니다.
-UNSPLITTABLE_METACHARS = re.compile(r"[`]|\$\(|<\(|>\(")
+# 백틱과 프로세스 치환은 임의 명령을 숨길 수 있으므로 항상 보류합니다.
+# $( ) 명령 치환은 별도 재귀 파서를 통해 내부 명령까지 검증한 뒤 안전할 때만 승인합니다.
+UNSPLITTABLE_METACHARS = re.compile(r"[`]|<\(|>\(")
+
+# 명령 치환 중첩 깊이 상한
+MAX_SUBSTITUTION_DEPTH = 3
 
 # 파이프라인 구분자. 따옴표 밖에서만 자릅니다. 개행과 캐리지 리턴도 셸에서는
 # 명령 구분자이므로 반드시 포함해야 합니다. 빠뜨리면 "git diff\recho x" 가 한
@@ -88,6 +92,7 @@ SAFE_TEST_COMMANDS = {
 SAFE_GIT_SUBCOMMANDS = {
     "diff",
     "log",
+    "merge-base",
     "rev-parse",
     "show",
     "status",
@@ -253,6 +258,14 @@ SAFE_GIT_OPTIONS: dict[str, set[str]] = {
         "-q",
         "--quiet",
     },
+    "merge-base": {
+        "--all",
+        "-a",
+        "--fork-point",
+        "--octopus",
+        "--independent",
+        "--is-ancestor",
+    },
 }
 
 SAFE_GIT_OPTION_PREFIXES: dict[str, tuple[str, ...]] = {
@@ -285,6 +298,7 @@ SAFE_GIT_OPTION_PREFIXES: dict[str, tuple[str, ...]] = {
     ),
     "show": ("--format=", "--pretty=", "--color="),
     "rev-parse": ("--short=", "--git-path="),
+    "merge-base": (),
 }
 
 GIT_BRANCH_READ_ONLY_FLAGS = {
@@ -313,6 +327,14 @@ FIND_DANGEROUS_FLAGS = {
     "-execdir",
     "-ok",
     "-okdir",
+}
+
+SAFE_SHELL_BUILTINS = {
+    "read",
+    "true",
+    ":",
+    "break",
+    "continue",
 }
 
 # 비명령 프롬프트 반복 자동 응답 상한 (초과 시 자동 응답 중단 및 사람 개입 로그 기록)
@@ -622,7 +644,161 @@ def classify_python_execution(argv: list[str], raw: str) -> tuple[str, str]:
     return "approve", "python 실행 (탈출 토큰 없음)"
 
 
-def classify_command(cmd: str) -> tuple[str, str]:
+def extract_command_substitutions(cmd: str) -> tuple[str, list[str], str | None]:
+    """따옴표 밖 및 큰따옴표 안의 $( ) 명령 치환을 추출하고 안전한 자리표시자로 대체합니다.
+
+    작은따옴표('...') 안의 $( ) 는 셸 확장이 일어나지 않으므로 건드리지 않습니다.
+    백틱(`)이나 프로세스 치환(<(, >()은 별도 정규식에서 이미 걸러집니다.
+    반환값: (대체된 명령, 추출된 내부 명령 목록, 에러 사유 또는 None)
+    """
+    out: list[str] = []
+    inner_cmds: list[str] = []
+    i = 0
+    n = len(cmd)
+    quote: str | None = None
+
+    while i < n:
+        ch = cmd[i]
+
+        # 1. 작은따옴표 안: 닫힐 때까지 그대로 통과
+        if quote == "'":
+            out.append(ch)
+            if ch == "'":
+                quote = None
+            i += 1
+            continue
+
+        # 2. 작은따옴표 시작
+        if ch == "'" and quote is None:
+            quote = "'"
+            out.append(ch)
+            i += 1
+            continue
+
+        # 3. 큰따옴표 안/밖에서 역슬래시 이스케이프 처리
+        if ch == "\\":
+            if i + 1 < n:
+                out.append(ch)
+                out.append(cmd[i + 1])
+                i += 2
+                continue
+            out.append(ch)
+            i += 1
+            continue
+
+        # 4. 큰따옴표 토글
+        if ch == '"':
+            quote = None if quote == '"' else '"'
+            out.append(ch)
+            i += 1
+            continue
+
+        # 5. $( 발견 (작은따옴표 밖)
+        if ch == "$" and i + 1 < n and cmd[i + 1] == "(":
+            j = i + 2
+            paren_depth = 1
+            sub_quote: str | None = None
+            inner_buf: list[str] = []
+
+            while j < n and paren_depth > 0:
+                sch = cmd[j]
+
+                # 내부 이스케이프
+                if sch == "\\":
+                    if j + 1 < n:
+                        inner_buf.append(sch)
+                        inner_buf.append(cmd[j + 1])
+                        j += 2
+                        continue
+                    inner_buf.append(sch)
+                    j += 1
+                    continue
+
+                # 내부 따옴표 처리
+                if sch in ("'", '"'):
+                    if sub_quote is None:
+                        sub_quote = sch
+                    elif sub_quote == sch:
+                        sub_quote = None
+                    inner_buf.append(sch)
+                    j += 1
+                    continue
+
+                if sub_quote is None:
+                    if sch == "$" and j + 1 < n and cmd[j + 1] == "(":
+                        paren_depth += 1
+                        inner_buf.append(sch)
+                        inner_buf.append("(")
+                        j += 2
+                        continue
+                    if sch == "(":
+                        paren_depth += 1
+                        inner_buf.append(sch)
+                        j += 1
+                        continue
+                    if sch == ")":
+                        paren_depth -= 1
+                        if paren_depth == 0:
+                            j += 1
+                            break
+                        inner_buf.append(sch)
+                        j += 1
+                        continue
+
+                inner_buf.append(sch)
+                j += 1
+
+            if paren_depth > 0 or sub_quote is not None:
+                return "", [], "명령 치환 괄호 불일치"
+
+            inner_cmd = "".join(inner_buf).strip()
+            if not inner_cmd:
+                return "", [], "명령 치환 내부가 비어 있음"
+
+            inner_cmds.append(inner_cmd)
+            out.append("__SUBST__")
+            i = j
+            continue
+
+        out.append(ch)
+        i += 1
+
+    if quote is not None:
+        return "", [], "따옴표 불일치"
+
+    return "".join(out), inner_cmds, None
+
+
+def check_loop_structure_balance(segments: list[str]) -> str | None:
+    """파이프라인 구간 목록에서 루프 키워드(while/for, do, done)의 균형을 검사합니다."""
+    starts = 0
+    dos = 0
+    dones = 0
+
+    for seg in segments:
+        clean, _ = strip_redirections(seg)
+        if not clean:
+            continue
+        try:
+            argv = shlex.split(clean)
+        except Exception:
+            argv = []
+        if not argv:
+            continue
+        first_tok = argv[0]
+        if first_tok in ("while", "for"):
+            starts += 1
+        elif first_tok == "do":
+            dos += 1
+        elif first_tok == "done":
+            dones += 1
+
+    if (starts > 0 or dos > 0 or dones > 0) and not (starts == dos == dones):
+        return "루프 구조 불완전 (while/for, do, done 불일치)"
+    return None
+
+
+def classify_command(cmd: str, depth: int = 0) -> tuple[str, str]:
     """명령을 파이프라인 구간으로 나눠 각각을 판정합니다.
 
     종전에는 셸 메타문자가 하나라도 있으면 통째로 보류했습니다. 그 결과 워커의
@@ -637,6 +813,9 @@ def classify_command(cmd: str) -> tuple[str, str]:
     if not cmd or not cmd.strip():
         return "hold", "빈 명령"
 
+    if depth > MAX_SUBSTITUTION_DEPTH:
+        return "hold", "명령 치환 중첩 깊이 상한 초과"
+
     if UNSPLITTABLE_METACHARS.search(cmd):
         return "hold", "명령 치환/프로세스 치환 포함"
 
@@ -644,9 +823,25 @@ def classify_command(cmd: str) -> tuple[str, str]:
     if heredoc is not None:
         return heredoc
 
+    # 명령 치환 $( ) 재귀 판정
+    if "$(" in cmd:
+        modified_cmd, inner_cmds, subst_err = extract_command_substitutions(cmd)
+        if subst_err:
+            return "hold", subst_err
+        for inner in inner_cmds:
+            inner_verdict, inner_reason = classify_command(inner, depth=depth + 1)
+            if inner_verdict != "approve":
+                return inner_verdict, inner_reason
+        cmd = modified_cmd
+
     segments = split_pipeline(cmd)
     if segments is None:
         return "hold", "히어독 또는 따옴표 불일치"
+
+    # while/for 루프 구조 균형 검사
+    loop_err = check_loop_structure_balance(segments)
+    if loop_err:
+        return "hold", loop_err
 
     for segment in segments:
         stripped, redirect_reason = strip_redirections(segment)
@@ -654,16 +849,16 @@ def classify_command(cmd: str) -> tuple[str, str]:
             return "hold", redirect_reason
         if not stripped:
             continue
-        verdict, reason = classify_segment(stripped)
+        verdict, reason = classify_segment(stripped, depth=depth)
         if verdict != "approve":
             return verdict, reason
 
     if len(segments) == 1:
-        return classify_segment(strip_redirections(segments[0])[0])
+        return classify_segment(strip_redirections(segments[0])[0], depth=depth)
     return "approve", f"파이프라인 {len(segments)}개 구간 전부 승인"
 
 
-def classify_segment(cmd: str) -> tuple[str, str]:
+def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
     """파이프라인 한 구간을 판정합니다. 종전 classify_command 의 본체입니다."""
     if not cmd or not cmd.strip():
         return "hold", "빈 명령"
@@ -679,6 +874,9 @@ def classify_segment(cmd: str) -> tuple[str, str]:
     #    classify_command 가 이미 분해하고 대상 경로를 검증했습니다.
     if UNSPLITTABLE_METACHARS.search(cmd):
         return "hold", "명령 치환/프로세스 치환 포함"
+
+    if "$(" in cmd:
+        return "hold", "명령 치환 포함"
 
     # 2. argv 파싱
     try:
@@ -703,7 +901,56 @@ def classify_segment(cmd: str) -> tuple[str, str]:
     if any(SECRET_PATH.search(arg) for arg in argv[1:]):
         return "hold", ".env 등 비밀 파일 접근은 보류"
 
-    # 4.1. 단순 읽기 전용 도구
+    # 4.1. 셸 내장 루프 제어 및 read 검사
+    if exe == "read":
+        return "approve", "안전한 셸 내장 read"
+
+    if exe in SAFE_SHELL_BUILTINS:
+        return "approve", f"안전한 셸 내장/명령 ({exe})"
+
+    if exe == "while":
+        rest = cmd.strip()
+        if rest.startswith("while"):
+            rest = rest[5:].strip()
+        if not rest:
+            return "hold", "while 조건 명령 없음"
+        cond_verdict, cond_reason = classify_command(rest, depth=depth)
+        if cond_verdict != "approve":
+            return cond_verdict, cond_reason
+        return "approve", f"안전한 while 루프 조건 ({cond_reason})"
+
+    if exe == "do":
+        rest = cmd.strip()
+        if rest.startswith("do"):
+            rest = rest[2:].strip()
+        if not rest:
+            return "approve", "안전한 루프 시작 (do)"
+        body_verdict, body_reason = classify_command(rest, depth=depth)
+        if body_verdict != "approve":
+            return body_verdict, body_reason
+        return "approve", f"안전한 루프 본문 (do): {body_reason}"
+
+    if exe == "done":
+        if len(argv) == 1:
+            return "approve", "안전한 루프 종료 (done)"
+        return "hold", "done 뒤에 유효하지 않은 인자"
+
+    if exe == "for":
+        if len(argv) < 3:
+            return "hold", "for 루프 문법 불일치"
+        var_name = argv[1]
+        if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", var_name):
+            return "hold", f"for 루프 변수명 부적합 ({var_name})"
+        if argv[2] != "in":
+            return "hold", f"for 루프는 'for X in ...' 형태만 허용 ({argv[2]})"
+        for item in argv[3:]:
+            if SECRET_PATH.search(item):
+                return "hold", ".env 등 비밀 파일 접근은 보류"
+            if DANGEROUS.search(item):
+                return "hold", "위험 패턴 감지"
+        return "approve", f"안전한 for 루프 ({var_name} in ...)"
+
+    # 4.2. 단순 읽기 전용 도구
     if exe in SAFE_STANDALONE_COMMANDS:
         return "approve", f"안전한 읽기 전용 명령 ({exe})"
 
