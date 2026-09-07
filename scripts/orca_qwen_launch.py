@@ -40,11 +40,8 @@ schedule_permission_setup = common.schedule_permission_setup
 
 DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
 DEFAULT_SHELL = "/bin/bash"
-COMMIT_NOTICE = (
-    "\n\n추가 지시: 작업을 마치면 반드시 변경 파일을 스테이징하고 커밋하십시오. "
-    "git add -A 는 쓰지 마십시오. 커밋 없이 완료를 선언하면 계약 위반입니다. "
-    "커밋 후 git log --oneline main..HEAD 로 확인하고 해시를 보고하십시오."
-)
+COMMIT_NOTICE = common.COMMIT_NOTICE
+REVIEWER_NOTICE = common.REVIEWER_NOTICE
 
 
 def registered_qwen_models() -> dict[str, str]:
@@ -148,6 +145,12 @@ def main(argv: list[str] | None = None) -> int:
         help="-i 대신 -p 로 단발 실행합니다. 대화형 세션이 남지 않습니다.",
     )
     parser.add_argument(
+        "--role",
+        choices=["auto", "builder", "reviewer"],
+        default="auto",
+        help="워커 역할 (auto, builder, reviewer. 기본 auto)",
+    )
+    parser.add_argument(
         "--no-commit-notice",
         action="store_true",
         help="커밋 고지문을 붙이지 않습니다.",
@@ -170,8 +173,11 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"오류: {err}\n")
         return 2
 
-    if not args.no_commit_notice:
-        prompt += COMMIT_NOTICE
+    prompt = common.append_role_notice(
+        prompt,
+        role=args.role,
+        no_commit_notice=args.no_commit_notice,
+    )
 
     env = dict(os.environ)
     cmd = build_command(model_id, prompt, args.one_shot)

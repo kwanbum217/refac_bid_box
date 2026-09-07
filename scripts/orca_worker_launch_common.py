@@ -32,6 +32,68 @@ PERMISSION_SETUP_DEADLINE_SEC = 600.0
 PERMISSION_SETUP_INTERVAL_SEC = 15.0
 PERMISSION_SETUP_FLAG = "--setup-permissions"
 
+COMMIT_NOTICE = (
+    "\n\n추가 지시: 작업을 마치면 반드시 변경 파일을 스테이징하고 커밋하십시오. "
+    "git add -A 는 쓰지 마십시오. 커밋 없이 완료를 선언하면 계약 위반입니다. "
+    "커밋 후 git log --oneline main..HEAD 로 확인하고 해시를 보고하십시오."
+)
+
+REVIEWER_NOTICE = (
+    "\n\n추가 지시: 리뷰어는 소스 코드를 수정하지 않으며 커밋이나 git add 를 절대 수행하지 마십시오. "
+    ".orca/ 아래 review_done.json 은 검토 산출물이므로 gitignore 대상이며 커밋하지 않습니다. "
+    "검토를 마치면 review_done.json 작성과 orca orchestration send --type worker_done 전송을 "
+    "둘 다 마쳐야 완료입니다."
+)
+
+
+def detect_role(prompt: str) -> str:
+    """지시문 텍스트에서 역할을 판정합니다.
+
+    리뷰어 지시문에는 ORCA_REVIEW_DONE_V2 또는 review_done.json 이 포함됩니다.
+    역할을 확정할 수 없으면 종전대로 빌더(builder)로 보고 커밋 고지문을 붙입니다 (fail-closed).
+    """
+    if not prompt:
+        return "builder"
+    if (
+        "ORCA_REVIEW_DONE_V2" in prompt
+        or "review_done.json" in prompt
+        or 'role: "reviewer"' in prompt
+        or "role: reviewer" in prompt
+    ):
+        return "reviewer"
+    return "builder"
+
+
+def resolve_notice(role: str = "auto", prompt: str = "") -> str:
+    """역할과 지시문 텍스트를 바탕으로 첨부할 고지문 문자열을 돌려줍니다.
+
+    role 이 auto 이면 detect_role 로 판정합니다.
+    reviewer 로 판정되거나 지정되면 REVIEWER_NOTICE 를,
+    그 외(builder 또는 판정 불가)는 COMMIT_NOTICE 를 돌려줍니다.
+    """
+    normalized_role = role.strip().lower() if role else "auto"
+    if normalized_role == "auto":
+        normalized_role = detect_role(prompt)
+
+    if normalized_role == "reviewer":
+        return REVIEWER_NOTICE
+    return COMMIT_NOTICE
+
+
+def append_role_notice(
+    prompt: str,
+    *,
+    role: str = "auto",
+    no_commit_notice: bool = False,
+) -> str:
+    """고지문 설정에 따라 prompt 에 적절한 고지문을 덧붙입니다.
+
+    no_commit_notice 가 True 이면 역할과 무관하게 어떤 고지문도 붙이지 않습니다.
+    """
+    if no_commit_notice:
+        return prompt
+    return prompt + resolve_notice(role=role, prompt=prompt)
+
 
 def _load_prepare_worker():
     """orca_taskctl 의 준비 상태 기계를 지연 로드합니다.
