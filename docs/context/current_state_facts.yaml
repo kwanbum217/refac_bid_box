@@ -285,12 +285,13 @@ facts:
       - docs/ops/backup_recovery_runbook.md
       - docs/ops/rpo_rto_policy.md
   - id: observability
-    status: blocked
-    decision_date: "2026-09-03"
-    claim: "관측성 스택은 후보만 있고 담당자 결정을 대기합니다."
-    document_anchor: "관측성 스택은 후보만"
+    status: active
+    decision_date: "2026-09-06"
+    claim: "관측성 스택은 Collector·Tempo·Grafana 로 확정했고 2단계 Prometheus 는 메트릭 계측 후 착수합니다."
+    document_anchor: "관측성 스택은 Collector"
     evidence:
-      - docs/ops/scale_and_silent_failure_audit_20260807.md
+      - docker-compose.prod.yml
+      - docs/ops/handoff_20260906_wave_aa_ad_session_close.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/scale_and_silent_failure_audit_20260807.md
