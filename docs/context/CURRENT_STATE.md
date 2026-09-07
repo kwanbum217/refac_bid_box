@@ -103,7 +103,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **SSR E2E Phase 2~4 (2026-09-03, 대기)**: 사용자 합의 후 DB 격리와 시나리오를 착수합니다.
 - **RPO/RTO 복구 목표 (2026-09-06, 확정)**: RPO 24시간·RTO 4시간을 확정했습니다. 분기 1회 restore drill 실시가 남았습니다.
 - **관측성 2단계 Prometheus (2026-09-06, 미착수)**: 1단계 Collector·Tempo·Grafana 배선은 `docker-compose.prod.yml` 에 들어갔고, 2단계는 메트릭 계측이 선행 조건입니다.
-- **RAG cold SQL (2026-09-06, 부분 재측정)**: 버퍼풀 콜드 조건에서 sql 구간 콜드 P50 86,539.54ms·콜드 max 101,496.91ms(콜드 표본 2건, partial)이며 이전 관찰치 97,087.81ms와 같은 계열이 재현됐으나 canonical 게이트 4건 미충족이라 정본 수치가 아닙니다.
+- **RAG cold SQL (2026-09-07, 원인 확정·정본 미충족)**: 콜드 표본 29건에서 sql 구간 콜드 P50 19.65ms·P99 78,751.14ms·max 108,739.94ms이며 콜드 지연은 소수 문항 현상입니다. canonical 미충족 원인은 q03·q25·q31 콜드 회차의 클라이언트 타임아웃 3건으로 확정됐고, 다음 측정은 타임아웃을 올려 실제 소요를 먼저 관측합니다.
 - **lexical 전량 재측정 (2026-09-03, 진행)**: 부분집합 효과를 전량 fixture로 확인합니다.
 - **금액 집계 성능 (2026-09-04, 진행)**: `agency_top10` 웜 31.97초. `base_amount` 컬럼 전환 시 6초로 줄지만 컬럼과 파싱값 불일치 343건의 정체 확인이 남았습니다.
 
@@ -119,6 +119,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - 기계 원장: [docs/context/current_state_facts.yaml](current_state_facts.yaml)
 - 상세 로그·과거 경위: [current_state_history.md](current_state_history.md)
 - 컷오버·레이턴시 규약: [latency_gate_protocol.md](../ops/latency_gate_protocol.md), [phase7_cutover_declaration_20260901.md](../ops/phase7_cutover_declaration_20260901.md)
-- 현재 잔여 과업: [handoff_20260907_wave_ah_session_close.md](../ops/handoff_20260907_wave_ah_session_close.md)
+- 현재 잔여 과업: [handoff_20260907_wave_ak_session_close.md](../ops/handoff_20260907_wave_ak_session_close.md)
 - 공고 금액 이상치·오버플로우: [announcement_amount_outliers_20260904.md](../ops/announcement_amount_outliers_20260904.md)
 - 데이터·특징 불변성: [db_migration_runbook.md](../migration/db_migration_runbook.md), [features.py](../../src/ml/features.py)
