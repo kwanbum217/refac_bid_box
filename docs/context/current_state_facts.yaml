@@ -112,6 +112,17 @@ facts:
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/ngram_edge_classes_measurement_20260901.md
+  - id: rag_segments_canonical
+    status: closed
+    decision_date: "2026-09-07"
+    claim: "RAG 구간 정본은 타임아웃 300초 96요청 전량 성공으로 canonical 게이트를 통과했으나 버퍼풀 콜드 조건은 재현하지 못했습니다."
+    document_anchor: "RAG 구간 정본은 타임아웃 300초"
+    evidence:
+      - data/benchmarks/rag_segments_canonical_20260907_t300.json
+      - docs/analysis/r13_coldsql_timeout_verdict_20260907.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/r13_coldsql_timeout_verdict_20260907.md
   - id: coldsql_metric
     status: closed
     decision_date: "2026-09-01"

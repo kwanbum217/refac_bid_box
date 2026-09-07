@@ -44,6 +44,24 @@
 
 ---
 
+## 3.9 RAG 구간 벤치마크 정본 (2026-09-07)
+
+`scripts/benchmark_rag_segments.py` 산출물입니다.
+
+| 파일 | 조건 | 판정 |
+| --- | --- | --- |
+| `rag_segments_canonical_20260907_t300.json` | 타임아웃 300초, 커밋 `ed5d40c` | `canonical: true`, 96요청 전량 성공 |
+| `noncanonical/rag_segments_20260907_timeout_partial.json` | 타임아웃 120초, 커밋 `9f0fac9` | `partial`, q03·q25·q31 콜드 타임아웃 3건 |
+
+**정본 산출물이 버퍼풀 콜드를 측정했다는 보장은 없습니다.** 하네스의 `is_cold` 는
+버퍼풀 상태가 아니라 문항별 첫 반복을 뜻하며, canonical 게이트에 버퍼풀 조건이
+없습니다. 위 두 파일은 서로 다른 버퍼풀 상태의 측정이므로 **어느 쪽도 다른 쪽을
+대체하지 않습니다.** 근거는
+[`../../docs/analysis/r13_coldsql_timeout_verdict_20260907.md`](../../docs/analysis/r13_coldsql_timeout_verdict_20260907.md)
+5.1 절입니다.
+
+---
+
 ## 4. noncanonical 디렉터리 안내
 
 `data/benchmarks/noncanonical/` 디렉터리는 정본 게이트를 충족하지 못했으나 디버깅, 비교 분석, 참조 목적으로 보존하는 산출물을 격리 보관하는 공간입니다.
