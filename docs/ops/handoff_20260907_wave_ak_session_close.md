@@ -28,7 +28,9 @@
 | AK5 | R-13 1차 측정 판정 문서와 산출물 | `5430330` | `ed5d40c` |
 | AK6 | R-13 2차 측정(타임아웃 300초) 정본 확보와 판정 갱신 | `7b7e0ab` | `1377534` |
 | AK7 | `source_commit` 갱신 | `87b3601` | `4b86612` |
-| AK8 | R-13 3차 측정(버퍼풀 콜드) 정본 확보와 버퍼풀 가설 반증 | 본 브랜치 | 본 병합 |
+| AK8 | R-13 3차 측정(버퍼풀 콜드) 정본 확보와 버퍼풀 가설 반증 | `2c1a89c` | `69f7a80` |
+| AL1 | 벤치마크 산출물 provenance 에 DB 버퍼풀 상태 기록 | `d830dd3`, `4997e89` | `cf4caa7` |
+| AL2 | `source_commit` 갱신 | `44a0091` | `99c92d7` |
 
 빌더는 전부 Antigravity `gemini-3.8-flash-medium`, 리뷰어는 Antigravity
 `claude-sonnet-4-6` 입니다. 리뷰 판정은 두 건 모두 `pass`, blocking_issues 0건이며
@@ -200,7 +202,7 @@ AK3 가 preamble 기록 지점에 `[ORCA_ROLE: builder|reviewer]` 표지를 넣�
 | ID | 내용 | 선행 조건 |
 | --- | --- | --- |
 | **R-12** | G2 Windows Docker Desktop 실기 | Windows 장비. `worker-start --on <saved-environment>` 원격 워커 경로가 열려 있다 |
-| **하네스 provenance 보강** | 버퍼풀 상태(`Innodb_buffer_pool_pages_data`)를 산출물에 기록 | 없음. 바로 착수 가능 |
+| ~~하네스 provenance 보강~~ | **AL1 로 닫힘** (`cf4caa7`) | - |
 | **R-10 2단계** | Prometheus 추가 | 메트릭 계측 선행 |
 
 ### 7.1 후속 과제 (이 세션이 만든 것)
@@ -208,7 +210,7 @@ AK3 가 preamble 기록 지점에 `[ORCA_ROLE: builder|reviewer]` 표지를 넣�
 | 출처 | 내용 |
 | --- | --- |
 | 3.5 | `--timeout-sec` 기본값 120초를 **유지합니다.** 재현 가능한 두 조건에서 `sql_ms` 최댓값이 320.3ms 와 69.3ms 라 부족하다는 근거가 없습니다. 재현하지 못하는 한 번의 관측으로 기본값을 바꾸지 마십시오 |
-| 3.5 | 하네스가 **버퍼풀 상태를 provenance 에 기록**하도록 보강. `Innodb_buffer_pool_pages_data` 한 줄이면 충분하며, 지금은 조건 구분을 사람이 컨테이너를 직접 조회해야 합니다 |
+| 3.5 | ~~하네스 버퍼풀 provenance 보강~~ **AL1 로 닫혔습니다.** `query_db_buffer_pool_pages_data` 가 시작·종료 시점을 기록하며 조회 실패 시 null 과 사유를 남깁니다 |
 | 3.5 | 1차 조건(스택 전체 기동 직후)의 재현 방법 탐색은 **우선순위가 낮습니다.** 해당 지표가 이미 게이트가 아니기 때문입니다 |
 | 4장 | 리뷰 Capsule 에 "판정 함수 검증은 실제 입력으로" 를 표준 항목으로 승격 검토 |
 | 6장 | 자동 승인 화이트리스트: 워크트리 내부를 가리키는 **절대 경로 리다이렉트**와 `python3 -c` 인라인 실행이 아직 보류 대상. 리뷰어가 보고 파일을 쓸 때마다 사람이 풀어야 함. AK2 가 다룬 재귀 판정 구조를 그대로 쓸 수 있음 |
@@ -233,6 +235,40 @@ AK3 가 preamble 기록 지점에 `[ORCA_ROLE: builder|reviewer]` 표지를 넣�
 
 ---
 
+## 8.5 Wave AL: 버퍼풀 provenance 기록
+
+3.5 절이 남긴 후속 과제를 같은 세션에서 닫았습니다. `query_db_buffer_pool_pages_data`
+가 측정 시작·종료 시점의 `Innodb_buffer_pool_pages_data` 를 산출물 provenance 에
+기록합니다. 계약은 다음과 같이 지켰습니다.
+
+| 계약 | 구현 |
+| --- | --- |
+| 게이트가 아니다 | `evaluate_canonical` 목록·판정 불변. 기존 산출물 3건이 소급 무효화되지 않음 |
+| 조용히 넘어가지 않는다 | 조회 실패 시 값은 `null`, 실패 사유를 함께 기록 |
+| 측정을 막지 않는다 | 조회 실패해도 측정 계속 |
+| 주입 가능해야 한다 | 모든 조회를 `cmd_fn` 경로로 수행 |
+| 비밀이 새지 않는다 | 비밀번호는 컨테이너 내부 환경변수 참조, 산출물에는 숫자와 사유만 |
+
+### 8.5.1 잡아낸 것 둘
+
+**리뷰어가 죽은 단언을 발견했습니다.** 비밀 누설 검증에
+`assert "password" not in text or "password" in "some_standard_field"` 형태가 있었고
+뒤쪽 항이 상수 거짓이라 아무 일도 하지 않았습니다. 보호가 약해진 것은 아니나 조건이
+완화된 것으로 오독됩니다. 비차단 관찰이었으나 재작업에 포함해 정리했습니다.
+
+**게이트 6이 보고 수치의 뒤처짐을 잡았습니다.** 빌더가 전량 테스트를 3,964건으로
+보고했는데 최종 커밋에서 재실행하니 3,968건이었습니다. 테스트 추가 전 시점의 수치를
+적은 것이며, 코드 결함은 아니지만 **보고가 최종 상태와 어긋나면 기계 검증이 성립하지
+않습니다.** 재작업에서 최종 커밋 기준으로 재실측해 해소했습니다.
+
+### 8.5.2 AK3 가 운영에서 검증됐습니다
+
+AL1 리뷰어 지시문에 **커밋 강제 고지문이 붙지 않았습니다.** AK3 의
+`[ORCA_ROLE: reviewer]` 표지가 실제 Dispatch 경로에서 동작한 첫 운영 증거이며, 직전
+두 세션에서 리뷰어가 이 고지문 때문에 질문으로 멈추던 문제가 재현되지 않았습니다.
+
+---
+
 ## 9. 정리 상태
 
 **모든 자원을 회수했습니다.** 빌더 2대와 리뷰어 2대 전부 `worker_done` ack 직후
@@ -242,6 +278,11 @@ AK3 가 preamble 기록 지점에 `[ORCA_ROLE: builder|reviewer]` 표지를 넣�
 워크트리 `wave-ak2`, `wave-ak3` 는 `main` 병합 확인 후 제거했고 브랜치도
 `git branch -d` 로 삭제했습니다. `orca_settled_session_audit.py` 는 잔류 없음입니다.
 
-**Docker dev compose 스택은 측정을 위해 띄운 상태 그대로 떠 있습니다.** 다음 세션이
-재측정을 이어간다면 그대로 쓰고, 아니면 내리십시오. Redis 는 `SHUTDOWN NOSAVE` 로
-내립니다.
+**Docker 스택은 내렸습니다.** Redis 는 `SHUTDOWN NOSAVE` 로 먼저 종료한 뒤
+`docker compose down` 을 실행했고, 잔여 컨테이너는 없으며 `dump.rdb` 도 생기지
+않았습니다. 데이터 볼륨 3종(`mysql_data`, `redis_data`, `meilisearch_data`)은
+그대로 보존했습니다.
+
+측정 중 변경한 것은 전부 원복했습니다. `.env` 는 백업본과 완전 일치로 되돌리고
+백업본을 제거했으며, `innodb_buffer_pool_dump_at_shutdown` 은 `ON` 으로 복구했습니다.
+DB 데이터는 건드리지 않았고 제거한 `ib_buffer_pool` 은 페이지 ID 목록일 뿐입니다.
