@@ -291,22 +291,43 @@ Docker 를 내리고 종료 점검을 하다가 발견했습니다. **저장소�
 
 정리는 살아 있는 터미널의 것만 남기고 나머지를 종료하는 방식으로 했습니다.
 
-### 8.6.2 권한 설정 자식이 코디네이터 터미널 핸들을 들고 떴습니다
+### 8.6.2 테스트 스위트가 코디네이터 터미널을 겨냥한 실제 프로세스를 띄웁니다
 
-`scripts/orca_agy_launch.py --setup-permissions <terminal> <model>` 형태의 자식
+`scripts/orca_agy_launch.py --setup-permissions <terminal> <model>` 형태의 분리
 프로세스가 **18개** 남아 있었고, 전부 인자로 **코디네이터 터미널 핸들**을 들고
-있었습니다. 워커 터미널 핸들이어야 하는 자리입니다. 스크립트 경로는 워커 워크트리
-(`wave-al1`) 아래였으므로 런처 자체는 올바른 워커 터미널에서 실행됐습니다.
+있었습니다. 워커 터미널 핸들이어야 하는 자리입니다.
 
-`schedule_permission_setup` 은 인자로 받은 핸들이 없으면 `ORCA_TERMINAL_HANDLE`
-환경변수를 씁니다. **추정 원인은 `orca terminal create` 로 워커 창을 만들 때
-코디네이터의 `ORCA_TERMINAL_HANDLE` 이 그대로 상속된 것입니다. 확인하지 않았으므로
-단정하지 않습니다.**
+**원인은 재현으로 확정했습니다. `orca terminal create` 의 환경변수 상속이 아니라
+테스트 스위트입니다.**
 
-**실제 피해는 없었습니다.** 실행 중이던 `orca_auto_approve.py` 는 전부 올바른 워커
-핸들을 들고 있었고, 코디네이터 터미널을 감시하던 승인기는 없었습니다. 다만 조건이
-맞으면 **코디네이터 세션의 승인 대화창을 자동 승인하는 경로**가 되므로 그냥 둘
-문제가 아닙니다.
+`tests/test_orca_agy_launch.py` 는 `mod.main(...)` 을 **8곳**에서 호출하면서
+`os.execvpe` 만 monkeypatch 합니다. 그런데 `scripts/orca_agy_launch.py` 는 execvpe
+직전에 `common.schedule_permission_setup(...)` 을 **실제 `spawn_permission_setup`
+으로** 호출합니다. 그 함수는 인자 핸들이 없으면 `ORCA_TERMINAL_HANDLE` 환경변수를
+쓰는데, 테스트는 코디네이터 터미널 안에서 돌므로 그 값이 **코디네이터 핸들**입니다.
+
+확증 실험입니다. 핸들을 식별 가능한 더미 값으로 두고 해당 테스트 한 건만 돌렸습니다.
+
+```
+ORCA_TERMINAL_HANDLE=term_PROBE_TEST_ONLY uv run pytest \
+  tests/test_orca_agy_launch.py::test_commit_notice_is_appended_when_enabled -q
+-> 1 passed
+
+pgrep -fl "setup-permissions term_PROBE_TEST_ONLY"
+-> orca_agy_launch.py --setup-permissions term_PROBE_TEST_ONLY gemini-3.8-flash-medium
+```
+
+**테스트 한 건이 실제 분리 프로세스를 하나 띄웁니다.** 해당 호출이 8곳이고 이 세션은
+전량 스위트를 여러 번 돌렸으므로 18개가 쌓인 것이 설명됩니다.
+
+**실제 피해는 없었습니다.** 그 자식은 `acquire_permissions` 를 수행하는데, 대상
+터미널에서 신뢰 대화창과 accept-edits 를 처리하고 감시기를 붙이는 절차입니다. 이번에
+실행 중이던 `orca_auto_approve.py` 는 전부 올바른 워커 핸들을 들고 있었고 코디네이터
+터미널을 감시하던 승인기는 없었습니다.
+
+**그러나 이것은 그냥 둘 문제가 아닙니다.** 테스트를 돌리는 것만으로 **코디네이터
+세션의 승인 대화창을 자동 승인하는 경로**가 열릴 수 있고, 사람이 테스트를 돌린다는
+사실만으로 부작용이 생기는 구조입니다. 테스트는 부작용이 없어야 합니다.
 
 ### 8.6.3 후속 과제
 
@@ -314,7 +335,9 @@ Docker 를 내리고 종료 점검을 하다가 발견했습니다. **저장소�
 | --- |
 | `orca_auto_approve.py` 가 대상 터미널이 닫힌 뒤 실제로 자기 종료하는지 확인하고, 안 되면 종료 조건을 고칩니다 |
 | 런처 경로로 띄운 워커의 감시기를 `worker-release` 시점에 함께 종료하게 합니다. 지금은 `finalize` 를 타야만 정리됩니다 |
-| `schedule_permission_setup` 이 상속된 `ORCA_TERMINAL_HANDLE` 을 쓰지 않도록 대상 터미널을 명시 인자로 강제합니다. 코디네이터 핸들이 들어오면 거부하는 것이 안전합니다 |
+| **(우선)** `tests/test_orca_agy_launch.py` 의 `mod.main(...)` 호출 8곳이 `schedule_permission_setup` 또는 `spawn_permission_setup` 을 monkeypatch 하도록 고칩니다. 지금은 테스트를 돌리는 것만으로 실제 분리 프로세스가 뜹니다 |
+| 같은 형태가 다른 런처 테스트(`orca_kimi_launch`, `orca_qwen_launch`)에도 있는지 확인합니다. kimi 는 468행에서 patch 하고 있으나 전수 확인은 하지 않았습니다 |
+| `schedule_permission_setup` 이 상속된 `ORCA_TERMINAL_HANDLE` 을 쓰지 않도록 대상 터미널을 명시 인자로 강제하는 것을 검토합니다. 코디네이터 핸들이 들어오면 거부하는 것이 안전합니다 |
 
 ---
 
