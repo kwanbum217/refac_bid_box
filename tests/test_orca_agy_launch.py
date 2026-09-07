@@ -13,6 +13,7 @@ from scripts import orca_worker_launch_common as common
 from scripts.orca_agy_launch import (
     COMMIT_NOTICE,
     PERMISSION_SETUP_FLAG,
+    REVIEWER_NOTICE,
     acquire_permissions,
     build_command,
     main,
@@ -174,6 +175,124 @@ def test_commit_notice_omitted_when_disabled(tmp_path: Path, monkeypatch):
     prompt = captured["cmd"][-1]
     assert prompt == "원래 지시문"
     assert COMMIT_NOTICE.strip() not in prompt
+
+
+def test_reviewer_notice_is_appended_for_reviewer_preamble(tmp_path: Path, monkeypatch):
+    """리뷰어 지시문(ORCA_REVIEW_DONE_V2)인 경우 커밋 강제 고지문 대신 리뷰어 고지문이 붙어야 합니다."""
+    target = tmp_path / "preamble.txt"
+    target.write_text("계약: ORCA_REVIEW_DONE_V2\n산출물: review_done.json", encoding="utf-8")
+
+    captured: dict = {}
+
+    def fake_execvpe(cmd0, cmd, env):
+        captured["cmd"] = list(cmd)
+        raise SystemExit(0)
+
+    from scripts import orca_agy_launch as mod
+
+    monkeypatch.setattr(mod.os, "execvpe", fake_execvpe)
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--model",
+                "gemini-3.8-flash-medium",
+                "--preamble",
+                str(target),
+                "--timeout-sec",
+                "1.0",
+            ]
+        )
+    assert exc.value.code == 0
+    prompt = captured["cmd"][-1]
+    assert REVIEWER_NOTICE.strip() in prompt
+    assert COMMIT_NOTICE.strip() not in prompt
+
+
+def test_reviewer_notice_omitted_when_no_commit_notice_given(tmp_path: Path, monkeypatch):
+    """리뷰어 지시문이더라도 --no-commit-notice 지정 시 어떤 고지문도 붙지 않아야 합니다."""
+    target = tmp_path / "preamble.txt"
+    target.write_text("계약: ORCA_REVIEW_DONE_V2\n산출물: review_done.json", encoding="utf-8")
+
+    captured: dict = {}
+
+    def fake_execvpe(cmd0, cmd, env):
+        captured["cmd"] = list(cmd)
+        raise SystemExit(0)
+
+    from scripts import orca_agy_launch as mod
+
+    monkeypatch.setattr(mod.os, "execvpe", fake_execvpe)
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--model",
+                "gemini-3.8-flash-medium",
+                "--preamble",
+                str(target),
+                "--timeout-sec",
+                "1.0",
+                "--no-commit-notice",
+            ]
+        )
+    assert exc.value.code == 0
+    prompt = captured["cmd"][-1]
+    assert prompt == "계약: ORCA_REVIEW_DONE_V2\n산출물: review_done.json"
+    assert REVIEWER_NOTICE.strip() not in prompt
+    assert COMMIT_NOTICE.strip() not in prompt
+
+
+def test_role_flag_overrides_automatic_detection(tmp_path: Path, monkeypatch):
+    """--role 인자로 자동 판정을 덮어쓸 수 있어야 합니다."""
+    target = tmp_path / "preamble.txt"
+    # 본문은 빌더 표지이지만 --role reviewer 로 지정
+    target.write_text("일반 빌드 작업", encoding="utf-8")
+
+    captured: dict = {}
+
+    def fake_execvpe(cmd0, cmd, env):
+        captured["cmd"] = list(cmd)
+        raise SystemExit(0)
+
+    from scripts import orca_agy_launch as mod
+
+    monkeypatch.setattr(mod.os, "execvpe", fake_execvpe)
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--model",
+                "gemini-3.8-flash-medium",
+                "--preamble",
+                str(target),
+                "--timeout-sec",
+                "1.0",
+                "--role",
+                "reviewer",
+            ]
+        )
+    assert exc.value.code == 0
+    prompt = captured["cmd"][-1]
+    assert REVIEWER_NOTICE.strip() in prompt
+    assert COMMIT_NOTICE.strip() not in prompt
+
+    # 반대로 리뷰어 본문이지만 --role builder 로 지정
+    target.write_text("계약: ORCA_REVIEW_DONE_V2", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--model",
+                "gemini-3.8-flash-medium",
+                "--preamble",
+                str(target),
+                "--timeout-sec",
+                "1.0",
+                "--role",
+                "builder",
+            ]
+        )
+    assert exc.value.code == 0
+    prompt = captured["cmd"][-1]
+    assert COMMIT_NOTICE.strip() in prompt
+    assert REVIEWER_NOTICE.strip() not in prompt
 
 
 def test_main_returns_nonzero_when_preamble_times_out(tmp_path: Path, capsys):

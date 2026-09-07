@@ -13,6 +13,7 @@ from scripts import orca_kimi_launch
 from scripts.orca_kimi_launch import (
     COMMIT_NOTICE,
     PERMISSION_SETUP_FLAG,
+    REVIEWER_NOTICE,
     build_command,
     build_completion_message,
     main,
@@ -250,6 +251,125 @@ def test_no_commit_notice_skips_append(
     prompt = cmd[-1]
     assert COMMIT_NOTICE not in prompt
     assert prompt == "본문"
+
+
+@patch("scripts.orca_kimi_launch.run_kimi", return_value=0)
+@patch("scripts.orca_kimi_launch.wait_for_preamble")
+def test_reviewer_notice_is_appended_for_reviewer_preamble(
+    mock_wait: MagicMock,
+    mock_run: MagicMock,
+    tmp_path: Path,
+):
+    """리뷰어 지시문(review_done.json)인 경우 커밋 강제 고지문 대신 리뷰어 고지문이 붙어야 합니다."""
+    reviewer_text = "계약: ORCA_REVIEW_DONE_V2\n산출물: review_done.json"
+    mock_wait.return_value = reviewer_text
+    preamble = tmp_path / "preamble.txt"
+    preamble.write_text(reviewer_text, encoding="utf-8")
+    with patch("scripts.orca_kimi_launch.open_interactive_shell"):
+        assert (
+            main(
+                [
+                    "--model",
+                    "m",
+                    "--preamble",
+                    str(preamble),
+                    "--no-keep-open",
+                ]
+            )
+            == 0
+        )
+    cmd = mock_run.call_args[0][0]
+    prompt = cmd[-1]
+    assert REVIEWER_NOTICE in prompt
+    assert COMMIT_NOTICE not in prompt
+
+
+@patch("scripts.orca_kimi_launch.run_kimi", return_value=0)
+@patch("scripts.orca_kimi_launch.wait_for_preamble")
+def test_reviewer_notice_omitted_when_no_commit_notice_given(
+    mock_wait: MagicMock,
+    mock_run: MagicMock,
+    tmp_path: Path,
+):
+    """리뷰어 지시문이더라도 --no-commit-notice 지정 시 어떤 고지문도 붙지 않아야 합니다."""
+    reviewer_text = "계약: ORCA_REVIEW_DONE_V2\n산출물: review_done.json"
+    mock_wait.return_value = reviewer_text
+    preamble = tmp_path / "preamble.txt"
+    preamble.write_text(reviewer_text, encoding="utf-8")
+    with patch("scripts.orca_kimi_launch.open_interactive_shell"):
+        assert (
+            main(
+                [
+                    "--model",
+                    "m",
+                    "--preamble",
+                    str(preamble),
+                    "--no-commit-notice",
+                    "--no-keep-open",
+                ]
+            )
+            == 0
+        )
+    cmd = mock_run.call_args[0][0]
+    prompt = cmd[-1]
+    assert prompt == reviewer_text
+    assert REVIEWER_NOTICE not in prompt
+    assert COMMIT_NOTICE not in prompt
+
+
+@patch("scripts.orca_kimi_launch.run_kimi", return_value=0)
+@patch("scripts.orca_kimi_launch.wait_for_preamble")
+def test_role_flag_overrides_automatic_detection(
+    mock_wait: MagicMock,
+    mock_run: MagicMock,
+    tmp_path: Path,
+):
+    """--role 인자로 자동 판정을 덮어쓸 수 있어야 합니다."""
+    preamble = tmp_path / "preamble.txt"
+
+    # 일반 본문이지만 --role reviewer 강제
+    mock_wait.return_value = "일반 작업 지시"
+    with patch("scripts.orca_kimi_launch.open_interactive_shell"):
+        assert (
+            main(
+                [
+                    "--model",
+                    "m",
+                    "--preamble",
+                    str(preamble),
+                    "--role",
+                    "reviewer",
+                    "--no-keep-open",
+                ]
+            )
+            == 0
+        )
+    cmd = mock_run.call_args[0][0]
+    prompt = cmd[-1]
+    assert REVIEWER_NOTICE in prompt
+    assert COMMIT_NOTICE not in prompt
+
+    # 리뷰어 본문이지만 --role builder 강제
+    mock_wait.return_value = "ORCA_REVIEW_DONE_V2 검토 지시"
+    with patch("scripts.orca_kimi_launch.open_interactive_shell"):
+        assert (
+            main(
+                [
+                    "--model",
+                    "m",
+                    "--preamble",
+                    str(preamble),
+                    "--role",
+                    "builder",
+                    "--no-keep-open",
+                ]
+            )
+            == 0
+        )
+    cmd = mock_run.call_args[0][0]
+    prompt = cmd[-1]
+    assert COMMIT_NOTICE in prompt
+    assert REVIEWER_NOTICE not in prompt
 
 
 def test_preamble_timeout_returns_nonzero(tmp_path: Path):

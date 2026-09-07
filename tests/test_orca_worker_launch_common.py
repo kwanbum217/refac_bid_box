@@ -6,9 +6,14 @@ import io
 from pathlib import Path
 
 from scripts.orca_worker_launch_common import (
+    COMMIT_NOTICE,
     PERMISSION_SETUP_FLAG,
+    REVIEWER_NOTICE,
     acquire_permissions,
+    append_role_notice,
+    detect_role,
     is_terminal_ready,
+    resolve_notice,
     run_permission_setup_child,
     schedule_permission_setup,
     spawn_permission_setup,
@@ -316,3 +321,85 @@ def test_is_terminal_ready_rules():
         )
         is False
     )
+
+
+def test_detect_role_identifies_reviewer_indicators():
+    """ORCA_REVIEW_DONE_V2 나 review_done.json 또는 role: reviewer 가 있으면 reviewer 로 판정합니다."""
+    assert (
+        detect_role("return_contract: ORCA_REVIEW_DONE_V2\nreport_path: review_done.json")
+        == "reviewer"
+    )
+    assert detect_role("review_done.json 보고서를 작성하십시오.") == "reviewer"
+    assert detect_role("role: reviewer") == "reviewer"
+    assert detect_role('role: "reviewer"') == "reviewer"
+
+
+def test_detect_role_identifies_builder():
+    """ORCA_WORKER_DONE_V2 가 있거나 리뷰어 표지가 없으면 builder 로 판정합니다."""
+    assert (
+        detect_role("return_contract: ORCA_WORKER_DONE_V2\nreport_path: worker_done.json")
+        == "builder"
+    )
+
+
+def test_detect_role_fails_closed_to_builder():
+    """역할 표지가 없는 텍스트나 빈 문자열은 fail-closed 원칙에 따라 builder 로 판정합니다."""
+    assert detect_role("일반 빌드 작업 지시문입니다.") == "builder"
+    assert detect_role("") == "builder"
+    assert detect_role("   \n\t") == "builder"
+
+
+def test_reviewer_notice_contract_content():
+    """리뷰어 고지문은 커밋 금지, git add 금지, review_done.json 커밋 금지, 보고서+전송 완료를 명시해야 합니다."""
+    assert "커밋" in REVIEWER_NOTICE
+    assert "git add" in REVIEWER_NOTICE
+    assert "review_done.json" in REVIEWER_NOTICE
+    assert "worker_done" in REVIEWER_NOTICE
+
+
+def test_resolve_notice_with_auto():
+    """role='auto' 일 때 지시문 분석 결과에 따라 올바른 고지문을 반환합니다."""
+    assert resolve_notice("auto", "review_done.json 작성") == REVIEWER_NOTICE
+    assert resolve_notice("auto", "worker_done.json 작성") == COMMIT_NOTICE
+    assert resolve_notice("auto", "알 수 없는 작업") == COMMIT_NOTICE
+
+
+def test_resolve_notice_role_override():
+    """role='reviewer' 또는 role='builder' 로 명시적 강제 시 지시문 내용과 무관하게 지정된 고지문을 반환합니다."""
+    # 빌더 지시문이지만 role='reviewer' 로 강제
+    assert resolve_notice("reviewer", "ORCA_WORKER_DONE_V2") == REVIEWER_NOTICE
+    # 리뷰어 지시문이지만 role='builder' 로 강제
+    assert resolve_notice("builder", "ORCA_REVIEW_DONE_V2") == COMMIT_NOTICE
+
+
+def test_append_role_notice_respects_no_commit_notice():
+    """no_commit_notice=True 이면 역할이나 지시문과 무관하게 어떤 고지문도 붙이지 않습니다."""
+    reviewer_prompt = "review_done.json 검토 지시"
+    builder_prompt = "코드 수정 지시"
+
+    assert (
+        append_role_notice(reviewer_prompt, role="auto", no_commit_notice=True) == reviewer_prompt
+    )
+    assert append_role_notice(builder_prompt, role="auto", no_commit_notice=True) == builder_prompt
+    assert (
+        append_role_notice(reviewer_prompt, role="reviewer", no_commit_notice=True)
+        == reviewer_prompt
+    )
+    assert (
+        append_role_notice(builder_prompt, role="builder", no_commit_notice=True) == builder_prompt
+    )
+
+
+def test_append_role_notice_appends_correct_notice():
+    """no_commit_notice=False 일 때 적절한 고지문이 prompt 뒤에 추가됩니다."""
+    reviewer_prompt = "review_done.json 검토 지시"
+    res_reviewer = append_role_notice(reviewer_prompt, role="auto", no_commit_notice=False)
+    assert res_reviewer.startswith(reviewer_prompt)
+    assert REVIEWER_NOTICE in res_reviewer
+    assert COMMIT_NOTICE not in res_reviewer
+
+    builder_prompt = "코드 수정 지시"
+    res_builder = append_role_notice(builder_prompt, role="auto", no_commit_notice=False)
+    assert res_builder.startswith(builder_prompt)
+    assert COMMIT_NOTICE in res_builder
+    assert REVIEWER_NOTICE not in res_builder
