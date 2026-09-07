@@ -53,6 +53,7 @@ from scripts.measure_llm_quality import (  # noqa: E402
 
 __all__ = [
     "CANONICAL_FIXTURE_HASHES",
+    "DEFAULT_DB_CONTAINER",
     "REASON_MISSING_HEADER",
     "REASON_TIMEOUT",
     "REASON_TRANSPORT_ERROR",
@@ -71,6 +72,7 @@ __all__ = [
     "load_fixture",
     "main",
     "parse_segment_lines",
+    "query_db_buffer_pool_pages_data",
     "send_query",
     "summarize_measurements",
     "verify_trace_correlation",
@@ -78,6 +80,7 @@ __all__ = [
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_CONTAINER = "refac_bid_box-app-1"
+DEFAULT_DB_CONTAINER = "refac_bid_box-db-1"
 DEFAULT_SERVICE = "app"
 QUERY_PATH = "/api/v1/chatbot/query"
 TRACE_HEADER_NAME = "X-RAG-Trace-Id"
@@ -284,6 +287,85 @@ def container_env_flag(container: str, name: str, command_runner: Any = None) ->
         if key == name:
             return value
     return None
+
+
+def query_db_buffer_pool_pages_data(
+    container: str = DEFAULT_DB_CONTAINER,
+    command_runner: Any = None,
+) -> dict[str, Any]:
+    """대상 DB 컨테이너의 InnoDB 버퍼풀 적재 페이지 수(Innodb_buffer_pool_pages_data)를 조회합니다.
+
+    실패 시 예외를 던지지 않고 pages_data=None 및 failure reason(error)을 반환합니다.
+    """
+    runner = command_runner or _command_output
+    cmd = [
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -B -e "SHOW GLOBAL STATUS LIKE \'Innodb_buffer_pool_pages_data\'"',
+    ]
+    try:
+        raw = runner(cmd)
+    except Exception as exc:
+        return {
+            "container": container,
+            "pages_data": None,
+            "innodb_buffer_pool_pages_data": None,
+            "error": f"명령 실행 예외 발생: {type(exc).__name__}",
+        }
+
+    if raw is None or not isinstance(raw, str):
+        return {
+            "container": container,
+            "pages_data": None,
+            "innodb_buffer_pool_pages_data": None,
+            "error": "명령 실행 결과가 문자열이 아닙니다.",
+        }
+
+    stripped = raw.strip()
+    if not stripped:
+        return {
+            "container": container,
+            "pages_data": None,
+            "innodb_buffer_pool_pages_data": None,
+            "error": "명령 실행 결과가 비어 있습니다.",
+        }
+
+    if stripped == "unknown":
+        return {
+            "container": container,
+            "pages_data": None,
+            "innodb_buffer_pool_pages_data": None,
+            "error": "명령 실행 실패 (unknown 반환)",
+        }
+
+    for line in stripped.splitlines():
+        parts = line.strip().split()
+        if len(parts) >= 2 and parts[0].lower() == "innodb_buffer_pool_pages_data":
+            try:
+                val = int(parts[1])
+                return {
+                    "container": container,
+                    "pages_data": val,
+                    "innodb_buffer_pool_pages_data": val,
+                    "error": None,
+                }
+            except ValueError:
+                return {
+                    "container": container,
+                    "pages_data": None,
+                    "innodb_buffer_pool_pages_data": None,
+                    "error": f"정수로 변환할 수 없는 값: {parts[1]}",
+                }
+
+    return {
+        "container": container,
+        "pages_data": None,
+        "innodb_buffer_pool_pages_data": None,
+        "error": "출력에서 Innodb_buffer_pool_pages_data 항목을 찾을 수 없습니다.",
+    }
 
 
 def assert_segment_logging_enabled(container: str, command_runner: Any = None) -> None:
@@ -523,6 +605,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="단발 질의 RAG 구간 분리 계측 하네스")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--target-container", default=DEFAULT_CONTAINER)
+    parser.add_argument(
+        "--db-container",
+        default=DEFAULT_DB_CONTAINER,
+        help="DB 컨테이너 이름 (버퍼풀 상태 조회용, 기본값: refac_bid_box-db-1)",
+    )
     parser.add_argument("--service-name", default=DEFAULT_SERVICE)
     parser.add_argument(
         "--fixture",
@@ -610,6 +697,14 @@ def main(
     except BuildProvenanceError as exc:
         print(f"시작 시점 provenance 무결성 검증 실패: {exc}")
         return 2
+
+    start_bp = query_db_buffer_pool_pages_data(
+        container=args.db_container,
+        command_runner=cmd_fn,
+    )
+    start_meta["db_buffer_pool"] = start_bp
+    start_meta["innodb_buffer_pool_pages_data"] = start_bp["pages_data"]
+    start_meta["db_buffer_pool_error"] = start_bp["error"]
 
     # dirty 면 무조건 거부 (fail-closed)
     start_dirty = start_meta.get("git_dirty")
@@ -784,6 +879,14 @@ def main(
         print(f"종료 시점 provenance 일관성 검증 실패: {exc}")
         return 2
 
+    end_bp = query_db_buffer_pool_pages_data(
+        container=args.db_container,
+        command_runner=cmd_fn,
+    )
+    end_meta["db_buffer_pool"] = end_bp
+    end_meta["innodb_buffer_pool_pages_data"] = end_bp["pages_data"]
+    end_meta["db_buffer_pool_error"] = end_bp["error"]
+
     # 10. 1:1 Trace 상관 및 무결성 검증
     trace_ok, trace_reason, trace_details = verify_trace_correlation(
         successful_traces=successful_traces,
@@ -923,10 +1026,15 @@ def main(
         "provenance": {
             "start": start_meta,
             "end": end_meta,
+            "db_buffer_pool": {
+                "start": start_bp,
+                "end": end_bp,
+            },
             "host_load": host_load_stats,
         },
         "config": {
             "base_url": args.base_url,
+            "db_container": args.db_container,
             "rounds": expected_rounds,
             "repetitions": args.repetitions if args.fixture is not None else 1,
             "limit": args.limit,

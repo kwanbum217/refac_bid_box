@@ -21,6 +21,7 @@ import pytest
 from scripts.benchmark_latency import Samples
 from scripts.benchmark_rag_segments import (
     CANONICAL_FIXTURE_HASHES,
+    DEFAULT_DB_CONTAINER,
     REASON_MISSING_HEADER,
     REASON_TIMEOUT,
     REASON_TRANSPORT_ERROR,
@@ -36,6 +37,7 @@ from scripts.benchmark_rag_segments import (
     load_fixture,
     main,
     parse_segment_lines,
+    query_db_buffer_pool_pages_data,
     send_query,
     summarize_measurements,
     verify_trace_correlation,
@@ -1563,3 +1565,244 @@ def test_main_failures_sum_evaluated_in_canonical_gate(tmp_path):
     assert payload["missing_header_failures"] == 3
     assert payload["transport_failures"] == 0
     assert payload["errors"] == 3
+
+
+def test_query_db_buffer_pool_pages_data_success():
+    """정상적인 SHOW GLOBAL STATUS 출력에서 Innodb_buffer_pool_pages_data 정수값을 파싱합니다."""
+
+    def runner(cmd: list[str]) -> str:
+        assert cmd[0:2] == ["docker", "exec"]
+        assert cmd[2] == "test-db"
+        assert "Innodb_buffer_pool_pages_data" in cmd[-1]
+        return "Innodb_buffer_pool_pages_data\t121120\n"
+
+    res = query_db_buffer_pool_pages_data("test-db", command_runner=runner)
+    assert res["container"] == "test-db"
+    assert res["pages_data"] == 121120
+    assert res["innodb_buffer_pool_pages_data"] == 121120
+    assert res["error"] is None
+
+
+def test_query_db_buffer_pool_pages_data_failures():
+    """unknown, 빈 출력, 예외 발생, 비정수 값, 누락 항목 시 null과 사유를 반환합니다."""
+    # 1. unknown
+    res1 = query_db_buffer_pool_pages_data("db1", command_runner=lambda _: "unknown")
+    assert res1["pages_data"] is None
+    assert res1["error"] == "명령 실행 실패 (unknown 반환)"
+
+    # 2. 빈 출력
+    res2 = query_db_buffer_pool_pages_data("db1", command_runner=lambda _: "")
+    assert res2["pages_data"] is None
+    assert res2["error"] == "명령 실행 결과가 비어 있습니다."
+
+    # 3. 예외 발생
+    def err_runner(_):
+        raise RuntimeError("docker daemon disconnected")
+
+    res3 = query_db_buffer_pool_pages_data("db1", command_runner=err_runner)
+    assert res3["pages_data"] is None
+    assert "명령 실행 예외 발생" in res3["error"]
+
+    # 4. 정수로 변환 불가능한 값
+    res4 = query_db_buffer_pool_pages_data(
+        "db1", command_runner=lambda _: "Innodb_buffer_pool_pages_data\tinvalid_val\n"
+    )
+    assert res4["pages_data"] is None
+    assert "정수로 변환할 수 없는 값" in res4["error"]
+
+    # 5. 출력에 다른 상태만 있는 경우
+    res5 = query_db_buffer_pool_pages_data("db1", command_runner=lambda _: "Uptime\t123456\n")
+    assert res5["pages_data"] is None
+    assert "출력에서 Innodb_buffer_pool_pages_data 항목을 찾을 수 없습니다." in res5["error"]
+
+
+def test_main_records_buffer_pool_provenance_on_success(tmp_path):
+    """시작과 종료 시점의 DB 버퍼풀 적재 상태가 provenance 에 정상 기록되고 canonical 판정에 영향이 없음을 검증합니다."""
+    output_file = tmp_path / "bp_success_result.json"
+    canonical_hash = next(iter(CANONICAL_FIXTURE_HASHES))
+
+    fixture_items = [{"id": "q01", "question": "질문 1"}]
+    fixture_file = tmp_path / "canonical_fixture.json"
+    fixture_file.write_bytes(b'{"dummy": true}')
+
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
+
+    base_docker_runner = _make_mock_docker_runner(logs_output=logs)
+    bp_call_count = 0
+
+    def runner_with_bp(command: list[str]) -> str:
+        nonlocal bp_call_count
+        if (
+            "exec" in command
+            and len(command) >= 6
+            and "Innodb_buffer_pool_pages_data" in command[-1]
+        ):
+            bp_call_count += 1
+            if bp_call_count == 1:
+                return "Innodb_buffer_pool_pages_data\t1192\n"
+            return "Innodb_buffer_pool_pages_data\t1383\n"
+        return base_docker_runner(command)
+
+    query_count = 0
+    traces = ["t_warmup", "t1", "t2", "t3"]
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        tid = traces[query_count]
+        query_count += 1
+        return 500.0, True, tid, None, None
+
+    with patch(
+        "scripts.benchmark_rag_segments.load_fixture",
+        return_value=(fixture_items, canonical_hash, 1),
+    ):
+        code = main(
+            [
+                "--expected-llm-model",
+                "gemma4:e4b",
+                "--fixture",
+                str(fixture_file),
+                "--repetitions",
+                "3",
+                "--db-container",
+                "custom-db-1",
+                "--output",
+                str(output_file),
+            ],
+            command_runner=runner_with_bp,
+            query_sender=mock_query,
+            host_load_sampler=lambda: {
+                "observed_at_utc": "2026-08-24T00:00:00Z",
+                "load_1m": 0.5,
+                "cpu_count": 8,
+                "per_core_percent": 6.25,
+            },
+        )
+
+    assert code == 0
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+
+    # 1. 시작 및 종료 시점 버퍼풀 값 기록 검증
+    start_bp = payload["provenance"]["start"]["db_buffer_pool"]
+    assert start_bp["container"] == "custom-db-1"
+    assert start_bp["pages_data"] == 1192
+    assert start_bp["innodb_buffer_pool_pages_data"] == 1192
+    assert start_bp["error"] is None
+    assert payload["provenance"]["start"]["innodb_buffer_pool_pages_data"] == 1192
+
+    end_bp = payload["provenance"]["end"]["db_buffer_pool"]
+    assert end_bp["container"] == "custom-db-1"
+    assert end_bp["pages_data"] == 1383
+    assert end_bp["innodb_buffer_pool_pages_data"] == 1383
+    assert end_bp["error"] is None
+    assert payload["provenance"]["end"]["innodb_buffer_pool_pages_data"] == 1383
+
+    assert payload["provenance"]["db_buffer_pool"]["start"]["pages_data"] == 1192
+    assert payload["provenance"]["db_buffer_pool"]["end"]["pages_data"] == 1383
+
+    # 2. config 에 db_container 기록
+    assert payload["config"]["db_container"] == "custom-db-1"
+
+    # 3. canonical 게이트 판정 불변 검증
+    assert payload["canonical"] is True
+    assert payload["canonical_success"] is True
+    assert payload["canonical_failed_gates"] == []
+
+    # 4. 비밀번호/시크릿 누설 없음 검증
+    payload_text = output_file.read_text(encoding="utf-8")
+    assert "MYSQL_ROOT_PASSWORD" not in payload_text
+    assert "password" not in payload_text.lower()
+
+
+def test_main_buffer_pool_failure_records_null_and_error_without_stopping_measurement(tmp_path):
+    """버퍼풀 조회가 실패해도 측정이 중단되지 않고 null과 실패 사유가 기록되며 게이트 판정이 유지됩니다."""
+    output_file = tmp_path / "bp_failure_result.json"
+    canonical_hash = next(iter(CANONICAL_FIXTURE_HASHES))
+
+    fixture_items = [{"id": "q01", "question": "질문 1"}]
+    fixture_file = tmp_path / "canonical_fixture.json"
+    fixture_file.write_bytes(b'{"dummy": true}')
+
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t1 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:02 INFO rag_engine_latency: trace_id=t2 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:03 INFO rag_engine_latency: trace_id=t3 plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
+
+    base_docker_runner = _make_mock_docker_runner(logs_output=logs)
+
+    def runner_with_failed_bp(command: list[str]) -> str:
+        if (
+            "exec" in command
+            and len(command) >= 6
+            and "Innodb_buffer_pool_pages_data" in command[-1]
+        ):
+            # 버퍼풀 조회 실패 시뮬레이션 (unknown 반환)
+            return "unknown"
+        return base_docker_runner(command)
+
+    query_count = 0
+    traces = ["t_warmup", "t1", "t2", "t3"]
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        tid = traces[query_count]
+        query_count += 1
+        return 500.0, True, tid, None, None
+
+    with patch(
+        "scripts.benchmark_rag_segments.load_fixture",
+        return_value=(fixture_items, canonical_hash, 1),
+    ):
+        code = main(
+            [
+                "--expected-llm-model",
+                "gemma4:e4b",
+                "--fixture",
+                str(fixture_file),
+                "--repetitions",
+                "3",
+                "--output",
+                str(output_file),
+            ],
+            command_runner=runner_with_failed_bp,
+            query_sender=mock_query,
+            host_load_sampler=lambda: {
+                "observed_at_utc": "2026-08-24T00:00:00Z",
+                "load_1m": 0.5,
+                "cpu_count": 8,
+                "per_core_percent": 6.25,
+            },
+        )
+
+    # 측정이 실패하지 않고 정상 완료됨
+    assert code == 0
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+
+    # pages_data 는 null(None)이고 error 사유가 기록됨
+    start_bp = payload["provenance"]["start"]["db_buffer_pool"]
+    assert start_bp["pages_data"] is None
+    assert start_bp["innodb_buffer_pool_pages_data"] is None
+    assert start_bp["error"] == "명령 실행 실패 (unknown 반환)"
+
+    end_bp = payload["provenance"]["end"]["db_buffer_pool"]
+    assert end_bp["pages_data"] is None
+    assert end_bp["innodb_buffer_pool_pages_data"] is None
+    assert end_bp["error"] == "명령 실행 실패 (unknown 반환)"
+
+    assert payload["provenance"]["db_buffer_pool"]["start"]["pages_data"] is None
+    assert payload["provenance"]["db_buffer_pool"]["end"]["pages_data"] is None
+
+    # 기본 DB 컨테이너 이름 확인
+    assert payload["config"]["db_container"] == DEFAULT_DB_CONTAINER
+
+    # canonical 게이트는 버퍼풀 실패와 무관하게 통과
+    assert payload["canonical"] is True
+    assert payload["canonical_success"] is True
+    assert payload["canonical_failed_gates"] == []
