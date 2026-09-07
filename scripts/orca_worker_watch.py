@@ -415,6 +415,66 @@ def inspect_terminal_block(
     return None
 
 
+def strip_preamble(terminal_text: str) -> str:
+    """Dispatch preamble 구간('=== CLI COMMANDS ===' ~ '=== TASK ===')을 제거합니다.
+
+    화면에 표시된 지시문 템플릿이 차단 신호 탐지 대상이 되지 않도록 제외합니다.
+    """
+    return re.sub(
+        r"[ \t]*=== CLI COMMANDS ===.*?(?:[ \t]*=== TASK ===[^\n]*\n?|$)",
+        "",
+        terminal_text,
+        flags=re.DOTALL,
+    )
+
+
+def join_continuation_lines(text: str) -> list[str]:
+    """백슬래시(\\)로 이어지는 여러 줄 명령을 하나의 논리적 줄로 합칩니다."""
+    raw_lines = text.splitlines()
+    joined_lines: list[str] = []
+    accum: list[str] = []
+    for line in raw_lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.endswith("\\"):
+            accum.append(stripped[:-1].rstrip())
+        else:
+            if accum:
+                accum.append(stripped)
+                joined_lines.append(" ".join(accum))
+                accum = []
+            else:
+                joined_lines.append(stripped)
+    if accum:
+        joined_lines.append(" ".join(accum))
+    return joined_lines
+
+
+def is_placeholder_value(val: str) -> bool:
+    """꺾쇠 자리표시자(<...>) 형태인지 확인합니다."""
+    return bool(re.search(r"<[^>]+>", val))
+
+
+def is_placeholder_command(cmd: str) -> bool:
+    """명령 문자열에 꺾쇠 자리표시자(<...>)가 포함되어 템플릿/예시 명령인지 확인합니다."""
+    return bool(re.search(r"<[^>]+>", cmd))
+
+
+def is_worker_done_signal_line(line: str) -> bool:
+    """줄이 실제 worker_done 전송 명령이나 완료 신호인지 판별합니다.
+
+    일반 대화나 작업 설명에 'worker_done' 단어가 포함된 경우를 오탐하지 않습니다.
+    """
+    line_lower = line.lower()
+    return bool(
+        re.search(r"--type[=\s]+[\"']?worker_done[\"']?", line_lower)
+        or re.search(r'["\']?type["\']?\s*:\s*["\']worker_done["\']', line_lower)
+        or "worker_done_guard" in line_lower
+        or ("send" in line_lower and "worker_done" in line_lower)
+    )
+
+
 def check_worker_done_report(
     terminal_text: str,
     worktree_path: str | None = None,
@@ -424,32 +484,40 @@ def check_worker_done_report(
 
     입력 텍스트(terminal_text)는 렌더링된 화면 또는 누적 스트림 출력일 수 있습니다.
     """
-    norm = normalize_text(terminal_text)
+    cleaned_text = strip_preamble(terminal_text)
+    norm = normalize_text(cleaned_text)
     if "worker_done" not in norm and "orchestration send" not in norm:
         return None
 
-    # worker_done 관련 명령/메시지가 포함된 줄 탐색
-    lines = [line.strip() for line in terminal_text.splitlines() if line.strip()]
-    done_lines = [
-        line
-        for line in lines
-        if "worker_done" in line.lower()
-        or ("send" in line.lower() and ("--type" in line.lower() or "worker_done" in line.lower()))
-    ]
+    # 줄 바꿈 백슬래시(\) 연결 후 분리
+    lines = join_continuation_lines(cleaned_text)
+    done_lines = [line for line in lines if is_worker_done_signal_line(line)]
     if not done_lines:
+        return None
+
+    # 꺾쇠 자리표시자(<...>)를 포함한 템플릿/예시 명령은 제외
+    real_done_lines = [line for line in done_lines if not is_placeholder_command(line)]
+    if not real_done_lines:
         return None
 
     # report_path / --report-path / reportPath 탐색
     target_path = None
-    for line in done_lines:
-        m_flag = re.search(r"--report(?:-path)?\s+[\"']?([^\s\"']+)[\"']?", line)
+    for line in real_done_lines:
+        m_flag = re.search(
+            r"--report(?:-path)?\s+(?:\"([^\"]+)\"|'([^']+)'|([^\s\"']+))",
+            line,
+        )
         if m_flag:
-            target_path = m_flag.group(1).strip()
-            break
+            val = (m_flag.group(1) or m_flag.group(2) or m_flag.group(3)).strip()
+            if not is_placeholder_value(val):
+                target_path = val
+                break
         m_json = re.search(r'["\']?report(?:_p|P)ath["\']?\s*:\s*["\']([^"\']+)["\']', line)
         if m_json:
-            target_path = m_json.group(1).strip()
-            break
+            val = m_json.group(1).strip()
+            if not is_placeholder_value(val):
+                target_path = val
+                break
 
     if not target_path:
         return (
@@ -480,11 +548,12 @@ def detect_block(
     repo: Path | None = None,
 ) -> tuple[str, str, BlockKind] | None:
     """터미널 텍스트(화면 또는 누적 스트림 출력)에서 워커 차단 신호를 탐지합니다."""
-    done_block = check_worker_done_report(terminal_text, worktree_path, repo)
+    cleaned_text = strip_preamble(terminal_text)
+    done_block = check_worker_done_report(cleaned_text, worktree_path, repo)
     if done_block:
         return done_block
 
-    norm_text = normalize_text(terminal_text)
+    norm_text = normalize_text(cleaned_text)
     prompt_match: tuple[str, str, BlockKind] | None = None
     for needle, reason, fix, kind in BLOCK_SIGNALS:
         if normalize_text(needle) not in norm_text:

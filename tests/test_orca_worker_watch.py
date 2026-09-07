@@ -625,6 +625,183 @@ def test_worker_done_valid_report_file_not_blocked(tmp_path: Path) -> None:
     assert res is None
 
 
+DISPATCH_PREAMBLE_SAMPLE = """\
+You are working inside Orca, a multi-agent IDE. You are a dispatched worker.
+Your coordinator's terminal handle is: term_311de244-f5fa-42dc-bd1b-565a8829d08e
+Your task ID is: task_78b8425799bd
+
+You talk to the coordinator only through the CLI commands below. Do not use
+Slack, GitHub comments, or any other channel to reach a human during the run.
+
+=== CLI COMMANDS ===
+
+  # Report the terminal task outcome (REQUIRED exactly once).
+  #
+  # RULE: --body must be a 3-sentence executive summary (what you did,
+  # what you found, what's left). Never send an empty body; the coordinator
+  # reads the body first and only opens artifacts if it needs more detail.
+  # If you produced a long-form artifact, include its path as
+  # payload.reportPath so the coordinator can find it without a file search.
+  #
+  # RULE: send worker_done exactly once. Use --outcome succeeded when the
+  # requested work is done, or replace it with --outcome failed when it is not.
+  # Never encode failure only in prose and never silently exit.
+  # Include BOTH taskId and dispatchId in the payload so a late completion
+  # from a failed retry cannot complete the current dispatch.
+  orca orchestration send --from term_92f9b7e0-8142-49ac-9e68-48d296059588 \\
+    --type worker_done --subject "<short status>" \\
+    --body "<3-sentence summary: what you did, what you found, what's left>" \\
+    --task-id task_78b8425799bd --dispatch-id ctx_d993478c46fe --outcome succeeded \\
+    --files-modified "path/a,path/b" \\
+    --report-path "<optional: path to the full artifact>"
+
+  # BEHAVIOR RULE: send a heartbeat every 5 minutes
+  # while actively working on the task. The coordinator uses this to
+  # distinguish "still thinking" from "hung / crashed." Skip heartbeats only
+  # while blocked inside `check --wait` or `ask` — those calls are
+  # themselves liveness signals.
+  #
+  # Include BOTH taskId and dispatchId in the payload: the coordinator
+  # attributes the heartbeat to the specific dispatch context, not just
+  # the task, so a straggler heartbeat from a previously-failed dispatch
+  # cannot mask a hung retry.
+  orca orchestration send --from term_92f9b7e0-8142-49ac-9e68-48d296059588 \\
+    --type heartbeat --subject "alive" \\
+    --task-id task_78b8425799bd --dispatch-id ctx_d993478c46fe \\
+    --phase "<short: investigating|implementing|reviewing|waiting>"
+
+  # Ask the coordinator a question and block until it answers.
+  orca orchestration ask --from term_92f9b7e0-8142-49ac-9e68-48d296059588 \\
+    --question "<your question>" \\
+    --options "<optional,comma,separated>" \\
+    --timeout-ms 600000
+
+  # Escalate a blocker or failure (pre-completion, when you need the
+  # coordinator to do something before you can continue):
+  orca orchestration send --from term_92f9b7e0-8142-49ac-9e68-48d296059588 \\
+    --type escalation --subject "Blocked: <reason>" \\
+    --body "<details>" \\
+    --task-id task_78b8425799bd --dispatch-id ctx_d993478c46fe
+
+  # Check for messages from the coordinator:
+  orca orchestration check --terminal term_92f9b7e0-8142-49ac-9e68-48d296059588
+
+=== AFTER YOU SEND worker_done ===
+
+worker_done ends your turn for this task. Your dispatched work is complete:
+stop, return to an idle prompt, and take no further actions — do NOT start
+new or unrelated work, do NOT run a sleep/poll loop, and do NOT keep calling
+`orca orchestration check`. The coordinator has already recorded your
+completion and expects no further output.
+
+=== TASK ===
+감시기가 화면에 떠 있는 Dispatch 지시문(preamble)의 명령 템플릿을 실제 worker_done 보고로 오인해 정상 작업 중인 워커를 실패 정체로 표시하는 오탐을 없앤다.
+"""
+
+
+def test_preamble_full_text_not_classified_as_blocked(tmp_path: Path) -> None:
+    """Dispatch preamble 전문이 화면에 떠 있어도 차단으로 판정하지 않아야 합니다."""
+    res = watch.detect_block(DISPATCH_PREAMBLE_SAMPLE, worktree_path=str(tmp_path))
+    assert res is None
+
+
+def test_multiline_worker_done_with_backslash_valid_report(tmp_path: Path) -> None:
+    """백슬래시로 이어진 여러 줄 worker_done 명령에서 실존하는 report-path 를 정상 추출해야 합니다."""
+    report_file = tmp_path / ".orca" / "worker_done.json"
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text("{}", encoding="utf-8")
+
+    terminal_text = (
+        "orca orchestration send --from term_abc \\\n"
+        "  --type worker_done \\\n"
+        "  --outcome succeeded \\\n"
+        "  --report-path .orca/worker_done.json\n"
+    )
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
+    assert res is None
+
+
+def test_multiline_worker_done_with_backslash_nonexistent_report(tmp_path: Path) -> None:
+    """백슬래시로 이어진 여러 줄 worker_done 명령에서 존재하지 않는 report-path 는 failure 로 판정해야 합니다."""
+    terminal_text = (
+        "orca orchestration send --from term_abc \\\n"
+        "  --type worker_done \\\n"
+        "  --outcome succeeded \\\n"
+        "  --report-path .orca/missing_report.json\n"
+    )
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
+    assert res is not None
+    reason, _fix, kind = res
+    assert "보고 파일이 존재하지 않음" in reason
+    assert kind == "failure"
+
+
+def test_multiline_worker_done_with_backslash_missing_report_path(tmp_path: Path) -> None:
+    """백슬래시로 이어진 여러 줄 worker_done 명령에서 report-path 가 없으면 failure 로 판정해야 합니다."""
+    terminal_text = (
+        "orca orchestration send --from term_abc \\\n"
+        "  --type worker_done \\\n"
+        "  --outcome succeeded\n"
+    )
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
+    assert res is not None
+    reason, _fix, kind = res
+    assert "reportPath 가 누락됨" in reason
+    assert kind == "failure"
+
+
+def test_placeholder_command_outside_preamble_not_blocked(tmp_path: Path) -> None:
+    """preamble 헤더 없이 명령 템플릿만 화면에 남아있어도 자리표시자(<...>)가 있으면 차단으로 판정하지 않습니다."""
+    terminal_text = (
+        "orca orchestration send --from term_123 \\\n"
+        '  --type worker_done --subject "<short status>" \\\n'
+        '  --report-path "<optional: path to the full artifact>"\n'
+    )
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
+    assert res is None
+
+
+def test_strip_preamble_removes_cli_commands_to_task() -> None:
+    """strip_preamble 은 '=== CLI COMMANDS ===' 부터 '=== TASK ===' 까지의 구간을 제거합니다."""
+    text = "before\n=== CLI COMMANDS ===\ntemplate content\n=== TASK ===\nafter task"
+    cleaned = watch.strip_preamble(text)
+    assert "before" in cleaned
+    assert "template content" not in cleaned
+    assert "after task" in cleaned
+
+
+def test_natural_text_mentioning_worker_done_not_blocked(tmp_path: Path) -> None:
+    """일반 대화나 작업 지시문에 worker_done 이라는 단어가 언급되어도 차단으로 판정하지 않습니다."""
+    terminal_text = (
+        "git log: fix worker_done handling in watch script\n"
+        "이 작업은 worker_done 오탐을 수정하는 작업입니다.\n"
+    )
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
+    assert res is None
+
+
+def test_real_failure_detected_even_with_template_present(tmp_path: Path) -> None:
+    """화면에 지시문 템플릿과 함께 실제 실패한 worker_done 전송이 공존하면 실패를 정상 탐지합니다."""
+    terminal_text = (
+        DISPATCH_PREAMBLE_SAMPLE + "\n"
+        "orca orchestration send --type worker_done --outcome succeeded\n"
+    )
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
+    assert res is not None
+    reason, _fix, kind = res
+    assert "reportPath 가 누락됨" in reason
+    assert kind == "failure"
+
+
+def test_placeholder_report_path_not_treated_as_real_file(tmp_path: Path) -> None:
+    """꺾쇠 자리표시자 report-path 는 디스크 실존 여부를 검사하지 않고 차단하지 않습니다."""
+    terminal_text = (
+        'orca orchestration send --type worker_done --report-path "<path/to/report.json>"\n'
+    )
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
+    assert res is None
+
+
 def test_collect_does_not_touch_real_runtime() -> None:
     """collect 는 잔류 세션 조회를 주입 가능한 지점으로 통과해야 합니다.
 
