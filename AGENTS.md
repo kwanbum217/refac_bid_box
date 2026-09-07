@@ -116,7 +116,8 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 - 병합은 `git merge --no-ff` 로 수행해 작업 단위를 이력에 남깁니다.
 - 병합 전 필수 확인: 테스트 전량 통과, `python scripts/validate_agent_rules.py` 통과.
 - 커밋 메시지: `type: subject` 형식 (예: `feat: 재학습 트레이너 추가`).
-  - type: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`
+  - type: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`, `merge`
+  - subject 는 한국어 필수입니다. `scripts/validate_commit_message.py` 가 기계로 검사합니다.
 - 상세는 [`docs/ops/git_branching_strategy.md`](docs/ops/git_branching_strategy.md).
 
 ---
