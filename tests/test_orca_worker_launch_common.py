@@ -9,10 +9,15 @@ from scripts.orca_worker_launch_common import (
     COMMIT_NOTICE,
     PERMISSION_SETUP_FLAG,
     REVIEWER_NOTICE,
+    ROLE_MARKER_BUILDER,
+    ROLE_MARKER_REVIEWER,
     acquire_permissions,
     append_role_notice,
     detect_role,
+    format_role_marker,
+    inject_role_marker,
     is_terminal_ready,
+    parse_role_marker,
     resolve_notice,
     run_permission_setup_child,
     schedule_permission_setup,
@@ -403,3 +408,113 @@ def test_append_role_notice_appends_correct_notice():
     assert res_builder.startswith(builder_prompt)
     assert COMMIT_NOTICE in res_builder
     assert REVIEWER_NOTICE not in res_builder
+
+
+def test_format_role_marker():
+    """format_role_marker 는 builder 와 reviewer 역할을 규격화된 한 줄 표지로 생성합니다."""
+    assert format_role_marker("reviewer") == ROLE_MARKER_REVIEWER
+    assert format_role_marker("builder") == ROLE_MARKER_BUILDER
+    assert format_role_marker("REVIEWER") == ROLE_MARKER_REVIEWER
+    assert format_role_marker("BUILDER") == ROLE_MARKER_BUILDER
+    # 알 수 없는 역할이나 빈 문자열은 builder 로 정규화
+    assert format_role_marker("unknown") == ROLE_MARKER_BUILDER
+    assert format_role_marker("") == ROLE_MARKER_BUILDER
+    assert format_role_marker(None) == ROLE_MARKER_BUILDER
+
+
+def test_parse_role_marker():
+    """parse_role_marker 는 독립된 한 줄의 역할 표지를 감지합니다."""
+    assert parse_role_marker(ROLE_MARKER_REVIEWER) == "reviewer"
+    assert parse_role_marker(ROLE_MARKER_BUILDER) == "builder"
+    assert parse_role_marker("  [ORCA_ROLE: reviewer]  ") == "reviewer"
+    assert parse_role_marker("ORCA_ROLE: reviewer") == "reviewer"
+    assert parse_role_marker("ORCA_ROLE: builder") == "builder"
+    assert parse_role_marker("[ORCA_ROLE: Reviewer]") == "reviewer"
+
+    # 여러 줄 텍스트에서 독립된 줄 감지
+    multiline = "첫 줄\n[ORCA_ROLE: reviewer]\n마지막 줄"
+    assert parse_role_marker(multiline) == "reviewer"
+
+    # 문장 내에 섞인 경우 독립된 줄이 아니므로 None
+    assert parse_role_marker("이 문장은 [ORCA_ROLE: reviewer] 가 포함됨") is None
+    assert parse_role_marker("ORCA_ROLE: reviewer is not a line") is None
+    assert parse_role_marker("일반 텍스트") is None
+    assert parse_role_marker("") is None
+
+
+def test_inject_role_marker():
+    """inject_role_marker 는 preamble 맨 앞에 표지를 추가하고 이미 있으면 교체합니다."""
+    original = "작업 지시문 본문"
+    injected = inject_role_marker(original, "reviewer")
+    assert injected.startswith(ROLE_MARKER_REVIEWER + "\n\n")
+    assert original in injected
+
+    # 이미 표지가 있는 경우 교체
+    replaced = inject_role_marker(injected, "builder")
+    assert replaced.startswith(ROLE_MARKER_BUILDER + "\n\n")
+    assert ROLE_MARKER_REVIEWER not in replaced
+    assert original in replaced
+
+
+def test_detect_role_prioritizes_role_marker_over_content():
+    """detect_role 은 본문 내용보다 역할 표지를 최우선 근거로 삼습니다."""
+    # 1. AK2 실제 리뷰어 재현 케이스: 본문에 ORCA_REVIEW_DONE_V2 나 review_done.json 이 없어도 표지가 reviewer 면 reviewer
+    real_reviewer_prompt = (
+        f"{ROLE_MARKER_REVIEWER}\n\n"
+        "You are working inside Orca, a multi-agent IDE. You are a dispatched worker.\n"
+        "=== TASK ===\n"
+        "빌더 산출물에 대한 독립 코드 리뷰를 수행한다. "
+        "정본 사양(Capsule): 현재 작업 디렉터리의 .orca/capsules/task_ak2_review/capsule.yaml."
+    )
+    assert detect_role(real_reviewer_prompt) == "reviewer"
+
+    # 2. 빌더가 review_done.json 이나 ORCA_REVIEW_DONE_V2 를 다루더라도 표지가 builder 면 builder 로 판정
+    builder_working_on_review = (
+        f"{ROLE_MARKER_BUILDER}\n\n"
+        "작업 내용: review_done.json 생성 모듈 및 ORCA_REVIEW_DONE_V2 계약 수정"
+    )
+    assert detect_role(builder_working_on_review) == "builder"
+
+
+def test_detect_role_four_paths():
+    """detect_role 의 네 경로(리뷰어 표지, 빌더 표지, 표지 없는 옛 형태, 확정 불가)를 단언합니다."""
+    # 경로 1: 리뷰어 표지
+    assert detect_role(f"{ROLE_MARKER_REVIEWER}\n일반 본문") == "reviewer"
+
+    # 경로 2: 빌더 표지
+    assert detect_role(f"{ROLE_MARKER_BUILDER}\n일반 본문") == "builder"
+
+    # 경로 3: 표지 없는 옛 형태 (하위 호환)
+    assert detect_role("계약: ORCA_REVIEW_DONE_V2") == "reviewer"
+    assert detect_role("산출물: review_done.json") == "reviewer"
+    assert detect_role('role: "reviewer"') == "reviewer"
+    assert detect_role("role: reviewer") == "reviewer"
+
+    # 경로 4: 표지 없는 옛 형태 확정 불가 (fail-closed to builder)
+    assert detect_role("일반 빌드 작업 지시문") == "builder"
+    assert detect_role("") == "builder"
+
+
+def test_resolve_notice_with_real_preamble_scenarios():
+    """실제 preamble 형태에서 resolve_notice 및 append_role_notice 가 올바르게 동작합니다."""
+    # 리뷰어 preamble: REVIEWER_NOTICE 가 붙고 COMMIT_NOTICE 는 붙지 않음
+    rev_preamble = f"{ROLE_MARKER_REVIEWER}\n\n=== TASK ===\n리뷰 수행"
+    assert resolve_notice("auto", rev_preamble) == REVIEWER_NOTICE
+    appended_rev = append_role_notice(rev_preamble, role="auto")
+    assert REVIEWER_NOTICE in appended_rev
+    assert COMMIT_NOTICE not in appended_rev
+
+    # 빌더 preamble: COMMIT_NOTICE 가 붙고 REVIEWER_NOTICE 는 붙지 않음
+    bld_preamble = f"{ROLE_MARKER_BUILDER}\n\n=== TASK ===\n코드 구현"
+    assert resolve_notice("auto", bld_preamble) == COMMIT_NOTICE
+    appended_bld = append_role_notice(bld_preamble, role="auto")
+    assert COMMIT_NOTICE in appended_bld
+    assert REVIEWER_NOTICE not in appended_bld
+
+    # --role 플래그 강제 시 표지보다 우선
+    assert resolve_notice("builder", rev_preamble) == COMMIT_NOTICE
+    assert resolve_notice("reviewer", bld_preamble) == REVIEWER_NOTICE
+
+    # --no-commit-notice 지정 시 어떤 고지문도 붙지 않음
+    assert append_role_notice(rev_preamble, role="auto", no_commit_notice=True) == rev_preamble
+    assert append_role_notice(bld_preamble, role="auto", no_commit_notice=True) == bld_preamble

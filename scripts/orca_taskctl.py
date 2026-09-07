@@ -133,6 +133,18 @@ except (ModuleNotFoundError, ImportError):
         sys.path.insert(0, str(_repo_root))
     from scripts.orca_skill_receipt import verify_skill_receipt
 
+try:
+    from scripts.orca_worker_launch_common import (
+        inject_role_marker,
+    )
+except (ModuleNotFoundError, ImportError):
+    _repo_root = Path(__file__).resolve().parent.parent
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
+    from scripts.orca_worker_launch_common import (
+        inject_role_marker,
+    )
+
 # ---------------------------------------------------------------------------
 # 상수
 # ---------------------------------------------------------------------------
@@ -4922,13 +4934,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         nonce = uuid.uuid4().hex[:8]
         preamble_file = worktree_path / ".orca" / f"preamble_{task_id}_{dispatch_id}_{nonce}.txt"
         preamble_file.parent.mkdir(parents=True, exist_ok=True)
-        preamble_file.write_text(preamble, encoding="utf-8")
+        effective_role = "reviewer" if capsule_role == "reviewer" else "builder"
+        preamble_with_marker = inject_role_marker(preamble, effective_role)
+        preamble_file.write_text(preamble_with_marker, encoding="utf-8")
         sys.stderr.write(
-            f"고유 preamble 작성 완료: {preamble_file} ({len(preamble)}자, nonce={nonce})\n"
+            f"고유 preamble 작성 완료: {preamble_file} ({len(preamble_with_marker)}자, nonce={nonce}, role={effective_role})\n"
         )
         # preamble 파일은 런처가 소비 후 삭제하므로, 별도 capability 파일에
         # dispatch 시점에 토큰을 기록합니다. guard 가 worker_done 전송 시 해소합니다.
-        record_dispatch_capability(worktree_path, task_id, preamble, stdout)
+        record_dispatch_capability(worktree_path, task_id, preamble_with_marker, stdout)
 
         pickup_ok, launcher_pickup_detail = verify_launcher_pickup(
             args.terminal, timeout_sec=30.0, preamble_file=preamble_file

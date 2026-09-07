@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess  # nosec B404 - 자기 자신(런처 스크립트)을 고정 인자로만 재호출합니다
 import sys
 import time
@@ -46,14 +47,67 @@ REVIEWER_NOTICE = (
 )
 
 
+ROLE_MARKER_PREFIX = "[ORCA_ROLE: "
+ROLE_MARKER_BUILDER = "[ORCA_ROLE: builder]"
+ROLE_MARKER_REVIEWER = "[ORCA_ROLE: reviewer]"
+
+_ROLE_MARKER_RE = re.compile(
+    r"^[ \t]*\[?[ \t]*ORCA_ROLE:[ \t]*(builder|reviewer)[ \t]*\]?[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def format_role_marker(role: str) -> str:
+    """역할 표지 한 줄을 생성합니다.
+
+    사람이 읽어도 무해하고 기계가 정확히 매칭할 수 있는 독립된 한 줄 표지입니다.
+    값은 'builder' 또는 'reviewer' 로 한정합니다.
+    """
+    normalized = (role or "").strip().lower()
+    if normalized not in ("builder", "reviewer"):
+        normalized = "builder"
+    return f"[ORCA_ROLE: {normalized}]"
+
+
+def parse_role_marker(text: str) -> str | None:
+    """텍스트에서 독립된 한 줄의 역할 표지를 추출합니다.
+
+    표지가 발견되면 'builder' 또는 'reviewer' 를 반환하고, 없으면 None 을 반환합니다.
+    """
+    if not text:
+        return None
+    match = _ROLE_MARKER_RE.search(text)
+    if match:
+        return match.group(1).lower()
+    return None
+
+
+def inject_role_marker(preamble: str, role: str) -> str:
+    """preamble 텍스트에 독립된 한 줄로 역할 표지를 기록합니다.
+
+    이미 표지가 있으면 덮어쓰고, 없으면 맨 앞에 추가합니다.
+    """
+    marker = format_role_marker(role)
+    if not preamble:
+        return marker
+    existing = parse_role_marker(preamble)
+    if existing:
+        return _ROLE_MARKER_RE.sub(marker, preamble, count=1)
+    return f"{marker}\n\n{preamble}"
+
+
 def detect_role(prompt: str) -> str:
     """지시문 텍스트에서 역할을 판정합니다.
 
-    리뷰어 지시문에는 ORCA_REVIEW_DONE_V2 또는 review_done.json 이 포함됩니다.
-    역할을 확정할 수 없으면 종전대로 빌더(builder)로 보고 커밋 고지문을 붙입니다 (fail-closed).
+    1. 표지(role marker)를 최우선 근거로 삼습니다 (builder 또는 reviewer).
+    2. 표지가 없으면 종전 문자열 판정(ORCA_REVIEW_DONE_V2, review_done.json, role: reviewer)으로 물러섭니다.
+    3. 그래도 확정할 수 없으면 builder 로 판정합니다 (fail-closed).
     """
     if not prompt:
         return "builder"
+    marker = parse_role_marker(prompt)
+    if marker:
+        return marker
     if (
         "ORCA_REVIEW_DONE_V2" in prompt
         or "review_done.json" in prompt

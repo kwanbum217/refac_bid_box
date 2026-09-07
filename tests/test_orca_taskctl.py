@@ -5846,7 +5846,7 @@ def test_cmd_dispatch_launcher_writes_preamble_to_worktree(
     written = list((worktree_dir / ".orca").glob("preamble_*.txt"))
     assert len(written) == 1
     assert written[0].name.startswith("preamble_task_intent_")
-    assert written[0].read_text(encoding="utf-8") == preamble_content
+    assert written[0].read_text(encoding="utf-8") == f"[ORCA_ROLE: builder]\n\n{preamble_content}"
     assert not (worktree_dir / ".orca" / "preamble.txt").exists()
 
     # 주 저장소에는 쓰지 않음을 검증
@@ -6120,7 +6120,7 @@ def test_cmd_dispatch_launcher_readiness_success_writes_preamble(
     assert len(dispatch_calls) == 1
     written = list((worktree_dir / ".orca").glob("preamble_*.txt"))
     assert len(written) == 1
-    assert written[0].read_text(encoding="utf-8") == preamble_content
+    assert written[0].read_text(encoding="utf-8") == f"[ORCA_ROLE: builder]\n\n{preamble_content}"
 
 
 def test_cmd_dispatch_launcher_readiness_fails_without_marker_no_preamble(
@@ -6315,7 +6315,7 @@ def test_cmd_dispatch_launcher_readiness_bypassed_with_flag(
 
     written = list((worktree_dir / ".orca").glob("preamble_*.txt"))
     assert len(written) == 1
-    assert written[0].read_text(encoding="utf-8") == preamble_content
+    assert written[0].read_text(encoding="utf-8") == f"[ORCA_ROLE: builder]\n\n{preamble_content}"
 
 
 def test_wait_for_launcher_readiness_polling_catches_late_marker(monkeypatch: pytest.MonkeyPatch):
@@ -7710,3 +7710,151 @@ def test_strip_matching_quotes_unit():
     assert _strip_matching_quotes("\"uv run pytest tests/ -q -m 'not data_assets'\"") == (
         "uv run pytest tests/ -q -m 'not data_assets'"
     )
+
+
+def test_dispatch_launcher_preamble_role_marker_regression(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """실제 dispatch 가 기록한 preamble 텍스트를 바탕으로 4개 판정 경로를 검증합니다.
+
+    1. 리뷰어 Task 의 dispatch 가 기록한 preamble 에 [ORCA_ROLE: reviewer] 표지가 들어감
+    2. 그 실제 preamble 텍스트를 detect_role 에 넣으면 'reviewer' 가 반환됨
+    3. 빌더 Task 의 dispatch 가 기록한 preamble 에 [ORCA_ROLE: builder] 표지가 들어가고 'builder' 로 판정됨
+    4. 표지가 없는 옛 형태 텍스트는 종전 판정으로 물러서고, 확정 불가 시 'builder' 로 fail-closed 됨
+    """
+    from scripts import orca_taskctl
+    from scripts.orca_worker_launch_common import (
+        COMMIT_NOTICE,
+        REVIEWER_NOTICE,
+        ROLE_MARKER_BUILDER,
+        ROLE_MARKER_REVIEWER,
+        append_role_notice,
+        detect_role,
+        resolve_notice,
+    )
+
+    # 1. 리뷰어 Task dispatch
+    reviewer_intent_content = (
+        SAMPLE_REVIEWER_INTENT_VALID.strip() + "\nbuilder_model: gpt-5.6-terra\n"
+    )
+    reviewer_intent_file = tmp_path / "reviewer_intent.yaml"
+    reviewer_intent_file.write_text(reviewer_intent_content, encoding="utf-8")
+    rev_worktree_dir = tmp_path / "worktree_reviewer"
+    rev_worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    def mock_dispatch_worker(**kwargs):
+        return (
+            0,
+            json.dumps(
+                {
+                    "ok": True,
+                    "result": {
+                        "preamble": (
+                            "You are working inside Orca, a multi-agent IDE. You are a dispatched worker.\n"
+                            "=== TASK ===\n"
+                            "빌더 산출물에 대한 독립 코드 리뷰를 수행한다. "
+                            "정본 사양(Capsule): 현재 작업 디렉터리의 .orca/capsules/task_rev/capsule.yaml."
+                        )
+                    },
+                }
+            ),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        )
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(orca_taskctl, "dispatch_worker", mock_dispatch_worker)
+    monkeypatch.setattr(orca_taskctl, "start_auto_approve", lambda t: (True, "감시기 완료"))
+    monkeypatch.setattr(orca_taskctl, "verify_launcher_pickup", lambda t, **kw: (True, "기동 성공"))
+    monkeypatch.setattr(
+        orca_taskctl, "wait_for_launcher_readiness", lambda *a, **kw: (True, "waiting", 0.0)
+    )
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(reviewer_intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_reviewer",
+            "--launcher",
+            "scripts/orca_agy_launch.py",
+            "--worktree",
+            str(rev_worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+    assert code == 0
+
+    rev_written = list((rev_worktree_dir / ".orca").glob("preamble_*.txt"))
+    assert len(rev_written) == 1
+    rev_preamble = rev_written[0].read_text(encoding="utf-8")
+
+    # 첫째: 리뷰어 preamble 에 독립된 한 줄의 reviewer 표지가 들어간다.
+    assert ROLE_MARKER_REVIEWER in rev_preamble.splitlines()
+
+    # 둘째: 그 실제 preamble 텍스트를 detect_role 에 넣으면 reviewer 가 나온다.
+    assert detect_role(rev_preamble) == "reviewer"
+    assert resolve_notice("auto", rev_preamble) == REVIEWER_NOTICE
+    rev_notice_prompt = append_role_notice(rev_preamble, role="auto")
+    assert REVIEWER_NOTICE in rev_notice_prompt
+    assert COMMIT_NOTICE not in rev_notice_prompt
+
+    # 셋째: 빌더 Task dispatch 검증
+    builder_intent_file = tmp_path / "builder_intent.yaml"
+    builder_intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    bld_worktree_dir = tmp_path / "worktree_builder"
+    bld_worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    code_bld = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(builder_intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_builder",
+            "--launcher",
+            "scripts/orca_agy_launch.py",
+            "--worktree",
+            str(bld_worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+    assert code_bld == 0
+
+    bld_written = list((bld_worktree_dir / ".orca").glob("preamble_*.txt"))
+    assert len(bld_written) == 1
+    bld_preamble = bld_written[0].read_text(encoding="utf-8")
+
+    assert ROLE_MARKER_BUILDER in bld_preamble.splitlines()
+    assert detect_role(bld_preamble) == "builder"
+    assert resolve_notice("auto", bld_preamble) == COMMIT_NOTICE
+    bld_notice_prompt = append_role_notice(bld_preamble, role="auto")
+    assert COMMIT_NOTICE in bld_notice_prompt
+    assert REVIEWER_NOTICE not in bld_notice_prompt
+
+    # 넷째: 표지가 없는 옛 형태 텍스트는 종전 판정으로 물러서고 확정 불가 시 builder 가 된다.
+    legacy_reviewer = "계약: ORCA_REVIEW_DONE_V2\n산출물: review_done.json"
+    assert detect_role(legacy_reviewer) == "reviewer"
+
+    legacy_unconfirmed = "You are working inside Orca.\n=== TASK ===\n일반 작업 지시문"
+    assert detect_role(legacy_unconfirmed) == "builder"
