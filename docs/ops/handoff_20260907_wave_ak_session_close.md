@@ -9,6 +9,26 @@
 
 ---
 
+## 0. 다음 세션 첫 작업 (사용자 지정 최우선)
+
+**`tests/test_orca_agy_launch.py` 가 실제 분리 프로세스를 띄우는 부작용을 먼저
+제거하십시오.** 2026-09-07 사용자 지시로 다른 어떤 항목보다 앞섭니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| 무엇 | `mod.main(...)` 호출 **8곳**이 `os.execvpe` 만 monkeypatch 하고, 그 직전의 `common.schedule_permission_setup` 은 실제 `spawn_permission_setup` 을 부릅니다 |
+| 결과 | 테스트를 돌리는 것만으로 `ORCA_TERMINAL_HANDLE` 이 가리키는 터미널, 즉 **코디네이터 세션**을 대상으로 권한 설정 자식이 뜹니다 |
+| 왜 위험한가 | 사람이 테스트를 돌린다는 사실만으로 코디네이터 세션의 승인 대화창을 자동 승인할 경로가 열립니다. **테스트는 부작용이 없어야 합니다** |
+| 재현 | `ORCA_TERMINAL_HANDLE=term_PROBE uv run pytest tests/test_orca_agy_launch.py::test_commit_notice_is_appended_when_enabled -q` 뒤 `pgrep -fl "setup-permissions term_PROBE"` |
+| 조치 | 8곳 전부 `schedule_permission_setup` 또는 `spawn_permission_setup` 을 patch. `orca_kimi_launch`·`orca_qwen_launch` 테스트도 전수 확인 |
+| 상세 | 8.6.2 절 |
+
+**착수 전 확인**: 이 세션이 orphan 프로세스를 전부 정리했으므로
+`pgrep -f "orca_agy_launch.py --setup-permissions"` 는 비어 있어야 합니다. 값이
+있으면 그 사이 누군가 전량 테스트를 돌린 것입니다.
+
+---
+
 ## 1. 한 줄 요약
 
 **GPT 진단 보고서 R-13 의 "HTTP 실패 2건" 을 조사해 원인이 하네스의 증거 폐기임을
@@ -201,6 +221,7 @@ AK3 가 preamble 기록 지점에 `[ORCA_ROLE: builder|reviewer]` 표지를 넣�
 
 | ID | 내용 | 선행 조건 |
 | --- | --- | --- |
+| **최우선** | 테스트 부작용 제거 (0장) | 없음. **사용자 지정 다음 세션 첫 작업** |
 | **R-12** | G2 Windows Docker Desktop 실기 | Windows 장비. `worker-start --on <saved-environment>` 원격 워커 경로가 열려 있다 |
 | ~~하네스 provenance 보강~~ | **AL1 로 닫힘** (`cf4caa7`) | - |
 | **R-10 2단계** | Prometheus 추가 | 메트릭 계측 선행 |
