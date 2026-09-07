@@ -352,7 +352,7 @@ def read_terminal_screen(handle: str) -> tuple[str, str] | None:
     return str(source), ANSI_RE.sub("", content)
 
 
-def terminal_tail(handle: str, lines: int = TAIL_LINES) -> str:
+def read_terminal_stream_tail(handle: str, lines: int = TAIL_LINES) -> str:
     """터미널의 누적 스트림 출력의 마지막 N 줄을 읽습니다.
 
     기존 누적 출력 fallback 및 레거시 인터페이스를 보존합니다.
@@ -392,7 +392,7 @@ def inspect_terminal_block(
     if screen_res is not None and screen_res[1]:
         stream_tail_1 = "\n".join(screen_res[1].splitlines()[-TAIL_LINES:])
     else:
-        stream_tail_1 = terminal_tail(handle, lines=TAIL_LINES)
+        stream_tail_1 = read_terminal_stream_tail(handle, lines=TAIL_LINES)
 
     found1 = detect_block(stream_tail_1, worktree_path=worktree_path, repo=repo)
     if found1 is None:
@@ -407,7 +407,7 @@ def inspect_terminal_block(
     if FALLBACK_RECHECK_DELAY_SECONDS > 0:
         do_sleep(FALLBACK_RECHECK_DELAY_SECONDS)
 
-    stream_tail_2 = terminal_tail(handle, lines=TAIL_LINES)
+    stream_tail_2 = read_terminal_stream_tail(handle, lines=TAIL_LINES)
     found2 = detect_block(stream_tail_2, worktree_path=worktree_path, repo=repo)
     if found2 is not None and found2[0] == found1[0]:
         return found2, "stream_fallback"
@@ -416,17 +416,20 @@ def inspect_terminal_block(
 
 
 def check_worker_done_report(
-    screen_tail: str,
+    terminal_text: str,
     worktree_path: str | None = None,
     repo: Path | None = None,
 ) -> tuple[str, str, BlockKind] | None:
-    """worker_done 전송/완료 신호가 있으나 reportPath 가 없거나 보고 파일이 존재하지 않는 경우 차단으로 판정합니다."""
-    norm = normalize_text(screen_tail)
+    """worker_done 전송/완료 신호가 있으나 reportPath 가 없거나 보고 파일이 존재하지 않는 경우 차단으로 판정합니다.
+
+    입력 텍스트(terminal_text)는 렌더링된 화면 또는 누적 스트림 출력일 수 있습니다.
+    """
+    norm = normalize_text(terminal_text)
     if "worker_done" not in norm and "orchestration send" not in norm:
         return None
 
     # worker_done 관련 명령/메시지가 포함된 줄 탐색
-    lines = [line.strip() for line in screen_tail.splitlines() if line.strip()]
+    lines = [line.strip() for line in terminal_text.splitlines() if line.strip()]
     done_lines = [
         line
         for line in lines
@@ -472,18 +475,19 @@ def check_worker_done_report(
 
 
 def detect_block(
-    screen_tail: str,
+    terminal_text: str,
     worktree_path: str | None = None,
     repo: Path | None = None,
 ) -> tuple[str, str, BlockKind] | None:
-    done_block = check_worker_done_report(screen_tail, worktree_path, repo)
+    """터미널 텍스트(화면 또는 누적 스트림 출력)에서 워커 차단 신호를 탐지합니다."""
+    done_block = check_worker_done_report(terminal_text, worktree_path, repo)
     if done_block:
         return done_block
 
-    norm_tail = normalize_text(screen_tail)
+    norm_text = normalize_text(terminal_text)
     prompt_match: tuple[str, str, BlockKind] | None = None
     for needle, reason, fix, kind in BLOCK_SIGNALS:
-        if normalize_text(needle) not in norm_tail:
+        if normalize_text(needle) not in norm_text:
             continue
         match = (reason, fix, kind)
         if kind == "failure":

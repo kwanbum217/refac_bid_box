@@ -592,8 +592,8 @@ def test_json_output_includes_stall_fields(capsys: pytest.CaptureFixture[str]) -
 
 def test_worker_done_missing_report_path_classified_as_blocked(tmp_path: Path) -> None:
     """worker_done 전송 화면에 reportPath 가 없으면 [차단]으로 분류되어야 합니다."""
-    screen_tail = "orca orchestration send --type worker_done --outcome succeeded\n"
-    res = watch.detect_block(screen_tail, worktree_path=str(tmp_path))
+    terminal_text = "orca orchestration send --type worker_done --outcome succeeded\n"
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
     assert res is not None
     reason, _fix, kind = res
     assert "reportPath 가 누락됨" in reason
@@ -602,10 +602,10 @@ def test_worker_done_missing_report_path_classified_as_blocked(tmp_path: Path) -
 
 def test_worker_done_nonexistent_report_file_classified_as_blocked(tmp_path: Path) -> None:
     """worker_done 에 지정된 보고 파일이 디스크에 없으면 [차단]으로 분류되어야 합니다."""
-    screen_tail = (
+    terminal_text = (
         "orca orchestration send --type worker_done --report-path .orca/worker_done.json\n"
     )
-    res = watch.detect_block(screen_tail, worktree_path=str(tmp_path))
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
     assert res is not None
     reason, _fix, kind = res
     assert "보고 파일이 존재하지 않음" in reason
@@ -618,10 +618,10 @@ def test_worker_done_valid_report_file_not_blocked(tmp_path: Path) -> None:
     report_file.parent.mkdir(parents=True, exist_ok=True)
     report_file.write_text("{}", encoding="utf-8")
 
-    screen_tail = (
+    terminal_text = (
         "orca orchestration send --type worker_done --report-path .orca/worker_done.json\n"
     )
-    res = watch.detect_block(screen_tail, worktree_path=str(tmp_path))
+    res = watch.detect_block(terminal_text, worktree_path=str(tmp_path))
     assert res is None
 
 
@@ -852,7 +852,7 @@ def test_screen_path_ignores_boot_string_absent_from_screen() -> None:
             return_value=("screen", rendered_screen),
         ),
         patch(
-            "scripts.orca_worker_watch.terminal_tail",
+            "scripts.orca_worker_watch.read_terminal_stream_tail",
             return_value=boot_output,
         ),
     ):
@@ -871,7 +871,7 @@ def test_screen_unavailable_single_observation_is_not_blocked() -> None:
             "scripts.orca_worker_watch.read_terminal_screen",
             return_value=("screen-unavailable", first_tail),
         ),
-        patch("scripts.orca_worker_watch.terminal_tail", return_value=second_tail),
+        patch("scripts.orca_worker_watch.read_terminal_stream_tail", return_value=second_tail),
     ):
         res = watch.inspect_terminal_block(
             "term_test",
@@ -893,7 +893,7 @@ def test_screen_unavailable_two_consecutive_observations_is_blocked() -> None:
             return_value=("screen-unavailable", persistent_tail),
         ),
         patch(
-            "scripts.orca_worker_watch.terminal_tail",
+            "scripts.orca_worker_watch.read_terminal_stream_tail",
             return_value=persistent_tail,
         ),
     ):
@@ -926,7 +926,7 @@ def test_fallback_block_evidence_labeled_in_output_and_json(
             "scripts.orca_worker_watch.read_terminal_screen",
             return_value=("screen-unavailable", persistent_tail),
         ),
-        patch("scripts.orca_worker_watch.terminal_tail", return_value=persistent_tail),
+        patch("scripts.orca_worker_watch.read_terminal_stream_tail", return_value=persistent_tail),
         patch("scripts.orca_worker_watch.collect_lingering_sessions", return_value=[]),
         patch("scripts.orca_worker_watch.collect_unanswered_questions", return_value=[]),
     ):
@@ -971,7 +971,7 @@ def test_no_signal_does_not_call_recheck_sleep_or_tail() -> None:
             "scripts.orca_worker_watch.read_terminal_screen",
             return_value=("screen-unavailable", clean_tail),
         ),
-        patch("scripts.orca_worker_watch.terminal_tail", side_effect=mock_tail),
+        patch("scripts.orca_worker_watch.read_terminal_stream_tail", side_effect=mock_tail),
     ):
         res = watch.inspect_terminal_block(
             "term_clean",
@@ -996,7 +996,7 @@ def test_no_signal_failed_screen_call_does_not_recheck() -> None:
 
     with (
         patch("scripts.orca_worker_watch.read_terminal_screen", return_value=None),
-        patch("scripts.orca_worker_watch.terminal_tail", side_effect=mock_tail),
+        patch("scripts.orca_worker_watch.read_terminal_stream_tail", side_effect=mock_tail),
     ):
         res = watch.inspect_terminal_block(
             "term_clean",
