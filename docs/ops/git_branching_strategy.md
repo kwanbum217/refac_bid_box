@@ -48,29 +48,31 @@ docs/migration-runbook
 | `chore` | 빌드, 설정, 의존성 |
 | `test` | 테스트 추가/수정 |
 | `ci` | CI 구성 |
+| `merge` | 브랜치 병합 |
 
 예:
 ```
-feat: add retraining trainer with LightGBM
-fix: remove hardcoded DEFAULT_INST_RATE in features
-docs: add phase5 retraining design
+feat: LightGBM 기반 재학습 트레이너 추가
+fix: features 모듈의 하드코딩된 DEFAULT_INST_RATE 제거
+docs: Phase 5 재학습 파이프라인 설계서 추가
 ```
 
 - 이모지 사용 금지.
-- subject는 간결하게, 영어 또는 한국어 가능 (코드는 영어 권장).
+- type은 영어 소문자 필수 (`feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `ci`, `merge`).
+- subject는 한국어 필수 (한글 음절 U+AC00~U+D7A3 최소 1자 포함).
 
 ---
 
 ## 4. 병합 프로세스 (PR 없음)
 
 ### 4.1 사전 준비: Git Hook 설치
-`prepare-commit-msg` 훅이 활성화되어 있어야 `git merge` 시점에 게이트가 정상 동작합니다.
+`prepare-commit-msg` 훅이 활성화되어 있어야 `git merge` 시점에 게이트가 정상 동작하며, `commit-msg` 훅으로 커밋 메시지 규약 위반을 차단합니다.
 
 > **설치 환경 주의사항**: Git 훅 설치는 반드시 **주 저장소(main repository) 루트**에서 실행해야 합니다. 격리 워크트리(worktree)에서 실행할 경우 생성되는 `.git/hooks/prepare-commit-msg` 내부의 `INSTALL_PYTHON` 경로가 워크트리의 가상환경(`.venv`)을 가리키게 되어, 작업 완료 후 워크트리를 삭제했을 때 훅이 깨지는 현상이 발생합니다.
 
 ```bash
-# 주 저장소 루트에서 pre-commit 및 prepare-commit-msg 훅을 모두 설치
-uv run pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg
+# 주 저장소 루트에서 pre-commit, prepare-commit-msg, commit-msg 훅을 모두 설치
+uv run pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg --hook-type commit-msg
 # 또는
 python3 scripts/premerge_full_suite_gate.py --install-hooks
 ```
@@ -78,7 +80,7 @@ python3 scripts/premerge_full_suite_gate.py --install-hooks
 #### 훅 미설치 시 현상 및 자동 검출
 - **미설치 시 현상**: `prepare-commit-msg` 훅이 설치되지 않으면 `merge_verified_branch.py` 헬퍼를 거치지 않고 수동으로 `git merge --no-ff`를 실행할 때 전량 테스트 증거 유무와 무관하게 병합이 통과(fail-open)됩니다.
 - **자동 검출**: `scripts/validate_agent_rules.py`가 `.pre-commit-config.yaml`의 모든 `stages`를 읽어 대응하는 `.git/hooks/<stage>` 파일의 실존 및 실행 권한을 검사합니다. 실패 시 아래 설치 명령을 그대로 출력합니다.
-  `uv run pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg`
+  `uv run pre-commit install --hook-type pre-commit --hook-type prepare-commit-msg --hook-type commit-msg`
 - **CI 예외**: CI는 훅을 설치하지 않으므로 표준 환경변수 `CI=true`인 경우에만 이 로컬 훅 검사를 건너뜁니다. 로컬 실행에서 임의 환경변수로 검사를 끄는 용도는 지원하지 않습니다.
 - **워크트리 준비**: `scripts/orca_prepare_worktree.py`는 설정의 모든 stage를 확인·설치하며, 설치 명령은 주 저장소 루트에서 실행하여 워크트리 제거 후에도 훅이 깨지지 않게 합니다.
 

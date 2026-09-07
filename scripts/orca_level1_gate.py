@@ -28,6 +28,7 @@ try:
         write_scope_excess,
     )
     from scripts.summarize_worker_done import summarize_worker_report
+    from scripts.validate_commit_message import validate_commit_subject
     from scripts.validate_review_report import evaluate, parse_checklist
 except ModuleNotFoundError:
     _repo_root = Path(__file__).resolve().parent.parent
@@ -44,6 +45,7 @@ except ModuleNotFoundError:
         write_scope_excess,
     )
     from scripts.summarize_worker_done import summarize_worker_report
+    from scripts.validate_commit_message import validate_commit_subject
     from scripts.validate_review_report import evaluate, parse_checklist
 
 # 타임아웃 기본 상한 (초)
@@ -413,6 +415,98 @@ def run_gate7_gitignored(
         summary=f"gitignore 대상 커밋 없음 (검사 {len([p for p in (changed_files or []) if p and str(p).strip()])}건)",
         details=[],
         raw_data={"violated_files": []},
+    )
+
+
+def run_gate8_commit_message(
+    repo: Path,
+    base: str,
+    branch: str,
+    capsule_path: Path | None = None,
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+) -> GateResult:
+    """게이트 8: 커밋 메시지 제목 한국어 규약 검증."""
+    if capsule_path is None or not capsule_path.exists():
+        return GateResult(
+            name="게이트 8 커밋 메시지",
+            status="skipped",
+            summary="Capsule 미지정으로 이 호출의 적용 대상이 아님",
+            details=[],
+            raw_data={},
+            required=False,
+        )
+
+    if base == branch:
+        return GateResult(
+            name="게이트 8 커밋 메시지",
+            status="skipped",
+            summary="브랜치가 base 와 같아 이 호출의 적용 대상이 아님",
+            details=[],
+            raw_data={},
+            required=False,
+        )
+
+    cmd = ["git", "log", "--format=%H%x00%P%x00%s", f"{base}..{branch}"]
+    code, stdout, stderr, timed_out = run_command_safe(cmd, repo, timeout)
+    if timed_out:
+        raise GateToolError(f"git log 타임아웃 ({timeout}초)")
+    if code != 0:
+        raise GateToolError(f"git log 실패 (종료 코드 {code}): {stderr.strip()}")
+
+    raw_lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+    if not raw_lines:
+        return GateResult(
+            name="게이트 8 커밋 메시지",
+            status="pass",
+            summary="검사 대상 커밋 없음 (0건)",
+            details=[],
+            raw_data={"total_commits": 0, "violated_commits": []},
+        )
+
+    commits: list[tuple[str, str, str]] = []
+    for line in raw_lines:
+        parts = line.split("\x00", 2)
+        commit_hash = parts[0]
+        parents = parts[1] if len(parts) > 1 else ""
+        subject = parts[2] if len(parts) > 2 else ""
+        commits.append((commit_hash, parents, subject))
+
+    violations: list[dict[str, str]] = []
+    for commit_hash, _parents, subject in commits:
+        short_hash = commit_hash[:8]
+        ok, reason = validate_commit_subject(subject)
+        if not ok:
+            violations.append(
+                {
+                    "commit": commit_hash,
+                    "short_commit": short_hash,
+                    "subject": subject,
+                    "reason": reason,
+                }
+            )
+
+    if violations:
+        details = [f"{v['short_commit']} {v['subject']} -> {v['reason']}" for v in violations]
+        return GateResult(
+            name="게이트 8 커밋 메시지",
+            status="fail",
+            summary=f"커밋 메시지 규약 위반 {len(violations)}건 감지 (총 {len(commits)}건)",
+            details=details,
+            raw_data={
+                "total_commits": len(commits),
+                "violated_commits": violations,
+            },
+        )
+
+    return GateResult(
+        name="게이트 8 커밋 메시지",
+        status="pass",
+        summary=f"커밋 메시지 규약 통과 (검사 {len(commits)}건)",
+        details=[],
+        raw_data={
+            "total_commits": len(commits),
+            "violated_commits": [],
+        },
     )
 
 
@@ -1279,6 +1373,7 @@ def build_json_output(
         "게이트 5 리뷰 보고": "gate5_review_report",
         "게이트 6 worker_done 보고": "gate6_worker_done",
         "게이트 7 gitignore 검증": "gate7_gitignored",
+        "게이트 8 커밋 메시지": "gate8_commit_message",
     }
     gates_dict: dict[str, Any] = {}
     fallback_idx = 0
@@ -1484,6 +1579,10 @@ def run_level1_gate(
         # 뿐이며 작업 트리 미커밋/미추적 파일은 보지 않습니다.
         g7 = run_gate7_gitignored(repo_path, changed_files)
         gates.append(g7)
+
+        # 게이트 8: 커밋 메시지 규약 검증
+        g8 = run_gate8_commit_message(repo_path, base, branch, capsule_path=capsule_path)
+        gates.append(g8)
 
     except GateToolError as exc:
         error_msg = str(exc)
