@@ -555,6 +555,16 @@ def _format_shared_resources(resources: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def _strip_matching_quotes(text: str) -> str:
+    """값 양끝의 따옴표가 동일한 종류의 짝('...' 또는 "...")일 때만 한 쌍을 벗깁니다."""
+    s = str(text).strip()
+    if len(s) >= 2 and (
+        (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'"))
+    ):
+        return s[1:-1]
+    return s
+
+
 def _normalize_declared_pytest_command(cmd: str) -> str:
     """선언된 검증 명령 중 전량 pytest 명령의 data_assets 제외 마커를 검증/보정합니다.
 
@@ -646,7 +656,7 @@ def _normalize_declared_pytest_command(cmd: str) -> str:
         return raw_cmd
 
     if has_marker:
-        marker_str = str(marker_val or "").strip().strip("'\"")
+        marker_str = _strip_matching_quotes(str(marker_val or ""))
         if "not data_assets" in marker_str:
             return raw_cmd
         raise ValueError(
@@ -876,12 +886,12 @@ def parse_intent(text: str) -> dict[str, Any]:
                     sub_content = sub_stripped[2:].strip()
                     m = re.match(r"^([a-z_]+):\s*(.*)$", sub_content)
                     if m:
-                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        k, v = m.group(1), _strip_matching_quotes(m.group(2))
                         current_item[k] = v
                 else:
                     m = re.match(r"^([a-z_]+):\s*(.*)$", sub_stripped)
                     if m:
-                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        k, v = m.group(1), _strip_matching_quotes(m.group(2))
                         current_item[k] = v
                 i += 1
 
@@ -911,14 +921,14 @@ def parse_intent(text: str) -> dict[str, Any]:
                     sub_content = sub_stripped[2:].strip()
                     m = re.match(r"^([a-z_]+):\s*(.*)$", sub_content)
                     if m:
-                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        k, v = m.group(1), _strip_matching_quotes(m.group(2))
                         current_res[k] = v
                     else:
-                        shared_res.append(sub_content.strip("\"'"))
+                        shared_res.append(_strip_matching_quotes(sub_content))
                 else:
                     m = re.match(r"^([a-z_]+):\s*(.*)$", sub_stripped)
                     if m:
-                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        k, v = m.group(1), _strip_matching_quotes(m.group(2))
                         current_res[k] = v
                 i += 1
 
@@ -946,7 +956,7 @@ def parse_intent(text: str) -> dict[str, Any]:
             ):
                 items: list[str] = []
                 if val and val != "[]":
-                    items.append(val.strip("\"'"))
+                    items.append(_strip_matching_quotes(val))
                 i += 1
                 while i < total_lines:
                     raw_sub = lines[i]
@@ -954,7 +964,7 @@ def parse_intent(text: str) -> dict[str, Any]:
                         break
                     sub_stripped = raw_sub.strip()
                     if sub_stripped and sub_stripped.startswith("- "):
-                        items.append(sub_stripped[2:].strip().strip("\"'"))
+                        items.append(_strip_matching_quotes(sub_stripped[2:]))
                     i += 1
                 result[key] = items
                 continue
@@ -974,7 +984,7 @@ def parse_intent(text: str) -> dict[str, Any]:
                 continue
 
             # 일반 단일값
-            clean_val = re.sub(r"\s+#.*$", "", val).strip().strip("\"'")
+            clean_val = _strip_matching_quotes(re.sub(r"\s+#.*$", "", val))
             result[key] = clean_val
             i += 1
             continue
