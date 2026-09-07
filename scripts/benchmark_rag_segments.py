@@ -53,6 +53,9 @@ from scripts.measure_llm_quality import (  # noqa: E402
 
 __all__ = [
     "CANONICAL_FIXTURE_HASHES",
+    "REASON_MISSING_HEADER",
+    "REASON_TIMEOUT",
+    "REASON_TRANSPORT_ERROR",
     "ModelMismatchError",
     "PlannedQuery",
     "SegmentLoggingDisabledError",
@@ -78,6 +81,10 @@ DEFAULT_CONTAINER = "refac_bid_box-app-1"
 DEFAULT_SERVICE = "app"
 QUERY_PATH = "/api/v1/chatbot/query"
 TRACE_HEADER_NAME = "X-RAG-Trace-Id"
+
+REASON_TIMEOUT = "timeout"
+REASON_TRANSPORT_ERROR = "transport_error"
+REASON_MISSING_HEADER = "missing_header"
 
 # 캐시 적중으로 측정치가 왜곡되지 않도록 질의를 매번 바꿉니다 (fixture 미지정 시 fallback)
 QUERIES = [
@@ -324,8 +331,12 @@ def assert_expected_model_matches(
     return runtime_norm
 
 
-def send_query(base_url: str, question: str, timeout_sec: float) -> tuple[float, bool, str | None]:
-    """단발 질의를 보내고 왕복 시간, 성공 여부, 응답 헤더의 trace_id를 돌려줍니다."""
+def send_query(
+    base_url: str,
+    question: str,
+    timeout_sec: float,
+) -> tuple[float, bool, str | None, str | None, str | None]:
+    """단발 질의를 보내고 왕복 시간, 성공 여부, trace_id, 실패 사유, 예외 메시지를 돌려줍니다."""
     body = json.dumps({"query": question}).encode("utf-8")
     req = urlrequest.Request(  # nosec B310
         f"{base_url}{QUERY_PATH}",
@@ -341,10 +352,28 @@ def send_query(base_url: str, question: str, timeout_sec: float) -> tuple[float,
             response.read()
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             if not trace_id or not str(trace_id).strip():
-                return elapsed_ms, False, None
-            return elapsed_ms, True, str(trace_id).strip()
-    except (urlerror.URLError, TimeoutError, OSError):
-        return (time.perf_counter() - started) * 1000.0, False, None
+                return (
+                    elapsed_ms,
+                    False,
+                    None,
+                    REASON_MISSING_HEADER,
+                    "응답 헤더에 X-RAG-Trace-Id 가 없습니다.",
+                )
+            return elapsed_ms, True, str(trace_id).strip(), None, None
+    except TimeoutError as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        return elapsed_ms, False, None, REASON_TIMEOUT, str(exc)
+    except urlerror.URLError as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        reason_obj = getattr(exc, "reason", None)
+        if isinstance(reason_obj, TimeoutError) or "timed out" in str(reason_obj).lower():
+            return elapsed_ms, False, None, REASON_TIMEOUT, str(exc)
+        return elapsed_ms, False, None, REASON_TRANSPORT_ERROR, str(exc)
+    except OSError as exc:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        if "timed out" in str(exc).lower():
+            return elapsed_ms, False, None, REASON_TIMEOUT, str(exc)
+        return elapsed_ms, False, None, REASON_TRANSPORT_ERROR, str(exc)
 
 
 def verify_trace_correlation(
@@ -647,17 +676,27 @@ def main(
                 )
             else:
                 w_q = QUERIES[w_idx % len(QUERIES)]
-            _elapsed_ms, ok, trace_id = query_fn(args.base_url, w_q, args.timeout_sec)
+            res = query_fn(args.base_url, w_q, args.timeout_sec)
+            ok = bool(res[1]) if len(res) > 1 else False
+            trace_id = res[2] if len(res) > 2 else None
             if ok and trace_id:
                 warmup_traces.append(trace_id)
 
     successful_traces: list[str] = []
     trace_metadata: dict[str, dict[str, Any]] = {}
-    failures = 0
+    failed_queries: list[dict[str, Any]] = []
+    transport_failures = 0
+    missing_header_failures = 0
 
     # 6. 질의 전송 루프
     for planned in plan:
-        elapsed_ms, ok, trace_id = query_fn(args.base_url, planned.question, args.timeout_sec)
+        res = query_fn(args.base_url, planned.question, args.timeout_sec)
+        elapsed_ms = float(res[0])
+        ok = bool(res[1]) if len(res) > 1 else False
+        trace_id = res[2] if len(res) > 2 else None
+        reason = res[3] if len(res) > 3 and res[3] is not None else None
+        error_msg = res[4] if len(res) > 4 and res[4] is not None else None
+
         if ok and trace_id:
             all_roundtrip.add(elapsed_ms, planned.question)
             if planned.is_cold:
@@ -674,7 +713,33 @@ def main(
                 "elapsed_ms": elapsed_ms,
             }
         else:
-            failures += 1
+            if reason is None:
+                if ok and not trace_id:
+                    reason = REASON_MISSING_HEADER
+                    error_msg = "응답 헤더에 X-RAG-Trace-Id 가 없습니다."
+                else:
+                    reason = REASON_TRANSPORT_ERROR
+
+            if reason == REASON_MISSING_HEADER:
+                missing_header_failures += 1
+            else:
+                transport_failures += 1
+
+            failed_queries.append(
+                {
+                    "item_id": planned.item_id,
+                    "question": planned.question,
+                    "repetition_index": planned.repetition_index,
+                    "is_cold": planned.is_cold,
+                    "elapsed_ms": elapsed_ms,
+                    "reason": reason,
+                    "failure_reason": reason,
+                    "error": error_msg,
+                    "error_message": error_msg,
+                }
+            )
+
+    failures = transport_failures + missing_header_failures
 
     # 7. 호스트 부하 모니터 정지
     host_load_stats = load_monitor.stop()
@@ -781,9 +846,7 @@ def main(
         exit_code = 1
         if failures > 0:
             status = "partial"
-            canonical_rationale = (
-                f"부분 HTTP 실패({failures}/{expected_rounds}): canonical baseline 자격 미충족"
-            )
+            canonical_rationale = f"부분 HTTP 실패({failures}/{expected_rounds} [전송 실패: {transport_failures}, 헤더 누락: {missing_header_failures}]): canonical baseline 자격 미충족"
         else:
             status = "integrity_error"
             canonical_rationale = (
@@ -888,6 +951,13 @@ def main(
             "by_item": summary_by_item,
         },
         "errors": failures,
+        "request_failures": failures,
+        "transport_failures": transport_failures,
+        "missing_header_failures": missing_header_failures,
+        "transport_failures_count": transport_failures,
+        "missing_header_failures_count": missing_header_failures,
+        "failed_queries": failed_queries,
+        "failed_requests": failed_queries,
         "successful_traces_count": len(successful_traces),
         "unique_successful_traces_count": len(set(successful_traces)),
         "segment_records_count": len(records),
