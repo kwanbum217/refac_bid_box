@@ -21,6 +21,9 @@ import pytest
 from scripts.benchmark_latency import Samples
 from scripts.benchmark_rag_segments import (
     CANONICAL_FIXTURE_HASHES,
+    REASON_MISSING_HEADER,
+    REASON_TIMEOUT,
+    REASON_TRANSPORT_ERROR,
     ModelMismatchError,
     SegmentLoggingDisabledError,
     aggregate,
@@ -269,9 +272,11 @@ def test_send_query_success_with_header():
 
     with patch("urllib.request.urlopen") as mock_urlopen:
         mock_urlopen.return_value.__enter__.return_value = mock_resp
-        elapsed_ms, ok, trace_id = send_query("http://127.0.0.1:8000", "질문", 10.0)
+        elapsed_ms, ok, trace_id, reason, error = send_query("http://127.0.0.1:8000", "질문", 10.0)
         assert ok is True
         assert trace_id == "trace_12345"
+        assert reason is None
+        assert error is None
         assert elapsed_ms >= 0.0
 
 
@@ -282,16 +287,56 @@ def test_send_query_missing_header_returns_false():
 
     with patch("urllib.request.urlopen") as mock_urlopen:
         mock_urlopen.return_value.__enter__.return_value = mock_resp
-        _elapsed_ms, ok, trace_id = send_query("http://127.0.0.1:8000", "질문", 10.0)
+        elapsed_ms, ok, trace_id, reason, error = send_query("http://127.0.0.1:8000", "질문", 10.0)
         assert ok is False
         assert trace_id is None
+        assert reason == REASON_MISSING_HEADER
+        assert "X-RAG-Trace-Id" in str(error)
+        assert elapsed_ms >= 0.0
 
 
 def test_send_query_network_error_returns_false():
     with patch("urllib.request.urlopen", side_effect=urlerror.URLError("connection refused")):
-        _elapsed_ms, ok, trace_id = send_query("http://127.0.0.1:8000", "질문", 10.0)
+        elapsed_ms, ok, trace_id, reason, error = send_query("http://127.0.0.1:8000", "질문", 10.0)
         assert ok is False
         assert trace_id is None
+        assert reason == REASON_TRANSPORT_ERROR
+        assert "connection refused" in str(error)
+        assert elapsed_ms >= 0.0
+
+
+def test_send_query_timeout_error_returns_timeout_reason():
+    with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out after 120s")):
+        elapsed_ms, ok, trace_id, reason, error = send_query("http://127.0.0.1:8000", "질문", 10.0)
+        assert ok is False
+        assert trace_id is None
+        assert reason == REASON_TIMEOUT
+        assert "timed out" in str(error)
+        assert elapsed_ms >= 0.0
+
+
+def test_send_query_urlerror_wrapping_timeout_returns_timeout_reason():
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=urlerror.URLError(TimeoutError("The read operation timed out")),
+    ):
+        elapsed_ms, ok, trace_id, reason, error = send_query("http://127.0.0.1:8000", "질문", 10.0)
+        assert ok is False
+        assert trace_id is None
+        assert reason == REASON_TIMEOUT
+        assert "timed out" in str(error)
+        assert elapsed_ms >= 0.0
+
+
+def test_send_query_oserror_timeout_returns_timeout_reason():
+    with patch("urllib.request.urlopen", side_effect=OSError("timed out")):
+        elapsed_ms, ok, trace_id, reason, error = send_query("http://127.0.0.1:8000", "질문", 10.0)
+        assert ok is False
+        assert trace_id is None
+        assert reason == REASON_TIMEOUT
+        assert "timed out" in str(error)
+        assert elapsed_ms >= 0.0
 
 
 def _make_mock_docker_runner(
@@ -1351,3 +1396,170 @@ def test_warmup_trace_correlation_passes_with_warmup_records(tmp_path):
     assert payload["trace_correlation"]["duplicate_log_traces"] == 0
     assert payload["trace_correlation"]["unmatched_log_traces"] == []
     assert payload["trace_correlation"]["missing_log_traces"] == []
+
+
+def test_main_failure_evidence_and_separated_counts(tmp_path):
+    """실패 회차의 증거(문항, 콜드여부, 소요시간, 사유, 예외메시지) 보존 및 전송실패/헤더누락 분리 집계 회귀 테스트."""
+    output_file = tmp_path / "failure_evidence_result.json"
+    logs = (
+        "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+        "2026-08-24 10:00:01 INFO rag_engine_latency: trace_id=t_succ plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    )
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    fixture_items = [
+        {"id": "q01", "question": "질문 1"},
+        {"id": "q02", "question": "질문 2"},
+        {"id": "q03", "question": "질문 3"},
+        {"id": "q04", "question": "질문 4"},
+    ]
+    fixture_file = tmp_path / "test_fixture.json"
+    fixture_file.write_text(json.dumps({"items": fixture_items}), encoding="utf-8")
+
+    query_count = 0
+    responses = {
+        1: (500.0, True, "t_warmup", None, None),
+        2: (450.0, True, "t_succ", None, None),
+        3: (120000.0, False, None, REASON_TIMEOUT, "timed out after 120s"),
+        4: (80.0, False, None, REASON_TRANSPORT_ERROR, "HTTP Error 500: Server Error"),
+        5: (
+            300.0,
+            False,
+            None,
+            REASON_MISSING_HEADER,
+            "응답 헤더에 X-RAG-Trace-Id 가 없습니다.",
+        ),
+    }
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        query_count += 1
+        return responses[query_count]
+
+    code = main(
+        [
+            "--expected-llm-model",
+            "gemma4:e4b",
+            "--fixture",
+            str(fixture_file),
+            "--repetitions",
+            "1",
+            "--warmup-rounds",
+            "1",
+            "--output",
+            str(output_file),
+        ],
+        command_runner=runner,
+        query_sender=mock_query,
+        host_load_sampler=lambda: {
+            "observed_at_utc": "2026-08-24T00:00:00Z",
+            "load_1m": 0.5,
+            "cpu_count": 8,
+            "per_core_percent": 6.25,
+        },
+    )
+
+    assert code == 1
+    assert output_file.exists()
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+
+    assert payload["status"] == "partial"
+    assert payload["canonical_success"] is False
+    assert payload["errors"] == 3
+    assert payload["transport_failures"] == 2
+    assert payload["missing_header_failures"] == 1
+    assert payload["transport_failures_count"] == 2
+    assert payload["missing_header_failures_count"] == 1
+
+    # canonical_rationale 에 분리 집계 반영 확인
+    assert "전송 실패: 2" in payload["canonical_rationale"]
+    assert "헤더 누락: 1" in payload["canonical_rationale"]
+
+    # failed_queries 에 실패 3건의 상세 증거가 보존되었는지 검증
+    failed = payload["failed_queries"]
+    assert len(failed) == 3
+
+    # 1번째 실패: 타임아웃
+    assert failed[0]["item_id"] == "q02"
+    assert failed[0]["question"] == "질문 2"
+    assert failed[0]["repetition_index"] == 0
+    assert failed[0]["is_cold"] is True
+    assert failed[0]["elapsed_ms"] == pytest.approx(120000.0)
+    assert failed[0]["reason"] == REASON_TIMEOUT
+    assert "timed out" in failed[0]["error"]
+
+    # 2번째 실패: 500 에러
+    assert failed[1]["item_id"] == "q03"
+    assert failed[1]["question"] == "질문 3"
+    assert failed[1]["repetition_index"] == 0
+    assert failed[1]["is_cold"] is True
+    assert failed[1]["elapsed_ms"] == pytest.approx(80.0)
+    assert failed[1]["reason"] == REASON_TRANSPORT_ERROR
+    assert "HTTP Error 500" in failed[1]["error"]
+
+    # 3번째 실패: 트레이스 헤더 누락
+    assert failed[2]["item_id"] == "q04"
+    assert failed[2]["question"] == "질문 4"
+    assert failed[2]["repetition_index"] == 0
+    assert failed[2]["is_cold"] is True
+    assert failed[2]["elapsed_ms"] == pytest.approx(300.0)
+    assert failed[2]["reason"] == REASON_MISSING_HEADER
+    assert "X-RAG-Trace-Id" in failed[2]["error"]
+
+
+def test_main_failures_sum_evaluated_in_canonical_gate(tmp_path):
+    """전송 실패와 헤더 누락의 합이 evaluate_canonical 에 전달되어 no_request_failures 게이트를 탈락시키는지 검증."""
+    output_file = tmp_path / "gate_sum_result.json"
+    canonical_hash = next(iter(CANONICAL_FIXTURE_HASHES))
+
+    fixture_items = [{"id": "q01", "question": "질문 1"}]
+    fixture_file = tmp_path / "canonical_fixture.json"
+    fixture_file.write_bytes(b'{"dummy": true}')
+
+    logs = "2026-08-24 10:00:00 INFO rag_engine_latency: trace_id=t_warmup plan_ms=10.0 sql_ms=20.0 vector_ms=0.0 kb_ms=0.0 assembly_ms=5.0 prepare_ms=35.0 llm_ms=500.0 guard_ms=10.0 total_ms=545.0\n"
+    runner = _make_mock_docker_runner(logs_output=logs)
+
+    query_count = 0
+
+    def mock_query(url, q, timeout):
+        nonlocal query_count
+        query_count += 1
+        if query_count == 1:
+            return 500.0, True, "t_warmup", None, None
+        # 트레이스 헤더만 누락된 경우
+        return 300.0, False, None, REASON_MISSING_HEADER, "응답 헤더에 X-RAG-Trace-Id 가 없습니다."
+
+    with patch(
+        "scripts.benchmark_rag_segments.load_fixture",
+        return_value=(fixture_items, canonical_hash, 1),
+    ):
+        code = main(
+            [
+                "--expected-llm-model",
+                "gemma4:e4b",
+                "--fixture",
+                str(fixture_file),
+                "--repetitions",
+                "3",
+                "--output",
+                str(output_file),
+            ],
+            command_runner=runner,
+            query_sender=mock_query,
+            host_load_sampler=lambda: {
+                "observed_at_utc": "2026-08-24T00:00:00Z",
+                "load_1m": 0.5,
+                "cpu_count": 8,
+                "per_core_percent": 6.25,
+            },
+        )
+
+    assert code == 1
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    assert payload["canonical"] is False
+    assert payload["canonical_success"] is False
+    # 헤더 누락 3건이 모두 request_failures 로 전달되어 no_request_failures 게이트 탈락
+    assert "no_request_failures" in payload["canonical_failed_gates"]
+    assert payload["missing_header_failures"] == 3
+    assert payload["transport_failures"] == 0
+    assert payload["errors"] == 3
