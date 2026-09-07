@@ -157,6 +157,21 @@ docker build -t refac-bid-box-frontend:orca-gate frontend # docker_build:fronten
 단독 재실행해 통과를 확인하고, `worker_done` 에 그 사실을 함께 적습니다. 이
 예외를 모르면 오탐으로 후속 Task 가 차단됩니다.
 
+세 번째 예외는 문서 링크 검사입니다. `docs/analysis/` 의 일부 보고서가
+`.orca/capsules/` 아래 Capsule 을 링크하는데 그 디렉터리는 gitignore 대상이라
+워크트리에 따라오지 않습니다. 그래서 다음 한 건이 격리 트리에서만 실패합니다.
+
+    tests/test_validate_doc_links.py::test_cli_execution
+
+**주 저장소에서는 통과합니다.** 2026-09-07 에 워커 3대의 전량 테스트가 전부 이
+한 건으로만 실패했고, 셋 다 브랜치 변경과 무관했습니다.
+
+2026-09-07 에 이 예외를 없앴습니다. 그 문서가 Capsule 을 마크다운 링크가 아니라
+인라인 코드로 참조하도록 고쳤고, 다른 보고서 열 곳은 원래부터 인라인 코드 방식이라
+같은 문제가 없었습니다. **`docs/` 에서 `.orca/` 아래를 링크하지 마십시오.**
+
+
+
 ### 2.4 서빙 모델을 로드하는 작업은 주 저장소에서 돌리십시오
 
 같은 이유로 **`data/model_files/*/model.bin` 을 읽는 스크립트는 격리 트리에서
@@ -414,6 +429,45 @@ done
    이 두 도구는 2026-08-15 첫 실사용에서 실제 계약 위반 4건(필수 필드 누락: version, branch, commit_count, blocking_issues)을 검출했습니다.
 2. **Level 2 (독립 리뷰어 워커)**: 독립된 리뷰어 모델이 `ORCA_REVIEW_DONE_V2` 계약([`.agents/templates/review_done_v2.json`](../../../.agents/templates/review_done_v2.json))에 따라 acceptance criteria, 회귀 위험, G1(데이터 무손실), Train/Serve 단일화, 동시성 결함, 스코프 초과 수정을 교차 검증합니다.
 3. **Level 3 (코디네이터 핵심 diff 검토)**: 핵심 알고리즘, DB 변경점, 모델 승격 게이트 등 비가역적 위험 지점만 선별하여 최종 병합을 결정합니다.
+
+### 4.3 검증은 완료 순서대로 병렬로 실행합니다
+
+**워커가 끝나는 대로 그 자리에서 검증을 시작하고, 다른 워커를 기다리지 마십시오.**
+2026-09-07 세션에서 코디네이터가 워커 하나의 `worker_done` 을 받아 Level 1 게이트를
+전면에서 끝까지 돌리고, 그동안 나머지 두 워커의 완료를 확인하지 않았습니다. 사용자가
+먼저 지적했습니다. 전량 pytest 는 회차당 2분이므로 3건을 직렬로 돌리면 6분, 병렬로
+돌리면 2분입니다.
+
+병렬이 안전한 이유는 검증이 **읽기 전용이고 워크트리가 서로 다르기 때문**입니다.
+동시 쓰기 상한(4장 5.1)은 워커에 걸리는 것이지 검증에 걸리는 것이 아닙니다.
+
+| 단계 | 병렬 여부 | 이유 |
+| --- | --- | --- |
+| Level 1 게이트 | **병렬** | 워크트리별 읽기 전용. 결과를 파일로 받아 나중에 읽습니다 |
+| Level 2 리뷰어 Dispatch | **병렬** | 리뷰어는 `allowed_write_files` 가 `.orca/` 뿐이라 쓰기 워커 상한에 포함되지 않습니다 |
+| Level 3 코디네이터 diff 검토 | 병렬 | 읽기 전용입니다 |
+| `main` 병합 | **직렬** | 공유 자원입니다. 한 번에 하나씩 |
+
+절차입니다.
+
+```bash
+# 1. 완료를 기다리되, 한 건을 받으면 즉시 그 건의 검증을 배경에 넣고 다시 기다립니다
+orca orchestration check --wait --types worker_done,escalation,question --json
+
+# 2. 게이트는 배경으로 띄우고 결과를 파일로 받습니다. 출력을 문맥에 직접 넣지 않습니다
+python3 scripts/orca_level1_gate.py --base main --branch <브랜치>   --repo <워크트리> --capsule <Capsule> --json > <스크래치>/gate_<태그>.json 2>&1 &
+```
+
+**게이트 출력을 그대로 읽지 마십시오(3.2 절).** 파일로 받아 `exit_code` 와 게이트별
+`status` 만 뽑습니다.
+
+**리뷰어도 마찬가지로 한 번에 붙입니다.** 빌더 회수와 리뷰어 Dispatch 사이에 다른
+Task 의 검증 결과를 기다릴 이유가 없습니다. `worker_done` 을 ack 하고 워커를 회수한
+직후 그 Task 의 리뷰어를 바로 띄우십시오.
+
+**직렬로 되돌아가야 하는 경우는 하나뿐입니다.** 검증이 공유 자원(Docker, DB,
+Meilisearch 색인, 서빙 트리)을 점유할 때입니다. 그때는 그 검증만 직렬로 돌리고
+나머지는 계속 병렬로 둡니다.
 
 ## 5. 상태 표현과 인수인계
 
