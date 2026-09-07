@@ -50,15 +50,20 @@
 
 | 파일 | 조건 | 판정 |
 | --- | --- | --- |
-| `rag_segments_canonical_20260907_t300.json` | 타임아웃 300초, 커밋 `ed5d40c` | `canonical: true`, 96요청 전량 성공 |
-| `noncanonical/rag_segments_20260907_timeout_partial.json` | 타임아웃 120초, 커밋 `9f0fac9` | `partial`, q03·q25·q31 콜드 타임아웃 3건 |
+| **`rag_segments_coldpool_20260907.json`** | 타임아웃 300초, **버퍼풀 콜드 검증**, 커밋 `4b86612` | `canonical: true`. **현재 정본** |
+| `rag_segments_canonical_20260907_t300.json` | 타임아웃 300초, 버퍼풀 웜, 커밋 `ed5d40c` | `canonical: true`. 비교용 보존 |
+| `noncanonical/rag_segments_20260907_timeout_partial.json` | 타임아웃 120초, 커밋 `9f0fac9` | `partial`, 콜드 타임아웃 3건 |
 
-**정본 산출물이 버퍼풀 콜드를 측정했다는 보장은 없습니다.** 하네스의 `is_cold` 는
-버퍼풀 상태가 아니라 문항별 첫 반복을 뜻하며, canonical 게이트에 버퍼풀 조건이
-없습니다. 위 두 파일은 서로 다른 버퍼풀 상태의 측정이므로 **어느 쪽도 다른 쪽을
-대체하지 않습니다.** 근거는
+**canonical 게이트에는 버퍼풀 조건이 없습니다.** 하네스의 `is_cold` 는 버퍼풀 상태가
+아니라 문항별 첫 반복을 뜻하므로, 게이트를 통과했다는 사실만으로 어떤 버퍼풀 상태를
+측정했는지 알 수 없습니다. **세 파일은 서로 다른 조건의 측정이며 어느 쪽도 다른 쪽을
+대체하지 않습니다.**
+
+`sql_ms` 콜드 최댓값은 108,739.9ms(1차) / 320.3ms(2차) / **69.3ms(3차 콜드풀)** 이며,
+**버퍼풀을 비운 실행이 가장 빠릅니다.** 1차의 값은 버퍼풀로 설명되지 않고 원인은
+미규명입니다. 상세는
 [`../../docs/analysis/r13_coldsql_timeout_verdict_20260907.md`](../../docs/analysis/r13_coldsql_timeout_verdict_20260907.md)
-5.1 절입니다.
+6장입니다.
 
 ---
 
