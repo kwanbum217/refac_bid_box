@@ -555,21 +555,135 @@ def _format_shared_resources(resources: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def _strip_matching_quotes(text: str) -> str:
+    """값 양끝의 따옴표가 동일한 종류의 짝('...' 또는 "...")일 때만 한 쌍을 벗깁니다."""
+    s = str(text).strip()
+    if len(s) >= 2 and (
+        (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'"))
+    ):
+        return s[1:-1]
+    return s
+
+
+def _normalize_declared_pytest_command(cmd: str) -> str:
+    """선언된 검증 명령 중 전량 pytest 명령의 data_assets 제외 마커를 검증/보정합니다.
+
+    1. tests 디렉터리 전량을 대상으로 하는 pytest 명령에 data_assets 제외 마커가 없으면 자동으로 붙입니다.
+    2. 특정 파일 또는 node id 를 대상으로 하는 pytest 명령은 변경 없이 보존합니다.
+    3. -m 옵션이 이미 있는데 data_assets 를 제외하지 않는 전량 pytest 명령은 ValueError 로 거부하며,
+       정본 형태를 제시합니다.
+    """
+    raw_cmd = cmd.strip()
+    if not raw_cmd:
+        return raw_cmd
+
+    try:
+        tokens = shlex.split(raw_cmd)
+    except ValueError:
+        tokens = raw_cmd.split()
+
+    if not tokens or "pytest" not in tokens:
+        return raw_cmd
+
+    pytest_idx = tokens.index("pytest")
+    if (
+        pytest_idx == 0
+        or (pytest_idx == 2 and tokens[0] == "uv" and tokens[1] == "run")
+        or (pytest_idx == 2 and tokens[0] in ("python", "python3") and tokens[1] == "-m")
+    ):
+        pass
+    else:
+        return raw_cmd
+
+    args = tokens[pytest_idx + 1 :]
+    options_with_arg = {
+        "-m",
+        "--marker",
+        "-k",
+        "-o",
+        "--override-ini",
+        "-c",
+        "-p",
+        "-r",
+        "--rootdir",
+        "--maxfail",
+        "--tb",
+        "--color",
+        "--capture",
+        "--junit-xml",
+        "--ignore",
+        "--deselect",
+    }
+
+    targets: list[str] = []
+    has_marker = False
+    marker_val: str | None = None
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("-m", "--marker"):
+            has_marker = True
+            if i + 1 < len(args):
+                marker_val = args[i + 1]
+                i += 2
+            else:
+                i += 1
+        elif arg.startswith("-m=") or arg.startswith("--marker="):
+            has_marker = True
+            marker_val = arg.split("=", 1)[1]
+            i += 1
+        elif arg.startswith("-") and "=" in arg:
+            i += 1
+        elif arg in options_with_arg:
+            if i + 1 < len(args):
+                i += 2
+            else:
+                i += 1
+        elif arg.startswith("-"):
+            i += 1
+        else:
+            targets.append(arg)
+            i += 1
+
+    def _is_full_test_target(target: str) -> bool:
+        cleaned = target.strip().rstrip("/")
+        return cleaned in ("tests", "./tests", ".", "")
+
+    is_full_tests = (len(targets) == 0) or all(_is_full_test_target(t) for t in targets)
+
+    if not is_full_tests:
+        return raw_cmd
+
+    if has_marker:
+        marker_str = _strip_matching_quotes(str(marker_val or ""))
+        if "not data_assets" in marker_str:
+            return raw_cmd
+        raise ValueError(
+            f"전량 pytest 검증 명령에 data_assets 를 제외하지 않는 -m 마커가 이미 선언되어 있습니다: '{raw_cmd}'. "
+            f"격리 워크트리에서는 모델 바이너리와 ChromaDB 가 없어 tests/test_data_preservation.py 가 실패하므로 "
+            f"data_assets 제외 마커가 필수입니다. 정본 형태는 '{BACKEND_VERIFICATION_COMMAND}' 입니다."
+        )
+
+    return f"{raw_cmd} -m 'not data_assets'"
+
+
 def resolve_verification_commands(
     intent: dict[str, Any],
     write_files: list[str],
 ) -> list[str]:
     """Task Intent 와 쓰기 범위로부터 Capsule 의 verification_commands 를 정합니다.
 
-    Intent 가 명시하면 그것을 그대로 보존합니다. 명시가 없으면 쓰기 범위가
-    요구하는 검증 능력(src/ 변경 시 mypy 포함)을 게이트와 같은 함수로 구해
-    그 능력을 덮는 명령 목록을 계산하여 반환합니다.
+    Intent 가 명시하면 전량 pytest 명령의 data_assets 제외 마커를 보정/검증한 뒤
+    보존합니다. 명시가 없으면 쓰기 범위가 요구하는 검증 능력(src/ 변경 시 mypy 포함)을
+    게이트와 같은 함수로 구해 그 능력을 덮는 명령 목록을 계산하여 반환합니다.
     """
     declared = [
         str(item).strip() for item in intent.get("verification_commands", []) if str(item).strip()
     ]
     if declared:
-        return list(dict.fromkeys(item for item in declared if item))
+        normalized = [_normalize_declared_pytest_command(cmd) for cmd in declared]
+        return list(dict.fromkeys(item for item in normalized if item))
 
     paths = [str(path).strip() for path in write_files if str(path).strip()]
     needed = required_capabilities(paths)
@@ -691,11 +805,17 @@ BASE_GROUND_TRUTH: tuple[tuple[str, str], ...] = (
     ("G1 데이터 무손실: DB 스키마 및 행 수 100% 보존", "docs/context/CURRENT_STATE.md"),
     ("Train/Serve 특징 단일화: src/ml/features.py 만 사용", "src/ml/features.py"),
     ("1인 작업: Pull Request 생성 금지, main 직접 커밋 금지", "AGENTS.md"),
+    (
+        "격리 워크트리 데이터 자산 예외: data/model_files 및 chroma_db 부재로 인한 "
+        "tests/test_data_preservation.py 2건(test_model_bin_files_exist, test_chroma_db_exists) "
+        "실패는 정상이며, 주 저장소에서 자산을 심볼릭 링크나 복사로 끌어오거나 주 저장소 경로를 건드리지 말 것",
+        "tests/test_data_preservation.py",
+    ),
 )
 
 
 def _format_ground_truth(extra_facts: list[str]) -> str:
-    """기본 사실 3건 뒤에 Intent 가 주입한 사실을 덧붙입니다.
+    """기본 사실 4건 뒤에 Intent 가 주입한 사실을 덧붙입니다.
 
     코디네이터가 이미 확인한 경계 조건을 사실로 못박지 않으면 워커가 같은
     것을 다시 조사하거나, 조사하지 않고 잘못된 가정으로 고칩니다.
@@ -766,12 +886,12 @@ def parse_intent(text: str) -> dict[str, Any]:
                     sub_content = sub_stripped[2:].strip()
                     m = re.match(r"^([a-z_]+):\s*(.*)$", sub_content)
                     if m:
-                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        k, v = m.group(1), _strip_matching_quotes(m.group(2))
                         current_item[k] = v
                 else:
                     m = re.match(r"^([a-z_]+):\s*(.*)$", sub_stripped)
                     if m:
-                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        k, v = m.group(1), _strip_matching_quotes(m.group(2))
                         current_item[k] = v
                 i += 1
 
@@ -801,14 +921,14 @@ def parse_intent(text: str) -> dict[str, Any]:
                     sub_content = sub_stripped[2:].strip()
                     m = re.match(r"^([a-z_]+):\s*(.*)$", sub_content)
                     if m:
-                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        k, v = m.group(1), _strip_matching_quotes(m.group(2))
                         current_res[k] = v
                     else:
-                        shared_res.append(sub_content.strip("\"'"))
+                        shared_res.append(_strip_matching_quotes(sub_content))
                 else:
                     m = re.match(r"^([a-z_]+):\s*(.*)$", sub_stripped)
                     if m:
-                        k, v = m.group(1), m.group(2).strip().strip("\"'")
+                        k, v = m.group(1), _strip_matching_quotes(m.group(2))
                         current_res[k] = v
                 i += 1
 
@@ -836,7 +956,7 @@ def parse_intent(text: str) -> dict[str, Any]:
             ):
                 items: list[str] = []
                 if val and val != "[]":
-                    items.append(val.strip("\"'"))
+                    items.append(_strip_matching_quotes(val))
                 i += 1
                 while i < total_lines:
                     raw_sub = lines[i]
@@ -844,7 +964,7 @@ def parse_intent(text: str) -> dict[str, Any]:
                         break
                     sub_stripped = raw_sub.strip()
                     if sub_stripped and sub_stripped.startswith("- "):
-                        items.append(sub_stripped[2:].strip().strip("\"'"))
+                        items.append(_strip_matching_quotes(sub_stripped[2:]))
                     i += 1
                 result[key] = items
                 continue
@@ -864,7 +984,7 @@ def parse_intent(text: str) -> dict[str, Any]:
                 continue
 
             # 일반 단일값
-            clean_val = re.sub(r"\s+#.*$", "", val).strip().strip("\"'")
+            clean_val = _strip_matching_quotes(re.sub(r"\s+#.*$", "", val))
             result[key] = clean_val
             i += 1
             continue

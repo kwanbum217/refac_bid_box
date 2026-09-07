@@ -29,6 +29,7 @@ from scripts.orca_taskctl import (
     _record_finalize_reliability,
     _run_command,
     _start_reliability_tracking,
+    _strip_matching_quotes,
     _to_glob,
     check_write_concurrency,
     classify_file_edit_auto_approve_support,
@@ -7489,3 +7490,223 @@ def test_deliver_capsule_notice_sends_short_probe_followup(
     assert res["status"] == "sent"
     assert len(sent) == 2
     assert res["delivery_probe"] in sent[1]
+
+
+# ---------------------------------------------------------------------------
+# Task AJ1 회귀 테스트: 전량 pytest data_assets 마커 강제 및 표준 사실 포함
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_verification_commands_attaches_data_assets_marker_to_full_pytest():
+    """전량 pytest 검증 명령에 data_assets 제외 마커가 없으면 자동으로 부착합니다."""
+    from scripts.orca_taskctl import BACKEND_VERIFICATION_COMMAND, resolve_verification_commands
+
+    # uv run pytest tests/ -q -> 마커 자동 부착
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/ -q"]}, []
+    ) == [BACKEND_VERIFICATION_COMMAND]
+
+    # uv run pytest tests/ -> 마커 부착
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/"]}, []
+    ) == ["uv run pytest tests/ -m 'not data_assets'"]
+
+    # uv run pytest tests -q -> 마커 부착
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests -q"]}, []
+    ) == ["uv run pytest tests -q -m 'not data_assets'"]
+
+    # pytest tests/ -q -> 마커 부착
+    assert resolve_verification_commands({"verification_commands": ["pytest tests/ -q"]}, []) == [
+        "pytest tests/ -q -m 'not data_assets'"
+    ]
+
+    # uv run pytest -q (대상 미지정 전량) -> 마커 부착
+    assert resolve_verification_commands({"verification_commands": ["uv run pytest -q"]}, []) == [
+        "uv run pytest -q -m 'not data_assets'"
+    ]
+
+
+def test_resolve_verification_commands_preserves_targeted_pytest_commands():
+    """특정 파일이나 node id 를 대상으로 하는 pytest 명령은 변형 없이 보존됩니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    # 특정 파일 대상
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/test_orca_taskctl.py -q"]}, []
+    ) == ["uv run pytest tests/test_orca_taskctl.py -q"]
+
+    # 특정 node id 대상
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/test_orca_taskctl.py::test_intent -q"]}, []
+    ) == ["uv run pytest tests/test_orca_taskctl.py::test_intent -q"]
+
+    # 이미 -m 'not data_assets' 가 있는 전량 명령도 보존
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/ -q -m 'not data_assets'"]}, []
+    ) == ["uv run pytest tests/ -q -m 'not data_assets'"]
+
+    # 특정 파일 대상 명령에 임의의 -m 옵션이 있어도 보존
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/test_ml.py -m unit -q"]}, []
+    ) == ["uv run pytest tests/test_ml.py -m unit -q"]
+
+
+def test_resolve_verification_commands_rejects_conflicting_marker():
+    """data_assets 를 제외하지 않는 기존 -m 옵션이 있는 전량 pytest 명령은 ValueError 로 거부합니다."""
+    import pytest
+
+    from scripts.orca_taskctl import BACKEND_VERIFICATION_COMMAND, resolve_verification_commands
+
+    with pytest.raises(ValueError) as exc_info:
+        resolve_verification_commands(
+            {"verification_commands": ["uv run pytest tests/ -q -m unit"]}, []
+        )
+    assert BACKEND_VERIFICATION_COMMAND in str(exc_info.value)
+    assert "상충되는 마커" in str(exc_info.value) or "data_assets 를 제외하지 않는" in str(
+        exc_info.value
+    )
+
+    with pytest.raises(ValueError) as exc_info2:
+        resolve_verification_commands(
+            {"verification_commands": ["uv run pytest tests/ -m 'not slow'"]}, []
+        )
+    assert BACKEND_VERIFICATION_COMMAND in str(exc_info2.value)
+
+
+def test_expand_intent_includes_isolated_worktree_data_assets_standard_fact():
+    """BASE_GROUND_TRUTH 의 격리 워크트리 데이터 자산 예외 사실이 Capsule 에 자동 포함됩니다."""
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    intent = parse_intent(
+        "role: builder\n"
+        "objective: 표준 사실 포함 검증\n"
+        "why_now: 검증\n"
+        "scope:\n"
+        "  - scripts/orca_taskctl.py\n"
+    )
+    capsule = expand_intent_to_capsule(intent, task_id="task_gt_verify")
+
+    assert "격리 워크트리 데이터 자산 예외" in capsule
+    assert "tests/test_data_preservation.py" in capsule
+    assert "test_model_bin_files_exist" in capsule
+    assert "test_chroma_db_exists" in capsule
+    assert "심볼릭 링크" in capsule
+    assert "주 저장소" in capsule
+
+
+def test_parse_intent_preserves_trailing_single_quotes_in_verification_commands():
+    """전량 pytest 에 마커를 붙인 명령을 verification_commands 에 선언한 Intent 를 parse_intent 로 읽으면 닫는 작은따옴표가 보존된다."""
+    intent_yaml = (
+        "schema: ORCA_TASK_INTENT_V1\n"
+        "role: builder\n"
+        "objective: 검증 명령 따옴표 보존 테스트\n"
+        "scope:\n"
+        "  - scripts/orca_taskctl.py\n"
+        "verification_commands:\n"
+        "  - \"uv run pytest tests/ -q -m 'not data_assets'\"\n"
+        "  - uv run pytest tests/ -q -m 'not data_assets'\n"
+    )
+    parsed = parse_intent(intent_yaml)
+    assert parsed["verification_commands"] == [
+        "uv run pytest tests/ -q -m 'not data_assets'",
+        "uv run pytest tests/ -q -m 'not data_assets'",
+    ]
+
+
+def test_expand_intent_preserves_and_enforces_marker_for_verification_commands():
+    """Intent 를 expand 하면 Capsule 에 정상 형태로 기록되고 마커 강제가 동작한다."""
+    # 1. 마커가 이미 선언된 Intent -> 닫는 따옴표가 잘리지 않고 정상 형태로 기록
+    intent_with_marker = parse_intent(
+        "schema: ORCA_TASK_INTENT_V1\n"
+        "role: builder\n"
+        "objective: 마커 포함 Intent 확장 테스트\n"
+        "scope:\n"
+        "  - scripts/orca_taskctl.py\n"
+        "verification_commands:\n"
+        "  - \"uv run pytest tests/ -q -m 'not data_assets'\"\n"
+    )
+    capsule_with_marker = expand_intent_to_capsule(
+        intent_with_marker, task_id="task_marker_preserve"
+    )
+    cmds = parse_capsule_list(capsule_with_marker, "verification_commands")
+    assert "uv run pytest tests/ -q -m 'not data_assets'" in cmds
+
+    # 2. 마커가 없는 전량 pytest Intent -> Capsule 확장 시 마커 강제가 동작하여 -m 'not data_assets' 부착
+    intent_without_marker = parse_intent(
+        "schema: ORCA_TASK_INTENT_V1\n"
+        "role: builder\n"
+        "objective: 마커 강제 Intent 확장 테스트\n"
+        "scope:\n"
+        "  - scripts/orca_taskctl.py\n"
+        "verification_commands:\n"
+        '  - "uv run pytest tests/ -q"\n'
+    )
+    capsule_enforced = expand_intent_to_capsule(
+        intent_without_marker, task_id="task_marker_enforce"
+    )
+    enforced_cmds = parse_capsule_list(capsule_enforced, "verification_commands")
+    assert BACKEND_VERIFICATION_COMMAND in enforced_cmds
+
+
+def test_parse_intent_preserves_internal_quotes():
+    """값 안쪽에만 따옴표가 있는 항목이 훼손되지 않는다."""
+    intent_yaml = (
+        "schema: ORCA_TASK_INTENT_V1\n"
+        "role: builder\n"
+        "objective: \"큰따옴표 안쪽 '작은따옴표' 보존\"\n"
+        "context: '작은따옴표 안쪽 \"큰따옴표\" 보존'\n"
+        "scope:\n"
+        '  - "scripts/foo.py"\n'
+        "  - 'tests/test_bar.py'\n"
+        "acceptance:\n"
+        "  - \"grep 'pattern' file.txt 실행 성공\"\n"
+        "  - 'echo \"double quotes\" 실행 성공'\n"
+        '  - pytest -k "test_a or test_b"\n'
+        "ground_truth:\n"
+        "  - \"이것은 '내부 따옴표'가 있는 사실이다\"\n"
+        "review_checklist:\n"
+        '  - id: "chk_1"\n'
+        "    question: \"코드에 'FIXME' 주석이 없는가?\"\n"
+        '    defect_when: "no"\n'
+        "shared_resources:\n"
+        "  - resource: \"res_'quoted'\"\n"
+        '    ownership: "read_only"\n'
+    )
+    parsed = parse_intent(intent_yaml)
+    assert parsed["objective"] == "큰따옴표 안쪽 '작은따옴표' 보존"
+    assert parsed["context"] == '작은따옴표 안쪽 "큰따옴표" 보존'
+    assert parsed["scope"] == ["scripts/foo.py", "tests/test_bar.py"]
+    assert parsed["acceptance"] == [
+        "grep 'pattern' file.txt 실행 성공",
+        'echo "double quotes" 실행 성공',
+        'pytest -k "test_a or test_b"',
+    ]
+    assert parsed["ground_truth"] == ["이것은 '내부 따옴표'가 있는 사실이다"]
+    assert parsed["review_checklist"] == [
+        {"id": "chk_1", "question": "코드에 'FIXME' 주석이 없는가?", "defect_when": "no"}
+    ]
+    assert parsed["shared_resources"] == [{"resource": "res_'quoted'", "ownership": "read_only"}]
+
+
+def test_strip_matching_quotes_unit():
+    """_strip_matching_quotes 단위 기능 검증: 짝이 맞는 따옴표만 1쌍 벗기고 원문 및 내부 따옴표를 보존한다."""
+    assert _strip_matching_quotes("") == ""
+    assert _strip_matching_quotes('"') == '"'
+    assert _strip_matching_quotes("'") == "'"
+    assert _strip_matching_quotes('""') == ""
+    assert _strip_matching_quotes("''") == ""
+    assert _strip_matching_quotes('"a"') == "a"
+    assert _strip_matching_quotes("'a'") == "a"
+    assert _strip_matching_quotes('"hello"') == "hello"
+    assert _strip_matching_quotes("'hello'") == "hello"
+    assert _strip_matching_quotes("\"hello'") == "\"hello'"
+    assert _strip_matching_quotes("'hello\"") == "'hello\""
+    assert _strip_matching_quotes("\"hello 'world'\"") == "hello 'world'"
+    assert _strip_matching_quotes("'hello \"world\"'") == 'hello "world"'
+    assert _strip_matching_quotes("uv run pytest tests/ -q -m 'not data_assets'") == (
+        "uv run pytest tests/ -q -m 'not data_assets'"
+    )
+    assert _strip_matching_quotes("\"uv run pytest tests/ -q -m 'not data_assets'\"") == (
+        "uv run pytest tests/ -q -m 'not data_assets'"
+    )
