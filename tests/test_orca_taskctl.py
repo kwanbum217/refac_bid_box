@@ -7489,3 +7489,106 @@ def test_deliver_capsule_notice_sends_short_probe_followup(
     assert res["status"] == "sent"
     assert len(sent) == 2
     assert res["delivery_probe"] in sent[1]
+
+
+# ---------------------------------------------------------------------------
+# Task AJ1 회귀 테스트: 전량 pytest data_assets 마커 강제 및 표준 사실 포함
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_verification_commands_attaches_data_assets_marker_to_full_pytest():
+    """전량 pytest 검증 명령에 data_assets 제외 마커가 없으면 자동으로 부착합니다."""
+    from scripts.orca_taskctl import BACKEND_VERIFICATION_COMMAND, resolve_verification_commands
+
+    # uv run pytest tests/ -q -> 마커 자동 부착
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/ -q"]}, []
+    ) == [BACKEND_VERIFICATION_COMMAND]
+
+    # uv run pytest tests/ -> 마커 부착
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/"]}, []
+    ) == ["uv run pytest tests/ -m 'not data_assets'"]
+
+    # uv run pytest tests -q -> 마커 부착
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests -q"]}, []
+    ) == ["uv run pytest tests -q -m 'not data_assets'"]
+
+    # pytest tests/ -q -> 마커 부착
+    assert resolve_verification_commands({"verification_commands": ["pytest tests/ -q"]}, []) == [
+        "pytest tests/ -q -m 'not data_assets'"
+    ]
+
+    # uv run pytest -q (대상 미지정 전량) -> 마커 부착
+    assert resolve_verification_commands({"verification_commands": ["uv run pytest -q"]}, []) == [
+        "uv run pytest -q -m 'not data_assets'"
+    ]
+
+
+def test_resolve_verification_commands_preserves_targeted_pytest_commands():
+    """특정 파일이나 node id 를 대상으로 하는 pytest 명령은 변형 없이 보존됩니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    # 특정 파일 대상
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/test_orca_taskctl.py -q"]}, []
+    ) == ["uv run pytest tests/test_orca_taskctl.py -q"]
+
+    # 특정 node id 대상
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/test_orca_taskctl.py::test_intent -q"]}, []
+    ) == ["uv run pytest tests/test_orca_taskctl.py::test_intent -q"]
+
+    # 이미 -m 'not data_assets' 가 있는 전량 명령도 보존
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/ -q -m 'not data_assets'"]}, []
+    ) == ["uv run pytest tests/ -q -m 'not data_assets'"]
+
+    # 특정 파일 대상 명령에 임의의 -m 옵션이 있어도 보존
+    assert resolve_verification_commands(
+        {"verification_commands": ["uv run pytest tests/test_ml.py -m unit -q"]}, []
+    ) == ["uv run pytest tests/test_ml.py -m unit -q"]
+
+
+def test_resolve_verification_commands_rejects_conflicting_marker():
+    """data_assets 를 제외하지 않는 기존 -m 옵션이 있는 전량 pytest 명령은 ValueError 로 거부합니다."""
+    import pytest
+
+    from scripts.orca_taskctl import BACKEND_VERIFICATION_COMMAND, resolve_verification_commands
+
+    with pytest.raises(ValueError) as exc_info:
+        resolve_verification_commands(
+            {"verification_commands": ["uv run pytest tests/ -q -m unit"]}, []
+        )
+    assert BACKEND_VERIFICATION_COMMAND in str(exc_info.value)
+    assert "상충되는 마커" in str(exc_info.value) or "data_assets 를 제외하지 않는" in str(
+        exc_info.value
+    )
+
+    with pytest.raises(ValueError) as exc_info2:
+        resolve_verification_commands(
+            {"verification_commands": ["uv run pytest tests/ -m 'not slow'"]}, []
+        )
+    assert BACKEND_VERIFICATION_COMMAND in str(exc_info2.value)
+
+
+def test_expand_intent_includes_isolated_worktree_data_assets_standard_fact():
+    """BASE_GROUND_TRUTH 의 격리 워크트리 데이터 자산 예외 사실이 Capsule 에 자동 포함됩니다."""
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    intent = parse_intent(
+        "role: builder\n"
+        "objective: 표준 사실 포함 검증\n"
+        "why_now: 검증\n"
+        "scope:\n"
+        "  - scripts/orca_taskctl.py\n"
+    )
+    capsule = expand_intent_to_capsule(intent, task_id="task_gt_verify")
+
+    assert "격리 워크트리 데이터 자산 예외" in capsule
+    assert "tests/test_data_preservation.py" in capsule
+    assert "test_model_bin_files_exist" in capsule
+    assert "test_chroma_db_exists" in capsule
+    assert "심볼릭 링크" in capsule
+    assert "주 저장소" in capsule
