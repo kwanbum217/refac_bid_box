@@ -352,7 +352,7 @@ def read_terminal_screen(handle: str) -> tuple[str, str] | None:
     return str(source), ANSI_RE.sub("", content)
 
 
-def terminal_tail(handle: str, lines: int = TAIL_LINES) -> str:
+def read_terminal_stream_tail(handle: str, lines: int = TAIL_LINES) -> str:
     """터미널의 누적 스트림 출력의 마지막 N 줄을 읽습니다.
 
     기존 누적 출력 fallback 및 레거시 인터페이스를 보존합니다.
@@ -392,7 +392,7 @@ def inspect_terminal_block(
     if screen_res is not None and screen_res[1]:
         stream_tail_1 = "\n".join(screen_res[1].splitlines()[-TAIL_LINES:])
     else:
-        stream_tail_1 = terminal_tail(handle, lines=TAIL_LINES)
+        stream_tail_1 = read_terminal_stream_tail(handle, lines=TAIL_LINES)
 
     found1 = detect_block(stream_tail_1, worktree_path=worktree_path, repo=repo)
     if found1 is None:
@@ -407,7 +407,7 @@ def inspect_terminal_block(
     if FALLBACK_RECHECK_DELAY_SECONDS > 0:
         do_sleep(FALLBACK_RECHECK_DELAY_SECONDS)
 
-    stream_tail_2 = terminal_tail(handle, lines=TAIL_LINES)
+    stream_tail_2 = read_terminal_stream_tail(handle, lines=TAIL_LINES)
     found2 = detect_block(stream_tail_2, worktree_path=worktree_path, repo=repo)
     if found2 is not None and found2[0] == found1[0]:
         return found2, "stream_fallback"
@@ -415,38 +415,109 @@ def inspect_terminal_block(
     return None
 
 
+def strip_preamble(terminal_text: str) -> str:
+    """Dispatch preamble 구간('=== CLI COMMANDS ===' ~ '=== TASK ===')을 제거합니다.
+
+    화면에 표시된 지시문 템플릿이 차단 신호 탐지 대상이 되지 않도록 제외합니다.
+    """
+    return re.sub(
+        r"[ \t]*=== CLI COMMANDS ===.*?(?:[ \t]*=== TASK ===[^\n]*\n?|$)",
+        "",
+        terminal_text,
+        flags=re.DOTALL,
+    )
+
+
+def join_continuation_lines(text: str) -> list[str]:
+    """백슬래시(\\)로 이어지는 여러 줄 명령을 하나의 논리적 줄로 합칩니다."""
+    raw_lines = text.splitlines()
+    joined_lines: list[str] = []
+    accum: list[str] = []
+    for line in raw_lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.endswith("\\"):
+            accum.append(stripped[:-1].rstrip())
+        else:
+            if accum:
+                accum.append(stripped)
+                joined_lines.append(" ".join(accum))
+                accum = []
+            else:
+                joined_lines.append(stripped)
+    if accum:
+        joined_lines.append(" ".join(accum))
+    return joined_lines
+
+
+def is_placeholder_value(val: str) -> bool:
+    """꺾쇠 자리표시자(<...>) 형태인지 확인합니다."""
+    return bool(re.search(r"<[^>]+>", val))
+
+
+def is_placeholder_command(cmd: str) -> bool:
+    """명령 문자열에 꺾쇠 자리표시자(<...>)가 포함되어 템플릿/예시 명령인지 확인합니다."""
+    return bool(re.search(r"<[^>]+>", cmd))
+
+
+def is_worker_done_signal_line(line: str) -> bool:
+    """줄이 실제 worker_done 전송 명령이나 완료 신호인지 판별합니다.
+
+    일반 대화나 작업 설명에 'worker_done' 단어가 포함된 경우를 오탐하지 않습니다.
+    """
+    line_lower = line.lower()
+    return bool(
+        re.search(r"--type[=\s]+[\"']?worker_done[\"']?", line_lower)
+        or re.search(r'["\']?type["\']?\s*:\s*["\']worker_done["\']', line_lower)
+        or "worker_done_guard" in line_lower
+        or ("send" in line_lower and "worker_done" in line_lower)
+    )
+
+
 def check_worker_done_report(
-    screen_tail: str,
+    terminal_text: str,
     worktree_path: str | None = None,
     repo: Path | None = None,
 ) -> tuple[str, str, BlockKind] | None:
-    """worker_done 전송/완료 신호가 있으나 reportPath 가 없거나 보고 파일이 존재하지 않는 경우 차단으로 판정합니다."""
-    norm = normalize_text(screen_tail)
+    """worker_done 전송/완료 신호가 있으나 reportPath 가 없거나 보고 파일이 존재하지 않는 경우 차단으로 판정합니다.
+
+    입력 텍스트(terminal_text)는 렌더링된 화면 또는 누적 스트림 출력일 수 있습니다.
+    """
+    cleaned_text = strip_preamble(terminal_text)
+    norm = normalize_text(cleaned_text)
     if "worker_done" not in norm and "orchestration send" not in norm:
         return None
 
-    # worker_done 관련 명령/메시지가 포함된 줄 탐색
-    lines = [line.strip() for line in screen_tail.splitlines() if line.strip()]
-    done_lines = [
-        line
-        for line in lines
-        if "worker_done" in line.lower()
-        or ("send" in line.lower() and ("--type" in line.lower() or "worker_done" in line.lower()))
-    ]
+    # 줄 바꿈 백슬래시(\) 연결 후 분리
+    lines = join_continuation_lines(cleaned_text)
+    done_lines = [line for line in lines if is_worker_done_signal_line(line)]
     if not done_lines:
+        return None
+
+    # 꺾쇠 자리표시자(<...>)를 포함한 템플릿/예시 명령은 제외
+    real_done_lines = [line for line in done_lines if not is_placeholder_command(line)]
+    if not real_done_lines:
         return None
 
     # report_path / --report-path / reportPath 탐색
     target_path = None
-    for line in done_lines:
-        m_flag = re.search(r"--report(?:-path)?\s+[\"']?([^\s\"']+)[\"']?", line)
+    for line in real_done_lines:
+        m_flag = re.search(
+            r"--report(?:-path)?\s+(?:\"([^\"]+)\"|'([^']+)'|([^\s\"']+))",
+            line,
+        )
         if m_flag:
-            target_path = m_flag.group(1).strip()
-            break
+            val = (m_flag.group(1) or m_flag.group(2) or m_flag.group(3)).strip()
+            if not is_placeholder_value(val):
+                target_path = val
+                break
         m_json = re.search(r'["\']?report(?:_p|P)ath["\']?\s*:\s*["\']([^"\']+)["\']', line)
         if m_json:
-            target_path = m_json.group(1).strip()
-            break
+            val = m_json.group(1).strip()
+            if not is_placeholder_value(val):
+                target_path = val
+                break
 
     if not target_path:
         return (
@@ -472,18 +543,20 @@ def check_worker_done_report(
 
 
 def detect_block(
-    screen_tail: str,
+    terminal_text: str,
     worktree_path: str | None = None,
     repo: Path | None = None,
 ) -> tuple[str, str, BlockKind] | None:
-    done_block = check_worker_done_report(screen_tail, worktree_path, repo)
+    """터미널 텍스트(화면 또는 누적 스트림 출력)에서 워커 차단 신호를 탐지합니다."""
+    cleaned_text = strip_preamble(terminal_text)
+    done_block = check_worker_done_report(cleaned_text, worktree_path, repo)
     if done_block:
         return done_block
 
-    norm_tail = normalize_text(screen_tail)
+    norm_text = normalize_text(cleaned_text)
     prompt_match: tuple[str, str, BlockKind] | None = None
     for needle, reason, fix, kind in BLOCK_SIGNALS:
-        if normalize_text(needle) not in norm_tail:
+        if normalize_text(needle) not in norm_text:
             continue
         match = (reason, fix, kind)
         if kind == "failure":
