@@ -28,6 +28,7 @@ from scripts.orca_level1_gate import (
     run_gate5_review_report,
     run_gate6_worker_done,
     run_gate7_gitignored,
+    run_gate8_commit_message,
     run_level1_gate,
 )
 
@@ -105,7 +106,7 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str]:
             "user.name=Test",
             "commit",
             "-m",
-            "chore: initial base commit",
+            "chore: 초기 베이스 커밋",
         ],
         cwd=str(repo),
         check=True,
@@ -137,7 +138,7 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str]:
             "user.name=Test",
             "commit",
             "-m",
-            "feat: branch changes",
+            "feat: 브랜치 변경 사항 반영",
         ],
         cwd=str(repo),
         check=True,
@@ -331,7 +332,7 @@ def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
     assert data["verdict"] == "pass"
     assert data["exit_code"] == 0
     assert "summary" in data
-    assert data["summary"]["total"] == 7
+    assert data["summary"]["total"] == 8
     assert data["summary"]["passed"] >= 1
 
     gates = data["gates"]
@@ -342,9 +343,11 @@ def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
     assert "gate4b_lint" in gates
     assert "gate5_review_report" in gates
     assert "gate7_gitignored" in gates
+    assert "gate8_commit_message" in gates
     assert gates["gate1_changed_files"]["status"] == "pass"
     assert gates["gate2_scope"]["status"] == "skipped"
     assert gates["gate7_gitignored"]["status"] == "pass"
+    assert gates["gate8_commit_message"]["status"] == "skipped"
 
     # 키가 실제 게이트를 가리키는지 확인합니다. 키 목록이 append 순서보다
     # 짧으면 뒤 게이트가 한 칸씩 밀려 gate_6 으로 흘러나갑니다.
@@ -353,6 +356,7 @@ def test_json_output_is_valid_and_contains_all_gate_keys(tmp_path: Path):
     assert gates["gate4_rules"]["name"] == "게이트 4 규칙 검증"
     assert gates["gate4b_lint"]["name"] == "게이트 4b 린터"
     assert gates["gate5_review_report"]["name"] == "게이트 5 리뷰 보고"
+    assert gates["gate8_commit_message"]["name"] == "게이트 8 커밋 메시지"
 
 
 def test_validate_agent_rules_output_parser():
@@ -1379,3 +1383,149 @@ def test_gate3_non_pytest_command_is_not_retried():
     assert g.status == "fail"
     assert mock_cmd.call_count == 1
     assert g.raw_data["results"][0].get("retried") is not True
+
+
+# ---------------------------------------------------------------------------
+# 게이트 8: 커밋 메시지 제목 한국어 규약 검증 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_gate8_pass_with_korean_commit_message(tmp_path: Path):
+    """게이트 8: 한국어 제목 커밋이 있으면 pass 로 판정합니다."""
+    repo, base, branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["common.txt", "unique_new.txt"])
+
+    g = run_gate8_commit_message(repo, base, branch, capsule_path=capsule)
+    assert g.status == "pass"
+    assert g.name == "게이트 8 커밋 메시지"
+    assert g.required is True
+    assert g.raw_data["total_commits"] == 1
+    assert g.raw_data["violated_commits"] == []
+    assert "통과" in g.summary
+
+
+def test_gate8_fail_with_english_commit_message(tmp_path: Path):
+    """게이트 8: 영어 제목 커밋이 포함되어 있으면 fail 로 판정하고 위반 상세를 기록합니다."""
+    repo, base, branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["common.txt", "unique_new.txt", "extra.txt"])
+    subprocess.run([GIT_BIN, "checkout", branch], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
+    (repo / "extra.txt").write_text("extra\n", encoding="utf-8")
+    subprocess.run([GIT_BIN, "add", "."], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
+    subprocess.run(  # noqa: S603
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=t@e.com",
+            "-c",
+            "user.name=T",
+            "commit",
+            "-m",
+            "fix: verify block signals from rendered screen",
+        ],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+    g = run_gate8_commit_message(repo, base, branch, capsule_path=capsule)
+    assert g.status == "fail"
+    assert g.name == "게이트 8 커밋 메시지"
+    assert g.required is True
+    assert g.raw_data["total_commits"] == 2
+    assert len(g.raw_data["violated_commits"]) == 1
+    violation = g.raw_data["violated_commits"][0]
+    assert violation["subject"] == "fix: verify block signals from rendered screen"
+    assert "한국어" in violation["reason"]
+    assert any("fix: verify block signals" in d for d in g.details)
+
+
+def test_gate8_not_applicable_when_capsule_is_none_or_missing(tmp_path: Path):
+    """게이트 8: Capsule 이 지정되지 않거나 없으면 N/A(skipped, required=False)로 처리합니다."""
+    repo, base, branch = _init_git_repo(tmp_path)
+
+    g_none = run_gate8_commit_message(repo, base, branch, capsule_path=None)
+    assert g_none.status == "skipped"
+    assert g_none.required is False
+    assert "적용 대상이 아님" in g_none.summary
+
+    missing_capsule = tmp_path / "non_existent_capsule.yaml"
+    g_missing = run_gate8_commit_message(repo, base, branch, capsule_path=missing_capsule)
+    assert g_missing.status == "skipped"
+    assert g_missing.required is False
+    assert "적용 대상이 아님" in g_missing.summary
+
+
+def test_gate8_not_applicable_when_base_equals_branch(tmp_path: Path):
+    """게이트 8: base 와 branch 가 같으면 N/A(skipped, required=False)로 처리합니다."""
+    repo, base, _branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["common.txt"])
+
+    g = run_gate8_commit_message(repo, base, base, capsule_path=capsule)
+    assert g.status == "skipped"
+    assert g.required is False
+    assert "적용 대상이 아님" in g.summary
+
+
+def test_gate8_in_run_level1_gate_outputs(tmp_path: Path):
+    """Level 1 게이트 전체 실행 시 Gate 8 이 JSON 및 사람 출력 양쪽에 정상 반영되는지 확인합니다."""
+    repo, base, branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["docs/note.md", "common.txt", "unique_new.txt"])
+    _write_passing_test(repo)
+
+    # 1. 정상 통과 케이스
+    code, json_out = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        capsule=capsule,
+        tests=["tests/test_ok.py -q"],
+        as_json=True,
+    )
+    assert code == 0
+    data = json.loads(json_out)
+    assert "gate8_commit_message" in data["gates"]
+    assert data["gates"]["gate8_commit_message"]["status"] == "pass"
+
+    _code_h, human_out = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        capsule=capsule,
+        tests=["tests/test_ok.py -q"],
+        as_json=False,
+    )
+    assert "게이트 8 커밋 메시지" in human_out
+    assert "[PASS]     게이트 8 커밋 메시지" in human_out
+
+    # 2. 커밋 메시지 위반 추가 시 게이트 실패 확인
+    subprocess.run([GIT_BIN, "checkout", branch], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
+    (repo / "bad.txt").write_text("bad\n", encoding="utf-8")
+    subprocess.run([GIT_BIN, "add", "."], cwd=str(repo), check=True, capture_output=True)  # noqa: S603
+    subprocess.run(  # noqa: S603
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=t@e.com",
+            "-c",
+            "user.name=T",
+            "commit",
+            "-m",
+            "feat: english only title without korean",
+        ],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+    code_fail, json_fail_out = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        capsule=capsule,
+        tests=["tests/test_ok.py -q"],
+        as_json=True,
+    )
+    assert code_fail == 1
+    fail_data = json.loads(json_fail_out)
+    assert fail_data["gates"]["gate8_commit_message"]["status"] == "fail"
+    assert fail_data["verdict"] == "fail"

@@ -193,7 +193,7 @@ def _init_git_repo(tmp_path: Path) -> tuple[Path, str, str, str]:
             "user.name=Test",
             "commit",
             "-m",
-            "feat: implement truth gate logic",
+            "feat: 진실성 게이트 로직을 구현한다",
         ],
         cwd=str(repo),
         check=True,
