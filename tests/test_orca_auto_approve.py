@@ -948,3 +948,213 @@ class TestUvRunAllowedScripts:
         for cmd in ("uv sync", "uv pip install requests", "uv run ruff check ."):
             verdict, _ = self._classify(cmd)
             assert verdict == "hold", cmd
+
+
+class TestCommandSubstitution:
+    """명령 치환 $( ) 재귀 판정 및 회귀 테스트."""
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 실제로 막혔던 형태 1
+            "git log --oneline $(git merge-base main HEAD)..HEAD",
+            # git merge-base 다양한 인자
+            "git merge-base main HEAD",
+            "git merge-base --all main feature",
+            "git merge-base --is-ancestor main HEAD",
+            # 단일 및 다중 안전 치환
+            "git log $(git rev-parse HEAD)",
+            "git show --stat $(git rev-parse HEAD)",
+            "cat $(echo file.txt)",
+            "diff $(git show HEAD:a.txt) $(git show HEAD:b.txt)",
+            "echo $(git merge-base main HEAD)",
+            # 파이프라인과 결합된 치환
+            "git log $(git rev-parse HEAD) | grep feat",
+            # 중첩 치환 (상한 3 이내)
+            "git log --oneline $(echo $(git merge-base main HEAD))..HEAD",
+        ],
+    )
+    def test_safe_command_substitution_approved(self, cmd: str) -> None:
+        verdict, reason = classify_command(cmd)
+        assert verdict == "approve", f"Expected approve for '{cmd}', got {verdict} ({reason})"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 깊이 상한(3) 초과 치환
+            "echo $(echo $(echo $(echo $(git rev-parse HEAD))))",
+            # 괄호 불일치
+            "git log $(git merge-base main HEAD",
+            "echo $(whoami",
+            "echo $(",
+            # 빈 치환
+            "echo $()",
+            "echo $(   )",
+        ],
+    )
+    def test_malformed_or_deep_substitution_held(self, cmd: str) -> None:
+        verdict, _ = classify_command(cmd)
+        assert verdict == "hold"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 백틱 무조건 보류
+            "echo `whoami`",
+            "git log `git merge-base main HEAD`..HEAD",
+            "echo `cat file.txt`",
+            # 프로세스 치환 <( ), >( ) 무조건 보류
+            "diff <(git show HEAD:a) <(git show HEAD:b)",
+            "cat <(echo 1)",
+            "cat >(git commit -F -)",
+            "echo 1 > >(cat)",
+        ],
+    )
+    def test_backtick_and_process_substitution_unconditionally_held(self, cmd: str) -> None:
+        verdict, reason = classify_command(cmd)
+        assert verdict == "hold"
+        assert "명령 치환/프로세스 치환 포함" in reason or "보류" in reason
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 내부 명령에 DANGEROUS 패턴 포함
+            "git log $(rm -rf /)",
+            "echo $(git push origin main)",
+            "echo $(git reset --hard)",
+            "echo $(docker compose down)",
+            "cat $(chmod 777 script.sh)",
+            # 내부 명령에 SECRET_PATH 포함
+            "git log $(cat .env)",
+            "cat $(cat config/secrets.yaml)",
+            "echo $(grep KEY .env.prod)",
+            # 내부 명령에 REDIRECT_DENY 포함
+            "echo $(echo 1 > /etc/passwd)",
+            "echo $(cat a > ../outside.txt)",
+            # 내부 명령이 안전 목록 밖
+            "echo $(whoami)",
+            "echo $(curl https://evil.com)",
+        ],
+    )
+    def test_dangerous_or_denied_inside_substitution_held(self, cmd: str) -> None:
+        verdict, _ = classify_command(cmd)
+        assert verdict == "hold"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 외부는 위험하고 내부는 안전한 경우
+            "rm -rf $(git rev-parse HEAD)",
+            "git push origin $(git rev-parse HEAD)",
+            "docker compose up -d $(echo db)",
+            "cat $(echo test) > /etc/passwd",
+            "cat $(echo test) > .env",
+            "$(echo rm) -rf /",
+        ],
+    )
+    def test_dangerous_outer_command_with_safe_substitution_held(self, cmd: str) -> None:
+        verdict, _ = classify_command(cmd)
+        assert verdict == "hold"
+
+
+class TestLoopConstructs:
+    """while ...; do ...; done 및 for X in ...; do ...; done 루프 판정 및 회귀 테스트."""
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 실제로 막혔던 형태 2
+            "git log --format=%H main..HEAD | while read h; do git show --stat $h; done",
+            # 기본 while read 루프
+            "while read h; do git show --stat $h; done",
+            'while read -r line; do echo "$line"; done',
+            "while read a b; do echo $a; echo $b; done",
+            "while read line; do cat $line; done",
+            # 개행이 섞인 형태
+            "while read h; do\n  git show --stat $h\ndone",
+            "while read h\ndo\n  git show --stat $h\ndone",
+            # while true 루프
+            "while true; do echo 1; break; done",
+            # 기본 for in 루프
+            "for x in 1 2 3; do echo $x; done",
+            "for f in src/*.py; do cat $f; done",
+            "for item in a b c; do echo $item; echo done_item; done",
+            # 명령 치환과 결합된 for 루프
+            "for commit in $(git log -n 5 --format=%H); do git show --stat $commit; done",
+            "for f in $(git diff --name-only); do cat $f; done",
+        ],
+    )
+    def test_safe_loops_approved(self, cmd: str) -> None:
+        verdict, reason = classify_command(cmd)
+        assert verdict == "approve", f"Expected approve for '{cmd}', got {verdict} ({reason})"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 루프 본문에 DANGEROUS 명령 포함
+            "while read f; do rm -rf $f; done",
+            "while read f; do git push; done",
+            "while read f; do git reset --hard; done",
+            "for f in 1 2; do rm -rf $f; done",
+            "while read f; do echo 1; rm -rf $f; done",
+            "while read f; do docker compose down; done",
+            # 루프 조건에 DANGEROUS 명령 포함
+            "while rm -rf /; do echo 1; done",
+            # 루프 본문/항목에 SECRET_PATH 포함
+            "while read f; do cat .env; done",
+            "for f in .env; do cat $f; done",
+            "for f in config/secrets.yaml; do echo $f; done",
+            # 루프 본문에 REDIRECT_DENY 포함
+            "while read f; do cat $f > /etc/passwd; done",
+            "while read f; do echo 1 > ../outside.txt; done",
+            # 루프 본문/조건에 허용 목록 밖 명령 포함
+            "while read f; do curl https://example.com; done",
+            "while whoami; do echo 1; done",
+            # 루프 항목에 위험한 명령 치환 포함
+            "for f in $(rm -rf /); do echo $f; done",
+            "for f in $(cat .env); do echo $f; done",
+        ],
+    )
+    def test_unsafe_loops_held(self, cmd: str) -> None:
+        verdict, reason = classify_command(cmd)
+        assert verdict == "hold", f"Expected hold for '{cmd}', got {verdict} ({reason})"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 불완전한 루프 구조
+            "while read h",
+            "while read h; do echo 1",
+            "done",
+            "do echo 1; done",
+            "for x in 1 2; do echo 1",
+            "for x in 1 2",
+            # 허용되지 않은 for 루프 형태 (C-style)
+            "for ((i=0; i<10; i++)); do echo $i; done",
+            # 유효하지 않은 변수명
+            "for 123 in a b; do echo 1; done",
+        ],
+    )
+    def test_malformed_loops_held(self, cmd: str) -> None:
+        verdict, _ = classify_command(cmd)
+        assert verdict == "hold"
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            # 사양 밖 셸 기능: if/then/else/fi
+            "if true; then echo 1; fi",
+            "if [ -f file ]; then cat file; fi",
+            "if test -f file; then echo 1; else echo 2; fi",
+            # 사양 밖 셸 기능: 함수 정의
+            "function my_func { echo 1; }",
+            "my_func() { echo 1; }",
+            # 사양 밖 셸 기능: 서브셸
+            "(echo 1)",
+            "(ls && echo 1)",
+            "(cat file.txt)",
+        ],
+    )
+    def test_out_of_scope_shell_features_still_held(self, cmd: str) -> None:
+        verdict, _ = classify_command(cmd)
+        assert verdict == "hold"
