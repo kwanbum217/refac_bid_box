@@ -1716,7 +1716,7 @@ def test_main_records_buffer_pool_provenance_on_success(tmp_path):
     # 4. 비밀번호/시크릿 누설 없음 검증
     payload_text = output_file.read_text(encoding="utf-8")
     assert "MYSQL_ROOT_PASSWORD" not in payload_text
-    assert "password" not in payload_text.lower() or "password" in "some_standard_field"
+    assert "password" not in payload_text.lower()
 
 
 def test_main_buffer_pool_failure_records_null_and_error_without_stopping_measurement(tmp_path):
