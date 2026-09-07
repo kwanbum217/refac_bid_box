@@ -115,10 +115,10 @@ facts:
   - id: rag_segments_canonical
     status: closed
     decision_date: "2026-09-07"
-    claim: "RAG 구간 정본은 타임아웃 300초 96요청 전량 성공으로 canonical 게이트를 통과했으나 버퍼풀 콜드 조건은 재현하지 못했습니다."
-    document_anchor: "RAG 구간 정본은 타임아웃 300초"
+    claim: "RAG 구간 정본은 버퍼풀을 비운 콜드 조건 96요청 전량 성공으로 canonical 게이트를 통과했고 1차의 10만 ms 대 값은 버퍼풀로 설명되지 않습니다."
+    document_anchor: "RAG 구간 정본은 버퍼풀을 비운"
     evidence:
-      - data/benchmarks/rag_segments_canonical_20260907_t300.json
+      - data/benchmarks/rag_segments_coldpool_20260907.json
       - docs/analysis/r13_coldsql_timeout_verdict_20260907.md
     related_documents:
       - docs/context/CURRENT_STATE.md
