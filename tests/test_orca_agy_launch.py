@@ -66,6 +66,38 @@ def test_wait_returns_content_once_written(tmp_path: Path):
     assert not target.exists()
 
 
+def test_agy_main_consumes_and_deletes_unique_preamble(tmp_path: Path, monkeypatch):
+    """Antigravity main 실행 시 고유 preamble_*.txt 파일을 읽고 소비 후 삭제해야 합니다."""
+    from scripts import orca_agy_launch as mod
+
+    target = tmp_path / "preamble_run_unique_agy.txt"
+    target.write_text("에이지와이 고유 지시문", encoding="utf-8")
+
+    captured: dict = {}
+
+    def fake_execvpe(cmd0, cmd, env):
+        captured["cmd"] = list(cmd)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(mod.os, "execvpe", fake_execvpe)
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--model",
+                "gemini-3.8-flash-medium",
+                "--preamble",
+                str(target),
+                "--timeout-sec",
+                "1.0",
+                "--no-commit-notice",
+            ]
+        )
+    assert exc.value.code == 0
+    assert not target.exists(), "런처 기동 후 preamble 파일이 삭제되어야 합니다"
+    prompt = captured["cmd"][-1]
+    assert prompt == "에이지와이 고유 지시문"
+
+
 def test_empty_file_is_not_accepted(tmp_path: Path):
     """비어 있는 파일을 지시문으로 읽으면 워커가 빈 지시로 기동합니다."""
     target = tmp_path / "preamble.txt"

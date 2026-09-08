@@ -5,8 +5,11 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
+
 from scripts.orca_worker_launch_common import (
     COMMIT_NOTICE,
+    DEFAULT_PREAMBLE,
     PERMISSION_SETUP_FLAG,
     REVIEWER_NOTICE,
     ROLE_MARKER_BUILDER,
@@ -22,6 +25,7 @@ from scripts.orca_worker_launch_common import (
     run_permission_setup_child,
     schedule_permission_setup,
     spawn_permission_setup,
+    wait_for_preamble,
 )
 
 
@@ -542,3 +546,92 @@ def test_schedule_permission_setup_default_spawn_never_calls_popen(monkeypatch):
     assert res is True
     assert len(popen_called) == 0, "subprocess.Popen 이 호출되었습니다"
     assert "권한 설정 예약: term_safe_worker_common" in out_stream.getvalue()
+
+
+def test_wait_for_preamble_reads_and_deletes_unique_file(tmp_path: Path, monkeypatch):
+    """기본 경로(.orca/preamble.txt) 대기 시 고유 preamble_*.txt 파일을 읽고 즉시 삭제해야 합니다."""
+    orca_dir = tmp_path / ".orca"
+    orca_dir.mkdir(parents=True, exist_ok=True)
+    target = orca_dir / "preamble_task123_ctx456_abc.txt"
+    target.write_text("고유 지시문 본문", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    res = wait_for_preamble(DEFAULT_PREAMBLE, timeout_sec=2.0, poll_sec=0.05)
+
+    assert res == "고유 지시문 본문"
+    assert not target.exists(), "소비 후 파일이 삭제되어야 합니다"
+
+
+def test_wait_for_preamble_rejects_multiple_candidates(tmp_path: Path, monkeypatch):
+    """둘 이상의 preamble_*.txt 후보가 있으면 어느 것도 소비하지 않고 ValueError 로 거부해야 합니다."""
+    orca_dir = tmp_path / ".orca"
+    orca_dir.mkdir(parents=True, exist_ok=True)
+    f1 = orca_dir / "preamble_task1.txt"
+    f2 = orca_dir / "preamble_task2.txt"
+    f1.write_text("지시 1", encoding="utf-8")
+    f2.write_text("지시 2", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError) as exc:
+        wait_for_preamble(DEFAULT_PREAMBLE, timeout_sec=1.0, poll_sec=0.05)
+
+    assert "다중 preamble 후보 발견" in str(exc.value)
+    assert f1.exists(), "거부 시 어느 파일도 삭제되어서는 안 됩니다"
+    assert f2.exists(), "거부 시 어느 파일도 삭제되어서는 안 됩니다"
+
+
+def test_wait_for_preamble_rejects_legacy_preamble_when_default_path(tmp_path: Path, monkeypatch):
+    """옛 형태의 고정 .orca/preamble.txt 만 남아있으면 격리 파손 위험으로 거부해야 합니다."""
+    orca_dir = tmp_path / ".orca"
+    orca_dir.mkdir(parents=True, exist_ok=True)
+    legacy = orca_dir / "preamble.txt"
+    legacy.write_text("옛 형태 지시문", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError) as exc:
+        wait_for_preamble(DEFAULT_PREAMBLE, timeout_sec=1.0, poll_sec=0.05)
+
+    assert "옛 형태의 고정 preamble 발견" in str(exc.value)
+    assert legacy.exists(), "거부 시 삭제하지 않아야 합니다"
+
+
+def test_wait_for_preamble_ignores_empty_file_until_timeout(tmp_path: Path):
+    """내용이 빈 파일은 아직 채워지지 않은 것으로 보고 타임아웃까지 대기해야 합니다."""
+    target = tmp_path / "preamble_empty.txt"
+    target.write_text("   \n\t", encoding="utf-8")
+
+    with pytest.raises(TimeoutError):
+        wait_for_preamble(target, timeout_sec=0.2, poll_sec=0.05)
+
+    assert target.exists(), "빈 파일은 소비(삭제)되지 않아야 합니다"
+
+
+def test_wait_for_preamble_explicit_unique_path_reads_and_deletes(tmp_path: Path):
+    """명시적 파일 경로가 preamble_*.txt 인 경우 정상 소비 후 삭제해야 합니다."""
+    target = tmp_path / "preamble_explicit_run.txt"
+    target.write_text("명시 경로 지시문", encoding="utf-8")
+
+    res = wait_for_preamble(target, timeout_sec=1.0, poll_sec=0.05)
+    assert res == "명시 경로 지시문"
+    assert not target.exists(), "preamble_*.txt 명시 경로는 소비 후 삭제되어야 합니다"
+
+
+def test_wait_for_preamble_explicit_path_rejects_when_multiple_candidates(tmp_path: Path):
+    """명시적 파일 경로의 부모 디렉터리에 둘 이상의 preamble_*.txt 가 있으면 거부해야 합니다."""
+    f1 = tmp_path / "preamble_exp1.txt"
+    f2 = tmp_path / "preamble_exp2.txt"
+    f1.write_text("내용 1", encoding="utf-8")
+    f2.write_text("내용 2", encoding="utf-8")
+
+    with pytest.raises(ValueError) as exc:
+        wait_for_preamble(f1, timeout_sec=1.0, poll_sec=0.05)
+
+    assert "다중 preamble 후보 발견" in str(exc.value)
+    assert f1.exists()
+    assert f2.exists()
+
+
+def test_wait_for_preamble_missing_file_times_out(tmp_path: Path):
+    """존재하지 않는 파일 경로는 지정된 타임아웃 후 TimeoutError 를 일으켜야 합니다."""
+    with pytest.raises(TimeoutError):
+        wait_for_preamble(tmp_path / "non_existent.txt", timeout_sec=0.2, poll_sec=0.05)

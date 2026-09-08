@@ -38,79 +38,10 @@ PERMISSION_SETUP_DELAY_SEC = common.PERMISSION_SETUP_DELAY_SEC
 PERMISSION_SETUP_FLAG = common.PERMISSION_SETUP_FLAG
 PERMISSION_SETUP_INTERVAL_SEC = common.PERMISSION_SETUP_INTERVAL_SEC
 
-DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
+DEFAULT_PREAMBLE = common.DEFAULT_PREAMBLE
 COMMIT_NOTICE = common.COMMIT_NOTICE
 REVIEWER_NOTICE = common.REVIEWER_NOTICE
-
-
-def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> str:
-    """고유한 파일명의 preamble 이 나타나 내용이 채워질 때까지 기다리고 소비(삭제)합니다.
-
-    1. 기본 경로(.orca/preamble.txt) 또는 디렉터리로 대기 중일 때:
-       - 워크트리 .orca 디렉터리 내에서 preamble_*.txt 고유 파일을 찾아 읽고 즉시 삭제합니다.
-       - 후보가 둘 이상이면 어느 것도 소비하지 않고 남아있는 파일 목록을 출력한 뒤 거부합니다.
-       - 고유 preamble 없이 옛 형태의 고정 .orca/preamble.txt 만 남아있으면 격리 파손 위험으로 거부합니다.
-    2. 명시적 파일 경로로 대기 중일 때:
-       - 해당 파일이 나타나 내용이 채워질 때까지 기다립니다.
-       - preamble_*.txt 파일인 경우 소비 후 즉시 삭제합니다.
-       - 동일 디렉터리에 preamble_*.txt 후보가 둘 이상이면 거부합니다.
-    """
-    deadline = time.monotonic() + timeout_sec
-    while time.monotonic() < deadline:
-        # 1. path 가 기본 경로이거나 디렉터리인 경우: .orca 내 고유 preamble 감지
-        if path == DEFAULT_PREAMBLE or path.is_dir() or not path.exists():
-            search_dir = path if path.is_dir() else path.parent
-            if search_dir.exists():
-                candidates = sorted(search_dir.glob("preamble_*.txt"))
-                if len(candidates) > 1:
-                    remaining = [c.name for c in candidates]
-                    sys.stderr.write(
-                        f"오류: 워크트리({search_dir})에 둘 이상의 preamble 후보가 발견되었습니다: {remaining}. "
-                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다.\n"
-                    )
-                    raise ValueError(
-                        f"다중 preamble 후보 발견 ({len(candidates)}개): {remaining}. "
-                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다."
-                    )
-                elif len(candidates) == 1:
-                    chosen = candidates[0]
-                    text = chosen.read_text(encoding="utf-8").strip()
-                    if text:
-                        chosen.unlink(missing_ok=True)
-                        print(f"preamble 소비 완료 ({chosen.name}): {len(text)}자", flush=True)
-                        return text
-                elif (search_dir / "preamble.txt").exists() and (
-                    path == DEFAULT_PREAMBLE or path.name == "preamble.txt"
-                ):
-                    sys.stderr.write(
-                        f"오류: 옛 형태의 고정 preamble({search_dir / 'preamble.txt'})이 발견되었습니다. "
-                        "이전 지시문 격리 파손 위험으로 기동을 거부합니다. 해당 파일을 삭제하고 고유 preamble 로 재기동하십시오.\n"
-                    )
-                    raise ValueError(f"옛 형태의 고정 preamble 발견: {search_dir / 'preamble.txt'}")
-
-        # 2. 명시된 path 가 직접 존재하는 경우
-        if path.is_file() and path.exists():
-            if path.name.startswith("preamble_"):
-                candidates = sorted(path.parent.glob("preamble_*.txt"))
-                if len(candidates) > 1:
-                    remaining = [c.name for c in candidates]
-                    sys.stderr.write(
-                        f"오류: 워크트리({path.parent})에 둘 이상의 preamble 후보가 발견되었습니다: {remaining}. "
-                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다.\n"
-                    )
-                    raise ValueError(
-                        f"다중 preamble 후보 발견 ({len(candidates)}개): {remaining}. "
-                        "시도 단위 격리가 성립하지 않으므로 어느 것도 소비하지 않고 기동을 거부합니다."
-                    )
-            text = path.read_text(encoding="utf-8").strip()
-            if text:
-                if path.name.startswith("preamble_"):
-                    path.unlink(missing_ok=True)
-                    print(f"preamble 소비 완료 ({path.name}): {len(text)}자", flush=True)
-                return text
-
-        time.sleep(poll_sec)
-    raise TimeoutError(f"preamble 파일을 {timeout_sec:.0f}초 안에 받지 못했습니다: {path}")
+wait_for_preamble = common.wait_for_preamble
 
 
 def build_command(model: str, prompt: str) -> list[str]:
