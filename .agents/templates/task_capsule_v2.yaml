@@ -66,7 +66,7 @@ verification_commands:
   - "python3 scripts/validate_agent_rules.py --quiet"
 
 artifact_paths:
-  - "docs/analysis/<task_name>.md"
+  - ".orca/capsules/<task_id>/worker_done.json"
 
 escalate_when:
   - "allowed_write_files 범위를 벗어난 파일 수정이 필요한 경우"

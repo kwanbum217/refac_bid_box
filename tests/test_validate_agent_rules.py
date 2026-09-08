@@ -26,6 +26,7 @@ from scripts.validate_agent_rules import (
     check_current_state_unknowns_contradictions,
     check_cursor_references_agents,
     check_hook_installation,
+    check_no_new_task_analysis_docs,
     check_opencode_json,
     check_orca_coordination_skill,
     check_skills_mirror,
@@ -41,7 +42,7 @@ from scripts.validate_agent_rules import (
 def test_real_repo_validation_passes():
     """실제 저장소의 v2 정합성 검증이 100% 통과하는지 확인."""
     checks = get_all_checks(PROJECT_ROOT)
-    assert len(checks) == 20
+    assert len(checks) == 21
     for chk in checks:
         assert chk.ok, f"Check failed: {chk.name} -> {chk.detail}"
     assert run_all_checks(PROJECT_ROOT, quiet=True) == 0
@@ -49,6 +50,7 @@ def test_real_repo_validation_passes():
     assert check_agents_model_table_absence(PROJECT_ROOT).ok
     assert check_current_state_unknowns_contradictions(PROJECT_ROOT).ok
     assert check_canonical_skill_pointer(PROJECT_ROOT).ok
+    assert check_no_new_task_analysis_docs(PROJECT_ROOT).ok
 
 
 def test_check_hook_installation_reads_config_and_checks_isolated_hooks(
@@ -1195,3 +1197,47 @@ class TestSourceCommitFreshnessScope:
     def test_tolerance_is_not_widened(self):
         """완화는 브랜치 범위로만 합니다. 허용 커밋 수를 늘리면 안 됩니다."""
         assert validate_agent_rules.CURRENT_STATE_LAG_TOLERANCE == 5
+
+
+def test_check_no_new_task_analysis_docs_rejects_added_task_doc(tmp_path: Path, monkeypatch):
+    """git diff 에서 docs/analysis/task_*.md 가 새로 추가된 경우 FAIL 이어야 합니다."""
+    monkeypatch.setattr(
+        validate_agent_rules,
+        "_get_added_files_from_git",
+        lambda root: {"docs/analysis/task_abc123.md", "src/ml/model.py"},
+    )
+    res = check_no_new_task_analysis_docs(tmp_path)
+    assert not res.ok
+    assert "새 Task 분석 문서 추가가 감지되어 거부되었습니다" in res.detail
+    assert "docs/analysis/task_abc123.md" in res.detail
+
+
+def test_check_no_new_task_analysis_docs_allows_other_files_and_modifications(
+    tmp_path: Path, monkeypatch
+):
+    """일반 문서나 소스 파일, 또는 태스크 분석 문서가 아닌 파일 추가는 통과해야 합니다."""
+    monkeypatch.setattr(
+        validate_agent_rules,
+        "_get_added_files_from_git",
+        lambda root: {"docs/ops/my_runbook.md", "docs/analysis/overview.md", "src/api/views.py"},
+    )
+    res = check_no_new_task_analysis_docs(tmp_path)
+    assert res.ok
+    assert "신규 Task 분석 문서 추가 없음" in res.detail
+
+
+def test_check_no_new_task_analysis_docs_is_diff_based_not_count_based(tmp_path: Path, monkeypatch):
+    """기존 파일이 디스크에 수백 개 존재해도 diff 상 추가가 없으면 통과합니다 (개수 세기가 아님)."""
+    # 디스크에 가짜 docs/analysis/task_*.md 파일들이 여럿 있어도 diff 가 비어있으면 통과
+    docs_dir = tmp_path / "docs" / "analysis"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(10):
+        (docs_dir / f"task_{i}.md").write_text("dummy", encoding="utf-8")
+
+    monkeypatch.setattr(
+        validate_agent_rules,
+        "_get_added_files_from_git",
+        lambda root: set(),
+    )
+    res = check_no_new_task_analysis_docs(tmp_path)
+    assert res.ok

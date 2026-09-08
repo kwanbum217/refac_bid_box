@@ -58,7 +58,7 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
-        files: '^(AGENTS\.md|CLAUDE\.md|SKILLS\.md|\.antigravity/rules\.md|\.cursor/rules/.*\.mdc|\.agents/skills/.*|\.claude/skills/.*|\.opencode/skills/.*)$'
+        files: '^(AGENTS\.md|CLAUDE\.md|SKILLS\.md|\.antigravity/rules\.md|\.cursor/rules/.*\.mdc|\.agents/skills/.*|\.claude/skills/.*|\.opencode/skills/.*|docs/analysis/.*)$'
 
   # ==========================================
   # 공통 기본 검사 훅

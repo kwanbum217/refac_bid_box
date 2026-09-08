@@ -1480,6 +1480,96 @@ def check_canonical_skill_pointer(root: Path = PROJECT_ROOT) -> CheckResult:
     )
 
 
+NEW_TASK_ANALYSIS_DOC_PATTERN = re.compile(r"^docs/analysis/task_.*\.md$")
+
+
+def _get_added_files_from_git(root: Path) -> set[str]:
+    """git diff 를 통해 신규 추가된(Added) 파일 목록을 수집합니다.
+
+    개수 세기가 아닌 diff 기반으로 신규 추가를 검사하기 위해:
+      1) staged (git diff --cached --name-only --diff-filter=A)
+      2) working tree (git diff --name-only --diff-filter=A)
+      3) branch commits (git diff --name-only --diff-filter=A base..HEAD)
+    세 영역의 신규 추가 파일 경로를 합산합니다.
+    """
+    added: set[str] = set()
+
+    # 1. Staged additions (pre-commit 핵심)
+    try:
+        out = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+            ["git", "-C", str(root), "diff", "--cached", "--name-only", "--diff-filter=A"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
+        )
+        if out.returncode == 0:
+            for line in out.stdout.splitlines():
+                item = line.strip()
+                if item:
+                    added.add(item.replace("\\", "/"))
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    # 2. Unstaged tracked additions
+    try:
+        out = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+            ["git", "-C", str(root), "diff", "--name-only", "--diff-filter=A"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
+        )
+        if out.returncode == 0:
+            for line in out.stdout.splitlines():
+                item = line.strip()
+                if item:
+                    added.add(item.replace("\\", "/"))
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    # 3. Branch commits against merge-base with main
+    base = _freshness_ref(root)
+    if base and base != "HEAD":
+        try:
+            out = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+                ["git", "-C", str(root), "diff", "--name-only", "--diff-filter=A", f"{base}..HEAD"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=GIT_PROBE_TIMEOUT_SECONDS,
+            )
+            if out.returncode == 0:
+                for line in out.stdout.splitlines():
+                    item = line.strip()
+                    if item:
+                        added.add(item.replace("\\", "/"))
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+    return added
+
+
+def check_no_new_task_analysis_docs(root: Path = PROJECT_ROOT) -> CheckResult:
+    """새 Task 분석 문서(docs/analysis/task_*.md)가 git diff 상에 추가되지 않았는지 검증합니다.
+
+    Task 결과의 정본은 worker_done.json 과 commit 이며 별도 Markdown 문서는 사본입니다.
+    신규 추가 차단은 파일 개수 세기가 아니라 git diff 기반으로 동작하여,
+    기존 문서 정리나 수정 작업과 충돌하지 않고 새로 추가되는 문서만 거부합니다.
+    """
+    name = "신규 Task 분석 문서 추가 차단 (git diff)"
+    added_files = _get_added_files_from_git(root)
+    violating = sorted(f for f in added_files if NEW_TASK_ANALYSIS_DOC_PATTERN.match(f))
+    if violating:
+        return CheckResult(
+            name,
+            False,
+            f"새 Task 분석 문서 추가가 감지되어 거부되었습니다 (git diff 기준): {', '.join(violating)}. "
+            "Task 결과 정본은 worker_done.json 과 commit 이며 새 docs/analysis/task_*.md 생성은 금지됩니다.",
+        )
+    return CheckResult(name, True, "신규 Task 분석 문서 추가 없음 (git diff 통과)")
+
+
 def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
     return [
         check_claude_is_pointer(root),
@@ -1492,6 +1582,7 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_v2_templates(root),
         check_orca_coordination_skill(root),
         check_canonical_skill_pointer(root),
+        check_no_new_task_analysis_docs(root),
         check_current_state_exists(root),
         check_current_state_sections(root),
         check_context_budgets(root),

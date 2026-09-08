@@ -1090,13 +1090,6 @@ def expand_intent_to_capsule(
     for path_item in write_files:
         validate_contained_path(path_item, field_name="scope")
 
-    # 템플릿이 artifact_paths 로 지시하는 분석 문서 경로를 쓰기 범위에 함께 넣습니다.
-    # 넣지 않으면 워커가 템플릿을 따라 만든 산출물이 Level 1 범위 게이트에서
-    # 초과로 거부됩니다 (반복 금지 4.7.2). 리뷰어는 문서를 쓰지 않으므로 제외합니다.
-    analysis_artifact = f"docs/analysis/{task_id}.md"
-    if not is_reviewer and analysis_artifact not in write_files:
-        write_files.append(analysis_artifact)
-
     # required_write_files: Intent scope 또는 required_write_files 에서 도출
     if is_reviewer:
         required_write_files: list[str] = []
@@ -1166,7 +1159,7 @@ def expand_intent_to_capsule(
         validate_contained_path(report_path, field_name="report_path")
         return_contract = "ORCA_WORKER_DONE_V2"
         mode = intent.get("mode", "worker")
-        artifact_paths_formatted = _format_yaml_list([f"docs/analysis/{task_id}.md"])
+        artifact_paths_formatted = _format_yaml_list([report_path])
 
     # 계약 이름만 적으면 스키마를 모르는 모델이 필드명을 제 마음대로 바꿉니다.
     # 2026-08-17 측정에서 Claude 계열 워커 2대가 checklist_results 대신 checklist 를

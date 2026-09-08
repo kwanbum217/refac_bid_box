@@ -2490,8 +2490,8 @@ scope:
     artifact_paths = parse_capsule_list(capsule_content, "artifact_paths")
 
     assert f".orca/capsules/{actual_orca_id}/capsule.yaml" in read_files
-    assert f"docs/analysis/{actual_orca_id}.md" in write_files
-    assert f"docs/analysis/{actual_orca_id}.md" in artifact_paths
+    assert f"docs/analysis/{actual_orca_id}.md" not in write_files
+    assert artifact_paths == [f".orca/capsules/{actual_orca_id}/worker_done.json"]
 
 
 def test_cmd_create_atomic_cleanup_on_task_create_exit_failure(
@@ -2644,19 +2644,46 @@ def test_cmd_dispatch_missing_reused_capsule_errors(
     assert code == 2
 
 
-def test_expand_includes_analysis_artifact_in_write_scope():
-    """템플릿이 지시하는 분석 문서 경로가 쓰기 범위에 있어야 합니다.
-
-    없으면 워커가 템플릿을 따라 만든 산출물이 Level 1 범위 게이트에서
-    초과로 거부됩니다 (반복 금지 4.7.2).
-    """
+def test_expand_builder_excludes_analysis_doc_from_write_files():
+    """빌더 Capsule 확장 결과의 allowed_write_files 에 docs/analysis/<task_id>.md 가 없어야 합니다."""
     from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
 
     capsule = expand_intent_to_capsule(parse_intent(SAMPLE_BUILDER_INTENT), task_id="task_abc")
     write_block = capsule.split("allowed_write_files:")[1].split("search_scope:")[0]
-    assert "docs/analysis/task_abc.md" in write_block
+    assert "docs/analysis/task_abc.md" not in write_block
+
+
+def test_expand_builder_artifact_paths_contains_only_worker_done():
+    """빌더 Capsule 의 artifact_paths 는 worker_done.json 하나만 있어야 합니다."""
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    capsule = expand_intent_to_capsule(parse_intent(SAMPLE_BUILDER_INTENT), task_id="task_abc")
     artifact_block = capsule.split("artifact_paths:")[1].split("escalate_when:")[0]
-    assert "docs/analysis/task_abc.md" in artifact_block
+    assert "docs/analysis/task_abc.md" not in artifact_block
+    assert ".orca/capsules/task_abc/worker_done.json" in artifact_block
+
+
+def test_expand_preserves_explicit_docs_path_in_intent():
+    """Intent 가 scope 에 명시한 docs/ 경로는 allowed_write_files 와 read_files 에 그대로 유지되어야 합니다."""
+    from scripts.orca_taskctl import expand_intent_to_capsule, parse_intent
+
+    custom_intent = """schema: ORCA_TASK_INTENT_V1
+role: builder
+task_id: task_doc_test
+objective: >
+  문서 갱신 작업.
+scope:
+  - "docs/ops/my_runbook.md"
+  - "src/ml/features.py"
+acceptance:
+  - "테스트 통과"
+"""
+    capsule = expand_intent_to_capsule(parse_intent(custom_intent), task_id="task_doc_test")
+    write_block = capsule.split("allowed_write_files:")[1].split("search_scope:")[0]
+    read_block = capsule.split("allowed_read_files:")[1].split("allowed_write_files:")[0]
+    assert "docs/ops/my_runbook.md" in write_block
+    assert "docs/ops/my_runbook.md" in read_block
+    assert "docs/analysis/task_doc_test.md" not in write_block
 
 
 def test_expand_reviewer_scope_excludes_analysis_artifact():
