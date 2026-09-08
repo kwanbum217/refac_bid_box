@@ -1,6 +1,7 @@
-"""
-src/app/services/kb_builder.py
-하이브리드 지식베이스 구축 (bidding_kb 컬렉션 청크 스트리밍 색인).
+"""src/app/services/kb_builder.py - 하이브리드 지식베이스 구축.
+
+최근 1년 공고에 낙찰 결과를 조인해 ChromaDB `bidding_kb` 컬렉션을 재구축하고
+knowledge_base_status 를 갱신합니다. 문서 본문 포맷, 메타데이터, 폴백 규칙을 보존합니다.
 """
 
 from __future__ import annotations
@@ -18,10 +19,7 @@ from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
 from src.app.core.timeutil import utcnow
-from src.app.models.bids import (
-    BidAnnouncement,
-    BidResult,
-)
+from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import KnowledgeBaseStatus
 from src.app.services.kb_document_builder import (
     _build_announcement_document,
@@ -46,34 +44,15 @@ class KbSyncStats(TypedDict):
 
 
 INDEX_BATCH_SIZE = 100
-# 50만 건 메타데이터를 한 응답으로 읽으면 Chroma 응답 객체가 워커 메모리를
-# 소진할 수 있습니다. 해시 비교용 조회도 페이지 단위로 제한합니다.
-INDEX_LOOKUP_BATCH_SIZE = 10_000
+INDEX_LOOKUP_BATCH_SIZE = 10_000  # 50만 건 메타데이터 페이지 단위 조회
 INDEX_LOOKUP_MAX_ATTEMPTS = 2
 INDEX_LOOKUP_RETRY_DELAY_SECONDS = 0.25
+DEFAULT_MAX_DOCUMENTS = 500_000  # KB 50만 건 확대 반영 운영 규모 기본값
+MAX_REMOVAL_RATIO = 0.5  # 한 번의 증분 색인이 지울 수 있는 상한 (데이터 무손실 G1)
+DOC_FORMAT_VERSION = 1  # 문서 본문 포맷 버전
+CHUNK_SIZE = 1_000  # 청크 스트리밍 단위 크기 (메모리 상주 방지)
 
-# 원본은 10 이었습니다. 그 값이 야간 재색인에 그대로 적용되면 목표 문서가 10건이
-# 되고, 기존 색인 전부가 삭제 대상으로 계산됩니다. 2026-08-07 에 KB 를 50만 건으로
-# 확대한 뒤로는 운영 규모와 맞는 값이어야 합니다.
-DEFAULT_MAX_DOCUMENTS = 500_000
-
-# 한 번의 증분 색인이 지울 수 있는 비율의 상한입니다. 이를 넘으면 색인을 중단하고
-# 실패로 보고합니다. 상한값 설정 실수나 DB 일시 장애로 KB 가 통째로 사라지는 경로를
-# 막습니다. 데이터 무손실(G1)은 벡터DB 에도 적용됩니다.
-MAX_REMOVAL_RATIO = 0.5
-
-# 문서 본문 포맷 버전.
-#
-# `_build_announcement_document` 나 `_build_result_document` 의 출력 형식을
-# 바꾸면 반드시 이 값을 올리십시오. 증분 색인은 본문 해시로 변경을 판정하므로,
-# 포맷을 바꾸고 버전을 그대로 두면 낡은 형식의 문서가 조용히 남습니다.
-DOC_FORMAT_VERSION = 1
-
-# 청크 스트리밍 단위 크기.
-# 문서 본문 전체를 메모리에 모으지 않고 이 크기만큼 읽어 _flush 에 넘긴 뒤 해제합니다.
-CHUNK_SIZE = 1_000
-
-__all__ = [
+__all__ = (
     "CHUNK_SIZE",
     "COLLECTION_NAME",
     "DEFAULT_MAX_DOCUMENTS",
@@ -85,7 +64,6 @@ __all__ = [
     "MAX_REMOVAL_RATIO",
     "_build_announcement_document",
     "_build_result_document",
-    "_diff_index",
     "_document_hash",
     "_flush",
     "_join_key",
@@ -94,15 +72,19 @@ __all__ = [
     "_read_existing_index_value",
     "_resolve_announcements",
     "_resolve_delta_announcements",
-    "_sync",
     "_upsert_kb_status",
     "get_kb_document_count",
     "rebuild_knowledge_base",
-]
+)
 
 
 def _document_hash(content: str) -> str:
-    """문서 본문의 해시. 증분 색인의 변경 판정 기준입니다."""
+    """문서 본문의 해시. 증분 색인의 변경 판정 기준입니다.
+
+    DB 시각을 쓰지 않는 이유가 있습니다. `collected_at` 은 `default=utcnow` 라
+    INSERT 시각이며, 재수집으로 값이 갱신돼도 시각이 그대로일 수 있습니다.
+    본문 해시는 어떤 경로로 값이 바뀌었든 잡아냅니다.
+    """
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
@@ -116,11 +98,7 @@ def _read_existing_index_value(operation: Callable[[], Any], operation_name: str
             last_error = exc
             if attempt < INDEX_LOOKUP_MAX_ATTEMPTS:
                 logger.warning(
-                    "%s 실패 (%d/%d), 재시도합니다: %s",
-                    operation_name,
-                    attempt,
-                    INDEX_LOOKUP_MAX_ATTEMPTS,
-                    exc,
+                    "%s 재시도(%d/%d): %s", operation_name, attempt, INDEX_LOOKUP_MAX_ATTEMPTS, exc
                 )
                 time.sleep(INDEX_LOOKUP_RETRY_DELAY_SECONDS)
 
@@ -131,7 +109,12 @@ def _read_existing_index_value(operation: Callable[[], Any], operation_name: str
 
 
 def _load_existing_index(collection) -> tuple[dict[str, str], bool]:
-    """컬렉션에 이미 있는 id -> 본문 해시 맵을 읽습니다."""
+    """컬렉션에 이미 있는 id -> 본문 해시 맵을 읽습니다.
+
+    두 번째 반환값은 증분을 적용할 수 있는지 여부입니다. 해시가 없거나 포맷
+    버전이 다른 문서가 하나라도 있으면 비교 기준이 서지 않으므로 전량
+    재구축으로 떨어집니다.
+    """
     stored_count = _read_existing_index_value(
         lambda: int(collection.count()), "기존 색인 문서 수 조회"
     )
@@ -147,9 +130,12 @@ def _load_existing_index(collection) -> tuple[dict[str, str], bool]:
                 include=["metadatas"], limit=INDEX_LOOKUP_BATCH_SIZE, offset=page_offset
             )
             ids, metadatas = stored.get("ids") or [], stored.get("metadatas") or []
-            if not ids or len(ids) != len(metadatas):
+            if not ids:
+                raise RuntimeError(f"offset {page_offset} 페이지가 비어 있습니다.")
+            if len(ids) != len(metadatas):
                 raise RuntimeError(
-                    f"offset {page_offset} 페이지 조회 오류 (ids={len(ids)}, metas={len(metadatas)})"
+                    f"offset {page_offset} 페이지의 ID {len(ids)}건과 "
+                    f"메타데이터 {len(metadatas)}건이 일치하지 않습니다."
                 )
             return ids, metadatas
 
@@ -173,22 +159,27 @@ def _load_existing_index(collection) -> tuple[dict[str, str], bool]:
 
 
 def _diff_index(
-    existing: dict[str, str],
-    ids: list[str],
-    metadatas: list[dict[str, Any]],
+    existing: dict[str, str], ids: list[str], metadatas: list[dict[str, Any]]
 ) -> tuple[list[int], list[str]]:
-    """재색인할 항목의 위치와 삭제할 id 를 계산합니다."""
+    """[Deprecated] 재색인할 항목의 위치와 삭제할 id 를 계산합니다.
+
+    _sync_stream 에서는 전량 target_ids 생성을 회피하므로 이 함수를 직접 호출하지 않습니다.
+    """
     changed_positions = [
-        pos for pos, doc_id in enumerate(ids) if existing.get(doc_id) != metadatas[pos]["doc_hash"]
+        position
+        for position, doc_id in enumerate(ids)
+        if existing.get(doc_id) != metadatas[position]["doc_hash"]
     ]
+    # 집합을 반드시 밖에서 한 번만 만듭니다. 컴프리헨션 안에 두면 기존 문서마다
+    # 재구축해 O(기존 x 대상) 이 되고, 10만 x 50만 규모에서는 끝나지 않습니다.
     target_ids = set(ids)
-    return changed_positions, [doc_id for doc_id in existing if doc_id not in target_ids]
+    removed_ids = [doc_id for doc_id in existing if doc_id not in target_ids]
+    return changed_positions, removed_ids
 
 
 def _upsert_kb_status(db: Session, **fields: Any) -> None:
-    status = db.execute(
-        select(KnowledgeBaseStatus).where(KnowledgeBaseStatus.kb_version == COLLECTION_NAME)
-    ).scalar_one_or_none()
+    query = select(KnowledgeBaseStatus).where(KnowledgeBaseStatus.kb_version == COLLECTION_NAME)
+    status = db.execute(query).scalar_one_or_none()
     if status is None:
         status = KnowledgeBaseStatus(kb_version=COLLECTION_NAME)
         db.add(status)
@@ -208,23 +199,37 @@ def _sync_stream(
     incremental: bool,
     delta_mode: bool,
     chunk_size: int,
+    prepare_chunk: Callable[[Sequence[Any]], None] | None = None,
 ) -> tuple[int, KbSyncStats]:
+    """컬렉션을 목표 상태에 맞춥니다.
+
+    반환하는 건수는 **컬렉션에 있어야 할 전체 문서 수**입니다. 이번에 임베딩한
+    수가 아닙니다. `knowledge_base_status.source_bid_count` 가 KB 규모를 뜻하는
+    값이라, 증분 실행에서 변경분만 기록하면 KB 가 줄어든 것처럼 보입니다.
+    """
     if not items:
-        if delta_mode:
-            return collection.count(), {
-                "mode": "delta",
-                "embedded": 0,
-                "unchanged": 0,
-                "removed": 0,
-            }
-        return 0, {"mode": "full", "embedded": 0, "unchanged": 0, "removed": 0}
+        mode = "delta" if delta_mode else "full"
+        empty_stats: KbSyncStats = {"mode": mode, "embedded": 0, "unchanged": 0, "removed": 0}
+        return (collection.count() if delta_mode else 0), empty_stats
 
     removed_ids: list[str] = []
-    if incremental:
-        target_ids = {make_id(i, it) for i, it in enumerate(items)}
-        removed_ids = [doc_id for doc_id in existing_hashes if doc_id not in target_ids]
-        del target_ids
-        removal_ratio = len(removed_ids) / len(existing_hashes) if existing_hashes else 0.0
+    if incremental and existing_hashes:
+        # target_ids 전량 집합({make_id(...) for it in items})을 생성하면
+        # 수십만 건의 문자열 객체가 existing_hashes 와 동시 상주하여 메모리가 폭증합니다.
+        # 기존 색인의 키 집합(기존 문자열 재사용)에서 목표 ID 를 청크 단위로 소거(discard)하여
+        # O(N) 추가 메모리 점유 없이 삭제 대상(removed_ids)을 계산합니다.
+        unseen_ids = set(existing_hashes.keys())
+        for start in range(0, len(items), chunk_size):
+            chunk = items[start : start + chunk_size]
+            for offset, item in enumerate(chunk):
+                unseen_ids.discard(make_id(start + offset, item))
+        removed_ids = list(unseen_ids)
+        del unseen_ids
+
+        # 임베딩을 시작하기 전에 막습니다. 이 비율을 넘는 삭제는 데이터가 실제로
+        # 사라진 것이 아니라 상한값이나 DB 조회가 잘못된 경우입니다. 그대로 두면
+        # 야간 재색인 한 번에 KB 가 통째로 비고, 챗봇은 근거 없이 답하게 됩니다.
+        removal_ratio = len(removed_ids) / len(existing_hashes)
         if removal_ratio > MAX_REMOVAL_RATIO:
             raise RuntimeError(
                 f"삭제 대상이 기존 색인의 {removal_ratio:.1%} 입니다"
@@ -237,11 +242,13 @@ def _sync_stream(
     unchanged_count = 0
     for start in range(0, len(items), chunk_size):
         chunk = items[start : start + chunk_size]
+        if prepare_chunk is not None:
+            prepare_chunk(chunk)
         docs: list[str] = []
         metas: list[dict[str, Any]] = []
         ids: list[str] = []
-        for i_offset, it in enumerate(chunk):
-            doc_id, content, meta = make_doc(start + i_offset, it)
+        for offset, item in enumerate(chunk):
+            doc_id, content, meta = make_doc(start + offset, item)
             if incremental and existing_hashes.get(doc_id) == meta.get("doc_hash"):
                 unchanged_count += 1
             else:
@@ -251,24 +258,18 @@ def _sync_stream(
         if docs:
             embedded_count += _flush(collection, docs, metas, ids)
 
+    # 삭제는 재색인 뒤에 합니다. 먼저 지우면 색인이 실패했을 때 문서만 사라집니다.
     if incremental and removed_ids:
         collection.delete(ids=removed_ids)
 
-    if delta_mode:
-        return collection.count(), {
-            "mode": "delta",
-            "embedded": embedded_count,
-            "unchanged": 0,
-            "removed": 0,
-        }
-    if incremental:
-        return len(items), {
-            "mode": "incremental",
-            "embedded": embedded_count,
-            "unchanged": unchanged_count,
-            "removed": len(removed_ids),
-        }
-    return len(items), {"mode": "full", "embedded": embedded_count, "unchanged": 0, "removed": 0}
+    mode = "delta" if delta_mode else ("incremental" if incremental else "full")
+    stats: KbSyncStats = {
+        "mode": mode,
+        "embedded": embedded_count,
+        "unchanged": unchanged_count if incremental and not delta_mode else 0,
+        "removed": len(removed_ids) if incremental and not delta_mode else 0,
+    }
+    return (collection.count() if delta_mode else len(items)), stats
 
 
 def rebuild_knowledge_base(
@@ -302,10 +303,8 @@ def rebuild_knowledge_base(
         if full:
             try:
                 chroma_client.delete_collection(COLLECTION_NAME)
-            # 없는 컬렉션 삭제는 정상 흐름이라 무시합니다
             except Exception:  # nosec B110
                 pass
-        # 질의 경로(vector_store)와 반드시 같은 임베딩 함수여야 합니다.
         collection = get_collection(chroma_client, COLLECTION_NAME, create=True)
 
         delta_mode = collected_since is not None and not full
@@ -315,86 +314,82 @@ def rebuild_knowledge_base(
 
         one_year_ago = utcnow() - timedelta(days=365)
         if delta_mode:
-            delta_since = collected_since
-            if delta_since is None:
+            if collected_since is None:
                 raise ValueError("delta_mode requires collected_since")
-            announcements, source_mode = _resolve_delta_announcements(db, delta_since)
+            announcements, source_mode = _resolve_delta_announcements(db, collected_since)
         else:
             announcements, source_mode = _resolve_announcements(db, one_year_ago)
 
-        results = (
-            db.execute(
-                select(BidResult).where(
-                    BidResult.bid_ntce_no.in_({a.bid_ntce_no for a in announcements})
-                    if delta_mode
-                    else BidResult.rl_openg_dt >= one_year_ago
-                )
-            )
-            .scalars()
-            .all()
-            if announcements
-            else []
-        )
-        results_map = {_join_key(row): row for row in results}
+        # 1년치 BidResult 전량을 한번에 메모리에 올려 results_map(O(N))을 구성하면
+        # 수십만 건 ORM 객체로 워커 메모리가 소진됩니다.
+        # 청크 단위로 필요한 BidResult 만 페이지 조회하여 메모리 상한을 유지합니다.
+        current_chunk_results_map: dict[str, Any] = {}
 
-        def make_ann_doc(_: int, ann: Any) -> tuple[str, str, dict[str, Any]]:
-            result = results_map.get(_join_key(ann))
-            content = _build_announcement_document(ann, result)
-            return (
-                f"bid_{ann.id}",
-                content,
-                {
-                    "type": "bid_info",
-                    "id": ann.id,
-                    "category": ann.category,
-                    "has_result": bool(result),
-                    "doc_hash": _document_hash(content),
-                    "fmt": DOC_FORMAT_VERSION,
-                },
-            )
+        def prepare_ann_chunk(chunk: Sequence[Any]) -> None:
+            nonlocal current_chunk_results_map
+            current_chunk_results_map.clear()
+            chunk_ntce_nos = {
+                announcement.bid_ntce_no
+                for announcement in chunk
+                if getattr(announcement, "bid_ntce_no", None)
+            }
+            if chunk_ntce_nos:
+                stmt = select(BidResult).where(BidResult.bid_ntce_no.in_(chunk_ntce_nos))
+                current_chunk_results_map = {
+                    _join_key(r): r for r in db.execute(stmt).scalars().all()
+                }
+
+        def make_ann_doc(_: int, announcement: Any) -> tuple[str, str, dict[str, Any]]:
+            result = current_chunk_results_map.get(_join_key(announcement))
+            content = _build_announcement_document(announcement, result)
+            meta = {
+                "type": "bid_info",
+                "id": announcement.id,
+                "category": announcement.category,
+                "has_result": bool(result),
+                "doc_hash": _document_hash(content),
+                "fmt": DOC_FORMAT_VERSION,
+            }
+            return f"bid_{announcement.id}", content, meta
 
         indexed_count, stats = _sync_stream(
             collection,
             announcements,
-            lambda _, a: f"bid_{a.id}",
+            lambda _, announcement: f"bid_{announcement.id}",
             make_ann_doc,
             existing_hashes,
             incremental=incremental,
             delta_mode=delta_mode,
             chunk_size=chunk_size,
+            prepare_chunk=prepare_ann_chunk,
         )
+        current_chunk_results_map.clear()
 
         if indexed_count == 0 and not delta_mode:
             source_mode = "results_only"
-            fallback_results = (
-                db.execute(
-                    select(BidResult)
-                    .where(BidResult.rl_openg_dt >= one_year_ago)
-                    .order_by(BidResult.rl_openg_dt.desc())
-                    .limit(limit)
-                )
-                .scalars()
-                .all()
+            stmt = (
+                select(BidResult)
+                .where(BidResult.rl_openg_dt >= one_year_ago)
+                .order_by(BidResult.rl_openg_dt.desc())
+                .limit(limit)
             )
+            fallback_results = db.execute(stmt).scalars().all()
 
-            def make_res_doc(idx: int, res: Any) -> tuple[str, str, dict[str, Any]]:
-                content = _build_result_document(res)
-                return (
-                    f"result_{res.bid_ntce_no}_{res.bid_ntce_ord}_{idx}",
-                    content,
-                    {
-                        "type": "bid_result",
-                        "category": res.category,
-                        "has_result": True,
-                        "doc_hash": _document_hash(content),
-                        "fmt": DOC_FORMAT_VERSION,
-                    },
-                )
+            def make_res_doc(index: int, result: Any) -> tuple[str, str, dict[str, Any]]:
+                content = _build_result_document(result)
+                meta = {
+                    "type": "bid_result",
+                    "category": result.category,
+                    "has_result": True,
+                    "doc_hash": _document_hash(content),
+                    "fmt": DOC_FORMAT_VERSION,
+                }
+                return f"result_{result.bid_ntce_no}_{result.bid_ntce_ord}_{index}", content, meta
 
             indexed_count, stats = _sync_stream(
                 collection,
                 fallback_results,
-                lambda idx, res: f"result_{res.bid_ntce_no}_{res.bid_ntce_ord}_{idx}",
+                lambda index, result: f"result_{result.bid_ntce_no}_{result.bid_ntce_ord}_{index}",
                 make_res_doc,
                 existing_hashes,
                 incremental=incremental,
@@ -411,8 +406,7 @@ def rebuild_knowledge_base(
         if stats["mode"] == "incremental":
             summary = (
                 f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"
-                f" (증분: 갱신 {stats['embedded']}건 / 유지 {stats['unchanged']}건"
-                f" / 삭제 {stats['removed']}건)"
+                f" (증분: 갱신 {stats['embedded']}건 / 유지 {stats['unchanged']}건 / 삭제 {stats['removed']}건)"
             )
         elif stats["mode"] == "delta":
             since_repr = collected_since.isoformat() if collected_since is not None else ""
@@ -427,30 +421,24 @@ def rebuild_knowledge_base(
             last_pipeline_run_id=pipeline_run_id,
             notes=f"{summary} (source={source_mode})",
         )
-        return {
-            "status": "success",
-            "summary": summary,
-            "metrics": {
-                "source_bid_count": indexed_count,
-                "collection_name": COLLECTION_NAME,
-                "source_mode": source_mode,
-                "max_documents": limit,
-                "last_pipeline_run_id": pipeline_run_id,
-                "last_embedding_at": embedded_at.isoformat(),
-                "index_mode": stats["mode"],
-                "embedded_count": stats["embedded"],
-                "unchanged_count": stats["unchanged"],
-                "removed_count": stats["removed"],
-            },
+        metrics = {
+            "source_bid_count": indexed_count,
+            "collection_name": COLLECTION_NAME,
+            "source_mode": source_mode,
+            "max_documents": limit,
+            "last_pipeline_run_id": pipeline_run_id,
+            "last_embedding_at": embedded_at.isoformat(),
+            "index_mode": stats["mode"],
+            "embedded_count": stats["embedded"],
+            "unchanged_count": stats["unchanged"],
+            "removed_count": stats["removed"],
         }
+        return {"status": "success", "summary": summary, "metrics": metrics}
     except Exception as exc:
         logger.exception("지식베이스 구축 실패")
         _upsert_kb_status(db, status="failed", last_pipeline_run_id=pipeline_run_id, notes=str(exc))
-        return {
-            "status": "failed",
-            "summary": str(exc),
-            "metrics": {"collection_name": COLLECTION_NAME, "max_documents": limit},
-        }
+        metrics = {"collection_name": COLLECTION_NAME, "max_documents": limit}
+        return {"status": "failed", "summary": str(exc), "metrics": metrics}
 
 
 def _flush(collection, documents: list[str], metadatas: list[dict], ids: list[str]) -> int:
@@ -459,12 +447,11 @@ def _flush(collection, documents: list[str], metadatas: list[dict], ids: list[st
     for start in range(0, len(documents), INDEX_BATCH_SIZE):
         end = start + INDEX_BATCH_SIZE
         chunk_ids = ids[start:end]
-        if not chunk_ids:
-            continue
-        collection.upsert(
-            documents=documents[start:end], metadatas=metadatas[start:end], ids=chunk_ids
-        )
-        indexed += len(chunk_ids)
+        if chunk_ids:
+            collection.upsert(
+                documents=documents[start:end], metadatas=metadatas[start:end], ids=chunk_ids
+            )
+            indexed += len(chunk_ids)
     return indexed
 
 
@@ -475,19 +462,21 @@ def _sync(
     ids: list[str],
     existing_hashes: dict[str, str],
     incremental: bool,
+    *,
+    chunk_size: int = CHUNK_SIZE,
 ) -> tuple[int, KbSyncStats]:
-    """컬렉션을 목표 상태에 맞춥니다."""
+    """[Deprecated] 하위 호환을 위해 유지되는 동기식 래퍼입니다."""
     if not documents:
         return 0, {"embedded": 0, "unchanged": 0, "removed": 0, "mode": "full"}
     return _sync_stream(
         collection,
         ids,
-        lambda idx, _: ids[idx],
-        lambda idx, _: (ids[idx], documents[idx], metadatas[idx]),
+        lambda index, _: ids[index],
+        lambda index, _: (ids[index], documents[index], metadatas[index]),
         existing_hashes,
         incremental=incremental,
         delta_mode=False,
-        chunk_size=len(ids) or 1,
+        chunk_size=chunk_size,
     )
 
 

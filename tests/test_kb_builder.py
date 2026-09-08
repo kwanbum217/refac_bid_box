@@ -350,17 +350,25 @@ def test_memory_bound_proportional_to_chunk_size() -> None:
 
     문서 수가 10배(200건 -> 2,000건) 증가하더라도
     1. collection.upsert 에 전달되는 문서 배치 크기는 chunk_size 를 초과하지 않으며
-    2. 청크 스트리밍으로 인해 문서 생성 중 피크 메모리가 문서 수에 선형 비례하여 폭증하지 않음을 검증합니다.
+    2. items 리스트 생성을 포함한 측정 구간에서 피크 메모리가 문서 수에 선형 비례하여 폭증하지 않음을 엄격히 검증합니다.
     """
     chunk_size = 50
 
-    # 1. 200건 실행
+    # 모듈 임포트 오버헤드를 배제하기 위한 사전 워밍업
+    ann_warm = [FakeBidAnnouncement(0)]
+    _coll_w, _c_w, _db_w, pw_c, pw_co, pw_a = _setup_mocks(ann_warm, initial_collection_docs={})
+    with pw_c, pw_co, pw_a:
+        rebuild_knowledge_base(_db_w, chunk_size=chunk_size, full=True)
+
+    # 1. 200건 실행 (items 생성을 tracemalloc 측정 구간에 포함)
+    tracemalloc.start()
     ann_200 = [FakeBidAnnouncement(i) for i in range(200)]
     fake_coll_200, _mock_client_200, mock_db_200, p_c1, p_co1, p_a1 = _setup_mocks(
         ann_200, initial_collection_docs={}
     )
-
-    tracemalloc.start()
+    fake_coll_200.upsert = lambda documents, metadatas, ids: (
+        fake_coll_200.upsert_batch_sizes.append(len(documents))
+    )
     with p_c1, p_co1, p_a1:
         res_200 = rebuild_knowledge_base(mock_db_200, chunk_size=chunk_size, full=True)
     _, peak_200 = tracemalloc.get_traced_memory()
@@ -368,17 +376,18 @@ def test_memory_bound_proportional_to_chunk_size() -> None:
 
     assert res_200["status"] == "success"
     assert res_200["metrics"]["embedded_count"] == 200
-    # 모든 upsert 배치가 chunk_size 이하인지 단언
     for batch_size in fake_coll_200.upsert_batch_sizes:
         assert batch_size <= chunk_size
 
-    # 2. 10배인 2,000건 실행
+    # 2. 10배인 2,000건 실행 (items 생성을 tracemalloc 측정 구간에 포함)
+    tracemalloc.start()
     ann_2000 = [FakeBidAnnouncement(i) for i in range(2000)]
     fake_coll_2000, _mock_client_2000, mock_db_2000, p_c2, p_co2, p_a2 = _setup_mocks(
         ann_2000, initial_collection_docs={}
     )
-
-    tracemalloc.start()
+    fake_coll_2000.upsert = lambda documents, metadatas, ids: (
+        fake_coll_2000.upsert_batch_sizes.append(len(documents))
+    )
     with p_c2, p_co2, p_a2:
         res_2000 = rebuild_knowledge_base(mock_db_2000, chunk_size=chunk_size, full=True)
     _, peak_2000 = tracemalloc.get_traced_memory()
@@ -386,18 +395,104 @@ def test_memory_bound_proportional_to_chunk_size() -> None:
 
     assert res_2000["status"] == "success"
     assert res_2000["metrics"]["embedded_count"] == 2000
-    # 모든 upsert 배치가 chunk_size 이하인지 단언
     for batch_size in fake_coll_2000.upsert_batch_sizes:
         assert batch_size <= chunk_size
 
-    # 3. 문서 수가 10배 늘어도 청크 스트리밍 덕분에 피크 메모리는 문서 수에 비례(10배)하여 증가하지 않고
-    #    청크 크기(50건) 수준의 상한 내로 제한됨을 단언합니다.
-    #    (전량 적재 시 10배에 가깝게 증가하지만, 스트리밍 시 배율이 매우 낮게 유지됨)
+    # 3. 문서 수가 10배 늘어도 items 생성을 포함한 피크 메모리가 5.0배 미만으로 엄격히 억제됨을 단언 (6.0배보다 엄격)
     growth_ratio = peak_2000 / max(peak_200, 1)
-    assert growth_ratio < 6.0, (
+    assert growth_ratio < 5.0, (
         f"피크 메모리가 문서 수 증가에 비례하여 증가했습니다 (비율: {growth_ratio:.2f}x). "
         "청크 단위 해제가 정상 작동하지 않고 있습니다."
     )
+
+
+def test_memory_bound_incremental_with_large_existing_hashes() -> None:
+    """운영 기본 경로 full=False, incremental=True 에서 수만 건 existing_hashes 가 상주하더라도
+    청크 스트리밍과 target_ids 전량 집합 생성 회피로 피크 메모리가 안정적으로 유지됨을 검증.
+    """
+    chunk_size = 500
+    # 수만 건(20,000건) 기존 색인 해시 주입
+    initial_docs = {f"bid_{i}": f"hash_{i:064x}" for i in range(20_000)}
+
+    # 사전 워밍업
+    ann_warm = [FakeBidAnnouncement(0)]
+    _cw, _, _dbw, pw_c, pw_co, pw_a = _setup_mocks(
+        ann_warm, initial_collection_docs={"bid_0": "hash_0"}
+    )
+    with pw_c, pw_co, pw_a:
+        rebuild_knowledge_base(_dbw, chunk_size=chunk_size, full=False)
+
+    # 19,000건 공고 (1,000건 삭제 -> removal_ratio = 5% <= 50%)
+    tracemalloc.start()
+    announcements = [FakeBidAnnouncement(i) for i in range(19_000)]
+    fake_coll, mock_client, mock_db, p_client, p_coll, p_ann = _setup_mocks(
+        announcements, initial_collection_docs=initial_docs
+    )
+    fake_coll.upsert = lambda documents, metadatas, ids: fake_coll.upsert_batch_sizes.append(
+        len(documents)
+    )
+    with p_client, p_coll, p_ann:
+        result = rebuild_knowledge_base(mock_db, chunk_size=chunk_size, full=False)
+    _, peak_memory = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert result["status"] == "success"
+    metrics = result["metrics"]
+    assert metrics["index_mode"] == "incremental"
+    assert metrics["source_bid_count"] == 19_000
+    assert metrics["removed_count"] == 1_000
+    # full=False 이므로 delete_collection 은 절대 호출되지 않아야 함
+    mock_client.delete_collection.assert_not_called()
+    for batch_size in fake_coll.upsert_batch_sizes:
+        assert batch_size <= chunk_size
+
+    # 수만 건 existing_hashes 와 items 적재를 포함해도 피크 메모리가 50MB 미만으로 제어됨을 단언
+    assert peak_memory < 50 * 1024 * 1024, (
+        f"피크 메모리가 너무 높습니다: {peak_memory / 1024 / 1024:.2f} MB"
+    )
+
+
+def test_full_path_consistency_and_fallback_values() -> None:
+    """비증분 full 경로에서 len(items)와 embedded 가 일치하고 source_bid_count 와 fallback 분기가 일관됨을 검증."""
+    # 1. 일반 full 경로: len(items) == embedded == source_bid_count
+    announcements = [FakeBidAnnouncement(i) for i in range(15)]
+    fake_coll, _mock_client, mock_db, p_client, p_coll, p_ann = _setup_mocks(
+        announcements, initial_collection_docs={}
+    )
+    with p_client, p_coll, p_ann:
+        result = rebuild_knowledge_base(mock_db, chunk_size=5, full=True)
+
+    assert result["status"] == "success"
+    assert result["metrics"]["index_mode"] == "full"
+    assert result["metrics"]["embedded_count"] == len(announcements)
+    assert result["metrics"]["source_bid_count"] == len(announcements)
+    assert result["metrics"]["unchanged_count"] == 0
+    assert result["metrics"]["removed_count"] == 0
+
+    # 2. 공고가 없을 때 fallback 경로: source_bid_count == fallback_results 길이와 일치
+    mock_chroma_client = MagicMock()
+    fallback_results = [FakeBidResult(i) for i in range(7)]
+    mock_scalars = MagicMock()
+    mock_scalars.all.return_value = fallback_results
+    mock_execute = MagicMock()
+    mock_execute.scalars.return_value = mock_scalars
+    mock_execute.scalar_one_or_none.return_value = None
+    mock_db.execute.return_value = mock_execute
+
+    with (
+        patch("chromadb.PersistentClient", return_value=mock_chroma_client),
+        patch("src.app.services.kb_builder.get_collection", return_value=fake_coll),
+        patch(
+            "src.app.services.kb_builder._resolve_announcements",
+            return_value=([], "no_announcements"),
+        ),
+    ):
+        fb_result = rebuild_knowledge_base(mock_db, chunk_size=3, full=True)
+
+    assert fb_result["status"] == "success"
+    assert fb_result["metrics"]["source_mode"] == "results_only"
+    assert fb_result["metrics"]["embedded_count"] == len(fallback_results)
+    assert fb_result["metrics"]["source_bid_count"] == len(fallback_results)
 
 
 def test_fallback_results_when_announcements_empty() -> None:
