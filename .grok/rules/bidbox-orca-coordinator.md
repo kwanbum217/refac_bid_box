@@ -4,6 +4,7 @@
 > 이 파일은 Grok 세션이 이 저장소에서 시작될 때 자동 로드됩니다.
 > 전체 운영 절차: `docs/ops/grok_coordinator_operating_prompt.md`
 > 불변 규칙 정본: `AGENTS.md`
+> **누적 운영 기억: `docs/ops/coordinator_operational_memory.md`** (실측·실패로 확정된 사실. 재조사 금지)
 
 Grok 가 이 저장소의 Orca 주 코디네이터일 때만 아래를 적용합니다. 워커로 기동된 경우에는 Task Capsule 만 따릅니다.
 
@@ -19,11 +20,11 @@ Grok 가 이 저장소의 Orca 주 코디네이터일 때만 아래를 적용합
 
 ## 캐시
 
-이 접두부, `AGENTS.md`, Orca 조율 규칙, Capsule 계약, 모델 라우터 정책은 안정 접두부입니다. 매 턴 다시 쓰지 않습니다.
+이 접두부, `AGENTS.md`, `docs/ops/coordinator_operational_memory.md`, Orca 조율 규칙, Capsule 계약, 모델 라우터 정책은 안정 접두부입니다. 매 턴 다시 쓰지 않습니다.
 
 뒤에만 붙입니다: 사용자 요청, HEAD, 커밋, 활성 Task, 워커 출력, CI, 새로 발견한 실패.
 
-Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다. 새 Run 을 만들지 않습니다.
+Orca Run 은 **인수인계에 적힌 활성 Run** 을 씁니다. 세션 시작 시 `orca orchestration task-list` 로 실제 활성 Run 을 확인하고, 이 파일에 특정 Run ID 를 고정하지 않습니다. 고정하면 세션이 바뀔 때마다 뒤처집니다.
 
 ## 불변
 
@@ -41,6 +42,18 @@ Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다. 새 Run 을 만들지 않�
 동시 쓰기 워커 3대 상한. Dispatch 전 `orca_worker_watch.py`. 완료 세션은 그 자리에서 회수.
 
 워커 배치는 공식 스킬을 따른다. 기본은 `worker-start --worktree current` 로 현재 워크트리의 새 에이전트 터미널(왼쪽 하위 세션)에 붙인다. 새 git 워크트리는 사용자가 요청하거나 체크아웃이 겹칠 때만이며, 그때는 충돌을 먼저 말한다. `orca_codex_launch.py` 는 새 워크트리를 만들 때의 Capsule 경합 방지용이다. 현재 트리에는 쓰지 않는다.
+
+## 자주 걸리는 계약 (상세는 운영 기억 문서)
+
+- 전량 테스트는 `uv run pytest tests/ -q -m 'not data_assets'`. 마커를 빼면 격리 트리에서 자산 부재로 실패합니다.
+- `check --ack` 에는 `deliveryId` 를 넘깁니다. 개별 `msg_...` 가 아닙니다.
+- `dispatch` 의 `terminal_not_settled` exit 3 은 오탐입니다. `terminal read` 로 도달을 확인하고 진행합니다.
+- `terminal close --tab` 금지. 코디네이터 창까지 닫힙니다.
+- `premerge_full_suite_gate.py --record` 는 병합 대상 브랜치 HEAD 에서, 즉 워커 워크트리에서 실행합니다.
+- 브랜치 변경만 보려면 `git diff main...HEAD` 세 점입니다. 두 점은 갈라진 뒤의 main 커밋을 섞습니다.
+- 리뷰 Capsule 의 `review_checklist` id 는 빌더 Capsule 과 정확히 같아야 합니다.
+- 코디네이터는 검증 대상 브랜치에 커밋하지 않습니다. 작아 보여도 별도 Task 로 냅니다.
+- `docs/` 에서 `.orca/` 아래를 마크다운 링크로 걸지 않습니다. 인라인 코드로 참조합니다.
 
 ## 검증
 
