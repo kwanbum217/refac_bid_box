@@ -21,6 +21,7 @@ from scripts.orca_taskctl import (
     DEFAULT_RUN_ID,
     DEFAULT_VERIFICATION_COMMANDS,
     FILE_EDIT_AUTO_APPROVE_SEQUENCE,
+    LAUNCHER_ROUTING_BY_PROVIDER,
     MAX_CONCURRENT_WRITE_WORKERS,
     MYPY_VERIFICATION_COMMAND,
     RULES_VERIFICATION_COMMAND,
@@ -48,6 +49,7 @@ from scripts.orca_taskctl import (
     release_worker,
     remove_worker_meta,
     resolve_dispatch_model,
+    resolve_launcher_and_cli,
     resolve_run_id,
     start_worker_watch,
     stop_worker_watch,
@@ -8162,3 +8164,303 @@ def test_release_worker_cli_subcommands_and_json(
     assert code_missing == 2
     err = capsys.readouterr().err
     assert "오류: --dispatch (Dispatch ID)는 필수입니다" in err
+
+
+def test_resolve_launcher_and_cli_six_representative_models():
+    """여섯 CLI 각각의 대표 모델 ID 로 올바른 런처 경로와 cli_type 이 나온다."""
+    # 1. Antigravity (Gemini)
+    agy_launcher, agy_cli = resolve_launcher_and_cli(model="gemini-3.8-flash-medium")
+    assert agy_launcher == "scripts/orca_agy_launch.py"
+    assert agy_cli == "antigravity"
+
+    # 2. Qwen Code
+    qwen_launcher, qwen_cli = resolve_launcher_and_cli(model="qwen3.7-plus")
+    assert qwen_launcher == "scripts/orca_qwen_launch.py"
+    assert qwen_cli == "qwen"
+
+    # 3. Kimi
+    kimi_launcher, kimi_cli = resolve_launcher_and_cli(model="or-free/nemotron-ultra")
+    assert kimi_launcher == "scripts/orca_kimi_launch.py"
+    assert kimi_cli == "kimi"
+
+    # 4. Claude Code
+    claude_launcher, claude_cli = resolve_launcher_and_cli(model="claude-sonnet-5")
+    assert claude_launcher == "scripts/orca_claude_launch.py"
+    assert claude_cli == "claude"
+
+    # 5. OpenCode
+    opencode_launcher, opencode_cli = resolve_launcher_and_cli(
+        model="opencode/deepseek-v4-flash-free"
+    )
+    assert opencode_launcher == "scripts/orca_opencode_launch.py"
+    assert opencode_cli == "opencode"
+
+    # 6. Grok
+    grok_launcher, grok_cli = resolve_launcher_and_cli(model="grok-4.6")
+    assert grok_launcher == "scripts/orca_grok_launch.py"
+    assert grok_cli == "grok"
+
+
+def test_resolve_launcher_explicit_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """--launcher 를 명시하면 그 값이 자동 판정을 덮어쓴다."""
+    # 1. 함수 수준 검증: gemini 모델에 qwen 런처 명시 시 덮어쓰기
+    launcher, cli = resolve_launcher_and_cli(
+        model="gemini-3.8-flash-medium",
+        explicit_launcher="scripts/orca_qwen_launch.py",
+    )
+    assert launcher == "scripts/orca_qwen_launch.py"
+    assert cli == "qwen"
+
+    # 2. 임의 경로 런처 명시
+    custom_launcher, custom_cli = resolve_launcher_and_cli(
+        model="gemini-3.8-flash-medium",
+        explicit_launcher="scripts/custom_launcher.py",
+        explicit_agent="custom_cli",
+    )
+    assert custom_launcher == "scripts/custom_launcher.py"
+    assert custom_cli == "custom_cli"
+
+    # 3. dispatch 실행 수준 검증: 실제 orca 명령 없이 mock 대역으로 덮어쓰기 동작 확인
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent_override.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_override"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "dispatch_worker",
+        lambda **kw: (
+            0,
+            json.dumps({"ok": True, "result": {"preamble": "TEST"}}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
+    )
+    monkeypatch.setattr(orca_taskctl, "start_auto_approve", lambda t: (True, "감시기 완료"))
+    monkeypatch.setattr(orca_taskctl, "verify_launcher_pickup", lambda t, **kw: (True, "런처 확인"))
+    monkeypatch.setattr(
+        orca_taskctl, "wait_for_launcher_readiness", lambda *a, **kw: (True, "waiting", 0.0)
+    )
+
+    saved_meta = {}
+    monkeypatch.setattr(
+        orca_taskctl, "write_worker_meta", lambda term, meta: saved_meta.update(meta)
+    )
+    monkeypatch.setattr(orca_taskctl, "read_worker_meta", lambda term: saved_meta)
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_override_01",
+            "--model",
+            "gemini-3.8-flash-medium",
+            "--launcher",
+            "scripts/orca_claude_launch.py",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+    assert code == 0
+    assert saved_meta.get("launcher") == "scripts/orca_claude_launch.py"
+    assert saved_meta.get("cli_type") == "claude"
+
+
+def test_resolve_launcher_unroutable_model_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """판정 불가 모델은 종료 코드 2 로 거부되고 기본값으로 떨어지지 않는다."""
+    # 1. 함수 수준 검증: 미지원 모델에 대해 ValueError 발생 (기본값으로 안 떨어짐)
+    with pytest.raises(ValueError, match="런처 스크립트를 자동 결정할 수 없습니다"):
+        resolve_launcher_and_cli(model="unknown-provider-model-xyz")
+
+    with pytest.raises(ValueError, match="런처 스크립트를 자동 결정할 수 없습니다"):
+        resolve_launcher_and_cli(model="gpt-5.6-terra")
+
+    # 2. dispatch 실행 수준 검증: 종료 코드 2 로 즉시 거부되고 fail-closed
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent_unroutable.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_unroutable"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "resolve_dispatch_model",
+        lambda **kw: {
+            "model": "unsupported-model-999",
+            "source": "test",
+            "reason": "test",
+            "role": "builder",
+            "risk": "medium",
+            "warning": None,
+        },
+    )
+    dispatch_called = False
+
+    def fail_if_dispatched(**kwargs):
+        nonlocal dispatch_called
+        dispatch_called = True
+        return (0, "{}", "", [])
+
+    monkeypatch.setattr(orca_taskctl, "dispatch_worker", fail_if_dispatched)
+
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_unroutable_01",
+            "--model",
+            "unsupported-model-999",
+            "--launcher",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+    # 반드시 종료 코드 2 로 거부되어야 함
+    assert code == 2
+    # 디스패치 또는 런처 기동으로 넘어가지 않음
+    assert not dispatch_called
+    captured = capsys.readouterr()
+    assert "launcher_routing_failed" in captured.out or "런처 자동 판정 실패" in captured.err
+
+
+def test_resolve_launcher_no_codex_in_mapping():
+    """codex 런처가 매핑에 없다."""
+    assert "codex" not in LAUNCHER_ROUTING_BY_PROVIDER
+    for provider, (launcher_path, cli_type) in LAUNCHER_ROUTING_BY_PROVIDER.items():
+        assert "codex" not in provider.lower()
+        assert "codex" not in launcher_path.lower()
+        assert cli_type != "codex"
+
+
+def test_cmd_dispatch_launcher_auto_routing_without_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """--launcher 를 값 없이 줬을 때 모델에 맞는 런처를 자동 선택한다."""
+    from scripts import orca_taskctl
+
+    intent_file = tmp_path / "intent_auto.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+    worktree_dir = tmp_path / "worktree_auto"
+    worktree_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        orca_taskctl,
+        "check_write_concurrency",
+        lambda *a, **k: {
+            "allowed": True,
+            "active_write_count": 0,
+            "limit": 3,
+            "occupying": [],
+            "probe_error": None,
+            "reason": "정상",
+        },
+    )
+    monkeypatch.setattr(
+        orca_taskctl,
+        "dispatch_worker",
+        lambda **kw: (
+            0,
+            json.dumps({"ok": True, "result": {"preamble": "TEST"}}),
+            "",
+            ["orca", "orchestration", "dispatch"],
+        ),
+    )
+    monkeypatch.setattr(orca_taskctl, "start_auto_approve", lambda t: (True, "감시기 완료"))
+    monkeypatch.setattr(orca_taskctl, "verify_launcher_pickup", lambda t, **kw: (True, "런처 확인"))
+    monkeypatch.setattr(
+        orca_taskctl, "wait_for_launcher_readiness", lambda *a, **kw: (True, "waiting", 0.0)
+    )
+
+    saved_meta = {}
+    monkeypatch.setattr(
+        orca_taskctl, "write_worker_meta", lambda term, meta: saved_meta.update(meta)
+    )
+    monkeypatch.setattr(orca_taskctl, "read_worker_meta", lambda term: saved_meta)
+
+    # qwen 모델 지정 + 값 없는 --launcher 플래그
+    code = orca_taskctl.main(
+        [
+            "dispatch",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(tmp_path / "capsules"),
+            "--terminal",
+            "term_qwen_01",
+            "--model",
+            "qwen3.7-plus",
+            "--launcher",
+            "--worktree",
+            str(worktree_dir),
+            "--repo",
+            str(tmp_path / "main_repo"),
+            "--json",
+        ]
+    )
+    assert code == 0
+    assert saved_meta.get("launcher") == "scripts/orca_qwen_launch.py"
+    assert saved_meta.get("cli_type") == "qwen"
+
+
+def test_resolve_launcher_explicit_unknown_without_agent_fails_closed():
+    """알 수 없는 런처 경로와 알 수 없는 모델과 explicit_agent 부재 시 ValueError fail-closed 및 explicit_agent 지정 시 통과."""
+    # 1. 알 수 없는 런처 + 알 수 없는 모델 + explicit_agent 없음 -> ValueError fail-closed
+    with pytest.raises(ValueError, match="--agent 로 cli_type 을 명시하십시오"):
+        resolve_launcher_and_cli(
+            model="unknown-model-xyz",
+            explicit_launcher="scripts/custom_launcher.py",
+        )
+
+    # 2. explicit_agent 를 명시하면 정상 통과
+    launcher, cli = resolve_launcher_and_cli(
+        model="unknown-model-xyz",
+        explicit_launcher="scripts/custom_launcher.py",
+        explicit_agent="custom_cli",
+    )
+    assert launcher == "scripts/custom_launcher.py"
+    assert cli == "custom_cli"
