@@ -55,7 +55,7 @@ def _guard_kimi_permission_setup(monkeypatch):
 
 
 def test_wait_returns_content_once_written(tmp_path: Path):
-    target = tmp_path / "preamble.txt"
+    target = tmp_path / "preamble_kwait.txt"
 
     def writer():
         time.sleep(0.2)
@@ -63,6 +63,45 @@ def test_wait_returns_content_once_written(tmp_path: Path):
 
     threading.Thread(target=writer, daemon=True).start()
     assert wait_for_preamble(target, timeout_sec=5.0, poll_sec=0.05) == "지시문 본문"
+    assert not target.exists(), "고유 preamble_*.txt 파일은 소비 후 즉시 삭제되어야 합니다"
+
+
+def test_wait_for_preamble_rejects_multiple_candidates_in_kimi(tmp_path: Path):
+    f1 = tmp_path / "preamble_k1.txt"
+    f2 = tmp_path / "preamble_k2.txt"
+    f1.write_text("지시 1", encoding="utf-8")
+    f2.write_text("지시 2", encoding="utf-8")
+
+    with pytest.raises(ValueError) as exc:
+        wait_for_preamble(f1, timeout_sec=1.0, poll_sec=0.05)
+    assert "다중 preamble 후보 발견" in str(exc.value)
+
+
+@patch("scripts.orca_kimi_launch.run_kimi", return_value=0)
+@patch("scripts.orca_kimi_launch.open_interactive_shell")
+def test_kimi_main_consumes_and_deletes_unique_preamble(
+    mock_shell: MagicMock,
+    mock_run: MagicMock,
+    tmp_path: Path,
+):
+    """Kimi main 실행 시 고유 preamble_*.txt 파일을 읽고 소비 후 삭제해야 합니다."""
+    target = tmp_path / "preamble_run_unique.txt"
+    target.write_text("키미 고유 지시문", encoding="utf-8")
+
+    code = main(
+        [
+            "--model",
+            "or-free/nemotron-ultra",
+            "--preamble",
+            str(target),
+            "--no-commit-notice",
+            "--no-keep-open",
+        ]
+    )
+    assert code == 0
+    assert not target.exists(), "런처 기동 후 preamble 파일이 삭제되어야 합니다"
+    prompt = mock_run.call_args[0][0][-1]
+    assert prompt == "키미 고유 지시문"
 
 
 def test_empty_file_is_not_accepted(tmp_path: Path):

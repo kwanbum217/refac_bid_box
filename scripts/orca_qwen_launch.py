@@ -23,7 +23,6 @@ import argparse
 import os
 import subprocess  # nosec B404 - 코디네이터가 만든 고정 인자 목록으로만 qwen 을 호출합니다
 import sys
-import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +37,7 @@ PERMISSION_SETUP_FLAG = common.PERMISSION_SETUP_FLAG
 run_permission_setup_child = common.run_permission_setup_child
 schedule_permission_setup = common.schedule_permission_setup
 
-DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
+DEFAULT_PREAMBLE = common.DEFAULT_PREAMBLE
 DEFAULT_SHELL = "/bin/bash"
 COMMIT_NOTICE = common.COMMIT_NOTICE
 REVIEWER_NOTICE = common.REVIEWER_NOTICE
@@ -71,20 +70,7 @@ def resolve_model(model: str) -> str:
     )
 
 
-def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> str:
-    """preamble 파일이 나타나 내용이 채워질 때까지 기다립니다.
-
-    코디네이터가 Dispatch 결과를 파일로 쓰기 전까지는 비어 있습니다. 크기가 0 인
-    상태로 읽고 넘어가면 워커가 빈 지시로 기동하므로 내용이 있을 때만 돌려줍니다.
-    """
-    deadline = time.monotonic() + timeout_sec
-    while time.monotonic() < deadline:
-        if path.exists():
-            text = path.read_text(encoding="utf-8").strip()
-            if text:
-                return text
-        time.sleep(poll_sec)
-    raise TimeoutError(f"preamble 파일을 {timeout_sec:.0f}초 안에 받지 못했습니다: {path}")
+wait_for_preamble = common.wait_for_preamble
 
 
 def build_command(model_id: str, prompt: str, one_shot: bool) -> list[str]:
@@ -169,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
         prompt = wait_for_preamble(args.preamble, args.timeout_sec)
-    except TimeoutError as err:
+    except (TimeoutError, ValueError) as err:
         sys.stderr.write(f"오류: {err}\n")
         return 2
 
