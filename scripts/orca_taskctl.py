@@ -3925,6 +3925,73 @@ def verify_launcher_pickup(
     )
 
 
+LAUNCHER_ROUTING_BY_PROVIDER: dict[str, tuple[str, str]] = {
+    "gemini": ("scripts/orca_agy_launch.py", "antigravity"),
+    "qwen": ("scripts/orca_qwen_launch.py", "qwen"),
+    "kimi": ("scripts/orca_kimi_launch.py", "kimi"),
+    "kimi-openrouter": ("scripts/orca_kimi_launch.py", "kimi"),
+    "claude": ("scripts/orca_claude_launch.py", "claude"),
+    "opencode": ("scripts/orca_opencode_launch.py", "opencode"),
+    "grok": ("scripts/orca_grok_launch.py", "grok"),
+}
+
+LAUNCHER_PATH_TO_CLI: dict[str, str] = dict(LAUNCHER_ROUTING_BY_PROVIDER.values())
+
+
+def resolve_launcher_and_cli(
+    model: str | None = None,
+    explicit_launcher: str | None = None,
+    explicit_agent: str | None = None,
+) -> tuple[str, str]:
+    """모델 또는 명시 인자로부터 런처 스크립트 경로와 cli_type 을 함께 판정합니다.
+
+    1. 사람이 --launcher 를 직접 주면 그 값이 언제나 최우선이며 자동 판정을 건너뜁니다.
+       이때 cli_type 은 explicit_agent, 런처 경로 역매핑, 모델 제공자 판정 순으로 채웁니다.
+    2. --launcher 가 지정되지 않았거나 빈 문자열인 경우 모델 기반 자동 판정을 수행합니다:
+       - provider_for_model(model, strict=False) 로 제공자를 확인합니다.
+       - LAUNCHER_ROUTING_BY_PROVIDER 매핑에서 (launcher_path, cli_type) 을 함께 가져옵니다.
+       - 판정에 실패하거나(UNKNOWN_PROVIDER) 매핑에 없는 경우(예: codex, 미지원 모델)
+         조용히 기본값으로 떨어지지 않고 ValueError 를 발생시킵니다.
+    """
+    clean_launcher = (
+        explicit_launcher.strip()
+        if isinstance(explicit_launcher, str) and explicit_launcher.strip()
+        else None
+    )
+
+    if clean_launcher:
+        cli = (
+            explicit_agent.strip()
+            if isinstance(explicit_agent, str) and explicit_agent.strip()
+            else LAUNCHER_PATH_TO_CLI.get(clean_launcher)
+        )
+        if not cli and model and isinstance(model, str) and model.strip():
+            prov = provider_for_model(model.strip(), strict=False)
+            if prov in LAUNCHER_ROUTING_BY_PROVIDER:
+                cli = LAUNCHER_ROUTING_BY_PROVIDER[prov][1]
+        return clean_launcher, (cli or "antigravity")
+
+    if not model or not isinstance(model, str) or not model.strip():
+        raise ValueError(
+            "런처 자동 판정을 위한 모델 ID가 지정되지 않았습니다. --launcher 로 런처 경로를 명시하십시오."
+        )
+
+    provider = provider_for_model(model.strip(), strict=False)
+    if provider == UNKNOWN_PROVIDER or provider not in LAUNCHER_ROUTING_BY_PROVIDER:
+        raise ValueError(
+            f"모델 '{model}' (제공자: {provider})에 맞는 런처 스크립트를 자동 결정할 수 없습니다. "
+            f"--launcher 로 런처 스크립트 경로를 명시하십시오."
+        )
+
+    launcher_path, cli_type = LAUNCHER_ROUTING_BY_PROVIDER[provider]
+    detected_cli = (
+        explicit_agent.strip()
+        if isinstance(explicit_agent, str) and explicit_agent.strip()
+        else cli_type
+    )
+    return launcher_path, detected_cli
+
+
 def resolve_dispatch_model(
     args_model: str | None,
     capsule_text: str,
@@ -4756,7 +4823,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     pre_dispatch_warnings: list[str] = []
     dispatch_started_at = time.time()
     fallback_info: dict[str, Any] = {"fallback_used": False}
-    launcher_mode = bool(getattr(args, "launcher", None))
+    launcher_mode = getattr(args, "launcher", None) is not None
     worktree_path: Path | None = None
     preamble_file: Path | None = None
     launcher_pickup_detail: str | None = None
@@ -4880,6 +4947,31 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
 
     if args.terminal and launcher_mode:
         # 런처 경로: --return-preamble 로 지시문을 받아 <워크트리>/.orca/preamble.txt 에 쓴 뒤 기동 확인
+        try:
+            launcher_val, detected_cli = resolve_launcher_and_cli(
+                model=model,
+                explicit_launcher=args.launcher,
+                explicit_agent=args.agent,
+            )
+        except ValueError as exc:
+            err_msg = f"런처 자동 판정 실패: {exc}"
+            sys.stderr.write(f"오류: {err_msg}\n")
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "error": "launcher_routing_failed",
+                            "task_id": task_id,
+                            "model": model,
+                            "reason": str(exc),
+                            "exit_code": 2,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                )
+            return 2
+
         if worktree_path is None:
             err_msg = (
                 f"런처 기동 실패: 워커 터미널 {args.terminal} 의 워크트리 경로를 확인할 수 없습니다. "
@@ -4968,7 +5060,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                         f"({waited_seconds:.1f}초 대기). 터미널이 비정상 종료되었거나 접근할 수 없습니다. "
                         "해결책: 터미널을 생성할 때 --command 로 런처를 지정해야 합니다. "
                         "예시: orca terminal create --worktree path:<워크트리> "
-                        "--command 'uv run python scripts/orca_agy_launch.py --model gemini-3.8-flash-medium'"
+                        f"--command 'uv run python {launcher_val} --model {model}'"
                     )
                 else:
                     err_msg = (
@@ -4976,7 +5068,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                         f"({waited_seconds:.1f}초 대기). 대상 터미널이 런처를 실행 중인 상태가 아닙니다. "
                         "해결책: 터미널을 생성할 때 --command 로 런처를 지정해야 합니다. "
                         "예시: orca terminal create --worktree path:<워크트리> "
-                        "--command 'uv run python scripts/orca_agy_launch.py --model gemini-3.8-flash-medium'"
+                        f"--command 'uv run python {launcher_val} --model {model}'"
                     )
                 sys.stderr.write(f"오류: {err_msg}\n")
                 if args.json:
@@ -4998,14 +5090,6 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                     )
                 return 2
 
-        # 런처 경로는 Antigravity 전용입니다. worker-start 가 받는 claude/codex/cursor 는
-        # 이 분기로 오지 않으므로 --agent 가 없으면 antigravity 로 확정합니다.
-        detected_cli = args.agent or "antigravity"
-        launcher_val = (
-            args.launcher
-            if isinstance(args.launcher, str) and args.launcher
-            else "scripts/orca_agy_launch.py"
-        )
         meta = read_worker_meta(args.terminal) or {}
         meta["cli_type"] = detected_cli
         meta["model"] = model
@@ -5746,9 +5830,9 @@ def _build_parser() -> argparse.ArgumentParser:
     dsp.add_argument(
         "--launcher",
         nargs="?",
-        const="scripts/orca_agy_launch.py",
+        const="",
         default=None,
-        help="런처 경로 사용 (지정 시 --return-preamble 로 받은 지시문을 <워크트리>/.orca/preamble.txt 에 기록하고 런처 기동을 확인합니다)",
+        help="런처 경로 사용 (지정 시 --return-preamble 로 받은 지시문을 <워크트리>/.orca/preamble.txt 에 기록하고 런처 기동을 확인합니다. 생략 시 모델에 맞는 런처를 자동 선택합니다)",
     )
     dsp.add_argument(
         "--allow-unverified-delivery",
