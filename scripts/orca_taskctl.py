@@ -27,6 +27,7 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
@@ -3045,6 +3046,178 @@ def finalize_task(
 
 
 # ---------------------------------------------------------------------------
+# Worker Release (워커 회수 및 감시기 정리)
+# ---------------------------------------------------------------------------
+
+
+def release_worker(
+    dispatch_id: str,
+    terminal: str | None = None,
+    capsule_path: Path | None = None,
+    task_id: str | None = None,
+    capsule_dir: Path | str | None = None,
+    command_runner: Callable[..., tuple[int, str, str]] | None = None,
+) -> dict[str, Any]:
+    """워커를 회수하고 대상 터미널의 자동 승인 감시기를 함께 중지합니다.
+
+    절차:
+    1. orca orchestration worker-release --dispatch <dispatch_id> 실행
+    2. worker-release 성공/실패 여부와 무관하게 대상 터미널의 stop_auto_approve 실행
+    3. 터미널 핸들 해석 순서: 명시 인자 -> Capsule -> worker-show
+    4. 핸들을 끝내 찾지 못하면 감시기 정리를 건너뛰고 비정상 종료 코드 반환
+    5. retained 시 안내 문구 포함 (창은 자동으로 닫지 않으며 --tab 사용 금지)
+    """
+    runner = command_runner if command_runner is not None else _run_command
+
+    # 1. worker-release 실행
+    cmd_rel = ["orca", "orchestration", "worker-release", "--dispatch", dispatch_id]
+    code_rel, stdout_rel, stderr_rel = runner(cmd_rel)
+
+    # retained 감지 (문자열 또는 JSON 파싱)
+    is_retained = False
+    stdout_lower = (stdout_rel or "").lower()
+    if "retained" in stdout_lower or "no_owned_resource" in stdout_lower:
+        is_retained = True
+    else:
+        with suppress(Exception):
+            rel_json = json.loads(stdout_rel)
+            if isinstance(rel_json, dict):
+                res_obj = rel_json.get("result", rel_json)
+                if isinstance(res_obj, dict) and (
+                    res_obj.get("terminalState") == "retained"
+                    or res_obj.get("retained") is True
+                    or res_obj.get("status") == "retained"
+                ):
+                    is_retained = True
+
+    # 2. 대상 터미널 핸들 해석 (우선순위: 명시 인자 -> Capsule -> worker-show)
+    target_terminal: str | None = terminal.strip() if terminal and terminal.strip() else None
+    terminal_source: str | None = "explicit" if target_terminal else None
+
+    # (2) Capsule 에서 탐색
+    if not target_terminal:
+        resolved_capsule_path: Path | None = None
+        if capsule_path:
+            cpath = Path(capsule_path)
+            if cpath.is_file():
+                resolved_capsule_path = cpath
+            elif (cpath / "capsule.yaml").is_file():
+                resolved_capsule_path = cpath / "capsule.yaml"
+        if not resolved_capsule_path and task_id:
+            cdir = Path(capsule_dir or ".orca/capsules")
+            for cand in (cdir / task_id / "capsule.yaml", cdir / f"{task_id}.yaml"):
+                if cand.is_file():
+                    resolved_capsule_path = cand
+                    break
+        if not resolved_capsule_path:
+            cdir = Path(capsule_dir or ".orca/capsules")
+            cand_direct = cdir / dispatch_id / "capsule.yaml"
+            if cand_direct.is_file():
+                resolved_capsule_path = cand_direct
+            elif cdir.is_dir():
+                for cand in cdir.glob("*/capsule.yaml"):
+                    with suppress(Exception):
+                        data = load_capsule(cand)
+                        t_id = (
+                            data.get("task_id")
+                            if isinstance(data, dict)
+                            else parse_capsule_scalar(str(data), "task_id")
+                        )
+                        d_id = (
+                            data.get("dispatch_id")
+                            if isinstance(data, dict)
+                            else parse_capsule_scalar(str(data), "dispatch_id")
+                        )
+                        if t_id == dispatch_id or d_id == dispatch_id:
+                            resolved_capsule_path = cand
+                            break
+
+        if resolved_capsule_path and resolved_capsule_path.is_file():
+            with suppress(Exception):
+                cap_data = load_capsule(resolved_capsule_path)
+                cand_term = None
+                if isinstance(cap_data, dict):
+                    cand_term = cap_data.get("terminal") or cap_data.get("terminal_handle")
+                elif isinstance(cap_data, str):
+                    cand_term = parse_capsule_scalar(cap_data, "terminal") or parse_capsule_scalar(
+                        cap_data, "terminal_handle"
+                    )
+                if cand_term and str(cand_term).strip():
+                    target_terminal = str(cand_term).strip()
+                    terminal_source = "capsule"
+
+    # (3) worker-show 에서 탐색
+    if not target_terminal:
+        cmd_show = ["orca", "orchestration", "worker-show", "--dispatch", dispatch_id, "--json"]
+        code_show, stdout_show, _ = runner(cmd_show)
+        if code_show == 0 and stdout_show:
+            with suppress(Exception):
+                show_data = json.loads(stdout_show)
+                if isinstance(show_data, dict):
+                    res = show_data.get("result", show_data)
+                    worker_obj = (
+                        res.get("worker")
+                        if isinstance(res, dict) and isinstance(res.get("worker"), dict)
+                        else None
+                    )
+                    if not worker_obj and isinstance(show_data.get("worker"), dict):
+                        worker_obj = show_data["worker"]
+                    if isinstance(worker_obj, dict):
+                        cand_handle = worker_obj.get("agent_terminal_handle")
+                        if cand_handle and str(cand_handle).strip():
+                            target_terminal = str(cand_handle).strip()
+                            terminal_source = "worker-show"
+
+    # retained 안내 문구 작성 (창 단위 수동 종료 권고, --tab 사용 금지)
+    retained_notice: str | None = None
+    if is_retained:
+        handle_placeholder = target_terminal or "<handle>"
+        retained_notice = (
+            f"터미널이 유지(retained)되었습니다. 재사용된 터미널이므로 창이 자동으로 닫히지 않습니다. "
+            f"창을 종료하려면 다음 명령을 사용하십시오: orca terminal close --terminal {handle_placeholder} (--tab 사용 금지)"
+        )
+
+    # 3. 자동 승인 감시기 중지 (worker-release 성공/실패 여부와 무관하게 핸들이 있으면 반드시 실행)
+    watcher_stopped = False
+    watcher_skipped = False
+    watcher_message = ""
+
+    if target_terminal:
+        success, msg = stop_auto_approve(target_terminal)
+        remove_worker_meta(target_terminal)
+        watcher_stopped = success
+        watcher_message = msg
+    else:
+        watcher_stopped = False
+        watcher_skipped = True
+        watcher_message = "터미널 핸들을 찾을 수 없어 감시기 정리를 건너뛰었습니다."
+
+    # 4. 종료 코드 결정 (핸들 미확인 시 비정상 종료 코드 필수, release 실패 시에도 비정상 종료)
+    if target_terminal is None:
+        exit_code = 1
+    elif code_rel != 0:
+        exit_code = code_rel if code_rel > 0 else 1
+    else:
+        exit_code = 0
+
+    return {
+        "dispatch_id": dispatch_id,
+        "terminal": target_terminal,
+        "terminal_source": terminal_source,
+        "release_exit_code": code_rel,
+        "release_stdout": stdout_rel,
+        "release_stderr": stderr_rel,
+        "release_succeeded": code_rel == 0,
+        "retained": is_retained,
+        "retained_notice": retained_notice,
+        "watcher_stopped": watcher_stopped,
+        "watcher_skipped": watcher_skipped,
+        "watcher_message": watcher_message,
+        "exit_code": exit_code,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI 명령어 핸들러
 # ---------------------------------------------------------------------------
 
@@ -5407,6 +5580,47 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     return int(result["exit_code"])
 
 
+def cmd_release_worker(args: argparse.Namespace) -> int:
+    dispatch_id = getattr(args, "dispatch_id", None) or getattr(args, "dispatch_pos", None)
+    if not dispatch_id:
+        sys.stderr.write("오류: --dispatch (Dispatch ID)는 필수입니다.\n")
+        return 2
+
+    capsule_path = Path(args.capsule) if getattr(args, "capsule", None) else None
+    result = release_worker(
+        dispatch_id=dispatch_id,
+        terminal=getattr(args, "terminal", None),
+        capsule_path=capsule_path,
+        task_id=getattr(args, "task_id", None),
+        capsule_dir=getattr(args, "capsule_dir", None),
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"워커 회수 결과: Dispatch {dispatch_id}")
+        rel_status = (
+            "성공"
+            if result["release_succeeded"]
+            else f"실패 (종료 코드 {result['release_exit_code']})"
+        )
+        print(f"- worker-release: {rel_status}")
+        if result["retained"]:
+            print("- 터미널 상태: retained (유지됨)")
+            if result.get("retained_notice"):
+                print(f"  안내: {result['retained_notice']}")
+        if result["terminal"]:
+            print(f"- 대상 터미널: {result['terminal']} (출처: {result['terminal_source']})")
+        else:
+            print("- 대상 터미널: 미확인 (핸들 부재)")
+        if result["watcher_stopped"]:
+            print(f"- 감시기 중지: 완료 ({result['watcher_message']})")
+        else:
+            print(f"- 감시기 중지: 건너뜀 ({result['watcher_message']})")
+
+    return int(result["exit_code"])
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     cmd = ["orca", "orchestration", "task-list", "--run", args.run_id]
     if args.json:
@@ -5632,6 +5846,27 @@ def _build_parser() -> argparse.ArgumentParser:
     fin.add_argument("--terminal", help="워커 터미널 핸들 (지정 시 종료 시 자동 승인 감시기 중지)")
     fin.add_argument("--json", action="store_true", help="JSON 출력")
 
+    # release-worker (aliases: worker-release, release)
+    rel = sub.add_parser(
+        "release-worker",
+        aliases=["worker-release", "release"],
+        help="워커를 회수하고 대상 터미널의 자동 승인 감시기를 함께 중지합니다.",
+    )
+    rel.add_argument("--dispatch", "--dispatch-id", dest="dispatch_id", help="회수할 Dispatch ID")
+    rel.add_argument(
+        "dispatch_pos",
+        nargs="?",
+        default=None,
+        help="회수할 Dispatch ID (위치 인자)",
+    )
+    rel.add_argument(
+        "--terminal", help="워커 터미널 핸들 (미지정 시 Capsule/worker-show 자동 해석)"
+    )
+    rel.add_argument("--capsule", help="Task Capsule YAML 경로")
+    rel.add_argument("--task-id", help="Task ID (Capsule 자동 탐색용)")
+    rel.add_argument("--capsule-dir", default=".orca/capsules", help="Capsule 저장 디렉터리")
+    rel.add_argument("--json", action="store_true", help="JSON 출력")
+
     # status
     sts = sub.add_parser("status", help="Task / Run 상태를 조회합니다.")
     sts.add_argument("--run-id", default=DEFAULT_RUN_ID, help="Run ID")
@@ -5657,6 +5892,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_dispatch(args)
     if args.command == "finalize":
         return cmd_finalize(args)
+    if args.command in ("release-worker", "worker-release", "release"):
+        return cmd_release_worker(args)
     if args.command == "status":
         return cmd_status(args)
     return 1
