@@ -45,6 +45,7 @@ from scripts.orca_taskctl import (
     parse_intent,
     prepare_worker_terminal,
     read_worker_meta,
+    release_worker,
     remove_worker_meta,
     resolve_dispatch_model,
     resolve_run_id,
@@ -7858,3 +7859,306 @@ def test_dispatch_launcher_preamble_role_marker_regression(
 
     legacy_unconfirmed = "You are working inside Orca.\n=== TASK ===\n일반 작업 지시문"
     assert detect_role(legacy_unconfirmed) == "builder"
+
+
+# ---------------------------------------------------------------------------
+# release_worker (워커 회수 및 자동 승인 감시기 정리) 테스트
+# ---------------------------------------------------------------------------
+
+
+def test_release_worker_success_explicit_terminal(monkeypatch: pytest.MonkeyPatch):
+    """명시 인자로 터미널이 주어지고 worker-release 가 성공하면 감시기가 정상 중지되고 종료 코드는 0이다."""
+    called_commands: list[list[str]] = []
+    stopped_terminals: list[str] = []
+
+    def mock_runner(cmd: list[str], cwd: Any = None, timeout: int = 30) -> tuple[int, str, str]:
+        called_commands.append(cmd)
+        if cmd[:4] == ["orca", "orchestration", "worker-release", "--dispatch"]:
+            return 0, "Worker released successfully", ""
+        return 0, "", ""
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.stop_auto_approve",
+        lambda term: (stopped_terminals.append(term) or True, f"중지 완료 ({term})"),
+    )
+
+    result = release_worker(
+        dispatch_id="ctx_release_01",
+        terminal="term_explicit_01",
+        command_runner=mock_runner,
+    )
+
+    assert called_commands == [
+        ["orca", "orchestration", "worker-release", "--dispatch", "ctx_release_01"]
+    ]
+    assert stopped_terminals == ["term_explicit_01"]
+    assert result["release_succeeded"] is True
+    assert result["terminal"] == "term_explicit_01"
+    assert result["terminal_source"] == "explicit"
+    assert result["watcher_stopped"] is True
+    assert result["watcher_skipped"] is False
+    assert result["retained"] is False
+    assert result["exit_code"] == 0
+
+
+def test_release_worker_unconditional_watcher_stop_on_release_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """(체크리스트 1: watcher_stop_unconditional) worker-release 가 실패해도 대상 터미널의 stop_auto_approve 는 반드시 호출된다."""
+    stopped_terminals: list[str] = []
+
+    def mock_runner_fail(
+        cmd: list[str], cwd: Any = None, timeout: int = 30
+    ) -> tuple[int, str, str]:
+        if cmd[:4] == ["orca", "orchestration", "worker-release", "--dispatch"]:
+            return 1, "", "오류: Dispatch 세션을 찾을 수 없습니다"
+        return 0, "", ""
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.stop_auto_approve",
+        lambda term: (stopped_terminals.append(term) or True, f"중지 완료 ({term})"),
+    )
+
+    result = release_worker(
+        dispatch_id="ctx_release_fail",
+        terminal="term_must_stop",
+        command_runner=mock_runner_fail,
+    )
+
+    # worker-release 실패와 무관하게 stop_auto_approve 가 실행되어야 함
+    assert stopped_terminals == ["term_must_stop"]
+    assert result["release_succeeded"] is False
+    assert result["release_exit_code"] == 1
+    assert result["watcher_stopped"] is True
+    assert result["exit_code"] != 0
+    assert result["exit_code"] == 1
+
+
+def test_release_worker_handle_resolution_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """(체크리스트 2: handle_resolution_order) 터미널 핸들 해석이 명시 인자 -> Capsule -> worker-show 순서를 엄격히 따른다."""
+    # Capsule 파일 준비
+    capsule_file = tmp_path / "capsule.yaml"
+    capsule_file.write_text(
+        "schema: ORCA_TASK_CAPSULE_V2\nrole: builder\nterminal: term_from_capsule\n",
+        encoding="utf-8",
+    )
+
+    # 1. 명시 인자가 있으면 Capsule 과 worker-show 보다 우선
+    show_called_1: list[list[str]] = []
+
+    def mock_runner_1(cmd: list[str], cwd: Any = None, timeout: int = 30) -> tuple[int, str, str]:
+        if cmd[:4] == ["orca", "orchestration", "worker-release", "--dispatch"]:
+            return 0, "ok", ""
+        if cmd[:4] == ["orca", "orchestration", "worker-show", "--dispatch"]:
+            show_called_1.append(cmd)
+            return (
+                0,
+                json.dumps({"result": {"worker": {"agent_terminal_handle": "term_from_show"}}}),
+                "",
+            )
+        return 0, "", ""
+
+    res_explicit = release_worker(
+        dispatch_id="ctx_test_order",
+        terminal="term_from_explicit",
+        capsule_path=capsule_file,
+        command_runner=mock_runner_1,
+    )
+    assert res_explicit["terminal"] == "term_from_explicit"
+    assert res_explicit["terminal_source"] == "explicit"
+    assert len(show_called_1) == 0  # worker-show 호출되지 않아야 함
+
+    # 2. 명시 인자가 없고 Capsule 이 있으면 worker-show 보다 우선
+    show_called_2: list[list[str]] = []
+
+    def mock_runner_2(cmd: list[str], cwd: Any = None, timeout: int = 30) -> tuple[int, str, str]:
+        if cmd[:4] == ["orca", "orchestration", "worker-release", "--dispatch"]:
+            return 0, "ok", ""
+        if cmd[:4] == ["orca", "orchestration", "worker-show", "--dispatch"]:
+            show_called_2.append(cmd)
+            return (
+                0,
+                json.dumps({"result": {"worker": {"agent_terminal_handle": "term_from_show"}}}),
+                "",
+            )
+        return 0, "", ""
+
+    res_capsule = release_worker(
+        dispatch_id="ctx_test_order",
+        terminal=None,
+        capsule_path=capsule_file,
+        command_runner=mock_runner_2,
+    )
+    assert res_capsule["terminal"] == "term_from_capsule"
+    assert res_capsule["terminal_source"] == "capsule"
+    assert len(show_called_2) == 0  # worker-show 호출되지 않아야 함
+
+    # 3. 명시 인자도 없고 Capsule 에도 없으면 worker-show 조회
+    show_called_3: list[list[str]] = []
+
+    def mock_runner_3(cmd: list[str], cwd: Any = None, timeout: int = 30) -> tuple[int, str, str]:
+        if cmd[:4] == ["orca", "orchestration", "worker-release", "--dispatch"]:
+            return 0, "ok", ""
+        if cmd[:4] == ["orca", "orchestration", "worker-show", "--dispatch"]:
+            show_called_3.append(cmd)
+            return (
+                0,
+                json.dumps({"result": {"worker": {"agent_terminal_handle": "term_from_show"}}}),
+                "",
+            )
+        return 0, "", ""
+
+    res_show = release_worker(
+        dispatch_id="ctx_test_order",
+        terminal=None,
+        capsule_path=None,
+        command_runner=mock_runner_3,
+    )
+    assert res_show["terminal"] == "term_from_show"
+    assert res_show["terminal_source"] == "worker-show"
+    assert len(show_called_3) == 1
+    assert show_called_3[0] == [
+        "orca",
+        "orchestration",
+        "worker-show",
+        "--dispatch",
+        "ctx_test_order",
+        "--json",
+    ]
+
+
+def test_release_worker_missing_handle_fails_closed(monkeypatch: pytest.MonkeyPatch):
+    """(체크리스트 3: silent_success_on_missing_handle) 핸들을 끝내 찾지 못하면 성공으로 처리하지 않고 감시기 건너뜀 명시 및 비정상 종료 코드를 반환한다."""
+    stopped_terminals: list[str] = []
+
+    def mock_runner_no_handle(
+        cmd: list[str], cwd: Any = None, timeout: int = 30
+    ) -> tuple[int, str, str]:
+        if cmd[:4] == ["orca", "orchestration", "worker-release", "--dispatch"]:
+            return 0, "Worker released", ""
+        if cmd[:4] == ["orca", "orchestration", "worker-show", "--dispatch"]:
+            return 0, json.dumps({"result": {"worker": {}}}), ""
+        return 0, "", ""
+
+    monkeypatch.setattr(
+        "scripts.orca_taskctl.stop_auto_approve",
+        lambda term: (stopped_terminals.append(term) or True, f"중지 완료 ({term})"),
+    )
+
+    result = release_worker(
+        dispatch_id="ctx_no_handle",
+        terminal=None,
+        capsule_path=None,
+        command_runner=mock_runner_no_handle,
+    )
+
+    assert result["terminal"] is None
+    assert result["terminal_source"] is None
+    assert result["watcher_stopped"] is False
+    assert result["watcher_skipped"] is True
+    assert "터미널 핸들을 찾을 수 없어" in result["watcher_message"]
+    assert len(stopped_terminals) == 0
+    # 핸들이 없어 감시기를 정리하지 못했으므로 종료 코드는 반드시 0이 아니어야 함
+    assert result["exit_code"] != 0
+    assert result["exit_code"] == 1
+
+
+def test_release_worker_retained_notification_no_window_close(monkeypatch: pytest.MonkeyPatch):
+    """(체크리스트 4: closes_window_automatically) retained 시 창을 자동으로 닫거나 --tab 을 쓰지 않고 안내 문구만 포함한다."""
+    called_commands: list[list[str]] = []
+
+    def mock_runner_retained(
+        cmd: list[str], cwd: Any = None, timeout: int = 30
+    ) -> tuple[int, str, str]:
+        called_commands.append(cmd)
+        if cmd[:4] == ["orca", "orchestration", "worker-release", "--dispatch"]:
+            # JSON 형태로 terminalState: retained 반환
+            return (
+                0,
+                json.dumps({"result": {"status": "retained", "terminalState": "retained"}}),
+                "",
+            )
+        return 0, "", ""
+
+    result = release_worker(
+        dispatch_id="ctx_retained_01",
+        terminal="term_retained_01",
+        command_runner=mock_runner_retained,
+    )
+
+    assert result["retained"] is True
+    assert result["retained_notice"] is not None
+    assert "orca terminal close --terminal term_retained_01" in result["retained_notice"]
+    assert "--tab 사용 금지" in result["retained_notice"]
+
+    # 창을 자동으로 닫지 않아야 하고 terminal close 나 --tab 명령이 실행되지 않았는지 검증
+    for cmd in called_commands:
+        assert "close" not in cmd
+        assert "--tab" not in cmd
+
+
+def test_release_worker_cli_subcommands_and_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """CLI 서브커맨드 release-worker, worker-release, positional dispatch 및 --json 출력을 검증한다."""
+
+    def mock_run_cmd(cmd: list[str], cwd: Any = None, timeout: int = 30) -> tuple[int, str, str]:
+        if cmd[:4] == ["orca", "orchestration", "worker-release", "--dispatch"]:
+            return 0, "Worker released", ""
+        return 0, "", ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run_cmd)
+
+    # 1. release-worker --dispatch <id> --terminal <term> --json
+    code_json = main(
+        [
+            "release-worker",
+            "--dispatch",
+            "ctx_json_01",
+            "--terminal",
+            "term_json_01",
+            "--json",
+        ]
+    )
+    assert code_json == 0
+    captured_json = capsys.readouterr().out
+    data = json.loads(captured_json)
+    assert data["dispatch_id"] == "ctx_json_01"
+    assert data["terminal"] == "term_json_01"
+    assert data["release_succeeded"] is True
+    assert data["watcher_stopped"] is True
+
+    # 2. worker-release alias
+    code_alias = main(
+        [
+            "worker-release",
+            "--dispatch",
+            "ctx_alias_01",
+            "--terminal",
+            "term_alias_01",
+        ]
+    )
+    assert code_alias == 0
+    captured_text = capsys.readouterr().out
+    assert "워커 회수 결과: Dispatch ctx_alias_01" in captured_text
+    assert "- worker-release: 성공" in captured_text
+    assert "- 대상 터미널: term_alias_01" in captured_text
+
+    # 3. 위치 인자 dispatch 지원
+    code_pos = main(
+        [
+            "release-worker",
+            "ctx_pos_01",
+            "--terminal",
+            "term_pos_01",
+        ]
+    )
+    assert code_pos == 0
+    captured_pos = capsys.readouterr().out
+    assert "워커 회수 결과: Dispatch ctx_pos_01" in captured_pos
+
+    # 4. dispatch 미지정 시 실패 (종료 코드 2)
+    code_missing = main(["release-worker"])
+    assert code_missing == 2
+    err = capsys.readouterr().err
+    assert "오류: --dispatch (Dispatch ID)는 필수입니다" in err
