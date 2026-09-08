@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-09-07
-> **source_commit**: `6d6cf5b`
+> **updated_at**: 2026-09-08
+> **source_commit**: `45348fe`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -104,6 +104,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
 - **SSR E2E Phase 2~4 (2026-09-03, 대기)**: 사용자 합의 후 DB 격리와 시나리오를 착수합니다.
 - **RPO/RTO 복구 목표 (2026-09-06, 확정)**: RPO 24시간·RTO 4시간을 확정했습니다. 분기 1회 restore drill 실시가 남았습니다.
+- **워커 런처 계열 (2026-09-08, 해소)**: 런처 테스트의 실제 프로세스 부작용, 자동 승인 감시기 자기 종료, preamble 인계 규약 공용화, claude/opencode/grok 런처 신설, dispatch 런처 자동 선택을 Wave AM/AN 8건으로 닫았습니다. 사용 CLI 7종 중 6종이 `dispatch --launcher` 정규 경로에 있습니다(codex 는 구조가 달라 대상 아님).
+- **자동 승인 화이트리스트 (2026-09-08, 판단 대기)**: `pgrep`, 환경변수 접두 명령, `git add`/`git commit`, `orca orchestration send`, CLI `--help` 가 화이트리스트 밖이라 워커마다 사람 승인이 필요합니다. 열지 여부는 사용자 결정 사항입니다.
 - **관측성 2단계 Prometheus (2026-09-06, 미착수)**: 1단계 Collector·Tempo·Grafana 배선은 `docker-compose.prod.yml` 에 들어갔고, 2단계는 메트릭 계측이 선행 조건입니다.
 - **RAG cold SQL (2026-09-07, 정본 확보·1차 원인 미규명)**: 버퍼풀을 실제로 비운 뒤(121,120 -> 1,192 페이지) 타임아웃 300초로 측정해 96요청 전량 성공으로 canonical 게이트를 통과했습니다(`rag_segments_coldpool_20260907.json`, sql 구간 콜드 P50 11.9ms·max 69.3ms). 콜드 버퍼풀 실행이 가장 빨라 1차의 10만 ms 대 값은 버퍼풀로 설명되지 않으며 원인은 미규명입니다. 재현 가능한 두 조건에서 근거가 없으므로 타임아웃 기본값 120초는 유지합니다.
 - **lexical 전량 재측정 (2026-09-03, 진행)**: 부분집합 효과를 전량 fixture로 확인합니다.
@@ -121,6 +123,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - 기계 원장: [docs/context/current_state_facts.yaml](current_state_facts.yaml)
 - 상세 로그·과거 경위: [current_state_history.md](current_state_history.md)
 - 컷오버·레이턴시 규약: [latency_gate_protocol.md](../ops/latency_gate_protocol.md), [phase7_cutover_declaration_20260901.md](../ops/phase7_cutover_declaration_20260901.md)
-- 현재 잔여 과업: [handoff_20260907_wave_ak_session_close.md](../ops/handoff_20260907_wave_ak_session_close.md) (0장이 다음 세션 최우선 작업입니다)
+- 현재 잔여 과업: [handoff_20260908_wave_am_an_session_close.md](../ops/handoff_20260908_wave_am_an_session_close.md) (10장이 남은 항목입니다)
 - 공고 금액 이상치·오버플로우: [announcement_amount_outliers_20260904.md](../ops/announcement_amount_outliers_20260904.md)
 - 데이터·특징 불변성: [db_migration_runbook.md](../migration/db_migration_runbook.md), [features.py](../../src/ml/features.py)
