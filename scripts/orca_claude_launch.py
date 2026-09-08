@@ -40,17 +40,17 @@ def build_command(
     prompt: str,
     *,
     one_shot: bool = False,
-    dangerously_skip_permissions: bool = False,
+    permission_mode: str | None = None,
 ) -> list[str]:
     """claude 기동 명령 배열을 조립합니다.
 
     대화형은 claude [prompt] 위치 인자이고 단발은 -p 입니다. 모델은 --model 입니다.
-    권한 자동 승인 인자(--dangerously-skip-permissions)는 기본으로 붙이지 않으며
+    권한 모드 인자(--permission-mode)는 기본으로 붙이지 않으며
     명시적으로 요청될 때만 포함합니다.
     """
     cmd = ["claude", "--model", model]
-    if dangerously_skip_permissions:
-        cmd.append("--dangerously-skip-permissions")
+    if permission_mode:
+        cmd.extend(["--permission-mode", permission_mode])
     if one_shot:
         cmd.extend(["-p", prompt])
     else:
@@ -118,9 +118,10 @@ def main(argv: list[str] | None = None) -> int:
         help="-p 로 단발 실행합니다. 완료 후 셸로 이어받아 출력을 보존합니다.",
     )
     parser.add_argument(
-        "--dangerously-skip-permissions",
-        action="store_true",
-        help="권한 자동 승인 (--dangerously-skip-permissions) 플래그를 추가합니다. 기본값은 미사용입니다.",
+        "--permission-mode",
+        type=str,
+        default=None,
+        help="권한 모드 (--permission-mode, 예: acceptEdits). 기본값은 미사용입니다.",
     )
     parser.add_argument(
         "--role",
@@ -158,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         args.model,
         prompt,
         one_shot=args.one_shot,
-        dangerously_skip_permissions=args.dangerously_skip_permissions,
+        permission_mode=args.permission_mode,
     )
 
     common.schedule_permission_setup(

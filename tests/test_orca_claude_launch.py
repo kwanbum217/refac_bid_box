@@ -98,6 +98,38 @@ def test_claude_main_consumes_and_deletes_unique_preamble(
     assert prompt == "클로드 고유 지시문"
 
 
+@patch("scripts.orca_claude_launch.run_claude", return_value=0)
+@patch("scripts.orca_claude_launch.open_interactive_shell")
+def test_claude_main_passes_permission_mode(
+    mock_shell: MagicMock,
+    mock_run: MagicMock,
+    tmp_path: Path,
+):
+    """Claude main 실행 시 --permission-mode 인자가 올바르게 명령 배열에 전달되어야 합니다."""
+    target = tmp_path / "preamble_mode_claude.txt"
+    target.write_text("지시문", encoding="utf-8")
+
+    code = main(
+        [
+            "--model",
+            "claude-3-7-sonnet-20250219",
+            "--preamble",
+            str(target),
+            "--permission-mode",
+            "acceptEdits",
+            "--no-commit-notice",
+            "--one-shot",
+            "--no-keep-open",
+        ]
+    )
+    assert code == 0
+    cmd = mock_run.call_args[0][0]
+    assert "--permission-mode" in cmd
+    idx = cmd.index("--permission-mode")
+    assert cmd[idx + 1] == "acceptEdits"
+    assert "--dangerously-skip-permissions" not in cmd
+
+
 def test_build_command_interactive_and_one_shot():
     """대화형은 claude [prompt] 위치 인자, 단발은 -p 플래그를 사용해야 합니다."""
     interactive_cmd = build_command("claude-3-7-sonnet-20250219", "지시문", one_shot=False)
@@ -107,24 +139,29 @@ def test_build_command_interactive_and_one_shot():
     assert one_shot_cmd == ["claude", "--model", "claude-3-7-sonnet-20250219", "-p", "지시문"]
 
 
-def test_build_command_dangerously_skip_permissions_flag():
-    """권한 자동 승인 플래그는 명시적으로 지정될 때만 인자에 포함되어야 합니다."""
-    cmd_default = build_command(
-        "claude-3-7-sonnet-20250219", "지시문", dangerously_skip_permissions=False
-    )
+def test_build_command_permission_mode():
+    """권한 모드 인자는 명시적으로 지정될 때만 포함되며 acceptEdits 가 순서대로 전달되어야 합니다."""
+    # 1. 기본 기동 명령에 --permission-mode 가 없다
+    cmd_default = build_command("claude-3-7-sonnet-20250219", "지시문")
+    assert "--permission-mode" not in cmd_default
+    # 3. --dangerously-skip-permissions 문자열이 조립 명령에 어떤 경우에도 나타나지 않는다
     assert "--dangerously-skip-permissions" not in cmd_default
 
-    cmd_flag = build_command(
-        "claude-3-7-sonnet-20250219", "지시문", dangerously_skip_permissions=True
-    )
-    assert "--dangerously-skip-permissions" in cmd_flag
+    # 2. 인자를 켜면 --permission-mode 와 acceptEdits 가 순서대로 들어간다
+    cmd_flag = build_command("claude-3-7-sonnet-20250219", "지시문", permission_mode="acceptEdits")
+    assert "--permission-mode" in cmd_flag
     assert cmd_flag == [
         "claude",
         "--model",
         "claude-3-7-sonnet-20250219",
-        "--dangerously-skip-permissions",
+        "--permission-mode",
+        "acceptEdits",
         "지시문",
     ]
+    idx = cmd_flag.index("--permission-mode")
+    assert cmd_flag[idx + 1] == "acceptEdits"
+    # 3. --dangerously-skip-permissions 문자열이 조립 명령에 어떤 경우에도 나타나지 않는다
+    assert "--dangerously-skip-permissions" not in cmd_flag
 
 
 def test_commit_notice_mentions_commit_requirement():
