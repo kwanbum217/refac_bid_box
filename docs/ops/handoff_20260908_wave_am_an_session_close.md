@@ -14,9 +14,14 @@
 **대시보드 금액 집계의 전환 효과를 실측으로 확인하십시오.** 코드는 이미 바뀌었는데
 그 효과가 한 번도 측정되지 않았습니다.
 
+> **2026-09-08 갱신**: 1차 실측(`kwanbum217/dashboard-latency`)은 리뷰 fail 로 반려됐습니다.
+> `GET /api/v1/bids/stats` 는 `get_dashboard_stats`(BidResult, Redis 캐시) 라
+> `_announcement_amount_expr` 경로가 아닙니다. **측정 대상을 `get_compare_stats_data`
+> 로 바로잡아 다시 하십시오.** 상세는 13.4 절.
+
 | 항목 | 내용 |
 | --- | --- |
-| 무엇 | `agency_announce_top10` 을 포함한 대시보드 집계가 `base_amount` 컬럼 기반으로 전환됐으나(`30aba4e`), API 경로 레이턴시를 측정한 적이 없습니다 |
+| 무엇 | `agency_announce_top10` 을 포함한 대시보드 집계가 `base_amount` 컬럼 기반으로 전환됐으나(`30aba4e`), 그 경로의 API 레이턴시를 측정한 적이 없습니다 |
 | 왜 최우선인가 | G3 는 상시 과제이고 "기능이 동작하는 것으로 완료가 아니며 실측으로 성능을 확인해야 완료" 입니다. 사용자 대면 경로에 미검증 성능 주장이 남아 있는 유일한 항목입니다 |
 | 알려진 값 | API 웜 31.97초(전환 전). DB 레벨 실측은 JSON 파싱 58.8~68.3초 대 컬럼 2.22~2.38초로 **26~29배**, 산출값 완전 일치 |
 | 기대 | 전환 후 API 웜이 6초 안팎으로 내려가야 합니다. 내려가지 않으면 병목이 집계가 아닌 다른 구간이라는 뜻이며 그 자체가 결론입니다 |
@@ -327,7 +332,79 @@ term_PROBE_AM1'` 은 1회만 승인했습니다. **Capsule 에 명령 형태를 
 
 ---
 
-## 13. 정리 상태
+## 13. 코디네이터 교대와 catchup 병합 (2026-09-08 오후)
+
+Claude 5시간 한도로 Grok 4.6 에 인계했다가 다시 인수했습니다. 그 사이 Grok 이
+Wave AO 를 닫고 대시보드 실측과 catchup 을 진행했습니다.
+
+### 13.1 인계 절차에서 배운 것
+
+| 항목 | 내용 |
+| --- | --- |
+| Run 바인딩 | `orca orchestration run-use --id <run>` 로 `coordinator_handle` 을 넘긴다. 넘기지 않으면 배달이 새 코디네이터에게 오지 않는다 |
+| 배달 fencing | 구 코디네이터 세대의 `deliveryId` 는 `fenced consumer generation` 으로 거부된다. 다시 `check` 하면 새 세대 ID 로 재발급되며 내용은 같다 |
+| 스킬 영수증 | `taskctl create` 가 구 코디네이터 영수증을 핸들 불일치로 거부한다. `scripts/orca_skill_receipt.py issue` 로 재발급한다 |
+| 캐시 접두부 | Run ID 를 `.grok/rules` 에 고정하지 말 것. 교대할 때마다 뒤처진다 |
+
+### 13.2 catchup 병합 (`80d7cb0`)
+
+놓친 02:00 크론 슬롯 판정입니다. 종전에는 경과 24시간 임계치만 봐서 19시간 경과
+시점에 `threshold_not_exceeded` 로 거부했습니다.
+
+| 검증 | 결과 |
+| --- | --- |
+| Level 1 게이트 | 8종 pass, 실패 0. 게이트 3만 `backend_mypy` 미검증으로 skip |
+| skip 보완 | 코디네이터가 `uv run mypy src` 직접 실행, 93파일 무결함 |
+| Level 2 리뷰 (`qwen3.7-plus`) | verdict pass, blocking 0, 8항목 전부 결함 없음 |
+| Level 3 diff | 슬롯 기준 판정, 삭제 줄 0건(쿨다운 보존), 크론·타임존 불변, 수집 미호출 확인 |
+| 전량 테스트 | 4,078건 통과 (워커 주장과 일치, 게이트 6 통과) |
+
+**운영에서 발화와 수집을 확인했습니다.** 스택 재기동 시 `reason=missed_schedule`,
+`last_cron_slot=2026-09-08T02:00:00`, `elapsed_hours=20.1` 로 따라잡기가 시작됐고
+347초 뒤 종료했습니다. 단위 테스트만 있던 상태에서 실경로 증거를 확보했습니다.
+
+| 지표 | 수집 전 | 수집 후 |
+| --- | ---: | ---: |
+| `bid_announcements` | 5,498,959 | **5,500,771** (+1,812) |
+| 최신 `collected_at` | 2026-09-07 12:58:50 | **2026-09-08 09:05:59** |
+
+**다만 파이프라인 전체는 `failed` 로 끝났습니다.** 수집 단계는 커밋됐으나 이어지는
+ChromaDB 색인에서 `sqlite3.OperationalError: disk I/O error` 가 났습니다. 원인은
+**디스크 잔여 공간 부족**입니다. 호스트 데이터 볼륨이 401Gi 사용 / 26Gi 여유(94%)
+이고 컨테이너 `/app/chroma_db` 도 27G 여유(95%)입니다. 디렉터리 쓰기 자체는 되지만
+SQLite 는 트랜잭션에 WAL·journal 공간이 필요해 이 여유에서 실패합니다.
+
+**코드 결함이 아닙니다.** 따라잡기 판정과 수집은 정상 동작했고 실패는 그 아래
+인프라 계층입니다. 쿨다운 TTL 약 6시간이 걸려 자동 재시도는 없습니다.
+
+**후속 과제**: 디스크 확보가 선행되어야 색인까지 완주합니다. `data/` 5.5G,
+`chroma_db/` 3.6G 는 저장소 안 것이고 호스트 전체가 94% 입니다. 정리 대상은 저장소
+밖에 있을 가능성이 큽니다.
+
+### 13.3 코디네이터 실수 하나
+
+**워크트리를 제거하기 전에 Docker 마운트 원본인지 확인하지 않았습니다.**
+`dashboard-latency` 워크트리를 `git worktree list` 와 `orca worktree list` 만 보고
+"터미널 0개, 미병합 브랜치뿐" 으로 판단해 제거했는데, 실행 중인 Compose 스택이 그
+경로를 `/app/src` 등 4곳의 bind mount 원본으로 물고 있었습니다. 제거 순간 컨테이너
+소스가 사라져 스택이 깨졌습니다.
+
+**데이터 피해는 없었습니다.** DB 5,498,959행 정상, 데이터 볼륨 3종 보존, 브랜치
+커밋 2건은 제거 전 `git push` 로 원격 백업해 두었고 Orca 도 `preservedBranch` 로
+로컬에 남겼습니다.
+
+복구는 스택을 주 저장소 기준으로 재기동해 마쳤고, 그 과정이 곧 catchup 의 운영
+검증이 됐습니다. 재발 방지 항목을 `docs/ops/coordinator_operational_memory.md` 4장에
+넣었습니다.
+
+### 13.4 남은 것
+
+- 대시보드 실측 브랜치 `kwanbum217/dashboard-latency` @ `2f43b3c` 는 리뷰 fail 로 **미병합**입니다. 원격에 백업돼 있고 워크트리 카드는 회수했습니다. 보고서 4.2절의 compare-stats 수치가 산출물 JSON 에 없다는 것이 반려 사유입니다
+- 대시보드 실측은 `get_dashboard_stats`(BidResult, Redis 캐시) 를 잰 것이라 `_announcement_amount_expr` 경로가 아닙니다. 전환 전 31.97초와 같은 경로로 비교한 결론은 기각됐습니다. **금액 집계 실측은 `get_compare_stats_data` 로 다시 해야 합니다**
+
+---
+
+## 14. 정리 상태
 
 **모든 자원을 회수했습니다.** 빌더 8대와 리뷰어 6대 전부 `worker_done` ack 직후
 `orca_taskctl.py release-worker` 로 회수했고, 그 명령이 `worker-release` 와
