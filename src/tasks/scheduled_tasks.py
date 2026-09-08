@@ -1136,6 +1136,25 @@ def check_schedule_catchup_needed(
         "threshold_hours": threshold_hours,
     }
 
+    # 마지막 크론 슬롯(매일 02:00 naive, UTC로 해석) 이후 수집이 없으면 놓친 슬롯으로 발화.
+    # 경과 시간이 임계치에 못 미쳐도 슬롯 누락이면 따라잡기를 돌린다.
+    now_naive = now.replace(tzinfo=None) if now.tzinfo else now
+    if now_naive.hour >= 2:
+        last_slot_naive = now_naive.replace(hour=2, minute=0, second=0, microsecond=0)
+    else:
+        last_slot_naive = (now_naive - timedelta(days=1)).replace(
+            hour=2, minute=0, second=0, microsecond=0
+        )
+    last_slot = _as_utc(last_slot_naive)
+    collected_aware = _as_utc(latest_collected_at)
+
+    if collected_aware < last_slot:
+        details["last_cron_slot"] = last_slot.isoformat()
+        details["reason"] = (
+            f"마지막 크론 슬롯({last_slot_naive.isoformat()}) 이후 수집이 없어 놓친 슬롯을 보충합니다."
+        )
+        return True, "missed_schedule", details
+
     if elapsed_hours >= threshold_hours:
         details["reason"] = (
             f"마지막 수집 후 {elapsed_hours:.1f}시간 경과하여 임계치({threshold_hours}시간)를 초과했습니다."

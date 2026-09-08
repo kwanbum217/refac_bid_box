@@ -136,26 +136,98 @@ def test_catchup_skipped_when_threshold_not_exceeded(monkeypatch):
         assert details["threshold_hours"] == 24
 
 
-def test_catchup_needed_when_threshold_exceeded(monkeypatch):
-    """마지막 수집 후 경과 시간이 임계(24시간) 이상이면 따라잡기를 발화합니다."""
+def test_catchup_needed_when_missed_0200_slot(monkeypatch):
+    """회귀 고정값: now=08:02, collected_at=전날 12:58:50 이면 오늘 02:00 슬롯을 놓쳤으므로 발화합니다."""
     monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
     monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS", 24)
     monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
     monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
 
-    now = datetime(2026, 9, 3, 12, 0, 0, tzinfo=UTC)
-    # 30시간 전 수집 (임계 초과)
-    old_collected = now - timedelta(hours=30)
+    now = datetime(2026, 9, 8, 8, 2, 0, tzinfo=UTC)
+    latest_collected = datetime(2026, 9, 7, 12, 58, 50, tzinfo=UTC)
 
     with (
         patch.object(scheduled_tasks, "utcnow", return_value=now),
-        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=old_collected),
+        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=latest_collected),
+        patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
+    ):
+        needed, reason, details = check_schedule_catchup_needed()
+        assert needed is True
+        assert reason == "missed_schedule"
+        assert details["elapsed_hours"] < 24
+        assert "last_cron_slot" in details
+
+
+def test_catchup_skipped_when_before_0200_and_collected_after_yesterday_slot(monkeypatch):
+    """오늘 02:00 이전 재시작이고 어제 슬롯 이후 수집이 있으면 건너뜁니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS", 24)
+
+    now = datetime(2026, 9, 8, 1, 0, 0, tzinfo=UTC)
+    latest_collected = datetime(2026, 9, 7, 12, 58, 50, tzinfo=UTC)
+
+    with (
+        patch.object(scheduled_tasks, "utcnow", return_value=now),
+        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=latest_collected),
+        patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
+    ):
+        needed, reason, _details = check_schedule_catchup_needed()
+        assert needed is False
+        assert reason == "threshold_not_exceeded"
+
+
+def test_catchup_skipped_when_missed_slot_but_in_cooldown(monkeypatch):
+    """슬롯을 놓쳤더라도 쿨다운 이내이면 건너뜁니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS", 24)
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS", 6)
+
+    now = datetime(2026, 9, 8, 8, 2, 0, tzinfo=UTC)
+    latest_collected = datetime(2026, 9, 7, 12, 58, 50, tzinfo=UTC)
+    last_attempt_iso = "2026-09-08T06:00:00+00:00"
+
+    with (
+        patch.object(scheduled_tasks, "utcnow", return_value=now),
+        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=latest_collected),
+        patch.object(
+            scheduled_tasks, "is_catchup_in_cooldown", return_value=(True, last_attempt_iso)
+        ),
+    ):
+        needed, reason, _details = check_schedule_catchup_needed()
+        assert needed is False
+        assert reason == "in_cooldown"
+
+
+def test_catchup_needed_when_threshold_exceeded(monkeypatch):
+    """마지막 수집 후 경과 시간이 임계(24시간) 이상이면 따라잡기를 발화합니다.
+
+    실제 시나리오에서는 슬롯 누락이 먼저 발화하지만, 백스톱 경로로 임계 초과도
+    여전히 동작함을 확인합니다 (슬롯 이후 수집이 있어도 24시간 이상 경과한 경우).
+    """
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS", 24)
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+
+    # now=09-04 01:00, last_slot=09-03 02:00, collected=09-03 02:30 (슬롯 이후)
+    # elapsed = 22.5h < 24h -> threshold_not_exceeded 가 아니라
+    # collected > slot 이므로 missed_schedule 도 아님. 정상 skip.
+    # 백스톱을 보려면 collected 가 슬롯 이후이면서 elapsed >= 24h 여야 하는데
+    # 매일 02:00 슬롯 구조상 동시에 만족할 수 없다. 따라서 백스톱은
+    # threshold_hours 를 0 으로 낮춰서 확인한다.
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS", 0)
+
+    now = datetime(2026, 9, 3, 12, 0, 0, tzinfo=UTC)
+    recent_collected = datetime(2026, 9, 3, 11, 0, 0, tzinfo=UTC)
+
+    with (
+        patch.object(scheduled_tasks, "utcnow", return_value=now),
+        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=recent_collected),
         patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
     ):
         needed, reason, details = check_schedule_catchup_needed()
         assert needed is True
         assert reason == "threshold_exceeded"
-        assert details["elapsed_hours"] == 30.0
         assert details["target_task"] == "development_data_refresh"
 
 
