@@ -20,6 +20,7 @@ from scripts.orca_auto_approve import (
     get_watcher_pid_path,
     is_safe_git_branch,
     is_safe_git_subcommand,
+    is_terminal_exited,
     match_safe_prompt,
     parse_git_subcommand,
     pending_command,
@@ -1158,3 +1159,154 @@ class TestLoopConstructs:
     def test_out_of_scope_shell_features_still_held(self, cmd: str) -> None:
         verdict, _ = classify_command(cmd)
         assert verdict == "hold"
+
+
+class TestTerminalExitedDetection:
+    """화면 앞머리 메타데이터 기반 터미널 종료(status: exited) 판정 단위 테스트."""
+
+    def test_terminal_exited_detected_from_header(self) -> None:
+        """orca terminal read 표준 메타데이터 헤더(status: exited)가 정상 감지되는지 검증."""
+        screen = (
+            "handle: term_234b47cdddc7\n"
+            "status: exited\n"
+            "source: stream\n"
+            "cursor: 0,0\n\n"
+            "last command output before exit"
+        )
+        assert is_terminal_exited(screen) is True
+
+    def test_terminal_running_not_detected_as_exited(self) -> None:
+        """정상 실행 중인 터미널(status: running)은 exited 로 판정되지 않는지 검증."""
+        screen = (
+            "handle: term_234b47cdddc7\n"
+            "status: running\n"
+            "source: stream\n"
+            "cursor: 0,0\n\n"
+            "worker@host:~$ git status"
+        )
+        assert is_terminal_exited(screen) is False
+
+    def test_status_exited_in_body_is_ignored(self) -> None:
+        """워커 화면 본문에 status: exited 텍스트가 출력되어 있어도 헤더가 running 이면 exited 로 판정하지 않음 (오탐 방지)."""
+        screen = (
+            "handle: term_234b47cdddc7\n"
+            "status: running\n"
+            "source: stream\n"
+            "cursor: 0,0\n\n"
+            "worker@host:~$ echo 'status: exited'\n"
+            "status: exited\n"
+            "worker@host:~$ "
+        )
+        assert is_terminal_exited(screen) is False
+
+    def test_status_exited_without_metadata_header_ignored(self) -> None:
+        """메타데이터 헤더 없이 화면 본문에만 status: exited 가 있는 경우 exited 로 판정하지 않음."""
+        screen = "Antigravity CLI output\nRunning tests...\nstatus: exited\nDone."
+        assert is_terminal_exited(screen) is False
+
+    def test_terminal_exited_empty_or_invalid_screen(self) -> None:
+        """빈 문자열, 공백 또는 유효하지 않은 입력에 대해 안전하게 False 반환."""
+        assert is_terminal_exited("") is False
+        assert is_terminal_exited("   \n  ") is False
+        assert is_terminal_exited(None) is False  # type: ignore[arg-type]
+
+
+class TestPollLoopExitedSelfExit:
+    """poll_loop 에서의 닫힌 터미널 감시 제외, 연속 관측 상한 및 자기 종료 검증."""
+
+    @patch("scripts.orca_auto_approve.time.sleep")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_terminates_in_finite_time_when_all_terminals_exited(
+        self,
+        mock_read: MagicMock,
+        mock_sleep: MagicMock,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """닫힌 터미널(status: exited) 응답 시 연속 관측 상한 도달 후 poll_loop 이 유한 시간 안에 정상 반환하는지 검증."""
+        mock_read.return_value = (
+            "handle: term_exited\nstatus: exited\nsource: stream\ncursor: 0,0\n"
+        )
+        # max_exit_observations=2 로 2개 터미널 감시 -> 각 2회씩 총 4회 read 호출 후 정상 반환해야 함
+        poll_loop(["term_1", "term_2"], max_exit_observations=2)
+        assert mock_read.call_count == 4
+        captured = capsys.readouterr()
+        assert "[제외]" in captured.out
+        assert "터미널 종료 확인 (status: exited, 2회 연속)" in captured.out
+
+    @patch("scripts.orca_auto_approve.time.sleep")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_does_not_terminate_prematurely_on_single_exited_observation(
+        self,
+        mock_read: MagicMock,
+        mock_sleep: MagicMock,
+    ) -> None:
+        """연속 관측 상한(기본 3회) 미만에서는 감시 대상에서 즉시 제외되지 않고 카운트가 초기화되는지 검증."""
+        exited_screen = "handle: term_temp\nstatus: exited\nsource: stream\ncursor: 0,0\n"
+        running_screen = "handle: term_temp\nstatus: running\nsource: stream\ncursor: 0,0\n"
+        # 순서: exited(1회) -> running(초기화) -> StopIteration
+        screens = [exited_screen, running_screen]
+        screen_idx = 0
+
+        def fake_read(handle: str) -> str:
+            nonlocal screen_idx
+            idx = min(screen_idx, len(screens) - 1)
+            return screens[idx]
+
+        def fake_sleep(sec: float) -> None:
+            nonlocal screen_idx
+            screen_idx += 1
+            if screen_idx >= 2:
+                raise StopIteration
+
+        mock_read.side_effect = fake_read
+        mock_sleep.side_effect = fake_sleep
+
+        with pytest.raises(StopIteration):
+            poll_loop(["term_temp"], max_exit_observations=3)
+
+    @patch("scripts.orca_auto_approve.time.sleep")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_does_not_terminate_on_normal_running_screens(
+        self,
+        mock_read: MagicMock,
+        mock_sleep: MagicMock,
+    ) -> None:
+        """정상 화면을 계속 돌려줄 때는 감시 대상이 유지되어 poll_loop 이 스스로 반환하지 않고 계속 도는지 검증."""
+        running_screen = "handle: term_alive\nstatus: running\nsource: stream\ncursor: 0,0\n"
+        mock_read.return_value = running_screen
+        call_count = 0
+
+        def fake_sleep(sec: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 5:
+                # 유한 번 돈 후 인위적으로 중단시켜 루프가 살아있음을 단언
+                raise StopIteration
+
+        mock_sleep.side_effect = fake_sleep
+
+        # 스스로 반환하지 않고 StopIteration 까지 계속 돌았음을 확인
+        with pytest.raises(StopIteration):
+            poll_loop(["term_alive"], max_exit_observations=3)
+        assert mock_read.call_count >= 5
+
+    @patch("scripts.orca_auto_approve.time.sleep")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_cleans_up_pid_file_when_terminals_exited(
+        self,
+        mock_read: MagicMock,
+        mock_sleep: MagicMock,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """터미널 종료로 poll_loop 이 정상 반환될 때 PID 파일이 깨끗이 정리되는지 검증."""
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+        pid_path = get_watcher_pid_path("term_exit_clean")
+        write_watcher_pid(pid_path, 12345)
+        assert pid_path.exists()
+
+        mock_read.return_value = (
+            "handle: term_exit_clean\nstatus: exited\nsource: stream\ncursor: 0,0\n"
+        )
+        poll_loop(["term_exit_clean"], max_exit_observations=1)
+        assert not pid_path.exists()

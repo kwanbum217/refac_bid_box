@@ -427,6 +427,10 @@ def check_dangerous_prompt(screen: str) -> str | None:
 # 터미널 연속 읽기 실패 허용 상한 (초과 시 감시 대상에서 제외)
 MAX_CONSECUTIVE_READ_FAILURES = 5
 
+# 터미널 종료(status: exited) 연속 관측 허용 상한 (초과 시 감시 대상에서 제외)
+MAX_CONSECUTIVE_EXIT_OBSERVATIONS = 3
+MAX_CONSECUTIVE_EXIT_FAILURES = MAX_CONSECUTIVE_EXIT_OBSERVATIONS
+
 
 def get_watcher_pid_path(terminal: str) -> Path:
     """터미널 핸들에 대응하는 PID 파일 경로를 반환합니다."""
@@ -1112,11 +1116,47 @@ def pending_command(screen: str) -> str | None:
     return body.strip()
 
 
-def poll_loop(terminals: list[str], max_failures: int = MAX_CONSECUTIVE_READ_FAILURES) -> None:
+def is_terminal_exited(screen: str) -> bool:
+    """orca terminal read 앞머리 메타데이터 영역에서 터미널 종료(status: exited) 여부를 판정합니다.
+
+    워커 프로세스가 본문에 status: exited 텍스트를 출력하는 것만으로 감시가 조기 종료되지
+    않도록 화면 전체 검색이 아닌 앞머리 메타데이터 헤더 영역(첫 빈 줄 이전 또는 비헤더 라인 이전,
+    최대 20줄)에서만 판정합니다.
+    """
+    if not isinstance(screen, str) or not screen.strip():
+        return False
+
+    lines = screen.lstrip("\r\n").splitlines()
+    for line in lines[:20]:
+        stripped = line.strip()
+        if not stripped:
+            break
+        match = re.match(r"^([a-zA-Z0-9_-]+):\s*(.*)$", stripped)
+        if not match:
+            break
+        key = match.group(1).lower()
+        val = match.group(2).strip().lower()
+        if key == "status" and (val == "exited" or val.startswith("exited")):
+            return True
+    return False
+
+
+def poll_loop(
+    terminals: list[str],
+    max_failures: int = MAX_CONSECUTIVE_READ_FAILURES,
+    max_exit_observations: int = MAX_CONSECUTIVE_EXIT_OBSERVATIONS,
+    **kwargs: Any,
+) -> None:
     """터미널 목록을 순회하며 권한 대화창 및 안전한 비명령 프롬프트를 자동 승인/해제합니다. 감시 대상이 모두 소진되면 종료합니다."""
+    if "max_exit_failures" in kwargs:
+        max_exit_observations = kwargs["max_exit_failures"]
+    if "max_exits" in kwargs:
+        max_exit_observations = kwargs["max_exits"]
+
     try:
         active = list(terminals)
         fail_counts: dict[str, int] = dict.fromkeys(active, 0)
+        exit_counts: dict[str, int] = dict.fromkeys(active, 0)
         seen_cmds: dict[str, str] = {}
         prompt_repeat_counts: dict[tuple[str, str], int] = {}
         seen_prompts: dict[str, str] = {}
@@ -1127,8 +1167,23 @@ def poll_loop(terminals: list[str], max_failures: int = MAX_CONSECUTIVE_READ_FAI
                     fail_counts[h] = fail_counts.get(h, 0) + 1
                     if fail_counts[h] >= max_failures:
                         active.remove(h)
+                        print(
+                            f"[제외] {h[:16]} 터미널 연속 읽기 실패 상한({max_failures}회) 도달: 감시 대상에서 제외합니다.",
+                            flush=True,
+                        )
                     continue
                 fail_counts[h] = 0
+
+                if is_terminal_exited(screen):
+                    exit_counts[h] = exit_counts.get(h, 0) + 1
+                    if exit_counts[h] >= max_exit_observations:
+                        active.remove(h)
+                        print(
+                            f"[제외] {h[:16]} 터미널 종료 확인 (status: exited, {exit_counts[h]}회 연속): 감시 대상에서 제외합니다.",
+                            flush=True,
+                        )
+                    continue
+                exit_counts[h] = 0
 
                 cmd = pending_command(screen)
                 if cmd is not None:
