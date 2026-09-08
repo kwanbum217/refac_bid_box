@@ -83,6 +83,8 @@ Capsule 에 명령 형태를 지정하기 전에 승인 대상인지 확인하�
 | 측정 중 저장소 동결 | 측정이 도는 동안 커밋·병합·브랜치 조작 금지. 2026-08-26 에 병합 한 번이 20분치 측정 72회차를 폐기시켰다 |
 | 코디네이터가 검증 대상 브랜치에 커밋 금지 | 리뷰가 끝난 브랜치에 코드를 올리면 게이트 6이 보고 건수 불일치로 실패하고, 그 커밋은 아무도 리뷰하지 않은 채 병합된다. 작아 보여도 별도 Task 로 낸다 |
 | `docs/` 에서 `.orca/` 링크 금지 | gitignore 대상이라 격리 워크트리에 없어 링크 검증이 실패한다. 인라인 코드로 참조한다 |
+| **워크트리 제거 전 Docker 마운트 확인** | `git worktree list` 와 `orca worktree list` 만 보면 부족하다. 실행 중인 컨테이너가 그 워크트리를 bind mount 원본으로 물고 있을 수 있다. 2026-09-08 에 `dashboard-latency` 워크트리를 지웠더니 스택의 `/app/src` 가 통째로 비었다. 제거 전 `docker inspect $(docker compose ps -q app) --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}'` 로 확인한다 |
+| `orca worktree rm` 의 브랜치 보존 | 미병합 브랜치는 `preservedBranch` 로 남기지만 판정은 Orca 몫이다. 원격에 없는 브랜치는 **먼저 `git push` 로 백업**한 뒤 제거한다 |
 | `git branch -D` 금지 | `-d` 가 거부하면 아직 병합되지 않은 것이다. 삭제 전 `git log --oneline main..<branch>` 를 읽는다 |
 | `rework` 유사 이름 Capsule | `.orca/capsules/<원본id>_rework/` 를 만들고 `allowed_read_files` 첫 줄에 넣는다. 워커가 그쪽으로 이탈하므로 투입 전에 양쪽에서 삭제한다 |
 
