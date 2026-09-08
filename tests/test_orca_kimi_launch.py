@@ -36,6 +36,24 @@ def _skip_model_registry_check(request, monkeypatch):
     monkeypatch.setattr(orca_kimi_launch, "assert_model_available", lambda model, home: None)
 
 
+@pytest.fixture(autouse=True)
+def _guard_kimi_permission_setup(monkeypatch):
+    """Kimi 런처 테스트가 실제 분리 프로세스를 띄우지 않도록 안전망을 제공합니다."""
+    import subprocess
+
+    orig_spawn = orca_kimi_launch.spawn_permission_setup
+    _SENTINEL = object()
+
+    def safe_spawn(
+        launcher_script: str | Path, terminal: str, model: str, *, popen=_SENTINEL
+    ) -> None:
+        if popen is _SENTINEL or popen is subprocess.Popen:
+            return None
+        return orig_spawn(launcher_script, terminal, model, popen=popen)
+
+    monkeypatch.setattr(orca_kimi_launch, "spawn_permission_setup", safe_spawn)
+
+
 def test_wait_returns_content_once_written(tmp_path: Path):
     target = tmp_path / "preamble.txt"
 
@@ -513,3 +531,37 @@ def test_kimi_launcher_warns_when_handle_absent(
 
     err = capsys.readouterr().err
     assert "ORCA_TERMINAL_HANDLE" in err
+
+
+def test_main_never_calls_popen_for_permission_setup(tmp_path: Path, monkeypatch):
+    """Kimi main 실행 시 ORCA_TERMINAL_HANDLE 이 있어도 subprocess.Popen 이 절대 호출되지 않아야 합니다."""
+    preamble = tmp_path / "preamble.txt"
+    preamble.write_text("회귀 검증 지시", encoding="utf-8")
+    monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "term_REGRESSION_PROBE_KIMI")
+
+    popen_called = []
+
+    def tracking_popen(*args, **kwargs):
+        popen_called.append((args, kwargs))
+        raise RuntimeError(
+            "subprocess.Popen 이 호출되었습니다! 실제 프로세스 생성이 차단되지 않았습니다."
+        )
+
+    monkeypatch.setattr("subprocess.Popen", tracking_popen)
+
+    with (
+        patch("scripts.orca_kimi_launch.run_kimi", return_value=0),
+        patch("scripts.orca_kimi_launch.open_interactive_shell"),
+    ):
+        code = main(
+            [
+                "--model",
+                "or-free/nemotron-ultra",
+                "--preamble",
+                str(preamble),
+                "--no-commit-notice",
+                "--no-keep-open",
+            ]
+        )
+    assert code == 0
+    assert len(popen_called) == 0, "subprocess.Popen 이 호출되었습니다"

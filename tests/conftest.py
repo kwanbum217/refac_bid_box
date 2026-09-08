@@ -170,8 +170,40 @@ def _fast_password(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _disable_orca_auto_approve(monkeypatch):
-    """테스트가 실제 권한 자동 승인 감시기 프로세스를 띄우지 않게 막습니다."""
+    """테스트가 실제 권한 자동 승인 감시기 및 런처 분리 프로세스를 띄우지 않게 막습니다."""
     monkeypatch.setenv("ORCA_DISABLE_AUTO_APPROVE", "1")
+
+    import subprocess
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    import scripts.orca_worker_launch_common as _launch_common
+
+    orig_spawn = _launch_common.spawn_permission_setup
+    _SENTINEL = object()
+
+    def safe_spawn(
+        launcher_script: str | Path,
+        terminal: str,
+        model: str,
+        *,
+        log_path: Path = Path(".orca/permission_setup.log"),
+        popen=_SENTINEL,
+    ):
+        if popen is _SENTINEL or popen is subprocess.Popen:
+            mock_proc = MagicMock()
+            mock_proc.pid = 99999
+            return mock_proc
+        return orig_spawn(launcher_script, terminal, model, log_path=log_path, popen=popen)
+
+    monkeypatch.setattr(_launch_common, "spawn_permission_setup", safe_spawn)
+    if (
+        hasattr(_launch_common.schedule_permission_setup, "__kwdefaults__")
+        and _launch_common.schedule_permission_setup.__kwdefaults__
+    ):
+        monkeypatch.setitem(
+            _launch_common.schedule_permission_setup.__kwdefaults__, "spawn_fn", safe_spawn
+        )
 
 
 class _InMemoryRateLimitPipeline:
