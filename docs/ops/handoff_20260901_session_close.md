@@ -44,7 +44,7 @@
 | 브랜치 | `kwanbum217/orca-i-h` |
 | 커밋 | `d8aa9a9` `test: add 7 ngram edge assertions and correct fail-closed safety` |
 | 내용 | `edge_04`·`05`·`07`·`09`·`10`·`11`·`12` 의 `is_safe_for_ngram` 을 `true` 에서 `false` 로 좁힘. ID 집합 동등성 테스트 |
-| 파일 | `tests/fixtures/ngram_edge_keywords.json`, `tests/test_ngram_prefilter_equivalence.py`, `docs/analysis/task_1a222b4caaa8.md`, `docs/analysis/task_i_h_ngram_edge_assertions.md` |
+| 파일 | `tests/fixtures/ngram_edge_keywords.json`, `tests/test_ngram_prefilter_equivalence.py`, `docs/analysis/task_i_h_ngram_edge_assertions.md` |
 | 이미 확인 | J4 읽기 전용 대조에서 7항목 모두 main `true` / I-H `false` |
 | 금지 | 운영 FULLTEXT 생성, 플래그 ON, `src/rag/structured_data.py` 변경, Alembic |
 

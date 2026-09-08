@@ -29,7 +29,7 @@ GPT 재감사가 남긴 5개 후속 중 **3개를 종결**하고 1개를 부분 
 | Task | 내용 | 브랜치 |
 | --- | --- | --- |
 | `task_ea688271d62b` | worker_done 진실성 검증(커밋·브랜치 실존, changed_files 대조) + 보고 누락 시 Level 1 FAIL | `t1-workerdone-gate` |
-| `task_a2764ba98c7c` | 정확 제목 Meilisearch 어휘 독립 채널, 정규화 충돌 제거, 결정적 tie-breaker | `t2-lexical-channel` |
+| `exact_title_lexical_channel_impl_20260828` | 정확 제목 Meilisearch 어휘 독립 채널, 정규화 충돌 제거, 결정적 tie-breaker | `t2-lexical-channel` |
 | `task_dda88e2e6fe3` | `Accept this file edit?` 등 Antigravity 대화창 탐지 | `t3-watch-dialog` |
 | `task_57b62635a363` | RAG 구간 계측(sql/vector/lexical/llm/total), 노출 플래그 기본 False | `t4-rag-segments` |
 | `task_ac1c2f9da231` | 실제 CPU utilization 계측을 벤치마크 리포트에 추가 | `t5-cpu-util` |

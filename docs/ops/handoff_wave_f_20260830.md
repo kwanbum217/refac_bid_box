@@ -105,7 +105,7 @@ Capsule 이 요구한 대로 probe 스키마가 삭제되어 인덱스가 사라
 | --- | --- | --- |
 | F1 `task_f50eb8c4d5c0` | gemini-3.7-flash-medium | 손상 필터는 비용 원인이 아님 |
 | F2 `task_bdb4581217d3` | qwen3.7-plus | Meilisearch 위임 불가 |
-| F3 `task_c138f15bf6a3` | gemini-3.7-flash-high | ngram 컬럼별 선택 채택 권고 |
+| F3 `task_f3_ngram_fulltext_probe` | gemini-3.7-flash-high | ngram 컬럼별 선택 채택 권고 |
 
 워커 계약 위반 기록은 [`orca_do_not_repeat.md`](orca_do_not_repeat.md) 와 함께
 다음 Capsule 작성 시 참고하십시오. 이번 Wave 에서 확인된 것은 검증 명령 미실행,

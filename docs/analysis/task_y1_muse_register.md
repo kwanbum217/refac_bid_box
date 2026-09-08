@@ -1,7 +1,7 @@
 # Meta Muse Spark 1.3 모델 풀 등록 및 가용성 검증 보고서
 
 > **작성일**: 2026-09-05
-> **태스크 ID**: `task_75828a01d336`
+> **태스크 ID**: `task_y1_muse_register`
 > **런 ID**: `run_febef4f1cee9`
 > **담당**: Builder
 > **정본 사양**: `.orca/capsules/task_y1_muse_register/capsule.yaml`

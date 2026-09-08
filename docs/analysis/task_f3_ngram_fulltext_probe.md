@@ -1,7 +1,7 @@
 # 선행 와일드카드 검색의 MySQL ngram FULLTEXT 인덱스 실측 판정 보고서
 
 > **작성일**: 2026-08-30
-> **Task ID**: `task_c138f15bf6a3` (Section F3)
+> **Task ID**: `task_f3_ngram_fulltext_probe` (Section F3)
 > **관련 문서**: [`docs/analysis/coldsql_attribution_canonical_20260830.md`](file://../../docs/analysis/coldsql_attribution_canonical_20260830.md), [`src/rag/structured_data.py`](file://../../src/rag/structured_data.py)
 > **검증 환경**: 격리된 별도 스키마 `ngram_probe` (운영 스키마 `procurement` 변경 0건, 실측 완료 후 `ngram_probe` 전량 삭제 완료)
 

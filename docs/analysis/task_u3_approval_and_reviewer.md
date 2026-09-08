@@ -1,6 +1,6 @@
 # 분석 보고서: DB 직접 실행 자동 승인 경로 제거 및 리뷰어 독립성 Fail-Closed 강화
 
-> **Task ID**: `task_1803e9c04566`
+> **Task ID**: `task_u3_approval_and_reviewer`
 > **작성일**: 2026-09-01
 > **작성자**: Orca Worker (`term_a1bc689e-a3f3-4108-aa6b-296fffb2a017`)
 
@@ -89,4 +89,3 @@
 | `tests/test_orca_model_router.py` | 빌더 Provider 미상 fail-closed 및 low 읽기 전용 허용 회귀 테스트 추가 |
 | `tests/test_orca_run_reviewer.py` | 독립 리뷰어 모델 명령어 빌드 검증 테스트 추가 |
 | `docs/analysis/task_u3_approval_and_reviewer.md` | 작업 분석 및 보안 검증 보고서 작성 |
-| `docs/analysis/task_1803e9c04566.md` | 작업 ID 매핑 분석 보고서 작성 |

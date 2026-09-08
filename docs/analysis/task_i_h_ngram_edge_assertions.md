@@ -1,7 +1,7 @@
 # MySQL ngram FULLTEXT 미실측 7개 특수 경계값 동등성 검증 및 Fail-Closed 정정 보고서
 
 > **작성일**: 2026-08-31 (2026-09-01 Rebase 갱신)
-> **Task ID**: `task_1a222b4caaa8` / `task_1584401ebfcf` (Section I-H / K1-IH Rebase)
+> **Task ID**: `task_i_h_ngram_edge_assertions` / `task_1584401ebfcf` (Section I-H / K1-IH Rebase)
 > **기준 커밋**: `5f09059` (main)
 > **관련 문서**: [`docs/context/CURRENT_STATE.md`](file://../../docs/context/CURRENT_STATE.md), [`tests/test_ngram_prefilter_equivalence.py`](file://../../tests/test_ngram_prefilter_equivalence.py), [`tests/fixtures/ngram_edge_keywords.json`](file://../../tests/fixtures/ngram_edge_keywords.json)
 > **검증 대상**: MySQL 8 ngram FULLTEXT 선행필터 적용 시 7개 미실측 특수 경계값의 결과 집합 동등성(ID set equality) 및 안전 판정

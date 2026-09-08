@@ -1,7 +1,7 @@
 # Windows CI Pytest 중단 원인 격리 및 대기 제거 분석 보고서
 
 > **작성일**: 2026-09-01
-> **Task ID**: `task_3b10931f6de5` (Capsule: `task_u1_windows_ci_hang`)
+> **Task ID**: `task_u1_windows_ci_hang`
 > **대상 파일**: `scripts/orca_taskctl.py`, `tests/test_orca_taskctl.py`
 > **상태**: 완료 (Completed)
 
