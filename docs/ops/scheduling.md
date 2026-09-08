@@ -81,6 +81,17 @@ flowchart TD
    - 파이프라인 및 후속 집계가 정상 완료(`status == "success"`)되면 자기 토큰으로 claim 키(`bidbox:schedule:collection_claim`)만 해제합니다.
    - 기동 따라잡기 시도가 완료되면 성공/실패 여부와 무관하게 `finally` 블록에서 쿨다운 키(`bidbox:schedule:catchup_cooldown`)를 독립적으로 기록합니다. 태스크 성공 시의 claim 해제는 claim 키에만 적용되고 쿨다운 키를 절대 삭제하지 않으므로, 성공 후에도 TTL(`AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS`, 기본 6시간) 동안 재시작 루프에 의한 중복 수집이 완벽히 방어됩니다.
 
+### 3.2 놓친 크론 슬롯 판정 (Missed Schedule Slot)
+
+기동 따라잡기의 정본 발화 조건은 **마지막으로 지나간 매일 02:00 크론 슬롯 이후 수집이 있었는지**입니다. 경과 시간 임계치(`AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS`)만 보면 스택 오프라인으로 02:00 수집이 빠져도 경과 24시간 미만이면 건너뛰는 문제가 있습니다.
+
+판정 로직:
+1. 현재 시각(`now`)이 오늘 02:00 이후이면 마지막 슬롯은 **오늘 02:00**, 이전이면 **어제 02:00**입니다.
+2. 슬롯 시각은 워커 크론과 동일한 naive 시각(UTC)으로 계산합니다.
+3. `latest_collected_at`이 마지막 슬롯보다 이전이면 `reason=missed_schedule`로 발화합니다.
+4. 슬롯 이후 수집이 있으면 기존 경과 시간 임계치 판정으로 넘어갑니다.
+5. 쿨다운(`in_cooldown`)은 슬롯 누락 판정보다 먼저 확인하여 재시작 루프를 방어합니다.
+
 ---
 
 ## 4. 환경 변수 및 설정 명세
@@ -90,7 +101,7 @@ flowchart TD
 | `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | bool | `True` | 개발 DB 최신화 크론 활성화 (기본 경로) |
 | `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | bool | `False` | 운영 전체 야간 번들 크론 활성화 |
 | `AUTOMATION_SCHEDULE_CATCHUP_ENABLED` | bool | `False` | 기동 시 누락 수집 따라잡기 활성화 |
-| `AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS` | int | `24` | 수집 누락 판정 기준 경과 시간 (시간 단위) |
+| `AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS` | int | `24` | 수집 누락 판정 기준 경과 시간 (시간 단위, 슬롯 누락 미발화 시 백스톱) |
 | `AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS` | int | `6` | 재시작 루프 방어 재시도 쿨다운 (시간 단위) |
 
 ---
