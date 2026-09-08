@@ -139,8 +139,8 @@ AM3 는 `orca_taskctl.py release-worker` 를 추가해 회수와 감시기 중�
 없었습니다.
 
 AM5 가 세 런처를 신설할 때 조사 보고서
-[`../../.orca/reports/am5_launcher_gap_survey.md`](../../.orca/reports/am5_launcher_gap_survey.md)
-를 먼저 만들어 근거로 삼았습니다. 미확인 0건이며 코디네이터가 근거 표본 4건을
+`.orca/reports/am5_launcher_gap_survey.md` 를 먼저 만들어 근거로 삼았습니다
+(`.orca/` 는 gitignore 대상이라 마크다운 링크로 걸지 않고 인라인 코드로 참조합니다). 미확인 0건이며 코디네이터가 근거 표본 4건을
 직접 대조했습니다. 단발 모드를 `os.execvpe` 로 띄우면 창이 즉시 닫혀 출력을 잃는다는
 지적이 그 보고서에서 나왔고, 세 런처 모두 `subprocess.run` 후 셸로 이어받습니다.
 
