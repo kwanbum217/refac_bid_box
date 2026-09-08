@@ -429,7 +429,6 @@ MAX_CONSECUTIVE_READ_FAILURES = 5
 
 # 터미널 종료(status: exited) 연속 관측 허용 상한 (초과 시 감시 대상에서 제외)
 MAX_CONSECUTIVE_EXIT_OBSERVATIONS = 3
-MAX_CONSECUTIVE_EXIT_FAILURES = MAX_CONSECUTIVE_EXIT_OBSERVATIONS
 
 
 def get_watcher_pid_path(terminal: str) -> Path:
@@ -1145,14 +1144,8 @@ def poll_loop(
     terminals: list[str],
     max_failures: int = MAX_CONSECUTIVE_READ_FAILURES,
     max_exit_observations: int = MAX_CONSECUTIVE_EXIT_OBSERVATIONS,
-    **kwargs: Any,
 ) -> None:
     """터미널 목록을 순회하며 권한 대화창 및 안전한 비명령 프롬프트를 자동 승인/해제합니다. 감시 대상이 모두 소진되면 종료합니다."""
-    if "max_exit_failures" in kwargs:
-        max_exit_observations = kwargs["max_exit_failures"]
-    if "max_exits" in kwargs:
-        max_exit_observations = kwargs["max_exits"]
-
     try:
         active = list(terminals)
         fail_counts: dict[str, int] = dict.fromkeys(active, 0)
