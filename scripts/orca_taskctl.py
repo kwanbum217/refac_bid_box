@@ -3969,7 +3969,12 @@ def resolve_launcher_and_cli(
             prov = provider_for_model(model.strip(), strict=False)
             if prov in LAUNCHER_ROUTING_BY_PROVIDER:
                 cli = LAUNCHER_ROUTING_BY_PROVIDER[prov][1]
-        return clean_launcher, (cli or "antigravity")
+        if not cli:
+            raise ValueError(
+                f"런처 '{clean_launcher}'의 cli_type을 자동 판정할 수 없습니다. "
+                f"--agent 로 cli_type 을 명시하십시오."
+            )
+        return clean_launcher, cli
 
     if not model or not isinstance(model, str) or not model.strip():
         raise ValueError(

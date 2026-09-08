@@ -8445,3 +8445,22 @@ def test_cmd_dispatch_launcher_auto_routing_without_path(
     assert code == 0
     assert saved_meta.get("launcher") == "scripts/orca_qwen_launch.py"
     assert saved_meta.get("cli_type") == "qwen"
+
+
+def test_resolve_launcher_explicit_unknown_without_agent_fails_closed():
+    """알 수 없는 런처 경로와 알 수 없는 모델과 explicit_agent 부재 시 ValueError fail-closed 및 explicit_agent 지정 시 통과."""
+    # 1. 알 수 없는 런처 + 알 수 없는 모델 + explicit_agent 없음 -> ValueError fail-closed
+    with pytest.raises(ValueError, match="--agent 로 cli_type 을 명시하십시오"):
+        resolve_launcher_and_cli(
+            model="unknown-model-xyz",
+            explicit_launcher="scripts/custom_launcher.py",
+        )
+
+    # 2. explicit_agent 를 명시하면 정상 통과
+    launcher, cli = resolve_launcher_and_cli(
+        model="unknown-model-xyz",
+        explicit_launcher="scripts/custom_launcher.py",
+        explicit_agent="custom_cli",
+    )
+    assert launcher == "scripts/custom_launcher.py"
+    assert cli == "custom_cli"
