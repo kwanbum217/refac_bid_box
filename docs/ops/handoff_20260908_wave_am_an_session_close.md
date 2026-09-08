@@ -284,6 +284,7 @@ term_PROBE_AM1'` 은 1회만 승인했습니다. **Capsule 에 명령 형태를 
 | `opencode`/`grok` 권한 중간 단계 | `acceptEdits` 상당 옵션 존재 여부 조사 | 조사 선행 |
 | 비런처 경로 `detected_cli` | `orca_taskctl.py` 5229행 부근이 gemini/grok 만 검사 | 하위 판정이 fail-closed 라 안전 문제 아님 |
 | 선행 AK 8.6.3 | `schedule_permission_setup` 이 코디네이터 핸들을 거부하게 만들기 | 워커도 자기 핸들을 상속받으므로 구분 방법 선행 |
+| **KB 메모리 폭주 수정** | `rebuild_knowledge_base` 가 최근 1년치 문서를 전량 적재해 worker 10.5GB 소멸. 청크 스트리밍으로 전환 | 없음. Wave AP1 로 발급 |
 | **문서 역사층 분리** | `task_*.md` 269개와 handoff 96개를 annotated tag + SHA256 manifest 로 퇴역시켜 674 -> 250 이하 | Wave AO1(생성 차단) 병합 후. 경로 문자열 참조가 `docs/` 밖 71개 파일에 있어 일괄 갱신 필요 |
 
 **컷오버를 막는 것은 여전히 R-12 하나입니다.** 다만 R-12 는 장비 부재로 착수할 수 없으므로 다음 세션의 첫 작업은 0장입니다.
@@ -398,22 +399,41 @@ chromadb `embeddings_queue.submit_embeddings` -> SQLite commit 입니다.
 **코드 결함이 아닙니다.** 따라잡기 판정과 수집은 정상 동작했고 실패는 그 아래
 색인 계층입니다. 쿨다운 TTL 약 6시간이 걸려 자동 재시도는 없습니다.
 
-**재현 시도 결과 (2026-09-08)**: worker 컨테이너에서 별도 probe 컬렉션에
-100건씩 10회 upsert(총 1,000건)를 돌렸으나 **재현되지 않았습니다.** 단일 writer
-소규모 경로는 정상입니다. `INDEX_BATCH_SIZE` 는 100 이라 대량 배치 가설도 약합니다.
+**원인을 확정했습니다 (2026-09-08).** `sqlite3.OperationalError: disk I/O error` 는
+**증상이며 원인이 아닙니다.** `update_kb_task` 실행 시 worker 컨테이너가 **10.5GB** 를
+사용하고 소멸하며, 그 과정에서 진행 중이던 SQLite 커밋이 끊긴 것입니다.
 
-관측된 사실 하나가 남습니다. **app 컨테이너가 `chroma.sqlite3` 를 fd 7개로 열고
-있고 worker 는 1개입니다.** 두 컨테이너가 같은 SQLite 파일을 bind mount 로 공유하며
-macOS virtiofs 에서 SQLite 잠금이 깨지는 것은 알려진 유형입니다. 다만 probe 가
-그 조건에서도 성공했으므로 이것만으로 단정할 수 없습니다.
+1초 간격 실측입니다(`docker exec <컨테이너> cat /sys/fs/cgroup/memory.current`).
 
-**원인은 여전히 미규명입니다.** 재현하려면 실제 임베딩(bge-m3, 1024차원)과 실제
-문서량으로 `kb_builder` 경로를 돌려야 합니다. probe 는 Chroma 기본 MiniLM 을 썼고
-데이터량도 실제와 다릅니다.
+| 시각 | worker | app | db |
+| --- | ---: | ---: | ---: |
+| 19:05:35 (투입) | 438MB | 2,752MB | 2,431MB |
+| 19:06:05 (변곡점) | 1,920MB | 2,690MB | 2,581MB |
+| 19:06:24 | 6,839MB | 2,690MB | 4,566MB |
+| **19:06:37 (직후 소멸)** | **10,509MB** | 2,565MB | 2,101MB |
 
-**금지**: 디스크 정리 같은 조치를 하지 마십시오. 근거 없는 조치이며 원인이 아닙니다.
+worker 단독 10.5GB 에 app·db 를 더하면 VM 총량 15.6GiB 를 사실상 다 씁니다.
+cgroup `memory.max` 가 `max` 라 컨테이너 OOM 이 아니라 VM 수준 회수이며, 그래서
+`OOMKilled=false` `ExitCode=0` 으로 기록됩니다.
 
-**G1 확인**: 조사 중 `bidding_kb` 536,002건 무결, probe 컬렉션 잔존 0건입니다.
+**Docker 메모리 상향은 해법이 아닙니다.** 14GiB -> 16GiB 로 올린 뒤 격리 시험은
+통과했으나 전체 파이프라인은 73초 만에 재현됐습니다. 필요조건이었지 충분조건이
+아니며, 데이터가 늘면 다시 깨집니다.
+
+**코드 결함입니다.** `rebuild_knowledge_base` 가 최근 1년치 문서 집합을 리스트로
+전량 적재합니다. 수정 Task 를 발급했습니다.
+
+기각한 가설 다섯(디스크 공간, 대량 배치, SQLite 잠금 경합, bge-m3 임베딩, 메모리
+상향)과 반증 근거, 실측 곡선 전문은
+[`../analysis/kb_builder_memory_exhaustion_20260908.md`](../analysis/kb_builder_memory_exhaustion_20260908.md)
+입니다.
+
+**G1 확인**: 조사 전 구간에서 `bidding_kb` 536,002건 불변, probe 잔존 0건,
+`bid_announcements` 5,500,771행입니다.
+
+**Docker 설정 변경 기록**: `~/Library/Group Containers/group.com.docker/settings-store.json`
+의 `MemoryMiB` 를 14,336 -> 16,384 로 올렸습니다(백업 `.bak.20260908`). 원인 규명
+과정의 변경이며 되돌려도 무방합니다.
 
 ### 13.3 코디네이터 실수 하나
 
