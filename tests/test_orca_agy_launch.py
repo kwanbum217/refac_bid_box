@@ -22,6 +22,24 @@ from scripts.orca_agy_launch import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _guard_agy_permission_setup(monkeypatch):
+    """Antigravity 런처 테스트가 실제 분리 프로세스를 띄우지 않도록 안전망을 제공합니다."""
+    import subprocess
+
+    from scripts import orca_agy_launch as mod
+
+    orig_spawn = mod.spawn_permission_setup
+    _SENTINEL = object()
+
+    def safe_spawn(terminal: str, model: str, *, popen=_SENTINEL) -> None:
+        if popen is _SENTINEL or popen is subprocess.Popen:
+            return None
+        return orig_spawn(terminal, model, popen=popen)
+
+    monkeypatch.setattr(mod, "spawn_permission_setup", safe_spawn)
+
+
 def test_wait_returns_content_once_written(tmp_path: Path):
     # 고유명 preamble_*.txt 로 대기한다. 고정명 preamble.txt 로 대기하면
     # 폴링 루프 경계에서 옛 형태 격리 파손 거부와 경합해 드물게
@@ -539,3 +557,41 @@ def test_acquire_permissions_forwards_given_cli_type():
     call = prepare.calls[0]
     assert call["cli_type"] == "antigravity"
     assert call["launcher"] == "scripts/orca_agy_launch.py"
+
+
+def test_main_never_calls_popen_for_permission_setup(tmp_path: Path, monkeypatch):
+    """main 실행 시 ORCA_TERMINAL_HANDLE 이 설정되어 있어도 subprocess.Popen 이 절대 호출되지 않아야 합니다."""
+    from scripts import orca_agy_launch as mod
+
+    target = tmp_path / "preamble.txt"
+    target.write_text("회귀 검증 지시", encoding="utf-8")
+    monkeypatch.setenv("ORCA_TERMINAL_HANDLE", "term_REGRESSION_PROBE_AGY")
+
+    def fake_execvpe(cmd0, cmd, env):
+        raise SystemExit(0)
+
+    monkeypatch.setattr(mod.os, "execvpe", fake_execvpe)
+
+    popen_called = []
+
+    def tracking_popen(*args, **kwargs):
+        popen_called.append((args, kwargs))
+        raise RuntimeError(
+            "subprocess.Popen 이 호출되었습니다! 실제 프로세스 생성이 차단되지 않았습니다."
+        )
+
+    monkeypatch.setattr("subprocess.Popen", tracking_popen)
+
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--model",
+                "gemini-3.8-flash-medium",
+                "--preamble",
+                str(target),
+                "--timeout-sec",
+                "1.0",
+            ]
+        )
+    assert exc.value.code == 0
+    assert len(popen_called) == 0, "subprocess.Popen 이 호출되었습니다"

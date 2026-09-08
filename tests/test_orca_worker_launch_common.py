@@ -518,3 +518,27 @@ def test_resolve_notice_with_real_preamble_scenarios():
     # --no-commit-notice 지정 시 어떤 고지문도 붙지 않음
     assert append_role_notice(rev_preamble, role="auto", no_commit_notice=True) == rev_preamble
     assert append_role_notice(bld_preamble, role="auto", no_commit_notice=True) == bld_preamble
+
+
+def test_schedule_permission_setup_default_spawn_never_calls_popen(monkeypatch):
+    """기본 spawn_fn 사용 시에도 테스트 안전망에 의해 subprocess.Popen 이 절대 호출되지 않아야 합니다."""
+    popen_called = []
+
+    def tracking_popen(*args, **kwargs):
+        popen_called.append((args, kwargs))
+        raise RuntimeError(
+            "subprocess.Popen 이 호출되었습니다! 실제 프로세스 생성이 차단되지 않았습니다."
+        )
+
+    monkeypatch.setattr("subprocess.Popen", tracking_popen)
+
+    out_stream = io.StringIO()
+    res = schedule_permission_setup(
+        "scripts/orca_agy_launch.py",
+        "gemini-3.8-flash-medium",
+        terminal="term_safe_worker_common",
+        stdout=out_stream,
+    )
+    assert res is True
+    assert len(popen_called) == 0, "subprocess.Popen 이 호출되었습니다"
+    assert "권한 설정 예약: term_safe_worker_common" in out_stream.getvalue()
