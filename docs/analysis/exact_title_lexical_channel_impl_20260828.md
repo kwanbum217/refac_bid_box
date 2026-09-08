@@ -1,9 +1,10 @@
-# Task task_a2764ba98c7c 분석 및 구현 보고서
+# Task exact_title_lexical_channel_impl_20260828 분석 및 구현 보고서
 
 > **작성일**: 2026-08-28
-> **작업자**: Orca Worker (Builder)
-> **Task ID**: task_a2764ba98c7c
-> **Run ID**: run_43d9937ac156
+> **상태**: 완료 (`succeeded`)
+> **Task ID**: exact_title_lexical_channel_impl_20260828
+> **Branch**: `work/t2-lexical-channel`
+> **Worker**: `term_527ee1c5-e63d-4c3d-b4f0-4537c358ef9c`
 
 ---
 

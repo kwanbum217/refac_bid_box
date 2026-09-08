@@ -2,7 +2,7 @@
 
 > 작성일: 2026-09-01
 > 대상 모듈: scripts/orca_taskctl.py, tests/test_orca_taskctl.py, tests/test_measure_agent_bootstrap_cost.py
-> 작업 ID: task_6b27ae443a51 (run_6872c388bbf2)
+> 작업 ID: task_k3_dispatch_test_regression (run_6872c388bbf2)
 
 ---
 
@@ -62,7 +62,7 @@
 ## 5. 검증 결과
 
 <!-- METRICS:
-{"task_id": "task_6b27ae443a51", "before_failed": 27, "after_failed": 0, "status": "succeeded"}
+{"task_id": "task_k3_dispatch_test_regression", "before_failed": 27, "after_failed": 0, "status": "succeeded"}
 -->
 
 1. **대상 모듈 전용 테스트**:
