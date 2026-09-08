@@ -61,9 +61,11 @@
 | AN1 | claude 런처 권한 인자를 acceptEdits 로 전환 | `60930ef` | `b997460` |
 | AN2 | dispatch 런처 자동 선택과 fail-closed | `4540856`, `d6ed305` | `9819210` |
 | AN3 | claude 권한 모드 허용값을 acceptEdits 로 제한 | `d72d9eb` | `45348fe` |
+| AO1 | Task 분석 문서 자동 주입 제거와 신규 `docs/analysis/task_*.md` 차단 | `f7f747d` | `a32f364` |
+| AO2 | `docs/` 동일 문서 9쌍 정리. 대응표 파일은 AO1 차단 규칙과 충돌해 제거 | `33b206a`, `1f8e9d4` | `8e722f5` |
 
 빌더는 전부 Antigravity `gemini-3.8-flash-medium`, 리뷰어는 Qwen Code `qwen3.7-plus`
-입니다. Level 1 게이트는 8건 모두 9종 전량 통과, 리뷰 판정은 전부 `pass` 입니다.
+입니다. AM/AN 8건의 Level 1 게이트는 9종 전량 통과입니다. AO1 은 게이트 6(리베이스 후 보고 정합성), AO2 는 게이트 3(`validate_doc_links.py` 허용 목록)을 코디네이터 실측으로 갈음하고 병합했습니다.
 
 ---
 
@@ -317,7 +319,7 @@ term_PROBE_AM1'` 은 1회만 승인했습니다. **Capsule 에 명령 형태를 
 
 | 단계 | 내용 | 판정 |
 | --- | --- | --- |
-| A | Task 문서 자동 생성 중단 + 신규 생성 차단 게이트 + `docs/` 중복 9쌍 정리 | **즉시** (Wave AO1) |
+| A | Task 문서 자동 생성 중단 + 신규 생성 차단 게이트 + `docs/` 중복 9쌍 정리 | **완료** (`a32f364`, `8e722f5`) |
 | B | tag + manifest 역사층 분리, 674 -> 250 이하 | 백로그 (11장) |
 | C | `architecture`/`runbooks`/`domains` 재편, 40개 목표 | **기각** |
 
