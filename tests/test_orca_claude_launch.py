@@ -130,6 +130,20 @@ def test_claude_main_passes_permission_mode(
     assert "--dangerously-skip-permissions" not in cmd
 
 
+def test_claude_main_rejects_invalid_permission_mode():
+    """Claude main 실행 시 --permission-mode 에 bypassPermissions 등 허용되지 않은 값을 넘기면 argparse 가 SystemExit 2 로 거부해야 합니다."""
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "--model",
+                "claude-3-7-sonnet-20250219",
+                "--permission-mode",
+                "bypassPermissions",
+            ]
+        )
+    assert exc_info.value.code == 2
+
+
 def test_build_command_interactive_and_one_shot():
     """대화형은 claude [prompt] 위치 인자, 단발은 -p 플래그를 사용해야 합니다."""
     interactive_cmd = build_command("claude-3-7-sonnet-20250219", "지시문", one_shot=False)

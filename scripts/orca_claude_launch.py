@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--permission-mode",
-        type=str,
+        choices=["acceptEdits"],
         default=None,
         help="권한 모드 (--permission-mode, 예: acceptEdits). 기본값은 미사용입니다.",
     )
