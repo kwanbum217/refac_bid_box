@@ -1,0 +1,713 @@
+{
+  "meta": {
+    "git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+    "measured_at_utc": "2026-09-08T08:06:49.449762+00:00",
+    "python_version": "3.11.16",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "docker_image_id": "refac_bid_box-app",
+    "container_id": "6d144c0129444b80f27cb5557f5acb8854005ebad5c81b8316e4fb306834a32e",
+    "target_container_image_id": "sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+    "image_digest": "refac_bid_box-app@sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+    "container_name": "refac_bid_box-app-1",
+    "service_name": "app",
+    "base_url": "http://127.0.0.1:8000",
+    "bound_port": 8000,
+    "port_bindings": [
+      {
+        "container_port": 8000,
+        "host_ip": "0.0.0.0",
+        "host_port": 8000
+      },
+      {
+        "container_port": 8000,
+        "host_ip": "::",
+        "host_port": 8000
+      }
+    ],
+    "target_source_mount": "/Users/kwanbum/orca/workspaces/refac_bid_box/dashboard-latency/src",
+    "target_source_git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+    "target_source_git_dirty": false,
+    "perf_config": {
+      "GEMINI_MODEL": null,
+      "LATENCY_SEGMENT_LOGGING": "false",
+      "LLM_PROVIDER": "ollama",
+      "LLM_TEMPERATURE": null,
+      "LLM_TIMEOUT_SECONDS": null,
+      "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+      "OLLAMA_MODEL": "gemma4:e2b",
+      "PREDICTION_GC_MODE": "freeze",
+      "WEB_CONCURRENCY": null,
+      "container_command": [
+        "python3",
+        "-m",
+        "uvicorn",
+        "src.app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1"
+      ],
+      "effective_web_workers": 1,
+      "effective_web_workers_reason": null
+    },
+    "gc": {
+      "enabled": true,
+      "threshold": [
+        700,
+        10,
+        10
+      ]
+    },
+    "instrumentation": {
+      "timer": "time.perf_counter",
+      "timer_resolution_seconds": 4.166666666666667e-08,
+      "timer_monotonic": true
+    },
+    "db_buffer_pool": {
+      "container": "refac_bid_box-db-1",
+      "pages_data": 122335,
+      "innodb_buffer_pool_pages_data": 122335,
+      "error": null
+    },
+    "innodb_buffer_pool_pages_data": 122335,
+    "db_buffer_pool_error": null,
+    "start_provenance": {
+      "git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+      "measured_at_utc": "2026-09-08T08:06:49.449762+00:00",
+      "python_version": "3.11.16",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "refac_bid_box-app",
+      "container_id": "6d144c0129444b80f27cb5557f5acb8854005ebad5c81b8316e4fb306834a32e",
+      "target_container_image_id": "sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+      "image_digest": "refac_bid_box-app@sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://127.0.0.1:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "0.0.0.0",
+          "host_port": 8000
+        },
+        {
+          "container_port": 8000,
+          "host_ip": "::",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/orca/workspaces/refac_bid_box/dashboard-latency/src",
+      "target_source_git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      },
+      "db_buffer_pool": {
+        "container": "refac_bid_box-db-1",
+        "pages_data": 122700,
+        "innodb_buffer_pool_pages_data": 122700,
+        "error": null
+      },
+      "innodb_buffer_pool_pages_data": 122700,
+      "db_buffer_pool_error": null
+    },
+    "end_provenance": {
+      "git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+      "measured_at_utc": "2026-09-08T08:06:59.882005+00:00",
+      "python_version": "3.11.16",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "refac_bid_box-app",
+      "container_id": "6d144c0129444b80f27cb5557f5acb8854005ebad5c81b8316e4fb306834a32e",
+      "target_container_image_id": "sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+      "image_digest": "refac_bid_box-app@sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://127.0.0.1:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "0.0.0.0",
+          "host_port": 8000
+        },
+        {
+          "container_port": 8000,
+          "host_ip": "::",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/orca/workspaces/refac_bid_box/dashboard-latency/src",
+      "target_source_git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      },
+      "db_buffer_pool": {
+        "container": "refac_bid_box-db-1",
+        "pages_data": 122335,
+        "innodb_buffer_pool_pages_data": 122335,
+        "error": null
+      },
+      "innodb_buffer_pool_pages_data": 122335,
+      "db_buffer_pool_error": null
+    },
+    "provenance_consistent": true,
+    "host_load": {
+      "cpu_count": 14,
+      "samples": [
+        {
+          "observed_at_utc": "2026-09-08T08:06:49.520206+00:00",
+          "load_1m": 2.6728515625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 19.091796875,
+          "per_core_percent": 19.091796875,
+          "cpu_utilization_percent": 16.4786,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 12.814832998628845,
+          "cpu_utilization_observation_ms": 12.814832998628845,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-08T08:06:54.607114+00:00",
+          "load_1m": 3.81982421875,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 27.284458705357146,
+          "per_core_percent": 27.284458705357146,
+          "cpu_utilization_percent": 7.6286,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 15.196667000054731,
+          "cpu_utilization_observation_ms": 15.196667000054731,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-08T08:06:59.624213+00:00",
+          "load_1m": 3.513671875,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 25.09765625,
+          "per_core_percent": 25.09765625,
+          "cpu_utilization_percent": 10.7857,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 15.79466700059129,
+          "cpu_utilization_observation_ms": 15.79466700059129,
+          "cpu_utilization_unavailable_reason": null
+        }
+      ],
+      "load_1m": {
+        "min": 2.6728515625,
+        "median": 3.513671875,
+        "max": 3.81982421875
+      },
+      "normalized_load_1m_percent": {
+        "min": 19.091796875,
+        "median": 25.09765625,
+        "max": 27.284458705357146
+      },
+      "per_core_percent": {
+        "min": 19.091796875,
+        "median": 25.09765625,
+        "max": 27.284458705357146
+      },
+      "cpu_utilization_percent": {
+        "min": 7.6286,
+        "median": 10.7857,
+        "max": 16.4786
+      },
+      "cpu_utilization_method": "ps_process_sum"
+    }
+  },
+  "provenance": {
+    "start": {
+      "git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+      "measured_at_utc": "2026-09-08T08:06:49.449762+00:00",
+      "python_version": "3.11.16",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "refac_bid_box-app",
+      "container_id": "6d144c0129444b80f27cb5557f5acb8854005ebad5c81b8316e4fb306834a32e",
+      "target_container_image_id": "sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+      "image_digest": "refac_bid_box-app@sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://127.0.0.1:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "0.0.0.0",
+          "host_port": 8000
+        },
+        {
+          "container_port": 8000,
+          "host_ip": "::",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/orca/workspaces/refac_bid_box/dashboard-latency/src",
+      "target_source_git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      },
+      "db_buffer_pool": {
+        "container": "refac_bid_box-db-1",
+        "pages_data": 122700,
+        "innodb_buffer_pool_pages_data": 122700,
+        "error": null
+      },
+      "innodb_buffer_pool_pages_data": 122700,
+      "db_buffer_pool_error": null
+    },
+    "end": {
+      "git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+      "measured_at_utc": "2026-09-08T08:06:59.882005+00:00",
+      "python_version": "3.11.16",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "refac_bid_box-app",
+      "container_id": "6d144c0129444b80f27cb5557f5acb8854005ebad5c81b8316e4fb306834a32e",
+      "target_container_image_id": "sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+      "image_digest": "refac_bid_box-app@sha256:22d9d1a3ea22ecad9803a6ec9fc8597fb874276d0a6c863f8b2490cc288a5f9e",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://127.0.0.1:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "0.0.0.0",
+          "host_port": 8000
+        },
+        {
+          "container_port": 8000,
+          "host_ip": "::",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/orca/workspaces/refac_bid_box/dashboard-latency/src",
+      "target_source_git_sha": "4a5a749902f92ec8228c796580f6c4ea59e0e1c2",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      },
+      "db_buffer_pool": {
+        "container": "refac_bid_box-db-1",
+        "pages_data": 122335,
+        "innodb_buffer_pool_pages_data": 122335,
+        "error": null
+      },
+      "innodb_buffer_pool_pages_data": 122335,
+      "db_buffer_pool_error": null
+    },
+    "innodb_buffer_pool_pages_data": 122335,
+    "db_buffer_pool": {
+      "container": "refac_bid_box-db-1",
+      "pages_data": 122335,
+      "innodb_buffer_pool_pages_data": 122335,
+      "error": null
+    }
+  },
+  "target": "dashboard",
+  "base_url": "http://127.0.0.1:8000",
+  "samples": {
+    "dashboard_stats": {
+      "label": "대시보드 통계 API (웜)",
+      "values_ms": [
+        2.7547089994186535,
+        2.426375000140979,
+        3.6088750002818415,
+        3.1595420005032793,
+        3.7591660002362914,
+        3.803249999691616,
+        3.8024160003260477,
+        3.391875001398148,
+        3.465832998699625,
+        3.2812079989525955,
+        3.03962499856425,
+        3.7381669990281807,
+        2.9738329994870583,
+        2.5116249998973217,
+        3.0323749997478444,
+        3.382290999070392,
+        3.7600409996230155,
+        3.055584000321687,
+        3.7972089994582348,
+        3.30687499990745
+      ],
+      "errors": 0,
+      "p50_ms": 3.344582999488921,
+      "p95_ms": 3.802457700294326,
+      "p99_ms": 3.803091539812158,
+      "tagged": [
+        [
+          "round_1",
+          2.7547089994186535
+        ],
+        [
+          "round_2",
+          2.426375000140979
+        ],
+        [
+          "round_3",
+          3.6088750002818415
+        ],
+        [
+          "round_4",
+          3.1595420005032793
+        ],
+        [
+          "round_5",
+          3.7591660002362914
+        ],
+        [
+          "round_6",
+          3.803249999691616
+        ],
+        [
+          "round_7",
+          3.8024160003260477
+        ],
+        [
+          "round_8",
+          3.391875001398148
+        ],
+        [
+          "round_9",
+          3.465832998699625
+        ],
+        [
+          "round_10",
+          3.2812079989525955
+        ],
+        [
+          "round_11",
+          3.03962499856425
+        ],
+        [
+          "round_12",
+          3.7381669990281807
+        ],
+        [
+          "round_13",
+          2.9738329994870583
+        ],
+        [
+          "round_14",
+          2.5116249998973217
+        ],
+        [
+          "round_15",
+          3.0323749997478444
+        ],
+        [
+          "round_16",
+          3.382290999070392
+        ],
+        [
+          "round_17",
+          3.7600409996230155
+        ],
+        [
+          "round_18",
+          3.055584000321687
+        ],
+        [
+          "round_19",
+          3.7972089994582348
+        ],
+        [
+          "round_20",
+          3.30687499990745
+        ]
+      ]
+    },
+    "dashboard_stats_warm": {
+      "label": "대시보드 통계 API (웜)",
+      "values_ms": [
+        2.7547089994186535,
+        2.426375000140979,
+        3.6088750002818415,
+        3.1595420005032793,
+        3.7591660002362914,
+        3.803249999691616,
+        3.8024160003260477,
+        3.391875001398148,
+        3.465832998699625,
+        3.2812079989525955,
+        3.03962499856425,
+        3.7381669990281807,
+        2.9738329994870583,
+        2.5116249998973217,
+        3.0323749997478444,
+        3.382290999070392,
+        3.7600409996230155,
+        3.055584000321687,
+        3.7972089994582348,
+        3.30687499990745
+      ],
+      "errors": 0,
+      "p50_ms": 3.344582999488921,
+      "p95_ms": 3.802457700294326,
+      "p99_ms": 3.803091539812158,
+      "tagged": [
+        [
+          "round_1",
+          2.7547089994186535
+        ],
+        [
+          "round_2",
+          2.426375000140979
+        ],
+        [
+          "round_3",
+          3.6088750002818415
+        ],
+        [
+          "round_4",
+          3.1595420005032793
+        ],
+        [
+          "round_5",
+          3.7591660002362914
+        ],
+        [
+          "round_6",
+          3.803249999691616
+        ],
+        [
+          "round_7",
+          3.8024160003260477
+        ],
+        [
+          "round_8",
+          3.391875001398148
+        ],
+        [
+          "round_9",
+          3.465832998699625
+        ],
+        [
+          "round_10",
+          3.2812079989525955
+        ],
+        [
+          "round_11",
+          3.03962499856425
+        ],
+        [
+          "round_12",
+          3.7381669990281807
+        ],
+        [
+          "round_13",
+          2.9738329994870583
+        ],
+        [
+          "round_14",
+          2.5116249998973217
+        ],
+        [
+          "round_15",
+          3.0323749997478444
+        ],
+        [
+          "round_16",
+          3.382290999070392
+        ],
+        [
+          "round_17",
+          3.7600409996230155
+        ],
+        [
+          "round_18",
+          3.055584000321687
+        ],
+        [
+          "round_19",
+          3.7972089994582348
+        ],
+        [
+          "round_20",
+          3.30687499990745
+        ]
+      ]
+    },
+    "dashboard_stats_cold": {
+      "label": "대시보드 통계 API (콜드 / 웜업)",
+      "values_ms": [
+        6.991917000050307,
+        2.7394589997129515
+      ],
+      "errors": 0,
+      "p50_ms": 4.865687999881629,
+      "p95_ms": 6.7792941000334395,
+      "p99_ms": 6.949392420046934,
+      "tagged": [
+        [
+          "warmup_1",
+          6.991917000050307
+        ],
+        [
+          "warmup_2",
+          2.7394589997129515
+        ]
+      ]
+    }
+  },
+  "canonical_warm": {
+    "endpoint": "/api/v1/bids/stats",
+    "p50_ms": 3.344582999488921,
+    "p95_ms": 3.802457700294326,
+    "p99_ms": 3.803091539812158,
+    "mean_ms": 3.3025436997377255,
+    "representative_ms": 3.344582999488921,
+    "rounds": 20,
+    "errors": 0
+  },
+  "verdict": {
+    "baseline_pre_cutover_ms": 31970.0,
+    "measured_warm_representative_ms": 3.344582999488921,
+    "measured_warm_p95_ms": 3.802457700294326,
+    "latency_reduction_ratio": 0.00010461629651200878,
+    "conclusion": "전환 전 31.97초 대비 실측 웜 레이턴시가 수 밀리초 수준으로 대폭 단축됨"
+  }
+}
