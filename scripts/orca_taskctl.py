@@ -2008,7 +2008,14 @@ def start_worker_watch(repo: Path | str = ".") -> tuple[bool, str]:
                     | subprocess.DETACHED_PROCESS
                 }
             proc = subprocess.Popen(  # nosec B603  고정된 스크립트 경로와 인자만 넘깁니다
-                [sys.executable, str(script), "--repo", str(repo_path), "--watch"],
+                [
+                    sys.executable,
+                    str(script),
+                    "--repo",
+                    str(repo_path),
+                    "--watch",
+                    "--respawn",
+                ],
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,

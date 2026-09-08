@@ -5451,6 +5451,7 @@ def test_start_worker_watch_lifecycle_and_deduplication(
     assert "기동 완료" in msg1
     assert len(spawned_calls) == 1
     assert "--watch" in spawned_calls[0]
+    assert "--respawn" in spawned_calls[0]
 
     # 2. 두 번째 호출: 이미 살아있는 PID 가 있으므로 스폰 없이 기존 프로세스 재사용
     ok2, msg2 = start_worker_watch(tmp_path)
