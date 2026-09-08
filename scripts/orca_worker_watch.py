@@ -14,15 +14,18 @@ scripts/orca_worker_watch.py
     uv run python scripts/orca_worker_watch.py
     uv run python scripts/orca_worker_watch.py --json
 
-    # 상시 감시 루프
+    # 상시 감시 루프 (차단이 나와도 종료하지 않음. dispatch 가 --respawn 과 함께 붙임)
     uv run python scripts/orca_worker_watch.py --watch
     uv run python scripts/orca_worker_watch.py --watch --interval 10 --max-iterations 30
     uv run python scripts/orca_worker_watch.py --watch --min-commits 1
 
 종료 코드:
     0  모든 워커가 정상 진행 중이거나 감시 대상 없음, 또는 완료 조건(min-commits) 충족, 또는 최대 반복 완료
-    1  차단 신호가 감지된 워커가 있음 (코디네이터 개입 필요)
+    1  1회 점검이거나 --max-iterations 가 있는 반복에서 차단 신호가 감지됨
     2  도구 오류
+
+무제한 --watch (max-iterations 없음) 는 차단을 출력한 뒤에도 종료하지 않습니다.
+한 워커의 회수 대기·승인 대기가 다른 워커 감시를 끊지 않게 하기 위함입니다.
 """
 
 from __future__ import annotations
@@ -889,8 +892,10 @@ def watch_loop(
 
         prev_signatures = current_signatures
 
-        # 1. 차단 신호 감지 시 즉시 종료 (코디네이터 개입 필요)
-        if any(s.blocked for s in states):
+        # 1. 차단 신호: 1회 점검과 --max-iterations 가 있는 반복만 즉시 종료한다.
+        # 무제한 --watch 는 출력만 하고 계속 돈다. 한 워커의 회수 대기·승인 대기가
+        # 프로세스를 죽여 다른 워커 감시가 끊기는 일을 막는다.
+        if any(s.blocked for s in states) and max_iterations is not None:
             return 1
 
         # 2. 지정된 최소 커밋 수 도달 완료 조건 충족 시 정상 종료
@@ -911,6 +916,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", default="main", help="진척 비교 기준 브랜치")
     parser.add_argument("--json", action="store_true", help="기계 판독 출력")
     parser.add_argument("--watch", action="store_true", help="상시 감시 모드 활성화")
+    parser.add_argument(
+        "--respawn",
+        action="store_true",
+        help="무제한 --watch 가 비정상 종료하면 재기동한다. dispatch 부착 경로가 붙인다",
+    )
     parser.add_argument(
         "--interval",
         "--interval-sec",
@@ -956,22 +966,32 @@ def main(argv: list[str] | None = None) -> int:
         interval = DEFAULT_INTERVAL_SECONDS
 
     stall_threshold = args.stall_threshold
+    unbounded = bool(args.watch and max_iterations is None)
+    respawn = bool(args.respawn and unbounded)
 
-    try:
-        return watch_loop(
-            repo=args.repo,
-            base=args.base,
-            interval=interval,
-            max_iterations=max_iterations,
-            min_commits=args.min_commits,
-            stall_threshold=stall_threshold,
-            json_output=args.json,
+    while True:
+        try:
+            code = watch_loop(
+                repo=args.repo,
+                base=args.base,
+                interval=interval,
+                max_iterations=max_iterations,
+                min_commits=args.min_commits,
+                stall_threshold=stall_threshold,
+                json_output=args.json,
+            )
+        except KeyboardInterrupt:
+            return 0
+        except Exception as exc:
+            print(f"감시 실패: {exc}", file=sys.stderr)
+            code = 2
+        if not respawn or code == 0:
+            return code
+        print(
+            f"상시 감시기가 종료 코드 {code} 로 끝나 재기동합니다",
+            file=sys.stderr,
         )
-    except KeyboardInterrupt:
-        return 0
-    except Exception as exc:
-        print(f"감시 실패: {exc}", file=sys.stderr)
-        return 2
+        time.sleep(interval)
 
 
 if __name__ == "__main__":

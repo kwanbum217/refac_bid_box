@@ -446,7 +446,7 @@ def test_default_no_args_is_one_shot_without_sleep() -> None:
 
 
 def test_watch_mode_immediate_exit_on_block() -> None:
-    """반복 모드에서 차단을 만나면 남은 반복 없이 즉시 종료 코드 1로 끝난다."""
+    """--max-iterations 가 있는 반복 모드에서 차단을 만나면 남은 반복 없이 즉시 종료 코드 1로 끝난다."""
     clean_state = watch.WorkerState(name="orca-w1", path="/tmp/w1", branch="b1", commits=0, dirty=0)
     blocked_state = watch.WorkerState(
         name="orca-w1",
@@ -466,6 +466,63 @@ def test_watch_mode_immediate_exit_on_block() -> None:
         exit_code = watch.main(["--watch", "--max-iterations", "10", "--interval", "5"])
         assert exit_code == 1
         assert sleep_mock.call_count == 1
+
+
+def test_unbounded_watch_continues_after_block() -> None:
+    """무제한 --watch 는 차단을 출력한 뒤에도 종료하지 않아 다른 워커 감시가 끊기지 않는다."""
+    blocked_state = watch.WorkerState(
+        name="orca-w1",
+        path="/tmp/w1",
+        branch="b1",
+        commits=0,
+        dirty=0,
+        blocked_reason="completed Task 의 워커 터미널이 아직 열려 있습니다",
+        blocked_fix="worker-release 후 terminal close",
+        blocked_kind="settled_session",
+    )
+    clean_state = watch.WorkerState(
+        name="orca-w2",
+        path="/tmp/w2",
+        branch="b2",
+        commits=1,
+        dirty=0,
+    )
+    calls = {"n": 0}
+
+    def fake_collect(*_args: object, **_kwargs: object) -> list[watch.WorkerState]:
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            return [blocked_state]
+        return [clean_state]
+
+    def fake_sleep(_seconds: float) -> None:
+        if calls["n"] >= 3:
+            raise KeyboardInterrupt
+
+    with (
+        patch("scripts.orca_worker_watch.collect", side_effect=fake_collect),
+        patch("time.sleep", side_effect=fake_sleep),
+    ):
+        exit_code = watch.main(["--watch", "--interval", "1"])
+    assert exit_code == 0
+    assert calls["n"] >= 3
+
+
+def test_respawn_restarts_after_nonzero_then_stops_on_zero() -> None:
+    """--respawn 무제한 감시는 비정상 종료 코드 뒤에 재기동하고 0 이면 멈춘다."""
+    calls = {"n": 0}
+
+    def fake_loop(**_kwargs: object) -> int:
+        calls["n"] += 1
+        return 2 if calls["n"] == 1 else 0
+
+    with (
+        patch("scripts.orca_worker_watch.watch_loop", side_effect=fake_loop),
+        patch("time.sleep"),
+    ):
+        exit_code = watch.main(["--watch", "--respawn"])
+    assert exit_code == 0
+    assert calls["n"] == 2
 
 
 def test_watch_mode_min_commits_completion() -> None:
