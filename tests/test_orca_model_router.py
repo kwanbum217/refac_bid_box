@@ -317,6 +317,7 @@ class TestModelPoolAndSelection:
         }
         assert non_auto_pools == {
             "deepseek-flash",
+            "qwen-flash",
             "gemini-3.7-flash-high",
             "gemini-3.7-flash-medium",
             "gemini-3.7-flash-low",
