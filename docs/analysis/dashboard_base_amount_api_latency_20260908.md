@@ -1,7 +1,7 @@
 # 대시보드 금액 집계 base_amount 전환 후 GET /api/v1/bids/stats 웜 API 레이턴시 실측 보고서
 
 > **측정일시**: 2026-09-08
-> **측정 대상**: `GET /api/v1/bids/stats`
+> **측정 대상**: `GET /api/v1/bids/stats` (이 경로 하나. `compare-stats` 는 미측정)
 > **벤치마크 하네스**: `scripts/benchmark_latency.py`
 > **측정 환경**: Docker Compose 기반 라이브 HTTP 서비스 (`http://127.0.0.1:8000`)
 > **원시 측정치 산출물**: `data/benchmarks/dashboard_base_amount_api_latency_20260908.json`
@@ -30,9 +30,12 @@
 | `canonical_warm.p95_ms` | 3.802457700294326 |
 | `canonical_warm.mean_ms` | 3.3025436997377255 |
 | `provenance.innodb_buffer_pool_pages_data` | 122335 |
-| `verdict.baseline_pre_cutover_ms` | 31970 |
-| `verdict.conclusion` | 전환 전 31.97초 대비 실측 웜 레이턴시가 수 밀리초 수준으로 대폭 단축됨 |
 <!-- METRICS_END -->
+
+산출물 JSON 의 `verdict` 블록은 인용하지 않습니다. 그 안의
+`baseline_pre_cutover_ms` 31,970 은 이 측정 대상이 아닌 다른 경로의 값이며
+`conclusion` 도 그 비교 위에 서 있습니다. 근거는 4.3 절에 적었습니다. 원시
+측정치(`samples`, `canonical_warm`, `provenance`)는 그대로 보존합니다.
 
 ---
 
@@ -62,19 +65,50 @@
 
 ---
 
-## 4. 전환 전 기준선 대비 비교 및 판정
+## 4. 판정과 범위
 
 ### 4.1 비교 기준
-- **전환 전 기존 벤치마크 기준선**: 31.97초 (31,970ms)
+
 - **DB 단독 예비 집계 추정치**: 6초 안팎 (약 6,000ms)
 - **실측 웜 API 레이턴시**: 대표값 3.34ms, P95 3.80ms
 
-### 4.2 분석 및 판정 결론
-1. **지연 시간 단축 효과**:
-   - 전환 전 API 웜 기준선(31.97초)과 비교했을 때, 실측된 `GET /api/v1/bids/stats`의 웜 API 레이턴시는 **3.34ms (P95 3.80ms)**로 측정되었습니다.
-   - 이는 전환 전 대비 약 **0.01%** 수준(99.99% 단축)으로 단축된 수치입니다.
+**31.97초를 이 측정의 기준선으로 쓰지 않습니다.** 초안은 그것을 전환 전
+기준선으로 놓고 99.99% 단축을 계산했으나, 그 값의 출처는
+[`announcement_amount_outliers_20260904.md`](../ops/announcement_amount_outliers_20260904.md)
+4.3 절의 `agency_top10` 쿼리 웜 시간이며 `compare-stats` 경로에 속합니다.
+이 보고서가 잰 `GET /api/v1/bids/stats` 와 다른 경로이므로 두 값을 나란히
+놓은 비교는 성립하지 않습니다.
 
-2. **구조적 병목 및 집계 전환 효과 규명**:
+### 4.2 분석 및 판정 결론
+1. **실측 결과**:
+   - `GET /api/v1/bids/stats` 의 웜 API 레이턴시는 **3.34ms (P95 3.80ms)** 입니다.
+   - DB 단독 예비 집계 추정치 6초 안팎보다 세 자릿수 빠르며, 이 경로에 대한 성능 우려는 없습니다.
+   - 전환 전후 배율은 산출하지 않습니다. 같은 경로의 전환 전 실측치가 없기 때문입니다.
+
+2. **구조적 해석**:
    - 대시보드 기본 통계(`GET /api/v1/bids/stats`)는 1차적으로 `BidResult` 스코프 집계 및 캐시 레이어(`cache.set`)의 보호를 받으므로 웜 상태에서 3.3ms대의 즉각적인 응답성을 보장합니다.
-   - 공고 기초금액(`_announcement_amount_expr`) 전환의 주 수혜 경로인 `GET /api/v1/bids/compare-stats`(공고 대비 낙찰 비교 통계의 `agency_announce_top10`) 역시 기존 5,497,840건 전체 행의 JSON 추출 연산(31.97초 소요)에서 컬럼 인덱스 집계로 전환되어 콜드 기준 약 9.87초, 웜 기준 약 34ms로 성능이 대폭 개선되었습니다.
-   - 따라서 전환 전 31.97초에 달하던 병목은 완전히 해소되었으며, `GET /api/v1/bids/stats`의 웜 API 레이턴시는 6초 안팎의 예비 기준선보다도 훨씬 우수한 수 밀리초 수준으로 안정화되었음을 최종 확인했습니다.
+   - 따라서 `GET /api/v1/bids/stats`의 웜 API 레이턴시는 6초 안팎의 예비 기준선보다도 우수한 수 밀리초 수준으로 안정화되었음을 확인했습니다.
+
+### 4.3 이 측정이 말하지 않는 것 (범위 한계)
+
+**측정한 것은 `GET /api/v1/bids/stats` 하나뿐입니다.** 결론을 그 범위 밖으로 넓히지 않습니다.
+
+`_announcement_amount_expr` 전환의 주 수혜 경로는 `GET /api/v1/bids/compare-stats`
+(`agency_announce_top10`)이며 **이 경로는 측정하지 않았습니다.** 산출물 JSON 의
+`samples` 는 `dashboard_stats`, `dashboard_stats_warm`, `dashboard_stats_cold`
+셋뿐이고 `compare-stats` 계열 표본이 없습니다.
+
+초안에는 두 번째 문제도 있었습니다. 전환 전 기준선으로 삼은 31.97초가 실은
+`compare-stats` 경로 `agency_top10` 의 값이어서, 다른 경로끼리 비교하고 99.99%
+단축을 계산했습니다. 산출물 JSON 의 `verdict` 블록도 같은 비교 위에 있으므로
+정본 지표에서 인용을 뺐습니다.
+
+2026-09-09 리뷰에서 이 보고서의 초안이 반려된 사유는 첫 번째 문제입니다. 초안 4.2절이
+`compare-stats` 의 콜드 약 9.87초와 웜 약 34ms 를 확정 서술했으나 산출물 JSON 에
+그 수치가 없었습니다. 측정하지 않은 값을 결론에 넣은 것이며, `METRICS` 블록 밖의
+산문이라 기계 검증도 닿지 않았습니다. 해당 문단을 삭제하고 범위를 실측 대상으로
+좁혔습니다.
+
+`compare-stats` 실측은 별도 과제로 남습니다. 그 경로는 캐시 보호를 받지 않고 콜드
+조건에서 버퍼풀을 비워야 의미가 있으므로 측정 창을 따로 잡아야 합니다. 따라서
+"전환 전 31.97초 병목이 완전히 해소되었다" 는 판단은 **아직 근거가 없습니다.**
