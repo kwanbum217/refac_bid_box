@@ -15,6 +15,9 @@ import os
 import socket
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -51,6 +54,108 @@ from src.tasks.scheduled_tasks import (
 from src.tasks.summary_tasks import rebuild_dataset_summary_task
 
 logger = logging.getLogger(__name__)
+
+_heavy_task_lock: asyncio.Lock | None = None
+_running_heavy_tasks: set[str] = set()
+_in_heavy_task: ContextVar[bool] = ContextVar("_in_heavy_task", default=False)
+
+HEAVY_TASK_NAMES: frozenset[str] = frozenset(
+    {
+        "collect_bids_task",
+        "update_kb_task",
+        "manual_full_task",
+        "refresh_data_task",
+        "manual_retrain_task",
+    }
+)
+
+HEAVY_RUN_MODES: frozenset[str] = frozenset(
+    {
+        "collect_only",
+        "kb_only",
+        "manual_full",
+        "refresh_data",
+        "retrain_only",
+        "nightly_schedule",
+    }
+)
+
+
+def get_heavy_task_lock() -> asyncio.Lock:
+    """무거운 태스크 상호 배제 잠금을 반환합니다."""
+    global _heavy_task_lock
+    if _heavy_task_lock is None:
+        _heavy_task_lock = asyncio.Lock()
+    return _heavy_task_lock
+
+
+def reset_heavy_task_lock(lock: asyncio.Lock | None = None) -> None:
+    """테스트 격리를 위해 잠금 인스턴스를 재설정하거나 주입합니다."""
+    global _heavy_task_lock
+    _heavy_task_lock = lock
+    _running_heavy_tasks.clear()
+
+
+def get_running_heavy_tasks() -> set[str]:
+    """현재 실행 중인 무거운 태스크 이름 집합을 반환합니다."""
+    return set(_running_heavy_tasks)
+
+
+def is_in_heavy_task() -> bool:
+    """현재 비동기 컨텍스트가 무거운 태스크 가드 내부인지 확인합니다."""
+    return _in_heavy_task.get()
+
+
+@asynccontextmanager
+async def heavy_task_guard(task_name: str) -> AsyncIterator[None]:
+    """무거운 태스크 단일 실행 잠금 (Heavy Task Single Execution Lock).
+
+    [설계 근거]
+    1. 메모리 폭주 방지: update_kb_task, collect_bids_task, manual_full_task 등
+       DB 전량 또는 KB 전량을 다루는 무거운 태스크는 단일 실행 시에도 수 GB의 메모리를 사용합니다.
+       동시에 여러 건이 실행되면 컨테이너 메모리 한계(OOM)를 초과하여 워커가 소멸합니다.
+       따라서 무거운 태스크 간에는 상호 배제(동시 실행 상한 = 1)가 필수적입니다.
+    2. 가벼운 태스크 처리량 유지:
+       WorkerSettings.max_jobs = 4 는 유지하며, preflight_check_task, validate_model_task 등
+       가벼운 태스크는 잠금을 획득하지 않고 병렬 실행됩니다.
+    3. 재시도 보존 (No Retry Burn):
+       arq 의 Retry(defer) 예외를 사용해 재큐잉하면 arq.worker.run_job 내부의
+       incr(retry_key_prefix + job_id) 로 인해 매번 job_try 가 증가하여
+       기본 max_tries(5)를 빠르게 소진하고 태스크가 영구 소멸됩니다.
+       실측 사례에서도 장애 재기동 시 태스크들이 이미 try=3, try=2 상태였으므로
+       Retry(defer) 방식은 태스크 유실을 초래합니다.
+       반면 asyncio 잠금 대기는 try 카운트를 소진하지 않고 안전하게 순차 실행합니다.
+
+    [기각된 대안]
+    - 대안 1 (max_jobs = 1 로 일괄 축소): 가벼운 태스크까지 직렬화되어 전체 처리량이 저하됨 (기각).
+    - 대안 2 (태스크별 개별 세마포어): update_kb_task 와 collect_bids_task 가 동시에 돌면
+      서로 다른 태스크라도 메모리 합산으로 워커가 사망하므로 태스크 간 상호 배제가 필수 (기각).
+    - 대안 3 (중복 작업 조용한 폐기): 실패한 작업의 재시도는 시스템 일관성에 필수적이므로
+      버려서는 안 됨 (기각).
+    - 대안 4 (arq Retry deferral): retry_key_prefix 카운트 소진으로 재시도 한도 초과 실패 유발 (기각).
+    """
+    if _in_heavy_task.get():
+        yield
+        return
+
+    lock = get_heavy_task_lock()
+    if lock.locked():
+        logger.info("무거운 태스크 '%s' 실행 잠금 대기 중...", task_name)
+    async with lock:
+        _in_heavy_task.set(True)
+        _running_heavy_tasks.add(task_name)
+        logger.info(
+            "무거운 태스크 '%s' 실행 잠금 획득 (현재 실행 중인 무거운 태스크: %s)",
+            task_name,
+            list(_running_heavy_tasks),
+        )
+        try:
+            yield
+        finally:
+            _running_heavy_tasks.discard(task_name)
+            _in_heavy_task.set(False)
+            logger.info("무거운 태스크 '%s' 실행 잠금 해제 완료", task_name)
+
 
 WORKER_HEARTBEAT_KEY = "bidbox:worker:heartbeat"
 QUEUE_BACKLOG_KEY = "bidbox:worker:queue_backlog"
@@ -306,6 +411,21 @@ class WorkerSettings:
             )
         )
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    # 무거운 태스크 동시 실행 제한 정책:
+    # 1. max_jobs = 4 유지:
+    #    가벼운 태스크(preflight, validate 등)의 동시 처리량을 유지하기 위해
+    #    워커 전체 max_jobs 를 1 로 축소하지 않고 4 로 유지합니다.
+    # 2. 무거운 태스크 단일 실행 잠금 (Heavy Task Single Execution Lock):
+    #    update_kb_task, collect_bids_task, manual_full_task 등 DB 전량 또는 KB 전량을 다루는
+    #    무거운 태스크들은 heavy_task_guard 를 통해 단 1개만 실행되도록 상호 배제(동시성=1)합니다.
+    # 3. 재시도 보존 (No Retry Burn):
+    #    재시도 큐에서 태스크가 한꺼번에 되살아나도 순차 실행되어 메모리 폭주(OOM)를 방지하며,
+    #    arq Retry(defer) 예외를 사용하지 않아 job_try 카운트 소진(5회 초과 실패)을 방어합니다.
+    # 4. 기각된 대안:
+    #    - max_jobs = 1 축소: 가벼운 태스크까지 직렬화되어 처리량 저하 (기각)
+    #    - 태스크별 개별 세마포어: 서로 다른 무거운 작업 동시 실행 시 메모리 합산 폭주 (기각)
+    #    - 재시도 작업 조용한 버림: 작업 유실 및 파이프라인 일관성 훼손 (기각)
+    #    - Arq Retry deferral: 재시도 한도(max_tries=5) 조기 소진으로 작업 소멸 유발 (기각)
     max_jobs = 4
     job_timeout = 1800
     keep_result = 3600
@@ -373,5 +493,31 @@ def _apply_catchup_job_timeout(functions: list[Any]) -> list[Any]:
     return updated
 
 
+HEAVY_JOB_TIMEOUT_SECONDS = 10800  # 3시간 (야간 크론 및 따라잡기와 동일한 넉넉한 상한)
+
+
+def _apply_heavy_task_settings(functions: list[Any]) -> list[Any]:
+    """무거운 태스크는 큐 대기 시간과 실행 시간을 고려해 3시간 타임아웃을 적용합니다."""
+    updated: list[Any] = []
+    for fn in functions:
+        target = getattr(fn, "coroutine", fn)
+        fn_name = getattr(target, "__name__", "")
+        if fn_name not in HEAVY_TASK_NAMES:
+            updated.append(fn)
+            continue
+        if getattr(fn, "timeout_s", None) is not None:
+            updated.append(fn)
+            continue
+        wrapped = arq_func(
+            target,
+            name=fn_name,
+            timeout=HEAVY_JOB_TIMEOUT_SECONDS,
+        )
+        cast(Any, wrapped).__name__ = fn_name
+        updated.append(wrapped)
+    return updated
+
+
 ensure_all_worker_tasks_traced()
 WorkerSettings.functions = _apply_catchup_job_timeout(WorkerSettings.functions)
+WorkerSettings.functions = _apply_heavy_task_settings(WorkerSettings.functions)
