@@ -24,7 +24,7 @@ from chromadb.config import Settings as _ChromaSettings
 
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
-from src.app.services import kb_builder
+from src.app.services import kb_builder, kb_index_sync
 
 # allow_reset 은 클라이언트 설정으로 직접 넘깁니다. 환경변수로 두면 모듈 import
 # 만으로 프로세스 전역이 오염되어 다른 테스트의 chroma 동작까지 바뀝니다.
@@ -162,6 +162,7 @@ def test_format_version_bump_forces_full_reindex(isolated_db, chroma_path, monke
         _add_announcement(isolated_db, notice_no=f"2026{index:06d}", name=f"공고 {index}")
     kb_builder.rebuild_knowledge_base(isolated_db)
 
+    monkeypatch.setattr(kb_index_sync, "DOC_FORMAT_VERSION", kb_index_sync.DOC_FORMAT_VERSION + 1)
     monkeypatch.setattr(kb_builder, "DOC_FORMAT_VERSION", kb_builder.DOC_FORMAT_VERSION + 1)
     outcome = kb_builder.rebuild_knowledge_base(isolated_db)
 
@@ -212,7 +213,7 @@ def test_incremental_run_never_empties_collection(isolated_db, chroma_path, monk
     def boom(*_args, **_kwargs):
         raise RuntimeError("임베딩 실패")
 
-    monkeypatch.setattr(kb_builder, "_flush", boom)
+    monkeypatch.setattr(kb_index_sync, "_flush", boom)
     outcome = kb_builder.rebuild_knowledge_base(isolated_db)
 
     assert outcome["status"] == "failed"
@@ -263,7 +264,7 @@ def test_existing_index_metadata_is_loaded_in_pages(monkeypatch):
             return {"ids": [row[0] for row in rows], "metadatas": [row[1] for row in rows]}
 
     collection = _Collection()
-    monkeypatch.setattr(kb_builder, "INDEX_LOOKUP_BATCH_SIZE", 2)
+    monkeypatch.setattr(kb_index_sync, "INDEX_LOOKUP_BATCH_SIZE", 2)
 
     hashes, incremental = kb_builder._load_existing_index(collection)
 
@@ -292,7 +293,7 @@ def test_existing_index_count_failure_retries_without_falling_back(monkeypatch):
             }
 
     collection = _Collection()
-    monkeypatch.setattr(kb_builder, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(kb_index_sync, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
 
     hashes, incremental = kb_builder._load_existing_index(collection)
 
@@ -321,7 +322,7 @@ def test_existing_index_page_failure_retries_without_falling_back(monkeypatch):
             }
 
     collection = _Collection()
-    monkeypatch.setattr(kb_builder, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(kb_index_sync, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
 
     hashes, incremental = kb_builder._load_existing_index(collection)
 
@@ -342,7 +343,7 @@ def test_repeated_existing_index_count_failure_stops_after_retry(monkeypatch):
             raise RuntimeError("지속적인 count 실패")
 
     collection = _Collection()
-    monkeypatch.setattr(kb_builder, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(kb_index_sync, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", 0)
 
     with pytest.raises(RuntimeError, match="기존 색인을 보존한 채 중단"):
         kb_builder._load_existing_index(collection)
@@ -365,6 +366,7 @@ def test_repeated_existing_index_failure_preserves_collection(
         raise RuntimeError("기존 색인 문서 수 조회에 2회 실패했습니다.")
 
     monkeypatch.setattr(kb_builder, "_load_existing_index", fail_existing_index)
+    monkeypatch.setattr(kb_index_sync, "_load_existing_index", fail_existing_index)
     outcome = kb_builder.rebuild_knowledge_base(isolated_db)
 
     assert outcome["status"] == "failed"
