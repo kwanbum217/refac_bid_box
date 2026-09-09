@@ -43,8 +43,6 @@ URL_MAP = {
     "chatbot:automation_job_confirm": "/api/v1/automation/job/{job_id}/confirm",
     "chatbot:automation_job_status": "/api/v1/automation/job/{job_id}/status",
     "chatbot:automation_job_cancel": "/api/v1/automation/job/{job_id}/cancel",
-    # 공고 기준 분석 (적격심사 정량평가). 백엔드 미구현 상태에서 템플릿 렌더링을 위해 자리표시자 등록.
-    "evaluations:analyze": "/api/v1/evaluations/analyze",
     "accounts:login": "/accounts/login/",
     "accounts:logout": "/accounts/logout/",
     "accounts:signup": "/accounts/signup/",

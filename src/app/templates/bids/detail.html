@@ -801,7 +801,7 @@ $(document).ready(function() {
     // ============================================================
     // 3. 공고 기준 분석 (Evaluation)
     // ============================================================
-    const evaluationUrl = '{{ url('evaluations:analyze') }}';
+    const evaluationUrl = '/api/v1/evaluations/analyze';
 
     function formatNumber(value) {
         return Number(value || 0).toLocaleString('ko-KR');
