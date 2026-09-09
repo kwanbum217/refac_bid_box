@@ -71,6 +71,7 @@ from src.app.services.evaluation_rules import (
 from src.app.services.evaluation_scoring import (
     calculate_min_bid_amount,
     calculate_price_score,
+    compute_price_ratio,
     evaluate_qualification,
     generate_pred_price_scenarios,
     invert_lowest_bid_rate,
@@ -88,7 +89,6 @@ router = APIRouter(prefix="/evaluations", tags=["Evaluations"])
 # 규칙 레지스트리는 별표 식별 문자열과 낙찰하한율만 실측으로 확정했습니다.
 # 가격배점한도(B)·평점계수(k)·통과점수(T) 는 별표마다 다르고 공고 데이터에 없으므로
 # 사용자가 공고문 배점표를 입력합니다. 이 계층은 세 값을 추측하지 않습니다.
-SCORE_TABLE_FIELDS: tuple[str, ...] = ("max_price_score", "multiplier", "pass_threshold")
 SCORE_TABLE_LABELS: dict[str, str] = {
     "max_price_score": "가격배점한도",
     "multiplier": "평점계수",
@@ -156,49 +156,37 @@ def _get_snapshot_or_404(db: Session, snapshot_id: int, user_id: int) -> BidEval
     return snapshot
 
 
-def _decimal_value(source: Any, field_name: str) -> Decimal | None:
-    """객체에 선언된 수치 필드만 읽습니다. 필드가 없거나 0 이하이면 None 을 돌려 계산 대상 아님을 표시합니다."""
-    raw_value = getattr(source, field_name, None)
-    if raw_value is None:
-        return None
-    try:
-        value = Decimal(str(raw_value))
-    except (ArithmeticError, TypeError, ValueError):
-        return None
-    return value if value > Decimal("0") else None
-
-
 def _score_table(
     qualification: QualificationInput,
     rule: EvaluationRule,
 ) -> tuple[ScoreTable | None, list[str]]:
     """가격점수에 필요한 배점표 파라미터를 사용자 입력에서 읽습니다.
 
-    가격배점한도·평점계수·통과점수는 규칙 레지스트리가 확정하지 못한 값이라 입력이 정본이고,
-    입력이 없으면 추측하지 않고 결측 필드명만 돌려 점수 계산을 차단합니다.
-    기준비율은 규칙 객체의 선언값을 쓰되, 사용자가 배점표에서 입력했다면 그 값을 우선합니다.
+    가격배점한도·평점계수·통과점수는 규칙 레지스트리가 실측으로 확정하지 못한 값이라
+    공고문 배점표에서 읽은 사용자 입력이 정본입니다. 하나라도 없으면 추측하지 않고
+    결측 필드명만 돌려 점수 계산을 차단합니다. 기준비율은 규칙 객체의 선언값을 씁니다.
     """
+    supplied: dict[str, float | None] = {
+        "max_price_score": qualification.max_price_score,
+        "multiplier": qualification.multiplier,
+        "pass_threshold": qualification.pass_threshold,
+    }
     resolved: dict[str, Decimal] = {}
     missing: list[str] = []
-    for field_name in SCORE_TABLE_FIELDS:
-        value = _decimal_value(qualification, field_name)
+    for field_name, value in supplied.items():
         if value is None:
             missing.append(field_name)
         else:
-            resolved[field_name] = value
+            resolved[field_name] = Decimal(str(value))
     if missing:
         return None, missing
-
-    base_rate = _decimal_value(qualification, "base_rate") or _decimal_value(rule, "base_rate")
-    if base_rate is None:
-        return None, ["base_rate"]
 
     return (
         ScoreTable(
             max_price_score=resolved["max_price_score"],
             multiplier=resolved["multiplier"],
             pass_threshold=resolved["pass_threshold"],
-            base_rate=base_rate,
+            base_rate=rule.base_rate,
         ),
         [],
     )
@@ -406,12 +394,28 @@ def _model_provenance(
     )
 
 
-def _scenario_price_notes(scenarios: list[ScenarioPrice]) -> list[str]:
-    """복수예가 시나리오 예정가격 구간. 점수 계산과 무관하게 공고값으로 확정됩니다."""
-    if not scenarios:
-        return []
-    prices = " / ".join(f"{s.scenario_name} {int(s.pred_price):,}원" for s in scenarios)
-    return [f"복수예가 시나리오 예정가격: {prices}"]
+def _unscored_scenario_results(
+    scenarios: list[ScenarioPrice],
+    candidate_bid_amount: Decimal,
+) -> list[ScenarioEvaluationResult]:
+    """배점표 없이도 확정되는 시나리오 예정가격과 투찰률. 점수 계열은 계산하지 않았으므로 None 입니다."""
+    return [
+        ScenarioEvaluationResult(
+            scenario_name=scenario.scenario_name,
+            scenario_type=scenario.scenario_type,
+            estimated_price=int(scenario.pred_price),
+            bid_to_estimated_ratio=float(
+                compute_price_ratio(candidate_bid_amount, scenario.pred_price)
+            ),
+            price_score=None,
+            qualification_score=None,
+            total_score=None,
+            pass_threshold=None,
+            is_qualified=None,
+            warnings=[],
+        )
+        for scenario in scenarios
+    ]
 
 
 def _score_table_missing_response(
@@ -427,6 +431,7 @@ def _score_table_missing_response(
     assert rule_result.effective_lwlt_rate is not None
     rule = rule_result.rule
     effective_lwlt = rule_result.effective_lwlt_rate
+    candidate_bid_amount = Decimal(str(payload.candidate_bid_amount))
     a_value = _extract_a_value(bid)
     min_bid_result = calculate_min_bid_amount(
         pred_price=pred_price,
@@ -444,7 +449,6 @@ def _score_table_missing_response(
     labels = ", ".join(SCORE_TABLE_LABELS.get(name, name) for name in missing_fields)
     warnings = [
         *rule_result.warnings,
-        *_scenario_price_notes(scenarios),
         floor_note,
         "가격점수·종합점수·적격 판정·최저 투찰률 역산은 배점표를 입력한 뒤에 계산됩니다.",
     ]
@@ -467,7 +471,7 @@ def _score_table_missing_response(
         min_bid_amount_with_a=(
             int(min_bid_result.min_bid_amount) if min_bid_result.has_a_value else None
         ),
-        scenario_results=[],
+        scenario_results=_unscored_scenario_results(scenarios, candidate_bid_amount),
         warnings=warnings,
     )
 
