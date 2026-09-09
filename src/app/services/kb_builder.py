@@ -20,6 +20,7 @@ from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import KnowledgeBaseStatus
 from src.app.services.kb_document_builder import (
+    DEFAULT_MAX_DOCUMENTS,
     PagedQuerySequence,
     _build_announcement_document,
     _build_result_document,
@@ -50,11 +51,6 @@ from src.rag.embeddings import get_collection
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "bidding_kb"
-
-# 원본은 10 이었습니다. 그 값이 야간 재색인에 그대로 적용되면 목표 문서가 10건이
-# 되고, 기존 색인 전부가 삭제 대상으로 계산됩니다. 2026-08-07 에 KB 를 50만 건으로
-# 확대한 뒤로는 운영 규모와 맞는 값이어야 합니다.
-DEFAULT_MAX_DOCUMENTS = 500_000
 
 # fmt: off
 __all__ = (

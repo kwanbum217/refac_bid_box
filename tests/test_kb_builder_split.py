@@ -8,6 +8,7 @@ kb_builder.py 에서 재수출하는 심볼들이 누락되거나 분할된 모�
 from __future__ import annotations
 
 import ast
+import pathlib
 from pathlib import Path
 
 
@@ -166,3 +167,35 @@ def test_document_builder_functions():
     res_doc = _build_result_document(result)
     assert "[낙찰공고번호] 20260101001-000" in res_doc
     assert "[낙찰업체] 낙찰업체" in res_doc
+
+
+def test_max_documents_single_definition() -> None:
+    """상한은 kb_document_builder 한 곳에서만 정의되고 kb_builder 는 재수출합니다.
+
+    2026-09-09 이전에는 두 모듈이 각자 500_000 을 정의해 한쪽만 고치면 값이
+    어긋날 수 있었습니다. 실제 판정은 kb_document_builder 쪽이 하므로 kb_builder
+    에만 손대면 조용히 무시됩니다.
+    """
+    import src.app.services.kb_builder as kb_builder
+    import src.app.services.kb_document_builder as kb_doc
+
+    assert kb_builder.DEFAULT_MAX_DOCUMENTS is kb_doc.DEFAULT_MAX_DOCUMENTS
+
+    source = (
+        pathlib.Path(__file__).resolve().parents[1] / "src" / "app" / "services" / "kb_builder.py"
+    ).read_text()
+    assert "DEFAULT_MAX_DOCUMENTS = " not in source, (
+        "kb_builder.py 는 상한을 자체 정의하지 말고 kb_document_builder 에서 import 해야 합니다."
+    )
+
+
+def test_max_documents_covers_one_year_window() -> None:
+    """상한이 최근 1년 공고 규모를 담을 수 있어야 합니다.
+
+    2026-09-09 실측에서 최근 1년 공고가 505,271건이고 상한이 500,000 이라
+    창의 가장 오래된 3.3일치가 색인에서 빠지고 있었습니다. 상한이 1년 창보다
+    작으면 "최근 1년" 이라는 의미와 실제 색인 범위가 어긋납니다.
+    """
+    from src.app.services.kb_document_builder import _max_documents
+
+    assert _max_documents() >= 505_271
