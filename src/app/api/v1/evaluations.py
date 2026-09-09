@@ -17,11 +17,21 @@ src/app/api/v1/evaluations.py
 | 스냅샷 삭제 | DELETE /api/v1/evaluations/snapshots/{snapshot_id} |
 
 설계 문서: docs/design/servc_qualification_evaluation_design_20260909.md
+
+본 파일은 산식 상수를 하나도 가지지 않습니다. 규칙 판별과 낙찰하한율은 evaluation_rules,
+점수 계산과 적격 판정과 역산은 evaluation_scoring, 모델 출처는 predict_price_api 가 정본입니다.
+가격배점한도(B)·평점계수(k)·통과점수(T) 는 규칙 레지스트리가 실측으로 확정하지 않은 값이라
+사용자가 공고문 배점표로 입력하며, 입력이 없으면 추측 대신 점수 계산만 차단합니다.
+
+차단 코드:
+- 규칙 판별 차단 (evaluation_rules): NOT_SERVC, NON_PRED_PRICE, MANUAL_EVALUATION, RULE_NOT_FOUND
+- 입력·데이터 부족 차단 (본 파일): MISSING_SCORE_TABLE, PRED_PRICE_UNAVAILABLE
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -30,6 +40,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import require_current_user
+from src.app.api.v1.predictions import predict_price_api
 from src.app.core.db import get_db
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement
@@ -48,21 +59,18 @@ from src.app.schemas.evaluations import (
     EvaluationSnapshotResponse,
     EvidenceMetadata,
     PriceScenarioConfig,
+    QualificationInput,
     ScenarioEvaluationResult,
 )
+from src.app.schemas.predictions import PredictPriceRequest
 from src.app.services.evaluation_rules import (
+    EvaluationRule,
     RuleResolutionResult,
     resolve_evaluation_rule_from_raw_data,
 )
 from src.app.services.evaluation_scoring import (
-    InvertRateResult,
-    MinBidAmountResult,
-    PredPriceScenariosResult,
-    PriceScoreResult,
-    QualificationResult,
     calculate_min_bid_amount,
     calculate_price_score,
-    compute_price_ratio,
     evaluate_qualification,
     generate_pred_price_scenarios,
     invert_lowest_bid_rate,
@@ -76,6 +84,52 @@ router = APIRouter(prefix="/evaluations", tags=["Evaluations"])
 # =============================================================================
 # 헬퍼 함수
 # =============================================================================
+
+# 규칙 레지스트리는 별표 식별 문자열과 낙찰하한율만 실측으로 확정했습니다.
+# 가격배점한도(B)·평점계수(k)·통과점수(T) 는 별표마다 다르고 공고 데이터에 없으므로
+# 사용자가 공고문 배점표를 입력합니다. 이 계층은 세 값을 추측하지 않습니다.
+SCORE_TABLE_FIELDS: tuple[str, ...] = ("max_price_score", "multiplier", "pass_threshold")
+SCORE_TABLE_LABELS: dict[str, str] = {
+    "max_price_score": "가격배점한도",
+    "multiplier": "평점계수",
+    "pass_threshold": "통과점수",  # nosec B105 - 배점표 항목의 한국어 표기이지 비밀번호가 아닙니다
+}
+
+# 공고 raw_data 안에서 A값(국민연금·건강보험 등 합산액)이 노출되는 필드명입니다.
+A_VALUE_RAW_KEYS: tuple[str, ...] = ("a_value", "aValue", "A값", "nonBidCost", "non_bid_cost")
+
+# 규칙 판별(도메인)이 아니라 입력·데이터 부족으로 계산을 멈추는 코드입니다.
+BLOCK_CODE_MISSING_SCORE_TABLE = "MISSING_SCORE_TABLE"
+BLOCK_CODE_PRED_PRICE_UNAVAILABLE = "PRED_PRICE_UNAVAILABLE"
+
+
+@dataclass(frozen=True)
+class ScoreTable:
+    """가격점수 계산 파라미터. B·k·T 는 사용자 입력, 기준비율은 규칙 레지스트리 선언값입니다."""
+
+    max_price_score: Decimal
+    multiplier: Decimal
+    pass_threshold: Decimal
+    base_rate: Decimal
+
+
+@dataclass(frozen=True)
+class ScenarioPrice:
+    """시나리오별 예정가격 입력. 값의 계산은 evaluation_scoring 이 수행합니다."""
+
+    scenario_name: str
+    scenario_type: str
+    pred_price: Decimal
+
+
+@dataclass(frozen=True)
+class ModelProvenance:
+    """predict_price_api 로부터 전달받은 모델 출처."""
+
+    requested_model: str | None
+    actual_model: str | None
+    fallback_used: bool
+    fallback_reason: str | None
 
 
 def _get_bid_or_404(db: Session, bid_id: int) -> BidAnnouncement:
@@ -102,258 +156,388 @@ def _get_snapshot_or_404(db: Session, snapshot_id: int, user_id: int) -> BidEval
     return snapshot
 
 
-def _resolve_rule_and_build_warnings(
-    bid: BidAnnouncement,
-) -> tuple[RuleResolutionResult, list[str]]:
-    """공고 raw_data에서 규칙을 판별하고 경고 목록을 구성."""
-    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-    result = resolve_evaluation_rule_from_raw_data(
-        category=bid.category,
-        raw_data=raw_data,
+def _decimal_value(source: Any, field_name: str) -> Decimal | None:
+    """객체에 선언된 수치 필드만 읽습니다. 필드가 없거나 0 이하이면 None 을 돌려 계산 대상 아님을 표시합니다."""
+    raw_value = getattr(source, field_name, None)
+    if raw_value is None:
+        return None
+    try:
+        value = Decimal(str(raw_value))
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return value if value > Decimal("0") else None
+
+
+def _score_table(
+    qualification: QualificationInput,
+    rule: EvaluationRule,
+) -> tuple[ScoreTable | None, list[str]]:
+    """가격점수에 필요한 배점표 파라미터를 사용자 입력에서 읽습니다.
+
+    가격배점한도·평점계수·통과점수는 규칙 레지스트리가 확정하지 못한 값이라 입력이 정본이고,
+    입력이 없으면 추측하지 않고 결측 필드명만 돌려 점수 계산을 차단합니다.
+    기준비율은 규칙 객체의 선언값을 쓰되, 사용자가 배점표에서 입력했다면 그 값을 우선합니다.
+    """
+    resolved: dict[str, Decimal] = {}
+    missing: list[str] = []
+    for field_name in SCORE_TABLE_FIELDS:
+        value = _decimal_value(qualification, field_name)
+        if value is None:
+            missing.append(field_name)
+        else:
+            resolved[field_name] = value
+    if missing:
+        return None, missing
+
+    base_rate = _decimal_value(qualification, "base_rate") or _decimal_value(rule, "base_rate")
+    if base_rate is None:
+        return None, ["base_rate"]
+
+    return (
+        ScoreTable(
+            max_price_score=resolved["max_price_score"],
+            multiplier=resolved["multiplier"],
+            pass_threshold=resolved["pass_threshold"],
+            base_rate=base_rate,
+        ),
+        [],
     )
-    return result, result.warnings
 
 
-def _build_price_scenarios(
+def _announcement_pred_price(bid: BidAnnouncement) -> Decimal | None:
+    """공고의 예정가격 기준액. BidAnnouncement.prediction_reference_amount 접근자를 정본으로 씁니다."""
+    reference = bid.prediction_reference_amount
+    if reference is None:
+        return None
+    value = Decimal(str(reference))
+    return value if value > Decimal("0") else None
+
+
+def _raw_int(raw_data: dict[str, Any], key: str) -> int | None:
+    """공고 raw_data 의 정수 필드. 결측이면 None 을 돌려 도메인 기본값에 맡깁니다."""
+    try:
+        value = int(str(raw_data.get(key, "")).strip())
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _is_local_contract(bid: BidAnnouncement) -> bool:
+    """계약 방법 명칭에서 지방계약 여부를 판단합니다 (복수예가 변동 범위 선택용)."""
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    methods = f"{raw_data.get('cntrctCnclsMthdNm') or ''} {bid.cntrct_mthd_nm or ''}"
+    return "지방" in methods
+
+
+def _scenario_prices(
     bid: BidAnnouncement,
     request_scenarios: list[PriceScenarioConfig] | None,
-    rule_result: RuleResolutionResult,
-) -> list[PredPriceScenariosResult]:
-    """복수예가 시나리오 구성. 요청 시나리오가 있으면 그것을 쓰고, 없으면 공고 기초금액으로 자동 구성."""
+) -> list[ScenarioPrice]:
+    """복수예가 3 시나리오 예정가격을 구성합니다.
+
+    복수예가 총수와 추첨수는 공고의 totPrdprcNum·drwtPrdprcNum 을 우선하고,
+    결측일 때만 evaluation_scoring.generate_pred_price_scenarios 의 기본값이 적용됩니다.
+    """
     if request_scenarios:
         return [
-            PredPriceScenariosResult(
-                base_amount=Decimal(str(s.estimated_price)),
-                tot_prdprc_num=15,
-                drwt_prdprc_num=4,
-                range_rate=Decimal("0"),
-                range_source="CUSTOM",
-                scenario_lower=Decimal(str(s.estimated_price)),
-                scenario_base=Decimal(str(s.estimated_price)),
-                scenario_upper=Decimal(str(s.estimated_price)),
+            ScenarioPrice(
+                scenario_name=scenario.scenario_name,
+                scenario_type=scenario.scenario_type,
+                pred_price=Decimal(str(scenario.estimated_price)),
             )
-            for s in request_scenarios
+            for scenario in request_scenarios
         ]
 
-    base_amount = bid.resolved_base_amount or bid.presmpt_prce or 0
-    if base_amount <= 0:
+    base_amount = _announcement_pred_price(bid)
+    if base_amount is None:
         return []
 
-    # 계약 유형별 기본 범위 적용 (국가/지방 판단은 cntrct_mthd_nm 등에서 추론 가능하나,
-    # 설계서 4.4절 기준 국가계약 ±2% 기본값 적용)
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-    is_local = "지방" in str(raw_data.get("cntrctCnclsMthdNm") or "") or "지방" in str(
-        bid.cntrct_mthd_nm or ""
-    )
-
-    return [generate_pred_price_scenarios(Decimal(str(base_amount)), is_local_contract=is_local)]
-
-
-def _determine_pass_threshold(rule: Any) -> Decimal:
-    """적용된 규칙의 통과점수(T) 결정. 설계서에 따라 고시금액 이상 별표는 85점, 미만은 95점 등."""
-    # 서비스 종류별 통과점수는 규칙의 service_type 등으로 판별
-    # 일반용역 적격심사는 대체로 95점 기준, 일부는 85점
-    # 여기서는 규칙 설명이나 table_name에서 고시금액 이상/미만 구분을 통해 결정
-    if "고시금액 이상" in rule.description or "5억원 이상" in rule.description:
-        return Decimal("85")
-    return Decimal("95")
-
-
-def _determine_scoring_params(rule: Any) -> tuple[Decimal, Decimal, Decimal]:
-    """배점한도(B), 계수(k), 기준비율 결정."""
-    # 일반용역 적격심사 공고 기준: B=70, k=2, 기준비율=88%.
-    return Decimal("70"), Decimal("2"), Decimal("0.88")
+    is_local = _is_local_contract(bid)
+    tot_prdprc_num = _raw_int(raw_data, "totPrdprcNum")
+    drwt_prdprc_num = _raw_int(raw_data, "drwtPrdprcNum")
+    if tot_prdprc_num is not None and drwt_prdprc_num is not None:
+        scenarios = generate_pred_price_scenarios(
+            base_amount,
+            tot_prdprc_num=tot_prdprc_num,
+            drwt_prdprc_num=drwt_prdprc_num,
+            is_local_contract=is_local,
+        )
+    else:
+        # 공고에 필드가 없으면 evaluation_scoring.generate_pred_price_scenarios
+        # 의 기본값 계약에 맡깁니다. 이 계층에서 수치를 복제하지 않습니다.
+        scenarios = generate_pred_price_scenarios(base_amount, is_local_contract=is_local)
+    return [
+        ScenarioPrice("하단", "lower", scenarios.scenario_lower),
+        ScenarioPrice("기준", "base", scenarios.scenario_base),
+        ScenarioPrice("상단", "upper", scenarios.scenario_upper),
+    ]
 
 
-def _calculate_a_value(bid: BidAnnouncement) -> Decimal | None:
-    """공고에서 A값(국민연금, 건강보험, 퇴직급여충당금 등) 추출."""
+def _extract_a_value(bid: BidAnnouncement) -> Decimal | None:
+    """공고 raw_data 에 노출된 A값(국민연금·건강보험 등 합산액) 필드를 읽습니다."""
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-    # A값 관련 필드명 추정 (실제 필드명은 데이터 확인 필요)
-    for key in ["a_value", "aValue", "A값", "nonBidCost", "non_bid_cost"]:
-        val = raw_data.get(key)
-        if val is not None:
-            try:
-                return Decimal(str(val))
-            except (ArithmeticError, TypeError, ValueError):
-                logger.debug("A값 필드 변환 실패: key=%s", key)
+    for key in A_VALUE_RAW_KEYS:
+        raw_value = raw_data.get(key)
+        if raw_value is None:
+            continue
+        try:
+            value = Decimal(str(raw_value))
+        except (ArithmeticError, TypeError, ValueError):
+            logger.debug("A값 필드 변환 실패: key=%s", key)
+            continue
+        if value > Decimal("0"):
+            return value
     return None
 
 
+def _qualification_scores(
+    qualification: QualificationInput,
+) -> tuple[Decimal, Decimal, Decimal]:
+    """설계서 4.5 정의대로 사용자 입력을 수행능력(실적+경영상태), 근로조건, 신인도로 나눕니다."""
+    performance = Decimal(str(qualification.performance_score)) + Decimal(
+        str(qualification.management_score)
+    )
+    labor = Decimal(str(qualification.labor_plan_score))
+    credibility = Decimal(str(qualification.credibility_score))
+    return performance, labor, credibility
+
+
+def _as_percent(value: Decimal) -> float:
+    """비율을 응답 스키마가 요구하는 퍼센트 숫자로 바꿉니다."""
+    return float(value * Decimal("100")) if value <= Decimal("1") else float(value)
+
+
 def _evaluate_scenario(
-    scenario: PredPriceScenariosResult,
+    scenario: ScenarioPrice,
     candidate_bid_amount: Decimal,
-    qualification_input: Any,
-    rule_result: RuleResolutionResult,
+    scores: tuple[Decimal, Decimal, Decimal],
+    qualification: QualificationInput,
+    table: ScoreTable,
 ) -> ScenarioEvaluationResult:
-    """단일 시나리오에 대한 평가 수행."""
-    rule = rule_result.rule
-    warnings: list[str] = []
-
-    # 가격점수 계산
-    max_price_score, multiplier, base_rate = _determine_scoring_params(rule)
-    price_score_result: PriceScoreResult = calculate_price_score(
+    """단일 시나리오의 가격점수와 적격 판정을 evaluation_scoring 에 위임합니다."""
+    performance_score, labor_score, credibility_score = scores
+    price = calculate_price_score(
         bid_price=candidate_bid_amount,
-        pred_price=scenario.scenario_base,  # 기준 시나리오 예정가격 사용
-        base_rate=base_rate,
-        max_price_score=max_price_score,
-        multiplier=multiplier,
+        pred_price=scenario.pred_price,
+        base_rate=table.base_rate,
+        max_price_score=table.max_price_score,
+        multiplier=table.multiplier,
     )
-
-    # 정량점수 Q 계산
-    non_price_score = (
-        Decimal(str(qualification_input.performance_score or 0))
-        + Decimal(str(qualification_input.management_score or 0))
-        + Decimal(str(qualification_input.labor_plan_score or 0))
-        + Decimal(str(qualification_input.credibility_score or 0))
-    )
-
-    # 종합 적격 판정
-    pass_threshold = _determine_pass_threshold(rule)
-    qual_result: QualificationResult = evaluate_qualification(
+    judgement = evaluate_qualification(
         bid_price=candidate_bid_amount,
-        pred_price=scenario.scenario_base,
-        pass_threshold=pass_threshold,
-        price_score=price_score_result.score,
-        performance_score=Decimal(str(qualification_input.performance_score or 0))
-        + Decimal(str(qualification_input.management_score or 0)),
-        labor_condition_score=Decimal(str(qualification_input.labor_plan_score or 0)),
-        reputation_score=Decimal(str(qualification_input.credibility_score or 0)),
-        has_disqualification=qualification_input.disqualification,
+        pred_price=scenario.pred_price,
+        pass_threshold=table.pass_threshold,
+        price_score=price.score,
+        performance_score=performance_score,
+        labor_condition_score=labor_score,
+        reputation_score=credibility_score,
+        has_disqualification=qualification.disqualification,
     )
-    warnings.extend(qual_result.warnings)
-
-    # 시나리오별 투찰율 계산 (각 시나리오 예정가격 대비)
-    bid_to_estimated_ratio = compute_price_ratio(candidate_bid_amount, scenario.scenario_base)
-
-    # 시나리오별 가격점수 재계산 (시나리오 예정가격 기준)
-    scenario_price_score_result: PriceScoreResult = calculate_price_score(
-        bid_price=candidate_bid_amount,
-        pred_price=scenario.scenario_base,
-        base_rate=base_rate,
-        max_price_score=max_price_score,
-        multiplier=multiplier,
-    )
-
-    # 시나리오별 종합점수
-    scenario_total = non_price_score + scenario_price_score_result.score
-    scenario_qualified = (
-        not qualification_input.disqualification
-        and candidate_bid_amount <= scenario.scenario_base
-        and scenario_total >= pass_threshold
-    )
-
     return ScenarioEvaluationResult(
-        scenario_name=scenario.scenario_name if hasattr(scenario, "scenario_name") else "기준",
-        scenario_type="base",
-        estimated_price=int(scenario.scenario_base),
-        bid_to_estimated_ratio=float(bid_to_estimated_ratio),
-        price_score=float(scenario_price_score_result.score),
-        qualification_score=float(non_price_score),
-        total_score=float(scenario_total),
-        pass_threshold=float(pass_threshold),
-        is_qualified=scenario_qualified,
-        warnings=warnings,
+        scenario_name=scenario.scenario_name,
+        scenario_type=scenario.scenario_type,
+        estimated_price=int(scenario.pred_price),
+        bid_to_estimated_ratio=float(price.price_ratio),
+        price_score=float(price.score),
+        qualification_score=float(judgement.non_price_score),
+        total_score=float(judgement.total_score),
+        pass_threshold=float(judgement.pass_threshold),
+        is_qualified=judgement.is_qualified,
+        warnings=list(judgement.warnings),
     )
 
 
-def _build_analysis_response(
+def _rule_basis(bid: BidAnnouncement, rule_result: RuleResolutionResult) -> str:
+    """규칙 판별 근거. 매칭에 쓴 낙찰방법 식별 문자열과 별표명을 그대로 노출합니다."""
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    method_name = raw_data.get("sucsfbidMthdNm") or "N/A"
+    if rule_result.rule is None:
+        return f"낙찰방법: {method_name}"
+    return f"낙찰방법 '{method_name}' → 별표 '{rule_result.rule.table_name}' 매칭"
+
+
+def _blocked_response(
     bid: BidAnnouncement,
-    request: EvaluationRequest,
-    user: CustomUser,
     rule_result: RuleResolutionResult,
-    candidate_bid_amount: Decimal,
-    a_value: Decimal | None,
-    scenarios: list[PredPriceScenariosResult],
+    code: str,
+    message: str,
 ) -> EvaluationResponse:
-    """분석 응답 구성."""
-    warnings: list[str] = list(rule_result.warnings)
+    """계산 차단은 500 이 아니라 사유가 적힌 정상 응답 상태로 전달됩니다."""
+    return EvaluationResponse(
+        status="blocked",
+        rule_id=rule_result.rule.rule_id if rule_result.rule else None,
+        rule_name=rule_result.rule.description if rule_result.rule else None,
+        rule_basis=_rule_basis(bid, rule_result),
+        blocked=True,
+        blocked_reason=f"{code}: {message}",
+        warnings=list(rule_result.warnings),
+    )
 
-    if rule_result.is_blocked:
-        return EvaluationResponse(
-            status="blocked",
-            rule_id=rule_result.rule.rule_id if rule_result.rule else None,
-            rule_name=rule_result.rule.description if rule_result.rule else None,
-            rule_basis=f"낙찰방법: {bid.raw_data.get('sucsfbidMthdNm') if isinstance(bid.raw_data, dict) else 'N/A'}",
-            blocked=True,
-            blocked_reason=(
-                f"{rule_result.block_reason_code}: {rule_result.block_reason_message}"
-                if rule_result.block_reason_code
-                else rule_result.block_reason_message
+
+def _model_provenance(
+    payload: EvaluationRequest,
+    request: Request,
+    db: Session,
+) -> ModelProvenance:
+    """모델 출처는 predict_price_api 산출물을 그대로 전달합니다. 이 계층에서 합성하지 않습니다."""
+    try:
+        prediction = predict_price_api(
+            PredictPriceRequest(
+                bid_id=payload.bid_id,
+                selected_model=payload.selected_model,
+                user_price=str(payload.candidate_bid_amount),
             ),
-            warnings=warnings,
+            request,
+            db,
         )
+    except HTTPException as exc:
+        return ModelProvenance(
+            requested_model=payload.selected_model,
+            actual_model=None,
+            fallback_used=True,
+            fallback_reason=f"예측 모델을 확인할 수 없습니다 ({exc.status_code}: {exc.detail})",
+        )
+    return ModelProvenance(
+        requested_model=prediction.requested_model,
+        actual_model=prediction.model_id,
+        fallback_used=prediction.fallback_used,
+        fallback_reason=prediction.fallback_reason,
+    )
 
+
+def _scenario_price_notes(scenarios: list[ScenarioPrice]) -> list[str]:
+    """복수예가 시나리오 예정가격 구간. 점수 계산과 무관하게 공고값으로 확정됩니다."""
+    if not scenarios:
+        return []
+    prices = " / ".join(f"{s.scenario_name} {int(s.pred_price):,}원" for s in scenarios)
+    return [f"복수예가 시나리오 예정가격: {prices}"]
+
+
+def _score_table_missing_response(
+    bid: BidAnnouncement,
+    payload: EvaluationRequest,
+    rule_result: RuleResolutionResult,
+    pred_price: Decimal,
+    scenarios: list[ScenarioPrice],
+    missing_fields: list[str],
+) -> EvaluationResponse:
+    """배점표 입력이 없어 점수는 계산하지 않습니다. 하한율·A값·시나리오 구간은 그대로 전달합니다."""
     assert rule_result.rule is not None
     assert rule_result.effective_lwlt_rate is not None
     rule = rule_result.rule
     effective_lwlt = rule_result.effective_lwlt_rate
-
-    # 기본 파라미터
-    max_price_score, multiplier, base_rate = _determine_scoring_params(rule)
-    pass_threshold = _determine_pass_threshold(rule)
-
-    # 정량점수 Q
-    non_price_score = (
-        Decimal(str(request.qualification_input.performance_score or 0))
-        + Decimal(str(request.qualification_input.management_score or 0))
-        + Decimal(str(request.qualification_input.labor_plan_score or 0))
-        + Decimal(str(request.qualification_input.credibility_score or 0))
-    )
-
-    # A값 반영 최저 투찰금액
-    min_bid_result: MinBidAmountResult = calculate_min_bid_amount(
-        pred_price=scenarios[0].scenario_base
-        if scenarios
-        else Decimal(str(bid.prediction_reference_amount or 0)),
+    a_value = _extract_a_value(bid)
+    min_bid_result = calculate_min_bid_amount(
+        pred_price=pred_price,
         lwlt_rate=effective_lwlt,
         a_value=a_value,
     )
+    if min_bid_result.has_a_value:
+        floor_note = f"A값 반영 최저 투찰금액: {int(min_bid_result.min_bid_amount):,}원"
+    else:
+        floor_note = (
+            f"낙찰하한율 {min_bid_result.lwlt_rate_pct}% 적용 최저 투찰금액: "
+            f"{int(min_bid_result.min_bid_amount):,}원"
+        )
 
-    # 최저 가능 투찰률 역산
-    invert_result: InvertRateResult = invert_lowest_bid_rate(
-        pass_threshold=pass_threshold,
+    labels = ", ".join(SCORE_TABLE_LABELS.get(name, name) for name in missing_fields)
+    warnings = [
+        *rule_result.warnings,
+        *_scenario_price_notes(scenarios),
+        floor_note,
+        "가격점수·종합점수·적격 판정·최저 투찰률 역산은 배점표를 입력한 뒤에 계산됩니다.",
+    ]
+    return EvaluationResponse(
+        status="blocked",
+        rule_id=rule.rule_id,
+        rule_name=rule.description,
+        rule_basis=_rule_basis(bid, rule_result),
+        blocked=True,
+        blocked_reason=(
+            f"{BLOCK_CODE_MISSING_SCORE_TABLE}: 공고문의 적격심사 배점표({labels})을 입력해야 "
+            "점수를 계산할 수 있습니다."
+        ),
+        requested_model=payload.selected_model,
+        actual_model=None,
+        fallback_used=False,
+        fallback_reason="점수 계산을 하지 않아 예측 모델을 호출하지 않았습니다.",
+        lower_bound_rate=float(effective_lwlt),
+        a_value_amount=int(a_value) if a_value is not None else None,
+        min_bid_amount_with_a=(
+            int(min_bid_result.min_bid_amount) if min_bid_result.has_a_value else None
+        ),
+        scenario_results=[],
+        warnings=warnings,
+    )
+
+
+def _success_response(
+    bid: BidAnnouncement,
+    payload: EvaluationRequest,
+    rule_result: RuleResolutionResult,
+    table: ScoreTable,
+    pred_price: Decimal,
+    scenarios: list[ScenarioPrice],
+    provenance: ModelProvenance,
+) -> EvaluationResponse:
+    """규칙 판별 결과와 evaluation_scoring 계산 결과를 응답 스키마로 담습니다."""
+    assert rule_result.rule is not None
+    assert rule_result.effective_lwlt_rate is not None
+    rule = rule_result.rule
+    effective_lwlt = rule_result.effective_lwlt_rate
+    candidate_bid_amount = Decimal(str(payload.candidate_bid_amount))
+    qualification = payload.qualification_input
+    scores = _qualification_scores(qualification)
+    non_price_score = scores[0] + scores[1] + scores[2]
+    a_value = _extract_a_value(bid)
+
+    warnings = list(rule_result.warnings)
+    if provenance.actual_model is None:
+        warnings.append(f"모델 출처를 확정할 수 없습니다. {provenance.fallback_reason}")
+
+    min_bid_result = calculate_min_bid_amount(
+        pred_price=pred_price,
+        lwlt_rate=effective_lwlt,
+        a_value=a_value,
+    )
+    invert_result = invert_lowest_bid_rate(
+        pass_threshold=table.pass_threshold,
         non_price_score=non_price_score,
-        base_rate=base_rate,
-        max_price_score=max_price_score,
-        multiplier=multiplier,
+        base_rate=table.base_rate,
+        max_price_score=table.max_price_score,
+        multiplier=table.multiplier,
         announcement_lwlt_rate=effective_lwlt,
     )
     warnings.extend(invert_result.warnings)
-
-    # 시나리오별 평가
-    scenario_results: list[ScenarioEvaluationResult] = []
-    for scenario in scenarios:
-        scenario_results.append(
-            _evaluate_scenario(
-                scenario, candidate_bid_amount, request.qualification_input, rule_result
-            )
-        )
-
-    # 모델 출처 정보 (예측 API와 유사하게 구성)
-    # 여기서는 평가용 모델 ID를 별도로 관리하지 않으므로 기본값 사용
-    requested_model = request.selected_model or "evaluation_default"
-    actual_model = requested_model
-    fallback_used = False
-    fallback_reason = None
 
     return EvaluationResponse(
         status="success",
         rule_id=rule.rule_id,
         rule_name=rule.description,
-        rule_basis=f"낙찰방법 '{bid.raw_data.get('sucsfbidMthdNm') if isinstance(bid.raw_data, dict) else 'N/A'}' → 별표 '{rule.table_name}' 매칭",
+        rule_basis=_rule_basis(bid, rule_result),
         blocked=False,
-        requested_model=requested_model,
-        actual_model=actual_model,
-        fallback_used=fallback_used,
-        fallback_reason=fallback_reason,
-        base_rate=float(base_rate * 100) if base_rate <= 1 else float(base_rate),
-        lower_bound_rate=float(effective_lwlt) if effective_lwlt else None,
-        a_value_amount=int(a_value) if a_value else None,
-        min_bid_amount_with_a=int(min_bid_result.min_bid_amount)
-        if min_bid_result.has_a_value
-        else None,
-        min_possible_bid_rate=float(invert_result.effective_rate_pct) if invert_result else None,
-        scenario_results=scenario_results,
+        requested_model=provenance.requested_model,
+        actual_model=provenance.actual_model,
+        fallback_used=provenance.fallback_used,
+        fallback_reason=provenance.fallback_reason,
+        base_rate=_as_percent(table.base_rate),
+        lower_bound_rate=float(effective_lwlt),
+        a_value_amount=int(a_value) if a_value is not None else None,
+        min_bid_amount_with_a=(
+            int(min_bid_result.min_bid_amount) if min_bid_result.has_a_value else None
+        ),
+        min_possible_bid_rate=float(invert_result.effective_rate_pct),
+        scenario_results=[
+            _evaluate_scenario(
+                scenario=scenario,
+                candidate_bid_amount=candidate_bid_amount,
+                scores=scores,
+                qualification=qualification,
+                table=table,
+            )
+            for scenario in scenarios
+        ],
         warnings=warnings,
     )
 
@@ -410,13 +594,73 @@ def _save_snapshot_async(
 # =============================================================================
 
 
+def _analyze_bid(
+    bid: BidAnnouncement,
+    payload: EvaluationRequest,
+    request: Request,
+    db: Session,
+) -> EvaluationResponse:
+    """규칙 판별과 점수 계산을 도메인 모듈에 위임한 채 분석 응답을 조립합니다.
+
+    판별은 evaluation_rules, 계산은 evaluation_scoring, 모델 출처는 predict_price_api 가 정본이며,
+    그들이 값을 주지 못하는 구간은 추측하지 않고 차단합니다.
+    """
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    rule_result = resolve_evaluation_rule_from_raw_data(
+        category=bid.category,
+        raw_data=raw_data,
+    )
+    if rule_result.is_blocked:
+        return _blocked_response(
+            bid,
+            rule_result,
+            str(rule_result.block_reason_code),
+            rule_result.block_reason_message or "계산 조건을 충족하지 않았습니다.",
+        )
+
+    assert rule_result.rule is not None
+    rule = rule_result.rule
+
+    pred_price = _announcement_pred_price(bid)
+    if pred_price is None:
+        return _blocked_response(
+            bid,
+            rule_result,
+            BLOCK_CODE_PRED_PRICE_UNAVAILABLE,
+            "공고에 예정가격(기초금액)이 공개되지 않아 최저 투찰금액과 시나리오를 계산할 분모가 없습니다.",
+        )
+
+    scenarios = _scenario_prices(bid, payload.price_scenarios)
+
+    table, missing_fields = _score_table(payload.qualification_input, rule)
+    if table is None:
+        return _score_table_missing_response(
+            bid=bid,
+            payload=payload,
+            rule_result=rule_result,
+            pred_price=pred_price,
+            scenarios=scenarios,
+            missing_fields=missing_fields,
+        )
+
+    return _success_response(
+        bid=bid,
+        payload=payload,
+        rule_result=rule_result,
+        table=table,
+        pred_price=pred_price,
+        scenarios=scenarios,
+        provenance=_model_provenance(payload, request, db),
+    )
+
+
 @router.post("/analyze", response_model=EvaluationResponse, summary="적격심사 정량평가 통합 분석")
 def analyze_evaluation(
     payload: EvaluationRequest,
     request: Request,
     db: Session = Depends(get_db),
     user: CustomUser = Depends(require_current_user),
-):
+) -> EvaluationResponse:
     """
     적격심사 정량평가 및 투찰 금액 통합 분석.
 
@@ -429,33 +673,10 @@ def analyze_evaluation(
 
     소유권: 요청 사용자 본인만 접근 가능 (인증된 사용자에서 user_id 추출).
     """
-    # 1. 공고 조회
     bid = _get_bid_or_404(db, payload.bid_id)
+    response = _analyze_bid(bid, payload, request, db)
 
-    # 2. 규칙 판별
-    rule_result, _ = _resolve_rule_and_build_warnings(bid)
-
-    # 3. 후보 투찰금액
-    candidate_bid_amount = Decimal(str(payload.candidate_bid_amount))
-
-    # 4. A값 추출
-    a_value = _calculate_a_value(bid)
-
-    # 5. 복수예가 시나리오 구성
-    scenarios = _build_price_scenarios(bid, payload.price_scenarios, rule_result)
-
-    # 5. 분석 응답 구성
-    response = _build_analysis_response(
-        bid=bid,
-        request=payload,
-        user=user,
-        rule_result=rule_result,
-        candidate_bid_amount=candidate_bid_amount,
-        a_value=a_value,
-        scenarios=scenarios,
-    )
-
-    # 6. 분석 성공 시 스냅샷 저장 (차단된 경우도 스냅샷으로 남김)
+    # 차단된 경우도 스냅샷으로 남깁니다. 저장 실패가 응답을 막지는 못합니다.
     if response.status in ("success", "blocked"):
         input_json = {
             "bid_id": payload.bid_id,
@@ -468,7 +689,6 @@ def analyze_evaluation(
                 else None
             ),
         }
-        result_json = response.model_dump(mode="json")
         _save_snapshot_async(
             db=db,
             user_id=user.id,
@@ -477,7 +697,7 @@ def analyze_evaluation(
             model_id=response.actual_model or "unknown",
             model_version="1.0",
             input_json=input_json,
-            result_json=result_json,
+            result_json=response.model_dump(mode="json"),
             evidence_items=[],  # 증빙은 별도 API로 관리
         )
 
