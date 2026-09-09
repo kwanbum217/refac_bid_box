@@ -368,6 +368,39 @@
                                         <td class="py-2 pr-4 text-right text-slate-400">±5.00</td>
                                         <td class="py-2 text-slate-500">양수 가점, 음수 감점</td>
                                     </tr>
+                                    <tr class="bg-blue-50">
+                                        <td class="py-2 pr-4 font-medium text-slate-700" colspan="4">
+                                            <span class="font-bold text-blue-700">공고문 적격심사 배점표</span>
+                                            <span class="text-xs text-slate-600 ml-2">아래 셋을 입력해야 가격점수와 총점이 계산됩니다. 공고문의 적격심사 세부기준 별표에서 확인하십시오.</span>
+                                        </td>
+                                    </tr>
+                                    <tr class="bg-blue-50">
+                                        <td class="py-2 pr-4 font-medium text-slate-700">가격 배점한도 (B)</td>
+                                        <td class="py-2 pr-4 text-right">
+                                            <input type="number" id="input-max-price-score" step="0.01" min="0"
+                                                   class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                        </td>
+                                        <td class="py-2 pr-4 text-right text-slate-400">필수</td>
+                                        <td class="py-2 text-slate-500">입찰가격 평점의 만점</td>
+                                    </tr>
+                                    <tr class="bg-blue-50">
+                                        <td class="py-2 pr-4 font-medium text-slate-700">평점 계수 (k)</td>
+                                        <td class="py-2 pr-4 text-right">
+                                            <input type="number" id="input-multiplier" step="0.01" min="0"
+                                                   class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                        </td>
+                                        <td class="py-2 pr-4 text-right text-slate-400">필수</td>
+                                        <td class="py-2 text-slate-500">기준비율 편차에 곱하는 값</td>
+                                    </tr>
+                                    <tr class="bg-blue-50">
+                                        <td class="py-2 pr-4 font-medium text-slate-700">통과점수 (T)</td>
+                                        <td class="py-2 pr-4 text-right">
+                                            <input type="number" id="input-pass-threshold" step="0.01" min="0"
+                                                   class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                        </td>
+                                        <td class="py-2 pr-4 text-right text-slate-400">필수</td>
+                                        <td class="py-2 text-slate-500">종합평점 적격 기준</td>
+                                    </tr>
                                 </tbody>
                             </table>
                         </div>
@@ -878,7 +911,10 @@ $(document).ready(function() {
         else if (lowerBoundRate != null) $('#lower-bound-used-value').text(lowerBoundRate);
     }
 
-    // 초기 규칙 정보 로드 (입찰 없이도 적용 규칙 확인 가능)
+    // 초기 규칙 정보 로드 (입찰 없이도 적용 규칙 확인 가능).
+    // 정량점수를 0 으로 보내는 것은 의도된 것이다. 이 호출의 목적은 어떤 별표가
+    // 적용되는지와 차단 여부만 확인하는 것이며, 응답의 점수와 시나리오 표는
+    // 사용하지 않는다. 표는 분석 실행 버튼을 눌렀을 때만 그린다.
     function loadEvaluationRule() {
         $.ajax({
             url: evaluationUrl,
@@ -936,6 +972,11 @@ $(document).ready(function() {
         const laborPlanScore = parseFloat($('#input-labor-plan').val()) || 0;
         const credibilityScore = parseFloat($('#input-credibility').val()) || 0;
         const disqualification = $('#input-disqualification').is(':checked');
+        // 공고문 배점표. 규칙 레지스트리가 확정하지 못한 값이라 사용자 입력이 정본이다.
+        // 셋 중 하나라도 비면 서버가 MISSING_SCORE_TABLE 로 점수 계산을 차단한다.
+        const maxPriceScore = parseFloat($('#input-max-price-score').val());
+        const multiplier = parseFloat($('#input-multiplier').val());
+        const passThreshold = parseFloat($('#input-pass-threshold').val());
 
         if (!candidateBidAmount) {
             alert('투찰 금액을 입력하십시오. (AI 투찰 금액 분석기의 입력란 사용)');
@@ -974,7 +1015,10 @@ $(document).ready(function() {
                     management_score: managementScore,
                     labor_plan_score: laborPlanScore,
                     credibility_score: credibilityScore,
-                    disqualification: disqualification
+                    disqualification: disqualification,
+                    max_price_score: Number.isFinite(maxPriceScore) ? maxPriceScore : null,
+                    multiplier: Number.isFinite(multiplier) ? multiplier : null,
+                    pass_threshold: Number.isFinite(passThreshold) ? passThreshold : null
                 }
             }),
             success: function(data) {
@@ -1011,8 +1055,15 @@ $(document).ready(function() {
                         const tbody = $('#scenario-tbody');
                         tbody.empty();
                         data.scenario_results.forEach(function(scenario) {
-                            const qualifiedClass = scenario.is_qualified ? 'text-emerald-600' : 'text-rose-600';
-                            const qualifiedText = scenario.is_qualified ? '적격' : '부적격';
+                            // is_qualified 가 null 이면 배점표가 없어 계산하지 않은 것이다.
+                            // 계산 불가와 탈락은 다른 상태이므로 부적격으로 표시하지 않는다.
+                            const notScored = scenario.is_qualified === null || scenario.is_qualified === undefined;
+                            const qualifiedClass = notScored
+                                ? 'text-slate-400'
+                                : (scenario.is_qualified ? 'text-emerald-600' : 'text-rose-600');
+                            const qualifiedText = notScored
+                                ? '미계산'
+                                : (scenario.is_qualified ? '적격' : '부적격');
                             const row = `
                                 <tr class="hover:bg-slate-50/50">
                                     <td class="p-2 font-medium">${escapeHtml(scenario.scenario_name)}</td>

@@ -341,3 +341,43 @@ class TestEvaluationUISchemaAlignment:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestEvaluationUIScoreTable:
+    """공고문 배점표 입력과 미계산 표기 검증."""
+
+    @pytest.fixture(scope="class")
+    def template_content(self):
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "app"
+            / "templates"
+            / "bids"
+            / "detail.html"
+        )
+        return path.read_text(encoding="utf-8")
+
+    def test_score_table_inputs_exist(self, template_content):
+        """공고문 배점표 B·k·T 입력란이 화면에 있어야 합니다.
+
+        이 셋이 없으면 서버가 MISSING_SCORE_TABLE 로 점수 계산을 차단하므로
+        사용자는 정량점수를 입력해도 총점을 볼 수 없습니다. 2026-09-09 에 실제로
+        그 상태로 배포돼 모든 시나리오가 부적격으로 보였습니다.
+        """
+        for field_id in ("input-max-price-score", "input-multiplier", "input-pass-threshold"):
+            assert f'id="{field_id}"' in template_content, f"배점표 입력란 {field_id} 누락"
+
+    def test_score_table_is_sent_in_request(self, template_content):
+        """배점표 입력값이 분석 요청 본문에 실려야 합니다."""
+        for key in ("max_price_score:", "multiplier:", "pass_threshold:"):
+            assert key in template_content, f"요청 본문에 {key} 누락"
+
+    def test_unscored_scenario_is_not_shown_as_disqualified(self, template_content):
+        """배점표 결측으로 계산하지 않은 시나리오를 부적격으로 표시하면 안 됩니다.
+
+        계산 불가와 탈락은 다른 상태입니다. is_qualified 가 null 일 때 미계산으로
+        표기해야 사용자가 오해하지 않습니다.
+        """
+        assert "미계산" in template_content, "미계산 표기가 없습니다"
+        assert "scenario.is_qualified === null" in template_content, "null 판별이 없습니다"
