@@ -223,15 +223,17 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/ops/model_promotion_runbook.md
   - id: kb_index_memory
-    status: active
+    status: closed
     decision_date: "2026-09-09"
-    claim: "KB 색인 메모리 폭주는 bf29f3e 병합 후에도 단일 색인 피크 10,762MB 로 재현되어 AP4 판정 기준 3항을 전부 미충족했고 조회 계층 페이지 전환과 재시도 폭풍 차단을 추진합니다."
+    claim: "KB 색인 메모리 폭주는 Wave AP 전량 병합(4e40bd1) 후 재측정에서 단일 색인 피크 4,323MB 로 959초에 정상 완료해 AP4 판정 기준 3항을 모두 충족했습니다."
     document_anchor: "KB 색인 메모리 폭주는"
     evidence:
-      - data/benchmarks/kb_index_worker_mem_run2_single_20260909.tsv
+      - data/benchmarks/kb_index_worker_mem_waveap_20260909.tsv
+      - docs/analysis/kb_index_memory_waveap_verification_20260909.md
       - docs/analysis/kb_index_memory_verification_20260909.md
     related_documents:
       - docs/context/CURRENT_STATE.md
+      - docs/analysis/kb_index_memory_waveap_verification_20260909.md
       - docs/analysis/kb_index_memory_verification_20260909.md
       - docs/analysis/kb_builder_memory_exhaustion_20260908.md
   - id: lexical_full_rerun
