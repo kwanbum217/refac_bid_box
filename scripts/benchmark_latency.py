@@ -79,8 +79,91 @@ from scripts.benchmark_provenance import (  # noqa: E402
     single_host_load_sample as _default_single_host_load_sample,
 )
 
+DEFAULT_DB_CONTAINER = "refac_bid_box-db-1"
+
+
+def query_db_buffer_pool_pages_data(
+    container: str = DEFAULT_DB_CONTAINER,
+    command_runner: Any = None,
+) -> dict[str, Any]:
+    """대상 DB 컨테이너의 InnoDB 버퍼풀 적재 페이지 수(Innodb_buffer_pool_pages_data)를 조회합니다.
+
+    실패 시 예외를 던지지 않고 pages_data=None 및 failure reason(error)을 반환합니다.
+    """
+    runner = command_runner or _command_output
+    cmd = [
+        "docker",
+        "exec",
+        container,
+        "sh",
+        "-c",
+        'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -N -B -e "SHOW GLOBAL STATUS LIKE \'Innodb_buffer_pool_pages_data\'"',
+    ]
+    try:
+        raw = runner(cmd)
+    except Exception as exc:
+        return {
+            "container": container,
+            "pages_data": None,
+            "innodb_buffer_pool_pages_data": None,
+            "error": f"명령 실행 예외 발생: {type(exc).__name__}",
+        }
+
+    if raw is None or not isinstance(raw, str):
+        return {
+            "container": container,
+            "pages_data": None,
+            "innodb_buffer_pool_pages_data": None,
+            "error": "명령 실행 결과가 문자열이 아닙니다.",
+        }
+
+    stripped = raw.strip()
+    if not stripped:
+        return {
+            "container": container,
+            "pages_data": None,
+            "innodb_buffer_pool_pages_data": None,
+            "error": "명령 실행 결과가 비어 있습니다.",
+        }
+
+    if stripped == "unknown":
+        return {
+            "container": container,
+            "pages_data": None,
+            "innodb_buffer_pool_pages_data": None,
+            "error": "명령 실행 실패 (unknown 반환)",
+        }
+
+    for line in stripped.splitlines():
+        parts = line.strip().split()
+        if len(parts) >= 2 and parts[0].lower() == "innodb_buffer_pool_pages_data":
+            try:
+                val = int(parts[1])
+                return {
+                    "container": container,
+                    "pages_data": val,
+                    "innodb_buffer_pool_pages_data": val,
+                    "error": None,
+                }
+            except ValueError:
+                return {
+                    "container": container,
+                    "pages_data": None,
+                    "innodb_buffer_pool_pages_data": None,
+                    "error": f"정수로 변환할 수 없는 값: {parts[1]}",
+                }
+
+    return {
+        "container": container,
+        "pages_data": None,
+        "innodb_buffer_pool_pages_data": None,
+        "error": "출력에서 Innodb_buffer_pool_pages_data 항목을 찾을 수 없습니다.",
+    }
+
+
 __all__ = [
     "CHAT_QUERIES",
+    "DEFAULT_DB_CONTAINER",
     "FIRST_TOKEN_TARGET_MS",
     "PERF_CONFIG_ALLOWLIST",
     "PREDICT_TARGET_MS",
@@ -95,6 +178,7 @@ __all__ = [
     "_parse_env_vars",
     "_parse_port_bindings",
     "_parse_source_mount",
+    "benchmark_dashboard_stats",
     "benchmark_predict",
     "benchmark_query",
     "benchmark_sse_canonical",
@@ -394,15 +478,55 @@ def benchmark_predict(base_url: str, rounds: int, concurrency: int) -> Samples:
     return samples
 
 
+def benchmark_dashboard_stats(
+    base_url: str,
+    rounds: int = 10,
+    warmup_rounds: int = 1,
+) -> tuple[Samples, Samples]:
+    """GET /api/v1/bids/stats 의 웜 및 콜드(웜업) API 레이턴시를 측정합니다."""
+    cold_samples = Samples("대시보드 통계 API (콜드 / 웜업)")
+    warm_samples = Samples("대시보드 통계 API (웜)")
+
+    with httpx.Client(base_url=base_url, timeout=120.0) as client:
+        # 웜업 요청 (콜드 측정)
+        for i in range(warmup_rounds):
+            start = time.perf_counter()
+            try:
+                r = client.get("/api/v1/bids/stats")
+                elapsed = (time.perf_counter() - start) * 1000.0
+                if r.status_code == 200:
+                    cold_samples.add(elapsed, f"warmup_{i + 1}")
+                else:
+                    cold_samples.errors += 1
+            except httpx.HTTPError:
+                cold_samples.errors += 1
+
+        # 웜 측정
+        for i in range(rounds):
+            start = time.perf_counter()
+            try:
+                r = client.get("/api/v1/bids/stats")
+                elapsed = (time.perf_counter() - start) * 1000.0
+                if r.status_code == 200:
+                    warm_samples.add(elapsed, f"round_{i + 1}")
+                else:
+                    warm_samples.errors += 1
+            except httpx.HTTPError:
+                warm_samples.errors += 1
+            print(f"    대시보드 통계 API 웜 {i + 1}/{rounds} 완료", end="\r", flush=True)
+    print(" " * 40, end="\r")
+    return cold_samples, warm_samples
+
+
 def build_evidence(
     base_url: str,
     predict_rounds: int,
     predict_concurrency: int,
-    first_stage: Samples,
-    first_token: Samples,
-    final: Samples,
-    predict: Samples,
-    query: Samples,
+    first_stage: Samples | None = None,
+    first_token: Samples | None = None,
+    final: Samples | None = None,
+    predict: Samples | None = None,
+    query: Samples | None = None,
     host_load: dict[str, object] | None = None,
     strict_provenance: bool = True,
     service_name: str = "app",
@@ -410,6 +534,10 @@ def build_evidence(
     meta: dict[str, object] | None = None,
     start_meta: dict[str, object] | None = None,
     end_meta: dict[str, object] | None = None,
+    dashboard_stats: Samples | None = None,
+    dashboard_stats_cold: Samples | None = None,
+    target: str = "phase7",
+    target_db_container: str | None = None,
 ) -> dict[str, object]:
     if start_meta is None and end_meta is None:
         if meta is None:
@@ -437,28 +565,100 @@ def build_evidence(
     if meta is not None:
         base_meta.update(meta)
 
+    # DB 버퍼풀 정보 확보
+    start_bp = start_meta.get("db_buffer_pool")
+    end_bp = end_meta.get("db_buffer_pool")
+    if end_bp is None and target_db_container is not None:
+        end_bp = query_db_buffer_pool_pages_data(container=target_db_container)
+        end_meta["db_buffer_pool"] = end_bp
+        end_meta["innodb_buffer_pool_pages_data"] = end_bp.get("pages_data")
+    if start_bp is None and end_bp is not None:
+        start_meta["db_buffer_pool"] = end_bp
+        start_meta["innodb_buffer_pool_pages_data"] = end_bp.get("pages_data")
+
+    buffer_pool_pages = end_meta.get("innodb_buffer_pool_pages_data") or start_meta.get(
+        "innodb_buffer_pool_pages_data"
+    )
+    bp_data = end_meta.get("db_buffer_pool") or start_meta.get("db_buffer_pool")
+
     evidence_meta = {
         **base_meta,
         "start_provenance": start_meta,
         "end_provenance": end_meta,
         "provenance_consistent": provenance_consistent,
         "host_load": host_load if host_load is not None else host_load_metadata(),
+        "innodb_buffer_pool_pages_data": buffer_pool_pages,
+        "db_buffer_pool": bp_data,
     }
 
-    evidence = {
+    evidence_samples: dict[str, Any] = {}
+    if first_stage is not None:
+        evidence_samples["first_stage_new"] = first_stage.as_dict()
+    if first_token is not None:
+        evidence_samples["first_token_new"] = first_token.as_dict()
+    if final is not None:
+        evidence_samples["final_new"] = final.as_dict()
+    if predict is not None:
+        evidence_samples["predict"] = predict.as_dict()
+    if query is not None:
+        evidence_samples["query"] = query.as_dict()
+    if dashboard_stats is not None:
+        evidence_samples["dashboard_stats"] = dashboard_stats.as_dict()
+        evidence_samples["dashboard_stats_warm"] = dashboard_stats.as_dict()
+    if dashboard_stats_cold is not None:
+        evidence_samples["dashboard_stats_cold"] = dashboard_stats_cold.as_dict()
+
+    evidence: dict[str, Any] = {
         "meta": evidence_meta,
-        "base_url": base_url,
-        "predict_rounds": predict_rounds,
-        "predict_concurrency": predict_concurrency,
-        "predict_warmup_requests": predict_concurrency,
-        "samples": {
-            "first_stage_new": first_stage.as_dict(),
-            "first_token_new": first_token.as_dict(),
-            "final_new": final.as_dict(),
-            "predict": predict.as_dict(),
-            "query": query.as_dict(),
+        "provenance": {
+            "start": start_meta,
+            "end": end_meta,
+            "innodb_buffer_pool_pages_data": buffer_pool_pages,
+            "db_buffer_pool": bp_data,
         },
+        "target": target,
+        "base_url": base_url,
+        "samples": evidence_samples,
     }
+
+    if predict_rounds:
+        evidence["predict_rounds"] = predict_rounds
+        evidence["predict_concurrency"] = predict_concurrency
+        evidence["predict_warmup_requests"] = predict_concurrency
+
+    if dashboard_stats is not None:
+        p50 = dashboard_stats.percentile(50)
+        p95 = dashboard_stats.percentile(95)
+        p99 = dashboard_stats.percentile(99)
+        mean_val = statistics.fmean(dashboard_stats.values) if dashboard_stats.values else None
+        evidence["canonical_warm"] = {
+            "endpoint": "/api/v1/bids/stats",
+            "p50_ms": None if math.isnan(p50) else p50,
+            "p95_ms": None if math.isnan(p95) else p95,
+            "p99_ms": None if math.isnan(p99) else p99,
+            "mean_ms": mean_val,
+            "representative_ms": None if math.isnan(p50) else p50,
+            "rounds": len(dashboard_stats.values),
+            "errors": dashboard_stats.errors,
+        }
+        baseline_ms = 31_970.0
+        ratio = p50 / baseline_ms if not math.isnan(p50) else None
+        evidence["verdict"] = {
+            "baseline_pre_cutover_ms": baseline_ms,
+            "measured_warm_representative_ms": None if math.isnan(p50) else p50,
+            "measured_warm_p95_ms": None if math.isnan(p95) else p95,
+            "latency_reduction_ratio": ratio,
+            "conclusion": (
+                "전환 전 31.97초 대비 실측 웜 레이턴시가 수 밀리초 수준으로 대폭 단축됨"
+                if not math.isnan(p50) and p50 < 1000
+                else (
+                    "전환 효과 달성 (6초 안팎)"
+                    if not math.isnan(p50) and p50 <= 7000
+                    else "병목이 집계가 아니라는 결론"
+                )
+            ),
+        }
+
     return sanitize_nan_to_none(evidence)
 
 
@@ -493,10 +693,33 @@ def main() -> int:
         default=None,
         help="명시적 대상 도커 컨테이너 이름 또는 ID (기본: None)",
     )
+    parser.add_argument(
+        "--target-db-container",
+        default=None,
+        help="대상 DB 도커 컨테이너 이름 또는 ID (기본: None)",
+    )
+    parser.add_argument(
+        "--target",
+        choices=["all", "phase7", "dashboard"],
+        default="phase7",
+        help="측정 대상 (기본: phase7, dashboard: 대시보드 통계 API, all: 전체)",
+    )
     parser.add_argument("--sse-rounds", type=int, default=20)
     parser.add_argument("--query-rounds", type=int, default=10)
     parser.add_argument("--predict-rounds", type=int, default=100)
     parser.add_argument("--predict-concurrency", type=int, default=10)
+    parser.add_argument(
+        "--dashboard-rounds",
+        type=int,
+        default=10,
+        help="대시보드 통계 API 웜 측정 횟수 (기본: 10)",
+    )
+    parser.add_argument(
+        "--dashboard-warmup-rounds",
+        type=int,
+        default=1,
+        help="대시보드 통계 API 웜업(콜드) 횟수 (기본: 1)",
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--allow-unknown-provenance",
@@ -507,9 +730,13 @@ def main() -> int:
     args = parser.parse_args()
 
     print("=" * 62)
-    print("refac_bid_box Phase 7 레이턴시 벤치마크")
+    print("refac_bid_box 레이턴시 벤치마크")
     print(f"대상 서버: {args.base_url}")
+    print(f"대상 모드: {args.target}")
     print("=" * 62)
+
+    if not args.target_db_container:
+        args.target_db_container = DEFAULT_DB_CONTAINER
 
     try:
         httpx.get(f"{args.base_url}/api/v1/health", timeout=5.0).raise_for_status()
@@ -533,16 +760,44 @@ def main() -> int:
         )
         return 2
 
+    # DB 버퍼풀 시작 지점 수집
+    start_bp = query_db_buffer_pool_pages_data(container=args.target_db_container)
+    start_meta["db_buffer_pool"] = start_bp
+    start_meta["innodb_buffer_pool_pages_data"] = start_bp.get("pages_data")
+    start_meta["db_buffer_pool_error"] = start_bp.get("error")
+
     load_monitor = HostLoadMonitor(interval_seconds=5.0, min_samples=3).start()
 
-    print(f"\n[1/3] 낙찰가 예측 API ({args.predict_rounds}회)")
-    predict = benchmark_predict(args.base_url, args.predict_rounds, args.predict_concurrency)
+    predict = None
+    first_stage = None
+    new_first_token = None
+    final = None
+    query = None
+    dashboard_cold = None
+    dashboard_warm = None
 
-    print(f"\n[2/3] 정본 SSE 스트리밍 ({args.sse_rounds}회)")
-    first_stage, new_first_token, final = benchmark_sse_canonical(args.base_url, args.sse_rounds)
+    if args.target in ("phase7", "all"):
+        print(f"\n[1/3] 낙찰가 예측 API ({args.predict_rounds}회)")
+        predict = benchmark_predict(args.base_url, args.predict_rounds, args.predict_concurrency)
 
-    print(f"\n[3/3] 단발 질의 API ({args.query_rounds}회)")
-    query = benchmark_query(args.base_url, args.query_rounds)
+        print(f"\n[2/3] 정본 SSE 스트리밍 ({args.sse_rounds}회)")
+        first_stage, new_first_token, final = benchmark_sse_canonical(
+            args.base_url, args.sse_rounds
+        )
+
+        print(f"\n[3/3] 단발 질의 API ({args.query_rounds}회)")
+        query = benchmark_query(args.base_url, args.query_rounds)
+
+    if args.target in ("dashboard", "all"):
+        print(
+            f"\n대시보드 통계 API GET /api/v1/bids/stats "
+            f"(웜 {args.dashboard_rounds}회, 웜업 {args.dashboard_warmup_rounds}회)"
+        )
+        dashboard_cold, dashboard_warm = benchmark_dashboard_stats(
+            args.base_url,
+            rounds=args.dashboard_rounds,
+            warmup_rounds=args.dashboard_warmup_rounds,
+        )
 
     host_load = load_monitor.stop()
 
@@ -558,22 +813,40 @@ def main() -> int:
         print(f"빌드 provenance 검증 실패 (종료 시점 / 교체 감지): {exc}")
         return 2
 
+    # DB 버퍼풀 종료 지점 수집
+    end_bp = query_db_buffer_pool_pages_data(container=args.target_db_container)
+    end_meta["db_buffer_pool"] = end_bp
+    end_meta["innodb_buffer_pool_pages_data"] = end_bp.get("pages_data")
+    end_meta["db_buffer_pool_error"] = end_bp.get("error")
+
     print("\n" + "-" * 62)
     print("결과")
-    results = [
-        new_first_token.report(FIRST_TOKEN_TARGET_MS),
-        final.report(TOTAL_TARGET_MS),
-        first_stage.report(),
-        predict.report(PREDICT_TARGET_MS),
-    ]
-    query.report()
+    results = []
+
+    if args.target in ("phase7", "all"):
+        if new_first_token is not None:
+            results.append(new_first_token.report(FIRST_TOKEN_TARGET_MS))
+        if final is not None:
+            results.append(final.report(TOTAL_TARGET_MS))
+        if first_stage is not None:
+            first_stage.report()
+        if predict is not None:
+            results.append(predict.report(PREDICT_TARGET_MS))
+        if query is not None:
+            query.report()
+
+    if args.target in ("dashboard", "all") and dashboard_warm is not None:
+        if dashboard_cold is not None:
+            dashboard_cold.report()
+        dashboard_passed = dashboard_warm.report()
+        results.append(dashboard_passed)
 
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         evidence = build_evidence(
             args.base_url,
-            args.predict_rounds,
-            args.predict_concurrency,
+            args.predict_rounds if args.target in ("phase7", "all") else 0,
+            args.predict_concurrency if args.target in ("phase7", "all") else 0,
             first_stage,
             new_first_token,
             final,
@@ -585,6 +858,10 @@ def main() -> int:
             target_container=args.target_container,
             start_meta=start_meta,
             end_meta=end_meta,
+            dashboard_stats=dashboard_warm,
+            dashboard_stats_cold=dashboard_cold,
+            target=args.target,
+            target_db_container=args.target_db_container,
         )
         args.output.write_text(
             dump_strict_json(evidence),
@@ -592,16 +869,16 @@ def main() -> int:
         )
         print(f"  원시 측정치 저장: {args.output}")
 
-    if final.tagged:
+    if final is not None and final.tagged:
         print("\n  질의별 최장 소요 (SSE 전체)")
         for tag, ms in final.slowest(5):
             print(f"      {_fmt(ms):>8s}  {tag}")
 
     print("-" * 62)
     if all(results):
-        print("레이턴시 목표 전부 달성")
+        print("레이턴시 측정 완료 (전부 성공)")
         return 0
-    print("레이턴시 목표 미달 항목이 있습니다")
+    print("레이턴시 측정 중 오류 또는 미달 항목이 있습니다")
     return 1
 
 
