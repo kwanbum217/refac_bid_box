@@ -43,25 +43,10 @@ from src.tasks.run_mode_matrix import get_run_mode_steps
 
 # fmt: off
 __all__ = [
-    "STEP_RUNNERS",
-    "_check_chroma_vectors",
-    "_invoke_sync_runner",
-    "_post_callback",
-    "_report",
-    "_step_collect",
-    "_step_inspect",
-    "_step_predict",
-    "_step_rag",
-    "_step_retrain",
-    "_step_search",
-    "collect_bids_task",
-    "manual_full_task",
-    "manual_retrain_task",
-    "preflight_check_task",
-    "refresh_data_task",
-    "run_automation_pipeline",
-    "update_kb_task",
-    "validate_model_task",
+    "STEP_RUNNERS", "_check_chroma_vectors", "_invoke_sync_runner", "_post_callback", "_report",
+    "_step_collect", "_step_inspect", "_step_predict", "_step_rag", "_step_retrain", "_step_search",
+    "collect_bids_task", "manual_full_task", "manual_retrain_task", "preflight_check_task",
+    "refresh_data_task", "run_automation_pipeline", "update_kb_task", "validate_model_task",
 ]
 # fmt: on
 
@@ -103,37 +88,21 @@ def _report(  # nosec B107
     callback_url 이 있으면 API 로 보냅니다 (워커가 DB 를 공유하지 않는 배포).
     없거나 전송에 실패하면 같은 페이로드를 DB 에 직접 기록합니다.
     """
-    caller_db = None
     if isinstance(db, Session):
         caller_db = db
         req_id = automation_request_id
-        st = step
-        sta = status
-        summ = summary
-        met = metrics if isinstance(metrics, dict) else {}
-        fin = final
-        cb_url = callback_url
-        cb_token = callback_token
     else:
+        caller_db = None
         req_id = str(db or automation_request_id or "")
-        st = step
-        sta = status
-        summ = summary
-        met = metrics if isinstance(metrics, dict) else {}
-        fin = final
-        cb_url = callback_url
-        cb_token = callback_token
+
+    st, sta, summ = step, status, summary
+    met = metrics if isinstance(metrics, dict) else {}
+    fin, cb_url, cb_token = final, callback_url, callback_token
 
     if not req_id:
         return
 
-    payload = {
-        "step": st,
-        "status": sta,
-        "summary": summ,
-        "metrics": met,
-        "final": fin,
-    }
+    payload = {"step": st, "status": sta, "summary": summ, "metrics": met, "final": fin}
 
     if cb_url and _post_callback(cb_url, cb_token, payload):
         return
@@ -192,7 +161,29 @@ async def run_automation_pipeline(
     callback_url: str = "",
     callback_token: str = "",
 ) -> dict[str, Any]:
-    """run_mode 에 정의된 스텝을 순서대로 실행하고 결과를 누적 보고합니다."""
+    if run_mode in {
+        "collect_only",
+        "kb_only",
+        "manual_full",
+        "refresh_data",
+        "retrain_only",
+        "nightly_schedule",
+    }:
+        from src.tasks.worker import heavy_task_guard, is_in_heavy_task
+
+        if not is_in_heavy_task():
+            async with heavy_task_guard(f"run_automation_pipeline:{run_mode}"):
+                return await run_automation_pipeline(
+                    ctx,
+                    execution_id=execution_id,
+                    action_key=action_key,
+                    run_mode=run_mode,
+                    original_query=original_query,
+                    automation_request_id=automation_request_id,
+                    callback_url=callback_url,
+                    callback_token=callback_token,
+                )
+
     delivery = {"callback_url": callback_url, "callback_token": callback_token}
     db = SessionLocal()
     completed: list[str] = []
@@ -379,7 +370,6 @@ async def run_automation_pipeline(
             )
         except Exception as rep_err:
             logger.error("파이프라인 실패 보고 기록 실패: %s", rep_err)
-            logger.error("파이프라인 실패 보고 기록 실패: %s", rep_err)
 
         try:
             execution = db.execute(
@@ -402,43 +392,61 @@ async def run_automation_pipeline(
         db.close()
 
 
+def _heavy_task(fn: Callable[..., Any]) -> Callable[..., Any]:
+    from functools import wraps
+
+    @wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        from src.tasks.worker import heavy_task_guard
+
+        async with heavy_task_guard(fn.__name__):
+            return await fn(*args, **kwargs)
+
+    return wrapper
+
+
 @traced_worker_task
-async def preflight_check_task(ctx, **kwargs):
+async def preflight_check_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="preflight_only", **kwargs)
 
 
 @traced_worker_task
-async def collect_bids_task(ctx, **kwargs):
+@_heavy_task
+async def collect_bids_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="collect_only", **kwargs)
 
 
 @traced_worker_task
-async def update_kb_task(ctx, **kwargs):
+@_heavy_task
+async def update_kb_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="kb_only", **kwargs)
 
 
 @traced_worker_task
-async def validate_model_task(ctx, **kwargs):
+async def validate_model_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="predict_only", **kwargs)
 
 
 @traced_worker_task
-async def refresh_data_task(ctx, **kwargs):
+@_heavy_task
+async def refresh_data_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="refresh_data", **kwargs)
 
 
 @traced_worker_task
-async def manual_full_task(ctx, **kwargs):
+@_heavy_task
+async def manual_full_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="manual_full", **kwargs)
 
 
 @traced_worker_task
-async def manual_retrain_task(ctx, **kwargs):
+@_heavy_task
+async def manual_retrain_task(ctx: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
     kwargs.pop("run_mode", None)
     return await run_automation_pipeline(ctx, run_mode="retrain_only", **kwargs)
