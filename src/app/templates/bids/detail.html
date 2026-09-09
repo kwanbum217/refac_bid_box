@@ -394,7 +394,7 @@
                                     <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
                                         <th class="p-2">시나리오</th>
                                         <th class="p-2 text-right">예정가격</th>
-                                        <th class="p-2 text-right">투찰율</th>
+                                        <th class="p-2 text-right">투찰율 (서버 비율)</th>
                                         <th class="p-2 text-right">가격점수</th>
                                         <th class="p-2 text-right">정량점수</th>
                                         <th class="p-2 text-right">총점</th>
@@ -814,6 +814,12 @@ $(document).ready(function() {
         return num.toFixed(2) + '%';
     }
 
+    function formatRatio(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return '-';
+        return num.toFixed(4);
+    }
+
     function formatScore(value) {
         const num = Number(value);
         if (!Number.isFinite(num)) return '-';
@@ -1011,7 +1017,7 @@ $(document).ready(function() {
                                 <tr class="hover:bg-slate-50/50">
                                     <td class="p-2 font-medium">${escapeHtml(scenario.scenario_name)}</td>
                                     <td class="p-2 text-right font-mono tabular-nums">₩${formatNumber(scenario.estimated_price)}</td>
-                                    <td class="p-2 text-right font-mono tabular-nums">${formatRate(scenario.bid_to_estimated_ratio * 100)}</td>
+                                    <td class="p-2 text-right font-mono tabular-nums">${formatRatio(scenario.bid_to_estimated_ratio)}</td>
                                     <td class="p-2 text-right font-bold text-primary">${formatScore(scenario.price_score)}</td>
                                     <td class="p-2 text-right font-bold text-slate-700">${formatScore(scenario.qualification_score)}</td>
                                     <td class="p-2 text-right font-bold text-slate-900">${formatScore(scenario.total_score)}</td>

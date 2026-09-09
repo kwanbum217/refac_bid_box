@@ -5,6 +5,7 @@ tests/test_evaluation_ui.py
 HTML 템플릿에 필수 요소가 모두 포함되어 있는지 정적 분석으로 확인합니다.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -211,10 +212,32 @@ class TestEvaluationUITemplate:
     # ---------------------------------------------------------------------
     def test_no_client_side_calculation(self, template_content):
         """브라우저에서 점수를 재계산하는 로직이 없다."""
-        # 클라이언트에서 가격점수/총점/적격여부를 계산하는 코드가 없어야 함
-        # 서버 응답을 그대로 표시하는 패턴만 있어야 함
-        # (정적 분석으로는 완전 검증 불가하나, 명시적 계산 로직이 없는지 확인)
-        pass  # 템플릿 구조상 서버 응답 바인딩만 있음
+        script_match = re.search(r"<script>(.*?)</script>", template_content, re.DOTALL)
+        assert script_match, "평가 스크립트 영역을 찾을 수 없음"
+        script = script_match.group(1)
+
+        # 평가 결과의 수치 필드는 서버가 계산한 값을 그대로 표시해야 한다.
+        # 필드 바로 뒤에 산술 연산자가 붙으면 브라우저 재계산으로 간주한다.
+        server_calculated_fields = (
+            "scenario.bid_to_estimated_ratio",
+            "scenario.price_score",
+            "scenario.qualification_score",
+            "scenario.total_score",
+            "data.a_value_amount",
+            "data.min_bid_amount_with_a",
+            "data.min_possible_bid_rate",
+        )
+        arithmetic_pattern = re.compile(
+            r"(?P<field>" + "|".join(map(re.escape, server_calculated_fields)) + r")\s*[*/+-]"
+        )
+        matches = arithmetic_pattern.findall(script)
+        assert not matches, f"서버 응답 필드에 브라우저 산술 연산이 적용됨: {matches}"
+
+        # 시나리오 결과의 핵심 수치와 적격 여부는 계산 없이 표시 함수에 바인딩한다.
+        assert "formatRatio(scenario.bid_to_estimated_ratio)" in script
+        assert "formatScore(scenario.price_score)" in script
+        assert "formatScore(scenario.total_score)" in script
+        assert "scenario.is_qualified ?" in script
 
 
 class TestEvaluationUISchemaAlignment:
