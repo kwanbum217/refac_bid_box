@@ -83,6 +83,29 @@ class QualificationInput(BaseModel):
         default=None,
         description="증빙 서류 기준일 (입찰공고일 또는 마감일 기준 확인)",
     )
+    # 아래 셋은 공고문의 적격심사 배점표에서 사용자가 읽어 입력합니다.
+    # 규칙 레지스트리에 넣지 않는 이유는 실측으로 확정하지 못했기 때문입니다.
+    # DB 550만 건에서 확정한 것은 별표 식별 문자열과 낙찰하한율 둘뿐이고,
+    # 가격배점과 계수와 통과점수는 별표마다 다른데 공고 데이터에 들어 있지
+    # 않습니다. 참고 자료의 배점표는 추정가격 구간축이라 용역 종류별 별표축과
+    # 대응하지 않으며 그 값으로 실측 하한율이 재현되지도 않습니다. 추측한 값을
+    # 레지스트리에 박으면 전 별표에 틀린 점수가 적용되므로 사용자 입력으로
+    # 받습니다. 셋 중 하나라도 없으면 점수 계산을 차단합니다.
+    max_price_score: float | None = Field(
+        default=None,
+        gt=0.0,
+        description="가격 배점한도 B. 공고문 적격심사 배점표에서 입력",
+    )
+    multiplier: float | None = Field(
+        default=None,
+        gt=0.0,
+        description="가격평점 계수 k. 공고문 적격심사 배점표에서 입력",
+    )
+    pass_threshold: float | None = Field(
+        default=None,
+        gt=0.0,
+        description="적격 통과점수 T. 공고문 적격심사 배점표에서 입력",
+    )
 
 
 # ============================================================================
@@ -140,24 +163,24 @@ class ScenarioEvaluationResult(BaseModel):
         ...,
         description="투찰율/사정율 비율 x = ROUND_HALF_UP(입찰금액 / 예정가격, 4자리)",
     )
-    price_score: float = Field(
-        ...,
+    price_score: float | None = Field(
+        default=None,
         description="입찰가격 평점 P = B - k * |(기준비율 - x) * 100|",
     )
-    qualification_score: float = Field(
-        ...,
+    qualification_score: float | None = Field(
+        default=None,
         description="정량평가 종합점수 Q (수행능력 + 근로조건이행계획 + 신인도)",
     )
-    total_score: float = Field(
-        ...,
+    total_score: float | None = Field(
+        default=None,
         description="종합평가 점수 (총점 = Q + P)",
     )
-    pass_threshold: float = Field(
-        ...,
+    pass_threshold: float | None = Field(
+        default=None,
         description="적격심사 통과 기준 점수 T (예: 95점 또는 85점)",
     )
-    is_qualified: bool = Field(
-        ...,
+    is_qualified: bool | None = Field(
+        default=None,
         description="적격 통과 여부 (결격사유 없음 AND 입찰금액 <= 예정가격 AND 총점 >= T)",
     )
     warnings: list[str] = Field(
