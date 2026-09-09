@@ -177,6 +177,21 @@ class TestEvaluationUITemplate:
         assert 'id="res-similarity"' in template_content
         assert 'id="res-interval"' in template_content
 
+    def test_evaluation_card_is_below_ai_card(self, template_content):
+        """공고 기준 분석 카드는 기존 AI 분석기 아래에 배치된다."""
+        prediction_end = template_content.index('id="prediction-result"')
+        evaluation_start = template_content.index('id="evaluation-card"')
+        sidebar_start = template_content.index("Right Column: Sidebar")
+
+        assert prediction_end < evaluation_start < sidebar_start
+
+    def test_prediction_script_has_no_duplicate_or_invalid_helpers(self, template_content):
+        """기존 AI 스크립트의 중복 선언과 평가 스크립트 문법 오류가 없다."""
+        assert template_content.count("const currencyFormatter") == 1
+        assert template_content.count("function escapeHtml") == 1
+        assert "precededBy" not in template_content
+        assert "candidate_bid_amount: 0" not in template_content
+
     # ---------------------------------------------------------------------
     # JavaScript 함수 존재 여부 (정적 분석)
     # ---------------------------------------------------------------------

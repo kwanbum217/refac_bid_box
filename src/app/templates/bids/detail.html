@@ -269,7 +269,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
 
             <!-- 공고 기준 분석 카드 (AI 투찰 금액 분석기 아래) -->
             <div class="h-card overflow-hidden" id="evaluation-card">
@@ -439,6 +438,7 @@
                     </div>
                 </div>
             </div>
+            </div>
 
             <!-- Right Column: Sidebar -->
             <div class="lg:col-span-4 space-y-6">
@@ -511,11 +511,6 @@ $(document).ready(function() {
     const defaultModelId = '{{ default_prediction_model|default("v25", true) }}';
     const bidCategory = '{{ bid.category|default("", true)|escapejs }}';
     const bidId = Number('{{ bid.id }}');
-    const currencyFormatter = new Intl.NumberFormat('ko-KR', {
-        style: 'currency',
-        currency: 'KRW',
-        maximumFractionDigits: 0
-    });
     const categoryLabels = {
         Thng: '물품',
         Cnstwk: '건설',
@@ -808,15 +803,6 @@ $(document).ready(function() {
     // ============================================================
     const evaluationUrl = '{{ url('evaluations:analyze') }}';
 
-    function escapeHtml(value) {
-        return String(value || '')
-            .replace(/&/g, '&')
-            .replace(/</g, '<')
-            .replace(/>/g, '>')
-            .replace(/"/g, '"')
-            .replace(/'/g, ''');
-    }
-
     function formatNumber(value) {
         return Number(value || 0).toLocaleString('ko-KR');
     }
@@ -843,6 +829,48 @@ $(document).ready(function() {
         return reasons[code] || code;
     }
 
+    function usesFallbackModel(data) {
+        return Boolean(
+            data.fallback_used
+            || (data.requested_model && data.actual_model && data.requested_model !== data.actual_model)
+        );
+    }
+
+    function renderLowerBoundWarnings(warnings, lowerBoundRate) {
+        let hasLowerBoundDefault = false;
+        let hasLowerBoundMismatch = false;
+        let defaultValue = null;
+        let noticeValue = null;
+        let ruleValue = null;
+        let usedValue = null;
+
+        (warnings || []).forEach(function(w) {
+            if (w.includes('기본값')) {
+                hasLowerBoundDefault = true;
+                const match = w.match(/([\d.]+)%/);
+                if (match) defaultValue = match[1];
+            }
+            if (w.includes('불일치') || w.includes('다릅니다')) {
+                hasLowerBoundMismatch = true;
+                const matches = w.match(/([\d.]+)%/g);
+                if (matches && matches.length >= 2) {
+                    noticeValue = matches[0].replace('%', '');
+                    ruleValue = matches[1].replace('%', '');
+                    if (matches.length >= 3) usedValue = matches[2].replace('%', '');
+                }
+            }
+        });
+
+        $('#lower-bound-warnings').toggleClass('hidden', !(hasLowerBoundDefault || hasLowerBoundMismatch));
+        $('#lower-bound-default-warning').toggleClass('hidden', !hasLowerBoundDefault);
+        $('#lower-bound-mismatch-warning').toggleClass('hidden', !hasLowerBoundMismatch);
+        if (defaultValue) $('#lower-bound-default-value').text(defaultValue);
+        if (noticeValue) $('#lower-bound-notice-value').text(noticeValue);
+        if (ruleValue) $('#lower-bound-rule-value').text(ruleValue);
+        if (usedValue) $('#lower-bound-used-value').text(usedValue);
+        else if (lowerBoundRate != null) $('#lower-bound-used-value').text(lowerBoundRate);
+    }
+
     // 초기 규칙 정보 로드 (입찰 없이도 적용 규칙 확인 가능)
     function loadEvaluationRule() {
         $.ajax({
@@ -852,7 +880,7 @@ $(document).ready(function() {
             dataType: 'json',
             data: JSON.stringify({
                 bid_id: bidId,
-                candidate_bid_amount: 0,
+                candidate_bid_amount: 1,
                 qualification_input: {
                     performance_score: 0,
                     management_score: 0,
@@ -873,19 +901,14 @@ $(document).ready(function() {
                     $('#rule-basis').text(data.rule_basis || '-');
                 }
                 // 모델 대체 경고
-                if (data.fallback_used) {
+                if (usesFallbackModel(data)) {
                     $('#evaluation-fallback-msg').text(
                         '요청 모델(' + (data.requested_model || '-') + ')을 쓸 수 없어 '
                         + (data.actual_model || '-') + ' 이 적용되었습니다. 사유: ' + (data.fallback_reason || '-')
                     );
                     $('#evaluation-fallback').removeClass('hidden');
                 }
-                // 하한율 경고
-                if (data.lower_bound_rate != null) {
-                    // 기본값 사용 여부는 서버 응답에 별도 필드로 줄 수 있으나, 여기선 경고 배열에서 확인
-                    // 하한율 관련 경고가 warnings에 포함될 수 있음
-                }
-                // 하한율 기본값/불일치 경고는 warnings 배열에서 처리
+                renderLowerBoundWarnings(data.warnings, data.lower_bound_rate);
             },
             error: function() {
                 $('#evaluation-loading').addClass('hidden');
@@ -927,6 +950,7 @@ $(document).ready(function() {
         $('#scenario-results').addClass('hidden');
         $('#evaluation-warnings').addClass('hidden');
         $('#evaluation-fallback').addClass('hidden');
+        $('#lower-bound-warnings').addClass('hidden');
         $('#lower-bound-warnings > div').addClass('hidden');
         $('#scenario-warnings').addClass('hidden');
 
@@ -964,7 +988,7 @@ $(document).ready(function() {
                     }
 
                     // 모델 대체 경고
-                    if (data.fallback_used) {
+                    if (usesFallbackModel(data)) {
                         $('#evaluation-fallback-msg').text(
                             '요청 모델(' + (data.requested_model || '-') + ')을 쓸 수 없어 '
                             + (data.actual_model || '-') + ' 이 적용되었습니다. 사유: ' + (data.fallback_reason || '-')
@@ -972,43 +996,7 @@ $(document).ready(function() {
                         $('#evaluation-fallback').removeClass('hidden');
                     }
 
-                    // 하한율 경고
-                    let hasLowerBoundDefault = false;
-                    let hasLowerBoundMismatch = false;
-                    let defaultValue = null;
-                    let noticeValue = null;
-                    let ruleValue = null;
-                    let usedValue = null;
-
-                    (data.warnings || []).forEach(function(w) {
-                        if (w.includes('기본값')) {
-                            hasLowerBoundDefault = true;
-                            const match = w.match(/([\d.]+)%/);
-                            if (match) defaultValue = match[1];
-                        }
-                        if (w.includes('불일치') || w.includes('다릅니다')) {
-                            hasLowerBoundMismatch = true;
-                            const matches = w.match(/([\d.]+)%/g);
-                            if (matches && matches.length >= 2) {
-                                noticeValue = matches[0].replace('%', '');
-                                ruleValue = matches[1].replace('%', '');
-                            }
-                            const usedMatch = w.match(/적용했습/.precededBy('([\d.]+)%'));
-                            if (usedMatch) usedValue = usedMatch[1];
-                        }
-                    });
-
-                    if (hasLowerBoundDefault && defaultValue) {
-                        $('#lower-bound-default-value').text(defaultValue);
-                        $('#lower-bound-default-warning').removeClass('hidden');
-                    }
-                    if (hasLowerBoundMismatch) {
-                        if (noticeValue) $('#lower-bound-notice-value').text(noticeValue);
-                        if (ruleValue) $('#lower-bound-rule-value').text(ruleValue);
-                        if (usedValue) $('#lower-bound-used-value').text(usedValue);
-                        else if (data.lower_bound_rate) $('#lower-bound-used-value').text(data.lower_bound_rate);
-                        $('#lower-bound-mismatch-warning').removeClass('hidden');
-                    }
+                    renderLowerBoundWarnings(data.warnings, data.lower_bound_rate);
 
                     // 시나리오 결과표
                     if (data.scenario_results && data.scenario_results.length > 0) {
