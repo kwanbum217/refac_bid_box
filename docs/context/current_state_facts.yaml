@@ -225,10 +225,11 @@ facts:
   - id: kb_index_memory
     status: closed
     decision_date: "2026-09-09"
-    claim: "KB 색인 메모리 폭주는 Wave AP 전량 병합(4e40bd1) 후 재측정에서 단일 색인 피크 4,323MB 로 959초에 정상 완료해 AP4 판정 기준 3항을 모두 충족했습니다."
+    claim: "KB 색인 메모리 폭주는 Wave AP 전량 병합(4e40bd1) 후 재측정에서 16GiB 조건 피크 4,323MB 와 14GiB 원복 조건 피크 1,027MB 로 모두 정상 완료해 AP4 판정 기준 3항을 충족했습니다."
     document_anchor: "KB 색인 메모리 폭주는"
     evidence:
       - data/benchmarks/kb_index_worker_mem_waveap_20260909.tsv
+      - data/benchmarks/kb_index_worker_mem_waveap_14g_20260909.tsv
       - docs/analysis/kb_index_memory_waveap_verification_20260909.md
       - docs/analysis/kb_index_memory_verification_20260909.md
     related_documents:
