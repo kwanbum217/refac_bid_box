@@ -340,6 +340,23 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         ],
         "notes": "복잡한 SQL·RAG·레이턴시 회귀 원인 분석 전문. Alibaba Token Plan 잔량이 크지 않아 자동 배정에서 제외한다. qwen-plus 가 두 번 실패했거나 원인 분석이 막혔을 때 --model 로 명시 지정하고 WORKER_MODEL_NOTICE 를 남긴다.",
     },
+    "qwen-flash": {
+        "id": "qwen3.8-flash",
+        "provider": "qwen",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+        ],
+        # 2026-09-09 사용자 지정으로 등록했습니다. Token Plan Global 목록 조회와
+        # 실호출 probe 로 가용성을 확인했으며 reasoning_tokens 를 돌려줍니다.
+        # deepseek-v4-pro 보다 토큰 단가가 낮아 구현 위주 빌더의 가성비 선택입니다.
+        # 쓰기 과제 실적이 쌓이기 전까지 자동 배정에서는 제외합니다.
+        "notes": "구현 위주 빌더용 가성비 선택. 2026-09-09 Token Plan 실호출 probe 통과. deepseek-v4-pro 보다 단가가 낮다. 쓰기 과제 실적이 쌓이기 전까지 자동 배정에서 제외한다.",
+    },
     "deepseek-flash": {
         "id": "deepseek-v4-flash",
         "provider": "qwen",
@@ -356,7 +373,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         # deepseek-pro 보다 가볍고 응답이 빠른 계열이라 구현 위주 빌더에 씁니다.
         # 쓰기 과제 실적이 아직 없으므로 자동 배정에서는 제외하고 --model 명시
         # 지정과 WORKER_MODEL_NOTICE 를 거칩니다.
-        "notes": "구현 위주 빌더용 경량 계열. 2026-09-09 사용자 지정 등록. Token Plan Global 경유이며 쓰기 과제 실적이 쌓이기 전까지 자동 배정에서 제외한다.",
+        "notes": "2026-09-09 실호출에서 403 Access to model denied 로 계정 권한이 없음을 확인했다. 권한이 열리기 전까지 배정하지 말고 qwen-flash 를 쓴다.",
     },
     "glm": {
         "id": "glm-5.2",
