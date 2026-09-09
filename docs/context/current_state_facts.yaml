@@ -1,6 +1,6 @@
 version: "2.0"
 description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
-updated_at: "2026-09-06"
+updated_at: "2026-09-09"
 facts:
   - id: gate_g1
     status: closed
@@ -222,6 +222,18 @@ facts:
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/model_promotion_runbook.md
+  - id: kb_index_memory
+    status: active
+    decision_date: "2026-09-09"
+    claim: "KB 색인 메모리 폭주는 bf29f3e 병합 후에도 단일 색인 피크 10,762MB 로 재현되어 AP4 판정 기준 3항을 전부 미충족했고 조회 계층 페이지 전환과 재시도 폭풍 차단을 추진합니다."
+    document_anchor: "KB 색인 메모리 폭주는"
+    evidence:
+      - data/benchmarks/kb_index_worker_mem_run2_single_20260909.tsv
+      - docs/analysis/kb_index_memory_verification_20260909.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/analysis/kb_index_memory_verification_20260909.md
+      - docs/analysis/kb_builder_memory_exhaustion_20260908.md
   - id: lexical_full_rerun
     status: active
     decision_date: "2026-08-28"
