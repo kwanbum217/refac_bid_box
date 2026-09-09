@@ -340,6 +340,24 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         ],
         "notes": "복잡한 SQL·RAG·레이턴시 회귀 원인 분석 전문. Alibaba Token Plan 잔량이 크지 않아 자동 배정에서 제외한다. qwen-plus 가 두 번 실패했거나 원인 분석이 막혔을 때 --model 로 명시 지정하고 WORKER_MODEL_NOTICE 를 남긴다.",
     },
+    "deepseek-flash": {
+        "id": "deepseek-v4-flash",
+        "provider": "qwen",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+        ],
+        # 2026-09-09 사용자 지정으로 등록했습니다. ~/.qwen 설정의
+        # deepseek/deepseek-v4-flash-0731 이며 Token Plan Global 경유입니다.
+        # deepseek-pro 보다 가볍고 응답이 빠른 계열이라 구현 위주 빌더에 씁니다.
+        # 쓰기 과제 실적이 아직 없으므로 자동 배정에서는 제외하고 --model 명시
+        # 지정과 WORKER_MODEL_NOTICE 를 거칩니다.
+        "notes": "구현 위주 빌더용 경량 계열. 2026-09-09 사용자 지정 등록. Token Plan Global 경유이며 쓰기 과제 실적이 쌓이기 전까지 자동 배정에서 제외한다.",
+    },
     "glm": {
         "id": "glm-5.2",
         "provider": "qwen",

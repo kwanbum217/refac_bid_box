@@ -316,6 +316,7 @@ class TestModelPoolAndSelection:
             "opencode-muse-spark",
         }
         assert non_auto_pools == {
+            "deepseek-flash",
             "gemini-3.7-flash-high",
             "gemini-3.7-flash-medium",
             "gemini-3.7-flash-low",
