@@ -50,7 +50,7 @@ class BidEvaluationProfile(Base):
     id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("accounts_customuser.id", name=FK_BID_EVAL_PROFILES_USER),
+        ForeignKey("accounts_customuser.id", name=FK_BID_EVAL_PROFILES_USER, ondelete="CASCADE"),
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -85,12 +85,12 @@ class BidEvaluationSnapshot(Base):
     id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
     bid_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("bid_announcements.id", name=FK_BID_EVAL_SNAPSHOTS_BID),
+        ForeignKey("bid_announcements.id", name=FK_BID_EVAL_SNAPSHOTS_BID, ondelete="CASCADE"),
         nullable=False,
     )
     user_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("accounts_customuser.id", name=FK_BID_EVAL_SNAPSHOTS_USER),
+        ForeignKey("accounts_customuser.id", name=FK_BID_EVAL_SNAPSHOTS_USER, ondelete="CASCADE"),
         nullable=False,
     )
     rule_id: Mapped[str] = mapped_column(String(100), nullable=False)
