@@ -271,6 +271,175 @@
                 </div>
             </div>
 
+            <!-- 공고 기준 분석 카드 (AI 투찰 금액 분석기 아래) -->
+            <div class="h-card overflow-hidden" id="evaluation-card">
+                <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                    <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                        <i class="fas fa-clipboard-check text-primary mr-2"></i>
+                        공고 기준 분석
+                    </h2>
+                    <span id="evaluation-scope-badge" class="badge badge-gray text-[10px]">
+                        일반용역 적격심사만 지원 (약 6%)
+                    </span>
+                </div>
+
+                <div class="p-6 space-y-6">
+                    <!-- 1. 적용 규칙 표시 -->
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">적용 규칙</h3>
+                        </div>
+                        <div id="evaluation-rule" class="hidden p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                            <div class="flex items-center gap-3">
+                                <span class="detail-label">규칙 ID</span>
+                                <code id="rule-id" class="text-sm font-mono text-slate-800 bg-white px-2 py-1 rounded border border-slate-200"></code>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="detail-label">규칙명</span>
+                                <span id="rule-name" class="text-sm font-semibold text-slate-800"></span>
+                            </div>
+                            <div class="flex items-start gap-3">
+                                <span class="detail-label mt-0.5 shrink-0">판별 근거</span>
+                                <span id="rule-basis" class="text-sm text-slate-600 leading-relaxed"></span>
+                            </div>
+                        </div>
+                        <div id="evaluation-blocked" class="hidden p-4 bg-red-50 border border-red-200 rounded-lg space-y-2">
+                            <div class="flex items-start gap-2 text-red-700">
+                                <i class="fas fa-ban mt-0.5 shrink-0"></i>
+                                <div>
+                                    <div class="font-bold">계산 차단</div>
+                                    <div id="blocked-reason" class="text-sm mt-0.5"></div>
+                                    <div class="text-xs mt-1 text-red-600">공고문의 낙찰방법과 별표를 직접 확인하십시오.</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="evaluation-loading" class="flex items-center gap-2 text-sm text-slate-500">
+                            <i class="fas fa-circle-notch fa-spin"></i>
+                            <span>적격심사 규칙 확인 중...</span>
+                        </div>
+                    </div>
+
+                    <!-- 2. 정량평가 입력표 -->
+                    <div class="space-y-3 border-t border-slate-200 pt-4">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">정량평가 입력</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm" id="qualification-input-table">
+                                <thead>
+                                    <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                        <th class="pb-2 pr-4">항목</th>
+                                        <th class="pb-2 pr-4 text-right">점수</th>
+                                        <th class="pb-2 pr-4 text-right">최대</th>
+                                        <th class="pb-2">비고</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr>
+                                        <td class="py-2 pr-4 font-medium text-slate-700">수행능력 - 실적</td>
+                                        <td class="py-2 pr-4 text-right">
+                                            <input type="number" id="input-performance" step="0.01" min="0" max="30"
+                                                   class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                        </td>
+                                        <td class="py-2 pr-4 text-right text-slate-400">30.00</td>
+                                        <td class="py-2 text-slate-500">실적 평가 점수</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="py-2 pr-4 font-medium text-slate-700">수행능력 - 경영상태</td>
+                                        <td class="py-2 pr-4 text-right">
+                                            <input type="number" id="input-management" step="0.01" min="0" max="20"
+                                                   class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                        </td>
+                                        <td class="py-2 pr-4 text-right text-slate-400">20.00</td>
+                                        <td class="py-2 text-slate-500">신용평가등급 등</td>
+                                    </tr>
+                                    <tr class="bg-amber-50/50">
+                                        <td class="py-2 pr-4 font-medium text-slate-700">근로조건 이행계획 <i class="fas fa-exclamation-circle text-amber-500 ml-1 cursor-help" title="단순노무용역 필수 항목. 0점 시 사실상 통과 불가"></i></td>
+                                        <td class="py-2 pr-4 text-right">
+                                            <input type="number" id="input-labor-plan" step="0.01" min="0" max="10"
+                                                   class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                        </td>
+                                        <td class="py-2 pr-4 text-right text-slate-400">10.00</td>
+                                        <td class="py-2 text-amber-700 font-semibold">단순노무용역 필수, 0점 불가</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="py-2 pr-4 font-medium text-slate-700">신인도 가감점</td>
+                                        <td class="py-2 pr-4 text-right">
+                                            <input type="number" id="input-credibility" step="0.01" min="-5" max="5"
+                                                   class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                        </td>
+                                        <td class="py-2 pr-4 text-right text-slate-400">±5.00</td>
+                                        <td class="py-2 text-slate-500">양수 가점, 음수 감점</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="flex items-center gap-3 mt-3">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="input-disqualification" class="rounded border-slate-300 text-primary focus:ring-primary">
+                                <span class="text-sm font-medium text-slate-700">결격사유 해당 (부정당업자 제재, 영업정지 등)</span>
+                            </label>
+                        </div>
+                        <div class="flex items-center gap-2 mt-3">
+                            <button id="btn-evaluate" class="h-btn h-btn-primary px-4 py-2 shadow-sm text-sm">
+                                <i class="fas fa-calculator mr-2"></i> 분석 실행
+                            </button>
+                            <span id="evaluation-hint" class="text-xs text-slate-400">투찰 금액과 정량평가 점수를 입력 후 실행</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. 예정가격 시나리오 결과표 -->
+                    <div id="scenario-results" class="hidden space-y-3 border-t border-slate-200 pt-4">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">예정가격 시나리오별 평가 결과</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm" id="scenario-table">
+                                <thead>
+                                    <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                                        <th class="p-2">시나리오</th>
+                                        <th class="p-2 text-right">예정가격</th>
+                                        <th class="p-2 text-right">투찰율</th>
+                                        <th class="p-2 text-right">가격점수</th>
+                                        <th class="p-2 text-right">정량점수</th>
+                                        <th class="p-2 text-right">총점</th>
+                                        <th class="p-2 text-center">적격</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="scenario-tbody" class="divide-y divide-slate-100">
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="scenario-warnings" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-amber-700 space-y-1">
+                            <div class="flex items-start gap-2">
+                                <i class="fas fa-triangle-exclamation text-amber-500 mt-0.5 shrink-0"></i>
+                                <div id="scenario-warnings-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. 종합 경고 및 정보 -->
+                    <div id="evaluation-warnings" class="hidden space-y-2 border-t border-slate-200 pt-4">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">경고 및 안내</h3>
+                        <div id="warnings-list" class="space-y-2"></div>
+                    </div>
+
+                    <!-- 모델 대체 경고 -->
+                    <div id="evaluation-fallback" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-700 flex items-start gap-2">
+                        <i class="fas fa-triangle-exclamation mt-0.5 shrink-0"></i>
+                        <span id="evaluation-fallback-msg"></span>
+                    </div>
+
+                    <!-- 하한율 경고 -->
+                    <div id="lower-bound-warnings" class="hidden space-y-2">
+                        <div id="lower-bound-default-warning" class="hidden p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700 flex items-start gap-2">
+                            <i class="fas fa-info-circle text-blue-500 mt-0.5 shrink-0"></i>
+                            <span>공고에 낙찰하한율이 없어 별표 기본값(<span id="lower-bound-default-value"></span>%)을 사용했습니다. 실제 공고문 확인 필요.</span>
+                        </div>
+                        <div id="lower-bound-mismatch-warning" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-amber-700 flex items-start gap-2">
+                            <i class="fas fa-triangle-exclamation text-amber-500 mt-0.5 shrink-0"></i>
+                            <span>공고 낙찰하한율(<span id="lower-bound-notice-value"></span>%)이 별표 기본값(<span id="lower-bound-rule-value"></span>%)과 다릅니다. 공고값(<span id="lower-bound-used-value"></span>%)을 적용했습니다.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Right Column: Sidebar -->
             <div class="lg:col-span-4 space-y-6">
                 <!-- Past Results -->
@@ -341,6 +510,12 @@ $(document).ready(function() {
     let availableModels = [];
     const defaultModelId = '{{ default_prediction_model|default("v25", true) }}';
     const bidCategory = '{{ bid.category|default("", true)|escapejs }}';
+    const bidId = Number('{{ bid.id }}');
+    const currencyFormatter = new Intl.NumberFormat('ko-KR', {
+        style: 'currency',
+        currency: 'KRW',
+        maximumFractionDigits: 0
+    });
     const categoryLabels = {
         Thng: '물품',
         Cnstwk: '건설',
@@ -624,6 +799,277 @@ $(document).ready(function() {
             },
             complete: function() {
                 $('#btn-predict').html(originalBtnContent).prop('disabled', false);
+            }
+        });
+    });
+
+    // ============================================================
+    // 3. 공고 기준 분석 (Evaluation)
+    // ============================================================
+    const evaluationUrl = '{{ url('evaluations:analyze') }}';
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&')
+            .replace(/</g, '<')
+            .replace(/>/g, '>')
+            .replace(/"/g, '"')
+            .replace(/'/g, ''');
+    }
+
+    function formatNumber(value) {
+        return Number(value || 0).toLocaleString('ko-KR');
+    }
+
+    function formatRate(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return '-';
+        return num.toFixed(2) + '%';
+    }
+
+    function formatScore(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return '-';
+        return num.toFixed(2);
+    }
+
+    function getBlockedReasonText(code) {
+        const reasons = {
+            'NOT_SERVC': '일반용역 공고가 아님',
+            'NON_PRED_PRICE': '비예가라 예정가격이 없음',
+            'MANUAL_EVALUATION': '발주기관 자체 기준 수기심사라 표준 배점표를 적용할 수 없음',
+            'RULE_NOT_FOUND': '낙찰방법으로 적격심사 별표를 특정할 수 없음'
+        };
+        return reasons[code] || code;
+    }
+
+    // 초기 규칙 정보 로드 (입찰 없이도 적용 규칙 확인 가능)
+    function loadEvaluationRule() {
+        $.ajax({
+            url: evaluationUrl,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify({
+                bid_id: bidId,
+                candidate_bid_amount: 0,
+                qualification_input: {
+                    performance_score: 0,
+                    management_score: 0,
+                    labor_plan_score: 0,
+                    credibility_score: 0,
+                    disqualification: false
+                }
+            }),
+            success: function(data) {
+                $('#evaluation-loading').addClass('hidden');
+                if (data.blocked) {
+                    $('#evaluation-blocked').removeClass('hidden');
+                    $('#blocked-reason').text(getBlockedReasonText(data.blocked_reason) + (data.rule_basis ? ' (' + data.rule_basis + ')' : ''));
+                } else {
+                    $('#evaluation-rule').removeClass('hidden');
+                    $('#rule-id').text(data.rule_id || '-');
+                    $('#rule-name').text(data.rule_name || '-');
+                    $('#rule-basis').text(data.rule_basis || '-');
+                }
+                // 모델 대체 경고
+                if (data.fallback_used) {
+                    $('#evaluation-fallback-msg').text(
+                        '요청 모델(' + (data.requested_model || '-') + ')을 쓸 수 없어 '
+                        + (data.actual_model || '-') + ' 이 적용되었습니다. 사유: ' + (data.fallback_reason || '-')
+                    );
+                    $('#evaluation-fallback').removeClass('hidden');
+                }
+                // 하한율 경고
+                if (data.lower_bound_rate != null) {
+                    // 기본값 사용 여부는 서버 응답에 별도 필드로 줄 수 있으나, 여기선 경고 배열에서 확인
+                    // 하한율 관련 경고가 warnings에 포함될 수 있음
+                }
+                // 하한율 기본값/불일치 경고는 warnings 배열에서 처리
+            },
+            error: function() {
+                $('#evaluation-loading').addClass('hidden');
+                $('#evaluation-blocked').removeClass('hidden');
+                $('#blocked-reason').text('규칙 확인 중 오류가 발생했습니다.');
+            }
+        });
+    }
+
+    // 페이지 로드 시 규칙 확인
+    loadEvaluationRule();
+
+    // 분석 실행 버튼
+    $('#btn-evaluate').click(function() {
+        const candidateBidAmount = $('#user-price').val().replace(/\D/g, '');
+        const performanceScore = parseFloat($('#input-performance').val()) || 0;
+        const managementScore = parseFloat($('#input-management').val()) || 0;
+        const laborPlanScore = parseFloat($('#input-labor-plan').val()) || 0;
+        const credibilityScore = parseFloat($('#input-credibility').val()) || 0;
+        const disqualification = $('#input-disqualification').is(':checked');
+
+        if (!candidateBidAmount) {
+            alert('투찰 금액을 입력하십시오. (AI 투찰 금액 분석기의 입력란 사용)');
+            return;
+        }
+
+        // 근로조건 이행계획 0점 경고
+        if (laborPlanScore === 0) {
+            if (!confirm('근로조건 이행계획 점수가 0점입니다. 단순노무용역의 경우 사실상 통과가 불가할 수 있습니다. 계속하시겠습니까?')) {
+                return;
+            }
+        }
+
+        const originalBtnContent = $(this).html();
+        $(this).html('<i class="fas fa-circle-notch fa-spin"></i>').prop('disabled', true);
+        $('#evaluation-hint').addClass('hidden');
+
+        // 결과 영역 초기화
+        $('#scenario-results').addClass('hidden');
+        $('#evaluation-warnings').addClass('hidden');
+        $('#evaluation-fallback').addClass('hidden');
+        $('#lower-bound-warnings > div').addClass('hidden');
+        $('#scenario-warnings').addClass('hidden');
+
+        $.ajax({
+            url: evaluationUrl,
+            method: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            data: JSON.stringify({
+                bid_id: bidId,
+                candidate_bid_amount: parseInt(candidateBidAmount),
+                qualification_input: {
+                    performance_score: performanceScore,
+                    management_score: managementScore,
+                    labor_plan_score: laborPlanScore,
+                    credibility_score: credibilityScore,
+                    disqualification: disqualification
+                }
+            }),
+            success: function(data) {
+                if (data.status === 'success' || data.status === 'blocked') {
+                    // 적용 규칙 표시 업데이트
+                    if (data.rule_id) {
+                        $('#evaluation-rule').removeClass('hidden');
+                        $('#rule-id').text(data.rule_id);
+                        $('#rule-name').text(data.rule_name || '-');
+                        $('#rule-basis').text(data.rule_basis || '-');
+                    }
+                    if (data.blocked) {
+                        $('#evaluation-blocked').removeClass('hidden');
+                        $('#blocked-reason').text(getBlockedReasonText(data.blocked_reason) + (data.rule_basis ? ' (' + data.rule_basis + ')' : ''));
+                        $('#evaluation-rule').addClass('hidden');
+                    } else {
+                        $('#evaluation-blocked').addClass('hidden');
+                    }
+
+                    // 모델 대체 경고
+                    if (data.fallback_used) {
+                        $('#evaluation-fallback-msg').text(
+                            '요청 모델(' + (data.requested_model || '-') + ')을 쓸 수 없어 '
+                            + (data.actual_model || '-') + ' 이 적용되었습니다. 사유: ' + (data.fallback_reason || '-')
+                        );
+                        $('#evaluation-fallback').removeClass('hidden');
+                    }
+
+                    // 하한율 경고
+                    let hasLowerBoundDefault = false;
+                    let hasLowerBoundMismatch = false;
+                    let defaultValue = null;
+                    let noticeValue = null;
+                    let ruleValue = null;
+                    let usedValue = null;
+
+                    (data.warnings || []).forEach(function(w) {
+                        if (w.includes('기본값')) {
+                            hasLowerBoundDefault = true;
+                            const match = w.match(/([\d.]+)%/);
+                            if (match) defaultValue = match[1];
+                        }
+                        if (w.includes('불일치') || w.includes('다릅니다')) {
+                            hasLowerBoundMismatch = true;
+                            const matches = w.match(/([\d.]+)%/g);
+                            if (matches && matches.length >= 2) {
+                                noticeValue = matches[0].replace('%', '');
+                                ruleValue = matches[1].replace('%', '');
+                            }
+                            const usedMatch = w.match(/적용했습/.precededBy('([\d.]+)%'));
+                            if (usedMatch) usedValue = usedMatch[1];
+                        }
+                    });
+
+                    if (hasLowerBoundDefault && defaultValue) {
+                        $('#lower-bound-default-value').text(defaultValue);
+                        $('#lower-bound-default-warning').removeClass('hidden');
+                    }
+                    if (hasLowerBoundMismatch) {
+                        if (noticeValue) $('#lower-bound-notice-value').text(noticeValue);
+                        if (ruleValue) $('#lower-bound-rule-value').text(ruleValue);
+                        if (usedValue) $('#lower-bound-used-value').text(usedValue);
+                        else if (data.lower_bound_rate) $('#lower-bound-used-value').text(data.lower_bound_rate);
+                        $('#lower-bound-mismatch-warning').removeClass('hidden');
+                    }
+
+                    // 시나리오 결과표
+                    if (data.scenario_results && data.scenario_results.length > 0) {
+                        $('#scenario-results').removeClass('hidden');
+                        const tbody = $('#scenario-tbody');
+                        tbody.empty();
+                        data.scenario_results.forEach(function(scenario) {
+                            const qualifiedClass = scenario.is_qualified ? 'text-emerald-600' : 'text-rose-600';
+                            const qualifiedText = scenario.is_qualified ? '적격' : '부적격';
+                            const row = `
+                                <tr class="hover:bg-slate-50/50">
+                                    <td class="p-2 font-medium">${escapeHtml(scenario.scenario_name)}</td>
+                                    <td class="p-2 text-right font-mono tabular-nums">₩${formatNumber(scenario.estimated_price)}</td>
+                                    <td class="p-2 text-right font-mono tabular-nums">${formatRate(scenario.bid_to_estimated_ratio * 100)}</td>
+                                    <td class="p-2 text-right font-bold text-primary">${formatScore(scenario.price_score)}</td>
+                                    <td class="p-2 text-right font-bold text-slate-700">${formatScore(scenario.qualification_score)}</td>
+                                    <td class="p-2 text-right font-bold text-slate-900">${formatScore(scenario.total_score)}</td>
+                                    <td class="p-2 text-center font-bold ${qualifiedClass}">${qualifiedText}</td>
+                                </tr>
+                            `;
+                            tbody.append(row);
+                        });
+
+                        // 시나리오별 경고
+                        let allScenarioWarnings = [];
+                        data.scenario_results.forEach(function(scenario) {
+                            (scenario.warnings || []).forEach(function(w) {
+                                allScenarioWarnings.push(scenario.scenario_name + ': ' + w);
+                            });
+                        });
+                        if (allScenarioWarnings.length > 0) {
+                            $('#scenario-warnings-list').html(allScenarioWarnings.map(w => '<div>' + escapeHtml(w) + '</div>').join(''));
+                            $('#scenario-warnings').removeClass('hidden');
+                        }
+                    }
+
+                    // 종합 경고
+                    if (data.warnings && data.warnings.length > 0) {
+                        $('#evaluation-warnings').removeClass('hidden');
+                        const warningsHtml = data.warnings
+                            .filter(w => !w.includes('기본값') && !w.includes('불일치') && !w.includes('다릅니다'))
+                            .map(w => '<div class="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">' + escapeHtml(w) + '</div>')
+                            .join('');
+                        $('#warnings-list').html(warningsHtml);
+                    }
+
+                    // A값, 최저 투찰금액, 최저 투찰률 표시 (정보용)
+                    // 기존 경고 영역에 추가하거나 별도 표시 가능
+                } else {
+                    alert('분석 실패: ' + (data.message || '알 수 없는 오류'));
+                }
+            },
+            error: function(xhr) {
+                const err = xhr.responseJSON
+                    ? (xhr.responseJSON.detail || xhr.responseJSON.message)
+                    : 'Server communication error occurred.';
+                alert('Error: ' + err);
+            },
+            complete: function() {
+                $('#btn-evaluate').html(originalBtnContent).prop('disabled', false);
+                $('#evaluation-hint').removeClass('hidden');
             }
         });
     });
