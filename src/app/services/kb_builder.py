@@ -22,6 +22,7 @@ from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import KnowledgeBaseStatus
 from src.app.services.kb_document_builder import (
+    PagedQuerySequence,
     _build_announcement_document,
     _build_result_document,
     _join_key,
@@ -62,6 +63,7 @@ __all__ = (
     "INDEX_LOOKUP_MAX_ATTEMPTS",
     "INDEX_LOOKUP_RETRY_DELAY_SECONDS",
     "MAX_REMOVAL_RATIO",
+    "PagedQuerySequence",
     "_build_announcement_document",
     "_build_result_document",
     "_document_hash",
@@ -206,6 +208,11 @@ def _sync_stream(
     반환하는 건수는 **컬렉션에 있어야 할 전체 문서 수**입니다. 이번에 임베딩한
     수가 아닙니다. `knowledge_base_status.source_bid_count` 가 KB 규모를 뜻하는
     값이라, 증분 실행에서 변경분만 기록하면 KB 가 줄어든 것처럼 보입니다.
+
+    [설계 근거: 2회 순회와 페이지 지연 조회]
+    _sync_stream 은 2회 순회합니다 (Pass 1: removed_ids 소거, Pass 2: 임베딩/upsert).
+    단순 제너레이터는 1회 순회 후 소진되므로 반복 순회 및 슬라이싱이 가능한 Sequence
+    (PagedQuerySequence/list)를 유지하고, 슬라이스마다 페이지를 지연 조회하여 O(N) 메모리 상주를 방지합니다.
     """
     if not items:
         mode = "delta" if delta_mode else "full"

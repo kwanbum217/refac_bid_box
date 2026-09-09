@@ -553,3 +553,183 @@ def test_empty_dataset_raises_runtime_error() -> None:
 
     assert result["status"] == "failed"
     assert "인덱싱할 공고/낙찰 데이터가 없습니다" in result["summary"]
+
+
+class StreamingFakeDb:
+    """페이지 단위 조회를 시뮬레이션하는 DB 세션 대역."""
+
+    def __init__(self, notice_count: int, collected_count: int = 0) -> None:
+        self.notice_count = notice_count
+        self.collected_count = collected_count
+
+    def scalar(self, stmt: Any) -> Any:
+        sql_text = str(stmt)
+        if "WHERE bid_announcements.collected_at" in sql_text:
+            return self.collected_count
+        return self.notice_count
+
+    def execute(self, stmt: Any) -> Any:
+        mock_result = MagicMock()
+        sql_text = str(stmt)
+        if "bid_announcements" in sql_text:
+            offset = getattr(stmt, "_offset", 0) or 0
+            limit = getattr(stmt, "_limit", None)
+            total = (
+                self.collected_count
+                if "WHERE bid_announcements.collected_at" in sql_text
+                else self.notice_count
+            )
+            end = total if limit is None else min(total, offset + limit)
+            page = [FakeBidAnnouncement(i) for i in range(offset, end)]
+            mock_result.scalars.return_value.all.return_value = page
+        elif "bid_results" in sql_text:
+            mock_result.scalars.return_value.all.return_value = []
+        elif "knowledge_base_status" in sql_text:
+            mock_result.scalar_one_or_none.return_value = None
+        else:
+            mock_result.scalars.return_value.all.return_value = []
+            mock_result.scalar_one_or_none.return_value = None
+        return mock_result
+
+    def commit(self) -> None:
+        pass
+
+    def add(self, obj: Any) -> None:
+        pass
+
+
+def test_resolve_announcements_fallback_rules_and_paged_sequence() -> None:
+    """_resolve_announcements 의 공고일 우선 -> 수집일 폴백 규칙과 PagedQuerySequence 동작 검증."""
+    from src.app.services.kb_builder import _resolve_announcements
+    from src.app.services.kb_document_builder import PagedQuerySequence
+
+    dt = datetime(2026, 1, 1)
+
+    # 1. 공고일 기준 데이터가 있을 때
+    db_notice = StreamingFakeDb(notice_count=15, collected_count=5)
+    seq_notice, mode_notice = _resolve_announcements(cast(Any, db_notice), dt)
+    assert mode_notice == "announcements_by_notice_date"
+    assert isinstance(seq_notice, PagedQuerySequence)
+    assert len(seq_notice) == 15
+    assert bool(seq_notice) is True
+    # 슬라이스 및 단일 인덱스 검증
+    slice_items = seq_notice[0:5]
+    assert len(slice_items) == 5
+    assert slice_items[0].id == 0
+    assert seq_notice[3].id == 3
+
+    # 2. 공고일 기준이 0건이고 수집일 기준이 있을 때 폴백
+    db_collected = StreamingFakeDb(notice_count=0, collected_count=8)
+    seq_collected, mode_collected = _resolve_announcements(cast(Any, db_collected), dt)
+    assert mode_collected == "announcements_by_collected_at"
+    assert isinstance(seq_collected, PagedQuerySequence)
+    assert len(seq_collected) == 8
+    assert len(list(seq_collected)) == 8
+
+    # 3. 둘 다 0건일 때
+    db_empty = StreamingFakeDb(notice_count=0, collected_count=0)
+    seq_empty, mode_empty = _resolve_announcements(cast(Any, db_empty), dt)
+    assert mode_empty == "announcements_unavailable"
+    assert seq_empty == []
+
+
+def test_resolve_delta_announcements_paged_sequence() -> None:
+    """_resolve_delta_announcements 가 PagedQuerySequence 로 페이지 단위 지연 조회를 수행함을 검증."""
+    from src.app.services.kb_builder import _resolve_delta_announcements
+    from src.app.services.kb_document_builder import PagedQuerySequence
+
+    mock_db = MagicMock()
+    mock_scalars_distinct = MagicMock()
+    mock_scalars_distinct.all.return_value = ["NTCE_000001", "NTCE_000002"]
+    mock_db.scalars.return_value = mock_scalars_distinct
+    mock_db.scalar.return_value = 10
+
+    mock_execute = MagicMock()
+    mock_execute.scalars.return_value.all.return_value = [FakeBidAnnouncement(i) for i in range(5)]
+    mock_db.execute.return_value = mock_execute
+
+    seq, mode = _resolve_delta_announcements(mock_db, datetime(2026, 9, 1))
+    assert mode == "announcements_by_collected_delta"
+    assert isinstance(seq, PagedQuerySequence)
+    assert len(seq) == 10
+    chunk = seq[0:5]
+    assert len(chunk) == 5
+
+    # 0건일 때 빈 리스트 반환
+    mock_db_empty = MagicMock()
+    mock_db_empty.scalars.return_value.all.return_value = []
+    mock_db_empty.scalar.return_value = 0
+    seq_empty, mode_empty = _resolve_delta_announcements(mock_db_empty, datetime(2026, 9, 1))
+    assert mode_empty == "announcements_by_collected_delta"
+    assert seq_empty == []
+
+
+def test_memory_bound_announcements_query_streaming() -> None:
+    """_resolve_announcements 조회를 측정 구간에 포함하여, 문서 수가 10배(200건 -> 2,000건)
+    증가하더라도 PagedQuerySequence 의 페이지 단위 지연 조회로 인해 피크 메모리가
+    문서 수에 비례하여 증가하지 않음을 단언하는 회귀 테스트.
+    """
+    chunk_size = 50
+
+    # 사전 워밍업
+    db_warm = StreamingFakeDb(notice_count=1)
+    coll_w = FakeChromaCollection()
+    client_w = MagicMock()
+    with (
+        patch("chromadb.PersistentClient", return_value=client_w),
+        patch("src.app.services.kb_builder.get_collection", return_value=coll_w),
+    ):
+        rebuild_knowledge_base(cast(Any, db_warm), chunk_size=chunk_size, full=True)
+
+    # 1. 200건 실행 (_resolve_announcements DB 조회를 tracemalloc 측정 구간에 포함)
+    db_200 = StreamingFakeDb(notice_count=200)
+    coll_200 = FakeChromaCollection()
+    coll_200.upsert = lambda documents, metadatas, ids: coll_200.upsert_batch_sizes.append(
+        len(documents)
+    )
+    client_200 = MagicMock()
+
+    tracemalloc.start()
+    with (
+        patch("chromadb.PersistentClient", return_value=client_200),
+        patch("src.app.services.kb_builder.get_collection", return_value=coll_200),
+    ):
+        res_200 = rebuild_knowledge_base(cast(Any, db_200), chunk_size=chunk_size, full=True)
+    _, peak_200 = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert res_200["status"] == "success"
+    assert res_200["metrics"]["source_mode"] == "announcements_by_notice_date"
+    assert res_200["metrics"]["embedded_count"] == 200
+    for batch_size in coll_200.upsert_batch_sizes:
+        assert batch_size <= chunk_size
+
+    # 2. 10배인 2,000건 실행 (_resolve_announcements DB 조회를 tracemalloc 측정 구간에 포함)
+    db_2000 = StreamingFakeDb(notice_count=2000)
+    coll_2000 = FakeChromaCollection()
+    coll_2000.upsert = lambda documents, metadatas, ids: coll_2000.upsert_batch_sizes.append(
+        len(documents)
+    )
+    client_2000 = MagicMock()
+
+    tracemalloc.start()
+    with (
+        patch("chromadb.PersistentClient", return_value=client_2000),
+        patch("src.app.services.kb_builder.get_collection", return_value=coll_2000),
+    ):
+        res_2000 = rebuild_knowledge_base(cast(Any, db_2000), chunk_size=chunk_size, full=True)
+    _, peak_2000 = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert res_2000["status"] == "success"
+    assert res_2000["metrics"]["source_mode"] == "announcements_by_notice_date"
+    assert res_2000["metrics"]["embedded_count"] == 2000
+    for batch_size in coll_2000.upsert_batch_sizes:
+        assert batch_size <= chunk_size
+
+    # 3. announcements 조회를 포함해도 10배 문서 수에서 피크 메모리 증가비율이 5.0배 미만으로 엄격히 억제됨을 단언
+    growth_ratio = peak_2000 / max(peak_200, 1)
+    assert growth_ratio < 5.0, (
+        f"announcements 조회 포함 피크 메모리가 문서 수에 비례하여 증가했습니다 (비율: {growth_ratio:.2f}x). "
+        "페이지 단위 지연 조회가 정상 작동하지 않고 있습니다."
+    )

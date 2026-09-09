@@ -7,9 +7,11 @@ src/app/services/kb_document_builder.py
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime
+from typing import TypeVar, overload
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import (
@@ -21,6 +23,58 @@ from src.app.models.bids import (
 )
 
 DEFAULT_MAX_DOCUMENTS = 500_000
+
+T = TypeVar("T")
+
+
+class PagedQuerySequence(Sequence[T]):
+    """지식베이스 구축을 위한 페이지 단위 지연 조회 시퀀스.
+
+    수십만 건의 레코드를 메모리에 한 번에 올리지 않고, 슬라이스나 순회 시점에
+    페이지 단위(chunk_size)로만 데이터베이스에서 조회하여 반환합니다.
+    _sync_stream 의 2단계 순회(Pass 1: removed_ids 소거, Pass 2: 임베딩 및 upsert)를
+    모두 지원하며, 각 단계에서 한 번에 1개 페이지만 메모리에 상주하도록 보장하여
+    O(N) 메모리 폭주를 근본적으로 차단합니다.
+    """
+
+    def __init__(self, total_count: int, fetch_page: Callable[[int, int], list[T]]) -> None:
+        self._total_count = max(0, total_count)
+        self._fetch_page = fetch_page
+
+    def __len__(self) -> int:
+        return self._total_count
+
+    def __bool__(self) -> bool:
+        return self._total_count > 0
+
+    @overload
+    def __getitem__(self, index: int) -> T: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> list[T]: ...
+
+    def __getitem__(self, index: int | slice) -> T | list[T]:
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self._total_count)
+            if step != 1:
+                raise NotImplementedError("PagedQuerySequence only supports step=1 slices")
+            if start >= stop:
+                return []
+            return self._fetch_page(start, stop - start)
+        else:
+            if index < 0:
+                index += self._total_count
+            if index < 0 or index >= self._total_count:
+                raise IndexError("list index out of range")
+            items = self._fetch_page(index, 1)
+            if not items:
+                raise IndexError("list index out of range")
+            return items[0]
+
+    def __iter__(self) -> Iterator[T]:
+        page_size = 1_000
+        for offset in range(0, self._total_count, page_size):
+            yield from self._fetch_page(offset, min(page_size, self._total_count - offset))
 
 
 def _max_documents() -> int:
@@ -36,52 +90,70 @@ def _max_documents() -> int:
 
 def _resolve_announcements(
     db: Session, one_year_ago: datetime
-) -> tuple[list[BidAnnouncement], str]:
-    """공고일 기준 → 수집일 기준 순으로 폴백합니다 (원본 _resolve_announcement_queryset)."""
+) -> tuple[Sequence[BidAnnouncement], str]:
+    """공고일 기준 → 수집일 기준 순으로 폴백합니다 (원본 _resolve_announcement_queryset).
+
+    .scalars().all() 로 전량을 한 번에 로드하지 않고, 건수 확인 후
+    PagedQuerySequence 를 반환하여 chunk_size 단위로 지연 조회합니다.
+    """
     limit = _max_documents()
 
-    by_notice = (
-        db.execute(
-            select(BidAnnouncement)
-            .where(BidAnnouncement.bid_ntce_dt >= one_year_ago)
-            .order_by(BidAnnouncement.bid_ntce_dt.desc())
-            .limit(limit)
-        )
-        .scalars()
-        .all()
+    notice_query = (
+        select(BidAnnouncement)
+        .where(BidAnnouncement.bid_ntce_dt >= one_year_ago)
+        .order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
     )
-    if by_notice:
-        return list(by_notice), "announcements_by_notice_date"
+    notice_count = (
+        db.scalar(
+            select(func.count(BidAnnouncement.id)).where(
+                BidAnnouncement.bid_ntce_dt >= one_year_ago
+            )
+        )
+        or 0
+    )
 
-    by_collected = (
-        db.execute(
-            select(BidAnnouncement)
-            .where(BidAnnouncement.collected_at >= one_year_ago)
-            .order_by(BidAnnouncement.collected_at.desc())
-            .limit(limit)
-        )
-        .scalars()
-        .all()
+    if notice_count > 0:
+        total = min(notice_count, limit)
+
+        def fetch_notice_page(offset: int, page_limit: int) -> list[BidAnnouncement]:
+            return list(db.execute(notice_query.offset(offset).limit(page_limit)).scalars().all())
+
+        return PagedQuerySequence(total, fetch_notice_page), "announcements_by_notice_date"
+
+    collected_query = (
+        select(BidAnnouncement)
+        .where(BidAnnouncement.collected_at >= one_year_ago)
+        .order_by(BidAnnouncement.collected_at.desc(), BidAnnouncement.id.desc())
     )
-    if by_collected:
-        return list(by_collected), "announcements_by_collected_at"
+    collected_count = (
+        db.scalar(
+            select(func.count(BidAnnouncement.id)).where(
+                BidAnnouncement.collected_at >= one_year_ago
+            )
+        )
+        or 0
+    )
+
+    if collected_count > 0:
+        total = min(collected_count, limit)
+
+        def fetch_collected_page(offset: int, page_limit: int) -> list[BidAnnouncement]:
+            return list(
+                db.execute(collected_query.offset(offset).limit(page_limit)).scalars().all()
+            )
+
+        return PagedQuerySequence(total, fetch_collected_page), "announcements_by_collected_at"
 
     return [], "announcements_unavailable"
 
 
 def _resolve_delta_announcements(
     db: Session, collected_since: datetime
-) -> tuple[list[BidAnnouncement], str]:
-    """이번 수집분과 새 낙찰 결과가 참조하는 공고만 KB에 반영합니다."""
-    announcements = list(
-        db.execute(
-            select(BidAnnouncement)
-            .where(BidAnnouncement.collected_at >= collected_since)
-            .order_by(BidAnnouncement.collected_at.desc())
-        )
-        .scalars()
-        .all()
-    )
+) -> tuple[Sequence[BidAnnouncement], str]:
+    """이번 수집분과 새 낙찰 결과가 참조하는 공고만 KB에 반영합니다.
+
+    전량 리스트를 만들지 않고 PagedQuerySequence 를 반환하여 페이지 단위로 읽습니다.
+    """
     result_notice_numbers = list(
         db.scalars(
             select(BidResult.bid_ntce_no)
@@ -90,16 +162,27 @@ def _resolve_delta_announcements(
         ).all()
     )
     if result_notice_numbers:
-        related_announcements = db.execute(
-            select(BidAnnouncement).where(BidAnnouncement.bid_ntce_no.in_(result_notice_numbers))
-        ).scalars()
-        known_ids = {announcement.id for announcement in announcements}
-        announcements.extend(
-            announcement
-            for announcement in related_announcements
-            if announcement.id not in known_ids
+        delta_filter = or_(
+            BidAnnouncement.collected_at >= collected_since,
+            BidAnnouncement.bid_ntce_no.in_(result_notice_numbers),
         )
-    return announcements, "announcements_by_collected_delta"
+    else:
+        delta_filter = BidAnnouncement.collected_at >= collected_since
+
+    delta_count = db.scalar(select(func.count(BidAnnouncement.id)).where(delta_filter)) or 0
+    if delta_count == 0:
+        return [], "announcements_by_collected_delta"
+
+    delta_query = (
+        select(BidAnnouncement)
+        .where(delta_filter)
+        .order_by(BidAnnouncement.collected_at.desc(), BidAnnouncement.id.desc())
+    )
+
+    def fetch_delta_page(offset: int, page_limit: int) -> list[BidAnnouncement]:
+        return list(db.execute(delta_query.offset(offset).limit(page_limit)).scalars().all())
+
+    return PagedQuerySequence(delta_count, fetch_delta_page), "announcements_by_collected_delta"
 
 
 def _join_key(row: BidAnnouncement | BidResult) -> str:
