@@ -66,6 +66,15 @@ HEAVY_TASK_NAMES: frozenset[str] = frozenset(
         "manual_full_task",
         "refresh_data_task",
         "manual_retrain_task",
+        # 스스로 무거운 일을 하지 않고 run_automation_pipeline 을 부른다. 그 하위 호출에서
+        # run_mode 기반 잠금이 이미 걸리므로 동시 실행은 막힌다. 그럼에도 목록에 넣는 이유는
+        # _apply_heavy_task_settings 의 3시간 타임아웃이 이 목록을 기준으로 적용되기 때문이다.
+        # 빠지면 기본 1800초가 걸리는데, 잠금 대기 시간이 job_timeout 안에서 흐르므로 앞선
+        # 무거운 작업이 길면 대기 중 타임아웃으로 실패해 재시도 큐로 되돌아간다.
+        # 2026-09-09 실측에서 이 태스크가 966초를 썼고 1800초까지 여유가 크지 않았다.
+        # nightly_schedule_task 는 여기에 넣지 않는다. cron 등록에서 timeout=10800 을
+        # 직접 받고 있으며 WorkerSettings.functions 에는 없어 이 목록의 적용 대상이 아니다.
+        "run_schedule_catchup_task",
     }
 )
 

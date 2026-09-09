@@ -240,3 +240,51 @@ async def test_heavy_run_mode_protection_in_pipeline():
     assert res2["status"] == "success"
     assert max_active == 1
     assert active == 0
+
+
+def test_heavy_task_names_covers_pipeline_entrypoints() -> None:
+    """run_automation_pipeline 을 부르는 스케줄 진입점도 3시간 타임아웃 대상이어야 합니다.
+
+    catchup 은 하위 호출에서 run_mode 기반 잠금이 걸리므로 동시 실행은 이미 막힙니다.
+    문제는 타임아웃입니다. _apply_heavy_task_settings 가 HEAVY_TASK_NAMES 를 기준으로
+    3시간을 적용하는데, 빠지면 기본 1800초가 걸립니다. 잠금 대기가 job_timeout 안에서
+    흐르므로 앞선 작업이 길면 대기 중 타임아웃으로 실패해 재시도 큐로 되돌아갑니다.
+
+    nightly_schedule_task 는 cron 등록에서 timeout=10800 을 직접 받으므로 이 목록의
+    대상이 아닙니다. 그 사실을 아래에서 함께 확인합니다.
+    """
+    from src.tasks.worker import HEAVY_TASK_NAMES
+
+    assert "run_schedule_catchup_task" in HEAVY_TASK_NAMES
+
+
+def test_heavy_task_settings_applies_extended_timeout() -> None:
+    """HEAVY_TASK_NAMES 전 항목에 3시간 타임아웃이 실제로 붙는지 확인합니다."""
+    from src.tasks.worker import (
+        HEAVY_JOB_TIMEOUT_SECONDS,
+        HEAVY_TASK_NAMES,
+        WorkerSettings,
+    )
+
+    applied = {
+        getattr(getattr(fn, "coroutine", fn), "__name__", ""): getattr(fn, "timeout_s", None)
+        for fn in WorkerSettings.functions
+    }
+    for name in HEAVY_TASK_NAMES:
+        if name not in applied:
+            continue
+        assert applied[name] == HEAVY_JOB_TIMEOUT_SECONDS, (
+            f"{name} 에 3시간 타임아웃이 적용되지 않았습니다 (현재: {applied[name]})"
+        )
+
+
+def test_nightly_cron_has_extended_timeout() -> None:
+    """nightly_schedule_task 는 cron 등록에서 3시간 타임아웃을 직접 받습니다."""
+    from src.tasks.worker import HEAVY_JOB_TIMEOUT_SECONDS, WorkerSettings
+
+    for job in WorkerSettings.cron_jobs:
+        name = getattr(getattr(job, "coroutine", job), "__name__", "")
+        if name == "nightly_schedule_task":
+            assert job.timeout_s == HEAVY_JOB_TIMEOUT_SECONDS
+            return
+    raise AssertionError("nightly_schedule_task cron 등록을 찾지 못했습니다.")
