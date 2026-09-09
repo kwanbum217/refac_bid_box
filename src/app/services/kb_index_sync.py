@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import sys
 import time
 from collections.abc import Callable, Sequence
 from typing import Any, TypedDict
@@ -66,60 +65,6 @@ __all__ = (
 )
 
 
-def _current_doc_format_version() -> int:
-    mod = sys.modules.get("src.app.services.kb_builder")
-    if mod is not None:
-        builder_val = getattr(mod, "DOC_FORMAT_VERSION", None)
-        if builder_val is not None and builder_val != 1:
-            return builder_val
-    return DOC_FORMAT_VERSION
-
-
-def _current_lookup_batch_size() -> int:
-    mod = sys.modules.get("src.app.services.kb_builder")
-    if mod is not None:
-        builder_val = getattr(mod, "INDEX_LOOKUP_BATCH_SIZE", None)
-        if builder_val is not None and builder_val != 10_000:
-            return builder_val
-    return INDEX_LOOKUP_BATCH_SIZE
-
-
-def _current_retry_delay_seconds() -> float:
-    mod = sys.modules.get("src.app.services.kb_builder")
-    if mod is not None:
-        builder_val = getattr(mod, "INDEX_LOOKUP_RETRY_DELAY_SECONDS", None)
-        if builder_val is not None and builder_val != 0.25:
-            return builder_val
-    return INDEX_LOOKUP_RETRY_DELAY_SECONDS
-
-
-def _current_max_attempts() -> int:
-    mod = sys.modules.get("src.app.services.kb_builder")
-    if mod is not None:
-        builder_val = getattr(mod, "INDEX_LOOKUP_MAX_ATTEMPTS", None)
-        if builder_val is not None and builder_val != 2:
-            return builder_val
-    return INDEX_LOOKUP_MAX_ATTEMPTS
-
-
-def _current_max_removal_ratio() -> float:
-    mod = sys.modules.get("src.app.services.kb_builder")
-    if mod is not None:
-        builder_val = getattr(mod, "MAX_REMOVAL_RATIO", None)
-        if builder_val is not None and builder_val != 0.5:
-            return builder_val
-    return MAX_REMOVAL_RATIO
-
-
-def _current_flush() -> Callable[..., int]:
-    mod = sys.modules.get("src.app.services.kb_builder")
-    if mod is not None:
-        builder_val = getattr(mod, "_flush", None)
-        if builder_val is not None and builder_val is not _flush:
-            return builder_val
-    return _flush
-
-
 def _document_hash(content: str) -> str:
     """문서 본문의 해시. 증분 색인의 변경 판정 기준입니다.
 
@@ -133,8 +78,8 @@ def _document_hash(content: str) -> str:
 def _read_existing_index_value(operation: Callable[[], Any], operation_name: str) -> Any:
     """기존 색인 조회를 재시도하고, 계속 실패하면 변경 전에 중단합니다."""
     last_error: Exception | None = None
-    max_attempts = _current_max_attempts()
-    retry_delay = _current_retry_delay_seconds()
+    max_attempts = INDEX_LOOKUP_MAX_ATTEMPTS
+    retry_delay = INDEX_LOOKUP_RETRY_DELAY_SECONDS
     for attempt in range(1, max_attempts + 1):
         try:
             return operation()
@@ -164,8 +109,8 @@ def _load_existing_index(collection: Any) -> tuple[dict[str, str], bool]:
     if not stored_count:
         return {}, False
 
-    batch_size = _current_lookup_batch_size()
-    fmt_version = _current_doc_format_version()
+    batch_size = INDEX_LOOKUP_BATCH_SIZE
+    fmt_version = DOC_FORMAT_VERSION
     hashes: dict[str, str] = {}
     for offset in range(0, stored_count, batch_size):
 
@@ -280,7 +225,7 @@ def _sync_stream(
         # 임베딩을 시작하기 전에 막습니다. 이 비율을 넘는 삭제는 데이터가 실제로
         # 사라진 것이 아니라 상한값이나 DB 조회가 잘못된 경우입니다. 그대로 두면
         # 야간 재색인 한 번에 KB 가 통째로 비고, 챗봇은 근거 없이 답하게 됩니다.
-        max_ratio = _current_max_removal_ratio()
+        max_ratio = MAX_REMOVAL_RATIO
         removal_ratio = len(removed_ids) / len(existing_hashes)
         if removal_ratio > max_ratio:
             raise RuntimeError(
@@ -296,7 +241,6 @@ def _sync_stream(
     # Pass 1 과 Pass 2 사이 집합 변경이 발생하더라도, Pass 2 에서 upsert/유지된 문서가
     # removed_ids 로 잘못 삭제되는 위험(G1 데이터 손실)을 원천 차단하기 위해 소거합니다.
     removed_ids_set = set(removed_ids) if incremental and removed_ids else set()
-    flush_fn = _current_flush()
 
     for start in range(0, len(items), chunk_size):
         chunk = items[start : start + chunk_size]
@@ -316,7 +260,7 @@ def _sync_stream(
                 metas.append(meta)
                 ids.append(doc_id)
         if docs:
-            embedded_count += flush_fn(collection, docs, metas, ids)
+            embedded_count += _flush(collection, docs, metas, ids)
 
     # 삭제는 재색인 뒤에 합니다. 먼저 지우면 색인이 실패했을 때 문서만 사라집니다.
     final_removed_count = 0
