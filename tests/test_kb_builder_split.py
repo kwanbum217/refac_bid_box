@@ -34,6 +34,35 @@ def test_reexported_symbols_from_kb_builder():
         assert getattr(kb_builder_module, sym) is getattr(kb_doc_module, sym)
 
 
+def test_reexported_sync_symbols_from_kb_builder():
+    """kb_builder.py 에서 kb_index_sync.py 로 이동된 심볼들이 올바르게 재수출되는지 검증합니다."""
+    import src.app.services.kb_builder as kb_builder_module
+    import src.app.services.kb_index_sync as kb_sync_module
+
+    moved_sync_symbols = [
+        "CHUNK_SIZE",
+        "DOC_FORMAT_VERSION",
+        "INDEX_BATCH_SIZE",
+        "INDEX_LOOKUP_BATCH_SIZE",
+        "INDEX_LOOKUP_MAX_ATTEMPTS",
+        "INDEX_LOOKUP_RETRY_DELAY_SECONDS",
+        "MAX_REMOVAL_RATIO",
+        "KbSyncStats",
+        "_document_hash",
+        "_read_existing_index_value",
+        "_load_existing_index",
+        "_diff_index",
+        "_flush",
+        "_sync_stream",
+        "_sync",
+    ]
+
+    for sym in moved_sync_symbols:
+        assert hasattr(kb_builder_module, sym), f"kb_builder.py 에 {sym} 재수출 누락"
+        assert hasattr(kb_sync_module, sym), f"kb_index_sync.py 에 {sym} 정의 누락"
+        assert getattr(kb_builder_module, sym) is getattr(kb_sync_module, sym)
+
+
 def test_retained_symbols_in_kb_builder():
     """kb_builder.py 에 필수 유지 심볼 및 상수가 그대로 남아 있는지 검증합니다."""
     import src.app.services.kb_builder as kb_builder_module
@@ -63,26 +92,27 @@ def test_retained_symbols_in_kb_builder():
 
 
 def test_no_circular_dependency():
-    """kb_document_builder.py 가 kb_builder 를 import 하지 않는지 AST 로 검증합니다."""
-    doc_builder_path = Path("src/app/services/kb_document_builder.py")
-    tree = ast.parse(doc_builder_path.read_text(encoding="utf-8"))
+    """kb_document_builder.py 와 kb_index_sync.py 가 kb_builder 를 import 하지 않는지 AST 로 검증합니다."""
+    for filename in ["kb_document_builder.py", "kb_index_sync.py"]:
+        path = Path(f"src/app/services/{filename}")
+        tree = ast.parse(path.read_text(encoding="utf-8"))
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                assert "kb_builder" not in alias.name, (
-                    "kb_document_builder 가 kb_builder 를 import 하면 안 됩니다"
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert "kb_builder" not in alias.name, (
+                        f"{filename} 이 kb_builder 를 import 하면 안 됩니다"
+                    )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                assert "kb_builder" not in node.module, (
+                    f"{filename} 이 kb_builder 를 import 하면 안 됩니다"
                 )
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            assert "kb_builder" not in node.module, (
-                "kb_document_builder 가 kb_builder 를 import 하면 안 됩니다"
-            )
 
 
 def test_line_counts():
-    """kb_builder.py 와 kb_document_builder.py 가 각각 500줄 미만인지 검증합니다."""
+    """kb_builder.py, kb_document_builder.py, kb_index_sync.py 가 각각 500줄 미만인지 검증합니다."""
     services_dir = Path("src/app/services")
-    for filename in ["kb_builder.py", "kb_document_builder.py"]:
+    for filename in ["kb_builder.py", "kb_document_builder.py", "kb_index_sync.py"]:
         file_path = services_dir / filename
         assert file_path.exists(), f"{filename} 파일이 존재하지 않습니다"
         line_count = len(file_path.read_text(encoding="utf-8").splitlines())
