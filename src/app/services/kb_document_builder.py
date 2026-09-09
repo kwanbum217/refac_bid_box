@@ -9,9 +9,9 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime
-from typing import TypeVar, overload
+from typing import Any, TypeVar, overload
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import (
@@ -25,21 +25,39 @@ from src.app.models.bids import (
 DEFAULT_MAX_DOCUMENTS = 500_000
 
 T = TypeVar("T")
+CursorKey = tuple[Any, int]
 
 
 class PagedQuerySequence(Sequence[T]):
-    """지식베이스 구축을 위한 페이지 단위 지연 조회 시퀀스.
+    """지식베이스 구축을 위한 keyset(seek) 기반 페이지 지연 조회 시퀀스.
 
-    수십만 건의 레코드를 메모리에 한 번에 올리지 않고, 슬라이스나 순회 시점에
-    페이지 단위(chunk_size)로만 데이터베이스에서 조회하여 반환합니다.
-    _sync_stream 의 2단계 순회(Pass 1: removed_ids 소거, Pass 2: 임베딩 및 upsert)를
-    모두 지원하며, 각 단계에서 한 번에 1개 페이지만 메모리에 상주하도록 보장하여
-    O(N) 메모리 폭주를 근본적으로 차단합니다.
+    [설계 근거: Keyset 페이징과 O(1) 메모리 상주]
+    1. Keyset(Seek) 페이징:
+       기존 OFFSET 방식은 뒤쪽 페이지로 갈수록 앞선 행들을 스캔하여 버리는 O(N^2) 누적 비용이
+       발생합니다. 본 시퀀스는 (dt desc, id desc) 튜플을 커서로 사용하는 keyset 페이징을 적용하여,
+       인덱스 seek(O(log N))로 다음 페이지를 즉시 조회합니다.
+    2. Session Identity Map 해제:
+       조회된 ORM 객체는 조회 직후 세션에서 expunge 되어 세션의 identity_map 에 누적되지 않고,
+       청크 단위 처리가 끝나면 Python GC 가 메모리를 즉시 회수합니다.
+    3. 스냅샷 일관성 (G1 데이터 무손실):
+       Pass 1 첫 페이지 조회 시점의 최신 커서(first_dt, first_id)를 상한 앵커로 고정하여,
+       Pass 2 에서도 동일한 상한 조건을 적용합니다. 순회 도중 DB 에 신규 행이 추가되어도
+       Pass 1 과 Pass 2 가 정확히 동일한 레코드 집합을 보게 되므로, Pass 2 에서 upsert 된 문서가
+       Pass 1 기준 removed_ids 로 잘못 삭제되는 G1 데이터 손실을 원천 차단합니다.
     """
 
-    def __init__(self, total_count: int, fetch_page: Callable[[int, int], list[T]]) -> None:
+    def __init__(
+        self,
+        total_count: int,
+        fetch_page: Callable[[int, int, CursorKey | None, CursorKey | None, bool], list[T]],
+        extract_cursor: Callable[[T], CursorKey] | None = None,
+    ) -> None:
         self._total_count = max(0, total_count)
         self._fetch_page = fetch_page
+        self._extract_cursor = extract_cursor
+        self._current_offset = 0
+        self._last_cursor: CursorKey | None = None
+        self._snapshot_cursor: CursorKey | None = None
 
     def __len__(self) -> int:
         return self._total_count
@@ -60,13 +78,44 @@ class PagedQuerySequence(Sequence[T]):
                 raise NotImplementedError("PagedQuerySequence only supports step=1 slices")
             if start >= stop:
                 return []
-            return self._fetch_page(start, stop - start)
+            length = stop - start
+
+            # 순차적 순회인지 판별:
+            # 1. start == 0: 새로운 패스(Pass 1 또는 Pass 2)의 시작
+            if start == 0:
+                self._current_offset = 0
+                self._last_cursor = None
+                items = self._fetch_page(0, length, None, self._snapshot_cursor, False)
+                if items and self._extract_cursor is not None:
+                    if self._snapshot_cursor is None:
+                        # Pass 1 첫 페이지의 첫 번째 항목을 스냅샷 상한 앵커로 고정
+                        self._snapshot_cursor = self._extract_cursor(items[0])
+                    self._last_cursor = self._extract_cursor(items[-1])
+                self._current_offset = len(items)
+                return items
+
+            # 2. start == self._current_offset: 이전 페이지에 이은 순차적 keyset seek 순회
+            if start == self._current_offset and self._last_cursor is not None:
+                items = self._fetch_page(
+                    start, length, self._last_cursor, self._snapshot_cursor, False
+                )
+                if items and self._extract_cursor is not None:
+                    self._last_cursor = self._extract_cursor(items[-1])
+                self._current_offset += len(items)
+                return items
+
+            # 3. 비순차 접근 (테스트/랜덤 액세스 등): fallback offset 모드로 조회
+            items = self._fetch_page(start, length, None, self._snapshot_cursor, True)
+            self._current_offset = start + len(items)
+            if items and self._extract_cursor is not None:
+                self._last_cursor = self._extract_cursor(items[-1])
+            return items
         else:
             if index < 0:
                 index += self._total_count
             if index < 0 or index >= self._total_count:
                 raise IndexError("list index out of range")
-            items = self._fetch_page(index, 1)
+            items = self._fetch_page(index, 1, None, self._snapshot_cursor, True)
             if not items:
                 raise IndexError("list index out of range")
             return items[0]
@@ -74,7 +123,61 @@ class PagedQuerySequence(Sequence[T]):
     def __iter__(self) -> Iterator[T]:
         page_size = 1_000
         for offset in range(0, self._total_count, page_size):
-            yield from self._fetch_page(offset, min(page_size, self._total_count - offset))
+            yield from self[offset : min(offset + page_size, self._total_count)]
+
+
+def _fetch_keyset_page(
+    db: Session,
+    base_select: Any,
+    col_dt: Any,
+    col_id: Any,
+    offset: int,
+    limit: int,
+    cursor: CursorKey | None,
+    snapshot_cursor: CursorKey | None,
+    use_offset: bool,
+    initial_objs: set[Any] | None = None,
+) -> list[BidAnnouncement]:
+    """Keyset seek 기반으로 페이지를 조회하고 세션에서 expunge 합니다.
+
+    [설계 근거: ORM Session Identity Map 누적 방지 및 호출자 객체 보존]
+    SQLAlchemy Session 은 조회된 모든 ORM 객체를 identity map 에 강한 참조로 유지합니다.
+    수십만 건을 조회할 때 expunge 하지 않으면 세션이 유지되는 동안 O(N) 객체가 메모리에 누적됩니다.
+    각 페이지를 읽은 즉시 이번 조회로 새로 로드된 객체만 db.expunge(obj) 로 분리(detach)하여
+    세션에 누적되지 않고 GC 로 즉시 회수되도록 보장합니다.
+    조회 시작 전 세션에 이미 존재하던 호출자의 객체(initial_objs)는 detach 하지 않고 온전히 보존합니다.
+    """
+    stmt = base_select
+
+    # 1. 스냅샷 상한 조건: Pass 1 시작 시점의 최신 행 이하로 제한 (Pass 1/Pass 2 집합 동일성 보장)
+    if snapshot_cursor is not None:
+        snap_dt, snap_id = snapshot_cursor
+        stmt = stmt.where(
+            or_(
+                col_dt < snap_dt,
+                and_(col_dt == snap_dt, col_id <= snap_id),
+            )
+        )
+
+    # 2. Keyset Seek 조건 또는 Offset 조건
+    if not use_offset and cursor is not None:
+        last_dt, last_id = cursor
+        stmt = stmt.where(
+            or_(
+                col_dt < last_dt,
+                and_(col_dt == last_dt, col_id < last_id),
+            )
+        )
+    elif use_offset and offset > 0:
+        stmt = stmt.offset(offset)
+
+    stmt = stmt.limit(limit)
+
+    rows = list(db.execute(stmt).scalars().all())
+    for row in rows:
+        if hasattr(db, "expunge") and (initial_objs is None or row not in initial_objs):
+            db.expunge(row)
+    return rows
 
 
 def _max_documents() -> int:
@@ -91,18 +194,14 @@ def _max_documents() -> int:
 def _resolve_announcements(
     db: Session, one_year_ago: datetime
 ) -> tuple[Sequence[BidAnnouncement], str]:
-    """공고일 기준 → 수집일 기준 순으로 폴백합니다 (원본 _resolve_announcement_queryset).
+    """공고일 기준 -> 수집일 기준 순으로 폴백합니다.
 
-    .scalars().all() 로 전량을 한 번에 로드하지 않고, 건수 확인 후
-    PagedQuerySequence 를 반환하여 chunk_size 단위로 지연 조회합니다.
+    .scalars().all() 로 전량을 한 번에 로드하지 않고,
+    Keyset seek 페이징과 ORM 객체 expunge 가 적용된 PagedQuerySequence 를 반환합니다.
     """
     limit = _max_documents()
+    initial_objs = set(db.identity_map.values()) if hasattr(db, "identity_map") else set()
 
-    notice_query = (
-        select(BidAnnouncement)
-        .where(BidAnnouncement.bid_ntce_dt >= one_year_ago)
-        .order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
-    )
     notice_count = (
         db.scalar(
             select(func.count(BidAnnouncement.id)).where(
@@ -114,17 +213,41 @@ def _resolve_announcements(
 
     if notice_count > 0:
         total = min(notice_count, limit)
+        base_query = (
+            select(BidAnnouncement)
+            .where(BidAnnouncement.bid_ntce_dt >= one_year_ago)
+            .order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
+        )
 
-        def fetch_notice_page(offset: int, page_limit: int) -> list[BidAnnouncement]:
-            return list(db.execute(notice_query.offset(offset).limit(page_limit)).scalars().all())
+        def fetch_notice_page(
+            offset: int,
+            page_limit: int,
+            cursor: CursorKey | None,
+            snapshot_cursor: CursorKey | None,
+            use_offset: bool,
+        ) -> list[BidAnnouncement]:
+            return _fetch_keyset_page(
+                db,
+                base_query,
+                BidAnnouncement.bid_ntce_dt,
+                BidAnnouncement.id,
+                offset,
+                page_limit,
+                cursor,
+                snapshot_cursor,
+                use_offset,
+                initial_objs,
+            )
 
-        return PagedQuerySequence(total, fetch_notice_page), "announcements_by_notice_date"
+        return (
+            PagedQuerySequence(
+                total,
+                fetch_notice_page,
+                extract_cursor=lambda ann: (ann.bid_ntce_dt, ann.id),
+            ),
+            "announcements_by_notice_date",
+        )
 
-    collected_query = (
-        select(BidAnnouncement)
-        .where(BidAnnouncement.collected_at >= one_year_ago)
-        .order_by(BidAnnouncement.collected_at.desc(), BidAnnouncement.id.desc())
-    )
     collected_count = (
         db.scalar(
             select(func.count(BidAnnouncement.id)).where(
@@ -136,13 +259,40 @@ def _resolve_announcements(
 
     if collected_count > 0:
         total = min(collected_count, limit)
+        base_query = (
+            select(BidAnnouncement)
+            .where(BidAnnouncement.collected_at >= one_year_ago)
+            .order_by(BidAnnouncement.collected_at.desc(), BidAnnouncement.id.desc())
+        )
 
-        def fetch_collected_page(offset: int, page_limit: int) -> list[BidAnnouncement]:
-            return list(
-                db.execute(collected_query.offset(offset).limit(page_limit)).scalars().all()
+        def fetch_collected_page(
+            offset: int,
+            page_limit: int,
+            cursor: CursorKey | None,
+            snapshot_cursor: CursorKey | None,
+            use_offset: bool,
+        ) -> list[BidAnnouncement]:
+            return _fetch_keyset_page(
+                db,
+                base_query,
+                BidAnnouncement.collected_at,
+                BidAnnouncement.id,
+                offset,
+                page_limit,
+                cursor,
+                snapshot_cursor,
+                use_offset,
+                initial_objs,
             )
 
-        return PagedQuerySequence(total, fetch_collected_page), "announcements_by_collected_at"
+        return (
+            PagedQuerySequence(
+                total,
+                fetch_collected_page,
+                extract_cursor=lambda ann: (ann.collected_at, ann.id),
+            ),
+            "announcements_by_collected_at",
+        )
 
     return [], "announcements_unavailable"
 
@@ -152,8 +302,10 @@ def _resolve_delta_announcements(
 ) -> tuple[Sequence[BidAnnouncement], str]:
     """이번 수집분과 새 낙찰 결과가 참조하는 공고만 KB에 반영합니다.
 
-    전량 리스트를 만들지 않고 PagedQuerySequence 를 반환하여 페이지 단위로 읽습니다.
+    전량 리스트를 만들지 않고 Keyset seek 페이징과 ORM 객체 expunge 가 적용된
+    PagedQuerySequence 를 반환하여 페이지 단위로 읽습니다.
     """
+    initial_objs = set(db.identity_map.values()) if hasattr(db, "identity_map") else set()
     result_notice_numbers = list(
         db.scalars(
             select(BidResult.bid_ntce_no)
@@ -173,16 +325,40 @@ def _resolve_delta_announcements(
     if delta_count == 0:
         return [], "announcements_by_collected_delta"
 
-    delta_query = (
+    base_query = (
         select(BidAnnouncement)
         .where(delta_filter)
         .order_by(BidAnnouncement.collected_at.desc(), BidAnnouncement.id.desc())
     )
 
-    def fetch_delta_page(offset: int, page_limit: int) -> list[BidAnnouncement]:
-        return list(db.execute(delta_query.offset(offset).limit(page_limit)).scalars().all())
+    def fetch_delta_page(
+        offset: int,
+        page_limit: int,
+        cursor: CursorKey | None,
+        snapshot_cursor: CursorKey | None,
+        use_offset: bool,
+    ) -> list[BidAnnouncement]:
+        return _fetch_keyset_page(
+            db,
+            base_query,
+            BidAnnouncement.collected_at,
+            BidAnnouncement.id,
+            offset,
+            page_limit,
+            cursor,
+            snapshot_cursor,
+            use_offset,
+            initial_objs,
+        )
 
-    return PagedQuerySequence(delta_count, fetch_delta_page), "announcements_by_collected_delta"
+    return (
+        PagedQuerySequence(
+            delta_count,
+            fetch_delta_page,
+            extract_cursor=lambda ann: (ann.collected_at, ann.id),
+        ),
+        "announcements_by_collected_delta",
+    )
 
 
 def _join_key(row: BidAnnouncement | BidResult) -> str:
