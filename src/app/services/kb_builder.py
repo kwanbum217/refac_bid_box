@@ -22,6 +22,7 @@ from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import KnowledgeBaseStatus
 from src.app.services.kb_document_builder import (
+    PagedQuerySequence,
     _build_announcement_document,
     _build_result_document,
     _join_key,
@@ -52,30 +53,17 @@ MAX_REMOVAL_RATIO = 0.5  # 한 번의 증분 색인이 지울 수 있는 상한 
 DOC_FORMAT_VERSION = 1  # 문서 본문 포맷 버전
 CHUNK_SIZE = 1_000  # 청크 스트리밍 단위 크기 (메모리 상주 방지)
 
+# fmt: off
 __all__ = (
-    "CHUNK_SIZE",
-    "COLLECTION_NAME",
-    "DEFAULT_MAX_DOCUMENTS",
-    "DOC_FORMAT_VERSION",
-    "INDEX_BATCH_SIZE",
-    "INDEX_LOOKUP_BATCH_SIZE",
-    "INDEX_LOOKUP_MAX_ATTEMPTS",
-    "INDEX_LOOKUP_RETRY_DELAY_SECONDS",
-    "MAX_REMOVAL_RATIO",
-    "_build_announcement_document",
-    "_build_result_document",
-    "_document_hash",
-    "_flush",
-    "_join_key",
-    "_load_existing_index",
-    "_max_documents",
-    "_read_existing_index_value",
-    "_resolve_announcements",
-    "_resolve_delta_announcements",
-    "_upsert_kb_status",
-    "get_kb_document_count",
-    "rebuild_knowledge_base",
+    "CHUNK_SIZE", "COLLECTION_NAME", "DEFAULT_MAX_DOCUMENTS", "DOC_FORMAT_VERSION",
+    "INDEX_BATCH_SIZE", "INDEX_LOOKUP_BATCH_SIZE", "INDEX_LOOKUP_MAX_ATTEMPTS",
+    "INDEX_LOOKUP_RETRY_DELAY_SECONDS", "MAX_REMOVAL_RATIO", "PagedQuerySequence",
+    "_build_announcement_document", "_build_result_document", "_document_hash", "_flush",
+    "_join_key", "_load_existing_index", "_max_documents", "_read_existing_index_value",
+    "_resolve_announcements", "_resolve_delta_announcements", "_upsert_kb_status",
+    "get_kb_document_count", "rebuild_knowledge_base",
 )
+# fmt: on
 
 
 def _document_hash(content: str) -> str:
@@ -206,6 +194,11 @@ def _sync_stream(
     반환하는 건수는 **컬렉션에 있어야 할 전체 문서 수**입니다. 이번에 임베딩한
     수가 아닙니다. `knowledge_base_status.source_bid_count` 가 KB 규모를 뜻하는
     값이라, 증분 실행에서 변경분만 기록하면 KB 가 줄어든 것처럼 보입니다.
+
+    [설계 근거: 2회 순회와 페이지 지연 조회]
+    _sync_stream 은 2회 순회합니다 (Pass 1: removed_ids 소거, Pass 2: 임베딩/upsert).
+    단순 제너레이터는 1회 순회 후 소진되므로 반복 순회 및 슬라이싱이 가능한 Sequence
+    (PagedQuerySequence/list)를 유지하고, 슬라이스마다 페이지를 지연 조회하여 O(N) 메모리 상주를 방지합니다.
     """
     if not items:
         mode = "delta" if delta_mode else "full"
@@ -240,6 +233,11 @@ def _sync_stream(
 
     embedded_count = 0
     unchanged_count = 0
+    # [설계 근거: G1 데이터 무손실 - Pass 2 upsert 문서 삭제 방지]
+    # Pass 1 과 Pass 2 사이 집합 변경이 발생하더라도, Pass 2 에서 upsert/유지된 문서가
+    # removed_ids 로 잘못 삭제되는 위험(G1 데이터 손실)을 원천 차단하기 위해 소거합니다.
+    removed_ids_set = set(removed_ids) if incremental and removed_ids else set()
+
     for start in range(0, len(items), chunk_size):
         chunk = items[start : start + chunk_size]
         if prepare_chunk is not None:
@@ -249,6 +247,8 @@ def _sync_stream(
         ids: list[str] = []
         for offset, item in enumerate(chunk):
             doc_id, content, meta = make_doc(start + offset, item)
+            if removed_ids_set:
+                removed_ids_set.discard(doc_id)
             if incremental and existing_hashes.get(doc_id) == meta.get("doc_hash"):
                 unchanged_count += 1
             else:
@@ -259,15 +259,18 @@ def _sync_stream(
             embedded_count += _flush(collection, docs, metas, ids)
 
     # 삭제는 재색인 뒤에 합니다. 먼저 지우면 색인이 실패했을 때 문서만 사라집니다.
-    if incremental and removed_ids:
-        collection.delete(ids=removed_ids)
+    final_removed_count = 0
+    if incremental and removed_ids_set:
+        final_removed = list(removed_ids_set)
+        final_removed_count = len(final_removed)
+        collection.delete(ids=final_removed)
 
     mode = "delta" if delta_mode else ("incremental" if incremental else "full")
     stats: KbSyncStats = {
         "mode": mode,
         "embedded": embedded_count,
         "unchanged": unchanged_count if incremental and not delta_mode else 0,
-        "removed": len(removed_ids) if incremental and not delta_mode else 0,
+        "removed": final_removed_count if incremental and not delta_mode else 0,
     }
     return (collection.count() if delta_mode else len(items)), stats
 
@@ -335,9 +338,10 @@ def rebuild_knowledge_base(
             }
             if chunk_ntce_nos:
                 stmt = select(BidResult).where(BidResult.bid_ntce_no.in_(chunk_ntce_nos))
-                current_chunk_results_map = {
-                    _join_key(r): r for r in db.execute(stmt).scalars().all()
-                }
+                res_rows = list(db.execute(stmt).scalars().all())
+                for r in res_rows:
+                    db.expunge(r)
+                current_chunk_results_map = {_join_key(r): r for r in res_rows}
 
         def make_ann_doc(_: int, announcement: Any) -> tuple[str, str, dict[str, Any]]:
             result = current_chunk_results_map.get(_join_key(announcement))
@@ -373,7 +377,9 @@ def rebuild_knowledge_base(
                 .order_by(BidResult.rl_openg_dt.desc())
                 .limit(limit)
             )
-            fallback_results = db.execute(stmt).scalars().all()
+            fallback_results = list(db.execute(stmt).scalars().all())
+            for r in fallback_results:
+                db.expunge(r)
 
             def make_res_doc(index: int, result: Any) -> tuple[str, str, dict[str, Any]]:
                 content = _build_result_document(result)
