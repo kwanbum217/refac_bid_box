@@ -10,7 +10,16 @@
 
 ## 0. 다음 세션 첫 작업
 
-**R-29 입니다.** compare-stats 종단 3,951ms 를 줄이는 일이며, 출발점은
+**환경을 먼저 올리십시오.** 이전 세션이 컴퓨터 종료를 위해 스택을 내렸습니다.
+
+```sh
+docker compose up -d db redis meilisearch app
+until curl -sf http://localhost:8000/api/v1/health/ready >/dev/null; do sleep 5; done
+```
+
+헬스 경로는 `/api/v1/health/ready` 입니다. `/health` 는 404 입니다.
+
+그다음이 **R-29 입니다.** compare-stats 종단 3,951ms 를 줄이는 일이며, 출발점은
 **종단 1.6초 개선이 어느 쿼리에서 왔는지 귀속하는 것**입니다. 통계 갱신 뒤
 매칭 쿼리는 그대로였으므로 기관별 상위 10 과 월별 두 건 중 어딘가입니다.
 
@@ -156,6 +165,32 @@ AX1 리뷰어가 `산포 초과(참고)` 분기에 테스트가 없다고 적었
 
 **리뷰 보고는 checklist 와 blocking 만 보지 말고 본문을 읽으십시오.**
 
+### 5.6 감시기 종료 패턴이 틀려 6대가 쌓였습니다
+
+세션 종료 정리에서 `orca_worker_watch` 프로세스 6개가 살아 있는 것을 발견했습니다.
+웨이브마다 하나씩 남아 누적된 것입니다.
+
+원인은 코디네이터가 쓴 종료 패턴입니다. 실제 명령줄은 다음 형태인데,
+
+    orca_worker_watch.py --repo <워크트리> --watch --respawn
+
+`pkill -f "orca_worker_watch.py --watch"` 로 찾았습니다. `--repo <경로>` 가 사이에
+끼어 있어 그 문자열은 연속으로 나타나지 않습니다. **한 번도 안 잡혔고 매번
+"감시기 정리" 라고 출력만 했습니다.**
+
+올바른 형태입니다.
+
+```sh
+pgrep -fl orca_worker_watch        # 먼저 확인
+pkill -f orca_worker_watch.py      # 스크립트 이름만으로 찾는다
+```
+
+**정리 명령을 쓸 때는 종료 코드나 `pgrep` 으로 실제로 사라졌는지 확인하십시오.**
+`pkill` 은 대상이 없어도 조용히 끝납니다. 같은 이유로 워크트리가 이미 제거된
+뒤에도 감시기는 없는 경로를 계속 감시하고 있었습니다.
+
+---
+
 ### 5.5 병렬 판단 근거
 
 AX1(코드)과 AX2(DB 읽기 조사)를 병렬로 돌렸습니다. 안전했던 이유는 AX2 의
@@ -177,7 +212,10 @@ AX1(코드)과 AX2(DB 읽기 조사)를 병렬로 돌렸습니다. 안전했던 
 - `orca_settled_session_audit.py` 잔류 없음
 - 리뷰 산출물은 `.orca/capsules/<task_id>/review_done.json` 과
   `docs/analysis/*_review_20260911.md` 로 보존
-- Docker 스택 넷을 올린 채로 둡니다. `LATENCY_SEGMENT_LOGGING` 은 `false` 입니다
+- **Docker 스택을 내렸습니다.** 사용자가 컴퓨터를 끄기 위해 세션 종료 시 정리했습니다.
+  다음 세션은 `docker compose up -d db redis meilisearch app` 으로 다시 올리십시오.
+  `LATENCY_SEGMENT_LOGGING` 은 `false` 로 원복된 상태입니다
+- **배경 감시기를 전부 종료했습니다.** 5.6 절을 보십시오
 
 ### 6.1 Task 종결 상태 (`run_fd19c3f39c9a`)
 
