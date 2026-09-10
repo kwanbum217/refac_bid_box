@@ -41,7 +41,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from scripts.orca_forbidden_artifacts import FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS
+try:
+    from scripts.orca_forbidden_artifacts import FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS
+except ModuleNotFoundError:
+    _repo_root = Path(__file__).resolve().parent.parent
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
+    from scripts.orca_forbidden_artifacts import FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS
 
 # 기본 주기 및 정체 후보 판정 기준 시간 (초 단위)
 DEFAULT_INTERVAL_SECONDS: float = 10.0

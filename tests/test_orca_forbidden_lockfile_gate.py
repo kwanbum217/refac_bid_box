@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +16,22 @@ from scripts.orca_level1_gate import (
 )
 
 FORBIDDEN_NAMES = ("pnpm-lock.yaml", "pnpm-workspace.yaml", "yarn.lock", "bun.lockb")
+
+
+def test_worker_watch_direct_execution_from_non_repository_cwd(tmp_path: Path) -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "orca_worker_watch.py"
+
+    result = subprocess.run(  # noqa: S603  고정된 인터프리터와 스크립트만 실행합니다
+        [sys.executable, str(script), "--json"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode in (0, 1)
+    assert "ModuleNotFoundError" not in result.stderr
+    json.loads(result.stdout)
 
 
 @pytest.mark.parametrize("filename", FORBIDDEN_NAMES)
