@@ -38,6 +38,7 @@ from src.app.services.ranking_snapshots import (
     REPLACEMENT_CHAR,
     exclude_corrupted,
     get_skipped_count,
+    get_skipped_marker,
     get_top_rankings,
 )
 from src.rag.schemas import RetrievalPlan
@@ -546,11 +547,14 @@ def _top_rows(
             return [tuple(row) for row in rows], int(dropped)
 
         kept, dropped = _drop_corrupted(db.execute(stmt).all(), limit)
+        marker: int | None = None
         if not dropped:
-            # 실시간 경로에서 U+FFFD 탐침을 매번 돌리는 대신, 야간에 이미 계산해 둔
-            # 스냅샷의 손상 여부 마커(rank=0)를 O(1)로 재사용합니다.
-            dropped = get_skipped_count(db, dataset, dimension, category)
-        if not dropped and corrupted_probe is not None:
+            # 마커가 존재하면(0 포함) 그 값을 그대로 쓰고 탐침을 돌지 않습니다.
+            # 마커가 아예 없을 때만 종전대로 탐침을 실행합니다.
+            marker = get_skipped_marker(db, dataset, dimension, category)
+            if marker is not None:
+                dropped = marker
+        if not dropped and marker is None and corrupted_probe is not None:
             # 마커까지 없으면 제외 여부를 알 방법이 없습니다. SQL 이 exclude_corrupted 로
             # 이미 손상값을 걸러 보내기 때문에 파이썬 계층이 셀 것이 남지 않습니다.
             # 그 상태로 0 을 확정하면 실제로 제외했는데도 안내가 사라집니다(Wave E1 회귀).
