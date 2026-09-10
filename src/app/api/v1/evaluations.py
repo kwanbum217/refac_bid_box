@@ -58,6 +58,7 @@ from src.app.schemas.evaluations import (
     EvaluationSnapshotCreate,
     EvaluationSnapshotResponse,
     EvidenceMetadata,
+    NegotiationRateDistribution,
     PriceScenarioConfig,
     QualificationInput,
     ScenarioEvaluationResult,
@@ -76,6 +77,7 @@ from src.app.services.evaluation_scoring import (
     generate_pred_price_scenarios,
     invert_lowest_bid_rate,
 )
+from src.app.services.negotiation_stats import get_negotiation_stats
 
 logger = logging.getLogger(__name__)
 
@@ -626,12 +628,17 @@ def _analyze_bid(
         raw_data=raw_data,
     )
     if rule_result.is_blocked:
-        return _blocked_response(
+        response = _blocked_response(
             bid,
             rule_result,
             str(rule_result.block_reason_code),
             rule_result.block_reason_message or "계산 조건을 충족하지 않았습니다.",
         )
+        if rule_result.negotiation_variant is not None:
+            response.negotiation_rate_distribution = NegotiationRateDistribution(
+                **get_negotiation_stats(db, rule_result.negotiation_variant)
+            )
+        return response
 
     assert rule_result.rule is not None
     rule = rule_result.rule

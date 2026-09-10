@@ -194,6 +194,16 @@ class ScenarioEvaluationResult(BaseModel):
 # ============================================================================
 
 
+class NegotiationRateDistribution(BaseModel):
+    """협상 공고 변종의 과거 낙찰률 실측 분포."""
+
+    valid_count: int = Field(..., description="유효 집계 건수")
+    average: float | None = Field(None, description="평균 낙찰률 (%)")
+    median: float | None = Field(None, description="중앙값 낙찰률 (%)")
+    minimum: float | None = Field(None, description="최소 낙찰률 (%)")
+    maximum: float | None = Field(None, description="최대 낙찰률 (%)")
+
+
 class EvaluationRequest(BaseModel):
     """적격심사 정량평가 및 투찰 분석 요청.
 
@@ -261,6 +271,9 @@ class EvaluationResponse(BaseModel):
     negotiation_price_eval_rate: float | None = Field(
         default=None,
         description="협상에의한계약 입찰가격 평가비율 (%)",
+    )
+    negotiation_rate_distribution: NegotiationRateDistribution | None = Field(
+        default=None, description="협상 공고 변종의 과거 낙찰률 실측 분포 참고값"
     )
     blocked: bool = Field(
         default=False,
