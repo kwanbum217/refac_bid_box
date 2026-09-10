@@ -230,9 +230,30 @@ facts:
     evidence:
       - docs/design/servc_qualification_evaluation_design_20260909.md
       - docs/ops/handoff_20260909_wave_ap_ev_session_close.md
+      - docs/analysis/aq3_evaluation_realuse_scenarios_20260910.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/design/servc_qualification_evaluation_design_20260909.md
+  - id: negotiation_contract_support
+    status: active
+    decision_date: "2026-09-10"
+    claim: "협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다."
+    document_anchor: "협상 공고를 NEGOTIATION_CONTRACT 로 판별하고"
+    evidence:
+      - docs/analysis/aq2_servc_scope_extension_survey_20260910.md
+      - docs/analysis/ng2a_negotiation_price_score_survey_20260910.md
+      - docs/ops/handoff_20260910_wave_aq_ng_session_close.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+  - id: compare_stats_latency
+    status: closed
+    decision_date: "2026-09-10"
+    claim: "GET /api/v1/bids/stats 웜 레이턴시는 3.34ms(P95 3.80ms)입니다."
+    document_anchor: "GET /api/v1/bids/stats 웜 레이턴시는 3.34ms"
+    evidence:
+      - docs/ops/handoff_20260910_wave_aq_ng_session_close.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
   - id: kb_index_memory
     status: closed
     decision_date: "2026-09-09"

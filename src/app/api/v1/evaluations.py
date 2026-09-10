@@ -58,6 +58,7 @@ from src.app.schemas.evaluations import (
     EvaluationSnapshotCreate,
     EvaluationSnapshotResponse,
     EvidenceMetadata,
+    NegotiationRateDistribution,
     PriceScenarioConfig,
     QualificationInput,
     ScenarioEvaluationResult,
@@ -76,6 +77,7 @@ from src.app.services.evaluation_scoring import (
     generate_pred_price_scenarios,
     invert_lowest_bid_rate,
 )
+from src.app.services.negotiation_stats import get_negotiation_stats
 
 logger = logging.getLogger(__name__)
 
@@ -357,6 +359,17 @@ def _blocked_response(
         rule_id=rule_result.rule.rule_id if rule_result.rule else None,
         rule_name=rule_result.rule.description if rule_result.rule else None,
         rule_basis=_rule_basis(bid, rule_result),
+        negotiation_variant=rule_result.negotiation_variant,
+        negotiation_tech_eval_rate=(
+            float(rule_result.negotiation_tech_eval_rate)
+            if rule_result.negotiation_tech_eval_rate is not None
+            else None
+        ),
+        negotiation_price_eval_rate=(
+            float(rule_result.negotiation_price_eval_rate)
+            if rule_result.negotiation_price_eval_rate is not None
+            else None
+        ),
         blocked=True,
         blocked_reason=f"{code}: {message}",
         warnings=list(rule_result.warnings),
@@ -615,12 +628,17 @@ def _analyze_bid(
         raw_data=raw_data,
     )
     if rule_result.is_blocked:
-        return _blocked_response(
+        response = _blocked_response(
             bid,
             rule_result,
             str(rule_result.block_reason_code),
             rule_result.block_reason_message or "계산 조건을 충족하지 않았습니다.",
         )
+        if rule_result.negotiation_variant is not None:
+            response.negotiation_rate_distribution = NegotiationRateDistribution(
+                **get_negotiation_stats(db, rule_result.negotiation_variant)
+            )
+        return response
 
     assert rule_result.rule is not None
     rule = rule_result.rule
