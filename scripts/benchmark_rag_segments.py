@@ -72,9 +72,11 @@ __all__ = [
     "load_fixture",
     "main",
     "parse_segment_lines",
+    "parse_structured_sql_traces",
     "query_db_buffer_pool_pages_data",
     "send_query",
     "summarize_measurements",
+    "summarize_structured_sql_segments",
     "verify_trace_correlation",
 ]
 
@@ -111,6 +113,10 @@ SEGMENT_KEYS = (
     "guard_ms",
 )
 TOTAL_KEY = "total_ms"
+
+# 정형 검색 구간 계측 키. src/rag/engine.py 가 rag_engine_latency 줄 끝에
+# structured_sql_segments=<JSON> 형태로 기록한다. JSON 안에는 공백과 중괄호가
+# 들어 있어 기존의 공백 분리 정규식으로는 파싱되지 않는다.
 
 # docs/ops/latency_gate_protocol.md 2장은 warmup 요청 수를 측정 동시성과 같은 수로 규정합니다.
 # 본 하네스는 직렬(단발) 질의 전송(concurrency=1)이므로 기동 직후 콜드 스타트(ChromaDB/임베딩/Ollama 연결)를
@@ -245,17 +251,86 @@ def build_query_plan(
     return plan
 
 
-def parse_segment_lines(raw_log: str) -> list[dict[str, float | str]]:
-    """컨테이너 로그에서 rag_engine_latency 줄을 뽑아 구조로 만듭니다."""
-    records: list[dict[str, float | str]] = []
+STRUCTURED_SQL_KEY = "structured_sql_segments"
+
+# 결과 JSON 에 추가만 하는 정형 계측 산출물 키. 기존 키를 지우거나 바꾸지 않는다.
+STRUCTURED_SQL_TRACES_KEY = "structured_sql_traces"
+STRUCTURED_SQL_SUMMARY_KEY = "structured_sql_summary"
+
+
+def _split_structured_sql_field(payload: str) -> tuple[dict[str, Any] | None, str]:
+    """payload 에서 structured_sql_segments=<JSON> 을 분리한다.
+
+    값 안의 중괄호와 공백 때문에 공백 분리 정규식으로는 잘리므로, 중괄호
+    균형을 세어 JSON 조각을 통째로 떼어낸 뒤 json 으로 해석한다. 해석에
+    실패하거나 값이 null 이면 없는 것으로 보고 나머지 문자열만 돌려준다.
+    """
+    marker = STRUCTURED_SQL_KEY + "="
+    idx = payload.find(marker)
+    if idx < 0:
+        return None, payload
+    start = idx + len(marker)
+    while start < len(payload) and payload[start] == " ":
+        start += 1
+    if start >= len(payload):
+        return None, payload[:idx]
+    if payload.startswith("null", start):
+        return None, payload[:idx] + payload[start + len("null") :]
+    if payload[start] != "{":
+        return None, payload[:idx] + payload[start:]
+    depth = 0
+    in_string = False
+    escaped = False
+    end: int | None = None
+    for pos in range(start, len(payload)):
+        char = payload[pos]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = pos + 1
+                break
+    if end is None:
+        return None, payload[:idx]
+    raw = payload[start:end]
+    rest = payload[:idx] + payload[end:]
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None, rest
+    if not isinstance(parsed, dict):
+        return None, rest
+    return parsed, rest
+
+
+def parse_segment_lines(raw_log: str) -> list[dict[str, Any]]:
+    """컨테이너 로그에서 rag_engine_latency 줄을 뽑아 구조로 만듭니다.
+
+    structured_sql_segments 값은 중괄호와 공백을 포함하므로 먼저 통째로
+    분리해 JSON 으로 해석하고, 나머지 필드만 공백 분리 정규식으로 읽는다.
+    그 필드가 없는 옛 로그 줄도 예외 없이 처리된다.
+    """
+    records: list[dict[str, Any]] = []
     if not raw_log or raw_log == "unknown":
         return records
     for line in raw_log.splitlines():
         if LOG_MARKER not in line:
             continue
         payload = line.split(LOG_MARKER, 1)[1]
-        record: dict[str, float | str] = {}
-        for key, value in re.findall(r"(\w+)=([^\s]+)", payload):
+        structured, rest = _split_structured_sql_field(payload)
+        record: dict[str, Any] = {}
+        for key, value in re.findall(r"(\w+)=([^\s]+)", rest):
             if key.endswith("_ms"):
                 try:
                     record[key] = float(value)
@@ -263,9 +338,133 @@ def parse_segment_lines(raw_log: str) -> list[dict[str, float | str]]:
                     continue
             else:
                 record[key] = value
+        if structured is not None:
+            record[STRUCTURED_SQL_KEY] = structured
         if TOTAL_KEY in record:
             records.append(record)
     return records
+
+
+def parse_structured_sql_traces(
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """레코드 목록에서 트레이스별 정형 계측 원값을 뽑는다.
+
+    cursor_count 처럼 시간이 아닌 정수 카운터도 함께 담는다. 필드가 없는
+    옛 레코드는 건너뛴다.
+    """
+    traces: list[dict[str, Any]] = []
+    for record in records:
+        blob = record.get(STRUCTURED_SQL_KEY)
+        if not isinstance(blob, dict):
+            continue
+        raw_segments = blob.get("segments")
+        segments: dict[str, float] = {}
+        if isinstance(raw_segments, dict):
+            for name, value in raw_segments.items():
+                try:
+                    segments[str(name)] = float(value)  # type: ignore[arg-type]
+                except (TypeError, ValueError):
+                    continue
+        try:
+            cursor_count: int | None = int(blob["cursor_count"])  # type: ignore[index]
+        except (KeyError, TypeError, ValueError):
+            cursor_count = None
+        trace: dict[str, Any] = {
+            "trace_id": str(record.get("trace_id", "")),
+            "segments": segments,
+            "cursor_count": cursor_count,
+        }
+        for key in ("cursor_ms", "total_ms", "residual_ms"):
+            try:
+                trace[key] = float(blob[key])  # type: ignore[index]
+            except (KeyError, TypeError, ValueError):
+                trace[key] = None
+        for key in ("is_cold", "item_id", "repetition_index"):
+            if key in record:
+                trace[key] = record[key]
+        traces.append(trace)
+    return traces
+
+
+def _summarize_float_list(values: list[float]) -> dict[str, Any] | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    count = len(ordered)
+    return {
+        "n": count,
+        "min_ms": ordered[0],
+        "max_ms": ordered[-1],
+        "mean_ms": sum(ordered) / count,
+    }
+
+
+def summarize_structured_sql_segments(
+    records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """트레이스별 정형 계측을 구간별로 집계한다.
+
+    각 구간을 독립적으로 집계하며 합산하지 않는다. corrupted_probe_ms 는
+    top_rows_N 안에 중첩된 부분합이므로 최상위 구간 소계에 더하면 안 된다.
+    구성비(composition)는 참고용으로만 내며 cursor_ms 평균 대비 각 구간
+    평균의 비율이다. 중첩 탓에 합이 100%를 넘을 수 있다.
+    """
+    traces = parse_structured_sql_traces(records)
+    per_segment: dict[str, list[float]] = {}
+    cursor_ms_values: list[float] = []
+    total_ms_values: list[float] = []
+    residual_ms_values: list[float] = []
+    cursor_counts: list[int] = []
+    for trace in traces:
+        segments = trace.get("segments")
+        if isinstance(segments, dict):
+            for name, value in segments.items():
+                per_segment.setdefault(str(name), []).append(float(value))
+        if isinstance(trace.get("cursor_ms"), float):
+            cursor_ms_values.append(trace["cursor_ms"])
+        if isinstance(trace.get("total_ms"), float):
+            total_ms_values.append(trace["total_ms"])
+        if isinstance(trace.get("residual_ms"), float):
+            residual_ms_values.append(trace["residual_ms"])
+        if isinstance(trace.get("cursor_count"), int):
+            cursor_counts.append(trace["cursor_count"])
+
+    by_segment: dict[str, Any] = {}
+    for name in sorted(per_segment):
+        summary = _summarize_float_list(per_segment[name])
+        if summary is not None:
+            by_segment[name] = summary
+
+    cursor_ms_summary = _summarize_float_list(cursor_ms_values)
+    cursor_mean = cursor_ms_summary["mean_ms"] if cursor_ms_summary else 0.0
+    composition: dict[str, float | None] = {}
+    for name in sorted(per_segment):
+        seg_summary = by_segment.get(name)
+        if seg_summary and cursor_mean:
+            composition[name] = seg_summary["mean_ms"] / cursor_mean
+        else:
+            composition[name] = None
+
+    cursor_count_summary: dict[str, Any] | None = None
+    if cursor_counts:
+        ordered_counts = sorted(cursor_counts)
+        cursor_count_summary = {
+            "n": len(ordered_counts),
+            "values": ordered_counts,
+            "min": ordered_counts[0],
+            "max": ordered_counts[-1],
+        }
+
+    return {
+        "traces": len(traces),
+        "by_segment": by_segment,
+        "cursor_ms": cursor_ms_summary,
+        "total_ms": _summarize_float_list(total_ms_values),
+        "residual_ms": _summarize_float_list(residual_ms_values),
+        "cursor_count": cursor_count_summary,
+        "composition": composition,
+    }
 
 
 def container_env_flag(container: str, name: str, command_runner: Any = None) -> str | None:
@@ -1000,6 +1199,17 @@ def main(
         "by_item": summary_by_item,
     }
 
+    # 정형 구간 계측 산출물. 기존 키에 손대지 않고 추가만 한다. 트레이스별
+    # 원값과 구간별 집계를 모두 남기며 cursor_count 같은 비시간 값도 담는다.
+    structured_sql_traces = parse_structured_sql_traces(records)
+    structured_sql_traces_cold = parse_structured_sql_traces(cold_records)
+    structured_sql_traces_warm = parse_structured_sql_traces(warm_records)
+    structured_sql_summary = {
+        "all": summarize_structured_sql_segments(records),
+        "cold": summarize_structured_sql_segments(cold_records),
+        "warm": summarize_structured_sql_segments(warm_records),
+    }
+
     perf_config = start_meta.get("perf_config")
     llm_provider = perf_config.get("LLM_PROVIDER") if isinstance(perf_config, dict) else None
 
@@ -1072,6 +1282,13 @@ def main(
         "cold_records_count": len(cold_records),
         "warm_records_count": len(warm_records),
         "trace_correlation": trace_details,
+        "structured_sql_traces": structured_sql_traces,
+        "structured_sql_traces_cold": structured_sql_traces_cold,
+        "structured_sql_traces_warm": structured_sql_traces_warm,
+        "structured_sql_summary": structured_sql_summary,
+        "structured_sql_summary_all": structured_sql_summary["all"],
+        "structured_sql_summary_cold": structured_sql_summary["cold"],
+        "structured_sql_summary_warm": structured_sql_summary["warm"],
     }
 
     text = dump_strict_json(sanitize_nan_to_none(payload), ensure_ascii=False, indent=2)

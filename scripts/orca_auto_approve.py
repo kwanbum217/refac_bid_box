@@ -1163,7 +1163,12 @@ def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
 #
 # **여기에 스크립트를 추가할 때는 그 스크립트가 스스로 쓰기를 막는지 확인하십시오.**
 # 이 목록은 "무엇을 실행해도 되는가" 가 아니라 "무엇이 스스로 안전한가" 입니다.
-UV_RUN_ALLOWED_SCRIPTS = frozenset({"scripts/db_readonly_query.py"})
+# scripts/compare_rag_segments.py 는 결과 JSON 두 개를 읽어 판정을 표준출력으로
+# 내기만 하며 파일을 쓰거나 DB 에 접속하거나 컨테이너를 제어하지 않으므로
+# 읽기 전용으로 확인해 등록합니다.
+UV_RUN_ALLOWED_SCRIPTS = frozenset(
+    {"scripts/db_readonly_query.py", "scripts/compare_rag_segments.py"}
+)
 
 
 def classify_docker_execution(argv: list[str], cmd: str) -> tuple[str, str]:
