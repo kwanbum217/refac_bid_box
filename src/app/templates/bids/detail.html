@@ -302,6 +302,19 @@
                                 <span id="rule-basis" class="text-sm text-slate-600 leading-relaxed"></span>
                             </div>
                         </div>
+                        <div id="negotiation-distribution" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-chart-column text-primary"></i>
+                                <h3 class="text-sm font-bold text-slate-900">과거 낙찰률 실측 분포</h3>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div><div class="detail-label">유효 건수</div><div id="negotiation-count" class="text-sm font-bold text-slate-800 tabular-nums">-</div></div>
+                                <div><div class="detail-label">평균</div><div id="negotiation-average" class="text-sm font-bold text-slate-800 tabular-nums">-</div></div>
+                                <div><div class="detail-label">중앙값</div><div id="negotiation-median" class="text-sm font-bold text-slate-800 tabular-nums">-</div></div>
+                                <div><div class="detail-label">범위</div><div id="negotiation-range" class="text-sm font-bold text-slate-800 tabular-nums">-</div></div>
+                            </div>
+                            <p class="text-[11px] leading-relaxed text-slate-600">이 값은 과거 낙찰 결과의 참고 분포이며 가격평점 산식이 아니고 이번 공고의 결과를 뜻하지 않습니다. 기초금액 대비 낙찰금액 비율이며 50% 이상 110% 이하로 제한한 값입니다.</p>
+                        </div>
                         <div id="evaluation-blocked" class="hidden p-4 bg-red-50 border border-red-200 rounded-lg space-y-2">
                             <div class="flex items-start gap-2 text-red-700">
                                 <i class="fas fa-ban mt-0.5 shrink-0"></i>
@@ -891,6 +904,7 @@ $(document).ready(function() {
         $('#negotiation-variant').text(data.negotiation_variant || '-');
         $('#negotiation-tech-rate').text(formatRate(data.negotiation_tech_eval_rate));
         $('#negotiation-price-rate').text(formatRate(data.negotiation_price_eval_rate));
+        renderNegotiationDistribution(data);
         return true;
     }
 
@@ -936,6 +950,22 @@ $(document).ready(function() {
         else if (lowerBoundRate != null) $('#lower-bound-used-value').text(lowerBoundRate);
     }
 
+    function renderNegotiationDistribution(data) {
+        const distribution = data.negotiation_rate_distribution;
+        if (!distribution || !data.negotiation_variant) {
+            $('#negotiation-distribution').addClass('hidden');
+            return;
+        }
+        const formatRate = function(value) {
+            return value == null ? '-' : Number(value).toFixed(4) + '%';
+        };
+        $('#negotiation-count').text(Number(distribution.valid_count || 0).toLocaleString('ko-KR') + '건');
+        $('#negotiation-average').text(formatRate(distribution.average));
+        $('#negotiation-median').text(formatRate(distribution.median));
+        $('#negotiation-range').text(formatRate(distribution.minimum) + ' ~ ' + formatRate(distribution.maximum));
+        $('#negotiation-distribution').removeClass('hidden');
+    }
+
     // 초기 규칙 정보 로드 (입찰 없이도 적용 규칙 확인 가능).
     // 정량점수를 0 으로 보내는 것은 의도된 것이다. 이 호출의 목적은 어떤 별표가
     // 적용되는지와 차단 여부만 확인하는 것이며, 응답의 점수와 시나리오 표는
@@ -979,6 +1009,7 @@ $(document).ready(function() {
                     $('#evaluation-fallback').removeClass('hidden');
                 }
                 renderLowerBoundWarnings(data.warnings, data.lower_bound_rate);
+                renderNegotiationDistribution(data);
             },
             error: function() {
                 $('#evaluation-loading').addClass('hidden');
@@ -1078,6 +1109,7 @@ $(document).ready(function() {
                     }
 
                     renderLowerBoundWarnings(data.warnings, data.lower_bound_rate);
+                    renderNegotiationDistribution(data);
 
                     // 시나리오 결과표
                     if (data.scenario_results && data.scenario_results.length > 0) {
