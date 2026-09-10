@@ -3,6 +3,9 @@
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
+
+from sqlalchemy.dialects import mysql, sqlite
 
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import negotiation_stats
@@ -89,3 +92,127 @@ def test_distribution_second_call_uses_cache(isolated_db, monkeypatch):
 
     monkeypatch.setattr(negotiation_stats, "_rows", fail_query)
     assert negotiation_stats.get_negotiation_stats(isolated_db, "STANDARD") == first
+
+
+class _CompileOnlyDB:
+    def __init__(self, dialect):
+        self._bind = SimpleNamespace(dialect=dialect)
+        self.statement = None
+
+    def get_bind(self):
+        return self._bind
+
+    def execute(self, statement):
+        self.statement = statement
+        return SimpleNamespace(all=lambda: [])
+
+
+def test_rows_builds_mysql_specific_sql_without_connecting_to_mysql():
+    db = _CompileOnlyDB(mysql.dialect())
+
+    assert negotiation_stats._rows(db, "STANDARD") == []
+
+    sql = str(db.statement.compile(dialect=mysql.dialect())).lower()
+    assert "lpad" in sql
+    assert "json_unquote" in sql
+
+
+def test_rows_builds_sqlite_specific_sql_without_connecting_to_mysql():
+    db = _CompileOnlyDB(sqlite.dialect())
+
+    assert negotiation_stats._rows(db, "STANDARD") == []
+
+    sql = str(db.statement.compile(dialect=sqlite.dialect())).lower()
+    assert "printf" in sql
+
+
+def test_each_negotiation_variant_only_matches_its_own_marker(isolated_db, monkeypatch):
+    store = {}
+    monkeypatch.setattr(negotiation_stats.cache, "get", store.get)
+    monkeypatch.setattr(
+        negotiation_stats.cache, "set", lambda key, value, ttl: store.update({key: value})
+    )
+    markers = {
+        "STANDARD": "협상에의한계약",
+        "SW": "협상에의한계약(SW사업)",
+        "ENGINEERING": "협상에의한계약(엔지니어링)",
+        "CONSTRUCTION_ENGINEERING": "협상에의한계약(건설엔지니어링)",
+    }
+    for index, method in enumerate(markers.values()):
+        _add_pair(isolated_db, f"variant-{index}", 100, 90, method)
+
+    for variant in markers:
+        result = negotiation_stats.get_negotiation_stats(isolated_db, variant)
+        assert result["valid_count"] == 1
+        assert result["average"] == Decimal("90.0000")
+
+
+def test_standard_does_not_swallow_marked_variants(isolated_db, monkeypatch):
+    store = {}
+    monkeypatch.setattr(negotiation_stats.cache, "get", store.get)
+    monkeypatch.setattr(
+        negotiation_stats.cache, "set", lambda key, value, ttl: store.update({key: value})
+    )
+    _add_pair(isolated_db, "standard-only", 100, 90, "협상에의한계약")
+    _add_pair(isolated_db, "sw", 100, 80, "협상에의한계약(SW사업)")
+    _add_pair(isolated_db, "engineering", 100, 70, "협상에의한계약(엔지니어링)")
+    _add_pair(isolated_db, "construction-engineering", 100, 60, "협상에의한계약(건설엔지니어링)")
+
+    result = negotiation_stats.get_negotiation_stats(isolated_db, "STANDARD")
+
+    assert result["valid_count"] == 1
+    assert result["average"] == Decimal("90.0000")
+
+
+def test_engineering_does_not_match_construction_engineering(isolated_db, monkeypatch):
+    store = {}
+    monkeypatch.setattr(negotiation_stats.cache, "get", store.get)
+    monkeypatch.setattr(
+        negotiation_stats.cache, "set", lambda key, value, ttl: store.update({key: value})
+    )
+    _add_pair(isolated_db, "engineering", 100, 70, "협상에의한계약(엔지니어링)")
+    _add_pair(isolated_db, "construction-engineering", 100, 60, "협상에의한계약(건설엔지니어링)")
+
+    result = negotiation_stats.get_negotiation_stats(isolated_db, "ENGINEERING")
+
+    assert result["valid_count"] == 1
+    assert result["average"] == Decimal("70.0000")
+
+
+def test_negotiation_rate_boundaries_are_included(isolated_db, monkeypatch):
+    store = {}
+    monkeypatch.setattr(negotiation_stats.cache, "get", store.get)
+    monkeypatch.setattr(
+        negotiation_stats.cache, "set", lambda key, value, ttl: store.update({key: value})
+    )
+    _add_pair(isolated_db, "lower-bound", 100, 50, "협상에의한계약")
+    _add_pair(isolated_db, "upper-bound", 100, 110, "협상에의한계약")
+
+    result = negotiation_stats.get_negotiation_stats(isolated_db, "STANDARD")
+
+    assert result == {
+        "valid_count": 2,
+        "average": Decimal("80.0000"),
+        "median": Decimal("80.0000"),
+        "minimum": Decimal("50.0000"),
+        "maximum": Decimal("110.0000"),
+    }
+
+
+def test_empty_and_unknown_variants_return_empty_distribution(isolated_db, monkeypatch):
+    store = {}
+    monkeypatch.setattr(negotiation_stats.cache, "get", store.get)
+    monkeypatch.setattr(
+        negotiation_stats.cache, "set", lambda key, value, ttl: store.update({key: value})
+    )
+    _add_pair(isolated_db, "known", 100, 90, "협상에의한계약")
+
+    for variant in ("CONSTRUCTION_ENGINEERING", "NOT_A_VARIANT"):
+        result = negotiation_stats.get_negotiation_stats(isolated_db, variant)
+        assert result == {
+            "valid_count": 0,
+            "average": None,
+            "median": None,
+            "minimum": None,
+            "maximum": None,
+        }
