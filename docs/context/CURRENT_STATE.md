@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-10
-> **source_commit**: `d6dc35f`
+> **source_commit**: `458f8a8`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -114,6 +114,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **RPO/RTO 복구 목표 (2026-09-06, 확정)**: RPO 24시간·RTO 4시간을 확정했습니다. 분기 1회 restore drill 실시가 남았습니다.
 - **워커 런처 계열 (2026-09-08, 해소)**: 런처 테스트의 실제 프로세스 부작용, 자동 승인 감시기 자기 종료, preamble 인계 규약 공용화, claude/opencode/grok 런처 신설, dispatch 런처 자동 선택을 Wave AM/AN 8건으로 닫았습니다. 사용 CLI 7종 중 6종이 `dispatch --launcher` 정규 경로에 있습니다(codex 는 구조가 달라 대상 아님).
 - **자동 승인 화이트리스트 (2026-09-08, 판단 대기)**: `pgrep`, 환경변수 접두 명령, `git add`/`git commit`, `orca orchestration send`, CLI `--help` 가 화이트리스트 밖이라 워커마다 사람 승인이 필요합니다. 열지 여부는 사용자 결정 사항입니다.
+- **자동 승인 화이트리스트 (2026-09-10, 확장 완료)**: 워커가 매번 사람 승인을 기다리던 명령을 열었습니다. `git add` 는 **명시 경로만** 허용하고 `-A`, `--all`, `-u`, 점 경로, 인자 없음을 거부합니다. 다른 작업의 미커밋 산출물을 삼키는 것을 막기 위함입니다. `git commit` 은 `-m`, `--message`, `-F`, `--file` 만 허용하고 **`--no-verify` 와 `-n` 을 절대 거부**합니다. 열리면 premerge 전량 테스트 게이트와 커밋 메시지 검증이 통째로 우회되기 때문이며, `--amend`, `--allow-empty`, `--author`, `--date`, `--reset-author` 도 같습니다. `pgrep` 과 임의 명령의 `--help`/`-h`, `orca orchestration send` 를 열었고 `orca` 의 다른 서브커맨드는 여전히 보류입니다. `git reset`, `push`, `checkout`, `restore`, `merge`, `rebase`, `worktree add/remove` 는 그대로 보류입니다.
 - **관측성 2단계 Prometheus (2026-09-06, 미착수)**: 1단계 Collector·Tempo·Grafana 배선은 `docker-compose.prod.yml` 에 들어갔고, 2단계는 메트릭 계측이 선행 조건입니다.
 - **RAG cold SQL (2026-09-07, 정본 확보·1차 원인 미규명)**: 버퍼풀을 실제로 비운 뒤(121,120 -> 1,192 페이지) 타임아웃 300초로 측정해 96요청 전량 성공으로 canonical 게이트를 통과했습니다(`rag_segments_coldpool_20260907.json`, sql 구간 콜드 P50 11.9ms·max 69.3ms). 콜드 버퍼풀 실행이 가장 빨라 1차의 10만 ms 대 값은 버퍼풀로 설명되지 않으며 원인은 미규명입니다. 재현 가능한 두 조건에서 근거가 없으므로 타임아웃 기본값 120초는 유지합니다.
 - **RAG cold SQL 원인 조사 (2026-09-10, 가설 좁힘·미확정)**: 1차의 10만 ms 대 값을 코드 판독으로 조사해 가설 다섯을 순위와 근거로 정리했습니다(`docs/analysis/at2_coldsql_cause_investigation_20260910.md`). **그 값을 쿼리 실행 시간이라 부르면 안 됩니다.** 타이머가 SQL 실행만 감싸는지 캐시 조회와 세션 checkout 과 결과 조립까지 감싸는지 미확정이므로 정형 SQL 구간 계측값이 정확한 표현입니다. 유력 후보는 캐시 miss 시 선행 와일드카드 `LIKE` 와 `GROUP BY` 를 포함한 실시간 집계, 그리고 연결 획득 대기가 `sql_ms` 에 함께 계상되는 계측 범위 둘입니다. warmup 하네스는 직렬 1회 호출이라 직접 원인으로는 약하나 캐시와 연결 상태 교란 후보로 남습니다. 동시 요청 경합 가설은 하네스가 `concurrency=1` 직렬이라 이번 측정의 설명으로는 기각에 가깝습니다. 실행 가능한 다음 실험을 판정 기준과 함께 보고서 6장에 남겼습니다. **같은 날 코드 판독으로 셋을 확정했습니다.** 네 문항의 공통점은 날짜 범위나 카테고리가 아니라 기관명 필터를 가진 개체 지정 낙찰 질의라는 점이며, 기관명 필터가 `_snapshot_scope` 를 `None` 으로 만들어 live 경로를 선택합니다(`src/rag/structured_data.py:191-204`). `sql_ms` 는 `retrieve_structured_data` 호출 직전부터 반환 직후까지를 감싸므로 Redis 캐시 조회, lazy checkout 대기, 다중 SQL, 결과 조립, `corrupted_probe` 가 전부 그 안에 들어갑니다(`src/rag/engine.py:743-747`). 정형 DB 호출은 `asyncio.to_thread` 로 오프로드되므로 이벤트 루프 블로킹 가설은 부정됐고, 스레드풀과 DB 풀 경합은 별도 가설로 남습니다(`src/rag/engine.py:1177-1185`). 남은 것은 개별 SQL 시간 구성비의 후속 계측입니다.

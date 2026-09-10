@@ -80,6 +80,7 @@ SAFE_STANDALONE_COMMANDS = {
     "head",
     "jq",
     "ls",
+    "pgrep",
     "rg",
     "tail",
     "wc",
@@ -90,6 +91,8 @@ SAFE_TEST_COMMANDS = {
 }
 
 SAFE_GIT_SUBCOMMANDS = {
+    "add",
+    "commit",
     "diff",
     "log",
     "merge-base",
@@ -125,6 +128,16 @@ GIT_FORBIDDEN_GLOBAL_OPTIONS = {
 
 # git 서브커맨드별 허용 옵션 화이트리스트
 SAFE_GIT_OPTIONS: dict[str, set[str]] = {
+    "add": {
+        "-n",
+        "--dry-run",
+    },
+    "commit": {
+        "-m",
+        "--message",
+        "-F",
+        "--file",
+    },
     "status": {
         "-s",
         "--short",
@@ -269,6 +282,11 @@ SAFE_GIT_OPTIONS: dict[str, set[str]] = {
 }
 
 SAFE_GIT_OPTION_PREFIXES: dict[str, tuple[str, ...]] = {
+    "add": (),
+    "commit": (
+        "--message=",
+        "--file=",
+    ),
     "status": (),
     "diff": (
         "-U",
@@ -495,6 +513,11 @@ def parse_git_subcommand(args: list[str]) -> tuple[str | None, list[str]]:
 
 def is_safe_git_subcommand(subcmd: str, sub_args: list[str]) -> tuple[bool, str]:
     """git 서브커맨드 인자가 화이트리스트에 부합하는지 검사합니다."""
+    if subcmd == "add":
+        return is_safe_git_add(sub_args)
+    if subcmd == "commit":
+        return is_safe_git_commit(sub_args)
+
     allowed_flags = SAFE_GIT_OPTIONS.get(subcmd, set())
     allowed_prefixes = SAFE_GIT_OPTION_PREFIXES.get(subcmd, ())
 
@@ -524,6 +547,88 @@ def is_safe_git_subcommand(subcmd: str, sub_args: list[str]) -> tuple[bool, str]
             return False, f"허용되지 않은 git {subcmd} 옵션 ({arg})"
         i += 1
     return True, f"안전한 git {subcmd} 명령"
+
+
+def is_safe_git_add(sub_args: list[str]) -> tuple[bool, str]:
+    """git add 의 명시 경로와 읽기 전용 dry-run 만 허용합니다."""
+    path_count = 0
+    after_separator = False
+    for arg in sub_args:
+        if after_separator:
+            if arg == ".":
+                return False, "git add 점 경로는 보류"
+            path_count += 1
+            continue
+
+        if arg == "--":
+            after_separator = True
+            continue
+        if arg in ("-n", "--dry-run"):
+            continue
+        if arg in ("-A", "--all", "-u", "--update"):
+            return False, f"git add 전체/업데이트 옵션은 보류 ({arg})"
+        if arg == ".":
+            return False, "git add 점 경로는 보류"
+        if arg.startswith("-"):
+            return False, f"허용되지 않은 git add 옵션 ({arg})"
+        path_count += 1
+
+    if path_count == 0:
+        return False, "git add 명시 경로 없음"
+    return True, "안전한 git add 명시 경로"
+
+
+GIT_COMMIT_FORBIDDEN_OPTIONS = {
+    "--no-verify",
+    "-n",
+    "--amend",
+    "--allow-empty",
+    "--reset-author",
+}
+
+
+def is_safe_git_commit(sub_args: list[str]) -> tuple[bool, str]:
+    """git commit 의 메시지 지정 옵션만 허용하고 검증 우회를 막습니다."""
+    if not sub_args:
+        return False, "git commit 메시지 옵션 없음"
+
+    message_option_seen = False
+    i = 0
+    while i < len(sub_args):
+        arg = sub_args[i]
+        if arg in GIT_COMMIT_FORBIDDEN_OPTIONS or arg in ("--author", "--date"):
+            return False, f"허용되지 않은 git commit 옵션 ({arg})"
+        if (
+            arg.startswith("--no-verify=")
+            or arg.startswith("--author=")
+            or arg.startswith("--date=")
+        ):
+            return False, f"허용되지 않은 git commit 옵션 ({arg})"
+
+        if arg in ("-m", "--message", "-F", "--file"):
+            if i + 1 >= len(sub_args):
+                return False, f"git commit 옵션 값 없음 ({arg})"
+            next_arg = sub_args[i + 1]
+            if next_arg == "--":
+                return False, f"git commit 옵션 값 없음 ({arg})"
+            message_option_seen = True
+            i += 2
+            continue
+        if (arg.startswith("-m") and not arg.startswith("--")) or (
+            arg.startswith("-F") and not arg.startswith("--")
+        ):
+            message_option_seen = True
+            i += 1
+            continue
+        if arg.startswith("--message=") or arg.startswith("--file="):
+            message_option_seen = True
+            i += 1
+            continue
+        return False, f"허용되지 않은 git commit 인자 ({arg})"
+
+    if not message_option_seen:
+        return False, "git commit 메시지 옵션 없음"
+    return True, "안전한 git commit 메시지 지정"
 
 
 def is_safe_git_branch(sub_args: list[str]) -> bool:
@@ -996,6 +1101,12 @@ def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
 
         return "hold", f"git 서브커맨드 보류: {subcmd}"
 
+    # 워커 완료 보고와 차단 알림에 사용하는 정규 조율 전송 경로만 허용합니다.
+    if exe == "orca":
+        if len(argv) >= 3 and argv[1:3] == ["orchestration", "send"]:
+            return "approve", "허용된 Orca orchestration send"
+        return "hold", "orca 서브커맨드는 orchestration send 만 허용"
+
     # 4.3. find 명령어 검사 (-delete, -exec 등 금지)
     if exe == "find":
         if any(arg in FIND_DANGEROUS_FLAGS for arg in argv[1:]):
@@ -1034,6 +1145,11 @@ def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
         return "hold", f"{exe} 파일/디렉토리 변경 명령은 보류 대상"
     if exe in ("docker", "docker-compose"):
         return classify_docker_execution(argv, cmd)
+
+    # 인자 마지막의 도움말은 조회 전용입니다. 위의 명시적 정책 분기는 먼저
+    # 판정하여 git/파일 변경/Orca의 금지된 형태가 도움말 인자로 우회되지 않게 합니다.
+    if argv[-1] in ("--help", "-h"):
+        return "approve", "CLI 도움말 조회"
 
     # 4.7. 기본값: fail-closed 보류
     return "hold", f"안전목록 밖: {exe}"
