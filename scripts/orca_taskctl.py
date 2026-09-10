@@ -3932,6 +3932,8 @@ LAUNCHER_ROUTING_BY_PROVIDER: dict[str, tuple[str, str]] = {
     "kimi-openrouter": ("scripts/orca_kimi_launch.py", "kimi"),
     "claude": ("scripts/orca_claude_launch.py", "claude"),
     "opencode": ("scripts/orca_opencode_launch.py", "opencode"),
+    # OpenRouter 는 제공자가 별개지만 실행기는 OpenCode CLI 를 그대로 씁니다.
+    "openrouter": ("scripts/orca_opencode_launch.py", "opencode"),
     "grok": ("scripts/orca_grok_launch.py", "grok"),
 }
 

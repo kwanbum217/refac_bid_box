@@ -318,6 +318,11 @@ class TestModelPoolAndSelection:
         assert non_auto_pools == {
             "deepseek-flash",
             "qwen-flash",
+            # 2026-09-10 사용자 지정 등록. Codex 워커와 OpenRouter 경유 2종은
+            # 유료 키 또는 승인 대화창 특성 때문에 수동 지정 전용입니다.
+            "codex-luna",
+            "or-deepseek-flash",
+            "or-qwen-coder-next",
             "gemini-3.7-flash-high",
             "gemini-3.7-flash-medium",
             "gemini-3.7-flash-low",
