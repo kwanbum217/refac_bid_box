@@ -7,15 +7,19 @@ RAG 정형 검색 (원본 rag_engine.retrieve_structured_data / _apply_*_filters
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
+import logging
 import threading
+import time
 import unicodedata
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from src.app.core.cache import cache
@@ -37,6 +41,159 @@ from src.app.services.ranking_snapshots import (
     get_top_rankings,
 )
 from src.rag.schemas import RetrievalPlan
+
+logger = logging.getLogger(__name__)
+
+_latency_record: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "structured_latency_record", default=None
+)
+_listener_lock = threading.Lock()
+_listeners_registered = False
+
+
+def _latency_enabled() -> bool:
+    try:
+        return bool(getattr(settings, "LATENCY_SEGMENT_LOGGING", False))
+    except Exception:
+        return False
+
+
+def _register_cursor_listeners() -> None:
+    global _listeners_registered
+    if not _latency_enabled() or _listeners_registered:
+        return
+    with _listener_lock:
+        if _listeners_registered or not _latency_enabled():
+            return
+        try:
+            if not event.contains(Engine, "before_cursor_execute", _before_cursor_execute):
+                event.listen(Engine, "before_cursor_execute", _before_cursor_execute)
+            if not event.contains(Engine, "after_cursor_execute", _after_cursor_execute):
+                event.listen(Engine, "after_cursor_execute", _after_cursor_execute)
+            _listeners_registered = True
+        except Exception as exc:
+            logger.warning("정형 검색 SQL 계측 리스너 등록 중 예외 발생 (무시됨): %s", exc)
+
+
+def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany) -> None:
+    try:
+        record = _latency_record.get()
+        if record is not None and record.get("active"):
+            record.setdefault("cursor_starts", []).append(time.perf_counter())
+    except Exception:
+        return
+
+
+def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany) -> None:
+    try:
+        record = _latency_record.get()
+        if record is None or not record.get("active"):
+            return
+        starts = record.get("cursor_starts", [])
+        if not starts:
+            return
+        elapsed_ms = max(0.0, (time.perf_counter() - starts.pop()) * 1000.0)
+        record["cursor_ms"] = record.get("cursor_ms", 0.0) + elapsed_ms
+        record["cursor_count"] = record.get("cursor_count", 0) + 1
+    except Exception:
+        return
+
+
+def _open_latency_record() -> dict[str, Any] | None:
+    if not _latency_enabled():
+        return None
+    _register_cursor_listeners()
+    record: dict[str, Any] = {
+        "active": True,
+        "started_at": time.perf_counter(),
+        "cursor_ms": 0.0,
+        "cursor_count": 0,
+        "cursor_starts": [],
+        "segments": {},
+        "counters": {},
+    }
+    _latency_record.set(record)
+    return record
+
+
+def _close_latency_record(record: dict[str, Any] | None) -> None:
+    if record is None:
+        return
+    try:
+        record["active"] = False
+        total_ms = max(0.0, (time.perf_counter() - record["started_at"]) * 1000.0)
+        cursor_ms = float(record.get("cursor_ms", 0.0))
+        record["total_ms"] = total_ms
+        record["residual_ms"] = max(0.0, total_ms - cursor_ms)
+        record.pop("cursor_starts", None)
+    except Exception as exc:
+        logger.warning("정형 검색 SQL 계측 종료 중 예외 발생 (무시됨): %s", exc)
+
+
+def get_structured_latency_segments() -> dict[str, Any] | None:
+    """현재 context의 정형 검색 계측 결과를 호출자에게 안전하게 제공합니다."""
+    if not _latency_enabled():
+        return None
+    try:
+        record = _latency_record.get()
+        if record is None or record.get("active"):
+            return None
+        return {
+            "segments": dict(record.get("segments", {})),
+            "cursor_ms": round(float(record.get("cursor_ms", 0.0)), 2),
+            "cursor_count": int(record.get("cursor_count", 0)),
+            "total_ms": round(float(record.get("total_ms", 0.0)), 2),
+            "residual_ms": round(float(record.get("residual_ms", 0.0)), 2),
+        }
+    except Exception as exc:
+        logger.warning("정형 검색 SQL 계측 결과 읽기 중 예외 발생 (무시됨): %s", exc)
+        return None
+
+
+def _record_segment(label: str, elapsed_ms: float) -> None:
+    try:
+        record = _latency_record.get()
+        if record is not None and record.get("active"):
+            segments = record.setdefault("segments", {})
+            segments[label] = round(float(segments.get(label, 0.0)) + elapsed_ms, 2)
+    except Exception:
+        return
+
+
+def _next_segment_label(prefix: str) -> str:
+    record = _latency_record.get()
+    if record is None or not record.get("active"):
+        return prefix
+    counters = record.setdefault("counters", {})
+    index = int(counters.get(prefix, 0)) + 1
+    counters[prefix] = index
+    return f"{prefix}_{index}"
+
+
+def _measure_call(prefix: str):
+    def decorator(func):
+        def measured(*args, **kwargs):
+            started = time.perf_counter()
+            try:
+                return func(*args, **kwargs)
+            finally:
+                _record_segment(
+                    _next_segment_label(prefix), (time.perf_counter() - started) * 1000.0
+                )
+
+        measured.__name__ = func.__name__
+        measured.__doc__ = func.__doc__
+        return measured
+
+    return decorator
+
+
+def _timed_cache_get(key: str) -> Any:
+    started = time.perf_counter()
+    try:
+        return cache.get(key)
+    finally:
+        _record_segment("cache_lookup_ms", (time.perf_counter() - started) * 1000.0)
 
 
 def _normalize_text(value: str | None) -> str:
@@ -345,6 +502,7 @@ def _flight_lock(key: str):
                 _flight_locks.pop(key, None)
 
 
+@_measure_call("top_rows")
 def _top_rows(
     db: Session,
     *,
@@ -375,14 +533,14 @@ def _top_rows(
     # 잦으므로 캐시합니다.
     stmt = live_stmt.limit(limit * LIVE_OVERFETCH_FACTOR)
     key = _stmt_cache_key("rag:top:", stmt)
-    cached_live = cache.get(key)
+    cached_live = _timed_cache_get(key)
     if cached_live is not None:
         rows, dropped = cached_live
         return [tuple(row) for row in rows], int(dropped)
 
     with _flight_lock(key):
         # 잠금 획득 후 캐시 재확인
-        cached_live = cache.get(key)
+        cached_live = _timed_cache_get(key)
         if cached_live is not None:
             rows, dropped = cached_live
             return [tuple(row) for row in rows], int(dropped)
@@ -403,7 +561,13 @@ def _top_rows(
             # 스냅샷이 아직 없는 환경에서만 LIMIT 1 탐침 한 번을 씁니다.
             # 비용 실측(2026-09-06 EXPLAIN): 날짜 무 3,118,641행 전체 스캔,
             # 날짜 유 501,266행 범위 스캔. 선행 와일드카드라 줄일 수 없습니다.
-            dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
+            probe_started = time.perf_counter()
+            try:
+                dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
+            finally:
+                _record_segment(
+                    "corrupted_probe_ms", (time.perf_counter() - probe_started) * 1000.0
+                )
 
         # 손상 탐지 결과까지 함께 담습니다. 순위만 캐시하면 적중할 때마다 탐지
         # 질의가 다시 돌아 절반만 아끼게 됩니다.
@@ -411,6 +575,7 @@ def _top_rows(
         return kept, dropped
 
 
+@_measure_call("cached_aggregate")
 def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list[Any]:
     """집계 결과를 캐시에서 돌려줍니다.
 
@@ -423,13 +588,13 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
     """
     key = _stmt_cache_key("rag:agg:", stmt)
 
-    cached = cache.get(key)
+    cached = _timed_cache_get(key)
     if cached is not None:
         return list(cached)
 
     with _flight_lock(key):
         # 잠금 획득 후 캐시 재확인
-        cached = cache.get(key)
+        cached = _timed_cache_get(key)
         if cached is not None:
             return list(cached)
 
@@ -634,7 +799,7 @@ def _empty_result(plan: RetrievalPlan, hint: str) -> dict[str, Any]:
     }
 
 
-def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
+def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
     try:
         result_conditions = _result_conditions(plan)
     except InvalidDateFilterError as exc:
@@ -751,11 +916,12 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         dropped_total=dropped_total,
     )
 
+    assembly_started = time.perf_counter()
     response_filters = dict(plan.filters or {})
     if response_filters.get("category"):
         response_filters["category_label"] = _category_label(str(response_filters["category"]))
 
-    return {
+    result = {
         "filters": response_filters,
         "summary": {
             "total_bids": int(total_count or 0),
@@ -776,3 +942,18 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
         },
         "insufficiency_hints": insufficiency,
     }
+    _record_segment("result_assembly_ms", (time.perf_counter() - assembly_started) * 1000.0)
+    return result
+
+
+def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
+    """정형 검색을 실행하고 진단용 구간 계측을 contextvar에 남깁니다."""
+    record = _open_latency_record()
+    try:
+        return _retrieve_structured_data_impl(db, plan)
+    except Exception as exc:
+        if record is not None:
+            logger.warning("정형 검색 계측 중 호출 경로 예외를 관찰했습니다: %s", exc)
+        raise
+    finally:
+        _close_latency_record(record)
