@@ -66,7 +66,10 @@ from src.rag.snapshots import (
     _extract_statistical_snapshot,
     _extract_trend_snapshot,
 )
-from src.rag.structured_data import retrieve_structured_data
+from src.rag.structured_data import (
+    get_structured_latency_segments,
+    retrieve_structured_data,
+)
 from src.rag.vector_store import (
     SemanticSearchResult,
     _extract_doc_sort_key,
@@ -543,7 +546,7 @@ def check_numeric_omissions(
 class PreparedContext(tuple):
     """_prepare_context 반환 튜플 (기존 7개 요소와 세부 구간 계측 정보 보존)."""
 
-    timings: dict[str, float]
+    timings: dict[str, Any]
 
     def __new__(
         cls,
@@ -554,7 +557,7 @@ class PreparedContext(tuple):
         provenance: Any,
         context_text: Any,
         messages: Any,
-        timings: dict[str, float] | None = None,
+        timings: dict[str, Any] | None = None,
     ) -> PreparedContext:
         instance = super().__new__(
             cls,
@@ -741,10 +744,12 @@ class HybridRAGEngine:
         vector_failed = False
 
         sql_elapsed_ms = 0.0
+        structured_sql_segments: dict[str, Any] | None = None
         if plan.use_sql and structured_data is None and db is not None:
             t_sql_start = _safe_perf_counter()
             structured_data = retrieve_structured_data(db, plan)
             sql_elapsed_ms = (_safe_perf_counter() - t_sql_start) * 1000.0
+            structured_sql_segments = get_structured_latency_segments()
 
         lexical_elapsed_ms = 0.0
         vector_elapsed_ms = 0.0
@@ -862,6 +867,7 @@ class HybridRAGEngine:
                 "kb_status_ms": round(kb_status_elapsed_ms, 2),
                 "assembly_ms": round(assembly_elapsed_ms, 2),
                 "prepare_total_ms": round(prepare_total_ms, 2),
+                "structured_sql_segments": structured_sql_segments,
             }
         except Exception as exc:
             logger.warning("RAG 준비 구간 계측 중 예외 발생 (무시됨): %s", exc)
@@ -873,6 +879,7 @@ class HybridRAGEngine:
                 "kb_status_ms": 0.0,
                 "assembly_ms": 0.0,
                 "prepare_total_ms": 0.0,
+                "structured_sql_segments": structured_sql_segments,
             }
 
         return PreparedContext(
@@ -954,6 +961,7 @@ class HybridRAGEngine:
         lexical_ms = float(timings.get("lexical_ms", 0.0))
         kb_status_ms = float(timings.get("kb_status_ms", 0.0))
         assembly_ms = float(timings.get("assembly_ms", 0.0))
+        structured_sql_segments = timings.get("structured_sql_segments") or {}
         prepare_total_ms = float(
             timings.get("prepare_total_ms", (_safe_perf_counter() - t_start) * 1000.0)
         )
@@ -997,7 +1005,7 @@ class HybridRAGEngine:
                 logger.info(
                     "rag_engine_latency: trace_id=%s status=%s route=%s use_sql=%s use_vector=%s use_lexical=%s use_kb=%s "
                     "plan_ms=%.2f sql_ms=%.2f vector_ms=%.2f lexical_ms=%.2f kb_ms=%.2f assembly_ms=%.2f prepare_ms=%.2f "
-                    "llm_ms=%.2f guard_ms=%.2f total_ms=%.2f backend=%s",
+                    "llm_ms=%.2f guard_ms=%.2f total_ms=%.2f backend=%s structured_sql_segments=%s",
                     provenance.trace_id,
                     status,
                     plan.route_reason or "unknown",
@@ -1016,6 +1024,7 @@ class HybridRAGEngine:
                     guard_ms,
                     total_ms,
                     backend_name,
+                    json.dumps(structured_sql_segments, ensure_ascii=False, sort_keys=True),
                     extra={
                         "trace_id": provenance.trace_id,
                         "status": status,
@@ -1035,6 +1044,7 @@ class HybridRAGEngine:
                         "guard_ms": guard_ms,
                         "total_ms": total_ms,
                         "backend": backend_name,
+                        "structured_sql_segments": structured_sql_segments,
                     },
                 )
             except Exception as exc:
