@@ -169,6 +169,13 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         "probe_cmd": ["codex", "exec", "ping"],
         "timeout": 30,
     },
+    "openrouter": {
+        # OpenCode CLI 를 실행기로 쓰지만 제공자는 OpenRouter 로 별개입니다.
+        # 한도와 가용성이 OpenCode Zen 무료 풀과 무관하며, 리뷰어 독립 판정에서도
+        # 서로 다른 계열로 취급해야 합니다.
+        "probe_cmd": ["opencode", "run", "--model", "{model}", "ping"],
+        "timeout": 60,
+    },
     "cerebras": {
         "probe_cmd": ["opencode", "run", "--model", "{model}", "ping"],
         "timeout": 20,
@@ -374,6 +381,60 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         # 쓰기 과제 실적이 아직 없으므로 자동 배정에서는 제외하고 --model 명시
         # 지정과 WORKER_MODEL_NOTICE 를 거칩니다.
         "notes": "2026-09-09 실호출에서 403 Access to model denied 로 계정 권한이 없음을 확인했다. 권한이 열리기 전까지 배정하지 말고 qwen-flash 를 쓴다.",
+    },
+    "codex-luna": {
+        "id": "gpt-5.6-luna",
+        "provider": "codex",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": None,
+        "default_effort": "medium",
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+            "documenter",
+        ],
+        # 2026-09-10 사용자 지정으로 등록했습니다. codex exec 실호출 probe 로
+        # 가용성을 확인했으며 ~/.codex/models_cache.json 에도 있습니다. 코디네이터
+        # 모델(gpt-5.6-terra)과 같은 CLI 를 쓰지만 tier 가 primary 라 워커로 배정됩니다.
+        # 커밋 없이 worker_done 을 보내는 경향이 반복 관측되어 커밋 수 확인이 필수이고,
+        # 명령마다 승인 대화창을 띄우므로 터미널 끝을 직접 읽어야 합니다.
+        "notes": "절차적 구현과 조사에 쓰는 Codex 워커. 2026-09-10 실호출 probe 통과. 커밋 없이 worker_done 을 보내는 경향이 있어 커밋 수를 반드시 확인한다. 명령마다 승인 대화창을 띄우므로 worker_watch 만으로는 정체를 못 잡고 터미널 끝을 직접 읽어야 한다.",
+    },
+    "or-deepseek-flash": {
+        "id": "openrouter/deepseek/deepseek-v4-flash",
+        "provider": "openrouter",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+        ],
+        # 2026-09-10 사용자 지정으로 등록했습니다. 같은 모델이 Alibaba Token Plan
+        # 경로(deepseek-flash)에서는 403 Access to model denied 인데 OpenRouter
+        # 경로에서는 실호출 probe 를 통과합니다. 두 경로는 별개이며 한쪽의 실패를
+        # 다른 쪽의 근거로 쓰지 마십시오. OpenRouter 는 유료 키를 소모합니다.
+        "notes": "OpenRouter 경유 deepseek-v4-flash. 2026-09-10 실호출 probe 통과. Token Plan 경로(deepseek-flash)는 403 이며 이 항목과 별개다. 유료 키를 소모하므로 자동 배정에서 제외한다.",
+    },
+    "or-qwen-coder-next": {
+        "id": "openrouter/qwen/qwen3-coder-next",
+        "provider": "openrouter",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "reviewer",
+            "investigator",
+            "documenter",
+        ],
+        # 2026-09-10 사용자 지정으로 등록했습니다. 빌더가 qwen(Token Plan) 또는
+        # codex 계열일 때 다른 제공자로 독립 검토를 맡습니다. 빌더가
+        # or-deepseek-flash 일 때는 같은 openrouter 제공자라 리뷰어로 쓸 수 없고
+        # opencode-muse-spark 를 씁니다.
+        "notes": "OpenRouter 경유 qwen3-coder-next 리뷰어. 2026-09-10 실호출 probe 통과. 빌더가 openrouter 계열이면 독립성이 깨지므로 배정하지 않는다. 유료 키를 소모하므로 자동 배정에서 제외한다.",
     },
     "glm": {
         "id": "glm-5.2",
@@ -1188,6 +1249,7 @@ MODEL_PROVIDER_PREFIXES: tuple[tuple[str, str], ...] = (
     ("cursor", "cursor"),
     ("opencode", "opencode"),
     ("cerebras", "cerebras"),
+    ("openrouter/", "openrouter"),
     ("or-free", "kimi-openrouter"),
     ("kimi", "kimi-openrouter"),
 )
