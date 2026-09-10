@@ -32,6 +32,8 @@ ATTACH_01_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_01"
 # 공고문 배점표를 사용자가 입력한 상태를 재현하는 값이다.
 # 규칙 레지스트리의 값이 아니라 요청 본문으로 보내는 테스트 데이터이므로 여기서 자유롭게 고른다.
 SCORE_TABLE = {"max_price_score": 20, "multiplier": 2, "pass_threshold": 95}
+# 브라우저가 보낸 점수를 서버가 되돌려주는지 검사하는 센티넬 값입니다.
+SENTINEL_SCORE = 999
 
 ANALYZE_URL = "/api/v1/evaluations/analyze"
 
@@ -169,8 +171,8 @@ def _analysis_payload(
         "credibility_score": 0,
         "disqualification": False,
         # 브라우저가 계산해서 보낸 값. 서버는 이것을 신뢰하지 않는다.
-        "price_score": 999,
-        "total_score": 999,
+        "price_score": SENTINEL_SCORE,
+        "total_score": SENTINEL_SCORE,
         "is_qualified": True,
     }
     qualification_input.update(score_table or {})
@@ -490,6 +492,29 @@ def test_analyze_returns_404_for_unknown_bid(client, isolated_db, as_user):
 # --------------------------------------------------------------------------- #
 
 
+def _echoed_sentinel_paths(node, path="$"):
+    """응답 어디에도 클라이언트가 보낸 센티넬 값이 되돌아오지 않았는지 확인합니다.
+
+    원문 문자열에서 "999" 를 찾으면 타임스탬프나 금액이나 ID 에 우연히 들어간
+    999 까지 잡아 무작위로 실패합니다. 검사 대상은 문자열 부분일치가 아니라
+    값 자체이므로 파싱한 JSON 을 순회하며 값이 정확히 999 인 자리만 모읍니다.
+    """
+    found: list[str] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            found.extend(_echoed_sentinel_paths(value, f"{path}.{key}"))
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            found.extend(_echoed_sentinel_paths(value, f"{path}[{index}]"))
+    elif isinstance(node, bool):
+        pass
+    elif (isinstance(node, (int, float)) and node == SENTINEL_SCORE) or (
+        isinstance(node, str) and node.strip() == str(SENTINEL_SCORE)
+    ):
+        found.append(path)
+    return found
+
+
 def test_browser_supplied_scores_are_never_echoed(client, isolated_db, as_user):
     """클라이언트가 보낸 999 점 계열 값은 응답의 어떤 자리에도 나타나지 않는다."""
     as_user(10)
@@ -498,7 +523,8 @@ def test_browser_supplied_scores_are_never_echoed(client, isolated_db, as_user):
     response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
 
     assert response.status_code == 200, response.text
-    assert "999" not in response.text
+    echoed = _echoed_sentinel_paths(response.json())
+    assert echoed == [], f"클라이언트가 보낸 {SENTINEL_SCORE} 가 응답에 되돌아왔습니다: {echoed}"
 
 
 def test_server_scores_are_not_the_requested_ones(client, isolated_db, as_user):
@@ -509,9 +535,10 @@ def test_server_scores_are_not_the_requested_ones(client, isolated_db, as_user):
     response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id, score_table=SCORE_TABLE))
 
     assert response.status_code == 200, response.text
-    text = response.text
-    assert "999" not in text
-    base = {s["scenario_name"]: s for s in response.json()["scenario_results"]}["기준"]
+    payload = response.json()
+    echoed = _echoed_sentinel_paths(payload)
+    assert echoed == [], f"클라이언트가 보낸 {SENTINEL_SCORE} 가 응답에 되돌아왔습니다: {echoed}"
+    base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
     assert base["price_score"] == pytest.approx(2.98)
     assert base["total_score"] == pytest.approx(77.98)
 
