@@ -102,6 +102,20 @@ def test_통계행이_없으면_정상으로_보지_않는다() -> None:
     assert item["stale"] is True
 
 
+def test_갱신시각만_NULL이어도_정상으로_보지_않는다() -> None:
+    item = evaluate_table(
+        "bid_announcements",
+        5_504_119,
+        None,
+        5_504_119,
+        NOW,
+        DEFAULT_MAX_DRIFT_PCT,
+        DEFAULT_MAX_STALE_DAYS,
+    )
+    assert item["status"] == "MISSING"
+    assert item["stale"] is True
+
+
 def test_정상_종료코드는_0이다(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
