@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from scripts.orca_forbidden_artifacts import FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS
+
 # 기본 주기 및 정체 후보 판정 기준 시간 (초 단위)
 DEFAULT_INTERVAL_SECONDS: float = 10.0
 DEFAULT_STALL_THRESHOLD_SECONDS: float = 300.0
@@ -56,25 +58,24 @@ FILE_EDIT_DIALOG_SIGNALS: tuple[str, ...] = (
     "Allow creation of this file?",
 )
 
-FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS = frozenset(
-    {"pnpm-lock.yaml", "pnpm-workspace.yaml", "yarn.lock", "bun.lockb"}
-)
 
+def find_forbidden_lockfiles(worktree: Path, status_lines: list[str]) -> list[str]:
+    """git status 결과에서 워커 워크트리의 금지 산출물 경로를 반환합니다.
 
-def find_forbidden_lockfiles(worktree: Path) -> list[str]:
-    """워커 워크트리의 금지 산출물 경로를 반환합니다.
-
-    node_modules 아래의 서드파티 파일은 검사하지 않으며, 커밋 여부와 무관하게
-    현재 작업 트리의 파일 존재만 확인합니다.
+    워크트리 전체를 다시 순회하지 않고 collect()가 이미 실행한 git status 결과를
+    재사용합니다. 따라서 gitignore 대상 산출물은 untracked 목록에 나오지 않아
+    감시기 검출에서 빠질 수 있습니다. node_modules 아래 경로는 제외합니다.
     """
     if not worktree.is_dir():
         return []
     found: list[str] = []
-    for path in worktree.rglob("*"):
-        relative = path.relative_to(worktree)
-        if not path.is_file() or "node_modules" in relative.parts:
+    for line in status_lines:
+        if not line.startswith("?? "):
             continue
-        if path.name in FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS:
+        relative = Path(line[3:])
+        if "node_modules" in relative.parts:
+            continue
+        if relative.name in FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS:
             found.append(relative.as_posix())
     return sorted(found)
 
@@ -276,9 +277,13 @@ def list_worktrees(repo: Path) -> list[tuple[str, str, str]]:
     return entries
 
 
-def worktree_progress(path: str, base: str = "main") -> tuple[int, int]:
+def worktree_progress(
+    path: str, base: str = "main", status_lines: list[str] | None = None
+) -> tuple[int, int]:
     commits = _run(["git", "-C", path, "log", "--oneline", f"{base}..HEAD"])
     dirty = _run(["git", "-C", path, "status", "--short"])
+    if status_lines is not None:
+        status_lines.extend(dirty.splitlines())
     return (
         len([x for x in commits.splitlines() if x.strip()]),
         len([x for x in dirty.splitlines() if x.strip()]),
@@ -712,9 +717,10 @@ def collect(
     terminals = terminal_map()
     states: list[WorkerState] = []
     for name, path, branch in list_worktrees(repo):
-        commits, dirty = worktree_progress(path, base)
+        status_lines: list[str] = []
+        commits, dirty = worktree_progress(path, base, status_lines)
         state = WorkerState(name=name, path=path, branch=branch, commits=commits, dirty=dirty)
-        state.forbidden_lockfiles = find_forbidden_lockfiles(Path(path))
+        state.forbidden_lockfiles = find_forbidden_lockfiles(Path(path), status_lines)
         if state.forbidden_lockfiles:
             state.notes.append(
                 "경고: 금지된 패키지 관리자 산출물 "

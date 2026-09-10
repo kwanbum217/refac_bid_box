@@ -62,9 +62,13 @@ def test_worker_watch_warns_without_blocking(tmp_path: Path) -> None:
     artifact.write_text("untracked\n", encoding="utf-8")
     fake_worktrees = [("worker", str(tmp_path), "feature")]
 
+    def fake_progress(_path: str, _base: str, status_lines: list[str]) -> tuple[int, int]:
+        status_lines.append("?? pnpm-workspace.yaml")
+        return 0, 1
+
     with (
         patch.object(worker_watch, "list_worktrees", return_value=fake_worktrees),
-        patch.object(worker_watch, "worktree_progress", return_value=(0, 1)),
+        patch.object(worker_watch, "worktree_progress", side_effect=fake_progress),
         patch.object(worker_watch, "terminal_map", return_value={}),
         patch.object(worker_watch, "collect_lingering_sessions", return_value=[]),
         patch.object(worker_watch, "collect_unanswered_questions", return_value=[]),
@@ -77,3 +81,21 @@ def test_worker_watch_warns_without_blocking(tmp_path: Path) -> None:
     assert any("금지된 패키지 관리자 산출물" in note for note in states[0].notes)
     payload = states[0].as_dict()
     assert payload["forbidden_lockfiles"] == ["pnpm-workspace.yaml"]
+
+
+def test_worker_watch_reuses_status_lines_without_running_a_second_process(
+    tmp_path: Path,
+) -> None:
+    status_lines: list[str] = []
+    with patch.object(
+        worker_watch,
+        "_run",
+        side_effect=["", "?? nested/yarn.lock\n"],
+    ) as run:
+        progress = worker_watch.worktree_progress(str(tmp_path), status_lines=status_lines)
+
+    assert progress == (0, 1)
+    assert status_lines == ["?? nested/yarn.lock"]
+    assert worker_watch.find_forbidden_lockfiles(tmp_path, status_lines) == ["nested/yarn.lock"]
+    assert run.call_count == 2
+    assert run.call_args_list[-1].args[0][3:] == ["status", "--short"]

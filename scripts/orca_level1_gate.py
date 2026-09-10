@@ -27,6 +27,7 @@ try:
         verify_changed_files_match,
         write_scope_excess,
     )
+    from scripts.orca_forbidden_artifacts import FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS
     from scripts.summarize_worker_done import summarize_worker_report
     from scripts.validate_commit_message import validate_commit_subject
     from scripts.validate_review_report import evaluate, parse_checklist
@@ -44,6 +45,7 @@ except ModuleNotFoundError:
         verify_changed_files_match,
         write_scope_excess,
     )
+    from scripts.orca_forbidden_artifacts import FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS
     from scripts.summarize_worker_done import summarize_worker_report
     from scripts.validate_commit_message import validate_commit_subject
     from scripts.validate_review_report import evaluate, parse_checklist
@@ -508,11 +510,6 @@ def run_gate8_commit_message(
             "violated_commits": [],
         },
     )
-
-
-FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS = frozenset(
-    {"pnpm-lock.yaml", "pnpm-workspace.yaml", "yarn.lock", "bun.lockb"}
-)
 
 
 def find_forbidden_lockfiles(repo: Path) -> list[str]:
