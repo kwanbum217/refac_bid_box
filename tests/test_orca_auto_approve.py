@@ -68,6 +68,9 @@ class TestClassifyCommandSafe:
             "git branch --list",
             "git worktree list",
             "git worktree list --porcelain",
+            # 명시 경로를 지정한 git add 와 메시지 옵션만 자동 승인합니다.
+            "git add src/main.py",
+            "git commit -m 'feat: something'",
             "rg 'def main' src/",
             "grep 'TODO' README.md",
             "cat pyproject.toml",
@@ -135,7 +138,6 @@ class TestClassifyCommandHold:
             "git checkout main",
             "git checkout -b feature",
             "git restore src/main.py",
-            "git commit -m 'feat: something'",
             "git merge feature",
             "git rebase main",
             "git worktree add ../other main",
