@@ -2,9 +2,32 @@
 
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import negotiation_stats
+
+
+def _detail_template() -> str:
+    return Path("src/app/templates/bids/detail.html").read_text(encoding="utf-8")
+
+
+def test_negotiation_template_uses_unique_distribution_id() -> None:
+    template = _detail_template()
+
+    assert template.count('id="negotiation-info"') == 1
+    assert template.count('id="negotiation-distribution"') == 1
+    assert "$('#negotiation-distribution').removeClass('hidden')" in template
+
+
+def test_negotiation_branch_renders_distribution_before_return() -> None:
+    template = _detail_template()
+    branch_start = template.index("function renderNegotiation(data)")
+    branch_end = template.index("function usesFallbackModel", branch_start)
+    branch = template[branch_start:branch_end]
+
+    assert "renderNegotiationDistribution(data);" in branch
+    assert branch.index("renderNegotiationDistribution(data);") < branch.index("return true;")
 
 
 def _add_pair(db, no: str, base: int, awarded: int, method: str, ord_: str = "000") -> None:
