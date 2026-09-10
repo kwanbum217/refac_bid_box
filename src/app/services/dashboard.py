@@ -502,9 +502,12 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
     # 매칭 데이터 (최근 1년)
     matched_count = db.scalar(
         select(func.count(BidAnnouncement.id)).where(
-            BidAnnouncement.bid_ntce_no.in_(
-                select(BidResult.bid_ntce_no).where(BidResult.rl_openg_dt >= one_year_ago)
+            select(BidResult.id)
+            .where(
+                BidResult.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+                BidResult.rl_openg_dt >= one_year_ago,
             )
+            .exists()
         )
     )
 
