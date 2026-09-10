@@ -149,12 +149,20 @@ def test_filtered_corruption_skips_probe():
 
 
 def test_probe_outcome_is_cached():
-    """탐침 결과까지 함께 캐시돼 다음 적중 때 DB 를 치지 않습니다."""
-    db = _TopRowsSession([("정상건설", 50)], marker=0, probe_hit=True)
+    """탐침 결과까지 함께 캐시돼 다음 적중 때 DB 를 치지 않습니다.
+
+    마커가 있으면 탐침이 아예 돌지 않으므로 이 테스트는 반드시 마커 부재
+    상태여야 합니다. marker=0 은 "확인했고 깨끗함" 이라 탐침을 건너뛰어
+    이 계약을 검증하지 못합니다.
+    """
+    db = _TopRowsSession([("정상건설", 50)], marker=None, probe_hit=True)
 
     first = _top(db)
     executions_after_first = db.live_executions + db.probe_executions
     second = _top(db)
 
+    # 탐침이 실제로 돌았는지 먼저 못박습니다. 이 단언이 없으면 판정 조건이
+    # 바뀌어 탐침을 건너뛰게 됐을 때 테스트가 조용히 무의미해집니다.
+    assert db.probe_executions == 1
     assert first == second
     assert db.live_executions + db.probe_executions == executions_after_first
