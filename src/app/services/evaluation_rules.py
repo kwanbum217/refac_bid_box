@@ -284,6 +284,19 @@ BLOCK_CODE_NOT_SERVC = "NOT_SERVC"
 BLOCK_CODE_NON_PRED_PRICE = "NON_PRED_PRICE"
 BLOCK_CODE_MANUAL_EVALUATION = "MANUAL_EVALUATION"
 BLOCK_CODE_RULE_NOT_FOUND = "RULE_NOT_FOUND"
+BLOCK_CODE_NEGOTIATION_CONTRACT = "NEGOTIATION_CONTRACT"
+
+NEGOTIATION_VARIANT_STANDARD = "STANDARD"
+NEGOTIATION_VARIANT_SW = "SW"
+NEGOTIATION_VARIANT_ENGINEERING = "ENGINEERING"
+NEGOTIATION_VARIANT_CONSTRUCTION_ENGINEERING = "CONSTRUCTION_ENGINEERING"
+
+_NEGOTIATION_VARIANTS: tuple[tuple[str, str], ...] = (
+    ("건설엔지니어링", NEGOTIATION_VARIANT_CONSTRUCTION_ENGINEERING),
+    ("엔지니어링", NEGOTIATION_VARIANT_ENGINEERING),
+    ("SW사업", NEGOTIATION_VARIANT_SW),
+    ("협상에 의한 낙찰자 결정", NEGOTIATION_VARIANT_STANDARD),
+)
 
 
 @dataclass(frozen=True)
@@ -297,6 +310,9 @@ class RuleResolutionResult:
     effective_lwlt_rate: Decimal | None = None
     rate_source: str | None = None  # "ANNOUNCEMENT" 또는 "RULE_DEFAULT"
     warnings: list[str] = field(default_factory=list)
+    negotiation_tech_eval_rate: Decimal | None = None
+    negotiation_price_eval_rate: Decimal | None = None
+    negotiation_variant: str | None = None
 
 
 def normalize_pattern_string(text: str) -> str:
@@ -357,6 +373,8 @@ def resolve_evaluation_rule(
     prearng_prce_dcsn_mthd_nm: str | None,
     sucsfbid_mthd_nm: str | None,
     sucsfbid_lwlt_rate: Decimal | str | float | None = None,
+    tech_ablt_evl_rt: Decimal | str | float | None = None,
+    bid_prce_evl_rt: Decimal | str | float | None = None,
     rules: Sequence[EvaluationRule] = POST_20260526_RULES,
 ) -> RuleResolutionResult:
     """일반용역 적격심사 대상 판별 순서에 따라 차단 조건 및 별표 규칙을 확정합니다.
@@ -404,7 +422,55 @@ def resolve_evaluation_rule(
             warnings=warnings,
         )
 
-    # 4 & 5. 별표 규칙 매칭
+    # 4. 협상에의한계약은 적격심사 별표가 아닌 별도 평가 체계입니다.
+    negotiation_variant: str | None = None
+    if sucsfbid_mthd_nm and "협상에의한계약" in sucsfbid_mthd_nm:
+        for marker, variant in _NEGOTIATION_VARIANTS:
+            if marker in sucsfbid_mthd_nm:
+                negotiation_variant = variant
+                break
+        if negotiation_variant is None:
+            negotiation_variant = NEGOTIATION_VARIANT_STANDARD
+
+        parsed_rates: list[Decimal | None] = []
+        rate_labels = ("기술능력 평가비율(techAbltEvlRt)", "입찰가격 평가비율(bidPrceEvlRt)")
+        for label, value in zip(rate_labels, (tech_ablt_evl_rt, bid_prce_evl_rt), strict=True):
+            parsed: Decimal | None = None
+            try:
+                text_value = str(value).strip() if value is not None else ""
+                if text_value:
+                    parsed = Decimal(str(value))
+            except (ArithmeticError, TypeError, ValueError):
+                parsed = None
+            if parsed is None:
+                warnings.append(
+                    f"협상 공고의 {label} 값이 없거나 숫자가 아니어서 제공하지 않습니다."
+                )
+            parsed_rates.append(parsed)
+
+        tech_rate, price_rate = parsed_rates
+        if (
+            tech_rate is not None
+            and price_rate is not None
+            and tech_rate + price_rate != Decimal("100")
+        ):
+            warnings.append(
+                f"협상 공고의 기술능력·입찰가격 평가비율 합계({tech_rate + price_rate})가 100이 아닙니다."
+            )
+        return RuleResolutionResult(
+            is_blocked=True,
+            block_reason_code=BLOCK_CODE_NEGOTIATION_CONTRACT,
+            block_reason_message=(
+                "협상에의한계약 공고입니다. 적격심사 점수 산식은 적용하지 않으며 "
+                "공고의 기술능력·입찰가격 평가비율만 제공합니다."
+            ),
+            warnings=warnings,
+            negotiation_tech_eval_rate=tech_rate,
+            negotiation_price_eval_rate=price_rate,
+            negotiation_variant=negotiation_variant,
+        )
+
+    # 5 & 6. 별표 규칙 매칭
     if not sucsfbid_mthd_nm:
         return RuleResolutionResult(
             is_blocked=True,
@@ -475,11 +541,15 @@ def resolve_evaluation_rule_from_raw_data(
     prearng_mthd = raw_data.get("prearngPrceDcsnMthdNm")
     sucsfbid_mthd = raw_data.get("sucsfbidMthdNm")
     lwlt_rate = raw_data.get("sucsfbidLwltRate")
+    tech_eval_rate = raw_data.get("techAbltEvlRt")
+    price_eval_rate = raw_data.get("bidPrceEvlRt")
 
     return resolve_evaluation_rule(
         category=category,
         prearng_prce_dcsn_mthd_nm=prearng_mthd,
         sucsfbid_mthd_nm=sucsfbid_mthd,
         sucsfbid_lwlt_rate=lwlt_rate,
+        tech_ablt_evl_rt=tech_eval_rate,
+        bid_prce_evl_rt=price_eval_rate,
         rules=rules,
     )

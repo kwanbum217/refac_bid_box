@@ -250,6 +250,18 @@ class EvaluationResponse(BaseModel):
         default=None,
         description="적격심사 규칙 판별 근거 (낙찰방법 식별문자열 매칭 근거 등)",
     )
+    negotiation_variant: str | None = Field(
+        default=None,
+        description="협상에의한계약 변종 식별자 (STANDARD/SW/ENGINEERING/CONSTRUCTION_ENGINEERING)",
+    )
+    negotiation_tech_eval_rate: float | None = Field(
+        default=None,
+        description="협상에의한계약 기술능력 평가비율 (%)",
+    )
+    negotiation_price_eval_rate: float | None = Field(
+        default=None,
+        description="협상에의한계약 입찰가격 평가비율 (%)",
+    )
     blocked: bool = Field(
         default=False,
         description="계산 차단 여부 (지원 범위 밖, 비예가, 수기심사 등 계산 불가 조건 시 True)",
