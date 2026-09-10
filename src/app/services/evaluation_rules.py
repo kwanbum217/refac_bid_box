@@ -275,6 +275,19 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
     ),
 )
 
+# 기술용역은 식별 문자열별 고정 규칙으로 환원하지 않고 공고 하한율만 사용합니다.
+SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT = EvaluationRule(
+    rule_id="SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT",
+    service_type="TECH",
+    table_name="기술용역 적격심사",
+    description="기술용역 적격심사 공고 하한율",
+    effective_date="2026-05-26",
+    source="공고별 sucsfbidLwltRate",
+    patterns=(),
+    lwlt_rate=Decimal("0"),
+    base_rate=Decimal("0.90"),
+)
+
 # 2026-05-26 개정 전 규칙 저장소 (과거 분석 재현용 예약)
 PRE_20260526_RULES: tuple[EvaluationRule, ...] = ()
 
@@ -285,6 +298,7 @@ BLOCK_CODE_NON_PRED_PRICE = "NON_PRED_PRICE"
 BLOCK_CODE_MANUAL_EVALUATION = "MANUAL_EVALUATION"
 BLOCK_CODE_RULE_NOT_FOUND = "RULE_NOT_FOUND"
 BLOCK_CODE_NEGOTIATION_CONTRACT = "NEGOTIATION_CONTRACT"
+BLOCK_CODE_TECH_SERVICE_MISSING_LWLT = "TECH_SERVICE_MISSING_LWLT"
 
 NEGOTIATION_VARIANT_STANDARD = "STANDARD"
 NEGOTIATION_VARIANT_SW = "SW"
@@ -376,6 +390,7 @@ def resolve_evaluation_rule(
     tech_ablt_evl_rt: Decimal | str | float | None = None,
     bid_prce_evl_rt: Decimal | str | float | None = None,
     rules: Sequence[EvaluationRule] = POST_20260526_RULES,
+    srvce_div_nm: str | None = None,
 ) -> RuleResolutionResult:
     """일반용역 적격심사 대상 판별 순서에 따라 차단 조건 및 별표 규칙을 확정합니다.
 
@@ -470,6 +485,39 @@ def resolve_evaluation_rule(
             negotiation_variant=negotiation_variant,
         )
 
+    # 기술용역 적격심사는 협상 판별 이후, 일반용역 별표 매칭 이전에 판별합니다.
+    if srvce_div_nm == "기술용역" and sucsfbid_mthd_nm and "적격심사" in sucsfbid_mthd_nm:
+        tech_parsed_lwlt_rate: Decimal | None = None
+        if sucsfbid_lwlt_rate is not None:
+            try:
+                str_rate = str(sucsfbid_lwlt_rate).strip()
+                if str_rate:
+                    tech_parsed_lwlt_rate = Decimal(str_rate)
+            except (ArithmeticError, TypeError, ValueError):
+                tech_parsed_lwlt_rate = None
+
+        if tech_parsed_lwlt_rate is None or tech_parsed_lwlt_rate <= Decimal("0"):
+            return RuleResolutionResult(
+                is_blocked=True,
+                block_reason_code=BLOCK_CODE_TECH_SERVICE_MISSING_LWLT,
+                block_reason_message=(
+                    "기술용역 공고의 낙찰하한율이 없어 공고별 하한율을 적용할 수 없습니다."
+                ),
+                rule=SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT,
+                effective_lwlt_rate=Decimal("0"),
+                warnings=warnings,
+            )
+
+        return RuleResolutionResult(
+            is_blocked=False,
+            block_reason_code=None,
+            block_reason_message=None,
+            rule=SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT,
+            effective_lwlt_rate=tech_parsed_lwlt_rate,
+            rate_source="ANNOUNCEMENT",
+            warnings=warnings,
+        )
+
     # 5 & 6. 별표 규칙 매칭
     if not sucsfbid_mthd_nm:
         return RuleResolutionResult(
@@ -543,6 +591,7 @@ def resolve_evaluation_rule_from_raw_data(
     lwlt_rate = raw_data.get("sucsfbidLwltRate")
     tech_eval_rate = raw_data.get("techAbltEvlRt")
     price_eval_rate = raw_data.get("bidPrceEvlRt")
+    srvce_div_nm = raw_data.get("srvceDivNm")
 
     return resolve_evaluation_rule(
         category=category,
@@ -552,4 +601,5 @@ def resolve_evaluation_rule_from_raw_data(
         tech_ablt_evl_rt=tech_eval_rate,
         bid_prce_evl_rt=price_eval_rate,
         rules=rules,
+        srvce_div_nm=srvce_div_nm,
     )
