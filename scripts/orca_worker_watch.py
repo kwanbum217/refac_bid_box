@@ -56,6 +56,28 @@ FILE_EDIT_DIALOG_SIGNALS: tuple[str, ...] = (
     "Allow creation of this file?",
 )
 
+FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS = frozenset(
+    {"pnpm-lock.yaml", "pnpm-workspace.yaml", "yarn.lock", "bun.lockb"}
+)
+
+
+def find_forbidden_lockfiles(worktree: Path) -> list[str]:
+    """워커 워크트리의 금지 산출물 경로를 반환합니다.
+
+    node_modules 아래의 서드파티 파일은 검사하지 않으며, 커밋 여부와 무관하게
+    현재 작업 트리의 파일 존재만 확인합니다.
+    """
+    if not worktree.is_dir():
+        return []
+    found: list[str] = []
+    for path in worktree.rglob("*"):
+        relative = path.relative_to(worktree)
+        if not path.is_file() or "node_modules" in relative.parts:
+            continue
+        if path.name in FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS:
+            found.append(relative.as_posix())
+    return sorted(found)
+
 
 def normalize_text(text: str) -> str:
     """대소문자와 공백(줄바꿈, 연속 공백)을 정규화합니다."""
@@ -168,6 +190,7 @@ class WorkerState:
     blocked_fix: str | None = None
     blocked_kind: BlockKind | None = None
     blocked_source: str | None = None
+    forbidden_lockfiles: list[str] = field(default_factory=list)
     stall_candidate: bool = False
     unchanged_seconds: float = 0.0
     notes: list[str] = field(default_factory=list)
@@ -189,6 +212,7 @@ class WorkerState:
             "blocked_reason": self.blocked_reason,
             "blocked_fix": self.blocked_fix,
             "blocked_source": self.blocked_source,
+            "forbidden_lockfiles": list(self.forbidden_lockfiles),
             "stall_candidate": self.stall_candidate,
             "unchanged_seconds": round(self.unchanged_seconds, 1),
             "notes": list(self.notes),
@@ -690,6 +714,13 @@ def collect(
     for name, path, branch in list_worktrees(repo):
         commits, dirty = worktree_progress(path, base)
         state = WorkerState(name=name, path=path, branch=branch, commits=commits, dirty=dirty)
+        state.forbidden_lockfiles = find_forbidden_lockfiles(Path(path))
+        if state.forbidden_lockfiles:
+            state.notes.append(
+                "경고: 금지된 패키지 관리자 산출물 "
+                f"{len(state.forbidden_lockfiles)}건 감지 "
+                f"({', '.join(state.forbidden_lockfiles)})"
+            )
         candidates = terminals.get(path, [])
         info, select_notes = select_worker_terminal(candidates)
         state.notes.extend(select_notes)
@@ -863,6 +894,7 @@ def watch_loop(
                 s.blocked_kind,
                 s.blocked_reason,
                 s.blocked_source,
+                tuple(s.forbidden_lockfiles),
                 s.stall_candidate,
             )
             for s in states

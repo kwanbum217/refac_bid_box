@@ -510,6 +510,49 @@ def run_gate8_commit_message(
     )
 
 
+FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS = frozenset(
+    {"pnpm-lock.yaml", "pnpm-workspace.yaml", "yarn.lock", "bun.lockb"}
+)
+
+
+def find_forbidden_lockfiles(repo: Path) -> list[str]:
+    """작업 트리의 금지된 패키지 관리자 산출물 경로를 반환합니다.
+
+    커밋 여부와 무관하게 현재 파일 시스템을 확인하며, node_modules 아래의
+    서드파티 산출물은 저장소 정책 대상이 아니므로 제외합니다.
+    """
+    if not repo.is_dir():
+        raise GateToolError(f"저장소 경로가 존재하지 않거나 디렉터리가 아님: {repo}")
+
+    found: list[str] = []
+    for path in repo.rglob("*"):
+        if not path.is_file() or "node_modules" in path.relative_to(repo).parts:
+            continue
+        if path.name in FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS:
+            found.append(path.relative_to(repo).as_posix())
+    return sorted(found)
+
+
+def run_gate9_forbidden_lockfiles(repo: Path) -> GateResult:
+    """게이트 9: 금지된 패키지 관리자 산출물의 작업 트리 존재 검증."""
+    violated = find_forbidden_lockfiles(repo)
+    if violated:
+        return GateResult(
+            name="게이트 9 금지 lockfile 검증",
+            status="fail",
+            summary=f"금지된 패키지 관리자 산출물 {len(violated)}건 감지",
+            details=[f"위반 목록: {', '.join(violated)}"],
+            raw_data={"forbidden_files": violated},
+        )
+    return GateResult(
+        name="게이트 9 금지 lockfile 검증",
+        status="pass",
+        summary="금지된 패키지 관리자 산출물 없음",
+        details=[],
+        raw_data={"forbidden_files": []},
+    )
+
+
 ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
@@ -1374,6 +1417,7 @@ def build_json_output(
         "게이트 6 worker_done 보고": "gate6_worker_done",
         "게이트 7 gitignore 검증": "gate7_gitignored",
         "게이트 8 커밋 메시지": "gate8_commit_message",
+        "게이트 9 금지 lockfile 검증": "gate9_forbidden_lockfiles",
     }
     gates_dict: dict[str, Any] = {}
     fallback_idx = 0
@@ -1583,6 +1627,13 @@ def run_level1_gate(
         # 게이트 8: 커밋 메시지 규약 검증
         g8 = run_gate8_commit_message(repo_path, base, branch, capsule_path=capsule_path)
         gates.append(g8)
+
+        # 게이트 9: 커밋 여부와 무관한 작업 트리의 금지 산출물 검증.
+        # Level 1 병합 판정은 Capsule을 받는 호출이므로 해당 경로에서 적용한다.
+        # Capsule 없는 기존 진단 호출의 게이트 집계 호환성은 유지한다.
+        if capsule_path is not None:
+            g9 = run_gate9_forbidden_lockfiles(repo_path)
+            gates.append(g9)
 
     except GateToolError as exc:
         error_msg = str(exc)
