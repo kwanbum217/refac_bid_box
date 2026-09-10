@@ -357,6 +357,17 @@ def _blocked_response(
         rule_id=rule_result.rule.rule_id if rule_result.rule else None,
         rule_name=rule_result.rule.description if rule_result.rule else None,
         rule_basis=_rule_basis(bid, rule_result),
+        negotiation_variant=rule_result.negotiation_variant,
+        negotiation_tech_eval_rate=(
+            float(rule_result.negotiation_tech_eval_rate)
+            if rule_result.negotiation_tech_eval_rate is not None
+            else None
+        ),
+        negotiation_price_eval_rate=(
+            float(rule_result.negotiation_price_eval_rate)
+            if rule_result.negotiation_price_eval_rate is not None
+            else None
+        ),
         blocked=True,
         blocked_reason=f"{code}: {message}",
         warnings=list(rule_result.warnings),

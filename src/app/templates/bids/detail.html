@@ -312,6 +312,15 @@
                                 </div>
                             </div>
                         </div>
+                        <div id="negotiation-info" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                            <div class="font-bold text-blue-700">협상에의한계약 공고</div>
+                            <div class="text-sm text-blue-700">적격심사 점수 산식은 적용하지 않고 공고에 기재된 평가비율만 제공합니다.</div>
+                            <div class="grid grid-cols-1 grid-cols-3 gap-3 text-sm">
+                                <div><div class="detail-label">계약 유형</div><div id="negotiation-variant" class="font-semibold text-slate-800">-</div></div>
+                                <div><div class="detail-label">기술능력 평가비율</div><div id="negotiation-tech-rate" class="font-semibold text-slate-800">-</div></div>
+                                <div><div class="detail-label">입찰가격 평가비율</div><div id="negotiation-price-rate" class="font-semibold text-slate-800">-</div></div>
+                            </div>
+                        </div>
                         <div id="evaluation-loading" class="flex items-center gap-2 text-sm text-slate-500">
                             <i class="fas fa-circle-notch fa-spin"></i>
                             <span>적격심사 규칙 확인 중...</span>
@@ -319,7 +328,7 @@
                     </div>
 
                     <!-- 2. 정량평가 입력표 -->
-                    <div class="space-y-3 border-t border-slate-200 pt-4">
+                    <div id="qualification-section" class="space-y-3 border-t border-slate-200 pt-4">
                         <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">정량평가 입력</h3>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm" id="qualification-input-table">
@@ -864,9 +873,25 @@ $(document).ready(function() {
             'NOT_SERVC': '일반용역 공고가 아님',
             'NON_PRED_PRICE': '비예가라 예정가격이 없음',
             'MANUAL_EVALUATION': '발주기관 자체 기준 수기심사라 표준 배점표를 적용할 수 없음',
-            'RULE_NOT_FOUND': '낙찰방법으로 적격심사 별표를 특정할 수 없음'
+            'RULE_NOT_FOUND': '낙찰방법으로 적격심사 별표를 특정할 수 없음',
+            'NEGOTIATION_CONTRACT': '협상에의한계약으로 적격심사 점수 산식을 적용하지 않음'
         };
         return reasons[code] || code;
+    }
+
+    function renderNegotiation(data) {
+        const isNegotiation = data.negotiation_variant != null;
+        $('#negotiation-info').toggleClass('hidden', !isNegotiation);
+        $('#qualification-section').toggleClass('hidden', isNegotiation);
+        $('#scenario-results').toggleClass('hidden', isNegotiation || $('#scenario-tbody').children().length === 0);
+        if (!isNegotiation) return false;
+        $('#evaluation-scope-badge').text('협상에의한계약 평가비율 제공');
+        $('#evaluation-blocked').addClass('hidden');
+        $('#evaluation-rule').addClass('hidden');
+        $('#negotiation-variant').text(data.negotiation_variant || '-');
+        $('#negotiation-tech-rate').text(formatRate(data.negotiation_tech_eval_rate));
+        $('#negotiation-price-rate').text(formatRate(data.negotiation_price_eval_rate));
+        return true;
     }
 
     function usesFallbackModel(data) {
@@ -934,7 +959,9 @@ $(document).ready(function() {
             }),
             success: function(data) {
                 $('#evaluation-loading').addClass('hidden');
-                if (data.blocked) {
+                if (renderNegotiation(data)) {
+                    return;
+                } else if (data.blocked) {
                     $('#evaluation-blocked').removeClass('hidden');
                     $('#blocked-reason').text(getBlockedReasonText(data.blocked_reason) + (data.rule_basis ? ' (' + data.rule_basis + ')' : ''));
                 } else {
@@ -1023,6 +1050,9 @@ $(document).ready(function() {
             }),
             success: function(data) {
                 if (data.status === 'success' || data.status === 'blocked') {
+                    if (renderNegotiation(data)) {
+                        return;
+                    }
                     // 적용 규칙 표시 업데이트
                     if (data.rule_id) {
                         $('#evaluation-rule').removeClass('hidden');
