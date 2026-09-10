@@ -224,13 +224,13 @@ facts:
       - docs/ops/model_promotion_runbook.md
   - id: servc_qualification_evaluation
     status: active
-    decision_date: "2026-09-09"
-    claim: "일반용역 적격심사 정량평가 기능은 규칙·계산·저장·API·화면 전 계층을 병합하고 마이그레이션 둘을 적용했으며 실사용 검증과 지원 범위 확장을 추진합니다."
+    decision_date: "2026-09-10"
+    claim: "일반용역 적격심사 정량평가 기능은 규칙·계산·저장·API·화면 전 계층을 병합했고 기술용역은 공고 하한율 판별까지 넣었으며 화면 배지 문구는 후속으로 추진합니다."
     document_anchor: "일반용역 적격심사 정량평가 기능은"
     evidence:
       - docs/design/servc_qualification_evaluation_design_20260909.md
-      - docs/ops/handoff_20260909_wave_ap_ev_session_close.md
-      - docs/analysis/aq3_evaluation_realuse_scenarios_20260910.md
+      - docs/analysis/ar2_tech_servc_realuse_announcements_20260910.md
+      - tests/test_tech_service_qualification.py
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/design/servc_qualification_evaluation_design_20260909.md
