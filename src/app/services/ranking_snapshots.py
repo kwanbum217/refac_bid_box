@@ -179,18 +179,22 @@ def rebuild_ranking_snapshots(db: Session, *, force_weekly: bool = False) -> dic
                     BidRankingSnapshot.category == category,
                 )
             )
-            if dropped:
-                db.add(
-                    BidRankingSnapshot(
-                        dataset=dataset,
-                        dimension=dimension,
-                        category=category,
-                        rank=SKIPPED_MARKER_RANK,
-                        label=None,
-                        metric_count=1,
-                        rebuilt_at=started,
-                    )
+            # 손상 제외 마커는 손상 유무와 무관하게 항상 기록합니다. 마커가 없으면
+            # "모른다" 와 "깨끗하다" 를 구분할 수 없어 실시간 경로가 매번
+            # corrupted_probe 를 돕니다. 있으면 1, 없으면 0 을 남겨 존재 여부와
+            # 값을 분리해 읽을 수 있게 합니다. rank 0 행은 조회에서 제외됩니다.
+            db.add(
+                BidRankingSnapshot(
+                    dataset=dataset,
+                    dimension=dimension,
+                    category=category,
+                    rank=SKIPPED_MARKER_RANK,
+                    label=None,
+                    metric_count=int(bool(dropped)),
+                    rebuilt_at=started,
                 )
+            )
+            written += 1
             for rank, (label, count) in enumerate(rows, start=1):
                 db.add(
                     BidRankingSnapshot(
@@ -260,6 +264,26 @@ def get_skipped_count(db: Session, dataset: str, dimension: str, category: str) 
         )
     )
     return int(value or 0)
+
+
+def get_skipped_marker(db: Session, dataset: str, dimension: str, category: str) -> int | None:
+    """손상 제외 마커의 존재 여부와 값을 분리해 돌려줍니다.
+
+    마커 행이 없으면 None 을 돌려 "모른다" 를 뜻합니다. 있으면 metric_count 를
+    int 로 돌려줍니다. 0 은 "확인했고 깨끗했다" 는 뜻이라 None 과 다릅니다.
+    기존 get_skipped_count 의 시그니처와 반환 의미는 그대로 둡니다.
+    """
+    value = db.scalar(
+        select(BidRankingSnapshot.metric_count).where(
+            BidRankingSnapshot.dataset == dataset,
+            BidRankingSnapshot.dimension == dimension,
+            BidRankingSnapshot.category == (category or ALL_CATEGORIES),
+            BidRankingSnapshot.rank == SKIPPED_MARKER_RANK,
+        )
+    )
+    if value is None:
+        return None
+    return int(value)
 
 
 def snapshot_age(db: Session) -> datetime | None:

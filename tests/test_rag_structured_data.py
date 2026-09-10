@@ -53,7 +53,7 @@ class _TopRowsSession:
     않습니다. 순위 질의가 항상 첫 번째 `execute` 이고 탐침이 두 번째입니다.
     """
 
-    def __init__(self, rows, *, marker=0, probe_hit=False):
+    def __init__(self, rows, *, marker=None, probe_hit=False):
         self._rows = rows
         self._marker = marker
         self._probe_hit = probe_hit
@@ -102,7 +102,7 @@ def test_probe_runs_even_when_ranking_is_filled():
     SQL 이 손상값을 먼저 걸러 보내므로 파이썬 계층은 창밖 제외를 셀 수
     없고, 탐침 없이 0을 확정하면 안내가 사라집니다.
     """
-    db = _TopRowsSession([("정상건설", 50), ("대한건설", 40)], marker=0, probe_hit=True)
+    db = _TopRowsSession([("정상건설", 50), ("대한건설", 40)], marker=None, probe_hit=True)
 
     kept, dropped = _top(db)
 
@@ -114,7 +114,7 @@ def test_probe_runs_even_when_ranking_is_filled():
 
 def test_probe_confirms_zero_when_no_corruption():
     """손상이 없으면 탐침이 0을 확정합니다."""
-    db = _TopRowsSession([("정상건설", 50)], marker=0, probe_hit=False)
+    db = _TopRowsSession([("정상건설", 50)], marker=None, probe_hit=False)
 
     kept, dropped = _top(db)
 
