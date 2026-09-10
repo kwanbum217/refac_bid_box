@@ -887,18 +887,34 @@ $(document).ready(function() {
             'NON_PRED_PRICE': '비예가라 예정가격이 없음',
             'MANUAL_EVALUATION': '발주기관 자체 기준 수기심사라 표준 배점표를 적용할 수 없음',
             'RULE_NOT_FOUND': '낙찰방법으로 적격심사 별표를 특정할 수 없음',
-            'NEGOTIATION_CONTRACT': '협상에의한계약으로 적격심사 점수 산식을 적용하지 않음'
+            'NEGOTIATION_CONTRACT': '협상에의한계약으로 적격심사 점수 산식을 적용하지 않음',
+            'TECH_SERVICE_MISSING_LWLT': '기술용역 공고에 낙찰하한율이 없어 계산할 수 없음'
         };
-        return reasons[code] || code;
+        const rawReason = String(code || '');
+        const codePrefix = rawReason.match(/^([A-Z][A-Z_]*)\s*:/);
+        const reasonCode = codePrefix ? codePrefix[1] : rawReason;
+        if (reasons[reasonCode]) return reasons[reasonCode];
+        return codePrefix ? rawReason.slice(codePrefix[0].length).trim() : rawReason;
+    }
+
+    function setEvaluationScopeBadge(data) {
+        const defaultText = '일반용역 적격심사만 지원 (약 6%)';
+        let badgeText = defaultText;
+        if (data && data.negotiation_variant != null) {
+            badgeText = '협상에의한계약 평가비율 제공';
+        } else if (data && data.rule_id === 'SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT') {
+            badgeText = '기술용역 적격심사 공고 (공고 하한율 적용)';
+        }
+        $('#evaluation-scope-badge').text(badgeText);
     }
 
     function renderNegotiation(data) {
         const isNegotiation = data.negotiation_variant != null;
+        setEvaluationScopeBadge(data);
         $('#negotiation-info').toggleClass('hidden', !isNegotiation);
         $('#qualification-section').toggleClass('hidden', isNegotiation);
         $('#scenario-results').toggleClass('hidden', isNegotiation || $('#scenario-tbody').children().length === 0);
         if (!isNegotiation) return false;
-        $('#evaluation-scope-badge').text('협상에의한계약 평가비율 제공');
         $('#evaluation-blocked').addClass('hidden');
         $('#evaluation-rule').addClass('hidden');
         $('#negotiation-variant').text(data.negotiation_variant || '-');
