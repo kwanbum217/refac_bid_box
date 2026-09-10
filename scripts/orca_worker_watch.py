@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 import subprocess  # nosec B404  고정된 git·orca 명령만 실행하며 사용자 입력을 받지 않습니다
 import sys
@@ -64,6 +65,55 @@ FILE_EDIT_DIALOG_SIGNALS: tuple[str, ...] = (
     "Allow creation of this file?",
 )
 
+LOGGER = logging.getLogger(__name__)
+
+
+def _decode_git_status_path(raw_path: str) -> str | None:
+    """git status 의 C 스타일 인용 경로를 실제 경로 문자열로 복원합니다."""
+    if not (raw_path.startswith('"') and raw_path.endswith('"')):
+        return raw_path
+
+    encoded = raw_path[1:-1]
+    decoded = bytearray()
+    index = 0
+    escapes = {
+        "a": b"\a",
+        "b": b"\b",
+        "f": b"\f",
+        "n": b"\n",
+        "r": b"\r",
+        "t": b"\t",
+        "v": b"\v",
+        "\\": b"\\",
+        '"': b'"',
+    }
+    try:
+        while index < len(encoded):
+            char = encoded[index]
+            if char != "\\":
+                decoded.extend(char.encode("utf-8"))
+                index += 1
+                continue
+            index += 1
+            if index >= len(encoded):
+                raise ValueError("끝난 백슬래시")
+            char = encoded[index]
+            if char in escapes:
+                decoded.extend(escapes[char])
+                index += 1
+                continue
+            if char not in "01234567":
+                raise ValueError(f"지원하지 않는 이스케이프: \\{char}")
+            end = index + 1
+            while end < len(encoded) and end < index + 3 and encoded[end] in "01234567":
+                end += 1
+            decoded.append(int(encoded[index:end], 8))
+            index = end
+        return decoded.decode("utf-8")
+    except (UnicodeDecodeError, ValueError):
+        LOGGER.warning("git status 경로를 디코딩하지 못해 건너뜁니다: %s", raw_path)
+        return None
+
 
 def find_forbidden_lockfiles(worktree: Path, status_lines: list[str]) -> list[str]:
     """git status 결과에서 워커 워크트리의 금지 산출물 경로를 반환합니다.
@@ -78,7 +128,10 @@ def find_forbidden_lockfiles(worktree: Path, status_lines: list[str]) -> list[st
     for line in status_lines:
         if not line.startswith("?? "):
             continue
-        relative = Path(line[3:])
+        decoded_path = _decode_git_status_path(line[3:])
+        if decoded_path is None:
+            continue
+        relative = Path(decoded_path)
         if "node_modules" in relative.parts:
             continue
         if relative.name in FORBIDDEN_PACKAGE_MANAGER_ARTIFACTS:
