@@ -2,7 +2,7 @@
 
 > 검증일: 2026-09-10
 >
-> 상태: 코드 전환 및 회귀 테스트 완료, 운영 DB 실측 차단
+> 상태: 코드 전환·회귀 테스트·운영 DB 실측 완료
 
 ## 1. 변경 내용
 
@@ -29,7 +29,7 @@ uv run pytest tests/test_dashboard_compare_stats_exists.py tests/test_dashboard_
 18 passed in 5.89s
 ```
 
-## 3. 운영 DB 실측 차단
+## 3. 운영 DB 실측
 
 원형과 EXISTS에 공통으로 사용할 대표 기준일은 `2025-09-10 00:00:00`으로
 정했습니다. 원형 COUNT는 다음 질의로 실행을 시도했습니다.
@@ -44,18 +44,37 @@ WHERE a.bid_ntce_no IN (
 )
 ```
 
-`uv run python scripts/db_readonly_query.py --format json --sql "<질의>"`로 두
-차례 실행했으나 모두 다음 오류로 실패했습니다.
+`uv run python scripts/db_readonly_query.py --format json --sql "<질의>"`로
+동일한 기준일을 사용해 각각 실행한 결과는 다음과 같습니다.
 
-```text
-(2003, "Can't connect to MySQL server on '127.0.0.1' ([Errno 61] Connection refused)")
-```
+|형태|COUNT 결과|
+|---|---:|
+|원형 `IN`|327686|
+|`EXISTS`|327686|
 
-따라서 운영 데이터의 COUNT 숫자 동등성, 원형/EXISTS 각각의 EXPLAIN ANALYZE
-3회 실측값, 실제 실행계획의 `type=ALL` 해소 여부는 아직 보고할 수 없습니다.
-DB 연결이 복구되면 동일 기준일로 원형과 다음 EXISTS 질의를 번갈아 3회씩
-실행하고, 각 회차의 actual time·rows 및 두 COUNT 숫자를 이 문서에 추가해야
-합니다.
+두 값이 정확히 같아 결과 의미 보존을 확인했습니다.
+
+### EXPLAIN ANALYZE 교차 실행
+
+원형과 EXISTS를 원형→EXISTS 순서로 세 번씩 번갈아 실행했습니다. 아래 시간은
+최상위 `Aggregate`의 `actual time`(ms)이며, rows는 최종 집계 행과 내부 실행
+행을 함께 적었습니다.
+
+|회차|형태|Aggregate actual time|최종 rows|내부 rows|결과 접근|
+|---:|---|---:|---:|---:|---|
+|1|원형 `IN`|903 ms|327686|327696|`ix_bid_results_dt_cat` range, 309406 rows|
+|1|`EXISTS`|960 ms|327686|327696|`ix_bid_results_dt_cat` range, 309406 rows|
+|2|원형 `IN`|943 ms|327686|327696|`ix_bid_results_dt_cat` range, 309406 rows|
+|2|`EXISTS`|892 ms|327686|327696|`ix_bid_results_dt_cat` range, 309406 rows|
+|3|원형 `IN`|896 ms|327686|327696|`ix_bid_results_dt_cat` range, 309406 rows|
+|3|`EXISTS`|854 ms|327686|327696|`ix_bid_results_dt_cat` range, 309406 rows|
+
+대표값(3회 평균)은 원형 914.0ms, EXISTS 902.0ms로 EXISTS가 약 1.3% 낮았지만,
+세 회차의 분산과 동일 실행계획을 고려하면 유의미한 성능 개선으로 단정하지
+않습니다. 두 형태 모두 `Remove duplicate ... (weedout)`가 있고, 결과 접근은
+`ix_bid_results_dt_cat` 범위 스캔입니다. 이번 실측에서 두 형태 모두 결과 테이블
+`type=ALL` 풀스캔으로 돌아가지 않았으며, 원형도 이미 range 계획으로 실행되어
+EXISTS 전환만으로 계획상 추가 개선은 관찰되지 않았습니다.
 
 ```sql
 SELECT COUNT(a.id) AS matched_count
@@ -68,4 +87,7 @@ WHERE EXISTS (
 )
 ```
 
-실측이 완료되기 전에는 성능 개선 완료로 판정하지 않습니다.
+이번 실측의 판정은 의미 보존과 `type=ALL` 회피는 통과, 성능 개선은
+미확정입니다. 인덱스 추가나 파생 집계 없이 EXISTS 전환만 적용했으므로, 향후
+더 큰 차이를 확인하려면 별도 Task에서 측정 조건과 실행계획 변화 원인을
+재검토해야 합니다.
