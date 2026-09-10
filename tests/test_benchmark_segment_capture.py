@@ -186,6 +186,34 @@ def test_비교기가_산포_안_시간차를_구별_불가로_판정한다():
     assert "개선" not in text
 
 
+def test_비교기가_산포를_넘는_시간차도_확정으로_올리지_않는다():
+    """범위가 안 겹치고 평균차가 산포 합을 넘어도 참고까지만 간다.
+
+    시간 분기에는 확정도 개선도 없다는 것이 이 도구의 핵심 계약이다.
+    표본이 적을 때 우연히 두 덩어리가 갈리는 일은 일어날 수 있으므로,
+    그때 나오는 문구가 확정이나 개선이 아님을 못박는다.
+    """
+    before = {
+        "structured_sql_traces": [
+            _trace("a1", {"top_rows_2": 100.0}, 12),
+            _trace("a2", {"top_rows_2": 110.0}, 12),
+        ]
+    }
+    after = {
+        "structured_sql_traces": [
+            _trace("b1", {"top_rows_2": 1000.0}, 12),
+            _trace("b2", {"top_rows_2": 1010.0}, 12),
+        ]
+    }
+    verdict = compare_payloads(before, after, scope="cold", min_samples=2)
+    target = [item for item in verdict["time"] if item["name"] == "top_rows_2"]
+    assert len(target) == 1
+    assert target[0]["verdict"] == "산포 초과(참고)"
+    assert "확정" not in target[0]["verdict"]
+    text = format_verdict(verdict)
+    assert "개선" not in text
+
+
 def test_비교기가_표본_부족을_판정_불가로_구분한다():
     before = {"structured_sql_traces": [_trace("a1", {"top_rows_2": 100.0}, 12)]}
     after = {"structured_sql_traces": [_trace("b1", {"top_rows_2": 90.0}, 9)]}
