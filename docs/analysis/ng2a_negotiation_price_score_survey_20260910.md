@@ -82,7 +82,27 @@ untyNtceNo, VAT
 
 ### 3.1 조인과 품질 제한
 
-`bid_announcements`와 `bid_results`를 공고번호·업무구분·차수(3자리 정규화)로 조인했습니다. 조인 결과는 5,014건입니다. 기초금액과 낙찰금액으로 `낙찰금액 / 기초금액 * 100`을 계산했으며, 0 이하·50% 미만·110% 초과의 명백한 금액 이상치는 참고 분포에서 제외했습니다. 제외 행은 7건(0 이하 2건, 0~50% 5건)이고, 50~110% 유효 표본은 4,999건입니다.
+`bid_announcements`와 `bid_results`를 다음 세 키 모두로 조인했습니다.
+
+| 조인 키 | 설명 |
+| --- | --- |
+| `bid_ntce_no` | 공고번호 |
+| `category` | 업무구분 |
+| `LPAD(bid_ntce_ord, 3, '0')` | 차수 3자리 정규화 |
+
+이 조건으로 성립한 조인 행은 5,014건입니다. 전체 협상 공고 20,077건 중 조인 성립분은 24.98%로 약 25%이며, 낙찰 결과가 수집된 공고만 `bid_results`와 조인되기 때문입니다. 이는 AQ2 조사에서 확인한 협상 연결률 25.38%와 같은 범위의 결과입니다.
+
+기초금액과 낙찰금액으로 `낙찰금액 / 기초금액 * 100`을 계산하고, 다음과 같이 15건을 제외했습니다.
+
+| 제외 사유 | 건수 |
+| --- | ---: |
+| 계산 불가(기초금액 0 또는 NULL) | 7 |
+| 0 이하 | 2 |
+| 0 초과 50% 미만 | 5 |
+| 110% 초과 | 1 |
+| 제외 합계 | 15 |
+
+따라서 유효 표본은 `5,014 - 15 = 4,999`건이며, 3.2 절의 분포는 50% 이상 110% 이하로 제한한 값입니다. 110% 초과 1건은 낙찰금액 250,000,000원·기초금액 1원인 데이터 품질 이상치이므로 필터 없이 평균을 내면 분포를 왜곡합니다.
 
 ### 3.2 네 변종별 실측
 
@@ -220,6 +240,41 @@ WHERE a.category='Servc' AND a.bid_ntce_dt >= '2026-05-26'
 
 ```text
 joined_rows = 5014
+```
+
+3.1 절의 제외 회계는 다음 질의로 재현할 수 있습니다. `CASE`의 순서는 기초금액 0 또는 NULL인 행을 먼저 계산 불가로 분류한 뒤, 계산된 낙찰률의 범위별로 분류하도록 했습니다.
+
+```sql
+WITH joined AS (
+  SELECT a.base_amount, r.sucsf_bid_amt,
+         r.sucsf_bid_amt / NULLIF(a.base_amount, 0) * 100 AS bid_rate
+  FROM bid_announcements a JOIN bid_results r
+    ON r.bid_ntce_no=a.bid_ntce_no AND r.category=a.category
+   AND LPAD(r.bid_ntce_ord,3,'0')=LPAD(a.bid_ntce_ord,3,'0')
+  WHERE a.category='Servc' AND a.bid_ntce_dt >= '2026-05-26'
+    AND JSON_UNQUOTE(JSON_EXTRACT(a.raw_data,'$.sucsfbidMthdNm')) LIKE '협상에의한계약%'
+), classified AS (
+  SELECT CASE
+    WHEN base_amount IS NULL OR base_amount = 0 THEN '계산 불가(기초금액 0 또는 NULL)'
+    WHEN bid_rate <= 0 THEN '0 이하'
+    WHEN bid_rate > 0 AND bid_rate < 50 THEN '0 초과 50% 미만'
+    WHEN bid_rate > 110 THEN '110% 초과'
+    ELSE '유효(50% 이상 110% 이하)'
+  END AS sample_status
+  FROM joined
+)
+SELECT sample_status, COUNT(*) AS n
+FROM classified
+GROUP BY sample_status
+ORDER BY sample_status
+```
+
+```text
+계산 불가(기초금액 0 또는 NULL) = 7
+0 이하 = 2
+0 초과 50% 미만 = 5
+110% 초과 = 1
+유효(50% 이상 110% 이하) = 4999
 ```
 
 분포 산출 질의는 조인 후 `r.sucsf_bid_amt / NULLIF(a.base_amount,0) * 100`을 계산하고 `BETWEEN 50 AND 110`으로 품질 제한한 뒤 `ROW_NUMBER()`와 `COUNT() OVER()`로 중앙값을 산출했습니다. 이 제한과 제외 건수는 3.1 절에 명시했으며, 원본 낙찰결과를 변경하거나 보정하지 않았습니다.
