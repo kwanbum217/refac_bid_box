@@ -240,8 +240,6 @@ def restore_mysql_database(
     cmd += [
         "--default-character-set=utf8mb4",
         "--max-allowed-packet=1073741824",
-        "--net-read-timeout=3600",
-        "--net-write-timeout=3600",
         str(db_config["name"]),
     ]
     with gzip.open(input_gz_path, "rb") as gz_in, tempfile.TemporaryFile() as err_file:
@@ -256,9 +254,11 @@ def restore_mysql_database(
             proc.kill()
             raise RuntimeError("mysql 복원 표준입력을 열 수 없습니다.")
         try:
+            preamble = b"SET SESSION net_read_timeout=3600;\nSET SESSION net_write_timeout=3600;\n"
             if disable_binlog:
-                proc.stdin.write(b"SET SESSION sql_log_bin=0;\n")
-                proc.stdin.flush()
+                preamble += b"SET SESSION sql_log_bin=0;\n"
+            proc.stdin.write(preamble)
+            proc.stdin.flush()
             shutil.copyfileobj(gz_in, proc.stdin)
         except (BrokenPipeError, ValueError) as exc:
             proc.kill()

@@ -586,7 +586,9 @@ def test_restore_mysql_database_streams_gzip(
     assert popen_kwargs["stdout"] is subprocess.DEVNULL
     assert popen_kwargs["stderr"] is not subprocess.PIPE
     mock_copy.assert_called_once()
-    mock_proc.stdin.write.assert_not_called()
+    written = b"".join(call.args[0] for call in mock_proc.stdin.write.call_args_list)
+    assert b"SET SESSION net_read_timeout=3600;" in written
+    assert b"SET SESSION sql_log_bin=0;" not in written
     mock_proc.wait.assert_called()
     mock_proc.stdin.close.assert_called_once()
 
@@ -616,8 +618,10 @@ def test_restore_mysql_database_disables_binlog_for_drill(
     ):
         mock_gzip.return_value.__enter__.return_value = MagicMock(name="gz")
         restore_mysql_database(drill_db, dump, disable_binlog=True)
-    mock_proc.stdin.write.assert_called_once_with(b"SET SESSION sql_log_bin=0;\n")
-    mock_proc.stdin.flush.assert_called_once()
+    written = b"".join(call.args[0] for call in mock_proc.stdin.write.call_args_list)
+    assert b"SET SESSION sql_log_bin=0;" in written
+    assert b"SET SESSION net_read_timeout=3600;" in written
+    mock_proc.stdin.flush.assert_called()
 
 
 def test_create_mysql_database_uses_container_client(monkeypatch: pytest.MonkeyPatch) -> None:
