@@ -10,8 +10,24 @@
 
 ## 0. 다음 세션 첫 작업
 
-**사용자 지시 없이 새 작업을 시작하지 마십시오.** 남은 항목이 전부 사용자
-결정이나 장비를 선행 조건으로 두고 있습니다(6장).
+**환경을 먼저 올리십시오.** 사용자가 컴퓨터를 끄기 위해 이 세션이 스택을
+내렸습니다.
+
+```sh
+docker compose up -d db redis meilisearch app
+until curl -sf http://localhost:8000/api/v1/health/ready >/dev/null; do sleep 5; done
+```
+
+헬스 경로는 `/api/v1/health/ready` 입니다. `/health` 는 404 입니다.
+
+**새 웨이브를 띄우기 전에 Run 을 만들거나 바인딩하십시오.** Run 바인딩이 없으면
+`orca_settled_session_audit.py` 가 `run_required` 로 실패하고 `dispatch` 가 그
+검사를 선행 조건으로 씁니다.
+
+**코디네이터가 교대했다면 스킬 영수증을 재발급하십시오**(8.4 절).
+
+기능 작업으로는 **`coldsql_rerun`** 이 다음 후보입니다. 표본 2건 `partial` 상태라
+재측정만 하면 벗어납니다. 도구는 이미 있고 **조용한 DB 가 필요해 직렬**입니다.
 
 **병합한 뒤에는 반드시 CI 를 확인하십시오.** 이번 세션 초입에 CI 가 3회 연속
 실패한 채였고 그 위에 병합이 쌓여 있었습니다(4.1 절).
@@ -239,7 +255,33 @@ Task 수를 `task-list` 로 확인하십시오.
 
 ---
 
-## 9. 모델 배정
+## 9. 자원 정리 상태
+
+**전부 회수했습니다.** 사용자가 컴퓨터를 끄기 위해 세션 종료 시 정리했습니다.
+
+- 워크트리: 주 저장소 하나. `orca-bf1`, `orca-bg1`, `orca-bh1` 제거
+- 브랜치: 병합 확인 후 삭제, `-D` 미사용
+- 배경 감시기 0개 (`pgrep -f 'orca_worker_watch|worker_guard'`)
+- `orca_settled_session_audit.py` 잔류 없음
+- **Docker 스택을 내렸습니다.** 0장으로 다시 올리십시오
+- `LATENCY_SEGMENT_LOGGING` 은 `false` 원복 상태
+- `OTEL_ENABLED` 은 로컬 기본 `false` 유지
+
+### 9.1 미종결 사실 현황
+
+| 사실 | 상태 | 다음 조건 |
+| --- | --- | --- |
+| `coldsql_rerun` | active | 재측정. 조용한 DB |
+| `lexical_full_rerun` | active | 전량 재측정 |
+| `missing_lwlt_intervals` | active | 결측 집단 예측구간 관리 |
+| `mysql_stats_refresh_policy` | active | 주기 채택 문구 정리 |
+| `drift_job` | active | Thng baseline 데이터 축적 |
+| `gate_g2` | blocked | Windows 장비 |
+| `negotiation_contract_support` | active | R-17 과 동일 원천 부재 |
+
+---
+
+## 10. 모델 배정
 
 | 역할 | 모델 | 결과 |
 | --- | --- | --- |
