@@ -223,3 +223,35 @@ def test_harness_segment_names_match_recorder():
     """하네스와 레코더의 구간 이름이 어긋나지 않습니다."""
     assert set(harness.SEGMENT_NAMES) == set(latency_segments.COMPARE_STATS_SEGMENT_NAMES)
     assert set(harness.SEGMENT_NAMES) == set(EXPECTED_SEGMENTS)
+
+
+def test_대시보드_로거도_구간_로거_보강_대상이다() -> None:
+    """컨테이너 런타임에서 compare_stats_segments 줄이 유실되지 않아야 합니다.
+
+    2026-09-11 측정에서 계측이 켜졌는데도 로그가 한 줄도 나오지 않았습니다.
+    보강 대상이 src.rag.engine 하나뿐이라 대시보드 로거가 WARNING 에 막혔습니다.
+    """
+    import logging
+    from unittest.mock import patch
+
+    from src.app.core.config import settings
+    from src.app.main import SEGMENT_LOGGER_NAMES, _enable_latency_segment_logging
+
+    assert "src.app.services.dashboard" in SEGMENT_LOGGER_NAMES
+
+    target = logging.getLogger("src.app.services.dashboard")
+    saved_handlers = list(target.handlers)
+    saved_level = target.level
+    saved_propagate = target.propagate
+    target.handlers.clear()
+    target.propagate = True
+    try:
+        with patch.object(settings, "LATENCY_SEGMENT_LOGGING", True):
+            _enable_latency_segment_logging()
+        assert target.level == logging.INFO
+        assert len(target.handlers) == 1
+        assert target.propagate is False
+    finally:
+        target.handlers = saved_handlers
+        target.setLevel(saved_level)
+        target.propagate = saved_propagate

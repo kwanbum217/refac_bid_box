@@ -132,6 +132,11 @@ async def _warm_vector_search() -> None:
         warmup_state.mark_vector_done(success=False, error=str(exc))
 
 
+# 구간 계측 로그를 내보내는 로거 이름이다. 새 계측 지점을 추가하면 여기에 넣어야
+# 컨테이너 런타임에서 로그가 유실되지 않는다.
+SEGMENT_LOGGER_NAMES = ("src.rag.engine", "src.app.services.dashboard")
+
+
 def _enable_latency_segment_logging() -> None:
     """구간 계측 로그가 실제로 나가도록 로거를 준비합니다.
 
@@ -142,13 +147,14 @@ def _enable_latency_segment_logging() -> None:
     """
     if not settings.LATENCY_SEGMENT_LOGGING:
         return
-    segment_logger = logging.getLogger("src.rag.engine")
-    segment_logger.setLevel(logging.INFO)
-    if not segment_logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-        segment_logger.addHandler(handler)
-    segment_logger.propagate = False
+    for name in SEGMENT_LOGGER_NAMES:
+        segment_logger = logging.getLogger(name)
+        segment_logger.setLevel(logging.INFO)
+        if not segment_logger.handlers:
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+            segment_logger.addHandler(handler)
+        segment_logger.propagate = False
 
 
 def _enable_warmup_logging() -> None:
