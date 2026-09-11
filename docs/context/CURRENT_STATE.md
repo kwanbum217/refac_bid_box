@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-11
-> **source_commit**: `582b4e01`
+> **source_commit**: `769656ec`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -153,6 +153,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - 기계 원장: [docs/context/current_state_facts.yaml](current_state_facts.yaml)
 - 상세 로그·과거 경위: [current_state_history.md](current_state_history.md)
 - 컷오버·레이턴시 규약: [latency_gate_protocol.md](../ops/latency_gate_protocol.md), [phase7_cutover_declaration_20260901.md](../ops/phase7_cutover_declaration_20260901.md)
-- 현재 잔여 과업: [handoff_20260911_wave_az_session_close.md](../ops/handoff_20260911_wave_az_session_close.md) (6장이 남은 항목입니다)
+- 현재 잔여 과업: [handoff_20260911_wave_ba_bd_session_close.md](../ops/handoff_20260911_wave_ba_bd_session_close.md) (7장이 남은 항목입니다)
 - 공고 금액 이상치·오버플로우: [announcement_amount_outliers_20260904.md](../ops/announcement_amount_outliers_20260904.md)
 - 데이터·특징 불변성: [db_migration_runbook.md](../migration/db_migration_runbook.md), [features.py](../../src/ml/features.py)
