@@ -239,16 +239,29 @@ def test_alertmanager_holds_alerts_without_host_publish(compose: dict):
     assert alertmanager["networks"] == ["internal"]
     assert alertmanager["volumes"] == [
         "./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
+        "./docker/secrets/alertmanager_slack_url:/etc/alertmanager/secrets/slack_url:ro",
         "alertmanager_data:/alertmanager",
     ]
     assert compose["volumes"]["alertmanager_data"] is None
     assert "--cluster.listen-address=" in alertmanager["command"]
 
+    # 기본 수신기는 여전히 local-hold 다. Slack 은 critical 만 받는 자식 라우트이며
+    # 나머지 심각도는 밖으로 나가지 않는다. 모든 알람을 보내면 채널이 잠겨
+    # 정작 중요한 것이 묻힌다.
     config = _load_yaml(ALERTMANAGER_CONFIG_PATH)
     assert config["route"]["receiver"] == "local-hold"
-    receivers = config["receivers"]
-    assert len(receivers) == 1
-    assert receivers[0] == {"name": "local-hold"}
+    assert config["route"]["routes"] == [
+        {"receiver": "slack-slo", "matchers": ["severity = critical"]}
+    ]
+    receivers = {r["name"]: r for r in config["receivers"]}
+    assert set(receivers) == {"local-hold", "slack-slo"}
+    assert receivers["local-hold"] == {"name": "local-hold"}
+
+    # 비밀값은 설정 파일이 아니라 파일 참조로만 들어온다.
+    slack_cfg = receivers["slack-slo"]["slack_configs"][0]
+    assert slack_cfg["api_url_file"] == "/etc/alertmanager/secrets/slack_url"
+    assert "api_url" not in slack_cfg
+    assert "hooks.slack.com" not in ALERTMANAGER_CONFIG_PATH.read_text(encoding="utf-8")
 
 
 def test_grafana_provisions_slo_alerts_dashboard():

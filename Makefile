@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets test-e2e backup backup-dry-run restore-dry-run backup-verify backup-list
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets test-e2e backup backup-dry-run restore-dry-run backup-verify backup-list render-alertmanager-secret
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -35,6 +35,7 @@ help:
 	@echo "  make model-verify   - 모델 직렬화 버전과 서빙 특징 호환성 검증"
 	@echo "  make rebuild-rankings - 상위 N 집계 스냅샷 재생성"
 	@echo "  make rebuild-institution-stats - 기관별 낙찰률 사전 집계 재생성"
+	@echo "  make render-alertmanager-secret - .env 의 ALERTMANAGER_SLACK_WEBHOOK_URL 로 비밀 파일 생성"
 	@echo "  make backup         - 운영 DB·ChromaDB·모델 통합 백업 실행"
 	@echo "  make backup-dry-run - 통합 백업 사전 점검 (dry-run)"
 	@echo "  make restore-dry-run - 통합 복원 대상 사전 점검 (dry-run)"
@@ -97,6 +98,9 @@ rebuild-rankings:
 
 rebuild-institution-stats:
 	$(PYTHON) scripts/rebuild_institution_stats.py
+
+render-alertmanager-secret:
+	$(PYTHON) scripts/render_alertmanager_secret.py
 
 # 기동 중인 서버에 HTTP 로 붙습니다. 먼저 uvicorn 을 띄우십시오.
 benchmark:
