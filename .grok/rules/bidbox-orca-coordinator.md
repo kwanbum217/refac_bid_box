@@ -59,6 +59,6 @@ Orca Run 은 **인수인계에 적힌 활성 Run** 을 씁니다. 세션 시작 
 
 완료 주장마다 diff, 실행 경로, 테스트, 같은 HEAD, 그 HEAD 의 CI 를 확인합니다. skip 테스트의 값은 실측합니다.
 
-리뷰어는 빌더와 다른 계열. 배정 정본은 `scripts/orca_model_router.py` 의 `TIER_POLICY`.
+리뷰어는 빌더와 다른 계열. 2026-09-11 사용자 지시: 리뷰어는 `opencode/muse-spark-1.3-contributor-free` 를 명시 Dispatch 한다. 빌더가 OpenCode 계열이면 `qwen-plus` 로 돌린다. TIER_POLICY 자동 배정은 바꾸지 않는다.
 
 fail-closed. 증명 못 하면 진행하지 않고 차단으로 보고합니다.

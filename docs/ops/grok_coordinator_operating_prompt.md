@@ -94,6 +94,17 @@ orca orchestration worker-start --task <task_id> --worktree current --agent <cli
 
 같은 트리의 동시 쓰기가 `AGENTS.md` 4장과 겹치면 순차로 돌리거나, 충돌을 알린 뒤에만 `new-child` 를 씁니다.
 
+### 4.2 리뷰어 모델 (2026-09-11 사용자 지시)
+
+리뷰어는 `opencode/muse-spark-1.3-contributor-free` 를 명시 지정한다. TIER_POLICY 의 리뷰어 자동 배정은 바꾸지 않는다.
+
+```bash
+orca terminal create --worktree path:<워크트리> --title "리뷰어 muse" \
+  --command "uv run python scripts/orca_opencode_launch.py --model opencode/muse-spark-1.3-contributor-free --role reviewer --auto"
+```
+
+빌더가 이미 OpenCode 계열이면 계열 분리 불변을 지켜 `qwen-plus` 로 돌린다. 리뷰어 보고는 주장이며 게이트와 diff 가 정본이다.
+
 ---
 
 ## 5. 검증
