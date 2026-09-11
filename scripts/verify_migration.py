@@ -34,7 +34,30 @@ EXPECTED_MODELS = ("v25", "quantum_leap_v25_pro", "ssh_hist_premium", "v13_hybri
 G1_TOOL_VERSION = "2.0.0"
 # ORM에 포함되지 않는 외부 테이블은 이 목록에 명시적으로 승인해야 합니다.
 # 목록 밖의 테이블은 검증 보고서에 경고를 남기고 실패 처리합니다.
-APPROVED_EXTERNAL_TABLES: frozenset[str] = frozenset()
+# G1 은 기존 테이블을 삭제하지 않는다. Django 잔여 테이블과 Alembic 장부,
+# 재생성 가능한 작업 테이블은 ORM 밖이지만 운영 DB 에 남아 있으므로 승인한다.
+APPROVED_EXTERNAL_TABLES: frozenset[str] = frozenset(
+    {
+        "account_emailaddress",
+        "account_emailconfirmation",
+        "accounts_customuser_groups",
+        "accounts_customuser_user_permissions",
+        "alembic_version",
+        "auth_group",
+        "auth_group_permissions",
+        "auth_permission",
+        "django_admin_log",
+        "django_content_type",
+        "django_migrations",
+        "django_session",
+        "django_site",
+        "servc_inst_verify",
+        "socialaccount_socialaccount",
+        "socialaccount_socialapp",
+        "socialaccount_socialapp_sites",
+        "socialaccount_socialtoken",
+    }
+)
 MANIFEST_PATH = PROJECT_ROOT / "data" / "backups" / "data_assets_checksums.json"
 SCHEMA_BASELINE_PATH = PROJECT_ROOT / "data" / "backups" / "schema_signature_baseline.json"
 DEFAULT_REPORT_PATH = PROJECT_ROOT / "data" / "backups" / "data_preservation_report.json"

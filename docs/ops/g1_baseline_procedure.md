@@ -41,8 +41,10 @@ uv run python scripts/verify_migration.py
 reconciliation 기준선이 없거나, 출처 메타데이터가 없거나 불완전하면 즉시 실패합니다.
 
 스키마 테이블 집합은 하드코딩 목록을 사용하지 않고 SQLAlchemy `Base.metadata`에 등록된
-ORM 전체 테이블로 계산합니다. DB에만 있는 테이블과 ORM에만 있는 테이블을 모두 보고하며,
-승인 목록에 없는 DB 테이블은 경고와 함께 실패 처리합니다.
+ORM 전체 테이블로 계산합니다. `src/app/models/__init__.py` 가 평가 모델을 포함해
+등록된 ORM 을 모두 가져와야 합니다. DB에만 있는 테이블과 ORM에만 있는 테이블을 모두
+보고하며, `APPROVED_EXTERNAL_TABLES` 에 없는 DB 테이블은 경고와 함께 실패 처리합니다.
+Django 잔여 테이블, `alembic_version`, `servc_inst_verify` 는 승인된 외부 테이블입니다.
 
 ## 3. 테스트
 

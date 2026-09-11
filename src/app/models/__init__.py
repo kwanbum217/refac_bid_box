@@ -13,6 +13,11 @@ from src.app.models.chatbot import (
     KnowledgeBaseStatus,
     PipelineExecution,
 )
+from src.app.models.evaluations import (
+    BidEvaluationEvidence,
+    BidEvaluationProfile,
+    BidEvaluationSnapshot,
+)
 from src.app.models.predictions import PredictionResult, RetrainLog
 
 __all__ = [
@@ -20,6 +25,9 @@ __all__ = [
     "AutomationSubscription",
     "BidAnnouncement",
     "BidDatasetSummary",
+    "BidEvaluationEvidence",
+    "BidEvaluationProfile",
+    "BidEvaluationSnapshot",
     "BidRankingSnapshot",
     "BidResult",
     "ChatSessionState",

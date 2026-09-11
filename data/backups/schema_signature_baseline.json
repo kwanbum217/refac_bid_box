@@ -1,0 +1,3411 @@
+{
+  "version": "1.0.0",
+  "tables": {
+    "account_emailaddress": {
+      "name": "account_emailaddress",
+      "columns": [
+        {
+          "name": "email",
+          "type": "VARCHAR(254) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "primary",
+          "type": "TINYINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "verified",
+          "type": "TINYINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "account_emailaddress_user_id_2c513194_fk_accounts_customuser_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "account_emailaddress_email_03be32b2",
+          "column_names": [
+            "email"
+          ],
+          "unique": false
+        },
+        {
+          "name": "account_emailaddress_user_id_email_987c8728_uniq",
+          "column_names": [
+            "user_id",
+            "email"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "74a58b4a27cffcb5f5ba91a4a27cbda1f498108f2c3fe66d06bee66d79a58123"
+    },
+    "account_emailconfirmation": {
+      "name": "account_emailconfirmation",
+      "columns": [
+        {
+          "name": "created",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "email_address_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "key",
+          "type": "VARCHAR(64) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sent",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "account_emailconfirm_email_address_id_5b7f8c58_fk_account_e",
+          "constrained_columns": [
+            "email_address_id"
+          ],
+          "referred_table": "account_emailaddress",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "account_emailconfirm_email_address_id_5b7f8c58_fk_account_e",
+          "column_names": [
+            "email_address_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "key",
+          "column_names": [
+            "key"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "ab604eec0106ffd9f6d39ae3ae515ebd118da93e4abf630fe0e1db064491fbab"
+    },
+    "accounts_customuser": {
+      "name": "accounts_customuser",
+      "columns": [
+        {
+          "name": "birth_d",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "birth_m",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "birth_y",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "date_joined",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR(254) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "first_name",
+          "type": "VARCHAR(150) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "gender",
+          "type": "VARCHAR(1) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "is_active",
+          "type": "TINYINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "is_staff",
+          "type": "TINYINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "is_superuser",
+          "type": "TINYINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_login",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_name",
+          "type": "VARCHAR(150) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "nickname",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "password",
+          "type": "VARCHAR(128) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "username",
+          "type": "VARCHAR(150) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "username",
+          "column_names": [
+            "username"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "fb4de17f0132decd4c707042d6d7abbd44aca92da0306ee2fc99e83e0337032f"
+    },
+    "accounts_customuser_groups": {
+      "name": "accounts_customuser_groups",
+      "columns": [
+        {
+          "name": "customuser_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "group_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "accounts_customuser__customuser_id_bc55088e_fk_accounts_",
+          "constrained_columns": [
+            "customuser_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "accounts_customuser_groups_group_id_86ba5f9e_fk_auth_group_id",
+          "constrained_columns": [
+            "group_id"
+          ],
+          "referred_table": "auth_group",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounts_customuser_groups_customuser_id_group_id_c074bdcb_uniq",
+          "column_names": [
+            "customuser_id",
+            "group_id"
+          ],
+          "unique": true
+        },
+        {
+          "name": "accounts_customuser_groups_group_id_86ba5f9e_fk_auth_group_id",
+          "column_names": [
+            "group_id"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "112e0b43ac0939f40ef8b98f28d1215a980054e2288f7a6e68ceb6ee2f3b83e3"
+    },
+    "accounts_customuser_user_permissions": {
+      "name": "accounts_customuser_user_permissions",
+      "columns": [
+        {
+          "name": "customuser_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "permission_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "accounts_customuser__customuser_id_0deaefae_fk_accounts_",
+          "constrained_columns": [
+            "customuser_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "accounts_customuser__permission_id_aea3d0e5_fk_auth_perm",
+          "constrained_columns": [
+            "permission_id"
+          ],
+          "referred_table": "auth_permission",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "accounts_customuser__permission_id_aea3d0e5_fk_auth_perm",
+          "column_names": [
+            "permission_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "accounts_customuser_user_customuser_id_permission_9632a709_uniq",
+          "column_names": [
+            "customuser_id",
+            "permission_id"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "ca52ca0f666c4bc1bfb9f397b25df4d935ef2ced25b978be1dcc730a94b02d22"
+    },
+    "alembic_version": {
+      "name": "alembic_version",
+      "columns": [
+        {
+          "name": "version_num",
+          "type": "VARCHAR(32) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "version_num"
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "hash": "9c9beba307d6bb90fe37f4eb31c06dd99f680a54323b77cce37a4632a7b76307"
+    },
+    "auth_group": {
+      "name": "auth_group",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR(150) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "name",
+          "column_names": [
+            "name"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "f0daa81e4856334a02e199665d9db77f27f00d7e49bf00ef1aa2358321504414"
+    },
+    "auth_group_permissions": {
+      "name": "auth_group_permissions",
+      "columns": [
+        {
+          "name": "group_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "permission_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "auth_group_permissions_group_id_b120cbf9_fk_auth_group_id",
+          "constrained_columns": [
+            "group_id"
+          ],
+          "referred_table": "auth_group",
+          "referred_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "auth_group_permissio_permission_id_84c5c92e_fk_auth_perm",
+          "constrained_columns": [
+            "permission_id"
+          ],
+          "referred_table": "auth_permission",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "auth_group_permissio_permission_id_84c5c92e_fk_auth_perm",
+          "column_names": [
+            "permission_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "auth_group_permissions_group_id_permission_id_0cd325b0_uniq",
+          "column_names": [
+            "group_id",
+            "permission_id"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "065b0dbc5184396f67340e91392a9a93f1e8d8f2ed407fc083d22fdc79b11f78"
+    },
+    "auth_permission": {
+      "name": "auth_permission",
+      "columns": [
+        {
+          "name": "codename",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "content_type_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "auth_permission_content_type_id_2f476e4b_fk_django_co",
+          "constrained_columns": [
+            "content_type_id"
+          ],
+          "referred_table": "django_content_type",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "auth_permission_content_type_id_codename_01ab375a_uniq",
+          "column_names": [
+            "content_type_id",
+            "codename"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "5a1eda5bc2a9f9790700b2a4228ae20e71b3294de4c3f32ea5d531951bbf732e"
+    },
+    "automation_requests": {
+      "name": "automation_requests",
+      "columns": [
+        {
+          "name": "action_key",
+          "type": "VARCHAR(64) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "completed_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "confirmed_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "error_message",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "execution_url",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "followup_query",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "harness_execution_id",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "intent_type",
+          "type": "VARCHAR(64) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "payload",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "pipeline_name",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "plan_execution_id",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "request_id",
+          "type": "VARCHAR(36) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "requested_text",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "requires_confirmation",
+          "type": "TINYINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "result_payload",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "result_summary",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "started_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "automation_requests_user_id_09027998_fk_accounts_customuser_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "automation_requests_action_key_72546a52",
+          "column_names": [
+            "action_key"
+          ],
+          "unique": false
+        },
+        {
+          "name": "automation_requests_created_at_1c714821",
+          "column_names": [
+            "created_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "automation_requests_intent_type_72f08cf2",
+          "column_names": [
+            "intent_type"
+          ],
+          "unique": false
+        },
+        {
+          "name": "automation_requests_plan_execution_id_4f401e5d",
+          "column_names": [
+            "plan_execution_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "automation_requests_status_b21ae7da",
+          "column_names": [
+            "status"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_auto_req_action_created",
+          "column_names": [
+            "action_key",
+            "created_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_auto_req_intent_created",
+          "column_names": [
+            "intent_type",
+            "created_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_auto_req_user_status",
+          "column_names": [
+            "user_id",
+            "status"
+          ],
+          "unique": false
+        },
+        {
+          "name": "request_id",
+          "column_names": [
+            "request_id"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "2478d00ecc710a936ce176be8d4bf7251b30e685f439eaa523b6e4908334416d"
+    },
+    "automation_subscriptions": {
+      "name": "automation_subscriptions",
+      "columns": [
+        {
+          "name": "automation_type",
+          "type": "VARCHAR(64) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "filter_json",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "is_active",
+          "type": "TINYINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_run_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "next_run_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "schedule_cron",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "automation_subscript_user_id_65841fc4_fk_accounts_",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "automation_subscriptions_automation_type_64b4d3d1",
+          "column_names": [
+            "automation_type"
+          ],
+          "unique": false
+        },
+        {
+          "name": "automation_subscriptions_is_active_1dd49756",
+          "column_names": [
+            "is_active"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_auto_sub_type",
+          "column_names": [
+            "automation_type"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_auto_sub_user_active",
+          "column_names": [
+            "user_id",
+            "is_active"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "643c95f2fa8501dc2375cedd58248611a366ffe9cfd049e0f1f234318335686b"
+    },
+    "bid_announcements": {
+      "name": "bid_announcements",
+      "columns": [
+        {
+          "name": "base_amount",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_clse_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_methd_nm",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_nm",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "category",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "cntrct_mthd_nm",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "collected_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dminstt_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "ntce_instt_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "ntce_kind_nm",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "openg_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "presmpt_prce",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "raw_data",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "bid_announcements_bid_ntce_dt_c42f1afb",
+          "column_names": [
+            "bid_ntce_dt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "bid_announcements_bid_ntce_no_bid_ntce_ord_5d538568_uniq",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord",
+            "category"
+          ],
+          "unique": true
+        },
+        {
+          "name": "bid_announcements_category_02e9e006",
+          "column_names": [
+            "category"
+          ],
+          "unique": false
+        },
+        {
+          "name": "bid_announcements_dminstt_nm_952da702",
+          "column_names": [
+            "dminstt_nm"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_ann_cat_dt",
+          "column_names": [
+            "category",
+            "bid_ntce_dt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_ann_category_collected_dt",
+          "column_names": [
+            "category",
+            "collected_at",
+            "bid_ntce_dt",
+            "id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_ann_collected",
+          "column_names": [
+            "collected_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_ann_collected_dt",
+          "column_names": [
+            "collected_at",
+            "bid_ntce_dt",
+            "id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_ann_dt_cat",
+          "column_names": [
+            "bid_ntce_dt",
+            "category"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "324781fa1323edd55396c40ccd25b6d8519edf82200a43033ebd70a1af5ac587"
+    },
+    "bid_compare_stats_snapshots": {
+      "name": "bid_compare_stats_snapshots",
+      "columns": [
+        {
+          "name": "payload",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rebuilt_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "snapshot_key",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "window_days",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "snapshot_key"
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "hash": "d9e0fe67e1318a2cdf02ff0b2fc15dd89716a4495bde95d916749105311dac60"
+    },
+    "bid_dataset_summaries": {
+      "name": "bid_dataset_summaries",
+      "columns": [
+        {
+          "name": "aggregation_version",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'1'"
+        },
+        {
+          "name": "avg_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dataset",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "rebuilt_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "source_latest_collected_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "total_amount",
+          "type": "DECIMAL(30, 0)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "total_count",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "dataset"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "bid_dataset_summaries_rebuilt_at_8d77f9db",
+          "column_names": [
+            "rebuilt_at"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "db63132629b7fd7a107d4ef8dd88e3b75db7645da6e724d0df92115af9288501"
+    },
+    "bid_evaluation_evidence": {
+      "name": "bid_evaluation_evidence",
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "issuer",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "item_code",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "note",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "reference_no",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "snapshot_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "valid_from",
+          "type": "DATE",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "valid_to",
+          "type": "DATE",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "fk_bid_eval_evidence_snapshot_id",
+          "constrained_columns": [
+            "snapshot_id"
+          ],
+          "referred_table": "bid_evaluation_snapshots",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_bid_eval_evidence_item_code",
+          "column_names": [
+            "item_code"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_eval_evidence_snap_item",
+          "column_names": [
+            "snapshot_id",
+            "item_code"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_eval_evidence_snapshot_id",
+          "column_names": [
+            "snapshot_id"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a"
+    },
+    "bid_evaluation_profiles": {
+      "name": "bid_evaluation_profiles",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "framework",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'servc_qualification'"
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "input_json",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "input_schema_version",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'1.0'"
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "fk_bid_eval_profiles_user_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_bid_eval_profiles_user_created",
+          "column_names": [
+            "user_id",
+            "created_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_eval_profiles_user_id",
+          "column_names": [
+            "user_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_bid_eval_profiles_user_name",
+          "column_names": [
+            "user_id",
+            "name"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "fee7f458d7d9966e3c10ce2637420330c5174629f667ac5c826c56bbe28bab8e"
+    },
+    "bid_evaluation_snapshots": {
+      "name": "bid_evaluation_snapshots",
+      "columns": [
+        {
+          "name": "bid_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "input_json",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "model_id",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "model_version",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "result_json",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rule_id",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "fk_bid_eval_snapshots_user_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "fk_bid_eval_snapshots_bid_id",
+          "constrained_columns": [
+            "bid_id"
+          ],
+          "referred_table": "bid_announcements",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_bid_eval_snapshots_bid_id",
+          "column_names": [
+            "bid_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_eval_snapshots_created_at",
+          "column_names": [
+            "created_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_eval_snapshots_rule_id",
+          "column_names": [
+            "rule_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_eval_snapshots_user_bid",
+          "column_names": [
+            "user_id",
+            "bid_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_eval_snapshots_user_id",
+          "column_names": [
+            "user_id"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "761fed06d9e29c01cf1a9149efa3cd831a91c6266573fb814359a008038ed17a"
+    },
+    "bid_ranking_snapshots": {
+      "name": "bid_ranking_snapshots",
+      "columns": [
+        {
+          "name": "category",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dataset",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dimension",
+          "type": "VARCHAR(30) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "label",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "metric_count",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rank",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rebuilt_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_bid_ranking_lookup",
+          "column_names": [
+            "dataset",
+            "dimension",
+            "category",
+            "rank"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_bid_ranking_slot",
+          "column_names": [
+            "dataset",
+            "dimension",
+            "category",
+            "rank"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "dd386a5dee7f4abf08926b8978dbad4244f5d69cfbf0d062bdf7b827c1ec5dca"
+    },
+    "bid_results": {
+      "name": "bid_results",
+      "columns": [
+        {
+          "name": "bid_ntce_nm",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bidwinnr_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "category",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "collected_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dminstt_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "raw_data",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rl_openg_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sucsf_bid_amt",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sucsf_bid_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "bid_results_bid_ntce_no_bid_ntce_ord_category_94d04c58_uniq",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord",
+            "category"
+          ],
+          "unique": true
+        },
+        {
+          "name": "bid_results_category_981358ae",
+          "column_names": [
+            "category"
+          ],
+          "unique": false
+        },
+        {
+          "name": "bid_results_collected_at_25a564b9",
+          "column_names": [
+            "collected_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "bid_results_dminstt_nm_1b809760",
+          "column_names": [
+            "dminstt_nm"
+          ],
+          "unique": false
+        },
+        {
+          "name": "bid_results_rl_openg_dt_00b70e7a",
+          "column_names": [
+            "rl_openg_dt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_results_amt_id",
+          "column_names": [
+            "sucsf_bid_amt",
+            "id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_results_bidwinnr_nm",
+          "column_names": [
+            "bidwinnr_nm"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_results_cat_dt_stats",
+          "column_names": [
+            "category",
+            "rl_openg_dt",
+            "sucsf_bid_rate",
+            "sucsf_bid_amt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_results_dt_cat",
+          "column_names": [
+            "rl_openg_dt",
+            "category"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_results_rate_id",
+          "column_names": [
+            "sucsf_bid_rate",
+            "id"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "7c6789b017bc5bf2a86350d801378f44b5e57b9f5adca9100a8e49a7a786cd5a"
+    },
+    "chat_session_states": {
+      "name": "chat_session_states",
+      "columns": [
+        {
+          "name": "chat_history_json",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "last_action_key",
+          "type": "VARCHAR(64) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_chart_payload",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_filters_json",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_job_id",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_kb_version",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_plan_json",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_query",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_response_mode",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_result_payload",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_result_summary",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "session_key",
+          "type": "VARCHAR(64) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "chat_session_states_user_id_47adeb98_fk_accounts_customuser_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "chat_session_states_updated_at_44284963",
+          "column_names": [
+            "updated_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_chat_state_user_updated",
+          "column_names": [
+            "user_id",
+            "updated_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "session_key",
+          "column_names": [
+            "session_key"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "77a97c60bb532b4a5c02ff6b6a50ca7f032e67d42487ee9bb475a653a49cb326"
+    },
+    "django_admin_log": {
+      "name": "django_admin_log",
+      "columns": [
+        {
+          "name": "action_flag",
+          "type": "SMALLINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "action_time",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "change_message",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "content_type_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "object_id",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "object_repr",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "django_admin_log_user_id_c564eba6_fk_accounts_customuser_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "django_admin_log_content_type_id_c4bce8eb_fk_django_co",
+          "constrained_columns": [
+            "content_type_id"
+          ],
+          "referred_table": "django_content_type",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "django_admin_log_content_type_id_c4bce8eb_fk_django_co",
+          "column_names": [
+            "content_type_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "django_admin_log_user_id_c564eba6_fk_accounts_customuser_id",
+          "column_names": [
+            "user_id"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "2af8eb99ab2beab36069c77b804fb4084d6bafb85c53b828ccddf1d90faac476"
+    },
+    "django_content_type": {
+      "name": "django_content_type",
+      "columns": [
+        {
+          "name": "app_label",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "model",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "django_content_type_app_label_model_76bd3d3b_uniq",
+          "column_names": [
+            "app_label",
+            "model"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "611afda7f77ff97e19b403c350392a3f4c33e75824f71b45b09d2188b582e57b"
+    },
+    "django_migrations": {
+      "name": "django_migrations",
+      "columns": [
+        {
+          "name": "app",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "applied",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "hash": "dced355995343ee3845de4a8b5f4b23e182c9207483551462f5fc458fb00ce00"
+    },
+    "django_session": {
+      "name": "django_session",
+      "columns": [
+        {
+          "name": "expire_date",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "session_data",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "session_key",
+          "type": "VARCHAR(40) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "session_key"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "django_session_expire_date_a5c62663",
+          "column_names": [
+            "expire_date"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "b3baa1d9244069838f05dcf65b70d64bc57174860afd9b8425832bb0fb7ddce3"
+    },
+    "django_site": {
+      "name": "django_site",
+      "columns": [
+        {
+          "name": "domain",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "django_site_domain_a2e37b91_uniq",
+          "column_names": [
+            "domain"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "6f27de8711c6dd55bebfc8dab3d9b72e3813e0ab97f54247b9d286915abe2042"
+    },
+    "institution_win_rate_stats": {
+      "name": "institution_win_rate_stats",
+      "columns": [
+        {
+          "name": "avg_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "category",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "ewm_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "institution_name",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rebuilt_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sample_count",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "uq_inst_win_rate_scope",
+          "column_names": [
+            "institution_name",
+            "category"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "949ece41bfc66fc2100cefb6574cf873ac4d2f57c9dc770f8daaa065fd74340b"
+    },
+    "knowledge_base_status": {
+      "name": "knowledge_base_status",
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "kb_version",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_embedding_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "last_pipeline_run_id",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "notes",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "source_bid_count",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "kb_version",
+          "column_names": [
+            "kb_version"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "40a791e9b54e5942499187c00fcd8ff411e517b51a54c36636ba7d847b50ea61"
+    },
+    "pipeline_executions": {
+      "name": "pipeline_executions",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "ended_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "execution_id",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "external_url",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "logs_summary",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "metrics_json",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "pipeline_name",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "raw_status_payload",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "run_mode",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "source",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "stage_name",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "stage_status",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "started_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "execution_id",
+          "column_names": [
+            "execution_id"
+          ],
+          "unique": true
+        },
+        {
+          "name": "ix_pipe_exec_created",
+          "column_names": [
+            "created_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_pipe_exec_name_status",
+          "column_names": [
+            "pipeline_name",
+            "status"
+          ],
+          "unique": false
+        },
+        {
+          "name": "pipeline_executions_pipeline_name_010b1479",
+          "column_names": [
+            "pipeline_name"
+          ],
+          "unique": false
+        },
+        {
+          "name": "pipeline_executions_status_e7ec4919",
+          "column_names": [
+            "status"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "ef98bd6ef8d384fbdd1c9010d8a374379f17bf5599a33d15af254cc95bebaed2"
+    },
+    "prediction_results": {
+      "name": "prediction_results",
+      "columns": [
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "confidence_score",
+          "type": "DECIMAL(5, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "model_version",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "predicted_lower_bound",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "predicted_optimal_price",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "predicted_upper_bound",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_input_price",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "hash": "e45f1a94754ebd46ef78ef5d6b613b773331de67bb46010d5f4bd4ddf7a2cfa4"
+    },
+    "retrain_logs": {
+      "name": "retrain_logs",
+      "columns": [
+        {
+          "name": "challenger_version",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "champion_version",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "metrics_summary",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(30) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "trigger_source",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "hash": "37f7bdb7bd12c8869ca79b8617fc99b7d2c83c4c7c591235a68744bc0b6b3936"
+    },
+    "servc_inst_verify": {
+      "name": "servc_inst_verify",
+      "columns": [
+        {
+          "name": "ann_openg_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "asign_bdgt_amt",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "base_amount",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_methd_nm",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_nm",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_prce_evl_rt",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "clsfc_nm",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "cntrct_mthd_nm",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dminstt_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "drwt_prdprc_num",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "intrbid_yn",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "lrg_clsfc_nm",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "lwlt_rate",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "mid_clsfc_nm",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "ntce_instt_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "ntce_kind_nm",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "ppsw_gnrl_srvce_yn",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "pq_eval_yn",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "prearng_mthd",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "presmpt_prce",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "presmpt_prce_raw",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rgn_lmt_nm",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rl_openg_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "srvce_div_nm",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sucsf_bid_amt",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sucsf_bid_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sucsfbid_mthd_cd",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sucsfbid_mthd_nm",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sucsfbid_mthd_std",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "tech_ablt_evl_rt",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "tot_prdprc_num",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "tp_eval_yn",
+          "type": "LONGTEXT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_v_dt",
+          "column_names": [
+            "bid_ntce_dt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_v_lwlt",
+          "column_names": [
+            "lwlt_rate"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "9f3f26bbb31c356f27926741057947ebfb287952d7f7ae3454a88201d70c5e4a"
+    },
+    "socialaccount_socialaccount": {
+      "name": "socialaccount_socialaccount",
+      "columns": [
+        {
+          "name": "date_joined",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "extra_data",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "last_login",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "provider",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "uid",
+          "type": "VARCHAR(191) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "socialaccount_social_user_id_8146e70c_fk_accounts_",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "socialaccount_social_user_id_8146e70c_fk_accounts_",
+          "column_names": [
+            "user_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "socialaccount_socialaccount_provider_uid_fc810c6e_uniq",
+          "column_names": [
+            "provider",
+            "uid"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "1f9ceb2497fe293bb2e86f423accedfcb57051fc3686c4b1c43fc1923bb2adfe"
+    },
+    "socialaccount_socialapp": {
+      "name": "socialaccount_socialapp",
+      "columns": [
+        {
+          "name": "client_id",
+          "type": "VARCHAR(191) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "key",
+          "type": "VARCHAR(191) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "name",
+          "type": "VARCHAR(40) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "provider",
+          "type": "VARCHAR(30) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "provider_id",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "secret",
+          "type": "VARCHAR(191) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "settings",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "hash": "2b15551d964b4690a6b2153fe0c06317ee798a189e0567eb1bde220d5dc0dec7"
+    },
+    "socialaccount_socialapp_sites": {
+      "name": "socialaccount_socialapp_sites",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "site_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "socialapp_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "socialaccount_socialapp_sites_site_id_2579dee5_fk_django_site_id",
+          "constrained_columns": [
+            "site_id"
+          ],
+          "referred_table": "django_site",
+          "referred_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "socialaccount_social_socialapp_id_97fb6e7d_fk_socialacc",
+          "constrained_columns": [
+            "socialapp_id"
+          ],
+          "referred_table": "socialaccount_socialapp",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "socialaccount_socialapp_sites_site_id_2579dee5_fk_django_site_id",
+          "column_names": [
+            "site_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "socialaccount_socialapp_sites_socialapp_id_site_id_71a9a768_uniq",
+          "column_names": [
+            "socialapp_id",
+            "site_id"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97"
+    },
+    "socialaccount_socialtoken": {
+      "name": "socialaccount_socialtoken",
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "app_id",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "expires_at",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "token",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "token_secret",
+          "type": "LONGTEXT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "socialaccount_social_account_id_951f210e_fk_socialacc",
+          "constrained_columns": [
+            "account_id"
+          ],
+          "referred_table": "socialaccount_socialaccount",
+          "referred_columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "socialaccount_social_app_id_636a42d7_fk_socialacc",
+          "constrained_columns": [
+            "app_id"
+          ],
+          "referred_table": "socialaccount_socialapp",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "socialaccount_social_account_id_951f210e_fk_socialacc",
+          "column_names": [
+            "account_id"
+          ],
+          "unique": false
+        },
+        {
+          "name": "socialaccount_socialtoken_app_id_account_id_fca4e0ac_uniq",
+          "column_names": [
+            "app_id",
+            "account_id"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
+    }
+  },
+  "table_hashes": {
+    "account_emailaddress": "74a58b4a27cffcb5f5ba91a4a27cbda1f498108f2c3fe66d06bee66d79a58123",
+    "account_emailconfirmation": "ab604eec0106ffd9f6d39ae3ae515ebd118da93e4abf630fe0e1db064491fbab",
+    "accounts_customuser": "fb4de17f0132decd4c707042d6d7abbd44aca92da0306ee2fc99e83e0337032f",
+    "accounts_customuser_groups": "112e0b43ac0939f40ef8b98f28d1215a980054e2288f7a6e68ceb6ee2f3b83e3",
+    "accounts_customuser_user_permissions": "ca52ca0f666c4bc1bfb9f397b25df4d935ef2ced25b978be1dcc730a94b02d22",
+    "alembic_version": "9c9beba307d6bb90fe37f4eb31c06dd99f680a54323b77cce37a4632a7b76307",
+    "auth_group": "f0daa81e4856334a02e199665d9db77f27f00d7e49bf00ef1aa2358321504414",
+    "auth_group_permissions": "065b0dbc5184396f67340e91392a9a93f1e8d8f2ed407fc083d22fdc79b11f78",
+    "auth_permission": "5a1eda5bc2a9f9790700b2a4228ae20e71b3294de4c3f32ea5d531951bbf732e",
+    "automation_requests": "2478d00ecc710a936ce176be8d4bf7251b30e685f439eaa523b6e4908334416d",
+    "automation_subscriptions": "643c95f2fa8501dc2375cedd58248611a366ffe9cfd049e0f1f234318335686b",
+    "bid_announcements": "324781fa1323edd55396c40ccd25b6d8519edf82200a43033ebd70a1af5ac587",
+    "bid_compare_stats_snapshots": "d9e0fe67e1318a2cdf02ff0b2fc15dd89716a4495bde95d916749105311dac60",
+    "bid_dataset_summaries": "db63132629b7fd7a107d4ef8dd88e3b75db7645da6e724d0df92115af9288501",
+    "bid_evaluation_evidence": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a",
+    "bid_evaluation_profiles": "fee7f458d7d9966e3c10ce2637420330c5174629f667ac5c826c56bbe28bab8e",
+    "bid_evaluation_snapshots": "761fed06d9e29c01cf1a9149efa3cd831a91c6266573fb814359a008038ed17a",
+    "bid_ranking_snapshots": "dd386a5dee7f4abf08926b8978dbad4244f5d69cfbf0d062bdf7b827c1ec5dca",
+    "bid_results": "7c6789b017bc5bf2a86350d801378f44b5e57b9f5adca9100a8e49a7a786cd5a",
+    "chat_session_states": "77a97c60bb532b4a5c02ff6b6a50ca7f032e67d42487ee9bb475a653a49cb326",
+    "django_admin_log": "2af8eb99ab2beab36069c77b804fb4084d6bafb85c53b828ccddf1d90faac476",
+    "django_content_type": "611afda7f77ff97e19b403c350392a3f4c33e75824f71b45b09d2188b582e57b",
+    "django_migrations": "dced355995343ee3845de4a8b5f4b23e182c9207483551462f5fc458fb00ce00",
+    "django_session": "b3baa1d9244069838f05dcf65b70d64bc57174860afd9b8425832bb0fb7ddce3",
+    "django_site": "6f27de8711c6dd55bebfc8dab3d9b72e3813e0ab97f54247b9d286915abe2042",
+    "institution_win_rate_stats": "949ece41bfc66fc2100cefb6574cf873ac4d2f57c9dc770f8daaa065fd74340b",
+    "knowledge_base_status": "40a791e9b54e5942499187c00fcd8ff411e517b51a54c36636ba7d847b50ea61",
+    "pipeline_executions": "ef98bd6ef8d384fbdd1c9010d8a374379f17bf5599a33d15af254cc95bebaed2",
+    "prediction_results": "e45f1a94754ebd46ef78ef5d6b613b773331de67bb46010d5f4bd4ddf7a2cfa4",
+    "retrain_logs": "37f7bdb7bd12c8869ca79b8617fc99b7d2c83c4c7c591235a68744bc0b6b3936",
+    "servc_inst_verify": "9f3f26bbb31c356f27926741057947ebfb287952d7f7ae3454a88201d70c5e4a",
+    "socialaccount_socialaccount": "1f9ceb2497fe293bb2e86f423accedfcb57051fc3686c4b1c43fc1923bb2adfe",
+    "socialaccount_socialapp": "2b15551d964b4690a6b2153fe0c06317ee798a189e0567eb1bde220d5dc0dec7",
+    "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
+    "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
+  },
+  "overall_hash": "94ee0305d862559a3ca0124029bddacafbabf27f6e1b113ba9eeb15a8ecb994f",
+  "orm_tables": [
+    "accounts_customuser",
+    "automation_requests",
+    "automation_subscriptions",
+    "bid_announcements",
+    "bid_compare_stats_snapshots",
+    "bid_dataset_summaries",
+    "bid_evaluation_evidence",
+    "bid_evaluation_profiles",
+    "bid_evaluation_snapshots",
+    "bid_ranking_snapshots",
+    "bid_results",
+    "chat_session_states",
+    "institution_win_rate_stats",
+    "knowledge_base_status",
+    "pipeline_executions",
+    "prediction_results",
+    "retrain_logs"
+  ],
+  "database_tables": [
+    "account_emailaddress",
+    "account_emailconfirmation",
+    "accounts_customuser",
+    "accounts_customuser_groups",
+    "accounts_customuser_user_permissions",
+    "alembic_version",
+    "auth_group",
+    "auth_group_permissions",
+    "auth_permission",
+    "automation_requests",
+    "automation_subscriptions",
+    "bid_announcements",
+    "bid_compare_stats_snapshots",
+    "bid_dataset_summaries",
+    "bid_evaluation_evidence",
+    "bid_evaluation_profiles",
+    "bid_evaluation_snapshots",
+    "bid_ranking_snapshots",
+    "bid_results",
+    "chat_session_states",
+    "django_admin_log",
+    "django_content_type",
+    "django_migrations",
+    "django_session",
+    "django_site",
+    "institution_win_rate_stats",
+    "knowledge_base_status",
+    "pipeline_executions",
+    "prediction_results",
+    "retrain_logs",
+    "servc_inst_verify",
+    "socialaccount_socialaccount",
+    "socialaccount_socialapp",
+    "socialaccount_socialapp_sites",
+    "socialaccount_socialtoken"
+  ],
+  "metadata": {
+    "generated_at": "2026-09-11T07:03:02.189788+00:00",
+    "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
+    "generated_by": "kwanbum",
+    "tool_version": "2.0.0",
+    "git_head": "570868cf33a991b17974a52bd10c83650fc30b75"
+  }
+}
