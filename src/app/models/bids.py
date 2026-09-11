@@ -476,6 +476,36 @@ class BidRankingSnapshot(Base):
         return f"[{self.dataset}/{self.dimension}/{scope}] {self.rank}위 {self.label}"
 
 
+class BidCompareStatsSnapshot(Base):
+    """비교 통계 사전 집계 스냅샷.
+
+    GET /api/v1/bids/compare-stats 의 두 무거운 집계(기관별 상위 10,
+    매칭 건수)를 매 요청 실시간 계산 대신 하루 한 번 재집계해 둡니다.
+    기존 테이블은 절대 건드리지 않으며 이 테이블만 새로 둡니다.
+    조회는 스냅샷이 있고 2일 이내면 쓰고, 없거나 낡으면 실시간 폴백합니다.
+    """
+
+    __tablename__ = "bid_compare_stats_snapshots"
+
+    snapshot_key: Mapped[str] = mapped_column(String(50), primary_key=True, comment="스냅샷 키")
+    payload: Mapped[dict[str, Any] | list[Any]] = mapped_column(
+        JSON, nullable=False, comment="사전 집계 결과 원문"
+    )
+    window_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=365, comment="집계 창(일)"
+    )
+    rebuilt_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        comment="집계 갱신 시각",
+    )
+
+    def __str__(self) -> str:
+        return f"비교 통계 스냅샷 {self.snapshot_key}"
+
+
 class InstitutionWinRateStat(Base):
     """기관별 낙찰률 이력 사전 집계.
 
