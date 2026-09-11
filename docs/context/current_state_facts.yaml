@@ -365,25 +365,29 @@ facts:
   - id: rpo_rto
     status: active
     decision_date: "2026-09-06"
-    claim: "RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 실시를 추진합니다."
+    claim: "RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 실시를 추진합니다. 런북 공란은 확정값으로 고쳤고 실행 절차서는 병합했으나 실측 드릴은 스냅샷 부재로 아직 돌리지 않았습니다."
     document_anchor: "RPO/RTO와 정기 백업 스케줄"
     evidence:
       - docs/ops/backup_recovery_runbook.md
       - docs/ops/rpo_rto_policy.md
+      - docs/ops/restore_drill_procedure_20260911.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/backup_recovery_runbook.md
       - docs/ops/rpo_rto_policy.md
+      - docs/ops/restore_drill_procedure_20260911.md
   - id: observability
     status: active
-    decision_date: "2026-09-06"
-    claim: "관측성 스택은 Collector·Tempo·Grafana 로 확정했고 2단계 Prometheus 는 메트릭 계측 후 착수합니다."
+    decision_date: "2026-09-11"
+    claim: "관측성 스택은 Collector·Tempo·Grafana 로 확정했고 요청 지연·DB 질의 지연·요청 수 메트릭 계측은 병합했습니다. 2단계 Prometheus 배선을 추진합니다."
     document_anchor: "관측성 스택은 Collector"
     evidence:
       - docker-compose.prod.yml
-      - docs/ops/handoff_20260906_wave_aa_ad_session_close.md
+      - src/app/core/observability.py
+      - docs/ops/observability_metrics_20260911.md
     related_documents:
       - docs/context/CURRENT_STATE.md
+      - docs/ops/observability_metrics_20260911.md
       - docs/ops/scale_and_silent_failure_audit_20260807.md
   - id: drift_job
     status: active
