@@ -306,17 +306,19 @@ def validate_doc_links(
         checked_count += 1
         if broken:
             total_broken.extend(broken)
-            if not quiet:
-                for b in broken:
-                    rel_src = (
-                        b.source_file.relative_to(root_dir)
-                        if b.source_file.is_relative_to(root_dir)
-                        else b.source_file
-                    )
-                    print(
-                        f"[FAIL] {rel_src}:{b.line_number} -> {b.raw_target}\n"
-                        f"       원인: {b.reason} (해석 경로: {b.resolved_path})"
-                    )
+            # quiet 는 성공 시 잡음을 줄이려는 것이지 실패 내용을 숨기라는 뜻이 아닙니다.
+            # 2026-09-11 에 Windows 러너에서만 9건이 깨졌는데 quiet 가 건수만 찍어
+            # 어느 링크인지 알 수 없었고 원인 추적이 로컬 추측에 의존했습니다.
+            for b in broken:
+                rel_src = (
+                    b.source_file.relative_to(root_dir)
+                    if b.source_file.is_relative_to(root_dir)
+                    else b.source_file
+                )
+                print(
+                    f"[FAIL] {rel_src}:{b.line_number} -> {b.raw_target}\n"
+                    f"       원인: {b.reason} (해석 경로: {b.resolved_path})"
+                )
 
     if not quiet:
         print("-" * 60)

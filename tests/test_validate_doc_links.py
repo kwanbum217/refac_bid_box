@@ -241,3 +241,20 @@ def test_cli_execution():
     )
     assert proc.returncode == 0
     assert "[PASS]" in proc.stdout
+
+
+def test_quiet_mode_still_reports_broken_links(tmp_path, capsys):
+    """quiet 는 성공 시 잡음을 줄이는 것이지 실패 내용을 숨기는 것이 아니다.
+
+    2026-09-11 Windows 러너에서 9건이 깨졌는데 quiet 가 건수만 출력해
+    어느 링크인지 알 수 없었고 원인 추적이 로컬 추측에 의존했다.
+    """
+    md = tmp_path / "broken.md"
+    md.write_text("[없는 문서](./does_not_exist.md)\n", encoding="utf-8")
+
+    exit_code = validate_doc_links([md], root_dir=tmp_path, quiet=True)
+    captured = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "[FAIL]" in captured
+    assert "does_not_exist.md" in captured
