@@ -204,3 +204,70 @@ def test_model_verification_rejects_mutated_serving_and_backup(monkeypatch, tmp_
 
     assert passed is False
     assert "백업도 불일치" in message
+
+
+def test_only_steps_rejects_unknown(monkeypatch, capsys, tmp_path):
+    """알 수 없는 --only-steps 값은 검증을 시작하지 않고 종료 코드 2입니다."""
+    report = tmp_path / "report.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["verify_migration.py", "--only-steps", "nope", "--report-path", str(report)],
+    )
+
+    assert verify_migration.main() == 2
+    captured = capsys.readouterr()
+    assert "알 수 없는 --only-steps" in captured.out
+    assert not report.exists()
+
+
+def test_only_steps_runs_selected_file_checks_only(monkeypatch, tmp_path):
+    """weights,chroma 만 고르면 DB 단계는 호출하지 않습니다."""
+    called: list[str] = []
+    report = tmp_path / "report.json"
+
+    monkeypatch.setattr(
+        verify_migration,
+        "verify_model_weights",
+        lambda: called.append("weights") or (True, "ok"),
+    )
+    monkeypatch.setattr(
+        verify_migration,
+        "verify_chroma_db",
+        lambda: called.append("chroma") or (True, "ok"),
+    )
+    monkeypatch.setattr(
+        verify_migration,
+        "verify_db_schema",
+        lambda: called.append("tables") or (True, "ok"),
+    )
+    monkeypatch.setattr(
+        verify_migration,
+        "verify_schema_signature",
+        lambda **_kwargs: called.append("signature") or (True, "ok"),
+    )
+    monkeypatch.setattr(
+        verify_migration,
+        "verify_row_counts",
+        lambda: called.append("rowcount") or (True, "ok"),
+    )
+    monkeypatch.setattr(
+        verify_migration,
+        "verify_reconciliation",
+        lambda **_kwargs: called.append("reconciliation") or (True, "ok"),
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "verify_migration.py",
+            "--only-steps",
+            "weights,chroma",
+            "--report-path",
+            str(report),
+        ],
+    )
+
+    assert verify_migration.main() == 0
+    assert called == ["weights", "chroma"]
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    names = [item["name"] for item in payload["results"]]
+    assert names == ["ML 가중치 4종 무결성", "ChromaDB 컬렉션 무결성"]

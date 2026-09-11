@@ -218,6 +218,7 @@ def run_drill_g1_verification(
     drill_db_config: dict[str, Any],
     report_path: Path | None = None,
     project_root: Path | None = None,
+    only_steps: str | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     root = project_root or PROJECT_ROOT
     script = root / "scripts" / "verify_migration.py"
@@ -237,8 +238,11 @@ def run_drill_g1_verification(
     }
     if drill_db_config.get("password"):
         env["DB_PASSWORD"] = str(drill_db_config["password"])
+    cmd = [sys.executable, str(script), "--report-path", str(rep)]
+    if only_steps:
+        cmd.extend(["--only-steps", only_steps])
     proc = subprocess.run(
-        [sys.executable, str(script), "--report-path", str(rep)],
+        cmd,
         cwd=str(root),
         capture_output=True,
         text=True,
@@ -293,6 +297,32 @@ def _record_timing(
     }
 
 
+def _combine_staged_g1(
+    file_part: dict[str, Any],
+    db_part: dict[str, Any],
+) -> dict[str, Any]:
+    """파일 단계와 DB 단계 G1 결과를 하나의 리포트 필드로 합칩니다."""
+    file_ok = bool(file_part.get("success"))
+    db_ok = bool(db_part.get("success"))
+    messages = [
+        part.get("message")
+        for part in (file_part, db_part)
+        if isinstance(part.get("message"), str) and part.get("message")
+    ]
+    if file_ok and db_ok:
+        message = "G1 무손실 검증 통과 (파일·DB 단계 분리)"
+    elif messages:
+        message = " / ".join(messages)
+    else:
+        message = "G1 무손실 검증을 실행하지 않음"
+    return {
+        "success": file_ok and db_ok,
+        "message": message,
+        "file": file_part,
+        "database": db_part,
+    }
+
+
 def run_restore_drill(
     snapshot_dir: Path,
     target_dir: Path,
@@ -300,7 +330,12 @@ def run_restore_drill(
     keep_artifacts: bool = False,
     project_root: Path | None = None,
 ) -> dict[str, Any]:
-    """격리 대상에 대해 아카이브 해제, DB import, G1 무손실 검증을 실제로 수행하는 복원 리허설 도구입니다."""
+    """격리 대상에 대해 아카이브 해제, DB import, G1 무손실 검증을 실제로 수행하는 복원 리허설 도구입니다.
+
+    로컬 디스크 정점을 낮추기 위해 파일 해제본과 격리 DB 복사본을 동시에 두지 않습니다.
+    파일 G1(weights, chroma)이 끝나면 해제본을 지운 뒤 DB import와 DB G1을 수행합니다.
+    RTO는 두 단계 소요 시간의 합입니다.
+    """
     raw_target = str(target_dir).strip()
     if not raw_target or raw_target in (".", "./", "..", "../"):
         raise ValueError("복원 리허설 대상 디렉토리를 지정해야 합니다.")
@@ -372,7 +407,7 @@ def run_restore_drill(
             False, {"success": False, "message": "스냅샷 무결성 검증 실패로 건너뜀"}, []
         )
 
-    extracted, g1_res, success, created_db = [], {}, False, False
+    extracted, g1_file, g1_db, success, created_db = [], {}, {}, False, False
     target.mkdir(parents=True, exist_ok=True)
     try:
 
@@ -386,13 +421,30 @@ def run_restore_drill(
                 errors.append(f"{name} 실패: {exc}")
                 raise
 
-        def _do_extract():
+        def _do_extract() -> None:
             for k in ("chroma_db", "models"):
                 if comps.get(k, {}).get("path"):
                     extract_tar_archive(snapshot_dir / comps[k]["path"], target_base_dir=target)
                     extracted.append(k)
 
-        def _do_import():
+        def _do_g1_files() -> None:
+            nonlocal g1_file
+            ok, msg, rep = run_drill_g1_verification(
+                target,
+                drill_db,
+                target / "g1_drill_verify_files.json",
+                project_root=project_root,
+                only_steps="weights,chroma",
+            )
+            g1_file = {"success": ok, "message": msg, "report": rep}
+            if not ok:
+                raise RuntimeError(f"G1 무손실 검증 실패: {msg}")
+
+        def _do_extract_cleanup() -> None:
+            cleanup_drill_target_dir(target, project_root=project_root)
+            target.mkdir(parents=True, exist_ok=True)
+
+        def _do_import() -> None:
             nonlocal created_db
             create_mysql_database(drill_db)
             created_db = True
@@ -400,19 +452,25 @@ def run_restore_drill(
                 raise ValueError("매니페스트에 database 아카이브 경로가 없습니다.")
             restore_mysql_database(drill_db, snapshot_dir / comps["database"]["path"])
 
-        def _do_g1():
-            nonlocal g1_res, success
+        def _do_g1_db() -> None:
+            nonlocal g1_db, success
             ok, msg, rep = run_drill_g1_verification(
-                target, drill_db, target / "g1_drill_verify_report.json", project_root=project_root
+                target,
+                drill_db,
+                target / "g1_drill_verify_db.json",
+                project_root=project_root,
+                only_steps="tables,signature,rowcount,reconciliation",
             )
-            g1_res = {"success": ok, "message": msg, "report": rep}
+            g1_db = {"success": ok, "message": msg, "report": rep}
             if not ok:
                 raise RuntimeError(f"G1 무손실 검증 실패: {msg}")
             success = True
 
         _exec_step("archive_extraction", _do_extract)
+        _exec_step("g1_file_verification", _do_g1_files)
+        _exec_step("extract_cleanup", _do_extract_cleanup)
         _exec_step("database_import", _do_import)
-        _exec_step("g1_verification", _do_g1)
+        _exec_step("g1_db_verification", _do_g1_db)
     except Exception:
         success = False
 
@@ -428,6 +486,7 @@ def run_restore_drill(
                 errors.append(f"리허설 산출물 정리 실패: {exc}")
         _record_timing(timings, "cleanup", c_st, datetime.now(UTC), c_status)
 
+    g1_res = _combine_staged_g1(g1_file, g1_db)
     return _drill_rep(success and (len(errors) == 0), g1_res, extracted)
 
 

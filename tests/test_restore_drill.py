@@ -243,12 +243,19 @@ def test_drill_executes_extraction_db_import_and_g1_verification(tmp_path: Path)
     assert "chroma_db" in report["extracted_components"]
     assert "models" in report["extracted_components"]
 
-    # 실제 추출 및 DB 복원, G1 검증 호출 확인
+    # 실제 추출 및 DB 복원, 단계 나눔 G1 검증 호출 확인
     assert mock_extract.call_count == 2
     mock_create_db.assert_called_once_with(drill_db)
     mock_restore_db.assert_called_once_with(drill_db, snapshot_dir / "db_dump.sql.gz")
-    mock_g1.assert_called_once()
+    assert mock_g1.call_count == 2
+    assert mock_g1.call_args_list[0].kwargs["only_steps"] == "weights,chroma"
+    assert (
+        mock_g1.call_args_list[1].kwargs["only_steps"] == "tables,signature,rowcount,reconciliation"
+    )
     mock_drop_db.assert_called_once()
+    assert report["g1_verification"]["success"] is True
+    assert report["g1_verification"]["file"]["success"] is True
+    assert report["g1_verification"]["database"]["success"] is True
 
 
 def test_drill_records_timings_and_rpo_measurements_without_threshold_verdict(tmp_path: Path):
@@ -281,8 +288,10 @@ def test_drill_records_timings_and_rpo_measurements_without_threshold_verdict(tm
     for step in (
         "snapshot_verification",
         "archive_extraction",
+        "g1_file_verification",
+        "extract_cleanup",
         "database_import",
-        "g1_verification",
+        "g1_db_verification",
         "cleanup",
     ):
         assert step in timings, f"{step} 단계가 timings 에 누락되었습니다."
@@ -342,6 +351,10 @@ def test_drill_cleanup_performed_on_success_and_failure(tmp_path: Path):
         ),
         patch("scripts.backup_recovery.drop_mysql_database") as mock_drop_2,
         patch("scripts.backup_recovery.extract_tar_archive"),
+        patch(
+            "scripts.backup_recovery.run_drill_g1_verification",
+            return_value=(True, "통과", {}),
+        ),
     ):
         report2 = run_restore_drill(
             snapshot_dir, target2, keep_artifacts=False, project_root=project_root
@@ -371,21 +384,21 @@ def test_drill_cleanup_performed_on_success_and_failure(tmp_path: Path):
     assert target3.exists()
 
 
-def test_drill_fails_if_g1_verification_fails(tmp_path: Path):
-    """G1 무손실 검증이 실패하면 전체 리허설은 실패(success: False)로 판정됩니다."""
+def test_drill_fails_if_file_g1_verification_fails(tmp_path: Path):
+    """파일 G1이 실패하면 DB import 전에 중단하고 전체 리허설은 실패합니다."""
     project_root = tmp_path / "fake_repo"
     project_root.mkdir()
     isolated_target = tmp_path / "drill_target"
     snapshot_dir = _create_valid_snapshot(tmp_path / "snapshot")
 
     with (
-        patch("scripts.backup_recovery.create_mysql_database"),
-        patch("scripts.backup_recovery.restore_mysql_database"),
+        patch("scripts.backup_recovery.create_mysql_database") as mock_create_db,
+        patch("scripts.backup_recovery.restore_mysql_database") as mock_restore_db,
         patch("scripts.backup_recovery.drop_mysql_database"),
         patch("scripts.backup_recovery.extract_tar_archive"),
         patch(
             "scripts.backup_recovery.run_drill_g1_verification",
-            return_value=(False, "행 수 불일치: 10건 누락", {}),
+            return_value=(False, "가중치 체크섬 불일치", {}),
         ),
     ):
         report = run_restore_drill(
@@ -395,8 +408,102 @@ def test_drill_fails_if_g1_verification_fails(tmp_path: Path):
         )
 
     assert report["success"] is False
-    assert report["timings"]["g1_verification"]["status"] == "FAIL"
+    assert report["timings"]["g1_file_verification"]["status"] == "FAIL"
+    assert "database_import" not in report["timings"]
+    mock_create_db.assert_not_called()
+    mock_restore_db.assert_not_called()
     assert any("G1 무손실 검증 실패" in err for err in report["errors"])
+
+
+def test_drill_fails_if_db_g1_verification_fails(tmp_path: Path):
+    """DB G1이 실패하면 전체 리허설은 실패(success: False)로 판정됩니다."""
+    project_root = tmp_path / "fake_repo"
+    project_root.mkdir()
+    isolated_target = tmp_path / "drill_target"
+    snapshot_dir = _create_valid_snapshot(tmp_path / "snapshot")
+
+    def _g1_side_effect(*_args, **kwargs):
+        steps = kwargs.get("only_steps", "")
+        if steps == "weights,chroma":
+            return True, "파일 G1 통과", {}
+        return False, "행 수 불일치: 10건 누락", {}
+
+    with (
+        patch("scripts.backup_recovery.create_mysql_database"),
+        patch("scripts.backup_recovery.restore_mysql_database"),
+        patch("scripts.backup_recovery.drop_mysql_database"),
+        patch("scripts.backup_recovery.extract_tar_archive"),
+        patch(
+            "scripts.backup_recovery.run_drill_g1_verification",
+            side_effect=_g1_side_effect,
+        ),
+    ):
+        report = run_restore_drill(
+            snapshot_dir=snapshot_dir,
+            target_dir=isolated_target,
+            project_root=project_root,
+        )
+
+    assert report["success"] is False
+    assert report["timings"]["g1_file_verification"]["status"] == "PASS"
+    assert report["timings"]["g1_db_verification"]["status"] == "FAIL"
+    assert any("G1 무손실 검증 실패" in err for err in report["errors"])
+
+
+def test_drill_does_not_hold_extract_and_db_together(tmp_path: Path):
+    """파일 해제본은 DB import 전에 지워서 디스크 정점을 둘의 합이 아니게 합니다."""
+    project_root = tmp_path / "fake_repo"
+    project_root.mkdir()
+    isolated_target = tmp_path / "drill_target"
+    snapshot_dir = _create_valid_snapshot(tmp_path / "snapshot")
+    order: list[str] = []
+
+    def _extract(*_args, **_kwargs) -> None:
+        order.append("extract")
+
+    def _g1(*_args, **kwargs):
+        order.append(f"g1:{kwargs.get('only_steps')}")
+        return True, "통과", {}
+
+    def _create(*_args, **_kwargs) -> None:
+        order.append("create_db")
+
+    def _restore(*_args, **_kwargs) -> None:
+        order.append("restore_db")
+
+    def _cleanup(path: Path, project_root: Path | None = None) -> None:
+        del path, project_root
+        order.append("cleanup_extract")
+
+    with (
+        patch("scripts.backup_recovery.get_db_config", return_value={"name": "procurement"}),
+        patch("scripts.backup_recovery.create_mysql_database", side_effect=_create),
+        patch("scripts.backup_recovery.restore_mysql_database", side_effect=_restore),
+        patch("scripts.backup_recovery.drop_mysql_database"),
+        patch("scripts.backup_recovery.extract_tar_archive", side_effect=_extract),
+        patch("scripts.backup_recovery.cleanup_drill_target_dir", side_effect=_cleanup),
+        patch("scripts.backup_recovery.run_drill_g1_verification", side_effect=_g1),
+    ):
+        report = run_restore_drill(
+            snapshot_dir=snapshot_dir,
+            target_dir=isolated_target,
+            project_root=project_root,
+        )
+
+    assert report["success"] is True
+    assert order[:5] == [
+        "extract",
+        "extract",
+        "g1:weights,chroma",
+        "cleanup_extract",
+        "create_db",
+    ]
+    assert "restore_db" in order
+    assert "g1:tables,signature,rowcount,reconciliation" in order
+    extract_idx = order.index("g1:weights,chroma")
+    cleanup_idx = order.index("cleanup_extract")
+    create_idx = order.index("create_db")
+    assert extract_idx < cleanup_idx < create_idx
 
 
 def test_drop_mysql_database_guard():
@@ -517,13 +624,16 @@ def test_run_drill_g1_verification_subprocess(tmp_path: Path):
             target_dir=target_dir,
             drill_db_config=drill_db,
             report_path=report_file,
+            only_steps="weights,chroma",
         )
 
         assert ok is True
         assert "G1 무손실 검증 통과" in msg
         assert rep.get("overall_verdict") == "PASS"
 
-        # 환경변수 전달 확인
+        cmd = mock_run.call_args[0][0]
+        assert "--only-steps" in cmd
+        assert "weights,chroma" in cmd
         env_passed = mock_run.call_args[1]["env"]
         assert env_passed["DB_NAME"] == "procurement_restore_drill"
         assert env_passed["DATA_ASSET_ROOT"] == str(target_dir)
