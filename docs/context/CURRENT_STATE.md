@@ -89,7 +89,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **missing_lwlt_intervals**: missing_lwlt 집단은 MAE 2.0943으로 결측 집단 전용 예측구간 관리를 추진합니다.
 
-- **rpo_rto**: RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 실시를 추진합니다. 런북 공란은 확정값으로 고쳤고 실행 절차서는 병합했으나 실측 드릴은 스냅샷 부재로 아직 돌리지 않았습니다.
+- **rpo_rto**: RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 실시를 추진합니다. 런북 공란은 확정값으로 고쳤고 실행 절차서는 병합했으며 2026-09-11 로컬 단계 나눔 드릴이 통과했습니다(총 852.83초, G1 파일·DB 분리 검증 통과).
 
 - **drift_job**: 드리프트 감시는 Servc baseline(b_20260906_servc_post_regime) 기준으로 진행 중(ML_DRIFT_MONITOR_ENABLED 기본값 True)이며, Thng baseline은 없어 해당 모델만 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록합니다.
 
@@ -117,7 +117,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
 - **SSR E2E Phase 2~4 (2026-09-03, 대기)**: 사용자 합의 후 DB 격리와 시나리오를 착수합니다.
-- **RPO/RTO 복구 목표 (2026-09-11, 절차 준비·실측 미실시)**: RPO 24시간·RTO 4시간을 확정했고 런북 공란을 그 값으로 고쳤으며 분기 복구 절차서를 병합했습니다. 실측 드릴은 스냅샷이 없어 아직 돌리지 않았습니다.
+- **RPO/RTO 복구 목표 (2026-09-11, 실측 통과)**: RPO 24시간·RTO 4시간을 확정했고 런북 공란을 그 값으로 고쳤으며 분기 복구 절차서를 병합했습니다. 로컬 단계 나눔 드릴은 `data/backups/restore_drill_report_20260911.json` 기준으로 통과했고 총 852.83초로 RTO 한도 이내입니다.
 - **워커 런처 계열 (2026-09-08, 해소)**: 런처 테스트의 실제 프로세스 부작용, 자동 승인 감시기 자기 종료, preamble 인계 규약 공용화, claude/opencode/grok 런처 신설, dispatch 런처 자동 선택을 Wave AM/AN 8건으로 닫았습니다. 사용 CLI 7종 중 6종이 `dispatch --launcher` 정규 경로에 있습니다(codex 는 구조가 달라 대상 아님).
 - **자동 승인 화이트리스트 (2026-09-08, 판단 대기)**: `pgrep`, 환경변수 접두 명령, `git add`/`git commit`, `orca orchestration send`, CLI `--help` 가 화이트리스트 밖이라 워커마다 사람 승인이 필요합니다. 열지 여부는 사용자 결정 사항입니다.
 - **자동 승인 화이트리스트 (2026-09-10, 확장 완료)**: 워커가 매번 사람 승인을 기다리던 명령을 열었습니다. `git add` 는 **명시 경로만** 허용하고 `-A`, `--all`, `-u`, 점 경로, 인자 없음을 거부합니다. 다른 작업의 미커밋 산출물을 삼키는 것을 막기 위함입니다. `git commit` 은 `-m`, `--message`, `-F`, `--file` 만 허용하고 **`--no-verify` 와 `-n` 을 절대 거부**합니다. 열리면 premerge 전량 테스트 게이트와 커밋 메시지 검증이 통째로 우회되기 때문이며, `--amend`, `--allow-empty`, `--author`, `--date`, `--reset-author` 도 같습니다. `pgrep` 과 임의 명령의 `--help`/`-h`, `orca orchestration send` 를 열었고 `orca` 의 다른 서브커맨드는 여전히 보류입니다. `git reset`, `push`, `checkout`, `restore`, `merge`, `rebase`, `worktree add/remove` 는 그대로 보류입니다.

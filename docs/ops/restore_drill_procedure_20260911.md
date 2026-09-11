@@ -25,7 +25,7 @@
 | **격리 대상 경로** | 프로젝트 루트, 현재 작업 디렉터리(cwd), 시스템 루트와 전혀 겹치지 않는 외부 격리 경로여야 함 | `/tmp/refac_bid_box_restore_drill` 등 독립 디렉터리 지정 |
 | **서비스 상태** | Docker 상의 MySQL 8 컨테이너가 정상 기동 중이어야 함 | `docker compose ps` 또는 `scripts/db_readonly_query.py` 정상 응답 |
 | **시스템 격리성 (단독 실행)** | 드릴 중 RTO 시간 실측이 왜곡되지 않도록 백그라운드 테스트, 모델 학습, 벤치마크, 대용량 I/O 작업이 없어야 함 | 코디네이터 단독 직렬 실행 원칙 준수 (타 워커 쓰기/테스트 중단) |
-| **디스크 여유 공간** | 스냅샷 압축 해제 및 DB 복원에 필요한 최소 여유 공간(최소 10GB 이상 권장) 확보 | `df -h /tmp` 로 대상 볼륨 용량 확인 |
+| **디스크 여유 공간** | 파일 해제본과 격리 DB를 동시에 두지 않는다. 정점은 둘 중 큰 쪽(격리 InnoDB 약 8-12GB)이며 여유 15GB 이상을 권장 | `df -h /tmp` 로 대상 볼륨 용량 확인 |
 
 ---
 
@@ -71,7 +71,15 @@ python3 scripts/backup_recovery.py drill \
   --report-path data/backups/restore_drill_report_debug.json
 ```
 
-> **주의**: `--keep-artifacts`를 사용한 경우, 분석이 완료된 후 반드시 임시 데이터베이스를 삭제(`DROP DATABASE \`procurement_drill_debug\`;`)하고 격리 디렉터리(`/tmp/refac_bid_box_restore_drill`)를 정리해야 합니다.
+> **주의**: 로컬 디스크 정점을 낮추기 위해 파일 해제본은 DB import 전에 항상 삭제합니다. `--keep-artifacts`는 격리 DB와 대상 디렉터리만 보존하므로, 분석이 끝나면 임시 데이터베이스를 삭제(`DROP DATABASE \`procurement_drill_debug\`;`)하고 격리 디렉터리(`/tmp/refac_bid_box_restore_drill`)를 정리해야 합니다.
+
+드릴은 다음 순서로 직렬 실행합니다. RTO는 단계 소요 시간의 합입니다.
+
+1. 스냅샷 무결성 검증
+2. 파일 아카이브 해제 후 `verify_migration.py --only-steps weights,chroma`
+3. 해제본 삭제(`cleanup_drill_target_dir`)
+4. 격리 DB 생성 및 import 후 `verify_migration.py --only-steps tables,signature,rowcount,reconciliation`. import 세션은 `sql_log_bin=0` 이라 덤프 크기만큼의 binlog 가 생기지 않으며, 복원 동안만 `innodb_redo_log_capacity` 를 8GB 로 올렸다가 되돌린다. mysql 클라이언트 stderr 는 파이프가 아니라 임시 파일로 받아 redo 경고로 교착하지 않는다
+5. 격리 DB drop 및 잔여 경로 정리
 
 ---
 
@@ -128,8 +136,10 @@ python3 scripts/backup_recovery.py drill \
     "timings": {
       "snapshot_verification": { "duration_seconds": 1.25, "status": "PASS" },
       "archive_extraction": { "duration_seconds": 4.10, "status": "PASS" },
+      "g1_file_verification": { "duration_seconds": 3.20, "status": "PASS" },
+      "extract_cleanup": { "duration_seconds": 0.40, "status": "PASS" },
       "database_import": { "duration_seconds": 28.45, "status": "PASS" },
-      "g1_verification": { "duration_seconds": 6.80, "status": "PASS" },
+      "g1_db_verification": { "duration_seconds": 6.80, "status": "PASS" },
       "cleanup": { "duration_seconds": 0.95, "status": "PASS" }
     },
     "total_duration_seconds": 41.55,

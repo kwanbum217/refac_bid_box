@@ -119,6 +119,18 @@ def test_default_orm_table_set_contains_all_known_tables():
 
     assert "bid_ranking_snapshots" in orm_tables
     assert "institution_win_rate_stats" in orm_tables
+    assert "bid_evaluation_profiles" in orm_tables
+    assert "bid_evaluation_snapshots" in orm_tables
+    assert "bid_evaluation_evidence" in orm_tables
+
+
+def test_approved_external_tables_cover_preserved_django_leftovers():
+    approved = verifier.APPROVED_EXTERNAL_TABLES
+
+    assert "django_migrations" in approved
+    assert "alembic_version" in approved
+    assert "servc_inst_verify" in approved
+    assert "account_emailaddress" in approved
 
 
 def test_reconciliation_baseline_missing_is_fail_closed(tmp_path):

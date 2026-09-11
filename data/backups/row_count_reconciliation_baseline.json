@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "cutover_timestamp": "2026-07-31T06:20:49+00:00",
+  "rationale": "명시적 기준선 생성 명령으로 수집한 이행 시점 이전 원본 행 수입니다.",
+  "tables": {
+    "bid_announcements": 1660792,
+    "bid_results": 2973072
+  },
+  "metadata": {
+    "generated_at": "2026-09-11T07:03:03.181504+00:00",
+    "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
+    "generated_by": "kwanbum",
+    "tool_version": "2.0.0",
+    "git_head": "570868cf33a991b17974a52bd10c83650fc30b75"
+  }
+}

@@ -34,7 +34,30 @@ EXPECTED_MODELS = ("v25", "quantum_leap_v25_pro", "ssh_hist_premium", "v13_hybri
 G1_TOOL_VERSION = "2.0.0"
 # ORM에 포함되지 않는 외부 테이블은 이 목록에 명시적으로 승인해야 합니다.
 # 목록 밖의 테이블은 검증 보고서에 경고를 남기고 실패 처리합니다.
-APPROVED_EXTERNAL_TABLES: frozenset[str] = frozenset()
+# G1 은 기존 테이블을 삭제하지 않는다. Django 잔여 테이블과 Alembic 장부,
+# 재생성 가능한 작업 테이블은 ORM 밖이지만 운영 DB 에 남아 있으므로 승인한다.
+APPROVED_EXTERNAL_TABLES: frozenset[str] = frozenset(
+    {
+        "account_emailaddress",
+        "account_emailconfirmation",
+        "accounts_customuser_groups",
+        "accounts_customuser_user_permissions",
+        "alembic_version",
+        "auth_group",
+        "auth_group_permissions",
+        "auth_permission",
+        "django_admin_log",
+        "django_content_type",
+        "django_migrations",
+        "django_session",
+        "django_site",
+        "servc_inst_verify",
+        "socialaccount_socialaccount",
+        "socialaccount_socialapp",
+        "socialaccount_socialapp_sites",
+        "socialaccount_socialtoken",
+    }
+)
 MANIFEST_PATH = PROJECT_ROOT / "data" / "backups" / "data_assets_checksums.json"
 SCHEMA_BASELINE_PATH = PROJECT_ROOT / "data" / "backups" / "schema_signature_baseline.json"
 DEFAULT_REPORT_PATH = PROJECT_ROOT / "data" / "backups" / "data_preservation_report.json"
@@ -981,6 +1004,13 @@ def main() -> int:
         default=MIGRATION_CUTOVER_BASELINE_PATH,
         help="reconciliation 원본 행 수 기준선 파일 경로",
     )
+    parser.add_argument(
+        "--only-steps",
+        default=None,
+        help=(
+            "쉼표 구분 단계만 실행합니다. weights,chroma,tables,signature,rowcount,reconciliation"
+        ),
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -1010,30 +1040,60 @@ def main() -> int:
             print(("PASS" if ok else "FAIL") + f": {message}")
         return 0 if all(ok for ok, _ in generation_results) else 1
 
-    step1_ok, step1_msg = verify_model_weights()
-    step2_ok, step2_msg = verify_chroma_db()
-    step3_ok, step3_msg = verify_db_schema()
-    step4_ok, step4_msg = verify_schema_signature(baseline_path=args.baseline_path)
-    step5_ok, step5_msg = verify_row_counts()
+    allowed_steps = {
+        "weights",
+        "chroma",
+        "tables",
+        "signature",
+        "rowcount",
+        "reconciliation",
+    }
+    if args.only_steps:
+        selected = {part.strip() for part in args.only_steps.split(",") if part.strip()}
+        unknown = selected - allowed_steps
+        if unknown:
+            print(f"FAIL: 알 수 없는 --only-steps 값: {', '.join(sorted(unknown))}")
+            return 2
+    else:
+        selected = allowed_steps
+
+    def _wanted(name: str) -> bool:
+        return name in selected
+
+    step1_ok, step1_msg = verify_model_weights() if _wanted("weights") else (True, "단계 생략")
+    step2_ok, step2_msg = verify_chroma_db() if _wanted("chroma") else (True, "단계 생략")
+    step3_ok, step3_msg = verify_db_schema() if _wanted("tables") else (True, "단계 생략")
+    step4_ok, step4_msg = (
+        verify_schema_signature(baseline_path=args.baseline_path)
+        if _wanted("signature")
+        else (True, "단계 생략")
+    )
+    step5_ok, step5_msg = verify_row_counts() if _wanted("rowcount") else (True, "단계 생략")
     # 6단계: 5단계가 PASS 일 때만 reconciliation 을 수행한다.
     # 5단계가 FAIL 이면 누적 행이 부족한 상태이므로 reconciliation 의
     # baseline 비교도 같은 원인이 두 번 보고되어 판정을 흐린다. 원인을
     # 단일화하기 위해 6단계를 생략하고 5단계의 FAIL 만 남긴다.
-    if step5_ok:
+    if not _wanted("reconciliation"):
+        step6_ok, step6_msg = True, "단계 생략"
+    elif _wanted("rowcount") and not step5_ok:
+        step6_ok = False
+        step6_msg = "5단계 실패로 reconciliation 생략 (누적 행 수 부족 판정 유지)"
+    else:
         step6_ok, step6_msg = verify_reconciliation(
             baseline_path=args.reconciliation_baseline_path,
         )
-    else:
-        step6_ok = False
-        step6_msg = "5단계 실패로 reconciliation 생략 (누적 행 수 부족 판정 유지)"
 
     named_results = [
-        ("ML 가중치 4종 무결성", step1_ok, step1_msg),
-        ("ChromaDB 컬렉션 무결성", step2_ok, step2_msg),
-        ("DB 테이블 존재 여부", step3_ok, step3_msg),
-        ("DB 전 테이블 스키마 서명 정합성", step4_ok, step4_msg),
-        ("데이터 행 수 하한 검증", step5_ok, step5_msg),
-        ("G1 reconciliation: 원본/성장분 분리 대조", step6_ok, step6_msg),
+        item
+        for item, key in (
+            (("ML 가중치 4종 무결성", step1_ok, step1_msg), "weights"),
+            (("ChromaDB 컬렉션 무결성", step2_ok, step2_msg), "chroma"),
+            (("DB 테이블 존재 여부", step3_ok, step3_msg), "tables"),
+            (("DB 전 테이블 스키마 서명 정합성", step4_ok, step4_msg), "signature"),
+            (("데이터 행 수 하한 검증", step5_ok, step5_msg), "rowcount"),
+            (("G1 reconciliation: 원본/성장분 분리 대조", step6_ok, step6_msg), "reconciliation"),
+        )
+        if key in selected
     ]
 
     report = generate_verification_report(named_results, output_path=args.report_path)

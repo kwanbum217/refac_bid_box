@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
-import os
 import subprocess  # nosec B404
 import sys
 from datetime import UTC, datetime
@@ -44,6 +44,14 @@ from scripts.backup_recovery_core import (  # noqa: E402
     restore_mysql_database,
     sha256_file,
     validate_backup_output,
+)
+from scripts.backup_recovery_drill import (  # noqa: E402
+    DRILL_REDO_LOG_CAPACITY_BYTES,
+    combine_staged_g1,
+    measure_rpo,
+    mysql_exec,
+    record_timing,
+    run_drill_g1_verification,
 )
 from scripts.backup_snapshots import (  # noqa: E402
     list_snapshots,
@@ -213,86 +221,6 @@ def execute_backup(
     return manifest_data
 
 
-def run_drill_g1_verification(
-    target_dir: Path,
-    drill_db_config: dict[str, Any],
-    report_path: Path | None = None,
-    project_root: Path | None = None,
-) -> tuple[bool, str, dict[str, Any]]:
-    root = project_root or PROJECT_ROOT
-    script = root / "scripts" / "verify_migration.py"
-    if not script.exists():
-        return False, f"검증 스크립트 없음: {script}", {}
-    rep = report_path or (target_dir / "drill_g1_verification_report.json")
-    env = {
-        **os.environ,
-        "DB_NAME": str(drill_db_config["name"]),
-        "DB_HOST": str(drill_db_config["host"]),
-        "DB_PORT": str(drill_db_config["port"]),
-        "DB_USER": str(drill_db_config["user"]),
-        "DATA_ASSET_ROOT": str(target_dir),
-        "CHROMA_DB_PATH": str(target_dir / "chroma_db"),
-        "MODEL_FILES_DIR": str(target_dir / "data" / "model_files"),
-        "MODEL_BACKUPS_DIR": str(target_dir / "data" / "model_backups"),
-    }
-    if drill_db_config.get("password"):
-        env["DB_PASSWORD"] = str(drill_db_config["password"])
-    proc = subprocess.run(
-        [sys.executable, str(script), "--report-path", str(rep)],
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        env=env,
-        check=False,
-    )  # nosec B603, B607
-    try:
-        rep_data = json.loads(rep.read_text(encoding="utf-8")) if rep.exists() else {}
-    except Exception:
-        rep_data = {}
-    return (
-        proc.returncode == 0,
-        (
-            "G1 무손실 검증 통과"
-            if proc.returncode == 0
-            else (proc.stderr or proc.stdout or "G1 검증 실패").strip()
-        ),
-        rep_data,
-    )
-
-
-def _measure_rpo(manifest: dict[str, Any], st: datetime) -> dict[str, Any]:
-    w, c = manifest.get("consistency_window", {}), manifest.get("created_at")
-
-    def _diff(s: str | None) -> float | None:
-        return (st - datetime.fromisoformat(s)).total_seconds() if s else None
-
-    return {
-        "snapshot_created_at": c,
-        "consistency_window": w,
-        "drill_started_at": st.isoformat(),
-        "created_at_to_drill_start_seconds": _diff(c),
-        "db_dump_finished_to_drill_start_seconds": _diff(w.get("db_dump_finished_at")),
-        "file_assets_to_drill_start_seconds": _diff(w.get("file_assets_collected_at")),
-    }
-
-
-def _record_timing(
-    timings: dict[str, Any],
-    name: str,
-    start: datetime,
-    end: datetime,
-    status: str,
-    err: Exception | None = None,
-) -> None:
-    timings[name] = {
-        "started_at": start.isoformat(),
-        "finished_at": end.isoformat(),
-        "duration_seconds": (end - start).total_seconds(),
-        "status": status,
-        **({"error": str(err)} if err else {}),
-    }
-
-
 def run_restore_drill(
     snapshot_dir: Path,
     target_dir: Path,
@@ -300,7 +228,12 @@ def run_restore_drill(
     keep_artifacts: bool = False,
     project_root: Path | None = None,
 ) -> dict[str, Any]:
-    """격리 대상에 대해 아카이브 해제, DB import, G1 무손실 검증을 실제로 수행하는 복원 리허설 도구입니다."""
+    """격리 대상에 대해 아카이브 해제, DB import, G1 무손실 검증을 실제로 수행하는 복원 리허설 도구입니다.
+
+    로컬 디스크 정점을 낮추기 위해 파일 해제본과 격리 DB 복사본을 동시에 두지 않습니다.
+    파일 G1(weights, chroma)이 끝나면 해제본을 지운 뒤 DB import와 DB G1을 수행합니다.
+    RTO는 두 단계 소요 시간의 합입니다.
+    """
     raw_target = str(target_dir).strip()
     if not raw_target or raw_target in (".", "./", "..", "../"):
         raise ValueError("복원 리허설 대상 디렉토리를 지정해야 합니다.")
@@ -344,10 +277,10 @@ def run_restore_drill(
         print(
             "      [주의] 백업 매니페스트에 완전한 행 수 증거가 없습니다 (과거 백업 또는 미완 상태)."
         )
-    _record_timing(
+    record_timing(
         timings, "snapshot_verification", v_st, datetime.now(UTC), "PASS" if valid else "FAIL"
     )
-    rpo, comps = _measure_rpo(manifest, drill_start), manifest.get("components", {})
+    rpo, comps = measure_rpo(manifest, drill_start), manifest.get("components", {})
 
     def _drill_rep(ok: bool, g1_v: dict[str, Any], ext: list[str]) -> dict[str, Any]:
         return {
@@ -372,7 +305,7 @@ def run_restore_drill(
             False, {"success": False, "message": "스냅샷 무결성 검증 실패로 건너뜀"}, []
         )
 
-    extracted, g1_res, success, created_db = [], {}, False, False
+    extracted, g1_file, g1_db, success, created_db = [], {}, {}, False, False
     target.mkdir(parents=True, exist_ok=True)
     try:
 
@@ -380,39 +313,79 @@ def run_restore_drill(
             st = datetime.now(UTC)
             try:
                 fn()
-                _record_timing(timings, name, st, datetime.now(UTC), "PASS")
+                record_timing(timings, name, st, datetime.now(UTC), "PASS")
             except Exception as exc:
-                _record_timing(timings, name, st, datetime.now(UTC), "FAIL", exc)
+                record_timing(timings, name, st, datetime.now(UTC), "FAIL", exc)
                 errors.append(f"{name} 실패: {exc}")
                 raise
 
-        def _do_extract():
+        def _do_extract() -> None:
             for k in ("chroma_db", "models"):
                 if comps.get(k, {}).get("path"):
                     extract_tar_archive(snapshot_dir / comps[k]["path"], target_base_dir=target)
                     extracted.append(k)
 
-        def _do_import():
+        def _do_g1_files() -> None:
+            nonlocal g1_file
+            ok, msg, rep = run_drill_g1_verification(
+                target,
+                drill_db,
+                target / "g1_drill_verify_files.json",
+                project_root=project_root,
+                only_steps="weights,chroma",
+            )
+            g1_file = {"success": ok, "message": msg, "report": rep}
+            if not ok:
+                raise RuntimeError(f"G1 무손실 검증 실패: {msg}")
+
+        def _do_extract_cleanup() -> None:
+            cleanup_drill_target_dir(target, project_root=project_root)
+            target.mkdir(parents=True, exist_ok=True)
+
+        def _do_import() -> None:
             nonlocal created_db
             create_mysql_database(drill_db)
             created_db = True
             if not comps.get("database", {}).get("path"):
                 raise ValueError("매니페스트에 database 아카이브 경로가 없습니다.")
-            restore_mysql_database(drill_db, snapshot_dir / comps["database"]["path"])
+            original_redo = mysql_exec(drill_db, "SELECT @@GLOBAL.innodb_redo_log_capacity")
+            try:
+                if int(original_redo) < DRILL_REDO_LOG_CAPACITY_BYTES:
+                    mysql_exec(
+                        drill_db,
+                        f"SET GLOBAL innodb_redo_log_capacity={DRILL_REDO_LOG_CAPACITY_BYTES}",
+                    )
+                restore_mysql_database(
+                    drill_db,
+                    snapshot_dir / comps["database"]["path"],
+                    disable_binlog=True,
+                )
+            finally:
+                with contextlib.suppress(Exception):
+                    mysql_exec(
+                        drill_db,
+                        f"SET GLOBAL innodb_redo_log_capacity={int(original_redo)}",
+                    )
 
-        def _do_g1():
-            nonlocal g1_res, success
+        def _do_g1_db() -> None:
+            nonlocal g1_db, success
             ok, msg, rep = run_drill_g1_verification(
-                target, drill_db, target / "g1_drill_verify_report.json", project_root=project_root
+                target,
+                drill_db,
+                target / "g1_drill_verify_db.json",
+                project_root=project_root,
+                only_steps="tables,signature,rowcount,reconciliation",
             )
-            g1_res = {"success": ok, "message": msg, "report": rep}
+            g1_db = {"success": ok, "message": msg, "report": rep}
             if not ok:
                 raise RuntimeError(f"G1 무손실 검증 실패: {msg}")
             success = True
 
         _exec_step("archive_extraction", _do_extract)
+        _exec_step("g1_file_verification", _do_g1_files)
+        _exec_step("extract_cleanup", _do_extract_cleanup)
         _exec_step("database_import", _do_import)
-        _exec_step("g1_verification", _do_g1)
+        _exec_step("g1_db_verification", _do_g1_db)
     except Exception:
         success = False
 
@@ -426,8 +399,9 @@ def run_restore_drill(
             except Exception as exc:
                 c_status = "FAIL"
                 errors.append(f"리허설 산출물 정리 실패: {exc}")
-        _record_timing(timings, "cleanup", c_st, datetime.now(UTC), c_status)
+        record_timing(timings, "cleanup", c_st, datetime.now(UTC), c_status)
 
+    g1_res = combine_staged_g1(g1_file, g1_db)
     return _drill_rep(success and (len(errors) == 0), g1_res, extracted)
 
 
