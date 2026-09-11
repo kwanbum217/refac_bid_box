@@ -262,6 +262,9 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     # 원본 스텝 구성(run_mode_matrix)을 건드리지 않으려고 파이프라인 밖에 둡니다.
     outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
 
+    # 비교 통계의 두 무거운 집계도 같은 자리에서 다시 만듭니다.
+    outcome["compare_stats_snapshots"] = await asyncio.to_thread(_rebuild_compare_stats_snapshots)
+
     # 추론 경로가 쓰는 기관 이력 집계도 함께 갱신합니다. 이 표가 낡으면
     # 학습과 추론의 inst_hist_rate 정의가 갈립니다 (AGENTS.md 6항).
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
@@ -330,6 +333,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
         return outcome
 
     outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
+    outcome["compare_stats_snapshots"] = await asyncio.to_thread(_rebuild_compare_stats_snapshots)
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
@@ -337,7 +341,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     return final_outcome
 
 
-FOLLOWUP_KEYS = ("ranking_snapshots", "institution_stats")
+FOLLOWUP_KEYS = ("ranking_snapshots", "compare_stats_snapshots", "institution_stats")
 
 
 def _mark_followup_failures(outcome: dict[str, Any]) -> dict[str, Any]:
@@ -370,6 +374,20 @@ def _rebuild_ranking_snapshots() -> dict[str, Any]:
         return rebuild_ranking_snapshots(db)
     except Exception as exc:
         logger.exception("상위 N 스냅샷 재집계 실패")
+        return {"status": "failed", "error": str(exc)}
+    finally:
+        db.close()
+
+
+def _rebuild_compare_stats_snapshots() -> dict[str, Any]:
+    """실패해도 야간 스케줄 전체를 실패로 만들지 않습니다."""
+    from src.app.services.compare_stats_snapshots import rebuild_compare_stats_snapshots
+
+    db = SessionLocal()
+    try:
+        return rebuild_compare_stats_snapshots(db)
+    except Exception as exc:
+        logger.exception("비교 통계 스냅샷 재집계 실패")
         return {"status": "failed", "error": str(exc)}
     finally:
         db.close()

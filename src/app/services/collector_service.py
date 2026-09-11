@@ -219,6 +219,14 @@ def _warm_aggregates_and_caches_sync(datasets: list[str], bind=None) -> None:
     db = session_factory()
     try:
         rebuild_bid_dataset_summaries(db, datasets)
+        try:
+            from src.app.services.compare_stats_snapshots import (
+                rebuild_compare_stats_snapshots,
+            )
+
+            rebuild_compare_stats_snapshots(db)
+        except Exception as exc:
+            logger.warning("비교 통계 스냅샷 재집계 실패: %s", mask_credentials(exc))
         warm_dashboard_stats_cache(db)
         warm_home_page_cache(db)
     finally:
