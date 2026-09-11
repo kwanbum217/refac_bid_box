@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 from opentelemetry.metrics import Counter, Histogram
 from opentelemetry.sdk.metrics.export import (
@@ -205,6 +205,35 @@ def test_route_template_label_prevents_cardinality_explosion():
                     f"라벨 값에 고차원 또는 실제 파라미터가 포함됨: {key}={val}"
                 )
                 assert forbidden not in str(key), f"라벨 키에 고차원 값이 포함됨: {key}"
+
+
+def test_included_router_route_label_omits_app_prefix():
+    """include_router 접두 /api/v1 은 APIRoute.path 에 없어 http.route 라벨에도 없다."""
+    app = FastAPI()
+    reader = InMemoryMetricReader()
+    router = APIRouter(prefix="/predictions")
+
+    @router.post("/predict")
+    def predict():
+        return {"ok": True}
+
+    app.include_router(router, prefix="/api/v1")
+    setup_observability(app=app, custom_metric_exporter=reader)
+    client = TestClient(app)
+    response = client.post("/api/v1/predictions/predict")
+    assert response.status_code == 200
+
+    metrics_data = reader.get_metrics_data()
+    assert metrics_data is not None
+    routes_seen: set[str] = set()
+    for resource_metrics in metrics_data.resource_metrics:
+        for scope_metrics in resource_metrics.scope_metrics:
+            for metric in scope_metrics.metrics:
+                for data_point in getattr(metric.data, "data_points", []):
+                    route = dict(data_point.attributes).get("http.route")
+                    if route is not None:
+                        routes_seen.add(str(route))
+    assert routes_seen == {"/predictions/predict"}
 
 
 def test_sensitive_keys_excluded_from_labels():

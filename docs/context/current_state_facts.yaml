@@ -396,6 +396,24 @@ facts:
       - docs/ops/observability_metrics_20260911.md
       - docs/ops/otel_metrics_latency_ab_20260911.md
       - docs/ops/scale_and_silent_failure_audit_20260807.md
+  - id: slo_alerts
+    status: closed
+    decision_date: "2026-09-11"
+    claim: "예측 API 운영 SLO 는 c10 P95 100ms 와 5xx 비율 0.1% 이며 SSE 전체 P95 20초를 라이브 알람으로 넣었고, SSE 첫 토큰 3초와 100ms 초과율 0.5% 는 벤치마크 게이트로 유지하며 통과 기준으로 둡니다."
+    document_anchor: "예측 API 운영 SLO"
+    evidence:
+      - docker/prometheus_rules.yml
+      - docker/alertmanager.yml
+      - docker/prometheus.yml
+      - docker-compose.prod.yml
+      - docker/grafana/dashboards/slo_alerts.json
+      - docs/ops/slo_alerts_20260911.md
+      - docs/ops/latency_gate_protocol.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/slo_alerts_20260911.md
+      - docs/ops/latency_gate_protocol.md
+      - docs/ops/observability.md
   - id: drift_job
     status: active
     decision_date: "2026-09-06"

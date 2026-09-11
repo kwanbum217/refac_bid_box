@@ -23,6 +23,9 @@ GRAFANA_DASHBOARD_PROVIDER_PATH = (
 GRAFANA_HTTP_DB_DASHBOARD_PATH = (
     REPO_ROOT / "docker" / "grafana" / "dashboards" / "http_db_latency.json"
 )
+PROMETHEUS_RULES_PATH = REPO_ROOT / "docker" / "prometheus_rules.yml"
+ALERTMANAGER_CONFIG_PATH = REPO_ROOT / "docker" / "alertmanager.yml"
+GRAFANA_SLO_DASHBOARD_PATH = REPO_ROOT / "docker" / "grafana" / "dashboards" / "slo_alerts.json"
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +102,7 @@ def test_worker_healthcheck_requires_fresh_heartbeat(compose: dict):
 
 def test_observability_services_stay_on_internal_network(compose: dict):
     services = compose["services"]
-    for name in ("otel-collector", "tempo", "prometheus", "grafana"):
+    for name in ("otel-collector", "tempo", "prometheus", "alertmanager", "grafana"):
         assert services[name]["networks"] == ["internal"]
         assert "ports" not in services[name]
 
@@ -113,9 +116,11 @@ def test_prometheus_scrapes_collector_without_host_publish(compose: dict):
     assert prometheus["restart"] == "unless-stopped"
     assert prometheus["volumes"] == [
         "./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+        "./docker/prometheus_rules.yml:/etc/prometheus/prometheus_rules.yml:ro",
         "prometheus_data:/prometheus",
     ]
     assert "otel-collector" in _depends_on_names(prometheus)
+    assert "alertmanager" in _depends_on_names(prometheus)
     assert compose["volumes"]["prometheus_data"] is None
 
     assert collector["expose"] == ["8889"]
@@ -123,6 +128,10 @@ def test_prometheus_scrapes_collector_without_host_publish(compose: dict):
 
     scrape = _load_yaml(PROMETHEUS_CONFIG_PATH)
     assert scrape["global"]["scrape_interval"] == "15s"
+    assert scrape["rule_files"] == ["/etc/prometheus/prometheus_rules.yml"]
+    assert scrape["alerting"]["alertmanagers"][0]["static_configs"][0]["targets"] == [
+        "alertmanager:9093"
+    ]
     jobs = scrape["scrape_configs"]
     assert len(jobs) == 1
     assert jobs[0]["job_name"] == "otel-collector"
@@ -188,4 +197,76 @@ def test_grafana_provisions_http_db_latency_dashboard(compose: dict):
     assert "histogram_quantile(0.95" in joined
     assert "http_route" in joined
     assert "db_operation" in joined
+    assert "/api/v1/bids/" not in joined
+
+
+def test_prometheus_slo_alert_rules_use_g3_thresholds(compose: dict):
+    rules = _load_yaml(PROMETHEUS_RULES_PATH)
+    alerts = {item["alert"]: item for item in rules["groups"][0]["rules"]}
+    assert set(alerts) == {
+        "PredictHttpP95High",
+        "PredictHttpErrorRateHigh",
+        "ChatStreamHttpP95High",
+        "OtelCollectorDown",
+    }
+
+    http_duration = HTTP_SERVER_REQUEST_DURATION.replace(".", "_") + "_seconds"
+    http_count = HTTP_SERVER_REQUEST_COUNT.replace(".", "_") + "_total"
+    predict_p95 = alerts["PredictHttpP95High"]["expr"]
+    predict_errors = alerts["PredictHttpErrorRateHigh"]["expr"]
+    sse_p95 = alerts["ChatStreamHttpP95High"]["expr"]
+
+    assert http_duration in predict_p95
+    assert 'http_route="/predictions/predict"' in predict_p95
+    assert "> 0.1" in predict_p95
+    assert http_count in predict_errors
+    assert 'http_response_status_code=~"5.."' in predict_errors
+    assert "> 0.001" in predict_errors
+    assert 'http_route="/chatbot/chat/stream"' in sse_p95
+    assert "> 20" in sse_p95
+    assert "/api/v1/bids/" not in predict_p95
+    assert alerts["PredictHttpP95High"]["for"] == "10m"
+    assert alerts["OtelCollectorDown"]["expr"].strip() == 'up{job="otel-collector"} == 0'
+
+
+def test_alertmanager_holds_alerts_without_host_publish(compose: dict):
+    alertmanager = compose["services"]["alertmanager"]
+    assert alertmanager["image"].startswith("prom/alertmanager:")
+    assert "@sha256:" in alertmanager["image"]
+    assert alertmanager["restart"] == "unless-stopped"
+    assert alertmanager["expose"] == ["9093"]
+    assert "ports" not in alertmanager
+    assert alertmanager["networks"] == ["internal"]
+    assert alertmanager["volumes"] == [
+        "./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
+        "alertmanager_data:/alertmanager",
+    ]
+    assert compose["volumes"]["alertmanager_data"] is None
+    assert "--cluster.listen-address=" in alertmanager["command"]
+
+    config = _load_yaml(ALERTMANAGER_CONFIG_PATH)
+    assert config["route"]["receiver"] == "local-hold"
+    receivers = config["receivers"]
+    assert len(receivers) == 1
+    assert receivers[0] == {"name": "local-hold"}
+
+
+def test_grafana_provisions_slo_alerts_dashboard():
+    dashboard = json.loads(GRAFANA_SLO_DASHBOARD_PATH.read_text(encoding="utf-8"))
+    assert dashboard["uid"] == "bidbox-slo-alerts"
+    assert dashboard["title"] == "SLO and alerts"
+    exprs = [
+        str(target.get("expr", ""))
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", [])
+    ]
+    joined = "\n".join(exprs)
+    http_duration = HTTP_SERVER_REQUEST_DURATION.replace(".", "_") + "_seconds"
+    http_count = HTTP_SERVER_REQUEST_COUNT.replace(".", "_") + "_total"
+    assert "ALERTS{slo!=" in joined
+    assert http_duration in joined
+    assert http_count in joined
+    assert "/predictions/predict" in joined
+    assert "/chatbot/chat/stream" in joined
+    assert "/api/v1/predictions/predict" not in joined
     assert "/api/v1/bids/" not in joined

@@ -1,0 +1,25 @@
+# Alertmanager 설정 (관측성 3단계)
+#
+# 외부 알림 채널(메일, Slack)은 비밀값과 사용자 승인이 필요하므로 넣지 않는다.
+# 빈 수신기는 알람을 수락·그룹핑만 하고 밖으로 보내지 않는다.
+# 발화 상태는 Prometheus ALERTS 시계열과 Grafana SLO 대시보드로 본다.
+
+route:
+  receiver: local-hold
+  group_by:
+    - alertname
+    - slo
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: local-hold
+
+inhibit_rules:
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
+    equal:
+      - slo
