@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -28,6 +29,14 @@ from scripts.backup_recovery_core import (
     drop_mysql_database,
     restore_mysql_database,
 )
+
+
+@pytest.fixture(autouse=True)
+def _stub_drill_mysql_exec(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "scripts.backup_recovery._mysql_exec",
+        lambda *_args, **_kwargs: "104857600",
+    )
 
 
 def _create_valid_snapshot(
@@ -563,7 +572,8 @@ def test_restore_mysql_database_streams_gzip(
     mock_proc = MagicMock()
     mock_proc.returncode = 0
     mock_proc.stdin = MagicMock()
-    mock_proc.communicate.return_value = (b"", b"")
+    mock_proc.stdin.closed = False
+    mock_proc.wait.return_value = 0
     with (
         patch("scripts.backup_recovery_core.gzip.open") as mock_gzip,
         patch("scripts.backup_recovery_core.shutil.copyfileobj") as mock_copy,
@@ -572,9 +582,12 @@ def test_restore_mysql_database_streams_gzip(
         mock_gzip.return_value.__enter__.return_value = MagicMock(name="gz")
         restore_mysql_database(drill_db, dump)
     mock_popen.assert_called_once()
+    popen_kwargs = mock_popen.call_args.kwargs
+    assert popen_kwargs["stdout"] is subprocess.DEVNULL
+    assert popen_kwargs["stderr"] is not subprocess.PIPE
     mock_copy.assert_called_once()
     mock_proc.stdin.write.assert_not_called()
-    mock_proc.communicate.assert_called_once_with()
+    mock_proc.wait.assert_called()
     mock_proc.stdin.close.assert_called_once()
 
 
@@ -594,7 +607,8 @@ def test_restore_mysql_database_disables_binlog_for_drill(
     mock_proc = MagicMock()
     mock_proc.returncode = 0
     mock_proc.stdin = MagicMock()
-    mock_proc.communicate.return_value = (b"", b"")
+    mock_proc.stdin.closed = False
+    mock_proc.wait.return_value = 0
     with (
         patch("scripts.backup_recovery_core.gzip.open") as mock_gzip,
         patch("scripts.backup_recovery_core.shutil.copyfileobj"),

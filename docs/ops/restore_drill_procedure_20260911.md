@@ -78,7 +78,7 @@ python3 scripts/backup_recovery.py drill \
 1. 스냅샷 무결성 검증
 2. 파일 아카이브 해제 후 `verify_migration.py --only-steps weights,chroma`
 3. 해제본 삭제(`cleanup_drill_target_dir`)
-4. 격리 DB 생성 및 import 후 `verify_migration.py --only-steps tables,signature,rowcount,reconciliation`. import 세션은 `sql_log_bin=0` 이라 덤프 크기만큼의 binlog 가 생기지 않는다
+4. 격리 DB 생성 및 import 후 `verify_migration.py --only-steps tables,signature,rowcount,reconciliation`. import 세션은 `sql_log_bin=0` 이라 덤프 크기만큼의 binlog 가 생기지 않으며, 복원 동안만 `innodb_redo_log_capacity` 를 8GB 로 올렸다가 되돌린다. mysql 클라이언트 stderr 는 파이프가 아니라 임시 파일로 받아 redo 경고로 교착하지 않는다
 5. 격리 DB drop 및 잔여 경로 정리
 
 ---

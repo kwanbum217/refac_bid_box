@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess  # nosec B404
@@ -40,6 +41,7 @@ from scripts.backup_recovery_core import (  # noqa: E402
     get_db_config,
     get_head_commit_sha,
     get_model_source_paths,
+    mysql_client_command,
     query_db_row_counts,
     restore_mysql_database,
     sha256_file,
@@ -301,6 +303,19 @@ def _record_timing(
     }
 
 
+DRILL_REDO_LOG_CAPACITY_BYTES = 8_589_934_592
+
+
+def _mysql_exec(db_config: dict[str, Any], sql: str) -> str:
+    cmd, env = mysql_client_command("mysql", db_config)
+    cmd += ["-N", "-e", sql]
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)  # nosec B603
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "실패").strip()
+        raise RuntimeError(f"MySQL 실행 실패 (코드 {proc.returncode}): {err}")
+    return proc.stdout.strip()
+
+
 def _combine_staged_g1(
     file_part: dict[str, Any],
     db_part: dict[str, Any],
@@ -454,11 +469,24 @@ def run_restore_drill(
             created_db = True
             if not comps.get("database", {}).get("path"):
                 raise ValueError("매니페스트에 database 아카이브 경로가 없습니다.")
-            restore_mysql_database(
-                drill_db,
-                snapshot_dir / comps["database"]["path"],
-                disable_binlog=True,
-            )
+            original_redo = _mysql_exec(drill_db, "SELECT @@GLOBAL.innodb_redo_log_capacity")
+            try:
+                if int(original_redo) < DRILL_REDO_LOG_CAPACITY_BYTES:
+                    _mysql_exec(
+                        drill_db,
+                        f"SET GLOBAL innodb_redo_log_capacity={DRILL_REDO_LOG_CAPACITY_BYTES}",
+                    )
+                restore_mysql_database(
+                    drill_db,
+                    snapshot_dir / comps["database"]["path"],
+                    disable_binlog=True,
+                )
+            finally:
+                with contextlib.suppress(Exception):
+                    _mysql_exec(
+                        drill_db,
+                        f"SET GLOBAL innodb_redo_log_capacity={int(original_redo)}",
+                    )
 
         def _do_g1_db() -> None:
             nonlocal g1_db, success

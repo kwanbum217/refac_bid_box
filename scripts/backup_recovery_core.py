@@ -10,6 +10,7 @@ import shutil
 import subprocess  # nosec B404
 import sys
 import tarfile
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -238,21 +239,39 @@ def restore_mysql_database(
     cmd, env = mysql_client_command("mysql", db_config)
     cmd += [
         "--default-character-set=utf8mb4",
+        "--max-allowed-packet=1073741824",
+        "--net-read-timeout=3600",
+        "--net-write-timeout=3600",
         str(db_config["name"]),
     ]
-    with gzip.open(input_gz_path, "rb") as gz_in:
+    with gzip.open(input_gz_path, "rb") as gz_in, tempfile.TemporaryFile() as err_file:
         proc = subprocess.Popen(
-            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=err_file,
+            env=env,
         )  # nosec B603, B607
         if proc.stdin is None:
             proc.kill()
             raise RuntimeError("mysql 복원 표준입력을 열 수 없습니다.")
-        if disable_binlog:
-            proc.stdin.write(b"SET SESSION sql_log_bin=0;\n")
-            proc.stdin.flush()
-        shutil.copyfileobj(gz_in, proc.stdin)
-        proc.stdin.close()
-        _, stderr_data = proc.communicate()
+        try:
+            if disable_binlog:
+                proc.stdin.write(b"SET SESSION sql_log_bin=0;\n")
+                proc.stdin.flush()
+            shutil.copyfileobj(gz_in, proc.stdin)
+        except (BrokenPipeError, ValueError) as exc:
+            proc.kill()
+            proc.wait()
+            err_file.seek(0)
+            err = err_file.read().decode("utf-8", errors="replace") or str(exc)
+            raise RuntimeError(f"mysql 복원 파이프가 닫혔습니다: {err}") from exc
+        finally:
+            if proc.stdin is not None and not proc.stdin.closed:
+                proc.stdin.close()
+        proc.wait()
+        err_file.seek(0)
+        stderr_data = err_file.read()
     if proc.returncode != 0:
         err = stderr_data.decode("utf-8", errors="replace") if stderr_data else "mysql 복원 실패"
         raise RuntimeError(f"mysql 복원 실행 실패 (코드 {proc.returncode}): {err}")
