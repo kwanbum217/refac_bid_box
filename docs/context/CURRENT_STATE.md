@@ -69,7 +69,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **state_budget**: CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 8,000자 이하 목표를 통과했습니다.
 
-- **compare_stats_snapshot**: compare-stats 상위 두 집계를 사전 집계 스냅샷으로 옮겨 캐시 미적중 종단이 3,725ms 에서 505ms 가 됐고 두 구간은 0.0ms 입니다. 구조 차이는 확정이고 시간 차이는 산포 초과(참고)이며 전환을 완료했습니다.
+- **compare_stats_snapshot**: compare-stats 네 집계를 사전 집계 스냅샷으로 옮겨 캐시 미적중 종단이 3,725ms 에서 4.9ms 가 됐고 네 구간은 모두 0.00ms 입니다. 구조 차이는 확정이고 시간 차이는 산포 초과(참고)이며 이 경로 최적화를 완료했습니다.
 
 - **compare_stats_attribution**: compare-stats 캐시 미적중 종단은 기관별 상위 10 집계 2,097ms(56.3%)와 매칭 건수 1,136ms(30.5%)가 87%를 차지하며 비 SQL 구간은 6ms 대입니다. 12회차 전량 유효 표본으로 귀속 측정을 완료했습니다.
 
