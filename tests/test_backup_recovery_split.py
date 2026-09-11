@@ -20,12 +20,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 def test_split_line_counts_within_cap():
     paths = {
-        # 2026-09-05: R-09 행 수 조회 실패와 실제 0행 구분 및 과거 백업 정책 반영으로
-        # 525 -> 547 이 됐습니다. 여유 8줄만 둡니다.
+        # 2026-09-11: 단계 나눔 드릴 헬퍼를 backup_recovery_drill.py 로 옮겨
+        # 650 -> 실측값으로 되돌립니다. 여유 20줄입니다.
         "backup_recovery.py": (REPO_ROOT / "scripts" / "backup_recovery.py", 555),
-        # 2026-09-05: R-09 evaluate_row_counts 헬퍼 및 query_db_row_counts 개선으로
-        # 320 -> 334 가 됐습니다. 여유 11줄만 둡니다.
-        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 345),
+        # 2026-09-11: 드릴 복원 스트리밍과 stderr 파일 분리가 346 이 됐습니다.
+        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 366),
+        "backup_recovery_drill.py": (REPO_ROOT / "scripts" / "backup_recovery_drill.py", 180),
         # 2026-09-05: R-01 스냅샷 검증기 엄격화(스키마, 필수자산, SHA256/크기 형식 검증)로
         # 132 -> 160 이 됐고, 이어서 R-08 보존 정책 실동작 전환(삭제 전 무결성 검증,
         # 경로 격리, 디스크 여유 경보)으로 160 -> 265 가 됐습니다. 실측값에 여유
@@ -42,6 +42,7 @@ def test_no_circular_imports_in_split_modules():
     """순환 import 부재 검증: 어느 새 모듈도 backup_recovery 를 import 하면 안 된다."""
     paths = [
         REPO_ROOT / "scripts" / "backup_recovery_core.py",
+        REPO_ROOT / "scripts" / "backup_recovery_drill.py",
         REPO_ROOT / "scripts" / "backup_snapshots.py",
     ]
     forbidden_module = "scripts.backup_recovery"

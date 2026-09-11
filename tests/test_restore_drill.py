@@ -34,7 +34,7 @@ from scripts.backup_recovery_core import (
 @pytest.fixture(autouse=True)
 def _stub_drill_mysql_exec(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "scripts.backup_recovery._mysql_exec",
+        "scripts.backup_recovery.mysql_exec",
         lambda *_args, **_kwargs: "104857600",
     )
 

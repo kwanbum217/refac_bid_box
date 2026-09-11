@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
-import os
 import subprocess  # nosec B404
 import sys
 from datetime import UTC, datetime
@@ -41,11 +40,18 @@ from scripts.backup_recovery_core import (  # noqa: E402
     get_db_config,
     get_head_commit_sha,
     get_model_source_paths,
-    mysql_client_command,
     query_db_row_counts,
     restore_mysql_database,
     sha256_file,
     validate_backup_output,
+)
+from scripts.backup_recovery_drill import (  # noqa: E402
+    DRILL_REDO_LOG_CAPACITY_BYTES,
+    combine_staged_g1,
+    measure_rpo,
+    mysql_exec,
+    record_timing,
+    run_drill_g1_verification,
 )
 from scripts.backup_snapshots import (  # noqa: E402
     list_snapshots,
@@ -215,133 +221,6 @@ def execute_backup(
     return manifest_data
 
 
-def run_drill_g1_verification(
-    target_dir: Path,
-    drill_db_config: dict[str, Any],
-    report_path: Path | None = None,
-    project_root: Path | None = None,
-    only_steps: str | None = None,
-) -> tuple[bool, str, dict[str, Any]]:
-    root = project_root or PROJECT_ROOT
-    script = root / "scripts" / "verify_migration.py"
-    if not script.exists():
-        return False, f"검증 스크립트 없음: {script}", {}
-    rep = report_path or (target_dir / "drill_g1_verification_report.json")
-    env = {
-        **os.environ,
-        "DB_NAME": str(drill_db_config["name"]),
-        "DB_HOST": str(drill_db_config["host"]),
-        "DB_PORT": str(drill_db_config["port"]),
-        "DB_USER": str(drill_db_config["user"]),
-        "DATA_ASSET_ROOT": str(target_dir),
-        "CHROMA_DB_PATH": str(target_dir / "chroma_db"),
-        "MODEL_FILES_DIR": str(target_dir / "data" / "model_files"),
-        "MODEL_BACKUPS_DIR": str(target_dir / "data" / "model_backups"),
-    }
-    env.setdefault(
-        "CHROMA_SOURCE_BACKUP_PATH",
-        str(root / "data" / "backups" / "chroma_source"),
-    )
-    if drill_db_config.get("password"):
-        env["DB_PASSWORD"] = str(drill_db_config["password"])
-    cmd = [sys.executable, str(script), "--report-path", str(rep)]
-    if only_steps:
-        cmd.extend(["--only-steps", only_steps])
-    proc = subprocess.run(
-        cmd,
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        env=env,
-        check=False,
-    )  # nosec B603, B607
-    try:
-        rep_data = json.loads(rep.read_text(encoding="utf-8")) if rep.exists() else {}
-    except Exception:
-        rep_data = {}
-    return (
-        proc.returncode == 0,
-        (
-            "G1 무손실 검증 통과"
-            if proc.returncode == 0
-            else (proc.stderr or proc.stdout or "G1 검증 실패").strip()
-        ),
-        rep_data,
-    )
-
-
-def _measure_rpo(manifest: dict[str, Any], st: datetime) -> dict[str, Any]:
-    w, c = manifest.get("consistency_window", {}), manifest.get("created_at")
-
-    def _diff(s: str | None) -> float | None:
-        return (st - datetime.fromisoformat(s)).total_seconds() if s else None
-
-    return {
-        "snapshot_created_at": c,
-        "consistency_window": w,
-        "drill_started_at": st.isoformat(),
-        "created_at_to_drill_start_seconds": _diff(c),
-        "db_dump_finished_to_drill_start_seconds": _diff(w.get("db_dump_finished_at")),
-        "file_assets_to_drill_start_seconds": _diff(w.get("file_assets_collected_at")),
-    }
-
-
-def _record_timing(
-    timings: dict[str, Any],
-    name: str,
-    start: datetime,
-    end: datetime,
-    status: str,
-    err: Exception | None = None,
-) -> None:
-    timings[name] = {
-        "started_at": start.isoformat(),
-        "finished_at": end.isoformat(),
-        "duration_seconds": (end - start).total_seconds(),
-        "status": status,
-        **({"error": str(err)} if err else {}),
-    }
-
-
-DRILL_REDO_LOG_CAPACITY_BYTES = 8_589_934_592
-
-
-def _mysql_exec(db_config: dict[str, Any], sql: str) -> str:
-    cmd, env = mysql_client_command("mysql", db_config)
-    cmd += ["-N", "-e", sql]
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)  # nosec B603
-    if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout or "실패").strip()
-        raise RuntimeError(f"MySQL 실행 실패 (코드 {proc.returncode}): {err}")
-    return proc.stdout.strip()
-
-
-def _combine_staged_g1(
-    file_part: dict[str, Any],
-    db_part: dict[str, Any],
-) -> dict[str, Any]:
-    """파일 단계와 DB 단계 G1 결과를 하나의 리포트 필드로 합칩니다."""
-    file_ok = bool(file_part.get("success"))
-    db_ok = bool(db_part.get("success"))
-    messages = [
-        part.get("message")
-        for part in (file_part, db_part)
-        if isinstance(part.get("message"), str) and part.get("message")
-    ]
-    if file_ok and db_ok:
-        message = "G1 무손실 검증 통과 (파일·DB 단계 분리)"
-    elif messages:
-        message = " / ".join(messages)
-    else:
-        message = "G1 무손실 검증을 실행하지 않음"
-    return {
-        "success": file_ok and db_ok,
-        "message": message,
-        "file": file_part,
-        "database": db_part,
-    }
-
-
 def run_restore_drill(
     snapshot_dir: Path,
     target_dir: Path,
@@ -398,10 +277,10 @@ def run_restore_drill(
         print(
             "      [주의] 백업 매니페스트에 완전한 행 수 증거가 없습니다 (과거 백업 또는 미완 상태)."
         )
-    _record_timing(
+    record_timing(
         timings, "snapshot_verification", v_st, datetime.now(UTC), "PASS" if valid else "FAIL"
     )
-    rpo, comps = _measure_rpo(manifest, drill_start), manifest.get("components", {})
+    rpo, comps = measure_rpo(manifest, drill_start), manifest.get("components", {})
 
     def _drill_rep(ok: bool, g1_v: dict[str, Any], ext: list[str]) -> dict[str, Any]:
         return {
@@ -434,9 +313,9 @@ def run_restore_drill(
             st = datetime.now(UTC)
             try:
                 fn()
-                _record_timing(timings, name, st, datetime.now(UTC), "PASS")
+                record_timing(timings, name, st, datetime.now(UTC), "PASS")
             except Exception as exc:
-                _record_timing(timings, name, st, datetime.now(UTC), "FAIL", exc)
+                record_timing(timings, name, st, datetime.now(UTC), "FAIL", exc)
                 errors.append(f"{name} 실패: {exc}")
                 raise
 
@@ -469,10 +348,10 @@ def run_restore_drill(
             created_db = True
             if not comps.get("database", {}).get("path"):
                 raise ValueError("매니페스트에 database 아카이브 경로가 없습니다.")
-            original_redo = _mysql_exec(drill_db, "SELECT @@GLOBAL.innodb_redo_log_capacity")
+            original_redo = mysql_exec(drill_db, "SELECT @@GLOBAL.innodb_redo_log_capacity")
             try:
                 if int(original_redo) < DRILL_REDO_LOG_CAPACITY_BYTES:
-                    _mysql_exec(
+                    mysql_exec(
                         drill_db,
                         f"SET GLOBAL innodb_redo_log_capacity={DRILL_REDO_LOG_CAPACITY_BYTES}",
                     )
@@ -483,7 +362,7 @@ def run_restore_drill(
                 )
             finally:
                 with contextlib.suppress(Exception):
-                    _mysql_exec(
+                    mysql_exec(
                         drill_db,
                         f"SET GLOBAL innodb_redo_log_capacity={int(original_redo)}",
                     )
@@ -520,9 +399,9 @@ def run_restore_drill(
             except Exception as exc:
                 c_status = "FAIL"
                 errors.append(f"리허설 산출물 정리 실패: {exc}")
-        _record_timing(timings, "cleanup", c_st, datetime.now(UTC), c_status)
+        record_timing(timings, "cleanup", c_st, datetime.now(UTC), c_status)
 
-    g1_res = _combine_staged_g1(g1_file, g1_db)
+    g1_res = combine_staged_g1(g1_file, g1_db)
     return _drill_rep(success and (len(errors) == 0), g1_res, extracted)
 
 
