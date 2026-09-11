@@ -269,3 +269,25 @@ async def test_nightly_schedule_task_후속단계에_점검결과가_담긴다()
         assert outcome["status"] == "success"
         assert "mysql_stats_freshness" in outcome
         assert outcome["mysql_stats_freshness"] == freshness_result
+
+
+def test_조회가_빠뜨린_테이블도_판정_목록에_남는다() -> None:
+    """fetched 를 그대로 순회하면 빠진 테이블이 조용히 사라진다.
+
+    리뷰어가 잔여로 지적한 경로다. 임계 초과가 정상으로 보이면 안 된다.
+    """
+    from datetime import datetime
+
+    from src.app.services.mysql_stats_freshness import evaluate_all
+
+    results = evaluate_all(
+        ("bid_results", "bid_announcements"),
+        {"bid_results": (100, datetime(2026, 9, 11))},
+        {"bid_results": 100},
+        datetime(2026, 9, 11),
+    )
+
+    assert [r["table"] for r in results] == ["bid_results", "bid_announcements"]
+    missing = next(r for r in results if r["table"] == "bid_announcements")
+    assert missing["status"] == "MISSING"
+    assert missing["stale"] is True

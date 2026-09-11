@@ -141,18 +141,23 @@ def evaluate_all(
     max_drift_pct: float = DEFAULT_MAX_DRIFT_PCT,
     max_stale_days: float = DEFAULT_MAX_STALE_DAYS,
 ) -> list[dict[str, Any]]:
-    """조회 결과를 판정 목록으로 바꾼다."""
+    """조회 결과를 판정 목록으로 바꾼다.
+
+    요청한 `tables` 순서를 기준으로 순회한다. `fetched` 를 그대로 순회하면
+    조회가 일부 테이블을 빠뜨렸을 때 그 테이블이 판정 목록에서 조용히 사라져
+    임계 초과가 정상으로 보인다. 통계 행이 없는 테이블은 evaluate_table 이
+    MISSING 으로 판정하므로 여기서 채워 넣는 편이 안전하다.
+    """
     return [
         evaluate_table(
             table,
-            stats_rows,
-            last_update,
+            *fetched.get(table, (None, None)),
             expected.get(table),
             now,
             max_drift_pct,
             max_stale_days,
         )
-        for table, (stats_rows, last_update) in fetched.items()
+        for table in tables
     ]
 
 
