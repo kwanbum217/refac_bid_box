@@ -236,6 +236,10 @@ def run_drill_g1_verification(
         "MODEL_FILES_DIR": str(target_dir / "data" / "model_files"),
         "MODEL_BACKUPS_DIR": str(target_dir / "data" / "model_backups"),
     }
+    env.setdefault(
+        "CHROMA_SOURCE_BACKUP_PATH",
+        str(root / "data" / "backups" / "chroma_source"),
+    )
     if drill_db_config.get("password"):
         env["DB_PASSWORD"] = str(drill_db_config["password"])
     cmd = [sys.executable, str(script), "--report-path", str(rep)]

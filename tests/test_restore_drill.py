@@ -638,6 +638,9 @@ def test_run_drill_g1_verification_subprocess(tmp_path: Path):
         assert env_passed["DB_NAME"] == "procurement_restore_drill"
         assert env_passed["DATA_ASSET_ROOT"] == str(target_dir)
         assert env_passed["CHROMA_DB_PATH"] == str(target_dir / "chroma_db")
+        assert env_passed["CHROMA_SOURCE_BACKUP_PATH"] == str(
+            PROJECT_ROOT / "data" / "backups" / "chroma_source"
+        )
 
 
 def test_drill_cli_parser_and_arguments():
