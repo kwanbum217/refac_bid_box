@@ -261,3 +261,40 @@ def test_손상된_기관명이_제외되지_않고_그대로_남는다(isolated
     assert row is not None
     names = [item["name"] for item in row.payload]
     assert "��깨진기관" in names
+
+
+def test_항목_키가_빠진_스냅샷은_예외_대신_폴백한다(isolated_db):
+    """리스트라는 것만 보고 항목을 인덱싱하면 KeyError 로 전체가 실패한다.
+
+    리뷰어가 잔여 위험으로 지적한 경로다. 작성기는 이 형태를 쓰지 않지만
+    손으로 넣은 행이나 옛 형태가 남을 수 있다.
+    """
+    _add_announcement(isolated_db)
+    _add_result(isolated_db)
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
+    row = isolated_db.get(BidCompareStatsSnapshot, snapshots.SNAPSHOT_KEY_AGENCY_TOP10)
+    row.payload = [{"name": "키가 빠진 기관"}]
+    isolated_db.commit()
+
+    data = dashboard.get_compare_stats_data(isolated_db)
+
+    assert data["agency_announce_top10"][0]["name"] is not None
+    assert "total_base_amount" in data["agency_announce_top10"][0]
+
+
+def test_정확히_2일_경계는_스냅샷을_쓴다(isolated_db):
+    """규약은 2일 이내면 스냅샷이다. 48.0시간은 폴백이 아니다."""
+    now = utcnow()
+    assert snapshots.is_snapshot_fresh(now - timedelta(days=2), now=now) is True
+    assert snapshots.is_snapshot_fresh(now - timedelta(days=2, seconds=1), now=now) is False
+
+
+def test_aware_datetime_도_naive_와_같게_판정한다(isolated_db):
+    """이 저장소는 naive 와 aware 가 섞여 사고가 난 이력이 있다."""
+    from datetime import UTC
+
+    now = utcnow()
+    aware = (now - timedelta(days=1)).replace(tzinfo=UTC)
+    assert snapshots.is_snapshot_fresh(aware, now=now) is True
+    stale_aware = (now - timedelta(days=3)).replace(tzinfo=UTC)
+    assert snapshots.is_snapshot_fresh(stale_aware, now=now) is False

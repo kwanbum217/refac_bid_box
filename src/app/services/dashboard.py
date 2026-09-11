@@ -565,9 +565,9 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         matched_payload, matched_rebuilt_at, _matched_age = compare_snapshots.get_snapshot_with_age(
             db, compare_snapshots.SNAPSHOT_KEY_MATCHED_COUNT
         )
-        agency_usable = compare_snapshots.is_snapshot_fresh(agency_rebuilt_at) and isinstance(
-            agency_payload, list
-        )
+        agency_usable = compare_snapshots.is_snapshot_fresh(
+            agency_rebuilt_at
+        ) and compare_snapshots.is_agency_payload_usable(agency_payload)
         matched_usable = (
             compare_snapshots.is_snapshot_fresh(matched_rebuilt_at)
             and isinstance(matched_payload, dict)

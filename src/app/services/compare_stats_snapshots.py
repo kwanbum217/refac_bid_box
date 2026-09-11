@@ -44,6 +44,22 @@ logger = logging.getLogger(__name__)
 SNAPSHOT_KEY_AGENCY_TOP10 = "agency_announce_top10"
 SNAPSHOT_KEY_MATCHED_COUNT = "matched_count"
 
+# 기관 payload 한 항목이 가져야 하는 키입니다. 리스트라는 것만 보고 항목을 그대로
+# 인덱싱하면 키가 빠진 항목에서 KeyError 가 나 compare-stats 전체가 실패합니다.
+# 작성기는 이 형태만 쓰지만, 손으로 넣은 행이나 옛 형태가 남을 수 있으므로
+# 사용 판정에서 항목까지 봅니다.
+AGENCY_ITEM_KEYS = ("name", "total_base_amount", "total_prce", "count")
+
+
+def is_agency_payload_usable(payload: object) -> bool:
+    """기관 상위 10 payload 를 그대로 쓸 수 있는 형태인지 판정합니다."""
+    if not isinstance(payload, list):
+        return False
+    return all(
+        isinstance(item, dict) and all(key in item for key in AGENCY_ITEM_KEYS) for item in payload
+    )
+
+
 # 두 스냅샷의 집계 창(일). 응답의 최근 1년 구간과 같습니다.
 COMPARE_STATS_WINDOW_DAYS = 365
 
