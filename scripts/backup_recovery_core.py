@@ -239,7 +239,12 @@ def restore_mysql_database(db_config: dict[str, Any], input_gz_path: Path) -> No
         proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
         )  # nosec B603, B607
-        _, stderr_data = proc.communicate(input=gz_in.read())
+        if proc.stdin is None:
+            proc.kill()
+            raise RuntimeError("mysql 복원 표준입력을 열 수 없습니다.")
+        shutil.copyfileobj(gz_in, proc.stdin)
+        proc.stdin.close()
+        _, stderr_data = proc.communicate()
     if proc.returncode != 0:
         err = stderr_data.decode("utf-8", errors="replace") if stderr_data else "mysql 복원 실패"
         raise RuntimeError(f"mysql 복원 실행 실패 (코드 {proc.returncode}): {err}")

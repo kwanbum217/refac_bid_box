@@ -26,6 +26,7 @@ from scripts.backup_recovery import (
 from scripts.backup_recovery_core import (
     create_mysql_database,
     drop_mysql_database,
+    restore_mysql_database,
 )
 
 
@@ -435,6 +436,36 @@ def test_create_and_drop_mysql_database_subprocesses():
         assert any(
             "DROP DATABASE IF EXISTS `procurement_restore_drill`" in str(arg) for arg in drop_args
         )
+
+
+def test_restore_mysql_database_streams_gzip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """복원은 덤프 전체를 메모리에 올리지 않고 gzip 을 mysql stdin 으로 흘린다."""
+    dump = tmp_path / "db_dump.sql.gz"
+    dump.write_bytes(b"not-a-real-gzip")
+    drill_db = {
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "pwd",
+        "name": "procurement_restore_drill",
+    }
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.stdin = MagicMock()
+    mock_proc.communicate.return_value = (b"", b"")
+    with (
+        patch("scripts.backup_recovery_core.gzip.open") as mock_gzip,
+        patch("scripts.backup_recovery_core.shutil.copyfileobj") as mock_copy,
+        patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+    ):
+        mock_gzip.return_value.__enter__.return_value = MagicMock(name="gz")
+        restore_mysql_database(drill_db, dump)
+    mock_popen.assert_called_once()
+    mock_copy.assert_called_once()
+    mock_proc.communicate.assert_called_once_with()
+    mock_proc.stdin.close.assert_called_once()
 
 
 def test_create_mysql_database_uses_container_client(monkeypatch: pytest.MonkeyPatch) -> None:
