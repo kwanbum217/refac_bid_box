@@ -437,6 +437,30 @@ def test_create_and_drop_mysql_database_subprocesses():
         )
 
 
+def test_create_mysql_database_uses_container_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MYSQL_CLIENT_CONTAINER 가 있으면 CREATE DATABASE 도 컨테이너 클라이언트를 쓴다."""
+    monkeypatch.setenv("MYSQL_CLIENT_CONTAINER", "refac_bid_box-db-1")
+    drill_db = {
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "pwd",
+        "name": "procurement_restore_drill",
+    }
+    with patch("subprocess.run") as mock_run:
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_run.return_value = mock_proc
+        create_mysql_database(drill_db)
+    cmd = mock_run.call_args[0][0]
+    assert cmd[:3] == ["docker", "exec", "-i"]
+    assert "refac_bid_box-db-1" in cmd
+    assert "-e" in cmd
+    assert any(
+        "CREATE DATABASE IF NOT EXISTS `procurement_restore_drill`" in str(arg) for arg in cmd
+    )
+
+
 def test_run_drill_g1_verification_subprocess(tmp_path: Path):
     """run_drill_g1_verification 이 verify_migration.py 를 올바른 격리 환경변수로 호출합니다."""
     target_dir = tmp_path / "drill_target"

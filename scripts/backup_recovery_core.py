@@ -261,25 +261,8 @@ def extract_tar_archive(archive_path: Path, target_base_dir: Path) -> None:
 
 
 def _run_mysql_cmd(db_config: dict[str, Any], sql: str, err_prefix: str) -> None:
-    cmd = [
-        "mysql",
-        "-h",
-        str(db_config["host"]),
-        "-P",
-        str(db_config["port"]),
-        # host 가 localhost 면 mysql 클라이언트는 포트를 무시하고 유닉스 소켓으로
-        # 붙습니다. DB 가 컨테이너에 있으면 그 소켓이 없어 백업과 복원이 모두
-        # 실패합니다. 포트를 지정한 이상 TCP 를 쓰는 것이 의도입니다.
-        "--protocol=TCP",
-        "-u",
-        str(db_config["user"]),
-        "-e",
-        sql,
-    ]
-
-    env = os.environ.copy()
-    if db_config.get("password"):
-        env["MYSQL_PWD"] = str(db_config["password"])
+    cmd, env = mysql_client_command("mysql", db_config)
+    cmd += ["-e", sql]
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)  # nosec B603, B607
     if proc.returncode != 0:
         err = proc.stderr.strip() if proc.stderr else "실패"
