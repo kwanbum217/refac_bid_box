@@ -243,6 +243,7 @@ facts:
       - docs/analysis/aq2_servc_scope_extension_survey_20260910.md
       - docs/analysis/ng2a_negotiation_price_score_survey_20260910.md
       - docs/ops/handoff_20260910_wave_aq_ng_session_close.md
+      - docs/analysis/bm1_negotiation_price_source_recount_20260911.md
     related_documents:
       - docs/context/CURRENT_STATE.md
   - id: compare_stats_latency
