@@ -454,7 +454,11 @@ def run_restore_drill(
             created_db = True
             if not comps.get("database", {}).get("path"):
                 raise ValueError("매니페스트에 database 아카이브 경로가 없습니다.")
-            restore_mysql_database(drill_db, snapshot_dir / comps["database"]["path"])
+            restore_mysql_database(
+                drill_db,
+                snapshot_dir / comps["database"]["path"],
+                disable_binlog=True,
+            )
 
         def _do_g1_db() -> None:
             nonlocal g1_db, success

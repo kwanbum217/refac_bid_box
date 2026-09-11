@@ -78,7 +78,7 @@ python3 scripts/backup_recovery.py drill \
 1. 스냅샷 무결성 검증
 2. 파일 아카이브 해제 후 `verify_migration.py --only-steps weights,chroma`
 3. 해제본 삭제(`cleanup_drill_target_dir`)
-4. 격리 DB 생성 및 import 후 `verify_migration.py --only-steps tables,signature,rowcount,reconciliation`
+4. 격리 DB 생성 및 import 후 `verify_migration.py --only-steps tables,signature,rowcount,reconciliation`. import 세션은 `sql_log_bin=0` 이라 덤프 크기만큼의 binlog 가 생기지 않는다
 5. 격리 DB drop 및 잔여 경로 정리
 
 ---

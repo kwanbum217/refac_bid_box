@@ -227,7 +227,12 @@ def dump_mysql_database(db_config: dict[str, Any], output_gz_path: Path) -> tupl
     return output_gz_path.stat().st_size, sha256_file(output_gz_path)
 
 
-def restore_mysql_database(db_config: dict[str, Any], input_gz_path: Path) -> None:
+def restore_mysql_database(
+    db_config: dict[str, Any],
+    input_gz_path: Path,
+    *,
+    disable_binlog: bool = False,
+) -> None:
     if not input_gz_path.exists():
         raise FileNotFoundError(f"복원할 DB 덤프 파일 없음: {input_gz_path}")
     cmd, env = mysql_client_command("mysql", db_config)
@@ -242,6 +247,9 @@ def restore_mysql_database(db_config: dict[str, Any], input_gz_path: Path) -> No
         if proc.stdin is None:
             proc.kill()
             raise RuntimeError("mysql 복원 표준입력을 열 수 없습니다.")
+        if disable_binlog:
+            proc.stdin.write(b"SET SESSION sql_log_bin=0;\n")
+            proc.stdin.flush()
         shutil.copyfileobj(gz_in, proc.stdin)
         proc.stdin.close()
         _, stderr_data = proc.communicate()

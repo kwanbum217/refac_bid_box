@@ -246,7 +246,9 @@ def test_drill_executes_extraction_db_import_and_g1_verification(tmp_path: Path)
     # 실제 추출 및 DB 복원, 단계 나눔 G1 검증 호출 확인
     assert mock_extract.call_count == 2
     mock_create_db.assert_called_once_with(drill_db)
-    mock_restore_db.assert_called_once_with(drill_db, snapshot_dir / "db_dump.sql.gz")
+    mock_restore_db.assert_called_once_with(
+        drill_db, snapshot_dir / "db_dump.sql.gz", disable_binlog=True
+    )
     assert mock_g1.call_count == 2
     assert mock_g1.call_args_list[0].kwargs["only_steps"] == "weights,chroma"
     assert (
@@ -571,8 +573,37 @@ def test_restore_mysql_database_streams_gzip(
         restore_mysql_database(drill_db, dump)
     mock_popen.assert_called_once()
     mock_copy.assert_called_once()
+    mock_proc.stdin.write.assert_not_called()
     mock_proc.communicate.assert_called_once_with()
     mock_proc.stdin.close.assert_called_once()
+
+
+def test_restore_mysql_database_disables_binlog_for_drill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """격리 드릴 복원은 세션 binlog 를 꺼서 덤프 크기만큼의 로그가 생기지 않게 한다."""
+    dump = tmp_path / "db_dump.sql.gz"
+    dump.write_bytes(b"not-a-real-gzip")
+    drill_db = {
+        "host": "localhost",
+        "port": 3306,
+        "user": "root",
+        "password": "pwd",
+        "name": "procurement_restore_drill",
+    }
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.stdin = MagicMock()
+    mock_proc.communicate.return_value = (b"", b"")
+    with (
+        patch("scripts.backup_recovery_core.gzip.open") as mock_gzip,
+        patch("scripts.backup_recovery_core.shutil.copyfileobj"),
+        patch("subprocess.Popen", return_value=mock_proc),
+    ):
+        mock_gzip.return_value.__enter__.return_value = MagicMock(name="gz")
+        restore_mysql_database(drill_db, dump, disable_binlog=True)
+    mock_proc.stdin.write.assert_called_once_with(b"SET SESSION sql_log_bin=0;\n")
+    mock_proc.stdin.flush.assert_called_once()
 
 
 def test_create_mysql_database_uses_container_client(monkeypatch: pytest.MonkeyPatch) -> None:
