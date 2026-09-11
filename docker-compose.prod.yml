@@ -408,9 +408,12 @@ services:
       - --storage.tsdb.path=/prometheus
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus_rules.yml:/etc/prometheus/prometheus_rules.yml:ro
       - prometheus_data:/prometheus
     depends_on:
       otel-collector:
+        condition: service_started
+      alertmanager:
         condition: service_started
     deploy:
       resources:
@@ -420,6 +423,34 @@ services:
         reservations:
           cpus: "0.25"
           memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - internal
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --cluster.listen-address=
+    volumes:
+      - ./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    expose:
+      - "9093"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
     logging:
       driver: "json-file"
       options:
@@ -468,6 +499,7 @@ volumes:
   tempo_data:
   grafana_data:
   prometheus_data:
+  alertmanager_data:
   caddy_data:
   caddy_config:
 

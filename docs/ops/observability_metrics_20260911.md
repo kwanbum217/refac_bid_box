@@ -93,3 +93,4 @@ graph TD
 | Grafana Prometheus 데이터소스 | `docker/grafana/provisioning/datasources/prometheus.yaml` 에 Prometheus 데이터소스 provision | 완료 |
 | Grafana HTTP/DB 지연 대시보드 | `docker/grafana/dashboards/http_db_latency.json` 과 dashboards provision. PromQL 은 `http.server.request.duration` / `db.client.operation.duration` / `http.server.request.count` 의 Prometheus 변환명 | 완료 |
 | 정식 성능 및 레이턴시 검증 | 예측 API c10 600x3 쌍대 실측. off 최악 P95 48.71ms, on 56.74ms, 둘 다 100ms 한도 통과. [`otel_metrics_latency_ab_20260911.md`](otel_metrics_latency_ab_20260911.md) | 완료 |
+| SLO 값과 알람 규칙 | G3 한도를 Prometheus 규칙으로 옮기고 Alertmanager `local-hold` 와 Grafana `bidbox-slo-alerts` 를 넣음. [`slo_alerts_20260911.md`](slo_alerts_20260911.md) | 완료 |

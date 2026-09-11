@@ -1,0 +1,71 @@
+# Prometheus SLO 알람 규칙 (관측성 3단계)
+#
+# 임계치는 벤치마크에서 새로 만들지 않고 G3 게이트 정본을 옮긴다.
+# - 예측 API P95 100ms: docs/ops/latency_gate_protocol.md 4장
+# - 예측 API 5xx 0.1%: G3 7,200 요청 오류 0건, Wilson 상한 0.053% 를
+#   운영 5분 창에서 단건 5xx 에 울리지 않도록 반올림한 값
+# - SSE 전체 P95 20s: latency_gate_protocol.md 4.1 (순차 측정 목표)
+# SSE 첫 토큰 3s 와 예측 100ms 초과율 0.5% 는 라이브 메트릭으로 재현할 수
+# 없어 벤치마크 게이트로 남긴다. OTEL_ENABLED=false 이면 표본이 없어
+# histogram_quantile 은 NaN 을 돌려 비교식이 발화하지 않는다.
+
+groups:
+  - name: bidbox_slo
+    interval: 15s
+    rules:
+      - alert: PredictHttpP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_server_request_duration_seconds_bucket{http_route="/predictions/predict"}[5m])
+            )
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+          slo: predict_p95
+        annotations:
+          summary: "예측 API P95 가 100ms SLO 를 넘었습니다"
+          description: "http_route=/predictions/predict 의 5분 P95 가 0.1s 를 10분 연속 초과했습니다."
+
+      - alert: PredictHttpErrorRateHigh
+        expr: |
+          (
+            sum(rate(http_server_request_count_total{http_route="/predictions/predict",http_response_status_code=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_server_request_count_total{http_route="/predictions/predict"}[5m])), 1e-9)
+          ) > 0.001
+        for: 10m
+        labels:
+          severity: critical
+          slo: predict_availability
+        annotations:
+          summary: "예측 API 5xx 비율이 0.1% SLO 를 넘었습니다"
+          description: "http_route=/predictions/predict 의 5분 5xx 비율이 0.001 을 10분 연속 초과했습니다."
+
+      - alert: ChatStreamHttpP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_server_request_duration_seconds_bucket{http_route="/chatbot/chat/stream"}[5m])
+            )
+          ) > 20
+        for: 10m
+        labels:
+          severity: warning
+          slo: sse_total_p95
+        annotations:
+          summary: "챗봇 SSE 전체 P95 가 20초 SLO 를 넘었습니다"
+          description: "http_route=/chatbot/chat/stream 의 HTTP 전체 지연 5분 P95 가 20s 를 10분 연속 초과했습니다. 첫 토큰 SLO 는 이 메트릭으로 판정하지 않습니다."
+
+      - alert: OtelCollectorDown
+        expr: 'up{job="otel-collector"} == 0'
+        for: 5m
+        labels:
+          severity: critical
+          slo: scrape
+        annotations:
+          summary: "OTel Collector Prometheus 스크랩이 실패했습니다"
+          description: "job=otel-collector 대상이 5분 동안 up==0 입니다. 애플리케이션 SLO 시계열이 끊깁니다."

@@ -171,12 +171,12 @@ status = get_observability_status()
 
 ---
 
-## 7. 미결 사항 (Pending)
+## 7. 후속 상태
 
-본 작업 범위에서는 관측성 계측(Instrumentation) 인프라 배선만을 다루며, 아래 항목은 관측성 백엔드가 최종 선정된 이후 구성하도록 미결로 둡니다:
+계측 배선 시점의 미결 세 항목은 이후 단계에서 닫혔다.
 
-| 항목 | 상태 | 향후 계획 |
+| 항목 | 상태 | 근거 |
 | --- | --- | --- |
-| **관측성 백엔드 선정** | 미결 (Pending) | Prometheus, Grafana Tempo, Jaeger, 클라우드 관리형 중 선정 |
-| **SLO (Service Level Objective)** | 미결 (Pending) | 백엔드 저장소 선정 후 P95/P99 엔드포인트별 응답 지연 목표치 설정 |
-| **알람 규칙 (Alert Rules)** | 미결 (Pending) | Alertmanager / Grafana Alerting 연동을 통한 에러율/지연 임계치 경보 구성 |
+| **관측성 백엔드 선정** | 확정 | Collector·Tempo·Prometheus·Grafana. [`observability_metrics_20260911.md`](observability_metrics_20260911.md) |
+| **SLO** | 확정 | 예측 API P95 100ms, 5xx 0.1%, SSE 전체 P95 20초. [`slo_alerts_20260911.md`](slo_alerts_20260911.md) |
+| **알람 규칙** | 배선 | Prometheus 규칙과 Alertmanager `local-hold`. 메일·Slack 수신기는 비밀값 승인 후 |
