@@ -1,0 +1,97 @@
+{
+  "schema": "OTEL_METRICS_LATENCY_AB_V1",
+  "endpoint": "/api/v1/predictions/predict",
+  "concurrency": 10,
+  "rounds_per_mode": 3,
+  "samples_per_round": 600,
+  "modes": {
+    "off": {
+      "otel_enabled": false,
+      "rounds": [
+        {
+          "round": 1,
+          "n": 600,
+          "errors": 0,
+          "p50_ms": 39.01,
+          "p95_ms": 48.39,
+          "p99_ms": 52.85,
+          "over_100ms": 0,
+          "load_median_percent": 15.059988839285715,
+          "load_max_percent": 15.569196428571427
+        },
+        {
+          "round": 2,
+          "n": 600,
+          "errors": 0,
+          "p50_ms": 39.5,
+          "p95_ms": 48.71,
+          "p99_ms": 52.96,
+          "over_100ms": 0,
+          "load_median_percent": 29.150390625,
+          "load_max_percent": 29.823521205357146
+        },
+        {
+          "round": 3,
+          "n": 600,
+          "errors": 0,
+          "p50_ms": 38.57,
+          "p95_ms": 47.65,
+          "p99_ms": 53.3,
+          "over_100ms": 0,
+          "load_median_percent": 23.503766741071427,
+          "load_max_percent": 24.560546875
+        }
+      ],
+      "worst_p95_ms": 48.71,
+      "total_n": 1800,
+      "total_over_100ms": 0,
+      "total_errors": 0
+    },
+    "on": {
+      "otel_enabled": true,
+      "rounds": [
+        {
+          "round": 1,
+          "n": 600,
+          "errors": 0,
+          "p50_ms": 45.68,
+          "p95_ms": 56.74,
+          "p99_ms": 60.38,
+          "over_100ms": 0,
+          "load_median_percent": 19.740513392857142,
+          "load_max_percent": 21.358816964285715
+        },
+        {
+          "round": 2,
+          "n": 600,
+          "errors": 0,
+          "p50_ms": 44.33,
+          "p95_ms": 55.88,
+          "p99_ms": 60.63,
+          "over_100ms": 0,
+          "load_median_percent": 18.962751116071427,
+          "load_max_percent": 19.025530133928573
+        },
+        {
+          "round": 3,
+          "n": 600,
+          "errors": 0,
+          "p50_ms": 44.63,
+          "p95_ms": 56.08,
+          "p99_ms": 58.94,
+          "over_100ms": 0,
+          "load_median_percent": 21.602957589285715,
+          "load_max_percent": 22.7294921875
+        }
+      ],
+      "worst_p95_ms": 56.74,
+      "total_n": 1800,
+      "total_over_100ms": 0,
+      "total_errors": 0
+    }
+  },
+  "delta_worst_p95_ms": 8.03,
+  "delta_worst_p95_ratio": 0.1649,
+  "g3_c10_p95_limit_ms": 100.0,
+  "both_modes_pass_g3_c10": true
+}

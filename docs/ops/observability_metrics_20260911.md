@@ -82,7 +82,8 @@ graph TD
 
 ## 5. 관측성 2단계(Prometheus) 잔여 과업
 
-애플리케이션 OTLP 메트릭 방출, Prometheus 스크랩, HTTP/DB 지연 대시보드 provision 은 완료되었습니다. 메트릭 켜짐 레이턴시 실측은 별도 문서로 남깁니다.
+애플리케이션 OTLP 메트릭 방출, Prometheus 스크랩, HTTP/DB 지연 대시보드 provision,
+메트릭 켜짐 예측 API 레이턴시 쌍대 실측까지 완료되었습니다.
 
 | 과업 | 상세 내용 | 상태 |
 | --- | --- | --- |
@@ -91,4 +92,4 @@ graph TD
 | Prometheus Scrape 잡 구성 | `docker/prometheus.yml` 이 `otel-collector:8889` 를 15s 간격으로 스크랩 | 완료 |
 | Grafana Prometheus 데이터소스 | `docker/grafana/provisioning/datasources/prometheus.yaml` 에 Prometheus 데이터소스 provision | 완료 |
 | Grafana HTTP/DB 지연 대시보드 | `docker/grafana/dashboards/http_db_latency.json` 과 dashboards provision. PromQL 은 `http.server.request.duration` / `db.client.operation.duration` / `http.server.request.count` 의 Prometheus 변환명 | 완료 |
-| 정식 성능 및 레이턴시 검증 | 메트릭 활성화 상태에서의 레이턴시 영향도 실측 및 평가 | 잔여 (코디네이터 측정) |
+| 정식 성능 및 레이턴시 검증 | 예측 API c10 600x3 쌍대 실측. off 최악 P95 48.71ms, on 56.74ms, 둘 다 100ms 한도 통과. [`otel_metrics_latency_ab_20260911.md`](otel_metrics_latency_ab_20260911.md) | 완료 |
