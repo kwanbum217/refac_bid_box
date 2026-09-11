@@ -9,14 +9,25 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI
-from opentelemetry import context, trace
+from opentelemetry import context, metrics, trace
+from opentelemetry.metrics import Counter, Histogram
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import (
+    ConsoleMetricExporter,
+    MetricExporter,
+    MetricExportResult,
+    MetricReader,
+    MetricsData,
+    PeriodicExportingMetricReader,
+)
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import (
@@ -28,11 +39,37 @@ from opentelemetry.sdk.trace.export import (
 )
 from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
 from opentelemetry.trace import Status, StatusCode
+from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from src.app.core.config import get_app_version, settings
 
 logger = logging.getLogger(__name__)
+
+# OpenTelemetry 표준 시맨틱 컨벤션 메트릭 명칭 및 단위
+HTTP_SERVER_REQUEST_DURATION: str = "http.server.request.duration"
+DB_CLIENT_OPERATION_DURATION: str = "db.client.operation.duration"
+HTTP_SERVER_REQUEST_COUNT: str = "http.server.request.count"
+
+# DB 질의 연산 카디널리티 관리를 위한 표준 SQL 명령어 허용 목록
+KNOWN_DB_OPERATIONS: frozenset[str] = frozenset(
+    {
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "COMMIT",
+        "ROLLBACK",
+        "BEGIN",
+        "CREATE",
+        "ALTER",
+        "DROP",
+        "PRAGMA",
+        "SHOW",
+        "SET",
+    }
+)
 
 # 비밀 정보 노출 방지를 위한 민감 키 패턴 목록
 SENSITIVE_KEY_PATTERNS: tuple[str, ...] = (
@@ -95,18 +132,223 @@ class SafeSpanExporter(SpanExporter):
             return False
 
 
+class SafeMetricExporter(MetricExporter):
+    """수집기 장애 시 애플리케이션 장애 전파를 차단하고 메트릭 내보내기 상태를 기록하는 래퍼."""
+
+    def __init__(self, delegate: MetricExporter) -> None:
+        super().__init__(
+            preferred_temporality=getattr(delegate, "_preferred_temporality", None),
+            preferred_aggregation=getattr(delegate, "_preferred_aggregation", None),
+        )
+        self._delegate = delegate
+        self.metrics_exported: int = 0
+        self.export_errors: int = 0
+        self.last_export_error: str | None = None
+        self.last_export_at: str | None = None
+
+    def export(
+        self,
+        metrics_data: MetricsData,
+        timeout_millis: float = 10_000,
+        **kwargs: Any,
+    ) -> MetricExportResult:
+        try:
+            result = self._delegate.export(metrics_data, timeout_millis=timeout_millis, **kwargs)
+            if result == MetricExportResult.SUCCESS:
+                self.metrics_exported += 1
+                self.last_export_at = datetime.now(UTC).isoformat()
+                return result
+            self.export_errors += 1
+            self.last_export_error = f"MetricExportResult: {result}"
+            logger.warning("OpenTelemetry 메트릭 내보내기 실패: %s", self.last_export_error)
+            return result
+        except Exception as exc:
+            self.export_errors += 1
+            self.last_export_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("OpenTelemetry 메트릭 내보내기 예외: %s", self.last_export_error)
+            return MetricExportResult.FAILURE
+
+    def shutdown(self, timeout_millis: float = 30_000, **kwargs: Any) -> None:
+        try:
+            self._delegate.shutdown(timeout_millis=timeout_millis, **kwargs)
+        except Exception as exc:
+            logger.warning("OpenTelemetry metric exporter shutdown 예외: %s", exc)
+
+    def force_flush(self, timeout_millis: float = 10_000) -> bool:
+        try:
+            return self._delegate.force_flush(timeout_millis=timeout_millis)
+        except Exception as exc:
+            logger.warning("OpenTelemetry metric exporter force_flush 예외: %s", exc)
+            return False
+
+
+def _extract_route_template(scope: Scope) -> str:
+    """경로 템플릿을 추출합니다.
+
+    실제 경로 값(ID, 파라미터 등) 대신 /api/v1/bids/{bid_id} 형태의 템플릿을 반환하여
+    카디널리티 폭발을 방지합니다. 매칭되지 않은 경로는 'unmatched' 로 분류합니다.
+    """
+    route = scope.get("route")
+    if route and hasattr(route, "path") and isinstance(route.path, str):
+        return route.path
+    return "unmatched"
+
+
+def _record_http_metrics(scope: Scope, status_code: int, duration_seconds: float) -> None:
+    """HTTP 요청 지연 및 요청 수 메트릭을 기록합니다."""
+    if not _registry.metrics_enabled:
+        return
+    route_template = _extract_route_template(scope)
+    method = str(scope.get("method", "UNKNOWN")).upper()
+
+    attrs: dict[str, Any] = {
+        "http.route": route_template,
+        "http.request.method": method,
+        "http.response.status_code": status_code,
+    }
+    # 민감 키 마스킹 검증 (추가 방어)
+    safe_attrs = {k: v for k, v in attrs.items() if not _is_sensitive_key(str(k))}
+
+    if _registry.http_duration_histogram is not None:
+        _registry.http_duration_histogram.record(duration_seconds, safe_attrs)
+    if _registry.http_requests_counter is not None:
+        _registry.http_requests_counter.add(1, safe_attrs)
+
+
+class OTelMetricsMiddleware:
+    """HTTP 요청 지연 및 요청 수를 계측하는 ASGI 미들웨어."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not is_metrics_enabled():
+            await self.app(scope, receive, send)
+            return
+
+        status_code = 500
+
+        async def send_wrapper(message: Any) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message.get("status", 200)
+            await send(message)
+
+        start_time = time.perf_counter()
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            duration = time.perf_counter() - start_time
+            try:
+                _record_http_metrics(scope, status_code, duration)
+            except Exception as exc:
+                logger.warning("HTTP 메트릭 기록 예외: %s", exc)
+
+
+def _extract_db_operation(statement: str | None) -> str:
+    """SQL 문에서 연산자(SELECT, INSERT 등)를 추출하여 저카디널리티 라벨을 보장합니다."""
+    if not statement:
+        return "UNKNOWN"
+    first_token = statement.strip().split()[0].upper()
+    return first_token if first_token in KNOWN_DB_OPERATIONS else "OTHER"
+
+
+def _before_cursor_execute(
+    conn: Any,
+    cursor: Any,
+    statement: str,
+    parameters: Any,
+    context: Any,
+    executemany: bool,
+) -> None:
+    with suppress(Exception):
+        conn.info["_otel_db_start"] = time.perf_counter()
+
+
+def _after_cursor_execute(
+    conn: Any,
+    cursor: Any,
+    statement: str,
+    parameters: Any,
+    context: Any,
+    executemany: bool,
+) -> None:
+    try:
+        start = conn.info.pop("_otel_db_start", None)
+        if (
+            start is not None
+            and _registry.metrics_enabled
+            and _registry.db_duration_histogram is not None
+        ):
+            duration = time.perf_counter() - start
+            op = _extract_db_operation(statement)
+            dialect = getattr(getattr(conn, "dialect", None), "name", "unknown")
+            attrs = {"db.system": dialect, "db.operation": op}
+            safe_attrs = {k: v for k, v in attrs.items() if not _is_sensitive_key(str(k))}
+            _registry.db_duration_histogram.record(duration, safe_attrs)
+    except Exception as exc:
+        logger.warning("DB 메트릭 기록 예외: %s", exc)
+
+
+def _handle_error(exception_context: Any) -> None:
+    try:
+        conn = getattr(exception_context, "connection", None)
+        start = conn.info.pop("_otel_db_start", None) if conn and hasattr(conn, "info") else None
+        if (
+            start is not None
+            and _registry.metrics_enabled
+            and _registry.db_duration_histogram is not None
+        ):
+            duration = time.perf_counter() - start
+            statement = getattr(exception_context, "statement", None)
+            op = _extract_db_operation(statement)
+            dialect = getattr(getattr(conn, "dialect", None), "name", "unknown")
+            attrs = {"db.system": dialect, "db.operation": op}
+            safe_attrs = {k: v for k, v in attrs.items() if not _is_sensitive_key(str(k))}
+            _registry.db_duration_histogram.record(duration, safe_attrs)
+    except Exception as exc:
+        logger.warning("DB 에러 메트릭 기록 예외: %s", exc)
+
+
+def _attach_db_metrics_listeners(engine: Engine) -> None:
+    """SQLAlchemy Engine 에 DB 쿼리 지연 메트릭 리스너를 등록합니다."""
+    if not event.contains(engine, "before_cursor_execute", _before_cursor_execute):
+        event.listen(engine, "before_cursor_execute", _before_cursor_execute)
+    if not event.contains(engine, "after_cursor_execute", _after_cursor_execute):
+        event.listen(engine, "after_cursor_execute", _after_cursor_execute)
+    if not event.contains(engine, "handle_error", _handle_error):
+        event.listen(engine, "handle_error", _handle_error)
+
+
+def _detach_db_metrics_listeners(engine: Engine) -> None:
+    """SQLAlchemy Engine 에 등록된 DB 쿼리 지연 메트릭 리스너를 해제합니다."""
+    if event.contains(engine, "before_cursor_execute", _before_cursor_execute):
+        event.remove(engine, "before_cursor_execute", _before_cursor_execute)
+    if event.contains(engine, "after_cursor_execute", _after_cursor_execute):
+        event.remove(engine, "after_cursor_execute", _after_cursor_execute)
+    if event.contains(engine, "handle_error", _handle_error):
+        event.remove(engine, "handle_error", _handle_error)
+
+
 @dataclass
 class ObservabilityRegistry:
     enabled: bool = False
+    metrics_enabled: bool = False
     initialized: bool = False
     service_name: str = ""
     exporter_type: str = "none"
     endpoint: str = ""
     safe_exporter: SafeSpanExporter | None = None
+    safe_metric_exporter: SafeMetricExporter | None = None
     tracer_provider: TracerProvider | None = None
+    meter_provider: MeterProvider | None = None
+    http_duration_histogram: Histogram | None = None
+    db_duration_histogram: Histogram | None = None
+    http_requests_counter: Counter | None = None
     fastapi_instrumented: bool = False
     sqlalchemy_instrumented: bool = False
     arq_instrumented: bool = False
+    sqlalchemy_metrics_engine: Engine | None = None
 
 
 _registry = ObservabilityRegistry()
@@ -117,23 +359,44 @@ def is_otel_enabled() -> bool:
     return _registry.enabled
 
 
+def is_metrics_enabled() -> bool:
+    """OpenTelemetry 메트릭 활성화 여부를 반환합니다."""
+    return _registry.metrics_enabled
+
+
 def get_tracer_provider() -> TracerProvider | None:
     """현재 등록된 TracerProvider 를 반환합니다."""
     return _registry.tracer_provider
+
+
+def get_meter_provider() -> MeterProvider | None:
+    """현재 등록된 MeterProvider 를 반환합니다."""
+    return _registry.meter_provider
+
+
+def get_metric_instruments() -> dict[str, Any]:
+    """등록된 세 가지 핵심 메트릭 계측기 딕셔너리를 반환합니다."""
+    return {
+        "http_request_duration": _registry.http_duration_histogram,
+        "db_operation_duration": _registry.db_duration_histogram,
+        "http_request_count": _registry.http_requests_counter,
+    }
 
 
 def setup_observability(
     app: FastAPI | None = None,
     engine: Engine | None = None,
     custom_exporter: SpanExporter | None = None,
+    custom_metric_exporter: MetricExporter | MetricReader | None = None,
 ) -> None:
-    """OpenTelemetry 분산 추적 계측을 초기화하고 배선합니다.
+    """OpenTelemetry 분산 추적 및 메트릭 계측을 초기화하고 배선합니다.
 
     settings.OTEL_ENABLED 가 False 일 때는 어떤 자원도 할당하지 않고 즉시 반환하여
     런타임 오버헤드를 0 으로 유지합니다.
     """
-    if not settings.OTEL_ENABLED and custom_exporter is None:
+    if not settings.OTEL_ENABLED and custom_exporter is None and custom_metric_exporter is None:
         _registry.enabled = False
+        _registry.metrics_enabled = False
         _registry.initialized = True
         return
 
@@ -179,12 +442,103 @@ def setup_observability(
         _registry.safe_exporter = safe_exporter
         _registry.tracer_provider = provider
         trace.set_tracer_provider(provider)
-        _registry.initialized = True
 
+    # MeterProvider 및 메트릭 계측 초기화
+    should_enable_metrics = settings.is_metrics_enabled or (custom_metric_exporter is not None)
+    if should_enable_metrics and _registry.meter_provider is None:
+        resource = Resource.create(
+            {
+                "service.name": settings.OTEL_SERVICE_NAME,
+                "service.version": get_app_version(),
+            }
+        )
+        safe_metric_exporter: SafeMetricExporter | None = None
+        metric_readers: list[MetricReader] = []
+
+        if custom_metric_exporter is not None:
+            if isinstance(custom_metric_exporter, MetricReader):
+                metric_readers.append(custom_metric_exporter)
+            else:
+                safe_metric_exporter = SafeMetricExporter(custom_metric_exporter)
+                metric_readers.append(
+                    PeriodicExportingMetricReader(
+                        safe_metric_exporter,
+                        export_interval_millis=settings.OTEL_METRIC_EXPORT_INTERVAL_MILLIS,
+                    )
+                )
+        elif settings.OTEL_EXPORTER_TYPE == "console":
+            safe_metric_exporter = SafeMetricExporter(ConsoleMetricExporter())
+            metric_readers.append(
+                PeriodicExportingMetricReader(
+                    safe_metric_exporter,
+                    export_interval_millis=settings.OTEL_METRIC_EXPORT_INTERVAL_MILLIS,
+                )
+            )
+        elif settings.OTEL_EXPORTER_TYPE == "otlp":
+            try:
+                from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+                    OTLPMetricExporter,
+                    _append_metrics_path,
+                )
+
+                endpoint = settings.OTEL_EXPORTER_OTLP_ENDPOINT
+                metric_endpoint: str | None = None
+                if endpoint:
+                    if endpoint.endswith("/v1/traces"):
+                        metric_endpoint = endpoint[:-10] + "/v1/metrics"
+                    elif endpoint.endswith("/v1/traces/"):
+                        metric_endpoint = endpoint[:-11] + "/v1/metrics"
+                    elif not endpoint.endswith("/v1/metrics"):
+                        metric_endpoint = _append_metrics_path(endpoint)
+                    else:
+                        metric_endpoint = endpoint
+
+                raw_metric_exporter = (
+                    OTLPMetricExporter(endpoint=metric_endpoint)
+                    if metric_endpoint
+                    else OTLPMetricExporter()
+                )
+                safe_metric_exporter = SafeMetricExporter(raw_metric_exporter)
+                metric_readers.append(
+                    PeriodicExportingMetricReader(
+                        safe_metric_exporter,
+                        export_interval_millis=settings.OTEL_METRIC_EXPORT_INTERVAL_MILLIS,
+                    )
+                )
+            except Exception as exc:
+                logger.warning("OTLP Metric Exporter 초기화 실패: %s", exc)
+
+        meter_provider = MeterProvider(resource=resource, metric_readers=metric_readers)
+        metrics.set_meter_provider(meter_provider)
+
+        meter = meter_provider.get_meter("refac_bid_box", get_app_version())
+
+        # 3가지 핵심 계측기 등록 (OpenTelemetry 시맨틱 컨벤션 준수)
+        _registry.http_duration_histogram = meter.create_histogram(
+            name=HTTP_SERVER_REQUEST_DURATION,
+            description="Duration of HTTP server requests in seconds.",
+            unit="s",
+        )
+        _registry.db_duration_histogram = meter.create_histogram(
+            name=DB_CLIENT_OPERATION_DURATION,
+            description="Duration of database client operations in seconds.",
+            unit="s",
+        )
+        _registry.http_requests_counter = meter.create_counter(
+            name=HTTP_SERVER_REQUEST_COUNT,
+            description="Total count of HTTP server requests.",
+            unit="{request}",
+        )
+
+        _registry.safe_metric_exporter = safe_metric_exporter
+        _registry.meter_provider = meter_provider
+        _registry.metrics_enabled = True
+
+    _registry.initialized = True
     provider = _registry.tracer_provider
 
-    # FastAPI 계측 배선
-    if app is not None and not _registry.fastapi_instrumented:
+    # FastAPI 계측 배선 (Tracer)
+    if app is not None and not _registry.fastapi_instrumented and provider is not None:
         try:
             from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
@@ -197,8 +551,14 @@ def setup_observability(
         except Exception as exc:
             logger.warning("FastAPI 계측 배선 실패: %s", exc)
 
-    # SQLAlchemy 계측 배선
-    if engine is not None and not _registry.sqlalchemy_instrumented:
+    # FastAPI 메트릭 미들웨어 배선
+    if app is not None and _registry.metrics_enabled:
+        user_middlewares = getattr(app, "user_middleware", [])
+        if not any(m.cls == OTelMetricsMiddleware for m in user_middlewares):
+            app.add_middleware(OTelMetricsMiddleware)
+
+    # SQLAlchemy 계측 배선 (Tracer)
+    if engine is not None and not _registry.sqlalchemy_instrumented and provider is not None:
         try:
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
@@ -210,6 +570,11 @@ def setup_observability(
             _registry.sqlalchemy_instrumented = True
         except Exception as exc:
             logger.warning("SQLAlchemy 계측 배선 실패: %s", exc)
+
+    # SQLAlchemy DB 질의 지연 메트릭 배선
+    if engine is not None and _registry.metrics_enabled:
+        _attach_db_metrics_listeners(engine)
+        _registry.sqlalchemy_metrics_engine = engine
 
 
 async def arq_on_job_start(ctx: dict[str, Any]) -> None:
@@ -390,8 +755,10 @@ def traced_worker_task(
 def get_observability_status() -> dict[str, Any]:
     """현재 OpenTelemetry 계측 및 내보내기 상태를 반환합니다."""
     safe_exporter = _registry.safe_exporter
+    safe_metric_exporter = _registry.safe_metric_exporter
     return {
         "enabled": _registry.enabled,
+        "metrics_enabled": _registry.metrics_enabled,
         "initialized": _registry.initialized,
         "service_name": _registry.service_name,
         "exporter_type": _registry.exporter_type,
@@ -400,6 +767,14 @@ def get_observability_status() -> dict[str, Any]:
         "export_errors": safe_exporter.export_errors if safe_exporter else 0,
         "last_export_error": safe_exporter.last_export_error if safe_exporter else None,
         "last_export_at": safe_exporter.last_export_at if safe_exporter else None,
+        "metrics_exported": safe_metric_exporter.metrics_exported if safe_metric_exporter else 0,
+        "metric_export_errors": safe_metric_exporter.export_errors if safe_metric_exporter else 0,
+        "last_metric_export_error": (
+            safe_metric_exporter.last_export_error if safe_metric_exporter else None
+        ),
+        "last_metric_export_at": safe_metric_exporter.last_export_at
+        if safe_metric_exporter
+        else None,
         "instrumentations": {
             "fastapi": _registry.fastapi_instrumented,
             "sqlalchemy": _registry.sqlalchemy_instrumented,
@@ -424,13 +799,38 @@ def reset_observability_for_testing() -> None:
             SQLAlchemyInstrumentor().uninstrument()
         except Exception as exc:
             logger.debug("SQLAlchemy uninstrument 예외: %s", exc)
+
+    if _registry.sqlalchemy_metrics_engine is not None:
+        try:
+            _detach_db_metrics_listeners(_registry.sqlalchemy_metrics_engine)
+        except Exception as exc:
+            logger.debug("SQLAlchemy 메트릭 리스너 해제 예외: %s", exc)
+
+    if _registry.meter_provider is not None:
+        try:
+            _registry.meter_provider.shutdown()
+        except Exception as exc:
+            logger.debug("MeterProvider shutdown 예외: %s", exc)
+        with suppress(Exception):
+            from opentelemetry.metrics import _internal as _metrics_internal
+
+            _metrics_internal._METER_PROVIDER = None
+            _metrics_internal._METER_PROVIDER_SET_ONCE._done = False
+
     _registry.enabled = False
+    _registry.metrics_enabled = False
     _registry.initialized = False
     _registry.service_name = ""
     _registry.exporter_type = "none"
     _registry.endpoint = ""
     _registry.safe_exporter = None
+    _registry.safe_metric_exporter = None
     _registry.tracer_provider = None
+    _registry.meter_provider = None
+    _registry.http_duration_histogram = None
+    _registry.db_duration_histogram = None
+    _registry.http_requests_counter = None
     _registry.fastapi_instrumented = False
     _registry.sqlalchemy_instrumented = False
     _registry.arq_instrumented = False
+    _registry.sqlalchemy_metrics_engine = None

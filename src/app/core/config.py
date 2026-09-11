@@ -200,11 +200,16 @@ class Settings(BaseSettings):
     OTEL_ENABLED: bool = False
     OTEL_SERVICE_NAME: str = "refac_bid_box"
     # OTLP HTTP 수집기 엔드포인트 (예: http://localhost:4318 또는 http://collector:4318/v1/traces)
+    # 분산 추적은 /v1/traces 로 내보내며, 메트릭 익스포터는 같은 엔드포인트를 재사용하되 메트릭 규약(/v1/metrics)으로 변환하여 내보냅니다.
     OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
     # Exporter 유형: "none"(내보내지 않음), "console"(디버그용 stdout), "otlp"(표준 OTLP HTTP)
     OTEL_EXPORTER_TYPE: Literal["none", "console", "otlp"] = "none"
     # 트레이스 샘플링 비율 (0.0 ~ 1.0)
     OTEL_SAMPLING_RATIO: float = 1.0
+    # 메트릭 개폐 설정. None 일 경우 OTEL_ENABLED 설정을 따르며, False 로 설정 시 분산 추적만 켜고 메트릭을 비활성화할 수 있습니다.
+    OTEL_METRICS_ENABLED: bool | None = None
+    # 메트릭 내보내기 주기 (밀리초 단위, 기본 60000ms = 60초)
+    OTEL_METRIC_EXPORT_INTERVAL_MILLIS: int = 60000
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -220,6 +225,19 @@ class Settings(BaseSettings):
         production 에서는 전체 API 표면이 공개되지 않도록 닫습니다.
         """
         return self.ENVIRONMENT != "production"
+
+    @property
+    def is_metrics_enabled(self) -> bool:
+        """메트릭 계측 활성화 여부를 판정합니다.
+
+        OTEL_ENABLED 가 False 이면 메트릭도 항상 비활성화되어 런타임 오버헤드를 0으로 유지합니다.
+        OTEL_ENABLED 가 True 일 때 OTEL_METRICS_ENABLED 가 False 로 명시되지 않은 한 활성화됩니다.
+        """
+        if not self.OTEL_ENABLED:
+            return False
+        if self.OTEL_METRICS_ENABLED is not None:
+            return self.OTEL_METRICS_ENABLED
+        return self.OTEL_ENABLED
 
     @model_validator(mode="after")
     def validate_security_settings(self):
