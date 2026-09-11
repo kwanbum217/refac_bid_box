@@ -1,0 +1,15 @@
+# Grafana Prometheus 데이터소스 provision (관측성 2단계)
+# 대시보드 JSON 은 본 범위에 넣지 않습니다.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST

@@ -380,12 +380,14 @@ facts:
   - id: observability
     status: active
     decision_date: "2026-09-11"
-    claim: "관측성 스택은 Collector·Tempo·Grafana 로 확정했고 요청 지연·DB 질의 지연·요청 수 메트릭 계측은 병합했습니다. 2단계 Prometheus 배선을 추진합니다."
+    claim: "관측성 스택은 Collector·Tempo·Grafana 로 확정했고 요청 지연·DB 질의 지연·요청 수 메트릭 계측은 병합했습니다. 2단계 Prometheus 스크랩 배선은 넣었고 HTTP/DB 지연 대시보드와 메트릭 켜짐 레이턴시 실측을 추진합니다."
     document_anchor: "관측성 스택은 Collector"
     evidence:
       - docker-compose.prod.yml
       - src/app/core/observability.py
       - docs/ops/observability_metrics_20260911.md
+      - docker/otel-collector-config.yaml
+      - docker/prometheus.yml
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/observability_metrics_20260911.md

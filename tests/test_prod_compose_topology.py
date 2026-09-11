@@ -3,7 +3,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-COMPOSE_PATH = Path(__file__).parents[1] / "docker-compose.prod.yml"
+REPO_ROOT = Path(__file__).parents[1]
+COMPOSE_PATH = REPO_ROOT / "docker-compose.prod.yml"
+COLLECTOR_CONFIG_PATH = REPO_ROOT / "docker" / "otel-collector-config.yaml"
+PROMETHEUS_CONFIG_PATH = REPO_ROOT / "docker" / "prometheus.yml"
+GRAFANA_PROMETHEUS_DATASOURCE_PATH = (
+    REPO_ROOT / "docker" / "grafana" / "provisioning" / "datasources" / "prometheus.yaml"
+)
 
 
 @pytest.fixture(scope="module")
@@ -24,6 +30,20 @@ def _environment(service: dict) -> dict[str, str]:
 def _healthcheck_command(service: dict) -> str:
     test = service["healthcheck"]["test"]
     return " ".join(str(part) for part in test)
+
+
+def _depends_on_names(service: dict) -> set[str]:
+    depends_on = service.get("depends_on", {})
+    if isinstance(depends_on, dict):
+        return set(depends_on)
+    return set(depends_on)
+
+
+def _load_yaml(path: Path) -> dict:
+    with path.open(encoding="utf-8") as yaml_file:
+        parsed = yaml.safe_load(yaml_file)
+    assert isinstance(parsed, dict)
+    return parsed
 
 
 def test_data_tier_isolated_and_application_services_have_egress(compose: dict):
@@ -62,3 +82,64 @@ def test_worker_healthcheck_requires_fresh_heartbeat(compose: dict):
 
     environment = _environment(worker)
     assert "WORKER_HEARTBEAT_MAX_AGE_SECONDS" in environment
+
+
+def test_observability_services_stay_on_internal_network(compose: dict):
+    services = compose["services"]
+    for name in ("otel-collector", "tempo", "prometheus", "grafana"):
+        assert services[name]["networks"] == ["internal"]
+        assert "ports" not in services[name]
+
+
+def test_prometheus_scrapes_collector_without_host_publish(compose: dict):
+    prometheus = compose["services"]["prometheus"]
+    collector = compose["services"]["otel-collector"]
+
+    assert prometheus["image"].startswith("prom/prometheus:")
+    assert "@sha256:" in prometheus["image"]
+    assert prometheus["restart"] == "unless-stopped"
+    assert prometheus["volumes"] == [
+        "./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro",
+        "prometheus_data:/prometheus",
+    ]
+    assert "otel-collector" in _depends_on_names(prometheus)
+    assert compose["volumes"]["prometheus_data"] is None
+
+    assert collector["expose"] == ["8889"]
+    assert "ports" not in collector
+
+    scrape = _load_yaml(PROMETHEUS_CONFIG_PATH)
+    assert scrape["global"]["scrape_interval"] == "15s"
+    jobs = scrape["scrape_configs"]
+    assert len(jobs) == 1
+    assert jobs[0]["job_name"] == "otel-collector"
+    assert jobs[0]["static_configs"][0]["targets"] == ["otel-collector:8889"]
+
+
+def test_otel_collector_keeps_traces_and_adds_metrics_pipeline():
+    config = _load_yaml(COLLECTOR_CONFIG_PATH)
+    traces = config["service"]["pipelines"]["traces"]
+    metrics = config["service"]["pipelines"]["metrics"]
+
+    assert traces["receivers"] == ["otlp"]
+    assert traces["processors"] == ["tail_sampling", "batch"]
+    assert traces["exporters"] == ["otlp/tempo"]
+    assert metrics["receivers"] == ["otlp"]
+    assert metrics["processors"] == ["batch"]
+    assert metrics["exporters"] == ["prometheus"]
+    assert config["exporters"]["prometheus"]["endpoint"] == "0.0.0.0:8889"
+
+
+def test_grafana_provisions_prometheus_datasource(compose: dict):
+    grafana = compose["services"]["grafana"]
+    assert (
+        "./docker/grafana/provisioning/datasources:"
+        "/etc/grafana/provisioning/datasources:ro" in grafana["volumes"]
+    )
+    assert "prometheus" in _depends_on_names(grafana)
+
+    datasource = _load_yaml(GRAFANA_PROMETHEUS_DATASOURCE_PATH)
+    entries = datasource["datasources"]
+    assert len(entries) == 1
+    assert entries[0]["type"] == "prometheus"
+    assert entries[0]["url"] == "http://prometheus:9090"

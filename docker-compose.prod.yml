@@ -356,6 +356,8 @@ services:
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
       - ./docker/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    expose:
+      - "8889"
     depends_on:
       tempo:
         condition: service_started
@@ -398,6 +400,34 @@ services:
     networks:
       - internal
 
+  prometheus:
+    image: prom/prometheus:v3.13.3@sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      otel-collector:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      - internal
+
   grafana:
     image: grafana/grafana:12.2.0@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7
     restart: unless-stopped
@@ -407,8 +437,11 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
     depends_on:
       tempo:
+        condition: service_started
+      prometheus:
         condition: service_started
     deploy:
       resources:
@@ -432,6 +465,7 @@ volumes:
   meilisearch_data:
   tempo_data:
   grafana_data:
+  prometheus_data:
   caddy_data:
   caddy_config:
 
