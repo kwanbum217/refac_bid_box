@@ -123,11 +123,13 @@ Capsule 에 명령 형태를 지정하기 전에 승인 대상인지 확인하�
 
 ## 7. 워커 모델 배정
 
-- 기본은 빌더 Antigravity Gemini, 리뷰어는 다른 계열(Qwen `qwen3.7-plus` 또는 Grok)
+- 기본은 빌더 Antigravity Gemini, 리뷰어는 다른 계열
+- **2026-09-11 사용자 지시:** 리뷰어는 `opencode/muse-spark-1.3-contributor-free` (풀 키 `opencode-muse-spark`) 를 명시 Dispatch 한다. TIER_POLICY 자동 배정은 열지 않는다. 기동은 `scripts/orca_opencode_launch.py --model opencode/muse-spark-1.3-contributor-free --role reviewer --auto`. 2026-09-11 probe: `opencode run --model opencode/muse-spark-1.3-contributor-free` 종료 코드 0
+- 빌더가 이미 OpenCode 계열이면 계열 분리 불변 때문에 리뷰어를 Muse Spark 로 두지 않고 `qwen-plus` 로 돌린다
 - 한쪽 풀이 마르면 등급을 낮추기 전에 **다른 풀의 같은 등급**을 먼저 확인한다
 - **CLI 마다 가용성이 따로 논다.** 같은 모델이 두 CLI 에 있어도 한쪽에서만 사라진다. 모델 이름으로 판정하지 말고 쓸 CLI 로 직접 probe 한다
 - 목록 이탈과 1회 실패를 소멸로 단정하지 않는다. 조치 없이 복구된 사례가 있다
-- 무료 풀은 쓰기 과제에 쓰지 않는다. 리뷰어에도 열지 않는다
+- 무료 풀 자동 배정은 쓰기 과제와 리뷰어에 열지 않는다. 위 Muse Spark 리뷰어는 사용자 지시의 명시 지정이다
 - 배정 정본은 `scripts/orca_model_router.py` 의 `TIER_POLICY` 이며 문서는 사본을 두지 않는다
 
 ---
