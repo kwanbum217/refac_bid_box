@@ -264,6 +264,16 @@ facts:
       - docs/analysis/az3_compare_stats_attribution_20260911.md
     related_documents:
       - docs/context/CURRENT_STATE.md
+  - id: compare_stats_snapshot
+    status: closed
+    decision_date: "2026-09-11"
+    claim: "compare-stats 상위 두 집계를 사전 집계 스냅샷으로 옮겨 캐시 미적중 종단이 3,725ms 에서 505ms 가 됐고 두 구간은 0.0ms 입니다."
+    document_anchor: "compare-stats 상위 두 집계를 사전 집계 스냅샷으로 옮겨"
+    evidence:
+      - data/benchmarks/compare_stats_segments_after_snapshot_20260911.json
+      - docs/analysis/ba2_compare_stats_snapshot_effect_20260911.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
   - id: mysql_stats_refresh_policy
     status: active
     decision_date: "2026-09-11"
