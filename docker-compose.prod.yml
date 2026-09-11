@@ -440,6 +440,7 @@ services:
       - --cluster.listen-address=
     volumes:
       - ./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./docker/secrets/alertmanager_slack_url:/etc/alertmanager/secrets/slack_url:ro
       - alertmanager_data:/alertmanager
     expose:
       - "9093"

@@ -1,8 +1,8 @@
-# Alertmanager 설정 (관측성 3단계)
+# Alertmanager 설정 (관측성 3단계 및 SLO Slack 연동)
 #
-# 외부 알림 채널(메일, Slack)은 비밀값과 사용자 승인이 필요하므로 넣지 않는다.
-# 빈 수신기는 알람을 수락·그룹핑만 하고 밖으로 보내지 않는다.
-# 발화 상태는 Prometheus ALERTS 시계열과 Grafana SLO 대시보드로 본다.
+# 기본 수신기는 local-hold 이며, severity=critical 알람만 slack-slo 수신기로 라우팅합니다.
+# Alertmanager 는 환경변수 치환을 지원하지 않으므로 api_url_file 지시자로
+# 마운트된 비밀 파일(/etc/alertmanager/secrets/slack_url)을 참조합니다.
 
 route:
   receiver: local-hold
@@ -12,9 +12,29 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+  routes:
+    - receiver: slack-slo
+      matchers:
+        - severity = critical
 
 receivers:
   - name: local-hold
+
+  - name: slack-slo
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_url
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] [{{ .CommonLabels.severity }}] {{ .CommonLabels.alertname }} (SLO: {{ .CommonLabels.slo }})'
+        text: >-
+          {{ range .Alerts -}}
+          *알람*: {{ .Labels.alertname }}
+          *SLO*: {{ .Labels.slo }}
+          *심각도*: {{ .Labels.severity }}
+          *발화 시각*: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          {{ if .Annotations.summary }}*요약*: {{ .Annotations.summary }}
+          {{ end }}{{ if .Annotations.description }}*상세*: {{ .Annotations.description }}
+          {{ end }}*대시보드*: {{ or .Annotations.dashboard_url "http://localhost:3000/d/bidbox-slo-alerts" }}
+          {{ end }}
 
 inhibit_rules:
   - source_matchers:

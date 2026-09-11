@@ -69,6 +69,7 @@ dmypy.json
 *.key
 *.crt
 secrets.json
+docker/secrets/
 
 # ============================================================
 # OS — macOS
