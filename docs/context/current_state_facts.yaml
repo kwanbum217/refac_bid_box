@@ -353,11 +353,13 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/ops/ngram_fulltext_cutover_runbook.md
   - id: ssr_e2e
-    status: blocked
-    decision_date: "2026-09-02"
-    claim: "SSR E2E Phase 2~4는 범위 조사만 끝났고 착수는 사용자 합의 대기입니다."
-    document_anchor: "SSR E2E Phase 2~4는 범위 조사"
+    status: closed
+    decision_date: "2026-09-11"
+    claim: "SSR E2E 는 Playwright 기반으로 Phase 1~4 를 모두 구현했고 전용 CI Job 이 skip 0 을 요구하며 통과합니다."
+    document_anchor: "SSR E2E 는 Playwright 기반으로"
     evidence:
+      - tests/e2e
+      - .github/workflows/ci.yml
       - docs/analysis/ssr_e2e_scope_survey_20260902.md
     related_documents:
       - docs/context/CURRENT_STATE.md

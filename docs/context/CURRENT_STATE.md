@@ -83,6 +83,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **rpo_rto**: RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 정례화를 야간 점검으로 완료했습니다. 2026-09-11 로컬 단계 나눔 드릴이 통과했고(총 852.83초, G1 파일·DB 분리 검증 통과) 경과 80일 경고 임계와 판정 불가 fail-closed 를 기계로 강제합니다.
 
+- **ssr_e2e**: SSR E2E 는 Playwright 기반으로 Phase 1~4 를 모두 구현했고 전용 CI Job 이 skip 0 을 요구하며 통과합니다. 대상은 인증과 공고·낙찰 화면, 챗봇 SSE 스트리밍, React SPA 이며 32건을 수집합니다.
+
 ### active 사실
 
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
@@ -105,8 +107,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **ngram_flag**: NGRAM_PREFILTER_ENABLED=false이며 true 전환과 운영 FULLTEXT 인덱스 생성은 사용자 승인 전 보류입니다.
 
-- **ssr_e2e**: SSR E2E Phase 2~4는 범위 조사만 끝났고 착수는 사용자 합의 대기입니다.
-
 ### rejected 사실
 
 - **ngram_prefilter**: ngram 선행필터 자체가 기각되고 운영 FULLTEXT 인덱스도 제거되었습니다.
@@ -118,7 +118,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
-- **SSR E2E Phase 2~4 (2026-09-03, 대기)**: 사용자 합의 후 DB 격리와 시나리오를 착수합니다.
+- **SSR E2E (2026-09-11, 해소)**: Phase 1~4 가 이미 구현돼 있었고 전용 CI Job `e2e-browser-test` 가 skip 0 조건으로 통과합니다. 2026-09-02 조사 시점의 대기 표기가 구현 이후에도 갱신되지 않아 사실이 낡아 있던 것을 바로잡았습니다.
 - **RPO/RTO 복구 목표 (2026-09-11, 실측 통과)**: RPO 24시간·RTO 4시간을 확정했고 런북 공란을 그 값으로 고쳤으며 분기 복구 절차서를 병합했습니다. 로컬 단계 나눔 드릴은 `data/backups/restore_drill_report_20260911.json` 기준으로 통과했고 총 852.83초로 RTO 한도 이내입니다.
 - **워커 런처 계열 (2026-09-08, 해소)**: 런처 테스트의 실제 프로세스 부작용, 자동 승인 감시기 자기 종료, preamble 인계 규약 공용화, claude/opencode/grok 런처 신설, dispatch 런처 자동 선택을 Wave AM/AN 8건으로 닫았습니다. 사용 CLI 7종 중 6종이 `dispatch --launcher` 정규 경로에 있습니다(codex 는 구조가 달라 대상 아님).
 - **자동 승인 화이트리스트 (2026-09-08, 판단 대기)**: `pgrep`, 환경변수 접두 명령, `git add`/`git commit`, `orca orchestration send`, CLI `--help` 가 화이트리스트 밖이라 워커마다 사람 승인이 필요합니다. 열지 여부는 사용자 결정 사항입니다.
