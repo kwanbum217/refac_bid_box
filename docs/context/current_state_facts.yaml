@@ -223,17 +223,15 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/ops/model_promotion_runbook.md
   - id: servc_qualification_evaluation
-    status: active
-    decision_date: "2026-09-10"
-    claim: "일반용역 적격심사 정량평가 기능은 규칙·계산·저장·API·화면 전 계층을 병합했고 기술용역은 공고 하한율 판별까지 넣었으며 화면 배지 문구는 후속으로 추진합니다."
-    document_anchor: "일반용역 적격심사 정량평가 기능은"
+    status: closed
+    decision_date: "2026-09-11"
+    claim: "일반용역 적격심사 정량평가는 전 계층을 병합했고 화면 범위 배지는 일반용역·기술용역·협상 세 분기를 모두 표시합니다."
+    document_anchor: "일반용역 적격심사 정량평가는 전 계층을 병합했고"
     evidence:
-      - docs/design/servc_qualification_evaluation_design_20260909.md
+      - src/app/templates/bids/detail.html
       - docs/analysis/ar2_tech_servc_realuse_announcements_20260910.md
-      - tests/test_tech_service_qualification.py
     related_documents:
       - docs/context/CURRENT_STATE.md
-      - docs/design/servc_qualification_evaluation_design_20260909.md
   - id: negotiation_contract_support
     status: active
     decision_date: "2026-09-10"
@@ -344,15 +342,15 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/ops/cross_platform_guide.md
   - id: ngram_flag
-    status: blocked
-    decision_date: "2026-09-01"
-    claim: "NGRAM_PREFILTER_ENABLED=false이며 true 전환과 운영 FULLTEXT 인덱스 생성은 사용자 승인 전 보류입니다."
-    document_anchor: "NGRAM_PREFILTER_ENABLED=false"
+    status: closed
+    decision_date: "2026-09-11"
+    claim: "NGRAM_PREFILTER_ENABLED 는 false 로 고정하며 기각된 선행필터의 영구 차단 스위치입니다."
+    document_anchor: "NGRAM_PREFILTER_ENABLED 는 false 로 고정하며"
     evidence:
-      - docs/ops/ngram_fulltext_cutover_runbook.md
+      - src/app/core/config.py
+      - src/rag/structured_data.py
     related_documents:
       - docs/context/CURRENT_STATE.md
-      - docs/ops/ngram_fulltext_cutover_runbook.md
   - id: ssr_e2e
     status: closed
     decision_date: "2026-09-11"

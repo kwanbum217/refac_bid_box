@@ -85,11 +85,13 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **ssr_e2e**: SSR E2E 는 Playwright 기반으로 Phase 1~4 를 모두 구현했고 전용 CI Job 이 skip 0 을 요구하며 통과합니다. 대상은 인증과 공고·낙찰 화면, 챗봇 SSE 스트리밍, React SPA 이며 32건을 수집합니다.
 
+- **servc_qualification_evaluation**: 일반용역 적격심사 정량평가는 전 계층을 병합했고 화면 범위 배지는 일반용역·기술용역·협상 세 분기를 모두 표시합니다. `src/app/templates/bids/detail.html` 의 `setEvaluationScopeBadge` 가 기본 문구, `negotiation_variant` 보유 시 협상 문구, `rule_id === 'SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT'` 시 기술용역 문구를 설정합니다. 배지 문구를 후속 과제로 두었던 기재는 구현 이후 갱신되지 않은 것이며 2026-09-11 에 코드로 확인해 종결했습니다.
+
+- **ngram_flag**: NGRAM_PREFILTER_ENABLED 는 false 로 고정하며 기각된 선행필터의 영구 차단 스위치입니다. `ngram_prefilter` 사실이 rejected 이고 운영 FULLTEXT 인덱스도 제거된 상태라 true 전환은 승인 대상이 아닙니다. 승인 대기로 두었던 기재는 기각 판정 이후 갱신되지 않은 것이며 2026-09-11 에 종결했습니다.
+
 ### active 사실
 
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
-
-- **servc_qualification_evaluation**: 일반용역 적격심사 정량평가 기능은 규칙·계산·저장·API·화면 전 계층을 병합했고 기술용역은 공고 하한율 판별까지 넣었으며 화면 배지 문구는 후속으로 추진합니다.
 
 - **mysql_stats_refresh_policy**: 영속 통계 신선도는 읽기 전용 점검 실행기로 판정하며 갱신 주기 채택은 코디네이터 결정 사항으로 남았습니다. innodb_stats_auto_recalc 가 ON 이고 테이블별 재정의가 없는데도 139.8% 편차가 열흘을 간 것을 확인했으며 주기 채택을 추진합니다.
 
@@ -104,8 +106,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 ### blocked 사실
 
 - **gate_g2**: G2 크로스 플랫폼은 보류이며 Windows Docker Desktop 실기 검증은 미검증입니다.
-
-- **ngram_flag**: NGRAM_PREFILTER_ENABLED=false이며 true 전환과 운영 FULLTEXT 인덱스 생성은 사용자 승인 전 보류입니다.
 
 ### rejected 사실
 
