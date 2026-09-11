@@ -254,6 +254,26 @@ facts:
       - docs/ops/handoff_20260910_wave_aq_ng_session_close.md
     related_documents:
       - docs/context/CURRENT_STATE.md
+  - id: compare_stats_attribution
+    status: closed
+    decision_date: "2026-09-11"
+    claim: "compare-stats 캐시 미적중 종단은 기관별 상위 10 집계 2,097ms(56.3%)와 매칭 건수 1,136ms(30.5%)가 87%를 차지하며 비 SQL 구간은 6ms 대입니다."
+    document_anchor: "compare-stats 캐시 미적중 종단은 기관별 상위 10 집계"
+    evidence:
+      - data/benchmarks/compare_stats_segments_20260911.json
+      - docs/analysis/az3_compare_stats_attribution_20260911.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+  - id: mysql_stats_refresh_policy
+    status: active
+    decision_date: "2026-09-11"
+    claim: "영속 통계 신선도는 읽기 전용 점검 실행기로 판정하며 갱신 주기 채택은 코디네이터 결정 사항으로 남았습니다."
+    document_anchor: "영속 통계 신선도는 읽기 전용 점검 실행기로"
+    evidence:
+      - scripts/check_mysql_stats_freshness.py
+      - docs/ops/mysql_statistics_refresh_policy_20260911.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
   - id: kb_index_memory
     status: closed
     decision_date: "2026-09-09"

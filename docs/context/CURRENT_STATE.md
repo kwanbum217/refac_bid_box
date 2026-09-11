@@ -69,6 +69,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **state_budget**: CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 8,000자 이하 목표를 통과했습니다.
 
+- **compare_stats_attribution**: compare-stats 캐시 미적중 종단은 기관별 상위 10 집계 2,097ms(56.3%)와 매칭 건수 1,136ms(30.5%)가 87%를 차지하며 비 SQL 구간은 6ms 대입니다. 12회차 전량 유효 표본으로 귀속 측정을 완료했습니다.
+
 - **kb_index_memory**: KB 색인 메모리 폭주는 Wave AP 전량 병합 후 재측정에서 해소를 확인했고 상한을 520,000 으로 올려 최근 1년 505,271건 전량을 삭제 없이 색인했습니다.
 
 - **compare_stats_latency**: GET /api/v1/bids/stats 웜 레이턴시는 3.34ms(P95 3.80ms)입니다. compare-stats 실측을 완료했고 전환 전 웜 31.97초 대비 정상상태 6.5초로 완화를 통과 기준으로 유지합니다.
@@ -78,6 +80,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
 
 - **servc_qualification_evaluation**: 일반용역 적격심사 정량평가 기능은 규칙·계산·저장·API·화면 전 계층을 병합했고 기술용역은 공고 하한율 판별까지 넣었으며 화면 배지 문구는 후속으로 추진합니다.
+
+- **mysql_stats_refresh_policy**: 영속 통계 신선도는 읽기 전용 점검 실행기로 판정하며 갱신 주기 채택은 코디네이터 결정 사항으로 남았습니다. innodb_stats_auto_recalc 가 ON 이고 테이블별 재정의가 없는데도 139.8% 편차가 열흘을 간 것을 확인했으며 주기 채택을 추진합니다.
 
 - **lexical_full_rerun**: 정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다.
 
