@@ -44,7 +44,7 @@ def test_gate9_detects_each_forbidden_artifact(tmp_path: Path, filename: str) ->
 
     assert result.status == "fail"
     assert result.raw_data["forbidden_files"] == [f"nested/{filename}"]
-    assert str(target.relative_to(tmp_path)) in result.details[0]
+    assert target.relative_to(tmp_path).as_posix() in result.details[0]
 
 
 def test_gate9_detects_untracked_artifact_and_wires_json_key(tmp_path: Path) -> None:

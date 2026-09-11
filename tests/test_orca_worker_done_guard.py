@@ -532,7 +532,7 @@ def test_dispatch_capability_recorded_per_task_under_orca(tmp_path: Path, capsys
     )
     assert dest is not None
     assert dest.read_text(encoding="utf-8").strip() == cap_value
-    assert str(dest.relative_to(worktree)).startswith(".orca/")
+    assert dest.relative_to(worktree).as_posix().startswith(".orca/")
     err = capsys.readouterr().err
     assert cap_value not in err
 
