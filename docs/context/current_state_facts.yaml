@@ -363,14 +363,15 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/ssr_e2e_scope_survey_20260902.md
   - id: rpo_rto
-    status: active
+    status: closed
     decision_date: "2026-09-06"
-    claim: "RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 실시를 추진합니다. 런북 공란은 확정값으로 고쳤고 실행 절차서는 병합했으며 2026-09-11 로컬 단계 나눔 드릴이 통과했습니다(총 852.83초, G1 파일·DB 분리 검증 통과)."
+    claim: "RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 정례화를 야간 점검으로 완료했습니다. 2026-09-11 로컬 단계 나눔 드릴이 통과했고(총 852.83초, G1 파일·DB 분리 검증 통과) 경과 80일 경고 임계와 판정 불가 fail-closed 를 기계로 강제합니다."
     document_anchor: "RPO/RTO와 정기 백업 스케줄"
     evidence:
       - docs/ops/backup_recovery_runbook.md
       - docs/ops/rpo_rto_policy.md
       - docs/ops/restore_drill_procedure_20260911.md
+      - docs/ops/restore_drill_cadence_20260911.md
       - data/backups/restore_drill_report_20260911.json
     related_documents:
       - docs/context/CURRENT_STATE.md

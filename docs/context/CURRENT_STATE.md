@@ -81,6 +81,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **slo_alerts**: 예측 API 운영 SLO 는 c10 P95 100ms 와 5xx 비율 0.1% 이며 SSE 전체 P95 20초를 라이브 알람으로 넣었고, SSE 첫 토큰 3초와 100ms 초과율 0.5% 는 벤치마크 게이트로 유지하며 통과 기준으로 둡니다.
 
+- **rpo_rto**: RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 정례화를 야간 점검으로 완료했습니다. 2026-09-11 로컬 단계 나눔 드릴이 통과했고(총 852.83초, G1 파일·DB 분리 검증 통과) 경과 80일 경고 임계와 판정 불가 fail-closed 를 기계로 강제합니다.
+
 ### active 사실
 
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
@@ -92,8 +94,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **lexical_full_rerun**: 정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다.
 
 - **missing_lwlt_intervals**: missing_lwlt 집단은 MAE 2.0943으로 결측 집단 전용 예측구간 관리를 추진합니다.
-
-- **rpo_rto**: RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 실시를 추진합니다. 런북 공란은 확정값으로 고쳤고 실행 절차서는 병합했으며 2026-09-11 로컬 단계 나눔 드릴이 통과했습니다(총 852.83초, G1 파일·DB 분리 검증 통과).
 
 - **drift_job**: 드리프트 감시는 Servc baseline(b_20260906_servc_post_regime) 기준으로 진행 중(ML_DRIFT_MONITOR_ENABLED 기본값 True)이며, Thng baseline은 없어 해당 모델만 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록합니다.
 
