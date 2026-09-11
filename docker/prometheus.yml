@@ -1,0 +1,14 @@
+# Prometheus 설정 (refac_bid_box 관측성 2단계)
+#
+# OTel Collector prometheus exporter(otel-collector:8889) 만 스크랩합니다.
+# 호스트 포트는 열지 않으며, 같은 internal 네트워크의 Grafana 가 조회합니다.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: otel-collector
+    static_configs:
+      - targets:
+          - otel-collector:8889
