@@ -268,6 +268,9 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     # 추론 경로가 쓰는 기관 이력 집계도 함께 갱신합니다. 이 표가 낡으면
     # 학습과 추론의 inst_hist_rate 정의가 갈립니다 (AGENTS.md 6항).
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
+
+    # MySQL 영속 통계 신선도 점검 (읽기 전용, ANALYZE 자동 실행 금지)
+    outcome["mysql_stats_freshness"] = await asyncio.to_thread(_check_mysql_stats_freshness)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
         release_schedule_claim(claim.key, token=claim.token)
@@ -335,6 +338,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     outcome["ranking_snapshots"] = await asyncio.to_thread(_rebuild_ranking_snapshots)
     outcome["compare_stats_snapshots"] = await asyncio.to_thread(_rebuild_compare_stats_snapshots)
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
+    outcome["mysql_stats_freshness"] = await asyncio.to_thread(_check_mysql_stats_freshness)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
         release_schedule_claim(claim.key, token=claim.token)
@@ -402,6 +406,37 @@ def _rebuild_institution_stats() -> dict[str, Any]:
         return rebuild_institution_stats(db)
     except Exception as exc:
         logger.exception("기관 이력 집계 실패")
+        return {"status": "failed", "error": str(exc)}
+    finally:
+        db.close()
+
+
+def _check_mysql_stats_freshness() -> dict[str, Any]:
+    """실패해도 야간 스케줄 전체를 실패로 만들지 않습니다.
+
+    MySQL 영속 통계 신선도를 읽기 전용으로 점검합니다.
+    ANALYZE TABLE 등 어떤 쓰기도 실행하지 않으며 감지만 수행합니다.
+    임계 초과 시 경고 수준 로그를 남기고, 정상일 때는 정보 수준 로그를 남깁니다.
+    """
+    from src.app.services.mysql_stats_freshness import check_mysql_stats_freshness
+
+    db = SessionLocal()
+    try:
+        result = check_mysql_stats_freshness(db)
+        if result.get("stale"):
+            logger.warning(
+                "MySQL 영속 통계 신선도 임계 초과 감지: %s",
+                [
+                    f"테이블 {item['table']}: {item['reason']}"
+                    for item in result.get("tables", [])
+                    if item.get("stale")
+                ],
+            )
+        else:
+            logger.info("MySQL 영속 통계 신선도 점검 정상 (임계 이내)")
+        return result
+    except Exception as exc:
+        logger.exception("MySQL 영속 통계 신선도 점검 실패")
         return {"status": "failed", "error": str(exc)}
     finally:
         db.close()
