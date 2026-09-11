@@ -532,6 +532,26 @@ def _query_agency_announce_top10_realtime(
     ]
 
 
+def _query_announce_by_month_realtime(db: Session, one_year_ago: datetime) -> list[dict[str, Any]]:
+    """공고 월별 건수 실시간 집계. 스냅샷이 없거나 낡을 때의 폴백 경로입니다."""
+    return _build_monthly_counts(
+        db,
+        select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
+            BidAnnouncement.bid_ntce_dt >= one_year_ago
+        ),
+        BidAnnouncement.bid_ntce_dt,
+    )
+
+
+def _query_result_by_month_realtime(db: Session, one_year_ago: datetime) -> list[dict[str, Any]]:
+    """개찰결과 월별 건수 실시간 집계. 스냅샷이 없거나 낡을 때의 폴백 경로입니다."""
+    return _build_monthly_counts(
+        db,
+        select(BidResult.id, BidResult.rl_openg_dt).where(BidResult.rl_openg_dt >= one_year_ago),
+        BidResult.rl_openg_dt,
+    )
+
+
 def get_compare_stats_data(db: Session) -> dict[str, Any]:
     """입찰공고 vs 낙찰 비교 통계.
 
@@ -554,7 +574,7 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         summaries_stale = getattr(announcement_summary, "is_stale", False) or getattr(
             result_summary, "is_stale", False
         )
-        # 스냅샷 선행 조회는 PK 2건이라 저렴합니다. 실제 payload 재사용은
+        # 스냅샷 선행 조회는 PK 4건이라 저렴합니다. 실제 payload 재사용은
         # 아래 각 구간 안에서 하므로 중복 집계는 없습니다. 스냅샷 부재나
         # 노후는 계산 경로만 바꾸고 캐시 키와 TTL 에는 영향을 주지 않습니다.
         # 폴백은 실시간 계산이므로 데이터가 신선하며 is_stale 은 데이터셋
@@ -565,6 +585,16 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         matched_payload, matched_rebuilt_at, _matched_age = compare_snapshots.get_snapshot_with_age(
             db, compare_snapshots.SNAPSHOT_KEY_MATCHED_COUNT
         )
+        announce_month_payload, announce_month_rebuilt_at, _announce_month_age = (
+            compare_snapshots.get_snapshot_with_age(
+                db, compare_snapshots.SNAPSHOT_KEY_ANNOUNCE_BY_MONTH
+            )
+        )
+        result_month_payload, result_month_rebuilt_at, _result_month_age = (
+            compare_snapshots.get_snapshot_with_age(
+                db, compare_snapshots.SNAPSHOT_KEY_RESULT_BY_MONTH
+            )
+        )
         agency_usable = compare_snapshots.is_snapshot_fresh(
             agency_rebuilt_at
         ) and compare_snapshots.is_agency_payload_usable(agency_payload)
@@ -573,7 +603,15 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
             and isinstance(matched_payload, dict)
             and isinstance(matched_payload.get("value"), int)
         )
-        snapshot_fallback = not (agency_usable and matched_usable)
+        announce_month_usable = compare_snapshots.is_snapshot_fresh(
+            announce_month_rebuilt_at
+        ) and compare_snapshots.is_monthly_payload_usable(announce_month_payload)
+        result_month_usable = compare_snapshots.is_snapshot_fresh(
+            result_month_rebuilt_at
+        ) and compare_snapshots.is_monthly_payload_usable(result_month_payload)
+        snapshot_fallback = not (
+            agency_usable and matched_usable and announce_month_usable and result_month_usable
+        )
         is_stale = summaries_stale
         cache_key = _compare_stats_cache_key(announcement_summary, result_summary)
         if is_stale:
@@ -596,21 +634,22 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
                 matched_count = _query_matched_count_realtime(db, one_year_ago)
 
         with latency_segments.compare_stats_segment("announce_by_month"):
-            announce_by_month = _build_monthly_counts(
-                db,
-                select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
-                    BidAnnouncement.bid_ntce_dt >= one_year_ago
-                ),
-                BidAnnouncement.bid_ntce_dt,
-            )
+            if announce_month_usable:
+                announce_by_month = [
+                    {"month": str(item["month"]), "count": int(item["count"])}
+                    for item in announce_month_payload
+                ]
+            else:
+                announce_by_month = _query_announce_by_month_realtime(db, one_year_ago)
+
         with latency_segments.compare_stats_segment("result_by_month"):
-            result_by_month = _build_monthly_counts(
-                db,
-                select(BidResult.id, BidResult.rl_openg_dt).where(
-                    BidResult.rl_openg_dt >= one_year_ago
-                ),
-                BidResult.rl_openg_dt,
-            )
+            if result_month_usable:
+                result_by_month = [
+                    {"month": str(item["month"]), "count": int(item["count"])}
+                    for item in result_month_payload
+                ]
+            else:
+                result_by_month = _query_result_by_month_realtime(db, one_year_ago)
 
         with latency_segments.compare_stats_segment("agency_announce_top10"):
             if agency_usable:
@@ -644,9 +683,11 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         is_stale = summaries_stale
         try:
             logger.info(
-                "비교 통계 스냅샷 사용 여부 matched_count=%s agency_announce_top10=%s 폴백=%s",
+                "비교 통계 스냅샷 사용 여부 matched_count=%s agency_announce_top10=%s announce_by_month=%s result_by_month=%s 폴백=%s",
                 "스냅샷" if matched_usable else "실시간",
                 "스냅샷" if agency_usable else "실시간",
+                "스냅샷" if announce_month_usable else "실시간",
+                "스냅샷" if result_month_usable else "실시간",
                 "예" if snapshot_fallback else "아니요",
             )
         except Exception as exc:

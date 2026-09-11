@@ -8,11 +8,13 @@ GET /api/v1/bids/compare-stats 의 두 무거운 집계(기관별 상위 10,
 실시간으로 다시 셉니다. 응답 캐시가 이미 24시간 TTL 이므로 인덱스가
 아니라 사전 집계로 해결합니다.
 
-스냅샷은 둘입니다. snapshot_key='agency_announce_top10' 의 payload 는
+스냅샷은 넷입니다. snapshot_key='agency_announce_top10' 의 payload 는
 응답의 agency_announce_top10 리스트와 똑같은 배열이며 각 항목은 name,
 total_base_amount, total_prce, count 네 키를 가집니다.
 snapshot_key='matched_count' 의 payload 는 {"value": 정수} 입니다.
-window_days 는 둘 다 365 입니다.
+snapshot_key='announce_by_month' 및 snapshot_key='result_by_month' 의 payload 는
+각각 공고/개찰결과 월별 추세 배열이며 각 항목은 month, count 두 키를 가집니다.
+window_days 는 넷 모두 365 입니다.
 
 금액 집계는 dashboard._announcement_amount_expr 를 그대로 재사용합니다.
 다시 구현하면 이상치 상한 규칙이 갈라져 같은 화면에 다른 금액이 나옵니다.
@@ -43,6 +45,8 @@ logger = logging.getLogger(__name__)
 
 SNAPSHOT_KEY_AGENCY_TOP10 = "agency_announce_top10"
 SNAPSHOT_KEY_MATCHED_COUNT = "matched_count"
+SNAPSHOT_KEY_ANNOUNCE_BY_MONTH = "announce_by_month"
+SNAPSHOT_KEY_RESULT_BY_MONTH = "result_by_month"
 
 # 기관 payload 한 항목이 가져야 하는 키입니다. 리스트라는 것만 보고 항목을 그대로
 # 인덱싱하면 키가 빠진 항목에서 KeyError 가 나 compare-stats 전체가 실패합니다.
@@ -60,7 +64,25 @@ def is_agency_payload_usable(payload: object) -> bool:
     )
 
 
-# 두 스냅샷의 집계 창(일). 응답의 최근 1년 구간과 같습니다.
+# 월별 payload 한 항목이 가져야 하는 키입니다.
+# 항목이 dict 이고 month 와 count 키를 모두 가지며 올바른 타입인지 확인합니다.
+MONTHLY_ITEM_KEYS = ("month", "count")
+
+
+def is_monthly_payload_usable(payload: object) -> bool:
+    """월별 집계 payload 를 그대로 쓸 수 있는 형태인지 판정합니다."""
+    if not isinstance(payload, list):
+        return False
+    return all(
+        isinstance(item, dict)
+        and all(key in item for key in MONTHLY_ITEM_KEYS)
+        and isinstance(item.get("month"), str)
+        and isinstance(item.get("count"), int)
+        for item in payload
+    )
+
+
+# 스냅샷의 집계 창(일). 응답의 최근 1년 구간과 같습니다.
 COMPARE_STATS_WINDOW_DAYS = 365
 
 # 스냅샷 신선도 임계(일). 수집 크론이 매일 02:00 에 돌므로 하루 거르는 것은
@@ -163,16 +185,44 @@ def _compute_matched_count_payload(db: Session, one_year_ago: datetime) -> dict[
     return {"value": int(matched_count or 0)}
 
 
+def _compute_announce_by_month_payload(db: Session, one_year_ago: datetime) -> list[dict[str, Any]]:
+    """공고 월별 건수 payload 를 기존 _build_monthly_counts 로 계산합니다."""
+    from src.app.services.dashboard import _build_monthly_counts
+
+    return _build_monthly_counts(
+        db,
+        select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
+            BidAnnouncement.bid_ntce_dt >= one_year_ago
+        ),
+        BidAnnouncement.bid_ntce_dt,
+    )
+
+
+def _compute_result_by_month_payload(db: Session, one_year_ago: datetime) -> list[dict[str, Any]]:
+    """개찰결과 월별 건수 payload 를 기존 _build_monthly_counts 로 계산합니다."""
+    from src.app.services.dashboard import _build_monthly_counts
+
+    return _build_monthly_counts(
+        db,
+        select(BidResult.id, BidResult.rl_openg_dt).where(BidResult.rl_openg_dt >= one_year_ago),
+        BidResult.rl_openg_dt,
+    )
+
+
 def rebuild_compare_stats_snapshots(db: Session) -> dict[str, Any]:
-    """두 스냅샷을 다시 계산해 upsert 합니다. 야간과 수집 직후 경로에서 부릅니다."""
+    """네 스냅샷을 다시 계산해 upsert 합니다. 야간과 수집 직후 경로에서 부릅니다."""
     started = utcnow()
     one_year_ago = started - timedelta(days=COMPARE_STATS_WINDOW_DAYS)
     agency_payload = _compute_agency_top10_payload(db, one_year_ago)
     matched_payload = _compute_matched_count_payload(db, one_year_ago)
+    announce_by_month_payload = _compute_announce_by_month_payload(db, one_year_ago)
+    result_by_month_payload = _compute_result_by_month_payload(db, one_year_ago)
     rebuilt_at = utcnow()
     for snapshot_key, payload in (
         (SNAPSHOT_KEY_AGENCY_TOP10, agency_payload),
         (SNAPSHOT_KEY_MATCHED_COUNT, matched_payload),
+        (SNAPSHOT_KEY_ANNOUNCE_BY_MONTH, announce_by_month_payload),
+        (SNAPSHOT_KEY_RESULT_BY_MONTH, result_by_month_payload),
     ):
         row = db.get(BidCompareStatsSnapshot, snapshot_key)
         if row is None:
@@ -190,12 +240,17 @@ def rebuild_compare_stats_snapshots(db: Session) -> dict[str, Any]:
     db.commit()
     elapsed = (utcnow() - started).total_seconds()
     logger.info(
-        "비교 통계 스냅샷 재집계 완료 (2건, %.1fs)",
+        "비교 통계 스냅샷 재집계 완료 (4건, %.1fs)",
         elapsed,
     )
     return {
         "status": "success",
-        "snapshots": [SNAPSHOT_KEY_AGENCY_TOP10, SNAPSHOT_KEY_MATCHED_COUNT],
+        "snapshots": [
+            SNAPSHOT_KEY_AGENCY_TOP10,
+            SNAPSHOT_KEY_MATCHED_COUNT,
+            SNAPSHOT_KEY_ANNOUNCE_BY_MONTH,
+            SNAPSHOT_KEY_RESULT_BY_MONTH,
+        ],
         "window_days": COMPARE_STATS_WINDOW_DAYS,
         "rebuilt_at": rebuilt_at.isoformat(),
         "elapsed_seconds": elapsed,
@@ -205,10 +260,15 @@ def rebuild_compare_stats_snapshots(db: Session) -> dict[str, Any]:
 __all__ = [
     "COMPARE_STATS_SNAPSHOT_MAX_AGE_DAYS",
     "COMPARE_STATS_WINDOW_DAYS",
+    "MONTHLY_ITEM_KEYS",
     "SNAPSHOT_KEY_AGENCY_TOP10",
+    "SNAPSHOT_KEY_ANNOUNCE_BY_MONTH",
     "SNAPSHOT_KEY_MATCHED_COUNT",
+    "SNAPSHOT_KEY_RESULT_BY_MONTH",
     "get_compare_stats_snapshot",
     "get_snapshot_with_age",
+    "is_agency_payload_usable",
+    "is_monthly_payload_usable",
     "is_snapshot_fresh",
     "rebuild_compare_stats_snapshots",
 ]
