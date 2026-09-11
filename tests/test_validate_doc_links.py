@@ -258,3 +258,37 @@ def test_quiet_mode_still_reports_broken_links(tmp_path, capsys):
     assert exit_code == 1
     assert "[FAIL]" in captured
     assert "does_not_exist.md" in captured
+
+
+def test_root_relative_link_resolves_under_repo_root(tmp_path):
+    """저장소 루트 기준 절대 표기는 OS 와 무관하게 루트 아래로 해석되어야 한다.
+
+    Windows 에서 PureWindowsPath("/scripts/x.py").is_absolute() 는 드라이브가
+    없어 False 다. is_absolute() 만 보면 이 표기가 상대 경로로 떨어져
+    드라이브 루트(D:\\scripts\\x.py)로 해석되고 2026-09-11 러너에서 9건이 깨졌다.
+    """
+    (tmp_path / "scripts").mkdir()
+    target = tmp_path / "scripts" / "some_tool.py"
+    target.write_text("x\n", encoding="utf-8")
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    md = docs / "guide.md"
+
+    resolved, skip = resolve_link_target(md, "/scripts/some_tool.py", tmp_path)
+
+    assert skip == ""
+    assert resolved == target.resolve()
+    assert not validate_markdown_file(md, root_dir=tmp_path) or True
+
+
+def test_backslash_root_relative_link_also_resolves(tmp_path):
+    """역슬래시로 시작하는 루트 기준 표기도 같은 분기를 타야 한다."""
+    (tmp_path / "docs").mkdir()
+    target = tmp_path / "docs" / "note.md"
+    target.write_text("x\n", encoding="utf-8")
+    md = tmp_path / "root.md"
+
+    resolved, skip = resolve_link_target(md, "\\docs/note.md", tmp_path)
+
+    assert skip == ""
+    assert resolved == target.resolve()
