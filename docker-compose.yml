@@ -66,6 +66,11 @@ services:
       - LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-refac_bid_box}
+      - OTEL_EXPORTER_TYPE=${OTEL_EXPORTER_TYPE:-none}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_METRIC_EXPORT_INTERVAL_MILLIS=${OTEL_METRIC_EXPORT_INTERVAL_MILLIS:-60000}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -119,6 +124,11 @@ services:
       - LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-refac_bid_box}
+      - OTEL_EXPORTER_TYPE=${OTEL_EXPORTER_TYPE:-none}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_METRIC_EXPORT_INTERVAL_MILLIS=${OTEL_METRIC_EXPORT_INTERVAL_MILLIS:-60000}
       # 개발 DB와 KB는 매일 최신화하되, 예측 검증·재학습은 운영 스케줄에만 둡니다.
       - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
       - AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=true
