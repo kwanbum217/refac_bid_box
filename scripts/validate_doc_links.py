@@ -185,7 +185,11 @@ def resolve_link_target(
     # 작성자 머신의 실제 절대 경로(/Users/..., C:\\...)를 존재한다는 이유로
     # 통과시키면 그 머신에서만 green 이 된다. 2026-08-25 에 이 fail-open 때문에
     # 로컬은 통과하고 CI 3플랫폼이 33건으로 실패했다.
-    if target_as_path.is_absolute():
+    # Windows 에서 PureWindowsPath("/scripts/x.py").is_absolute() 는 드라이브가 없어
+    # False 다. is_absolute() 만 보면 저장소 루트 기준 절대 표기가 이 분기를 타지
+    # 못하고 상대 경로로 떨어져 D:\scripts\x.py 처럼 드라이브 루트로 해석된다.
+    # 2026-09-11 에 Windows 러너에서만 9건이 이렇게 깨졌다. 문자열 접두로도 판정한다.
+    if target_as_path.is_absolute() or target_path.startswith(("/", "\\")):
         # anchor 를 떼어 저장소 루트 기준으로만 해석한다. lstrip("/") 만 하면
         # Windows 의 드라이브 절대 경로(C:\\...)가 남아 Path 조인이 root_dir 를
         # 통째로 무시하고 그 절대 경로를 그대로 돌려준다. 그러면 작성자 머신에

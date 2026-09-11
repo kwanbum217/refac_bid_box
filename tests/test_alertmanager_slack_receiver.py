@@ -21,6 +21,7 @@ Alertmanager Slack 수신기 및 비밀값 파일 주입 배선 테스트.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -158,8 +159,12 @@ def test_render_script_creates_file_with_0600_permissions(tmp_path: Path) -> Non
     assert out_file.is_file(), "비밀 파일이 생성되어야 합니다."
     assert out_file.read_text(encoding="utf-8").strip() == dummy_url
 
-    mode = oct(out_file.stat().st_mode & 0o777)
-    assert mode == "0o600", f"파일 권한이 0600 이어야 합니다: {mode}"
+    # Windows 는 POSIX 권한 비트를 지원하지 않아 chmod(0o600) 이후에도 0o666 이 된다.
+    # 비밀 파일은 운영 리눅스 컨테이너에서만 쓰이므로 그 플랫폼에서만 권한을 고정하고,
+    # Windows 에서는 생성 여부와 내용만 검증한다. 2026-09-11 러너 실패 근거.
+    if os.name == "posix":
+        mode = oct(out_file.stat().st_mode & 0o777)
+        assert mode == "0o600", f"파일 권한이 0600 이어야 합니다: {mode}"
 
 
 def test_render_script_does_not_leak_secret(
