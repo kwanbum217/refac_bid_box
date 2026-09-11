@@ -1,7 +1,14 @@
+import json
 from pathlib import Path
 
 import pytest
 import yaml
+
+from src.app.core.observability import (
+    DB_CLIENT_OPERATION_DURATION,
+    HTTP_SERVER_REQUEST_COUNT,
+    HTTP_SERVER_REQUEST_DURATION,
+)
 
 REPO_ROOT = Path(__file__).parents[1]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.prod.yml"
@@ -9,6 +16,12 @@ COLLECTOR_CONFIG_PATH = REPO_ROOT / "docker" / "otel-collector-config.yaml"
 PROMETHEUS_CONFIG_PATH = REPO_ROOT / "docker" / "prometheus.yml"
 GRAFANA_PROMETHEUS_DATASOURCE_PATH = (
     REPO_ROOT / "docker" / "grafana" / "provisioning" / "datasources" / "prometheus.yaml"
+)
+GRAFANA_DASHBOARD_PROVIDER_PATH = (
+    REPO_ROOT / "docker" / "grafana" / "provisioning" / "dashboards" / "dashboards.yaml"
+)
+GRAFANA_HTTP_DB_DASHBOARD_PATH = (
+    REPO_ROOT / "docker" / "grafana" / "dashboards" / "http_db_latency.json"
 )
 
 
@@ -143,3 +156,36 @@ def test_grafana_provisions_prometheus_datasource(compose: dict):
     assert len(entries) == 1
     assert entries[0]["type"] == "prometheus"
     assert entries[0]["url"] == "http://prometheus:9090"
+
+
+def test_grafana_provisions_http_db_latency_dashboard(compose: dict):
+    grafana = compose["services"]["grafana"]
+    volumes = grafana["volumes"]
+    assert (
+        "./docker/grafana/provisioning/dashboards:"
+        "/etc/grafana/provisioning/dashboards:ro" in volumes
+    )
+    assert "./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro" in volumes
+
+    provider = _load_yaml(GRAFANA_DASHBOARD_PROVIDER_PATH)
+    assert provider["providers"][0]["options"]["path"] == "/var/lib/grafana/dashboards"
+
+    dashboard = json.loads(GRAFANA_HTTP_DB_DASHBOARD_PATH.read_text(encoding="utf-8"))
+    assert dashboard["uid"] == "bidbox-http-db-latency"
+    assert dashboard["title"] == "HTTP and DB latency"
+    exprs = [
+        str(target.get("expr", ""))
+        for panel in dashboard["panels"]
+        for target in panel.get("targets", [])
+    ]
+    joined = "\n".join(exprs)
+    http_duration = HTTP_SERVER_REQUEST_DURATION.replace(".", "_") + "_seconds"
+    db_duration = DB_CLIENT_OPERATION_DURATION.replace(".", "_") + "_seconds"
+    http_count = HTTP_SERVER_REQUEST_COUNT.replace(".", "_") + "_total"
+    assert http_duration in joined
+    assert db_duration in joined
+    assert http_count in joined
+    assert "histogram_quantile(0.95" in joined
+    assert "http_route" in joined
+    assert "db_operation" in joined
+    assert "/api/v1/bids/" not in joined
