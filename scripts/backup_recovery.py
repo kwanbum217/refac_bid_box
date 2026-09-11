@@ -283,6 +283,7 @@ def run_restore_drill(
     rpo, comps = measure_rpo(manifest, drill_start), manifest.get("components", {})
 
     def _drill_rep(ok: bool, g1_v: dict[str, Any], ext: list[str]) -> dict[str, Any]:
+        finished_at = datetime.now(UTC)
         return {
             "schema": "RESTORE_DRILL_REPORT_V2",
             "snapshot_dir": str(snapshot_dir),
@@ -292,7 +293,9 @@ def run_restore_drill(
             "components": sorted(comps),
             "extracted_components": ext,
             "timings": timings,
-            "total_duration_seconds": (datetime.now(UTC) - drill_start).total_seconds(),
+            "started_at": drill_start.isoformat(),
+            "finished_at": finished_at.isoformat(),
+            "total_duration_seconds": (finished_at - drill_start).total_seconds(),
             "rpo_measurements": rpo,
             "g1_verification": g1_v,
             "keep_artifacts": keep_artifacts,

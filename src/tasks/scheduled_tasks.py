@@ -31,7 +31,6 @@ from typing import Any, cast
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from scripts.backup_recovery import execute_backup, prune_snapshots
 from scripts.backup_recovery_core import DEFAULT_SNAPSHOTS_DIR
 from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
@@ -90,6 +89,20 @@ def _record_schedule(
         return cast(Any, tracked)
 
     return decorator
+
+
+def execute_backup(*args: Any, **kwargs: Any) -> Any:
+    import importlib
+
+    mod = importlib.import_module("scripts.backup_recovery")
+    return mod.execute_backup(*args, **kwargs)
+
+
+def prune_snapshots(*args: Any, **kwargs: Any) -> Any:
+    import importlib
+
+    mod = importlib.import_module("scripts.backup_snapshots")
+    return mod.prune_snapshots(*args, **kwargs)
 
 
 def check_backup_disk_space(target_dir: Path | None = None) -> tuple[float, bool]:
@@ -271,6 +284,9 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # MySQL 영속 통계 신선도 점검 (읽기 전용, ANALYZE 자동 실행 금지)
     outcome["mysql_stats_freshness"] = await asyncio.to_thread(_check_mysql_stats_freshness)
+
+    # 복원 드릴 정례화 신선도 점검 (읽기 전용, 드릴 자동 실행 금지)
+    outcome["restore_drill_freshness"] = await asyncio.to_thread(_check_restore_drill_freshness)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
         release_schedule_claim(claim.key, token=claim.token)
@@ -339,6 +355,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     outcome["compare_stats_snapshots"] = await asyncio.to_thread(_rebuild_compare_stats_snapshots)
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
     outcome["mysql_stats_freshness"] = await asyncio.to_thread(_check_mysql_stats_freshness)
+    outcome["restore_drill_freshness"] = await asyncio.to_thread(_check_restore_drill_freshness)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
         release_schedule_claim(claim.key, token=claim.token)
@@ -440,6 +457,36 @@ def _check_mysql_stats_freshness() -> dict[str, Any]:
         return {"status": "failed", "error": str(exc)}
     finally:
         db.close()
+
+
+def _check_restore_drill_freshness() -> dict[str, Any]:
+    """실패해도 야간 스케줄 전체를 실패로 만들지 않습니다.
+
+    복원 드릴 정례화 신선도를 읽기 전용으로 점검합니다.
+    backup_recovery.py 의 drill 이나 restore 를 자동 실행하지 않으며 감지만 수행합니다.
+    임계 초과 또는 판정 불가 시 경고 수준 로그를 남기고, 정상일 때는 정보 수준 로그를 남깁니다.
+    """
+    from src.app.services.restore_drill_freshness import check_restore_drill_freshness
+
+    try:
+        result = check_restore_drill_freshness()
+        status = result.get("status")
+        if status == "OVERDUE":
+            logger.warning(
+                "복원 드릴 정례화 신선도 임계 초과 감지: %s",
+                result.get("reason"),
+            )
+        elif status == "UNDECIDABLE":
+            logger.warning(
+                "복원 드릴 정례화 신선도 판정 불가: %s",
+                result.get("reason"),
+            )
+        else:
+            logger.info("복원 드릴 정례화 신선도 점검 정상 (임계 이내)")
+        return result
+    except Exception as exc:
+        logger.exception("복원 드릴 정례화 신선도 점검 실패")
+        return {"status": "failed", "error": str(exc)}
 
 
 @traced_worker_task
