@@ -3,9 +3,9 @@ import tomllib
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _VERSION_FALLBACK = "0.0.0+unknown"
@@ -43,6 +43,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 class Settings(BaseSettings):
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
     DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"
     CSRF_PROTECTION_ENABLED: bool = True
     SECRET_KEY: str
     # 고비용 자동화는 최근 성공 이력이 있으면 재실행하지 않습니다 (원본 동일 기본값 on).
@@ -238,6 +239,21 @@ class Settings(BaseSettings):
         if self.OTEL_METRICS_ENABLED is not None:
             return self.OTEL_METRICS_ENABLED
         return self.OTEL_ENABLED
+
+    @field_validator("LOG_LEVEL", mode="before")
+    @classmethod
+    def validate_log_level(cls, v: Any) -> str:
+        if isinstance(v, str):
+            v_upper = v.strip().upper()
+            if v_upper in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+                return v_upper
+        elif isinstance(v, int) and not isinstance(v, bool):
+            name = logging.getLevelName(v)
+            if isinstance(name, str) and name in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+                return name
+        raise ValueError(
+            f"유효하지 않은 LOG_LEVEL 입니다: {v}. (DEBUG, INFO, WARNING, ERROR, CRITICAL 중 하나여야 합니다)"
+        )
 
     @model_validator(mode="after")
     def validate_security_settings(self):

@@ -21,9 +21,11 @@ from src.app.api.v1.health import router as health_router
 from src.app.api.v1.health import warmup_state
 from src.app.api.v1.predictions import router as predictions_router
 from src.app.core.config import Settings, get_app_version, settings
+from src.app.core.logging_config import DEFAULT_DATE_FORMAT, DEFAULT_LOG_FORMAT, configure_logging
 
 APP_DIR = Path(__file__).resolve().parent
 
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -152,7 +154,7 @@ def _enable_latency_segment_logging() -> None:
         segment_logger.setLevel(logging.INFO)
         if not segment_logger.handlers:
             handler = logging.StreamHandler(sys.stdout)
-            handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+            handler.setFormatter(logging.Formatter(DEFAULT_LOG_FORMAT, datefmt=DEFAULT_DATE_FORMAT))
             segment_logger.addHandler(handler)
         segment_logger.propagate = False
 
@@ -167,14 +169,18 @@ def _enable_warmup_logging() -> None:
     """
     if logger.level == logging.NOTSET or logger.level > logging.INFO:
         logger.setLevel(logging.INFO)
-    if not logger.handlers and not logging.getLogger().handlers:
+    if logging.getLogger().handlers:
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+    elif not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        handler.setFormatter(logging.Formatter(DEFAULT_LOG_FORMAT, datefmt=DEFAULT_DATE_FORMAT))
         logger.addHandler(handler)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    configure_logging()
     _enable_warmup_logging()
     _enable_latency_segment_logging()
     warmup_state.start()

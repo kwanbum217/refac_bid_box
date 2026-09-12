@@ -27,6 +27,7 @@ from arq.worker import func as arq_func
 
 from src.app.core.cache import CacheLayer
 from src.app.core.config import settings
+from src.app.core.logging_config import configure_logging
 from src.app.core.observability import (
     arq_on_job_end,
     arq_on_job_start,
@@ -340,6 +341,7 @@ async def _run_catchup_background(ctx: dict[str, Any]) -> None:
 
 
 async def _on_startup(ctx: dict[str, Any]) -> None:
+    configure_logging()
     if settings.OTEL_ENABLED:
         from src.app.core.db import engine
 
