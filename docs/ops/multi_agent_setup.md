@@ -47,6 +47,29 @@
 - 비협상 원칙(G1/G2/G3), 코딩 규칙, 절대 금지 행위, Orca 다중 섹션 조율 규칙을 정의합니다.
 - 역할별 부트스트랩 모드(Coordinator, Orca Worker, Reviewer, Standalone)를 정의하여 불필요한 전체 문서 재독을 방지합니다.
 
+### 3.1.1 에이전트 부트스트랩 모드 상세 절차
+
+모든 에이전트는 본 `AGENTS.md`를 단일 진실 원천으로 자동 로드한 후, 자신의 역할(Role)에 맞는 최소 문맥만 선택하여 시작합니다.
+
+#### Coordinator 모드
+- 프로젝트 현재 운영 상태 정본: [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md)를 읽습니다.
+- 현재 작업에 필요한 스킬 1개만 선택적으로 로드합니다 (예: `.agents/skills/project-orchestrator/SKILL.md`).
+- Orca 다중 Task/섹션 작업일 때만 [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md)를 읽습니다.
+- Grok 가 코디네이터일 때는 [`grok_coordinator_operating_prompt.md`](grok_coordinator_operating_prompt.md)를 운영 절차로 따르고, 캐시 접두부는 [`.grok/rules/bidbox-orca-coordinator.md`](../../.grok/rules/bidbox-orca-coordinator.md)입니다.
+- 과거 인수인계 문서(handoff)나 전체 설계서([`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md))는 현재 Task의 근거가 부족할 때만 선택 조회합니다.
+
+#### Orca Worker 모드
+- 코디네이터가 주입한 **`ORCA_TASK_CAPSULE_V2`가 해당 작업 문맥의 정본**입니다.
+- Capsule에 명시되지 않은 `README.md`, `SKILLS.md`, 전체 설계서, 과거 handoff를 재독하지 않습니다.
+- 사양(`ground_truth`)에 명시된 이미 확인된 사실은 재조사하지 않습니다.
+- 허용 범위(`allowed_read_files`, `allowed_write_files`) 밖의 문맥이나 수정이 필요하면 즉시 질문(`ask`) 또는 에스컬레이션(`escalation`)합니다.
+
+#### Reviewer 모드
+- Task Capsule, 변경 파일 목록, `git diff`, acceptance criteria, 테스트 결과 요약만 좁게 검토합니다. 프로젝트 전체를 탐색하지 않습니다.
+
+#### Standalone 모드
+- Orca 조율 외 단독 에이전트로 전체 프로젝트 작업을 수행할 때만 선택형 컨텍스트 인덱스인 [`SKILLS.md`](../../SKILLS.md)를 참조합니다.
+
 ### 3.2 SKILLS.md (선택형 컨텍스트 & 스킬 인덱스)
 
 - Coordinator 및 Standalone 에이전트용 선택형 참조 인덱스입니다.
@@ -118,6 +141,32 @@
 `opencode.json`은 `instructions: ["AGENTS.md"]` 단일 자동 로드이며 `SKILLS.md`
 중복 주입을 하지 않습니다. `AGENTS.md`에 `@SKILLS.md` 자동 import도 존재하지
 않습니다.
+
+### 5.2 Orca 다중 섹션 조율 규칙 상세
+
+`AGENTS.md` 4장의 각 조율 규칙에 대한 상세 실행 지침 및 배경 설명입니다.
+
+#### 5.2.1 조율 대상 기준 및 제외 원칙
+다른 섹션과 **같은 파일·브랜치·작업 트리**를 다루거나, 작업 사이에 병합·검증·공유 자원 의존성이 있으면 반드시 `orca-section-coordination` 스킬을 먼저 사용합니다.
+
+**같은 프로젝트에서 동시에 일한다는 사실만으로는 조율 대상이 아닙니다.** 격리 작업 트리에서 자기 브랜치의 새 파일만 만들고 검증까지 마치는 작업은 겹치는 것이 없으므로 제외합니다. 겹치는 것이 생기는 시점(병합, 공유 자원 점유)에 등록합니다.
+
+#### 5.2.2 동시 쓰기 워커 상한 (규칙 5.1)
+**동시 쓰기 워커는 3대를 넘기지 않습니다.** 작업 트리가 서로 겹치지 않아도 적용됩니다. 워커 풀은 여러 개지만 코디네이터는 하나이므로, 검증이 병목이 되면 미검증 병합 위험이 커집니다. 읽기 전용 워커(`allowed_write_files` 가 빈 목록)는 상한에 포함하지 않습니다. `scripts/orca_taskctl.py dispatch` 가 이 상한을 기계로 강제하며 초과 시 워커를 기동하지 않고 종료 코드 1 로 거부합니다. 상한을 의도적으로 올릴 때만 `--max-write-workers` 를 쓰고, `--skip-concurrency-check` 는 습관적으로 쓰지 않습니다.
+
+#### 5.2.3 완료 세션 회수 절차 (규칙 6)
+**완료 세션은 그 자리에서 회수합니다.** `worker_done` 을 ack 하고 Task 가 `completed` 가 되면 병합을 기다리지 말고 워커 터미널을 회수합니다(`worker-release`, 남은 창은 `terminal close --terminal`, `--tab` 금지). 워크트리와 브랜치는 로컬 `main` 병합이 확인된 뒤에만 제거합니다. 미병합 브랜치와 활성 Dispatch 트리는 건드리지 않습니다. `scripts/orca_taskctl.py dispatch` 는 완료됐는데도 워커 터미널이 남은 세션이 있으면 기동을 거부합니다. 검사 명령은 `python3 scripts/orca_settled_session_audit.py` 입니다. 정리 여부는 인수인계에 "회수했다/하지 않았다"로 남깁니다.
+
+#### 5.2.4 병렬 검증 원칙 (규칙 8)
+**검증은 완료 순서대로 병렬로 실행합니다.** 워커가 끝나는 대로 그 Task 의 Level 1 게이트와 리뷰어 Dispatch 를 시작하고 다른 워커의 완료를 기다리지 않습니다. 검증은 읽기 전용이고 워크트리가 서로 다르므로 동시 쓰기 상한과 무관합니다. `main` 병합만 직렬입니다. 상세는 [`.agents/skills/orca-section-coordination/SKILL.md`](../../.agents/skills/orca-section-coordination/SKILL.md) 4.3 절.
+
+#### 5.2.5 워커 감시 및 차단 대응 (규칙 9)
+**Dispatch 한 워커는 감시 대상입니다.** 지시가 필요 없는 상시 의무이며, 진행·완료·차단을 보고하기 전에 `python3 scripts/orca_worker_watch.py` 로 워커별 커밋 수·미커밋 수와 터미널 차단 신호를 확인합니다. 종료 코드 1 은 사람 개입이 필요한 차단이 있다는 뜻이므로 조치 전에는 다음 Task 를 Dispatch 하지 않습니다. 워커가 신뢰 대화창, 설문, 권한 요청, 인증 정체에 막혀 있는 것을 사용자가 먼저 발견하면 코디네이터 실패로 간주합니다.
+
+### 5.3 모델 운영 및 배정 규칙
+
+- 코디네이터의 기본값은 Codex `gpt-5.6-terra` + effort `medium`입니다. 기본값을 벗어나 모델 또는 effort를 변경하기 전에는 사용자에게 `MODEL_CHANGE_NOTICE`로 대상 작업, 변경 전·후 설정, 사유, 사용량 영향, 기본값 복귀 시점을 알립니다. `gpt-5.6-sol` + `high`는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 쓰며 사용자 승인 후에만 적용합니다. 상세 매트릭스는 [`docs/ops/orca_orchestration_playbook.md`](orca_orchestration_playbook.md) 4.2.1절을 따릅니다.
+- 워커 모델 배정의 실행 정본은 [`scripts/orca_model_router.py`](../../scripts/orca_model_router.py)의 `TIER_POLICY`이며, 문서는 그 사본을 두지 않습니다. 리뷰어는 빌더와 다른 계열을 배정해야 한다는 불변조건을 준수하고, 모델은 풀 등록 전에 해당 CLI로 직접 probe합니다. 기본값을 벗어나면 `WORKER_MODEL_NOTICE`를 남깁니다. 상세 근거와 가용성 실측은 [`docs/ops/orca_worker_model_pool.md`](orca_worker_model_pool.md)를 참조하십시오.
 
 ---
 
