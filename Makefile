@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality check-rules lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets test-e2e backup backup-dry-run restore-dry-run backup-verify backup-list render-alertmanager-secret
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality check-rules sync-skills lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets test-e2e backup backup-dry-run restore-dry-run backup-verify backup-list render-alertmanager-secret
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -25,6 +25,7 @@ help:
 	@echo "  make typecheck      - mypy 타입 검사 (릴리스 게이트 포함)"
 	@echo "  make quality        - typecheck & jscpd 중복 코드 검사"
 	@echo "  make check-rules    - 다중 에이전트 규칙 정합성 검증"
+	@echo "  make sync-skills    - 스킬 정본을 CLI 별 미러로 복제"
 	@echo "  make lint-workflows - GitHub Actions 워크플로우 검사 (actionlint)"
 	@echo "  make check-all      - 전체 린트, 보안, 품질, 규칙 정합성 검사"
 	@echo "  make migrate-verify - 데이터 보존 무손실 실측 검증"
@@ -143,6 +144,9 @@ quality: typecheck
 
 check-rules:
 	$(PYTHON) scripts/validate_agent_rules.py
+
+sync-skills:
+	$(PYTHON) scripts/sync_skill_mirrors.py
 
 lint-workflows:
 	$(UV) run actionlint
