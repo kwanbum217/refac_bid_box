@@ -52,16 +52,14 @@ HTMX 기각은 **잔여 외부 CDN 의존과 무관합니다.** `base.html` 의 
 참조가 **0건**입니다 (검증: [`cdn_asset_localization_20260825.md`](../analysis/cdn_asset_localization_20260825.md),
 `tests/test_static_assets.py`).
 
-여전히 외부 호스트에 묶인 잔여 범위는 아래 둘뿐이며, 둘 다 UI 프레임워크 선택과
-별개의 과제로 남은 작업 절에 기록되어 있습니다.
+당시 별개 과제로 기록되었던 아래 잔여 두 범위 역시 이후 **모두 로컬화 및 컴파일 완료**되었습니다.
 
-1. **Chart.js CDN 3개 템플릿**: `bids/dashboard.html:6`, `bids/compare.html:7`,
-   `chatbot/chat.html:657` 이 `cdn.jsdelivr.net/npm/chart.js` 를 받습니다
-   (`chatbot/chat.html:658` 의 marked 도 동일 호스트).
-2. **Tailwind browser JIT**: `cdn.tailwindcss.com` 은 로컬 파일
-   `vendor/tailwindcss/3.4.16/tailwindcss.js` 로 내려받았지만, 여전히 브라우저에서
-   CSS 를 생성하는 개발용 배포판입니다. 운영 배포를 위한 정적 컴파일 CSS 빌드
-   체인 도입은 후속 과제로 남아 있습니다.
+1. **Chart.js 및 marked CDN 로컬화 완료**: `bids/dashboard.html:6`, `bids/compare.html:7`,
+   `chatbot/chat.html` (marked 포함) 이 `src/app/static/vendor/` 로 이관되어
+   전체 템플릿의 외부 CDN 참조가 **0건**입니다 (`tests/test_static_assets.py`).
+2. **Tailwind 정적 컴파일 완료**: `src/app/static/css/tailwind.css` 정적 컴파일본이
+   도입되었고, `base.html` 이 이를 직접 링크하며 CI Verify Tailwind CSS Reproducibility
+   스텝에서 재현성을 검증합니다.
 
 ---
 
@@ -200,6 +198,6 @@ React 를 원본 디자인으로 전면 재구현하는 방안을 설계까지 �
 2. ~~로그인/회원가입 POST 처리를 SSR 폼으로 연결~~ → **완료: fetch JSON POST → API 연결** (2026-08-01)
 3. ~~원본 `re_path` 이중 슬래시 교정 이식~~ → **완료: `collapse_bids_double_slash` 미들웨어** (2026-08-04)
 4. ~~base.html 핵심 자산 CDN 의존 제거~~ → **완료: `src/app/static/vendor/` 로컬화, 외부 참조 0건** (2026-08-25)
-5. Chart.js CDN 3개 템플릿 로컬화 — `bids/dashboard.html:6`, `bids/compare.html:7`, `chatbot/chat.html:657` (marked 포함) 을 `vendor/` 로 이관 (2026-08-25 기준 미완료)
-6. Tailwind browser JIT 를 운영용 정적 컴파일 CSS 로 교체 — 로컬 `tailwindcss.js` 는 개발용 브라우저 JIT (2026-08-25 기준 미완료)
+5. ~~Chart.js CDN 3개 템플릿 로컬화~~ → **완료: `bids/dashboard.html`, `bids/compare.html`, `chatbot/chat.html` (marked 포함) `vendor/` 이관, 외부 참조 0건** (2026-08-25)
+6. ~~Tailwind browser JIT 를 운영용 정적 컴파일 CSS 로 교체~~ → **완료: `tailwind.css` 44KB 컴파일본 배포, base.html 링크, CI 재현성 검증** (2026-08-25)
 7. Django admin 은 이식하지 않습니다. 원본에서 사용하지 않았음을 담당자가 확인했습니다 (2026-08-04)
