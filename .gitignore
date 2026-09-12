@@ -54,6 +54,8 @@ coverage.xml
 dmypy.json
 .pyre/
 .pytype/
+reports/
+
 
 # Jupyter
 .ipynb_checkpoints/
