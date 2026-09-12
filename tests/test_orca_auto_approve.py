@@ -163,7 +163,6 @@ class TestClassifyCommandHold:
             "chmod 755 script.sh",
             "docker compose exec api sh",
             "docker compose up -d",
-            "docker ps",
             "docker run -it ubuntu",
             # sed 수정 옵션
             "sed -i 's/a/b/g' file.txt",
@@ -906,6 +905,11 @@ class TestDockerReadOnlySql:
             "docker rm -f db",
             "docker run alpine",
         ):
+            verdict, _ = self._classify(cmd)
+            assert verdict == "hold", cmd
+
+        # DB 접근 경로인 exec 계열은 보류 사유에 정규 실행기 안내를 유지합니다.
+        for cmd in ("docker exec db mysql -e 'SELECT 1'", "docker compose exec db sh"):
             verdict, reason = self._classify(cmd)
             assert verdict == "hold", cmd
             assert "db_readonly_query.py" in reason
