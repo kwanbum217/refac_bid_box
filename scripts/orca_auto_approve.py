@@ -353,6 +353,9 @@ SAFE_SHELL_BUILTINS = {
     ":",
     "break",
     "continue",
+    # 대기는 부작용이 없습니다. 워커가 외부 자원(도커 데몬, 서비스 헬스체크)이
+    # 준비되기를 기다리는 루프에서 이것 하나 때문에 승인을 기다리곤 했습니다.
+    "sleep",
 }
 
 # 비명령 프롬프트 반복 자동 응답 상한 (초과 시 자동 응답 중단 및 사람 개입 로그 기록)
@@ -1139,7 +1142,9 @@ def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
     # 4.6. 보류 대상 명령 명시적 사유 반환
     if exe in ("python", "python3") or exe.startswith("python3."):
         return classify_python_execution(argv, cmd)
-    if exe in ("npm", "npx", "yarn", "pnpm"):
+    if exe == "npm":
+        return classify_npm_execution(argv, cmd)
+    if exe in ("npx", "yarn", "pnpm"):
         return "hold", f"{exe} 실행은 보류 대상"
     if exe in ("mv", "cp", "mkdir", "rm", "chmod", "chown", "touch"):
         return "hold", f"{exe} 파일/디렉토리 변경 명령은 보류 대상"
@@ -1179,19 +1184,142 @@ UV_RUN_ALLOWED_SCRIPTS = frozenset(
 )
 
 
-def classify_docker_execution(argv: list[str], cmd: str) -> tuple[str, str]:
-    """docker 직접 실행은 항상 보류합니다.
+# docker 서브커맨드 중 상태를 바꾸지 않는 조회 전용 목록입니다.
+# 컨테이너나 이미지나 볼륨을 만들거나 지우거나 실행하지 않고 현재 상태만 보고합니다.
+DOCKER_READONLY_SUBCOMMANDS = frozenset(
+    {
+        "info",
+        "images",
+        "image",
+        "ps",
+        "version",
+        "context",
+        "inspect",
+        "history",
+        "port",
+        "top",
+        "stats",
+        "diff",
+        "logs",
+    }
+)
 
-    2026-09-01 외부 감사 지적: docker mysql -e 경로의 단순 시작 토큰 검사는
-    'WITH ... UPDATE', 'SELECT ... INTO OUTFILE' 같은 쓰기/탈출을 통과시킬 위험이 있습니다.
-    읽기 전용 DB 조회가 필요할 때는 강력한 다중 검사, 토큰 검사, 주석/리터럴 제거 및
-    READ ONLY 트랜잭션을 강제하는 scripts/db_readonly_query.py (uv run python 으로 자동 승인됨)를
-    사용해야 합니다.
+# `docker image` 와 `docker context` 처럼 두 번째 토큰까지 봐야 조회인지 갈리는 경우입니다.
+DOCKER_READONLY_NESTED = {
+    "image": frozenset({"ls", "inspect", "history"}),
+    "context": frozenset({"ls", "show", "inspect"}),
+    "volume": frozenset({"ls", "inspect"}),
+    "network": frozenset({"ls", "inspect"}),
+    "system": frozenset({"info", "df"}),
+    "builder": frozenset({"ls"}),
+    "compose": frozenset({"config", "ps", "logs", "version"}),
+}
+
+# docker build 에서 결과물을 호스트 파일 시스템으로 빼내는 플래그입니다.
+# 이미지를 로컬 데몬에 만드는 것과 달리 호스트에 파일을 쓰므로 승인 대상에서 제외합니다.
+DOCKER_BUILD_EXPORT_FLAGS = ("--output", "-o", "--load-cache-to", "--cache-to")
+
+# npm 서브커맨드 중 의존성 트리를 바꾸지 않는 조회 전용 목록입니다.
+# audit fix, install, ci, run 은 lock 파일이나 node_modules 를 바꾸므로 제외합니다.
+NPM_READONLY_SUBCOMMANDS = frozenset({"audit", "ls", "list", "view", "outdated", "why", "config"})
+
+
+def classify_docker_execution(argv: list[str], cmd: str) -> tuple[str, str]:
+    """docker 실행을 판정합니다.
+
+    2026-09-12 확장. 종전에는 docker 를 통째로 보류했습니다. 그 결과
+    `.dockerignore` 나 compose 를 바꾸는 Task 가 자기 검증 명령(`docker build`,
+    `docker compose config`)을 한 줄도 스스로 실행하지 못하고, 워커가 데몬 상태를
+    확인하려 `docker info` 를 부르는 것마저 사람 승인을 기다렸습니다. 같은 날
+    한 Task 가 이 지점에서 네 번 멈췄습니다.
+
+    승인 기준은 "무엇을 실행해도 되는가" 가 아니라 "무엇이 되돌릴 수 있는가" 입니다.
+    상태를 보고만 하는 조회와, 로컬 이미지 하나를 만들 뿐인 build 는 승인합니다.
+    컨테이너를 띄우거나(run, up, exec) 지우는(rm, rmi, prune, down) 것은 보류를
+    유지합니다. DB 조회가 필요하면 종전대로
+    scripts/db_readonly_query.py 를 써야 하며, docker exec 경로는 열지 않습니다.
     """
+    args = argv[1:]
+    if not args:
+        return "hold", "docker 서브커맨드 없음"
+
+    # 전역 옵션이 붙으면 대상 데몬이나 컨텍스트가 바뀔 수 있어 보류합니다.
+    if args[0].startswith("-"):
+        return "hold", f"docker 전역 옵션 사용 금지 ({args[0]})"
+
+    sub = args[0]
+    rest = args[1:]
+
+    # 이미지 삭제는 재빌드로 복구할 수 있는 로컬 캐시 조작입니다. 워커가 크기
+    # 비교용으로 만든 임시 태그를 스스로 정리하지 못하면 측정 Task 마다 승인이
+    # 필요합니다(2026-09-12 실증). 컨테이너와 볼륨 삭제는 종전대로 보류합니다.
+    if sub in ("rmi",) or (sub == "image" and rest and rest[0] == "rm"):
+        if any(arg.startswith("$") for arg in rest):
+            return "hold", "docker 이미지 삭제 대상이 변수/치환 형태"
+        targets = rest[1:] if sub == "image" else rest
+        if not targets or all(arg.startswith("-") for arg in targets):
+            return "hold", "docker 이미지 삭제는 대상 태그를 명시해야 합니다"
+        return "approve", "로컬 이미지 태그 삭제 (docker rmi)"
+
+    if sub in DOCKER_READONLY_NESTED:
+        if not rest:
+            return "hold", (
+                f"docker {sub} 는 조회 서브커맨드를 명시해야 합니다 "
+                "(DB 조회가 필요하면 uv run python scripts/db_readonly_query.py 를 사용하십시오)"
+            )
+        if rest[0] in DOCKER_READONLY_NESTED[sub]:
+            return "approve", f"조회 전용 docker 명령 (docker {sub} {rest[0]})"
+        return "hold", (
+            f"docker {sub} {rest[0]} 는 보류 대상 "
+            "(DB 조회가 필요하면 uv run python scripts/db_readonly_query.py 를 사용하십시오)"
+        )
+
+    if sub == "build":
+        for arg in rest:
+            for flag in DOCKER_BUILD_EXPORT_FLAGS:
+                if arg == flag or arg.startswith(flag + "="):
+                    return "hold", f"docker build 의 호스트 내보내기 옵션은 보류 ({arg})"
+        return "approve", "로컬 이미지 빌드 (docker build)"
+
+    if sub in DOCKER_READONLY_SUBCOMMANDS:
+        return "approve", f"조회 전용 docker 명령 (docker {sub})"
+
     return (
         "hold",
-        "docker 직접 실행은 보류 대상 (DB 조회가 필요하면 uv run python scripts/db_readonly_query.py 를 사용하십시오)",
+        f"docker {sub} 는 보류 대상 (DB 조회가 필요하면 uv run python scripts/db_readonly_query.py 를 사용하십시오)",
     )
+
+
+def classify_npm_execution(argv: list[str], cmd: str) -> tuple[str, str]:
+    """npm 실행을 판정합니다.
+
+    2026-09-12 확장. 공급망 검증 Task 가 `npm audit` 을 스스로 실행하지 못해
+    멈췄습니다. audit 과 ls 계열은 lock 파일과 node_modules 를 읽기만 하므로
+    승인하고, 트리를 바꾸는 install, ci, update, audit fix 는 보류를 유지합니다.
+    """
+    args = argv[1:]
+    if not args:
+        return "hold", "npm 서브커맨드 없음"
+
+    # --prefix 로 다른 디렉터리를 대상으로 삼는 형태는 대상 검증이 따로 필요해 보류합니다.
+    if args[0].startswith("-"):
+        return "hold", f"npm 전역 옵션 사용 금지 ({args[0]})"
+
+    sub = args[0]
+    rest = args[1:]
+
+    if sub not in NPM_READONLY_SUBCOMMANDS:
+        return "hold", f"npm {sub} 는 보류 대상"
+
+    # `npm audit fix` 는 이름은 audit 이지만 lock 파일을 고쳐 씁니다.
+    if sub == "audit" and rest and rest[0] == "fix":
+        return "hold", "npm audit fix 는 lock 파일을 변경하므로 보류"
+
+    # `npm config set` 은 설정을 씁니다. get 과 list 만 조회입니다.
+    if sub == "config" and (not rest or rest[0] not in ("get", "list", "ls")):
+        return "hold", "npm config 는 get/list 조회만 허용"
+
+    return "approve", f"조회 전용 npm 명령 (npm {sub})"
 
 
 def read(handle: str) -> str | None:
