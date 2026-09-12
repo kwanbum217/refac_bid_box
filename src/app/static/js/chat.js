@@ -1258,8 +1258,11 @@ $(document).ready(function() {
         });
     });
 
-    let initialMessage = interface.data('initial-message');
-    if (typeof initialMessage === 'string') {
+    let initialMessage = interface.attr('data-initial-message');
+    if (initialMessage === undefined || initialMessage === null || initialMessage === '') {
+        initialMessage = interface.data('initial-message');
+    }
+    if (typeof initialMessage === 'string' && initialMessage.trim().length > 0) {
         try {
             initialMessage = JSON.parse(initialMessage);
         } catch (e) {

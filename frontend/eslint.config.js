@@ -19,7 +19,8 @@ export default tseslint.config(
     ignores: ['dist/**', 'node_modules/**'],
   },
   {
-    files: ['../src/app/static/js/**/*.js', 'src/app/static/js/**/*.js'],
+    basePath: '..',
+    files: ['src/app/static/js/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'script',

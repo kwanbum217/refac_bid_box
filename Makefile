@@ -126,6 +126,7 @@ backup-list:
 lint:
 	$(PYTHON) -m ruff check .
 	$(PYTHON) -m ruff format --check .
+	npm --prefix frontend run lint
 
 format:
 	$(PYTHON) -m ruff check . --fix

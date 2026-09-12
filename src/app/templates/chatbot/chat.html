@@ -625,7 +625,7 @@
                      data-cancel-url-template="{{ url('chatbot:automation_job_cancel', job_id='__JOB_ID__') }}"
                      data-chat-page-url="{{ url('chatbot:chat_page') }}"
                      data-user-initial="{{ user.username[:1]|upper if user else '' }}"
-                     data-initial-message="{{ initial_message|to_json|e }}"
+                     data-initial-message="{{ initial_message|to_json|forceescape if initial_message else '' }}"
                      class="relative flex items-center gap-3">
                     <div class="relative flex-1">
                         <input type="text" id="chat-input"
