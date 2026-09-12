@@ -250,6 +250,16 @@ jobs:
       - name: Run pytest (SQLite in-memory with coverage)
         run: uv run pytest -q -m "not data_assets and not e2e" --cov=src --cov-report=term-missing --cov-fail-under=80 --durations=25 -p no:cacheprovider
 
+      # G1 데이터 무손실 운영 도구 3종(verify_migration, backup_recovery, promote_model) 개별 커버리지 게이트.
+      # src 전체 게이트 80% 를 희석시키지 않기 위해 별도로 측정하며, 각 도구별 fail_under 를 엄격하게 검증합니다.
+      - name: Run G1 scripts individual coverage gate
+        run: |
+          uv run pytest -q -m "not data_assets and not e2e" tests/test_g1_reconciliation.py tests/test_g1_schema_signature.py tests/test_restore_drill.py tests/test_restore_drill_docs.py tests/test_verify_migration.py tests/test_verify_migration_fail_closed.py tests/test_backup_fail_closed.py tests/test_backup_recovery.py tests/test_backup_recovery_split.py tests/test_backup_schedule.py tests/test_restore_drill_freshness.py tests/test_promotion_cli.py tests/test_promotion_evidence_binding.py tests/test_promotion_gate.py --cov=scripts.verify_migration --cov=scripts.backup_recovery --cov=scripts.promote_model --cov-fail-under=0 --cov-report=term-missing
+          uv run coverage report --include="*verify_migration.py" --fail-under=70
+          uv run coverage report --include="*backup_recovery.py" --fail-under=80
+          uv run coverage report --include="*promote_model.py" --fail-under=85
+
+
   e2e-browser-test:
     name: Browser E2E Tests (Playwright Chromium)
     runs-on: ubuntu-latest
