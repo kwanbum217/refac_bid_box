@@ -11,6 +11,7 @@ scripts/promote_model.py)의 개별 커버리지 게이트 설정 정합성을 �
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tomllib
@@ -101,19 +102,52 @@ def test_ci_workflow_scripts_coverage_gate_step():
     assert 'coverage report --include="*promote_model.py" --fail-under=85' in gate_run
 
 
-def test_coverage_gate_failure_reproduction():
-    """임계값 미달 시 coverage report 가 실제로 0이 아닌 종료 코드로 실패하는지 확인합니다."""
+def test_coverage_gate_failure_reproduction(tmp_path: Path):
+    """임계값 미달 시 coverage report 가 실제로 0이 아닌 종료 코드로 실패하는지 확인합니다.
+
+    측정 데이터를 이 테스트가 직접 만듭니다. 저장소에 남아 있는 .coverage 파일에
+    의존하면 그 파일이 없는 환경에서 coverage 가 'No data to report.' 를 내고
+    실패합니다. 격리 워크트리와 CI 신규 체크아웃이 그런 환경입니다.
+    """
+    target = tmp_path / "partially_covered.py"
+    target.write_text(
+        "def covered():\n"
+        "    return 1\n"
+        "\n"
+        "\n"
+        "def uncovered():\n"
+        "    value = 2\n"
+        "    return value\n"
+        "\n"
+        "\n"
+        "covered()\n",
+        encoding="utf-8",
+    )
+    env = {**os.environ, "COVERAGE_FILE": str(tmp_path / ".coverage")}
+    measured = subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "coverage", "run", str(target)],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=env,
+    )
+    assert measured.returncode == 0, (
+        f"커버리지 측정 실행이 성공해야 합니다: {measured.stdout} {measured.stderr}"
+    )
+
     res = subprocess.run(
         [
             sys.executable,
             "-m",
             "coverage",
             "report",
-            "--include=*verify_migration.py",
+            "--include=*partially_covered.py",
             "--fail-under=99.99",
         ],
         capture_output=True,
         text=True,
+        cwd=tmp_path,
+        env=env,
     )
     assert res.returncode != 0, (
         f"임계값 미달 시 coverage report 는 0이 아닌 종료 코드를 반환해야 합니다: {res.stdout}"
