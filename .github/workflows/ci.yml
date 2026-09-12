@@ -65,6 +65,18 @@ jobs:
           fi
           uv run python ../scripts/filter_npm_audit.py --input /tmp/npm_audit_stdout.json --allowlist ../.github/vulnerability-allowlist.yml --stderr-file /tmp/npm_audit_stderr.log
 
+      - name: Scan root JavaScript dependencies
+        # 루트 package.json / package-lock.json 에 대한 npm audit 을 수행하고 allowlist 와 대조합니다.
+        # 기존 frontend 스캔과 동일하게 filter_npm_audit.py 판정 스크립트를 재사용합니다.
+        run: |
+          set +e
+          npm audit --audit-level=high --json 2>/tmp/root_npm_audit_stderr.log >/tmp/root_npm_audit_stdout.json
+          set -e
+          if [ -s /tmp/root_npm_audit_stderr.log ]; then
+            cat /tmp/root_npm_audit_stderr.log >&2
+          fi
+          uv run python scripts/filter_npm_audit.py --input /tmp/root_npm_audit_stdout.json --allowlist .github/vulnerability-allowlist.yml --stderr-file /tmp/root_npm_audit_stderr.log
+
       - name: Build application image
         id: build-image
         run: docker build --pull=false -t refac-bid-box:ci .
