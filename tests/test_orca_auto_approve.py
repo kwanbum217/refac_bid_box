@@ -153,7 +153,10 @@ class TestClassifyCommandHold:
             "find . -execdir rm {} +",
             "find . -ok rm {} +",
             # (e) 빌드, 도커, 파일 변경
-            "npm run build",
+            # npm run build 와 lint 와 test 는 2026-09-12 확장으로 검증 능력을 덮는
+            # 명령이라 승인 대상이 됐습니다. 서버를 띄우는 dev 와 preview 는 그대로
+            # 보류이며 test_orca_auto_approve_expanded.py 가 그 경계를 검사합니다.
+            "npm run dev",
             "npm test",
             "npm install",
             "mv a b",

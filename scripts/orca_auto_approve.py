@@ -1231,6 +1231,11 @@ DOCKER_BUILD_EXPORT_FLAGS = ("--output", "-o", "--load-cache-to", "--cache-to")
 # audit fix, install, ci, run 은 lock 파일이나 node_modules 를 바꾸므로 제외합니다.
 NPM_READONLY_SUBCOMMANDS = frozenset({"audit", "ls", "list", "view", "outdated", "why", "config"})
 
+# `npm run` 으로 실행을 승인하는 스크립트 이름. 검증 성격이며 실행 후 스스로
+# 종료하는 것만 둡니다. dev, start, preview 는 서버를 띄우고 돌아오지 않으므로
+# 제외합니다. 여기에 이름을 추가할 때는 그 스크립트가 무엇을 하는지 확인하십시오.
+NPM_VERIFICATION_SCRIPTS = frozenset({"lint", "test", "build", "typecheck", "check"})
+
 
 def classify_node_execution(argv: list[str], raw: str) -> tuple[str, str]:
     """node 실행을 판정합니다.
@@ -1337,12 +1342,34 @@ def classify_npm_execution(argv: list[str], cmd: str) -> tuple[str, str]:
     if not args:
         return "hold", "npm 서브커맨드 없음"
 
-    # --prefix 로 다른 디렉터리를 대상으로 삼는 형태는 대상 검증이 따로 필요해 보류합니다.
+    # `npm --prefix <디렉터리> ...` 는 이 저장소의 표준 검증 명령 형태입니다.
+    # 조율 스킬이 frontend_test 와 frontend_build 능력을 덮는 명령으로 규정합니다.
+    # 대상 디렉터리가 워크트리 안이면 안전하므로 그것만 검증하고 나머지를 재판정합니다.
+    if args[0] == "--prefix":
+        if len(args) < 3:
+            return "hold", "npm --prefix 뒤에 디렉터리와 서브커맨드가 필요합니다"
+        target = args[1]
+        if REDIRECT_DENY.search(target) or target.startswith("-"):
+            return "hold", f"npm --prefix 대상이 허용 범위 밖 ({target})"
+        args = args[2:]
+
     if args[0].startswith("-"):
         return "hold", f"npm 전역 옵션 사용 금지 ({args[0]})"
 
     sub = args[0]
     rest = args[1:]
+
+    # `npm run <스크립트>` 는 package.json 이 정의한 임의 코드를 실행하므로 전부
+    # 열지 않습니다. 다만 검증 성격의 스크립트는 워커가 반드시 돌려야 하는
+    # 명령이고 조율 스킬도 이를 검증 능력으로 인정합니다. 이름으로 한정해
+    # 허용하고 서버를 띄우는 dev, start, preview 는 보류를 유지합니다.
+    if sub == "run":
+        if not rest:
+            return "hold", "npm run 은 스크립트 이름이 필요합니다"
+        script = rest[0]
+        if script in NPM_VERIFICATION_SCRIPTS:
+            return "approve", f"검증용 npm 스크립트 (npm run {script})"
+        return "hold", f"npm run {script} 는 보류 대상"
 
     if sub not in NPM_READONLY_SUBCOMMANDS:
         return "hold", f"npm {sub} 는 보류 대상"
