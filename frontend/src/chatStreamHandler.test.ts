@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { processChatStream, buildChatRequestBody } from './chatStreamHandler.ts';
+import { processChatStream, buildChatRequestBody, type ChatStreamCallbacks } from './chatStreamHandler.ts';
 
 // Mock stream reader
 class MockReader implements ReadableStreamDefaultReader<Uint8Array> {
@@ -26,27 +26,50 @@ class MockReader implements ReadableStreamDefaultReader<Uint8Array> {
     return { done: false, value: this.chunks.shift()! };
   }
 
-  cancel(reason?: any): Promise<void> {
+  cancel(): Promise<void> {
     return Promise.resolve();
   }
   releaseLock(): void {}
 }
 
-const createMockCallbacks = (): any & { calls: Record<string, any[]> } => {
-  const calls: Record<string, any[]> = {
-    onStage: [], onDocs: [], onToken: [], onFinal: [], onError: [],
-    onAbort: [], onNetworkError: [], onUnexpectedEnd: [], onComplete: []
+interface MockCalls {
+  onStage: { s: string; m: string }[];
+  onDocs: { d: unknown[] }[];
+  onToken: { t: string }[];
+  onFinal: { a: string; d: unknown[]; v: unknown; s?: string }[];
+  onError: { m: string; t: string }[];
+  onAbort: Record<string, never>[];
+  onNetworkError: { m: string }[];
+  onUnexpectedEnd: { a: string }[];
+  onComplete: Record<string, never>[];
+}
+
+interface MockCallbacks extends ChatStreamCallbacks {
+  calls: MockCalls;
+}
+
+const createMockCallbacks = (): MockCallbacks => {
+  const calls: MockCalls = {
+    onStage: [],
+    onDocs: [],
+    onToken: [],
+    onFinal: [],
+    onError: [],
+    onAbort: [],
+    onNetworkError: [],
+    onUnexpectedEnd: [],
+    onComplete: [],
   };
   return {
     calls,
-    onStage: (s, m) => calls.onStage.push({ s, m }),
-    onDocs: (d) => calls.onDocs.push({ d }),
-    onToken: (t) => calls.onToken.push({ t }),
-    onFinal: (a, d, v, s) => calls.onFinal.push({ a, d, v, s }),
-    onError: (m, t) => calls.onError.push({ m, t }),
+    onStage: (s: string, m: string) => calls.onStage.push({ s, m }),
+    onDocs: (d: unknown[]) => calls.onDocs.push({ d }),
+    onToken: (t: string) => calls.onToken.push({ t }),
+    onFinal: (a: string, d: unknown[], v: unknown, s?: string) => calls.onFinal.push({ a, d, v, s }),
+    onError: (m: string, t: string) => calls.onError.push({ m, t }),
     onAbort: () => calls.onAbort.push({}),
-    onNetworkError: (m) => calls.onNetworkError.push({ m }),
-    onUnexpectedEnd: (a) => calls.onUnexpectedEnd.push({ a }),
+    onNetworkError: (m: string) => calls.onNetworkError.push({ m }),
+    onUnexpectedEnd: (a: string) => calls.onUnexpectedEnd.push({ a }),
     onComplete: () => calls.onComplete.push({}),
   };
 };
