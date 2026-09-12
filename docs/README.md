@@ -239,6 +239,7 @@ docs/
 | --- | --- | --- |
 | **프로젝트 현재 운영 상태** | [`context/CURRENT_STATE.md`](context/CURRENT_STATE.md) | **단일 진실 원천(SSOT).** 현재 구현 상태, 테스트/CI 현황, 런타임 지표 |
 | 과거 인수인계 (2026-08-18) | [`context/handoff_20260818.md`](context/handoff_20260818.md) | 이전 세션 컨텍스트 인수인계 기록 |
+| **분석 보고서 인덱스** | [`analysis/README.md`](analysis/README.md) | **주제별 분석 문서 색인 (394건).** 기한부 과업, 측정·벤치마크, 기각 접근, 모델, RAG, SSR 등 주제별 분류 |
 | 분석 보고서 디렉토리 | [`analysis/`](analysis/) | Arq 처리량, I/O 차단, c2/c4 배치 등 심층 성능 및 분석 보고서 모음 |
 
 ## 6. changelogs/
