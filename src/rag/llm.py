@@ -4,11 +4,12 @@ src/rag/llm.py
 RAG 생성 LLM 백엔드 추상화.
 
 원본 bid_box 는 Google Gemini API 를 직접 호출했습니다. 리팩토링본은 발표 환경에서
-네트워크와 API 키 의존을 없애기 위해 기본 백엔드를 로컬 Ollama(gemma4:e4b)로 두되,
+네트워크와 API 키 의존을 없애기 위해 기본 백엔드를 로컬 Ollama(gemma4:e2b)로 두되,
 `LLM_PROVIDER=gemini` 로 원본 경로를 즉시 복원할 수 있게 유지합니다.
 
-주의: 본 모듈은 생성(generation) LLM 만 교체합니다. ChromaDB 임베딩 모델은
-보존된 bidding_kb 임베딩과의 정합성 때문에 절대 교체하지 않습니다 (G1 데이터 무손실).
+참고: 본 모듈은 생성(generation) LLM 만 다룹니다. ChromaDB 임베딩 모델은
+2026-08-06 에 bge-m3 로 교체되었으며, 임베딩 모델 변경 시에는 기존 벡터 데이터와의
+정합성을 위해 전량 재색인이 필요합니다.
 """
 
 from __future__ import annotations
