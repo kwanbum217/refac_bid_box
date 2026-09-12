@@ -97,3 +97,83 @@ def test_existing_safe_git_subcommands_remain_approved(cmd: str) -> None:
     """기존 여섯 읽기 전용 git 서브커맨드의 판정은 유지합니다."""
     verdict, reason = classify_command(cmd)
     assert verdict == "approve", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "docker info",
+        "docker images",
+        "docker images | grep refac-bid-box",
+        "docker ps -a",
+        "docker version",
+        "docker context ls",
+        "docker image ls",
+        "docker volume ls",
+        "docker network ls",
+        "docker system df",
+        "docker compose config -q",
+        "docker compose ps",
+        "docker build -t refac-bid-box-root:orca-gate .",
+        "docker build -t refac-bid-box-frontend:orca-gate frontend",
+        "sleep 5",
+        "for i in {1..30}; do docker info >/dev/null 2>&1 && echo ready || sleep 2; done",
+        "npm audit --audit-level=high --json",
+        "npm audit --audit-level=high --json 2>/tmp/err.log >/tmp/out.json",
+        "npm ls nanoid",
+        "npm outdated",
+        "npm config get registry",
+        "docker rmi refac-bid-box-root:orca-gate",
+        "docker image rm old",
+    ],
+)
+def test_docker_and_npm_readonly_commands_are_approved(cmd: str) -> None:
+    """상태를 바꾸지 않는 docker/npm 조회와 로컬 이미지 빌드는 자동 승인합니다."""
+    verdict, reason = classify_command(cmd)
+    assert verdict == "approve", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "docker run -d nginx",
+        "docker exec -i db mysql -e 'SELECT 1'",
+        "docker rm -f app",
+        "docker system prune -af",
+        "docker volume rm data",
+        "docker rmi",
+        "docker image rm",
+        "docker rmi -f",
+        "docker context use remote",
+        "docker build -o type=local,dest=/tmp/out .",
+        "docker build --output type=tar,dest=/tmp/out.tar .",
+        "docker --host tcp://remote:2375 info",
+        "docker",
+        "npm install",
+        "npm ci",
+        "npm audit fix",
+        "npm audit fix --force",
+        "npm run build",
+        "npm config set registry http://example.invalid",
+        "npm publish",
+        "npx create-app",
+    ],
+)
+def test_docker_and_npm_mutating_commands_are_held(cmd: str) -> None:
+    """컨테이너나 의존성 트리를 바꾸는 명령은 종전대로 사람 승인을 기다립니다."""
+    verdict, reason = classify_command(cmd)
+    assert verdict == "hold", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+
+
+def test_docker_exec_mysql_path_stays_closed() -> None:
+    """docker exec 를 통한 DB 접근 경로는 확장 이후에도 열리지 않습니다."""
+    verdict, _ = classify_command(
+        "docker exec -i mysql mysql -e 'SELECT COUNT(*) FROM bid_results'"
+    )
+    assert verdict == "hold"
+
+
+def test_docker_build_redirect_to_secret_is_held() -> None:
+    """리다이렉트 대상 검증이 docker build 승인보다 우선합니다."""
+    verdict, _ = classify_command("docker build . > /Users/kwanbum/.env")
+    assert verdict == "hold"
