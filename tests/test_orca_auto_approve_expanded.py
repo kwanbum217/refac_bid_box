@@ -153,7 +153,6 @@ def test_docker_and_npm_readonly_commands_are_approved(cmd: str) -> None:
         "npm ci",
         "npm audit fix",
         "npm audit fix --force",
-        "npm run build",
         "npm config set registry http://example.invalid",
         "npm publish",
         "npx create-app",
@@ -209,5 +208,42 @@ def test_node_inline_evaluation_is_approved(cmd: str) -> None:
 )
 def test_node_escape_tokens_are_held(cmd: str) -> None:
     """셸 탈출, 파일 삭제, 동적 평가 토큰이 있으면 종전대로 사람 승인을 기다립니다."""
+    verdict, reason = classify_command(cmd)
+    assert verdict == "hold", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "npm --prefix frontend run lint",
+        "npm --prefix frontend run test",
+        "npm --prefix frontend run build",
+        "npm --prefix frontend audit",
+        "npm run lint",
+        "npm run test",
+        "npm run build",
+    ],
+)
+def test_npm_verification_scripts_are_approved(cmd: str) -> None:
+    """조율 스킬이 검증 능력으로 규정한 npm 명령은 자동 승인합니다."""
+    verdict, reason = classify_command(cmd)
+    assert verdict == "approve", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "npm run dev",
+        "npm run preview",
+        "npm run start",
+        "npm run",
+        "npm --prefix /etc run lint",
+        "npm --prefix ../../elsewhere run lint",
+        "npm --prefix frontend",
+        "npm --global install pkg",
+    ],
+)
+def test_npm_non_verification_forms_are_held(cmd: str) -> None:
+    """서버를 띄우거나 워크트리 밖을 대상으로 하는 npm 형태는 보류합니다."""
     verdict, reason = classify_command(cmd)
     assert verdict == "hold", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
