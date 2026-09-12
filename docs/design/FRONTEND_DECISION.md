@@ -22,7 +22,7 @@
 - **실제 템플릿 위치**: `src/app/templates/` (총 12종 Jinja2 템플릿 이식 완료)
 - **정적 자산 위치**: `src/app/static/` (`css/`, `images/`, `vendor/`). `base.html` 핵심 자산(bootstrap, daisyui, tailwindcss, jquery, font-awesome, fonts)은 전부 `vendor/` 로컬 파일이며 **외부 CDN 참조 0건**입니다 (2026-08-25 로컬라이즈, 검증: `tests/test_static_assets.py`)
 - **HTMX 미사용**: `src/app/templates/` 전체에서 HTMX 로드와 `hx-*` 속성이 **0건**입니다. 동적 처리는 jQuery 3.7.1(`base.html:266`)이 담당하며 `$()` 호출은 `chatbot/chat.html` 과 `bids/detail.html` 두 파일에 83건입니다. 이 상태가 기각 결정에 따른 **정본 구현**입니다
-- **Chart.js**: 아직 CDN 로드입니다 (`bids/dashboard.html:6`, `bids/compare.html:7`, `chatbot/chat.html:657` 등 3개 템플릿). **잔여 과업**으로 아래 '이 결정이 닫지 않는 것' 절과 '남은 작업' 절에 기록합니다
+- **Chart.js 와 marked**: `vendor/` 로컬 파일입니다. `bids/dashboard.html:6`, `bids/compare.html:7`, `chatbot/chat.html:657` 이 `vendor/chartjs/4.5.1/chart.umd.min.js` 를, `chatbot/chat.html:658` 이 `vendor/marked/15.0.12/` 를 참조하며 템플릿 전체의 외부 CDN 참조는 **0건**입니다
 - **SSR 라우팅 진입점**: `src/app/api/ui.py` (`/`, `/bids/`, `/bids/results/`, `/bids/dashboard/`, `/chatbot/` 등)
 - **챗봇 SSE 스트리밍**: `POST /api/v1/chatbot/chat/stream` (단일 파이프라인 스트리밍 완료)
 - **React SPA 격리**: `docker-compose.yml`에서 `profiles: ["legacy"]`로 격리, 기본 기동 제외

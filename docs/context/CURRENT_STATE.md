@@ -67,7 +67,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **model_swap_gap**: 서빙 모델 교체는 rename 사이 미세 부재 구간을 해소했고 세대 디렉터리와 LIVE 포인터 os.replace 교체로 완료했습니다.
 
-- **state_budget**: CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 실측 7983자(13070바이트)로 8,000자 이하 목표를 통과했습니다.
+- **state_budget**: CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 실측 7990자로 8,000자 이하 목표를 통과했습니다.
 
 - **compare_stats_snapshot**: compare-stats 네 집계를 사전 집계 스냅샷으로 옮겨 캐시 미적중 종단이 3,725ms 에서 4.9ms 가 됐고 네 구간은 모두 0.00ms 입니다. 구조 차이는 확정이고 시간 차이는 산포 초과(참고)이며 이 경로 최적화를 완료했습니다.
 
@@ -127,7 +127,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - 운영 지표·게이트·불변 사실이 바뀌면 같은 커밋에서 [CURRENT_STATE.md](CURRENT_STATE.md)와 [current_state_facts.yaml](current_state_facts.yaml)을 함께 갱신합니다.
 - 상세 측정 로그와 과거 경위는 [current_state_history.md](current_state_history.md)로 옮기며 사실을 삭제하지 않습니다.
-- **정규화 목표 바이트 수: 12,000바이트 이하(문자 수 8,000자 이하)**입니다. 현재 문서는 13070바이트·7983자이며, 판정 사실만 부팅 요약에 남기고 상세 로그를 이력으로 분리했습니다.
+- **정규화 목표: 문자 수 8,000자 이하**입니다. 상세 로그는 이력으로 분리했습니다. 12,000바이트 목표는 2026-09-12 에 폐기했습니다. 한국어에서 8,000자는 13,000바이트를 넘어 두 목표가 양립하지 않습니다.
 - 진실 우선순위는 실제 코드·실측 아티팩트 > CURRENT_STATE.md > README.md > 과거 handoff입니다.
 
 ## 7. 증거 경로 참조 (Evidence Pointers)
