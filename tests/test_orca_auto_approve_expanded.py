@@ -177,3 +177,37 @@ def test_docker_build_redirect_to_secret_is_held() -> None:
     """리다이렉트 대상 검증이 docker build 승인보다 우선합니다."""
     verdict, _ = classify_command("docker build . > /Users/kwanbum/.env")
     assert verdict == "hold"
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "node -e \"const t = require('typescript-eslint'); console.log(Object.keys(t));\"",
+        "node -p \"require('./package.json').version\"",
+        "node scripts/build.js",
+        "node --version",
+        "node --help",
+    ],
+)
+def test_node_inline_evaluation_is_approved(cmd: str) -> None:
+    """셸 탈출이나 삭제 토큰이 없는 node 실행은 python -c 와 같은 기준으로 승인합니다."""
+    verdict, reason = classify_command(cmd)
+    assert verdict == "approve", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "node -e \"require('child_process').execSync('ls')\"",
+        "node -e \"require('fs').rmSync('/tmp/x')\"",
+        "node -e \"require('fs').unlinkSync('a')\"",
+        'node -e "eval(process.argv[1])"',
+        "node -e \"require('vm').runInNewContext(s)\"",
+        "node",
+        "node --inspect-brk",
+    ],
+)
+def test_node_escape_tokens_are_held(cmd: str) -> None:
+    """셸 탈출, 파일 삭제, 동적 평가 토큰이 있으면 종전대로 사람 승인을 기다립니다."""
+    verdict, reason = classify_command(cmd)
+    assert verdict == "hold", f"'{cmd}' 판정이 {verdict}입니다: {reason}"

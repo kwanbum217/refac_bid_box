@@ -61,6 +61,12 @@ PYTHON_ESCAPE_TOKENS = re.compile(
     r"\bos\.unlink\b|\bos\.rmdir\b|\bpty\b|\bos\.exec|\beval\s*\(|\bexec\s*\(",
 )
 
+NODE_ESCAPE_TOKENS = re.compile(
+    r"\bchild_process\b|\bexecSync\b|\bspawnSync\b|\bexecFileSync\b|"
+    r"\brmSync\b|\bunlinkSync\b|\brmdirSync\b|\bfs\.rm\b|\bfs\.unlink\b|"
+    r"\bprocess\.binding\b|\brunIn(New|This)?Context\b|\beval\s*\(",
+)
+
 DANGEROUS = re.compile(
     r"rm\s+-rf|git\s+push|git\s+reset\s+--hard|git\s+checkout\s+main|"
     r"DROP\s+TABLE|DELETE\s+FROM|TRUNCATE|UPDATE\s+\w+\s+SET|INSERT\s+INTO|"
@@ -1144,6 +1150,8 @@ def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
         return classify_python_execution(argv, cmd)
     if exe == "npm":
         return classify_npm_execution(argv, cmd)
+    if exe == "node":
+        return classify_node_execution(argv, cmd)
     if exe in ("npx", "yarn", "pnpm"):
         return "hold", f"{exe} 실행은 보류 대상"
     if exe in ("mv", "cp", "mkdir", "rm", "chmod", "chown", "touch"):
@@ -1222,6 +1230,34 @@ DOCKER_BUILD_EXPORT_FLAGS = ("--output", "-o", "--load-cache-to", "--cache-to")
 # npm 서브커맨드 중 의존성 트리를 바꾸지 않는 조회 전용 목록입니다.
 # audit fix, install, ci, run 은 lock 파일이나 node_modules 를 바꾸므로 제외합니다.
 NPM_READONLY_SUBCOMMANDS = frozenset({"audit", "ls", "list", "view", "outdated", "why", "config"})
+
+
+def classify_node_execution(argv: list[str], raw: str) -> tuple[str, str]:
+    """node 실행을 판정합니다.
+
+    2026-09-12 확장. 프론트엔드를 다루는 Task 에서 워커가 설치된 패키지의 export 를
+    확인하려고 node -e 를 부르는 것이 화이트리스트 밖이라 매번 승인을 기다렸습니다.
+    python -c 는 같은 목적으로 이미 열려 있어 대칭이 맞지 않았습니다.
+
+    판정 기준은 python 쪽과 같습니다. 셸로 빠져나가거나 파일을 지우는 토큰이
+    없을 때만 승인하고 그 밖에는 보류합니다. child_process 계열과 fs 삭제 계열이
+    여기 해당합니다.
+    """
+    if NODE_ESCAPE_TOKENS.search(raw):
+        return "hold", "node 본문에 셸 탈출/삭제 토큰 포함"
+    args = argv[1:]
+    if not args:
+        return "hold", "node 대화형 실행은 보류"
+    if args[0] in ("-e", "--eval", "-p", "--print"):
+        return "approve", f"node {args[0]} 실행 (탈출 토큰 없음)"
+    if args[0] in ("--version", "-v", "--help", "-h"):
+        return "approve", f"node 조회 옵션 ({args[0]})"
+    if not args[0].startswith("-"):
+        target = args[0]
+        if REDIRECT_DENY.search(target):
+            return "hold", f"node 실행 대상이 허용 범위 밖 ({target})"
+        return "approve", f"node 스크립트 실행 ({target})"
+    return "hold", f"node 옵션은 안전 목록 밖 ({args[0]})"
 
 
 def classify_docker_execution(argv: list[str], cmd: str) -> tuple[str, str]:
