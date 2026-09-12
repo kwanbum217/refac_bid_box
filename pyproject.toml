@@ -290,3 +290,11 @@ exclude_lines = [
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
 ]
+
+# ==========================================
+# G1 Scripts Individual Coverage Gate
+# ==========================================
+[tool.scripts_coverage_gate.thresholds]
+"scripts/verify_migration.py" = 70.0
+"scripts/backup_recovery.py" = 80.0
+"scripts/promote_model.py" = 85.0
