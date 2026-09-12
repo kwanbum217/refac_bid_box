@@ -458,6 +458,7 @@ def check_skills_mirror(root: Path = PROJECT_ROOT) -> CheckResult:
     detail = f"{len(all_diffs)}건 차이: " + " | ".join(all_diffs[:3])
     if len(all_diffs) > 3:
         detail += f" ... 외 {len(all_diffs) - 3}건"
+    detail += " | 해결: python3 scripts/sync_skill_mirrors.py (또는 make sync-skills)"
     return CheckResult("스킬 미러 정합성", False, detail)
 
 

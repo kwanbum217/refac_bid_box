@@ -194,11 +194,34 @@
 | `.antigravity/rules.md` | Antigravity 핵심 규칙 요약본 (12,000자 캡 준수) |
 | `.cursor/rules/*.mdc` | Cursor 핵심 규칙 (00-core) 및 Phase 0~7 스킬 규칙 (01~08) |
 | `.agents/skills/{스킬명}/` | 스킬 정본 (Phase 0~7 8개 스킬) |
-| `.claude/skills/{스킬명}/` | Claude Code 전용 스킬 1:1 미러 |
-| `.opencode/skills/{스킬명}/` | opencode 전용 스킬 1:1 미러 |
+| `.claude/skills/{스킬명}/` | Claude Code 전용 스킬 1:1 미러 (생성물) |
+| `.opencode/skills/{스킬명}/` | opencode 전용 스킬 1:1 미러 (생성물) |
+| `scripts/sync_skill_mirrors.py` | 정본을 두 미러로 복제 (`make sync-skills`) |
 | `.agents/skills/orca-section-coordination/` | Orca 기반 다중 섹션 조율 스킬 정본 |
 | `scripts/validate_agent_rules.py` | 정합성 자동 검증 스크립트 (pre-commit 연동) |
 
+
+### 7.1 스킬 미러는 손으로 맞추지 않습니다
+
+정본은 `.agents/skills/` 하나이고 `.claude/skills/` 와 `.opencode/skills/` 는 각 CLI 가
+스킬을 탐색하는 고정 경로입니다. 세 트리는 바이트 단위로 같아야 하며
+`scripts/validate_agent_rules.py` 검사 5 가 커밋 시점에 강제합니다.
+
+**정본을 고친 뒤에는 복제 도구를 실행하고 결과를 같은 커밋에 담으십시오.**
+
+```bash
+python3 scripts/sync_skill_mirrors.py          # 정본 -> 미러 복제
+python3 scripts/sync_skill_mirrors.py --check  # 어긋남만 보고 (종료 코드 1)
+make sync-skills                               # 같은 동작
+```
+
+복제 도구는 내용이 다른 파일과 정본에만 있는 파일을 덮어쓰고, 미러에만 남은 파일과 그
+결과로 비게 된 디렉터리를 제거합니다. `--check` 는 파일을 고치지 않습니다.
+
+**심볼릭 링크로 통합하지 않는 이유는 G2 입니다.** Windows 의 Git 은 `core.symlinks` 와
+권한이 갖춰지지 않으면 링크를 텍스트 파일로 체크아웃하므로, 그 환경에서 각 CLI 의 스킬
+탐색이 오류 없이 조용히 깨집니다. 저장소에 추적되는 심볼릭 링크를 두지 않는 것이 현재
+방침이며, 중복 비용(추적 파일 36개, 총 408K)보다 크로스 플랫폼 동일성을 우선합니다.
 
 ---
 
