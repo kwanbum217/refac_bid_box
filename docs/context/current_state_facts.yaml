@@ -323,7 +323,7 @@ facts:
   - id: state_budget
     status: closed
     decision_date: "2026-09-06"
-    claim: "CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 실측 7983자(13070바이트)로 8,000자 이하 목표를 통과했습니다."
+    claim: "CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 실측 7990자로 8,000자 이하 목표를 통과했습니다."
     document_anchor: "CURRENT_STATE 부팅 요약은 facts.yaml"
     evidence:
       - docs/context/current_state_facts.yaml
