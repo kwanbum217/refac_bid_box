@@ -386,6 +386,28 @@ class TestHelperFunctions:
         screen_missing_marker = "Some strange prompt\nDo you want to proceed?\n"
         assert pending_command(screen_missing_marker) == ""
 
+    def test_pending_command_accepts_run_this_command_phrasing(self) -> None:
+        """Antigravity 가 쓰는 확인 문구도 대화창으로 인정해야 합니다.
+
+        2026-09-12 Wave Y3 에서 이 문구를 몰라 판정기가 승인으로 판단하는 명령까지
+        사람 승인을 기다리며 정체했습니다.
+        """
+        screen = (
+            "Command\n"
+            "--------------------------------\n"
+            "Requesting permission for:\n"
+            '   node -e "console.log(process.cwd())"\n'
+            "\n"
+            "Run this command?\n"
+            "> 1. Yes, run command\n"
+            "  4. No, cancel\n"
+            "esc to cancel      accept-edits · Gemini 3.8 Flash · high"
+        )
+        assert pending_command(screen) == 'node -e "console.log(process.cwd())"'
+
+        screen_missing_marker = "Some strange prompt\nRun this command?\n"
+        assert pending_command(screen_missing_marker) == ""
+
     @pytest.mark.parametrize(
         "screen, expected_sig",
         [
