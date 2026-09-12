@@ -78,6 +78,42 @@ flowchart TD
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `""` | URL 문자열 | OTLP HTTP 수집기 엔드포인트 (예: `http://localhost:4318/v1/traces`) |
 | `OTEL_SAMPLING_RATIO` | `1.0` | `0.0` ~ `1.0` | 트레이스 샘플링 비율 (1.0 = 100% 수집) |
 
+### 3.1 개발 환경 관측성 스택 (opt-in)
+
+개발 compose 는 관측성 스택을 **프로파일로 분리해** 둡니다. 기본 `docker compose up` 은
+종전대로 `app`, `worker`, `db`, `redis`, `meilisearch` 만 띄웁니다. 네 서비스를 항상
+띄우면 관측성이 필요 없는 개발과 테스트에서도 메모리와 기동 시간을 쓰기 때문입니다.
+운영(`docker-compose.prod.yml`)은 종전대로 항상 띄웁니다.
+
+```bash
+make observability-up      # docker compose --profile observability up -d
+make observability-down    # 정지
+```
+
+| 서비스 | 호스트 포트 | 용도 |
+| --- | --- | --- |
+| `otel-collector` | 4317(gRPC), 4318(HTTP) | 앱이 보낸 OTLP 수신, Tempo 와 Prometheus 로 분배 |
+| `tempo` | (내부) | 추적 저장소 |
+| `prometheus` | 9090 | 지표 저장소. `docker/prometheus.dev.yml` 사용 |
+| `grafana` | 3000 | 대시보드. 기본 계정은 `admin` / `GF_SECURITY_ADMIN_PASSWORD`(미설정 시 `admin`) |
+
+앱에서 추적을 실제로 내보내려면 `.env` 에 다음을 두십시오. 엔드포인트는 컨테이너
+이름이어야 하며 `localhost` 로 두면 앱 컨테이너 자신을 가리켜 아무것도 도착하지 않습니다.
+
+```dotenv
+OTEL_ENABLED=true
+OTEL_EXPORTER_TYPE=otlp
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
+```
+
+**개발 스택에는 `alertmanager` 를 두지 않습니다.** Slack 수신자 비밀 파일
+(`/etc/alertmanager/secrets/slack_url`, `make render-alertmanager-secret` 로 생성)을
+요구하는 운영 호출 경로이며 로컬에서는 호출할 대상이 없습니다. 그래서 개발 Prometheus 는
+`alerting` 블록이 없는 `docker/prometheus.dev.yml` 을 씁니다. 이 블록을 남기면 Prometheus 가
+존재하지 않는 `alertmanager:9093` 을 계속 조회하며 오류 로그를 쌓습니다. 두 Prometheus
+설정이 조용히 어긋나지 않도록 `tests/test_observability_dev_stack.py` 가 스크랩 대상과
+규칙 파일 목록의 동일성을 검사하고, 기본 기동 서비스 집합이 늘어나는 것도 함께 막습니다.
+
 ---
 
 ## 4. 계층별 계측 대상 및 Span 속성 목록
