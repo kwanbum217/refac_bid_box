@@ -4,6 +4,11 @@
   "format": ["python", "javascript", "typescript"],
   "min-lines": 5,
   "min-tokens": 50,
+  "path": [
+    "src/",
+    "frontend/src/",
+    "src/app/static/js/"
+  ],
   "ignore": [
     "**/.venv/**",
     "**/__pycache__/**",

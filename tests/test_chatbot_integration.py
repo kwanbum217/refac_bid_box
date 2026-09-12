@@ -13,6 +13,7 @@ tests/test_automation_status_api.py 에 있습니다.
 """
 
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 from src.app.core.timeutil import utcnow
@@ -408,17 +409,37 @@ def test_chat_page_renders_session_sidebar_and_chat_binding(client, isolated_db)
     response = client.get("/chatbot/")
     assert response.status_code == 200
     body = response.text
-    for marker in (
+    assert "js/chat.js" in body, "챗봇 화면에 js/chat.js 참조가 없습니다."
+
+    html_markers = (
         "data-chat-url",
         "data-new-session-url",
         "btn-stop",
         "요청 중지",
+        "app_settings_modal",
+        "settings-show-sources",
+        "chat-chart-card",
+        "chat-chart-summary",
+        "chart-expanded-open",
+        "source-tag-index",
+        "user-msg-content",
+        "새 분석",
+        "파이프라인 감시",
+    )
+    for marker in html_markers:
+        assert marker in body, f"챗봇 화면에 {marker!r} 가 없습니다."
+
+    chat_js_path = (
+        Path(__file__).resolve().parent.parent / "src" / "app" / "static" / "js" / "chat.js"
+    )
+    assert chat_js_path.is_file(), "src/app/static/js/chat.js 파일이 존재하지 않습니다."
+    chat_js_content = chat_js_path.read_text(encoding="utf-8")
+
+    js_identifiers = (
         "cancelUrlTemplate",
         "cancel-automation-btn",
         "stopActiveChatRequest",
         "confirm-automation-btn",
-        "app_settings_modal",
-        "settings-show-sources",
         "normalizePlainBotMarkdown",
         "chat-chart-card",
         "chat-chart-summary",
@@ -439,10 +460,9 @@ def test_chat_page_renders_session_sidebar_and_chat_binding(client, isolated_db)
         "AI가 요청을 분석 중입니다",
         "user-msg-content",
         "scrollChatToMessageStart",
-        "새 분석",
-        "파이프라인 감시",
-    ):
-        assert marker in body, f"챗봇 화면에 {marker!r} 가 없습니다."
+    )
+    for identifier in js_identifiers:
+        assert identifier in chat_js_content, f"chat.js 파일에 {identifier!r} 가 없습니다."
 
     assert "New Analysis" not in body
 
