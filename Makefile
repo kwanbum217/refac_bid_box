@@ -1,4 +1,4 @@
-.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality check-rules sync-skills lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets test-e2e backup backup-dry-run restore-dry-run backup-verify backup-list render-alertmanager-secret
+.PHONY: help setup import-assets dev dev-fe db-up up down logs build lint format security typecheck quality observability-up observability-down check-rules sync-skills lint-workflows check-all migrate-verify migrate-current migrate-up migrate-stamp migrate-check model-verify rebuild-rankings rebuild-institution-stats benchmark test test-data-assets test-e2e backup backup-dry-run restore-dry-run backup-verify backup-list render-alertmanager-secret
 
 ifeq ($(OS),Windows_NT)
 VENV_PYTHON := .venv/Scripts/python.exe
@@ -17,6 +17,8 @@ help:
 	@echo "  make db-up          - MySQL+Redis만 배경 실행"
 	@echo "  make up             - 전체 스택 컨테이너 배경 실행 (FastAPI+Arq+MySQL+Redis)"
 	@echo "  make build          - 컨테이너 이미지 빌드"
+	@echo "  make observability-up   - 관측성 스택(OTel, Tempo, Prometheus, Grafana) 기동"
+	@echo "  make observability-down - 관측성 스택 정지"
 	@echo "  make down           - 컨테이너 중지 및 네트워크 정리"
 	@echo "  make logs           - 컨테이너 실시간 로그 확인"
 	@echo "  make lint           - Ruff 린트 및 포맷 검사 (확인 전용)"
@@ -68,6 +70,12 @@ build:
 
 down:
 	docker compose down
+
+observability-up:
+	docker compose --profile observability up -d otel-collector tempo prometheus grafana
+
+observability-down:
+	docker compose --profile observability stop otel-collector tempo prometheus grafana
 
 logs:
 	docker compose logs -f

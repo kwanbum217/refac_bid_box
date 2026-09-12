@@ -224,7 +224,88 @@ services:
       timeout: 5s
       retries: 20
 
+  # 관측성 스택 (opt-in). 기본 기동 대상이 아니며 프로파일을 명시할 때만 뜹니다.
+  #
+  #   docker compose --profile observability up -d
+  #   make observability-up
+  #
+  # 기본값에서 빼는 이유는 개발 기동 비용입니다. 네 서비스가 항상 뜨면 평범한
+  # 개발과 테스트에서도 메모리와 기동 시간을 쓰는데, 관측성이 필요한 때는
+  # 레이턴시 조사와 추적 확인처럼 한정된 상황입니다. 운영(docker-compose.prod.yml)은
+  # 종전대로 항상 띄웁니다.
+  #
+  # 앱에서 추적을 내보내려면 .env 에 OTEL_ENABLED=true 와
+  # OTEL_EXPORTER_TYPE=otlp 를 두고 엔드포인트를 컨테이너 이름으로 지정하십시오.
+  #   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
+  # 운영과 달리 alertmanager 는 두지 않습니다. Slack 수신자 비밀 파일을 요구하는
+  # 호출 경로라 로컬에서 호출할 대상이 없습니다. 그래서 Prometheus 설정도
+  # alerting 블록이 없는 docker/prometheus.dev.yml 을 씁니다.
+  otel-collector:
+    profiles: ["observability"]
+    restart: unless-stopped
+    image: otel/opentelemetry-collector-contrib:0.141.0@sha256:b14234c4bc1b7364629af272e564913bb57bdc9736d45b8b6db5ab3417dc75f9
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./docker/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      tempo:
+        condition: service_started
+
+  tempo:
+    profiles: ["observability"]
+    restart: unless-stopped
+    image: grafana/tempo:2.9.2@sha256:3f0825e14397d3459e11e96f99ddd3976ec0cb75e328459e173298d9fb74b407
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./docker/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+
+  prometheus:
+    profiles: ["observability"]
+    restart: unless-stopped
+    image: prom/prometheus:v3.13.3@sha256:6976aa8a60fec930796ce5772b8d12da7a318a5daa8d40d69c5c7819a05eeed7
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./docker/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus_rules.yml:/etc/prometheus/prometheus_rules.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      otel-collector:
+        condition: service_started
+
+  grafana:
+    profiles: ["observability"]
+    restart: unless-stopped
+    image: grafana/grafana:12.2.0@sha256:74144189b38447facf737dfd0f3906e42e0776212bf575dc3334c3609183adf7
+    environment:
+      # 로컬 전용 기본값입니다. 운영은 GF_SECURITY_ADMIN_PASSWORD 를 필수로 요구합니다.
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      tempo:
+        condition: service_started
+      prometheus:
+        condition: service_started
+
 volumes:
   mysql_data:
   redis_data:
   meilisearch_data:
+  tempo_data:
+  prometheus_data:
+  grafana_data:

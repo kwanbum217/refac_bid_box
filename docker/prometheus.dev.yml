@@ -1,0 +1,23 @@
+# Prometheus 설정 (개발 compose observability 프로파일 전용)
+#
+# docker/prometheus.yml 과 스크랩 대상과 규칙 파일은 같고 alerting 블록만 없습니다.
+# 개발 스택에는 alertmanager 를 두지 않기 때문입니다. alertmanager 는 Slack 수신자
+# 비밀 파일(/etc/alertmanager/secrets/slack_url)을 요구하는 운영 호출 경로이며
+# 로컬에서는 호출할 대상이 없습니다. alerting 블록을 남겨 두면 Prometheus 가
+# 존재하지 않는 alertmanager:9093 을 계속 조회하며 오류 로그를 쌓습니다.
+#
+# 두 파일이 조용히 어긋나지 않도록 tests/test_observability_dev_stack.py 가
+# 스크랩 대상과 규칙 파일 목록의 동일성을 검사합니다.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/prometheus_rules.yml
+
+scrape_configs:
+  - job_name: otel-collector
+    static_configs:
+      - targets:
+          - otel-collector:8889
