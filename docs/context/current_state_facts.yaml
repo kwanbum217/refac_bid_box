@@ -323,7 +323,7 @@ facts:
   - id: state_budget
     status: closed
     decision_date: "2026-09-06"
-    claim: "CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 8,000자 이하 목표를 통과했습니다."
+    claim: "CURRENT_STATE 부팅 요약은 facts.yaml과 history.md를 참조하고 실측 7990자로 8,000자 이하 목표를 통과했습니다."
     document_anchor: "CURRENT_STATE 부팅 요약은 facts.yaml"
     evidence:
       - docs/context/current_state_facts.yaml
@@ -441,7 +441,7 @@ facts:
   - id: supply_chain_gate
     status: closed
     decision_date: "2026-09-04"
-    claim: "공급망 스캔은 모두 차단 모드로 운영하며 CRITICAL 및 HIGH 취약점 차단 게이트를 통과 기준으로 유지합니다."
+    claim: "공급망 스캔은 모두 차단 모드로 운영하며, chromadb 3건(만료일 2026-12-31)의 allowlist 한시 예외를 두고 CRITICAL 및 HIGH 차단 게이트를 통과 기준으로 유지합니다."
     document_anchor: "공급망 스캔은 모두 차단 모드로 운영"
     evidence:
       - docs/ops/supply_chain_policy.md

@@ -39,3 +39,19 @@ frontend/
 .vscode/
 *.swp
 Thumbs.db
+
+# Dependencies, documentation, tests, and benchmarks
+node_modules/
+docs/
+tests/
+benchmarks/
+
+# CI and agent runtime states
+.github/
+.orca/
+.opencode/
+.agents/
+.claude/
+.cursor/
+.grok/
+.antigravity/
