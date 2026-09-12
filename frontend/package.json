@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "cd .. && npx --prefix frontend eslint -c frontend/eslint.config.js frontend/src/ src/app/static/js/",
+    "lint": "cd .. && npx --prefix frontend eslint -c frontend/eslint.config.js frontend src/app/static/js/",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test src/*.test.ts"
   },
