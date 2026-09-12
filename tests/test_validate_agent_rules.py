@@ -600,17 +600,34 @@ def test_check_current_state_sections_real_repo_within_tolerance():
     assert str(CURRENT_STATE_LAG_TOLERANCE) in res.detail
 
 
-def test_check_context_budgets_warns_when_over(tmp_path: Path):
-    """대상이 모두 있고 하나가 예산을 넘으면 FAIL 이 아니라 WARN 입니다.
+def test_check_context_budgets_fails_when_over(tmp_path: Path):
+    """대상이 모두 있고 하나가 예산을 넘으면 WARN 이 아니라 FAIL 입니다.
 
-    대상 부재는 별도로 FAIL 이므로 두 파일을 모두 만들어야 WARN 경로에 닿습니다.
+    대상 부재는 별도로 FAIL 이며, 예산 초과 시 ok=False, warn=False 로 반환합니다.
     """
     (tmp_path / "AGENTS.md").write_text("가" * (AGENTS_CHAR_BUDGET + 1), encoding="utf-8")
     _write_current_state(tmp_path, "가" * (CURRENT_STATE_CHAR_BUDGET - 1))
     res = check_context_budgets(tmp_path)
-    assert res.ok
-    assert res.warn
+    assert not res.ok
+    assert not res.warn
     assert "AGENTS.md" in res.detail
+
+
+def test_context_budget_overrun_exit_code_is_1(tmp_path: Path, monkeypatch):
+    """예산을 넘긴 문서가 있을 때 실제로 종료 코드가 1이 되는지 검증합니다.
+
+    임시 디렉터리에 초과 문서를 만들고, 검증 실행 시 종료 코드가 1이 되는지 확인합니다.
+    """
+    (tmp_path / "AGENTS.md").write_text("가" * (AGENTS_CHAR_BUDGET + 1), encoding="utf-8")
+    _write_current_state(tmp_path, "가" * (CURRENT_STATE_CHAR_BUDGET - 1))
+    monkeypatch.setattr(
+        validate_agent_rules,
+        "check_context_budgets",
+        lambda root=PROJECT_ROOT: check_context_budgets(tmp_path),
+    )
+    exit_code = run_all_checks(PROJECT_ROOT, quiet=True)
+    assert exit_code == 1
+    assert validate_agent_rules.main(["--quiet"]) == 1
 
 
 def test_check_context_budgets_passes_within_budget(tmp_path: Path):

@@ -853,8 +853,7 @@ def _commits_behind_head(root: Path, commit: str) -> int | None:
 def check_context_budgets(root: Path = PROJECT_ROOT) -> CheckResult:
     """자동 주입 문서의 크기 예산을 확인합니다 (설계 5장).
 
-    초과가 곧 오류는 아니지만, 자동 주입 문서는 모든 워커의 시작 비용이므로
-    커지는 것을 조용히 넘기지 않습니다.
+    자동 주입 문서는 모든 워커의 시작 비용이므로 예산 초과 시 WARN 이 아닌 FAIL 로 처리합니다.
     """
     name = "컨텍스트 예산"
     targets = [
@@ -878,7 +877,7 @@ def check_context_budgets(root: Path = PROJECT_ROOT) -> CheckResult:
         return CheckResult(name, False, f"측정 대상 없음: {missing}")
     detail = ", ".join(sizes) if sizes else "대상 파일 없음"
     if over:
-        return CheckResult(name, True, f"권장 예산 초과: {'; '.join(over)}", warn=True)
+        return CheckResult(name, False, f"권장 예산 초과: {'; '.join(over)}")
     return CheckResult(name, True, detail)
 
 
@@ -1612,10 +1611,10 @@ def run_all_checks(root: Path = PROJECT_ROOT, quiet: bool = False) -> int:
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="다중 에이전트 규칙 정합성 검증 (pre-commit / v2)")
     parser.add_argument("--quiet", action="store_true", help="요약만 출력")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     return run_all_checks(quiet=args.quiet)
 
 

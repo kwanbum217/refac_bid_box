@@ -10,23 +10,16 @@
 
 ## 0. 에이전트 부트스트랩 모드 (Agent Bootstrap Modes)
 
-모든 에이전트는 본 `AGENTS.md`를 단일 진실 원천으로 자동 로드한 후, 자신의 역할(Role)에 맞는 최소 문맥만 선택하여 시작합니다.
+모든 에이전트는 본 `AGENTS.md`를 단일 진실 원천으로 자동 로드한 후, 자신의 역할(Role)에 맞는 최소 문맥만 선택하여 시작합니다. 상세 절차는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#311-에이전트-부트스트랩-모드-상세-절차)를 참조하십시오.
 
 ### 0.1 Coordinator 모드
-- 프로젝트 현재 운영 상태 정본: [`docs/context/CURRENT_STATE.md`](docs/context/CURRENT_STATE.md)를 읽습니다.
-- 현재 작업에 필요한 스킬 1개만 선택적으로 로드합니다 (예: `.agents/skills/project-orchestrator/SKILL.md`).
-- Orca 다중 Task/섹션 작업일 때만 [`.agents/skills/orca-section-coordination/SKILL.md`](.agents/skills/orca-section-coordination/SKILL.md)를 읽습니다.
-- Grok 가 코디네이터일 때는 [`docs/ops/grok_coordinator_operating_prompt.md`](docs/ops/grok_coordinator_operating_prompt.md)를 운영 절차로 따르고, 캐시 접두부는 [`.grok/rules/bidbox-orca-coordinator.md`](.grok/rules/bidbox-orca-coordinator.md)입니다.
-- 과거 인수인계 문서(handoff)나 전체 설계서([`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md))는 현재 Task의 근거가 부족할 때만 선택 조회합니다.
+- 프로젝트 현재 운영 상태 정본 [`docs/context/CURRENT_STATE.md`](docs/context/CURRENT_STATE.md) 및 작업에 필요한 스킬 1개만 선택 로드합니다. 상세는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#311-에이전트-부트스트랩-모드-상세-절차)를 참조하십시오.
 
 ### 0.2 Orca Worker 모드
-- 코디네이터가 주입한 **`ORCA_TASK_CAPSULE_V2`가 해당 작업 문맥의 정본**입니다.
-- Capsule에 명시되지 않은 `README.md`, `SKILLS.md`, 전체 설계서, 과거 handoff를 재독하지 않습니다.
-- 사양(`ground_truth`)에 명시된 이미 확인된 사실은 재조사하지 않습니다.
-- 허용 범위(`allowed_read_files`, `allowed_write_files`) 밖의 문맥이나 수정이 필요하면 즉시 질문(`ask`) 또는 에스컬레이션(`escalation`)합니다.
+- 코디네이터가 주입한 **`ORCA_TASK_CAPSULE_V2`가 해당 작업 문맥의 정본**입니다. Capsule 외 문서 재독을 금지하며 허용 파일 범위만 다룹니다.
 
 ### 0.3 Reviewer 모드
-- Task Capsule, 변경 파일 목록, `git diff`, acceptance criteria, 테스트 결과 요약만 좁게 검토합니다. 프로젝트 전체를 탐색하지 않습니다.
+- Task Capsule, 변경 파일 목록, `git diff`, acceptance criteria, 테스트 결과 요약만 좁게 검토하며 전체를 탐색하지 않습니다.
 
 ### 0.4 Standalone 모드
 - Orca 조율 외 단독 에이전트로 전체 프로젝트 작업을 수행할 때만 선택형 컨텍스트 인덱스인 [`SKILLS.md`](SKILLS.md)를 참조합니다.
@@ -83,28 +76,26 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 
 ## 4. Orca 다중 섹션 조율 규칙
 
-다른 섹션과 **같은 파일·브랜치·작업 트리**를 다루거나, 작업 사이에 병합·검증·공유 자원 의존성이 있으면 반드시 `orca-section-coordination` 스킬을 먼저 사용합니다.
-
-**같은 프로젝트에서 동시에 일한다는 사실만으로는 조율 대상이 아닙니다.** 격리 작업 트리에서 자기 브랜치의 새 파일만 만들고 검증까지 마치는 작업은 겹치는 것이 없으므로 제외합니다. 겹치는 것이 생기는 시점(병합, 공유 자원 점유)에 등록합니다.
+다른 섹션과 **같은 파일·브랜치·작업 트리**를 다루거나, 작업 사이에 병합·검증·공유 자원 의존성이 있으면 반드시 `orca-section-coordination` 스킬을 먼저 사용합니다. 격리 작업 트리에서 자기 브랜치의 독립 작업은 조율 대상에서 제외하며, 상세는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#52-orca-다중-섹션-조율-규칙-상세)를 참조하십시오.
 
 1. 작업 묶음은 Orca Run으로 만들거나 기존 Run에 바인딩하고, 각 섹션을 Task로 등록합니다.
 2. 선행 작업·병합·검증·공유 자원(Docker/DB/대량 색인/ML 학습)은 Task 의존성으로 명시합니다.
 3. 다음 섹션은 선행 Task의 검증된 `worker_done` 전에는 시작하지 않습니다. 터미널 출력이나 구두 보고만으로 완료·병합·시작 가능을 선언하지 않습니다.
 4. 워커는 검증 결과·변경 파일·차단 사유를 포함한 `worker_done`으로 종료합니다. 코디네이터는 해당 기록을 확인한 뒤에만 후속 Task를 Dispatch합니다.
 5. 하나의 브랜치·작업 트리·공유 자원에 대한 동시 쓰기 작업은 금지합니다. 독립 작업만 병렬로 Dispatch합니다.
-5.1. **동시 쓰기 워커는 3대를 넘기지 않습니다.** 작업 트리가 서로 겹치지 않아도 적용됩니다. 워커 풀은 여러 개지만 코디네이터는 하나이므로, 검증이 병목이 되면 미검증 병합 위험이 커집니다. 읽기 전용 워커(`allowed_write_files` 가 빈 목록)는 상한에 포함하지 않습니다. `scripts/orca_taskctl.py dispatch` 가 이 상한을 기계로 강제하며 초과 시 워커를 기동하지 않고 종료 코드 1 로 거부합니다. 상한을 의도적으로 올릴 때만 `--max-write-workers` 를 쓰고, `--skip-concurrency-check` 는 습관적으로 쓰지 않습니다.
-6. **완료 세션은 그 자리에서 회수합니다.** `worker_done` 을 ack 하고 Task 가 `completed` 가 되면 병합을 기다리지 말고 워커 터미널을 회수합니다(`worker-release`, 남은 창은 `terminal close --terminal`, `--tab` 금지). 워크트리와 브랜치는 로컬 `main` 병합이 확인된 뒤에만 제거합니다. 미병합 브랜치와 활성 Dispatch 트리는 건드리지 않습니다. `scripts/orca_taskctl.py dispatch` 는 완료됐는데도 워커 터미널이 남은 세션이 있으면 기동을 거부합니다. 검사 명령은 `python3 scripts/orca_settled_session_audit.py` 입니다. 정리 여부는 인수인계에 "회수했다/하지 않았다"로 남깁니다.
+5.1. **동시 쓰기 워커는 3대를 넘기지 않습니다.** 읽기 전용 워커는 제외하며, 상한 강제 도구 및 예외 플래그 상세는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#522-동시-쓰기-워커-상한-규칙-51)를 참조하십시오.
+6. **완료 세션은 그 자리에서 회수합니다.** Task 완료 시 병합 대기 없이 워커 터미널을 회수하며, 회수 절차 및 감사 도구 상세는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#523-완료-세션-회수-절차-규칙-6)를 참조하십시오.
 7. Orca 런타임을 사용할 수 없으면 조율 작업을 시작하지 말고, 준비 상태 또는 차단 원인을 사용자에게 보고합니다. 진행 중이던 작업은 중단하지 않되 상태 선언을 멈춥니다.
-8. **검증은 완료 순서대로 병렬로 실행합니다.** 워커가 끝나는 대로 그 Task 의 Level 1 게이트와 리뷰어 Dispatch 를 시작하고 다른 워커의 완료를 기다리지 않습니다. 검증은 읽기 전용이고 워크트리가 서로 다르므로 동시 쓰기 상한과 무관합니다. `main` 병합만 직렬입니다. 상세는 [`.agents/skills/orca-section-coordination/SKILL.md`](.agents/skills/orca-section-coordination/SKILL.md) 4.3 절.
-9. **Dispatch 한 워커는 감시 대상입니다.** 지시가 필요 없는 상시 의무이며, 진행·완료·차단을 보고하기 전에 `python3 scripts/orca_worker_watch.py` 로 워커별 커밋 수·미커밋 수와 터미널 차단 신호를 확인합니다. 종료 코드 1 은 사람 개입이 필요한 차단이 있다는 뜻이므로 조치 전에는 다음 Task 를 Dispatch 하지 않습니다. 워커가 신뢰 대화창, 설문, 권한 요청, 인증 정체에 막혀 있는 것을 사용자가 먼저 발견하면 코디네이터 실패로 간주합니다.
+8. **검증은 완료 순서대로 병렬로 실행합니다.** 워커 종료 즉시 Level 1 게이트와 리뷰어 Dispatch 를 시작하고 `main` 병합만 직렬입니다. 상세는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#524-병렬-검증-원칙-규칙-8)를 참조하십시오.
+9. **Dispatch 한 워커는 감시 대상입니다.** 보고 전 감시 도구로 확인하고 사람 개입 차단 발생 시 후속 Dispatch를 중단합니다. 상세는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#525-워커-감시-및-차단-대응-규칙-9)를 참조하십시오.
 
 ## 5. 커뮤니케이션 규칙
 
 - 응답은 한국어 존댓말로 작성.
 - 복잡한 변경이나 설계 결정은 사전에 제안하고 합의 후 진행.
 - 파일 경로는 `file_path:line_number` 형식으로 참조 (클릭 가능).
-- 코디네이터의 기본값은 Codex `gpt-5.6-terra` + effort `medium`입니다. 기본값을 벗어나 모델 또는 effort를 변경하기 전에는 사용자에게 `MODEL_CHANGE_NOTICE`로 대상 작업, 변경 전·후 설정, 사유, 사용량 영향, 기본값 복귀 시점을 알립니다. `gpt-5.6-sol` + `high`는 데이터 무손실·컷오버·복잡한 병합의 최종 판정에만 쓰며 사용자 승인 후에만 적용합니다. 상세 매트릭스는 [`docs/ops/orca_orchestration_playbook.md`](docs/ops/orca_orchestration_playbook.md) 4.2.1절을 따릅니다.
-- 워커 모델 배정의 실행 정본은 [`scripts/orca_model_router.py`](scripts/orca_model_router.py)의 `TIER_POLICY`이며, 문서는 그 사본을 두지 않습니다. 리뷰어는 빌더와 다른 계열을 배정해야 한다는 불변조건을 준수하고, 모델은 풀 등록 전에 해당 CLI로 직접 probe합니다. 기본값을 벗어나면 `WORKER_MODEL_NOTICE`를 남깁니다. 상세 근거와 가용성 실측은 [`docs/ops/orca_worker_model_pool.md`](docs/ops/orca_worker_model_pool.md)를 참조하십시오.
+- 코디네이터 모델: 기본값은 Codex `gpt-5.6-terra` + `medium`이며, 변경 시 `MODEL_CHANGE_NOTICE`가 필요합니다 (`gpt-5.6-sol` + `high`는 사용자 사전 승인 필수). 상세는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#53-모델-운영-및-배정-규칙)를 따릅니다.
+- 워커 모델 배정: 실행 정본은 [`scripts/orca_model_router.py`](scripts/orca_model_router.py)의 `TIER_POLICY`를 따르며(리뷰어-빌더 계열 분리), 기본값 이탈 시 `WORKER_MODEL_NOTICE`를 남깁니다. 상세는 [`docs/ops/multi_agent_setup.md`](docs/ops/multi_agent_setup.md#53-모델-운영-및-배정-규칙)를 참조하십시오.
 
 ---
 
