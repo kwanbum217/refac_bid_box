@@ -218,6 +218,12 @@ BLOCK_SIGNALS: list[tuple[str, str, str, BlockKind]] = [
         "prompt",
     ),
     ("Do you want to proceed", "진행 확인 프롬프트", "화면을 읽고 승인 여부를 판단", "prompt"),
+    (
+        "Run this command?",
+        "명령 실행 승인 프롬프트",
+        "화면을 읽고 승인 여부를 판단",
+        "prompt",
+    ),
 ]
 
 BLOCK_KIND_LABELS: dict[BlockKind, str] = {

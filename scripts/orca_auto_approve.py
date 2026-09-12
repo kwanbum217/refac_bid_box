@@ -39,6 +39,13 @@ MAX_SUBSTITUTION_DEPTH = 3
 # 구간으로 보여 승인되고 실제로는 두 명령이 실행됩니다.
 PIPELINE_SEPARATORS = ("&&", "||", ";", "|", "\n", "\r")
 
+# 명령 실행 승인 대화창의 확인 문구. CLI 빌드마다 다르므로 아는 형태를 모두 둡니다.
+# 하나만 인정하면 판정기가 승인으로 판단하는 명령조차 대화창이 탐지되지 않아
+# 워커가 사람 승인을 기다리며 멈춥니다. 2026-09-12 Wave Y3 에서 Antigravity 가
+# "Run this command?" 를 쓰는데 이 목록에 없어 읽기 전용 조사 명령이 반복해서
+# 정체했고 감시기 로그는 빈 파일로 남았습니다.
+CONFIRM_PHRASES = ("Do you want to proceed?", "Run this command?")
+
 # 리다이렉트 대상으로 허용하는 경로. 워크트리 상대 경로와 임시 디렉터리만 씁니다.
 # 절대 경로, 상위 참조, .env, .git 아래는 거부합니다.
 REDIRECT_DENY = re.compile(r"^/(?!tmp/|dev/null)|\.\.|(^|/)\.env|(^|/)\.git/")
@@ -1419,7 +1426,11 @@ def pending_command(screen: str) -> str | None:
             return sig
 
     # 2. 기존 도구/명령 실행 승인 프롬프트 검사
-    if "Do you want to proceed?" not in screen and "do you want to proceed?" not in norm_screen:
+    confirm = next(
+        (phrase for phrase in CONFIRM_PHRASES if phrase in screen or phrase.lower() in norm_screen),
+        None,
+    )
+    if confirm is None:
         return None
     marker = "Requesting permission for:"
     if marker not in screen:
@@ -1428,10 +1439,13 @@ def pending_command(screen: str) -> str | None:
             return ""
         low_screen = screen.lower()
         start_idx = low_screen.find(marker_low) + len(marker_low)
-        end_idx = low_screen.find("do you want to proceed?", start_idx)
+        end_idx = low_screen.find(confirm.lower(), start_idx)
+        if end_idx < 0:
+            end_idx = len(screen)
         return screen[start_idx:end_idx].strip()
     body = screen.split(marker, 1)[1]
-    body = body.split("Do you want to proceed?", 1)[0]
+    if confirm in body:
+        body = body.split(confirm, 1)[0]
     return body.strip()
 
 
