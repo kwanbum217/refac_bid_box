@@ -69,8 +69,10 @@ __all__ = [
     "container_env_flag",
     "docker_since_timestamp",
     "evaluate_canonical",
+    "fixture_dependent_argument_error",
     "load_fixture",
     "main",
+    "missing_fixture_item_ids",
     "parse_segment_lines",
     "parse_structured_sql_traces",
     "query_db_buffer_pool_pages_data",
@@ -206,6 +208,34 @@ def load_fixture(
         selected = selected[:limit]
 
     return selected, sha256, total_items
+
+
+def _split_item_ids(item_ids: str | None) -> list[str]:
+    return [x.strip() for x in (item_ids or "").split(",") if x.strip()]
+
+
+def fixture_dependent_argument_error(args: argparse.Namespace) -> str | None:
+    """fixture 없이 받으면 무시되는 인자가 있으면 오류 문구를, 없으면 None 을 돌려줍니다."""
+    if args.fixture is not None:
+        return None
+    ignored = []
+    if _split_item_ids(args.item_ids):
+        ignored.append("--item-ids")
+    if args.repetitions != 1:
+        ignored.append("--repetitions")
+    if args.limit:
+        ignored.append("--limit")
+    if not ignored:
+        return None
+    return f"{', '.join(ignored)} 는 --fixture 와 함께 써야 합니다. fixture 없이는 무시되고 즉석 질의가 나갑니다."
+
+
+def missing_fixture_item_ids(
+    item_ids: str | None, fixture_items: list[dict[str, Any]] | None
+) -> list[str]:
+    """요청한 문항 ID 중 fixture 에서 선택되지 않은 것을 요청 순서대로 돌려줍니다."""
+    selected = {str(item.get("id", "")).strip() for item in fixture_items or []}
+    return [item_id for item_id in _split_item_ids(item_ids) if item_id not in selected]
 
 
 def build_query_plan(
@@ -877,6 +907,13 @@ def main(
     cmd_fn = command_runner or _command_output
     query_fn = query_sender or send_query
 
+    # fixture 에만 의미가 있는 인자를 fixture 없이 받으면 조용히 무시되고 즉석 질의가 나갑니다.
+    # 2026-09-13 측정 한 회차가 이것으로 폐기됐으므로 비싼 사전 검증보다 먼저 거부합니다.
+    argument_error = fixture_dependent_argument_error(args)
+    if argument_error:
+        print(f"인자 오류: {argument_error}", file=sys.stderr)
+        return 2
+
     # 1. LATENCY_SEGMENT_LOGGING 켜짐 여부 사전 검증
     try:
         assert_segment_logging_enabled(args.target_container, command_runner=cmd_fn)
@@ -936,6 +973,14 @@ def main(
             )
         except Exception as exc:
             print(f"Fixture 파일 로드 실패 ({args.fixture}): {exc}", file=sys.stderr)
+            return 2
+        # --limit 은 선택 뒤에 자르므로 함께 쓰면 잘린 ID 를 없는 것으로 오판합니다.
+        missing_ids = [] if args.limit else missing_fixture_item_ids(args.item_ids, fixture_items)
+        if missing_ids:
+            print(
+                f"인자 오류: fixture 에 없는 --item-ids 입니다: {', '.join(missing_ids)}",
+                file=sys.stderr,
+            )
             return 2
 
     plan = build_query_plan(

@@ -225,4 +225,4 @@ q08 이 해석 대상에서 빠진 "서울"(공고 기관명 2,588종, 일치 �
 | 1 | 8.1 절 선택지 중 방향 결정 | 사용자 결정 |
 | 2 | `(dminstt_nm, category)` 복합 커버링 인덱스의 효과·쓰기 비용 실측 (q31 잔여) | DDL 합의 |
 | 3 | 2단계 해석 경계를 일치 행 수로 확정 (10만~44만 사이) | 없음 |
-| 4 | `benchmark_rag_segments.py` 가 fixture 없는 `--item-ids` 를 거부하게 수정 | 없음 |
+| 4 | `benchmark_rag_segments.py` 가 fixture 없는 `--item-ids` 를 거부하게 수정 | 완료 (2026-09-13). `--repetitions`, `--limit`, fixture 에 없는 ID 도 거부 |
