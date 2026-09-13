@@ -425,7 +425,7 @@ def _hint_result_date_index(stmt, plan: RetrievalPlan):
 # 날짜 범위 없이 기관명 부분 일치만 걸려도 옵티마이저가 같은 그룹 인덱스를 골라 339만 항목을
 # 훑으며 기관명 확인을 위해 행마다 본문을 읽습니다. "서울" 낙찰업체 집계가 완전 콜드에서
 # 7,159~13,218ms 였고, 이 인덱스만 막으면 테이블 순차 스캔으로 1,258~1,470ms 였습니다
-# (2026-09-13 실측, 결과 동일, docs/analysis/rag_coldsql_root_cause_20260913.md 11장).
+# (2026-09-13 실측, 결과 동일, docs/analysis/rag_coldsql_root_cause_20260913.md 10장).
 # 날짜 범위가 있으면 위 날짜 인덱스 강제가 더 좁히므로 이 힌트를 붙이지 않습니다.
 RESULT_WINNER_GROUP_INDEX_IGNORE_HINT = "IGNORE INDEX (ix_bid_results_bidwinnr_nm)"
 

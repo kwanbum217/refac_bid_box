@@ -1,0 +1,23 @@
+# 2026-09-13 bid_results 기관명(서울) 집계 완전 콜드 대조 원시 로그
+## 6변형 x 2회
+{"rep": 1, "variant": "agg_like", "ms": 4474, "bp_before": "960", "result_sha": "8bfd50a5f1ad", "note": ""}
+{"rep": 1, "variant": "agg_two", "ms": 4090, "bp_before": "968", "result_sha": "8bfd50a5f1ad", "note": "resolve=1427 main=2663 names=2467"}
+{"rep": 1, "variant": "cnt_cover", "ms": 852, "bp_before": "966", "result_sha": "6b669938bce6", "note": "covering proxy"}
+{"rep": 1, "variant": "cnt_table", "ms": 1035, "bp_before": "961", "result_sha": "6b669938bce6", "note": "table scan"}
+{"rep": 1, "variant": "win_like", "ms": 8994, "bp_before": "965", "result_sha": "de96b864ffd5", "note": ""}
+{"rep": 1, "variant": "win_two", "ms": 2291, "bp_before": "958", "result_sha": "de96b864ffd5", "note": "resolve=465 main=1826 names=2467"}
+{"rep": 2, "variant": "win_two", "ms": 2248, "bp_before": "952", "result_sha": "de96b864ffd5", "note": "resolve=465 main=1783 names=2467"}
+{"rep": 2, "variant": "win_like", "ms": 6961, "bp_before": "958", "result_sha": "de96b864ffd5", "note": ""}
+{"rep": 2, "variant": "cnt_table", "ms": 825, "bp_before": "966", "result_sha": "6b669938bce6", "note": "table scan"}
+{"rep": 2, "variant": "cnt_cover", "ms": 697, "bp_before": "960", "result_sha": "6b669938bce6", "note": "covering proxy"}
+{"rep": 2, "variant": "agg_two", "ms": 1964, "bp_before": "961", "result_sha": "8bfd50a5f1ad", "note": "resolve=290 main=1674 names=2467"}
+{"rep": 2, "variant": "agg_like", "ms": 842, "bp_before": "959", "result_sha": "8bfd50a5f1ad", "note": ""}
+done
+## 낙찰업체 집계 3변형 x 2회
+{"rep": 1, "variant": "win_like", "ms": 13218, "bp_before": "964", "result_sha": "de96b864ffd5", "note": ""}
+{"rep": 1, "variant": "win_ignore", "ms": 1470, "bp_before": "955", "result_sha": "de96b864ffd5", "note": "ignore bidwinnr index"}
+{"rep": 1, "variant": "win_two", "ms": 2669, "bp_before": "965", "result_sha": "de96b864ffd5", "note": "resolve=592 main=2077 names=2467"}
+{"rep": 2, "variant": "win_two", "ms": 2215, "bp_before": "960", "result_sha": "de96b864ffd5", "note": "resolve=301 main=1914 names=2467"}
+{"rep": 2, "variant": "win_ignore", "ms": 1258, "bp_before": "961", "result_sha": "de96b864ffd5", "note": "ignore bidwinnr index"}
+{"rep": 2, "variant": "win_like", "ms": 7159, "bp_before": "960", "result_sha": "de96b864ffd5", "note": ""}
+done
