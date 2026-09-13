@@ -122,7 +122,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **RAG cold SQL 원인 조사 (2026-09-10, 가설 좁힘·미확정)**: 기관명 필터 live 경로와 다중 SQL 실행이 지연 원인 후보입니다. 세부 구성비는 후속 과제입니다.
 - **손상 탐침 제거 (2026-09-11, 구조적 제거 확정·효과 크기 미확정)**: corrupted_probe 0ms 달성을 확정했습니다. 잔여 분산으로 효과 크기는 미확정입니다.
 - **측정 설계와 실행계획 조사 (2026-09-11, 도구 완비·원인 미확정)**: 계측 도구를 완비했습니다. 영속 통계 노후를 확인했으나 계획 전환 원인은 미확정입니다.
-- **ChromaDB 1.x 메이저 업그레이드 (2026-09-13, 조사 완료·실행 미착수)**: 12-31 만료 전 복사본 이행을 권고하며 목표 버전은 사용자 결정입니다 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).
+- **ChromaDB 1.x 업그레이드 (2026-09-13, 보류)**: 1.5.9 까지 CVE 미수정, 1.x 는 1건 추가. 서버 미노출로 예외 유지, 12-31 재확인 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
 - 운영 지표·게이트·불변 사실이 바뀌면 같은 커밋에서 [CURRENT_STATE.md](CURRENT_STATE.md)와 [current_state_facts.yaml](current_state_facts.yaml)을 함께 갱신합니다.
