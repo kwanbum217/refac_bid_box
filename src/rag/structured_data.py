@@ -487,6 +487,12 @@ def _result_availability_conditions(
 # 과대해지므로 상한을 넘을 때는 종전 부분 일치로 돌아갑니다.
 INSTITUTION_NAME_RESOLVE_LIMIT = 1000
 
+# 상한 초과 판정은 오래 둡니다. 기관명 집합은 수집으로 늘기만 하므로 한 번 넘은 검색어가 다시
+# 상한 안으로 들어오지 않고, 넘은 경우의 되돌림은 항상 완전한 부분 일치입니다. "서울"은 요청마다
+# 1,369ms 해석 질의를 돌린 뒤 결과를 버렸습니다(2026-09-13). 이름 목록은 새 기관을 놓치지 않도록
+# 집계와 같은 1시간을 유지합니다(최근 7일 신규 기관명 낙찰 63, 공고 68).
+INSTITUTION_OVERFLOW_CACHE_TTL = 7 * 24 * 60 * 60
+
 
 @_measure_call("institution_resolve")
 def _resolve_institution_names(db: Session, column, institution_name: str) -> list[str] | None:
@@ -508,8 +514,14 @@ def _resolve_institution_names(db: Session, column, institution_name: str) -> li
             cached = _timed_cache_get(key)
             if cached is None:
                 names = [row[0] for row in db.execute(stmt).all() if row[0] is not None]
-                cached = {"names": names}
-                cache.set(key, cached, AGGREGATE_CACHE_TTL)
+                if len(names) > INSTITUTION_NAME_RESOLVE_LIMIT:
+                    cached = {"overflow": True}
+                    cache.set(key, cached, INSTITUTION_OVERFLOW_CACHE_TTL)
+                else:
+                    cached = {"names": names}
+                    cache.set(key, cached, AGGREGATE_CACHE_TTL)
+    if cached.get("overflow"):
+        return None
     names = list(cached["names"])
     if len(names) > INSTITUTION_NAME_RESOLVE_LIMIT:
         return None
