@@ -52,7 +52,10 @@ from src.tasks.scheduled_tasks import (
     run_schedule_catchup_task,
     weekly_retrain_task,
 )
-from src.tasks.summary_tasks import rebuild_dataset_summary_task
+from src.tasks.summary_tasks import (
+    rebuild_dataset_summary_task,
+    refresh_institution_catalog_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -380,6 +383,7 @@ class WorkerSettings:
         backup_schedule_task,
         run_schedule_catchup_task,
         rebuild_dataset_summary_task,
+        refresh_institution_catalog_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
     # 워커가 여러 대여도 arq 는 크론을 한 번만 실행합니다.
@@ -407,6 +411,13 @@ class WorkerSettings:
             cast(Any, drift_monitor_task),
             hour=4,
             minute=0,
+            run_at_startup=False,
+            timeout=3600,
+        ),
+        # RAG 기관명 해석 목록. 매시 덮어써 요청 경로의 콜드 목록 생성을 없앱니다.
+        cron(
+            cast(Any, refresh_institution_catalog_task),
+            minute=5,
             run_at_startup=False,
             timeout=3600,
         ),

@@ -14,6 +14,7 @@ import re
 import threading
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -51,6 +52,12 @@ _latency_record: contextvars.ContextVar[dict[str, Any] | None] = contextvars.Con
 )
 _listener_lock = threading.Lock()
 _listeners_registered = False
+# 병렬 집계 스레드가 같은 계측 기록을 함께 고칩니다.
+_record_lock = threading.Lock()
+# 병렬 집계가 쓸 구간 라벨을 호출 순서대로 미리 정해 둡니다. 완료 순서로 번호를 매기면 회차마다 뜻이 바뀝니다.
+_reserved_segment_label: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "structured_reserved_segment_label", default=None
+)
 
 
 def _latency_enabled() -> bool:
@@ -81,7 +88,9 @@ def _before_cursor_execute(conn, cursor, statement, parameters, context, execute
     try:
         record = _latency_record.get()
         if record is not None and record.get("active"):
-            record.setdefault("cursor_starts", []).append(time.perf_counter())
+            with _record_lock:
+                starts = record.setdefault("cursor_starts", {})
+                starts.setdefault(threading.get_ident(), []).append(time.perf_counter())
     except Exception:
         return
 
@@ -91,12 +100,13 @@ def _after_cursor_execute(conn, cursor, statement, parameters, context, executem
         record = _latency_record.get()
         if record is None or not record.get("active"):
             return
-        starts = record.get("cursor_starts", [])
-        if not starts:
-            return
-        elapsed_ms = max(0.0, (time.perf_counter() - starts.pop()) * 1000.0)
-        record["cursor_ms"] = record.get("cursor_ms", 0.0) + elapsed_ms
-        record["cursor_count"] = record.get("cursor_count", 0) + 1
+        with _record_lock:
+            starts = record.get("cursor_starts", {}).get(threading.get_ident())
+            if not starts:
+                return
+            elapsed_ms = max(0.0, (time.perf_counter() - starts.pop()) * 1000.0)
+            record["cursor_ms"] = record.get("cursor_ms", 0.0) + elapsed_ms
+            record["cursor_count"] = record.get("cursor_count", 0) + 1
     except Exception:
         return
 
@@ -110,7 +120,7 @@ def _open_latency_record() -> dict[str, Any] | None:
         "started_at": time.perf_counter(),
         "cursor_ms": 0.0,
         "cursor_count": 0,
-        "cursor_starts": [],
+        "cursor_starts": {},
         "segments": {},
         "counters": {},
     }
@@ -156,8 +166,9 @@ def _record_segment(label: str, elapsed_ms: float) -> None:
     try:
         record = _latency_record.get()
         if record is not None and record.get("active"):
-            segments = record.setdefault("segments", {})
-            segments[label] = round(float(segments.get(label, 0.0)) + elapsed_ms, 2)
+            with _record_lock:
+                segments = record.setdefault("segments", {})
+                segments[label] = round(float(segments.get(label, 0.0)) + elapsed_ms, 2)
     except Exception:
         return
 
@@ -166,21 +177,26 @@ def _next_segment_label(prefix: str) -> str:
     record = _latency_record.get()
     if record is None or not record.get("active"):
         return prefix
-    counters = record.setdefault("counters", {})
-    index = int(counters.get(prefix, 0)) + 1
-    counters[prefix] = index
+    with _record_lock:
+        counters = record.setdefault("counters", {})
+        index = int(counters.get(prefix, 0)) + 1
+        counters[prefix] = index
     return f"{prefix}_{index}"
 
 
 def _measure_call(prefix: str):
     def decorator(func):
         def measured(*args, **kwargs):
+            reserved = _reserved_segment_label.get()
+            token = _reserved_segment_label.set(None)
             started = time.perf_counter()
             try:
                 return func(*args, **kwargs)
             finally:
+                _reserved_segment_label.reset(token)
                 _record_segment(
-                    _next_segment_label(prefix), (time.perf_counter() - started) * 1000.0
+                    reserved or _next_segment_label(prefix),
+                    (time.perf_counter() - started) * 1000.0,
                 )
 
         measured.__name__ = func.__name__
@@ -575,16 +591,39 @@ def _catalog_eligible(institution_name: str) -> bool:
     return bool(_CATALOG_TERM.fullmatch(institution_name))
 
 
+# 워커가 매시 목록을 덮어써 요청 경로가 콜드 목록 생성을 만나지 않게 합니다. 두 번 거르기 전에는 만료되지
+# 않도록 주기의 두 배로 둡니다. 워커가 멈추면 요청 경로가 종전처럼 1시간 목록을 직접 만듭니다.
+INSTITUTION_CATALOG_REFRESH_TTL = 2 * 60 * 60
+
+
+def _institution_catalog_key(column) -> str:
+    return f"rag:inst_catalog:{column.class_.__tablename__}"
+
+
+def _load_institution_catalog(db: Session, column) -> list[str]:
+    return [row[0] for row in db.execute(select(column).distinct()).all() if row[0]]
+
+
 def _institution_name_catalog(db: Session, column) -> list[str]:
-    key = f"rag:inst_catalog:{column.class_.__tablename__}"
+    key = _institution_catalog_key(column)
     names = _timed_cache_get(key)
     if names is None:
         with _flight_lock(key):
             names = _timed_cache_get(key)
             if names is None:
-                names = [row[0] for row in db.execute(select(column).distinct()).all() if row[0]]
+                names = _load_institution_catalog(db, column)
                 cache.set(key, names, AGGREGATE_CACHE_TTL)
     return names
+
+
+def refresh_institution_name_catalogs(db: Session) -> dict[str, int]:
+    """공고·낙찰 고유 기관명 목록을 다시 읽어 캐시를 덮어씁니다."""
+    counts = {}
+    for column in (BidAnnouncement.dminstt_nm, BidResult.dminstt_nm):
+        names = _load_institution_catalog(db, column)
+        cache.set(_institution_catalog_key(column), names, INSTITUTION_CATALOG_REFRESH_TTL)
+        counts[column.class_.__tablename__] = len(names)
+    return counts
 
 
 def _match_institution_catalog(names: list[str], institution_name: str) -> list[str] | None:
@@ -821,6 +860,63 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
         return normalized
 
 
+# 서로 기다리지 않는 집계 다섯 개를 순차로 돌면 q08 콜드에서 SQL 합계 약 4.9초였고 가장 긴 문장은 1.9초였습니다
+# (2026-09-13). 프로세스 전체에서 스레드를 넷으로 묶어 추가 연결이 요청 수에 비례해 늘지 않게 합니다
+# (연결 풀 10+20). 붐비면 대기열에서 기다리므로 순차 실행보다 느려지지는 않습니다.
+PARALLEL_AGGREGATE_WORKERS = 4
+_parallel_executor: ThreadPoolExecutor | None = None
+_parallel_executor_lock = threading.Lock()
+
+
+def _aggregate_executor() -> ThreadPoolExecutor:
+    global _parallel_executor
+    with _parallel_executor_lock:
+        if _parallel_executor is None:
+            _parallel_executor = ThreadPoolExecutor(
+                max_workers=PARALLEL_AGGREGATE_WORKERS, thread_name_prefix="rag-aggregate"
+            )
+        return _parallel_executor
+
+
+def _parallel_aggregates_enabled(db: Session) -> bool:
+    # SQLite 인메모리 테스트 DB 는 연결 하나를 공유하므로 스레드별 세션을 열 수 없습니다.
+    return db.get_bind().dialect.name == "mysql"
+
+
+def _run_with_label(label: str, func, session: Session):
+    token = _reserved_segment_label.set(label)
+    try:
+        return func(session)
+    finally:
+        _reserved_segment_label.reset(token)
+
+
+def _run_in_own_session(label: str, func, bind):
+    with Session(bind=bind) as session:
+        return _run_with_label(label, func, session)
+
+
+def _run_aggregates(db: Session, tasks: list[tuple[str, Any]]) -> list[Any]:
+    """(구간 접두어, 세션을 받는 함수) 목록을 실행해 결과를 같은 순서로 돌려줍니다.
+
+    MySQL 이면 마지막 작업은 요청 세션에서, 나머지는 각자 세션으로 동시에 돌립니다.
+    """
+    if not _parallel_aggregates_enabled(db):
+        return [func(db) for _, func in tasks]
+    labels = [_next_segment_label(prefix) for prefix, _ in tasks]
+    bind = db.get_bind()
+    executor = _aggregate_executor()
+    futures = [
+        executor.submit(contextvars.copy_context().run, _run_in_own_session, label, func, bind)
+        for label, (_, func) in zip(labels[:-1], tasks[:-1], strict=True)
+    ]
+    try:
+        last = _run_with_label(labels[-1], tasks[-1][1], db)
+    finally:
+        results = [future.result() for future in futures]
+    return [*results, last]
+
+
 def _cacheable(value: Any) -> Any:
     """순위 행의 값을 Redis JSON 경로에서도 같은 모양이 되도록 맞춥니다.
 
@@ -1042,113 +1138,137 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             )
         )
 
-    total_count, avg_rate, total_amt = _cached_aggregate(
-        db,
-        _hint_result_institution_cover(
-            select(
-                func.count(BidResult.id),
-                func.avg(BidResult.sucsf_bid_rate),
-                func.sum(BidResult.sucsf_bid_amt),
-            ).where(*result_conditions),
-            plan,
-            result_names,
-        ),
-    )
-    (announcement_count,) = _cached_aggregate(
-        db,
-        _hint_announcement_institution_cover(
-            select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
-            plan,
-            announcement_names,
-        ),
-    )
-
-    recent_results = _fetch_recent_results(db, result_conditions, result_limit)
-
     category_filter = _normalize_text(str((plan.filters or {}).get("category") or ""))
-
     winner_conditions = _result_conditions(
         plan, enable_ngram_prefilter=True, institution_names=result_names
     )
-    winner_rows, dropped_winners = _top_rows(
-        db,
-        scope=snapshot_scope,
-        dataset=DATASET_RESULT,
-        dimension="bidwinnr_nm",
-        category=category_filter,
-        live_stmt=_hint_result_institution_cover(
-            _hint_result_winner_group_index(
-                _hint_result_date_index(
-                    select(BidResult.bidwinnr_nm, func.count(BidResult.id))
-                    .where(exclude_corrupted(BidResult.bidwinnr_nm), *winner_conditions)
-                    .group_by(BidResult.bidwinnr_nm)
-                    .order_by(func.count(BidResult.id).desc()),
+    institution_conditions = _announcement_conditions(
+        plan, enable_ngram_prefilter=True, institution_names=announcement_names
+    )
+
+    def result_amounts(session: Session) -> list[Any]:
+        return _cached_aggregate(
+            session,
+            _hint_result_institution_cover(
+                select(
+                    func.count(BidResult.id),
+                    func.avg(BidResult.sucsf_bid_rate),
+                    func.sum(BidResult.sucsf_bid_amt),
+                ).where(*result_conditions),
+                plan,
+                result_names,
+            ),
+        )
+
+    def announcement_total(session: Session) -> list[Any]:
+        return _cached_aggregate(
+            session,
+            _hint_announcement_institution_cover(
+                select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
+                plan,
+                announcement_names,
+            ),
+        )
+
+    def winner_ranking(session: Session) -> tuple[list, int]:
+        return _top_rows(
+            session,
+            scope=snapshot_scope,
+            dataset=DATASET_RESULT,
+            dimension="bidwinnr_nm",
+            category=category_filter,
+            live_stmt=_hint_result_institution_cover(
+                _hint_result_winner_group_index(
+                    _hint_result_date_index(
+                        select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+                        .where(exclude_corrupted(BidResult.bidwinnr_nm), *winner_conditions)
+                        .group_by(BidResult.bidwinnr_nm)
+                        .order_by(func.count(BidResult.id).desc()),
+                        plan,
+                    ),
                     plan,
                 ),
                 plan,
+                result_names,
             ),
-            plan,
-            result_names,
-        ),
-        corrupted_probe=select(BidResult.id).where(
-            BidResult.bidwinnr_nm.contains(REPLACEMENT_CHAR), *result_conditions
-        ),
+            corrupted_probe=select(BidResult.id).where(
+                BidResult.bidwinnr_nm.contains(REPLACEMENT_CHAR), *result_conditions
+            ),
+        )
+
+    def institution_ranking(session: Session) -> tuple[list, int]:
+        return _top_rows(
+            session,
+            scope=snapshot_scope,
+            dataset=DATASET_ANNOUNCEMENT,
+            dimension="dminstt_nm",
+            category=category_filter,
+            live_stmt=_hint_announcement_institution_cover(
+                _hint_announcement_date_index(
+                    select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+                    .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions)
+                    .group_by(BidAnnouncement.dminstt_nm)
+                    .order_by(func.count(BidAnnouncement.id).desc()),
+                    plan,
+                ),
+                plan,
+                announcement_names,
+            ),
+            corrupted_probe=select(BidAnnouncement.id).where(
+                BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+            ),
+        )
+
+    def announcement_ranking(session: Session) -> tuple[list, int]:
+        return _top_rows(
+            session,
+            scope=snapshot_scope,
+            dataset=DATASET_ANNOUNCEMENT,
+            dimension="bid_ntce_nm",
+            category=category_filter,
+            live_stmt=_hint_announcement_institution_cover(
+                _hint_announcement_date_index(
+                    select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+                    .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
+                    .group_by(BidAnnouncement.bid_ntce_nm)
+                    .order_by(func.count(BidAnnouncement.id).desc()),
+                    plan,
+                ),
+                plan,
+                announcement_names,
+            ),
+            corrupted_probe=select(BidAnnouncement.id).where(
+                BidAnnouncement.bid_ntce_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+            ),
+        )
+
+    # 가장 긴 공고명 집계를 마지막에 두어 요청 세션이 직접 맡게 합니다.
+    (
+        (total_count, avg_rate, total_amt),
+        (announcement_count,),
+        (winner_rows, dropped_winners),
+        (institution_rows, dropped_institutions),
+        (announcement_rows, dropped_announcements),
+    ) = _run_aggregates(
+        db,
+        [
+            ("cached_aggregate", result_amounts),
+            ("cached_aggregate", announcement_total),
+            ("top_rows", winner_ranking),
+            ("top_rows", institution_ranking),
+            ("top_rows", announcement_ranking),
+        ],
     )
+
+    recent_results = _fetch_recent_results(db, result_conditions, result_limit)
     top_winners = [
         {"bidwinnr_nm": _normalize_text(row[0]) if row[0] else row[0], "win_count": row[1]}
         for row in winner_rows
     ]
-
-    institution_conditions = _announcement_conditions(
-        plan, enable_ngram_prefilter=True, institution_names=announcement_names
-    )
-    institution_rows, dropped_institutions = _top_rows(
-        db,
-        scope=snapshot_scope,
-        dataset=DATASET_ANNOUNCEMENT,
-        dimension="dminstt_nm",
-        category=category_filter,
-        live_stmt=_hint_announcement_institution_cover(
-            _hint_announcement_date_index(
-                select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
-                .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions)
-                .group_by(BidAnnouncement.dminstt_nm)
-                .order_by(func.count(BidAnnouncement.id).desc()),
-                plan,
-            ),
-            plan,
-            announcement_names,
-        ),
-        corrupted_probe=select(BidAnnouncement.id).where(
-            BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
-        ),
-    )
     top_institutions = [
         {"dminstt_nm": _normalize_text(row[0]) if row[0] else row[0], "ntce_count": row[1]}
         for row in institution_rows
     ]
-
-    announcement_rows, dropped_announcements = _top_rows(
-        db,
-        scope=snapshot_scope,
-        dataset=DATASET_ANNOUNCEMENT,
-        dimension="bid_ntce_nm",
-        category=category_filter,
-        live_stmt=_hint_announcement_institution_cover(
-            _hint_announcement_date_index(
-                select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
-                .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
-                .group_by(BidAnnouncement.bid_ntce_nm)
-                .order_by(func.count(BidAnnouncement.id).desc()),
-                plan,
-            ),
-            plan,
-            announcement_names,
-        ),
-        corrupted_probe=select(BidAnnouncement.id).where(
-            BidAnnouncement.bid_ntce_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
-        ),
-    )
     top_announcements = [
         {"bid_ntce_nm": _normalize_text(row[0]) if row[0] else row[0], "ntce_count": row[1]}
         for row in announcement_rows

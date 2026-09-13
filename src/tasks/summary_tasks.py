@@ -13,6 +13,7 @@ from typing import Any
 from src.app.core.db import SessionLocal
 from src.app.core.observability import traced_worker_task
 from src.app.services.dashboard import rebuild_bid_dataset_summary
+from src.rag.structured_data import refresh_institution_name_catalogs
 
 logger = logging.getLogger(__name__)
 
@@ -34,4 +35,13 @@ async def rebuild_dataset_summary_task(ctx: dict[str, Any], dataset: str) -> dic
     return result
 
 
-__all__ = ["rebuild_dataset_summary_task"]
+@traced_worker_task
+async def refresh_institution_catalog_task(ctx: dict[str, Any]) -> dict[str, int]:
+    """RAG 기관명 해석이 쓰는 고유 기관명 목록 캐시를 매시 갱신합니다."""
+    with SessionLocal() as db:
+        counts = refresh_institution_name_catalogs(db)
+    logger.info("기관명 목록 캐시 갱신 완료: %s", counts)
+    return counts
+
+
+__all__ = ["rebuild_dataset_summary_task", "refresh_institution_catalog_task"]
