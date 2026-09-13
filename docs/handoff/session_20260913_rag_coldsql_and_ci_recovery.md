@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-13
 > **작성자**: Claude Opus 5 (코디네이터)
-> **기준 커밋**: `2e2b2a72`
+> **기준 커밋**: `5b29841e`
 > **이어받은 문서**: [`docs/handoff/session_20260913_wave_z_observability_chromadb.md`](session_20260913_wave_z_observability_chromadb.md) (같은 날 전반부)
 
 ---
@@ -15,7 +15,9 @@ RAG 정형 질의 콜드 SQL 40초의 원인을 **기관명 선행 와일드카�
 테스트가 로컬 Redis 를 오염시키던 결함을 고쳤습니다. 마지막으로 공고 기관명 커버링 인덱스를 적용해 q31 을
 1초대로 줄였고, 병렬 워커로 `source_commit` 뒤처짐을 병합 단위로 세게 했습니다. 이어서 낙찰 쪽과 q03 의 원인을
 실행계획 힌트 두 개로 해소하고 원장 `coldsql_rerun` 을 정본으로 종결했습니다(6장, 사용자 부재 중 권고안으로 진행).
-이후 낙찰 쪽 커버링 인덱스(6.5 절)와 MySQL 임시 테이블 상한 128MB(6.6 절)를 적용했습니다. `main` 은 `2e2b2a72` 입니다.
+이후 낙찰 쪽 커버링 인덱스(6.5 절), MySQL 임시 테이블 상한 128MB(6.6 절), 한글 기관명 목록 캐시(6.7 절),
+독립 집계 병렬 실행과 목록 매시 예열(6.8 절)을 적용해 q08 콜드 요청을 9초대에서 **2.1~2.3초**로 줄였습니다.
+`main` 은 `5b29841e` 이며 세션 종료 시 Docker 와 배경 프로세스를 내렸습니다(8장).
 
 ---
 
@@ -45,6 +47,11 @@ RAG 정형 질의 콜드 SQL 40초의 원인을 **기관명 선행 와일드카�
 | `795eb49d` | 낙찰 기관명 커버링 인덱스와 강제 힌트 (마이그레이션 `c38ebe417cf3`, G1 기준선, 전후 실측) | CI 전 잡 성공 |
 | `0639665f` | 이 문서 갱신 (6.5 절, 절 번호 교정) | CI 전 잡 성공 |
 | `2e2b2a72` | MySQL `tmp_table_size`·`max_heap_table_size` 128MB, 7장 5번 정정 | 전량 4,689건, CI 전 잡 성공 |
+| `903814c9` | 이 문서 갱신 (6.6 절) | CI 전 잡 성공 |
+| `5173d99c` | 한글 기관명 목록 캐시 해석, 128MB 요청 단위 재측정 (분석 16.1 절, 17장) | 전량 4,697건, MySQL 동등성 6건, CI 전 잡 성공 |
+| `da3e3174` | 독립 집계 병렬 실행, 기관명 목록 매시 예열 cron (분석 18장) | 전량 4,703건, MySQL 통합 8건, CI 전 잡 성공 |
+| `051f09ff` | 병렬 부하·q25·q31 회귀·예열 실동작 기록 (분석 18.1 절) | **CI `lint-and-validate` 실패** (`source_commit` 6 병합 뒤처짐, 6.9 절) |
+| `5b29841e` | `source_commit` 을 `051f09ff` 로 갱신 | 전량 4,703건, CI 전 잡 성공 |
 
 ---
 
@@ -302,7 +309,11 @@ q08 공고명별 집계가 16MB 상한을 넘어 매회 디스크 임시 테이�
 
 ### 6.9 확인하지 못한 것
 
-- `128e93fe`, `9a829fea`, `795eb49d`, `0639665f`, `2e2b2a72` CI 는 전 잡 성공을 확인했습니다.
+- `128e93fe`, `9a829fea`, `795eb49d`, `0639665f`, `2e2b2a72`, `903814c9`, `5173d99c`, `da3e3174`, `5b29841e` CI 는 전 잡 성공을 확인했습니다.
+- `051f09ff` 는 `source_commit` 뒤처짐으로 CI 규칙 검증이 실패했습니다. 병합 커밋을 `--amend` 로 고치려다 사전 병합 훅이
+  거부했고, 스테이징된 수정이 작업 트리에 남아 로컬 규칙 검증이 작업 트리 파일로 통과해 갱신 없는 커밋이 푸시됐습니다.
+  `5b29841e` 에서 해소했습니다. **병합 커밋은 amend 하지 말고, 푸시 전 `git status --short` 가 비었는지 함께 확인하십시오.**
+- arq 워커가 개발 환경에 없어 매시 예열의 요청 경로 효과는 실측하지 않았습니다(작업 단독 실행과 Redis TTL 만 확인).
 - 128MB 적용 뒤 q08·q03 요청 전체 레이턴시는 재측정하지 않았습니다. SQL 구간 약 0.8초 단축만 확인했습니다.
 
 ## 7. 다음 착수 순서
@@ -316,25 +327,25 @@ q08 공고명별 집계가 16MB 상한을 넘어 매회 디스크 임시 테이�
 | 5 | 셸 명령 자동 승인 실동작 확인. Wave AA 의 `승인 대기` 표시 3회는 감시기 로그상 사유가 전부 `CLI 만족도 설문 프롬프트` 였고 자동 승인기의 설문 해제 기록과 대응합니다. 셸 명령 승인 대화창은 뜨지 않았던 것으로 보이며 자동 승인기 결함 근거는 없습니다. 실제 대화창이 뜨는 실행에서 한 번 확인하면 닫습니다 | 다음 워커 기동 |
 | 6 | Windows 실기 검증 | 장비. G2 유일 잔여 조건 |
 | 6-1 | ~~독립 집계 병렬 실행과 기관명 목록 예열~~ 적용 완료 (6.8 절). 로컬 동시 8건까지 연결 대기 없음. 운영 부하에서 재관찰 | 운영 배포 뒤 |
+| 6-2 | 운영 반영 시 앱·arq 워커 재기동 (병렬 집계, `refresh_institution_catalog_task` 매시 5분) | 운영 배포 시점 |
+| 6-3 | q08 에 남은 약 2초는 공고명별 집계 한 문장. 기관별 순위 예열이나 스냅샷 확장 조사 | 효과 대비 복잡도 판단 |
 | 7 | chromadb 상류 수정 버전 재확인 | 2026-12-31 또는 권고 갱신 |
 
 `coldsql_rerun` 은 6.2 절의 전체 fixture 정본으로 종결했습니다.
 
 ---
 
-## 8. 자원 상태
+## 8. 자원 상태 (세션 종료 시점)
 
 | 대상 | 상태 |
 | --- | --- |
-| Docker | `app`, `db`, `redis`, `meilisearch` 가동 중. 관측성 프로파일은 내림 |
-| 앱 설정 | `LATENCY_SEGMENT_LOGGING=false`, `OLLAMA_MODEL=gemma4:e2b` (`.env` 기본값, 확인 완료) |
-| MySQL | `innodb_buffer_pool_dump_at_shutdown=ON` 복원 확인. `tmp_table_size`·`max_heap_table_size` 128MB 로 재생성 (2026-09-13) |
-| 워크트리 | 주 저장소 하나 |
-| 브랜치 | `main` 과 다른 세션 소유 `kwanbum217/orca-r15-verify` |
-| Redis | 테스트는 로컬 Redis 에 쓰지 않음. 남은 `rag:*` 키는 측정 중 앱이 만든 정상 캐시 (TTL 1시간) |
-| Ollama | `gemma4:e2b` 러너 재적재 후 정상 |
-| MySQL 리비전 | 개발 DB `c38ebe417cf3` (공고·낙찰 커버링 인덱스 적용) |
-| 감시기 | 공용 상시 감시기 `orca_worker_watch`(PID 10801) 하나. 이 세션의 URL 승인 루프는 종료 |
-| Orca Run `run_d38c5a224e54` | Task 2건 `completed`, 워커 터미널 회수 완료 |
-| Orca Run `run_3c37e482a894` | Task 2건(`task_de96a1306bd7` 빌더, `task_9c39416a7b85` 리뷰) `completed`, 터미널 회수, 워크트리·브랜치 제거 |
-| 원격 | `origin/main` = `2e2b2a72` (이 문서 병합 전) |
+| Docker | 프로젝트 `app`, `db`, `redis`, `meilisearch` 를 `docker compose stop` 으로 정지 (볼륨 보존). 다음 세션은 `docker compose start` |
+| MySQL | `innodb_buffer_pool_dump_at_shutdown=ON`, `tmp_table_size`·`max_heap_table_size` 128MB, 리비전 `c38ebe417cf3` |
+| Redis | `rag:inst_catalog:*` 두 키(TTL 2시간)와 측정 캐시가 남아 있었으나 재기동 후 만료 또는 재생성됨 |
+| Ollama | 적재 모델 언로드 |
+| 감시기 | 공용 상시 감시기 `orca_worker_watch`(PID 10801) 종료. 활성 워커 없음 |
+| 워크트리·브랜치 | 주 저장소 하나, `main` 과 다른 세션 소유 `kwanbum217/orca-r15-verify` |
+| 앱 설정 | `LATENCY_SEGMENT_LOGGING=false`, `OLLAMA_MODEL=gemma4:e2b` (`.env` 기본값) |
+| 측정 스크립트 | 콜드 절차 `ri_request.sh`·부하 비교 `load_parallel.py` 는 세션 scratchpad 에만 있었음. 절차는 분석 3.1 절, 18.1 절 참조 |
+| Orca Run | `run_d38c5a224e54`, `run_3c37e482a894` 모두 Task `completed`, 터미널·워크트리 회수 완료 |
+| 원격 | `origin/main` = `5b29841e` (이 문서 병합 전) |
