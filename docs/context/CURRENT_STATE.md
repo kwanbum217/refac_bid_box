@@ -91,6 +91,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **missing_lwlt_intervals**: missing_lwlt 집단은 MAE 2.0943으로 응답 경고 플래그와 화면 안내 구현을 완료해 종결합니다.
 
+- **coldsql_rerun**: RAG 정형 질의 cold SQL 재측정은 2026-09-13 전체 32문항 3회 완전 콜드 정본이 canonical 을 통과해 partial 을 종결했습니다. 콜드 SQL 중앙값 18ms, 최대 q03 82,529ms 였고 이후 커버링 인덱스 강제로 q03 은 7.8초입니다.
+
 ### active 사실
 
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
@@ -100,8 +102,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **lexical_full_rerun**: 정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다.
 
 - **drift_job**: 드리프트 감시는 Servc baseline(b_20260906_servc_post_regime) 기준으로 진행 중(ML_DRIFT_MONITOR_ENABLED 기본값 True)이며, Thng baseline은 없어 해당 모델만 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록합니다.
-
-- **coldsql_rerun**: RAG 정형 질의 cold SQL 재측정(2026-09-06, 버퍼풀 콜드)은 sql 구간 콜드 P50 86,539.54ms·콜드 max 101,496.91ms·웜 P50 62.02ms·웜 max 1,015.64ms이며 콜드 표본 2건으로 측정 상태는 partial이고 이전 관찰치 97,087.81ms와 같은 계열이 재현됐으나 canonical 게이트 4건 미충족이라 정본 수치가 아니며 정본 측정을 추진합니다.
 
 ### blocked 사실
 
