@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextvars
 import hashlib
 import logging
+import re
 import threading
 import time
 import unicodedata
@@ -558,6 +559,46 @@ INSTITUTION_NAME_RESOLVE_LIMIT = 1000
 # 집계와 같은 1시간을 유지합니다(최근 7일 신규 기관명 낙찰 63, 공고 68).
 INSTITUTION_OVERFLOW_CACHE_TTL = 7 * 24 * 60 * 60
 
+# 해석 질의도 상한 안의 검색어는 기관명 인덱스(공고 359MB)를 끝까지 훑습니다. "광주"가 콜드에서
+# 4.6~12.9초, 웜에서 0.7초였습니다. 고유 기관명은 공고 43,755종, 낙찰 50,854종으로 합쳐도 약 2MB 라
+# 목록째 캐시하고 파이썬에서 고릅니다(2026-09-13 실측). 목록 조회는 skip scan 이라 웜 175ms 입니다.
+# 파이썬 부분 일치가 utf8mb4_unicode_ci LIKE 와 같은 것은 한글 음절만으로 된 검색어뿐입니다. 전각 괄호,
+# 전각 숫자, 악센트 문자는 MySQL 이 같은 글자로 보므로 괄호·영문·숫자·공백이 섞이면 해석 질의로 갑니다.
+_CATALOG_TERM = re.compile(r"[가-힣]+")
+# 무시 가능 문자가 이름 안에 끼면 LIKE 결과를 파이썬에서 확정할 수 없습니다.
+_CATALOG_UNCERTAIN_CHARS = re.compile(
+    "[\x00-\x1f\x7f-\x9f\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]"
+)
+
+
+def _catalog_eligible(institution_name: str) -> bool:
+    return bool(_CATALOG_TERM.fullmatch(institution_name))
+
+
+def _institution_name_catalog(db: Session, column) -> list[str]:
+    key = f"rag:inst_catalog:{column.class_.__tablename__}"
+    names = _timed_cache_get(key)
+    if names is None:
+        with _flight_lock(key):
+            names = _timed_cache_get(key)
+            if names is None:
+                names = [row[0] for row in db.execute(select(column).distinct()).all() if row[0]]
+                cache.set(key, names, AGGREGATE_CACHE_TTL)
+    return names
+
+
+def _match_institution_catalog(names: list[str], institution_name: str) -> list[str] | None:
+    """목록에서 부분 일치 이름을 고릅니다. 확정할 수 없는 이름이 있으면 None 입니다."""
+    matched = []
+    for name in names:
+        if institution_name in name:
+            matched.append(name)
+        elif _CATALOG_UNCERTAIN_CHARS.search(name) and institution_name in (
+            _CATALOG_UNCERTAIN_CHARS.sub("", name)
+        ):
+            return None
+    return matched
+
 
 @_measure_call("institution_resolve")
 def _resolve_institution_names(db: Session, column, institution_name: str) -> list[str] | None:
@@ -566,6 +607,12 @@ def _resolve_institution_names(db: Session, column, institution_name: str) -> li
     utf8mb4_unicode_ci 등호는 대소문자와 끝 공백 차이를 같게 보므로, 여기서 얻은
     대표 이름의 IN 조회는 부분 일치가 잡던 변형 행을 함께 잡습니다.
     """
+    if _catalog_eligible(institution_name):
+        matched = _match_institution_catalog(
+            _institution_name_catalog(db, column), institution_name
+        )
+        if matched is not None:
+            return None if len(matched) > INSTITUTION_NAME_RESOLVE_LIMIT else matched
     stmt = (
         select(column)
         .where(column.contains(institution_name))
