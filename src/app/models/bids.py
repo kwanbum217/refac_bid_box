@@ -192,6 +192,16 @@ class BidResult(Base):
             "sucsf_bid_rate",
             "sucsf_bid_amt",
         ),
+        # RAG 정형 검색의 기관명 조건 금액 집계와 낙찰업체 집계가 본문을 읽지 않게 합니다
+        # (migrations/versions/c38ebe417cf3).
+        Index(
+            "ix_bid_results_inst_cat_stats",
+            "dminstt_nm",
+            "category",
+            "bidwinnr_nm",
+            "sucsf_bid_rate",
+            "sucsf_bid_amt",
+        ),
     )
 
     id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
