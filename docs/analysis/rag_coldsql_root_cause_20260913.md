@@ -401,10 +401,74 @@ q25 증가는 이 변경과 무관합니다. 힌트가 붙는 `top_rows_1` 은 3
 
 ---
 
-## 12. 다음 단계
+## 12. 정본 재측정과 q03 원인
+
+원장 `coldsql_rerun`(09-06 콜드 표본 2건, partial)을 닫기 위해 09-07 정본과 같은 조건(전체 fixture 32문항 × 3회,
+`--timeout-sec 300`, warmup 1회)으로 완전 콜드 뒤 `688052e3` 에서 쟀습니다. 원시 결과
+`data/benchmarks/rag_segments_canonical_coldsql_20260913.json`.
+
+| 항목 | 값 |
+| --- | --- |
+| canonical | 통과 (96요청 전량 성공, trace 1:1 상관) |
+| 콜드 SQL (커서 2회 이상 표본) | 30건, 중앙값 18ms |
+| 최대 | **q03 82,529ms**, q08 23,361ms, q25 8,346ms, q31 5,363ms, q02 4,897ms |
+
+q03 은 4문항 측정에서 warmup 이 캐시를 채워 콜드 표본에 들어오지 않던 문항입니다. "광주"(공고 1,453종, 상한 초과)에
+category `Servc` 가 붙습니다.
+
+| 문장 | 최대 | 검사 행 |
+| --- | ---: | ---: |
+| 공고 COUNT, `dminstt_nm LIKE '%광주%' AND category='Servc'` | 26,323ms | 2,118,631 |
+| 공고 기관별 GROUP BY, 같은 조건 | 20,023ms | 2,118,646 |
+| 공고 공고명별 GROUP BY, 같은 조건 | 18,410ms | 2,118,646 |
+| 낙찰 COUNT/AVG/SUM, 같은 조건 | 11,791ms | 3,431,580 |
+
+검사 행 2,118,631 은 `Servc` 공고 전체 수입니다. `EXPLAIN` 에서 옵티마이저는 category 인덱스 조회(추정 비용 671,723)를
+커버링 인덱스 `ix_bid_ann_inst_cat_ntce` 전체 스캔(추정 7,000,000)보다 싸다고 골랐습니다. 비용 모델이 행 수만 보고,
+211만 행 본문을 31.6GB 테이블에서 흩어 읽는 I/O 를 반영하지 않습니다. category 가 없으면("서울") 옵티마이저가 기관명
+인덱스를 스스로 고릅니다.
+
+완전 콜드 대조(원시 로그 `data/benchmarks/rag_coldsql_announcement_cover_force_20260913.txt`, 결과 해시 동일):
+
+| 문장 | 현재 계획 | `FORCE INDEX (ix_bid_ann_inst_cat_ntce)` |
+| --- | --- | --- |
+| COUNT | 50,236 / 16,086ms | **1,589 / 1,136ms** |
+| 기관별 GROUP BY | 16,911 / 16,069ms | **1,567 / 1,296ms** |
+
+---
+
+## 13. 부분 일치 되돌림 + category 공고 집계에 커버링 인덱스 강제
+
+`_hint_announcement_institution_cover` 가 기관명이 상한을 넘어 부분 일치로 되돌아가고(이름 목록 없음) category 가 있고
+날짜 범위가 없을 때만 공고 COUNT, 기관별·공고명별 GROUP BY 에 `FORCE INDEX (ix_bid_ann_inst_cat_ntce)` 를 붙입니다.
+이름 목록으로 해석됐거나 category 가 없거나 날짜 범위가 있으면 붙이지 않으며, 날짜 인덱스 강제와 겹치지 않음을 테스트가
+고정합니다(`adb5465c`).
+
+요청 단위 전후는 `main`(`688052e3`)과 구현(`adb5465c`)을 번갈아 두 번씩, 완전 콜드로 쟀습니다. **q03 이 warmup 에 가려지지
+않도록 `--item-ids q03,q08 --repetitions 2 --no-warmup` 을 썼습니다.** 원시 결과
+`data/benchmarks/rag_segments_announcement_cover_hint_{before,after}_r{1,2}_20260913.json`.
+
+| 문항 | before | after | 판정 |
+| --- | --- | --- | --- |
+| **q03** | 52,422 / 52,085ms | **7,802 / 7,858ms** | 범위 비중첩, 약 6.7배 |
+| q03 힌트 대상 세 구간 | 15,339~16,830ms 각 | 1,064~1,806ms 각 | |
+| q08 | 10,039 / 9,811ms | 7,252 / 7,320ms | 힌트 조건 밖 (category 없음) |
+
+q08 감소는 이 변경과 무관합니다. 힌트가 붙지 않는 문항이고 줄어든 곳은 낙찰 금액 집계 `cached_aggregate_1`
+(2,690~2,790 → 1,092~1,153ms)입니다.
+
+**측정 중 메모리 부족으로 첫 시도가 강제 종료됐습니다.** 호스트 24GB 에 Docker VM 13.6GB 와 Ollama 모델 두 개
+(`gemma4:e2b` 7GB, `bge-m3` 0.7GB, `keep_alive` 사실상 무기한)가 상주한 상태에서 측정이 `gemma4:e4b` 를 올렸습니다.
+`keep_alive: 0` 요청으로 두 모델을 내린 뒤 다시 쟀습니다. 측정 전에 `curl localhost:11434/api/ps` 로 상주 모델을 확인하십시오.
+
+---
+
+## 14. 다음 단계
+
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
 | 1 | `bid_results` 고아 FULLTEXT 사전 항목 정리 방법 결정과 복제본 검증 | 사용자 결정 |
 | 2 | 금액 집계 커버링 인덱스 (11.2 절) | 1, 11.3 절 측정 조건, DDL 합의 |
 | 3 | `purge` 를 넣은 콜드 측정 절차 | 관리자 권한 |
+| 4 | q03 에 남은 낙찰 금액 집계(광주+Servc 11.8초, category 인덱스 조회) 대책 | 11.1 절 고아 항목 확인 뒤 |
