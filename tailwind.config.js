@@ -1,8 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: 'class',
+  // 정적 JS 는 기본 추출기로 스캔하므로 `if (!container)` 같은 부정 연산이 클래스로 잡힙니다.
+  blocklist: ['!container'],
   content: {
-    files: ['./src/app/templates/**/*.html'],
+    files: ['./src/app/templates/**/*.html', './src/app/static/js/**/*.js'],
     extract: {
       html: (content) => {
         const classes = new Set();
