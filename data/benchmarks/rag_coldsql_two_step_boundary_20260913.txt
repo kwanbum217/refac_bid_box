@@ -1,0 +1,14 @@
+# 2026-09-13 2단계 해석 경계 완전 콜드 교차 실측 원시 로그 (bid_announcements 공고명별 GROUP BY)
+{"rep": 1, "term": "인천", "mode": "like", "ms": 46557, "bp_before": "953", "result_sha": "cae7ebb08156", "note": ""}
+{"rep": 1, "term": "인천", "mode": "two", "ms": 29790, "bp_before": "946", "result_sha": "cae7ebb08156", "note": "resolve=1112 main=28678 names=1147"}
+{"rep": 1, "term": "부산", "mode": "like", "ms": 38736, "bp_before": "950", "result_sha": "f419d237914b", "note": ""}
+{"rep": 1, "term": "부산", "mode": "two", "ms": 37479, "bp_before": "954", "result_sha": "f419d237914b", "note": "resolve=1877 main=35602 names=1482"}
+{"rep": 1, "term": "광주", "mode": "like", "ms": 36219, "bp_before": "946", "result_sha": "160aa30a0199", "note": ""}
+{"rep": 1, "term": "광주", "mode": "two", "ms": 56837, "bp_before": "949", "result_sha": "160aa30a0199", "note": "resolve=1845 main=54992 names=1453"}
+{"rep": 2, "term": "인천", "mode": "two", "ms": 28754, "bp_before": "948", "result_sha": "cae7ebb08156", "note": "resolve=2122 main=26632 names=1147"}
+{"rep": 2, "term": "인천", "mode": "like", "ms": 36385, "bp_before": "949", "result_sha": "cae7ebb08156", "note": ""}
+{"rep": 2, "term": "부산", "mode": "two", "ms": 36518, "bp_before": "950", "result_sha": "f419d237914b", "note": "resolve=1478 main=35040 names=1482"}
+{"rep": 2, "term": "부산", "mode": "like", "ms": 33849, "bp_before": "954", "result_sha": "f419d237914b", "note": ""}
+{"rep": 2, "term": "광주", "mode": "two", "ms": 58270, "bp_before": "947", "result_sha": "160aa30a0199", "note": "resolve=1702 main=56568 names=1453"}
+{"rep": 2, "term": "광주", "mode": "like", "ms": 35360, "bp_before": "959", "result_sha": "160aa30a0199", "note": ""}
+done
