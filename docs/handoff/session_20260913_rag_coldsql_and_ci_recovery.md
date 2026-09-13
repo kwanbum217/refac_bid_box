@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-13
 > **작성자**: Claude Opus 5 (코디네이터)
-> **기준 커밋**: `2dba1f82`
+> **기준 커밋**: `fdf65e2e`
 > **이어받은 문서**: [`docs/handoff/session_20260913_wave_z_observability_chromadb.md`](session_20260913_wave_z_observability_chromadb.md) (같은 날 전반부)
 
 ---
@@ -17,7 +17,8 @@ RAG 정형 질의 콜드 SQL 40초의 원인을 **기관명 선행 와일드카�
 실행계획 힌트 두 개로 해소하고 원장 `coldsql_rerun` 을 정본으로 종결했습니다(6장, 사용자 부재 중 권고안으로 진행).
 이후 낙찰 쪽 커버링 인덱스(6.5 절), MySQL 임시 테이블 상한 128MB(6.6 절), 한글 기관명 목록 캐시(6.7 절),
 독립 집계 병렬 실행과 목록 매시 예열(6.8 절)을 적용해 q08 콜드 요청을 9초대에서 **2.1~2.3초**로 줄였습니다.
-`main` 은 `5b29841e` 이며 세션 종료 시 Docker 와 배경 프로세스를 내렸습니다(8장).
+이어서 Windows CI 의 연결 대기를 없애 CI 를 9분에서 **5.5분**으로 줄이고(6.9 절), 병합 묶기·CI 비차단 확인 운영 규칙을
+채택했습니다(6.10 절). `main` 은 `fdf65e2e` 이며 세션 종료 시 Docker 와 배경 프로세스를 내렸습니다(8장).
 
 ---
 
@@ -52,6 +53,9 @@ RAG 정형 질의 콜드 SQL 40초의 원인을 **기관명 선행 와일드카�
 | `da3e3174` | 독립 집계 병렬 실행, 기관명 목록 매시 예열 cron (분석 18장) | 전량 4,703건, MySQL 통합 8건, CI 전 잡 성공 |
 | `051f09ff` | 병렬 부하·q25·q31 회귀·예열 실동작 기록 (분석 18.1 절) | **CI `lint-and-validate` 실패** (`source_commit` 6 병합 뒤처짐, 6.9 절) |
 | `5b29841e` | `source_commit` 을 `051f09ff` 로 갱신 | 전량 4,703건, CI 전 잡 성공 |
+| `2d627af5` | 세션 종료 인수인계 | 전량 4,703건, CI 전 잡 성공 |
+| `2dba1f82` | 테스트 중 로컬 Redis·Ollama 연결 즉시 실패 (`tests/conftest.py`) | 전량 4,694건, CI 전 잡 성공, **CI 9분 4초 → 5분 37초** |
+| `fdf65e2e` | Windows CI 연결 대기 제거 기록 (6.9 절) | CI 전 잡 성공 (5분 28초) |
 
 ---
 
@@ -328,14 +332,19 @@ Grok 의 CI 대기 단축 제안서(`~/Downloads/refac_bid_box_ci_wait_reduction
 잡이 실제로 쓰는 포트라 막지 않았고, 나머지는 Windows 실기 없이 연결 대상을 특정하지 못해 보류했습니다. 이제 Windows 와 macOS(4분)의
 차이는 1.5분이며 나머지는 Windows 의 테스트당 일반 부하입니다. 제안서의 운영안(병합 묶기, CI 비차단 확인)은 사용자 결정 대기입니다.
 
-### 6.10 확인하지 못한 것
+### 6.10 병합 묶기와 CI 비차단 확인 (운영 규칙, 사용자 합의)
 
-- `128e93fe`, `9a829fea`, `795eb49d`, `0639665f`, `2e2b2a72`, `903814c9`, `5173d99c`, `da3e3174`, `5b29841e` CI 는 전 잡 성공을 확인했습니다.
+`docs/ops/git_branching_strategy.md` 4.3 절에 적었습니다. 코드·문서·인수인계·`source_commit` 을 한 브랜치에 넣어 한 번 병합하고,
+CI 는 기다리지 않되 다음 병합 직전과 세션 종료 전에 반드시 확인합니다. 이 문서 갱신도 그 규칙대로 규칙 문서와 한 병합에 묶었습니다.
+
+### 6.11 확인하지 못한 것
+
+- `128e93fe`, `9a829fea`, `795eb49d`, `0639665f`, `2e2b2a72`, `903814c9`, `5173d99c`, `da3e3174`, `5b29841e`, `2d627af5`, `2dba1f82`, `fdf65e2e` CI 는 전 잡 성공을 확인했습니다.
 - `051f09ff` 는 `source_commit` 뒤처짐으로 CI 규칙 검증이 실패했습니다. 병합 커밋을 `--amend` 로 고치려다 사전 병합 훅이
   거부했고, 스테이징된 수정이 작업 트리에 남아 로컬 규칙 검증이 작업 트리 파일로 통과해 갱신 없는 커밋이 푸시됐습니다.
   `5b29841e` 에서 해소했습니다. **병합 커밋은 amend 하지 말고, 푸시 전 `git status --short` 가 비었는지 함께 확인하십시오.**
 - arq 워커가 개발 환경에 없어 매시 예열의 요청 경로 효과는 실측하지 않았습니다(작업 단독 실행과 Redis TTL 만 확인).
-- 128MB 적용 뒤 q08·q03 요청 전체 레이턴시는 재측정하지 않았습니다. SQL 구간 약 0.8초 단축만 확인했습니다.
+- Windows CI 에 남은 4.2초 연결 대기 3건(합계 약 13초)은 연결 대상을 특정하지 못했습니다(6.9 절).
 
 ## 7. 다음 착수 순서
 
@@ -364,9 +373,9 @@ Grok 의 CI 대기 단축 제안서(`~/Downloads/refac_bid_box_ci_wait_reduction
 | MySQL | `innodb_buffer_pool_dump_at_shutdown=ON`, `tmp_table_size`·`max_heap_table_size` 128MB, 리비전 `c38ebe417cf3` |
 | Redis | `rag:inst_catalog:*` 두 키(TTL 2시간)와 측정 캐시가 남아 있었으나 재기동 후 만료 또는 재생성됨 |
 | Ollama | 적재 모델 언로드 |
-| 감시기 | 공용 상시 감시기 `orca_worker_watch`(PID 10801) 종료. 활성 워커 없음 |
+| 감시기 | 공용 상시 감시기 종료. 활성 워커 없음 |
 | 워크트리·브랜치 | 주 저장소 하나, `main` 과 다른 세션 소유 `kwanbum217/orca-r15-verify` |
 | 앱 설정 | `LATENCY_SEGMENT_LOGGING=false`, `OLLAMA_MODEL=gemma4:e2b` (`.env` 기본값) |
 | 측정 스크립트 | 콜드 절차 `ri_request.sh`·부하 비교 `load_parallel.py` 는 세션 scratchpad 에만 있었음. 절차는 분석 3.1 절, 18.1 절 참조 |
 | Orca Run | `run_d38c5a224e54`, `run_3c37e482a894` 모두 Task `completed`, 터미널·워크트리 회수 완료 |
-| 원격 | `origin/main` = `5b29841e` (이 문서 병합 전) |
+| 원격 | `origin/main` = `fdf65e2e` (이 문서 병합 전) |

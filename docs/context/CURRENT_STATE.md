@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-13
-> **source_commit**: `5b29841e`
+> **source_commit**: `fdf65e2e`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -49,7 +49,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **rag_segments_canonical**: RAG 구간 정본은 버퍼풀을 비운 콜드 조건 96요청 전량 성공으로 canonical 게이트를 통과했고 1차의 10만 ms 대 값은 버퍼풀로 설명되지 않습니다.
 
-- **source_commit_protocol**: source_commit은 기본 브랜치 병합 커밋에서 함께 갱신하고 작업 브랜치에서는 경고로 낮추는 규약으로 통과 기준을 유지합니다.
+- **source_commit_protocol**: source_commit은 작업 브랜치에서 병합 직전 main HEAD 로 갱신해 한 병합에 묶고(amend 금지) 경고 강등은 작업 브랜치에서만, 통과 기준으로 유지합니다.
 
 - **premerge_gate**: main 병합 전에는 make check-all와 전량 테스트 증거를 확인하는 규칙을 통과 기준으로 유지합니다.
 
