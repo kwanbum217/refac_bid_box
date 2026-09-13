@@ -446,6 +446,35 @@ def _hint_result_winner_group_index(stmt, plan: RetrievalPlan):
     return stmt.with_hint(BidResult, RESULT_WINNER_GROUP_INDEX_IGNORE_HINT, dialect_name="mysql")
 
 
+# 공고 쪽(ANNOUNCEMENT_INSTITUTION_COVER_HINT)과 같은 판단 착오가 낙찰 테이블에도 있습니다. 기관명이 부분 일치로
+# 되돌아가고 category 가 붙으면 옵티마이저가 category 인덱스 조회를 커버링 인덱스보다 싸다고 골라 행마다 본문을
+# 읽습니다. category 가 없으면 옵티마이저가 커버링 인덱스를 스스로 고르므로 붙이지 않습니다
+# (2026-09-13 EXPLAIN, docs/analysis/rag_coldsql_root_cause_20260913.md 14장).
+RESULT_INSTITUTION_COVER_HINT = "FORCE INDEX (ix_bid_results_inst_cat_stats)"
+
+
+def _needs_result_institution_cover_hint(
+    plan: RetrievalPlan, institution_names: list[str] | None
+) -> bool:
+    """부분 일치로 되돌아간 기관명과 category 가 함께 걸리고 날짜 범위가 없는 낙찰 집계인지 판정합니다."""
+    filters = plan.filters or {}
+    if institution_names is not None:
+        return False
+    if not _normalize_text(str(filters.get("institution_name") or "")):
+        return False
+    if not _normalize_text(str(filters.get("category") or "")):
+        return False
+    date_from, date_to = _resolve_window(filters)
+    return not (date_from or date_to)
+
+
+def _hint_result_institution_cover(stmt, plan: RetrievalPlan, institution_names: list[str] | None):
+    """조건이 맞을 때만 낙찰 기관명 커버링 인덱스를 강제합니다. 결과 집합은 바뀌지 않습니다."""
+    if not _needs_result_institution_cover_hint(plan, institution_names):
+        return stmt
+    return stmt.with_hint(BidResult, RESULT_INSTITUTION_COVER_HINT, dialect_name="mysql")
+
+
 def _needs_announcement_date_index_hint(plan: RetrievalPlan) -> bool:
     """날짜 범위는 있고 category 가 없는 공고 집계인지 판정합니다."""
     filters = plan.filters or {}
@@ -968,11 +997,15 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
 
     total_count, avg_rate, total_amt = _cached_aggregate(
         db,
-        select(
-            func.count(BidResult.id),
-            func.avg(BidResult.sucsf_bid_rate),
-            func.sum(BidResult.sucsf_bid_amt),
-        ).where(*result_conditions),
+        _hint_result_institution_cover(
+            select(
+                func.count(BidResult.id),
+                func.avg(BidResult.sucsf_bid_rate),
+                func.sum(BidResult.sucsf_bid_amt),
+            ).where(*result_conditions),
+            plan,
+            result_names,
+        ),
     )
     (announcement_count,) = _cached_aggregate(
         db,
@@ -996,15 +1029,19 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         dataset=DATASET_RESULT,
         dimension="bidwinnr_nm",
         category=category_filter,
-        live_stmt=_hint_result_winner_group_index(
-            _hint_result_date_index(
-                select(BidResult.bidwinnr_nm, func.count(BidResult.id))
-                .where(exclude_corrupted(BidResult.bidwinnr_nm), *winner_conditions)
-                .group_by(BidResult.bidwinnr_nm)
-                .order_by(func.count(BidResult.id).desc()),
+        live_stmt=_hint_result_institution_cover(
+            _hint_result_winner_group_index(
+                _hint_result_date_index(
+                    select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+                    .where(exclude_corrupted(BidResult.bidwinnr_nm), *winner_conditions)
+                    .group_by(BidResult.bidwinnr_nm)
+                    .order_by(func.count(BidResult.id).desc()),
+                    plan,
+                ),
                 plan,
             ),
             plan,
+            result_names,
         ),
         corrupted_probe=select(BidResult.id).where(
             BidResult.bidwinnr_nm.contains(REPLACEMENT_CHAR), *result_conditions

@@ -323,6 +323,54 @@ def test_announcement_cover_and_date_hints_never_combine():
     )
 
 
+def test_result_cover_hint_applies_only_to_like_fallback_with_category():
+    """낙찰 집계도 부분 일치 되돌림 + category 에서만 커버링 인덱스를 강제합니다.
+
+    category 가 없으면 옵티마이저가 ix_bid_results_inst_cat_stats 를 스스로 고르고, 있으면 category
+    인덱스로 본문을 읽었습니다(2026-09-13 EXPLAIN).
+    """
+    needs = structured_data._needs_result_institution_cover_hint
+    assert needs(_plan(institution_name="광주", category="Servc"), None)
+    assert not needs(_plan(institution_name="광주", category="Servc"), ["광주광역시"])
+    assert not needs(_plan(institution_name="서울"), None)
+    assert not needs(_plan(institution_name="광주", category="Servc", date_from="2026-01-01"), None)
+    assert not needs(_plan(category="Servc"), None)
+
+
+def test_result_winner_cover_force_replaces_group_index_ignore():
+    """category 가 붙은 부분 일치 되돌림에서는 커버링 인덱스 강제가 그룹 인덱스 배제를 대신합니다.
+
+    SQLAlchemy with_hint 는 테이블·방언마다 힌트 하나만 유지하므로 뒤에 붙인 FORCE 가 IGNORE 를
+    대체합니다. FORCE 가 이미 ix_bid_results_inst_cat_stats 로 선택지를 좁히므로 결과 계획은 같습니다
+    (2026-09-13 EXPLAIN: Index scan using ix_bid_results_inst_cat_stats). category 가 없으면 IGNORE 만 붙습니다.
+    """
+    from sqlalchemy.dialects import mysql
+
+    base = (
+        select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+        .group_by(BidResult.bidwinnr_nm)
+        .order_by(func.count(BidResult.id).desc())
+    )
+
+    def compiled(plan):
+        stmt = structured_data._hint_result_institution_cover(
+            structured_data._hint_result_winner_group_index(
+                structured_data._hint_result_date_index(base, plan), plan
+            ),
+            plan,
+            None,
+        )
+        return str(stmt.compile(dialect=mysql.dialect()))
+
+    with_category = compiled(_plan(institution_name="광주", category="Servc"))
+    without_category = compiled(_plan(institution_name="서울"))
+
+    assert "FORCE INDEX (ix_bid_results_inst_cat_stats)" in with_category
+    assert "IGNORE INDEX" not in with_category
+    assert "IGNORE INDEX (ix_bid_results_bidwinnr_nm)" in without_category
+    assert "FORCE INDEX" not in without_category
+
+
 def test_date_index_hint_preserves_select_and_grouping():
     """힌트가 선택 컬럼, 그룹 기준, 정렬 기준을 바꾸지 않습니다."""
     base = (

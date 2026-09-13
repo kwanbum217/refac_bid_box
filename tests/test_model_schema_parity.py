@@ -142,6 +142,7 @@ PRODUCTION_INDEX_NAMES = {
         # 챗봇 통계 집계 커버링 인덱스. 마이그레이션 a1c4e7b90d21 로 추가했습니다.
         "ix_bid_results_cat_dt_stats",
         "ix_bid_results_dt_cat",
+        "ix_bid_results_inst_cat_stats",
         "ix_bid_results_rate_id",
     },
     "chat_session_states": {
@@ -283,6 +284,13 @@ BIDS_TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
             "ix_bid_results_dt_cat": ("rl_openg_dt", "category"),
             "ix_bid_results_amt_id": ("sucsf_bid_amt", "id"),
             "ix_bid_results_rate_id": ("sucsf_bid_rate", "id"),
+            "ix_bid_results_inst_cat_stats": (
+                "dminstt_nm",
+                "category",
+                "bidwinnr_nm",
+                "sucsf_bid_rate",
+                "sucsf_bid_amt",
+            ),
             "bid_results_dminstt_nm_1b809760": ("dminstt_nm",),
             "bid_results_category_981358ae": ("category",),
             "bid_results_collected_at_25a564b9": ("collected_at",),
