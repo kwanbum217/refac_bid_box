@@ -237,6 +237,52 @@ def test_date_index_hint_emits_force_index_for_mysql_only():
     assert "FORCE INDEX" not in str(unhinted.compile(dialect=mysql.dialect()))
 
 
+def test_winner_group_index_ignore_applies_to_institution_without_date():
+    """기관명 조건만 걸린 낙찰업체 집계에만 그룹 인덱스 배제 힌트를 붙입니다.
+
+    날짜 범위가 없으면 옵티마이저가 ix_bid_results_bidwinnr_nm 으로 339만 항목을 훑으며
+    행마다 본문을 읽습니다("서울" 완전 콜드 7,159~13,218ms). 배제하면 1,258~1,470ms 였고
+    결과는 같습니다. 날짜 범위가 있으면 날짜 인덱스 강제가 더 좁히므로 붙이지 않습니다.
+    """
+    needs = structured_data._needs_result_winner_group_index_ignore
+    assert needs(_plan(institution_name="서울"))
+    assert needs(_plan(institution_name="서울", category="Servc"))
+    assert not needs(_plan(institution_name="서울", date_from="2026-01-01"))
+    assert not needs(_plan(category="Servc"))
+    assert not needs(_plan())
+
+
+def test_winner_hints_never_combine_date_force_and_group_ignore():
+    """두 힌트의 적용 조건이 겹치지 않아 한 문장에 FORCE 와 IGNORE 가 함께 나오지 않습니다."""
+    from sqlalchemy.dialects import mysql, sqlite
+
+    base = (
+        select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+        .group_by(BidResult.bidwinnr_nm)
+        .order_by(func.count(BidResult.id).desc())
+    )
+
+    def hinted(plan):
+        return structured_data._hint_result_winner_group_index(
+            structured_data._hint_result_date_index(base, plan), plan
+        )
+
+    institution_only = str(hinted(_plan(institution_name="서울")).compile(dialect=mysql.dialect()))
+    with_date = str(
+        hinted(_plan(institution_name="서울", date_from="2026-01-01")).compile(
+            dialect=mysql.dialect()
+        )
+    )
+
+    assert "IGNORE INDEX (ix_bid_results_bidwinnr_nm)" in institution_only
+    assert "FORCE INDEX" not in institution_only
+    assert "FORCE INDEX (ix_bid_results_dt_cat)" in with_date
+    assert "IGNORE INDEX" not in with_date
+    assert "IGNORE INDEX" not in str(
+        hinted(_plan(institution_name="서울")).compile(dialect=sqlite.dialect())
+    )
+
+
 def test_date_index_hint_preserves_select_and_grouping():
     """힌트가 선택 컬럼, 그룹 기준, 정렬 기준을 바꾸지 않습니다."""
     base = (
