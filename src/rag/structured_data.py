@@ -462,6 +462,42 @@ def _hint_announcement_date_index(stmt, plan: RetrievalPlan):
     return stmt.with_hint(BidAnnouncement, ANNOUNCEMENT_DATE_INDEX_HINT, dialect_name="mysql")
 
 
+# 기관명이 상한을 넘어 부분 일치로 되돌아가고 category 가 붙으면, 옵티마이저가 행 수만 보고
+# category 인덱스 조회(추정 비용 67만)를 커버링 인덱스 스캔(700만)보다 싸다고 판단합니다. 실제로는
+# Servc 공고 211만 행 본문을 31.6GB 테이블에서 흩어 읽습니다. "광주"+Servc 완전 콜드에서 COUNT 가
+# 16,086~50,236ms, 기관별 집계가 16,069~16,911ms 였고 커버링 인덱스를 강제하면 1,136~1,589ms,
+# 1,296~1,567ms 였습니다(2026-09-13 실측, 결과 동일, docs/analysis/rag_coldsql_root_cause_20260913.md 13장).
+# category 가 없으면 옵티마이저가 이미 기관명 인덱스를 고르고, 날짜 범위가 있으면 위 날짜 인덱스
+# 강제가 적용되므로 붙이지 않습니다. 이름 목록으로 해석된 경우(IN)도 붙이지 않습니다.
+ANNOUNCEMENT_INSTITUTION_COVER_HINT = "FORCE INDEX (ix_bid_ann_inst_cat_ntce)"
+
+
+def _needs_announcement_institution_cover_hint(
+    plan: RetrievalPlan, institution_names: list[str] | None
+) -> bool:
+    """부분 일치로 되돌아간 기관명과 category 가 함께 걸리고 날짜 범위가 없는지 판정합니다."""
+    filters = plan.filters or {}
+    if institution_names is not None:
+        return False
+    if not _normalize_text(str(filters.get("institution_name") or "")):
+        return False
+    if not _normalize_text(str(filters.get("category") or "")):
+        return False
+    date_from, date_to = _resolve_window(filters)
+    return not (date_from or date_to)
+
+
+def _hint_announcement_institution_cover(
+    stmt, plan: RetrievalPlan, institution_names: list[str] | None
+):
+    """조건이 맞을 때만 공고 기관명 커버링 인덱스를 강제합니다. 결과 집합은 바뀌지 않습니다."""
+    if not _needs_announcement_institution_cover_hint(plan, institution_names):
+        return stmt
+    return stmt.with_hint(
+        BidAnnouncement, ANNOUNCEMENT_INSTITUTION_COVER_HINT, dialect_name="mysql"
+    )
+
+
 def _result_availability_conditions(
     plan: RetrievalPlan, *, institution_names: list[str] | None = None
 ) -> list:
@@ -940,7 +976,11 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     )
     (announcement_count,) = _cached_aggregate(
         db,
-        select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
+        _hint_announcement_institution_cover(
+            select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
+            plan,
+            announcement_names,
+        ),
     )
 
     recent_results = _fetch_recent_results(db, result_conditions, result_limit)
@@ -984,12 +1024,16 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         dataset=DATASET_ANNOUNCEMENT,
         dimension="dminstt_nm",
         category=category_filter,
-        live_stmt=_hint_announcement_date_index(
-            select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
-            .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions)
-            .group_by(BidAnnouncement.dminstt_nm)
-            .order_by(func.count(BidAnnouncement.id).desc()),
+        live_stmt=_hint_announcement_institution_cover(
+            _hint_announcement_date_index(
+                select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+                .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions)
+                .group_by(BidAnnouncement.dminstt_nm)
+                .order_by(func.count(BidAnnouncement.id).desc()),
+                plan,
+            ),
             plan,
+            announcement_names,
         ),
         corrupted_probe=select(BidAnnouncement.id).where(
             BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
@@ -1006,12 +1050,16 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         dataset=DATASET_ANNOUNCEMENT,
         dimension="bid_ntce_nm",
         category=category_filter,
-        live_stmt=_hint_announcement_date_index(
-            select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
-            .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
-            .group_by(BidAnnouncement.bid_ntce_nm)
-            .order_by(func.count(BidAnnouncement.id).desc()),
+        live_stmt=_hint_announcement_institution_cover(
+            _hint_announcement_date_index(
+                select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+                .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
+                .group_by(BidAnnouncement.bid_ntce_nm)
+                .order_by(func.count(BidAnnouncement.id).desc()),
+                plan,
+            ),
             plan,
+            announcement_names,
         ),
         corrupted_probe=select(BidAnnouncement.id).where(
             BidAnnouncement.bid_ntce_nm.contains(REPLACEMENT_CHAR), *announcement_conditions

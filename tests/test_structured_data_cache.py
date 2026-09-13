@@ -283,6 +283,46 @@ def test_winner_hints_never_combine_date_force_and_group_ignore():
     )
 
 
+def test_announcement_cover_hint_applies_only_to_like_fallback_with_category():
+    """상한 초과로 부분 일치에 되돌아간 기관명과 category 가 함께 걸릴 때만 커버링 인덱스를 강제합니다.
+
+    "광주"+Servc 에서 옵티마이저가 category 인덱스로 211만 행 본문을 흩어 읽었습니다(COUNT 완전 콜드
+    16,086~50,236ms). 커버링 인덱스를 강제하면 1,136~1,589ms 였고 결과는 같았습니다.
+    """
+    needs = structured_data._needs_announcement_institution_cover_hint
+    assert needs(_plan(institution_name="광주", category="Servc"), None)
+    assert not needs(_plan(institution_name="광주", category="Servc"), ["광주광역시"])
+    assert not needs(_plan(institution_name="서울"), None)
+    assert not needs(_plan(institution_name="광주", category="Servc", date_from="2026-01-01"), None)
+    assert not needs(_plan(category="Servc"), None)
+
+
+def test_announcement_cover_and_date_hints_never_combine():
+    from sqlalchemy.dialects import mysql
+
+    from src.app.models.bids import BidAnnouncement
+
+    base = select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id)).group_by(
+        BidAnnouncement.dminstt_nm
+    )
+
+    def hinted(plan, names=None):
+        stmt = structured_data._hint_announcement_date_index(base, plan)
+        stmt = structured_data._hint_announcement_institution_cover(stmt, plan, names)
+        return str(stmt.compile(dialect=mysql.dialect()))
+
+    covered = hinted(_plan(institution_name="광주", category="Servc"))
+    dated = hinted(_plan(institution_name="광주", date_from="2026-01-01"))
+
+    assert "FORCE INDEX (ix_bid_ann_inst_cat_ntce)" in covered
+    assert "ix_bid_ann_dt_cat" not in covered
+    assert "FORCE INDEX (ix_bid_ann_dt_cat)" in dated
+    assert "ix_bid_ann_inst_cat_ntce" not in dated
+    assert "FORCE INDEX" not in hinted(
+        _plan(institution_name="광주", category="Servc"), ["광주광역시"]
+    )
+
+
 def test_date_index_hint_preserves_select_and_grouping():
     """힌트가 선택 컬럼, 그룹 기준, 정렬 기준을 바꾸지 않습니다."""
     base = (
