@@ -39,8 +39,19 @@ from src.app.main import app  # 모든 모델이 Base.metadata 에 등록되도�
 
 
 @pytest.fixture
-def isolated_db():
-    """SQLite 인메모리 DB 세션. accounts 등 DB 쓰기 테스트를 격리합니다."""
+def isolated_db(monkeypatch):
+    """SQLite 인메모리 DB 세션. accounts 등 DB 쓰기 테스트를 격리합니다.
+
+    프로세스 캐시도 함께 격리합니다. RAG 캐시 키는 SQL 문자열 해시라 DB 가 달라도 같으므로,
+    로컬에 Redis 가 떠 있으면 이전 실행의 테스트 데이터 결과를 다음 실행이 받아 갑니다
+    (2026-09-13 기관명 해석 캐시로 test_rag_engine 두 건이 로컬에서만 실패).
+    """
+    from src.app.core.cache import cache
+
+    monkeypatch.setattr(cache._conn, "_client", None)
+    monkeypatch.setattr(cache._conn, "_next_attempt_at", float("inf"))
+    monkeypatch.setattr(cache, "_local", {})
+
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
