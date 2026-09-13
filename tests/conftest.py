@@ -18,6 +18,8 @@ tests/conftest.py
    균일하게 나타납니다. 이 fixture 는 암호학적 강도를 검증하지 않는 테스트가
    password hashing 비용을 부담하지 않도록 make_password 와 check_password 를
    1회 반복 버전으로 대체합니다. 운영 코드에는 영향을 주지 않습니다.
+ - _fast_fail_local_services fixture 가 로컬 Redis·Ollama 연결을 즉시 실패시킵니다.
+   Windows 는 닫힌 localhost 포트 연결이 4.33초 뒤에 실패해 로그인 테스트마다 그만큼 기다렸습니다.
 """
 
 import os
@@ -52,6 +54,66 @@ def _isolate_process_cache(monkeypatch):
     monkeypatch.setattr(cache._conn, "_client", None)
     monkeypatch.setattr(cache._conn, "_next_attempt_at", float("inf"))
     monkeypatch.setattr(cache, "_local", {})
+
+
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+@pytest.fixture(autouse=True)
+def _fast_fail_local_services(monkeypatch):
+    """로컬 Redis·Ollama 연결 시도를 기다리지 않고 즉시 실패시킵니다.
+
+    Windows 는 닫힌 localhost 포트 연결이 약 2초씩 두 주소(::1, 127.0.0.1)로 재시도되어 4.33초 뒤에
+    실패합니다. Linux·macOS 는 즉시 실패합니다. 세션 저장소·로그인 제한 등의 RedisConnection 은 5초
+    백오프로 다시 붙으려 하는데, Windows 에서는 테스트가 느려 백오프가 거의 매번 지나므로 로그인하는
+    테스트마다 4.33초를 기다렸습니다. 2026-09-13 CI(Run 34760809083)에서 Windows pytest 가 7분 52초로
+    Ubuntu 2분 24초의 세 배였고, 느린 테스트 상위 25개 중 19개가 4.33초였습니다. 로컬에서 같은 지연을
+    흉내 내면 전량 테스트가 90초에서 240초로 늘고 느린 테스트 목록이 CI 와 일치했습니다.
+    (0d3ea959 의 PBKDF2 가속 뒤에도 남아 있던 균일 지연입니다.)
+
+    Ollama 도 같아서 챗봇 질의 테스트가 Windows 에서 4~8초였습니다. Ollama 는 설정의 포트 하나만 막고
+    MySQL 통합 테스트나 E2E 서버 포트는 건드리지 않습니다.
+
+    CI 매트릭스에는 Redis·Ollama 가 없어 연결은 원래 실패합니다. 실패를 즉시 내는 것만 바꾸므로 동작은
+    같습니다. 실제 Redis 에 붙는 테스트는 없고, 재연결 동작 테스트는 redis 모듈 대역을 씁니다.
+    """
+    import socket
+    from urllib.parse import urlparse
+
+    import redis.asyncio.connection
+    import redis.connection
+
+    from src.app.core.config import settings
+
+    def refuse(connection) -> bool:
+        return str(getattr(connection, "host", "")) in _LOCAL_HOSTS
+
+    sync_connect = redis.connection.AbstractConnection.connect
+    async_connect = redis.asyncio.connection.AbstractConnection.connect
+
+    def fast_sync_connect(self, *args, **kwargs):
+        if refuse(self):
+            raise redis.exceptions.ConnectionError("테스트는 로컬 Redis 에 연결하지 않습니다")
+        return sync_connect(self, *args, **kwargs)
+
+    async def fast_async_connect(self, *args, **kwargs):
+        if refuse(self):
+            raise redis.exceptions.ConnectionError("테스트는 로컬 Redis 에 연결하지 않습니다")
+        return await async_connect(self, *args, **kwargs)
+
+    monkeypatch.setattr(redis.connection.AbstractConnection, "connect", fast_sync_connect)
+    monkeypatch.setattr(redis.asyncio.connection.AbstractConnection, "connect", fast_async_connect)
+
+    ollama_port = urlparse(settings.OLLAMA_BASE_URL).port
+    create_connection = socket.create_connection
+
+    def fast_create_connection(address, *args, **kwargs):
+        host, port = address[0], address[1]
+        if str(host) in _LOCAL_HOSTS and port == ollama_port:
+            raise ConnectionRefusedError("테스트는 로컬 Ollama 에 연결하지 않습니다")
+        return create_connection(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "create_connection", fast_create_connection)
 
 
 @pytest.fixture
