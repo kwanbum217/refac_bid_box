@@ -3,7 +3,7 @@
 > **측정일**: 2026-09-13
 > **작성자**: Claude Opus 5 (코디네이터)
 > **기준 커밋**: `0faf67d6`
-> **상태**: 원인 확정, 2단계 해석 구현·요청 단위 전후 실측 완료 (7장)
+> **상태**: 원인 확정, 2단계 해석(7장)과 공고 커버링 인덱스(9장) 적용·실측 완료
 > **원시 데이터**: `data/benchmarks/rag_segments_coldsql_20260913.json`, `data/benchmarks/rag_coldsql_cold_variants_20260913.txt`, `data/benchmarks/rag_segments_two_step_{before,after}_r{1,2}_20260913.json`
 > **선행 문서**: [`av2_coldsql_segment_measurement_20260910.md`](av2_coldsql_segment_measurement_20260910.md), [`r13_coldsql_timeout_verdict_20260907.md`](r13_coldsql_timeout_verdict_20260907.md), [`ax2_plan_instability_20260911.md`](ax2_plan_instability_20260911.md)
 
@@ -258,11 +258,46 @@ q08 이 해석 대상에서 빠진 "서울"(공고 기관명 2,588종, 일치 �
 
 ---
 
-## 9. 다음 단계
+## 9. 커버링 인덱스 적용 결과
+
+사용자 합의로 `ix_bid_ann_inst_cat_ntce (dminstt_nm, category, bid_ntce_nm)` 를 적용했습니다.
+
+| 항목 | 결과 |
+| --- | --- |
+| 마이그레이션 | `migrations/versions/afc72b545c6a` (멱등, MySQL `ALGORITHM=INPLACE, LOCK=NONE`) |
+| 적용 소요 | `alembic upgrade head` 122초 (개발 DB, 온라인 DDL) |
+| 실제 크기 | 762MB (`innodb_index_stats`, 8.3 절 추정 약 760MB) |
+| G1 | 갱신 전 차이가 이 인덱스 추가 하나뿐임을 인덱스 단위로 대조한 뒤 기준선 재기록. `verify_migration.py` 6항목 통과 |
+
+7장 절차(완전 콜드, Redis `rag:*` 삭제, 앱 재기동, 같은 인자)로 적용 전(`471834ab`)과 적용 후(`70135eee`)를
+두 번씩 쟀습니다. 원시 결과는 `data/benchmarks/rag_segments_covering_index_{before,after}_r{1,2}_20260913.json` 입니다.
+
+| 문항 | 적용 전 | 적용 후 | 판정 |
+| --- | --- | --- | --- |
+| q31 (대전) | 37,635 / 16,672ms | **1,117 / 1,004ms** | 범위 비중첩, 15~37배 |
+| q25 | 7,498 / 7,646ms | **3,432 / 1,692ms** | 범위 비중첩, 2~4배 |
+| q08 (서울) | 56,447 / 44,133ms | **32,277 / 32,778ms** | 범위 비중첩 |
+
+단위는 콜드 `sql_ms` 입니다. 적용 전 1회차는 병렬 워커의 전량 테스트와 시간이 겹쳐 값이 높을 수 있습니다. 2회차만
+비교해도 세 문항 모두 적용 후 범위와 겹치지 않습니다.
+
+- **q08 의 공고명별 집계 `top_rows_3` 은 33,286 / 29,080ms 에서 4,462 / 4,603ms 가 됐습니다.** 8장에서 2단계
+  해석으로는 줄지 않던 구간입니다.
+- **q08 에 남은 약 30초는 `bid_results` 쪽입니다.** 금액 합계·평균 집계 `cached_aggregate_1`(10~12초)과
+  낙찰자별 집계 `top_rows_1`(8~10초)이 기관명 부분 일치로 낙찰 테이블을 읽습니다. 이번 인덱스의 대상이 아닙니다.
+- 웜 회차 최대값이 25~32ms 에서 62~63ms 로 늘었습니다. 캐시 적중 경로라 인덱스와의 인과는 확인하지 않았고
+  절대값은 수십 ms 입니다.
+
+측정 중 로컬 Ollama `gemma4:e2b` 러너가 빈 응답을 돌려주는 상태가 있었습니다(`tests/test_e2e_cutover.py`
+실패로 발견). 러너를 내렸다 다시 적재해 해소했으며 구조화 SQL 구간 측정과는 무관합니다.
+
+---
+
+## 10. 다음 단계
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
-| 1 | `(dminstt_nm, category, bid_ntce_nm)` 복합 인덱스 채택 여부 (8.2~8.3 절) | 사용자 합의 (DDL, G1 기준선) |
-| 2 | 채택 시 Alembic 마이그레이션, 스키마 서명 기준선 갱신, 요청 단위 전후 실측 | 1 |
-| 3 | 2단계 해석 경계를 일치 행 수로 확정 | 완료 (2026-09-13). 15만~22만 행, 기준 변경 안 함 (8.1 절) |
-| 4 | `benchmark_rag_segments.py` 가 fixture 없는 `--item-ids` 를 거부하게 수정 | 완료 (2026-09-13). `--repetitions`, `--limit`, fixture 에 없는 ID 도 거부 |
+| 1 | `bid_results` 기관명 조건 집계(q08 잔여 약 30초)의 원인 귀속과 대책. 금액·낙찰자 컬럼까지 담는 커버링 인덱스는 크기 추정부터 | 없음 (DDL 은 합의) |
+| 2 | 웜 회차 최대값 증가(25~32ms → 62~63ms)의 재현 여부 확인 | 없음 |
+| 3 | 2단계 해석 경계 확정 | 완료 (8.1 절) |
+| 4 | `benchmark_rag_segments.py` 인자 거부 | 완료 |

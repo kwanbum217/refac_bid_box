@@ -118,7 +118,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
-- **RAG cold SQL (2026-09-13, 2단계 해석 적용)**: 기관명 LIKE 콜드 I/O 가 원인. 해석 적용 문항 3.4~7.8배, 1,000종 초과 검색어는 미해결 ([rag_coldsql_root_cause_20260913.md](../analysis/rag_coldsql_root_cause_20260913.md)).
+- **RAG cold SQL (2026-09-13, 공고 인덱스 적용)**: 기관명 LIKE 콜드 I/O 가 원인. 공고 커버링 인덱스로 q31 1초대, bid_results 쪽 잔여 ([rag_coldsql_root_cause_20260913.md](../analysis/rag_coldsql_root_cause_20260913.md)).
 - **손상 탐침 제거 (2026-09-11, 구조적 제거 확정·효과 크기 미확정)**: corrupted_probe 0ms 달성을 확정했습니다. 잔여 분산으로 효과 크기는 미확정입니다.
 - **측정 설계와 실행계획 조사 (2026-09-11, 도구 완비·원인 미확정)**: 계측 도구를 완비했습니다. 영속 통계 노후를 확인했으나 계획 전환 원인은 미확정입니다.
 - **ChromaDB 1.x 업그레이드 (2026-09-13, 보류)**: 1.5.9 까지 CVE 미수정, 1.x 는 1건 추가. 서버 미노출로 예외 유지, 12-31 재확인 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).

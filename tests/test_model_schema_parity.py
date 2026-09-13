@@ -128,6 +128,7 @@ PRODUCTION_INDEX_NAMES = {
         "ix_bid_ann_category_collected_dt",
         "ix_bid_ann_collected_dt",
         "ix_bid_ann_dt_cat",
+        "ix_bid_ann_inst_cat_ntce",
     },
     "bid_dataset_summaries": {"bid_dataset_summaries_rebuilt_at_8d77f9db"},
     "bid_results": {
@@ -410,6 +411,7 @@ BIDS_TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
             "ix_bid_ann_collected": ("collected_at",),
             "ix_bid_ann_category_collected_dt": ("category", "collected_at", "bid_ntce_dt", "id"),
             "ix_bid_ann_collected_dt": ("collected_at", "bid_ntce_dt", "id"),
+            "ix_bid_ann_inst_cat_ntce": ("dminstt_nm", "category", "bid_ntce_nm"),
         },
         "columns": {
             "id": {
