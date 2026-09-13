@@ -756,6 +756,80 @@ def test_freshness_ref_falls_back_to_head_without_main(monkeypatch, tmp_path):
     assert validate_agent_rules._freshness_ref(tmp_path) == "HEAD"
 
 
+def _run_git_test_command(repo_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603
+        ["git", "-C", str(repo_dir), *args],  # noqa: S607
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_commits_behind_head_counts_first_parent_merges_in_real_git_repo(tmp_path: Path):
+    """--first-parent 로 세어 병합 1회가 뒤처짐 1로 반영되는지 실제 git 저장소에서 검증합니다.
+
+    작업 브랜치 커밋과 병합 커밋을 모두 세던 종전 방식은 병합 1회에 2가 늘어나
+    병합 3회만으로 허용치(5)를 넘어 차단되었습니다. --first-parent 를 쓰면
+    병합 단위(first-parent)만 세어 병합 3회에 3이 되고, 병합 6회 시 6이 되어
+    허용치를 초과하는 오래된 커밋을 정상 차단합니다.
+    """
+    # 1. 실제 git 저장소 초기화 및 로컬 사용자 설정 (전역 설정 불변)
+    _run_git_test_command(tmp_path, "init")
+    _run_git_test_command(tmp_path, "checkout", "-B", "main")
+    _run_git_test_command(tmp_path, "config", "user.name", "Test Runner")
+    _run_git_test_command(tmp_path, "config", "user.email", "test@example.com")
+
+    # 2. main 에서 기준(기록) 커밋 생성
+    base_file = tmp_path / "base.txt"
+    base_file.write_text("base\n", encoding="utf-8")
+    _run_git_test_command(tmp_path, "add", "base.txt")
+    _run_git_test_command(tmp_path, "commit", "-m", "chore: base commit")
+    recorded_commit = _run_git_test_command(tmp_path, "rev-parse", "HEAD").stdout.strip()
+
+    # 3. 작업 브랜치에 커밋 하나를 만들고 main 으로 --no-ff 병합하는 일을 세 번 반복
+    for i in range(1, 4):
+        _run_git_test_command(tmp_path, "checkout", "-b", f"feat-{i}")
+        feat_file = tmp_path / f"feat_{i}.txt"
+        feat_file.write_text(f"feat {i}\n", encoding="utf-8")
+        _run_git_test_command(tmp_path, "add", f"feat_{i}.txt")
+        _run_git_test_command(tmp_path, "commit", "-m", f"feat: work {i}")
+        _run_git_test_command(tmp_path, "checkout", "main")
+        _run_git_test_command(tmp_path, "merge", "--no-ff", "-m", f"merge: feat {i}", f"feat-{i}")
+
+    # 4. 단언: 종전 방식(rev-list --count)은 6이지만, _commits_behind_head 는 --first-parent 로 3 반환
+    legacy_count = int(
+        _run_git_test_command(
+            tmp_path, "rev-list", "--count", f"{recorded_commit}..HEAD"
+        ).stdout.strip()
+    )
+    assert legacy_count == 6
+
+    behind_3 = validate_agent_rules._commits_behind_head(tmp_path, recorded_commit)
+    assert behind_3 == 3
+
+    # 5. 병합 세 번 더 반복하여 총 6회 병합 시 뒤처짐 6으로 허용치(5) 초과 검증
+    for i in range(4, 7):
+        _run_git_test_command(tmp_path, "checkout", "-b", f"feat-{i}")
+        feat_file = tmp_path / f"feat_{i}.txt"
+        feat_file.write_text(f"feat {i}\n", encoding="utf-8")
+        _run_git_test_command(tmp_path, "add", f"feat_{i}.txt")
+        _run_git_test_command(tmp_path, "commit", "-m", f"feat: work {i}")
+        _run_git_test_command(tmp_path, "checkout", "main")
+        _run_git_test_command(tmp_path, "merge", "--no-ff", "-m", f"merge: feat {i}", f"feat-{i}")
+
+    behind_6 = validate_agent_rules._commits_behind_head(tmp_path, recorded_commit)
+    assert behind_6 == 6
+    assert behind_6 > validate_agent_rules.CURRENT_STATE_LAG_TOLERANCE
+
+    # check_current_state_sections 도 실제로 오래된 기준 커밋을 FAIL 로 차단하는지 확인
+    state_body = f"# state\n> updated_at: 2026-09-13\n> source_commit: `{recorded_commit}`\nG1 G2 G3\ndocs/ops/test.md\n"
+    _write_current_state(tmp_path, state_body)
+    res = check_current_state_sections(tmp_path)
+    assert not res.ok
+    assert f"source_commit {recorded_commit} 이 HEAD 보다 6 커밋 뒤처짐" in res.detail
+    assert f"허용 {validate_agent_rules.CURRENT_STATE_LAG_TOLERANCE}" in res.detail
+
+
 # ===========================================================================
 # 워커 모델 배정표 (TIER_POLICY) 정합성 검증 테스트
 # ===========================================================================

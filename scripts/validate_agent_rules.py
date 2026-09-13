@@ -834,7 +834,7 @@ def _commits_behind_head(root: Path, commit: str) -> int | None:
         )
         ref = _freshness_ref(root)
         out = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
-            ["git", "-C", str(root), "rev-list", "--count", f"{commit}..{ref}"],
+            ["git", "-C", str(root), "rev-list", "--count", "--first-parent", f"{commit}..{ref}"],
             check=True,
             capture_output=True,
             text=True,
