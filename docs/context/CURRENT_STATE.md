@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-13
-> **source_commit**: `6721981a`
+> **source_commit**: `1337d002`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -118,7 +118,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
-- **RAG cold SQL (2026-09-13, 원인 확정·개선 합의 대기)**: 날짜 없는 기관명 LIKE 가 31.6GB 공고 본문을 콜드로 읽습니다. 2단계 해석이 콜드 4배 빠름 ([rag_coldsql_root_cause_20260913.md](../analysis/rag_coldsql_root_cause_20260913.md)). 타임아웃 120초 유지.
+- **RAG cold SQL (2026-09-13, 2단계 해석 적용)**: 기관명 LIKE 콜드 I/O 가 원인. 해석 적용 문항 3.4~7.8배, 1,000종 초과 검색어는 미해결 ([rag_coldsql_root_cause_20260913.md](../analysis/rag_coldsql_root_cause_20260913.md)).
 - **손상 탐침 제거 (2026-09-11, 구조적 제거 확정·효과 크기 미확정)**: corrupted_probe 0ms 달성을 확정했습니다. 잔여 분산으로 효과 크기는 미확정입니다.
 - **측정 설계와 실행계획 조사 (2026-09-11, 도구 완비·원인 미확정)**: 계측 도구를 완비했습니다. 영속 통계 노후를 확인했으나 계획 전환 원인은 미확정입니다.
 - **ChromaDB 1.x 업그레이드 (2026-09-13, 보류)**: 1.5.9 까지 CVE 미수정, 1.x 는 1건 추가. 서버 미노출로 예외 유지, 12-31 재확인 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).

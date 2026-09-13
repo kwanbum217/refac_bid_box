@@ -283,7 +283,19 @@ def _resolve_window(filters: dict[str, Any]) -> tuple[datetime | None, datetime 
     return date_from, date_to
 
 
-def _result_conditions(plan: RetrievalPlan, *, enable_ngram_prefilter: bool = False) -> list:
+def _institution_condition(column, institution_name: str, institution_names: list[str] | None):
+    """해석된 기관명 목록이 있으면 등호 조회로, 없으면 부분 일치로 거릅니다."""
+    if institution_names is not None:
+        return column.in_(institution_names)
+    return column.contains(institution_name)
+
+
+def _result_conditions(
+    plan: RetrievalPlan,
+    *,
+    enable_ngram_prefilter: bool = False,
+    institution_names: list[str] | None = None,
+) -> list:
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
@@ -301,13 +313,20 @@ def _result_conditions(plan: RetrievalPlan, *, enable_ngram_prefilter: bool = Fa
     if date_to:
         conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
     if institution_name:
-        conditions.append(BidResult.dminstt_nm.contains(institution_name))
+        conditions.append(
+            _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
+        )
     if category:
         conditions.append(BidResult.category == category)
     return conditions
 
 
-def _announcement_conditions(plan: RetrievalPlan, *, enable_ngram_prefilter: bool = False) -> list:
+def _announcement_conditions(
+    plan: RetrievalPlan,
+    *,
+    enable_ngram_prefilter: bool = False,
+    institution_names: list[str] | None = None,
+) -> list:
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
@@ -327,7 +346,9 @@ def _announcement_conditions(plan: RetrievalPlan, *, enable_ngram_prefilter: boo
     if date_to:
         conditions.append(BidAnnouncement.bid_ntce_dt <= date_to + timedelta(days=1))
     if institution_name:
-        conditions.append(BidAnnouncement.dminstt_nm.contains(institution_name))
+        conditions.append(
+            _institution_condition(BidAnnouncement.dminstt_nm, institution_name, institution_names)
+        )
     if category:
         conditions.append(BidAnnouncement.category == category)
     return conditions
@@ -417,17 +438,58 @@ def _hint_announcement_date_index(stmt, plan: RetrievalPlan):
     return stmt.with_hint(BidAnnouncement, ANNOUNCEMENT_DATE_INDEX_HINT, dialect_name="mysql")
 
 
-def _result_availability_conditions(plan: RetrievalPlan) -> list:
+def _result_availability_conditions(
+    plan: RetrievalPlan, *, institution_names: list[str] | None = None
+) -> list:
     """날짜 필터를 제외한 결과 보유 범위 확인 조건을 만듭니다."""
     filters = plan.filters or {}
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
     conditions = []
     if institution_name:
-        conditions.append(BidResult.dminstt_nm.contains(institution_name))
+        conditions.append(
+            _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
+        )
     if category:
         conditions.append(BidResult.category == category)
     return conditions
+
+
+# 기관명 부분 일치는 선행 와일드카드라 날짜 범위가 없으면 후보 행 본문을 전부 읽습니다.
+# bid_announcements 데이터 31.6GB 가 버퍼풀 2GB 밖에 있어 콜드에서 문장당 16~28초가
+# 걸렸고, 인덱스 힌트로는 줄지 않았습니다. 기관명 인덱스(359MB)만 훑어 정확한 이름을
+# 먼저 구한 뒤 등호로 조회하면 같은 문장이 콜드 4.5~4.9초였습니다(2026-09-13 실측,
+# docs/analysis/rag_coldsql_root_cause_20260913.md). 이름이 너무 많으면 IN 목록이
+# 과대해지므로 상한을 넘을 때는 종전 부분 일치로 돌아갑니다.
+INSTITUTION_NAME_RESOLVE_LIMIT = 1000
+
+
+@_measure_call("institution_resolve")
+def _resolve_institution_names(db: Session, column, institution_name: str) -> list[str] | None:
+    """기관명 부분 일치를 정확한 이름 목록으로 풉니다. 상한 초과면 None 입니다.
+
+    utf8mb4_unicode_ci 등호는 대소문자와 끝 공백 차이를 같게 보므로, 여기서 얻은
+    대표 이름의 IN 조회는 부분 일치가 잡던 변형 행을 함께 잡습니다.
+    """
+    stmt = (
+        select(column)
+        .where(column.contains(institution_name))
+        .distinct()
+        .limit(INSTITUTION_NAME_RESOLVE_LIMIT + 1)
+    )
+    key = _stmt_cache_key("rag:inst:", stmt)
+    cached = _timed_cache_get(key)
+    if cached is None:
+        with _flight_lock(key):
+            cached = _timed_cache_get(key)
+            if cached is None:
+                names = [row[0] for row in db.execute(stmt).all() if row[0] is not None]
+                cached = {"names": names}
+                cache.set(key, cached, AGGREGATE_CACHE_TTL)
+    names = list(cached["names"])
+    if len(names) > INSTITUTION_NAME_RESOLVE_LIMIT:
+        return None
+    return names
 
 
 # U+FFFD 는 SQL 에서 먼저 쳐내므로 배수는 작아도 됩니다.
@@ -805,7 +867,7 @@ def _empty_result(plan: RetrievalPlan, hint: str) -> dict[str, Any]:
 
 def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str, Any]:
     try:
-        result_conditions = _result_conditions(plan)
+        _resolve_window(plan.filters or {})
     except InvalidDateFilterError as exc:
         # 해석하지 못한 날짜 필터를 빼고 조회하면 전체 기간 통계가 사용자가
         # 지정한 기간의 답으로 돌아갑니다. 조회 자체를 하지 않고 알립니다.
@@ -813,13 +875,23 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             plan,
             f"{exc} 날짜를 YYYY-MM-DD 형식으로 다시 알려주시면 해당 기간으로 조회하겠습니다.",
         )
-    announcement_conditions = _announcement_conditions(plan)
+    institution_name = _normalize_text(str((plan.filters or {}).get("institution_name") or ""))
+    result_names = announcement_names = None
+    if institution_name:
+        result_names = _resolve_institution_names(db, BidResult.dminstt_nm, institution_name)
+        announcement_names = _resolve_institution_names(
+            db, BidAnnouncement.dminstt_nm, institution_name
+        )
+    result_conditions = _result_conditions(plan, institution_names=result_names)
+    announcement_conditions = _announcement_conditions(plan, institution_names=announcement_names)
     snapshot_scope = _snapshot_scope(plan)
     result_limit = _result_limit(plan)
     latest_available_result_at = None
     if result_limit:
         latest_available_result_at = db.scalar(
-            select(func.max(BidResult.rl_openg_dt)).where(*_result_availability_conditions(plan))
+            select(func.max(BidResult.rl_openg_dt)).where(
+                *_result_availability_conditions(plan, institution_names=result_names)
+            )
         )
 
     total_count, avg_rate, total_amt = _cached_aggregate(
@@ -839,7 +911,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
 
     category_filter = _normalize_text(str((plan.filters or {}).get("category") or ""))
 
-    winner_conditions = _result_conditions(plan, enable_ngram_prefilter=True)
+    winner_conditions = _result_conditions(
+        plan, enable_ngram_prefilter=True, institution_names=result_names
+    )
     winner_rows, dropped_winners = _top_rows(
         db,
         scope=snapshot_scope,
@@ -862,7 +936,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         for row in winner_rows
     ]
 
-    institution_conditions = _announcement_conditions(plan, enable_ngram_prefilter=True)
+    institution_conditions = _announcement_conditions(
+        plan, enable_ngram_prefilter=True, institution_names=announcement_names
+    )
     institution_rows, dropped_institutions = _top_rows(
         db,
         scope=snapshot_scope,
