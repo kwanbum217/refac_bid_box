@@ -1,0 +1,98 @@
+[
+  {
+    "concurrency": 1,
+    "parallel": false,
+    "wall_ms": 5029,
+    "median_ms": 5029,
+    "max_ms": 5029,
+    "pool_peak": 1
+  },
+  {
+    "concurrency": 1,
+    "parallel": true,
+    "wall_ms": 2000,
+    "median_ms": 2000,
+    "max_ms": 2000,
+    "pool_peak": 5
+  },
+  {
+    "concurrency": 1,
+    "parallel": true,
+    "wall_ms": 2123,
+    "median_ms": 2123,
+    "max_ms": 2123,
+    "pool_peak": 5
+  },
+  {
+    "concurrency": 1,
+    "parallel": false,
+    "wall_ms": 4794,
+    "median_ms": 4794,
+    "max_ms": 4794,
+    "pool_peak": 1
+  },
+  {
+    "concurrency": 4,
+    "parallel": false,
+    "wall_ms": 5441,
+    "median_ms": 5417,
+    "max_ms": 5441,
+    "pool_peak": 4
+  },
+  {
+    "concurrency": 4,
+    "parallel": true,
+    "wall_ms": 4449,
+    "median_ms": 3283,
+    "max_ms": 4448,
+    "pool_peak": 8
+  },
+  {
+    "concurrency": 4,
+    "parallel": true,
+    "wall_ms": 4754,
+    "median_ms": 3500,
+    "max_ms": 4754,
+    "pool_peak": 8
+  },
+  {
+    "concurrency": 4,
+    "parallel": false,
+    "wall_ms": 5118,
+    "median_ms": 4997,
+    "max_ms": 5117,
+    "pool_peak": 4
+  },
+  {
+    "concurrency": 8,
+    "parallel": false,
+    "wall_ms": 5525,
+    "median_ms": 3026,
+    "max_ms": 5524,
+    "pool_peak": 8
+  },
+  {
+    "concurrency": 8,
+    "parallel": true,
+    "wall_ms": 4541,
+    "median_ms": 3789,
+    "max_ms": 4540,
+    "pool_peak": 12
+  },
+  {
+    "concurrency": 8,
+    "parallel": true,
+    "wall_ms": 4988,
+    "median_ms": 3974,
+    "max_ms": 4987,
+    "pool_peak": 12
+  },
+  {
+    "concurrency": 8,
+    "parallel": false,
+    "wall_ms": 5448,
+    "median_ms": 3085,
+    "max_ms": 5447,
+    "pool_peak": 8
+  }
+]
