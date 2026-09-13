@@ -449,7 +449,7 @@ def _hint_result_winner_group_index(stmt, plan: RetrievalPlan):
 # 공고 쪽(ANNOUNCEMENT_INSTITUTION_COVER_HINT)과 같은 판단 착오가 낙찰 테이블에도 있습니다. 기관명이 부분 일치로
 # 되돌아가고 category 가 붙으면 옵티마이저가 category 인덱스 조회를 커버링 인덱스보다 싸다고 골라 행마다 본문을
 # 읽습니다. category 가 없으면 옵티마이저가 커버링 인덱스를 스스로 고르므로 붙이지 않습니다
-# (2026-09-13 EXPLAIN, docs/analysis/rag_coldsql_root_cause_20260913.md 15장).
+# (2026-09-13 EXPLAIN, docs/analysis/rag_coldsql_root_cause_20260913.md 14장).
 RESULT_INSTITUTION_COVER_HINT = "FORCE INDEX (ix_bid_results_inst_cat_stats)"
 
 

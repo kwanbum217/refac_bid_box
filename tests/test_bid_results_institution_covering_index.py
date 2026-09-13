@@ -6,7 +6,7 @@ tests/test_bid_results_institution_covering_index.py
 RAG 정형 검색의 기관명 조건 금액 집계와 낙찰업체 집계가 낙찰 본문을 읽지 않도록
 (dminstt_nm, category, bidwinnr_nm, sucsf_bid_rate, sucsf_bid_amt) 인덱스를 둡니다. MySQL 에서는
 조회와 수집을 막지 않는 온라인 DDL 이어야 하고 리비전은 멱등이어야 합니다
-(docs/analysis/rag_coldsql_root_cause_20260913.md 15장).
+(docs/analysis/rag_coldsql_root_cause_20260913.md 14장).
 """
 
 from __future__ import annotations
