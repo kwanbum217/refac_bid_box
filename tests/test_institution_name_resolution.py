@@ -3,7 +3,8 @@ tests/test_institution_name_resolution.py
 
 기관명 2단계 해석 계약 검증.
 
-기관명 부분 일치를 정확한 이름 목록으로 먼저 푼 뒤 등호로 조회합니다. 콜드에서 문장당
+기관명 부분 일치를 정확한 이름 목록으로 먼저 푼 뒤 등호로 조회합니다. 한글 음절만으로 된 검색어는
+고유 기관명 목록 캐시에서 고르고, 그 밖의 검색어는 해석 질의를 씁니다. 콜드에서 문장당
 16~28초가 4.5~4.9초로 줄었습니다(docs/analysis/rag_coldsql_root_cause_20260913.md).
 결과 행 집합은 부분 일치와 같아야 하며, 이름이 상한을 넘으면 부분 일치로 돌아갑니다.
 
@@ -32,6 +33,12 @@ def isolated_cache(monkeypatch):
     monkeypatch.setattr(cache._conn, "_next_attempt_at", float("inf"))
     monkeypatch.setattr(cache, "_local", {})
     return cache
+
+
+@pytest.fixture
+def query_path(monkeypatch):
+    """한글 전용 검색어도 목록 경로 대신 해석 질의 경로를 타게 합니다."""
+    monkeypatch.setattr(structured_data, "_catalog_eligible", lambda name: False)
 
 
 def _plan(**filters) -> RetrievalPlan:
@@ -110,7 +117,7 @@ def test_resolver_caches_names(isolated_db, monkeypatch):
     assert sorted(names) == ["세종특별자치시", "세종특별자치시 교육청"]
 
 
-def test_overflow_is_cached_long_and_name_lists_short(isolated_db, monkeypatch):
+def test_overflow_is_cached_long_and_name_lists_short(isolated_db, monkeypatch, query_path):
     _seed(isolated_db)
     stored: list[tuple[dict, int]] = []
     monkeypatch.setattr(cache, "set", lambda key, value, ttl: stored.append((value, ttl)))
@@ -131,7 +138,7 @@ def test_overflow_is_cached_long_and_name_lists_short(isolated_db, monkeypatch):
     assert structured_data.INSTITUTION_OVERFLOW_CACHE_TTL > structured_data.AGGREGATE_CACHE_TTL
 
 
-def test_cached_overflow_skips_database(isolated_db, monkeypatch):
+def test_cached_overflow_skips_database(isolated_db, monkeypatch, query_path):
     _seed(isolated_db)
     monkeypatch.setattr(structured_data, "INSTITUTION_NAME_RESOLVE_LIMIT", 1)
     structured_data._resolve_institution_names(isolated_db, BidResult.dminstt_nm, "세종")
@@ -147,12 +154,51 @@ def test_cached_overflow_skips_database(isolated_db, monkeypatch):
     )
 
 
-def test_legacy_oversized_name_list_still_falls_back(monkeypatch):
+def test_legacy_oversized_name_list_still_falls_back(monkeypatch, query_path):
     """배포 전에 저장된 1,001개짜리 이름 목록 캐시도 되돌림으로 읽습니다."""
     monkeypatch.setattr(structured_data, "INSTITUTION_NAME_RESOLVE_LIMIT", 1)
     monkeypatch.setattr(structured_data, "_timed_cache_get", lambda key: {"names": ["a", "b"]})
 
     assert structured_data._resolve_institution_names(None, BidResult.dminstt_nm, "a") is None
+
+
+def test_catalog_serves_other_terms_without_database(isolated_db, monkeypatch):
+    _seed(isolated_db)
+    structured_data._resolve_institution_names(isolated_db, BidResult.dminstt_nm, "세종")
+
+    def fail_execute(*args, **kwargs):
+        raise AssertionError("목록이 캐시돼 있으면 다른 한글 검색어도 DB 를 조회하면 안 됩니다")
+
+    monkeypatch.setattr(isolated_db, "execute", fail_execute)
+
+    assert structured_data._resolve_institution_names(
+        isolated_db, BidResult.dminstt_nm, "서울"
+    ) == ["서울특별시"]
+
+
+@pytest.mark.parametrize("term", ["세종 교육청", "LH", "(주)", "제2해병", "세종%"])
+def test_non_hangul_terms_use_resolution_query(term):
+    assert structured_data._catalog_eligible(term) is False
+
+
+def test_catalog_is_per_table(isolated_db):
+    _seed(isolated_db)
+    isolated_db.add(BidResult(bid_ntce_no="R9", dminstt_nm="세종낙찰전용", category="Cnstwk"))
+    isolated_db.commit()
+
+    assert "세종낙찰전용" in structured_data._resolve_institution_names(
+        isolated_db, BidResult.dminstt_nm, "세종"
+    )
+    assert "세종낙찰전용" not in structured_data._resolve_institution_names(
+        isolated_db, BidAnnouncement.dminstt_nm, "세종"
+    )
+
+
+def test_uncertain_name_falls_back_to_resolution_query():
+    assert structured_data._match_institution_catalog(["대\ufff9중소기업", "광주"], "대중") is None
+    assert structured_data._match_institution_catalog(["대\ufff9중소기업", "광주"], "광주") == [
+        "광주"
+    ]
 
 
 @pytest.mark.parametrize("term", ["세종특별자치시", "서울", "없는기관명"])
