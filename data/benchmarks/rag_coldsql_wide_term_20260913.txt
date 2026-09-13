@@ -1,0 +1,10 @@
+# 2026-09-13 상한 초과 기관명(서울, 2,588종) 완전 콜드 교차 실측 원시 로그 (bid_announcements)
+{"rep": 1, "variant": "count_like", "ms": 2035, "bp_before": "946", "result_sha": "af01e0557345", "note": ""}
+{"rep": 1, "variant": "count_two", "ms": 1220, "bp_before": "958", "result_sha": "af01e0557345", "note": "resolve=760 main=460 names=2588"}
+{"rep": 1, "variant": "group_like", "ms": 41624, "bp_before": "955", "result_sha": "8ec65010ab80", "note": ""}
+{"rep": 1, "variant": "group_two", "ms": 49705, "bp_before": "949", "result_sha": "8ec65010ab80", "note": "resolve=956 main=48749 names=2588"}
+{"rep": 2, "variant": "count_two", "ms": 1226, "bp_before": "951", "result_sha": "af01e0557345", "note": "resolve=768 main=458 names=2588"}
+{"rep": 2, "variant": "count_like", "ms": 1318, "bp_before": "950", "result_sha": "af01e0557345", "note": ""}
+{"rep": 2, "variant": "group_two", "ms": 48263, "bp_before": "954", "result_sha": "8ec65010ab80", "note": "resolve=314 main=47949 names=2588"}
+{"rep": 2, "variant": "group_like", "ms": 22646, "bp_before": "957", "result_sha": "8ec65010ab80", "note": ""}
+done

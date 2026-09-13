@@ -119,7 +119,7 @@ python3 scripts/validate_agent_rules.py                                    # mai
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
-| 1 | 상한 초과 기관명(서울 2,588종, 광주 등)의 상한 상향 또는 대체 경로를 완전 콜드로 실측 | 없음 |
+| 1 | 넓은 기관명 GROUP BY 대책 방향 결정 (분석 문서 8.1 절). 상한 상향은 실측으로 기각 | 사용자 결정 |
 | 2 | `(dminstt_nm, category)` 복합 커버링 인덱스 효과·쓰기 비용 실측 (q31 잔여 11~13초) | DDL 사용자 합의 |
 | 3 | `benchmark_rag_segments.py` 가 fixture 없는 `--item-ids` 를 거부 | 없음 |
 | 4 | 셸 명령 자동 승인 실동작 확인 | 다음 워커 기동 |
