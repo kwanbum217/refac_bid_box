@@ -314,6 +314,9 @@ class BidAnnouncement(Base):
         ),
         # 카테고리 공통 최근 공고 조회에서 수집일 범위와 정렬을 함께 사용합니다.
         Index("ix_bid_ann_collected_dt", "collected_at", "bid_ntce_dt", "id"),
+        # RAG 정형 검색의 기관명 조건 COUNT 와 기관별·공고명별 집계가 본문을 읽지 않게 합니다
+        # (migrations/versions/afc72b545c6a).
+        Index("ix_bid_ann_inst_cat_ntce", "dminstt_nm", "category", "bid_ntce_nm"),
     )
 
     id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
