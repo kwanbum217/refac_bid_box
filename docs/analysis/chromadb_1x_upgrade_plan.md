@@ -29,9 +29,9 @@
 ### 1.3 단일 권고안
 **권고안: "후보 B: 복사본 마이그레이션 후 원자적 교체 (Copy-then-Migrate & Atomic Swap)"**
 
-원천 DB에서 50만 건을 재임베딩하는 방식(후보 D)은 약 20~30시간 이상의 연산 비용과 Ollama/GPU 부하를 초래합니다. 반면 원본 디렉토리에서 제자리 마이그레이션을 실행하는 방식(후보 A)은 1.x 클라이언트 기동 즉시 SQLite 스키마 DDL(`max_seq_id` 컬럼 변경 등)이 비가역적으로 적용되어 0.6.3으로의 즉각적인 롤백이 불가능해집니다.
+원천 DB에서 50만 건을 재임베딩하는 방식(후보 D)은 약 20~30시간 이상의 연산 비용과 Ollama/GPU 부하를 초래합니다. 반면 원본 디렉토리에서 제자리 마이그레이션을 실행하는 방식(후보 A)은 원본 SQLite 스키마를 제자리에서 바꿉니다. 상류 마이그레이션 `00005-max-seq-id-int.sqlite.sql` 은 `max_seq_id` 에 `INTEGER` 컬럼을 추가해 BLOB 값을 변환한 뒤 원래 `seq_id` 컬럼을 `DROP` 하고 새 컬럼 이름을 바꿉니다(출처: [Chroma PR #3765 diff](https://github.com/chroma-core/chroma/pull/3765.diff)). 원 컬럼이 삭제되므로 0.6.3 으로 같은 디렉터리를 다시 열 수 없을 것으로 추론되지만, **역방향 오픈 실패 자체는 실측하지 않았습니다(미확인, 스테이징 복사본에서 확인).**
 
-따라서 **운영 `chroma_db/` 디렉토리의 전체 복사본(`chroma_db_v1_staging/`)을 생성한 뒤, 격리된 스테이징 복사본에서 1.x 마이그레이션을 실행하고 4대 무손실 검증을 100% 통과한 경우에 한하여 원자적 심볼릭 링크/디렉토리 스왑(`mv`)으로 전환**하는 후보 B 방식을 단일 표준 경로로 권고합니다.
+따라서 **운영 `chroma_db/` 디렉토리의 전체 복사본(`chroma_db_v1_staging/`)을 생성한 뒤, 격리된 스테이징 복사본에서 1.x 마이그레이션을 실행하고 4대 무손실 검증을 100% 통과한 경우에 한하여 디렉터리 이름 교체(`mv`)로 전환**하는 후보 B 방식을 단일 표준 경로로 권고합니다.
 
 ---
 
@@ -45,7 +45,7 @@
 | --- | --- | --- | --- | --- |
 | `src/app/api/v1/health.py:70-76` | `chromadb.PersistentClient(path)`<br>`client.get_collection(DEFAULT_COLLECTION)`<br>`collection.count()` | 클라이언트 생성 및 count 호출 인터페이스 호환 유지. 단, `get_collection` 시 기본 임베딩 함수 로드 시도 동작 주의. | 불필요<br>(권장: 공용 헬퍼 통일) | `PersistentClient` 및 `count()` 시그니처 유지 확인.<br>(출처: [Chroma API Types](https://github.com/chroma-core/chroma/blob/main/chromadb/api/types.py)) |
 | `src/app/services/kb_builder.py:122-135`<br>(내부: `kb_index_sync.py:105,118,176,270`) | `chromadb.PersistentClient(path)`<br>`chroma_client.delete_collection(name)`<br>`get_collection(..., create=True)`<br>`collection.count()`<br>`collection.get(include, limit, offset)`<br>`collection.upsert(docs, metas, ids)`<br>`collection.delete(ids)` | 핵심 CRUD API 시그니처 호환 유지. `collection.get()` 정렬 기준이 내부 ID 순으로 변경되었으나, `kb_index_sync.py`는 전체 offset 순회 후 해시 맵을 구성하므로 최종 결과 동일. | 불필요 | `delete_collection`, `get_or_create_collection`, `upsert`, `delete`, `get` 지원 확인.<br>(출처: [Chroma v1 Migration Guide](https://github.com/chroma-core/chroma/blob/0ba72738c9d8dc8427573158d53fb035ad7d0bad/docs/docs.trychroma.com/markdoc/content/updates/migration.md)) |
-| `src/rag/vector_store.py:502-554` | `chromadb.PersistentClient(path)`<br>`get_collection(client, DEFAULT_COLLECTION)`<br>`collection.query(query_texts, n_results, where)` | 질의 인터페이스 호환 유지. Rust 필터 엔진 재작성으로 `where` 필터 평가 성능 대폭 향상. 빈 `where={}` 전달 불가(기존 코드는 이미 방어 로직 완비). | 불필요 | `collection.query` 인터페이스 동일 유지.<br>(출처: [Chroma API Types](https://github.com/chroma-core/chroma/blob/main/chromadb/api/types.py)) |
+| `src/rag/vector_store.py:502-554` | `chromadb.PersistentClient(path)`<br>`get_collection(client, DEFAULT_COLLECTION)`<br>`collection.query(query_texts, n_results, where)` | 질의 인터페이스 호환 유지. 빈 `where={}` 전달 불가(기존 코드는 이미 방어 로직 완비). `where` 필터 성능 변화는 측정하지 않았습니다(미확인, 4.4 적중률 회귀 측정 시 지연도 함께 기록). | 불필요 | `collection.query` 인터페이스 동일 유지.<br>(출처: [Chroma API Types](https://github.com/chroma-core/chroma/blob/main/chromadb/api/types.py), 빈 `where` 제약은 [Chroma v1 Migration Guide](https://github.com/chroma-core/chroma/blob/0ba72738c9d8dc8427573158d53fb035ad7d0bad/docs/docs.trychroma.com/markdoc/content/updates/migration.md)) |
 | `scripts/verify_migration.py:172-191`<br>`scripts/verify_migration.py:332-346` | `read_chroma_stats`: SQLite 파일 직접 연결 및 쿼리 (`collections`, `segments`, `embeddings` 조인)<br>`probe_chroma_query`: `PersistentClient`, `get_collection`, `query`, `count` | `probe_chroma_query`는 정상 동작. 단, `read_chroma_stats`의 SQLite 직접 조회가 1.x 스키마 변경 시 영향받을 수 있으며, `verify_chroma_db()`의 체크섬 검증은 1.x 파일 변경으로 실패하므로 분리 필요. | **수정 필요**<br>(검증 스크립트 대응) | `chroma.sqlite3` 마이그레이션 적용 시 기존 체크섬 불일치 발생. SQLite 내부 스키마 대조 로직 분기 필요.<br>(출처: [Chroma PR #3765](https://github.com/chroma-core/chroma/pull/3765)) |
 | `scripts/run_data_reconciliation.py:142-166` | `chromadb.PersistentClient(path)`<br>`get_collection(client, name)`<br>`collection.count()`<br>`collection.get(include, limit, offset)` | 1.x에서 `limit`/`offset` 순회 시 내부 ID 기준으로 페이징 반환되나, 전체 50만 건 순회 후 공고번호 집합(`set[str]`)으로 집계하므로 반환 순서 무관 정합성 유지. | 불필요 | `collection.get` 동작 규약 확인.<br>(출처: [Chroma v1 Migration Guide](https://github.com/chroma-core/chroma/blob/0ba72738c9d8dc8427573158d53fb035ad7d0bad/docs/docs.trychroma.com/markdoc/content/updates/migration.md)) |
 | `scripts/measure_kb_retrieval.py:29-93` | `chromadb.PersistentClient(path)`<br>`get_collection(client, collection)`<br>`collection.count()`<br>`collection.get(include=[])`<br>`collection.get(ids, include=["documents"])`<br>`collection.query(query_texts, n_results)` | 경량 ID 조회(`include=[]`), 표본 문서 조회, 질의 모두 1.x에서 동일하게 동작. 측정 지표 및 절차 100% 호환. | 불필요 | `get` 및 `query` 명세 일치.<br>(출처: [Chroma API Types](https://github.com/chroma-core/chroma/blob/main/chromadb/api/types.py)) |
@@ -75,7 +75,7 @@ ChromaDB 0.6.3 데이터를 1.x로 이전하는 4가지 후보 경로를 비교�
 | **방식 설명** | 1.x 클라이언트로 기존 `chroma_db/`를 직접 오픈하여 제자리 마이그레이션 수행 | 운영 `chroma_db/` 복사본 생성 -> 복사본에서 1.x 오픈 및 4대 무손실 검증 -> 디렉토리 원자적 교체(`mv`) | 0.6.3에서 50만 건 벡터/문서/메타데이터를 Parquet/JSONL로 덤프 -> 1.x 신규 컬렉션에 batch insert | 원천 MySQL DB에서 공고/낙찰 데이터를 읽어 Ollama `bge-m3`로 50만 건을 처음부터 다시 임베딩 |
 | **소요 시간** | 약 1 ~ 3분 | **약 10 ~ 15분**<br>(복사 20초 + 마이그레이션 2분 + 검증 8분) | 약 25 ~ 45분<br>(덤프 5분 + HNSW 재색인 20분 + 검증 8분) | **약 20 ~ 30시간 이상**<br>(1만 건당 213.6초 기준 50만 건 연산) |
 | **소요 시간 추정 근거** | SQLite DDL(`ALTER TABLE max_seq_id`) 및 세그먼트 인덱스 파일 접근 시간 | 로컬 NVMe SSD 3.6GB 복사(~200MB/s) 20초 + 1.x 마이그레이션 1~2분 + 100건 질의 표본 검증 5~8분 | 1024차원 50만 건 I/O 덤프 + Rust hnswlib 멀티스레드 인덱스 빌드 속도 | `src/rag/embeddings.py` 실측치: 1만 건당 213.6초. 50만 건 단순 계산 10,680초(3시간)이나 DB 페이징/GPU 큐 고려 시 수십 시간 소요 |
-| **되돌리기 가능성** | **불가능 (비가역적)**<br>SQLite 스키마가 즉시 수정되어 0.6.3으로 역방향 오픈 불가 | **즉시 가능 (완벽 보존)**<br>원본 디렉토리가 100% 보존되므로 `mv` 원복 및 패키지 다운그레이드(1분 미만) | **가능**<br>원본 디렉토리 보존 상태로 진행 | **가능**<br>원본 디렉토리 보존 상태로 진행 |
+| **되돌리기 가능성** | **불가능으로 추론 (미실측)**<br>원본 SQLite 의 `max_seq_id.seq_id` 컬럼이 삭제·대체됨([PR #3765 diff](https://github.com/chroma-core/chroma/pull/3765.diff)). 0.6.3 역방향 오픈 실패는 스테이징에서 확인 전까지 미확인 | **즉시 가능 (완벽 보존)**<br>원본 디렉토리가 100% 보존되므로 `mv` 원복 및 패키지 다운그레이드(1분 미만) | **가능**<br>원본 디렉토리 보존 상태로 진행 | **가능**<br>원본 디렉토리 보존 상태로 진행 |
 | **G1 무손실 보장성** | **위험**<br>마이그레이션 실패 시 원본 손상 위험 | **최고 (완벽 보장)**<br>검증 100% 통과 시에만 운영 적용 | **우수**<br>벡터값 직접 보존 가능하나 HNSW 그래프 재생성 오차 가능성 존재 | **열위**<br>시간 소요 과다, 중간 프로세스 중단 위험 |
 | **판정** | **기각 (절대 금지)** | **채택 (단일 권고안)** | **예비 대안 (후보 B 실패 시)** | **기각 (비효율 및 자원 낭비)** |
 
@@ -214,9 +214,9 @@ G1 데이터 무손실 원칙을 객관적으로 입증하기 위해, 마이그�
 - In-process 클라이언트(`PersistentClient`)에서 `chroma_server_nofile`, `chroma_server_thread_pool_size`, `chroma_memory_limit_bytes`, `chroma_segment_cache_policy` 설정이 무시됨.
   (출처: [Chroma v1 Migration Guide](https://github.com/chroma-core/chroma/blob/0ba72738c9d8dc8427573158d53fb035ad7d0bad/docs/docs.trychroma.com/markdoc/content/updates/migration.md))
 - 공식 Docker 컨테이너 기본 볼륨 경로가 `/chroma/chroma`에서 `/data`로 변경됨.
-  (출처: [Chroma PR #3880](https://github.com/chroma-core/chroma/pull/3880))
-- SQLite 메타데이터 스키마에서 `max_seq_id` 컬럼 타입이 `BLOB`에서 `INTEGER`로 마이그레이션됨.
-  (출처: [Chroma PR #3765](https://github.com/chroma-core/chroma/pull/3765))
+  (출처: [Chroma PR #3880 diff](https://github.com/chroma-core/chroma/pull/3880.diff) 의 `docs/docs.trychroma.com/markdoc/content/updates/migration.md` 변경분)
+- SQLite 메타데이터 스키마에서 `max_seq_id` 의 `seq_id` 가 8바이트 big-endian `BLOB` 에서 `INTEGER` 로 마이그레이션되며, 원 컬럼은 `DROP COLUMN` 후 새 컬럼으로 대체됨.
+  (출처: [Chroma PR #3765 diff](https://github.com/chroma-core/chroma/pull/3765.diff) 의 `chromadb/migrations/metadb/00005-max-seq-id-int.sqlite.sql`)
 - `PersistentClient`, `collection.query()`, `collection.get()`, `collection.upsert()`, `collection.delete()`, `collection.count()` 파이썬 호출 인터페이스 유지됨.
   (출처: [Chroma API Types](https://github.com/chroma-core/chroma/blob/main/chromadb/api/types.py))
 - `EmbeddingFunction` 프로토콜 규약(`__call__(self, input: Documents) -> Embeddings`, `name(self) -> str`) 유지됨.
