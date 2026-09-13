@@ -48,10 +48,10 @@ def diff_mirror(canonical: Path, mirror: Path) -> dict[str, list[str]]:
     canonical_files = relative_files(canonical)
     mirror_files = relative_files(mirror)
 
-    missing = sorted(str(p) for p in canonical_files - mirror_files)
-    extra = sorted(str(p) for p in mirror_files - canonical_files)
+    missing = sorted(p.as_posix() for p in canonical_files - mirror_files)
+    extra = sorted(p.as_posix() for p in mirror_files - canonical_files)
     changed = sorted(
-        str(p)
+        p.as_posix()
         for p in canonical_files & mirror_files
         if not filecmp.cmp(canonical / p, mirror / p, shallow=False)
     )
@@ -96,9 +96,9 @@ def run(root: Path, check_only: bool) -> tuple[int, dict[str, Any]]:
             if not check_only:
                 mirror.mkdir(parents=True, exist_ok=True)
                 entry["actions"] = sync_mirror(canonical, mirror, diff)
-        mirrors[str(mirror_rel)] = entry
+        mirrors[mirror_rel.as_posix()] = entry
 
-    report: dict[str, Any] = {"canonical": str(CANONICAL), "mirrors": mirrors}
+    report: dict[str, Any] = {"canonical": CANONICAL.as_posix(), "mirrors": mirrors}
     if check_only:
         return (1 if drifted else 0), report
     return 0, report

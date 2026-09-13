@@ -35,7 +35,7 @@ def build_repo(root: Path, mirror_content: dict[str, str] | None = None) -> None
         body = (
             "정본 내용\n"
             if mirror_content is None
-            else mirror_content.get(str(mirror_rel), "정본 내용\n")
+            else mirror_content.get(mirror_rel.as_posix(), "정본 내용\n")
         )
         (mirror / "demo-skill" / "SKILL.md").write_text(body, encoding="utf-8")
 
