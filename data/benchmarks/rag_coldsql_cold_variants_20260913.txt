@@ -1,0 +1,12 @@
+# 2026-09-13 완전 콜드(버퍼풀 덤프 제거 + VM drop_caches) 대조 실측 원시 로그
+# 대상: SELECT COUNT(id) FROM bid_announcements WHERE dminstt_nm LIKE '%세종특별자치시%' AND category='Cnstwk'
+rep=1 variant=A count=7951 ms=21492 bp_before='Innodb_buffer_pool_pages_data	955' plan='Index lookup on bid_announcements using bid_announcements_category_02e9e006 '
+rep=1 variant=B count=7951 ms=28239 bp_before='Innodb_buffer_pool_pages_data	949' plan='Table scan on bid_announcements  '
+rep=1 variant=C count=7951 ms=26825 bp_before='Innodb_buffer_pool_pages_data	952' plan='Table scan on bid_announcements  '
+rep=2 variant=A count=7951 ms=16493 bp_before='Innodb_buffer_pool_pages_data	950' plan='Index lookup on bid_announcements using bid_announcements_category_02e9e006 '
+rep=2 variant=B count=7951 ms=26231 bp_before='Innodb_buffer_pool_pages_data	952' plan='Table scan on bid_announcements  '
+rep=2 variant=C count=7951 ms=19781 bp_before='Innodb_buffer_pool_pages_data	953' plan='Table scan on bid_announcements  '
+done
+rep=1 twostep names=231 count=7951 step1_ms=869 step2_ms=4044 bp_before='Innodb_buffer_pool_pages_data	959' plan1='Covering index skip scan for deduplication on bid_announcements using bid_announcements_dminstt_nm_952da702  ' plan2='Index range scan on bid_announcements using bid_announcements_dminstt_nm_952da702 over '
+rep=2 twostep names=231 count=7951 step1_ms=697 step2_ms=3773 bp_before='Innodb_buffer_pool_pages_data	949' plan1='Covering index skip scan for deduplication on bid_announcements using bid_announcements_dminstt_nm_952da702  ' plan2='Index range scan on bid_announcements using bid_announcements_dminstt_nm_952da702 over '
+done
