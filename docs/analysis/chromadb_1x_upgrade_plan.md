@@ -3,8 +3,34 @@
 > **작성일**: 2026-09-13
 > **작성자**: Orca Builder (Worker)
 > **기준 커밋**: `a1593e80fa245c629efd904066d01ba75c53ef88`
-> **상태**: 사전 조사 완료 (단일 권고안 수립)
+> **상태**: **업그레이드 보류** (2026-09-13 UNK-03 실측 결과 상류 수정 버전 없음. 0장 참조)
 > **대상 패키지**: `chromadb 0.6.3` -> `chromadb 1.x` (`pyproject.toml`)
+
+---
+
+## 0. 2026-09-13 UNK-03 실측 결과와 보류 결정
+
+사용자가 후보 B 를 승인한 직후 UNK-03 을 먼저 확인했고, **1.x 업그레이드는 CVE 를 해소하지 못한다**는
+결과가 나와 스테이징 실측(UNK-01, UNK-02)을 시작하지 않고 보류했습니다. 원본 `chroma_db/` 는 어떤
+버전으로도 열지 않았습니다.
+
+| 권고 | CVE | 심각도 | 영향 범위 | 수정 버전 |
+| --- | --- | --- | --- | --- |
+| [GHSA-2wm9-hf6c-p5cr](https://github.com/advisories/GHSA-2wm9-hf6c-p5cr) | CVE-2026-45830 | high | `>= 0.4.17, <= 1.5.9` | 없음 |
+| [GHSA-xph7-9rjv-w5fr](https://github.com/advisories/GHSA-xph7-9rjv-w5fr) | CVE-2026-45831 | high | `>= 0.5.0, <= 1.5.9` | 없음 |
+| [GHSA-36p7-vc44-83pf](https://github.com/advisories/GHSA-36p7-vc44-83pf) | CVE-2026-45833 | critical | `>= 0.4.17, <= 1.5.9` | 없음 |
+| [GHSA-f4j7-r4q5-qw2c](https://github.com/advisories/GHSA-f4j7-r4q5-qw2c) | CVE-2026-45829 | critical | `>= 1.0.0, <= 1.5.9` | 없음 |
+
+- 조회 경로: GitHub Advisory API 의 `first_patched_version`, OSV `v1/query` 의 버전별 조회. 0.6.3 은 3건,
+  1.0.0 과 PyPI 최신 1.5.9 는 **4건**이 나옵니다.
+- 1.x 로 올리면 기존 3건이 그대로 남고 인증 전 코드 주입(CVE-2026-45829)이 추가됩니다.
+- 네 건 모두 Chroma HTTP 서버(`/api/v2`)의 인증·권한·`trust_remote_code` 경로입니다. 이 저장소는
+  모든 호출부가 프로세스 내 `PersistentClient` 이며 compose, Dockerfile, 코드 어디에도 Chroma 서버,
+  `HttpClient`, `trust_remote_code` 가 없습니다.
+
+**결정**: 업그레이드를 보류하고 `.github/vulnerability-allowlist.yml` 의 사유를 "상류 미수정, 서버 경로
+미노출" 로 고쳤습니다. 만료일 2026-12-31 은 상류 수정 버전을 다시 확인하는 시점으로 유지합니다.
+수정 버전이 나오면 아래 1장 이하의 후보 B 계획과 UNK-01, UNK-02 실측을 그 버전으로 재개합니다.
 
 ---
 
