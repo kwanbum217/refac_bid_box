@@ -262,6 +262,8 @@ services:
       --default-authentication-plugin=mysql_native_password
       --innodb-redo-log-capacity=2147483648
       --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL_SIZE:-2147483648}
+      --tmp-table-size=134217728
+      --max-heap-table-size=134217728
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
