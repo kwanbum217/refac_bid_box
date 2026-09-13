@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-13
-> **source_commit**: `24247063`
+> **source_commit**: `9ac4fe35`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -89,6 +89,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **ngram_flag**: NGRAM_PREFILTER_ENABLED 는 false 로 고정하며 기각된 선행필터의 영구 차단 스위치입니다. `ngram_prefilter` 사실이 rejected 이고 운영 FULLTEXT 인덱스도 제거된 상태라 true 전환은 승인 대상이 아닙니다. 승인 대기로 두었던 기재는 기각 판정 이후 갱신되지 않은 것이며 2026-09-11 에 종결했습니다.
 
+- **missing_lwlt_intervals**: missing_lwlt 집단은 MAE 2.0943으로 응답 경고 플래그와 화면 안내 구현을 완료해 종결합니다.
+
 ### active 사실
 
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
@@ -96,8 +98,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **mysql_stats_refresh_policy**: 영속 통계 신선도는 읽기 전용 점검 실행기로 판정하며 갱신 주기 채택은 코디네이터 결정 사항으로 남았습니다. innodb_stats_auto_recalc 가 ON 이고 테이블별 재정의가 없는데도 139.8% 편차가 열흘을 간 것을 확인했으며 주기 채택을 추진합니다.
 
 - **lexical_full_rerun**: 정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다.
-
-- **missing_lwlt_intervals**: missing_lwlt 집단은 MAE 2.0943으로 결측 집단 전용 예측구간 관리를 추진합니다.
 
 - **drift_job**: 드리프트 감시는 Servc baseline(b_20260906_servc_post_regime) 기준으로 진행 중(ML_DRIFT_MONITOR_ENABLED 기본값 True)이며, Thng baseline은 없어 해당 모델만 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록합니다.
 

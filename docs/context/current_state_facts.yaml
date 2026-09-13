@@ -311,12 +311,14 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/lexical_channel_latency_effect_20260828.md
   - id: missing_lwlt_intervals
-    status: active
-    decision_date: "2026-08-30"
-    claim: "missing_lwlt 집단은 MAE 2.0943으로 결측 집단 전용 예측구간 관리를 추진합니다."
+    status: closed
+    decision_date: "2026-09-13"
+    claim: "missing_lwlt 집단은 MAE 2.0943으로 응답 경고 플래그와 화면 안내 구현을 완료해 종결합니다."
     document_anchor: "missing_lwlt 집단은 MAE 2.0943"
     evidence:
       - docs/analysis/servc_lwlt_missing_20260830.md
+      - src/app/api/v1/predictions.py
+      - tests/test_missing_lwlt_serving.py
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/servc_lwlt_missing_20260830.md
