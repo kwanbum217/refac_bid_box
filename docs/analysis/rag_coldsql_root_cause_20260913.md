@@ -3,8 +3,8 @@
 > **측정일**: 2026-09-13
 > **작성자**: Claude Opus 5 (코디네이터)
 > **기준 커밋**: `0faf67d6`
-> **상태**: 원인 확정, 개선안 1건 콜드 실측 완료, 구현은 합의 대기
-> **원시 데이터**: `data/benchmarks/rag_segments_coldsql_20260913.json`, `data/benchmarks/rag_coldsql_cold_variants_20260913.txt`
+> **상태**: 원인 확정, 2단계 해석 구현·요청 단위 전후 실측 완료 (7장)
+> **원시 데이터**: `data/benchmarks/rag_segments_coldsql_20260913.json`, `data/benchmarks/rag_coldsql_cold_variants_20260913.txt`, `data/benchmarks/rag_segments_two_step_{before,after}_r{1,2}_20260913.json`
 > **선행 문서**: [`av2_coldsql_segment_measurement_20260910.md`](av2_coldsql_segment_measurement_20260910.md), [`r13_coldsql_timeout_verdict_20260907.md`](r13_coldsql_timeout_verdict_20260907.md), [`ax2_plan_instability_20260911.md`](ax2_plan_instability_20260911.md)
 
 ---
@@ -146,10 +146,45 @@ SELECT COUNT(id) FROM bid_announcements WHERE dminstt_nm IN (<231종>) AND categ
 
 ---
 
-## 6. 다음 단계
+## 6. 구현
+
+`src/rag/structured_data.py` 의 `_resolve_institution_names` 가 기관명 부분 일치를 정확한 이름 목록으로
+풀고, `_result_conditions`, `_announcement_conditions`, `_result_availability_conditions` 가 목록을
+받으면 `IN` 으로 조회합니다. 목록이 `INSTITUTION_NAME_RESOLVE_LIMIT`(1,000)를 넘으면 종전 부분 일치로
+돌아갑니다. 해석 결과는 집계와 같은 1시간 TTL 로 캐시하며 계측 구간명은 `institution_resolve_N` 입니다.
+
+`tests/test_institution_name_resolution.py` 의 `mysql_integration` 6건이 실제 MySQL 에서 기관명
+세 종(서울회생법원, 유성구, 세종특별자치시)과 두 테이블의 id 집합이 부분 일치와 같음을 확인했습니다.
+
+---
+
+## 7. 요청 단위 전후 실측
+
+`main`(`1337d002`)과 구현(`b11b695c`)을 before, after, before, after 순으로 번갈아 쟀습니다. 매 회
+3장의 완전 콜드 절차, Redis `rag:*` 삭제, 앱 재기동을 거쳤고 인자는 2장과 같습니다.
+
+| 문항 | 해석된 기관명 | before 1 | before 2 | after 1 | after 2 | 판정 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| q25 | 상한 이내 | 48,200 | 53,129 | **6,574** | **6,379** | 범위 비중첩, 약 7.8배 |
+| q31 | 대전 (상한 이내) | 50,084 | 53,822 | **16,158** | **14,435** | 범위 비중첩, 약 3.4배 |
+| q08 | 서울 (2,588종, 상한 초과) | 38,068 | 41,458 | 43,995 | 38,774 | 범위 중첩, 차이 없음 |
+
+단위는 콜드 `sql_ms`(ms)입니다. 웜 회차 최대값은 전후 모두 28ms 이하입니다. `cursor_count` 는 해석
+질의 두 개만큼 9에서 11로 늘었고 해석 구간은 회당 117~586ms 입니다.
+
+**q08 이 줄지 않은 것은 설계대로입니다.** 플래너가 뽑은 기관명이 "서울" 이라 상한을 넘어 부분 일치로
+돌아갔고, 공고명별 집계 `top_rows_3` 이 전후 모두 26~33초로 남았습니다. warmup 문항 q03 의 "광주" 도
+같은 경로였습니다. 넓은 검색어는 이번 변경의 효과 밖입니다.
+
+q31 에 남은 11~13초는 `cached_aggregate_2`(공고 COUNT, 대전 기관명 수백 종 `IN`)입니다. 일치 행 본문을
+여전히 읽기 때문이며 4.2 절의 복합 커버링 인덱스가 겨냥하는 지점입니다.
+
+---
+
+## 8. 다음 단계
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
-| 1 | 2단계 해석 구현 (`src/rag/structured_data.py`), 이름 수 상한과 동등성 테스트 | 사용자 합의 |
-| 2 | 2장 절차 + 완전 콜드로 요청 단위 전후 비교 (`scripts/compare_rag_segments.py`) | 1 |
+| 1 | 상한 초과 검색어(서울 2,588종 등)에 대해 상한 상향 또는 대체 경로를 완전 콜드로 실측 | 없음 |
+| 2 | `(dminstt_nm, category)` 복합 커버링 인덱스의 효과·쓰기 비용 실측 | DDL 합의 |
 | 3 | `benchmark_rag_segments.py` 가 fixture 없는 `--item-ids` 를 거부하게 수정 | 없음 |
