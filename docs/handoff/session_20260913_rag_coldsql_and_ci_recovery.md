@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-13
 > **작성자**: Claude Opus 5 (코디네이터)
-> **기준 커밋**: `c395771a`
+> **기준 커밋**: `aa6f0002`
 > **이어받은 문서**: [`docs/handoff/session_20260913_wave_z_observability_chromadb.md`](session_20260913_wave_z_observability_chromadb.md) (같은 날 전반부)
 
 ---
@@ -11,7 +11,8 @@
 
 RAG 정형 질의 콜드 SQL 40초의 원인을 **기관명 선행 와일드카드가 31.6GB 공고 본문을 콜드로 읽는 I/O** 로
 확정하고, 기관명 2단계 해석을 구현해 해석이 적용된 문항을 3.4~7.8배 줄였습니다. 이어서 2026-09-11 이후
-11회 연속 실패하던 `main` CI 를 복구했습니다. `main` 은 `c395771a` 이며 CI 10개 잡이 전부 성공입니다.
+11회 연속 실패하던 `main` CI 를 복구했습니다. 이어서 상한 초과 기관명 경로를 실측해 상한 상향을 기각했고,
+테스트가 로컬 Redis 를 오염시키던 결함을 고쳤습니다. `main` 은 `aa6f0002` 이며 CI 10개 잡이 전부 성공입니다.
 
 ---
 
@@ -23,7 +24,10 @@ RAG 정형 질의 콜드 SQL 40초의 원인을 **기관명 선행 와일드카�
 | `1337d002` | RAG 콜드 SQL 원인 규명 분석 문서 | 전량 4,658건 |
 | `320ccf2c` | 기관명 2단계 해석 구현과 전후 실측 | 전량 4,666건, MySQL 동등성 6건 |
 | `87ceac47` | Tailwind 스캔 누락, 미러 도구 Windows 경로 | CI 부분 해소 |
-| `c395771a` | 미러 테스트 파라미터, `source_commit` 갱신 | **CI 전 잡 성공** |
+| `c395771a` | 미러 테스트 파라미터, `source_commit` 갱신 | CI 전 잡 성공 |
+| `5447d856` | 이 문서 초판 | CI 전 잡 성공 |
+| `f69b1f68` | 상한 초과 기관명 실측, 테스트 캐시 전역 격리 | CI `lint-and-validate` 실패 (5.3 절) |
+| `aa6f0002` | `source_commit` 갱신 | **CI 전 잡 성공** |
 
 ---
 
@@ -88,6 +92,22 @@ MYSQL_TEST_URL="$(uv run python -c 'from src.app.core.config import settings; pr
 보냅니다.** 이번 세션 첫 측정이 이것으로 폐기됐습니다. 반드시 `--fixture data/eval/llm_quality_fixture_v2.json`
 을 함께 주십시오.
 
+### 4.1 상한 초과 기관명: 상한을 올리지 않는다
+
+q08 의 "서울"(공고 2,588종, 일치 442,955행)로 완전 콜드 교차 2회를 쟀습니다(분석 문서 8장).
+
+| 문장 | `LIKE` (현재 되돌림) | 2단계 해석 |
+| --- | --- | --- |
+| COUNT | 2.0 / 1.3초 | 1.2 / 1.2초 |
+| 공고명별 GROUP BY | 41.6 / 22.6초 | **49.7 / 48.3초 (더 느림, 범위 비중첩)** |
+
+**2단계 해석의 효과를 가르는 것은 이름 수가 아니라 일치 행 수입니다.** 세종(7,951행) 4배, 대전(103,608행)
+3.4배 빨라졌고 서울(442,955행)은 느려졌습니다. 흩어진 본문 읽기가 순차 읽기보다 비싸지는 경계가 10만~44만 행
+사이에 있습니다. 현재 1,000종 상한은 그 근사치로 맞게 동작하므로 코드는 바꾸지 않았습니다.
+
+q08 의 28초 구간 대책은 분석 문서 8.1 절의 세 선택지(`(dminstt_nm, bid_ntce_nm)` 복합 인덱스, 기관명
+단위 사전 집계, 넓은 기관명 날짜 기본값) 중 **사용자 결정**이 필요합니다.
+
 ---
 
 ## 5. CI 복구
@@ -108,10 +128,28 @@ CI 확인 없이 쌓았고 뒤늦게 발견했습니다.** 전임 인수인계�
 ### 5.1 병합 절차에 더할 것
 
 ```sh
-git push origin main
+# main 에서 병합한 직후. 규칙 검증이 통과해야만 푸시한다 (; 로 잇지 말 것)
+python3 scripts/validate_agent_rules.py --quiet && git push origin main
 gh run list --commit "$(git rev-parse HEAD)" --workflow ci.yml --limit 1   # run 을 찾아 완료까지 대기
-python3 scripts/validate_agent_rules.py                                    # main 에서 한 번 더. source_commit 한도 5
 ```
+
+### 5.2 테스트가 로컬 Redis 를 오염시키던 결함
+
+상한 초과 실측을 병합하려다 `tests/test_rag_engine.py` 두 건이 **로컬에서만** 실패했습니다. RAG 캐시 키는 SQL
+문자열 해시라 DB 가 달라도 같은데, 테스트가 로컬 Redis 에 값을 써서 이전 실행의 sqlite 테스트 데이터로 만든
+기관명 목록을 다음 실행이 받아 갔습니다. CI 에는 Redis 가 없어 드러나지 않았습니다.
+
+전량 실행 한 번이 `rag:*` 키 116개를 남겼습니다(`test_rag_singleflight` 104, E2E 두 파일 12). **이 값은 로컬
+개발용 앱의 답도 최대 1시간 오염시킬 수 있었습니다.** `tests/conftest.py` 에 autouse `_isolate_process_cache`
+를 넣어 모든 테스트가 메모리 캐시를 쓰게 했고, 전량 실행 후 잔류 키 0 을 확인했습니다. 특정 캐시 상태가 필요한
+테스트는 그 뒤에 다시 덮어씁니다.
+
+### 5.3 규칙 검증 실패 상태로 푸시한 커밋
+
+`f69b1f68` 병합 뒤 main 에서 `validate_agent_rules.py` 가 `source_commit` 8 커밋 뒤처짐으로 `[FAIL]` 을 냈는데,
+명령을 `;` 로 이어 붙여 푸시가 그대로 실행됐습니다. 그 커밋의 CI `lint-and-validate` 가 실패했고 나머지 잡은
+전부 통과했습니다. `aa6f0002` 로 기준 커밋을 갱신해 해소했고 그때부터 푸시를 규칙 검증 성공에 걸었습니다.
+**한 브랜치에 커밋이 여러 개 쌓이면 병합 시점에 한도 5 를 넘기 쉽습니다.**
 
 ---
 
@@ -119,12 +157,13 @@ python3 scripts/validate_agent_rules.py                                    # mai
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
-| 1 | 넓은 기관명 GROUP BY 대책 방향 결정 (분석 문서 8.1 절). 상한 상향은 실측으로 기각 | 사용자 결정 |
+| 1 | 넓은 기관명 GROUP BY 대책 방향 결정 (분석 문서 8.1 절, 이 문서 4.1 절). 상한 상향은 실측으로 기각 | 사용자 결정 |
 | 2 | `(dminstt_nm, category)` 복합 커버링 인덱스 효과·쓰기 비용 실측 (q31 잔여 11~13초) | DDL 사용자 합의 |
-| 3 | `benchmark_rag_segments.py` 가 fixture 없는 `--item-ids` 를 거부 | 없음 |
-| 4 | 셸 명령 자동 승인 실동작 확인 | 다음 워커 기동 |
-| 5 | Windows 실기 검증 | 장비. G2 유일 잔여 조건 |
-| 6 | chromadb 상류 수정 버전 재확인 | 2026-12-31 또는 권고 갱신 |
+| 3 | 2단계 해석 경계를 일치 행 수로 확정 (10만~44만 행 사이) | 없음 |
+| 4 | `benchmark_rag_segments.py` 가 fixture 없는 `--item-ids` 를 거부 | 없음 |
+| 5 | 셸 명령 자동 승인 실동작 확인 | 다음 워커 기동 |
+| 6 | Windows 실기 검증 | 장비. G2 유일 잔여 조건 |
+| 7 | chromadb 상류 수정 버전 재확인 | 2026-12-31 또는 권고 갱신 |
 
 `coldsql_rerun`(`current_state_facts.yaml`, active)은 이번 측정이 canonical 게이트(`item_count_full`)를
 충족하지 않아 원장 상태를 바꾸지 않았습니다. 정본 수치로 닫으려면 전 문항 측정이 필요합니다.
@@ -140,6 +179,7 @@ python3 scripts/validate_agent_rules.py                                    # mai
 | MySQL | `innodb_buffer_pool_dump_at_shutdown=ON` 복원 확인 |
 | 워크트리 | 주 저장소 하나 |
 | 브랜치 | `main` 과 다른 세션 소유 `kwanbum217/orca-r15-verify` |
+| Redis | `rag:*` 키 0. 테스트는 이제 로컬 Redis 에 쓰지 않음 |
 | 감시기 | 공용 상시 감시기 `orca_worker_watch`(PID 10801) 하나. 이 세션의 URL 승인 루프는 종료 |
 | Orca Run `run_d38c5a224e54` | Task 2건 `completed`, 워커 터미널 회수 완료 |
-| 원격 | `origin/main` = `c395771a`, CI 전 잡 성공 |
+| 원격 | `origin/main` = `aa6f0002`, CI 전 잡 성공 |
