@@ -17,6 +17,9 @@ PROMETHEUS_CONFIG_PATH = REPO_ROOT / "docker" / "prometheus.yml"
 GRAFANA_PROMETHEUS_DATASOURCE_PATH = (
     REPO_ROOT / "docker" / "grafana" / "provisioning" / "datasources" / "prometheus.yaml"
 )
+GRAFANA_TEMPO_DATASOURCE_PATH = (
+    REPO_ROOT / "docker" / "grafana" / "provisioning" / "datasources" / "tempo.yaml"
+)
 GRAFANA_DASHBOARD_PROVIDER_PATH = (
     REPO_ROOT / "docker" / "grafana" / "provisioning" / "dashboards" / "dashboards.yaml"
 )
@@ -150,6 +153,32 @@ def test_otel_collector_keeps_traces_and_adds_metrics_pipeline():
     assert metrics["processors"] == ["batch"]
     assert metrics["exporters"] == ["prometheus"]
     assert config["exporters"]["prometheus"]["endpoint"] == "0.0.0.0:8889"
+
+
+def test_otel_collector_probabilistic_policy_uses_percentage_key():
+    # collector-contrib 0.141.0 은 sampling_ratio 를 알 수 없는 키로 거부해 기동 루프에 빠진다.
+    policies = _load_yaml(COLLECTOR_CONFIG_PATH)["processors"]["tail_sampling"]["policies"]
+    probabilistic = [p["probabilistic"] for p in policies if p["type"] == "probabilistic"]
+
+    assert probabilistic
+    for policy in probabilistic:
+        assert set(policy) == {"sampling_percentage"}
+        assert 0 < policy["sampling_percentage"] <= 100
+
+
+def test_otel_collector_exports_traces_to_tempo_grpc_port():
+    # otlp exporter 는 gRPC 이므로 Tempo 의 HTTP 수신 포트 4318 을 가리키면 전량 export 실패한다.
+    exporter = _load_yaml(COLLECTOR_CONFIG_PATH)["exporters"]["otlp/tempo"]
+
+    assert exporter["endpoint"] == "tempo:4317"
+
+
+def test_grafana_provisions_tempo_datasource():
+    entries = _load_yaml(GRAFANA_TEMPO_DATASOURCE_PATH)["datasources"]
+
+    assert len(entries) == 1
+    assert entries[0]["type"] == "tempo"
+    assert entries[0]["url"] == "http://tempo:3200"
 
 
 def test_grafana_provisions_prometheus_datasource(compose: dict):

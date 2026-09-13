@@ -23,8 +23,9 @@
 ## 2. 토폴로지
 
 app 과 worker 가 OTLP HTTP(`http://otel-collector:4318/v1/traces`) 로 span 을 보내면
-Collector 가 tail sampling 을 적용한 뒤 Tempo(`http://tempo:4318`) 로 전달합니다.
-Grafana 는 Tempo(`http://tempo:3200`) 를 데이터소스로 읽습니다.
+Collector 가 tail sampling 을 적용한 뒤 Tempo 의 OTLP gRPC 포트(`tempo:4317`) 로 전달합니다.
+Collector 의 `otlp` exporter 는 gRPC 이므로 Tempo 의 HTTP 수신 포트 4318 을 가리키면 export 가 전량 실패합니다.
+Grafana 는 `docker/grafana/provisioning/datasources/tempo.yaml` 로 Tempo(`http://tempo:3200`) 를 데이터소스로 읽습니다.
 
 세 서비스는 모두 `internal` 네트워크에만 붙으며 외부로 포트를 열지 않습니다.
 Grafana 조회가 필요하면 같은 네트워크의 임시 컨테이너나 SSH 터널로 접근합니다.
