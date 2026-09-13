@@ -431,15 +431,16 @@ facts:
       - docs/context/CURRENT_STATE.md
       - docs/ops/psi_drift_monitoring.md
   - id: coldsql_rerun
-    status: active
-    decision_date: "2026-09-06"
-    claim: "RAG 정형 질의 cold SQL 재측정(2026-09-06, 버퍼풀 콜드)은 sql 구간 콜드 P50 86,539.54ms·콜드 max 101,496.91ms·웜 P50 62.02ms·웜 max 1,015.64ms이며 콜드 표본 2건으로 측정 상태는 partial이고 이전 관찰치 97,087.81ms와 같은 계열이 재현됐으나 canonical 게이트 4건 미충족이라 정본 수치가 아니며 정본 측정을 추진합니다."
+    status: closed
+    decision_date: "2026-09-13"
+    claim: "RAG 정형 질의 cold SQL 재측정은 2026-09-13 전체 32문항 3회 완전 콜드 정본이 canonical 을 통과해 partial 을 종결했습니다. 콜드 SQL 중앙값 18ms, 최대 q03 82,529ms 였고 이후 커버링 인덱스 강제로 q03 은 7.8초입니다."
     document_anchor: "RAG 정형 질의 cold SQL 재측정"
     evidence:
-      - docs/analysis/rag_structured_sql_coldstart_20260830.md
+      - data/benchmarks/rag_segments_canonical_coldsql_20260913.json
+      - docs/analysis/rag_coldsql_root_cause_20260913.md
     related_documents:
       - docs/context/CURRENT_STATE.md
-      - docs/analysis/rag_structured_sql_coldstart_20260830.md
+      - docs/analysis/rag_coldsql_root_cause_20260913.md
   - id: supply_chain_gate
     status: closed
     decision_date: "2026-09-04"
