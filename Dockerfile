@@ -1,4 +1,4 @@
-FROM python:3.11-slim@sha256:d1e9ca7c4e78d1e8ecadb5d44bfc8e956e7a65b659a9950f569f243d72b326d0 AS builder
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534 AS builder
 
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
@@ -29,7 +29,7 @@ RUN uv export --frozen --no-dev --no-emit-project --format requirements.txt -o /
 COPY . /app/
 RUN uv pip install --python "$VIRTUAL_ENV/bin/python" --no-deps -e .
 
-FROM python:3.11-slim@sha256:d1e9ca7c4e78d1e8ecadb5d44bfc8e956e7a65b659a9950f569f243d72b326d0 AS runtime
+FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534 AS runtime
 
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
@@ -41,8 +41,15 @@ WORKDIR /app
 # 런타임에는 없어서 2026-09-03 에 v25, v13_hybrid, quantum_leap_v25_pro,
 # servc_institution_v1 네 모델이 전부 libgomp.so.1 없음으로 로드에 실패했습니다.
 # 공고 상세 화면에 SSH 모델 하나만 뜨던 원인입니다.
+#
+# gzip, libsqlite3-0 은 Debian 보안 수정(CVE-2026-41992, CVE-2026-11822, CVE-2026-11824)이
+# 베이스 이미지보다 먼저 나와 공급망 검사가 막혔습니다(2026-09-13). 버전을 박으면 다음 보안
+# 갱신 때 이전 버전이 저장소에서 빠져 빌드가 깨지므로 대상 패키지만 지정해 올립니다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
+    && apt-get install -y --no-install-recommends --only-upgrade \
+    gzip \
+    libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
