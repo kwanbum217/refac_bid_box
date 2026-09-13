@@ -34,8 +34,11 @@ from scripts.benchmark_rag_segments import (
     container_env_flag,
     docker_since_timestamp,
     evaluate_canonical,
+    fixture_dependent_argument_error,
     load_fixture,
     main,
+    missing_fixture_item_ids,
+    parse_args,
     parse_segment_lines,
     query_db_buffer_pool_pages_data,
     send_query,
@@ -1806,3 +1809,43 @@ def test_main_buffer_pool_failure_records_null_and_error_without_stopping_measur
     assert payload["canonical"] is True
     assert payload["canonical_success"] is True
     assert payload["canonical_failed_gates"] == []
+
+
+def _runner_must_not_be_called(command: list[str]) -> str:
+    raise AssertionError(f"인자 거부는 Docker 사전 검증보다 먼저 일어나야 합니다: {command}")
+
+
+@pytest.mark.parametrize(
+    "extra_args",
+    [
+        ["--item-ids", "q03,q08"],
+        ["--repetitions", "3"],
+        ["--limit", "2"],
+    ],
+)
+def test_main_rejects_fixture_only_arguments_without_fixture(extra_args, capsys):
+    code = main(
+        ["--expected-llm-model", "gemma4:e4b", *extra_args],
+        command_runner=_runner_must_not_be_called,
+    )
+
+    assert code == 2
+    assert extra_args[0] in capsys.readouterr().err
+
+
+def test_fixture_dependent_argument_error_allows_fixture_and_defaults():
+    assert fixture_dependent_argument_error(parse_args(["--rounds", "2"])) is None
+    assert (
+        fixture_dependent_argument_error(
+            parse_args(["--fixture", "f.json", "--item-ids", "q03", "--repetitions", "3"])
+        )
+        is None
+    )
+
+
+def test_missing_fixture_item_ids_reports_unknown_ids_in_request_order():
+    items = [{"id": "q03"}, {"id": "q08"}]
+
+    assert missing_fixture_item_ids("q99, q03,q00", items) == ["q99", "q00"]
+    assert missing_fixture_item_ids("q03,q08", items) == []
+    assert missing_fixture_item_ids(None, items) == []
