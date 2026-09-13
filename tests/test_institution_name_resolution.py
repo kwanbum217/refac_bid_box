@@ -110,6 +110,51 @@ def test_resolver_caches_names(isolated_db, monkeypatch):
     assert sorted(names) == ["세종특별자치시", "세종특별자치시 교육청"]
 
 
+def test_overflow_is_cached_long_and_name_lists_short(isolated_db, monkeypatch):
+    _seed(isolated_db)
+    stored: list[tuple[dict, int]] = []
+    monkeypatch.setattr(cache, "set", lambda key, value, ttl: stored.append((value, ttl)))
+    monkeypatch.setattr(structured_data, "INSTITUTION_NAME_RESOLVE_LIMIT", 1)
+
+    assert (
+        structured_data._resolve_institution_names(isolated_db, BidResult.dminstt_nm, "세종")
+        is None
+    )
+    assert structured_data._resolve_institution_names(
+        isolated_db, BidResult.dminstt_nm, "서울특별시"
+    ) == ["서울특별시"]
+
+    assert stored == [
+        ({"overflow": True}, structured_data.INSTITUTION_OVERFLOW_CACHE_TTL),
+        ({"names": ["서울특별시"]}, structured_data.AGGREGATE_CACHE_TTL),
+    ]
+    assert structured_data.INSTITUTION_OVERFLOW_CACHE_TTL > structured_data.AGGREGATE_CACHE_TTL
+
+
+def test_cached_overflow_skips_database(isolated_db, monkeypatch):
+    _seed(isolated_db)
+    monkeypatch.setattr(structured_data, "INSTITUTION_NAME_RESOLVE_LIMIT", 1)
+    structured_data._resolve_institution_names(isolated_db, BidResult.dminstt_nm, "세종")
+
+    def fail_execute(*args, **kwargs):
+        raise AssertionError("상한 초과가 캐시돼 있으면 해석 질의를 다시 돌리면 안 됩니다")
+
+    monkeypatch.setattr(isolated_db, "execute", fail_execute)
+
+    assert (
+        structured_data._resolve_institution_names(isolated_db, BidResult.dminstt_nm, "세종")
+        is None
+    )
+
+
+def test_legacy_oversized_name_list_still_falls_back(monkeypatch):
+    """배포 전에 저장된 1,001개짜리 이름 목록 캐시도 되돌림으로 읽습니다."""
+    monkeypatch.setattr(structured_data, "INSTITUTION_NAME_RESOLVE_LIMIT", 1)
+    monkeypatch.setattr(structured_data, "_timed_cache_get", lambda key: {"names": ["a", "b"]})
+
+    assert structured_data._resolve_institution_names(None, BidResult.dminstt_nm, "a") is None
+
+
 @pytest.mark.parametrize("term", ["세종특별자치시", "서울", "없는기관명"])
 def test_resolved_rows_equal_substring_rows(isolated_db, term):
     _seed(isolated_db)
