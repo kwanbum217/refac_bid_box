@@ -110,7 +110,7 @@ def test_missing_canonical_is_tool_error(tmp_path: Path):
     assert "error" in report
 
 
-@pytest.mark.parametrize("mirror_rel", [str(m) for m in sync.MIRRORS])
+@pytest.mark.parametrize("mirror_rel", [m.as_posix() for m in sync.MIRRORS])
 def test_repository_mirrors_are_in_sync(mirror_rel: str):
     """저장소의 실제 미러가 정본과 일치합니다."""
     _, report = sync.run(PROJECT_ROOT, check_only=True)
