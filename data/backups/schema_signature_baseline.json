@@ -1151,9 +1151,18 @@
             "category"
           ],
           "unique": false
+        },
+        {
+          "name": "ix_bid_ann_inst_cat_ntce",
+          "column_names": [
+            "dminstt_nm",
+            "category",
+            "bid_ntce_nm"
+          ],
+          "unique": false
         }
       ],
-      "hash": "324781fa1323edd55396c40ccd25b6d8519edf82200a43033ebd70a1af5ac587"
+      "hash": "e573d572930a7e4329f1bc106ae05b6ddc1e79f49d776373f5bc2cad3ccc7324"
     },
     "bid_compare_stats_snapshots": {
       "name": "bid_compare_stats_snapshots",
@@ -3319,7 +3328,7 @@
     "auth_permission": "5a1eda5bc2a9f9790700b2a4228ae20e71b3294de4c3f32ea5d531951bbf732e",
     "automation_requests": "2478d00ecc710a936ce176be8d4bf7251b30e685f439eaa523b6e4908334416d",
     "automation_subscriptions": "643c95f2fa8501dc2375cedd58248611a366ffe9cfd049e0f1f234318335686b",
-    "bid_announcements": "324781fa1323edd55396c40ccd25b6d8519edf82200a43033ebd70a1af5ac587",
+    "bid_announcements": "e573d572930a7e4329f1bc106ae05b6ddc1e79f49d776373f5bc2cad3ccc7324",
     "bid_compare_stats_snapshots": "d9e0fe67e1318a2cdf02ff0b2fc15dd89716a4495bde95d916749105311dac60",
     "bid_dataset_summaries": "db63132629b7fd7a107d4ef8dd88e3b75db7645da6e724d0df92115af9288501",
     "bid_evaluation_evidence": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a",
@@ -3344,7 +3353,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "94ee0305d862559a3ca0124029bddacafbabf27f6e1b113ba9eeb15a8ecb994f",
+  "overall_hash": "02644379a4972d1505a9f6ab87abb18f5fae545278bae5c33882f9e10208620e",
   "orm_tables": [
     "accounts_customuser",
     "automation_requests",
@@ -3402,10 +3411,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-09-11T07:03:02.189788+00:00",
+    "generated_at": "2026-09-13T07:58:01.236831+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "570868cf33a991b17974a52bd10c83650fc30b75"
+    "git_head": "d66747d7b2f291e3e431581c6c0d39dc09c2dae9"
   }
 }
