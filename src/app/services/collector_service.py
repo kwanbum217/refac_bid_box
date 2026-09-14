@@ -394,6 +394,10 @@ async def collect_bids(
         except RangeCollectionError as exc:
             logger.error("면허제한정보 부분 실패: %s", mask_credentials(exc))
             metrics["license_limit_count"] += exc.saved
+            metrics["failed_ranges"].extend(
+                {"category": None, "kind": "license_limit", "start_date": start, "end_date": end}
+                for start, end in exc.failed_ranges
+            )
             metrics.setdefault("restrictions", {})["license_limit_error"] = mask_credentials(exc)
         except Exception as exc:
             logger.exception("면허제한정보 수집 실패")
@@ -415,6 +419,15 @@ async def collect_bids(
         except RangeCollectionError as exc:
             logger.error("참가가능지역 부분 실패: %s", mask_credentials(exc))
             metrics["participation_region_count"] += exc.saved
+            metrics["failed_ranges"].extend(
+                {
+                    "category": None,
+                    "kind": "participation_region",
+                    "start_date": start,
+                    "end_date": end,
+                }
+                for start, end in exc.failed_ranges
+            )
             metrics.setdefault("restrictions", {})["participation_region_error"] = mask_credentials(
                 exc
             )

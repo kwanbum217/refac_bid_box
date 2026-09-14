@@ -18,8 +18,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     # 1. bid_announcement_license_limits 테이블 생성
-    op.create_table(
-        "bid_announcement_license_limits",
+    op.create_table('bid_announcement_license_limits',
         sa.Column(
             "id",
             sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
@@ -74,8 +73,7 @@ def upgrade() -> None:
     )
 
     # 2. bid_announcement_participation_regions 테이블 생성
-    op.create_table(
-        "bid_announcement_participation_regions",
+    op.create_table('bid_announcement_participation_regions',
         sa.Column(
             "id",
             sa.BigInteger().with_variant(sa.Integer(), "sqlite"),

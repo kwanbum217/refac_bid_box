@@ -25,6 +25,7 @@ from src.app.models.bid_restrictions import (
     BidAnnouncementParticipationRegion,
 )
 from src.app.services.api_collector import (
+    RangeCollectionError,
     _map_license_limit_item,
     _map_participation_region_item,
 )
@@ -394,6 +395,62 @@ async def test_collect_bids_restriction_failure_marks_partial_success_and_masks_
         error_msg = metrics["restrictions"]["license_limit_error"]
         assert test_secret_token not in error_msg
         assert "serviceKey=***" in error_msg
+
+
+@pytest.mark.asyncio
+async def test_collect_bids_restriction_partial_failure_records_failed_ranges() -> None:
+    """체크포인트가 공고 MAX(date) 라 제한 수집 실패 구간은 수동 백필 근거로 남아야 합니다."""
+    mock_db = MagicMock()
+    mock_db.get_bind.return_value.dialect.name = "sqlite"
+
+    with (
+        patch("src.app.services.collector_service.get_service_key", return_value="TEST_KEY"),
+        patch(
+            "src.app.services.collector_service._resolve_collection_window_thread",
+            return_value=("20260901", "20260914", False),
+        ),
+        patch(
+            "src.app.services.collector_service.stream_bid_announcements",
+            new_callable=AsyncMock,
+            return_value=10,
+        ),
+        patch(
+            "src.app.services.collector_service.stream_bid_license_limits",
+            new_callable=AsyncMock,
+            side_effect=RangeCollectionError("면허제한정보", 7, [("20260901", "20260907")]),
+        ),
+        patch(
+            "src.app.services.collector_service.stream_bid_participation_regions",
+            new_callable=AsyncMock,
+            side_effect=RangeCollectionError("참가가능지역", 2, [("20260908", "20260914")]),
+        ),
+    ):
+        metrics = await collect_bids(
+            mock_db,
+            start_date="20260901",
+            end_date="20260914",
+            fetch_type="announce",
+            categories=("Thng",),
+            refresh_aggregates=False,
+        )
+
+    assert metrics["status"] == "partial_success"
+    assert metrics["license_limit_count"] == 7
+    assert metrics["participation_region_count"] == 2
+    assert metrics["failed_ranges"] == [
+        {
+            "category": None,
+            "kind": "license_limit",
+            "start_date": "20260901",
+            "end_date": "20260907",
+        },
+        {
+            "category": None,
+            "kind": "participation_region",
+            "start_date": "20260908",
+            "end_date": "20260914",
+        },
+    ]
 
 
 # ============================================================================
