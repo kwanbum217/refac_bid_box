@@ -32,6 +32,9 @@ CONNECT_TIMEOUT_SECONDS = 2
 # 지연이고, 반대로 값을 더 키우면 복구 감지가 그만큼 늦어집니다.
 RECONNECT_BACKOFF_SECONDS = 5.0
 
+# 로컬 메모리 캐시 항목 수 상한입니다.
+LOCAL_CACHE_MAX_ITEMS = 1000
+
 
 class RedisConnection:
     """Redis 클라이언트의 수명과 재연결 백오프만 담당합니다.
@@ -141,7 +144,16 @@ class CacheLayer:
                 logger.warning("캐시 저장 실패 (%s): %s", key, exc)
                 self._conn.invalidate(exc)
             return
-        self._local[key] = (time.time() + ttl, value)
+
+        now = time.time()
+        if key not in self._local and len(self._local) >= LOCAL_CACHE_MAX_ITEMS:
+            expired = [k for k, (exp, _) in self._local.items() if exp < now]
+            for k in expired:
+                self._local.pop(k, None)
+            while len(self._local) >= LOCAL_CACHE_MAX_ITEMS and self._local:
+                oldest_key = next(iter(self._local))
+                self._local.pop(oldest_key, None)
+        self._local[key] = (now + ttl, value)
 
     def delete(self, key: str) -> None:
         client = self._conn.client()
