@@ -275,12 +275,15 @@ facts:
     related_documents:
       - docs/context/CURRENT_STATE.md
   - id: mysql_stats_refresh_policy
-    status: active
-    decision_date: "2026-09-11"
-    claim: "영속 통계 신선도는 읽기 전용 점검 실행기로 판정하며 갱신 주기 채택은 코디네이터 결정 사항으로 남았습니다."
+    status: closed
+    decision_date: "2026-09-14"
+    claim: "영속 통계 신선도는 읽기 전용 점검 실행기로 판정하며 선택지 B(임계 초과 시 사람 승인 수동 갱신)를 채택해 야간 점검까지 구현했고 종결합니다."
     document_anchor: "영속 통계 신선도는 읽기 전용 점검 실행기로"
     evidence:
       - scripts/check_mysql_stats_freshness.py
+      - src/app/services/mysql_stats_freshness.py
+      - src/tasks/scheduled_tasks.py
+      - tests/test_mysql_stats_freshness.py
       - docs/ops/mysql_statistics_refresh_policy_20260911.md
     related_documents:
       - docs/context/CURRENT_STATE.md
