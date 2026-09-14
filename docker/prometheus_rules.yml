@@ -69,3 +69,52 @@ groups:
         annotations:
           summary: "OTel Collector Prometheus 스크랩이 실패했습니다"
           description: "job=otel-collector 대상이 5분 동안 up==0 입니다. 애플리케이션 SLO 시계열이 끊깁니다."
+
+  - name: rag_llm_slo
+    interval: 15s
+    rules:
+      - alert: RagLlmErrorRateHigh
+        expr: |
+          (
+            sum(rate(rag_llm_requests_total{outcome="error"}[5m]))
+            /
+            clamp_min(sum(rate(rag_llm_requests_total[5m])), 1e-9)
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          slo: rag_llm_error_rate
+        annotations:
+          summary: "RAG LLM 오류율이 10% 기준을 넘었습니다"
+          description: "rag_llm_requests_total 의 5분 오류율이 0.1(10%)을 5분 연속 초과했습니다."
+
+      - alert: RagLlmTtftP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(rag_llm_ttft_ms_milliseconds_bucket[5m])
+            )
+          ) > 3000
+        for: 10m
+        labels:
+          severity: warning
+          slo: rag_llm_ttft_p95
+        annotations:
+          summary: "RAG LLM TTFT P95 가 3초(3000ms) 기준을 넘었습니다"
+          description: "rag_llm_ttft_ms_milliseconds_bucket 의 5분 P95 가 3000ms(3s)를 10분 연속 초과했습니다."
+
+      - alert: RagLlmRequestsZeroWithHttpTraffic
+        expr: |
+          (
+            sum(rate(rag_llm_requests_total[5m])) == 0
+            and
+            sum(rate(http_server_request_count_total{http_route="/chatbot/chat/stream"}[5m])) > 0
+          )
+        for: 15m
+        labels:
+          severity: critical
+          slo: rag_llm_traffic
+        annotations:
+          summary: "RAG HTTP 요청이 있으나 LLM 요청이 15분간 0건입니다"
+          description: "http_route=/chatbot/chat/stream 요청이 지속되지만 rag_llm_requests_total 요청이 15분 동안 0건입니다."
