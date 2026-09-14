@@ -317,9 +317,16 @@ def sync_search_index(db: Session, *, collected_since: datetime | None = None) -
     client = MeiliSearchClient()
     client.configure_index()
     counts = {"announcements": 0, "results": 0}
-    for batch in _announcement_batches(db, _latest_announcements(db, collected_since)):
-        client.upsert(batch)
-        counts["announcements"] += len(batch)
+    # 공고는 서버 측 커서로 스트리밍합니다. 같은 연결로 제한정보를 조회하면 pymysql 이
+    # "Previous unbuffered result was left incomplete" 를 내고 스트림이 첫 배치에서 끊겨
+    # 색인이 조용히 누락됩니다(2026-09-14 실측: 1,000건에서 중단). 조회는 별도 연결로 합니다.
+    lookup_db = Session(bind=db.get_bind())
+    try:
+        for batch in _announcement_batches(lookup_db, _latest_announcements(db, collected_since)):
+            client.upsert(batch)
+            counts["announcements"] += len(batch)
+    finally:
+        lookup_db.close()
 
     result_stmt = select(BidResult)
     if collected_since:

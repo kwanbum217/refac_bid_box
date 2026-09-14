@@ -491,3 +491,27 @@ def test_latest_announcement_filter_uses_ranked_derived_ids():
 
     assert "ROW_NUMBER() OVER" in sql
     assert "LATEST_RANK" in sql
+
+
+def test_sync_uses_separate_session_for_license_lookup(monkeypatch):
+    """스트리밍 세션으로 제한정보를 조회하면 MySQL 에서 공고 스트림이 끊깁니다(2026-09-14 실측)."""
+    from unittest.mock import MagicMock
+
+    from src.app.services import search_index
+
+    stream_db = MagicMock()
+    seen = {}
+
+    def fake_batches(lookup_db, rows):
+        seen["lookup_db"] = lookup_db
+        return iter(())
+
+    client = MagicMock()
+    monkeypatch.setattr(search_index, "MeiliSearchClient", lambda: client)
+    monkeypatch.setattr(search_index, "_latest_announcements", lambda db, since: iter(()))
+    monkeypatch.setattr(search_index, "_announcement_batches", fake_batches)
+    stream_db.execute.return_value.scalars.return_value.yield_per.return_value = iter(())
+
+    search_index.sync_search_index(stream_db)
+
+    assert seen["lookup_db"] is not stream_db
