@@ -261,3 +261,112 @@ def test_mysql_resolved_id_set_equals_substring(term, model):
         )
 
     assert resolved == legacy
+
+
+def test_new_institution_resolved_via_db_when_catalog_stale(isolated_db):
+    """카탈로그 캐시가 채워진 뒤 DB 에 새 기관 행이 추가되면 DB 해석 질의로 새 이름을 반환합니다."""
+    _seed(isolated_db)
+    # 먼저 카탈로그를 캐시에 채웁니다 (세종, 서울만 존재)
+    structured_data._resolve_institution_names(isolated_db, BidAnnouncement.dminstt_nm, "세종")
+
+    # 캐시 채워진 후 DB 에 새 기관 추가
+    new_ann = BidAnnouncement(
+        bid_ntce_no="A_NEW_INST",
+        dminstt_nm="부산광역시",
+        category="Cnstwk",
+    )
+    isolated_db.add(new_ann)
+    isolated_db.commit()
+
+    # 카탈로그에는 '부산'이 없지만 DB 해석 질의로 넘어가서 새 이름을 반환해야 합니다
+    names = structured_data._resolve_institution_names(
+        isolated_db, BidAnnouncement.dminstt_nm, "부산"
+    )
+    assert names == ["부산광역시"]
+
+
+def test_empty_resolution_cached_with_short_ttl(isolated_db, monkeypatch):
+    """DB 해석 질의 결과가 빈 목록이면 짧은 TTL(INSTITUTION_EMPTY_RESOLVE_CACHE_TTL=300초)로 캐시됩니다."""
+    _seed(isolated_db)
+    # 먼저 카탈로그를 캐시해 둡니다
+    structured_data._resolve_institution_names(isolated_db, BidAnnouncement.dminstt_nm, "세종")
+
+    stored: list[tuple[dict, int]] = []
+    monkeypatch.setattr(cache, "set", lambda key, value, ttl: stored.append((value, ttl)))
+
+    # DB 에 없는 기관명 검색 -> 카탈로그 빈 일치 -> DB 해석 질의 -> 빈 결과 -> 300초 캐시
+    result = structured_data._resolve_institution_names(
+        isolated_db, BidAnnouncement.dminstt_nm, "제주특별자치도"
+    )
+
+    assert result == []
+    assert stored == [
+        ({"names": []}, structured_data.INSTITUTION_EMPTY_RESOLVE_CACHE_TTL),
+    ]
+    assert structured_data.INSTITUTION_EMPTY_RESOLVE_CACHE_TTL == 300
+    assert structured_data.INSTITUTION_EMPTY_RESOLVE_CACHE_TTL < structured_data.AGGREGATE_CACHE_TTL
+
+
+def test_warm_aggregates_refreshes_catalog_and_tolerates_failure(isolated_db, monkeypatch):
+    """수집 후 예열이 catalog 갱신을 호출하고, 갱신 예외에도 나머지 예열이 정상 진행됩니다."""
+    import src.app.services.compare_stats_snapshots as compare_module
+    from src.app.services import collector_service
+
+    calls: list[str] = []
+
+    def mock_refresh(db):
+        calls.append("refresh")
+
+    monkeypatch.setattr(structured_data, "refresh_institution_name_catalogs", mock_refresh)
+    monkeypatch.setattr(
+        collector_service,
+        "rebuild_bid_dataset_summaries",
+        lambda db, ds: calls.append("rebuild_summaries"),
+    )
+    monkeypatch.setattr(
+        compare_module,
+        "rebuild_compare_stats_snapshots",
+        lambda db: calls.append("rebuild_compare"),
+    )
+    monkeypatch.setattr(
+        collector_service,
+        "warm_dashboard_stats_cache",
+        lambda db: calls.append("warm_dashboard"),
+    )
+    monkeypatch.setattr(
+        collector_service,
+        "warm_home_page_cache",
+        lambda db: calls.append("warm_home"),
+    )
+
+    # 1) 정상 예열 호출 시 catalog 갱신 호출 검증
+    collector_service._warm_aggregates_and_caches_sync(
+        ["announcement"], bind=isolated_db.get_bind()
+    )
+    assert calls == [
+        "refresh",
+        "rebuild_summaries",
+        "rebuild_compare",
+        "warm_dashboard",
+        "warm_home",
+    ]
+
+    # 2) catalog 갱신 실패 시에도 나머지 예열 흐름 계속 진행 검증
+    calls.clear()
+
+    def failing_refresh(db):
+        calls.append("failing_refresh")
+        raise RuntimeError("카탈로그 갱신 중 실패")
+
+    monkeypatch.setattr(structured_data, "refresh_institution_name_catalogs", failing_refresh)
+
+    collector_service._warm_aggregates_and_caches_sync(
+        ["announcement"], bind=isolated_db.get_bind()
+    )
+    assert calls == [
+        "failing_refresh",
+        "rebuild_summaries",
+        "rebuild_compare",
+        "warm_dashboard",
+        "warm_home",
+    ]
