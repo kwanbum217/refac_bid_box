@@ -204,7 +204,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: backup
-    command: ["arq", "src.tasks.worker.WorkerSettings"]
+    command: ["arq", "src.tasks.worker.BackupWorkerSettings"]
     environment:
       - ENVIRONMENT=${ENVIRONMENT:?ENVIRONMENT must be set}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
@@ -225,8 +225,6 @@ services:
       - ML_WEEKLY_RETRAIN_ENABLED=false
       - WORKER_HEARTBEAT_MAX_AGE_SECONDS=${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
       - TZ=Asia/Seoul
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -249,9 +247,9 @@ services:
         max-size: "10m"
         max-file: "5"
     volumes:
-      - ./ml_registry:/app/ml_registry
+      - ./ml_registry:/app/ml_registry:ro
       - ./data:/app/data
-      - ./chroma_db:/app/chroma_db
+      - ./chroma_db:/app/chroma_db:ro
     networks:
       - internal
       - egress
