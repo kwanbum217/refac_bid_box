@@ -109,6 +109,48 @@
                     </div>
                 </div>
 
+                {% if restrictions and (restrictions.collected or restrictions.industry_limited == 'Y') %}
+                <!-- Participation Restrictions Card -->
+                <div class="h-card p-6 space-y-4" id="participation-restrictions">
+                    <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                        <i class="fas fa-id-card text-primary mr-2"></i>
+                        참가 자격 제한
+                    </h2>
+                    {% if restrictions.license_groups %}
+                    <div class="space-y-3">
+                        {% for group in restrictions.license_groups %}
+                        <div>
+                            <div class="detail-label">제한그룹 {{ group.group_no }}</div>
+                            <ul class="mt-1 space-y-1">
+                                {% for item in group.licenses %}
+                                <li class="text-sm text-slate-800">
+                                    <span class="font-semibold">{{ item.name|default("-", true) }}</span>
+                                    {% if item.permitted %}<span class="block text-xs text-slate-500">허용업종: {{ item.permitted }}</span>{% endif %}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% if restrictions.license_groups|length > 1 %}
+                    <p class="text-xs text-slate-500">제한그룹이 여러 개인 공고입니다. 그룹 간 적용 방식은 공고문에서 확인하십시오.</p>
+                    {% endif %}
+                    {% elif restrictions.industry_limited == 'Y' %}
+                    <p class="text-sm text-slate-600" id="restrictions-not-collected">업종제한이 있는 공고입니다. 제한 업종명은 2026-09-14 이후 수집한 공고부터 제공하므로 공고문에서 확인하십시오.</p>
+                    {% endif %}
+                    {% if restrictions.regions %}
+                    <div>
+                        <div class="detail-label">참가가능지역</div>
+                        <div class="mt-1 flex flex-wrap gap-2">
+                            {% for region in restrictions.regions %}
+                            <span class="px-2 py-0.5 rounded bg-slate-100 text-xs font-semibold text-slate-700">{{ region }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
                 <!-- AI Prediction Section -->
                 <div class="h-card overflow-hidden">
                     <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">

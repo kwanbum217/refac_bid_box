@@ -15,6 +15,10 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased
 
 from src.app.core.config import settings
+from src.app.models.bid_restrictions import (
+    BidAnnouncementLicenseLimit,
+    BidAnnouncementParticipationRegion,
+)
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 
@@ -534,9 +538,70 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
         "bid": bid,
         "similar_bids": list(similar_bids),
         "past_results": past_results,
+        "restrictions": get_announcement_restrictions(db, bid),
         "default_prediction_model": DEFAULT_PREDICTION_MODEL_BY_CATEGORY.get(
             bid.category, DEFAULT_PREDICTION_MODEL
         ),
+    }
+
+
+def _sort_key(value: str | None) -> tuple[int, str]:
+    text = value or ""
+    return (int(text), text) if text.isdigit() else (10**9, text)
+
+
+def get_announcement_restrictions(db: Session, bid: BidAnnouncement) -> dict[str, Any]:
+    """공고의 면허제한 그룹과 참가가능지역.
+
+    그룹 간 결합 의미(AND/OR)는 확인되지 않아 해석하지 않고 그룹별로 나열합니다.
+    수집은 2026-09-14 이후 신규 공고부터라, 과거 공고는 공고 API 의 제한 여부만 남습니다.
+    """
+    license_rows = (
+        db.execute(
+            select(BidAnnouncementLicenseLimit).where(
+                BidAnnouncementLicenseLimit.bid_ntce_no == bid.bid_ntce_no,
+                BidAnnouncementLicenseLimit.bid_ntce_ord == bid.bid_ntce_ord,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    region_rows = (
+        db.execute(
+            select(BidAnnouncementParticipationRegion).where(
+                BidAnnouncementParticipationRegion.bid_ntce_no == bid.bid_ntce_no,
+                BidAnnouncementParticipationRegion.bid_ntce_ord == bid.bid_ntce_ord,
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    groups: dict[str, list[BidAnnouncementLicenseLimit]] = {}
+    for row in sorted(license_rows, key=lambda r: (_sort_key(r.lmt_grp_no), _sort_key(r.lmt_sno))):
+        groups.setdefault(row.lmt_grp_no, []).append(row)
+
+    raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    industry_limited = (raw.get("indstrytyLmtYn") or "").strip().upper() or None
+    return {
+        "license_groups": [
+            {
+                "group_no": group_no,
+                "licenses": [
+                    {"name": row.lcns_lmt_nm, "permitted": row.permsn_indstryty_list}
+                    for row in rows
+                    if row.lcns_lmt_nm or row.permsn_indstryty_list
+                ],
+            }
+            for group_no, rows in groups.items()
+        ],
+        "regions": [
+            row.prtcpt_psbl_rgn_nm
+            for row in sorted(region_rows, key=lambda r: _sort_key(r.lmt_sno))
+            if row.prtcpt_psbl_rgn_nm
+        ],
+        "industry_limited": industry_limited,
+        "collected": bool(license_rows or region_rows),
     }
 
 
