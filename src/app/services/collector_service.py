@@ -224,6 +224,12 @@ def _warm_aggregates_and_caches_sync(datasets: list[str], bind=None) -> None:
     )
     db = session_factory()
     try:
+        try:
+            from src.rag.structured_data import refresh_institution_name_catalogs
+
+            refresh_institution_name_catalogs(db)
+        except Exception as exc:
+            logger.warning("RAG 기관명 카탈로그 갱신 실패: %s", mask_credentials(exc))
         rebuild_bid_dataset_summaries(db, datasets)
         try:
             from src.app.services.compare_stats_snapshots import (

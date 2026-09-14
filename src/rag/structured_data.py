@@ -575,6 +575,10 @@ INSTITUTION_NAME_RESOLVE_LIMIT = 1000
 # 집계와 같은 1시간을 유지합니다(최근 7일 신규 기관명 낙찰 63, 공고 68).
 INSTITUTION_OVERFLOW_CACHE_TTL = 7 * 24 * 60 * 60
 
+# 해석 질의 결과가 빈 이름 목록일 때의 유효 시간 (300초).
+# 새 기관이 들어온 뒤 빈 결과가 1시간 남는 결함을 막기 위해 짧게 캐시합니다.
+INSTITUTION_EMPTY_RESOLVE_CACHE_TTL = 300
+
 # 해석 질의도 상한 안의 검색어는 기관명 인덱스(공고 359MB)를 끝까지 훑습니다. "광주"가 콜드에서
 # 4.6~12.9초, 웜에서 0.7초였습니다. 고유 기관명은 공고 43,755종, 낙찰 50,854종으로 합쳐도 약 2MB 라
 # 목록째 캐시하고 파이썬에서 고릅니다(2026-09-13 실측). 목록 조회는 skip scan 이라 웜 175ms 입니다.
@@ -650,7 +654,7 @@ def _resolve_institution_names(db: Session, column, institution_name: str) -> li
         matched = _match_institution_catalog(
             _institution_name_catalog(db, column), institution_name
         )
-        if matched is not None:
+        if matched is not None and len(matched) > 0:
             return None if len(matched) > INSTITUTION_NAME_RESOLVE_LIMIT else matched
     stmt = (
         select(column)
@@ -668,6 +672,9 @@ def _resolve_institution_names(db: Session, column, institution_name: str) -> li
                 if len(names) > INSTITUTION_NAME_RESOLVE_LIMIT:
                     cached = {"overflow": True}
                     cache.set(key, cached, INSTITUTION_OVERFLOW_CACHE_TTL)
+                elif not names:
+                    cached = {"names": names}
+                    cache.set(key, cached, INSTITUTION_EMPTY_RESOLVE_CACHE_TTL)
                 else:
                     cached = {"names": names}
                     cache.set(key, cached, AGGREGATE_CACHE_TTL)
