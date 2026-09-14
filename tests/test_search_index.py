@@ -38,6 +38,22 @@ def test_announcement_document_uses_stable_notice_identity():
     assert document["id"] == "announcement_Servc_20260810001"
     assert document["source_id"] == 42
     assert document["region_codes"] == ["seoul"]
+    assert document["license_codes"] == []
+
+
+def test_announcement_document_includes_custom_license_codes():
+    row = BidAnnouncement(
+        id=43,
+        bid_ntce_no="20260810002",
+        bid_ntce_ord="000",
+        bid_ntce_nm="통신 공사",
+        category="Cnstwk",
+        bid_ntce_dt=utcnow(),
+        collected_at=utcnow(),
+    )
+
+    document = announcement_document(row, license_codes=["0036", "1492", "0036"])
+    assert document["license_codes"] == ["0036", "1492"]
 
 
 def test_meili_search_sends_dataset_filters_and_sort(monkeypatch):
@@ -65,6 +81,31 @@ def test_meili_search_sends_dataset_filters_and_sort(monkeypatch):
     )
 
 
+def test_meili_search_supports_license_code_filter(monkeypatch):
+    response = Mock()
+    response.content = b"{}"
+    response.json.return_value = {"hits": [{"source_id": 9}], "estimatedTotalHits": 1}
+    response.raise_for_status.return_value = None
+    request = Mock(return_value=response)
+    monkeypatch.setattr(httpx, "request", request)
+
+    page = MeiliSearchClient(base_url="http://search", master_key="test-key").search(
+        query="",
+        dataset="announcement",
+        category="Servc",
+        region=None,
+        sort=["bid_ntce_dt:desc"],
+        offset=0,
+        limit=20,
+        license_code="0036",
+    )
+
+    assert page == SearchPage(ids=[9], has_next=False)
+    assert request.call_args.kwargs["json"]["filter"] == (
+        'dataset = "announcement" AND category = "Servc" AND license_codes = "0036"'
+    )
+
+
 def test_configure_index_supports_full_dataset_pagination_and_rate_filter(monkeypatch):
     response = Mock(content=b"")
     response.raise_for_status.return_value = None
@@ -77,6 +118,7 @@ def test_configure_index_supports_full_dataset_pagination_and_rate_filter(monkey
     assert settings_payload["pagination"] == {"maxTotalHits": INDEX_MAX_TOTAL_HITS}
     assert INDEX_MAX_TOTAL_HITS >= 10_000_000
     assert "sucsf_bid_rate" in settings_payload["filterableAttributes"]
+    assert "license_codes" in settings_payload["filterableAttributes"]
 
 
 def test_rate_sort_excludes_null_rates_and_escapes_filter_values(monkeypatch):
@@ -449,3 +491,27 @@ def test_latest_announcement_filter_uses_ranked_derived_ids():
 
     assert "ROW_NUMBER() OVER" in sql
     assert "LATEST_RANK" in sql
+
+
+def test_sync_uses_separate_session_for_license_lookup(monkeypatch):
+    """스트리밍 세션으로 제한정보를 조회하면 MySQL 에서 공고 스트림이 끊깁니다(2026-09-14 실측)."""
+    from unittest.mock import MagicMock
+
+    from src.app.services import search_index
+
+    stream_db = MagicMock()
+    seen = {}
+
+    def fake_batches(lookup_db, rows):
+        seen["lookup_db"] = lookup_db
+        return iter(())
+
+    client = MagicMock()
+    monkeypatch.setattr(search_index, "MeiliSearchClient", lambda: client)
+    monkeypatch.setattr(search_index, "_latest_announcements", lambda db, since: iter(()))
+    monkeypatch.setattr(search_index, "_announcement_batches", fake_batches)
+    stream_db.execute.return_value.scalars.return_value.yield_per.return_value = iter(())
+
+    search_index.sync_search_index(stream_db)
+
+    assert seen["lookup_db"] is not stream_db

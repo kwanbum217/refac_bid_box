@@ -170,15 +170,17 @@ def bid_list(
     cat: str = Query(""),
     region: str = Query(""),
     sort: str = Query(""),
+    lic: str = Query(""),
     page: int = Query(1),
     db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
 ):
     if user is None:
         return _login_redirect(request)
+    normalized_lic = bid_queries.normalize_license_code(lic)
     try:
         page_obj = bid_queries.list_announcements(
-            db, q=q, cat=cat, region=region, sort=sort, page=page
+            db, q=q, cat=cat, region=region, sort=sort, page=page, lic=normalized_lic
         )
     except SearchBackendUnavailable as exc:
         logger.exception("공고 SSR 목록 검색 백엔드 실패")
@@ -186,6 +188,7 @@ def bid_list(
             status_code=503,
             detail="공고 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
         ) from exc
+    industry_choices = bid_queries.get_top_industry_choices(db)
     context = {
         "bids": page_obj.object_list,
         "page_obj": page_obj,
@@ -195,6 +198,8 @@ def bid_list(
         "cat": cat,
         "sort": bid_queries.normalize_bid_sort(sort),
         "region": bid_queries.normalize_region_code(region),
+        "lic": normalized_lic,
+        "industry_choices": industry_choices,
         "region_groups": bid_queries.region_groups_payload(),
     }
     return _render(request, "bids/list.html", context, user, "bids")

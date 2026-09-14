@@ -21,6 +21,7 @@ from datetime import timedelta
 import pytest
 
 from src.app.core.timeutil import utcnow
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import bid_queries
 
@@ -284,3 +285,48 @@ def test_result_detail_uses_announcement_reference_winning_rate(isolated_db):
     rate = detail["result"].display_winning_rate(isolated_db)
     assert str(rate).startswith("86.36")
     assert float(rate) != 95.0
+
+
+def test_bid_list_industry_filter_mysql_fallback(monkeypatch, isolated_db):
+    """MySQL fallback 에서도 lic 필터(4자리 코드)가 정상 동작하고 잘못된 코드는 무시된다."""
+    from src.app.core.config import settings
+
+    monkeypatch.setattr(settings, "MEILI_ENABLED", False, raising=False)
+    now = utcnow()
+    ann_telco = _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-PARITY-TELCO",
+        bid_ntce_nm="통신 공사 공고",
+        category="Cnstwk",
+        bid_ntce_dt=now,
+    )
+    ann_other = _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-PARITY-OTHER",
+        bid_ntce_nm="일반 용역 공고",
+        category="Servc",
+        bid_ntce_dt=now,
+    )
+    isolated_db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no="ANN-PARITY-TELCO",
+            bid_ntce_ord="000",
+            lmt_grp_no="1",
+            lmt_sno="1",
+            lcns_lmt_nm="정보통신공사업/0036",
+            collected_at=now,
+        )
+    )
+    isolated_db.commit()
+
+    # 정상 4자리 코드 필터
+    page_filtered = bid_queries.list_announcements(isolated_db, lic="0036")
+    ids = [row.id for row in page_filtered.object_list]
+    assert ann_telco.id in ids
+    assert ann_other.id not in ids
+
+    # 잘못된 코드(3자리, 영문 등)는 필터가 무시되어 둘 다 노출
+    page_invalid = bid_queries.list_announcements(isolated_db, lic="123")
+    ids_invalid = [row.id for row in page_invalid.object_list]
+    assert ann_telco.id in ids_invalid
+    assert ann_other.id in ids_invalid

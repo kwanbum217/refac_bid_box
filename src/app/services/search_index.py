@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,6 +24,20 @@ from src.app.models.bids import BidAnnouncement, BidResult
 logger = logging.getLogger(__name__)
 
 INDEX_UID = "bid_records"
+
+_LICENSE_CODE_PATTERN = re.compile(r"/(\d{4})(?!\d)")
+
+
+def extract_license_codes(*texts: str | None) -> list[str]:
+    codes: set[str] = set()
+    for text in texts:
+        if not text:
+            continue
+        for match in _LICENSE_CODE_PATTERN.finditer(text):
+            codes.add(match.group(1))
+    return sorted(codes)
+
+
 SYNC_BATCH_SIZE = 1_000
 INDEX_MAX_TOTAL_HITS = 10_000_000
 
@@ -61,7 +76,9 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
-def announcement_document(row: BidAnnouncement) -> dict[str, Any]:
+def announcement_document(
+    row: BidAnnouncement, license_codes: list[str] | None = None
+) -> dict[str, Any]:
     region_codes = _region_codes(row.dminstt_nm, row.ntce_instt_nm)
     return {
         # 차수가 새로 수집돼도 기존 문서를 교체해야 하므로 DB PK가 아니라 공고의
@@ -76,6 +93,7 @@ def announcement_document(row: BidAnnouncement) -> dict[str, Any]:
         "category": row.category,
         "region_codes": region_codes,
         "region_rank": _region_rank(region_codes),
+        "license_codes": sorted(set(license_codes)) if license_codes else [],
         "bid_ntce_dt": _iso(row.bid_ntce_dt),
         "bid_clse_dt": _iso(row.bid_clse_dt),
         "base_amount": row.resolved_base_amount,
@@ -153,6 +171,7 @@ class MeiliSearchClient:
                     "dataset",
                     "category",
                     "region_codes",
+                    "license_codes",
                     "sucsf_bid_rate",
                 ],
                 "sortableAttributes": [
@@ -183,12 +202,15 @@ class MeiliSearchClient:
         sort: list[str],
         offset: int,
         limit: int,
+        license_code: str | None = None,
     ) -> SearchPage:
         filters = [f"dataset = {json.dumps(dataset, ensure_ascii=False)}"]
         if category:
             filters.append(f"category = {json.dumps(category, ensure_ascii=False)}")
         if region:
             filters.append(f"region_codes = {json.dumps(region, ensure_ascii=False)}")
+        if license_code:
+            filters.append(f"license_codes = {json.dumps(license_code, ensure_ascii=False)}")
         if dataset == "result" and any(
             item in {"sucsf_bid_rate:asc", "sucsf_bid_rate:desc"} for item in sort
         ):
@@ -229,6 +251,56 @@ def _latest_announcements(db: Session, collected_since: datetime | None):
     )
 
 
+def _build_announcement_batch(db: Session, rows: list[BidAnnouncement]) -> list[dict[str, Any]]:
+    from sqlalchemy import tuple_
+
+    from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
+
+    if not rows:
+        return []
+
+    pairs = {(row.bid_ntce_no, row.bid_ntce_ord or "000") for row in rows}
+    limits = (
+        db.execute(
+            select(BidAnnouncementLicenseLimit).where(
+                tuple_(
+                    BidAnnouncementLicenseLimit.bid_ntce_no,
+                    BidAnnouncementLicenseLimit.bid_ntce_ord,
+                ).in_(pairs)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    limits_by_key: dict[tuple[str, str], list[str]] = {}
+    for limit in limits:
+        codes = extract_license_codes(limit.lcns_lmt_nm, limit.permsn_indstryty_list)
+        if codes:
+            key = (limit.bid_ntce_no, limit.bid_ntce_ord)
+            limits_by_key.setdefault(key, []).extend(codes)
+
+    batch_docs: list[dict[str, Any]] = []
+    for row in rows:
+        key = (row.bid_ntce_no, row.bid_ntce_ord or "000")
+        codes = sorted(set(limits_by_key.get(key, [])))
+        batch_docs.append(announcement_document(row, license_codes=codes))
+    return batch_docs
+
+
+def _announcement_batches(
+    db: Session, rows: Iterable[BidAnnouncement]
+) -> Iterable[list[dict[str, Any]]]:
+    current_rows: list[BidAnnouncement] = []
+    for row in rows:
+        current_rows.append(row)
+        if len(current_rows) == SYNC_BATCH_SIZE:
+            yield _build_announcement_batch(db, current_rows)
+            current_rows = []
+    if current_rows:
+        yield _build_announcement_batch(db, current_rows)
+
+
 def _rows_to_batches(rows: Iterable[Any], mapper):
     batch: list[dict[str, Any]] = []
     for row in rows:
@@ -245,11 +317,16 @@ def sync_search_index(db: Session, *, collected_since: datetime | None = None) -
     client = MeiliSearchClient()
     client.configure_index()
     counts = {"announcements": 0, "results": 0}
-    for batch in _rows_to_batches(
-        _latest_announcements(db, collected_since), announcement_document
-    ):
-        client.upsert(batch)
-        counts["announcements"] += len(batch)
+    # 공고는 서버 측 커서로 스트리밍합니다. 같은 연결로 제한정보를 조회하면 pymysql 이
+    # "Previous unbuffered result was left incomplete" 를 내고 스트림이 첫 배치에서 끊겨
+    # 색인이 조용히 누락됩니다(2026-09-14 실측: 1,000건에서 중단). 조회는 별도 연결로 합니다.
+    lookup_db = Session(bind=db.get_bind())
+    try:
+        for batch in _announcement_batches(lookup_db, _latest_announcements(db, collected_since)):
+            client.upsert(batch)
+            counts["announcements"] += len(batch)
+    finally:
+        lookup_db.close()
 
     result_stmt = select(BidResult)
     if collected_since:
