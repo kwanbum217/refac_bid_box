@@ -312,3 +312,24 @@ def test_grafana_provisions_slo_alerts_dashboard():
     assert "/chatbot/chat/stream" in joined
     assert "/api/v1/predictions/predict" not in joined
     assert "/api/v1/bids/" not in joined
+
+
+def test_all_prod_compose_services_pin_image_digest(compose: dict):
+    """운영 compose 의 모든 서비스 image 가 @sha256: 로 고정되었는지 단언합니다."""
+    services = compose.get("services", {})
+    assert services, "운영 compose 에 서비스가 정의되어 있어야 합니다."
+
+    pinned_count = 0
+    for name, service in services.items():
+        image = service.get("image")
+        if not image:
+            # build 로 만드는 서비스는 image 키가 없으면 건너뜁니다.
+            continue
+        assert "@sha256:" in image, (
+            f"서비스 '{name}'의 이미지 '{image}'가 digest(@sha256:)로 고정되지 않았습니다."
+        )
+        pinned_count += 1
+
+    assert pinned_count > 0, (
+        "digest 가 고정된 이미지를 사용하는 서비스가 최소 1개 이상이어야 합니다."
+    )

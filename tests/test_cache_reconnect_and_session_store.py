@@ -249,3 +249,63 @@ def test_session_cookie_secure_flag_follows_environment(client, monkeypatch):
     # CORS 가 allow_origins=["*"] + allow_credentials=True 인 동안 lax 가
     # cross-site 요청에 쿠키가 붙는 것을 막는 유일한 방어선입니다.
     assert "samesite=lax" in set_cookie
+
+
+def test_local_cache_bounded_evicts_oldest_when_exceeding_max_items(monkeypatch):
+    """(a) Redis 없이 상한+N 개를 넣으면 항목 수가 상한 이하이고 최근 키는 남는다."""
+    _install_connector(monkeypatch, RecordingConnector(client=None))
+    monkeypatch.setattr(cache_module, "LOCAL_CACHE_MAX_ITEMS", 3)
+    layer = CacheLayer(connection=RedisConnection(backoff_seconds=BACKOFF, label="test"))
+
+    for i in range(5):
+        layer.set(f"k{i}", f"val{i}", ttl=100)
+
+    assert len(layer._local) <= 3
+    assert len(layer._local) == 3
+    assert layer.get("k0") is None
+    assert layer.get("k1") is None
+    assert layer.get("k2") == "val2"
+    assert layer.get("k3") == "val3"
+    assert layer.get("k4") == "val4"
+
+
+def test_local_cache_evicts_expired_items_first(monkeypatch, clock):
+    """(b) 만료 항목이 먼저 지워진다."""
+    _install_connector(monkeypatch, RecordingConnector(client=None))
+    monkeypatch.setattr(cache_module, "LOCAL_CACHE_MAX_ITEMS", 3)
+    layer = CacheLayer(connection=RedisConnection(backoff_seconds=BACKOFF, label="test"))
+
+    layer.set("k1", "val1", ttl=100)
+    layer.set("k2", "val2", ttl=10)
+    layer.set("k3", "val3", ttl=100)
+
+    clock.advance(20)
+
+    layer.set("k4", "val4", ttl=100)
+
+    assert len(layer._local) <= 3
+    assert len(layer._local) == 3
+    assert layer.get("k1") == "val1"
+    assert layer.get("k2") is None
+    assert layer.get("k3") == "val3"
+    assert layer.get("k4") == "val4"
+
+
+def test_local_cache_update_existing_key_does_not_evict_others(monkeypatch):
+    """(c) 같은 키 갱신은 다른 항목을 밀어내지 않는다."""
+    _install_connector(monkeypatch, RecordingConnector(client=None))
+    monkeypatch.setattr(cache_module, "LOCAL_CACHE_MAX_ITEMS", 3)
+    layer = CacheLayer(connection=RedisConnection(backoff_seconds=BACKOFF, label="test"))
+
+    layer.set("k1", "val1", ttl=100)
+    layer.set("k2", "val2", ttl=100)
+    layer.set("k3", "val3", ttl=100)
+
+    # 기존 키 k2 갱신
+    layer.set("k2", "val2_updated", ttl=100)
+
+    assert len(layer._local) <= 3
+    assert len(layer._local) == 3
+    assert layer.get("k1") == "val1"
+    assert layer.get("k2") == "val2_updated"
+    assert layer.get("k3") == "val3"
