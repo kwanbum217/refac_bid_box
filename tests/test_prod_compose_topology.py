@@ -74,20 +74,44 @@ def test_data_tier_isolated_and_application_services_have_egress(compose: dict):
     assert services["db"]["networks"] == ["internal"]
     assert services["redis"]["networks"] == ["internal"]
     assert services["meilisearch"]["networks"] == ["internal"]
+    assert services["backup"]["networks"] == ["internal"]
     assert services["app"]["networks"] == ["internal", "egress"]
     assert services["worker"]["networks"] == ["internal", "egress"]
     assert services["proxy"]["networks"] == ["egress"]
 
 
 def test_app_readiness_requires_ready_and_production_gates(compose: dict):
+    """운영 readiness 게이트 단언.
+
+    LLM 장애 시 결정론적 응답(_fallback_answer)으로 서비스 유지 및 Caddy 기동 보장을 위해
+    READINESS_REQUIRE_LLM 은 false 로 둔다.
+    mysql, redis, model_registry, warmup 필수 조건은 유지한다.
+    """
     app = compose["services"]["app"]
     app_healthcheck = _healthcheck_command(app)
-    assert "['status'] == 'ready'" in app_healthcheck
-    assert "degraded" not in app_healthcheck
+    assert "in ('ready', 'degraded')" in app_healthcheck
 
     environment = _environment(app)
     assert environment["READINESS_REQUIRE_WARMUP"] == "true"
-    assert environment["READINESS_REQUIRE_LLM"] == "true"
+    assert environment["READINESS_REQUIRE_LLM"] == "false"
+
+
+def test_backup_service_enforces_least_privilege(compose: dict):
+    """backup 서비스 최소권한 구성 단언.
+
+    - 외부 인터넷 egress 제거 (internal 전용)
+    - Ollama 통신용 extra_hosts 제거
+    - ml_registry, chroma_db 읽기 전용(:ro) 마운트
+    - 스냅샷 저장을 위한 data 마운트 쓰기 권한 유지
+    """
+    backup = compose["services"]["backup"]
+    assert backup["networks"] == ["internal"]
+    assert "egress" not in backup["networks"]
+    assert "extra_hosts" not in backup
+    volumes = backup.get("volumes", [])
+    assert "./ml_registry:/app/ml_registry:ro" in volumes
+    assert "./chroma_db:/app/chroma_db:ro" in volumes
+    assert "./data:/app/data" in volumes
 
 
 def test_worker_healthcheck_requires_fresh_heartbeat(compose: dict):

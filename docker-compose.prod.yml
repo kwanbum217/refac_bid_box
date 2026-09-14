@@ -60,7 +60,7 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
       - TRUSTED_PROXY_IPS=${TRUSTED_PROXY_IPS:?TRUSTED_PROXY_IPS must be set}
       - READINESS_REQUIRE_WARMUP=true
-      - READINESS_REQUIRE_LLM=true
+      - READINESS_REQUIRE_LLM=false
       - OTEL_ENABLED=${OTEL_ENABLED:-true}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-refac_bid_box}
       - OTEL_EXPORTER_TYPE=${OTEL_EXPORTER_TYPE:-otlp}
@@ -80,7 +80,7 @@ services:
         - CMD
         - python
         - -c
-        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3); assert json.load(response)['status'] == 'ready'"
+        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3); assert json.load(response)['status'] in ('ready', 'degraded')"
       interval: 10s
       timeout: 5s
       retries: 12
@@ -225,8 +225,6 @@ services:
       - ML_WEEKLY_RETRAIN_ENABLED=false
       - WORKER_HEARTBEAT_MAX_AGE_SECONDS=${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
       - TZ=Asia/Seoul
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -249,12 +247,11 @@ services:
         max-size: "10m"
         max-file: "5"
     volumes:
-      - ./ml_registry:/app/ml_registry
+      - ./ml_registry:/app/ml_registry:ro
       - ./data:/app/data
-      - ./chroma_db:/app/chroma_db
+      - ./chroma_db:/app/chroma_db:ro
     networks:
       - internal
-      - egress
 
   db:
     image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
