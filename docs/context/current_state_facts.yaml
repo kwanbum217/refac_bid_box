@@ -1,6 +1,6 @@
 version: "2.0"
 description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
-updated_at: "2026-09-09"
+updated_at: "2026-09-14"
 facts:
   - id: gate_g1
     status: closed

@@ -1250,6 +1250,19 @@ def check_current_state_fact_ledger(root: Path = PROJECT_ROOT) -> CheckResult:
         ):
             failures.append(f"{fact_id}: evidence 경로 누락")
 
+    # 사실은 갱신했는데 원장 updated_at 을 두면 부팅한 코디네이터가 원장을 낡은 것으로 오판합니다
+    # (2026-09-14 외부 감사: updated_at 09-09, 최신 decision_date 09-14).
+    decision_dates = [
+        str(fact["decision_date"])
+        for fact in facts["facts"]
+        if isinstance(fact, dict) and fact.get("decision_date")
+    ]
+    updated_at = facts.get("updated_at")
+    if updated_at and decision_dates and str(updated_at) < max(decision_dates):
+        failures.append(
+            f"원장 updated_at {updated_at} 이 최신 decision_date {max(decision_dates)} 보다 이릅니다"
+        )
+
     if failures:
         return CheckResult(name, False, "; ".join(failures))
     return CheckResult(
