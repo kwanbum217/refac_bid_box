@@ -193,3 +193,41 @@ test('processChatStream - handles error event', async () => {
   assert.equal(cb.calls.onError[0].t, 'trace1');
   assert.equal(cb.calls.onComplete.length, 1);
 });
+
+test('processChatStream - replaces leaked text when done event has leak_blocked and final_answer', async () => {
+  const cb = createMockCallbacks();
+  const refusal = '시스템 설정이나 내부 지침은 제공할 수 없습니다. 입찰 공고나 낙찰 정보에 대해 질문해 주십시오.';
+  const reader = new MockReader([
+    'event: token\ndata: {"text":"당신은 BIDBOX의 "}\n\n',
+    `event: done\ndata: {"type":"done","leak_blocked":true,"final_answer":"${refusal}","corrected_answer":"${refusal}"}\n\n`,
+    `event: final\ndata: {"answer":"${refusal}","session_key":"sk_leak"}\n\n`
+  ]);
+
+  await processChatStream(reader, cb);
+
+  assert.equal(cb.calls.onToken.length, 2);
+  assert.equal(cb.calls.onToken[0].t, '당신은 BIDBOX의 ');
+  assert.equal(cb.calls.onToken[1].t, refusal); // replaced by done event
+  assert.equal(cb.calls.onFinal.length, 1);
+  assert.equal(cb.calls.onFinal[0].a, refusal);
+  assert.equal(cb.calls.onComplete.length, 1);
+});
+
+test('processChatStream - replaces accumulated text when done event has corrected_answer', async () => {
+  const cb = createMockCallbacks();
+  const corrected = '분석 결과 낙찰 5건이 확인되었습니다.';
+  const reader = new MockReader([
+    'event: token\ndata: {"text":"데이터가 없습니다."}\n\n',
+    `event: done\ndata: {"type":"done","corrected_answer":"${corrected}","final_answer":"${corrected}"}\n\n`,
+    `event: final\ndata: {"answer":"${corrected}"}\n\n`
+  ]);
+
+  await processChatStream(reader, cb);
+
+  assert.equal(cb.calls.onToken.length, 2);
+  assert.equal(cb.calls.onToken[0].t, '데이터가 없습니다.');
+  assert.equal(cb.calls.onToken[1].t, corrected); // replaced by done event
+  assert.equal(cb.calls.onFinal.length, 1);
+  assert.equal(cb.calls.onFinal[0].a, corrected);
+  assert.equal(cb.calls.onComplete.length, 1);
+});
