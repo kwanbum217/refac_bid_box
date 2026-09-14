@@ -33,6 +33,11 @@ from src.rag.answer_format import (
     _markdown_result_cell,
     _normalize_category_wording,
 )
+from src.rag.leak_guard import (
+    LEAK_REFUSAL_MESSAGE,
+    contains_system_prompt_leak,
+    init_leak_guard,
+)
 from src.rag.llm import build_backend
 from src.rag.query_planning import (
     CATEGORY_KEYWORDS,
@@ -102,6 +107,7 @@ SYSTEM_PROMPT = (
     "<canvas class='chat-chart' data-type='bar' data-labels='가,나,다' data-values='10,20,30' "
     "data-title='차트 제목'></canvas>"
 )
+init_leak_guard(SYSTEM_PROMPT)
 
 
 def _normalize_tool_context(
@@ -1135,9 +1141,15 @@ class HybridRAGEngine:
                 trace_id=provenance.trace_id,
                 provenance=provenance,
             )
-            citation_suffix = _build_source_citation_from_context(
-                structured_data, vector_docs, kb_status
-            )
+            if contains_system_prompt_leak(answer_text):
+                answer_text = LEAK_REFUSAL_MESSAGE
+                citation_suffix = ""
+                final_citations: list[str] = []
+            else:
+                citation_suffix = _build_source_citation_from_context(
+                    structured_data, vector_docs, kb_status
+                )
+                final_citations = [citation_suffix.strip()] if citation_suffix.strip() else []
             guard_elapsed_ms = (_safe_perf_counter() - t_guard_start) * 1000.0
 
             total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
@@ -1151,7 +1163,7 @@ class HybridRAGEngine:
             seg_metrics = _calc_segment_metrics(llm_elapsed_ms, guard_elapsed_ms, total_elapsed_ms)
             return _bundle(
                 f"{answer_text}{citation_suffix}",
-                [citation_suffix.strip()] if citation_suffix.strip() else [],
+                final_citations,
                 total_elapsed_ms=total_elapsed_ms,
                 segment_metrics=seg_metrics,
             )
@@ -1318,12 +1330,40 @@ class HybridRAGEngine:
             raw_answer = ""
             t_llm_stream_start = _safe_perf_counter()
             token_gen = backend.stream_generate(SYSTEM_PROMPT, messages)
+            leak_blocked = False
             while True:
                 token = await asyncio.to_thread(next, token_gen, None)
                 if token is None:
                     break
                 raw_answer += token
+                if contains_system_prompt_leak(raw_answer):
+                    leak_blocked = True
+                    # 조각이 20자 이상이라 탐지 전 노출은 한 조각의 일부로 제한됩니다.
+                    if hasattr(token_gen, "close"):
+                        try:
+                            token_gen.close()
+                        except Exception as exc:
+                            logger.debug("토큰 생성기 종료 중 예외 (무시됨): %s", exc)
+                    break
                 yield {"type": "token", "text": token}
+
+            if leak_blocked:
+                llm_stream_elapsed_ms = (_safe_perf_counter() - t_llm_stream_start) * 1000.0
+                guard_stream_elapsed_ms = 0.0
+                done_event = {
+                    "type": "done",
+                    "citations": [],
+                    "trace_id": provenance.trace_id,
+                    "final_answer": LEAK_REFUSAL_MESSAGE,
+                    "corrected_answer": LEAK_REFUSAL_MESSAGE,
+                    "leak_blocked": True,
+                }
+                if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
+                    done_event["segment_metrics"] = _calc_stream_metrics(
+                        llm_stream_elapsed_ms, guard_stream_elapsed_ms
+                    )
+                yield done_event
+                return
 
             llm_stream_elapsed_ms = (_safe_perf_counter() - t_llm_stream_start) * 1000.0
             t_guard_stream_start = _safe_perf_counter()

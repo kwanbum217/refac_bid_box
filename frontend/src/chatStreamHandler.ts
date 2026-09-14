@@ -51,9 +51,26 @@ export async function processChatStream(
         } else if (eventName === 'token') {
           accumulated += data.text;
           callbacks.onToken(accumulated);
+        } else if (eventName === 'done') {
+          if (data.leak_blocked && (data.final_answer || data.corrected_answer)) {
+            accumulated = data.final_answer || data.corrected_answer;
+            callbacks.onToken(accumulated);
+          } else if (data.corrected_answer) {
+            accumulated = data.corrected_answer;
+            callbacks.onToken(accumulated);
+          } else if (data.final_answer) {
+            accumulated = data.final_answer;
+            callbacks.onToken(accumulated);
+          }
         } else if (eventName === 'final') {
+          const finalAnswer =
+            (data.leak_blocked ? (data.final_answer || data.corrected_answer || data.answer) : null) ||
+            data.corrected_answer ||
+            data.answer ||
+            accumulated ||
+            '분석이 완료되었습니다.';
           callbacks.onFinal(
-            data.answer || accumulated || '분석이 완료되었습니다.',
+            finalAnswer,
             accumulatedDocs,
             data.visualizations,
             data.session_key
