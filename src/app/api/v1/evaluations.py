@@ -24,7 +24,8 @@ src/app/api/v1/evaluations.py
 사용자가 공고문 배점표로 입력하며, 입력이 없으면 추측 대신 점수 계산만 차단합니다.
 
 차단 코드:
-- 규칙 판별 차단 (evaluation_rules): NOT_SERVC, NON_PRED_PRICE, MANUAL_EVALUATION, RULE_NOT_FOUND
+- 규칙 판별 차단 (evaluation_rules): NOT_SERVC, NON_PRED_PRICE, MANUAL_EVALUATION, RULE_NOT_FOUND,
+  NEGOTIATION_CONTRACT, TECH_SERVICE_MISSING_LWLT, NOT_QUALIFICATION_METHOD, RULE_REGIME_MISMATCH
 - 입력·데이터 부족 차단 (본 파일): MISSING_SCORE_TABLE, PRED_PRICE_UNAVAILABLE
 """
 
@@ -65,6 +66,8 @@ from src.app.schemas.evaluations import (
 )
 from src.app.schemas.predictions import PredictPriceRequest
 from src.app.services.evaluation_rules import (
+    METHOD_FAMILY_BY_CODE,
+    METHOD_SOURCE_CODE,
     EvaluationRule,
     RuleResolutionResult,
     resolve_evaluation_rule_from_raw_data,
@@ -342,6 +345,10 @@ def _rule_basis(bid: BidAnnouncement, rule_result: RuleResolutionResult) -> str:
     """규칙 판별 근거. 매칭에 쓴 낙찰방법 식별 문자열과 별표명을 그대로 노출합니다."""
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     method_name = raw_data.get("sucsfbidMthdNm") or "N/A"
+    if rule_result.method_source == METHOD_SOURCE_CODE:
+        method_code = raw_data.get("sucsfbidMthdCd")
+        family = METHOD_FAMILY_BY_CODE.get(method_code or "", "N/A")
+        method_name = f"{method_name}, 코드 {method_code} 에서 '{family}' 로 추정"
     if rule_result.rule is None:
         return f"낙찰방법: {method_name}"
     return f"낙찰방법 '{method_name}' → 별표 '{rule_result.rule.table_name}' 매칭"

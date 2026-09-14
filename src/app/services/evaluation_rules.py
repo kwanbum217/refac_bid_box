@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -299,6 +300,33 @@ BLOCK_CODE_MANUAL_EVALUATION = "MANUAL_EVALUATION"
 BLOCK_CODE_RULE_NOT_FOUND = "RULE_NOT_FOUND"
 BLOCK_CODE_NEGOTIATION_CONTRACT = "NEGOTIATION_CONTRACT"
 BLOCK_CODE_TECH_SERVICE_MISSING_LWLT = "TECH_SERVICE_MISSING_LWLT"
+BLOCK_CODE_NOT_QUALIFICATION_METHOD = "NOT_QUALIFICATION_METHOD"
+BLOCK_CODE_RULE_REGIME_MISMATCH = "RULE_REGIME_MISMATCH"
+
+METHOD_NAME_PLACEHOLDER = "공고서참조"
+METHOD_SOURCE_ANNOUNCEMENT = "ANNOUNCEMENT"
+METHOD_SOURCE_CODE = "CODE"
+METHOD_FAMILY_QUALIFICATION = "적격심사제"
+
+# 2025-01 이후 용역 공고 356,655건에서 코드 하나가 계열 하나에만 대응함을 실측했습니다 (2026-09-14).
+METHOD_FAMILY_BY_CODE: dict[str, str] = {
+    "낙030001": METHOD_FAMILY_QUALIFICATION,
+    "낙030002": "규격가격동시입찰",
+    "낙030003": "2단계경쟁입찰",
+    "낙030004": "다수공급자계약",
+    "낙030005": "협상에의한계약",
+    "낙030008": "경쟁적대화방식에의한계약",
+    "낙030009": "수의시담",
+    "낙030010": "수의시담(2인 이상)",
+    "낙030017": "설계공모",
+    "낙030018": "규격적합자중 최저가",
+    "낙030021": "최저가낙찰제",
+    "낙030022": "제한적최저가(낙찰하한율)",
+    "낙030026": "종합심사낙찰제(기술용역)",
+    "낙030029": "소액수의견적",
+    "낙030031": "카탈로그계약",
+    "낙030033": "안전점검수행기관지정",
+}
 
 NEGOTIATION_VARIANT_STANDARD = "STANDARD"
 NEGOTIATION_VARIANT_SW = "SW"
@@ -327,6 +355,7 @@ class RuleResolutionResult:
     negotiation_tech_eval_rate: Decimal | None = None
     negotiation_price_eval_rate: Decimal | None = None
     negotiation_variant: str | None = None
+    method_source: str | None = None  # "ANNOUNCEMENT" 또는 "CODE"
 
 
 def normalize_pattern_string(text: str) -> str:
@@ -382,7 +411,123 @@ def list_all_rules(
     return list(rules)
 
 
+def resolve_method_name(
+    sucsfbid_mthd_nm: str | None,
+    sucsfbid_mthd_cd: str | None,
+) -> tuple[str | None, str | None, list[str]]:
+    """판별에 쓸 낙찰방법명과 그 출처를 정합니다.
+
+    원문이 '공고서참조'이거나 비어 있으면 sucsfbidMthdCd 로 계열명을 대신 씁니다.
+    2024년 이전 용역 공고는 원문이 전부 '공고서참조'라 코드가 유일한 단서입니다.
+    """
+    name = sucsfbid_mthd_nm.strip() if sucsfbid_mthd_nm else ""
+    if name and name != METHOD_NAME_PLACEHOLDER:
+        return sucsfbid_mthd_nm, METHOD_SOURCE_ANNOUNCEMENT, []
+
+    code = sucsfbid_mthd_cd.strip() if sucsfbid_mthd_cd else ""
+    family = METHOD_FAMILY_BY_CODE.get(code)
+    if family is not None:
+        return family, METHOD_SOURCE_CODE, []
+
+    warnings = []
+    if code:
+        warnings.append(f"낙찰방법 코드({code})가 계열 대응표에 없어 낙찰방법을 추정하지 않습니다.")
+    return sucsfbid_mthd_nm, METHOD_SOURCE_ANNOUNCEMENT, warnings
+
+
+def _parse_announcement_date(value: date | str | None) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip() if value is not None else ""
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
 def resolve_evaluation_rule(
+    category: str | None,
+    prearng_prce_dcsn_mthd_nm: str | None,
+    sucsfbid_mthd_nm: str | None,
+    sucsfbid_lwlt_rate: Decimal | str | float | None = None,
+    tech_ablt_evl_rt: Decimal | str | float | None = None,
+    bid_prce_evl_rt: Decimal | str | float | None = None,
+    rules: Sequence[EvaluationRule] = POST_20260526_RULES,
+    srvce_div_nm: str | None = None,
+    sucsfbid_mthd_cd: str | None = None,
+    bid_ntce_dt: date | str | None = None,
+) -> RuleResolutionResult:
+    """낙찰방법 출처를 정하고 별표를 판별한 뒤 공고일과 별표 시행일을 대조합니다.
+
+    [추가 판별]
+    - 원문 낙찰방법이 '공고서참조'면 sucsfbidMthdCd 계열명으로 판별
+    - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).
+      공고일이 없으면 대조하지 않고, 있는데 읽을 수 없으면 차단 대신 경고만 남깁니다.
+    """
+    method_name, method_source, method_warnings = resolve_method_name(
+        sucsfbid_mthd_nm, sucsfbid_mthd_cd
+    )
+    result = _resolve_by_method_name(
+        category=category,
+        prearng_prce_dcsn_mthd_nm=prearng_prce_dcsn_mthd_nm,
+        sucsfbid_mthd_nm=method_name,
+        sucsfbid_lwlt_rate=sucsfbid_lwlt_rate,
+        tech_ablt_evl_rt=tech_ablt_evl_rt,
+        bid_prce_evl_rt=bid_prce_evl_rt,
+        rules=rules,
+        srvce_div_nm=srvce_div_nm,
+    )
+    result = replace(
+        result,
+        method_source=method_source,
+        warnings=method_warnings + result.warnings,
+    )
+
+    if (
+        method_source == METHOD_SOURCE_CODE
+        and result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND
+    ):
+        result = replace(
+            result,
+            block_reason_message=(
+                f"낙찰방법이 '{METHOD_NAME_PLACEHOLDER}'라 코드({sucsfbid_mthd_cd})로 "
+                "적격심사제 공고임은 확인했지만, 적용 별표는 공고서에서만 확인할 수 있습니다."
+            ),
+        )
+
+    if result.is_blocked or result.rule is None:
+        return result
+
+    if bid_ntce_dt is None:
+        return result
+    effective_date = date.fromisoformat(result.rule.effective_date)
+    announced = _parse_announcement_date(bid_ntce_dt)
+    if announced is None:
+        return replace(
+            result,
+            warnings=[
+                *result.warnings,
+                f"공고일({bid_ntce_dt})을 읽을 수 없어 별표 시행일({effective_date}) 대조를 건너뛰었습니다.",
+            ],
+        )
+    if announced < effective_date:
+        return replace(
+            result,
+            is_blocked=True,
+            block_reason_code=BLOCK_CODE_RULE_REGIME_MISMATCH,
+            block_reason_message=(
+                f"공고일({announced})이 별표 시행일({effective_date})보다 앞서 현행 별표로 "
+                "계산하지 않습니다. 개정 전 별표는 등록되어 있지 않습니다."
+            ),
+            effective_lwlt_rate=None,
+            rate_source=None,
+        )
+    return result
+
+
+def _resolve_by_method_name(
     category: str | None,
     prearng_prce_dcsn_mthd_nm: str | None,
     sucsfbid_mthd_nm: str | None,
@@ -398,9 +543,11 @@ def resolve_evaluation_rule(
     1. category != 'Servc' -> 계산 차단 (NOT_SERVC)
     2. prearngPrceDcsnMthdNm == '비예가' -> 계산 차단 (NON_PRED_PRICE)
     3. sucsfbidMthdNm 이 '적격심사제-관리규정외 수기심사' -> 계산 차단 (MANUAL_EVALUATION)
-    4. sucsfbidMthdNm 을 별표 식별 문자열과 매칭 -> 별표 확정
-    5. 매칭 실패 -> 계산 차단 (RULE_NOT_FOUND)
-    6. 하한율 확정 우선순위:
+    4. 협상에의한계약 -> 평가비율만 제공 (NEGOTIATION_CONTRACT)
+    5. 적격심사제가 아닌 알려진 낙찰방법 계열 -> 계산 차단 (NOT_QUALIFICATION_METHOD)
+    6. 기술용역 적격심사 -> 공고 하한율 적용
+    7. sucsfbidMthdNm 을 별표 식별 문자열과 매칭 -> 별표 확정, 실패 시 계산 차단 (RULE_NOT_FOUND)
+    8. 하한율 확정 우선순위:
        - 공고의 sucsfbidLwltRate 가 최우선
        - 결측이면 별표 기본값을 쓰되 '기본값 사용' 경고
        - 공고값과 별표 기본값이 다르면 공고값을 쓰고 '불일치' 경고
@@ -483,6 +630,20 @@ def resolve_evaluation_rule(
             negotiation_tech_eval_rate=tech_rate,
             negotiation_price_eval_rate=price_rate,
             negotiation_variant=negotiation_variant,
+        )
+
+    method_family = sucsfbid_mthd_nm.split("-", 1)[0].strip() if sucsfbid_mthd_nm else ""
+    if (
+        method_family in METHOD_FAMILY_BY_CODE.values()
+        and method_family != METHOD_FAMILY_QUALIFICATION
+    ):
+        return RuleResolutionResult(
+            is_blocked=True,
+            block_reason_code=BLOCK_CODE_NOT_QUALIFICATION_METHOD,
+            block_reason_message=(
+                f"낙찰방법이 '{method_family}' 계열이라 적격심사 점수 산식을 적용하지 않습니다."
+            ),
+            warnings=warnings,
         )
 
     # 기술용역 적격심사는 협상 판별 이후, 일반용역 별표 매칭 이전에 판별합니다.
@@ -602,4 +763,6 @@ def resolve_evaluation_rule_from_raw_data(
         bid_prce_evl_rt=price_eval_rate,
         rules=rules,
         srvce_div_nm=srvce_div_nm,
+        sucsfbid_mthd_cd=raw_data.get("sucsfbidMthdCd"),
+        bid_ntce_dt=raw_data.get("bidNtceDt"),
     )
