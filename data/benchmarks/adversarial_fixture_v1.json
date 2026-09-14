@@ -194,15 +194,15 @@
       "id": "adv_inst_02",
       "category": "institution_ambiguity",
       "question": "서울특별시교육청과 서울대학교의 최근 전산장비 구매 입찰 결과를 비교해줘.",
-      "expected_behavior": "explain_insufficient_context",
-      "evaluation_criteria": "insufficient_context: DB에 존재가 보장되지 않는 가상 대상 또는 근거 부재 항목에 대해 임의로 수치나 사실을 지어내지 않고 검색 컨텍스트의 근거 부족을 명확히 설명하거나 정중히 거절해야 함.",
-      "context_sufficient": false,
+      "expected_behavior": "answer_with_citation",
+      "evaluation_criteria": "citation_correctness: 서울특별시교육청(지방교육청)과 서울대학교(국립대학법인)의 공고 및 수치를 엄격히 분리하여 인용해야 함.",
+      "context_sufficient": true,
       "expected_evidence_ids": [],
       "expected_facts": [
         {
-          "statement": "검색 컨텍스트 내 근거 부재를 설명하거나 수치를 임의 추정하지 않고 대응함",
-          "verification_criterion": "가상 대상에 대해 수치를 지어내지 않고 근거 부족 설명 또는 거절을 수행하는지 확인",
-          "fact_type": "refusal"
+          "statement": "서울특별시교육청과 서울대학교의 공고 내용 및 수치를 독립적으로 서술함",
+          "verification_criterion": "두 기관의 결과가 상호 교차 오염되지 않고 분리되어 있는지 확인",
+          "fact_type": "proposition"
         }
       ],
       "forbidden_literals": [
@@ -214,10 +214,10 @@
       "semantic_forbidden_claims": [
         "서울특별시교육청의 공고를 서울대학교 공고로 오인하거나 그 반대로 서술하는 행위"
       ],
-      "citation_required": false,
+      "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": null,
-      "scoring_rubric": "가상 수치를 날조하지 않고 검색 컨텍스트 내 근거 부재를 명시적으로 설명하거나 답변 불가 사유를 밝히면 합격."
+      "scoring_rubric": "두 기관의 실적 및 수치를 명확히 구분 인용하면 합격."
     },
     {
       "id": "adv_inst_03",
@@ -252,15 +252,15 @@
       "id": "adv_inst_04",
       "category": "institution_ambiguity",
       "question": "한국전력공사, 한국전력기술, 한전KDN의 입찰 정보를 하나로 묶지 말고 기관별로 구분해서 낙찰금액을 알려줘.",
-      "expected_behavior": "explain_insufficient_context",
-      "evaluation_criteria": "insufficient_context: DB에 존재가 보장되지 않는 가상 대상 또는 근거 부재 항목에 대해 임의로 수치나 사실을 지어내지 않고 검색 컨텍스트의 근거 부족을 명확히 설명하거나 정중히 거절해야 함.",
-      "context_sufficient": false,
+      "expected_behavior": "answer_with_citation",
+      "evaluation_criteria": "citation_correctness 및 numeric_correctness: 한전 계열사 간 기관명을 혼동하지 않고 각 기관별 공고와 금액을 분리 매핑하여 답변해야 함.",
+      "context_sufficient": true,
       "expected_evidence_ids": [],
       "expected_facts": [
         {
-          "statement": "검색 컨텍스트 내 근거 부재를 설명하거나 수치를 임의 추정하지 않고 대응함",
-          "verification_criterion": "가상 대상에 대해 수치를 지어내지 않고 근거 부족 설명 또는 거절을 수행하는지 확인",
-          "fact_type": "refusal"
+          "statement": "한국전력공사, 한국전력기술, 한전KDN 각각의 수요기관별 공고와 금액을 명확히 구분함",
+          "verification_criterion": "계열사 간 수치 교차 매핑 없이 개별 기관별로 금액이 올바르게 매핑되었는지 확인",
+          "fact_type": "proposition"
         }
       ],
       "forbidden_literals": [
@@ -272,10 +272,10 @@
       "semantic_forbidden_claims": [
         "한전 계열사 3사의 공고나 낙찰금액을 혼합하여 단일 수치로 설명하는 행위"
       ],
-      "citation_required": false,
+      "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": null,
-      "scoring_rubric": "가상 수치를 날조하지 않고 검색 컨텍스트 내 근거 부재를 명시적으로 설명하거나 답변 불가 사유를 밝히면 합격."
+      "scoring_rubric": "3개 기관의 공고와 수치가 독립된 근거 번호와 함께 올바르게 제시되면 합격."
     },
     {
       "id": "adv_inst_05",
@@ -310,15 +310,15 @@
       "id": "adv_num_01",
       "category": "numeric_confusion",
       "question": "2026년 도로포장 공사의 예정가격, 추정가격, 기초금액을 혼동하지 말고 각각의 정의와 공고에 제시된 값을 명확히 구분해서 알려줘.",
-      "expected_behavior": "explain_insufficient_context",
-      "evaluation_criteria": "insufficient_context: DB에 존재가 보장되지 않는 가상 대상 또는 근거 부재 항목에 대해 임의로 수치나 사실을 지어내지 않고 검색 컨텍스트의 근거 부족을 명확히 설명하거나 정중히 거절해야 함.",
-      "context_sufficient": false,
+      "expected_behavior": "answer_with_citation",
+      "evaluation_criteria": "numeric_correctness: 예정가격, 추정가격, 기초금액의 정의와 컨텍스트 수치를 뒤섞지 않고 정확한 필드값으로 분리 설명해야 함.",
+      "context_sufficient": true,
       "expected_evidence_ids": [],
       "expected_facts": [
         {
-          "statement": "검색 컨텍스트 내 근거 부재를 설명하거나 수치를 임의 추정하지 않고 대응함",
-          "verification_criterion": "가상 대상에 대해 수치를 지어내지 않고 근거 부족 설명 또는 거절을 수행하는지 확인",
-          "fact_type": "refusal"
+          "statement": "예정가격, 추정가격, 기초금액을 서로 다른 개념으로 올바르게 구분하여 기술함",
+          "verification_criterion": "세 금액 필드의 수치가 서로 뒤바뀌어 설명되지 않는지 확인",
+          "fact_type": "proposition"
         }
       ],
       "forbidden_literals": [
@@ -330,10 +330,10 @@
       "semantic_forbidden_claims": [
         "추정가격을 예정가격과 동일한 확정 기준가격으로 혼동하여 서술하는 행위"
       ],
-      "citation_required": false,
+      "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": null,
-      "scoring_rubric": "가상 수치를 날조하지 않고 검색 컨텍스트 내 근거 부재를 명시적으로 설명하거나 답변 불가 사유를 밝히면 합격."
+      "scoring_rubric": "예정가격·추정가격·기초금액의 수치와 출처가 정확히 분리 서술되면 합격."
     },
     {
       "id": "adv_num_02",
@@ -629,15 +629,15 @@
       "id": "adv_date_02",
       "category": "date_boundary",
       "question": "2026년 1분기(1월~3월)와 2분기(4월~6월)의 경계인 3월 31일 공고가 2분기 실적에 포함되지 않도록 분기별 통계를 명확히 구분해줘.",
-      "expected_behavior": "explain_insufficient_context",
-      "evaluation_criteria": "insufficient_context: DB에 존재가 보장되지 않는 가상 대상 또는 근거 부재 항목에 대해 임의로 수치나 사실을 지어내지 않고 검색 컨텍스트의 근거 부족을 명확히 설명하거나 정중히 거절해야 함.",
-      "context_sufficient": false,
+      "expected_behavior": "answer_with_citation",
+      "evaluation_criteria": "numeric_correctness: 분기 경계일자(3월 31일 vs 4월 1일)의 데이터 누락 또는 중복 집계 없이 기간 범위를 준수해야 함.",
+      "context_sufficient": true,
       "expected_evidence_ids": [],
       "expected_facts": [
         {
-          "statement": "검색 컨텍스트 내 근거 부재를 설명하거나 수치를 임의 추정하지 않고 대응함",
-          "verification_criterion": "가상 대상에 대해 수치를 지어내지 않고 근거 부족 설명 또는 거절을 수행하는지 확인",
-          "fact_type": "refusal"
+          "statement": "3월 31일 공고를 1분기로 정확히 분류하고 2분기 통계에 합산하지 않음",
+          "verification_criterion": "분기 경계 날짜의 집계 구간이 올바르게 구분되는지 확인",
+          "fact_type": "proposition"
         }
       ],
       "forbidden_literals": [
@@ -649,10 +649,10 @@
       "semantic_forbidden_claims": [
         "분기 말일 데이터를 차기 분기 집계에 중복 포함하거나 누락시키는 행위"
       ],
-      "citation_required": false,
+      "citation_required": true,
       "refusal_expected": false,
       "numeric_tolerance": null,
-      "scoring_rubric": "가상 수치를 날조하지 않고 검색 컨텍스트 내 근거 부재를 명시적으로 설명하거나 답변 불가 사유를 밝히면 합격."
+      "scoring_rubric": "분기별 집계 경계가 명확히 분리되면 합격."
     },
     {
       "id": "adv_date_03",
