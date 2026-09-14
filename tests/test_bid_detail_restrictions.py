@@ -125,7 +125,9 @@ def test_detail_renders_groups_regions_and_multi_group_notice(auth_client, isola
     assert "정보통신공사업/0036" in body
     assert "전기공사업/0038" in body
     assert "충청남도 공주시" in body
-    assert "그룹 간 적용 방식은 공고문에서 확인하십시오" in body
+    assert "2개 그룹 중 하나를 충족하면 참가할 수 있고" in body
+    assert "최종 자격은 공고문에서 확인하십시오" in body
+    assert 'id="restriction-groups-more"' not in body
     assert "restrictions-not-collected" not in body
 
 
@@ -144,3 +146,46 @@ def test_detail_hides_card_without_restrictions(auth_client, isolated_db):
     body = auth_client.get(f"/bids/{bid.id}/").text
 
     assert 'id="participation-restrictions"' not in body
+
+
+def test_detail_collapses_groups_beyond_three_and_marks_joint_requirement(auth_client, isolated_db):
+    bid = _bid(isolated_db, raw_data={"indstrytyLmtYn": "Y"})
+    for grp in range(1, 6):
+        _license(isolated_db, bid.bid_ntce_no, str(grp), "1", f"업종A{grp}/000{grp}")
+        _license(isolated_db, bid.bid_ntce_no, str(grp), "2", f"업종B{grp}/100{grp}")
+    isolated_db.commit()
+
+    body = auth_client.get(f"/bids/{bid.id}/").text
+
+    visible, _, collapsed = body.partition('id="restriction-groups-more"')
+    assert "업종A3/0003" in visible
+    assert "업종A4/0004" not in visible
+    assert "나머지 2개 그룹 펼치기" in collapsed
+    assert "업종A5/0005" in collapsed
+    assert "제한그룹 1 (모두 필요)" in body
+
+
+def test_detail_blocked_guidance_is_per_reason(auth_client, isolated_db):
+    bid = _bid(isolated_db, raw_data={"indstrytyLmtYn": "N"})
+
+    body = auth_client.get(f"/bids/{bid.id}/").text
+
+    assert 'id="blocked-guidance"' in body
+    assert "function getBlockedGuidanceText(code)" in body
+    assert (
+        body.count("$('#blocked-guidance').text(getBlockedGuidanceText(data.blocked_reason));") == 2
+    )
+    for code in (
+        "NOT_SERVC",
+        "NON_PRED_PRICE",
+        "MANUAL_EVALUATION",
+        "RULE_NOT_FOUND",
+        "NOT_QUALIFICATION_METHOD",
+        "RULE_REGIME_MISMATCH",
+        "NEGOTIATION_CONTRACT",
+        "TECH_SERVICE_MISSING_LWLT",
+    ):
+        assert (
+            f"'{code}':"
+            in body.split("function getBlockedGuidanceText(code)")[1].split("function ")[0]
+        )
