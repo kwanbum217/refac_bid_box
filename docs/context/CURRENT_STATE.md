@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-14
-> **source_commit**: `a4c84240`
+> **source_commit**: `fd14d0d2`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -93,13 +93,13 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **coldsql_rerun**: RAG 정형 질의 cold SQL 재측정은 2026-09-13 전체 32문항 3회 완전 콜드 정본이 canonical 을 통과해 partial 을 종결했습니다. 콜드 SQL 중앙값 18ms, 최대 q03 82,529ms 였고 대책 병합 후 2026-09-14 정본은 콜드 SQL 최대 5,056ms 입니다.
 
-- **mysql_stats_refresh_policy**: 영속 통계 신선도는 읽기 전용 점검 실행기로 판정하며 선택지 B(임계 초과 시 사람 승인 수동 갱신)를 채택해 야간 점검까지 구현했고 종결합니다. 2026-09-14 점검은 편차 1.3%·15.9%로 정상입니다.
+- **mysql_stats_refresh_policy**: 영속 통계 신선도는 읽기 전용 점검 실행기로 판정하며 선택지 B(임계 초과 시 사람 승인 수동 갱신)를 채택해 야간 점검까지 구현했고 종결합니다.
+
+- **lexical_full_rerun**: 정확 제목 lexical 채널은 2026-09-14 전량 32문항 3회 재측정에서 실패 0·numeric 144/144 로 종결합니다.
 
 ### active 사실
 
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
-
-- **lexical_full_rerun**: 정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다.
 
 - **drift_job**: 드리프트 감시는 Servc baseline(b_20260906_servc_post_regime) 기준으로 진행 중(ML_DRIFT_MONITOR_ENABLED 기본값 True)이며, Thng baseline은 없어 해당 모델만 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록합니다.
 
