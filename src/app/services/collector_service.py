@@ -24,6 +24,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
+from src.app.models.bid_restrictions import (
+    BidAnnouncementLicenseLimit,
+    BidAnnouncementParticipationRegion,
+)
 from src.app.models.bids import DATASET_ANNOUNCEMENT, DATASET_RESULT, BidAnnouncement, BidResult
 from src.app.services.api_collector import (
     BID_CATEGORIES,
@@ -32,6 +36,8 @@ from src.app.services.api_collector import (
     mask_credentials,
     stream_bid_announcements,
     stream_bid_data,
+    stream_bid_license_limits,
+    stream_bid_participation_regions,
 )
 from src.app.services.dashboard import rebuild_bid_dataset_summaries, warm_dashboard_stats_cache
 from src.app.services.home_context import warm_home_page_cache
@@ -310,6 +316,8 @@ async def collect_bids(
         "catchup": is_catchup,
         "announcement_count": 0,
         "result_count": 0,
+        "license_limit_count": 0,
+        "participation_region_count": 0,
         "attempted": 0,
         "failed_count": 0,
         "failed_ranges": [],
@@ -373,6 +381,53 @@ async def collect_bids(
                     logger.debug("낙찰정보 롤백 실패: %s", rb_exc)
                 metrics["categories"][cat_code]["result_error"] = mask_credentials(exc)
 
+    if fetch_type in ("both", "announce"):
+        metrics["attempted"] += 1
+        try:
+            saved = await stream_bid_license_limits(
+                resolved_start,
+                resolved_end,
+                lambda rows: _bulk_insert(db, BidAnnouncementLicenseLimit, rows),
+            )
+            metrics["license_limit_count"] += saved
+            logger.info("면허제한정보 %s건 적재", saved)
+        except RangeCollectionError as exc:
+            logger.error("면허제한정보 부분 실패: %s", mask_credentials(exc))
+            metrics["license_limit_count"] += exc.saved
+            metrics.setdefault("restrictions", {})["license_limit_error"] = mask_credentials(exc)
+        except Exception as exc:
+            logger.exception("면허제한정보 수집 실패")
+            try:
+                db.rollback()
+            except Exception as rb_exc:
+                logger.debug("면허제한정보 롤백 실패: %s", rb_exc)
+            metrics.setdefault("restrictions", {})["license_limit_error"] = mask_credentials(exc)
+
+        metrics["attempted"] += 1
+        try:
+            saved = await stream_bid_participation_regions(
+                resolved_start,
+                resolved_end,
+                lambda rows: _bulk_insert(db, BidAnnouncementParticipationRegion, rows),
+            )
+            metrics["participation_region_count"] += saved
+            logger.info("참가가능지역 %s건 적재", saved)
+        except RangeCollectionError as exc:
+            logger.error("참가가능지역 부분 실패: %s", mask_credentials(exc))
+            metrics["participation_region_count"] += exc.saved
+            metrics.setdefault("restrictions", {})["participation_region_error"] = mask_credentials(
+                exc
+            )
+        except Exception as exc:
+            logger.exception("참가가능지역 수집 실패")
+            try:
+                db.rollback()
+            except Exception as rb_exc:
+                logger.debug("참가가능지역 롤백 실패: %s", rb_exc)
+            metrics.setdefault("restrictions", {})["participation_region_error"] = mask_credentials(
+                exc
+            )
+
     metrics["total_records"] = metrics["announcement_count"] + metrics["result_count"]
 
     # 장기 백필은 이 함수를 수십 번 호출합니다. 매번 300만 행을 훑어
@@ -397,10 +452,19 @@ async def collect_bids(
                 logger.debug("대시보드 예열 롤백 실패: %s", rb_exc)
             metrics["cache_warmed"] = False
 
-    metrics["failed_count"] = sum(
-        error_key in category_metrics
-        for category_metrics in metrics["categories"].values()
-        for error_key in ("announcement_error", "result_error")
+    restriction_errors = metrics.get("restrictions", {})
+    failed_restrictions = sum(
+        1
+        for err_key in ("license_limit_error", "participation_region_error")
+        if err_key in restriction_errors
+    )
+    metrics["failed_count"] = (
+        sum(
+            error_key in category_metrics
+            for category_metrics in metrics["categories"].values()
+            for error_key in ("announcement_error", "result_error")
+        )
+        + failed_restrictions
     )
     if metrics["failed_count"] == 0:
         metrics["status"] = "success"

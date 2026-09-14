@@ -122,6 +122,8 @@ def test_default_orm_table_set_contains_all_known_tables():
     assert "bid_evaluation_profiles" in orm_tables
     assert "bid_evaluation_snapshots" in orm_tables
     assert "bid_evaluation_evidence" in orm_tables
+    assert "bid_announcement_license_limits" in orm_tables
+    assert "bid_announcement_participation_regions" in orm_tables
 
 
 def test_approved_external_tables_cover_preserved_django_leftovers():

@@ -1,4 +1,8 @@
 from src.app.models.accounts import CustomUser, UserAccount
+from src.app.models.bid_restrictions import (
+    BidAnnouncementLicenseLimit,
+    BidAnnouncementParticipationRegion,
+)
 from src.app.models.bids import (
     BidAnnouncement,
     BidDatasetSummary,
@@ -24,6 +28,8 @@ __all__ = [
     "AutomationRequest",
     "AutomationSubscription",
     "BidAnnouncement",
+    "BidAnnouncementLicenseLimit",
+    "BidAnnouncementParticipationRegion",
     "BidDatasetSummary",
     "BidEvaluationEvidence",
     "BidEvaluationProfile",

@@ -31,6 +31,12 @@ API_BASE_URL = "https://apis.data.go.kr/1230000/as/ScsbidInfoService/getScsbidLi
 BID_ANNOUNCE_API_URL = (
     "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoThng"
 )
+BID_LICENSE_LIMIT_API_URL = (
+    "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoLicenseLimit"
+)
+BID_PARTICIPATION_REGION_API_URL = (
+    "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoPrtcptPsblRgn"
+)
 
 BID_CATEGORIES: dict[str, dict[str, str]] = {
     "Thng": {
@@ -483,5 +489,75 @@ async def stream_bid_announcements(
         num_of_rows,
         _map_announcement_item(category),
         "입찰공고",
+        sink,
+    )
+
+
+def _clean_str(val: str | None) -> str | None:
+    if not val:
+        return None
+    stripped = val.strip()
+    return stripped if stripped else None
+
+
+def _map_license_limit_item(item: ET.Element, raw_data: dict[str, str]) -> dict[str, Any]:
+    bid_ntce_no = _clean_str(_get_text(item, "bidNtceNo")) or ""
+    return {
+        "bid_ntce_no": bid_ntce_no,
+        "bid_ntce_ord": _clean_str(_get_text(item, "bidNtceOrd")) or "000",
+        "lmt_grp_no": _clean_str(_get_text(item, "lmtGrpNo")) or "1",
+        "lmt_sno": _clean_str(_get_text(item, "lmtSno")) or "1",
+        "lcns_lmt_nm": _clean_str(_get_text(item, "lcnsLmtNm")),
+        "permsn_indstryty_list": _clean_str(_get_text(item, "permsnIndstrytyList")),
+        "indstryty_mfrc_fld_list": _clean_str(_get_text(item, "indstrytyMfrcFldList")),
+        "rgst_dt": _parse_datetime(_clean_str(_get_text(item, "rgstDt"))),
+        "bsns_div_nm": _clean_str(_get_text(item, "bsnsDivNm")),
+    }
+
+
+def _map_participation_region_item(item: ET.Element, raw_data: dict[str, str]) -> dict[str, Any]:
+    bid_ntce_no = _clean_str(_get_text(item, "bidNtceNo")) or ""
+    return {
+        "bid_ntce_no": bid_ntce_no,
+        "bid_ntce_ord": _clean_str(_get_text(item, "bidNtceOrd")) or "000",
+        "lmt_sno": _clean_str(_get_text(item, "lmtSno")) or "1",
+        "prtcpt_psbl_rgn_nm": _clean_str(_get_text(item, "prtcptPsblRgnNm")),
+        "rgst_dt": _parse_datetime(_clean_str(_get_text(item, "rgstDt"))),
+        "bsns_div_nm": _clean_str(_get_text(item, "bsnsDivNm")),
+    }
+
+
+async def stream_bid_license_limits(
+    start_date: str,
+    end_date: str,
+    sink: Callable[[list[dict[str, Any]]], Any],
+    num_of_rows: int = 999,
+) -> int:
+    """면허제한정보를 15일 구간 단위로 받아 즉시 `sink` 로 넘깁니다."""
+    return await _run_ranges(
+        BID_LICENSE_LIMIT_API_URL,
+        start_date,
+        end_date,
+        num_of_rows,
+        _map_license_limit_item,
+        "면허제한정보",
+        sink,
+    )
+
+
+async def stream_bid_participation_regions(
+    start_date: str,
+    end_date: str,
+    sink: Callable[[list[dict[str, Any]]], Any],
+    num_of_rows: int = 999,
+) -> int:
+    """참가가능지역을 15일 구간 단위로 받아 즉시 `sink` 로 넘깁니다."""
+    return await _run_ranges(
+        BID_PARTICIPATION_REGION_API_URL,
+        start_date,
+        end_date,
+        num_of_rows,
+        _map_participation_region_item,
+        "참가가능지역",
         sink,
     )
