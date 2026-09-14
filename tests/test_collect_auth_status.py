@@ -17,6 +17,8 @@ async def test_collect_bids_reports_failed_when_all_attempts_raise(monkeypatch, 
     monkeypatch.setattr(collector_service, "get_service_key", lambda: "test-key")
     monkeypatch.setattr(collector_service, "stream_bid_announcements", fail)
     monkeypatch.setattr(collector_service, "stream_bid_data", fail)
+    monkeypatch.setattr(collector_service, "stream_bid_license_limits", fail)
+    monkeypatch.setattr(collector_service, "stream_bid_participation_regions", fail)
 
     metrics = await collector_service.collect_bids(
         isolated_db,
@@ -25,8 +27,8 @@ async def test_collect_bids_reports_failed_when_all_attempts_raise(monkeypatch, 
     )
 
     assert metrics["status"] == "failed"
-    assert metrics["attempted"] == 4
-    assert metrics["failed_count"] == 4
+    assert metrics["attempted"] == 6
+    assert metrics["failed_count"] == 6
 
 
 @pytest.mark.asyncio
@@ -45,6 +47,12 @@ async def test_collect_bids_reports_partial_success_when_some_attempts_raise(
         collect_announcements,
     )
 
+    async def collect_restrictions(*args, **kwargs):
+        return 0
+
+    monkeypatch.setattr(collector_service, "stream_bid_license_limits", collect_restrictions)
+    monkeypatch.setattr(collector_service, "stream_bid_participation_regions", collect_restrictions)
+
     metrics = await collector_service.collect_bids(
         isolated_db,
         categories=("Thng", "Servc"),
@@ -53,7 +61,7 @@ async def test_collect_bids_reports_partial_success_when_some_attempts_raise(
     )
 
     assert metrics["status"] == "partial_success"
-    assert metrics["attempted"] == 2
+    assert metrics["attempted"] == 4
     assert metrics["failed_count"] == 1
 
 
@@ -65,6 +73,8 @@ async def test_collect_bids_reports_success_when_all_attempts_finish(monkeypatch
     monkeypatch.setattr(collector_service, "get_service_key", lambda: "test-key")
     monkeypatch.setattr(collector_service, "stream_bid_announcements", collect)
     monkeypatch.setattr(collector_service, "stream_bid_data", collect)
+    monkeypatch.setattr(collector_service, "stream_bid_license_limits", collect)
+    monkeypatch.setattr(collector_service, "stream_bid_participation_regions", collect)
 
     metrics = await collector_service.collect_bids(
         isolated_db,
@@ -73,5 +83,5 @@ async def test_collect_bids_reports_success_when_all_attempts_finish(monkeypatch
     )
 
     assert metrics["status"] == "success"
-    assert metrics["attempted"] == 4
+    assert metrics["attempted"] == 6
     assert metrics["failed_count"] == 0
