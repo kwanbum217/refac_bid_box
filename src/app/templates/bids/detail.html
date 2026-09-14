@@ -117,10 +117,14 @@
                         참가 자격 제한
                     </h2>
                     {% if restrictions.license_groups %}
-                    <div class="space-y-3">
-                        {% for group in restrictions.license_groups %}
+                    {% set group_count = restrictions.license_groups|length %}
+                    <p class="text-xs text-slate-600" id="restriction-group-rule">
+                        {% if group_count > 1 %}아래 {{ group_count }}개 그룹 중 하나를 충족하면 참가할 수 있고, 같은 그룹에 적힌 업종은 모두 갖춰야 하는 것으로 보입니다.{% else %}아래 그룹에 적힌 업종을 모두 갖춰야 하는 것으로 보입니다.{% endif %}
+                        최종 자격은 공고문에서 확인하십시오.
+                    </p>
+                    {% macro restriction_group(group) %}
                         <div>
-                            <div class="detail-label">제한그룹 {{ group.group_no }}</div>
+                            <div class="detail-label">제한그룹 {{ group.group_no }}{% if group.licenses|length > 1 %} (모두 필요){% endif %}</div>
                             <ul class="mt-1 space-y-1">
                                 {% for item in group.licenses %}
                                 <li class="text-sm text-slate-800">
@@ -130,10 +134,17 @@
                                 {% endfor %}
                             </ul>
                         </div>
-                        {% endfor %}
+                    {% endmacro %}
+                    <div class="space-y-3">
+                        {% for group in restrictions.license_groups[:3] %}{{ restriction_group(group) }}{% endfor %}
                     </div>
-                    {% if restrictions.license_groups|length > 1 %}
-                    <p class="text-xs text-slate-500">제한그룹이 여러 개인 공고입니다. 그룹 간 적용 방식은 공고문에서 확인하십시오.</p>
+                    {% if group_count > 3 %}
+                    <details id="restriction-groups-more" class="group">
+                        <summary class="cursor-pointer text-xs font-semibold text-primary select-none">나머지 {{ group_count - 3 }}개 그룹 펼치기</summary>
+                        <div class="space-y-3 mt-3">
+                            {% for group in restrictions.license_groups[3:] %}{{ restriction_group(group) }}{% endfor %}
+                        </div>
+                    </details>
                     {% endif %}
                     {% elif restrictions.industry_limited == 'Y' %}
                     <p class="text-sm text-slate-600" id="restrictions-not-collected">업종제한이 있는 공고입니다. 제한 업종명은 2026-09-14 이후 수집한 공고부터 제공하므로 공고문에서 확인하십시오.</p>
@@ -363,7 +374,7 @@
                                 <div>
                                     <div class="font-bold">계산 차단</div>
                                     <div id="blocked-reason" class="text-sm mt-0.5"></div>
-                                    <div class="text-xs mt-1 text-rose-600">공고문의 낙찰방법과 별표를 직접 확인하십시오.</div>
+                                    <div id="blocked-guidance" class="text-xs mt-1 text-rose-600">공고문의 낙찰방법과 별표를 직접 확인하십시오.</div>
                                 </div>
                             </div>
                         </div>
@@ -941,6 +952,23 @@ $(document).ready(function() {
         return codePrefix ? rawReason.slice(codePrefix[0].length).trim() : rawReason;
     }
 
+    function getBlockedGuidanceText(code) {
+        const guidance = {
+            'NOT_SERVC': '이 계산기는 일반용역 적격심사 공고만 지원합니다. 물품·공사 공고는 발주기관의 적격심사 기준을 확인하십시오.',
+            'NON_PRED_PRICE': '예정가격이 없는 공고입니다. 공고문의 낙찰자 결정방법과 가격 평가 방식을 확인하십시오.',
+            'MANUAL_EVALUATION': '발주기관이 정한 자체 심사기준표를 공고 첨부파일에서 확인하십시오.',
+            'RULE_NOT_FOUND': '공고문의 낙찰방법과 적용 별표를 직접 확인하십시오.',
+            'NOT_QUALIFICATION_METHOD': '공고문에 기재된 낙찰자 결정방법(최저가, 수의계약 등)을 확인하십시오.',
+            'RULE_REGIME_MISMATCH': '공고 당시 시행 중이던 개정 전 적격심사 기준과 낙찰하한율을 공고문에서 확인하십시오.',
+            'NEGOTIATION_CONTRACT': '제안서 평가 기준과 협상 절차는 공고문과 제안요청서를 확인하십시오.',
+            'TECH_SERVICE_MISSING_LWLT': '공고문에 기재된 낙찰하한율을 확인하십시오.'
+        };
+        const rawReason = String(code || '');
+        const codePrefix = rawReason.match(/^([A-Z][A-Z_]*)\s*:/);
+        const reasonCode = codePrefix ? codePrefix[1] : rawReason;
+        return guidance[reasonCode] || '공고문의 낙찰방법과 별표를 직접 확인하십시오.';
+    }
+
     function setEvaluationScopeBadge(data) {
         const defaultText = '일반용역 적격심사만 지원 (약 6%)';
         let badgeText = defaultText;
@@ -1054,6 +1082,7 @@ $(document).ready(function() {
                 } else if (data.blocked) {
                     $('#evaluation-blocked').removeClass('hidden');
                     $('#blocked-reason').text(getBlockedReasonText(data.blocked_reason) + (data.rule_basis ? ' (' + data.rule_basis + ')' : ''));
+                    $('#blocked-guidance').text(getBlockedGuidanceText(data.blocked_reason));
                 } else {
                     $('#evaluation-rule').removeClass('hidden');
                     $('#rule-id').text(data.rule_id || '-');
@@ -1154,6 +1183,7 @@ $(document).ready(function() {
                     if (data.blocked) {
                         $('#evaluation-blocked').removeClass('hidden');
                         $('#blocked-reason').text(getBlockedReasonText(data.blocked_reason) + (data.rule_basis ? ' (' + data.rule_basis + ')' : ''));
+                        $('#blocked-guidance').text(getBlockedGuidanceText(data.blocked_reason));
                         $('#evaluation-rule').addClass('hidden');
                     } else {
                         $('#evaluation-blocked').addClass('hidden');
