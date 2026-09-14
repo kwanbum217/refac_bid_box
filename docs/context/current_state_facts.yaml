@@ -437,10 +437,11 @@ facts:
   - id: coldsql_rerun
     status: closed
     decision_date: "2026-09-13"
-    claim: "RAG 정형 질의 cold SQL 재측정은 2026-09-13 전체 32문항 3회 완전 콜드 정본이 canonical 을 통과해 partial 을 종결했습니다. 콜드 SQL 중앙값 18ms, 최대 q03 82,529ms 였고 이후 커버링 인덱스 강제로 q03 은 7.8초입니다."
+    claim: "RAG 정형 질의 cold SQL 재측정은 2026-09-13 전체 32문항 3회 완전 콜드 정본이 canonical 을 통과해 partial 을 종결했습니다. 콜드 SQL 중앙값 18ms, 최대 q03 82,529ms 였고 대책 병합 후 2026-09-14 정본은 콜드 SQL 최대 5,056ms 입니다."
     document_anchor: "RAG 정형 질의 cold SQL 재측정"
     evidence:
       - data/benchmarks/rag_segments_canonical_coldsql_20260913.json
+      - data/benchmarks/rag_segments_canonical_coldsql_20260914.json
       - docs/analysis/rag_coldsql_root_cause_20260913.md
     related_documents:
       - docs/context/CURRENT_STATE.md
