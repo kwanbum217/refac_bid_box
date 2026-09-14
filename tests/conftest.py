@@ -56,6 +56,24 @@ def _isolate_process_cache(monkeypatch):
     monkeypatch.setattr(cache, "_local", {})
 
 
+@pytest.fixture(autouse=True)
+def _stub_restriction_collection(monkeypatch):
+    """collect_bids 가 부르는 면허제한정보·참가가능지역 수집을 기본으로 0건 가짜로 바꿉니다.
+
+    공고·낙찰 수집만 가짜로 바꾼 기존 테스트가 이 두 호출로 실제 조달청 API 에 나갑니다.
+    로컬은 .env 인증키로 성공해 통과하고 키가 없는 CI 에서만 실패했습니다(2026-09-14).
+    이 호출을 검증하는 테스트는 이 뒤에 다시 덮어씁니다.
+    """
+    from unittest.mock import AsyncMock
+
+    from src.app.services import collector_service
+
+    monkeypatch.setattr(collector_service, "stream_bid_license_limits", AsyncMock(return_value=0))
+    monkeypatch.setattr(
+        collector_service, "stream_bid_participation_regions", AsyncMock(return_value=0)
+    )
+
+
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
