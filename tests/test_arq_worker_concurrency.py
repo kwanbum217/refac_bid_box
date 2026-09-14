@@ -288,3 +288,25 @@ def test_nightly_cron_has_extended_timeout() -> None:
             assert job.timeout_s == HEAVY_JOB_TIMEOUT_SECONDS
             return
     raise AssertionError("nightly_schedule_task cron 등록을 찾지 못했습니다.")
+
+
+def test_backup_worker_settings_preserves_concurrency_isolation() -> None:
+    """BackupWorkerSettings 는 무거운 태스크(HEAVY_TASK_NAMES)를 포함하지 않음을 단언합니다."""
+    from src.tasks.worker import (
+        BACKUP_QUEUE_NAME,
+        HEAVY_TASK_NAMES,
+        BackupWorkerSettings,
+    )
+
+    assert BackupWorkerSettings.max_jobs == 4
+    assert BackupWorkerSettings.job_timeout == 1800
+    assert BackupWorkerSettings.queue_name == BACKUP_QUEUE_NAME
+
+    backup_func_names = {
+        getattr(getattr(fn, "coroutine", fn), "__name__", "")
+        for fn in BackupWorkerSettings.functions
+    }
+    for heavy_name in HEAVY_TASK_NAMES:
+        assert heavy_name not in backup_func_names, (
+            f"BackupWorkerSettings 에 무거운 태스크 '{heavy_name}' 이 등록되어 있습니다."
+        )

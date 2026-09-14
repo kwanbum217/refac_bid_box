@@ -5,6 +5,7 @@ Arq 워커 진입점. 원본 Harness 파이프라인 실행 백엔드를 대체�
 
 실행:
     arq src.tasks.worker.WorkerSettings
+    arq src.tasks.worker.BackupWorkerSettings
 """
 
 from __future__ import annotations
@@ -422,16 +423,6 @@ class WorkerSettings:
             timeout=3600,
         ),
     ]
-    if settings.BACKUP_SCHEDULE_ENABLED:
-        cron_jobs.append(
-            cron(
-                cast(Any, backup_schedule_task),
-                hour=3,
-                minute=0,
-                run_at_startup=False,
-                timeout=10800,
-            )
-        )
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     # 무거운 태스크 동시 실행 제한 정책:
     # 1. max_jobs = 4 유지:
@@ -460,6 +451,58 @@ class WorkerSettings:
     on_job_end = arq_on_job_end
 
 
+BACKUP_QUEUE_NAME = "arq:queue:backup"
+
+
+async def _on_backup_startup(ctx: dict[str, Any]) -> None:
+    configure_logging()
+    if settings.OTEL_ENABLED:
+        from src.app.core.db import engine
+
+        setup_observability(engine=engine)
+    record_worker_heartbeat()
+    ctx["worker_heartbeat_task"] = asyncio.create_task(_heartbeat_loop())
+
+
+async def _on_backup_shutdown(ctx: dict[str, Any]) -> None:
+    ctx["worker_shutting_down"] = True
+    heartbeat_task = ctx.pop("worker_heartbeat_task", None)
+    if heartbeat_task is not None:
+        heartbeat_task.cancel()
+        await asyncio.gather(heartbeat_task, return_exceptions=True)
+
+
+class BackupWorkerSettings:
+    """백업 전용 Arq 워커 설정입니다.
+
+    수집·재학습 등 일반 작업과 격리된 전용 큐(arq:queue:backup)를 소비하며,
+    functions 와 cron_jobs 에 백업 작업만 등록합니다.
+    """
+
+    functions = [
+        backup_schedule_task,
+    ]
+    cron_jobs = [
+        cron(
+            cast(Any, backup_schedule_task),
+            hour=3,
+            minute=0,
+            run_at_startup=False,
+            timeout=10800,
+        ),
+    ]
+    queue_name = BACKUP_QUEUE_NAME
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    max_jobs = 4
+    job_timeout = 1800
+    keep_result = 3600
+    allow_abort_jobs = True
+    on_startup = _on_backup_startup
+    on_shutdown = _on_backup_shutdown
+    on_job_start = arq_on_job_start
+    on_job_end = arq_on_job_end
+
+
 def is_task_traced(fn: Any) -> bool:
     """태스크 함수가 trace_worker_task 로 계측되었는지 확인합니다."""
     target = getattr(fn, "coroutine", fn)
@@ -482,7 +525,7 @@ def get_all_worker_tasks() -> list[Any]:
 
 
 def ensure_all_worker_tasks_traced() -> None:
-    """새 태스크 등록 시 배선 누락을 방어하기 위해 WorkerSettings.functions 의 계측을 보장합니다."""
+    """새 태스크 등록 시 배선 누락을 방어하기 위해 WorkerSettings 와 BackupWorkerSettings 의 계측을 보장합니다."""
     new_functions = []
     for fn in WorkerSettings.functions:
         target = getattr(fn, "coroutine", fn)
@@ -492,6 +535,16 @@ def ensure_all_worker_tasks_traced() -> None:
         else:
             new_functions.append(fn)
     WorkerSettings.functions = new_functions
+
+    new_backup_functions = []
+    for fn in BackupWorkerSettings.functions:
+        target = getattr(fn, "coroutine", fn)
+        if not is_task_traced(target):
+            wrapped = traced_worker_task(target)
+            new_backup_functions.append(wrapped)
+        else:
+            new_backup_functions.append(fn)
+    BackupWorkerSettings.functions = new_backup_functions
 
 
 def _apply_catchup_job_timeout(functions: list[Any]) -> list[Any]:
