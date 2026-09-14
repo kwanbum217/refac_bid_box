@@ -74,7 +74,6 @@ def test_data_tier_isolated_and_application_services_have_egress(compose: dict):
     assert services["db"]["networks"] == ["internal"]
     assert services["redis"]["networks"] == ["internal"]
     assert services["meilisearch"]["networks"] == ["internal"]
-    assert services["backup"]["networks"] == ["internal"]
     assert services["app"]["networks"] == ["internal", "egress"]
     assert services["worker"]["networks"] == ["internal", "egress"]
     assert services["proxy"]["networks"] == ["egress"]
@@ -96,22 +95,19 @@ def test_app_readiness_requires_ready_and_production_gates(compose: dict):
     assert environment["READINESS_REQUIRE_LLM"] == "false"
 
 
-def test_backup_service_enforces_least_privilege(compose: dict):
-    """backup 서비스 최소권한 구성 단언.
+def test_backup_keeps_worker_privileges_while_sharing_arq_queue(compose: dict):
+    """backup 은 worker 와 같은 arq WorkerSettings·기본 큐를 소비합니다.
 
-    - 외부 인터넷 egress 제거 (internal 전용)
-    - Ollama 통신용 extra_hosts 제거
-    - ml_registry, chroma_db 읽기 전용(:ro) 마운트
-    - 스냅샷 저장을 위한 data 마운트 쓰기 권한 유지
+    수집(외부 API), 재학습(ml_registry 쓰기), 드리프트·기관명 목록 크론이 backup 으로 떨어질 수 있어
+    egress 와 쓰기 마운트를 걷으면 그 작업이 무작위로 실패합니다(2026-09-14 코디네이터 검토).
+    권한 축소는 backup 전용 큐 분리 뒤에 합니다. docs/ops/backup_least_privilege.md 참조.
     """
     backup = compose["services"]["backup"]
-    assert backup["networks"] == ["internal"]
-    assert "egress" not in backup["networks"]
-    assert "extra_hosts" not in backup
+    assert backup["command"] == compose["services"]["worker"]["command"]
+    assert "egress" in backup["networks"]
     volumes = backup.get("volumes", [])
-    assert "./ml_registry:/app/ml_registry:ro" in volumes
-    assert "./chroma_db:/app/chroma_db:ro" in volumes
-    assert "./data:/app/data" in volumes
+    assert "./ml_registry:/app/ml_registry" in volumes
+    assert "./chroma_db:/app/chroma_db" in volumes
 
 
 def test_worker_healthcheck_requires_fresh_heartbeat(compose: dict):

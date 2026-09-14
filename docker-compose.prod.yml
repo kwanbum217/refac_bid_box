@@ -225,6 +225,8 @@ services:
       - ML_WEEKLY_RETRAIN_ENABLED=false
       - WORKER_HEARTBEAT_MAX_AGE_SECONDS=${WORKER_HEARTBEAT_MAX_AGE_SECONDS:-90}
       - TZ=Asia/Seoul
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -247,11 +249,12 @@ services:
         max-size: "10m"
         max-file: "5"
     volumes:
-      - ./ml_registry:/app/ml_registry:ro
+      - ./ml_registry:/app/ml_registry
       - ./data:/app/data
-      - ./chroma_db:/app/chroma_db:ro
+      - ./chroma_db:/app/chroma_db
     networks:
       - internal
+      - egress
 
   db:
     image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
