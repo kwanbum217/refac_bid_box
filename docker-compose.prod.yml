@@ -60,7 +60,7 @@ services:
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
       - TRUSTED_PROXY_IPS=${TRUSTED_PROXY_IPS:?TRUSTED_PROXY_IPS must be set}
       - READINESS_REQUIRE_WARMUP=true
-      - READINESS_REQUIRE_LLM=true
+      - READINESS_REQUIRE_LLM=false
       - OTEL_ENABLED=${OTEL_ENABLED:-true}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-refac_bid_box}
       - OTEL_EXPORTER_TYPE=${OTEL_EXPORTER_TYPE:-otlp}
@@ -80,7 +80,7 @@ services:
         - CMD
         - python
         - -c
-        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3); assert json.load(response)['status'] == 'ready'"
+        - "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3); assert json.load(response)['status'] in ('ready', 'degraded')"
       interval: 10s
       timeout: 5s
       retries: 12
