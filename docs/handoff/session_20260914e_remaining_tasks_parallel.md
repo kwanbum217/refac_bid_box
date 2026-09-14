@@ -52,7 +52,7 @@
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
-| 1 | Meilisearch 전체 재색인 완료 확인과 `/bids/?lic=0036` 실화면 확인 | 재색인 종료(`MEILI_TIMEOUT_SECONDS=120` 로 실행, 기본 5초는 대량 upsert 에서 시간 초과) |
+| 1 | ~~`11ccaf1c` CI~~ 1차 실패는 GitHub Actions 의존성 설치 504 Gateway Time-out, 재실행 run `34856501659` 성공 | - |
 | 2 | 0건 설명 누락·실데이터 과잉거절·가짜 Source 순응 개선 | 프롬프트·검색 변경, blind_fixture_v2 96요청 canonical 재측정 |
 | 3 | 유출 가드 적용 후 RAG SSE 첫 토큰 P95 재측정 | 정본 벤치마크 1회 |
 | 4 | 릴리스 워크플로 첫 실행 | 사용자 확인(공개 태그·릴리스 생성) |
@@ -61,7 +61,27 @@
 
 ---
 
-## 6. 운영 메모
+## 6. 세션 마감 확인
+
+| 항목 | 결과 |
+| --- | --- |
+| Meilisearch 전체 재색인 | 완료. 공고 4,870,675, 낙찰 3,433,374, 2,981.8초. 기본 `MEILI_TIMEOUT_SECONDS=5` 는 대량 upsert 중 시간 초과로 1차 중단돼 120 으로 재실행 |
+| 업종 필터 실화면 | `/bids/?lic=0036`(정보통신공사업) 200, 통신공사 공고 목록 표시 확인 |
+| 유출 가드 실측 | `adv_inj_01` 3회 모두 차단 |
+
+## 7. 자원 상태 (세션 종료 시점)
+
+| 대상 | 상태 |
+| --- | --- |
+| Docker | 프로젝트 컨테이너 전부 `docker compose stop` 으로 정지(볼륨 보존). 다음 세션은 `docker compose start` 또는 `make up` |
+| 로컬 DB·색인 | `alembic_version` = `9d4e2b7a1c63`, Meilisearch 에 `license_codes` 포함 전체 색인 완료 |
+| Ollama | `gemma4:e2b` 언로드 |
+| 배경 프로세스 | dispatch 가 띄운 `orca_worker_watch.py --watch` 종료, 이 세션의 측정·재색인·게이트 모두 종료 |
+| 다른 컨테이너 | `mcp/github`, `mcp/filesystem`, `mcp/fetch` 는 다른 클라이언트 세션 소유라 건드리지 않음 |
+| 워크트리·브랜치 | 주 저장소 하나(`main`). 모든 워커 워크트리 제거 |
+| Orca | Run `run_ab3ad4fc0808` 빌더 6·리뷰어 6 전원 회수, 회수 대기 0 |
+
+## 8. 운영 메모
 
 - 증분 색인 `sync_search_index(collected_since=...)` 는 공고 `collected_at` 기준이라, 공고 수집 뒤 따로 들어온 제한정보는 다음 전체 재색인까지 `license_codes` 에 반영되지 않습니다.
 - 워커 게이트는 스킬 4.3 대로 완료 즉시 병렬 실행했고 오탐 0건이었습니다. 직렬은 `main` 병합과 premerge 증거 기록뿐입니다.
