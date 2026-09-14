@@ -305,12 +305,14 @@ facts:
       - docs/analysis/kb_index_memory_verification_20260909.md
       - docs/analysis/kb_builder_memory_exhaustion_20260908.md
   - id: lexical_full_rerun
-    status: active
-    decision_date: "2026-08-28"
-    claim: "정확 제목 lexical 채널은 부분집합 지연을 줄였고 전량 재측정을 진행합니다."
+    status: closed
+    decision_date: "2026-09-14"
+    claim: "정확 제목 lexical 채널은 2026-09-14 전량 32문항 3회 재측정에서 실패 0·numeric 144/144 로 종결합니다."
     document_anchor: "정확 제목 lexical 채널"
     evidence:
       - docs/analysis/lexical_channel_latency_effect_20260828.md
+      - data/benchmarks/blind_fixture_v2_e2b_20260830_v2.json
+      - data/benchmarks/blind_fixture_v2_e2b_20260914.json
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/lexical_channel_latency_effect_20260828.md
