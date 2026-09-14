@@ -1,8 +1,9 @@
 # 세션 인수인계: 2026-09-13 RAG 콜드 SQL 원인 규명과 CI 복구
 
 > **작성일**: 2026-09-13
+> **수정일**: 2026-09-14 (7장 이어받은 세션 반영, 6.12 절)
 > **작성자**: Claude Opus 5 (코디네이터)
-> **기준 커밋**: `fdf65e2e`
+> **기준 커밋**: `b53e2c03`
 > **이어받은 문서**: [`docs/handoff/session_20260913_wave_z_observability_chromadb.md`](session_20260913_wave_z_observability_chromadb.md) (같은 날 전반부)
 
 ---
@@ -56,6 +57,12 @@ RAG 정형 질의 콜드 SQL 40초의 원인을 **기관명 선행 와일드카�
 | `2d627af5` | 세션 종료 인수인계 | 전량 4,703건, CI 전 잡 성공 |
 | `2dba1f82` | 테스트 중 로컬 Redis·Ollama 연결 즉시 실패 (`tests/conftest.py`) | 전량 4,694건, CI 전 잡 성공, **CI 9분 4초 → 5분 37초** |
 | `fdf65e2e` | Windows CI 연결 대기 제거 기록 (6.9 절) | CI 전 잡 성공 (5분 28초) |
+| `95e9e541` | 병합 묶기·CI 비차단 확인 규칙, 세션 종료 인수인계 | CI 전 잡 성공 |
+| `a4c84240` | 원장 `mysql_stats_refresh_policy` 종결 (6.12 절) | 전량 4,703건, CI 전 잡 성공 |
+| `fd14d0d2` | 대책 병합 후 전체 fixture 정본 재측정 (분석 19장) | 전량 4,703건, CI 전 잡 성공 |
+| `2d7c0e57` | 원장 `lexical_full_rerun` 종결, 품질 전량 재측정 | 전량 4,703건, CI 전 잡 성공 |
+| `5dedbea4` | 웜 SQL P95 증가 귀속 (분석 19.1 절) | 전량 4,703건, CI 전 잡 성공 |
+| `b53e2c03` | q08 잔여 콜드 지연 미적용 판정 (분석 19.2 절) | 전량 4,703건, CI 전 잡 성공 |
 
 ---
 
@@ -346,6 +353,27 @@ CI 는 기다리지 않되 다음 병합 직전과 세션 종료 전에 반드�
 - arq 워커가 개발 환경에 없어 매시 예열의 요청 경로 효과는 실측하지 않았습니다(작업 단독 실행과 Redis TTL 만 확인).
 - Windows CI 에 남은 4.2초 연결 대기 3건(합계 약 13초)은 연결 대상을 특정하지 못했습니다(6.9 절).
 
+### 6.12 이어받은 세션 (2026-09-14)
+
+7장을 이어받아 로컬에서 할 수 있는 항목을 모두 닫았습니다. 코드는 바꾸지 않았습니다.
+
+| 작업 | 결과 |
+| --- | --- |
+| 원장 `mysql_stats_refresh_policy` | 선택지 B 는 `4992e70b` 에서 야간 점검까지 구현돼 있었고 원장 문구만 결정 대기로 남아 있었습니다. 점검 결과 편차 1.3%·15.9%, 정상 |
+| 전체 fixture 정본 재측정 (7장 4번) | canonical 통과. 콜드 SQL P95 15.1초 → 1.9초, 최대 82.5초 → 5.1초. 콜드 요청의 꼬리는 이제 LLM 생성 |
+| 원장 `lexical_full_rerun` | 08-30 전량 측정이 이미 lexical 채널을 포함했습니다. 현재 HEAD 에서 품질 96요청을 다시 재 numeric 144/144 등 전 지표가 08-30 과 같습니다 |
+| 웜 SQL P95 34ms → 69ms | 기관명 목록 캐시가 요청마다 목록을 받아 훑는 비용. 요청 전체의 1% 미만이라 미적용 |
+| q08 남은 약 2초 (7장 6-3번) | 762MB 커버링 인덱스의 콜드 읽기 비용. 재기동 직후·광역 검색어 첫 요청에 한정되어 미적용 |
+
+**전체 fixture 측정은 `nohup` 분리 프로세스로 띄우십시오.** 하네스 배경 작업으로는 메모리 부족으로 세 번 강제 종료됐고, 분리
+프로세스와 `gemma4:e2b` 언로드로 약 10분 만에 완주했습니다. 진행 감시는 앱 로그의 요청 수와 프로세스 생존으로 걸었습니다.
+
+**`measure_llm_quality.py` 는 종료 시 작업 트리 dirty 를 다시 검사합니다.** 측정 중 문서 수정이나 브랜치 전환을 하면 canonical 에서
+탈락하므로 측정이 끝날 때까지 저장소를 건드리지 마십시오.
+
+**원장 active 항목은 구현보다 늦게 갱신되는 일이 반복됩니다**(`missing_lwlt_intervals`, `mysql_stats_refresh_policy`, `lexical_full_rerun`).
+착수 전에 코드와 기존 측정 파일부터 확인하십시오.
+
 ## 7. 다음 착수 순서
 
 | 순서 | 작업 | 선행 조건 |
@@ -358,8 +386,8 @@ CI 는 기다리지 않되 다음 병합 직전과 세션 종료 전에 반드�
 | 6 | Windows 실기 검증 | 장비. G2 유일 잔여 조건 |
 | 6-1 | ~~독립 집계 병렬 실행과 기관명 목록 예열~~ 적용 완료 (6.8 절). 로컬 동시 8건까지 연결 대기 없음. 운영 부하에서 재관찰 | 운영 배포 뒤 |
 | 6-2 | 운영 반영 시 앱·arq 워커 재기동 (병렬 집계, `refresh_institution_catalog_task` 매시 5분) | 운영 배포 시점 |
-| 6-4 | 2026-09-14: 원장 `mysql_stats_refresh_policy`·`lexical_full_rerun` 종결(품질 96요청 전량 정답), 웜 SQL P95 증가는 기관명 목록 캐시 비용으로 귀속하고 미적용(분석 19.1 절) | - |
 | 6-3 | ~~q08 에 남은 약 2초~~ 2026-09-14 콜드 인덱스 읽기 비용으로 확인하고 적용하지 않음 (분석 19.2 절). 후보: `innodb_buffer_pool_dump_pct` 상향 효과 측정 | 필요 시 |
+| 6-4 | 2026-09-14: 원장 `mysql_stats_refresh_policy`·`lexical_full_rerun` 종결(품질 96요청 전량 정답), 웜 SQL P95 증가는 기관명 목록 캐시 비용으로 귀속하고 미적용(분석 19.1 절) | - |
 | 7 | chromadb 상류 수정 버전 재확인 | 2026-12-31 또는 권고 갱신 |
 
 `coldsql_rerun` 은 6.2 절의 전체 fixture 정본으로 종결했습니다.
@@ -370,13 +398,13 @@ CI 는 기다리지 않되 다음 병합 직전과 세션 종료 전에 반드�
 
 | 대상 | 상태 |
 | --- | --- |
-| Docker | 프로젝트 `app`, `db`, `redis`, `meilisearch` 를 `docker compose stop` 으로 정지 (볼륨 보존). 다음 세션은 `docker compose start` |
+| Docker | 09-14 세션 종료 시 프로젝트 `app`, `db`, `redis`, `meilisearch` 를 `docker compose stop` 으로 정지 (볼륨 보존). 다음 세션은 `docker compose start` |
 | MySQL | `innodb_buffer_pool_dump_at_shutdown=ON`, `tmp_table_size`·`max_heap_table_size` 128MB, 리비전 `c38ebe417cf3` |
-| Redis | `rag:inst_catalog:*` 두 키(TTL 2시간)와 측정 캐시가 남아 있었으나 재기동 후 만료 또는 재생성됨 |
-| Ollama | 적재 모델 언로드 |
+| Redis | 09-14 품질 측정 전 답변 캐시 33개 삭제, `rag:inst_catalog:*` 두 키는 유지. 정지 상태라 재기동 후 만료 또는 재생성됨 |
+| Ollama | 09-14 품질 측정이 올린 `gemma4:e2b` 언로드, 적재 모델 없음 |
 | 감시기 | 공용 상시 감시기 종료. 활성 워커 없음 |
 | 워크트리·브랜치 | 주 저장소 하나, `main` 과 다른 세션 소유 `kwanbum217/orca-r15-verify` |
-| 앱 설정 | `LATENCY_SEGMENT_LOGGING=false`, `OLLAMA_MODEL=gemma4:e2b` (`.env` 기본값) |
+| 앱 설정 | `LATENCY_SEGMENT_LOGGING=false`, `OLLAMA_MODEL=gemma4:e2b` (`.env` 기본값). 09-14 정본 측정 때 셸 변수로 e4b·true 를 줬고 측정 뒤 기본값으로 재기동함 |
 | 측정 스크립트 | 콜드 절차 `ri_request.sh`·부하 비교 `load_parallel.py` 는 세션 scratchpad 에만 있었음. 절차는 분석 3.1 절, 18.1 절 참조 |
 | Orca Run | `run_d38c5a224e54`, `run_3c37e482a894` 모두 Task `completed`, 터미널·워크트리 회수 완료 |
-| 원격 | `origin/main` = `fdf65e2e` (이 문서 병합 전) |
+| 원격 | `origin/main` = `b53e2c03` (이 문서 병합 전) |
