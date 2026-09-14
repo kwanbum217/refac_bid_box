@@ -31,6 +31,10 @@ from src.app.core.observability import (
     DB_CLIENT_OPERATION_DURATION,
     HTTP_SERVER_REQUEST_COUNT,
     HTTP_SERVER_REQUEST_DURATION,
+    RAG_LLM_GENERATION_MS,
+    RAG_LLM_REQUESTS,
+    RAG_LLM_TOKENS,
+    RAG_LLM_TTFT_MS,
     SafeMetricExporter,
     _extract_db_operation,
     _extract_route_template,
@@ -77,6 +81,10 @@ def test_otel_disabled_noop():
     assert instruments["http_request_duration"] is None
     assert instruments["db_operation_duration"] is None
     assert instruments["http_request_count"] is None
+    assert instruments["rag_llm_ttft_ms"] is None
+    assert instruments["rag_llm_generation_ms"] is None
+    assert instruments["rag_llm_tokens"] is None
+    assert instruments["rag_llm_requests"] is None
 
     status = get_observability_status()
     assert status["enabled"] is False
@@ -102,6 +110,10 @@ def test_otel_metrics_explicitly_disabled():
     assert instruments["http_request_duration"] is None
     assert instruments["db_operation_duration"] is None
     assert instruments["http_request_count"] is None
+    assert instruments["rag_llm_ttft_ms"] is None
+    assert instruments["rag_llm_generation_ms"] is None
+    assert instruments["rag_llm_tokens"] is None
+    assert instruments["rag_llm_requests"] is None
 
 
 def test_three_instruments_registered_and_semantic_conventions():
@@ -137,6 +149,44 @@ def test_three_instruments_registered_and_semantic_conventions():
     assert http_dur.unit == "s"
     assert db_dur.unit == "s"
     assert http_cnt.unit == "{request}"
+
+
+def test_rag_llm_instruments_registered_and_semantic_conventions():
+    """RAG LLM 4대 계측기가 등록되고 명칭과 단위가 규격에 부합하는지 검증합니다."""
+    settings.OTEL_ENABLED = True
+    settings.OTEL_METRICS_ENABLED = True
+    settings.OTEL_EXPORTER_TYPE = "none"
+
+    setup_observability()
+
+    assert is_metrics_enabled()
+    instruments = get_metric_instruments()
+
+    ttft = instruments["rag_llm_ttft_ms"]
+    gen = instruments["rag_llm_generation_ms"]
+    tokens = instruments["rag_llm_tokens"]
+    requests = instruments["rag_llm_requests"]
+
+    assert isinstance(ttft, Histogram)
+    assert isinstance(gen, Histogram)
+    assert isinstance(tokens, Counter)
+    assert isinstance(requests, Counter)
+
+    assert ttft.name == RAG_LLM_TTFT_MS
+    assert ttft.name == "rag_llm_ttft_ms"
+    assert ttft.unit == "ms"
+
+    assert gen.name == RAG_LLM_GENERATION_MS
+    assert gen.name == "rag_llm_generation_ms"
+    assert gen.unit == "ms"
+
+    assert tokens.name == RAG_LLM_TOKENS
+    assert tokens.name == "rag_llm_tokens"
+    assert tokens.unit == "{token}"
+
+    assert requests.name == RAG_LLM_REQUESTS
+    assert requests.name == "rag_llm_requests"
+    assert requests.unit == "{request}"
 
 
 def test_route_template_label_prevents_cardinality_explosion():

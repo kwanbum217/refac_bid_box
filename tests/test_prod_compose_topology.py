@@ -80,14 +80,34 @@ def test_data_tier_isolated_and_application_services_have_egress(compose: dict):
 
 
 def test_app_readiness_requires_ready_and_production_gates(compose: dict):
+    """운영 readiness 게이트 단언.
+
+    LLM 장애 시 결정론적 응답(_fallback_answer)으로 서비스 유지 및 Caddy 기동 보장을 위해
+    READINESS_REQUIRE_LLM 은 false 로 둔다.
+    mysql, redis, model_registry, warmup 필수 조건은 유지한다.
+    """
     app = compose["services"]["app"]
     app_healthcheck = _healthcheck_command(app)
-    assert "['status'] == 'ready'" in app_healthcheck
-    assert "degraded" not in app_healthcheck
+    assert "in ('ready', 'degraded')" in app_healthcheck
 
     environment = _environment(app)
     assert environment["READINESS_REQUIRE_WARMUP"] == "true"
-    assert environment["READINESS_REQUIRE_LLM"] == "true"
+    assert environment["READINESS_REQUIRE_LLM"] == "false"
+
+
+def test_backup_keeps_worker_privileges_while_sharing_arq_queue(compose: dict):
+    """backup 은 worker 와 같은 arq WorkerSettings·기본 큐를 소비합니다.
+
+    수집(외부 API), 재학습(ml_registry 쓰기), 드리프트·기관명 목록 크론이 backup 으로 떨어질 수 있어
+    egress 와 쓰기 마운트를 걷으면 그 작업이 무작위로 실패합니다(2026-09-14 코디네이터 검토).
+    권한 축소는 backup 전용 큐 분리 뒤에 합니다. docs/ops/backup_least_privilege.md 참조.
+    """
+    backup = compose["services"]["backup"]
+    assert backup["command"] == compose["services"]["worker"]["command"]
+    assert "egress" in backup["networks"]
+    volumes = backup.get("volumes", [])
+    assert "./ml_registry:/app/ml_registry" in volumes
+    assert "./chroma_db:/app/chroma_db" in volumes
 
 
 def test_worker_healthcheck_requires_fresh_heartbeat(compose: dict):

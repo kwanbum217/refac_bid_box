@@ -16,14 +16,39 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Iterator
 from typing import Any, Protocol
 
 import httpx
 
 from src.app.core.config import settings
+from src.app.core.observability import (
+    record_llm_generation_duration,
+    record_llm_request,
+    record_llm_tokens,
+    record_llm_ttft,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_gemini_tokens(response_or_chunk: Any) -> tuple[int | None, int | None]:
+    """Gemini 응답 객체로부터 입력 및 출력 토큰 수를 추출합니다."""
+    usage = getattr(response_or_chunk, "usage_metadata", None)
+    if usage is None and isinstance(response_or_chunk, dict):
+        usage = response_or_chunk.get("usage_metadata")
+    if usage is None:
+        return None, None
+    if isinstance(usage, dict):
+        in_t = usage.get("prompt_token_count")
+        out_t = usage.get("candidates_token_count")
+    else:
+        in_t = getattr(usage, "prompt_token_count", None)
+        out_t = getattr(usage, "candidates_token_count", None)
+    input_tokens = in_t if isinstance(in_t, int) else None
+    output_tokens = out_t if isinstance(out_t, int) else None
+    return input_tokens, output_tokens
 
 
 class LLMBackend(Protocol):
@@ -124,33 +149,101 @@ class OllamaBackend:
 
     def generate(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
         payload = self._payload(system_prompt, messages, stream=False)
-        response = httpx.post(f"{self.base_url}/api/chat", json=payload, timeout=self.timeout)
-        response.raise_for_status()
-        body = response.json()
-        return str((body.get("message") or {}).get("content") or "")
+        t_start = time.perf_counter()
+        recorded = False
+        try:
+            response = httpx.post(f"{self.base_url}/api/chat", json=payload, timeout=self.timeout)
+            response.raise_for_status()
+            body = response.json()
+            duration_ms = (time.perf_counter() - t_start) * 1000.0
+            record_llm_generation_duration(self.name, self.model, duration_ms)
+            record_llm_request(self.name, self.model, outcome="success")
+            recorded = True
+
+            in_tokens = (
+                body.get("prompt_eval_count")
+                if isinstance(body.get("prompt_eval_count"), int)
+                else None
+            )
+            out_tokens = body.get("eval_count") if isinstance(body.get("eval_count"), int) else None
+            if in_tokens is not None or out_tokens is not None:
+                record_llm_tokens(
+                    self.name,
+                    self.model,
+                    input_tokens=in_tokens,
+                    output_tokens=out_tokens,
+                )
+
+            return str((body.get("message") or {}).get("content") or "")
+        except Exception:
+            if not recorded:
+                duration_ms = (time.perf_counter() - t_start) * 1000.0
+                record_llm_generation_duration(self.name, self.model, duration_ms)
+                record_llm_request(self.name, self.model, outcome="error")
+                recorded = True
+            raise
 
     def stream_generate(self, system_prompt: str, messages: list[dict[str, str]]) -> Iterator[str]:
         """Ollama /api/chat stream=True 를 사용해 실시간 토큰을 반환합니다."""
         payload = self._payload(system_prompt, messages, stream=True)
-        with httpx.stream(
-            "POST",
-            f"{self.base_url}/api/chat",
-            json=payload,
-            timeout=self.timeout,
-        ) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                try:
-                    chunk = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if chunk.get("done"):
-                    break
-                content = (chunk.get("message") or {}).get("content")
-                if content:
-                    yield str(content)
+        t_start = time.perf_counter()
+        ttft_recorded = False
+        recorded = False
+        success = False
+        in_tokens: int | None = None
+        out_tokens: int | None = None
+
+        try:
+            with httpx.stream(
+                "POST",
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=self.timeout,
+            ) as response:
+                response.raise_for_status()
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if chunk.get("done"):
+                        if isinstance(chunk.get("prompt_eval_count"), int):
+                            in_tokens = chunk.get("prompt_eval_count")
+                        if isinstance(chunk.get("eval_count"), int):
+                            out_tokens = chunk.get("eval_count")
+                        break
+                    content = (chunk.get("message") or {}).get("content")
+                    if content:
+                        if not ttft_recorded:
+                            ttft_ms = (time.perf_counter() - t_start) * 1000.0
+                            record_llm_ttft(self.name, self.model, ttft_ms)
+                            ttft_recorded = True
+                        yield str(content)
+                success = True
+        except GeneratorExit:
+            raise
+        except Exception:
+            if not recorded:
+                duration_ms = (time.perf_counter() - t_start) * 1000.0
+                record_llm_generation_duration(self.name, self.model, duration_ms)
+                record_llm_request(self.name, self.model, outcome="error")
+                recorded = True
+            raise
+        finally:
+            if not recorded and success:
+                duration_ms = (time.perf_counter() - t_start) * 1000.0
+                record_llm_generation_duration(self.name, self.model, duration_ms)
+                record_llm_request(self.name, self.model, outcome="success")
+                if in_tokens is not None or out_tokens is not None:
+                    record_llm_tokens(
+                        self.name,
+                        self.model,
+                        input_tokens=in_tokens,
+                        output_tokens=out_tokens,
+                    )
+                recorded = True
 
 
 class GeminiBackend:
@@ -178,45 +271,114 @@ class GeminiBackend:
         return True
 
     def generate(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
-        if self._client is None:
-            raise RuntimeError("Gemini 클라이언트가 초기화되지 않았습니다. API 키를 확인하세요.")
-        from google.genai import types
+        t_start = time.perf_counter()
+        recorded = False
+        try:
+            if self._client is None:
+                raise RuntimeError(
+                    "Gemini 클라이언트가 초기화되지 않았습니다. API 키를 확인하세요."
+                )
+            from google.genai import types
 
-        contents = [
-            types.Content(
-                role="model" if item.get("role") == "assistant" else "user",
-                parts=[types.Part.from_text(text=item.get("content") or "")],
+            contents = [
+                types.Content(
+                    role="model" if item.get("role") == "assistant" else "user",
+                    parts=[types.Part.from_text(text=item.get("content") or "")],
+                )
+                for item in messages
+            ]
+            response = self._client.models.generate_content(
+                model=self.model,
+                contents=contents,
+                config=types.GenerateContentConfig(system_instruction=system_prompt),
             )
-            for item in messages
-        ]
-        response = self._client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=types.GenerateContentConfig(system_instruction=system_prompt),
-        )
-        return response.text or ""
+            duration_ms = (time.perf_counter() - t_start) * 1000.0
+            record_llm_generation_duration(self.name, self.model, duration_ms)
+            record_llm_request(self.name, self.model, outcome="success")
+            recorded = True
+
+            in_tokens, out_tokens = _extract_gemini_tokens(response)
+            if in_tokens is not None or out_tokens is not None:
+                record_llm_tokens(
+                    self.name,
+                    self.model,
+                    input_tokens=in_tokens,
+                    output_tokens=out_tokens,
+                )
+
+            return response.text or ""
+        except Exception:
+            if not recorded:
+                duration_ms = (time.perf_counter() - t_start) * 1000.0
+                record_llm_generation_duration(self.name, self.model, duration_ms)
+                record_llm_request(self.name, self.model, outcome="error")
+                recorded = True
+            raise
 
     def stream_generate(self, system_prompt: str, messages: list[dict[str, str]]) -> Iterator[str]:
         """Gemini 스트리밍 API 를 사용해 실시간 토큰을 반환합니다."""
-        if self._client is None:
-            raise RuntimeError("Gemini 클라이언트가 초기화되지 않았습니다. API 키를 확인하세요.")
-        from google.genai import types
+        t_start = time.perf_counter()
+        ttft_recorded = False
+        recorded = False
+        success = False
+        in_tokens: int | None = None
+        out_tokens: int | None = None
 
-        contents = [
-            types.Content(
-                role="model" if item.get("role") == "assistant" else "user",
-                parts=[types.Part.from_text(text=item.get("content") or "")],
+        try:
+            if self._client is None:
+                raise RuntimeError(
+                    "Gemini 클라이언트가 초기화되지 않았습니다. API 키를 확인하세요."
+                )
+            from google.genai import types
+
+            contents = [
+                types.Content(
+                    role="model" if item.get("role") == "assistant" else "user",
+                    parts=[types.Part.from_text(text=item.get("content") or "")],
+                )
+                for item in messages
+            ]
+            stream = self._client.models.generate_content_stream(
+                model=self.model,
+                contents=contents,
+                config=types.GenerateContentConfig(system_instruction=system_prompt),
             )
-            for item in messages
-        ]
-        for chunk in self._client.models.generate_content_stream(
-            model=self.model,
-            contents=contents,
-            config=types.GenerateContentConfig(system_instruction=system_prompt),
-        ):
-            text = chunk.text or ""
-            if text:
-                yield text
+            for chunk in stream:
+                text = chunk.text or ""
+                chunk_in, chunk_out = _extract_gemini_tokens(chunk)
+                if chunk_in is not None:
+                    in_tokens = chunk_in
+                if chunk_out is not None:
+                    out_tokens = chunk_out
+                if text:
+                    if not ttft_recorded:
+                        ttft_ms = (time.perf_counter() - t_start) * 1000.0
+                        record_llm_ttft(self.name, self.model, ttft_ms)
+                        ttft_recorded = True
+                    yield text
+            success = True
+        except GeneratorExit:
+            raise
+        except Exception:
+            if not recorded:
+                duration_ms = (time.perf_counter() - t_start) * 1000.0
+                record_llm_generation_duration(self.name, self.model, duration_ms)
+                record_llm_request(self.name, self.model, outcome="error")
+                recorded = True
+            raise
+        finally:
+            if not recorded and success:
+                duration_ms = (time.perf_counter() - t_start) * 1000.0
+                record_llm_generation_duration(self.name, self.model, duration_ms)
+                record_llm_request(self.name, self.model, outcome="success")
+                if in_tokens is not None or out_tokens is not None:
+                    record_llm_tokens(
+                        self.name,
+                        self.model,
+                        input_tokens=in_tokens,
+                        output_tokens=out_tokens,
+                    )
+                recorded = True
 
 
 def build_backend(provider: str | None = None) -> LLMBackend | None:

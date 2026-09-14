@@ -52,6 +52,12 @@ HTTP_SERVER_REQUEST_DURATION: str = "http.server.request.duration"
 DB_CLIENT_OPERATION_DURATION: str = "db.client.operation.duration"
 HTTP_SERVER_REQUEST_COUNT: str = "http.server.request.count"
 
+# RAG LLM 관측성 메트릭 명칭
+RAG_LLM_TTFT_MS: str = "rag_llm_ttft_ms"
+RAG_LLM_GENERATION_MS: str = "rag_llm_generation_ms"
+RAG_LLM_TOKENS: str = "rag_llm_tokens"
+RAG_LLM_REQUESTS: str = "rag_llm_requests"
+
 # DB 질의 연산 카디널리티 관리를 위한 표준 SQL 명령어 허용 목록
 KNOWN_DB_OPERATIONS: frozenset[str] = frozenset(
     {
@@ -345,6 +351,10 @@ class ObservabilityRegistry:
     http_duration_histogram: Histogram | None = None
     db_duration_histogram: Histogram | None = None
     http_requests_counter: Counter | None = None
+    llm_ttft_histogram: Histogram | None = None
+    llm_generation_histogram: Histogram | None = None
+    llm_tokens_counter: Counter | None = None
+    llm_requests_counter: Counter | None = None
     fastapi_instrumented: bool = False
     sqlalchemy_instrumented: bool = False
     arq_instrumented: bool = False
@@ -375,11 +385,15 @@ def get_meter_provider() -> MeterProvider | None:
 
 
 def get_metric_instruments() -> dict[str, Any]:
-    """등록된 세 가지 핵심 메트릭 계측기 딕셔너리를 반환합니다."""
+    """등록된 메트릭 계측기 딕셔너리를 반환합니다."""
     return {
         "http_request_duration": _registry.http_duration_histogram,
         "db_operation_duration": _registry.db_duration_histogram,
         "http_request_count": _registry.http_requests_counter,
+        "rag_llm_ttft_ms": _registry.llm_ttft_histogram,
+        "rag_llm_generation_ms": _registry.llm_generation_histogram,
+        "rag_llm_tokens": _registry.llm_tokens_counter,
+        "rag_llm_requests": _registry.llm_requests_counter,
     }
 
 
@@ -527,6 +541,28 @@ def setup_observability(
         _registry.http_requests_counter = meter.create_counter(
             name=HTTP_SERVER_REQUEST_COUNT,
             description="Total count of HTTP server requests.",
+            unit="{request}",
+        )
+
+        # RAG LLM 관측성 계측기 등록
+        _registry.llm_ttft_histogram = meter.create_histogram(
+            name=RAG_LLM_TTFT_MS,
+            description="Time to first token of RAG LLM stream in milliseconds.",
+            unit="ms",
+        )
+        _registry.llm_generation_histogram = meter.create_histogram(
+            name=RAG_LLM_GENERATION_MS,
+            description="Total duration of RAG LLM generation in milliseconds.",
+            unit="ms",
+        )
+        _registry.llm_tokens_counter = meter.create_counter(
+            name=RAG_LLM_TOKENS,
+            description="Count of tokens processed by RAG LLM.",
+            unit="{token}",
+        )
+        _registry.llm_requests_counter = meter.create_counter(
+            name=RAG_LLM_REQUESTS,
+            description="Count of RAG LLM generation requests.",
             unit="{request}",
         )
 
@@ -830,7 +866,83 @@ def reset_observability_for_testing() -> None:
     _registry.http_duration_histogram = None
     _registry.db_duration_histogram = None
     _registry.http_requests_counter = None
+    _registry.llm_ttft_histogram = None
+    _registry.llm_generation_histogram = None
+    _registry.llm_tokens_counter = None
+    _registry.llm_requests_counter = None
     _registry.fastapi_instrumented = False
     _registry.sqlalchemy_instrumented = False
     _registry.arq_instrumented = False
     _registry.sqlalchemy_metrics_engine = None
+
+
+def record_llm_request(
+    backend: str,
+    model: str,
+    outcome: str,
+) -> None:
+    """LLM 요청 결과(성공/오류) 카운터를 기록합니다."""
+    if not _registry.metrics_enabled or _registry.llm_requests_counter is None:
+        return
+    try:
+        attrs = {"backend": backend, "model": model, "outcome": outcome}
+        _registry.llm_requests_counter.add(1, attrs)
+    except Exception as exc:
+        logger.warning("LLM 요청 카운터 기록 예외: %s", exc)
+
+
+def record_llm_generation_duration(
+    backend: str,
+    model: str,
+    duration_ms: float,
+) -> None:
+    """LLM 전체 생성 소요 시간(ms)을 기록합니다."""
+    if not _registry.metrics_enabled or _registry.llm_generation_histogram is None:
+        return
+    try:
+        attrs = {"backend": backend, "model": model}
+        _registry.llm_generation_histogram.record(duration_ms, attrs)
+    except Exception as exc:
+        logger.warning("LLM 생성 시간 기록 예외: %s", exc)
+
+
+def record_llm_ttft(
+    backend: str,
+    model: str,
+    duration_ms: float,
+) -> None:
+    """LLM 스트리밍 첫 청크 도달 시간(ms)을 기록합니다."""
+    if not _registry.metrics_enabled or _registry.llm_ttft_histogram is None:
+        return
+    try:
+        attrs = {"backend": backend, "model": model}
+        _registry.llm_ttft_histogram.record(duration_ms, attrs)
+    except Exception as exc:
+        logger.warning("LLM TTFT 기록 예외: %s", exc)
+
+
+def record_llm_tokens(
+    backend: str,
+    model: str,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> None:
+    """LLM 입력 및 출력 토큰 수를 기록합니다.
+
+    토큰 수가 백엔드에 의해 명시적으로 제공된 경우에만 기록하며, 추정값은 기록하지 않습니다.
+    """
+    if not _registry.metrics_enabled or _registry.llm_tokens_counter is None:
+        return
+    try:
+        if isinstance(input_tokens, (int, float)) and input_tokens >= 0:
+            _registry.llm_tokens_counter.add(
+                int(input_tokens),
+                {"backend": backend, "model": model, "direction": "input"},
+            )
+        if isinstance(output_tokens, (int, float)) and output_tokens >= 0:
+            _registry.llm_tokens_counter.add(
+                int(output_tokens),
+                {"backend": backend, "model": model, "direction": "output"},
+            )
+    except Exception as exc:
+        logger.warning("LLM 토큰 수 기록 예외: %s", exc)

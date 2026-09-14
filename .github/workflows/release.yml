@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
+
       - name: Check release readiness
         id: readiness
         env:
@@ -39,6 +42,52 @@ jobs:
           python scripts/check_release_readiness.py \
             --tag "${{ steps.readiness.outputs.tag }}" \
             --notes-output "$RUNNER_TEMP/release-notes.md"
+
+      - name: Build release application image
+        id: build-image
+        env:
+          RELEASE_TAG: ${{ steps.readiness.outputs.tag }}
+        run: |
+          docker buildx build --load -t "refac-bid-box:${RELEASE_TAG}" .
+
+      - name: Scan container image
+        id: trivy-scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: refac-bid-box:${{ steps.readiness.outputs.tag }}
+          format: json
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          exit-code: '0'
+          ignore-unfixed: true
+          output: trivy-results.json
+
+      - name: Filter Trivy results against allowlist
+        run: |
+          uv run python scripts/filter_trivy_results.py \
+            --input trivy-results.json \
+            --allowlist .github/vulnerability-allowlist.yml
+
+      - name: Generate application SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: refac-bid-box:${{ steps.readiness.outputs.tag }}
+          artifact-name: refac-bid-box-sbom.spdx.json
+          output-file: refac-bid-box-sbom.spdx.json
+          format: spdx-json
+
+      - name: Record image digest and update release notes
+        env:
+          RELEASE_TAG: ${{ steps.readiness.outputs.tag }}
+        run: |
+          IMAGE_ID=$(docker inspect --format='{{.Id}}' "refac-bid-box:${RELEASE_TAG}")
+          {
+            echo "image: refac-bid-box:${RELEASE_TAG}"
+            echo "image_id: ${IMAGE_ID}"
+            echo "digest: ${IMAGE_ID}"
+          } > image-digest.txt
+          echo "" >> "$RUNNER_TEMP/release-notes.md"
+          echo "Image Digest: ${IMAGE_ID}" >> "$RUNNER_TEMP/release-notes.md"
 
       - name: Create and push release tag
         env:
@@ -57,4 +106,6 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --verify-tag \
             --title "$RELEASE_TAG" \
-            --notes-file "$RUNNER_TEMP/release-notes.md"
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            refac-bid-box-sbom.spdx.json \
+            image-digest.txt
