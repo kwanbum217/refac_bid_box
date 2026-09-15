@@ -25,6 +25,8 @@ from src.app.schemas.chat import ChatPlan
 MAX_HISTORY_TURNS = 10
 USER_MEMORY_PREFIX = "user:"
 SESSION_KEY_SALT = "bidbox.chatbot.session_key"
+SESSION_KEY_SIGNATURE_LENGTH = 31
+SESSION_KEY_MAX_LENGTH = 64
 _UNSET = object()
 
 
@@ -35,13 +37,15 @@ def sign_session_key(raw_id: str) -> str:
         raw_id.encode(),
         hashlib.sha256,
     ).digest()
-    signature = base64.urlsafe_b64encode(digest).decode().rstrip("=")
+    signature = base64.urlsafe_b64encode(digest).decode().rstrip("=")[:SESSION_KEY_SIGNATURE_LENGTH]
     return f"{raw_id}:{signature}"
 
 
 def verify_session_key(token: str | None) -> bool:
     """세션 키 서명의 유효성을 검증합니다 (만료 없음)."""
     if not token or not isinstance(token, str):
+        return False
+    if len(token) > SESSION_KEY_MAX_LENGTH:
         return False
     if ":" not in token:
         return False
@@ -56,7 +60,9 @@ def verify_session_key(token: str | None) -> bool:
         raw_id.encode(),
         hashlib.sha256,
     ).digest()
-    expected_signature = base64.urlsafe_b64encode(expected).decode().rstrip("=")
+    expected_signature = (
+        base64.urlsafe_b64encode(expected).decode().rstrip("=")[:SESSION_KEY_SIGNATURE_LENGTH]
+    )
     return hmac.compare_digest(signature, expected_signature)
 
 
@@ -71,7 +77,11 @@ def ensure_session_key(
     user_id: int | object | None = _UNSET,
 ) -> str:
     cleaned = (session_key or "").strip()
-    if not cleaned or cleaned.startswith(USER_MEMORY_PREFIX):
+    if (
+        not cleaned
+        or cleaned.startswith(USER_MEMORY_PREFIX)
+        or len(cleaned) > SESSION_KEY_MAX_LENGTH
+    ):
         return generate_signed_session_key()
 
     if user_id is _UNSET:
