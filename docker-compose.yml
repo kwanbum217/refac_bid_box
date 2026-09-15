@@ -139,7 +139,11 @@ services:
       # 마지막 collected_at 이 24시간을 넘겼을 때만 1회 실행되고 6시간 쿨다운이
       # 걸리므로, 재시작 반복으로 수집이 중복해서 돌지 않습니다.
       - AUTOMATION_SCHEDULE_CATCHUP_ENABLED=true
-      - ML_WEEKLY_RETRAIN_ENABLED=false
+      # 2026-09-15 최신성 쌍대 실험(docs/design/servc_freshness_retrain_20260915.md)에서
+      # 8주 최신 모델이 MAE -0.0255 로 유의하게 좋아 개발 환경은 용역만 매주 재학습합니다.
+      # 승격은 수동이며 운영 Compose 는 꺼 둔 상태를 유지합니다.
+      - ML_WEEKLY_RETRAIN_ENABLED=true
+      - ML_WEEKLY_RETRAIN_CATEGORIES=Servc
       # Arq cron 은 워커의 로컬 시간을 사용하므로 운영 문서의 02:00을 KST로 고정합니다.
       - TZ=Asia/Seoul
     extra_hosts:

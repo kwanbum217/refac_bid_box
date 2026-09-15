@@ -130,6 +130,42 @@ async def test_weekly_retrain_isolates_category_failure():
 
 
 @pytest.mark.asyncio
+async def test_weekly_retrain_runs_only_selected_categories():
+    """ML_WEEKLY_RETRAIN_CATEGORIES 로 고른 카테고리만 재학습합니다."""
+    executed_categories: list[str] = []
+
+    async def fake_run_retrain(ctx, trigger_source="weekly_schedule", category_code=None, **kwargs):
+        executed_categories.append(category_code)
+        return {"status": "success", "category": category_code}
+
+    with (
+        patch("src.tasks.scheduled_tasks.settings.ML_WEEKLY_RETRAIN_CATEGORIES", " Servc , "),
+        patch("src.tasks.scheduled_tasks.run_retrain_pipeline_task", side_effect=fake_run_retrain),
+    ):
+        outcome = await weekly_retrain_task({})
+
+    assert executed_categories == ["Servc"]
+    assert outcome["status"] == "success"
+    assert list(outcome["categories"]) == ["Servc"]
+
+
+@pytest.mark.asyncio
+async def test_weekly_retrain_rejects_unknown_category():
+    """오타 난 카테고리는 조용히 건너뛰지 않고 실패로 알립니다."""
+    with (
+        patch("src.tasks.scheduled_tasks.settings.ML_WEEKLY_RETRAIN_CATEGORIES", "Servc,Srvc"),
+        patch("src.tasks.scheduled_tasks.run_retrain_pipeline_task") as retrain,
+        patch("src.tasks.scheduled_tasks.notify_task_failure") as notify,
+    ):
+        outcome = await weekly_retrain_task({})
+
+    assert outcome["status"] == "failed"
+    assert "Srvc" in outcome["error"]
+    retrain.assert_not_called()
+    notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_weekly_retrain_disabled():
     """settings.ML_WEEKLY_RETRAIN_ENABLED=False 면 스케줄이 건너뜁니다."""
     with patch("src.tasks.scheduled_tasks.settings.ML_WEEKLY_RETRAIN_ENABLED", False):
