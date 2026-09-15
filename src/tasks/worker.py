@@ -385,7 +385,6 @@ class WorkerSettings:
         run_retrain_pipeline_task,
         development_data_refresh_task,
         drift_monitor_task,
-        backup_schedule_task,
         run_schedule_catchup_task,
         rebuild_dataset_summary_task,
         refresh_institution_catalog_task,
