@@ -485,8 +485,7 @@
       "use_lexical": false,
       "filters": {
         "date_from": "2026-01-01",
-        "date_to": "2026-06-30",
-        "time_bucket": "quarter"
+        "date_to": "2026-12-31"
       }
     },
     "adv_date_03": {
