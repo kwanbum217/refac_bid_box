@@ -57,7 +57,7 @@ CI는 6개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해�
 
 1. **독립 Job 분리 및 중복 실행 차단**:
    - `cross-platform-test` 매트릭스에서는 `-m "not data_assets and not e2e"`로 E2E를 제외하고 Chromium 설치 단계를 제거하여 매트릭스 러너 오버헤드를 대폭 경감합니다.
-   - `e2e-browser-test` 독립 Job에서만 배포 표준 환경(Ubuntu 3.11)으로 Chromium 바이너리를 설치하고 `-m e2e`로 E2E 시나리오 32건을 집중 검증합니다.
+   - `e2e-browser-test` 독립 Job에서만 배포 표준 환경(Ubuntu 3.11)으로 Chromium 바이너리를 설치하고 `-m e2e`로 E2E 시나리오 34건을 집중 검증합니다.
 2. **0건 Skip 엄격 게이트**:
    - 브라우저 바이너리가 설치된 환경임에도 테스트가 skip되는 것은 환경 오설정 또는 회귀 결함이므로 성공으로 간주하지 않습니다.
    - 출력에 `SKIPPED` 또는 `skipped` 문자열이 감지되면 종료 코드 1로 즉시 Job을 실패 처리합니다.
