@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS: int = 6
     # 원본 Airflow narabid_weekly_retrain(매주 월요일 03:00) 대체.
     ML_WEEKLY_RETRAIN_ENABLED: bool = True
+    # 주간 재학습 대상 카테고리. 콤마로 구분하며 비우면 CATEGORY_MODEL_NAMES 전체입니다.
+    # 모델 고도화가 용역 우선이라 개발 Compose 는 Servc 만 돌립니다.
+    ML_WEEKLY_RETRAIN_CATEGORIES: str = ""
     # PSI 드리프트 모니터링 정기 검사(매일 04:00) 활성화 여부.
     # Servc baseline(b_20260906_servc_post_regime)이 있어 기본값은 활성(True)입니다.
     # baseline이 없는 모델(예: Thng quantum_leap_v25_pro)은 drift_monitor_task에서
@@ -221,6 +224,13 @@ class Settings(BaseSettings):
     def cors_allowed_origins(self) -> list[str]:
         """CORS_ALLOWED_ORIGINS 를 오리진 목록으로 변환합니다."""
         return [origin.strip() for origin in self.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def weekly_retrain_categories(self) -> list[str]:
+        """ML_WEEKLY_RETRAIN_CATEGORIES 를 카테고리 코드 목록으로 변환합니다."""
+        return [
+            code.strip() for code in self.ML_WEEKLY_RETRAIN_CATEGORIES.split(",") if code.strip()
+        ]
 
     @property
     def docs_enabled(self) -> bool:

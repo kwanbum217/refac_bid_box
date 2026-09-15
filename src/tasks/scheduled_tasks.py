@@ -501,11 +501,19 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info("주간 재학습이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
-    logger.info("주간 재학습 실행 시작 (카테고리 fan-out)")
+    selected = settings.weekly_retrain_categories
+    unknown = [code for code in selected if code not in CATEGORY_MODEL_NAMES]
+    if unknown:
+        error_msg = f"ML_WEEKLY_RETRAIN_CATEGORIES 에 등록되지 않은 카테고리가 있습니다: {unknown}"
+        await notify_task_failure("주간 재학습 스케줄", error_msg)
+        return {"status": "failed", "trigger_source": "weekly_schedule", "error": error_msg}
+    categories = sorted(selected or CATEGORY_MODEL_NAMES.keys())
+
+    logger.info("주간 재학습 실행 시작 (카테고리 fan-out: %s)", categories)
     results: dict[str, Any] = {}
     has_failure = False
 
-    for category in sorted(CATEGORY_MODEL_NAMES.keys()):
+    for category in categories:
         try:
             logger.info("주간 재학습 시작: 카테고리 %s", category)
             cat_result = await run_retrain_pipeline_task(

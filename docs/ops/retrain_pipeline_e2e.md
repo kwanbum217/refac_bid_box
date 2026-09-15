@@ -135,7 +135,7 @@ print(asyncio.run(run_retrain_pipeline_task(
 PY
 ```
 
-주간 재학습은 매주 월요일 03:00 에 자동 실행됩니다(`src/tasks/worker.py` `cron_jobs`). `ML_WEEKLY_RETRAIN_ENABLED=false` 로 끌 수 있습니다.
+주간 재학습은 매주 월요일 03:00 에 자동 실행됩니다(`src/tasks/worker.py` `cron_jobs`). `ML_WEEKLY_RETRAIN_ENABLED=false` 로 끌 수 있고, `ML_WEEKLY_RETRAIN_CATEGORIES=Servc` 처럼 대상 카테고리를 좁힐 수 있습니다(비우면 전체, 등록되지 않은 코드는 실패로 알림). 개발 Compose 는 2026-09-15 부터 용역만 켜 두며 승격은 여전히 수동입니다.
 
 ---
 

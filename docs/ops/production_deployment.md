@@ -38,6 +38,7 @@
 | `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | `true` | 데이터 일일 최신화 |
 | `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | `false` | 야간 스케줄 |
 | `ML_WEEKLY_RETRAIN_ENABLED` | `false` | 주간 재학습 |
+| `ML_WEEKLY_RETRAIN_CATEGORIES` | 빈 값(전체) | 주간 재학습 대상 카테고리, 콤마 구분 |
 
 ---
 
