@@ -389,6 +389,11 @@ def test_adv_inst_04_plan_expected_outcome():
         ("한국도로공사 본사 보수공사 입찰", "Cnstwk"),
         ("한국수자원공사 2026년 광역상수도 정밀안전진단 용역", "Servc"),
         ("한국전력공사 변전설비 신설 건설공사", "Cnstwk"),
+        ("서울역사공원조성공사 낙찰 결과", "Cnstwk"),
+        ("부산신항배후도로공사 낙찰금액", "Cnstwk"),
+        ("경기도청사리모델링공사 입찰", "Cnstwk"),
+        ("대구북구청사증축공사 공고", "Cnstwk"),
+        ("한국공사 입찰", "Cnstwk"),
     ],
 )
 def test_public_corporation_vs_construction_category_matching(

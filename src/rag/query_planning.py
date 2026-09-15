@@ -72,6 +72,28 @@ PUBLIC_CORPORATION_PREFIXES = (
     "세종",
     "인천국제",
 )
+# 접두어만으로 판정하면 "서울역사공원조성공사" 같은 건설 공사명이 공기업으로 오인됩니다.
+# 접두어와 "공사" 사이가 실제 공기업 어간일 때만 공기업 이름으로 봅니다.
+PUBLIC_CORPORATION_STEMS = (
+    "전력",
+    "교통",
+    "도로",
+    "도시",
+    "주택도시",
+    "토지주택",
+    "도시개발",
+    "수자원",
+    "가스",
+    "철도",
+    "공항",
+    "농어촌",
+    "관광",
+    "환경",
+    "지역난방",
+    "석유",
+    "광해광업",
+    "조폐",
+)
 PUBLIC_CORP_JOSA = ("의", "와", "과", "은", "는", "이", "가")
 REGION_KEYWORDS = (
     "서울",
@@ -156,7 +178,7 @@ def _extract_public_corporation_tokens(text: str) -> list[str]:
     """공기업 이름 토큰을 추출합니다.
 
     공백·쉼표·조사로 끊은 토큰이 '공사'로 끝나고, PUBLIC_CORPORATION_PREFIXES 중 하나로 시작하며,
-    접두어와 '공사' 사이에 한 글자 이상이 있으면 공기업 이름으로 판정합니다.
+    접두어와 '공사' 사이가 PUBLIC_CORPORATION_STEMS 중 하나와 정확히 같으면 공기업 이름으로 판정합니다.
     토큰의 조사('의', '와', '과', '은', '는', '이', '가')는 떼고 판정합니다.
     """
     tokens = re.split(r"[\s,]+", text)
@@ -171,7 +193,7 @@ def _extract_public_corporation_tokens(text: str) -> list[str]:
             for prefix in PUBLIC_CORPORATION_PREFIXES:
                 if cleaned.startswith(prefix):
                     between = cleaned[len(prefix) : -2]
-                    if len(between) >= 1:
+                    if between in PUBLIC_CORPORATION_STEMS:
                         found.append(cleaned)
                         break
     return found
