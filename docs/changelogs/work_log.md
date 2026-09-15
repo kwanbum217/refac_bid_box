@@ -1125,3 +1125,16 @@
   - README G3 세분화 및 Thng 서빙 지표 아티팩트 부재를 문서 동기화 부채로 식별했습니다
 - **관련 파일**: `docs/handoff/2026-08-14_gpt_analysis_verification.md`, `tests/test_scheduled_tasks.py`, `tests/test_worker_compose.py`
 - **검증 결과**: 테스트 18건 통과, `validate_agent_rules.py` 6/6 PASS
+
+### 2026-09-15 | Claude Opus 5 | 용역 모델 최신 데이터 재학습·승격
+
+- **작업자**: 관범 & AI 에이전트
+- **주요 변경사항**:
+  - DB 로 용역 학습 데이터셋 재구축(925,054행, 개찰 2026-09-14 까지). 기존 feature store 는 2026-08-03 에 고정돼 있었음
+  - 레짐 재개 조건 재측정: 미충족(희소 수준 3.78%, MAE 격차 0.33)
+  - 최신성 쌍대 실험 `scripts/eval_servc_freshness.py`: 8주 최신 모델 MAE -0.0255 (t=-8.12), 대조군 -0.0107
+  - 주간 재학습 대상 카테고리 설정 `ML_WEEKLY_RETRAIN_CATEGORIES` 추가, 개발 Compose 는 용역만 재학습
+  - `compare_servc_models_paired.py` 결함 두 건 수정(`--model-root` TypeError, 예측 API 시그니처 변경 뒤 전량 api_error)
+  - `servc_institution_v1` 을 `v_20260807_043210_535` 에서 `v_20260915_133523_756` 으로 승격(세대 디렉터리 + LIVE 포인터 방식 첫 실운용)
+- **관련 파일**: `docs/design/servc_freshness_retrain_20260915.md`, `data/model_files/servc_institution_v1/LIVE`, `data/model_metrics/servc_institution_v1.json`
+- **검증 결과**: 운영 경로 쌍대 2,976건 비회귀, 승격 후 서빙 실측 3,000건 실패 0 (MAE 1.1885, 대부분 학습 구간 표본), 롤백 대상 `v_20260807_043210_535`
