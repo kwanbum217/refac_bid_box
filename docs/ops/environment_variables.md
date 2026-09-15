@@ -73,8 +73,11 @@ CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명�
 | `DB_USER` | 아니오 | `root` | DB 사용자 보조 설정 |
 | `DB_PASSWORD` | 아니오 | `rootpassword` | DB 비밀번호 보조 설정과 운영 보안 검증 입력 |
 | `MYSQL_ROOT_PASSWORD` | 아니오 | `rootpassword` | Docker Compose 개발용 MySQL root 비밀번호 (운영에서는 교체 필수) |
+| `BACKUP_DB_USER` | 운영 backup 서비스 **예** | (없음, 미설정 시 `DB_USER` 사용) | 백업 덤프 전용 최소 권한 MySQL 사용자 계정 (`docker-compose.prod.yml` backup 서비스 필수) |
+| `BACKUP_DB_PASSWORD` | 운영 backup 서비스 **예** | (없음, 미설정 시 `DB_PASSWORD` 사용) | 백업 덤프 전용 최소 권한 MySQL 계정 비밀번호 (`docker-compose.prod.yml` backup 서비스 필수) |
 
 > 이중화 제거: 기존 `BIDBOX_DB_BACKEND=sqlite` fallback을 폐지하고 모든 환경에서 MySQL 통일.
+> 백업 최소권한: `docker-compose.prod.yml`의 `backup` 서비스는 애플리케이션 공용 계정 대신 `BACKUP_DB_USER`와 `BACKUP_DB_PASSWORD`를 필수로 요구합니다. 로컬 CLI 실행 시에는 미설정 시 기존 `DB_USER`·`DB_PASSWORD`로 fallback 됩니다.
 
 현재 애플리케이션 연결의 정본은 `DATABASE_URL`입니다. Docker Compose는
 `MYSQL_ROOT_PASSWORD`로 `DATABASE_URL`을 구성하고 같은 값을 `DB_PASSWORD`에도

@@ -203,3 +203,96 @@ def test_trivy_and_filter_criteria():
     filter_cmd = str(filter_step.get("run", ""))
     assert "scripts/filter_trivy_results.py" in filter_cmd
     assert ".github/vulnerability-allowlist.yml" in filter_cmd
+
+
+def test_workflow_dispatch_draft_input_contract():
+    """workflow_dispatch 에 draft(type boolean, default true) 입력이 명시되어야 합니다."""
+    data = _load_yaml(RELEASE_WORKFLOW_PATH)
+    on_dispatch = (data.get("on") or data.get(True, {})).get("workflow_dispatch", {})
+    assert isinstance(on_dispatch, dict), "workflow_dispatch 는 딕셔너리여야 합니다."
+    inputs = on_dispatch.get("inputs", {})
+    assert "draft" in inputs, "workflow_dispatch 에 'draft' 입력이 정의되어야 합니다."
+    draft_spec = inputs["draft"]
+    assert draft_spec.get("type") == "boolean", "draft 입력의 type 은 boolean 이어야 합니다."
+    assert draft_spec.get("default") is True, "draft 입력의 default 는 true 여야 합니다."
+
+
+def test_draft_true_branch_contracts():
+    """draft=true 경로에서 태그 push 가 차단되고, gh release create 에 --draft 및 --target 이 전달되며 --verify-tag 는 배제되어야 합니다."""
+    data = _load_yaml(RELEASE_WORKFLOW_PATH)
+    steps = data["jobs"]["release"]["steps"]
+
+    # 1. 태그 푸시 스텝 조건 검증
+    tag_step = next(s for s in steps if "git tag" in str(s.get("run", "")))
+    tag_condition = str(tag_step.get("if", ""))
+    assert "!inputs.draft" in tag_condition, (
+        "태그 푸시 스텝은 draft 가 false 일 때만 실행되어야 합니다."
+    )
+
+    # 2. 초안 릴리스 생성 스텝 검증
+    draft_release_step = next(
+        s
+        for s in steps
+        if "gh release create" in str(s.get("run", "")) and "--draft" in str(s.get("run", ""))
+    )
+    draft_cmd = str(draft_release_step.get("run", ""))
+    draft_condition = str(draft_release_step.get("if", ""))
+
+    assert "inputs.draft" in draft_condition
+    assert "!inputs.draft" not in draft_condition
+    assert "--draft" in draft_cmd
+    assert "--target" in draft_cmd
+    assert "--verify-tag" not in draft_cmd
+    assert "refac-bid-box-sbom.spdx.json" in draft_cmd
+    assert "image-digest.txt" in draft_cmd
+
+
+def test_draft_false_public_branch_contracts():
+    """draft=false 경로에서 태그가 푸시되고, gh release create 에 --verify-tag 가 포함되며 --draft 는 배제되어야 합니다."""
+    data = _load_yaml(RELEASE_WORKFLOW_PATH)
+    steps = data["jobs"]["release"]["steps"]
+
+    # 1. 태그 푸시 스텝 검증
+    tag_step = next(s for s in steps if "git tag" in str(s.get("run", "")))
+    tag_cmd = str(tag_step.get("run", ""))
+    tag_condition = str(tag_step.get("if", ""))
+    assert "!inputs.draft" in tag_condition
+    assert "git tag" in tag_cmd
+    assert "git push origin" in tag_cmd
+
+    # 2. 공개 릴리스 생성 스텝 검증
+    public_release_step = next(
+        s
+        for s in steps
+        if "gh release create" in str(s.get("run", "")) and "--verify-tag" in str(s.get("run", ""))
+    )
+    public_cmd = str(public_release_step.get("run", ""))
+    public_condition = str(public_release_step.get("if", ""))
+
+    assert "!inputs.draft" in public_condition
+    assert "--verify-tag" in public_cmd
+    assert "--draft" not in public_cmd
+    assert "refac-bid-box-sbom.spdx.json" in public_cmd
+    assert "image-digest.txt" in public_cmd
+
+
+def test_security_gates_run_unconditionally_for_both_branches():
+    """readiness, build, trivy, allowlist, sbom, image-digest 스텝은 draft 분기 조건 없이 항상 실행되어야 합니다."""
+    data = _load_yaml(RELEASE_WORKFLOW_PATH)
+    steps = data["jobs"]["release"]["steps"]
+
+    essential_step_predicates = [
+        ("readiness", lambda s: "check_release_readiness.py" in str(s.get("run", ""))),
+        ("build", lambda s: "docker buildx" in str(s.get("run", ""))),
+        ("trivy", lambda s: "trivy-action" in str(s.get("uses", ""))),
+        ("filter", lambda s: "filter_trivy_results.py" in str(s.get("run", ""))),
+        ("sbom", lambda s: "sbom-action" in str(s.get("uses", ""))),
+        ("digest", lambda s: "image-digest.txt" in str(s.get("run", ""))),
+    ]
+
+    for name, pred in essential_step_predicates:
+        matching_step = next(s for s in steps if pred(s))
+        step_if = matching_step.get("if")
+        assert step_if is None or "draft" not in str(step_if), (
+            f"필수 보안/무결성 게이트 '{name}' 는 draft 분기와 무관하게 무조건 실행되어야 합니다."
+        )
