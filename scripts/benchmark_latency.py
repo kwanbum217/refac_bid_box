@@ -441,8 +441,21 @@ def benchmark_sse_canonical(base_url: str, rounds: int) -> tuple[Samples, Sample
     return first_stage, first_token, final
 
 
-def benchmark_predict(base_url: str, rounds: int, concurrency: int) -> Samples:
+def benchmark_predict(
+    base_url: str,
+    rounds: int,
+    concurrency: int,
+    session_cookie: str | None = None,
+) -> Samples:
     samples = Samples("낙찰가 예측 API")
+    cookie_value = (
+        session_cookie if session_cookie is not None else os.getenv("BENCHMARK_SESSION_COOKIE")
+    )
+    cookies: dict[str, str] | None = None
+    if cookie_value:
+        if cookie_value.startswith("bidbox_session="):
+            cookie_value = cookie_value.split("=", 1)[1]
+        cookies = {"bidbox_session": cookie_value}
 
     def request(index: int) -> tuple[bool, float]:
         payload = {
@@ -451,11 +464,15 @@ def benchmark_predict(base_url: str, rounds: int, concurrency: int) -> Samples:
             "category_code": "Thng",
         }
         start = time.perf_counter()
+        kwargs: dict[str, Any] = {"json": payload, "timeout": 60.0}
+        if cookies:
+            kwargs["cookies"] = cookies
         response = httpx.post(
             f"{base_url}/api/v1/predictions/predict",
-            json=payload,
-            timeout=60.0,
+            **kwargs,
         )
+        if response.status_code == 429 and not cookies:
+            raise RuntimeError("익명 쿼터로 차단됨, --session-cookie 필요")
         return response.status_code == 200, (time.perf_counter() - start) * 1000.0
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -722,6 +739,11 @@ def main() -> int:
     )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
+        "--session-cookie",
+        default=os.getenv("BENCHMARK_SESSION_COOKIE"),
+        help="인증 요청을 위한 세션 쿠키 값 (bidbox_session)",
+    )
+    parser.add_argument(
         "--allow-unknown-provenance",
         action="store_true",
         default=False,
@@ -778,7 +800,12 @@ def main() -> int:
 
     if args.target in ("phase7", "all"):
         print(f"\n[1/3] 낙찰가 예측 API ({args.predict_rounds}회)")
-        predict = benchmark_predict(args.base_url, args.predict_rounds, args.predict_concurrency)
+        predict = benchmark_predict(
+            args.base_url,
+            args.predict_rounds,
+            args.predict_concurrency,
+            session_cookie=args.session_cookie,
+        )
 
         print(f"\n[2/3] 정본 SSE 스트리밍 ({args.sse_rounds}회)")
         first_stage, new_first_token, final = benchmark_sse_canonical(

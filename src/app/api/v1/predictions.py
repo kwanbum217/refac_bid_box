@@ -18,8 +18,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from src.app.api.v1.accounts import get_current_user
 from src.app.core.config import settings
 from src.app.core.db import get_db
+from src.app.core.security import enforce_anonymous_api_quota
+from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement
 from src.app.schemas.predictions import (
     PredictionRequest,
@@ -109,8 +112,10 @@ def predict_price_api(
     payload: PredictPriceRequest,
     request: Request,
     db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
 ):
     """공고 ID를 받아 Champion 모델로 최적 투찰가를 산출합니다."""
+    enforce_anonymous_api_quota(request, user)
     t_start = time.perf_counter()
     c_start = time.thread_time()
     dispatch_wait_ms = _prediction_dispatch_wait_ms(request)
@@ -324,12 +329,14 @@ def predict_winning_price(
     payload: PredictionRequest,
     request: Request,
     db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
 ):
     """공고 레코드 없이 특징을 직접 넣어 예측합니다 (리팩토링 신규 계약).
 
     db 는 inst_hist_rate 를 실제 기관 이력으로 채우기 위해 필요합니다.
     빼면 상수로 떨어져 학습과 정의가 갈립니다.
     """
+    enforce_anonymous_api_quota(request, user)
     t_start = time.perf_counter()
     c_start = time.thread_time()
     dispatch_wait_ms = _prediction_dispatch_wait_ms(request)

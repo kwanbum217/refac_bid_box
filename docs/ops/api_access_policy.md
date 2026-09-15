@@ -1,19 +1,21 @@
 # API 접근 정책
 
-> 적용 범위: `src/app/api/v1/chatbot.py`
+> 적용 범위: `src/app/api/v1/chatbot.py`, `src/app/api/v1/predictions.py`
 >
-> 최종 갱신일: 2026-09-02
+> 최종 갱신일: 2026-09-15
 
 ## 익명 접근 정책
 
-현재 화면(`chat_page`)은 로그인을 요구하지만, 챗봇의 대응 API는 익명 사용자가
-기본 기능을 먼저 확인할 수 있도록 다음 경로를 로그인 없이 열어 둡니다.
+현재 화면(`chat_page` 및 공고 상세)은 비로그인 사용자에게도 기본 체험을 제공하며,
+익명 사용자가 주요 기능을 먼저 확인할 수 있도록 다음 경로를 로그인 없이 열어 둡니다.
 
 | 경로 | 익명 허용 이유 | 익명 쿼터 |
 | --- | --- | --- |
 | `POST /api/v1/chatbot/chat` | 로그인 전 질의·답변 체험을 제공합니다. 로그인하면 사용자 세션과 이력이 연결됩니다. | IP별 60초당 30회 |
 | `POST /api/v1/chatbot/chat/stream` | 일반 대화와 같은 기능을 SSE로 제공합니다. 스트림 진입 시점에만 쿼터를 확인합니다. | IP별 60초당 30회 |
 | `POST /api/v1/chatbot/session/new` | 익명 대화를 시작할 세션 키를 발급합니다. | IP별 60초당 30회 |
+| `POST /api/v1/predictions/predict-price` | 공고 상세 등에서 로그인 없이 투찰가 분석을 체험할 수 있도록 허용합니다. | IP별 60초당 30회 |
+| `POST /api/v1/predictions/predict` | 공고 레코드 없이 특징 직접 입력을 통한 예측을 로그인 없이 체험할 수 있도록 허용합니다. | IP별 60초당 30회 |
 
 쿼터는 `TRUSTED_PROXY_IPS` 정책을 반영하는 `resolve_client_ip`로 식별한 IP를
 기준으로 Redis에 기록합니다. 기본값은 60초당 30회이며, 운영 환경에서는
