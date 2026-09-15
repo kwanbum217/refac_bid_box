@@ -42,10 +42,11 @@ on:
 
 ## 3. Job 구성 및 게이트 명세
 
-CI는 5개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해야만 정상 상태로 판정됩니다.
+CI는 6개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해야만 정상 상태로 판정됩니다.
 
 | Job 이름 | 실행 환경 | 주요 검증 항목 | 통과 조건 및 게이트 |
 | --- | --- | --- | --- |
+| `supply-chain` | Ubuntu 22.04 / Python 3.11 / Node 22 / Docker | 취약점 허용목록 검증, Python 의존성(pip-audit), JavaScript 의존성(frontend 및 루트 npm audit), 컨테이너 이미지 보안 스캔(Trivy) | CRITICAL 및 HIGH 취약점 차단 (allowlist 예외 제외), 전 단계 종료 코드 0 |
 | `lint-and-validate` | Ubuntu 22.04 / Python 3.11 / Node 22 | Ruff 린트, Ruff 포맷 검사, Bandit 보안 스캔, Mypy 타입 검사, 다중 에이전트 규칙 정합성, 문서 링크 유효성, Actionlint, 프론트엔드 테스트 및 빌드, Tailwind CSS 재현성 | 전 단계 종료 코드 0 (확인 전용) |
 | `cross-platform-test` | Ubuntu (3.11, 3.12, 3.13), macOS (3.11), Windows (3.11) | SQLite 인메모리 기반 단위/통합 테스트, Pytest 커버리지 측정 (E2E는 독립 Job으로 분리되어 제외) | `not data_assets and not e2e` 전량 통과, 커버리지 하한 80% 이상 |
 | `e2e-browser-test` | Ubuntu 22.04 / Python 3.11 / Node 22 / Chromium | Playwright 기반 SSR 및 React SPA 브라우저 E2E 테스트 슈트 전량 검증 (`-m e2e`) | 전 시나리오 통과, **0건 skip 필수** (1건이라도 skip 시 실패), 1건 이상 pass, **실행 시간 예산 60초 이내** |
@@ -56,7 +57,7 @@ CI는 5개의 핵심 병렬/독립 Job으로 구성되며, 전 Job이 통과해�
 
 1. **독립 Job 분리 및 중복 실행 차단**:
    - `cross-platform-test` 매트릭스에서는 `-m "not data_assets and not e2e"`로 E2E를 제외하고 Chromium 설치 단계를 제거하여 매트릭스 러너 오버헤드를 대폭 경감합니다.
-   - `e2e-browser-test` 독립 Job에서만 배포 표준 환경(Ubuntu 3.11)으로 Chromium 바이너리를 설치하고 `-m e2e`로 E2E 시나리오 31건을 집중 검증합니다.
+   - `e2e-browser-test` 독립 Job에서만 배포 표준 환경(Ubuntu 3.11)으로 Chromium 바이너리를 설치하고 `-m e2e`로 E2E 시나리오 32건을 집중 검증합니다.
 2. **0건 Skip 엄격 게이트**:
    - 브라우저 바이너리가 설치된 환경임에도 테스트가 skip되는 것은 환경 오설정 또는 회귀 결함이므로 성공으로 간주하지 않습니다.
    - 출력에 `SKIPPED` 또는 `skipped` 문자열이 감지되면 종료 코드 1로 즉시 Job을 실패 처리합니다.
