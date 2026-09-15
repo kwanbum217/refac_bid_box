@@ -241,11 +241,16 @@ SIGNUP_RATE_LIMIT_EXCEEDED_DETAIL = (
 )
 
 
+AUTH_SERVICE_UNAVAILABLE_DETAIL = (
+    "일시적으로 인증 요청을 처리할 수 없습니다. 잠시 후 다시 시도해 주십시오."
+)
+
+
 class LoginRateLimiter:
     """로그인 시도 제한기 (IP 축 및 계정 축).
 
     Redis 를 사용하여 로그인 실패 횟수를 기록하고 임계치 초과 시 429 로 차단합니다.
-    Redis 가 다운되거나 사용 불가할 때는 로그인을 차단하지 않고 제한만 건너뜁니다 (fail-open).
+    Redis 가 다운되거나 사용 불가할 때는 503 으로 차단합니다 (fail-closed).
     임계값과 잠금 시간은 settings 에서 동적으로 조회하여 변경에 즉각 반응합니다.
     """
 
@@ -274,11 +279,14 @@ class LoginRateLimiter:
         """시도 제한 초과 여부를 검사합니다.
 
         초과 시 429 HTTPException 을 발생시킵니다 (남은 시간은 노출하지 않음).
-        Redis 미가용 시에는 제한을 건너뛰고 정상 통과합니다.
+        Redis 미가용 시에는 503 HTTPException 을 발생시킵니다 (fail-closed).
         """
         client = self._conn.client()
         if client is None:
-            return
+            raise HTTPException(
+                status_code=503,
+                detail=AUTH_SERVICE_UNAVAILABLE_DETAIL,
+            )
 
         try:
             if ip:
@@ -302,7 +310,11 @@ class LoginRateLimiter:
             raise
         except Exception as exc:
             self._conn.invalidate(exc)
-            logger.warning("로그인 시도 제한 조회 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc)
+            logger.warning("로그인 시도 제한 조회 중 Redis 오류 발생: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail=AUTH_SERVICE_UNAVAILABLE_DETAIL,
+            ) from exc
 
     def record_failure(self, ip: str | None, username: str | None) -> None:
         """로그인 실패 시 카운터를 증가시킵니다.
@@ -419,12 +431,12 @@ class SignupRateLimiter:
     """회원가입 요청 제한기 (IP 축 고정 윈도우).
 
     Redis 를 사용하여 회원가입 시도 횟수를 기록하고 임계치 초과 시 429 로 차단합니다.
-    Redis 가 다운되거나 사용 불가할 때는 요청을 차단하지 않고 제한만 건너뜁니다 (fail-open).
+    Redis 가 다운되거나 사용 불가할 때는 503 으로 차단합니다 (fail-closed).
     임계값과 윈도우 시간은 settings 에서 동적으로 조회하여 변경에 즉각 반응합니다.
     """
 
     def __init__(self, connection: RedisConnection | None = None):
-        self._conn = connection or RedisConnection(label="signup_rate_limit")
+        self._conn = connection or login_rate_limiter._conn
 
     @property
     def max_attempts(self) -> int:
@@ -441,10 +453,15 @@ class SignupRateLimiter:
         """회원가입 요청 수가 임계를 넘었는지 검사합니다.
 
         초과 시 429 HTTPException 을 발생시킵니다.
-        Redis 미가용 시에는 제한을 건너뛰고 정상 통과합니다.
+        Redis 미가용 시에는 503 HTTPException 을 발생시킵니다 (fail-closed).
         """
         client = self._conn.client()
-        if client is None or not ip:
+        if client is None:
+            raise HTTPException(
+                status_code=503,
+                detail=AUTH_SERVICE_UNAVAILABLE_DETAIL,
+            )
+        if not ip:
             return
 
         try:
@@ -459,7 +476,11 @@ class SignupRateLimiter:
             raise
         except Exception as exc:
             self._conn.invalidate(exc)
-            logger.warning("회원가입 시도 제한 조회 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc)
+            logger.warning("회원가입 시도 제한 조회 중 Redis 오류 발생: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail=AUTH_SERVICE_UNAVAILABLE_DETAIL,
+            ) from exc
 
     def record_attempt(self, ip: str | None) -> None:
         """회원가입 시도를 기록합니다.

@@ -505,7 +505,20 @@ async def login_submit(
         request.headers.get("x-forwarded-for"),
     )
 
-    login_rate_limiter.check_rate_limit(ip, username)
+    try:
+        login_rate_limiter.check_rate_limit(ip, username)
+    except HTTPException as exc:
+        context = {
+            "hide_sidebar": True,
+            "form": login_form(
+                data={"username": username},
+                non_field_errors=[str(exc.detail)],
+            ),
+            "next": _safe_next_path(next),
+        }
+        response = _render(request, "accounts/login.html", context, None)
+        response.status_code = exc.status_code
+        return response
 
     # 동기 DB 조회와 PBKDF2 검증을 루프 스레드에서 하면 무인증 요청만으로
     # 이벤트 루프를 점유할 수 있습니다.

@@ -1,8 +1,9 @@
 # Alertmanager 설정 (관측성 3단계 및 SLO Slack 연동)
 #
-# 기본 수신기는 local-hold 이며, severity=critical 알람만 slack-slo 수신기로 라우팅합니다.
+# 기본 수신기는 local-hold 이며, severity=critical 알람은 slack-slo 수신기로,
+# severity=warning 알람은 slack-warning 수신기로 라우팅합니다.
 # Alertmanager 는 환경변수 치환을 지원하지 않으므로 api_url_file 지시자로
-# 마운트된 비밀 파일(/etc/alertmanager/secrets/slack_url)을 참조합니다.
+# 마운트된 비밀 파일(/etc/alertmanager/secrets/slack_url, slack_warning_url)을 참조합니다.
 
 route:
   receiver: local-hold
@@ -16,6 +17,12 @@ route:
     - receiver: slack-slo
       matchers:
         - severity = critical
+    - receiver: slack-warning
+      matchers:
+        - severity = warning
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
 
 receivers:
   - name: local-hold
@@ -23,6 +30,22 @@ receivers:
   - name: slack-slo
     slack_configs:
       - api_url_file: /etc/alertmanager/secrets/slack_url
+        send_resolved: true
+        title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] [{{ .CommonLabels.severity }}] {{ .CommonLabels.alertname }} (SLO: {{ .CommonLabels.slo }})'
+        text: >-
+          {{ range .Alerts -}}
+          *알람*: {{ .Labels.alertname }}
+          *SLO*: {{ .Labels.slo }}
+          *심각도*: {{ .Labels.severity }}
+          *발화 시각*: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          {{ if .Annotations.summary }}*요약*: {{ .Annotations.summary }}
+          {{ end }}{{ if .Annotations.description }}*상세*: {{ .Annotations.description }}
+          {{ end }}*대시보드*: {{ or .Annotations.dashboard_url "http://localhost:3000/d/bidbox-slo-alerts" }}
+          {{ end }}
+
+  - name: slack-warning
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack_warning_url
         send_resolved: true
         title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] [{{ .CommonLabels.severity }}] {{ .CommonLabels.alertname }} (SLO: {{ .CommonLabels.slo }})'
         text: >-

@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from src.app.core.config import settings
 from src.app.core.security import (
     ANONYMOUS_API_RATE_LIMIT_PREFIX,
+    AUTH_SERVICE_UNAVAILABLE_DETAIL,
     RATE_LIMIT_ACCOUNT_PREFIX,
     RATE_LIMIT_IP_PREFIX,
     SIGNUP_RATE_LIMIT_EXCEEDED_DETAIL,
@@ -177,36 +178,34 @@ def test_ssr_signup_rate_limit_within_limit_and_exceeded(
     assert SIGNUP_RATE_LIMIT_EXCEEDED_DETAIL in res2.text
 
 
-def test_signup_rate_limiter_fail_open_when_redis_unavailable(client: TestClient, monkeypatch):
-    """Redis 미가용 시 두 가입 경로 모두 차단 없이 통과해야 합니다."""
+def test_signup_rate_limiter_fail_closed_when_redis_unavailable(client: TestClient, monkeypatch):
+    """Redis 미가용 시 두 가입 경로 모두 503 으로 차단(fail-closed)되어야 합니다."""
     # client 가 None 인 경우
     monkeypatch.setattr(signup_rate_limiter._conn, "client", lambda: None)
 
-    # API 경로 정상 통과
+    # API 경로 503 차단
     payload_api = {
-        "username": "failopen_user_api",
+        "username": "failclosed_user_api",
         "password1": "password1234!",
         "password2": "password1234!",
-        "nickname": "페일오픈",
-        "email": "failopen_api@example.com",
+        "nickname": "페일클로즈",
+        "email": "failclosed_api@example.com",
         "birth_date": "1990-01-01",
         "gender": "M",
         "agree_terms": True,
         "agree_privacy": True,
     }
     res_api = client.post("/api/v1/accounts/signup", json=payload_api)
-    assert res_api.status_code == 200
+    assert res_api.status_code == 503
+    assert res_api.json()["detail"] == AUTH_SERVICE_UNAVAILABLE_DETAIL
 
-    # API 가입으로 발급된 세션 쿠키를 비움
-    client.cookies.clear()
-
-    # SSR 경로 정상 통과
+    # SSR 경로 503 및 오류 문구 폼 재렌더링
     form_data_ssr = {
-        "username": "failopen_user_ssr",
+        "username": "failclosed_user_ssr",
         "password1": "password1234!",
         "password2": "password1234!",
-        "nickname": "페일오픈SSR",
-        "email": "failopen_ssr@example.com",
+        "nickname": "페일클로즈SSR",
+        "email": "failclosed_ssr@example.com",
         "birth_date": "1990-01-01",
         "gender": "F",
         "agree_terms": "on",
@@ -217,7 +216,8 @@ def test_signup_rate_limiter_fail_open_when_redis_unavailable(client: TestClient
         data=csrf_form(client, "/accounts/signup/", form_data_ssr),
         follow_redirects=False,
     )
-    assert res_ssr.status_code == 303
+    assert res_ssr.status_code == 503
+    assert AUTH_SERVICE_UNAVAILABLE_DETAIL in res_ssr.text
 
 
 def test_signup_attempt_recorded_regardless_of_success_or_failure(

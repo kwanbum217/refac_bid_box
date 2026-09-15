@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from src.app.core.config import settings
 from src.app.core.db import get_db
 from src.app.core.security import (
+    AUTH_SERVICE_UNAVAILABLE_DETAIL,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
     SessionStoreUnavailable,
@@ -194,7 +195,12 @@ def register_user(payload: SignUpRequest, response: Response, db: Session) -> Us
     return _serialize(user)
 
 
-@router.post("/signup", response_model=UserResponse, summary="회원가입")
+@router.post(
+    "/signup",
+    response_model=UserResponse,
+    summary="회원가입",
+    responses={503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL}},
+)
 def signup(
     request: Request,
     payload: SignUpRequest,
@@ -207,7 +213,12 @@ def signup(
     return register_user(payload, response, db)
 
 
-@router.post("/login", response_model=UserResponse, summary="로그인")
+@router.post(
+    "/login",
+    response_model=UserResponse,
+    summary="로그인",
+    responses={503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL}},
+)
 def login(
     request: Request,
     payload: LoginRequest,

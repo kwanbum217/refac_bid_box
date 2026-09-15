@@ -306,28 +306,55 @@ def test_alertmanager_holds_alerts_without_host_publish(compose: dict):
     assert alertmanager["volumes"] == [
         "./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
         "./docker/secrets/alertmanager_slack_url:/etc/alertmanager/secrets/slack_url:ro",
+        "./docker/secrets/alertmanager_slack_warning_url:/etc/alertmanager/secrets/slack_warning_url:ro",
         "alertmanager_data:/alertmanager",
     ]
     assert compose["volumes"]["alertmanager_data"] is None
     assert "--cluster.listen-address=" in alertmanager["command"]
 
-    # 기본 수신기는 여전히 local-hold 다. Slack 은 critical 만 받는 자식 라우트이며
+    # 기본 수신기는 여전히 local-hold 다. Slack 은 critical 과 warning 만 받는 자식 라우트이며
     # 나머지 심각도는 밖으로 나가지 않는다. 모든 알람을 보내면 채널이 잠겨
     # 정작 중요한 것이 묻힌다.
     config = _load_yaml(ALERTMANAGER_CONFIG_PATH)
     assert config["route"]["receiver"] == "local-hold"
-    assert config["route"]["routes"] == [
-        {"receiver": "slack-slo", "matchers": ["severity = critical"]}
-    ]
+    routes = config["route"]["routes"]
+    assert any(
+        r.get("receiver") == "slack-slo" and "severity = critical" in r.get("matchers", [])
+        for r in routes
+    )
+    assert any(
+        r.get("receiver") == "slack-warning"
+        and "severity = warning" in r.get("matchers", [])
+        and r.get("repeat_interval") == "12h"
+        for r in routes
+    )
     receivers = {r["name"]: r for r in config["receivers"]}
-    assert set(receivers) == {"local-hold", "slack-slo"}
+    assert set(receivers) == {"local-hold", "slack-slo", "slack-warning"}
     assert receivers["local-hold"] == {"name": "local-hold"}
 
     # 비밀값은 설정 파일이 아니라 파일 참조로만 들어온다.
     slack_cfg = receivers["slack-slo"]["slack_configs"][0]
     assert slack_cfg["api_url_file"] == "/etc/alertmanager/secrets/slack_url"
     assert "api_url" not in slack_cfg
+    slack_warn_cfg = receivers["slack-warning"]["slack_configs"][0]
+    assert slack_warn_cfg["api_url_file"] == "/etc/alertmanager/secrets/slack_warning_url"
+    assert "api_url" not in slack_warn_cfg
     assert "hooks.slack.com" not in ALERTMANAGER_CONFIG_PATH.read_text(encoding="utf-8")
+
+
+def test_prod_worker_schedule_defaults(compose: dict):
+    """운영 worker 환경변수 기본값 검증 (야간 번들 기본 true, 주간 재학습 기본 false)."""
+    worker = compose["services"]["worker"]
+    env = _environment(worker)
+    assert (
+        env["AUTOMATION_NIGHTLY_SCHEDULE_ENABLED"] == "${AUTOMATION_NIGHTLY_SCHEDULE_ENABLED:-true}"
+    )
+    assert env["ML_WEEKLY_RETRAIN_ENABLED"] == "${ML_WEEKLY_RETRAIN_ENABLED:-false}"
+
+    backup = compose["services"]["backup"]
+    backup_env = _environment(backup)
+    assert backup_env["AUTOMATION_NIGHTLY_SCHEDULE_ENABLED"] == "false"
+    assert backup_env["ML_WEEKLY_RETRAIN_ENABLED"] == "false"
 
 
 def test_grafana_provisions_slo_alerts_dashboard():
