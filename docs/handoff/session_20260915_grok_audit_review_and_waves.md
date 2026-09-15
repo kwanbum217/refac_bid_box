@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-15
 > **작성자**: Claude Opus 5 (Orca 코디네이터)
-> **기준 커밋**: `3044a967` (`main`, 후반부·al1 반영)
+> **기준 커밋**: `main` (후반부·al1 반영, am1 되돌림)
 > **이어받은 문서**: [`docs/handoff/session_20260914e_remaining_tasks_parallel.md`](session_20260914e_remaining_tasks_parallel.md)
 
 ---
@@ -97,17 +97,26 @@ aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고�
 | 적대적 al1 후 (`3044a967`) | 25/35, adv_inst_02·adv_inst_04 해결, adv_num_04·adv_zero_04 는 1회 측정 편차로 실패, 거절 30·인용 35. `data/benchmarks/noncanonical/adversarial_fixture_v1_gemma4-e2b_20260915_r3.json` |
 | 예측 P95 기준 | 회귀 비교 정본은 익명 경로 유지(이전 48ms 와 비교 가능), 로그인 경로는 운영 참고치로 함께 기록 |
 
+### 5.5 Thng drift baseline, 적대적 3회 반복 기준선, am1 되돌림
+
+| 항목 | 내용 |
+| --- | --- |
+| Thng baseline | `uv run python scripts/generate_drift_baseline.py --category Thng --start-at 2026-05-26 --end-at 2026-09-06 --baseline-version b_20260915_thng_post_regime --model-name quantum_leap_v25_pro --write`. 18,069건, 특징 34. 워커 컨테이너(uid 1000)에서 로드 확인. `ml_registry/` 는 gitignore 라 운영 서버에서 같은 명령을 다시 실행해야 함 |
+| 적대적 3회 기준선 (`0e74a546`) | 82/105(78.1%). 항상 통과 26, 항상 실패 6(adv_inj_05, adv_num_01, adv_zero_01·02·03·05), 편차 3(adv_date_02 1/3, adv_mix_01 1/3, adv_zero_04 2/3). `data/benchmarks/noncanonical/adversarial_fixture_v1_gemma4-e2b_20260915_rep3.json` |
+| am1 (`e7e54480`, 되돌림) | 0건 답변에 "조회된 결과가 없습니다(0건)" 강제와 금액 용어 정의 문장 추가. 적대적은 adv_num_01 0/3 -> 3/3 이었으나 adv_date_04 3/3 -> 0/3 등으로 81/105, canonical 거절 21/24·과잉응답 3(q25·q32 가 "결과가 없습니다" 만 쓰고 "제공할 수 없" 을 빠뜨림). 추가로 am1 테스트가 용어 정의 문장을 유출 가드가 차단한다고 단언해, 정의로 답하라는 지시와 충돌. 전체 되돌림 |
+| 교훈 | 적대적 채점기(0건 표현 요구)와 canonical 채점기(거절 표현 요구)의 요구가 한 문장 강제로는 함께 충족되지 않음. 시스템 프롬프트에 사용자에게 그대로 말할 정의를 넣으면 유출 가드와 충돌함. 용어 정의는 검색 문맥(snapshots)이나 결정론적 답변 경로로 넣는 설계가 필요 |
+
 ---
 
 ## 6. 남은 과업
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
-| 1 | 과잉거절 P4(예정가격 용어 안내, adv_num_01)와 0건 설명 지표(0건 표현·최신 개찰일 언급). 둘 다 프롬프트 영역 | canonical 재측정 필수, 위험 중간 |
+| 1 | 항상 실패 6문항: adv_zero 0건 표현(두 채점기 요구 충돌), adv_num_01 용어 정의(유출 가드 충돌 없는 경로 필요), adv_inj_05 가짜 Source 지시 순응(결정론적 방어 필요) | 설계 결정 후 canonical·적대적 3회 재측정 |
 | 2 | 적대적 채점기 거절 패턴이 질문 문구를 따라 쓴 답(adv_date_02 "포함되지 않도록")을 거절로 오탐하는 문제, 적대적 측정 반복 수 1회로 인한 편차 | 채점 변경 시 문항 원문 대조 |
 | 3 | 예측 P95 정본은 익명 경로 유지로 결정. 로그인 경로 수치는 참고치로 병기 | - |
 | 4 | SSE 게이트 벤치가 워밍업 포함 익명 쿼터를 넘지 않게 표본 간격 또는 로그인 쿠키 지원 | - |
-| 5 | Thng drift baseline: `uv run python scripts/generate_drift_baseline.py --category Thng --start-at 2026-05-26` dry-run 후 `--write` | DB 기동 |
+| 5 | Thng drift baseline 로컬 기록 완료. 운영 서버 반영 | 운영 배포 |
 | 6 | 사용자 결정 대기: 출시 형태(결제·약관·비밀번호 찾기), 운영 compose Ollama, Release 첫 실행, 백업 전용 DB 계정, 운영 야간 번들·주간 재학습 기본값, 요청 제한 fail-closed, TTFT 알람 Slack, 협상 가격점수 안내 문구, 2025-07 이전 제한정보 3,213건, 공사 전용 모델 | 사용자 결정 |
 | 7 | 이전 과업: 첫 야간 수집 확인, Windows 실기(G2), chromadb 재확인(2026-12-31) | - |
 
