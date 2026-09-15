@@ -274,6 +274,8 @@ def worker_observation():
         )
 
         observation_cache = CacheLayer()
+        # backup 워커는 별도 키(BACKUP_WORKER_HEARTBEAT_KEY)를 사용하며,
+        # /health/worker 관측 상태는 일반 워커(WORKER_HEARTBEAT_KEY) 조회를 유지합니다.
         worker = observation_cache.get(WORKER_HEARTBEAT_KEY)
         queue = observation_cache.get(QUEUE_BACKLOG_KEY)
         schedules = observation_cache.get(SCHEDULE_STATUS_KEY)

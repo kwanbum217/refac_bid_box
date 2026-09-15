@@ -18,6 +18,8 @@ import pytest
 
 from src.tasks.worker import (
     BACKUP_QUEUE_NAME,
+    BACKUP_WORKER_HEARTBEAT_KEY,
+    WORKER_HEARTBEAT_KEY,
     BackupWorkerSettings,
     WorkerSettings,
     _on_backup_shutdown,
@@ -78,17 +80,20 @@ async def test_backup_worker_startup_and_shutdown_lifecycle():
     """BackupWorkerSettings.on_startup 은 하트비트를 시작하되 수집 따라잡기를 등록하지 않습니다."""
     ctx: dict[str, Any] = {}
 
-    async def fake_heartbeat_loop():
+    async def fake_heartbeat_loop(key=None):
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.Event().wait()
 
     with (
         patch("src.tasks.worker.record_worker_heartbeat") as mock_record,
-        patch("src.tasks.worker._heartbeat_loop", side_effect=fake_heartbeat_loop),
+        patch("src.tasks.worker._heartbeat_loop", side_effect=fake_heartbeat_loop) as mock_loop,
         patch("src.tasks.worker.configure_logging"),
     ):
         await _on_backup_startup(ctx)
-        mock_record.assert_called_once()
+        mock_record.assert_called_once_with(BACKUP_WORKER_HEARTBEAT_KEY)
+        assert mock_record.call_args[0][0] != WORKER_HEARTBEAT_KEY
+        mock_loop.assert_called_once_with(BACKUP_WORKER_HEARTBEAT_KEY)
+        assert mock_loop.call_args[0][0] != WORKER_HEARTBEAT_KEY
         assert "worker_heartbeat_task" in ctx
         assert "schedule_catchup_task" not in ctx
 

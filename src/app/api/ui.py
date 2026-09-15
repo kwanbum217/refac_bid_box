@@ -35,6 +35,7 @@ from src.app.core.security import (
     login_rate_limiter,
     make_csrf_token,
     resolve_client_ip,
+    signup_rate_limiter,
 )
 from src.app.core.templating import templates
 from src.app.core.timeutil import utcnow
@@ -407,7 +408,14 @@ async def signup_submit(request: Request):
         "agree_privacy": "agree_privacy" in form_data,
     }
 
+    ip = resolve_client_ip(
+        request.client.host if request.client and request.client.host else "",
+        request.headers.get("x-forwarded-for"),
+    )
+
     try:
+        signup_rate_limiter.check_rate_limit(ip)
+        signup_rate_limiter.record_attempt(ip)
         signup_payload = SignUpRequest.model_validate(payload)
         response = RedirectResponse(url="/", status_code=303)
         # register_user 는 동기 DB 트랜잭션과 PBKDF2 해싱을 함께 수행합니다.
@@ -419,12 +427,15 @@ async def signup_submit(request: Request):
             field_name = str(item.get("loc", ("__all__",))[0])
             errors.setdefault(field_name, []).append(str(item.get("msg", "입력값을 확인해주세요.")))
         status_code = 422
+        non_field_errors = errors.get("__all__", [])
     except HTTPException as exc:
         errors = {}
+        non_field_errors = []
         if exc.status_code == 409:
             errors["username"] = [str(exc.detail)]
         else:
             errors["__all__"] = [str(exc.detail)]
+            non_field_errors = [str(exc.detail)]
         status_code = exc.status_code
 
     render_response = _render(
@@ -432,7 +443,11 @@ async def signup_submit(request: Request):
         "accounts/signup.html",
         {
             "hide_sidebar": True,
-            "form": signup_form(data=payload, errors=errors),
+            "form": signup_form(
+                data=payload,
+                errors=errors,
+                non_field_errors=non_field_errors or None,
+            ),
         },
         None,
     )

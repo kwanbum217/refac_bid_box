@@ -244,3 +244,20 @@ def test_worker_observation_returns_unknown_when_redis_unavailable(monkeypatch):
         "queue": None,
         "schedules": None,
     }
+
+
+def test_record_backup_worker_heartbeat_isolated_key(monkeypatch):
+    """백업 워커 하트비트는 별도 키에 기록되고 일반 워커 키와 큐 적체 키를 건드리지 않아야 합니다."""
+    now_iso = "2026-09-15T00:00:00+00:00"
+    fake_cache = FakeCache()
+    monkeypatch.setattr(worker, "_worker_cache", fake_cache)
+    monkeypatch.setattr(worker, "_now_iso", lambda: now_iso)
+
+    worker.record_worker_heartbeat(key=worker.BACKUP_WORKER_HEARTBEAT_KEY)
+
+    assert fake_cache.values[worker.BACKUP_WORKER_HEARTBEAT_KEY] == {
+        "worker_id": worker._worker_id,
+        "last_seen_at": now_iso,
+    }
+    assert worker.WORKER_HEARTBEAT_KEY not in fake_cache.values
+    assert worker.QUEUE_BACKLOG_KEY not in fake_cache.values
