@@ -86,7 +86,7 @@ def test_missing_response_fields_legacy(monkeypatch):
 
     monkeypatch.setattr(
         "scripts.compare_servc_models_paired.predict_price_api",
-        lambda req, session: LegacyResponse(),
+        lambda payload, request, db: LegacyResponse(),
     )
 
     res = predict_one(session=None, bid_id=101, model_id="legacy_req")
@@ -252,7 +252,7 @@ def test_main_all_api_errors_reports_counts_and_exits_nonzero(monkeypatch, capsy
 def test_main_output_exposes_only_fixed_categories(monkeypatch, capsys):
     sensitive = "/opt/secret/model.bin password=secret123 token=JWT12345"
 
-    def _mock_predict_price_api(request, session):
+    def _mock_predict_price_api(payload, request, db):
         raise RuntimeError(sensitive)
 
     monkeypatch.setattr(
@@ -326,7 +326,7 @@ def _patch_response(monkeypatch, **fields):
         setattr(Response, key, value)
     monkeypatch.setattr(
         "scripts.compare_servc_models_paired.predict_price_api",
-        lambda req, session: Response(),
+        lambda payload, request, db: Response(),
     )
 
 
@@ -360,3 +360,14 @@ def test_classify_pair_detects_same_actual_model():
     assert flags["same_actual_model"] is True
     assert flags["challenger_fallback"] is True
     assert flags["base_fallback"] is False
+
+
+def test_bind_registry_model_root_overrides_class_root(monkeypatch, tmp_path):
+    """--model-root 는 이 프로세스의 ModelRegistry 루트만 바꿉니다."""
+    from scripts.compare_servc_models_paired import _bind_registry_model_root
+    from src.ml.model_registry import ModelRegistry
+
+    monkeypatch.setattr(ModelRegistry, "_get_model_root", ModelRegistry.__dict__["_get_model_root"])
+    _bind_registry_model_root(tmp_path)
+
+    assert ModelRegistry._get_model_root() == str(tmp_path)

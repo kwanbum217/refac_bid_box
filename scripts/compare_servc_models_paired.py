@@ -36,7 +36,7 @@ warnings.filterwarnings("ignore")
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from scripts.eval_servc_api_path import collect  # noqa: E402
+from scripts.eval_servc_api_path import _script_predict_request, collect  # noqa: E402
 from src.app.api.v1.predictions import predict_price_api  # noqa: E402
 from src.app.core.db import SessionLocal  # noqa: E402
 from src.app.models.bids import BidAnnouncement  # noqa: E402
@@ -59,7 +59,8 @@ def _bind_registry_model_root(root: Path) -> None:
     def _get_model_root(cls: type[ModelRegistry]) -> str:
         return root_str
 
-    object.__setattr__(ModelRegistry, "_get_model_root", classmethod(_get_model_root))
+    # object.__setattr__ 는 type 객체에 쓸 수 없어 TypeError 로 실패합니다.
+    type.__setattr__(ModelRegistry, "_get_model_root", classmethod(_get_model_root))
 
 
 # 제외 사유로 출력할 수 있는 유일한 범주입니다. 임의 문자열(예외 원문, fallback_reason,
@@ -102,7 +103,8 @@ def predict_one(session, bid_id: int, model_id: str) -> dict | None:
     try:
         response = predict_price_api(
             PredictPriceRequest(bid_id=int(bid_id), user_price="0", selected_model=model_id),
-            session,
+            _script_predict_request(),
+            db=session,
         )
     except Exception:
         return None
