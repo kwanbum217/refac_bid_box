@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-15
 > **작성자**: Claude Opus 5 (Orca 코디네이터)
-> **기준 커밋**: `83728ff7` (`main`)
+> **기준 커밋**: `c32b8456` (`main`, 후반부 반영)
 > **이어받은 문서**: [`docs/handoff/session_20260914e_remaining_tasks_parallel.md`](session_20260914e_remaining_tasks_parallel.md)
 
 ---
@@ -53,24 +53,61 @@ ai1 은 사용자 결정(선택지 A: 익명 쿼터, 챗봇과 설정 공유, `l
 
 ---
 
-## 5. 남은 과업
+## 5. 후반부: 과잉거절 수정, 실측, 실측이 드러낸 결함 수정
 
-| 순서 | 작업 | 선행 조건 |
-| :---: | --- | --- |
-| 1 | ah1 프롬프트 효과 실측: 적대적 fixture 재측정과 blind_fixture_v2 96요청 canonical. 144/144 미달이면 ah1 되돌림 | Docker·Ollama 기동, 측정 중 병합 동결 |
-| 2 | 유출 가드·ah1·ai1 반영 후 RAG SSE 첫 토큰 P95 와 예측 P95 재측정. 예측 벤치마크는 이제 `--session-cookie` 필요 | 1과 같은 측정 창 |
-| 3 | 과잉거절 수정 P1(공기업명 "공사" 분야 오인식)·P2(분기 기간 해석). Intent 초안 `.orca/intents/wave_aj_20260915/` | 1 실측으로 기준선 확보 후 병합, 병합 뒤 canonical 재측정 |
-| 4 | Thng drift baseline: `uv run python scripts/generate_drift_baseline.py --category Thng --start-at 2026-05-26` dry-run 후 `--write` | DB 기동 |
-| 5 | 사용자 결정 대기: 출시 형태(결제·약관·비밀번호 찾기), 운영 compose Ollama, Release 첫 실행, 백업 전용 DB 계정, 운영 야간 번들·주간 재학습 기본값, 요청 제한 fail-closed, TTFT 알람 Slack, 협상 가격점수 안내 문구, 2025-07 이전 제한정보 3,213건, 공사 전용 모델 | 사용자 결정 |
-| 6 | 이전 과업: 첫 야간 수집 확인, Windows 실기(G2), chromadb 재확인(2026-12-31) | - |
+### 5.1 병합 내역
+
+| Task | 병합 | 내용 | 검증 |
+| --- | --- | --- | --- |
+| aj1 `task_7cb458ae91f1` | `a3a69467` | 공기업명 속 "공사" 를 공사 분야로 오인하지 않음, 공기업 접미사 5종. 수정 전 계획 스냅샷 `tests/fixtures/retrieval_plan_canonical_snapshot.json` 과 불변 테스트 | 워커 규칙이 "서울역사공원조성공사" 같은 지역명 건설공사까지 공기업으로 오인해 코디네이터가 어간 허용 목록 `PUBLIC_CORPORATION_STEMS` 로 좁힘(`b8c6f1f6`). 바뀐 계획은 q29·adv_inst_03·adv_inst_04 뿐. 전량 4,949, CI 성공 |
+| aj2 `task_7ed6dc95973f` | `7eac75fc` | "N분기", "N분기와 M분기", 상반기·하반기 해석과 `time_bucket=quarter` 분기별 집계(반열림 구간) | 워커가 계약과 달리 스냅샷을 고쳐 코디네이터가 원복(`1a2bd36f`). 바뀐 계획은 adv_date_02 뿐, 반례 3종 통과. 전량 4,955, CI 성공 |
+| ak2 `task_4d03e88e3823` | `8938ef33` | 익명 세션 키 서명을 31자로 잘라 키 64자. 64자 초과 키는 새로 발급 | 게이트 통과, 전량 4,968 |
+| ak1 `task_74131d9fd519` | `c32b8456` | ah1 의 0건 설명 문장을 거절형("확인할 수 없어(0건) 정보를 제공할 수 없다", 다른 공고 나열 금지)으로 교체 | 게이트 통과, 전량 4,964 |
+
+aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고·커밋 불일치로 실패하므로 전량 테스트·mypy·ruff·계획 재현 대조로 판정했습니다.
+
+### 5.2 실측 결과 (gemma4:e2b, Docker 로컬 스택)
+
+| 측정 | 결과 | 파일 |
+| --- | --- | --- |
+| 적대적 fixture (35×1, `7eac75fc`) | 25/34(시간 초과 1). adv_date_02·adv_inj_01 통과로 개선, adv_inst_04 는 기관명 슬롯 부재로 여전히 실패, adv_zero_* 는 "0건" 답변이 채점기의 거절형 요구와 어긋나 실패 | `data/benchmarks/noncanonical/adversarial_fixture_v1_gemma4-e2b_20260915.json` |
+| canonical 1차 (`7eac75fc`) | numeric 144/144 이나 거절 21/24, 과잉응답 3. 전부 q32 이며 ah1 0건 설명 문장이 원인. canonical 플래그는 true 로 찍혀 오해 소지가 있어 noncanonical 로 옮김 | `data/benchmarks/noncanonical/blind_fixture_v2_e2b_20260915_ah1_refusal_regression.json` |
+| canonical 2차 (`c32b8456`) | **통과 복구.** numeric 144/144, evidence recall 1.0, 인용 72/72, 거절 24/24, 과잉응답 0. 응답 P95 6,055ms(09-14 4,128ms) | `data/benchmarks/blind_fixture_v2_e2b_20260915_r2.json` |
+| RAG SSE c1 1차 (`7eac75fc`) | 30건 전부 스트림 오류. 원인은 아래 결함 | `data/benchmarks/noncanonical/sse_gate_c1_20260915_r1.json` |
+| RAG SSE c1 2차 (`c32b8456`) | 29/30, 첫 토큰 P95 832ms, 완료 P95 1,426ms. 실패 1건은 벤치 자체의 익명 쿼터 초과(워밍업 포함 60초 31건) | `data/benchmarks/noncanonical/sse_gate_c1_20260915_r2.json` |
+| 예측 c10 (로그인 쿠키) | 재기동 직후 P95 105.3ms, 워밍 후 63.9ms·85.8ms. 익명 20회 P95 51.5ms. 로그인 경로는 세션 조회로 중앙값 약 7ms 증가 | `data/benchmarks/noncanonical/predict_c10_20260915*.json` |
+
+### 5.3 실측이 드러낸 결함
+
+| 결함 | 원인 | 조치 |
+| --- | --- | --- |
+| 운영 MySQL 에서 익명 SSE 챗봇이 대화 상태 저장 중 실패 | `6bddc61e`(2026-09-02) 이후 서명 세션 키 76자, `chat_session_states.session_key` 는 `VARCHAR(64)`. SQLite 테스트는 길이 미검사 | ak2. 컬럼은 G1 규칙상 유지하고 키를 64자로 축소, 컬럼 길이 회귀 테스트 추가 |
+| ah1 프롬프트가 canonical 거절을 3건 깨뜨림 | 0건 설명형 문장이 거절 패턴을 피함 | ak1 |
+| 앱 컨테이너가 `./src` 마운트여도 코드 변경을 자동 재적재하지 않음 | 모듈 수준 상수(`SYSTEM_PROMPT`) | 측정 전 `docker compose restart app worker` 필수 |
 
 ---
 
-## 6. 자원 상태 (세션 종료 시점)
+## 6. 남은 과업
+
+| 순서 | 작업 | 선행 조건 |
+| :---: | --- | --- |
+| 1 | 과잉거절 P3(복수 기관 분리 추출, adv_inst_02·adv_inst_04)·P4(예정가격 용어 안내, adv_num_01) | canonical 재측정 필수, 위험 중간 |
+| 2 | 적대적 채점기의 `zero_result_explained` 문항 기대 행동 재정의 여부(0건 설명형 답을 거절로 볼지) | 사용자 결정. 바꾸면 채점 부풀림 여부를 문항 원문으로 대조 |
+| 3 | 예측 P95 정본 갱신 방식: 로그인 경로 기준으로 바꿀지, 익명 기준을 유지할지 | 사용자 결정 |
+| 4 | SSE 게이트 벤치가 워밍업 포함 익명 쿼터를 넘지 않게 표본 간격 또는 로그인 쿠키 지원 | - |
+| 5 | Thng drift baseline: `uv run python scripts/generate_drift_baseline.py --category Thng --start-at 2026-05-26` dry-run 후 `--write` | DB 기동 |
+| 6 | 사용자 결정 대기: 출시 형태(결제·약관·비밀번호 찾기), 운영 compose Ollama, Release 첫 실행, 백업 전용 DB 계정, 운영 야간 번들·주간 재학습 기본값, 요청 제한 fail-closed, TTFT 알람 Slack, 협상 가격점수 안내 문구, 2025-07 이전 제한정보 3,213건, 공사 전용 모델 | 사용자 결정 |
+| 7 | 이전 과업: 첫 야간 수집 확인, Windows 실기(G2), chromadb 재확인(2026-12-31) | - |
+
+---
+
+## 7. 자원 상태 (세션 종료 시점)
 
 | 대상 | 상태 |
 | --- | --- |
-| 워크트리·브랜치 | 주 저장소 하나. 워커 워크트리 7개 모두 제거, 병합 브랜치 삭제 |
-| Orca | Run `run_75d816606872` 빌더 7, 리뷰어 5 전원 회수. 워커는 Antigravity 런처와 OpenCode 터미널 경로라 비감독이며 창을 직접 닫음. 완료 세션 잔류 없음 |
-| 배경 프로세스 | dispatch 가 띄운 `orca_worker_watch.py --watch` 6개 종료 |
-| Docker·Ollama | 세션 동안 기동하지 않음(이전 세션에서 정지한 상태 유지) |
+| 워크트리·브랜치 | 주 저장소 하나. 워커 워크트리 11개 모두 제거, 병합 브랜치 삭제 |
+| Orca | Run `run_75d816606872` 빌더 11, 리뷰어 5 전원 회수. Antigravity 런처·OpenCode 터미널 경로라 비감독이며 창을 직접 닫음. 완료 세션 잔류 없음 |
+| 배경 프로세스 | dispatch 가 띄운 `orca_worker_watch.py --watch` 종료 |
+| Docker | 로컬 스택 기동 중(app·worker·db·redis·meilisearch). 포트는 ai2 로 `127.0.0.1` 바인딩 확인 |
+| Ollama | 호스트에서 기동, `gemma4:e2b` 로드 상태 |
+| 로컬 DB | 벤치 전용 계정 `bench_latency_20260915`(사용자 id 15)을 API 회원가입으로 추가. 비밀번호·쿠키는 저장소에 두지 않음 |

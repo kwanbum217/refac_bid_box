@@ -1,0 +1,512 @@
+{
+  "meta": {
+    "git_sha": "7eac75fc38e114af419df493b908827d6ea28b6f",
+    "measured_at_utc": "2026-09-15T04:47:02.285794+00:00",
+    "python_version": "3.12.14",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "docker_image_id": "e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+    "container_id": "0c98b723bbb60211aa22051c861c9b2d9690709bc1f4171ec662cf2d7aa6794e",
+    "target_container_image_id": "sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+    "image_digest": "refac_bid_box-app@sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+    "container_name": "refac_bid_box-app-1",
+    "service_name": "app",
+    "base_url": "http://localhost:8000",
+    "bound_port": 8000,
+    "port_bindings": [
+      {
+        "container_port": 8000,
+        "host_ip": "127.0.0.1",
+        "host_port": 8000
+      }
+    ],
+    "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+    "target_source_git_sha": "7eac75fc38e114af419df493b908827d6ea28b6f",
+    "target_source_git_dirty": false,
+    "perf_config": {
+      "GEMINI_MODEL": null,
+      "LATENCY_SEGMENT_LOGGING": "false",
+      "LLM_PROVIDER": "ollama",
+      "LLM_TEMPERATURE": null,
+      "LLM_TIMEOUT_SECONDS": null,
+      "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+      "OLLAMA_MODEL": "gemma4:e2b",
+      "PREDICTION_GC_MODE": "freeze",
+      "WEB_CONCURRENCY": null,
+      "container_command": [
+        "python3",
+        "-m",
+        "uvicorn",
+        "src.app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1"
+      ],
+      "effective_web_workers": 1,
+      "effective_web_workers_reason": null
+    },
+    "gc": {
+      "enabled": true,
+      "threshold": [
+        700,
+        10,
+        10
+      ]
+    },
+    "instrumentation": {
+      "timer": "time.perf_counter",
+      "timer_resolution_seconds": 4.166666666666667e-08,
+      "timer_monotonic": true
+    },
+    "start_provenance": {
+      "git_sha": "7eac75fc38e114af419df493b908827d6ea28b6f",
+      "measured_at_utc": "2026-09-15T04:47:02.285794+00:00",
+      "python_version": "3.12.14",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_id": "0c98b723bbb60211aa22051c861c9b2d9690709bc1f4171ec662cf2d7aa6794e",
+      "target_container_image_id": "sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "image_digest": "refac_bid_box-app@sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://localhost:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "127.0.0.1",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+      "target_source_git_sha": "7eac75fc38e114af419df493b908827d6ea28b6f",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      }
+    },
+    "end_provenance": {
+      "git_sha": "7eac75fc38e114af419df493b908827d6ea28b6f",
+      "measured_at_utc": "2026-09-15T04:47:42.956443+00:00",
+      "python_version": "3.12.14",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_id": "0c98b723bbb60211aa22051c861c9b2d9690709bc1f4171ec662cf2d7aa6794e",
+      "target_container_image_id": "sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "image_digest": "refac_bid_box-app@sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://localhost:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "127.0.0.1",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+      "target_source_git_sha": "7eac75fc38e114af419df493b908827d6ea28b6f",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      }
+    },
+    "provenance_consistent": true,
+    "concurrency": 1,
+    "rounds": 30,
+    "round_num": 1,
+    "warmup": true
+  },
+  "summary": {
+    "concurrency": 1,
+    "rounds": 30,
+    "round_num": 1,
+    "total_requests": 30,
+    "successful_requests": 0,
+    "error_requests": 30,
+    "first_stage_stats": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_ms": null,
+      "min_ms": null,
+      "mean_ms": null,
+      "threshold_ms": null,
+      "exceeded_count": 0,
+      "exceeded_rate_pct": 0.0,
+      "wilson_upper_pct": 0.0
+    },
+    "first_token_stats": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_ms": null,
+      "min_ms": null,
+      "mean_ms": null,
+      "threshold_ms": 3000.0,
+      "exceeded_count": 0,
+      "exceeded_rate_pct": 0.0,
+      "wilson_upper_pct": 0.0
+    },
+    "final_stats": {
+      "n": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_ms": null,
+      "min_ms": null,
+      "mean_ms": null,
+      "threshold_ms": 20000.0,
+      "exceeded_count": 0,
+      "exceeded_rate_pct": 0.0,
+      "wilson_upper_pct": 0.0
+    }
+  },
+  "records": [
+    {
+      "request_index": 0,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#1)",
+      "first_stage_ms": 11.31,
+      "first_token_ms": 1097.69,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 1,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#2)",
+      "first_stage_ms": 13.0,
+      "first_token_ms": 1005.59,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 2,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#3)",
+      "first_stage_ms": 9.72,
+      "first_token_ms": 1555.5,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 3,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#4)",
+      "first_stage_ms": 12.74,
+      "first_token_ms": 1788.69,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 4,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#5)",
+      "first_stage_ms": 10.61,
+      "first_token_ms": 1592.96,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 5,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#6)",
+      "first_stage_ms": 8.65,
+      "first_token_ms": 615.79,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 6,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#7)",
+      "first_stage_ms": 8.6,
+      "first_token_ms": 315.35,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 7,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#8)",
+      "first_stage_ms": 11.73,
+      "first_token_ms": 1138.95,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 8,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#9)",
+      "first_stage_ms": 12.66,
+      "first_token_ms": 808.79,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 9,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#10)",
+      "first_stage_ms": 13.73,
+      "first_token_ms": 1160.59,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 10,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#11)",
+      "first_stage_ms": 14.24,
+      "first_token_ms": 606.52,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 11,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#12)",
+      "first_stage_ms": 11.81,
+      "first_token_ms": 319.01,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 12,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#13)",
+      "first_stage_ms": 16.71,
+      "first_token_ms": 633.27,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 13,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#14)",
+      "first_stage_ms": 11.37,
+      "first_token_ms": 799.52,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 14,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#15)",
+      "first_stage_ms": 12.64,
+      "first_token_ms": 1170.16,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 15,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#16)",
+      "first_stage_ms": 8.21,
+      "first_token_ms": 521.15,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 16,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#17)",
+      "first_stage_ms": 11.9,
+      "first_token_ms": 322.42,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 17,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#18)",
+      "first_stage_ms": 8.34,
+      "first_token_ms": 507.44,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 18,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#19)",
+      "first_stage_ms": 12.2,
+      "first_token_ms": 741.13,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 19,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#20)",
+      "first_stage_ms": 12.21,
+      "first_token_ms": 931.37,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 20,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#21)",
+      "first_stage_ms": 7.15,
+      "first_token_ms": 487.03,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 21,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#22)",
+      "first_stage_ms": 10.81,
+      "first_token_ms": 318.98,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 22,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#23)",
+      "first_stage_ms": 12.58,
+      "first_token_ms": 557.34,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 23,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#24)",
+      "first_stage_ms": 10.54,
+      "first_token_ms": 831.73,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 24,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#25)",
+      "first_stage_ms": 14.74,
+      "first_token_ms": 888.7,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 25,
+      "query": "적격심사 기준이 어떻게 되나요 (게이트 표본 r1-#26)",
+      "first_stage_ms": 11.2,
+      "first_token_ms": 528.48,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 26,
+      "query": "2025년 물품 낙찰 평균 낙찰률 알려줘 (게이트 표본 r1-#27)",
+      "first_stage_ms": 12.62,
+      "first_token_ms": 324.72,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 27,
+      "query": "공사 부문 최근 낙찰 동향 알려줘 (게이트 표본 r1-#28)",
+      "first_stage_ms": 9.37,
+      "first_token_ms": 440.55,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 28,
+      "query": "수요기관별 낙찰 금액 상위는 어디야 (게이트 표본 r1-#29)",
+      "first_stage_ms": 9.05,
+      "first_token_ms": 651.66,
+      "final_ms": null,
+      "success": false,
+      "error": "stream_error_event"
+    },
+    {
+      "request_index": 29,
+      "query": "용역 계약 방법에는 어떤 것이 있나요 (게이트 표본 r1-#30)",
+      "first_stage_ms": null,
+      "first_token_ms": null,
+      "final_ms": null,
+      "success": false,
+      "error": "http_429"
+    }
+  ]
+}

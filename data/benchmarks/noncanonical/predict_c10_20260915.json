@@ -1,0 +1,577 @@
+{
+  "meta": {
+    "git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+    "measured_at_utc": "2026-09-15T05:11:32.741501+00:00",
+    "python_version": "3.12.14",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "docker_image_id": "e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+    "container_id": "0c98b723bbb60211aa22051c861c9b2d9690709bc1f4171ec662cf2d7aa6794e",
+    "target_container_image_id": "sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+    "image_digest": "refac_bid_box-app@sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+    "container_name": "refac_bid_box-app-1",
+    "service_name": "app",
+    "base_url": "http://localhost:8000",
+    "bound_port": 8000,
+    "port_bindings": [
+      {
+        "container_port": 8000,
+        "host_ip": "127.0.0.1",
+        "host_port": 8000
+      }
+    ],
+    "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+    "target_source_git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+    "target_source_git_dirty": false,
+    "perf_config": {
+      "GEMINI_MODEL": null,
+      "LATENCY_SEGMENT_LOGGING": "false",
+      "LLM_PROVIDER": "ollama",
+      "LLM_TEMPERATURE": null,
+      "LLM_TIMEOUT_SECONDS": null,
+      "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+      "OLLAMA_MODEL": "gemma4:e2b",
+      "PREDICTION_GC_MODE": "freeze",
+      "WEB_CONCURRENCY": null,
+      "container_command": [
+        "python3",
+        "-m",
+        "uvicorn",
+        "src.app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1"
+      ],
+      "effective_web_workers": 1,
+      "effective_web_workers_reason": null
+    },
+    "gc": {
+      "enabled": true,
+      "threshold": [
+        700,
+        10,
+        10
+      ]
+    },
+    "instrumentation": {
+      "timer": "time.perf_counter",
+      "timer_resolution_seconds": 4.166666666666667e-08,
+      "timer_monotonic": true
+    },
+    "db_buffer_pool": {
+      "container": "refac_bid_box-db-1",
+      "pages_data": 119468,
+      "innodb_buffer_pool_pages_data": 119468,
+      "error": null
+    },
+    "innodb_buffer_pool_pages_data": 119468,
+    "db_buffer_pool_error": null,
+    "start_provenance": {
+      "git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+      "measured_at_utc": "2026-09-15T05:11:32.741501+00:00",
+      "python_version": "3.12.14",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_id": "0c98b723bbb60211aa22051c861c9b2d9690709bc1f4171ec662cf2d7aa6794e",
+      "target_container_image_id": "sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "image_digest": "refac_bid_box-app@sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://localhost:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "127.0.0.1",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+      "target_source_git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      },
+      "db_buffer_pool": {
+        "container": "refac_bid_box-db-1",
+        "pages_data": 119472,
+        "innodb_buffer_pool_pages_data": 119472,
+        "error": null
+      },
+      "innodb_buffer_pool_pages_data": 119472,
+      "db_buffer_pool_error": null
+    },
+    "end_provenance": {
+      "git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+      "measured_at_utc": "2026-09-15T05:11:44.266784+00:00",
+      "python_version": "3.12.14",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_id": "0c98b723bbb60211aa22051c861c9b2d9690709bc1f4171ec662cf2d7aa6794e",
+      "target_container_image_id": "sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "image_digest": "refac_bid_box-app@sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://localhost:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "127.0.0.1",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+      "target_source_git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      },
+      "db_buffer_pool": {
+        "container": "refac_bid_box-db-1",
+        "pages_data": 119468,
+        "innodb_buffer_pool_pages_data": 119468,
+        "error": null
+      },
+      "innodb_buffer_pool_pages_data": 119468,
+      "db_buffer_pool_error": null
+    },
+    "provenance_consistent": true,
+    "host_load": {
+      "cpu_count": 14,
+      "samples": [
+        {
+          "observed_at_utc": "2026-09-15T05:11:32.850017+00:00",
+          "load_1m": 3.05322265625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 21.808733258928573,
+          "per_core_percent": 21.808733258928573,
+          "cpu_utilization_percent": 11.6714,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 11.894875000507454,
+          "cpu_utilization_observation_ms": 11.894875000507454,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-15T05:11:38.713616+00:00",
+          "load_1m": 2.96875,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 21.205357142857142,
+          "per_core_percent": 21.205357142857142,
+          "cpu_utilization_percent": 24.1143,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 48.913667000306305,
+          "cpu_utilization_observation_ms": 48.913667000306305,
+          "cpu_utilization_unavailable_reason": null
+        },
+        {
+          "observed_at_utc": "2026-09-15T05:11:43.745232+00:00",
+          "load_1m": 2.81103515625,
+          "cpu_count": 14,
+          "normalized_load_1m_percent": 20.078822544642858,
+          "per_core_percent": 20.078822544642858,
+          "cpu_utilization_percent": 12.6143,
+          "cpu_utilization_method": "ps_process_sum",
+          "cpu_utilization_probe_ms": 27.478124999106512,
+          "cpu_utilization_observation_ms": 27.478124999106512,
+          "cpu_utilization_unavailable_reason": null
+        }
+      ],
+      "load_1m": {
+        "min": 2.81103515625,
+        "median": 2.96875,
+        "max": 3.05322265625
+      },
+      "normalized_load_1m_percent": {
+        "min": 20.078822544642858,
+        "median": 21.205357142857142,
+        "max": 21.808733258928573
+      },
+      "per_core_percent": {
+        "min": 20.078822544642858,
+        "median": 21.205357142857142,
+        "max": 21.808733258928573
+      },
+      "cpu_utilization_percent": {
+        "min": 11.6714,
+        "median": 12.6143,
+        "max": 24.1143
+      },
+      "cpu_utilization_method": "ps_process_sum"
+    }
+  },
+  "provenance": {
+    "start": {
+      "git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+      "measured_at_utc": "2026-09-15T05:11:32.741501+00:00",
+      "python_version": "3.12.14",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_id": "0c98b723bbb60211aa22051c861c9b2d9690709bc1f4171ec662cf2d7aa6794e",
+      "target_container_image_id": "sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "image_digest": "refac_bid_box-app@sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://localhost:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "127.0.0.1",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+      "target_source_git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      },
+      "db_buffer_pool": {
+        "container": "refac_bid_box-db-1",
+        "pages_data": 119472,
+        "innodb_buffer_pool_pages_data": 119472,
+        "error": null
+      },
+      "innodb_buffer_pool_pages_data": 119472,
+      "db_buffer_pool_error": null
+    },
+    "end": {
+      "git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+      "measured_at_utc": "2026-09-15T05:11:44.266784+00:00",
+      "python_version": "3.12.14",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "docker_image_id": "e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_id": "0c98b723bbb60211aa22051c861c9b2d9690709bc1f4171ec662cf2d7aa6794e",
+      "target_container_image_id": "sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "image_digest": "refac_bid_box-app@sha256:e8e14cee92695ad33a9e9d40095c912de5aa5a95ef9245943d1c008fb28d8f8b",
+      "container_name": "refac_bid_box-app-1",
+      "service_name": "app",
+      "base_url": "http://localhost:8000",
+      "bound_port": 8000,
+      "port_bindings": [
+        {
+          "container_port": 8000,
+          "host_ip": "127.0.0.1",
+          "host_port": 8000
+        }
+      ],
+      "target_source_mount": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/src",
+      "target_source_git_sha": "c32b845694af8fcf8394597cd785be96182143a2",
+      "target_source_git_dirty": false,
+      "perf_config": {
+        "GEMINI_MODEL": null,
+        "LATENCY_SEGMENT_LOGGING": "false",
+        "LLM_PROVIDER": "ollama",
+        "LLM_TEMPERATURE": null,
+        "LLM_TIMEOUT_SECONDS": null,
+        "OLLAMA_BASE_URL": "http://host.docker.internal:11434",
+        "OLLAMA_MODEL": "gemma4:e2b",
+        "PREDICTION_GC_MODE": "freeze",
+        "WEB_CONCURRENCY": null,
+        "container_command": [
+          "python3",
+          "-m",
+          "uvicorn",
+          "src.app.main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--workers",
+          "1"
+        ],
+        "effective_web_workers": 1,
+        "effective_web_workers_reason": null
+      },
+      "gc": {
+        "enabled": true,
+        "threshold": [
+          700,
+          10,
+          10
+        ]
+      },
+      "instrumentation": {
+        "timer": "time.perf_counter",
+        "timer_resolution_seconds": 4.166666666666667e-08,
+        "timer_monotonic": true
+      },
+      "db_buffer_pool": {
+        "container": "refac_bid_box-db-1",
+        "pages_data": 119468,
+        "innodb_buffer_pool_pages_data": 119468,
+        "error": null
+      },
+      "innodb_buffer_pool_pages_data": 119468,
+      "db_buffer_pool_error": null
+    },
+    "innodb_buffer_pool_pages_data": 119468,
+    "db_buffer_pool": {
+      "container": "refac_bid_box-db-1",
+      "pages_data": 119468,
+      "innodb_buffer_pool_pages_data": 119468,
+      "error": null
+    }
+  },
+  "target": "phase7",
+  "base_url": "http://localhost:8000",
+  "samples": {
+    "first_stage_new": {
+      "label": "정본 SSE 첫 stage (first_stage_ms)",
+      "values_ms": [],
+      "errors": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "tagged": []
+    },
+    "first_token_new": {
+      "label": "정본 SSE 첫 token (first_token_ms)",
+      "values_ms": [],
+      "errors": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "tagged": []
+    },
+    "final_new": {
+      "label": "정본 SSE 완료 (final_ms)",
+      "values_ms": [],
+      "errors": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "tagged": []
+    },
+    "predict": {
+      "label": "낙찰가 예측 API",
+      "values_ms": [
+        39.776707999408245,
+        62.131290998877375,
+        63.58691700006602,
+        63.89595799919334,
+        64.11462500000198,
+        64.69129200013413,
+        64.36800000119547,
+        64.51895800091734,
+        71.41329200021573,
+        71.86183299927507,
+        65.42691700087744,
+        98.13387500071258,
+        106.57008300040616,
+        104.76341700086778,
+        104.87820799971814,
+        105.11195800063433,
+        105.25304200018581,
+        105.2782919996389,
+        98.0581660005555,
+        98.72929199991631,
+        106.526000001395,
+        73.81466699916928,
+        80.47391599939147,
+        74.83649999994668,
+        73.74820800032467,
+        74.51266600037343,
+        73.55979199928697,
+        74.49662500039267,
+        73.86366699938662,
+        74.22733299972606,
+        41.83412500060513,
+        33.4778330015979,
+        55.41766700116568,
+        59.193999999479274,
+        59.394666999651236,
+        48.93724999965343,
+        59.71825000051467,
+        60.13162499948521,
+        59.73858400102472,
+        60.09858399920631,
+        60.414249999666936,
+        63.60337499972957,
+        98.35875000135275,
+        100.45187499963504,
+        101.54425000109768,
+        102.5254579999455,
+        101.99487499994575,
+        106.10258399901795,
+        102.11262499979057,
+        103.97308299980068,
+        107.30908300138253,
+        77.85624999996799,
+        41.47070799990615,
+        46.920000000682194,
+        58.20566699912888,
+        60.41637500129582,
+        64.16191700009222,
+        63.07941600061895,
+        63.35908300025039,
+        63.080750000153785,
+        63.86491599914734,
+        63.94404200000281,
+        57.62712499927147,
+        57.58379199869523,
+        56.41333299899998,
+        56.394499999441905,
+        56.54520799907914,
+        56.68720799985749,
+        56.39891700047883,
+        56.10429199987266,
+        57.0697500006645,
+        57.67991700122366,
+        52.927957998690545,
+        54.75658300019859,
+        52.33041700012109,
+        53.00604200056114,
+        54.01216599966574,
+        54.6585000010964,
+        55.36095800016483,
+        54.8832090007636,
+        55.712041999868234,
+        61.00799999876472,
+        58.612208000340615,
+        47.498792000624235,
+        57.071040999289835,
+        61.49583300066297,
+        60.518917000081274,
+        60.76083299922175,
+        60.986207998212194,
+        61.854083000071114,
+        63.79420800112712,
+        61.257208999450086,
+        50.38749999948777,
+        40.27041700101108,
+        40.58950000035111,
+        40.59825000149431,
+        40.506290999474004,
+        41.06454100110568,
+        49.22870799964585,
+        50.265208001292194
+      ],
+      "errors": 0,
+      "p50_ms": 61.1326044991074,
+      "p95_ms": 105.25430450015847,
+      "p99_ms": 106.57747300041594,
+      "tagged": []
+    },
+    "query": {
+      "label": "단발 질의 API (비스트리밍)",
+      "values_ms": [],
+      "errors": 0,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "tagged": []
+    }
+  },
+  "predict_rounds": 100,
+  "predict_concurrency": 10,
+  "predict_warmup_requests": 10
+}
