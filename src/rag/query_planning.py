@@ -346,6 +346,77 @@ def _parse_year_month_window(lowered: str) -> tuple[date, date, bool] | None:
     return None
 
 
+QUARTER_MONTHS = {
+    1: (1, 3),
+    2: (4, 6),
+    3: (7, 9),
+    4: (10, 12),
+}
+
+
+def _quarter_window(year: int, start_q: int, end_q: int, explicit: bool) -> tuple[date, date, bool]:
+    s_first, s_last = sorted((start_q, end_q))
+    start_month = QUARTER_MONTHS[s_first][0]
+    end_month = QUARTER_MONTHS[s_last][1]
+    return date(year, start_month, 1), _month_end(year, end_month), explicit
+
+
+def _parse_quarter_window(lowered: str) -> tuple[date, date, bool] | None:
+    """분기 및 상반기/하반기 표현을 기간으로 바꿉니다.
+
+    두 분기를 잇는 범위 표현만 explicit_range=True 이고,
+    단독 분기나 상/하반기는 explicit_range=False 입니다.
+    """
+    # 1. 크로스 연도 분기 범위 (예: 2025년 4분기부터 2026년 1분기)
+    cross_quarter = re.search(
+        r"(\d{4})\s*년\s*([1-4])\s*분기(?:\s*\([^)]*\))?\s*(?:부터|와|과|및|~|-|,|\s+)\s*(\d{4})\s*년\s*([1-4])\s*분기",
+        lowered,
+    )
+    if cross_quarter:
+        y1, q1, y2, q2 = (int(g) for g in cross_quarter.groups())
+        if 1 <= q1 <= 4 and 1 <= q2 <= 4:
+            s_date = date(y1, QUARTER_MONTHS[q1][0], 1)
+            e_date = _month_end(y2, QUARTER_MONTHS[q2][1])
+            start, end = sorted((s_date, e_date))
+            return start, end, True
+
+    # 2. 동일 연도 분기 범위 (예: 2026년 1분기(1월~3월)와 2분기(4월~6월), 2026년 1분기와 2분기, 1분기~2분기 등)
+    same_year_quarter = re.search(
+        r"(\d{4})\s*년\s*([1-4])\s*분기(?:\s*\([^)]*\))?\s*(?:부터|와|과|및|~|-|,|\s+)\s*([1-4])\s*분기",
+        lowered,
+    )
+    if same_year_quarter:
+        year, q1, q2 = (int(g) for g in same_year_quarter.groups())
+        if 1 <= q1 <= 4 and 1 <= q2 <= 4:
+            return _quarter_window(year, q1, q2, True)
+
+    # 3. 단독 분기 (예: 2026년 1분기)
+    single_quarter = re.search(r"(\d{4})\s*년\s*([1-4])\s*분기", lowered)
+    if single_quarter:
+        year, q = (int(g) for g in single_quarter.groups())
+        if 1 <= q <= 4:
+            return _quarter_window(year, q, q, False)
+
+    # 4. 상반기 / 하반기 (예: 2026년 상반기, 2026년 하반기, 하반기)
+    half_with_year = re.search(r"(\d{4})\s*년\s*(상반기|하반기)", lowered)
+    if half_with_year:
+        year = int(half_with_year.group(1))
+        half = half_with_year.group(2)
+        if half == "상반기":
+            return date(year, 1, 1), date(year, 6, 30), False
+        return date(year, 7, 1), date(year, 12, 31), False
+
+    half_standalone = re.search(r"(?<![가-힣])(상반기|하반기)(?![가-힣])", lowered)
+    if half_standalone:
+        year = date.today().year
+        half = half_standalone.group(1)
+        if half == "상반기":
+            return date(year, 1, 1), date(year, 6, 30), False
+        return date(year, 7, 1), date(year, 12, 31), False
+
+    return None
+
+
 def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
     """질의에서 기간을 뽑습니다.
 
@@ -378,6 +449,13 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
         start_date, end_date = sorted((iso_dates[0], iso_dates[1]))
         start, end = _to_iso(start_date, end_date)
         return start, end, "recent", True
+
+    # 분기 및 상반기/하반기 표현 (월 표현이 함께 포함된 경우 예: "1분기(1월~3월)" 대비 분기 규칙 우선 적용)
+    quarter_window = _parse_quarter_window(lowered)
+    if quarter_window is not None:
+        window_start, window_end, explicit_range = quarter_window
+        start, end = _to_iso(window_start, window_end)
+        return start, end, "recent", explicit_range
 
     # 일자 없이 연/월만 말하는 표현입니다. 위의 완전한 날짜 쌍보다 뒤에 두어야
     # "2026년 4월 19일부터 2026년 4월 25일까지" 가 연월 규칙에 먼저 잡히지 않습니다.
@@ -479,6 +557,18 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["date_from"] = date_from
     if date_to:
         filters["date_to"] = date_to
+
+    # 분기 비교 및 time_bucket 판정: 분기가 둘 이상이거나 "분기별"이 포함된 경우 quarter 버킷 활성화
+    quarter_matches = re.findall(r"[1-4]\s*분기", lowered)
+    is_multi_quarter = len(quarter_matches) >= 2 or bool(
+        re.search(
+            r"([1-4])\s*분기(?:\s*\([^)]*\))?\s*(?:부터|와|과|및|~|-|,|\s+)\s*([1-4])\s*분기",
+            lowered,
+        )
+    )
+    has_quarter_bucket = is_multi_quarter or ("분기별" in lowered)
+    if has_quarter_bucket and not suppress_implicit_window:
+        filters["time_bucket"] = "quarter"
 
     # 공기업 이름 토큰을 제외한 나머지 문자열에서만 CATEGORY_KEYWORDS 를 찾습니다.
     category_query = lowered

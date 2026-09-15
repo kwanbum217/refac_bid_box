@@ -325,7 +325,7 @@ def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance():
         snapshot = json.load(f)
 
     adv_snapshots = snapshot["adversarial_fixture_v1"]
-    allowed_changed_ids = {"adv_inst_03", "adv_inst_04"}
+    allowed_changed_ids = {"adv_inst_03", "adv_inst_04", "adv_date_02"}
 
     for item_id, snap in adv_snapshots.items():
         question = snap["question"]
@@ -345,6 +345,13 @@ def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance():
                 assert plan.use_lexical == snap["use_lexical"]
                 assert "category" not in plan.filters, f"[{item_id}] category 필터가 없어야 합니다."
                 assert plan.filters.get("institution_name") == "서울"
+            elif item_id == "adv_date_02":
+                assert plan.use_sql is True, f"[{item_id}] use_sql 이 True 여야 합니다."
+                assert plan.use_vector is False, f"[{item_id}] use_vector 가 False 여야 합니다."
+                assert plan.use_lexical is False, f"[{item_id}] use_lexical 이 False 여야 합니다."
+                assert plan.filters.get("date_from") == "2026-01-01"
+                assert plan.filters.get("date_to") == "2026-06-30"
+                assert plan.filters.get("time_bucket") == "quarter"
         else:
             assert plan.use_sql == snap["use_sql"], f"[{item_id}] use_sql 불일치: {question}"
             assert plan.use_vector == snap["use_vector"], (
@@ -449,3 +456,95 @@ def test_new_entity_org_suffixes_recognized(suffix: str, sample_query: str):
     """새로 추가된 공기업 접미사 5종이 ENTITY_ORG_SUFFIXES에 포함되고 개체로 인식되어야 합니다."""
     assert suffix in ENTITY_ORG_SUFFIXES
     assert is_entity_specific_query(sample_query) is True
+
+
+def test_quarter_and_half_year_parsing():
+    """분기(1~4분기), 분기 범위, 상반기/하반기 기간 해석 동작을 검증합니다."""
+    # 1. 단독 분기
+    p1 = build_retrieval_plan("2026년 1분기 용역 낙찰 통계 알려줘")
+    assert p1.filters.get("date_from") == "2026-01-01"
+    assert p1.filters.get("date_to") == "2026-03-31"
+    assert "time_bucket" not in p1.filters
+
+    p2 = build_retrieval_plan("2026년 2분기 공사 통계")
+    assert p2.filters.get("date_from") == "2026-04-01"
+    assert p2.filters.get("date_to") == "2026-06-30"
+
+    p3 = build_retrieval_plan("2026년 3분기 물품 통계")
+    assert p3.filters.get("date_from") == "2026-07-01"
+    assert p3.filters.get("date_to") == "2026-09-30"
+
+    p4 = build_retrieval_plan("2026년 4분기 통계")
+    assert p4.filters.get("date_from") == "2026-10-01"
+    assert p4.filters.get("date_to") == "2026-12-31"
+
+    # 2. 분기 범위 (명시적 기간 한정, time_bucket="quarter")
+    pr1 = build_retrieval_plan("2026년 1분기와 2분기 용역 통계 비교")
+    assert pr1.filters.get("date_from") == "2026-01-01"
+    assert pr1.filters.get("date_to") == "2026-06-30"
+    assert pr1.filters.get("time_bucket") == "quarter"
+
+    pr2 = build_retrieval_plan("2026년 1분기~2분기 통계")
+    assert pr2.filters.get("date_from") == "2026-01-01"
+    assert pr2.filters.get("date_to") == "2026-06-30"
+    assert pr2.filters.get("time_bucket") == "quarter"
+
+    pr3 = build_retrieval_plan("2026년 1분기부터 3분기 통계")
+    assert pr3.filters.get("date_from") == "2026-01-01"
+    assert pr3.filters.get("date_to") == "2026-09-30"
+    assert pr3.filters.get("time_bucket") == "quarter"
+
+    # 3. 상반기 / 하반기
+    ps1 = build_retrieval_plan("2026년 상반기 용역 공고 통계")
+    assert ps1.filters.get("date_from") == "2026-01-01"
+    assert ps1.filters.get("date_to") == "2026-06-30"
+
+    ps2 = build_retrieval_plan("2026년 하반기 공사 통계")
+    assert ps2.filters.get("date_from") == "2026-07-01"
+    assert ps2.filters.get("date_to") == "2026-12-31"
+
+    from datetime import date
+
+    today_year = date.today().year
+    ps3 = build_retrieval_plan("하반기 낙찰률 통계")
+    assert ps3.filters.get("date_from") == f"{today_year}-07-01"
+    assert ps3.filters.get("date_to") == f"{today_year}-12-31"
+
+
+def test_adv_date_02_query_planning_contract():
+    """adv_date_02 질문 계획이 date_from 2026-01-01, date_to 2026-06-30, time_bucket quarter 임을 단언합니다."""
+    query = (
+        "2026년 1분기(1월~3월)와 2분기(4월~6월)의 경계인 3월 31일 공고가 2분기 실적에 포함되지 않도록 "
+        "분기별 통계를 명확히 구분해줘."
+    )
+    plan = build_retrieval_plan(query)
+    assert plan.use_sql is True
+    assert plan.use_vector is False
+    assert plan.filters.get("date_from") == "2026-01-01"
+    assert plan.filters.get("date_to") == "2026-06-30"
+    assert plan.filters.get("time_bucket") == "quarter"
+
+
+def test_quarter_counterexamples():
+    """분기 규칙이 과도하게 넓지 않음을 보이는 반례 테스트 (Contract 5)."""
+    # (a) 개체 질의라 기간 필터 및 time_bucket이 억제되어야 함
+    q_entity = "2026년 1분기 학교급식 식재료 구매 공고의 낙찰업체를 알려줘"
+    p_entity = build_retrieval_plan(q_entity)
+    assert is_entity_specific_query(q_entity) is True
+    assert "date_from" not in p_entity.filters
+    assert "date_to" not in p_entity.filters
+    assert "time_bucket" not in p_entity.filters
+
+    # (b) "분기"가 기간이 아닌 단어(예: 분기점)인 경우 기간 및 time_bucket 미생성
+    q_junction = "분기점 교차로 개선공사 낙찰금액"
+    p_junction = build_retrieval_plan(q_junction)
+    assert "date_from" not in p_junction.filters
+    assert "date_to" not in p_junction.filters
+    assert "time_bucket" not in p_junction.filters
+
+    # (c) 기존 월 규칙 결과 불변 보존
+    q_month = "2026년 3월 용역 낙찰률 통계 알려줘"
+    p_month = build_retrieval_plan(q_month)
+    assert p_month.filters.get("date_from") == "2026-03-01"
+    assert p_month.filters.get("date_to") == "2026-03-31"
+    assert "time_bucket" not in p_month.filters
