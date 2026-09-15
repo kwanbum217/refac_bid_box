@@ -226,8 +226,19 @@ def _commits_since_tag(repo_root: Path, previous_tag: str | None) -> list[tuple[
     return commits
 
 
-def generate_release_notes(repo_root: Path, tag: str) -> str:
-    """직전 릴리스 태그 이후 커밋을 type별 Markdown으로 묶습니다."""
+# GitHub 릴리스 본문 한도는 125,000자입니다. 워크플로가 뒤에 이미지 digest 줄을
+# 덧붙이므로 여유를 둡니다. 첫 릴리스는 직전 태그가 없어 전체 이력이 들어갑니다.
+RELEASE_NOTES_MAX_CHARS = 100_000
+
+
+def generate_release_notes(
+    repo_root: Path, tag: str, max_chars: int = RELEASE_NOTES_MAX_CHARS
+) -> str:
+    """직전 릴리스 태그 이후 커밋을 type별 Markdown으로 묶습니다.
+
+    본문이 max_chars 를 넘으면 각 묶음을 최신 커밋부터 같은 몫까지만 싣고
+    나머지는 건수로 요약합니다.
+    """
     previous_tag = _previous_release_tag(repo_root, tag)
     grouped: dict[str, list[tuple[str, str]]] = {commit_type: [] for commit_type in COMMIT_TYPES}
     grouped["other"] = []
@@ -242,16 +253,36 @@ def generate_release_notes(repo_root: Path, tag: str) -> str:
             rendered_subject = subject.strip()
         grouped[group].append((commit_sha[:7], rendered_subject))
 
-    sections: list[str] = []
-    for group in (*COMMIT_TYPES, "other"):
-        commits = grouped[group]
-        if not commits:
-            continue
-        heading = "기타" if group == "other" else group
-        lines = [f"## {heading}"]
-        lines.extend(f"- {subject} ({commit_sha})" for commit_sha, subject in commits)
-        sections.append("\n".join(lines))
-    return "\n\n".join(sections) if sections else "변경 사항이 없습니다."
+    groups = [group for group in (*COMMIT_TYPES, "other") if grouped[group]]
+    if not groups:
+        return "변경 사항이 없습니다."
+
+    def render(budget: int | None) -> str:
+        sections: list[str] = []
+        for group in groups:
+            heading = "기타" if group == "other" else group
+            lines = [f"## {heading}"]
+            used = len(lines[0])
+            commits = grouped[group]
+            for index, (commit_sha, subject) in enumerate(commits):
+                line = f"- {subject} ({commit_sha})"
+                if budget is not None and used + len(line) + 1 > budget:
+                    lines.append(
+                        f"- 외 {len(commits) - index}건은 생략했습니다. "
+                        "전체 이력은 git log 로 확인하십시오."
+                    )
+                    break
+                lines.append(line)
+                used += len(line) + 1
+            sections.append("\n".join(lines))
+        return "\n\n".join(sections)
+
+    notes = render(None)
+    if len(notes) <= max_chars:
+        return notes
+    summary_reserve = 80
+    per_group = max(1, (max_chars - 2 * len(groups)) // len(groups) - summary_reserve)
+    return render(per_group)
 
 
 def _write_github_output(path: Path, report: ReadinessReport) -> None:
