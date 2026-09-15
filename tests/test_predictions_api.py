@@ -370,3 +370,49 @@ def test_predict_price_rejects_bid_with_zero_budget_in_raw_data(client, isolated
     )
 
     assert response.status_code == 422
+
+
+@patch("src.app.api.v1.predictions.enforce_anonymous_api_quota")
+@patch("src.app.api.v1.predictions.ModelRegistry.get_model")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
+def test_predict_price_invokes_enforce_anonymous_quota(
+    mock_predict, mock_get_model, mock_enforce, client, isolated_db
+):
+    """predict_price_api 진입 시 enforce_anonymous_api_quota 가 호출된다."""
+    bid = _create_bid(isolated_db)
+    mock_predict.return_value = _outcome(0.951)
+    mock_get_model.return_value = _mock_wrapper("Quantum Leap V25 Pro")
+
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": bid.id, "user_price": "97000000"},
+    )
+
+    assert response.status_code == 200
+    mock_enforce.assert_called_once()
+
+
+@patch("src.app.api.v1.predictions.enforce_anonymous_api_quota")
+@patch("src.app.api.v1.predictions.predictor.predict")
+def test_predict_winning_price_invokes_enforce_anonymous_quota(mock_predict, mock_enforce, client):
+    """predict_winning_price 진입 시 enforce_anonymous_api_quota 가 호출된다."""
+    mock_predict.return_value = {
+        "predicted_price": 475_000_000,
+        "predicted_rate": 95.0,
+        "model_version": "v1",
+        "features_used": {"presumed_price": 500_000_000.0},
+    }
+
+    response = client.post(
+        "/api/v1/predictions/predict",
+        json={
+            "bid_notice_no": "BID-123",
+            "presumed_price": 500_000_000,
+            "base_price": 495_000_000,
+            "category_code": "Thng",
+        },
+    )
+
+    assert response.status_code == 200
+    mock_enforce.assert_called_once()
+    assert response.json()["predicted_price"] == 475_000_000
