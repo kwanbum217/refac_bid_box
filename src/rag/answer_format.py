@@ -43,6 +43,9 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         if key == "category":
             lines.append(f"- 분야: {_category_label(str(value))}")
             continue
+        if key == "institution_names" and isinstance(value, list):
+            lines.append(f"- 대상 기관: {', '.join(str(v) for v in value)}")
+            continue
         lines.append(f"- {labels.get(key, key)}: {value}")
     return "\n".join(lines)
 

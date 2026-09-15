@@ -1238,6 +1238,95 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             plan,
             f"{exc} 날짜를 YYYY-MM-DD 형식으로 다시 알려주시면 해당 기간으로 조회하겠습니다.",
         )
+    filters = plan.filters or {}
+    raw_institution_names = filters.get("institution_names")
+    if raw_institution_names and isinstance(raw_institution_names, list):
+        target_names = raw_institution_names[:5]
+        resolved_institutions: list[tuple[str, list[str]]] = []
+        for name in target_names:
+            norm_name = _normalize_text(name)
+            if not norm_name:
+                continue
+            matched = _resolve_institution_names(db, BidResult.dminstt_nm, norm_name)
+            if matched:
+                resolved_institutions.append((norm_name, matched))
+
+        if resolved_institutions:
+            date_from, date_to = _resolve_window(filters)
+            category = _normalize_text(str(filters.get("category") or ""))
+
+            by_institution: list[dict[str, Any]] = []
+            all_recent_results: list[dict[str, Any]] = []
+            total_bids = 0
+            rate_sum = 0.0
+            rate_count = 0
+
+            for inst_name, matched_names in resolved_institutions:
+                conditions = []
+                if date_from:
+                    conditions.append(BidResult.rl_openg_dt >= date_from)
+                if date_to:
+                    conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+                if category:
+                    conditions.append(BidResult.category == category)
+                conditions.append(BidResult.dminstt_nm.in_(matched_names))
+
+                agg_stmt = select(
+                    func.count(BidResult.id),
+                    func.avg(BidResult.sucsf_bid_rate),
+                ).where(*conditions)
+                agg_row = db.execute(agg_stmt).first()
+                bid_count = int(agg_row[0] or 0) if agg_row else 0
+                avg_rate = (
+                    float(round(float(agg_row[1] or 0), 4))
+                    if (agg_row and agg_row[1] is not None)
+                    else 0.0
+                )
+
+                total_bids += bid_count
+                if bid_count > 0 and agg_row and agg_row[1] is not None:
+                    rate_sum += float(agg_row[1]) * bid_count
+                    rate_count += bid_count
+
+                recent_list = _fetch_recent_results(db, conditions, limit=3)
+                all_recent_results.extend(recent_list)
+
+                by_institution.append(
+                    {
+                        "institution_name": inst_name,
+                        "resolved_names": matched_names,
+                        "bid_count": bid_count,
+                        "avg_rate": avg_rate,
+                        "recent_results": recent_list,
+                    }
+                )
+
+            overall_avg_rate = float(round(rate_sum / rate_count, 4)) if rate_count > 0 else 0.0
+            response_filters = dict(filters)
+            if response_filters.get("category"):
+                response_filters["category_label"] = _category_label(
+                    str(response_filters["category"])
+                )
+
+            return {
+                "filters": response_filters,
+                "summary": {
+                    "total_bids": total_bids,
+                    "announcement_count": 0,
+                    "average_winning_rate": overall_avg_rate,
+                    "total_winning_amount": 0.0,
+                    "top_winners": [],
+                    "top_institutions": [],
+                    "top_announcements": [],
+                    "sample_announcements": [],
+                    "recent_results": all_recent_results,
+                    "latest_available_result_at": None,
+                    "time_series": [],
+                    "by_institution": by_institution,
+                },
+                "insufficiency_hints": [],
+            }
+
     institution_name = _normalize_text(str((plan.filters or {}).get("institution_name") or ""))
     result_names = announcement_names = None
     if institution_name:

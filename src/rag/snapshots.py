@@ -27,6 +27,35 @@ def _extract_statistical_snapshot(structured_data: dict | None) -> str:
         return "\n".join(lines)
 
     summary = structured_data.get("summary") or {}
+    by_institution = summary.get("by_institution")
+    if by_institution:
+        lines = ["정형 데이터 집계:"]
+        for inst_data in by_institution:
+            inst_name = inst_data.get("institution_name") or "-"
+            lines.append(f"[{inst_name}]")
+            lines.append(f"- 낙찰 결과 수: {_stat_value_text(inst_data.get('bid_count'))}")
+            lines.append(f"- 평균 낙찰률: {_stat_value_text(inst_data.get('avg_rate'))}")
+            recent = inst_data.get("recent_results") or []
+            if recent:
+                lines.append("- 최근 낙찰 결과:")
+                for index, item in enumerate(recent, start=1):
+                    amt_val = item.get("sucsf_bid_amt")
+                    amt_str = f"{amt_val}원" if amt_val is not None else "-"
+                    rate_val = item.get("sucsf_bid_rate")
+                    rate_str = f"{rate_val}%" if rate_val is not None else "-"
+                    lines.append(
+                        f"  - {index}. 공고명={item.get('bid_ntce_nm') or '-'} / "
+                        f"낙찰업체={item.get('bidwinnr_nm') or '-'} / "
+                        f"낙찰금액={amt_str} / "
+                        f"낙찰률={rate_str} / "
+                        f"개찰일={item.get('rl_openg_dt') or '-'}"
+                    )
+            else:
+                lines.append("- 최근 낙찰 결과: 없음")
+        for item in structured_data.get("insufficiency_hints") or []:
+            lines.append(f"- 한계: {item}")
+        return "\n".join(lines)
+
     lines = [
         "정형 데이터 집계:",
         f"- 낙찰 결과 수: {_stat_value_text(summary.get('total_bids'))}",

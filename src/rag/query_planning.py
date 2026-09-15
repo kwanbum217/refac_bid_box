@@ -199,6 +199,67 @@ def _extract_public_corporation_tokens(text: str) -> list[str]:
     return found
 
 
+INSTITUTION_CANDIDATE_PATTERN = re.compile(r"^[가-힣a-zA-Z0-9]{2,20}$")
+FIRST_NOUN_PHRASE_OF_PATTERN = re.compile(r"^(.*?)(?<!\s)의(?:\s|[,\.?!]|$)")
+INSTITUTION_LIST_SPLIT_PATTERN = re.compile(
+    r"\s*,\s*|\s*(?:와|과)\s+|(?<=[가-힣a-zA-Z0-9])(?:와|과)(?=[가-힣a-zA-Z0-9])"
+)
+NON_INSTITUTION_TERMS = frozenset(
+    {
+        "낙찰금액",
+        "추정가격",
+        "예정가격",
+        "기초금액",
+        "투찰금액",
+        "입찰금액",
+        "공고금액",
+        "낙찰률",
+        "투찰률",
+        "사정률",
+        "경쟁률",
+        "낙찰자",
+        "낙찰업체",
+        "수요기관",
+        "공고번호",
+        "공고명",
+    }
+)
+NON_INSTITUTION_SUFFIXES = ("금액", "가격", "낙찰률", "투찰률", "사정률", "경쟁률")
+
+
+def _extract_institution_list(query: str) -> list[str]:
+    """질의에서 여러 기관을 나열해 비교·구분을 요청하는 기관 후보 목록을 추출합니다.
+
+    질의에서 "의" 로 끝나는 첫 명사구 바로 앞 구간만 봅니다.
+    그 구간을 쉼표 또는 "와 "/"과 "/"와"/"과"(바로 뒤가 다음 이름) 로 나눠 두 개 이상이고,
+    각 부분이 공백·괄호·대괄호가 없는 2~20자 한글·영문·숫자 문자열일 때만 후보 목록을 반환합니다.
+    조건을 하나라도 어기면 빈 목록을 반환합니다.
+    """
+    normalized = _normalize_text(query)
+    match = FIRST_NOUN_PHRASE_OF_PATTERN.search(normalized)
+    if not match:
+        return []
+
+    prefix = match.group(1).strip()
+    if not prefix:
+        return []
+
+    parts = INSTITUTION_LIST_SPLIT_PATTERN.split(prefix)
+    if len(parts) < 2:
+        return []
+
+    candidates: list[str] = []
+    for part in parts:
+        cleaned = part.strip()
+        if not INSTITUTION_CANDIDATE_PATTERN.fullmatch(cleaned):
+            return []
+        if cleaned in NON_INSTITUTION_TERMS or cleaned.endswith(NON_INSTITUTION_SUFFIXES):
+            return []
+        candidates.append(cleaned)
+
+    return candidates
+
+
 def _normalize_text(value: str | None) -> str:
     return unicodedata.normalize("NFC", (value or "").strip())
 
@@ -536,6 +597,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_sql = False
         use_vector = True
 
+    inst_candidates = _extract_institution_list(normalized_query)
+    if inst_candidates:
+        use_sql = True
+
     date_from, date_to, time_bias, explicit_range = _parse_time_window(normalized_query)
 
     # 공고명에는 사업연도와 대상월이 흔히 들어갑니다. "2026년 9월분 학교급식물품"
@@ -592,10 +657,13 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if matched_category is not None:
         filters["category"] = matched_category
 
-    for region in REGION_KEYWORDS:
-        if region in lowered:
-            filters["institution_name"] = region
-            break
+    if inst_candidates:
+        filters["institution_names"] = inst_candidates
+    else:
+        for region in REGION_KEYWORDS:
+            if region in lowered:
+                filters["institution_name"] = region
+                break
 
     if result_list_query:
         filters["result_limit"] = extract_result_limit(normalized_query)
