@@ -360,3 +360,14 @@ def test_classify_pair_detects_same_actual_model():
     assert flags["same_actual_model"] is True
     assert flags["challenger_fallback"] is True
     assert flags["base_fallback"] is False
+
+
+def test_bind_registry_model_root_overrides_class_root(monkeypatch, tmp_path):
+    """--model-root 는 이 프로세스의 ModelRegistry 루트만 바꿉니다."""
+    from scripts.compare_servc_models_paired import _bind_registry_model_root
+    from src.ml.model_registry import ModelRegistry
+
+    monkeypatch.setattr(ModelRegistry, "_get_model_root", ModelRegistry.__dict__["_get_model_root"])
+    _bind_registry_model_root(tmp_path)
+
+    assert ModelRegistry._get_model_root() == str(tmp_path)
