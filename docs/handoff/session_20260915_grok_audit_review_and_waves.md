@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-15
 > **작성자**: Claude Opus 5 (Orca 코디네이터)
-> **기준 커밋**: `main` (후반부·al1 반영, am1 되돌림, an1·an2 반영)
+> **기준 커밋**: `main` (세션 마감, ao1·ao2 반영)
 > **이어받은 문서**: [`docs/handoff/session_20260914e_remaining_tasks_parallel.md`](session_20260914e_remaining_tasks_parallel.md)
 
 ---
@@ -116,6 +116,13 @@ aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고�
 | 적대적 3회 (`0bfcf589`) | 82/105 -> **85/105**. adv_inj_05 0/3 -> 3/3, adv_num_01 0/3 -> 3/3. adv_fut_04 3/3 -> 1/3 은 답 내용이 올바른 거절("개찰 전에는 공개되지 않습니다")이나 "제공되어 있지 않습니다" 표현이 거절 패턴에 걸리지 않은 채점 표현 차이. 모델이 인용 번호 없는 용어 안내를 [1] 로 인용하는 흠 있음. `data/benchmarks/noncanonical/adversarial_fixture_v1_gemma4-e2b_20260915_rep3_an.json` |
 | adv_zero 판단 | 두 채점기 모두 바꾸지 않고 알려진 한계로 둠. canonical 거절 패턴 확장은 정본 게이트 완화, 적대적 기대치 변경은 정답 정의 변경이라 부풀림 위험 |
 
+### 5.7 ao1 SSE 벤치 세션 쿠키, ao2 제한정보 카드 E2E
+
+| 항목 | 내용 |
+| --- | --- |
+| ao1 `task_4713755e260b` -> `3ba336d2` | `scripts/benchmark_sse_gate.py --session-cookie`(기본 `BENCHMARK_SESSION_COOKIE`). 쿠키 없이 429 이면 `http_429_anonymous_quota` 로 기록하고 재측정 안내와 종료 코드 1. 결과 파일에 인자·argv 를 기록하지 않아 쿠키 누출 경로 없음 |
+| ao2 `task_aa46166ff1dd` -> `ff12baad` | `tests/e2e/test_ssr_bid_restrictions.py` 3건(카드 표시, 그룹 펼치기, 제한 없음 미표시). `-m e2e` 실행 건수 31 -> 34. 기존 문서의 32건은 실행 건수와 1건 어긋나 있었으며 `ci_contract.md`·`CURRENT_STATE.md` 를 34건으로 정정. CI Browser E2E 포함 전 Job 성공 |
+
 ---
 
 ## 6. 남은 과업
@@ -136,9 +143,10 @@ aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고�
 
 | 대상 | 상태 |
 | --- | --- |
-| 워크트리·브랜치 | 주 저장소 하나. 워커 워크트리 11개 모두 제거, 병합 브랜치 삭제 |
-| Orca | Run `run_75d816606872` 빌더 11, 리뷰어 5 전원 회수. Antigravity 런처·OpenCode 터미널 경로라 비감독이며 창을 직접 닫음. 완료 세션 잔류 없음 |
-| 배경 프로세스 | dispatch 가 띄운 `orca_worker_watch.py --watch` 종료 |
-| Docker | 로컬 스택 기동 중(app·worker·db·redis·meilisearch). 포트는 ai2 로 `127.0.0.1` 바인딩 확인 |
-| Ollama | 호스트에서 기동, `gemma4:e2b` 로드 상태 |
-| 로컬 DB | 벤치 전용 계정 `bench_latency_20260915`(사용자 id 15)을 API 회원가입으로 추가. 비밀번호·쿠키는 저장소에 두지 않음 |
+| 워크트리·브랜치 | 주 저장소 하나(`main`). 워커 워크트리 모두 제거, 병합 브랜치 삭제 |
+| Orca | Run `run_75d816606872` 워커 전원 회수, 완료 세션 잔류 없음. Antigravity 런처·OpenCode 터미널 경로라 비감독이며 창을 직접 닫음 |
+| 배경 프로세스 | `orca_worker_watch.py` 와 측정·대기 루프 모두 종료. 세션 중 메모리 부족으로 대기 루프 4개가 강제 종료된 적이 있으나 nohup 측정은 영향 없음 |
+| Docker | `docker compose stop` 으로 정지(볼륨 보존). 다음 세션은 `docker compose up -d`. 앱은 `./src` 마운트여도 코드 변경을 자동 재적재하지 않으므로 병합 후 측정 전 `docker compose restart app worker` 필수 |
+| Ollama | `gemma4:e2b` 언로드. 홈 디렉터리에서 4시간 넘게 돈 `agy` 프로세스는 이 세션 소유가 아니라 건드리지 않음 |
+| 로컬 DB | 벤치 전용 계정 `bench_latency_20260915`(사용자 id 15) 유지. 다음 P95 측정에 재사용하며 비밀번호·쿠키는 저장소에 두지 않음 |
+| ml_registry | `quantum_leap_v25_pro/baseline` 로컬 생성(gitignore). 운영 서버에서 같은 명령으로 재생성 필요 |
