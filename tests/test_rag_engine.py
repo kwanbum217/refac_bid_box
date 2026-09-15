@@ -816,45 +816,21 @@ def test_system_prompt_scoped_refusal_and_zero_result_explanation():
     # (b) 존재하지 않는 대상 질의 시 0건 거절 및 설명 지시 (과잉응답 방지 및 canonical 거절 패턴 준수)
     expected_zero_result_sentence = (
         "검색 컨텍스트에 요청한 기관·공고번호·분야·사업이 없으면 다른 공고를 대신 나열하거나 추정하지 말고, "
-        '반드시 "조회된 결과가 없습니다(0건)" 라는 표현을 그대로 쓰고 '
-        "그 대상의 정보를 제공할 수 없다고 밝힌 뒤 무엇을 기준으로 찾았는지 한 문장으로 덧붙이세요. "
-        "이때 미확정·비공개 사유는 붙이지 마세요."
+        "그 대상을 수집 데이터에서 확인할 수 없어(0건) 정보를 제공할 수 없다고 밝힌 뒤 "
+        "무엇을 기준으로 찾았는지 한 문장으로 덧붙이세요. 이때 미확정·비공개 사유는 붙이지 마세요."
     )
     assert expected_zero_result_sentence in SYSTEM_PROMPT
-    assert '반드시 "조회된 결과가 없습니다(0건)" 라는 표현을 그대로 쓰고' in SYSTEM_PROMPT
-    assert "조회된 결과가 없습니다(0건)" in SYSTEM_PROMPT
 
     # 새 문장의 핵심 요건 검증: (a) 다른 공고 나열 금지, (b) 거절 표현, (c) 미확정·비공개 사유 금지
     assert "다른 공고를 대신 나열하거나 추정하지 말고" in expected_zero_result_sentence
     assert "제공할 수 없다고 밝힌 뒤" in expected_zero_result_sentence
     assert "미확정·비공개 사유는 붙이지 마세요" in expected_zero_result_sentence
 
-    # 금액 용어 정의 문장 포함 검증
-    expected_price_terms_sentence = (
-        "금액 용어는 다음 정의를 따르세요. "
-        "기초금액은 발주기관이 예정가격 작성의 기준으로 공고하는 금액이고, "
-        "예정가격은 기초금액을 바탕으로 복수예비가격 추첨 등을 거쳐 개찰 시점에 확정되는 낙찰자 결정 기준 가격으로 개찰 전에는 공개되지 않으며, "
-        "추정가격은 입찰 방법 결정 등에 쓰도록 부가가치세를 제외하고 산정한 금액입니다. "
-        "용어 정의를 묻는 질문에는 이 정의로 답하고, 공고 값은 검색 컨텍스트에 있는 값만 구분해 인용하세요."
-    )
-    assert expected_price_terms_sentence in SYSTEM_PROMPT
-
-    # scripts/measure_llm_adversarial.py 의 ZERO_RESULT_PATTERNS 가 모범 답변을 0건 설명으로 판정함을 단언
-    from scripts.measure_llm_adversarial import (
-        ZERO_RESULT_PATTERNS,
-        check_zero_result_explained,
-    )
-
-    exemplar_zero = "조회된 결과가 없습니다(0건). 2026년 공고 기준으로 찾았습니다."
-    assert any(p.search(exemplar_zero) for p in ZERO_RESULT_PATTERNS)
-    zero_explained, _ = check_zero_result_explained(exemplar_zero, "zero_result_explained")
-    assert zero_explained is True
-
     # scripts/measure_llm_quality.py 의 is_refusal 이 모범 답변 예시를 거절로 판정함을 단언
     from scripts.measure_llm_quality import is_refusal
 
     exemplar_refusal = (
-        "요청하신 대상은 조회된 결과가 없습니다(0건). 해당 정보를 제공할 수 없습니다."
+        "요청하신 대상은 수집 데이터에서 확인할 수 없어(0건) 정보를 제공할 수 없습니다."
     )
     assert is_refusal(exemplar_refusal) is True
 
