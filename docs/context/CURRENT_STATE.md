@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-15
-> **source_commit**: `e272af7c`
+> **source_commit**: `3ba336d2`
 > **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -83,7 +83,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **rpo_rto**: RPO 24시간·RTO 4시간을 확정했고 RPO/RTO와 정기 백업 스케줄은 일 1회 스냅샷으로 충족하며 분기 1회 restore drill 정례화를 야간 점검으로 완료했습니다. 2026-09-11 로컬 단계 나눔 드릴이 통과했고(총 852.83초, G1 파일·DB 분리 검증 통과) 경과 80일 경고 임계와 판정 불가 fail-closed 를 기계로 강제합니다.
 
-- **ssr_e2e**: SSR E2E 는 Playwright 기반으로 Phase 1~4 를 모두 구현했고 전용 CI Job 이 skip 0 을 요구하며 통과합니다. 대상은 인증과 공고·낙찰 화면, 챗봇 SSE 스트리밍, React SPA 이며 32건을 수집합니다.
+- **ssr_e2e**: SSR E2E 는 Playwright 기반으로 Phase 1~4 를 모두 구현했고 전용 CI Job 이 skip 0 을 요구하며 통과합니다. 대상은 인증과 공고·낙찰 화면, 챗봇 SSE 스트리밍, React SPA 이며 34건을 실행합니다.
 
 - **servc_qualification_evaluation**: 일반용역 적격심사 정량평가는 전 계층을 병합했고 화면 범위 배지는 일반용역·기술용역·협상 세 분기를 모두 표시합니다. `src/app/templates/bids/detail.html` 의 `setEvaluationScopeBadge` 가 기본 문구, `negotiation_variant` 보유 시 협상 문구, `rule_id === 'SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT'` 시 기술용역 문구를 설정합니다. 배지 문구를 후속 과제로 두었던 기재는 구현 이후 갱신되지 않은 것이며 2026-09-11 에 코드로 확인해 종결했습니다.
 
