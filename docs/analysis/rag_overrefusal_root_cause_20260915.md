@@ -1,7 +1,7 @@
 # 적대적 픽스처 실데이터 과잉거절 4건의 원인 분석 및 수정 후보 보고서
 
 > **작성일**: 2026-09-15
-> **작성자**: Orca Worker (Investigator / Builder)
+> **작성자**: Orca Worker (Investigator), 코디네이터 검증(질의 계획 4건 재현 일치, 재측정 명령 정정)
 > **대상 Task**: `task_6cb1d67943a2` (Dispatch: `ctx_ba4a2e5db67d`)
 > **대상 문항**: `adv_inst_02`, `adv_inst_04`, `adv_num_01`, `adv_date_02`
 > **상태**: 원인 규명 완료, 코드 경로 귀속 완료, 수정 후보 및 우선순위 수립
@@ -216,7 +216,7 @@ Task Capsule Fact 6에 따라, 각 수정 후보의 변경 파일, 대상 문항
 - **`blind_fixture_v2` canonical 144/144 회귀 위험**: **낮음 (Low)**. 기존 canonical 픽스처의 건설공사 질의("...도로포장공사", "...보수공사")는 여전히 `Cnstwk`로 정상 매칭되며, 공기업 오인식만 제거되므로 안전함.
 - **필요한 재측정**:
   - `uv run pytest tests/test_rag_engine.py -q`
-  - `python3 scripts/benchmark_rag_segments.py` (canonical 32문항 96요청 회귀 검증)
+  - `uv run python scripts/measure_llm_quality.py` 로 blind_fixture_v2 canonical 32문항 96요청 회귀 검증 (명령 인자는 `docs/analysis/blind_fixture_v2_canonical_20260830.md` 참조. `benchmark_rag_segments.py` 는 구간 레이턴시 측정기라 품질 회귀 판정에 쓰지 않음)
 
 ### 5.2 수정 후보 2: 분기(Quarter) 기간 파싱 및 시계열 버킷/복수 기간 통계 연계
 - **바꿀 파일**: [`src/rag/query_planning.py`](../../src/rag/query_planning.py), [`src/rag/structured_data.py`](../../src/rag/structured_data.py), [`src/rag/snapshots.py`](../../src/rag/snapshots.py)
