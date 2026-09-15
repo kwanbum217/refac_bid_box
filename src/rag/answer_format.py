@@ -23,6 +23,13 @@ from src.rag.snapshots import (
     _extract_trend_snapshot,
 )
 
+PRICE_TERM_NOTES = (
+    "- 기초금액: 발주기관이 예정가격 작성의 기준으로 공고하는 금액입니다.\n"
+    "- 예정가격: 기초금액을 바탕으로 복수예비가격 추첨 등을 거쳐 개찰 시점에 확정되는 낙찰자 결정 기준 가격이며, 개찰 전에는 공개되지 않습니다.\n"
+    "- 추정가격: 입찰 방법 결정 등에 쓰도록 부가가치세를 제외하고 산정한 금액입니다.\n"
+    "- 공고별 값은 아래 Source 에 있는 값만 인용하고, 없는 값은 추정하지 않습니다."
+)
+
 
 def _format_filters_for_prompt(filters: dict | None) -> str:
     if not filters:
@@ -135,6 +142,10 @@ def _compose_context_text(
     formatted_filters = _format_filters_for_prompt(plan.filters)
     if formatted_filters:
         sections.append(f"적용 필터:\n{formatted_filters}")
+
+    query_text = plan.lexical_query if plan.lexical_query else plan.semantic_query
+    if query_text and any(term in query_text for term in ("예정가격", "추정가격", "기초금액")):
+        sections.append("금액 용어 안내 (시스템 기준 정의, 인용 번호 없음):\n" + PRICE_TERM_NOTES)
 
     # 통계 및 수치 데이터 (Source [1])
     statistical_snapshot = _extract_statistical_snapshot(structured_data)
