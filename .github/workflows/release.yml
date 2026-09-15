@@ -2,6 +2,12 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      draft:
+        description: '초안(draft) 릴리스 생성 여부'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   actions: read
@@ -90,6 +96,7 @@ jobs:
           echo "Image Digest: ${IMAGE_ID}" >> "$RUNNER_TEMP/release-notes.md"
 
       - name: Create and push release tag
+        if: ${{ !inputs.draft }}
         env:
           RELEASE_TAG: ${{ steps.readiness.outputs.tag }}
         run: |
@@ -98,7 +105,22 @@ jobs:
           git tag "$RELEASE_TAG" "$(git rev-parse HEAD)"
           git push origin "$RELEASE_TAG"
 
-      - name: Create GitHub release
+      - name: Create draft GitHub release
+        if: ${{ inputs.draft }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.readiness.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --draft \
+            --target "$(git rev-parse HEAD)" \
+            --title "$RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            refac-bid-box-sbom.spdx.json \
+            image-digest.txt
+
+      - name: Create public GitHub release
+        if: ${{ !inputs.draft }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.readiness.outputs.tag }}

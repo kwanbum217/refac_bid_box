@@ -77,25 +77,35 @@ def get_head_commit_sha(project_root: Path | None = None) -> str:
 
 
 def get_db_config() -> dict[str, Any]:
-    """DB 접속 설정을 환경 변수 또는 settings 에서 안전하게 로드합니다."""
+    """DB 접속 설정을 로드하며 덤프 전용 계정(BACKUP_DB_USER)을 우선 사용합니다."""
+    env = os.environ
     try:
         from src.app.core.config import settings
 
-        return {
-            "host": settings.DB_HOST,
-            "port": settings.DB_PORT,
-            "user": settings.DB_USER,
-            "password": settings.DB_PASSWORD,
-            "name": settings.DB_NAME,
-        }
+        host, port, name = settings.DB_HOST, settings.DB_PORT, settings.DB_NAME
+        u = (
+            env.get("BACKUP_DB_USER")
+            or getattr(settings, "BACKUP_DB_USER", None)
+            or env.get("DB_USER")
+            or settings.DB_USER
+        )
+        p = (
+            env.get("BACKUP_DB_PASSWORD")
+            or getattr(settings, "BACKUP_DB_PASSWORD", None)
+            or env.get("DB_PASSWORD")
+            or settings.DB_PASSWORD
+        )
     except Exception:
-        return {
-            "host": os.environ.get("DB_HOST", "localhost"),
-            "port": int(os.environ.get("DB_PORT", "3306")),
-            "user": os.environ.get("DB_USER", "root"),
-            "password": os.environ.get("DB_PASSWORD", os.environ.get("MYSQL_ROOT_PASSWORD", "")),
-            "name": os.environ.get("DB_NAME", "procurement"),
-        }
+        host, port, name = (
+            env.get("DB_HOST", "localhost"),
+            int(env.get("DB_PORT", "3306")),
+            env.get("DB_NAME", "procurement"),
+        )
+        u = env.get("BACKUP_DB_USER") or env.get("DB_USER", "root")
+        p = env.get("BACKUP_DB_PASSWORD") or env.get(
+            "DB_PASSWORD", env.get("MYSQL_ROOT_PASSWORD", "")
+        )
+    return {"host": host, "port": port, "user": u, "password": p, "name": name}
 
 
 def mask_secret(value: str) -> str:

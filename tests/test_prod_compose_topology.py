@@ -115,6 +115,12 @@ def test_backup_service_enforces_least_privilege(compose: dict):
     assert "./chroma_db:/app/chroma_db:ro" in volumes
     assert "./data:/app/data" in volumes
 
+    env = _environment(backup)
+    assert env["BACKUP_DB_USER"] == "${BACKUP_DB_USER:?BACKUP_DB_USER must be set}"
+    assert env["BACKUP_DB_PASSWORD"] == "${BACKUP_DB_PASSWORD:?BACKUP_DB_PASSWORD must be set}"  # noqa: S105
+    assert "${BACKUP_DB_USER:?BACKUP_DB_USER must be set}" in env["DATABASE_URL"]
+    assert "${BACKUP_DB_PASSWORD:?BACKUP_DB_PASSWORD must be set}" in env["DATABASE_URL"]
+
 
 def test_worker_healthcheck_requires_fresh_heartbeat(compose: dict):
     worker = compose["services"]["worker"]

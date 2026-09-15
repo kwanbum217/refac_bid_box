@@ -208,12 +208,14 @@ services:
     environment:
       - ENVIRONMENT=${ENVIRONMENT:?ENVIRONMENT must be set}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY must be set}
-      - DATABASE_URL=mysql+pymysql://${DB_USER:?DB_USER must be set}:${DB_PASSWORD:?DB_PASSWORD must be set}@db:3306/${DB_NAME:?DB_NAME must be set}
+      - DATABASE_URL=mysql+pymysql://${BACKUP_DB_USER:?BACKUP_DB_USER must be set}:${BACKUP_DB_PASSWORD:?BACKUP_DB_PASSWORD must be set}@db:3306/${DB_NAME:?DB_NAME must be set}
       - DB_HOST=db
       - DB_PORT=3306
-      - DB_USER=${DB_USER:?DB_USER must be set}
-      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
+      - DB_USER=${BACKUP_DB_USER:?BACKUP_DB_USER must be set}
+      - DB_PASSWORD=${BACKUP_DB_PASSWORD:?BACKUP_DB_PASSWORD must be set}
       - DB_NAME=${DB_NAME:?DB_NAME must be set}
+      - BACKUP_DB_USER=${BACKUP_DB_USER:?BACKUP_DB_USER must be set}
+      - BACKUP_DB_PASSWORD=${BACKUP_DB_PASSWORD:?BACKUP_DB_PASSWORD must be set}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
       - CHROMA_DB_PATH=/app/chroma_db
       - BACKUP_SCHEDULE_ENABLED=true

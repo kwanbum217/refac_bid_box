@@ -1,9 +1,9 @@
 # backup 서비스 권한 축소 및 전용 큐 분리
 
 > **작성일**: 2026-09-14
-> **수정일**: 2026-09-14
+> **수정일**: 2026-09-15
 > **대상**: `docker-compose.prod.yml` 의 `backup` 서비스
-> **관련 Task**: `task_a32d19622b97`
+> **관련 Task**: `task_a32d19622b97`, `task_6e71e04ed87d`
 
 ---
 
@@ -14,6 +14,8 @@
 기존에는 `backup` 서비스가 `worker`와 동일한 `WorkerSettings`를 실행하여 기본 큐(`arq:queue`)를 공유하고 있었기 때문에, 외부 수집 API 호출이나 재학습 등의 일반 작업이 `backup` 컨테이너로 임의 할당될 위험이 있었습니다.
 
 전용 큐 분리가 완료됨에 따라 `backup` 서비스가 오직 백업 스케줄(`backup_schedule_task`)만 실행하도록 격리되었으며, 이에 맞추어 사용하지 않는 권한(`extra_hosts`, `ml_registry` 및 `chroma_db` 쓰기 권한)을 안전하게 제거했습니다.
+
+이어서 2026-09-15 사용자 결정에 따라 백업 덤프 수행 시 애플리케이션 공용 DB 계정 대신 **덤프 전용 최소 권한 MySQL 계정(`BACKUP_DB_USER`)**을 사용하도록 전환하여 DB 계정 최소권한 분리를 완결했습니다.
 
 ---
 
@@ -58,8 +60,38 @@
 
 ---
 
-## 5. 데이터베이스 전용 계정 관련 안내 (사용자 결정 대상)
+## 5. 데이터베이스 전용 최소 권한 계정 분리 (해소 완료)
 
-현재 백업 컨테이너는 애플리케이션 공용 DB 계정(`DB_USER`)을 사용하여 덤프를 수행합니다.
+2026-09-15 사용자 결정에 따라 백업 컨테이너가 애플리케이션 공용 DB 계정(`DB_USER`) 대신 **덤프 전용 최소 권한 계정(`BACKUP_DB_USER`)**을 사용하도록 전환을 완료했습니다.
 
-백업 전용 최소 권한 MySQL 계정(예: `SELECT`, `LOCK TABLES`, `SHOW VIEW` 등 덤프 전용 권한만 부여된 계정) 분리는 데이터베이스 사용자 생성 및 권한 부여가 수반되는 변경이므로 운영자 및 사용자 결정 대상으로 분류되어 있으며 이번 범위에서는 제외되었습니다.
+### 5.1 계정 권한 정책
+백업 덤프 전용 계정은 데이터 유출 및 침해 시 피해 범위를 최소화하기 위해 읽기 및 메타데이터 조회 권한만 부여받으며, 데이터 쓰기(`INSERT`, `UPDATE`, `DELETE`) 및 스키마 변경(`DROP`, `ALTER`, `CREATE TABLE`) 권한은 일체 부여되지 않습니다.
+
+- **부여 권한**:
+  - `procurement.*`: `SELECT`, `SHOW VIEW`, `TRIGGER`, `LOCK TABLES`, `EVENT`
+  - `*.*`: `PROCESS` (MySQL 8.0 `mysqldump`의 Information Schema TABLESPACES 조회 호환성 보장)
+- **계정 생성 SQL**: [`scripts/create_backup_db_user.sql`](../../scripts/create_backup_db_user.sql)
+
+### 5.2 운영 DB 계정 생성 및 적용 절차
+1. **운영 DB 관리자 권한으로 계정 생성 SQL 실행**:
+   ```sh
+   mysql -u root -p < scripts/create_backup_db_user.sql
+   ```
+   (주의: 실행 전 SQL 내 `IDENTIFIED BY` 비밀번호 자리표시자를 실제 운영용 강력한 난수로 변경하십시오.)
+2. **운영 `.env` 파일에 전용 환경변수 2종 추가**:
+   ```sh
+   BACKUP_DB_USER=bidbox_backup
+   BACKUP_DB_PASSWORD=<설정한_안전한_비밀번호>
+   ```
+3. **backup 컨테이너 재기동**:
+   ```sh
+   docker compose -f docker-compose.prod.yml up -d backup
+   ```
+4. **덤프 정상 동작 1회 수동 확인**:
+   ```sh
+   docker compose -f docker-compose.prod.yml exec backup python scripts/backup_recovery.py --execute
+   ```
+
+### 5.3 복구(Restore) 및 리허설(Drill) 계정 정책
+- **백업 덤프**: `BACKUP_DB_USER` (최소 권한 읽기 전용 계정)를 사용하여 수행합니다.
+- **복원 및 리허설**: DB 생성/삭제(`CREATE DATABASE`, `DROP DATABASE`) 및 테이블 데이터 복원(`INSERT`, `CREATE TABLE` 등) 쓰기 작업이 필수적이므로, **복구 작업은 여전히 관리자(root 또는 공용 관리 계정) 권한**으로 수행합니다.
