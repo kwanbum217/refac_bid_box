@@ -33,6 +33,10 @@ from src.rag.answer_format import (
     _markdown_result_cell,
     _normalize_category_wording,
 )
+from src.rag.injection_guard import (
+    INJECTION_NOTICE,
+    strip_injected_source_blocks,
+)
 from src.rag.leak_guard import (
     LEAK_REFUSAL_MESSAGE,
     contains_system_prompt_leak,
@@ -950,8 +954,44 @@ class HybridRAGEngine:
         tool_context: dict | None = None,
     ) -> AnswerBundle:
         t_start = _safe_perf_counter()
+        cleaned_query, injection_stripped = strip_injected_source_blocks(user_query)
+        if injection_stripped and not cleaned_query:
+            trace_id = f"rag-{int(time.time() * 1000)}-{os.urandom(4).hex()}"
+            total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
+            expose_flag = getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
+            metrics_to_include = (
+                {
+                    "plan_ms": 0.0,
+                    "sql_ms": 0.0,
+                    "vector_ms": 0.0,
+                    "lexical_ms": 0.0,
+                    "kb_status_ms": 0.0,
+                    "assembly_ms": 0.0,
+                    "prepare_total_ms": 0.0,
+                    "llm_ms": 0.0,
+                    "guard_ms": 0.0,
+                    "total_ms": round(total_elapsed_ms, 2),
+                }
+                if expose_flag
+                else None
+            )
+            return AnswerBundle(
+                answer=INJECTION_NOTICE,
+                provenance=Provenance(
+                    trace_id=trace_id,
+                    retrieval_mode="injection_guard",
+                    items=[],
+                    insufficiency_hints=[],
+                ),
+                citations=[],
+                retrieved_docs=[],
+                latency_ms=total_elapsed_ms,
+                segment_metrics=metrics_to_include,
+            )
+
+        effective_query = cleaned_query if injection_stripped else user_query
         prepared = self._prepare_context(
-            user_query, db=db, history=history, tool_context=tool_context
+            effective_query, db=db, history=history, tool_context=tool_context
         )
         (
             plan,
@@ -1099,8 +1139,11 @@ class HybridRAGEngine:
                 backend_name="none",
             )
             seg_metrics = _calc_segment_metrics(0.0, guard_elapsed_ms, total_elapsed_ms)
+            final_ans = f"{direct_result_list_answer}{citation_suffix}"
+            if injection_stripped:
+                final_ans = f"{INJECTION_NOTICE} {final_ans}"
             return _bundle(
-                f"{direct_result_list_answer}{citation_suffix}",
+                final_ans,
                 [citation_suffix.strip()] if citation_suffix.strip() else [],
                 total_elapsed_ms=total_elapsed_ms,
                 segment_metrics=seg_metrics,
@@ -1110,9 +1153,11 @@ class HybridRAGEngine:
         if backend is None:
             t_fallback_start = _safe_perf_counter()
             fallback_text = _fallback_answer(
-                user_query, plan, structured_data, vector_docs, kb_status
+                effective_query, plan, structured_data, vector_docs, kb_status
             )
             normalized = _normalize_category_wording(fallback_text, plan)
+            if injection_stripped:
+                normalized = f"{INJECTION_NOTICE} {normalized}"
             guard_elapsed_ms = (_safe_perf_counter() - t_fallback_start) * 1000.0
             total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
             _log_latency(
@@ -1153,6 +1198,8 @@ class HybridRAGEngine:
                     structured_data, vector_docs, kb_status
                 )
                 final_citations = [citation_suffix.strip()] if citation_suffix.strip() else []
+                if injection_stripped:
+                    answer_text = f"{INJECTION_NOTICE} {answer_text}"
             guard_elapsed_ms = (_safe_perf_counter() - t_guard_start) * 1000.0
 
             total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
@@ -1174,9 +1221,11 @@ class HybridRAGEngine:
             llm_elapsed_ms = (_safe_perf_counter() - t_llm_start) * 1000.0
             t_fallback_start = _safe_perf_counter()
             fallback_text = _fallback_answer(
-                user_query, plan, structured_data, vector_docs, kb_status
+                effective_query, plan, structured_data, vector_docs, kb_status
             )
             normalized = _normalize_category_wording(fallback_text, plan)
+            if injection_stripped:
+                normalized = f"{INJECTION_NOTICE} {normalized}"
             guard_elapsed_ms = (_safe_perf_counter() - t_fallback_start) * 1000.0
             total_elapsed_ms = (_safe_perf_counter() - t_start) * 1000.0
             logger.warning(
@@ -1237,9 +1286,37 @@ class HybridRAGEngine:
         # tool_context 가 비어 있으면 여기서 동기 DB 질의와 ChromaDB 임베딩 검색이
         # 일어납니다. SSE 제너레이터는 이벤트 루프에서 돌므로 스레드로 넘깁니다.
         t_stream_start = _safe_perf_counter()
+        cleaned_query, injection_stripped = strip_injected_source_blocks(user_query)
+        if injection_stripped and not cleaned_query:
+            trace_id = f"rag-{int(time.time() * 1000)}-{os.urandom(4).hex()}"
+            yield {"type": "docs", "docs": []}
+            yield {"type": "token", "text": INJECTION_NOTICE}
+            done_event: dict[str, Any] = {
+                "type": "done",
+                "citations": [],
+                "trace_id": trace_id,
+                "final_answer": INJECTION_NOTICE,
+            }
+            if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
+                done_event["segment_metrics"] = {
+                    "plan_ms": 0.0,
+                    "sql_ms": 0.0,
+                    "vector_ms": 0.0,
+                    "lexical_ms": 0.0,
+                    "kb_status_ms": 0.0,
+                    "assembly_ms": 0.0,
+                    "prepare_total_ms": 0.0,
+                    "llm_ms": 0.0,
+                    "guard_ms": 0.0,
+                    "total_ms": round((_safe_perf_counter() - t_stream_start) * 1000.0, 2),
+                }
+            yield done_event
+            return
+
+        effective_query = cleaned_query if injection_stripped else user_query
         prepared = await asyncio.to_thread(
             self._prepare_context,
-            user_query,
+            effective_query,
             db=db,
             history=history,
             tool_context=tool_context,
@@ -1295,8 +1372,13 @@ class HybridRAGEngine:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
-            final_answer = f"{direct_result_list_answer}{citation_suffix}"
-            yield {"type": "token", "text": final_answer}
+            raw_answer = f"{direct_result_list_answer}{citation_suffix}"
+            if injection_stripped:
+                yield {"type": "token", "text": f"{INJECTION_NOTICE} "}
+                final_answer = f"{INJECTION_NOTICE} {raw_answer}"
+            else:
+                final_answer = raw_answer
+            yield {"type": "token", "text": raw_answer}
             done_event = {
                 "type": "done",
                 "citations": [citation_suffix.strip()] if citation_suffix.strip() else [],
@@ -1311,29 +1393,37 @@ class HybridRAGEngine:
         backend = self.backend
         if backend is None:
             fallback_text = _fallback_answer(
-                user_query, plan, structured_data, vector_docs, kb_status
+                effective_query, plan, structured_data, vector_docs, kb_status
             )
             normalized = _normalize_category_wording(fallback_text, plan)
+            if injection_stripped:
+                yield {"type": "token", "text": f"{INJECTION_NOTICE} "}
             yield {"type": "token", "text": normalized}
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
             )
+            raw_answer = f"{normalized}{citation_suffix}"
+            final_answer = f"{INJECTION_NOTICE} {raw_answer}" if injection_stripped else raw_answer
             done_event = {
                 "type": "done",
                 "citations": [citation_suffix.strip()] if citation_suffix.strip() else [],
                 "trace_id": provenance.trace_id,
-                "final_answer": f"{normalized}{citation_suffix}",
+                "final_answer": final_answer,
             }
             if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
                 done_event["segment_metrics"] = _calc_stream_metrics(0.0, 0.0)
             yield done_event
             return
 
+        notice_yielded = False
         try:
             raw_answer = ""
             t_llm_stream_start = _safe_perf_counter()
             token_gen = backend.stream_generate(SYSTEM_PROMPT, messages)
             leak_blocked = False
+            if injection_stripped:
+                yield {"type": "token", "text": f"{INJECTION_NOTICE} "}
+                notice_yielded = True
             while True:
                 token = await asyncio.to_thread(next, token_gen, None)
                 if token is None:
@@ -1382,7 +1472,10 @@ class HybridRAGEngine:
                 structured_data, vector_docs, kb_status
             )
             guard_stream_elapsed_ms = (_safe_perf_counter() - t_guard_stream_start) * 1000.0
-            final_answer = f"{corrected_answer}{citation_suffix}"
+            raw_final_answer = f"{corrected_answer}{citation_suffix}"
+            final_answer = (
+                f"{INJECTION_NOTICE} {raw_final_answer}" if injection_stripped else raw_final_answer
+            )
             final_citations = [citation_suffix.strip()] if citation_suffix.strip() else []
 
             done_event = {
@@ -1400,15 +1493,18 @@ class HybridRAGEngine:
             yield done_event
         except Exception:
             fallback_text = _fallback_answer(
-                user_query, plan, structured_data, vector_docs, kb_status
+                effective_query, plan, structured_data, vector_docs, kb_status
             )
             normalized = _normalize_category_wording(fallback_text, plan)
+            if injection_stripped and not notice_yielded:
+                yield {"type": "token", "text": f"{INJECTION_NOTICE} "}
             yield {"type": "token", "text": normalized}
+            final_answer = f"{INJECTION_NOTICE} {normalized}" if injection_stripped else normalized
             done_event = {
                 "type": "done",
                 "citations": [],
                 "trace_id": provenance.trace_id,
-                "final_answer": normalized,
+                "final_answer": final_answer,
             }
             if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
                 done_event["segment_metrics"] = _calc_stream_metrics(0.0, 0.0)
@@ -1431,6 +1527,7 @@ def get_chatbot_response(
 
 __all__ = [
     "CATEGORY_KEYWORDS",
+    "INJECTION_NOTICE",
     "KB_KEYWORDS",
     "REGION_KEYWORDS",
     "RESULT_LIST_MARKERS",
@@ -1474,4 +1571,5 @@ __all__ = [
     "retrieve_semantic_context",
     "retrieve_structured_data",
     "search_recent_details",
+    "strip_injected_source_blocks",
 ]
