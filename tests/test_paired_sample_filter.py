@@ -51,3 +51,29 @@ def test_evaluation_warns_when_reporting_and_decision_verdicts_differ(capsys):
     assert evaluation["verdict_mismatch"] is True
     assert "주의: 판정이 어긋납니다" in output
     assert "전량 'challenger 우세' -> 범위 내 '판별 불가'" in output
+
+
+def test_collect_since_adds_opening_date_lower_bound():
+    from sqlalchemy.dialects import mysql
+
+    from scripts.eval_servc_api_path import collect
+
+    captured = {}
+
+    class _Session:
+        def execute(self, stmt):
+            captured["sql"] = str(
+                stmt.compile(dialect=mysql.dialect(), compile_kwargs={"literal_binds": True})
+            )
+
+            class _Result:
+                def all(self):
+                    return []
+
+            return _Result()
+
+    collect(_Session(), 2026, 10, 42, "Servc", since="2026-10-15")
+    assert "rl_openg_dt >= '2026-10-15'" in captured["sql"]
+
+    collect(_Session(), 2026, 10, 42, "Servc")
+    assert ">= '2026-10-15'" not in captured["sql"]
