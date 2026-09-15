@@ -150,3 +150,21 @@ aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고�
 | Ollama | `gemma4:e2b` 언로드. 홈 디렉터리에서 4시간 넘게 돈 `agy` 프로세스는 이 세션 소유가 아니라 건드리지 않음 |
 | 로컬 DB | 벤치 전용 계정 `bench_latency_20260915`(사용자 id 15) 유지. 다음 P95 측정에 재사용하며 비밀번호·쿠키는 저장소에 두지 않음 |
 | ml_registry | `quantum_leap_v25_pro/baseline` 로컬 생성(gitignore). 운영 서버에서 같은 명령으로 재생성 필요 |
+
+## 8. 사용자 결정 기록 (2026-09-15)
+
+| 항목 | 결정 | 다음 실행 |
+| --- | --- | --- |
+| 출시 형태 | 내부 베타 유지 | 결제·약관 전문·비밀번호 찾기는 보류. G2 Windows 실기와 운영 한 바퀴 증명 우선. 공개 API 는 익명 쿼터 유지 |
+| 운영 LLM 런타임 | 외부 호스트 유지 | `docker-compose.prod.yml` 은 그대로, 운영 문서에 GPU·Ollama 호스트 준비 절차 명시 |
+| Release 첫 실행 | 비공개 사전 릴리스 태그로 1회 | `v0.1.0-rc.1` 류 태그로 release 워크플로(SBOM·Trivy) 1회 통과 확인 |
+| 백업 DB 계정 | 전용 읽기 계정 추가 | 덤프 최소 권한(SELECT·LOCK TABLES·SHOW VIEW·TRIGGER 등) 계정 생성 스크립트와 backup 서비스 환경변수 분리. 스키마 불변 |
+| 야간 번들·주간 재학습 | 야간만 켜고 재학습은 끔 | 운영 compose `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` 기본 true, `ML_WEEKLY_RETRAIN_ENABLED` 는 false 유지 |
+| Redis 장애 시 요청 제한 | 로그인·회원가입만 fail-closed | `LoginRateLimiter`·`SignupRateLimiter` 는 Redis 미가용 시 503, 익명 API 제한은 통과 유지 |
+| TTFT 알람 | warning 도 별도 채널로 | Alertmanager 에 severity=warning 수신기 추가, repeat_interval 길게, critical 경로 불변 |
+| adv_zero 0건 채점 충돌 | 알려진 한계로 유지 | 채점기·fixture 변경 없음 |
+| 2025-07 이전 입찰 중 3,213건 제한정보 | 백필 제외·화면 안내 | 해당 공고 상세에 "제한정보 미수집" 안내 |
+| 공사(Cnstwk) 전용 모델 | 학습·비교 실험 착수 | `cnstwk_institution_v1` 을 용역과 같은 시간 분할·쌍대 검정으로 학습, v25 대비 유의한 개선일 때만 승격. ML 학습 자원 독점 Task |
+| 협상 계약 가격점수 안내 | 상세 화면과 소개 문구 모두 명시 | 협상 공고 평가 카드와 서비스 소개·기능 안내에 "가격점수 미계산, 평가비율·낙찰률 참고 분포만 제공" 명시 |
+
+병렬 착수 권장 묶음: (1) 야간 기본값·로그인/가입 fail-closed·TTFT 알람 수신기(운영 설정), (2) 백업 전용 계정, (3) 제한정보 미수집 안내·협상 안내 문구(화면), (4) Release 사전 태그. 공사 모델 학습은 ML 자원을 독점하므로 별도 Task 로 직렬 진행합니다.
