@@ -799,3 +799,43 @@ def test_get_answer_sync_with_numeric_omission_detection(caplog, monkeypatch):
     omission_logs = [r for r in caplog.records if "rag_numeric_omission:" in r.message]
     assert len(omission_logs) == 1
     assert "missing_count=2" in omission_logs[0].message
+
+
+def test_system_prompt_scoped_refusal_and_zero_result_explanation():
+    """SYSTEM_PROMPT 의 거절 사유가 미개찰·미래 질의로 한정되고 부재 대상에 0건 설명 지시가 포함됨을 검증한다."""
+    # (a) 미개찰·미래 질의로 거절 사유 한정
+    assert (
+        "미개찰·미래 시점 질의를 거절할 때는 개찰 전 미확정 정보이거나 비공개 내부 정보여서 제공할 수 없다는 사유를 한 문장으로 명확히 밝히세요."
+        in SYSTEM_PROMPT
+    )
+    # 전체적인 거절 사유 지시문이 독립적으로 존재하지 않고 미개찰·미래 시점 질의로 한정되었는지 확인
+    assert not SYSTEM_PROMPT.startswith("거절할 때는 개찰 전 미확정 정보이거나")
+    assert ". 거절할 때는 개찰 전 미확정 정보이거나" not in SYSTEM_PROMPT
+    assert "답변을 거절하세요. 거절할 때는" not in SYSTEM_PROMPT
+
+    # (b) 존재하지 않는 대상 질의 시 0건 및 검색 대상 설명 지시
+    assert (
+        "검색 컨텍스트에 요청한 기관·공고번호·분야가 없으면 그 대상이 수집 데이터에서 확인되지 않았다(0건)는 사실과 무엇을 기준으로 찾았는지를 설명하고, 미확정·비공개 사유를 붙이지 마세요."
+        in SYSTEM_PROMPT
+    )
+
+    # (c) 기존 핵심 지침들의 불변 보존 검증 (canonical 144/144 근거)
+    assert "반드시 제공된 '검색 컨텍스트'의 Source 정보를 기반으로 답변하세요." in SYSTEM_PROMPT
+    assert (
+        "문장 끝마다 해당 문장의 근거가 되는 소스 번호를 [1], [2]와 같이 인라인 인용으로 표시하세요."
+        in SYSTEM_PROMPT
+    )
+    assert (
+        "통계 수치(낙찰 수, 상위 업체, 빈번 공고 기관 등)는 Source [1]을, 추세 분석은 Source [2]를, 상세 문맥은 Source [3], [4], [5]를 인용하세요."
+        in SYSTEM_PROMPT
+    )
+    assert "목록 데이터가 컨텍스트에 있으면 검색 결과가 없다고 말하지 마세요." in SYSTEM_PROMPT
+    assert (
+        "요청 기간에 목록이 없으면 컨텍스트 부족이라고 하지 말고, 요청 기간의 0건과 DB 최신 개찰일을 명확히 설명하세요."
+        in SYSTEM_PROMPT
+    )
+    assert (
+        "최종 답변에는 Servc, Thng, Cnstwk, Frgcpt 같은 코드를 쓰지 말고 용역, 물품, 공사, 외자처럼 사용자용 분류명만 쓰세요."
+        in SYSTEM_PROMPT
+    )
+    assert "<canvas class='chat-chart' data-type='bar'" in SYSTEM_PROMPT
