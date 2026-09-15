@@ -115,6 +115,26 @@ def test_release_notes_use_only_commits_after_previous_tag(tmp_path: Path) -> No
     assert "initialize test repository" not in notes
 
 
+def test_release_notes_are_capped_under_github_body_limit(tmp_path: Path) -> None:
+    repo = _new_repo(tmp_path, version="0.1.0")
+    for index in range(40):
+        (repo / "source.txt").write_text(f"change {index}\n", encoding="utf-8")
+        _git(repo, "add", "source.txt")
+        kind = "feat" if index % 2 else "fix"
+        _git(repo, "commit", "-m", f"{kind}: change number {index:02d} " + "x" * 60)
+
+    full = readiness.generate_release_notes(repo, "v0.1.0", max_chars=1_000_000)
+    capped = readiness.generate_release_notes(repo, "v0.1.0", max_chars=900)
+
+    assert len(full) > 900
+    assert len(capped) <= 900
+    assert "## feat" in capped
+    assert "## fix" in capped
+    assert "건은 생략했습니다" in capped
+    assert "change number 39" in capped
+    assert "change number 38" in capped
+
+
 def test_notes_reject_tag_that_does_not_match_project_version(tmp_path: Path) -> None:
     repo = _new_repo(tmp_path, version="0.2.0")
     output = tmp_path / "notes.md"
