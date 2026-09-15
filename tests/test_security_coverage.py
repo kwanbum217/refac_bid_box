@@ -278,25 +278,33 @@ def test_session_convenience_functions(monkeypatch):
 # ==============================================================================
 
 
-def test_login_rate_limiter_fail_open_when_redis_unavailable():
-    """Redis 가 없거나 조회/기록 중 예외가 발생할 때 요청을 차단하지 않고 정상 통과해야 한다 (fail-open)."""
+def test_login_rate_limiter_fail_closed_when_redis_unavailable():
+    """Redis 가 없거나 조회 중 예외가 발생할 때 503 을 발생시키고, 기록 함수는 정상 통과해야 한다 (fail-closed)."""
     mock_conn = MagicMock()
     mock_conn.client.return_value = None
     limiter = LoginRateLimiter(connection=mock_conn)
 
-    # 에러 없이 통과해야 함
-    limiter.check_rate_limit("1.2.3.4", "testuser")
+    # client is None: check_rate_limit 는 503 발생
+    with pytest.raises(HTTPException) as exc_info:
+        limiter.check_rate_limit("1.2.3.4", "testuser")
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == sec.AUTH_SERVICE_UNAVAILABLE_DETAIL
+
+    # 기록 함수는 에러 없이 조용히 통과
     limiter.record_failure("1.2.3.4", "testuser")
     limiter.record_success("1.2.3.4", "testuser")
 
-    # 예외 발생 시에도 경고 로깅 후 정상 통과
+    # 예외 발생 시: check_rate_limit 는 503 발생, 기록 함수는 조용히 통과
     failing_client = MagicMock()
     failing_client.get.side_effect = RuntimeError("Redis read fail")
     failing_client.pipeline.side_effect = RuntimeError("Redis pipe fail")
     failing_client.delete.side_effect = RuntimeError("Redis delete fail")
     mock_conn.client.return_value = failing_client
 
-    limiter.check_rate_limit("1.2.3.4", "testuser")
+    with pytest.raises(HTTPException) as exc_info2:
+        limiter.check_rate_limit("1.2.3.4", "testuser")
+    assert exc_info2.value.status_code == 503
+    assert exc_info2.value.detail == sec.AUTH_SERVICE_UNAVAILABLE_DETAIL
     assert mock_conn.invalidate.call_count == 1
 
     limiter.record_failure("1.2.3.4", "testuser")
