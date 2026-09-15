@@ -232,6 +232,25 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import datetime as dt, json, os, time, redis; r = redis.from_url(os.environ['REDIS_URL'],
+          socket_connect_timeout=2, socket_timeout=2); r.ping(); heartbeat =
+          r.get('bidbox:backup_worker:heartbeat'); assert heartbeat is not None, 'backup worker heartbeat missing';
+          payload = json.loads(heartbeat); last_seen_at = payload.get('last_seen_at');
+          assert isinstance(last_seen_at, str) and last_seen_at; last_seen =
+          dt.datetime.fromisoformat(last_seen_at.replace('Z', '+00:00')); age_seconds =
+          time.time() - last_seen.timestamp(); max_age_seconds =
+          float(os.environ['WORKER_HEARTBEAT_MAX_AGE_SECONDS']); assert 0 <= age_seconds <=
+          max_age_seconds, f'backup worker heartbeat is stale: {age_seconds:.1f}s'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     user: "1000:1000"
     deploy:
       resources:

@@ -127,6 +127,9 @@ class Settings(BaseSettings):
     # 익명 챗봇 API 요청 쿼터(기본 IP별 60초당 30회)
     ANONYMOUS_API_RATE_LIMIT_MAX_REQUESTS: int = 30
     ANONYMOUS_API_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    # 회원가입 시도 제한: IP 축 고정 윈도우 (기본 3600초당 10회)
+    SIGNUP_RATE_LIMIT_MAX: int = 10
+    SIGNUP_RATE_LIMIT_WINDOW_SECONDS: int = 3600
 
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"

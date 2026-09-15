@@ -24,9 +24,11 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `DEBUG` | 아니오 | `false` | 디버그 모드 (운영은 `false` 강제) |
 | `CORS_ALLOWED_ORIGINS` | 운영은 **예** | - | 자격증명 요청을 허용할 오리진 목록. 콤마 구분, 스킴 포함 |
 | `CORS_DEV_ALLOW_ALL` | 아니오 | `true` | 개발·스테이징에서 임의 오리진 허용 여부. 운영에는 영향이 없습니다 |
+| `SIGNUP_RATE_LIMIT_MAX` | 아니오 | `10` | IP 축 회원가입 최대 허용 횟수 (고정 윈도우) |
+| `SIGNUP_RATE_LIMIT_WINDOW_SECONDS` | 아니오 | `3600` | 회원가입 시도 제한 윈도우 시간 (초, 기본 3600초 = 1시간) |
 | `WEB_CONCURRENCY` | 아니오 | `1` | Docker Compose app 서비스의 Uvicorn 워커 프로세스 수. FastAPI 설정 모델이 읽는 값이 아니라 `docker-compose.yml`의 `command`가 직접 소비합니다. 3워커 이상은 100ms 목표에 실패해 기본값에서 철회된 수동 실험 옵션입니다 |
 
-현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 여섯 가지입니다. `APP_ENV`,
+현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 항목들입니다. `APP_ENV`,
 `APP_SECRET_KEY`, `APP_DEBUG`, `APP_ALLOWED_HOSTS`는 이전 Django 설계의 명칭이므로
 이 프로젝트의 `.env`에 사용하지 않습니다. 허용 호스트 목록은 현재 설정 모델에
 구현되어 있지 않아 별도 환경변수로 추가하지 않습니다.

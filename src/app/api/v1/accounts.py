@@ -36,6 +36,7 @@ from src.app.core.security import (
     make_password,
     read_session,
     resolve_client_ip,
+    signup_rate_limiter,
 )
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
@@ -194,7 +195,15 @@ def register_user(payload: SignUpRequest, response: Response, db: Session) -> Us
 
 
 @router.post("/signup", response_model=UserResponse, summary="회원가입")
-def signup(payload: SignUpRequest, response: Response, db: Session = Depends(get_db)):
+def signup(
+    request: Request,
+    payload: SignUpRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    ip = _client_ip(request)
+    signup_rate_limiter.check_rate_limit(ip)
+    signup_rate_limiter.record_attempt(ip)
     return register_user(payload, response, db)
 
 

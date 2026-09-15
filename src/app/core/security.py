@@ -235,6 +235,10 @@ RATE_LIMIT_ACCOUNT_PREFIX = "auth:ratelimit:account:"
 RATE_LIMIT_EXCEEDED_DETAIL = "너무 많은 로그인 시도가 발생했습니다. 잠시 후 다시 시도해 주십시오."
 ANONYMOUS_API_RATE_LIMIT_PREFIX = "api:ratelimit:anonymous:"
 ANONYMOUS_API_RATE_LIMIT_EXCEEDED_DETAIL = "요청이 너무 많습니다. 잠시 후 다시 시도해 주십시오."
+SIGNUP_RATE_LIMIT_PREFIX = "auth:ratelimit:signup:ip:"
+SIGNUP_RATE_LIMIT_EXCEEDED_DETAIL = (
+    "너무 많은 회원가입 시도가 발생했습니다. 잠시 후 다시 시도해 주십시오."
+)
 
 
 class LoginRateLimiter:
@@ -409,6 +413,79 @@ def enforce_anonymous_api_quota(request: Any, user: Any) -> None:
     ip = resolve_client_ip(peer, request.headers.get("x-forwarded-for"))
     anonymous_api_rate_limiter.check_rate_limit(ip)
     anonymous_api_rate_limiter.record_request(ip)
+
+
+class SignupRateLimiter:
+    """회원가입 요청 제한기 (IP 축 고정 윈도우).
+
+    Redis 를 사용하여 회원가입 시도 횟수를 기록하고 임계치 초과 시 429 로 차단합니다.
+    Redis 가 다운되거나 사용 불가할 때는 요청을 차단하지 않고 제한만 건너뜁니다 (fail-open).
+    임계값과 윈도우 시간은 settings 에서 동적으로 조회하여 변경에 즉각 반응합니다.
+    """
+
+    def __init__(self, connection: RedisConnection | None = None):
+        self._conn = connection or RedisConnection(label="signup_rate_limit")
+
+    @property
+    def max_attempts(self) -> int:
+        return int(getattr(settings, "SIGNUP_RATE_LIMIT_MAX", 10))
+
+    @property
+    def window_seconds(self) -> int:
+        return int(getattr(settings, "SIGNUP_RATE_LIMIT_WINDOW_SECONDS", 3600))
+
+    def _key(self, ip: str) -> str:
+        return f"{SIGNUP_RATE_LIMIT_PREFIX}{ip}"
+
+    def check_rate_limit(self, ip: str | None) -> None:
+        """회원가입 요청 수가 임계를 넘었는지 검사합니다.
+
+        초과 시 429 HTTPException 을 발생시킵니다.
+        Redis 미가용 시에는 제한을 건너뛰고 정상 통과합니다.
+        """
+        client = self._conn.client()
+        if client is None or not ip:
+            return
+
+        try:
+            count = client.get(self._key(ip))
+            if count is not None and int(count) >= self.max_attempts:
+                logger.warning("IP 회원가입 시도 제한 초과: %s", ip)
+                raise HTTPException(
+                    status_code=429,
+                    detail=SIGNUP_RATE_LIMIT_EXCEEDED_DETAIL,
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("회원가입 시도 제한 조회 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc)
+
+    def record_attempt(self, ip: str | None) -> None:
+        """회원가입 시도를 기록합니다.
+
+        성공·실패와 무관하게 시도마다 1회 기록합니다.
+        Redis 미가용 시에는 제한을 건너뛰고 경고 로그를 남깁니다.
+        """
+        client = self._conn.client()
+        if client is None or not ip:
+            return
+
+        key = self._key(ip)
+        window = self.window_seconds
+        try:
+            pipe = client.pipeline()
+            pipe.incr(key)
+            pipe.expire(key, window)
+            pipe.execute()
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning(
+                "회원가입 시도 카운터 기록 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc
+            )
+
+
+signup_rate_limiter = SignupRateLimiter()
 
 
 def _parse_trusted_proxies() -> list[ipaddress._BaseNetwork]:

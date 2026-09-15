@@ -172,6 +172,7 @@ async def heavy_task_guard(task_name: str) -> AsyncIterator[None]:
 
 
 WORKER_HEARTBEAT_KEY = "bidbox:worker:heartbeat"
+BACKUP_WORKER_HEARTBEAT_KEY = "bidbox:backup_worker:heartbeat"
 QUEUE_BACKLOG_KEY = "bidbox:worker:queue_backlog"
 SCHEDULE_STATUS_KEY = "bidbox:worker:schedules"
 OBSERVATION_TTL_SECONDS = 7 * 24 * 60 * 60
@@ -227,17 +228,20 @@ def _redis_queue_length() -> int | None:
     return metrics["pending"] if metrics is not None else None
 
 
-def record_worker_heartbeat() -> None:
+def record_worker_heartbeat(key: str = WORKER_HEARTBEAT_KEY) -> None:
     """워커 생존 시각, 식별자와 관측 시점의 큐 적체를 기록합니다."""
     now = _now_iso()
     try:
         _worker_cache.set(
-            WORKER_HEARTBEAT_KEY,
+            key,
             {"worker_id": _worker_id, "last_seen_at": now},
             OBSERVATION_TTL_SECONDS,
         )
     except Exception:
         logger.debug("워커 heartbeat 기록 실패 (무시됨)")
+
+    if key != WORKER_HEARTBEAT_KEY:
+        return
 
     try:
         metrics = _redis_queue_metrics()
@@ -284,9 +288,9 @@ def record_schedule_result(schedule_name: str, outcome: Any, success: bool) -> N
         return
 
 
-async def _heartbeat_loop() -> None:
+async def _heartbeat_loop(key: str = WORKER_HEARTBEAT_KEY) -> None:
     while True:
-        record_worker_heartbeat()
+        record_worker_heartbeat(key)
         await asyncio.sleep(settings.WORKER_HEARTBEAT_INTERVAL_SECONDS)
 
 
@@ -460,8 +464,8 @@ async def _on_backup_startup(ctx: dict[str, Any]) -> None:
         from src.app.core.db import engine
 
         setup_observability(engine=engine)
-    record_worker_heartbeat()
-    ctx["worker_heartbeat_task"] = asyncio.create_task(_heartbeat_loop())
+    record_worker_heartbeat(BACKUP_WORKER_HEARTBEAT_KEY)
+    ctx["worker_heartbeat_task"] = asyncio.create_task(_heartbeat_loop(BACKUP_WORKER_HEARTBEAT_KEY))
 
 
 async def _on_backup_shutdown(ctx: dict[str, Any]) -> None:

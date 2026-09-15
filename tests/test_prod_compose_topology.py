@@ -129,6 +129,17 @@ def test_worker_healthcheck_requires_fresh_heartbeat(compose: dict):
     assert "WORKER_HEARTBEAT_MAX_AGE_SECONDS" in environment
 
 
+def test_backup_healthcheck_requires_fresh_heartbeat(compose: dict):
+    backup = compose["services"]["backup"]
+    healthcheck = _healthcheck_command(backup)
+    assert "r.ping()" in healthcheck
+    assert "bidbox:backup_worker:heartbeat" in healthcheck
+    assert "bidbox:worker:heartbeat" not in healthcheck
+    assert "last_seen_at" in healthcheck
+    assert "WORKER_HEARTBEAT_MAX_AGE_SECONDS" in healthcheck
+    assert "age_seconds" in healthcheck
+
+
 def test_observability_services_stay_on_internal_network(compose: dict):
     services = compose["services"]
     for name in ("otel-collector", "tempo", "prometheus", "alertmanager", "grafana"):
