@@ -813,11 +813,26 @@ def test_system_prompt_scoped_refusal_and_zero_result_explanation():
     assert ". 거절할 때는 개찰 전 미확정 정보이거나" not in SYSTEM_PROMPT
     assert "답변을 거절하세요. 거절할 때는" not in SYSTEM_PROMPT
 
-    # (b) 존재하지 않는 대상 질의 시 0건 및 검색 대상 설명 지시
-    assert (
-        "검색 컨텍스트에 요청한 기관·공고번호·분야가 없으면 그 대상이 수집 데이터에서 확인되지 않았다(0건)는 사실과 무엇을 기준으로 찾았는지를 설명하고, 미확정·비공개 사유를 붙이지 마세요."
-        in SYSTEM_PROMPT
+    # (b) 존재하지 않는 대상 질의 시 0건 거절 및 설명 지시 (과잉응답 방지 및 canonical 거절 패턴 준수)
+    expected_zero_result_sentence = (
+        "검색 컨텍스트에 요청한 기관·공고번호·분야·사업이 없으면 다른 공고를 대신 나열하거나 추정하지 말고, "
+        "그 대상을 수집 데이터에서 확인할 수 없어(0건) 정보를 제공할 수 없다고 밝힌 뒤 "
+        "무엇을 기준으로 찾았는지 한 문장으로 덧붙이세요. 이때 미확정·비공개 사유는 붙이지 마세요."
     )
+    assert expected_zero_result_sentence in SYSTEM_PROMPT
+
+    # 새 문장의 핵심 요건 검증: (a) 다른 공고 나열 금지, (b) 거절 표현, (c) 미확정·비공개 사유 금지
+    assert "다른 공고를 대신 나열하거나 추정하지 말고" in expected_zero_result_sentence
+    assert "제공할 수 없다고 밝힌 뒤" in expected_zero_result_sentence
+    assert "미확정·비공개 사유는 붙이지 마세요" in expected_zero_result_sentence
+
+    # scripts/measure_llm_quality.py 의 is_refusal 이 모범 답변 예시를 거절로 판정함을 단언
+    from scripts.measure_llm_quality import is_refusal
+
+    exemplar_refusal = (
+        "요청하신 대상은 수집 데이터에서 확인할 수 없어(0건) 정보를 제공할 수 없습니다."
+    )
+    assert is_refusal(exemplar_refusal) is True
 
     # (c) 기존 핵심 지침들의 불변 보존 검증 (canonical 144/144 근거)
     assert "반드시 제공된 '검색 컨텍스트'의 Source 정보를 기반으로 답변하세요." in SYSTEM_PROMPT
