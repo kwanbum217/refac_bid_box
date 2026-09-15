@@ -16,11 +16,12 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import math
+import os
 import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from scripts.benchmark_latency import (
     BuildProvenanceError,
@@ -126,6 +127,7 @@ def execute_sse_request(
     index: int,
     query: str,
     timeout_sec: float = 180.0,
+    session_cookie: str | None = None,
 ) -> SingleRequestRecord:
     start_time = time.perf_counter()
     first_stage_ms: float | None = None
@@ -135,9 +137,23 @@ def execute_sse_request(
     seen_token = False
     error: str | None = None
 
+    cookie_value = session_cookie
+    cookies: dict[str, str] | None = None
+    if cookie_value:
+        if cookie_value.startswith("bidbox_session="):
+            cookie_value = cookie_value.split("=", 1)[1]
+        cookies = {"bidbox_session": cookie_value}
+
+    client_kwargs: dict[str, Any] = {
+        "base_url": base_url,
+        "timeout": timeout_sec,
+    }
+    if cookies:
+        client_kwargs["cookies"] = cookies
+
     try:
         with (
-            httpx.Client(base_url=base_url, timeout=timeout_sec) as client,
+            httpx.Client(**client_kwargs) as client,
             client.stream(
                 "POST",
                 "/api/v1/chatbot/chat/stream",
@@ -145,6 +161,9 @@ def execute_sse_request(
             ) as response,
         ):
             if response.status_code != 200:
+                err = f"http_{response.status_code}"
+                if response.status_code == 429 and not cookies:
+                    err = "http_429_anonymous_quota"
                 return SingleRequestRecord(
                     request_index=index,
                     query=query,
@@ -152,7 +171,7 @@ def execute_sse_request(
                     first_token_ms=None,
                     final_ms=None,
                     success=False,
-                    error=f"http_{response.status_code}",
+                    error=err,
                 )
 
             current_event: str | None = None
@@ -248,6 +267,7 @@ def run_benchmark(
     rounds: int,
     round_num: int,
     warmup: bool = True,
+    session_cookie: str | None = None,
 ) -> tuple[BenchmarkSummary, list[SingleRequestRecord]]:
     print(
         f"\n[시작] SSE 게이트 측정 (동시성: c{concurrency}, 표본: {rounds}건, 회차: r{round_num})"
@@ -263,6 +283,7 @@ def run_benchmark(
                     base_url,
                     -1 - w_idx,
                     f"워밍업 질의 {w_idx + 1}",
+                    session_cookie=session_cookie,
                 )
                 for w_idx in range(concurrency)
             ]
@@ -281,6 +302,7 @@ def run_benchmark(
                 base_url,
                 idx,
                 _query_for_index(idx, round_num),
+                session_cookie=session_cookie,
             ): idx
             for idx in range(rounds)
         }
@@ -338,6 +360,8 @@ def run_benchmark(
         f"  - 완료 (final): P50={fn_stats['p50_ms']}ms, P95={fn_stats['p95_ms']}ms, P99={fn_stats['p99_ms']}ms, Max={fn_stats['max_ms']}ms "
         f"(>20000ms: {fn_stats['exceeded_count']}건 / {fn_stats['exceeded_rate_pct']}%, Wilson 상한: {fn_stats['wilson_upper_pct']}%)"
     )
+    if any(r.error == "http_429_anonymous_quota" for r in records):
+        print("익명 쿼터로 차단된 표본이 있습니다. --session-cookie 로 재측정하십시오.")
     print("-" * 65)
 
     return summary, records
@@ -387,6 +411,11 @@ def main() -> int:
     parser.add_argument("--round-num", type=int, default=1, help="측정 회차 번호 (1, 2, 3...)")
     parser.add_argument("--no-warmup", action="store_true", help="Warmup 건너뛰기")
     parser.add_argument("--output", type=Path, help="결과 저장 JSON 경로")
+    parser.add_argument(
+        "--session-cookie",
+        default=os.getenv("BENCHMARK_SESSION_COOKIE"),
+        help="인증 요청을 위한 세션 쿠키 값 (bidbox_session)",
+    )
 
     args = parser.parse_args()
 
@@ -419,6 +448,7 @@ def main() -> int:
         rounds=args.rounds,
         round_num=args.round_num,
         warmup=not args.no_warmup,
+        session_cookie=args.session_cookie,
     )
 
     try:
@@ -459,6 +489,7 @@ def main() -> int:
         print(f"원시 측정치 저장 완료: {args.output}")
 
     # 판정 검사 (목표: 첫 토큰 P95 <= 3000ms, final P95 <= 20000ms, errors == 0)
+    has_anonymous_quota = any(r.error == "http_429_anonymous_quota" for r in records)
     ft_p95 = summary["first_token_stats"]["p95_ms"]
     fn_p95 = summary["final_stats"]["p95_ms"]
     errs = summary["error_requests"]
@@ -469,6 +500,7 @@ def main() -> int:
         and ft_p95 <= FIRST_TOKEN_TARGET_MS
         and fn_p95 <= FINAL_TARGET_MS
         and errs == 0
+        and not has_anonymous_quota
     )
 
     return 0 if passed else 1
