@@ -86,7 +86,7 @@ def test_missing_response_fields_legacy(monkeypatch):
 
     monkeypatch.setattr(
         "scripts.compare_servc_models_paired.predict_price_api",
-        lambda req, session: LegacyResponse(),
+        lambda payload, request, db: LegacyResponse(),
     )
 
     res = predict_one(session=None, bid_id=101, model_id="legacy_req")
@@ -252,7 +252,7 @@ def test_main_all_api_errors_reports_counts_and_exits_nonzero(monkeypatch, capsy
 def test_main_output_exposes_only_fixed_categories(monkeypatch, capsys):
     sensitive = "/opt/secret/model.bin password=secret123 token=JWT12345"
 
-    def _mock_predict_price_api(request, session):
+    def _mock_predict_price_api(payload, request, db):
         raise RuntimeError(sensitive)
 
     monkeypatch.setattr(
@@ -326,7 +326,7 @@ def _patch_response(monkeypatch, **fields):
         setattr(Response, key, value)
     monkeypatch.setattr(
         "scripts.compare_servc_models_paired.predict_price_api",
-        lambda req, session: Response(),
+        lambda payload, request, db: Response(),
     )
 
 

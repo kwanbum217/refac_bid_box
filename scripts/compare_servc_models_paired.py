@@ -36,7 +36,7 @@ warnings.filterwarnings("ignore")
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from scripts.eval_servc_api_path import collect  # noqa: E402
+from scripts.eval_servc_api_path import _script_predict_request, collect  # noqa: E402
 from src.app.api.v1.predictions import predict_price_api  # noqa: E402
 from src.app.core.db import SessionLocal  # noqa: E402
 from src.app.models.bids import BidAnnouncement  # noqa: E402
@@ -103,7 +103,8 @@ def predict_one(session, bid_id: int, model_id: str) -> dict | None:
     try:
         response = predict_price_api(
             PredictPriceRequest(bid_id=int(bid_id), user_price="0", selected_model=model_id),
-            session,
+            _script_predict_request(),
+            db=session,
         )
     except Exception:
         return None
