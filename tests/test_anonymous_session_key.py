@@ -63,11 +63,13 @@ def test_sign_and_verify_session_key_roundtrip():
     """서버가 발급한 서명 키는 정상 검증되고 만료 없이 유효합니다."""
     key = generate_signed_session_key()
     assert verify_session_key(key) is True
+    assert len(key) == 64
 
-    custom_raw = "12345678-1234-4321-abcd-1234567890ab"
+    custom_raw = "1234567812344321abcd1234567890ab"
     signed_custom = sign_session_key(custom_raw)
     assert verify_session_key(signed_custom) is True
     assert signed_custom.startswith(f"{custom_raw}:")
+    assert len(signed_custom) == 64
 
 
 def test_verify_session_key_rejects_invalid_and_forged_keys():
@@ -85,6 +87,10 @@ def test_verify_session_key_rejects_invalid_and_forged_keys():
     raw_id, _ = valid_key.rsplit(":", 1)
     forged_key = f"{raw_id}:invalid_signature_abc123"
     assert verify_session_key(forged_key) is False
+
+    # 서명 길이(31자)를 맞춘 위조 서명 거부
+    forged_same_len = f"{raw_id}:" + "x" * 31
+    assert verify_session_key(forged_same_len) is False
 
     # raw_id 변조
     _, signature = valid_key.rsplit(":", 1)
@@ -227,6 +233,7 @@ def test_post_session_new_api_returns_signed_key(client):
     session_key = data.get("session_key")
     assert session_key is not None
     assert verify_session_key(session_key) is True
+    assert len(session_key) == 64
 
 
 def test_resolve_user_memory_key_format_preserved():
