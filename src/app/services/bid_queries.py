@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Integer, and_, case, func, or_, select
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session, aliased
 
 from src.app.core.cache import cache
 from src.app.core.config import settings
+from src.app.core.timeutil import utcnow
 from src.app.models.bid_restrictions import (
     BidAnnouncementLicenseLimit,
     BidAnnouncementParticipationRegion,
@@ -628,10 +630,19 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
         "similar_bids": list(similar_bids),
         "past_results": past_results,
         "restrictions": get_announcement_restrictions(db, bid),
+        "is_negotiation": _is_negotiation(bid),
         "default_prediction_model": DEFAULT_PREDICTION_MODEL_BY_CATEGORY.get(
             bid.category, DEFAULT_PREDICTION_MODEL
         ),
     }
+
+
+def _is_negotiation(bid: BidAnnouncement) -> bool:
+    raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    sucsfbid = str(raw.get("sucsfbidMthdNm") or "")
+    cntrct = str(bid.cntrct_mthd_nm or "")
+    bid_methd = str(raw.get("bidMethdNm") or "")
+    return "협상" in sucsfbid or "협상" in cntrct or "협상" in bid_methd
 
 
 def _sort_key(value: str | None) -> tuple[int, str]:
@@ -672,6 +683,18 @@ def get_announcement_restrictions(db: Session, bid: BidAnnouncement) -> dict[str
 
     raw = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     industry_limited = (raw.get("indstrytyLmtYn") or "").strip().upper() or None
+    collected = bool(license_rows or region_rows)
+
+    uncollected_legacy = False
+    if not collected and bid.bid_ntce_dt is not None and bid.bid_clse_dt is not None:
+        ntce_dt = (
+            bid.bid_ntce_dt.replace(tzinfo=None) if bid.bid_ntce_dt.tzinfo else bid.bid_ntce_dt
+        )
+        clse_dt = (
+            bid.bid_clse_dt.replace(tzinfo=None) if bid.bid_clse_dt.tzinfo else bid.bid_clse_dt
+        )
+        uncollected_legacy = (ntce_dt < datetime(2025, 7, 1, 0, 0)) and (clse_dt >= utcnow())
+
     return {
         "license_groups": [
             {
@@ -690,7 +713,8 @@ def get_announcement_restrictions(db: Session, bid: BidAnnouncement) -> dict[str
             if row.prtcpt_psbl_rgn_nm
         ],
         "industry_limited": industry_limited,
-        "collected": bool(license_rows or region_rows),
+        "collected": collected,
+        "uncollected_legacy": uncollected_legacy,
     }
 
 

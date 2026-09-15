@@ -160,6 +160,15 @@
                     </div>
                     {% endif %}
                 </div>
+                {% elif restrictions and restrictions.uncollected_legacy %}
+                <!-- Participation Restrictions Card (Legacy Uncollected) -->
+                <div class="h-card p-6 space-y-4" id="restriction-uncollected-notice">
+                    <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                        <i class="fas fa-id-card text-primary mr-2"></i>
+                        참가 자격 제한
+                    </h2>
+                    <p class="text-sm text-slate-600">이 공고는 참가 제한정보(면허·지역)를 수집하지 않은 과거 공고입니다. 공고문에서 참가 자격을 확인하십시오.</p>
+                </div>
                 {% endif %}
 
                 <!-- AI Prediction Section -->
@@ -381,6 +390,9 @@
                         <div id="negotiation-info" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
                             <div class="font-bold text-blue-700">협상에의한계약 공고</div>
                             <div class="text-sm text-blue-700">적격심사 점수 산식은 적용하지 않고 공고에 기재된 평가비율만 제공합니다.</div>
+                            {% if is_negotiation or (bid and bid.cntrct_mthd_nm and '협상' in bid.cntrct_mthd_nm) or (bid and bid.raw_data and '협상' in (bid.raw_data.get('sucsfbidMthdNm') or '')) %}
+                            <div id="negotiation-price-score-notice" class="text-sm text-blue-700">협상에의한계약은 공고별로 가격점수 산식이 달라 가격점수는 계산하지 않습니다. 기술·가격 평가비율과 낙찰률 참고 분포만 제공합니다.</div>
+                            {% endif %}
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                 <div><div class="detail-label">계약 유형</div><div id="negotiation-variant" class="font-semibold text-slate-800">-</div></div>
                                 <div><div class="detail-label">기술능력 평가비율</div><div id="negotiation-tech-rate" class="font-semibold text-slate-800">-</div></div>
