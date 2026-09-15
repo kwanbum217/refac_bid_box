@@ -14,6 +14,8 @@ from pathlib import Path
 import pytest
 
 from src.rag.query_planning import (
+    ENTITY_ORG_SUFFIXES,
+    _extract_public_corporation_tokens,
     build_retrieval_plan,
     extract_result_limit,
     is_entity_specific_query,
@@ -281,3 +283,169 @@ def test_non_entity_statistics_query_keeps_year_filter():
     plan = build_retrieval_plan("2025년 용역 낙찰률 평균 통계 알려줘")
     assert plan.filters.get("date_from") == "2025-01-01"
     assert plan.filters.get("date_to") == "2025-12-31"
+
+
+def test_retrieval_plan_llm_quality_fixture_v2_snapshot_invariance():
+    """llm_quality_fixture_v2 전 문항의 계획이 스냅샷과 완전히 일치해야 합니다 (q29의 category 키 제외만 허용)."""
+    snapshot_path = Path("tests/fixtures/retrieval_plan_canonical_snapshot.json")
+    assert snapshot_path.exists(), "정본 스냅샷 파일이 존재해야 합니다."
+    with open(snapshot_path, encoding="utf-8") as f:
+        snapshot = json.load(f)
+
+    v2_snapshots = snapshot["llm_quality_fixture_v2"]
+    for item_id, snap in v2_snapshots.items():
+        question = snap["question"]
+        plan = build_retrieval_plan(question)
+
+        if item_id == "q29":
+            # q29는 category 키만 빠지고 use_sql, use_vector, use_lexical 은 스냅샷과 동일해야 함
+            assert plan.use_sql == snap["use_sql"], f"[{item_id}] use_sql 불일치"
+            assert plan.use_vector == snap["use_vector"], f"[{item_id}] use_vector 불일치"
+            assert plan.use_lexical == snap["use_lexical"], f"[{item_id}] use_lexical 불일치"
+            assert "category" not in plan.filters, (
+                f"[{item_id}] category 필터가 제거되지 않았습니다."
+            )
+            expected_filters = {k: v for k, v in snap["filters"].items() if k != "category"}
+            assert plan.filters == expected_filters, f"[{item_id}] 필터 불일치"
+        else:
+            assert plan.use_sql == snap["use_sql"], f"[{item_id}] use_sql 불일치: {question}"
+            assert plan.use_vector == snap["use_vector"], (
+                f"[{item_id}] use_vector 불일치: {question}"
+            )
+            assert plan.use_lexical == snap["use_lexical"], (
+                f"[{item_id}] use_lexical 불일치: {question}"
+            )
+            assert plan.filters == snap["filters"], f"[{item_id}] filters 불일치: {question}"
+
+
+def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance():
+    """adversarial_fixture_v1 문항 중 명시 허용 목록(adv_inst_03, adv_inst_04) 외에는 스냅샷과 완전히 일치해야 합니다."""
+    snapshot_path = Path("tests/fixtures/retrieval_plan_canonical_snapshot.json")
+    with open(snapshot_path, encoding="utf-8") as f:
+        snapshot = json.load(f)
+
+    adv_snapshots = snapshot["adversarial_fixture_v1"]
+    allowed_changed_ids = {"adv_inst_03", "adv_inst_04"}
+
+    for item_id, snap in adv_snapshots.items():
+        question = snap["question"]
+        plan = build_retrieval_plan(question)
+
+        if item_id in allowed_changed_ids:
+            if item_id == "adv_inst_04":
+                # adv_inst_04: use_sql=True, use_vector=True, use_lexical=True, filters에 category 없음
+                assert plan.use_sql is True, f"[{item_id}] use_sql 이 True 여야 합니다."
+                assert plan.use_vector is True, f"[{item_id}] use_vector 가 True 여야 합니다."
+                assert plan.use_lexical is True, f"[{item_id}] use_lexical 이 True 여야 합니다."
+                assert "category" not in plan.filters, f"[{item_id}] category 필터가 없어야 합니다."
+            elif item_id == "adv_inst_03":
+                # adv_inst_03: 서울교통공사는 공기업이므로 category='Cnstwk' 제거, institution_name='서울' 유지
+                assert plan.use_sql == snap["use_sql"]
+                assert plan.use_vector == snap["use_vector"]
+                assert plan.use_lexical == snap["use_lexical"]
+                assert "category" not in plan.filters, f"[{item_id}] category 필터가 없어야 합니다."
+                assert plan.filters.get("institution_name") == "서울"
+        else:
+            assert plan.use_sql == snap["use_sql"], f"[{item_id}] use_sql 불일치: {question}"
+            assert plan.use_vector == snap["use_vector"], (
+                f"[{item_id}] use_vector 불일치: {question}"
+            )
+            assert plan.use_lexical == snap["use_lexical"], (
+                f"[{item_id}] use_lexical 불일치: {question}"
+            )
+            assert plan.filters == snap["filters"], f"[{item_id}] filters 불일치: {question}"
+
+
+def test_adv_inst_04_plan_expected_outcome():
+    """adv_inst_04 질문의 계획은 use_sql=True 이고 filters 에 category 가 없어야 합니다 (Contract 5)."""
+    adv_path = Path("data/benchmarks/adversarial_fixture_v1.json")
+    with open(adv_path, encoding="utf-8") as f:
+        adv_data = json.load(f)
+
+    adv_inst_04 = next(it for it in adv_data["items"] if it["id"] == "adv_inst_04")
+    query = adv_inst_04["question"]
+    plan = build_retrieval_plan(query)
+
+    assert plan.use_sql is True
+    assert plan.use_vector is True
+    assert plan.use_lexical is True
+    assert "category" not in plan.filters
+    assert is_entity_specific_query(query) is True
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_category"),
+    [
+        ("도로포장공사 입찰 공고", "Cnstwk"),
+        ("보수공사 견적 안내", "Cnstwk"),
+        ("도로포장 공사의 낙찰자 알려줘", "Cnstwk"),
+        ("공사 입찰 통계 보여줘", "Cnstwk"),
+        ("시도 도로공사 입찰 현황", "Cnstwk"),
+        ("한국도로공사 스마트 고속도로 통신망 구축사업", None),
+        ("한국전력공사 스마트 분전반 구매 공고", None),
+        ("서울교통공사 사업 안내", None),
+        ("인천국제공항공사 입찰 공고", None),
+        ("경기주택도시공사의 사업 공고", None),
+        ("한국도로공사 본사 보수공사 입찰", "Cnstwk"),
+        ("한국수자원공사 2026년 광역상수도 정밀안전진단 용역", "Servc"),
+        ("한국전력공사 변전설비 신설 건설공사", "Cnstwk"),
+        ("서울역사공원조성공사 낙찰 결과", "Cnstwk"),
+        ("부산신항배후도로공사 낙찰금액", "Cnstwk"),
+        ("경기도청사리모델링공사 입찰", "Cnstwk"),
+        ("대구북구청사증축공사 공고", "Cnstwk"),
+        ("한국공사 입찰", "Cnstwk"),
+    ],
+)
+def test_public_corporation_vs_construction_category_matching(
+    query: str, expected_category: str | None
+):
+    """공기업 명칭의 '공사'는 분야로 오인하지 않고 실제 공사/용역/물품 분야 키워드만 올바르게 판정합니다."""
+    plan = build_retrieval_plan(query)
+    if expected_category is None:
+        assert "category" not in plan.filters, (
+            f"category 가 없어야 합니다: {query} -> {plan.filters}"
+        )
+    else:
+        assert plan.filters.get("category") == expected_category, (
+            f"category 일치 실패: {query} -> {plan.filters}"
+        )
+
+
+@pytest.mark.parametrize(
+    "corp_name",
+    [
+        "한국전력공사",
+        "서울교통공사",
+        "한국도로공사",
+        "인천국제공항공사",
+        "경기주택도시공사",
+        "한국전력공사의",
+        "한국전력공사와",
+        "한국전력공사는",
+        "한국전력공사가",
+        "한국전력공사이",
+        "한국전력공사과",
+        "한국전력공사은",
+    ],
+)
+def test_extract_public_corporation_tokens(corp_name: str):
+    """공기업 판정 규칙 및 조사 제거 동작을 검증합니다."""
+    extracted = _extract_public_corporation_tokens(corp_name)
+    assert len(extracted) == 1
+    assert extracted[0].endswith("공사")
+
+
+@pytest.mark.parametrize(
+    ("suffix", "sample_query"),
+    [
+        ("전력공사", "한국전력공사의 입찰 내역을 알려줘"),
+        ("교통공사", "서울교통공사의 발주 공고를 알려줘"),
+        ("도시공사", "경기주택도시공사의 낙찰업체를 알려줘"),
+        ("농어촌공사", "한국농어촌공사의 최근 공고를 알려줘"),
+        ("관광공사", "한국관광공사의 용역 낙찰금액을 알려줘"),
+    ],
+)
+def test_new_entity_org_suffixes_recognized(suffix: str, sample_query: str):
+    """새로 추가된 공기업 접미사 5종이 ENTITY_ORG_SUFFIXES에 포함되고 개체로 인식되어야 합니다."""
+    assert suffix in ENTITY_ORG_SUFFIXES
+    assert is_entity_specific_query(sample_query) is True

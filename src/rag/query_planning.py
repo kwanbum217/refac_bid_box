@@ -59,6 +59,42 @@ CATEGORY_KEYWORDS = {
     "용역": "Servc",
     "외자": "Frgcpt",
 }
+PUBLIC_CORPORATION_PREFIXES = (
+    "한국",
+    "서울",
+    "부산",
+    "인천",
+    "경기",
+    "대구",
+    "광주",
+    "대전",
+    "울산",
+    "세종",
+    "인천국제",
+)
+# 접두어만으로 판정하면 "서울역사공원조성공사" 같은 건설 공사명이 공기업으로 오인됩니다.
+# 접두어와 "공사" 사이가 실제 공기업 어간일 때만 공기업 이름으로 봅니다.
+PUBLIC_CORPORATION_STEMS = (
+    "전력",
+    "교통",
+    "도로",
+    "도시",
+    "주택도시",
+    "토지주택",
+    "도시개발",
+    "수자원",
+    "가스",
+    "철도",
+    "공항",
+    "농어촌",
+    "관광",
+    "환경",
+    "지역난방",
+    "석유",
+    "광해광업",
+    "조폐",
+)
+PUBLIC_CORP_JOSA = ("의", "와", "과", "은", "는", "이", "가")
 REGION_KEYWORDS = (
     "서울",
     "부산",
@@ -120,6 +156,11 @@ ENTITY_ORG_SUFFIXES = (
     "수자원공사",
     "토지주택공사",
     "가스공사",
+    "전력공사",
+    "교통공사",
+    "도시공사",
+    "농어촌공사",
+    "관광공사",
     "시설공단",
     "관리공단",
     "사업소",
@@ -131,6 +172,31 @@ ENTITY_ORG_SUFFIXES = (
     "주민센터",
     "행정복지센터",
 )
+
+
+def _extract_public_corporation_tokens(text: str) -> list[str]:
+    """공기업 이름 토큰을 추출합니다.
+
+    공백·쉼표·조사로 끊은 토큰이 '공사'로 끝나고, PUBLIC_CORPORATION_PREFIXES 중 하나로 시작하며,
+    접두어와 '공사' 사이가 PUBLIC_CORPORATION_STEMS 중 하나와 정확히 같으면 공기업 이름으로 판정합니다.
+    토큰의 조사('의', '와', '과', '은', '는', '이', '가')는 떼고 판정합니다.
+    """
+    tokens = re.split(r"[\s,]+", text)
+    found: list[str] = []
+    for raw in tokens:
+        cleaned = raw.strip(" \t\r\n,.'\"`[]()<>《》「」『』")
+        for josa in PUBLIC_CORP_JOSA:
+            if cleaned.endswith(josa) and len(cleaned) > len(josa):
+                cleaned = cleaned[: -len(josa)]
+                break
+        if cleaned.endswith("공사"):
+            for prefix in PUBLIC_CORPORATION_PREFIXES:
+                if cleaned.startswith(prefix):
+                    between = cleaned[len(prefix) : -2]
+                    if between in PUBLIC_CORPORATION_STEMS:
+                        found.append(cleaned)
+                        break
+    return found
 
 
 def _normalize_text(value: str | None) -> str:
@@ -414,12 +480,21 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if date_to:
         filters["date_to"] = date_to
 
+    # 공기업 이름 토큰을 제외한 나머지 문자열에서만 CATEGORY_KEYWORDS 를 찾습니다.
+    category_query = lowered
+    for corp in sorted(
+        set(_extract_public_corporation_tokens(normalized_query)), key=len, reverse=True
+    ):
+        corp_lower = corp.lower()
+        if corp_lower in category_query:
+            category_query = category_query.replace(corp_lower, " " * len(corp_lower))
+
     # 한국어 명사구 구조상 수식어 뒤에 오는 마지막 카테고리 단어가 핵어(예: "~공사 감리 용역" -> 용역)이므로
     # 질의에서 가장 뒤에 나타나는 카테고리 키워드를 채택합니다.
     last_cat_pos = -1
     matched_category = None
     for keyword, category in CATEGORY_KEYWORDS.items():
-        pos = lowered.rfind(keyword)
+        pos = category_query.rfind(keyword)
         if pos > last_cat_pos:
             last_cat_pos = pos
             matched_category = category
