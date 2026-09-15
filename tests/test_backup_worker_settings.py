@@ -66,6 +66,20 @@ def test_worker_settings_cron_jobs_does_not_contain_backup():
     assert len(WorkerSettings.cron_jobs) >= 5
 
 
+def test_worker_settings_functions_does_not_contain_backup():
+    """WorkerSettings 의 functions 에는 backup_schedule_task 가 없고 BackupWorkerSettings.functions 에는 존재해야 합니다."""
+    worker_func_names = [
+        getattr(getattr(fn, "coroutine", fn), "__name__", "") for fn in WorkerSettings.functions
+    ]
+    assert "backup_schedule_task" not in worker_func_names
+
+    backup_func_names = [
+        getattr(getattr(fn, "coroutine", fn), "__name__", "")
+        for fn in BackupWorkerSettings.functions
+    ]
+    assert "backup_schedule_task" in backup_func_names
+
+
 def test_backup_worker_settings_shares_redis_and_concurrency_contract():
     """BackupWorkerSettings 는 Redis 설정을 공유하고 기본 동시성 계약(max_jobs=4, job_timeout=1800)을 유지합니다."""
     assert BackupWorkerSettings.redis_settings.host == WorkerSettings.redis_settings.host
