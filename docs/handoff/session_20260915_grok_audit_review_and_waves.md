@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-15
 > **작성자**: Claude Opus 5 (Orca 코디네이터)
-> **기준 커밋**: `c32b8456` (`main`, 후반부 반영)
+> **기준 커밋**: `3044a967` (`main`, 후반부·al1 반영)
 > **이어받은 문서**: [`docs/handoff/session_20260914e_remaining_tasks_parallel.md`](session_20260914e_remaining_tasks_parallel.md)
 
 ---
@@ -85,15 +85,27 @@ aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고�
 | ah1 프롬프트가 canonical 거절을 3건 깨뜨림 | 0건 설명형 문장이 거절 패턴을 피함 | ak1 |
 | 앱 컨테이너가 `./src` 마운트여도 코드 변경을 자동 재적재하지 않음 | 모듈 수준 상수(`SYSTEM_PROMPT`) | 측정 전 `docker compose restart app worker` 필수 |
 
+### 5.4 al1 복수 기관 추출과 최종 실측
+
+| 항목 | 내용 |
+| --- | --- |
+| 병합 | al1 `task_73044ced9dab` -> `3044a967`. 질의의 "A, B, C의"·"A와 B의" 열거에서 공백·괄호 없는 2~20자 이름만 기관 후보로 뽑고, 기관명 카탈로그로 실제 수요기관에 대응된 이름만 기관별 집계(건수·평균 낙찰률·최근 결과 3건)를 Source [1] 에 싣습니다. 대응 기관이 없으면 기존 경로 |
+| 검증 | 게이트 통과, 전량 4,973. 계획이 바뀐 문항은 adv_inst_02·adv_inst_04 뿐, 스냅샷 미수정, 반례(공고명 괄호, "낙찰금액과 낙찰률", "공고 A와 공고 B") 미추출 |
+| 판단 변경 | adv_zero 채점기 수정은 하지 않음. fixture 가 refusal_expected=true 로 정답을 정의하고 있고, ak1 이후 거절·지시 위계 지표는 채점기 변경 없이 통과함. 남은 실패는 0건 설명 지표(0건 표현과 날짜 언급 요구)이며 프롬프트 영역 |
+| canonical (`3044a967`) | numeric 144/144, evidence recall 1.0, 인용 72/72, 거절 24/24, 과잉응답 0. `data/benchmarks/blind_fixture_v2_e2b_20260915_r3.json` |
+| 적대적 ak1 후 (`c456cec3`) | 25/35, 지시 위계 34·거절 29. `data/benchmarks/noncanonical/adversarial_fixture_v1_gemma4-e2b_20260915_r2.json` |
+| 적대적 al1 후 (`3044a967`) | 25/35, adv_inst_02·adv_inst_04 해결, adv_num_04·adv_zero_04 는 1회 측정 편차로 실패, 거절 30·인용 35. `data/benchmarks/noncanonical/adversarial_fixture_v1_gemma4-e2b_20260915_r3.json` |
+| 예측 P95 기준 | 회귀 비교 정본은 익명 경로 유지(이전 48ms 와 비교 가능), 로그인 경로는 운영 참고치로 함께 기록 |
+
 ---
 
 ## 6. 남은 과업
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
-| 1 | 과잉거절 P3(복수 기관 분리 추출, adv_inst_02·adv_inst_04)·P4(예정가격 용어 안내, adv_num_01) | canonical 재측정 필수, 위험 중간 |
-| 2 | 적대적 채점기의 `zero_result_explained` 문항 기대 행동 재정의 여부(0건 설명형 답을 거절로 볼지) | 사용자 결정. 바꾸면 채점 부풀림 여부를 문항 원문으로 대조 |
-| 3 | 예측 P95 정본 갱신 방식: 로그인 경로 기준으로 바꿀지, 익명 기준을 유지할지 | 사용자 결정 |
+| 1 | 과잉거절 P4(예정가격 용어 안내, adv_num_01)와 0건 설명 지표(0건 표현·최신 개찰일 언급). 둘 다 프롬프트 영역 | canonical 재측정 필수, 위험 중간 |
+| 2 | 적대적 채점기 거절 패턴이 질문 문구를 따라 쓴 답(adv_date_02 "포함되지 않도록")을 거절로 오탐하는 문제, 적대적 측정 반복 수 1회로 인한 편차 | 채점 변경 시 문항 원문 대조 |
+| 3 | 예측 P95 정본은 익명 경로 유지로 결정. 로그인 경로 수치는 참고치로 병기 | - |
 | 4 | SSE 게이트 벤치가 워밍업 포함 익명 쿼터를 넘지 않게 표본 간격 또는 로그인 쿠키 지원 | - |
 | 5 | Thng drift baseline: `uv run python scripts/generate_drift_baseline.py --category Thng --start-at 2026-05-26` dry-run 후 `--write` | DB 기동 |
 | 6 | 사용자 결정 대기: 출시 형태(결제·약관·비밀번호 찾기), 운영 compose Ollama, Release 첫 실행, 백업 전용 DB 계정, 운영 야간 번들·주간 재학습 기본값, 요청 제한 fail-closed, TTFT 알람 Slack, 협상 가격점수 안내 문구, 2025-07 이전 제한정보 3,213건, 공사 전용 모델 | 사용자 결정 |
