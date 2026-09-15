@@ -44,6 +44,21 @@
 - **크로스 플랫폼 호환**: macOS / Windows 동일 환경에서 개발·실행 가능
 - **기술 스택 최적화**: 레이턴시·정합성 관점에서 효율적인 스택 적용
 
+## 기술 스택 (확정)
+
+| 영역 | 기술 | 비고 |
+| --- | --- | --- |
+| 백엔드 | FastAPI (ASGI) | 비동기 I/O, Pydantic v2, Swagger 자동화 |
+| DB | MySQL 8 (Docker) | 이중화(SQLite fallback) 제거, 스키마 100% 보존 |
+| 캐시/브로커 | Redis | 파일/locmem 캐시 대체 |
+| 검색 엔진 | Meilisearch | Compose 필수 서비스. `MEILI_ENABLED`로 제어, 공고·낙찰 목록 읽기 모델 전용 |
+| 태스크 큐 | Arq (asyncio + Redis) | 경량 비동기 태스크 큐 |
+| ML | LightGBM, CatBoost, scikit-learn | 기존 스택 유지 |
+| 벡터DB | ChromaDB (유지) | 원본 `bidding_kb` 1개 컬렉션 스냅샷 보존 최우선 (G1) |
+| LLM | Ollama gemma4:e2b (기본), Google Gemini (대체/선택) | 의도 분류, 요약, RAG |
+| 패키지 관리 | uv + pyproject.toml | pip 대체 |
+| 컨테이너 | Docker + docker-compose | 크로스 플랫폼 표준 (G2) |
+
 ## 빠른 시작
 
 ```bash
