@@ -374,3 +374,223 @@ def test_sse_reproducibility_metadata_bind_mount_clean_and_image_only(monkeypatc
     assert meta_img["target_source_mount"] is None
     assert meta_img["target_source_git_sha"] is None
     assert meta_img["target_source_git_dirty"] is None
+
+
+class _MockSSEStreamResponse:
+    def __init__(self, status_code: int = 200, lines: list[str] | None = None):
+        self.status_code = status_code
+        self._lines = lines or [
+            "event: stage\n",
+            "data: search\n",
+            "event: token\n",
+            "data: Hello\n",
+            "event: final\n",
+            "data: done\n",
+        ]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def iter_lines(self):
+        yield from self._lines
+
+
+def test_sse_request_with_session_cookie_strips_prefix_and_passes_to_client(monkeypatch):
+    captured_client_kwargs: list[dict] = []
+
+    class MockClient:
+        def __init__(self, *args, **kwargs):
+            captured_client_kwargs.append(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def stream(self, method, url, **kwargs):
+            return _MockSSEStreamResponse(status_code=200)
+
+    monkeypatch.setattr(benchmark_sse_gate.httpx, "Client", MockClient)
+
+    # 1. bidbox_session= 접두어가 있는 쿠키
+    rec1 = benchmark_sse_gate.execute_sse_request(
+        base_url="http://testserver",
+        index=0,
+        query="질의 1",
+        session_cookie="bidbox_session=test_cookie_value_123",
+    )
+    assert rec1.success is True
+    assert captured_client_kwargs[-1].get("cookies") == {"bidbox_session": "test_cookie_value_123"}
+
+    # 2. 접두어가 없는 쿠키
+    rec2 = benchmark_sse_gate.execute_sse_request(
+        base_url="http://testserver",
+        index=1,
+        query="질의 2",
+        session_cookie="raw_cookie_abc",
+    )
+    assert rec2.success is True
+    assert captured_client_kwargs[-1].get("cookies") == {"bidbox_session": "raw_cookie_abc"}
+
+    # 3. 쿠키가 없는 경우 (None)
+    rec3 = benchmark_sse_gate.execute_sse_request(
+        base_url="http://testserver",
+        index=2,
+        query="질의 3",
+        session_cookie=None,
+    )
+    assert rec3.success is True
+    assert "cookies" not in captured_client_kwargs[-1]
+
+
+def test_sse_request_anonymous_429_returns_anonymous_quota_error_and_exit_code_1(
+    monkeypatch, capsys
+):
+    class MockClient429:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def stream(self, method, url, **kwargs):
+            return _MockSSEStreamResponse(status_code=429)
+
+    monkeypatch.setattr(benchmark_sse_gate.httpx, "Client", MockClient429)
+
+    # (a) execute_sse_request 레벨 검증: 쿠키 없을 때 429이면 http_429_anonymous_quota
+    rec = benchmark_sse_gate.execute_sse_request(
+        base_url="http://testserver",
+        index=0,
+        query="익명 질의",
+        session_cookie=None,
+    )
+    assert rec.success is False
+    assert rec.error == "http_429_anonymous_quota"
+
+    # (b) main() 레벨 검증: 안내 문구 출력 및 종료 코드 1 반환
+    class MockHealthResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(benchmark_sse_gate.httpx, "get", lambda *a, **kw: MockHealthResponse())
+    monkeypatch.setattr(
+        benchmark_sse_gate,
+        "reproducibility_metadata",
+        lambda **kw: {"git_sha": "sha_123", "container_id": "cnt_1"},
+    )
+    monkeypatch.setattr(
+        benchmark_sse_gate,
+        "verify_provenance_consistency",
+        lambda *a, **kw: True,
+    )
+    monkeypatch.delenv("BENCHMARK_SESSION_COOKIE", raising=False)
+    monkeypatch.setattr(
+        benchmark_sse_gate.sys,
+        "argv",
+        [
+            "benchmark_sse_gate.py",
+            "--base-url",
+            "http://testserver",
+            "--no-warmup",
+            "--rounds",
+            "2",
+        ],
+    )
+
+    exit_code = benchmark_sse_gate.main()
+    assert exit_code == 1
+
+    captured = capsys.readouterr()
+    assert "익명 쿼터로 차단된 표본이 있습니다. --session-cookie 로 재측정하십시오." in captured.out
+
+
+def test_sse_request_authenticated_429_recorded_as_http_429(monkeypatch):
+    class MockClient429:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def stream(self, method, url, **kwargs):
+            return _MockSSEStreamResponse(status_code=429)
+
+    monkeypatch.setattr(benchmark_sse_gate.httpx, "Client", MockClient429)
+
+    # 쿠키가 있을 때 429이면 기존처럼 http_429로 기록
+    rec = benchmark_sse_gate.execute_sse_request(
+        base_url="http://testserver",
+        index=0,
+        query="인증 질의",
+        session_cookie="bidbox_session=valid_token",
+    )
+    assert rec.success is False
+    assert rec.error == "http_429"
+
+
+def test_sse_benchmark_successful_samples_metric_calculation_invariant(monkeypatch):
+    class MockSuccessClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def stream(self, method, url, **kwargs):
+            return _MockSSEStreamResponse(status_code=200)
+
+    monkeypatch.setattr(benchmark_sse_gate.httpx, "Client", MockSuccessClient)
+
+    summary, records = benchmark_sse_gate.run_benchmark(
+        base_url="http://testserver",
+        concurrency=1,
+        rounds=3,
+        round_num=1,
+        warmup=False,
+        session_cookie="bidbox_session=valid_token",
+    )
+
+    assert summary["rounds"] == 3
+    assert summary["successful_requests"] == 3
+    assert summary["error_requests"] == 0
+    assert len(records) == 3
+    assert all(r.success for r in records)
+
+    # 통계 지표 산출 불변 검증
+    ft_stats = summary["first_token_stats"]
+    assert ft_stats["n"] == 3
+    assert ft_stats["p50_ms"] is not None
+    assert ft_stats["p95_ms"] is not None
+    assert ft_stats["threshold_ms"] == benchmark_sse_gate.FIRST_TOKEN_TARGET_MS
+    assert ft_stats["exceeded_count"] == 0
+    assert ft_stats["exceeded_rate_pct"] == 0.0
+
+    # compute_metric_stats 함수 단위 불변 검증
+    sample_values = [100.0, 200.0, 300.0, 400.0, 500.0]
+    calc = benchmark_sse_gate.compute_metric_stats(sample_values, threshold_ms=350.0)
+    assert calc["n"] == 5
+    assert calc["p50_ms"] == 300.0
+    assert calc["p95_ms"] == 480.0
+    assert calc["p99_ms"] == 496.0
+    assert calc["min_ms"] == 100.0
+    assert calc["max_ms"] == 500.0
+    assert calc["mean_ms"] == 300.0
+    assert calc["exceeded_count"] == 2
+    assert calc["exceeded_rate_pct"] == 40.0
+    assert calc["wilson_upper_pct"] == benchmark_sse_gate.wilson_score_upper(2, 5)
