@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-15
 > **작성자**: Claude Opus 5 (Orca 코디네이터)
-> **기준 커밋**: `main` `b56bf894` (ap1~ap3·aq1·aq2, 용역 재학습 승격 반영)
+> **기준 커밋**: `main` `186fc453` (ap1~ap3·aq1·aq2, 용역 재학습 승격, 쌍대 비교 `--since` 반영, 세션 마감)
 > **이어받은 문서**: [`docs/handoff/session_20260914e_remaining_tasks_parallel.md`](session_20260914e_remaining_tasks_parallel.md)
 
 ---
@@ -161,7 +161,7 @@ aq1 타당성 조사(`01d39b5e`)와 aq2 연도 홀드아웃 평가 스크립트(
 | :---: | --- | --- |
 | 1 | 운영 서버 용역 모델 반영. `model.bin` 은 Git 밖이라 운영에서 같은 parquet 재구축·재학습·판정 파일·승격을 재현하거나 세대 디렉터리를 복사 | 운영 배포 |
 | 2 | 승격 후 표본 외 확인. 2026-10 중순 이후 개찰분(두 모델 모두 미학습)으로 `compare_servc_models_paired.py --year 2026 --since 2026-09-15` 로 재비교(날짜 하한 인자 추가 완료, 실제 DB 표본 수 대조 일치) | 개찰 4주 축적 |
-| 3 | 첫 주간 재학습(월요일 03:00 KST) 결과 확인. `retrain_logs` 와 알림, feature store 갱신 여부 | 개발 스택 기동 상태 |
+| 3 | 첫 주간 재학습(월요일 03:00 KST) 결과 확인. `retrain_logs` 와 알림, `data/feature_store/dataset_Servc.parquet` 갱신 여부. 주간 경로(`run_retrain_pipeline_task`)는 DB 에서 데이터셋을 다시 만들어 기본 feature store 에 쓰지만, `retrain_servc_from_parquet.py` 는 기존 parquet 만 읽음 | 월요일 03:00 에 개발 스택 기동 |
 | 4 | 적대적 항상 실패 4문항(adv_zero_01·02·03·05)은 알려진 한계 유지. adv_fut_04·adv_date_02 는 거절 표현 편차 | - |
 | 5 | Thng drift baseline, Alertmanager warning 시크릿, 백업 전용 계정 생성의 운영 서버 반영 | 운영 배포 |
 | 6 | Release `v0.1.0` 초안 공개 여부 | 사용자 결정 |
@@ -173,15 +173,24 @@ aq1 타당성 조사(`01d39b5e`)와 aq2 연도 홀드아웃 평가 스크립트(
 
 | 대상 | 상태 |
 | --- | --- |
-| 워크트리·브랜치 | 주 저장소 하나(`main`). 워커 워크트리 모두 제거, 병합 브랜치 삭제 |
+| 워크트리·브랜치 | 주 저장소 하나(`main`). 워커·임시 워크트리(aq2, 주간 재학습) 모두 제거, 병합 브랜치 삭제 |
 | Orca | Run `run_75d816606872` 워커 전원 회수, 완료 세션 잔류 없음. Antigravity 런처·OpenCode 터미널 경로라 비감독이며 창을 직접 닫음 |
-| 배경 프로세스 | `orca_worker_watch.py` 와 측정·대기 루프 모두 종료. 세션 중 메모리 부족으로 대기 루프 4개가 강제 종료된 적이 있으나 nohup 측정은 영향 없음 |
-| Docker | 개발 스택 기동 중(app·worker·db 등, 볼륨 보존). 주간 재학습이 켜져 있으므로 스택을 내리면 월요일 03:00 재학습이 돌지 않음. 앱은 `./src` 마운트여도 코드 변경을 자동 재적재하지 않으므로 병합 후 측정 전 `docker compose restart app worker` 필수 |
-| Ollama | `gemma4:e2b` 언로드. 홈 디렉터리에서 4시간 넘게 돈 `agy` 프로세스는 이 세션 소유가 아니라 건드리지 않음 |
+| 배경 프로세스 | 마감 시 상시 감시기 `orca_worker_watch.py --watch --respawn` 과 측정·대기 루프 모두 종료. 이 세션 후반의 데이터셋 재구축·재학습·쌍대 비교는 모두 끝난 뒤 종료됨. 세션 중 메모리 부족으로 대기 루프 4개가 강제 종료된 적이 있으나 nohup 측정은 영향 없음 |
+| Docker | 세션 마감 시 `docker compose stop` 으로 정지(볼륨 보존). 다음 세션은 `docker compose up -d`. **개발 Compose 는 용역 주간 재학습(월요일 03:00 KST)이 켜져 있으나 스택이 내려가 있으면 돌지 않고 따라잡기 대상도 아닙니다.** 앱은 `./src` 마운트여도 코드 변경을 자동 재적재하지 않으므로 병합 후 측정 전 `docker compose restart app worker` 필수 |
+| Ollama | 마감 시 `gemma4:e2b` 언로드. 앱 기동 시 예열로 다시 적재됩니다. 홈 디렉터리의 장시간 `agy` 프로세스와 opencode MCP 노드는 이 세션 소유가 아니라 건드리지 않음 |
 | 로컬 DB | 벤치 전용 계정 `bench_latency_20260915`(사용자 id 15) 유지. 다음 P95 측정에 재사용하며 비밀번호·쿠키는 저장소에 두지 않음 |
 | ml_registry | `quantum_leap_v25_pro/baseline` 로컬 생성(gitignore). `servc_institution_v1/v_20260915_133523_756`(승격, `paired_verdict.json` 포함), `cnstwk_institution_v1/v_20260915_121521_459`(미승격). 운영 서버에서 재생성 필요 |
 | 모델 백업 | `data/model_backups/servc_institution_v1`. 롤백 `uv run python scripts/promote_model.py rollback --model servc_institution_v1` |
 | 워커 모델 | Gemini 토큰 리셋으로 병렬 워커는 Gemini 로 복귀(한때 Antigravity Claude 로 전환). Orca 1.4.203 스킬 영수증 재발급 완료 |
+
+### 7.1 다음 세션 시작 절차
+
+| 순서 | 명령·확인 |
+| :---: | --- |
+| 1 | `docker compose up -d` 후 `curl -s localhost:8000/api/v1/health/ready` 200 확인 |
+| 2 | `curl -s localhost:8000/api/v1/predictions/list-models` 에서 `servc_institution_v1` 이 `v_20260915_133523_756` 인지 확인 |
+| 3 | `gh run list --branch main --limit 3` 로 마지막 병합(`186fc453`) CI 결과 확인 |
+| 4 | `orca skills get orchestration` 재독 후 조율 시작. 병렬 워커는 Gemini 기본 |
 
 ## 8. 사용자 결정 기록 (2026-09-15)
 
