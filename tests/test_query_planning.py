@@ -15,6 +15,7 @@ import pytest
 
 from src.rag.query_planning import (
     ENTITY_ORG_SUFFIXES,
+    _extract_institution_list,
     _extract_public_corporation_tokens,
     build_retrieval_plan,
     extract_result_limit,
@@ -325,7 +326,7 @@ def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance():
         snapshot = json.load(f)
 
     adv_snapshots = snapshot["adversarial_fixture_v1"]
-    allowed_changed_ids = {"adv_inst_03", "adv_inst_04", "adv_date_02"}
+    allowed_changed_ids = {"adv_inst_02", "adv_inst_03", "adv_inst_04", "adv_date_02"}
 
     for item_id, snap in adv_snapshots.items():
         question = snap["question"]
@@ -338,6 +339,17 @@ def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance():
                 assert plan.use_vector is True, f"[{item_id}] use_vector 가 True 여야 합니다."
                 assert plan.use_lexical is True, f"[{item_id}] use_lexical 이 True 여야 합니다."
                 assert "category" not in plan.filters, f"[{item_id}] category 필터가 없어야 합니다."
+                assert plan.filters.get("institution_names") == [
+                    "한국전력공사",
+                    "한국전력기술",
+                    "한전KDN",
+                ]
+            elif item_id == "adv_inst_02":
+                assert plan.use_sql is True, f"[{item_id}] use_sql 이 True 여야 합니다."
+                assert plan.use_vector is True, f"[{item_id}] use_vector 가 True 여야 합니다."
+                assert plan.use_lexical is True, f"[{item_id}] use_lexical 이 True 여야 합니다."
+                assert plan.filters.get("institution_names") == ["서울특별시교육청", "서울대학교"]
+                assert "institution_name" not in plan.filters
             elif item_id == "adv_inst_03":
                 # adv_inst_03: 서울교통공사는 공기업이므로 category='Cnstwk' 제거, institution_name='서울' 유지
                 assert plan.use_sql == snap["use_sql"]
@@ -548,3 +560,55 @@ def test_quarter_counterexamples():
     assert p_month.filters.get("date_from") == "2026-03-01"
     assert p_month.filters.get("date_to") == "2026-03-31"
     assert "time_bucket" not in p_month.filters
+
+
+def test_extract_institution_list_contract_examples():
+    """계약 1 의 예시 5종 및 반례 검증."""
+    # 예시 1: 쉼표 구분 3개 기관
+    q1 = "한국전력공사, 한국전력기술, 한전KDN의 입찰 정보를 하나로 묶지 말고 기관별로 구분해서 낙찰금액을 알려줘."
+    assert _extract_institution_list(q1) == ["한국전력공사", "한국전력기술", "한전KDN"]
+
+    # 예시 2: '과 ' 구분 2개 기관
+    q2 = "서울특별시교육청과 서울대학교의 최근 전산장비 구매 입찰 결과를 비교해줘."
+    assert _extract_institution_list(q2) == ["서울특별시교육청", "서울대학교"]
+
+    # 예시 3: 뒤에 '의' 가 아님 -> 빈 목록
+    q3 = "... 최종 낙찰금액과 낙찰률을 알려줘"
+    assert _extract_institution_list(q3) == []
+
+    # 예시 4: 공백·괄호 포함 -> 빈 목록
+    q4 = "전기(통신,소방)공사 설계용역 수의계약 안내 공고의 낙찰업체를 알려줘"
+    assert _extract_institution_list(q4) == []
+
+    # 예시 5: 공백·괄호 포함 -> 빈 목록
+    q5 = "공고 A(전산망 유지보수)와 공고 B(서버 증설)의 낙찰 결과를 비교할 때, ..."
+    assert _extract_institution_list(q5) == []
+
+    # 반례 1: 공백 없는 '와'/'과' 2개 기관 (유효)
+    assert _extract_institution_list("서울특별시교육청과서울대학교의 비교") == [
+        "서울특별시교육청",
+        "서울대학교",
+    ]
+
+    # 반례 2: 단일 기관 (2개 미만) -> 빈 목록
+    assert _extract_institution_list("한국전력공사의 입찰 정보를 알려줘") == []
+
+    # 반례 3: 20자 초과 문자열 -> 빈 목록
+    long_name = "가" * 21
+    assert _extract_institution_list(f"{long_name}과 서울대학교의 입찰") == []
+
+    # 반례 4: 1글자 기관 (2자 미만) -> 빈 목록
+    assert _extract_institution_list("A와 B의 입찰 내역") == []
+
+    # 반례 5: 대괄호 포함 -> 빈 목록
+    assert _extract_institution_list("[한국전력]과 [한전KDN]의 입찰") == []
+
+    # 반례 6: 속성·금액·통계 단어(낙찰금액, 추정가격, 낙찰률 등) -> 빈 목록
+    assert (
+        _extract_institution_list(
+            "낙찰금액과 추정가격의 차이를 설명하고, 낙찰금액을 추정가격으로 잘못 부르지 않고 정확히 표기해줘."
+        )
+        == []
+    )
+    assert _extract_institution_list("낙찰금액과 낙찰률의 차이") == []
+    assert _extract_institution_list("투찰률과 사정률의 관계") == []
