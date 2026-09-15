@@ -1024,10 +1024,122 @@ def _fetch_sample_announcements(
     ]
 
 
-def _build_time_series(db: Session, plan: RetrievalPlan, conditions: list) -> list[dict[str, Any]]:
-    """트렌드 분석 모드일 때 개찰일자별 낙찰률 시계열 버킷을 계산합니다."""
-    if (plan.filters or {}).get("analysis_mode") != "trend":
+def _generate_quarters_between(
+    start_date: date | datetime, end_date: date | datetime
+) -> list[tuple[int, int]]:
+    """start_date부터 end_date까지의 (연도, 분기) 목록을 순서대로 생성합니다."""
+    start_y = start_date.year
+    start_q = (start_date.month - 1) // 3 + 1
+    end_y = end_date.year
+    end_q = (end_date.month - 1) // 3 + 1
+
+    quarters: list[tuple[int, int]] = []
+    curr_y, curr_q = start_y, start_q
+    while (curr_y < end_y) or (curr_y == end_y and curr_q <= end_q):
+        quarters.append((curr_y, curr_q))
+        if curr_q == 4:
+            curr_y += 1
+            curr_q = 1
+        else:
+            curr_q += 1
+    return quarters
+
+
+def _quarter_boundaries(year: int, quarter: int) -> tuple[datetime, datetime]:
+    """분기의 시작과 다음 분기의 시작 [분기 첫날 00:00, 다음 분기 첫날 00:00) 반열림 구간을 반환합니다."""
+    start_month = (quarter - 1) * 3 + 1
+    start_dt = datetime(year, start_month, 1, 0, 0, 0)
+    if quarter == 4:
+        next_dt = datetime(year + 1, 1, 1, 0, 0, 0)
+    else:
+        next_dt = datetime(year, start_month + 3, 1, 0, 0, 0)
+    return start_dt, next_dt
+
+
+def _build_time_series(
+    db: Session,
+    plan: RetrievalPlan,
+    conditions: list,
+    announcement_conditions: list | None = None,
+    result_names: list[str] | None = None,
+    announcement_names: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """트렌드 분석 모드이거나 time_bucket이 quarter일 때 개찰일자별 낙찰률 시계열 버킷을 계산합니다."""
+    filters = plan.filters or {}
+    is_quarter = filters.get("time_bucket") == "quarter"
+
+    if not is_quarter and filters.get("analysis_mode") != "trend":
         return []
+
+    if is_quarter:
+        date_from, date_to = _resolve_window(filters)
+        if date_from and date_to:
+            quarters = _generate_quarters_between(date_from, date_to)
+        elif date_from:
+            quarters = _generate_quarters_between(date_from, date_from)
+        else:
+            today = date.today()
+            quarters = [(today.year, q) for q in range(1, 5)]
+
+        institution_name = _normalize_text(str(filters.get("institution_name") or ""))
+        category = _normalize_text(str(filters.get("category") or ""))
+
+        base_res_conditions = []
+        if institution_name:
+            base_res_conditions.append(
+                _institution_condition(BidResult.dminstt_nm, institution_name, result_names)
+            )
+        if category:
+            base_res_conditions.append(BidResult.category == category)
+
+        base_ann_conditions = []
+        if institution_name:
+            base_ann_conditions.append(
+                _institution_condition(
+                    BidAnnouncement.dminstt_nm, institution_name, announcement_names
+                )
+            )
+        if category:
+            base_ann_conditions.append(BidAnnouncement.category == category)
+
+        series = []
+        for year, quarter in quarters:
+            q_start, q_next = _quarter_boundaries(year, quarter)
+            res_stmt = select(
+                func.count(BidResult.id),
+                func.avg(BidResult.sucsf_bid_rate),
+            ).where(
+                BidResult.rl_openg_dt >= q_start,
+                BidResult.rl_openg_dt < q_next,
+                *base_res_conditions,
+            )
+            ann_stmt = select(func.count(BidAnnouncement.id)).where(
+                BidAnnouncement.bid_ntce_dt >= q_start,
+                BidAnnouncement.bid_ntce_dt < q_next,
+                *base_ann_conditions,
+            )
+
+            res_row = _cached_aggregate(db, res_stmt)
+            bid_count = int(res_row[0] or 0)
+            avg_rate = float(round(float(res_row[1] or 0), 4)) if res_row[1] is not None else 0.0
+
+            ann_row = _cached_aggregate(db, ann_stmt)
+            ann_count = int(ann_row[0] or 0)
+
+            label = f"{year}년 {quarter}분기"
+            series.append(
+                {
+                    "label": label,
+                    "month": label,
+                    "period": "quarter",
+                    "avg_rate": avg_rate,
+                    "bid_count": bid_count,
+                    "announcement_count": ann_count,
+                    "ntce_count": ann_count,
+                }
+            )
+        return series
+
     granularity = _resolve_time_series_granularity(plan)
     series_buckets: dict[str, dict[str, float]] = {}
     rows = db.execute(
@@ -1282,7 +1394,14 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     ]
 
     sample_announcements = _fetch_sample_announcements(db, announcement_conditions)
-    time_series = _build_time_series(db, plan, result_conditions)
+    time_series = _build_time_series(
+        db,
+        plan,
+        result_conditions,
+        announcement_conditions=announcement_conditions,
+        result_names=result_names,
+        announcement_names=announcement_names,
+    )
 
     dropped_total = dropped_winners + dropped_institutions + dropped_announcements
     insufficiency = _build_insufficiency_hints(
