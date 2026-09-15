@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-15
 > **작성자**: Claude Opus 5 (Orca 코디네이터)
-> **기준 커밋**: `main` (세션 마감, ao1·ao2 반영)
+> **기준 커밋**: `main` `b56bf894` (ap1~ap3·aq1·aq2, 용역 재학습 승격 반영)
 > **이어받은 문서**: [`docs/handoff/session_20260914e_remaining_tasks_parallel.md`](session_20260914e_remaining_tasks_parallel.md)
 
 ---
@@ -125,16 +125,46 @@ aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고�
 
 ---
 
+### 5.8 사용자 결정 반영 (ap1·ap2·ap3), 첫 Release 초안
+
+| 항목 | 병합 | 내용 |
+| --- | --- | --- |
+| ap3 제한정보·협상 안내 | `488f4186` | 2025-07-01 이전 미수집 공고 상세에 제한정보 미수집 안내, 협상 공고 가격점수 미계산 안내와 README 소개 문구 |
+| ap1 운영 설정 | `1b57a554` | 운영 야간 번들 기본 true, 로그인·가입 제한기 Redis 미가용 시 503, Alertmanager warning 수신기(`docker/secrets/alertmanager_slack_warning_url` 운영 준비 필요), `docs/ops/alerting.md` |
+| ap2 백업 계정·Release | `2a0428ff` | `scripts/create_backup_db_user.sql`(bidbox_backup 최소 권한), backup 서비스 `BACKUP_DB_USER`/`BACKUP_DB_PASSWORD`, release 워크플로 `draft` 입력 |
+| 릴리스 노트 길이 | `f307f630` | 첫 릴리스 노트가 GitHub 본문 한도 125,000자를 넘어 실패. 묶음별 상한 100,000자로 축약 |
+| Release 초안 | 실행 `34968242895` success | `v0.1.0` Draft(SBOM·image digest 자산), 원격 태그 0개. 공개 여부는 담당자 결정 |
+
+### 5.9 공사 모델 중단
+
+aq1 타당성 조사(`01d39b5e`)와 aq2 연도 홀드아웃 평가 스크립트(`19337eb9`)까지 병합한 뒤 **사용자 지시로 중단**했습니다("용역쪽을 우선 고도화"). 로컬 `data/feature_store/cnstwk_rebuild_20260915/`(1,363,701행)와 `ml_registry/cnstwk_institution_v1/v_20260915_121521_459`(미승격)는 남아 있고, v25 비교 실행·승격은 하지 않았습니다. 서빙은 v25 그대로입니다. **공사·물품 모델 작업은 사용자가 명시적으로 요청할 때만 재개합니다.**
+
+### 5.10 용역 모델 최신 데이터 재학습·승격
+
+| 단계 | 병합 | 결과 |
+| --- | --- | --- |
+| 데이터셋 재구축 | - | `data/feature_store/servc_rebuild_20260915/dataset_Servc.parquet` 925,054행(개찰 2026-09-14 까지). 기존 parquet 은 2026-08-03 고정 |
+| 레짐 재개 조건 | `754eb0c6` | 미충족. 희소 수준 3.78%(기준 15%), MAE 격차 0.33(기준 0.5) |
+| 최신성 쌍대 | `754eb0c6` | 8주 최신 모델 MAE -0.0255 t=-8.12, 4주 -0.0127, 대조군 -0.0107. `scripts/eval_servc_freshness.py` |
+| 주간 재학습 범위 | `03a9ee0b` | `ML_WEEKLY_RETRAIN_CATEGORIES` 추가. 개발 Compose 는 용역만 true, 운영은 false 유지, 승격은 수동 |
+| 쌍대 비교 결함 | `e8fcb2fc` | `--model-root` TypeError, 예측 API `request` 인자 추가 뒤 전량 api_error. 테스트 목도 옛 시그니처였음 |
+| 승격 | `b56bf894` | `v_20260807_043210_535` -> `v_20260915_133523_756`. 운영 경로 2,976건 비회귀(MAE -0.0055 t=-1.34, 구간 폭 -0.1004 t=-13.91). 스크립트 판정은 api_error 2건으로 fail-closed 였고, 표본이 두 모델 모두의 학습 구간이라 최신성을 못 잰다는 근거로 사용자 승인 후 승격 |
+| 승격 후 확인 | - | 서빙 실측 3,000건 실패 0(MAE 1.1885), 컨테이너 `list-models` 버전 일치, 미개찰 공고 HTTP 예측 fallback 없음 |
+
+승격이 세대 디렉터리 방식(`LIVE` 포인터 + `generations/<세대>/metadata.json`)으로 이뤄진 첫 사례입니다. 두 파일은 커밋했고 `model*.bin` 은 제외입니다. **슬롯 루트 `metadata.json` 은 옛 버전이 남아 있으므로 서빙 버전 판단에 쓰지 마십시오.** 근거는 `docs/design/servc_freshness_retrain_20260915.md` 입니다.
+
+---
+
 ## 6. 남은 과업
 
 | 순서 | 작업 | 선행 조건 |
 | :---: | --- | --- |
-| 1 | 적대적 항상 실패 4문항(adv_zero_01·02·03·05, 두 채점기 요구 충돌로 알려진 한계). adv_fut_04·adv_date_02 는 거절 표현 차이로 편차 | 채점 기준 변경은 사용자 결정 |
-| 2 | 적대적 채점기 거절 패턴이 질문 문구를 따라 쓴 답(adv_date_02 "포함되지 않도록")을 거절로 오탐하는 문제, 적대적 측정 반복 수 1회로 인한 편차 | 채점 변경 시 문항 원문 대조 |
-| 3 | 예측 P95 정본은 익명 경로 유지로 결정. 로그인 경로 수치는 참고치로 병기 | - |
-| 4 | SSE 게이트 벤치가 워밍업 포함 익명 쿼터를 넘지 않게 표본 간격 또는 로그인 쿠키 지원 | - |
-| 5 | Thng drift baseline 로컬 기록 완료. 운영 서버 반영 | 운영 배포 |
-| 6 | 사용자 결정 대기: 출시 형태(결제·약관·비밀번호 찾기), 운영 compose Ollama, Release 첫 실행, 백업 전용 DB 계정, 운영 야간 번들·주간 재학습 기본값, 요청 제한 fail-closed, TTFT 알람 Slack, 협상 가격점수 안내 문구, 2025-07 이전 제한정보 3,213건, 공사 전용 모델 | 사용자 결정 |
+| 1 | 운영 서버 용역 모델 반영. `model.bin` 은 Git 밖이라 운영에서 같은 parquet 재구축·재학습·판정 파일·승격을 재현하거나 세대 디렉터리를 복사 | 운영 배포 |
+| 2 | 승격 후 표본 외 확인. 2026-10 중순 이후 개찰분(두 모델 모두 미학습)으로 `compare_servc_models_paired.py` 재비교. 연도 단위 표본이라 날짜 하한 인자가 필요할 수 있음 | 개찰 4주 축적 |
+| 3 | 첫 주간 재학습(월요일 03:00 KST) 결과 확인. `retrain_logs` 와 알림, feature store 갱신 여부 | 개발 스택 기동 상태 |
+| 4 | 적대적 항상 실패 4문항(adv_zero_01·02·03·05)은 알려진 한계 유지. adv_fut_04·adv_date_02 는 거절 표현 편차 | - |
+| 5 | Thng drift baseline, Alertmanager warning 시크릿, 백업 전용 계정 생성의 운영 서버 반영 | 운영 배포 |
+| 6 | Release `v0.1.0` 초안 공개 여부 | 사용자 결정 |
 | 7 | 이전 과업: 첫 야간 수집 확인, Windows 실기(G2), chromadb 재확인(2026-12-31) | - |
 
 ---
@@ -146,10 +176,12 @@ aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고�
 | 워크트리·브랜치 | 주 저장소 하나(`main`). 워커 워크트리 모두 제거, 병합 브랜치 삭제 |
 | Orca | Run `run_75d816606872` 워커 전원 회수, 완료 세션 잔류 없음. Antigravity 런처·OpenCode 터미널 경로라 비감독이며 창을 직접 닫음 |
 | 배경 프로세스 | `orca_worker_watch.py` 와 측정·대기 루프 모두 종료. 세션 중 메모리 부족으로 대기 루프 4개가 강제 종료된 적이 있으나 nohup 측정은 영향 없음 |
-| Docker | `docker compose stop` 으로 정지(볼륨 보존). 다음 세션은 `docker compose up -d`. 앱은 `./src` 마운트여도 코드 변경을 자동 재적재하지 않으므로 병합 후 측정 전 `docker compose restart app worker` 필수 |
+| Docker | 개발 스택 기동 중(app·worker·db 등, 볼륨 보존). 주간 재학습이 켜져 있으므로 스택을 내리면 월요일 03:00 재학습이 돌지 않음. 앱은 `./src` 마운트여도 코드 변경을 자동 재적재하지 않으므로 병합 후 측정 전 `docker compose restart app worker` 필수 |
 | Ollama | `gemma4:e2b` 언로드. 홈 디렉터리에서 4시간 넘게 돈 `agy` 프로세스는 이 세션 소유가 아니라 건드리지 않음 |
 | 로컬 DB | 벤치 전용 계정 `bench_latency_20260915`(사용자 id 15) 유지. 다음 P95 측정에 재사용하며 비밀번호·쿠키는 저장소에 두지 않음 |
-| ml_registry | `quantum_leap_v25_pro/baseline` 로컬 생성(gitignore). 운영 서버에서 같은 명령으로 재생성 필요 |
+| ml_registry | `quantum_leap_v25_pro/baseline` 로컬 생성(gitignore). `servc_institution_v1/v_20260915_133523_756`(승격, `paired_verdict.json` 포함), `cnstwk_institution_v1/v_20260915_121521_459`(미승격). 운영 서버에서 재생성 필요 |
+| 모델 백업 | `data/model_backups/servc_institution_v1`. 롤백 `uv run python scripts/promote_model.py rollback --model servc_institution_v1` |
+| 워커 모델 | Gemini 토큰 리셋으로 병렬 워커는 Gemini 로 복귀(한때 Antigravity Claude 로 전환). Orca 1.4.203 스킬 영수증 재발급 완료 |
 
 ## 8. 사용자 결정 기록 (2026-09-15)
 
@@ -164,7 +196,10 @@ aj1·aj2 는 코디네이터 커밋이 추가돼 Level 1 게이트 6 이 보고�
 | TTFT 알람 | warning 도 별도 채널로 | Alertmanager 에 severity=warning 수신기 추가, repeat_interval 길게, critical 경로 불변 |
 | adv_zero 0건 채점 충돌 | 알려진 한계로 유지 | 채점기·fixture 변경 없음 |
 | 2025-07 이전 입찰 중 3,213건 제한정보 | 백필 제외·화면 안내 | 해당 공고 상세에 "제한정보 미수집" 안내 |
-| 공사(Cnstwk) 전용 모델 | 학습·비교 실험 착수 | `cnstwk_institution_v1` 을 용역과 같은 시간 분할·쌍대 검정으로 학습, v25 대비 유의한 개선일 때만 승격. ML 학습 자원 독점 Task |
+| 공사(Cnstwk) 전용 모델 | 학습·비교 실험 착수 -> 같은 날 aq2 까지 하고 중단(용역 우선) | `cnstwk_institution_v1` 을 용역과 같은 시간 분할·쌍대 검정으로 학습, v25 대비 유의한 개선일 때만 승격. ML 학습 자원 독점 Task |
 | 협상 계약 가격점수 안내 | 상세 화면과 소개 문구 모두 명시 | 협상 공고 평가 카드와 서비스 소개·기능 안내에 "가격점수 미계산, 평가비율·낙찰률 참고 분포만 제공" 명시 |
 
 병렬 착수 권장 묶음: (1) 야간 기본값·로그인/가입 fail-closed·TTFT 알람 수신기(운영 설정), (2) 백업 전용 계정, (3) 제한정보 미수집 안내·협상 안내 문구(화면), (4) Release 사전 태그. 공사 모델 학습은 ML 자원을 독점하므로 별도 Task 로 직렬 진행합니다.
+| 용역 재학습 | 재학습 후 검증 거쳐 승격 | 5.10 절대로 승격 완료 |
+| 주간 재학습 | 개발 환경만 켜고 운영은 유지 | 개발 Compose 용역만 true, 운영 false |
+| 재학습 후보 승격 | 승격 | 운영 쌍대 fail-closed 사유와 표본 외 근거를 판정 파일 evidence 에 기록 |
