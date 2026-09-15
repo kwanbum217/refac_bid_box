@@ -361,6 +361,11 @@ def main() -> int:
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--category", default="Servc", help="업무구분 코드")
+    parser.add_argument(
+        "--since",
+        default=None,
+        help="이 개찰일(YYYY-MM-DD) 이상만 표본으로 씁니다. --year 와 함께 적용됩니다",
+    )
     parser.add_argument("--require-lwlt", action="store_true", help="하한율 보유 건만 채점")
     parser.add_argument(
         "--model-root",
@@ -384,7 +389,7 @@ def main() -> int:
     session = SessionLocal()
     try:
         pool = args.samples * 4 if args.require_lwlt else args.samples
-        frame = collect(session, args.year, pool, args.seed, args.category)
+        frame = collect(session, args.year, pool, args.seed, args.category, since=args.since)
         if frame.empty:
             print("표본이 없습니다. DB 연결과 연도를 확인하십시오.")
             return 1

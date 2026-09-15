@@ -62,8 +62,13 @@ def collect(
     samples: int,
     seed: int,
     category: str = "Servc",
+    since: str | None = None,
 ) -> pd.DataFrame:
-    """실제 낙찰률이 있는 해당 업무구분 공고를 무작위로 뽑습니다."""
+    """실제 낙찰률이 있는 해당 업무구분 공고를 무작위로 뽑습니다.
+
+    since 를 주면 그 개찰일 이상만 뽑습니다. 승격 뒤 두 모델이 모두 학습하지
+    않은 구간만 비교할 때 씁니다.
+    """
     stmt = (
         select(
             BidAnnouncement.id,
@@ -80,6 +85,8 @@ def collect(
         .order_by(func.rand(seed))
         .limit(samples)
     )
+    if since:
+        stmt = stmt.where(BidResult.rl_openg_dt >= since)
     rows = session.execute(stmt).all()
     return pd.DataFrame(rows, columns=["bid_id", "bid_ntce_no", "actual_rate"])
 
