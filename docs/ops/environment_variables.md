@@ -24,9 +24,11 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `DEBUG` | 아니오 | `false` | 디버그 모드 (운영은 `false` 강제) |
 | `CORS_ALLOWED_ORIGINS` | 운영은 **예** | - | 자격증명 요청을 허용할 오리진 목록. 콤마 구분, 스킴 포함 |
 | `CORS_DEV_ALLOW_ALL` | 아니오 | `true` | 개발·스테이징에서 임의 오리진 허용 여부. 운영에는 영향이 없습니다 |
-| `SIGNUP_RATE_LIMIT_MAX` | 아니오 | `10` | IP 축 회원가입 최대 허용 횟수 (고정 윈도우) |
+| `SIGNUP_RATE_LIMIT_MAX` | 아니오 | `10` | IP 축 회원가입 최대 허용 횟수 (고정 윈도우). Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과 |
 | `SIGNUP_RATE_LIMIT_WINDOW_SECONDS` | 아니오 | `3600` | 회원가입 시도 제한 윈도우 시간 (초, 기본 3600초 = 1시간) |
 | `WEB_CONCURRENCY` | 아니오 | `1` | Docker Compose app 서비스의 Uvicorn 워커 프로세스 수. FastAPI 설정 모델이 읽는 값이 아니라 `docker-compose.yml`의 `command`가 직접 소비합니다. 3워커 이상은 100ms 목표에 실패해 기본값에서 철회된 수동 실험 옵션입니다 |
+
+요청 제한 정책: Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과합니다. 인증 보안을 위해 로그인 및 회원가입 시도 제한은 fail-closed 로 처리하며, 일반 서비스 가용성을 위해 익명 API 요청 제한은 fail-open 으로 통과시킵니다.
 
 현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 항목들입니다. `APP_ENV`,
 `APP_SECRET_KEY`, `APP_DEBUG`, `APP_ALLOWED_HOSTS`는 이전 Django 설계의 명칭이므로
@@ -152,7 +154,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | `AUTOMATION_CALLBACK_BASE_URL` | 아니오 | (없음) | 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소 |
 | `AUTOMATION_REUSE_RECENT` | 아니오 | `true` | 고비용 작업(`full_validation`)의 최근 72시간 성공 이력 재사용 |
 | `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | 아니오 | `false` | 매일 02:00 KST 개발 DB 수집·최근 24시간 KB 델타 upsert·집계 최신화. 예측 검증·재학습은 제외 |
-| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | 아니오 | `true` | 매일 02:00 야간 번들 크론 사용 여부 |
+| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | 아니오 | `true` | 매일 02:00 야간 번들 크론 사용 여부 (운영 compose 기본 true, 개발 기본 false) |
 
 `AUTOMATION_CALLBACK_BASE_URL` 은 **워커가 도달할 수 있는 주소**여야 합니다. 컨테이너를 분리했다면 `http://app:8000` 처럼 서비스명을 쓰십시오. `http://localhost:8000` 은 워커 컨테이너 자기 자신을 가리키므로 거부됩니다.
 
@@ -184,7 +186,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 `collect → rag → inspect`와 순위·기관 집계만 수행합니다. `rag`는 최근 24시간 수집분과
 새 낙찰 결과에 연결되는 공고만 upsert하므로 50만 건 KB 전체를 워커 메모리에 올리지
 않습니다. 예측 검증이 포함된 운영
-야간 번들과 주간 재학습은 `false`로 유지합니다. 두 야간 스케줄을 함께 켜면 개발
+야간 번들은 운영 compose 기본 true, 개발 기본 false 로 설정되며, 주간 재학습은 false 로 유지합니다. 두 야간 스케줄을 함께 켜면 개발
 최신화 작업이 건너뛰어 중복 수집을 막습니다.
 
 발신 페이로드는 `{"text": ...}` 로 고정돼 있어 **Slack 전용**입니다. Discord 로 바꾸려면 `{"content": ...}` 를 요구하므로 `src/tasks/notifier.py:60` 수정이 함께 필요합니다. 발신 실패는 예외를 삼키고 로그만 남기므로 형식이 틀려도 조용히 실패합니다.
@@ -204,7 +206,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | 변수 | 코드 기본값 | `.env.example` 값 | 사유 |
 | --- | --- | --- | --- |
 | `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | `false` | `true` | 개발 환경에서는 매일 DB 최신화를 켜두되, 운영 기본값은 끔 |
-| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | `true` | `false` | 코드 기본값은 야간 번들 활성, 개발 예시는 끔 |
+| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | `false` | `false` | 코드 기본값 및 개발 예시는 false, 운영 compose 기본 true |
 | `ML_WEEKLY_RETRAIN_ENABLED` | `true` | `false` | 코드 기본값은 주간 재학습 활성, 개발 예시는 끔 |
 | `MEILI_ENABLED` | `false` | `false` | 동일 (명시적 표기) |
 | `CORS_DEV_ALLOW_ALL` | `true` | `true` | 동일 |

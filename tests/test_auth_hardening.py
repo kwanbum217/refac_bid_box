@@ -21,6 +21,7 @@ from sqlalchemy import select
 from src.app.api.v1.accounts import SignUpRequest, get_current_user, register_user
 from src.app.core.config import settings
 from src.app.core.security import (
+    AUTH_SERVICE_UNAVAILABLE_DETAIL,
     SESSION_COOKIE_NAME,
     create_session,
     login_rate_limiter,
@@ -246,25 +247,27 @@ def test_login_rate_limit_resets_on_success(
         assert res.status_code == 401
 
 
-def test_login_rate_limit_fail_open_when_redis_unavailable(client, isolated_db, monkeypatch):
-    """Redis 가 다운/미가용 상태일 때 로그인이 차단되지 않고 정상 검증으로 통과(fail-open)한다."""
+def test_login_rate_limit_fail_closed_when_redis_unavailable(client, isolated_db, monkeypatch):
+    """Redis 가 다운/미가용 상태일 때 로그인이 503 으로 차단(fail-closed)된다."""
     # Redis client() 가 None 을 반환하도록 패치
     monkeypatch.setattr(login_rate_limiter._conn, "client", lambda: None)
     _create_user(isolated_db, username="redis_down_user")
 
-    # 잘못된 비밀번호 -> 401
+    # 비밀번호와 무관하게 503 차단
     res_wrong = client.post(
         "/api/v1/accounts/login",
         json={"username": "redis_down_user", "password": "WrongPassword!"},
     )
-    assert res_wrong.status_code == 401
+    assert res_wrong.status_code == 503
+    assert res_wrong.json()["detail"] == AUTH_SERVICE_UNAVAILABLE_DETAIL
 
-    # 올바른 비밀번호 -> 200 성공 (Redis 다운이어도 로그인이 막히지 않음)
+    # 올바른 비밀번호여도 503 차단
     res_ok = client.post(
         "/api/v1/accounts/login",
         json={"username": "redis_down_user", "password": "StrongPass1234!"},
     )
-    assert res_ok.status_code == 200
+    assert res_ok.status_code == 503
+    assert res_ok.json()["detail"] == AUTH_SERVICE_UNAVAILABLE_DETAIL
 
 
 def test_ssr_login_rate_limit(client, isolated_db, mock_redis_for_rate_limit, monkeypatch):

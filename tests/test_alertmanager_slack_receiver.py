@@ -85,6 +85,36 @@ def test_critical_only_routes_to_slack_slo() -> None:
     )
 
 
+def test_warning_routes_to_slack_warning() -> None:
+    """severity=warning 알람이 slack-warning 수신기로 라우팅되는지 검증합니다."""
+    data = yaml.safe_load(ALERTMANAGER_YML.read_text(encoding="utf-8"))
+    route = data["route"]
+
+    routes = route.get("routes", [])
+    assert len(routes) > 0, "자식 라우트 목록이 존재해야 합니다."
+
+    warning_routes = [r for r in routes if r.get("receiver") == "slack-warning"]
+    assert len(warning_routes) == 1, (
+        "slack-warning 으로 분기하는 자식 라우트가 정확히 1건 있어야 합니다."
+    )
+
+    warning_route = warning_routes[0]
+    matchers = warning_route.get("matchers", [])
+    assert any("severity" in m and "warning" in m for m in matchers), (
+        f"slack-warning 라우트는 severity=warning 조건이어야 합니다: {matchers}"
+    )
+    assert warning_route.get("repeat_interval") == "12h", "repeat_interval 은 12h 여야 합니다."
+    assert warning_route.get("group_wait") == "30s", "group_wait 는 30s 여야 합니다."
+    assert warning_route.get("group_interval") == "5m", "group_interval 은 5m 여야 합니다."
+
+    receivers = {r["name"]: r for r in data["receivers"]}
+    assert "slack-warning" in receivers, "slack-warning 수신기가 정의되어 있어야 합니다."
+    warning_receiver = receivers["slack-warning"]
+    assert "slack_configs" in warning_receiver, "slack_configs 가 정의되어 있어야 합니다."
+    slack_cfg = warning_receiver["slack_configs"][0]
+    assert slack_cfg["api_url_file"] == "/etc/alertmanager/secrets/slack_warning_url"
+
+
 def test_slack_receiver_uses_api_url_file_and_no_raw_url() -> None:
     """slack-slo 수신기가 api_url_file 을 사용하고 파일 어디에도 실제 웹훅 URL 문자열이 없는지 검증합니다."""
     raw_content = ALERTMANAGER_YML.read_text(encoding="utf-8")
@@ -225,11 +255,15 @@ def test_docker_compose_prod_alertmanager_volume_mount() -> None:
     expected_mount = (
         "./docker/secrets/alertmanager_slack_url:/etc/alertmanager/secrets/slack_url:ro"
     )
+    expected_warning_mount = "./docker/secrets/alertmanager_slack_warning_url:/etc/alertmanager/secrets/slack_warning_url:ro"
     expected_config_mount = "./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"
     expected_data_volume = "alertmanager_data:/alertmanager"
 
     assert any(expected_mount in str(v) for v in volumes), (
         f"비밀 파일 마운트({expected_mount})가 volumes 에 포함되어야 합니다: {volumes}"
+    )
+    assert any(expected_warning_mount in str(v) for v in volumes), (
+        f"경고 비밀 파일 마운트({expected_warning_mount})가 volumes 에 포함되어야 합니다: {volumes}"
     )
     assert any(expected_config_mount in str(v) for v in volumes), (
         f"설정 파일 마운트({expected_config_mount})가 volumes 에 포함되어야 합니다: {volumes}"
