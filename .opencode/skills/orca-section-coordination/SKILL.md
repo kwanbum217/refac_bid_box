@@ -398,6 +398,12 @@ for m in json.load(sys.stdin)['result']['messages']: print(m['type'], m['subject
 done
 ```
 
+**`check --wait` 를 `timeout N` 으로 감싸지 마십시오.** 이 Mac 에는 `timeout` 명령이 없어
+orca 가 실행되지도 않고 `command not found` 로 즉시 끝납니다. 대기 상한은 `--timeout-ms`
+로만 겁니다. `--wait` 는 15초마다 keepalive JSON 을 stderr 로 내므로 `2>&1` 로 합치지 말고
+stdout 만 파싱하며, 파싱할 JSON 이 없으면 "빈 결과" 로 삼키지 말고 종료 코드와 원문을
+출력하십시오. 2026-09-16 에 이 조합을 Orca 의 `--wait` 결함으로 오판했습니다.
+
 **소진하지 않으면 `question` 을 놓칩니다.** 2026-08-19 에 워커의 `question` 이 두 번째
 배치에 들어 있었는데, 첫 배치를 ack 하지 않아 정규 경로로는 보이지 않았습니다. 마침
 터미널 출력에서 발견해 답했으나, 그러지 않았다면 워커가 응답 대기로 멈춰 있었을

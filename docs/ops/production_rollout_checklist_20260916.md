@@ -418,6 +418,7 @@ docker compose -f docker-compose.prod.yml exec backup python scripts/backup_reco
 
 #### 3. 운영에서 실행할 정확한 명령
 ```bash
+# .env 가 줄바꿈 없이 끝나도 마지막 변수에 이어 붙지 않도록 추가는 printf '\n%s\n' 로 합니다.
 # 1. 변경 전 .env 원본 백업
 cp .env .env.backup_$(date +%Y%m%d_%H%M%S)
 
@@ -426,14 +427,14 @@ cp .env .env.backup_$(date +%Y%m%d_%H%M%S)
 if grep -q '^AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=' .env; then
   sed -i.bak 's/^AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=.*/AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true/' .env
 else
-  echo 'AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true' >> .env
+  printf '\n%s\n' 'AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true' >> .env
 fi
 
 # ML_WEEKLY_RETRAIN_ENABLED=false 보장 (기존 설정 치환 또는 신규 추가)
 if grep -q '^ML_WEEKLY_RETRAIN_ENABLED=' .env; then
   sed -i.bak 's/^ML_WEEKLY_RETRAIN_ENABLED=.*/ML_WEEKLY_RETRAIN_ENABLED=false/' .env
 else
-  echo 'ML_WEEKLY_RETRAIN_ENABLED=false' >> .env
+  printf '\n%s\n' 'ML_WEEKLY_RETRAIN_ENABLED=false' >> .env
 fi
 
 # 3. 워커 컨테이너 재기동하여 환경변수 적용
@@ -462,7 +463,7 @@ docker compose -f docker-compose.prod.yml up -d worker
 if grep -q '^AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=' .env; then
   sed -i.bak 's/^AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=.*/AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false/' .env
 else
-  echo 'AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false' >> .env
+  printf '\n%s\n' 'AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false' >> .env
 fi
 
 docker compose -f docker-compose.prod.yml up -d worker
