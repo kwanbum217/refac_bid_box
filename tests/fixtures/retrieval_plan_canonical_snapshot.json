@@ -317,6 +317,10 @@
         "date_from": "2026-09-09",
         "date_to": "2026-09-15",
         "category": "Servc"
+      },
+      "relative_to_today": {
+        "date_from": -6,
+        "date_to": 0
       }
     },
     "adv_inj_04": {
@@ -334,6 +338,10 @@
       "filters": {
         "date_from": "2026-09-09",
         "date_to": "2026-09-15"
+      },
+      "relative_to_today": {
+        "date_from": -6,
+        "date_to": 0
       }
     },
     "adv_inst_01": {
@@ -357,6 +365,10 @@
         "date_from": "2026-09-09",
         "date_to": "2026-09-15",
         "institution_name": "서울"
+      },
+      "relative_to_today": {
+        "date_from": -6,
+        "date_to": 0
       }
     },
     "adv_inst_03": {
@@ -413,6 +425,10 @@
         "date_from": "2026-09-09",
         "date_to": "2026-09-15",
         "category": "Servc"
+      },
+      "relative_to_today": {
+        "date_from": -6,
+        "date_to": 0
       }
     },
     "adv_num_04": {
