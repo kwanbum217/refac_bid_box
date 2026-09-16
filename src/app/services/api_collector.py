@@ -205,6 +205,47 @@ def _item_raw_data(item: ET.Element) -> dict[str, str]:
     return {child.tag: (child.text.strip() if child.text else "") for child in item}
 
 
+_INVALID_XML_RAW_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+_XML_CHAR_REF_RE = re.compile(r"&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));")
+
+
+def is_valid_xml_char(cp: int) -> bool:
+    """XML 1.0 사양의 유효 문자 코드포인트인지 판별합니다.
+
+    Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+    """
+    return (
+        cp in (0x9, 0xA, 0xD)
+        or (0x20 <= cp <= 0xD7FF)
+        or (0xE000 <= cp <= 0xFFFD)
+        or (0x10000 <= cp <= 0x10FFFF)
+    )
+
+
+def sanitize_xml_text(xml_text: str) -> str:
+    """XML 1.0 명세에 위배되는 금지 문자 참조와 제어 문자를 살균합니다.
+
+    조달청(G2B) OpenAPI 응답에 포함될 수 있는 &#x0; 등 유효하지 않은
+    숫자 문자 참조(NCR)와 C0 제어문자를 제거하여 ElementTree.fromstring
+    파싱 실패(reference to invalid character number 등)를 방지합니다.
+    """
+    if not xml_text:
+        return xml_text
+
+    def _replace_char_ref(match: re.Match[str]) -> str:
+        hex_val, dec_val = match.groups()
+        try:
+            cp = int(hex_val, 16) if hex_val is not None else int(dec_val, 10)
+        except ValueError:
+            return ""
+        if is_valid_xml_char(cp):
+            return match.group(0)
+        return ""
+
+    cleaned = _XML_CHAR_REF_RE.sub(_replace_char_ref, xml_text)
+    return _INVALID_XML_RAW_CHARS_RE.sub("", cleaned)
+
+
 async def _fetch_paged(
     client: httpx.AsyncClient,
     api_url: str,
@@ -237,7 +278,7 @@ async def _fetch_paged(
         async with sem:
             resp = await _make_request_with_retry(client, api_url, params)
         # G2B 공공 API 응답 전용. 외부 사용자 입력이 아닙니다
-        root = ET.fromstring(resp.text)  # nosec B314
+        root = ET.fromstring(sanitize_xml_text(resp.text))  # nosec B314
 
         result_code = root.findtext(".//resultCode", default="")
         if result_code != "00":
