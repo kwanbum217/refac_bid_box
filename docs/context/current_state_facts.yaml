@@ -1,6 +1,6 @@
 version: "2.0"
 description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
-updated_at: "2026-09-15"
+updated_at: "2026-09-16"
 facts:
   - id: gate_g1
     status: closed
@@ -426,12 +426,14 @@ facts:
       - docs/ops/observability.md
   - id: drift_job
     status: active
-    decision_date: "2026-09-06"
-    claim: "드리프트 감시는 Servc baseline(b_20260906_servc_post_regime) 기준으로 진행 중(ML_DRIFT_MONITOR_ENABLED 기본값 True)이며, Thng baseline은 없어 해당 모델만 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록합니다."
-    document_anchor: "드리프트 감시는 Servc baseline"
+    decision_date: "2026-09-16"
+    claim: "드리프트 감시는 Servc·Thng·Cnstwk 세 baseline을 모두 갖춰 전 카테고리 진행 중입니다(ML_DRIFT_MONITOR_ENABLED 기본값 True). Thng b_20260915_thng_post_regime(18,069건) 적재로 건너뛰기 예외는 없어졌고, ml_registry는 Git 미추적이라 운영 재생성이 필요합니다."
+    document_anchor: "드리프트 감시는 Servc·Thng·Cnstwk 세 baseline"
     evidence:
       - docs/ops/psi_drift_monitoring.md
       - src/app/core/config.py
+      - src/ml/training_config.py
+      - scripts/generate_drift_baseline.py
       - tests/test_psi_drift_wiring.py
     related_documents:
       - docs/context/CURRENT_STATE.md

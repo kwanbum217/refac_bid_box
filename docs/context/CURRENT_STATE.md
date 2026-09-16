@@ -101,7 +101,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
 
-- **drift_job**: 드리프트 감시는 Servc baseline(b_20260906_servc_post_regime) 기준으로 진행 중(ML_DRIFT_MONITOR_ENABLED 기본값 True)이며, Thng baseline은 없어 해당 모델만 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록합니다.
+- **drift_job**: 드리프트 감시는 Servc·Thng·Cnstwk 세 baseline을 모두 갖춰 전 카테고리 진행 중입니다(ML_DRIFT_MONITOR_ENABLED 기본값 True). Thng b_20260915_thng_post_regime(18,069건) 적재로 건너뛰기 예외는 없어졌고, ml_registry는 Git 미추적이라 운영 재생성이 필요합니다.
 
 ### blocked 사실
 
