@@ -1,8 +1,8 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-16
-> **source_commit**: `261fa9a8`
-> **version**: 0.1.0 (`pyproject.toml` 이 SSoT)
+> **source_commit**: `44a47864`
+> **version**: 0.1.0rc1 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
 ---
@@ -27,7 +27,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **gate_g3**: G3 스택 최적화 레이턴시 게이트는 전 항목 통과이며 전체 컷오버는 G2 확인 후입니다.
 
-- **project_version**: 프로젝트 버전은 0.1.0이며 pyproject.toml이 SSoT이고 버전 표기를 통과 기준으로 유지합니다.
+- **project_version**: 버전은 0.1.0rc1이고 pyproject.toml이 SSoT이며 v0.1.0-rc.1 태그 파생을 통과로 유지합니다.
 
 - **features_single_source**: Train/Serve 특징 생성은 src/ml/features.py 단일 함수만 사용하며 단일화 원칙을 통과 기준으로 유지합니다.
 

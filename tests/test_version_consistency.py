@@ -54,12 +54,13 @@ class TestVersionConsistency:
         )
 
     def test_version_format_semver(self) -> None:
-        """버전이 시맨틱 버전 형식(MAJOR.MINOR.PATCH)을 따라야 합니다."""
+        """버전이 MAJOR.MINOR.PATCH 이거나 그 뒤에 PEP 440 사전 릴리스가 붙어야 합니다."""
         version = _read_pyproject_version()
-        # 기본 시맨틱 버전 패턴 (pre-release, build metadata 제외)
-        semver_pattern = r"^\d+\.\d+\.\d+$"
-        assert re.match(semver_pattern, version), (
-            f"버전 '{version}'이 시맨틱 버전 형식(MAJOR.MINOR.PATCH)을 따르지 않습니다."
+        # 릴리스 워크플로가 사전 릴리스 버전(0.1.0rc1)을 SemVer 태그(v0.1.0-rc.1)로
+        # 정규화하므로 pyproject 쪽은 PEP 440 표기를 허용합니다.
+        version_pattern = r"^\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?$"
+        assert re.match(version_pattern, version), (
+            f"버전 '{version}'이 MAJOR.MINOR.PATCH 또는 사전 릴리스 형식을 따르지 않습니다."
         )
 
     def test_get_app_version_function(self) -> None:
