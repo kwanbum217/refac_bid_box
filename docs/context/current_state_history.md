@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-09-16 Grok 세션 종료 기록
+
+- HEAD 직전 `faa752e4`. 잔여 과업 사전점검 3건과 G2B XML 살균을 병합했다.
+- chromadb GHSA 4건은 2026-09-16 재조회에서도 `first_patched_version` 이 없다. 12-31 재확인을 유지한다.
+- 개발 02:00 은 `development_data_refresh_task` 다. 2026-09-16 15:40 따라잡기는 물품 XML 금지 문자 참조로 `collect=partial_success` 가 되어 전체 failed 였다. 살균은 `faa752e4` 에 들어갔다.
+- 운영 반영은 경로 A 확정, 실행은 운영 접근 대기. Release 초안 두 건은 유지.
+- 상세는 [`session_20260916_grok_shutdown.md`](../handoff/session_20260916_grok_shutdown.md).
+
+---
+
 ## 정규화 전 원본 (2026-09-03)
 
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
