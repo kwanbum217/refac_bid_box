@@ -104,13 +104,19 @@ docker compose -f docker-compose.prod.yml restart app worker
 > 3. `metadata.json`: 세대 메타데이터 및 성능 지표 파일
 > 4. `LIVE`: 최신 세대 ID(`v_20260915_133523_756_20260915_135842_a4470852`)를 가리키는 포인터 파일
 
+**운영 서버에서 실행**:
 ```bash
+# 운영 서버에서 실행
 # 0. [필수] 운영 서버에서 현재 LIVE 값을 먼저 보존합니다.
 #    경로 B 는 promote() 를 거치지 않아 data/model_backups 에 백업이 생기지
 #    않습니다. 이 값이 유일한 되돌리기 근거입니다.
 cp data/model_files/servc_institution_v1/LIVE \
    data/model_files/servc_institution_v1/LIVE.before_20260916
+```
 
+**로컬에서 실행**:
+```bash
+# 로컬에서 실행
 # 1. 로컬 환경에서 운영 서버로 세대 아티팩트 디렉터리 및 LIVE 포인터 실제 복사/전송 (rsync 또는 scp 사용)
 # [원본 경로]: data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/
 # [대상 경로]: ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/
@@ -125,7 +131,11 @@ rsync -avz \
 # (참고: scp 명령 사용 시)
 # scp -rp data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852 ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/generations/
 # scp -p data/model_files/servc_institution_v1/LIVE ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/LIVE
+```
 
+**운영 서버에서 실행**:
+```bash
+# 운영 서버에서 실행
 # 2. 운영 서버에서 전송받은 파일의 권한 설정 (0644)
 chmod 644 data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/*
 chmod 644 data/model_files/servc_institution_v1/LIVE
@@ -408,15 +418,26 @@ docker compose -f docker-compose.prod.yml exec backup python scripts/backup_reco
 
 #### 3. 운영에서 실행할 정확한 명령
 ```bash
-# 1. 운영 .env 파일 내 설정 확인 및 수정
-# AUTOMATION_NIGHTLY_SCHEDULE_ENABLED 가 false 로 지정되어 있다면 true 로 변경
-# ML_WEEKLY_RETRAIN_ENABLED 는 false 로 유지
-grep -E '(AUTOMATION_NIGHTLY_SCHEDULE_ENABLED|ML_WEEKLY_RETRAIN_ENABLED)' .env || true
+# .env 가 줄바꿈 없이 끝나도 마지막 변수에 이어 붙지 않도록 추가는 printf '\n%s\n' 로 합니다.
+# 1. 변경 전 .env 원본 백업
+cp .env .env.backup_$(date +%Y%m%d_%H%M%S)
 
-# 필요 시 .env 파일 업데이트 (기존 값 주석 처리 또는 갱신)
-sed -i.bak 's/AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=.*/AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true/' .env
+# 2. 운영 .env 파일 내 설정 확인 및 수정
+# AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true 보장 (기존 설정 치환 또는 신규 추가)
+if grep -q '^AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=' .env; then
+  sed -i.bak 's/^AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=.*/AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true/' .env
+else
+  printf '\n%s\n' 'AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true' >> .env
+fi
 
-# 2. 워커 컨테이너 재기동하여 환경변수 적용
+# ML_WEEKLY_RETRAIN_ENABLED=false 보장 (기존 설정 치환 또는 신규 추가)
+if grep -q '^ML_WEEKLY_RETRAIN_ENABLED=' .env; then
+  sed -i.bak 's/^ML_WEEKLY_RETRAIN_ENABLED=.*/ML_WEEKLY_RETRAIN_ENABLED=false/' .env
+else
+  printf '\n%s\n' 'ML_WEEKLY_RETRAIN_ENABLED=false' >> .env
+fi
+
+# 3. 워커 컨테이너 재기동하여 환경변수 적용
 docker compose -f docker-compose.prod.yml up -d worker
 ```
 
@@ -426,18 +447,25 @@ docker compose -f docker-compose.prod.yml up -d worker
   # 워커 컨테이너 내부 환경변수 확인
   docker compose -f docker-compose.prod.yml exec worker env | grep -E '(AUTOMATION_NIGHTLY_SCHEDULE_ENABLED|ML_WEEKLY_RETRAIN_ENABLED)'
 
-  # 워커 로그에서 크론 잡 등록 확인
-  docker compose -f docker-compose.prod.yml logs --tail=40 worker
+  # 다음 02:00 이후 워커 로그에서 야간 스케줄 비활성화 문구 부재 및 정상 실행 확인
+  docker compose -f docker-compose.prod.yml logs --tail=100 worker | grep -E '(nightly_schedule_task|야간 스케줄)'
   ```
 - **기대 출력**:
-  - `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true`
-  - `ML_WEEKLY_RETRAIN_ENABLED=false`
-  - 워커 로그에 02:00 야간 번들(`run_nightly_maintenance_bundle`) 크론 잡이 등록되어 기동됨
+  - 컨테이너 env: `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true`, `ML_WEEKLY_RETRAIN_ENABLED=false`
+  - 02:00 스케줄 실행 시 워커 로그에 `야간 스케줄이 비활성화되어 있어 건너뜁니다.` 문구가 출력되지 않고 정상 실행됨
 
 #### 5. 실패 시 되돌리기 (Rollback)
 ```bash
-# .env 에서 AUTOMATION_NIGHTLY_SCHEDULE_ENABLED 를 false 로 변경
-sed -i.bak 's/AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=true/AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false/' .env
+# 1. 백업 파일로 원복하는 대안
+# cp .env.backup_<TIMESTAMP> .env
+
+# 2. 명시적으로 false 를 작성하여 compose 기본값(true)을 이기도록 설정
+if grep -q '^AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=' .env; then
+  sed -i.bak 's/^AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=.*/AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false/' .env
+else
+  printf '\n%s\n' 'AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false' >> .env
+fi
+
 docker compose -f docker-compose.prod.yml up -d worker
 ```
 
