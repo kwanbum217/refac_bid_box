@@ -110,9 +110,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.readiness.outputs.tag }}
+          IS_PRERELEASE: ${{ steps.readiness.outputs.prerelease }}
         run: |
+          EXTRA_FLAGS=()
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            EXTRA_FLAGS+=("--prerelease")
+          fi
           gh release create "$RELEASE_TAG" \
             --draft \
+            ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
             --target "$(git rev-parse HEAD)" \
             --title "$RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
@@ -124,9 +130,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.readiness.outputs.tag }}
+          IS_PRERELEASE: ${{ steps.readiness.outputs.prerelease }}
         run: |
+          EXTRA_FLAGS=()
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            EXTRA_FLAGS+=("--prerelease")
+          fi
           gh release create "$RELEASE_TAG" \
             --verify-tag \
+            ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
             --title "$RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             refac-bid-box-sbom.spdx.json \
