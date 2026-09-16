@@ -89,7 +89,7 @@
    ```
 4. **덤프 정상 동작 1회 수동 확인**:
    ```sh
-   docker compose -f docker-compose.prod.yml exec backup python scripts/backup_recovery.py --execute
+   docker compose -f docker-compose.prod.yml exec backup python scripts/backup_recovery.py backup --execute
    ```
 
 ### 5.3 복구(Restore) 및 리허설(Drill) 계정 정책

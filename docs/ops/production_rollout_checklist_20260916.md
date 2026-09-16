@@ -18,7 +18,7 @@
 | 번호 | 항목 | 대상 시스템 | 로컬 상태 | 운영 필요 작업 |
 | :---: | --- | --- | --- | --- |
 | **1** | 용역 모델 승격 (`v_20260915_133523_756`) | `app`, `worker` (`ml_registry`, `data/model_files`) | 로컬 세대 등록 및 LIVE 포인터 갱신 완료 | 운영 가중치 배치 및 포인터 정합성 확보 (경로 A/B 중 선택) |
-| **2** | 물품(Thng) Drift Baseline 생성 | `worker` (`ml_registry/quantum_leap_v25_pro/baseline`) | 로컬 18,069건 기반 baseline 생성 완료 | 운영 DB 기반 동일 명령 실행 및 아티팩트 생성 |
+| **2** | 물품(Thng) Drift Baseline 생성 | `worker` (`ml_registry/quantum_leap_v25_pro/baseline`) | 로컬 18,069건 기반 baseline 생성 완료 | 운영 DB 기반 worker 컨테이너 내부 명령 실행 및 아티팩트 생성 |
 | **3** | Alertmanager Warning 수신기 시크릿 파일 | `alertmanager` (`docker/secrets/alertmanager_slack_warning_url`) | 로컬 더미/테스트 파일 존재 | 운영 Slack warning 웹훅 URL 시크릿 파일 생성 (0600) |
 | **4** | 백업 전용 DB 계정 (`bidbox_backup`) 생성 | `db` (MySQL 8), `backup` 컨테이너 | SQL 작성 및 compose 배선 완료 | 운영 MySQL 계정/권한 생성 SQL 실행 및 `.env` 주입 |
 | **5** | 운영 야간 번들 크론 기본값 (`true`) 확인 | `worker` 컨테이너 환경변수 | Compose 기본값 `true` 반영 완료 | 운영 배포 환경변수 무결성 점검 및 워커 재기동 |
@@ -45,9 +45,9 @@
 | **개념** | 운영 DB에서 최신 데이터 추출 -> 재학습 -> 판정 파일 생성 -> 승격 스크립트 실행 | 로컬에서 검증 완료된 세대 디렉터리(`generations/<세대_ID>`) 및 가중치를 운영 서버로 SCP/rsync 복사 |
 | **장점** | 운영 환경의 독립적 재현성 보장, 운영 데이터 정합성 자체 검증 | 네트워크 복사만으로 즉시 적용 가능 (학습 시간 545초 및 CPU 자원 소모 없음) |
 | **단점** | 운영 서버 CPU 부하 유발, 약 10분 소요, 학습 시점 DB 상태에 따른 사소한 차이 가능성 | 모델 아티팩트 전송을 위한 수동 파일 전송 채널 필요 |
-| **선행 조건** | 운영 DB 최신 데이터 수집 완료, `uv` 및 빌드 환경 가용 | 운영 서버와 로컬 간 보안 파일 전송 경로 확보 |
+| **선행 조건** | 운영 DB 최신 데이터 수집 완료, `worker` 컨테이너 가용 | 운영 서버와 로컬 간 보안 파일 전송 경로 확보 |
 | **검증 방법** | `uv run python scripts/promote_model.py status` 및 API 예측 호출 | `LIVE` 파일 내용과 세대 디렉터리 내 `metadata.json`, `model.bin` 무결성 확인 및 API 실측 |
-| **되돌리기** | `uv run python scripts/promote_model.py rollback --model servc_institution_v1` | `echo "구세대ID" > data/model_files/servc_institution_v1/LIVE` 또는 백업 복원 |
+| **되돌리기** | `uv run python scripts/promote_model.py rollback --model servc_institution_v1` | `uv run python scripts/promote_model.py rollback --model servc_institution_v1` (정본 롤백) |
 
 #### 3. 선행 조건
 - 운영 코드베이스 최신 커밋 반영 (`git pull`)
@@ -57,34 +57,78 @@
 #### 4. 운영에서 실행할 정확한 명령
 
 ##### [선택 1: 경로 A 채택 시 (권장 재현 절차)]
+> **주의 (실행 환경 및 데이터셋 구축 경로)**:
+> - `scripts/` 디렉터리에는 데이터셋을 만드는 독립 실행 스크립트(`build_feature_store.py`)가 존재하지 않습니다. 데이터셋 재구축은 `src/tasks/retrain_task.py`의 `run_retrain_pipeline_task`(내부적으로 `src/ml/dataset.py`의 `build_training_dataset` 호출) 파이프라인을 통해 수행됩니다.
+> - 운영 환경의 MySQL(`db`)은 보안 정책상 호스트 포트를 개방하지 않고 내부 브리지 네트워크(`internal`)에만 바인딩되므로, DB 조회가 필요한 재학습 명령은 호스트가 아닌 `worker` 컨테이너 내부에서 실행해야 합니다.
+
 ```bash
-# 1. Feature Store 데이터셋 구축 (운영 DB 기반)
-uv run python scripts/build_feature_store.py --category Servc --end-at 2026-09-15
+# 1. 재학습 파이프라인 실행 (운영 DB 기반 데이터셋 빌드 및 모델 재학습, worker 컨테이너 내부 실행)
+docker compose -f docker-compose.prod.yml exec worker python -c "
+import asyncio
+from src.tasks.retrain_task import run_retrain_pipeline_task
+result = asyncio.run(run_retrain_pipeline_task({}, trigger_source='manual_rollout', category_code='Servc'))
+print('재학습 파이프라인 실행 결과:', result)
+"
 
-# 2. 모델 재학습 (545초 소요 예상)
-uv run python scripts/retrain_servc_from_parquet.py --parquet data/feature_store/servc_rebuild_20260915/dataset_Servc.parquet
+# [대안: 데이터셋 Parquet 생성과 retrain_servc_from_parquet.py 를 분리 실행할 경우]
+# 1-1. Feature Store 데이터셋 구축 (src/ml/dataset.py build_training_dataset 직접 호출)
+# docker compose -f docker-compose.prod.yml exec worker python -c "
+# from src.app.core.db import SessionLocal
+# from src.ml.dataset import build_training_dataset
+# db = SessionLocal()
+# try:
+#     df = build_training_dataset(db, category_code='Servc', require_announcement=False)
+#     print(f'데이터셋 구축 완료: {len(df):,}행')
+# finally:
+#     db.close()
+# "
+# 1-2. Parquet 기반 재학습 실행 (545초 소요 예상)
+# docker compose -f docker-compose.prod.yml exec worker python scripts/retrain_servc_from_parquet.py --category Servc --parquet data/feature_store/dataset_Servc.parquet
 
-# 3. 승격 예행 및 상태 확인
-uv run python scripts/promote_model.py status
+# 2. 승격 예행 및 상태 확인
+docker compose -f docker-compose.prod.yml exec worker python scripts/promote_model.py status
+# (또는 호스트에서 실행 시: uv run python scripts/promote_model.py status)
 
-# 4. 운영 승격 집행
-uv run python scripts/promote_model.py promote --model servc_institution_v1 --category Servc --apply
+# 3. 운영 승격 집행
+docker compose -f docker-compose.prod.yml exec worker python scripts/promote_model.py promote --model servc_institution_v1 --category Servc --apply
+# (또는 호스트에서 실행 시: uv run python scripts/promote_model.py promote --model servc_institution_v1 --category Servc --apply)
 
-# 5. 애플리케이션 및 워커 컨테이너 재기동
+# 4. 애플리케이션 및 워커 컨테이너 재기동
 docker compose -f docker-compose.prod.yml restart app worker
 ```
 
 ##### [선택 2: 경로 B 채택 시 (신속 이관 절차)]
+> **전송 대상 필수 아티팩트 목록**:
+> 1. `model.bin`: 메인 LightGBM 가중치 파일
+> 2. `model_q10.bin` ~ `model_q90.bin`: 9개 분위수 회귀 모델 가중치 파일
+> 3. `metadata.json`: 세대 메타데이터 및 성능 지표 파일
+> 4. `LIVE`: 최신 세대 ID(`v_20260915_133523_756_20260915_135842_a4470852`)를 가리키는 포인터 파일
+
 ```bash
-# 1. 운영 서버의 servc_institution_v1 세대 디렉터리 확인 및 가중치 배치
-# (로컬의 model.bin 및 model_q*.bin 을 해당 세대 디렉터리로 복사)
-mkdir -p data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852
+# 1. 로컬 환경에서 운영 서버로 세대 아티팩트 디렉터리 및 LIVE 포인터 실제 복사/전송 (rsync 또는 scp 사용)
+# [원본 경로]: data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/
+# [대상 경로]: ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/
+rsync -avz \
+  data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/ \
+  ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/
 
-# 2. 로컬에서 전송받은 model.bin 및 분위수 아티팩트 권한 점검
-chmod 644 data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/model*.bin
+rsync -avz \
+  data/model_files/servc_institution_v1/LIVE \
+  ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/LIVE
 
-# 3. LIVE 포인터가 해당 세대를 가리키는지 확인 (Git 추적 상태 점검)
-cat data/model_files/servc_institution_v1/LIVE
+# (참고: scp 명령 사용 시)
+# scp -rp data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852 ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/generations/
+# scp -p data/model_files/servc_institution_v1/LIVE ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/LIVE
+
+# 2. 운영 서버에서 전송받은 파일의 권한 설정 (0644)
+chmod 644 data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/*
+chmod 644 data/model_files/servc_institution_v1/LIVE
+
+# 3. 전송 후 아티팩트 무결성 확인 (빈 디렉터리 여부 및 필수 파일 존재 검증)
+test -f data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/model.bin || { echo "[오류] model.bin 누락"; exit 1; }
+test -f data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/metadata.json || { echo "[오류] metadata.json 누락"; exit 1; }
+test "$(cat data/model_files/servc_institution_v1/LIVE)" = "v_20260915_133523_756_20260915_135842_a4470852" || { echo "[오류] LIVE 포인터 불일치"; exit 1; }
+echo "가중치 파일 및 LIVE 포인터 무결성 확인 완료"
 
 # 4. 애플리케이션 및 워커 컨테이너 재기동
 docker compose -f docker-compose.prod.yml restart app worker
@@ -120,12 +164,11 @@ docker compose -f docker-compose.prod.yml restart app worker
 
 #### 6. 실패 시 되돌리기 (Rollback)
 ```bash
-# promote_model 롤백 명령 실행 (직전 백업 세대로 원자 복원)
+# 1. 정본 되돌리기: promote_model 롤백 명령 실행 (직전 백업 세대로 원자 복원)
 uv run python scripts/promote_model.py rollback --model servc_institution_v1
+# (또는 컨테이너 내부: docker compose -f docker-compose.prod.yml exec worker python scripts/promote_model.py rollback --model servc_institution_v1)
 
-# 또는 LIVE 포인터를 이전 세대 버전으로 수동 복구 후 재기동
-# echo "v_20260807_043210_535" > data/model_files/servc_institution_v1/LIVE
-
+# 2. 애플리케이션 및 워커 컨테이너 재기동
 docker compose -f docker-compose.prod.yml restart app worker
 ```
 
@@ -142,17 +185,19 @@ docker compose -f docker-compose.prod.yml restart app worker
 - 운영 DB 내 물품(`Thng`) 입찰/개찰 데이터가 2026-05-26부터 2026-09-06 이상 축적되어 있을 것 (최소 1,000건 이상 필요)
 
 #### 3. 운영에서 실행할 정확한 명령
+운영 MySQL (`db`)은 보안 정책상 호스트 포트를 개방하지 않고 내부 브리지 네트워크(`internal`)에만 바인딩되므로, DB 조회가 필요한 본 명령은 반드시 `worker` 컨테이너 내부에서 실행해야 합니다.
+
 ```bash
-# 1. Dry-run 으로 대상 건수 및 특징 수 확인 (파일 쓰기 없음)
-uv run python scripts/generate_drift_baseline.py \
+# 1. Dry-run 으로 대상 건수 및 특징 수 확인 (파일 쓰기 없음, worker 컨테이너 내부 실행)
+docker compose -f docker-compose.prod.yml exec worker python scripts/generate_drift_baseline.py \
     --category Thng \
     --start-at 2026-05-26 \
     --end-at 2026-09-06 \
     --baseline-version b_20260915_thng_post_regime \
     --model-name quantum_leap_v25_pro
 
-# 2. 실제 baseline 아티팩트 기록 (--write 명시)
-uv run python scripts/generate_drift_baseline.py \
+# 2. 실제 baseline 아티팩트 기록 (--write 명시, worker 컨테이너 내부 실행)
+docker compose -f docker-compose.prod.yml exec worker python scripts/generate_drift_baseline.py \
     --category Thng \
     --start-at 2026-05-26 \
     --end-at 2026-09-06 \
@@ -231,12 +276,18 @@ docker compose -f docker-compose.prod.yml up -d alertmanager
   - 상태: `Up` (healthy)
 
 #### 5. 실패 시 되돌리기 (Rollback)
-```bash
-# 잘못 생성된 warning 시크릿 파일 제거
-rm -f docker/secrets/alertmanager_slack_warning_url
+> **주의 (바인드 마운트 제약)**: `docker-compose.prod.yml`이 `./docker/secrets/alertmanager_slack_warning_url`을 파일 바인드 마운트(`:ro`)하므로, 해당 파일을 삭제(`rm`)하면 Alertmanager 기동이 실패하거나 도커가 그 경로에 디렉터리를 생성하는 결함이 발생합니다. 시크릿 파일은 삭제하지 않고 그대로 유지하며, `docker/alertmanager.yml` 설정 파일에서 warning 수신기를 되돌립니다. `slack-slo` critical 경로는 건드리지 않습니다.
 
-# Alertmanager 설정을 직전으로 되돌려야 할 경우 alertmanager.yml 의 slack-warning 참조 임시 주석 처리 후 재기동
+```bash
+# 1. Alertmanager 설정 파일(docker/alertmanager.yml)에서 warning 수신기를 local-hold 로 변경
+# [편집 대상 파일]: docker/alertmanager.yml (routes 내 receiver: slack-warning 을 receiver: local-hold 로 변경)
+sed -i.bak 's/receiver: slack-warning/receiver: local-hold/' docker/alertmanager.yml
+
+# 2. alertmanager 컨테이너 재기동하여 변경된 설정 적용
 docker compose -f docker-compose.prod.yml up -d alertmanager
+
+# 3. alertmanager 로그에서 설정 로드 정상 완료 확인
+docker compose -f docker-compose.prod.yml logs --tail=30 alertmanager
 ```
 
 ---
@@ -285,7 +336,7 @@ docker compose -f docker-compose.prod.yml up -d backup
   docker compose -f docker-compose.prod.yml exec -T db mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "SHOW GRANTS FOR 'bidbox_backup'@'%';"
 
   # backup 서비스에서 수동 덤프 1회 실행 확인 (dry-run 또는 실행)
-  docker compose -f docker-compose.prod.yml exec backup python scripts/backup_recovery.py --execute
+  docker compose -f docker-compose.prod.yml exec backup python scripts/backup_recovery.py backup --execute
 
   # backup 서비스 로그 및 헬스체크 확인
   docker compose -f docker-compose.prod.yml ps backup
@@ -298,15 +349,21 @@ docker compose -f docker-compose.prod.yml up -d backup
   - 컨테이너 상태: `Up` (healthy)
 
 #### 5. 실패 시 되돌리기 (Rollback)
+> **주의 (필수 환경변수 보간 제약)**: `docker-compose.prod.yml`의 `backup` 서비스는 `BACKUP_DB_USER` 및 `BACKUP_DB_PASSWORD`를 `${VAR:?...}` 필수 보간으로 정의하므로, `.env`에서 이 변수들을 삭제(`d`)하면 Compose 보간 단계에서 기동이 즉시 실패하며 공용 계정으로 자동 강등되지 않습니다. 따라서 변수를 삭제하지 않고 기존 애플리케이션 공용 계정(`DB_USER`, `DB_PASSWORD`) 값을 두 변수에 주입하여 백업 서비스를 복구합니다. 이는 최소 권한 분리 원칙을 일시적으로 되돌려 비상 복구하는 조치입니다.
+
 ```bash
-# 1. 생성된 bidbox_backup DB 사용자 삭제
-docker compose -f docker-compose.prod.yml exec -T db mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "DROP USER IF EXISTS 'bidbox_backup'@'%';"
+# 1. .env 내 BACKUP_DB_USER / BACKUP_DB_PASSWORD 를 기존 공용 DB 계정 값으로 설정
+sed -i.bak "s/^BACKUP_DB_USER=.*/BACKUP_DB_USER=${DB_USER}/" .env
+sed -i.bak "s/^BACKUP_DB_PASSWORD=.*/BACKUP_DB_PASSWORD=${DB_PASSWORD}/" .env
 
-# 2. .env 에서 BACKUP_DB_USER, BACKUP_DB_PASSWORD 제거
-sed -i.bak '/BACKUP_DB_/d' .env
-
-# 3. backup 서비스를 DB_USER / DB_PASSWORD 공용 계정으로 임시 복원 기동
+# 2. backup 서비스 컨테이너 재생성 및 재기동
 docker compose -f docker-compose.prod.yml up -d backup
+
+# 3. 백업 서비스 수동 덤프 1회 정상 동작 검증
+docker compose -f docker-compose.prod.yml exec backup python scripts/backup_recovery.py backup --execute
+
+# 4. 필요 시 신규 생성했던 bidbox_backup 전용 DB 사용자 삭제 (선택 사항)
+# docker compose -f docker-compose.prod.yml exec -T db mysql -u root -p"${MYSQL_ROOT_PASSWORD}" -e "DROP USER IF EXISTS 'bidbox_backup'@'%';"
 ```
 
 ---
