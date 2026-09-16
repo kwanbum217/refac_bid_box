@@ -296,3 +296,39 @@ def test_security_gates_run_unconditionally_for_both_branches():
         assert step_if is None or "draft" not in str(step_if), (
             f"필수 보안/무결성 게이트 '{name}' 는 draft 분기와 무관하게 무조건 실행되어야 합니다."
         )
+
+
+def test_prerelease_conditional_in_draft_and_public_steps():
+    """(5) 사전 릴리스일 때만 --prerelease 가 붙는 조건식이 draft 경로와 공개 경로 모두에 있어야 합니다."""
+    data = _load_yaml(RELEASE_WORKFLOW_PATH)
+    steps = data["jobs"]["release"]["steps"]
+
+    # 1. draft 릴리스 생성 스텝
+    draft_step = next(
+        s
+        for s in steps
+        if "gh release create" in str(s.get("run", "")) and "--draft" in str(s.get("run", ""))
+    )
+    draft_env = draft_step.get("env", {})
+    draft_cmd = str(draft_step.get("run", ""))
+    assert "IS_PRERELEASE" in draft_env
+    assert "steps.readiness.outputs.prerelease" in draft_env["IS_PRERELEASE"]
+    assert 'if [ "$IS_PRERELEASE" = "true" ]' in draft_cmd
+    assert "--prerelease" in draft_cmd
+    # gh release create 인자에 정적으로 --prerelease가 하드코딩되지 않음
+    assert not re.search(r"gh release create[^\n]*--prerelease", draft_cmd)
+
+    # 2. 공개 릴리스 생성 스텝
+    public_step = next(
+        s
+        for s in steps
+        if "gh release create" in str(s.get("run", "")) and "--verify-tag" in str(s.get("run", ""))
+    )
+    public_env = public_step.get("env", {})
+    public_cmd = str(public_step.get("run", ""))
+    assert "IS_PRERELEASE" in public_env
+    assert "steps.readiness.outputs.prerelease" in public_env["IS_PRERELEASE"]
+    assert 'if [ "$IS_PRERELEASE" = "true" ]' in public_cmd
+    assert "--prerelease" in public_cmd
+    # gh release create 인자에 정적으로 --prerelease가 하드코딩되지 않음
+    assert not re.search(r"gh release create[^\n]*--prerelease", public_cmd)

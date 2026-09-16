@@ -43,6 +43,11 @@ class ReadinessReport:
     version: str
     tag: str
     checks: tuple[ReadinessCheck, ...]
+    is_prerelease: bool = False
+
+    @property
+    def prerelease(self) -> bool:
+        return self.is_prerelease
 
     @property
     def passed(self) -> bool:
@@ -80,9 +85,44 @@ def read_project_version(pyproject_path: Path) -> str:
     return version.strip()
 
 
+PEP440_PRERELEASE_PATTERN = re.compile(
+    r"^(?P<base>\d+(?:\.\d+)*)(?:[.-]?(?P<phase>a|alpha|b|beta|rc|c|pre|preview)[.-]?(?P<num>\d+))$",
+    re.IGNORECASE,
+)
+
+PRERELEASE_PHASE_MAP = {
+    "a": "alpha",
+    "alpha": "alpha",
+    "b": "beta",
+    "beta": "beta",
+    "rc": "rc",
+    "c": "rc",
+    "pre": "rc",
+    "preview": "rc",
+}
+
+
+def is_prerelease(version: str) -> bool:
+    """버전 문자열이 PEP 440 사전 릴리스 규격인지 판정합니다."""
+    return PEP440_PRERELEASE_PATTERN.match(version.strip()) is not None
+
+
 def release_tag(version: str, tag_prefix: str = "v") -> str:
-    """프로젝트 버전에서 릴리스 태그를 파생합니다."""
-    return f"{tag_prefix}{version}"
+    """프로젝트 버전에서 릴리스 태그를 파생합니다.
+
+    PEP 440 사전 릴리스 버전(예: 0.1.0rc1, 1.2.0b2, 2.0.0a1)은 SemVer 태그
+    (v0.1.0-rc.1, v1.2.0-beta.2, v2.0.0-alpha.1)로 정규화합니다.
+    정식 릴리스 버전(예: 0.1.0)은 기존과 동일하게 접두사만 붙입니다.
+    """
+    clean_version = version.strip()
+    match = PEP440_PRERELEASE_PATTERN.match(clean_version)
+    if match:
+        base = match.group("base")
+        raw_phase = match.group("phase").lower()
+        phase = PRERELEASE_PHASE_MAP.get(raw_phase, raw_phase)
+        num = match.group("num")
+        return f"{tag_prefix}{base}-{phase}.{num}"
+    return f"{tag_prefix}{clean_version}"
 
 
 def check_ci_passed(
@@ -202,7 +242,12 @@ def check_readiness(
         ),
         ReadinessCheck("CI 통과", ci_check[0], ci_check[1]),
     )
-    return ReadinessReport(version=version, tag=tag, checks=checks)
+    return ReadinessReport(
+        version=version,
+        tag=tag,
+        checks=checks,
+        is_prerelease=is_prerelease(version),
+    )
 
 
 def _previous_release_tag(repo_root: Path, current_tag: str) -> str | None:
@@ -286,9 +331,12 @@ def generate_release_notes(
 
 
 def _write_github_output(path: Path, report: ReadinessReport) -> None:
+    prerelease_val = "true" if report.is_prerelease else "false"
     with path.open("a", encoding="utf-8") as file:
         file.write(f"version={report.version}\n")
         file.write(f"tag={report.tag}\n")
+        file.write(f"prerelease={prerelease_val}\n")
+        file.write(f"is_prerelease={prerelease_val}\n")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -340,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"릴리스 버전: {report.version}")
     print(f"릴리스 태그: {report.tag}")
+    print(f"사전 릴리스 여부: {'예' if report.is_prerelease else '아니오'}")
     for check in report.checks:
         state = "통과" if check.passed else "실패"
         print(f"[{state}] {check.name}: {check.detail}")

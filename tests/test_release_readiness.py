@@ -152,3 +152,105 @@ def test_notes_reject_tag_that_does_not_match_project_version(tmp_path: Path) ->
 
     assert result == 1
     assert not output.exists()
+
+
+def test_release_tag_normalization_pep440_and_stable() -> None:
+    """PEP 440 사전 릴리스 버전은 SemVer 태그로 정규화되고 정식 버전은 v 접두사만 유지해야 합니다."""
+    # (1) 0.1.0rc1 -> v0.1.0-rc.1
+    assert readiness.release_tag("0.1.0rc1") == "v0.1.0-rc.1"
+    assert readiness.release_tag("1.2.0b2") == "v1.2.0-beta.2"
+    assert readiness.release_tag("2.0.0a1") == "v2.0.0-alpha.1"
+
+    # (2) 0.1.0 -> v0.1.0
+    assert readiness.release_tag("0.1.0") == "v0.1.0"
+    assert readiness.release_tag("2.4.1") == "v2.4.1"
+
+    # tag_prefix 인자 동작 유지
+    assert readiness.release_tag("0.1.0rc1", tag_prefix="") == "0.1.0-rc.1"
+    assert readiness.release_tag("0.1.0", tag_prefix="") == "0.1.0"
+
+
+def test_is_prerelease_and_readiness_report_flag(tmp_path: Path) -> None:
+    """사전 릴리스 판정 함수 및 ReadinessReport 플래그가 참/거짓으로 정확히 설정되어야 합니다."""
+    # (3) 사전 릴리스 판정 플래그가 두 경우에 각각 참과 거짓
+    assert readiness.is_prerelease("0.1.0rc1") is True
+    assert readiness.is_prerelease("1.2.0b2") is True
+    assert readiness.is_prerelease("2.0.0a1") is True
+    assert readiness.is_prerelease("0.1.0") is False
+    assert readiness.is_prerelease("2.4.1") is False
+
+    # 사전 릴리스 저장소 검사
+    rc_dir = tmp_path / "rc"
+    rc_dir.mkdir()
+    repo_rc = _new_repo(rc_dir, version="0.1.0rc1")
+    report_rc = readiness.check_readiness(
+        repo_rc, repository="owner/repo", ci_checker=_successful_ci
+    )
+    assert report_rc.passed
+    assert report_rc.version == "0.1.0rc1"
+    assert report_rc.tag == "v0.1.0-rc.1"
+    assert report_rc.is_prerelease is True
+    assert report_rc.prerelease is True
+
+    gh_output_rc = tmp_path / "gh_output_rc.txt"
+    readiness._write_github_output(gh_output_rc, report_rc)
+    output_rc_text = gh_output_rc.read_text(encoding="utf-8")
+    assert "tag=v0.1.0-rc.1\n" in output_rc_text
+    assert "prerelease=true\n" in output_rc_text
+    assert "is_prerelease=true\n" in output_rc_text
+
+    # 정식 릴리스 저장소 검사
+    stable_dir = tmp_path / "stable"
+    stable_dir.mkdir()
+    repo_stable = _new_repo(stable_dir, version="0.1.0")
+    report_stable = readiness.check_readiness(
+        repo_stable, repository="owner/repo", ci_checker=_successful_ci
+    )
+    assert report_stable.passed
+    assert report_stable.version == "0.1.0"
+    assert report_stable.tag == "v0.1.0"
+    assert report_stable.is_prerelease is False
+    assert report_stable.prerelease is False
+
+    gh_output_stable = tmp_path / "gh_output_stable.txt"
+    readiness._write_github_output(gh_output_stable, report_stable)
+    output_stable_text = gh_output_stable.read_text(encoding="utf-8")
+    assert "tag=v0.1.0\n" in output_stable_text
+    assert "prerelease=false\n" in output_stable_text
+    assert "is_prerelease=false\n" in output_stable_text
+
+
+def test_notes_tag_matching_with_normalized_prerelease_tag(tmp_path: Path) -> None:
+    """(4) --notes-output 의 태그 대조가 정규화된 태그로 이뤄져야 합니다."""
+    repo = _new_repo(tmp_path, version="0.1.0rc1")
+    output = tmp_path / "notes.md"
+
+    # 정규화된 태그 전달 시 성공
+    result_ok = readiness.main(
+        [
+            "--repo-root",
+            str(repo),
+            "--tag",
+            "v0.1.0-rc.1",
+            "--notes-output",
+            str(output),
+        ]
+    )
+    assert result_ok == 0
+    assert output.exists()
+    assert "## chore" in output.read_text(encoding="utf-8")
+
+    # 미정규화된 태그 전달 시 불일치로 거부
+    output_err = tmp_path / "notes_err.md"
+    result_err = readiness.main(
+        [
+            "--repo-root",
+            str(repo),
+            "--tag",
+            "v0.1.0rc1",
+            "--notes-output",
+            str(output_err),
+        ]
+    )
+    assert result_err == 1
+    assert not output_err.exists()
