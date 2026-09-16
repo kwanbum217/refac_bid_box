@@ -254,3 +254,25 @@ def test_notes_tag_matching_with_normalized_prerelease_tag(tmp_path: Path) -> No
     )
     assert result_err == 1
     assert not output_err.exists()
+
+
+def test_prerelease_tag_does_not_become_previous_tag_of_later_release(tmp_path: Path) -> None:
+    """사전 릴리스 태그가 정식 태그보다 앞서 직전 태그로 뽑히면 안 됩니다.
+
+    versionsort.suffix 없이 정렬하면 git 은 v0.1.0-rc.1 을 v0.1.0 보다 높게 둡니다.
+    그 상태로 v0.2.0 노트를 만들면 범위가 v0.1.0-rc.1..HEAD 가 되어 v0.1.0 에서
+    이미 발행한 커밋이 다시 들어갑니다.
+    """
+    repo = _new_repo(tmp_path, version="0.2.0")
+    _git(repo, "tag", "v0.1.0-rc.1")
+    (repo / "source.txt").write_text("stable\n", encoding="utf-8")
+    _git(repo, "commit", "-am", "feat: 정식 릴리스에 담긴 변경")
+    _git(repo, "tag", "v0.1.0")
+    (repo / "source.txt").write_text("next\n", encoding="utf-8")
+    _git(repo, "commit", "-am", "feat: 다음 릴리스에 담길 변경")
+
+    assert readiness._previous_release_tag(repo, "v0.2.0") == "v0.1.0"
+
+    notes = readiness.generate_release_notes(repo, "v0.2.0")
+    assert "다음 릴리스에 담길 변경" in notes
+    assert "정식 릴리스에 담긴 변경" not in notes

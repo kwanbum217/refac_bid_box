@@ -253,7 +253,18 @@ def check_readiness(
 def _previous_release_tag(repo_root: Path, current_tag: str) -> str | None:
     prefix = re.match(r"^[^0-9]*", current_tag)
     tag_prefix = prefix.group(0) if prefix else ""
-    tags = _git(repo_root, "tag", "--list", f"{tag_prefix}*", "--sort=-version:refname")
+    # versionsort.suffix 가 없으면 git 은 v0.1.0-rc.1 을 v0.1.0 보다 높게 둡니다.
+    # 그러면 다음 버전의 직전 태그로 사전 릴리스가 뽑혀 릴리스 노트가 이미
+    # 발행한 커밋을 다시 담습니다.
+    tags = _git(
+        repo_root,
+        "-c",
+        "versionsort.suffix=-",
+        "tag",
+        "--list",
+        f"{tag_prefix}*",
+        "--sort=-version:refname",
+    )
     for tag in tags.splitlines():
         if tag and tag != current_tag:
             return tag

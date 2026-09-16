@@ -120,8 +120,8 @@ Python 패키징 표준(PEP 440)에 따른 사전 릴리스 버전은 Git 및 �
 
 ### 6.3 직전 태그 탐색(`_previous_release_tag`) 영향
 
-- `scripts/check_release_readiness.py`의 `_previous_release_tag`는 Git의 버전 역순 정렬(`git tag --list "v*" --sort=-version:refname`)을 사용하여 직전 릴리스 태그를 결정합니다.
-- Git의 `version:refname` 정렬(Debian SemVer 규칙)에 따라 `v0.1.0-rc.1`은 정식 태그인 `v0.1.0`보다 낮은 버전으로 취급됩니다.
+- `scripts/check_release_readiness.py`의 `_previous_release_tag`는 Git의 버전 역순 정렬(`git -c versionsort.suffix=- tag --list "v*" --sort=-version:refname`)을 사용하여 직전 릴리스 태그를 결정합니다.
+- **`versionsort.suffix` 지정은 필수입니다.** 그것이 없으면 Git 기본 `version:refname` 정렬은 `v0.1.0-rc.1`을 정식 태그 `v0.1.0`보다 **높게** 둡니다. 그 상태로 다음 버전 노트를 만들면 직전 태그로 사전 릴리스가 뽑혀 정식 릴리스에서 이미 발행한 커밋이 다시 들어갑니다. `versionsort.suffix=-`를 주면 `-`로 시작하는 접미사가 사전 릴리스로 취급되어 `v0.1.0-rc.1`이 `v0.1.0`보다 낮아집니다. 회귀 검사는 `tests/test_release_readiness.py`의 `test_prerelease_tag_does_not_become_previous_tag_of_later_release`입니다.
 - 따라서 후속 정식 릴리스(`v0.1.0`) 발행 시 직전 태그로 `v0.1.0-rc.1`이 선택되어, 사전 릴리스 이후 새롭게 추가된 커밋들만 릴리스 노트 본문으로 집계됩니다.
 - 반대로 첫 번째 릴리스로 사전 릴리스를 발행할 경우 이전 태그가 없으므로 저장소의 전체 커밋 이력이 첫 릴리스 노트로 자동 작성됩니다.
 
