@@ -74,8 +74,12 @@
 
 ### 5.2 운영 DB 계정 생성 및 적용 절차
 1. **운영 DB 관리자 권한으로 계정 생성 SQL 실행**:
+   운영 `db` 서비스는 호스트 포트를 열지 않고 internal 네트워크만 쓰므로 호스트에서
+   `mysql` 로 직접 붙을 수 없습니다. 컨테이너 안에서 실행하십시오.
    ```sh
-   mysql -u root -p < scripts/create_backup_db_user.sql
+   set -a; . ./.env; set +a
+   docker compose -f docker-compose.prod.yml exec -T db \
+     mysql -u root -p"${MYSQL_ROOT_PASSWORD}" < scripts/create_backup_db_user.sql
    ```
    (주의: 실행 전 SQL 내 `IDENTIFIED BY` 비밀번호 자리표시자를 실제 운영용 강력한 난수로 변경하십시오.)
 2. **운영 `.env` 파일에 전용 환경변수 2종 추가**:

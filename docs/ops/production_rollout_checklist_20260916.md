@@ -47,7 +47,7 @@
 | **단점** | 운영 서버 CPU 부하 유발, 약 10분 소요, 학습 시점 DB 상태에 따른 사소한 차이 가능성 | 모델 아티팩트 전송을 위한 수동 파일 전송 채널 필요 |
 | **선행 조건** | 운영 DB 최신 데이터 수집 완료, `worker` 컨테이너 가용 | 운영 서버와 로컬 간 보안 파일 전송 경로 확보 |
 | **검증 방법** | `uv run python scripts/promote_model.py status` 및 API 예측 호출 | `LIVE` 파일 내용과 세대 디렉터리 내 `metadata.json`, `model.bin` 무결성 확인 및 API 실측 |
-| **되돌리기** | `uv run python scripts/promote_model.py rollback --model servc_institution_v1` | `uv run python scripts/promote_model.py rollback --model servc_institution_v1` (정본 롤백) |
+| **되돌리기** | `uv run python scripts/promote_model.py rollback --model servc_institution_v1` (승격 시 남긴 `data/model_backups` 복원) | **rollback 을 쓰지 않습니다.** 복사 전에 보존한 `LIVE` 값을 다시 써 직전 운영 세대로 되돌립니다 |
 
 #### 3. 선행 조건
 - 운영 코드베이스 최신 커밋 반영 (`git pull`)
@@ -105,6 +105,12 @@ docker compose -f docker-compose.prod.yml restart app worker
 > 4. `LIVE`: 최신 세대 ID(`v_20260915_133523_756_20260915_135842_a4470852`)를 가리키는 포인터 파일
 
 ```bash
+# 0. [필수] 운영 서버에서 현재 LIVE 값을 먼저 보존합니다.
+#    경로 B 는 promote() 를 거치지 않아 data/model_backups 에 백업이 생기지
+#    않습니다. 이 값이 유일한 되돌리기 근거입니다.
+cp data/model_files/servc_institution_v1/LIVE \
+   data/model_files/servc_institution_v1/LIVE.before_20260916
+
 # 1. 로컬 환경에서 운영 서버로 세대 아티팩트 디렉터리 및 LIVE 포인터 실제 복사/전송 (rsync 또는 scp 사용)
 # [원본 경로]: data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/
 # [대상 경로]: ${PROD_HOST}:${PROD_PROJECT_ROOT}/data/model_files/servc_institution_v1/generations/v_20260915_133523_756_20260915_135842_a4470852/
@@ -163,12 +169,24 @@ docker compose -f docker-compose.prod.yml restart app worker
   - Python 실측: `Loaded version: v_20260915_133523_756`, `Predictor check passed.`
 
 #### 6. 실패 시 되돌리기 (Rollback)
-```bash
-# 1. 정본 되돌리기: promote_model 롤백 명령 실행 (직전 백업 세대로 원자 복원)
-uv run python scripts/promote_model.py rollback --model servc_institution_v1
-# (또는 컨테이너 내부: docker compose -f docker-compose.prod.yml exec worker python scripts/promote_model.py rollback --model servc_institution_v1)
 
-# 2. 애플리케이션 및 워커 컨테이너 재기동
+**되돌리기는 어느 경로로 적용했느냐에 따라 다릅니다.** `promote_model.py rollback` 은
+`promote()` 가 `data/model_backups` 에 남긴 백업을 복원합니다. 경로 B 는 파일 복사만
+하므로 그 백업이 없으며, rollback 을 부르면 복원할 대상이 없거나 엉뚱한 세대로 돌아갑니다.
+
+```bash
+# [경로 A 로 적용한 경우] 정본 되돌리기: 승격 시 남긴 백업을 원자 복원합니다.
+docker compose -f docker-compose.prod.yml exec worker \
+  python scripts/promote_model.py rollback --model servc_institution_v1
+
+# [경로 B 로 적용한 경우] 0 단계에서 보존한 LIVE 값을 되돌립니다.
+#   전송한 세대 디렉터리는 지우지 않고 남겨 둡니다. 포인터만 되돌리면 충분합니다.
+test -f data/model_files/servc_institution_v1/LIVE.before_20260916 \
+  || { echo "[오류] 보존한 LIVE 값이 없어 되돌릴 수 없습니다"; exit 1; }
+cp data/model_files/servc_institution_v1/LIVE.before_20260916 \
+   data/model_files/servc_institution_v1/LIVE
+
+# [공통] 애플리케이션 및 워커 컨테이너 재기동
 docker compose -f docker-compose.prod.yml restart app worker
 ```
 
@@ -305,6 +323,11 @@ docker compose -f docker-compose.prod.yml logs --tail=30 alertmanager
 
 #### 3. 운영에서 실행할 정확한 명령
 ```bash
+# 0. [필수] 아래 명령들은 ${MYSQL_ROOT_PASSWORD} 를 호스트 셸에서 확장합니다.
+#    compose 는 .env 를 스스로 보간하지만 exec 인자와 sed 치환은 그렇지
+#    않습니다. 먼저 읽지 않으면 빈 비밀번호로 mysql 이 실패합니다.
+set -a; . ./.env; set +a
+
 # 1. 안전한 임의의 비밀번호 생성 (예: 32자 난수)
 NEW_BACKUP_PASS=$(openssl rand -hex 16)
 
@@ -352,6 +375,11 @@ docker compose -f docker-compose.prod.yml up -d backup
 > **주의 (필수 환경변수 보간 제약)**: `docker-compose.prod.yml`의 `backup` 서비스는 `BACKUP_DB_USER` 및 `BACKUP_DB_PASSWORD`를 `${VAR:?...}` 필수 보간으로 정의하므로, `.env`에서 이 변수들을 삭제(`d`)하면 Compose 보간 단계에서 기동이 즉시 실패하며 공용 계정으로 자동 강등되지 않습니다. 따라서 변수를 삭제하지 않고 기존 애플리케이션 공용 계정(`DB_USER`, `DB_PASSWORD`) 값을 두 변수에 주입하여 백업 서비스를 복구합니다. 이는 최소 권한 분리 원칙을 일시적으로 되돌려 비상 복구하는 조치입니다.
 
 ```bash
+# 0. [필수] 치환에 쓸 ${DB_USER} 와 ${DB_PASSWORD} 를 호스트 셸에 읽어 들입니다.
+#    읽지 않으면 BACKUP_DB_* 가 빈 값이 되어 ${VAR:?} 필수 보간으로
+#    backup 서비스 기동이 실패합니다.
+set -a; . ./.env; set +a
+
 # 1. .env 내 BACKUP_DB_USER / BACKUP_DB_PASSWORD 를 기존 공용 DB 계정 값으로 설정
 sed -i.bak "s/^BACKUP_DB_USER=.*/BACKUP_DB_USER=${DB_USER}/" .env
 sed -i.bak "s/^BACKUP_DB_PASSWORD=.*/BACKUP_DB_PASSWORD=${DB_PASSWORD}/" .env
