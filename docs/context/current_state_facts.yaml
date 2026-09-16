@@ -25,8 +25,8 @@ facts:
   - id: project_version
     status: closed
     decision_date: "2026-09-03"
-    claim: "프로젝트 버전은 0.1.0이며 pyproject.toml이 SSoT이고 버전 표기를 통과 기준으로 유지합니다."
-    document_anchor: "프로젝트 버전은 0.1.0"
+    claim: "버전은 0.1.0rc1이고 pyproject.toml이 SSoT이며 v0.1.0-rc.1 태그 파생을 통과로 유지합니다."
+    document_anchor: "버전은 0.1.0rc1"
     evidence:
       - pyproject.toml
     related_documents:
