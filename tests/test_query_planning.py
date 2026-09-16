@@ -9,6 +9,7 @@ tests/test_query_planning.py
 """
 
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -286,6 +287,22 @@ def test_non_entity_statistics_query_keeps_year_filter():
     assert plan.filters.get("date_to") == "2025-12-31"
 
 
+def _expected_filters(snap: dict) -> dict:
+    """스냅샷 필터를 오늘 기준으로 해석합니다.
+
+    "최근" 같은 표현은 계획기가 오늘을 기준으로 창을 잡으므로 절대 날짜를 굳히면
+    기록 다음 날부터 매일 실패합니다. relative_to_today 가 있는 항목은 그 오프셋으로
+    날짜를 다시 계산해 창의 폭과 오늘로부터의 거리를 그대로 검사합니다.
+    """
+    filters = dict(snap["filters"])
+    offsets = snap.get("relative_to_today")
+    if offsets:
+        today = date.today()
+        for key, offset in offsets.items():
+            filters[key] = (today + timedelta(days=offset)).isoformat()
+    return filters
+
+
 def test_retrieval_plan_llm_quality_fixture_v2_snapshot_invariance():
     """llm_quality_fixture_v2 전 문항의 계획이 스냅샷과 완전히 일치해야 합니다 (q29의 category 키 제외만 허용)."""
     snapshot_path = Path("tests/fixtures/retrieval_plan_canonical_snapshot.json")
@@ -306,7 +323,7 @@ def test_retrieval_plan_llm_quality_fixture_v2_snapshot_invariance():
             assert "category" not in plan.filters, (
                 f"[{item_id}] category 필터가 제거되지 않았습니다."
             )
-            expected_filters = {k: v for k, v in snap["filters"].items() if k != "category"}
+            expected_filters = {k: v for k, v in _expected_filters(snap).items() if k != "category"}
             assert plan.filters == expected_filters, f"[{item_id}] 필터 불일치"
         else:
             assert plan.use_sql == snap["use_sql"], f"[{item_id}] use_sql 불일치: {question}"
@@ -316,7 +333,9 @@ def test_retrieval_plan_llm_quality_fixture_v2_snapshot_invariance():
             assert plan.use_lexical == snap["use_lexical"], (
                 f"[{item_id}] use_lexical 불일치: {question}"
             )
-            assert plan.filters == snap["filters"], f"[{item_id}] filters 불일치: {question}"
+            assert plan.filters == _expected_filters(snap), (
+                f"[{item_id}] filters 불일치: {question}"
+            )
 
 
 def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance():
@@ -372,7 +391,9 @@ def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance():
             assert plan.use_lexical == snap["use_lexical"], (
                 f"[{item_id}] use_lexical 불일치: {question}"
             )
-            assert plan.filters == snap["filters"], f"[{item_id}] filters 불일치: {question}"
+            assert plan.filters == _expected_filters(snap), (
+                f"[{item_id}] filters 불일치: {question}"
+            )
 
 
 def test_adv_inst_04_plan_expected_outcome():
