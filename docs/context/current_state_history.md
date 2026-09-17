@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-09-17 Grok 세션 종료 기록
+
+- HEAD 직전 `dd5aaf9a`. 스택 재기동 후 따라잡기 수집 id=20 `success`, 드리프트 3건 `DRIFT_DETECTED` 를 병합했다.
+- XML 살균 첫 실기는 통과했다. 20260909 는 7일 상한으로 자동 회수되지 않았고 backfill 은 하지 않았다.
+- `TRIGGER_RETRAIN` 은 알림 라벨이며 재학습·승격은 실행하지 않았다.
+- 상세는 [`session_20260917_grok_shutdown.md`](../handoff/session_20260917_grok_shutdown.md).
+
+---
+
 ## 2026-09-16 Grok 세션 종료 기록
 
 - HEAD 직전 `faa752e4`. 잔여 과업 사전점검 3건과 G2B XML 살균을 병합했다.
