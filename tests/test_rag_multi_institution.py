@@ -11,7 +11,7 @@ tests/test_rag_multi_institution.py
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy.orm import Session
@@ -26,6 +26,7 @@ from src.rag.structured_data import retrieve_structured_data
 
 def _seed_sample_bid_results(db: Session) -> None:
     """서울특별시교육청 3건, 서울대학교 2건의 낙찰 행을 시드합니다."""
+    now = datetime.now().replace(microsecond=0)
     items = [
         BidResult(
             id=101,
@@ -36,7 +37,7 @@ def _seed_sample_bid_results(db: Session) -> None:
             bidwinnr_nm="에이치피코리아",
             sucsf_bid_amt=50_000_000,
             sucsf_bid_rate=88.5000,
-            rl_openg_dt=datetime(2026, 9, 10, 10, 0, 0),
+            rl_openg_dt=now - timedelta(days=3),
             category="Thng",
         ),
         BidResult(
@@ -48,7 +49,7 @@ def _seed_sample_bid_results(db: Session) -> None:
             bidwinnr_nm="삼성전자",
             sucsf_bid_amt=120_000_000,
             sucsf_bid_rate=87.5000,
-            rl_openg_dt=datetime(2026, 9, 11, 11, 0, 0),
+            rl_openg_dt=now - timedelta(days=2),
             category="Thng",
         ),
         BidResult(
@@ -60,7 +61,7 @@ def _seed_sample_bid_results(db: Session) -> None:
             bidwinnr_nm="시스코시스템즈",
             sucsf_bid_amt=75_000_000,
             sucsf_bid_rate=89.2000,
-            rl_openg_dt=datetime(2026, 9, 12, 14, 0, 0),
+            rl_openg_dt=now - timedelta(days=1),
             category="Thng",
         ),
         BidResult(
@@ -72,7 +73,7 @@ def _seed_sample_bid_results(db: Session) -> None:
             bidwinnr_nm="델테크놀로지스",
             sucsf_bid_amt=200_000_000,
             sucsf_bid_rate=92.1000,
-            rl_openg_dt=datetime(2026, 9, 13, 15, 0, 0),
+            rl_openg_dt=now - timedelta(days=2),
             category="Thng",
         ),
         BidResult(
@@ -84,7 +85,7 @@ def _seed_sample_bid_results(db: Session) -> None:
             bidwinnr_nm="안랩",
             sucsf_bid_amt=80_000_000,
             sucsf_bid_rate=91.5000,
-            rl_openg_dt=datetime(2026, 9, 14, 16, 0, 0),
+            rl_openg_dt=now - timedelta(days=1),
             category="Thng",
         ),
     ]
