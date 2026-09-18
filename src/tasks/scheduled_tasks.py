@@ -623,7 +623,7 @@ async def drift_monitor_task(
 ) -> dict[str, Any]:
     """매일 04:00 주기적 PSI 드리프트 검사 태스크.
 
-    - settings/환경변수 ML_DRIFT_MONITOR_ENABLED 플래그로 활성화 제어 (기본값: False)
+    - settings/환경변수 ML_DRIFT_MONITOR_ENABLED 플래그로 활성화 제어 (기본값: True)
     - CATEGORY_MODEL_NAMES 의 각 카테고리별 모델에 대해 baseline 아티팩트 조회
     - 평가 윈도우 [now - evaluation_window_days, now) 반열림 구간(개찰일 기준)으로 최근 데이터만 조회
     - persist=False 로 운영 학습 데이터셋 Parquet 덮어쓰기 방지
@@ -647,7 +647,7 @@ async def drift_monitor_task(
             baseline_dir = Path(registry_dir) / model_name / "baseline"
 
             baseline_dist = await asyncio.to_thread(load_baseline_distributions, baseline_dir)
-            # baseline 부재 모델(예: Thng)은 예외 없이 건너뜁니다. 거짓 드리프트를
+            # baseline 부재 모델(아티팩트 미적재 시)은 예외 없이 건너뜁니다. 거짓 드리프트를
             # 보고하지 않고 INSUFFICIENT_DATA로 기록한 뒤 다음 카테고리로 계속합니다.
             if not baseline_dist:
                 logger.info(

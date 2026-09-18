@@ -1,6 +1,7 @@
 # PSI 드리프트 모니터링 운영 및 평가 윈도우 사양서
 
 > **작성일**: 2026-09-03
+> **갱신일**: 2026-09-18
 > **상태**: 확정 (Active)
 > **관련 모듈**: `src/ml/monitoring.py`, `src/ml/dataset.py`, `src/tasks/scheduled_tasks.py`
 > **관련 테스트**: `tests/test_drift_monitor_window.py`, `tests/test_psi_drift_wiring.py`, `tests/test_drift_subgroup.py`
@@ -105,7 +106,7 @@ flowchart TD
 
 - **인간 개입 원칙**: 드리프트가 감지되어도 자동 재학습이나 자동 모델 승격은 절대 발생하지 않으며, 운영 담당자에게 알림만 발신합니다.
 - **단일 특징 생성 원천**: `src/ml/features.py` 단일 모듈을 통해 baseline과 recent feature의 일관성을 유지합니다.
-- **활성화 기본값과 baseline 현황(2026-09-06)**: `ML_DRIFT_MONITOR_ENABLED` 기본값은 활성(True)이며, Servc baseline(`b_20260906_servc_post_regime`, 2026-05-26 이후 18,993건·35 특징·집단 분리)은 감시 대상입니다. baseline이 없는 모델(예: Thng `quantum_leap_v25_pro`)은 예외나 거짓 드리프트 없이 건너뛰고 `retrain_logs`에 `INSUFFICIENT_DATA`로 기록한 뒤 다음 카테고리로 계속합니다(`src/tasks/scheduled_tasks.py`의 baseline 부재 분기).
+- **활성화 기본값과 baseline 현황(2026-09-18)**: `ML_DRIFT_MONITOR_ENABLED` 기본값은 활성(True)이며, 세 카테고리(`Cnstwk`, `Servc`, `Thng`) 모두 baseline을 갖추어 전 카테고리 감시를 수행합니다. Thng은 `b_20260915_thng_post_regime`(18,069건) 적재로 건너뛰기 예외 없이 감시 대상에 포함되었습니다. (이력: 2026-09-06 초기 운영 시에는 Thng `quantum_leap_v25_pro`의 baseline 부재로 `INSUFFICIENT_DATA`로 건너뛰었으나, 2026-09-15 baseline 적재로 해소되었습니다).
 
 ---
 
