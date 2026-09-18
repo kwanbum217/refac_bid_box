@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-09-18 세션 종료 (20260909 백필 완료)
+
+- 사용자가 승인한 20260909 1일 공백 backfill 을 코디네이터가 실행했다. 수집 처리 공고 1,677 / 낙찰 958 (upsert). DATE 건수는 공고 1,677 · 낙찰 642 로 직전 유지.
+- 첫 `--sync-downstream` 은 앱·워커와 호스트가 chroma_db SQLite 를 동시에 열어 `disk I/O error`. 앱·워커 정지 후 재실행 `RECON_EXIT:0`, KB delta 19,301, 정합성 차집합 0건.
+- as16 DB 실측 `d48ec32d`, as17 하류 실측 `56c70fc7`. 빌더 Gemini, 리뷰어 Muse Spark 1.3 free.
+- Path A·Release·Servc OOS·as9-review 는 보류 유지. 주간 재학습은 09-21 03:00. 재학습 enqueue 없음.
+- 상세는 [`session_20260918_grok_shutdown.md`](../handoff/session_20260918_grok_shutdown.md).
+
+---
+
 ## 2026-09-18 놓친 드리프트 수동 enqueue
 
 - 따라잡기 id=21 success 후 코디네이터가 `drift_monitor_task` Job `c72dab32cb3a4db19e0d581e43969277` 를 enqueue 했다. 4.00초, id=7/8/9 모두 `DRIFT_DETECTED`. Thng 은 `INSUFFICIENT_DATA` 가 아니다.
