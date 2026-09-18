@@ -1,8 +1,8 @@
 # 크로스 플랫폼 호환 가이드 (macOS / Windows)
 
 > **작성일**: 2026-07-31
-> **갱신일**: 2026-08-24
-> **상태**: 2026-08-24 원격 CI run `32703096829` (`bd6212c`) 에서 ubuntu·macOS·windows 전부 green / Windows Docker Desktop 실기 미수행
+> **갱신일**: 2026-09-05
+> **상태**: 2026-09-05 원격 CI run `33947859707` (`fa1202f`) 에서 ubuntu·macOS·windows 전부 green / Windows Docker Desktop 실기 미수행 (G2 판정: 보류)
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
 ---

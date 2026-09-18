@@ -1,6 +1,6 @@
 version: "2.0"
 description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
-updated_at: "2026-09-16"
+updated_at: "2026-09-18"
 facts:
   - id: gate_g1
     status: closed
@@ -234,17 +234,23 @@ facts:
     related_documents:
       - docs/context/CURRENT_STATE.md
   - id: negotiation_contract_support
-    status: active
-    decision_date: "2026-09-10"
-    claim: "협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다."
+    status: closed
+    decision_date: "2026-09-18"
+    claim: "협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 공고서 원문 필요 판정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 완료했습니다."
     document_anchor: "협상 공고를 NEGOTIATION_CONTRACT 로 판별하고"
     evidence:
       - docs/analysis/aq2_servc_scope_extension_survey_20260910.md
       - docs/analysis/ng2a_negotiation_price_score_survey_20260910.md
       - docs/ops/handoff_20260910_wave_aq_ng_session_close.md
       - docs/analysis/bm1_negotiation_price_source_recount_20260911.md
+      - src/app/services/evaluation_rules.py
+      - src/app/services/negotiation_stats.py
+      - src/app/templates/bids/detail.html
+      - tests/test_negotiation_contract.py
+      - docs/analysis/negotiation_price_score_feasibility_20260918.md
     related_documents:
       - docs/context/CURRENT_STATE.md
+      - docs/analysis/negotiation_price_score_feasibility_20260918.md
   - id: compare_stats_latency
     status: closed
     decision_date: "2026-09-10"
@@ -432,9 +438,10 @@ facts:
     evidence:
       - docs/ops/psi_drift_monitoring.md
       - src/app/core/config.py
-      - src/ml/training_config.py
       - scripts/generate_drift_baseline.py
       - tests/test_psi_drift_wiring.py
+      - docs/analysis/drift_monitor_verify_20260918.md
+      - docs/ops/ml_registry_production_bootstrap.md
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/psi_drift_monitoring.md

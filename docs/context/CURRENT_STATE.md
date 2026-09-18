@@ -97,9 +97,9 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **lexical_full_rerun**: 정확 제목 lexical 채널은 2026-09-14 전량 32문항 3회 재측정에서 실패 0·numeric 144/144 로 종결합니다.
 
-### active 사실
+- **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 공고서 원문 필요 판정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 완료했습니다.
 
-- **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 산식 미확정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 진행했습니다.
+### active 사실
 
 - **drift_job**: 드리프트 감시는 Servc·Thng·Cnstwk 세 baseline을 모두 갖춰 전 카테고리 진행 중입니다(ML_DRIFT_MONITOR_ENABLED 기본값 True). Thng b_20260915_thng_post_regime(18,069건) 적재로 건너뛰기 예외는 없어졌고, ml_registry는 Git 미추적이라 운영 재생성이 필요합니다.
 
@@ -118,9 +118,8 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
-- **RAG cold SQL (2026-09-13, 인덱스·힌트 적용)**: 기관명 LIKE 콜드 I/O. 09-14 정본 콜드 SQL P95 1.9초·최대 5.1초 ([rag_coldsql_root_cause_20260913.md](../analysis/rag_coldsql_root_cause_20260913.md)).
 - **손상 탐침 제거 (2026-09-11, 구조적 제거 확정·효과 크기 미확정)**: corrupted_probe 0ms 달성을 확정했습니다. 잔여 분산으로 효과 크기는 미확정입니다.
-- **측정 설계와 실행계획 조사 (2026-09-11, 도구 완비·원인 미확정)**: 계측 도구를 완비했습니다. 영속 통계 노후를 확인했으나 계획 전환 원인은 미확정입니다.
+- **측정 설계와 실행계획 조사 (2026-09-11, 도구 완비·원인 미확정)**: 상위 문제는 compare_stats_snapshot 과 mysql_stats_refresh_policy 종결로 해소되었고 단일 질의의 옵티마이저 계획 전환 원인만 미해결입니다.
 - **ChromaDB 1.x 업그레이드 (2026-09-13, 보류)**: 1.5.9 까지 CVE 미수정, 1.x 는 1건 추가. 서버 미노출로 예외 유지, 12-31 재확인 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
