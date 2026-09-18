@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-09-18 세션 시작 실측
+
+- 스택 재기동 후 따라잡기 수집 id=21 `success` (collect·search·rag·inspect). 09-18 04:00 정규 drift_monitor 는 스택 다운으로 추가 0건.
+- 20260909 는 7일 상한으로 이번에도 자동 회수되지 않았고 backfill 은 하지 않았다.
+- Release 초안 `v0.1.0`·`v0.1.0-rc.1` 은 Draft 유지. 경로 A·주간 재학습(09-21)·chromadb 12-31 재확인은 보류 유지.
+- 빌더는 Gemini 3.8 Flash medium(비감독 런처), 리뷰어는 사용자 지시로 `opencode/muse-spark-1.3-contributor-free`. 세 보고서 모두 Level 1 통과·리뷰 pass.
+- 상세는 [`session_start_verify_20260918.md`](../analysis/session_start_verify_20260918.md), [`session_git_ci_verify_20260918.md`](../analysis/session_git_ci_verify_20260918.md), [`session_hold_items_20260918.md`](../analysis/session_hold_items_20260918.md).
+
+---
+
 ## 2026-09-17 Grok 세션 종료 기록
 
 - HEAD 직전 `dd5aaf9a`. 스택 재기동 후 따라잡기 수집 id=20 `success`, 드리프트 3건 `DRIFT_DETECTED` 를 병합했다.
