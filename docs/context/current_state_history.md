@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-09-18 놓친 드리프트 수동 enqueue
+
+- 따라잡기 id=21 success 후 코디네이터가 `drift_monitor_task` Job `c72dab32cb3a4db19e0d581e43969277` 를 enqueue 했다. 4.00초, id=7/8/9 모두 `DRIFT_DETECTED`. Thng 은 `INSUFFICIENT_DATA` 가 아니다.
+- `TRIGGER_RETRAIN` 은 알림 라벨이며 재학습·승격은 실행하지 않았다.
+- as9-review `task_7bc94af1d54e` 는 blocked 잔류로 남기고 재 Dispatch 하지 않았다.
+- 상세는 [`drift_monitor_verify_20260918.md`](../analysis/drift_monitor_verify_20260918.md), [`as9_review_leftover_20260918.md`](../analysis/as9_review_leftover_20260918.md).
+
+---
+
 ## 2026-09-18 세션 시작 실측
 
 - 스택 재기동 후 따라잡기 수집 id=21 `success` (collect·search·rag·inspect). 09-18 04:00 정규 drift_monitor 는 스택 다운으로 추가 0건.
