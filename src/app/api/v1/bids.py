@@ -17,6 +17,7 @@ src/app/api/v1/bids.py
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,7 +27,7 @@ from sqlalchemy.orm import Session
 from src.app.api.v1.accounts import require_current_user
 from src.app.core.db import get_db
 from src.app.models.accounts import CustomUser
-from src.app.models.bids import BidAnnouncement, BidResult
+from src.app.models.bids import BidAnnouncement, BidResult, preload_matching_announcements
 from src.app.schemas.bids import (
     BidDetailResponse,
     BidListResponse,
@@ -97,6 +98,11 @@ def _serialize_result(db: Session, result: BidResult) -> dict[str, Any]:
     }
 
 
+def _serialize_results(db: Session, results: Sequence[BidResult]) -> list[dict[str, Any]]:
+    preload_matching_announcements(db, results)
+    return [_serialize_result(db, row) for row in results]
+
+
 @router.get("", response_model=BidListResponse, summary="입찰공고 목록")
 def list_bids(
     q: str = Query("", description="공고명/공고번호/수요기관명 검색어"),
@@ -150,7 +156,7 @@ def list_bid_results(
             detail="낙찰 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
         ) from exc
     return BidResultListResponse(
-        results=[_serialize_result(db, row) for row in page_obj.object_list],
+        results=_serialize_results(db, page_obj.object_list),
         page_obj=page_obj.as_dict(),
         is_paginated=page_obj.has_previous or page_obj.has_next,
         q=q or "",
@@ -193,7 +199,7 @@ def api_home_context(db: Session = Depends(get_db)):
     context = get_home_page_context(db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
     return HomeContextResponse(
         recent_bids=[_serialize_announcement(bid) for bid in context["recent_bids"]],
-        recent_results=[_serialize_result(db, row) for row in context["recent_results"]],
+        recent_results=_serialize_results(db, context["recent_results"]),
         recent_bid_sections=[
             {
                 "code": section["code"],
@@ -216,7 +222,7 @@ def get_bid_result_detail(pk: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="낙찰 결과를 찾을 수 없습니다.")
     return BidResultDetailResponse(
         result=_serialize_result(db, detail["result"]),
-        related_results=[_serialize_result(db, row) for row in detail["related_results"]],
+        related_results=_serialize_results(db, detail["related_results"]),
         raw_json=detail["raw_json"] if isinstance(detail["raw_json"], dict) else None,
     )
 
@@ -229,7 +235,7 @@ def get_bid_detail(pk: int, db: Session = Depends(get_db)):
     return BidDetailResponse(
         bid=_serialize_announcement(detail["bid"]),
         similar_bids=[_serialize_announcement(bid) for bid in detail["similar_bids"]],
-        past_results=[_serialize_result(db, row) for row in detail["past_results"]],
+        past_results=_serialize_results(db, detail["past_results"]),
         default_prediction_model=detail["default_prediction_model"],
     )
 
