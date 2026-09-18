@@ -118,7 +118,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
-- **RAG cold SQL (2026-09-13, 인덱스·힌트 적용)**: 기관명 LIKE 콜드 I/O 가 원인. 커버링 인덱스·힌트, 임시 테이블 128MB, 한글 기관명 목록 캐시, 집계 병렬 실행으로 09-14 전체 fixture 정본 콜드 SQL P95 1.9초·최대 5.1초 ([rag_coldsql_root_cause_20260913.md](../analysis/rag_coldsql_root_cause_20260913.md)).
+- **RAG cold SQL (2026-09-13, 인덱스·힌트 적용)**: 기관명 LIKE 콜드 I/O. 09-14 정본 콜드 SQL P95 1.9초·최대 5.1초 ([rag_coldsql_root_cause_20260913.md](../analysis/rag_coldsql_root_cause_20260913.md)).
 - **손상 탐침 제거 (2026-09-11, 구조적 제거 확정·효과 크기 미확정)**: corrupted_probe 0ms 달성을 확정했습니다. 잔여 분산으로 효과 크기는 미확정입니다.
 - **측정 설계와 실행계획 조사 (2026-09-11, 도구 완비·원인 미확정)**: 계측 도구를 완비했습니다. 영속 통계 노후를 확인했으나 계획 전환 원인은 미확정입니다.
 - **ChromaDB 1.x 업그레이드 (2026-09-13, 보류)**: 1.5.9 까지 CVE 미수정, 1.x 는 1건 추가. 서버 미노출로 예외 유지, 12-31 재확인 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).
@@ -134,7 +134,6 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - 기계 원장: [docs/context/current_state_facts.yaml](current_state_facts.yaml)
 - 상세 로그·과거 경위: [current_state_history.md](current_state_history.md)
 - 컷오버·레이턴시 규약: [latency_gate_protocol.md](../ops/latency_gate_protocol.md), [phase7_cutover_declaration_20260901.md](../ops/phase7_cutover_declaration_20260901.md)
-- 현재 잔여 과업: [session_20260917_grok_shutdown.md](../handoff/session_20260917_grok_shutdown.md)
-- 2026-09-18 세션 시작 실측: [session_start_verify_20260918.md](../analysis/session_start_verify_20260918.md), [session_git_ci_verify_20260918.md](../analysis/session_git_ci_verify_20260918.md), [session_hold_items_20260918.md](../analysis/session_hold_items_20260918.md)
+- 현재 잔여 과업: [session_20260917_grok_shutdown.md](../handoff/session_20260917_grok_shutdown.md), [session_start_verify_20260918.md](../analysis/session_start_verify_20260918.md)
 - 공고 금액 이상치·오버플로우: [announcement_amount_outliers_20260904.md](../ops/announcement_amount_outliers_20260904.md)
 - 데이터·특징 불변성: [db_migration_runbook.md](../migration/db_migration_runbook.md), [features.py](../../src/ml/features.py)
