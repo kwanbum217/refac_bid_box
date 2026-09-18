@@ -8,6 +8,7 @@ src/app/models/bids.py
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import datetime
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
@@ -21,8 +22,9 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    tuple_,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from src.app.core.db import Base, PKBigInteger
 from src.app.core.timeutil import utcnow
@@ -294,6 +296,11 @@ class BidResult(Base):
     def display_winning_rate(self, db) -> Decimal | None:
         return self.reference_basis_winning_rate(db) or _format_rate(self.sucsf_bid_rate)
 
+    @classmethod
+    def preload_matching_announcements(cls, db: Session, results: Sequence[BidResult]) -> None:
+        """낙찰 목록의 매칭 공고를 일괄(IN 절)로 조회하여 _matching_announcement_cache 에 미리 채웁니다."""
+        preload_matching_announcements(db, results)
+
 
 class BidAnnouncement(Base):
     """조달청 입찰공고 테이블"""
@@ -401,6 +408,75 @@ class BidAnnouncement(Base):
     def prediction_reference_amount(self) -> int | None:
         resolved = self.resolved_base_amount
         return resolved if resolved is not None else self.presmpt_prce
+
+
+def preload_matching_announcements(db: Session, results: Sequence[BidResult]) -> None:
+    """낙찰 목록의 매칭 공고를 일괄(IN 절)로 조회하여 N+1 쿼리를 방지합니다.
+
+    각 BidResult 인스턴스의 `_matching_announcement_cache` 속성에 결과를 캐싱하여,
+    이후 display_winning_rate -> reference_basis_winning_rate -> matching_announcement
+    호출 시 추가 SQL 질의가 발생하지 않도록 합니다.
+
+    1차로 (bid_ntce_no, category) 조건으로 공고 후보군을 일괄 조회한 뒤,
+    2차로 차수(bid_ntce_ord) 완전 일치 -> 선행 0을 제거한 정규화 차수 일치 순으로 매칭합니다.
+    """
+    unloaded = [
+        row
+        for row in results
+        if row is not None and not hasattr(row, "_matching_announcement_cache")
+    ]
+    if not unloaded:
+        return
+
+    # 공고번호나 카테고리가 없는 행은 매칭 불가로 즉시 캐시 처리
+    for row in unloaded:
+        if not row.bid_ntce_no or not row.category:
+            row._matching_announcement_cache = None
+
+    pairs = {
+        (row.bid_ntce_no, row.category) for row in unloaded if row.bid_ntce_no and row.category
+    }
+    if not pairs:
+        return
+
+    pair_list = list(pairs)
+    announcements: list[BidAnnouncement] = []
+    chunk_size = 500
+    for idx in range(0, len(pair_list), chunk_size):
+        chunk = pair_list[idx : idx + chunk_size]
+        announcements.extend(
+            db.query(BidAnnouncement)
+            .filter(tuple_(BidAnnouncement.bid_ntce_no, BidAnnouncement.category).in_(chunk))
+            .order_by(BidAnnouncement.bid_ntce_no, BidAnnouncement.bid_ntce_ord)
+            .all()
+        )
+
+    candidates_by_pair: dict[tuple[str, str], list[BidAnnouncement]] = {}
+    for ann in announcements:
+        candidates_by_pair.setdefault((ann.bid_ntce_no, ann.category), []).append(ann)
+
+    for row in unloaded:
+        if hasattr(row, "_matching_announcement_cache"):
+            continue
+        candidates = candidates_by_pair.get((row.bid_ntce_no, row.category), [])
+        matched: BidAnnouncement | None = None
+
+        # 1차: 차수 완전 일치
+        for candidate in candidates:
+            if candidate.bid_ntce_ord == row.bid_ntce_ord:
+                matched = candidate
+                break
+
+        # 2차: 차수 정규화(선행 0 제거) 일치 (최대 10개 후보)
+        if matched is None:
+            normalized_ord = (row.bid_ntce_ord or "").lstrip("0") or "0"
+            for candidate in candidates[:10]:
+                candidate_ord = (candidate.bid_ntce_ord or "").lstrip("0") or "0"
+                if candidate_ord == normalized_ord:
+                    matched = candidate
+                    break
+
+        row._matching_announcement_cache = matched
 
 
 class BidDatasetSummary(Base):
