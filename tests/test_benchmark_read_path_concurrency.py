@@ -26,6 +26,7 @@ from sqlalchemy import event
 from scripts.benchmark_read_path_concurrency import (
     TARGETS,
     MetricStats,
+    assert_measurable,
     build_execution_plan,
     calculate_percentile,
     format_round_comparison,
@@ -406,3 +407,41 @@ def test_restart_env_carries_variant_value():
     assert get_restart_env("A") == {"READ_PATH_PRELOAD_ANNOUNCEMENTS": "true"}
     assert get_restart_env("B") == {"READ_PATH_PRELOAD_ANNOUNCEMENTS": "false"}
     assert "READ_PATH_PRELOAD_ANNOUNCEMENTS=false" in (get_restart_command("B"))
+
+
+def test_assert_measurable_rejects_empty_samples():
+    """표본 0건이면 조용히 넘기지 않고 실패하는지 검사합니다."""
+    import pytest
+
+    ok = MetricStats(
+        name="a",
+        path="/a",
+        is_control=True,
+        count=1,
+        p50_ms=1.0,
+        p95_ms=2.0,
+        p99_ms=2.0,
+        mean_ms=1.5,
+        min_ms=1.0,
+        max_ms=3.0,
+        errors=0,
+        latencies_ms=[1.0],
+    )
+    empty = MetricStats(
+        name="b",
+        path="/b",
+        is_control=False,
+        count=0,
+        p50_ms=None,
+        p95_ms=None,
+        p99_ms=None,
+        mean_ms=None,
+        min_ms=None,
+        max_ms=None,
+        errors=100,
+        latencies_ms=[],
+    )
+    assert assert_measurable("A", 1, {"a": ok}) is None
+    with pytest.raises(RuntimeError) as exc:
+        assert_measurable("B", 2, {"a": ok, "b": empty})
+    assert "표본 0건" in str(exc.value)

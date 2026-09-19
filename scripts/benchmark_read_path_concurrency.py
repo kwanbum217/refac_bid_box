@@ -184,6 +184,26 @@ class MetricStats:
         }
 
 
+def wait_until_ready(base_url: str, timeout_sec: int = 180) -> None:
+    """앱이 준비 상태가 될 때까지 기다립니다.
+
+    고정 대기는 컨테이너 재생성 시간을 보장하지 못합니다. 2026-09-19 회차에서
+    5초 고정 대기 때문에 B 변체 전량(요청 100/100)이 오류로 버려졌습니다.
+    """
+    deadline = time.monotonic() + timeout_sec
+    last_error: str | None = None
+    while time.monotonic() < deadline:
+        try:
+            resp = httpx.get(f"{base_url}/api/v1/health/ready", timeout=5.0)
+            if resp.status_code == 200:
+                return
+            last_error = f"status={resp.status_code}"
+        except Exception as exc:
+            last_error = str(exc)
+        time.sleep(2)
+    raise RuntimeError(f"앱이 {timeout_sec}초 안에 준비되지 않았습니다: {last_error}")
+
+
 def get_restart_env(variant: str) -> dict[str, str]:
     """A/B 변체에 따라 앱 컨테이너에 주입할 환경변수를 반환합니다."""
     return {"READ_PATH_PRELOAD_ANNOUNCEMENTS": "true" if variant.upper() == "A" else "false"}
@@ -490,6 +510,16 @@ def format_round_comparison(
     return "\n".join(lines), diff_records
 
 
+def assert_measurable(variant: str, round_no: int, stats: dict[str, MetricStats]) -> None:
+    """표본이 하나도 없는 측정을 조용히 넘기지 않고 즉시 실패시킵니다."""
+    empty = [name for name, st in stats.items() if not st.latencies_ms]
+    if empty:
+        raise RuntimeError(
+            f"왕복 {round_no} 변체 {variant}: 표본 0건인 경로 {len(empty)}건 "
+            f"({', '.join(empty)}). 앱이 준비되지 않았거나 요청이 전부 실패했습니다."
+        )
+
+
 def run_ab_benchmark(
     base_url: str,
     rounds: int = 3,
@@ -516,7 +546,7 @@ def run_ab_benchmark(
             subprocess.run(  # nosec B603
                 cmd_args, check=True, env={**os.environ, **get_restart_env("A")}
             )
-            time.sleep(5)  # 기동 대기
+            wait_until_ready(base_url)
 
         stats_a: dict[str, MetricStats] = {}
         for t in TARGETS:
@@ -535,7 +565,7 @@ def run_ab_benchmark(
             subprocess.run(  # nosec B603
                 cmd_args, check=True, env={**os.environ, **get_restart_env("B")}
             )
-            time.sleep(5)  # 기동 대기
+            wait_until_ready(base_url)
 
         stats_b: dict[str, MetricStats] = {}
         for t in TARGETS:
@@ -546,6 +576,9 @@ def run_ab_benchmark(
                 sample_count=sample_count,
                 warmup_count=warmup_count,
             )
+
+        assert_measurable("A", r, stats_a)
+        assert_measurable("B", r, stats_b)
 
         table_str, diff_data = format_round_comparison(r, stats_a, stats_b)
         print(table_str)
