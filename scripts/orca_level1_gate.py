@@ -553,6 +553,186 @@ def run_gate9_forbidden_lockfiles(repo: Path) -> GateResult:
 ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
+# 게이트 10 이 검사하는 실행기와 하위 명령 최대 깊이입니다. 도움말을 안전하게
+# 얻을 수 있고(페이저를 띄우지 않고) 이 저장소의 문서·스크립트가 실제로 부르는
+# 것만 담습니다. git 은 `git <sub> --help` 가 man 페이지를 띄우므로 제외합니다.
+COMMAND_REALITY_EXECUTABLES: dict[str, int] = {
+    "docker": 2,
+    "npm": 1,
+    "gh": 2,
+    "uv": 1,
+}
+
+COMMAND_REALITY_SUFFIXES = {".md", ".py", ".sh", ".yml", ".yaml"}
+
+# 줄 앞의 마크다운 장식(인용, 목록, 코드 펜스)과 환경변수 대입을 걷어낸 뒤
+# 알려진 실행기로 시작하는 줄만 후보로 봅니다.
+_COMMAND_LINE_RE = re.compile(
+    r"^[\s>*\-+|`$#]*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
+    r"(?P<exe>" + "|".join(COMMAND_REALITY_EXECUTABLES) + r")\s+(?P<rest>.+)$"
+)
+
+_SCRIPT_PATH_RE = re.compile(r"(?<![\w./-])(scripts/[\w./-]+\.(?:py|sh))")
+
+# 문서가 "이렇게 쓰면 안 된다" 는 반례를 일부러 적는 경우가 있습니다. 같은 줄이나
+# 바로 앞 줄에 이 표시를 두면 그 줄을 검사하지 않습니다.
+COMMAND_REALITY_IGNORE = "command-reality-ignore"
+
+
+def _help_text(argv: list[str]) -> str | None:
+    """명령의 도움말을 가져옵니다. 실행기가 없으면 None 을 돌려줍니다."""
+    try:
+        proc = subprocess.run(  # nosec B603
+            [*argv, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return None
+    return strip_ansi((proc.stdout or "") + "\n" + (proc.stderr or ""))
+
+
+def _flag_in_help(flag: str, help_text: str) -> bool:
+    """도움말 본문에 해당 플래그가 선언돼 있는지 확인합니다."""
+    return re.search(r"(?<![\w-])" + re.escape(flag) + r"(?![\w-])", help_text) is not None
+
+
+def _parse_command(rest: str) -> tuple[list[str], list[str]] | None:
+    """하위 명령 사슬과 검사 대상 플래그를 분리합니다.
+
+    하위 명령보다 먼저 플래그가 나오면(예: `npm --prefix x run y`) 전역 플래그와
+    하위 명령 플래그를 구분할 수 없으므로 검사하지 않습니다.
+    """
+    try:
+        tokens = shlex.split(rest.replace("`", " "), comments=True)
+    except ValueError:
+        return None
+    if not tokens:
+        return None
+    return tokens, []
+
+
+def check_command_reality(
+    repo: Path, changed_files: list[str], help_cache: dict[str, str | None] | None = None
+) -> tuple[list[str], list[str], int]:
+    """변경 파일이 쓰는 명령의 플래그와 스크립트 경로가 실재하는지 검사합니다.
+
+    돌려주는 값은 (위반 목록, 경고 목록, 건너뛴 실행기 목록, 검사한 명령 수) 입니다.
+    위반은 실재하지 않는 옵션이고, 경고는 없는 스크립트 경로입니다. 문서에는
+    예시용 가짜 경로가 정당하게 등장하므로 경로 누락으로 병합을 막지 않습니다.
+    """
+    cache: dict[str, str | None] = {} if help_cache is None else help_cache
+    violations: list[str] = []
+    warnings: list[str] = []
+    skipped: set[str] = set()
+    checked = 0
+
+    for rel in changed_files:
+        path = repo / rel
+        if path.suffix not in COMMAND_REALITY_SUFFIXES or not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        lines = text.splitlines()
+        for lineno, raw_line in enumerate(lines, start=1):
+            previous = lines[lineno - 2] if lineno >= 2 else ""
+            if COMMAND_REALITY_IGNORE in raw_line or COMMAND_REALITY_IGNORE in previous:
+                continue
+            for script_rel in _SCRIPT_PATH_RE.findall(raw_line):
+                if not (repo / script_rel).exists():
+                    warnings.append(f"{rel}:{lineno} 없는 스크립트 경로: {script_rel}")
+
+            match = _COMMAND_LINE_RE.match(raw_line)
+            if match is None:
+                continue
+            exe = match.group("exe")
+            parsed = _parse_command(match.group("rest"))
+            if parsed is None:
+                continue
+            tokens = parsed[0]
+
+            depth = COMMAND_REALITY_EXECUTABLES[exe]
+            chain: list[str] = []
+            idx = 0
+            while idx < len(tokens) and len(chain) < depth and not tokens[idx].startswith("-"):
+                chain.append(tokens[idx])
+                idx += 1
+            if not chain:
+                # 하위 명령보다 플래그가 먼저 나온 형태는 검사하지 않습니다.
+                continue
+
+            flags: list[str] = []
+            while idx < len(tokens):
+                arg = tokens[idx]
+                if arg == "--":
+                    break
+                if arg.startswith("-") and arg != "-":
+                    flags.append(arg.split("=", 1)[0])
+                    idx += 1
+                    continue
+                # 첫 위치 인자 뒤의 플래그는 다른 프로그램의 것입니다.
+                break
+            if not flags:
+                continue
+
+            key = " ".join([exe, *chain])
+            if key not in cache:
+                cache[key] = _help_text([exe, *chain])
+            help_text = cache[key]
+            if help_text is None:
+                skipped.add(exe)
+                continue
+
+            checked += 1
+            for flag in flags:
+                if not _flag_in_help(flag, help_text):
+                    violations.append(f"{rel}:{lineno} `{key}` 에 없는 옵션: {flag}")
+
+    return violations, warnings, sorted(skipped), checked
+
+
+def run_gate10_command_reality(repo: Path, changed_files: list[str]) -> GateResult:
+    """게이트 10: 변경 파일이 쓰는 명령과 경로의 실재성 검증.
+
+    2026-09-19 에 `docker compose up -d -e VAR=x app` 이 게이트·리뷰·코디네이터
+    검토를 모두 통과해 병합됐습니다. `docker compose up` 에는 -e 옵션이 없어
+    A/B 측정 하니스가 실행되지 않는 상태였습니다. 이 게이트는 그 부류를 잡습니다.
+    """
+    name = "게이트 10 명령 실재성"
+    violations, warnings, skipped, checked = check_command_reality(repo, changed_files)
+    details: list[str] = []
+    if warnings:
+        details.append(f"경고(차단 아님) 없는 스크립트 경로 {len(warnings)}건: {warnings[0]}")
+    if skipped:
+        details.append(f"실행기 미설치로 건너뜀: {', '.join(skipped)}")
+    raw = {
+        "violations": violations,
+        "warnings": warnings,
+        "skipped_executables": skipped,
+        "checked": checked,
+    }
+    if violations:
+        return GateResult(
+            name=name,
+            status="fail",
+            summary=f"실재하지 않는 명령 옵션 {len(violations)}건",
+            details=violations[:20] + details,
+            raw_data=raw,
+        )
+    return GateResult(
+        name=name,
+        status="pass",
+        summary=f"명령 {checked}건 검사, 실재하지 않는 옵션 없음",
+        details=details,
+        raw_data=raw,
+    )
+
+
 def strip_ansi(text: str) -> str:
     """터미널 ANSI 제어/색상 코드를 제거합니다."""
     return ANSI_ESCAPE_RE.sub("", text)
@@ -1415,6 +1595,7 @@ def build_json_output(
         "게이트 7 gitignore 검증": "gate7_gitignored",
         "게이트 8 커밋 메시지": "gate8_commit_message",
         "게이트 9 금지 lockfile 검증": "gate9_forbidden_lockfiles",
+        "게이트 10 명령 실재성": "gate10_command_reality",
     }
     gates_dict: dict[str, Any] = {}
     fallback_idx = 0
@@ -1631,6 +1812,11 @@ def run_level1_gate(
         if capsule_path is not None:
             g9 = run_gate9_forbidden_lockfiles(repo_path)
             gates.append(g9)
+
+            # 게이트 10: 변경 파일이 쓰는 명령 옵션과 스크립트 경로의 실재성.
+            # 게이트 9 와 같은 이유로 Capsule 을 받는 병합 판정 호출에서만 돕니다.
+            g10 = run_gate10_command_reality(repo_path, changed_files)
+            gates.append(g10)
 
     except GateToolError as exc:
         error_msg = str(exc)

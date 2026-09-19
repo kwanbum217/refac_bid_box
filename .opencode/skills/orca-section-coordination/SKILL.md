@@ -428,10 +428,20 @@ stdout 만 파싱하며, 파싱할 JSON 이 없으면 "빈 결과" 로 삼키지
 
 코디네이터는 워커 산출물을 무검증 신뢰하지 않고 다음 3단계로 검증합니다.
 
-1. **Level 1 (결정론적 기계 검증)**: 코디네이터가 `python3 scripts/orca_level1_gate.py` 단일 호출로 6대 게이트(변경 파일, 범위, 테스트, 규칙, 린터, 리뷰 보고)를 한 번에 검증합니다 (종료 코드: 0 통과, 1 게이트 실패, 2 도구 오류).
+1. **Level 1 (결정론적 기계 검증)**: 코디네이터가 `python3 scripts/orca_level1_gate.py` 단일 호출로 10대 게이트(변경 파일, 범위, 테스트, 규칙, 린터, 리뷰 보고, gitignore, 커밋 메시지, 금지 lockfile, 명령 실재성)를 한 번에 검증합니다 (종료 코드: 0 통과, 1 게이트 실패, 2 도구 오류).
    ```bash
    python3 scripts/orca_level1_gate.py --base main --branch <작업브랜치> --repo <워크트리경로> --tests '<대상 테스트>' --capsule <Capsule 경로>
    ```
+   **게이트 10 은 변경 파일이 쓰는 명령의 옵션이 실재하는지 검사합니다.** 2026-09-19 에
+   <!-- command-reality-ignore -->
+   `docker compose up -d -e VAR=x app` 이 게이트·독립 리뷰·코디네이터 diff 검토를 모두
+   통과해 병합됐습니다. `docker compose up` 에는 `-e` 가 없어 측정 하니스가 실행되지
+   않는 상태였습니다. 문서가 이런 반례를 일부러 적어야 하면 같은 줄이나 앞 줄에
+   `command-reality-ignore` 를 두어 그 줄을 검사에서 뺍니다. 세 검증 모두 명령의 **실재 여부**를 보지 않았기 때문입니다.
+   게이트는 `docker`, `npm`, `gh`, `uv` 의 도움말과 대조하며, 실행기가 없으면 건너뛰고
+   없는 스크립트 경로는 차단하지 않는 경고로만 보고합니다. 문서의 예시 경로가 병합을
+   막지 않게 하기 위함입니다.
+
    이 두 도구는 2026-08-15 첫 실사용에서 실제 계약 위반 4건(필수 필드 누락: version, branch, commit_count, blocking_issues)을 검출했습니다.
 2. **Level 2 (독립 리뷰어 워커)**: 독립된 리뷰어 모델이 `ORCA_REVIEW_DONE_V2` 계약([`.agents/templates/review_done_v2.json`](../../../.agents/templates/review_done_v2.json))에 따라 acceptance criteria, 회귀 위험, G1(데이터 무손실), Train/Serve 단일화, 동시성 결함, 스코프 초과 수정을 교차 검증합니다.
 3. **Level 3 (코디네이터 핵심 diff 검토)**: 핵심 알고리즘, DB 변경점, 모델 승격 게이트 등 비가역적 위험 지점만 선별하여 최종 병합을 결정합니다.
