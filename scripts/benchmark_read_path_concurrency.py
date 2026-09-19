@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import math
+import os
 import statistics
 import subprocess  # nosec B404
 import sys
@@ -183,24 +184,33 @@ class MetricStats:
         }
 
 
+def get_restart_env(variant: str) -> dict[str, str]:
+    """A/B 변체에 따라 앱 컨테이너에 주입할 환경변수를 반환합니다."""
+    return {"READ_PATH_PRELOAD_ANNOUNCEMENTS": "true" if variant.upper() == "A" else "false"}
+
+
 def get_restart_command_args(variant: str) -> list[str]:
-    """A/B 변체에 따른 컨테이너 재시작 명령 인자 목록을 반환합니다."""
-    preload_val = "true" if variant.upper() == "A" else "false"
+    """A/B 변체에 따른 컨테이너 재시작 명령 인자 목록을 반환합니다.
+
+    docker compose up 에는 -e 옵션이 없습니다. 값은 셸 환경변수로 주입하고
+    compose 의 app 서비스가 이를 컨테이너로 전달합니다.
+    """
     return [
         "docker",
         "compose",
         "up",
         "-d",
         "--no-deps",
-        "-e",
-        f"READ_PATH_PRELOAD_ANNOUNCEMENTS={preload_val}",
+        "--force-recreate",
         "app",
     ]
 
 
 def get_restart_command(variant: str) -> str:
     """A/B 변체에 따른 컨테이너 재시작 명령 문자열을 반환합니다."""
-    return " ".join(get_restart_command_args(variant))
+    env = get_restart_env(variant)
+    prefix = " ".join(f"{k}={v}" for k, v in env.items())
+    return f"{prefix} {' '.join(get_restart_command_args(variant))}"
 
 
 def build_execution_plan(
@@ -502,8 +512,10 @@ def run_ab_benchmark(
         print(f"\n>>> [왕복 {r}/{rounds}] A (선채움 ON) 측정 준비")
         if auto_restart:
             cmd_args = get_restart_command_args("A")
-            print(f"컨테이너 재시작 실행: {' '.join(cmd_args)}")
-            subprocess.run(cmd_args, check=True)  # nosec B603
+            print(f"컨테이너 재시작 실행: {get_restart_command('A')}")
+            subprocess.run(  # nosec B603
+                cmd_args, check=True, env={**os.environ, **get_restart_env("A")}
+            )
             time.sleep(5)  # 기동 대기
 
         stats_a: dict[str, MetricStats] = {}
@@ -519,8 +531,10 @@ def run_ab_benchmark(
         print(f"\n>>> [왕복 {r}/{rounds}] B (선채움 OFF) 측정 준비")
         if auto_restart:
             cmd_args = get_restart_command_args("B")
-            print(f"컨테이너 재시작 실행: {' '.join(cmd_args)}")
-            subprocess.run(cmd_args, check=True)  # nosec B603
+            print(f"컨테이너 재시작 실행: {get_restart_command('B')}")
+            subprocess.run(  # nosec B603
+                cmd_args, check=True, env={**os.environ, **get_restart_env("B")}
+            )
             time.sleep(5)  # 기동 대기
 
         stats_b: dict[str, MetricStats] = {}
