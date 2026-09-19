@@ -82,3 +82,14 @@ def test_unrelated_files_are_ignored(tmp_path):
     violations, _warnings, _skipped, checked = check_command_reality(tmp_path, [rel])
     assert checked == 0
     assert violations == []
+
+
+def test_ignore_marker_exempts_intentional_counterexample(tmp_path):
+    """문서가 일부러 적는 반례는 표시로 검사에서 뺍니다."""
+    rel = _write(
+        tmp_path,
+        "docs/counter.md",
+        "<!-- command-reality-ignore -->\n`docker compose up -e FOO=bar app` 은 틀린 형태입니다.\n",
+    )
+    violations, _warnings, _skipped, _checked = check_command_reality(tmp_path, [rel])
+    assert violations == []

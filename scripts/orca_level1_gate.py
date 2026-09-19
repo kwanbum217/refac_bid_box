@@ -574,6 +574,10 @@ _COMMAND_LINE_RE = re.compile(
 
 _SCRIPT_PATH_RE = re.compile(r"(?<![\w./-])(scripts/[\w./-]+\.(?:py|sh))")
 
+# 문서가 "이렇게 쓰면 안 된다" 는 반례를 일부러 적는 경우가 있습니다. 같은 줄이나
+# 바로 앞 줄에 이 표시를 두면 그 줄을 검사하지 않습니다.
+COMMAND_REALITY_IGNORE = "command-reality-ignore"
+
 
 def _help_text(argv: list[str]) -> str | None:
     """명령의 도움말을 가져옵니다. 실행기가 없으면 None 을 돌려줍니다."""
@@ -634,7 +638,11 @@ def check_command_reality(
         except (OSError, UnicodeDecodeError):
             continue
 
-        for lineno, raw_line in enumerate(text.splitlines(), start=1):
+        lines = text.splitlines()
+        for lineno, raw_line in enumerate(lines, start=1):
+            previous = lines[lineno - 2] if lineno >= 2 else ""
+            if COMMAND_REALITY_IGNORE in raw_line or COMMAND_REALITY_IGNORE in previous:
+                continue
             for script_rel in _SCRIPT_PATH_RE.findall(raw_line):
                 if not (repo / script_rel).exists():
                     warnings.append(f"{rel}:{lineno} 없는 스크립트 경로: {script_rel}")

@@ -433,9 +433,11 @@ stdout 만 파싱하며, 파싱할 JSON 이 없으면 "빈 결과" 로 삼키지
    python3 scripts/orca_level1_gate.py --base main --branch <작업브랜치> --repo <워크트리경로> --tests '<대상 테스트>' --capsule <Capsule 경로>
    ```
    **게이트 10 은 변경 파일이 쓰는 명령의 옵션이 실재하는지 검사합니다.** 2026-09-19 에
+   <!-- command-reality-ignore -->
    `docker compose up -d -e VAR=x app` 이 게이트·독립 리뷰·코디네이터 diff 검토를 모두
    통과해 병합됐습니다. `docker compose up` 에는 `-e` 가 없어 측정 하니스가 실행되지
-   않는 상태였습니다. 세 검증 모두 명령의 **실재 여부**를 보지 않았기 때문입니다.
+   않는 상태였습니다. 문서가 이런 반례를 일부러 적어야 하면 같은 줄이나 앞 줄에
+   `command-reality-ignore` 를 두어 그 줄을 검사에서 뺍니다. 세 검증 모두 명령의 **실재 여부**를 보지 않았기 때문입니다.
    게이트는 `docker`, `npm`, `gh`, `uv` 의 도움말과 대조하며, 실행기가 없으면 건너뛰고
    없는 스크립트 경로는 차단하지 않는 경고로만 보고합니다. 문서의 예시 경로가 병합을
    막지 않게 하기 위함입니다.
