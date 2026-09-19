@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     RAG_EXPOSE_SEGMENT_METRICS: bool = False
     # RAG 답변에서 검색 컨텍스트의 낙찰금액·낙찰률 누락 여부를 결정론적으로 검출해 로깅합니다.
     NUMERIC_OMISSION_DETECTION: bool = False
+    # 읽기 경로 동시성 측정 및 A/B 실험을 위한 낙찰 목록 공고 일괄 선채움 스위치입니다.
+    # 진단·측정 전용 플래그이며 기본값은 활성(True)이라 운영 동작은 변경되지 않습니다.
+    READ_PATH_PRELOAD_ANNOUNCEMENTS: bool = True
     # MLOps 알림 웹훅(Slack/Discord). 비면 알림을 보내지 않습니다.
     # 실제 URL 은 .env 에만 둡니다.
     MLOPS_WEBHOOK_URL: str = ""

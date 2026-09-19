@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import require_current_user
+from src.app.core.config import settings
 from src.app.core.db import get_db
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult, preload_matching_announcements
@@ -99,7 +100,8 @@ def _serialize_result(db: Session, result: BidResult) -> dict[str, Any]:
 
 
 def _serialize_results(db: Session, results: Sequence[BidResult]) -> list[dict[str, Any]]:
-    preload_matching_announcements(db, results)
+    if settings.READ_PATH_PRELOAD_ANNOUNCEMENTS:
+        preload_matching_announcements(db, results)
     return [_serialize_result(db, row) for row in results]
 
 
