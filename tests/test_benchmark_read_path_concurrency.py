@@ -29,6 +29,9 @@ from scripts.benchmark_read_path_concurrency import (
     build_execution_plan,
     calculate_percentile,
     format_round_comparison,
+    get_restart_command,
+    get_restart_command_args,
+    get_restart_env,
     main,
 )
 from src.app.api.v1.bids import _serialize_results
@@ -386,3 +389,20 @@ def test_round_comparison_formatter():
     assert diffs["낙찰 목록 1쪽"]["b_p95_ms"] == 200.0
     assert diffs["낙찰 목록 1쪽"]["diff_ms"] == -120.0
     assert diffs["낙찰 목록 1쪽"]["pct_change"] == -60.0
+
+
+def test_restart_command_uses_valid_compose_flags():
+    """docker compose up 에 없는 -e 옵션을 쓰지 않는지 검사합니다."""
+    for variant in ("A", "B"):
+        args = get_restart_command_args(variant)
+        assert "-e" not in args
+        assert args[:3] == ["docker", "compose", "up"]
+        assert "--force-recreate" in args
+        assert args[-1] == "app"
+
+
+def test_restart_env_carries_variant_value():
+    """변체 값이 셸 환경변수로 전달되는지 검사합니다."""
+    assert get_restart_env("A") == {"READ_PATH_PRELOAD_ANNOUNCEMENTS": "true"}
+    assert get_restart_env("B") == {"READ_PATH_PRELOAD_ANNOUNCEMENTS": "false"}
+    assert "READ_PATH_PRELOAD_ANNOUNCEMENTS=false" in (get_restart_command("B"))

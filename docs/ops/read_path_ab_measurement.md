@@ -70,14 +70,16 @@ uv run python scripts/benchmark_read_path_concurrency.py --dry-run
 
 - **A 변체 (선채움 활성화, 기본값)**:
   ```bash
-  docker compose up -d --no-deps -e READ_PATH_PRELOAD_ANNOUNCEMENTS=true app
+  READ_PATH_PRELOAD_ANNOUNCEMENTS=true docker compose up -d --no-deps --force-recreate app
   ```
 - **B 변체 (선채움 비활성화, 단건 폴백)**:
   ```bash
-  docker compose up -d --no-deps -e READ_PATH_PRELOAD_ANNOUNCEMENTS=false app
+  READ_PATH_PRELOAD_ANNOUNCEMENTS=false docker compose up -d --no-deps --force-recreate app
   ```
 
 컨테이너 재시작 후 `http://127.0.0.1:8000/docs` 응답을 확인하여 헬스 상태를 확인합니다.
+
+`docker compose up` 에는 `-e` 옵션이 없습니다. 값은 셸 환경변수로 주입하며, `docker-compose.yml` 의 `app` 서비스가 `READ_PATH_PRELOAD_ANNOUNCEMENTS=${READ_PATH_PRELOAD_ANNOUNCEMENTS:-true}` 로 컨테이너에 전달합니다. 변수를 지정하지 않으면 운영 기본값인 `true` 입니다. `--force-recreate` 가 없으면 환경변수만 바뀐 경우 compose 가 컨테이너를 그대로 두어 변체 전환이 적용되지 않습니다.
 
 ### 4.3. 워밍업 규격
 
