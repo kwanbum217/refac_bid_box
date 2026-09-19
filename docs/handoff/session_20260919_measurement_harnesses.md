@@ -26,6 +26,7 @@
 | `8f42fa66` | 이 인수인계 문서 | 전량 5,134. CI success |
 | `a5ec3252` | 인증 경로 레이턴시 실측 결과 | 전량 5,134. CI success |
 | `48054365` | Level 1 게이트 10 명령 실재성 검사 | 게이트 자기검증 pass. 전량 5,142. CI 10잡 전량 success |
+| `3fb00737` | 인수인계에 게이트 10 반영 + `source_commit` 갱신 | 전량 5,142. 규칙 21/21 |
 
 워커 모델: 빌더 `gemini-3.8-flash-medium` 2대, 리뷰어 `opencode/muse-spark-1.3-contributor-free` 2대. 리뷰어는 사용자 지시이며 TIER_POLICY 기본 이탈이므로 `WORKER_MODEL_NOTICE` 입니다. 빌더도 배정표 권장(`muse-spark`)보다 상위라 같은 고지 대상입니다.
 
@@ -94,6 +95,20 @@ Run `run_1dbced5f03c6` 의 Task 4건은 전부 `completed` 이고 잔류 세션�
 | 미설치 | 실행기가 없으면 건너뛰고 그 사실을 보고한다 |
 
 저장소 전체 문서·스크립트 887개에서 명령 141건을 검사해 오탐 0건입니다. 테스트는 `tests/test_orca_command_reality_gate.py` 8건입니다.
+
+
+### 5.2 세션 종료 처리
+
+이번 세션은 사용자 요청으로 컴퓨터를 끌 수 있는 상태까지 정리하고 끝냈습니다.
+
+| 대상 | 종료 처리 |
+| --- | --- |
+| Redis | `SHUTDOWN NOSAVE` 로 먼저 내린다. 그냥 내리면 `dump.rdb` 가 생겨 Git 추적 문제가 재발한다 |
+| Docker | `docker compose down`. **볼륨은 지우지 않는다**(`-v` 금지) |
+| 배경 프로세스 | 상시 감시기 `orca_worker_watch.py --watch --respawn` (이번 세션 PID 16996) 종료 |
+| 워커 터미널 | 이미 전부 회수·종료 완료 |
+
+다음 세션은 전 인수인계 6.1 절 순서대로 Docker Desktop 기동부터 다시 시작하면 됩니다.
 
 ## 6. 사용자 결정 (유지)
 
