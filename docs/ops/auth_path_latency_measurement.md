@@ -53,7 +53,7 @@
 
 ```bash
 # 활성 상태인 사용자 확인 (읽기 전용 질의 도구 사용)
-uv run python scripts/db_readonly_query.py --sql "SELECT id, username, is_active, is_staff FROM custom_user WHERE is_active = 1 LIMIT 5;"
+uv run python scripts/db_readonly_query.py --sql "SELECT id, username, is_active, is_staff FROM accounts_customuser WHERE is_active = 1 LIMIT 5"
 ```
 
 확인된 계정 정보는 셸 세션의 환경변수로 설정하여 하니스에 주입합니다.
