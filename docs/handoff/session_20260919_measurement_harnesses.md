@@ -10,7 +10,7 @@
 
 ## 1. 한 줄 요약
 
-전 세션 인수인계 7장에서 지금 착수 가능한 것이 측정 계열 두 건뿐이어서, 워커 2대로 측정 하니스를 병렬 제작해 병합한 뒤 코디네이터가 실측했습니다. 낙찰 목록 N+1 제거의 순개선을 -62.7% 로 확정했고, 인증 경로 실측은 자격증명 대기로 남았습니다.
+전 세션 인수인계 7장에서 지금 착수 가능한 것이 측정 계열 두 건뿐이어서, 워커 2대로 측정 하니스를 병렬 제작해 병합한 뒤 코디네이터가 실측했습니다. 낙찰 목록 N+1 제거의 순개선을 -62.7% 로 확정했고, 사용자가 측정 계정을 만들어 준 뒤 인증 경로 P95 까지 실측을 마쳤습니다.
 
 ---
 
@@ -92,7 +92,7 @@ Run `run_1dbced5f03c6` 의 Task 4건은 전부 `completed` 이고 잔류 세션�
 
 | 항목 | 결정 |
 | --- | --- |
-| 인증 경로 측정 계정 | 사용자가 자격증명을 직접 주입한다. 계정을 새로 만들지 않는다 |
+| 인증 경로 측정 계정 | 사용자가 측정 전용 계정 `sojiroh`(id=16)를 직접 만들어 자격증명을 주입했다. 비밀번호는 저장소에 두지 않으며 코디네이터는 측정 후 주입 파일을 삭제했다 |
 
 ---
 
@@ -100,8 +100,7 @@ Run `run_1dbced5f03c6` 의 Task 4건은 전부 `completed` 이고 잔류 세션�
 
 | 시점 | 과업 | 확인 방법 |
 | --- | --- | --- |
-| 즉시 | **인증 경로 P95 실측**. 이번 세션 미완 | 6장 결정대로 자격증명을 받아 `uv run python scripts/benchmark_auth_paths.py --mode all`. 절차는 [`auth_path_latency_measurement.md`](../ops/auth_path_latency_measurement.md) |
-| 측정 전 | app 을 선채움 기본값으로 되돌렸는지 | 5장 주의 |
+| 완료 | 인증 경로 P95 실측 | 결과는 [`auth_path_latency_20260919.md`](../analysis/auth_path_latency_20260919.md). 최적화 후보 없음 |
 | 스택 기동 후 | 수집·드리프트 진행 | 전 인수인계 6.1 절차 |
 | 2026-09-21 03:00 이후 | 첫 주간 재학습. 자동 승격 없는지 | [`weekly_retrain_verification.md`](../ops/weekly_retrain_verification.md) |
 | 운영 접근 확보 시 | 경로 A. **ml_registry 재생성이 선행** | [`ml_registry_production_bootstrap.md`](../ops/ml_registry_production_bootstrap.md) |
