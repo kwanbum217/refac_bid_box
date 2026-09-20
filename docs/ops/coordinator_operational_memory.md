@@ -123,7 +123,9 @@ Capsule 에 명령 형태를 지정하기 전에 승인 대상인지 확인하�
 
 ## 7. 워커 모델 배정
 
-- 기본은 빌더 Antigravity Gemini, 리뷰어는 다른 계열
+- **2026-09-20 사용자 지시: 빌더 기본값은 Command Code(cmd) CLI 의 `deepseek/deepseek-v4.1-flash` 다.** Gemini 사용 중단에 따른 교체이며 `TIER_POLICY` 의 builder 세 위험도 전부에서 1순위다. 기동은 `scripts/orca_cmd_launch.py --model deepseek/deepseek-v4.1-flash --effort <등급>` 을 터미널 명령으로 지정한다. 2026-09-20 probe: `cmd -p ping --model deepseek/deepseek-v4.1-flash --effort low` 3.1초 정상 응답
+- **이 모델의 추론 등급은 모델 ID 가 아니라 `--effort` 다.** 지원 등급은 default, low, high, max 네 가지이고 `medium` 은 없다. default 는 플래그를 붙이지 않는 모델 기본값이며, 위험도 대응은 low->default, medium->high, high->max 로 `effort_by_risk` 에 못 박혀 있다. 목록 밖의 값을 주면 CLI 가 종료 코드 0 으로 "Unknown effort" 만 찍고 기본 등급으로 진행하므로 조용히 무시된다
+- 리뷰어는 빌더와 계열이 달라야 하므로 빌더가 cmd 인 동안 리뷰어에 cmd 계열을 두지 않는다
 - **2026-09-11 사용자 지시:** 리뷰어는 `opencode/muse-spark-1.3-contributor-free` (풀 키 `opencode-muse-spark`) 를 명시 Dispatch 한다. TIER_POLICY 자동 배정은 열지 않는다. 기동은 `scripts/orca_opencode_launch.py --model opencode/muse-spark-1.3-contributor-free --role reviewer --auto`. 2026-09-11 probe: `opencode run --model opencode/muse-spark-1.3-contributor-free` 종료 코드 0
 - 빌더가 이미 OpenCode 계열이면 계열 분리 불변 때문에 리뷰어를 Muse Spark 로 두지 않고 `qwen-plus` 로 돌린다
 - 한쪽 풀이 마르면 등급을 낮추기 전에 **다른 풀의 같은 등급**을 먼저 확인한다
