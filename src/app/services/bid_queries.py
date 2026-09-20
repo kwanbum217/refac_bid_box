@@ -24,7 +24,11 @@ from src.app.models.bid_restrictions import (
     BidAnnouncementLicenseLimit,
     BidAnnouncementParticipationRegion,
 )
-from src.app.models.bids import BidAnnouncement, BidResult
+from src.app.models.bids import (
+    BidAnnouncement,
+    BidResult,
+    preload_matching_announcements,
+)
 from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 
 TOP_INDUSTRY_CHOICES_CACHE_KEY = "bid_queries:top_industry_choices:200"
@@ -737,6 +741,9 @@ def get_result_detail(db: Session, pk: int) -> dict[str, Any] | None:
         .limit(5)
         .all()
     )
+
+    # 본건 및 관련 낙찰 공고를 일괄 선채움하여 N+1 질의를 방지합니다.
+    preload_matching_announcements(db, [result, *related_results])
 
     # 낙찰률은 공고 기준금액을 다시 조회해야 나오므로 원본과 달리 property 가
     # 아니라 db 를 받는 메서드입니다. Jinja2 는 속성 접근으로 메서드를 호출하지
