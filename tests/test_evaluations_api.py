@@ -17,6 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import event
 
 from src.app.api.v1 import evaluations
 from src.app.api.v1.evaluations import require_current_user
@@ -755,6 +756,125 @@ def test_analyze_snapshot_belongs_to_requesting_user(client, isolated_db, as_use
     as_user(8)
     assert client.get("/api/v1/evaluations/snapshots").json() == []
     assert client.get(f"/api/v1/evaluations/snapshots/{rows[0]['id']}").status_code == 404
+
+
+class _QueryRecorder:
+    """실행된 SQL 을 수집하는 컨텍스트 매니저."""
+
+    def __init__(self, session):
+        self.bind = session.get_bind()
+        self.statements: list[str] = []
+
+    def _record(self, conn, cursor, statement, parameters, context, executemany):
+        self.statements.append(statement)
+
+    def __enter__(self):
+        event.listen(self.bind, "before_cursor_execute", self._record)
+        return self
+
+    def __exit__(self, *exc):
+        event.remove(self.bind, "before_cursor_execute", self._record)
+        return False
+
+    @property
+    def select_statements(self) -> list[str]:
+        return [stmt for stmt in self.statements if stmt.strip().upper().startswith("SELECT")]
+
+
+def test_list_evaluation_snapshots_eager_loads_evidence_items_with_fixed_queries(
+    client, isolated_db, as_user
+):
+    """스냅샷 목록 조회 시 증빙 항목을 일괄 로딩하여 건수와 무관하게 고정된 질의 수(2회)로 조회된다."""
+    bid = _create_bid(isolated_db)
+    bid_id = bid.id
+    user_id = 99
+    as_user(user_id)
+
+    # 1. 스냅샷 1건 생성 (증빙 2건 포함)
+    evidence_1 = [
+        {"item_code": "performance", "issuer": "기관A", "reference_no": "REF-001", "note": "실적"},
+        {"item_code": "management", "issuer": "기관B", "reference_no": "REF-002", "note": "경영"},
+    ]
+    resp = client.post(
+        "/api/v1/evaluations/snapshots",
+        json={
+            "bid_id": bid_id,
+            "rule_id": "RULE-SNAP-1",
+            "model_id": "MODEL-1",
+            "model_version": "1.0",
+            "input_json": {"step": 1},
+            "result_json": {"score": 10},
+            "evidence_items": evidence_1,
+        },
+    )
+    assert resp.status_code == 201
+
+    # 스냅샷 1건일 때 목록 조회 질의 수 측정
+    with _QueryRecorder(isolated_db) as recorder_1:
+        res_1 = client.get("/api/v1/evaluations/snapshots")
+    assert res_1.status_code == 200
+    rows_1 = res_1.json()
+    assert len(rows_1) == 1
+    assert len(rows_1[0]["evidence_items"]) == 2
+    select_count_1 = len(recorder_1.select_statements)
+    # 스냅샷 목록 1회 + 증빙 일괄 IN 1회 = 총 2회 SELECT
+    assert select_count_1 == 2, (
+        f"기대 2회이나 실제 {select_count_1}회: {recorder_1.select_statements}"
+    )
+
+    # 2. 스냅샷 4건 추가 생성 (총 5건, 각 증빙 2건씩 총 10건)
+    for idx in range(2, 6):
+        evidence_items = [
+            {
+                "item_code": f"code_{idx}_1",
+                "issuer": f"기관_{idx}_1",
+                "reference_no": f"REF-{idx}-1",
+            },
+            {
+                "item_code": f"code_{idx}_2",
+                "issuer": f"기관_{idx}_2",
+                "reference_no": f"REF-{idx}-2",
+            },
+        ]
+        resp = client.post(
+            "/api/v1/evaluations/snapshots",
+            json={
+                "bid_id": bid_id,
+                "rule_id": f"RULE-SNAP-{idx}",
+                "model_id": "MODEL-1",
+                "model_version": "1.0",
+                "input_json": {"step": idx},
+                "result_json": {"score": idx * 10},
+                "evidence_items": evidence_items,
+            },
+        )
+        assert resp.status_code == 201
+
+    # 스냅샷 5건일 때 목록 조회 질의 수 측정
+    with _QueryRecorder(isolated_db) as recorder_5:
+        res_5 = client.get("/api/v1/evaluations/snapshots")
+    assert res_5.status_code == 200
+    rows_5 = res_5.json()
+    assert len(rows_5) == 5
+
+    # 1+N 지연 로딩이었다면 1 + 5 = 6회 발생했을 것이나, selectinload 일괄 적재로 질의 수가 증가하지 않음
+    select_count_5 = len(recorder_5.select_statements)
+    assert select_count_5 == select_count_1 == 2, (
+        f"스냅샷이 1건에서 5건으로 증가했으나 SELECT 질의 수는 2회로 고정되어야 함. "
+        f"실제 1건 시: {select_count_1}회, 5건 시: {select_count_5}회"
+    )
+
+    # 데이터 및 순서 정합성 검증: created_at 내림차순 및 각 스냅샷의 증빙 메타데이터 온전성
+    for row in rows_5:
+        assert len(row["evidence_items"]) == 2
+        for item in row["evidence_items"]:
+            assert item["item_code"]
+            assert item["issuer"]
+            assert item["reference_no"]
+
+    # created_at 내림차순 정렬 유지 확인
+    created_ats = [r["created_at"] for r in rows_5]
+    assert created_ats == sorted(created_ats, reverse=True)
 
 
 # --------------------------------------------------------------------------- #

@@ -20,6 +20,7 @@ from src.app.models.bids import (
     BidResult,
     preload_matching_announcements,
 )
+from src.app.services.bid_queries import get_result_detail
 
 
 class QueryCounter:
@@ -417,3 +418,84 @@ def test_preload_idempotent_and_empty(isolated_db):
 
     # 4. BidResult 클래스 메서드 호출 동등성
     BidResult.preload_matching_announcements(isolated_db, [res])
+
+
+def test_get_result_detail_preloads_announcements_and_prevents_n_plus_one(isolated_db):
+    """get_result_detail 호출 시 본건과 관련 낙찰의 공고가 일괄 선채움되어 N+1 쿼리가 방지됨을 검증."""
+    # 본건 공고 및 낙찰 생성
+    target_ann = _create_announcement(
+        isolated_db,
+        bid_ntce_no="DETAIL-TARGET-001",
+        bid_ntce_ord="000",
+        dminstt_nm="한국도로공사",
+        category="Servc",
+        base_amount=100_000_000,
+    )
+    target_res = _create_result(
+        isolated_db,
+        bid_ntce_no="DETAIL-TARGET-001",
+        bid_ntce_ord="00",
+        dminstt_nm="한국도로공사",
+        category="Servc",
+        sucsf_bid_amt=88_000_000,
+        sucsf_bid_rate=Decimal("88.0000"),
+    )
+
+    # 동일 기관/카테고리의 관련 낙찰 및 공고 5건 생성
+    for i in range(5):
+        _create_announcement(
+            isolated_db,
+            bid_ntce_no=f"DETAIL-REL-{i:03d}",
+            bid_ntce_ord="000",
+            dminstt_nm="한국도로공사",
+            category="Servc",
+            base_amount=100_000_000,
+        )
+        _create_result(
+            isolated_db,
+            bid_ntce_no=f"DETAIL-REL-{i:03d}",
+            bid_ntce_ord="00",
+            dminstt_nm="한국도로공사",
+            category="Servc",
+            sucsf_bid_amt=90_000_000 + i * 1_000_000,
+            sucsf_bid_rate=Decimal(f"{90 + i}.0000"),
+        )
+
+    isolated_db.expire_all()
+    engine = isolated_db.get_bind()
+
+    # get_result_detail 실행 시 쿼리 계측:
+    # 1. db.get(BidResult, pk) (1회)
+    # 2. related_results 조회 (1회)
+    # 3. preload_matching_announcements 일괄 IN 쿼리 (1회)
+    # 4. display_winning_rate 루프 내부에서는 캐시를 사용하므로 추가 공고 쿼리 0회
+    # 총 쿼리는 3회만 발생해야 함 (선채움이 없었다면 본건 1회 + 관련 5회 = 최소 8회 이상 발생)
+    with QueryCounter(engine) as counter:
+        detail = get_result_detail(isolated_db, target_res.id)
+
+    assert detail is not None
+    assert set(detail.keys()) == {"result", "related_results", "raw_json"}
+    assert detail["result"].id == target_res.id
+    assert len(detail["related_results"]) == 5
+
+    # 공고 조회 쿼리가 루프 순회에 비례하지 않고 정확히 3회(본건 1 + 관련 1 + 선채움 1)로 한정됨을 검증
+    assert counter.count == 3
+
+    # 본건 및 관련 낙찰 5건 모두에 _matching_announcement_cache 가 적재되었음을 검증
+    assert hasattr(detail["result"], "_matching_announcement_cache")
+    assert detail["result"]._matching_announcement_cache is not None
+    assert detail["result"]._matching_announcement_cache.id == target_ann.id
+    assert detail["result"].resolved_winning_rate == Decimal("88.0000")
+
+    for row in detail["related_results"]:
+        assert hasattr(row, "_matching_announcement_cache")
+        assert row._matching_announcement_cache is not None
+        assert row.resolved_winning_rate is not None
+
+    # 선채움 캐시 적중 검증:
+    # detail 반환 객체들에 대해 display_winning_rate 를 재호출해도 SQL 쿼리가 0회 발생함을 확인
+    with QueryCounter(engine) as zero_counter:
+        detail["result"].display_winning_rate(isolated_db)
+        for row in detail["related_results"]:
+            row.display_winning_rate(isolated_db)
+    assert zero_counter.count == 0
