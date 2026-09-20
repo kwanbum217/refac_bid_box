@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-09-18
-> **source_commit**: `3fb00737`
+> **source_commit**: `639c60f1`
 > **version**: 0.1.0rc1 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -119,7 +119,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
 - **손상 탐침 제거 (2026-09-11, 구조적 제거 확정·효과 크기 미확정)**: corrupted_probe 0ms 달성을 확정했습니다. 잔여 분산으로 효과 크기는 미확정입니다.
-- **측정 설계와 실행계획 조사 (2026-09-11, 도구 완비·원인 미확정)**: 상위 문제는 compare_stats_snapshot 과 mysql_stats_refresh_policy 종결로 해소되었고 단일 질의의 옵티마이저 계획 전환 원인만 미해결입니다.
+- **측정 설계와 실행계획 조사 (2026-09-20, 종결)**: 단일 EXISTS 는 compare_stats_snapshots 매칭 집계로 특정했고 전환 원인은 세미조인 비용 역전 경계와 인덱스 다이브 과대추정의 결합입니다. 운영 경로는 스냅샷으로 격리되어 영향이 없습니다 ([exists_plan_flip_investigation_20260920.md](../analysis/exists_plan_flip_investigation_20260920.md)).
 - **ChromaDB 1.x 업그레이드 (2026-09-13, 보류)**: 1.5.9 까지 CVE 미수정, 1.x 는 1건 추가. 서버 미노출로 예외 유지, 12-31 재확인 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).
 ### 6.2 정본 갱신 규약 (Update Protocol)
 

@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-20
 > **작성자**: Orca Builder (Worker, task_1fb1362ffc82)
-> **대상 Task**: `task_w1_handoff_backlog_reaudit`
+> **대상 Task**: `task_1fb1362ffc82`
 > **단일 진실 원천(SSoT)**: `AGENTS.md`, `docs/context/CURRENT_STATE.md`
 > **판정 기준일**: 2026-09-20
 > **원칙**: 진실 우선순위(실제 코드 및 실측 아티팩트 > CURRENT_STATE.md > README.md > 과거 handoff). 코드를 수정하지 않고 판정만 수행.
