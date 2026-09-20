@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import event, func, select
+from sqlalchemy import Integer, case, event, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -867,6 +867,30 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
         return normalized
 
 
+@_measure_call("cached_rows")
+def _cached_rows(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list[tuple[Any, ...]]:
+    """키별 여러 행을 돌려주는 일괄 집계 결과를 캐시합니다.
+
+    _cached_aggregate 는 .one() 으로 단일 행만 다룹니다. GROUP BY 로 여러 키를
+    한 번에 집계하는 경로는 이 함수로 같은 캐시 계층과 single-flight 를 씁니다.
+    키 접두어가 달라 단일 행 캐시와 값이 섞이지 않습니다.
+    """
+    key = _stmt_cache_key("rag:rows:", stmt)
+
+    cached = _timed_cache_get(key)
+    if cached is not None:
+        return [tuple(row) for row in cached]
+
+    with _flight_lock(key):
+        cached = _timed_cache_get(key)
+        if cached is not None:
+            return [tuple(row) for row in cached]
+
+        rows = [tuple(_numeric_or_none(value) for value in row) for row in db.execute(stmt).all()]
+        cache.set(key, [[_cacheable(value) for value in row] for row in rows], ttl)
+        return rows
+
+
 # 서로 기다리지 않는 집계 다섯 개를 순차로 돌면 q08 콜드에서 SQL 합계 약 4.9초였고 가장 긴 문장은 1.9초였습니다
 # (2026-09-13). 프로세스 전체에서 스레드를 넷으로 묶어 추가 연결이 요청 수에 비례해 늘지 않게 합니다
 # (연결 풀 10+20). 붐비면 대기열에서 기다리므로 순차 실행보다 느려지지는 않습니다.
@@ -999,6 +1023,88 @@ def _fetch_recent_results(db: Session, conditions: list, limit: int) -> list[dic
     return recent
 
 
+def _recent_result_order_key(result: BidResult) -> tuple[bool, float, int]:
+    """_fetch_recent_results 의 정렬 기준(개찰일 내림차순, NULL 뒤, id 내림차순)을 파이썬으로 옮깁니다."""
+    opened_at = result.rl_openg_dt
+    if opened_at is None:
+        return (True, 0.0, -(result.id or 0))
+    return (False, -opened_at.timestamp(), -(result.id or 0))
+
+
+def _fetch_recent_results_batch(
+    db: Session, conditions: list, names: list[str], limit: int
+) -> dict[str, list[BidResult]]:
+    """기관명 목록 전체의 최신 낙찰 결과를 한 번의 질의로 모아 기관명별로 나눕니다.
+
+    기관마다 _fetch_recent_results 를 부르면 기관 수만큼 질의가 늘어납니다. 윈도
+    함수로 기관명별 상위 (limit * LIVE_OVERFETCH_FACTOR) 건을 한 질의로 받아
+    호출부가 기관별로 합쳐 상한을 적용합니다. 기관명별 상한 건수가 같으므로
+    합집합 상위 구간도 기존과 동일합니다.
+    """
+    if not limit or not names:
+        return {}
+
+    ranked = (
+        select(
+            BidResult.id.label("id"),
+            func.row_number()
+            .over(
+                partition_by=BidResult.dminstt_nm,
+                order_by=(
+                    BidResult.rl_openg_dt.is_(None),
+                    BidResult.rl_openg_dt.desc(),
+                    BidResult.id.desc(),
+                ),
+            )
+            .label("recent_rank"),
+        )
+        .where(*conditions, BidResult.dminstt_nm.in_(names))
+        .subquery()
+    )
+    rows = (
+        db.execute(
+            select(BidResult)
+            .join(ranked, ranked.c.id == BidResult.id)
+            .where(ranked.c.recent_rank <= limit * LIVE_OVERFETCH_FACTOR)
+        )
+        .scalars()
+        .all()
+    )
+
+    grouped: dict[str, list[BidResult]] = {}
+    for result in rows:
+        if result.dminstt_nm is None:
+            continue
+        grouped.setdefault(result.dminstt_nm, []).append(result)
+    return grouped
+
+
+def _select_recent_results(candidates: list[BidResult], limit: int) -> list[dict[str, Any]]:
+    """기관별 후보 행을 정렬해 손상값을 제외하고 최대 limit 건을 고릅니다.
+
+    기존 _fetch_recent_results 가 DB 에서 상위 (limit * LIVE_OVERFETCH_FACTOR)
+    건을 받아 자르던 것과 같은 상한을 파이썬에서 적용합니다.
+    """
+    if not limit or not candidates:
+        return []
+    ordered = sorted(candidates, key=_recent_result_order_key)[: limit * LIVE_OVERFETCH_FACTOR]
+    recent: list[dict[str, Any]] = []
+    for result in ordered:
+        if any(
+            is_corrupted_display_text(value)
+            for value in (
+                result.bid_ntce_nm,
+                result.dminstt_nm,
+                result.bidwinnr_nm,
+            )
+        ):
+            continue
+        recent.append(_format_recent_result(result))
+        if len(recent) >= limit:
+            break
+    return recent
+
+
 def _fetch_sample_announcements(
     db: Session, conditions: list, limit: int = 3
 ) -> list[dict[str, Any]]:
@@ -1056,6 +1162,30 @@ def _quarter_boundaries(year: int, quarter: int) -> tuple[datetime, datetime]:
     return start_dt, next_dt
 
 
+def _quarter_group_expressions(db: Session, column) -> tuple[Any, Any]:
+    """날짜 컬럼을 (연도, 분기) 정수로 묶는 방언별 GROUP BY 식을 만듭니다.
+
+    SQLite 는 YEAR()/QUARTER() 가 없어 strftime 결과를 정수로 캐스팅하고 월을
+    분기로 나눕니다. MySQL 은 YEAR()/MONTH() 를 씁니다. 분기 판정은 두 방언이
+    같은 CASE 식을 공유합니다.
+    """
+    year_expr: Any
+    month_expr: Any
+    if db.get_bind().dialect.name == "sqlite":
+        year_expr = func.strftime("%Y", column).cast(Integer)
+        month_expr = func.strftime("%m", column).cast(Integer)
+    else:
+        year_expr = func.year(column)
+        month_expr = func.month(column)
+    quarter_expr = case(
+        (month_expr <= 3, 1),
+        (month_expr <= 6, 2),
+        (month_expr <= 9, 3),
+        else_=4,
+    )
+    return year_expr, quarter_expr
+
+
 def _build_time_series(
     db: Session,
     plan: RetrievalPlan,
@@ -1102,29 +1232,62 @@ def _build_time_series(
         if category:
             base_ann_conditions.append(BidAnnouncement.category == category)
 
-        series = []
-        for year, quarter in quarters:
-            q_start, q_next = _quarter_boundaries(year, quarter)
-            res_stmt = select(
+        series: list[dict[str, Any]] = []
+        if not quarters:
+            return series
+
+        # 분기마다 집계 질의를 따로 내면 질의 수가 분기 수에 비례합니다. 대상 분기가
+        # 연속이므로 전체 구간을 한 번에 GROUP BY (연도, 분기) 로 집계하고 파이썬에서
+        # 분기별로 나눠 담습니다. 질의 수는 분기 수와 무관하게 낙찰·공고 각 1회입니다.
+        range_start, _ = _quarter_boundaries(*quarters[0])
+        _, range_end = _quarter_boundaries(*quarters[-1])
+
+        res_year, res_quarter = _quarter_group_expressions(db, BidResult.rl_openg_dt)
+        ann_year, ann_quarter = _quarter_group_expressions(db, BidAnnouncement.bid_ntce_dt)
+
+        res_stmt = (
+            select(
+                res_year.label("year"),
+                res_quarter.label("quarter"),
                 func.count(BidResult.id),
                 func.avg(BidResult.sucsf_bid_rate),
-            ).where(
-                BidResult.rl_openg_dt >= q_start,
-                BidResult.rl_openg_dt < q_next,
+            )
+            .where(
+                BidResult.rl_openg_dt >= range_start,
+                BidResult.rl_openg_dt < range_end,
                 *base_res_conditions,
             )
-            ann_stmt = select(func.count(BidAnnouncement.id)).where(
-                BidAnnouncement.bid_ntce_dt >= q_start,
-                BidAnnouncement.bid_ntce_dt < q_next,
+            .group_by(res_year, res_quarter)
+        )
+        ann_stmt = (
+            select(
+                ann_year.label("year"),
+                ann_quarter.label("quarter"),
+                func.count(BidAnnouncement.id),
+            )
+            .where(
+                BidAnnouncement.bid_ntce_dt >= range_start,
+                BidAnnouncement.bid_ntce_dt < range_end,
                 *base_ann_conditions,
             )
+            .group_by(ann_year, ann_quarter)
+        )
 
-            res_row = _cached_aggregate(db, res_stmt)
-            bid_count = int(res_row[0] or 0)
-            avg_rate = float(round(float(res_row[1] or 0), 4)) if res_row[1] is not None else 0.0
+        res_by_quarter = {
+            (int(row[0]), int(row[1])): (int(row[2] or 0), row[3])
+            for row in _cached_rows(db, res_stmt)
+            if row[0] is not None and row[1] is not None
+        }
+        ann_by_quarter = {
+            (int(row[0]), int(row[1])): int(row[2] or 0)
+            for row in _cached_rows(db, ann_stmt)
+            if row[0] is not None and row[1] is not None
+        }
 
-            ann_row = _cached_aggregate(db, ann_stmt)
-            ann_count = int(ann_row[0] or 0)
+        for year, quarter in quarters:
+            bid_count, avg_value = res_by_quarter.get((year, quarter), (0, None))
+            avg_rate = float(round(float(avg_value or 0), 4)) if avg_value is not None else 0.0
+            ann_count = ann_by_quarter.get((year, quarter), 0)
 
             label = f"{year}년 {quarter}분기"
             series.append(
@@ -1255,6 +1418,44 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             date_from, date_to = _resolve_window(filters)
             category = _normalize_text(str(filters.get("category") or ""))
 
+            # 기관마다 집계와 최신 결과 질의를 따로 내면 질의 수가 기관 수에
+            # 비례합니다. 공통 조건은 그대로 두고 기관명만 IN 으로 합쳐 GROUP BY
+            # 한 번과, 윈도 함수로 기관명별 최신 결과를 뽑는 한 번으로 줄입니다.
+            common_conditions = []
+            if date_from:
+                common_conditions.append(BidResult.rl_openg_dt >= date_from)
+            if date_to:
+                common_conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+            if category:
+                common_conditions.append(BidResult.category == category)
+
+            all_matched_names = sorted(
+                {name for _, matched_names in resolved_institutions for name in matched_names}
+            )
+
+            stats_by_name: dict[str, tuple[int, float, int]] = {}
+            for db_name, id_count, rate_value, rate_rows in db.execute(
+                select(
+                    BidResult.dminstt_nm,
+                    func.count(BidResult.id),
+                    func.sum(BidResult.sucsf_bid_rate),
+                    func.count(BidResult.sucsf_bid_rate),
+                )
+                .where(*common_conditions, BidResult.dminstt_nm.in_(all_matched_names))
+                .group_by(BidResult.dminstt_nm)
+            ).all():
+                if db_name is None:
+                    continue
+                stats_by_name[db_name] = (
+                    int(id_count or 0),
+                    float(rate_value) if rate_value is not None else 0.0,
+                    int(rate_rows or 0),
+                )
+
+            recent_by_name = _fetch_recent_results_batch(
+                db, common_conditions, all_matched_names, limit=3
+            )
+
             by_institution: list[dict[str, Any]] = []
             all_recent_results: list[dict[str, Any]] = []
             total_bids = 0
@@ -1262,33 +1463,28 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             rate_count = 0
 
             for inst_name, matched_names in resolved_institutions:
-                conditions = []
-                if date_from:
-                    conditions.append(BidResult.rl_openg_dt >= date_from)
-                if date_to:
-                    conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
-                if category:
-                    conditions.append(BidResult.category == category)
-                conditions.append(BidResult.dminstt_nm.in_(matched_names))
+                bid_count = 0
+                inst_rate_sum = 0.0
+                inst_rate_rows = 0
+                candidates: list[BidResult] = []
+                for matched_name in matched_names:
+                    count_value, rate_value, rate_rows = stats_by_name.get(
+                        matched_name, (0, 0.0, 0)
+                    )
+                    bid_count += count_value
+                    inst_rate_sum += rate_value
+                    inst_rate_rows += rate_rows
+                    candidates.extend(recent_by_name.get(matched_name, []))
 
-                agg_stmt = select(
-                    func.count(BidResult.id),
-                    func.avg(BidResult.sucsf_bid_rate),
-                ).where(*conditions)
-                agg_row = db.execute(agg_stmt).first()
-                bid_count = int(agg_row[0] or 0) if agg_row else 0
-                avg_rate = (
-                    float(round(float(agg_row[1] or 0), 4))
-                    if (agg_row and agg_row[1] is not None)
-                    else 0.0
-                )
+                raw_avg_rate = inst_rate_sum / inst_rate_rows if inst_rate_rows > 0 else None
+                avg_rate = float(round(raw_avg_rate, 4)) if raw_avg_rate is not None else 0.0
 
                 total_bids += bid_count
-                if bid_count > 0 and agg_row and agg_row[1] is not None:
-                    rate_sum += float(agg_row[1]) * bid_count
+                if bid_count > 0 and raw_avg_rate is not None:
+                    rate_sum += raw_avg_rate * bid_count
                     rate_count += bid_count
 
-                recent_list = _fetch_recent_results(db, conditions, limit=3)
+                recent_list = _select_recent_results(candidates, limit=3)
                 all_recent_results.extend(recent_list)
 
                 by_institution.append(
