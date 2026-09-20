@@ -1341,3 +1341,201 @@ class TestPollLoopExitedSelfExit:
         )
         poll_loop(["term_exit_clean"], max_exit_observations=1)
         assert not pid_path.exists()
+
+
+class TestCommandCodeDialog:
+    """Command Code(cmd) CLI 의 명령 실행 승인 대화창 탐지 계약입니다."""
+
+    SCREEN = (
+        "Execute Shell Command\n"
+        "Command Code needs to execute pwd && ls -la .orca 2>/dev/null.\n"
+        "\n"
+        "Press [ctrl+e] to explain this command\n"
+        "\n"
+        "  1. Yes\n"
+        "  2. Yes, don't ask again for this exact command in this project\n"
+        "  3. No, tell Command Code what to do differently\n"
+    )
+
+    def test_pending_command_extracts_command(self):
+        from scripts.orca_auto_approve import pending_command
+
+        assert pending_command(self.SCREEN) == "pwd && ls -la .orca 2>/dev/null"
+
+    def test_extracted_command_is_classified(self):
+        """탐지만 되고 판정에서 보류되면 워커는 여전히 멈춥니다."""
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        verdict, _reason = classify_command(pending_command(self.SCREEN))
+        assert verdict == "approve"
+
+    def test_no_dialog_returns_none(self):
+        from scripts.orca_auto_approve import pending_command
+
+        assert pending_command("대화창이 없는 평범한 화면") is None
+
+    def test_command_with_trailing_dot_only_loses_sentence_period(self):
+        """명령 안의 마침표(확장자)는 남고 문장 끝 마침표만 떨어져야 합니다."""
+        from scripts.orca_auto_approve import pending_command
+
+        screen = "Command Code needs to execute cat src/app/main.py.\n\nPress [ctrl+e] to explain\n"
+        assert pending_command(screen) == "cat src/app/main.py"
+
+
+class TestOrcaCheckAllowance:
+    """워커가 코디네이터 지시를 받는 경로는 자동 승인 대상입니다."""
+
+    def test_check_without_ack_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        verdict, _ = classify_command("orca orchestration check --terminal term_x --json")
+        assert verdict == "approve"
+
+    def test_check_with_ack_is_held(self):
+        """--ack 는 배달을 소비해 되돌릴 수 없으므로 사람 승인으로 남깁니다."""
+        from scripts.orca_auto_approve import classify_command
+
+        verdict, _ = classify_command("orca orchestration check --ack delivery_abc")
+        assert verdict == "hold"
+
+    def test_other_orca_subcommands_stay_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        for cmd in (
+            "orca terminal close --terminal term_x",
+            "orca worktree create --name x",
+            "orca orchestration worker-release --dispatch d",
+        ):
+            verdict, _ = classify_command(cmd)
+            assert verdict == "hold", cmd
+
+
+class TestWrappedDialogAndCommitHeredoc:
+    """워커 정체를 만든 두 형태를 회귀로 고정합니다."""
+
+    def test_wrapped_command_is_joined_into_one_line(self):
+        """대화창이 폭에서 접은 명령은 한 줄로 되돌려야 합니다.
+
+        접힌 줄을 그대로 두면 개행이 명령 구분자로 읽혀 뒷부분이 별도 명령으로
+        판정되고, 안전한 명령조차 보류됩니다.
+        """
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        screen = (
+            "Execute Shell Command\n"
+            "Command Code needs to execute uv run pytest tests/a.py tests/b.py\n"
+            "tests/c.py -q 2>&1 | tail -30.\n\nPress [ctrl+e] to explain this command\n"
+        )
+        cmd = pending_command(screen)
+        assert "\n" not in cmd
+        assert cmd == "uv run pytest tests/a.py tests/b.py tests/c.py -q 2>&1 | tail -30"
+        assert classify_command(cmd)[0] == "approve"
+
+    def test_wrapped_git_pipeline_is_approved(self):
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        screen = (
+            "Command Code needs to execute git add src/x.py tests/y.py && git status\n"
+            "--short.\n\nPress [ctrl+e] to explain this command\n"
+        )
+        assert classify_command(pending_command(screen))[0] == "approve"
+
+    def test_quoted_heredoc_commit_message_is_approved(self):
+        """커밋 메시지 히어독은 본문이 확장되지 않는 데이터이므로 승인합니다."""
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git commit -F - <<'EOF'")[0] == "approve"
+        assert classify_command("git commit -q -F - <<'MSG'")[0] == "approve"
+
+    def test_unquoted_heredoc_commit_message_stays_held(self):
+        """따옴표 없는 구분자는 확장이 일어나므로 계속 보류합니다."""
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git commit -F - <<EOF")[0] == "hold"
+
+
+class TestGitDisplayOnlyConfig:
+    """화면 출력만 바꾸는 git -c 설정은 승인하고 나머지는 계속 보류합니다."""
+
+    def test_pager_config_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git -c core.pager=cat diff -- src/x.py")[0] == "approve"
+
+    def test_other_config_keys_stay_held(self):
+        """저장소 상태나 신원을 바꾸는 설정은 허용하지 않습니다."""
+        from scripts.orca_auto_approve import classify_command
+
+        for cmd in (
+            "git -c user.email=x@y.z commit -m t",
+            "git -c core.hooksPath=/tmp/h status",
+            "git -c protocol.ext.allow=always fetch",
+        ):
+            assert classify_command(cmd)[0] == "hold", cmd
+
+    def test_config_without_subcommand_is_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git -c core.pager=cat")[0] == "hold"
+
+
+class TestGitCheckIgnore:
+    """산출물이 gitignore 대상인지 묻는 읽기 전용 조회는 승인합니다."""
+
+    def test_check_ignore_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git check-ignore -v .orca/x .commandcode")[0] == "approve"
+
+    def test_unknown_check_ignore_option_stays_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git check-ignore --stdin")[0] == "hold"
+
+
+class TestHeredocKeepsNewlines:
+    """히어독은 개행을 보존해야 첫 줄 판정과 종료 구분자가 유지됩니다."""
+
+    SCREEN = (
+        "Execute Shell Command\n"
+        "Command Code needs to execute git commit -F - <<'EOF'\n"
+        "fix: 제목 줄\n"
+        "\n"
+        "본문 줄.\n"
+        "EOF.\n"
+        "\nPress [ctrl+e] to explain this command\n"
+    )
+
+    def test_heredoc_command_keeps_newlines(self):
+        from scripts.orca_auto_approve import pending_command
+
+        cmd = pending_command(self.SCREEN)
+        assert cmd.splitlines()[0] == "git commit -F - <<'EOF'"
+
+    def test_heredoc_commit_is_approved_from_dialog(self):
+        """합쳐 버리면 첫 줄이 본문까지 삼켜 판정이 무너집니다."""
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        assert classify_command(pending_command(self.SCREEN))[0] == "approve"
+
+
+class TestHeredocCommitAfterPrefix:
+    """워커는 스테이징과 커밋을 한 줄로 냅니다. 앞 구간도 함께 판정합니다."""
+
+    def test_add_then_commit_heredoc_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        cmd = "git add src/x.py tests/y.py && git commit -F - <<'EOF'\n제목\nEOF"
+        assert classify_command(cmd)[0] == "approve"
+
+    def test_unsafe_prefix_blocks_commit_heredoc(self):
+        """앞 구간이 위험하면 뒤가 커밋 히어독이라도 보류해야 합니다."""
+        from scripts.orca_auto_approve import classify_command
+
+        cmd = "rm -rf build && git commit -F - <<'EOF'\n제목\nEOF"
+        assert classify_command(cmd)[0] == "hold"
+
+    def test_unquoted_delimiter_after_prefix_stays_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git add x && git commit -F - <<EOF")[0] == "hold"
