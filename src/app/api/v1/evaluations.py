@@ -38,7 +38,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from src.app.api.v1.accounts import require_current_user
 from src.app.api.v1.predictions import predict_price_api
@@ -912,7 +912,11 @@ def list_evaluation_snapshots(
     user: CustomUser = Depends(require_current_user),
 ):
     """로그인한 사용자의 분석 스냅샷 목록을 조회합니다. bid_id로 필터링 가능."""
-    query = select(BidEvaluationSnapshot).where(BidEvaluationSnapshot.user_id == user.id)
+    query = (
+        select(BidEvaluationSnapshot)
+        .options(selectinload(BidEvaluationSnapshot.evidence_items))
+        .where(BidEvaluationSnapshot.user_id == user.id)
+    )
     if bid_id is not None:
         query = query.where(BidEvaluationSnapshot.bid_id == bid_id)
     query = query.order_by(BidEvaluationSnapshot.created_at.desc())
