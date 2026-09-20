@@ -1491,3 +1491,29 @@ class TestGitCheckIgnore:
         from scripts.orca_auto_approve import classify_command
 
         assert classify_command("git check-ignore --stdin")[0] == "hold"
+
+
+class TestHeredocKeepsNewlines:
+    """히어독은 개행을 보존해야 첫 줄 판정과 종료 구분자가 유지됩니다."""
+
+    SCREEN = (
+        "Execute Shell Command\n"
+        "Command Code needs to execute git commit -F - <<'EOF'\n"
+        "fix: 제목 줄\n"
+        "\n"
+        "본문 줄.\n"
+        "EOF.\n"
+        "\nPress [ctrl+e] to explain this command\n"
+    )
+
+    def test_heredoc_command_keeps_newlines(self):
+        from scripts.orca_auto_approve import pending_command
+
+        cmd = pending_command(self.SCREEN)
+        assert cmd.splitlines()[0] == "git commit -F - <<'EOF'"
+
+    def test_heredoc_commit_is_approved_from_dialog(self):
+        """합쳐 버리면 첫 줄이 본문까지 삼켜 판정이 무너집니다."""
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        assert classify_command(pending_command(self.SCREEN))[0] == "approve"

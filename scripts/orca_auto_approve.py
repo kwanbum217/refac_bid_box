@@ -1510,6 +1510,11 @@ def extract_command_code_command(screen: str) -> str | None:
     # 그대로 두면 PIPELINE_SEPARATORS 가 개행을 명령 구분자로 읽어 접힌 뒷부분이
     # 별도 명령으로 판정되고, 안전한 명령조차 보류됩니다. 2026-09-20 에 빌더 두
     # 대가 각각 pytest 와 git add 에서 이 이유로 멈췄습니다.
+    #
+    # 히어독은 예외입니다. 본문의 개행이 의미를 가지고 종료 구분자도 줄 단위라,
+    # 합치면 첫 줄 판정이 무너지고 본문 뒤에 붙은 명령을 구분할 수 없게 됩니다.
+    if "<<" in command:
+        return command
     return " ".join(command.split())
 
 
