@@ -129,6 +129,9 @@ SAFE_TEST_COMMANDS = {
 
 SAFE_GIT_SUBCOMMANDS = {
     "add",
+    # 경로가 gitignore 대상인지 묻기만 합니다. 워커가 산출물을 커밋해도 되는지
+    # 확인할 때 씁니다(2026-09-20 빌더 정체).
+    "check-ignore",
     "commit",
     "diff",
     "log",
@@ -325,6 +328,18 @@ SAFE_GIT_OPTIONS: dict[str, set[str]] = {
         "--independent",
         "--is-ancestor",
     },
+    # 경로의 gitignore 여부만 묻습니다. -v 는 어느 규칙이 걸렸는지 함께 보여 줄 뿐
+    # 저장소 상태를 바꾸지 않습니다.
+    "check-ignore": {
+        "-v",
+        "--verbose",
+        "-n",
+        "--non-matching",
+        "--no-index",
+        "-q",
+        "--quiet",
+        "-z",
+    },
 }
 
 SAFE_GIT_OPTION_PREFIXES: dict[str, tuple[str, ...]] = {
@@ -363,6 +378,7 @@ SAFE_GIT_OPTION_PREFIXES: dict[str, tuple[str, ...]] = {
     "show": ("--format=", "--pretty=", "--color="),
     "rev-parse": ("--short=", "--git-path="),
     "merge-base": (),
+    "check-ignore": (),
 }
 
 GIT_BRANCH_READ_ONLY_FLAGS = {

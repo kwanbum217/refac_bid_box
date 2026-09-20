@@ -1477,3 +1477,17 @@ class TestGitDisplayOnlyConfig:
         from scripts.orca_auto_approve import classify_command
 
         assert classify_command("git -c core.pager=cat")[0] == "hold"
+
+
+class TestGitCheckIgnore:
+    """산출물이 gitignore 대상인지 묻는 읽기 전용 조회는 승인합니다."""
+
+    def test_check_ignore_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git check-ignore -v .orca/x .commandcode")[0] == "approve"
+
+    def test_unknown_check_ignore_option_stays_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git check-ignore --stdin")[0] == "hold"
