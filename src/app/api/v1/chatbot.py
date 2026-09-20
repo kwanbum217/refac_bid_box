@@ -434,7 +434,7 @@ async def chat_api(
     user: CustomUser | None = Depends(get_current_user),
 ):
     """계획 수립 -> 도구 실행 -> RAG 답변 생성의 원본 파이프라인을 그대로 수행합니다."""
-    enforce_anonymous_api_quota(request, user)
+    await asyncio.to_thread(enforce_anonymous_api_quota, request, user)
     return await asyncio.to_thread(_run_chat, payload, user.id if user else None)
 
 
@@ -469,7 +469,7 @@ async def chat_stream_api(
     비스트리밍 응답과 완전히 같은 ChatResponse 라, 화면은 기존 렌더 로직을
     그대로 쓰면 됩니다. 토큰은 체감 속도를 위한 것이고 정본은 `final` 입니다.
     """
-    enforce_anonymous_api_quota(request, user)
+    await asyncio.to_thread(enforce_anonymous_api_quota, request, user)
     user_id = user.id if user else None
 
     async def event_generator():
