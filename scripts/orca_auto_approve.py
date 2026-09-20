@@ -80,7 +80,7 @@ HEREDOC_WRITE = re.compile(
 # 이 저장소의 커밋 메시지는 여러 줄 한국어 본문이라 워커가 매번 이 형태를 쓰며,
 # 보류하면 커밋마다 승인 대기가 생깁니다(2026-09-20 빌더 워커 정체).
 HEREDOC_COMMIT_MESSAGE = re.compile(
-    r"^\s*git\s+commit\s+(?:-[a-zA-Z-]+\s+)*-F\s+-\s+<<-?\s*(['\"])(\w+)\1\s*$",
+    r"(?:^|&&|\|\||;)\s*git\s+commit\s+(?:-[a-zA-Z-]+\s+)*-F\s+-\s+<<-?\s*(['\"])(\w+)\1\s*$",
 )
 
 # python 실행 본문에서 보류하는 토큰. 셸 탈출과 파일 삭제 경로입니다.
@@ -785,8 +785,21 @@ def classify_heredoc_write(cmd: str) -> tuple[str, str] | None:
     if "<<" not in cmd:
         return None
     first_line = cmd.split("\n", 1)[0]
-    if HEREDOC_COMMIT_MESSAGE.match(first_line):
-        return "approve", "따옴표 구분자 히어독 커밋 메시지 (본문 확장 없음)"
+
+    # 워커는 커밋을 `git add <파일들> && git commit -F - <<'EOF'` 한 줄로 냅니다.
+    # 히어독은 마지막 구간에만 올 수 있으므로, 앞 구간은 평소 규칙으로 판정하고
+    # 뒤의 커밋 히어독만 따로 봅니다. 앞 구간이 하나라도 보류면 전체를 보류합니다.
+    commit_match = HEREDOC_COMMIT_MESSAGE.search(first_line)
+    if commit_match:
+        prefix = first_line[: commit_match.start()].strip()
+        prefix = prefix.rstrip("&|;").strip()
+        if not prefix:
+            return "approve", "따옴표 구분자 히어독 커밋 메시지 (본문 확장 없음)"
+        verdict, reason = classify_command(prefix)
+        if verdict != "approve":
+            return verdict, reason
+        return "approve", "선행 구간 승인 + 따옴표 구분자 히어독 커밋 메시지"
+
     match = HEREDOC_WRITE.match(first_line)
     if not match:
         # 따옴표 없는 구분자이거나 형태가 다르면 확장 가능성이 있어 보류합니다.
@@ -1510,6 +1523,11 @@ def extract_command_code_command(screen: str) -> str | None:
     # 그대로 두면 PIPELINE_SEPARATORS 가 개행을 명령 구분자로 읽어 접힌 뒷부분이
     # 별도 명령으로 판정되고, 안전한 명령조차 보류됩니다. 2026-09-20 에 빌더 두
     # 대가 각각 pytest 와 git add 에서 이 이유로 멈췄습니다.
+    #
+    # 히어독은 예외입니다. 본문의 개행이 의미를 가지고 종료 구분자도 줄 단위라,
+    # 합치면 첫 줄 판정이 무너지고 본문 뒤에 붙은 명령을 구분할 수 없게 됩니다.
+    if "<<" in command:
+        return command
     return " ".join(command.split())
 
 
