@@ -1517,3 +1517,25 @@ class TestHeredocKeepsNewlines:
         from scripts.orca_auto_approve import classify_command, pending_command
 
         assert classify_command(pending_command(self.SCREEN))[0] == "approve"
+
+
+class TestHeredocCommitAfterPrefix:
+    """워커는 스테이징과 커밋을 한 줄로 냅니다. 앞 구간도 함께 판정합니다."""
+
+    def test_add_then_commit_heredoc_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        cmd = "git add src/x.py tests/y.py && git commit -F - <<'EOF'\n제목\nEOF"
+        assert classify_command(cmd)[0] == "approve"
+
+    def test_unsafe_prefix_blocks_commit_heredoc(self):
+        """앞 구간이 위험하면 뒤가 커밋 히어독이라도 보류해야 합니다."""
+        from scripts.orca_auto_approve import classify_command
+
+        cmd = "rm -rf build && git commit -F - <<'EOF'\n제목\nEOF"
+        assert classify_command(cmd)[0] == "hold"
+
+    def test_unquoted_delimiter_after_prefix_stays_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git add x && git commit -F - <<EOF")[0] == "hold"
