@@ -108,18 +108,10 @@ def test_effort_flag_rejects_unknown_level(tmp_path: Path):
 
 def test_build_command_auto_approve_flags():
     """권한 자동 승인 인자는 명시적으로 지정될 때만 포함되어야 합니다."""
-    assert "--permission-mode" not in build_command(MODEL, "지시문")
+    assert "--yolo" not in build_command(MODEL, "지시문")
 
     cmd = build_command(MODEL, "지시문", auto=True)
-    assert cmd == [
-        "cmd",
-        "--model",
-        MODEL,
-        "--trust",
-        "--permission-mode",
-        "auto-accept",
-        "지시문",
-    ]
+    assert cmd == ["cmd", "--model", MODEL, "--trust", "--yolo", "지시문"]
 
 
 @patch("scripts.orca_cmd_launch.run_cmd", return_value=0)
