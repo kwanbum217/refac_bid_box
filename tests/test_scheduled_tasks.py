@@ -9,17 +9,20 @@ tests/test_scheduled_tasks.py
 """
 
 import asyncio
+import threading
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import pandas as pd
 import pytest
 from arq.cron import next_cron
 from sqlalchemy import select
 
 from src.app.core.config import settings
 from src.app.models.chatbot import PipelineExecution
+from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.tasks import scheduled_tasks, worker
 from src.tasks.run_mode_matrix import get_run_mode_steps
 from src.tasks.worker import WorkerSettings
@@ -508,3 +511,188 @@ def test_catchup_job_is_registered_with_nightly_timeout():
     assert catchup is not None
     assert getattr(catchup, "timeout_s", None) == float(worker.SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS)
     assert WorkerSettings.max_jobs == 4
+
+
+# --------------------------------------------------------------------------- #
+# 이벤트 루프 오프로드 증명 (스레드 식별자 대조)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_schedule_claim_acquire_and_release_run_off_event_loop(monkeypatch, isolated_db):
+    """claim 획득·해제가 이벤트 루프 스레드가 아닌 워커 스레드에서 실행됩니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True, raising=False)
+    loop_thread = threading.get_ident()
+    acquire_threads: list[int] = []
+    release_threads: list[int] = []
+
+    def _acquire(owner, **kwargs):
+        acquire_threads.append(threading.get_ident())
+        return scheduled_tasks.ScheduleClaimResult(
+            status=scheduled_tasks.ScheduleClaimStatus.ACQUIRED,
+            key=scheduled_tasks.SCHEDULE_COLLECTION_CLAIM_KEY,
+            owner=owner,
+            ttl=21600,
+            token="test-token",
+            detail="test claim granted",
+        )
+
+    def _release(key, token=None, **kwargs):
+        release_threads.append(threading.get_ident())
+        return True
+
+    monkeypatch.setattr(scheduled_tasks, "acquire_schedule_claim", _acquire)
+    monkeypatch.setattr(scheduled_tasks, "release_schedule_claim", _release)
+
+    session_factory = lambda: isolated_db  # noqa: E731
+    with (
+        patch.object(scheduled_tasks, "SessionLocal", session_factory),
+        patch.object(
+            scheduled_tasks,
+            "run_automation_pipeline",
+            new=AsyncMock(return_value={"status": "success"}),
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_ranking_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_compare_stats_snapshots", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_rebuild_institution_stats", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_check_mysql_stats_freshness", return_value={"status": "success"}
+        ),
+        patch.object(
+            scheduled_tasks, "_check_restore_drill_freshness", return_value={"status": "success"}
+        ),
+    ):
+        isolated_db.close = lambda: None
+        result = await scheduled_tasks.nightly_schedule_task({})
+
+    assert result["status"] == "success"
+    assert acquire_threads
+    assert all(tid != loop_thread for tid in acquire_threads)
+    assert release_threads
+    assert all(tid != loop_thread for tid in release_threads)
+
+
+@pytest.mark.asyncio
+async def test_catchup_decision_and_ledger_run_off_event_loop(monkeypatch, catchup_redis):
+    """따라잡기 판정과 선점·종결 원장 기록이 이벤트 루프 밖에서 실행됩니다."""
+    loop_thread = threading.get_ident()
+    check_threads: list[int] = []
+    record_threads: list[int] = []
+
+    def _check(db=None):
+        check_threads.append(threading.get_ident())
+        return (True, "threshold_exceeded", {"target_task": "development_data_refresh"})
+
+    def _record(*args, **kwargs):
+        record_threads.append(threading.get_ident())
+        return True
+
+    monkeypatch.setattr(scheduled_tasks, "check_schedule_catchup_needed", _check)
+    monkeypatch.setattr(scheduled_tasks, "record_catchup_attempt", _record)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "development_data_refresh_task",
+        AsyncMock(return_value={"status": "success"}),
+    )
+
+    outcome = await scheduled_tasks.run_schedule_catchup_task({})
+
+    assert outcome["status"] == "success"
+    assert check_threads
+    assert all(tid != loop_thread for tid in check_threads)
+    # 선점(nx) 기록과 finally 종결 기록이 각각 오프로드됩니다.
+    assert len(record_threads) >= 2
+    assert all(tid != loop_thread for tid in record_threads)
+
+
+@pytest.mark.asyncio
+async def test_catchup_skip_ledger_write_runs_off_event_loop(monkeypatch, catchup_redis):
+    """판정 스킵 경로의 원장 기록도 이벤트 루프 밖에서 실행됩니다."""
+    loop_thread = threading.get_ident()
+    record_threads: list[int] = []
+
+    def _check(db=None):
+        return (False, "threshold_not_exceeded", {"target_task": "development_data_refresh"})
+
+    def _record(*args, **kwargs):
+        record_threads.append(threading.get_ident())
+        return True
+
+    monkeypatch.setattr(scheduled_tasks, "check_schedule_catchup_needed", _check)
+    monkeypatch.setattr(scheduled_tasks, "record_catchup_attempt", _record)
+
+    outcome = await scheduled_tasks.run_schedule_catchup_task({})
+
+    assert outcome["status"] == "skipped"
+    assert record_threads
+    assert all(tid != loop_thread for tid in record_threads)
+
+
+@pytest.mark.asyncio
+async def test_drift_feature_frame_and_psi_run_off_event_loop(monkeypatch):
+    """드리프트 특징 프레임 생성과 PSI 판정이 같은 워커 스레드에서 한 번에 실행됩니다."""
+    monkeypatch.setattr(settings, "ML_DRIFT_MONITOR_ENABLED", True, raising=False)
+    loop_thread = threading.get_ident()
+    seen: list[tuple[str, int]] = []
+
+    df_recent = pd.DataFrame(
+        [
+            {
+                "presumed_price": 100_000_000.0,
+                "base_price": 99_000_000.0,
+                "winning_rate": 88.0,
+                "openg_dt": "2026-08-01",
+                "srvce_div_nm": "일반용역",
+            }
+            for _ in range(120)
+        ]
+    )
+
+    def _build_dataset(db, category_code, **kwargs):
+        seen.append(("build", threading.get_ident()))
+        return df_recent
+
+    def _compute_drift(baseline_dist, df_feat, **kwargs):
+        seen.append(("drift", threading.get_ident()))
+        return {
+            "status": "STABLE",
+            "recent_samples": len(df_feat),
+            "drift_feature_count": 0,
+            "drift_features": [],
+            "total_features_checked": 2,
+        }
+
+    monkeypatch.setattr(scheduled_tasks, "build_training_dataset", _build_dataset)
+    monkeypatch.setattr(scheduled_tasks, "check_dataset_drift", _compute_drift)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "load_baseline_distributions",
+        lambda baseline_dir: {"model_version": "v_thread_test"},
+    )
+    monkeypatch.setattr(scheduled_tasks, "_record_drift_log", lambda **kwargs: None)
+    monkeypatch.setattr(scheduled_tasks, "notify_drift_detected", AsyncMock())
+    monkeypatch.setattr(
+        scheduled_tasks, "SessionLocal", lambda: SimpleNamespace(close=lambda: None)
+    )
+
+    outcome = await scheduled_tasks.drift_monitor_task({}, evaluation_window_days=7)
+
+    assert outcome["status"] == "success"
+    expected = 2 * len(CATEGORY_MODEL_NAMES)
+    assert len(seen) == expected
+    for index in range(0, expected, 2):
+        build_kind, build_thread = seen[index]
+        drift_kind, drift_thread = seen[index + 1]
+        assert build_kind == "build"
+        assert drift_kind == "drift"
+        # 프레임 생성과 PSI 계산이 모두 이벤트 루프 밖에서 실행됩니다.
+        assert build_thread != loop_thread
+        assert drift_thread != loop_thread
+        # 두 계산이 같은 워커 스레드에서 수행되어 프레임이 루프로 돌아오지 않습니다.
+        assert build_thread == drift_thread

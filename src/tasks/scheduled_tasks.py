@@ -223,7 +223,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info("야간 스케줄이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
-    claim = acquire_schedule_claim("nightly_schedule")
+    claim = await asyncio.to_thread(acquire_schedule_claim, "nightly_schedule")
     if not claim.acquired:
         if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
             logger.info("야간 스케줄 실행 건너뜀 (이미 claim됨, key=%s)", claim.key)
@@ -289,7 +289,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     outcome["restore_drill_freshness"] = await asyncio.to_thread(_check_restore_drill_freshness)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
-        release_schedule_claim(claim.key, token=claim.token)
+        await asyncio.to_thread(release_schedule_claim, claim.key, token=claim.token)
     return final_outcome
 
 
@@ -304,7 +304,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info("운영 야간 번들이 활성화되어 개발 데이터 최신화를 건너뜁니다.")
         return {"status": "skipped", "reason": "nightly_schedule_enabled"}
 
-    claim = acquire_schedule_claim("development_data_refresh")
+    claim = await asyncio.to_thread(acquire_schedule_claim, "development_data_refresh")
     if not claim.acquired:
         if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
             logger.info("개발 데이터 최신화 실행 건너뜀 (이미 claim됨, key=%s)", claim.key)
@@ -358,7 +358,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     outcome["restore_drill_freshness"] = await asyncio.to_thread(_check_restore_drill_freshness)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
-        release_schedule_claim(claim.key, token=claim.token)
+        await asyncio.to_thread(release_schedule_claim, claim.key, token=claim.token)
     return final_outcome
 
 
@@ -589,24 +589,47 @@ def _record_drift_log(
             session.close()
 
 
-def _build_training_dataset_thread(
+def _compute_drift_assessment_thread(
     category_code: str,
     start_at: datetime,
     end_at: datetime,
-    persist: bool = False,
-) -> pd.DataFrame:
-    """스레드 전용 세션에서 학습 데이터셋을 빌드합니다."""
+    baseline_dist: dict[str, Any],
+    evaluation_window_days: int,
+) -> dict[str, Any] | None:
+    """스레드 전용 세션에서 평가 데이터셋과 특징 프레임을 만들고 PSI 판정을 계산합니다.
+
+    프레임이 스레드 경계를 넘지 않도록 데이터셋 로드부터 판정까지 한 스레드에서 수행합니다.
+    최근 평가 데이터가 없으면 None 을 반환합니다.
+    """
     db = SessionLocal()
     try:
-        return build_training_dataset(
+        df_raw = build_training_dataset(
             db,
             category_code=category_code,
             start_at=start_at,
             end_at=end_at,
-            persist=persist,
+            persist=False,
         )
     finally:
         db.close()
+
+    if df_raw.empty:
+        return None
+
+    # 단일 특징 공급원(features.py) 거침
+    df_raw = attach_institution_history(df_raw)
+    df_raw = attach_repeat_history(df_raw)
+    records = df_raw.to_dict(orient="records")
+    features_list = build_feature_frame(records)
+    df_feat = pd.DataFrame(features_list)
+    category_levels = collect_category_levels(df_feat)
+    df_feat = apply_categorical_dtypes(df_feat, category_levels)
+
+    return check_dataset_drift(
+        baseline_dist,
+        df_feat,
+        evaluation_window_days=evaluation_window_days,
+    )
 
 
 def is_drift_monitor_enabled() -> bool:
@@ -685,15 +708,16 @@ async def drift_monitor_task(
                 start_at = now - timedelta(days=evaluation_window_days)
                 end_at = now
 
-                df_raw = await asyncio.to_thread(
-                    _build_training_dataset_thread,
-                    category_code=category,
-                    start_at=start_at,
-                    end_at=end_at,
-                    persist=False,
+                drift_verdict = await asyncio.to_thread(
+                    _compute_drift_assessment_thread,
+                    category,
+                    start_at,
+                    end_at,
+                    baseline_dist,
+                    evaluation_window_days,
                 )
 
-                if df_raw.empty:
+                if drift_verdict is None:
                     insufficient_summary = {
                         "reason": (
                             f"카테고리 {category}에 대한 최근 평가 데이터가 없습니다 "
@@ -719,22 +743,6 @@ async def drift_monitor_task(
                         "samples": 0,
                     }
                     continue
-
-                # 단일 특징 공급원(features.py) 거침
-                df_raw = attach_institution_history(df_raw)
-                df_raw = attach_repeat_history(df_raw)
-                records = df_raw.to_dict(orient="records")
-                features_list = build_feature_frame(records)
-                df_feat = pd.DataFrame(features_list)
-                category_levels = collect_category_levels(df_feat)
-                df_feat = apply_categorical_dtypes(df_feat, category_levels)
-
-                # 드리프트 판정
-                drift_verdict = check_dataset_drift(
-                    baseline_dist,
-                    df_feat,
-                    evaluation_window_days=evaluation_window_days,
-                )
 
                 # retrain_logs 에 기록
                 await asyncio.to_thread(
@@ -1279,7 +1287,7 @@ def check_schedule_catchup_needed(
 @_record_schedule("schedule_catchup")
 async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """기동 시 누락된 스케줄 수집을 따라잡는 진입점 태스크입니다."""
-    needed, reason, details = check_schedule_catchup_needed()
+    needed, reason, details = await asyncio.to_thread(check_schedule_catchup_needed)
     logger.info(
         "스케줄 따라잡기 판정: needed=%s, reason=%s, details=%s",
         needed,
@@ -1290,7 +1298,8 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
     if not needed:
         # 쿨다운 중 재평가는 선점 워커의 원장을 덮지 않습니다.
         if reason != "in_cooldown":
-            record_catchup_attempt(
+            await asyncio.to_thread(
+                record_catchup_attempt,
                 ledger=build_catchup_ledger(status="skipped", reason=reason, details=details),
                 apply_cooldown=False,
             )
@@ -1306,7 +1315,8 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
         reason=reason,
         details=details,
     )
-    if not record_catchup_attempt(ledger=running_ledger, nx=True):
+    claimed = await asyncio.to_thread(record_catchup_attempt, ledger=running_ledger, nx=True)
+    if not claimed:
         logger.info("스케줄 따라잡기가 이미 선점되어 건너뜁니다 (target_task=%s)", target_task)
         return {
             "status": "skipped",
@@ -1394,4 +1404,4 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
             "catchup_details": details,
         }
     finally:
-        record_catchup_attempt(ledger=ledger)
+        await asyncio.to_thread(record_catchup_attempt, ledger=ledger)
