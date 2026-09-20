@@ -138,6 +138,15 @@ SAFE_GIT_SUBCOMMANDS = {
     "status",
 }
 
+# git -c 로 넘겨도 저장소 상태를 바꾸지 않고 화면 출력만 바꾸는 설정입니다.
+# 페이저를 끄는 용도로 워커가 습관적으로 붙입니다.
+GIT_DISPLAY_ONLY_CONFIG = {
+    "core.pager=cat",
+    "core.pager=",
+    "color.ui=false",
+    "color.ui=never",
+}
+
 GIT_GLOBAL_OPTIONS_WITH_ARG = {
     "-C",
     "-c",
@@ -1114,10 +1123,19 @@ def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
         if not git_args:
             return "hold", "git 서브커맨드 없음"
 
-        # 전역 옵션 검출: 첫 인자가 '-' 로 시작하면 전역 옵션 사용으로 간주하고 hold
-        if git_args[0].startswith("-"):
+        # 전역 옵션 검출: 첫 인자가 '-' 로 시작하면 전역 옵션 사용으로 간주하고 hold.
+        # 예외는 화면 출력만 바꾸는 -c 설정 두 개다. 워커가 페이저를 끄려고 습관적으로
+        # 붙이며, 막으면 git diff 마다 사람 승인을 기다린다(2026-09-20 빌더 정체).
+        # 저장소 상태를 바꾸지 않는 키만 이름으로 지정해 허용한다.
+        while len(git_args) >= 2 and git_args[0] == "-c" and git_args[1] in GIT_DISPLAY_ONLY_CONFIG:
+            git_args = git_args[2:]
+
+        if git_args and git_args[0].startswith("-"):
             opt = git_args[0]
             return "hold", f"git 전역 옵션 사용 금지 ({opt})"
+
+        if not git_args:
+            return "hold", "git 서브커맨드 없음"
 
         subcmd, sub_args = parse_git_subcommand(git_args)
         if subcmd is None:

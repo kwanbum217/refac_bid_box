@@ -1452,3 +1452,28 @@ class TestWrappedDialogAndCommitHeredoc:
         from scripts.orca_auto_approve import classify_command
 
         assert classify_command("git commit -F - <<EOF")[0] == "hold"
+
+
+class TestGitDisplayOnlyConfig:
+    """화면 출력만 바꾸는 git -c 설정은 승인하고 나머지는 계속 보류합니다."""
+
+    def test_pager_config_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git -c core.pager=cat diff -- src/x.py")[0] == "approve"
+
+    def test_other_config_keys_stay_held(self):
+        """저장소 상태나 신원을 바꾸는 설정은 허용하지 않습니다."""
+        from scripts.orca_auto_approve import classify_command
+
+        for cmd in (
+            "git -c user.email=x@y.z commit -m t",
+            "git -c core.hooksPath=/tmp/h status",
+            "git -c protocol.ext.allow=always fetch",
+        ):
+            assert classify_command(cmd)[0] == "hold", cmd
+
+    def test_config_without_subcommand_is_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git -c core.pager=cat")[0] == "hold"
