@@ -291,6 +291,16 @@ $ python3 scripts/validate_agent_rules.py --quiet
 validate_agent_rules exit=0
 ```
 
+변경 파일 검증도 실제 실행 출력을 그대로 옮겨 적습니다. 이 명령의 출력은 커밋 수와 무관하게 동일합니다.
+
+```text
+$ git diff --name-only main...HEAD
+docs/analysis/write_path_g3_scan_20260920.md
+git diff exit=0
+```
+
+작업 브랜치와 최종 커밋 SHA, 커밋 수, 변경 파일 목록은 캡슐 계약의 정본 기록인 `.orca/capsules/task_f895e5e6a4d0/worker_done.json` 의 `branch`·`commit`·`commit_count`·`changed_files` 에 적었습니다.
+
 - 본 보고서는 `METRICS_BEGIN` 마커를 쓰지 않았습니다. 마커가 없으면 분석 문서 수치 정합성 검사 대상이 아니며, 본 조사는 실측 수치가 아니라 정적 판정이므로 마커 대상이 아닙니다.
-- 코드·테스트 파일 변경 여부는 커밋 후 `git diff --name-only main...HEAD` 로 확인했고, 변경 파일은 본 보고서 1건과 캡슐 산출물 `worker_done.json` 뿐입니다.
+- 코드·테스트 파일 변경 여부는 커밋 후 `git diff --name-only main...HEAD` 로 확인했고, 변경 파일은 본 보고서 1건뿐입니다. 캡슐 산출물 `.orca/capsules/task_f895e5e6a4d0/worker_done.json` 은 `.gitignore:231` 의 `.orca/` 규칙으로 추적 대상이 아닙니다.
 - 표에 적은 행 번호는 작성 시점에 해당 행을 직접 열어 대조했습니다. 대표 확인 위치는 `src/tasks/summary_tasks.py:22,26,37,40`, `src/tasks/scheduled_tasks.py:226,292,724-725,733,1282`, `src/app/services/collector_service.py:88,90,102,362,469`, `src/app/services/ranking_snapshots.py:168,172,173,213`, `src/app/services/home_context.py:100-101,115-119`, `src/tasks/automation_steps.py:23,33` 입니다.
