@@ -46,6 +46,19 @@ PIPELINE_SEPARATORS = ("&&", "||", ";", "|", "\n", "\r")
 # 정체했고 감시기 로그는 빈 파일로 남았습니다.
 CONFIRM_PHRASES = ("Do you want to proceed?", "Run this command?")
 
+# Command Code(cmd) CLI 의 명령 실행 승인 대화창. 확인 문구 대신 본문에 실행할
+# 명령을 문장으로 적고 번호 선택지를 띄웁니다. 형태가 달라 CONFIRM_PHRASES 와
+# "Requesting permission for:" 경로에 걸리지 않으며, 2026-09-20 에 이 때문에
+# 빌더 워커가 첫 셸 명령에서 사람 승인을 기다리며 멈췄습니다.
+CMD_EXEC_MARKER = "Command Code needs to execute"
+
+# 명령 본문의 끝 경계. 화면에서 이 문구들 중 가장 먼저 나오는 곳까지가 명령입니다.
+CMD_EXEC_END_MARKERS = (
+    "Press [ctrl+e]",
+    "1. Yes",
+    "ctrl+e explain",
+)
+
 # 리다이렉트 대상으로 허용하는 경로. 워크트리 상대 경로와 임시 디렉터리만 씁니다.
 # 절대 경로, 상위 참조, .env, .git 아래는 거부합니다.
 REDIRECT_DENY = re.compile(r"^/(?!tmp/|dev/null)|\.\.|(^|/)\.env|(^|/)\.git/")
@@ -60,6 +73,14 @@ SECRET_PATH = re.compile(r"(^|/)\.env(\.|$)|(^|/)\.env$|id_rsa|credentials|secre
 HEREDOC_WRITE = re.compile(
     r"^\s*(?:cat|tee)\s+<<-?\s*(['\"])(\w+)\1\s*(?:>>?)\s*(?P<target>[^\s]+)\s*$",
     re.MULTILINE,
+)
+
+# 커밋 메시지를 표준입력 히어독으로 넘기는 형태. 구분자를 따옴표로 감싸면 본문은
+# 확장되지 않는 순수 데이터이고 쓰기 대상도 파일이 아니라 커밋 메시지입니다.
+# 이 저장소의 커밋 메시지는 여러 줄 한국어 본문이라 워커가 매번 이 형태를 쓰며,
+# 보류하면 커밋마다 승인 대기가 생깁니다(2026-09-20 빌더 워커 정체).
+HEREDOC_COMMIT_MESSAGE = re.compile(
+    r"^\s*git\s+commit\s+(?:-[a-zA-Z-]+\s+)*-F\s+-\s+<<-?\s*(['\"])(\w+)\1\s*$",
 )
 
 # python 실행 본문에서 보류하는 토큰. 셸 탈출과 파일 삭제 경로입니다.
@@ -94,6 +115,9 @@ SAFE_STANDALONE_COMMANDS = {
     "jq",
     "ls",
     "pgrep",
+    # 현재 디렉터리 출력. 부작용이 없고 워커가 작업 트리 경계를 확인하는
+    # 첫 명령으로 자주 씁니다. 2026-09-20 에 이 하나 때문에 승인 대기가 났습니다.
+    "pwd",
     "rg",
     "tail",
     "wc",
@@ -736,6 +760,8 @@ def classify_heredoc_write(cmd: str) -> tuple[str, str] | None:
     if "<<" not in cmd:
         return None
     first_line = cmd.split("\n", 1)[0]
+    if HEREDOC_COMMIT_MESSAGE.match(first_line):
+        return "approve", "따옴표 구분자 히어독 커밋 메시지 (본문 확장 없음)"
     match = HEREDOC_WRITE.match(first_line)
     if not match:
         # 따옴표 없는 구분자이거나 형태가 다르면 확장 가능성이 있어 보류합니다.
@@ -1118,10 +1144,17 @@ def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
         return "hold", f"git 서브커맨드 보류: {subcmd}"
 
     # 워커 완료 보고와 차단 알림에 사용하는 정규 조율 전송 경로만 허용합니다.
+    # 배달 조회(check)도 함께 엽니다. 워커는 코디네이터 지시를 이 명령으로만
+    # 받으며, --ack 없이는 읽기 전용입니다. --ack 는 배달을 소비해 되돌릴 수
+    # 없으므로 사람 승인으로 남깁니다.
     if exe == "orca":
         if len(argv) >= 3 and argv[1:3] == ["orchestration", "send"]:
             return "approve", "허용된 Orca orchestration send"
-        return "hold", "orca 서브커맨드는 orchestration send 만 허용"
+        if len(argv) >= 3 and argv[1:3] == ["orchestration", "check"]:
+            if "--ack" in argv[3:]:
+                return "hold", "orca orchestration check --ack 는 배달을 소비하므로 보류"
+            return "approve", "허용된 Orca orchestration check (읽기 전용)"
+        return "hold", "orca 서브커맨드는 orchestration send 와 check 만 허용"
 
     # 4.3. find 명령어 검사 (-delete, -exec 등 금지)
     if exe == "find":
@@ -1417,6 +1450,35 @@ def send(handle: str, text: str) -> None:
     )
 
 
+def extract_command_code_command(screen: str) -> str | None:
+    """Command Code 승인 대화창에서 실행 대기 중인 명령을 추출합니다.
+
+    대화창이 없으면 None 을 반환합니다. 명령 문장은 마침표로 끝나므로 마지막
+    마침표 하나만 떼어 냅니다. 명령 안의 마침표(파일 확장자)는 건드리지 않습니다.
+    """
+    if not isinstance(screen, str) or not screen:
+        return None
+    idx = screen.find(CMD_EXEC_MARKER)
+    if idx < 0:
+        return None
+
+    body = screen[idx + len(CMD_EXEC_MARKER) :]
+    end = len(body)
+    for marker in CMD_EXEC_END_MARKERS:
+        found = body.find(marker)
+        if 0 <= found < end:
+            end = found
+    command = body[:end].strip()
+    if command.endswith("."):
+        command = command[:-1].strip()
+
+    # 대화창은 명령을 한 문장으로 적고 터미널 폭에서 줄을 접습니다. 그 줄바꿈을
+    # 그대로 두면 PIPELINE_SEPARATORS 가 개행을 명령 구분자로 읽어 접힌 뒷부분이
+    # 별도 명령으로 판정되고, 안전한 명령조차 보류됩니다. 2026-09-20 에 빌더 두
+    # 대가 각각 pytest 와 git add 에서 이 이유로 멈췄습니다.
+    return " ".join(command.split())
+
+
 def pending_command(screen: str) -> str | None:
     norm_screen = normalize_text(screen)
 
@@ -1425,7 +1487,12 @@ def pending_command(screen: str) -> str | None:
         if normalize_text(sig) in norm_screen:
             return sig
 
-    # 2. 기존 도구/명령 실행 승인 프롬프트 검사
+    # 2. Command Code(cmd) 명령 실행 승인 대화창 검사
+    cmd_command = extract_command_code_command(screen)
+    if cmd_command is not None:
+        return cmd_command
+
+    # 3. 기존 도구/명령 실행 승인 프롬프트 검사
     confirm = next(
         (phrase for phrase in CONFIRM_PHRASES if phrase in screen or phrase.lower() in norm_screen),
         None,

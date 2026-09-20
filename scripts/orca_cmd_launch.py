@@ -57,14 +57,18 @@ def build_command(
 
     대화형은 cmd "<message>" 위치 인자이고 단발은 cmd -p <message> 입니다.
     모델은 --model 로 provider/model 형태이며 추론 등급은 --effort 입니다.
-    권한 자동 승인(--trust --permission-mode auto-accept)은 기본으로 붙이지 않으며
-    명시적으로 요청될 때만 포함합니다.
+    권한 자동 승인(--trust --yolo)은 기본으로 붙이지 않으며 명시적으로 요청될 때만
+    포함합니다.
     """
     cmd = ["cmd", "--model", model]
     if effort and effort != EFFORT_DEFAULT_LEVEL:
         cmd.extend(["--effort", effort])
     if auto:
-        cmd.extend(["--trust", "--permission-mode", "auto-accept"])
+        # --permission-mode auto-accept 는 파일 편집만 자동 승인하고 셸 명령은
+        # 여전히 대화창을 띄웁니다. 감시기가 그 대화창을 읽어 승인하지만 화면
+        # 줄바꿈과 판정 지연 때문에 워커가 멈추는 구간이 생깁니다. 격리 워크트리에서
+        # 도는 워커는 대화창 자체를 띄우지 않는 편이 낫습니다.
+        cmd.extend(["--trust", "--yolo"])
     if one_shot:
         cmd.extend(["-p", prompt])
         return cmd
@@ -140,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--auto",
         action="store_true",
-        help="권한 자동 승인(--trust --permission-mode auto-accept)을 추가합니다. 기본값은 미사용입니다.",
+        help="권한 자동 승인(--trust --yolo)을 추가합니다. 기본값은 미사용입니다.",
     )
     parser.add_argument(
         "--role",
