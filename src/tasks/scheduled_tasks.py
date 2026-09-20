@@ -77,13 +77,14 @@ def _record_schedule(
         async def tracked(*args: Any, **kwargs: Any) -> Any:
             from src.tasks.worker import record_schedule_result
 
+            # 스케줄 결과 기록도 동기 Redis 왕복을 포함하므로 이벤트 루프 밖에서 실행합니다.
             try:
                 outcome = await task(*args, **kwargs)
             except Exception:
-                record_schedule_result(schedule_name, None, False)
+                await asyncio.to_thread(record_schedule_result, schedule_name, None, False)
                 raise
             success = isinstance(outcome, dict) and outcome.get("status") in {"success", "skipped"}
-            record_schedule_result(schedule_name, outcome, success)
+            await asyncio.to_thread(record_schedule_result, schedule_name, outcome, success)
             return outcome
 
         return cast(Any, tracked)

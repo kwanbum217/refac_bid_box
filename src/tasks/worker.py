@@ -289,8 +289,9 @@ def record_schedule_result(schedule_name: str, outcome: Any, success: bool) -> N
 
 
 async def _heartbeat_loop(key: str = WORKER_HEARTBEAT_KEY) -> None:
+    # 관측 기록은 동기 Redis 왕복을 포함하므로 이벤트 루프 밖 스레드에서 실행합니다.
     while True:
-        record_worker_heartbeat(key)
+        await asyncio.to_thread(record_worker_heartbeat, key)
         await asyncio.sleep(settings.WORKER_HEARTBEAT_INTERVAL_SECONDS)
 
 
@@ -354,7 +355,7 @@ async def _on_startup(ctx: dict[str, Any]) -> None:
         from src.app.core.db import engine
 
         setup_observability(engine=engine)
-    record_worker_heartbeat()
+    await asyncio.to_thread(record_worker_heartbeat)
     ctx["worker_heartbeat_task"] = asyncio.create_task(_heartbeat_loop())
     if settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED:
         ctx["schedule_catchup_task"] = asyncio.create_task(_run_catchup_background(ctx))
@@ -463,7 +464,7 @@ async def _on_backup_startup(ctx: dict[str, Any]) -> None:
         from src.app.core.db import engine
 
         setup_observability(engine=engine)
-    record_worker_heartbeat(BACKUP_WORKER_HEARTBEAT_KEY)
+    await asyncio.to_thread(record_worker_heartbeat, BACKUP_WORKER_HEARTBEAT_KEY)
     ctx["worker_heartbeat_task"] = asyncio.create_task(_heartbeat_loop(BACKUP_WORKER_HEARTBEAT_KEY))
 
 
