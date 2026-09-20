@@ -1477,3 +1477,65 @@ class TestGitDisplayOnlyConfig:
         from scripts.orca_auto_approve import classify_command
 
         assert classify_command("git -c core.pager=cat")[0] == "hold"
+
+
+class TestGitCheckIgnore:
+    """산출물이 gitignore 대상인지 묻는 읽기 전용 조회는 승인합니다."""
+
+    def test_check_ignore_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git check-ignore -v .orca/x .commandcode")[0] == "approve"
+
+    def test_unknown_check_ignore_option_stays_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git check-ignore --stdin")[0] == "hold"
+
+
+class TestHeredocKeepsNewlines:
+    """히어독은 개행을 보존해야 첫 줄 판정과 종료 구분자가 유지됩니다."""
+
+    SCREEN = (
+        "Execute Shell Command\n"
+        "Command Code needs to execute git commit -F - <<'EOF'\n"
+        "fix: 제목 줄\n"
+        "\n"
+        "본문 줄.\n"
+        "EOF.\n"
+        "\nPress [ctrl+e] to explain this command\n"
+    )
+
+    def test_heredoc_command_keeps_newlines(self):
+        from scripts.orca_auto_approve import pending_command
+
+        cmd = pending_command(self.SCREEN)
+        assert cmd.splitlines()[0] == "git commit -F - <<'EOF'"
+
+    def test_heredoc_commit_is_approved_from_dialog(self):
+        """합쳐 버리면 첫 줄이 본문까지 삼켜 판정이 무너집니다."""
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        assert classify_command(pending_command(self.SCREEN))[0] == "approve"
+
+
+class TestHeredocCommitAfterPrefix:
+    """워커는 스테이징과 커밋을 한 줄로 냅니다. 앞 구간도 함께 판정합니다."""
+
+    def test_add_then_commit_heredoc_is_approved(self):
+        from scripts.orca_auto_approve import classify_command
+
+        cmd = "git add src/x.py tests/y.py && git commit -F - <<'EOF'\n제목\nEOF"
+        assert classify_command(cmd)[0] == "approve"
+
+    def test_unsafe_prefix_blocks_commit_heredoc(self):
+        """앞 구간이 위험하면 뒤가 커밋 히어독이라도 보류해야 합니다."""
+        from scripts.orca_auto_approve import classify_command
+
+        cmd = "rm -rf build && git commit -F - <<'EOF'\n제목\nEOF"
+        assert classify_command(cmd)[0] == "hold"
+
+    def test_unquoted_delimiter_after_prefix_stays_held(self):
+        from scripts.orca_auto_approve import classify_command
+
+        assert classify_command("git add x && git commit -F - <<EOF")[0] == "hold"
