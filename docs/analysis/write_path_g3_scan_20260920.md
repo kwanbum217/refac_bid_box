@@ -75,7 +75,13 @@ Capsule 계약에 따라 다음은 **결함으로 적지 않았습니다.**
 | D8 | 낮음 | `src/app/services/home_context.py:100-101,115-119` | N+1 질의 (표본·윈도우 루프) | 수집 성공 후 캐시 예열, 캐시 미적중 | 예열 꼬리에서 최대 약 45회 질의 | 예열 구간 질의 수·소요 |
 | D9 | 낮음 | `src/tasks/worker.py:293` / `:357` / `scheduled_tasks.py:83,86` | 이벤트 루프 블로킹 동기 Redis | heartbeat 주기마다, 태스크 기동·스케줄 기록마다 | 관측용 Redis 왕복이 주기적으로 루프 정지 | heartbeat 주기 편차, Redis 지연 주입 대조 |
 
+> **정정 (2026-09-20)**: 위 표 D1 의 `:37,40` 은 `:39,42` 가 맞습니다. 상세는 3.1 절 정정 항목을 보십시오.
+
 ### 3.1 D1 (높음) — 요약 재집계 태스크가 워커 이벤트 루프에서 동기 집계 실행
+
+> **정정 (2026-09-20, 독립 검토 지적)**: 두 번째 함수의 행 번호는 작성 시점 기준 `:39`(`async def refresh_institution_catalog_task`)와 `:42`(`counts = refresh_institution_name_catalogs(db)`)입니다. 본문과 3장 표, 4장, 5장의 `:37`·`:40`·`:36-42` 표기는 2행 어긋난 값입니다. 지적한 함수와 호출은 동일하며 판정에는 영향이 없습니다.
+>
+> **현재 코드 기준으로는 두 행 번호 모두 유효하지 않습니다.** D1 은 커밋 `487e1e25` 로 오프로드가 반영되어 해당 구간이 전용 동기 함수로 분리되었습니다.
 
 - **위치**: `src/tasks/summary_tasks.py:22` (`async def rebuild_dataset_summary_task`) 의 `:26` (`summary = rebuild_bid_dataset_summary(db, dataset)`), 그리고 `:37` (`async def refresh_institution_catalog_task`) 의 `:40` (`counts = refresh_institution_name_catalogs(db)`)
 - **형태**: Arq 태스크가 `async def` 이고 워커 이벤트 루프에서 실행되는데, 본문의 무거운 동기 SQLAlchemy 집계·갱신을 `asyncio.to_thread` 로 오프로드하지 않고 직접 호출합니다. 같은 저장소의 다른 태스크는 이미 같은 패턴을 `to_thread` 로 처리합니다 (`src/tasks/scheduled_tasks.py:276,279,283,286,289` 및 `:354-358`).
@@ -186,7 +192,7 @@ Capsule 계약에 따라 다음은 **결함으로 적지 않았습니다.**
 | 백업 스케줄 | `src/tasks/scheduled_tasks.py:142,143` | 결함 없음 | `execute_backup`·`prune_snapshots` 를 `to_thread` 로 오프로드합니다. |
 | 드리프트 태스크 오프로드 구간 | `src/tasks/scheduled_tasks.py:649,688,664,707,740` | 결함 없음 | baseline 로드, 데이터셋 빌드, 판정 이력 기록이 오프로드됩니다. 나머지 구간은 D3 입니다. |
 | 주간 재학습 fan-out | `src/tasks/scheduled_tasks.py:516-533` | 결함 없음 | 카테고리 루프가 `await run_retrain_pipeline_task(...)` 를 호출하고 그 내부가 오프로드됩니다. |
-| 요약 재집계 오프로드 경로 | `src/tasks/summary_tasks.py:36-42` 이외 | 해당 없음 | D1 이 결함입니다. |
+| 요약 재집계 오프로드 경로 | `src/tasks/summary_tasks.py:36-42`(정정: `:38-44`) 이외 | 해당 없음 | D1 이 결함입니다. |
 | MySQL 통계 신선도 | `src/app/services/mysql_stats_freshness.py:223-228` | 결함 없음 | 테이블 2개 고정 순회이며 읽기 전용입니다. 호출부 `scheduled_tasks.py:286,357` 이 `to_thread` 입니다. |
 | 검색 인덱스 배치 구성 | `src/app/services/search_index.py:254-288` | 결함 없음 | 1,000행 배치마다 `IN` 질의 1회로, 행당 질의가 아닙니다. |
 | KB 청크 준비 | `src/app/services/kb_builder.py:155-168` | 결함 없음 | 1,000행 청크마다 `IN` 질의 1회로, 행당 질의가 아닙니다. |
@@ -208,7 +214,7 @@ Capsule 계약에 따라 다음은 **결함으로 적지 않았습니다.**
 
 | 항목 | 사유 |
 | :--- | :--- |
-| `src/rag/structured_data.refresh_institution_name_catalogs` 내부 | 정본 허용 범위 밖입니다. 호출부는 `summary_tasks.py:40` 이며 D1 에 포함했습니다. |
+| `src/rag/structured_data.refresh_institution_name_catalogs` 내부 | 정본 허용 범위 밖입니다. 호출부는 `summary_tasks.py:40`(정정: `:42`) 이며 D1 에 포함했습니다. |
 | `src/ml/monitoring.check_dataset_drift`·`src/ml/psi` 내부 | 소스 확인 결과 순수 pandas/numpy 연산으로 파일·DB I/O 가 없음을 확인했으나, 스레드 오프로드 판단은 호출부(D3) 기준입니다. |
 | `scripts/backup_recovery`, `scripts/backup_snapshots` 내부 | 스크립트 계층이며 `to_thread` 경유라 이벤트 루프 차단은 없다고 판단했으나 내부 질의 구조는 미확인입니다. |
 | `src/app/core/cache.CacheLayer` 클라이언트 종류 | 정본 허용 범위 밖입니다. 다만 `src/tasks/worker.py:210-211` 이 `zcount`·`zcard` 를 동기 호출하는 사실로 동기 클라이언트임을 확인했습니다. |
@@ -221,7 +227,7 @@ Capsule 계약에 따라 다음은 **결함으로 적지 않았습니다.**
 
 ### 6.1 권고 1순위: 요약 재집계 태스크 2종 오프로드 (D1)
 
-- **결함 요약**: `rebuild_dataset_summary_task`(`summary_tasks.py:22,26`)와 `refresh_institution_catalog_task`(`:37,40`)가 async 인데 무거운 동기 DB 작업을 워커 이벤트 루프에서 직접 실행합니다.
+- **결함 요약**: `rebuild_dataset_summary_task`(`summary_tasks.py:22,26`)와 `refresh_institution_catalog_task`(`:37,40`, **정정: `:39,42`**)가 async 인데 무거운 동기 DB 작업을 워커 이벤트 루프에서 직접 실행합니다.
 - **수정 난이도**: **낮음 (하)**. 두 본문을 각각 동기 함수로 분리하고 `await asyncio.to_thread(...)` 로 감쌉니다.
 - **회귀 위험**: **매우 낮음 (최하)**. 같은 저장소의 `scheduled_tasks.py:276-289` 가 동일 패턴을 이미 사용하고 있고, 세션 생성·종료와 반환 구조를 그대로 유지합니다.
 - **예상 효과**: 수 초 규모 루프 정지가 제거되어 수집·조회 직후 등록되는 재집계가 다른 태스크와 heartbeat 를 밀지 않습니다.
