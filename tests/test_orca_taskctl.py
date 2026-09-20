@@ -4758,7 +4758,7 @@ def test_resolve_dispatch_model_risk_medium():
         args_model=None,
         capsule_text=capsule_text,
     )
-    assert res["model"] == "gemini-3.8-flash-medium"
+    assert res["model"] == "deepseek/deepseek-v4.1-flash"
     assert res["source"] == "router"
     assert res["risk"] == "medium"
     assert res["warning"] is None
@@ -4771,9 +4771,10 @@ def test_resolve_dispatch_model_risk_high():
         args_model=None,
         capsule_text=capsule_text,
     )
-    # high 위험도 빌더의 주 모델은 A+ 워커입니다. 무료 티어이므로 라우터가
-    # 재검증 경고를 함께 돌려줍니다. 병합 판정은 코디네이터가 Level 3 에서 합니다.
-    assert res["model"] == "opencode/muse-spark-1.3-contributor-free"
+    # 2026-09-20 부터 빌더 주 모델은 Command Code DeepSeek 입니다. 위험도는
+    # 모델이 아니라 추론 등급(--effort)으로 반영하며, 병합 판정은 코디네이터가
+    # Level 3 에서 합니다.
+    assert res["model"] == "deepseek/deepseek-v4.1-flash"
     assert res["source"] == "router"
     assert res["risk"] == "high"
 
@@ -4833,7 +4834,7 @@ def test_dispatch_dry_run_matches_actual_resolution(tmp_path: Path, capsys: pyte
     captured = capsys.readouterr()
     data = json.loads(captured.out)
     assert data["dry_run"] is True
-    assert data["model"] == "gemini-3.8-flash-medium"
+    assert data["model"] == "deepseek/deepseek-v4.1-flash"
     assert data["model_source"] == "router"
     assert data["risk"] == "medium"
 

@@ -77,6 +77,7 @@ __all__ = [
     "cmd_list",
     "cmd_probe",
     "cmd_route",
+    "effort_for_model",
     "free_order_for_role",
     "free_pool_eligibility",
     "is_coordinator_model",
@@ -204,6 +205,21 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
         ],
         "timeout": 120,
     },
+    "cmd": {
+        # Command Code CLI(cmd) 전용 probe 설정. --effort 는 모델마다 받는 값이
+        # 다르고 목록 밖의 값을 주면 종료 코드 0 으로 "Unknown effort" 만 찍으므로
+        # probe 에는 어떤 모델에서도 유효한 low 를 고정으로 씁니다.
+        "probe_cmd": [
+            "cmd",
+            "-p",
+            "ping",
+            "--model",
+            "{model}",
+            "--effort",
+            "low",
+        ],
+        "timeout": 60,
+    },
     "grok": {
         # SuperGrok 로컬 Grok CLI 전용 probe 설정.
         # grok -p ping --model {model} --output-format plain
@@ -225,6 +241,43 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 MODEL_POOL: dict[str, dict[str, Any]] = {
+    "cmd-deepseek-flash": {
+        "id": "deepseek/deepseek-v4.1-flash",
+        "provider": "cmd",
+        "tier": "primary",
+        "auto_selectable": True,
+        "max_tokens": None,
+        # 2026-09-20 사용자 지시로 빌더 기본값이 되었습니다. Gemini 사용 중단에
+        # 따른 교체이며 실적이 쌓이기 전이므로 산출물 재검증을 평소보다 넓게
+        # 잡으십시오. 2026-09-20 probe: cmd -p ping --model deepseek/deepseek-v4.1-flash
+        # --effort low 가 3.1초에 정상 응답했습니다.
+        #
+        # 추론 등급은 모델 ID 가 아니라 --effort 플래그입니다. 이 모델이 받는
+        # 등급은 default, low, high, max 네 가지입니다. default 는 플래그를 붙이지
+        # 않고 기동하는 모델 기본값이고, CLI 가 실제 인자로 받는 것은 나머지
+        # 셋뿐이며 medium 은 거부됩니다. 목록 밖의 값을 주면 CLI 가 종료 코드 0 으로
+        # "Unknown effort" 만 출력하고 기본 등급으로 진행하므로, 런처와 라우터가
+        # 먼저 값을 좁힙니다.
+        "effort_levels": ("default", "low", "high", "max"),
+        # 플래그를 붙이지 않는 등급입니다. 이 값이 판정되면 호출부는 --effort 를
+        # 생략합니다.
+        "effort_default_level": "default",
+        "effort_by_risk": {"low": "default", "medium": "high", "high": "max"},
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": (
+            "Command Code(cmd) CLI 경유 DeepSeek V4.1 Flash. 빌더 기본 모델이다. "
+            "추론 등급은 default, low, high, max 네 가지이며 medium 은 없다. "
+            "default 는 --effort 를 붙이지 않는 모델 기본값이다. "
+            "reviewer 는 suitable_for 에 두지 않는다. 빌더 기본값과 같은 계열을 "
+            "리뷰어로 쓰면 독립 판정이 되지 않는다. "
+            "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
+        ),
+    },
     "gemini-flash-high": {
         "id": "gemini-3.8-flash-high",
         "provider": "gemini",
@@ -1240,6 +1293,10 @@ def pool_for_model(model_or_pool: str) -> str | None:
 MODEL_PROVIDER_PREFIXES: tuple[tuple[str, str], ...] = (
     ("gemini", "gemini"),
     ("qwen", "qwen"),
+    # 순서가 의미를 가집니다. Command Code 는 provider/model 형태라 "deepseek/" 로
+    # 시작하고, Alibaba Token Plan 경유 항목은 "deepseek-v4-pro" 처럼 슬래시가
+    # 없습니다. 아래 두 줄의 순서를 바꾸면 Command Code 모델이 qwen 으로 오판됩니다.
+    ("deepseek/", "cmd"),
     ("deepseek", "qwen"),
     ("glm", "qwen"),
     ("claude", "claude"),
@@ -1410,9 +1467,12 @@ TIER_POLICY: dict[tuple[str, str], list[str]] = {
     # 복잡한 다중 파일 구현과 깊은 원인 추적은 Muse 가 먼저 받습니다.
     # medium 과 low 는 기존 워커가 그대로 맡습니다. 단순 과제까지 A+ 워커로
     # 올리면 얻는 것 없이 비용만 늘어납니다.
-    ("builder", "high"): ["opencode-muse-spark", "gemini-flash-high", "qwen-plus"],
-    ("builder", "medium"): ["gemini-flash-medium", "qwen-plus"],
-    ("builder", "low"): ["gemini-flash-medium", "qwen-plus"],
+    # 2026-09-20 사용자 지시. Gemini 사용 중단에 따라 빌더 기본값을 Command Code
+    # 경유 DeepSeek V4.1 Flash 로 바꿉니다. 추론 등급은 모델 ID 가 아니라
+    # --effort 플래그로 지정하므로 EFFORT_BY_RISK 가 위험도별 등급을 정합니다.
+    ("builder", "high"): ["cmd-deepseek-flash", "opencode-muse-spark", "qwen-plus"],
+    ("builder", "medium"): ["cmd-deepseek-flash", "qwen-plus"],
+    ("builder", "low"): ["cmd-deepseek-flash", "qwen-plus"],
     ("investigator", "high"): ["opencode-muse-spark", "gemini-flash-high", "qwen-plus"],
     ("investigator", "medium"): ["gemini-flash-medium", "qwen-plus"],
     ("investigator", "low"): ["gemini-flash-low", "gemini-flash-medium"],
@@ -1533,6 +1593,11 @@ class RouteResult:
     fallback_available: bool | None
     reasons: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # 추론 등급을 모델 ID 가 아니라 별도 플래그로 받는 CLI 가 있습니다
+    # (Command Code 의 --effort). 그런 모델은 여기에 위험도별 등급이 실리고,
+    # 등급 개념이 ID 에 녹아 있는 모델(gemini-3.8-flash-medium)은 None 입니다.
+    primary_effort: str | None = None
+    fallback_effort: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1712,6 +1777,37 @@ def normalize_provider_hint(value: Any) -> str:
     if token in _UNKNOWN_PROVIDER_TOKENS:
         return UNKNOWN_PROVIDER
     return token
+
+
+def effort_for_model(model_or_pool: str | None, risk: str) -> str | None:
+    """모델과 위험도로 CLI 추론 등급(--effort) 값을 판정합니다.
+
+    등급을 모델 ID 에 포함하지 않고 별도 플래그로 받는 모델에만 값이 있습니다.
+    등록되지 않았거나 등급 개념이 없는 모델은 None 을 돌려주며, 호출부는 그때
+    --effort 를 붙이지 않고 CLI 기본값으로 기동합니다.
+    """
+    if not model_or_pool or not isinstance(model_or_pool, str):
+        return None
+
+    cleaned = model_or_pool.strip()
+    info = MODEL_POOL.get(cleaned)
+    if info is None:
+        for pool_info in MODEL_POOL.values():
+            if cleaned == pool_info.get("id"):
+                info = pool_info
+                break
+    if info is None:
+        return None
+
+    by_risk = info.get("effort_by_risk")
+    if not isinstance(by_risk, dict):
+        return None
+
+    level = by_risk.get(risk)
+    levels = info.get("effort_levels") or ()
+    if not level or (levels and level not in levels):
+        return None
+    return str(level)
 
 
 def select_model(
@@ -2266,6 +2362,8 @@ def route(
         fallback_available=fallback_available,
         reasons=reasons,
         warnings=warnings,
+        primary_effort=effort_for_model(primary_id, risk),
+        fallback_effort=effort_for_model(fallback_id, risk),
     )
 
 
@@ -2489,7 +2587,14 @@ def cmd_route(args: argparse.Namespace) -> int:
                     "fallback_available": result.fallback_available,
                     "reasons": result.reasons,
                     "warnings": result.warnings,
+                    "primary_effort": result.primary_effort,
+                    "fallback_effort": result.fallback_effort,
                     "recommended": recommended,
+                    "recommended_effort": (
+                        result.fallback_effort
+                        if not result.primary_available and result.fallback_available
+                        else result.primary_effort
+                    ),
                 },
                 indent=2,
             )
@@ -2509,6 +2614,8 @@ def cmd_route(args: argparse.Namespace) -> int:
                 else "(미확인)"
             )
             print(f"대체 모델:     {result.fallback_model} {fb_status}")
+        if result.primary_effort:
+            print(f"추론 등급:     --effort {result.primary_effort}")
         if result.reasons:
             print(f"판정 근거:     {', '.join(result.reasons)}")
         if result.warnings:

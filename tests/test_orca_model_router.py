@@ -47,6 +47,7 @@ from scripts.orca_model_router import (
     cmd_list,
     cmd_probe,
     cmd_route,
+    effort_for_model,
     free_pool_eligibility,
     is_coordinator_model,
     load_reliability_history,
@@ -240,10 +241,10 @@ class TestModelPoolAndSelection:
         assert res["fallback_model"] is None
 
     def test_select_model_high_risk_builder(self):
-        """high 위험도 구현은 A+ 워커가 주 모델입니다."""
+        """2026-09-20 부터 빌더 주 모델은 위험도와 무관하게 Command Code DeepSeek 입니다."""
         res = select_model("builder", "high")
-        assert res["primary_pool"] == "opencode-muse-spark"
-        assert res["fallback_pool"] == "gemini-flash-high"
+        assert res["primary_pool"] == "cmd-deepseek-flash"
+        assert res["fallback_pool"] == "opencode-muse-spark"
 
     def test_select_model_documenter_low_risk(self):
         """공식 문서가 low 등급 용도로 초안 작성과 빠른 분석을 규정합니다."""
@@ -258,7 +259,7 @@ class TestModelPoolAndSelection:
         assert res["fallback_pool"] == "qwen-plus"
 
     def test_select_model_exclude_filtering(self):
-        res = select_model("builder", "high", exclude=["opencode-muse-spark", "gemini-flash-high"])
+        res = select_model("builder", "high", exclude=["cmd-deepseek-flash", "opencode-muse-spark"])
         assert res["primary_pool"] == "qwen-plus"
         assert res["fallback_pool"] is None
 
@@ -268,25 +269,25 @@ class TestModelPoolAndSelection:
             select_model(
                 "builder",
                 "high",
-                exclude=["opencode-muse-spark", "gemini-flash-high", "qwen-plus"],
+                exclude=["cmd-deepseek-flash", "opencode-muse-spark", "qwen-plus"],
             )
 
         err = exc_info.value
         assert err.role == "builder"
         assert err.risk == "high"
-        assert "gemini-flash-high" in err.exclude
+        assert "cmd-deepseek-flash" in err.exclude
         assert "qwen-plus" in err.exclude
         assert "builder" in str(err)
         assert "high" in str(err)
-        assert "gemini-flash-high" in str(err)
+        assert "cmd-deepseek-flash" in str(err)
 
     def test_select_model_normal_path_regression_preserved(self):
         """제외하지 않은 정상 경로가 종전과 동일한 모델을 반환합니다."""
         res_builder_high = select_model("builder", "high")
-        assert res_builder_high["primary_pool"] == "opencode-muse-spark"
-        assert res_builder_high["primary_model"] == "opencode/muse-spark-1.3-contributor-free"
-        assert res_builder_high["fallback_pool"] == "gemini-flash-high"
-        assert res_builder_high["fallback_model"] == "gemini-3.8-flash-high"
+        assert res_builder_high["primary_pool"] == "cmd-deepseek-flash"
+        assert res_builder_high["primary_model"] == "deepseek/deepseek-v4.1-flash"
+        assert res_builder_high["fallback_pool"] == "opencode-muse-spark"
+        assert res_builder_high["fallback_model"] == "opencode/muse-spark-1.3-contributor-free"
 
         res_reviewer_high = select_model("reviewer", "high", builder_provider="gemini")
         assert res_reviewer_high["primary_pool"] == "qwen-plus"
@@ -314,6 +315,8 @@ class TestModelPoolAndSelection:
             # 2026-09-06 Wave U 실과제 3건 완주로 승격. builder/investigator 의
             # high 위험도에만 자동 배정됩니다.
             "opencode-muse-spark",
+            # 2026-09-20 사용자 지시로 빌더 기본값이 되었습니다.
+            "cmd-deepseek-flash",
         }
         assert non_auto_pools == {
             "deepseek-flash",
@@ -560,7 +563,9 @@ class TestRoute:
         assert isinstance(res, RouteResult)
         assert res.risk == "medium"
         assert res.role == "builder"
-        assert res.primary_model == "gemini-3.8-flash-medium"
+        assert res.primary_model == "deepseek/deepseek-v4.1-flash"
+        # 추론 등급을 --effort 로 받는 모델이므로 위험도별 등급이 함께 실립니다.
+        assert res.primary_effort == "high"
         assert res.primary_available is True
         assert res.fallback_available is None
 
@@ -571,10 +576,11 @@ class TestRoute:
             probe=False,
         )
         assert res.risk == "high"
-        # high 위험도 빌더의 주 모델은 A+ 워커입니다. 임계 과제라도 구현은 워커가
+        # 빌더의 주 모델은 Command Code DeepSeek 입니다. 임계 과제라도 구현은 워커가
         # 맡고 병합과 데이터 무손실 최종 판정은 코디네이터가 Level 3 에서 합니다.
-        assert res.primary_model == "opencode/muse-spark-1.3-contributor-free"
-        assert res.fallback_model == "gemini-3.8-flash-high"
+        assert res.primary_model == "deepseek/deepseek-v4.1-flash"
+        assert res.primary_effort == "max"
+        assert res.fallback_model == "opencode/muse-spark-1.3-contributor-free"
         assert len(res.reasons) > 0
         assert any("high 키워드 매칭" in r for r in res.reasons)
 
@@ -623,7 +629,7 @@ class TestRoute:
         """주 모델이 실패하고 대체 모델이 성공할 때 대체 모델로 전환됨을 확인합니다."""
 
         def _mock_run(cmd, *args, **kwargs):
-            if "opencode/muse-spark-1.3-contributor-free" in cmd:
+            if "deepseek/deepseek-v4.1-flash" in cmd:
                 return MagicMock(returncode=1, stdout="", stderr="quota exhausted 429")
             return MagicMock(returncode=0, stdout="ok", stderr="")
 
@@ -684,7 +690,7 @@ class TestCLI:
         captured = capsys.readouterr().out
         data = json.loads(captured)
         assert data["risk"] == "high"
-        assert data["primary_model"] == "opencode/muse-spark-1.3-contributor-free"
+        assert data["primary_model"] == "deepseek/deepseek-v4.1-flash"
         assert len(data["reasons"]) > 0
 
     def test_classify_text(self, capsys):
@@ -734,7 +740,8 @@ class TestCLI:
         assert ret == 0
         data = json.loads(capsys.readouterr().out)
         assert data["risk"] == "medium"
-        assert data["recommended"] == "gemini-3.8-flash-medium"
+        assert data["recommended"] == "deepseek/deepseek-v4.1-flash"
+        assert data["recommended_effort"] == "high"
 
     def test_route_cli_coordinator_model_rejected(self, capsys):
         parser = argparse.ArgumentParser()
@@ -1325,16 +1332,18 @@ class TestRiskAwareTier:
                 assert select_model(role, risk, **kwargs)["primary_pool"] != "gemini-flash-high"
 
     def test_builder_medium_risk_uses_medium(self):
-        """medium 위험도 빌더는 범용 등급을 쓰고 전문·상신 등급으로 올리지 않습니다."""
+        """medium 위험도 빌더는 기본 모델에 중간 추론 등급을 씁니다."""
         res = select_model("builder", "medium")
-        assert res["primary_pool"] == "gemini-flash-medium"
+        assert res["primary_pool"] == "cmd-deepseek-flash"
         assert res["fallback_pool"] == "qwen-plus"
+        assert effort_for_model(res["primary_model"], "medium") == "high"
 
     def test_builder_high_risk_uses_high(self):
-        """high 위험도 빌더는 A+ 워커가 주 모델이고 전문 등급이 대체입니다."""
+        """high 위험도 빌더는 기본 모델을 최고 추론 등급으로 쓰고 A+ 워커가 대체입니다."""
         res = select_model("builder", "high")
-        assert res["primary_pool"] == "opencode-muse-spark"
-        assert res["fallback_pool"] == "gemini-flash-high"
+        assert res["primary_pool"] == "cmd-deepseek-flash"
+        assert res["fallback_pool"] == "opencode-muse-spark"
+        assert effort_for_model(res["primary_model"], "high") == "max"
 
     def test_reviewer_never_gets_low_tier_as_primary(self):
         """판정이 병합 결정에 쓰이므로 리뷰어 주 모델은 low 등급이 아닙니다."""
@@ -1346,7 +1355,7 @@ class TestRiskAwareTier:
 
     def test_reviewer_high_risk_prefers_independent_family(self):
         """리뷰어 주 모델은 빌더와 다른 계열이어야 같은 편향이 검토를 통과하지 않습니다."""
-        reviewer = select_model("reviewer", "high", builder_provider="gemini")["primary_pool"]
+        reviewer = select_model("reviewer", "high", builder_provider="cmd")["primary_pool"]
         builder = select_model("builder", "high")["primary_pool"]
         assert reviewer == "qwen-plus"
         assert reviewer != builder
@@ -1355,7 +1364,7 @@ class TestRiskAwareTier:
         """low 등급은 low 위험도 조사와 문서화에만 주 모델이 됩니다."""
         assert select_model("investigator", "low")["primary_pool"] == "gemini-flash-low"
         assert select_model("documenter", "low")["primary_pool"] == "gemini-flash-low"
-        assert select_model("builder", "low")["primary_pool"] == "gemini-flash-medium"
+        assert select_model("builder", "low")["primary_pool"] == "cmd-deepseek-flash"
         for role in ("reviewer", "builder"):
             for risk in ("low", "medium", "high"):
                 kwargs = {"builder_provider": "gemini"} if role == "reviewer" else {}
@@ -2016,16 +2025,14 @@ class TestProviderIndependence:
         assert res_qwen_excluded["fallback_pool"] is None
         assert res_qwen_excluded["fallback_model"] is None
 
-        # builder high: 기본 후보는 [opencode-muse-spark, gemini-flash-high, qwen-plus]
-        # gemini 제외 시 opencode 와 qwen 이 남습니다
-        res_b_gemini_excluded = select_model("builder", "high", exclude_providers=["gemini"])
-        assert res_b_gemini_excluded["primary_pool"] == "opencode-muse-spark"
-        assert res_b_gemini_excluded["fallback_pool"] == "qwen-plus"
+        # builder high: 기본 후보는 [cmd-deepseek-flash, opencode-muse-spark, qwen-plus]
+        # cmd 제외 시 opencode 와 qwen 이 남습니다
+        res_b_cmd_excluded = select_model("builder", "high", exclude_providers=["cmd"])
+        assert res_b_cmd_excluded["primary_pool"] == "opencode-muse-spark"
+        assert res_b_cmd_excluded["fallback_pool"] == "qwen-plus"
 
-        # opencode 와 gemini 를 모두 제외하면 qwen-plus 만 남습니다
-        res_b_two_excluded = select_model(
-            "builder", "high", exclude_providers=["gemini", "opencode"]
-        )
+        # cmd 와 opencode 를 모두 제외하면 qwen-plus 만 남습니다
+        res_b_two_excluded = select_model("builder", "high", exclude_providers=["cmd", "opencode"])
         assert res_b_two_excluded["primary_pool"] == "qwen-plus"
         assert res_b_two_excluded["fallback_pool"] is None
 
@@ -2051,8 +2058,8 @@ class TestProviderIndependence:
     def test_select_model_without_exclude_providers_preserves_builder_and_other_roles(self):
         """exclude_providers 를 지정하지 않은 빌더 및 타 역할 호출은 동작이 변하지 않습니다."""
         res_builder = select_model("builder", "medium")
-        assert res_builder["primary_pool"] == "gemini-flash-medium"
-        assert res_builder["primary_model"] == "gemini-3.8-flash-medium"
+        assert res_builder["primary_pool"] == "cmd-deepseek-flash"
+        assert res_builder["primary_model"] == "deepseek/deepseek-v4.1-flash"
         assert res_builder["fallback_pool"] == "qwen-plus"
         assert res_builder["fallback_model"] == "qwen3.7-plus"
 
@@ -2127,8 +2134,8 @@ class TestProviderIndependence:
         assert TIER_POLICY[("reviewer", "medium")] == ["qwen-plus", "gemini-flash-medium"]
         assert TIER_POLICY[("reviewer", "low")] == ["qwen-plus", "gemini-flash-medium"]
         assert TIER_POLICY[("builder", "high")] == [
+            "cmd-deepseek-flash",
             "opencode-muse-spark",
-            "gemini-flash-high",
             "qwen-plus",
         ]
         assert TIER_POLICY[("investigator", "high")] == [
@@ -2136,8 +2143,8 @@ class TestProviderIndependence:
             "gemini-flash-high",
             "qwen-plus",
         ]
-        assert TIER_POLICY[("builder", "medium")] == ["gemini-flash-medium", "qwen-plus"]
-        assert TIER_POLICY[("builder", "low")] == ["gemini-flash-medium", "qwen-plus"]
+        assert TIER_POLICY[("builder", "medium")] == ["cmd-deepseek-flash", "qwen-plus"]
+        assert TIER_POLICY[("builder", "low")] == ["cmd-deepseek-flash", "qwen-plus"]
 
     def test_gemini_38_and_37_pool_registration(self):
         """Gemini 3.8 이 주력으로 등록되고 3.7 은 수동 지정용으로 보존됨을 검증합니다."""
@@ -2370,10 +2377,16 @@ class TestProviderIndependence:
             select_model,
         )
 
-        allowed = {("builder", "high"), ("investigator", "high")}
+        # 2026-09-20 빌더 기본값이 Command Code DeepSeek 으로 바뀌면서 builder high
+        # 에서는 Muse 가 주 모델이 아니라 첫 대체가 되었습니다. 자동 배정이 열리는
+        # 조합 자체는 그대로 builder/investigator high 둘뿐입니다.
+        allowed_primary = {("investigator", "high")}
+        allowed_fallback = {("builder", "high")}
         for (role, risk), candidates in TIER_POLICY.items():
-            if (role, risk) in allowed:
+            if (role, risk) in allowed_primary:
                 assert candidates[0] == "opencode-muse-spark", (role, risk, candidates)
+            elif (role, risk) in allowed_fallback:
+                assert candidates[1] == "opencode-muse-spark", (role, risk, candidates)
             else:
                 assert "opencode-muse-spark" not in candidates, (role, risk, candidates)
             assert "opencode/muse-spark-1.3-contributor-free" not in candidates
@@ -2389,13 +2402,14 @@ class TestProviderIndependence:
         for role in ["builder", "reviewer", "investigator", "benchmarker", "documenter"]:
             for risk in ["high", "medium", "low"]:
                 kwargs = {"builder_provider": "gemini"} if role == "reviewer" else {}
-                expected = (role, risk) in allowed
                 for res in (
                     select_model(role, risk, **kwargs),
                     select_model(role, risk, allow_free=True, **kwargs),
                 ):
-                    if expected:
+                    if (role, risk) in allowed_primary:
                         assert res["primary_pool"] == "opencode-muse-spark", (role, risk, res)
+                    elif (role, risk) in allowed_fallback:
+                        assert res["fallback_pool"] == "opencode-muse-spark", (role, risk, res)
                     else:
                         assert res["primary_pool"] != "opencode-muse-spark", (role, risk, res)
                         assert res["fallback_pool"] != "opencode-muse-spark", (role, risk, res)
@@ -2404,11 +2418,22 @@ class TestProviderIndependence:
         """빌더가 Muse(opencode)이면 리뷰어는 다른 계열이어야 합니다."""
         from scripts.orca_model_router import MODEL_POOL, select_model
 
-        builder = select_model("builder", "high")["primary_pool"]
-        assert MODEL_POOL[builder]["provider"] == "opencode"
+        # Muse 는 빌더 기본값에서 첫 대체로 내려갔습니다. 명시 지정으로 빌더가
+        # opencode 가 되는 경로는 그대로 있으므로 그 조건에서 독립성을 봅니다.
+        assert MODEL_POOL["opencode-muse-spark"]["provider"] == "opencode"
         for risk in ("high", "medium", "low"):
             reviewer = select_model("reviewer", risk, builder_provider="opencode")["primary_pool"]
             assert MODEL_POOL[reviewer]["provider"] != "opencode", (risk, reviewer)
+
+    def test_cmd_builder_default_gets_independent_family_reviewer(self):
+        """빌더 기본값이 cmd 계열이므로 리뷰어는 cmd 가 아니어야 합니다."""
+        from scripts.orca_model_router import MODEL_POOL, select_model
+
+        builder = select_model("builder", "high")["primary_pool"]
+        assert MODEL_POOL[builder]["provider"] == "cmd"
+        for risk in ("high", "medium", "low"):
+            reviewer = select_model("reviewer", risk, builder_provider="cmd")["primary_pool"]
+            assert MODEL_POOL[reviewer]["provider"] != "cmd", (risk, reviewer)
 
     def test_route_muse_spark_explicit(self):
         """opencode-muse-spark 명시 지정 시 builder/investigator 경로를 검증합니다."""
@@ -2523,3 +2548,61 @@ class TestProviderHintNormalization:
         )
         model = routed["primary_model"]
         assert orca_model_router.provider_for_model(model, strict=False) != "gemini"
+
+
+class TestCommandCodeDeepSeekRegistration:
+    """Command Code(cmd) 경유 DeepSeek V4.1 Flash 빌더 기본값 등록 계약입니다."""
+
+    POOL_KEY = "cmd-deepseek-flash"
+    MODEL_ID = "deepseek/deepseek-v4.1-flash"
+
+    def test_pool_entry_is_registered_and_auto_selectable(self):
+        info = orca_model_router.MODEL_POOL[self.POOL_KEY]
+        assert info["id"] == self.MODEL_ID
+        assert info["provider"] == "cmd"
+        assert info["auto_selectable"] is True
+        assert "builder" in info["suitable_for"]
+
+    def test_reviewer_is_not_suitable_for_builder_default_model(self):
+        """빌더 기본값과 같은 계열을 리뷰어로 쓰면 독립 판정이 되지 않습니다."""
+        assert "reviewer" not in orca_model_router.MODEL_POOL[self.POOL_KEY]["suitable_for"]
+
+    def test_builder_default_is_deepseek_for_every_risk(self):
+        for risk in ("low", "medium", "high"):
+            assert orca_model_router.TIER_POLICY[("builder", risk)][0] == self.POOL_KEY
+
+    def test_provider_prefix_separates_command_code_from_token_plan(self):
+        """슬래시가 있는 Command Code ID 와 Token Plan 경유 ID 는 다른 제공자입니다."""
+        assert orca_model_router.provider_for_model(self.MODEL_ID) == "cmd"
+        assert orca_model_router.provider_for_model("deepseek-v4-pro") == "qwen"
+
+    def test_probe_config_has_cmd_entry(self):
+        probe_cmd = orca_model_router.PROBE_CONFIG["cmd"]["probe_cmd"]
+        assert probe_cmd[0] == "cmd"
+        assert "{model}" in probe_cmd
+
+    def test_effort_levels_cover_four_supported_grades(self):
+        info = orca_model_router.MODEL_POOL[self.POOL_KEY]
+        assert info["effort_levels"] == ("default", "low", "high", "max")
+        assert info["effort_default_level"] == "default"
+        assert "medium" not in info["effort_levels"]
+
+    def test_effort_for_model_maps_risk_to_supported_level(self):
+        levels = orca_model_router.MODEL_POOL[self.POOL_KEY]["effort_levels"]
+        for risk in ("low", "medium", "high"):
+            level = orca_model_router.effort_for_model(self.MODEL_ID, risk)
+            assert level in levels
+        assert orca_model_router.effort_for_model(self.MODEL_ID, "high") == "max"
+
+    def test_effort_for_model_is_none_when_grade_lives_in_model_id(self):
+        """등급이 모델 ID 에 녹아 있는 모델은 --effort 를 쓰지 않습니다."""
+        assert orca_model_router.effort_for_model("gemini-3.8-flash-medium", "medium") is None
+        assert orca_model_router.effort_for_model(None, "medium") is None
+
+    def test_route_carries_effort_for_builder(self, monkeypatch):
+        monkeypatch.setattr(orca_model_router, "probe_model", lambda *a, **k: (True, "ok"))
+        result = orca_model_router.route(
+            role="builder", risk="medium", objective="구현", probe=False
+        )
+        assert result.primary_model == self.MODEL_ID
+        assert result.primary_effort == "high"

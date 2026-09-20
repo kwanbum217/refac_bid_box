@@ -17,9 +17,9 @@
 | `reviewer` | `high` | `qwen-plus` | `gemini-flash-high` |
 | `reviewer` | `medium` | `qwen-plus` | `gemini-flash-medium` |
 | `reviewer` | `low` | `qwen-plus` | `gemini-flash-medium` |
-| `builder` | `high` | `opencode-muse-spark` | `gemini-flash-high` |
-| `builder` | `medium` | `gemini-flash-medium` | `qwen-plus` |
-| `builder` | `low` | `gemini-flash-medium` | `qwen-plus` |
+| `builder` | `high` | `cmd-deepseek-flash` | `opencode-muse-spark` |
+| `builder` | `medium` | `cmd-deepseek-flash` | `qwen-plus` |
+| `builder` | `low` | `cmd-deepseek-flash` | `qwen-plus` |
 | `investigator` | `high` | `opencode-muse-spark` | `gemini-flash-high` |
 | `investigator` | `medium` | `gemini-flash-medium` | `qwen-plus` |
 | `investigator` | `low` | `gemini-flash-low` | `gemini-flash-medium` |
@@ -51,11 +51,36 @@
 | `claude-sonnet` | `claude-sonnet-5` | Claude | O (`True`) | 로컬 Claude Pro 수동 보조 워커 (TIER_POLICY 자동 배정 제외, WORKER_MODEL_NOTICE 후 명시 배정) |
 | `grok-4.6` | `grok-4.6` | Grok | X (`False`) | SuperGrok 로컬 Grok CLI. effort high 는 코디네이터 등급으로 워커 자동 배정 제외, 워커 등급은 medium/low. WORKER_MODEL_NOTICE 후 명시 배정 |
 | `grok-4.5` | `grok-4.5` | Grok | X (`False`) | SuperGrok 로컬 Grok CLI. grok-4.5 워커 모델. WORKER_MODEL_NOTICE 후 명시 배정 |
-| `opencode-muse-spark` | `opencode/muse-spark-1.3-contributor-free` | OpenCode | O (`True`) | A+ 고난도 워커. `builder`/`investigator` 의 high 위험도에만 자동 배정. `reviewer`/`benchmarker` 는 명시 지정 전용 |
+| `opencode-muse-spark` | `opencode/muse-spark-1.3-contributor-free` | OpenCode | O (`True`) | A+ 고난도 워커. `investigator` high 의 1순위이자 `builder` high 의 2순위. `reviewer`/`benchmarker` 는 명시 지정 전용 |
+| `cmd-deepseek-flash` | `deepseek/deepseek-v4.1-flash` | Command Code | O (`True`) | **빌더 기본 모델**(2026-09-20 사용자 지시). 추론 등급은 `--effort` 로 지정하며 `reviewer` 는 배정 대상이 아님 |
 
 `gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
 
-리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를 그대로 통과시키기 때문입니다. 현재 정책에서 빌더가 Gemini 계열(`gemini-flash-*`)인 동안 리뷰어는 `qwen-plus`(Alibaba Token Plan)입니다.
+리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를 그대로 통과시키기 때문입니다. 현재 정책에서 빌더가 Command Code 계열(`cmd-deepseek-flash`)인 동안 리뷰어는 `qwen-plus`(Alibaba Token Plan)이며, 사용자 지시로 `opencode-muse-spark` 를 명시 배정하는 경로도 계열이 갈라집니다.
+
+### 1.2 Command Code(cmd) 추론 등급
+
+Command Code CLI 는 추론 등급을 모델 ID 가 아니라 `--effort` 플래그로 받습니다.
+`deepseek/deepseek-v4.1-flash` 가 지원하는 등급은 네 가지이고 `medium` 은 없습니다.
+
+| 등급 | CLI 인자 | 배정되는 위험도 |
+| --- | --- | :---: |
+| `default` | (플래그 없음) | `low` |
+| `low` | `--effort low` | 명시 지정 전용 |
+| `high` | `--effort high` | `medium` |
+| `max` | `--effort max` | `high` |
+
+등급 대응은 `MODEL_POOL["cmd-deepseek-flash"]["effort_by_risk"]` 가 정본이며
+`effort_for_model(model, risk)` 로 조회합니다. 목록 밖의 값을 주면 CLI 가 종료 코드
+0 으로 "Unknown effort" 만 출력하고 기본 등급으로 진행하므로, 등급 지정이 조용히
+무시됩니다. 런처(`scripts/orca_cmd_launch.py`)가 먼저 값을 거부합니다.
+
+워커 창은 다음처럼 띄웁니다.
+
+```bash
+orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
+  --command "uv run python scripts/orca_cmd_launch.py --model deepseek/deepseek-v4.1-flash --effort max --auto"
+```
 
 ---
 

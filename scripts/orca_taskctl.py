@@ -2266,7 +2266,7 @@ def classify_file_edit_auto_approve_support(
                 f"기록된 메타데이터(cli={cli_type or 'antigravity'})에 따라 Antigravity CLI 로 판정되어 "
                 "파일 편집 자동 승인 모드 전환을 지원합니다"
             )
-        elif cli_type in ("opencode", "claude", "codex", "kimi", "qwen", "grok"):
+        elif cli_type in ("opencode", "claude", "codex", "kimi", "qwen", "grok", "cmd"):
             record_supported = False
             record_reason = (
                 f"기록된 메타데이터(cli={cli_type})에 따라 shift+tab 을 accept-edits 로 "
@@ -3935,6 +3935,8 @@ LAUNCHER_ROUTING_BY_PROVIDER: dict[str, tuple[str, str]] = {
     # OpenRouter 는 제공자가 별개지만 실행기는 OpenCode CLI 를 그대로 씁니다.
     "openrouter": ("scripts/orca_opencode_launch.py", "opencode"),
     "grok": ("scripts/orca_grok_launch.py", "grok"),
+    # Command Code CLI(cmd). 2026-09-20 빌더 기본 경로입니다.
+    "cmd": ("scripts/orca_cmd_launch.py", "cmd"),
 }
 
 LAUNCHER_PATH_TO_CLI: dict[str, str] = dict(LAUNCHER_ROUTING_BY_PROVIDER.values())
@@ -5239,7 +5241,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             or (
                 "antigravity"
                 if (args.model and "gemini" in args.model.lower())
-                else ("grok" if (args.model and "grok" in args.model.lower()) else None)
+                else (
+                    "grok"
+                    if (args.model and "grok" in args.model.lower())
+                    else (
+                        "cmd"
+                        if (args.model and provider_for_model(args.model, strict=False) == "cmd")
+                        else None
+                    )
+                )
             )
         )
         prep = prepare_worker_terminal(
@@ -5764,7 +5774,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     prp.add_argument("--terminal", required=True, help="워커 터미널 핸들")
     prp.add_argument(
-        "--cli-type", help="CLI 종류 (antigravity, cursor, opencode, claude, codex, kimi, grok)"
+        "--cli-type",
+        help="CLI 종류 (antigravity, cursor, opencode, claude, codex, kimi, grok, cmd)",
     )
     prp.add_argument("--model", help="워커 모델 ID")
     prp.add_argument("--launcher", help="런처 스크립트/방법")
