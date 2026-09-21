@@ -1052,6 +1052,21 @@ def resolve_intent_deps(intent: dict[str, Any]) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def role_default_report_path(capsule_dir: str, role: str | None) -> str:
+    """역할별 기본 보고 경로를 정합니다.
+
+    리뷰어는 review_done.json, 그 밖의 역할은 worker_done.json 입니다. Capsule
+    생성 경로와 기동 고지 경로가 같은 기준을 쓰도록 한 곳에 모읍니다.
+    2026-09-21 고지가 리뷰어에게도 worker_done.json 을 가리켜 리뷰어 세 대가
+    보고서를 잘못된 경로에 썼습니다. 그 원인을 여기서 막습니다.
+    """
+    filename = "review_done.json" if role == "reviewer" else "worker_done.json"
+    base = str(capsule_dir).rstrip("/")
+    if not base or base == ".":
+        return filename
+    return f"{base}/{filename}"
+
+
 def expand_intent_to_capsule(
     intent: dict[str, Any],
     task_id: str | None = None,
@@ -1148,14 +1163,15 @@ def expand_intent_to_capsule(
     acceptance_formatted = _format_yaml_list(acc_items)
 
     # artifact_paths & report_path
+    default_report = role_default_report_path(f".orca/capsules/{task_id}", role)
     if is_reviewer:
-        report_path = str(intent.get("report_path") or f".orca/capsules/{task_id}/review_done.json")
+        report_path = str(intent.get("report_path") or default_report)
         validate_contained_path(report_path, field_name="report_path")
         return_contract = "ORCA_REVIEW_DONE_V2"
         mode = "reviewer"
         artifact_paths_formatted = _format_yaml_list([report_path])
     else:
-        report_path = str(intent.get("report_path") or f".orca/capsules/{task_id}/worker_done.json")
+        report_path = str(intent.get("report_path") or default_report)
         validate_contained_path(report_path, field_name="report_path")
         return_contract = "ORCA_WORKER_DONE_V2"
         mode = intent.get("mode", "worker")
@@ -3303,11 +3319,30 @@ def _deliver_capsule_notice(
         return {"status": "skipped", "reason": "no_terminal_handle"}
 
     dispatch_id = resolve_dispatch_id(task_id)
-    report_path = intent.get("report_path")
-    if not report_path:
-        rel_capsule = worktree_relative_capsule_path(capsule_path)
-        rel_parent = str(Path(rel_capsule).parent)
-        report_path = f"{rel_parent}/worker_done.json" if rel_parent != "." else "worker_done.json"
+    role = intent.get("role")
+    rel_capsule = worktree_relative_capsule_path(capsule_path)
+    rel_parent = str(Path(rel_capsule).parent)
+
+    # 보고 경로 정본 순서는 Capsule 파일, Intent, 역할별 기본값입니다. Capsule 을
+    # 읽지 못해도 고지 자체는 보내야 하므로 예외를 삼키고 다음 순서로 넘어갑니다.
+    capsule_report_path: str | None = None
+    try:
+        if capsule_path.is_file():
+            capsule_report_path = parse_capsule_scalar(
+                capsule_path.read_text(encoding="utf-8"), "report_path"
+            )
+    except (OSError, UnicodeDecodeError):
+        capsule_report_path = None
+
+    intent_report_path = str(intent.get("report_path") or "").strip() or None
+    if capsule_report_path and intent_report_path and capsule_report_path != intent_report_path:
+        sys.stderr.write(
+            f"경고: Capsule report_path({capsule_report_path})와 Intent report_path({intent_report_path})가 "
+            "달라 Capsule 값을 씁니다.\n"
+        )
+    report_path = (
+        capsule_report_path or intent_report_path or role_default_report_path(rel_parent, role)
+    )
     delivery_probe = new_delivery_probe()
     try:
         text = build_capsule_notice(
@@ -3316,7 +3351,7 @@ def _deliver_capsule_notice(
             dispatch_id=dispatch_id,
             delivery_probe=delivery_probe,
             worktree_path=getattr(args, "worktree", None),
-            role=intent.get("role"),
+            role=role,
         )
     except ValueError as err:
         sys.stderr.write(f"경고: Capsule 고지문 작성 실패: {err}\n")
