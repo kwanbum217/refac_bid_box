@@ -330,10 +330,12 @@ python3 -c 'import json;a=json.load(open("data/benchmarks/offload_latency_202609
 
 ```bash
 uv run python scripts/benchmark_offload_loop_lag.py --rounds 3 \
-    --json data/benchmarks/offload_latency_20260921/loop_lag.json
+    --output data/benchmarks/offload_latency_20260921/loop_lag.json
 uv run python scripts/benchmark_home_recent_selection.py --rounds 3 \
-    --json data/benchmarks/offload_latency_20260921/home_recent.json
+    --output data/benchmarks/offload_latency_20260921/home_recent.json
 ```
+
+2026-09-21 정정: 최초 병합본은 두 명령에 하니스에 없는 `--json` 을 적었습니다. 두 하니스의 결과 파일 옵션은 `--output` 입니다.
 
 두 하니스 모두 db·redis 컨테이너만 띄운 상태에서 실행했습니다. 워커 컨테이너를 올리면 기동 따라잡기 수집이 배경으로 돌아 측정이 오염됩니다.
 
