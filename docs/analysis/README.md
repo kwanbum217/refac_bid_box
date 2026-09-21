@@ -27,12 +27,12 @@
 
 ## 1. 활성 문서 및 미해결 기한부 과업
 
-현재 진행 중이거나 만료 기한이 정해진 과업, 후속 착수 대기 조사 문서입니다. chromadb 1.x 업그레이드(2026-12-31 만료) 및 nanoid 취약점(2026-10-31 만료) 관리가 포함됩니다.
+현재 진행 중이거나 만료 기한이 정해진 과업, 후속 착수 대기 조사 문서입니다. nanoid 취약점은 커밋 `d68078a7` 에서 해소되어 예외 목록에서 제거되었고, 기한부 예외는 chromadb 1.x 업그레이드(2026-12-31 만료)만 남았습니다. chromadb 예외는 만료 30일 전인 2026-12-01 에 상류 수정 버전을 재확인합니다.
 
 | 대표 문서 | 관련 회차 및 보충 | 일자 | 판정 및 핵심 결과 |
 | --- | --- | --- | --- |
 | [`drift_baseline_source_survey_20260906.md`](drift_baseline_source_survey_20260906.md) | [`task_093efcc53333.md`](task_093efcc53333.md) | 2026-09-06 | - 정의: src/ml/monitoring.py:130-137의 save_baseline_distributions가 target_dir/feature_distributions_v1.json과 target_dir/metadata.... |
-| [`task_38b3bb325d8e.md`](task_38b3bb325d8e.md) | [`task_4ff8fb0ca9cd.md`](task_4ff8fb0ca9cd.md)<br>[`task_69142134cabc.md`](task_69142134cabc.md)<br>[`task_a48917d63a07.md`](task_a48917d63a07.md) | 2026-09-03 | 공급망 스캔(pip/npm/Trivy) 차단 모드 전환 및 예외 관리 도입. chromadb 1.x 업그레이드(2026-12-31 만료) 및 nanoid(2026-10-31 만료) 기한부 과업 확정 |
+| [`task_38b3bb325d8e.md`](task_38b3bb325d8e.md) | [`task_4ff8fb0ca9cd.md`](task_4ff8fb0ca9cd.md)<br>[`task_69142134cabc.md`](task_69142134cabc.md)<br>[`task_a48917d63a07.md`](task_a48917d63a07.md) | 2026-09-03 | 공급망 스캔(pip/npm/Trivy) 차단 모드 전환 및 예외 관리 도입. chromadb 1.x 업그레이드(2026-12-31 만료) 기한부 과업 확정. nanoid 는 커밋 `d68078a7` 에서 해소되어 예외 목록에서 제거 |
 | [`ssr_e2e_scope_survey_20260902.md`](ssr_e2e_scope_survey_20260902.md) | [`task_07bcd5cf94e2.md`](task_07bcd5cf94e2.md) | 2026-09-02 | 본 저장소(refac_bid_box)는 Django 모놀리식 구조에서 FastAPI + MySQL 8 + Redis + Meilisearch + Ollama 기반으로 리팩토링된 공공조달 입찰 예측 및 하이브리드 RAG 챗봇 플랫... |
 | [`observability_stack_survey_20260902.md`](observability_stack_survey_20260902.md) | [`bd1_otel_metrics_review_20260911.md`](bd1_otel_metrics_review_20260911.md)<br>[`task_0534350cf9a0.md`](task_0534350cf9a0.md) | 2026-09-02 | 지표를 먼저 정의한 뒤, 1인 운영에 맞는 관측성 선택지를 비교합니다. |
 | [`handoff_backlog_reaudit_20260920.md`](handoff_backlog_reaudit_20260920.md) | — | 2026-09-20 | 인수인계 문서와 CURRENT_STATE 6.1절의 잔여 과업 26개 행(고유 20건)을 전수 재판정해 8건(12행)이 이미 해소되었음을 확인했고, 즉시 착수 가능한 유효 과업은 수집·드리프트 진행 관찰, 손상 탐침 효과 크기 조사, 단일 질의 실행계획 전환 원인 규명 3건뿐입니다. |
