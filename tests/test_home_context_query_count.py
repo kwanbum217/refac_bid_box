@@ -12,8 +12,8 @@ tests/test_home_context_query_count.py
 1. 결과 동일성 - 수정 전 알고리즘을 참조 구현으로 그대로 옮겨 두고, 빈 표, 중복
    밀집, 윈도우 분산, 시각 동률, 분야 필터, 최대 표본이 필요한 대규모 형상에서
    선별 id 와 순서가 같음을 단언합니다.
-2. 질의 수 - 데이터 규모와 무관하게 SELECT 가 1회로 고정되고, 참조 구현보다 적음을
-   단언합니다.
+2. 질의 수 - 첫 표본에서 limit 을 채우는 형상에서는 SELECT 1회와 읽는 행 50 이하를,
+   어떤 형상에서도 호출당 SELECT 3회 이하와 참조 구현 이하를 단언합니다.
 """
 
 from __future__ import annotations
@@ -45,15 +45,35 @@ CATEGORIES = ("Servc", "Thng", "Cnstwk", "Frgcpt")
 # --------------------------------------------------------------------------- #
 
 
+def _limit_value(statement: str, parameters: Any) -> int | None:
+    """실행된 SQL 의 LIMIT 값입니다. LIMIT 절이 없으면 None 입니다.
+
+    SQLite 는 LIMIT 을 바인딩하므로 문장에는 ? 로 남고, 값은 앞선 조건절의 바인딩
+    수만큼 뒤에 온 같은 순서의 파라미터 자리에 있습니다.
+    """
+    limit_index = statement.upper().find("LIMIT")
+    if limit_index < 0:
+        return None
+    if not isinstance(parameters, (tuple, list)):
+        return None
+    position = statement[:limit_index].count("?")
+    if position >= len(parameters):
+        return None
+    value = parameters[position]
+    return int(value) if isinstance(value, int) else None
+
+
 class _QueryRecorder:
-    """세션에 실행된 SQL 문을 순서대로 모읍니다."""
+    """세션에 실행된 SQL 문과 그 LIMIT 값을 순서대로 모읍니다."""
 
     def __init__(self, session: Session) -> None:
         self.connection = session.get_bind()
         self.statements: list[str] = []
+        self.limit_values: list[int | None] = []
 
     def _record(self, conn, cursor, statement, parameters, context, executemany) -> None:
         self.statements.append(statement)
+        self.limit_values.append(_limit_value(statement, parameters))
 
     def __enter__(self) -> _QueryRecorder:
         event.listen(self.connection, "before_cursor_execute", self._record)
@@ -71,6 +91,21 @@ class _QueryRecorder:
                 if statement.lstrip().upper().startswith("SELECT")
             ]
         )
+
+    def select_limits(self) -> list[int]:
+        """SELECT 문이 스스로 제한한 행 수(LIMIT) 목록입니다. LIMIT 없는 SELECT 는 빠집니다."""
+        limits: list[int] = []
+        for statement, limit in zip(self.statements, self.limit_values, strict=True):
+            if limit is None:
+                continue
+            if statement.lstrip().upper().startswith("SELECT"):
+                limits.append(limit)
+        return limits
+
+    def selection_select_count(self) -> int:
+        """최근 공고 선별 질의(수집일 내림차순 정렬)만 셉니다."""
+        marker = f"{BidAnnouncement.__tablename__}.collected_at DESC"
+        return len([statement for statement in self.statements if marker in statement])
 
 
 def _legacy_dedupe(candidates: list[BidAnnouncement], limit: int) -> list[BidAnnouncement]:
@@ -269,11 +304,12 @@ def _count_legacy_selects(db, *, limit: int, latest_collected_at, base_stmt=None
     return recorder.select_count()
 
 
-def _count_context_selects(db: Session) -> int:
+def _context_select_counts(db: Session) -> tuple[int, int]:
+    """홈 컨텍스트 한 번의 (전체 SELECT 수, 최근 공고 선별 SELECT 수) 입니다."""
     recorder = _QueryRecorder(db)
     with recorder:
         home_context.get_home_page_context(db)
-    return recorder.select_count()
+    return recorder.select_count(), recorder.selection_select_count()
 
 
 # --------------------------------------------------------------------------- #
@@ -405,42 +441,66 @@ def test_selection_order_uses_notice_time_then_id_when_collected_at_ties():
 # --------------------------------------------------------------------------- #
 
 
-def test_query_count_is_fixed_regardless_of_data_scale():
-    """선별 한 번의 SELECT 수가 데이터 규모와 무관하게 1회로 고정입니다."""
+def test_first_sample_fills_limit_uses_one_query_and_reads_at_most_first_sample():
+    """첫 표본에서 limit 을 채우는 형상은 SELECT 1회와 읽는 행 50 이하로 끝납니다."""
+    db = _new_session()
+    _seed(db, _clustered_specs(400, rows_per_key=1))
+    latest = _latest_collected_at(db)
+
+    for base_stmt, limit in (
+        (select(BidAnnouncement), 8),
+        (select(BidAnnouncement).where(BidAnnouncement.category == "Servc"), 6),
+    ):
+        recorder = _QueryRecorder(db)
+        with recorder:
+            selected = _recent_unique_announcements(db, base_stmt, limit, latest)
+
+        assert len(selected) == limit
+        assert recorder.select_count() == 1
+        assert recorder.select_limits() == [HOME_RECENT_SAMPLE_SIZES[0]]
+
+
+def test_query_count_bounded_by_sample_sizes_regardless_of_data_scale():
+    """어떤 데이터 규모에서도 선별 한 번의 SELECT 가 표본 크기 수(3) 이하이고 참조 구현 이하입니다."""
     scale_shapes = ((6, 6), (400, 200), (1400, 200))
-    counts = []
+    current_counts = []
+    legacy_counts = []
 
     for count, rows_per_key in scale_shapes:
         db = _new_session()
         _seed(db, _clustered_specs(count, rows_per_key=rows_per_key))
-        counts.append(
-            _count_selection_selects(db, limit=8, latest_collected_at=_latest_collected_at(db))
-        )
+        latest = _latest_collected_at(db)
+        current_counts.append(_count_selection_selects(db, limit=8, latest_collected_at=latest))
+        legacy_counts.append(_count_legacy_selects(db, limit=8, latest_collected_at=latest))
 
-    assert counts == [1, 1, 1]
+    assert all(count <= len(HOME_RECENT_SAMPLE_SIZES) for count in current_counts)
+    assert all(
+        current <= legacy for current, legacy in zip(current_counts, legacy_counts, strict=True)
+    )
 
 
 def test_query_count_reduced_versus_legacy_double_loop():
-    """이중 순회는 표본·윈도 조합 수만큼 질의를 내고, 고정 질의는 1회입니다."""
+    """이중 순회는 표본·윈도 조합 수만큼 질의를 내고, 점진 확대는 그보다 적습니다."""
     db = _new_session()
     _seed(db, _clustered_specs(1400, rows_per_key=200))
     latest = _latest_collected_at(db)
 
     legacy_count = _count_legacy_selects(db, limit=8, latest_collected_at=latest)
-    fixed_count = _count_selection_selects(db, limit=8, latest_collected_at=latest)
+    current_count = _count_selection_selects(db, limit=8, latest_collected_at=latest)
     worst_case = len(HOME_RECENT_DAY_WINDOWS) * len(HOME_RECENT_SAMPLE_SIZES) + len(
         HOME_RECENT_SAMPLE_SIZES
     )
 
     assert legacy_count == worst_case
-    assert fixed_count == 1
-    assert fixed_count < legacy_count
+    assert current_count <= len(HOME_RECENT_SAMPLE_SIZES)
+    assert current_count < legacy_count
 
 
-def test_home_page_context_query_count_is_fixed_across_data_scale(monkeypatch):
-    """홈 컨텍스트 전체의 SELECT 수가 데이터 규모와 무관하게 같습니다."""
+def test_home_page_context_query_count_never_above_legacy_across_data_scale(monkeypatch):
+    """홈 컨텍스트 전체의 SELECT 수가 어떤 데이터 규모에서도 참조 구현보다 많지 않습니다."""
     scale_shapes = ((6, 6), (400, 200), (1400, 200))
-    fixed_counts = []
+    calls_per_page = 1 + len(home_context.DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
+    current_counts = []
 
     for index, (count, rows_per_key) in enumerate(scale_shapes):
         db = _new_session()
@@ -452,7 +512,7 @@ def test_home_page_context_query_count_is_fixed_across_data_scale(monkeypatch):
                 base=BASE_TIME - timedelta(days=index),
             ),
         )
-        fixed_counts.append(_count_context_selects(db))
+        current_counts.append(_context_select_counts(db))
 
     monkeypatch.setattr(
         home_context, "_recent_unique_announcements", _legacy_recent_unique_announcements
@@ -469,8 +529,10 @@ def test_home_page_context_query_count_is_fixed_across_data_scale(monkeypatch):
                 base=BASE_TIME - timedelta(days=10 + index),
             ),
         )
-        legacy_counts.append(_count_context_selects(db))
+        legacy_counts.append(_context_select_counts(db))
 
-    assert len(set(fixed_counts)) == 1
-    for fixed_count, legacy_count in zip(fixed_counts, legacy_counts, strict=True):
-        assert fixed_count < legacy_count
+    for (current_total, current_selection), (legacy_total, _) in zip(
+        current_counts, legacy_counts, strict=True
+    ):
+        assert current_selection <= calls_per_page * len(HOME_RECENT_SAMPLE_SIZES)
+        assert current_total < legacy_total
