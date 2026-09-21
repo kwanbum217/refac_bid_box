@@ -1,0 +1,438 @@
+# 이벤트 루프 오프로드 및 홈 최근 공고 선별 실측 (2026-09-21)
+
+> **작성일**: 2026-09-21
+> **작성자**: DeepSeek V4.1 Flash (Orca 워커), 실측은 Claude Opus 5 (Orca 코디네이터)
+> **기준 커밋**: `main` `29a8202e5cc04e159927ec7fd202d793122e8ef0` (dirty 아님)
+> **Orca Run**: `run_0601d2861203`
+> **측정 규약**: [`../ops/latency_gate_protocol.md`](../ops/latency_gate_protocol.md)
+> **배경 조사**: [`write_path_g3_scan_20260920.md`](write_path_g3_scan_20260920.md) 3장 (D1·D2·D7·D8·D9)
+> **측정 도구**: `scripts/benchmark_offload_loop_lag.py`, `scripts/benchmark_home_recent_selection.py`
+> **원시 결과**: `data/benchmarks/offload_latency_20260921/loop_lag.json`(스키마 `ORCA_OFFLOAD_LOOP_LAG_V1`), `data/benchmarks/offload_latency_20260921/home_recent.json`(스키마 `HOME_RECENT_SELECTION_BENCHMARK_V1`)
+
+---
+
+## 1. 한 줄 요약
+
+D1 세 대상(요약 재집계 2종·기관명 캐시)은 오프로드 전 동작에서 이벤트 루프가 **396.48~29595.26ms** 멈추던 것이 `asyncio.to_thread` 경로에서 최대 **1.58~28.31ms** 로 줄어 **방향은 확정**입니다. D2.claim_cycle·D7·D9 는 데워진 상태의 호출 소요가 **0.2~3ms** 라 탐침 해상도(1ms) 근처여서 **판정 불가 또는 미미**이고, D2.catchup_check 는 함수가 즉시 반환해 **측정이 성립하지 않았습니다**. D8 은 개선이 아니라 **회귀**로 다섯 시나리오 전부에서 현재 구현이 변경 전 구현보다 중앙값 기준 **28.81~49.88ms** 느립니다.
+
+---
+
+## 2. 왜 쟀는가
+
+[`write_path_g3_scan_20260920.md`](write_path_g3_scan_20260920.md) 3장은 D1·D2·D7·D9 의 측정 방법으로 loop lag 를, D8 의 측정 방법으로 예열 구간 질의 수와 소요를 규정했으나 저장소에 해당 도구가 없었습니다. 코디네이터가 하니스 두 개(`29a8202e` 기준)를 병합한 뒤, 같은 커밋에서 db·redis 컨테이너만 띄워 실측했습니다.
+
+두 측정의 목적이 다릅니다.
+
+| 대상 | 정적 조사가 세운 가설 | 이번 실측이 확인하려는 것 |
+| --- | --- | --- |
+| D1·D2·D7·D9 | 동기 호출이 이벤트 루프를 정지시킨다 | 정지 시간이 실제로 존재하는가, `to_thread` 가 그것을 없애는가 |
+| D8 | 표본·윈도우 이중 순회가 최대 약 45회 질의를 낸다 | 축약 구현이 실제로 질의·시간을 줄였는가 |
+
+---
+
+## 3. 측정 조건
+
+### 3.1 환경 (규약 5.3·5.4)
+
+| 항목 | loop_lag.json | home_recent.json |
+| --- | --- | --- |
+| 측정 시각 (UTC) | 2026-09-21T03:10:46 | 2026-09-21T03:11:14 |
+| 커밋 SHA | `29a8202e5cc04e159927ec7fd202d793122e8ef0` | 같음 |
+| dirty 여부 | 아님 (false) | 아님 (false) |
+| 정규화 load average 최소 / 중앙 / 최대 | 15.21% / **28.21%** / **39.07%** | 22.57% / **26.25%** / **28.57%** |
+| 규약 5.3 판정 (중앙 30% 이하, 최대 50% 이하) | **통과** | **통과** |
+| 부하 표본 수 (5초 간격) | 109 | 4 |
+| DB 버퍼풀 크기 | 2.0 GiB (2,147,483,648 바이트) | 2.0 GiB (2,147,483,648 바이트) |
+| DB 연속 가동 시간 | 586초 | 614초 |
+| `bid_announcements` 행 수 | 파일에 미기재 | 5,515,517 |
+| 계측(프로파일러·트레이서) | 비활성 | 비활성 |
+
+`loop_lag.json` 의 포착 부하 최대 39.07% 는 규약 5.3 의 최대 50% 이내이지만 중앙 30% 기준에 근접합니다. 규약은 임계 초과 시 측정 폐기를 요구하며, 두 파일 모두 초과하지 않았으므로 판정 근거로 사용합니다.
+
+`loop_lag.json` 에는 `bid_announcements` 행 수가 실려 있지 않습니다. 같은 시각 같은 DB 에서 측정한 `home_recent.json` 의 5,515,517행을 이 세션의 값으로 인용합니다. 두 파일은 서로 다른 값이 아니라 한 환경의 두 기록입니다.
+
+### 3.2 프로세스 구성과 컨테이너
+
+| 항목 | 값 |
+| --- | --- |
+| 기동 컨테이너 | **db, redis 두 개뿐** |
+| 앱(FastAPI/Uvicorn)·Arq 워커 컨테이너 | **미기동** |
+| 하니스 실행 위치 | 호스트 프로세스 (python 3.12.14, macOS-26.6.2-arm64, 논리 코어 14) |
+| 이벤트 루프 | 하니스 프로세스의 단일 asyncio 루프 + asyncio 기본 스레드 executor |
+| 부하 발생기 | 없음 (동시 요청 없이 순차 호출) |
+
+워커 컨테이너를 띄우지 않은 이유는 **기동 따라잡기 수집을 막기 위해서**입니다. 워커가 뜨면 `run_schedule_catchup_task` 가 기동 시 수집을 시작해 D1 요약 집계와 D7 COUNT 가 측정 중에 배경으로 돌아갑니다. 그래서 워커·앱은 올리지 않고 db·redis 만 올린 상태에서 하니스를 호스트에서 직접 돌렸습니다.
+
+컨테이너가 두 개뿐이므로 규약 5장이 요구하는 Uvicorn 워커 수·스레드 예산은 이 측정에 해당 없습니다. 대신 위 표의 하니스 프로세스 구성을 기록합니다.
+
+### 3.3 집단 정의와 측정 방식
+
+| 구분 | 정의 |
+| --- | --- |
+| A 집단 | 대상 동기 함수를 코루틴 안에서 **그대로 호출**. 오프로드 전 동작 |
+| B 집단 | `await asyncio.to_thread(대상 함수)`. 현재 동작 |
+| 교차 | 한 반복마다 ABBA 순서로 A·B 를 교대 실행 |
+| 탐침 | 별도 코루틴이 1ms `asyncio.sleep` 후 `loop.time()` 실경과를 재어 초과분을 지연 표본으로 누적 |
+| 워밍업 | 집단별 선행 반복. **집계에서 제외** |
+| 대표값 | 세 회차 중 **최악값** (규약 3장) |
+| 반올림 | 소수 둘째 자리 |
+
+탐침 간격이 1ms 이므로 **측정 해상도는 1ms** 입니다. A 집단에서 `probe_sample_count` 가 1 인 것은 탐침이 첫 표본을 남기기 전에 동기 호출이 루프를 붙잡았기 때문이며, 그 단일 값이 곧 정지 시간입니다. B 집단에서는 정지가 없어 표본이 수천~수만 개 쌓입니다.
+
+D2 는 하니스 전용 claim key, D9 는 하니스 전용 heartbeat key·schedule_name 만 쓰고 종료 시 삭제합니다. D1 은 운영과 같은 파생 요약 테이블·기관명 캐시를 갱신하며 원본 테이블(`bid_announcements`, `bid_results`)에는 쓰지 않습니다.
+
+---
+
+## 4. 결과: 이벤트 루프 지연 (D1·D2·D7·D9)
+
+지연 단위는 ms 입니다. `A 최대 지연`·`B 최대 지연` 은 그 회차 표본 중 `probe_lag_max_ms` 의 최댓값, `wall 중앙값` 은 `wall_ms` 의 중앙값, `n` 은 워밍업을 뺀 호출 수입니다.
+
+### 4.1 D1 — 요약 재집계·기관명 캐시 (효과 확정)
+
+**D1.announcement** (공고 데이터셋 요약 재집계, 반복 3·워밍업 2)
+
+| 회차 | A n | A 최대 지연 | A wall 중앙값 | B n | B 최대 지연 | B wall 중앙값 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | 28113.29 | 28113.94 | 1 | 5.58 | 28598.46 |
+| 2 | 1 | 29595.26 | 29595.38 | 1 | 11.17 | 28739.68 |
+| 3 | 1 | 28937.58 | 28937.65 | 1 | 7.09 | 29555.75 |
+| **최악 회차** | 1 | **29595.26** | 29595.38 | 1 | **11.17** | 29555.75 |
+
+**D1.result** (낙찰 데이터셋 요약 재집계, 반복 3·워밍업 2)
+
+| 회차 | A n | A 최대 지연 | A wall 중앙값 | B n | B 최대 지연 | B wall 중앙값 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | 697.99 | 698.88 | 1 | 1.28 | 710.13 |
+| 2 | 1 | 654.47 | 655.35 | 1 | 1.58 | 579.17 |
+| 3 | 1 | 519.74 | 520.58 | 1 | 0.33 | 509.45 |
+| **최악 회차** | 1 | **697.99** | 698.88 | 1 | **1.58** | 710.13 |
+
+**D1.catalogs** (기관명 목록 캐시 갱신, 반복 3·워밍업 2)
+
+| 회차 | A n | A 최대 지연 | A wall 중앙값 | B n | B 최대 지연 | B wall 중앙값 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | 317.23 | 318.14 | 1 | 22.38 | 324.03 |
+| 2 | 1 | 396.48 | 397.36 | 1 | 28.31 | 339.50 |
+| 3 | 1 | 326.45 | 327.36 | 1 | 23.58 | 318.78 |
+| **최악 회차** | 1 | **396.48** | 397.36 | 1 | **28.31** | 339.50 |
+
+최악 회차 최대 지연의 A/B 비는 `D1.announcement` **2649.09배**, `D1.result` **441.82배**, `D1.catalogs` **14.01배** 입니다(원시 JSON `summary.lag_max_ratio_a_over_b`). 세 회차 모두 같은 방향입니다. 벽시계 시간은 A·B 가 비슷합니다. 오프로드는 **연산을 빠르게 만들지 않고 루프를 비울 뿐**입니다(`D1.announcement` 최악 wall 29595.38 대 29555.75).
+
+### 4.2 D2 — 스케줄 claim 한 주기와 따라잡기 판정
+
+**D2.claim_cycle** (반복 20·워밍업 2, 집단·회차당 n=18)
+
+| 회차 | A n | A 최대 지연 | A wall 중앙값 | B n | B 최대 지연 | B wall 중앙값 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 18 | 0.11 | 0.75 | 18 | 0.09 | 0.81 |
+| 2 | 18 | 0.13 | 0.53 | 18 | 0.10 | 0.57 |
+| 3 | 18 | 0.11 | 0.54 | 18 | 0.11 | 0.58 |
+| **최악 회차** | 18 | **0.13** | 0.75 | 18 | **0.11** | 0.81 |
+
+**D2.catchup_check** (반복 20·워밍업 2, 집단·회차당 n=18)
+
+| 회차 | A n | A 최대 지연 | A wall 중앙값 | B n | B 최대 지연 | B wall 중앙값 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 18 | 0.18 | 0.00 | 18 | 0.26 | 0.06 |
+| 2 | 18 | 0.20 | 0.00 | 18 | 0.17 | 0.06 |
+| 3 | 18 | 0.18 | 0.00 | 18 | 0.16 | 0.07 |
+| **최악 회차** | 18 | **0.20** | 0.00 | 18 | **0.26** | 0.07 |
+
+`D2.claim_cycle` 의 A·B 차이는 0.02ms 로 해상도 이하입니다. **판정 불가**입니다.
+
+`D2.catchup_check` 는 **측정이 성립하지 않았습니다.** 측정 호스트의 설정에서 `AUTOMATION_SCHEDULE_CATCHUP_ENABLED` 가 기본값 False 라 `check_schedule_catchup_needed` 가 즉시 반환합니다. 그래서 A 의 wall 중앙값이 0.00ms 이고 A·B 어느 쪽에도 대상 로직이 돌지 않았습니다. 운영 워커는 `docker-compose.yml` 에서 이 값을 true 로 두므로 호스트 조건과 다릅니다. 이 대상은 **판정 불가**로 적습니다. `loop_lag.json` 의 `summary.lag_max_ratio_a_over_b` 가 0.75 로 나온 것은 효과가 아니라 빈 함수 호출의 잡음입니다.
+
+### 4.3 D7 — 오늘 적재 공고 수 동기 COUNT
+
+**D7.count_today** (반복 20·워밍업 2, 집단·회차당 n=18)
+
+| 회차 | A n | A 최대 지연 | A wall 중앙값 | B n | B 최대 지연 | B wall 중앙값 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 18 | 2.36 | 2.82 | 18 | 0.60 | 3.11 |
+| 2 | 18 | 1.76 | 1.94 | 18 | 0.35 | 2.24 |
+| 3 | 18 | 0.46 | 1.30 | 18 | 0.17 | 1.35 |
+| **최악 회차** | 18 | **2.36** | 2.82 | 18 | **0.60** | 3.11 |
+
+데워진 상태의 COUNT 는 회차가 갈수록 빨라져 최악 2.36ms(A) 대 0.60ms(B) 입니다. A/B 비 3.92배이지만 절대값이 해상도(1ms)의 몇 배 수준이라 **정상 상태 효과는 미미 또는 판정 불가**로 적습니다. 다만 이 대상은 호출 1회가 2.36ms 로 측정된 것이 아니라 회차별로 2.36 → 1.76 → 0.46ms 로 줄었습니다. 첫 호출의 냉시동 비용이 크다는 뜻이며, 코디네이터가 본 측정 파일 밖에서 관찰한 **스모크 실행 첫 냉시동 호출 32.64ms** 는 이 경향의 연장으로 **냉시동 참고**로만 적습니다.
+
+### 4.4 D9 — heartbeat·스케줄 결과 기록
+
+**D9.heartbeat** (반복 30·워밍업 2, 집단·회차당 n=28)
+
+| 회차 | A n | A 최대 지연 | A wall 중앙값 | B n | B 최대 지연 | B wall 중앙값 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 28 | 0.16 | 0.29 | 28 | 0.15 | 0.35 |
+| 2 | 28 | 0.17 | 0.32 | 28 | 0.14 | 0.38 |
+| 3 | 28 | 0.15 | 0.31 | 28 | 0.19 | 0.38 |
+| **최악 회차** | 28 | **0.17** | 0.32 | 28 | **0.19** | 0.38 |
+
+**D9.schedule_result** (반복 30·워밍업 2, 집단·회차당 n=28)
+
+| 회차 | A n | A 최대 지연 | A wall 중앙값 | B n | B 최대 지연 | B wall 중앙값 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 28 | 0.10 | 0.66 | 28 | 0.08 | 0.78 |
+| 2 | 28 | 0.16 | 0.75 | 28 | 0.08 | 0.92 |
+| 3 | 28 | 1.05 | 0.72 | 28 | 9.05 | 0.83 |
+| **최악 회차** | 28 | **1.05** | 0.75 | 28 | **9.05** | 0.92 |
+
+`D9.heartbeat` 는 A 0.17ms 대 B 0.19ms 로 해상도 이하입니다. **판정 불가**입니다.
+
+`D9.schedule_result` 는 3회차에서 B 의 최대 지연(9.05ms)이 A(1.05ms)보다 큽니다. **관찰 사실만 적습니다.** 이 회차 B 의 28개 호출 중 최대값 하나가 9.05ms 였고 나머지 회차 B 는 0.08ms 였으며, A 는 0.10~1.05ms 였습니다. 단발 표본 하나의 값이므로 분포를 말할 수 없고, 원인을 추측해 단정하지 않습니다.
+
+### 4.5 D1~D9 요약
+
+| 대상 | 회차당 표본 | A 최악 최대 지연 | B 최악 최대 지연 | A/B 비 | 판정 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| D1.announcement | 1 | 29595.26 | 11.17 | 2649.09 | **효과 확정 (정지 제거)** |
+| D1.result | 1 | 697.99 | 1.58 | 441.82 | **효과 확정 (정지 제거)** |
+| D1.catalogs | 1 | 396.48 | 28.31 | 14.01 | **효과 확정 (정지 제거)** |
+| D2.claim_cycle | 18 | 0.13 | 0.11 | 1.20 | 판정 불가 (해상도 이하) |
+| D2.catchup_check | 18 | 0.20 | 0.26 | 0.75 | **판정 불가 (측정 불성립)** |
+| D7.count_today | 18 | 2.36 | 0.60 | 3.92 | 정상 상태 미미, 냉시동만 큼 |
+| D9.heartbeat | 28 | 0.17 | 0.19 | 0.91 | 판정 불가 (해상도 이하) |
+| D9.schedule_result | 28 | 1.05 | 9.05 | 0.12 | 판정 불가 (단발 표본, B 우세) |
+
+---
+
+## 5. 결과: 홈 최근 공고 선별 질의 축약 (D8)
+
+시나리오 5종(전체 1 + 카테고리 4)을 반복 30·워밍업 3 으로 돌린 값입니다. `current` 는 현재 구현(`home_context._recent_unique_announcements`, 최대 표본 1회 질의), `legacy` 는 변경 전 구현(표본·윈도우 이중 순회)을 하니스에 그대로 옮긴 것입니다. 집단·회차당 n=27 입니다.
+
+### 5.1 회차별 표
+
+| 시나리오 | 회차 | current 중앙값 | current P95 | legacy 중앙값 | legacy P95 | 차이(중앙값) | SQL current/legacy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| all (limit 8) | 0 | 34.32 | 41.87 | 2.10 | 2.72 | -32.22 | 1 / 1 |
+| all | 1 | 34.29 | 40.61 | 2.05 | 2.77 | -32.24 | 1 / 1 |
+| all | 2 | 35.26 | 42.27 | 2.11 | 2.58 | -33.15 | 1 / 1 |
+| Cnstwk (limit 6) | 0 | 39.05 | 46.57 | 1.75 | 2.01 | -37.30 | 1 / 1 |
+| Cnstwk | 1 | 38.95 | 47.10 | 1.77 | 2.13 | -37.19 | 1 / 1 |
+| Cnstwk | 2 | 52.02 | 63.63 | 2.15 | 2.60 | -49.88 | 1 / 1 |
+| Servc (limit 6) | 0 | 33.36 | 41.58 | 1.58 | 1.80 | -31.79 | 1 / 1 |
+| Servc | 1 | 33.39 | 39.56 | 1.21 | 1.81 | -32.18 | 1 / 1 |
+| Servc | 2 | 33.86 | 42.24 | 1.11 | 1.84 | -32.75 | 1 / 1 |
+| Thng (limit 6) | 0 | 32.27 | 40.31 | 1.74 | 2.11 | -30.52 | 1 / 1 |
+| Thng | 1 | 33.37 | 42.47 | 1.74 | 2.45 | -31.63 | 1 / 1 |
+| Thng | 2 | 32.59 | 38.87 | 1.72 | 2.06 | -30.87 | 1 / 1 |
+| Frgcpt (limit 6) | 0 | 30.96 | 36.89 | 2.38 | 2.76 | -28.59 | 1 / 2 |
+| Frgcpt | 1 | 30.85 | 37.20 | 2.38 | 2.70 | -28.46 | 1 / 2 |
+| Frgcpt | 2 | 31.19 | 40.22 | 2.32 | 2.81 | -28.87 | 1 / 2 |
+
+차이는 `current - legacy` 이므로 음수가 **현재 구현이 더 느리다**는 뜻입니다.
+
+### 5.2 최악 회차 기준
+
+| 시나리오 | current 중앙값 (최악) | legacy 중앙값 (최악) | 차이 | 비 |
+| --- | ---: | ---: | ---: | ---: |
+| all | 35.26 | 2.11 | +33.15 | 16.73 |
+| Cnstwk | 52.02 | 2.15 | +49.88 | 24.21 |
+| Servc | 33.86 | 1.58 | +32.28 | 21.48 |
+| Thng | 33.37 | 1.74 | +31.62 | 19.13 |
+| Frgcpt | 31.19 | 2.38 | +28.81 | 13.08 |
+| **다섯 시나리오 합** | 185.70 | 9.96 | **+175.74** | 18.64 |
+
+**방향은 개선이 아니라 회귀입니다.** 다섯 시나리오 전부에서, 세 회차 전부에서 `current` 가 `legacy` 보다 느립니다.
+
+### 5.3 왜 회귀인가 (측정된 사실)
+
+- 실제 데이터(`bid_announcements` 5,515,517행)에서는 `legacy` 도 **대부분 SQL 1회로 끝납니다.** 정렬 첫 키가 `collected_at` 이라 첫 표본 50행에서 `limit`(8 또는 6)을 채우고 조기 반환합니다. 정적 조사가 가정한 이중 순회(최대 약 45회)는 **데이터가 희소할 때만** 발생합니다.
+- `current` 는 항상 **최대 표본 1000행**을 읽어 ORM 객체를 만듭니다(`home_context.py:99`, `HOME_RECENT_SAMPLE_SIZES = (50, 200, 1000)`). 행 수가 고정 비용이므로 데이터가 희소하든 풍부하든 30ms 대를 냅니다.
+- 질의 수는 두 구현 모두 대부분 1회입니다. `Frgcpt` 의 legacy 만 2회인데, 카테고리 후보가 50행 미만이라 두 번째 표본 크기까지 진행한 경우입니다.
+- 부수효과로 홈 캐시 예열 1회에 `_recent_unique_announcements` 가 **다섯 번**(전체 1 + 카테고리 4, `home_context.py:140,148`) 불립니다. 최악 회차 중앙값 합으로 추정하면 예열 1회당 **약 175.74ms** 의 추가 비용입니다.
+
+### 5.4 처분 선택지 (결정하지 않음)
+
+D8 의 처분은 **사용자 결정 사항**입니다. 이 보고서는 선택지와 근거만 적고 어느 하나를 결정한 것처럼 쓰지 않습니다.
+
+| 선택지 | 근거가 되는 사실 | 감수해야 할 것 |
+| --- | --- | --- |
+| 현재 구현 유지 | 데이터가 희소한 시점(수집 직후 등)에는 이중 순회가 실제로 발생할 수 있습니다 | 실측 데이터 규모에서 다섯 시나리오 전부 28.81~49.88ms 회귀, 예열 1회당 약 175.74ms 추가 |
+| 변경 전 구현으로 되돌리기 | 회귀가 전 회차·전 시나리오에서 일관되며 legacy 는 조기 반환으로 1~2ms 입니다 | 희소 데이터 구간에서 표본·윈도우 순회 비용이 다시 발생합니다. 그 구간의 실측은 이번 회차에 없습니다 |
+| 점진 확대 방식으로 재작성 | 두 극단(항상 1000행 / 항상 순회)을 피할 수 있습니다 | 새 구현이며 실측 근거가 아직 없습니다. 희소 구간 기준선을 먼저 세워야 합니다 |
+
+위 선택지 중 **점진 확대 재작성**을 사용자가 선택했고, 그 구현이 `main` `9a110ae3` 으로 병합됐습니다. 재측정 결과는 **부록 B** 에 적습니다.
+
+---
+
+## 6. 판정 불가 항목과 한계
+
+측정이 성립하지 않았거나 방향을 말할 수 없는 항목을 그대로 적습니다.
+
+| 항목 | 상태 | 이유 |
+| --- | --- | --- |
+| D2.catchup_check | **판정 불가 (측정 불성립)** | `AUTOMATION_SCHEDULE_CATCHUP_ENABLED` 기본값 False 로 함수가 즉시 반환. A wall 중앙값 0.00ms. 운영 워커는 compose 에서 true |
+| D2.claim_cycle | 판정 불가 | A·B 최대 지연 차 0.02ms, 탐침 해상도 1ms 이하 |
+| D9.heartbeat | 판정 불가 | A 0.17ms 대 B 0.19ms, 해상도 이하 |
+| D9.schedule_result | 판정 불가 | 3회차 B 9.05ms 는 단발 표본 하나. 원인은 이 측정으로 알 수 없음 |
+| D7.count_today | 정상 상태 미미 | 최악 2.36ms 대 0.60ms. 냉시동 첫 호출 32.64ms 는 본 측정 파일 밖 관찰 |
+
+한계를 항목별로 적습니다.
+
+1. **D1 세 대상은 회차·집단당 비워밍업 표본이 1개입니다.** 기본 반복 3에서 워밍업 2를 뺀 결과입니다. 따라서 D1 의 수치는 분포 통계가 아니라 단일 표본이며, 최악값도 세 표본 중 최대입니다. 다만 A 와 B 의 차이가 네 자릿수 배(14.01~2649.09배)라 **방향 판정은 표본 부족으로 흔들리지 않습니다.** 크기를 분포로 말하지 않습니다.
+2. **D2.catchup_check 는 운영 조건을 재현하지 못했습니다.** 이 대상에 대해 이번 회차가 말할 수 있는 것은 "호스트 조건에서는 대상 로직이 돌지 않았다" 뿐이며, 운영 조건의 효과는 **판정 불가**입니다.
+3. **해상도 한계.** 탐침 간격이 1ms 이므로 A·B 차이가 수 ms 이하인 D2.claim_cycle·D9.heartbeat 는 방향을 말할 수 없습니다.
+4. **정상 상태만 측정했습니다.** 워밍업을 뺀 값이므로 Redis 지연 주입이나 콜드 상태의 확대 효과는 이번 회차 범위 밖입니다. 정적 조사(D2·D9)가 제안한 지연 주입 실험은 수행하지 않았습니다.
+5. **D3 는 대상에서 제외했습니다.** `data/model_files/*/baseline` 디렉터리가 없어 운영에서 드리프트 계산 경로 자체가 건너뛰어집니다(원시 JSON `excluded_targets`).
+6. **D4·D5·D6 은 이번 하니스 대상이 아닙니다.** D4·D5 는 이미 `asyncio.to_thread` 로 오프로드되어 이벤트 루프를 막지 않고, D6 은 예외 경로 전용입니다. 이번 회차는 루프 정지 관점의 D1·D2·D7·D9 만 다룹니다.
+7. **앱·워커 컨테이너를 띄우지 않았습니다.** 따라잡기 수집을 막기 위한 조치이며, 그 결과 실제 워커 프로세스의 heartbeat 루프·스케줄 태스크와 같은 루프를 공유하는 조건은 재현하지 않았습니다. 하니스는 호스트 프로세스에서 대상 함수만 직접 호출합니다.
+8. **`loop_lag.json` 에 공고 행 수가 없습니다.** 행 수는 같은 시각 같은 DB 를 기록한 `home_recent.json` 에서 인용했습니다.
+9. **주변 부하가 규약 임계에 근접했습니다.** `loop_lag.json` 중앙 28.21%·최대 39.07% 로 기준(중앙 30%·최대 50%) 이내이지만 여유가 크지 않습니다. D1 의 큰 차이는 이 부하로 설명되지 않지만, 수 ms 대 수치는 부하 영향 가능성을 배제하지 않습니다.
+10. **벽시계 시간은 개선되지 않았습니다.** 오프로드는 루프 정지를 없앨 뿐 연산 자체를 빠르게 하지 않습니다. D1.announcement 의 A·B wall 중앙값이 29.6초로 같은 것이 그 증거입니다.
+
+---
+
+## 7. 결론
+
+| 항목 | 판정 |
+| --- | --- |
+| D1 세 대상의 이벤트 루프 정지 제거 | **효과 확정.** 최대 지연 29595.26 / 697.99 / 396.48ms → 11.17 / 1.58 / 28.31ms. 단 회차당 표본 1개 |
+| D2.claim_cycle·D9.heartbeat | **판정 불가.** A·B 차이가 탐침 해상도 이하 |
+| D2.catchup_check | **판정 불가 (측정 불성립).** 함수가 즉시 반환. 운영 조건 미재현 |
+| D7.count_today | **정상 상태 미미.** 다만 냉시동 첫 호출 32.64ms 는 별도 항목으로 남김 |
+| D9.schedule_result | **판정 불가.** 3회차 B 9.05ms 는 단발 표본. 원인 미상 |
+| D8 최근 공고 선별 | **개선이 아니라 회귀.** 다섯 시나리오 전부·세 회차 전부 current 가 느림. 처분은 사용자 결정 사항 |
+
+정적 조사 3장이 D1·D2·D7·D9 를 "이벤트 루프 정지"로 묶어 높음/낮음으로 분류한 것은, 실측에서 **D1 만 크기가 확인되고 나머지는 정상 상태에서 해상도 아래 또는 미성립**이었습니다. 반대로 D8 은 "낮음"으로 분류됐지만 실측 데이터 규모에서 **유일하게 시간이 늘어난 항목**입니다. 이 회차는 두 방향의 어긋남을 모두 기록합니다.
+
+표의 D8 판정은 이 보고서 작성 시점(`main` `29a8202e`)의 실측입니다. 이후 사용자가 점진 확대 재작성을 선택해 그 구현이 `main` `9a110ae3` 으로 병합됐고, 재측정 결과는 **부록 B** 에 적습니다.
+
+---
+
+## 부록 A. 수치 재계산 명령
+
+보고서의 모든 표는 아래 세 명령으로 원시 JSON 에서 직접 재계산됩니다. 각 명령은 `python3 -c` 한 줄이며, 저장소 루트에서 실행합니다. 반올림은 소수 둘째 자리입니다.
+
+**A.1 loop lag 표 (§4)**
+
+```bash
+python3 -c 'import json,statistics as s;d=json.load(open("data/benchmarks/offload_latency_20260921/loop_lag.json"));f=lambda v,a,r:[x for x in v["records"] if not x["warmup"] and x["arm"]==a and x["round"]==r];[print(t,a,"|"," | ".join("r%d n=%d lag_max=%.2f wall_med=%.2f"%(r,len(f(v,a,r)),max(x["probe_lag_max_ms"] for x in f(v,a,r)),s.median([x["wall_ms"] for x in f(v,a,r)])) for r in (1,2,3)),"| worst_lag=%.2f"%(max(x["probe_lag_max_ms"] for x in v["records"] if not x["warmup"] and x["arm"]==a))) for t,v in d["results"].items() for a in ("A","B")]'
+```
+
+**A.2 D8 표 (§5)**
+
+```bash
+python3 -c 'import json;d=json.load(open("data/benchmarks/offload_latency_20260921/home_recent.json"));[print(s["scenario"],"limit=%d"%s["limit"],"|"," | ".join("r%d n=%d cur=%.2f leg=%.2f d=%+.2f sql=%d/%d"%(r["round"],r["current"]["n"],r["current"]["elapsed_ms"]["median"],r["legacy"]["elapsed_ms"]["median"],r["difference_ms"]["median"],r["current"]["sql_count"]["max"],r["legacy"]["sql_count"]["max"]) for r in s["rounds"])) for s in d["scenarios"]]'
+```
+
+**A.3 환경·설정 값 (§3)**
+
+```bash
+python3 -c 'import json;a=json.load(open("data/benchmarks/offload_latency_20260921/loop_lag.json"));b=json.load(open("data/benchmarks/offload_latency_20260921/home_recent.json"));print("loop_lag git",a["environment"]["git"],"load",a["environment"]["host_load"]["min"],a["environment"]["host_load"]["median"],a["environment"]["host_load"]["max"],"pool",a["environment"]["db"]["buffer_pool_size_bytes"],a["environment"]["db"]["buffer_pool_size_gb"],"uptime",a["environment"]["db"]["uptime_seconds"]);print("home_recent git",b["environment"]["git_sha"],b["environment"]["git_dirty"],"load",b["environment"]["load_average"]["normalized_percent"],"pool",b["environment"]["db"]["innodb_buffer_pool_size_bytes"],"uptime",b["environment"]["db"]["uptime_seconds"],"rows",b["environment"]["db"]["bid_announcements_rows"]);print("config",a["config"],b["config"])'
+```
+
+**A.4 파생값 (§4.5 비, §5.2 최악·합)**
+
+```bash
+python3 -c 'import json;a=json.load(open("data/benchmarks/offload_latency_20260921/loop_lag.json"));print({t:round(v["summary"]["lag_max_ratio_a_over_b"],2) for t,v in a["results"].items()});b=json.load(open("data/benchmarks/offload_latency_20260921/home_recent.json"));print("sum cur",round(sum(max(r["current"]["elapsed_ms"]["median"] for r in s["rounds"]) for s in b["scenarios"]),2),"sum leg",round(sum(max(r["legacy"]["elapsed_ms"]["median"] for r in s["rounds"]) for s in b["scenarios"]),2))'
+```
+
+**A.5 재현 방법**
+
+```bash
+uv run python scripts/benchmark_offload_loop_lag.py --rounds 3 \
+    --json data/benchmarks/offload_latency_20260921/loop_lag.json
+uv run python scripts/benchmark_home_recent_selection.py --rounds 3 \
+    --json data/benchmarks/offload_latency_20260921/home_recent.json
+```
+
+두 하니스 모두 db·redis 컨테이너만 띄운 상태에서 실행했습니다. 워커 컨테이너를 올리면 기동 따라잡기 수집이 배경으로 돌아 측정이 오염됩니다.
+
+---
+
+## 부록 B. D8 점진 확대 재작성 후 재측정 (2026-09-21)
+
+> **원시 결과**: `data/benchmarks/offload_latency_20260921/home_recent_progressive.json` (스키마 `HOME_RECENT_SELECTION_BENCHMARK_V1`)
+> **측정 하니스**: `scripts/benchmark_home_recent_selection.py` (5장과 같음)
+
+5.4 절의 선택지 중 **점진 확대 재작성**을 사용자가 선택했고, 그 구현이 `main` `9a110ae3` 으로 병합됐습니다. 이 부록은 재작성 후 같은 하니스로 다시 측정한 결과입니다. 1~7장과 부록 A 의 수치·판정은 바꾸지 않습니다.
+
+### B.1 측정 조건
+
+| 항목 | 값 |
+| --- | --- |
+| 측정 시각 (UTC) | 2026-09-21T05:07:37 |
+| 커밋 SHA | `9a110ae3b4b1ff0c029b754d8631c0f4a775526a` |
+| dirty 여부 | 아님 (false) |
+| 정규화 load average 최소 / 중앙 / 최대 | 20.93% / **20.93%** / 20.93% |
+| 부하 표본 수 (5초 간격) | 1 |
+| 규약 5.3 판정 (중앙 30% 이하, 최대 50% 이하) | **통과** |
+| DB 버퍼풀 크기 | 2.0 GiB (2,147,483,648 바이트) |
+| DB 연속 가동 시간 | 789초 |
+| `bid_announcements` 행 수 | 5,515,517 |
+| 기동 컨테이너 | **db, redis 두 개뿐** (앱·Arq 워커 미기동) |
+| 하니스 실행 위치 | 호스트 프로세스 (python 3.12.14, macOS-26.6.2-arm64, 논리 코어 14) |
+| 반복 / 워밍업 | 시나리오·집단·회차당 30회 / 3회 (집계 n=27) |
+| 계측(프로파일러·트레이서) | 비활성 |
+
+재측정 첫 회차는 규약 5.3 의 주변 부하 임계를 넘어 측정을 버리고 같은 커밋에서 다시 쟀습니다. 코디네이터가 하니스와 별도로 5초 간격 표본을 한 번 더 재어 같은 20.93% 를 확인했습니다(코디네이터 확인 사실).
+
+### B.2 시나리오별 회차 중앙값
+
+`current` 는 점진 확대 재작성 후 구현, `legacy` 는 5장과 같은 변경 전 구현입니다. `이전 current` 는 기존 `home_recent.json` 을 같은 방식으로 재계산한 값입니다. 워밍업 기록은 집계에서 제외했습니다(n=27). 반올림은 소수 둘째 자리입니다.
+
+| 시나리오 | 회차 | 이전 current | 새 current | legacy | 새 current - legacy | SQL current/legacy | 선별 동일 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| all (limit 8) | 0 | 34.32 | 2.04 | 1.87 | +0.17 | 1 / 1 | 예 |
+| all | 1 | 34.29 | 2.11 | 1.89 | +0.22 | 1 / 1 | 예 |
+| all | 2 | 35.26 | 1.97 | 1.84 | +0.14 | 1 / 1 | 예 |
+| Cnstwk (limit 6) | 0 | 39.05 | 2.38 | 1.07 | +1.30 | 1 / 1 | 예 |
+| Cnstwk | 1 | 38.95 | 2.34 | 1.10 | +1.24 | 1 / 1 | 예 |
+| Cnstwk | 2 | 52.02 | 2.24 | 1.11 | +1.13 | 1 / 1 | 예 |
+| Servc (limit 6) | 0 | 33.36 | 2.04 | 1.07 | +0.97 | 1 / 1 | 예 |
+| Servc | 1 | 33.39 | 1.94 | 0.97 | +0.97 | 1 / 1 | 예 |
+| Servc | 2 | 33.86 | 1.95 | 0.97 | +0.98 | 1 / 1 | 예 |
+| Thng (limit 6) | 0 | 32.27 | 2.09 | 1.06 | +1.02 | 1 / 1 | 예 |
+| Thng | 1 | 33.37 | 2.15 | 1.08 | +1.07 | 1 / 1 | 예 |
+| Thng | 2 | 32.59 | 2.18 | 1.07 | +1.10 | 1 / 1 | 예 |
+| Frgcpt (limit 6) | 0 | 30.96 | 1.95 | 1.73 | +0.23 | 1 / 2 | 예 |
+| Frgcpt | 1 | 30.85 | 1.99 | 1.71 | +0.28 | 1 / 2 | 예 |
+| Frgcpt | 2 | 31.19 | 1.94 | 1.74 | +0.20 | 1 / 2 | 예 |
+
+`새 current - legacy` 가 양수이면 새 구현이 더 느리다는 뜻입니다. 시나리오별 최악 회차 중앙값은 current 2.11 / 2.38 / 2.04 / 2.18 / 1.99ms, legacy 1.89 / 1.11 / 1.07 / 1.08 / 1.74ms 이고, 합은 current **10.70ms**, legacy **6.89ms**, 차 **3.81ms** 입니다(합산 후 반올림).
+
+### B.3 판정
+
+- **회귀 해소.** 5.2 절의 회귀(다섯 시나리오 전부·세 회차 전부 current 30.85~52.02ms)는 재작성 후 사라졌습니다. 새 current 는 1.94~2.38ms, legacy 는 0.97~1.89ms 입니다.
+- **카테고리 네 시나리오는 legacy 대비 약 1ms 느립니다.** 회차별 차이는 Cnstwk +1.13~+1.30ms, Servc +0.97~+0.98ms, Thng +1.02~+1.10ms, Frgcpt +0.20~+0.28ms 이고, 전체(`all`) 시나리오는 +0.14~+0.22ms 입니다.
+- **이 잔여 차이는 예열 꼬리 비용이며 사용자 경로가 아닙니다.** 선별 호출은 홈 캐시 예열 시 다섯 번 일어나고(5.3 절), 예열 이후 사용자 요청 경로는 이 비용을 지불하지 않습니다.
+- SQL 수는 current 가 다섯 시나리오 전부 1회, legacy 는 Frgcpt 만 2회입니다. 두 구현의 선별 결과(`announcement_ids`)는 전 시나리오·전 회차에서 같습니다.
+- 이 부록은 회귀 해소 여부와 잔여 차이만 판정하며, 추가 최적화를 결정하지 않습니다.
+
+### B.4 약 1ms 잔여 차이의 원인
+
+코디네이터가 실행 계획으로 확인한 사실입니다.
+
+- `legacy` 는 1일 윈도 조건(`collected_at >= 최신 - 1일`)이 붙어 인덱스 `ix_bid_ann_category_collected_dt` 의 범위 스캔을 합니다. Servc 기준 해당 행은 10행입니다(COUNT 10, EXPLAIN type range rows 10).
+- `current` 는 윈도 조건 없이 같은 인덱스의 ref 역방향 스캔으로 전역 접두 50행을 읽은 뒤 메모리에서 거릅니다.
+- 질의 수는 같아도 가져와 ORM 객체로 만드는 행이 약 5배입니다.
+- 이것은 설계 계약(첫 표본 50행 접두)의 비용이며 구현 결함이 아닙니다.
+
+원인은 위 실행 계획까지이며, 이 부록은 다른 원인을 추측해 덧붙이지 않습니다.
+
+### B.5 재계산 명령
+
+부록 B 의 모든 표는 아래 네 명령으로 원시 JSON 에서 직접 재계산됩니다. 저장소 루트에서 실행하며, 반올림은 소수 둘째 자리입니다.
+
+**B.5.1 회차별 중앙값·SQL·선별 동일 (B.2 표)**
+
+```bash
+python3 -c 'import json;d=json.load(open("data/benchmarks/offload_latency_20260921/home_recent_progressive.json"));f=lambda r,g:[x["announcement_ids"] for x in r["repetitions"] if not x["warmup"] and x["group"]==g];[print(s["scenario"],"r%d"%r["round"],"cur=%.2f leg=%.2f d=%+.2f sql=%d/%d ids_same=%s"%(r["current"]["elapsed_ms"]["median"],r["legacy"]["elapsed_ms"]["median"],r["current"]["elapsed_ms"]["median"]-r["legacy"]["elapsed_ms"]["median"],r["current"]["sql_count"]["max"],r["legacy"]["sql_count"]["max"],set(map(tuple,f(r,"current")))==set(map(tuple,f(r,"legacy"))))) for s in d["scenarios"] for r in s["rounds"]]'
+```
+
+**B.5.2 이전 current (B.2 표)**
+
+```bash
+python3 -c 'import json;d=json.load(open("data/benchmarks/offload_latency_20260921/home_recent.json"));[print(s["scenario"],"r%d"%r["round"],"prev_cur=%.2f"%r["current"]["elapsed_ms"]["median"]) for s in d["scenarios"] for r in s["rounds"]]'
+```
+
+**B.5.3 최악 회차와 합 (B.2 표 아래)**
+
+```bash
+python3 -c 'import json;d=json.load(open("data/benchmarks/offload_latency_20260921/home_recent_progressive.json"));f=lambda s,g:max(r[g]["elapsed_ms"]["median"] for r in s["rounds"]);[print(s["scenario"],"worst cur=%.2f leg=%.2f"%(f(s,"current"),f(s,"legacy"))) for s in d["scenarios"]];c=[f(s,"current") for s in d["scenarios"]];l=[f(s,"legacy") for s in d["scenarios"]];print("sum cur=%.2f leg=%.2f diff=%.2f"%(sum(c),sum(l),sum(c)-sum(l)))'
+```
+
+**B.5.4 측정 조건 (B.1 표)**
+
+```bash
+python3 -c 'import json;e=json.load(open("data/benchmarks/offload_latency_20260921/home_recent_progressive.json"));print(e["measured_at_utc"]);print(e["environment"]["git_sha"],e["environment"]["git_dirty"],e["environment"]["python_version"],e["environment"]["platform"]);print(e["environment"]["load_average"]["sample_count"],e["environment"]["load_average"]["interval_seconds"],e["environment"]["load_average"]["normalized_percent"]);print(e["environment"]["db"]);print(e["config"])'
+```
