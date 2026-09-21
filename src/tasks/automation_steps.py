@@ -6,6 +6,7 @@ src/tasks/automation_steps.py
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -20,6 +21,21 @@ from src.app.services.automation_orchestrator import (
 )
 
 
+def _count_today_announcements_sync(db) -> int:
+    """오늘 적재된 공고 수를 세는 동기 집계.
+
+    bid_announcements 는 300만 행 이상이라 이 COUNT 가 수 초 걸릴 수 있습니다.
+    _step_collect 는 async 이므로 이벤트 루프에서 직접 부르면 워커 루프가 그만큼
+    정지합니다. 별도 스레드에서만 호출하며, 넘겨받은 세션으로는 이 집계 외 다른
+    작업을 수행하지 않습니다.
+    """
+    today_start = datetime.combine(utcnow().date(), datetime.min.time())
+    count = db.scalar(
+        select(func.count(BidAnnouncement.id)).where(BidAnnouncement.collected_at >= today_start)
+    )
+    return int(count or 0)
+
+
 async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, str, dict[str, Any]]:
     """G2B 수집 스텝 (원본 collect_bids 명령 대응)."""
     from src.app.services.collector_service import collect_bids
@@ -30,12 +46,7 @@ async def _step_collect(db, *, refresh_aggregates: bool = True) -> tuple[str, st
         status = "failed"
 
     if status == "error":
-        today_rows = db.scalar(
-            select(func.count(BidAnnouncement.id)).where(
-                BidAnnouncement.collected_at
-                >= datetime.combine(utcnow().date(), datetime.min.time())
-            )
-        )
+        today_rows = await asyncio.to_thread(_count_today_announcements_sync, db)
         msg = str(
             metrics.get("message") or "G2B serviceKey 가 설정되지 않아 수집을 수행할 수 없습니다."
         )
