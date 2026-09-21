@@ -250,6 +250,8 @@ D8 의 처분은 **사용자 결정 사항**입니다. 이 보고서는 선택�
 | 변경 전 구현으로 되돌리기 | 회귀가 전 회차·전 시나리오에서 일관되며 legacy 는 조기 반환으로 1~2ms 입니다 | 희소 데이터 구간에서 표본·윈도우 순회 비용이 다시 발생합니다. 그 구간의 실측은 이번 회차에 없습니다 |
 | 점진 확대 방식으로 재작성 | 두 극단(항상 1000행 / 항상 순회)을 피할 수 있습니다 | 새 구현이며 실측 근거가 아직 없습니다. 희소 구간 기준선을 먼저 세워야 합니다 |
 
+위 선택지 중 **점진 확대 재작성**을 사용자가 선택했고, 그 구현이 `main` `9a110ae3` 으로 병합됐습니다. 재측정 결과는 **부록 B** 에 적습니다.
+
 ---
 
 ## 6. 판정 불가 항목과 한계
@@ -292,6 +294,8 @@ D8 의 처분은 **사용자 결정 사항**입니다. 이 보고서는 선택�
 
 정적 조사 3장이 D1·D2·D7·D9 를 "이벤트 루프 정지"로 묶어 높음/낮음으로 분류한 것은, 실측에서 **D1 만 크기가 확인되고 나머지는 정상 상태에서 해상도 아래 또는 미성립**이었습니다. 반대로 D8 은 "낮음"으로 분류됐지만 실측 데이터 규모에서 **유일하게 시간이 늘어난 항목**입니다. 이 회차는 두 방향의 어긋남을 모두 기록합니다.
 
+표의 D8 판정은 이 보고서 작성 시점(`main` `29a8202e`)의 실측입니다. 이후 사용자가 점진 확대 재작성을 선택해 그 구현이 `main` `9a110ae3` 으로 병합됐고, 재측정 결과는 **부록 B** 에 적습니다.
+
 ---
 
 ## 부록 A. 수치 재계산 명령
@@ -332,3 +336,103 @@ uv run python scripts/benchmark_home_recent_selection.py --rounds 3 \
 ```
 
 두 하니스 모두 db·redis 컨테이너만 띄운 상태에서 실행했습니다. 워커 컨테이너를 올리면 기동 따라잡기 수집이 배경으로 돌아 측정이 오염됩니다.
+
+---
+
+## 부록 B. D8 점진 확대 재작성 후 재측정 (2026-09-21)
+
+> **원시 결과**: `data/benchmarks/offload_latency_20260921/home_recent_progressive.json` (스키마 `HOME_RECENT_SELECTION_BENCHMARK_V1`)
+> **측정 하니스**: `scripts/benchmark_home_recent_selection.py` (5장과 같음)
+
+5.4 절의 선택지 중 **점진 확대 재작성**을 사용자가 선택했고, 그 구현이 `main` `9a110ae3` 으로 병합됐습니다. 이 부록은 재작성 후 같은 하니스로 다시 측정한 결과입니다. 1~7장과 부록 A 의 수치·판정은 바꾸지 않습니다.
+
+### B.1 측정 조건
+
+| 항목 | 값 |
+| --- | --- |
+| 측정 시각 (UTC) | 2026-09-21T05:07:37 |
+| 커밋 SHA | `9a110ae3b4b1ff0c029b754d8631c0f4a775526a` |
+| dirty 여부 | 아님 (false) |
+| 정규화 load average 최소 / 중앙 / 최대 | 20.93% / **20.93%** / 20.93% |
+| 부하 표본 수 (5초 간격) | 1 |
+| 규약 5.3 판정 (중앙 30% 이하, 최대 50% 이하) | **통과** |
+| DB 버퍼풀 크기 | 2.0 GiB (2,147,483,648 바이트) |
+| DB 연속 가동 시간 | 789초 |
+| `bid_announcements` 행 수 | 5,515,517 |
+| 기동 컨테이너 | **db, redis 두 개뿐** (앱·Arq 워커 미기동) |
+| 하니스 실행 위치 | 호스트 프로세스 (python 3.12.14, macOS-26.6.2-arm64, 논리 코어 14) |
+| 반복 / 워밍업 | 시나리오·집단·회차당 30회 / 3회 (집계 n=27) |
+| 계측(프로파일러·트레이서) | 비활성 |
+
+재측정 첫 회차는 규약 5.3 의 주변 부하 임계를 넘어 측정을 버리고 같은 커밋에서 다시 쟀습니다. 코디네이터가 하니스와 별도로 5초 간격 표본을 한 번 더 재어 같은 20.93% 를 확인했습니다(코디네이터 확인 사실).
+
+### B.2 시나리오별 회차 중앙값
+
+`current` 는 점진 확대 재작성 후 구현, `legacy` 는 5장과 같은 변경 전 구현입니다. `이전 current` 는 기존 `home_recent.json` 을 같은 방식으로 재계산한 값입니다. 워밍업 기록은 집계에서 제외했습니다(n=27). 반올림은 소수 둘째 자리입니다.
+
+| 시나리오 | 회차 | 이전 current | 새 current | legacy | 새 current - legacy | SQL current/legacy | 선별 동일 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| all (limit 8) | 0 | 34.32 | 2.04 | 1.87 | +0.17 | 1 / 1 | 예 |
+| all | 1 | 34.29 | 2.11 | 1.89 | +0.22 | 1 / 1 | 예 |
+| all | 2 | 35.26 | 1.97 | 1.84 | +0.14 | 1 / 1 | 예 |
+| Cnstwk (limit 6) | 0 | 39.05 | 2.38 | 1.07 | +1.30 | 1 / 1 | 예 |
+| Cnstwk | 1 | 38.95 | 2.34 | 1.10 | +1.24 | 1 / 1 | 예 |
+| Cnstwk | 2 | 52.02 | 2.24 | 1.11 | +1.13 | 1 / 1 | 예 |
+| Servc (limit 6) | 0 | 33.36 | 2.04 | 1.07 | +0.97 | 1 / 1 | 예 |
+| Servc | 1 | 33.39 | 1.94 | 0.97 | +0.97 | 1 / 1 | 예 |
+| Servc | 2 | 33.86 | 1.95 | 0.97 | +0.98 | 1 / 1 | 예 |
+| Thng (limit 6) | 0 | 32.27 | 2.09 | 1.06 | +1.02 | 1 / 1 | 예 |
+| Thng | 1 | 33.37 | 2.15 | 1.08 | +1.07 | 1 / 1 | 예 |
+| Thng | 2 | 32.59 | 2.18 | 1.07 | +1.10 | 1 / 1 | 예 |
+| Frgcpt (limit 6) | 0 | 30.96 | 1.95 | 1.73 | +0.23 | 1 / 2 | 예 |
+| Frgcpt | 1 | 30.85 | 1.99 | 1.71 | +0.28 | 1 / 2 | 예 |
+| Frgcpt | 2 | 31.19 | 1.94 | 1.74 | +0.20 | 1 / 2 | 예 |
+
+`새 current - legacy` 가 양수이면 새 구현이 더 느리다는 뜻입니다. 시나리오별 최악 회차 중앙값은 current 2.11 / 2.38 / 2.04 / 2.18 / 1.99ms, legacy 1.89 / 1.11 / 1.07 / 1.08 / 1.74ms 이고, 합은 current **10.70ms**, legacy **6.89ms**, 차 **3.81ms** 입니다(합산 후 반올림).
+
+### B.3 판정
+
+- **회귀 해소.** 5.2 절의 회귀(다섯 시나리오 전부·세 회차 전부 current 30.85~52.02ms)는 재작성 후 사라졌습니다. 새 current 는 1.94~2.38ms, legacy 는 0.97~1.89ms 입니다.
+- **카테고리 네 시나리오는 legacy 대비 약 1ms 느립니다.** 회차별 차이는 Cnstwk +1.13~+1.30ms, Servc +0.97~+0.98ms, Thng +1.02~+1.10ms, Frgcpt +0.20~+0.28ms 이고, 전체(`all`) 시나리오는 +0.14~+0.22ms 입니다.
+- **이 잔여 차이는 예열 꼬리 비용이며 사용자 경로가 아닙니다.** 선별 호출은 홈 캐시 예열 시 다섯 번 일어나고(5.3 절), 예열 이후 사용자 요청 경로는 이 비용을 지불하지 않습니다.
+- SQL 수는 current 가 다섯 시나리오 전부 1회, legacy 는 Frgcpt 만 2회입니다. 두 구현의 선별 결과(`announcement_ids`)는 전 시나리오·전 회차에서 같습니다.
+- 이 부록은 회귀 해소 여부와 잔여 차이만 판정하며, 추가 최적화를 결정하지 않습니다.
+
+### B.4 약 1ms 잔여 차이의 원인
+
+코디네이터가 실행 계획으로 확인한 사실입니다.
+
+- `legacy` 는 1일 윈도 조건(`collected_at >= 최신 - 1일`)이 붙어 인덱스 `ix_bid_ann_category_collected_dt` 의 범위 스캔을 합니다. Servc 기준 해당 행은 10행입니다(COUNT 10, EXPLAIN type range rows 10).
+- `current` 는 윈도 조건 없이 같은 인덱스의 ref 역방향 스캔으로 전역 접두 50행을 읽은 뒤 메모리에서 거릅니다.
+- 질의 수는 같아도 가져와 ORM 객체로 만드는 행이 약 5배입니다.
+- 이것은 설계 계약(첫 표본 50행 접두)의 비용이며 구현 결함이 아닙니다.
+
+원인은 위 실행 계획까지이며, 이 부록은 다른 원인을 추측해 덧붙이지 않습니다.
+
+### B.5 재계산 명령
+
+부록 B 의 모든 표는 아래 네 명령으로 원시 JSON 에서 직접 재계산됩니다. 저장소 루트에서 실행하며, 반올림은 소수 둘째 자리입니다.
+
+**B.5.1 회차별 중앙값·SQL·선별 동일 (B.2 표)**
+
+```bash
+python3 -c 'import json;d=json.load(open("data/benchmarks/offload_latency_20260921/home_recent_progressive.json"));f=lambda r,g:[x["announcement_ids"] for x in r["repetitions"] if not x["warmup"] and x["group"]==g];[print(s["scenario"],"r%d"%r["round"],"cur=%.2f leg=%.2f d=%+.2f sql=%d/%d ids_same=%s"%(r["current"]["elapsed_ms"]["median"],r["legacy"]["elapsed_ms"]["median"],r["current"]["elapsed_ms"]["median"]-r["legacy"]["elapsed_ms"]["median"],r["current"]["sql_count"]["max"],r["legacy"]["sql_count"]["max"],set(map(tuple,f(r,"current")))==set(map(tuple,f(r,"legacy"))))) for s in d["scenarios"] for r in s["rounds"]]'
+```
+
+**B.5.2 이전 current (B.2 표)**
+
+```bash
+python3 -c 'import json;d=json.load(open("data/benchmarks/offload_latency_20260921/home_recent.json"));[print(s["scenario"],"r%d"%r["round"],"prev_cur=%.2f"%r["current"]["elapsed_ms"]["median"]) for s in d["scenarios"] for r in s["rounds"]]'
+```
+
+**B.5.3 최악 회차와 합 (B.2 표 아래)**
+
+```bash
+python3 -c 'import json;d=json.load(open("data/benchmarks/offload_latency_20260921/home_recent_progressive.json"));f=lambda s,g:max(r[g]["elapsed_ms"]["median"] for r in s["rounds"]);[print(s["scenario"],"worst cur=%.2f leg=%.2f"%(f(s,"current"),f(s,"legacy"))) for s in d["scenarios"]];c=[f(s,"current") for s in d["scenarios"]];l=[f(s,"legacy") for s in d["scenarios"]];print("sum cur=%.2f leg=%.2f diff=%.2f"%(sum(c),sum(l),sum(c)-sum(l)))'
+```
+
+**B.5.4 측정 조건 (B.1 표)**
+
+```bash
+python3 -c 'import json;e=json.load(open("data/benchmarks/offload_latency_20260921/home_recent_progressive.json"));print(e["measured_at_utc"]);print(e["environment"]["git_sha"],e["environment"]["git_dirty"],e["environment"]["python_version"],e["environment"]["platform"]);print(e["environment"]["load_average"]["sample_count"],e["environment"]["load_average"]["interval_seconds"],e["environment"]["load_average"]["normalized_percent"]);print(e["environment"]["db"]);print(e["config"])'
+```
