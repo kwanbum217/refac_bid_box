@@ -7,8 +7,11 @@ Command Code CLI 를 Orca 워커로 씁니다. 터미널을 런처를 명령으�
 --one-shot 을 주면 cmd -p <message> 단발 실행으로 바뀌며, subprocess.run 으로
 완주시킨 뒤 대화형 셸로 이어받아 터미널 창을 유지합니다.
 
-추론 등급은 모델 ID 에 포함되지 않고 --effort 플래그로 지정합니다.
-DeepSeek V4.1 Flash 가 받는 값은 low, high, max 입니다.
+추론 등급은 모델 ID 에 포함되지 않고 --effort 플래그로 지정하며 모델마다 받는
+값이 다릅니다. --effort 의 argparse choices 는 (default, low, medium, high, max)
+합집합으로 넓히고, 인자 해석 직후 MODEL_POOL 에서 모델별로 허용 등급을 검사합니다.
+목록 밖의 값은 CLI 가 종료 코드 0 으로 "Unknown effort" 만 출력하고 조용히 기본
+등급으로 진행하므로 런처가 먼저 거부합니다.
 
     orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
       --command "uv run python scripts/orca_cmd_launch.py --model deepseek/deepseek-v4.1-flash --effort high"
@@ -27,7 +30,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts import orca_model_router  # noqa: E402
 from scripts import orca_worker_launch_common as common  # noqa: E402
+
+MODEL_POOL = orca_model_router.MODEL_POOL
+pool_for_model = orca_model_router.pool_for_model
 
 PERMISSION_SETUP_FLAG = common.PERMISSION_SETUP_FLAG
 DEFAULT_PREAMBLE = common.DEFAULT_PREAMBLE
@@ -35,12 +42,31 @@ DEFAULT_SHELL = "/bin/bash"
 COMMIT_NOTICE = common.COMMIT_NOTICE
 REVIEWER_NOTICE = common.REVIEWER_NOTICE
 
-# DeepSeek V4.1 Flash 가 지원하는 추론 등급 네 가지입니다. default 는 --effort 를
-# 붙이지 않고 기동하는 모델 기본값이라 CLI 인자로는 나가지 않습니다. 목록 밖의 값을
-# 주면 CLI 가 종료 코드 0 으로 "Unknown effort" 만 출력하고 기본 등급으로 진행하므로
-# 런처가 먼저 거부합니다.
+# cmd 런처가 받는 추론 등급의 합집합입니다. 모델마다 받는 값이 다르므로
+# (DeepSeek V4.1 Flash 와 GLM-5.3 Flash 는 medium 이 없고 Hy4 Preview 는 max 가
+# 없다) argparse choices 는 합집합으로 넓히고, 인자 해석 직후
+# allowed_effort_levels() 로 모델별 허용 등급을 검사합니다. default 는 --effort 를
+# 붙이지 않고 기동하는 모델 기본값이라 CLI 인자로는 나가지 않습니다.
 EFFORT_DEFAULT_LEVEL = "default"
-EFFORT_CHOICES = ("default", "low", "high", "max")
+EFFORT_CHOICES = ("default", "low", "medium", "high", "max")
+
+
+def allowed_effort_levels(model: str) -> tuple[str, ...]:
+    """모델이 받는 추론 등급을 MODEL_POOL 에서 조회합니다.
+
+    등록된 풀은 그 풀의 effort_levels 를 돌려주고, 등록되지 않았거나 풀에
+    effort_levels 가 없으면 default 만 허용합니다. 목록 밖의 값을 CLI 에 넘기면
+    종료 코드 0 으로 "Unknown effort" 만 출력하고 조용히 기본 등급으로 진행하므로
+    런처가 여기서 값을 좁힙니다.
+    """
+    pool = pool_for_model(model)
+    if pool is None:
+        return (EFFORT_DEFAULT_LEVEL,)
+    levels = MODEL_POOL[pool].get("effort_levels")
+    if not levels:
+        return (EFFORT_DEFAULT_LEVEL,)
+    return tuple(str(level) for level in levels)
+
 
 wait_for_preamble = common.wait_for_preamble
 
@@ -131,8 +157,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--effort",
         choices=EFFORT_CHOICES,
-        help="추론 등급 (default, low, high, max). default 와 미지정은 모두 "
-        "--effort 를 붙이지 않고 모델 기본값으로 기동합니다.",
+        help="추론 등급 (default, low, medium, high, max). 모델마다 받는 값이 "
+        "다르며 MODEL_POOL 의 effort_levels 에 없는 값은 거부합니다. default 와 "
+        "미지정은 모두 --effort 를 붙이지 않고 모델 기본값으로 기동합니다.",
     )
     parser.add_argument("--preamble", type=Path, default=DEFAULT_PREAMBLE)
     parser.add_argument("--timeout-sec", type=float, default=300.0)
@@ -163,6 +190,17 @@ def main(argv: list[str] | None = None) -> int:
         help="단발 실행 종료 후 셸로 이어받지 않고 종료 코드를 그대로 반환합니다.",
     )
     args = parser.parse_args(argv)
+
+    # 모델별 허용 등급 검사는 인자 해석 직후에 둡니다. cmd 는 알 수 없는 등급을
+    # 받아도 종료 코드 0 으로 안내만 찍고 기본 등급으로 진행하므로, 여기서 막지
+    # 않으면 등급 지정이 조용히 무시된 채 워커가 기동합니다.
+    if args.effort is not None:
+        allowed = allowed_effort_levels(args.model)
+        if args.effort not in allowed:
+            parser.error(
+                f"--effort {args.effort} 는 모델 {args.model} 이 받지 않습니다. "
+                f"허용 등급: {', '.join(allowed)}"
+            )
 
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:

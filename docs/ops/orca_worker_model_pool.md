@@ -53,33 +53,56 @@
 | `grok-4.5` | `grok-4.5` | Grok | X (`False`) | SuperGrok 로컬 Grok CLI. grok-4.5 워커 모델. WORKER_MODEL_NOTICE 후 명시 배정 |
 | `opencode-muse-spark` | `opencode/muse-spark-1.3-contributor-free` | OpenCode | O (`True`) | A+ 고난도 워커. `investigator` high 의 1순위이자 `builder` high 의 2순위. `reviewer`/`benchmarker` 는 명시 지정 전용 |
 | `cmd-deepseek-flash` | `deepseek/deepseek-v4.1-flash` | Command Code | O (`True`) | **빌더 기본 모델**(2026-09-20 사용자 지시). 추론 등급은 `--effort` 로 지정하며 `reviewer` 는 배정 대상이 아님 |
+| `cmd-glm-flash` | `z-ai/glm-5.3-flash` | Command Code | X (`False`) | 2026-09-21 등록. 명시 지정 전용 저가 후보. `--effort` 는 `default`/`low`/`high`/`max` 이며 `medium` 없음 |
+| `cmd-hy4-preview` | `tencent/hy4-preview` | Command Code | X (`False`) | 2026-09-21 등록. 명시 지정 전용. `--effort` 는 `default`/`low`/`medium`/`high` 이며 `max` 없음. 입력 단가가 기본 빌더의 약 5배 |
 
-`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
+`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5`, `cmd-glm-flash`, `cmd-hy4-preview` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
 
 리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를 그대로 통과시키기 때문입니다. 현재 정책에서 빌더가 Command Code 계열(`cmd-deepseek-flash`)인 동안 리뷰어는 `qwen-plus`(Alibaba Token Plan)이며, 사용자 지시로 `opencode-muse-spark` 를 명시 배정하는 경로도 계열이 갈라집니다.
 
 ### 1.2 Command Code(cmd) 추론 등급
 
 Command Code CLI 는 추론 등급을 모델 ID 가 아니라 `--effort` 플래그로 받습니다.
-`deepseek/deepseek-v4.1-flash` 가 지원하는 등급은 네 가지이고 `medium` 은 없습니다.
+**모델마다 받는 등급이 다릅니다.** 아래 표가 등록된 세 모델의 등급 정본입니다.
 
-| 등급 | CLI 인자 | 배정되는 위험도 |
-| --- | --- | :---: |
-| `default` | (플래그 없음) | `low` |
-| `low` | `--effort low` | 명시 지정 전용 |
-| `high` | `--effort high` | `medium` |
-| `max` | `--effort max` | `high` |
+| 모델 | 등급 | CLI 인자 | 배정되는 위험도 |
+| --- | --- | --- | :---: |
+| `deepseek/deepseek-v4.1-flash` | `default` | (플래그 없음) | `low` |
+| `deepseek/deepseek-v4.1-flash` | `low` | `--effort low` | 명시 지정 전용 |
+| `deepseek/deepseek-v4.1-flash` | `high` | `--effort high` | `medium` |
+| `deepseek/deepseek-v4.1-flash` | `max` | `--effort max` | `high` |
+| `z-ai/glm-5.3-flash` | `default` | (플래그 없음) | `low` |
+| `z-ai/glm-5.3-flash` | `low` | `--effort low` | 명시 지정 전용 |
+| `z-ai/glm-5.3-flash` | `high` | `--effort high` | `medium` |
+| `z-ai/glm-5.3-flash` | `max` | `--effort max` | `high` |
+| `tencent/hy4-preview` | `default` | (플래그 없음) | `low` |
+| `tencent/hy4-preview` | `low` | `--effort low` | 명시 지정 전용 |
+| `tencent/hy4-preview` | `medium` | `--effort medium` | `medium` |
+| `tencent/hy4-preview` | `high` | `--effort high` | `high` |
 
-등급 대응은 `MODEL_POOL["cmd-deepseek-flash"]["effort_by_risk"]` 가 정본이며
-`effort_for_model(model, risk)` 로 조회합니다. 목록 밖의 값을 주면 CLI 가 종료 코드
-0 으로 "Unknown effort" 만 출력하고 기본 등급으로 진행하므로, 등급 지정이 조용히
-무시됩니다. 런처(`scripts/orca_cmd_launch.py`)가 먼저 값을 거부합니다.
+정리하면 `deepseek/deepseek-v4.1-flash` 와 `z-ai/glm-5.3-flash` 는 `medium` 이 없고,
+`tencent/hy4-preview` 는 `max` 가 없습니다. `default` 는 `--effort` 를 붙이지 않는
+모델 기본값입니다.
+
+등급 대응은 각 풀의 `effort_by_risk` 가 정본이며 `effort_for_model(model, risk)` 로
+조회합니다. 목록 밖의 값을 주면 CLI 가 종료 코드 0 으로 "Unknown effort" 만 출력하고
+기본 등급으로 진행하므로 등급 지정이 조용히 무시됩니다. 런처
+(`scripts/orca_cmd_launch.py`)가 인자 해석 직후 `MODEL_POOL` 의 모델별
+`effort_levels` 로 값을 검사해, 받지 않는 등급이면 표준 오류에 사유를 쓰고 종료 코드
+2 로 끝냅니다. 미등록 모델은 `default` 또는 미지정만 허용합니다.
 
 워커 창은 다음처럼 띄웁니다.
 
 ```bash
 orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
   --command "uv run python scripts/orca_cmd_launch.py --model deepseek/deepseek-v4.1-flash --effort max --auto"
+```
+
+명시 지정 전용 두 모델은 `--model` 로 직접 지정하며 `WORKER_MODEL_NOTICE` 를 남깁니다.
+
+```bash
+orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
+  --command "uv run python scripts/orca_cmd_launch.py --model tencent/hy4-preview --effort high --auto"
 ```
 
 ---
@@ -279,3 +302,36 @@ L4 상신 모델을 쓰더라도 이 네 가지는 위임하지 않습니다.
 자체는 완주했으나 분석 문서에서 원시 JSON 과 어긋나는 수치 4건을 냈고 Capsule 이
 지정한 검증 명령 2개 중 1개를 실행하지 않았습니다. 코디네이터가 전량 검산해야
 했습니다.
+
+---
+
+## 11. 가용성 실측 (2026-09-21, Command Code cmd)
+
+등록 전에 코디네이터가 이 계정에서 `cmd -p "Reply with exactly: pong" --model <ID>`
+로 직접 확인한 결과입니다. GOAT 요금제 한도 때문에 저가 모델만 워커 후보로 보고
+probe 했으며, 리뷰어 독립성은 CLI 단위 provider 분리를 그대로 유지합니다.
+
+| 모델 ID | 종료 코드 | 응답 | 소요 | 받는 등급 | 받지 않는 등급 | 조치 |
+| --- | :---: | :---: | :---: | --- | --- | --- |
+| `z-ai/glm-5.3-flash` | 0 | `pong` | 8초 | `low`, `high`, `max` | `medium`, `xhigh`, `zzzz` | 풀 등록 (`cmd-glm-flash`), 명시 지정 전용 |
+| `tencent/hy4-preview` | 0 | `pong` | 5초 | `low`, `medium`, `high` | `max`, `xhigh`, `zzzz` | 풀 등록 (`cmd-hy4-preview`), 명시 지정 전용 |
+
+두 모델의 확인 사실과 운용 정책은 다음과 같습니다.
+
+1. **받는 등급이 다르다**: `--effort low`, `high`, `max` 는 GLM-5.3 Flash 에서
+   "Reasoning effort set to `<등급>` for GLM-5.3 Flash." 를 출력하고 정상
+   응답했습니다. Hy4 Preview 는 `low`, `medium`, `high` 가 정상이었습니다.
+2. **목록 밖 등급은 조용히 무시된다**: 두 모델 모두 `--effort medium`, `xhigh`,
+   `zzzz`(Hy4 는 `max`)에 대해 종료 코드 0 으로
+   "Unknown effort ... Supported: ..." 만 출력하고 기본 등급으로 진행했습니다.
+   CLI 가 실패로 알려 주지 않으므로 런처가 모델별 `effort_levels` 로 먼저 거부합니다.
+3. **자동 배정하지 않는다**: 두 풀 모두 `auto_selectable=False` 이며 `TIER_POLICY`
+   와 무료 순서에 넣지 않았습니다. `suitable_for` 는 `builder`, `investigator`,
+   `benchmarker`, `documenter` 이고 `reviewer` 는 두지 않습니다. 빌더 기본값이 같은
+   cmd 계열이므로 리뷰어로 쓰면 독립 판정이 되지 않습니다.
+4. **Hy4 는 고난도 전용**: `tencent/hy4-preview` 의 입력 단가가 기본 빌더
+   (`cmd-deepseek-flash`)의 약 5배이므로 저가 후보 탐색의 목적에 맞지 않습니다.
+   고난도 과제에만 `--model` 로 명시 지정하고 `WORKER_MODEL_NOTICE` 를 남깁니다.
+5. **등급 계약의 정본은 코드다**: 이 절의 표는 probe 기록이며, 실제 검사는
+   `MODEL_POOL` 의 `effort_levels` 와 런처의 `allowed_effort_levels()` 가 수행합니다.
+   문서와 코드가 어긋나면 코드가 정본입니다.

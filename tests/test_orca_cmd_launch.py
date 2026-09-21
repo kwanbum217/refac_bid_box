@@ -16,6 +16,7 @@ from scripts.orca_cmd_launch import (
     EFFORT_DEFAULT_LEVEL,
     PERMISSION_SETUP_FLAG,
     REVIEWER_NOTICE,
+    allowed_effort_levels,
     build_command,
     build_completion_message,
     main,
@@ -26,6 +27,8 @@ from scripts.orca_cmd_launch import (
 )
 
 MODEL = "deepseek/deepseek-v4.1-flash"
+GLM_MODEL = "z-ai/glm-5.3-flash"
+HY4_MODEL = "tencent/hy4-preview"
 
 
 @pytest.fixture(autouse=True)
@@ -81,17 +84,82 @@ def test_build_command_interactive_and_one_shot():
 
 
 def test_build_command_effort_levels():
-    """지원 등급은 네 가지이며 default 는 --effort 를 붙이지 않아야 합니다."""
-    assert EFFORT_CHOICES == ("default", "low", "high", "max")
+    """합집합 등급 다섯 가지이며 default 는 --effort 를 붙이지 않아야 합니다."""
+    assert EFFORT_CHOICES == ("default", "low", "medium", "high", "max")
     assert EFFORT_DEFAULT_LEVEL == "default"
 
     assert "--effort" not in build_command(MODEL, "지시문", effort=EFFORT_DEFAULT_LEVEL)
     assert "--effort" not in build_command(MODEL, "지시문", effort=None)
 
-    for level in ("low", "high", "max"):
+    for level in ("low", "medium", "high", "max"):
         cmd = build_command(MODEL, "지시문", effort=level)
         assert cmd[:5] == ["cmd", "--model", MODEL, "--effort", level]
         assert cmd[-1] == "지시문"
+
+
+def test_allowed_effort_levels_follows_model_pool():
+    """모델별 허용 등급은 MODEL_POOL 의 effort_levels 를 따릅니다.
+
+    미등록 모델은 default 만 허용합니다. cmd 가 목록 밖의 등급을 조용히 기본값으로
+    진행하므로 런처가 값을 좁히는 유일한 지점입니다.
+    """
+    assert allowed_effort_levels(MODEL) == ("default", "low", "high", "max")
+    assert allowed_effort_levels(GLM_MODEL) == ("default", "low", "high", "max")
+    assert allowed_effort_levels(HY4_MODEL) == ("default", "low", "medium", "high")
+    assert allowed_effort_levels("vendor/unregistered-model") == ("default",)
+
+
+@pytest.mark.parametrize(
+    ("model", "effort"),
+    [
+        # GLM-5.3 Flash 는 medium 이 없습니다.
+        (GLM_MODEL, "medium"),
+        # Hy4 Preview 는 max 가 없습니다.
+        (HY4_MODEL, "max"),
+        # 미등록 모델은 default 외 등급을 받지 않습니다.
+        ("vendor/unregistered-model", "high"),
+    ],
+)
+def test_effort_flag_rejects_level_unsupported_by_model(
+    model: str, effort: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    """(3) 모델이 받지 않는 등급은 런처가 종료 코드 2 로 거부하고 cmd 를 호출하지 않습니다."""
+    target = tmp_path / "preamble_reject.txt"
+    target.write_text("지시문", encoding="utf-8")
+    with patch("scripts.orca_cmd_launch.run_cmd") as mock_run, pytest.raises(SystemExit) as exc:
+        main(["--model", model, "--effort", effort, "--preamble", str(target)])
+    assert exc.value.code == 2
+    mock_run.assert_not_called()
+    assert effort in capsys.readouterr().err
+
+
+def test_build_command_includes_medium_for_hy4_preview():
+    """(4) Hy4 Preview 의 medium 은 build_command 결과에 --effort medium 으로 실립니다."""
+    cmd = build_command(HY4_MODEL, "지시문", effort="medium")
+    assert cmd[:5] == ["cmd", "--model", HY4_MODEL, "--effort", "medium"]
+    assert cmd[-1] == "지시문"
+
+
+@patch("scripts.orca_cmd_launch.run_cmd", return_value=0)
+def test_main_allows_medium_for_hy4_preview(mock_run: MagicMock, tmp_path: Path):
+    target = tmp_path / "preamble_hy4.txt"
+    target.write_text("지시문", encoding="utf-8")
+    code = main(
+        [
+            "--model",
+            HY4_MODEL,
+            "--effort",
+            "medium",
+            "--preamble",
+            str(target),
+            "--no-commit-notice",
+            "--one-shot",
+            "--no-keep-open",
+        ]
+    )
+    assert code == 0
+    executed = mock_run.call_args[0][0]
+    assert executed[executed.index("--effort") + 1] == "medium"
 
 
 def test_effort_flag_rejects_unknown_level(tmp_path: Path):
