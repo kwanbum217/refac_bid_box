@@ -1,15 +1,16 @@
 # 분석 보고서 주제별 인덱스 (Analysis Document Index)
 
 > **작성일**: 2026-09-12
+> **수정일**: 2026-09-21
 > **상태**: 활성 (Active)
-> **대상**: `docs/analysis/` 내 전체 조사·분석·측정·의사결정 문서 (총 394건)
+> **대상**: `docs/analysis/` 내 전체 조사·분석·측정·의사결정 문서 (총 422건)
 > **원칙**: 주제별 분류, 기한부/미해결 과업 및 활성 문서 분리, 측정/기각 항목 명시, 표 우선, 단일 진실 원천 정합성 보장
 
 ---
 
 ## 문서 개요
 
-본 문서는 `docs/analysis/` 디렉터리에 축적된 394건의 분석 및 조사 보고서를 주제별로 체계화한 단일 정본 색인입니다. 각 항목은 대표 문서 링크와 한 줄 핵심 판정 내용을 포함하며, 복수 회차나 검토 보고서가 수반된 과업은 대표 문서 하위에 연관 문서를 묶어 가독성을 유지하였습니다.
+본 문서는 `docs/analysis/` 디렉터리에 축적된 422건의 분석 및 조사 보고서를 주제별로 체계화한 단일 정본 색인입니다. 각 항목은 대표 문서 링크와 한 줄 핵심 판정 내용을 포함하며, 복수 회차나 검토 보고서가 수반된 과업은 대표 문서 하위에 연관 문서를 묶어 가독성을 유지하였습니다.
 
 ## 목차
 
@@ -34,6 +35,10 @@
 | [`task_38b3bb325d8e.md`](task_38b3bb325d8e.md) | [`task_4ff8fb0ca9cd.md`](task_4ff8fb0ca9cd.md)<br>[`task_69142134cabc.md`](task_69142134cabc.md)<br>[`task_a48917d63a07.md`](task_a48917d63a07.md) | 2026-09-03 | 공급망 스캔(pip/npm/Trivy) 차단 모드 전환 및 예외 관리 도입. chromadb 1.x 업그레이드(2026-12-31 만료) 및 nanoid(2026-10-31 만료) 기한부 과업 확정 |
 | [`ssr_e2e_scope_survey_20260902.md`](ssr_e2e_scope_survey_20260902.md) | [`task_07bcd5cf94e2.md`](task_07bcd5cf94e2.md) | 2026-09-02 | 본 저장소(refac_bid_box)는 Django 모놀리식 구조에서 FastAPI + MySQL 8 + Redis + Meilisearch + Ollama 기반으로 리팩토링된 공공조달 입찰 예측 및 하이브리드 RAG 챗봇 플랫... |
 | [`observability_stack_survey_20260902.md`](observability_stack_survey_20260902.md) | [`bd1_otel_metrics_review_20260911.md`](bd1_otel_metrics_review_20260911.md)<br>[`task_0534350cf9a0.md`](task_0534350cf9a0.md) | 2026-09-02 | 지표를 먼저 정의한 뒤, 1인 운영에 맞는 관측성 선택지를 비교합니다. |
+| [`handoff_backlog_reaudit_20260920.md`](handoff_backlog_reaudit_20260920.md) | — | 2026-09-20 | 인수인계 문서와 CURRENT_STATE 6.1절의 잔여 과업 26개 행(고유 20건)을 전수 재판정해 8건(12행)이 이미 해소되었음을 확인했고, 즉시 착수 가능한 유효 과업은 수집·드리프트 진행 관찰, 손상 탐침 효과 크기 조사, 단일 질의 실행계획 전환 원인 규명 3건뿐입니다. |
+| [`session_hold_items_20260918.md`](session_hold_items_20260918.md) | — | 2026-09-18 | 인수인계 상 4대 보류 결정 항목(경로 A, GitHub Release 초안, 주간 재학습 일정, ChromaDB CVE 재확인일)이 모두 실행 조건 미충족 또는 일정 미도래임을 확인하고, 운영 반영·Release 변경·재학습 실행·ChromaDB 버전 변경 없이 기존 확정 결정을 유지합니다. |
+| [`windows_chromadb_status_20260916.md`](windows_chromadb_status_20260916.md) | — | 2026-09-16 | ChromaDB 4개 권고 모두 first_patched_version이 없어(null) 1.x 업그레이드를 제안하지 않고 상류 미수정, 2026-12-31 재확인 유지를 유지합니다. G2 크로스 플랫폼 게이트는 Windows Docker Desktop 실기 미검증으로 보류를 유지합니다. |
+| [`chromadb_1x_upgrade_plan.md`](chromadb_1x_upgrade_plan.md) | — | 2026-09-13 | 1.x 업그레이드는 CVE 를 해소하지 못한다는 실측 결과로 스테이징 실측(UNK-01, UNK-02) 없이 보류했고, 원본 chroma_db/ 는 어떤 버전으로도 열지 않았습니다. 상류 수정 버전이 나오면 후보 B(복사본 마이그레이션 후 원자적 교체) 계획을 그 버전으로 재개합니다. |
 
 ---
 
@@ -138,6 +143,13 @@ Arq 워커 처리량, /predict 엔드포인트 P95 레이턴시(c1/c2/c4/c10), R
 | [`task_44eb5fa51a0c.md`](task_44eb5fa51a0c.md) | — | — | 2026-08-30 RAG v2 32문항 정본 실측(docs/analysis/blind_fixture_v2_canonical_20260830.md)에서 신규 정본(6210ee1)의 Citation 지표가 100.0%(70/70)... |
 | [`task_2d639c0bc1c6.md`](task_2d639c0bc1c6.md) | — | — | 테스트 경고를 통제 가능한 상한으로 묶었다. 베이스라인(-W default) 138 warnings → 필터 적용 후 **0 warnings**. 상한은 실측값에 근거해 5로 잡았다. |
 | [`p2_3r_strict_json_evidence.md`](p2_3r_strict_json_evidence.md) | — | — | 기존 scripts/benchmark_latency.py에만 국소적으로 적용되어 있던 strict JSON 직렬화(dump_strict_json, sanitize_nan_to_none)를 공용 모듈 scripts/_strict_... |
+| [`offload_latency_20260921.md`](offload_latency_20260921.md) | — | 2026-09-21 | D1 세 대상의 이벤트 루프 정지가 396.48~29595.26ms 에서 최대 1.58~28.31ms 로 줄어 효과가 확정되었고, D8 은 다섯 시나리오 전부에서 변경 전 구현보다 중앙값 기준 28.81~49.88ms 느린 회귀로 판정되어 점진 확대 재작성 후 회귀가 해소되었습니다(잔여 차 약 1ms, 예열 꼬리 비용). |
+| [`exists_plan_flip_investigation_20260920.md`](exists_plan_flip_investigation_20260920.md) | — | 2026-09-20 | 단일 EXISTS 매칭 질의의 계획 뒤집힘은 세미조인 전략 간 비용 역전 임계 경계(비용 차 10% 미만)와 인덱스 다이브 추정치의 거친 오차(실제 대비 2.4배 과대추정)가 결합된 구조적 선택도 민감성으로 판정했고, 서비스 영향은 compare_stats_snapshot 격리로 종결되었습니다. |
+| [`read_path_g3_rescan_20260920.md`](read_path_g3_rescan_20260920.md) | — | 2026-09-20 | 아직 최적화되지 않은 읽기 경로에서 N+1 질의 5건과 이벤트 루프 블로킹 동기 I/O 1건을 특정하고, 낙찰 상세 N+1·적격심사 스냅샷 목록 지연 로딩·챗봇 익명 쿼터 동기 Redis 를 상위 3건으로 권고했습니다. |
+| [`write_path_g3_scan_20260920.md`](write_path_g3_scan_20260920.md) | — | 2026-09-20 | 쓰기·수집 경로에서 이벤트 루프를 막는 동기 실행 6건과 N+1 성격의 루프 질의 3건을 특정했고, Arq 워커 계층의 적용 누락이 가장 뚜렷한 구조적 결함이며 저장소 안에 이미 검증된 오프로드 패턴이 있으므로 낮은 위험으로 회수할 수 있습니다. |
+| [`auth_path_latency_20260919.md`](auth_path_latency_20260919.md) | — | 2026-09-19 | 세션 쿠키 발급 절차가 없어 그동안 측정하지 못했던 인증 경로 세 건을 처음으로 실측해, 단일 웜에서는 전부 P95 5ms 이하이고 동시성 c10 에서도 전부 39.2ms 이하로 비인증 읽기 경로보다 빠르며 최적화 후보가 없습니다. |
+| [`read_path_ab_confirmation_20260919.md`](read_path_ab_confirmation_20260919.md) | — | 2026-09-19 | 선채움 ON/OFF 3왕복 교대 측정에서 낙찰 목록 1쪽 P95 가 75.28ms 대 202.01ms 로 -62.7% 이며, 같은 회차의 대조군 다섯 경로는 전부 ±4ms 안에 머물러 측정이 유효함을 확정했습니다. |
+| [`read_path_concurrency_20260918.md`](read_path_concurrency_20260918.md) | — | 2026-09-18 | 동시성 c10 에서 낙찰 목록 P95 가 219.69ms 로 튄 원인이 행마다 공고를 조회하는 N+1 이었고, 일괄 조회로 바꾼 뒤 3회 재측정 중앙값 79.16ms 를 얻었습니다. 대조군도 함께 줄어 순개선 크기는 A/B 재측정 전까지 미확정입니다. |
 
 ---
 
@@ -211,6 +223,13 @@ Arq 워커 처리량, /predict 엔드포인트 P95 레이턴시(c1/c2/c4/c10), R
 | [`task_67e934d9fa15.md`](task_67e934d9fa15.md) | — | — | SSR 브라우저 폼인 /accounts/login/, /accounts/signup/, /accounts/logout/ 화면에 서명 토큰을 발급하고, 세 상태 변경 POST를 모두 서버에서 검증합니다. 검증 플래그가 켜져 있을 ... |
 | [`task_4a11c91c25e4.md`](task_4a11c91c25e4.md) | — | — | - **목표**: mypy 전역 비활성 오류 코드 5종 중 실제 위반이 없거나 적은 3종(return-value, attr-defined, union-attr)을 복구하여 타입 게이트의 실효성을 높인다. |
 | [`task_2851e07d864d.md`](task_2851e07d864d.md) | — | — | - **배경**: taskctl dispatch의 런처 경로가 Antigravity(scripts/orca_agy_launch.py)로 고정되어 있어 다른 CLI 워커 기동 시 매번 수동으로 --launcher 경로를 적어야 했... |
+| [`weekly_retrain_prep_20260920.md`](weekly_retrain_prep_20260920.md) | — | 2026-09-20 | 런북과 코드를 전수 대조해 2.5절 서빙 모델 확인 경로(ml_registry/servc_institution_v1/serving_models.json)가 실재하지 않는 유령 경로임을 판정했고, 자동 승격이 6중 게이트로 차단되며 DB 시각이 KST 보다 9시간 이른 UTC 로 기록되는 시차 함정을 확인했습니다. |
+| [`negotiation_price_score_feasibility_20260918.md`](negotiation_price_score_feasibility_20260918.md) | — | 2026-09-18 | 단일 판정은 공고서 원문 필요입니다. 평점산식 분기점(80% 대 70%)·가산 계수·소수점 처리·최저입찰가격 하한 보정 기준이 DB 와 API 어디에도 구조화되어 있지 않아, 현행 NEGOTIATION_CONTRACT 차단과 평가비율·낙찰률 참고 분포 제공을 현재 데이터로 제공 가능한 최선의 범위로 유지합니다. |
+| [`drift_monitor_verify_20260918.md`](drift_monitor_verify_20260918.md) | — | 2026-09-18 | 09-18 인큐 작업이 retrain_logs 에 id=7(Cnstwk)·8(Servc)·9(Thng) 세 건을 DRIFT_DETECTED 로 기록했고, Thng 은 859건 표본에서 17개 특징이 임계를 초과했으며 자동 재학습·승격은 수행되지 않았습니다. |
+| [`drift_monitor_verify_20260917.md`](drift_monitor_verify_20260917.md) | — | 2026-09-17 | 04:00 크론 공백 후 수동 인큐한 드리프트 감시가 id=4·5·6 세 건을 DRIFT_DETECTED 로 기록했고, Thng 은 15개 특징에서 임계를 초과했으며 overall_action TRIGGER_RETRAIN 은 알림 라벨일 뿐 자동 재학습·승격 명령이 아님을 확인했습니다. |
+| [`nightly_drift_preflight_20260916.md`](nightly_drift_preflight_20260916.md) | — | 2026-09-16 | 09-17 02:00 최신화와 04:00 첫 드리프트 감시를 앞두고 3개 모델 baseline 아티팩트 보존과 최근 7일 Thng 유효 표본 753건(최소 요구 30건의 25배)을 실측해 INSUFFICIENT_DATA 가능성을 배제하고, 판정 확인 절차와 원인 분기 매트릭스를 확정했습니다. |
+| [`weekly_retrain_preflight_20260916.md`](weekly_retrain_preflight_20260916.md) | — | 2026-09-16 | 주간 재학습 파이프라인이 승격 함수를 호출하지 않고 챌린저를 레지스트리에만 등록하고 서빙 모델을 교체하지 않음을 코드로 입증했고, 09-21 03:00 첫 실행 후 retrain_logs·LIVE 포인터(v_20260915_133523_756 불변)·Feature Store Parquet 갱신 확인 절차를 확정했습니다. |
+| [`cnstwk_model_feasibility_20260915.md`](cnstwk_model_feasibility_20260915.md) | — | 2026-09-15 | 공사 데이터셋 135만 건은 require_announcement=True 기반 INNER JOIN 과 raw_data JSON 언쿼트 추출로 재구축해야 34개 단일 공급원 특징 생성이 가능하며(기존 DB 스키마 100% 보존), 2025년 홀드아웃과 2026년 레짐 전환 분리 구간에서 v25 대비 t 절댓값 2.0 이상·차이 0.0074 이상의 쌍대 우위를 입증해야 승격할 수 있습니다. |
 
 ---
 
@@ -256,6 +275,9 @@ ChromaDB 벡터 저장소, bge-m3 임베딩, 증분 색인, Meilisearch 하이�
 | [`task_2c66139a4a75.md`](task_2c66139a4a75.md) | — | — | 상세는 task_z1_windows_remaining.md 2절. |
 | [`task_22fb73627e8c.md`](task_22fb73627e8c.md) | — | — | Wave AJ2에서 워커 런처 고지문의 역할별 분기(빌더용 COMMIT_NOTICE vs 리뷰어용 REVIEWER_NOTICE)가 도입되었으나, 실제 Dispatch 경로에서 리뷰어 워커에게 여전히 COMMIT_NOTICE(커밋... |
 | [`task_033ef1fb805d.md`](task_033ef1fb805d.md) | [`bd2_restore_drill_prep_review_20260911.md`](bd2_restore_drill_prep_review_20260911.md)<br>[`task_z1_backup_retention.md`](task_z1_backup_retention.md) | — | scripts.backup_recovery_core.REQUIRED_BACKUP_ASSETS에 database, chroma_db, |
+| [`rag_overrefusal_root_cause_20260915.md`](rag_overrefusal_root_cause_20260915.md) | — | 2026-09-15 | 적대적 픽스처 과잉거절 4건은 프롬프트나 모델의 문제가 아니라 질의 플래너의 키워드 오인식(Cnstwk)·복수 기관 및 분기 슬롯 미지원·7일 하드 윈도우 post-filter·DB 스키마 상 예정가격 컬럼 부재가 복합 작용한 결과이며, P1(공기업 명칭 충돌 방지)과 P2(분기 기간 파싱)는 즉시 적용 가능으로 판정했습니다. |
+| [`rag_adversarial_evaluation_plan.md`](rag_adversarial_evaluation_plan.md) | — | 2026-09-14 | 적대적 평가 7대 범주 35문항과 5대 행동 지표 체계를 세우고 재채점으로 종합 통과율을 12/35(34.29%)에서 25/35(71.43%)로 회복시켰으며, 남은 10건은 채점기 오류가 아닌 gemma4:e2b 의 실제 취약점으로 분류해 시스템 프롬프트 보강 권고 문안과 재측정 게이트를 제시했습니다. |
+| [`rag_coldsql_root_cause_20260913.md`](rag_coldsql_root_cause_20260913.md) | — | 2026-09-13 | 콜드 SQL 40초는 기관명 선행 와일드카드 조건이 날짜 범위 없이 걸릴 때 메모리에 없는 공고 본문 페이지를 수백만 행 읽기 때문이며, 인덱스 선택이나 실행계획 흔들림은 원인이 아니라고 확정하고 CURRENT_STATE 6.1 의 기관명 필터 후보를 닫았습니다. |
 
 ---
 
@@ -376,6 +398,10 @@ DB 마이그레이션(MySQL 8), Arq 백그라운드 태스크, 백업/복구 및
 | [`task_0a181c70b200.md`](task_0a181c70b200.md) | — | — | SQLite와 MySQL에서 결과 또는 실행 가능성이 실제로 달라지는 SQL 의미만 선정했습니다. 콜레이션, 숫자 나눗셈, ONLY_FULL_GROUP_BY, 날짜 버킷 함수, JSON 스칼라 추출을 각각 한 건씩 검증합니다. |
 | [`t2.md`](t2.md) | — | — | refac_bid_box의 비동기 태스크 큐인 Arq 워커(src/tasks/worker.py)는 max_jobs=4 설정 하에 비동기 이벤트 루프 기반으로 동작합니다. |
 | [`p2_2_stale_lock_ownership.md`](p2_2_stale_lock_ownership.md) | — | — | docs/handoff/2026-08-22_post_1a45ad5_audit.md P2-2: 기존 _settings_lock은 lock 파일에 보유 PID만 기록하고 finally 블록에서 소유권 확인 없이 같은 경로를 unli... |
+| [`backfill_20260909_downstream_verify.md`](backfill_20260909_downstream_verify.md) | — | 2026-09-18 | --sync-downstream 하류 동기화 전 단계가 완결되어 KB 에 19,301건이 반영(누적 517,170건, status=ready)되었고, 발주기관 통계 39,036건·순위 스냅샷 110건 갱신과 Fail-Closed 정합성 차집합 0건을 확인했습니다. |
+| [`backfill_20260909_db_verify.md`](backfill_20260909_db_verify.md) | — | 2026-09-18 | 2026-09-09 1일 공백 백필 후 읽기 전용 질의로 공고 1,677건(Cnstwk 473·Frgcpt 8·Servc 590·Thng 606)과 낙찰 642건(Cnstwk 233·Servc 200·Thng 209)이 직전 대비 100% 유지되었고 DB 스키마 무변경을 확인했습니다. |
+| [`session_start_verify_20260918.md`](session_start_verify_20260918.md) | — | 2026-09-18 | id=20 이후 신규 수집 id=21 이 success 로 완료(공고 1,644건·낙찰 955건)됨을 확인했고, 09-18 04:00 정규 drift_monitor 는 스택 다운과 따라잡기 비대상으로 0건 미실행이며 TRIGGER_RETRAIN 라벨은 재학습 미실행으로 해석됨을 기록했습니다. |
+| [`catchup_collection_verify_20260917.md`](catchup_collection_verify_20260917.md) | — | 2026-09-17 | 스케줄 따라잡기 수집이 pipeline_executions id=20(status=success)으로 정상 종료되어 XML 살균(commit faa752e4) 후 첫 실기에서 예외 0건으로 물품 공고 1,393건·낙찰 294건이 적재되었고, 20260909 구간은 7일 회수 상한 초과로 미회수 공백으로 남았습니다. |
 
 ---
 
@@ -436,5 +462,8 @@ mypy 정적 검사 부채 해소, 크로스 플랫폼 CI(macOS/Windows), OpenTel
 | [`task_50768bf0d9de.md`](task_50768bf0d9de.md) | — | — | - 2026-08-31 에 qwen3.7-plus 리뷰어가 JSON 이 아닌 응답을 두 번 연속 돌려주어 실패했다. |
 | [`task_36dff76c2464.md`](task_36dff76c2464.md) | — | — | 워커가 .orca/ 같은 gitignore 대상 경로를 git add -f 로 강제 커밋해도 Level 1 게이트가 실패하지 않았습니다. |
 | [`task_28394bf3d41f.md`](task_28394bf3d41f.md) | — | — | ORCA_WORKER_DONE_V2 계약이 문서 규칙에 머무는지 실행 게이트인지를 저장소 코드 근거로 판정하는 조사 보고서 작성 |
+| [`state_code_consistency_audit_20260918.md`](state_code_consistency_audit_20260918.md) | — | 2026-09-18 | CURRENT_STATE.md·current_state_facts.yaml 과 실제 소스 코드를 대조해 active 사실 2건(negotiation_contract_support, drift_job)과 6.1절 Unknowns 2건(RAG cold SQL, 측정 설계와 실행계획 조사) 및 원장 updated_at 의 불일치를 확인하고, 코드 수정 없이 문서 갱신 방향만 권고했습니다. |
+| [`session_git_ci_verify_20260918.md`](session_git_ci_verify_20260918.md) | — | 2026-09-18 | 세션 시작 시점에 Git HEAD bf4b4d46 기준 main CI Run 35221030901 이 success 이고 CURRENT_STATE source_commit(dd5aaf9a) 뒤처짐이 2 커밋(임계값 5 이내)임을 실측했으며, 잔류 as9-review 태스크를 재실행 없이 확인만 했습니다. |
+| [`as9_review_leftover_20260918.md`](as9_review_leftover_20260918.md) | — | 2026-09-18 | 드리프트 실측 보고서는 코디네이터의 실측 검증을 거쳐 main(d0c7476a)에 병합 완료되었고 as9-review(task_7bc94af1d54e)는 reportPath 누락으로 blocked 잔류했으므로, 재 Dispatch·재실행 없이 종결된 잔류로 간주합니다. |
 
 ---
