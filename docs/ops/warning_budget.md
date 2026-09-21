@@ -19,10 +19,12 @@
 | 항목 | 값 |
 | --- | --- |
 | 베이스라인 (필터 미적용) | `uv run pytest tests/ -q -m 'not data_assets' -W default` 실행 시 138 warnings (`-W always` 로는 338, 동일 메시지 중복 표시 정책 차이) |
-| 필터 적용 후 실측값 | `uv run pytest tests/ -q -m 'not data_assets'` 실행 시 **0 warnings** |
-| **상한 (예산)** | **5 warnings** (실측값 0에 운영 여유 5건) |
+| 필터 적용 후 실측값 | 2026-09-21 격리 워크트리에서 `uv run pytest tests/ -q -m 'not data_assets'` 실행 시 **3 warnings** (`5291 passed, 40 skipped, 3 deselected`) |
+| **상한 (예산)** | **5 warnings** (실측값 3에 운영 여유 2건) |
 
-상한은 `--max-warnings=N` 으로 강제하지 않고, 운영 가이드라인으로 둡니다. CI 에서 상한을 강제하려면 별도 작업으로 `addopts = "--max-warnings=5"` 추가를 검토한다.
+실측 3건의 출처는 `tests/test_evaluation_ui.py` 의 클래스 스코프 fixture 를 인스턴스 메서드로 정의해 발생하는 `PytestRemovedIn10Warning` ("Class-scoped fixture defined as instance method is deprecated.") 3건이며, `-W default` 없이 pytest 요약 줄에서 확인한 값입니다. 경고를 없애는 코드 수정은 본 작업 범위가 아니며 별도 작업으로 남깁니다.
+
+상한은 운영 가이드라인에 더해 CI 에서 강제합니다. `.github/workflows/ci.yml` 의 `pytest-warning-budget` 잡(ubuntu-latest, python 3.12)이 전량 pytest 요약 줄의 `N warnings` 를 읽어 5건을 넘으면 실패시킵니다. 경고가 0건이면 요약 줄에 `warnings` 문구가 없으므로 0 으로 봅니다.
 
 ---
 
@@ -192,6 +194,6 @@ pytest 자체 동작에서 발생하는 안내성 경고이며, 우리 테스트
 uv run pytest tests/ -q -m 'not data_assets'
 ```
 
-예상 결과: `3334 passed, 35 skipped, 3 deselected in 90.83s` (0 warnings).
+예상 결과: `5291 passed, 40 skipped, 3 deselected, 3 warnings in 154.38s` (skip 수와 소요 시간은 환경에 따라 다르다).
 
-상한 검증은 `tests/test_warning_budget.py` 의 정적 검사로 충분하다. 예산 테스트가 전체 스위트를 다시 실행하지 않으므로 55초를 두 번 쓰지 않는다.
+상한 강제는 CI 의 `pytest-warning-budget` 잡이 담당하고, 로컬에서는 `tests/test_warning_budget.py` 의 정적 검사로 filterwarnings 계약만 확인한다. 둘 다 전체 스위트를 다시 실행하지 않는다.
