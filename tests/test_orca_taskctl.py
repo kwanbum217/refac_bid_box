@@ -7524,6 +7524,89 @@ def test_deliver_capsule_notice_sends_short_probe_followup(
     assert res["delivery_probe"] in sent[1]
 
 
+def _notice_capsule(tmp_path: Path, task_id: str, body: str) -> Path:
+    capsule = tmp_path / ".orca" / "capsules" / task_id / "capsule.yaml"
+    capsule.parent.mkdir(parents=True, exist_ok=True)
+    capsule.write_text(body, encoding="utf-8")
+    return capsule
+
+
+def _run_notice(monkeypatch: pytest.MonkeyPatch, capsule: Path, task_id: str, intent: dict):
+    from types import SimpleNamespace
+
+    from scripts import orca_taskctl
+
+    monkeypatch.setattr(orca_taskctl, "resolve_dispatch_id", lambda task_id, timeout=30: "d1")
+    sent: list[str] = []
+
+    def mock_send(handle: str, text: str, timeout: int = 30):
+        sent.append(text)
+        return 0, json.dumps({"ok": True}), ""
+
+    monkeypatch.setattr(orca_taskctl, "terminal_send", mock_send)
+    args = SimpleNamespace(no_capsule_notice=False, terminal="term_x", worktree=None)
+    res = orca_taskctl._deliver_capsule_notice(args, task_id, capsule, intent)
+    return res, sent
+
+
+def test_notice_uses_capsule_report_path_when_intent_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Capsule 에 report_path 가 있으면 Intent 에 없어도 그 값을 정본으로 씁니다."""
+    capsule = _notice_capsule(
+        tmp_path,
+        "task_c1",
+        'role: "builder"\nreport_path: ".orca/capsules/task_c1/custom_done.json"\n',
+    )
+    res, sent = _run_notice(monkeypatch, capsule, "task_c1", {"role": "builder"})
+    assert res["status"] == "sent"
+    assert ".orca/capsules/task_c1/custom_done.json" in sent[0]
+    assert "worker_done.json" not in sent[0]
+
+
+def test_notice_defaults_to_review_done_for_reviewer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Capsule 과 Intent 에 report_path 가 없으면 리뷰어 기본값은 review_done.json 입니다."""
+    capsule = _notice_capsule(tmp_path, "task_r1", 'role: "reviewer"\n')
+    res, sent = _run_notice(monkeypatch, capsule, "task_r1", {"role": "reviewer"})
+    assert res["status"] == "sent"
+    assert ".orca/capsules/task_r1/review_done.json" in sent[0]
+
+
+def test_notice_defaults_to_worker_done_for_builder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Capsule 과 Intent 에 report_path 가 없으면 빌더 기본값은 worker_done.json 입니다."""
+    capsule = _notice_capsule(tmp_path, "task_b1", 'role: "builder"\n')
+    res, sent = _run_notice(monkeypatch, capsule, "task_b1", {"role": "builder"})
+    assert res["status"] == "sent"
+    assert ".orca/capsules/task_b1/worker_done.json" in sent[0]
+
+
+def test_notice_prefers_capsule_over_intent_and_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """Capsule 과 Intent 값이 다르면 Capsule 값을 쓰고 표준 오류에 한 줄 남깁니다."""
+    capsule = _notice_capsule(
+        tmp_path,
+        "task_d1",
+        'role: "builder"\nreport_path: ".orca/capsules/task_d1/from_capsule.json"\n',
+    )
+    res, sent = _run_notice(
+        monkeypatch,
+        capsule,
+        "task_d1",
+        {"role": "builder", "report_path": ".orca/capsules/task_d1/from_intent.json"},
+    )
+    assert res["status"] == "sent"
+    assert ".orca/capsules/task_d1/from_capsule.json" in sent[0]
+    assert "from_intent.json" not in sent[0]
+    err = capsys.readouterr().err
+    assert "from_capsule.json" in err
+    assert "from_intent.json" in err
+
+
 # ---------------------------------------------------------------------------
 # Task AJ1 회귀 테스트: 전량 pytest data_assets 마커 강제 및 표준 사실 포함
 # ---------------------------------------------------------------------------
