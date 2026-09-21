@@ -440,7 +440,11 @@ stdout 만 파싱하며, 파싱할 JSON 이 없으면 "빈 결과" 로 삼키지
    `command-reality-ignore` 를 두어 그 줄을 검사에서 뺍니다. 세 검증 모두 명령의 **실재 여부**를 보지 않았기 때문입니다.
    게이트는 `docker`, `npm`, `gh`, `uv` 의 도움말과 대조하며, 실행기가 없으면 건너뛰고
    없는 스크립트 경로는 차단하지 않는 경고로만 보고합니다. 문서의 예시 경로가 병합을
-   막지 않게 하기 위함입니다.
+   막지 않게 하기 위함입니다. 저장소 파이썬 스크립트를 부르는 명령, 즉 `uv run python`
+   과 `python3` 과 `python` 뒤에 `scripts/*.py` 가 오는 형태는 백슬래시 줄 이음을 합친
+   뒤 그 스크립트의 argparse 옵션을 AST 로 수집해 대조합니다. 옵션을 확정할 수 없는
+   스크립트(파일 없음, 구문 오류, add_subparsers, 비상수 옵션 이름)는 위반이 아니라
+   건너뜀으로 셉니다.
 
    이 두 도구는 2026-08-15 첫 실사용에서 실제 계약 위반 4건(필수 필드 누락: version, branch, commit_count, blocking_issues)을 검출했습니다.
 2. **Level 2 (독립 리뷰어 워커)**: 독립된 리뷰어 모델이 `ORCA_REVIEW_DONE_V2` 계약([`.agents/templates/review_done_v2.json`](../../../.agents/templates/review_done_v2.json))에 따라 acceptance criteria, 회귀 위험, G1(데이터 무손실), Train/Serve 단일화, 동시성 결함, 스코프 초과 수정을 교차 검증합니다.

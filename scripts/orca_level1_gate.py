@@ -8,6 +8,7 @@ scripts/orca_level1_gate.py
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import shlex
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
@@ -614,20 +615,121 @@ def _parse_command(rest: str) -> tuple[list[str], list[str]] | None:
     return tokens, []
 
 
+# 저장소 파이썬 스크립트 호출은 실행기 도움말이 아니라 스크립트 자신의 argparse
+# 정의와 대조합니다. 줄 이음을 합치지 않으면 `--rounds 3 \` 다음 줄에 놓인 옵션을
+# 보지 못하고, `uv run python` 은 python 을 위치 인자로 보아 검사를 멈춥니다.
+# 2026-09-21 에 `uv run python scripts/benchmark_offload_loop_lag.py --rounds 3 \`
+# 다음 줄 `--json ...` 이 그 두 구멍으로 게이트·독립 리뷰·코디네이터 검토를 모두
+# 통과했습니다. 두 하니스에는 --json 이 없고 --output 이 있습니다.
+_PY_SCRIPT_COMMAND_RE = re.compile(
+    r"^[\s>*\-+|`$#]*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
+    r"(?P<prefix>uv\s+run\s+python|python3|python)\s+"
+    r"(?P<script>scripts/[\w./-]+\.py)(?P<rest>.*)$"
+)
+
+# argparse 가 스스로 제공하므로 어떤 스크립트에도 선언이 없습니다.
+PY_SCRIPT_ALWAYS_ALLOWED_OPTIONS = frozenset({"-h", "--help"})
+
+# 파이프·리다이렉션 뒤의 토큰은 다음 프로그램의 것이므로 이 명령의 옵션이 아닙니다.
+# `python3 scripts/x.py --json | tail -25` 의 -25 를 x.py 의 옵션으로 세면 없는
+# 옵션 오탐이 됩니다. 기존 docker 검사도 첫 위치 인자에서 같은 이유로 멈춥니다.
+_SHELL_SEPARATOR_RE = re.compile(r"^(?:\||\|\||&&|;|&|>>?|<|\d+[<>])")
+
+# 셸 명령 치환의 시작(`$(...)` 또는 토큰 머리의 백틱)입니다. 안쪽 명령의 플래그는
+# 이 명령의 것이 아닙니다. 문서가 인라인 코드를 닫는 백틱은 토큰 끝에 붙으므로
+# 시작으로 보지 않고, 그 백틱만 떼고 옵션으로 계속 봅니다. 시작으로 보면 인라인
+# 코드로 적은 명령의 마지막 옵션을 통째로 놓칩니다.
+_COMMAND_SUBSTITUTION_START_RE = re.compile(r"\$\(|^`")
+
+# 옵션 이름은 `-` 또는 `--` 뒤에 영문자로 시작합니다. 문장 부호가 붙은 `--quiet:`,
+# 화살표 `->`, 범위 표기 `-f/--file`, `tail -25` 의 -25 를 걸러냅니다.
+_SCRIPT_FLAG_RE = re.compile(r"^--?[A-Za-z][A-Za-z0-9_-]*$")
+
+
+def join_continuation_lines(lines: list[str]) -> list[tuple[int, str]]:
+    """줄 끝 백슬래시로 이어진 줄을 하나의 명령으로 합칩니다.
+
+    돌려주는 값은 (명령이 시작된 1기준 줄 번호, 합쳐진 텍스트) 목록입니다.
+    위반 보고는 합쳐진 줄이 아니라 시작 줄 번호로 합니다. 문서 독자가 찾아야
+    하는 위치는 명령이 시작된 줄이기 때문입니다.
+    """
+    joined: list[tuple[int, str]] = []
+    idx = 0
+    while idx < len(lines):
+        start = idx
+        text = lines[idx].rstrip()
+        while text.endswith("\\") and idx + 1 < len(lines):
+            text = text[:-1].rstrip() + " " + lines[idx + 1].strip()
+            idx += 1
+        joined.append((start + 1, text))
+        idx += 1
+    return joined
+
+
+def collect_script_options(script_path: Path) -> tuple[frozenset[str], str]:
+    """스크립트를 실행하거나 import 하지 않고 ast 로 argparse 옵션을 모읍니다.
+
+    돌려주는 값은 (옵션 집합, 건너뛴 사유) 입니다. 사유가 비어 있지 않으면 옵션을
+    확정할 수 없다는 뜻이므로 위반으로 판정하지 않습니다. 파일이 없거나, 구문
+    오류이거나, add_argument 가 없거나, add_subparsers 로 하위 명령을 나누거나,
+    옵션 이름이 문자열 상수가 아니면 확정할 수 없습니다.
+    """
+    try:
+        source = script_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return frozenset(), "스크립트 파일 없음"
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return frozenset(), "구문 오류"
+
+    options: set[str] = set()
+    calls = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr == "add_subparsers":
+            return frozenset(), "add_subparsers 사용"
+        if node.func.attr != "add_argument":
+            continue
+        calls += 1
+        for arg in node.args:
+            if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+                return frozenset(), "옵션 이름이 문자열 상수가 아님"
+            if arg.value.startswith("-"):
+                options.add(arg.value)
+    if calls == 0:
+        return frozenset(), "add_argument 없음"
+    return frozenset(options), ""
+
+
 def check_command_reality(
-    repo: Path, changed_files: list[str], help_cache: dict[str, str | None] | None = None
-) -> tuple[list[str], list[str], int]:
+    repo: Path,
+    changed_files: list[str],
+    help_cache: dict[str, str | None] | None = None,
+    python_stats: dict[str, int] | None = None,
+) -> tuple[list[str], list[str], list[str], int]:
     """변경 파일이 쓰는 명령의 플래그와 스크립트 경로가 실재하는지 검사합니다.
 
     돌려주는 값은 (위반 목록, 경고 목록, 건너뛴 실행기 목록, 검사한 명령 수) 입니다.
-    위반은 실재하지 않는 옵션이고, 경고는 없는 스크립트 경로입니다. 문서에는
-    예시용 가짜 경로가 정당하게 등장하므로 경로 누락으로 병합을 막지 않습니다.
+    위반은 실재하지 않는 옵션이고, 경고는 없는 스크립트 경로와 argparse 축약
+    옵션입니다. 문서에는 예시용 가짜 경로가 정당하게 등장하므로 경로 누락으로
+    병합을 막지 않습니다.
+
+    검사는 두 갈래입니다. docker·npm·gh·uv 는 실행기 도움말과 대조하고,
+    `uv run python`·`python3`·`python` 뒤에 `scripts/*.py` 가 오는 명령은 줄 이음을
+    합친 뒤 그 스크립트의 argparse 옵션과 대조합니다. 파이프·리다이렉션·명령 치환
+    뒤의 토큰과 옵션 형태가 아닌 토큰은 다른 프로그램의 것이므로 검사하지 않습니다.
+    파이썬 스크립트 검사 수와 건너뛴 수는 python_stats 에 담아 돌려줍니다(선택).
     """
     cache: dict[str, str | None] = {} if help_cache is None else help_cache
     violations: list[str] = []
     warnings: list[str] = []
     skipped: set[str] = set()
     checked = 0
+    script_option_cache: dict[str, tuple[frozenset[str], str]] = {}
+    python_checked = 0
+    python_skipped = 0
 
     for rel in changed_files:
         path = repo / rel
@@ -693,6 +795,58 @@ def check_command_reality(
                 if not _flag_in_help(flag, help_text):
                     violations.append(f"{rel}:{lineno} `{key}` 에 없는 옵션: {flag}")
 
+        for start_lineno, joined in join_continuation_lines(lines):
+            previous = lines[start_lineno - 2] if start_lineno >= 2 else ""
+            if COMMAND_REALITY_IGNORE in joined or COMMAND_REALITY_IGNORE in previous:
+                continue
+            script_match = _PY_SCRIPT_COMMAND_RE.match(joined)
+            if script_match is None:
+                continue
+            script_rel = script_match.group("script")
+            try:
+                tokens = shlex.split(script_match.group("rest"), comments=True)
+            except ValueError:
+                continue
+            script_flags: list[str] = []
+            for arg in tokens:
+                if arg == "--":
+                    break
+                if _SHELL_SEPARATOR_RE.match(arg) or _COMMAND_SUBSTITUTION_START_RE.search(arg):
+                    break
+                flag = arg.rstrip("`").split("=", 1)[0]
+                if _SCRIPT_FLAG_RE.match(flag):
+                    script_flags.append(flag)
+            script_flags = [
+                flag for flag in script_flags if flag not in PY_SCRIPT_ALWAYS_ALLOWED_OPTIONS
+            ]
+            if not script_flags:
+                continue
+
+            if script_rel not in script_option_cache:
+                script_option_cache[script_rel] = collect_script_options(repo / script_rel)
+            options, skip_reason = script_option_cache[script_rel]
+            if skip_reason:
+                python_skipped += 1
+                continue
+
+            python_checked += 1
+            checked += 1
+            for flag in script_flags:
+                if flag in options:
+                    continue
+                # argparse 는 긴 옵션의 고유 접두사를 허용합니다. 접두사가 정확히
+                # 하나일 때만 통과시키고, 그 사실을 경고로 남깁니다.
+                candidates = sorted(opt for opt in options if opt.startswith(flag))
+                if flag.startswith("--") and len(candidates) == 1:
+                    warnings.append(
+                        f"{rel}:{start_lineno} `{script_rel}` 축약 옵션 {flag} -> {candidates[0]}"
+                    )
+                    continue
+                violations.append(f"{rel}:{start_lineno} `{script_rel}` 에 없는 옵션: {flag}")
+
+    if python_stats is not None:
+        python_stats["python_checked"] = python_checked
+        python_stats["python_skipped"] = python_skipped
     return violations, warnings, sorted(skipped), checked
 
 
@@ -702,19 +856,30 @@ def run_gate10_command_reality(repo: Path, changed_files: list[str]) -> GateResu
     2026-09-19 에 `docker compose up -d -e VAR=x app` 이 게이트·리뷰·코디네이터
     검토를 모두 통과해 병합됐습니다. `docker compose up` 에는 -e 옵션이 없어
     A/B 측정 하니스가 실행되지 않는 상태였습니다. 이 게이트는 그 부류를 잡습니다.
+    저장소 파이썬 스크립트 호출은 줄 이음을 합친 뒤 그 스크립트의 argparse 옵션과
+    대조합니다.
     """
     name = "게이트 10 명령 실재성"
-    violations, warnings, skipped, checked = check_command_reality(repo, changed_files)
+    python_stats: dict[str, int] = {}
+    violations, warnings, skipped, checked = check_command_reality(
+        repo, changed_files, python_stats=python_stats
+    )
     details: list[str] = []
     if warnings:
-        details.append(f"경고(차단 아님) 없는 스크립트 경로 {len(warnings)}건: {warnings[0]}")
+        details.append(f"경고(차단 아님) {len(warnings)}건: {warnings[0]}")
     if skipped:
         details.append(f"실행기 미설치로 건너뜀: {', '.join(skipped)}")
+    if python_stats.get("python_skipped"):
+        details.append(
+            f"파이썬 스크립트 옵션을 확정할 수 없어 건너뜀 {python_stats['python_skipped']}건"
+        )
     raw = {
         "violations": violations,
         "warnings": warnings,
         "skipped_executables": skipped,
         "checked": checked,
+        "python_script_checked": python_stats.get("python_checked", 0),
+        "python_script_skipped": python_stats.get("python_skipped", 0),
     }
     if violations:
         return GateResult(
