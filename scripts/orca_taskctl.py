@@ -3321,7 +3321,8 @@ def _deliver_capsule_notice(
     dispatch_id = resolve_dispatch_id(task_id)
     role = intent.get("role")
     rel_capsule = worktree_relative_capsule_path(capsule_path)
-    rel_parent = str(Path(rel_capsule).parent)
+    # Windows 에서 str(Path) 는 역슬래시를 써 Capsule 의 '/' 경로와 어긋납니다.
+    rel_parent = Path(rel_capsule).parent.as_posix()
 
     # 보고 경로 정본 순서는 Capsule 파일, Intent, 역할별 기본값입니다. Capsule 을
     # 읽지 못해도 고지 자체는 보내야 하므로 예외를 삼키고 다음 순서로 넘어갑니다.
