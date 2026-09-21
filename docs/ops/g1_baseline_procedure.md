@@ -53,3 +53,14 @@ DB 접속 없이 다음 단위 테스트로 fail-closed 동작과 테이블 집�
 ```bash
 uv run pytest tests/test_g1_schema_signature.py tests/test_verify_migration_fail_closed.py -q
 ```
+
+## 4. 로컬 실행 증적 보관 절차
+
+G1 검증을 로컬에서 실행할 때는 언제, 어느 커밋에서, 무엇을 통과했는지 증적을 남깁니다. 증적이 없으면 같은 판정을 재현하기 위해 처음부터 다시 실행해야 합니다.
+
+1. 검증 전에 `git rev-parse HEAD` 로 대상 커밋 SHA 를 기록합니다.
+2. Makefile 에 실재하는 대상만 실행합니다: `make migrate-verify`, `make model-verify`, `make test-data-assets`.
+3. 실행 결과(표준출력·종료 코드)를 `data/benchmarks/g1_runs/<날짜>/` 에 결과 파일로 남깁니다. 이 디렉터리는 증적을 만들 때만 생성하며, 본 절차 문서가 미리 만들지 않습니다.
+4. 결과 파일에는 실행 일시(UTC), 대상 커밋 SHA, 실행한 make 대상, 종료 코드를 함께 적습니다.
+
+`data/benchmarks/g1_runs/` 는 증적 보관 위치 제안이며, 보존 정책이 바뀌면 함께 재검토합니다.

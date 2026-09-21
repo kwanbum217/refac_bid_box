@@ -1270,6 +1270,8 @@ def classify_segment(cmd: str, depth: int = 0) -> tuple[str, str]:
 # 문장만 내며 scripts/db_readonly_query.py 의 파서 검사와 READ ONLY 트랜잭션을
 # 그대로 탄다. 파일을 쓰거나 DB 에 쓰거나 컨테이너를 제어하지 않으므로
 # 읽기 전용으로 확인해 등록합니다.
+# 이 목록은 pyproject.toml 의 ruff per-file-ignores "scripts/**/*.py" S404/S603/S607/S310
+# 예외와 짝을 이룹니다. 한쪽을 바꾸면 다른 쪽도 함께 검토하십시오.
 UV_RUN_ALLOWED_SCRIPTS = frozenset(
     {
         "scripts/db_readonly_query.py",
