@@ -167,28 +167,65 @@ jobs:
       - name: Lint GitHub Actions Workflows
         run: uv run actionlint
 
+      # frontend/ 는 동결 자산이고 신규 개발은 SSR 로 합니다. 변경이 없는데도
+      # npm ci 부터 build 까지 매번 돌리면 CI 시간만 쓰고 검증 강도는 오르지 않습니다.
+      # pull_request 는 base/head SHA, push 는 before/sha 를 비교합니다.
+      # before 가 0000...0 인 첫 push 거나 비교 자체가 실패하면 건너뛰지 않고
+      # 실행하는 쪽으로 기웁니다(fail-open). 워크플로 자신이 바뀐 경우도
+      # 판정 로직이 바뀐 것이므로 프런트 단계를 다시 돌립니다.
+      - name: Detect frontend changes
+        id: frontend-changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              RANGE="HEAD~1...HEAD"
+            else
+              RANGE="${BEFORE}...${{ github.sha }}"
+            fi
+          fi
+          if CHANGED_FILES=$(git diff --name-only "$RANGE" -- frontend/ .github/workflows/ci.yml 2>/dev/null); then
+            if [ -n "$CHANGED_FILES" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            fi
+            echo "frontend 판정 기준 ${RANGE}: ${CHANGED_FILES:-변경 없음}"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "frontend 판정 기준 ${RANGE} 비교 실패: 프런트 단계를 실행합니다."
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
       - name: Install Frontend Dependencies
+        if: steps.frontend-changes.outputs.changed == 'true'
         working-directory: ./frontend
         run: npm ci
 
       - name: Run Frontend Lint
+        if: steps.frontend-changes.outputs.changed == 'true'
         working-directory: ./frontend
         run: npm run lint
 
       - name: Run Frontend Type Check
+        if: steps.frontend-changes.outputs.changed == 'true'
         working-directory: ./frontend
         run: npx tsc --noEmit
 
       - name: Run Frontend Tests
+        if: steps.frontend-changes.outputs.changed == 'true'
         working-directory: ./frontend
         run: npm run test
 
       - name: Build Frontend
+        if: steps.frontend-changes.outputs.changed == 'true'
         working-directory: ./frontend
         run: npm run build
 
@@ -258,6 +295,55 @@ jobs:
           uv run coverage report --include="*verify_migration.py" --fail-under=70
           uv run coverage report --include="*backup_recovery.py" --fail-under=80
           uv run coverage report --include="*promote_model.py" --fail-under=85
+
+
+  pytest-warning-budget:
+    name: pytest 경고 예산 검증
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          # 경고 수는 실행 환경에 따라 달라집니다. 예산 판정은 배포 상한에 가까운
+          # 3.12 한 곳에서만 수행해 판정 지점을 하나로 유지합니다.
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      # 전량 pytest 의 경고 수가 예산을 넘으면 CI 를 실패시킵니다.
+      # 새 플러그인이나 의존성을 쓰지 않고 pytest 요약 줄의 "N warnings" 만 읽습니다.
+      # 경고가 0건이면 요약 줄에 "warnings" 문구 자체가 없으므로 0 으로 봅니다.
+      # 테스트 실패는 경고 판정보다 먼저 전파해 경고 검사가 실패를 가리지 않게 합니다.
+      - name: Run full pytest and enforce warning budget
+        shell: bash
+        env:
+          # 상한은 docs/ops/warning_budget.md 2장의 예산(5건)과 같은 값입니다.
+          PYTEST_WARNING_BUDGET: '5'
+        run: |
+          set +e
+          OUTPUT=$(uv run pytest tests/ -q -m 'not data_assets' 2>&1)
+          EXIT_CODE=$?
+          set -e
+          echo "$OUTPUT"
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "Error: pytest failed with exit code $EXIT_CODE."
+            exit "$EXIT_CODE"
+          fi
+          WARNING_COUNT=$(printf '%s\n' "$OUTPUT" | grep -Eo '[0-9]+ warnings?' | tail -n 1 | grep -Eo '[0-9]+' || true)
+          if [ -z "$WARNING_COUNT" ]; then
+            WARNING_COUNT=0
+          fi
+          echo "pytest warnings: ${WARNING_COUNT} (budget ${PYTEST_WARNING_BUDGET})"
+          if [ "$WARNING_COUNT" -gt "$PYTEST_WARNING_BUDGET" ]; then
+            echo "Error: pytest emitted ${WARNING_COUNT} warnings, exceeding the budget of ${PYTEST_WARNING_BUDGET}."
+            exit 1
+          fi
 
 
   e2e-browser-test:
@@ -346,7 +432,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       mysql:
-        image: mysql:8.0
+        # docker-compose.yml 의 db 서비스와 같은 다이제스트로 고정합니다.
+        # 태그만 쓰면 같은 태그가 다른 이미지로 교체될 때 CI 와 compose 가
+        # 서로 다른 MySQL 을 검증하게 됩니다.
+        image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
         env:
           MYSQL_ROOT_PASSWORD: testpassword
           MYSQL_DATABASE: test_procurement_ngram
