@@ -222,7 +222,7 @@ G1 데이터 무손실 원칙을 객관적으로 입증하기 위해, 마이그�
 4. **서비스 재기동 및 상태 확인**:
    ```bash
    docker compose up -d app worker
-   python3 scripts/verify_migration.py --stages chroma
+   python3 scripts/verify_migration.py --only-steps chroma
    ```
 
 5. **결과 확인**:

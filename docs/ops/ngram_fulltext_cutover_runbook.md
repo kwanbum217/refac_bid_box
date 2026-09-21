@@ -203,7 +203,7 @@ docker compose restart api
 uv run python scripts/measure_coldsql_attribution.py \
   --fixture tests/fixtures/blind_fixture_v2.json \
   --flush-cache \
-  --repeat 3 \
+  --repetitions 3 \
   --output data/benchmarks/coldsql_post_ngram_$(date +%Y%m%d).json
 ```
 
