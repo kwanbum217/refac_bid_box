@@ -6,8 +6,8 @@ tests/test_benchmark_home_recent_selection.py
 
 이 파일이 증명하는 것:
 
-1. 현재 구현(current)의 호출당 SQL 수는 표본·윈도 조합과 무관하게 1회로 고정이고,
-   변경 전 구현(legacy)은 같은 데이터 형상에서 조합에 따라 늘어난다.
+1. 현재 구현(current)의 호출당 SQL 수는 표본 크기 수(3)를 넘지 않고 변경 전 구현보다
+   많지 않으며, 변경 전 구현(legacy)은 같은 데이터 형상에서 조합에 따라 늘어난다.
 2. 두 집단이 같은 입력에서 같은 선별 id 목록을 돌려준다.
 3. 두 집단의 id 목록이 다르면 하니스가 0 이 아닌 코드로 끝난다.
 4. 결과 JSON 에 커밋 SHA, load average 최소·중앙·최대, 버퍼풀 크기, DB 가동 시간,
@@ -148,8 +148,8 @@ def test_build_scenarios_rejects_unknown_name():
 # --------------------------------------------------------------------------- #
 
 
-def test_current_query_count_fixed_and_legacy_varies_with_combinations():
-    """current 는 데이터 형상과 무관하게 SQL 1회, legacy 는 표본·윈도 조합에 따라 늘어납니다."""
+def test_current_query_count_bounded_and_legacy_varies_with_combinations():
+    """current 는 표본 크기 수(3) 이하이고 legacy 보다 많지 않으며, legacy 는 조합에 따라 늘어납니다."""
     shapes = ((6, 6), (400, 200), (1400, 200))
     scenario = Scenario(name="all", limit=ALL_RECENT_LIMIT, category=None)
 
@@ -170,15 +170,15 @@ def test_current_query_count_fixed_and_legacy_varies_with_combinations():
         legacy = measure_once(db, scenario, legacy_recent_unique_announcements, latest)
         current_counts.append(current["sql_count"])
         legacy_counts.append(legacy["sql_count"])
-        assert current["select_count"] == 1
+        assert current["select_count"] <= len(home_context.HOME_RECENT_SAMPLE_SIZES)
         assert legacy["select_count"] > 1
 
-    assert current_counts == [1, 1, 1]
+    assert all(count <= len(home_context.HOME_RECENT_SAMPLE_SIZES) for count in current_counts)
+    assert all(
+        current <= legacy for current, legacy in zip(current_counts, legacy_counts, strict=True)
+    )
     assert legacy_counts[0] < legacy_counts[1]
     assert len(set(legacy_counts)) > 1
-    assert all(
-        legacy > current for current, legacy in zip(current_counts, legacy_counts, strict=True)
-    )
 
 
 # --------------------------------------------------------------------------- #
@@ -221,7 +221,7 @@ def test_measure_once_records_contract_fields():
     )
 
     assert set(record) == {"sql_count", "select_count", "elapsed_ms", "announcement_ids"}
-    assert record["sql_count"] == 1
+    assert record["sql_count"] <= len(home_context.HOME_RECENT_SAMPLE_SIZES)
     assert record["elapsed_ms"] >= 0.0
     assert len(record["announcement_ids"]) == len(set(record["announcement_ids"]))
 
@@ -341,4 +341,7 @@ def test_main_writes_environment_record_and_raw_rounds(tmp_path):
         assert record["group"] in (CURRENT_GROUP, LEGACY_GROUP)
         assert {"sql_count", "elapsed_ms", "announcement_ids"} <= set(record)
     current_records = [record for record in repetitions if record["group"] == CURRENT_GROUP]
-    assert all(record["sql_count"] == 1 for record in current_records)
+    assert all(
+        record["sql_count"] <= len(home_context.HOME_RECENT_SAMPLE_SIZES)
+        for record in current_records
+    )

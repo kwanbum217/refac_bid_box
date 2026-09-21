@@ -3,7 +3,8 @@ src/app/services/home_context.py
 
 홈 화면 컨텍스트 (원본 apps/bids/home_context.py 1:1 이식).
 표본 확대(50/200/1000건)와 수집일 윈도우(1/3/7일) 폴백 판정은 그대로 두고,
-질의는 최대 표본 한 번으로 고정해 윈도우별 후보를 메모리에서 잘라 재현합니다.
+전역 정렬 접두를 표본 크기 순서로 필요할 때만 늘려 읽어 윈도우별 후보를 메모리에서
+거릅니다. 흔한 경우 질의 한 번(50행)으로 끝나고, 데이터가 희소해도 세 번을 넘지 않습니다.
 """
 
 from __future__ import annotations
@@ -93,17 +94,33 @@ def _recent_unique_announcements(
         BidAnnouncement.bid_ntce_dt.desc(),
         BidAnnouncement.id.desc(),
     )
-    # 정렬 첫 키가 collected_at 이므로 표본 상위 N행은 어떤 윈도우로 걸러도 그
-    # 윈도우 조회의 상위 N행과 같습니다. 최대 표본을 한 번만 읽어 두고 윈도우와
-    # 표본 크기는 메모리 슬라이스로 재현합니다.
-    candidates = list(db.execute(ordered_stmt.limit(max(HOME_RECENT_SAMPLE_SIZES))).scalars().all())
+    # 정렬 첫 키가 collected_at 이므로 어떤 윈도우에 걸린 행 집합도 전역 정렬의
+    # 접두입니다. 그래서 윈도우 후보는 전역 접두에서 메모리로 걸러 만들면 되고,
+    # 접두는 표본 크기 순서로 필요할 때만 늘려 읽습니다. 흔한 경우 첫 표본 50행에서
+    # limit 이 차 질의 한 번으로 끝나고, 데이터가 희소해도 세 번을 넘지 않습니다.
+    prefix: list[BidAnnouncement] = []
+    prefix_exhausted = False
+
+    def ordered_prefix(sample_size: int) -> list[BidAnnouncement]:
+        nonlocal prefix, prefix_exhausted
+
+        if not prefix_exhausted and len(prefix) < sample_size:
+            prefix = list(db.execute(ordered_stmt.limit(sample_size)).scalars().all())
+            if len(prefix) < sample_size:
+                prefix_exhausted = True
+        return prefix[:sample_size]
+
     best_effort: list[BidAnnouncement] = []
 
-    def collect_from(rows: list[BidAnnouncement]) -> list[BidAnnouncement]:
+    def collect_from(window_start: datetime | None) -> list[BidAnnouncement]:
         nonlocal best_effort
 
         for sample_size in HOME_RECENT_SAMPLE_SIZES:
-            sample = rows[:sample_size]
+            sample = [
+                row
+                for row in ordered_prefix(sample_size)
+                if window_start is None or row.collected_at >= window_start
+            ]
             if not sample:
                 return best_effort
 
@@ -119,11 +136,11 @@ def _recent_unique_announcements(
     if latest_collected_at is not None:
         for day_window in HOME_RECENT_DAY_WINDOWS:
             window_start = latest_collected_at - timedelta(days=day_window)
-            selected = collect_from([row for row in candidates if row.collected_at >= window_start])
+            selected = collect_from(window_start)
             if len(selected) >= limit:
                 return selected[:limit]
 
-    return collect_from(candidates)[:limit]
+    return collect_from(None)[:limit]
 
 
 def _build_home_payload(
