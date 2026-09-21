@@ -57,6 +57,37 @@ def _isolate_process_cache(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_promotion_audit_log(tmp_path):
+    """승격 감사 로그가 테스트마다 임시 디렉터리로 가게 합니다.
+
+    승격을 부르는 테스트가 audit_log_path 를 넘기지 않으면 src.ml.promotion 의
+    기본 경로로 append 되고, 그 기본값이 운영 로그(data/promotion_audit.log)입니다.
+    2026-09-21 확인 결과 이 파일 9,245줄 중 9,244줄이 테스트의 test_model 기록이었고,
+    마지막 기록 시각이 전량 테스트 실행 시각과 일치했습니다. 테스트가 운영 승격
+    이력을 오염시키지 않도록 기본 경로를 임시 디렉터리로 돌립니다.
+
+    scripts/promote_model 은 임포트 시점에 `from src.ml.promotion import AUDIT_LOG_PATH`
+    로 값을 **복사**해 argparse 기본값(str)으로 굳혀 둡니다. 원본만 바꾸면 CLI 경로는
+    여전히 운영 로그로 가므로 두 이름을 함께 바꿉니다.
+
+    전용 MonkeyPatch 인스턴스를 씁니다. pytest 의 monkeypatch fixture 는 함수 스코프
+    동안 공유되어, 테스트가 자기 monkeypatch.undo() 를 부르면(test_promotion_gate 의
+    재승격 킬 시뮬레이션이 그렇습니다) 이 격리 패치까지 함께 풀려 운영 로그로 샙니다.
+
+    운영 코드의 기본 경로와 동작은 바꾸지 않습니다. teardown 에서 원래 값으로 복구됩니다.
+    """
+    from scripts import promote_model
+    from src.ml import promotion
+
+    isolated = tmp_path / "promotion_audit.log"
+    patcher = pytest.MonkeyPatch()
+    patcher.setattr(promotion, "AUDIT_LOG_PATH", isolated)
+    patcher.setattr(promote_model, "AUDIT_LOG_PATH", isolated)
+    yield
+    patcher.undo()
+
+
+@pytest.fixture(autouse=True)
 def _stub_restriction_collection(monkeypatch):
     """collect_bids 가 부르는 면허제한정보·참가가능지역 수집을 기본으로 0건 가짜로 바꿉니다.
 
