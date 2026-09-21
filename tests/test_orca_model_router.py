@@ -351,6 +351,9 @@ class TestModelPoolAndSelection:
             "qwen-max",
             "grok-4.6",
             "grok-4.5",
+            # 2026-09-21 등록. 명시 지정 전용이며 자동 배정하지 않습니다.
+            "cmd-glm-flash",
+            "cmd-hy4-preview",
         }
 
 
@@ -2606,3 +2609,79 @@ class TestCommandCodeDeepSeekRegistration:
         )
         assert result.primary_model == self.MODEL_ID
         assert result.primary_effort == "high"
+
+
+class TestCommandCodeExplicitOnlyPoolRegistration:
+    """Command Code(cmd) 경유 명시 지정 전용 풀 2종의 등록 계약입니다.
+
+    2026-09-21 등록한 z-ai GLM-5.3 Flash 와 Tencent Hy4 Preview 입니다. 둘 다
+    자동 배정하지 않고 reviewer 로도 배정하지 않습니다. 등급 계약은 코디네이터
+    probe 결과를 그대로 옮긴 것이며, GLM 은 medium 이 없고 Hy4 는 max 가 없습니다.
+    """
+
+    POOL_CONTRACTS: ClassVar[dict[str, tuple[str, tuple[str, ...], dict[str, str]]]] = {
+        "cmd-glm-flash": (
+            "z-ai/glm-5.3-flash",
+            ("default", "low", "high", "max"),
+            {"low": "default", "medium": "high", "high": "max"},
+        ),
+        "cmd-hy4-preview": (
+            "tencent/hy4-preview",
+            ("default", "low", "medium", "high"),
+            {"low": "default", "medium": "medium", "high": "high"},
+        ),
+    }
+
+    def test_pool_entries_are_registered_as_explicit_only(self):
+        for pool_key, (model_id, levels, _by_risk) in self.POOL_CONTRACTS.items():
+            info = orca_model_router.MODEL_POOL[pool_key]
+            assert info["id"] == model_id
+            assert info["provider"] == "cmd"
+            assert info["auto_selectable"] is False
+            assert info["effort_levels"] == levels
+            assert info["effort_default_level"] == "default"
+
+    def test_reviewer_is_not_suitable_for_new_pools(self):
+        for pool_key in self.POOL_CONTRACTS:
+            suitable = orca_model_router.MODEL_POOL[pool_key]["suitable_for"]
+            assert "reviewer" not in suitable
+            for role in ("builder", "investigator", "benchmarker", "documenter"):
+                assert role in suitable
+
+    def test_effort_for_model_matches_probe_contract(self):
+        """(1) 두 새 풀이 세 위험도에서 계약대로의 등급을 돌려줍니다."""
+        for pool_key, (model_id, levels, by_risk) in self.POOL_CONTRACTS.items():
+            for risk, expected in by_risk.items():
+                assert orca_model_router.effort_for_model(pool_key, risk) == expected
+                assert orca_model_router.effort_for_model(model_id, risk) == expected
+            for risk in ("low", "medium", "high"):
+                assert orca_model_router.effort_for_model(model_id, risk) in levels
+
+    def test_new_pools_are_absent_from_automatic_routing_tables(self):
+        """자동 배정 경로인 TIER_POLICY 와 무료 순서 어디에도 없어야 합니다."""
+        for pool_key in self.POOL_CONTRACTS:
+            for candidates in orca_model_router.TIER_POLICY.values():
+                assert pool_key not in candidates
+            for order in orca_model_router.FREE_ORDER_BY_ROLE.values():
+                assert pool_key not in order
+            assert pool_key not in orca_model_router.FREE_POOL_ORDER
+
+    def test_select_model_never_auto_selects_new_pools(self):
+        """(2) 어떤 role·risk 에서도 두 새 풀이 자동 선택되지 않습니다."""
+        roles = ["builder", "reviewer", "investigator", "benchmarker", "documenter", "unknown"]
+        risks = ["low", "medium", "high"]
+        for pool_key, (model_id, _levels, _by_risk) in self.POOL_CONTRACTS.items():
+            for role in roles:
+                for risk in risks:
+                    for allow_free in (False, True):
+                        kwargs: dict[str, object] = {
+                            "allow_free": allow_free,
+                            "has_write_scope": False,
+                        }
+                        if role == "reviewer":
+                            kwargs["builder_provider"] = "cmd"
+                        res = orca_model_router.select_model(role, risk, **kwargs)
+                        assert res["primary_pool"] != pool_key
+                        assert res["fallback_pool"] != pool_key
+                        assert res["primary_model"] != model_id
+                        assert res["fallback_model"] != model_id

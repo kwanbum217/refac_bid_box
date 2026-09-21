@@ -278,6 +278,77 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
         ),
     },
+    "cmd-glm-flash": {
+        "id": "z-ai/glm-5.3-flash",
+        "provider": "cmd",
+        "tier": "primary",
+        # 명시 지정 전용입니다. GOAT 요금제 한도 안에서 쓰는 저가 후보이므로
+        # 자동 배정하지 않고 --model 로 지정할 때만 씁니다.
+        "auto_selectable": False,
+        "max_tokens": None,
+        # 2026-09-21 코디네이터 probe: cmd -p 'Reply with exactly: pong'
+        # --model z-ai/glm-5.3-flash 가 종료 코드 0, 8초에 응답 pong.
+        # --effort low, high, max 는 "Reasoning effort set to <등급> for GLM-5.3
+        # Flash." 를 출력하고 정상 응답했고, --effort medium, xhigh, zzzz 는 종료
+        # 코드 0 으로 "Unknown effort ... Supported: low, high, max." 만 출력하고
+        # 기본 등급으로 진행했습니다. 그래서 medium 이 없습니다.
+        #
+        # 추론 등급은 모델 ID 가 아니라 --effort 플래그입니다. default 는 플래그를
+        # 붙이지 않고 기동하는 모델 기본값이라 CLI 인자로는 나가지 않습니다.
+        "effort_levels": ("default", "low", "high", "max"),
+        "effort_default_level": "default",
+        "effort_by_risk": {"low": "default", "medium": "high", "high": "max"},
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": (
+            "Command Code(cmd) CLI 경유 z-ai GLM-5.3 Flash. 명시 지정 전용이며 "
+            "자동 배정하지 않는다. 2026-09-21 probe: 종료 코드 0, 8초, 응답 pong. "
+            "추론 등급은 default, low, high, max 네 가지이며 medium 은 없다. "
+            "default 는 --effort 를 붙이지 않는 모델 기본값이다. "
+            "reviewer 는 suitable_for 에 두지 않는다. 빌더 기본값과 같은 cmd "
+            "계열을 리뷰어로 쓰면 독립 판정이 되지 않는다. "
+            "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
+        ),
+    },
+    "cmd-hy4-preview": {
+        "id": "tencent/hy4-preview",
+        "provider": "cmd",
+        "tier": "primary",
+        # 명시 지정 전용입니다. 입력 단가가 기본 빌더(cmd-deepseek-flash)의 약
+        # 5배라 고난도 과제에만 --model 로 지정합니다.
+        "auto_selectable": False,
+        "max_tokens": None,
+        # 2026-09-21 코디네이터 probe: cmd -p 'Reply with exactly: pong'
+        # --model tencent/hy4-preview 가 종료 코드 0, 5초에 응답 pong.
+        # --effort low, medium, high 는 정상이고, --effort max, xhigh, zzzz 는
+        # 종료 코드 0 으로 "Unknown effort ... Supported: low, medium, high." 만
+        # 출력했습니다. 즉 max 가 없고 medium 이 있습니다.
+        #
+        # 추론 등급은 모델 ID 가 아니라 --effort 플래그입니다. default 는 플래그를
+        # 붙이지 않고 기동하는 모델 기본값이라 CLI 인자로는 나가지 않습니다.
+        "effort_levels": ("default", "low", "medium", "high"),
+        "effort_default_level": "default",
+        "effort_by_risk": {"low": "default", "medium": "medium", "high": "high"},
+        "suitable_for": [
+            "builder",
+            "investigator",
+            "benchmarker",
+            "documenter",
+        ],
+        "notes": (
+            "Command Code(cmd) CLI 경유 Tencent Hy4 Preview. 명시 지정 전용이며 "
+            "자동 배정하지 않는다. 2026-09-21 probe: 종료 코드 0, 5초, 응답 pong. "
+            "추론 등급은 default, low, medium, high 네 가지이며 max 는 없다. "
+            "default 는 --effort 를 붙이지 않는 모델 기본값이다. "
+            "입력 단가가 기본 빌더(cmd-deepseek-flash)의 약 5배이므로 고난도 "
+            "과제에만 명시 지정한다. reviewer 는 suitable_for 에 두지 않는다. "
+            "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
+        ),
+    },
     "gemini-flash-high": {
         "id": "gemini-3.8-flash-high",
         "provider": "gemini",
