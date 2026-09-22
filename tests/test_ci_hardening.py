@@ -7,7 +7,7 @@ tests/test_ci_hardening.py
      다이제스트로 고정되어 있다 (QA-5).
   2. frontend/ 변경이 없으면 동결 React 단계(npm ci, lint, tsc, test, build)가
      건너뛰어지고, tailwind 재현성 검증은 건너뛰지 않는다 (FE-3).
-  3. 전량 pytest 의 경고 수가 예산(5건)을 넘으면 실패한다 (QA-2).
+  3. 전량 pytest 의 경고 수가 예산(0건)을 넘으면 실패한다 (QA-2).
 
 워크플로를 실제로 실행하지 않습니다. YAML 을 읽어 배선만 대조합니다.
 """
@@ -168,7 +168,7 @@ def test_tailwind_steps_are_not_gated():
 
 
 def test_pytest_warning_budget_job_enforces_summary_line():
-    """전용 잡이 pytest 요약 줄의 경고 수를 읽어 5건 초과 시 실패해야 합니다."""
+    """전용 잡이 pytest 요약 줄의 경고 수를 읽어 0건 초과 시 실패해야 합니다."""
     data = _ci_data()
     jobs = data["jobs"]
     assert WARNING_BUDGET_JOB in jobs, f"ci.yml 에 {WARNING_BUDGET_JOB} 잡이 없습니다."
@@ -182,8 +182,8 @@ def test_pytest_warning_budget_job_enforces_summary_line():
     assert step.get("shell") == "bash", "요약 줄 파싱은 셸에 종속되므로 bash 로 고정해야 합니다."
 
     env = step.get("env", {})
-    assert str(env.get("PYTEST_WARNING_BUDGET")) == "5", (
-        f"경고 예산은 5 여야 합니다: {env.get('PYTEST_WARNING_BUDGET')!r}"
+    assert str(env.get("PYTEST_WARNING_BUDGET")) == "0", (
+        f"경고 예산은 0 이어야 합니다: {env.get('PYTEST_WARNING_BUDGET')!r}"
     )
 
     run = str(step.get("run", ""))

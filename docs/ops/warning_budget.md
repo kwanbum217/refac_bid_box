@@ -20,11 +20,11 @@
 | --- | --- |
 | 베이스라인 (필터 미적용) | `uv run pytest tests/ -q -m 'not data_assets' -W default` 실행 시 138 warnings (`-W always` 로는 338, 동일 메시지 중복 표시 정책 차이) |
 | 필터 적용 후 실측값 | 2026-09-22 격리 워크트리에서 `uv run pytest tests/ -q -m 'not data_assets'` 실행 시 **0 warnings** (`5297 passed, 40 skipped, 3 deselected`). 직전 실측은 2026-09-21 의 3 warnings (`5291 passed`) |
-| **상한 (예산)** | **5 warnings** (실측값 3에 운영 여유 2건) |
+| **상한 (예산)** | **0 warnings** (2026-09-22 로컬·CI 실측 0건, 사용자 결정) |
 
-2026-09-21 실측 3건의 출처는 `tests/test_evaluation_ui.py` 의 클래스 스코프 fixture 를 인스턴스 메서드로 정의해 발생하는 `PytestRemovedIn10Warning` ("Class-scoped fixture defined as instance method is deprecated.") 3건이었습니다. 2026-09-22 에 세 fixture 를 pytest 권고대로 `@classmethod` 로 바꿔 출처를 제거했습니다. 같은 날 CI 경고 예산 잡은 로컬보다 1건 많은 4건을 보고했으므로, CI 에는 출처 미확인 경고 1건이 남아 있을 수 있습니다. 상한 5건은 그대로 두며, 낮출지는 CI 실측을 확인한 뒤 정합니다.
+2026-09-21 실측 3건의 출처는 `tests/test_evaluation_ui.py` 의 클래스 스코프 fixture 를 인스턴스 메서드로 정의해 발생하는 `PytestRemovedIn10Warning` ("Class-scoped fixture defined as instance method is deprecated.") 3건이었습니다. 2026-09-22 에 세 fixture 를 pytest 권고대로 `@classmethod` 로 바꿔 출처를 제거했습니다. 같은 날 CI 경고 예산 잡은 로컬보다 1건 많은 4건을 보고했으므로, CI 에는 출처 미확인 경고 1건이 남아 있을 수 있습니다. 이후 `8164fd5c` CI 에서도 0건을 확인했고, 사용자 결정으로 상한을 5건에서 0건으로 낮췄습니다. 새 경고는 1건이라도 CI 를 막으므로 5장 절차대로 출처를 고치거나 필터를 등록합니다.
 
-상한은 운영 가이드라인에 더해 CI 에서 강제합니다. `.github/workflows/ci.yml` 의 `pytest-warning-budget` 잡(ubuntu-latest, python 3.12)이 전량 pytest 요약 줄의 `N warnings` 를 읽어 5건을 넘으면 실패시킵니다. 경고가 0건이면 요약 줄에 `warnings` 문구가 없으므로 0 으로 봅니다.
+상한은 운영 가이드라인에 더해 CI 에서 강제합니다. `.github/workflows/ci.yml` 의 `pytest-warning-budget` 잡(ubuntu-latest, python 3.12)이 전량 pytest 요약 줄의 `N warnings` 를 읽어 0건을 넘으면, 즉 경고가 1건이라도 있으면 실패시킵니다. 경고가 0건이면 요약 줄에 `warnings` 문구가 없으므로 0 으로 봅니다.
 
 ---
 
