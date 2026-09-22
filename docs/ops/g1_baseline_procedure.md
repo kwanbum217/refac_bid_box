@@ -64,3 +64,23 @@ G1 검증을 로컬에서 실행할 때는 언제, 어느 커밋에서, 무엇�
 4. 결과 파일에는 실행 일시(UTC), 대상 커밋 SHA, 실행한 make 대상, 종료 코드를 함께 적습니다.
 
 `data/benchmarks/g1_runs/` 는 증적 보관 위치 제안이며, 보존 정책이 바뀌면 함께 재검토합니다.
+
+## 5. 기준선 드리프트 정적 게이트
+
+기준선이 ORM(`src.app.models` 의 `Base.metadata`)과 Alembic 마이그레이션(`migrations/versions/*.py`)보다 뒤처지면 CI 가 실패합니다. 이 게이트는 `tests/test_g1_baseline_drift_gate.py` 이며 DB 에 접속하지 않고 동작합니다. 마이그레이션 파일은 import 하지 않고 ast 로 `upgrade()` 본문만 읽으므로 alembic 런타임도 필요하지 않습니다.
+
+막는 조건은 다음과 같습니다.
+
+- 기준선 `tables` 에 없는 ORM 테이블 또는 컬럼
+- 기준선 `orm_tables` 와 실제 ORM 테이블 집합의 불일치
+- `upgrade()` 가 만들지만 기준선 `tables` 또는 해당 테이블 `indexes` 에 없는 테이블·인덱스. `op.execute` 원문 SQL 의 `CREATE [UNIQUE] INDEX`, `ADD [UNIQUE] INDEX` 도 포함하며, `downgrade()` 의 drop 은 세지 않습니다.
+- 이름을 모듈 상수·f-string·for 루프로 정적으로 정할 수 없는 create 호출은 조용히 건너뛰지 않고 실패로 보고합니다.
+
+스키마를 바꾸는 마이그레이션을 병합하기 전에 DB 에 적용한 뒤 기준선을 갱신합니다.
+
+```bash
+uv run python scripts/verify_migration.py --generate-schema-baseline
+uv run pytest tests/test_g1_baseline_drift_gate.py -q
+```
+
+갱신 후 기존 테이블 정의 변경이 0건인지 `git diff data/backups/schema_signature_baseline.json` 으로 대조합니다. 새 테이블·인덱스 항목만 늘고 기존 항목의 컬럼·타입·제약조건은 변하지 않아야 합니다.
