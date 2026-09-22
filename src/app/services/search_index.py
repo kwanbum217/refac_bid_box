@@ -239,6 +239,29 @@ class MeiliSearchClient:
         )
         return SearchPage(ids=ids, has_next=has_next)
 
+    def count(self, *, dataset: str) -> int:
+        """dataset 필터에 해당하는 문서의 정확한 총 건수를 돌려줍니다.
+
+        offset·limit 검색은 추정치 estimatedTotalHits 만 주므로 page·hitsPerPage 로
+        조회해 정확한 totalHits 를 읽습니다. 문서 본문은 받지 않으며 전체를 내려받아
+        세지 않습니다.
+        """
+        payload = self._request(
+            "POST",
+            f"/indexes/{INDEX_UID}/search",
+            json={
+                "q": "",
+                "filter": f"dataset = {json.dumps(dataset, ensure_ascii=False)}",
+                "page": 1,
+                "hitsPerPage": 1,
+                "attributesToRetrieve": ["id"],
+            },
+        )
+        total = payload.get("totalHits")
+        if not isinstance(total, int) or isinstance(total, bool):
+            raise SearchBackendUnavailable("Meilisearch 응답에 정확한 총 건수가 없습니다.")
+        return total
+
 
 def _latest_announcements(db: Session, collected_since: datetime | None):
     from src.app.services.bid_queries import latest_announcement_filter
