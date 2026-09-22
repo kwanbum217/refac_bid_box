@@ -126,9 +126,9 @@ def combine_staged_g1(
     file_ok = bool(file_part.get("success"))
     db_ok = bool(db_part.get("success"))
     messages = [
-        part.get("message")
+        message
         for part in (file_part, db_part)
-        if isinstance(part.get("message"), str) and part.get("message")
+        if isinstance(message := part.get("message"), str) and message
     ]
     if file_ok and db_ok:
         message = "G1 무손실 검증 통과 (파일·DB 단계 분리)"

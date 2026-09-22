@@ -1,7 +1,8 @@
 # RPO·RTO 복구 목표 정책 (RPO/RTO Policy)
 
 > **작성일**: 2026-09-06
-> **버전**: 1.0
+> **버전**: 1.1
+> **수정일**: 2026-09-22 (Meilisearch 전체 재색인 실측 반영)
 > **상태**: 확정 (R-07, 사용자 확정 2026-09-06)
 > **관련 문서**: [`docs/ops/backup_recovery_runbook.md`](backup_recovery_runbook.md), [`docs/context/CURRENT_STATE.md`](../context/CURRENT_STATE.md), [`docs/context/current_state_facts.yaml`](../context/current_state_facts.yaml)
 
@@ -36,12 +37,15 @@
 | G1 무손실 검증 (파일 3.2초 + DB 7.9초) | 미배정 | 11.1초 | restore drill 보고서의 단계별 소요 시간 |
 | 정리 | 미배정 | 3.7초 | restore drill 보고서의 단계별 소요 시간 |
 | 서비스 정상화 (app·meilisearch 재생성부터 첫 200 응답) | 미배정 | 15.1초 (3회 21.7·15.1·15.1초의 중앙값) | `docker compose up -d --force-recreate --no-deps meilisearch app` 후 health healthy 와 `/accounts/login/` 200 까지 |
-| Meilisearch 읽기 모델 전체 재색인 | 미배정 | 미측정 | 스냅샷에 Meilisearch 데이터가 없으므로 실제 재해 복구에는 `scripts/sync_search_index.py` 전체 재색인이 추가로 필요하다 |
-| **합계 (재색인 제외)** | 4시간 | **약 1,439초 (약 24분)** | drill 보고서 `total_duration_seconds` 1,423.9초 + 서비스 정상화 15.1초 |
+| Meilisearch 읽기 모델 전체 재색인 | 미배정 | 839.3초 (클라이언트 적재 581.9초 + 서버 색인 완료 대기 257.4초) | 빈 임시 Meilisearch(v1.14)에 `scripts/sync_search_index.py` 인자 없이 전체 동기화한 뒤 `/tasks` 의 enqueued·processing 이 0 이 될 때까지 |
+| **합계 (재색인 제외)** | - | **약 1,439초 (약 24분)** | drill 보고서 `total_duration_seconds` 1,423.9초 + 서비스 정상화 15.1초 |
+| **합계 (재색인 포함)** | 4시간 | **약 2,278초 (약 38분)** | 위 합계 + 재색인 839.3초. 단계를 직렬로 더한 값 |
 
 실측 근거는 `data/backups/restore_drill_report_20260922.json`(스냅샷 `snapshot_20260921_061612`, 공고 5,517,351행, 낙찰 3,439,172행, G1 PASS)입니다. 같은 날 첫 drill 은 G1 스키마 서명 기준선이 2026-09-14 테이블 추가를 반영하지 않아 `g1_db_verification` FAIL 이었고(총 1,616.6초), 기준선을 `00222bd0` 에서 갱신한 뒤 재실행해 통과했습니다. 2026-09-11 drill 의 DB import 823.9초 대비 약 1.7배입니다. 원인은 확정하지 못했습니다. 행 수는 공고 5,504,119행에서 5,517,351행(약 0.2%), 덤프 크기는 2.10GB 에서 2.12GB(약 1%)로 거의 같습니다. 그 사이 추가된 스키마 요소는 커버링 인덱스 2개(ix_bid_ann_inst_cat_ntce 762MB, ix_bid_results_inst_cat_stats 396MB)와 테이블 2개(약 268MB)이며 import 중 인덱스 빌드 비용이 늘었을 수 있으나, 이것으로 568초 증가를 모두 설명한다는 근거는 없습니다. 다음 drill 에서 단계 내부 시간을 나눠 재야 합니다.
 
-단계별 예산 배분은 아직 하지 않았습니다. 재색인 단계를 실측한 뒤 배분합니다. 실측 합이 4시간을 초과하면 목표 미충족으로 5절을 따릅니다. 실측하지 않은 수치를 실측인 것처럼 기록하지 않습니다.
+재색인 실측(2026-09-22, `main` `047e751f`)은 공고 4,879,588건과 낙찰 3,439,172건, 문서 8,318,760건을 실패 작업 0건으로 적재했고 색인 크기는 21.8GB 였습니다. 운영 색인을 건드리지 않도록 별도 포트(127.0.0.1:7701)의 임시 컨테이너와 빈 전용 볼륨을 썼고 측정 뒤 삭제했습니다. 이 수치는 `MEILI_TIMEOUT_SECONDS=30` 에서 잰 값입니다. 기본값 5초로 전체 재색인이 배치 실패 없이 끝나는지는 확인하지 않았으므로, 실제 복구에서는 같은 값을 주고 실행합니다.
+
+단계별 예산 배분은 아직 하지 않았습니다. 모든 단계를 실측했으므로 배분은 사용자 결정으로 남깁니다. 실측 합이 4시간을 초과하면 목표 미충족으로 5절을 따릅니다. 실측하지 않은 수치를 실측인 것처럼 기록하지 않습니다.
 
 ---
 
