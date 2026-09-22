@@ -80,7 +80,7 @@
 make backup-dry-run
 
 # 또는 직접 실행
-python3 scripts/backup_recovery.py backup
+uv run python scripts/backup_recovery.py backup
 ```
 
 ### 3.2 실제 백업 실행
@@ -90,13 +90,13 @@ python3 scripts/backup_recovery.py backup
 make backup
 
 # 또는 직접 실행
-python3 scripts/backup_recovery.py backup --execute
+uv run python scripts/backup_recovery.py backup --execute
 
 # 개발 머신 또는 CI에서 의도적으로 자산이 없는 경우에만 사용
-python3 scripts/backup_recovery.py backup --execute --allow-partial
+uv run python scripts/backup_recovery.py backup --execute --allow-partial
 
 # 특정 디렉토리에 스냅샷 저장 시
-python3 scripts/backup_recovery.py backup --execute --output-dir data/backups/snapshots/snapshot_custom
+uv run python scripts/backup_recovery.py backup --execute --output-dir data/backups/snapshots/snapshot_custom
 ```
 
 ### 3.3 백업 스냅샷 산출물 구조
@@ -189,10 +189,10 @@ DB와 파일 자산 사이에 발생할 수 있는 시점 차이를 판정할 �
 ```bash
 # 백업 스냅샷 목록 조회
 make backup-list
-# 또는 python3 scripts/backup_recovery.py list
+# 또는 uv run python scripts/backup_recovery.py list
 
 # 최신 또는 특정 스냅샷 무결성 검증 (SHA256 체크섬 대조)
-python3 scripts/backup_recovery.py verify --snapshot-dir data/backups/snapshots/snapshot_20260902_153000
+uv run python scripts/backup_recovery.py verify --snapshot-dir data/backups/snapshots/snapshot_20260902_153000
 ```
 
 ---
@@ -208,7 +208,7 @@ python3 scripts/backup_recovery.py verify --snapshot-dir data/backups/snapshots/
 make restore-dry-run
 
 # 특정 스냅샷 지정 점검
-python3 scripts/backup_recovery.py restore --snapshot-dir data/backups/snapshots/snapshot_20260902_153000
+uv run python scripts/backup_recovery.py restore --snapshot-dir data/backups/snapshots/snapshot_20260902_153000
 ```
 
 ### 4.2 실제 복원 실행
@@ -217,7 +217,7 @@ python3 scripts/backup_recovery.py restore --snapshot-dir data/backups/snapshots
 
 ```bash
 # 특정 스냅샷으로 복원 실행
-python3 scripts/backup_recovery.py restore \
+uv run python scripts/backup_recovery.py restore \
   --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
   --execute \
   --confirm
@@ -257,13 +257,13 @@ python3 scripts/backup_recovery.py restore \
 
 ```bash
 # 기본 실행: 격리 디렉토리 및 격리 DB로 실제 복원 리허설 후 자동 정리
-python3 scripts/backup_recovery.py drill \
+uv run python scripts/backup_recovery.py drill \
   --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
   --target-dir /tmp/refac_bid_box_restore_drill \
   --report-path data/backups/restore_drill_report.json
 
 # 커스텀 격리 DB 지정 및 조사용 산출물 보존 시
-python3 scripts/backup_recovery.py drill \
+uv run python scripts/backup_recovery.py drill \
   --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
   --target-dir /tmp/refac_bid_box_restore_drill \
   --db-name procurement_drill_manual \
@@ -294,10 +294,10 @@ python3 scripts/backup_recovery.py drill \
 
 ```bash
 # 수동 점검 (dry-run): 삭제 후보 목록만 출력
-python3 scripts/backup_recovery.py prune --retain-count 7
+uv run python scripts/backup_recovery.py prune --retain-count 7
 
 # 승인된 수동 삭제 실행
-python3 scripts/backup_recovery.py prune --retain-count 7 --delete
+uv run python scripts/backup_recovery.py prune --retain-count 7 --delete
 ```
 
 ---
