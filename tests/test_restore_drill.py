@@ -7,10 +7,12 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,6 +39,124 @@ def _stub_drill_mysql_exec(monkeypatch: pytest.MonkeyPatch) -> None:
         "scripts.backup_recovery.mysql_exec",
         lambda *_args, **_kwargs: "104857600",
     )
+
+
+_DRILL_DB = {
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
+    "password": "pwd",
+    "name": "procurement_restore_drill",
+}
+
+# mysqldump 기본 출력 형식을 축소한 덤프입니다. 테이블 세 개의 structure 와 data 경계
+# 주석을 담고 있어, 줄 단위 계측 경로가 원문 바이트를 그대로 전달하는지 비교하는 기준이 됩니다.
+_TABLE_DUMP_SQL = b"".join(
+    [
+        b"-- MySQL dump 10.13  Distrib 8.0.36, for Linux (x86_64)\n",
+        b"--\n",
+        b"-- Host: localhost    Database: procurement\n",
+        b"-- ------------------------------------------------------\n",
+        b"-- Server version\t8.0.36\n",
+        b"\n",
+        b"/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;\n",
+        b"\n",
+        b"--\n",
+        b"-- Table structure for table `alpha`\n",
+        b"--\n",
+        b"\n",
+        b"DROP TABLE IF EXISTS `alpha`;\n",
+        b"CREATE TABLE `alpha` (\n",
+        b"  `id` int NOT NULL,\n",
+        b"  PRIMARY KEY (`id`)\n",
+        b") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n",
+        b"\n",
+        b"--\n",
+        b"-- Dumping data for table `alpha`\n",
+        b"--\n",
+        b"\n",
+        b"LOCK TABLES `alpha` WRITE;\n",
+        b"INSERT INTO `alpha` VALUES (1),(2),(3);\n",
+        b"UNLOCK TABLES;\n",
+        b"\n",
+        b"--\n",
+        b"-- Table structure for table `beta`\n",
+        b"--\n",
+        b"\n",
+        b"DROP TABLE IF EXISTS `beta`;\n",
+        b"CREATE TABLE `beta` (\n",
+        b"  `id` int NOT NULL\n",
+        b") ENGINE=InnoDB;\n",
+        b"\n",
+        b"--\n",
+        b"-- Dumping data for table `beta`\n",
+        b"--\n",
+        b"\n",
+        b"LOCK TABLES `beta` WRITE;\n",
+        b"INSERT INTO `beta` VALUES (1);\n",
+        b"UNLOCK TABLES;\n",
+        b"\n",
+        b"--\n",
+        b"-- Table structure for table `gamma`\n",
+        b"--\n",
+        b"\n",
+        b"DROP TABLE IF EXISTS `gamma`;\n",
+        b"CREATE TABLE `gamma` (\n",
+        b"  `id` int NOT NULL\n",
+        b") ENGINE=InnoDB;\n",
+        b"\n",
+        b"--\n",
+        b"-- Dumping data for table `gamma`\n",
+        b"--\n",
+        b"\n",
+        b"LOCK TABLES `gamma` WRITE;\n",
+        b"INSERT INTO `gamma` VALUES (7);\n",
+        b"UNLOCK TABLES;\n",
+        b"-- Dump completed on 2026-09-22  9:30:00\n",
+    ]
+)
+
+_BINLOG_PREAMBLE = (
+    b"SET SESSION net_read_timeout=3600;\n"
+    b"SET SESSION net_write_timeout=3600;\n"
+    b"SET SESSION sql_log_bin=0;\n"
+)
+
+
+class _RecordingStdin:
+    """mysql 표준입력으로 나간 바이트를 그대로 모으는 대역입니다."""
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+        self.closed = False
+
+    def write(self, data: bytes) -> int:
+        self._buffer.extend(data)
+        return len(data)
+
+    def flush(self) -> None:
+        return None
+
+    def close(self) -> None:
+        self.closed = True
+
+    @property
+    def payload(self) -> bytes:
+        return bytes(self._buffer)
+
+
+def _fake_mysql_process() -> tuple[MagicMock, _RecordingStdin]:
+    stdin = _RecordingStdin()
+    proc = MagicMock()
+    proc.returncode = 0
+    proc.stdin = stdin
+    proc.wait.return_value = 0
+    return proc, stdin
+
+
+def _write_gzip_dump(path: Path) -> None:
+    with gzip.open(path, "wb") as handle:
+        handle.write(_TABLE_DUMP_SQL)
 
 
 def _create_valid_snapshot(
@@ -255,9 +375,11 @@ def test_drill_executes_extraction_db_import_and_g1_verification(tmp_path: Path)
     # 실제 추출 및 DB 복원, 단계 나눔 G1 검증 호출 확인
     assert mock_extract.call_count == 2
     mock_create_db.assert_called_once_with(drill_db)
-    mock_restore_db.assert_called_once_with(
-        drill_db, snapshot_dir / "db_dump.sql.gz", disable_binlog=True
-    )
+    mock_restore_db.assert_called_once()
+    restore_args, restore_kwargs = mock_restore_db.call_args
+    assert restore_args == (drill_db, snapshot_dir / "db_dump.sql.gz")
+    assert restore_kwargs["disable_binlog"] is True
+    assert isinstance(restore_kwargs["table_timings"], list)
     assert mock_g1.call_count == 2
     assert mock_g1.call_args_list[0].kwargs["only_steps"] == "weights,chroma"
     assert (
@@ -325,6 +447,88 @@ def test_drill_records_timings_and_rpo_measurements_without_threshold_verdict(tm
     assert "rto_sla_met" not in rpo
     assert "threshold" not in rpo
     assert "verdict" not in rpo
+
+
+def test_drill_report_includes_database_import_breakdown(tmp_path: Path):
+    """드릴 보고서가 테이블별 적재 구간을 초 내림차순 합계와 함께 남기고 기존 키를 보존합니다."""
+    project_root = tmp_path / "fake_repo"
+    project_root.mkdir()
+    isolated_target = tmp_path / "drill_target"
+    snapshot_dir = _create_valid_snapshot(tmp_path / "snapshot")
+    captured: dict[str, Any] = {}
+
+    def _restore(_db, _path, *, disable_binlog=False, table_timings=None):
+        captured["disable_binlog"] = disable_binlog
+        captured["table_timings"] = table_timings
+        assert table_timings is not None
+        table_timings.extend(
+            [
+                {"table": "bid_results", "phase": "structure", "seconds": 12.5, "bytes": 2048},
+                {"table": "bid_results", "phase": "data", "seconds": 900.25, "bytes": 1048576},
+                {
+                    "table": "bid_announcements",
+                    "phase": "data",
+                    "seconds": 301.0,
+                    "bytes": 524288,
+                },
+            ]
+        )
+
+    with (
+        patch("scripts.backup_recovery.create_mysql_database"),
+        patch("scripts.backup_recovery.restore_mysql_database", side_effect=_restore),
+        patch("scripts.backup_recovery.drop_mysql_database"),
+        patch("scripts.backup_recovery.extract_tar_archive"),
+        patch(
+            "scripts.backup_recovery.run_drill_g1_verification",
+            return_value=(True, "G1 통과", {}),
+        ),
+    ):
+        report = run_restore_drill(
+            snapshot_dir=snapshot_dir,
+            target_dir=isolated_target,
+            project_root=project_root,
+        )
+
+    assert captured["disable_binlog"] is True
+    breakdown = report["database_import_breakdown"]
+    # 보고서의 구간은 드릴이 restore 로 넘긴 목록의 항목 그대로여야 합니다.
+    passed_segments = captured["table_timings"]
+    assert passed_segments is not None
+    passed_ids = {id(entry) for entry in passed_segments}
+    recorded_ids = {id(entry) for entry in breakdown["segments"]}
+    assert passed_ids == recorded_ids
+    assert breakdown["segment_count"] == 3
+    assert breakdown["total_seconds"] == pytest.approx(1213.75)
+    assert breakdown["total_bytes"] == 1574912
+    assert [entry["seconds"] for entry in breakdown["segments"]] == [900.25, 301.0, 12.5]
+    assert [entry["table"] for entry in breakdown["segments"]] == [
+        "bid_results",
+        "bid_announcements",
+        "bid_results",
+    ]
+    assert report["timings"]["database_import"]["status"] == "PASS"
+    assert report["timings"]["database_import"]["duration_seconds"] > 0
+
+    for key in (
+        "schema",
+        "snapshot_dir",
+        "target_dir",
+        "drill_db",
+        "snapshot_valid",
+        "components",
+        "extracted_components",
+        "timings",
+        "started_at",
+        "finished_at",
+        "total_duration_seconds",
+        "rpo_measurements",
+        "g1_verification",
+        "keep_artifacts",
+        "errors",
+        "success",
+    ):
+        assert key in report
 
 
 def test_drill_cleanup_performed_on_success_and_failure(tmp_path: Path):
@@ -622,6 +826,54 @@ def test_restore_mysql_database_disables_binlog_for_drill(
     assert b"SET SESSION sql_log_bin=0;" in written
     assert b"SET SESSION net_read_timeout=3600;" in written
     mock_proc.stdin.flush.assert_called()
+
+
+def test_restore_mysql_database_records_table_timings_without_changing_bytes(
+    tmp_path: Path,
+) -> None:
+    """계측 목록을 넘기면 테이블 경계마다 구간을 기록하고 전달 바이트는 원문과 같습니다."""
+    dump = tmp_path / "db_dump.sql.gz"
+    _write_gzip_dump(dump)
+    proc, stdin = _fake_mysql_process()
+    table_timings: list[dict[str, Any]] = []
+    with patch("subprocess.Popen", return_value=proc):
+        restore_mysql_database(_DRILL_DB, dump, disable_binlog=True, table_timings=table_timings)
+
+    assert stdin.payload == _BINLOG_PREAMBLE + _TABLE_DUMP_SQL
+    assert stdin.closed is True
+    proc.wait.assert_called_once()
+    assert [(entry["table"], entry["phase"]) for entry in table_timings] == [
+        ("alpha", "structure"),
+        ("alpha", "data"),
+        ("beta", "structure"),
+        ("beta", "data"),
+        ("gamma", "structure"),
+        ("gamma", "data"),
+    ]
+    for entry in table_timings:
+        assert set(entry) == {"table", "phase", "seconds", "bytes"}
+        assert entry["seconds"] >= 0.0
+        assert entry["bytes"] > 0
+    assert sum(entry["bytes"] for entry in table_timings) <= len(_TABLE_DUMP_SQL)
+
+
+def test_restore_mysql_database_without_table_timings_keeps_copyfileobj_path(
+    tmp_path: Path,
+) -> None:
+    """목록이 None 이면 기존과 같이 copyfileobj 로 통째 전송하고 구간을 만들지 않습니다."""
+    dump = tmp_path / "db_dump.sql.gz"
+    _write_gzip_dump(dump)
+    proc, stdin = _fake_mysql_process()
+    with (
+        patch("scripts.backup_recovery_core.shutil.copyfileobj") as mock_copy,
+        patch("subprocess.Popen", return_value=proc),
+    ):
+        restore_mysql_database(_DRILL_DB, dump, disable_binlog=True)
+
+    mock_copy.assert_called_once()
+    # 목록이 None 인 경로는 copyfileobj 에 위임하므로 자체적으로 덤프 바이트를 쓰지 않습니다.
+    assert mock_copy.call_args[0][1] is stdin
+    assert stdin.payload == _BINLOG_PREAMBLE
 
 
 def test_create_mysql_database_uses_container_client(monkeypatch: pytest.MonkeyPatch) -> None:
