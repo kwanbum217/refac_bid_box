@@ -4,9 +4,7 @@ src/app/services/home_context.py
 홈 화면 컨텍스트 (원본 apps/bids/home_context.py 1:1 이식).
 표본 확대(50/200/1000건)와 수집일 윈도우(1/3/7일) 폴백 판정은 그대로 두고,
 전역 정렬 접두를 표본 크기 순서로 필요할 때만 늘려 읽어 윈도우별 후보를 메모리에서
-거릅니다. 첫 질의는 가장 작은 일 윈도우 조건을 걸어 인덱스 범위 스캔으로 끝내고,
-그 윈도우가 표본보다 작을 때만 전역 접두로 넓힙니다. 흔한 경우 질의 한 번(50행)으로
-끝나고, 데이터가 희소해도 세 번을 넘지 않습니다.
+거릅니다. 흔한 경우 질의 한 번(50행)으로 끝나고, 데이터가 희소해도 세 번을 넘지 않습니다.
 """
 
 from __future__ import annotations
@@ -98,38 +96,18 @@ def _recent_unique_announcements(
     )
     # 정렬 첫 키가 collected_at 이므로 어떤 윈도우에 걸린 행 집합도 전역 정렬의
     # 접두입니다. 그래서 윈도우 후보는 전역 접두에서 메모리로 걸러 만들면 되고,
-    # 접두는 표본 크기 순서로 필요할 때만 늘려 읽습니다. 첫 질의만 가장 작은 일
-    # 윈도우로 좁혀 인덱스 범위 스캔으로 끝냅니다. 그 윈도우가 표본을 채우면 결과가
-    # 전역 접두와 같고, 표본보다 작으면 그 윈도우의 전부이면서 여전히 전역 접두의
-    # 앞부분이라 접두 시작점으로 그대로 씁니다. 흔한 경우 첫 질의 한 번으로 끝나고,
-    # 데이터가 희소해도 세 번을 넘지 않습니다.
-    first_window_start = (
-        latest_collected_at - timedelta(days=HOME_RECENT_DAY_WINDOWS[0])
-        if latest_collected_at is not None
-        else None
-    )
-    fetch_sizes = list(HOME_RECENT_SAMPLE_SIZES)
+    # 접두는 표본 크기 순서로 필요할 때만 늘려 읽습니다. 흔한 경우 첫 표본 50행에서
+    # limit 이 차 질의 한 번으로 끝나고, 데이터가 희소해도 세 번을 넘지 않습니다.
     prefix: list[BidAnnouncement] = []
     prefix_exhausted = False
 
     def ordered_prefix(sample_size: int) -> list[BidAnnouncement]:
-        nonlocal first_window_start, prefix, prefix_exhausted
+        nonlocal prefix, prefix_exhausted
 
-        while not prefix_exhausted and len(prefix) < sample_size and fetch_sizes:
-            window_start = first_window_start
-            first_window_start = None
-            size = fetch_sizes.pop(0)
-
-            statement = ordered_stmt
-            if window_start is not None:
-                statement = statement.where(BidAnnouncement.collected_at >= window_start)
-            prefix = list(db.execute(statement.limit(size)).scalars().all())
-
-            # 좁은 윈도우가 표본보다 작으면 그 윈도우는 다 읽었지만 전역 테이블은
-            # 더 남아 있을 수 있으므로 소진으로 보지 않습니다.
-            if len(prefix) < size and window_start is None:
+        if not prefix_exhausted and len(prefix) < sample_size:
+            prefix = list(db.execute(ordered_stmt.limit(sample_size)).scalars().all())
+            if len(prefix) < sample_size:
                 prefix_exhausted = True
-
         return prefix[:sample_size]
 
     best_effort: list[BidAnnouncement] = []
