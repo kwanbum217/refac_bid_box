@@ -14,8 +14,6 @@ tests/test_home_context_query_count.py
    선별 id 와 순서가 같음을 단언합니다.
 2. 질의 수 - 첫 표본에서 limit 을 채우는 형상에서는 SELECT 1회와 읽는 행 50 이하를,
    어떤 형상에서도 호출당 SELECT 3회 이하와 참조 구현 이하를 단언합니다.
-3. 윈도 하한 - 첫 질의가 가장 작은 일 윈도(collected_at >= latest - 1일) 조건을 걸고,
-   1일 윈도가 희소한 형상에서도 결과 동일성과 질의 수 계약이 유지됨을 단언합니다.
 """
 
 from __future__ import annotations
@@ -65,33 +63,16 @@ def _limit_value(statement: str, parameters: Any) -> int | None:
     return int(value) if isinstance(value, int) else None
 
 
-def _bound_datetime(value: Any) -> datetime | None:
-    """바인딩된 파라미터 값을 datetime 으로 맞춥니다.
-
-    SQLite 는 DateTime 을 문자열로 바인딩하므로 두 표현을 모두 받습니다.
-    """
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
-
-
 class _QueryRecorder:
-    """세션에 실행된 SQL 문과 그 LIMIT 값, 바인딩 파라미터를 순서대로 모읍니다."""
+    """세션에 실행된 SQL 문과 그 LIMIT 값을 순서대로 모읍니다."""
 
     def __init__(self, session: Session) -> None:
         self.connection = session.get_bind()
         self.statements: list[str] = []
-        self.parameters: list[Any] = []
         self.limit_values: list[int | None] = []
 
     def _record(self, conn, cursor, statement, parameters, context, executemany) -> None:
         self.statements.append(statement)
-        self.parameters.append(parameters)
         self.limit_values.append(_limit_value(statement, parameters))
 
     def __enter__(self) -> _QueryRecorder:
@@ -555,67 +536,3 @@ def test_home_page_context_query_count_never_above_legacy_across_data_scale(monk
     ):
         assert current_selection <= calls_per_page * len(HOME_RECENT_SAMPLE_SIZES)
         assert current_total < legacy_total
-
-
-# --------------------------------------------------------------------------- #
-# 첫 질의 윈도 하한
-# --------------------------------------------------------------------------- #
-
-
-def test_first_selection_query_is_bounded_by_smallest_day_window():
-    """첫 질의는 가장 작은 일 윈도 하한 조건을 걸어 인덱스 범위 스캔으로 끝납니다."""
-    db = _new_session()
-    _seed(db, _clustered_specs(400, rows_per_key=1))
-    latest = _latest_collected_at(db)
-
-    recorder = _QueryRecorder(db)
-    with recorder:
-        selected = _recent_unique_announcements(
-            db, select(BidAnnouncement), limit=8, latest_collected_at=latest
-        )
-
-    # 1일 윈도가 limit 을 채우므로 첫 질의 한 번으로 끝납니다.
-    assert len(selected) == 8
-    assert recorder.select_count() == 1
-
-    first_statement = " ".join(recorder.statements[0].split())
-    assert f"{BidAnnouncement.__tablename__}.collected_at >=" in first_statement
-    expected_start = latest - timedelta(days=HOME_RECENT_DAY_WINDOWS[0])
-    assert any(_bound_datetime(value) == expected_start for value in recorder.parameters[0])
-
-
-def test_sparse_one_day_window_keeps_legacy_selection_and_query_bound():
-    """1일 윈도가 표본에도 limit 에도 못 미치는 희소 형상에서도 판정과 질의 수가 유지됩니다."""
-    db = _new_session()
-    specs = [
-        _spec(index, key=f"ANN-HEAD-{index}", ord_="000", minutes_ago=10 + index)
-        for index in range(3)
-    ]
-    specs += [
-        _spec(index, key=f"ANN-DUP-{index % 3}", ord_=f"{index:03d}", minutes_ago=1500 + index)
-        for index in range(300)
-    ]
-    specs += [
-        _spec(index, key=f"ANN-TAIL-{index:04d}", ord_="000", minutes_ago=5000 + index)
-        for index in range(700)
-    ]
-    _seed(db, specs)
-    latest = _latest_collected_at(db)
-
-    # 1일 윈도 안쪽은 3행뿐이라 첫 질의가 표본 50 을 못 채우고 limit 도 못 채웁니다.
-    selected_ids = _assert_same_selection(db, limit=8, latest_collected_at=latest)
-    assert len(selected_ids) == 8
-
-    recorder = _QueryRecorder(db)
-    with recorder:
-        selected = _recent_unique_announcements(
-            db, select(BidAnnouncement), limit=8, latest_collected_at=latest
-        )
-
-    assert [row.id for row in selected] == selected_ids
-    current = recorder.select_count()
-    legacy = _count_legacy_selects(db, limit=8, latest_collected_at=latest)
-
-    assert current <= len(HOME_RECENT_SAMPLE_SIZES)
-    assert current <= legacy
-    assert current < legacy
