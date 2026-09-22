@@ -1294,7 +1294,7 @@ def test_gate7_ignores_untracked_files(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# docker compose -f/--file 허용 (2026-09-06)
+# docker compose -f/--file 허용 (2026-09-06)  command-reality-ignore
 # ---------------------------------------------------------------------------
 
 
