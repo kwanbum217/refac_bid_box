@@ -22,6 +22,7 @@ tests/conftest.py
    Windows 는 닫힌 localhost 포트 연결이 4.33초 뒤에 실패해 로그인 테스트마다 그만큼 기다렸습니다.
 """
 
+import hashlib
 import os
 
 os.environ.setdefault("SKIP_MODEL_LOAD", "true")
@@ -38,6 +39,97 @@ from sqlalchemy.pool import StaticPool
 
 from src.app.core.db import Base, get_db
 from src.app.main import app  # 모든 모델이 Base.metadata 에 등록되도록 import
+
+# 테스트 전용 결정적 임베딩 차원. chromadb 는 모든 벡터 길이만 같으면 됩니다.
+TEST_EMBEDDING_DIMENSION = 32
+
+
+class DeterministicTestEmbeddingFunction:
+    """테스트 전용 결정적 가짜 임베딩 함수.
+
+    chromadb 의 기본 임베딩 함수(ONNXMiniLM_L6_V2)는 첫 호출에 all-MiniLM-L6-v2
+    ONNX 모델을 인터넷에서 내려받아 압축을 풀고 ONNX 런타임으로 추론합니다.
+    그러면 테스트가 네트워크와 로컬 캐시(~/.cache/chroma)에 의존해, 캐시가 없는
+    CI 에서만 다운로드가 일어나고 tar.extractall DeprecationWarning 이 발생했습니다
+    (2026-09-22 경고 예산 잡 1 warning 의 출처).
+
+    문자열 SHA-256 해시를 고정 차원 float 벡터로 펼칩니다. 같은 입력에는 항상 같은
+    벡터를 주고 네트워크, 파일 다운로드, ONNX 런타임을 쓰지 않습니다. 의미적
+    유사도는 없으므로 검색 순위나 거리 값을 단언하는 테스트에는 쓸 수 없습니다
+    (현재 그런 테스트는 없습니다).
+
+    chromadb 의 EmbeddingFunction 규약(__call__(self, input) 이 문서 수만큼의 벡터를
+    돌려줌)을 그대로 따르므로 운영 경로와 같은 자리에 끼워 넣을 수 있습니다.
+    """
+
+    def __init__(self, dimension: int = TEST_EMBEDDING_DIMENSION) -> None:
+        self.dimension = dimension
+
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        return [self._vector(text) for text in input]
+
+    def _vector(self, text: str) -> list[float]:
+        values: list[float] = []
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        while len(values) < self.dimension:
+            values.extend(byte / 255.0 for byte in digest)
+            if len(values) < self.dimension:
+                digest = hashlib.sha256(digest).digest()
+        return values[: self.dimension]
+
+
+_TEST_EMBEDDING_FUNCTION = DeterministicTestEmbeddingFunction()
+
+
+@pytest.fixture
+def deterministic_embedding_function():
+    """테스트 전역에서 쓰는 결정적 가짜 임베딩 함수 인스턴스."""
+    return _TEST_EMBEDDING_FUNCTION
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_test_embedding(monkeypatch):
+    """테스트 중 chromadb 기본 ONNX 임베딩 대신 결정적 가짜를 쓰게 합니다.
+
+    conftest 는 EMBEDDING_PROVIDER 를 default 로 두므로
+    src.rag.embeddings.get_embedding_function() 이 None 을 돌려주고, get_collection 은
+    embedding_function 을 넘기지 않습니다. 그 자리에서 chromadb 가 기본값으로 끼워
+    넣는 ONNXMiniLM_L6_V2 를 이 fixture 가 가짜로 바꿔 끼웁니다.
+
+    get_embedding_function 자체는 건드리지 않습니다. tests/test_rag_embeddings.py 가
+    운영 분기(default -> None, ollama 어댑터 선택)를 그대로 검증해야 하므로, 검색
+    함수 대신 컬렉션을 여는 chromadb 클라이언트 메서드에서 기본값만 대체합니다.
+    클라이언트가 embedding_function 을 명시로 받으면 그대로 둡니다.
+
+    운영 코드는 바뀌지 않으며 이 프로세스의 테스트 실행에만 적용됩니다.
+    """
+    import functools
+
+    from chromadb.api.client import Client
+
+    def force_deterministic(original):
+        @functools.wraps(original)
+        def wrapper(self, *args, **kwargs):
+            if kwargs.get("embedding_function") is None:
+                kwargs["embedding_function"] = _TEST_EMBEDDING_FUNCTION
+            return original(self, *args, **kwargs)
+
+        return wrapper
+
+    classes = [Client]
+    try:
+        from chromadb.api.async_client import AsyncClient
+    except ImportError:
+        pass
+    else:
+        classes.append(AsyncClient)
+
+    for cls in classes:
+        for name in ("get_collection", "get_or_create_collection", "create_collection"):
+            original = getattr(cls, name, None)
+            if original is None:
+                continue
+            monkeypatch.setattr(cls, name, force_deterministic(original))
 
 
 @pytest.fixture(autouse=True)
