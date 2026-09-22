@@ -992,6 +992,75 @@ def test_src_change_without_mypy_fails_strict(tmp_path: Path):
     assert "backend_mypy" in output
 
 
+def test_scripts_python_change_requires_mypy():
+    """scripts/ 파이썬 변경도 mypy 능력을 요구해야 합니다.
+
+    CI 의 `uv run mypy src/` 는 src 가 import 하는 scripts 모듈까지 따라가
+    검사하므로, scripts/ 파이썬만 고친 Task 도 mypy 를 돌려야 합니다.
+    """
+    assert required_capabilities(["scripts/backup_recovery_core.py"]) == {
+        "backend_pytest",
+        "backend_mypy",
+    }
+    assert required_capabilities(["scripts/nested/orca_helper.py"]) == {
+        "backend_pytest",
+        "backend_mypy",
+    }
+
+
+def test_non_python_scripts_and_tests_do_not_require_mypy():
+    """scripts/ 의 비파이썬 파일과 tests/ 파일의 판정은 그대로입니다."""
+    assert required_capabilities(["scripts/run.sh"]) == {"backend_pytest"}
+    assert required_capabilities(["scripts/config.yaml"]) == {"backend_pytest"}
+    assert required_capabilities(["tests/test_x.py"]) == {"backend_pytest"}
+
+
+def test_scripts_python_change_without_mypy_fails_strict(tmp_path: Path):
+    """scripts/ 파이썬 변경 시 mypy 검증 명령이 없으면 Gate 3 skipped 및 strict=True 시 전체 실패."""
+    repo, base, branch = _make_clean_feature_repo(tmp_path)
+    (repo / "scripts" / "backup_recovery_core.py").write_text("def run(): pass\n", encoding="utf-8")
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, "add", "scripts/backup_recovery_core.py"],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, "-c", "user.email=t@e.com", "-c", "user.name=T", "commit", "-m", "add script"],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+    # pytest만 제공하는 명령 전달
+    g3 = run_gate3_tests(
+        ["scripts/backup_recovery_core.py"],
+        repo,
+        commands=["uv run pytest tests/ -q"],
+        capabilities=required_capabilities(["scripts/backup_recovery_core.py"]),
+    )
+    assert g3.status == "skipped"
+    assert "backend_mypy" in g3.raw_data["uncovered_capabilities"]
+
+    # strict 모드 실행 시 Gate 3 skipped 때문에 전체 결과 실패 (exit_code == 1)
+    capsule = repo / "capsule.yaml"
+    capsule.write_text(
+        "allowed_write_files:\n  - scripts/backup_recovery_core.py\n"
+        "verification_commands:\n  - uv run pytest tests/ -q\n",
+        encoding="utf-8",
+    )
+    exit_code, output = run_level1_gate(
+        repo=repo,
+        base=base,
+        branch=branch,
+        capsule=capsule,
+        strict=True,
+        allow_missing_report=True,
+    )
+    assert exit_code == 1
+    assert "backend_mypy" in output
+
+
 def test_gate6_multi_report_union_diff_success_and_failure(tmp_path: Path):
     """다중 worker_done 보고서의 changed_files 합집합이 git diff와 일치하면 통과, 누락 시 실패합니다."""
     repo, base, branch = _make_clean_feature_repo(tmp_path)
@@ -1225,7 +1294,7 @@ def test_gate7_ignores_untracked_files(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# docker compose -f/--file 허용 (2026-09-06)
+# docker compose -f/--file 허용 (2026-09-06)  command-reality-ignore
 # ---------------------------------------------------------------------------
 
 
