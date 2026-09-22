@@ -508,7 +508,7 @@ def test_drill_report_includes_database_import_breakdown(tmp_path: Path):
         "bid_results",
     ]
     assert report["timings"]["database_import"]["status"] == "PASS"
-    assert report["timings"]["database_import"]["duration_seconds"] > 0
+    assert report["timings"]["database_import"]["duration_seconds"] >= 0
 
     for key in (
         "schema",

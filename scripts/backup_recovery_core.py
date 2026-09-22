@@ -12,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from typing import IO, Any
 
@@ -274,7 +275,7 @@ def close_table_timing_segment(
 
 
 def stream_dump_by_table(
-    gz_in: IO[bytes], stdin: IO[bytes], table_timings: list[dict[str, Any]]
+    gz_in: Iterable[bytes], stdin: IO[bytes], table_timings: list[dict[str, Any]]
 ) -> dict[str, Any] | None:
     """덤프를 줄 단위로 흘려 보내며 테이블 경계마다 구간을 기록합니다.
 
@@ -353,7 +354,7 @@ def restore_mysql_database(
             if proc.stdin is not None and not proc.stdin.closed:
                 proc.stdin.close()
         proc.wait()
-        if pending is not None:
+        if pending is not None and table_timings is not None:
             close_table_timing_segment(pending, time.monotonic(), table_timings)
         err_file.seek(0)
         stderr_data = err_file.read()
