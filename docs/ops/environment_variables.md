@@ -22,8 +22,8 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `ENVIRONMENT` | 아니오 | `development` | 실행 환경 (`development` / `staging` / `production`) |
 | `SECRET_KEY` | **예** | - | 32자 이상의 애플리케이션 시크릿 키 (랜덤값) |
 | `DEBUG` | 아니오 | `false` | 디버그 모드 (운영은 `false` 강제) |
-| `CORS_ALLOWED_ORIGINS` | 운영은 **예** | - | 자격증명 요청을 허용할 오리진 목록. 콤마 구분, 스킴 포함 |
-| `CORS_DEV_ALLOW_ALL` | 아니오 | `true` | 개발·스테이징에서 임의 오리진 허용 여부. 운영에는 영향이 없습니다 |
+| `CORS_ALLOWED_ORIGINS` | 운영·스테이징은 **예** | - | 자격증명 요청을 허용할 오리진 목록. 콤마 구분, 스킴 포함 |
+| `CORS_DEV_ALLOW_ALL` | 아니오 | `true` | `development` 에서만 임의 오리진 허용 여부. `staging`·`production` 에서는 효력이 없고 `CORS_ALLOWED_ORIGINS` 명시가 필수입니다 |
 | `SIGNUP_RATE_LIMIT_MAX` | 아니오 | `10` | IP 축 회원가입 최대 허용 횟수 (고정 윈도우). Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과 |
 | `SIGNUP_RATE_LIMIT_WINDOW_SECONDS` | 아니오 | `3600` | 회원가입 시도 제한 윈도우 시간 (초, 기본 3600초 = 1시간) |
 | `WEB_CONCURRENCY` | 아니오 | `1` | Docker Compose app 서비스의 Uvicorn 워커 프로세스 수. FastAPI 설정 모델이 읽는 값이 아니라 `docker-compose.yml`의 `command`가 직접 소비합니다. 3워커 이상은 100ms 목표에 실패해 기본값에서 철회된 수동 실험 옵션입니다 |
@@ -44,22 +44,25 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 `ENVIRONMENT`는 표의 세 값만 허용합니다. 오타나 임의 값은 개발 환경으로 강등하지
 않고 시동을 거부합니다. `SECRET_KEY`가 없거나 32자보다 짧아도 애플리케이션은
 시작하지 않습니다. 또한 `ENVIRONMENT=production`에서는 예제 시크릿,
-`DEBUG=true`, 기본 DB 비밀번호를 거부합니다. Docker Compose도 `.env`에
-`SECRET_KEY`가 없으면 구성 단계에서 실패하도록 동일한 계약을 사용합니다.
+`DEBUG=true`, 기본 DB 비밀번호를 거부합니다. `ENVIRONMENT=staging`은
+`CORS_ALLOWED_ORIGINS` 명시만 추가로 요구하며, 위의 운영 전용 검사(예제 시크릿,
+`DEBUG=true`, 기본 DB 비밀번호)는 `production`에만 적용됩니다. Docker Compose도
+`.env`에 `SECRET_KEY`가 없으면 구성 단계에서 실패하도록 동일한 계약을 사용합니다.
 
 `ENVIRONMENT`에 따라 갈리는 노출 정책은 다음과 같습니다.
 
-| 항목 | development / staging | production |
-| --- | --- | --- |
-| `/docs`, `/redoc`, `/openapi.json` | 노출 | 세 경로 모두 404 |
-| CORS 허용 오리진 | `CORS_ALLOWED_ORIGINS`가 비면 `CORS_DEV_ALLOW_ALL`에 따라 임의 오리진 | `CORS_ALLOWED_ORIGINS` 목록만 |
-| `CORS_ALLOWED_ORIGINS` 미설정 | 허용 | **시동 거부** |
-| `CORS_ALLOWED_ORIGINS`에 `*` 포함 | 허용 | **시동 거부** |
+| 항목 | development | staging | production |
+| --- | --- | --- | --- |
+| `/docs`, `/redoc`, `/openapi.json` | 노출 | 노출 | 세 경로 모두 404 |
+| CORS 허용 오리진 | `CORS_ALLOWED_ORIGINS`가 비면 `CORS_DEV_ALLOW_ALL`에 따라 임의 오리진, 값이 있으면 그 목록 | `CORS_ALLOWED_ORIGINS` 목록만 | `CORS_ALLOWED_ORIGINS` 목록만 |
+| `CORS_DEV_ALLOW_ALL` | 오리진이 비었을 때만 효력 | 무시 | 무시 |
+| `CORS_ALLOWED_ORIGINS` 미설정 | 허용 | **시동 거부** | **시동 거부** |
+| `CORS_ALLOWED_ORIGINS`에 `*` 포함 | 허용 | **시동 거부** | **시동 거부** |
 
 CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명이 실린 요청에
 와일드카드를 쓰면 `*` 대신 요청 `Origin`을 그대로 반사하고
 `Access-Control-Allow-Credentials: true`를 붙이므로, 와일드카드는 사실상 임의
-오리진 허용입니다. 운영에서 목록을 강제하는 이유입니다. 문서 경로는 `docs_url`만
+오리진 허용입니다. 운영과 스테이징에서 목록을 강제하는 이유입니다. 문서 경로는 `docs_url`만
 닫으면 `/openapi.json`이 남아 스키마가 그대로 공개되므로 세 경로를 함께 닫습니다.
 
 ### 2.2 Database
@@ -212,7 +215,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | `false` | `false` | 코드 기본값 및 개발 예시는 false, 운영 compose 기본 true |
 | `ML_WEEKLY_RETRAIN_ENABLED` | `true` | `false` | 코드 기본값은 주간 재학습 활성, 개발 예시는 끔 |
 | `MEILI_ENABLED` | `false` | `false` | 동일 (명시적 표기) |
-| `CORS_DEV_ALLOW_ALL` | `true` | `true` | 동일 |
+| `CORS_DEV_ALLOW_ALL` | `true` | `true` | 동일. `development` 에서만 효력이 있으며 `staging`·`production` 은 `CORS_ALLOWED_ORIGINS` 명시 필수 |
 | `WEB_CONCURRENCY` | (설정 모델에 없음) | `1` | Compose 전용 변수. 코드는 읽지 않음 |
 | `MYSQL_ROOT_PASSWORD` | (설정 모델에 없음) | `rootpassword` | Compose 전용 변수. 코드는 `DB_PASSWORD` 사용 |
 

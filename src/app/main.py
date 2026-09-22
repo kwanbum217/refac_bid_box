@@ -227,11 +227,13 @@ def _cors_kwargs(app_settings: Settings) -> _CorsKwargs:
     허용이며, 지금 악용되지 않는 것은 세션 쿠키가 samesite=lax 여서 생긴
     우연한 방어입니다. production 에서는 명시 목록만 허용합니다.
 
-    개발·스테이징은 로컬 화면이 깨지지 않도록 기존 범위를 유지합니다.
+    임의 오리진 허용은 development 전용입니다. staging 은 production 과 같이
+    CORS_ALLOWED_ORIGINS 명시가 기동 시 필수이며, 여기서는 그 목록을 그대로
+    씁니다.
     """
     origins = app_settings.cors_allowed_origins
-    production = app_settings.ENVIRONMENT == "production"
-    if not origins and not production and app_settings.CORS_DEV_ALLOW_ALL:
+    development = app_settings.ENVIRONMENT == "development"
+    if not origins and development and app_settings.CORS_DEV_ALLOW_ALL:
         origins = ["*"]
 
     return {

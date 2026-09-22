@@ -106,11 +106,11 @@ class Settings(BaseSettings):
     # list[str] 필드로 두면 pydantic-settings 가 환경변수를 JSON 으로만 해석해
     # .env 에 ["https://a","https://b"] 를 요구합니다. 운영자가 손으로 쓰는 값이라
     # 콤마 구분을 받고 cors_allowed_origins 프로퍼티에서 나눕니다.
-    # 개발·스테이징 기본값은 비어 있어도 되며, 그 경우 아래 CORS_DEV_ALLOW_ALL
-    # 정책이 적용됩니다. production 에서 비면 validator 가 기동을 거부합니다.
+    # development 에서만 비어 있어도 되며, 그 경우 아래 CORS_DEV_ALLOW_ALL
+    # 정책이 적용됩니다. staging 과 production 에서 비면 validator 가 기동을 거부합니다.
     CORS_ALLOWED_ORIGINS: str = ""
-    # 개발·스테이징에서 임의 오리진을 허용할지 여부입니다. 로컬 개발 편의를 위해
-    # 기본 활성이며, production 에서는 이 값과 무관하게 항상 목록만 허용합니다.
+    # development 에서만 임의 오리진을 허용할지 여부입니다. 로컬 개발 편의를 위해
+    # 기본 활성이며, staging 과 production 에서는 이 값과 무관하게 항상 목록만 허용합니다.
     CORS_DEV_ALLOW_ALL: bool = True
 
     # 인증 보안 및 DoS 방어 설정
@@ -271,11 +271,33 @@ class Settings(BaseSettings):
             f"유효하지 않은 LOG_LEVEL 입니다: {v}. (DEBUG, INFO, WARNING, ERROR, CRITICAL 중 하나여야 합니다)"
         )
 
+    def _require_explicit_cors_origins(self, environment: str) -> None:
+        """명시 오리진이 필수인 환경에서 빈 목록과 와일드카드를 거부합니다.
+
+        staging 과 production 이 같은 판정을 공유합니다. 두 환경 모두 목록을
+        비워 두면 임의 오리진 허용으로 흐를 수 있으므로 기동 시점에
+        fail-closed 로 막습니다.
+        """
+        label = "운영" if environment == "production" else environment
+        origins = self.cors_allowed_origins
+        if not origins:
+            raise ValueError(
+                f"{label} 환경에서는 CORS_ALLOWED_ORIGINS 에 허용 오리진을 명시해야 합니다."
+            )
+        if "*" in origins:
+            raise ValueError(
+                f"{label} 환경에서는 CORS_ALLOWED_ORIGINS 에 와일드카드를 사용할 수 없습니다."
+            )
+
     @model_validator(mode="after")
     def validate_security_settings(self):
         secret_key = self.SECRET_KEY.strip()
         if len(secret_key) < 32:
             raise ValueError("SECRET_KEY는 32자 이상의 무작위 값이어야 합니다.")
+
+        if self.ENVIRONMENT == "staging":
+            self._require_explicit_cors_origins("staging")
+            return self
 
         if self.ENVIRONMENT != "production":
             return self
@@ -293,15 +315,7 @@ class Settings(BaseSettings):
         if self.DB_PASSWORD == "rootpassword" or "rootpassword" in self.DATABASE_URL:  # nosec B105 - 기본 비밀번호 사용을 거부하는 검사 문자열입니다
             raise ValueError("운영 환경에서는 기본 데이터베이스 비밀번호를 사용할 수 없습니다.")
 
-        origins = self.cors_allowed_origins
-        if not origins:
-            raise ValueError(
-                "운영 환경에서는 CORS_ALLOWED_ORIGINS 에 허용 오리진을 명시해야 합니다."
-            )
-        if "*" in origins:
-            raise ValueError(
-                "운영 환경에서는 CORS_ALLOWED_ORIGINS 에 와일드카드를 사용할 수 없습니다."
-            )
+        self._require_explicit_cors_origins("production")
 
         return self
 
