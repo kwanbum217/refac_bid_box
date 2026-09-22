@@ -1,4 +1,4 @@
-"""운영 보안 설정의 시동 차단 계약을 검증합니다."""
+"""운영·스테이징 보안 설정의 시동 차단 계약을 검증합니다."""
 
 from __future__ import annotations
 
@@ -97,6 +97,30 @@ def test_cors_dev_allow_all_does_not_exempt_production():
             CORS_DEV_ALLOW_ALL=True,
             _env_file=None,
         )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"CORS_ALLOWED_ORIGINS": ""}, "CORS_ALLOWED_ORIGINS"),
+        ({"CORS_ALLOWED_ORIGINS": "   ,  "}, "CORS_ALLOWED_ORIGINS"),
+        ({"CORS_ALLOWED_ORIGINS": "*"}, "와일드카드"),
+        ({"CORS_ALLOWED_ORIGINS": "https://app.example.com,*"}, "와일드카드"),
+    ],
+)
+def test_staging_rejects_insecure_cors_settings(overrides, message):
+    # staging 은 development 의 임의 오리진 허용 편의를 물려받지 않습니다.
+    # CORS_DEV_ALLOW_ALL 을 켜 둬도 명시 목록 검증을 우회할 수 없습니다.
+    values = {
+        "ENVIRONMENT": "staging",
+        "SECRET_KEY": "staging-test-secret-key-that-is-long-enough",
+        "CORS_DEV_ALLOW_ALL": True,
+        "_env_file": None,
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValidationError, match=message):
+        Settings(**values)
 
 
 def test_development_allows_empty_cors_origins():
