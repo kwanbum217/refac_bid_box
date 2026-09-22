@@ -97,6 +97,7 @@ Level 1 게이트 3 은 변경 파일이 요구하는 **검증 능력(capability
 | `docker-compose*.yml` | `compose_config` | `docker compose config -q` |
 | `.github/workflows/*.yml` | `workflow_lint` | `uv run actionlint` |
 | `src/**/*.py` | `backend_pytest`, `backend_mypy` | `uv run pytest ...`, `uv run mypy src` |
+| `scripts/**/*.py` | `backend_pytest`, `backend_mypy` | `uv run pytest ...`, `uv run mypy src` |
 | 그 밖의 코드 | `backend_pytest` | `uv run pytest ...` |
 | 문서(`.md`/`.rst`/`.adoc`) | 없음 | - |
 

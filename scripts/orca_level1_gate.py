@@ -257,6 +257,12 @@ def _path_capabilities(path: str) -> set[str]:
         or cleaned == "src/..."
     ):
         return {CAP_BACKEND_PYTEST, CAP_BACKEND_MYPY}
+    # CI 의 `uv run mypy src/` 는 src 가 import 하는 scripts 모듈까지 따라가
+    # 검사합니다. 2026-09-22 에 scripts/backup_recovery_core.py 만 바꾼 Task 가
+    # mypy 명령 없이 이 게이트를 통과했고, 그 타입 오류로 CI 가 세 번 실패했습니다.
+    # 도달 가능한 모듈을 추적하는 대신 scripts/ 파이썬 변경 전체에 mypy 를 요구합니다.
+    if cleaned.startswith("scripts/") and Path(cleaned).suffix.lower() == ".py":
+        return {CAP_BACKEND_PYTEST, CAP_BACKEND_MYPY}
     return {CAP_BACKEND_PYTEST}
 
 
