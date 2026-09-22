@@ -11,8 +11,9 @@ import subprocess  # nosec B404
 import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -238,12 +239,80 @@ def dump_mysql_database(db_config: dict[str, Any], output_gz_path: Path) -> tupl
     return output_gz_path.stat().st_size, sha256_file(output_gz_path)
 
 
+MYSQL_DUMP_TABLE_MARKERS: tuple[tuple[bytes, str], ...] = (
+    (b"-- Table structure for table ", "structure"),
+    (b"-- Dumping data for table ", "data"),
+)
+
+
+def parse_dump_table_marker(line: bytes) -> tuple[str, str] | None:
+    """mysqldump 테이블 경계 주석 줄에서 (테이블명, 단계)를 추출합니다.
+
+    경계 판정은 줄이 b"-- " 로 시작할 때만 합니다. 그 밖의 줄은 None 입니다.
+    """
+    if not line.startswith(b"-- "):
+        return None
+    for marker, phase in MYSQL_DUMP_TABLE_MARKERS:
+        if line.startswith(marker):
+            name = line[len(marker) :].strip().strip(b"`").decode("utf-8", errors="replace")
+            return name, phase
+    return None
+
+
+def close_table_timing_segment(
+    segment: dict[str, Any], end_monotonic: float, table_timings: list[dict[str, Any]]
+) -> None:
+    """진행 중인 테이블 구간을 종료 시각으로 닫아 table_timings 에 넣습니다."""
+    table_timings.append(
+        {
+            "table": segment["table"],
+            "phase": segment["phase"],
+            "seconds": end_monotonic - segment["started_monotonic"],
+            "bytes": segment["bytes"],
+        }
+    )
+
+
+def stream_dump_by_table(
+    gz_in: IO[bytes], stdin: IO[bytes], table_timings: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """덤프를 줄 단위로 흘려 보내며 테이블 경계마다 구간을 기록합니다.
+
+    확장 INSERT 한 줄이 수 MB 일 수 있으므로 읽은 줄을 추가로 복사하거나 누적하지
+    않고 그대로 표준입력에 씁니다. 마지막 구간은 닫지 않고 돌려주므로 호출자가
+    mysql 프로세스 종료 시각으로 닫습니다.
+    """
+    pending: dict[str, Any] | None = None
+    for line in gz_in:
+        marker = parse_dump_table_marker(line)
+        if marker is not None:
+            if pending is not None:
+                close_table_timing_segment(pending, time.monotonic(), table_timings)
+            pending = {
+                "table": marker[0],
+                "phase": marker[1],
+                "bytes": 0,
+                "started_monotonic": time.monotonic(),
+            }
+        stdin.write(line)
+        if pending is not None:
+            pending["bytes"] += len(line)
+    return pending
+
+
 def restore_mysql_database(
     db_config: dict[str, Any],
     input_gz_path: Path,
     *,
     disable_binlog: bool = False,
+    table_timings: list[dict[str, Any]] | None = None,
 ) -> None:
+    """gzip 덤프를 mysql 클라이언트 표준입력으로 흘려 복원합니다.
+
+    table_timings 가 None 이면 기존과 같이 덤프를 통째로 흘려 보냅니다. 목록이 주어지면
+    줄 단위로 보내며 mysqldump 의 테이블 경계 주석마다 table, phase, seconds, bytes 를
+    기록합니다. 이때 mysql 로 가는 바이트는 원문 덤프와 같습니다.
+    """
     if not input_gz_path.exists():
         raise FileNotFoundError(f"복원할 DB 덤프 파일 없음: {input_gz_path}")
     cmd, env = mysql_client_command("mysql", db_config)
@@ -263,13 +332,17 @@ def restore_mysql_database(
         if proc.stdin is None:
             proc.kill()
             raise RuntimeError("mysql 복원 표준입력을 열 수 없습니다.")
+        pending: dict[str, Any] | None = None
         try:
             preamble = b"SET SESSION net_read_timeout=3600;\nSET SESSION net_write_timeout=3600;\n"
             if disable_binlog:
                 preamble += b"SET SESSION sql_log_bin=0;\n"
             proc.stdin.write(preamble)
             proc.stdin.flush()
-            shutil.copyfileobj(gz_in, proc.stdin)
+            if table_timings is None:
+                shutil.copyfileobj(gz_in, proc.stdin)
+            else:
+                pending = stream_dump_by_table(gz_in, proc.stdin, table_timings)
         except (BrokenPipeError, ValueError) as exc:
             proc.kill()
             proc.wait()
@@ -280,6 +353,8 @@ def restore_mysql_database(
             if proc.stdin is not None and not proc.stdin.closed:
                 proc.stdin.close()
         proc.wait()
+        if pending is not None:
+            close_table_timing_segment(pending, time.monotonic(), table_timings)
         err_file.seek(0)
         stderr_data = err_file.read()
     if proc.returncode != 0:

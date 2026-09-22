@@ -221,6 +221,20 @@ def execute_backup(
     return manifest_data
 
 
+def build_database_import_breakdown(segments: list[dict[str, Any]]) -> dict[str, Any]:
+    """테이블별 적재 구간을 초 내림차순으로 정렬해 합계와 함께 묶습니다.
+
+    합계 초는 timings.database_import.duration_seconds 에서 전처리 문장 전송, gzip
+    해제, mysql 종료 대기를 뺀 값입니다. 두 값을 대조하면 미기록 구간을 해석할 수 있습니다.
+    """
+    return {
+        "total_seconds": sum(float(s["seconds"]) for s in segments),
+        "total_bytes": sum(int(s["bytes"]) for s in segments),
+        "segment_count": len(segments),
+        "segments": sorted(segments, key=lambda s: s["seconds"], reverse=True),
+    }
+
+
 def run_restore_drill(
     snapshot_dir: Path,
     target_dir: Path,
@@ -281,6 +295,7 @@ def run_restore_drill(
         timings, "snapshot_verification", v_st, datetime.now(UTC), "PASS" if valid else "FAIL"
     )
     rpo, comps = measure_rpo(manifest, drill_start), manifest.get("components", {})
+    db_import_timings: list[dict[str, Any]] = []
 
     def _drill_rep(ok: bool, g1_v: dict[str, Any], ext: list[str]) -> dict[str, Any]:
         finished_at = datetime.now(UTC)
@@ -293,6 +308,7 @@ def run_restore_drill(
             "components": sorted(comps),
             "extracted_components": ext,
             "timings": timings,
+            "database_import_breakdown": build_database_import_breakdown(db_import_timings),
             "started_at": drill_start.isoformat(),
             "finished_at": finished_at.isoformat(),
             "total_duration_seconds": (finished_at - drill_start).total_seconds(),
@@ -362,6 +378,7 @@ def run_restore_drill(
                     drill_db,
                     snapshot_dir / comps["database"]["path"],
                     disable_binlog=True,
+                    table_timings=db_import_timings,
                 )
             finally:
                 with contextlib.suppress(Exception):

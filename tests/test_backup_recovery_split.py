@@ -24,7 +24,8 @@ def test_split_line_counts_within_cap():
         # 650 -> 실측값으로 되돌립니다. 여유 20줄입니다.
         "backup_recovery.py": (REPO_ROOT / "scripts" / "backup_recovery.py", 555),
         # 2026-09-11: 드릴 복원 스트리밍과 stderr 파일 분리가 346 이 됐습니다.
-        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 366),
+        # 2026-09-22: DB import 테이블별 계측 추가로 431 이 됐습니다.
+        "backup_recovery_core.py": (REPO_ROOT / "scripts" / "backup_recovery_core.py", 451),
         "backup_recovery_drill.py": (REPO_ROOT / "scripts" / "backup_recovery_drill.py", 180),
         # 2026-09-05: R-01 스냅샷 검증기 엄격화(스키마, 필수자산, SHA256/크기 형식 검증)로
         # 132 -> 160 이 됐고, 이어서 R-08 보존 정책 실동작 전환(삭제 전 무결성 검증,

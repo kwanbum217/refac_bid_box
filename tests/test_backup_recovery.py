@@ -394,6 +394,52 @@ def test_restore_execute_with_confirm(
     mock_verify.assert_called_once()
 
 
+def test_restore_execute_does_not_request_table_timings(tmp_path: Path):
+    """운영 복구 경로는 table_timings 계측을 요청하지 않아 기존 전송 방식을 유지합니다."""
+    snap = tmp_path / "snap"
+    snap.mkdir()
+    components = {}
+    for name, filename, content in (
+        ("database", "db_dump.sql.gz", b"db_data"),
+        ("chroma_db", "chroma_db.tar.gz", b"chroma_data"),
+        ("models", "models.tar.gz", b"models_data"),
+    ):
+        file_path = snap / filename
+        file_path.write_bytes(content)
+        components[name] = {
+            "path": filename,
+            "size_bytes": len(content),
+            "sha256": sha256_file(file_path),
+        }
+    (snap / MANIFEST_FILENAME).write_text(
+        json.dumps(
+            {
+                "schema": "BACKUP_MANIFEST_V1",
+                "partial_backup": False,
+                "recovery_trusted": True,
+                "components": components,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with (
+        patch("scripts.backup_recovery.restore_mysql_database") as mock_restore_db,
+        patch("scripts.backup_recovery.extract_tar_archive"),
+    ):
+        success = execute_restore(
+            snapshot_dir=snap,
+            execute=True,
+            confirm=True,
+            skip_verify=True,
+            project_root=tmp_path,
+        )
+
+    assert success is True
+    mock_restore_db.assert_called_once()
+    _, restore_kwargs = mock_restore_db.call_args
+    assert restore_kwargs == {}
+
+
 def test_list_snapshots(tmp_path: Path):
     """스냅샷 목록 조회 함수 검증."""
     snapshots_dir = tmp_path / "snapshots"
