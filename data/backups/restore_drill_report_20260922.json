@@ -1,0 +1,145 @@
+{
+  "schema": "RESTORE_DRILL_REPORT_V2",
+  "snapshot_dir": "data/backups/snapshots/snapshot_20260921_061612",
+  "target_dir": "/private/tmp/refac_bid_box_restore_drill",
+  "drill_db": {
+    "host": "localhost",
+    "port": 3306,
+    "name": "procurement_restore_drill",
+    "user": "root"
+  },
+  "snapshot_valid": true,
+  "components": [
+    "chroma_db",
+    "database",
+    "models"
+  ],
+  "extracted_components": [
+    "chroma_db",
+    "models"
+  ],
+  "timings": {
+    "snapshot_verification": {
+      "started_at": "2026-09-22T07:59:55.948436+00:00",
+      "finished_at": "2026-09-22T07:59:57.950690+00:00",
+      "duration_seconds": 2.002254,
+      "status": "PASS"
+    },
+    "archive_extraction": {
+      "started_at": "2026-09-22T07:59:57.950827+00:00",
+      "finished_at": "2026-09-22T08:00:13.446539+00:00",
+      "duration_seconds": 15.495712,
+      "status": "PASS"
+    },
+    "g1_file_verification": {
+      "started_at": "2026-09-22T08:00:13.446553+00:00",
+      "finished_at": "2026-09-22T08:00:16.649274+00:00",
+      "duration_seconds": 3.202721,
+      "status": "PASS"
+    },
+    "extract_cleanup": {
+      "started_at": "2026-09-22T08:00:16.649308+00:00",
+      "finished_at": "2026-09-22T08:00:16.756656+00:00",
+      "duration_seconds": 0.107348,
+      "status": "PASS"
+    },
+    "database_import": {
+      "started_at": "2026-09-22T08:00:16.756676+00:00",
+      "finished_at": "2026-09-22T08:23:28.352710+00:00",
+      "duration_seconds": 1391.596034,
+      "status": "PASS"
+    },
+    "g1_db_verification": {
+      "started_at": "2026-09-22T08:23:28.352815+00:00",
+      "finished_at": "2026-09-22T08:23:36.252258+00:00",
+      "duration_seconds": 7.899443,
+      "status": "PASS"
+    },
+    "cleanup": {
+      "started_at": "2026-09-22T08:23:36.252287+00:00",
+      "finished_at": "2026-09-22T08:23:39.881933+00:00",
+      "duration_seconds": 3.629646,
+      "status": "PASS"
+    }
+  },
+  "started_at": "2026-09-22T07:59:55.948316+00:00",
+  "finished_at": "2026-09-22T08:23:39.882000+00:00",
+  "total_duration_seconds": 1423.933684,
+  "rpo_measurements": {
+    "snapshot_created_at": "2026-09-21T06:42:35.073119+00:00",
+    "consistency_window": {
+      "db_dump_started_at": "2026-09-21T06:16:12.342553+00:00",
+      "db_dump_finished_at": "2026-09-21T06:39:44.031978+00:00",
+      "row_counts_queried_at": "2026-09-21T06:39:44.859583+00:00",
+      "file_assets_collected_at": "2026-09-21T06:42:35.073161+00:00",
+      "timing_note": "덤프 완료 후 별도 조회한 행 수는 쓰기 중인 DB 의 덤프 시점 행 수와 다를 수 있습니다."
+    },
+    "drill_started_at": "2026-09-22T07:59:55.948316+00:00",
+    "created_at_to_drill_start_seconds": 91040.875197,
+    "db_dump_finished_to_drill_start_seconds": 91211.916338,
+    "file_assets_to_drill_start_seconds": 91040.875155
+  },
+  "g1_verification": {
+    "success": true,
+    "message": "G1 무손실 검증 통과 (파일·DB 단계 분리)",
+    "file": {
+      "success": true,
+      "message": "G1 무손실 검증 통과",
+      "report": {
+        "generated_at": "2026-09-22T08:00:16.493673+00:00",
+        "head_commit": "00222bd03d721be27c939f964c03b14acec4ef69",
+        "overall_verdict": "PASS",
+        "passed_count": 2,
+        "total_count": 2,
+        "results": [
+          {
+            "name": "ML 가중치 4종 무결성",
+            "status": "PASS",
+            "message": "ML 가중치 4종 체크섬 일치"
+          },
+          {
+            "name": "ChromaDB 컬렉션 무결성",
+            "status": "PASS",
+            "message": "ChromaDB 원본 10건 보존 / 운영 518337건 확인"
+          }
+        ]
+      }
+    },
+    "database": {
+      "success": true,
+      "message": "G1 무손실 검증 통과",
+      "report": {
+        "generated_at": "2026-09-22T08:23:36.185893+00:00",
+        "head_commit": "00222bd03d721be27c939f964c03b14acec4ef69",
+        "overall_verdict": "PASS",
+        "passed_count": 4,
+        "total_count": 4,
+        "results": [
+          {
+            "name": "DB 테이블 존재 여부",
+            "status": "PASS",
+            "message": "ORM 테이블 존재 확인 (승인된 외부 테이블 18개 포함)"
+          },
+          {
+            "name": "DB 전 테이블 스키마 서명 정합성",
+            "status": "PASS",
+            "message": "DB 스키마 서명 일치 (전 테이블 컬럼·타입·제약조건 무손실)"
+          },
+          {
+            "name": "데이터 행 수 하한 검증",
+            "status": "PASS",
+            "message": "공고 5,517,351행 / 낙찰 3,439,172행 확인"
+          },
+          {
+            "name": "G1 reconciliation: 원본/성장분 분리 대조",
+            "status": "PASS",
+            "message": "원본/성장분 대조 일치 — bid_announcements 1,660,792행 / bid_results 2,973,072행"
+          }
+        ]
+      }
+    }
+  },
+  "keep_artifacts": false,
+  "errors": [],
+  "success": true
+}

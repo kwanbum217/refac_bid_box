@@ -21,7 +21,7 @@
 
 | 점검 항목 | 조건 및 점검 기준 | 확인 방법 / 점검 명령 |
 | --- | --- | --- |
-| **스냅샷 유효성** | 복원 대상 단일 복구 단위 스냅샷이 존재하고 체크섬 무결성이 확인되어야 함 (`partial_backup: false`, `recovery_trusted: true`) | `python3 scripts/backup_recovery.py verify --snapshot-dir <스냅샷경로>` 결과 `[PASS]` |
+| **스냅샷 유효성** | 복원 대상 단일 복구 단위 스냅샷이 존재하고 체크섬 무결성이 확인되어야 함 (`partial_backup: false`, `recovery_trusted: true`) | `uv run python scripts/backup_recovery.py verify --snapshot-dir <스냅샷경로>` 결과 `[PASS]` |
 | **격리 대상 경로** | 프로젝트 루트, 현재 작업 디렉터리(cwd), 시스템 루트와 전혀 겹치지 않는 외부 격리 경로여야 함 | `/tmp/refac_bid_box_restore_drill` 등 독립 디렉터리 지정 |
 | **서비스 상태** | Docker 상의 MySQL 8 컨테이너가 정상 기동 중이어야 함 | `docker compose ps` 또는 `scripts/db_readonly_query.py` 정상 응답 |
 | **시스템 격리성 (단독 실행)** | 드릴 중 RTO 시간 실측이 왜곡되지 않도록 백그라운드 테스트, 모델 학습, 벤치마크, 대용량 I/O 작업이 없어야 함 | 코디네이터 단독 직렬 실행 원칙 준수 (타 워커 쓰기/테스트 중단) |
@@ -47,11 +47,14 @@
 
 ### 3.2 표준 실행 명령
 
+도구는 `datetime.UTC` 를 쓰므로 Python 3.11 이상이 필요합니다. macOS 기본 `python3`(3.9)로 실행하면 import 단계에서 실패하므로 `uv run python` 으로 실행합니다. 호스트의 `mysql` 클라이언트가 서버 인증 플러그인과 맞지 않으면 `MYSQL_CLIENT_CONTAINER=$(docker inspect -f '{{.Name}}' $(docker compose ps -q db) | tr -d /)` 를 먼저 지정해 컨테이너 안의 클라이언트를 씁니다.
+
+
 정기 분기 복원 드릴 시 운영 담당자 또는 코디네이터가 실행하는 표준 명령입니다:
 
 ```bash
 # 최신 또는 특정 스냅샷을 대상으로 복원 드릴 실행 (자동 정리 포함)
-python3 scripts/backup_recovery.py drill \
+uv run python scripts/backup_recovery.py drill \
   --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
   --target-dir /tmp/refac_bid_box_restore_drill \
   --report-path data/backups/restore_drill_report_20260911.json
@@ -63,7 +66,7 @@ python3 scripts/backup_recovery.py drill \
 
 ```bash
 # --keep-artifacts 플래그 지정 실행
-python3 scripts/backup_recovery.py drill \
+uv run python scripts/backup_recovery.py drill \
   --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
   --target-dir /tmp/refac_bid_box_restore_drill \
   --db-name procurement_drill_debug \
