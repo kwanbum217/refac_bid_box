@@ -18,7 +18,9 @@ Meilisearch 읽기 모델 건수 대조 점검 회귀 테스트.
 from __future__ import annotations
 
 import inspect
+import json
 import logging
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -38,6 +40,15 @@ from src.app.services.search_index import (
 )
 from src.app.services.search_index_parity import check_search_index_parity, count_db_announcements
 from src.tasks import scheduled_tasks
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SCHEMA_BASELINE_PATH = PROJECT_ROOT / "data" / "backups" / "schema_signature_baseline.json"
+
+PARITY_PREMISE_BROKEN = (
+    "GROUP BY 건수와 row_number 파티션 수의 동치 전제가 깨졌습니다. "
+    "bid_announcements 의 파티션 키(bid_ntce_no, category)가 NULL 을 허용하면 "
+    "count_db_announcements 와 latest_announcement_filter 가 다른 값을 낼 수 있습니다."
+)
 
 
 def _fake_db(announcement_count: int, result_count: int) -> MagicMock:
@@ -259,6 +270,25 @@ def test_group_by_건수가_latest_announcement_filter_파티션수와_같다(is
 
     assert expected == 4
     assert count_db_announcements(isolated_db) == expected
+
+
+def test_공고_파티션_키는_ORM에서_NOT_NULL이다() -> None:
+    """두 건수 정의의 동치 전제를 ORM 컬럼 nullable=False 로 고정합니다."""
+    columns = BidAnnouncement.__table__.c
+
+    assert columns.bid_ntce_no.nullable is False, PARITY_PREMISE_BROKEN
+    assert columns.category.nullable is False, PARITY_PREMISE_BROKEN
+
+
+def test_공고_파티션_키는_G1_기준선에서_NOT_NULL이다() -> None:
+    """운영 MySQL 스키마 서명에서도 같은 전제를 고정합니다."""
+    baseline = json.loads(SCHEMA_BASELINE_PATH.read_text(encoding="utf-8"))
+    columns = {
+        column["name"]: column for column in baseline["tables"]["bid_announcements"]["columns"]
+    }
+
+    assert columns["bid_ntce_no"]["nullable"] is False, PARITY_PREMISE_BROKEN
+    assert columns["category"]["nullable"] is False, PARITY_PREMISE_BROKEN
 
 
 # --------------------------------------------------------------------------- #
