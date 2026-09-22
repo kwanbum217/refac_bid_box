@@ -15,11 +15,13 @@ class TestEvaluationUITemplate:
     """detail.html 템플릿의 공고 기준 분석 카드 검증."""
 
     @pytest.fixture(scope="class")
-    def template_path(self):
+    @classmethod
+    def template_path(cls):
         return Path("src/app/templates/bids/detail.html")
 
     @pytest.fixture(scope="class")
-    def template_content(self, template_path):
+    @classmethod
+    def template_content(cls, template_path):
         return template_path.read_text(encoding="utf-8")
 
     # ---------------------------------------------------------------------
@@ -347,7 +349,8 @@ class TestEvaluationUIScoreTable:
     """공고문 배점표 입력과 미계산 표기 검증."""
 
     @pytest.fixture(scope="class")
-    def template_content(self):
+    @classmethod
+    def template_content(cls):
         path = (
             Path(__file__).resolve().parents[1]
             / "src"
