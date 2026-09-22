@@ -952,6 +952,212 @@
       ],
       "hash": "643c95f2fa8501dc2375cedd58248611a366ffe9cfd049e0f1f234318335686b"
     },
+    "bid_announcement_license_limits": {
+      "name": "bid_announcement_license_limits",
+      "columns": [
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'000'"
+        },
+        {
+          "name": "bsns_div_nm",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "collected_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "indstryty_mfrc_fld_list",
+          "type": "TEXT COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "lcns_lmt_nm",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "lmt_grp_no",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'1'"
+        },
+        {
+          "name": "lmt_sno",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'1'"
+        },
+        {
+          "name": "permsn_indstryty_list",
+          "type": "TEXT COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rgst_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_bid_ann_lic_limits_collected",
+          "column_names": [
+            "collected_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_ann_lic_limits_ntce",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_bid_ann_lic_limits_ntce_grp_sno",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord",
+            "lmt_grp_no",
+            "lmt_sno"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "a0871740bfc21f95c53509ddb5948275e2a07242da67acc0d845bc3effe258b5"
+    },
+    "bid_announcement_participation_regions": {
+      "name": "bid_announcement_participation_regions",
+      "columns": [
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'000'"
+        },
+        {
+          "name": "bsns_div_nm",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "collected_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "lmt_sno",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'1'"
+        },
+        {
+          "name": "prtcpt_psbl_rgn_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rgst_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_bid_ann_prtcpt_rgn_collected",
+          "column_names": [
+            "collected_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_bid_ann_prtcpt_rgn_ntce",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_bid_ann_prtcpt_rgn_ntce_sno",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord",
+            "lmt_sno"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "5c661943772b6baf82ed0492577310ead3eed005d697e44fac910fea3ec2389b"
+    },
     "bid_announcements": {
       "name": "bid_announcements",
       "columns": [
@@ -3339,6 +3545,8 @@
     "auth_permission": "5a1eda5bc2a9f9790700b2a4228ae20e71b3294de4c3f32ea5d531951bbf732e",
     "automation_requests": "2478d00ecc710a936ce176be8d4bf7251b30e685f439eaa523b6e4908334416d",
     "automation_subscriptions": "643c95f2fa8501dc2375cedd58248611a366ffe9cfd049e0f1f234318335686b",
+    "bid_announcement_license_limits": "a0871740bfc21f95c53509ddb5948275e2a07242da67acc0d845bc3effe258b5",
+    "bid_announcement_participation_regions": "5c661943772b6baf82ed0492577310ead3eed005d697e44fac910fea3ec2389b",
     "bid_announcements": "e573d572930a7e4329f1bc106ae05b6ddc1e79f49d776373f5bc2cad3ccc7324",
     "bid_compare_stats_snapshots": "d9e0fe67e1318a2cdf02ff0b2fc15dd89716a4495bde95d916749105311dac60",
     "bid_dataset_summaries": "db63132629b7fd7a107d4ef8dd88e3b75db7645da6e724d0df92115af9288501",
@@ -3364,11 +3572,13 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "04aa47f884864787b7041cd3df4c0e5836e71c9334db839527ff32cf2d9e1017",
+  "overall_hash": "6eb318e7b625b161693ca5312aedbb7c9076034afa2d4b76a66ad0d91fb76b00",
   "orm_tables": [
     "accounts_customuser",
     "automation_requests",
     "automation_subscriptions",
+    "bid_announcement_license_limits",
+    "bid_announcement_participation_regions",
     "bid_announcements",
     "bid_compare_stats_snapshots",
     "bid_dataset_summaries",
@@ -3396,6 +3606,8 @@
     "auth_permission",
     "automation_requests",
     "automation_subscriptions",
+    "bid_announcement_license_limits",
+    "bid_announcement_participation_regions",
     "bid_announcements",
     "bid_compare_stats_snapshots",
     "bid_dataset_summaries",
@@ -3422,10 +3634,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-09-13T11:45:14.445043+00:00",
+    "generated_at": "2026-09-22T07:55:07.582667+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "2c6eb44b1cadb8e480ed6ce0cb9ef07fd785c425"
+    "git_head": "44dd7546d19d402ecac89404fdcb1b61ca95aa52"
   }
 }
