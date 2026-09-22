@@ -323,8 +323,8 @@ jobs:
       - name: Run full pytest and enforce warning budget
         shell: bash
         env:
-          # 상한은 docs/ops/warning_budget.md 2장의 예산(5건)과 같은 값입니다.
-          PYTEST_WARNING_BUDGET: '5'
+          # 상한은 docs/ops/warning_budget.md 2장의 예산(0건)과 같은 값입니다.
+          PYTEST_WARNING_BUDGET: '0'
         run: |
           set +e
           OUTPUT=$(uv run pytest tests/ -q -m 'not data_assets' 2>&1)
