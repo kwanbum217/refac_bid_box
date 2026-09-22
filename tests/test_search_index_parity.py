@@ -24,15 +24,19 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from sqlalchemy import func, select
 
 from src.app.core.config import settings
+from src.app.core.timeutil import utcnow
+from src.app.models.bids import BidAnnouncement
 from src.app.services import search_index_parity
+from src.app.services.bid_queries import latest_announcement_filter
 from src.app.services.search_index import (
     INDEX_UID,
     MeiliSearchClient,
     SearchBackendUnavailable,
 )
-from src.app.services.search_index_parity import check_search_index_parity
+from src.app.services.search_index_parity import check_search_index_parity, count_db_announcements
 from src.tasks import scheduled_tasks
 
 
@@ -192,6 +196,69 @@ def test_점검경로가_색인쓰기와_커밋을_부르지_않는다(monkeypat
     client.configure_index.assert_not_called()
     db.commit.assert_not_called()
     db.add.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# 건수 정의 동치
+# --------------------------------------------------------------------------- #
+
+
+def test_group_by_건수가_latest_announcement_filter_파티션수와_같다(isolated_db) -> None:
+    """차수가 여러 개인 조합과 카테고리만 다른 같은 공고번호가 섞여도 두 정의가 동치입니다."""
+    now = utcnow()
+    isolated_db.add_all(
+        [
+            BidAnnouncement(
+                bid_ntce_no="PARITY-A",
+                bid_ntce_ord="000",
+                category="Servc",
+                bid_ntce_dt=now,
+                collected_at=now,
+            ),
+            BidAnnouncement(
+                bid_ntce_no="PARITY-A",
+                bid_ntce_ord="001",
+                category="Servc",
+                bid_ntce_dt=now,
+                collected_at=now,
+            ),
+            BidAnnouncement(
+                bid_ntce_no="PARITY-A",
+                bid_ntce_ord="002",
+                category="Servc",
+                bid_ntce_dt=now,
+                collected_at=now,
+            ),
+            BidAnnouncement(
+                bid_ntce_no="PARITY-B",
+                bid_ntce_ord="000",
+                category="Servc",
+                bid_ntce_dt=now,
+                collected_at=now,
+            ),
+            BidAnnouncement(
+                bid_ntce_no="PARITY-B",
+                bid_ntce_ord="000",
+                category="Thng",
+                bid_ntce_dt=now,
+                collected_at=now,
+            ),
+            BidAnnouncement(
+                bid_ntce_no="PARITY-C",
+                bid_ntce_ord="000",
+                category="Cnstwk",
+                bid_ntce_dt=now,
+                collected_at=now,
+            ),
+        ]
+    )
+    isolated_db.commit()
+
+    latest = latest_announcement_filter(select(BidAnnouncement.id)).subquery()
+    expected = int(isolated_db.scalar(select(func.count()).select_from(latest)) or 0)
+
+    assert expected == 4
+    assert count_db_announcements(isolated_db) == expected
 
 
 # --------------------------------------------------------------------------- #
