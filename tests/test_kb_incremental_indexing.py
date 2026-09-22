@@ -39,7 +39,22 @@ def _ephemeral_persistent_factory(*_args, **_kwargs):
 
 @pytest.fixture(autouse=True)
 def _reset_chroma_between_tests(monkeypatch):
-    """EphemeralClient 를 테스트 시작 시 reset 하고 PersistentClient 를 대체합니다."""
+    """EphemeralClient 를 테스트 시작 시 reset 하고 PersistentClient 를 대체합니다.
+
+    이 파일은 실제 EphemeralClient 로 색인하므로, 임베딩이 chromadb 기본값이면 첫
+    호출에 ONNX MiniLM 모델을 내려받습니다(2026-09-22 경고 예산 잡 1 warning 의 출처가
+    이 파일의 test_first_run_indexes_everything 이었습니다). conftest 의 결정적 가짜
+    임베딩이 기본값을 덮게 하고, ONNX 추론과 다운로드를 실패시켜 격리가 풀리면 여기서
+    즉시 드러나게 합니다.
+    """
+    from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("테스트가 chromadb 기본 ONNX MiniLM 임베딩을 호출했습니다")
+
+    monkeypatch.setattr(ONNXMiniLM_L6_V2, "__call__", forbidden)
+    monkeypatch.setattr(ONNXMiniLM_L6_V2, "_download_model_if_not_exists", forbidden)
+    monkeypatch.setattr(ONNXMiniLM_L6_V2, "_download", forbidden)
     _ephemeral_client_singleton.reset()
     monkeypatch.setattr(_chromadb_module, "PersistentClient", _ephemeral_persistent_factory)
     return None
