@@ -288,6 +288,9 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # 복원 드릴 정례화 신선도 점검 (읽기 전용, 드릴 자동 실행 금지)
     outcome["restore_drill_freshness"] = await asyncio.to_thread(_check_restore_drill_freshness)
+
+    # Meilisearch 읽기 모델 건수 대조 점검 (읽기 전용, 재구축 자동 실행 금지)
+    outcome["search_index_parity"] = await asyncio.to_thread(_check_search_index_parity)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
         await asyncio.to_thread(release_schedule_claim, claim.key, token=claim.token)
@@ -357,6 +360,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     outcome["institution_stats"] = await asyncio.to_thread(_rebuild_institution_stats)
     outcome["mysql_stats_freshness"] = await asyncio.to_thread(_check_mysql_stats_freshness)
     outcome["restore_drill_freshness"] = await asyncio.to_thread(_check_restore_drill_freshness)
+    outcome["search_index_parity"] = await asyncio.to_thread(_check_search_index_parity)
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
         await asyncio.to_thread(release_schedule_claim, claim.key, token=claim.token)
@@ -488,6 +492,51 @@ def _check_restore_drill_freshness() -> dict[str, Any]:
     except Exception as exc:
         logger.exception("복원 드릴 정례화 신선도 점검 실패")
         return {"status": "failed", "error": str(exc)}
+
+
+def _check_search_index_parity() -> dict[str, Any]:
+    """실패해도 야간 스케줄 전체를 실패로 만들지 않습니다.
+
+    Meilisearch 읽기 모델과 MySQL 원본의 공고·낙찰 건수를 읽기 전용으로 대조합니다.
+    색인 동기화나 재구축은 어떤 것도 자동 실행하지 않으며 감지만 수행합니다.
+    불일치 시 경고 수준 로그로 두 데이터셋의 수치와 수동 재구축 안내를 남기고,
+    정상일 때는 정보 수준 로그를 남깁니다.
+    """
+    from src.app.services.search_index_parity import check_search_index_parity
+
+    db = SessionLocal()
+    try:
+        result = check_search_index_parity(db)
+        status = result.get("status")
+        if status == "mismatch":
+            announcements = result.get("announcements") or {}
+            results = result.get("results") or {}
+            logger.warning(
+                "Meilisearch 읽기 모델 건수 불일치 감지: "
+                "공고 db=%s meili=%s diff=%s, 낙찰 db=%s meili=%s diff=%s. "
+                "자동 재구축은 실행하지 않습니다. "
+                "수동 재구축은 scripts/run_data_reconciliation.py 로 실행하세요.",
+                announcements.get("db"),
+                announcements.get("meili"),
+                announcements.get("diff"),
+                results.get("db"),
+                results.get("meili"),
+                results.get("diff"),
+            )
+        elif status == "unavailable":
+            logger.warning(
+                "Meilisearch 읽기 모델 건수 대조 불가: 검색 백엔드에 연결하지 못했습니다."
+            )
+        elif status == "skipped":
+            logger.info("Meilisearch 읽기 모델 건수 대조 건너뜀 (MEILI_ENABLED 비활성)")
+        else:
+            logger.info("Meilisearch 읽기 모델 건수 대조 정상 (공고·낙찰 모두 일치)")
+        return result
+    except Exception as exc:
+        logger.exception("Meilisearch 읽기 모델 건수 대조 실패")
+        return {"status": "failed", "error": str(exc)}
+    finally:
+        db.close()
 
 
 @traced_worker_task
