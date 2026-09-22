@@ -47,12 +47,18 @@ def count_db_announcements(db: Session) -> int:
     """색인 대상과 같은 정의의 공고 기대 건수를 COUNT 집계로 셉니다.
 
     공고번호+카테고리 파티션마다 최신 차수 1행만 색인되므로 서로 다른 조합 수를 셉니다.
-    행을 파이썬으로 내려받아 세지 않습니다.
+    latest_announcement_filter 의 row_number 파티션 수와 같은 값이며, 대신 파티션 키를
+    GROUP BY 로 묶어 셉니다. 그 키가 bid_announcements 의 (bid_ntce_no, bid_ntce_ord,
+    category) 유니크 인덱스에 덮여 있어 운영 규모(약 638만 행)에서도 전체 정렬 없이
+    인덱스만 읽습니다. GROUP BY 는 NULL 키도 하나의 그룹으로 세므로 파티션 정의와
+    결과가 같습니다. 행을 파이썬으로 내려받아 세지 않습니다.
     """
-    from src.app.services.bid_queries import latest_announcement_filter
-
-    latest = latest_announcement_filter(select(BidAnnouncement.id)).subquery()
-    return int(db.scalar(select(func.count()).select_from(latest)) or 0)
+    grouped = (
+        select(BidAnnouncement.bid_ntce_no, BidAnnouncement.category)
+        .group_by(BidAnnouncement.bid_ntce_no, BidAnnouncement.category)
+        .subquery()
+    )
+    return int(db.scalar(select(func.count()).select_from(grouped)) or 0)
 
 
 def count_db_results(db: Session) -> int:
