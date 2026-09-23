@@ -234,6 +234,27 @@ uv run python scripts/backup_recovery.py restore \
 
 검증 실패 시 즉시 에러를 반환하고 복원 결과를 검토할 수 있도록 로그를 남깁니다.
 
+### 4.3.1 Meilisearch 읽기 모델 재색인
+
+Meilisearch 색인은 백업 대상이 아닙니다. Meilisearch 는 MySQL 에서 파생되는 공고·낙찰 목록 읽기 모델이므로, 복원 후 MySQL 데이터에서 다시 만들어야 합니다. 재색인이 끝나기 전에는 검색·목록 조회가 정상 결과를 내지 않습니다.
+
+컨테이너 안에서 타임아웃을 30초로 지정해 실행합니다:
+
+```bash
+docker compose exec -e MEILI_TIMEOUT_SECONDS=30 app python3 scripts/sync_search_index.py
+```
+
+완료 판정은 스크립트 종료가 아니라 Meilisearch 의 미완료 작업이 0 이 되는 것입니다. 클라이언트 적재가 끝나 스크립트가 종료된 뒤에도 서버 색인은 계속 진행되므로, 호스트에서 다음으로 `enqueued`·`processing` 작업이 0 인지 확인합니다:
+
+```bash
+curl -s -H "Authorization: Bearer $MEILI_MASTER_KEY" \
+  "http://127.0.0.1:7700/tasks?statuses=enqueued,processing&limit=1"
+```
+
+응답의 `total` 이 0 이면 재색인이 완료된 것입니다.
+
+전제: [`docs/ops/rpo_rto_policy.md`](rpo_rto_policy.md) 3장의 실측 839.3초는 `MEILI_TIMEOUT_SECONDS=30` 에서 측정한 값입니다. 기본값 5초로 전체 재색인이 배치 실패 없이 끝나는지는 확인하지 않았으므로, 복구에서는 반드시 30을 지정합니다.
+
 ### 4.4 복원 리허설 (Restore Drill)
 
 과거 복원 리허설은 계획 검증과 체크섬 확인만 수행하고 실제 아카이브 해제나 DB import를 수행하지 않던 결함이 있었습니다. 2026-09-03 리팩토링을 통해 **실제로 아카이브를 풀고, 격리된 임시 DB에 import한 후, `scripts/verify_migration.py`를 재사용해 G1 무손실 검증까지 완결하는 실측 도구**로 고도화되었습니다.
@@ -333,3 +354,4 @@ uv run python scripts/backup_recovery.py prune --retain-count 7 --delete
 - [ ] `make backup-verify`로 생성된 스냅샷 아카이브 무결성 검증
 - [ ] 복원 모의 훈련 시 `restore-dry-run`으로 덮어쓸 대상 목록 확인
 - [ ] 복원 완료 후 `scripts/verify_migration.py` 5단계 검증 전량 통과 확인
+- [ ] 복원 후 4.3.1절 재색인을 `MEILI_TIMEOUT_SECONDS=30` 으로 실행하고 `/tasks` 의 enqueued·processing 이 0 인지 확인
