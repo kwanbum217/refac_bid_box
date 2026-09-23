@@ -41,6 +41,57 @@ def test_announcement_document_uses_stable_notice_identity():
     assert document["license_codes"] == []
 
 
+QUALIFICATION_RAW = {
+    "prearngPrceDcsnMthdNm": "복수예가",
+    "sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만",
+    "sucsfbidLwltRate": "89.995",
+    "srvceDivNm": "일반용역",
+}
+
+
+def test_announcement_document_records_qualification_analyzable():
+    """검색 문서의 판정은 목록 뱃지·qual 필터와 같은 단건 판정 함수를 씁니다."""
+    analyzable = BidAnnouncement(
+        id=44,
+        bid_ntce_no="20260923001",
+        bid_ntce_ord="000",
+        bid_ntce_nm="적격심사 대상 용역",
+        dminstt_nm="서울특별시",
+        category="Servc",
+        presmpt_prce=500_000_000,
+        bid_ntce_dt=utcnow(),
+        collected_at=utcnow(),
+        raw_data=dict(QUALIFICATION_RAW),
+    )
+    other_category = BidAnnouncement(
+        id=45,
+        bid_ntce_no="20260923002",
+        bid_ntce_ord="000",
+        bid_ntce_nm="적격심사 비대상 공사",
+        dminstt_nm="서울특별시",
+        category="Cnstwk",
+        presmpt_prce=500_000_000,
+        bid_ntce_dt=utcnow(),
+        collected_at=utcnow(),
+        raw_data=dict(QUALIFICATION_RAW),
+    )
+    no_raw_data = BidAnnouncement(
+        id=46,
+        bid_ntce_no="20260923003",
+        bid_ntce_ord="000",
+        bid_ntce_nm="원본 데이터 없는 용역",
+        dminstt_nm="서울특별시",
+        category="Servc",
+        presmpt_prce=500_000_000,
+        bid_ntce_dt=utcnow(),
+        collected_at=utcnow(),
+    )
+
+    assert announcement_document(analyzable)["qualification_analyzable"] is True
+    assert announcement_document(other_category)["qualification_analyzable"] is False
+    assert announcement_document(no_raw_data)["qualification_analyzable"] is False
+
+
 def test_announcement_document_includes_custom_license_codes():
     row = BidAnnouncement(
         id=43,
@@ -119,6 +170,64 @@ def test_configure_index_supports_full_dataset_pagination_and_rate_filter(monkey
     assert INDEX_MAX_TOTAL_HITS >= 10_000_000
     assert "sucsf_bid_rate" in settings_payload["filterableAttributes"]
     assert "license_codes" in settings_payload["filterableAttributes"]
+
+
+def test_configure_index_registers_qualification_analyzable_filter(monkeypatch):
+    response = Mock(content=b"")
+    response.raise_for_status.return_value = None
+    request = Mock(return_value=response)
+    monkeypatch.setattr(httpx, "request", request)
+
+    MeiliSearchClient(base_url="http://search", master_key="test-key").configure_index()
+
+    settings_payload = request.call_args_list[-1].kwargs["json"]
+    assert "qualification_analyzable" in settings_payload["filterableAttributes"]
+
+
+def test_meili_search_adds_qualification_filter_only_when_requested(monkeypatch):
+    response = Mock()
+    response.content = b"{}"
+    response.json.return_value = {"hits": [], "estimatedTotalHits": 0}
+    response.raise_for_status.return_value = None
+    request = Mock(return_value=response)
+    monkeypatch.setattr(httpx, "request", request)
+
+    client = MeiliSearchClient(base_url="http://search", master_key="test-key")
+    client.search(
+        query="",
+        dataset="announcement",
+        category=None,
+        region=None,
+        sort=["bid_ntce_dt:desc"],
+        offset=0,
+        limit=20,
+        qualification_only=True,
+    )
+    client.search(
+        query="",
+        dataset="announcement",
+        category=None,
+        region=None,
+        sort=["bid_ntce_dt:desc"],
+        offset=0,
+        limit=20,
+        qualification_only=False,
+    )
+
+    with_filter = request.call_args_list[0].kwargs["json"]["filter"]
+    without_filter = request.call_args_list[1].kwargs["json"]["filter"]
+    assert "qualification_analyzable = true" in with_filter
+    assert "qualification_analyzable" not in without_filter
+
+
+def test_qualification_only_reaches_meili_from_list_announcements(monkeypatch, isolated_db):
+    search = Mock(return_value=SearchPage(ids=[], has_next=False))
+    monkeypatch.setattr(settings, "MEILI_ENABLED", True, raising=False)
+    monkeypatch.setattr("src.app.services.search_index.MeiliSearchClient.search", search)
+
+    bid_queries.list_announcements(isolated_db, qualification_only=True)
+
+    assert search.call_args.kwargs["qualification_only"] is True
 
 
 def test_rate_sort_excludes_null_rates_and_escapes_filter_values(monkeypatch):

@@ -58,6 +58,16 @@
                         {% endfor %}
                     </datalist>
                 </div>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        name="qual"
+                        value="1"
+                        class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                        {% if qual == '1' %}checked{% endif %}
+                    >
+                    <span class="text-sm font-medium text-slate-700">적격심사 분석 공고만</span>
+                </label>
                 <select name="cat" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-none cursor-pointer">
                     <option value="">전체 분야</option>
                     <option value="Thng" {% if cat == 'Thng' %}selected{% endif %}>물품</option>
@@ -184,7 +194,7 @@
 
                 <div class="flex items-center space-x-2">
                     {% if page_obj.has_previous %}
-                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
                         이전
                     </a>
                     {% endif %}
@@ -194,7 +204,7 @@
                     </span>
 
                     {% if page_obj.has_next %}
-                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
                         다음
                     </a>
                     {% endif %}

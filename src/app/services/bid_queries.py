@@ -391,22 +391,79 @@ def _paginate_without_count(db: Session, stmt, page_number: int) -> OffsetPage:
     )
 
 
-def qualification_analyzable_ids(bids: Iterable[BidAnnouncement]) -> set[int]:
-    """공고 상세의 적격심사 분석(점수와 입찰가격 보완)이 계산되는 공고의 id 입니다.
+def is_qualification_analyzable(bid: BidAnnouncement) -> bool:
+    """공고 상세의 적격심사 분석(점수와 입찰가격 보완)이 계산되는지 단건 판정합니다.
 
     분석 API 와 같은 두 조건을 봅니다. 규칙 판별이 차단되지 않고 예정가격 기준액이
-    있어야 합니다. 판별 함수는 DB 를 조회하지 않으므로 목록 한 페이지분에만 씁니다.
+    있어야 합니다. DB 를 조회하지 않으므로 목록 한 페이지분이나 검색 문서 생성에
+    쓸 수 있습니다. 목록 뱃지와 qual 필터와 검색 문서가 모두 이 함수 하나를 씁니다.
     """
-    analyzable: set[int] = set()
-    for bid in bids:
-        raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-        rule = resolve_evaluation_rule_from_raw_data(category=bid.category, raw_data=raw_data)
-        if rule.is_blocked:
-            continue
-        reference = bid.prediction_reference_amount
-        if reference is not None and reference > 0:
-            analyzable.add(bid.id)
-    return analyzable
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    rule = resolve_evaluation_rule_from_raw_data(category=bid.category, raw_data=raw_data)
+    if rule.is_blocked:
+        return False
+    reference = bid.prediction_reference_amount
+    return reference is not None and reference > 0
+
+
+def qualification_analyzable_ids(bids: Iterable[BidAnnouncement]) -> set[int]:
+    """적격심사 분석이 계산되는 공고의 id 집합입니다. 판정은 단건 함수에 위임합니다."""
+    return {bid.id for bid in bids if is_qualification_analyzable(bid)}
+
+
+# DB 대체 경로는 판정이 파이썬 함수라 SQL 조건으로 밀어 넣을 수 없어, 정렬 순서대로
+# 후보를 훑으며 통과 행을 모읍니다. 후보를 끝까지 훑으면 페이지 하나에 목록 전체를
+# 읽게 되므로 스캔 상한을 둡니다. 상한에 닿으면 그때까지 모은 행으로 페이지를 만들고
+# 다음 페이지는 없다고 봅니다(개발·테스트 대체 경로라 정확도보다 비용을 우선합니다).
+QUALIFICATION_ONLY_CANDIDATE_LIMIT = 5_000
+QUALIFICATION_ONLY_CHUNK_SIZE = 200
+
+
+def _paginate_qualification_only(db: Session, stmt, page_number: int) -> OffsetPage:
+    """적격심사 분석 대상만 모아 페이지를 만드는 개발·테스트용 DB 대체 경로입니다.
+
+    운영 목록은 Meilisearch 경로를 타므로 이 함수는 MEILI_ENABLED 가 거짓일 때만
+    쓰입니다. 정렬 순서대로 후보를 QUALIFICATION_ONLY_CHUNK_SIZE 행씩 읽으며 판정을
+    통과한 행을 모으고, 앞 페이지의 통과 행은 건너뜁니다. 통과 행이 PAGE_SIZE 를
+    넘으면 다음 페이지가 있다고 표시합니다.
+    """
+    page_number = max(page_number, 1)
+    skip_remaining = (page_number - 1) * PAGE_SIZE
+    collected: list[BidAnnouncement] = []
+    has_next = False
+    scanned = 0
+    offset = 0
+    while scanned < QUALIFICATION_ONLY_CANDIDATE_LIMIT:
+        chunk = _with_mysql_execution_limit(
+            stmt.offset(offset).limit(QUALIFICATION_ONLY_CHUNK_SIZE)
+        )
+        try:
+            rows = db.execute(chunk).scalars().all()
+        except DBAPIError as exc:
+            if not _is_mysql_query_timeout(exc):
+                raise
+            from src.app.services.search_index import SearchBackendUnavailable
+
+            raise SearchBackendUnavailable("MySQL 검색 fallback 실행시간을 초과했습니다.") from exc
+        if not rows:
+            break
+        scanned += len(rows)
+        offset += len(rows)
+        for row in rows:
+            if not is_qualification_analyzable(row):
+                continue
+            if skip_remaining > 0:
+                skip_remaining -= 1
+                continue
+            if len(collected) >= PAGE_SIZE:
+                has_next = True
+                break
+            collected.append(row)
+        if has_next or len(rows) < QUALIFICATION_ONLY_CHUNK_SIZE:
+            break
+    return OffsetPage(
+        object_list=collected, number=page_number, per_page=PAGE_SIZE, has_next=has_next
+    )
 
 
 def _page_from_search_ids(
@@ -435,6 +492,7 @@ def _search_index_page(
     sort: list[str],
     page_number: int,
     license_code: str | None = None,
+    qualification_only: bool = False,
 ) -> OffsetPage:
     from src.app.services.search_index import MeiliSearchClient
 
@@ -449,6 +507,8 @@ def _search_index_page(
     }
     if license_code is not None:
         search_kwargs["license_code"] = license_code
+    if qualification_only:
+        search_kwargs["qualification_only"] = True
     result = MeiliSearchClient().search(**search_kwargs)
     return _page_from_search_ids(db, model, result.ids, page_number, result.has_next)
 
@@ -480,6 +540,7 @@ def list_announcements(
     sort: str | None = None,
     page: int = 1,
     lic: str | None = None,
+    qualification_only: bool = False,
 ) -> OffsetPage:
     region_code = normalize_region_code(region)
     license_code = normalize_license_code(lic)
@@ -500,6 +561,7 @@ def list_announcements(
                 category=cat or None,
                 region=region_code or None,
                 license_code=license_code or None,
+                qualification_only=qualification_only,
                 sort=_announcement_search_sort(sort_key),
                 page_number=page_number,
             )
@@ -557,6 +619,11 @@ def list_announcements(
         )
     else:
         stmt = stmt.order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
+
+    if qualification_only:
+        # 적격심사 분석 대상은 용역(Servc) 공고에서만 계산되므로 후보를 먼저 좁힙니다.
+        stmt = stmt.where(BidAnnouncement.category == "Servc")
+        return _apply_page_limit(_paginate_qualification_only(db, stmt, page_number))
 
     return _apply_page_limit(_paginate_without_count(db, stmt, page_number))
 
