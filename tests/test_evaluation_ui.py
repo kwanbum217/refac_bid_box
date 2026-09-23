@@ -282,6 +282,7 @@ class TestEvaluationUISchemaAlignment:
             "min_bid_amount_with_a",
             "min_possible_bid_rate",
             "scenario_results",
+            "price_compensation",
             "warnings",
         ]
 

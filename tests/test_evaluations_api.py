@@ -238,6 +238,43 @@ def test_score_table_input_drives_server_calculation(client, isolated_db, as_use
     # P_req = 95 - 75 = 20 = B 이므로 역산 하한이 기준비율 자체(90%) 로 실질 구속된다
     assert payload["min_possible_bid_rate"] == pytest.approx(90.0)
 
+    # 가격 보완 판정: 도메인 결과를 지수 표기 없는 문자열·정수로 옮긴다
+    pc = payload["price_compensation"]
+    assert pc is not None
+    assert pc["score_status"] == "already_sufficient"
+    assert pc["score_status_label"] == "하한율로 이미 통과"
+    assert pc["amount_status"] == "verified"
+    assert pc["floor_score_basis"] == "forward_verified"
+    # pass_threshold 는 배점표 통과점수 T 이지 비밀번호가 아니다 (S105 오탐)
+    assert pc["pass_threshold"] == "95"  # noqa: S105
+    assert pc["non_price_score"] == "75"
+    assert pc["p_req"] == "20"
+    assert pc["max_price_score"] == "20"
+    assert pc["score_gap"] == "0"
+    assert pc["score_slack"] == "0"
+    assert pc["floor_price_score"] == "20"
+    assert pc["base_rate_percent"] == "90"
+    assert pc["announcement_lwlt_rate"] == "89.995"
+    assert pc["calculated_rate_percent"] == "90"
+    assert pc["effective_rate_percent"] == "90"
+    assert pc["binding_constraint"] == "CALCULATED_SCORE_RATE"
+    assert pc["score_floor_amount"] == 449_975_000
+    # 하한 금액으로 이미 P_req 를 충족하므로 금액을 더 올리지 않는다
+    pc_scenarios = {s["scenario_name"]: s for s in pc["scenarios"]}
+    assert list(pc_scenarios) == ["하단", "기준", "상단"]
+    assert [pc_scenarios[name]["complement_bid_amount"] for name in ("하단", "기준", "상단")] == [
+        440_975_500,
+        449_975_000,
+        458_974_500,
+    ]
+    for row in pc_scenarios.values():
+        assert row["row_status"] == "already_sufficient"
+        assert row["verified_price_ratio"] == "0.9000"
+        assert row["bid_rate_percent"] == "89.995"
+        assert row["verified_price_score"] == "20"
+        assert row["ratio_steps_raised"] == 0
+        assert row["meets_p_req"] is True
+
 
 def test_announcement_lower_rate_binds_when_score_is_easy(client, isolated_db, as_user):
     """역산 투찰률이 공고 하한율보다 낮으면 공고 하한율이 실질 하한이 된다."""
@@ -268,6 +305,45 @@ def test_announcement_lower_rate_binds_when_score_is_easy(client, isolated_db, a
     assert payload["min_possible_bid_rate"] == pytest.approx(ATTACH_01_LWLT_RATE)
 
 
+def test_price_compensation_reports_impossible_without_duplicating_warning(
+    client, isolated_db, as_user
+):
+    """P_req > B 이면 보완 불가로 판정하고, 도메인 경고를 응답에 두 번 싣지 않는다.
+
+    같은 문장을 도메인 resolve_price_compensation 과 invert_lowest_bid_rate 가 모두
+    내므로, 이어 붙이기 전에 중복을 제거해야 한다.
+    """
+    as_user(10)
+    bid = _create_bid(isolated_db)
+    # Q = 75 이고 T 를 100 으로 올리면 P_req = 25 > B 20 이다.
+    table = {**SCORE_TABLE, "pass_threshold": 100}
+
+    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id, score_table=table))
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    pc = payload["price_compensation"]
+    assert pc is not None
+    assert pc["score_status"] == "impossible"
+    assert pc["score_status_label"] == "보완 불가"
+    assert pc["p_req"] == "25"
+    assert pc["score_gap"] == "5"
+    assert pc["score_slack"] is None
+    assert pc["guidance"] == (
+        "가격점수 만점으로도 통과점수에 닿지 않습니다. 대수 투찰률은 투찰 권고가 아닙니다."
+    )
+    for row in pc["scenarios"]:
+        assert row["row_status"] == "impossible"
+        assert row["complement_bid_amount"] is None
+        assert row["meets_p_req"] is False
+    # 도메인 계약: P_req > B 사유 경고는 응답 전체에 정확히 한 번만 실린다
+    capacity_warning = (
+        "수행능력 점수(75.0점) 부족으로 가격점수 만점(20.0점)을 받아도 "
+        "통과점수(100.0점)에 도달할 수 없습니다."
+    )
+    assert payload["warnings"].count(capacity_warning) == 1
+
+
 @pytest.mark.parametrize(
     "missing_field",
     ["max_price_score", "multiplier", "pass_threshold"],
@@ -286,6 +362,8 @@ def test_any_missing_score_table_field_blocks_scoring(client, isolated_db, as_us
     assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
     assert missing_field not in payload["blocked_reason"]  # 메시지는 한국어 표기로 나온다
     assert payload["scenario_results"][0]["price_score"] is None
+    # 점수 계산을 차단했으므로 가격 보완 판정도 내지 않는다
+    assert payload["price_compensation"] is None
 
 
 def test_non_positive_score_table_value_is_rejected(client, isolated_db, as_user):
@@ -339,6 +417,8 @@ def test_missing_score_table_keeps_scenarios_and_floor_amounts(
     # 역산과 기준비율은 통과점수 T 가 있어야 나오므로 여전히 비어 있다
     assert payload["min_possible_bid_rate"] is None
     assert payload["base_rate"] is None
+    # 배점표가 없으면 가격 보완 판정도 내지 않는다
+    assert payload["price_compensation"] is None
     # 낙찰하한율 기준 최저 투찰금액은 차단되지 않는다. 용역은 A값을 적용하지 않는다.
     assert payload["a_value_amount"] is None
     assert payload["min_bid_amount_with_a"] is None
@@ -450,6 +530,8 @@ def test_analyze_returns_blocked_result_with_reason_code(
     assert payload["scenario_results"] == []
     # 규칙을 매칭하지 못하면 별표 정보도 없다
     assert payload["lower_bound_rate"] is None
+    # 규칙 차단 응답에는 가격 보완 판정이 없다
+    assert payload["price_compensation"] is None
 
 
 def test_blocked_analysis_still_saves_snapshot(client, isolated_db, as_user):

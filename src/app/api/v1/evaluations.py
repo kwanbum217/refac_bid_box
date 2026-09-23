@@ -60,6 +60,8 @@ from src.app.schemas.evaluations import (
     EvaluationSnapshotResponse,
     EvidenceMetadata,
     NegotiationRateDistribution,
+    PriceCompensation,
+    PriceCompensationScenario,
     PriceScenarioConfig,
     QualificationInput,
     ScenarioEvaluationResult,
@@ -73,12 +75,15 @@ from src.app.services.evaluation_rules import (
     resolve_evaluation_rule_from_raw_data,
 )
 from src.app.services.evaluation_scoring import (
+    PriceCompensationResult,
     calculate_min_bid_amount,
     calculate_price_score,
     compute_price_ratio,
     evaluate_qualification,
+    format_decimal_plain,
     generate_pred_price_scenarios,
     invert_lowest_bid_rate,
+    resolve_price_compensation,
 )
 from src.app.services.negotiation_stats import get_negotiation_stats
 
@@ -470,6 +475,94 @@ def _score_table_missing_response(
     )
 
 
+_PRICE_COMPENSATION_STATUS_LABELS: dict[str, str] = {
+    "already_sufficient": "하한율로 이미 통과",
+    "compensate": "입찰가격으로 보완",
+    "impossible": "보완 불가",
+}
+
+
+def _price_compensation_guidance(result: PriceCompensationResult) -> str:
+    """판정 상태별 안내 한 문장. P_req > B 사유와 그 밖의 불가 사유를 구분합니다."""
+    if result.score_status == "already_sufficient":
+        return "낙찰하한율 금액으로 이미 필요 가격점수를 충족합니다. 금액을 더 올리지 않습니다."
+    if result.score_status == "compensate":
+        return (
+            "정량점수 부족분을 입찰가격으로 보완하려면 "
+            "시나리오별 보완 금액 이상으로 투찰해야 합니다."
+        )
+    if result.p_req > result.max_price_score:
+        return "가격점수 만점으로도 통과점수에 닿지 않습니다. 대수 투찰률은 투찰 권고가 아닙니다."
+    return "기준비율 이하의 합법 금액으로는 필요 가격점수에 닿지 않습니다."
+
+
+def _price_compensation_payload(result: PriceCompensationResult) -> PriceCompensation:
+    """도메인 판정 결과를 지수 표기 없는 문자열·정수 JSON 으로 옮깁니다.
+
+    점수·퍼센트는 format_decimal_plain, verified_price_ratio 는 4자리 고정 문자열,
+    금액은 int 를 씁니다. float() 는 거치지 않습니다.
+    """
+    return PriceCompensation(
+        score_status=result.score_status,
+        score_status_label=_PRICE_COMPENSATION_STATUS_LABELS[result.score_status],
+        amount_status=result.amount_status,
+        floor_score_basis=result.floor_score_basis,
+        pass_threshold=format_decimal_plain(result.pass_threshold),
+        non_price_score=format_decimal_plain(result.non_price_score),
+        p_req=format_decimal_plain(result.p_req),
+        max_price_score=format_decimal_plain(result.max_price_score),
+        score_gap=format_decimal_plain(result.score_gap),
+        score_slack=(
+            format_decimal_plain(result.score_slack) if result.score_slack is not None else None
+        ),
+        floor_price_score=(
+            format_decimal_plain(result.floor_price_score)
+            if result.floor_price_score is not None
+            else None
+        ),
+        base_rate_percent=format_decimal_plain(result.base_rate_percent),
+        announcement_lwlt_rate=format_decimal_plain(result.announcement_lwlt_rate_percent),
+        calculated_rate_percent=format_decimal_plain(result.calculated_rate_percent),
+        effective_rate_percent=format_decimal_plain(result.effective_rate_percent),
+        binding_constraint=result.binding_constraint,
+        score_floor_amount=(
+            int(result.score_floor_amount) if result.score_floor_amount is not None else None
+        ),
+        guidance=_price_compensation_guidance(result),
+        scenarios=[
+            PriceCompensationScenario(
+                scenario_name=row.scenario_name,
+                scenario_type=row.scenario_type,
+                estimated_price=int(row.estimated_price),
+                row_status=row.row_status,
+                verified_price_ratio=(
+                    format(row.verified_price_ratio, "f")
+                    if row.verified_price_ratio is not None
+                    else None
+                ),
+                bid_rate_percent=(
+                    format_decimal_plain(row.bid_rate_percent)
+                    if row.bid_rate_percent is not None
+                    else None
+                ),
+                verified_price_score=(
+                    format_decimal_plain(row.verified_price_score)
+                    if row.verified_price_score is not None
+                    else None
+                ),
+                complement_bid_amount=(
+                    int(row.complement_bid_amount)
+                    if row.complement_bid_amount is not None
+                    else None
+                ),
+                ratio_steps_raised=row.ratio_steps_raised,
+                meets_p_req=row.meets_p_req,
+            )
+            for row in result.scenarios
+        ],
+    )
+
+
 def _success_response(
     bid: BidAnnouncement,
     payload: EvaluationRequest,
@@ -512,6 +605,20 @@ def _success_response(
     )
     warnings.extend(invert_result.warnings)
 
+    compensation_result = resolve_price_compensation(
+        pass_threshold=table.pass_threshold,
+        non_price_score=non_price_score,
+        base_rate=table.base_rate,
+        max_price_score=table.max_price_score,
+        multiplier=table.multiplier,
+        announcement_lwlt_rate=effective_lwlt,
+        reference_pred_price=pred_price,
+        scenarios=[(s.scenario_name, s.scenario_type, s.pred_price) for s in scenarios],
+    )
+    for warning in compensation_result.warnings:
+        if warning not in warnings:
+            warnings.append(warning)
+
     return EvaluationResponse(
         status="success",
         rule_id=rule.rule_id,
@@ -537,6 +644,7 @@ def _success_response(
             )
             for scenario in scenarios
         ],
+        price_compensation=_price_compensation_payload(compensation_result),
         warnings=warnings,
     )
 
