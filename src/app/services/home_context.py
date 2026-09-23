@@ -24,6 +24,7 @@ from src.app.models.bids import (
     BidDatasetSummary,
     BidResult,
 )
+from src.app.services.bid_queries import qualification_analyzable_ids
 
 DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES = ("Cnstwk", "Servc", "Thng", "Frgcpt")
 HOME_CONTEXT_CACHE_TTL = 60 * 60 * 24
@@ -262,6 +263,7 @@ def get_home_page_context(
         ],
         "recent_results": recent_results,
         "recent_bid_sections": recent_bid_sections,
+        "qualification_ids": qualification_analyzable_ids(announcement_map.values()),
         "announcement_total": payload["announcement_total"],
         "result_total": payload["result_total"],
         "latest_result_rate": payload["latest_result_rate"],

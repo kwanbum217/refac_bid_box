@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -29,6 +30,7 @@ from src.app.models.bids import (
     BidResult,
     preload_matching_announcements,
 )
+from src.app.services.evaluation_rules import resolve_evaluation_rule_from_raw_data
 from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 
 TOP_INDUSTRY_CHOICES_CACHE_KEY = "bid_queries:top_industry_choices:200"
@@ -387,6 +389,24 @@ def _paginate_without_count(db: Session, stmt, page_number: int) -> OffsetPage:
         per_page=PAGE_SIZE,
         has_next=has_next,
     )
+
+
+def qualification_analyzable_ids(bids: Iterable[BidAnnouncement]) -> set[int]:
+    """공고 상세의 적격심사 분석(점수와 입찰가격 보완)이 계산되는 공고의 id 입니다.
+
+    분석 API 와 같은 두 조건을 봅니다. 규칙 판별이 차단되지 않고 예정가격 기준액이
+    있어야 합니다. 판별 함수는 DB 를 조회하지 않으므로 목록 한 페이지분에만 씁니다.
+    """
+    analyzable: set[int] = set()
+    for bid in bids:
+        raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+        rule = resolve_evaluation_rule_from_raw_data(category=bid.category, raw_data=raw_data)
+        if rule.is_blocked:
+            continue
+        reference = bid.prediction_reference_amount
+        if reference is not None and reference > 0:
+            analyzable.add(bid.id)
+    return analyzable
 
 
 def _page_from_search_ids(
