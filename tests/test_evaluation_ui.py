@@ -454,7 +454,7 @@ class TestEvaluationUIPriceCompensation:
         body = self._function_body(script, "function renderPriceCompensation(pc)")
         assert "escapeHtml(row.scenario_name)" in body
         assert "escapeHtml(rowStatusLabels[row.row_status] || row.row_status)" in body
-        assert "escapeHtml(withDash(row.bid_rate_percent))" in body
+        assert "escapeHtml(percentText(row.bid_rate_percent))" in body
         assert "escapeHtml(withDash(row.verified_price_ratio))" in body
         assert "escapeHtml(withDash(row.verified_price_score))" in body
 
