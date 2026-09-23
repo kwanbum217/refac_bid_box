@@ -10,6 +10,7 @@ import pytest
 
 from scripts.orca_contract import verify_verification_truth
 from scripts.orca_level1_gate import (
+    check_command_reality,
     format_failed_nodes,
     format_human_output,
     get_git_changed_files,
@@ -1294,7 +1295,7 @@ def test_gate7_ignores_untracked_files(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# docker compose -f/--file 허용 (2026-09-06)  command-reality-ignore
+# docker compose -f/--file 허용 (2026-09-06)
 # ---------------------------------------------------------------------------
 
 
@@ -1598,3 +1599,96 @@ def test_gate8_in_run_level1_gate_outputs(tmp_path: Path):
     fail_data = json.loads(json_fail_out)
     assert fail_data["gates"]["gate8_commit_message"]["status"] == "fail"
     assert fail_data["verdict"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# 게이트 10: compose 전역 옵션과 범위 표기 (2026-09-23)
+# ---------------------------------------------------------------------------
+
+# 실제 docker 를 부르지 않도록 도움말 대조를 결정적으로 만들기 위한 가짜 도움말입니다.
+# 키는 실행기와 사슬을 공백으로 이은 문자열입니다(예: "docker compose up").
+COMPOSE_HELP_CACHE: dict[str, str] = {
+    "docker compose": (
+        "Usage:  docker compose [OPTIONS] COMMAND\n"
+        "Options:\n"
+        "      --ansi string              Control when to print ANSI control characters\n"
+        "      --env-file stringArray     Specify an alternate environment file\n"
+        "  -f, --file stringArray         Compose configuration files\n"
+        "      --parallel int             Control max parallelism\n"
+        "      --profile stringArray      Specify a profile to enable\n"
+        "      --progress string          Set type of progress output\n"
+        "  -p, --project-name string      Project name\n"
+        "      --project-directory string Specify an alternate working directory\n"
+    ),
+    "docker compose up": (
+        "Usage:  docker compose up [OPTIONS] [SERVICE...]\n"
+        "Options:\n"
+        "  -d, --detach       Detached mode\n"
+        "      --no-deps      Don't start linked services\n"
+    ),
+}
+
+
+def _command_doc_repo(tmp_path: Path, lines: list[str]) -> Path:
+    """게이트 10 이 검사할 표본 문서를 가진 임시 저장소를 만듭니다."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "doc.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return repo
+
+
+def test_gate10_compose_range_notation_is_not_an_option(tmp_path: Path):
+    """(a) '-f/--file' 같은 범위 표기를 옵션 하나로 세면 없는 옵션 오탐이 됩니다.
+
+    2026-09-06 주석이 이 오탐으로 게이트 10 에 걸려 command-reality-ignore 표지로
+    우회했었습니다. 실행기 경로가 옵션 형태가 아닌 토큰에서 수집을 멈춰야 합니다.
+    """
+    repo = _command_doc_repo(tmp_path, ["# docker compose -f/--file 허용 (2026-09-06)"])
+
+    violations, _warnings, _skipped, checked = check_command_reality(
+        repo, ["doc.md"], help_cache=dict(COMPOSE_HELP_CACHE)
+    )
+
+    assert violations == []
+    assert checked == 0
+
+
+def test_gate10_compose_global_options_reveal_subcommand_flags(tmp_path: Path):
+    """(b)~(f) compose 전역 옵션 뒤 하위 명령 검사와 전역 옵션 자체 대조를 고정합니다.
+
+    전역 옵션이 하위 명령 앞에 오면 사슬이 비어 하위 명령 옵션을 통째로 놓쳤습니다.
+    2026-09-19 에 병합된 `docker compose up -d -e VAR=x app` 이 -f 를 앞에 붙이면
+    그대로 통과하던 구멍을 막습니다.
+    """
+    repo = _command_doc_repo(
+        tmp_path,
+        [
+            "docker compose -f docker-compose.yml up -e X=1 app",
+            "docker compose --file=docker-compose.yml up -d",
+            "docker compose -p proj --env-file .env up -d --no-deps app",
+            "docker compose --bogus up -d",
+            "docker compose up -d -e VAR=x app",
+        ],
+    )
+
+    violations, warnings, skipped, checked = check_command_reality(
+        repo, ["doc.md"], help_cache=dict(COMPOSE_HELP_CACHE)
+    )
+
+    def refs(lineno: int) -> list[str]:
+        return [v for v in violations if v.startswith(f"doc.md:{lineno} ")]
+
+    # (b) 전역 옵션 뒤에 오는 하위 명령 옵션 -e 를 검사합니다.
+    assert refs(1) == ["doc.md:1 `docker compose up` 에 없는 옵션: -e"]
+    # (c) '--file=값' 처럼 붙은 형태는 값을 소비하지 않습니다.
+    assert refs(2) == []
+    # (d) 값을 먹는 전역 옵션이 여럿이어도 하위 명령을 놓치지 않습니다.
+    assert refs(3) == []
+    # (e) 전역 옵션 자체도 docker compose 도움말과 대조합니다.
+    assert refs(4) == ["doc.md:4 `docker compose` 에 없는 옵션: --bogus"]
+    # (f) 기존 사례는 전역 옵션이 없어도 여전히 잡힙니다.
+    assert refs(5) == ["doc.md:5 `docker compose up` 에 없는 옵션: -e"]
+
+    assert warnings == []
+    assert skipped == []
+    assert checked == 5

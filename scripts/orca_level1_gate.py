@@ -572,6 +572,26 @@ COMMAND_REALITY_EXECUTABLES: dict[str, int] = {
 
 COMMAND_REALITY_SUFFIXES = {".md", ".py", ".sh", ".yml", ".yaml"}
 
+# `docker compose` 의 하위 명령보다 앞에 오는 전역 옵션 중 값을 하나 더 먹는
+# 것들입니다. `docker compose --help` 의 해당 항목과 2026-09-23 에 대조했습니다.
+# 이 목록 밖의 전역 옵션은 값 소비 여부를 알 수 없어 그 줄의 하위 명령 검사를
+# 멈춥니다(오탐보다 누락이 낫다). 목록에 있으면 전역 옵션 자체도 도움말과
+# 대조하므로, 없는 옵션이면 위반으로 보고됩니다.
+DOCKER_COMPOSE_GLOBAL_VALUE_FLAGS = frozenset(
+    {
+        "-f",
+        "--file",
+        "-p",
+        "--project-name",
+        "--project-directory",
+        "--env-file",
+        "--profile",
+        "--ansi",
+        "--progress",
+        "--parallel",
+    }
+)
+
 # 줄 앞의 마크다운 장식(인용, 목록, 코드 펜스)과 환경변수 대입을 걷어낸 뒤
 # 알려진 실행기로 시작하는 줄만 후보로 봅니다.
 _COMMAND_LINE_RE = re.compile(
@@ -724,7 +744,8 @@ def check_command_reality(
 
     검사는 두 갈래입니다. docker·npm·gh·uv 는 실행기 도움말과 대조하고,
     `uv run python`·`python3`·`python` 뒤에 `scripts/*.py` 가 오는 명령은 줄 이음을
-    합친 뒤 그 스크립트의 argparse 옵션과 대조합니다. 파이프·리다이렉션·명령 치환
+    합친 뒤 그 스크립트의 argparse 옵션과 대조합니다. `docker compose` 는 하위 명령
+    앞의 전역 옵션을 건너뛴 뒤 하위 명령 사슬과 그 옵션을 대조합니다. 파이프·리다이렉션·명령 치환
     뒤의 토큰과 옵션 형태가 아닌 토큰은 다른 프로그램의 것이므로 검사하지 않습니다.
     파이썬 스크립트 검사 수와 건너뛴 수는 python_stats 에 담아 돌려줍니다(선택).
     """
@@ -766,10 +787,33 @@ def check_command_reality(
 
             depth = COMMAND_REALITY_EXECUTABLES[exe]
             chain: list[str] = []
+            global_checks: list[tuple[str, str]] = []
             idx = 0
-            while idx < len(tokens) and len(chain) < depth and not tokens[idx].startswith("-"):
-                chain.append(tokens[idx])
+            # compose 하위 명령보다 앞에 전역 옵션이 올 수 있습니다. 전역 옵션을
+            # 건너뛰지 않으면 그 뒤 하위 명령의 옵션을 통째로 놓칩니다.
+            in_compose_prefix = False
+            while idx < len(tokens) and len(chain) < depth:
+                token = tokens[idx]
+                if not token.startswith("-"):
+                    chain.append(token)
+                    idx += 1
+                    in_compose_prefix = exe == "docker" and chain == ["compose"]
+                    continue
+                if not in_compose_prefix:
+                    break
+                flag = token.split("=", 1)[0]
+                # `-f/--file` 같은 범위 표기는 옵션이 아닙니다. 그 자리부터는
+                # 산문일 가능성이 크므로 옵션 수집을 멈춥니다.
+                if not _SCRIPT_FLAG_RE.match(flag):
+                    break
+                global_checks.append((" ".join([exe, *chain]), flag))
                 idx += 1
+                if flag not in DOCKER_COMPOSE_GLOBAL_VALUE_FLAGS:
+                    # 값 소비 여부를 알 수 없는 전역 옵션 뒤로는 사슬을 잇지 않습니다.
+                    break
+                if "=" not in token:
+                    idx += 1
+                continue
             if not chain:
                 # 하위 명령보다 플래그가 먼저 나온 형태는 검사하지 않습니다.
                 continue
@@ -780,26 +824,41 @@ def check_command_reality(
                 if arg == "--":
                     break
                 if arg.startswith("-") and arg != "-":
-                    flags.append(arg.split("=", 1)[0])
+                    flag = arg.split("=", 1)[0]
+                    # 범위 표기처럼 옵션 형태가 아닌 토큰은 세지 않고 멈춥니다.
+                    if not _SCRIPT_FLAG_RE.match(flag):
+                        break
+                    flags.append(flag)
                     idx += 1
                     continue
                 # 첫 위치 인자 뒤의 플래그는 다른 프로그램의 것입니다.
                 break
-            if not flags:
+            if not flags and not global_checks:
                 continue
 
             key = " ".join([exe, *chain])
-            if key not in cache:
-                cache[key] = _help_text([exe, *chain])
-            help_text = cache[key]
-            if help_text is None:
+            check_keys: list[str] = []
+            for global_key, _global_flag in global_checks:
+                if global_key not in check_keys:
+                    check_keys.append(global_key)
+            if flags and key not in check_keys:
+                check_keys.append(key)
+            for check_key in check_keys:
+                if check_key not in cache:
+                    cache[check_key] = _help_text(check_key.split())
+            if any(cache[check_key] is None for check_key in check_keys):
                 skipped.add(exe)
                 continue
 
             checked += 1
-            for flag in flags:
-                if not _flag_in_help(flag, help_text):
-                    violations.append(f"{rel}:{lineno} `{key}` 에 없는 옵션: {flag}")
+            for global_key, flag in global_checks:
+                if not _flag_in_help(flag, cache[global_key] or ""):
+                    violations.append(f"{rel}:{lineno} `{global_key}` 에 없는 옵션: {flag}")
+            if flags:
+                chain_help = cache[key] or ""
+                for flag in flags:
+                    if not _flag_in_help(flag, chain_help):
+                        violations.append(f"{rel}:{lineno} `{key}` 에 없는 옵션: {flag}")
 
         for start_lineno, joined in join_continuation_lines(lines):
             previous = lines[start_lineno - 2] if start_lineno >= 2 else ""
