@@ -25,8 +25,10 @@ from src.app.services.evaluation_scoring import (
     calculate_price_score,
     compute_price_ratio,
     evaluate_qualification,
+    format_decimal_plain,
     generate_pred_price_scenarios,
     invert_lowest_bid_rate,
+    resolve_price_compensation,
 )
 
 
@@ -420,3 +422,275 @@ class TestQualificationEvaluation:
         assert res.is_qualified is False
         assert res.condition_total_score_valid is False
         assert any("통과점수" in w for w in res.warnings)
+
+
+class TestPriceCompensation:
+    """정량점수 부족분의 입찰가격 보완 판정과 설계 검산(T1~T11) 고정."""
+
+    def test_t1_already_sufficient_across_three_scenarios(self) -> None:
+        # T=95, Q=75 -> P_req=20, B=20, 하한 89.995, 기준 0.90
+        # P_floor = 20 이므로 P_req <= P_floor 로 최저 투찰금액에서 이미 충분하다.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("75"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("20"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("89.995"),
+            reference_pred_price=Decimal("500000000"),
+            scenarios=(
+                ("하단", "LOWER", Decimal("490000000")),
+                ("기준", "BASE", Decimal("500000000")),
+                ("상단", "UPPER", Decimal("510000000")),
+            ),
+        )
+        assert res.score_status == "already_sufficient"
+        assert res.score_gap == Decimal("0")
+        assert res.score_slack == Decimal("0")
+        assert res.score_floor_amount == Decimal("449975000")
+        assert res.floor_price_score == Decimal("20")
+        assert res.effective_rate_percent == Decimal("90")
+        assert [row.complement_bid_amount for row in res.scenarios] == [
+            Decimal("440975500"),
+            Decimal("449975000"),
+            Decimal("458974500"),
+        ]
+        assert [row.verified_price_ratio for row in res.scenarios] == [
+            Decimal("0.9000"),
+            Decimal("0.9000"),
+            Decimal("0.9000"),
+        ]
+        assert [row.verified_price_score for row in res.scenarios] == [
+            Decimal("20"),
+            Decimal("20"),
+            Decimal("20"),
+        ]
+        assert [row.bid_rate_percent for row in res.scenarios] == [
+            Decimal("89.995"),
+            Decimal("89.995"),
+            Decimal("89.995"),
+        ]
+        assert all(row.row_status == "already_sufficient" for row in res.scenarios)
+        assert all(row.ratio_steps_raised == 0 for row in res.scenarios)
+        assert all(row.meets_p_req is True for row in res.scenarios)
+
+    def test_t2_score_slack_when_non_price_score_is_higher(self) -> None:
+        # T1 에서 Q=83 -> P_req=12 이므로 P_floor 20 대비 여유가 8점이다.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("83"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("20"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("89.995"),
+            reference_pred_price=Decimal("500000000"),
+        )
+        assert res.score_status == "already_sufficient"
+        assert res.score_gap == Decimal("0")
+        assert res.score_slack == Decimal("8")
+        assert res.effective_rate_percent == Decimal("89.995")
+        assert res.binding_constraint == "ANNOUNCEMENT_LWLT_RATE"
+
+    def test_t3_compensation_amount_on_exact_boundary(self) -> None:
+        # T=95, Q=70 -> P_req=25, B=30, k=2, 하한 86.745, 기준 0.90
+        # 낮은 근 = 0.90 - 5/200 = 0.875, 경계비율 0.87495 의 올림 금액이 채택된다.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("70"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("30"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("86.745"),
+            reference_pred_price=Decimal("100000000"),
+            scenarios=(
+                ("기준", "BASE", Decimal("100000000")),
+                ("하단", "LOWER", Decimal("99999999")),
+            ),
+        )
+        assert res.score_status == "compensate"
+        assert res.floor_price_score == Decimal("23.5")
+        assert res.score_gap == Decimal("1.5")
+        assert res.score_floor_amount == Decimal("86745000")
+        assert res.effective_rate_percent == Decimal("87.5")
+        assert res.binding_constraint == "CALCULATED_SCORE_RATE"
+        base_row = res.scenarios[0]
+        assert base_row.complement_bid_amount == Decimal("87495000")
+        assert base_row.verified_price_ratio == Decimal("0.8750")
+        assert base_row.verified_price_score == Decimal("25")
+        assert base_row.bid_rate_percent == Decimal("87.495")
+        assert base_row.ratio_steps_raised == 0
+        assert base_row.meets_p_req is True
+        # 예정가격이 1원 낮아도 같은 4자리 격자에 들어가 같은 금액이 최저가 된다.
+        assert res.scenarios[1].complement_bid_amount == Decimal("87495000")
+
+    def test_t4_compensation_steps_up_one_grid(self) -> None:
+        # T3 에서 Q=69.998 -> P_req=25.002, 낮은 근 0.87501 의 올림 격자는 0.8751 이다.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("69.998"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("30"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("86.745"),
+            reference_pred_price=Decimal("100000000"),
+        )
+        assert res.score_status == "compensate"
+        assert res.p_req == Decimal("25.002")
+        assert res.scenarios == ()
+        probe = calculate_price_score(
+            bid_price=Decimal("87504999"),
+            pred_price=Decimal("100000000"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("30"),
+            multiplier=Decimal("2"),
+        )
+        assert probe.score < Decimal("25.002")
+
+    def test_t4_row_values_are_pinned(self) -> None:
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("69.998"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("30"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("86.745"),
+            scenarios=(("기준", "BASE", Decimal("100000000")),),
+        )
+        row = res.scenarios[0]
+        assert row.complement_bid_amount == Decimal("87505000")
+        assert row.verified_price_ratio == Decimal("0.8751")
+        assert row.ratio_steps_raised == 1
+
+    def test_t5_impossible_when_floor_ratio_exceeds_base_rate(self) -> None:
+        # 하한율 90.005 는 기준비율 0.90 보다 높아 x_floor 0.9001 > 0.90 이고 P_floor 19.98 < P_req 20.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("75"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("20"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("90.005"),
+            scenarios=(("기준", "BASE", Decimal("100000000")),),
+        )
+        assert res.score_status == "impossible"
+        assert res.score_gap == Decimal("0.02")
+        assert res.floor_price_score == Decimal("19.98")
+        row = res.scenarios[0]
+        assert row.complement_bid_amount is None
+        assert row.verified_price_ratio is None
+        assert row.verified_price_score is None
+        assert row.bid_rate_percent is None
+        assert row.row_status == "impossible"
+        assert row.meets_p_req is False
+
+    def test_t6_impossible_when_won_unit_cannot_reach_required_score(self) -> None:
+        # 예정가격 3,333원, 하한율 80%: 원 단위로 올려도 19.97 점에 닿지 않는다.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("75.03"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("20"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("80"),
+            scenarios=(("기준", "BASE", Decimal("3333")),),
+        )
+        assert res.score_status == "impossible"
+        assert res.p_req == Decimal("19.97")
+        assert res.score_gap == Decimal("0.01")
+        assert res.scenarios[0].complement_bid_amount is None
+        assert res.scenarios[0].row_status == "impossible"
+
+    def test_t7_impossible_when_p_req_exceeds_max_price_score(self) -> None:
+        # Q=72, T=95 -> P_req=23 > B=20 이므로 만점으로도 도달할 수 없다.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("72"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("20"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("89.995"),
+            reference_pred_price=Decimal("500000000"),
+            scenarios=(("기준", "BASE", Decimal("500000000")),),
+        )
+        assert res.score_status == "impossible"
+        assert res.score_gap == Decimal("3")
+        assert res.scenarios[0].complement_bid_amount is None
+        assert res.scenarios[0].meets_p_req is False
+
+    def test_t8_k4_scenarios_and_forward_verification(self) -> None:
+        # T=95, Q=29 -> P_req=66, B=70, k=4, 하한 86.745, 기준 0.88
+        # 낮은 근 = 0.88 - 4/400 = 0.87, 경계비율 0.86995 의 올림 금액이 채택된다.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("29"),
+            base_rate=Decimal("0.88"),
+            max_price_score=Decimal("70"),
+            multiplier=Decimal("4"),
+            announcement_lwlt_rate=Decimal("86.745"),
+            scenarios=(
+                ("낙찰예상", "BASE", Decimal("333333333")),
+                ("소액", "LOWER", Decimal("100000000")),
+                ("중간", "MID", Decimal("123456789")),
+                ("대액", "UPPER", Decimal("500000000")),
+            ),
+        )
+        assert res.score_status == "compensate"
+        assert res.scenarios[0].verified_price_ratio == Decimal("0.8700")
+        assert res.scenarios[0].verified_price_score == Decimal("66")
+        assert res.scenarios[0].ratio_steps_raised == 0
+        assert [row.complement_bid_amount for row in res.scenarios] == [
+            Decimal("289983334"),
+            Decimal("86995000"),
+            Decimal("107401234"),
+            Decimal("434975000"),
+        ]
+        one_won_below = calculate_price_score(
+            bid_price=Decimal("289983333"),
+            pred_price=Decimal("333333333"),
+            base_rate=Decimal("0.88"),
+            max_price_score=Decimal("70"),
+            multiplier=Decimal("4"),
+        )
+        assert one_won_below.price_ratio == Decimal("0.8699")
+        assert one_won_below.score == Decimal("65.96")
+
+    def test_t9_rate_only_when_no_reference_and_no_scenarios(self) -> None:
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("70"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("30"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("89.995"),
+        )
+        assert res.amount_status == "rate_only"
+        assert res.floor_score_basis == "algebraic"
+        assert res.scenarios == ()
+        assert res.score_floor_amount is None
+        assert res.floor_price_score == Decimal("29.99")
+        assert res.score_status == "already_sufficient"
+
+    def test_t10_global_status_follows_worst_scenario_row(self) -> None:
+        # 3,333원 행은 도달 불가, 100,000,000원 행은 보완 가능하므로 전역은 불가다.
+        res = resolve_price_compensation(
+            pass_threshold=Decimal("95"),
+            non_price_score=Decimal("75.03"),
+            base_rate=Decimal("0.90"),
+            max_price_score=Decimal("20"),
+            multiplier=Decimal("2"),
+            announcement_lwlt_rate=Decimal("80"),
+            scenarios=(
+                ("소액", "LOWER", Decimal("3333")),
+                ("기준", "BASE", Decimal("100000000")),
+            ),
+        )
+        assert res.score_status == "impossible"
+        assert res.amount_status == "verified"
+        assert res.floor_score_basis == "forward_verified"
+        assert [row.row_status for row in res.scenarios] == ["impossible", "compensate"]
+
+    def test_t11_format_decimal_plain(self) -> None:
+        assert format_decimal_plain(Decimal("20.00")) == "20"
+        assert format_decimal_plain(Decimal("89.9950")) == "89.995"
+        assert format_decimal_plain(Decimal("1.50")) == "1.5"
+        assert format_decimal_plain(Decimal("0")) == "0"

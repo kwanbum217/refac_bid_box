@@ -2,15 +2,18 @@
 src/app/services/evaluation_scoring.py
 
 일반용역 적격심사 결정론적 점수 계산 도메인 모듈.
-부동소수점을 배제하고 decimal.Decimal 과 ROUND_HALF_UP 만을 사용하여
-가격점수, 낙찰하한율 기준 최저 투찰금액, 최저 투찰률 역산, 복수예가 시나리오, 종합 적격 판정을 수행합니다.
+부동소수점을 배제하고 decimal.Decimal 을 사용하며, 금액과 비율 확정에는 ROUND_HALF_UP 을 쓰고
+입찰가격 보완 금액 후보 산출에만 ROUND_CEILING 을 씁니다.
+가격점수, 낙찰하한율 기준 최저 투찰금액, 최저 투찰률 역산, 정량점수 부족분 가격 보완,
+복수예가 시나리오, 종합 적격 판정을 수행합니다.
 외부 DB, HTTP 요청, 파일 I/O, 시스템 시각에 의존하지 않는 순수 함수로 동작합니다.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Literal
 
 # 소수점 4자리 반올림 단위 (가격비율 x 확정용)
@@ -377,4 +380,431 @@ def evaluate_qualification(
         condition_bid_price_valid=cond_price_valid,
         condition_total_score_valid=cond_score_valid,
         warnings=warnings,
+    )
+
+
+def format_decimal_plain(value: Decimal) -> str:
+    """Decimal 을 지수 표기 없이 평문 문자열로 만들고 불필요한 꼬리 0 을 제거합니다.
+
+    Decimal.normalize() 와 float() 를 쓰지 않습니다.
+    예: Decimal('20.00') -> '20', Decimal('89.9950') -> '89.995',
+    Decimal('1.50') -> '1.5', Decimal('0') -> '0'
+    """
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+@dataclass(frozen=True)
+class CompensationScenarioResult:
+    """시나리오 예정가격 한 건에 대한 가격 보완 판정 결과 객체."""
+
+    scenario_name: str
+    scenario_type: str
+    estimated_price: Decimal
+    row_status: Literal["already_sufficient", "compensate", "impossible"]
+    verified_price_ratio: Decimal | None  # 채택 금액의 순방향 x (소수점 4자리)
+    bid_rate_percent: Decimal | None  # 채택 금액 / 예정가격 * 100 (소수점 3자리)
+    complement_bid_amount: Decimal | None  # 보완 입찰금액 (already_sufficient 는 최저 투찰금액)
+    verified_price_score: Decimal | None  # 채택 금액의 가격점수
+    ratio_steps_raised: int  # 역산 하한 비율 대비 4자리 격자 상승 횟수
+    meets_p_req: bool  # 필요 가격점수 P_req 충족 여부
+
+
+@dataclass(frozen=True)
+class PriceCompensationResult:
+    """정량점수 부족분을 입찰가격으로 보완하는 판정 결과 객체."""
+
+    score_status: Literal["already_sufficient", "compensate", "impossible"]
+    amount_status: Literal["verified", "rate_only"]
+    floor_score_basis: Literal["forward_verified", "algebraic"]
+    pass_threshold: Decimal  # T
+    non_price_score: Decimal  # Q
+    p_req: Decimal  # P_req = T - Q
+    max_price_score: Decimal  # B
+    score_gap: Decimal  # P_req 대비 확보 가능 최고 점수의 부족분
+    score_slack: Decimal | None  # already_sufficient 일 때만 P_floor - P_req
+    floor_price_score: Decimal | None  # P_floor: 하한 금액의 가격점수
+    base_rate_percent: Decimal  # 기준비율 (백분율)
+    announcement_lwlt_rate_percent: Decimal  # 공고 하한율 (백분율)
+    calculated_rate_percent: Decimal  # 역산 최저 투찰률 (백분율)
+    effective_rate_percent: Decimal  # 실질 구속 하한 투찰률 (백분율)
+    binding_constraint: Literal["ANNOUNCEMENT_LWLT_RATE", "CALCULATED_SCORE_RATE"]
+    score_floor_amount: Decimal | None  # 기준 예정가격의 최저 투찰금액
+    scenarios: tuple[CompensationScenarioResult, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _RowOutcome:
+    """행 판정 내부 중간 결과 (공개 계약 아님)."""
+
+    status: Literal["already_sufficient", "compensate", "impossible"]
+    floor_amount: Decimal
+    floor_score: Decimal
+    floor_ratio: Decimal
+    complement_amount: Decimal | None
+    verified_ratio: Decimal | None
+    verified_score: Decimal | None
+    bid_rate_percent: Decimal | None
+    ratio_steps_raised: int
+    meets_p_req: bool
+    best_score: Decimal  # 기준비율 이하 x 를 가진 시도 금액 중 최고 점수 (없으면 P_floor)
+    overflow: bool  # 반복 상한 초과로 불가 판정에 이른 경우
+
+
+_SCORE_STATUS_SEVERITY: dict[str, int] = {
+    "already_sufficient": 0,
+    "compensate": 1,
+    "impossible": 2,
+}
+
+
+def _normalize_rate_ratio(rate: Decimal) -> Decimal:
+    """1 초과면 백분율, 이하면 비율로 보고 비율로 정규화합니다."""
+    return rate / Decimal("100") if rate > Decimal("1") else rate
+
+
+def _bid_rate_percent(amount: Decimal, pred_price: Decimal) -> Decimal:
+    """채택 금액의 투찰률(%)을 소수점 셋째 자리 ROUND_HALF_UP 으로 확정합니다."""
+    return (amount / pred_price * Decimal("100")).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+
+def _compute_score_gap(
+    status: Literal["already_sufficient", "compensate", "impossible"],
+    p_req: Decimal,
+    max_price_score: Decimal,
+    floor_score: Decimal,
+    best_score: Decimal,
+) -> Decimal:
+    """상태별 P_req 대비 점수 부족분을 산출합니다."""
+    if status == "already_sufficient":
+        return Decimal("0")
+    if status == "compensate":
+        return p_req - floor_score
+    if p_req > max_price_score:
+        return p_req - max_price_score
+    return p_req - best_score
+
+
+def _resolve_compensation_row(
+    pred_price: Decimal,
+    base_ratio: Decimal,
+    max_price_score: Decimal,
+    multiplier: Decimal,
+    p_req: Decimal,
+    announcement_lwlt_rate: Decimal,
+    announcement_ratio: Decimal,
+) -> _RowOutcome:
+    """예정가격 한 건에 대해 세 상태와 최저 보완 금액을 판정합니다.
+
+    x 는 소수점 4자리 ROUND_HALF_UP 격자이므로 같은 격자 안의 금액은 점수가 같습니다.
+    목표 격자의 반올림 하한 경계비율(x_target - unit/2)에 예정가격을 곱해 원 단위로
+    올림(ROUND_CEILING)한 금액이 그 점수를 얻는 최저 금액입니다.
+    """
+    unit = FOUR_DECIMALS
+    half = unit / Decimal("2")
+
+    floor_amount = calculate_min_bid_amount(pred_price, announcement_lwlt_rate).min_bid_amount
+    floor_result = calculate_price_score(
+        floor_amount, pred_price, base_ratio, max_price_score, multiplier
+    )
+    p_floor = floor_result.score
+    x_floor = floor_result.price_ratio
+
+    if p_req > max_price_score:
+        return _RowOutcome(
+            status="impossible",
+            floor_amount=floor_amount,
+            floor_score=p_floor,
+            floor_ratio=x_floor,
+            complement_amount=None,
+            verified_ratio=None,
+            verified_score=None,
+            bid_rate_percent=None,
+            ratio_steps_raised=0,
+            meets_p_req=False,
+            best_score=p_floor,
+            overflow=False,
+        )
+
+    if p_req <= p_floor:
+        return _RowOutcome(
+            "already_sufficient",
+            floor_amount,
+            p_floor,
+            x_floor,
+            floor_amount,
+            x_floor,
+            p_floor,
+            _bid_rate_percent(floor_amount, pred_price),
+            0,
+            True,
+            p_floor,
+            False,
+        )
+
+    if x_floor > base_ratio and p_floor < p_req:
+        return _RowOutcome(
+            status="impossible",
+            floor_amount=floor_amount,
+            floor_score=p_floor,
+            floor_ratio=x_floor,
+            complement_amount=None,
+            verified_ratio=None,
+            verified_score=None,
+            bid_rate_percent=None,
+            ratio_steps_raised=0,
+            meets_p_req=False,
+            best_score=p_floor,
+            overflow=False,
+        )
+
+    low_root = base_ratio - (max_price_score - p_req) / (Decimal("100") * multiplier)
+    start_ratio = low_root if low_root > announcement_ratio else announcement_ratio
+    x_target = start_ratio.quantize(unit, rounding=ROUND_CEILING)
+    first_target = x_target
+    iteration_limit = int((base_ratio - first_target) / unit) + 1
+
+    best_score: Decimal | None = None
+    adopted_amount: Decimal | None = None
+    adopted_result: PriceScoreResult | None = None
+    overflow = False
+    iterations = 0
+
+    while True:
+        if iterations >= iteration_limit:
+            overflow = True
+            break
+        iterations += 1
+
+        if x_target > base_ratio:
+            break
+
+        boundary = x_target - half
+        candidate = (pred_price * boundary).to_integral_value(rounding=ROUND_CEILING)
+        if candidate < floor_amount:
+            x_target += unit
+            continue
+
+        result = calculate_price_score(
+            candidate, pred_price, base_ratio, max_price_score, multiplier
+        )
+        if result.price_ratio > base_ratio:
+            lower = candidate - WON_UNIT
+            lower_result: PriceScoreResult | None = None
+            while lower >= floor_amount:
+                probe = calculate_price_score(
+                    lower, pred_price, base_ratio, max_price_score, multiplier
+                )
+                if probe.price_ratio <= base_ratio:
+                    lower_result = probe
+                    break
+                lower -= WON_UNIT
+            if lower_result is not None:
+                best_score = (
+                    lower_result.score
+                    if best_score is None
+                    else max(best_score, lower_result.score)
+                )
+                if lower_result.score >= p_req:
+                    adopted_amount = lower
+                    adopted_result = lower_result
+            break
+
+        if result.score >= p_req:
+            adopted_amount = candidate
+            adopted_result = result
+            break
+
+        best_score = result.score if best_score is None else max(best_score, result.score)
+        x_target += unit
+
+    if adopted_amount is None or adopted_result is None:
+        best = best_score if best_score is not None else p_floor
+        return _RowOutcome(
+            status="impossible",
+            floor_amount=floor_amount,
+            floor_score=p_floor,
+            floor_ratio=x_floor,
+            complement_amount=None,
+            verified_ratio=None,
+            verified_score=None,
+            bid_rate_percent=None,
+            ratio_steps_raised=0,
+            meets_p_req=False,
+            best_score=best,
+            overflow=overflow,
+        )
+
+    steps = int((adopted_result.price_ratio - low_root.quantize(unit, rounding=ROUND_FLOOR)) / unit)
+    if steps < 0:
+        steps = 0
+
+    return _RowOutcome(
+        "compensate",
+        floor_amount,
+        p_floor,
+        x_floor,
+        adopted_amount,
+        adopted_result.price_ratio,
+        adopted_result.score,
+        _bid_rate_percent(adopted_amount, pred_price),
+        steps,
+        True,
+        p_floor,
+        overflow,
+    )
+
+
+def resolve_price_compensation(
+    pass_threshold: Decimal,
+    non_price_score: Decimal,
+    base_rate: Decimal,
+    max_price_score: Decimal,
+    multiplier: Decimal,
+    announcement_lwlt_rate: Decimal,
+    reference_pred_price: Decimal | None = None,
+    scenarios: Sequence[tuple[str, str, Decimal]] = (),
+) -> PriceCompensationResult:
+    """정량점수 부족분을 입찰가격으로 보완할 수 있는지 판정합니다.
+
+    [판정 절차]
+    P_req = T - Q 를 하한 가격점수 P_floor 및 배점한도 B 와 비교해 세 상태를 정합니다.
+    already_sufficient: P_req <= P_floor, 최저 투찰금액으로 충분
+    compensate: 금액을 올려 P_req 를 충족하는 최저 금액을 순방향으로 검증
+    impossible: P_req > B 이거나, 최저 투찰금액의 x 가 기준비율을 넘어 원 단위로 도달 불가
+
+    reference_pred_price 가 있으면 그 예정가격의 판정이 전역 상태가 되고,
+    없고 scenarios 가 있으면 행 상태 중 가장 나쁜 것이 전역 상태가 됩니다.
+    둘 다 없으면 금액 검증 없이 역산 하한(algebraic)으로만 상태를 판정합니다.
+    """
+    base_ratio = _normalize_rate_ratio(base_rate)
+    announcement_ratio = _normalize_rate_ratio(announcement_lwlt_rate)
+
+    invert_result = invert_lowest_bid_rate(
+        pass_threshold=pass_threshold,
+        non_price_score=non_price_score,
+        base_rate=base_rate,
+        max_price_score=max_price_score,
+        multiplier=multiplier,
+        announcement_lwlt_rate=announcement_lwlt_rate,
+    )
+    p_req = invert_result.p_req
+
+    warnings: list[str] = list(invert_result.warnings)
+
+    scenario_rows: list[CompensationScenarioResult] = []
+    outcomes: list[_RowOutcome] = []
+    for scenario_name, scenario_type, estimated_price in scenarios:
+        outcome = _resolve_compensation_row(
+            estimated_price,
+            base_ratio,
+            max_price_score,
+            multiplier,
+            p_req,
+            announcement_lwlt_rate,
+            announcement_ratio,
+        )
+        if outcome.overflow:
+            warnings.append(
+                f"{scenario_name} 시나리오에서 보완 금액 탐색 반복 상한을 넘어 불가로 판정했습니다."
+            )
+        outcomes.append(outcome)
+        scenario_rows.append(
+            CompensationScenarioResult(
+                scenario_name=scenario_name,
+                scenario_type=scenario_type,
+                estimated_price=estimated_price,
+                row_status=outcome.status,
+                verified_price_ratio=outcome.verified_ratio,
+                bid_rate_percent=outcome.bid_rate_percent,
+                complement_bid_amount=outcome.complement_amount,
+                verified_price_score=outcome.verified_score,
+                ratio_steps_raised=outcome.ratio_steps_raised,
+                meets_p_req=outcome.meets_p_req,
+            )
+        )
+
+    amount_status: Literal["verified", "rate_only"]
+    floor_score_basis: Literal["forward_verified", "algebraic"]
+    global_outcome: _RowOutcome | None
+
+    if reference_pred_price is not None:
+        global_outcome = _resolve_compensation_row(
+            reference_pred_price,
+            base_ratio,
+            max_price_score,
+            multiplier,
+            p_req,
+            announcement_lwlt_rate,
+            announcement_ratio,
+        )
+        if global_outcome.overflow:
+            warnings.append(
+                "기준 예정가격에서 보완 금액 탐색 반복 상한을 넘어 불가로 판정했습니다."
+            )
+        amount_status = "verified"
+        floor_score_basis = "forward_verified"
+    elif outcomes:
+        global_outcome = max(outcomes, key=lambda row: _SCORE_STATUS_SEVERITY[row.status])
+        amount_status = "verified"
+        floor_score_basis = "forward_verified"
+    else:
+        global_outcome = None
+        amount_status = "rate_only"
+        floor_score_basis = "algebraic"
+
+    if global_outcome is not None:
+        score_status = global_outcome.status
+        floor_price_score: Decimal | None = global_outcome.floor_score
+        score_floor_amount: Decimal | None = global_outcome.floor_amount
+        score_gap = _compute_score_gap(
+            score_status,
+            p_req,
+            max_price_score,
+            global_outcome.floor_score,
+            global_outcome.best_score,
+        )
+    else:
+        floor_price_score = max_price_score - multiplier * abs(
+            (base_ratio - announcement_ratio) * Decimal("100")
+        )
+        score_floor_amount = None
+        if p_req > max_price_score:
+            score_status = "impossible"
+            score_gap = p_req - max_price_score
+        elif p_req <= floor_price_score:
+            score_status = "already_sufficient"
+            score_gap = Decimal("0")
+        else:
+            score_status = "compensate"
+            score_gap = p_req - floor_price_score
+
+    score_slack = (
+        floor_price_score - p_req
+        if score_status == "already_sufficient" and floor_price_score is not None
+        else None
+    )
+
+    return PriceCompensationResult(
+        score_status=score_status,
+        amount_status=amount_status,
+        floor_score_basis=floor_score_basis,
+        pass_threshold=pass_threshold,
+        non_price_score=non_price_score,
+        p_req=p_req,
+        max_price_score=max_price_score,
+        score_gap=score_gap,
+        score_slack=score_slack,
+        floor_price_score=floor_price_score,
+        base_rate_percent=base_ratio * Decimal("100"),
+        announcement_lwlt_rate_percent=invert_result.announcement_rate_pct,
+        calculated_rate_percent=invert_result.calculated_rate_pct,
+        effective_rate_percent=invert_result.effective_rate_pct,
+        binding_constraint=invert_result.binding_constraint,
+        score_floor_amount=score_floor_amount,
+        scenarios=tuple(scenario_rows),
+        warnings=tuple(warnings),
     )
