@@ -1148,6 +1148,18 @@ $(document).ready(function() {
         const withDash = function(value) {
             return value == null || value === '' ? '-' : String(value);
         };
+        const percentText = function(value) {
+            return value == null || value === '' ? '-' : String(value) + '%';
+        };
+        const rowStatusLabels = {
+            already_sufficient: '하한율로 이미 통과',
+            compensate: '입찰가격으로 보완',
+            impossible: '보완 불가',
+        };
+        const floorBasisLabels = {
+            forward_verified: '하한 가격점수는 하한 금액을 순방향으로 계산한 값입니다.',
+            algebraic: '예정가격이 없어 하한 가격점수를 산식으로만 계산했습니다.',
+        };
         const amountText = function(value) {
             return value == null ? '-' : '₩' + formatNumber(value);
         };
@@ -1164,14 +1176,14 @@ $(document).ready(function() {
         }
         $('#pc-floor-price-score').text(withDash(pc.floor_price_score));
         $('#pc-score-floor-amount').text(amountText(pc.score_floor_amount));
-        $('#pc-effective-rate').text(withDash(pc.effective_rate_percent));
+        $('#pc-effective-rate').text(percentText(pc.effective_rate_percent));
         $('#pc-effective-rate-note').text(
             pc.score_status === 'impossible'
                 ? '(대수 역산값) 투찰 권고가 아닌 대수값'
                 : '(대수 역산값)'
         );
-        $('#pc-base-rate').text(withDash(pc.base_rate_percent));
-        $('#pc-floor-basis').text(pc.floor_score_basis || '');
+        $('#pc-base-rate').text(percentText(pc.base_rate_percent));
+        $('#pc-floor-basis').text(floorBasisLabels[pc.floor_score_basis] || '');
         $('#pc-guidance').text(pc.guidance || '');
 
         const isRateOnly = pc.amount_status === 'rate_only';
@@ -1190,9 +1202,9 @@ $(document).ready(function() {
                     <tr class="hover:bg-slate-50/50">
                         <td class="p-2 font-medium">${escapeHtml(row.scenario_name)}</td>
                         <td class="p-2 text-right font-mono tabular-nums">₩${formatNumber(row.estimated_price)}</td>
-                        <td class="p-2 text-slate-600">${escapeHtml(row.row_status)}</td>
+                        <td class="p-2 text-slate-600">${escapeHtml(rowStatusLabels[row.row_status] || row.row_status)}</td>
                         <td class="p-2 text-right font-mono tabular-nums">${complementCell}</td>
-                        <td class="p-2 text-right font-mono tabular-nums">${escapeHtml(withDash(row.bid_rate_percent))}</td>
+                        <td class="p-2 text-right font-mono tabular-nums">${escapeHtml(percentText(row.bid_rate_percent))}</td>
                         <td class="p-2 text-right font-mono tabular-nums">${escapeHtml(withDash(row.verified_price_ratio))}</td>
                         <td class="p-2 text-right font-mono tabular-nums">${escapeHtml(withDash(row.verified_price_score))}</td>
                     </tr>
