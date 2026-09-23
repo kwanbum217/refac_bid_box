@@ -222,7 +222,11 @@ class TestDeterministicPricingMath:
 
 
 class TestAValueMinBidAmount:
-    """A값 반영 및 A값 부재 시 최저 투찰금액 산출 검증."""
+    """최저 투찰금액 산출 검증.
+
+    A값 분기는 공사 적격심사 별표 전용이며 용역 적격심사에는 쓰지 않는다.
+    용역 평가 경로는 항상 A값 없는 분기(예정가격 * 하한율)를 쓴다.
+    """
 
     def test_min_bid_amount_without_a_value(self) -> None:
         # 최저 투찰금액 = 예정가격 * 하한율

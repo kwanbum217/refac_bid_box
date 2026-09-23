@@ -239,7 +239,8 @@ class EvaluationResponse(BaseModel):
     """적격심사 정량평가 및 투찰 분석 응답.
 
     적용된 심사 규칙, 규칙 판별 근거, 계산 차단 여부 및 사유, 모델 출처,
-    A값 반영 투찰금액, 최저 가능 투찰률 역산값, 시나리오별 평가 결과 및 경고를 반환합니다.
+    A값 관련 예약 필드(용역에서는 미사용), 최저 가능 투찰률 역산값, 시나리오별 평가 결과 및 경고를
+    반환합니다.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -309,11 +310,17 @@ class EvaluationResponse(BaseModel):
     )
     a_value_amount: int | None = Field(
         default=None,
-        description="A값 (국민연금, 건강보험, 퇴직급여충당금 등 비투찰/고정비용 합산액)",
+        description=(
+            "A값 (국민연금, 건강보험, 퇴직급여충당금 등 비투찰/고정비용 합산액). "
+            "용역 적격심사는 A값을 적용하지 않아 항상 null 입니다. 공사 확장용 예약 필드"
+        ),
     )
     min_bid_amount_with_a: int | None = Field(
         default=None,
-        description="A값 반영 최저 투찰금액 (원)",
+        description=(
+            "A값 반영 최저 투찰금액 (원). "
+            "용역 적격심사는 A값을 적용하지 않아 항상 null 입니다. 공사 확장용 예약 필드"
+        ),
     )
     min_possible_bid_rate: float | None = Field(
         default=None,

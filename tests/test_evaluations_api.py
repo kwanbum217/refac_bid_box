@@ -206,9 +206,13 @@ def test_score_table_input_drives_server_calculation(client, isolated_db, as_use
     # 하한율과 기준비율은 규칙 레지스트리 선언값. API 는 아무 산식 상수도 두지 않는다.
     assert payload["lower_bound_rate"] == pytest.approx(ATTACH_01_LWLT_RATE)
     assert payload["base_rate"] == pytest.approx(90.0)
-    # (예정가격 - A값) * 하한율 + A값
-    assert payload["a_value_amount"] == 100_000_000
-    assert payload["min_bid_amount_with_a"] == 459_980_000
+    # 용역 적격심사는 A값을 적용하지 않는다. raw_data 에 A값이 있어도 두 필드는 항상 null 이다.
+    assert payload["a_value_amount"] is None
+    assert payload["min_bid_amount_with_a"] is None
+    # 최저 투찰금액 경고는 항상 낙찰하한율 기준이다. 예정가격 5억 * 89.995% = 449,975,000.
+    warnings_text = " ".join(payload["warnings"])
+    assert "449,975,000" in warnings_text
+    assert "459,980,000" not in warnings_text
 
     scenarios = {s["scenario_name"]: s for s in payload["scenario_results"]}
     assert set(scenarios) == {"하단", "기준", "상단"}
@@ -335,10 +339,14 @@ def test_missing_score_table_keeps_scenarios_and_floor_amounts(
     # 역산과 기준비율은 통과점수 T 가 있어야 나오므로 여전히 비어 있다
     assert payload["min_possible_bid_rate"] is None
     assert payload["base_rate"] is None
-    # 낙찰하한율과 A값 산식은 차단되지 않는다
-    assert payload["a_value_amount"] == 100_000_000
-    assert payload["min_bid_amount_with_a"] == 459_980_000
-    assert "459,980,000" in " ".join(payload["warnings"])
+    # 낙찰하한율 기준 최저 투찰금액은 차단되지 않는다. 용역은 A값을 적용하지 않는다.
+    assert payload["a_value_amount"] is None
+    assert payload["min_bid_amount_with_a"] is None
+    # 예정가격 5억 * 89.995% = 449,975,000. A값을 반영한 459,980,000 은 나오지 않는다.
+    warnings_text = " ".join(payload["warnings"])
+    assert "449,975,000" in warnings_text
+    assert "459,980,000" not in warnings_text
+    assert "A값 반영" not in warnings_text
     # 예측 API 를 호출하지 않았으므로 모델 출처를 지어내지 않는다
     assert payload["actual_model"] is None
     assert payload["fallback_used"] is False
