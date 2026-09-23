@@ -242,3 +242,63 @@ def test_qualification_only_fallback_paginates_in_sort_order(monkeypatch, isolat
     assert pages[1].has_next is True
     assert [row.bid_ntce_no for row in pages[2].object_list] == ["QUAL-PAGE-5"]
     assert pages[2].has_next is False
+
+
+@pytest.fixture
+def seeded_plain_home_bid(isolated_db):
+    """홈 분야별 카드에 노출되지만 적격심사 판별은 되지 않는 용역 공고.
+
+    적격심사 공고와 같은 Servc 분야에 두어 같은 분야 패널에 나란히 렌더되게 한다.
+    판별만 비예가로 막고 분야·날짜 조건은 적격심사 공고와 동일하게 맞춘다.
+    """
+    now = utcnow()
+    bid = BidAnnouncement(
+        bid_ntce_no="BADGE-SSR-002",
+        bid_ntce_ord="000",
+        bid_ntce_nm="적격심사 미해당 SSR 용역 공고",
+        dminstt_nm="표기 SSR 수요기관",
+        category="Servc",
+        presmpt_prce=500_000_000,
+        bid_ntce_dt=now,
+        bid_clse_dt=now + timedelta(days=7),
+        collected_at=now,
+        raw_data={**QUALIFICATION_RAW, "prearngPrceDcsnMthdNm": "비예가"},
+    )
+    isolated_db.add(bid)
+    isolated_db.commit()
+    isolated_db.refresh(bid)
+    return bid
+
+
+def _home_card_html(html: str, bid_id: int) -> str:
+    """홈 분야별 카드의 <a class="home-slide-card"> 조각만 잘라낸다.
+
+    페이지 전체 문자열로 뱃지 유무를 보면 다른 카드나 스크립트의 문자열에 걸려
+    오판하므로 카드 단위로 좁힌다. 카드 안에는 중첩 <a> 가 없다.
+    """
+    marker = f'href="/bids/{bid_id}/" class="home-slide-card'
+    start = html.index(marker)
+    card_start = html.rfind("<a ", 0, start)
+    card_end = html.index("</a>", start)
+    return html[card_start:card_end]
+
+
+def test_home_category_cards_mark_only_qualification_bids(
+    auth_client,  # noqa: F811
+    seeded_qualification_bid,
+    seeded_plain_home_bid,
+):
+    """홈(/)의 분야별 카드도 적격심사 공고에만 뱃지를 붙인다."""
+    response = auth_client.get("/")
+    assert response.status_code == 200
+    html = response.text
+
+    # 두 공고가 실제로 홈 카드에 노출되지 않으면 아래 카드 단언은 공허해진다.
+    assert seeded_qualification_bid.bid_ntce_nm in html
+    assert seeded_plain_home_bid.bid_ntce_nm in html
+
+    marked = _home_card_html(html, seeded_qualification_bid.id)
+    unmarked = _home_card_html(html, seeded_plain_home_bid.id)
+
+    assert BADGE_TEXT in marked
+    assert BADGE_TEXT not in unmarked
