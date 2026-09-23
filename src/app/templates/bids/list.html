@@ -18,6 +18,7 @@
     }
     .badge-gray { background-color: #F3F4F6; color: #374151; }
     .badge-red { background-color: #FEE2E2; color: #B91C1C; }
+    .badge-indigo { background-color: #E0E7FF; color: #4338CA; }
 </style>
 {% endblock %}
 
@@ -109,6 +110,9 @@
                         <tr class="bid-row cursor-pointer" data-url="{{ url('bids:bid_detail', bid.id) }}" onclick="location.href=this.dataset.url;">
                             <td>
                                 <span class="badge badge-gray">{{ bid.category_label }}</span>
+                                {% if qualification_ids and bid.id in qualification_ids %}
+                                <span class="badge badge-indigo mt-1" title="공고 상세에서 적격심사 점수와 입찰가격 보완을 계산할 수 있는 공고입니다">적격심사 분석</span>
+                                {% endif %}
                             </td>
                             <td class="max-w-md">
                                 <div class="bid-title font-semibold text-slate-900 truncate">

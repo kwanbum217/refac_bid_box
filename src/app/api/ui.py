@@ -192,6 +192,7 @@ def bid_list(
     industry_choices = bid_queries.get_top_industry_choices(db)
     context = {
         "bids": page_obj.object_list,
+        "qualification_ids": bid_queries.qualification_analyzable_ids(page_obj.object_list),
         "page_obj": page_obj,
         "max_page": bid_queries.MAX_LIST_PAGE,
         "is_paginated": page_obj.has_previous or page_obj.has_next,

@@ -496,8 +496,13 @@
                             {% for bid in section.entries %}
                             <a href="{{ url('bids:bid_detail', bid.id) }}" class="home-slide-card flex h-full min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50/70 p-5">
                                 <div class="flex items-center justify-between gap-3">
-                                    <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold tracking-tight text-slate-900 shadow-sm">
-                                        {{ bid.category_label }}
+                                    <span class="flex items-center gap-1">
+                                        <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold tracking-tight text-slate-900 shadow-sm">
+                                            {{ bid.category_label }}
+                                        </span>
+                                        {% if qualification_ids and bid.id in qualification_ids %}
+                                        <span class="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-1 text-[11px] font-bold tracking-tight text-indigo-600" title="공고 상세에서 적격심사 점수와 입찰가격 보완을 계산할 수 있는 공고입니다">적격심사 분석</span>
+                                        {% endif %}
                                     </span>
                                     <span class="min-w-0 truncate text-right text-[11px] font-semibold text-slate-500">{{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}</span>
                                 </div>
