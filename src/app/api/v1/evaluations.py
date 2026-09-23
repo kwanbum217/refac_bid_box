@@ -100,9 +100,6 @@ SCORE_TABLE_LABELS: dict[str, str] = {
     "pass_threshold": "통과점수",  # nosec B105 - 배점표 항목의 한국어 표기이지 비밀번호가 아닙니다
 }
 
-# 공고 raw_data 안에서 A값(국민연금·건강보험 등 합산액)이 노출되는 필드명입니다.
-A_VALUE_RAW_KEYS: tuple[str, ...] = ("a_value", "aValue", "A값", "nonBidCost", "non_bid_cost")
-
 # 규칙 판별(도메인)이 아니라 입력·데이터 부족으로 계산을 멈추는 코드입니다.
 BLOCK_CODE_MISSING_SCORE_TABLE = "MISSING_SCORE_TABLE"
 BLOCK_CODE_PRED_PRICE_UNAVAILABLE = "PRED_PRICE_UNAVAILABLE"
@@ -267,23 +264,6 @@ def _scenario_prices(
     ]
 
 
-def _extract_a_value(bid: BidAnnouncement) -> Decimal | None:
-    """공고 raw_data 에 노출된 A값(국민연금·건강보험 등 합산액) 필드를 읽습니다."""
-    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-    for key in A_VALUE_RAW_KEYS:
-        raw_value = raw_data.get(key)
-        if raw_value is None:
-            continue
-        try:
-            value = Decimal(str(raw_value))
-        except (ArithmeticError, TypeError, ValueError):
-            logger.debug("A값 필드 변환 실패: key=%s", key)
-            continue
-        if value > Decimal("0"):
-            return value
-    return None
-
-
 def _qualification_scores(
     qualification: QualificationInput,
 ) -> tuple[Decimal, Decimal, Decimal]:
@@ -446,25 +426,21 @@ def _score_table_missing_response(
     scenarios: list[ScenarioPrice],
     missing_fields: list[str],
 ) -> EvaluationResponse:
-    """배점표 입력이 없어 점수는 계산하지 않습니다. 하한율·A값·시나리오 구간은 그대로 전달합니다."""
+    """배점표 입력이 없어 점수는 계산하지 않습니다. 하한율과 시나리오 구간은 그대로 전달합니다."""
     assert rule_result.rule is not None
     assert rule_result.effective_lwlt_rate is not None
     rule = rule_result.rule
     effective_lwlt = rule_result.effective_lwlt_rate
     candidate_bid_amount = Decimal(str(payload.candidate_bid_amount))
-    a_value = _extract_a_value(bid)
+    # 용역 적격심사는 A값을 적용하지 않습니다. 최저 투찰금액은 예정가격 * 하한율입니다.
     min_bid_result = calculate_min_bid_amount(
         pred_price=pred_price,
         lwlt_rate=effective_lwlt,
-        a_value=a_value,
     )
-    if min_bid_result.has_a_value:
-        floor_note = f"A값 반영 최저 투찰금액: {int(min_bid_result.min_bid_amount):,}원"
-    else:
-        floor_note = (
-            f"낙찰하한율 {min_bid_result.lwlt_rate_pct}% 적용 최저 투찰금액: "
-            f"{int(min_bid_result.min_bid_amount):,}원"
-        )
+    floor_note = (
+        f"낙찰하한율 {min_bid_result.lwlt_rate_pct}% 적용 최저 투찰금액: "
+        f"{int(min_bid_result.min_bid_amount):,}원"
+    )
 
     labels = ", ".join(SCORE_TABLE_LABELS.get(name, name) for name in missing_fields)
     warnings = [
@@ -487,10 +463,8 @@ def _score_table_missing_response(
         fallback_used=False,
         fallback_reason="점수 계산을 하지 않아 예측 모델을 호출하지 않았습니다.",
         lower_bound_rate=float(effective_lwlt),
-        a_value_amount=int(a_value) if a_value is not None else None,
-        min_bid_amount_with_a=(
-            int(min_bid_result.min_bid_amount) if min_bid_result.has_a_value else None
-        ),
+        a_value_amount=None,
+        min_bid_amount_with_a=None,
         scenario_results=_unscored_scenario_results(scenarios, candidate_bid_amount),
         warnings=warnings,
     )
@@ -514,16 +488,19 @@ def _success_response(
     qualification = payload.qualification_input
     scores = _qualification_scores(qualification)
     non_price_score = scores[0] + scores[1] + scores[2]
-    a_value = _extract_a_value(bid)
 
     warnings = list(rule_result.warnings)
     if provenance.actual_model is None:
         warnings.append(f"모델 출처를 확정할 수 없습니다. {provenance.fallback_reason}")
 
+    # 용역 적격심사는 A값을 적용하지 않습니다. 최저 투찰금액은 예정가격 * 하한율입니다.
     min_bid_result = calculate_min_bid_amount(
         pred_price=pred_price,
         lwlt_rate=effective_lwlt,
-        a_value=a_value,
+    )
+    warnings.append(
+        f"낙찰하한율 {min_bid_result.lwlt_rate_pct}% 적용 최저 투찰금액: "
+        f"{int(min_bid_result.min_bid_amount):,}원"
     )
     invert_result = invert_lowest_bid_rate(
         pass_threshold=table.pass_threshold,
@@ -547,10 +524,8 @@ def _success_response(
         fallback_reason=provenance.fallback_reason,
         base_rate=_as_percent(table.base_rate),
         lower_bound_rate=float(effective_lwlt),
-        a_value_amount=int(a_value) if a_value is not None else None,
-        min_bid_amount_with_a=(
-            int(min_bid_result.min_bid_amount) if min_bid_result.has_a_value else None
-        ),
+        a_value_amount=None,
+        min_bid_amount_with_a=None,
         min_possible_bid_rate=float(invert_result.effective_rate_pct),
         scenario_results=[
             _evaluate_scenario(
@@ -696,7 +671,7 @@ def analyze_evaluation(
     서버가 다음을 한 번에 수행:
     1. 공고 조회 (bid_id)
     2. 적격심사 규칙 판별 (category, 낙찰방법, 하한율 등)
-    3. 가격점수, A값 반영 최저 투찰금액, 최저 투찰률 역산 계산
+    3. 가격점수, 낙찰하한율 기준 최저 투찰금액, 최저 투찰률 역산 계산
     4. 복수예가 시나리오별 종합 평가
     5. 분석 성공 시 스냅샷 저장 (실패해도 응답은 정상 반환)
 

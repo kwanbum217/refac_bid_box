@@ -3,7 +3,7 @@ src/app/services/evaluation_scoring.py
 
 일반용역 적격심사 결정론적 점수 계산 도메인 모듈.
 부동소수점을 배제하고 decimal.Decimal 과 ROUND_HALF_UP 만을 사용하여
-가격점수, A값 반영 최저 투찰금액, 최저 투찰률 역산, 복수예가 시나리오, 종합 적격 판정을 수행합니다.
+가격점수, 낙찰하한율 기준 최저 투찰금액, 최저 투찰률 역산, 복수예가 시나리오, 종합 적격 판정을 수행합니다.
 외부 DB, HTTP 요청, 파일 I/O, 시스템 시각에 의존하지 않는 순수 함수로 동작합니다.
 """
 
@@ -150,12 +150,14 @@ def calculate_min_bid_amount(
     lwlt_rate: Decimal,
     a_value: Decimal | None = None,
 ) -> MinBidAmountResult:
-    """A값(국민연금, 건강보험 등 합산액) 반영 최저 투찰금액을 산출합니다.
+    """최저 투찰금액을 산출합니다.
 
     [산식]
     A값이 있는 경우: 최저 투찰금액 = (예정가격 - A값) * 하한율 + A값
     A값이 없는 경우: 최저 투찰금액 = 예정가격 * 하한율
 
+    A값 분기는 공사 적격심사 별표 전용이며 용역 적격심사에는 쓰지 않습니다.
+    용역은 A값 없이 호출되어 항상 예정가격 * 하한율을 씁니다.
     금액은 원 단위로 반올림(ROUND_HALF_UP)합니다.
     """
     if pred_price <= Decimal("0"):
