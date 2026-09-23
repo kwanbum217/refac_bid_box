@@ -11,7 +11,7 @@ src/app/schemas/evaluations.py
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -235,6 +235,70 @@ class EvaluationRequest(BaseModel):
     )
 
 
+class PriceCompensationScenario(BaseModel):
+    """시나리오 예정가격 한 건에 대한 가격 보완 판정 응답.
+
+    점수·투찰률은 서버가 지수 표기 없이 만든 문자열이고, 금액만 정수입니다.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    scenario_name: str = Field(..., description="시나리오명 (하단/기준/상단 등)")
+    scenario_type: str = Field(..., description="시나리오 구분 (lower/base/upper/custom)")
+    estimated_price: int = Field(..., description="시나리오 예정가격 (원)")
+    row_status: Literal["already_sufficient", "compensate", "impossible"] = Field(
+        ..., description="행 판정 상태"
+    )
+    verified_price_ratio: str | None = Field(
+        None, description="채택 금액의 순방향 투찰률 비율 x (소수점 4자리 고정 문자열)"
+    )
+    bid_rate_percent: str | None = Field(None, description="채택 금액의 투찰률 (%)")
+    verified_price_score: str | None = Field(None, description="채택 금액의 가격점수")
+    complement_bid_amount: int | None = Field(None, description="보완 입찰금액 (원)")
+    ratio_steps_raised: int = Field(..., description="역산 하한 비율 대비 4자리 격자 상승 횟수")
+    meets_p_req: bool = Field(..., description="필요 가격점수 P_req 충족 여부")
+
+
+class PriceCompensation(BaseModel):
+    """정량점수 부족분을 입찰가격으로 보완하는 판정 응답.
+
+    score_status 와 amount_status 와 floor_score_basis 가 판정의 세 축이며,
+    p_req·score_gap·score_slack 등 점수와 퍼센트는 도메인 Decimal 을 평문 문자열로 옮긴 값입니다.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    score_status: Literal["already_sufficient", "compensate", "impossible"] = Field(
+        ..., description="전역 판정 상태"
+    )
+    score_status_label: str = Field(..., description="전역 판정 상태의 한국어 표기")
+    amount_status: Literal["verified", "rate_only"] = Field(
+        ..., description="금액 순방향 검증 여부"
+    )
+    floor_score_basis: Literal["forward_verified", "algebraic"] = Field(
+        ..., description="하한 가격점수 산출 근거"
+    )
+    pass_threshold: str = Field(..., description="통과점수 T")
+    non_price_score: str = Field(..., description="정량점수 합계 Q")
+    p_req: str = Field(..., description="필요 가격점수 P_req = T - Q")
+    max_price_score: str = Field(..., description="가격 배점한도 B")
+    score_gap: str = Field(..., description="P_req 대비 확보 가능 최고 점수의 부족분")
+    score_slack: str | None = Field(None, description="이미 충족한 경우의 점수 여유")
+    floor_price_score: str | None = Field(None, description="하한 금액의 가격점수")
+    base_rate_percent: str = Field(..., description="기준비율 (%)")
+    announcement_lwlt_rate: str = Field(..., description="공고 낙찰하한율 (%)")
+    calculated_rate_percent: str = Field(..., description="역산 최저 투찰률 (%)")
+    effective_rate_percent: str = Field(..., description="실질 구속 하한 투찰률 (%)")
+    binding_constraint: Literal["ANNOUNCEMENT_LWLT_RATE", "CALCULATED_SCORE_RATE"] = Field(
+        ..., description="실질 구속 하한의 출처"
+    )
+    score_floor_amount: int | None = Field(None, description="기준 예정가격의 최저 투찰금액 (원)")
+    guidance: str = Field(..., description="판정 상태에 따른 한 문장 안내")
+    scenarios: list[PriceCompensationScenario] = Field(
+        default_factory=list, description="시나리오별 보완 판정 목록"
+    )
+
+
 class EvaluationResponse(BaseModel):
     """적격심사 정량평가 및 투찰 분석 응답.
 
@@ -329,6 +393,10 @@ class EvaluationResponse(BaseModel):
     scenario_results: list[ScenarioEvaluationResult] = Field(
         default_factory=list,
         description="복수예가 시나리오별 평가 결과 목록",
+    )
+    price_compensation: PriceCompensation | None = Field(
+        default=None,
+        description=("정량점수 부족분의 입찰가격 보완 판정. 계산을 차단한 응답에서는 null 입니다."),
     )
     warnings: list[str] = Field(
         default_factory=list,
