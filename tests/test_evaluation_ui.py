@@ -228,6 +228,19 @@ class TestEvaluationUITemplate:
             "data.a_value_amount",
             "data.min_bid_amount_with_a",
             "data.min_possible_bid_rate",
+            # 가격 보완 영역. 서버가 만든 퍼센트·점수 문자열을 그대로 표시한다.
+            "pc.p_req",
+            "pc.score_gap",
+            "pc.score_slack",
+            "pc.floor_price_score",
+            "pc.score_floor_amount",
+            "pc.effective_rate_percent",
+            "pc.base_rate_percent",
+            "row.estimated_price",
+            "row.complement_bid_amount",
+            "row.bid_rate_percent",
+            "row.verified_price_ratio",
+            "row.verified_price_score",
         )
         arithmetic_pattern = re.compile(
             r"(?P<field>" + "|".join(map(re.escape, server_calculated_fields)) + r")\s*[*/+-]"
@@ -384,3 +397,83 @@ class TestEvaluationUIScoreTable:
         """
         assert "미계산" in template_content, "미계산 표기가 없습니다"
         assert "scenario.is_qualified === null" in template_content, "null 판별이 없습니다"
+
+
+class TestEvaluationUIPriceCompensation:
+    """정량점수 부족분의 입찰가격 보완 영역 검증.
+
+    서버가 계산한 price_compensation 객체를 화면이 그대로 표시하는지만 정적으로
+    확인합니다. 값 변환과 재계산은 금지이며, 응답이 없으면 영역을 숨깁니다.
+    """
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def template_content(cls):
+        path = Path("src/app/templates/bids/detail.html")
+        return path.read_text(encoding="utf-8")
+
+    def _script(self, template_content):
+        match = re.search(r"<script>(.*?)</script>", template_content, re.DOTALL)
+        assert match, "평가 스크립트 영역을 찾을 수 없음"
+        return match.group(1)
+
+    def _function_body(self, script, signature):
+        match = re.search(re.escape(signature) + r"\s*\{(.*?)\n    \}", script, re.DOTALL)
+        assert match, f"{signature} 본문을 찾을 수 없음"
+        return match.group(1)
+
+    def test_price_compensation_placement(self, template_content):
+        """보완 영역은 시나리오 결과표 뒤, 종합 경고 앞에 있다."""
+        scenario_start = template_content.index('id="scenario-results"')
+        compensation = template_content.index('id="price-compensation"')
+        warnings_start = template_content.index('id="evaluation-warnings"')
+        assert scenario_start < compensation < warnings_start
+
+    def test_render_function_called_only_in_success_callback(self, template_content):
+        """렌더 함수는 분석 실행 성공 콜백에서만 호출한다."""
+        script = self._script(template_content)
+        assert "function renderPriceCompensation(pc)" in script
+        assert "renderPriceCompensation(data.price_compensation)" in script
+
+        load_rule_body = self._function_body(script, "function loadEvaluationRule()")
+        assert "renderPriceCompensation" not in load_rule_body, (
+            "loadEvaluationRule 콜백에서는 보완 영역을 그리면 안 됩니다"
+        )
+
+    def test_price_compensation_does_not_reformat_server_values(self, template_content):
+        """퍼센트·점수 문자열은 서버 값을 그대로 쓰고 금액만 formatNumber 를 쓴다."""
+        script = self._script(template_content)
+        body = self._function_body(script, "function renderPriceCompensation(pc)")
+        assert "formatRate(" not in body, "퍼센트를 formatRate 로 변환하면 안 됩니다"
+        assert "formatScore(" not in body, "점수를 formatScore 로 변환하면 안 됩니다"
+        assert "formatNumber(" in body, "금액은 formatNumber 로 표시해야 합니다"
+
+    def test_price_compensation_escapes_server_strings(self, template_content):
+        """시나리오명·행 상태·비율 문자열을 escapeHtml 로 감싼다."""
+        script = self._script(template_content)
+        body = self._function_body(script, "function renderPriceCompensation(pc)")
+        assert "escapeHtml(row.scenario_name)" in body
+        assert "escapeHtml(rowStatusLabels[row.row_status] || row.row_status)" in body
+        assert "escapeHtml(percentText(row.bid_rate_percent))" in body
+        assert "escapeHtml(withDash(row.verified_price_ratio))" in body
+        assert "escapeHtml(withDash(row.verified_price_score))" in body
+
+    def test_price_compensation_hides_when_absent(self, template_content):
+        """응답에 보완 정보가 없으면 영역을 숨긴다."""
+        script = self._script(template_content)
+        body = self._function_body(script, "function renderPriceCompensation(pc)")
+        assert "if (!pc) {" in body
+        assert "$container.addClass('hidden')" in body
+
+    def test_rate_only_scenario_hidden(self, template_content):
+        """금액을 계산하지 않은 응답에서는 시나리오 표를 숨기고 안내 문구를 보인다."""
+        script = self._script(template_content)
+        body = self._function_body(script, "function renderPriceCompensation(pc)")
+        assert "pc.amount_status === 'rate_only'" in body
+        assert "예정가격이 없어 금액을 계산하지 않았습니다" in template_content
+
+    def test_price_compensation_fixed_guidance(self, template_content):
+        """보완 영역 하단 안내 문구가 고정으로 있다."""
+        assert (
+            "기준비율을 넘기면 가격점수가 다시 내려갑니다. 결격사유는 가격점수로 보완되지 않습니다."
+        ) in template_content

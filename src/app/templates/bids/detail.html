@@ -533,6 +533,76 @@
                         </div>
                     </div>
 
+                    <!-- 정량점수 부족분의 입찰가격 보완 -->
+                    <div id="price-compensation" class="hidden space-y-3 border-t border-slate-200 pt-4">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">입찰가격 보완 분석</h3>
+                        <div class="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <span id="pc-status-label" class="badge badge-gray text-[10px]"></span>
+                                <span id="pc-amount-note" class="text-[10px] font-semibold text-slate-500"></span>
+                            </div>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div>
+                                    <div class="detail-label">필요 가격점수</div>
+                                    <div id="pc-p-req" class="detail-value tabular-nums">-</div>
+                                </div>
+                                <div>
+                                    <div class="detail-label">부족 점수</div>
+                                    <div id="pc-score-gap" class="detail-value tabular-nums">-</div>
+                                </div>
+                                <div id="pc-score-slack-line" class="hidden">
+                                    <div class="detail-label">여유 점수</div>
+                                    <div id="pc-score-slack" class="detail-value tabular-nums">-</div>
+                                </div>
+                                <div>
+                                    <div class="detail-label">하한 가격점수</div>
+                                    <div id="pc-floor-price-score" class="detail-value tabular-nums">-</div>
+                                </div>
+                                <div>
+                                    <div class="detail-label">하한 금액</div>
+                                    <div id="pc-score-floor-amount" class="detail-value tabular-nums">-</div>
+                                </div>
+                                <div>
+                                    <div class="detail-label">대수 투찰률</div>
+                                    <div class="flex items-end gap-1">
+                                        <span id="pc-effective-rate" class="detail-value tabular-nums">-</span>
+                                        <span id="pc-effective-rate-note" class="text-[10px] font-semibold text-slate-500"></span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="detail-label">기준비율</div>
+                                    <div id="pc-base-rate" class="detail-value tabular-nums">-</div>
+                                </div>
+                            </div>
+                            <p id="pc-floor-basis" class="text-[11px] leading-relaxed text-slate-500"></p>
+                            <p id="pc-guidance" class="text-xs leading-relaxed text-slate-600"></p>
+                        </div>
+                        <div id="pc-scenario-wrap" class="hidden space-y-2">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm" id="pc-scenario-table">
+                                    <thead>
+                                        <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+                                            <th class="p-2">시나리오</th>
+                                            <th class="p-2 text-right">예정가격</th>
+                                            <th class="p-2">상태</th>
+                                            <th class="p-2 text-right">보완 금액</th>
+                                            <th class="p-2 text-right">검증 투찰률</th>
+                                            <th class="p-2 text-right">순방향 비율</th>
+                                            <th class="p-2 text-right">검증 점수</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="pc-scenario-tbody" class="divide-y divide-slate-100"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div id="pc-rate-only" class="hidden p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700">
+                            예정가격이 없어 금액을 계산하지 않았습니다
+                        </div>
+                        <p class="text-[11px] leading-relaxed text-slate-500 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                            기준비율을 넘기면 가격점수가 다시 내려갑니다. 결격사유는 가격점수로 보완되지 않습니다.
+                        </p>
+                    </div>
+
                     <!-- 4. 종합 경고 및 정보 -->
                     <div id="evaluation-warnings" class="hidden space-y-2 border-t border-slate-200 pt-4">
                         <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">경고 및 안내</h3>
@@ -1066,6 +1136,85 @@ $(document).ready(function() {
         $('#negotiation-distribution').removeClass('hidden');
     }
 
+    // 정량점수가 부족할 때 입찰가격으로 보완할 수 있는지 서버가 계산한 값을 그대로 표시합니다.
+    // 퍼센트와 점수는 서버 문자열을 그대로 쓰고, 금액만 formatNumber 로 자릿수를 맞춥니다.
+    // 응답에 price_compensation 이 없으면 영역을 숨깁니다.
+    function renderPriceCompensation(pc) {
+        const $container = $('#price-compensation');
+        if (!pc) {
+            $container.addClass('hidden');
+            return;
+        }
+        const withDash = function(value) {
+            return value == null || value === '' ? '-' : String(value);
+        };
+        const percentText = function(value) {
+            return value == null || value === '' ? '-' : String(value) + '%';
+        };
+        const rowStatusLabels = {
+            already_sufficient: '하한율로 이미 통과',
+            compensate: '입찰가격으로 보완',
+            impossible: '보완 불가',
+        };
+        const floorBasisLabels = {
+            forward_verified: '하한 가격점수는 하한 금액을 순방향으로 계산한 값입니다.',
+            algebraic: '예정가격이 없어 하한 가격점수를 산식으로만 계산했습니다.',
+        };
+        const amountText = function(value) {
+            return value == null ? '-' : '₩' + formatNumber(value);
+        };
+
+        $('#pc-status-label').text(pc.score_status_label || '-');
+        $('#pc-amount-note').text(pc.amount_status === 'rate_only' ? '금액 미계산(비율만 제공)' : '');
+        $('#pc-p-req').text(withDash(pc.p_req));
+        $('#pc-score-gap').text(withDash(pc.score_gap));
+        if (pc.score_slack == null) {
+            $('#pc-score-slack-line').addClass('hidden');
+        } else {
+            $('#pc-score-slack-line').removeClass('hidden');
+            $('#pc-score-slack').text(pc.score_slack);
+        }
+        $('#pc-floor-price-score').text(withDash(pc.floor_price_score));
+        $('#pc-score-floor-amount').text(amountText(pc.score_floor_amount));
+        $('#pc-effective-rate').text(percentText(pc.effective_rate_percent));
+        $('#pc-effective-rate-note').text(
+            pc.score_status === 'impossible'
+                ? '(대수 역산값) 투찰 권고가 아닌 대수값'
+                : '(대수 역산값)'
+        );
+        $('#pc-base-rate').text(percentText(pc.base_rate_percent));
+        $('#pc-floor-basis').text(floorBasisLabels[pc.floor_score_basis] || '');
+        $('#pc-guidance').text(pc.guidance || '');
+
+        const isRateOnly = pc.amount_status === 'rate_only';
+        const scenarios = Array.isArray(pc.scenarios) ? pc.scenarios : [];
+        $('#pc-rate-only').toggleClass('hidden', !isRateOnly);
+        const showTable = !isRateOnly && scenarios.length > 0;
+        $('#pc-scenario-wrap').toggleClass('hidden', !showTable);
+        if (showTable) {
+            const tbody = $('#pc-scenario-tbody');
+            tbody.empty();
+            scenarios.forEach(function(row) {
+                const complementCell = row.complement_bid_amount == null
+                    ? '-'
+                    : '₩' + formatNumber(row.complement_bid_amount);
+                tbody.append(`
+                    <tr class="hover:bg-slate-50/50">
+                        <td class="p-2 font-medium">${escapeHtml(row.scenario_name)}</td>
+                        <td class="p-2 text-right font-mono tabular-nums">₩${formatNumber(row.estimated_price)}</td>
+                        <td class="p-2 text-slate-600">${escapeHtml(rowStatusLabels[row.row_status] || row.row_status)}</td>
+                        <td class="p-2 text-right font-mono tabular-nums">${complementCell}</td>
+                        <td class="p-2 text-right font-mono tabular-nums">${escapeHtml(percentText(row.bid_rate_percent))}</td>
+                        <td class="p-2 text-right font-mono tabular-nums">${escapeHtml(withDash(row.verified_price_ratio))}</td>
+                        <td class="p-2 text-right font-mono tabular-nums">${escapeHtml(withDash(row.verified_price_score))}</td>
+                    </tr>
+                `);
+            });
+        }
+
+        $container.removeClass('hidden');
+    }
+
     // 초기 규칙 정보 로드 (입찰 없이도 적용 규칙 확인 가능).
     // 정량점수를 0 으로 보내는 것은 의도된 것이다. 이 호출의 목적은 어떤 별표가
     // 적용되는지와 차단 여부만 확인하는 것이며, 응답의 점수와 시나리오 표는
@@ -1160,6 +1309,7 @@ $(document).ready(function() {
         $('#lower-bound-warnings').addClass('hidden');
         $('#lower-bound-warnings > div').addClass('hidden');
         $('#scenario-warnings').addClass('hidden');
+        $('#price-compensation').addClass('hidden');
 
         $.ajax({
             url: evaluationUrl,
@@ -1212,6 +1362,7 @@ $(document).ready(function() {
 
                     renderLowerBoundWarnings(data.warnings, data.lower_bound_rate);
                     renderNegotiationDistribution(data);
+                    renderPriceCompensation(data.price_compensation);
 
                     // 시나리오 결과표
                     if (data.scenario_results && data.scenario_results.length > 0) {
