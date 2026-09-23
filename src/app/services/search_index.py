@@ -79,6 +79,10 @@ def _iso(value: datetime | None) -> str | None:
 def announcement_document(
     row: BidAnnouncement, license_codes: list[str] | None = None
 ) -> dict[str, Any]:
+    # 판정 정본은 bid_queries 에 있고, 이 모듈은 bid_queries 를 지연 import 합니다
+    # (bid_queries 가 이 모듈을 함수 안에서 import 하므로 최상단 import 는 순환입니다).
+    from src.app.services.bid_queries import is_qualification_analyzable
+
     region_codes = _region_codes(row.dminstt_nm, row.ntce_instt_nm)
     return {
         # 차수가 새로 수집돼도 기존 문서를 교체해야 하므로 DB PK가 아니라 공고의
@@ -91,6 +95,7 @@ def announcement_document(
         "dminstt_nm": row.dminstt_nm or "",
         "ntce_instt_nm": row.ntce_instt_nm or "",
         "category": row.category,
+        "qualification_analyzable": is_qualification_analyzable(row),
         "region_codes": region_codes,
         "region_rank": _region_rank(region_codes),
         "license_codes": sorted(set(license_codes)) if license_codes else [],
@@ -170,6 +175,7 @@ class MeiliSearchClient:
                 "filterableAttributes": [
                     "dataset",
                     "category",
+                    "qualification_analyzable",
                     "region_codes",
                     "license_codes",
                     "sucsf_bid_rate",
@@ -203,6 +209,7 @@ class MeiliSearchClient:
         offset: int,
         limit: int,
         license_code: str | None = None,
+        qualification_only: bool = False,
     ) -> SearchPage:
         filters = [f"dataset = {json.dumps(dataset, ensure_ascii=False)}"]
         if category:
@@ -211,6 +218,8 @@ class MeiliSearchClient:
             filters.append(f"region_codes = {json.dumps(region, ensure_ascii=False)}")
         if license_code:
             filters.append(f"license_codes = {json.dumps(license_code, ensure_ascii=False)}")
+        if qualification_only:
+            filters.append("qualification_analyzable = true")
         if dataset == "result" and any(
             item in {"sucsf_bid_rate:asc", "sucsf_bid_rate:desc"} for item in sort
         ):
