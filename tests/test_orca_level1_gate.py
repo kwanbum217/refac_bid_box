@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import json
 import shutil
 import subprocess
@@ -1692,3 +1693,101 @@ def test_gate10_compose_global_options_reveal_subcommand_flags(tmp_path: Path):
     assert warnings == []
     assert skipped == []
     assert checked == 5
+
+
+# ---------------------------------------------------------------------------
+# Level 1 strict 통과 증거 기록 (--record-evidence)
+# ---------------------------------------------------------------------------
+
+
+def test_record_evidence_requires_strict(tmp_path: Path):
+    """--record-evidence 는 --strict 없이 호출되면 거부되고 아무것도 기록하지 않습니다.
+
+    진단 호출이 통과 증거를 남기면 병합 훅이 검증되지 않은 판정을 통과로 오인합니다.
+    """
+    repo, base, branch = _init_git_repo(tmp_path)
+
+    code, output = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        as_json=True,
+        record_evidence=True,
+    )
+
+    data = json.loads(output)
+    assert code == 2
+    assert data["verdict"] == "error"
+    assert "--strict" in data["error"]
+    assert not (repo / ".cache" / "level1_strict_evidence.json").exists()
+
+
+def test_record_evidence_not_written_on_fail(tmp_path: Path):
+    """판정이 fail 이면 증거를 기록하지 않고 기존 증거도 건드리지 않습니다."""
+    repo, base, branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["src/a.py", "common.txt", "unique_new.txt"])
+    evidence_path = repo / ".cache" / "level1_strict_evidence.json"
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    previous = '{"schema": "PREVIOUS_EVIDENCE", "commit": "deadbeef"}\n'
+    evidence_path.write_text(previous, encoding="utf-8")
+
+    code, output = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        capsule=capsule,
+        as_json=True,
+        strict=True,
+        record_evidence=True,
+    )
+
+    data = json.loads(output)
+    assert code == 1
+    assert data["verdict"] == "fail"
+    assert data["evidence"]["recorded"] is False
+    assert "기록하지 않았습니다" in data["evidence"]["note"]
+    assert evidence_path.read_text(encoding="utf-8") == previous
+
+
+def test_record_evidence_written_on_strict_pass(tmp_path: Path):
+    """--strict 판정이 pass 이면 공통 경로에 증거를 기록하고 필수 필드를 남깁니다."""
+    from scripts.orca_level1_gate import LEVEL1_STRICT_EVIDENCE_SCHEMA
+
+    repo, base, branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["common.txt", "unique_new.txt"])
+    _write_passing_test(repo)
+
+    code, output = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        capsule=capsule,
+        tests=["tests/test_ok.py -q"],
+        as_json=True,
+        strict=True,
+        record_evidence=True,
+    )
+
+    data = json.loads(output)
+    assert code == 0
+    assert data["verdict"] == "pass"
+    assert data["evidence"]["recorded"] is True
+
+    evidence_path = repo / ".cache" / "level1_strict_evidence.json"
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    expected_commit = subprocess.run(  # noqa: S603
+        [GIT_BIN, "rev-parse", branch],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert evidence["schema"] == LEVEL1_STRICT_EVIDENCE_SCHEMA
+    assert evidence["commit"] == expected_commit
+    assert evidence["branch"] == branch
+    assert evidence["base"] == base
+    assert evidence["capsule"] == str(Path(capsule).resolve())
+    assert evidence["strict"] is True
+    assert evidence["verdict"] == "pass"
+    assert datetime.datetime.fromisoformat(evidence["recorded_at"]).tzinfo is not None

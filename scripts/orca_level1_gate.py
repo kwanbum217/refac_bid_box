@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import datetime
+import json
 import re
 import shlex
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
@@ -56,6 +58,12 @@ DEFAULT_GIT_TIMEOUT = 10
 DEFAULT_PYTEST_TIMEOUT = 900
 DEFAULT_VALIDATE_TIMEOUT = 30
 DEFAULT_MAX_CHARS = 2000
+
+# 병합 판정(--strict) 통과 증거입니다. premerge_full_suite_gate 와 같은 규칙으로
+# 주 저장소 공통 .cache/ 에 기록해 main 병합 훅이 워크트리 기록을 그대로 읽습니다.
+LEVEL1_STRICT_EVIDENCE_SCHEMA = "LEVEL1_STRICT_EVIDENCE_V1"
+DEFAULT_LEVEL1_EVIDENCE_PATH = Path(".cache/level1_strict_evidence.json")
+UTC_TZ = getattr(datetime, "UTC", datetime.timezone.utc)  # noqa: UP017
 
 
 class GateToolError(Exception):
@@ -1860,6 +1868,85 @@ def build_json_output(
     }
 
 
+def resolve_level1_evidence_path(repo: Path) -> Path:
+    """Level 1 strict 증거 파일의 주 저장소 공통 경로를 해소합니다.
+
+    premerge_full_suite_gate 와 같은 규칙입니다. git rev-parse --git-common-dir 을
+    기준으로 .cache/ 를 찾으므로 워크트리에서 기록한 증거를 주 저장소의 병합 훅이
+    그대로 읽습니다.
+    """
+    code, stdout, _stderr, timed_out = run_command_safe(
+        ["git", "rev-parse", "--git-common-dir"], repo, DEFAULT_GIT_TIMEOUT
+    )
+    if not timed_out and code == 0 and stdout.strip():
+        common_dir = Path(stdout.strip())
+        common_dir = (
+            common_dir.resolve() if common_dir.is_absolute() else (repo / common_dir).resolve()
+        )
+        if common_dir.name == ".git":
+            return common_dir.parent / DEFAULT_LEVEL1_EVIDENCE_PATH
+        return common_dir / DEFAULT_LEVEL1_EVIDENCE_PATH
+
+    return (repo / DEFAULT_LEVEL1_EVIDENCE_PATH).resolve()
+
+
+def get_git_commit_sha(repo: Path, branch: str) -> str:
+    """검증 대상 ref 의 전체 커밋 SHA 를 조회합니다."""
+    code, stdout, stderr, timed_out = run_command_safe(
+        ["git", "rev-parse", "--verify", f"{branch}^{{commit}}"], repo, DEFAULT_GIT_TIMEOUT
+    )
+    if timed_out:
+        raise GateToolError(f"git rev-parse {branch} 타임아웃 ({DEFAULT_GIT_TIMEOUT}초)")
+    if code != 0 or not stdout.strip():
+        raise GateToolError(f"검증 대상 커밋({branch})을 확인할 수 없습니다: {stderr.strip()}")
+    return stdout.strip()
+
+
+def record_strict_evidence(
+    *,
+    repo: Path,
+    branch: str,
+    base: str,
+    capsule: Path | None,
+) -> tuple[int, str]:
+    """--strict 판정 pass 의 증거를 주 저장소 공통 .cache/ 에 기록합니다.
+
+    verdict 판정이 끝난 뒤 pass 일 때만 호출합니다. fail 판정에서는 호출하지 않으므로
+    기존 증거를 덮어쓰지 않습니다.
+    """
+    try:
+        commit_sha = get_git_commit_sha(repo, branch)
+    except GateToolError as exc:
+        return 2, f"[level1-evidence] {exc}"
+
+    target_path = resolve_level1_evidence_path(repo)
+    evidence_data = {
+        "schema": LEVEL1_STRICT_EVIDENCE_SCHEMA,
+        "commit": commit_sha,
+        "branch": branch,
+        "base": base,
+        "capsule": str(capsule) if capsule is not None else None,
+        "strict": True,
+        "verdict": "pass",
+        "recorded_at": datetime.datetime.now(UTC_TZ).isoformat(),
+    }
+
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(
+            json.dumps(evidence_data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        return 2, f"[level1-evidence] 증거 파일 작성 실패 ({target_path}): {exc}"
+
+    return 0, (
+        f"[level1-evidence] Level 1 strict 통과 증거 기록 완료\n"
+        f"  commit: {commit_sha[:8]}\n"
+        f"  file: {target_path}"
+    )
+
+
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     """CLI 인자를 파싱합니다."""
     parser = argparse.ArgumentParser(
@@ -1911,6 +1998,14 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="건너뛴 게이트를 실패로 간주 (병합 판정용)",
     )
+    parser.add_argument(
+        "--record-evidence",
+        action="store_true",
+        help=(
+            "--strict 판정이 pass 일 때만 주 저장소 공통 "
+            f"{DEFAULT_LEVEL1_EVIDENCE_PATH} 에 통과 증거를 기록 (--strict 필수)"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1927,12 +2022,27 @@ def run_level1_gate(
     max_chars: int = DEFAULT_MAX_CHARS,
     as_json: bool = False,
     strict: bool = False,
+    record_evidence: bool = False,
     reports: list[str | Path] | None = None,
 ) -> tuple[int, str]:
     """Level 1 게이트 전체를 실행하고 (exit_code, output_text) 를 반환합니다.
 
     strict 를 켜면 건너뛴 게이트가 하나라도 있을 때 fail 로 판정합니다.
+    record_evidence 는 strict 판정이 pass 일 때만 통과 증거를 기록합니다.
     """
+    # 증거는 병합 판정의 산출물입니다. --strict 없는 진단 호출이 증거를 남기면
+    # 병합 훅이 검증되지 않은 판정을 통과 증거로 오인합니다.
+    if record_evidence and not strict:
+        error_msg = (
+            "[level1-evidence] --record-evidence 는 --strict 와 함께일 때만 유효합니다. "
+            "병합 판정이 아닌 호출은 통과 증거를 남길 수 없습니다."
+        )
+        if as_json:
+            data = build_json_output([], "error", 2, 0, 0, 0, error_message=error_msg)
+            return 2, dump_strict_json(data, indent=2)
+        out = format_human_output([], "error", 0, 0, 0, error_message=error_msg)
+        return 2, truncate(out, max_chars)
+
     if tests is None:
         tests = []
     if verify is None:
@@ -2081,13 +2191,57 @@ def run_level1_gate(
     verdict = "pass" if failed_count == 0 and not (strict and blocking_skips) else "fail"
     exit_code = 0 if verdict == "pass" else 1
 
+    evidence_recorded = False
+    evidence_note = ""
+    if record_evidence:
+        if verdict != "pass":
+            evidence_note = (
+                "[level1-evidence] 최종 판정이 pass 가 아니므로 증거를 기록하지 않았습니다. "
+                "기존 증거는 유지됩니다."
+            )
+        else:
+            evidence_code, evidence_note = record_strict_evidence(
+                repo=repo_path,
+                branch=branch,
+                base=base,
+                capsule=capsule_path,
+            )
+            if evidence_code != 0:
+                # 기록 실패를 pass 로 넘기면 병합 훅이 증거 부재로 막을 때까지
+                # 아무도 모릅니다. 도구 오류(2)로 즉시 알립니다.
+                if as_json:
+                    data = build_json_output(
+                        gates,
+                        "error",
+                        2,
+                        passed_count,
+                        skipped_count,
+                        failed_count,
+                        error_message=evidence_note,
+                    )
+                    return 2, dump_strict_json(data, indent=2)
+                out = format_human_output(
+                    gates,
+                    "error",
+                    passed_count,
+                    skipped_count,
+                    failed_count,
+                    error_message=evidence_note,
+                )
+                return 2, truncate(out, max_chars)
+            evidence_recorded = True
+
     if as_json:
         data = build_json_output(
             gates, verdict, exit_code, passed_count, skipped_count, failed_count
         )
+        if record_evidence:
+            data["evidence"] = {"recorded": evidence_recorded, "note": evidence_note}
         return exit_code, dump_strict_json(data, indent=2)
 
     human_text = format_human_output(gates, verdict, passed_count, skipped_count, failed_count)
+    if evidence_note:
+        human_text += "\n" + evidence_note
     return exit_code, truncate(human_text, max_chars)
 
 
@@ -2117,6 +2271,7 @@ def main(argv: list[str] | None = None) -> int:
         max_chars=args.max_chars,
         as_json=args.json,
         strict=args.strict,
+        record_evidence=args.record_evidence,
     )
     print(output)
     return code

@@ -455,8 +455,10 @@ stdout 만 파싱하며, 파싱할 JSON 이 없으면 "빈 결과" 로 삼키지
 
 ```bash
 python3 scripts/orca_taskctl.py coordinator-capsule --slug <식별자> --objective "<목표>" --scope <경로> --scope <경로>
-python3 scripts/orca_level1_gate.py --base main --branch <브랜치> --repo . --capsule .orca/capsules/coord_<식별자>/capsule.yaml --strict
+python3 scripts/orca_level1_gate.py --base main --branch <브랜치> --repo . --capsule .orca/capsules/coord_<식별자>/capsule.yaml --strict --record-evidence
 ```
+
+`--strict --record-evidence` 는 판정이 `pass` 일 때 주 저장소 공통 `.cache/level1_strict_evidence.json` 에 증거를 남기고, `main` 병합 커밋에서 `prepare-commit-msg` 훅이 그 증거의 `commit` 을 `MERGE_HEAD` 와 대조합니다. 이제 기록 없는 브랜치는 훅이 막습니다.
 
 2. **Level 2 (독립 리뷰어 워커)**: 독립된 리뷰어 모델이 `ORCA_REVIEW_DONE_V2` 계약([`.agents/templates/review_done_v2.json`](../../../.agents/templates/review_done_v2.json))에 따라 acceptance criteria, 회귀 위험, G1(데이터 무손실), Train/Serve 단일화, 동시성 결함, 스코프 초과 수정을 교차 검증합니다.
 3. **Level 3 (코디네이터 핵심 diff 검토)**: 핵심 알고리즘, DB 변경점, 모델 승격 게이트 등 비가역적 위험 지점만 선별하여 최종 병합을 결정합니다.
