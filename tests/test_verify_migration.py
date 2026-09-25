@@ -271,3 +271,158 @@ def test_only_steps_runs_selected_file_checks_only(monkeypatch, tmp_path):
     payload = json.loads(report.read_text(encoding="utf-8"))
     names = [item["name"] for item in payload["results"]]
     assert names == ["ML 가중치 4종 무결성", "ChromaDB 컬렉션 무결성"]
+
+
+def _configure_g1_file_steps(monkeypatch, tmp_path: Path) -> dict[str, Path]:
+    """weights·chroma 단계를 가짜 파일만으로 돌릴 수 있는 환경을 만듭니다.
+
+    실제 model.bin 이나 chroma_db 자산에 의존하지 않습니다.
+    """
+    monkeypatch.delenv("MODEL_FILES_DIR", raising=False)
+    monkeypatch.delenv("MODEL_BACKUPS_DIR", raising=False)
+    model = "v25"
+    model_files = tmp_path / "data" / "model_files" / model
+    model_files.mkdir(parents=True)
+    model_records: dict[str, dict[str, str]] = {}
+    for name, payload in (("model.bin", b"model-weights"), ("scaler.pkl", b"scaler")):
+        file_path = model_files / name
+        file_path.write_bytes(payload)
+        model_records[name] = {"sha256": verify_migration.sha256_file(file_path)}
+
+    source = tmp_path / "data" / "backups" / "chroma_source"
+    operational = tmp_path / "chroma_db"
+    source_sqlite = _create_chroma(source, 10)
+    _create_chroma(operational, 500)
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "models": {model: model_records},
+                "chroma_baseline": {"collections": ["bidding_kb"], "embedding_count": 10},
+                "chroma_db": {
+                    "chroma_db/chroma.sqlite3": {
+                        "sha256": verify_migration.sha256_file(source_sqlite),
+                        "bytes": source_sqlite.stat().st_size,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(verify_migration, "ASSET_ROOT", tmp_path)
+    monkeypatch.setattr(verify_migration, "MANIFEST_PATH", manifest_path)
+    monkeypatch.setattr(verify_migration, "EXPECTED_MODELS", (model,))
+    monkeypatch.setattr(verify_migration, "CHROMA_SOURCE_BACKUP_PATH", source)
+    monkeypatch.setattr(verify_migration, "CHROMA_DB_PATH", operational)
+    _stub_probe(monkeypatch, (True, "bidding_kb 질의 정상 (500건 색인)"))
+    return {
+        "model.bin": model_files / "model.bin",
+        "scaler.pkl": model_files / "scaler.pkl",
+        "chroma.sqlite3": source_sqlite,
+    }
+
+
+def _run_g1_file_steps(monkeypatch, tmp_path: Path) -> tuple[int, dict]:
+    """가짜 파일로 weights,chroma 단계를 돌리고 종료 코드와 저장된 보고서를 돌려줍니다."""
+    report_path = tmp_path / "report.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "verify_migration.py",
+            "--only-steps",
+            "weights,chroma",
+            "--report-path",
+            str(report_path),
+        ],
+    )
+    exit_code = verify_migration.main()
+    return exit_code, json.loads(report_path.read_text(encoding="utf-8"))
+
+
+def test_report_records_step_timings_and_file_bytes_without_changing_verdict(
+    monkeypatch,
+    tmp_path,
+):
+    """계측 필드만 추가되고 기존 키와 판정은 계측 전과 같아야 합니다."""
+    files = _configure_g1_file_steps(monkeypatch, tmp_path)
+
+    exit_code, payload = _run_g1_file_steps(monkeypatch, tmp_path)
+
+    # 1. 기존 키는 그대로이고 계측 키만 추가됩니다.
+    assert set(payload) == {
+        "generated_at",
+        "head_commit",
+        "overall_verdict",
+        "passed_count",
+        "total_count",
+        "results",
+        "step_timings",
+        "segments",
+    }
+    assert exit_code == 0
+    assert payload["overall_verdict"] == "PASS"
+    assert payload["passed_count"] == 2
+    assert payload["total_count"] == 2
+
+    # 2. 실행한 단계마다 소요 시간이 남습니다.
+    assert set(payload["step_timings"]) == {"weights", "chroma"}
+    assert all(
+        isinstance(seconds, float) and seconds >= 0.0
+        for seconds in payload["step_timings"].values()
+    )
+
+    # 3. 해시한 파일마다 저장소 상대 경로와 읽은 바이트, 소요 시간이 남습니다.
+    file_segments = {
+        segment["path"]: segment for segment in payload["segments"] if "path" in segment
+    }
+    assert set(file_segments) == {
+        "data/model_files/v25/model.bin",
+        "data/model_files/v25/scaler.pkl",
+        "data/backups/chroma_source/chroma.sqlite3",
+    }
+    for stored_path, segment in file_segments.items():
+        assert set(segment) == {"path", "bytes", "seconds"}
+        assert segment["bytes"] == files[Path(stored_path).name].stat().st_size
+        assert segment["seconds"] >= 0.0
+
+    # 4. chroma sqlite 집계와 조회 구간도 별도 구간으로 남습니다.
+    spans = {segment["name"]: segment for segment in payload["segments"] if "name" in segment}
+    assert set(spans) == {
+        "chroma_source_sqlite_count",
+        "chroma_operational_sqlite_count",
+        "chroma_query_probe",
+    }
+    assert all(set(segment) == {"name", "seconds"} for segment in spans.values())
+
+    # 5. 기록된 판정과 메시지는 계측 없이 직접 호출한 결과와 같습니다.
+    for name, step in (
+        ("ML 가중치 4종 무결성", verify_migration.verify_model_weights),
+        ("ChromaDB 컬렉션 무결성", verify_migration.verify_chroma_db),
+    ):
+        ok, message = step()
+        item = next(item for item in payload["results"] if item["name"] == name)
+        assert item["status"] == ("PASS" if ok else "FAIL")
+        assert item["message"] == message
+
+
+def test_instrumentation_keeps_failure_verdict_and_message(monkeypatch, tmp_path):
+    """파일이 변조돼도 계측 때문에 판정이나 메시지가 달라지지 않아야 합니다."""
+    files = _configure_g1_file_steps(monkeypatch, tmp_path)
+    files["model.bin"].write_bytes(b"corrupted")
+
+    exit_code, payload = _run_g1_file_steps(monkeypatch, tmp_path)
+
+    ok, message = verify_migration.verify_model_weights()
+    assert ok is False
+    assert "체크섬 불일치" in message
+    assert exit_code == 1
+    assert payload["overall_verdict"] == "FAIL"
+    assert payload["passed_count"] == 1
+    item = next(item for item in payload["results"] if item["name"] == "ML 가중치 4종 무결성")
+    assert item["status"] == "FAIL"
+    assert item["message"] == message
+
+    # 판정이 실패해도 계측은 계속 남습니다.
+    assert set(payload["step_timings"]) == {"weights", "chroma"}
+    assert any(segment.get("bytes") for segment in payload["segments"])

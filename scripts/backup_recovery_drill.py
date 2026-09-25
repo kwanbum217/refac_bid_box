@@ -75,6 +75,35 @@ def run_drill_g1_verification(
     )
 
 
+def extract_g1_file_breakdown(rep_data: dict[str, Any]) -> dict[str, Any] | None:
+    """검증 보고서의 단계·구간 계측값을 drill 보고서용 필드로 옮깁니다.
+
+    total_seconds 는 단계 소요 시간의 합이라 drill 의
+    timings.g1_file_verification.duration_seconds 와 대조하면 계측되지 않은
+    구간(자식 프로세스 기동, 보고서 기록)을 해석할 수 있습니다. 계측 필드가
+    없는 구버전 보고서에는 필드를 만들지 않도록 None 을 돌려줍니다.
+    """
+    step_timings = rep_data.get("step_timings")
+    segments = rep_data.get("segments")
+    if not isinstance(step_timings, dict) or not step_timings:
+        return None
+    if not isinstance(segments, list):
+        return None
+    if not all(isinstance(seconds, (int, float)) for seconds in step_timings.values()):
+        return None
+
+    total_bytes = 0
+    for segment in segments:
+        if isinstance(segment, dict) and isinstance(segment.get("bytes"), (int, float)):
+            total_bytes += int(segment["bytes"])
+    return {
+        "total_seconds": float(sum(step_timings.values())),
+        "total_bytes": total_bytes,
+        "step_timings": {str(name): float(seconds) for name, seconds in step_timings.items()},
+        "segments": list(segments),
+    }
+
+
 def measure_rpo(manifest: dict[str, Any], st: datetime) -> dict[str, Any]:
     w, c = manifest.get("consistency_window", {}), manifest.get("created_at")
 
