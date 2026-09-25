@@ -3307,6 +3307,42 @@ COORDINATOR_REVIEW_CHECKLIST: tuple[dict[str, str], ...] = (
 )
 
 
+def strip_worker_report_declaration(capsule: str) -> str:
+    """Capsule 에서 워커 보고 선언 줄을 제거합니다.
+
+    코디네이터가 직접 쓴 브랜치에는 원리상 워커 보고가 없습니다. 그런데
+    expand_intent_to_capsule 은 역할 기본 보고 경로로 report_path 를 채우고,
+    게이트 6 은 Capsule 에 report_path 가 있으면 보고 파일을 요구하므로
+    --strict 가 'worker_done 보고 파일 없음' 으로 실패합니다. expand 의 기존
+    호출자(expand, create, dispatch, rework) 출력은 그대로 두고 이 경로에서만
+    보고 선언 세 곳, 곧 report_path 줄과 return_contract 줄, artifact_paths
+    목록의 보고 파일 경로 항목을 지웁니다. 다른 줄은 건드리지 않습니다.
+    """
+    report_path = parse_capsule_scalar(capsule, "report_path")
+    if not report_path:
+        return capsule
+
+    report_item = f'- "{report_path}"'
+    kept: list[str] = []
+    in_artifact_paths = False
+    for line in capsule.splitlines():
+        stripped = line.strip()
+        if in_artifact_paths:
+            if stripped.startswith("- "):
+                if stripped != report_item:
+                    kept.append(line)
+                continue
+            in_artifact_paths = False
+        if stripped.startswith("artifact_paths:"):
+            in_artifact_paths = True
+            kept.append(line)
+            continue
+        if stripped.startswith(("report_path:", "return_contract:")):
+            continue
+        kept.append(line)
+    return "\n".join(kept) + "\n"
+
+
 def cmd_coordinator_capsule(args: argparse.Namespace) -> int:
     """워커 없이 코디네이터가 직접 쓴 브랜치용 최소 Capsule 을 만듭니다.
 
@@ -3354,6 +3390,8 @@ def cmd_coordinator_capsule(args: argparse.Namespace) -> int:
     except ValueError as err:
         sys.stderr.write(f"오류: {err}\n")
         return 2
+
+    capsule = strip_worker_report_declaration(capsule)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(capsule, encoding="utf-8")
