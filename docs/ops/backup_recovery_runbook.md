@@ -246,6 +246,12 @@ docker compose exec -e MEILI_TIMEOUT_SECONDS=30 app python3 scripts/sync_search_
 
 완료 판정은 스크립트 종료가 아니라 Meilisearch 의 미완료 작업이 0 이 되는 것입니다. 클라이언트 적재가 끝나 스크립트가 종료된 뒤에도 서버 색인은 계속 진행되므로, 호스트에서 다음으로 `enqueued`·`processing` 작업이 0 인지 확인합니다:
 
+이 키는 `.env` 에만 있고 호스트 셸에는 기본으로 없으므로 저장소 루트에서 다음으로 값을 먼저 읽어 오며, 읽은 값은 화면에 출력하거나 문서·셸 이력에 남기지 않습니다:
+
+```bash
+export MEILI_MASTER_KEY="$(grep '^MEILI_MASTER_KEY=' .env | cut -d= -f2-)"
+```
+
 ```bash
 curl -s -H "Authorization: Bearer $MEILI_MASTER_KEY" \
   "http://127.0.0.1:7700/tasks?statuses=enqueued,processing&limit=1"
