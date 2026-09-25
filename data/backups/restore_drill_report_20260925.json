@@ -1,0 +1,596 @@
+{
+  "schema": "RESTORE_DRILL_REPORT_V2",
+  "snapshot_dir": "data/backups/snapshots/snapshot_20260921_061612",
+  "target_dir": "/private/tmp/refac_bid_box_restore_drill",
+  "drill_db": {
+    "host": "localhost",
+    "port": 3306,
+    "name": "procurement_restore_drill",
+    "user": "root"
+  },
+  "snapshot_valid": true,
+  "components": [
+    "chroma_db",
+    "database",
+    "models"
+  ],
+  "extracted_components": [
+    "chroma_db",
+    "models"
+  ],
+  "timings": {
+    "snapshot_verification": {
+      "started_at": "2026-09-25T06:55:29.626626+00:00",
+      "finished_at": "2026-09-25T06:55:31.696972+00:00",
+      "duration_seconds": 2.070346,
+      "status": "PASS"
+    },
+    "archive_extraction": {
+      "started_at": "2026-09-25T06:55:31.697207+00:00",
+      "finished_at": "2026-09-25T06:55:48.306126+00:00",
+      "duration_seconds": 16.608919,
+      "status": "PASS"
+    },
+    "g1_file_verification": {
+      "started_at": "2026-09-25T06:55:48.306140+00:00",
+      "finished_at": "2026-09-25T06:56:09.142583+00:00",
+      "duration_seconds": 20.836443,
+      "status": "PASS"
+    },
+    "extract_cleanup": {
+      "started_at": "2026-09-25T06:56:09.142605+00:00",
+      "finished_at": "2026-09-25T06:56:09.236910+00:00",
+      "duration_seconds": 0.094305,
+      "status": "PASS"
+    },
+    "database_import": {
+      "started_at": "2026-09-25T06:56:09.236933+00:00",
+      "finished_at": "2026-09-25T07:19:58.423944+00:00",
+      "duration_seconds": 1429.187011,
+      "status": "PASS"
+    },
+    "g1_db_verification": {
+      "started_at": "2026-09-25T07:19:58.424171+00:00",
+      "finished_at": "2026-09-25T07:20:02.033351+00:00",
+      "duration_seconds": 3.60918,
+      "status": "PASS"
+    },
+    "cleanup": {
+      "started_at": "2026-09-25T07:20:02.033403+00:00",
+      "finished_at": "2026-09-25T07:20:06.978314+00:00",
+      "duration_seconds": 4.944911,
+      "status": "PASS"
+    }
+  },
+  "database_import_breakdown": {
+    "total_seconds": 1424.5831277449997,
+    "total_bytes": 27195002222,
+    "segment_count": 74,
+    "segments": [
+      {
+        "table": "bid_announcements",
+        "phase": "data",
+        "seconds": 1163.709756834,
+        "bytes": 24992883310
+      },
+      {
+        "table": "bid_results",
+        "phase": "data",
+        "seconds": 218.19003799999973,
+        "bytes": 1411697946
+      },
+      {
+        "table": "servc_inst_verify",
+        "phase": "data",
+        "seconds": 29.509270125000057,
+        "bytes": 605450977
+      },
+      {
+        "table": "bid_announcement_license_limits",
+        "phase": "data",
+        "seconds": 5.896907332999945,
+        "bytes": 114420531
+      },
+      {
+        "table": "bid_announcement_participation_regions",
+        "phase": "data",
+        "seconds": 3.1903105000001233,
+        "bytes": 46507560
+      },
+      {
+        "table": "chat_session_states",
+        "phase": "data",
+        "seconds": 2.0517262079997636,
+        "bytes": 19371905
+      },
+      {
+        "table": "socialaccount_socialtoken",
+        "phase": "data",
+        "seconds": 1.3675100409996048,
+        "bytes": 776
+      },
+      {
+        "table": "institution_win_rate_stats",
+        "phase": "data",
+        "seconds": 0.6655911670000023,
+        "bytes": 4322104
+      },
+      {
+        "table": "retrain_logs",
+        "phase": "data",
+        "seconds": 0.0005056669997429708,
+        "bytes": 155820
+      },
+      {
+        "table": "bid_compare_stats_snapshots",
+        "phase": "structure",
+        "seconds": 0.00014179199979480472,
+        "bytes": 588
+      },
+      {
+        "table": "socialaccount_socialaccount",
+        "phase": "structure",
+        "seconds": 0.0001397500000166474,
+        "bytes": 1134
+      },
+      {
+        "table": "bid_evaluation_snapshots",
+        "phase": "data",
+        "seconds": 0.00011858400011988124,
+        "bytes": 84283
+      },
+      {
+        "table": "pipeline_executions",
+        "phase": "data",
+        "seconds": 7.275000007211929e-05,
+        "bytes": 13448
+      },
+      {
+        "table": "django_content_type",
+        "phase": "structure",
+        "seconds": 5.987499980619759e-05,
+        "bytes": 663
+      },
+      {
+        "table": "institution_win_rate_stats",
+        "phase": "structure",
+        "seconds": 5.4457999794976786e-05,
+        "bytes": 1074
+      },
+      {
+        "table": "socialaccount_socialtoken",
+        "phase": "structure",
+        "seconds": 4.099999978279811e-05,
+        "bytes": 1123
+      },
+      {
+        "table": "socialaccount_socialapp",
+        "phase": "structure",
+        "seconds": 4.0082999930746155e-05,
+        "bytes": 965
+      },
+      {
+        "table": "bid_announcement_participation_regions",
+        "phase": "structure",
+        "seconds": 3.9541000205645105e-05,
+        "bytes": 1163
+      },
+      {
+        "table": "django_admin_log",
+        "phase": "structure",
+        "seconds": 3.908300004695775e-05,
+        "bytes": 1271
+      },
+      {
+        "table": "servc_inst_verify",
+        "phase": "structure",
+        "seconds": 3.841599982479238e-05,
+        "bytes": 2687
+      },
+      {
+        "table": "socialaccount_socialapp_sites",
+        "phase": "structure",
+        "seconds": 3.6750000163010554e-05,
+        "bytes": 996
+      },
+      {
+        "table": "bid_ranking_snapshots",
+        "phase": "data",
+        "seconds": 3.645900005722069e-05,
+        "bytes": 16498
+      },
+      {
+        "table": "knowledge_base_status",
+        "phase": "structure",
+        "seconds": 3.549999973984086e-05,
+        "bytes": 964
+      },
+      {
+        "table": "automation_requests",
+        "phase": "data",
+        "seconds": 3.533300014169072e-05,
+        "bytes": 13884
+      },
+      {
+        "table": "pipeline_executions",
+        "phase": "structure",
+        "seconds": 3.28749997606792e-05,
+        "bytes": 1782
+      },
+      {
+        "table": "chat_session_states",
+        "phase": "structure",
+        "seconds": 2.68329999926209e-05,
+        "bytes": 2173
+      },
+      {
+        "table": "auth_permission",
+        "phase": "data",
+        "seconds": 2.6249999791616574e-05,
+        "bytes": 4982
+      },
+      {
+        "table": "django_session",
+        "phase": "structure",
+        "seconds": 2.2541999896930065e-05,
+        "bytes": 618
+      },
+      {
+        "table": "django_migrations",
+        "phase": "structure",
+        "seconds": 2.23330002881994e-05,
+        "bytes": 596
+      },
+      {
+        "table": "bid_evaluation_profiles",
+        "phase": "structure",
+        "seconds": 2.1915999695920618e-05,
+        "bytes": 1126
+      },
+      {
+        "table": "django_site",
+        "phase": "structure",
+        "seconds": 2.166600006603403e-05,
+        "bytes": 605
+      },
+      {
+        "table": "retrain_logs",
+        "phase": "structure",
+        "seconds": 2.141699997082469e-05,
+        "bytes": 882
+      },
+      {
+        "table": "prediction_results",
+        "phase": "structure",
+        "seconds": 2.0541000139928656e-05,
+        "bytes": 902
+      },
+      {
+        "table": "socialaccount_socialaccount",
+        "phase": "data",
+        "seconds": 1.887500002339948e-05,
+        "bytes": 263
+      },
+      {
+        "table": "socialaccount_socialapp",
+        "phase": "data",
+        "seconds": 1.808300021366449e-05,
+        "bytes": 247
+      },
+      {
+        "table": "account_emailaddress",
+        "phase": "structure",
+        "seconds": 1.795899970602477e-05,
+        "bytes": 876
+      },
+      {
+        "table": "socialaccount_socialapp_sites",
+        "phase": "data",
+        "seconds": 1.78329996742832e-05,
+        "bytes": 271
+      },
+      {
+        "table": "knowledge_base_status",
+        "phase": "data",
+        "seconds": 1.7040999864548212e-05,
+        "bytes": 551
+      },
+      {
+        "table": "django_migrations",
+        "phase": "data",
+        "seconds": 1.570900030856137e-05,
+        "bytes": 4326
+      },
+      {
+        "table": "django_content_type",
+        "phase": "data",
+        "seconds": 1.5582999822072452e-05,
+        "bytes": 919
+      },
+      {
+        "table": "accounts_customuser_user_permissions",
+        "phase": "structure",
+        "seconds": 1.462500040361192e-05,
+        "bytes": 1031
+      },
+      {
+        "table": "django_site",
+        "phase": "data",
+        "seconds": 1.4041999747860245e-05,
+        "bytes": 265
+      },
+      {
+        "table": "bid_announcements",
+        "phase": "structure",
+        "seconds": 1.4000000192027073e-05,
+        "bytes": 2132
+      },
+      {
+        "table": "django_admin_log",
+        "phase": "data",
+        "seconds": 1.3624999610328814e-05,
+        "bytes": 219
+      },
+      {
+        "table": "automation_requests",
+        "phase": "structure",
+        "seconds": 1.2916999821754871e-05,
+        "bytes": 2507
+      },
+      {
+        "table": "bid_results",
+        "phase": "structure",
+        "seconds": 1.2708000213024206e-05,
+        "bytes": 1907
+      },
+      {
+        "table": "prediction_results",
+        "phase": "data",
+        "seconds": 1.2542000149551313e-05,
+        "bytes": 227
+      },
+      {
+        "table": "django_session",
+        "phase": "data",
+        "seconds": 1.2457999673642917e-05,
+        "bytes": 211
+      },
+      {
+        "table": "accounts_customuser",
+        "phase": "structure",
+        "seconds": 8.709000212547835e-06,
+        "bytes": 1204
+      },
+      {
+        "table": "bid_announcement_license_limits",
+        "phase": "structure",
+        "seconds": 8.625000191386789e-06,
+        "bytes": 1348
+      },
+      {
+        "table": "bid_evaluation_snapshots",
+        "phase": "structure",
+        "seconds": 8.459000127913896e-06,
+        "bytes": 1334
+      },
+      {
+        "table": "automation_subscriptions",
+        "phase": "structure",
+        "seconds": 8.292000075016404e-06,
+        "bytes": 1348
+      },
+      {
+        "table": "bid_evaluation_evidence",
+        "phase": "structure",
+        "seconds": 7.957999969221419e-06,
+        "bytes": 1357
+      },
+      {
+        "table": "bid_ranking_snapshots",
+        "phase": "structure",
+        "seconds": 7.957999969221419e-06,
+        "bytes": 1183
+      },
+      {
+        "table": "accounts_customuser",
+        "phase": "data",
+        "seconds": 7.58299984227051e-06,
+        "bytes": 1742
+      },
+      {
+        "table": "bid_dataset_summaries",
+        "phase": "structure",
+        "seconds": 7.04200010659406e-06,
+        "bytes": 831
+      },
+      {
+        "table": "account_emailconfirmation",
+        "phase": "structure",
+        "seconds": 6.916000074852491e-06,
+        "bytes": 880
+      },
+      {
+        "table": "accounts_customuser_groups",
+        "phase": "structure",
+        "seconds": 6.208000286278548e-06,
+        "bytes": 986
+      },
+      {
+        "table": "bid_compare_stats_snapshots",
+        "phase": "data",
+        "seconds": 6.040999778633704e-06,
+        "bytes": 2975
+      },
+      {
+        "table": "auth_group_permissions",
+        "phase": "structure",
+        "seconds": 5.957999746897258e-06,
+        "bytes": 959
+      },
+      {
+        "table": "auth_permission",
+        "phase": "structure",
+        "seconds": 5.625000085274223e-06,
+        "bytes": 839
+      },
+      {
+        "table": "auth_group",
+        "phase": "structure",
+        "seconds": 4.584000180329895e-06,
+        "bytes": 495
+      },
+      {
+        "table": "alembic_version",
+        "phase": "structure",
+        "seconds": 3.999999989900971e-06,
+        "bytes": 459
+      },
+      {
+        "table": "bid_dataset_summaries",
+        "phase": "data",
+        "seconds": 3.875000402331352e-06,
+        "bytes": 493
+      },
+      {
+        "table": "account_emailaddress",
+        "phase": "data",
+        "seconds": 3.5830003071168903e-06,
+        "bytes": 235
+      },
+      {
+        "table": "alembic_version",
+        "phase": "data",
+        "seconds": 3.209000169590581e-06,
+        "bytes": 270
+      },
+      {
+        "table": "bid_evaluation_evidence",
+        "phase": "data",
+        "seconds": 3.0830001378490124e-06,
+        "bytes": 247
+      },
+      {
+        "table": "accounts_customuser_user_permissions",
+        "phase": "data",
+        "seconds": 3.000000106112566e-06,
+        "bytes": 299
+      },
+      {
+        "table": "bid_evaluation_profiles",
+        "phase": "data",
+        "seconds": 3.000000106112566e-06,
+        "bytes": 247
+      },
+      {
+        "table": "account_emailconfirmation",
+        "phase": "data",
+        "seconds": 2.958000095532043e-06,
+        "bytes": 255
+      },
+      {
+        "table": "accounts_customuser_groups",
+        "phase": "data",
+        "seconds": 2.91600008495152e-06,
+        "bytes": 259
+      },
+      {
+        "table": "auth_group",
+        "phase": "data",
+        "seconds": 2.91600008495152e-06,
+        "bytes": 195
+      },
+      {
+        "table": "automation_subscriptions",
+        "phase": "data",
+        "seconds": 2.8330000532150734e-06,
+        "bytes": 251
+      },
+      {
+        "table": "auth_group_permissions",
+        "phase": "data",
+        "seconds": 2.79200003205915e-06,
+        "bytes": 243
+      }
+    ]
+  },
+  "started_at": "2026-09-25T06:55:29.626488+00:00",
+  "finished_at": "2026-09-25T07:20:06.978366+00:00",
+  "total_duration_seconds": 1477.351878,
+  "rpo_measurements": {
+    "snapshot_created_at": "2026-09-21T06:42:35.073119+00:00",
+    "consistency_window": {
+      "db_dump_started_at": "2026-09-21T06:16:12.342553+00:00",
+      "db_dump_finished_at": "2026-09-21T06:39:44.031978+00:00",
+      "row_counts_queried_at": "2026-09-21T06:39:44.859583+00:00",
+      "file_assets_collected_at": "2026-09-21T06:42:35.073161+00:00",
+      "timing_note": "덤프 완료 후 별도 조회한 행 수는 쓰기 중인 DB 의 덤프 시점 행 수와 다를 수 있습니다."
+    },
+    "drill_started_at": "2026-09-25T06:55:29.626488+00:00",
+    "created_at_to_drill_start_seconds": 346374.553369,
+    "db_dump_finished_to_drill_start_seconds": 346545.59451,
+    "file_assets_to_drill_start_seconds": 346374.553327
+  },
+  "g1_verification": {
+    "success": true,
+    "message": "G1 무손실 검증 통과 (파일·DB 단계 분리)",
+    "file": {
+      "success": true,
+      "message": "G1 무손실 검증 통과",
+      "report": {
+        "generated_at": "2026-09-25T06:56:09.003179+00:00",
+        "head_commit": "3e3bf9be8156753635d2921d19a06e6e49a264d9",
+        "overall_verdict": "PASS",
+        "passed_count": 2,
+        "total_count": 2,
+        "results": [
+          {
+            "name": "ML 가중치 4종 무결성",
+            "status": "PASS",
+            "message": "ML 가중치 4종 체크섬 일치"
+          },
+          {
+            "name": "ChromaDB 컬렉션 무결성",
+            "status": "PASS",
+            "message": "ChromaDB 원본 10건 보존 / 운영 518337건 확인"
+          }
+        ]
+      }
+    },
+    "database": {
+      "success": true,
+      "message": "G1 무손실 검증 통과",
+      "report": {
+        "generated_at": "2026-09-25T07:20:01.965271+00:00",
+        "head_commit": "3e3bf9be8156753635d2921d19a06e6e49a264d9",
+        "overall_verdict": "PASS",
+        "passed_count": 4,
+        "total_count": 4,
+        "results": [
+          {
+            "name": "DB 테이블 존재 여부",
+            "status": "PASS",
+            "message": "ORM 테이블 존재 확인 (승인된 외부 테이블 18개 포함)"
+          },
+          {
+            "name": "DB 전 테이블 스키마 서명 정합성",
+            "status": "PASS",
+            "message": "DB 스키마 서명 일치 (전 테이블 컬럼·타입·제약조건 무손실)"
+          },
+          {
+            "name": "데이터 행 수 하한 검증",
+            "status": "PASS",
+            "message": "공고 5,517,351행 / 낙찰 3,439,172행 확인"
+          },
+          {
+            "name": "G1 reconciliation: 원본/성장분 분리 대조",
+            "status": "PASS",
+            "message": "원본/성장분 대조 일치 — bid_announcements 1,660,792행 / bid_results 2,973,072행"
+          }
+        ]
+      }
+    }
+  },
+  "keep_artifacts": false,
+  "errors": [],
+  "success": true
+}

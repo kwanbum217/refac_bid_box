@@ -259,7 +259,7 @@ curl -s -H "Authorization: Bearer $MEILI_MASTER_KEY" \
 
 응답의 `total` 이 0 이면 재색인이 완료된 것입니다.
 
-전제: [`docs/ops/rpo_rto_policy.md`](rpo_rto_policy.md) 3장의 실측 839.3초는 `MEILI_TIMEOUT_SECONDS=30` 에서 측정한 값입니다. 기본값 5초로 전체 재색인이 배치 실패 없이 끝나는지는 확인하지 않았으므로, 복구에서는 반드시 30을 지정합니다.
+전제: [`docs/ops/rpo_rto_policy.md`](rpo_rto_policy.md) 3장의 재색인 실측(2026-09-22 839.3초, 2026-09-25 951.2초)은 모두 `MEILI_TIMEOUT_SECONDS=30` 에서 측정한 값입니다. 기본값 5초로 전체 재색인이 배치 실패 없이 끝나는지는 확인하지 않았으므로, 복구에서는 반드시 30을 지정합니다.
 
 ### 4.4 복원 리허설 (Restore Drill)
 
