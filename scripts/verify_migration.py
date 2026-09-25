@@ -188,11 +188,11 @@ def reset_instrumentation() -> None:
 
 
 def _storage_relative_path(path: Path) -> str:
-    """자산 저장소 루트 기준 상대 경로를 반환합니다. 루트 밖이면 절대 경로를 씁니다."""
+    """자산 저장소 루트 기준 상대 경로를 '/' 구분자로 반환합니다. 루트 밖이면 절대 경로를 씁니다."""
     try:
-        return str(path.resolve().relative_to(ASSET_ROOT.resolve()))
+        return path.resolve().relative_to(ASSET_ROOT.resolve()).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()
 
 
 def _timed_step(name: str, fn: Callable[[], tuple[bool, str]]) -> tuple[bool, str]:
