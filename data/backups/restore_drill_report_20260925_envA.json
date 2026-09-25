@@ -1,0 +1,1539 @@
+{
+  "schema": "RESTORE_DRILL_REPORT_V2",
+  "snapshot_dir": "data/backups/snapshots/snapshot_20260911_033631",
+  "target_dir": "/private/tmp/refac_bid_box_restore_drill",
+  "drill_db": {
+    "host": "localhost",
+    "port": 3306,
+    "name": "procurement_restore_drill",
+    "user": "root"
+  },
+  "snapshot_valid": true,
+  "components": [
+    "chroma_db",
+    "database",
+    "models"
+  ],
+  "extracted_components": [
+    "chroma_db",
+    "models"
+  ],
+  "timings": {
+    "snapshot_verification": {
+      "started_at": "2026-09-25T10:47:31.473059+00:00",
+      "finished_at": "2026-09-25T10:47:33.414084+00:00",
+      "duration_seconds": 1.941025,
+      "status": "PASS"
+    },
+    "archive_extraction": {
+      "started_at": "2026-09-25T10:47:33.414238+00:00",
+      "finished_at": "2026-09-25T10:47:48.130924+00:00",
+      "duration_seconds": 14.716686,
+      "status": "PASS"
+    },
+    "g1_file_verification": {
+      "started_at": "2026-09-25T10:47:48.130940+00:00",
+      "finished_at": "2026-09-25T10:47:51.962917+00:00",
+      "duration_seconds": 3.831977,
+      "status": "PASS"
+    },
+    "extract_cleanup": {
+      "started_at": "2026-09-25T10:47:51.962936+00:00",
+      "finished_at": "2026-09-25T10:47:52.058701+00:00",
+      "duration_seconds": 0.095765,
+      "status": "PASS"
+    },
+    "database_import": {
+      "started_at": "2026-09-25T10:47:52.058716+00:00",
+      "finished_at": "2026-09-25T11:05:45.213059+00:00",
+      "duration_seconds": 1073.154343,
+      "status": "PASS"
+    },
+    "g1_db_verification": {
+      "started_at": "2026-09-25T11:05:45.213153+00:00",
+      "finished_at": "2026-09-25T11:05:53.884630+00:00",
+      "duration_seconds": 8.671477,
+      "status": "PASS"
+    },
+    "cleanup": {
+      "started_at": "2026-09-25T11:05:53.884654+00:00",
+      "finished_at": "2026-09-25T11:05:56.958322+00:00",
+      "duration_seconds": 3.073668,
+      "status": "PASS"
+    }
+  },
+  "database_import_breakdown": {
+    "total_seconds": 1072.278565703984,
+    "total_bytes": 26954349067,
+    "segment_count": 70,
+    "segments": [
+      {
+        "table": "bid_announcements",
+        "phase": "data",
+        "seconds": 887.2860321250009,
+        "bytes": 24921990090
+      },
+      {
+        "table": "bid_results",
+        "phase": "data",
+        "seconds": 156.30294866599797,
+        "bytes": 1403386908
+      },
+      {
+        "table": "servc_inst_verify",
+        "phase": "data",
+        "seconds": 27.49308870800087,
+        "bytes": 605450977
+      },
+      {
+        "table": "chat_session_states",
+        "phase": "data",
+        "seconds": 0.5402002909977455,
+        "bytes": 19068694
+      },
+      {
+        "table": "socialaccount_socialtoken",
+        "phase": "data",
+        "seconds": 0.5308192089978547,
+        "bytes": 776
+      },
+      {
+        "table": "institution_win_rate_stats",
+        "phase": "data",
+        "seconds": 0.12364016699939384,
+        "bytes": 4316671
+      },
+      {
+        "table": "bid_evaluation_snapshots",
+        "phase": "data",
+        "seconds": 0.00016366700219805352,
+        "bytes": 33662
+      },
+      {
+        "table": "bid_results",
+        "phase": "structure",
+        "seconds": 0.000136042002850445,
+        "bytes": 1795
+      },
+      {
+        "table": "bid_ranking_snapshots",
+        "phase": "data",
+        "seconds": 0.00012979099847143516,
+        "bytes": 16506
+      },
+      {
+        "table": "servc_inst_verify",
+        "phase": "structure",
+        "seconds": 0.00012095800047973171,
+        "bytes": 2687
+      },
+      {
+        "table": "chat_session_states",
+        "phase": "structure",
+        "seconds": 8.791700020083226e-05,
+        "bytes": 2173
+      },
+      {
+        "table": "retrain_logs",
+        "phase": "data",
+        "seconds": 7.983300019986928e-05,
+        "bytes": 1371
+      },
+      {
+        "table": "pipeline_executions",
+        "phase": "data",
+        "seconds": 7.02500001352746e-05,
+        "bytes": 9476
+      },
+      {
+        "table": "pipeline_executions",
+        "phase": "structure",
+        "seconds": 6.97920004313346e-05,
+        "bytes": 1782
+      },
+      {
+        "table": "bid_dataset_summaries",
+        "phase": "data",
+        "seconds": 6.0792001022491604e-05,
+        "bytes": 493
+      },
+      {
+        "table": "bid_evaluation_evidence",
+        "phase": "structure",
+        "seconds": 5.979200068395585e-05,
+        "bytes": 1357
+      },
+      {
+        "table": "bid_evaluation_profiles",
+        "phase": "structure",
+        "seconds": 5.2457999117905274e-05,
+        "bytes": 1126
+      },
+      {
+        "table": "bid_evaluation_snapshots",
+        "phase": "structure",
+        "seconds": 5.2374998631421477e-05,
+        "bytes": 1334
+      },
+      {
+        "table": "knowledge_base_status",
+        "phase": "structure",
+        "seconds": 4.7375000576721504e-05,
+        "bytes": 964
+      },
+      {
+        "table": "bid_ranking_snapshots",
+        "phase": "structure",
+        "seconds": 4.149999949731864e-05,
+        "bytes": 1183
+      },
+      {
+        "table": "prediction_results",
+        "phase": "structure",
+        "seconds": 4.129099761485122e-05,
+        "bytes": 902
+      },
+      {
+        "table": "bid_dataset_summaries",
+        "phase": "structure",
+        "seconds": 3.941599788959138e-05,
+        "bytes": 831
+      },
+      {
+        "table": "bid_compare_stats_snapshots",
+        "phase": "structure",
+        "seconds": 3.7917001463938504e-05,
+        "bytes": 588
+      },
+      {
+        "table": "retrain_logs",
+        "phase": "structure",
+        "seconds": 3.7583999073831365e-05,
+        "bytes": 881
+      },
+      {
+        "table": "bid_compare_stats_snapshots",
+        "phase": "data",
+        "seconds": 3.216600089217536e-05,
+        "bytes": 2977
+      },
+      {
+        "table": "automation_requests",
+        "phase": "data",
+        "seconds": 3.2124999052030034e-05,
+        "bytes": 13884
+      },
+      {
+        "table": "django_migrations",
+        "phase": "data",
+        "seconds": 3.087500226683915e-05,
+        "bytes": 4326
+      },
+      {
+        "table": "knowledge_base_status",
+        "phase": "data",
+        "seconds": 2.8832997486460954e-05,
+        "bytes": 553
+      },
+      {
+        "table": "django_admin_log",
+        "phase": "structure",
+        "seconds": 2.4666998797329143e-05,
+        "bytes": 1271
+      },
+      {
+        "table": "institution_win_rate_stats",
+        "phase": "structure",
+        "seconds": 2.183299875468947e-05,
+        "bytes": 1074
+      },
+      {
+        "table": "auth_permission",
+        "phase": "data",
+        "seconds": 2.0125000446569175e-05,
+        "bytes": 4982
+      },
+      {
+        "table": "prediction_results",
+        "phase": "data",
+        "seconds": 1.779100057319738e-05,
+        "bytes": 227
+      },
+      {
+        "table": "bid_evaluation_evidence",
+        "phase": "data",
+        "seconds": 1.7790996935218573e-05,
+        "bytes": 247
+      },
+      {
+        "table": "bid_evaluation_profiles",
+        "phase": "data",
+        "seconds": 1.737500133458525e-05,
+        "bytes": 247
+      },
+      {
+        "table": "account_emailaddress",
+        "phase": "structure",
+        "seconds": 1.3957998817204498e-05,
+        "bytes": 876
+      },
+      {
+        "table": "django_content_type",
+        "phase": "structure",
+        "seconds": 1.3582997780758888e-05,
+        "bytes": 663
+      },
+      {
+        "table": "alembic_version",
+        "phase": "structure",
+        "seconds": 1.3541999578592367e-05,
+        "bytes": 459
+      },
+      {
+        "table": "django_site",
+        "phase": "structure",
+        "seconds": 1.3374999980442226e-05,
+        "bytes": 605
+      },
+      {
+        "table": "automation_requests",
+        "phase": "structure",
+        "seconds": 1.3207998563302681e-05,
+        "bytes": 2507
+      },
+      {
+        "table": "django_session",
+        "phase": "structure",
+        "seconds": 1.3166998542146757e-05,
+        "bytes": 618
+      },
+      {
+        "table": "django_migrations",
+        "phase": "structure",
+        "seconds": 1.3083001249469817e-05,
+        "bytes": 596
+      },
+      {
+        "table": "bid_announcements",
+        "phase": "structure",
+        "seconds": 1.2665999747696333e-05,
+        "bytes": 2058
+      },
+      {
+        "table": "django_session",
+        "phase": "data",
+        "seconds": 1.1708001693477854e-05,
+        "bytes": 211
+      },
+      {
+        "table": "socialaccount_socialaccount",
+        "phase": "structure",
+        "seconds": 9.457999112783e-06,
+        "bytes": 1134
+      },
+      {
+        "table": "django_content_type",
+        "phase": "data",
+        "seconds": 9.04199987417087e-06,
+        "bytes": 919
+      },
+      {
+        "table": "django_site",
+        "phase": "data",
+        "seconds": 8.625000191386789e-06,
+        "bytes": 265
+      },
+      {
+        "table": "accounts_customuser",
+        "phase": "structure",
+        "seconds": 8.583998351241462e-06,
+        "bytes": 1204
+      },
+      {
+        "table": "automation_subscriptions",
+        "phase": "structure",
+        "seconds": 8.33300146041438e-06,
+        "bytes": 1348
+      },
+      {
+        "table": "django_admin_log",
+        "phase": "data",
+        "seconds": 8.167000487446785e-06,
+        "bytes": 219
+      },
+      {
+        "table": "account_emailconfirmation",
+        "phase": "structure",
+        "seconds": 7.0000005507608876e-06,
+        "bytes": 880
+      },
+      {
+        "table": "socialaccount_socialtoken",
+        "phase": "structure",
+        "seconds": 6.791000487282872e-06,
+        "bytes": 1123
+      },
+      {
+        "table": "socialaccount_socialapp_sites",
+        "phase": "structure",
+        "seconds": 6.709000444971025e-06,
+        "bytes": 996
+      },
+      {
+        "table": "socialaccount_socialapp",
+        "phase": "structure",
+        "seconds": 6.54199902783148e-06,
+        "bytes": 965
+      },
+      {
+        "table": "accounts_customuser_groups",
+        "phase": "structure",
+        "seconds": 6.124999345047399e-06,
+        "bytes": 986
+      },
+      {
+        "table": "accounts_customuser_user_permissions",
+        "phase": "structure",
+        "seconds": 5.791000148747116e-06,
+        "bytes": 1031
+      },
+      {
+        "table": "auth_group_permissions",
+        "phase": "structure",
+        "seconds": 5.750000127591193e-06,
+        "bytes": 959
+      },
+      {
+        "table": "auth_permission",
+        "phase": "structure",
+        "seconds": 5.45799957762938e-06,
+        "bytes": 839
+      },
+      {
+        "table": "accounts_customuser",
+        "phase": "data",
+        "seconds": 5.333000444807112e-06,
+        "bytes": 1308
+      },
+      {
+        "table": "auth_group",
+        "phase": "structure",
+        "seconds": 4.499999704421498e-06,
+        "bytes": 495
+      },
+      {
+        "table": "account_emailaddress",
+        "phase": "data",
+        "seconds": 3.749999450519681e-06,
+        "bytes": 235
+      },
+      {
+        "table": "socialaccount_socialaccount",
+        "phase": "data",
+        "seconds": 3.583998477552086e-06,
+        "bytes": 263
+      },
+      {
+        "table": "alembic_version",
+        "phase": "data",
+        "seconds": 3.166000169585459e-06,
+        "bytes": 270
+      },
+      {
+        "table": "socialaccount_socialapp",
+        "phase": "data",
+        "seconds": 3.0410010367631912e-06,
+        "bytes": 247
+      },
+      {
+        "table": "account_emailconfirmation",
+        "phase": "data",
+        "seconds": 2.958000550279394e-06,
+        "bytes": 255
+      },
+      {
+        "table": "socialaccount_socialapp_sites",
+        "phase": "data",
+        "seconds": 2.91700052912347e-06,
+        "bytes": 271
+      },
+      {
+        "table": "accounts_customuser_groups",
+        "phase": "data",
+        "seconds": 2.9169987101340666e-06,
+        "bytes": 259
+      },
+      {
+        "table": "accounts_customuser_user_permissions",
+        "phase": "data",
+        "seconds": 2.9169987101340666e-06,
+        "bytes": 299
+      },
+      {
+        "table": "automation_subscriptions",
+        "phase": "data",
+        "seconds": 2.8750000637955964e-06,
+        "bytes": 251
+      },
+      {
+        "table": "auth_group",
+        "phase": "data",
+        "seconds": 2.8340000426396728e-06,
+        "bytes": 195
+      },
+      {
+        "table": "auth_group_permissions",
+        "phase": "data",
+        "seconds": 2.749999111983925e-06,
+        "bytes": 243
+      }
+    ]
+  },
+  "started_at": "2026-09-25T10:47:31.472932+00:00",
+  "finished_at": "2026-09-25T11:05:56.958402+00:00",
+  "total_duration_seconds": 1105.48547,
+  "rpo_measurements": {
+    "snapshot_created_at": "2026-09-11T04:05:31.617090+00:00",
+    "consistency_window": {
+      "db_dump_started_at": "2026-09-11T03:36:31.786093+00:00",
+      "db_dump_finished_at": "2026-09-11T04:02:55.721652+00:00",
+      "row_counts_queried_at": "2026-09-11T04:02:56.495971+00:00",
+      "file_assets_collected_at": "2026-09-11T04:05:31.617133+00:00",
+      "timing_note": "덤프 완료 후 별도 조회한 행 수는 쓰기 중인 DB 의 덤프 시점 행 수와 다를 수 있습니다."
+    },
+    "drill_started_at": "2026-09-25T10:47:31.472932+00:00",
+    "created_at_to_drill_start_seconds": 1233719.855842,
+    "db_dump_finished_to_drill_start_seconds": 1233875.75128,
+    "file_assets_to_drill_start_seconds": 1233719.855799
+  },
+  "g1_verification": {
+    "success": true,
+    "message": "G1 무손실 검증 통과 (파일·DB 단계 분리)",
+    "file": {
+      "success": true,
+      "message": "G1 무손실 검증 통과",
+      "report": {
+        "generated_at": "2026-09-25T10:47:51.837706+00:00",
+        "head_commit": "8611daaf2520e369e4ef11c1b1580b6d27caa9b4",
+        "overall_verdict": "PASS",
+        "passed_count": 2,
+        "total_count": 2,
+        "results": [
+          {
+            "name": "ML 가중치 4종 무결성",
+            "status": "PASS",
+            "message": "ML 가중치 4종 체크섬 일치"
+          },
+          {
+            "name": "ChromaDB 컬렉션 무결성",
+            "status": "PASS",
+            "message": "ChromaDB 원본 10건 보존 / 운영 506948건 확인"
+          }
+        ],
+        "step_timings": {
+          "weights": 0.01755362500080082,
+          "chroma": 3.646503792000658
+        },
+        "segments": [
+          {
+            "path": "data/model_files/v25/model.bin",
+            "bytes": 48805,
+            "seconds": 0.00011033299961127341
+          },
+          {
+            "path": "data/model_files/v25/v25_lgbm_final.joblib",
+            "bytes": 760543,
+            "seconds": 0.00036820900095335674
+          },
+          {
+            "path": "data/model_files/v25/v25_cat_final.bin",
+            "bytes": 271752,
+            "seconds": 0.00014695800018671434
+          },
+          {
+            "path": "data/model_files/v25/metadata.json",
+            "bytes": 588,
+            "seconds": 4.708300002675969e-05
+          },
+          {
+            "path": "data/model_files/v25/preprocess.py",
+            "bytes": 3962,
+            "seconds": 4.829099998460151e-05
+          },
+          {
+            "path": "data/model_files/v25/champion_summary.json",
+            "bytes": 3492,
+            "seconds": 4.833299863093998e-05
+          },
+          {
+            "path": "data/model_files/quantum_leap_v25_pro/model.bin",
+            "bytes": 3663496,
+            "seconds": 0.0013538750008592615
+          },
+          {
+            "path": "data/model_files/quantum_leap_v25_pro/metadata.json",
+            "bytes": 1928,
+            "seconds": 4.7792000259505585e-05
+          },
+          {
+            "path": "data/model_backups/quantum_leap_v25_pro/model.bin",
+            "bytes": 1835,
+            "seconds": 4.908399932901375e-05
+          },
+          {
+            "path": "data/model_backups/quantum_leap_v25_pro/metadata.json",
+            "bytes": 564,
+            "seconds": 4.824999996344559e-05
+          },
+          {
+            "path": "data/model_backups/quantum_leap_v25_pro/preprocess.py",
+            "bytes": 1036,
+            "seconds": 4.533300125331152e-05
+          },
+          {
+            "path": "data/model_backups/quantum_leap_v25_pro/champion_summary.json",
+            "bytes": 1291,
+            "seconds": 4.58330014225794e-05
+          },
+          {
+            "path": "data/model_files/ssh_hist_premium/model.bin",
+            "bytes": 4310561,
+            "seconds": 0.0015723339984106133
+          },
+          {
+            "path": "data/model_files/ssh_hist_premium/metadata.json",
+            "bytes": 677,
+            "seconds": 5.2000001232954673e-05
+          },
+          {
+            "path": "data/model_files/ssh_hist_premium/preprocess.py",
+            "bytes": 927,
+            "seconds": 5.3666999519919045e-05
+          },
+          {
+            "path": "data/model_files/ssh_hist_premium/champion_summary.json",
+            "bytes": 794,
+            "seconds": 5.249999958323315e-05
+          },
+          {
+            "path": "data/model_files/v13_hybrid/model.bin",
+            "bytes": 37302098,
+            "seconds": 0.012963125000169384
+          },
+          {
+            "path": "data/model_files/v13_hybrid/metadata.json",
+            "bytes": 570,
+            "seconds": 6.758299969078507e-05
+          },
+          {
+            "path": "data/model_files/v13_hybrid/preprocess.py",
+            "bytes": 3349,
+            "seconds": 4.595800055540167e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/03b021f9-7544-4517-8baa-f8f1247b411d/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0003929579997929977
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/03b021f9-7544-4517-8baa-f8f1247b411d/header.bin",
+            "bytes": 100,
+            "seconds": 0.0001883749991975492
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/03b021f9-7544-4517-8baa-f8f1247b411d/length.bin",
+            "bytes": 400,
+            "seconds": 0.00020637499983422458
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/03b021f9-7544-4517-8baa-f8f1247b411d/link_lists.bin",
+            "bytes": 0,
+            "seconds": 6.362500062095933e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/09700aaa-acb9-47da-a704-c30fd2b01b61/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0004710829998657573
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/09700aaa-acb9-47da-a704-c30fd2b01b61/header.bin",
+            "bytes": 100,
+            "seconds": 0.00014629199904447887
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/09700aaa-acb9-47da-a704-c30fd2b01b61/length.bin",
+            "bytes": 400,
+            "seconds": 0.00048108299961313605
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/09700aaa-acb9-47da-a704-c30fd2b01b61/link_lists.bin",
+            "bytes": 0,
+            "seconds": 7.93330000306014e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/122dc8cb-90ca-4107-ac83-440929d3de35/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00032000000101106707
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/122dc8cb-90ca-4107-ac83-440929d3de35/header.bin",
+            "bytes": 100,
+            "seconds": 0.00012887500088254455
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/122dc8cb-90ca-4107-ac83-440929d3de35/length.bin",
+            "bytes": 400,
+            "seconds": 0.0001629999987926567
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/122dc8cb-90ca-4107-ac83-440929d3de35/link_lists.bin",
+            "bytes": 0,
+            "seconds": 7.158299922593869e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/27c95858-d801-4573-9392-d339d4d3b8b6/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0008478330000798451
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/27c95858-d801-4573-9392-d339d4d3b8b6/header.bin",
+            "bytes": 100,
+            "seconds": 9.479099935560953e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/27c95858-d801-4573-9392-d339d4d3b8b6/length.bin",
+            "bytes": 400,
+            "seconds": 0.00013633299931825604
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/27c95858-d801-4573-9392-d339d4d3b8b6/link_lists.bin",
+            "bytes": 0,
+            "seconds": 0.00010687500071071554
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/3c6dd57b-cc57-4cf5-9761-a5d12ec32b3d/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00036145800004305784
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/3c6dd57b-cc57-4cf5-9761-a5d12ec32b3d/header.bin",
+            "bytes": 100,
+            "seconds": 0.0001286249989789212
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/3c6dd57b-cc57-4cf5-9761-a5d12ec32b3d/length.bin",
+            "bytes": 400,
+            "seconds": 0.00011470899880805518
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/3c6dd57b-cc57-4cf5-9761-a5d12ec32b3d/link_lists.bin",
+            "bytes": 0,
+            "seconds": 7.6374999480322e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/5c919aff-3abe-4074-91c2-68533ee49f80/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00028391599880706053
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/5c919aff-3abe-4074-91c2-68533ee49f80/header.bin",
+            "bytes": 100,
+            "seconds": 8.929199975682423e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/5c919aff-3abe-4074-91c2-68533ee49f80/length.bin",
+            "bytes": 400,
+            "seconds": 8.69169998622965e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/5c919aff-3abe-4074-91c2-68533ee49f80/link_lists.bin",
+            "bytes": 0,
+            "seconds": 6.833399856986944e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/9725b077-5b2f-4995-9a92-e7443a188b88/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00030412500018428545
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/9725b077-5b2f-4995-9a92-e7443a188b88/header.bin",
+            "bytes": 100,
+            "seconds": 8.404199979850091e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/9725b077-5b2f-4995-9a92-e7443a188b88/length.bin",
+            "bytes": 400,
+            "seconds": 8.358299965038896e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/9725b077-5b2f-4995-9a92-e7443a188b88/link_lists.bin",
+            "bytes": 0,
+            "seconds": 6.641700019827113e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/a580fdf0-feb5-4768-86f3-70d1b0ab5235/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0002757500005827751
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/a580fdf0-feb5-4768-86f3-70d1b0ab5235/header.bin",
+            "bytes": 100,
+            "seconds": 8.408299981965683e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/a580fdf0-feb5-4768-86f3-70d1b0ab5235/length.bin",
+            "bytes": 400,
+            "seconds": 8.291700032714289e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/a580fdf0-feb5-4768-86f3-70d1b0ab5235/link_lists.bin",
+            "bytes": 0,
+            "seconds": 6.57500004308531e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/aa5e255c-5fb4-4fe1-96a5-3c3cb7c27b4b/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0003068750011152588
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/aa5e255c-5fb4-4fe1-96a5-3c3cb7c27b4b/header.bin",
+            "bytes": 100,
+            "seconds": 8.275000072899275e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/aa5e255c-5fb4-4fe1-96a5-3c3cb7c27b4b/length.bin",
+            "bytes": 400,
+            "seconds": 8.354199962923303e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/aa5e255c-5fb4-4fe1-96a5-3c3cb7c27b4b/link_lists.bin",
+            "bytes": 0,
+            "seconds": 6.600000051548705e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b0e538d7-4fd4-4bf0-8a12-1a53c5747d6b/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00030137500107230153
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b0e538d7-4fd4-4bf0-8a12-1a53c5747d6b/header.bin",
+            "bytes": 100,
+            "seconds": 9.458299973630346e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b0e538d7-4fd4-4bf0-8a12-1a53c5747d6b/length.bin",
+            "bytes": 400,
+            "seconds": 0.00012379100007819943
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b0e538d7-4fd4-4bf0-8a12-1a53c5747d6b/link_lists.bin",
+            "bytes": 0,
+            "seconds": 5.862499892828055e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b2e419a4-2dee-4a3e-827e-25e328bb702c/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0002813749997585546
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b2e419a4-2dee-4a3e-827e-25e328bb702c/header.bin",
+            "bytes": 100,
+            "seconds": 0.00015654100025130901
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b2e419a4-2dee-4a3e-827e-25e328bb702c/length.bin",
+            "bytes": 400,
+            "seconds": 0.0004279589993529953
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b2e419a4-2dee-4a3e-827e-25e328bb702c/link_lists.bin",
+            "bytes": 0,
+            "seconds": 6.616700011363719e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/chroma.sqlite3",
+            "bytes": 344064,
+            "seconds": 0.00043283299964969046
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/d67e5851-7e96-4f37-bfa5-ceb05d35fcf9/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00032020800063037314
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/d67e5851-7e96-4f37-bfa5-ceb05d35fcf9/header.bin",
+            "bytes": 100,
+            "seconds": 9.183299880533013e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/d67e5851-7e96-4f37-bfa5-ceb05d35fcf9/length.bin",
+            "bytes": 400,
+            "seconds": 8.483300007355865e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/d67e5851-7e96-4f37-bfa5-ceb05d35fcf9/link_lists.bin",
+            "bytes": 0,
+            "seconds": 6.233400017663371e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e61fed8c-32f6-41ed-a864-6e85132614a5/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0002609170005598571
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e61fed8c-32f6-41ed-a864-6e85132614a5/header.bin",
+            "bytes": 100,
+            "seconds": 7.895800081314519e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e61fed8c-32f6-41ed-a864-6e85132614a5/length.bin",
+            "bytes": 400,
+            "seconds": 8.241599971370306e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e61fed8c-32f6-41ed-a864-6e85132614a5/link_lists.bin",
+            "bytes": 0,
+            "seconds": 5.862499892828055e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e8fd1093-e37a-4904-a189-57b92ab5afee/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0002745420006249333
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e8fd1093-e37a-4904-a189-57b92ab5afee/header.bin",
+            "bytes": 100,
+            "seconds": 8.450000132143032e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e8fd1093-e37a-4904-a189-57b92ab5afee/length.bin",
+            "bytes": 400,
+            "seconds": 7.824999920558184e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e8fd1093-e37a-4904-a189-57b92ab5afee/link_lists.bin",
+            "bytes": 0,
+            "seconds": 5.854200026078615e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/eb47392a-bee0-4977-8aaf-e047e46245d0/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00027191600020159967
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/eb47392a-bee0-4977-8aaf-e047e46245d0/header.bin",
+            "bytes": 100,
+            "seconds": 7.516599907830823e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/eb47392a-bee0-4977-8aaf-e047e46245d0/length.bin",
+            "bytes": 400,
+            "seconds": 7.424999967042822e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/eb47392a-bee0-4977-8aaf-e047e46245d0/link_lists.bin",
+            "bytes": 0,
+            "seconds": 5.862499892828055e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f19d13a3-09d8-4407-94b7-e5fd104a4f5f/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00029254199944261927
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f19d13a3-09d8-4407-94b7-e5fd104a4f5f/header.bin",
+            "bytes": 100,
+            "seconds": 7.47500016586855e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f19d13a3-09d8-4407-94b7-e5fd104a4f5f/length.bin",
+            "bytes": 400,
+            "seconds": 7.437499880325049e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f19d13a3-09d8-4407-94b7-e5fd104a4f5f/link_lists.bin",
+            "bytes": 0,
+            "seconds": 5.8708999858936295e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f32bc140-90b1-47b7-b979-3215d0b0f6f3/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.0002876250000554137
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f32bc140-90b1-47b7-b979-3215d0b0f6f3/header.bin",
+            "bytes": 100,
+            "seconds": 0.0001799589990696404
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f32bc140-90b1-47b7-b979-3215d0b0f6f3/length.bin",
+            "bytes": 400,
+            "seconds": 0.0001429999992978992
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f32bc140-90b1-47b7-b979-3215d0b0f6f3/link_lists.bin",
+            "bytes": 0,
+            "seconds": 5.837500066263601e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/fbea0f20-3a41-4727-9471-840cd2fa39c9/data_level0.bin",
+            "bytes": 167600,
+            "seconds": 0.00043233399992459454
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/fbea0f20-3a41-4727-9471-840cd2fa39c9/header.bin",
+            "bytes": 100,
+            "seconds": 8.737499956623651e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/fbea0f20-3a41-4727-9471-840cd2fa39c9/length.bin",
+            "bytes": 400,
+            "seconds": 9.7250000180793e-05
+          },
+          {
+            "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/fbea0f20-3a41-4727-9471-840cd2fa39c9/link_lists.bin",
+            "bytes": 0,
+            "seconds": 6.820899943704717e-05
+          },
+          {
+            "name": "chroma_source_sqlite_count",
+            "seconds": 0.00032520900094823446
+          },
+          {
+            "name": "chroma_operational_sqlite_count",
+            "seconds": 0.8609319999995932
+          },
+          {
+            "name": "chroma_query_probe",
+            "seconds": 2.7721182919995044
+          }
+        ]
+      }
+    },
+    "database": {
+      "success": true,
+      "message": "G1 무손실 검증 통과",
+      "report": {
+        "generated_at": "2026-09-25T11:05:53.811167+00:00",
+        "head_commit": "8611daaf2520e369e4ef11c1b1580b6d27caa9b4",
+        "overall_verdict": "PASS",
+        "passed_count": 4,
+        "total_count": 4,
+        "results": [
+          {
+            "name": "DB 테이블 존재 여부",
+            "status": "PASS",
+            "message": "ORM 테이블 존재 확인 (승인된 외부 테이블 18개 포함)"
+          },
+          {
+            "name": "DB 전 테이블 스키마 서명 정합성",
+            "status": "PASS",
+            "message": "DB 스키마 서명 일치 (전 테이블 컬럼·타입·제약조건 무손실)"
+          },
+          {
+            "name": "데이터 행 수 하한 검증",
+            "status": "PASS",
+            "message": "공고 5,517,351행 / 낙찰 3,439,172행 확인"
+          },
+          {
+            "name": "G1 reconciliation: 원본/성장분 분리 대조",
+            "status": "PASS",
+            "message": "원본/성장분 대조 일치 — bid_announcements 1,660,792행 / bid_results 2,973,072행"
+          }
+        ],
+        "step_timings": {
+          "tables": 0.550920458001201,
+          "signature": 0.10451741599899833,
+          "rowcount": 6.903282624996791,
+          "reconciliation": 0.9530227089999244
+        },
+        "segments": []
+      }
+    }
+  },
+  "keep_artifacts": false,
+  "errors": [],
+  "success": true,
+  "g1_file_breakdown": {
+    "total_seconds": 3.664057417001459,
+    "total_bytes": 49748132,
+    "step_timings": {
+      "weights": 0.01755362500080082,
+      "chroma": 3.646503792000658
+    },
+    "segments": [
+      {
+        "path": "data/model_files/v25/model.bin",
+        "bytes": 48805,
+        "seconds": 0.00011033299961127341
+      },
+      {
+        "path": "data/model_files/v25/v25_lgbm_final.joblib",
+        "bytes": 760543,
+        "seconds": 0.00036820900095335674
+      },
+      {
+        "path": "data/model_files/v25/v25_cat_final.bin",
+        "bytes": 271752,
+        "seconds": 0.00014695800018671434
+      },
+      {
+        "path": "data/model_files/v25/metadata.json",
+        "bytes": 588,
+        "seconds": 4.708300002675969e-05
+      },
+      {
+        "path": "data/model_files/v25/preprocess.py",
+        "bytes": 3962,
+        "seconds": 4.829099998460151e-05
+      },
+      {
+        "path": "data/model_files/v25/champion_summary.json",
+        "bytes": 3492,
+        "seconds": 4.833299863093998e-05
+      },
+      {
+        "path": "data/model_files/quantum_leap_v25_pro/model.bin",
+        "bytes": 3663496,
+        "seconds": 0.0013538750008592615
+      },
+      {
+        "path": "data/model_files/quantum_leap_v25_pro/metadata.json",
+        "bytes": 1928,
+        "seconds": 4.7792000259505585e-05
+      },
+      {
+        "path": "data/model_backups/quantum_leap_v25_pro/model.bin",
+        "bytes": 1835,
+        "seconds": 4.908399932901375e-05
+      },
+      {
+        "path": "data/model_backups/quantum_leap_v25_pro/metadata.json",
+        "bytes": 564,
+        "seconds": 4.824999996344559e-05
+      },
+      {
+        "path": "data/model_backups/quantum_leap_v25_pro/preprocess.py",
+        "bytes": 1036,
+        "seconds": 4.533300125331152e-05
+      },
+      {
+        "path": "data/model_backups/quantum_leap_v25_pro/champion_summary.json",
+        "bytes": 1291,
+        "seconds": 4.58330014225794e-05
+      },
+      {
+        "path": "data/model_files/ssh_hist_premium/model.bin",
+        "bytes": 4310561,
+        "seconds": 0.0015723339984106133
+      },
+      {
+        "path": "data/model_files/ssh_hist_premium/metadata.json",
+        "bytes": 677,
+        "seconds": 5.2000001232954673e-05
+      },
+      {
+        "path": "data/model_files/ssh_hist_premium/preprocess.py",
+        "bytes": 927,
+        "seconds": 5.3666999519919045e-05
+      },
+      {
+        "path": "data/model_files/ssh_hist_premium/champion_summary.json",
+        "bytes": 794,
+        "seconds": 5.249999958323315e-05
+      },
+      {
+        "path": "data/model_files/v13_hybrid/model.bin",
+        "bytes": 37302098,
+        "seconds": 0.012963125000169384
+      },
+      {
+        "path": "data/model_files/v13_hybrid/metadata.json",
+        "bytes": 570,
+        "seconds": 6.758299969078507e-05
+      },
+      {
+        "path": "data/model_files/v13_hybrid/preprocess.py",
+        "bytes": 3349,
+        "seconds": 4.595800055540167e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/03b021f9-7544-4517-8baa-f8f1247b411d/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0003929579997929977
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/03b021f9-7544-4517-8baa-f8f1247b411d/header.bin",
+        "bytes": 100,
+        "seconds": 0.0001883749991975492
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/03b021f9-7544-4517-8baa-f8f1247b411d/length.bin",
+        "bytes": 400,
+        "seconds": 0.00020637499983422458
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/03b021f9-7544-4517-8baa-f8f1247b411d/link_lists.bin",
+        "bytes": 0,
+        "seconds": 6.362500062095933e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/09700aaa-acb9-47da-a704-c30fd2b01b61/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0004710829998657573
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/09700aaa-acb9-47da-a704-c30fd2b01b61/header.bin",
+        "bytes": 100,
+        "seconds": 0.00014629199904447887
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/09700aaa-acb9-47da-a704-c30fd2b01b61/length.bin",
+        "bytes": 400,
+        "seconds": 0.00048108299961313605
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/09700aaa-acb9-47da-a704-c30fd2b01b61/link_lists.bin",
+        "bytes": 0,
+        "seconds": 7.93330000306014e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/122dc8cb-90ca-4107-ac83-440929d3de35/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00032000000101106707
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/122dc8cb-90ca-4107-ac83-440929d3de35/header.bin",
+        "bytes": 100,
+        "seconds": 0.00012887500088254455
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/122dc8cb-90ca-4107-ac83-440929d3de35/length.bin",
+        "bytes": 400,
+        "seconds": 0.0001629999987926567
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/122dc8cb-90ca-4107-ac83-440929d3de35/link_lists.bin",
+        "bytes": 0,
+        "seconds": 7.158299922593869e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/27c95858-d801-4573-9392-d339d4d3b8b6/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0008478330000798451
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/27c95858-d801-4573-9392-d339d4d3b8b6/header.bin",
+        "bytes": 100,
+        "seconds": 9.479099935560953e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/27c95858-d801-4573-9392-d339d4d3b8b6/length.bin",
+        "bytes": 400,
+        "seconds": 0.00013633299931825604
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/27c95858-d801-4573-9392-d339d4d3b8b6/link_lists.bin",
+        "bytes": 0,
+        "seconds": 0.00010687500071071554
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/3c6dd57b-cc57-4cf5-9761-a5d12ec32b3d/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00036145800004305784
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/3c6dd57b-cc57-4cf5-9761-a5d12ec32b3d/header.bin",
+        "bytes": 100,
+        "seconds": 0.0001286249989789212
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/3c6dd57b-cc57-4cf5-9761-a5d12ec32b3d/length.bin",
+        "bytes": 400,
+        "seconds": 0.00011470899880805518
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/3c6dd57b-cc57-4cf5-9761-a5d12ec32b3d/link_lists.bin",
+        "bytes": 0,
+        "seconds": 7.6374999480322e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/5c919aff-3abe-4074-91c2-68533ee49f80/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00028391599880706053
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/5c919aff-3abe-4074-91c2-68533ee49f80/header.bin",
+        "bytes": 100,
+        "seconds": 8.929199975682423e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/5c919aff-3abe-4074-91c2-68533ee49f80/length.bin",
+        "bytes": 400,
+        "seconds": 8.69169998622965e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/5c919aff-3abe-4074-91c2-68533ee49f80/link_lists.bin",
+        "bytes": 0,
+        "seconds": 6.833399856986944e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/9725b077-5b2f-4995-9a92-e7443a188b88/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00030412500018428545
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/9725b077-5b2f-4995-9a92-e7443a188b88/header.bin",
+        "bytes": 100,
+        "seconds": 8.404199979850091e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/9725b077-5b2f-4995-9a92-e7443a188b88/length.bin",
+        "bytes": 400,
+        "seconds": 8.358299965038896e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/9725b077-5b2f-4995-9a92-e7443a188b88/link_lists.bin",
+        "bytes": 0,
+        "seconds": 6.641700019827113e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/a580fdf0-feb5-4768-86f3-70d1b0ab5235/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0002757500005827751
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/a580fdf0-feb5-4768-86f3-70d1b0ab5235/header.bin",
+        "bytes": 100,
+        "seconds": 8.408299981965683e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/a580fdf0-feb5-4768-86f3-70d1b0ab5235/length.bin",
+        "bytes": 400,
+        "seconds": 8.291700032714289e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/a580fdf0-feb5-4768-86f3-70d1b0ab5235/link_lists.bin",
+        "bytes": 0,
+        "seconds": 6.57500004308531e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/aa5e255c-5fb4-4fe1-96a5-3c3cb7c27b4b/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0003068750011152588
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/aa5e255c-5fb4-4fe1-96a5-3c3cb7c27b4b/header.bin",
+        "bytes": 100,
+        "seconds": 8.275000072899275e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/aa5e255c-5fb4-4fe1-96a5-3c3cb7c27b4b/length.bin",
+        "bytes": 400,
+        "seconds": 8.354199962923303e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/aa5e255c-5fb4-4fe1-96a5-3c3cb7c27b4b/link_lists.bin",
+        "bytes": 0,
+        "seconds": 6.600000051548705e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b0e538d7-4fd4-4bf0-8a12-1a53c5747d6b/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00030137500107230153
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b0e538d7-4fd4-4bf0-8a12-1a53c5747d6b/header.bin",
+        "bytes": 100,
+        "seconds": 9.458299973630346e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b0e538d7-4fd4-4bf0-8a12-1a53c5747d6b/length.bin",
+        "bytes": 400,
+        "seconds": 0.00012379100007819943
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b0e538d7-4fd4-4bf0-8a12-1a53c5747d6b/link_lists.bin",
+        "bytes": 0,
+        "seconds": 5.862499892828055e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b2e419a4-2dee-4a3e-827e-25e328bb702c/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0002813749997585546
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b2e419a4-2dee-4a3e-827e-25e328bb702c/header.bin",
+        "bytes": 100,
+        "seconds": 0.00015654100025130901
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b2e419a4-2dee-4a3e-827e-25e328bb702c/length.bin",
+        "bytes": 400,
+        "seconds": 0.0004279589993529953
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/b2e419a4-2dee-4a3e-827e-25e328bb702c/link_lists.bin",
+        "bytes": 0,
+        "seconds": 6.616700011363719e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/chroma.sqlite3",
+        "bytes": 344064,
+        "seconds": 0.00043283299964969046
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/d67e5851-7e96-4f37-bfa5-ceb05d35fcf9/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00032020800063037314
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/d67e5851-7e96-4f37-bfa5-ceb05d35fcf9/header.bin",
+        "bytes": 100,
+        "seconds": 9.183299880533013e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/d67e5851-7e96-4f37-bfa5-ceb05d35fcf9/length.bin",
+        "bytes": 400,
+        "seconds": 8.483300007355865e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/d67e5851-7e96-4f37-bfa5-ceb05d35fcf9/link_lists.bin",
+        "bytes": 0,
+        "seconds": 6.233400017663371e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e61fed8c-32f6-41ed-a864-6e85132614a5/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0002609170005598571
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e61fed8c-32f6-41ed-a864-6e85132614a5/header.bin",
+        "bytes": 100,
+        "seconds": 7.895800081314519e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e61fed8c-32f6-41ed-a864-6e85132614a5/length.bin",
+        "bytes": 400,
+        "seconds": 8.241599971370306e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e61fed8c-32f6-41ed-a864-6e85132614a5/link_lists.bin",
+        "bytes": 0,
+        "seconds": 5.862499892828055e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e8fd1093-e37a-4904-a189-57b92ab5afee/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0002745420006249333
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e8fd1093-e37a-4904-a189-57b92ab5afee/header.bin",
+        "bytes": 100,
+        "seconds": 8.450000132143032e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e8fd1093-e37a-4904-a189-57b92ab5afee/length.bin",
+        "bytes": 400,
+        "seconds": 7.824999920558184e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/e8fd1093-e37a-4904-a189-57b92ab5afee/link_lists.bin",
+        "bytes": 0,
+        "seconds": 5.854200026078615e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/eb47392a-bee0-4977-8aaf-e047e46245d0/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00027191600020159967
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/eb47392a-bee0-4977-8aaf-e047e46245d0/header.bin",
+        "bytes": 100,
+        "seconds": 7.516599907830823e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/eb47392a-bee0-4977-8aaf-e047e46245d0/length.bin",
+        "bytes": 400,
+        "seconds": 7.424999967042822e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/eb47392a-bee0-4977-8aaf-e047e46245d0/link_lists.bin",
+        "bytes": 0,
+        "seconds": 5.862499892828055e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f19d13a3-09d8-4407-94b7-e5fd104a4f5f/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00029254199944261927
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f19d13a3-09d8-4407-94b7-e5fd104a4f5f/header.bin",
+        "bytes": 100,
+        "seconds": 7.47500016586855e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f19d13a3-09d8-4407-94b7-e5fd104a4f5f/length.bin",
+        "bytes": 400,
+        "seconds": 7.437499880325049e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f19d13a3-09d8-4407-94b7-e5fd104a4f5f/link_lists.bin",
+        "bytes": 0,
+        "seconds": 5.8708999858936295e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f32bc140-90b1-47b7-b979-3215d0b0f6f3/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.0002876250000554137
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f32bc140-90b1-47b7-b979-3215d0b0f6f3/header.bin",
+        "bytes": 100,
+        "seconds": 0.0001799589990696404
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f32bc140-90b1-47b7-b979-3215d0b0f6f3/length.bin",
+        "bytes": 400,
+        "seconds": 0.0001429999992978992
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/f32bc140-90b1-47b7-b979-3215d0b0f6f3/link_lists.bin",
+        "bytes": 0,
+        "seconds": 5.837500066263601e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/fbea0f20-3a41-4727-9471-840cd2fa39c9/data_level0.bin",
+        "bytes": 167600,
+        "seconds": 0.00043233399992459454
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/fbea0f20-3a41-4727-9471-840cd2fa39c9/header.bin",
+        "bytes": 100,
+        "seconds": 8.737499956623651e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/fbea0f20-3a41-4727-9471-840cd2fa39c9/length.bin",
+        "bytes": 400,
+        "seconds": 9.7250000180793e-05
+      },
+      {
+        "path": "/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box/data/backups/chroma_source/fbea0f20-3a41-4727-9471-840cd2fa39c9/link_lists.bin",
+        "bytes": 0,
+        "seconds": 6.820899943704717e-05
+      },
+      {
+        "name": "chroma_source_sqlite_count",
+        "seconds": 0.00032520900094823446
+      },
+      {
+        "name": "chroma_operational_sqlite_count",
+        "seconds": 0.8609319999995932
+      },
+      {
+        "name": "chroma_query_probe",
+        "seconds": 2.7721182919995044
+      }
+    ]
+  }
+}

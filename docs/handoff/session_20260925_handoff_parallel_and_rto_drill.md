@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-25
 > **작성자**: Claude Opus 5.5 (Orca 코디네이터)
-> **기준 커밋**: `main` `ef93ad2b`
+> **기준 커밋**: `main` `8611daaf`
 > **Orca Run**: `run_073ce2b70842` (워커 터미널 전부 회수)
 > **이어받은 문서**: [`session_20260923c_qualification_badge_and_filter.md`](session_20260923c_qualification_badge_and_filter.md)
 
@@ -87,13 +87,22 @@
 
 **이제 모든 main 병합에 Level 1 strict 증거가 필요하다.** 병합 전 순서는 `orca_level1_gate.py ... --strict --record-evidence`, `premerge_full_suite_gate.py --record`, `git merge --no-ff` 다. 워커 브랜치와 코디네이터 브랜치(`coordinator-capsule`) 모두 같다.
 
+### 5.1.1 같은 세션에서 끝낸 P 웨이브
+
+| 과업 | 결과 | 검증 |
+| --- | --- | --- |
+| P1 `task_e5e9b82c357c` G1 파일 검증 세부 계측 | 병합 `8611daaf`. `verify_migration.py` 보고서에 `step_timings` 와 파일별 `segments`, drill 보고서에 `g1_file_breakdown` | 리뷰 pass(`task_3aa2cb9afc17`, main 과 판정 동일을 가짜 가중치 4종으로 실측), strict 11/11, 전량 5,422 |
+| P2 `task_10a613c10985` DB import 환경 요인 조사 | 보고서 `.orca/capsules/task_10a613c10985/db_import_env_report.md`. 저하는 바이트당 적재 속도(32.7에서 23.4 MB/s)이며 09-22 전에 이미 생겼다 | 코디네이터 검산(09-22 값 ÷ 1.24 = 1,122초, 09-11 대비 1.36배) |
+| 환경 확정 실험(사용자 승인) | 컨테이너 재생성 뒤에도 1,158.3초. 작업량 동일, 쓰기·fsync 한 건당 시간 증가로 Docker VM 저장 계층으로 좁힘. Docker Desktop 4.92.0 갱신(2026-09-17)은 정황 | `rpo_rto_policy.md` 3장 |
+| G1 파일 검증 재측정 | 해시는 합계 약 50MB, 0.02초로 원인이 아니다(N4 추정 정정). 시간은 chroma 조회와 sqlite 집계 구간이며 단독 실행 1.3~4.2초, drill 안 3.8·4.3초. 첫 drill 의 20.8초는 재현되지 않았다 | 새 `g1_file_breakdown` |
+
 ### 5.2 다음 세션
 
 | 순서 | 할 일 | 근거와 주의 |
 | --- | --- | --- |
 | 1 | 이 문서 병합의 CI 확인 | |
-| 2 | (선택) DB import 환경 요인 1.40배의 정체 | 같은 스냅샷이 2026-09-11 823.9초, 2026-09-25 1,151.4초. MySQL 설정·버퍼·Docker 자원 할당 차이부터 본다 |
-| 3 | (선택) G1 파일 검증 하위 구간 타이머와 웜·콜드 재측정 | N4 권고. 합계 영향은 작다 |
+| 2 | (선택) Docker VM 저장 계층의 fsync 지연 확인 | 5.1.1 절로 컨테이너·작업량은 배제됐다. 다음 Docker Desktop 갱신 전후에 같은 스냅샷 drill 을 한 번씩 돌리면 버전 영향을 확인할 수 있다. DB import 예산 70분 안이라 급하지 않다 |
+| 3 | (선택) G1 파일 검증 20.8초 재발 여부 | 다음 분기 drill 의 `g1_file_breakdown` 으로 어느 chroma 구간인지 바로 보인다 |
 | 4 | OP-3 주간 재학습, `test_benchmark_offload_loop_lag` 흔들림 | 변동 없음. 이번 세션 CI 는 모두 처음부터 성공 |
 
 ---
@@ -103,6 +112,6 @@
 | 대상 | 상태 |
 | --- | --- |
 | Git | `main` 은 이 문서 병합 후 clean, 원격 반영. 워커 워크트리 0건, 작업 브랜치는 이 문서 브랜치뿐이며 병합 후 삭제 |
-| Orca | Run `run_073ce2b70842` Task 11건 completed(T1·T2·T4·N1·N2 와 각 리뷰, N4), 워커 터미널 전부 닫음, 배달 큐 비움. 터미널 목록의 narani_homepage 창들은 다른 프로젝트라 건드리지 않았다 |
+| Orca | Run `run_073ce2b70842` Task 14건 completed(T1·T2·T4·N1·N2·P1 와 각 리뷰, N4, P2), 워커 터미널 전부 닫음, 배달 큐 비움. 터미널 목록의 narani_homepage 창들은 다른 프로젝트라 건드리지 않았다 |
 | Docker | db 컨테이너만 실행 중. 임시 Meilisearch 는 삭제. 컴퓨터를 끄기 전에 `docker compose stop` 으로 내린다 |
 | 배경 프로세스 | 상시 워커 감시기는 워커 회수와 함께 중지 |
