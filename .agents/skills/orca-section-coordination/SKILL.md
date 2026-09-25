@@ -588,6 +588,13 @@ Task 가 `completed` 가 되었는데 워커 창이 남아 있으면 조율이 �
 정리 대상이 아닙니다. 원격 `origin/main` 미반영은 터미널 회수를 미루는
 사유가 아닙니다.
 
+`orca worktree rm` 은 워크트리만 지우는 것이 아니라 **그 워크트리에 체크아웃되어
+있던 병합 완료 로컬 브랜치도 함께 지웁니다.** 2026-09-25 실측에서
+`orca worktree rm --worktree path:<워크트리> --force` 가 워크트리와 함께
+`kwanbum217/orca-k1` 을 지웠고, 뒤이은 `git branch -d` 는 `branch not found` 를
+냈습니다. 그래서 5행의 `git log --oneline main..<branch>` 확인은 4행의 `rm` 전에
+하고, `rm` 뒤의 `git branch -d` 가 `not found` 를 내는 것은 정상으로 봅니다.
+
 ### 8.2 정리하면 안 되는 것
 
 | 대상 | 이유 |

@@ -282,6 +282,8 @@ curl -s -H "Authorization: Bearer $MEILI_MASTER_KEY" \
 - **RPO 관측값 산출**: 스냅샷 매니페스트의 일관성 윈도우(`consistency_window`: DB 덤프 완료 시각, 파일 수집 시각) 및 생성 시각과 리허설 시작 시각 간의 시차(초)를 정량 계산하여 기록합니다.
 - **목표값 대조 및 실측 판정**: 확정된 목표 기준(RTO 4시간, RPO 24시간)과 비교하여 실측 소요 시간(`total_duration_seconds`) 및 일관성 윈도우 시차를 판정합니다. 도구 레벨에서는 실측 데이터를 JSON 보고서에 기록하며, 분기 복구 드릴 절차서의 합격 기준에 따라 코디네이터가 최종 합격 여부를 판정합니다.
 
+호스트의 `mysql` 클라이언트가 서버 인증 플러그인과 맞지 않으면 `MYSQL_CLIENT_CONTAINER=$(docker inspect -f '{{.Name}}' $(docker compose ps -q db) | tr -d /)` 를 먼저 지정해 컨테이너 안의 클라이언트를 씁니다. 2026-09-25 리허설에서는 호스트 클라이언트(26.7)에 `mysql_native_password` 플러그인이 없어 실제로 이 지정이 필요했으며, 같은 안내가 [`docs/ops/restore_drill_procedure_20260911.md`](restore_drill_procedure_20260911.md) 3.2 절에도 있습니다.
+
 ```bash
 # 기본 실행: 격리 디렉토리 및 격리 DB로 실제 복원 리허설 후 자동 정리
 uv run python scripts/backup_recovery.py drill \
