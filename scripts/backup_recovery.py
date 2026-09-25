@@ -48,6 +48,7 @@ from scripts.backup_recovery_core import (  # noqa: E402
 from scripts.backup_recovery_drill import (  # noqa: E402
     DRILL_REDO_LOG_CAPACITY_BYTES,
     combine_staged_g1,
+    extract_g1_file_breakdown,
     measure_rpo,
     mysql_exec,
     record_timing,
@@ -296,10 +297,11 @@ def run_restore_drill(
     )
     rpo, comps = measure_rpo(manifest, drill_start), manifest.get("components", {})
     db_import_timings: list[dict[str, Any]] = []
+    extracted, g1_file, g1_db, success, created_db = [], {}, {}, False, False
 
     def _drill_rep(ok: bool, g1_v: dict[str, Any], ext: list[str]) -> dict[str, Any]:
         finished_at = datetime.now(UTC)
-        return {
+        report = {
             "schema": "RESTORE_DRILL_REPORT_V2",
             "snapshot_dir": str(snapshot_dir),
             "target_dir": str(target),
@@ -318,13 +320,17 @@ def run_restore_drill(
             "errors": errors,
             "success": ok,
         }
+        # 계측이 실린 파일 G1 보고서에만 필드를 만든다(구버전 보고서 호환).
+        breakdown = extract_g1_file_breakdown(g1_file.get("report") or {})
+        if breakdown is not None:
+            report["g1_file_breakdown"] = breakdown
+        return report
 
     if not valid:
         return _drill_rep(
             False, {"success": False, "message": "스냅샷 무결성 검증 실패로 건너뜀"}, []
         )
 
-    extracted, g1_file, g1_db, success, created_db = [], {}, {}, False, False
     target.mkdir(parents=True, exist_ok=True)
     try:
 

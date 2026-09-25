@@ -23,6 +23,8 @@ import os
 import sqlite3
 import subprocess  # nosec B404
 import sys
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -155,12 +157,65 @@ def validate_source_metadata(payload: object) -> str | None:
     return None
 
 
+class _InstrumentationCollector:
+    """G1 파일 검증 단계의 세부 구간 계측값 수집기.
+
+    판정과 분리되어 있다. 여기 쌓인 값은 검증 보고서의 추가 필드로만 쓰이며
+    어떤 PASS/FAIL 판정에도 관여하지 않는다.
+    """
+
+    def __init__(self) -> None:
+        self.step_timings: dict[str, float] = {}
+        self.segments: list[dict[str, object]] = []
+
+    def record_step(self, name: str, seconds: float) -> None:
+        self.step_timings[name] = seconds
+
+    def record_file(self, path: str, byte_count: int, seconds: float) -> None:
+        self.segments.append({"path": path, "bytes": byte_count, "seconds": seconds})
+
+    def record_span(self, name: str, seconds: float) -> None:
+        self.segments.append({"name": name, "seconds": seconds})
+
+
+_INSTRUMENTATION = _InstrumentationCollector()
+
+
+def reset_instrumentation() -> None:
+    """이전 실행의 계측값이 보고서에 섞이지 않도록 비웁니다."""
+    _INSTRUMENTATION.step_timings.clear()
+    _INSTRUMENTATION.segments.clear()
+
+
+def _storage_relative_path(path: Path) -> str:
+    """자산 저장소 루트 기준 상대 경로를 반환합니다. 루트 밖이면 절대 경로를 씁니다."""
+    try:
+        return str(path.resolve().relative_to(ASSET_ROOT.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def _timed_step(name: str, fn: Callable[[], tuple[bool, str]]) -> tuple[bool, str]:
+    """단계 실행 시간을 재서 계측기에 남기고 판정 결과를 그대로 돌려줍니다."""
+    started = time.perf_counter()
+    result = fn()
+    _INSTRUMENTATION.record_step(name, time.perf_counter() - started)
+    return result
+
+
 def sha256_file(path: Path) -> str:
+    return _hash_file(path)[0]
+
+
+def _hash_file(path: Path) -> tuple[str, int]:
+    """SHA256 과 함께 실제로 읽은 바이트 수를 돌려줍니다."""
     digest = hashlib.sha256()
+    byte_count = 0
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
-    return digest.hexdigest()
+            byte_count += len(chunk)
+    return digest.hexdigest(), byte_count
 
 
 def load_manifest() -> dict:
@@ -207,7 +262,19 @@ def verify_checksum_records(
             failures.append(f"파일 누락: {path}")
             continue
         expected = meta.get("sha256")
-        if not expected or sha256_file(path) != expected:
+        if not expected:
+            failures.append(f"체크섬 불일치: {path}")
+            continue
+        # 아래 두 줄은 판정과 무관한 계측입니다. 값은 보고서의 segments 로만
+        # 흘러가고, 해시 결과 비교는 기존과 동일합니다.
+        started = time.perf_counter()
+        digest, byte_count = _hash_file(path)
+        _INSTRUMENTATION.record_file(
+            _storage_relative_path(path),
+            byte_count,
+            time.perf_counter() - started,
+        )
+        if digest != expected:
             failures.append(f"체크섬 불일치: {path}")
     return failures
 
@@ -290,8 +357,16 @@ def verify_chroma_db() -> tuple[bool, str]:
     if failures:
         return False, failures[0]
 
+    source_count_started = time.perf_counter()
     source_collections, source_embeddings = read_chroma_stats(source_sqlite)
+    _INSTRUMENTATION.record_span(
+        "chroma_source_sqlite_count", time.perf_counter() - source_count_started
+    )
+    operational_count_started = time.perf_counter()
     operational_collections, operational_embeddings = read_chroma_stats(operational_sqlite)
+    _INSTRUMENTATION.record_span(
+        "chroma_operational_sqlite_count", time.perf_counter() - operational_count_started
+    )
     if source_collections != expected_collections or source_embeddings != expected_embeddings:
         return False, (
             "원본 ChromaDB 논리 기준선 불일치: "
@@ -316,7 +391,9 @@ def verify_chroma_db() -> tuple[bool, str]:
     # JSON 이 비어 chromadb 클라이언트가 컬렉션을 열지 못하는 동안에도 이
     # 검증은 통과했고, 챗봇은 닷새간 지식베이스 없이 답했습니다.
     # 행이 있는 것과 읽히는 것은 다릅니다.
+    probe_started = time.perf_counter()
     readable, detail = probe_chroma_query()
+    _INSTRUMENTATION.record_span("chroma_query_probe", time.perf_counter() - probe_started)
     if not readable:
         return False, f"운영 ChromaDB 조회 불가: {detail}"
     print(f"      조회 경로: {detail}")
@@ -931,8 +1008,15 @@ def generate_reconciliation_baseline(
 def generate_verification_report(
     results: list[tuple[str, bool, str]],
     output_path: Path | None = None,
+    *,
+    step_timings: dict[str, float] | None = None,
+    segments: list[dict[str, object]] | None = None,
 ) -> dict:
-    """검증 결과를 날짜, HEAD 커밋, 항목별 판정이 담긴 보고서로 생성 및 저장합니다."""
+    """검증 결과를 날짜, HEAD 커밋, 항목별 판정이 담긴 보고서로 생성 및 저장합니다.
+
+    step_timings 와 segments 는 계측값입니다. 넘어온 경우에만 보고서에 추가
+    필드로 붙으며, 판정 키(overall_verdict, results)에는 관여하지 않습니다.
+    """
     from datetime import datetime
 
     now_iso = datetime.now(UTC).isoformat()
@@ -957,6 +1041,10 @@ def generate_verification_report(
         "total_count": len(results),
         "results": items,
     }
+    if step_timings is not None:
+        report["step_timings"] = dict(step_timings)
+    if segments is not None:
+        report["segments"] = list(segments)
 
     target_path = output_path or DEFAULT_REPORT_PATH
     try:
@@ -1060,15 +1148,26 @@ def main() -> int:
     def _wanted(name: str) -> bool:
         return name in selected
 
-    step1_ok, step1_msg = verify_model_weights() if _wanted("weights") else (True, "단계 생략")
-    step2_ok, step2_msg = verify_chroma_db() if _wanted("chroma") else (True, "단계 생략")
-    step3_ok, step3_msg = verify_db_schema() if _wanted("tables") else (True, "단계 생략")
+    # 계측은 판정과 분리되어 있다. 여기서 비운 뒤 실행한 단계의 시간만
+    # 기록되며, 단계 반환값과 보고서 판정 키는 그대로다.
+    reset_instrumentation()
+    step1_ok, step1_msg = (
+        _timed_step("weights", verify_model_weights) if _wanted("weights") else (True, "단계 생략")
+    )
+    step2_ok, step2_msg = (
+        _timed_step("chroma", verify_chroma_db) if _wanted("chroma") else (True, "단계 생략")
+    )
+    step3_ok, step3_msg = (
+        _timed_step("tables", verify_db_schema) if _wanted("tables") else (True, "단계 생략")
+    )
     step4_ok, step4_msg = (
-        verify_schema_signature(baseline_path=args.baseline_path)
+        _timed_step("signature", lambda: verify_schema_signature(baseline_path=args.baseline_path))
         if _wanted("signature")
         else (True, "단계 생략")
     )
-    step5_ok, step5_msg = verify_row_counts() if _wanted("rowcount") else (True, "단계 생략")
+    step5_ok, step5_msg = (
+        _timed_step("rowcount", verify_row_counts) if _wanted("rowcount") else (True, "단계 생략")
+    )
     # 6단계: 5단계가 PASS 일 때만 reconciliation 을 수행한다.
     # 5단계가 FAIL 이면 누적 행이 부족한 상태이므로 reconciliation 의
     # baseline 비교도 같은 원인이 두 번 보고되어 판정을 흐린다. 원인을
@@ -1079,8 +1178,9 @@ def main() -> int:
         step6_ok = False
         step6_msg = "5단계 실패로 reconciliation 생략 (누적 행 수 부족 판정 유지)"
     else:
-        step6_ok, step6_msg = verify_reconciliation(
-            baseline_path=args.reconciliation_baseline_path,
+        step6_ok, step6_msg = _timed_step(
+            "reconciliation",
+            lambda: verify_reconciliation(baseline_path=args.reconciliation_baseline_path),
         )
 
     named_results = [
@@ -1096,7 +1196,12 @@ def main() -> int:
         if key in selected
     ]
 
-    report = generate_verification_report(named_results, output_path=args.report_path)
+    report = generate_verification_report(
+        named_results,
+        output_path=args.report_path,
+        step_timings=_INSTRUMENTATION.step_timings,
+        segments=_INSTRUMENTATION.segments,
+    )
 
     print("-" * 60)
     for name, ok, msg in named_results:

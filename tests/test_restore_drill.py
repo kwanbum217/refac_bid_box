@@ -31,6 +31,7 @@ from scripts.backup_recovery_core import (
     drop_mysql_database,
     restore_mysql_database,
 )
+from scripts.backup_recovery_drill import extract_g1_file_breakdown
 
 
 @pytest.fixture(autouse=True)
@@ -1011,3 +1012,100 @@ def test_cleanup_drill_target_dir_refuses_non_isolated_paths(tmp_path: Path):
 
     cleanup_drill_target_dir(isolated_dir, project_root=tmp_path / "other_root")
     assert not isolated_dir.exists()
+
+
+def test_extract_g1_file_breakdown_requires_instrumented_report():
+    """계측 필드가 없는 구버전 보고서에는 breakdown 을 만들지 않습니다."""
+    assert extract_g1_file_breakdown({}) is None
+    assert extract_g1_file_breakdown({"overall_verdict": "PASS"}) is None
+    assert extract_g1_file_breakdown({"step_timings": {"weights": 1.0}}) is None
+    assert extract_g1_file_breakdown({"step_timings": {}, "segments": []}) is None
+
+    segments = [
+        {"path": "data/model_files/v25/model.bin", "bytes": 1048576, "seconds": 1.25},
+        {"name": "chroma_query_probe", "seconds": 0.5},
+    ]
+    assert extract_g1_file_breakdown(
+        {"step_timings": {"weights": 1.5, "chroma": 3.0}, "segments": segments}
+    ) == {
+        "total_seconds": 4.5,
+        "total_bytes": 1048576,
+        "step_timings": {"weights": 1.5, "chroma": 3.0},
+        "segments": segments,
+    }
+
+
+def test_drill_report_moves_g1_file_breakdown_from_instrumented_report(tmp_path: Path):
+    """계측이 실린 파일 G1 보고서는 drill 보고서 최상위로 옮겨집니다."""
+    project_root = tmp_path / "fake_repo"
+    project_root.mkdir()
+    isolated_target = tmp_path / "drill_target"
+    snapshot_dir = _create_valid_snapshot(tmp_path / "snapshot")
+    segments = [
+        {"path": "data/model_files/v25/model.bin", "bytes": 1048576, "seconds": 1.25},
+        {"path": "data/backups/chroma_source/chroma.sqlite3", "bytes": 4096, "seconds": 2.5},
+        {"name": "chroma_query_probe", "seconds": 0.5},
+    ]
+
+    with (
+        patch("scripts.backup_recovery.create_mysql_database"),
+        patch("scripts.backup_recovery.restore_mysql_database"),
+        patch("scripts.backup_recovery.drop_mysql_database"),
+        patch("scripts.backup_recovery.extract_tar_archive"),
+        patch(
+            "scripts.backup_recovery.run_drill_g1_verification",
+            return_value=(
+                True,
+                "G1 통과",
+                {
+                    "overall_verdict": "PASS",
+                    "step_timings": {"weights": 1.5, "chroma": 3.0},
+                    "segments": segments,
+                },
+            ),
+        ),
+    ):
+        report = run_restore_drill(
+            snapshot_dir=snapshot_dir,
+            target_dir=isolated_target,
+            project_root=project_root,
+        )
+
+    assert report["g1_file_breakdown"] == {
+        "total_seconds": 4.5,
+        "total_bytes": 1052672,
+        "step_timings": {"weights": 1.5, "chroma": 3.0},
+        "segments": segments,
+    }
+    # 기존 필드와 파일 G1 보고서는 그대로 남습니다.
+    assert report["g1_verification"]["file"]["report"]["overall_verdict"] == "PASS"
+    assert report["timings"]["g1_file_verification"]["status"] == "PASS"
+    assert report["success"] is True
+
+
+def test_drill_report_omits_g1_file_breakdown_for_legacy_report(tmp_path: Path):
+    """계측이 없는 보고서를 돌려주는 구버전 경로에서는 필드를 만들지 않습니다."""
+    project_root = tmp_path / "fake_repo"
+    project_root.mkdir()
+    isolated_target = tmp_path / "drill_target"
+    snapshot_dir = _create_valid_snapshot(tmp_path / "snapshot")
+
+    with (
+        patch("scripts.backup_recovery.create_mysql_database"),
+        patch("scripts.backup_recovery.restore_mysql_database"),
+        patch("scripts.backup_recovery.drop_mysql_database"),
+        patch("scripts.backup_recovery.extract_tar_archive"),
+        patch(
+            "scripts.backup_recovery.run_drill_g1_verification",
+            return_value=(True, "G1 통과", {"overall_verdict": "PASS"}),
+        ),
+    ):
+        report = run_restore_drill(
+            snapshot_dir=snapshot_dir,
+            target_dir=isolated_target,
+            project_root=project_root,
+        )
+
+    assert "g1_file_breakdown" not in report
+    assert report["g1_verification"]["file"]["report"]["overall_verdict"] == "PASS"
+    assert report["success"] is True
