@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-25
 > **작성자**: Claude Opus 5.5 (Orca 코디네이터)
-> **기준 커밋**: `main` `c4da1c32`
+> **기준 커밋**: `main` `ef93ad2b`
 > **Orca Run**: `run_073ce2b70842` (워커 터미널 전부 회수)
 > **이어받은 문서**: [`session_20260923c_qualification_badge_and_filter.md`](session_20260923c_qualification_badge_and_filter.md)
 
@@ -44,7 +44,7 @@
 
 같은 스냅샷(`snapshot_20260921_061612`)이다. 호스트 mysql 26.7 은 인증 플러그인이 없어 `MYSQL_CLIENT_CONTAINER=refac_bid_box-db-1` 로 실행했다.
 
-**DB import 1.7배 판정.** 같은 스냅샷의 실행 간 차이가 2.7% 이므로 2026-09-11 대비 1.7배는 스냅샷 차이에서 온다. 처음 기록한 `database_import_breakdown` 에서 `bid_announcements` 데이터 구간이 1,163.7초(81.7%)이고 이 테이블에 2026-09-11 이후 커버링 인덱스 `ix_bid_ann_inst_cat_ntce` 가 추가됐다. 인덱스 유지 비용 가설과 맞지만 인덱스 비용이 데이터 구간에 섞여 있어 확정하지 않았다.
+**DB import 1.7배 판정 (N3 로 정정).** 처음에는 같은 날 같은 스냅샷의 차이 2.7% 만 보고 "전부 스냅샷 차이" 라고 적었으나 틀렸다. N3 에서 2026-09-11 스냅샷을 같은 날 다시 돌리니 그날 823.9초가 1,151.4초였다(같은 데이터에서 1.40배, 환경 요인). 같은 날 두 스냅샷끼리는 1,151.4초 대 1,429.2초(1.24배, 스냅샷 요인)이고 1.40 × 1.24 = 1.74 다. 스냅샷 요인 약 278초 중 약 260초가 커버링 인덱스가 추가된 두 테이블(`bid_announcements` +208초·+22%, `bid_results` +52초·+31%, 데이터 크기는 +0.3~0.7%)에 있어 인덱스 유지 비용으로 판정했다. 환경 요인의 정체는 특정하지 못했다. 보고서는 `data/backups/restore_drill_report_20260925_snap0911.json`(G1 PASS, 총 1,182.8초).
 
 ### 3.2 재색인
 
@@ -68,23 +68,33 @@
 | --- | --- |
 | `orca worktree rm` 은 워크트리와 함께 병합된 로컬 브랜치까지 지운다 | 뒤이은 `git branch -d` 가 "not found" 를 낸다. 제거 전에 `git log main..<branch>` 가 비었는지 확인하는 순서를 유지한다 |
 | `dispatch-show` 결과에는 워커 터미널 핸들이 없다 | 회수 시 핸들은 `worker_done` 뒤 `orca terminal list` 나 Dispatch 영수증에서 가져온다 |
-| G1 파일 검증이 같은 스냅샷에서 3.2초에서 20.8초로 늘었다 | 합계 영향은 작다. 같은 호스트의 다른 프로젝트 작업과 겹쳤다. 다음 drill 에서 반복되면 조사한다 |
+| G1 파일 검증이 같은 스냅샷에서 3.2초에서 20.8초로 늘었다 | N4 조사: 단계 본체는 `verify_migration.py` 의 모델·chroma 원본 SHA256 순차 해시라 페이지 캐시에 민감하고, 코드·매니페스트는 구간 내 불변이다. 환경 요인 유력(추정). N3 drill 에서는 3.9초였다. 확정하려면 하위 구간 타이머를 넣고 웜·콜드 재측정 |
+| 게이트·훅을 새로 만드는 과업은 첫 병합이 곧 첫 실사용이다 | N1 병합 때 증거 없이 병합을 시도해 훅이 거부함을 확인했고, 증거 기록 뒤 같은 병합을 커밋해 통과시켰다. 거부 직후 `git merge --abort` 가 훅이 건드린 파일 시각 때문에 "not uptodate" 로 실패했으나 내용 차이는 없어 병합 상태를 유지한 채 마무리했다 |
 | T2 의 인수 조건에 '생성 Capsule 로 strict 게이트 종단 실행' 이 없어 빌더·리뷰어 모두 게이트 6 결함을 놓쳤다. 첫 실사용(이 문서 브랜치)에서 드러났다 | T4 로 고쳤고, 게이트·훅을 만드는 과업의 인수 조건에는 실제 입력으로 끝까지 돌리는 종단 검증을 넣는다 |
 
 ---
 
 ## 5. 다음 세션 할 일
 
-이 세션에서 다음 웨이브의 Task 를 Run `run_073ce2b70842` 에 등록했다(사용자 선택 2026-09-25, Intent 는 `.orca/intents/run_073ce2b70842/`).
+### 5.1 같은 세션에서 끝낸 N 웨이브 (사용자 선택 2026-09-25)
+
+| 과업 | 결과 | 검증 |
+| --- | --- | --- |
+| N1 `task_5ad1df7950b9` main 병합 훅의 Level 1 strict 증거 강제 | 병합 `ef93ad2b`. `orca_level1_gate.py --strict --record-evidence` 가 pass 일 때만 공통 `.cache/level1_strict_evidence.json` 을 쓰고, prepare-commit-msg 훅 `premerge_level1_gate.py` 가 main 병합에서 증거 commit 과 MERGE_HEAD 를 대조한다 | 리뷰 pass(`task_43a06ce5aa60`), strict 11/11, 전량 5,417. 증거 없는 병합 거부와 증거 기록 뒤 통과를 실제 병합으로 확인 |
+| N2 `task_c9613bff5f5d` 런북 4.4.2, 조율 스킬 8.1 보강 | 병합 `44391fb9` | 리뷰 pass(`task_674a8853bf50`), strict 11/11, 전량 5,392 |
+| N4 `task_342830314b94` G1 파일 검증 시간 조사 | 4장 표. 코드 변경 없음, 보고서는 `.orca/capsules/task_342830314b94/` | 코디네이터가 구간 내 변경 2건이 이 단계 밖임을 git 이력으로 확인 |
+| N3 1.7배 원인 확정 drill | 3.1 절. 환경 1.40배 × 스냅샷 1.24배 | 보고서 JSON 커밋 |
+
+**이제 모든 main 병합에 Level 1 strict 증거가 필요하다.** 병합 전 순서는 `orca_level1_gate.py ... --strict --record-evidence`, `premerge_full_suite_gate.py --record`, `git merge --no-ff` 다. 워커 브랜치와 코디네이터 브랜치(`coordinator-capsule`) 모두 같다.
+
+### 5.2 다음 세션
 
 | 순서 | 할 일 | 근거와 주의 |
 | --- | --- | --- |
 | 1 | 이 문서 병합의 CI 확인 | |
-| 2 | N1 `task_5ad1df7950b9` main 병합 훅의 Level 1 strict 증거 강제 | `orca_level1_gate.py --record-evidence` 와 새 prepare-commit-msg 훅. 병합 뒤 코디네이터가 훅을 설치한다 |
-| 3 | N2 `task_c9613bff5f5d` 런북 4.4.2 `MYSQL_CLIENT_CONTAINER` 안내, 조율 스킬 8.1 `orca worktree rm` 안내 | N1 과 같은 스킬 파일의 다른 절 |
-| 4 | N4 `task_342830314b94` G1 파일 검증 3.2초 대 20.8초 원인 조사 | 읽기 전용 |
-| 5 | N3 2026-09-11 스냅샷 drill 로 1.7배 원인 확정 | 코디네이터 배경 측정. 워커 pytest 와 겹치지 않게 웨이브 뒤에 |
-| 6 | OP-3 주간 재학습, `test_benchmark_offload_loop_lag` 흔들림 | 변동 없음. 이번 세션 CI 는 모두 처음부터 성공 |
+| 2 | (선택) DB import 환경 요인 1.40배의 정체 | 같은 스냅샷이 2026-09-11 823.9초, 2026-09-25 1,151.4초. MySQL 설정·버퍼·Docker 자원 할당 차이부터 본다 |
+| 3 | (선택) G1 파일 검증 하위 구간 타이머와 웜·콜드 재측정 | N4 권고. 합계 영향은 작다 |
+| 4 | OP-3 주간 재학습, `test_benchmark_offload_loop_lag` 흔들림 | 변동 없음. 이번 세션 CI 는 모두 처음부터 성공 |
 
 ---
 
@@ -93,6 +103,6 @@
 | 대상 | 상태 |
 | --- | --- |
 | Git | `main` 은 이 문서 병합 후 clean, 원격 반영. 워커 워크트리 0건, 작업 브랜치는 이 문서 브랜치뿐이며 병합 후 삭제 |
-| Orca | Run `run_073ce2b70842` Task 6건 completed(T1·T2·T4 와 각 리뷰), 다음 웨이브 3건 등록됨, 워커 터미널 전부 닫음, 배달 큐 비움. 터미널 목록의 narani_homepage 창들은 다른 프로젝트라 건드리지 않았다 |
+| Orca | Run `run_073ce2b70842` Task 11건 completed(T1·T2·T4·N1·N2 와 각 리뷰, N4), 워커 터미널 전부 닫음, 배달 큐 비움. 터미널 목록의 narani_homepage 창들은 다른 프로젝트라 건드리지 않았다 |
 | Docker | db 컨테이너만 실행 중. 임시 Meilisearch 는 삭제. 컴퓨터를 끄기 전에 `docker compose stop` 으로 내린다 |
 | 배경 프로세스 | 상시 워커 감시기는 워커 회수와 함께 중지 |
