@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import types
 from pathlib import Path
 
@@ -13,10 +15,13 @@ from scripts.orca_level1_gate import (
     parse_verification_command,
     required_capabilities,
     run_gate2_scope,
+    run_gate6_worker_done,
 )
 from scripts.orca_taskctl import main
 
 OBJECTIVE = "코디네이터 직접 작성 브랜치용 최소 Capsule 을 만든다"
+
+GIT_BIN = shutil.which("git") or "/usr/bin/git"
 
 
 def _run(
@@ -127,3 +132,91 @@ def test_does_not_invoke_orca_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert code == 0
     assert calls == []
     assert out_path.exists()
+
+
+def test_no_report_declaration(tmp_path: Path):
+    """(f) 생성 Capsule 에 report_path 와 worker_done.json 문자열이 없다.
+
+    코디네이터 브랜치에는 워커 보고가 없으므로 보고 선언을 남기면 게이트 6 이
+    보고 파일을 요구해 --strict 가 실패합니다.
+    """
+    code, out_path = _run(tmp_path, ["scripts/orca_taskctl.py"])
+    assert code == 0
+
+    capsule_text = out_path.read_text(encoding="utf-8")
+    assert "report_path" not in capsule_text
+    assert "worker_done.json" not in capsule_text
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, *args], cwd=str(repo), check=True, capture_output=True
+    )
+
+
+def _git_commit(repo: Path, message: str) -> None:
+    subprocess.run(  # noqa: S603
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            message,
+        ],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+
+def _init_doc_change_repo(tmp_path: Path) -> tuple[Path, str, Path]:
+    """문서(.md) 한 건만 바꾼 임시 git 저장소와 그 scope 의 Capsule 을 만듭니다."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+
+    docs_dir = repo / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "note.md").write_text("베이스 내용\n", encoding="utf-8")
+    _git(repo, "add", "docs/note.md")
+    _git_commit(repo, "docs: 초기 베이스 커밋")
+
+    branch = "feature-branch"
+    _git(repo, "checkout", "-b", branch)
+    (docs_dir / "note.md").write_text("베이스 내용\n작업 브랜치 변경\n", encoding="utf-8")
+    _git(repo, "add", "docs/note.md")
+    _git_commit(repo, "docs: 작업 브랜치 문서 변경")
+
+    capsule_path = repo / ".orca" / "capsules" / "coord_demo" / "capsule.yaml"
+    code, out_path = _run(tmp_path, ["docs/note.md"], out=capsule_path)
+    assert code == 0
+    return repo, branch, out_path
+
+
+def test_strict_gate6_skipped_for_coordinator_capsule(tmp_path: Path):
+    """(g) 코디네이터 Capsule 은 게이트 2 를 통과하고 게이트 6 은 적용 대상이 아니다.
+
+    임시 저장소의 문서 한 건을 scope 로 준 Capsule 로 게이트 2 와 게이트 6 을
+    직접 호출합니다. 게이트 6 이 skipped/required=False 이므로 --strict 의
+    필수 건너뜀 집계에 들어가지 않아 strict 판정이 실패하지 않습니다.
+    """
+    repo, branch, capsule_path = _init_doc_change_repo(tmp_path)
+    changed_files = ["docs/note.md"]
+
+    scope_gate = run_gate2_scope(changed_files, capsule_path)
+    assert scope_gate.status == "pass"
+
+    report_gate = run_gate6_worker_done(
+        capsule_path=capsule_path, repo_path=repo, base="main", branch=branch
+    )
+    assert report_gate.status == "skipped"
+    assert report_gate.required is False
+
+    # orca_level1_gate.run_level1_gate 의 strict 판정과 같은 식으로 계산합니다.
+    blocking_skips = [
+        g.name for g in (scope_gate, report_gate) if g.status == "skipped" and g.required
+    ]
+    assert blocking_skips == []
