@@ -3292,6 +3292,101 @@ def cmd_expand(args: argparse.Namespace) -> int:
     return 0
 
 
+# 코디네이터가 워커 없이 직접 쓴 브랜치의 최소 Capsule 입니다. Orca Task 를 만들지
+# 않고 명령행 인자만으로 Intent 를 구성하므로, 게이트 2(쓰기 범위)와 게이트 3(검증
+# 능력)을 --strict 로 강제할 근거 파일을 워커 Dispatch 없이도 만들 수 있습니다.
+COORDINATOR_SLUG_RE = re.compile(r"^[a-z0-9-]+$")
+COORDINATOR_GROUND_TRUTH = "코디네이터 직접 작성 브랜치의 게이트 2·3 판정용 최소 Capsule 이다"
+COORDINATOR_REVIEW_CHECKLIST: tuple[dict[str, str], ...] = (
+    {
+        "id": "scope_expanded",
+        "question": "allowed_write_files 범위 밖 파일이 변경됐는가",
+        "defect_when": "yes",
+        "how": "git diff --name-only main...HEAD 를 허용 범위와 대조한다",
+    },
+)
+
+
+def cmd_coordinator_capsule(args: argparse.Namespace) -> int:
+    """워커 없이 코디네이터가 직접 쓴 브랜치용 최소 Capsule 을 만듭니다.
+
+    Orca Task 를 만들지 않고 orca CLI 를 호출하지도 않습니다. 명령행 인자만으로
+    메모리에서 최소 Intent 를 구성해 expand_intent_to_capsule 로 Capsule 을
+    생성하므로, 워커 Dispatch 없이도 게이트 2(쓰기 범위)와 게이트 3(검증 능력)을
+    --strict 로 강제할 근거 파일이 생깁니다.
+    """
+    slug = str(args.slug or "").strip()
+    if not COORDINATOR_SLUG_RE.fullmatch(slug):
+        sys.stderr.write(f"오류: --slug 는 영문 소문자·숫자·하이픈만 허용합니다: '{args.slug}'\n")
+        return 2
+
+    scope = [str(item).strip() for item in (args.scope or []) if str(item).strip()]
+    if not scope:
+        sys.stderr.write("오류: --scope 는 1개 이상 필요합니다.\n")
+        return 2
+
+    task_id = f"coord_{slug}"
+    out_path = (
+        Path(args.out)
+        if getattr(args, "out", None)
+        else Path(f".orca/capsules/{task_id}/capsule.yaml")
+    )
+    if out_path.exists():
+        sys.stderr.write(f"오류: --out 파일이 이미 존재합니다. 덮어쓰지 않습니다: {out_path}\n")
+        return 2
+
+    intent: dict[str, Any] = {
+        "schema": "ORCA_TASK_INTENT_V1",
+        "role": "builder",
+        "risk": "low",
+        "objective": args.objective,
+        "scope": scope,
+        "ground_truth": [COORDINATOR_GROUND_TRUTH],
+        "review_checklist": [dict(item) for item in COORDINATOR_REVIEW_CHECKLIST],
+    }
+
+    try:
+        capsule = expand_intent_to_capsule(
+            intent,
+            task_id=task_id,
+            capsule_path=out_path,
+        )
+    except ValueError as err:
+        sys.stderr.write(f"오류: {err}\n")
+        return 2
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(capsule, encoding="utf-8")
+
+    allowed_write = parse_capsule_list(capsule, "allowed_write_files")
+    verification_commands = parse_capsule_list(capsule, "verification_commands")
+
+    if getattr(args, "json", False):
+        print(
+            json.dumps(
+                {
+                    "capsule_path": str(out_path),
+                    "task_id": task_id,
+                    "allowed_write_files": allowed_write,
+                    "verification_commands": verification_commands,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    else:
+        print(f"Capsule 생성 완료: {out_path}")
+        print(f"  task_id: {task_id}")
+        print("  allowed_write_files:")
+        for item in allowed_write:
+            print(f"    - {item}")
+        print("  verification_commands:")
+        for item in verification_commands:
+            print(f"    - {item}")
+
+    return 0
+
+
 def _maybe_json(text: str) -> Any:
     """JSON 이면 파싱해서, 아니면 원문 문자열로 돌려줍니다."""
     if not text or not text.strip():
@@ -6011,6 +6106,25 @@ def _build_parser() -> argparse.ArgumentParser:
     sts.add_argument("--task-id", help="Task ID")
     sts.add_argument("--json", action="store_true", help="JSON 출력")
 
+    # coordinator-capsule
+    ccp = sub.add_parser(
+        "coordinator-capsule",
+        help="워커 없이 코디네이터가 직접 쓴 브랜치용 최소 Capsule 을 만듭니다 (Orca Task 미생성).",
+    )
+    ccp.add_argument("--slug", required=True, help="Capsule 식별자 (영문 소문자·숫자·하이픈만)")
+    ccp.add_argument("--objective", required=True, help="작업 목표")
+    ccp.add_argument(
+        "--scope",
+        action="append",
+        required=True,
+        help="쓰기 허용 경로 (저장소 상대 경로, 반복 지정 가능)",
+    )
+    ccp.add_argument(
+        "--out",
+        help="출력 Capsule 경로 (기본: .orca/capsules/coord_<slug>/capsule.yaml)",
+    )
+    ccp.add_argument("--json", action="store_true", help="JSON 출력")
+
     return parser
 
 
@@ -6020,6 +6134,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "expand":
         return cmd_expand(args)
+    if args.command == "coordinator-capsule":
+        return cmd_coordinator_capsule(args)
     if args.command in ("prepare-worker", "prepare"):
         return cmd_prepare_worker(args)
     if args.command == "create":
