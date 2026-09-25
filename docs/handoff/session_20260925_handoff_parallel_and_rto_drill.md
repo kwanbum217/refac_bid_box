@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-25
 > **작성자**: Claude Opus 5.5 (Orca 코디네이터)
-> **기준 커밋**: `main` `3e3bf9be`
+> **기준 커밋**: `main` `c4da1c32`
 > **Orca Run**: `run_073ce2b70842` (워커 터미널 전부 회수)
 > **이어받은 문서**: [`session_20260923c_qualification_badge_and_filter.md`](session_20260923c_qualification_badge_and_filter.md)
 
@@ -20,6 +20,7 @@
 | --- | --- | --- | --- |
 | T1 런북 `MEILI_MASTER_KEY` 로드 | `28d3b292` | 런북 4.3.1 의 curl 확인 명령 앞에 `.env` 에서 키를 읽는 한 줄(`grep '^MEILI_MASTER_KEY=' .env \| cut -d= -f2-`)을 더했다 | 빌더 `846e787d`(cmd DeepSeek V4.1 Flash), 리뷰 pass(`task_1bccf516ad74`, OpenCode Muse Spark, `=` 가 든 값과 접두 겹침 재현), strict 게이트 11/11, 전량 5,382, CI 성공 |
 | T2 `coordinator-capsule` | `3e3bf9be` | `scripts/orca_taskctl.py coordinator-capsule --slug --objective --scope [--out] [--json]` 이 Orca Task 없이 최소 Capsule 을 만든다. 조율 스킬 4.2 절 세 미러와 control plane 문서 3.1 표에 절차를 적었다. 게이트 코드는 바꾸지 않았다(게이트 2 의 Capsule 미지정 건너뜀은 이미 `--strict` 에서 실패한다) | 빌더 `ab2c7cdb`, 리뷰 pass(`task_7c23e4e9c67d`, 경로 가드 6종 직접 실행, src·scripts·frontend 능력 대조), strict 게이트 11/11(`--verify "uv run mypy src"`), 전량 5,390, CI 성공 |
+| T4 `coordinator-capsule` 보고 선언 제거 | `c4da1c32` | T2 도구가 만든 Capsule 에 워커용 `report_path` 가 들어가 게이트 6 이 fail, 문서의 `--strict` 절차가 어느 코디네이터 브랜치에서도 통과하지 못했다. 생성 결과에서 `report_path`, `return_contract`, 보고 파일 항목 세 줄만 지운다. `expand` 경로와 게이트 코드는 그대로다 | 빌더 `3c19f822`, 리뷰 pass(`task_e6d9116889cc`, main 과 expand 출력 동일 확인), strict 게이트 11/11, 전량 5,392. 코디네이터가 이 문서 브랜치로 종단 실행해 strict 종료 코드 0 확인 |
 
 사용자 결정(2026-09-25): 게이트 2 문제는 "최소 Capsule 의무화" 안, restore drill 은 이번 세션 실행.
 
@@ -68,18 +69,22 @@
 | `orca worktree rm` 은 워크트리와 함께 병합된 로컬 브랜치까지 지운다 | 뒤이은 `git branch -d` 가 "not found" 를 낸다. 제거 전에 `git log main..<branch>` 가 비었는지 확인하는 순서를 유지한다 |
 | `dispatch-show` 결과에는 워커 터미널 핸들이 없다 | 회수 시 핸들은 `worker_done` 뒤 `orca terminal list` 나 Dispatch 영수증에서 가져온다 |
 | G1 파일 검증이 같은 스냅샷에서 3.2초에서 20.8초로 늘었다 | 합계 영향은 작다. 같은 호스트의 다른 프로젝트 작업과 겹쳤다. 다음 drill 에서 반복되면 조사한다 |
-| 이 문서 브랜치는 코디네이터 직접 작성이다 | T2 의 `coordinator-capsule` 로 최소 Capsule 을 만들어 strict 게이트를 돌렸다(첫 실사용) |
+| T2 의 인수 조건에 '생성 Capsule 로 strict 게이트 종단 실행' 이 없어 빌더·리뷰어 모두 게이트 6 결함을 놓쳤다. 첫 실사용(이 문서 브랜치)에서 드러났다 | T4 로 고쳤고, 게이트·훅을 만드는 과업의 인수 조건에는 실제 입력으로 끝까지 돌리는 종단 검증을 넣는다 |
 
 ---
 
 ## 5. 다음 세션 할 일
 
+이 세션에서 다음 웨이브의 Task 를 Run `run_073ce2b70842` 에 등록했다(사용자 선택 2026-09-25, Intent 는 `.orca/intents/run_073ce2b70842/`).
+
 | 순서 | 할 일 | 근거와 주의 |
 | --- | --- | --- |
 | 1 | 이 문서 병합의 CI 확인 | |
-| 2 | (선택) 2026-09-11 스냅샷으로 drill 을 돌려 `bid_announcements` 구간을 비교해 1.7배 원인 확정 | 약 25분, Docker·DB 독점. 저장소 동결 필요 |
-| 3 | OP-3 주간 재학습 | worker 는 A안대로 정지 유지. 변동 없음 |
-| 4 | `test_benchmark_offload_loop_lag` 의 CI 흔들림이 반복되면 기준값이나 러너 조건을 재검토 | 이번 세션 CI 3건은 모두 처음부터 성공 |
+| 2 | N1 `task_5ad1df7950b9` main 병합 훅의 Level 1 strict 증거 강제 | `orca_level1_gate.py --record-evidence` 와 새 prepare-commit-msg 훅. 병합 뒤 코디네이터가 훅을 설치한다 |
+| 3 | N2 `task_c9613bff5f5d` 런북 4.4.2 `MYSQL_CLIENT_CONTAINER` 안내, 조율 스킬 8.1 `orca worktree rm` 안내 | N1 과 같은 스킬 파일의 다른 절 |
+| 4 | N4 `task_342830314b94` G1 파일 검증 3.2초 대 20.8초 원인 조사 | 읽기 전용 |
+| 5 | N3 2026-09-11 스냅샷 drill 로 1.7배 원인 확정 | 코디네이터 배경 측정. 워커 pytest 와 겹치지 않게 웨이브 뒤에 |
+| 6 | OP-3 주간 재학습, `test_benchmark_offload_loop_lag` 흔들림 | 변동 없음. 이번 세션 CI 는 모두 처음부터 성공 |
 
 ---
 
@@ -88,6 +93,6 @@
 | 대상 | 상태 |
 | --- | --- |
 | Git | `main` 은 이 문서 병합 후 clean, 원격 반영. 워커 워크트리 0건, 작업 브랜치는 이 문서 브랜치뿐이며 병합 후 삭제 |
-| Orca | Run `run_073ce2b70842` Task 4건 completed, 워커 터미널 전부 닫음, 배달 큐 비움. 터미널 목록의 narani_homepage 창들은 다른 프로젝트라 건드리지 않았다 |
+| Orca | Run `run_073ce2b70842` Task 6건 completed(T1·T2·T4 와 각 리뷰), 다음 웨이브 3건 등록됨, 워커 터미널 전부 닫음, 배달 큐 비움. 터미널 목록의 narani_homepage 창들은 다른 프로젝트라 건드리지 않았다 |
 | Docker | db 컨테이너만 실행 중. 임시 Meilisearch 는 삭제. 컴퓨터를 끄기 전에 `docker compose stop` 으로 내린다 |
 | 배경 프로세스 | 상시 워커 감시기는 워커 회수와 함께 중지 |
