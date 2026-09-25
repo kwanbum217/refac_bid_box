@@ -92,6 +92,10 @@ python3 scripts/premerge_full_suite_gate.py --install-hooks
    python3 scripts/premerge_full_suite_gate.py --record
    ```
    이 명령은 `uv run pytest tests/ -q -m 'not data_assets'`를 실행하고 `git rev-parse --git-common-dir`를 기반으로 주 저장소의 공통 `.cache/premerge_full_suite_evidence.json`에 현재 커밋 SHA와 전량 테스트 통과 증거를 기록합니다. 워크트리에서 실행해도 주 저장소 공통 캐시에 기록되므로 주 저장소 병합 훅에서 즉시 공유됩니다. 개별 파일이나 하위 집합만 실행된 부분 테스트 증거는 게이트에서 기각됩니다.
+   Level 1 strict 통과 증거도 같은 자리에서 기록합니다. `--strict` 판정이 `pass` 일 때만 기록되며, 검증 대상 커밋의 전체 SHA가 주 저장소 공통 `.cache/level1_strict_evidence.json`에 남습니다. 판정이 `fail`이면 파일을 쓰지 않으므로 기존 증거가 유지됩니다.
+   ```bash
+   python3 scripts/orca_level1_gate.py --base main --branch <작업브랜치> --repo <워크트리경로> --capsule <Capsule 경로> --strict --record-evidence
+   ```
 4. strict `finalize`와 Level 1 PASS가 기록된 JSON 증거를 생성합니다. 증거에는 `execution_mode: strict`, source/target branch, 그리고 검증한 source commit이 포함되어야 하며 helper는 현재 source ref와 대조한 뒤 검증된 불변 commit SHA를 `git merge` 인자로 사용합니다. 병합은 아래 helper로만 실행하며, 증거 누락·실패·재사용 시 helper는 `git merge`를 호출하지 않습니다.
    - 테스트 전량 통과 (`pytest`)
    - `python scripts/validate_agent_rules.py` 통과
@@ -100,7 +104,9 @@ python3 scripts/premerge_full_suite_gate.py --install-hooks
    - `main` 브랜치 병합 커밋 생성 시 pre-commit의 `prepare-commit-msg` 훅인 [`scripts/premerge_full_suite_gate.py`](../../scripts/premerge_full_suite_gate.py)가 자동 실행됩니다.
    - 훅 내부에서는 commit source가 `merge`인지 확인하고, `MERGE_HEAD`로 대상 커밋을 확인하여 주 저장소 공통 `.cache/premerge_full_suite_evidence.json`을 검증합니다. 일반 커밋(`message`, `template`, `commit`, `squash` 등)은 즉시 통과하므로 개발 속도에 영향이 없습니다.
    - 전량 테스트 통과 증거가 없거나, 개별 파일만 돌린 부분 테스트 증거이거나, 증거의 커밋 해시가 병합 대상 커밋과 다르거나, 테스트 종료 코드가 0이 아닌 경우 fail-closed 방식으로 병합이 즉시 차단됩니다.
+   - 같은 시점에 [`scripts/premerge_level1_gate.py`](../../scripts/premerge_level1_gate.py)가 Level 1 strict 증거의 `commit`을 `MERGE_HEAD`와 대조합니다. 증거가 없거나 다른 커밋의 증거이거나 `strict`가 `true`가 아니거나 `verdict`가 `pass`가 아니면 fail-closed 방식으로 병합이 즉시 차단됩니다.
    - 비상 시 단일 우회 수단으로 `BYPASS_PREMERGE_FULL_SUITE_GATE=1` 환경변수를 사용할 수 있으며 사용 시 stderr에 경고가 출력됩니다.
+   - Level 1 게이트도 같은 방식으로 `BYPASS_PREMERGE_LEVEL1_GATE=1` 환경변수로만 우회할 수 있으며 사용 시 stderr에 경고가 출력됩니다.
 6. 병합 후 `main` 푸시.
 
 ```bash

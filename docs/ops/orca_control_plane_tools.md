@@ -86,6 +86,8 @@
 - **`1` (검증 실패)**: 도구는 정상 실행되었으나 계약 위반, 게이트 반려, 리뷰어 defect가 확인된 경우.
 - **`2` (도구/파싱 오류)**: 대상 파일 누락, JSON 파싱 실패, 하위 검증 도구 자체 비정상 종료 시.
 
+**Level 1 strict 증거**: 병합 판정 호출은 `--record-evidence` 로 `--strict` 판정이 `pass` 일 때만 통과 증거를 주 저장소 공통 `.cache/level1_strict_evidence.json` 에 남깁니다. `main` 병합 커밋은 `prepare-commit-msg` 훅 `scripts/premerge_level1_gate.py` 가 그 증거의 `commit` 을 `MERGE_HEAD` 와 대조해 없거나 다르면 거부합니다.
+
 ### 3.4 Capsule 경로 전달 (2026-08-17 신설)
 
 **`orca orchestration dispatch --inject` 는 Orca Task 의 `spec` 만 워커에게 전달합니다.** Capsule 경로도 내용도 들어가지 않습니다. 2026-08-17 첫 실사용에서 워커 3대 전부가 Capsule 을 읽지 못한 채 요약만 보고 작업해 파일명과 보고 계약을 위반했습니다. 근거: [`orca_do_not_repeat.md`](orca_do_not_repeat.md) 4.7
