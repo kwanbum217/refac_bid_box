@@ -149,7 +149,9 @@ services:
       # 2026-09-15 최신성 쌍대 실험(docs/design/servc_freshness_retrain_20260915.md)에서
       # 8주 최신 모델이 MAE -0.0255 로 유의하게 좋아 개발 환경은 용역만 매주 재학습합니다.
       # 승격은 수동이며 운영 Compose 는 꺼 둔 상태를 유지합니다.
-      - ML_WEEKLY_RETRAIN_ENABLED=true
+      # 2026-09-26 worker 컨테이너 안 학습이 두 번 OOM(최대 12.26GiB 이상)으로 죽어,
+      # 학습 메모리를 줄일 때까지 일시 중지합니다. 되돌릴 때 이 두 줄을 지웁니다.
+      - ML_WEEKLY_RETRAIN_ENABLED=false
       - ML_WEEKLY_RETRAIN_CATEGORIES=Servc
       # Arq cron 은 워커의 로컬 시간을 사용하므로 운영 문서의 02:00을 KST로 고정합니다.
       - TZ=Asia/Seoul
