@@ -9,10 +9,25 @@ from __future__ import annotations
 
 import logging
 import logging.config
+import re
 from typing import Any
 
 DEFAULT_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+class ServiceKeyRedactionFilter(logging.Filter):
+    """로그 메시지에서 조달청 API 인증키(serviceKey 쿼리 값)를 가립니다."""
+
+    _SERVICE_KEY_PATTERN = re.compile(r"(?i)(serviceKey=)[^&\s'\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        redacted = self._SERVICE_KEY_PATTERN.sub(r"\1***", message)
+        if redacted != message:
+            record.msg = redacted
+            record.args = None
+        return True
 
 
 def get_logging_config(log_level: str = "INFO") -> dict[str, Any]:
@@ -26,12 +41,22 @@ def get_logging_config(log_level: str = "INFO") -> dict[str, Any]:
                 "datefmt": DEFAULT_DATE_FORMAT,
             },
         },
+        "filters": {
+            "service_key_redaction": {
+                "()": "src.app.core.logging_config.ServiceKeyRedactionFilter",
+            },
+        },
         "handlers": {
             "default": {
                 "class": "logging.StreamHandler",
                 "stream": "ext://sys.stdout",
                 "formatter": "standard",
+                "filters": ["service_key_redaction"],
             },
+        },
+        "loggers": {
+            "httpx": {"level": "WARNING"},
+            "httpcore": {"level": "WARNING"},
         },
         "root": {
             "level": str(log_level).upper(),
