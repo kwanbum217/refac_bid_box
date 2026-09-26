@@ -57,6 +57,9 @@ def get_logging_config(log_level: str = "INFO") -> dict[str, Any]:
         "loggers": {
             "httpx": {"level": "WARNING"},
             "httpcore": {"level": "WARNING"},
+            # chromadb 0.6.3 은 텔레메트리를 꺼도 posthog.capture 를 부르고, posthog 7.x 와
+            # 인자가 맞지 않아 클라이언트 생성마다 ERROR 를 남깁니다. 전송은 이미 꺼져 있습니다.
+            "chromadb.telemetry.product.posthog": {"level": "CRITICAL"},
         },
         "root": {
             "level": str(log_level).upper(),
