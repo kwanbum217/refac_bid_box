@@ -5,6 +5,7 @@
 > **범위**: 세 분류(용역 Servc, 공사 Cnstwk, 물품 Thng)의 `DRIFT_DETECTED` 판정 원인 규명
 > **관련 모듈**: `src/ml/psi.py`, `src/ml/monitoring.py`, `src/tasks/scheduled_tasks.py`
 > **데이터 근거**: `retrain_logs` id 13, 14, 15 (2026-09-26 판정), `ml_registry/*/baseline/feature_distributions_v1.json`
+> **정정**: `is_over_notice_amt` 가 "급증" 했다는 서술(1장 3번, 4장, 5장)은 2빈 PSI 역산에서 틀린 해를 고른 오류다. 실제로는 급감이며 원인은 대형 계약 낙찰결과 수집 공백이다([`drift_data_check_20260926.md`](drift_data_check_20260926.md) 3장).
 
 ---
 
