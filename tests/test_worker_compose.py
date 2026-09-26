@@ -32,8 +32,7 @@ def test_default_compose_refreshes_data_and_retrains_only_servc():
 
     assert "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=true" in worker
     assert "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=false" in worker
-    # 2026-09-26 학습 OOM 으로 일시 중지. 학습 메모리를 줄이면 true 로 되돌립니다.
-    assert "ML_WEEKLY_RETRAIN_ENABLED=false" in worker
+    assert "ML_WEEKLY_RETRAIN_ENABLED=true" in worker
     assert "ML_WEEKLY_RETRAIN_CATEGORIES=Servc" in worker
 
 
