@@ -20,7 +20,9 @@ from pydantic import ValidationError
 
 from src.app.core.config import Settings, settings
 from src.app.core.logging_config import (
+    ServiceKeyRedactionFilter,
     configure_logging,
+    get_logging_config,
 )
 from src.app.main import (
     _enable_latency_segment_logging,
@@ -103,6 +105,54 @@ def test_configure_logging_does_not_call_basic_config():
     with patch("logging.basicConfig") as mock_basic:
         configure_logging("INFO")
         mock_basic.assert_not_called()
+
+
+def test_get_logging_config_suppresses_httpx_loggers():
+    """get_logging_config 결과에 httpx 와 httpcore 로거가 WARNING 으로 설정되어 있는지 검증합니다."""
+    config = get_logging_config("INFO")
+    assert config["loggers"]["httpx"]["level"] == "WARNING"
+    assert config["loggers"]["httpcore"]["level"] == "WARNING"
+
+
+def test_redaction_filter_masks_service_key():
+    """필터가 serviceKey 쿼리 값을 serviceKey=*** 로 가리는지 검증합니다."""
+    record = logging.LogRecord(
+        "httpx",
+        logging.INFO,
+        "test.py",
+        1,
+        "GET https://x/y?serviceKey=FAKEKEY123&numOfRows=10",
+        None,
+        None,
+    )
+    redaction_filter = ServiceKeyRedactionFilter()
+    assert redaction_filter.filter(record) is True
+    assert record.getMessage() == "GET https://x/y?serviceKey=***&numOfRows=10"
+
+
+def test_redaction_filter_masks_service_key_with_args():
+    """%s 인자로 들어온 URL 의 serviceKey 값도 가려지는지 검증합니다."""
+    record = logging.LogRecord(
+        "httpx",
+        logging.INFO,
+        "test.py",
+        1,
+        "GET %s",
+        ("https://x/y?serviceKey=FAKEKEY123&numOfRows=10",),
+        None,
+    )
+    redaction_filter = ServiceKeyRedactionFilter()
+    assert redaction_filter.filter(record) is True
+    assert record.getMessage() == "GET https://x/y?serviceKey=***&numOfRows=10"
+
+
+def test_redaction_filter_keeps_messages_without_service_key():
+    """serviceKey 가 없는 메시지는 필터가 그대로 유지하는지 검증합니다."""
+    original_message = "event=collect_bids_start, target=g2b, count=42"
+    record = logging.LogRecord("app", logging.INFO, "test.py", 1, original_message, None, None)
+    redaction_filter = ServiceKeyRedactionFilter()
+    assert redaction_filter.filter(record) is True
+    assert record.getMessage() == original_message
 
 
 def test_uvicorn_baseline_emit_regression(capsys):
