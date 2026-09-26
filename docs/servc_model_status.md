@@ -81,7 +81,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 운영 환경 주간 재학습 재개 (`ML_WEEKLY_RETRAIN_ENABLED`) | 개발 환경은 켜져 있습니다. `docker-compose.yml` 이 `ML_WEEKLY_RETRAIN_ENABLED=true`, `ML_WEEKLY_RETRAIN_CATEGORIES=Servc` 로 용역만 매주 재학습하고 승격은 수동입니다(커밋 47917cbf, 2026-09-26 worker 재기동으로 재개). 운영 환경은 `docker-compose.prod.yml` 기본값 `false` 로 꺼져 있으며, 결정 대기 항목은 운영 환경 재개 여부입니다 |
+| 운영 환경 주간 재학습 재개 (`ML_WEEKLY_RETRAIN_ENABLED`) | 개발 환경은 켜져 있습니다. `docker-compose.yml` 이 `ML_WEEKLY_RETRAIN_ENABLED=true`, `ML_WEEKLY_RETRAIN_CATEGORIES=Servc` 로 용역만 매주 재학습하고 승격은 수동입니다(커밋 47917cbf, 2026-09-26 worker 재기동으로 재개). 운영 환경은 `docker-compose.prod.yml` 기본값 `false` 로 꺼져 있으며, 결정 대기 항목은 운영 환경 재개 여부입니다. 개발 환경을 켜 두고 worker 를 유지하는 것은 2026-09-26 사용자 결정입니다 |
 | 건설(Cnstwk) parquet 재생성 | 1,358,882행, 전 연도 하한율 약 100% 보유. 기대값은 크나 **용역 우선 방침에 어긋남** |
 | 물품(Thng) 후속 | 재생성 검증 완료(`data/feature_store_rebuild_20260811/`). 실익은 `ntce_kind_nm`, `bid_methd_nm` 두 컬럼. 연기 상태 |
 

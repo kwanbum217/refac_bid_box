@@ -37,6 +37,7 @@
 | "수집 공백 15일, 09-11~09-18 백필 필요" 경고 | **오탐.** 그 구간의 용역·물품·공사 공고와 낙찰은 DB 에 모두 있었다. 외자 낙찰 최신일만 09-10 이라 MIN of MAX 가 끌려갔다. 백필은 하지 않았고 W1 로 고쳤다 |
 | 드리프트 감시 | baseline 3개가 컨테이너에 마운트됨. 마지막 판정은 09-18 로 그 뒤 멈춰 있었다. 드리프트 알림이 외부로 나갈 수 있어 수동 실행은 하지 않았다. 다음 04:00 정기 실행 기록으로 확인한다 |
 | 주간 재학습 | 개발 compose 는 2026-09-15 커밋 `47917cbf` 부터 `ML_WEEKLY_RETRAIN_ENABLED=true`, `ML_WEEKLY_RETRAIN_CATEGORIES=Servc`. worker 재기동으로 다음 월요일에 용역 재학습이 돈다. 승격은 수동이라 서빙은 바뀌지 않는다. 운영 compose 는 기본값 `false` |
+| 사용자 결정(2026-09-26) | **개발 환경 주간 재학습은 켜 두고 worker 를 계속 가동한다.** 2026-09-21 A안(worker 정지)을 대체한다. 다음 세션은 worker 를 임의로 내리지 않는다 |
 
 ---
 
@@ -61,7 +62,7 @@
 | --- | --- | --- |
 | 1 | 이 문서 병합의 CI 확인 | |
 | 2 | 드리프트 감시 재개 확인 | `uv run python scripts/db_readonly_query.py --sql "SELECT id, trigger_source, challenger_version, status, created_at FROM retrain_logs ORDER BY id DESC LIMIT 6"` 에 09-27 04:00 이후 `drift_monitor` 행이 있어야 한다 |
-| 3 | 월요일 용역 주간 재학습 결과 확인 | 개발 환경 켜짐. 승격은 수동이며 `docs/servc_model_status.md` 의 판정 기준을 따른다. 원치 않으면 worker 를 내리거나 `ML_WEEKLY_RETRAIN_ENABLED` 를 끈다(사용자 결정) |
+| 3 | 월요일 용역 주간 재학습 결과 확인 | 개발 환경 켜짐. 승격은 수동이며 `docs/servc_model_status.md` 의 판정 기준을 따른다 |
 | 4 | 운영 환경 주간 재학습 재개 여부 | 현황판 3장 결정 대기 |
 | 5 | (선택) Docker VM fsync, G1 20.8초 재발, G2 Windows 실기 | 직전 인수인계 5.2 절과 동일. Docker Desktop 은 여전히 4.92.0 |
 
