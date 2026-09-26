@@ -1,6 +1,7 @@
 # 운영 환경 ml_registry 재생성 및 드리프트 감시 부트스트랩 런북
 
 > **작성일**: 2026-09-18
+> **수정일**: 2026-09-26
 > **상태**: 확정 (Active)
 > **대상 환경**: 운영 서버 (Production), 로컬 개발/스테이징
 > **관련 모듈**: `src/ml/monitoring.py`, `src/tasks/scheduled_tasks.py`, `src/tasks/retrain_task.py`, `src/ml/promotion.py`, `src/app/core/config.py`
@@ -16,8 +17,8 @@
 ### 1.1 ml_registry 부재 원인
 
 1. **Git 미추적 정책**: `ml_registry/` 디렉터리는 학습 및 모니터링 런타임 아티팩트를 보관하는 경로로, `.gitignore:198`에 등재되어 버전 관리 대상에서 제외되어 있습니다.
-2. **설정 기본값**: `src/app/core/config.py:202`의 `MODEL_REGISTRY_DIR` 기본값은 `"ml_registry"`입니다.
-3. **컨테이너 마운트**: `docker-compose.yml:95, 160` 및 `docker-compose.prod.yml`에서 호스트의 `./ml_registry` 경로를 컨테이너 내부 `/app/ml_registry`로 볼륨 마운트합니다.
+2. **설정 기본값**: `src/app/core/config.py:205`의 `MODEL_REGISTRY_DIR` 기본값은 `"ml_registry"`입니다.
+3. **컨테이너 마운트**: `docker-compose.yml:97, 164` 및 `docker-compose.prod.yml`에서 호스트의 `./ml_registry` 경로를 컨테이너 내부 `/app/ml_registry`로 볼륨 마운트합니다.
 4. **결과**: Git 저장소를 새로 clone 하여 배포한 운영 호스트에는 `ml_registry/` 디렉터리가 존재하지 않거나 빈 디렉터리 상태로 초기화됩니다. 가중치 배포 도구인 `scripts/sync_model_files.py`는 `data/model_files/`, `data/model_backups/`, `data/model_metrics/`만을 번들링하므로 `ml_registry/`는 포함되지 않습니다.
 
 ---
@@ -30,10 +31,10 @@
 
 - **코드 근거**:
   - `src/app/core/config.py:80`: `ML_DRIFT_MONITOR_ENABLED` 기본값은 `True`입니다.
-  - `src/tasks/scheduled_tasks.py:622-623`: `drift_monitor_task` 함수는 기본적으로 `registry_dir="ml_registry"`를 탐색합니다.
-  - `src/tasks/scheduled_tasks.py:645-649`: 매일 04:00에 `CATEGORY_MODEL_NAMES`의 전 카테고리(`Servc`, `Thng`, `Cnstwk`)를 순회하며 `baseline_dir = Path(registry_dir) / model_name / "baseline"` 경로의 아티팩트를 로드합니다.
-  - `src/ml/monitoring.py:208-218`: `load_baseline_distributions`는 `baseline_dir / "feature_distributions_v1.json"` 파일이 없으면 `None`을 반환합니다.
-  - `src/tasks/scheduled_tasks.py:652-678`: `if not baseline_dist:` 분기에서 "baseline 분포 아티팩트가 없습니다" 로그를 남기고, `retrain_logs` 테이블에 `status="INSUFFICIENT_DATA"` 및 `baseline_version="-"`로 기록한 뒤 카테고리를 건너뜁니다 (`results[category] = {"status": "skipped", "reason": "no_baseline"}`).
+  - `src/tasks/scheduled_tasks.py:692, 695`: `drift_monitor_task` 함수는 기본적으로 `registry_dir="ml_registry"`를 탐색합니다.
+  - `src/tasks/scheduled_tasks.py:718-722`: 매일 04:00에 `CATEGORY_MODEL_NAMES`의 전 카테고리(`Servc`, `Thng`, `Cnstwk`)를 순회하며 `baseline_dir = Path(registry_dir) / model_name / "baseline"` 경로의 아티팩트를 로드합니다.
+  - `src/ml/monitoring.py:208-217`: `load_baseline_distributions`는 `baseline_dir / "feature_distributions_v1.json"` 파일이 없으면 `None`을 반환합니다.
+  - `src/tasks/scheduled_tasks.py:725-751`: `if not baseline_dist:` 분기에서 "baseline 분포 아티팩트가 없습니다" 로그를 남기고, `retrain_logs` 테이블에 `status="INSUFFICIENT_DATA"` 및 `baseline_version="-"`로 기록한 뒤 카테고리를 건너뜁니다 (`results[category] = {"status": "skipped", "reason": "no_baseline"}`).
 - **장애 현상**:
   - 운영 DB에 실제 입찰·낙찰 데이터가 충분히 누적되어 있어도 기준 분포가 없어 다차원 PSI 계산(`check_dataset_drift`)과 알림 발신(`notify_drift_detected`)이 일절 수행되지 않습니다.
   - 전 카테고리가 매일 `INSUFFICIENT_DATA` 및 `no_baseline` 상태로 스킵되어 데이터 드리프트를 전혀 감지할 수 없습니다.
@@ -41,8 +42,8 @@
 ### 2.2 주간 재학습 승격 판정 거부 (`run_retrain_pipeline_task`)
 
 - **코드 근거**:
-  - `src/tasks/retrain_task.py:68-110`: `_load_champion_metrics(model_name, registry_dir="ml_registry")` 함수는 서빙본 사이드카 지표가 없을 때 `registry_dir / model_name` 디렉터리에서 이전 champion 버전을 탐색합니다. `ml_registry`가 없으면 `(NO_CHAMPION, {})`를 반환합니다.
-  - `src/tasks/retrain_task.py:204-235`: `champion_metrics`가 비어 있으면 모델 간 성능 비교(`compare_champion_vs_challenger`)를 수행하지 못하고, `recommendation="REJECT_CHALLENGER"` 및 "비교 대상 champion 지표가 없습니다. 최초 승격은 지표 확인 후 수동으로 수행하십시오." 사유로 승격이 자동 거부됩니다.
+  - `src/tasks/retrain_task.py:68-109`: `_load_champion_metrics(model_name, registry_dir="ml_registry")` 함수는 서빙본 정보가 전혀 없을 때 `registry_dir / model_name` 디렉터리에서 이전 champion 버전을 탐색합니다. `ml_registry`가 없으면 `(NO_CHAMPION, {})`를 반환합니다.
+  - `src/tasks/retrain_task.py:221-235`: `champion_metrics`가 비어 있으면 모델 간 성능 비교(`compare_champion_vs_challenger`)를 수행하지 못하고, `recommendation="REJECT_CHALLENGER"` 및 "서빙 중인 모델에 지표가 없어 비교할 수 없습니다. 최초 승격은 담당자가 직접 판단하십시오." 사유로 승격이 자동 거부됩니다.
 - **장애 현상**:
   - 매주 월요일 03:00 정기 재학습이 수행되어도 챌린저 모델의 승격 추천이 무조건 기각 처리됩니다.
 
@@ -50,7 +51,7 @@
 
 - **코드 근거**:
   - `src/ml/promotion.py:40`: `REGISTRY_ROOT = PROJECT_ROOT / "ml_registry"`
-  - `scripts/promote_model.py:84-88`: `_registry_models(registry_dir)`는 `registry_dir`가 없으면 빈 리스트를 반환합니다.
+  - `scripts/promote_model.py:84-87`: `_registry_models(registry_dir)`는 `registry_dir`가 없으면 빈 리스트를 반환합니다.
   - `scripts/promote_model.py:99-101`: `uv run python scripts/promote_model.py status` 실행 시 "레지스트리에 학습 아티팩트가 없습니다: ml_registry"를 출력하며 **종료 코드 1**로 실패합니다.
   - `scripts/promote_model.py:193-197`: 판정 파일 생성(`create-verdict`) 및 승격(`promote`) 시 소스 디렉터리가 없어 처리가 차단됩니다.
 
@@ -62,7 +63,7 @@
 
 1. **제도적 레짐 시프트 (Regime Shift)**:
    - 2026-05-26 대한민국 조달청의 공공조달 적격심사 기준 개정으로 낙찰하한율이 **2%p 일괄 상향**되었습니다.
-   - 코드 상에 `src/ml/features.py:48`의 `REGIME_SHIFT_DATE = datetime(2026, 5, 26)`로 명시되어 있습니다.
+   - 코드 상에 `src/ml/features.py:32`의 `REGIME_SHIFT_DATE = pd.Timestamp("2026-05-26")`로 명시되어 있습니다.
 2. **과거 데이터 혼입 위험성**:
    - 2026-05-26 이전의 낙찰률 및 기초금액 대비 투찰 분포는 현행 규정과 전혀 다른 이질적인 통계 모집단입니다.
    - 이전 데이터가 baseline 분포에 포함되면 현재 운영 데이터의 정상적인 낙찰률 변화가 거대한 가짜 드리프트(False Positive PSI >= 0.2)로 감지되거나, 실제 중요한 데이터 드리프트가 희석되어 감지되지 않습니다.
@@ -216,7 +217,7 @@ uv run python scripts/db_readonly_query.py --sql "SELECT id, trigger_source, cha
 1. **특정 모델 baseline 디렉터리 제거**:
    - 운영 호스트에서 해당 모델의 baseline 디렉터리(`ml_registry/{model_name}/baseline/`)를 삭제하거나 백업 경로로 이동합니다.
 2. **삭제 후 시스템 안전성 (Fail-safe)**:
-   - `src/tasks/scheduled_tasks.py:652-678`의 설계에 따라 baseline 디렉터리가 부재하면 태스크가 예외로 중단되지 않고, 사유 로그와 함께 `INSUFFICIENT_DATA`로 건너뜁니다.
+   - `src/tasks/scheduled_tasks.py:725-751`의 설계에 따라 baseline 디렉터리가 부재하면 태스크가 예외로 중단되지 않고, 사유 로그와 함께 `INSUFFICIENT_DATA`로 건너뜁니다.
 3. **올바른 인자로 재실행**:
    - 올바른 `--start-at`과 `--baseline-version` 인자를 지정하여 4장의 절차를 다시 수행합니다.
 
