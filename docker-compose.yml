@@ -49,6 +49,8 @@ services:
       # .env 의 CHROMA_DB_PATH 는 호스트 절대 경로입니다. 이미지에 그대로 실려
       # 컨테이너가 없는 경로를 보고 빈 컬렉션을 만들었습니다. 반드시 덮어씁니다.
       - CHROMA_DB_PATH=/app/chroma_db
+      # chromadb 텔레메트리 전송을 끕니다. 실패 로그 억제는 src/app/core/logging_config.py 가 맡습니다.
+      - ANONYMIZED_TELEMETRY=False
       # 모델 로드 직후 gc.freeze() 로 가중치를 영구 세대로 옮겨 generation-2
       # 순회에서 제외합니다. c10 최악 P99 108.55 -> 59.32ms, 100ms 초과 21건 ->
       # 0건(1,800 요청), P50 변화 없음, 10분 지속 부하 RSS 평평.
@@ -120,6 +122,7 @@ services:
       - MEILI_URL=http://meilisearch:7700
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set in .env}
       - CHROMA_DB_PATH=/app/chroma_db
+      - ANONYMIZED_TELEMETRY=False
       # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}

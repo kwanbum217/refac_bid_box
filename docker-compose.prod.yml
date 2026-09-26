@@ -50,6 +50,8 @@ services:
       - MEILI_URL=http://meilisearch:7700
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set}
       - CHROMA_DB_PATH=/app/chroma_db
+      # chromadb 텔레메트리 전송을 끕니다. 실패 로그 억제는 src/app/core/logging_config.py 가 맡습니다.
+      - ANONYMIZED_TELEMETRY=False
       - PREDICTION_GC_MODE=${PREDICTION_GC_MODE-freeze}
       - LATENCY_SEGMENT_LOGGING=${LATENCY_SEGMENT_LOGGING:-false}
       - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
@@ -128,6 +130,7 @@ services:
       - MEILI_URL=http://meilisearch:7700
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:?MEILI_MASTER_KEY must be set}
       - CHROMA_DB_PATH=/app/chroma_db
+      - ANONYMIZED_TELEMETRY=False
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
@@ -218,6 +221,7 @@ services:
       - BACKUP_DB_PASSWORD=${BACKUP_DB_PASSWORD:?BACKUP_DB_PASSWORD must be set}
       - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379/0
       - CHROMA_DB_PATH=/app/chroma_db
+      - ANONYMIZED_TELEMETRY=False
       - BACKUP_SCHEDULE_ENABLED=true
       - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-7}
       - BACKUP_DISK_MIN_FREE_GB=${BACKUP_DISK_MIN_FREE_GB:-5.0}

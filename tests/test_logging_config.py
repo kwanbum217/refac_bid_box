@@ -114,6 +114,13 @@ def test_get_logging_config_suppresses_httpx_loggers():
     assert config["loggers"]["httpcore"]["level"] == "WARNING"
 
 
+def test_get_logging_config_silences_chromadb_telemetry_errors():
+    """chromadb 텔레메트리 실패 로그가 ERROR 로 새지 않는지 검증합니다."""
+    configure_logging("INFO")
+    logger = logging.getLogger("chromadb.telemetry.product.posthog")
+    assert not logger.isEnabledFor(logging.ERROR)
+
+
 def test_redaction_filter_masks_service_key():
     """필터가 serviceKey 쿼리 값을 serviceKey=*** 로 가리는지 검증합니다."""
     record = logging.LogRecord(
