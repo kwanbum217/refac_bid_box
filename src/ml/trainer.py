@@ -518,8 +518,7 @@ class ModelTrainer:
 
             shutil.move(str(staging), str(target_dir))
 
-            # baseline 디렉터리 원자적 갱신: ml_registry/{model_name}/baseline/
-            self._update_baseline_atomically(target_dir / "baseline")
+            # ml_registry/{model_name}/baseline/ 은 scripts/generate_drift_baseline.py 로만 만든다.
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise

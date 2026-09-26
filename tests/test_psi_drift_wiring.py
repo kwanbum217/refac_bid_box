@@ -2,7 +2,7 @@
 tests/test_psi_drift_wiring.py
 
 PSI 드리프트 모니터링 운영 배선 검증 테스트.
-- 학습 시 baseline 아티팩트 원자적 저장 및 실패 시 불변 검증
+- 학습 시 버전 디렉터리 안에만 baseline 저장 및 registry baseline 미변경 검증
 - Arq Worker 크론 및 함수 등록 검증
 - 표본 부족(100건 미만) 시 판정 보류(INSUFFICIENT_DATA) 검증
 - 드리프트 감지(PSI >= 0.2) 시 알림 발신 및 retrain_logs 기록 검증
@@ -10,6 +10,7 @@ PSI 드리프트 모니터링 운영 배선 검증 테스트.
 - Single Source of Truth features.py 활용 검증
 """
 
+import json
 from unittest.mock import AsyncMock
 
 import numpy as np
@@ -33,7 +34,7 @@ from src.tasks.worker import WorkerSettings
 
 
 def test_baseline_saved_on_training_success(tmp_path):
-    """학습 성공 시 ml_registry/{model_name}/baseline/ 에 분포 아티팩트와 메타데이터가 저장됩니다."""
+    """학습 성공 시 버전 디렉터리 안에만 baseline 이 저장되고 registry baseline 은 생성되지 않습니다."""
     np.random.seed(42)
     sample_size = 120
     df_raw = pd.DataFrame(
@@ -57,12 +58,9 @@ def test_baseline_saved_on_training_success(tmp_path):
 
     version_baseline = tmp_path / "test_model" / version / "baseline"
     assert (version_baseline / "feature_distributions_v1.json").exists()
+    assert (version_baseline / "metadata.json").exists()
 
-    latest_baseline = tmp_path / "test_model" / "baseline"
-    assert (latest_baseline / "feature_distributions_v1.json").exists()
-    assert (latest_baseline / "metadata.json").exists()
-
-    dist = load_baseline_distributions(latest_baseline)
+    dist = load_baseline_distributions(version_baseline)
     assert dist is not None
     assert dist["schema_version"] == 1
     assert dist["model_name"] == "test_model"
@@ -73,6 +71,9 @@ def test_baseline_saved_on_training_success(tmp_path):
     assert "histogram" in dist["features"]["log_price"]
     assert "quantiles" in dist["features"]["log_price"]
     assert dist["psi_config"]["min_samples_per_feature"] == 100
+
+    registry_baseline = tmp_path / "test_model" / "baseline"
+    assert not registry_baseline.exists()
 
 
 def test_baseline_not_saved_on_training_failure(tmp_path, monkeypatch):
@@ -101,8 +102,8 @@ def test_baseline_not_saved_on_training_failure(tmp_path, monkeypatch):
     assert len(staging_dirs) == 0
 
 
-def test_baseline_atomic_update_preserves_integrity(tmp_path):
-    """두 번째 학습 성공 시 baseline 디렉터리가 임시 staging 잔재 없이 원자적으로 갱신됩니다."""
+def test_registry_baseline_unchanged_by_training(tmp_path):
+    """학습이 사전에 만들어 둔 registry baseline 을 갱신하지 않고 버전 baseline 만 남깁니다."""
     np.random.seed(42)
     df_raw = pd.DataFrame(
         [
@@ -116,17 +117,34 @@ def test_baseline_atomic_update_preserves_integrity(tmp_path):
         ]
     )
 
+    registry_baseline = tmp_path / "atomic_model" / "baseline"
+    save_baseline_distributions(
+        df_feat=df_raw,
+        feature_columns=["log_price"],
+        target_dir=registry_baseline,
+        model_name="atomic_model",
+        model_version="b_pre_existing",
+    )
+
     trainer = ModelTrainer(model_name="atomic_model", registry_dir=str(tmp_path))
     meta1 = trainer.train_and_register(df_raw)
-    dist1 = load_baseline_distributions(tmp_path / "atomic_model" / "baseline")
-    assert dist1["model_version"] == meta1["version"]
-
     meta2 = trainer.train_and_register(df_raw)
-    dist2 = load_baseline_distributions(tmp_path / "atomic_model" / "baseline")
-    assert dist2["model_version"] == meta2["version"]
     assert meta2["version"] != meta1["version"]
 
+    registry_dist = load_baseline_distributions(registry_baseline)
+    assert registry_dist is not None
+    assert registry_dist["model_version"] == "b_pre_existing"
+    with open(registry_baseline / "metadata.json", encoding="utf-8") as f:
+        assert json.load(f)["baseline_version"] == "b_pre_existing"
+
+    for meta in (meta1, meta2):
+        version_baseline = tmp_path / "atomic_model" / meta["version"] / "baseline"
+        dist = load_baseline_distributions(version_baseline)
+        assert dist is not None
+        assert dist["model_version"] == meta["version"]
+
     staging_files = list((tmp_path / "atomic_model").glob(".*staging*"))
+    staging_files += list((tmp_path / "atomic_model").glob(".baseline_backup_*"))
     assert len(staging_files) == 0
 
 
