@@ -27,7 +27,7 @@
 
 | 축 | 상태 | 다음 행동 | 근거 |
 | --- | --- | --- | --- |
-| **수집 복구와 OOS 축적** | **완료.** 3,098건 기준 충족 | 2026-08-30 Champion OOS 평가는 유효 3,589건, MAE 1.1825 로 즉시 재학습 근거가 없었습니다. 이후 2026-09-15 최신 데이터 재학습 판정에서 정기 재학습 재개 권고가 나왔고 재학습 후보 `v_20260915_133523_756` 이 승격돼 현 champion 입니다. 후속은 정기 재학습 재개 운영화(3장 결정 대기)입니다 | `data/benchmarks/servc_oos_champion_20260830.json`, `design/servc_freshness_retrain_20260915.md` |
+| **수집 복구와 OOS 축적** | **완료.** 3,098건 기준 충족 | 2026-08-30 Champion OOS 평가는 유효 3,589건, MAE 1.1825 로 즉시 재학습 근거가 없었습니다. 이후 2026-09-15 최신 데이터 재학습 판정에서 정기 재학습 재개 권고가 나왔고 재학습 후보 `v_20260915_133523_756` 이 승격돼 현 champion 입니다. 후속은 운영 환경 주간 재학습 재개(3장 결정 대기)입니다 | `data/benchmarks/servc_oos_champion_20260830.json`, `design/servc_freshness_retrain_20260915.md` |
 | `rbidPermsnYn` 결측 수준 정규화 | 조건부 대기 | OOS 판정 뒤에도 잔차 편향이 남을 때만 표기 이동의 제3수준 효과를 실험합니다 | `design/servc_flag_notation_verdict_20260811.md` |
 | `prearng_mthd` 와 결측 지시자 공선성 | 조건부 대기 | 새 OOS에서 정보 중복을 다시 판단할 근거가 생길 때만 엽니다 | 위와 동일 |
 | 신규 검출 6개 필드의 표기·실질 판정 | 조건부 대기 | P0~P2 뒤 표기 이동과 실질 제도 변화를 먼저 분류합니다. 전부 현재 미사용 필드입니다 | `design/servc_rawdata_regime_scan_20260811.md` |
@@ -81,7 +81,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| 주간 재학습 재개 (`ML_WEEKLY_RETRAIN_ENABLED`) | 2026-09-15 판정이 정기 재학습 재개를 권고하나 compose 는 `false`(2026-09-15 운영 결정 "야간만 켜고 재학습은 끔") 유지 중입니다. 재개는 별도 운영 결정입니다 (`design/servc_freshness_retrain_20260915.md`) |
+| 운영 환경 주간 재학습 재개 (`ML_WEEKLY_RETRAIN_ENABLED`) | 개발 환경은 켜져 있습니다. `docker-compose.yml` 이 `ML_WEEKLY_RETRAIN_ENABLED=true`, `ML_WEEKLY_RETRAIN_CATEGORIES=Servc` 로 용역만 매주 재학습하고 승격은 수동입니다(커밋 47917cbf, 2026-09-26 worker 재기동으로 재개). 운영 환경은 `docker-compose.prod.yml` 기본값 `false` 로 꺼져 있으며, 결정 대기 항목은 운영 환경 재개 여부입니다 |
 | 건설(Cnstwk) parquet 재생성 | 1,358,882행, 전 연도 하한율 약 100% 보유. 기대값은 크나 **용역 우선 방침에 어긋남** |
 | 물품(Thng) 후속 | 재생성 검증 완료(`data/feature_store_rebuild_20260811/`). 실익은 `ntce_kind_nm`, `bid_methd_nm` 두 컬럼. 연기 상태 |
 
@@ -103,7 +103,7 @@
 | 잔차와 특징의 최대 상관 | 0.105 |
 | 파생 parquet 컬럼 수 | Servc 28, Thng 12(구형), Cnstwk 12(구형) |
 | 학습 프레임 최신 개찰일 | **2026-09-14.** 현 champion `v_20260915_133523_756` 은 `data/feature_store/servc_rebuild_20260915/dataset_Servc.parquet`(925,054행, gitignore 대상)로 재학습됐습니다 |
-| 기본 Compose 주간 재학습 | **꺼져 있음**(`ML_WEEKLY_RETRAIN_ENABLED=false`). 레짐 축 기각 근거가 "정기 재학습 유지" 를 전제하므로 재생성 없이는 재개 조건이 움직이지 않습니다 |
+| 주간 재학습 상태 | 개발 환경은 켜짐(`docker-compose.yml` 의 `ML_WEEKLY_RETRAIN_ENABLED=true`, `ML_WEEKLY_RETRAIN_CATEGORIES=Servc`, 승격 수동, 커밋 47917cbf). 운영 환경은 기본값 `false` 로 꺼짐(`docker-compose.prod.yml`). 레짐 축 기각 근거가 "정기 재학습 유지" 를 전제하므로 재생성 없이는 재개 조건이 움직이지 않습니다 |
 | Champion OOS 평가 (2026-08-30) | 유효 3,589건, MAE 1.1825, 0.5%p 적중 62.69%, 피복률 90.25%, 구간 폭 중앙값 2.0145. 결측 집단 MAE 2.0943, 보유 집단 MAE 0.6288 (`data/benchmarks/servc_oos_champion_20260830.json`) |
 | Champion OOS 판정 결론 | 3,098건 축적 기준 충족 시점의 평가로 즉시 재학습 근거 없음. 이후 2026-09-15 최신 데이터 재학습 판정에서 별도 승격 결정 (`docs/context/CURRENT_STATE.md`, `design/servc_freshness_retrain_20260915.md`) |
 | 2026-09-15 재학습 승격 | `v_20260915_133523_756` 은 generations 메타데이터에 `promoted_at` 2026-09-15T13:58:42, description "재학습 승격본" 으로 기록돼 있습니다. `design/servc_freshness_retrain_20260915.md` 68행의 "승격은 하지 않았습니다" 는 승격 이전 시점 서술입니다 |
