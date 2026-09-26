@@ -129,6 +129,9 @@ uv run pytest tests/test_drift_monitor_window.py tests/test_psi_drift_wiring.py 
 분포 계산은 `save_baseline_distributions` 를 재사용하며 특징 생성은
 `src/ml/features.py` 단일 공급원만 사용합니다.
 
+학습은 버전 디렉터리 안에만 baseline 을 남기고 `ml_registry/{model_name}/baseline/` 은
+바꾸지 않는다(2026-09-26 변경).
+
 - **기본 dry-run**: 인자 없이 실행하면 어떤 파일도 쓰지 않고 대상 구간, 조회 행 수,
   특징 수, 저장될 경로만 출력합니다. 실제 기록은 `--write` 명시 플래그가 있을 때만
   수행합니다. 이 Task 에서는 `--write` 를 실행하지 않으며 `ml_registry` 아래에 파일을
