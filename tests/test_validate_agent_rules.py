@@ -508,6 +508,12 @@ def _write_current_state(root: Path, body: str) -> Path:
     return target
 
 
+def _write_evidence(root: Path, relative: str = "docs/migration/db_migration_runbook.md") -> None:
+    target = root / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# evidence\n", encoding="utf-8")
+
+
 def test_check_current_state_exists(tmp_path: Path):
     """정본이 없으면 FAIL, 있으면 PASS 입니다."""
     res = check_current_state_exists(tmp_path)
@@ -1139,6 +1145,7 @@ def test_check_current_state_fact_ledger_requires_claim_anchor_and_evidence(tmp_
     """원장의 판정 주장과 증거 경로가 부팅 문서에 그대로 있어야 합니다."""
     context = tmp_path / "docs" / "context"
     context.mkdir(parents=True)
+    _write_evidence(tmp_path)
     (context / "current_state_facts.yaml").write_text(
         """version: '2.0'
 facts:
@@ -1177,6 +1184,7 @@ def test_check_current_state_fact_ledger_rejects_claim_drift(tmp_path: Path):
     """문서의 주장 문구가 원장과 달라지면 실패합니다."""
     context = tmp_path / "docs" / "context"
     context.mkdir(parents=True)
+    _write_evidence(tmp_path)
     (context / "current_state_facts.yaml").write_text(
         """version: '2.0'
 facts:
@@ -1199,6 +1207,41 @@ facts:
     assert "claim" in result.detail
 
 
+def test_check_current_state_fact_ledger_rejects_missing_evidence_file(tmp_path: Path):
+    """경로 형태의 증거가 저장소에 없으면 실패하고, 경로가 아닌 서술은 건너뜁니다."""
+    context = tmp_path / "docs" / "context"
+    context.mkdir(parents=True)
+    _write_evidence(tmp_path)
+    ledger = context / "current_state_facts.yaml"
+    ledger.write_text(
+        """version: '2.0'
+facts:
+  - id: gate
+    status: closed
+    decision_date: '2026-09-03'
+    claim: 'G1은 통과 상태입니다.'
+    document_anchor: 'G1은 통과 상태'
+    evidence:
+      - docs/migration/db_migration_runbook.md
+      - GitHub Actions Run 1 (abc1234, success)
+""",
+        encoding="utf-8",
+    )
+    _write_current_state(tmp_path, "# CURRENT_STATE\n\nG1은 통과 상태입니다.\n")
+    result = check_current_state_fact_ledger(tmp_path)
+    assert result.ok, result.detail
+
+    ledger.write_text(
+        ledger.read_text(encoding="utf-8").replace(
+            "docs/migration/db_migration_runbook.md", "docs/analysis/missing.json"
+        ),
+        encoding="utf-8",
+    )
+    result = check_current_state_fact_ledger(tmp_path)
+    assert not result.ok
+    assert "docs/analysis/missing.json" in result.detail
+
+
 @pytest.mark.parametrize(
     ("updated_at", "ok"),
     [("2026-09-02", False), ("2026-09-03", True), ("2026-09-14", True)],
@@ -1209,6 +1252,7 @@ def test_check_current_state_fact_ledger_requires_fresh_updated_at(
     """원장 updated_at 이 최신 decision_date 보다 이르면 실패합니다."""
     context = tmp_path / "docs" / "context"
     context.mkdir(parents=True)
+    _write_evidence(tmp_path)
     (context / "current_state_facts.yaml").write_text(
         f"""version: '2.0'
 updated_at: '{updated_at}'
