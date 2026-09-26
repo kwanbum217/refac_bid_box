@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-09-26
 > **작성자**: Claude Opus 5.5 (Orca 코디네이터)
-> **기준 커밋**: `main` `5a8813dd`
+> **기준 커밋**: `main` `d90f2cac`
 > **Orca Run**: `run_1bfc04b2de02` (워커 터미널 전부 회수)
 > **이어받은 문서**: [`session_20260925_handoff_parallel_and_rto_drill.md`](session_20260925_handoff_parallel_and_rto_drill.md)
 
@@ -10,7 +10,7 @@
 
 ## 1. 한 줄 요약
 
-세 웨이브를 처리했습니다. 첫 웨이브는 드리프트 런북 인용 정정(A1)과 `CURRENT_STATE` 메타 최신화(B)입니다. 두 번째 웨이브는 2026-09-21 A안으로 멈춰 있던 `worker` 를 재기동해 수집과 드리프트 감시를 되살리고(S1), 2026-08-26 에 멈춘 용역 모델 현황판을 갱신했습니다(S2). 세 번째 웨이브는 그 과정에서 드러난 결함 셋을 고쳤습니다. 수집 공백 오탐(W1), 로그의 API 인증키 노출(W2), 원장 증거 경로 오류와 그것을 통과시킨 검증기 빈틈(W3)입니다.
+세 웨이브를 처리했습니다. 첫 웨이브는 드리프트 런북 인용 정정(A1)과 `CURRENT_STATE` 메타 최신화(B)입니다. 두 번째 웨이브는 2026-09-21 A안으로 멈춰 있던 `worker` 를 재기동해 수집과 드리프트 감시를 되살리고(S1), 2026-08-26 에 멈춘 용역 모델 현황판을 갱신했습니다(S2). 세 번째 웨이브는 그 과정에서 드러난 결함 셋을 고쳤습니다. 수집 공백 오탐(W1), 로그의 API 인증키 노출(W2), 원장 증거 경로 오류와 그것을 통과시킨 검증기 빈틈(W3)입니다. 마지막으로 app 로그를 10초마다 채우던 chromadb 텔레메트리 ERROR 를 멈췄습니다(T).
 
 ---
 
@@ -24,6 +24,7 @@
 | W3 원장 증거 경로와 검증기 | `f2bd54b2` | `servc_oos` 증거를 실제 위치 `data/benchmarks/servc_oos_champion_20260830.json` 으로 고치고, `validate_agent_rules.py` 원장 검사가 공백 없이 `/` 를 포함한 증거 값의 실재를 요구하게 했다 | 코디네이터 직접 작성. 옛 원장에 새 검사를 돌려 `servc_oos` 를 잡는 것을 확인, 테스트 60, mypy, strict 게이트, 전량 5,432 |
 | W2 `task_6fcd4a3a1802` 로그 인증키 가림 | `dd994365` | `src/app/core/logging_config.py`: `httpx`·`httpcore` 로거 WARNING, `ServiceKeyRedactionFilter` 가 `serviceKey=값` 을 대소문자 무관하게 `***` 로 가림 | 빌더 cmd GLM-5.3 Flash, 리뷰 pass(경계 입력 11종 실측), strict 게이트, 전량 5,426. 재시작한 worker 안에서 가짜 키가 `***` 로 찍히고 httpx INFO 가 숨는 것을 확인 |
 | W1 `task_827798ca12c0` 수집 공백 오탐 | `5a8813dd` | `src/app/services/collector_service.py`: 체크포인트 MIN of MAX 에서 희소 분류 `Frgcpt` 를 제외(요청이 전부 Frgcpt 면 예외). 무데이터 검사와 수집 대상은 그대로 | 빌더 cmd GLM-5.3 Flash, 리뷰 pass, strict 게이트, 전량 5,425. 재시작한 worker 안에서 창이 경고 없이 `20260924~20260925` 로 잡힘 |
+| T chromadb 텔레메트리 ERROR 억제 | `d90f2cac` | app 헬스체크가 10초마다 `PersistentClient` 를 만들 때마다 chromadb 0.6.3 의 `posthog.capture` 가 posthog 7.37.3 과 인자가 맞지 않아 ERROR 를 남겼다(하루 약 8,600줄). compose 에 `ANONYMIZED_TELEMETRY=False`(전송 차단), `logging_config.py` 에 해당 로거 CRITICAL(실패 로그 억제) | 코디네이터 직접 작성. 테스트 15, mypy, 개발·운영 compose config, strict 게이트, 전량 5,440, CI 성공. 재시작 뒤 헬스체크 5회 동안 텔레메트리·ERROR 로그 0건 |
 
 ---
 
@@ -49,6 +50,7 @@
 | W1 은 Frgcpt 공백 검출을 단정하던 기존 테스트 2건을 주요 분류로 바꿨다 | 설계상 받아들인 절충이다. 외자만 따로 비는 공백은 이제 체크포인트로 검출되지 않는다. 수집 창은 전 분류를 함께 가져오므로 실제 누락 위험은 작다 |
 | 원장 검증기는 증거가 비어 있지 않은지만 보아 없는 경로를 통과시켰다 | W3 로 경로 형태 값의 실재를 강제했다. 경로가 아닌 서술(CI 실행 설명)은 건너뛴다 |
 | zsh 에서 `${var^^}` 가 bad substitution 으로 터미널 생성이 실패했다 | Task 는 ready 로 남아 부작용 없이 재시도했다 |
+| 텔레메트리 수정 첫 안(`ANONYMIZED_TELEMETRY=False` 만)은 컨테이너에서 60초 관찰로 효과가 없음이 드러났다. chromadb 0.6.3 은 텔레메트리를 꺼도 `capture` 를 부른다 | 라이브러리 소스를 읽고 로거 억제를 더했다. 설정 변경은 병합 전에 실제 컨테이너 로그로 효과를 확인한다 |
 | 런처·터미널 부착 경로 워커는 release 결과가 `retained / no_owned_resource` 다 | 창을 `orca terminal close` 로 닫아 회수했다. 이번 Run 의 워커는 모두 비감독 경로였다 |
 
 ---
