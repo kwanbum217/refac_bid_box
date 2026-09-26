@@ -211,6 +211,13 @@ Capsule 의 `ground_truth` 에 이 명령 형태를 못 박으십시오. 형태�
 쓰라" 고 적었는데도 워커가 `docker exec -i ... sh -c '...'` 로 감싸 반복해서
 막혔습니다. **허용 형태만 적지 말고 금지 형태와 그 이유를 함께 적으십시오.**
 
+**운영 스키마에 시험 행을 넣지 마십시오.** 동시성·부하 실험처럼 행이 필요한 작업은
+`tests/test_mysql_concurrency.py` 처럼 전용 스키마를 만들고 끝날 때 DROP 합니다.
+2026-09-19 에 하니스 작업이 운영 `bid_results`·`bid_announcements` 에 `DBG-*` 행 20건을
+남겼고, 일주일 동안 기관 통계·요약·비교 스냅샷·드리프트 기준 분포에 섞였다가
+2026-09-26 에 백업 후 삭제하고 재집계했습니다(`docs/analysis/dbg_rows_origin_20260926.md`).
+Capsule 에는 "운영 DB 쓰기 금지, 필요하면 전용 스키마" 를 `forbidden` 으로 적으십시오.
+
 Intent 에 그대로 붙여 넣을 문장입니다.
 
 ```yaml
