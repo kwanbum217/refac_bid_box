@@ -8,6 +8,7 @@ K-Fold 교차 검증 및 LightGBM/CatBoost 기반 사투가 예측 모델을 재
 
 from __future__ import annotations
 
+import gc
 import json
 import shutil
 import tempfile
@@ -108,7 +109,7 @@ def _best_iteration_of(model: Any, model_type: str) -> int | None:
 def _refit_on_full(
     model_fn: Any,
     model_type: str,
-    selected: Any,
+    best_iteration: int | None,
     X: pd.DataFrame,
     y: np.ndarray,
     hyperparams: dict[str, Any] | None,
@@ -117,12 +118,13 @@ def _refit_on_full(
 
     트리 수는 **선택 단계에서 조기 종료가 고른 값으로 고정**합니다. 그대로
     재적합하면 검증 구간이 학습에 포함돼 조기 종료가 판단 근거를 잃고, 설정된
-    n_estimators 를 끝까지 써 과적합합니다.
+    n_estimators 를 끝까지 쓰고 과적합합니다.
 
-    Ridge 처럼 반복 수 개념이 없는 모델은 그대로 재적합합니다.
+    best_iteration 은 선택 단계에서 학습이 끝나는 대로 모델에서 꺼낸 값입니다.
+    후보 모델 객체를 여기까지 들고 가지 않으면 선택되지 않은 후보들이 평가가
+    끝나는 즉시 반납됩니다. Ridge 는 None 이어서 그대로 재적합합니다.
     """
     fixed = dict(hyperparams or {})
-    best_iteration = _best_iteration_of(selected, model_type)
     if best_iteration:
         fixed["n_estimators" if model_type == "lightgbm" else "iterations"] = best_iteration
     # 검증 인자에 전량을 넘깁니다. 조기 종료 콜백이 살아 있어도 학습 데이터를
@@ -264,6 +266,41 @@ class _CatBoostFrameAdapter:
         return np.asarray(self.model.predict(frame))
 
 
+FEATURE_CHUNK_ROWS = 50_000
+
+
+def _build_feature_frame_chunked(df: pd.DataFrame) -> pd.DataFrame:
+    """특징 구축을 청크로 나눠 처리합니다.
+
+    build_feature_frame 은 행별로 독립적이라 나눠도 결과가 같습니다. 행 dict
+    와 특징 dict 를 통째로 만들면 수 GiB 가 동시에 살아 있으므로 동시 상주분을
+    청크 크기로 제한합니다.
+    """
+    frames = []
+    for start in range(0, len(df), FEATURE_CHUNK_ROWS):
+        records = df.iloc[start : start + FEATURE_CHUNK_ROWS].to_dict(orient="records")
+        features_list = build_feature_frame(records)
+        frames.append(pd.DataFrame(features_list))
+        del records, features_list
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+def _collect_category_levels_chunked(df: pd.DataFrame) -> dict[str, list[str]]:
+    """범주 수준 수집도 청크로 나눠 합니다.
+
+    각 청크의 수준 집합을 합쳐 정렬하면 전체 수집 목록과 같고, 열별 문자열
+    사본이 청크 크기로 제한됩니다.
+    """
+    seen: dict[str, set[str]] = {}
+    for start in range(0, len(df), FEATURE_CHUNK_ROWS):
+        chunk_levels = collect_category_levels(df.iloc[start : start + FEATURE_CHUNK_ROWS])
+        for column, values in chunk_levels.items():
+            seen.setdefault(column, set()).update(values)
+    return {column: sorted(values) for column, values in seen.items()}
+
+
 def _cross_validate_model(
     df: pd.DataFrame,
     y: np.ndarray,
@@ -286,6 +323,8 @@ def _cross_validate_model(
         )
         preds = model.predict(X.iloc[valid_idx])
         metrics = evaluate_model_performance(np.asarray(y[valid_idx]), np.asarray(preds))
+        # 폴드 모델은 지표만 남기고 즉시 반납합니다.
+        del model
         fold_metrics.append(metrics)
 
     if not fold_metrics:
@@ -353,27 +392,28 @@ class ModelTrainer:
         feature_columns = training_features_for_category(self.category_code)
         effective_hyperparams = hyperparams_for_category(self.category_code, hyperparams)
 
-        # 단일 특징 공급원 적용
-        records = df_raw.to_dict(orient="records")
-        features_list = build_feature_frame(records)
-        df_feat = pd.DataFrame(features_list)
-
-        # 범주 수준을 여기서 확정해 모델과 함께 저장합니다. 추론 시점에 같은
-        # 수준으로 복원하지 않으면 범주 코드가 어긋나 조용히 다른 값을 읽습니다.
-        category_levels = collect_category_levels(df_feat)
-        df_feat = apply_categorical_dtypes(df_feat, category_levels)
-
-        # build_feature_frame 은 새 dict 를 만들어 반환하므로 개찰일이 사라집니다.
-        # 시계열 분할이 프레임 순서로 조용히 폴백하지 않도록 여기서 다시 싣습니다.
-        # 학습 특징이 아니라 정렬 기준이므로 TRAINING_FEATURES 에는 넣지 않습니다.
-        if TIME_SORT_COLUMN in df_raw.columns:
-            df_feat[TIME_SORT_COLUMN] = df_raw[TIME_SORT_COLUMN].to_numpy()
-
-        # Target (winning_rate)
+        # 정렬 기준과 정답을 특징 프레임을 만들기 전에 꺼내 둡니다. 이후 df_raw 는
+        # 다시 읽지 않습니다. build_feature_frame 은 새 dict 를 만들어 반환하므로
+        # 개찰일이 사라집니다. 시계열 분할이 프레임 순서로 조용히 폴백하지 않도록
+        # 여기서 다시 싣고, 정렬 기준이므로 TRAINING_FEATURES 에는 넣지 않습니다.
+        has_time = has_time_column(df_raw)
+        time_column = df_raw[TIME_SORT_COLUMN].to_numpy() if has_time else None
         if "winning_rate" in df_raw.columns:
             y = df_raw["winning_rate"].values
         else:
-            y = np.full(len(df_feat), 88.0)
+            y = np.full(len(df_raw), 88.0)
+
+        # 단일 특징 공급원 적용. 행 dict 와 특징 dict 가 통째로 살아 있으면
+        # 최대 메모리가 불어나므로 청크로 나눠 만듭니다.
+        df_feat = _build_feature_frame_chunked(df_raw)
+
+        # 범주 수준을 여기서 확정해 모델과 함께 저장합니다. 추론 시점에 같은
+        # 수준으로 복원하지 않으면 범주 코드가 어긋나 조용히 다른 값을 읽습니다.
+        category_levels = _collect_category_levels_chunked(df_feat)
+        df_feat = apply_categorical_dtypes(df_feat, category_levels)
+
+        if time_column is not None:
+            df_feat[TIME_SORT_COLUMN] = time_column
 
         # 시계열 분할: 과거를 학습, 미래를 검증
         train_idx, valid_idx, y_train, y_valid = _time_based_split(df_feat, y, validation_split)
@@ -408,9 +448,13 @@ class ModelTrainer:
                 df_train, y_train, model_fn, params, n_folds, feature_columns
             )
             model = model_fn(X_train, y_train, X_valid, y_valid, params)
+            best_iteration = _best_iteration_of(model, name)
             holdout = evaluate_model_performance(
                 np.asarray(y_valid), np.asarray(model.predict(X_valid))
             )
+            # 후보 모델은 여기서 반납합니다. 재적합에는 best_iteration 만 필요합니다.
+            del model
+            gc.collect()
             cv_by_model[name] = cv
             holdout_by_model[name] = holdout
             # 선택은 MAPE(낮을수록 좋음)로 합니다. R2/RMSE 는 조건부 평균을
@@ -422,9 +466,9 @@ class ModelTrainer:
             # 근거: docs/design/servc_repeat_procurement_20260803.md 1장
             # K-Fold 를 만들 수 없을 만큼 표본이 적으면 홀드아웃으로 내려갑니다.
             selection_score = cv.get("avg_mape", holdout["mape"])
-            candidates.append((selection_score, name, model, cv, holdout))
+            candidates.append((selection_score, name, best_iteration, cv, holdout))
 
-        _, model_type, best_model, cv_metrics, valid_metrics = min(
+        _, model_type, best_iteration, cv_metrics, valid_metrics = min(
             candidates, key=lambda item: item[0]
         )
 
@@ -446,7 +490,7 @@ class ModelTrainer:
         best_model = _refit_on_full(
             model_fns[model_type],
             model_type,
-            best_model,
+            best_iteration,
             X,
             y,
             effective_hyperparams.get(model_type),

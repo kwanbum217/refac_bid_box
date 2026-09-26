@@ -105,6 +105,8 @@ def _train_quantile_models(
             model = lgb.LGBMRegressor(objective="quantile", alpha=q, **params)
             model.fit(X_fit, y_fit, categorical_feature=categorical)
             bounds.append(model.predict(X_cal))
+            # 보정용 분위 모델은 배율 산정이 끝나면 필요가 없으므로 즉시 반납합니다.
+            del model
         # 분위별 독립 학습이라 예측이 뒤집힐 수 있습니다(교차 현상).
         lo_cal = np.minimum(bounds[0], bounds[1])
         hi_cal = np.maximum(bounds[0], bounds[1])
