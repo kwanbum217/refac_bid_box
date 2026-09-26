@@ -230,13 +230,13 @@ class TestResolveCollectionWindow:
 async def test_slow_category_gap_not_skipped(isolated_db, monkeypatch):
     """느린 범주 공백이 전역 MAX 로 건너뛰어지지 않음을 DB 레벨에서 검증합니다.
 
-    Frgcpt 개찰 최신일 8/7, Thng 8/13 → MIN(MAX per cat)=8/7 → 창 8/8~8/12.
+    Servc 개찰 최신일 8/7, Thng 8/13 → MIN(MAX per cat)=8/7 → 창 8/8~8/12.
     """
     import src.app.services.collector_service as svc
 
     fake_today = datetime(2026, 8, 13, 10, 0, 0)
     _seed_res(isolated_db, "Thng", datetime(2026, 8, 13, 10, 0, 0))
-    _seed_res(isolated_db, "Frgcpt", datetime(2026, 8, 7, 10, 0, 0))
+    _seed_res(isolated_db, "Servc", datetime(2026, 8, 7, 10, 0, 0))
     isolated_db.commit()
 
     with _utcnow_fixed(fake_today):
@@ -244,7 +244,7 @@ async def test_slow_category_gap_not_skipped(isolated_db, monkeypatch):
             isolated_db, start_date=None, end_date=None, fetch_type="result"
         )
 
-    assert start == "20260808", f"Frgcpt 공백이 건너뛰어졌습니다: start={start}"
+    assert start == "20260808", f"Servc 공백이 건너뛰어졌습니다: start={start}"
     assert end == "20260812"
     assert is_catchup is True
 
@@ -325,6 +325,94 @@ async def test_missing_category_triggers_max_catchup(isolated_db):
     yesterday = (fake_today - timedelta(days=1)).date()
     expected_start = (yesterday - timedelta(days=MAX_CATCHUP_DAYS - 1)).strftime("%Y%m%d")
     assert start == expected_start, f"Servc 누락인데 fallback 이 발동되지 않았습니다: start={start}"
+    assert is_catchup is True
+
+
+@pytest.mark.asyncio
+async def test_sparse_frgcpt_old_checkpoint_not_treated_as_gap(isolated_db, caplog):
+    """희소 분류 Frgcpt(외자) 의 오래된 최신일을 수집 공백으로 오판하지 않습니다.
+
+    주요 분류는 어제(8/12)까지 차 있고 Frgcpt 만 20일 전(7/23)이 최신일.
+    체크포인트에서 Frgcpt 를 제외하므로 공백 없음으로 판정하고 경고도 내지 않습니다.
+    """
+    import logging
+
+    import src.app.services.collector_service as svc
+
+    fake_today = datetime(2026, 8, 13, 10, 0, 0)
+    _seed_res(isolated_db, "Thng", datetime(2026, 8, 12, 10, 0, 0))
+    _seed_res(isolated_db, "Servc", datetime(2026, 8, 12, 10, 0, 0))
+    _seed_res(isolated_db, "Cnstwk", datetime(2026, 8, 12, 10, 0, 0))
+    _seed_res(isolated_db, "Frgcpt", datetime(2026, 7, 23, 10, 0, 0))
+    isolated_db.commit()
+
+    with (
+        caplog.at_level(logging.WARNING, logger="src.app.services.collector_service"),
+        _utcnow_fixed(fake_today),
+    ):
+        start, _end, is_catchup = svc.resolve_collection_window(
+            isolated_db, start_date=None, end_date=None, fetch_type="result"
+        )
+
+    assert start == "20260812", f"Frgcpt 공백 오판이 재발했습니다: start={start}"
+    assert is_catchup is False
+    gap_warnings = [r for r in caplog.records if "수집 공백" in r.getMessage()]
+    assert gap_warnings == [], f"공백 경고가 발생했습니다: {gap_warnings}"
+
+
+@pytest.mark.asyncio
+async def test_main_category_real_gap_still_caught(isolated_db):
+    """주요 분류 사이의 MIN of MAX 규칙은 유지되어 실제 공백을 여전히 잡습니다.
+
+    Thng 만 10일 전(8/2)이 최신일이고 나머지는 어제까지 차 있음.
+    max_catchup_days=12 로 최근 상한 미만의 공백이므로 창은 8/3~8/12.
+    """
+    import src.app.services.collector_service as svc
+
+    fake_today = datetime(2026, 8, 13, 10, 0, 0)
+    _seed_res(isolated_db, "Thng", datetime(2026, 8, 2, 10, 0, 0))
+    _seed_res(isolated_db, "Servc", datetime(2026, 8, 12, 10, 0, 0))
+    _seed_res(isolated_db, "Cnstwk", datetime(2026, 8, 12, 10, 0, 0))
+    _seed_res(isolated_db, "Frgcpt", datetime(2026, 8, 12, 10, 0, 0))
+    isolated_db.commit()
+
+    with _utcnow_fixed(fake_today):
+        start, _end, is_catchup = svc.resolve_collection_window(
+            isolated_db,
+            start_date=None,
+            end_date=None,
+            fetch_type="result",
+            max_catchup_days=12,
+        )
+
+    assert start == "20260803", f"주요 분류의 실제 공백을 놓쳤습니다: start={start}"
+    assert is_catchup is True
+
+
+@pytest.mark.asyncio
+async def test_frgcpt_only_request_uses_frgcpt_checkpoint(isolated_db):
+    """요청 분류가 전부 제외 대상이면 제외 없이 Frgcpt 최신일로 계산합니다.
+
+    Frgcpt 결과 8/7, Thng 결과 8/12. categories=("Frgcpt",) 로 요청하면
+    체크포인트는 Frgcpt 8/7 이 되고 창은 8/8~8/12.
+    """
+    import src.app.services.collector_service as svc
+
+    fake_today = datetime(2026, 8, 13, 10, 0, 0)
+    _seed_res(isolated_db, "Thng", datetime(2026, 8, 12, 10, 0, 0))
+    _seed_res(isolated_db, "Frgcpt", datetime(2026, 8, 7, 10, 0, 0))
+    isolated_db.commit()
+
+    with _utcnow_fixed(fake_today):
+        start, _end, is_catchup = svc.resolve_collection_window(
+            isolated_db,
+            start_date=None,
+            end_date=None,
+            fetch_type="result",
+            categories=("Frgcpt",),
+        )
+
+    assert start == "20260808", f"Frgcpt 단독 요청 체크포인트가 틀렸습니다: start={start}"
     assert is_catchup is True
 
 
@@ -453,14 +541,14 @@ async def test_partial_failure_visible_in_metrics(isolated_db, monkeypatch):
 async def test_partial_failure_retry_uses_per_category_min(isolated_db, monkeypatch):
     """부분 실패 뒤 재시도 시 느린 카테고리 체크포인트에서 창을 다시 계산합니다.
 
-    Thng 결과 8/12, Frgcpt 결과 8/7 → MIN=8/7 → 다음 창 8/8~8/12.
+    Thng 결과 8/12, Servc 결과 8/7 → MIN=8/7 → 다음 창 8/8~8/12.
     """
     import src.app.services.collector_service as svc
 
     fake_today = datetime(2026, 8, 13, 10, 0, 0)
 
     _seed_res(isolated_db, "Thng", datetime(2026, 8, 12, 10, 0, 0))
-    _seed_res(isolated_db, "Frgcpt", datetime(2026, 8, 7, 10, 0, 0))
+    _seed_res(isolated_db, "Servc", datetime(2026, 8, 7, 10, 0, 0))
     isolated_db.commit()
 
     _patch_svc(monkeypatch, svc, fake_today)
@@ -476,12 +564,12 @@ async def test_partial_failure_retry_uses_per_category_min(isolated_db, monkeypa
     result = await svc.collect_bids(
         isolated_db,
         fetch_type="result",
-        categories=("Thng", "Frgcpt"),
+        categories=("Thng", "Servc"),
         refresh_aggregates=False,
     )
 
     assert result["start_date"] == "20260808", (
-        f"Frgcpt 공백이 건너뛰어졌습니다: start={result['start_date']}"
+        f"Servc 공백이 건너뛰어졌습니다: start={result['start_date']}"
     )
     assert result["end_date"] == "20260812"
     assert result["catchup"] is True
