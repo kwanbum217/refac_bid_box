@@ -46,10 +46,31 @@ logger = logging.getLogger(__name__)
 
 BATCH_ROWS = 2_000
 
+# 체크포인트(MIN of MAX) 계산에서 제외하는 희소 분류.
+# 외자(Frgcpt)는 낙찰이 며칠씩 0건인 것이 정상이라 이 분류의 최신일로
+# 공백을 판정하면 오탐 경고가 발생합니다.
+CHECKPOINT_EXCLUDED_CATEGORIES = ("Frgcpt",)
+
 # 날짜 미지정 시 자동으로 회수하는 최대 일 수.
 # API 과부하와 수집 시간 예산을 고려한 상한입니다. 이보다 오래된 공백은
 # scripts/backfill_from_g2b.py 로 수동 채우기가 필요합니다.
 MAX_CATCHUP_DAYS = 7
+
+
+def _checkpoint_categories(
+    categories: tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    """체크포인트 계산에 사용할 분류 목록을 반환합니다.
+
+    categories 가 None 이면 제외 대상을 뺀 전체를, 요청 분류가 전부 제외
+    대상이면 그대로 반환하고, 그 외에는 제외 대상을 뺀 요청 분류를
+    반환합니다.
+    """
+    if categories is None:
+        return tuple(cat for cat in BID_CATEGORIES if cat not in CHECKPOINT_EXCLUDED_CATEGORIES)
+    if set(categories) <= set(CHECKPOINT_EXCLUDED_CATEGORIES):
+        return categories
+    return tuple(cat for cat in categories if cat not in CHECKPOINT_EXCLUDED_CATEGORIES)
 
 
 def resolve_collection_window(
@@ -69,6 +90,8 @@ def resolve_collection_window(
     체크포인트 선택 규칙:
     - 요청 카테고리만 대상으로 MIN(MAX(date) per category) 를 계산합니다.
     - 공고/결과 두 타입 중 더 오래된 쪽을 전체 체크포인트로 사용합니다.
+    - 희소 분류(외자 Frgcpt)는 체크포인트 계산에서 제외합니다. 단 요청
+      분류가 전부 제외 대상이면 그대로 계산합니다.
     - 요청 카테고리 중 DB 에 행이 없는 카테고리가 하나라도 있으면 영구 누락을
       막기 위해 max_catchup_days 창으로 처리합니다.
     - 공백이 max_catchup_days 를 초과하면 최근 max_catchup_days 일만 회수합니다.
@@ -111,16 +134,17 @@ def resolve_collection_window(
                     )
                     return gap_start.strftime("%Y%m%d"), yesterday_str, True
 
+    # 체크포인트 계산에는 희소 분류를 제외한 분류 목록을 씁니다.
     # 요청 카테고리별 최신일 중 가장 오래된 것(MIN of MAX per category) 을 계산합니다.
     # d < latest 로 비교해 최솟값(가장 오래된 날짜)을 유지합니다.
     # 전역 MAX 는 느린 카테고리의 공백을 건너뜁니다.
     # 공고/결과 두 타입 중에서도 더 오래된 쪽이 전체 체크포인트가 됩니다.
+    ckpt_categories = _checkpoint_categories(categories)
     latest: date | None = None
 
     if fetch_type in ("both", "announce"):
         ann_q = select(func.max(BidAnnouncement.bid_ntce_dt).label("max_dt"))
-        if categories:
-            ann_q = ann_q.where(BidAnnouncement.category.in_(categories))
+        ann_q = ann_q.where(BidAnnouncement.category.in_(ckpt_categories))
         per_cat = ann_q.group_by(BidAnnouncement.category).subquery()
         row = db.scalar(select(func.min(per_cat.c.max_dt)))
         if row is not None:
@@ -130,8 +154,7 @@ def resolve_collection_window(
 
     if fetch_type in ("both", "result"):
         res_q = select(func.max(BidResult.rl_openg_dt).label("max_dt"))
-        if categories:
-            res_q = res_q.where(BidResult.category.in_(categories))
+        res_q = res_q.where(BidResult.category.in_(ckpt_categories))
         per_cat = res_q.group_by(BidResult.category).subquery()
         row = db.scalar(select(func.min(per_cat.c.max_dt)))
         if row is not None:
