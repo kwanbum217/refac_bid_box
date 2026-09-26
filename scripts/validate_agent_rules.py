@@ -1249,6 +1249,17 @@ def check_current_state_fact_ledger(root: Path = PROJECT_ROOT) -> CheckResult:
             or not all(isinstance(value, str) and value.strip() for value in evidence)
         ):
             failures.append(f"{fact_id}: evidence 경로 누락")
+        else:
+            # 2026-09-26: servc_oos 가 없는 docs/analysis/ 경로를 가리킨 채 통과했습니다.
+            # 공백 없이 / 를 포함한 값만 경로로 보고, CI 실행 설명 같은 서술은 건너뜁니다.
+            for value in evidence:
+                path = value.strip()
+                if (
+                    "/" in path
+                    and not any(ch.isspace() for ch in path)
+                    and not (root / path).exists()
+                ):
+                    failures.append(f"{fact_id}: evidence 경로가 없음: {path}")
 
     # 사실은 갱신했는데 원장 updated_at 을 두면 부팅한 코디네이터가 원장을 낡은 것으로 오판합니다
     # (2026-09-14 외부 감사: updated_at 09-09, 최신 decision_date 09-14).
