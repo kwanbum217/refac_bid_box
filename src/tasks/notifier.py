@@ -146,6 +146,37 @@ async def notify_retrain_result(
     )
 
 
+async def notify_collection_window_clamped(event: dict[str, Any]) -> None:
+    """수집 창이 자동 회수 상한으로 클램프되어 이전 구간이 누락될 때 발신합니다.
+
+    클램프된 구간은 자동으로 회수되지 않으므로 사람이 백필을 실행해야 합니다.
+    event 는 resolve_collection_window 가 기록한
+    {days_missing, max_catchup_days, lost_start, lost_end, recovered_start} 입니다.
+    """
+    await notify(
+        "수집 창 클램프: 이전 구간 영구 누락 위험",
+        [
+            f"수집 공백 {event.get('days_missing', '?')}일이 자동 회수 상한"
+            f"({event.get('max_catchup_days', '?')}일)을 초과했습니다.",
+            f"누락 구간: {event.get('lost_start', '?')} ~ {event.get('lost_end', '?')}",
+            f"자동 회수 구간: {event.get('recovered_start', '?')} ~",
+            "",
+            "누락 구간은 자동으로 회수되지 않습니다. 수동 백필을 실행하십시오.",
+            "  uv run python scripts/backfill_from_g2b.py",
+        ],
+        level="action",
+    )
+
+
+async def notify_collection_gap(elapsed_hours: float, latest_collected_at: str | None) -> None:
+    """수집 실행 공백이 알림 임계(72시간) 이상일 때 발신합니다."""
+    lines = [f"마지막 수집 후 {elapsed_hours:.1f}시간 경과했습니다."]
+    if latest_collected_at:
+        lines.append(f"마지막 수집 시각: {latest_collected_at}")
+    lines.append("수집 스케줄과 워커 상태를 확인하십시오.")
+    await notify("수집 실행 공백 감지", lines, level="warning")
+
+
 async def notify_task_failure(task_name: str, error: str, *, detail: str = "") -> None:
     """스케줄·태스크 실패를 알립니다."""
     lines = [f"사유: {error}"]
