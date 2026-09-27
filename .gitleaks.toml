@@ -1,0 +1,68 @@
+# refac_bid_box gitleaks 설정
+# 기본 규칙 세트를 확장해서 사용하며, 오탐만 규칙과 경로를 모두 지정해 최소 범위로 허용합니다.
+# 허용 목록에 추가할 때는 반드시 description 에 사유를 적습니다. 사유 없는 허용은 금지합니다.
+
+title = "refac_bid_box gitleaks 설정"
+
+[extend]
+useDefault = true
+
+# .env 는 gitignore 대상인 로컬 실시크릿 파일입니다. 트래킹되지 않으므로 pre-commit
+# 스테이징 검사에는 등장하지 않고, dir 전체 스캔에서만 예상 탐지로 잡힙니다.
+# 시크릿 값은 이 설정 어디에도 적지 않습니다.
+[[allowlists]]
+description = "gitignore 대상 로컬 실시크릿 파일 .env. 트래킹되지 않으므로 저장소 유출 대상이 아니다."
+paths = ['''^\.env$''']
+
+# G1 스키마 서명 베이스라인. 테이블별 스키마 서명 SHA256 해시 맵으로, 64자
+# 16진수 해시가 generic-api-key 에 시크릿으로 오판됩니다.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+description = "스키마 서명 베이스라인 JSON. 테이블명별 스키마 서명 SHA256 해시로 시크릿이 아니다."
+paths = ['''^data/backups/schema_signature_baseline\.json$''']
+regexes = ['''"[A-Za-z_0-9]+": "[0-9a-f]{64}"''']
+
+# Servc OOS 고정 평가 결과. sample_keys_sha256 은 샘플 키 집합의 SHA256 지표값입니다.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+description = "Servc OOS 평가 결과 JSON. sample_keys_sha256 지표 해시로 시크릿이 아니다."
+paths = ['''^data/benchmarks/servc_oos_champion_20260830\.json$''']
+regexes = ['''sample_keys_sha256''']
+
+# MySQL EXPLAIN 측정 기록 문서. key: bid_announcements_*_<8자리16진수> 는
+# 인덱스 이름이며 generic-api-key 가 오탐합니다.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+description = "MySQL EXPLAIN 기록 문서. 인덱스 이름(테이블명_8자리 해시 접미) 오탐."
+paths = [
+  '''^docs/analysis/rag_structured_sql_coldstart_20260830\.md$''',
+  '''^docs/analysis/task_ef2f12867e6a\.md$''',
+]
+regexes = ['''key: [A-Za-z_]+_[0-9a-f]{8}''']
+
+# 스케줄 소유권 토큰 절차 문서의 예제 JSON. 문서화용 가짜 32자 16진수 토큰입니다.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+description = "스케줄 소유권 토큰 문서 예제. 가짜 예시 토큰으로 시크릿이 아니다."
+paths = ['''^docs/ops/scheduling\.md$''']
+regexes = ['''"token": "[0-9a-f]{32}"''']
+
+# 테스트 더미 시크릿. fixture 상수이며 실제 값이 아닙니다.
+[[allowlists]]
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+description = "테스트 더미 시크릿 fixture. 실제 값이 아닌 테스트 상수다."
+paths = [
+  '''^tests/test_ngram_prefilter_equivalence\.py$''',
+  '''^tests/test_orca_model_router\.py$''',
+]
+regexes = ['''SECRET_KEY="test-|fake_key\s*=''']

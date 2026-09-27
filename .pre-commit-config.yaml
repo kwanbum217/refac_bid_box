@@ -48,6 +48,20 @@ repos:
         pass_filenames: false
 
   # ==========================================
+  # Gitleaks (시크릿 탐지)
+  # ==========================================
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        name: Gitleaks Secret Scan (staged)
+        stages: [pre-commit]
+        # 전역 exclude 가 data/, chroma_db/, ml_registry/ 를 건너뛰므로 gitleaks 만
+        # 대상을 넓힌다. 훅은 읽기 전용이라 G1 데이터 자산을 수정하지 않으며,
+        # 데이터 자산 내부로 커밋되는 시크릿도 놓치지 않게 하기 위함이다.
+        exclude: '^\.venv/'
+
+  # ==========================================
   # 다중 에이전트 진입점 및 스킬 정합성 (로컬 훅)
   # ==========================================
   - repo: local
