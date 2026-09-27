@@ -114,9 +114,9 @@ def resolve_collection_window(
         for cat in categories:
             if fetch_type in ("both", "announce"):
                 has_ann = db.scalar(
-                    select(func.count(BidAnnouncement.id)).where(BidAnnouncement.category == cat)
+                    select(BidAnnouncement.id).where(BidAnnouncement.category == cat).limit(1)
                 )
-                if not has_ann:
+                if has_ann is None:
                     gap_start = yesterday - timedelta(days=max_catchup_days - 1)
                     logger.warning(
                         "카테고리 '%s' 공고 데이터 없음: max_catchup_days(%d일) 창으로 시작합니다.",
@@ -125,10 +125,8 @@ def resolve_collection_window(
                     )
                     return gap_start.strftime("%Y%m%d"), yesterday_str, True
             if fetch_type in ("both", "result"):
-                has_res = db.scalar(
-                    select(func.count(BidResult.id)).where(BidResult.category == cat)
-                )
-                if not has_res:
+                has_res = db.scalar(select(BidResult.id).where(BidResult.category == cat).limit(1))
+                if has_res is None:
                     gap_start = yesterday - timedelta(days=max_catchup_days - 1)
                     logger.warning(
                         "카테고리 '%s' 결과 데이터 없음: max_catchup_days(%d일) 창으로 시작합니다.",
