@@ -15,6 +15,9 @@ httpx.Response 의 raise_for_status 를 그대로 사용해 상태코드 예외�
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
+
 import httpx
 import pytest
 
@@ -53,15 +56,32 @@ def _connect_timeout(message: str = "connection refused") -> httpx.ConnectTimeou
     return httpx.ConnectTimeout(message, request=_request())
 
 
+class _RecordingAsyncioProxy:
+    """api_collector 모듈의 asyncio 이름만 대체하는 프록시. sleep 만 기록용 가짜로 두고 나머지는 실제 asyncio 에 위임한다."""
+
+    def __init__(self, real_asyncio, recorded: list[float]):
+        self._real_asyncio = real_asyncio
+        self._recorded = recorded
+
+        async def fake_sleep(seconds: float) -> None:
+            recorded.append(seconds)
+
+        self.sleep = fake_sleep
+
+    def __getattr__(self, name: str):
+        return getattr(self._real_asyncio, name)
+
+
 @pytest.fixture
 def sleep_calls(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """asyncio.sleep 을 즉시 반환하는 가짜로 대체하고 호출 인자를 기록합니다."""
+    """api_collector 모듈이 참조하는 asyncio 의 sleep 만 즉시 반환하는 가짜로 대체하고 호출 인자를 기록합니다. 전역 asyncio 는 바꾸지 않습니다."""
     recorded: list[float] = []
 
-    async def fake_sleep(seconds: float) -> None:
-        recorded.append(seconds)
-
-    monkeypatch.setattr(api_collector.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(
+        api_collector,
+        "asyncio",
+        _RecordingAsyncioProxy(api_collector.asyncio, recorded),
+    )
     return recorded
 
 
@@ -190,3 +210,32 @@ async def test_retry_log_masks_credentials(sleep_calls, caplog):
     assert resp.status_code == 200
     assert "REALSECRET12345678" not in caplog.text
     assert "serviceKey=***" in caplog.text
+
+
+async def test_sleep_patch_does_not_record_background_task_sleeps(sleep_calls):
+    """(8) 같은 이벤트 루프에서 백그라운드 태스크가 asyncio.sleep 을 호출해도 기록에는 섞이지 않는다."""
+    stop = asyncio.Event()
+
+    async def background_sleeper():
+        while not stop.is_set():
+            await asyncio.sleep(0)
+
+    task = asyncio.create_task(background_sleeper())
+    try:
+        client = FakeClient(
+            [
+                _status_response(503),
+                _status_response(200),
+            ]
+        )
+
+        resp = await _make_request_with_retry(client, MOCK_URL, params={}, max_retries=5)
+
+        assert resp.status_code == 200
+        assert client.calls == 2
+        assert sleep_calls == [3.0]
+    finally:
+        stop.set()
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
