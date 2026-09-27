@@ -307,6 +307,19 @@ jobs:
       - name: Run pytest (SQLite in-memory with coverage)
         run: uv run pytest -q -m "not data_assets and not e2e" --cov=src --cov-report=term-missing --cov-fail-under=80 --durations=25 -p no:cacheprovider
 
+      # D-14 CI 단위 성능 게이트(docs/ops/latency_gate_protocol.md 9장). HTTP P95
+      # 게이트는 규약 조건(600 표본, warmup, 주변 부하 실측)과 러너 성능 편차 때문에
+      # CI 에 둘 수 없으므로, 결정적 단위 지표를 추적 기준선
+      # data/benchmarks/perf_unit_baseline.json 과 대조하는 별도 층위다.
+      # wall-clock 은 판정에 쓰지 않으므로 러너 성능 편차의 영향이 없다.
+      # windows·macOS 에서는 실행하지 않는다(ubuntu 전용 게이트).
+      - name: Run unit performance gate
+        if: runner.os == 'Linux'
+        env:
+          # src/ml/model_registry.py 가 "true" 문자열로만 인정한다.
+          SKIP_MODEL_LOAD: 'true'
+        run: uv run pytest tests/test_perf_unit_gate.py tests/test_home_context_query_count.py tests/test_benchmark_home_recent_selection.py tests/test_bid_result_serialization_batch.py -q -p no:cacheprovider
+
       # G1 데이터 무손실 운영 도구 3종(verify_migration, backup_recovery, promote_model) 개별 커버리지 게이트.
       # src 전체 게이트 80% 를 희석시키지 않기 위해 별도로 측정하며, 각 도구별 fail_under 를 엄격하게 검증합니다.
       - name: Run G1 scripts individual coverage gate

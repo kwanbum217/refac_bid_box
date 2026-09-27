@@ -1,0 +1,15 @@
+{
+  "schema": "PERF_UNIT_BASELINE_V1",
+  "metadata": {
+    "generated_at": "2026-09-27T13:19:34+00:00",
+    "git_head": "8bcb92c7cc9fc195ea8d571b4e72ade6f0b5c663",
+    "generated_by": "uv run python -c 'from tests.test_perf_unit_gate import write_baseline; write_baseline()'"
+  },
+  "openapi_paths": 49,
+  "openapi_operations": 56,
+  "feature_map_key_count": 97,
+  "feature_map_set_sha256": "20e67f7ee8a2f83619824ec04753e2bc093f7de96ce85a4ee477b8e3b48dd050",
+  "training_features_servc_count": 35,
+  "unservable_features": [],
+  "home_context_query_ceiling": 15
+}
