@@ -81,6 +81,7 @@ def resolve_collection_window(
     fetch_type: str,
     categories: tuple[str, ...] | None = None,
     max_catchup_days: int = MAX_CATCHUP_DAYS,
+    clamp_events: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str, bool]:
     """수집 날짜 창을 결정합니다.
 
@@ -95,6 +96,8 @@ def resolve_collection_window(
     - 요청 카테고리 중 DB 에 행이 없는 카테고리가 하나라도 있으면 영구 누락을
       막기 위해 max_catchup_days 창으로 처리합니다.
     - 공백이 max_catchup_days 를 초과하면 최근 max_catchup_days 일만 회수합니다.
+
+    clamp_events 리스트가 주어지면 클램프 발생 사실을 호출부에 전달합니다.
 
     Returns:
         (resolved_start, resolved_end, is_catchup)
@@ -183,6 +186,16 @@ def resolve_collection_window(
             gap_start.strftime("%Y%m%d"),
             (earliest_recoverable - timedelta(days=1)).strftime("%Y%m%d"),
         )
+        if clamp_events is not None:
+            clamp_events.append(
+                {
+                    "days_missing": days_missing,
+                    "max_catchup_days": max_catchup_days,
+                    "lost_start": gap_start.strftime("%Y%m%d"),
+                    "lost_end": (earliest_recoverable - timedelta(days=1)).strftime("%Y%m%d"),
+                    "recovered_start": earliest_recoverable.strftime("%Y%m%d"),
+                }
+            )
         gap_start = earliest_recoverable
 
     return gap_start.strftime("%Y%m%d"), yesterday_str, True
@@ -276,6 +289,7 @@ def _resolve_collection_window_thread(
     fetch_type: str,
     categories: tuple[str, ...] | None = None,
     max_catchup_days: int = MAX_CATCHUP_DAYS,
+    clamp_events: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str, bool]:
     """체크포인트 조회를 스레드 전용 세션에서 수행합니다."""
     session_factory = (
@@ -292,6 +306,7 @@ def _resolve_collection_window_thread(
             fetch_type=fetch_type,
             categories=categories,
             max_catchup_days=max_catchup_days,
+            clamp_events=clamp_events,
         )
     finally:
         db.close()
@@ -326,6 +341,7 @@ async def collect_bids(
 
     target_categories = categories or tuple(BID_CATEGORIES.keys())
     engine = db.get_bind()
+    clamp_events: list[dict[str, Any]] = []
     resolved_start, resolved_end, is_catchup = await asyncio.to_thread(
         _resolve_collection_window_thread,
         bind=engine,
@@ -334,6 +350,7 @@ async def collect_bids(
         fetch_type=fetch_type,
         categories=target_categories,
         max_catchup_days=max_catchup_days,
+        clamp_events=clamp_events,
     )
     if is_catchup:
         logger.info("누락일 회수 모드: %s ~ %s", resolved_start, resolved_end)
@@ -352,6 +369,16 @@ async def collect_bids(
         "failed_ranges": [],
         "categories": {},
     }
+
+    if clamp_events:
+        event = clamp_events[0]
+        metrics["window_clamp"] = event
+        try:
+            from src.tasks import notifier
+
+            await notifier.notify_collection_window_clamped(event)
+        except Exception as exc:
+            logger.warning("수집 창 클램프 알림 발신 실패: %s", exc)
 
     for cat_code in target_categories:
         cat_info = BID_CATEGORIES.get(cat_code)

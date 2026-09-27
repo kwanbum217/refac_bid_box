@@ -56,6 +56,7 @@ from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.tasks.automation_tasks import run_automation_pipeline
 from src.tasks.notifier import (
     notify,
+    notify_collection_gap,
     notify_drift_detected,
     notify_task_failure,
 )
@@ -65,6 +66,9 @@ logger = logging.getLogger(__name__)
 
 # 원본 run_local_automation_bundle 의 기본 source 라벨과 동일하게 맞춥니다.
 SCHEDULER_SOURCE = "local_scheduler"
+
+# 수집 실행 공백 알림 임계(시간). 3일 이상 수집이 멈추면 사람에게 닿아야 합니다.
+COLLECTION_GAP_ALERT_HOURS = 72
 
 
 def _record_schedule(
@@ -1344,6 +1348,14 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
         reason,
         details,
     )
+
+    if needed:
+        elapsed_hours = details.get("elapsed_hours")
+        if isinstance(elapsed_hours, (int, float)) and elapsed_hours >= COLLECTION_GAP_ALERT_HOURS:
+            try:
+                await notify_collection_gap(elapsed_hours, details.get("latest_collected_at"))
+            except Exception as exc:
+                logger.warning("수집 실행 공백 알림 발신 실패: %s", exc)
 
     if not needed:
         # 쿨다운 중 재평가는 선점 워커의 원장을 덮지 않습니다.
