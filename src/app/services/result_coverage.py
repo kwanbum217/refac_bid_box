@@ -27,6 +27,7 @@ from src.app.models.bids import BidAnnouncement, BidResult
 LARGE_PRICE_THRESHOLD = 230_000_000
 MIN_WEEK_SAMPLES = 100
 RATE_DROP_ALERT = 0.10
+NOTICE_LOOKBACK_DAYS = 365
 
 TARGET_CATEGORIES = ("Servc", "Cnstwk", "Thng")
 
@@ -105,7 +106,7 @@ def compute_result_match_rates(
     반환 행의 baseline_* 필드는 364일 전 같은 주의 값이다.
 
     조회는 현재 성숙 주 구간과 전년 동기 구간 두 블록으로 좁혀 각 블록마다
-    공고는 bid_ntce_dt 를 [블록 시작 - 180일, 블록 끝], openg_dt 를
+    공고는 bid_ntce_dt 를 [블록 시작 - NOTICE_LOOKBACK_DAYS 일, 블록 끝], openg_dt 를
     [블록 시작, 블록 끝]로, 결과는 rl_openg_dt 를 [블록 시작 - 14일,
     블록 끝 + 90일]로 가져온다. 두 블록이 겹치거나 맞닿으면 하나로 합친다.
     """
@@ -132,7 +133,9 @@ def compute_result_match_rates(
                     BidAnnouncement.openg_dt,
                 ).filter(
                     BidAnnouncement.bid_ntce_dt
-                    >= datetime.combine(block_start - timedelta(days=180), time.min),
+                    >= datetime.combine(
+                        block_start - timedelta(days=NOTICE_LOOKBACK_DAYS), time.min
+                    ),
                     BidAnnouncement.bid_ntce_dt <= block_end_dt,
                     BidAnnouncement.openg_dt >= block_start_dt,
                     BidAnnouncement.openg_dt <= block_end_dt,

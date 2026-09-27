@@ -18,6 +18,7 @@ from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.result_coverage import (
     LARGE_PRICE_THRESHOLD,
     MIN_WEEK_SAMPLES,
+    NOTICE_LOOKBACK_DAYS,
     compute_result_match_rates,
     evaluate_match_rate_alerts,
     normalize_ord,
@@ -42,13 +43,16 @@ def _add_announcement(
     *,
     presmpt_prce: int | None = None,
     ntce_kind_nm: str | None = None,
+    ntce_dt: datetime | None = None,
 ) -> None:
     db.add(
         BidAnnouncement(
             bid_ntce_no=no,
             bid_ntce_ord=ord_,
             category=category,
-            bid_ntce_dt=_openg(openg_day) - timedelta(days=14),
+            bid_ntce_dt=(
+                ntce_dt if ntce_dt is not None else _openg(openg_day) - timedelta(days=14)
+            ),
             openg_dt=_openg(openg_day),
             presmpt_prce=presmpt_prce,
             ntce_kind_nm=ntce_kind_nm,
@@ -279,6 +283,67 @@ def test_overlapping_blocks_are_merged_without_double_count(isolated_db):
     baseline_row = _row_of(rows, "Servc", "small", baseline)
     assert baseline_row["announcements"] == 1
     assert baseline_row["matched"] == 1
+
+
+def test_notice_lookback_inclusive_lower_boundary(isolated_db):
+    """공고일이 블록 시작 - 365일(당일 00:00)인 공고는 집계된다."""
+    db = isolated_db
+    _add_announcement(
+        db,
+        "2026-I00001",
+        "001",
+        "Servc",
+        W,
+        ntce_dt=datetime.combine(W - timedelta(days=NOTICE_LOOKBACK_DAYS), time.min),
+    )
+    _add_result(db, "2026-I00001", "001", "Servc", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Servc", "small", W)
+    assert row["announcements"] == 1
+    assert row["matched"] == 1
+
+
+def test_notice_lookback_exclusive_lower_boundary(isolated_db):
+    """공고일이 블록 시작 - 366일인 공고는 집계되지 않는다."""
+    db = isolated_db
+    _add_announcement(
+        db,
+        "2026-J00001",
+        "001",
+        "Servc",
+        W,
+        ntce_dt=datetime.combine(W - timedelta(days=NOTICE_LOOKBACK_DAYS + 1), time.min),
+    )
+    _add_result(db, "2026-J00001", "001", "Servc", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Servc", "small", W)
+    assert row["announcements"] == 0
+    assert row["matched"] == 0
+
+
+def test_large_announcement_older_than_180_day_lookback_counted(isolated_db):
+    """공고일이 개찰일보다 200일 앞선 대형 공고는 180일 하한에서는 빠졌지만 집계된다."""
+    db = isolated_db
+    _add_announcement(
+        db,
+        "2026-K00001",
+        "001",
+        "Cnstwk",
+        W,
+        presmpt_prce=LARGE_PRICE_THRESHOLD,
+        ntce_dt=_openg(W) - timedelta(days=200),
+    )
+    _add_result(db, "2026-K00001", "001", "Cnstwk", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Cnstwk", "large", W)
+    assert row["announcements"] == 1
+    assert row["matched"] == 1
 
 
 def test_alert_rule_boundaries():
