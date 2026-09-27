@@ -316,6 +316,23 @@ jobs:
           uv run coverage report --include="*backup_recovery.py" --fail-under=80
           uv run coverage report --include="*promote_model.py" --fail-under=85
 
+      # Orca 조율 도구 6종과 무테스트였던 2종(orca_forbidden_artifacts, orca_codex_launch)
+      # 개별 커버리지 게이트. src 전역 게이트 80% 판정 대상에 scripts 가 섞이지 않도록
+      # G1 3종과 마찬가지로 대상 테스트만 별도 측정하고, 각 도구별 fail_under 로 판정합니다.
+      # 하한 실측값은 docs/analysis/ci_gate_designs_20260927.md 4장과
+      # pyproject.toml [tool.scripts_coverage_gate.thresholds] 주석을 참조합니다.
+      - name: Run orca scripts individual coverage gate
+        run: |
+          uv run pytest -q -m "not data_assets and not e2e" tests/test_orca_taskctl.py tests/test_orca_taskctl_coordinator_capsule.py tests/test_orca_worker_done_guard.py tests/test_orca_worker_done_gate.py tests/test_orca_contract.py tests/test_ci_path_separator_regression.py tests/test_orca_model_router.py tests/test_orca_level1_gate.py tests/test_orca_command_reality_gate.py tests/test_orca_forbidden_lockfile_gate.py tests/test_orca_auto_approve.py tests/test_orca_auto_approve_expanded.py tests/test_orca_auto_approve_attach.py tests/test_validate_agent_rules.py tests/test_benchmark_provenance.py tests/test_cpu_utilization_metric.py tests/test_benchmark_arq_throughput.py tests/test_orca_forbidden_artifacts.py tests/test_orca_codex_launch.py --cov=scripts.orca_taskctl --cov=scripts.orca_model_router --cov=scripts.orca_level1_gate --cov=scripts.orca_auto_approve --cov=scripts.validate_agent_rules --cov=scripts.benchmark_provenance --cov=scripts.orca_forbidden_artifacts --cov=scripts.orca_codex_launch --cov-fail-under=0 --cov-report=term-missing
+          uv run coverage report --include="*orca_taskctl.py" --fail-under=78
+          uv run coverage report --include="*orca_model_router.py" --fail-under=84
+          uv run coverage report --include="*orca_level1_gate.py" --fail-under=74
+          uv run coverage report --include="*orca_auto_approve.py" --fail-under=83
+          uv run coverage report --include="*validate_agent_rules.py" --fail-under=83
+          uv run coverage report --include="*benchmark_provenance.py" --fail-under=80
+          uv run coverage report --include="*orca_forbidden_artifacts.py" --fail-under=98
+          uv run coverage report --include="*orca_codex_launch.py" --fail-under=96
+
 
   pytest-warning-budget:
     name: pytest 경고 예산 검증

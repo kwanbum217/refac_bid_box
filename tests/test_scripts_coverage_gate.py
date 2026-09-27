@@ -1,7 +1,10 @@
 """tests/test_scripts_coverage_gate.py
 
 G1 데이터 무손실 운영 도구 3종(scripts/verify_migration.py, scripts/backup_recovery.py,
-scripts/promote_model.py)의 개별 커버리지 게이트 설정 정합성을 검증하는 테스트.
+scripts/promote_model.py)과 Orca 조율 도구 6종(orca_taskctl, orca_model_router,
+orca_level1_gate, orca_auto_approve, validate_agent_rules, benchmark_provenance),
+무테스트 2종(orca_forbidden_artifacts, orca_codex_launch)의 개별 커버리지 게이트
+설정 정합성을 검증하는 테스트.
 
 검증 항목:
 1. pyproject.toml 의 src 전체 커버리지 게이트(80%) 보존 및 scripts_coverage_gate 임계값 정합성
@@ -49,6 +52,14 @@ def test_pyproject_scripts_coverage_gate_config():
         "scripts/verify_migration.py": 70.0,
         "scripts/backup_recovery.py": 80.0,
         "scripts/promote_model.py": 85.0,
+        "scripts/orca_taskctl.py": 78.0,
+        "scripts/orca_model_router.py": 84.0,
+        "scripts/orca_level1_gate.py": 74.0,
+        "scripts/orca_auto_approve.py": 83.0,
+        "scripts/validate_agent_rules.py": 83.0,
+        "scripts/benchmark_provenance.py": 80.0,
+        "scripts/orca_forbidden_artifacts.py": 98.0,
+        "scripts/orca_codex_launch.py": 96.0,
     }
 
     for script_key, expected_val in expected_thresholds.items():
@@ -85,6 +96,9 @@ def test_ci_workflow_scripts_coverage_gate_step():
     src_run = src_step.get("run", "")
     assert "--cov=src" in src_run, "src 커버리지 측정 플래그가 유지되어야 합니다."
     assert "--cov-fail-under=80" in src_run, "src 커버리지 80% 하한 게이트가 유지되어야 합니다."
+    assert "--cov=scripts." not in src_run, (
+        "src 전역 80% 판정에 scripts 가 섞여 희석되어서는 안 됩니다."
+    )
 
     assert gate_step is not None, (
         "Run G1 scripts individual coverage gate 스텝이 CI workflow 에 존재해야 합니다."
@@ -100,6 +114,51 @@ def test_ci_workflow_scripts_coverage_gate_step():
     assert 'coverage report --include="*verify_migration.py" --fail-under=70' in gate_run
     assert 'coverage report --include="*backup_recovery.py" --fail-under=80' in gate_run
     assert 'coverage report --include="*promote_model.py" --fail-under=85' in gate_run
+
+    # Orca 조율 도구 6종과 무테스트 2종 개별 게이트 스텝 확인
+    orca_gate_step = None
+    for step in steps:
+        if step.get("name", "") == "Run orca scripts individual coverage gate":
+            orca_gate_step = step
+
+    assert orca_gate_step is not None, (
+        "Run orca scripts individual coverage gate 스텝이 CI workflow 에 존재해야 합니다."
+    )
+    orca_gate_run = orca_gate_step.get("run", "")
+
+    orca_cov_modules = [
+        "scripts.orca_taskctl",
+        "scripts.orca_model_router",
+        "scripts.orca_level1_gate",
+        "scripts.orca_auto_approve",
+        "scripts.validate_agent_rules",
+        "scripts.benchmark_provenance",
+        "scripts.orca_forbidden_artifacts",
+        "scripts.orca_codex_launch",
+    ]
+    for module in orca_cov_modules:
+        assert f"--cov={module}" in orca_gate_run, (
+            f"{module} 측정 플래그가 orca scripts 게이트 스텝에 있어야 합니다."
+        )
+
+    orca_expected_reports = [
+        ('coverage report --include="*orca_taskctl.py" --fail-under=78'),
+        ('coverage report --include="*orca_model_router.py" --fail-under=84'),
+        ('coverage report --include="*orca_level1_gate.py" --fail-under=74'),
+        ('coverage report --include="*orca_auto_approve.py" --fail-under=83'),
+        ('coverage report --include="*validate_agent_rules.py" --fail-under=83'),
+        ('coverage report --include="*benchmark_provenance.py" --fail-under=80'),
+        ('coverage report --include="*orca_forbidden_artifacts.py" --fail-under=98'),
+        ('coverage report --include="*orca_codex_launch.py" --fail-under=96'),
+    ]
+    for report_line in orca_expected_reports:
+        assert report_line in orca_gate_run, (
+            f"{report_line} 판정이 orca scripts 게이트 스텝에 있어야 합니다."
+        )
+
+    # 측정만 하고 판정하지 않는 형태를 막기 위해 -m 필터와 fail_under=0 측정 플래그를 확인합니다.
+    assert '-m "not data_assets and not e2e"' in orca_gate_run
+    assert "--cov-fail-under=0" in orca_gate_run
 
 
 def test_coverage_gate_failure_reproduction(tmp_path: Path):

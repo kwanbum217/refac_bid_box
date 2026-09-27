@@ -300,3 +300,16 @@ exclude_lines = [
 "scripts/verify_migration.py" = 70.0
 "scripts/backup_recovery.py" = 80.0
 "scripts/promote_model.py" = 85.0
+# G1 3종은 docs/analysis/ci_gate_designs_20260927.md 4장의 초기 하한을 따릅니다.
+# 조율 도구 6종과 무테스트 2종은 워크트리 실측값(orca_taskctl 83.73, orca_model_router
+# 86.73, orca_level1_gate 85.99, orca_auto_approve 85.80, validate_agent_rules 85.93,
+# benchmark_provenance 86.42, orca_forbidden_artifacts 100.00, orca_codex_launch
+# 98.39)에서 2%p 뺀 값을 버림으로 고정했습니다.
+"scripts/orca_taskctl.py" = 78.0
+"scripts/orca_model_router.py" = 84.0
+"scripts/orca_level1_gate.py" = 74.0
+"scripts/orca_auto_approve.py" = 83.0
+"scripts/validate_agent_rules.py" = 83.0
+"scripts/benchmark_provenance.py" = 80.0
+"scripts/orca_forbidden_artifacts.py" = 98.0
+"scripts/orca_codex_launch.py" = 96.0
