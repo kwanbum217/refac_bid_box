@@ -541,8 +541,11 @@ def new_chat_session_api(request: Request, user: CustomUser | None = Depends(get
 async def query_chatbot(
     payload: ChatbotQueryRequest,
     response: Response,
+    request: Request,
+    user: CustomUser | None = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    await asyncio.to_thread(enforce_anonymous_api_quota, request, user)
     bundle = await rag_engine.get_answer(payload.query, db=db)
     if bundle.provenance and bundle.provenance.trace_id:
         response.headers["X-RAG-Trace-Id"] = bundle.provenance.trace_id
