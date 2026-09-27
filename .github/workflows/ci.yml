@@ -204,6 +204,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Run Duplicate Code Check
+        run: npx --yes jscpd@5.3.2 --config .jscpd.json --reporters console
+
       - name: Install Frontend Dependencies
         if: steps.frontend-changes.outputs.changed == 'true'
         working-directory: ./frontend
