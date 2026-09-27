@@ -148,7 +148,7 @@ typecheck:
 	$(PYTHON) -m mypy src/
 
 quality: typecheck
-	npx jscpd src/ frontend/src/ src/app/static/js/ --threshold 5
+	npx --yes jscpd@5.3.2 --config .jscpd.json
 
 check-rules:
 	$(PYTHON) scripts/validate_agent_rules.py

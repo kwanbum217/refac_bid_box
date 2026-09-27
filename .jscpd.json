@@ -6,8 +6,7 @@
   "min-tokens": 50,
   "path": [
     "src/",
-    "frontend/src/",
-    "src/app/static/js/"
+    "frontend/src/"
   ],
   "ignore": [
     "**/.venv/**",
