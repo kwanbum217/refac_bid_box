@@ -44,6 +44,7 @@ from src.tasks.automation_tasks import (
     update_kb_task,
     validate_model_task,
 )
+from src.tasks.coverage_tasks import result_coverage_monitor_task
 from src.tasks.retrain_task import run_retrain_pipeline_task
 from src.tasks.scheduled_tasks import (
     backup_schedule_task,
@@ -389,6 +390,7 @@ class WorkerSettings:
         run_schedule_catchup_task,
         rebuild_dataset_summary_task,
         refresh_institution_catalog_task,
+        result_coverage_monitor_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
     # 워커가 여러 대여도 arq 는 크론을 한 번만 실행합니다.
@@ -415,6 +417,16 @@ class WorkerSettings:
         cron(
             cast(Any, drift_monitor_task),
             hour=4,
+            minute=0,
+            run_at_startup=False,
+            timeout=3600,
+        ),
+        # 개찰 완료 지 28일 지난 주의 대형 낙찰결과 매칭률 감시. 재학습 크론 뒤인
+        # 월요일 05:00 에 돌려 최신 수집 반영분을 본다.
+        cron(
+            cast(Any, result_coverage_monitor_task),
+            weekday="mon",
+            hour=5,
             minute=0,
             run_at_startup=False,
             timeout=3600,
