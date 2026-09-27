@@ -15,6 +15,7 @@ import collections.abc
 import concurrent.futures
 import contextlib
 import http.server
+import os
 import re
 import shutil
 import socket
@@ -42,6 +43,29 @@ from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
 
 _CHROMIUM_AVAILABLE: bool | None = None
+_CHROMIUM_LAST_FAILURE: str | None = None
+
+DEFAULT_BROWSER_PROBE_TIMEOUT_SECONDS = 30.0
+BROWSER_PROBE_TIMEOUT_ENV_VAR = "E2E_BROWSER_PROBE_TIMEOUT"
+_BROWSER_PROBE_ATTEMPTS = 2
+
+_FAILURE_TIMEOUT = "timeout"
+_FAILURE_FAILED = "failed"
+
+
+def _resolve_probe_timeout() -> float:
+    """환경변수 E2E_BROWSER_PROBE_TIMEOUT 으로 판정 제한 시간을 조정합니다.
+
+    값이 없거나 양의 실수가 아니면 기본값을 사용합니다.
+    """
+    raw = os.environ.get(BROWSER_PROBE_TIMEOUT_ENV_VAR)
+    if raw is None:
+        return DEFAULT_BROWSER_PROBE_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_BROWSER_PROBE_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_BROWSER_PROBE_TIMEOUT_SECONDS
 
 
 def find_free_port() -> int:
@@ -66,19 +90,51 @@ def _probe_chromium() -> bool:
 
 
 def is_chromium_available() -> bool:
-    """Playwright Chromium 브라우저 바이너리가 설치되어 실행 가능한지 확인합니다."""
-    global _CHROMIUM_AVAILABLE
+    """Playwright Chromium 브라우저 바이너리가 설치되어 실행 가능한지 확인합니다.
+
+    부하 상황에서도 5초 같은 짧은 제한에 걸려 e2e 전체가 skip 되지 않도록
+    기본 제한을 30초로 두고, 시간 초과나 판정 실패 시 한 번 재시도합니다.
+    두 번 모두 실패할 때만 실패 결과를 캐시합니다.
+    """
+    global _CHROMIUM_AVAILABLE, _CHROMIUM_LAST_FAILURE
     if _CHROMIUM_AVAILABLE is not None:
         return _CHROMIUM_AVAILABLE
 
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            fut = executor.submit(_probe_chromium)
-            _CHROMIUM_AVAILABLE = fut.result(timeout=5.0)
-    except Exception:
-        _CHROMIUM_AVAILABLE = False
+    timeout = _resolve_probe_timeout()
+    last_failure: str | None = None
+    for _ in range(_BROWSER_PROBE_ATTEMPTS):
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                fut = executor.submit(_probe_chromium)
+                result = fut.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            last_failure = _FAILURE_TIMEOUT
+            continue
+        except Exception:
+            last_failure = _FAILURE_FAILED
+            continue
+        if result:
+            _CHROMIUM_AVAILABLE = True
+            _CHROMIUM_LAST_FAILURE = None
+            return True
+        last_failure = _FAILURE_FAILED
 
-    return bool(_CHROMIUM_AVAILABLE)
+    _CHROMIUM_AVAILABLE = False
+    _CHROMIUM_LAST_FAILURE = last_failure
+    return False
+
+
+def _skip_reason() -> str:
+    """마지막 판정 실패 원인에 따라 skip 사유를 구분해 반환합니다."""
+    if _CHROMIUM_LAST_FAILURE == _FAILURE_TIMEOUT:
+        return (
+            "Playwright Chromium 가용성 판정이 제한 시간 안에 끝나지 않아 E2E 테스트를 건너뜁니다. "
+            f"환경변수 {BROWSER_PROBE_TIMEOUT_ENV_VAR} 으로 판정 제한 시간을 늘릴 수 있습니다."
+        )
+    return (
+        "Playwright Chromium 가용성 판정이 실패(브라우저 바이너리 미설치 등)하여 "
+        "E2E 테스트를 건너뜁니다."
+    )
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
@@ -89,9 +145,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     if (
         "e2e" in item.keywords or "page" in getattr(item, "fixturenames", [])
     ) and not is_chromium_available():
-        pytest.skip(
-            "Playwright Chromium 브라우저 바이너리가 설치되어 있지 않아 E2E 테스트를 건너뜁니다."
-        )
+        pytest.skip(_skip_reason())
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
