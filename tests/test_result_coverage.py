@@ -9,8 +9,10 @@ conftest 의 SQLite 격리 DB(isolated_db)로 검증한다.
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
+from typing import Any
 
 import pytest
+from sqlalchemy import event
 
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.result_coverage import (
@@ -185,6 +187,98 @@ def test_baseline_year_ago_rate(isolated_db):
     assert row["baseline_announcements"] == 2
     assert row["baseline_matched"] == 2
     assert row["baseline_rate"] == pytest.approx(1.0)
+
+
+def test_gap_rows_between_blocks_are_not_fetched(isolated_db):
+    """두 블록 사이 간극 구간에 개찰한 공고와 결과는 DB 조회로 들어오지 않는다."""
+    db = isolated_db
+    # 현재 블록 시작(W) 200일 전은 전년 블록 끝(2025-08-31)과 현재 블록 시작 사이다.
+    gap_day = W - timedelta(days=200)
+    _add_announcement(db, "2026-F00001", "001", "Servc", gap_day)
+    _add_result(db, "2026-F00001", "001", "Servc", gap_day)
+    db.commit()
+
+    captured: list[Any] = []
+
+    def _capture(conn: Any, cursor: Any, statement: str, parameters: Any, *args: Any) -> None:
+        if "bid_announcements" in statement:
+            captured.append(parameters)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", _capture)
+    try:
+        rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture)
+
+    row = _row_of(rows, "Servc", "small", W)
+    assert row["announcements"] == 0
+    assert row["matched"] == 0
+
+    # 공고 조회는 블록 두 개다. 개찰 경계 인자에 간극 주 날짜가 없다.
+    assert len(captured) == 2
+    for params in captured:
+        assert str(gap_day) not in str(params)
+
+
+def test_returned_rows_match_previous_contract(isolated_db):
+    """기존 픽스처 데이터에서 반환 행은 수정 전 계약과 같다."""
+    db = isolated_db
+    _add_announcement(db, "2026-G00001", "001", "Thng", W, presmpt_prce=LARGE_PRICE_THRESHOLD)
+    _add_result(db, "2026-G00001", "001", "Thng", W)
+    baseline = W - timedelta(days=364)
+    _add_announcement(
+        db, "2025-G00001", "001", "Thng", baseline, presmpt_prce=LARGE_PRICE_THRESHOLD
+    )
+    _add_result(db, "2025-G00001", "001", "Thng", baseline)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    assert len(rows) == 6
+    assert _row_of(rows, "Thng", "large", W) == {
+        "category": "Thng",
+        "week_start": W.isoformat(),
+        "band": "large",
+        "announcements": 1,
+        "matched": 1,
+        "rate": 1.0,
+        "baseline_announcements": 1,
+        "baseline_matched": 1,
+        "baseline_rate": 1.0,
+    }
+
+
+def test_overlapping_blocks_are_merged_without_double_count(isolated_db):
+    """weeks 가 커서 전년 블록과 현재 블록이 겹치면 하나로 합쳐 중복 집계되지 않는다."""
+    db = isolated_db
+    _add_announcement(db, "2026-H00001", "001", "Servc", W)
+    _add_result(db, "2026-H00001", "001", "Servc", W)
+    baseline = W - timedelta(days=364)
+    _add_announcement(db, "2025-H00001", "001", "Servc", baseline)
+    _add_result(db, "2025-H00001", "001", "Servc", baseline)
+    db.commit()
+
+    captured: list[Any] = []
+
+    def _capture(conn: Any, cursor: Any, statement: str, parameters: Any, *args: Any) -> None:
+        if "bid_announcements" in statement:
+            captured.append(parameters)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", _capture)
+    try:
+        rows = compute_result_match_rates(db, as_of=AS_OF, weeks=53)
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture)
+
+    # 53주면 블록이 겹치므로 공고 조회가 하나로 합쳐진다.
+    assert len(captured) == 1
+    row = _row_of(rows, "Servc", "small", W)
+    assert row["announcements"] == 1
+    assert row["matched"] == 1
+    baseline_row = _row_of(rows, "Servc", "small", baseline)
+    assert baseline_row["announcements"] == 1
+    assert baseline_row["matched"] == 1
 
 
 def test_alert_rule_boundaries():

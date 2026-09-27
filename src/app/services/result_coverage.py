@@ -69,6 +69,26 @@ def _with_mysql_execution_limit(stmt: Any) -> Any:
     return stmt.prefix_with(MYSQL_EXECUTION_LIMIT_HINT, dialect="mysql")
 
 
+def _query_blocks(mature_starts: list[date]) -> list[tuple[date, date]]:
+    """현재 성숙 주 블록과 364일 전 동기 블록을 만들고 겹치거나 맞닿으면 하나로 합친다.
+
+    각 블록은 (블록 시작, 블록 끝)이며 블록 끝은 그 목록의 가장 늦은 주 시작 + 6일이다.
+    """
+    baseline_starts = [s - timedelta(days=BASELINE_OFFSET_DAYS) for s in mature_starts]
+    blocks = sorted(
+        (min(starts), max(starts) + timedelta(days=6))
+        for starts in (baseline_starts, mature_starts)
+    )
+    merged: list[tuple[date, date]] = [blocks[0]]
+    for start, end in blocks[1:]:
+        prev_start, prev_end = merged[-1]
+        if start - prev_end <= timedelta(days=1):
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
 def compute_result_match_rates(
     db: Session,
     *,
@@ -83,50 +103,62 @@ def compute_result_match_rates(
     LARGE_PRICE_THRESHOLD, 그 밖(NULL 포함)은 소형이다. 매칭은
     (bid_ntce_no, category, 정규화 차수)가 낙찰결과에 존재하는 것이다.
     반환 행의 baseline_* 필드는 364일 전 같은 주의 값이다.
+
+    조회는 현재 성숙 주 구간과 전년 동기 구간 두 블록으로 좁혀 각 블록마다
+    공고는 bid_ntce_dt 를 [블록 시작 - 180일, 블록 끝], openg_dt 를
+    [블록 시작, 블록 끝]로, 결과는 rl_openg_dt 를 [블록 시작 - 14일,
+    블록 끝 + 90일]로 가져온다. 두 블록이 겹치거나 맞닿으면 하나로 합친다.
     """
     mature_starts = _mature_week_starts(as_of, weeks, min_elapsed_days)
     if not mature_starts:
         return []
 
-    all_starts = sorted(
-        set(mature_starts) | {s - timedelta(days=BASELINE_OFFSET_DAYS) for s in mature_starts}
-    )
-    range_start = all_starts[0] - timedelta(days=180)
-    range_end = all_starts[-1] + timedelta(days=6)
-    range_start_dt = datetime.combine(range_start, time.min)
-    range_end_dt = datetime.combine(range_end, time.max)
-    target_weeks = set(all_starts)
+    target_weeks = set(mature_starts) | {
+        s - timedelta(days=BASELINE_OFFSET_DAYS) for s in mature_starts
+    }
 
-    announcement_rows = _with_mysql_execution_limit(
-        db.query(
-            BidAnnouncement.bid_ntce_no,
-            BidAnnouncement.bid_ntce_ord,
-            BidAnnouncement.category,
-            BidAnnouncement.presmpt_prce,
-            BidAnnouncement.openg_dt,
-        ).filter(
-            BidAnnouncement.bid_ntce_dt >= range_start_dt,
-            BidAnnouncement.bid_ntce_dt <= range_end_dt,
-            BidAnnouncement.openg_dt >= range_start_dt,
-            BidAnnouncement.openg_dt <= range_end_dt,
-            BidAnnouncement.category.in_(TARGET_CATEGORIES),
-            or_(
-                BidAnnouncement.ntce_kind_nm.is_(None),
-                BidAnnouncement.ntce_kind_nm != CANCELLED_NTCE_KIND,
-            ),
+    announcement_rows: list[Any] = []
+    result_rows: list[Any] = []
+    for block_start, block_end in _query_blocks(mature_starts):
+        block_start_dt = datetime.combine(block_start, time.min)
+        block_end_dt = datetime.combine(block_end, time.max)
+        announcement_rows.extend(
+            _with_mysql_execution_limit(
+                db.query(
+                    BidAnnouncement.bid_ntce_no,
+                    BidAnnouncement.bid_ntce_ord,
+                    BidAnnouncement.category,
+                    BidAnnouncement.presmpt_prce,
+                    BidAnnouncement.openg_dt,
+                ).filter(
+                    BidAnnouncement.bid_ntce_dt
+                    >= datetime.combine(block_start - timedelta(days=180), time.min),
+                    BidAnnouncement.bid_ntce_dt <= block_end_dt,
+                    BidAnnouncement.openg_dt >= block_start_dt,
+                    BidAnnouncement.openg_dt <= block_end_dt,
+                    BidAnnouncement.category.in_(TARGET_CATEGORIES),
+                    or_(
+                        BidAnnouncement.ntce_kind_nm.is_(None),
+                        BidAnnouncement.ntce_kind_nm != CANCELLED_NTCE_KIND,
+                    ),
+                )
+            ).all()
         )
-    ).all()
-
-    result_rows = _with_mysql_execution_limit(
-        db.query(
-            BidResult.bid_ntce_no,
-            BidResult.bid_ntce_ord,
-            BidResult.category,
-        ).filter(
-            BidResult.category.in_(TARGET_CATEGORIES),
-            BidResult.rl_openg_dt >= datetime.combine(range_start - timedelta(days=14), time.min),
+        result_rows.extend(
+            _with_mysql_execution_limit(
+                db.query(
+                    BidResult.bid_ntce_no,
+                    BidResult.bid_ntce_ord,
+                    BidResult.category,
+                ).filter(
+                    BidResult.category.in_(TARGET_CATEGORIES),
+                    BidResult.rl_openg_dt
+                    >= datetime.combine(block_start - timedelta(days=14), time.min),
+                    BidResult.rl_openg_dt
+                    <= datetime.combine(block_end + timedelta(days=90), time.max),
+                )
+            ).all()
         )
-    ).all()
     result_keys = {(no, category, normalize_ord(ord_)) for no, ord_, category in result_rows}
 
     counts: dict[tuple[str, date, str], list[int]] = {}
