@@ -15,7 +15,7 @@ import threading
 import time
 from typing import Any
 
-from src.ml.features import build_feature_dict
+from src.ml.features import DEFAULT_INST_RATE, build_feature_dict
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ class SingletonPredictor:
         model_id: str | None = None,
     ) -> dict[str, Any]:
         if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
-            inst_rate = float(features.get("inst_hist_rate", 0.925))
+            inst_rate = float(features.get("inst_hist_rate", DEFAULT_INST_RATE))
             predicted_rate = inst_rate * 100.0
             model_version = "fallback"
         else:
