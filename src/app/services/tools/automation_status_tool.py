@@ -182,7 +182,7 @@ def execute(
             "visualizations": [],
             "result_payload": {},
             # 비밀번호가 아니라 확인 토큰 없음 표시입니다
-            "confirmation_token": "",  # nosec B105
+            "confirmation_token": "",  # nosec B105 - 빈 확인 토큰 자리표시자이지 비밀번호가 아닙니다
             "found": False,
         }
 

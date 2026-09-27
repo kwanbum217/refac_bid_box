@@ -162,7 +162,7 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
             "partial_success",
             "검증 가능한 모델 또는 공고가 없어 예측 검증을 수행하지 못했습니다.",
             # 불리언 플래그 키이며 비밀번호가 아닙니다
-            {  # nosec B105
+            {  # nosec B105 - 불리언 상태 플래그 키 pass_all 이지 비밀번호가 아닙니다
                 "pass_all": False,
                 "model_count": len(available),
                 "skipped": True,
@@ -184,7 +184,7 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
     return (
         f"모델 {len(available)}종 로드, 표본 추론 성공 (예측률 {rate:.4f}).",
         # 불리언 플래그 키이며 비밀번호가 아닙니다
-        {"pass_all": True, "model_count": len(available), "model_name": ", ".join(available)},  # nosec B105
+        {"pass_all": True, "model_count": len(available), "model_name": ", ".join(available)},  # nosec B105 - 불리언 상태 플래그 키 pass_all 이지 비밀번호가 아닙니다
     )
 
 

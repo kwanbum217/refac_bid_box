@@ -204,7 +204,7 @@ def build_action_response(db: Session, request_obj: AutomationRequest) -> dict[s
         message = request_obj.result_summary or "요청이 중지되었습니다."
         suggestions = ["다시 시도하기"]
         # 비밀번호가 아니라 확인 토큰 없음 표시입니다
-        confirmation_token = ""  # nosec B105
+        confirmation_token = ""  # nosec B105 - 빈 확인 토큰 자리표시자이지 비밀번호가 아닙니다
         visualizations: list[dict] = []
     elif request_obj.requires_confirmation and not request_obj.confirmed_at:
         mode = "confirmation"
@@ -223,7 +223,7 @@ def build_action_response(db: Session, request_obj: AutomationRequest) -> dict[s
             *presentable_result_payload.get("recommended_actions", [])[:2],
         ]
         # 비밀번호가 아니라 확인 토큰 없음 표시입니다
-        confirmation_token = ""  # nosec B105
+        confirmation_token = ""  # nosec B105 - 빈 확인 토큰 자리표시자이지 비밀번호가 아닙니다
         visualizations = build_visualizations(request_obj.result_payload)
     elif request_obj.status == STATUS_FAILED:
         mode = "error"
@@ -235,7 +235,7 @@ def build_action_response(db: Session, request_obj: AutomationRequest) -> dict[s
             *presentable_result_payload.get("recommended_actions", [])[:2],
         ]
         # 비밀번호가 아니라 확인 토큰 없음 표시입니다
-        confirmation_token = ""  # nosec B105
+        confirmation_token = ""  # nosec B105 - 빈 확인 토큰 자리표시자이지 비밀번호가 아닙니다
         visualizations = build_visualizations(request_obj.result_payload)
     else:
         mode = "action" if request_obj.status == STATUS_RUNNING else "progress"
@@ -243,7 +243,7 @@ def build_action_response(db: Session, request_obj: AutomationRequest) -> dict[s
         message = request_obj.result_summary or "자동화 작업이 등록되었습니다."
         suggestions = ["실행 상태 보기", "자동화 결과 요약 보기"]
         # 비밀번호가 아니라 확인 토큰 없음 표시입니다
-        confirmation_token = ""  # nosec B105
+        confirmation_token = ""  # nosec B105 - 빈 확인 토큰 자리표시자이지 비밀번호가 아닙니다
         visualizations = []
 
     return asdict(
