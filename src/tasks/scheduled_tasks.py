@@ -73,8 +73,15 @@ COLLECTION_GAP_ALERT_HOURS = 72
 
 def _record_schedule(
     schedule_name: str,
+    *,
+    success_statuses: frozenset[str] = frozenset({"success", "skipped"}),
 ) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
-    """스케줄 결과를 기록하되 기록 실패가 작업을 방해하지 않게 합니다."""
+    """스케줄 결과를 기록하되 기록 실패가 작업을 방해하지 않게 합니다.
+
+    success_statuses 는 반환 status 를 성공으로 볼 집합입니다. 스케줄마다 성공
+    규약이 다를 수 있어(낙찰결과 커버리지는 'ok') 필요한 스케줄만 명시적으로
+    지정하고 나머지는 기본값을 유지합니다.
+    """
 
     def decorator(task: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
         @wraps(task)
@@ -87,7 +94,7 @@ def _record_schedule(
             except Exception:
                 await asyncio.to_thread(record_schedule_result, schedule_name, None, False)
                 raise
-            success = isinstance(outcome, dict) and outcome.get("status") in {"success", "skipped"}
+            success = isinstance(outcome, dict) and outcome.get("status") in success_statuses
             await asyncio.to_thread(record_schedule_result, schedule_name, outcome, success)
             return outcome
 
@@ -1627,11 +1634,11 @@ def get_latest_drift_monitor_time(db: Session | None = None) -> datetime | None:
             session.close()
 
 
-def _read_schedule_last_run_at(
+def _read_schedule_status_entry(
     schedule_name: str,
     status_reader: Callable[[], Any] | None = None,
-) -> datetime | None:
-    """Redis 스케줄 상태에서 스케줄의 마지막 실행 시각을 파싱합니다.
+) -> dict[str, Any] | None:
+    """Redis 스케줄 상태에서 스케줄 항목 하나를 읽습니다.
 
     조회 실패나 값 부재는 기록 없음(None)으로 취급합니다. 가벼운 읽기 전용
     판정이라 한 번 더 도는 편이 놓치는 것보다 안전합니다.
@@ -1651,6 +1658,13 @@ def _read_schedule_last_run_at(
     entry = status.get(schedule_name)
     if not isinstance(entry, dict):
         return None
+    return entry
+
+
+def _parse_schedule_last_run_at(entry: Any) -> datetime | None:
+    """스케줄 항목에서 마지막 실행 시각을 파싱합니다. 실패나 부재는 None 입니다."""
+    if not isinstance(entry, dict):
+        return None
     raw = entry.get("last_run_at")
     if not raw:
         return None
@@ -1658,6 +1672,17 @@ def _read_schedule_last_run_at(
         return datetime.fromisoformat(str(raw))
     except ValueError:
         return None
+
+
+def _read_schedule_last_run_at(
+    schedule_name: str,
+    status_reader: Callable[[], Any] | None = None,
+) -> datetime | None:
+    """Redis 스케줄 상태에서 스케줄의 마지막 실행 시각을 파싱합니다.
+
+    조회 실패나 값 부재는 기록 없음(None)으로 취급합니다.
+    """
+    return _parse_schedule_last_run_at(_read_schedule_status_entry(schedule_name, status_reader))
 
 
 def check_drift_monitor_catchup_needed(
@@ -1750,12 +1775,15 @@ def check_result_coverage_catchup_needed(
         weekday=RESULT_COVERAGE_WEEKDAY,
         tz=tz,
     )
-    last_run_at = _read_schedule_last_run_at(RESULT_COVERAGE_SCHEDULE_NAME, status_reader)
+    entry = _read_schedule_status_entry(RESULT_COVERAGE_SCHEDULE_NAME, status_reader)
+    last_run_at = _parse_schedule_last_run_at(entry)
+    last_run_success = entry.get("success") if isinstance(entry, dict) else None
     details: dict[str, Any] = {
         "enabled": True,
         "last_coverage_slot": last_slot.isoformat(),
         "next_slot": next_slot.isoformat(),
         "latest_result_coverage_at": last_run_at.isoformat() if last_run_at else None,
+        "latest_result_coverage_success": last_run_success,
     }
 
     # 다음 커버리지 슬롯이 임박하면 따라잡기 대신 크론에 양보합니다.
@@ -1767,7 +1795,8 @@ def check_result_coverage_catchup_needed(
         )
         return False, "next_coverage_slot_imminent", details
 
-    if last_run_at is None:
+    # success 키가 없으면 유효한 실행 기록으로 보지 않아 기록 없음과 같게 다룹니다.
+    if last_run_at is None or last_run_success is None:
         details["reason"] = "이전 낙찰결과 커버리지 감시 기록이 없어 따라잡기를 실행합니다."
         return True, "no_previous_result_coverage", details
 
@@ -1778,7 +1807,14 @@ def check_result_coverage_catchup_needed(
         )
         return True, "missed_result_coverage", details
 
-    details["reason"] = "마지막 커버리지 슬롯 이후 기록이 있어 건너뜁니다."
+    # 슬롯 이후 실행이 있어도 실패로 기록됐다면 놓친 것과 같게 다시 실행합니다.
+    if last_run_success is False:
+        details["reason"] = (
+            f"마지막 커버리지 감시({last_run_at.isoformat()})가 실패로 기록되어 다시 실행합니다."
+        )
+        return True, "last_result_coverage_failed", details
+
+    details["reason"] = "마지막 커버리지 슬롯 이후 성공 기록이 있어 건너뜁니다."
     return False, "result_coverage_up_to_date", details
 
 

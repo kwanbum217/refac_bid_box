@@ -209,7 +209,12 @@ def test_coverage_needed_when_record_before_slot(monkeypatch):
     monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
 
     def _reader() -> dict[str, Any]:
-        return {"result_coverage_monitor": {"last_run_at": "2026-09-27T00:00:00+00:00"}}
+        return {
+            "result_coverage_monitor": {
+                "last_run_at": "2026-09-27T00:00:00+00:00",
+                "success": True,
+            }
+        }
 
     needed, reason, details = check_result_coverage_catchup_needed(
         now=MONDAY_0920_KST, tz=SEOUL, status_reader=_reader
@@ -224,7 +229,12 @@ def test_coverage_up_to_date_when_record_after_slot(monkeypatch):
     monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
 
     def _reader() -> dict[str, Any]:
-        return {"result_coverage_monitor": {"last_run_at": "2026-09-28T00:00:00+00:00"}}
+        return {
+            "result_coverage_monitor": {
+                "last_run_at": "2026-09-28T00:00:00+00:00",
+                "success": True,
+            }
+        }
 
     needed, reason, _details = check_result_coverage_catchup_needed(
         now=MONDAY_0920_KST, tz=SEOUL, status_reader=_reader
@@ -232,6 +242,65 @@ def test_coverage_up_to_date_when_record_after_slot(monkeypatch):
 
     assert needed is False
     assert reason == "result_coverage_up_to_date"
+
+
+def test_coverage_needed_when_last_run_failed(monkeypatch):
+    """슬롯 이후 실행이 success False 로 기록되면 실패로 보고 다시 실행합니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+
+    def _reader() -> dict[str, Any]:
+        return {
+            "result_coverage_monitor": {
+                "last_run_at": "2026-09-28T00:00:00+00:00",
+                "success": False,
+            }
+        }
+
+    needed, reason, details = check_result_coverage_catchup_needed(
+        now=MONDAY_0920_KST, tz=SEOUL, status_reader=_reader
+    )
+
+    assert needed is True
+    assert reason == "last_result_coverage_failed"
+    assert details["latest_result_coverage_at"] == "2026-09-28T00:00:00+00:00"
+    assert details["latest_result_coverage_success"] is False
+
+
+def test_coverage_treats_entry_without_success_as_no_record(monkeypatch):
+    """success 키가 없는 항목은 기록 없음과 같게 취급합니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+
+    def _reader() -> dict[str, Any]:
+        return {"result_coverage_monitor": {"last_run_at": "2026-09-28T00:00:00+00:00"}}
+
+    needed, reason, _details = check_result_coverage_catchup_needed(
+        now=MONDAY_0920_KST, tz=SEOUL, status_reader=_reader
+    )
+
+    assert needed is True
+    assert reason == "no_previous_result_coverage"
+
+
+def test_coverage_yields_before_slot_even_when_last_run_failed(monkeypatch):
+    """양보 규칙은 실패 기록보다 먼저 적용되어 다음 슬롯 직전에는 실행하지 않습니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    now = datetime(2026, 9, 27, 19, 30, 0, tzinfo=UTC)
+
+    def _reader() -> dict[str, Any]:
+        return {
+            "result_coverage_monitor": {
+                "last_run_at": "2026-09-20T00:00:00+00:00",
+                "success": False,
+            }
+        }
+
+    needed, reason, details = check_result_coverage_catchup_needed(
+        now=now, tz=SEOUL, status_reader=_reader
+    )
+
+    assert needed is False
+    assert reason == "next_coverage_slot_imminent"
+    assert details["next_slot"] == "2026-09-27T20:00:00+00:00"
 
 
 def test_coverage_needed_when_no_record(monkeypatch):
@@ -530,7 +599,7 @@ async def test_schedule_catchup_without_redis_skips_monitor_enqueue(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_coverage_task_records_schedule_status(monkeypatch):
-    """커버리지 태스크가 끝나면 Redis 스케줄 상태에 last_run_at 이 남습니다."""
+    """커버리지 태스크의 정상 실행(status ok)은 success True 로 기록됩니다."""
     store_client = StatusStoreClient()
     fake_cache = CacheLayer(connection=FakeRedisConnection(store_client, label="status_store"))
     monkeypatch.setattr(worker, "_worker_cache", fake_cache)
@@ -544,6 +613,61 @@ async def test_coverage_task_records_schedule_status(monkeypatch):
     assert result["status"] == "ok"
     status = worker.read_schedule_status()
     assert status["result_coverage_monitor"]["last_run_at"]
+    assert status["result_coverage_monitor"]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_coverage_task_records_failed_schedule_status(monkeypatch):
+    """커버리지 태스크의 실패 실행(status error)은 success False 로 기록됩니다."""
+    store_client = StatusStoreClient()
+    fake_cache = CacheLayer(connection=FakeRedisConnection(store_client, label="status_store"))
+    monkeypatch.setattr(worker, "_worker_cache", fake_cache)
+
+    async def fake_body() -> dict[str, Any]:
+        return {"status": "error", "as_of": "2026-09-28", "alerts": [], "rows": 0, "error": "boom"}
+
+    with patch.object(coverage_tasks, "_run_result_coverage_monitor", fake_body):
+        result = await coverage_tasks.result_coverage_monitor_task({})
+
+    assert result["status"] == "error"
+    status = worker.read_schedule_status()
+    assert status["result_coverage_monitor"]["last_run_at"]
+    assert status["result_coverage_monitor"]["success"] is False
+
+
+@pytest.mark.asyncio
+async def test_drift_schedule_success_statuses_unchanged(monkeypatch):
+    """기본 success_statuses 를 쓰는 드리프트 감시는 정상 실행을 success True 로 기록합니다."""
+    store_client = StatusStoreClient()
+    fake_cache = CacheLayer(connection=FakeRedisConnection(store_client, label="status_store"))
+    monkeypatch.setattr(worker, "_worker_cache", fake_cache)
+    _enable_drift_catchup(monkeypatch)
+
+    mock_body = AsyncMock(return_value={"status": "success", "trigger_source": "drift_monitor"})
+    with patch.object(scheduled_tasks, "_run_drift_monitor", mock_body):
+        result = await scheduled_tasks.drift_monitor_task({})
+
+    assert result["status"] == "success"
+    assert worker.read_schedule_status()["drift_monitor"]["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_record_schedule_default_success_statuses(monkeypatch):
+    """기본 success_statuses 는 success/skipped 만 성공으로 봅니다."""
+    store_client = StatusStoreClient()
+    fake_cache = CacheLayer(connection=FakeRedisConnection(store_client, label="status_store"))
+    monkeypatch.setattr(worker, "_worker_cache", fake_cache)
+
+    @scheduled_tasks._record_schedule("probe_schedule")
+    async def probe(status: str) -> dict[str, str]:
+        return {"status": status}
+
+    await probe("ok")
+    assert worker.read_schedule_status()["probe_schedule"]["success"] is False
+    await probe("success")
+    assert worker.read_schedule_status()["probe_schedule"]["success"] is True
+    await probe("skipped")
+    assert worker.read_schedule_status()["probe_schedule"]["success"] is True
 
 
 # --------------------------------------------------------------------------- #

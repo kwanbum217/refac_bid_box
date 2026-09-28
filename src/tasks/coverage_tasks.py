@@ -102,7 +102,7 @@ async def _run_result_coverage_monitor() -> dict[str, Any]:
 
 
 @traced_worker_task
-@_record_schedule("result_coverage_monitor")
+@_record_schedule("result_coverage_monitor", success_statuses=frozenset({"ok"}))
 async def result_coverage_monitor_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """매칭률 스냅샷을 계산하고 경고 대상이 있을 때만 한 번 알린다.
 
