@@ -11,15 +11,18 @@ OpenCode CLI 와 그 포크인 Kilo CLI(--binary kilo)를 Orca 워커로 씁니�
       --command "uv run python scripts/orca_opencode_launch.py --model openai/gpt-5.6-turbo"
     orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json
 
-추론 등급(--variant)은 run 단발 모드에만 있어 --one-shot 과 함께만 받습니다. 두 CLI 모두
-모르는 값을 오류 없이 무시하므로 허용 값을 여기서 제한합니다.
+추론 등급(--variant)은 두 CLI 모두 모르는 값을 오류 없이 무시하므로 허용 값을 여기서
+제한합니다. 단발 모드는 run --variant 로 넘깁니다. 대화형 TUI 에는 --variant 가 없어,
+kilo 는 KILO_CONFIG_CONTENT 로 model·variant 를 고정한 전용 에이전트를 주입하고
+--agent 로 선택합니다. 사용자가 왼쪽 워크트리에서 TUI 로 진행을 볼 수 있습니다.
 
-    --binary kilo --model openrouter/stealth/space-bunny-alpha --one-shot --variant max --auto
+    --binary kilo --model openrouter/stealth/space-bunny-alpha --variant max --auto
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess  # nosec B404 - 코디네이터가 만든 고정 인자 목록으로만 opencode 를 호출합니다
 import sys
@@ -36,6 +39,8 @@ DEFAULT_PREAMBLE = common.DEFAULT_PREAMBLE
 DEFAULT_SHELL = "/bin/bash"
 SUPPORTED_BINARIES = ("opencode", "kilo")
 SUPPORTED_VARIANTS = ("low", "medium", "high", "xhigh", "max")
+KILO_AGENT_NAME = "orca-worker"
+KILO_CONFIG_ENV = "KILO_CONFIG_CONTENT"
 COMMIT_NOTICE = common.COMMIT_NOTICE
 REVIEWER_NOTICE = common.REVIEWER_NOTICE
 
@@ -57,8 +62,10 @@ def build_command(
     모델은 -m 또는 --model 로 provider/model 형태입니다.
     권한 자동 승인 인자(--auto)는 기본으로 붙이지 않으며 명시적으로 요청될 때만 포함합니다.
     """
-    if variant is not None and not one_shot:
-        raise ValueError("--variant 는 run 단발 모드(--one-shot)에서만 쓸 수 있습니다")
+    if variant is not None and not one_shot and binary != "kilo":
+        raise ValueError(
+            "opencode 대화형 모드에는 --variant 가 없어 --one-shot 과 함께만 쓸 수 있습니다"
+        )
     if one_shot:
         cmd = [binary, "run", "--model", model]
         if variant is not None:
@@ -68,11 +75,31 @@ def build_command(
         cmd.append(prompt)
         return cmd
 
-    cmd = [binary, "--model", model]
+    if variant is not None:
+        cmd = [binary, "--agent", KILO_AGENT_NAME]
+    else:
+        cmd = [binary, "--model", model]
     if auto:
         cmd.append("--auto")
     cmd.extend(["--prompt", prompt])
     return cmd
+
+
+def build_env(
+    env: dict[str, str],
+    model: str,
+    *,
+    one_shot: bool = False,
+    binary: str = "opencode",
+    variant: str | None = None,
+) -> dict[str, str]:
+    """kilo 대화형에서 등급을 쓰면 model·variant 를 고정한 전용 에이전트를 주입합니다."""
+    if binary != "kilo" or one_shot or variant is None:
+        return env
+    if env.get(KILO_CONFIG_ENV):
+        raise ValueError(f"{KILO_CONFIG_ENV} 가 이미 설정되어 있어 에이전트를 주입할 수 없습니다")
+    agent = {"model": model, "variant": variant, "mode": "primary", "description": "Orca 워커"}
+    return {**env, KILO_CONFIG_ENV: json.dumps({"agent": {KILO_AGENT_NAME: agent}})}
 
 
 def build_completion_message(exit_code: int, model: str) -> str:
@@ -137,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         "--variant",
         choices=SUPPORTED_VARIANTS,
         default=None,
-        help="추론 등급. --one-shot 과 함께만 씁니다.",
+        help="추론 등급. opencode 는 --one-shot 과 함께만, kilo 는 대화형에서도 씁니다.",
     )
     parser.add_argument("--preamble", type=Path, default=DEFAULT_PREAMBLE)
     parser.add_argument("--timeout-sec", type=float, default=300.0)
@@ -168,8 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         help="단발 실행 종료 후 셸로 이어받지 않고 종료 코드를 그대로 반환합니다.",
     )
     args = parser.parse_args(argv)
-    if args.variant is not None and not args.one_shot:
-        parser.error("--variant 는 --one-shot 과 함께만 쓸 수 있습니다")
+    if args.variant is not None and not args.one_shot and args.binary != "kilo":
+        parser.error("opencode 대화형에서는 --variant 를 --one-shot 과 함께만 쓸 수 있습니다")
 
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
@@ -184,7 +211,17 @@ def main(argv: list[str] | None = None) -> int:
         no_commit_notice=args.no_commit_notice,
     )
 
-    env = dict(os.environ)
+    try:
+        env = build_env(
+            dict(os.environ),
+            args.model,
+            one_shot=args.one_shot,
+            binary=args.binary,
+            variant=args.variant,
+        )
+    except ValueError as err:
+        sys.stderr.write(f"오류: {err}\n")
+        return 2
     cmd = build_command(
         args.model,
         prompt,
