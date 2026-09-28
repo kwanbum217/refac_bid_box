@@ -303,3 +303,82 @@ def test_main_never_calls_popen_for_permission_setup(tmp_path: Path, monkeypatch
         )
     assert code == 0
     assert len(popen_called) == 0, "subprocess.Popen 이 호출되었습니다"
+
+
+def test_build_command_kilo_binary_with_variant():
+    """kilo 바이너리와 추론 등급은 run 단발 명령에 그대로 실려야 합니다."""
+    cmd = build_command(
+        "openrouter/stealth/space-bunny-alpha",
+        "지시문",
+        one_shot=True,
+        auto=True,
+        binary="kilo",
+        variant="max",
+    )
+    assert cmd == [
+        "kilo",
+        "run",
+        "--model",
+        "openrouter/stealth/space-bunny-alpha",
+        "--variant",
+        "max",
+        "--auto",
+        "지시문",
+    ]
+
+
+def test_build_command_rejects_variant_in_interactive_mode():
+    """대화형 TUI 에는 --variant 가 없으므로 조용히 버리지 않고 거부해야 합니다."""
+    with pytest.raises(ValueError):
+        build_command("openrouter/stealth/space-bunny-alpha", "지시문", variant="max")
+
+
+def test_main_rejects_variant_without_one_shot(tmp_path: Path):
+    target = tmp_path / "preamble_variant.txt"
+    target.write_text("지시문", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        main(["--model", "m", "--preamble", str(target), "--variant", "max"])
+    assert exc.value.code == 2
+    assert target.exists()
+
+
+def test_main_rejects_unknown_variant(tmp_path: Path):
+    """두 CLI 모두 모르는 등급을 오류 없이 무시하므로 런처가 먼저 거부해야 합니다."""
+    target = tmp_path / "preamble_bogus.txt"
+    target.write_text("지시문", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        main(["--model", "m", "--preamble", str(target), "--one-shot", "--variant", "bogus"])
+    assert exc.value.code == 2
+
+
+@patch("scripts.orca_opencode_launch.open_interactive_shell")
+@patch("scripts.orca_opencode_launch.run_opencode", return_value=0)
+def test_main_one_shot_runs_kilo_binary(mock_run: MagicMock, mock_shell: MagicMock, tmp_path: Path):
+    target = tmp_path / "preamble_kilo.txt"
+    target.write_text("지시문", encoding="utf-8")
+    code = main(
+        [
+            "--binary",
+            "kilo",
+            "--model",
+            "openrouter/stealth/space-bunny-alpha",
+            "--preamble",
+            str(target),
+            "--one-shot",
+            "--variant",
+            "max",
+            "--auto",
+            "--no-commit-notice",
+        ]
+    )
+    assert code == 0
+    cmd = mock_run.call_args[0][0]
+    assert cmd[:6] == [
+        "kilo",
+        "run",
+        "--model",
+        "openrouter/stealth/space-bunny-alpha",
+        "--variant",
+        "max",
+    ]
+    assert "--auto" in cmd
