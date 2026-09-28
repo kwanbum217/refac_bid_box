@@ -301,9 +301,9 @@ SELECT a.category, COUNT(*) AS mismatch_rows, COUNT(DISTINCT a.bid_ntce_no) AS n
 
 O8. 결과 차수 공고 행 보유율(4.2절의 보유 건수). O7 과 같은 조건에서 `COUNT(*)` 옆에 `SUM(CASE WHEN EXISTS (SELECT 1 FROM bid_announcements a2 WHERE a2.bid_ntce_no = a.bid_ntce_no AND a2.category = a.category AND RIGHT(CONCAT('000', COALESCE(NULLIF(TRIM(LEADING '0' FROM TRIM(a2.bid_ntce_ord)), ''), '0')), 3) IN (SELECT RIGHT(CONCAT('000', COALESCE(NULLIF(TRIM(LEADING '0' FROM TRIM(br.bid_ntce_ord)), ''), '0')), 3) FROM bid_results br WHERE br.bid_ntce_no = a.bid_ntce_no AND br.category = a.category)) THEN 1 ELSE 0 END) AS ann_row_at_res_ord` 를 추가한다.
 
-O9. 기저 364일 오프셋 집계(6.4절 기저 열). O4 와 같은 골격에서 기간을 `a.openg_dt >= '2025-06-09' AND a.openg_dt <= '2025-08-31 23:59:59.999999' AND a.bid_ntce_dt >= '2024-06-09' AND a.bid_ntce_dt <= '2025-08-31 23:59:59.999999'` 로 바꾼다.
+O9. 기저 364일 오프셋 12주 블록 집계(2025-06-09 ~ 2025-08-31 전체. 6.4절 표의 기저 열은 이 블록이 아니라 O10 의 단일 주다). O4 와 같은 골격에서 기간을 `a.openg_dt >= '2025-06-09' AND a.openg_dt <= '2025-08-31 23:59:59.999999' AND a.bid_ntce_dt >= '2024-06-09' AND a.bid_ntce_dt <= '2025-08-31 23:59:59.999999'` 로 바꾼다.
 
-O10. 기저 주 2025-08-25 대형(6.4절). O9 에 `a.presmpt_prce >= 230000000` 을 더하고 `ann, matched_ord, matched_any` 만 `GROUP BY a.category` 로 낸다.
+O10. 기저 주 2025-08-25 대형(6.4절 기저 열). O9 의 openg_dt 조건을 `a.openg_dt >= '2025-08-25 00:00:00' AND a.openg_dt <= '2025-08-31 23:59:59.999999'` 단일 주로 바꾸고 `a.presmpt_prce >= 230000000` 을 더하며 `ann, matched_ord, matched_any` 만 `GROUP BY a.category` 로 낸다.
 
 O11. 공고번호 단위 공고 행 중복(4.5절):
 ```
