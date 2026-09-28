@@ -48,8 +48,11 @@ from src.tasks.coverage_tasks import result_coverage_monitor_task
 from src.tasks.retrain_task import run_retrain_pipeline_task
 from src.tasks.scheduled_tasks import (
     DRIFT_MONITOR_CATCHUP_JOB_NAME,
+    DRIFT_MONITOR_JOB_TIMEOUT_SECONDS,
     RESULT_COVERAGE_CATCHUP_JOB_NAME,
+    RESULT_COVERAGE_JOB_TIMEOUT_SECONDS,
     WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
+    WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS,
     backup_schedule_task,
     development_data_refresh_task,
     drift_monitor_task,
@@ -186,9 +189,10 @@ OBSERVATION_TTL_SECONDS = 7 * 24 * 60 * 60
 ARQ_QUEUE_KEY = "arq:queue"
 SCHEDULE_CATCHUP_JOB_NAME = "run_schedule_catchup_task"
 SCHEDULE_CATCHUP_JOB_ID = "schedule-catchup-startup"
-SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS = 10800
-# 모니터 따라잡기는 원 태스크 크론과 같은 1시간 제한을 씁니다.
-MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS = 3600
+# 스케줄 작업 타임아웃은 scheduled_tasks.py 의 단일 정의를 그대로 씁니다.
+# 따라잡기 잡도 원 태스크와 같은 제한을 받도록 여기서 이름만 붙여 재사용합니다.
+SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS = WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS
+MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS = DRIFT_MONITOR_JOB_TIMEOUT_SECONDS
 _worker_cache = CacheLayer()
 _worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:12]}"
 
@@ -436,14 +440,14 @@ class WorkerSettings:
             hour=3,
             minute=0,
             run_at_startup=False,
-            timeout=10800,
+            timeout=WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS,
         ),
         cron(
             cast(Any, drift_monitor_task),
             hour=4,
             minute=0,
             run_at_startup=False,
-            timeout=3600,
+            timeout=DRIFT_MONITOR_JOB_TIMEOUT_SECONDS,
         ),
         # 개찰 완료 지 28일 지난 주의 대형 낙찰결과 매칭률 감시. 재학습 크론 뒤인
         # 월요일 05:00 에 돌려 최신 수집 반영분을 본다.
@@ -453,7 +457,7 @@ class WorkerSettings:
             hour=5,
             minute=0,
             run_at_startup=False,
-            timeout=3600,
+            timeout=RESULT_COVERAGE_JOB_TIMEOUT_SECONDS,
         ),
         # RAG 기관명 해석 목록. 매시 덮어써 요청 경로의 콜드 목록 생성을 없앱니다.
         cron(

@@ -25,12 +25,13 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import pytest
 
 from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
 from src.app.models.predictions import RetrainLog
-from src.tasks import scheduled_tasks, worker
+from src.tasks import retrain_task, scheduled_tasks, worker
 from src.tasks.scheduled_tasks import (
     WEEKLY_RETRAIN_CATCHUP_JOB_ID,
     WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
@@ -40,6 +41,7 @@ from src.tasks.scheduled_tasks import (
     _enqueue_weekly_retrain_catchup,
     check_weekly_retrain_catchup_needed,
     get_latest_weekly_retrain_time,
+    get_weekly_retrain_records_since,
     next_cron_slot,
     previous_cron_slot,
     run_schedule_catchup_task,
@@ -141,7 +143,10 @@ def test_weekly_catchup_needed_when_last_run_before_slot(monkeypatch):
     _enable_weekly_catchup(monkeypatch)
     now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
     last_run = datetime(2026, 9, 27, 3, 11, 0, tzinfo=UTC)
-    with patch.object(scheduled_tasks, "get_latest_weekly_retrain_time", return_value=last_run):
+    with (
+        patch.object(scheduled_tasks, "get_latest_weekly_retrain_time", return_value=last_run),
+        patch.object(scheduled_tasks, "get_weekly_retrain_records_since", return_value=[]),
+    ):
         needed, reason, details = check_weekly_retrain_catchup_needed(now=now, tz=SEOUL)
 
     assert needed is True
@@ -151,9 +156,17 @@ def test_weekly_catchup_needed_when_last_run_before_slot(monkeypatch):
 
 def test_weekly_catchup_skipped_when_last_run_after_slot(monkeypatch):
     _enable_weekly_catchup(monkeypatch)
+    monkeypatch.setattr(settings, "ML_WEEKLY_RETRAIN_CATEGORIES", "Servc")
     now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
     last_run = datetime(2026, 9, 28, 0, 0, 0, tzinfo=UTC)
-    with patch.object(scheduled_tasks, "get_latest_weekly_retrain_time", return_value=last_run):
+    with (
+        patch.object(scheduled_tasks, "get_latest_weekly_retrain_time", return_value=last_run),
+        patch.object(
+            scheduled_tasks,
+            "get_weekly_retrain_records_since",
+            return_value=[(last_run, {"category": "Servc"})],
+        ),
+    ):
         needed, reason, _details = check_weekly_retrain_catchup_needed(now=now, tz=SEOUL)
 
     assert needed is False
@@ -224,6 +237,122 @@ def test_get_latest_weekly_retrain_time_filters_trigger_source(isolated_db):
 
     latest = get_latest_weekly_retrain_time(isolated_db)
     assert latest == datetime(2026, 9, 21, 0, 0, 0)
+
+
+# --------------------------------------------------------------------------- #
+# 카테고리별 따라잡기 판정
+# --------------------------------------------------------------------------- #
+
+
+def _weekly_record(created_at: datetime, category: str | None) -> tuple[datetime, dict[str, Any]]:
+    summary: dict[str, Any] = {} if category is None else {"category": category}
+    return created_at, summary
+
+
+def test_weekly_catchup_needed_when_one_of_two_categories_missing(monkeypatch):
+    """두 카테고리 중 하나만 슬롯 이후 기록이 있으면 needed=True 와 missing_categories 를 남깁니다."""
+    _enable_weekly_catchup(monkeypatch)
+    monkeypatch.setattr(settings, "ML_WEEKLY_RETRAIN_CATEGORIES", "Servc,Thng")
+    now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
+    last_run = datetime(2026, 9, 28, 0, 0, 0, tzinfo=UTC)
+    records = [_weekly_record(last_run, "Servc")]
+    with (
+        patch.object(scheduled_tasks, "get_latest_weekly_retrain_time", return_value=last_run),
+        patch.object(scheduled_tasks, "get_weekly_retrain_records_since", return_value=records),
+    ):
+        needed, reason, details = check_weekly_retrain_catchup_needed(now=now, tz=SEOUL)
+
+    assert needed is True
+    assert reason == "missed_weekly_retrain"
+    assert details["missing_categories"] == ["Thng"]
+
+
+def test_weekly_catchup_up_to_date_when_all_categories_recorded(monkeypatch):
+    """설정된 두 카테고리 모두 슬롯 이후 기록이 있으면 처리됨으로 판정합니다."""
+    _enable_weekly_catchup(monkeypatch)
+    monkeypatch.setattr(settings, "ML_WEEKLY_RETRAIN_CATEGORIES", "Servc,Thng")
+    now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
+    last_run = datetime(2026, 9, 28, 0, 0, 0, tzinfo=UTC)
+    records = [_weekly_record(last_run, "Servc"), _weekly_record(last_run, "Thng")]
+    with (
+        patch.object(scheduled_tasks, "get_latest_weekly_retrain_time", return_value=last_run),
+        patch.object(scheduled_tasks, "get_weekly_retrain_records_since", return_value=records),
+    ):
+        needed, reason, _details = check_weekly_retrain_catchup_needed(now=now, tz=SEOUL)
+
+    assert needed is False
+    assert reason == "weekly_retrain_up_to_date"
+
+
+def test_weekly_catchup_accepts_category_less_row_for_single_category(monkeypatch):
+    """카테고리 하나만 설정되면 category 없는 과거 행을 그 카테고리 기록으로 인정합니다."""
+    _enable_weekly_catchup(monkeypatch)
+    monkeypatch.setattr(settings, "ML_WEEKLY_RETRAIN_CATEGORIES", "Servc")
+    now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
+    last_run = datetime(2026, 9, 28, 0, 0, 0, tzinfo=UTC)
+    records = [_weekly_record(last_run, None)]
+    with (
+        patch.object(scheduled_tasks, "get_latest_weekly_retrain_time", return_value=last_run),
+        patch.object(scheduled_tasks, "get_weekly_retrain_records_since", return_value=records),
+    ):
+        needed, reason, _details = check_weekly_retrain_catchup_needed(now=now, tz=SEOUL)
+
+    assert needed is False
+    assert reason == "weekly_retrain_up_to_date"
+
+
+def test_weekly_catchup_rejects_category_less_row_for_two_categories(monkeypatch):
+    """두 카테고리가 설정되면 category 없는 행은 어느 카테고리 기록으로도 인정하지 않습니다."""
+    _enable_weekly_catchup(monkeypatch)
+    monkeypatch.setattr(settings, "ML_WEEKLY_RETRAIN_CATEGORIES", "Servc,Thng")
+    now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
+    last_run = datetime(2026, 9, 28, 0, 0, 0, tzinfo=UTC)
+    records = [_weekly_record(last_run, None)]
+    with (
+        patch.object(scheduled_tasks, "get_latest_weekly_retrain_time", return_value=last_run),
+        patch.object(scheduled_tasks, "get_weekly_retrain_records_since", return_value=records),
+    ):
+        needed, reason, details = check_weekly_retrain_catchup_needed(now=now, tz=SEOUL)
+
+    assert needed is True
+    assert reason == "missed_weekly_retrain"
+    assert details["missing_categories"] == ["Servc", "Thng"]
+
+
+def test_get_weekly_retrain_records_since_filters_by_time_and_source(isolated_db):
+    """슬롯 이후 weekly_schedule 행만 돌려주고 manual 행과 슬롯 이전 행은 제외합니다."""
+    isolated_db.add_all(
+        [
+            RetrainLog(
+                trigger_source="weekly_schedule",
+                champion_version="champ",
+                challenger_version="weekly-before",
+                status="success",
+                metrics_summary={"category": "Servc"},
+                created_at=datetime(2026, 9, 26, 0, 0, 0),
+            ),
+            RetrainLog(
+                trigger_source="weekly_schedule",
+                champion_version="champ",
+                challenger_version="weekly-after",
+                status="success",
+                metrics_summary={"category": "Thng"},
+                created_at=datetime(2026, 9, 28, 0, 0, 0),
+            ),
+            RetrainLog(
+                trigger_source="manual",
+                champion_version="champ",
+                challenger_version="manual-after",
+                status="success",
+                metrics_summary={"category": "Servc"},
+                created_at=datetime(2026, 9, 28, 0, 0, 0),
+            ),
+        ]
+    )
+    isolated_db.commit()
+
+    records = get_weekly_retrain_records_since(isolated_db, since=datetime(2026, 9, 27, 18, 0, 0))
+    assert [summary for _created_at, summary in records] == [{"category": "Thng"}]
 
 
 # --------------------------------------------------------------------------- #
@@ -469,6 +598,91 @@ def test_weekly_catchup_registered_with_three_hour_timeout():
 
     entry = entries["run_weekly_retrain_catchup_task"]
     assert getattr(entry, "timeout_s", None) == worker.SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS
+
+
+# --------------------------------------------------------------------------- #
+# 상수 단일 정의 (cron 타임아웃과 TTL·양보 파생)
+# --------------------------------------------------------------------------- #
+
+
+def _cron_entry(name: str) -> Any:
+    for job in worker.WorkerSettings.cron_jobs:
+        target = getattr(job, "coroutine", job)
+        if getattr(target, "__name__", "") == name:
+            return job
+    raise AssertionError(f"cron 등록을 찾지 못했습니다: {name}")
+
+
+def test_weekly_retrain_claim_ttl_at_least_job_timeout():
+    """선점 TTL 은 잡 타임아웃 이상이어야 잡이 도는 동안 선점이 만료되지 않습니다."""
+    assert (
+        scheduled_tasks.WEEKLY_RETRAIN_CLAIM_TTL_SECONDS
+        >= scheduled_tasks.WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS
+    )
+
+
+def test_weekly_retrain_yield_equals_job_timeout():
+    assert (
+        scheduled_tasks.WEEKLY_RETRAIN_YIELD_BEFORE_SLOT_SECONDS
+        == scheduled_tasks.WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS
+    )
+
+
+def test_weekly_retrain_timeout_ttl_yield_values_unchanged():
+    """단일 정의로 묶어도 timeout, TTL, 양보 값은 바뀌지 않습니다."""
+    assert scheduled_tasks.WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS == 10800
+    assert scheduled_tasks.WEEKLY_RETRAIN_CLAIM_TTL_SECONDS == 10800
+    assert scheduled_tasks.WEEKLY_RETRAIN_YIELD_BEFORE_SLOT_SECONDS == 10800
+    assert scheduled_tasks.SCHEDULE_CLAIM_MIN_TTL_SECONDS == 10800
+
+
+def test_weekly_retrain_cron_timeout_uses_job_timeout_constant():
+    entry = _cron_entry("weekly_retrain_task")
+    assert getattr(entry, "timeout_s", None) == scheduled_tasks.WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_retrain_success_record_summary_includes_category(monkeypatch):
+    """성공 기록의 metrics_summary 에 category 를 담고 원 verdict 는 바꾸지 않습니다."""
+    captured: dict[str, Any] = {}
+    verdict = {"recommendation": "REJECT_CHALLENGER", "champion_comparable": True}
+
+    def fake_build(*_args: Any, **_kwargs: Any) -> Any:
+        return pd.DataFrame({"x": [1, 2, 3]})
+
+    class FakeTrainer:
+        model_name = "servc_institution_v1"
+        registry_dir = "ml_registry"
+
+        def train_and_register(self, _df: Any) -> dict[str, Any]:
+            return {
+                "version": "servc-v1",
+                "samples_count": 3,
+                "metrics": {"rmse": 1.0},
+                "holdout_is_overfit": False,
+            }
+
+    def fake_record(*_args: Any, **kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(retrain_task, "_build_training_dataset_thread", fake_build)
+    monkeypatch.setattr(
+        retrain_task, "_load_champion_metrics", lambda *_a, **_k: ("champ", {"rmse": 2.0})
+    )
+    monkeypatch.setattr(retrain_task.ModelTrainer, "for_category", lambda *_a, **_k: FakeTrainer())
+    monkeypatch.setattr(retrain_task, "compare_champion_vs_challenger", lambda *_a, **_k: verdict)
+    monkeypatch.setattr(retrain_task, "_record", fake_record)
+    monkeypatch.setattr(retrain_task, "notify_retrain_result", AsyncMock())
+    monkeypatch.setattr(retrain_task, "notify_task_failure", AsyncMock())
+
+    result = await retrain_task.run_retrain_pipeline_task(
+        {}, trigger_source="weekly_schedule", category_code="Servc"
+    )
+
+    assert result["status"] == "success"
+    assert captured["summary"]["category"] == "Servc"
+    assert captured["summary"]["recommendation"] == "REJECT_CHALLENGER"
+    assert "category" not in verdict
 
 
 # --------------------------------------------------------------------------- #

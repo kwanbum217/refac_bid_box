@@ -242,13 +242,16 @@ async def run_retrain_pipeline_task(
                 "표본이 적어 홀드아웃 분리 실패. 지표를 신뢰할 수 없습니다."
             )
 
+        # 성공 기록에도 category 를 남깁니다. verdict 는 그대로 두고 사본에만
+        # 담아, 주간 따라잡기가 카테고리별로 슬롯 이후 이력을 확인할 수 있게 합니다.
+        summary = {**verdict, "category": code}
         await asyncio.to_thread(
             _record,
             trigger_source=trigger_source,
             champion=champion_version,
             challenger=metadata["version"],
             status=verdict["recommendation"],
-            summary=verdict,
+            summary=summary,
         )
 
         logger.info(
