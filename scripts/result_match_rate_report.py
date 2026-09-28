@@ -22,19 +22,27 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.app.core.db import SessionLocal  # noqa: E402
+from src.app.services.result_arrivals import compute_late_arrivals  # noqa: E402
 from src.app.services.result_coverage import (  # noqa: E402
     compute_result_match_rates,
     evaluate_match_rate_alerts,
 )
 
 BAND_LABELS = {"large": "대형", "small": "소형"}
+LATE_AFTER_DAYS = 28
 
 
 def _format_rate(rate: float | None) -> str:
     return f"{rate * 100:5.1f}%" if rate is not None else "   -  "
 
 
-def _print_table(as_of: str, rows: list[dict[str, Any]], alerts: list[dict[str, Any]]) -> None:
+def _print_table(
+    as_of: str,
+    rows: list[dict[str, Any]],
+    alerts: list[dict[str, Any]],
+    late_arrivals: list[dict[str, Any]],
+    late_window_days: int,
+) -> None:
     print(f"기준일 {as_of}")
     print(
         f"{'분류':<8}{'주시작':<12}{'규모':<6}"
@@ -66,18 +74,34 @@ def _print_table(as_of: str, rows: list[dict[str, Any]], alerts: list[dict[str, 
         print()
         print("경고 대상 없음")
 
+    print()
+    print(f"늦은 도착(최근 {late_window_days}일, 개찰 후 {LATE_AFTER_DAYS}일 초과)")
+    print(f"{'분류':<8}{'규모':<6}{'늦은도착':>10}{'전체도착':>10}")
+    for row in late_arrivals:
+        print(
+            f"{row['category']:<8}{BAND_LABELS.get(row['band'], row['band']):<6}"
+            f"{row['late_arrivals']:>10,}{row['total_arrivals']:>10,}"
+        )
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="낙찰결과 매칭률 조회")
     parser.add_argument("--as-of", type=str, default=None, help="기준일 YYYY-MM-DD (기본 오늘)")
     parser.add_argument("--weeks", type=int, default=8, help="조회할 최근 성숙 주 수 (기본 8)")
     parser.add_argument("--format", type=str, choices=("table", "json"), default="table")
+    parser.add_argument(
+        "--late-window-days",
+        type=int,
+        default=7,
+        help="늦은 도착을 셀 최근 수집 창(일) (기본 7)",
+    )
     args = parser.parse_args(argv)
 
     as_of = date.fromisoformat(args.as_of) if args.as_of else date.today()
     db = SessionLocal()
     try:
         rows = compute_result_match_rates(db, as_of=as_of, weeks=args.weeks)
+        late_arrivals = compute_late_arrivals(db, as_of=as_of, window_days=args.late_window_days)
     finally:
         db.close()
     alerts = evaluate_match_rate_alerts(rows)
@@ -85,13 +109,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.format == "json":
         print(
             json.dumps(
-                {"as_of": as_of.isoformat(), "rows": rows, "alerts": alerts},
+                {
+                    "as_of": as_of.isoformat(),
+                    "rows": rows,
+                    "alerts": alerts,
+                    "late_arrivals": late_arrivals,
+                },
                 ensure_ascii=False,
                 indent=2,
             )
         )
     else:
-        _print_table(as_of.isoformat(), rows, alerts)
+        _print_table(as_of.isoformat(), rows, alerts, late_arrivals, args.late_window_days)
     return 0
 
 
