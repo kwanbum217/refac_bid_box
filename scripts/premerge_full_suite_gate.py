@@ -27,6 +27,8 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 DEFAULT_EVIDENCE_PATH = Path(".cache/premerge_full_suite_evidence.json")
 BYPASS_ENV_VAR = "BYPASS_PREMERGE_FULL_SUITE_GATE"
 CANONICAL_FULL_SUITE_CMD = ["uv", "run", "pytest", "tests/", "-q", "-m", "not data_assets"]
+MAX_FAILED_TESTS_RECORDED = 50
+MAX_FAILED_TESTS_IN_MESSAGE = 10
 
 
 def run_process(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -81,6 +83,34 @@ def parse_pytest_counts(summary: str) -> dict[str, int]:
             key = "failed"
         counts[key] = counts.get(key, 0) + val
     return counts
+
+
+SUMMARY_HEADER_MARKER = "short test summary info"
+
+
+def extract_failed_nodeids(output: str) -> list[str]:
+    """pytest short test summary info 의 FAILED/ERROR 줄에서 실패 nodeid 만 추출합니다.
+
+    줄 앞뒤 공백과 ' - ' 뒤 실패 메시지를 버리고, 중복을 제거하되 출현 순서를 유지합니다.
+    요약 머리줄이 있으면 마지막 머리줄 뒤만 훑어 테스트 본문 로그나 traceback 의
+    'FAILED ' 로 시작하는 줄을 잡지 않습니다.
+    """
+    lines = output.splitlines()
+    header_indexes = [i for i, line in enumerate(lines) if SUMMARY_HEADER_MARKER in line]
+    if header_indexes:
+        lines = lines[header_indexes[-1] + 1 :]
+    nodeids: list[str] = []
+    seen: set[str] = set()
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not (line.startswith("FAILED ") or line.startswith("ERROR ")):
+            continue
+        nodeid = line.split(" ", 1)[1].split(" - ", 1)[0].strip()
+        if not nodeid or nodeid in seen:
+            continue
+        seen.add(nodeid)
+        nodeids.append(nodeid)
+    return nodeids
 
 
 def resolve_evidence_path(
@@ -306,8 +336,9 @@ def record_evidence(
     print(f"[premerge-gate] 전량 테스트 실행 중: {' '.join(cmd)}")
 
     test_proc = runner(cmd)
+    combined_output = test_proc.stdout + "\n" + test_proc.stderr
     summary_line = ""
-    for line in reversed((test_proc.stdout + "\n" + test_proc.stderr).splitlines()):
+    for line in reversed(combined_output.splitlines()):
         line_clean = line.strip()
         if line_clean and (
             "passed" in line_clean or "failed" in line_clean or "error" in line_clean
@@ -316,6 +347,10 @@ def record_evidence(
             break
 
     counts = parse_pytest_counts(summary_line)
+
+    failed_nodeids = extract_failed_nodeids(combined_output)
+    failed_tests_truncated = len(failed_nodeids) > MAX_FAILED_TESTS_RECORDED
+    recorded_failed_tests = failed_nodeids[:MAX_FAILED_TESTS_RECORDED]
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     evidence_data = {
@@ -329,6 +364,8 @@ def record_evidence(
         "skipped": counts["skipped"],
         "summary": summary_line,
         "command": " ".join(cmd),
+        "failed_tests": recorded_failed_tests,
+        "failed_tests_truncated": failed_tests_truncated,
         "recorded_at": datetime.datetime.now(UTC_TZ).isoformat(),
     }
 
@@ -341,10 +378,17 @@ def record_evidence(
         return 1, f"증거 파일 작성 실패 ({target_path}): {exc}"
 
     if test_proc.returncode != 0:
-        return test_proc.returncode, (
-            f"[premerge-gate] 전량 테스트 실패 (종료 코드: {test_proc.returncode}).\n"
-            f"증거가 기록되었으나 실패 상태입니다: {summary_line}"
-        )
+        lines = [
+            f"[premerge-gate] 전량 테스트 실패 (종료 코드: {test_proc.returncode}).",
+            f"증거가 기록되었으나 실패 상태입니다: {summary_line}",
+        ]
+        if failed_nodeids:
+            lines.append("실패한 테스트:")
+            lines.extend(f"  - {nodeid}" for nodeid in failed_nodeids[:MAX_FAILED_TESTS_IN_MESSAGE])
+            remaining = len(failed_nodeids) - MAX_FAILED_TESTS_IN_MESSAGE
+            if remaining > 0:
+                lines.append(f"  ... 외 {remaining}건")
+        return test_proc.returncode, "\n".join(lines)
 
     return 0, (
         f"[premerge-gate] 전량 테스트 통과 및 증거 기록 완료\n"

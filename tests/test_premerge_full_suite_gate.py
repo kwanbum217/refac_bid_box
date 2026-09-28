@@ -19,6 +19,8 @@ import pytest
 from scripts.premerge_full_suite_gate import (
     BYPASS_ENV_VAR,
     CANONICAL_FULL_SUITE_CMD,
+    MAX_FAILED_TESTS_RECORDED,
+    extract_failed_nodeids,
     get_merge_head_sha,
     install_git_hooks,
     is_bypass_active,
@@ -553,3 +555,138 @@ def test_main_cli_prepare_commit_msg_positional_args(tmp_path: Path):
     # 3. 소스 생략된 일반 커밋 -> main 브랜치여도 증거 없이 즉시 통과
     ret_none = main([".git/COMMIT_EDITMSG"], runner=runner)
     assert ret_none == 0
+
+
+def test_extract_failed_nodeids_empty_on_pass():
+    """통과 출력에는 실패 nodeid 가 없어 빈 목록을 반환합니다."""
+    output = "3216 passed, 31 skipped in 55.0s\n"
+    assert extract_failed_nodeids(output) == []
+
+
+def test_extract_failed_nodeids_mixed_failed_and_error():
+    """FAILED 와 ERROR 를 함께 추출하고 메시지를 버리며 중복을 제거하고 순서를 유지합니다."""
+    output = (
+        "FAILED tests/test_a.py::test_one - AssertionError: boom\n"
+        "ERROR tests/test_b.py::test_two - RuntimeError: setup failed\n"
+        "FAILED tests/test_a.py::test_one - AssertionError: boom\n"
+        "some log line that mentions FAILED in the middle\n"
+        "FAILEDtests/test_ignored.py::test_x - no separator\n"
+        "FAILED tests/test_c.py::test_three\n"
+    )
+    assert extract_failed_nodeids(output) == [
+        "tests/test_a.py::test_one",
+        "tests/test_b.py::test_two",
+        "tests/test_c.py::test_three",
+    ]
+
+
+def test_extract_failed_nodeids_ignores_body_log_before_summary_header():
+    """요약 머리줄이 있으면 그 앞의 본문 로그·traceback 의 FAILED 줄은 잡지 않습니다."""
+    output = "\n".join(
+        [
+            "FAILED this-is-body-log-line",
+            "ERROR while connecting - retry",
+            "=========================== short test summary info ============================",
+            "FAILED tests/test_x.py::test_alpha - AssertionError",
+            "ERROR tests/test_z.py - ImportError",
+            "1 failed, 1 error, 10 passed in 1.00s",
+        ]
+    )
+    assert extract_failed_nodeids(output) == ["tests/test_x.py::test_alpha", "tests/test_z.py"]
+
+
+def test_extract_failed_nodeids_from_stderr_only():
+    """stdout 과 stderr 를 합친 출력에서 FAILED/ERROR 줄을 추출합니다."""
+    output = "\n".join(["1 failed, 3215 passed", "FAILED tests/test_err.py::test_e - ValueError"])
+    assert extract_failed_nodeids(output) == ["tests/test_err.py::test_e"]
+
+
+def test_record_evidence_success_records_empty_failed_tests(tmp_path: Path):
+    """통과 시 증거 JSON 에 failed_tests 빈 목록과 truncated false 가 기록됩니다."""
+    evidence_path = tmp_path / "pass_evidence.json"
+    runner = make_mock_runner(
+        branch="feature/pass-test",
+        head_sha="aabbcc1122334455",
+        pytest_exit_code=0,
+        pytest_stdout="3216 passed, 31 skipped in 55.0s",
+    )
+
+    code, _ = record_evidence(evidence_path=evidence_path, runner=runner)
+    assert code == 0
+
+    data, _ = load_evidence(evidence_path)
+    assert data is not None
+    assert data["failed_tests"] == []
+    assert data["failed_tests_truncated"] is False
+
+
+def test_record_evidence_failure_message_lists_failed_nodeids(tmp_path: Path):
+    """실패 반환 메시지에 실패한 nodeid 가 줄바꿈으로 나열됩니다."""
+    evidence_path = tmp_path / "fail_msg_evidence.json"
+    runner = make_mock_runner(
+        branch="feature/fail-msg",
+        head_sha="deadbeef5678",
+        pytest_exit_code=1,
+        pytest_stdout=(
+            "FAILED tests/test_x.py::test_y - AssertionError: boom\n"
+            "ERROR tests/test_z.py::test_w - RuntimeError: setup\n"
+            "1 failed, 1 error, 3214 passed in 55.0s"
+        ),
+    )
+
+    code, msg = record_evidence(evidence_path=evidence_path, runner=runner)
+    assert code == 1
+    assert "tests/test_x.py::test_y" in msg
+    assert "tests/test_z.py::test_w" in msg
+
+    data, _ = load_evidence(evidence_path)
+    assert data is not None
+    assert data["failed_tests"] == ["tests/test_x.py::test_y", "tests/test_z.py::test_w"]
+    assert data["failed_tests_truncated"] is False
+
+
+def test_record_evidence_failure_truncates_failed_tests(tmp_path: Path):
+    """실패 nodeid 가 50건을 넘으면 앞 50건만 기록하고 truncated 를 true 로 표시합니다."""
+    evidence_path = tmp_path / "truncated_evidence.json"
+    nodeids = [f"tests/test_bulk.py::test_{i:03d}" for i in range(MAX_FAILED_TESTS_RECORDED + 1)]
+    stdout = "\n".join(f"FAILED {nodeid} - AssertionError: boom" for nodeid in nodeids)
+    stdout += f"\n{len(nodeids)} failed, 10 passed in 55.0s"
+    runner = make_mock_runner(
+        branch="feature/bulk-fail",
+        head_sha="cafebabe0001",
+        pytest_exit_code=1,
+        pytest_stdout=stdout,
+    )
+
+    code, _ = record_evidence(evidence_path=evidence_path, runner=runner)
+    assert code == 1
+
+    data, _ = load_evidence(evidence_path)
+    assert data is not None
+    assert data["failed_tests"] == nodeids[:MAX_FAILED_TESTS_RECORDED]
+    assert len(data["failed_tests"]) == MAX_FAILED_TESTS_RECORDED
+    assert data["failed_tests_truncated"] is True
+
+
+def test_verify_accepts_legacy_evidence_without_failed_tests(tmp_path: Path):
+    """failed_tests 키가 없는 기존 증거 파일도 검증을 그대로 통과합니다."""
+    target_sha = "c0ffee1234567890"
+    evidence_path = tmp_path / "legacy_evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "suite": "full",
+                "target": "tests/",
+                "command": " ".join(CANONICAL_FULL_SUITE_CMD),
+                "commit": target_sha,
+                "exit_code": 0,
+                "summary": "3216 passed, 31 skipped in 55.0s",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    runner = make_mock_runner(branch="main", merge_head=target_sha)
+    code, msg = verify_premerge_gate(evidence_path=evidence_path, runner=runner)
+    assert code == 0
+    assert "검증 통과" in msg
