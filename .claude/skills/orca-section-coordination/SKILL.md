@@ -367,6 +367,8 @@ python3 scripts/orca_worker_watch.py --watch  # 상시 감시 루프 (기동 시
 | `escalate_when` 에 사실 불일치 조항이 있는가 | `ground_truth` 가 틀릴 수 있습니다. 2026-08-19 에 "호출부는 3곳" 이 실제로 4곳이었고, 이 조항 덕에 드러났습니다 |
 | 검증 명령이 acceptance 를 실제로 검사하는가 | 워커가 통과시킬 수 없는 사양은 왕복만 늘립니다 |
 | 직전 completed Task 의 워커 터미널을 회수했는가 | 안 하면 `orca_settled_session_audit.py` 가 Dispatch 를 거부합니다 |
+| 코드 수정 없는 재검증 Task 의 런처에 `--no-commit-notice` 를 붙였는가 | 빌더 역할 고지가 "반드시 커밋" 을 요구해 Capsule 의 커밋 금지와 충돌합니다. 2026-09-28 재검증 워커 2대가 모두 이 충돌을 질문했습니다 |
+| 빌더 브랜치에 코디네이터 커밋(main 병합, 문서 수정)을 얹지 않았는가 | 게이트 6 이 빌더 보고의 건수·changed_files 를 HEAD 에서 재현해 실패합니다. main 반영이 필요하면 빌더에게 검증 전에 병합하게 하고, source_commit 은 병합 커밋 안에서 갱신합니다 |
 
 `dispatch` 가 `terminal_not_settled` 로 종료 코드 3 을 내는 것은 **오탐입니다.** 판정이
 Dispatch 전에 이루어지고 이후 재확인이 없습니다. `orca terminal read` 로 도달을 한 번
