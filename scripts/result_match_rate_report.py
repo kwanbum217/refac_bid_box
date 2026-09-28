@@ -41,6 +41,7 @@ def _print_table(as_of: str, rows: list[dict[str, Any]], alerts: list[dict[str, 
         f"{'공고':>8}{'매칭':>8}{'매칭률':>10}"
         f"{'전년공고':>10}{'전년매칭률':>12}"
         f"{'보정률':>10}{'다주기저':>12}"
+        f"{'공고단위률':>12}{'전년공고단위률':>16}"
     )
     for row in rows:
         print(
@@ -48,6 +49,7 @@ def _print_table(as_of: str, rows: list[dict[str, Any]], alerts: list[dict[str, 
             f"{row['announcements']:>8,}{row['matched']:>8,}{_format_rate(row['rate']):>10}"
             f"{row['baseline_announcements']:>10,}{_format_rate(row['baseline_rate']):>12}"
             f"{_format_rate(row['adjusted_rate']):>10}{_format_rate(row['baseline_multi_rate']):>12}"
+            f"{_format_rate(row['notice_rate']):>12}{_format_rate(row['baseline_notice_rate']):>16}"
         )
 
     if alerts:
