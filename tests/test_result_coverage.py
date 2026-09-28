@@ -728,3 +728,161 @@ def test_worker_settings_register_task_and_cron():
     assert job.minute in (0, {0})
     assert job.run_at_startup is False
     assert job.timeout_s == 3600
+
+
+def test_notice_dedup_keeps_latest_ord(isolated_db):
+    """같은 공고번호·분류의 000/001 두 행은 보조 지표에서 최신 차수 하나만 센다."""
+    db = isolated_db
+    _add_announcement(db, "2026-L00001", "000", "Servc", W)
+    _add_announcement(db, "2026-L00001", "001", "Servc", W)
+    _add_result(db, "2026-L00001", "001", "Servc", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Servc", "small", W)
+    # 기존 매칭률은 두 행을 그대로 센다.
+    assert row["announcements"] == 2
+    assert row["matched"] == 1
+    assert row["rate"] == pytest.approx(0.5)
+    # 보조 지표는 최신 차수 001 한 행만 센다.
+    assert row["notice_announcements"] == 1
+    assert row["notice_matched"] == 1
+    assert row["notice_rate"] == pytest.approx(1.0)
+
+
+def test_notice_dedup_matches_latest_ord_only(isolated_db):
+    """결과가 000 에만 있고 공고가 000·001 이면 보조 지표는 001 기준이라 미매칭이다."""
+    db = isolated_db
+    _add_announcement(db, "2026-M00001", "000", "Servc", W)
+    _add_announcement(db, "2026-M00001", "001", "Servc", W)
+    _add_result(db, "2026-M00001", "000", "Servc", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Servc", "small", W)
+    assert row["announcements"] == 2
+    assert row["matched"] == 1
+    assert row["notice_announcements"] == 1
+    assert row["notice_matched"] == 0
+    assert row["notice_rate"] == pytest.approx(0.0)
+
+
+def test_notice_dedup_counts_in_latest_ord_week(isolated_db):
+    """차수가 다른 주에 걸치면 최신 차수 행의 주에만 계수한다."""
+    db = isolated_db
+    older = W - timedelta(days=7)
+    _add_announcement(db, "2026-P00001", "000", "Servc", older)
+    _add_announcement(db, "2026-P00001", "001", "Servc", W)
+    _add_result(db, "2026-P00001", "001", "Servc", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=2)
+    latest_row = _row_of(rows, "Servc", "small", W)
+    older_row = _row_of(rows, "Servc", "small", older)
+    assert latest_row["notice_announcements"] == 1
+    assert latest_row["notice_matched"] == 1
+    assert latest_row["notice_rate"] == pytest.approx(1.0)
+    assert older_row["notice_announcements"] == 0
+    assert older_row["notice_matched"] == 0
+    assert older_row["notice_rate"] is None
+    # 기존 집계는 두 주에 각각 한 행씩 남는다.
+    assert latest_row["announcements"] == 1
+    assert older_row["announcements"] == 1
+
+
+def test_notice_dedup_separates_categories(isolated_db):
+    """분류가 다르면 같은 공고번호라도 별도 공고로 계수한다."""
+    db = isolated_db
+    _add_announcement(db, "2026-Q00001", "000", "Servc", W)
+    _add_announcement(db, "2026-Q00001", "001", "Cnstwk", W)
+    _add_result(db, "2026-Q00001", "001", "Cnstwk", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    servc = _row_of(rows, "Servc", "small", W)
+    cnstwk = _row_of(rows, "Cnstwk", "small", W)
+    assert servc["notice_announcements"] == 1
+    assert servc["notice_matched"] == 0
+    assert cnstwk["notice_announcements"] == 1
+    assert cnstwk["notice_matched"] == 1
+
+
+def test_baseline_notice_rate_uses_single_year_ago_week(isolated_db):
+    """baseline_notice_* 는 364일 전 같은 단일 주에서 같은 방식으로 센 값이다."""
+    db = isolated_db
+    baseline = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    _add_announcement(db, "2026-R00001", "000", "Thng", W)
+    _add_announcement(db, "2026-R00001", "001", "Thng", W)
+    _add_result(db, "2026-R00001", "001", "Thng", W)
+    _add_announcement(db, "2025-R00001", "000", "Thng", baseline)
+    _add_announcement(db, "2025-R00001", "001", "Thng", baseline)
+    _add_result(db, "2025-R00001", "001", "Thng", baseline)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Thng", "small", W)
+    assert row["notice_announcements"] == 1
+    assert row["notice_matched"] == 1
+    assert row["notice_rate"] == pytest.approx(1.0)
+    assert row["baseline_notice_announcements"] == 1
+    assert row["baseline_notice_matched"] == 1
+    assert row["baseline_notice_rate"] == pytest.approx(1.0)
+
+
+def test_notice_metrics_do_not_feed_adjusted_rate(isolated_db):
+    """보조 지표는 보정률(adjusted_rate)과 기존 필드 계산에 쓰이지 않는다."""
+    db = isolated_db
+    center = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    _add_method_batch(db, "2025-S1", center, "전자입찰", 100, 50)
+    # 현재 주 대형 Thng 는 같은 공고번호 000/001 두 행이고 001 만 매칭이다.
+    _add_announcement(
+        db,
+        "2026-S00001",
+        "000",
+        "Thng",
+        W,
+        presmpt_prce=LARGE_PRICE_THRESHOLD,
+        bid_methd_nm="전자입찰",
+    )
+    _add_announcement(
+        db,
+        "2026-S00001",
+        "001",
+        "Thng",
+        W,
+        presmpt_prce=LARGE_PRICE_THRESHOLD,
+        bid_methd_nm="전자입찰",
+    )
+    _add_result(db, "2026-S00001", "001", "Thng", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Thng", "large", W)
+    # 기존 집계는 두 행을 세고, 보조 지표는 최신 차수 한 행만 센다.
+    assert row["announcements"] == 2
+    assert row["matched"] == 1
+    assert row["notice_announcements"] == 1
+    assert row["notice_matched"] == 1
+    assert row["notice_rate"] == pytest.approx(1.0)
+    # 보정률은 기존 방식별 집계(2건 중 1건, 기저 1.0 가중)를 그대로 쓴다.
+    assert row["baseline_multi_rate"] == pytest.approx(0.5)
+    assert row["adjusted_rate"] == pytest.approx(0.5)
+    assert row["adjusted_rate"] == pytest.approx(row["rate"])
+    assert row["adjusted_rate"] != pytest.approx(row["notice_rate"])
+
+
+def test_alerts_ignore_notice_fields():
+    """경고 판정은 보조 지표 필드가 있든 없든 같은 결과를 낸다."""
+    rows = _two_alert_weeks()
+    expected = evaluate_match_rate_alerts(rows)
+    assert len(expected) == 1
+    for row in rows:
+        row.update(
+            notice_announcements=1,
+            notice_matched=0,
+            notice_rate=0.0,
+            baseline_notice_announcements=1,
+            baseline_notice_matched=0,
+            baseline_notice_rate=0.0,
+        )
+    assert evaluate_match_rate_alerts(rows) == expected

@@ -18,6 +18,11 @@ src/app/services/result_coverage.py
   adjusted_rate 를 추가한다.
 - A6: 분류별 최근 성숙 주와 직전 성숙 주가 모두 조건을 만족할 때만 경고한다.
 
+2026-09-28 차수 불일치(docs/analysis/ord_mismatch_20260928.md)에서 변경공고로 옛
+차수 공고 행이 남아 분모가 부풀려진다고 판정했다. 정본 정의는 그대로 두고, 같은
+공고번호·분류의 여러 차수 행 중 최신 차수 행 하나만 세는 보조 지표 notice_* 를
+각 행에 병행 산출한다. 보조 지표는 5주 기저·보정률·경고 판정에 쓰지 않는다.
+
 읽기 전용 함수다. DB 쓰기는 하지 않는다. openg_dt 에 인덱스가 없으므로 공고
 조회는 반드시 bid_ntce_dt 범위(ix_bid_ann_dt_cat)로 먼저 좁힌 뒤 openg_dt
 조건을 더한다. 차수 정규화와 주 집계는 파이썬에서 해 SQLite 테스트와 동작을
@@ -170,6 +175,43 @@ def _adjusted_rate(
     return total
 
 
+def _notice_band_counts(
+    announcement_rows: list[Any],
+    result_keys: set[tuple[str, str, str]],
+    target_weeks: set[date],
+) -> dict[tuple[str, date, str], list[int]]:
+    """공고번호·분류 단위 보조 지표용 (분류, 주, 규모) 집계를 만든다.
+
+    같은 (bid_ntce_no, category) 의 여러 차수 공고 행 중 정규화 차수가 가장 큰
+    행 하나만 대표로 남긴다. 대표 행의 openg_dt 로 개찰 주를, presmpt_prce 로
+    규모를 정하고, 그 행의 (공고번호, 분류, 정규화 차수) 가 낙찰결과에 있는지로
+    매칭한다. 조회 블록 경계에 걸려 target_weeks 밖인 주는 기존 집계와 같이 세지
+    않는다. 분류가 다르면 서로 다른 공고로 센다.
+    """
+    latest: dict[tuple[str, str], tuple[str, Any]] = {}
+    for row in announcement_rows:
+        key = (row[0], row[2])
+        ord_norm = normalize_ord(row[1])
+        current = latest.get(key)
+        if current is None or ord_norm > current[0]:
+            latest[key] = (ord_norm, row)
+
+    counts: dict[tuple[str, date, str], list[int]] = {}
+    for ord_norm, row in latest.values():
+        _no, _ord, category, presmpt_prce, openg_dt, _method = row
+        if openg_dt is None:
+            continue
+        start = week_start(openg_dt.date())
+        if start not in target_weeks:
+            continue
+        band = BAND_LARGE if (presmpt_prce or 0) >= LARGE_PRICE_THRESHOLD else BAND_SMALL
+        bucket = counts.setdefault((category, start, band), [0, 0])
+        bucket[0] += 1
+        if (row[0], category, ord_norm) in result_keys:
+            bucket[1] += 1
+    return counts
+
+
 def compute_result_match_rates(
     db: Session,
     *,
@@ -189,6 +231,11 @@ def compute_result_match_rates(
     합산한 값이다(A1). 대형 행의 adjusted_rate 는 기저 5주의 방식 구성비로
     현재 주 방식별 매칭률을 가중한 보정률이다(A2). 소형 행과 현재 주 공고가
     0 인 행, 기저 5주 공고가 0 인 행은 adjusted_rate 가 None 이다.
+
+    notice_* 필드는 같은 공고번호·분류의 여러 차수 공고 행 중 정규화 차수가 가장
+    큰 행 하나만 센 보조 지표다. notice_rate 는 notice_matched / notice_announcements
+    이고, baseline_notice_* 는 364일 전 같은 단일 주에서 같은 방식으로 센 값이다.
+    보조 지표는 기존 필드와 adjusted_rate, 경고 판정에 쓰지 않는다.
 
     조회는 현재 성숙 주 구간과 전년 동기 5주 구간 두 블록으로 좁혀 각 블록마다
     공고는 bid_ntce_dt 를 [블록 시작 - NOTICE_LOOKBACK_DAYS 일, 블록 끝], openg_dt 를
@@ -273,6 +320,8 @@ def compute_result_match_rates(
             band_bucket[1] += 1
             method_bucket[1] += 1
 
+    notice_band_counts = _notice_band_counts(announcement_rows, result_keys, target_weeks)
+
     rows: list[dict[str, Any]] = []
     for start in sorted(mature_starts):
         center = start - timedelta(days=BASELINE_OFFSET_DAYS)
@@ -288,6 +337,12 @@ def compute_result_match_rates(
                 )
                 rate = _rate(matched, announcements)
                 baseline_multi_rate = _rate(baseline_multi_matched, baseline_multi_announcements)
+                notice_announcements, notice_matched = notice_band_counts.get(
+                    (category, start, band), [0, 0]
+                )
+                baseline_notice_announcements, baseline_notice_matched = notice_band_counts.get(
+                    (category, center, band), [0, 0]
+                )
                 adjusted_rate = None
                 if (
                     band == BAND_LARGE
@@ -318,6 +373,14 @@ def compute_result_match_rates(
                         "baseline_multi_matched": baseline_multi_matched,
                         "baseline_multi_rate": baseline_multi_rate,
                         "adjusted_rate": adjusted_rate,
+                        "notice_announcements": notice_announcements,
+                        "notice_matched": notice_matched,
+                        "notice_rate": _rate(notice_matched, notice_announcements),
+                        "baseline_notice_announcements": baseline_notice_announcements,
+                        "baseline_notice_matched": baseline_notice_matched,
+                        "baseline_notice_rate": _rate(
+                            baseline_notice_matched, baseline_notice_announcements
+                        ),
                     }
                 )
     return rows
