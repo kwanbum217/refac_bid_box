@@ -27,13 +27,36 @@ from src.app.services.result_coverage import (  # noqa: E402
     compute_result_match_rates,
     evaluate_match_rate_alerts,
 )
+from src.app.services.result_method_rates import compute_method_match_rates  # noqa: E402
 
 BAND_LABELS = {"large": "대형", "small": "소형"}
 LATE_AFTER_DAYS = 28
+METHOD_WEEKS_DEFAULT = 4
 
 
 def _format_rate(rate: float | None) -> str:
     return f"{rate * 100:5.1f}%" if rate is not None else "   -  "
+
+
+def _format_optional_rate(value: Any, width: int) -> str:
+    """다른 워커가 병합 전이라 행에 없을 수 있는 비율을 폭에 맞춰 표시한다.
+
+    값이 숫자가 아니면(필드 없음 또는 None) 하이픈으로 채운다.
+    """
+    text = f"{value * 100:.1f}%" if isinstance(value, (int, float)) else "-"
+    return f"{text:>{width}}"
+
+
+def _print_method_table(method_weeks: int, method_rates: list[dict[str, Any]]) -> None:
+    print()
+    print(f"입찰방식별 매칭률(최근 {method_weeks} 성숙 주 합산)")
+    print(f"{'분류':<8}{'규모':<6}{'입찰방식':<20}{'공고':>8}{'매칭':>8}{'매칭률':>10}{'비중':>10}")
+    for row in method_rates:
+        print(
+            f"{row['category']:<8}{BAND_LABELS.get(row['band'], row['band']):<6}"
+            f"{row['method']:<20}{row['announcements']:>8,}{row['matched']:>8,}"
+            f"{_format_rate(row['rate']):>10}{_format_rate(row['share']):>10}"
+        )
 
 
 def _print_table(
@@ -42,6 +65,8 @@ def _print_table(
     alerts: list[dict[str, Any]],
     late_arrivals: list[dict[str, Any]],
     late_window_days: int,
+    method_rates: list[dict[str, Any]],
+    method_weeks: int,
 ) -> None:
     print(f"기준일 {as_of}")
     print(
@@ -50,6 +75,7 @@ def _print_table(
         f"{'전년공고':>10}{'전년매칭률':>12}"
         f"{'보정률':>10}{'다주기저':>12}"
         f"{'공고단위률':>12}{'전년공고단위률':>16}"
+        f"{'취소제외보정':>14}{'전년취소제외보정':>18}"
     )
     for row in rows:
         print(
@@ -58,6 +84,8 @@ def _print_table(
             f"{row['baseline_announcements']:>10,}{_format_rate(row['baseline_rate']):>12}"
             f"{_format_rate(row['adjusted_rate']):>10}{_format_rate(row['baseline_multi_rate']):>12}"
             f"{_format_rate(row['notice_rate']):>12}{_format_rate(row['baseline_notice_rate']):>16}"
+            f"{_format_optional_rate(row.get('cancel_adjusted_rate'), 14)}"
+            f"{_format_optional_rate(row.get('baseline_cancel_adjusted_rate'), 18)}"
         )
 
     if alerts:
@@ -83,6 +111,8 @@ def _print_table(
             f"{row['late_arrivals']:>10,}{row['total_arrivals']:>10,}"
         )
 
+    _print_method_table(method_weeks, method_rates)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="낙찰결과 매칭률 조회")
@@ -95,6 +125,12 @@ def main(argv: list[str] | None = None) -> int:
         default=7,
         help="늦은 도착을 셀 최근 수집 창(일) (기본 7)",
     )
+    parser.add_argument(
+        "--method-weeks",
+        type=int,
+        default=METHOD_WEEKS_DEFAULT,
+        help="입찰방식별 표에 합산할 최근 성숙 주 수 (기본 4)",
+    )
     args = parser.parse_args(argv)
 
     as_of = date.fromisoformat(args.as_of) if args.as_of else date.today()
@@ -102,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rows = compute_result_match_rates(db, as_of=as_of, weeks=args.weeks)
         late_arrivals = compute_late_arrivals(db, as_of=as_of, window_days=args.late_window_days)
+        method_rates = compute_method_match_rates(db, as_of=as_of, weeks=args.method_weeks)
     finally:
         db.close()
     alerts = evaluate_match_rate_alerts(rows)
@@ -114,13 +151,22 @@ def main(argv: list[str] | None = None) -> int:
                     "rows": rows,
                     "alerts": alerts,
                     "late_arrivals": late_arrivals,
+                    "method_rates": method_rates,
                 },
                 ensure_ascii=False,
                 indent=2,
             )
         )
     else:
-        _print_table(as_of.isoformat(), rows, alerts, late_arrivals, args.late_window_days)
+        _print_table(
+            as_of.isoformat(),
+            rows,
+            alerts,
+            late_arrivals,
+            args.late_window_days,
+            method_rates,
+            args.method_weeks,
+        )
     return 0
 
 
