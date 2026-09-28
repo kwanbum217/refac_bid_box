@@ -23,6 +23,15 @@ from src.app.services.result_coverage import (
     evaluate_match_rate_alerts,
 )
 from src.tasks.notifier import notify
+from src.tasks.scheduled_tasks import (
+    RESULT_COVERAGE_CLAIM_KEY,
+    RESULT_COVERAGE_CLAIM_TTL_SECONDS,
+    ScheduleClaimResult,
+    ScheduleClaimStatus,
+    _record_schedule,
+    acquire_schedule_claim,
+    release_schedule_claim,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +56,24 @@ def _collect_snapshot() -> dict[str, Any]:
         db.close()
 
 
-@traced_worker_task
-async def result_coverage_monitor_task(ctx: dict[str, Any]) -> dict[str, Any]:
-    """매칭률 스냅샷을 계산하고 경고 대상이 있을 때만 한 번 알린다.
+def _acquire_result_coverage_claim() -> ScheduleClaimResult:
+    """커버리지 크론과 기동 따라잡기가 공유하는 선점을 원자적으로 획득합니다.
 
-    DB 오류는 로그만 남기고 status error 로 반환한다. 예외를 올리면 워커의
-    재시도 카운트를 소진하고 다른 감시 태스크를 방해하므로 삼킨다.
+    TTL 은 잡 타임아웃 이상으로 잡습니다. Redis 에 접근할 수 없으면 호출부가
+    경고를 남기고 선점 없이 진행하도록 결과를 그대로 돌려줍니다.
     """
+    from src.tasks.worker import MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS
+
+    ttl = max(int(MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS), RESULT_COVERAGE_CLAIM_TTL_SECONDS)
+    return acquire_schedule_claim(
+        "result_coverage_monitor",
+        key=RESULT_COVERAGE_CLAIM_KEY,
+        ttl_seconds=ttl,
+    )
+
+
+async def _run_result_coverage_monitor() -> dict[str, Any]:
+    """선점을 획득한 뒤 실행되는 매칭률 감시 본문입니다."""
     try:
         result = await asyncio.to_thread(_collect_snapshot)
     except Exception as exc:
@@ -79,3 +99,31 @@ async def result_coverage_monitor_task(ctx: dict[str, Any]) -> dict[str, Any]:
         lines.append("상세: uv run python scripts/result_match_rate_report.py")
         await notify("낙찰결과 매칭률 경고", lines, level="warning")
     return result
+
+
+@traced_worker_task
+@_record_schedule("result_coverage_monitor", success_statuses=frozenset({"ok"}))
+async def result_coverage_monitor_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """매칭률 스냅샷을 계산하고 경고 대상이 있을 때만 한 번 알린다.
+
+    DB 오류는 로그만 남기고 status error 로 반환한다. 예외를 올리면 워커의
+    재시도 카운트를 소진하고 다른 감시 태스크를 방해하므로 삼킨다.
+    크론과 기동 따라잡기가 같은 선점 키를 공유해 같은 슬롯 감시가 겹치지 않는다.
+    """
+    claim = _acquire_result_coverage_claim()
+    if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+        logger.info("낙찰결과 매칭률 감시가 이미 실행 중이어서 건너뜁니다.")
+        return {"status": "skipped", "reason": "already_running"}
+    if not claim.acquired:
+        logger.warning(
+            "Redis 접근 불가로 낙찰결과 매칭률 감시 선점 없이 진행합니다 (key=%s, status=%s)",
+            RESULT_COVERAGE_CLAIM_KEY,
+            claim.status.value,
+        )
+
+    try:
+        return await _run_result_coverage_monitor()
+    finally:
+        # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
+        if claim.acquired and claim.token:
+            release_schedule_claim(key=RESULT_COVERAGE_CLAIM_KEY, token=claim.token)
