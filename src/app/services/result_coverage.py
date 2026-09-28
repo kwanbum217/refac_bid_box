@@ -23,6 +23,12 @@ src/app/services/result_coverage.py
 공고번호·분류의 여러 차수 행 중 최신 차수 행 하나만 세는 보조 지표 notice_* 를
 각 행에 병행 산출한다. 보조 지표는 5주 기저·보정률·경고 판정에 쓰지 않는다.
 
+2026-09-28 용역 대형 상류 공백 재조사(docs/analysis/servc_upstream_recheck_20260928.md)
+에서 원인이 조달청 상류 영구 누락 우세로 확인된 경고가 매주 반복되어 다른 새 경고를
+묻는다는 판정에 따라, 원인이 확인된 경고를 만료일까지 알림에서 빼는 임시 억제를
+추가했다. 판정 규칙(5주 기저·방식 보정·2주 연속)은 바꾸지 않으며, 억제 대상도
+판정 결과에는 suppressed 표시와 함께 남는다. 기본값은 억제 없음이다.
+
 읽기 전용 함수다. DB 쓰기는 하지 않는다. openg_dt 에 인덱스가 없으므로 공고
 조회는 반드시 bid_ntce_dt 범위(ix_bid_ann_dt_cat)로 먼저 좁힌 뒤 openg_dt
 조건을 더한다. 차수 정규화와 주 집계는 파이썬에서 해 SQLite 테스트와 동작을
@@ -31,6 +37,7 @@ src/app/services/result_coverage.py
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -38,6 +45,8 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidAnnouncement, BidResult
+
+logger = logging.getLogger(__name__)
 
 LARGE_PRICE_THRESHOLD = 230_000_000
 MIN_WEEK_SAMPLES = 100
@@ -57,6 +66,11 @@ NULL_METHOD_LABEL = "(null)"
 
 BAND_LARGE = "large"
 BAND_SMALL = "small"
+
+# 임시 억제는 규모 large 만 허용합니다. 경고 판정 자체가 대형 행에서만 나오므로
+# 소형·기타 표기는 설정 실수로 보고 무시합니다.
+SUPPRESS_ALLOWED_BANDS = (BAND_LARGE,)
+SUPPRESS_FIELD_COUNT = 3
 
 
 def normalize_ord(value: Any) -> str:
@@ -386,6 +400,43 @@ def compute_result_match_rates(
     return rows
 
 
+def parse_alert_suppressions(text: str | None) -> dict[tuple[str, str], date]:
+    """임시 억제 설정 문자열을 (분류, 규모) -> 만료일 사전으로 파싱한다.
+
+    형식은 쉼표로 구분한 '분류:규모:만료일' 항목이다(예: 'Servc:large:2026-11-30').
+    각 항목의 앞뒤 공백은 허용하고, 항목 수가 3이 아니거나 분류·규모가 비었거나
+    규모가 large 가 아니거나 만료일이 YYYY-MM-DD 가 아니면 그 항목만 경고 로그를
+    남기고 무시한다. 빈 항목과 빈 문자열은 조용히 건너뛴다. 같은 (분류, 규모)가
+    여러 번 오면 마지막 값이 남는다.
+    """
+    suppressions: dict[tuple[str, str], date] = {}
+    if not text:
+        return suppressions
+    for raw in str(text).split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        parts = [part.strip() for part in item.split(":")]
+        if len(parts) != SUPPRESS_FIELD_COUNT or not parts[0] or not parts[1]:
+            logger.warning("낙찰결과 매칭률 억제 항목 형식 오류로 무시합니다: %r", item)
+            continue
+        category, band, expiry_text = parts
+        if band not in SUPPRESS_ALLOWED_BANDS:
+            logger.warning(
+                "낙찰결과 매칭률 억제 규모는 %s 만 허용합니다. 무시합니다: %r",
+                "/".join(SUPPRESS_ALLOWED_BANDS),
+                item,
+            )
+            continue
+        try:
+            expiry = date.fromisoformat(expiry_text)
+        except ValueError:
+            logger.warning("낙찰결과 매칭률 억제 만료일 형식 오류로 무시합니다: %r", item)
+            continue
+        suppressions[(category, band)] = expiry
+    return suppressions
+
+
 def _meets_alert_condition(row: dict[str, Any]) -> bool:
     """한 성숙 주가 경고 조건을 만족하는지 본다(A6)."""
     if row["announcements"] < MIN_WEEK_SAMPLES:
@@ -400,14 +451,28 @@ def _meets_alert_condition(row: dict[str, Any]) -> bool:
     return round(baseline_multi_rate - adjusted_rate, 6) >= RATE_DROP_ALERT
 
 
-def evaluate_match_rate_alerts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def evaluate_match_rate_alerts(
+    rows: list[dict[str, Any]],
+    *,
+    suppressions: dict[tuple[str, str], date] | None = None,
+    today: date | None = None,
+) -> list[dict[str, Any]]:
     """분류별 최근 성숙 주와 직전 성숙 주가 모두 조건을 만족할 때만 경고한다.
 
     각 대형 행은 announcements >= MIN_WEEK_SAMPLES,
     baseline_multi_announcements >= MIN_WEEK_SAMPLES,
     baseline_multi_rate - adjusted_rate >= RATE_DROP_ALERT 를 만족해야 한다.
     직전 성숙 주 대형 행이 없으면 경고하지 않는다(A6).
+
+    suppressions 는 (분류, 규모) -> 만료일 사전이다. 경고 조건을 만족한 항목이
+    억제 대상(분류·규모 일치, today 가 만료일 이하)이면 반환 dict 에
+    suppressed=True 와 suppressed_until=만료일 ISO 를 넣고, 아니면
+    suppressed=False 와 suppressed_until=None 을 넣는다. 억제 대상이라도 반환
+    목록에서 빼지 않으며 기존 키는 그대로 유지한다. suppressions 가 None 이거나
+    today 가 None 이면 각각 억제 없음, 오늘 날짜로 해석한다.
     """
+    reference = today if today is not None else date.today()
+    lookup = suppressions or {}
     large_by_category: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         if row.get("band") != BAND_LARGE:
@@ -427,6 +492,8 @@ def evaluate_match_rate_alerts(rows: list[dict[str, Any]]) -> list[dict[str, Any
         previous = candidates[-2]
         if not _meets_alert_condition(latest) or not _meets_alert_condition(previous):
             continue
+        expiry = lookup.get((category, BAND_LARGE))
+        is_suppressed = expiry is not None and reference <= expiry
         alerts.append(
             {
                 "category": category,
@@ -440,6 +507,8 @@ def evaluate_match_rate_alerts(rows: list[dict[str, Any]]) -> list[dict[str, Any
                 "previous_week_start": previous["week_start"],
                 "previous_adjusted_rate": previous["adjusted_rate"],
                 "previous_baseline_multi_rate": previous["baseline_multi_rate"],
+                "suppressed": is_suppressed,
+                "suppressed_until": expiry.isoformat() if is_suppressed and expiry else None,
             }
         )
     return alerts

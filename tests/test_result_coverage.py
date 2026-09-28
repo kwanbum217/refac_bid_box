@@ -24,6 +24,7 @@ from src.app.services.result_coverage import (
     compute_result_match_rates,
     evaluate_match_rate_alerts,
     normalize_ord,
+    parse_alert_suppressions,
 )
 
 # 2026-08-24 는 월요일이다. as_of = W + 34 일(2026-09-27, 일요일)이면
@@ -886,3 +887,100 @@ def test_alerts_ignore_notice_fields():
             baseline_notice_rate=0.0,
         )
     assert evaluate_match_rate_alerts(rows) == expected
+
+
+def test_parse_alert_suppressions_reads_valid_entries_with_whitespace():
+    parsed = parse_alert_suppressions(" Servc : large : 2026-11-30 , Thng:large:2026-12-31 ")
+    assert parsed == {
+        ("Servc", "large"): date(2026, 11, 30),
+        ("Thng", "large"): date(2026, 12, 31),
+    }
+
+
+def test_parse_alert_suppressions_empty_text_disables_suppression():
+    assert parse_alert_suppressions("") == {}
+    assert parse_alert_suppressions("   ") == {}
+    assert parse_alert_suppressions(None) == {}
+
+
+def test_parse_alert_suppressions_ignores_malformed_entries():
+    # 항목 수 오류, 빈 분류·규모, 날짜 오류, 규모 오류 항목은 무시하고 정상 항목만 남긴다.
+    parsed = parse_alert_suppressions(
+        "Servc:large,"
+        "Servc:large:2026-11-30:extra,"
+        ":large:2026-11-30,"
+        "Servc::2026-11-30,"
+        "Servc:large:not-a-date,"
+        "Servc:large:2026-13-01,"
+        "Servc:medium:2026-11-30,"
+        "Servc:large:2026-11-30"
+    )
+    assert parsed == {("Servc", "large"): date(2026, 11, 30)}
+
+
+def test_parse_alert_suppressions_rejects_small_band():
+    # 경고 판정은 대형만 하므로 소형 억제는 설정 실수로 보고 무시한다.
+    assert parse_alert_suppressions("Servc:small:2026-11-30") == {}
+
+
+def test_suppression_keeps_alert_and_marks_it():
+    suppressions = {("Servc", "large"): date(2026, 11, 30)}
+    alerts = evaluate_match_rate_alerts(
+        _two_alert_weeks(), suppressions=suppressions, today=date(2026, 10, 1)
+    )
+    # 억제 대상도 반환 목록에서 빼지 않고 suppressed 표시로 남긴다.
+    assert len(alerts) == 1
+    assert alerts[0]["category"] == "Servc"
+    assert alerts[0]["week_start"] == "2026-08-24"
+    assert alerts[0]["suppressed"] is True
+    assert alerts[0]["suppressed_until"] == "2026-11-30"
+
+
+def test_suppression_expires_the_day_after():
+    suppressions = {("Servc", "large"): date(2026, 10, 1)}
+    # 만료일 당일은 억제된다.
+    on_expiry = evaluate_match_rate_alerts(
+        _two_alert_weeks(), suppressions=suppressions, today=date(2026, 10, 1)
+    )
+    assert on_expiry[0]["suppressed"] is True
+    assert on_expiry[0]["suppressed_until"] == "2026-10-01"
+    # 만료일 다음 날부터는 억제가 풀린다.
+    after_expiry = evaluate_match_rate_alerts(
+        _two_alert_weeks(), suppressions=suppressions, today=date(2026, 10, 2)
+    )
+    assert after_expiry[0]["suppressed"] is False
+    assert after_expiry[0]["suppressed_until"] is None
+
+
+def test_suppression_other_category_is_not_suppressed():
+    suppressions = {("Thng", "large"): date(2026, 11, 30)}
+    alerts = evaluate_match_rate_alerts(
+        _two_alert_weeks(), suppressions=suppressions, today=date(2026, 10, 1)
+    )
+    assert alerts[0]["category"] == "Servc"
+    assert alerts[0]["suppressed"] is False
+    assert alerts[0]["suppressed_until"] is None
+
+
+def test_suppression_none_matches_legacy_contract():
+    legacy = evaluate_match_rate_alerts(_two_alert_weeks())
+    with_none = evaluate_match_rate_alerts(
+        _two_alert_weeks(), suppressions=None, today=date(2026, 10, 1)
+    )
+    assert len(legacy) == 1
+    assert legacy[0]["suppressed"] is False
+    assert legacy[0]["suppressed_until"] is None
+    # 기존 키 값은 억제 인자와 무관하게 동일하다.
+    for key in (
+        "category",
+        "week_start",
+        "rate",
+        "baseline_rate",
+        "announcements",
+        "adjusted_rate",
+        "baseline_multi_rate",
+        "previous_week_start",
+        "previous_adjusted_rate",
+        "previous_baseline_multi_rate",
+    ):
+        assert with_none[0][key] == legacy[0][key]
