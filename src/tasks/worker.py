@@ -47,11 +47,13 @@ from src.tasks.automation_tasks import (
 from src.tasks.coverage_tasks import result_coverage_monitor_task
 from src.tasks.retrain_task import run_retrain_pipeline_task
 from src.tasks.scheduled_tasks import (
+    WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
     backup_schedule_task,
     development_data_refresh_task,
     drift_monitor_task,
     nightly_schedule_task,
     run_schedule_catchup_task,
+    run_weekly_retrain_catchup_task,
     weekly_retrain_task,
 )
 from src.tasks.summary_tasks import (
@@ -388,6 +390,7 @@ class WorkerSettings:
         development_data_refresh_task,
         drift_monitor_task,
         run_schedule_catchup_task,
+        run_weekly_retrain_catchup_task,
         rebuild_dataset_summary_task,
         refresh_institution_catalog_task,
         result_coverage_monitor_task,
@@ -563,23 +566,24 @@ def ensure_all_worker_tasks_traced() -> None:
     BackupWorkerSettings.functions = new_backup_functions
 
 
+CATCHUP_JOB_TIMEOUTS: dict[str, int] = {
+    SCHEDULE_CATCHUP_JOB_NAME: SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS,
+    WEEKLY_RETRAIN_CATCHUP_JOB_NAME: SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS,
+}
+
+
 def _apply_catchup_job_timeout(functions: list[Any]) -> list[Any]:
     """따라잡기 잡은 야간 크론과 같은 3시간 제한을 쓰되 함수 목록의 __name__ 은 유지합니다."""
     updated: list[Any] = []
     for fn in functions:
         target = getattr(fn, "coroutine", fn)
-        if getattr(target, "__name__", "") != SCHEDULE_CATCHUP_JOB_NAME:
+        fn_name = getattr(target, "__name__", "")
+        timeout = CATCHUP_JOB_TIMEOUTS.get(fn_name)
+        if timeout is None or getattr(fn, "timeout_s", None) is not None:
             updated.append(fn)
             continue
-        if getattr(fn, "timeout_s", None) is not None:
-            updated.append(fn)
-            continue
-        wrapped = arq_func(
-            target,
-            name=SCHEDULE_CATCHUP_JOB_NAME,
-            timeout=SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS,
-        )
-        cast(Any, wrapped).__name__ = SCHEDULE_CATCHUP_JOB_NAME
+        wrapped = arq_func(target, name=fn_name, timeout=timeout)
+        cast(Any, wrapped).__name__ = fn_name
         updated.append(wrapped)
     return updated
 

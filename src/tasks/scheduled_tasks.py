@@ -22,7 +22,7 @@ import shutil
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from enum import StrEnum
 from functools import wraps
 from pathlib import Path
@@ -874,6 +874,15 @@ CATCHUP_LAST_ATTEMPT_KEY = SCHEDULE_CATCHUP_COOLDOWN_KEY
 CATCHUP_LEDGER_KEY = "bidbox:schedule:catchup_ledger"
 CATCHUP_LEDGER_TTL_SECONDS = 7 * 24 * 60 * 60
 
+WEEKLY_RETRAIN_CATCHUP_CLAIM_KEY = "bidbox:schedule:weekly_retrain_catchup_claim"
+WEEKLY_RETRAIN_CATCHUP_JOB_NAME = "run_weekly_retrain_catchup_task"
+WEEKLY_RETRAIN_CATCHUP_JOB_ID = "weekly-retrain-catchup-startup"
+
+# 주간 재학습 크론과 같은 시각(월요일 03:00). arq cron 과 동일한 프로세스 로컬 시각 기준입니다.
+WEEKLY_RETRAIN_WEEKDAY = 0
+WEEKLY_RETRAIN_HOUR = 3
+WEEKLY_RETRAIN_MINUTE = 0
+
 RELEASE_SCHEDULE_CLAIM_SCRIPT = """
 local val = redis.call('GET', KEYS[1])
 if not val then
@@ -1230,8 +1239,66 @@ def is_catchup_in_cooldown(
         return False, None
 
 
+def resolve_schedule_timezone(tz: tzinfo | None = None) -> tzinfo:
+    """크론 슬롯을 해석할 타임존을 반환합니다.
+
+    기본값은 arq cron 이 발화하는 기준과 같은 프로세스 로컬 타임존입니다.
+    """
+    if tz is not None:
+        return tz
+    return datetime.now().astimezone().tzinfo or UTC
+
+
+def previous_cron_slot(
+    now: datetime,
+    hour: int,
+    minute: int = 0,
+    *,
+    weekday: int | None = None,
+    tz: tzinfo | None = None,
+) -> datetime:
+    """기준 시각 이전의 가장 최근 크론 슬롯을 UTC aware datetime 으로 계산합니다.
+
+    슬롯 시각은 tz 기준 벽시계 시각으로 해석합니다. weekday 는 월요일=0 이며
+    None 이면 매일 슬롯입니다. tz 기본값은 프로세스 로컬 타임존(arq cron 기준)입니다.
+    """
+    slot_tz = resolve_schedule_timezone(tz)
+    reference = _as_utc(now).astimezone(slot_tz)
+    candidate = reference.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if weekday is None:
+        if candidate > reference:
+            candidate -= timedelta(days=1)
+    else:
+        candidate -= timedelta(days=(candidate.weekday() - weekday) % 7)
+        if candidate > reference:
+            candidate -= timedelta(days=7)
+    return candidate.astimezone(UTC)
+
+
+def get_latest_weekly_retrain_time(db: Session | None = None) -> datetime | None:
+    """retrain_logs 에서 trigger_source='weekly_schedule' 인 최신 created_at 을 조회합니다."""
+    from sqlalchemy import func, select
+
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
+    try:
+        return session.execute(
+            select(func.max(RetrainLog.created_at)).where(
+                RetrainLog.trigger_source == "weekly_schedule"
+            )
+        ).scalar()
+    finally:
+        if own_session:
+            session.close()
+
+
 def check_schedule_catchup_needed(
     db: Session | None = None,
+    tz: tzinfo | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     """기동 시 스케줄 따라잡기 필요 여부를 판정합니다.
 
@@ -1306,16 +1373,10 @@ def check_schedule_catchup_needed(
         "threshold_hours": threshold_hours,
     }
 
-    # 마지막 크론 슬롯(매일 02:00 naive, UTC로 해석) 이후 수집이 없으면 놓친 슬롯으로 발화.
+    # 마지막 크론 슬롯(매일 02:00, 프로세스 로컬 시각) 이후 수집이 없으면 놓친 슬롯으로 발화.
     # 경과 시간이 임계치에 못 미쳐도 슬롯 누락이면 따라잡기를 돌린다.
-    now_naive = now.replace(tzinfo=None) if now.tzinfo else now
-    if now_naive.hour >= 2:
-        last_slot_naive = now_naive.replace(hour=2, minute=0, second=0, microsecond=0)
-    else:
-        last_slot_naive = (now_naive - timedelta(days=1)).replace(
-            hour=2, minute=0, second=0, microsecond=0
-        )
-    last_slot = _as_utc(last_slot_naive)
+    last_slot = previous_cron_slot(now, 2, 0, tz=tz)
+    last_slot_naive = last_slot.astimezone(resolve_schedule_timezone(tz)).replace(tzinfo=None)
     collected_aware = _as_utc(latest_collected_at)
 
     if collected_aware < last_slot:
@@ -1337,10 +1398,147 @@ def check_schedule_catchup_needed(
     return False, "threshold_not_exceeded", details
 
 
+def check_weekly_retrain_catchup_needed(
+    db: Session | None = None,
+    now: datetime | None = None,
+    tz: tzinfo | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
+    """기동 시 주간 재학습(월요일 03:00) 놓친 슬롯 보충 필요 여부를 판정합니다.
+
+    Returns:
+        (needed, reason, details)
+    """
+    if not settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED:
+        return (
+            False,
+            "disabled",
+            {"enabled": False, "reason": "AUTOMATION_SCHEDULE_CATCHUP_ENABLED is False"},
+        )
+    if not settings.ML_WEEKLY_RETRAIN_ENABLED:
+        return (
+            False,
+            "disabled",
+            {"enabled": False, "reason": "ML_WEEKLY_RETRAIN_ENABLED is False"},
+        )
+
+    reference = now or utcnow()
+    last_slot = previous_cron_slot(
+        reference,
+        WEEKLY_RETRAIN_HOUR,
+        WEEKLY_RETRAIN_MINUTE,
+        weekday=WEEKLY_RETRAIN_WEEKDAY,
+        tz=tz,
+    )
+    latest_retrain = get_latest_weekly_retrain_time(db)
+    details: dict[str, Any] = {
+        "enabled": True,
+        "last_weekly_slot": last_slot.isoformat(),
+        "latest_weekly_retrain_at": latest_retrain.isoformat() if latest_retrain else None,
+    }
+
+    if latest_retrain is None:
+        details["reason"] = "이전 주간 재학습 이력이 존재하지 않아 따라잡기를 실행합니다."
+        return True, "no_previous_weekly_retrain", details
+
+    if _as_utc(latest_retrain) < last_slot:
+        details["reason"] = (
+            f"마지막 주간 슬롯({last_slot.isoformat()}) 이후 주간 재학습 이력이 없어 "
+            "놓친 슬롯을 보충합니다."
+        )
+        return True, "missed_weekly_retrain", details
+
+    details["reason"] = "마지막 주간 슬롯 이후 주간 재학습 이력이 있어 건너뜁니다."
+    return False, "weekly_retrain_up_to_date", details
+
+
+async def _enqueue_weekly_retrain_catchup(ctx: dict[str, Any]) -> None:
+    """데이터 따라잡기 종료 후 주간 재학습 따라잡기를 큐에 적재합니다.
+
+    적재 실패는 데이터 따라잡기 결과와 원장을 바꾸지 않고 경고 로그만 남깁니다.
+    """
+    redis = ctx.get("redis")
+    enqueue_job = getattr(redis, "enqueue_job", None)
+    if redis is None or enqueue_job is None:
+        logger.info("Arq redis 연결이 없어 주간 재학습 따라잡기를 큐에 넣지 않습니다.")
+        return
+    try:
+        await enqueue_job(
+            WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
+            _job_id=WEEKLY_RETRAIN_CATCHUP_JOB_ID,
+        )
+    except Exception as exc:
+        logger.warning("주간 재학습 따라잡기 적재 실패: %s", exc)
+
+
+@traced_worker_task
+async def run_weekly_retrain_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """기동 시 놓친 주간 재학습을 보충하는 진입점 태스크입니다."""
+    needed, reason, details = await asyncio.to_thread(check_weekly_retrain_catchup_needed)
+    logger.info(
+        "주간 재학습 따라잡기 판정: needed=%s, reason=%s, details=%s",
+        needed,
+        reason,
+        details,
+    )
+
+    if not needed:
+        return {"status": "skipped", "reason": reason, "details": details}
+
+    from src.tasks.worker import SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS
+
+    ttl = max(int(SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS), 60)
+    redis_conn = get_schedule_redis_conn()
+    client = redis_conn.client()
+    if client is None:
+        logger.warning("Redis 연결이 없어 주간 재학습 따라잡기 선점을 획득하지 못했습니다.")
+        return {"status": "skipped", "reason": "redis_unavailable", "details": details}
+
+    try:
+        claimed = bool(
+            client.set(
+                WEEKLY_RETRAIN_CATCHUP_CLAIM_KEY,
+                utcnow().isoformat(),
+                ex=ttl,
+                nx=True,
+            )
+        )
+    except Exception as exc:
+        redis_conn.invalidate(exc)
+        logger.warning("주간 재학습 따라잡기 선점 중 오류 발생: %s", exc)
+        return {"status": "skipped", "reason": "claim_error", "details": details}
+
+    if not claimed:
+        logger.info("주간 재학습 따라잡기가 이미 선점되어 건너뜁니다.")
+        return {"status": "skipped", "reason": "already_running", "details": details}
+
+    logger.info("주간 재학습 따라잡기 실행 시작 (details=%s)", details)
+    try:
+        outcome = await weekly_retrain_task(ctx)
+    except Exception as exc:
+        logger.exception("주간 재학습 따라잡기 실행 실패: %s", exc)
+        return {
+            "status": "failed",
+            "reason": "execution_failed",
+            "error": str(exc),
+            "catchup_details": details,
+        }
+
+    result = dict(outcome)
+    result["catchup_details"] = details
+    return result
+
+
 @traced_worker_task
 @_record_schedule("schedule_catchup")
 async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """기동 시 누락된 스케줄 수집을 따라잡는 진입점 태스크입니다."""
+    try:
+        return await _run_schedule_catchup(ctx)
+    finally:
+        await _enqueue_weekly_retrain_catchup(ctx)
+
+
+async def _run_schedule_catchup(ctx: dict[str, Any]) -> dict[str, Any]:
     needed, reason, details = await asyncio.to_thread(check_schedule_catchup_needed)
     logger.info(
         "스케줄 따라잡기 판정: needed=%s, reason=%s, details=%s",
